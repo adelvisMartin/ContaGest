@@ -1,0 +1,41 @@
+[
+  {
+    "id": "prd-1",
+    "sku": "CG-CBL-012",
+    "barcode": "7591000000123",
+    "qrCode": "CGVE:PRD:CG-CBL-012",
+    "name": "CG-CBL-012",
+    "category": "Inventario",
+    "stock": 0,
+    "reserved": 0,
+    "min": 0,
+    "costUsd": 0,
+    "priceUsd": 0
+  },
+  {
+    "id": "prd-2",
+    "sku": "CG-LED-009",
+    "barcode": "7591000000093",
+    "qrCode": "CGVE:PRD:CG-LED-009",
+    "name": "CG-LED-009",
+    "category": "Inventario",
+    "stock": 0,
+    "reserved": 0,
+    "min": 0,
+    "costUsd": 0,
+    "priceUsd": 0
+  },
+  {
+    "id": "prd-3",
+    "sku": "CG-TAB-012",
+    "barcode": "7591000001205",
+    "qrCode": "CGVE:PRD:CG-TAB-012",
+    "name": "CG-TAB-012",
+    "category": "Inventario",
+    "stock": 0,
+    "reserved": 0,
+    "min": 0,
+    "costUsd": 0,
+    "priceUsd": 0
+  }
+]

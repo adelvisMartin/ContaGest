@@ -1,0 +1,27 @@
+{
+  "name": "contagest-ve-frontend",
+  "version": "11.3.0",
+  "private": true,
+  "type": "module",
+  "description": "Frontend ContaGest-VE Enterprise ERP con migración interna módulo por módulo al UI Kit unificado, RBAC, demos y monitoreo.",
+  "scripts": {
+    "dev": "vite --host 0.0.0.0 --port 8080",
+    "build": "vite build",
+    "preview": "vite preview --host 0.0.0.0 --port 8080"
+  },
+  "dependencies": {
+    "@emotion/react": "latest",
+    "@emotion/styled": "latest",
+    "@mui/material": "latest",
+    "react": "latest",
+    "react-dom": "latest",
+    "react-hot-toast": "latest",
+    "qrcode": "^1.5.4"
+  },
+  "devDependencies": {
+    "vite": "latest",
+    "tailwindcss": "^3.4.17",
+    "postcss": "^8.4.49",
+    "autoprefixer": "^10.4.20"
+  }
+}

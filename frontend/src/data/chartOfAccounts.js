@@ -1,0 +1,1924 @@
+export const CHART_OF_ACCOUNTS = [
+  {
+    "code": "1",
+    "name": "ACTIVO",
+    "type": "asset",
+    "nature": "debit",
+    "level": 1,
+    "parentCode": "",
+    "allowPosting": false,
+    "description": ""
+  },
+  {
+    "code": "1.1",
+    "name": "Activo Corriente",
+    "type": "asset",
+    "nature": "debit",
+    "level": 2,
+    "parentCode": "1",
+    "allowPosting": false,
+    "description": ""
+  },
+  {
+    "code": "1.1.01",
+    "name": "Caja",
+    "type": "asset",
+    "nature": "debit",
+    "level": 3,
+    "parentCode": "1.1",
+    "allowPosting": false,
+    "description": ""
+  },
+  {
+    "code": "1.1.01.001",
+    "name": "Caja principal Bs.",
+    "type": "asset",
+    "nature": "debit",
+    "level": 4,
+    "parentCode": "1.1.01",
+    "allowPosting": true,
+    "description": ""
+  },
+  {
+    "code": "1.1.01.002",
+    "name": "Caja chica",
+    "type": "asset",
+    "nature": "debit",
+    "level": 4,
+    "parentCode": "1.1.01",
+    "allowPosting": true,
+    "description": ""
+  },
+  {
+    "code": "1.1.01.003",
+    "name": "Caja moneda extranjera",
+    "type": "asset",
+    "nature": "debit",
+    "level": 4,
+    "parentCode": "1.1.01",
+    "allowPosting": true,
+    "description": ""
+  },
+  {
+    "code": "1.1.02",
+    "name": "Bancos",
+    "type": "asset",
+    "nature": "debit",
+    "level": 3,
+    "parentCode": "1.1",
+    "allowPosting": false,
+    "description": ""
+  },
+  {
+    "code": "1.1.02.001",
+    "name": "Banco Nacional cuenta corriente",
+    "type": "asset",
+    "nature": "debit",
+    "level": 4,
+    "parentCode": "1.1.02",
+    "allowPosting": true,
+    "description": ""
+  },
+  {
+    "code": "1.1.02.002",
+    "name": "Banco Nacional cuenta ahorro",
+    "type": "asset",
+    "nature": "debit",
+    "level": 4,
+    "parentCode": "1.1.02",
+    "allowPosting": true,
+    "description": ""
+  },
+  {
+    "code": "1.1.02.003",
+    "name": "Banco extranjero USD",
+    "type": "asset",
+    "nature": "debit",
+    "level": 4,
+    "parentCode": "1.1.02",
+    "allowPosting": true,
+    "description": ""
+  },
+  {
+    "code": "1.1.02.004",
+    "name": "Banco custodia fiscal",
+    "type": "asset",
+    "nature": "debit",
+    "level": 4,
+    "parentCode": "1.1.02",
+    "allowPosting": true,
+    "description": ""
+  },
+  {
+    "code": "1.1.02.005",
+    "name": "Billetera/Pago móvil",
+    "type": "asset",
+    "nature": "debit",
+    "level": 4,
+    "parentCode": "1.1.02",
+    "allowPosting": true,
+    "description": ""
+  },
+  {
+    "code": "1.1.03",
+    "name": "Cuentas por cobrar comerciales",
+    "type": "asset",
+    "nature": "debit",
+    "level": 3,
+    "parentCode": "1.1",
+    "allowPosting": false,
+    "description": ""
+  },
+  {
+    "code": "1.1.03.001",
+    "name": "Clientes nacionales",
+    "type": "asset",
+    "nature": "debit",
+    "level": 4,
+    "parentCode": "1.1.03",
+    "allowPosting": true,
+    "description": ""
+  },
+  {
+    "code": "1.1.03.002",
+    "name": "Clientes relacionados",
+    "type": "asset",
+    "nature": "debit",
+    "level": 4,
+    "parentCode": "1.1.03",
+    "allowPosting": true,
+    "description": ""
+  },
+  {
+    "code": "1.1.03.003",
+    "name": "Facturas por cobrar",
+    "type": "asset",
+    "nature": "debit",
+    "level": 4,
+    "parentCode": "1.1.03",
+    "allowPosting": true,
+    "description": ""
+  },
+  {
+    "code": "1.1.03.004",
+    "name": "Efectos por cobrar",
+    "type": "asset",
+    "nature": "debit",
+    "level": 4,
+    "parentCode": "1.1.03",
+    "allowPosting": true,
+    "description": ""
+  },
+  {
+    "code": "1.1.03.005",
+    "name": "Anticipos a proveedores",
+    "type": "asset",
+    "nature": "debit",
+    "level": 4,
+    "parentCode": "1.1.03",
+    "allowPosting": true,
+    "description": ""
+  },
+  {
+    "code": "1.1.03.006",
+    "name": "Retenciones ISLR por compensar",
+    "type": "asset",
+    "nature": "debit",
+    "level": 4,
+    "parentCode": "1.1.03",
+    "allowPosting": true,
+    "description": ""
+  },
+  {
+    "code": "1.1.03.007",
+    "name": "Retenciones IVA por compensar",
+    "type": "asset",
+    "nature": "debit",
+    "level": 4,
+    "parentCode": "1.1.03",
+    "allowPosting": true,
+    "description": ""
+  },
+  {
+    "code": "1.1.03.008",
+    "name": "IGTF recuperable",
+    "type": "asset",
+    "nature": "debit",
+    "level": 4,
+    "parentCode": "1.1.03",
+    "allowPosting": true,
+    "description": ""
+  },
+  {
+    "code": "1.1.03.009",
+    "name": "Cuentas por cobrar empleados",
+    "type": "asset",
+    "nature": "debit",
+    "level": 4,
+    "parentCode": "1.1.03",
+    "allowPosting": true,
+    "description": ""
+  },
+  {
+    "code": "1.1.03.010",
+    "name": "Otras cuentas por cobrar",
+    "type": "asset",
+    "nature": "debit",
+    "level": 4,
+    "parentCode": "1.1.03",
+    "allowPosting": true,
+    "description": ""
+  },
+  {
+    "code": "1.1.04",
+    "name": "Inventarios",
+    "type": "asset",
+    "nature": "debit",
+    "level": 3,
+    "parentCode": "1.1",
+    "allowPosting": false,
+    "description": ""
+  },
+  {
+    "code": "1.1.04.001",
+    "name": "Mercancía para la venta",
+    "type": "asset",
+    "nature": "debit",
+    "level": 4,
+    "parentCode": "1.1.04",
+    "allowPosting": true,
+    "description": ""
+  },
+  {
+    "code": "1.1.04.002",
+    "name": "Materia prima",
+    "type": "asset",
+    "nature": "debit",
+    "level": 4,
+    "parentCode": "1.1.04",
+    "allowPosting": true,
+    "description": ""
+  },
+  {
+    "code": "1.1.04.003",
+    "name": "Productos en proceso",
+    "type": "asset",
+    "nature": "debit",
+    "level": 4,
+    "parentCode": "1.1.04",
+    "allowPosting": true,
+    "description": ""
+  },
+  {
+    "code": "1.1.04.004",
+    "name": "Productos terminados",
+    "type": "asset",
+    "nature": "debit",
+    "level": 4,
+    "parentCode": "1.1.04",
+    "allowPosting": true,
+    "description": ""
+  },
+  {
+    "code": "1.1.04.005",
+    "name": "Repuestos y suministros",
+    "type": "asset",
+    "nature": "debit",
+    "level": 4,
+    "parentCode": "1.1.04",
+    "allowPosting": true,
+    "description": ""
+  },
+  {
+    "code": "1.1.04.006",
+    "name": "Inventario en tránsito",
+    "type": "asset",
+    "nature": "debit",
+    "level": 4,
+    "parentCode": "1.1.04",
+    "allowPosting": true,
+    "description": ""
+  },
+  {
+    "code": "1.1.04.007",
+    "name": "Deterioro de inventario",
+    "type": "asset",
+    "nature": "credit",
+    "level": 4,
+    "parentCode": "1.1.04",
+    "allowPosting": true,
+    "description": ""
+  },
+  {
+    "code": "1.1.05",
+    "name": "Impuestos y créditos fiscales",
+    "type": "asset",
+    "nature": "debit",
+    "level": 3,
+    "parentCode": "1.1",
+    "allowPosting": false,
+    "description": ""
+  },
+  {
+    "code": "1.1.05.001",
+    "name": "IVA crédito fiscal",
+    "type": "asset",
+    "nature": "debit",
+    "level": 4,
+    "parentCode": "1.1.05",
+    "allowPosting": true,
+    "description": ""
+  },
+  {
+    "code": "1.1.05.002",
+    "name": "Crédito fiscal importaciones",
+    "type": "asset",
+    "nature": "debit",
+    "level": 4,
+    "parentCode": "1.1.05",
+    "allowPosting": true,
+    "description": ""
+  },
+  {
+    "code": "1.1.05.003",
+    "name": "Excedente IVA períodos anteriores",
+    "type": "asset",
+    "nature": "debit",
+    "level": 4,
+    "parentCode": "1.1.05",
+    "allowPosting": true,
+    "description": ""
+  },
+  {
+    "code": "1.1.05.004",
+    "name": "ISLR estimado pagado",
+    "type": "asset",
+    "nature": "debit",
+    "level": 4,
+    "parentCode": "1.1.05",
+    "allowPosting": true,
+    "description": ""
+  },
+  {
+    "code": "1.1.05.005",
+    "name": "Anticipo IVA",
+    "type": "asset",
+    "nature": "debit",
+    "level": 4,
+    "parentCode": "1.1.05",
+    "allowPosting": true,
+    "description": ""
+  },
+  {
+    "code": "1.1.05.006",
+    "name": "Anticipo ISLR",
+    "type": "asset",
+    "nature": "debit",
+    "level": 4,
+    "parentCode": "1.1.05",
+    "allowPosting": true,
+    "description": ""
+  },
+  {
+    "code": "1.1.05.007",
+    "name": "Créditos fiscales municipales",
+    "type": "asset",
+    "nature": "debit",
+    "level": 4,
+    "parentCode": "1.1.05",
+    "allowPosting": true,
+    "description": ""
+  },
+  {
+    "code": "1.1.06",
+    "name": "Gastos pagados por anticipado",
+    "type": "asset",
+    "nature": "debit",
+    "level": 3,
+    "parentCode": "1.1",
+    "allowPosting": false,
+    "description": ""
+  },
+  {
+    "code": "1.1.06.001",
+    "name": "Seguros prepagados",
+    "type": "asset",
+    "nature": "debit",
+    "level": 4,
+    "parentCode": "1.1.06",
+    "allowPosting": true,
+    "description": ""
+  },
+  {
+    "code": "1.1.06.002",
+    "name": "Alquileres prepagados",
+    "type": "asset",
+    "nature": "debit",
+    "level": 4,
+    "parentCode": "1.1.06",
+    "allowPosting": true,
+    "description": ""
+  },
+  {
+    "code": "1.1.06.003",
+    "name": "Servicios prepagados",
+    "type": "asset",
+    "nature": "debit",
+    "level": 4,
+    "parentCode": "1.1.06",
+    "allowPosting": true,
+    "description": ""
+  },
+  {
+    "code": "1.1.06.004",
+    "name": "Licencias y software prepagado",
+    "type": "asset",
+    "nature": "debit",
+    "level": 4,
+    "parentCode": "1.1.06",
+    "allowPosting": true,
+    "description": ""
+  },
+  {
+    "code": "1.2",
+    "name": "Activo No Corriente",
+    "type": "asset",
+    "nature": "debit",
+    "level": 2,
+    "parentCode": "1",
+    "allowPosting": false,
+    "description": ""
+  },
+  {
+    "code": "1.2.01",
+    "name": "Propiedad, planta y equipo",
+    "type": "asset",
+    "nature": "debit",
+    "level": 3,
+    "parentCode": "1.2",
+    "allowPosting": false,
+    "description": ""
+  },
+  {
+    "code": "1.2.01.001",
+    "name": "Terrenos",
+    "type": "asset",
+    "nature": "debit",
+    "level": 4,
+    "parentCode": "1.2.01",
+    "allowPosting": true,
+    "description": ""
+  },
+  {
+    "code": "1.2.01.002",
+    "name": "Edificaciones",
+    "type": "asset",
+    "nature": "debit",
+    "level": 4,
+    "parentCode": "1.2.01",
+    "allowPosting": true,
+    "description": ""
+  },
+  {
+    "code": "1.2.01.003",
+    "name": "Maquinaria y equipos",
+    "type": "asset",
+    "nature": "debit",
+    "level": 4,
+    "parentCode": "1.2.01",
+    "allowPosting": true,
+    "description": ""
+  },
+  {
+    "code": "1.2.01.004",
+    "name": "Vehículos",
+    "type": "asset",
+    "nature": "debit",
+    "level": 4,
+    "parentCode": "1.2.01",
+    "allowPosting": true,
+    "description": ""
+  },
+  {
+    "code": "1.2.01.005",
+    "name": "Mobiliario y equipos de oficina",
+    "type": "asset",
+    "nature": "debit",
+    "level": 4,
+    "parentCode": "1.2.01",
+    "allowPosting": true,
+    "description": ""
+  },
+  {
+    "code": "1.2.01.006",
+    "name": "Equipos de computación",
+    "type": "asset",
+    "nature": "debit",
+    "level": 4,
+    "parentCode": "1.2.01",
+    "allowPosting": true,
+    "description": ""
+  },
+  {
+    "code": "1.2.01.007",
+    "name": "Herramientas",
+    "type": "asset",
+    "nature": "debit",
+    "level": 4,
+    "parentCode": "1.2.01",
+    "allowPosting": true,
+    "description": ""
+  },
+  {
+    "code": "1.2.01.008",
+    "name": "Mejoras a propiedades arrendadas",
+    "type": "asset",
+    "nature": "debit",
+    "level": 4,
+    "parentCode": "1.2.01",
+    "allowPosting": true,
+    "description": ""
+  },
+  {
+    "code": "1.2.02",
+    "name": "Depreciación acumulada",
+    "type": "asset",
+    "nature": "credit",
+    "level": 3,
+    "parentCode": "1.2",
+    "allowPosting": false,
+    "description": ""
+  },
+  {
+    "code": "1.2.02.001",
+    "name": "Deprec. edificaciones",
+    "type": "asset",
+    "nature": "credit",
+    "level": 4,
+    "parentCode": "1.2.02",
+    "allowPosting": true,
+    "description": ""
+  },
+  {
+    "code": "1.2.02.002",
+    "name": "Deprec. maquinaria y equipos",
+    "type": "asset",
+    "nature": "credit",
+    "level": 4,
+    "parentCode": "1.2.02",
+    "allowPosting": true,
+    "description": ""
+  },
+  {
+    "code": "1.2.02.003",
+    "name": "Deprec. vehículos",
+    "type": "asset",
+    "nature": "credit",
+    "level": 4,
+    "parentCode": "1.2.02",
+    "allowPosting": true,
+    "description": ""
+  },
+  {
+    "code": "1.2.02.004",
+    "name": "Deprec. mobiliario",
+    "type": "asset",
+    "nature": "credit",
+    "level": 4,
+    "parentCode": "1.2.02",
+    "allowPosting": true,
+    "description": ""
+  },
+  {
+    "code": "1.2.02.005",
+    "name": "Deprec. equipos computación",
+    "type": "asset",
+    "nature": "credit",
+    "level": 4,
+    "parentCode": "1.2.02",
+    "allowPosting": true,
+    "description": ""
+  },
+  {
+    "code": "1.2.02.006",
+    "name": "Deprec. herramientas",
+    "type": "asset",
+    "nature": "credit",
+    "level": 4,
+    "parentCode": "1.2.02",
+    "allowPosting": true,
+    "description": ""
+  },
+  {
+    "code": "1.2.03",
+    "name": "Intangibles",
+    "type": "asset",
+    "nature": "debit",
+    "level": 3,
+    "parentCode": "1.2",
+    "allowPosting": false,
+    "description": ""
+  },
+  {
+    "code": "1.2.03.001",
+    "name": "Software",
+    "type": "asset",
+    "nature": "debit",
+    "level": 4,
+    "parentCode": "1.2.03",
+    "allowPosting": true,
+    "description": ""
+  },
+  {
+    "code": "1.2.03.002",
+    "name": "Marcas y patentes",
+    "type": "asset",
+    "nature": "debit",
+    "level": 4,
+    "parentCode": "1.2.03",
+    "allowPosting": true,
+    "description": ""
+  },
+  {
+    "code": "1.2.03.003",
+    "name": "Licencias",
+    "type": "asset",
+    "nature": "debit",
+    "level": 4,
+    "parentCode": "1.2.03",
+    "allowPosting": true,
+    "description": ""
+  },
+  {
+    "code": "1.2.03.004",
+    "name": "Amortización acumulada intangibles",
+    "type": "asset",
+    "nature": "credit",
+    "level": 4,
+    "parentCode": "1.2.03",
+    "allowPosting": true,
+    "description": ""
+  },
+  {
+    "code": "2",
+    "name": "PASIVO",
+    "type": "liability",
+    "nature": "credit",
+    "level": 1,
+    "parentCode": "",
+    "allowPosting": false,
+    "description": ""
+  },
+  {
+    "code": "2.1",
+    "name": "Pasivo Corriente",
+    "type": "liability",
+    "nature": "credit",
+    "level": 2,
+    "parentCode": "2",
+    "allowPosting": false,
+    "description": ""
+  },
+  {
+    "code": "2.1.01",
+    "name": "Cuentas por pagar proveedores",
+    "type": "liability",
+    "nature": "credit",
+    "level": 3,
+    "parentCode": "2.1",
+    "allowPosting": false,
+    "description": ""
+  },
+  {
+    "code": "2.1.01.001",
+    "name": "Proveedores nacionales",
+    "type": "liability",
+    "nature": "credit",
+    "level": 4,
+    "parentCode": "2.1.01",
+    "allowPosting": true,
+    "description": ""
+  },
+  {
+    "code": "2.1.01.002",
+    "name": "Proveedores relacionados",
+    "type": "liability",
+    "nature": "credit",
+    "level": 4,
+    "parentCode": "2.1.01",
+    "allowPosting": true,
+    "description": ""
+  },
+  {
+    "code": "2.1.01.003",
+    "name": "Facturas por pagar",
+    "type": "liability",
+    "nature": "credit",
+    "level": 4,
+    "parentCode": "2.1.01",
+    "allowPosting": true,
+    "description": ""
+  },
+  {
+    "code": "2.1.01.004",
+    "name": "Anticipos de clientes",
+    "type": "liability",
+    "nature": "credit",
+    "level": 4,
+    "parentCode": "2.1.01",
+    "allowPosting": true,
+    "description": ""
+  },
+  {
+    "code": "2.1.01.005",
+    "name": "Honorarios por pagar",
+    "type": "liability",
+    "nature": "credit",
+    "level": 4,
+    "parentCode": "2.1.01",
+    "allowPosting": true,
+    "description": ""
+  },
+  {
+    "code": "2.1.02",
+    "name": "Tributos por pagar",
+    "type": "liability",
+    "nature": "credit",
+    "level": 3,
+    "parentCode": "2.1",
+    "allowPosting": false,
+    "description": ""
+  },
+  {
+    "code": "2.1.02.001",
+    "name": "IVA débito fiscal",
+    "type": "liability",
+    "nature": "credit",
+    "level": 4,
+    "parentCode": "2.1.02",
+    "allowPosting": true,
+    "description": ""
+  },
+  {
+    "code": "2.1.02.002",
+    "name": "IVA por pagar",
+    "type": "liability",
+    "nature": "credit",
+    "level": 4,
+    "parentCode": "2.1.02",
+    "allowPosting": true,
+    "description": ""
+  },
+  {
+    "code": "2.1.02.003",
+    "name": "Retenciones IVA por enterar",
+    "type": "liability",
+    "nature": "credit",
+    "level": 4,
+    "parentCode": "2.1.02",
+    "allowPosting": true,
+    "description": ""
+  },
+  {
+    "code": "2.1.02.004",
+    "name": "Retenciones ISLR por enterar",
+    "type": "liability",
+    "nature": "credit",
+    "level": 4,
+    "parentCode": "2.1.02",
+    "allowPosting": true,
+    "description": ""
+  },
+  {
+    "code": "2.1.02.005",
+    "name": "IGTF por pagar",
+    "type": "liability",
+    "nature": "credit",
+    "level": 4,
+    "parentCode": "2.1.02",
+    "allowPosting": true,
+    "description": ""
+  },
+  {
+    "code": "2.1.02.006",
+    "name": "ISLR definitivo por pagar",
+    "type": "liability",
+    "nature": "credit",
+    "level": 4,
+    "parentCode": "2.1.02",
+    "allowPosting": true,
+    "description": ""
+  },
+  {
+    "code": "2.1.02.007",
+    "name": "Impuestos municipales por pagar",
+    "type": "liability",
+    "nature": "credit",
+    "level": 4,
+    "parentCode": "2.1.02",
+    "allowPosting": true,
+    "description": ""
+  },
+  {
+    "code": "2.1.02.008",
+    "name": "Tasas y contribuciones por pagar",
+    "type": "liability",
+    "nature": "credit",
+    "level": 4,
+    "parentCode": "2.1.02",
+    "allowPosting": true,
+    "description": ""
+  },
+  {
+    "code": "2.1.03",
+    "name": "Obligaciones laborales",
+    "type": "liability",
+    "nature": "credit",
+    "level": 3,
+    "parentCode": "2.1",
+    "allowPosting": false,
+    "description": ""
+  },
+  {
+    "code": "2.1.03.001",
+    "name": "Sueldos y salarios por pagar",
+    "type": "liability",
+    "nature": "credit",
+    "level": 4,
+    "parentCode": "2.1.03",
+    "allowPosting": true,
+    "description": ""
+  },
+  {
+    "code": "2.1.03.002",
+    "name": "Vacaciones por pagar",
+    "type": "liability",
+    "nature": "credit",
+    "level": 4,
+    "parentCode": "2.1.03",
+    "allowPosting": true,
+    "description": ""
+  },
+  {
+    "code": "2.1.03.003",
+    "name": "Utilidades por pagar",
+    "type": "liability",
+    "nature": "credit",
+    "level": 4,
+    "parentCode": "2.1.03",
+    "allowPosting": true,
+    "description": ""
+  },
+  {
+    "code": "2.1.03.004",
+    "name": "Prestaciones sociales por pagar",
+    "type": "liability",
+    "nature": "credit",
+    "level": 4,
+    "parentCode": "2.1.03",
+    "allowPosting": true,
+    "description": ""
+  },
+  {
+    "code": "2.1.03.005",
+    "name": "IVSS por pagar",
+    "type": "liability",
+    "nature": "credit",
+    "level": 4,
+    "parentCode": "2.1.03",
+    "allowPosting": true,
+    "description": ""
+  },
+  {
+    "code": "2.1.03.006",
+    "name": "FAOV por pagar",
+    "type": "liability",
+    "nature": "credit",
+    "level": 4,
+    "parentCode": "2.1.03",
+    "allowPosting": true,
+    "description": ""
+  },
+  {
+    "code": "2.1.03.007",
+    "name": "INCES por pagar",
+    "type": "liability",
+    "nature": "credit",
+    "level": 4,
+    "parentCode": "2.1.03",
+    "allowPosting": true,
+    "description": ""
+  },
+  {
+    "code": "2.1.03.008",
+    "name": "Retenciones nómina por enterar",
+    "type": "liability",
+    "nature": "credit",
+    "level": 4,
+    "parentCode": "2.1.03",
+    "allowPosting": true,
+    "description": ""
+  },
+  {
+    "code": "2.1.04",
+    "name": "Préstamos y obligaciones financieras CP",
+    "type": "liability",
+    "nature": "credit",
+    "level": 3,
+    "parentCode": "2.1",
+    "allowPosting": false,
+    "description": ""
+  },
+  {
+    "code": "2.1.04.001",
+    "name": "Préstamos bancarios CP",
+    "type": "liability",
+    "nature": "credit",
+    "level": 4,
+    "parentCode": "2.1.04",
+    "allowPosting": true,
+    "description": ""
+  },
+  {
+    "code": "2.1.04.002",
+    "name": "Intereses por pagar",
+    "type": "liability",
+    "nature": "credit",
+    "level": 4,
+    "parentCode": "2.1.04",
+    "allowPosting": true,
+    "description": ""
+  },
+  {
+    "code": "2.1.04.003",
+    "name": "Tarjetas corporativas por pagar",
+    "type": "liability",
+    "nature": "credit",
+    "level": 4,
+    "parentCode": "2.1.04",
+    "allowPosting": true,
+    "description": ""
+  },
+  {
+    "code": "2.2",
+    "name": "Pasivo No Corriente",
+    "type": "liability",
+    "nature": "credit",
+    "level": 2,
+    "parentCode": "2",
+    "allowPosting": false,
+    "description": ""
+  },
+  {
+    "code": "2.2.01",
+    "name": "Préstamos bancarios LP",
+    "type": "liability",
+    "nature": "credit",
+    "level": 3,
+    "parentCode": "2.2",
+    "allowPosting": true,
+    "description": ""
+  },
+  {
+    "code": "2.2.02",
+    "name": "Obligaciones con relacionadas LP",
+    "type": "liability",
+    "nature": "credit",
+    "level": 3,
+    "parentCode": "2.2",
+    "allowPosting": true,
+    "description": ""
+  },
+  {
+    "code": "2.2.03",
+    "name": "Provisiones legales LP",
+    "type": "liability",
+    "nature": "credit",
+    "level": 3,
+    "parentCode": "2.2",
+    "allowPosting": true,
+    "description": ""
+  },
+  {
+    "code": "2.2.04",
+    "name": "Ingresos diferidos LP",
+    "type": "liability",
+    "nature": "credit",
+    "level": 3,
+    "parentCode": "2.2",
+    "allowPosting": true,
+    "description": ""
+  },
+  {
+    "code": "3",
+    "name": "PATRIMONIO",
+    "type": "equity",
+    "nature": "credit",
+    "level": 1,
+    "parentCode": "",
+    "allowPosting": false,
+    "description": ""
+  },
+  {
+    "code": "3.1",
+    "name": "Capital social",
+    "type": "equity",
+    "nature": "credit",
+    "level": 2,
+    "parentCode": "3",
+    "allowPosting": true,
+    "description": ""
+  },
+  {
+    "code": "3.2",
+    "name": "Reserva legal",
+    "type": "equity",
+    "nature": "credit",
+    "level": 2,
+    "parentCode": "3",
+    "allowPosting": true,
+    "description": ""
+  },
+  {
+    "code": "3.3",
+    "name": "Resultados acumulados",
+    "type": "equity",
+    "nature": "credit",
+    "level": 2,
+    "parentCode": "3",
+    "allowPosting": true,
+    "description": ""
+  },
+  {
+    "code": "3.4",
+    "name": "Resultado del ejercicio",
+    "type": "equity",
+    "nature": "credit",
+    "level": 2,
+    "parentCode": "3",
+    "allowPosting": true,
+    "description": ""
+  },
+  {
+    "code": "3.5",
+    "name": "Aportes por capitalizar",
+    "type": "equity",
+    "nature": "credit",
+    "level": 2,
+    "parentCode": "3",
+    "allowPosting": true,
+    "description": ""
+  },
+  {
+    "code": "3.6",
+    "name": "Superávit por revaluación",
+    "type": "equity",
+    "nature": "credit",
+    "level": 2,
+    "parentCode": "3",
+    "allowPosting": true,
+    "description": ""
+  },
+  {
+    "code": "4",
+    "name": "INGRESOS",
+    "type": "income",
+    "nature": "credit",
+    "level": 1,
+    "parentCode": "",
+    "allowPosting": false,
+    "description": ""
+  },
+  {
+    "code": "4.1",
+    "name": "Ingresos operacionales",
+    "type": "income",
+    "nature": "credit",
+    "level": 2,
+    "parentCode": "4",
+    "allowPosting": false,
+    "description": ""
+  },
+  {
+    "code": "4.1.01",
+    "name": "Ventas nacionales gravadas",
+    "type": "income",
+    "nature": "credit",
+    "level": 3,
+    "parentCode": "4.1",
+    "allowPosting": true,
+    "description": ""
+  },
+  {
+    "code": "4.1.02",
+    "name": "Ventas nacionales exentas",
+    "type": "income",
+    "nature": "credit",
+    "level": 3,
+    "parentCode": "4.1",
+    "allowPosting": true,
+    "description": ""
+  },
+  {
+    "code": "4.1.03",
+    "name": "Ventas exportación",
+    "type": "income",
+    "nature": "credit",
+    "level": 3,
+    "parentCode": "4.1",
+    "allowPosting": true,
+    "description": ""
+  },
+  {
+    "code": "4.1.04",
+    "name": "Servicios prestados",
+    "type": "income",
+    "nature": "credit",
+    "level": 3,
+    "parentCode": "4.1",
+    "allowPosting": true,
+    "description": ""
+  },
+  {
+    "code": "4.1.05",
+    "name": "Descuentos y devoluciones en ventas",
+    "type": "income",
+    "nature": "debit",
+    "level": 3,
+    "parentCode": "4.1",
+    "allowPosting": true,
+    "description": ""
+  },
+  {
+    "code": "4.2",
+    "name": "Otros ingresos",
+    "type": "income",
+    "nature": "credit",
+    "level": 2,
+    "parentCode": "4",
+    "allowPosting": false,
+    "description": ""
+  },
+  {
+    "code": "4.2.01",
+    "name": "Ingresos financieros",
+    "type": "income",
+    "nature": "credit",
+    "level": 3,
+    "parentCode": "4.2",
+    "allowPosting": true,
+    "description": ""
+  },
+  {
+    "code": "4.2.02",
+    "name": "Diferencial cambiario ganado",
+    "type": "income",
+    "nature": "credit",
+    "level": 3,
+    "parentCode": "4.2",
+    "allowPosting": true,
+    "description": ""
+  },
+  {
+    "code": "4.2.03",
+    "name": "Ganancia en venta de activos",
+    "type": "income",
+    "nature": "credit",
+    "level": 3,
+    "parentCode": "4.2",
+    "allowPosting": true,
+    "description": ""
+  },
+  {
+    "code": "4.2.04",
+    "name": "Otros ingresos",
+    "type": "income",
+    "nature": "credit",
+    "level": 3,
+    "parentCode": "4.2",
+    "allowPosting": true,
+    "description": ""
+  },
+  {
+    "code": "5",
+    "name": "COSTOS",
+    "type": "cogs",
+    "nature": "debit",
+    "level": 1,
+    "parentCode": "",
+    "allowPosting": false,
+    "description": ""
+  },
+  {
+    "code": "5.1",
+    "name": "Costo de ventas",
+    "type": "cogs",
+    "nature": "debit",
+    "level": 2,
+    "parentCode": "5",
+    "allowPosting": false,
+    "description": ""
+  },
+  {
+    "code": "5.1.01",
+    "name": "Costo mercancía vendida",
+    "type": "cogs",
+    "nature": "debit",
+    "level": 3,
+    "parentCode": "5.1",
+    "allowPosting": true,
+    "description": ""
+  },
+  {
+    "code": "5.1.02",
+    "name": "Costo servicios prestados",
+    "type": "cogs",
+    "nature": "debit",
+    "level": 3,
+    "parentCode": "5.1",
+    "allowPosting": true,
+    "description": ""
+  },
+  {
+    "code": "5.1.03",
+    "name": "Fletes sobre compras",
+    "type": "cogs",
+    "nature": "debit",
+    "level": 3,
+    "parentCode": "5.1",
+    "allowPosting": true,
+    "description": ""
+  },
+  {
+    "code": "5.1.04",
+    "name": "Ajustes por merma",
+    "type": "cogs",
+    "nature": "debit",
+    "level": 3,
+    "parentCode": "5.1",
+    "allowPosting": true,
+    "description": ""
+  },
+  {
+    "code": "5.1.05",
+    "name": "Diferencial cambiario costo",
+    "type": "cogs",
+    "nature": "debit",
+    "level": 3,
+    "parentCode": "5.1",
+    "allowPosting": true,
+    "description": ""
+  },
+  {
+    "code": "6",
+    "name": "GASTOS",
+    "type": "expense",
+    "nature": "debit",
+    "level": 1,
+    "parentCode": "",
+    "allowPosting": false,
+    "description": ""
+  },
+  {
+    "code": "6.1",
+    "name": "Gastos de personal",
+    "type": "expense",
+    "nature": "debit",
+    "level": 2,
+    "parentCode": "6",
+    "allowPosting": false,
+    "description": ""
+  },
+  {
+    "code": "6.1.01",
+    "name": "Sueldos y salarios",
+    "type": "expense",
+    "nature": "debit",
+    "level": 3,
+    "parentCode": "6.1",
+    "allowPosting": true,
+    "description": ""
+  },
+  {
+    "code": "6.1.02",
+    "name": "Horas extras",
+    "type": "expense",
+    "nature": "debit",
+    "level": 3,
+    "parentCode": "6.1",
+    "allowPosting": true,
+    "description": ""
+  },
+  {
+    "code": "6.1.03",
+    "name": "Bonificaciones",
+    "type": "expense",
+    "nature": "debit",
+    "level": 3,
+    "parentCode": "6.1",
+    "allowPosting": true,
+    "description": ""
+  },
+  {
+    "code": "6.1.04",
+    "name": "Vacaciones",
+    "type": "expense",
+    "nature": "debit",
+    "level": 3,
+    "parentCode": "6.1",
+    "allowPosting": true,
+    "description": ""
+  },
+  {
+    "code": "6.1.05",
+    "name": "Utilidades",
+    "type": "expense",
+    "nature": "debit",
+    "level": 3,
+    "parentCode": "6.1",
+    "allowPosting": true,
+    "description": ""
+  },
+  {
+    "code": "6.1.06",
+    "name": "Prestaciones sociales",
+    "type": "expense",
+    "nature": "debit",
+    "level": 3,
+    "parentCode": "6.1",
+    "allowPosting": true,
+    "description": ""
+  },
+  {
+    "code": "6.1.07",
+    "name": "IVSS patronal",
+    "type": "expense",
+    "nature": "debit",
+    "level": 3,
+    "parentCode": "6.1",
+    "allowPosting": true,
+    "description": ""
+  },
+  {
+    "code": "6.1.08",
+    "name": "FAOV patronal",
+    "type": "expense",
+    "nature": "debit",
+    "level": 3,
+    "parentCode": "6.1",
+    "allowPosting": true,
+    "description": ""
+  },
+  {
+    "code": "6.1.09",
+    "name": "INCES patronal",
+    "type": "expense",
+    "nature": "debit",
+    "level": 3,
+    "parentCode": "6.1",
+    "allowPosting": true,
+    "description": ""
+  },
+  {
+    "code": "6.1.10",
+    "name": "Capacitación",
+    "type": "expense",
+    "nature": "debit",
+    "level": 3,
+    "parentCode": "6.1",
+    "allowPosting": true,
+    "description": ""
+  },
+  {
+    "code": "6.2",
+    "name": "Gastos administrativos",
+    "type": "expense",
+    "nature": "debit",
+    "level": 2,
+    "parentCode": "6",
+    "allowPosting": false,
+    "description": ""
+  },
+  {
+    "code": "6.2.01",
+    "name": "Alquileres",
+    "type": "expense",
+    "nature": "debit",
+    "level": 3,
+    "parentCode": "6.2",
+    "allowPosting": true,
+    "description": ""
+  },
+  {
+    "code": "6.2.02",
+    "name": "Servicios públicos",
+    "type": "expense",
+    "nature": "debit",
+    "level": 3,
+    "parentCode": "6.2",
+    "allowPosting": true,
+    "description": ""
+  },
+  {
+    "code": "6.2.03",
+    "name": "Internet y telefonía",
+    "type": "expense",
+    "nature": "debit",
+    "level": 3,
+    "parentCode": "6.2",
+    "allowPosting": true,
+    "description": ""
+  },
+  {
+    "code": "6.2.04",
+    "name": "Papelería y útiles",
+    "type": "expense",
+    "nature": "debit",
+    "level": 3,
+    "parentCode": "6.2",
+    "allowPosting": true,
+    "description": ""
+  },
+  {
+    "code": "6.2.05",
+    "name": "Honorarios profesionales",
+    "type": "expense",
+    "nature": "debit",
+    "level": 3,
+    "parentCode": "6.2",
+    "allowPosting": true,
+    "description": ""
+  },
+  {
+    "code": "6.2.06",
+    "name": "Mantenimiento oficina",
+    "type": "expense",
+    "nature": "debit",
+    "level": 3,
+    "parentCode": "6.2",
+    "allowPosting": true,
+    "description": ""
+  },
+  {
+    "code": "6.2.07",
+    "name": "Seguros",
+    "type": "expense",
+    "nature": "debit",
+    "level": 3,
+    "parentCode": "6.2",
+    "allowPosting": true,
+    "description": ""
+  },
+  {
+    "code": "6.2.08",
+    "name": "Vigilancia",
+    "type": "expense",
+    "nature": "debit",
+    "level": 3,
+    "parentCode": "6.2",
+    "allowPosting": true,
+    "description": ""
+  },
+  {
+    "code": "6.2.09",
+    "name": "Gastos legales",
+    "type": "expense",
+    "nature": "debit",
+    "level": 3,
+    "parentCode": "6.2",
+    "allowPosting": true,
+    "description": ""
+  },
+  {
+    "code": "6.2.10",
+    "name": "Licencias software",
+    "type": "expense",
+    "nature": "debit",
+    "level": 3,
+    "parentCode": "6.2",
+    "allowPosting": true,
+    "description": ""
+  },
+  {
+    "code": "6.3",
+    "name": "Gastos de ventas",
+    "type": "expense",
+    "nature": "debit",
+    "level": 2,
+    "parentCode": "6",
+    "allowPosting": false,
+    "description": ""
+  },
+  {
+    "code": "6.3.01",
+    "name": "Comisiones de venta",
+    "type": "expense",
+    "nature": "debit",
+    "level": 3,
+    "parentCode": "6.3",
+    "allowPosting": true,
+    "description": ""
+  },
+  {
+    "code": "6.3.02",
+    "name": "Publicidad y mercadeo",
+    "type": "expense",
+    "nature": "debit",
+    "level": 3,
+    "parentCode": "6.3",
+    "allowPosting": true,
+    "description": ""
+  },
+  {
+    "code": "6.3.03",
+    "name": "Viáticos comerciales",
+    "type": "expense",
+    "nature": "debit",
+    "level": 3,
+    "parentCode": "6.3",
+    "allowPosting": true,
+    "description": ""
+  },
+  {
+    "code": "6.3.04",
+    "name": "Fletes de venta",
+    "type": "expense",
+    "nature": "debit",
+    "level": 3,
+    "parentCode": "6.3",
+    "allowPosting": true,
+    "description": ""
+  },
+  {
+    "code": "6.3.05",
+    "name": "Empaques",
+    "type": "expense",
+    "nature": "debit",
+    "level": 3,
+    "parentCode": "6.3",
+    "allowPosting": true,
+    "description": ""
+  },
+  {
+    "code": "6.3.06",
+    "name": "Promociones",
+    "type": "expense",
+    "nature": "debit",
+    "level": 3,
+    "parentCode": "6.3",
+    "allowPosting": true,
+    "description": ""
+  },
+  {
+    "code": "6.4",
+    "name": "Gastos financieros",
+    "type": "expense",
+    "nature": "debit",
+    "level": 2,
+    "parentCode": "6",
+    "allowPosting": false,
+    "description": ""
+  },
+  {
+    "code": "6.4.01",
+    "name": "Comisiones bancarias",
+    "type": "expense",
+    "nature": "debit",
+    "level": 3,
+    "parentCode": "6.4",
+    "allowPosting": true,
+    "description": ""
+  },
+  {
+    "code": "6.4.02",
+    "name": "Intereses bancarios",
+    "type": "expense",
+    "nature": "debit",
+    "level": 3,
+    "parentCode": "6.4",
+    "allowPosting": true,
+    "description": ""
+  },
+  {
+    "code": "6.4.03",
+    "name": "IGTF asumido",
+    "type": "expense",
+    "nature": "debit",
+    "level": 3,
+    "parentCode": "6.4",
+    "allowPosting": true,
+    "description": ""
+  },
+  {
+    "code": "6.4.04",
+    "name": "Diferencial cambiario perdido",
+    "type": "expense",
+    "nature": "debit",
+    "level": 3,
+    "parentCode": "6.4",
+    "allowPosting": true,
+    "description": ""
+  },
+  {
+    "code": "6.4.05",
+    "name": "Gastos de cobranza",
+    "type": "expense",
+    "nature": "debit",
+    "level": 3,
+    "parentCode": "6.4",
+    "allowPosting": true,
+    "description": ""
+  },
+  {
+    "code": "6.5",
+    "name": "Depreciaciones y amortizaciones",
+    "type": "expense",
+    "nature": "debit",
+    "level": 2,
+    "parentCode": "6",
+    "allowPosting": false,
+    "description": ""
+  },
+  {
+    "code": "6.5.01",
+    "name": "Depreciación edificios",
+    "type": "expense",
+    "nature": "debit",
+    "level": 3,
+    "parentCode": "6.5",
+    "allowPosting": true,
+    "description": ""
+  },
+  {
+    "code": "6.5.02",
+    "name": "Depreciación vehículos",
+    "type": "expense",
+    "nature": "debit",
+    "level": 3,
+    "parentCode": "6.5",
+    "allowPosting": true,
+    "description": ""
+  },
+  {
+    "code": "6.5.03",
+    "name": "Depreciación equipos",
+    "type": "expense",
+    "nature": "debit",
+    "level": 3,
+    "parentCode": "6.5",
+    "allowPosting": true,
+    "description": ""
+  },
+  {
+    "code": "6.5.04",
+    "name": "Amortización intangibles",
+    "type": "expense",
+    "nature": "debit",
+    "level": 3,
+    "parentCode": "6.5",
+    "allowPosting": true,
+    "description": ""
+  },
+  {
+    "code": "6.6",
+    "name": "Tributos y contribuciones",
+    "type": "expense",
+    "nature": "debit",
+    "level": 2,
+    "parentCode": "6",
+    "allowPosting": false,
+    "description": ""
+  },
+  {
+    "code": "6.6.01",
+    "name": "Patente municipal",
+    "type": "expense",
+    "nature": "debit",
+    "level": 3,
+    "parentCode": "6.6",
+    "allowPosting": true,
+    "description": ""
+  },
+  {
+    "code": "6.6.02",
+    "name": "Tasas administrativas",
+    "type": "expense",
+    "nature": "debit",
+    "level": 3,
+    "parentCode": "6.6",
+    "allowPosting": true,
+    "description": ""
+  },
+  {
+    "code": "6.6.03",
+    "name": "Multas no deducibles",
+    "type": "expense",
+    "nature": "debit",
+    "level": 3,
+    "parentCode": "6.6",
+    "allowPosting": true,
+    "description": ""
+  },
+  {
+    "code": "6.6.04",
+    "name": "Impuestos no recuperables",
+    "type": "expense",
+    "nature": "debit",
+    "level": 3,
+    "parentCode": "6.6",
+    "allowPosting": true,
+    "description": ""
+  },
+  {
+    "code": "7",
+    "name": "CUENTAS DE ORDEN",
+    "type": "memo",
+    "nature": "debit",
+    "level": 1,
+    "parentCode": "",
+    "allowPosting": false,
+    "description": ""
+  },
+  {
+    "code": "7.1",
+    "name": "Mercancía en consignación",
+    "type": "memo",
+    "nature": "debit",
+    "level": 2,
+    "parentCode": "7",
+    "allowPosting": true,
+    "description": ""
+  },
+  {
+    "code": "7.2",
+    "name": "Garantías recibidas",
+    "type": "memo",
+    "nature": "debit",
+    "level": 2,
+    "parentCode": "7",
+    "allowPosting": true,
+    "description": ""
+  },
+  {
+    "code": "7.3",
+    "name": "Garantías otorgadas",
+    "type": "memo",
+    "nature": "debit",
+    "level": 2,
+    "parentCode": "7",
+    "allowPosting": true,
+    "description": ""
+  },
+  {
+    "code": "7.4",
+    "name": "Contratos pendientes",
+    "type": "memo",
+    "nature": "debit",
+    "level": 2,
+    "parentCode": "7",
+    "allowPosting": true,
+    "description": ""
+  },
+  {
+    "code": "7.5",
+    "name": "Documentos descontados",
+    "type": "memo",
+    "nature": "debit",
+    "level": 2,
+    "parentCode": "7",
+    "allowPosting": true,
+    "description": ""
+  },
+  {
+    "code": "8",
+    "name": "MÓDULOS ANALÍTICOS",
+    "type": "analytic",
+    "nature": "debit",
+    "level": 1,
+    "parentCode": "",
+    "allowPosting": false,
+    "description": ""
+  },
+  {
+    "code": "8.1",
+    "name": "Centros de costo",
+    "type": "analytic",
+    "nature": "debit",
+    "level": 2,
+    "parentCode": "8",
+    "allowPosting": false,
+    "description": ""
+  },
+  {
+    "code": "8.1.01",
+    "name": "Centro de costo administración",
+    "type": "analytic",
+    "nature": "debit",
+    "level": 3,
+    "parentCode": "8.1",
+    "allowPosting": true,
+    "description": ""
+  },
+  {
+    "code": "8.1.02",
+    "name": "Centro de costo ventas",
+    "type": "analytic",
+    "nature": "debit",
+    "level": 3,
+    "parentCode": "8.1",
+    "allowPosting": true,
+    "description": ""
+  },
+  {
+    "code": "8.1.03",
+    "name": "Centro de costo operaciones",
+    "type": "analytic",
+    "nature": "debit",
+    "level": 3,
+    "parentCode": "8.1",
+    "allowPosting": true,
+    "description": ""
+  },
+  {
+    "code": "8.1.04",
+    "name": "Centro de costo nómina",
+    "type": "analytic",
+    "nature": "debit",
+    "level": 3,
+    "parentCode": "8.1",
+    "allowPosting": true,
+    "description": ""
+  },
+  {
+    "code": "8.2",
+    "name": "Proyectos",
+    "type": "analytic",
+    "nature": "debit",
+    "level": 2,
+    "parentCode": "8",
+    "allowPosting": false,
+    "description": ""
+  },
+  {
+    "code": "8.2.01",
+    "name": "Proyecto activo",
+    "type": "analytic",
+    "nature": "debit",
+    "level": 3,
+    "parentCode": "8.2",
+    "allowPosting": true,
+    "description": ""
+  },
+  {
+    "code": "8.2.02",
+    "name": "Proyecto cerrado",
+    "type": "analytic",
+    "nature": "debit",
+    "level": 3,
+    "parentCode": "8.2",
+    "allowPosting": true,
+    "description": ""
+  },
+  {
+    "code": "8.2.03",
+    "name": "Proyecto interno",
+    "type": "analytic",
+    "nature": "debit",
+    "level": 3,
+    "parentCode": "8.2",
+    "allowPosting": true,
+    "description": ""
+  },
+  {
+    "code": "8.2.04",
+    "name": "Proyecto cliente",
+    "type": "analytic",
+    "nature": "debit",
+    "level": 3,
+    "parentCode": "8.2",
+    "allowPosting": true,
+    "description": ""
+  },
+  {
+    "code": "1.1.09",
+    "name": "IVA crédito fiscal legacy",
+    "type": "asset",
+    "nature": "debit",
+    "level": 3,
+    "parentCode": "1.1",
+    "allowPosting": true,
+    "description": "Alias de compatibilidad hacia 1.1.05.001"
+  },
+  {
+    "code": "2.1.05",
+    "name": "IGTF por pagar legacy",
+    "type": "liability",
+    "nature": "credit",
+    "level": 3,
+    "parentCode": "2.1",
+    "allowPosting": true,
+    "description": "Alias de compatibilidad hacia 2.1.02.005"
+  }
+];
+
+export const ACCOUNTING_POLICIES = { standard: "VEN-NIF PYME plantilla comercial", warning: "No existe un plan único oficial universal para empresas privadas venezolanas; esta plantilla debe ser revisada por contador público según actividad económica.", version: "2026.06" };

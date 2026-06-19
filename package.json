@@ -1,0 +1,19 @@
+{
+  "name": "contagest-coloso",
+  "version": "11.3.1",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "frontend",
+    "backend"
+  ],
+  "scripts": {
+    "dev:frontend": "npm --prefix frontend run dev",
+    "dev:backend": "npm --prefix backend run dev",
+    "build:frontend": "npm --prefix frontend run build",
+    "build:backend": "npm --prefix backend run build",
+    "build": "npm run build:frontend && npm run build:backend",
+    "vercel-build": "npm --prefix frontend install && npm --prefix frontend run build",
+    "seed": "npm --prefix backend run seed"
+  }
+}
