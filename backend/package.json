@@ -69,7 +69,7 @@
     "@types/pg": "latest",
     "@types/qrcode": "latest",
     "tsx": "latest",
-    "typescript": "latest"
+    "typescript": "5.9.3"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"
