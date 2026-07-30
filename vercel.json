@@ -4,15 +4,17 @@
   "outputDirectory": "frontend/dist",
   "framework": "vite",
   "functions": {
-    "api/**/*.ts": {
+    "api/index.js": {
+      "maxDuration": 30
+    },
+    "api/health.ts": {
       "maxDuration": 30
     }
   },
   "routes": [
     { "src": "/health", "dest": "/api/health.ts" },
     { "src": "/api/health", "dest": "/api/health.ts" },
-    { "src": "/api/diagnostic", "dest": "/api/diagnostic.ts" },
-    { "src": "/api/v1/(.*)", "dest": "/api/index.ts" },
+    { "src": "/api/v1/(.*)", "dest": "/api/index.js" },
     { "handle": "filesystem" },
     { "src": "/.*", "dest": "/index.html" }
   ]
