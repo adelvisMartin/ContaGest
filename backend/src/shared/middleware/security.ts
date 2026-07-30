@@ -5,7 +5,22 @@ import rateLimit from 'express-rate-limit';
 import { env, isProd } from '../../config/env.js';
 import { HttpError } from '../http.js';
 
-const allowedOrigins = env.CORS_ORIGIN.split(',').map((origin) => origin.trim()).filter(Boolean);
+function normalizeOrigin(value?: string) {
+  const trimmed = String(value || '').trim();
+  if (!trimmed) return '';
+  try {
+    return new URL(trimmed).origin;
+  } catch {
+    return '';
+  }
+}
+
+const allowedOrigins = new Set(
+  env.CORS_ORIGIN
+    .split(',')
+    .map(normalizeOrigin)
+    .filter(Boolean)
+);
 
 export function requestId(req: Request, res: Response, next: NextFunction) {
   const id = req.header('x-request-id') || randomUUID();
@@ -18,7 +33,7 @@ export const corsPolicy = cors({
   credentials: true,
   origin(origin, callback) {
     if (!origin) return callback(null, true);
-    if (allowedOrigins.includes(origin)) return callback(null, true);
+    if (allowedOrigins.has(normalizeOrigin(origin))) return callback(null, true);
     return callback(new HttpError(403, `Origen CORS no permitido: ${origin}`));
   },
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
