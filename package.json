@@ -1,19 +1,27 @@
 {
   "name": "contagest-coloso",
-  "version": "11.3.1",
+  "version": "11.3.2",
   "private": true,
   "type": "module",
+  "engines": {
+    "node": "22.x"
+  },
   "workspaces": [
     "frontend",
     "backend"
   ],
   "scripts": {
-    "dev:frontend": "npm --prefix frontend run dev",
-    "dev:backend": "npm --prefix backend run dev",
-    "build:frontend": "npm --prefix frontend run build",
-    "build:backend": "npm --prefix backend run build",
+    "dev:frontend": "npm --workspace frontend run dev",
+    "dev:backend": "npm --workspace backend run dev",
+    "build:frontend": "npm --workspace frontend run build",
+    "build:backend": "npm --workspace backend run build",
     "build": "npm run build:frontend && npm run build:backend",
-    "vercel-build": "npm --prefix frontend install && npm --prefix frontend run build",
-    "seed": "npm --prefix backend run seed"
+    "typecheck": "npm --workspace backend run typecheck",
+    "lint": "npm run typecheck && node --test tests/repository.test.mjs",
+    "test": "npm --workspace backend run test && node --test tests/repository.test.mjs",
+    "ci": "npm run lint && npm run test && npm run build",
+    "vercel-build": "npm run build:frontend",
+    "seed": "npm --workspace backend run seed",
+    "audit:prod": "npm audit --omit=dev --audit-level=high"
   }
 }
