@@ -55,6 +55,7 @@
     "pdfkit": "latest",
     "pg": "latest",
     "pino": "latest",
+    "prisma": "6",
     "qrcode": "latest",
     "zod": "latest"
   },
@@ -67,7 +68,6 @@
     "@types/pdfkit": "latest",
     "@types/pg": "latest",
     "@types/qrcode": "latest",
-    "prisma": "6",
     "tsx": "latest",
     "typescript": "latest"
   },
