@@ -13,6 +13,10 @@ const envSchema = z.object({
   JWT_SECRET: z.string().optional(),
   JSON_BODY_LIMIT: z.string().default('1mb'),
   DATABASE_URL: z.string().optional(),
+  POSTGRES_PRISMA_URL: z.string().optional(),
+  POSTGRES_URL: z.string().optional(),
+  POSTGRES_URL_NON_POOLING: z.string().optional(),
+  SUPABASE_DB_URL: z.string().optional(),
   DIRECT_URL: z.string().optional(),
   DIRECT_DATABASE_URL: z.string().optional(),
   SUPABASE_URL: z.string().optional(),
@@ -74,8 +78,12 @@ const appUrl = isProd && (!process.env.APP_URL || parsedEnv.APP_URL === DEFAULT_
 const explicitJwtSecret = String(parsedEnv.JWT_SECRET || '').trim();
 const privateSeed = parsedEnv.SUPABASE_SERVICE_ROLE_KEY
   || parsedEnv.DATABASE_URL
+  || parsedEnv.POSTGRES_PRISMA_URL
+  || parsedEnv.POSTGRES_URL
+  || parsedEnv.SUPABASE_DB_URL
   || parsedEnv.DIRECT_DATABASE_URL
   || parsedEnv.DIRECT_URL
+  || parsedEnv.POSTGRES_URL_NON_POOLING
   || '';
 const derivedJwtSecret = isProd && !isSecureJwtSecret(explicitJwtSecret) && privateSeed
   ? createHash('sha256').update(`contagest-ve:jwt:v11:${privateSeed}`).digest('base64url')
