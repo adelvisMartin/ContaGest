@@ -1,14 +1,22 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import fs from 'node:fs';
-import path from 'node:path';
+import chartAccountsData from '../../../data/chart_accounts.json' with { type: 'json' };
 import { prisma } from '../../database/prisma.js';
 import { asyncHandler, HttpError } from '../../shared/http.js';
 import { requireTenant } from '../../shared/middleware/context.js';
 import { validateBody } from '../../shared/middleware/validate.js';
 import { assertBalanced } from '../accounting/accounting.service.js';
 
-const chartAccounts = JSON.parse(fs.readFileSync(path.resolve(process.cwd(), 'data/chart_accounts.json'), 'utf8'));
+const chartAccounts = chartAccountsData as Array<{
+  code: string;
+  name: string;
+  type: string;
+  nature: 'debit' | 'credit';
+  level: number;
+  parentCode?: string | null;
+  allowPosting: boolean;
+  description?: string | null;
+}>;
 const router = Router();
 router.use(requireTenant);
 const accountSchema = z.object({ code: z.string(), name: z.string(), type: z.string(), nature: z.enum(['debit','credit']), level: z.number().int().default(1), parentCode: z.string().optional().nullable(), allowPosting: z.boolean().default(true), description: z.string().optional().nullable(), active: z.boolean().default(true) });
@@ -24,7 +32,7 @@ router.get('/', asyncHandler(async (req, res) => {
 router.post('/sync-template', asyncHandler(async (req, res) => {
   const tenantId = getTenantId(req);
   let created = 0;
-  for (const account of chartAccounts as any[]) {
+  for (const account of chartAccounts) {
     await prisma.chartAccount.upsert({ where: { tenantId_code: { tenantId, code: account.code } }, update: { ...account }, create: { tenantId, ...account } });
     created++;
   }
