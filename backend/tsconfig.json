@@ -5,6 +5,7 @@
     "moduleResolution": "NodeNext",
     "strict": false,
     "esModuleInterop": true,
+    "resolveJsonModule": true,
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
     "outDir": "dist",
@@ -17,6 +18,7 @@
   },
   "include": [
     "src/**/*.ts",
+    "src/**/*.json",
     "prisma/**/*.ts"
   ]
 }

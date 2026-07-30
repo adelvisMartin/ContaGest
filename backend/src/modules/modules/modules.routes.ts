@@ -1,7 +1,5 @@
 import { Router } from 'express';
-import { existsSync, readFileSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
-import { dirname, join } from 'node:path';
+import registryData from './module-registry.json' with { type: 'json' };
 import { prisma } from '../../database/prisma.js';
 import { asyncHandler, HttpError, ok } from '../../shared/http.js';
 import { requirePermission, requireTenant } from '../../shared/middleware/context.js';
@@ -10,14 +8,7 @@ import { moduleRecordSchema } from '../schemas.js';
 import { writeAudit } from '../../shared/services/audit.service.js';
 
 type ModuleView = { slug: string; route: string; title: string; category: string; endpoint: string };
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
-const registryPath = [
-  join(process.cwd(), 'src/modules/modules/module-registry.json'),
-  join(__dirname, 'module-registry.json')
-].find((candidate) => existsSync(candidate));
-if (!registryPath) throw new Error('module-registry.json no encontrado.');
-const registry = JSON.parse(readFileSync(registryPath, 'utf8')) as ModuleView[];
+const registry = registryData as ModuleView[];
 const allowed = new Set(registry.map((view) => view.slug));
 const router = Router();
 
