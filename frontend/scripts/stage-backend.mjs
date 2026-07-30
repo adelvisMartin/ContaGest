@@ -7,7 +7,7 @@ const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const frontendRoot = path.resolve(scriptDir, '..');
 const repositoryRoot = path.resolve(frontendRoot, '..');
 const backendEntry = path.join(repositoryRoot, 'backend/src/app.ts');
-const apiEntry = path.join(repositoryRoot, 'api/index.ts');
+const apiEntry = path.join(repositoryRoot, 'api/index.js');
 
 try {
   await access(backendEntry);
