@@ -1,8 +1,8 @@
 import { Router } from 'express';
 import { prisma } from '../database/prisma.js';
+import { requireTenant } from '../shared/middleware/context.js';
 import { createCrudRouter } from './crud.factory.js';
 import { clientSchema, supplierSchema, productSchema, bankAccountSchema, employeeSchema, taxPeriodSchema, tenantSchema } from './schemas.js';
-import authRoutes from './auth/auth.routes.js';
 import salesRoutes from './sales/sales.routes.js';
 import purchasesRoutes from './purchases/purchases.routes.js';
 import accountingRoutes from './accounting/accounting.routes.js';
@@ -28,7 +28,6 @@ import rulesRoutes from './rules/rules.routes.js';
 import rbacRoutes from './rbac/rbac.routes.js';
 
 const router = Router();
-router.use('/auth', authRoutes);
 router.use('/tenants', createCrudRouter({ model: 'tenant' as any, entity: 'tenant', permission: 'admin.manage', schema: tenantSchema, tenantScoped: false, searchFields: ['name','rif'] }));
 router.use('/clients', createCrudRouter({ model: 'client' as any, entity: 'client', permission: 'clients.manage', schema: clientSchema, searchFields: ['name','rif'] }));
 router.use('/suppliers', createCrudRouter({ model: 'supplier' as any, entity: 'supplier', permission: 'purchases.manage', schema: supplierSchema, searchFields: ['name','rif'] }));
@@ -59,11 +58,10 @@ router.use('/imports', importRoutes);
 router.use('/regulatory', regulatoryRoutes);
 router.use('/rules', rulesRoutes);
 router.use('/rbac', rbacRoutes);
-router.get('/health', (_req, res) => res.json({ ok: true, service: 'ContaGest-VE API', version: '10.1.0' }));
-router.get('/health/db', async (_req, res, next) => {
+router.get('/health/db', requireTenant, async (_req, res, next) => {
   try {
     const result = await prisma.$queryRawUnsafe('select now() as now, current_database() as db, current_schema() as schema');
-    res.json({ ok: true, database: result });
+    res.json({ ok: true, data: { database: result } });
   } catch (error) {
     next(error);
   }
