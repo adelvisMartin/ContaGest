@@ -1,12 +1,12 @@
 import { Router } from 'express';
 import crypto from 'node:crypto';
-import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
 import { z } from 'zod';
 import { prisma } from '../../database/prisma.js';
 import { env, isProd } from '../../config/env.js';
 import { asyncHandler, HttpError, ok } from '../../shared/http.js';
 import { validateBody } from '../../shared/middleware/validate.js';
+import { signAccessToken, tokenExpiresAt, verifyAccessToken } from '../../shared/auth/jwt.js';
 
 const router = Router();
 
@@ -32,7 +32,6 @@ const loginSchema = z.object({
   tenantRif: z.string().min(5).default('00000000'),
   ...captchaFields
 });
-
 
 function signCaptchaPayload(payload: string) {
   return crypto.createHmac('sha256', env.JWT_SECRET).update(payload).digest('base64url');
@@ -68,14 +67,6 @@ function verifyCaptcha(body: { captchaToken?: string; captchaAnswer?: string }) 
   if (String(expected) !== String(body.captchaAnswer || '').trim()) throw new HttpError(422, 'Captcha incorrecto. Verifica la operación.');
 }
 
-function buildToken(user: any, tenant: any) {
-  return jwt.sign(
-    { sub: user.id, tenantId: tenant.id, email: user.email, authMode: 'jwt' },
-    env.JWT_SECRET,
-    { expiresIn: '8h' }
-  );
-}
-
 function publicUser(user: any) {
   return {
     id: user.id,
@@ -84,6 +75,17 @@ function publicUser(user: any) {
     name: user.fullName,
     status: user.status,
     role: 'admin'
+  };
+}
+
+function buildSession(user: any, tenant: any) {
+  const token = signAccessToken(user, tenant.id);
+  return {
+    token,
+    tenantId: tenant.id,
+    tenant,
+    user: publicUser(user),
+    expiresAt: tokenExpiresAt(token)
   };
 }
 
@@ -187,15 +189,7 @@ router.post('/register', validateBody(registerSchema), asyncHandler(async (req, 
       });
 
   await ensureAdminRole(tenant.id, user.id);
-
-  const token = buildToken(user, tenant);
-  ok(res, {
-    token,
-    tenantId: tenant.id,
-    tenant,
-    user: publicUser(user),
-    expiresAt: Date.now() + 1000 * 60 * 60 * 8
-  }, 201);
+  ok(res, buildSession(user, tenant), 201);
 }));
 
 router.post('/login', validateBody(loginSchema), asyncHandler(async (req, res) => {
@@ -209,34 +203,41 @@ router.post('/login', validateBody(loginSchema), asyncHandler(async (req, res) =
   if (!user) throw new HttpError(401, 'Usuario no autorizado para esta empresa.');
 
   let valid = false;
-  if (user.passwordHash) {
-    valid = await bcrypt.compare(req.body.password, user.passwordHash);
-  } else if (!isProd && req.body.password === 'demo1234') {
-    valid = true;
-  }
+  if (user.passwordHash) valid = await bcrypt.compare(req.body.password, user.passwordHash);
+  else if (!isProd && req.body.password === 'demo1234') valid = true;
 
   if (!valid) throw new HttpError(401, 'Contraseña incorrecta.');
-
-  const token = buildToken(user, tenant);
-  ok(res, {
-    token,
-    tenantId: tenant.id,
-    tenant,
-    user: publicUser(user),
-    expiresAt: Date.now() + 1000 * 60 * 60 * 8
-  });
+  ok(res, buildSession(user, tenant));
 }));
 
-router.get('/me', asyncHandler(async (req, res) => {
-  const auth = req.header('authorization')?.replace('Bearer ', '');
-  if (!auth) throw new HttpError(401, 'Token requerido');
-  const decoded: any = jwt.verify(auth, env.JWT_SECRET);
+function bearerToken(req: any) {
+  const header = String(req.header('authorization') || '');
+  const [kind, token] = header.trim().split(/\s+/, 2);
+  if (kind?.toLowerCase() !== 'bearer' || !token) throw new HttpError(401, 'Token requerido.');
+  return token;
+}
+
+async function authenticatedSession(req: any) {
+  let decoded: any;
+  try { decoded = verifyAccessToken(bearerToken(req)); }
+  catch { throw new HttpError(401, 'Token inválido o expirado.'); }
+
   const user = await prisma.userProfile.findFirst({
-    where: { id: decoded.sub, tenantId: decoded.tenantId },
+    where: { id: decoded.sub, tenantId: decoded.tenantId, status: 'active' },
     select: { id: true, tenantId: true, email: true, fullName: true, status: true, tenant: true }
   });
-  if (!user) throw new HttpError(401, 'Usuario no encontrado.');
+  if (!user) throw new HttpError(401, 'Usuario no encontrado o deshabilitado.');
+  return { decoded, user };
+}
+
+router.get('/me', asyncHandler(async (req, res) => {
+  const { decoded, user } = await authenticatedSession(req);
   ok(res, { ...decoded, user: publicUser(user), tenant: user.tenant, tenantId: user.tenantId });
+}));
+
+router.post('/refresh', asyncHandler(async (req, res) => {
+  const { user } = await authenticatedSession(req);
+  ok(res, buildSession(user, user.tenant));
 }));
 
 export default router;
