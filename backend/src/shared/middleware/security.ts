@@ -17,12 +17,12 @@ export function requestId(req: Request, res: Response, next: NextFunction) {
 export const corsPolicy = cors({
   credentials: true,
   origin(origin, callback) {
-    if (!origin && !isProd) return callback(null, true);
-    if (origin && allowedOrigins.includes(origin)) return callback(null, true);
-    return callback(new HttpError(403, `Origen CORS no permitido: ${origin || 'sin origin'}`));
+    if (!origin) return callback(null, true);
+    if (allowedOrigins.includes(origin)) return callback(null, true);
+    return callback(new HttpError(403, `Origen CORS no permitido: ${origin}`));
   },
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'x-tenant-id', 'x-user-id', 'x-request-id']
+  allowedHeaders: ['Content-Type', 'Authorization', 'x-request-id', 'x-admin-register-key']
 });
 
 export const globalRateLimit = rateLimit({
@@ -42,12 +42,11 @@ export const authRateLimit = rateLimit({
 });
 
 export function enforceProductionSecrets(_req: Request, _res: Response, next: NextFunction) {
-  if (isProd && env.JWT_SECRET.includes('dev_secret')) {
+  if (isProd && (env.JWT_SECRET.includes('dev_secret') || env.JWT_SECRET.length < 32)) {
     return next(new HttpError(500, 'JWT_SECRET inseguro en producción.'));
   }
   next();
 }
-
 
 const suspiciousPatterns = [/\.\./, /<script/i, /union\s+select/i, /\$where/i, /\bexec\b/i];
 export function suspiciousRequestGuard(req: Request, _res: Response, next: NextFunction) {
@@ -62,5 +61,6 @@ export function securityResponseHeaders(_req: Request, res: Response, next: Next
   res.setHeader('x-content-type-options', 'nosniff');
   res.setHeader('referrer-policy', 'strict-origin-when-cross-origin');
   res.setHeader('permissions-policy', 'camera=(), microphone=(), geolocation=()');
+  res.setHeader('cross-origin-opener-policy', 'same-origin');
   next();
 }

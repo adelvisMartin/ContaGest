@@ -6,9 +6,10 @@ const envSchema = z.object({
   PORT: z.coerce.number().default(3030),
   APP_URL: z.string().default('http://localhost:8080'),
   CORS_ORIGIN: z.string().default('http://localhost:8080'),
-  JWT_SECRET: z.string().min(16).default('dev_secret_change_me_please'),
+  JWT_SECRET: z.string().min(32).default('dev_secret_change_me_please_32_chars'),
   JSON_BODY_LIMIT: z.string().default('1mb'),
   DATABASE_URL: z.string().optional(),
+  DIRECT_URL: z.string().optional(),
   DIRECT_DATABASE_URL: z.string().optional(),
   SUPABASE_URL: z.string().optional(),
   SUPABASE_ANON_KEY: z.string().optional(),
@@ -22,6 +23,7 @@ const envSchema = z.object({
   GOOGLE_MAPS_API_KEY: z.string().optional(),
   MAPBOX_TOKEN: z.string().optional(),
   ALLOW_PUBLIC_REGISTER: z.string().default('false'),
+  ALLOW_DEV_TENANT_HEADER: z.string().default('false'),
   ADMIN_REGISTER_KEY: z.string().optional()
 });
 
