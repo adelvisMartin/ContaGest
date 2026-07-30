@@ -1,0 +1,102 @@
+name: Production API smoke
+
+on:
+  push:
+    branches:
+      - test/production-smoke-20260730
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Validate public and authenticated API flows
+        shell: bash
+        run: |
+          node <<'NODE'
+          const base = 'https://conta-gest-frontend.vercel.app/api/v1';
+          const origin = 'https://conta-gest-frontend.vercel.app';
+
+          async function api(path, options = {}) {
+            const response = await fetch(`${base}${path}`, {
+              ...options,
+              headers: {
+                accept: 'application/json',
+                origin,
+                ...(options.body ? { 'content-type': 'application/json' } : {}),
+                ...(options.headers || {})
+              }
+            });
+            const text = await response.text();
+            let payload;
+            try { payload = text ? JSON.parse(text) : {}; }
+            catch { payload = { raw: text }; }
+            return { response, payload };
+          }
+
+          function assert(condition, message, details) {
+            if (!condition) {
+              console.error(`FAIL: ${message}`);
+              if (details) console.error(JSON.stringify(details).slice(0, 1200));
+              process.exit(1);
+            }
+          }
+
+          function solve(question) {
+            const [left, operator, right] = question.trim().split(/\s+/);
+            const a = Number(left);
+            const b = Number(right);
+            if (operator === '+') return a + b;
+            if (operator === '-') return a - b;
+            if (operator === '×' || operator === '*') return a * b;
+            throw new Error(`Operador captcha desconocido: ${operator}`);
+          }
+
+          const captcha = await api('/auth/captcha');
+          assert(captcha.response.status === 200, 'captcha debe responder 200', captcha.payload);
+          assert(captcha.response.headers.get('access-control-allow-origin') === origin, 'CORS debe permitir el dominio de producción');
+          const challenge = captcha.payload.data ?? captcha.payload;
+          assert(challenge.question && challenge.token, 'captcha debe incluir pregunta y token', captcha.payload);
+          console.log('PASS captcha + CORS');
+
+          const unauthorized = await api('/clients');
+          assert(unauthorized.response.status === 401, 'clientes sin JWT debe responder 401', unauthorized.payload);
+          console.log('PASS acceso anónimo bloqueado');
+
+          const login = await api('/auth/login', {
+            method: 'POST',
+            body: JSON.stringify({
+              tenantRif: '00000000',
+              email: 'admin@empresa.com',
+              password: 'demo1234',
+              captchaToken: challenge.token,
+              captchaAnswer: String(solve(challenge.question))
+            })
+          });
+          assert(login.response.status === 200, 'login debe responder 200', login.payload);
+          const session = login.payload.data ?? login.payload;
+          assert(session.token && session.tenantId && session.user?.email, 'login debe devolver sesión completa', login.payload);
+          console.log('PASS login real');
+
+          const authHeaders = { authorization: `Bearer ${session.token}` };
+          const checks = [
+            ['/auth/me', 'sesión'],
+            ['/clients', 'clientes'],
+            ['/products', 'productos'],
+            ['/modules', 'módulos'],
+            ['/health/db', 'base de datos']
+          ];
+
+          for (const [path, label] of checks) {
+            const result = await api(path, { headers: authHeaders });
+            assert(result.response.status === 200, `${label} debe responder 200`, result.payload);
+            const data = result.payload.data ?? result.payload;
+            const size = Array.isArray(data) ? data.length : Object.keys(data || {}).length;
+            console.log(`PASS ${label} (${size})`);
+          }
+
+          console.log('PRODUCTION_SMOKE_OK');
+          NODE
