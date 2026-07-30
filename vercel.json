@@ -1,6 +1,16 @@
 {
-  "buildCommand": "npm --prefix frontend install && npm --prefix frontend run build",
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "buildCommand": "npm run build:frontend",
   "outputDirectory": "frontend/dist",
   "framework": "vite",
-  "rewrites": [{ "source": "/(.*)", "destination": "/index.html" }]
+  "functions": {
+    "api/**/*.ts": {
+      "maxDuration": 30
+    }
+  },
+  "routes": [
+    { "src": "/health", "dest": "/api/health" },
+    { "handle": "filesystem" },
+    { "src": "/.*", "dest": "/index.html" }
+  ]
 }
