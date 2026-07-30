@@ -5,6 +5,7 @@ backend/node_modules/
 
 # builds
 frontend/dist/
+frontend/server-backend/
 backend/dist/
 dist/
 coverage/

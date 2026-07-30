@@ -9,7 +9,8 @@
   "description": "Frontend ContaGest-VE Enterprise ERP con migración interna módulo por módulo al UI Kit unificado, RBAC, demos y monitoreo.",
   "scripts": {
     "dev": "vite --host 0.0.0.0 --port 8080",
-    "build": "vite build",
+    "stage:backend": "node scripts/stage-backend.mjs",
+    "build": "npm run stage:backend && vite build",
     "preview": "vite preview --host 0.0.0.0 --port 8080"
   },
   "dependencies": {
