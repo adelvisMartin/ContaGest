@@ -18,13 +18,15 @@ type RequestContext = {
   authMode: 'backend-jwt' | 'supabase' | 'development' | 'anonymous';
 };
 
+type AuthIdentityContext = Pick<RequestContext, 'authMode'> & Omit<Partial<RequestContext>, 'authMode'>;
+
 function getBearerToken(req: Request) {
   const header = req.header('authorization') || '';
   const [type, token] = header.trim().split(/\s+/, 2);
   return type?.toLowerCase() === 'bearer' && token ? token : null;
 }
 
-async function resolveBackendJwtContext(token: string): Promise<Partial<RequestContext>> {
+async function resolveBackendJwtContext(token: string): Promise<AuthIdentityContext> {
   const decoded = verifyAccessToken(token);
   const profile = await prisma.userProfile.findFirst({
     where: { id: decoded.sub, tenantId: decoded.tenantId, status: 'active' },
@@ -39,7 +41,7 @@ async function resolveBackendJwtContext(token: string): Promise<Partial<RequestC
   };
 }
 
-async function resolveSupabaseContext(token: string): Promise<Partial<RequestContext> | null> {
+async function resolveSupabaseContext(token: string): Promise<AuthIdentityContext | null> {
   if (!env.SUPABASE_URL || !env.SUPABASE_ANON_KEY) return null;
 
   const supabase = createClient(env.SUPABASE_URL, env.SUPABASE_ANON_KEY, {
@@ -65,7 +67,7 @@ async function resolveSupabaseContext(token: string): Promise<Partial<RequestCon
   };
 }
 
-async function resolveSignedContext(token: string): Promise<Partial<RequestContext>> {
+async function resolveSignedContext(token: string): Promise<AuthIdentityContext> {
   try {
     return await resolveBackendJwtContext(token);
   } catch (backendError) {
