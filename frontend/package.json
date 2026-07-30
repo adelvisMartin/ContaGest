@@ -16,6 +16,7 @@
     "@emotion/react": "latest",
     "@emotion/styled": "latest",
     "@mui/material": "latest",
+    "contagest-ve-backend": "file:../backend",
     "react": "latest",
     "react-dom": "latest",
     "react-hot-toast": "latest",
