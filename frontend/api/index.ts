@@ -1,3 +1,3 @@
-import app from 'contagest-ve-backend';
+import app from '../server-backend/src/app.ts';
 
 export default app;
