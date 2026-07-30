@@ -16,6 +16,7 @@
     "@emotion/react": "latest",
     "@emotion/styled": "latest",
     "@mui/material": "latest",
+    "contagest-ve-backend": "file:../backend",
     "react": "latest",
     "react-dom": "latest",
     "react-hot-toast": "latest",
@@ -23,6 +24,7 @@
   },
   "devDependencies": {
     "vite": "latest",
+    "typescript": "5.9.3",
     "tailwindcss": "^3.4.17",
     "postcss": "^8.4.49",
     "autoprefixer": "^10.4.20"
