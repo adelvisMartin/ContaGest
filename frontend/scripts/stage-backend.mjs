@@ -1,21 +1,33 @@
-import { access, cp, mkdir, rm } from 'node:fs/promises';
+import { access } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { build } from 'esbuild';
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const frontendRoot = path.resolve(scriptDir, '..');
-const backendSource = path.resolve(frontendRoot, '../backend/src');
-const stagedRoot = path.resolve(frontendRoot, 'server-backend');
-const stagedSource = path.join(stagedRoot, 'src');
+const repositoryRoot = path.resolve(frontendRoot, '..');
+const backendEntry = path.join(repositoryRoot, 'backend/src/app.ts');
+const apiEntry = path.join(repositoryRoot, 'api/index.ts');
 
 try {
-  await access(backendSource);
+  await access(backendEntry);
 } catch {
-  throw new Error(`No se encontró el backend fuente en ${backendSource}`);
+  throw new Error(`No se encontró la entrada del backend en ${backendEntry}`);
 }
 
-await rm(stagedRoot, { recursive: true, force: true });
-await mkdir(stagedRoot, { recursive: true });
-await cp(backendSource, stagedSource, { recursive: true });
+await build({
+  entryPoints: [backendEntry],
+  outfile: apiEntry,
+  bundle: true,
+  platform: 'node',
+  format: 'esm',
+  target: 'node22',
+  packages: 'external',
+  sourcemap: false,
+  legalComments: 'none',
+  banner: {
+    js: '// Generated during build from backend/src/app.ts. Do not edit the deployed artifact directly.'
+  }
+});
 
-console.log(`[stage-backend] Backend copiado a ${stagedSource}`);
+console.log(`[stage-backend] Backend integrado en ${apiEntry}`);
