@@ -9,7 +9,9 @@
     }
   },
   "routes": [
-    { "src": "/health", "dest": "/api/health" },
+    { "src": "/health", "dest": "/api/health.ts" },
+    { "src": "/api/health", "dest": "/api/health.ts" },
+    { "src": "/api/v1/(.*)", "dest": "/api/index.ts" },
     { "handle": "filesystem" },
     { "src": "/.*", "dest": "/index.html" }
   ]
