@@ -97,11 +97,22 @@ const communications = [
   }
 ];
 
-function payload(data) {
-  return { ok: true, data };
+function payload(data) { return { ok: true, data }; }
+
+async function installTestSession(page) {
+  await page.addInitScript(() => {
+    localStorage.setItem('contagest_auth_session', JSON.stringify({
+      token: 'playwright-signed-session-placeholder',
+      tenantId: 'tenant-playwright-qa',
+      expiresAt: Date.now() + 60 * 60 * 1000,
+      mode: 'qa'
+    }));
+    localStorage.setItem('contagest_auto_sync_enabled', 'false');
+  });
 }
 
 async function installApiMocks(page) {
+  await installTestSession(page);
   await page.route('**/api/v1/**', async (route) => {
     const request = route.request();
     const url = new URL(request.url());
@@ -115,12 +126,8 @@ async function installApiMocks(page) {
 
     const response = (() => {
       if (path === '/verticals/veterinary/dashboard') return {
-        patients: 2,
-        appointmentsToday: { total: 2, pending: 1 },
-        pendingLabOrders: 1,
-        abnormalResults: 1,
-        hospitalized: 1,
-        vaccinesDue: 1
+        patients: 2, appointmentsToday: { total: 2, pending: 1 }, pendingLabOrders: 1,
+        abnormalResults: 1, hospitalized: 1, vaccinesDue: 1
       };
       if (path === '/verticals/health/patients') return pets;
       if (path === '/verticals/health/professionals') return professionals;
@@ -157,11 +164,7 @@ async function openVeterinary(page, viewport, tab = 'resumen') {
 }
 
 async function expectNoPageOverflow(page) {
-  const dimensions = await page.evaluate(() => ({
-    viewport: document.documentElement.clientWidth,
-    document: document.documentElement.scrollWidth,
-    body: document.body.scrollWidth
-  }));
+  const dimensions = await page.evaluate(() => ({ viewport:document.documentElement.clientWidth, document:document.documentElement.scrollWidth, body:document.body.scrollWidth }));
   expect(dimensions.document, JSON.stringify(dimensions)).toBeLessThanOrEqual(dimensions.viewport + 2);
   expect(dimensions.body, JSON.stringify(dimensions)).toBeLessThanOrEqual(dimensions.viewport + 2);
 }
@@ -169,48 +172,43 @@ async function expectNoPageOverflow(page) {
 mkdirSync('test-results/screenshots', { recursive: true });
 
 for (const testCase of [
-  { name: 'mobile', viewport: { width: 375, height: 812 } },
-  { name: 'tablet', viewport: { width: 768, height: 1024 } },
-  { name: 'desktop', viewport: { width: 1440, height: 900 } }
+  { name:'mobile', viewport:{width:375,height:812} },
+  { name:'tablet', viewport:{width:768,height:1024} },
+  { name:'desktop', viewport:{width:1440,height:900} }
 ]) {
   test(`veterinary workspace is compact and responsive on ${testCase.name}`, async ({ page }) => {
-    await openVeterinary(page, testCase.viewport);
+    await openVeterinary(page,testCase.viewport);
     await expect(page.getByText('Mascotas activas')).toBeVisible();
-    await expect(page.getByRole('tab', { name: /Laboratorio/ })).toBeVisible();
+    await expect(page.getByRole('tab',{name:/Laboratorio/})).toBeVisible();
     await expectNoPageOverflow(page);
-
-    const headingSize = await page.getByRole('heading', { name: 'Clínica veterinaria', exact: true }).evaluate((node) => Number.parseFloat(getComputedStyle(node).fontSize));
-    expect(headingSize).toBeLessThanOrEqual(testCase.name === 'desktop' ? 32 : 26);
-
-    await page.screenshot({ path: `test-results/screenshots/veterinary-${testCase.name}.png`, fullPage: true });
+    const headingSize=await page.getByRole('heading',{name:'Clínica veterinaria',exact:true}).evaluate((node)=>Number.parseFloat(getComputedStyle(node).fontSize));
+    expect(headingSize).toBeLessThanOrEqual(testCase.name==='desktop'?32:26);
+    await page.screenshot({path:`test-results/screenshots/veterinary-${testCase.name}.png`,fullPage:true});
   });
 }
 
 test('veterinary tabs and patient selection persist in query params', async ({ page }) => {
-  await openVeterinary(page, { width: 1440, height: 900 });
-
-  await page.getByRole('tab', { name: /Laboratorio/ }).click();
+  await openVeterinary(page,{width:1440,height:900});
+  await page.getByRole('tab',{name:/Laboratorio/}).click();
   await expect(page).toHaveURL(/tab=laboratorio/);
   await expect(page.getByText('Órdenes de laboratorio')).toBeVisible();
-
-  await page.getByRole('tab', { name: /Mascotas/ }).click();
+  await page.getByRole('tab',{name:/Mascotas/}).click();
   await expect(page).toHaveURL(/tab=pacientes/);
   await expect(page.getByPlaceholder('Buscar mascota, tutor o microchip')).toBeVisible();
-  await page.locator('.MuiListItemButton-root').filter({ hasText: 'Luna' }).click();
+  await page.locator('.MuiListItemButton-root').filter({hasText:'Luna'}).click();
   await expect(page).toHaveURL(new RegExp(`tab=pacientes.*patient=${pets[0].id}`));
-  await expect(page.getByText('María González', { exact: true })).toBeVisible();
-
+  await expect(page.getByText('María González',{exact:true})).toBeVisible();
   await page.goBack();
   await expect(page).toHaveURL(/module=veterinaria/);
 });
 
 test('pretesting legacy hero uses the compact global density layer', async ({ page }) => {
-  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.setViewportSize({width:1440,height:900});
   await installApiMocks(page);
-  await page.goto('/?module=pretesting', { waitUntil: 'domcontentloaded' });
+  await page.goto('/?module=pretesting',{waitUntil:'domcontentloaded'});
   await expect(page.locator('.pretest-hero h2')).toBeVisible();
-  const size = await page.locator('.pretest-hero h2').evaluate((node) => Number.parseFloat(getComputedStyle(node).fontSize));
+  const size=await page.locator('.pretest-hero h2').evaluate((node)=>Number.parseFloat(getComputedStyle(node).fontSize));
   expect(size).toBeLessThanOrEqual(37);
   await expectNoPageOverflow(page);
-  await page.screenshot({ path: 'test-results/screenshots/pretesting-desktop.png', fullPage: true });
+  await page.screenshot({path:'test-results/screenshots/pretesting-desktop.png',fullPage:true});
 });
