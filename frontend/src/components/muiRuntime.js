@@ -5,19 +5,11 @@ import { Toaster, toast } from 'react-hot-toast';
 import { translations } from '../i18n/translations.js';
 
 const runtime = { React, createRoot, Mui, HotToast: { Toaster, toast } };
+const mountedRoots = new WeakMap();
 
-function parseJson(value, fallback = []) {
-  try { return JSON.parse(value || '[]'); } catch { return fallback; }
-}
-
-function ensureId(node, prefix = 'mui') {
-  if (!node.dataset.muiId) node.dataset.muiId = `${prefix}_${Math.random().toString(36).slice(2, 9)}`;
-  return node.dataset.muiId;
-}
-
-function modeFor(state) {
-  return ['dark', 'enterprise'].includes(state?.settings?.theme) ? 'dark' : 'light';
-}
+function parseJson(value, fallback = []) { try { return JSON.parse(value || '[]'); } catch { return fallback; } }
+function ensureId(node, prefix = 'mui') { if (!node.dataset.muiId) node.dataset.muiId = `${prefix}_${Math.random().toString(36).slice(2, 9)}`; return node.dataset.muiId; }
+function modeFor(state) { return ['dark', 'enterprise'].includes(state?.settings?.theme) ? 'dark' : 'light'; }
 
 function createContaGestTheme(mode = 'light') {
   const dark = mode === 'dark';
@@ -25,36 +17,24 @@ function createContaGestTheme(mode = 'light') {
     palette: {
       mode,
       primary: { main: dark ? '#6dc0f1' : '#057dcd', dark: '#1e3d58' },
+      secondary: { main: '#8a508f' },
+      success: { main: '#16845b' },
+      warning: { main: '#e68a17' },
+      error: { main: '#d14343' },
       background: { default: dark ? '#071523' : '#f5f8fb', paper: dark ? '#0d2031' : '#ffffff' },
       text: { primary: dark ? '#f5f9fc' : '#102a43', secondary: dark ? '#b9c9d8' : '#52677c' },
       divider: dark ? '#29445c' : '#d9e3ec'
     },
     typography: {
-      fontFamily: 'Inter, Roboto, system-ui, sans-serif',
-      fontSize: 12,
+      fontFamily: 'Inter, Roboto, system-ui, sans-serif', fontSize: 12,
       button: { textTransform: 'none', fontWeight: 850, fontSize: '.72rem' },
-      body1: { fontSize: '.76rem' },
-      body2: { fontSize: '.72rem' }
+      body1: { fontSize: '.76rem' }, body2: { fontSize: '.72rem' }
     },
     shape: { borderRadius: 10 },
     components: {
-      MuiButton: {
-        defaultProps: { disableElevation: true, size: 'small' },
-        styleOverrides: { root: { minHeight: 36, borderRadius: 9, paddingInline: 12 } }
-      },
-      MuiOutlinedInput: {
-        styleOverrides: {
-          root: {
-            minHeight: 38,
-            borderRadius: 9,
-            backgroundColor: dark ? '#0d2031' : '#fff',
-            '& .MuiOutlinedInput-notchedOutline': { borderColor: dark ? '#29445c' : '#d1dde7' },
-            '&:hover .MuiOutlinedInput-notchedOutline': { borderColor: dark ? '#6dc0f1' : '#057dcd' },
-            '&.Mui-focused .MuiOutlinedInput-notchedOutline': { borderColor: dark ? '#6dc0f1' : '#057dcd', borderWidth: 1.5 }
-          },
-          input: { padding: '9px 10px', fontSize: '.74rem', fontWeight: 750 }
-        }
-      },
+      MuiButton: { defaultProps: { disableElevation: true, size: 'small' }, styleOverrides: { root: { minHeight: 36, borderRadius: 9, paddingInline: 12 } } },
+      MuiOutlinedInput: { styleOverrides: { root: { minHeight: 38, borderRadius: 9, backgroundColor: dark ? '#0d2031' : '#fff', '& .MuiOutlinedInput-notchedOutline': { borderColor: dark ? '#29445c' : '#d1dde7' }, '&:hover .MuiOutlinedInput-notchedOutline': { borderColor: dark ? '#6dc0f1' : '#057dcd' }, '&.Mui-focused .MuiOutlinedInput-notchedOutline': { borderColor: dark ? '#6dc0f1' : '#057dcd', borderWidth: 1.5 } }, input: { padding: '9px 10px', fontSize: '.74rem', fontWeight: 750 } } },
+      MuiInputBase: { styleOverrides: { inputMultiline: { padding: 0, lineHeight: 1.45 } } },
       MuiInputLabel: { styleOverrides: { root: { fontSize: '.72rem', fontWeight: 800 } } },
       MuiSelect: { styleOverrides: { select: { paddingBlock: '8px', fontSize: '.73rem', fontWeight: 800 } } },
       MuiMenuItem: { styleOverrides: { root: { minHeight: 36, margin: '2px 5px', borderRadius: 8, fontSize: '.72rem', fontWeight: 750 } } },
@@ -71,98 +51,76 @@ function Theme({ state, children }) {
   return React.createElement(Mui.ThemeProvider, { theme }, children);
 }
 
+function labelFor(node, fallback = 'Campo') {
+  const key = node.dataset.muiLabel || node.querySelector('label')?.dataset?.i18n || '';
+  const lang = node.dataset.muiLang || 'es';
+  return translations?.[lang]?.[key] || node.querySelector('label')?.textContent?.trim() || key || fallback;
+}
+
+function syncFallback(fallback, value) {
+  fallback.value = value;
+  fallback.dispatchEvent(new Event('input', { bubbles: true }));
+  fallback.dispatchEvent(new Event('change', { bubbles: true }));
+}
+
+function NativeFieldIsland({ node, state, multiline = false }) {
+  const fallback = node.querySelector(multiline ? 'textarea' : 'input');
+  const [value, setValue] = React.useState(String(fallback?.value ?? ''));
+  if (!fallback) return null;
+  const type = multiline ? 'text' : (fallback.type || 'text');
+  const props = {
+    label: labelFor(node), value, type, fullWidth: true, size: 'small', variant: 'outlined',
+    required: Boolean(fallback.dataset.muiRequired === 'true' || fallback.dataset.wasRequired === 'true'),
+    placeholder: fallback.placeholder || '', multiline, minRows: multiline ? 3 : undefined,
+    autoComplete: fallback.autocomplete || undefined,
+    inputProps: {
+      min: fallback.min || undefined, max: fallback.max || undefined, step: fallback.step || undefined,
+      pattern: fallback.pattern || undefined, inputMode: fallback.inputMode || undefined,
+      maxLength: fallback.maxLength > 0 ? fallback.maxLength : undefined
+    },
+    InputLabelProps: ['date','datetime-local','time','month'].includes(type) ? { shrink:true } : undefined,
+    onChange: (event) => { const next = event.target.value; setValue(next); syncFallback(fallback, next); },
+    onBlur: () => fallback.dispatchEvent(new Event('blur', { bubbles:true }))
+  };
+  return React.createElement(Theme, { state }, React.createElement(Mui.TextField, props));
+}
+
 function SelectIsland({ node, state }) {
+  const fallback = node.querySelector('select[data-mui-fallback],select');
   const hidden = node.querySelector('input[type="hidden"]');
-  const fallback = node.querySelector('select[data-mui-fallback]');
-  const options = parseJson(node.dataset.muiOptions, []);
-  const lang = state?.settings?.lang || 'es';
-  const labelKey = node.dataset.muiLabel || 'Seleccione';
-  const label = translations?.[lang]?.[labelKey] || labelKey;
+  const options = parseJson(node.dataset.muiOptions, fallback ? [...fallback.options].map((option)=>({ value:option.value, label:option.textContent })) : []);
+  const label = labelFor(node, 'Seleccione');
   const labelHidden = node.dataset.muiLabelHidden === 'true';
   const id = ensureId(node, 'mui-select');
   const [value, setValue] = React.useState(String(node.dataset.muiValue ?? hidden?.value ?? fallback?.value ?? ''));
-
-  React.useEffect(() => {
-    const next = String(node.dataset.muiValue ?? hidden?.value ?? fallback?.value ?? '');
-    setValue(next);
-  }, [node.dataset.muiValue]);
-
   const emit = (next) => {
-    setValue(next);
-    node.dataset.muiValue = next;
-    if (hidden) {
-      hidden.value = next;
-      hidden.dispatchEvent(new Event('change', { bubbles: true }));
-    }
-    if (fallback) {
-      fallback.value = next;
-      fallback.dispatchEvent(new Event('change', { bubbles: true }));
-    }
+    setValue(next); node.dataset.muiValue = next;
+    if (hidden) syncFallback(hidden, next);
+    if (fallback) syncFallback(fallback, next);
   };
-
-  return React.createElement(Theme, { state },
-    React.createElement(Mui.FormControl, { fullWidth: true, size: 'small' },
-      !labelHidden && React.createElement(Mui.InputLabel, { id: `${id}-label` }, label),
-      React.createElement(Mui.Select, {
-        id,
-        labelId: labelHidden ? undefined : `${id}-label`,
-        label: labelHidden ? undefined : label,
-        value,
-        displayEmpty: labelHidden,
-        onChange: (event) => emit(String(event.target.value)),
-        inputProps: { 'aria-label': label, name: node.dataset.muiName || hidden?.name || fallback?.name || '' },
-        MenuProps: { PaperProps: { sx: { mt: .6, maxHeight: 340, borderRadius: 2, '& .MuiMenu-list': { p: .5 } } } }
-      }, options.map((option) => React.createElement(Mui.MenuItem, { key: String(option.value), value: String(option.value) }, String(option.label))))
-    )
-  );
+  return React.createElement(Theme, { state }, React.createElement(Mui.FormControl, { fullWidth:true, size:'small' },
+    !labelHidden && React.createElement(Mui.InputLabel, { id:`${id}-label` }, label),
+    React.createElement(Mui.Select, {
+      id, labelId:labelHidden?undefined:`${id}-label`, label:labelHidden?undefined:label, value, displayEmpty:labelHidden,
+      required:Boolean(fallback?.dataset?.wasRequired==='true'),
+      onChange:(event)=>emit(String(event.target.value)),
+      inputProps:{ 'aria-label':label },
+      MenuProps:{ PaperProps:{ sx:{ mt:.6,maxHeight:340,borderRadius:2,'& .MuiMenu-list':{p:.5} } } }
+    }, options.map((option)=>React.createElement(Mui.MenuItem,{key:String(option.value),value:String(option.value)},String(option.label))))
+  ));
 }
 
-function icon(name) {
-  return React.createElement('i', { className: `fa-solid ${name || 'fa-circle-dot'}`, style: { fontSize: 12 } });
-}
-
-function navigate(route) {
-  if (route) window.dispatchEvent(new CustomEvent('cg:navigate', { detail: { route } }));
-}
+function icon(name) { return React.createElement('i', { className:`fa-solid ${name || 'fa-circle-dot'}`, style:{fontSize:12} }); }
+function navigate(route) { if (route) window.dispatchEvent(new CustomEvent('cg:navigate', { detail:{route} })); }
 
 function QuickTabsIsland({ node, state }) {
   const items = parseJson(node.dataset.items, []);
-  return React.createElement(Theme, { state },
-    React.createElement(Mui.Box, { sx: { display: 'flex', alignItems: 'center', gap: .65, overflowX: 'auto', py: .2, px: .2, scrollbarWidth: 'none' } },
-      items.map((item) => React.createElement(Mui.Chip, {
-        key: item.route,
-        icon: icon(item.locked ? 'fa-lock' : item.icon),
-        label: item.label,
-        color: item.active ? 'primary' : 'default',
-        variant: item.active ? 'filled' : 'outlined',
-        clickable: !item.active && !item.locked,
-        disabled: Boolean(item.locked),
-        'aria-current': item.active ? 'page' : undefined,
-        title: item.locked ? 'Bloqueado por rol/perfil activo' : item.label,
-        onClick: () => !item.active && !item.locked && navigate(item.route),
-        sx: { flex: '0 0 auto', opacity: 1, '& .MuiChip-icon': { color: item.active ? '#fff' : 'primary.main' } }
-      }))
-    )
-  );
+  return React.createElement(Theme, { state }, React.createElement(Mui.Box, { sx:{display:'flex',alignItems:'center',gap:.65,overflowX:'auto',py:.2,px:.2,scrollbarWidth:'none'} }, items.map((item)=>React.createElement(Mui.Chip,{key:item.route,icon:icon(item.locked?'fa-lock':item.icon),label:item.label,color:item.active?'primary':'default',variant:item.active?'filled':'outlined',clickable:!item.active&&!item.locked,disabled:Boolean(item.locked),'aria-current':item.active?'page':undefined,title:item.locked?'Bloqueado por rol/perfil activo':item.label,onClick:()=>!item.active&&!item.locked&&navigate(item.route),sx:{flex:'0 0 auto',opacity:1,'& .MuiChip-icon':{color:item.active?'#fff':'primary.main'}}}))));
 }
 
 function BreadcrumbsIsland({ node, state }) {
   const items = parseJson(node.dataset.items, []);
-  return React.createElement(Theme, { state },
-    React.createElement(Mui.Breadcrumbs, { separator: '›', maxItems: 4, 'aria-label': 'breadcrumb' },
-      items.map((item, index) => item.current
-        ? React.createElement(Mui.Typography, { key: `${item.label}-${index}`, color: 'primary', sx: { fontSize: '.69rem', fontWeight: 900 }, 'aria-current': 'page' }, item.label)
-        : React.createElement(Mui.Link, {
-            key: `${item.label}-${index}`,
-            component: 'button',
-            type: 'button',
-            underline: item.route ? 'hover' : 'none',
-            color: 'inherit',
-            onClick: () => item.route && navigate(item.route),
-            sx: { border: 0, bgcolor: 'transparent', p: 0, fontSize: '.69rem', fontWeight: 800, cursor: item.route ? 'pointer' : 'default' }
-          }, item.label))
-    )
-  );
+  return React.createElement(Theme,{state},React.createElement(Mui.Breadcrumbs,{separator:'›',maxItems:4,'aria-label':'breadcrumb'},items.map((item,index)=>item.current?React.createElement(Mui.Typography,{key:`${item.label}-${index}`,color:'primary',sx:{fontSize:'.69rem',fontWeight:900},'aria-current':'page'},item.label):React.createElement(Mui.Link,{key:`${item.label}-${index}`,component:'button',type:'button',underline:item.route?'hover':'none',color:'inherit',onClick:()=>item.route&&navigate(item.route),sx:{border:0,bgcolor:'transparent',p:0,fontSize:'.69rem',fontWeight:800,cursor:item.route?'pointer':'default'}},item.label))));
 }
 
 function ButtonIsland({ node, state }) {
@@ -171,15 +129,7 @@ function ButtonIsland({ node, state }) {
   const iconName = node.dataset.muiIcon || '';
   const variant = node.dataset.muiVariant || 'contained';
   const color = node.dataset.muiColor || 'primary';
-  return React.createElement(Theme, { state },
-    React.createElement(Mui.Button, {
-      variant,
-      color,
-      startIcon: iconName ? icon(iconName) : undefined,
-      onClick: () => fallback?.click(),
-      sx: { whiteSpace: 'nowrap' }
-    }, label)
-  );
+  return React.createElement(Theme,{state},React.createElement(Mui.Button,{variant,color,startIcon:iconName?icon(iconName):undefined,onClick:()=>fallback?.click(),sx:{whiteSpace:'nowrap'}},label));
 }
 
 function mount(node, marker, mountSelector, element) {
@@ -189,69 +139,70 @@ function mount(node, marker, mountSelector, element) {
   node.dataset[marker] = 'true';
   const root = createRoot(target);
   root.render(element);
+  mountedRoots.set(node, root);
   return root;
 }
 
-function mountSelect(node, ctx) {
-  const root = mount(node, 'muiMounted', '[data-mui-mount]', React.createElement(SelectIsland, { node, state: ctx.state }));
-  if (root) node.classList.add('mui-loading-done');
+function prepareNativeField(node, type) {
+  if (!node || node.dataset.muiNativePrepared === 'true') return;
+  const fallback = node.querySelector(type==='textarea'?'textarea':'input');
+  if (!fallback || ['hidden','file','checkbox','radio','color','range','submit','button'].includes(fallback.type)) return;
+  node.dataset.muiNativePrepared='true';
+  fallback.dataset.wasRequired=String(fallback.required);
+  fallback.required=false;
+  fallback.classList.add('mui-fallback-hidden');
+  node.querySelector('label')?.classList.add('mui-fallback-hidden');
+  const target=document.createElement('div');target.dataset.muiNativeMount='';node.appendChild(target);
 }
 
-function mountQuickTabs(node, ctx) {
-  const root = mount(node, 'muiQuicktabsMounted', '[data-mui-quicktabs-mount]', React.createElement(QuickTabsIsland, { node, state: ctx.state }));
-  if (root) {
-    node.querySelectorAll('.page-tab').forEach((item) => item.classList.add('mui-fallback-hidden'));
-    node.classList.add('mui-quicktabs-ready');
-  }
+function prepareSelect(node) {
+  if (!node || node.dataset.muiSelectPrepared === 'true') return;
+  const fallback=node.querySelector('select');
+  if(!fallback)return;
+  node.dataset.muiSelectPrepared='true';
+  fallback.dataset.wasRequired=String(fallback.required);
+  fallback.required=false;
+  fallback.dataset.muiFallback='';
+  fallback.classList.add('mui-fallback-hidden');
+  node.querySelector('label')?.classList.add('mui-fallback-hidden');
+  node.dataset.muiOptions=JSON.stringify([...fallback.options].map((option)=>({value:option.value,label:option.textContent})));
+  const target=document.createElement('div');target.dataset.muiMount='';node.appendChild(target);
 }
 
-function mountBreadcrumbs(node, ctx) {
-  const root = mount(node, 'muiBreadcrumbsMounted', '[data-mui-breadcrumb-mount]', React.createElement(BreadcrumbsIsland, { node, state: ctx.state }));
-  if (root) {
-    node.querySelector('.hf-breadcrumbs-fallback')?.classList.add('mui-fallback-hidden');
-    node.classList.add('mui-breadcrumbs-ready');
-  }
+function mountNativeFields(ctx) {
+  document.querySelectorAll('[data-cgx-kit="field"]').forEach((node)=>{
+    prepareNativeField(node,'field');
+    if(node.dataset.muiNativePrepared==='true') mount(node,'muiNativeMounted','[data-mui-native-mount]',React.createElement(NativeFieldIsland,{node,state:ctx.state}));
+  });
+  document.querySelectorAll('[data-cgx-kit="textarea"]').forEach((node)=>{
+    prepareNativeField(node,'textarea');
+    if(node.dataset.muiNativePrepared==='true') mount(node,'muiNativeMounted','[data-mui-native-mount]',React.createElement(NativeFieldIsland,{node,state:ctx.state,multiline:true}));
+  });
+  document.querySelectorAll('[data-cgx-kit="select"]').forEach((node)=>{
+    prepareSelect(node);
+    if(node.dataset.muiSelectPrepared==='true') mount(node,'muiMounted','[data-mui-mount]',React.createElement(SelectIsland,{node,state:ctx.state}));
+  });
 }
 
-function mountButton(node, ctx) {
-  const root = mount(node, 'muiButtonMounted', '[data-mui-button-mount]', React.createElement(ButtonIsland, { node, state: ctx.state }));
-  if (root) {
-    node.querySelector('[data-mui-button-fallback]')?.classList.add('mui-fallback-hidden');
-    node.classList.add('mui-button-ready');
-  }
-}
+function mountSelect(node, ctx) { const root=mount(node,'muiMounted','[data-mui-mount]',React.createElement(SelectIsland,{node,state:ctx.state}));if(root)node.classList.add('mui-loading-done'); }
+function mountQuickTabs(node,ctx){const root=mount(node,'muiQuicktabsMounted','[data-mui-quicktabs-mount]',React.createElement(QuickTabsIsland,{node,state:ctx.state}));if(root){node.querySelectorAll('.page-tab').forEach((item)=>item.classList.add('mui-fallback-hidden'));node.classList.add('mui-quicktabs-ready');}}
+function mountBreadcrumbs(node,ctx){const root=mount(node,'muiBreadcrumbsMounted','[data-mui-breadcrumb-mount]',React.createElement(BreadcrumbsIsland,{node,state:ctx.state}));if(root){node.querySelector('.hf-breadcrumbs-fallback')?.classList.add('mui-fallback-hidden');node.classList.add('mui-breadcrumbs-ready');}}
+function mountButton(node,ctx){const root=mount(node,'muiButtonMounted','[data-mui-button-mount]',React.createElement(ButtonIsland,{node,state:ctx.state}));if(root){node.querySelector('[data-mui-button-fallback]')?.classList.add('mui-fallback-hidden');node.classList.add('mui-button-ready');}}
 
 function mountToast(ctx) {
-  const node = document.getElementById('hot-toast-root');
-  if (!node || node.dataset.hotToastMounted === 'true') return;
-  node.dataset.hotToastMounted = 'true';
-  window.CG_HOT_TOAST = toast;
-  const dark = modeFor(ctx.state) === 'dark';
-  createRoot(node).render(React.createElement(Toaster, {
-    position: 'top-right',
-    gutter: 8,
-    toastOptions: {
-      duration: 3600,
-      style: {
-        borderRadius: '11px',
-        background: dark ? '#0d2031' : '#fff',
-        color: dark ? '#f5f9fc' : '#102a43',
-        border: `1px solid ${dark ? '#29445c' : '#d9e3ec'}`,
-        boxShadow: '0 12px 32px rgba(30,61,88,.14)',
-        fontSize: 12,
-        fontWeight: 800
-      }
-    }
-  }));
+  const node=document.getElementById('hot-toast-root');if(!node||node.dataset.hotToastMounted==='true')return;
+  node.dataset.hotToastMounted='true';window.CG_HOT_TOAST=toast;const dark=modeFor(ctx.state)==='dark';
+  createRoot(node).render(React.createElement(Toaster,{position:'top-right',gutter:8,toastOptions:{duration:3600,style:{borderRadius:'11px',background:dark?'#0d2031':'#fff',color:dark?'#f5f9fc':'#102a43',border:`1px solid ${dark?'#29445c':'#d9e3ec'}`,boxShadow:'0 12px 32px rgba(30,61,88,.14)',fontSize:12,fontWeight:800}}}));
 }
 
 export const MuiRuntime = {
-  mountAll(ctx = {}) {
-    window.__CG_MUI__ = runtime;
+  mountAll(ctx={}) {
+    window.__CG_MUI__=runtime;
     mountToast(ctx);
-    document.querySelectorAll('[data-mui-select-field]').forEach((node) => mountSelect(node, ctx));
-    document.querySelectorAll('[data-mui-button-field]').forEach((node) => mountButton(node, ctx));
-    document.querySelectorAll('[data-mui-quicktabs]').forEach((node) => mountQuickTabs(node, ctx));
-    document.querySelectorAll('[data-mui-breadcrumbs]').forEach((node) => mountBreadcrumbs(node, ctx));
+    mountNativeFields(ctx);
+    document.querySelectorAll('[data-mui-select-field]').forEach((node)=>mountSelect(node,ctx));
+    document.querySelectorAll('[data-mui-button-field]').forEach((node)=>mountButton(node,ctx));
+    document.querySelectorAll('[data-mui-quicktabs]').forEach((node)=>mountQuickTabs(node,ctx));
+    document.querySelectorAll('[data-mui-breadcrumbs]').forEach((node)=>mountBreadcrumbs(node,ctx));
   }
 };
