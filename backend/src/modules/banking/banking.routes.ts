@@ -3,8 +3,8 @@ import { z } from 'zod';
 import { prisma } from '../../database/prisma.js';
 import { requirePermission, requireTenant } from '../../shared/middleware/context.js';
 import { HttpError, asyncHandler, ok } from '../../shared/http.js';
-import { validate } from '../../shared/validate.js';
-import { writeAudit } from '../../shared/audit.js';
+import { validateBody } from '../../shared/middleware/validate.js';
+import { writeAudit } from '../../shared/services/audit.service.js';
 
 const router = Router();
 router.use(requireTenant, requirePermission('banking.manage'));
@@ -67,7 +67,7 @@ router.get('/movements', asyncHandler(async (req, res) => {
   ok(res, rows.map(serializeMovement));
 }));
 
-router.post('/movements', validate(movementSchema), asyncHandler(async (req, res) => {
+router.post('/movements', validateBody(movementSchema), asyncHandler(async (req, res) => {
   const ctx = context(req);
   const input = req.body as z.infer<typeof movementSchema>;
   const account = await prisma.bankAccount.findFirst({ where:{ id:input.accountId, tenantId:ctx.tenantId, active:true } });
@@ -91,11 +91,11 @@ router.post('/movements', validate(movementSchema), asyncHandler(async (req, res
     await tx.bankAccount.update({ where:{ id:account.id }, data:{ balance:{ increment:delta } } });
     return movement;
   });
-  await writeAudit({ tenantId:ctx.tenantId, userId:ctx.userId, module:'banking', action:'create-movement', entity:'BankMovement', entityId:created.id, after:serializeMovement(created), ip:ctx.ip, userAgent:ctx.userAgent });
+  await writeAudit({ tenantId:ctx.tenantId, userId:ctx.userId, action:'banking.create-movement', entity:'BankMovement', entityId:created.id, after:serializeMovement(created), ipAddress:ctx.ip, userAgent:ctx.userAgent });
   ok(res, serializeMovement(created));
 }));
 
-router.patch('/movements/:id/reconcile', validate(reconcileSchema), asyncHandler(async (req, res) => {
+router.patch('/movements/:id/reconcile', validateBody(reconcileSchema), asyncHandler(async (req, res) => {
   const ctx = context(req);
   const existing = await prisma.bankMovement.findFirst({ where:{ id:req.params.id, tenantId:ctx.tenantId } });
   if (!existing) throw new HttpError(404, 'Movimiento bancario no encontrado.');
@@ -104,7 +104,7 @@ router.patch('/movements/:id/reconcile', validate(reconcileSchema), asyncHandler
     data:{ matched:req.body.matched, ledgerEntryId:req.body.ledgerEntryId ?? existing.ledgerEntryId },
     include:{ account:true }
   });
-  await writeAudit({ tenantId:ctx.tenantId, userId:ctx.userId, module:'banking', action:req.body.matched ? 'reconcile' : 'unreconcile', entity:'BankMovement', entityId:updated.id, before:serializeMovement(existing), after:serializeMovement(updated), ip:ctx.ip, userAgent:ctx.userAgent });
+  await writeAudit({ tenantId:ctx.tenantId, userId:ctx.userId, action:req.body.matched ? 'banking.reconcile' : 'banking.unreconcile', entity:'BankMovement', entityId:updated.id, before:serializeMovement(existing), after:serializeMovement(updated), ipAddress:ctx.ip, userAgent:ctx.userAgent });
   ok(res, serializeMovement(updated));
 }));
 
@@ -118,7 +118,7 @@ router.delete('/movements/:id', asyncHandler(async (req, res) => {
     prisma.bankMovement.delete({ where:{ id:existing.id } }),
     prisma.bankAccount.update({ where:{ id:existing.accountId }, data:{ balance:{ decrement:delta } } })
   ]);
-  await writeAudit({ tenantId:ctx.tenantId, userId:ctx.userId, module:'banking', action:'delete-movement', entity:'BankMovement', entityId:existing.id, before:serializeMovement(existing), ip:ctx.ip, userAgent:ctx.userAgent });
+  await writeAudit({ tenantId:ctx.tenantId, userId:ctx.userId, action:'banking.delete-movement', entity:'BankMovement', entityId:existing.id, before:serializeMovement(existing), ipAddress:ctx.ip, userAgent:ctx.userAgent });
   ok(res, { deleted:true, id:existing.id });
 }));
 
