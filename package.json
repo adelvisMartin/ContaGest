@@ -1,15 +1,10 @@
 {
   "name": "contagest-coloso",
-  "version": "11.10.0",
+  "version": "11.11.0",
   "private": true,
   "type": "module",
-  "engines": {
-    "node": "22.x"
-  },
-  "workspaces": [
-    "frontend",
-    "backend"
-  ],
+  "engines": { "node": "22.x" },
+  "workspaces": ["frontend", "backend"],
   "scripts": {
     "dev:frontend": "npm --workspace frontend run dev",
     "dev:backend": "npm --workspace backend run dev",
@@ -25,7 +20,5 @@
     "seed": "npm --workspace backend run seed",
     "audit:prod": "npm audit --omit=dev --audit-level=high"
   },
-  "devDependencies": {
-    "@playwright/test": "^1.54.1"
-  }
+  "devDependencies": { "@playwright/test": "^1.54.1" }
 }
