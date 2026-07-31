@@ -1,0 +1,53 @@
+name: Patch v11.10 interactions
+
+on:
+  push:
+    branches: [feat/v11.10-veterinary-clinic]
+    paths:
+      - .github/workflows/patch-v1110-interactions.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/v11.10-veterinary-clinic
+          fetch-depth: 0
+
+      - name: Patch interactions and console warnings
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          app = Path('frontend/src/app.js')
+          source = app.read_text()
+          old = '  applyTranslations(app);'
+          new = "  applyTranslations(state.settings?.lang || 'es');"
+          assert old in source, 'applyTranslations call not found'
+          app.write_text(source.replace(old, new, 1))
+
+          vet = Path('frontend/src/pages/VeterinaryClinicPage.jsx')
+          source = vet.read_text()
+          replacements = {
+            '<Stack direction="row" justifyContent="space-between" alignItems="flex-start" gap={1} mb={1.2}>': '<Stack direction="row" gap={1} sx={{ justifyContent: \'space-between\', alignItems: \'flex-start\', mb: 1.2 }}>',
+            '<Box minWidth={0}>': '<Box sx={{ minWidth: 0 }}>',
+            '<Stack direction="row" gap={.7} flexWrap="wrap">': '<Stack direction="row" gap={.7} sx={{ flexWrap: \'wrap\' }}>',
+            '<Tab key={key} value={key} icon={<Icon name={icon} />} iconPosition="start" label={label} />': '<Tab key={key} value={key} icon={<Icon name={icon} />} iconPosition="start" label={label} onClick={(event) => { event.stopPropagation(); setTab(key); updateUrl(key, selectedPatientId); }} />'
+          }
+          for old, new in replacements.items():
+            assert old in source, f'pattern not found: {old}'
+            source = source.replace(old, new)
+          vet.write_text(source)
+          PY
+
+      - name: Commit patch
+        run: |
+          git config user.name "ContaGest QA Bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add frontend/src/app.js frontend/src/pages/VeterinaryClinicPage.jsx
+          git commit -m "fix: stabilize veterinary tabs and translation runtime"
+          git push origin HEAD:feat/v11.10-veterinary-clinic
