@@ -1,0 +1,51 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+
+const read = (path) => readFileSync(new URL(`../${path}`, import.meta.url), 'utf8');
+
+test('Vercel previews use an isolated derived JWT without weakening production', () => {
+  const env = read('backend/src/config/env.ts');
+  const security = read('backend/src/shared/middleware/security.ts');
+  assert.match(env, /isVercelPreview/);
+  assert.match(env, /preview-jwt/);
+  assert.match(env, /isProductionDeployment/);
+  assert.match(security, /isProductionDeployment && \(!jwtSecretReady \|\| !licenseSecretReady\)/);
+});
+
+test('license hashing is independent from JWT rotation', () => {
+  const env = read('backend/src/config/env.ts');
+  const licensing = read('backend/src/shared/licensing/licenseGuard.ts');
+  assert.match(env, /LICENSE_HASH_SECRET/);
+  assert.match(env, /deriveSecret\(privateSeed, 'license'\)/);
+  assert.match(licensing, /env\.LICENSE_HASH_SECRET/);
+  assert.doesNotMatch(licensing, /createHmac\('sha256', env\.JWT_SECRET\)/);
+});
+
+test('login clearly separates staff and licensed clients', () => {
+  const enhancer = read('frontend/src/services/loginEnhancer.js');
+  const styles = read('frontend/src/styles/login-enhancer.css');
+  assert.match(enhancer, /Equipo interno/);
+  assert.match(enhancer, /Cliente con licencia/);
+  assert.match(enhancer, /licenseInput\.required = client/);
+  assert.match(enhancer, /login-tech-note/);
+  assert.match(styles, /login-access-switch/);
+});
+
+test('CAPTCHA and login controls are responsive and compact', () => {
+  const styles = read('frontend/src/styles/login-v119.css');
+  assert.match(styles, /login-captcha-body/);
+  assert.match(styles, /grid-template-columns:minmax\(118px/);
+  assert.match(styles, /@media\(max-width:520px\)/);
+  assert.match(styles, /login-submit/);
+});
+
+test('PWA identifies v11.9.1 and never caches authentication APIs', () => {
+  const manifest = JSON.parse(read('frontend/manifest.webmanifest'));
+  const worker = read('frontend/sw.js');
+  assert.equal(manifest.display, 'standalone');
+  assert.equal(manifest.scope, '/');
+  assert.match(worker, /contagest-ve-v11-9-1/);
+  assert.match(worker, /url\.pathname\.startsWith\('\/api\/'\)/);
+  assert.match(worker, /request\.mode === 'navigate'/);
+});
