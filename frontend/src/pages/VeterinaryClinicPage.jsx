@@ -123,6 +123,8 @@ function VeterinaryWorkspace({ state, UrlStateService }) {
   const [professionals, setProfessionals] = useState([]);
   const [appointments, setAppointments] = useState([]);
   const [selectedPatientId, setSelectedPatientId] = useState(query.patient || '');
+  const tabRef = useRef(TABS.some(([key]) => key === query.tab) ? query.tab : 'resumen');
+  const patientRef = useRef(query.patient || '');
   const [encounters, setEncounters] = useState([]);
   const [prescriptions, setPrescriptions] = useState([]);
   const [consents, setConsents] = useState([]);
@@ -140,9 +142,12 @@ function VeterinaryWorkspace({ state, UrlStateService }) {
   const mode = state.settings?.theme || 'light';
   const theme = useMemo(() => createVetTheme(mode), [mode]);
 
-  const updateUrl = (nextTab = tab, patientId = selectedPatientId) => {
-    const params = { tab: nextTab };
-    if (patientId) params.patient = patientId;
+  const updateUrl = (nextTab, patientId) => {
+    const current = UrlStateService.getParams();
+    const params = { ...current, tab: nextTab || current.tab || tabRef.current || 'resumen' };
+    const nextPatient = patientId || current.patient || patientRef.current;
+    if (nextPatient) params.patient = nextPatient;
+    else delete params.patient;
     window.history.replaceState({ module: 'veterinaria' }, '', UrlStateService.href('veterinaria', params));
   };
 
@@ -160,9 +165,10 @@ function VeterinaryWorkspace({ state, UrlStateService }) {
       setPatients(pets);
       setProfessionals(arrayData(professionalResponse));
       setAppointments(arrayData(appointmentResponse).filter((item) => !item.patientKind || item.patientKind === 'animal'));
-      if (!selectedPatientId && pets.length) {
+      if (!patientRef.current && pets.length) {
+        patientRef.current = pets[0].id;
         setSelectedPatientId(pets[0].id);
-        updateUrl(tab, pets[0].id);
+        updateUrl(UrlStateService.get('tab', tabRef.current || 'resumen'), pets[0].id);
       }
     } catch (error) {
       toast.error(displayError(error));
@@ -189,8 +195,18 @@ function VeterinaryWorkspace({ state, UrlStateService }) {
   useEffect(() => { loadBase(); }, []);
   useEffect(() => { loadPatientData(selectedPatientId); }, [selectedPatientId]);
 
-  const changeTab = (_event, value) => { setTab(value); updateUrl(value, selectedPatientId); };
-  const selectPatient = (id) => { setSelectedPatientId(id); updateUrl('pacientes', id); };
+  const changeTab = (_event, value) => {
+    tabRef.current = value;
+    setTab(value);
+    updateUrl(value, patientRef.current);
+  };
+  const selectPatient = (id) => {
+    patientRef.current = id;
+    tabRef.current = 'pacientes';
+    setSelectedPatientId(id);
+    setTab('pacientes');
+    updateUrl('pacientes', id);
+  };
   const openDialog = (name, defaults = {}) => { setForm(defaults); setDialog(name); };
   const closeDialog = () => { if (!busy) { setDialog(''); setForm({}); } };
   const field = (name, fallback = '') => form[name] ?? fallback;
@@ -389,7 +405,7 @@ function VeterinaryWorkspace({ state, UrlStateService }) {
         <Metric icon="fa-paw" label="Mascotas activas" value={dashboard.patients || patients.length} /><Metric icon="fa-calendar-check" label="Citas de hoy" value={dashboard.appointmentsToday?.total || 0} hint={`${dashboard.appointmentsToday?.pending || 0} pendientes`} tone="success" /><Metric icon="fa-flask-vial" label="Laboratorios" value={dashboard.pendingLabOrders || 0} hint="pendientes" tone="secondary" /><Metric icon="fa-triangle-exclamation" label="Resultados alerta" value={dashboard.abnormalResults || 0} tone="warning" /><Metric icon="fa-house-medical" label="Hospitalizados" value={dashboard.hospitalized || 0} tone="error" /><Metric icon="fa-syringe" label="Vacunas próximas" value={dashboard.vaccinesDue || 0} tone="success" />
       </Box>
 
-      <Paper variant="outlined" sx={{ px: 1, overflow: 'hidden' }}><Tabs value={tab} onChange={changeTab} variant="scrollable" scrollButtons="auto" allowScrollButtonsMobile aria-label="Módulos veterinarios">{TABS.map(([key, label, icon]) => <Tab key={key} value={key} icon={<Icon name={icon} />} iconPosition="start" label={label} onClick={(event) => { event.stopPropagation(); setTab(key); updateUrl(key, selectedPatientId); }} />)}</Tabs></Paper>
+      <Paper variant="outlined" sx={{ px: 1, overflow: 'hidden' }}><Tabs value={tab} onChange={changeTab} variant="scrollable" scrollButtons="auto" allowScrollButtonsMobile aria-label="Módulos veterinarios">{TABS.map(([key, label, icon]) => <Tab key={key} value={key} icon={<Icon name={icon} />} iconPosition="start" label={label} onClick={(event) => { event.stopPropagation(); tabRef.current = key; setTab(key); updateUrl(key, patientRef.current); }} />)}</Tabs></Paper>
 
       {loading ? <Paper variant="outlined" sx={{ p: 4, textAlign: 'center' }}><CircularProgress size={30} /><Typography variant="body2" mt={1}>Cargando módulo veterinario...</Typography><LinearProgress sx={{ mt: 2 }} /></Paper> : renderTab()}
     </Box>
