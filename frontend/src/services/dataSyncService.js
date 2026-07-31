@@ -1,4 +1,5 @@
 import '../styles/settings-enterprise.css';
+import './uiEnhancementService.js';
 import { apiGet, apiPost } from './apiClient.js';
 
 export const SYNC_RESOURCES=['clients','inventory','history','taxes','ledger','banking','payroll','suppliers','purchases','sales','tasks','profile','admin','brand'];
