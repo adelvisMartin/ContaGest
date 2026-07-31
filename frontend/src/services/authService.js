@@ -1,8 +1,11 @@
 import '../styles/security.css';
 import '../styles/login-v119.css';
+import { installLoginEnhancer } from './loginEnhancer.js';
 import { AuthSession } from './authSession.js';
 import { BackendApi } from './backendApi.js';
 import { LicenseService } from './licenseService.js';
+
+installLoginEnhancer();
 
 const DEMO_USER={id:'demo-admin',name:'Administrador Local',fullName:'Administrador Local',email:'admin@erp.local',role:'sysadmin',permissions:['*']};
 const demoModeEnabled=()=>import.meta?.env?.DEV===true&&import.meta?.env?.VITE_ENABLE_DEMO_MODE==='true';
