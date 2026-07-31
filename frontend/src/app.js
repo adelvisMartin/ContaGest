@@ -68,6 +68,7 @@ import { WorksheetPage } from './pages/WorksheetPage.js';
 import { FinancialStatementsPage } from './pages/FinancialStatementsPage.js';
 import { AccountingClosePage } from './pages/AccountingClosePage.js';
 import { HealthcarePage } from './pages/HealthcarePage.js';
+import { VeterinaryClinicPage } from './pages/VeterinaryClinicPage.jsx';
 import { GymManagementPage } from './pages/GymManagementPage.js';
 import { CommunicationTemplatesPage } from './pages/CommunicationTemplatesPage.js';
 
@@ -123,7 +124,7 @@ const pages = {
   'normativa-contable': AccountingStandardsPage,
   pretesting: PretestingDashboardPage,
   salud: HealthcarePage,
-  veterinaria: HealthcarePage,
+  veterinaria: VeterinaryClinicPage,
   gimnasio: GymManagementPage,
   rutinas: GymManagementPage,
   nutricion: GymManagementPage,
