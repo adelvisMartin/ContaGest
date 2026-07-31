@@ -87,7 +87,7 @@ function createVetTheme(mode = 'light') {
 function Metric({ icon, label, value, hint, tone = 'primary' }) {
   return <Card sx={{ minHeight: 88 }}><CardContent sx={{ p: '12px!important', display: 'grid', gridTemplateColumns: '34px 1fr', gap: 1.1, alignItems: 'center' }}>
     <Avatar sx={{ width: 34, height: 34, bgcolor: `${tone}.main`, fontSize: 14 }}><Icon name={icon} /></Avatar>
-    <Box minWidth={0}><Typography variant="caption" color="text.secondary" sx={{ fontWeight: 850, textTransform: 'uppercase', letterSpacing: '.06em' }}>{label}</Typography>
+    <Box sx={{ minWidth: 0 }}><Typography variant="caption" color="text.secondary" sx={{ fontWeight: 850, textTransform: 'uppercase', letterSpacing: '.06em' }}>{label}</Typography>
       <Typography sx={{ fontWeight: 900, fontSize: '1.35rem', lineHeight: 1.05 }}>{value ?? 0}</Typography>
       {hint && <Typography variant="caption" color="text.secondary">{hint}</Typography>}
     </Box>
@@ -107,7 +107,7 @@ function EmptyState({ icon = 'fa-folder-open', title = 'Sin registros', text = '
 
 function SectionCard({ title, subtitle, action, children, sx = {} }) {
   return <Card sx={sx}><CardContent sx={{ p: '13px!important' }}>
-    <Stack direction="row" justifyContent="space-between" alignItems="flex-start" gap={1} mb={1.2}>
+    <Stack direction="row" gap={1} sx={{ justifyContent: 'space-between', alignItems: 'flex-start', mb: 1.2 }}>
       <Box><Typography variant="h6">{title}</Typography>{subtitle && <Typography variant="caption" color="text.secondary">{subtitle}</Typography>}</Box>{action}
     </Stack>{children}
   </CardContent></Card>;
@@ -282,7 +282,7 @@ function VeterinaryWorkspace({ state, UrlStateService }) {
     <SectionCard title="Agenda de hoy" subtitle="Confirmación y seguimiento desde la misma vista" action={<Button startIcon={<Icon name="fa-plus" />} onClick={() => openDialog('appointment', { patientId: selectedPatientId, startsAt: localDateTime(60), endsAt: localDateTime(90), channel: 'onsite' })}>Nueva cita</Button>}>
       {appointments.length ? <Stack gap={.8}>{appointments.slice(0, 8).map((item) => <Paper key={item.id} variant="outlined" sx={{ p: 1, display: 'grid', gridTemplateColumns: '70px minmax(0,1fr) auto', gap: 1, alignItems: 'center' }}>
         <Box><Typography variant="subtitle2">{new Date(item.startsAt).toLocaleTimeString('es-VE', { hour: '2-digit', minute: '2-digit' })}</Typography><Typography variant="caption">{onlyDate(item.startsAt)}</Typography></Box>
-        <Box minWidth={0}><Typography variant="subtitle2" noWrap>{item.patientName || patients.find((p) => p.id === item.patientId)?.displayName || 'Mascota'}</Typography><Typography variant="caption" color="text.secondary" noWrap>{item.reason || 'Consulta'} · {item.professionalName || 'Sin asignar'}</Typography></Box>
+        <Box sx={{ minWidth: 0 }}><Typography variant="subtitle2" noWrap>{item.patientName || patients.find((p) => p.id === item.patientId)?.displayName || 'Mascota'}</Typography><Typography variant="caption" color="text.secondary" noWrap>{item.reason || 'Consulta'} · {item.professionalName || 'Sin asignar'}</Typography></Box>
         <Stack direction="row" gap={.4} alignItems="center"><StatusChip value={item.status} /><Tooltip title="WhatsApp"><IconButton size="small" color="success" onClick={() => notifyAppointment(item, 'whatsapp')}><i className="fa-brands fa-whatsapp" /></IconButton></Tooltip><Tooltip title="Correo"><IconButton size="small" color="primary" onClick={() => notifyAppointment(item, 'email')}><Icon name="fa-envelope" /></IconButton></Tooltip></Stack>
       </Paper>)}</Stack> : <EmptyState icon="fa-calendar-check" title="Agenda libre" text="No hay citas próximas registradas." />}
     </SectionCard>
@@ -382,14 +382,14 @@ function VeterinaryWorkspace({ state, UrlStateService }) {
     <Box sx={{ display: 'grid', gap: 1.4 }}>
       <Paper variant="outlined" sx={{ p: { xs: 1.3, md: 1.7 }, display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center', gap: 1 }}>
         <Box><Typography variant="caption" color="primary" sx={{ textTransform: 'uppercase', letterSpacing: '.13em', fontWeight: 900 }}>Vertical veterinaria</Typography><Typography variant="h4">Clínica veterinaria</Typography><Typography variant="body2" color="text.secondary">Mascotas, agenda, historia clínica, laboratorio, hospitalización y seguimiento en una sola vista.</Typography></Box>
-        <Stack direction="row" gap={.7} flexWrap="wrap"><Button variant="outlined" startIcon={<Icon name="fa-user-doctor" />} onClick={() => openDialog('professional', { specialty: 'Medicina veterinaria general' })}>Profesional</Button><Button variant="outlined" startIcon={<Icon name="fa-rotate" />} onClick={refreshAll}>Actualizar</Button><Button startIcon={<Icon name="fa-plus" />} onClick={() => openDialog('patient')}>Nueva mascota</Button></Stack>
+        <Stack direction="row" gap={.7} sx={{ flexWrap: 'wrap' }}><Button variant="outlined" startIcon={<Icon name="fa-user-doctor" />} onClick={() => openDialog('professional', { specialty: 'Medicina veterinaria general' })}>Profesional</Button><Button variant="outlined" startIcon={<Icon name="fa-rotate" />} onClick={refreshAll}>Actualizar</Button><Button startIcon={<Icon name="fa-plus" />} onClick={() => openDialog('patient')}>Nueva mascota</Button></Stack>
       </Paper>
 
       <Box sx={{ display: 'grid', gridTemplateColumns: { xs: 'repeat(2,minmax(0,1fr))', md: 'repeat(3,minmax(0,1fr))', xl: 'repeat(6,minmax(0,1fr))' }, gap: 1 }}>
         <Metric icon="fa-paw" label="Mascotas activas" value={dashboard.patients || patients.length} /><Metric icon="fa-calendar-check" label="Citas de hoy" value={dashboard.appointmentsToday?.total || 0} hint={`${dashboard.appointmentsToday?.pending || 0} pendientes`} tone="success" /><Metric icon="fa-flask-vial" label="Laboratorios" value={dashboard.pendingLabOrders || 0} hint="pendientes" tone="secondary" /><Metric icon="fa-triangle-exclamation" label="Resultados alerta" value={dashboard.abnormalResults || 0} tone="warning" /><Metric icon="fa-house-medical" label="Hospitalizados" value={dashboard.hospitalized || 0} tone="error" /><Metric icon="fa-syringe" label="Vacunas próximas" value={dashboard.vaccinesDue || 0} tone="success" />
       </Box>
 
-      <Paper variant="outlined" sx={{ px: 1, overflow: 'hidden' }}><Tabs value={tab} onChange={changeTab} variant="scrollable" scrollButtons="auto" allowScrollButtonsMobile aria-label="Módulos veterinarios">{TABS.map(([key, label, icon]) => <Tab key={key} value={key} icon={<Icon name={icon} />} iconPosition="start" label={label} />)}</Tabs></Paper>
+      <Paper variant="outlined" sx={{ px: 1, overflow: 'hidden' }}><Tabs value={tab} onChange={changeTab} variant="scrollable" scrollButtons="auto" allowScrollButtonsMobile aria-label="Módulos veterinarios">{TABS.map(([key, label, icon]) => <Tab key={key} value={key} icon={<Icon name={icon} />} iconPosition="start" label={label} onClick={(event) => { event.stopPropagation(); setTab(key); updateUrl(key, selectedPatientId); }} />)}</Tabs></Paper>
 
       {loading ? <Paper variant="outlined" sx={{ p: 4, textAlign: 'center' }}><CircularProgress size={30} /><Typography variant="body2" mt={1}>Cargando módulo veterinario...</Typography><LinearProgress sx={{ mt: 2 }} /></Paper> : renderTab()}
     </Box>

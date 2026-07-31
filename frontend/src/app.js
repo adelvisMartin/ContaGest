@@ -164,7 +164,7 @@ function render() {
   app.innerHTML = route === 'login' ? pageHtml : Shell(state, pageHtml);
   document.body.dataset.route = route;
   document.title = `${route === 'dashboard' ? 'Inicio' : route.replaceAll('-', ' ')} · ContaGest-VE`;
-  applyTranslations(app);
+  applyTranslations(state.settings?.lang || 'es');
   QueryParamEnhancer.mount(app, UrlStateService);
   MuiRuntime.mountAll(app, createPageContext(state));
   page.mount?.(state, createPageContext(state));
