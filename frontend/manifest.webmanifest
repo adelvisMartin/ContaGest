@@ -1,11 +1,24 @@
 {
-  "name": "ContaGest-VE Enterprise v6",
+  "id": "/",
+  "name": "ContaGest-VE Enterprise",
   "short_name": "ContaGest",
-  "start_url": "./index.html",
+  "description": "Gestión empresarial, administrativa y verticales especializadas para Venezuela.",
+  "start_url": "/?source=pwa",
+  "scope": "/",
   "display": "standalone",
-  "background_color": "#0f172a",
-  "theme_color": "#1e3a8a",
+  "display_override": ["window-controls-overlay", "standalone", "minimal-ui"],
+  "orientation": "any",
+  "background_color": "#edf2fa",
+  "theme_color": "#0b3a78",
+  "categories": ["business", "finance", "productivity"],
+  "lang": "es-VE",
+  "dir": "ltr",
   "icons": [
-    { "src": "assets/img/logo.png", "sizes": "512x512", "type": "image/png" }
+    { "src": "/assets/img/logo.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ],
+  "shortcuts": [
+    { "name": "Dashboard", "short_name": "Dashboard", "url": "/#dashboard" },
+    { "name": "Nueva operación", "short_name": "Operación", "url": "/#ventas" },
+    { "name": "Inventario", "short_name": "Inventario", "url": "/#inventario" }
   ]
 }

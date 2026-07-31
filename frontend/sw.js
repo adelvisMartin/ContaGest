@@ -1,29 +1,58 @@
-const CACHE = 'contagest-ve-v11-1';
-const STATIC_ASSETS = ['./', './index.html', './manifest.webmanifest', './assets/img/logo.png', './assets/img/contagest-logo.svg'];
+const CACHE = 'contagest-ve-v11-9-1';
+const APP_SHELL = ['/', '/index.html', '/manifest.webmanifest', '/assets/img/logo.png', '/assets/img/contagest-logo.svg'];
 
 self.addEventListener('install', (event) => {
   self.skipWaiting();
-  event.waitUntil(caches.open(CACHE).then((cache) => cache.addAll(STATIC_ASSETS)).catch(() => undefined));
+  event.waitUntil(caches.open(CACHE).then((cache) => cache.addAll(APP_SHELL)).catch(() => undefined));
 });
 
 self.addEventListener('activate', (event) => {
-  event.waitUntil(caches.keys()
-    .then((keys) => Promise.all(keys.filter((key) => key !== CACHE).map((key) => caches.delete(key))))
-    .then(() => self.clients.claim()));
+  event.waitUntil(
+    caches.keys()
+      .then((keys) => Promise.all(keys.filter((key) => key !== CACHE).map((key) => caches.delete(key))))
+      .then(() => self.clients.claim())
+  );
 });
 
+function isSensitiveRequest(url) {
+  return url.pathname.startsWith('/api/')
+    || url.pathname.includes('/auth/')
+    || url.pathname.includes('/licenses')
+    || url.pathname.includes('/media');
+}
+
 self.addEventListener('fetch', (event) => {
-  if (event.request.method !== 'GET') return;
-  const url = new URL(event.request.url);
-  const isLocalDev = ['localhost', '127.0.0.1'].includes(url.hostname);
-  const isViteAsset = url.pathname.includes('/src/') || url.pathname.includes('/@vite') || url.pathname.includes('/node_modules/') || url.pathname.endsWith('.js') || url.pathname.endsWith('.css');
-  if (isLocalDev || isViteAsset) {
-    event.respondWith(fetch(event.request, { cache: 'no-store' }).catch(() => new Response('', { status: 204 })));
+  const { request } = event;
+  if (request.method !== 'GET') return;
+  const url = new URL(request.url);
+  if (url.origin !== self.location.origin || isSensitiveRequest(url)) return;
+
+  if (request.mode === 'navigate') {
+    event.respondWith(
+      fetch(request, { cache: 'no-store' })
+        .then((response) => response)
+        .catch(() => caches.match('/index.html').then((cached) => cached || new Response('ContaGest no está disponible sin conexión.', { status: 503 })))
+    );
     return;
   }
-  event.respondWith(fetch(event.request).then((response) => {
-    const copy = response.clone();
-    caches.open(CACHE).then((cache) => cache.put(event.request, copy)).catch(() => undefined);
-    return response;
-  }).catch(() => caches.match(event.request).then((res) => res || caches.match('./index.html') || new Response('', { status: 503 }))));
+
+  const cacheableAsset = ['style', 'script', 'image', 'font', 'manifest'].includes(request.destination);
+  if (!cacheableAsset) return;
+
+  event.respondWith(
+    caches.match(request).then((cached) => {
+      const network = fetch(request).then((response) => {
+        if (response.ok) caches.open(CACHE).then((cache) => cache.put(request, response.clone())).catch(() => undefined);
+        return response;
+      });
+      return cached || network;
+    })
+  );
+});
+
+self.addEventListener('message', (event) => {
+  if (event.data?.type === 'SKIP_WAITING') self.skipWaiting();
+  if (event.data?.type === 'CLEAR_APP_CACHE') {
+    event.waitUntil(caches.keys().then((keys) => Promise.all(keys.map((key) => caches.delete(key)))));
+  }
 });
