@@ -28,6 +28,7 @@ import rulesRoutes from './rules/rules.routes.js';
 import rbacRoutes from './rbac/rbac.routes.js';
 import verticalRoutes from './verticals/verticals.routes.js';
 import verticalExtendedRoutes from './verticals/verticals-extended.routes.js';
+import veterinaryRoutes from './verticals/veterinary.routes.js';
 import mediaRoutes from './media/media.routes.js';
 
 const router = Router();
@@ -63,6 +64,7 @@ router.use('/rules', rulesRoutes);
 router.use('/rbac', rbacRoutes);
 router.use('/verticals', verticalRoutes);
 router.use('/verticals', verticalExtendedRoutes);
+router.use('/verticals/veterinary', veterinaryRoutes);
 router.use('/media', mediaRoutes);
 router.get('/health/db', requireTenant, async (_req, res, next) => {
   try {
