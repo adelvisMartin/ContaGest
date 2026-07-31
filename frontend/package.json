@@ -1,12 +1,12 @@
 {
   "name": "contagest-ve-frontend",
-  "version": "11.9.1",
+  "version": "11.10.0",
   "private": true,
   "type": "module",
   "engines": {
     "node": "22.x"
   },
-  "description": "Frontend ContaGest-VE Enterprise ERP con UI empresarial, RBAC, licencias, PWA y verticales especializadas.",
+  "description": "Frontend ContaGest-VE Enterprise ERP con UI compacta, RBAC, licencias, PWA y verticales clínicas especializadas.",
   "scripts": {
     "dev": "vite --host 0.0.0.0 --port 8080",
     "stage:backend": "node scripts/stage-backend.mjs",
