@@ -1,6 +1,6 @@
 {
   "name": "contagest-coloso",
-  "version": "11.9.1",
+  "version": "11.10.0",
   "private": true,
   "type": "module",
   "engines": {
