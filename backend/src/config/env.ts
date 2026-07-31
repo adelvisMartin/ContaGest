@@ -4,6 +4,7 @@ import { z } from 'zod';
 
 const DEFAULT_APP_URL = 'http://localhost:8080';
 const DEVELOPMENT_JWT_SECRET = 'dev_secret_change_me_please_32_chars';
+const DEVELOPMENT_LICENSE_SECRET = 'dev_license_secret_change_me_32_chars';
 
 const envSchema = z.object({
   NODE_ENV: z.string().default('development'),
@@ -11,6 +12,7 @@ const envSchema = z.object({
   APP_URL: z.string().default(DEFAULT_APP_URL),
   CORS_ORIGIN: z.string().default(DEFAULT_APP_URL),
   JWT_SECRET: z.string().optional(),
+  LICENSE_HASH_SECRET: z.string().optional(),
   SUPABASE_JWT_SECRET: z.string().optional(),
   VERCEL_AUTOMATION_BYPASS_SECRET: z.string().optional(),
   JSON_BODY_LIMIT: z.string().default('1mb'),
@@ -49,7 +51,7 @@ function normalizeOrigin(value?: string) {
   }
 }
 
-function isSecureJwtSecret(value?: string) {
+function isSecureSecret(value?: string) {
   const secret = String(value || '').trim();
   return secret.length >= 32 && !secret.includes('dev_secret');
 }
@@ -86,6 +88,7 @@ const appUrl = isProd && (!process.env.APP_URL || parsedEnv.APP_URL === DEFAULT_
   : parsedEnv.APP_URL;
 
 const explicitJwtSecret = String(parsedEnv.JWT_SECRET || '').trim();
+const explicitLicenseSecret = String(parsedEnv.LICENSE_HASH_SECRET || '').trim();
 const privateSeed = parsedEnv.SUPABASE_SERVICE_ROLE_KEY
   || parsedEnv.SUPABASE_JWT_SECRET
   || parsedEnv.DATABASE_URL
@@ -106,29 +109,46 @@ const previewSeed = isVercelPreview
       .join(':')
   : '';
 
-const derivedPrivateSecret = !isSecureJwtSecret(explicitJwtSecret) && privateSeed
+const derivedPrivateJwtSecret = !isSecureSecret(explicitJwtSecret) && privateSeed
   ? deriveSecret(privateSeed, 'jwt')
   : '';
-const derivedPreviewSecret = !isSecureJwtSecret(explicitJwtSecret) && !derivedPrivateSecret && previewSeed
+const derivedPreviewJwtSecret = !isSecureSecret(explicitJwtSecret) && !derivedPrivateJwtSecret && previewSeed
   ? deriveSecret(previewSeed, 'preview-jwt')
   : '';
+const derivedLicenseSecret = !isSecureSecret(explicitLicenseSecret) && privateSeed
+  ? deriveSecret(privateSeed, 'license')
+  : '';
+const derivedPreviewLicenseSecret = !isSecureSecret(explicitLicenseSecret) && !derivedLicenseSecret && previewSeed
+  ? deriveSecret(previewSeed, 'preview-license')
+  : '';
 
-export const jwtSecretSource = isSecureJwtSecret(explicitJwtSecret)
+export const jwtSecretSource = isSecureSecret(explicitJwtSecret)
   ? 'explicit'
-  : derivedPrivateSecret
+  : derivedPrivateJwtSecret
     ? 'private-derived'
-    : derivedPreviewSecret
+    : derivedPreviewJwtSecret
+      ? 'preview-derived'
+      : 'development-default';
+export const licenseSecretSource = isSecureSecret(explicitLicenseSecret)
+  ? 'explicit'
+  : derivedLicenseSecret
+    ? 'private-derived'
+    : derivedPreviewLicenseSecret
       ? 'preview-derived'
       : 'development-default';
 
 export const jwtSecretReady = jwtSecretSource !== 'development-default' || !isProd;
+export const licenseSecretReady = licenseSecretSource !== 'development-default' || !isProd;
 
 export const env = {
   ...parsedEnv,
   NODE_ENV: isProd ? 'production' : parsedEnv.NODE_ENV,
   APP_URL: appUrl,
   CORS_ORIGIN: corsOrigins.join(',') || parsedEnv.CORS_ORIGIN,
-  JWT_SECRET: isSecureJwtSecret(explicitJwtSecret)
+  JWT_SECRET: isSecureSecret(explicitJwtSecret)
     ? explicitJwtSecret
-    : derivedPrivateSecret || derivedPreviewSecret || DEVELOPMENT_JWT_SECRET
+    : derivedPrivateJwtSecret || derivedPreviewJwtSecret || DEVELOPMENT_JWT_SECRET,
+  LICENSE_HASH_SECRET: isSecureSecret(explicitLicenseSecret)
+    ? explicitLicenseSecret
+    : derivedLicenseSecret || derivedPreviewLicenseSecret || DEVELOPMENT_LICENSE_SECRET
 };
