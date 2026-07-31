@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto';
 import { z } from 'zod';
 
 const DEFAULT_APP_URL = 'http://localhost:8080';
-const DEFAULT_JWT_SECRET = 'dev_secret_change_me_please_32_chars';
+const DEVELOPMENT_JWT_SECRET = 'dev_secret_change_me_please_32_chars';
 
 const envSchema = z.object({
   NODE_ENV: z.string().default('development'),
@@ -11,11 +11,14 @@ const envSchema = z.object({
   APP_URL: z.string().default(DEFAULT_APP_URL),
   CORS_ORIGIN: z.string().default(DEFAULT_APP_URL),
   JWT_SECRET: z.string().optional(),
+  SUPABASE_JWT_SECRET: z.string().optional(),
+  VERCEL_AUTOMATION_BYPASS_SECRET: z.string().optional(),
   JSON_BODY_LIMIT: z.string().default('1mb'),
   DATABASE_URL: z.string().optional(),
   POSTGRES_PRISMA_URL: z.string().optional(),
   POSTGRES_URL: z.string().optional(),
   POSTGRES_URL_NON_POOLING: z.string().optional(),
+  POSTGRES_PASSWORD: z.string().optional(),
   SUPABASE_DB_URL: z.string().optional(),
   DIRECT_URL: z.string().optional(),
   DIRECT_DATABASE_URL: z.string().optional(),
@@ -51,9 +54,16 @@ function isSecureJwtSecret(value?: string) {
   return secret.length >= 32 && !secret.includes('dev_secret');
 }
 
+function deriveSecret(seed: string, purpose: string) {
+  return createHash('sha256').update(`contagest-ve:${purpose}:v11.9.1:${seed}`).digest('base64url');
+}
+
 const parsedEnv = envSchema.parse(process.env);
-const isVercelProduction = process.env.VERCEL_ENV === 'production';
-export const isProd = parsedEnv.NODE_ENV === 'production' || isVercelProduction;
+export const deploymentEnvironment = process.env.VERCEL_ENV || parsedEnv.NODE_ENV;
+export const isVercelPreview = process.env.VERCEL_ENV === 'preview';
+export const isProductionDeployment = process.env.VERCEL_ENV === 'production'
+  || (!process.env.VERCEL_ENV && parsedEnv.NODE_ENV === 'production');
+export const isProd = parsedEnv.NODE_ENV === 'production' || Boolean(process.env.VERCEL_ENV);
 
 const vercelOrigins = [
   normalizeOrigin(process.env.VERCEL_PROJECT_PRODUCTION_URL),
@@ -77,6 +87,7 @@ const appUrl = isProd && (!process.env.APP_URL || parsedEnv.APP_URL === DEFAULT_
 
 const explicitJwtSecret = String(parsedEnv.JWT_SECRET || '').trim();
 const privateSeed = parsedEnv.SUPABASE_SERVICE_ROLE_KEY
+  || parsedEnv.SUPABASE_JWT_SECRET
   || parsedEnv.DATABASE_URL
   || parsedEnv.POSTGRES_PRISMA_URL
   || parsedEnv.POSTGRES_URL
@@ -84,10 +95,33 @@ const privateSeed = parsedEnv.SUPABASE_SERVICE_ROLE_KEY
   || parsedEnv.DIRECT_DATABASE_URL
   || parsedEnv.DIRECT_URL
   || parsedEnv.POSTGRES_URL_NON_POOLING
+  || parsedEnv.POSTGRES_PASSWORD
+  || parsedEnv.ADMIN_REGISTER_KEY
+  || parsedEnv.VERCEL_AUTOMATION_BYPASS_SECRET
   || '';
-const derivedJwtSecret = isProd && !isSecureJwtSecret(explicitJwtSecret) && privateSeed
-  ? createHash('sha256').update(`contagest-ve:jwt:v11:${privateSeed}`).digest('base64url')
+
+const previewSeed = isVercelPreview
+  ? [process.env.VERCEL_PROJECT_ID, process.env.VERCEL_GIT_REPO_ID, process.env.VERCEL_GIT_COMMIT_SHA, process.env.VERCEL_URL]
+      .filter(Boolean)
+      .join(':')
   : '';
+
+const derivedPrivateSecret = !isSecureJwtSecret(explicitJwtSecret) && privateSeed
+  ? deriveSecret(privateSeed, 'jwt')
+  : '';
+const derivedPreviewSecret = !isSecureJwtSecret(explicitJwtSecret) && !derivedPrivateSecret && previewSeed
+  ? deriveSecret(previewSeed, 'preview-jwt')
+  : '';
+
+export const jwtSecretSource = isSecureJwtSecret(explicitJwtSecret)
+  ? 'explicit'
+  : derivedPrivateSecret
+    ? 'private-derived'
+    : derivedPreviewSecret
+      ? 'preview-derived'
+      : 'development-default';
+
+export const jwtSecretReady = jwtSecretSource !== 'development-default' || !isProd;
 
 export const env = {
   ...parsedEnv,
@@ -96,5 +130,5 @@ export const env = {
   CORS_ORIGIN: corsOrigins.join(',') || parsedEnv.CORS_ORIGIN,
   JWT_SECRET: isSecureJwtSecret(explicitJwtSecret)
     ? explicitJwtSecret
-    : derivedJwtSecret || DEFAULT_JWT_SECRET
+    : derivedPrivateSecret || derivedPreviewSecret || DEVELOPMENT_JWT_SECRET
 };
