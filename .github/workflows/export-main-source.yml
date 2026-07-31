@@ -17,12 +17,12 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Package repository
-        run: tar --exclude=.git --exclude=node_modules -czf contagest-main.tgz .
+        run: tar --exclude=.git --exclude=node_modules -czf "$RUNNER_TEMP/contagest-main.tgz" .
 
       - name: Upload repository artifact
         uses: actions/upload-artifact@v4
         with:
           name: contagest-main-source
-          path: contagest-main.tgz
+          path: ${{ runner.temp }}/contagest-main.tgz
           retention-days: 1
           if-no-files-found: error
