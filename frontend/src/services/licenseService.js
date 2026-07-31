@@ -11,6 +11,12 @@ function deviceId() {
   return value;
 }
 
+function deviceLabel() {
+  const platform = navigator.userAgentData?.platform || navigator.platform || 'Dispositivo';
+  const mobile = navigator.userAgentData?.mobile || /Android|iPhone|iPad|Mobile/i.test(navigator.userAgent);
+  return `${mobile ? 'Móvil' : 'Equipo'} · ${platform}`.slice(0, 120);
+}
+
 export const LicenseService = {
   async list() {
     return BackendApi.get('/licenses');
@@ -21,16 +27,17 @@ export const LicenseService = {
   },
 
   async validate(licenseKey, route = 'dashboard') {
-    return BackendApi.post('/api/v1/licenses/validate', { licenseKey, route, deviceId: deviceId() });
+    return BackendApi.post('/api/v1/licenses/validate', { licenseKey, route, deviceId: deviceId(), deviceLabel: deviceLabel() });
   },
 
   async heartbeat(licenseKey, route = 'dashboard') {
-    return BackendApi.post('/api/v1/licenses/heartbeat', { licenseKey, route, deviceId: deviceId() });
+    return BackendApi.post('/api/v1/licenses/heartbeat', { licenseKey, route, deviceId: deviceId(), deviceLabel: deviceLabel() });
   },
 
   async revoke(id) {
     return BackendApi.request(`/licenses/${encodeURIComponent(id)}/revoke`, { method:'PATCH', body:{} });
   },
 
-  deviceId
+  deviceId,
+  deviceLabel
 };
