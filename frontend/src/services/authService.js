@@ -1,5 +1,6 @@
 import { AuthSession } from './authSession.js';
 import { BackendApi } from './backendApi.js';
+import { LicenseService } from './licenseService.js';
 
 const DEMO_USER = {
   id: 'demo-admin',
@@ -20,6 +21,7 @@ function normalizeSession(payload) {
     tenantId,
     tenant: payload.tenant || null,
     user: payload.user || null,
+    license: payload.license || null,
     expiresAt: payload.expiresAt || Date.now() + 1000 * 60 * 60 * 8,
     mode: 'api'
   });
@@ -34,7 +36,7 @@ export const AuthService = {
     return BackendApi.request('/auth/captcha', { noAuth: true });
   },
 
-  async login({ email, password, tenantRif = '00000000', captchaToken = '', captchaAnswer = '', mode = 'api' }) {
+  async login({ email, password, tenantRif = '00000000', captchaToken = '', captchaAnswer = '', licenseKey = '', deviceId = '', deviceLabel = '', mode = 'api' }) {
     if (mode === 'demo') {
       if (!demoModeEnabled()) throw new Error('El modo demo local está deshabilitado en esta compilación.');
       if (!email || !password) throw new Error('Ingresa email y contraseña.');
@@ -51,7 +53,18 @@ export const AuthService = {
     const payload = await BackendApi.request('/auth/login', {
       method: 'POST',
       noAuth: true,
-      body: { email, password, tenantRif, captchaToken, captchaAnswer }
+      body: {
+        email,
+        password,
+        tenantRif,
+        captchaToken,
+        captchaAnswer,
+        ...(licenseKey ? {
+          licenseKey,
+          deviceId: deviceId || LicenseService.deviceId(),
+          deviceLabel: deviceLabel || LicenseService.deviceLabel()
+        } : {})
+      }
     });
     return normalizeSession(payload);
   },
