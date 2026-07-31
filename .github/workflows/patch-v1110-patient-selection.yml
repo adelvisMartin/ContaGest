@@ -1,0 +1,47 @@
+name: Patch v11.10 patient selection
+
+on:
+  push:
+    branches: [feat/v11.10-veterinary-clinic]
+    paths:
+      - .github/workflows/patch-v1110-patient-selection.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/v11.10-veterinary-clinic
+          fetch-depth: 0
+
+      - name: Preserve patient tab and strengthen QA selector
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          vet = Path('frontend/src/pages/VeterinaryClinicPage.jsx')
+          source = vet.read_text()
+          old = "const selectPatient = (id) => { setSelectedPatientId(id); updateUrl(tab, id); };"
+          new = "const selectPatient = (id) => { setSelectedPatientId(id); updateUrl('pacientes', id); };"
+          assert old in source, 'patient selector pattern not found'
+          vet.write_text(source.replace(old, new, 1))
+
+          qa = Path('qa/veterinary.spec.mjs')
+          source = qa.read_text()
+          old = "  await expect(page).toHaveURL(/tab=pacientes/);\n  await page.getByRole('button', { name: /Luna/ }).click();\n  await expect(page).toHaveURL(new RegExp(`patient=${pets[0].id}`));"
+          new = "  await expect(page).toHaveURL(/tab=pacientes/);\n  await expect(page.getByPlaceholder('Buscar mascota, tutor o microchip')).toBeVisible();\n  await page.locator('.MuiListItemButton-root').filter({ hasText: 'Luna' }).click();\n  await expect(page).toHaveURL(new RegExp(`tab=pacientes.*patient=${pets[0].id}`));"
+          assert old in source, 'QA patient selection pattern not found'
+          qa.write_text(source.replace(old, new, 1))
+          PY
+
+      - name: Commit patch
+        run: |
+          git config user.name "ContaGest QA Bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add frontend/src/pages/VeterinaryClinicPage.jsx qa/veterinary.spec.mjs
+          git commit -m "fix: preserve veterinary patient workspace state"
+          git push origin HEAD:feat/v11.10-veterinary-clinic
