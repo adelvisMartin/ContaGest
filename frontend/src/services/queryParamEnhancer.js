@@ -1,12 +1,35 @@
+import '../styles/runtime-hotfix-v1110.css';
+
 const PARAM_BY_NAME = {
   q: 'q', search: 'search', query: 'search', status: 'status', type: 'type', kind: 'kind', category: 'category',
   specialty: 'specialty', page: 'page', pageSize: 'pageSize', sort: 'sort', order: 'order', date: 'date',
   dateFrom: 'dateFrom', dateTo: 'dateTo', from: 'from', to: 'to', view: 'view', tab: 'tab', mode: 'mode'
 };
 
+const VETERINARY_TAB_BY_LABEL = {
+  resumen: 'resumen',
+  mascotas: 'pacientes',
+  agenda: 'agenda',
+  'historia clinica': 'historia',
+  laboratorio: 'laboratorio',
+  estudios: 'estudios',
+  hospitalizacion: 'hospitalizacion',
+  procedimientos: 'procedimientos',
+  comunicaciones: 'comunicaciones'
+};
+
 let installed = false;
 let timer = null;
 let serviceRef = null;
+
+function normalizedLabel(value) {
+  return String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase();
+}
 
 function replaceParams(patch = {}) {
   if (!serviceRef) return;
@@ -31,6 +54,7 @@ function parameterFor(control) {
 function install() {
   if (installed) return;
   installed = true;
+
   document.addEventListener('input', (event) => {
     const control = event.target instanceof Element ? event.target.closest('[data-query-param]') : null;
     if (!control || !['INPUT', 'TEXTAREA'].includes(control.tagName)) return;
@@ -38,12 +62,25 @@ function install() {
     clearTimeout(timer);
     timer = setTimeout(() => replaceParams({ [key]: control.value }), 260);
   });
+
   document.addEventListener('change', (event) => {
     const control = event.target instanceof Element ? event.target.closest('[data-query-param]') : null;
     if (!control) return;
     replaceParams({ [control.dataset.queryParam]: control.value });
   });
+
   document.addEventListener('click', (event) => {
+    const veterinaryTab = event.target instanceof Element
+      ? event.target.closest('#veterinaryClinicRoot [role="tab"]')
+      : null;
+    if (veterinaryTab && serviceRef?.current().route === 'veterinaria') {
+      const key = VETERINARY_TAB_BY_LABEL[normalizedLabel(veterinaryTab.textContent)];
+      if (key) {
+        queueMicrotask(() => serviceRef.setParams({ tab: key }, { replace: true }));
+        return;
+      }
+    }
+
     const pageTrigger = event.target instanceof Element ? event.target.closest('[data-page],[data-sort],[data-view],[data-tab]') : null;
     if (!pageTrigger) return;
     const patch = {};
