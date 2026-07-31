@@ -132,8 +132,10 @@ const pages = {
   mensajes: CommunicationTemplatesPage
 };
 
+const REACT_MANAGED_ROUTES = new Set(['veterinaria']);
 const app = document.querySelector('#app');
 let lastRoute = null;
+let mountedPage = null;
 
 UrlStateService.bootstrap({ Store, routes: Object.keys(pages) });
 
@@ -155,25 +157,46 @@ function createPageContext(state) {
   };
 }
 
-function render() {
+function updateDocumentMetadata(state, route) {
+  document.body.dataset.route = route;
+  document.body.dataset.role = state.profile?.role || 'guest';
+  document.title = `${route === 'dashboard' ? 'Inicio' : route.replaceAll('-', ' ')} · ContaGest-VE`;
+  applyTranslations(state.settings?.lang || 'es');
+}
+
+function render({ force = false } = {}) {
   const state = Store.get();
   const route = state.route || 'dashboard';
   UrlStateService.ensureRoute(route, { replace: lastRoute === null });
   const page = pages[route] || ModuleRuntimePage;
+
+  const preserveMountedPage = !force
+    && route === lastRoute
+    && page === mountedPage
+    && REACT_MANAGED_ROUTES.has(route)
+    && document.getElementById('veterinaryClinicRoot');
+
+  if (preserveMountedPage) {
+    updateDocumentMetadata(state, route);
+    page.update?.(state, createPageContext(state));
+    return;
+  }
+
   const pageHtml = page.render(state, { query: UrlStateService.getParams(), UrlStateService });
   app.innerHTML = route === 'login' ? pageHtml : Shell(state, pageHtml);
-  document.body.dataset.route = route;
-  document.title = `${route === 'dashboard' ? 'Inicio' : route.replaceAll('-', ' ')} · ContaGest-VE`;
-  applyTranslations(state.settings?.lang || 'es');
+  updateDocumentMetadata(state, route);
   QueryParamEnhancer.mount(app, UrlStateService);
   MuiRuntime.mountAll(app, createPageContext(state));
   page.mount?.(state, createPageContext(state));
+
   if (lastRoute !== route) {
     document.documentElement.scrollTop = 0;
     document.body.scrollTop = 0;
-    lastRoute = route;
   }
+  lastRoute = route;
+  mountedPage = page;
 }
 
-Store.subscribe(render);
-render();
+Store.subscribe(() => render());
+window.addEventListener('popstate', () => render({ force: true }));
+render({ force: true });
