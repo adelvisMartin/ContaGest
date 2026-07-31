@@ -11,6 +11,7 @@ const mountedRoots = new WeakMap();
 function parseJson(value, fallback = []) { try { return JSON.parse(value || '[]'); } catch { return fallback; } }
 function ensureId(node, prefix = 'mui') { if (!node.dataset.muiId) node.dataset.muiId = `${prefix}_${Math.random().toString(36).slice(2, 9)}`; return node.dataset.muiId; }
 function modeFor(state) { return ['dark', 'enterprise'].includes(state?.settings?.theme) ? 'dark' : 'light'; }
+function humanize(value='Campo') { return String(value).replace(/([a-z])([A-Z])/g,'$1 $2').replace(/[_-]+/g,' ').replace(/^./,(char)=>char.toUpperCase()); }
 
 function createContaGestTheme(mode = 'light') {
   const dark = mode === 'dark';
@@ -35,7 +36,12 @@ function createContaGestTheme(mode = 'light') {
 }
 
 function Theme({ state, children }) { const mode=modeFor(state); const theme=React.useMemo(()=>createContaGestTheme(mode),[mode]); return React.createElement(Mui.ThemeProvider,{theme},children); }
-function labelFor(node,fallback='Campo'){const key=node.dataset.muiLabel||node.querySelector('label')?.dataset?.i18n||'';const lang=node.dataset.muiLang||'es';return translations?.[lang]?.[key]||node.querySelector('label')?.textContent?.trim()||key||fallback;}
+function labelFor(node,fallback='Campo') {
+  const key=node.dataset.muiLabel||node.querySelector('label')?.dataset?.i18n||'';
+  const explicit=node.querySelector(':scope > span')?.textContent?.trim()||node.getAttribute('aria-label')||'';
+  const lang=node.dataset.muiLang||'es';
+  return translations?.[lang]?.[key]||explicit||key||fallback;
+}
 function syncFallback(fallback,value){fallback.value=value;fallback.dispatchEvent(new Event('input',{bubbles:true}));fallback.dispatchEvent(new Event('change',{bubbles:true}));}
 
 function NativeFieldIsland({ node, state, multiline=false }) {
@@ -53,7 +59,7 @@ function NativeFieldIsland({ node, state, multiline=false }) {
   const type=sourceType==='password'&&passwordVisible?'text':sourceType;
   const endAdornment=sourceType==='password'?React.createElement(Mui.InputAdornment,{position:'end'},React.createElement(Mui.IconButton,{size:'small',edge:'end','aria-label':passwordVisible?'Ocultar contraseña':'Mostrar contraseña',onClick:()=>setPasswordVisible((current)=>!current)},React.createElement('i',{className:`fa-solid ${passwordVisible?'fa-eye-slash':'fa-eye'}`,style:{fontSize:13}}))):undefined;
   return React.createElement(Theme,{state},React.createElement(Mui.TextField,{
-    label:labelFor(node),value,type,fullWidth:true,size:'small',variant:'outlined',required:Boolean(fallback.dataset.wasRequired==='true'),
+    label:labelFor(node,humanize(fallback.name||fallback.placeholder)),value,type,fullWidth:true,size:'small',variant:'outlined',required:Boolean(fallback.dataset.wasRequired==='true'),
     placeholder:fallback.placeholder||'',multiline,minRows:multiline?3:undefined,autoComplete:fallback.autocomplete||undefined,
     inputProps:{min:fallback.min||undefined,max:fallback.max||undefined,step:fallback.step||undefined,pattern:fallback.pattern||undefined,inputMode:fallback.inputMode||undefined,maxLength:fallback.maxLength>0?fallback.maxLength:undefined},
     InputProps:endAdornment?{endAdornment}:undefined,
@@ -65,7 +71,7 @@ function NativeFieldIsland({ node, state, multiline=false }) {
 function SelectIsland({ node, state }) {
   const fallback=node.querySelector('select[data-mui-fallback],select'); const hidden=node.querySelector('input[type="hidden"]');
   const options=parseJson(node.dataset.muiOptions,fallback?[...fallback.options].map((option)=>({value:option.value,label:option.textContent})):[]);
-  const label=labelFor(node,'Seleccione'); const labelHidden=node.dataset.muiLabelHidden==='true'; const id=ensureId(node,'mui-select');
+  const label=labelFor(node,humanize(fallback?.name||'Seleccione')); const labelHidden=node.dataset.muiLabelHidden==='true'; const id=ensureId(node,'mui-select');
   const [value,setValue]=React.useState(String(node.dataset.muiValue??hidden?.value??fallback?.value??''));
   React.useEffect(()=>{const form=fallback?.form;const reset=()=>window.setTimeout(()=>setValue(String(fallback?.defaultValue??fallback?.options?.[0]?.value??'')),0);form?.addEventListener('reset',reset);return()=>form?.removeEventListener('reset',reset);},[fallback]);
   const emit=(next)=>{setValue(next);node.dataset.muiValue=next;if(hidden)syncFallback(hidden,next);if(fallback)syncFallback(fallback,next);};
@@ -78,9 +84,36 @@ function BreadcrumbsIsland({node,state}){const items=parseJson(node.dataset.item
 function ButtonIsland({node,state}){const fallback=node.querySelector('[data-mui-button-fallback]');const label=node.dataset.muiText||fallback?.textContent?.trim()||'Acción';const iconName=node.dataset.muiIcon||'';const variant=node.dataset.muiVariant||'contained';const color=node.dataset.muiColor||'primary';return React.createElement(Theme,{state},React.createElement(Mui.Button,{variant,color,startIcon:iconName?icon(iconName):undefined,onClick:()=>fallback?.click(),sx:{whiteSpace:'nowrap'}},label));}
 
 function mount(node,marker,mountSelector,element){if(!node||node.dataset[marker]==='true')return;const target=node.querySelector(mountSelector);if(!target)return;node.dataset[marker]='true';const root=createRoot(target);root.render(element);mountedRoots.set(node,root);return root;}
-function prepareNativeField(node,type){if(!node||node.dataset.muiNativePrepared==='true')return;const fallback=node.querySelector(type==='textarea'?'textarea':'input');if(!fallback||['hidden','file','checkbox','radio','color','range','submit','button'].includes(fallback.type))return;node.dataset.muiNativePrepared='true';fallback.dataset.wasRequired=String(fallback.required);fallback.required=false;fallback.classList.add('mui-fallback-hidden');node.querySelector('label')?.classList.add('mui-fallback-hidden');const target=document.createElement('div');target.dataset.muiNativeMount='';node.appendChild(target);}
-function prepareSelect(node){if(!node||node.dataset.muiSelectPrepared==='true')return;const fallback=node.querySelector('select');if(!fallback)return;node.dataset.muiSelectPrepared='true';fallback.dataset.wasRequired=String(fallback.required);fallback.required=false;fallback.dataset.muiFallback='';fallback.classList.add('mui-fallback-hidden');node.querySelector('label')?.classList.add('mui-fallback-hidden');node.dataset.muiOptions=JSON.stringify([...fallback.options].map((option)=>({value:option.value,label:option.textContent})));const target=document.createElement('div');target.dataset.muiMount='';node.appendChild(target);}
-function mountNativeFields(ctx){document.querySelectorAll('[data-cgx-kit="field"]').forEach((node)=>{prepareNativeField(node,'field');if(node.dataset.muiNativePrepared==='true')mount(node,'muiNativeMounted','[data-mui-native-mount]',React.createElement(NativeFieldIsland,{node,state:ctx.state}));});document.querySelectorAll('[data-cgx-kit="textarea"]').forEach((node)=>{prepareNativeField(node,'textarea');if(node.dataset.muiNativePrepared==='true')mount(node,'muiNativeMounted','[data-mui-native-mount]',React.createElement(NativeFieldIsland,{node,state:ctx.state,multiline:true}));});document.querySelectorAll('[data-cgx-kit="select"]').forEach((node)=>{prepareSelect(node);if(node.dataset.muiSelectPrepared==='true')mount(node,'muiMounted','[data-mui-mount]',React.createElement(SelectIsland,{node,state:ctx.state}));});}
+function hideLegacyLabel(node){const ownSpan=node.querySelector(':scope > span');if(ownSpan)ownSpan.classList.add('mui-fallback-hidden');node.querySelector('label')?.classList.add('mui-fallback-hidden');}
+function prepareNativeField(node,type){if(!node||node.dataset.muiNativePrepared==='true')return;const fallback=node.querySelector(type==='textarea'?'textarea':'input');if(!fallback||['hidden','file','checkbox','radio','color','range','submit','button'].includes(fallback.type))return;node.dataset.muiNativePrepared='true';fallback.dataset.wasRequired=String(fallback.required);fallback.required=false;fallback.classList.add('mui-fallback-hidden');hideLegacyLabel(node);const target=document.createElement('div');target.dataset.muiNativeMount='';node.appendChild(target);}
+function prepareSelect(node){if(!node||node.dataset.muiSelectPrepared==='true')return;const fallback=node.querySelector('select');if(!fallback)return;node.dataset.muiSelectPrepared='true';fallback.dataset.wasRequired=String(fallback.required);fallback.required=false;fallback.dataset.muiFallback='';fallback.classList.add('mui-fallback-hidden');hideLegacyLabel(node);node.dataset.muiOptions=JSON.stringify([...fallback.options].map((option)=>({value:option.value,label:option.textContent})));const target=document.createElement('div');target.dataset.muiMount='';node.appendChild(target);}
+
+function promoteLegacyFields(root=document){
+  root.querySelectorAll('.cg-vertical-page form,.cg-stack-form,.cg-inline-form,.cg-clinical-form').forEach((form)=>{
+    if(form.closest('.login-form,.coordinate-challenge-card,[data-no-mui]'))return;
+    form.querySelectorAll('input.input,textarea.textarea,select.select').forEach((field)=>{
+      if(field.closest('[data-cgx-kit]')||['hidden','file','checkbox','radio','color','range','submit','button'].includes(field.type))return;
+      let host=field.closest('label');
+      if(!host||!form.contains(host)){
+        host=document.createElement('div');
+        host.className='cgx-field';
+        field.before(host);
+        host.appendChild(field);
+      }
+      const type=field.tagName==='SELECT'?'select':field.tagName==='TEXTAREA'?'textarea':'field';
+      host.dataset.cgxKit=type;
+      host.dataset.muiLabel=host.querySelector(':scope > span')?.textContent?.trim()||field.getAttribute('aria-label')||field.placeholder||humanize(field.name);
+      if(host.classList.contains('cg-form-span'))host.classList.add('cg-field-wide');
+    });
+  });
+}
+
+function mountNativeFields(ctx){
+  promoteLegacyFields();
+  document.querySelectorAll('[data-cgx-kit="field"]').forEach((node)=>{prepareNativeField(node,'field');if(node.dataset.muiNativePrepared==='true')mount(node,'muiNativeMounted','[data-mui-native-mount]',React.createElement(NativeFieldIsland,{node,state:ctx.state}));});
+  document.querySelectorAll('[data-cgx-kit="textarea"]').forEach((node)=>{prepareNativeField(node,'textarea');if(node.dataset.muiNativePrepared==='true')mount(node,'muiNativeMounted','[data-mui-native-mount]',React.createElement(NativeFieldIsland,{node,state:ctx.state,multiline:true}));});
+  document.querySelectorAll('[data-cgx-kit="select"]').forEach((node)=>{prepareSelect(node);if(node.dataset.muiSelectPrepared==='true')mount(node,'muiMounted','[data-mui-mount]',React.createElement(SelectIsland,{node,state:ctx.state}));});
+}
 function mountSelect(node,ctx){const root=mount(node,'muiMounted','[data-mui-mount]',React.createElement(SelectIsland,{node,state:ctx.state}));if(root)node.classList.add('mui-loading-done');}
 function mountQuickTabs(node,ctx){const root=mount(node,'muiQuicktabsMounted','[data-mui-quicktabs-mount]',React.createElement(QuickTabsIsland,{node,state:ctx.state}));if(root){node.querySelectorAll('.page-tab').forEach((item)=>item.classList.add('mui-fallback-hidden'));node.classList.add('mui-quicktabs-ready');}}
 function mountBreadcrumbs(node,ctx){const root=mount(node,'muiBreadcrumbsMounted','[data-mui-breadcrumb-mount]',React.createElement(BreadcrumbsIsland,{node,state:ctx.state}));if(root){node.querySelector('.hf-breadcrumbs-fallback')?.classList.add('mui-fallback-hidden');node.classList.add('mui-breadcrumbs-ready');}}
