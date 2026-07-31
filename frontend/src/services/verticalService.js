@@ -1,15 +1,28 @@
 import '../styles/verticals.css';
 import { BackendApi } from './backendApi.js';
+import { MediaService } from './mediaService.js';
 
 const query = (params = {}) => {
   const value = new URLSearchParams(Object.entries(params).filter(([, item]) => item !== undefined && item !== null && item !== '')).toString();
   return value ? `?${value}` : '';
 };
 
+async function createWithPhoto(create, payload, entityType, altField) {
+  const { photoDataUrl = '', ...data } = payload || {};
+  const record = await create(data);
+  if (!photoDataUrl) return record;
+  const media = await MediaService.upload({ entityType, entityId: record.id, dataUrl: photoDataUrl, alt: record?.[altField] || '' });
+  return { ...record, photoPath: media.path, photoUrl: media.signedUrl };
+}
+
 export const HealthVerticalService = {
   summary() { return BackendApi.get('/verticals/health/summary'); },
-  patients(params = {}) { return BackendApi.get(`/verticals/health/patients${query(params)}`); },
-  createPatient(payload) { return BackendApi.post('/api/v1/verticals/health/patients', payload); },
+  async patients(params = {}) {
+    return MediaService.signRecords(await BackendApi.get(`/verticals/health/patients${query(params)}`));
+  },
+  createPatient(payload) {
+    return createWithPhoto((data) => BackendApi.post('/api/v1/verticals/health/patients', data), payload, 'care-patient', 'displayName');
+  },
   professionals() { return BackendApi.get('/verticals/health/professionals'); },
   createProfessional(payload) { return BackendApi.post('/api/v1/verticals/health/professionals', payload); },
   appointments(params = {}) { return BackendApi.get(`/verticals/health/appointments${query(params)}`); },
@@ -26,8 +39,12 @@ export const HealthVerticalService = {
 
 export const GymVerticalService = {
   summary() { return BackendApi.get('/verticals/gym/summary'); },
-  members(params = {}) { return BackendApi.get(`/verticals/gym/members${query(params)}`); },
-  createMember(payload) { return BackendApi.post('/api/v1/verticals/gym/members', payload); },
+  async members(params = {}) {
+    return MediaService.signRecords(await BackendApi.get(`/verticals/gym/members${query(params)}`));
+  },
+  createMember(payload) {
+    return createWithPhoto((data) => BackendApi.post('/api/v1/verticals/gym/members', data), payload, 'gym-member', 'fullName');
+  },
   trainers() { return BackendApi.get('/verticals/gym/trainers'); },
   createTrainer(payload) { return BackendApi.post('/api/v1/verticals/gym/trainers', payload); },
   plans() { return BackendApi.get('/verticals/gym/plans'); },
