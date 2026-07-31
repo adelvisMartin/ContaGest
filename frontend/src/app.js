@@ -15,6 +15,7 @@ import { AuthService } from './services/authService.js';
 import { SupabaseSyncService } from './services/supabaseSyncService.js';
 import { AccessControlService } from './services/accessControlService.js';
 import { UrlStateService } from './services/urlStateService.js';
+import { QueryParamEnhancer } from './services/queryParamEnhancer.js';
 
 import { DashboardPage } from './pages/DashboardPage.js';
 import { QuotePage } from './pages/QuotePage.js';
@@ -164,6 +165,7 @@ function render() {
   document.body.dataset.route = route;
   document.title = `${route === 'dashboard' ? 'Inicio' : route.replaceAll('-', ' ')} · ContaGest-VE`;
   applyTranslations(app);
+  QueryParamEnhancer.mount(app, UrlStateService);
   MuiRuntime.mountAll(app, createPageContext(state));
   page.mount?.(state, createPageContext(state));
   if (lastRoute !== route) {
