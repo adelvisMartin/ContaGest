@@ -2,7 +2,7 @@ import type { Request, Response, NextFunction } from 'express';
 import { randomUUID } from 'node:crypto';
 import cors from 'cors';
 import rateLimit from 'express-rate-limit';
-import { env, isProd, isProductionDeployment, jwtSecretReady } from '../../config/env.js';
+import { env, isProd, isProductionDeployment, jwtSecretReady, licenseSecretReady } from '../../config/env.js';
 import { HttpError } from '../http.js';
 
 function normalizeOrigin(value?: string) {
@@ -57,8 +57,8 @@ export const authRateLimit = rateLimit({
 });
 
 export function enforceProductionSecrets(_req: Request, _res: Response, next: NextFunction) {
-  if (isProductionDeployment && !jwtSecretReady) {
-    return next(new HttpError(503, 'La autenticación del servidor no está configurada.'));
+  if (isProductionDeployment && (!jwtSecretReady || !licenseSecretReady)) {
+    return next(new HttpError(503, 'La seguridad del servidor no está configurada.'));
   }
   next();
 }
