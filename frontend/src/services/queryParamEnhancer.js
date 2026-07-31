@@ -69,6 +69,19 @@ function install() {
     const carePatient=target?.closest('[data-care-patient]');
     if(carePatient)writeParams({patient:carePatient.dataset.carePatient,tab:'history'},{replace:false});
   });
+
+  window.addEventListener('popstate',()=>{
+    lastAppliedDeepLink='';
+    window.setTimeout(()=>{
+      if(!serviceRef)return;
+      const current=serviceRef.current();
+      if(current.route==='veterinaria'){
+        window.location.reload();
+        return;
+      }
+      applyDeepLink(document,current.params,current.route);
+    },0);
+  });
 }
 
 function applyDeepLink(root, params, route) {
