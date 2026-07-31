@@ -14,6 +14,7 @@ import { AnalyticsService } from './services/analyticsService.js';
 import { AuthService } from './services/authService.js';
 import { SupabaseSyncService } from './services/supabaseSyncService.js';
 import { AccessControlService } from './services/accessControlService.js';
+import { UrlStateService } from './services/urlStateService.js';
 
 import { DashboardPage } from './pages/DashboardPage.js';
 import { QuotePage } from './pages/QuotePage.js';
@@ -132,6 +133,8 @@ const pages = {
 const app = document.querySelector('#app');
 let lastRoute = null;
 
+UrlStateService.bootstrap({ Store, routes: Object.keys(pages) });
+
 function createPageContext(state) {
   return {
     Store,
@@ -144,6 +147,8 @@ function createPageContext(state) {
     SupabaseSyncService,
     AccessControlService,
     MuiRuntime,
+    UrlStateService,
+    query: UrlStateService.getParams(),
     state
   };
 }
@@ -151,9 +156,12 @@ function createPageContext(state) {
 function render() {
   const state = Store.get();
   const route = state.route || 'dashboard';
+  UrlStateService.ensureRoute(route, { replace: lastRoute === null });
   const page = pages[route] || ModuleRuntimePage;
-  const pageHtml = page.render(state);
+  const pageHtml = page.render(state, { query: UrlStateService.getParams(), UrlStateService });
   app.innerHTML = route === 'login' ? pageHtml : Shell(state, pageHtml);
+  document.body.dataset.route = route;
+  document.title = `${route === 'dashboard' ? 'Inicio' : route.replaceAll('-', ' ')} · ContaGest-VE`;
   applyTranslations(app);
   MuiRuntime.mountAll(app, createPageContext(state));
   page.mount?.(state, createPageContext(state));
