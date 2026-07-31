@@ -16,7 +16,6 @@ const cleanRoute = (value, fallback = 'dashboard') => {
   const route = String(value || '').trim().toLowerCase();
   return allowedRoutes.has(route) ? route : fallback;
 };
-
 const cleanKey = (value) => String(value || '').trim();
 const cleanValue = (value) => {
   const text = String(value ?? '').trim();
@@ -53,7 +52,7 @@ function readLocation(fallbackRoute = 'dashboard') {
     const normalized = cleanValue(value);
     if (normalized) safe[key] = normalized;
   });
-  return { route, params: safe };
+  return { route, params:safe };
 }
 
 function buildUrl(route, params = {}) {
@@ -72,33 +71,27 @@ function buildUrl(route, params = {}) {
 function notifyStore(route, source = 'url') {
   if (!StoreRef) return;
   navigationRevision += 1;
-  StoreRef.set({
-    route,
-    navigation: {
-      search: window.location.search,
-      revision: navigationRevision,
-      source
-    }
-  });
+  StoreRef.set({ route, navigation:{ search:window.location.search, revision:navigationRevision, source } });
 }
 
-function write(route, params = {}, { replace = false, notify = true, source = 'app' } = {}) {
+function write(route, params = {}, { replace = false, notify = true, source = 'app', preserveCurrent = true } = {}) {
   const nextRoute = cleanRoute(route, StoreRef?.get?.().route || 'dashboard');
-  const nextUrl = buildUrl(nextRoute, params);
+  const locationState = readLocation(nextRoute);
+  const normalized = normalizeParams(params);
+  const nextParams = preserveCurrent && nextRoute === locationState.route && Object.keys(normalized).length === 0
+    ? locationState.params
+    : normalized;
+  const nextUrl = buildUrl(nextRoute, nextParams);
   const currentUrl = `${window.location.pathname}${window.location.search}`;
-  if (nextUrl !== currentUrl) {
-    window.history[replace ? 'replaceState' : 'pushState']({ module: nextRoute }, '', nextUrl);
-  }
+  if (nextUrl !== currentUrl) window.history[replace ? 'replaceState' : 'pushState']({ module:nextRoute },'',nextUrl);
   if (notify) notifyStore(nextRoute, source);
-  return { route: nextRoute, params: normalizeParams(params), url: nextUrl };
+  return { route:nextRoute, params:nextParams, url:nextUrl };
 }
 
 function eventParams(node) {
   const params = {};
   const raw = node?.dataset?.queryParams;
-  if (raw) {
-    try { Object.assign(params, JSON.parse(raw)); } catch { /* invalid data attributes are ignored */ }
-  }
+  if (raw) { try { Object.assign(params, JSON.parse(raw)); } catch { /* ignored */ } }
   if (node?.dataset?.tab) params.tab = node.dataset.tab;
   if (node?.dataset?.view) params.view = node.dataset.view;
   if (node?.dataset?.entityId) params.id = node.dataset.entityId;
@@ -110,13 +103,10 @@ function installListeners() {
   installed = true;
 
   document.addEventListener('click', (event) => {
-    const target = event.target instanceof Element
-      ? event.target.closest('[data-route],[data-command-route],[data-breadcrumb-route]')
-      : null;
+    const target = event.target instanceof Element ? event.target.closest('[data-route],[data-command-route],[data-breadcrumb-route]') : null;
     if (!target) return;
     const route = target.dataset.route || target.dataset.commandRoute || target.dataset.breadcrumbRoute;
-    if (!route || !allowedRoutes.has(route)) return;
-    if (target.matches(':disabled,[aria-disabled="true"],.is-locked')) return;
+    if (!route || !allowedRoutes.has(route) || target.matches(':disabled,[aria-disabled="true"],.is-locked')) return;
     event.preventDefault();
     UrlStateService.navigate(route, eventParams(target));
   });
@@ -126,21 +116,21 @@ function installListeners() {
     if (!field) return;
     const key = field.dataset.queryParam;
     if (!SAFE_KEYS.has(key)) return;
-    UrlStateService.setParams({ [key]: field.value }, { replace: true });
+    UrlStateService.setParams({ [key]:field.value }, { replace:true });
   });
 
   document.addEventListener('click', (event) => {
     const trigger = event.target instanceof Element ? event.target.closest('[data-query-clear]') : null;
     if (!trigger) return;
     event.preventDefault();
-    const keys = String(trigger.dataset.queryClear || '').split(',').map((item) => item.trim()).filter(Boolean);
-    UrlStateService.clearParams(keys, { replace: true });
+    const keys = String(trigger.dataset.queryClear || '').split(',').map((item)=>item.trim()).filter(Boolean);
+    UrlStateService.clearParams(keys, { replace:true });
   });
 
   window.addEventListener('cg:navigate', (event) => {
     const detail = event.detail || {};
     if (!detail.route) return;
-    UrlStateService.navigate(detail.route, detail.params || {}, { replace: Boolean(detail.replace) });
+    UrlStateService.navigate(detail.route, detail.params || {}, { replace:Boolean(detail.replace), preserveCurrent:detail.preserveCurrent !== false });
   });
 
   window.addEventListener('popstate', () => {
@@ -153,69 +143,47 @@ function installListeners() {
 export const UrlStateService = {
   bootstrap({ Store, routes = [] } = {}) {
     StoreRef = Store;
-    allowedRoutes = new Set(routes.map((route) => String(route).toLowerCase()));
+    allowedRoutes = new Set(routes.map((route)=>String(route).toLowerCase()));
     installListeners();
     const current = StoreRef?.get?.() || {};
     const locationState = readLocation(current.route || 'dashboard');
     const hasExplicitRoute = new URLSearchParams(window.location.search).has(ROUTE_PARAM) || Boolean(legacyHashRoute());
-    if (hasExplicitRoute && locationState.route !== current.route) {
-      notifyStore(locationState.route, 'bootstrap');
-    } else {
-      write(current.route || locationState.route, locationState.params, { replace: true, notify: false });
-    }
+    if (hasExplicitRoute && locationState.route !== current.route) notifyStore(locationState.route, 'bootstrap');
+    else write(current.route || locationState.route, locationState.params, { replace:true, notify:false, preserveCurrent:false });
     return this.current();
   },
-
-  current() {
-    const current = StoreRef?.get?.() || {};
-    return readLocation(current.route || 'dashboard');
-  },
-
-  getParams() {
-    return this.current().params;
-  },
-
-  get(key, fallback = '') {
-    return this.getParams()[key] ?? fallback;
-  },
-
+  current() { const current=StoreRef?.get?.()||{}; return readLocation(current.route||'dashboard'); },
+  getParams() { return this.current().params; },
+  get(key, fallback = '') { return this.getParams()[key] ?? fallback; },
   navigate(route, params = {}, options = {}) {
-    return write(route, params, { replace: Boolean(options.replace), notify: true, source: 'navigate' });
+    return write(route, params, { replace:Boolean(options.replace), notify:true, source:'navigate', preserveCurrent:options.preserveCurrent !== false });
   },
-
   ensureRoute(route, { replace = false } = {}) {
-    const current = this.current();
-    if (current.route === route) return current;
-    return write(route, {}, { replace, notify: false, source: 'sync' });
+    const current=this.current();
+    if(current.route===route)return current;
+    return write(route, {}, { replace, notify:false, source:'sync', preserveCurrent:false });
   },
-
   setParams(patch = {}, { replace = true } = {}) {
-    const current = this.current();
-    const next = { ...current.params };
-    Object.entries(patch).forEach(([key, value]) => {
-      if (!SAFE_KEYS.has(key) || key === ROUTE_PARAM) return;
-      const normalized = cleanValue(value);
-      if (normalized) next[key] = normalized;
-      else delete next[key];
+    const current=this.current();
+    const next={...current.params};
+    Object.entries(patch).forEach(([key,value])=>{
+      if(!SAFE_KEYS.has(key)||key===ROUTE_PARAM)return;
+      const normalized=cleanValue(value);
+      if(normalized)next[key]=normalized;else delete next[key];
     });
-    return write(current.route, next, { replace, notify: true, source: 'query' });
+    return write(current.route,next,{replace,notify:true,source:'query',preserveCurrent:false});
   },
-
   clearParams(keys = [], { replace = true } = {}) {
-    const current = this.current();
-    const next = { ...current.params };
-    keys.forEach((key) => delete next[key]);
-    return write(current.route, next, { replace, notify: true, source: 'query-clear' });
+    const current=this.current();
+    const next={...current.params};
+    keys.forEach((key)=>delete next[key]);
+    return write(current.route,next,{replace,notify:true,source:'query-clear',preserveCurrent:false});
   },
-
-  href(route, params = {}) {
-    return buildUrl(route, params);
-  },
-
-  bindParam(node, key, fallback = '') {
-    if (!node || !SAFE_KEYS.has(key)) return;
-    node.dataset.queryParam = key;
-    const value = this.get(key, fallback);
-    if ('value' in node && value !== '') node.value = value;
+  href(route, params = {}) { return buildUrl(route, params); },
+  bindParam(node,key,fallback='') {
+    if(!node||!SAFE_KEYS.has(key))return;
+    node.dataset.queryParam=key;
+    const value=this.get(key,fallback);
+    if('value' in node&&value!=='')node.value=value;
   }
 };
