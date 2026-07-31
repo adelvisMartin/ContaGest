@@ -190,7 +190,7 @@ function VeterinaryWorkspace({ state, UrlStateService }) {
   useEffect(() => { loadPatientData(selectedPatientId); }, [selectedPatientId]);
 
   const changeTab = (_event, value) => { setTab(value); updateUrl(value, selectedPatientId); };
-  const selectPatient = (id) => { setSelectedPatientId(id); updateUrl(tab, id); };
+  const selectPatient = (id) => { setSelectedPatientId(id); updateUrl('pacientes', id); };
   const openDialog = (name, defaults = {}) => { setForm(defaults); setDialog(name); };
   const closeDialog = () => { if (!busy) { setDialog(''); setForm({}); } };
   const field = (name, fallback = '') => form[name] ?? fallback;

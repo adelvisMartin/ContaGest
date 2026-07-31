@@ -195,8 +195,9 @@ test('veterinary tabs and patient selection persist in query params', async ({ p
 
   await page.getByRole('tab', { name: /Mascotas/ }).click();
   await expect(page).toHaveURL(/tab=pacientes/);
-  await page.getByRole('button', { name: /Luna/ }).click();
-  await expect(page).toHaveURL(new RegExp(`patient=${pets[0].id}`));
+  await expect(page.getByPlaceholder('Buscar mascota, tutor o microchip')).toBeVisible();
+  await page.locator('.MuiListItemButton-root').filter({ hasText: 'Luna' }).click();
+  await expect(page).toHaveURL(new RegExp(`tab=pacientes.*patient=${pets[0].id}`));
   await expect(page.getByText('María González', { exact: true })).toBeVisible();
 
   await page.goBack();
