@@ -17,10 +17,10 @@ export type LicenseValidationInput = {
 };
 
 export const hashLicenseKey = (value: string) =>
-  crypto.createHmac('sha256', env.JWT_SECRET).update(value.trim().toUpperCase()).digest('hex');
+  crypto.createHmac('sha256', env.LICENSE_HASH_SECRET).update(value.trim().toUpperCase()).digest('hex');
 
 export const hashLicenseDevice = (value: string) =>
-  crypto.createHmac('sha256', env.JWT_SECRET).update(value.trim()).digest('hex');
+  crypto.createHmac('sha256', env.LICENSE_HASH_SECRET).update(value.trim()).digest('hex');
 
 function secureEqual(left: string, right: string) {
   const a = Buffer.from(left, 'hex');
