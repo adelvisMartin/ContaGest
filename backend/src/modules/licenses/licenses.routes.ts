@@ -3,30 +3,38 @@ import crypto from 'node:crypto';
 import bcrypt from 'bcryptjs';
 import { z } from 'zod';
 import { prisma } from '../../database/prisma.js';
+import { env } from '../../config/env.js';
 import { asyncHandler, HttpError, ok } from '../../shared/http.js';
 import { requireTenant, requirePermission } from '../../shared/middleware/context.js';
 
 const router = Router();
 router.use(requireTenant);
 
-const BUSINESS_SECTORS = ['comercio', 'servicios', 'restaurante', 'manufactura', 'distribucion', 'profesional', 'otro'] as const;
+const BUSINESS_SECTORS = [
+  'contador', 'comercio', 'servicios', 'restaurante', 'salud', 'veterinaria', 'gimnasio',
+  'manufactura', 'distribucion', 'profesional', 'otro'
+] as const;
 const COMMERCIAL_USES = ['evaluacion', 'demostracion', 'operacion', 'capacitacion', 'soporte'] as const;
 
 const licenseSchema = z.object({
   userEmail: z.string().email(),
   fullName: z.string().trim().min(2).max(120).default('Cliente de prueba'),
-  plan: z.enum(['trial', 'monthly', 'quarterly', 'annual']).default('trial'),
+  plan: z.enum(['trial', 'monthly', 'quarterly', 'annual', 'enterprise']).default('trial'),
   days: z.coerce.number().int().min(1).max(3650).default(15),
-  modules: z.array(z.string().min(1).max(80)).min(1).max(80),
+  modules: z.array(z.string().min(1).max(80)).min(1).max(120),
   businessSector: z.enum(BUSINESS_SECTORS).default('comercio'),
   commercialUse: z.enum(COMMERCIAL_USES).default('evaluacion'),
-  maxDevices: z.coerce.number().int().min(1).max(5).default(1)
+  maxUsers: z.coerce.number().int().min(1).max(100).default(1),
+  maxDevices: z.coerce.number().int().min(1).max(20).default(1),
+  notes: z.string().trim().max(1000).optional()
 });
 
 const validateSchema = z.object({
-  licenseKey: z.string().min(20).max(160),
-  deviceId: z.string().min(8).max(160),
-  route: z.string().max(120).optional()
+  licenseKey: z.string().min(20).max(180),
+  deviceId: z.string().min(8).max(240),
+  deviceLabel: z.string().trim().max(120).optional(),
+  route: z.string().max(160).optional(),
+  metadata: z.record(z.string(), z.unknown()).optional()
 });
 
 const permissionByModule: Record<string, string[]> = {
@@ -47,20 +55,35 @@ const permissionByModule: Record<string, string[]> = {
   'asistente-ia': ['reports.view'],
   bancos: ['banking.manage'],
   nomina: ['payroll.manage'],
-  tributos: ['taxes.export']
+  tributos: ['taxes.export'],
+  salud: ['health.manage'],
+  veterinaria: ['health.manage'],
+  gimnasio: ['gym.manage'],
+  rutinas: ['gym.manage'],
+  nutricion: ['gym.manage'],
+  mensajes: ['communications.manage']
 };
 
-function generateLicenseKey() {
+const sectorPrefix: Record<string, string> = {
+  contador:'CNT', comercio:'COM', servicios:'SRV', restaurante:'RES', salud:'MED', veterinaria:'VET', gimnasio:'GYM',
+  manufactura:'MAN', distribucion:'DIS', profesional:'PRO', otro:'ERP'
+};
+
+function generateLicenseKey(sector: string) {
   const token = crypto.randomBytes(24).toString('hex').toUpperCase();
-  return `CGVE-${token.slice(0, 8)}-${token.slice(8, 16)}-${token.slice(16, 24)}-${token.slice(24, 32)}`;
+  return `CGVE-${sectorPrefix[sector] || 'ERP'}-${token.slice(0, 8)}-${token.slice(8, 16)}-${token.slice(16, 24)}-${token.slice(24, 32)}`;
 }
 
 function generateTemporaryPassword() {
-  return `Cg!${crypto.randomBytes(9).toString('base64url')}9a`;
+  return `Cg!${crypto.randomBytes(10).toString('base64url')}9a`;
 }
 
 function hashKey(value: string) {
-  return crypto.createHash('sha256').update(value).digest('hex');
+  return crypto.createHmac('sha256', env.JWT_SECRET).update(value.trim().toUpperCase()).digest('hex');
+}
+
+function hashDevice(value: string) {
+  return crypto.createHmac('sha256', env.JWT_SECRET).update(value.trim()).digest('hex');
 }
 
 function secureEqual(left: string, right: string) {
@@ -70,18 +93,16 @@ function secureEqual(left: string, right: string) {
 }
 
 function normalizeConfig(value: unknown) {
-  if (Array.isArray(value)) return { enabled: value, businessSector: 'comercio', commercialUse: 'evaluacion', maxDevices: 1, devices: [] as string[] };
+  if (Array.isArray(value)) return { enabled: value, businessSector: 'comercio', commercialUse: 'evaluacion' };
   const data = value && typeof value === 'object' ? value as Record<string, unknown> : {};
   return {
     enabled: Array.isArray(data.enabled) ? data.enabled.map(String) : [],
     businessSector: String(data.businessSector || 'comercio'),
-    commercialUse: String(data.commercialUse || 'evaluacion'),
-    maxDevices: Math.max(1, Math.min(5, Number(data.maxDevices || 1))),
-    devices: Array.isArray(data.devices) ? data.devices.map(String).slice(0, 5) : []
+    commercialUse: String(data.commercialUse || 'evaluacion')
   };
 }
 
-function publicLicense(record: any, tenant?: any) {
+function publicLicense(record: any, tenant?: any, extension: any = {}) {
   const config = normalizeConfig(record.modules);
   return {
     id: record.id,
@@ -92,16 +113,29 @@ function publicLicense(record: any, tenant?: any) {
     plan: record.plan,
     keyPreview: record.keyPreview,
     modules: config.enabled,
-    businessSector: config.businessSector,
+    businessSector: extension.businessCategory || config.businessSector,
     commercialUse: config.commercialUse,
-    maxDevices: config.maxDevices,
-    devicesUsed: config.devices.length,
-    expiresAt: record.expiresAt.toISOString(),
+    maxUsers: Number(extension.maxUsers || 1),
+    maxDevices: Number(extension.maxDevices || 1),
+    devicesUsed: Number(extension.activationCount || 0),
+    companyName: extension.companyName || tenant?.name,
+    companyRif: extension.companyRif || tenant?.rif,
+    expiresAt: new Date(record.expiresAt).toISOString(),
     status: record.status,
-    lastSeenAt: record.lastSeenAt?.toISOString() || null,
+    lastSeenAt: record.lastSeenAt ? new Date(record.lastSeenAt).toISOString() : null,
     lastRoute: record.lastRoute || null,
-    createdAt: record.createdAt.toISOString()
+    revokedAt: extension.revokedAt ? new Date(extension.revokedAt).toISOString() : null,
+    createdAt: new Date(record.createdAt).toISOString()
   };
+}
+
+async function extensionByLicenseIds(ids: string[]) {
+  if (!ids.length) return new Map<string, any>();
+  const rows = await prisma.$queryRawUnsafe<any[]>(`
+    SELECT "id", "businessCategory", "companyName", "companyRif", "maxUsers", "maxDevices", "activationCount", "revokedAt"
+    FROM public."LicenseKey" WHERE "id" = ANY($1::text[])
+  `, ids);
+  return new Map(rows.map((row) => [row.id, row]));
 }
 
 async function assignTrialRole(tenantId: string, userId: string, modules: string[]) {
@@ -136,9 +170,27 @@ async function assignTrialRole(tenantId: string, userId: string, modules: string
   });
 }
 
-async function validateLicense(tenantId: string, userEmail: string, body: z.infer<typeof validateSchema>) {
+async function audit(req: any, action: string, entityId: string, after: unknown) {
+  const ctx = req.context;
+  await prisma.auditLog.create({
+    data: {
+      tenantId: ctx.tenantId,
+      userId: ctx.userId || null,
+      action,
+      entity: 'LicenseKey',
+      entityId,
+      after: after as any,
+      ipAddress: req.ip,
+      userAgent: req.headers['user-agent'] || null
+    }
+  });
+}
+
+async function validateLicense(req: any, body: z.infer<typeof validateSchema>) {
+  const ctx = req.context;
+  if (!ctx.email) throw new HttpError(401, 'La sesión no contiene correo de usuario.');
   const record = await prisma.licenseKey.findFirst({
-    where: { tenantId, userEmail, status: 'active' },
+    where: { tenantId: ctx.tenantId, userEmail: ctx.email, status: 'active' },
     orderBy: { createdAt: 'desc' }
   });
   if (!record) throw new HttpError(403, 'No existe una licencia activa para este usuario y empresa.');
@@ -148,21 +200,52 @@ async function validateLicense(tenantId: string, userEmail: string, body: z.infe
   }
   if (!secureEqual(record.keyHash, hashKey(body.licenseKey))) throw new HttpError(403, 'La licencia no pertenece a esta empresa o usuario.');
 
-  const config = normalizeConfig(record.modules);
-  if (!config.devices.includes(body.deviceId)) {
-    if (config.devices.length >= config.maxDevices) throw new HttpError(403, `La licencia alcanzó el máximo de ${config.maxDevices} dispositivo(s).`);
-    config.devices.push(body.deviceId);
+  const extensionRows = await prisma.$queryRawUnsafe<any[]>(`
+    SELECT "businessCategory", "companyRif", "maxUsers", "maxDevices", "activationCount"
+    FROM public."LicenseKey" WHERE "id" = $1 AND "tenantId" = $2 LIMIT 1
+  `, record.id, ctx.tenantId);
+  const extension = extensionRows[0] || {};
+  const tenant = await prisma.tenant.findUnique({ where: { id: ctx.tenantId }, select: { rif:true } });
+  if (extension.companyRif && tenant && extension.companyRif.trim().toUpperCase() !== tenant.rif.trim().toUpperCase()) {
+    throw new HttpError(403, 'La licencia está vinculada a otra empresa.');
   }
 
+  const deviceHash = hashDevice(body.deviceId);
+  const existing = await prisma.$queryRawUnsafe<any[]>(`
+    SELECT "id" FROM public."LicenseActivation" WHERE "licenseId" = $1 AND "deviceHash" = $2 LIMIT 1
+  `, record.id, deviceHash);
+  if (!existing.length) {
+    const countRows = await prisma.$queryRawUnsafe<any[]>(`
+      SELECT count(*)::int AS count FROM public."LicenseActivation" WHERE "licenseId" = $1 AND "status" = 'active'
+    `, record.id);
+    if (Number(countRows[0]?.count || 0) >= Number(extension.maxDevices || 1)) {
+      throw new HttpError(403, `La licencia alcanzó el máximo de ${Number(extension.maxDevices || 1)} dispositivo(s).`);
+    }
+  }
+
+  await prisma.$executeRawUnsafe(`
+    INSERT INTO public."LicenseActivation"
+      ("id", "tenantId", "licenseId", "userId", "deviceHash", "deviceLabel", "status", "firstSeenAt", "lastSeenAt", "lastIp", "lastUserAgent", "metadata")
+    VALUES
+      (gen_random_uuid()::text, $1, $2, $3, $4, $5, 'active', now(), now(), $6, $7, $8::jsonb)
+    ON CONFLICT ("licenseId", "deviceHash") DO UPDATE SET
+      "userId" = EXCLUDED."userId", "deviceLabel" = COALESCE(EXCLUDED."deviceLabel", public."LicenseActivation"."deviceLabel"),
+      "status" = 'active', "lastSeenAt" = now(), "lastIp" = EXCLUDED."lastIp", "lastUserAgent" = EXCLUDED."lastUserAgent", "metadata" = EXCLUDED."metadata"
+  `, ctx.tenantId, record.id, ctx.userId || null, deviceHash, body.deviceLabel || null, req.ip, req.headers['user-agent'] || null, JSON.stringify(body.metadata || {}));
+
+  const countRows = await prisma.$queryRawUnsafe<any[]>(`
+    SELECT count(*)::int AS count FROM public."LicenseActivation" WHERE "licenseId" = $1 AND "status" = 'active'
+  `, record.id);
+  const activationCount = Number(countRows[0]?.count || 0);
   const updated = await prisma.licenseKey.update({
     where: { id: record.id },
-    data: {
-      modules: config as any,
-      lastSeenAt: new Date(),
-      lastRoute: body.route || record.lastRoute
-    }
+    data: { lastSeenAt: new Date(), lastRoute: body.route || record.lastRoute }
   });
-  return publicLicense(updated);
+  await prisma.$executeRawUnsafe(`
+    UPDATE public."LicenseKey" SET "activationCount" = $2, "lastIp" = $3, "lastUserAgent" = $4, "updatedAt" = now() WHERE "id" = $1
+  `, record.id, activationCount, req.ip, req.headers['user-agent'] || null);
+
+  return publicLicense(updated, tenant, { ...extension, activationCount });
 }
 
 router.get('/', requirePermission('admin.manage'), asyncHandler(async (req, res) => {
@@ -171,7 +254,8 @@ router.get('/', requirePermission('admin.manage'), asyncHandler(async (req, res)
     prisma.tenant.findUnique({ where: { id: ctx.tenantId }, select: { id: true, name: true, rif: true } }),
     prisma.licenseKey.findMany({ where: { tenantId: ctx.tenantId }, orderBy: { createdAt: 'desc' }, take: 500 })
   ]);
-  ok(res, records.map((record) => publicLicense(record, tenant)));
+  const extensions = await extensionByLicenseIds(records.map((record) => record.id));
+  ok(res, records.map((record) => publicLicense(record, tenant, extensions.get(record.id))));
 }));
 
 router.post('/', requirePermission('admin.manage'), asyncHandler(async (req, res) => {
@@ -200,20 +284,15 @@ router.post('/', requirePermission('admin.manage'), asyncHandler(async (req, res
       });
 
   await assignTrialRole(ctx.tenantId, user.id, body.modules);
-  await prisma.licenseKey.updateMany({
-    where: { tenantId: ctx.tenantId, userEmail: body.userEmail, status: 'active' },
-    data: { status: 'revoked' }
-  });
+  const previous = await prisma.licenseKey.findMany({ where: { tenantId: ctx.tenantId, userEmail: body.userEmail, status: 'active' }, select: { id:true } });
+  if (previous.length) {
+    await prisma.licenseKey.updateMany({ where: { id: { in: previous.map((item) => item.id) } }, data: { status: 'revoked' } });
+    await prisma.$executeRawUnsafe(`UPDATE public."LicenseActivation" SET "status" = 'revoked' WHERE "licenseId" = ANY($1::text[])`, previous.map((item) => item.id));
+  }
 
-  const rawKey = generateLicenseKey();
+  const rawKey = generateLicenseKey(body.businessSector);
   const expiresAt = new Date(Date.now() + body.days * 86400000);
-  const config = {
-    enabled: body.modules,
-    businessSector: body.businessSector,
-    commercialUse: body.commercialUse,
-    maxDevices: body.maxDevices,
-    devices: []
-  };
+  const config = { enabled: body.modules, businessSector: body.businessSector, commercialUse: body.commercialUse };
   const record = await prisma.licenseKey.create({
     data: {
       tenantId: ctx.tenantId,
@@ -221,38 +300,54 @@ router.post('/', requirePermission('admin.manage'), asyncHandler(async (req, res
       userEmail: body.userEmail,
       plan: body.plan,
       keyHash: hashKey(rawKey),
-      keyPreview: `${rawKey.slice(0, 10)}••••${rawKey.slice(-4)}`,
+      keyPreview: `${rawKey.slice(0, 14)}-••••-${rawKey.slice(-4)}`,
       modules: config as any,
       expiresAt,
       status: 'active'
     }
   });
+  await prisma.$executeRawUnsafe(`
+    UPDATE public."LicenseKey" SET "businessCategory" = $2, "companyName" = $3, "companyRif" = $4,
+      "maxUsers" = $5, "maxDevices" = $6, "activationCount" = 0, "metadata" = $7::jsonb, "updatedAt" = now()
+    WHERE "id" = $1
+  `, record.id, body.businessSector, tenant.name, tenant.rif, body.maxUsers, body.maxDevices,
+    JSON.stringify({ commercialUse:body.commercialUse, notes:body.notes || '', issuedBy:ctx.userId || null }));
+
+  const publicData = publicLicense(record, tenant, {
+    businessCategory: body.businessSector,
+    companyName: tenant.name,
+    companyRif: tenant.rif,
+    maxUsers: body.maxUsers,
+    maxDevices: body.maxDevices,
+    activationCount: 0
+  });
+  await audit(req, 'license.create', record.id, publicData);
 
   ok(res, {
-    ...publicLicense(record, tenant),
+    ...publicData,
     licenseKey: rawKey,
     temporaryPassword,
     credentials: {
       tenantRif: tenant.rif,
+      companyName: tenant.name,
+      businessSector: body.businessSector,
       email: body.userEmail,
       temporaryPassword,
-      licenseKey: rawKey
+      licenseKey: rawKey,
+      expiresAt: expiresAt.toISOString(),
+      modules: body.modules
     },
-    warning: 'La clave y contraseña se muestran una sola vez. Guárdalas en un canal seguro.'
+    warning: 'La licencia y la contraseña se muestran una sola vez. Envíalas por un canal seguro y no publiques capturas.'
   }, 201);
 }));
 
 router.post('/validate', asyncHandler(async (req, res) => {
-  const ctx = (req as any).context;
-  if (!ctx.email) throw new HttpError(401, 'La sesión no contiene correo de usuario.');
-  const result = await validateLicense(ctx.tenantId, ctx.email, validateSchema.parse(req.body || {}));
+  const result = await validateLicense(req, validateSchema.parse(req.body || {}));
   ok(res, result);
 }));
 
 router.post('/heartbeat', asyncHandler(async (req, res) => {
-  const ctx = (req as any).context;
-  if (!ctx.email) throw new HttpError(401, 'La sesión no contiene correo de usuario.');
-  const result = await validateLicense(ctx.tenantId, ctx.email, validateSchema.parse(req.body || {}));
+  const result = await validateLicense(req, validateSchema.parse(req.body || {}));
   ok(res, { accepted: true, license: result, at: new Date().toISOString() });
 }));
 
@@ -261,7 +356,12 @@ router.patch('/:id/revoke', requirePermission('admin.manage'), asyncHandler(asyn
   const record = await prisma.licenseKey.findFirst({ where: { id: req.params.id, tenantId: ctx.tenantId } });
   if (!record) throw new HttpError(404, 'Licencia no encontrada.');
   const updated = await prisma.licenseKey.update({ where: { id: record.id }, data: { status: 'revoked' } });
-  ok(res, publicLicense(updated));
+  await prisma.$executeRawUnsafe(`UPDATE public."LicenseKey" SET "revokedAt" = now(), "updatedAt" = now() WHERE "id" = $1`, record.id);
+  await prisma.$executeRawUnsafe(`UPDATE public."LicenseActivation" SET "status" = 'revoked' WHERE "licenseId" = $1`, record.id);
+  const extension = (await extensionByLicenseIds([record.id])).get(record.id);
+  const data = publicLicense(updated, undefined, extension);
+  await audit(req, 'license.revoke', record.id, data);
+  ok(res, data);
 }));
 
 export default router;
