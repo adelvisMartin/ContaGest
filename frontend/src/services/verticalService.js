@@ -17,7 +17,11 @@ export const HealthVerticalService = {
   encounters(patientId) { return BackendApi.get(`/verticals/health/encounters${query({ patientId })}`); },
   createEncounter(payload) { return BackendApi.post('/api/v1/verticals/health/encounters', payload); },
   createMeasurement(payload) { return BackendApi.post('/api/v1/verticals/health/measurements', payload); },
-  createImmunization(payload) { return BackendApi.post('/api/v1/verticals/health/immunizations', payload); }
+  createImmunization(payload) { return BackendApi.post('/api/v1/verticals/health/immunizations', payload); },
+  prescriptions(patientId) { return BackendApi.get(`/verticals/health/prescriptions${query({ patientId })}`); },
+  createPrescription(payload) { return BackendApi.post('/api/v1/verticals/health/prescriptions', payload); },
+  consents(patientId) { return BackendApi.get(`/verticals/health/consents${query({ patientId })}`); },
+  createConsent(payload) { return BackendApi.post('/api/v1/verticals/health/consents', payload); }
 };
 
 export const GymVerticalService = {
@@ -29,6 +33,7 @@ export const GymVerticalService = {
   plans() { return BackendApi.get('/verticals/gym/plans'); },
   createPlan(payload) { return BackendApi.post('/api/v1/verticals/gym/plans', payload); },
   createMembership(payload) { return BackendApi.post('/api/v1/verticals/gym/memberships', payload); },
+  updateMembershipStatus(id, payload) { return BackendApi.request(`/verticals/gym/memberships/${encodeURIComponent(id)}/status`, { method:'PATCH', body:payload }); },
   checkIn(payload) { return BackendApi.post('/api/v1/verticals/gym/checkins', payload); },
   assessments(memberId) { return BackendApi.get(`/verticals/gym/assessments${query({ memberId })}`); },
   createAssessment(payload) { return BackendApi.post('/api/v1/verticals/gym/assessments', payload); },
@@ -37,7 +42,11 @@ export const GymVerticalService = {
   nutrition(memberId = '') { return BackendApi.get(`/verticals/gym/nutrition${query({ memberId })}`); },
   createNutrition(payload) { return BackendApi.post('/api/v1/verticals/gym/nutrition', payload); },
   classes() { return BackendApi.get('/verticals/gym/classes'); },
-  createClass(payload) { return BackendApi.post('/api/v1/verticals/gym/classes', payload); }
+  createClass(payload) { return BackendApi.post('/api/v1/verticals/gym/classes', payload); },
+  classBookings(classId) { return BackendApi.get(`/verticals/gym/classes/${encodeURIComponent(classId)}/bookings`); },
+  bookClass(payload) { return BackendApi.post('/api/v1/verticals/gym/classes/bookings', payload); },
+  payments(memberId = '') { return BackendApi.get(`/verticals/gym/payments${query({ memberId })}`); },
+  createPayment(payload) { return BackendApi.post('/api/v1/verticals/gym/payments', payload); }
 };
 
 export const CommunicationTemplateService = {
