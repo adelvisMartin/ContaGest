@@ -9,6 +9,7 @@ let lastPage = null;
 let lastPageAt = Date.now();
 let flushTimer = null;
 let flushing = false;
+let globalErrorsBound = false;
 
 function getSessionId() {
   let session = sessionStorage.getItem(SESSION_KEY);
@@ -66,6 +67,11 @@ function filterEvents(events, { from, to, type, route } = {}) {
 
 export const AnalyticsService = {
   startSession() {
+    if (!globalErrorsBound) {
+      globalErrorsBound = true;
+      window.addEventListener('error',(event)=>this.trackError(event.error || event.message,{source:'window.error',filename:event.filename||'',line:event.lineno||0,column:event.colno||0}));
+      window.addEventListener('unhandledrejection',(event)=>this.trackError(event.reason,{source:'unhandledrejection'}));
+    }
     const event = buildEvent('session_start', { referrer:document.referrer || 'direct' });
     saveLocal(event); queueFlush(); return event;
   },
