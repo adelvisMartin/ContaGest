@@ -26,6 +26,9 @@ import importRoutes from './imports/imports.routes.js';
 import regulatoryRoutes from './regulatory/regulatory.routes.js';
 import rulesRoutes from './rules/rules.routes.js';
 import rbacRoutes from './rbac/rbac.routes.js';
+import verticalRoutes from './verticals/verticals.routes.js';
+import verticalExtendedRoutes from './verticals/verticals-extended.routes.js';
+import mediaRoutes from './media/media.routes.js';
 
 const router = Router();
 router.use('/tenants', createCrudRouter({ model: 'tenant' as any, entity: 'tenant', permission: 'admin.manage', schema: tenantSchema, tenantScoped: false, searchFields: ['name','rif'] }));
@@ -58,6 +61,9 @@ router.use('/imports', importRoutes);
 router.use('/regulatory', regulatoryRoutes);
 router.use('/rules', rulesRoutes);
 router.use('/rbac', rbacRoutes);
+router.use('/verticals', verticalRoutes);
+router.use('/verticals', verticalExtendedRoutes);
+router.use('/media', mediaRoutes);
 router.get('/health/db', requireTenant, async (_req, res, next) => {
   try {
     const result = await prisma.$queryRawUnsafe('select now() as now, current_database() as db, current_schema() as schema');
