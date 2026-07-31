@@ -7,7 +7,14 @@ const prisma = new PrismaClient();
 
 const ADMIN_RIF = '00000000';
 const ADMIN_EMAIL = 'admin@erp.local';
-const ADMIN_PASSWORD = 'Adm1n$2026';
+const isProduction = String(process.env.NODE_ENV || '').toLowerCase() === 'production';
+const configuredPassword = String(process.env.SEED_ADMIN_PASSWORD || '').trim();
+const ADMIN_PASSWORD = configuredPassword || 'Adm1n$2026';
+const seedLegacyDemo = !isProduction && String(process.env.SEED_LEGACY_DEMO || '').toLowerCase() === 'true';
+
+if (isProduction && configuredPassword.length < 12) {
+  throw new Error('SEED_ADMIN_PASSWORD es obligatorio en producción y debe tener al menos 12 caracteres.');
+}
 
 async function seedPermissions() {
   const permissions = [
@@ -25,6 +32,9 @@ async function seedPermissions() {
     ['reports.view', 'Ver reportes'],
     ['modules.manage', 'Gestionar módulos'],
     ['audit.read', 'Ver auditoría'],
+    ['health.manage', 'Gestionar pacientes, historias clínicas y citas'],
+    ['gym.manage', 'Gestionar socios, membresías, rutinas y nutrición'],
+    ['communications.manage', 'Gestionar mensajes y plantillas operativas'],
     ['admin.manage', 'Administración global']
   ];
   for (const [key, description] of permissions) {
@@ -73,17 +83,20 @@ async function ensureRoleAndUser(tenantId: string) {
     create: { userId: user.id, roleId: role.id }
   });
 
-  // Compatibilidad con credenciales antiguas de pruebas internas.
-  const legacy = await prisma.userProfile.upsert({
-    where: { tenantId_email: { tenantId, email: 'admin@empresa.com' } },
-    update: { fullName: 'Administrador Demo', passwordHash: await bcrypt.hash('demo1234', 12), status: 'active' },
-    create: { tenantId, email: 'admin@empresa.com', fullName: 'Administrador Demo', passwordHash: await bcrypt.hash('demo1234', 12), status: 'active' }
-  });
-  await prisma.userRole.upsert({
-    where: { userId_roleId: { userId: legacy.id, roleId: role.id } },
-    update: {},
-    create: { userId: legacy.id, roleId: role.id }
-  });
+  if (seedLegacyDemo) {
+    const legacyPassword = String(process.env.SEED_LEGACY_DEMO_PASSWORD || '').trim();
+    if (legacyPassword.length < 12) throw new Error('SEED_LEGACY_DEMO_PASSWORD debe tener al menos 12 caracteres.');
+    const legacy = await prisma.userProfile.upsert({
+      where: { tenantId_email: { tenantId, email: 'admin@empresa.com' } },
+      update: { fullName: 'Administrador Demo', passwordHash: await bcrypt.hash(legacyPassword, 12), status: 'active' },
+      create: { tenantId, email: 'admin@empresa.com', fullName: 'Administrador Demo', passwordHash: await bcrypt.hash(legacyPassword, 12), status: 'active' }
+    });
+    await prisma.userRole.upsert({
+      where: { userId_roleId: { userId: legacy.id, roleId: role.id } },
+      update: {},
+      create: { userId: legacy.id, roleId: role.id }
+    });
+  }
 }
 
 async function seedOperationalData(tenantId: string) {
@@ -158,7 +171,8 @@ async function main() {
   console.log('Seed completo.');
   console.log(`RIF: ${ADMIN_RIF}`);
   console.log(`Email: ${ADMIN_EMAIL}`);
-  console.log(`Contraseña: ${ADMIN_PASSWORD}`);
+  console.log(configuredPassword ? 'Contraseña configurada mediante SEED_ADMIN_PASSWORD.' : 'Contraseña local de desarrollo aplicada; no usar este seed en producción.');
+  if (seedLegacyDemo) console.log('Usuario demo heredado creado mediante variables de entorno explícitas.');
 }
 
 main().catch((error) => {
