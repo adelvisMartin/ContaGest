@@ -1,0 +1,87 @@
+name: Patch employee profile fields
+
+on:
+  push:
+    branches:
+      - feat/v11.10-veterinary-clinic
+    paths:
+      - .github/workflows/patch-employee-profile-fields.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/v11.10-veterinary-clinic
+      - name: Patch Prisma and frontend contracts
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          schema = Path('backend/prisma/schema.prisma')
+          text = schema.read_text()
+          old = '''  idNumber    String
+  fullName    String
+  position    String
+  salary      Decimal @default(0) @db.Decimal(18,2)
+  active      Boolean @default(true)'''
+          new = '''  idNumber    String
+  fullName    String
+  position    String
+  department  String?
+  hiredAt     DateTime?
+  salary      Decimal @default(0) @db.Decimal(18,2)
+  active      Boolean @default(true)'''
+          if old not in text:
+              raise SystemExit('Employee model pattern not found')
+          text = text.replace(old, new, 1)
+          text = text.replace('  @@unique([tenantId, idNumber])\n}\n\nmodel PayrollPeriod', '  @@unique([tenantId, idNumber])\n  @@index([tenantId, department])\n  @@index([tenantId, hiredAt])\n}\n\nmodel PayrollPeriod', 1)
+          schema.write_text(text)
+
+          schemas = Path('backend/src/modules/schemas.ts')
+          text = schemas.read_text()
+          old = "export const employeeSchema = z.object({ idNumber: z.string().min(4), fullName: z.string().min(2), position: z.string().min(2), salary: z.coerce.number().optional(), active: z.boolean().optional() });"
+          new = "export const employeeSchema = z.object({ idNumber: z.string().min(4), fullName: z.string().min(2), position: z.string().min(2), department: z.string().max(120).optional(), hiredAt: z.coerce.date().optional(), salary: z.coerce.number().optional(), active: z.boolean().optional() });"
+          if old not in text:
+              raise SystemExit('employeeSchema pattern not found')
+          schemas.write_text(text.replace(old, new, 1))
+
+          service = Path('frontend/src/services/enterpriseOperationsService.js')
+          text = service.read_text()
+          old = '''      position:data.position || 'Colaborador',
+      salary:Number(data.salary||0),
+      active:true'''
+          new = '''      position:data.position || 'Colaborador',
+      department:data.department || undefined,
+      hiredAt:data.hiredAt || undefined,
+      salary:Number(data.salary||0),
+      active:true'''
+          if old not in text:
+              raise SystemExit('createEmployee pattern not found')
+          service.write_text(text.replace(old, new, 1))
+
+          migration = Path('backend/prisma/migrations/20260731153000_employee_department_hired_at')
+          migration.mkdir(parents=True, exist_ok=True)
+          (migration / 'migration.sql').write_text('''ALTER TABLE "Employee"
+            ADD COLUMN IF NOT EXISTS "department" TEXT,
+            ADD COLUMN IF NOT EXISTS "hiredAt" TIMESTAMP(3);
+
+          CREATE INDEX IF NOT EXISTS "Employee_tenantId_department_idx"
+            ON "Employee"("tenantId", "department");
+
+          CREATE INDEX IF NOT EXISTS "Employee_tenantId_hiredAt_idx"
+            ON "Employee"("tenantId", "hiredAt");
+          ''')
+          PY
+      - name: Remove one-off workflow and commit
+        run: |
+          rm .github/workflows/patch-employee-profile-fields.yml
+          git config user.name "ContaGest CI"
+          git config user.email "actions@users.noreply.github.com"
+          git add backend/prisma/schema.prisma backend/prisma/migrations backend/src/modules/schemas.ts frontend/src/services/enterpriseOperationsService.js .github/workflows/patch-employee-profile-fields.yml
+          git commit -m "feat: persist employee department and hire date"
+          git push origin HEAD:feat/v11.10-veterinary-clinic
