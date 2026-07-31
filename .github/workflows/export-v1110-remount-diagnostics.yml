@@ -1,0 +1,37 @@
+name: Export v11.10 remount diagnostics
+
+on:
+  push:
+    branches: [feat/v11.10-veterinary-clinic]
+    paths:
+      - .github/workflows/export-v1110-remount-diagnostics.yml
+
+permissions:
+  contents: write
+
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/v11.10-veterinary-clinic
+          fetch-depth: 0
+      - name: Export relevant handlers
+        run: |
+          mkdir -p .diagnostics
+          {
+            echo '=== STORE WRITES ==='
+            grep -RIn --include='*.js' --include='*.jsx' --include='*.ts' 'Store\.set\|store\.set' frontend/src || true
+            echo '=== CLICK LISTENERS ==='
+            grep -RIn --include='*.js' --include='*.jsx' --include='*.ts' "addEventListener(['\"]click\|closest(.*data-route\|data-care-patient\|MuiListItemButton" frontend/src || true
+            echo '=== ROUTE AND NAVIGATION ==='
+            grep -RIn --include='*.js' --include='*.jsx' --include='*.ts' 'data-route\|cg:navigate\|navigation:' frontend/src/app.js frontend/src/components frontend/src/services frontend/src/state || true
+          } > .diagnostics/v1110-remount.txt
+      - name: Commit diagnostics
+        run: |
+          git config user.name "ContaGest Diagnostic Bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add .diagnostics/v1110-remount.txt
+          git commit -m "chore: export v11.10 remount diagnostics"
+          git push origin HEAD:feat/v11.10-veterinary-clinic
