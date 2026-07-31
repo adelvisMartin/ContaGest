@@ -1,0 +1,28 @@
+name: Export ContaGest source
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Package repository
+        run: tar --exclude=.git --exclude=node_modules -czf contagest-main.tgz .
+
+      - name: Upload repository artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: contagest-main-source
+          path: contagest-main.tgz
+          retention-days: 1
+          if-no-files-found: error
