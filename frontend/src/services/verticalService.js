@@ -37,6 +37,26 @@ export const HealthVerticalService = {
   createConsent(payload) { return BackendApi.post('/api/v1/verticals/health/consents', payload); }
 };
 
+export const VeterinaryService = {
+  dashboard() { return BackendApi.get('/verticals/veterinary/dashboard'); },
+  labOrders(params = {}) { return BackendApi.get(`/verticals/veterinary/lab-orders${query(params)}`); },
+  createLabOrder(payload) { return BackendApi.post('/api/v1/verticals/veterinary/lab-orders', payload); },
+  labResults(params = {}) { return BackendApi.get(`/verticals/veterinary/lab-results${query(params)}`); },
+  createLabResult(payload) { return BackendApi.post('/api/v1/verticals/veterinary/lab-results', payload); },
+  studies(params = {}) { return BackendApi.get(`/verticals/veterinary/studies${query(params)}`); },
+  createStudy(payload) { return BackendApi.post('/api/v1/verticals/veterinary/studies', payload); },
+  hospitalizations(params = {}) { return BackendApi.get(`/verticals/veterinary/hospitalizations${query(params)}`); },
+  createHospitalization(payload) { return BackendApi.post('/api/v1/verticals/veterinary/hospitalizations', payload); },
+  updateHospitalizationStatus(id, payload) { return BackendApi.request(`/verticals/veterinary/hospitalizations/${encodeURIComponent(id)}/status`, { method: 'PATCH', body: payload }); },
+  observations(hospitalizationId) { return BackendApi.get(`/verticals/veterinary/observations${query({ hospitalizationId })}`); },
+  createObservation(payload) { return BackendApi.post('/api/v1/verticals/veterinary/observations', payload); },
+  procedures(params = {}) { return BackendApi.get(`/verticals/veterinary/procedures${query(params)}`); },
+  createProcedure(payload) { return BackendApi.post('/api/v1/verticals/veterinary/procedures', payload); },
+  communications(params = {}) { return BackendApi.get(`/verticals/veterinary/communications${query(params)}`); },
+  createCommunication(payload) { return BackendApi.post('/api/v1/verticals/veterinary/communications', payload); },
+  updateAppointmentStatus(id, payload) { return BackendApi.request(`/verticals/veterinary/appointments/${encodeURIComponent(id)}/status`, { method: 'PATCH', body: payload }); }
+};
+
 export const GymVerticalService = {
   summary() { return BackendApi.get('/verticals/gym/summary'); },
   async members(params = {}) {
