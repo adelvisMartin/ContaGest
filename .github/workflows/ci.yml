@@ -1,0 +1,60 @@
+name: ContaGest CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches:
+      - main
+      - feat/v11.4-enterprise-ui-security
+
+permissions:
+  contents: read
+
+concurrency:
+  group: contagest-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      NODE_ENV: test
+      DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/contagest
+      DIRECT_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/contagest
+      JWT_SECRET: ci-only-secret-with-more-than-thirty-two-characters
+      CORS_ORIGIN: http://localhost:4173
+      ALLOW_PUBLIC_REGISTER: "false"
+      ALLOW_DEV_TENANT_HEADER: "false"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install
+        run: npm install --no-audit --no-fund
+
+      - name: Prisma schema
+        run: npm --workspace backend run db:validate
+
+      - name: TypeScript
+        run: npm run typecheck
+
+      - name: Characterization tests
+        run: npm test
+
+      - name: Frontend build
+        run: npm run build:frontend
+
+      - name: Backend build
+        run: npm run build:backend
+
+      - name: Production dependency audit
+        continue-on-error: true
+        run: npm run audit:prod
