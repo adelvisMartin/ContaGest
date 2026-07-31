@@ -1,3 +1,4 @@
+import '../styles/verticals.css';
 import { BackendApi } from './backendApi.js';
 
 const query = (params = {}) => {
