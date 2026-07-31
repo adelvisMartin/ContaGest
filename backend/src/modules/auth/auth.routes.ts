@@ -7,6 +7,7 @@ import { env, isProd } from '../../config/env.js';
 import { asyncHandler, HttpError, ok } from '../../shared/http.js';
 import { validateBody } from '../../shared/middleware/validate.js';
 import { signAccessToken, tokenExpiresAt, verifyAccessToken } from '../../shared/auth/jwt.js';
+import { validateUserLicense } from '../../shared/licensing/licenseGuard.js';
 
 const router = Router();
 
@@ -30,6 +31,9 @@ const loginSchema = z.object({
   email: z.string().email(),
   password: z.string().min(1),
   tenantRif: z.string().min(5).default('00000000'),
+  licenseKey: z.string().min(20).max(180).optional(),
+  deviceId: z.string().min(8).max(240).optional(),
+  deviceLabel: z.string().max(120).optional(),
   ...captchaFields
 });
 
@@ -45,20 +49,31 @@ function createCaptchaChallenge() {
   const left = op === '-' ? Math.max(a, b) : a;
   const right = op === '-' ? Math.min(a, b) : b;
   const expected = op === '+' ? left + right : op === '-' ? left - right : left * right;
-  const exp = Date.now() + 5 * 60 * 1000;
+  const issuedAt = Date.now();
+  const exp = issuedAt + 5 * 60 * 1000;
   const nonce = crypto.randomBytes(12).toString('base64url');
-  const payload = Buffer.from(JSON.stringify({ a: left, b: right, op, expected, exp, nonce })).toString('base64url');
+  const payload = Buffer.from(JSON.stringify({ kind:'math', a:left, b:right, op, expected, issuedAt, exp, nonce })).toString('base64url');
   const sig = signCaptchaPayload(payload);
   return {
+    kind: 'math',
     question: `${left} ${op} ${right}`,
+    prompt: `¿Cuánto es ${left} ${op === '×' ? 'por' : op} ${right}?`,
     token: `${payload}.${sig}`,
-    expiresAt: exp
+    expiresAt: exp,
+    refreshAfterSeconds: 300
   };
+}
+
+function safeSignatureEqual(left: string, right: string) {
+  const a = Buffer.from(left);
+  const b = Buffer.from(right);
+  return a.length === b.length && crypto.timingSafeEqual(a, b);
 }
 
 function verifyCaptcha(body: { captchaToken?: string; captchaAnswer?: string }) {
   const [payload, sig] = String(body.captchaToken || '').split('.');
-  if (!payload || !sig || signCaptchaPayload(payload) !== sig) throw new HttpError(422, 'Captcha inválido. Actualiza el reto e intenta de nuevo.');
+  const expectedSig = payload ? signCaptchaPayload(payload) : '';
+  if (!payload || !sig || !safeSignatureEqual(expectedSig, sig)) throw new HttpError(422, 'Captcha inválido. Actualiza el reto e intenta de nuevo.');
   let challenge: any;
   try { challenge = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8')); }
   catch { throw new HttpError(422, 'Captcha corrupto. Actualiza el reto e intenta de nuevo.'); }
@@ -67,24 +82,25 @@ function verifyCaptcha(body: { captchaToken?: string; captchaAnswer?: string }) 
   if (String(expected) !== String(body.captchaAnswer || '').trim()) throw new HttpError(422, 'Captcha incorrecto. Verifica la operación.');
 }
 
-function publicUser(user: any) {
+function publicUser(user: any, role = 'admin') {
   return {
     id: user.id,
     email: user.email,
     fullName: user.fullName,
     name: user.fullName,
     status: user.status,
-    role: 'admin'
+    role
   };
 }
 
-function buildSession(user: any, tenant: any) {
+function buildSession(user: any, tenant: any, options: { role?: string; license?: any } = {}) {
   const token = signAccessToken(user, tenant.id);
   return {
     token,
     tenantId: tenant.id,
     tenant,
-    user: publicUser(user),
+    user: publicUser(user, options.role || 'admin'),
+    license: options.license || null,
     expiresAt: tokenExpiresAt(token)
   };
 }
@@ -101,7 +117,10 @@ async function ensureAdminRole(tenantId: string, userId: string) {
     'modules.manage',
     'payroll.manage',
     'banking.manage',
-    'taxes.export'
+    'taxes.export',
+    'health.manage',
+    'gym.manage',
+    'communications.manage'
   ];
 
   for (const key of permissionKeys) {
@@ -198,16 +217,37 @@ router.post('/login', validateBody(loginSchema), asyncHandler(async (req, res) =
   if (!tenant) throw new HttpError(401, 'Empresa no encontrada. Registra la empresa primero.');
 
   const user = await prisma.userProfile.findFirst({
-    where: { tenantId: tenant.id, email: req.body.email, status: 'active' }
+    where: { tenantId: tenant.id, email: req.body.email, status: 'active' },
+    include: { userRoles: { include: { role: true } } }
   });
   if (!user) throw new HttpError(401, 'Usuario no autorizado para esta empresa.');
 
   let valid = false;
   if (user.passwordHash) valid = await bcrypt.compare(req.body.password, user.passwordHash);
   else if (!isProd && req.body.password === 'demo1234') valid = true;
-
   if (!valid) throw new HttpError(401, 'Contraseña incorrecta.');
-  ok(res, buildSession(user, tenant));
+
+  const systemUser = user.userRoles.some((assignment) => assignment.role.system);
+  let license = null;
+  if (!systemUser) {
+    if (!req.body.licenseKey || !req.body.deviceId) {
+      throw new HttpError(403, 'Este usuario requiere licencia y dispositivo autorizado.');
+    }
+    license = await validateUserLicense({
+      tenantId: tenant.id,
+      userId: user.id,
+      userEmail: user.email,
+      licenseKey: req.body.licenseKey,
+      deviceId: req.body.deviceId,
+      deviceLabel: req.body.deviceLabel || null,
+      route: 'login',
+      ip: req.ip,
+      userAgent: req.headers['user-agent'] || null,
+      metadata: { source:'login' }
+    });
+  }
+
+  ok(res, buildSession(user, tenant, { role: systemUser ? 'admin' : 'client', license }));
 }));
 
 function bearerToken(req: any) {
