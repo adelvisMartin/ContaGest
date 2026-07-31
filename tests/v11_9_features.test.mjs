@@ -64,9 +64,10 @@ test('private media validates ownership file type size and tenant path', () => {
 test('AI assistant uses tenant indicators and safe deterministic fallback', () => {
   const code = read('backend/src/modules/ai/ai.routes.ts');
   assert.match(code, /tenantId/);
-  assert.match(code, /operationalSnapshot/);
-  assert.match(code, /deterministicAnswer/);
+  assert.match(code, /loadOperationalSnapshot/);
+  assert.match(code, /operationalAnswer/);
   assert.match(code, /OPENAI_API_KEY/);
+  assert.match(code, /contagest-operational/);
 });
 
 test('frontend registers all new routes and business modes', () => {
