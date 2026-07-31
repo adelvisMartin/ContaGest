@@ -1,12 +1,12 @@
 {
   "name": "contagest-ve-backend",
-  "version": "11.10.0",
+  "version": "11.11.0",
   "type": "module",
   "private": true,
   "main": "./src/app.ts",
   "exports": { ".": "./src/app.ts" },
   "engines": { "node": "22.x" },
-  "description": "Backend ContaGest-VE Enterprise con RBAC, licencias, MFA, Prisma/Supabase y operaciones veterinarias completas.",
+  "description": "Backend ContaGest-VE Enterprise con RBAC, licencias, MFA, Prisma/Supabase, verticales clínicas y endurecimiento operativo.",
   "scripts": {
     "dev": "tsx watch src/server.ts",
     "start": "node dist/src/server.js",
