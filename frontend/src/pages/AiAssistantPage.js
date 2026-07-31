@@ -1,3 +1,4 @@
+import '../styles/enterprise-refinement.css';
 import { PageHeader, Button } from '../components/ui/index.js';
 import { AiAssistantService } from '../services/aiAssistantService.js';
 import { escapeHtml } from '../utils/dom.js';
