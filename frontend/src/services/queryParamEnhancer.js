@@ -6,30 +6,9 @@ const PARAM_BY_NAME = {
   dateFrom: 'dateFrom', dateTo: 'dateTo', from: 'from', to: 'to', view: 'view', tab: 'tab', mode: 'mode'
 };
 
-const VETERINARY_TAB_BY_LABEL = {
-  resumen: 'resumen',
-  mascotas: 'pacientes',
-  agenda: 'agenda',
-  'historia clinica': 'historia',
-  laboratorio: 'laboratorio',
-  estudios: 'estudios',
-  hospitalizacion: 'hospitalizacion',
-  procedimientos: 'procedimientos',
-  comunicaciones: 'comunicaciones'
-};
-
 let installed = false;
 let timer = null;
 let serviceRef = null;
-
-function normalizedLabel(value) {
-  return String(value || '')
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/\s+/g, ' ')
-    .trim()
-    .toLowerCase();
-}
 
 function replaceParams(patch = {}) {
   if (!serviceRef) return;
@@ -70,17 +49,6 @@ function install() {
   });
 
   document.addEventListener('click', (event) => {
-    const veterinaryTab = event.target instanceof Element
-      ? event.target.closest('#veterinaryClinicRoot [role="tab"]')
-      : null;
-    if (veterinaryTab && serviceRef?.current().route === 'veterinaria') {
-      const key = VETERINARY_TAB_BY_LABEL[normalizedLabel(veterinaryTab.textContent)];
-      if (key) {
-        queueMicrotask(() => serviceRef.setParams({ tab: key }, { replace: true }));
-        return;
-      }
-    }
-
     const pageTrigger = event.target instanceof Element ? event.target.closest('[data-page],[data-sort],[data-view],[data-tab]') : null;
     if (!pageTrigger) return;
     const patch = {};
