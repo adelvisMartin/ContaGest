@@ -28,7 +28,7 @@ async function installEnterpriseMocks(page) {
   await page.route('**/api/v1/**', async (route) => {
     const request = route.request();
     const url = new URL(request.url());
-    const path = url.pathname.replace(/^\/api\/v1/, '');
+    const path = url.pathname.replace(/^\/api\/v1/, '').replace(/\/$/, '') || '/';
     const method = request.method();
 
     if (method === 'PATCH' && path === '/purchases/purchase-qa/cancel') {
@@ -99,7 +99,7 @@ for (const module of modules) {
     await expect(page.getByRole('heading', { name:module.heading, exact:true }).first()).toBeVisible();
     await expect(page).toHaveURL(new RegExp(`module=${module.route}`));
     if (module.query) await expect(page).toHaveURL(new RegExp(module.query.split('=')[0]));
-    if (module.mui) await expect(page.locator('.MuiFormControl-root,.MuiTextField-root').first()).toBeVisible();
+    if (module.mui) await expect(page.locator('.MuiFormControl-root:visible, .MuiTextField-root:visible').first()).toBeVisible();
     await expectNoOverflow(page);
   });
 }
@@ -110,6 +110,7 @@ test('issued purchase is cancelled with an accounting reversal and stays traceab
   page.on('dialog', (dialog) => dialog.accept());
   await page.goto('/?module=compras', { waitUntil:'domcontentloaded' });
   await expect(page.locator('body')).toHaveAttribute('data-route','compras');
+  await page.locator('#btnSyncPurchases').click();
   await expect(page.getByText('COMP-QA-001',{exact:true})).toBeVisible();
   await page.locator('[data-cancel-purchase="purchase-qa"]').click();
   await expect(page.getByText('Anulada',{exact:true})).toBeVisible();
