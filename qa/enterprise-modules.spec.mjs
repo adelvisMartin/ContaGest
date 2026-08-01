@@ -1,5 +1,18 @@
 import { test, expect } from '@playwright/test';
 
+const purchaseFixture = {
+  id:'purchase-qa',
+  issueDate:'2026-08-01T00:00:00.000Z',
+  number:'COMP-QA-001',
+  supplierId:'supplier-qa',
+  supplier:{ id:'supplier-qa', name:'Proveedor QA', rif:'J-12345678-9' },
+  subtotal:100,
+  iva:16,
+  total:116,
+  status:'issued',
+  lines:[{ id:'line-qa', description:'Compra de prueba', quantity:1, unitCost:100, taxRate:16, total:100 }]
+};
+
 async function installEnterpriseMocks(page) {
   await page.addInitScript(() => {
     localStorage.setItem('contagest_auth_session', JSON.stringify({
@@ -18,11 +31,29 @@ async function installEnterpriseMocks(page) {
     const path = url.pathname.replace(/^\/api\/v1/, '');
     const method = request.method();
 
-    if (method !== 'GET') {
+    if (method === 'PATCH' && path === '/purchases/purchase-qa/cancel') {
       return route.fulfill({
         status:200,
         contentType:'application/json',
-        body:JSON.stringify({ ok:true, data:{ id:`qa-${Date.now()}`, ...(request.postDataJSON?.() || {}) } })
+        body:JSON.stringify({
+          ok:true,
+          data:{
+            purchase:{ ...purchaseFixture, status:'cancelled' },
+            reversalId:'ledger-reversal-qa',
+            reversedEntries:['ledger-purchase-qa'],
+            accountingWarning:null
+          }
+        })
+      });
+    }
+
+    if (method !== 'GET') {
+      let payload = {};
+      try { payload = request.postDataJSON() || {}; } catch { payload = {}; }
+      return route.fulfill({
+        status:200,
+        contentType:'application/json',
+        body:JSON.stringify({ ok:true, data:{ id:`qa-${Date.now()}`, ...payload } })
       });
     }
 
@@ -31,6 +62,8 @@ async function installEnterpriseMocks(page) {
     else if (path === '/ai/status') data = { provider:'deterministic', model:'operational', indicators:{ lowStock:0, openSales:0, overdueSales:0, unpostedLedger:0 }, snapshotAt:new Date().toISOString() };
     else if (path === '/verticals/health/summary') data = { patients:{ humans:0, animals:0 }, appointmentsToday:{ total:0, upcoming:0 }, encountersThisMonth:0, vaccinesDue:0 };
     else if (path === '/verticals/gym/summary') data = { members:{ active:0, total:0 }, memberships:{ active:0, expiring:0 }, checkinsToday:0, revenueThisMonth:0 };
+    else if (path === '/purchases') data = [purchaseFixture];
+    else if (path === '/suppliers') data = [purchaseFixture.supplier];
 
     return route.fulfill({ status:200, contentType:'application/json', body:JSON.stringify({ ok:true, data }) });
   });
@@ -71,10 +104,23 @@ for (const module of modules) {
   });
 }
 
+test('issued purchase is cancelled with an accounting reversal and stays traceable', async ({ page }) => {
+  await page.setViewportSize({ width:1440, height:900 });
+  await installEnterpriseMocks(page);
+  page.on('dialog', (dialog) => dialog.accept());
+  await page.goto('/?module=compras', { waitUntil:'domcontentloaded' });
+  await expect(page.locator('body')).toHaveAttribute('data-route','compras');
+  await expect(page.getByText('COMP-QA-001',{exact:true})).toBeVisible();
+  await page.locator('[data-cancel-purchase="purchase-qa"]').click();
+  await expect(page.getByText('Anulada',{exact:true})).toBeVisible();
+  await expect(page.getByText('Sin acciones',{exact:true})).toBeVisible();
+  await expectNoOverflow(page);
+});
+
 test('mobile shell remains usable across strengthened modules', async ({ page }) => {
   await page.setViewportSize({ width:375, height:812 });
   await installEnterpriseMocks(page);
-  for (const route of ['tasks','bancos','nomina','reportes','salud','gimnasio','analytics','asistente-ia']) {
+  for (const route of ['tasks','bancos','nomina','compras','reportes','salud','gimnasio','analytics','asistente-ia']) {
     await page.goto(`/?module=${route}`, { waitUntil:'domcontentloaded' });
     await expect(page.locator('body')).toHaveAttribute('data-route', route);
     await expectNoOverflow(page);
