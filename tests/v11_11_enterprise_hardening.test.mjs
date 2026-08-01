@@ -8,10 +8,14 @@ const read = (path) => readFileSync(new URL(path, rootUrl), 'utf8');
 const files = [
   'frontend/src/services/runtimePolicy.js',
   'frontend/src/services/enterpriseOperationsService.js',
+  'frontend/src/services/purchaseOperationsService.js',
   'frontend/src/components/muiRuntime.js',
   'backend/src/modules/banking/banking.routes.ts',
   'backend/src/modules/payroll/payroll.routes.ts',
   'backend/src/modules/tasks/tasks.routes.ts',
+  'backend/src/modules/employees/employees.routes.ts',
+  'backend/src/modules/purchases/purchases.routes.ts',
+  'backend/prisma/migrations/20260731153000_employee_department_hired_at/migration.sql',
   'docs/ENTERPRISE_HARDENING_V111.md'
 ];
 
@@ -73,6 +77,46 @@ test('banking payroll and tasks APIs are tenant scoped, permission protected and
   assert.match(payroll, /recalculatePeriod/);
   const tasks = read('backend/src/modules/tasks/tasks.routes.ts');
   assert.match(tasks, /status:'archived'/);
+});
+
+test('purchase lifecycle is accounting-safe and server authoritative', () => {
+  const route = read('backend/src/modules/purchases/purchases.routes.ts');
+  const page = read('frontend/src/pages/PurchasesPage.js');
+  const service = read('frontend/src/services/purchaseOperationsService.js');
+  assert.match(route, /requirePermission\('purchases\.manage'\)/);
+  assert.match(route, /prisma\.\$transaction/);
+  assert.match(route, /purchaseInvoiceId/);
+  assert.match(route, /purchase-cancel:/);
+  assert.match(route, /Reverso por anulación/);
+  assert.match(route, /Solo se eliminan compras en borrador/);
+  assert.match(route, /writeAudit/);
+  assert.match(page, /data-cancel-purchase/);
+  assert.match(page, /PurchaseOperationsService\.cancel/);
+  assert.match(page, /PurchaseOperationsService\.deleteDraft/);
+  assert.doesNotMatch(page, /deletePurchase\?\./);
+  assert.match(service, /\/purchases\/\$\{encodeURIComponent\(id\)\}\/cancel/);
+});
+
+test('employee profiles persist department and hire date with tenant and audit controls', () => {
+  const route = read('backend/src/modules/employees/employees.routes.ts');
+  const index = read('backend/src/modules/index.ts');
+  const service = read('frontend/src/services/enterpriseOperationsService.js');
+  const schema = read('backend/prisma/schema.prisma');
+  const migration = read('backend/prisma/migrations/20260731153000_employee_department_hired_at/migration.sql');
+  assert.match(route, /requirePermission\('payroll\.manage'\)/);
+  assert.match(route, /"tenantId" = \$1/);
+  assert.match(route, /department/);
+  assert.match(route, /hiredAt/);
+  assert.match(route, /writeAudit/);
+  assert.match(route, /deactivate/);
+  assert.match(index, /router\.use\('\/employees', employeesRoutes\)/);
+  assert.match(service, /department:data\.department/);
+  assert.match(service, /hiredAt:data\.hiredAt/);
+  assert.match(schema, /department\s+String\?/);
+  assert.match(schema, /hiredAt\s+DateTime\?/);
+  assert.match(schema, /@@index\(\[tenantId, department\]\)/);
+  assert.match(migration, /ADD COLUMN IF NOT EXISTS "department"/);
+  assert.match(migration, /ADD COLUMN IF NOT EXISTS "hiredAt"/);
 });
 
 test('deep links preserve module context and support entity selection', () => {
