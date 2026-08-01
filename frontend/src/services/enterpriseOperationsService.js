@@ -59,8 +59,9 @@ const mapEmployee = (employee) => ({
   ...employee,
   document:employee.document || employee.idNumber,
   salary:Number(employee.salary||0),
-  department:employee.department || employee.payload?.department || '',
-  hiredAt:employee.hiredAt || employee.payload?.hiredAt || null
+  department:employee.department || '',
+  hiredAt:employee.hiredAt || null,
+  active:employee.active !== false
 });
 const mapReceipt = (receipt) => ({
   ...receipt,
@@ -83,10 +84,24 @@ export const PayrollService = {
       idNumber:data.document,
       fullName:data.fullName,
       position:data.position || 'Colaborador',
+      department:data.department || undefined,
+      hiredAt:data.hiredAt || undefined,
       salary:Number(data.salary||0),
       active:true
     }).then(mapEmployee);
   },
+  updateEmployee(id,data) {
+    return BackendApi.put(`/employees/${encodeURIComponent(id)}`,{
+      ...(data.document !== undefined ? { idNumber:data.document } : {}),
+      ...(data.fullName !== undefined ? { fullName:data.fullName } : {}),
+      ...(data.position !== undefined ? { position:data.position } : {}),
+      ...(data.department !== undefined ? { department:data.department } : {}),
+      ...(data.hiredAt !== undefined ? { hiredAt:data.hiredAt || null } : {}),
+      ...(data.salary !== undefined ? { salary:Number(data.salary||0) } : {}),
+      ...(data.active !== undefined ? { active:Boolean(data.active) } : {})
+    }).then(mapEmployee);
+  },
+  removeEmployee(id) { return BackendApi.delete(`/employees/${encodeURIComponent(id)}`); },
   async periods(status = '') { return (await BackendApi.get(`/payroll/periods${queryString({status})}`) || []).map(mapPeriod); },
   createPeriod(period) { return BackendApi.post('/payroll/periods',{period}).then(mapPeriod); },
   createReceipt(data) {
