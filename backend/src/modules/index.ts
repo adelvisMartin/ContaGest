@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { prisma } from '../database/prisma.js';
 import { requireTenant } from '../shared/middleware/context.js';
 import { createCrudRouter } from './crud.factory.js';
-import { clientSchema, supplierSchema, productSchema, bankAccountSchema, employeeSchema, taxPeriodSchema, tenantSchema } from './schemas.js';
+import { clientSchema, supplierSchema, productSchema, bankAccountSchema, taxPeriodSchema, tenantSchema } from './schemas.js';
 import salesRoutes from './sales/sales.routes.js';
 import purchasesRoutes from './purchases/purchases.routes.js';
 import accountingRoutes from './accounting/accounting.routes.js';
@@ -12,6 +12,10 @@ import currencyRoutes from './currency/currency.routes.js';
 import exportRoutes from './exports/exports.routes.js';
 import chartAccountRoutes from './chart-accounts/chart-accounts.routes.js';
 import hrRoutes from './hr/hr.routes.js';
+import bankingRoutes from './banking/banking.routes.js';
+import payrollRoutes from './payroll/payroll.routes.js';
+import tasksRoutes from './tasks/tasks.routes.js';
+import employeesRoutes from './employees/employees.routes.js';
 import fiscalRoutes from './fiscal/fiscal.routes.js';
 import analyticsRoutes from './analytics/analytics.routes.js';
 import qrRoutes from './qr/qr.routes.js';
@@ -28,16 +32,17 @@ import rulesRoutes from './rules/rules.routes.js';
 import rbacRoutes from './rbac/rbac.routes.js';
 import verticalRoutes from './verticals/verticals.routes.js';
 import verticalExtendedRoutes from './verticals/verticals-extended.routes.js';
+import veterinaryRoutes from './verticals/veterinary.routes.js';
 import mediaRoutes from './media/media.routes.js';
 
 const router = Router();
-router.use('/tenants', createCrudRouter({ model: 'tenant' as any, entity: 'tenant', permission: 'admin.manage', schema: tenantSchema, tenantScoped: false, searchFields: ['name','rif'] }));
-router.use('/clients', createCrudRouter({ model: 'client' as any, entity: 'client', permission: 'clients.manage', schema: clientSchema, searchFields: ['name','rif'] }));
-router.use('/suppliers', createCrudRouter({ model: 'supplier' as any, entity: 'supplier', permission: 'purchases.manage', schema: supplierSchema, searchFields: ['name','rif'] }));
-router.use('/products', createCrudRouter({ model: 'product' as any, entity: 'product', permission: 'inventory.manage', schema: productSchema, searchFields: ['name','sku'] }));
-router.use('/bank-accounts', createCrudRouter({ model: 'bankAccount' as any, entity: 'bankAccount', permission: 'banking.manage', schema: bankAccountSchema, searchFields: ['bankName','accountNo'] }));
-router.use('/employees', createCrudRouter({ model: 'employee' as any, entity: 'employee', permission: 'payroll.manage', schema: employeeSchema, searchFields: ['fullName','idNumber'] }));
-router.use('/tax-periods', createCrudRouter({ model: 'taxPeriod' as any, entity: 'taxPeriod', permission: 'taxes.export', schema: taxPeriodSchema, searchFields: ['period'] }));
+router.use('/tenants', createCrudRouter({ model:'tenant' as any, entity:'tenant', permission:'admin.manage', schema:tenantSchema, tenantScoped:false, searchFields:['name','rif'] }));
+router.use('/clients', createCrudRouter({ model:'client' as any, entity:'client', permission:'clients.manage', schema:clientSchema, searchFields:['name','rif'] }));
+router.use('/suppliers', createCrudRouter({ model:'supplier' as any, entity:'supplier', permission:'purchases.manage', schema:supplierSchema, searchFields:['name','rif'] }));
+router.use('/products', createCrudRouter({ model:'product' as any, entity:'product', permission:'inventory.manage', schema:productSchema, searchFields:['name','sku'] }));
+router.use('/bank-accounts', createCrudRouter({ model:'bankAccount' as any, entity:'bankAccount', permission:'banking.manage', schema:bankAccountSchema, searchFields:['bankName','accountNo'] }));
+router.use('/employees', employeesRoutes);
+router.use('/tax-periods', createCrudRouter({ model:'taxPeriod' as any, entity:'taxPeriod', permission:'taxes.export', schema:taxPeriodSchema, searchFields:['period'] }));
 router.use('/sales', salesRoutes);
 router.use('/purchases', purchasesRoutes);
 router.use('/accounting', accountingRoutes);
@@ -47,6 +52,9 @@ router.use('/currency', currencyRoutes);
 router.use('/exports', exportRoutes);
 router.use('/chart-accounts', chartAccountRoutes);
 router.use('/hr', hrRoutes);
+router.use('/banking', bankingRoutes);
+router.use('/payroll', payrollRoutes);
+router.use('/tasks', tasksRoutes);
 router.use('/fiscal', fiscalRoutes);
 router.use('/analytics', analyticsRoutes);
 router.use('/qr', qrRoutes);
@@ -63,13 +71,12 @@ router.use('/rules', rulesRoutes);
 router.use('/rbac', rbacRoutes);
 router.use('/verticals', verticalRoutes);
 router.use('/verticals', verticalExtendedRoutes);
+router.use('/verticals/veterinary', veterinaryRoutes);
 router.use('/media', mediaRoutes);
-router.get('/health/db', requireTenant, async (_req, res, next) => {
+router.get('/health/db', requireTenant, async (_req,res,next)=>{
   try {
-    const result = await prisma.$queryRawUnsafe('select now() as now, current_database() as db, current_schema() as schema');
-    res.json({ ok: true, data: { database: result } });
-  } catch (error) {
-    next(error);
-  }
+    const result=await prisma.$queryRawUnsafe('select now() as now, current_database() as db, current_schema() as schema');
+    res.json({ok:true,data:{database:result}});
+  } catch(error) { next(error); }
 });
 export default router;
