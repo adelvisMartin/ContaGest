@@ -198,8 +198,14 @@ test('veterinary tabs and patient selection persist in query params', async ({ p
   await page.locator('.MuiListItemButton-root').filter({hasText:'Luna'}).click();
   await expect(page).toHaveURL(new RegExp(`tab=pacientes.*patient=${pets[0].id}`));
   await expect(page.getByText('María González',{exact:true})).toBeVisible();
-  await page.goBack();
-  await expect(page).toHaveURL(/module=veterinaria/);
+
+  const selectedPatientUrl = page.url();
+  await page.goto('/?module=pretesting', { waitUntil:'domcontentloaded' });
+  await expect(page.locator('body')).toHaveAttribute('data-route','pretesting');
+  await page.goBack({ waitUntil:'domcontentloaded' });
+  await expect(page).toHaveURL(selectedPatientUrl);
+  await expect(page.locator('body')).toHaveAttribute('data-route','veterinaria');
+  await expect(page.getByText('María González',{exact:true})).toBeVisible();
 });
 
 test('pretesting legacy hero uses the compact global density layer', async ({ page }) => {
