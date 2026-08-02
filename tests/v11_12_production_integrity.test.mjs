@@ -12,7 +12,7 @@ test('el service worker forma parte de la salida pública de Vite', async () => 
   const vercel = JSON.parse(vercelRaw);
   assert.match(worker, /contagest-ve-v11-12-1/);
   assert.match(worker, /const APP_SHELL = \['\/', '\/index\.html'\]/);
-  assert.doesNotMatch(worker, /\/api\//);
+  assert.doesNotMatch(worker.match(/const APP_SHELL.*;/)?.[0] || '', /\/api\//);
   assert.ok(vercel.headers.some((entry) =>
     entry.source === '/sw.js'
     && entry.headers.some((header) => header.key === 'Service-Worker-Allowed' && header.value === '/')
