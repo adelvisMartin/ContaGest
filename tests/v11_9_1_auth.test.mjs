@@ -42,7 +42,7 @@ test('CAPTCHA and login controls are responsive and compact', () => {
 
 test('PWA identifies v11.12 and never caches authentication APIs', () => {
   const manifest = JSON.parse(read('frontend/manifest.webmanifest'));
-  const worker = read('frontend/sw.js');
+  const worker = read('frontend/public/sw.js');
   assert.equal(manifest.display, 'standalone');
   assert.equal(manifest.scope, '/');
   assert.match(worker, /contagest-ve-v11-12-0/);
