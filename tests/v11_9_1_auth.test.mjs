@@ -45,7 +45,7 @@ test('PWA identifies v11.12 and never caches authentication APIs', () => {
   const worker = read('frontend/public/sw.js');
   assert.equal(manifest.display, 'standalone');
   assert.equal(manifest.scope, '/');
-  assert.match(worker, /contagest-ve-v11-12-0/);
+  assert.match(worker, /contagest-ve-v11-12-1/);
   assert.match(worker, /url\.pathname\.startsWith\('\/api\/'\)/);
   assert.match(worker, /request\.mode === 'navigate'/);
 });
