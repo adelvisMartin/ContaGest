@@ -1,12 +1,13 @@
 const VERSION = '11.12.0';
 
-export default function healthHandler(_request: unknown, response: any) {
+export default function statusHandler(_request: unknown, response: any) {
   response.setHeader('Cache-Control', 'no-store');
   response.status(200).json({
     ok: true,
     status: 'healthy',
     service: 'ContaGest-VE API',
     version: VERSION,
+    buildCommit: process.env.VERCEL_GIT_COMMIT_SHA || null,
     runtime: 'vercel-node',
     timestamp: new Date().toISOString()
   });

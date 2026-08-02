@@ -1,5 +1,5 @@
-const CACHE = 'contagest-ve-v11-12-0';
-const APP_SHELL = ['/', '/index.html', '/manifest.webmanifest', '/assets/img/logo.png', '/assets/img/contagest-logo.svg'];
+const CACHE = 'contagest-ve-v11-12-1';
+const APP_SHELL = ['/', '/index.html'];
 
 self.addEventListener('install', (event) => {
   self.skipWaiting();
