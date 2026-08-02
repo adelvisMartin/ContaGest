@@ -19,7 +19,7 @@ import { QueryParamEnhancer } from './services/queryParamEnhancer.js';
 
 import { ModuleRuntimePage } from './pages/ModuleRuntimePage.js';
 
-const pageModules = import.meta.glob(['./pages/*Page.js', './pages/*Page.jsx']);
+const pageModules = import.meta.glob(['./pages/*Page.js', './pages/*Page.jsx', '!./pages/ModuleRuntimePage.js']);
 const pageRegistry = {
   dashboard:['./pages/DashboardPage.js','DashboardPage'],
   cotizacion:['./pages/QuotePage.js','QuotePage'],
@@ -367,4 +367,3 @@ setTimeout(autoRefreshBcvOnce,700);
 if('serviceWorker' in navigator){const local=['localhost','127.0.0.1'].includes(location.hostname);window.addEventListener('load',()=>{if(local){navigator.serviceWorker.getRegistrations?.().then((items)=>items.forEach((item)=>item.unregister())).catch(()=>null);window.caches?.keys?.().then((keys)=>keys.forEach((key)=>caches.delete(key))).catch(()=>null);}else navigator.serviceWorker.register('./sw.js').catch(()=>null);});}
 window.addEventListener('error',(event)=>console.error('[ContaGest Runtime]',event.error||event.message));
 window.addEventListener('unhandledrejection',(event)=>console.error('[ContaGest Promise]',event.reason));
-
