@@ -131,7 +131,7 @@ test('deep links preserve module context and support entity selection', () => {
 
 test('Vercel sends browser security headers and v11.12 health metadata', () => {
   const vercel = read('frontend/vercel.json');
-  const health = read('frontend/api/health.ts');
+  const health = read('frontend/api/status.ts');
   assert.match(vercel, /Content-Security-Policy/);
   assert.match(vercel, /X-Frame-Options/);
   assert.match(vercel, /Permissions-Policy/);
