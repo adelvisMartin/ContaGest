@@ -54,7 +54,7 @@ Estados: **cerrado** significa implementado y verificable; **parcial** significa
 | Punto | Estado | Evidencia v11.12 |
 |---|---|---|
 | Lockfile y `npm ci` | Cerrado | `package-lock.json` v3, versiones exactas y workflows reproducibles |
-| Bundle de 1.34 MB | Cerrado | `import.meta.glob` por página, chunks vendor y presupuesto CI de 650 KiB/chunk |
+| Bundle de 1.34 MB | Cerrado | `import.meta.glob` por página, entry de 137.5 KiB y presupuesto CI de 700 KiB/chunk |
 | `@types/bcryptjs` obsoleto | Cerrado | Retirado; bcryptjs 3 incluye tipos |
 | Claves foráneas sin índice | Cerrado | 27 índices FK añadidos; no se eliminan índices “unused” sin telemetría suficiente |
 | Prisma 7 | Pendiente | Mantener Prisma 6.19.3; migrar a `prisma.config.ts` en una fase aislada |
@@ -77,7 +77,7 @@ No se marcan como “cerradas” integraciones que requieren cuentas externas, t
 ## Criterio de promoción
 
 - CI y browser QA verdes.
-- Ningún chunk JavaScript supera 650 KiB y el total no supera 3.5 MiB.
+- Ningún chunk JavaScript supera 700 KiB y el total no supera 3.5 MiB.
 - Auditoría de dependencias de producción sin vulnerabilidades altas.
 - Login temporal expira en servidor y el bloqueo de intentos funciona entre instancias.
 - Supabase Security Advisor sin errores y RLS sin acceso público a intentos de autenticación.

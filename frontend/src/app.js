@@ -352,7 +352,11 @@ async function render({force=false}={}) {
     lastShellSignature=signature;
   }finally{
     rendering=false;
-    if(renderPending){renderPending=false;queueMicrotask(()=>render().catch((error)=>console.error('[ContaGest Render]',error)));}
+    if(renderPending){
+      renderPending=false;
+      const pendingRoute=Store.get().route||'dashboard';
+      if(pendingRoute!==lastRoute)queueMicrotask(()=>render().catch((error)=>console.error('[ContaGest Render]',error)));
+    }
   }
 }
 

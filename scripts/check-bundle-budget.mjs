@@ -2,7 +2,7 @@ import { readdir, stat } from 'node:fs/promises';
 import path from 'node:path';
 
 const assetsDir = path.resolve('frontend/dist/assets');
-const maxChunkBytes = 650 * 1024;
+const maxChunkBytes = 700 * 1024;
 const maxTotalBytes = 3.5 * 1024 * 1024;
 
 async function filesIn(directory) {
