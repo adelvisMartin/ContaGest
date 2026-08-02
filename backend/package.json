@@ -1,11 +1,15 @@
 {
   "name": "contagest-ve-backend",
-  "version": "11.11.0",
+  "version": "11.12.0",
   "type": "module",
   "private": true,
   "main": "./src/app.ts",
-  "exports": { ".": "./src/app.ts" },
-  "engines": { "node": "22.x" },
+  "exports": {
+    ".": "./src/app.ts"
+  },
+  "engines": {
+    "node": "22.x"
+  },
   "description": "Backend ContaGest-VE Enterprise con RBAC, licencias, MFA, Prisma/Supabase, verticales clínicas y endurecimiento operativo.",
   "scripts": {
     "dev": "tsx watch src/server.ts",
@@ -37,36 +41,38 @@
     "seed:clean": "tsx prisma/seed.ts --clean-demo"
   },
   "dependencies": {
-    "@prisma/client": "6",
-    "@supabase/supabase-js": "latest",
-    "bcryptjs": "latest",
-    "bwip-js": "latest",
-    "cors": "latest",
-    "dotenv": "latest",
-    "exceljs": "latest",
-    "express": "latest",
-    "express-rate-limit": "latest",
-    "helmet": "latest",
-    "jsonwebtoken": "latest",
-    "morgan": "latest",
-    "pdfkit": "latest",
-    "pg": "latest",
-    "pino": "latest",
-    "prisma": "6",
-    "qrcode": "latest",
-    "zod": "latest"
+    "@prisma/client": "6.19.3",
+    "@supabase/supabase-js": "2.111.0",
+    "bcryptjs": "3.0.3",
+    "bwip-js": "4.11.2",
+    "cors": "2.8.6",
+    "dotenv": "17.4.2",
+    "exceljs": "4.4.0",
+    "express": "5.2.1",
+    "express-rate-limit": "8.6.1",
+    "helmet": "8.3.0",
+    "jsonwebtoken": "9.0.3",
+    "morgan": "1.11.0",
+    "pdfkit": "0.19.1",
+    "pg": "8.22.0",
+    "pino": "10.3.1",
+    "prisma": "6.19.3",
+    "qrcode": "1.5.4",
+    "zod": "4.4.3"
   },
   "devDependencies": {
-    "@types/bcryptjs": "latest",
-    "@types/cors": "latest",
-    "@types/express": "latest",
-    "@types/jsonwebtoken": "latest",
-    "@types/node": "latest",
-    "@types/pdfkit": "latest",
-    "@types/pg": "latest",
-    "@types/qrcode": "latest",
-    "tsx": "latest",
+    "@types/cors": "2.8.19",
+    "@types/express": "5.0.6",
+    "@types/jsonwebtoken": "9.0.10",
+    "@types/node": "22.20.1",
+    "@types/pdfkit": "0.17.6",
+    "@types/pg": "8.20.3",
+    "@types/qrcode": "1.5.6",
+    "tsx": "4.23.4",
     "typescript": "5.9.3"
   },
-  "prisma": { "seed": "tsx prisma/seed.ts" }
+  "prisma": {
+    "seed": "tsx prisma/seed.ts"
+  }
 }
+

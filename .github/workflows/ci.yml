@@ -34,7 +34,7 @@ jobs:
           node-version: 22
 
       - name: Install
-        run: npm install --no-audit --no-fund
+        run: npm ci --no-audit --no-fund
 
       - name: Prisma schema
         run: npm --workspace backend run db:validate
@@ -51,6 +51,9 @@ jobs:
       - name: Backend build
         run: npm run build:backend
 
+      - name: Bundle budget
+        run: npm run check:bundle
+
       - name: Production dependency audit
-        continue-on-error: true
         run: npm run audit:prod
+

@@ -125,20 +125,26 @@ function slugId(value = 'demo') {
 }
 
 
+function sanitizeUser(user = {}) {
+  const copy = { ...user };
+  delete copy.password;
+  return copy;
+}
+
 function buildUsers() {
   return [
-    { id:'user-admin', fullName:'Admin Principal', email:'admin@empresa.com', roleId:'role-admin', status:'active', demo:false, maxModules:999, demoExpiresAt:null, password:'demo1234' },
-    { id:'user-gerente', fullName:'Gabriel Gerente', email:'gerente@empresa.com', roleId:'role-gerente', status:'active', demo:false, maxModules:30, demoExpiresAt:null, password:'demo1234' },
-    { id:'user-contador', fullName:'María Contador', email:'contador@empresa.com', roleId:'role-contador', status:'active', demo:false, maxModules:18, demoExpiresAt:null, password:'demo1234' },
-    { id:'user-tesoreria', fullName:'Teresa Finanzas', email:'tesoreria@empresa.com', roleId:'role-tesoreria', status:'active', demo:false, maxModules:10, demoExpiresAt:null, password:'demo1234' },
-    { id:'user-ventas', fullName:'Carlos Ventas', email:'ventas@empresa.com', roleId:'role-vendedor', status:'active', demo:false, maxModules:9, demoExpiresAt:null, password:'demo1234' },
-    { id:'user-inventario', fullName:'Ana Inventario', email:'inventario@empresa.com', roleId:'role-inventario', status:'active', demo:false, maxModules:7, demoExpiresAt:null, password:'demo1234' },
-    { id:'user-compras', fullName:'Pedro Compras', email:'compras@empresa.com', roleId:'role-compras', status:'active', demo:false, maxModules:7, demoExpiresAt:null, password:'demo1234' },
-    { id:'user-rrhh', fullName:'Laura RRHH', email:'rrhh@empresa.com', roleId:'role-rrhh', status:'active', demo:false, maxModules:5, demoExpiresAt:null, password:'demo1234' },
-    { id:'user-auditor', fullName:'Alejandra Auditoría', email:'auditor@empresa.com', roleId:'role-auditor', status:'active', demo:false, maxModules:7, demoExpiresAt:null, password:'demo1234' },
-    { id:'user-soporte', fullName:'Samuel Soporte', email:'soporte@empresa.com', roleId:'role-soporte', status:'active', demo:false, maxModules:7, demoExpiresAt:null, password:'demo1234' },
-    { id:'user-demo', fullName:'Usuario Demo Comercial', email:'demo@empresa.com', roleId:'role-demo', status:'active', demo:true, maxModules:7, demoExpiresAt:daysFromNow(14), password:'demo1234' },
-    { id:'user-readonly-demo', fullName:'Prospecto Solo Lectura', email:'lectura@empresa.com', roleId:'role-lectura', status:'active', demo:true, maxModules:4, demoExpiresAt:daysFromNow(7), password:'demo1234' }
+    { id:'user-admin', fullName:'Admin Principal', email:'admin@empresa.com', roleId:'role-admin', status:'active', demo:false, maxModules:999, demoExpiresAt:null },
+    { id:'user-gerente', fullName:'Gabriel Gerente', email:'gerente@empresa.com', roleId:'role-gerente', status:'active', demo:false, maxModules:30, demoExpiresAt:null },
+    { id:'user-contador', fullName:'María Contador', email:'contador@empresa.com', roleId:'role-contador', status:'active', demo:false, maxModules:18, demoExpiresAt:null },
+    { id:'user-tesoreria', fullName:'Teresa Finanzas', email:'tesoreria@empresa.com', roleId:'role-tesoreria', status:'active', demo:false, maxModules:10, demoExpiresAt:null },
+    { id:'user-ventas', fullName:'Carlos Ventas', email:'ventas@empresa.com', roleId:'role-vendedor', status:'active', demo:false, maxModules:9, demoExpiresAt:null },
+    { id:'user-inventario', fullName:'Ana Inventario', email:'inventario@empresa.com', roleId:'role-inventario', status:'active', demo:false, maxModules:7, demoExpiresAt:null },
+    { id:'user-compras', fullName:'Pedro Compras', email:'compras@empresa.com', roleId:'role-compras', status:'active', demo:false, maxModules:7, demoExpiresAt:null },
+    { id:'user-rrhh', fullName:'Laura RRHH', email:'rrhh@empresa.com', roleId:'role-rrhh', status:'active', demo:false, maxModules:5, demoExpiresAt:null },
+    { id:'user-auditor', fullName:'Alejandra Auditoría', email:'auditor@empresa.com', roleId:'role-auditor', status:'active', demo:false, maxModules:7, demoExpiresAt:null },
+    { id:'user-soporte', fullName:'Samuel Soporte', email:'soporte@empresa.com', roleId:'role-soporte', status:'active', demo:false, maxModules:7, demoExpiresAt:null },
+    { id:'user-demo', fullName:'Usuario Demo Comercial', email:'demo@empresa.com', roleId:'role-demo', status:'active', demo:true, maxModules:7, demoExpiresAt:daysFromNow(14) },
+    { id:'user-readonly-demo', fullName:'Prospecto Solo Lectura', email:'lectura@empresa.com', roleId:'role-lectura', status:'active', demo:true, maxModules:4, demoExpiresAt:daysFromNow(7) }
   ];
 }
 
@@ -166,7 +172,7 @@ export const AccessControlService = {
     const mergedUsers = [
       ...base.users.map((baseUser) => ({ ...baseUser, ...(savedUsers.find((user) => user.id === baseUser.id) || {}) })),
       ...savedUsers.filter((user) => !base.users.some((baseUser) => baseUser.id === user.id))
-    ];
+    ].map(sanitizeUser);
     return { ...base, ...rbac, roles: mergedRoles, users: mergedUsers };
   },
   activeUser(state) {
@@ -252,10 +258,9 @@ export const AccessControlService = {
       status: data.status || existing?.status || 'active',
       demo: true,
       maxModules,
-      demoExpiresAt: data.demoExpiresAt || daysFromNow(days),
-      password: data.password || existing?.password || 'demo1234'
+      demoExpiresAt: data.demoExpiresAt || daysFromNow(days)
     };
-    rbac.users = [user, ...rbac.users.filter((item) => item.id !== user.id && String(item.email).toLowerCase() !== String(user.email).toLowerCase())];
+    rbac.users = [user, ...rbac.users.filter((item) => item.id !== user.id && String(item.email).toLowerCase() !== String(user.email).toLowerCase())].map(sanitizeUser);
     rbac.activeUserId = data.activate ? user.id : rbac.activeUserId;
     rbac.audit = [{ at:new Date().toISOString(), action: existing ? 'update-demo-user' : 'create-demo-user', userId:user.id, email:user.email, maxModules }, ...(rbac.audit || [])].slice(0, 60);
     return rbac;
@@ -273,10 +278,9 @@ export const AccessControlService = {
         status: data.status ?? user.status,
         maxModules: data.maxModules !== undefined ? Number(data.maxModules) : user.maxModules,
         demo: data.demo !== undefined ? Boolean(data.demo) : user.demo,
-        demoExpiresAt: days !== undefined ? daysFromNow(Number(days)) : (data.demoExpiresAt ?? user.demoExpiresAt),
-        password: data.password || user.password
+        demoExpiresAt: days !== undefined ? daysFromNow(Number(days)) : (data.demoExpiresAt ?? user.demoExpiresAt)
       };
-    });
+    }).map(sanitizeUser);
     rbac.audit = [{ at:new Date().toISOString(), action:'edit-user', userId, data:Object.keys(data) }, ...(rbac.audit || [])].slice(0, 60);
     return rbac;
   },
@@ -284,3 +288,4 @@ export const AccessControlService = {
     return MODULE_CATALOG_ACCESS.find((item) => item.route === route)?.permission || 'modules.manage';
   }
 };
+

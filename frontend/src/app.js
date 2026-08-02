@@ -17,79 +17,81 @@ import { AccessControlService } from './services/accessControlService.js';
 import { UrlStateService } from './services/urlStateService.js';
 import { QueryParamEnhancer } from './services/queryParamEnhancer.js';
 
-import { DashboardPage } from './pages/DashboardPage.js';
-import { QuotePage } from './pages/QuotePage.js';
-import { ClientsPage } from './pages/ClientsPage.js';
-import { SalesPage } from './pages/SalesPage.js';
-import { InventoryPage } from './pages/InventoryPage.js';
-import { TaxesPage } from './pages/TaxesPage.js';
-import { RegulatoryPage } from './pages/RegulatoryPage.js';
-import { HistoryPage } from './pages/HistoryPage.js';
-import { ReportsPage } from './pages/ReportsPage.js';
-import { LedgerPage } from './pages/LedgerPage.js';
-import { BankingPage } from './pages/BankingPage.js';
-import { PayrollPage } from './pages/PayrollPage.js';
-import { SuppliersPage } from './pages/SuppliersPage.js';
-import { PurchasesPage } from './pages/PurchasesPage.js';
-import { AuditPage } from './pages/AuditPage.js';
-import { SettingsPage } from './pages/SettingsPage.js';
-import { HelpPage } from './pages/HelpPage.js';
-import { TasksPage } from './pages/TasksPage.js';
-import { ProfilePage } from './pages/ProfilePage.js';
-import { MobilePreviewPage } from './pages/MobilePreviewPage.js';
-import { SalesBookPage } from './pages/SalesBookPage.js';
-import { BrandGuidelinesPage } from './pages/BrandGuidelinesPage.js';
-import { AdminPanelPage } from './pages/AdminPanelPage.js';
-import { BackendPage } from './pages/BackendPage.js';
-import { ModuleCatalogPage } from './pages/ModuleCatalogPage.js';
 import { ModuleRuntimePage } from './pages/ModuleRuntimePage.js';
-import { LoginPage } from './pages/LoginPage.js';
-import { ChartAccountsPage } from './pages/ChartAccountsPage.js';
-import { HrDashboardPage } from './pages/HrDashboardPage.js';
-import { AnalyticsPage } from './pages/AnalyticsPage.js';
-import { QrBarcodePage } from './pages/QrBarcodePage.js';
-import { InventoryScannerPage } from './pages/InventoryScannerPage.js';
-import { FoodOrdersPage } from './pages/FoodOrdersPage.js';
-import { FastFoodPosPage } from './pages/FastFoodPosPage.js';
-import { OrderTrackingPage } from './pages/OrderTrackingPage.js';
-import { DeliveryMapPage } from './pages/DeliveryMapPage.js';
-import { AiAssistantPage } from './pages/AiAssistantPage.js';
-import { SupportCtaPage } from './pages/SupportCtaPage.js';
-import { DemoControlPage } from './pages/DemoControlPage.js';
-import { ModuleMaturityPage } from './pages/ModuleMaturityPage.js';
-import { BusinessRulesPage } from './pages/BusinessRulesPage.js';
-import { LicensesPage } from './pages/LicensesPage.js';
-import { DataImportPage } from './pages/DataImportPage.js';
-import { KardexPage } from './pages/KardexPage.js';
-import { AccountingStandardsPage } from './pages/AccountingStandardsPage.js';
-import { PretestingDashboardPage } from './pages/PretestingDashboardPage.js';
-import { GeneralLedgerPage } from './pages/GeneralLedgerPage.js';
-import { TrialBalancePage } from './pages/TrialBalancePage.js';
-import { WorksheetPage } from './pages/WorksheetPage.js';
-import { FinancialStatementsPage } from './pages/FinancialStatementsPage.js';
-import { AccountingClosePage } from './pages/AccountingClosePage.js';
-import { HealthcarePage } from './pages/HealthcarePage.js';
-import { VeterinaryClinicPage } from './pages/VeterinaryClinicPage.jsx';
-import { GymManagementPage } from './pages/GymManagementPage.js';
-import { CommunicationTemplatesPage } from './pages/CommunicationTemplatesPage.js';
 
-const pages = {
-  dashboard:DashboardPage, cotizacion:QuotePage, clientes:ClientsPage, ventas:SalesPage, inventario:InventoryPage,
-  tributos:TaxesPage, normativa:RegulatoryPage, historial:HistoryPage, reportes:ReportsPage, contabilidad:LedgerPage,
-  'libro-mayor':GeneralLedgerPage, 'balance-sumas-saldos':TrialBalancePage, 'hoja-trabajo':WorksheetPage,
-  'estados-financieros':FinancialStatementsPage, 'cierre-contable':AccountingClosePage, bancos:BankingPage,
-  nomina:PayrollPage, proveedores:SuppliersPage, compras:PurchasesPage, auditoria:AuditPage,
-  configuracion:SettingsPage, ayuda:HelpPage, tasks:TasksPage, profile:ProfilePage, mobile:MobilePreviewPage,
-  'libro-ventas':SalesBookPage, marca:BrandGuidelinesPage, admin:AdminPanelPage, backend:BackendPage,
-  vistas:ModuleCatalogPage, login:LoginPage, 'plan-cuentas':ChartAccountsPage, rrhh:HrDashboardPage,
-  analytics:AnalyticsPage, qr:QrBarcodePage, 'inventario-scan':InventoryScannerPage, pedidos:FoodOrdersPage,
-  'pos-sede':FastFoodPosPage, 'tracking-pedidos':OrderTrackingPage, 'delivery-mapa':DeliveryMapPage,
-  'asistente-ia':AiAssistantPage, soporte:SupportCtaPage, 'demo-control':DemoControlPage,
-  'modulos-madurez':ModuleMaturityPage, 'reglas-negocio':BusinessRulesPage, licencias:LicensesPage,
-  'importacion-data':DataImportPage, kardex:KardexPage, 'normativa-contable':AccountingStandardsPage,
-  pretesting:PretestingDashboardPage, salud:HealthcarePage, veterinaria:VeterinaryClinicPage,
-  gimnasio:GymManagementPage, rutinas:GymManagementPage, nutricion:GymManagementPage, mensajes:CommunicationTemplatesPage
+const pageModules = import.meta.glob(['./pages/*Page.js', './pages/*Page.jsx', '!./pages/ModuleRuntimePage.js']);
+const pageRegistry = {
+  dashboard:['./pages/DashboardPage.js','DashboardPage'],
+  cotizacion:['./pages/QuotePage.js','QuotePage'],
+  clientes:['./pages/ClientsPage.js','ClientsPage'],
+  ventas:['./pages/SalesPage.js','SalesPage'],
+  inventario:['./pages/InventoryPage.js','InventoryPage'],
+  tributos:['./pages/TaxesPage.js','TaxesPage'],
+  normativa:['./pages/RegulatoryPage.js','RegulatoryPage'],
+  historial:['./pages/HistoryPage.js','HistoryPage'],
+  reportes:['./pages/ReportsPage.js','ReportsPage'],
+  contabilidad:['./pages/LedgerPage.js','LedgerPage'],
+  'libro-mayor':['./pages/GeneralLedgerPage.js','GeneralLedgerPage'],
+  'balance-sumas-saldos':['./pages/TrialBalancePage.js','TrialBalancePage'],
+  'hoja-trabajo':['./pages/WorksheetPage.js','WorksheetPage'],
+  'estados-financieros':['./pages/FinancialStatementsPage.js','FinancialStatementsPage'],
+  'cierre-contable':['./pages/AccountingClosePage.js','AccountingClosePage'],
+  bancos:['./pages/BankingPage.js','BankingPage'],
+  nomina:['./pages/PayrollPage.js','PayrollPage'],
+  proveedores:['./pages/SuppliersPage.js','SuppliersPage'],
+  compras:['./pages/PurchasesPage.js','PurchasesPage'],
+  auditoria:['./pages/AuditPage.js','AuditPage'],
+  configuracion:['./pages/SettingsPage.js','SettingsPage'],
+  ayuda:['./pages/HelpPage.js','HelpPage'],
+  tasks:['./pages/TasksPage.js','TasksPage'],
+  profile:['./pages/ProfilePage.js','ProfilePage'],
+  mobile:['./pages/MobilePreviewPage.js','MobilePreviewPage'],
+  'libro-ventas':['./pages/SalesBookPage.js','SalesBookPage'],
+  marca:['./pages/BrandGuidelinesPage.js','BrandGuidelinesPage'],
+  admin:['./pages/AdminPanelPage.js','AdminPanelPage'],
+  backend:['./pages/BackendPage.js','BackendPage'],
+  vistas:['./pages/ModuleCatalogPage.js','ModuleCatalogPage'],
+  login:['./pages/LoginPage.js','LoginPage'],
+  'plan-cuentas':['./pages/ChartAccountsPage.js','ChartAccountsPage'],
+  rrhh:['./pages/HrDashboardPage.js','HrDashboardPage'],
+  analytics:['./pages/AnalyticsPage.js','AnalyticsPage'],
+  qr:['./pages/QrBarcodePage.js','QrBarcodePage'],
+  'inventario-scan':['./pages/InventoryScannerPage.js','InventoryScannerPage'],
+  pedidos:['./pages/FoodOrdersPage.js','FoodOrdersPage'],
+  'pos-sede':['./pages/FastFoodPosPage.js','FastFoodPosPage'],
+  'tracking-pedidos':['./pages/OrderTrackingPage.js','OrderTrackingPage'],
+  'delivery-mapa':['./pages/DeliveryMapPage.js','DeliveryMapPage'],
+  'asistente-ia':['./pages/AiAssistantPage.js','AiAssistantPage'],
+  soporte:['./pages/SupportCtaPage.js','SupportCtaPage'],
+  'demo-control':['./pages/DemoControlPage.js','DemoControlPage'],
+  'modulos-madurez':['./pages/ModuleMaturityPage.js','ModuleMaturityPage'],
+  'reglas-negocio':['./pages/BusinessRulesPage.js','BusinessRulesPage'],
+  licencias:['./pages/LicensesPage.js','LicensesPage'],
+  'importacion-data':['./pages/DataImportPage.js','DataImportPage'],
+  kardex:['./pages/KardexPage.js','KardexPage'],
+  'normativa-contable':['./pages/AccountingStandardsPage.js','AccountingStandardsPage'],
+  pretesting:['./pages/PretestingDashboardPage.js','PretestingDashboardPage'],
+  salud:['./pages/HealthcarePage.js','HealthcarePage'],
+  veterinaria:['./pages/VeterinaryClinicPage.jsx','VeterinaryClinicPage'],
+  gimnasio:['./pages/GymManagementPage.js','GymManagementPage'],
+  rutinas:['./pages/GymManagementPage.js','GymManagementPage'],
+  nutricion:['./pages/GymManagementPage.js','GymManagementPage'],
+  mensajes:['./pages/CommunicationTemplatesPage.js','CommunicationTemplatesPage']
 };
+const loadedPages = new Map();
+
+async function loadPage(route) {
+  if (loadedPages.has(route)) return loadedPages.get(route);
+  const definition = pageRegistry[route];
+  if (!definition) return null;
+  const importer = pageModules[definition[0]];
+  if (!importer) throw new Error(`No se encontró el módulo de ruta: ${route}`);
+  const module = await importer();
+  const page = module[definition[1]];
+  if (!page) throw new Error(`El módulo ${definition[0]} no exporta ${definition[1]}`);
+  loadedPages.set(route, page);
+  return page;
+}
 
 const CORE_LICENSE_ROUTES = new Set(['dashboard','profile','ayuda','soporte','login']);
 const REACT_MANAGED_ROUTES = new Set(['veterinaria']);
@@ -106,6 +108,7 @@ AccessControlService.canAccessRoute = (state, route) => {
 
 const app = document.getElementById('app');
 let rendering = false;
+let renderPending = false;
 let autoBcvStarted = false;
 let globalKeysBound = false;
 let lastRoute = null;
@@ -113,12 +116,13 @@ let mountedPage = null;
 let lastShellSignature = '';
 const lastAutoSyncByRoute = new Map();
 
-function resolvePage(route) {
-  if (pages[route]) return { page:pages[route], route };
+async function resolvePage(route) {
+  const page = await loadPage(route);
+  if (page) return { page, route };
   if (String(route || '').startsWith('stitch-')) {
     return { page:{ render:(state)=>ModuleRuntimePage.render(state,route), mount:(state,context)=>ModuleRuntimePage.mount(state,context,route) }, route };
   }
-  return { page:pages.dashboard, route:'dashboard' };
+  return { page:await loadPage('dashboard'), route:'dashboard' };
 }
 
 function shellSignature(state, route) {
@@ -171,7 +175,7 @@ window.addEventListener('cg:navigate', (event) => {
   denyNavigation();
 }, true);
 
-UrlStateService.bootstrap({ Store, routes:Object.keys(pages) });
+UrlStateService.bootstrap({ Store, routes:Object.keys(pageRegistry) });
 
 function enhanceHorizontalScroll() {
   document.querySelectorAll('.table-wrap,.pl-table-wrap,.ds-table-wrap,.cgv-table-shell').forEach((wrap) => {
@@ -302,8 +306,8 @@ function createPageContext(state, route) {
   return { Store,Toast,Modal,Loading,navigate,render,SupabaseSyncService,AccessControlService,MuiRuntime,UrlStateService,query:UrlStateService.getParams(),state:{...state,route} };
 }
 
-function render({force=false}={}) {
-  if(rendering)return;
+async function render({force=false}={}) {
+  if(rendering){renderPending=true;return;}
   rendering=true;
   try{
     const state=Store.get();
@@ -314,7 +318,7 @@ function render({force=false}={}) {
       return;
     }
     const effectiveRoute=!AuthService.isAuthenticated()&&requestedRoute!=='login'?'login':requestedRoute;
-    const {page,route}=resolvePage(effectiveRoute);
+    const {page,route}=await resolvePage(effectiveRoute);
     const signature=shellSignature(state,route);
     const preserve=!force&&route===lastRoute&&page===mountedPage&&REACT_MANAGED_ROUTES.has(route)&&signature===lastShellSignature&&document.getElementById('veterinaryClinicRoot');
     applyTheme(state.settings?.theme||'light');
@@ -346,13 +350,20 @@ function render({force=false}={}) {
     lastRoute=route;
     mountedPage=page;
     lastShellSignature=signature;
-  }finally{rendering=false;}
+  }finally{
+    rendering=false;
+    if(renderPending){
+      renderPending=false;
+      const pendingRoute=Store.get().route||'dashboard';
+      if(pendingRoute!==lastRoute)queueMicrotask(()=>render().catch((error)=>console.error('[ContaGest Render]',error)));
+    }
+  }
 }
 
-Store.subscribe(()=>render());
+Store.subscribe(()=>render().catch((error)=>console.error('[ContaGest Render]',error)));
 window.addEventListener('cg:loading',(event)=>event.detail?.active?Loading.mount(event.detail.message):Loading.unmount());
 AnalyticsService.startSession();
-render({force:true});
+render({force:true}).catch((error)=>console.error('[ContaGest Bootstrap]',error));
 
 async function autoRefreshBcvOnce(){if(autoBcvStarted)return;autoBcvStarted=true;const state=Store.get();if(!BcvService.shouldRefresh(state.bcv))return;try{Store.set({bcv:await BcvService.fetchRate({preferCache:true,allowStale:true})});}catch(error){console.warn('[ContaGest BCV]',error);}}
 setTimeout(autoRefreshBcvOnce,700);

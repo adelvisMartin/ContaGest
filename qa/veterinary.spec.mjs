@@ -213,8 +213,10 @@ test('pretesting legacy hero uses the compact global density layer', async ({ pa
   await installApiMocks(page);
   await page.goto('/?module=pretesting',{waitUntil:'domcontentloaded'});
   await expect(page.locator('.pretest-hero h2')).toBeVisible();
-  const size=await page.locator('.pretest-hero h2').evaluate((node)=>Number.parseFloat(getComputedStyle(node).fontSize));
-  expect(size).toBeLessThanOrEqual(37);
+  await expect.poll(
+    async () => page.locator('.pretest-hero h2').evaluate((node)=>Number.parseFloat(getComputedStyle(node).fontSize)),
+    { message:'El hero debe conservar una tipografía compacta después de la carga diferida.' }
+  ).toBeLessThanOrEqual(37);
   await expectNoPageOverflow(page);
   await page.screenshot({path:'test-results/screenshots/pretesting-desktop.png',fullPage:true});
 });
