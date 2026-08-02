@@ -15,7 +15,7 @@ const requiredFiles = [
   'backend/src/shared/middleware/context.ts',
   'backend/src/modules/auth/auth.routes.ts',
   'api/health.ts',
-  'frontend/api/health.ts',
+  'frontend/api/status.ts',
   'vercel.json',
   'frontend/vercel.json'
 ];
