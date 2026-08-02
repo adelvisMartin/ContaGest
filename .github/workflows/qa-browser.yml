@@ -22,7 +22,7 @@ jobs:
           node-version: 22
 
       - name: Install dependencies
-        run: npm install
+        run: npm ci --no-audit --no-fund
 
       - name: Install Chromium
         run: npx playwright install --with-deps chromium
@@ -34,9 +34,10 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: contagest-v11-10-browser-qa
+          name: contagest-v11-12-browser-qa
           path: |
             test-results
             playwright-report
           if-no-files-found: warn
           retention-days: 14
+

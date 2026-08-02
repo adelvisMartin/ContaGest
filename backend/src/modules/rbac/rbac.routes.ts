@@ -3,8 +3,10 @@ import { z } from 'zod';
 import bcrypt from 'bcryptjs';
 import { prisma } from '../../database/prisma.js';
 import { asyncHandler, HttpError, ok } from '../../shared/http.js';
+import { requireTenant, requirePermission } from '../../shared/middleware/context.js';
 
 const router = Router();
+router.use(requireTenant, requirePermission('admin.manage'));
 
 const MODULE_PERMISSIONS = [
   ['dashboard.view', 'Dashboard'], ['clients.manage', 'Clientes'], ['sales.manage', 'Ventas'], ['sales.view', 'Consulta ventas'],
@@ -120,7 +122,7 @@ async function buildSummary(tenantId: string) {
   ]);
   return {
     roles: roles.map((role) => ({ id: role.id, name: role.name, description: role.description, system: role.system, permissions: role.permissions.map((rp) => rp.permission.key), users: role.users.map((ur) => ur.user.email) })),
-    users: users.map((user) => ({ id: user.id, email: user.email, fullName: user.fullName, status: user.status, roles: user.userRoles.map((ur) => ur.role.name) })),
+    users: users.map((user) => ({ id: user.id, email: user.email, fullName: user.fullName, status: user.status, accessExpiresAt:user.accessExpiresAt, roles: user.userRoles.map((ur) => ur.role.name) })),
     demos: demos.map((demo) => ({ id: demo.id, prospect: demo.prospect, email: demo.email, enabledModules: demo.enabledModules, expiresAt: demo.expiresAt, maxUsers: demo.maxUsers, status: demo.status }))
   };
 }
@@ -135,7 +137,7 @@ const demoUserSchema = z.object({
   id: z.string().optional(),
   fullName: z.string().min(2),
   email: z.string().email(),
-  password: z.string().min(6).default('demo1234'),
+  password: z.string().min(12).max(128).optional(),
   roleName: z.string().default('Demo limitado'),
   roleId: z.string().optional(),
   days: z.coerce.number().min(1).max(365).default(14),
@@ -159,17 +161,25 @@ async function ensureRoleByName(tenantId: string, roleName: string) {
 
 async function upsertDemoUser(tenantId: string, body: z.infer<typeof demoUserSchema>) {
   const role = await ensureRoleByName(tenantId, body.roleName);
-  const passwordHash = await bcrypt.hash(body.password || 'demo1234', 12);
   const existing = await prisma.userProfile.findUnique({ where: { tenantId_email: { tenantId, email: body.email } } });
+  if(!existing&&!body.password)throw new HttpError(422,'La contraseña temporal es obligatoria al crear el usuario.');
+  const passwordHash = body.password ? await bcrypt.hash(body.password, 12) : undefined;
+  const expiresAt = new Date(Date.now() + body.days * 86400000);
+  const userData = {
+    fullName: body.fullName,
+    email: body.email,
+    status: body.status,
+    accessExpiresAt: expiresAt,
+    ...(passwordHash ? { passwordHash } : {})
+  };
   const user = existing
-    ? await prisma.userProfile.update({ where: { id: existing.id }, data: { fullName: body.fullName, email: body.email, passwordHash, status: body.status } })
-    : await prisma.userProfile.create({ data: { tenantId, email: body.email, fullName: body.fullName, passwordHash, status: body.status } });
+    ? await prisma.userProfile.update({ where: { id: existing.id }, data: userData })
+    : await prisma.userProfile.create({ data: { tenantId, ...userData, passwordHash:passwordHash! } });
 
   await prisma.userRole.deleteMany({ where: { userId: user.id } });
   await prisma.userRole.create({ data: { userId: user.id, roleId: role.id } });
 
   const enabledModules = ROLE_BLUEPRINTS.find((item) => item.name === body.roleName)?.permissions || ['dashboard.view','clients.manage','sales.view'];
-  const expiresAt = new Date(Date.now() + body.days * 86400000);
   await prisma.demoAccess.upsert({
     where: { id: demoAccessId(tenantId, body.email) },
     update: {
@@ -208,6 +218,7 @@ router.put('/roles/:name/permissions', asyncHandler(async (req, res) => {
 
 router.post('/demo-users', asyncHandler(async (req, res) => {
   const body = demoUserSchema.parse(req.body || {});
+  if(!body.password)throw new HttpError(422,'La contraseña temporal es obligatoria.');
   const result = await upsertDemoUser(tenantId(req), body);
   res.status(201).json({ ok: true, data: result, meta: {} });
 }));
@@ -219,3 +230,4 @@ router.put('/demo-users/:idOrEmail', asyncHandler(async (req, res) => {
 }));
 
 export default router;
+

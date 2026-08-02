@@ -104,8 +104,11 @@ export async function startNativeBarcodeScan(video, onDetected) {
 }
 
 export async function startHtml5QrScanner(elementId, onDetected) {
-  if (!window.Html5Qrcode) throw new Error('html5-qrcode no cargó. Usa entrada manual o revisa conexión/CDN.');
-  const scanner = new window.Html5Qrcode(elementId);
+  const library = await import('html5-qrcode');
+  const Html5Qrcode = library.Html5Qrcode || library.default?.Html5Qrcode || library.default;
+  if (!Html5Qrcode) throw new Error('El lector HTML5 QR no está disponible en esta compilación.');
+  const scanner = new Html5Qrcode(elementId);
   await scanner.start({ facingMode: 'environment' }, { fps: 10, qrbox: { width: 250, height: 250 } }, (decodedText) => onDetected(decodedText));
   return () => scanner.stop().catch(() => null);
 }
+

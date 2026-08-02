@@ -11,6 +11,37 @@ import { validateUserLicense } from '../../shared/licensing/licenseGuard.js';
 import { coordinateCardStatus, generateCoordinateCard, issueCoordinateChallenge, revokeCoordinateCard, verifyCoordinateChallenge } from '../../shared/auth/coordinateCard.js';
 
 const router = Router();
+const LOGIN_WINDOW_MS = 15 * 60 * 1000;
+const LOGIN_FAILURE_LIMIT = 5;
+
+function loginIdentity(req:any) {
+  return {
+    tenantRif:String(req.body?.tenantRif || '').trim().toUpperCase(),
+    email:String(req.body?.email || '').trim().toLowerCase(),
+    ipAddress:String(req.ip || 'unknown').slice(0, 120)
+  };
+}
+
+async function assertLoginNotLocked(req:any) {
+  const identity=loginIdentity(req);
+  const failures=await prisma.authLoginAttempt.count({
+    where:{...identity,success:false,createdAt:{gt:new Date(Date.now()-LOGIN_WINDOW_MS)}}
+  });
+  if(failures>=LOGIN_FAILURE_LIMIT)throw new HttpError(429,'Acceso bloqueado temporalmente por intentos fallidos. Intenta nuevamente en 15 minutos.');
+}
+
+async function recordLoginAttempt(req:any,success:boolean) {
+  const identity=loginIdentity(req);
+  await prisma.authLoginAttempt.create({data:{...identity,success}});
+  if(success){
+    await prisma.authLoginAttempt.deleteMany({where:{...identity,success:false}});
+    void prisma.authLoginAttempt.deleteMany({where:{createdAt:{lt:new Date(Date.now()-90*86400000)}}}).catch(()=>undefined);
+  }
+}
+
+function ensureAccessNotExpired(user:{accessExpiresAt?:Date|null}) {
+  if(user.accessExpiresAt&&user.accessExpiresAt.getTime()<=Date.now())throw new HttpError(403,'El acceso temporal venció. Solicita una nueva invitación.');
+}
 
 const captchaFields = { captchaToken:z.string().min(20), captchaAnswer:z.string().min(1).max(10) };
 const registerSchema = z.object({ tenantRif:z.string().min(5), tenantName:z.string().min(2), legalName:z.string().optional(), fullName:z.string().min(2), email:z.string().email(), password:z.string().min(6), plan:z.string().default('enterprise'), ...captchaFields });
@@ -39,7 +70,7 @@ function verifyCaptcha(body:{captchaToken?:string;captchaAnswer?:string}){
   if(!challenge?.exp||Date.now()>Number(challenge.exp))throw new HttpError(422,'Captcha expirado. Actualiza el reto.');
   if(String(Number(challenge.expected))!==String(body.captchaAnswer||'').trim())throw new HttpError(422,'Captcha incorrecto. Verifica la operación.');
 }
-function publicUser(user:any,role='admin'){return{id:user.id,email:user.email,fullName:user.fullName,name:user.fullName,status:user.status,role};}
+function publicUser(user:any,role='admin'){return{id:user.id,email:user.email,fullName:user.fullName,name:user.fullName,status:user.status,role,accessExpiresAt:user.accessExpiresAt||null};}
 function buildSession(user:any,tenant:any,options:{role?:string;license?:any}={}){const token=signAccessToken(user,tenant.id);return{token,tenantId:tenant.id,tenant,user:publicUser(user,options.role||'admin'),license:options.license||null,expiresAt:tokenExpiresAt(token)};}
 
 async function ensureAdminRole(tenantId:string,userId:string){
@@ -54,8 +85,8 @@ async function ensureAdminRole(tenantId:string,userId:string){
 function bearerToken(req:any){const header=String(req.header('authorization')||''),[kind,token]=header.trim().split(/\s+/,2);if(kind?.toLowerCase()!=='bearer'||!token)throw new HttpError(401,'Token requerido.');return token;}
 async function authenticatedSession(req:any){
   let decoded:any;try{decoded=verifyAccessToken(bearerToken(req));}catch{throw new HttpError(401,'Token inválido o expirado.');}
-  const user=await prisma.userProfile.findFirst({where:{id:decoded.sub,tenantId:decoded.tenantId,status:'active'},select:{id:true,tenantId:true,email:true,fullName:true,status:true,tenant:true}});
-  if(!user)throw new HttpError(401,'Usuario no encontrado o deshabilitado.');return{decoded,user};
+  const user=await prisma.userProfile.findFirst({where:{id:decoded.sub,tenantId:decoded.tenantId,status:'active'},select:{id:true,tenantId:true,email:true,fullName:true,status:true,accessExpiresAt:true,tenant:true}});
+  if(!user)throw new HttpError(401,'Usuario no encontrado o deshabilitado.');ensureAccessNotExpired(user);return{decoded,user};
 }
 
 router.get('/captcha',(_req,res)=>ok(res,createCaptchaChallenge()));
@@ -73,9 +104,15 @@ router.post('/register',validateBody(registerSchema),asyncHandler(async(req,res)
 
 router.post('/login',validateBody(loginSchema),asyncHandler(async(req,res)=>{
   verifyCaptcha(req.body);
-  const tenant=await prisma.tenant.findUnique({where:{rif:req.body.tenantRif}});if(!tenant)throw new HttpError(401,'Empresa no encontrada.');
-  const user=await prisma.userProfile.findFirst({where:{tenantId:tenant.id,email:req.body.email,status:'active'},include:{userRoles:{include:{role:true}}}});if(!user)throw new HttpError(401,'Usuario no autorizado para esta empresa.');
-  const valid=user.passwordHash?await bcrypt.compare(req.body.password,user.passwordHash):(!isProd&&req.body.password==='demo1234');if(!valid)throw new HttpError(401,'Contraseña incorrecta.');
+  await assertLoginNotLocked(req);
+  const tenant=await prisma.tenant.findUnique({where:{rif:req.body.tenantRif}});
+  if(!tenant){await recordLoginAttempt(req,false);throw new HttpError(401,'Credenciales incorrectas.');}
+  const user=await prisma.userProfile.findFirst({where:{tenantId:tenant.id,email:req.body.email,status:'active'},include:{userRoles:{include:{role:true}}}});
+  if(!user){await recordLoginAttempt(req,false);throw new HttpError(401,'Credenciales incorrectas.');}
+  ensureAccessNotExpired(user);
+  const valid=Boolean(user.passwordHash)&&await bcrypt.compare(req.body.password,user.passwordHash);
+  if(!valid){await recordLoginAttempt(req,false);throw new HttpError(401,'Credenciales incorrectas.');}
+  await recordLoginAttempt(req,true);
   const systemUser=user.userRoles.some((assignment)=>assignment.role.system);let license=null;
   if(!systemUser){
     if(!req.body.licenseKey||!req.body.deviceId)throw new HttpError(403,'Este usuario requiere licencia y dispositivo autorizado.');
@@ -89,7 +126,7 @@ router.post('/login',validateBody(loginSchema),asyncHandler(async(req,res)=>{
 
 router.post('/login/coordinates',validateBody(coordinateLoginSchema),asyncHandler(async(req,res)=>{
   const verified=await verifyCoordinateChallenge({challengeId:req.body.challengeId,answers:req.body.answers,ip:req.ip,userAgent:req.headers['user-agent']||''});
-  const user=await prisma.userProfile.findFirst({where:{id:verified.userId,tenantId:verified.tenantId,status:'active'},include:{tenant:true,userRoles:{include:{role:true}}}});if(!user)throw new HttpError(401,'Usuario del reto no disponible.');
+  const user=await prisma.userProfile.findFirst({where:{id:verified.userId,tenantId:verified.tenantId,status:'active'},include:{tenant:true,userRoles:{include:{role:true}}}});if(!user)throw new HttpError(401,'Usuario del reto no disponible.');ensureAccessNotExpired(user);
   const context=verified.context as any,systemUser=user.userRoles.some((assignment)=>assignment.role.system);
   ok(res,buildSession(user,user.tenant,{role:context.role|| (systemUser?'admin':'client'),license:context.license||null}));
 }));

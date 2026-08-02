@@ -1,4 +1,4 @@
-const CACHE = 'contagest-ve-v11-9-1';
+const CACHE = 'contagest-ve-v11-12-0';
 const APP_SHELL = ['/', '/index.html', '/manifest.webmanifest', '/assets/img/logo.png', '/assets/img/contagest-logo.svg'];
 
 self.addEventListener('install', (event) => {
@@ -56,3 +56,4 @@ self.addEventListener('message', (event) => {
     event.waitUntil(caches.keys().then((keys) => Promise.all(keys.map((key) => caches.delete(key)))));
   }
 });
+

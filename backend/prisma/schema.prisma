@@ -109,6 +109,7 @@ model UserProfile {
   fullName    String
   passwordHash String?
   status      UserStatus @default(active)
+  accessExpiresAt DateTime?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
@@ -121,6 +122,7 @@ model UserProfile {
 
   @@unique([tenantId, email])
   @@index([tenantId])
+  @@index([accessExpiresAt])
 }
 
 model Role {
@@ -842,3 +844,16 @@ model RegulatoryFeed {
   @@unique([tenantId, sourceKey])
   @@index([tenantId, kind])
 }
+
+model AuthLoginAttempt {
+  id          String   @id @default(uuid())
+  tenantRif   String
+  email       String
+  ipAddress   String
+  success     Boolean  @default(false)
+  createdAt   DateTime @default(now())
+
+  @@index([tenantRif, email, ipAddress, success, createdAt])
+  @@index([createdAt])
+}
+

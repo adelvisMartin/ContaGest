@@ -130,14 +130,14 @@ export const AdminPanelPage = {
       ${adminMonitoring(state, rbac)}
 
       <section class="cg-rbac-section cg-enterprise-card">
-        <div class="cg-rbac-section-head"><h3>Crear usuario demo editable</h3><p>Define nombre, email, rol, días de prueba, límite de módulos y contraseña. Luego puedes ajustar permisos por rol debajo.</p></div>
+        <div class="cg-rbac-section-head"><h3>Crear usuario demo editable</h3><p>Define nombre, email, rol, días de prueba y límite de módulos. La contraseña temporal viaja una sola vez al backend y no se guarda en el navegador.</p></div>
         <form id="createDemoUserForm" class="cg-demo-user-form">
           ${Field({ labelKey:'Nombre de usuario', name:'fullName', value:'Demo Cliente Nuevo', required:true })}
           ${Field({ labelKey:'Email demo', name:'email', type:'email', value:`demo-${Date.now().toString(36)}@empresa.com`, required:true })}
           ${Select({ labelKey:'Perfil / rol', name:'roleId', value:'role-demo', options:roleOptions(roles) })}
           ${Field({ labelKey:'Días de acceso', name:'days', type:'number', value:String(rbac.demoPolicy?.defaultDays || 14), attrs:'min="1" max="365"' })}
           ${Field({ labelKey:'Máx. módulos', name:'maxModules', type:'number', value:String(rbac.demoPolicy?.maxModules || 7), attrs:'min="1" max="30"' })}
-          ${Field({ labelKey:'Contraseña', name:'password', type:'text', value:'demo1234' })}
+          ${Field({ labelKey:'Contraseña temporal segura', name:'password', type:'password', value:'', required:true, attrs:'minlength="12" autocomplete="new-password"' })}
           <div class="cg-demo-user-actions">${Button({ text:'Crear demo', icon:'fa-user-plus', type:'submit' })}</div>
         </form>
       </section>
@@ -158,7 +158,7 @@ export const AdminPanelPage = {
       </section>
 
       <section class="cg-rbac-section cg-enterprise-card">
-        <div class="cg-rbac-section-head"><h3>Usuarios de prueba por perfil</h3><p>Todos pueden usar <code>demo1234</code> en desarrollo si no tienen hash. Los usuarios creados desde aquí se sincronizan con backend cuando esté disponible.</p></div>
+        <div class="cg-rbac-section-head"><h3>Usuarios de prueba por perfil</h3><p>Los usuarios sin hash no pueden iniciar sesión. Las credenciales temporales deben tener al menos 12 caracteres y solo se envían al backend.</p></div>
         <div class="pl-table-wrap"><table class="pl-table"><thead><tr><th>Usuario</th><th>Rol</th><th>Módulos habilitados</th><th>Tipo</th><th>Vence</th><th>Acciones</th></tr></thead><tbody>${userRows(rbac)}</tbody></table></div>
       </section>
     </section>`;
@@ -260,3 +260,4 @@ export const AdminPanelPage = {
     });
   }
 };
+

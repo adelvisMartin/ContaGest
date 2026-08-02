@@ -47,9 +47,10 @@ async function resolveBackendJwtContext(token: string): Promise<AuthIdentityCont
   const decoded = verifyAccessToken(token);
   const profile = await prisma.userProfile.findFirst({
     where: { id: decoded.sub, tenantId: decoded.tenantId, status: 'active' },
-    select: { id: true, tenantId: true, email: true }
+    select: { id: true, tenantId: true, email: true, accessExpiresAt:true }
   });
   if (!profile) throw new HttpError(403, 'Usuario JWT sin perfil activo.');
+  if (profile.accessExpiresAt && profile.accessExpiresAt.getTime() <= Date.now()) throw new HttpError(403, 'El acceso temporal venció.');
   return { authMode:'backend-jwt', userId:profile.id, tenantId:profile.tenantId, email:profile.email };
 }
 
@@ -61,8 +62,9 @@ async function resolveSupabaseContext(token: string): Promise<AuthIdentityContex
   });
   const { data, error } = await supabase.auth.getUser(token);
   if (error || !data.user) return null;
-  const profile = await prisma.userProfile.findFirst({ where:{ authUserId:data.user.id, status:'active' }, select:{ id:true, tenantId:true, email:true } });
+  const profile = await prisma.userProfile.findFirst({ where:{ authUserId:data.user.id, status:'active' }, select:{ id:true, tenantId:true, email:true, accessExpiresAt:true } });
   if (!profile) throw new HttpError(403, 'Usuario Supabase autenticado sin perfil activo en ContaGest-VE.');
+  if (profile.accessExpiresAt && profile.accessExpiresAt.getTime() <= Date.now()) throw new HttpError(403, 'El acceso temporal venció.');
   return { authMode:'supabase', authUserId:data.user.id, userId:profile.id, tenantId:profile.tenantId, email:profile.email || data.user.email || undefined };
 }
 
@@ -142,3 +144,4 @@ export function requirePermission(permission: string) {
     } catch (error) { next(error); }
   };
 }
+
