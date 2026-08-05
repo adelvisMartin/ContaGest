@@ -1,36 +1,11 @@
 {
-  "name": "contagest-ve-frontend",
-  "version": "11.12.0",
+  "name": "hipico-control-pwa-demo",
+  "version": "1.1.0",
   "private": true,
   "type": "module",
-  "engines": {
-    "node": "22.x"
-  },
-  "description": "Frontend ContaGest-VE Enterprise con UI MUI compacta, RBAC, licencias, PWA y verticales especializadas.",
+  "engines": { "node": "22.x" },
   "scripts": {
-    "dev": "vite --host 0.0.0.0 --port 8080",
-    "stage:backend": "node scripts/stage-backend.mjs",
-    "build": "npm run stage:backend && vite build",
-    "preview": "vite preview --host 0.0.0.0 --port 8080"
-  },
-  "dependencies": {
-    "@emotion/react": "11.14.0",
-    "@emotion/styled": "11.14.1",
-    "@mui/material": "9.2.0",
-    "contagest-ve-backend": "file:../backend",
-    "html5-qrcode": "2.3.8",
-    "react": "19.2.8",
-    "react-dom": "19.2.8",
-    "react-hot-toast": "2.6.0",
-    "qrcode": "1.5.4"
-  },
-  "devDependencies": {
-    "esbuild": "0.28.1",
-    "vite": "8.2.0",
-    "typescript": "5.9.3",
-    "tailwindcss": "3.4.19",
-    "postcss": "8.5.25",
-    "autoprefixer": "10.5.4"
+    "build": "npm run qa && node scripts/hipico-build.mjs",
+    "qa": "node scripts/hipico-qa.mjs"
   }
 }
-
