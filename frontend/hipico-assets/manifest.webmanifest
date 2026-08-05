@@ -1,12 +1,12 @@
 {
   "name": "Hípico Control",
   "short_name": "Hípico",
-  "description": "Registro, liquidación, saldos y planos para WhatsApp.",
+  "description": "Registro móvil de apuestas, comprobantes por WhatsApp, liquidación, disponibles, movimientos y cierre diario.",
   "id": "/",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
-  "background_color": "#07101b",
+  "background_color": "#08101c",
   "theme_color": "#0d1726",
   "orientation": "portrait-primary",
   "icons": [
@@ -18,7 +18,20 @@
     }
   ],
   "shortcuts": [
-    { "name": "Registrar apuesta", "url": "/?view=race" },
-    { "name": "Generar plano", "url": "/?view=plan" }
+    {
+      "name": "Registrar apuesta",
+      "short_name": "Apuesta",
+      "url": "/?view=race&action=bet"
+    },
+    {
+      "name": "Generar plano",
+      "short_name": "Plano",
+      "url": "/?view=race&tab=plan"
+    },
+    {
+      "name": "Ver disponibles",
+      "short_name": "Disponibles",
+      "url": "/?view=reports"
+    }
   ]
 }
