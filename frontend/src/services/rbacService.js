@@ -1,5 +1,8 @@
 import { BackendApi } from './backendApi.js';
 import { AccessControlService } from './accessControlService.js';
+import { installAdminUserSecurityEnhancer } from './adminUserSecurityEnhancer.js';
+
+installAdminUserSecurityEnhancer();
 
 export const RbacService = {
   async summary() {
