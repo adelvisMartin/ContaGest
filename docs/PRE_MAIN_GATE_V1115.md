@@ -5,7 +5,7 @@
 - [ ] **IAM-P1-001 / #27:** terminar auditoría `tenant admin` vs `platform/internal`; los bypass principales ya exigen `platform.manage`, pero falta revisión codewide/migración de roles existentes.
 - [ ] **QA-P1-001 / #28:** CI con PostgreSQL real: crear DB, ejecutar migraciones, probar triggers y rutas críticas.
 - [ ] **GOV-P1-001 / #30:** suspender/terminar exige expediente + `reasonCode`; retirar transición restringida por PATCH genérico antes de integrar la consola comercial en main.
-- [ ] **SEC-P1-002 / #31:** producción exige secreto estable de licencias; gate explícito implementado, falta cerrar custodia/rotación y evidencia del release.
+- [x] **SEC-P1-002 / #31:** producción exige secreto estable de licencias; gate explícito, prueba de caracterización y política de custodia/rotación implementados. La configuración del valor real sigue siendo gate de despliegue, no deuda de código.
 - [ ] Revisar el resultado de AppSec/DBRE/QA sobre el SHA final.
 
 ## Seguridad y tenant
@@ -58,7 +58,7 @@
 ## Producción (puede ser posterior al merge, pero anterior a clientes reales)
 
 - [ ] dominio/TLS final.
-- [ ] `JWT_SECRET` y `LICENSE_HASH_SECRET` explícitos/estables.
+- [ ] `JWT_SECRET` y `LICENSE_HASH_SECRET` explícitos/estables cargados en el proveedor de producción.
 - [ ] runtime DB least privilege.
 - [ ] backup offsite cifrado.
 - [ ] restore drill documentado.
