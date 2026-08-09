@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 const read=(path)=>fs.readFileSync(new URL(`../${path}`,import.meta.url),'utf8');
 
-test('legal acceptance is versioned, explicit and blocks business APIs until current documents are accepted',()=>{
+test('legal acceptance is versioned, explicit and blocks licensed customer business APIs until current documents are accepted',()=>{
   const migration=read('backend/prisma/migrations/20260809224500_v11_15_legal_acceptance_rif_lock/migration.sql');
   const catalog=read('backend/src/shared/legal/legalCatalog.ts');
   const routes=read('backend/src/modules/legal/legal.routes.ts');
@@ -14,6 +14,7 @@ test('legal acceptance is versioned, explicit and blocks business APIs until cur
   for(const code of ['terms','privacy','cookies','acceptable-use','suspension-termination'])assert.match(catalog,new RegExp(`code:'${code}'`));
   assert.match(routes,/necessaryCookiesAcknowledged:z\.literal\(true\)/);
   assert.match(routes,/explicit-checkbox/);
+  assert.match(middleware,/hasLicensedCustomerAccess/);
   assert.match(middleware,/new HttpError\(428/);
   assert.ok(index.indexOf("router.use('/legal', legalRoutes)")<index.indexOf('router.use(requireCurrentLegalAcceptance)'));
 });
