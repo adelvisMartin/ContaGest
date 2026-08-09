@@ -101,6 +101,7 @@ for (const module of modules) {
     if (module.query) await expect(page).toHaveURL(new RegExp(module.query.split('=')[0]));
     if (module.mui) await expect(page.locator('.MuiFormControl-root:visible, .MuiTextField-root:visible').first()).toBeVisible();
     await expectNoOverflow(page);
+    await page.screenshot({ path:`test-results/screenshots/v11-15-${module.route}-desktop.png`, fullPage:true });
   });
 }
 
@@ -116,6 +117,7 @@ test('issued purchase is cancelled with an accounting reversal and stays traceab
   await expect(page.getByText('Anulada',{exact:true})).toBeVisible();
   await expect(page.getByText('Sin acciones',{exact:true})).toBeVisible();
   await expectNoOverflow(page);
+  await page.screenshot({ path:'test-results/screenshots/v11-15-compras-desktop.png', fullPage:true });
 });
 
 test('mobile shell remains usable across strengthened modules', async ({ page }) => {
@@ -125,5 +127,6 @@ test('mobile shell remains usable across strengthened modules', async ({ page })
     await page.goto(`/?module=${route}`, { waitUntil:'domcontentloaded' });
     await expect(page.locator('body')).toHaveAttribute('data-route', route);
     await expectNoOverflow(page);
+    await page.screenshot({ path:`test-results/screenshots/v11-15-${route}-mobile.png`, fullPage:true });
   }
 });
