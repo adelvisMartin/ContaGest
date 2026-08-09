@@ -1,4 +1,4 @@
-const VERSION = '11.13.0';
+const VERSION = '11.14.0';
 
 export default function statusHandler(_request: unknown, response: any) {
   response.setHeader('Cache-Control', 'no-store');
