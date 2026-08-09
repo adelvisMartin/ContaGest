@@ -39,8 +39,8 @@ for (const viewport of [
     await mockCaptcha(page);
     await page.goto('/', { waitUntil:'domcontentloaded' });
     await expect(page.getByRole('heading',{ name:'Iniciar sesión', exact:true })).toBeVisible();
-    await expect(page.getByRole('button',{ name:/Equipo interno/i })).toBeVisible();
-    await expect(page.getByRole('button',{ name:/Cliente con licencia/i })).toBeVisible();
+    await expect(page.getByRole('tab',{ name:/Equipo interno/i })).toBeVisible();
+    await expect(page.getByRole('tab',{ name:/Cliente con licencia/i })).toBeVisible();
     await expect(page.locator('[data-captcha-question]')).toContainText('8 + 4');
     await expectNoPageOverflow(page);
     if (viewport.name === 'android-compact') {
@@ -55,7 +55,7 @@ test('client link exposes only licensed-client access on mobile', async ({ page 
   await page.goto('/cliente', { waitUntil:'domcontentloaded' });
   await expect(page.getByRole('heading',{ name:'Acceso de cliente', exact:true })).toBeVisible();
   await expect(page.getByText('Cliente con licencia',{ exact:true }).first()).toBeVisible();
-  await expect(page.getByRole('button',{ name:/Equipo interno/i })).toHaveCount(0);
+  await expect(page.locator('[data-login-access="staff"]')).toHaveCount(0);
   await expect(page.locator('[name="licenseKey"]')).toBeVisible();
   await expect(page.locator('[name="licenseKey"]')).toHaveAttribute('required','');
   await expectNoPageOverflow(page);
@@ -72,9 +72,11 @@ test('public PWA manifest exposes Chromium installability fields', async ({ requ
   expect(manifest.icons.some((icon) => String(icon.sizes).includes('192x192'))).toBeTruthy();
   expect(manifest.icons.some((icon) => String(icon.sizes).includes('512x512'))).toBeTruthy();
 
-  const icon = await request.get('/icons/contagest-app.svg');
-  expect(icon.ok()).toBeTruthy();
-  expect(icon.headers()['content-type']).toContain('image/svg+xml');
+  for (const iconPath of ['/icons/contagest-app-192.svg','/icons/contagest-app-512.svg']) {
+    const icon = await request.get(iconPath);
+    expect(icon.ok()).toBeTruthy();
+    expect(icon.headers()['content-type']).toContain('image/svg+xml');
+  }
 
   const worker = await request.get('/sw.js');
   expect(worker.ok()).toBeTruthy();
