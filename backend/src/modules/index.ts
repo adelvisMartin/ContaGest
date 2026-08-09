@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { prisma } from '../database/prisma.js';
 import { requireTenant } from '../shared/middleware/context.js';
+import { enforceCommercialSubscription } from '../shared/commercial/subscriptionMiddleware.js';
 import { createCrudRouter } from './crud.factory.js';
 import { clientSchema, supplierSchema, productSchema, bankAccountSchema, taxPeriodSchema, tenantSchema } from './schemas.js';
 import salesRoutes from './sales/sales.routes.js';
@@ -38,6 +39,7 @@ import veterinaryRoutes from './verticals/veterinary.routes.js';
 import mediaRoutes from './media/media.routes.js';
 
 const router = Router();
+router.use(enforceCommercialSubscription);
 router.use('/tenants', createCrudRouter({ model:'tenant' as any, entity:'tenant', permission:'admin.manage', schema:tenantSchema, tenantScoped:false, searchFields:['name','rif'] }));
 router.use('/clients', createCrudRouter({ model:'client' as any, entity:'client', permission:'clients.manage', schema:clientSchema, searchFields:['name','rif'] }));
 router.use('/suppliers', createCrudRouter({ model:'supplier' as any, entity:'supplier', permission:'purchases.manage', schema:supplierSchema, searchFields:['name','rif'] }));
