@@ -19,6 +19,14 @@ type MembershipRow = {
   isDefault:boolean;
 };
 
+type LicenseExtensionRow = {
+  businessCategory:string|null;
+  maxUsers:number|null;
+  maxDevices:number|null;
+  activationCount:number|null;
+  subscriptionId:string|null;
+};
+
 function normalizeLicenseModules(value:unknown){
   if(Array.isArray(value))return{enabled:value.map(String),businessSector:'general',commercialUse:'operacion'};
   const data=value&&typeof value==='object'?value as Record<string,unknown>:{};
@@ -77,11 +85,11 @@ export async function activeLicenseForProfile(userProfileId:string,tenantId:stri
   });
   if(!record)return null;
   const config=normalizeLicenseModules(record.modules);
-  const extension=await prisma.$queryRaw<Array<{businessCategory:string|null;maxUsers:number|null;maxDevices:number|null;activationCount:number|null;subscriptionId:string|null}>>`
+  const extension=await prisma.$queryRaw<LicenseExtensionRow[]>`
     SELECT "businessCategory","maxUsers","maxDevices","activationCount","subscriptionId"
     FROM public."LicenseKey" WHERE "id"=${record.id} LIMIT 1
   `;
-  const extra=extension[0]||{};
+  const extra:Partial<LicenseExtensionRow>=extension[0]||{};
   return{
     id:record.id,
     tenantId:record.tenantId,
