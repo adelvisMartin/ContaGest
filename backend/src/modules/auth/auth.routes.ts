@@ -11,7 +11,7 @@ import { validateUserLicense } from '../../shared/licensing/licenseGuard.js';
 import { coordinateCardStatus, generateCoordinateCard, issueCoordinateChallenge, revokeCoordinateCard, verifyCoordinateChallenge } from '../../shared/auth/coordinateCard.js';
 
 const router = Router();
-const LOGIN_WINDOW_MS = 15 * 60 * 1000;
+const LOGIN_FAILURE_WINDOW_MS = 24 * 60 * 60 * 1000;
 const LOGIN_FAILURE_LIMIT = 5;
 
 function loginIdentity(req:any) {
@@ -22,21 +22,28 @@ function loginIdentity(req:any) {
   };
 }
 
-async function assertLoginNotLocked(req:any) {
+async function failureCount(req:any) {
   const identity=loginIdentity(req);
-  const failures=await prisma.authLoginAttempt.count({
-    where:{...identity,success:false,createdAt:{gt:new Date(Date.now()-LOGIN_WINDOW_MS)}}
+  return prisma.authLoginAttempt.count({
+    where:{tenantRif:identity.tenantRif,email:identity.email,success:false,createdAt:{gt:new Date(Date.now()-LOGIN_FAILURE_WINDOW_MS)}}
   });
-  if(failures>=LOGIN_FAILURE_LIMIT)throw new HttpError(429,'Acceso bloqueado temporalmente por intentos fallidos. Intenta nuevamente en 15 minutos.');
 }
 
-async function recordLoginAttempt(req:any,success:boolean) {
+async function recordLoginFailure(req:any,userId?:string) {
   const identity=loginIdentity(req);
-  await prisma.authLoginAttempt.create({data:{...identity,success}});
-  if(success){
-    await prisma.authLoginAttempt.deleteMany({where:{...identity,success:false}});
-    void prisma.authLoginAttempt.deleteMany({where:{createdAt:{lt:new Date(Date.now()-90*86400000)}}}).catch(()=>undefined);
+  await prisma.authLoginAttempt.create({data:{...identity,success:false}});
+  const failures=await failureCount(req);
+  if(userId&&failures>=LOGIN_FAILURE_LIMIT){
+    await prisma.userProfile.updateMany({where:{id:userId,status:'active'},data:{status:'disabled'}});
   }
+  return failures;
+}
+
+async function recordLoginSuccess(req:any) {
+  const identity=loginIdentity(req);
+  await prisma.authLoginAttempt.create({data:{...identity,success:true}});
+  await prisma.authLoginAttempt.deleteMany({where:{tenantRif:identity.tenantRif,email:identity.email,success:false}});
+  void prisma.authLoginAttempt.deleteMany({where:{createdAt:{lt:new Date(Date.now()-90*86400000)}}}).catch(()=>undefined);
 }
 
 function ensureAccessNotExpired(user:{accessExpiresAt?:Date|null}) {
@@ -111,15 +118,24 @@ router.post('/register',validateBody(registerSchema),asyncHandler(async(req,res)
 
 router.post('/login',validateBody(loginSchema),asyncHandler(async(req,res)=>{
   verifyCaptcha(req.body);
-  await assertLoginNotLocked(req);
   const tenant=await prisma.tenant.findUnique({where:{rif:req.body.tenantRif}});
-  if(!tenant){await recordLoginAttempt(req,false);throw new HttpError(401,'Credenciales incorrectas.');}
-  const user=await prisma.userProfile.findFirst({where:{tenantId:tenant.id,email:req.body.email,status:'active'},include:{userRoles:{include:{role:true}}}});
-  if(!user){await recordLoginAttempt(req,false);throw new HttpError(401,'Credenciales incorrectas.');}
+  if(!tenant){await recordLoginFailure(req);throw new HttpError(401,'Credenciales incorrectas.');}
+
+  const user=await prisma.userProfile.findFirst({where:{tenantId:tenant.id,email:req.body.email},include:{userRoles:{include:{role:true}}}});
+  if(!user){await recordLoginFailure(req);throw new HttpError(401,'Credenciales incorrectas.');}
+  if(user.status==='disabled')throw new HttpError(423,'Usuario bloqueado. Comunícate con un administrador para reactivarlo.');
+  if(user.status!=='active')throw new HttpError(403,'El usuario todavía no está activo. Comunícate con un administrador.');
+
   ensureAccessNotExpired(user);
   const valid=Boolean(user.passwordHash)&&await bcrypt.compare(req.body.password,user.passwordHash);
-  if(!valid){await recordLoginAttempt(req,false);throw new HttpError(401,'Credenciales incorrectas.');}
-  await recordLoginAttempt(req,true);
+  if(!valid){
+    const failures=await recordLoginFailure(req,user.id);
+    if(failures>=LOGIN_FAILURE_LIMIT)throw new HttpError(423,'Usuario bloqueado después de 5 intentos fallidos. Comunícate con un administrador.');
+    const remaining=Math.max(0,LOGIN_FAILURE_LIMIT-failures);
+    throw new HttpError(401,`Credenciales incorrectas. Quedan ${remaining} intento(s) antes del bloqueo.`);
+  }
+
+  await recordLoginSuccess(req);
   const systemUser=user.userRoles.some((assignment)=>assignment.role.system);let license=null;
   if(!systemUser){
     if(!req.body.licenseKey||!req.body.deviceId)throw new HttpError(403,'Este usuario requiere licencia y dispositivo autorizado.');
