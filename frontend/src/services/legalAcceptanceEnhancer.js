@@ -51,7 +51,13 @@ function mount(status,session){
   const draft=draftByKey.get(key)||emptyDraft();
   draft.analytics=Boolean(draft.analytics||status.cookiePreferences?.analyticsEnabled);
   draftByKey.set(key,draft);
-  const layer=document.createElement('div');layer.id='cgLegalAcceptanceLayer';layer.className='cg-legal-layer';
+  const layer=document.createElement('div');
+  layer.id='cgLegalAcceptanceLayer';
+  layer.className='cg-legal-layer';
+  // The app's route guard intentionally searches the nearest [data-route]. BODY also carries
+  // the active route for visual metadata. Shadow it with an empty route so checkbox/button
+  // clicks inside this non-navigation dialog can never be cancelled as navigation attempts.
+  layer.dataset.route='';
   layer.innerHTML=`<section class="cg-legal-dialog" role="dialog" aria-modal="true" aria-labelledby="cgLegalTitle" aria-describedby="cgLegalIntro">
     <header><div><p class="cg-legal-eyebrow">Primer acceso · consentimiento contractual</p><h1 id="cgLegalTitle">Antes de continuar en ContaGest</h1><p id="cgLegalIntro">Revisa y acepta las versiones vigentes. La aceptación queda registrada con usuario, empresa, versión, fecha y evidencia técnica.</p></div><span class="cg-legal-version">${escapeHtml(documents[0]?.version||'')}</span></header>
     ${status.productionReady===false?'<div class="cg-legal-dev-warning"><strong>Entorno de prueba:</strong> falta completar la identidad jurídica del proveedor. Esta versión no debe usarse para dar de alta clientes reales.</div>':''}
