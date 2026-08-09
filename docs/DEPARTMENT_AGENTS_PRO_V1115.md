@@ -22,25 +22,33 @@ Modela ataque externo, usuario cliente malicioso, XSS, CSRF, session theft, tena
 
 Busca especialmente: rutas sin `requirePermission`, trust en `tenantId/RIF` del cliente, roles que hacen bypass, secretos browser-side, raw SQL dinámico, logs con secretos, endpoints de administración montados con permisos débiles.
 
+Hallazgo **SEC-P1-002 / #31**: el secreto de hash de licencias no debe acoplarse a credenciales DB/service-role que roten. El gate de producción ya exige `JWT_SECRET` y `LICENSE_HASH_SECRET` explícitos; falta cerrar custodia/rotación y pruebas operativas.
+
 ## 4. Principal IAM, Licensing & Anti-Abuse Architect
 
 Dueño de AccountUser, TenantMembership, RBAC, Subscription, LicenseKey, LicenseActivation y sesiones. Debe probar que un usuario no puede convertirse en interno ni ampliar empresas/cupos modificando requests.
 
-Hallazgo actual **IAM-P1-001**: `Role.system=true` se usa como sinónimo de “interno” en guardas, mientras `ensureAdminRole()` históricamente crea roles admin con `system=true`. Separar `platform/internal` de `tenant-admin` antes de main. `BLOCK_MAIN=yes`.
+Hallazgo **IAM-P1-001 / #27**: `Role.system=true` se usó históricamente como sinónimo de “interno”. Los bypass principales ya fueron cambiados a `platform.manage`, pero debe terminarse la auditoría codewide y normalización de roles existentes antes de main. `BLOCK_MAIN=yes`.
+
+Hallazgo corregido **IAM-P1-002**: igualdad de correo ya no vincula automáticamente identidades entre tenants. El mismo contador se vincula entre RIF únicamente mediante el provisionador explícito de la misma suscripción.
 
 ## 5. Principal PostgreSQL / DBRE
 
 Revisa FK, uniques, locks, transacciones, índices, RLS, roles de runtime, migraciones reversibles y constraints de negocio. Toda regla anti-abuso crítica debe existir server/DB, no solo UI.
 
-Hallazgo **DB-P1-001**: nuevas tablas SaaS/legales están mayormente administradas por migraciones SQL pero el modelo Prisma no refleja todo el dominio; definir canonicidad para evitar drift. `BLOCK_MAIN` si una próxima migración depende de introspección incompleta.
+Hallazgo **DB-P1-001**: nuevas tablas SaaS/legales están mayormente administradas por migraciones SQL pero el modelo Prisma no refleja todo el dominio; definir canonicidad para evitar drift.
+
+Hallazgo resuelto parcialmente **DB-P2-002**: advisor detectó FKs SaaS/legales sin índice; se añadieron índices para Commission, CookiePreference, LegalAcceptance, LicenseKey membership, TenantMembership y UserSession sin tocar Hípico/Budget Wallet.
 
 ## 6. Principal Backend/API Architect
 
 Revisa contratos HTTP, validación Zod, idempotencia, manejo de concurrencia, códigos 401/403/409/422/428, auditoría y límites. Prohíbe endpoints globales accesibles con permisos tenant-locales.
 
-Hallazgo resuelto en rama **API-P1-001**: CRUD global de Tenant con `tenantScoped:false`. Sustituido por ruta que solo expone la empresa activa; RIF/plan/status no son autoeditables.
+Hallazgo resuelto **API-P1-001**: CRUD global de Tenant con `tenantScoped:false`. Sustituido por ruta que solo expone la empresa activa; RIF/plan/status no son autoeditables.
 
 Hallazgo resuelto **API-P1-002**: módulos `commercial-access` y `license-devices` existían pero no estaban montados en `modules/index.ts`; ya montados y cubiertos por caracterización.
+
+Hallazgo **API/GOV-P1-003 / #30**: el PATCH genérico de suscripción todavía puede representar cambios restringidos de estado sin expediente/motivo codificado. Crear endpoint/caso dedicado para suspensión/reactivación/terminación antes de integrar la consola en main.
 
 ## 7. Principal Frontend Architecture
 
@@ -48,11 +56,13 @@ Revisa render, estado, caché, PWA, bundle, errores, API clients, formularios y 
 
 Busca: secretos en storage, HTML no escapado, dobles listeners, race conditions, estado local contradiciendo backend y rerender completo innecesario.
 
+Hallazgo corregido **FE-P2-001**: el modal de aceptación podía sufrir una actualización concurrente mientras el usuario marcaba documentos. Ahora evita remontaje de la misma versión y conserva el borrador de selección durante la revisión.
+
 ## 8. Principal ERP UX / Human Factors
 
 Optimiza para contador, vendedor y operador bajo presión. Revisa densidad, prevención de error, irreversible vs reversible, multiempresa y contexto del RIF.
 
-Regla: el RIF autoritativo debe mostrarse bloqueado y siempre debe ser visible qué empresa está activa antes de registrar un movimiento.
+Regla: el RIF autoritativo debe mostrarse bloqueado y siempre debe ser visible qué empresa está activa antes de registrar un movimiento. En UI se usa `readonly` para permitir lectura/copia; la seguridad real está en API + trigger DB.
 
 ## 9. Principal Design Systems & Accessibility
 
@@ -62,11 +72,13 @@ WCAG/teclado/focus/contraste, tokens, modales, móvil y lectores de pantalla. Pr
 
 Pirámide: caracterización → unit → integration DB → API → Playwright real → visual. Mocks no prueban constraints PostgreSQL.
 
-Hallazgo **QA-P1-001**: el CI necesita ejecutar migraciones v11.15 sobre PostgreSQL efímero y probar triggers de RIF, maxTenants, maxUsers y suscripción/licencia. `BLOCK_MAIN=yes` recomendado.
+Hallazgo **QA-P1-001 / #28**: el CI necesita ejecutar migraciones v11.15 sobre PostgreSQL efímero y probar triggers de RIF, maxTenants, maxUsers, suscripción/licencia y aceptación legal. `BLOCK_MAIN=yes` recomendado.
 
 ## 11. Principal SRE / DevSecOps
 
 Revisa Docker, TLS, headers, secrets, least privilege, observabilidad, deploy/rollback, health checks y capacity. No recomienda gastar antes de ingreso; sí exige que el primer cliente financie una infraestructura apta.
+
+Debe validar en release que producción no arranque con secretos derivados/inestables para licenciamiento y que los secretos no aparezcan en logs o artifacts.
 
 ## 12. Principal BCP/DR & Ransomware Resilience
 
@@ -80,11 +92,13 @@ Data inventory, minimización, retención, logs, DSAR/solicitudes, subprocesador
 
 Hallazgo **PRIV-P2-001**: `LegalAcceptance` conserva IP completa; definir necesidad y retención o usar representación minimizada cuando el abogado confirme suficiencia.
 
+Hallazgo **PRIV-P2-002**: la evidencia legal conserva hash + versión y depende de código/Git para reconstruir el texto; valorar `LegalDocumentVersion` inmutable/snapshot firmado para madurez enterprise.
+
 ## 14. Legal/Regulatory Liaison Venezuela
 
 No sustituye al abogado. Mantiene matriz de normas/preguntas y convierte revisión jurídica externa en requisitos verificables. No permite poner “cumple SENIAT”, “cumple privacidad” o “apto clínico” sin alcance escrito.
 
-`BLOCK_PRODUCTION=yes` mientras `LEGAL_PROVIDER_*` sea placeholder o documentos no estén revisados.
+`BLOCK_PRODUCTION=yes` mientras `LEGAL_PROVIDER_*` sea placeholder o documentos no estén revisados (#29).
 
 ## 15. Health Data / Clinical Workflow SME
 
@@ -95,6 +109,8 @@ Hallazgo **HEALTH-P1-001**: Salud humana debe permanecer fuera de datos reales h
 ## 16. Revenue Operations / Billing Principal
 
 Dueño de CustomerAccount, Subscription, Payments, Commission, renewal windows y mora. Debe reconciliar MRR con pagos y evitar que soporte edite `LicenseKey` para “cobrar”.
+
+Debe revisar #30: `past_due`, `suspended`, `cancelled` y reactivación deben tener motivo, fechas y caso asociado; impago no debe confundirse con fraude/seguridad.
 
 ## 17. FinOps Principal
 
@@ -107,6 +123,8 @@ Cada claim necesita `evidence_id`, fuente y fecha. Comparaciones de competidores
 ## 19. Customer Success / Support Operations Principal
 
 Define onboarding, SLA real, severidades, scripts de suspensión, recuperación, exportación y handoff a AppSec. No puede prometer 24/7 si no existe cobertura.
+
+No puede clausurar una cuenta por texto libre o una queja de buena fe; debe usar motivo codificado, proporcionalidad, aviso/revisión cuando corresponda y AuditLog.
 
 ## 20. Senior Red Team Reviewer (pre-main)
 
