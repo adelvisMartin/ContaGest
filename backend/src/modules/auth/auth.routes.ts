@@ -55,6 +55,7 @@ const captchaFields = { captchaToken:z.string().min(20), captchaAnswer:z.string(
 const registerSchema = z.object({ tenantRif:z.string().min(5), tenantName:z.string().min(2), legalName:z.string().optional(), fullName:z.string().min(2), email:z.string().email(), password:z.string().min(12).max(128), plan:z.string().default('enterprise'), ...captchaFields });
 const loginSchema = z.object({
   email:z.string().email(), password:z.string().min(1).max(128), tenantRif:z.string().min(5).default('00000000'),
+  accessMode:z.enum(['staff','client']).default('staff'),
   licenseKey:z.string().min(20).max(180).optional(), deviceId:z.string().min(8).max(240).optional(), deviceLabel:z.string().max(120).optional(), ...captchaFields
 });
 const coordinateLoginSchema = z.object({
@@ -144,11 +145,19 @@ router.post('/login',validateBody(loginSchema),asyncHandler(async(req,res)=>{
     throw new HttpError(401,`Credenciales incorrectas. Quedan ${remaining} intento(s) antes del bloqueo.`);
   }
 
+  const internalUser=isInternalUser(user);
+  if(req.body.accessMode==='client'&&internalUser){
+    throw new HttpError(403,'Esta cuenta pertenece al equipo interno. Usa el acceso interno de ContaGest.');
+  }
+  if(req.body.accessMode==='staff'&&!internalUser){
+    throw new HttpError(403,'Esta cuenta requiere el portal Cliente con licencia.');
+  }
+
   await recordLoginSuccess(req);
-  const internalUser=isInternalUser(user);let license=null;
+  let license=null;
   if(!internalUser){
     if(!req.body.licenseKey||!req.body.deviceId)throw new HttpError(403,'Este usuario requiere licencia y dispositivo autorizado.');
-    license=await validateUserLicense({tenantId:tenant.id,userId:user.id,userEmail:user.email,licenseKey:req.body.licenseKey,deviceId:req.body.deviceId,deviceLabel:req.body.deviceLabel||null,route:'login',ip:req.ip,userAgent:req.headers['user-agent']||null,metadata:{source:'login'}});
+    license=await validateUserLicense({tenantId:tenant.id,userId:user.id,userEmail:user.email,licenseKey:req.body.licenseKey,deviceId:req.body.deviceId,deviceLabel:req.body.deviceLabel||null,route:'login',ip:req.ip,userAgent:req.headers['user-agent']||null,metadata:{source:'login',accessMode:req.body.accessMode}});
   }
   const role=roleForUser(user);
   const mfa=await issueCoordinateChallenge({tenantId:tenant.id,userId:user.id,ip:req.ip,userAgent:req.headers['user-agent']||'',context:{role,license}});
