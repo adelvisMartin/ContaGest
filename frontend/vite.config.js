@@ -3,7 +3,9 @@ import { defineConfig } from 'vite';
 const pwaInstallPlugin = {
   name: 'contagest-pwa-install',
   transformIndexHtml(html) {
-    return html.replace('</body>', '  <script src="/pwa-install.js" defer></script>\n</body>');
+    return html
+      .replaceAll('11.12.0', '11.13.0')
+      .replace('</body>', '  <script src="/pwa-install.js" defer></script>\n</body>');
   }
 };
 
