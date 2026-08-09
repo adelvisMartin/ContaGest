@@ -26,6 +26,7 @@ import aiRoutes from './ai/ai.routes.js';
 import demosRoutes from './demos/demos.routes.js';
 import pretestingRoutes from './pretesting/pretesting.routes.js';
 import licenseRoutes from './licenses/licenses.routes.js';
+import commercialRoutes from './commercial/commercial.routes.js';
 import importRoutes from './imports/imports.routes.js';
 import regulatoryRoutes from './regulatory/regulatory.routes.js';
 import rulesRoutes from './rules/rules.routes.js';
@@ -66,6 +67,7 @@ router.use('/ai', aiRoutes);
 router.use('/demos', demosRoutes);
 router.use('/pretesting', pretestingRoutes);
 router.use('/licenses', licenseRoutes);
+router.use('/commercial', commercialRoutes);
 router.use('/imports', importRoutes);
 router.use('/regulatory', regulatoryRoutes);
 router.use('/rules', rulesRoutes);
@@ -77,7 +79,7 @@ router.use('/verticals/veterinary', veterinaryRoutes);
 router.use('/media', mediaRoutes);
 router.get('/health/db', requireTenant, async (_req,res,next)=>{
   try {
-    const result=await prisma.$queryRawUnsafe('select now() as now, current_database() as db, current_schema() as schema');
+    const result=await prisma.$queryRaw<Array<{now:Date;db:string;schema:string}>>`select now() as now, current_database() as db, current_schema() as schema`;
     res.json({ok:true,data:{database:result}});
   } catch(error) { next(error); }
 });
