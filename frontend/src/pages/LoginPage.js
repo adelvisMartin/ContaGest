@@ -41,11 +41,6 @@ export const LoginPage = {
     </main>`;
   },
   mount(state,{Store,Toast,navigate,SupabaseSyncService}) {
-    const failedKey='contagest_login_captcha_failures';
-    const lockKey='contagest_login_captcha_locked_until';
-    const captchaLocked=()=>Number(localStorage.getItem(lockKey)||0)>Date.now();
-    const registerFailure=()=>{const attempts=Number(localStorage.getItem(failedKey)||0)+1;localStorage.setItem(failedKey,String(attempts));if(attempts>=3){localStorage.setItem(lockKey,String(Date.now()+60000));localStorage.setItem(failedKey,'0');}};
-    const clearFailures=()=>{localStorage.removeItem(failedKey);localStorage.removeItem(lockKey);};
     const setStatus=(message='',tone='')=>{const node=document.querySelector('[data-login-status]');if(node){node.textContent=message;node.dataset.tone=tone;}};
     const loadCaptcha=async(form)=>{
       if(!form)return;
@@ -65,12 +60,16 @@ export const LoginPage = {
         setStatus('','');
       }catch(error){
         if(question)question.textContent='No se pudo cargar el reto';
+        if(token)token.value='';
         answer?.setAttribute('disabled','disabled');
         box?.classList.add('is-error');
-        setStatus(`Verificación no disponible: ${error.message || 'reintenta en unos segundos'}`,'error');
+        setStatus(`Verificación no disponible: ${error.message || 'usa el botón de actualizar'}`,'error');
       }finally{box?.classList.remove('is-loading');}
     };
-    const setSessionState=(session)=>{const licenseMode=session.license?.businessSector;Store.set({pendingMfa:null,route:'dashboard',profile:{name:session.user?.fullName||session.user?.name||'Usuario',email:session.user?.email||'',role:session.user?.role||'admin',branch:session.tenant?.name||'Empresa',plan:session.license?.plan||session.tenant?.plan||'Enterprise',avatarDataUrl:Store.get().profile?.avatarDataUrl||''},activeLicense:session.license||null,settings:{...Store.get().settings,companyName:session.tenant?.name||Store.get().settings.companyName,companyRif:session.tenant?.rif||Store.get().settings.companyRif,...(licenseMode?{businessMode:licenseMode}:{})}});};
+    const setSessionState=(session)=>{
+      const licenseMode=session.license?.businessSector;
+      Store.set({pendingMfa:null,route:'dashboard',profile:{name:session.user?.fullName||session.user?.name||'Usuario',email:session.user?.email||'',role:session.user?.role||'client',permissions:Array.isArray(session.user?.permissions)?session.user.permissions:[],branch:session.tenant?.name||'Empresa',plan:session.license?.plan||session.tenant?.plan||'Enterprise',avatarDataUrl:Store.get().profile?.avatarDataUrl||''},activeLicense:session.license||null,settings:{...Store.get().settings,companyName:session.tenant?.name||Store.get().settings.companyName,companyRif:session.tenant?.rif||Store.get().settings.companyRif,...(licenseMode?{businessMode:licenseMode}:{})}});
+    };
     const finish=async(session)=>{setSessionState(session);Toast.show(session.license?'Licencia y seguridad verificadas.':'Sesión segura iniciada.','success');await SupabaseSyncService?.syncCore?.({Store,Toast,force:true,silent:true});navigate('dashboard');};
     const loginForm=document.getElementById('loginForm');
     loadCaptcha(loginForm);
@@ -78,21 +77,18 @@ export const LoginPage = {
     loginForm?.addEventListener('submit',async(event)=>{
       event.preventDefault();
       if(!event.currentTarget.reportValidity())return;
-      if(captchaLocked())return Toast.show('Verificación bloqueada por un minuto.','error');
       const data=Object.fromEntries(new FormData(event.currentTarget));
       const submit=event.currentTarget.querySelector('[type="submit"]');
       submit?.setAttribute('disabled','disabled');
       setStatus('Verificando credenciales…','loading');
       try{
         const result=await AuthService.login({...data,mode:'api'});
-        clearFailures();
         if(result.mfaRequired){Store.set({pendingMfa:result});Toast.show('Contraseña correcta. Completa la tarjeta de coordenadas.','info');return;}
         await finish(result);
       }catch(error){
-        registerFailure();
         setStatus(error.message||'No se pudo iniciar sesión.','error');
         Toast.show(error.message||'No se pudo iniciar sesión.','error');
-        await loadCaptcha(event.currentTarget);
+        if(Number(error?.status)!==423)await loadCaptcha(event.currentTarget);
       }finally{submit?.removeAttribute('disabled');}
     });
     document.getElementById('coordinateChallengeForm')?.addEventListener('submit',async(event)=>{
