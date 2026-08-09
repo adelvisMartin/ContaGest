@@ -11,12 +11,16 @@ let installed=false;
 const draftByKey=new Map();
 
 const paragraphHtml=(body='')=>String(body).split(/\n\s*\n/).map((paragraph)=>`<p>${escapeHtml(paragraph)}</p>`).join('');
-const cacheKey=(session)=>`cg_legal_ok:${session?.tenantId||''}:${session?.user?.id||session?.user?.email||'client'}`;
+// Email is more stable than a profile id during initial /me hydration. The server remains
+// authoritative: this key only avoids duplicate UI work inside the current tab.
+const cacheKey=(session)=>`cg_legal_ok:${session?.tenantId||''}:${session?.user?.email||session?.user?.id||'client'}`;
 const emptyDraft=()=>({documents:new Set(),necessary:false,analytics:false});
+
+function activeLayer(){return document.getElementById('cgLegalAcceptanceLayer');}
 
 function releaseModal({clearDraft=false}={}){
   const previousKey=mountedKey;
-  document.getElementById('cgLegalAcceptanceLayer')?.remove();
+  activeLayer()?.remove();
   document.body.classList.remove('cg-legal-blocked');
   const app=document.getElementById('app');if(app)app.inert=false;
   mountedKey='';
@@ -28,8 +32,8 @@ function applyAnalyticsPreference(enabled){
 }
 
 async function declineAndExit(){
-  try{await BackendApi.request('/auth/logout',{method:'POST',body:{},skipRefresh:true});}catch{/* best effort */}
   const key=mountedKey;
+  try{await BackendApi.request('/auth/logout',{method:'POST',body:{},skipRefresh:true});}catch{/* best effort */}
   AuthSession.clear();
   if(key)draftByKey.delete(key);
   releaseModal({clearDraft:true});
@@ -37,11 +41,13 @@ async function declineAndExit(){
 }
 
 function mount(status,session){
+  // Never destroy a consent dialog that the user is actively reviewing merely because a
+  // background session hydration produced a slightly different local session object.
+  if(activeLayer())return;
   const key=cacheKey(session);
-  if(mountedKey===key&&document.getElementById('cgLegalAcceptanceLayer'))return;
-  releaseModal();mountedKey=key;
+  mountedKey=key;
   const documents=Array.isArray(status.documents)?status.documents.filter((doc)=>doc.required):[];
-  if(!documents.length)return;
+  if(!documents.length){mountedKey='';return;}
   const draft=draftByKey.get(key)||emptyDraft();
   draft.analytics=Boolean(draft.analytics||status.cookiePreferences?.analyticsEnabled);
   draftByKey.set(key,draft);
@@ -77,10 +83,11 @@ function mount(status,session){
 async function check(){
   const session=AuthSession.get();
   if(!session||session.sessionMode==='demo'||session.audience!=='client'){releaseModal();return;}
+  // If a client is already reading the current consent screen, no focus/pageshow/session
+  // hydration event may replace it. Acceptance is still revalidated by the backend on submit.
+  if(activeLayer())return;
   const key=cacheKey(session);
   if(sessionStorage.getItem(key)==='1')return;
-  // Avoid a second status request/remount while the user is actively reviewing the same consent dialog.
-  if(mountedKey===key&&document.getElementById('cgLegalAcceptanceLayer'))return;
   if(checking)return;checking=true;
   try{
     const status=await LegalService.status();
