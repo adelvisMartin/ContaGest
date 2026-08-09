@@ -14,10 +14,29 @@ const MODULE_PERMISSIONS = [
   ['taxes.export', 'Fiscal / SENIAT'], ['payroll.manage', 'RRHH / Nómina'], ['reports.view', 'Reportes'], ['audit.view', 'Auditoría'],
   ['orders.manage', 'Pedidos / POS'], ['orders.view', 'Tracking pedidos'], ['modules.manage', 'Módulos'], ['licenses.manage', 'Licencias'],
   ['demos.manage', 'Demos'], ['admin.manage', 'Administración']
-];
+] as const;
+
+const TENANT_PERMISSION_KEYS = new Set(MODULE_PERMISSIONS.map(([key]) => key));
+const PLATFORM_PERMISSION_PREFIX = 'platform.';
+
+function assertTenantPermissionKeys(permissionKeys: string[]) {
+  const invalid = [...new Set(permissionKeys)].filter((key) => !TENANT_PERMISSION_KEYS.has(key as any));
+  if (invalid.length) {
+    throw new HttpError(403, `Permisos reservados o no administrables por el tenant: ${invalid.join(', ')}`);
+  }
+}
+
+async function assertRoleIsTenantManaged(roleId: string) {
+  const platformPermissions = await prisma.rolePermission.count({
+    where: { roleId, permission: { key: { startsWith: PLATFORM_PERMISSION_PREFIX } } }
+  });
+  if (platformPermissions) {
+    throw new HttpError(403, 'Los roles de plataforma no pueden modificarse desde la administración RBAC de una empresa.');
+  }
+}
 
 const ROLE_BLUEPRINTS = [
-  { name: 'Administrador', description: 'Control total del sistema.', system: true, permissions: MODULE_PERMISSIONS.map(([key]) => key) },
+  { name: 'Administrador', description: 'Control total del sistema dentro de la empresa.', system: true, permissions: MODULE_PERMISSIONS.map(([key]) => key) },
   { name: 'Contador', description: 'Fiscal, contabilidad, compras, ventas y reportes.', system: true, permissions: ['dashboard.view','clients.manage','sales.view','purchases.manage','accounting.manage','banking.manage','taxes.export','reports.view','audit.view'] },
   { name: 'Vendedor / Caja', description: 'Clientes, cotizaciones, ventas y pedidos.', system: true, permissions: ['dashboard.view','clients.manage','sales.manage','sales.view','orders.manage','orders.view'] },
   { name: 'Inventario', description: 'Stock, kardex, productos y reportes.', system: true, permissions: ['dashboard.view','inventory.manage','reports.view'] },
@@ -41,10 +60,14 @@ function tenantId(req: any) {
 }
 
 async function ensurePermission(key: string, description?: string) {
+  if (!TENANT_PERMISSION_KEYS.has(key as any)) {
+    throw new HttpError(403, `El permiso ${key} está reservado a plataforma o no forma parte del catálogo tenant.`);
+  }
   return prisma.permission.upsert({ where: { key }, update: { description }, create: { key, description } });
 }
 
 async function setRolePermissions(roleId: string, permissionKeys: string[]) {
+  assertTenantPermissionKeys(permissionKeys);
   const permissions = [];
   for (const key of [...new Set(permissionKeys)]) {
     permissions.push(await ensurePermission(key, `Permiso ${key}`));
@@ -65,7 +88,8 @@ async function bootstrapTenant(tenantId: string) {
       update: { description: blueprint.description, system: blueprint.system },
       create: { tenantId, name: blueprint.name, description: blueprint.description, system: blueprint.system }
     });
-    await setRolePermissions(role.id, blueprint.permissions);
+    await assertRoleIsTenantManaged(role.id);
+    await setRolePermissions(role.id, [...blueprint.permissions]);
     roleMap.set(blueprint.name, role);
   }
 
@@ -161,7 +185,7 @@ async function ensureRoleByName(tenantId: string, roleName: string) {
 
 async function upsertDemoUser(tenantId: string, body: z.infer<typeof demoUserSchema>) {
   const role = await ensureRoleByName(tenantId, body.roleName);
-  if (role.system) throw new HttpError(422, 'Los usuarios demo no pueden asignarse a un rol interno del sistema.');
+  if (role.system) throw new HttpError(422, 'Los usuarios demo no pueden asignarse a un rol del catálogo interno de la empresa.');
   const existing = await prisma.userProfile.findUnique({ where: { tenantId_email: { tenantId, email: body.email } } });
   if(!existing&&!body.password)throw new HttpError(422,'La contraseña temporal es obligatoria al crear el usuario.');
   const passwordHash = body.password ? await bcrypt.hash(body.password, 12) : undefined;
@@ -208,10 +232,13 @@ async function upsertDemoUser(tenantId: string, body: z.infer<typeof demoUserSch
 
   return { id: user.id, email: user.email, fullName: user.fullName, role: role.name, expiresAt, maxModules: body.maxModules };
 }
+
 router.put('/roles/:name/permissions', asyncHandler(async (req, res) => {
   const body = rolePermissionsSchema.parse(req.body || {});
+  assertTenantPermissionKeys(body.permissionKeys);
   const role = await prisma.role.findUnique({ where: { tenantId_name: { tenantId: tenantId(req), name: decodeURIComponent(req.params.name) } } });
   if (!role) throw new HttpError(404, 'Rol no encontrado. Ejecuta bootstrap RBAC primero.');
+  await assertRoleIsTenantManaged(role.id);
   await setRolePermissions(role.id, body.permissionKeys);
   ok(res, { roleId: role.id, permissionKeys: body.permissionKeys });
 }));
