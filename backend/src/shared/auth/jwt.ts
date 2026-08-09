@@ -3,7 +3,7 @@ import { env } from '../../config/env.js';
 
 export const JWT_ISSUER = 'contagest-api';
 export const JWT_AUDIENCE = 'contagest-web';
-export const ACCESS_TOKEN_TTL_SECONDS = 8 * 60 * 60;
+export const ACCESS_TOKEN_TTL_SECONDS = 15 * 60;
 
 export type ContaGestAccessClaims = JwtPayload & {
   sub: string;
@@ -11,16 +11,18 @@ export type ContaGestAccessClaims = JwtPayload & {
   email: string;
   authMode: 'backend-jwt';
   tokenType: 'access';
+  sid?: string;
 };
 
-export function signAccessToken(user: { id: string; email: string }, tenantId: string) {
+export function signAccessToken(user: { id: string; email: string }, tenantId: string, sessionId?: string) {
   return jwt.sign(
     {
       sub: user.id,
       tenantId,
       email: user.email,
       authMode: 'backend-jwt',
-      tokenType: 'access'
+      tokenType: 'access',
+      ...(sessionId ? { sid:sessionId } : {})
     },
     env.JWT_SECRET,
     {
