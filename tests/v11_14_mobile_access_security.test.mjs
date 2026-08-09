@@ -11,10 +11,13 @@ test('v11.14 publishes a deterministic installable PWA', () => {
   const vite = read('frontend/vite.config.js');
   assert.equal(manifest.display, 'standalone');
   assert.equal(manifest.start_url, '/?source=pwa');
-  assert.equal(manifest.icons[0].src, '/icons/contagest-app.svg');
+  assert.equal(manifest.prefer_related_applications, false);
+  assert.ok(manifest.icons.some((icon) => icon.src === '/icons/contagest-app-192.svg' && icon.sizes === '192x192'));
+  assert.ok(manifest.icons.some((icon) => icon.src === '/icons/contagest-app-512.svg' && icon.sizes === '512x512'));
   assert.match(sw, /contagest-ve-v11-14-0/);
   assert.match(sw, /manifest\.webmanifest/);
-  assert.match(sw, /icons\/contagest-app\.svg/);
+  assert.match(sw, /contagest-app-192\.svg/);
+  assert.match(sw, /contagest-app-512\.svg/);
   assert.match(sw, /url\.pathname\.startsWith\('\/api\/'\)/);
   assert.match(installer, /beforeinstallprompt/);
   assert.match(installer, /Android/);
@@ -40,13 +43,17 @@ test('five failed passwords disable the account until an admin unlocks it', () =
   assert.match(admin, /bcrypt\.hash\(body\.newPassword, 12\)/);
 });
 
-test('client portal is visually forced to licensed-client mode', () => {
+test('client portal is visually and server-side forced to licensed-client mode', () => {
   const enhancer = read('frontend/src/services/loginEnhancer.js');
+  const auth = read('backend/src/modules/auth/auth.routes.ts');
   assert.match(enhancer, /path === '\/cliente'/);
   assert.match(enhancer, /clientOnly \? 'client'/);
   assert.match(enhancer, /Cliente con licencia/);
   assert.match(enhancer, /accessInput\.name = 'accessMode'/);
   assert.match(enhancer, /licenseInput\.required = client/);
+  assert.match(auth, /accessMode:z\.enum\(\['staff','client'\]\)/);
+  assert.match(auth, /accessMode==='client'&&internalUser/);
+  assert.match(auth, /accessMode==='staff'&&!internalUser/);
 });
 
 test('client URL editing cannot grant the admin frontend route and backend APIs enforce admin permission', () => {
