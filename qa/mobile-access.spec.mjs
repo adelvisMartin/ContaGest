@@ -29,6 +29,12 @@ async function expectNoPageOverflow(page) {
   expect(size.body, JSON.stringify(size)).toBeLessThanOrEqual(size.viewport + 2);
 }
 
+function licenseField(page) {
+  const fallback = page.locator('[name="licenseKey"]');
+  const host = fallback.locator('xpath=ancestor::*[@data-cgx-kit="field"][1]');
+  return { fallback, rendered:host.locator('input:not(.mui-fallback-hidden)').first() };
+}
+
 for (const viewport of [
   { name:'android-compact', width:344, height:760 },
   { name:'iphone', width:390, height:844 },
@@ -56,15 +62,18 @@ test('client link exposes only licensed-client access on mobile and keeps it aft
   await expect(page.getByRole('heading',{ name:'Acceso de cliente', exact:true })).toBeVisible();
   await expect(page.getByText('Cliente con licencia',{ exact:true }).first()).toBeVisible();
   await expect(page.locator('[data-login-access="staff"]')).toHaveCount(0);
-  await expect(page.locator('[name="licenseKey"]')).toBeVisible();
-  await expect(page.locator('[name="licenseKey"]')).toHaveAttribute('required','');
+  let license = licenseField(page);
+  await expect(license.rendered).toBeVisible();
+  await expect(license.fallback).toHaveAttribute('data-was-required','true');
   await expectNoPageOverflow(page);
   await page.screenshot({ path:'test-results/v11-14-cliente-android-344.png', fullPage:true });
 
   await page.goto('/?source=pwa', { waitUntil:'domcontentloaded' });
   await expect(page.getByRole('heading',{ name:'Acceso de cliente', exact:true })).toBeVisible();
   await expect(page.locator('[data-login-access="staff"]')).toHaveCount(0);
-  await expect(page.locator('[name="licenseKey"]')).toBeVisible();
+  license = licenseField(page);
+  await expect(license.rendered).toBeVisible();
+  await expect(license.fallback).toHaveAttribute('data-was-required','true');
 });
 
 test('public PWA manifest exposes Chromium installability fields', async ({ request }) => {
