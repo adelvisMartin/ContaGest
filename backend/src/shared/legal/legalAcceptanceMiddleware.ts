@@ -11,11 +11,19 @@ async function isPlatformOperator(userId:string,tenantId:string){
   return count>0;
 }
 
+async function hasLicensedCustomerAccess(userId:string,tenantId:string){
+  const count=await prisma.licenseKey.count({where:{userId,tenantId,status:'active',expiresAt:{gt:new Date()}}});
+  return count>0;
+}
+
 export async function requireCurrentLegalAcceptance(req:Request,_res:Response,next:NextFunction){
   try{
     const ctx=(req as any).context as {tenantId?:string;userId?:string}|undefined;
     if(!ctx?.tenantId||!ctx.userId)return next();
     if(await isPlatformOperator(ctx.userId,ctx.tenantId))return next();
+    // The first-access adhesion flow is a customer-license gate. Internal/staff sessions
+    // without a customer license are not trapped behind a UI that is intentionally client-only.
+    if(!await hasLicensedCustomerAccess(ctx.userId,ctx.tenantId))return next();
     const required=currentLegalDocuments().filter((doc)=>doc.required);
     const accepted=await prisma.$queryRaw<Array<{documentCode:string;documentVersion:string;documentHash:string}>>`
       SELECT "documentCode","documentVersion","documentHash"
