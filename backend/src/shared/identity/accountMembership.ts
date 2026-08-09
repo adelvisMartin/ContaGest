@@ -19,6 +19,16 @@ type MembershipRow = {
   isDefault:boolean;
 };
 
+function normalizeLicenseModules(value:unknown){
+  if(Array.isArray(value))return{enabled:value.map(String),businessSector:'general',commercialUse:'operacion'};
+  const data=value&&typeof value==='object'?value as Record<string,unknown>:{};
+  return{
+    enabled:Array.isArray(data.enabled)?data.enabled.map(String):[],
+    businessSector:String(data.businessSector||'general'),
+    commercialUse:String(data.commercialUse||'operacion')
+  };
+}
+
 export async function ensureAccountMembership(input: MembershipIdentityInput) {
   const email = input.email.trim().toLowerCase();
   if (!email) throw new HttpError(422, 'La membresía requiere un correo válido.');
@@ -58,6 +68,38 @@ export async function membershipForProfile(userProfileId:string) {
     LIMIT 1
   `;
   return rows[0] || null;
+}
+
+export async function activeLicenseForProfile(userProfileId:string,tenantId:string){
+  const record=await prisma.licenseKey.findFirst({
+    where:{userId:userProfileId,tenantId,status:'active',expiresAt:{gt:new Date()}},
+    orderBy:{createdAt:'desc'}
+  });
+  if(!record)return null;
+  const config=normalizeLicenseModules(record.modules);
+  const extension=await prisma.$queryRaw<Array<{businessCategory:string|null;maxUsers:number|null;maxDevices:number|null;activationCount:number|null;subscriptionId:string|null}>>`
+    SELECT "businessCategory","maxUsers","maxDevices","activationCount","subscriptionId"
+    FROM public."LicenseKey" WHERE "id"=${record.id} LIMIT 1
+  `;
+  const extra=extension[0]||{};
+  return{
+    id:record.id,
+    tenantId:record.tenantId,
+    userId:record.userId,
+    userEmail:record.userEmail,
+    plan:record.plan,
+    modules:config.enabled,
+    businessSector:String(extra.businessCategory||config.businessSector||'general'),
+    commercialUse:config.commercialUse,
+    maxUsers:Number(extra.maxUsers||1),
+    maxDevices:Number(extra.maxDevices||1),
+    devicesUsed:Number(extra.activationCount||0),
+    subscriptionId:extra.subscriptionId||null,
+    status:record.status,
+    expiresAt:record.expiresAt.toISOString(),
+    lastSeenAt:record.lastSeenAt?.toISOString()||null,
+    lastRoute:record.lastRoute||null
+  };
 }
 
 export async function listAccessibleTenants(userProfileId:string) {
@@ -159,12 +201,8 @@ export async function resolveTenantSwitch(currentUserProfileId:string, targetTen
   if (!target) throw new HttpError(403, 'La cuenta no tiene membresía activa en la empresa solicitada.');
 
   const systemRole = await prisma.userRole.count({ where:{ userId:target.userProfileId, role:{ tenantId:target.tenantId, system:true } } });
-  if (!systemRole) {
-    const license = await prisma.licenseKey.findFirst({
-      where:{ tenantId:target.tenantId, userId:target.userProfileId, status:'active', expiresAt:{ gt:new Date() } },
-      select:{ id:true }
-    });
-    if (!license) throw new HttpError(403, 'La empresa solicitada no está cubierta por una licencia activa para esta cuenta.');
+  if (!systemRole && !await activeLicenseForProfile(target.userProfileId,target.tenantId)) {
+    throw new HttpError(403, 'La empresa solicitada no está cubierta por una licencia activa para esta cuenta.');
   }
 
   return target;
