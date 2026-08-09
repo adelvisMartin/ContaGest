@@ -25,7 +25,18 @@ test('licensed client must explicitly accept current legal documents and necessa
   await expect(page.locator('#cgAnalyticsCookies')).not.toBeChecked();
   const accept=page.locator('#cgLegalAccept');
   await expect(accept).toBeDisabled();
-  for(const checkbox of await page.locator('[data-legal-document]').all())await checkbox.check();
+
+  // Exercise the real review UX: documents are collapsed individually, so open each one
+  // before checking its explicit acceptance box.
+  const sections=dialog.locator('.cg-legal-docs details');
+  await expect(sections).toHaveCount(documents.length);
+  for(let i=0;i<documents.length;i+=1){
+    const section=sections.nth(i);
+    if(!(await section.evaluate((node)=>node.open)))await section.locator('summary').click();
+    const checkbox=section.locator('[data-legal-document]');
+    await checkbox.check();
+    await expect(checkbox).toBeChecked();
+  }
   await page.locator('#cgNecessaryCookies').check();
   await expect(accept).toBeEnabled();
   await accept.click();
