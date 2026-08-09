@@ -11,7 +11,9 @@
       const raw = localStorage.getItem('contagest_auth_session');
       if (!raw) return false;
       const session = JSON.parse(raw);
-      return Boolean(session?.token) && Number(session?.expiresAt || 0) > Date.now();
+      // This metadata is only used to decide whether to show the install CTA.
+      // Authentication itself is enforced by HttpOnly cookies on the backend.
+      return Boolean(session?.tenantId) && Number(session?.expiresAt || 0) > Date.now();
     } catch {
       return false;
     }
