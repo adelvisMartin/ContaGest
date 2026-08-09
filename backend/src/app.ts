@@ -9,6 +9,7 @@ import { errorHandler, notFound } from './shared/middleware/error.js';
 import {
   authRateLimit,
   corsPolicy,
+  csrfProtection,
   enforceProductionSecrets,
   globalRateLimit,
   requestId,
@@ -20,7 +21,7 @@ const healthPayload = () => ({
   ok: true,
   status: 'healthy',
   service: 'ContaGest-VE API',
-  version: '11.14.0',
+  version: '11.15.0',
   timestamp: new Date().toISOString()
 });
 
@@ -42,6 +43,7 @@ export function createApp() {
   app.use(corsPolicy);
   app.use(globalRateLimit);
   app.use(express.json({ limit: env.JSON_BODY_LIMIT }));
+  app.use(csrfProtection);
   app.use(morgan(isProd ? 'combined' : 'dev'));
 
   app.get('/health', (_req, res) => res.json(healthPayload()));
