@@ -21,7 +21,7 @@ const healthPayload = () => ({
   ok: true,
   status: 'healthy',
   service: 'ContaGest-VE API',
-  version: '11.15.0',
+  version: '11.14.0',
   timestamp: new Date().toISOString()
 });
 
