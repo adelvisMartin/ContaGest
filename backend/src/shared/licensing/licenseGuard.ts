@@ -2,6 +2,7 @@ import crypto from 'node:crypto';
 import { prisma } from '../../database/prisma.js';
 import { env } from '../../config/env.js';
 import { HttpError } from '../http.js';
+import { assertSubscriptionAccess } from '../commercial/subscriptionGuard.js';
 
 const DEVICE_CREDENTIAL_TTL_MS = 180 * 24 * 60 * 60 * 1000;
 
@@ -27,6 +28,7 @@ type LicenseExtension = {
   maxDevices: number | null;
   activationCount: number | null;
   revokedAt: Date | null;
+  subscriptionId: string | null;
 };
 
 type ActivationRow = {
@@ -58,7 +60,7 @@ function createDeviceCredential() {
 
 async function loadExtension(licenseId: string, tenantId: string) {
   const rows = await prisma.$queryRaw<LicenseExtension[]>`
-    SELECT "businessCategory", "companyName", "companyRif", "maxUsers", "maxDevices", "activationCount", "revokedAt"
+    SELECT "businessCategory", "companyName", "companyRif", "maxUsers", "maxDevices", "activationCount", "revokedAt", "subscriptionId"
     FROM public."LicenseKey"
     WHERE "id" = ${licenseId} AND "tenantId" = ${tenantId}
     LIMIT 1
@@ -157,7 +159,6 @@ async function activateOrUpgradeDevice(params: {
   `;
   const existing = rows[0];
 
-  // Once a server credential has been issued, knowing only license + cloned deviceId is deliberately insufficient.
   if (existing?.credentialHash && existing.status === 'active') {
     throw new HttpError(403, 'Este dispositivo ya fue activado. Usa su credencial segura o solicita al administrador revocar/reactivar el equipo.');
   }
@@ -214,6 +215,7 @@ export async function validateUserLicense(input: LicenseValidationInput) {
   }
 
   const extension = await loadExtension(record.id, input.tenantId);
+  await assertSubscriptionAccess(extension.subscriptionId, input.tenantId);
   const tenant = await prisma.tenant.findUnique({ where: { id: input.tenantId }, select: { id:true, name:true, rif:true } });
   if (!tenant) throw new HttpError(403, 'Empresa de la licencia no encontrada.');
   if (extension.companyRif && extension.companyRif.trim().toUpperCase() !== tenant.rif.trim().toUpperCase()) {
@@ -282,6 +284,7 @@ export async function validateUserLicense(input: LicenseValidationInput) {
     devicesUsed: activationCount,
     companyName: extension.companyName || tenant.name,
     companyRif: extension.companyRif || tenant.rif,
+    subscriptionId: extension.subscriptionId || null,
     expiresAt: updated.expiresAt.toISOString(),
     status: updated.status,
     lastSeenAt: updated.lastSeenAt?.toISOString() || null,
