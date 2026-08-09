@@ -6,8 +6,17 @@ import { prisma } from '../../database/prisma.js';
 import { env, isProd } from '../../config/env.js';
 import { asyncHandler, HttpError, ok } from '../../shared/http.js';
 import { validateBody } from '../../shared/middleware/validate.js';
-import { signAccessToken, tokenExpiresAt, verifyAccessToken } from '../../shared/auth/jwt.js';
+import { verifyAccessToken } from '../../shared/auth/jwt.js';
+import {
+  issueBrowserSession,
+  readAccessToken,
+  readDeviceCredential,
+  revokeBrowserSession,
+  rotateBrowserSession,
+  setDeviceCredentialCookie
+} from '../../shared/auth/sessionCookies.js';
 import { validateUserLicense } from '../../shared/licensing/licenseGuard.js';
+import { ensureAccountMembership, listAccessibleTenants, resolveTenantSwitch } from '../../shared/identity/accountMembership.js';
 import { coordinateCardStatus, generateCoordinateCard, issueCoordinateChallenge, revokeCoordinateCard, verifyCoordinateChallenge } from '../../shared/auth/coordinateCard.js';
 
 const router = Router();
@@ -55,13 +64,14 @@ const captchaFields = { captchaToken:z.string().min(20), captchaAnswer:z.string(
 const registerSchema = z.object({ tenantRif:z.string().min(5), tenantName:z.string().min(2), legalName:z.string().optional(), fullName:z.string().min(2), email:z.string().email(), password:z.string().min(12).max(128), plan:z.string().default('enterprise'), ...captchaFields });
 const loginSchema = z.object({
   email:z.string().email(), password:z.string().min(1).max(128), tenantRif:z.string().min(5).default('00000000'),
-  accessMode:z.enum(['staff','client']).default('staff'),
+  accessMode:z.enum(['staff','client']).optional(),
   licenseKey:z.string().min(20).max(180).optional(), deviceId:z.string().min(8).max(240).optional(), deviceLabel:z.string().max(120).optional(), ...captchaFields
 });
 const coordinateLoginSchema = z.object({
   challengeId:z.string().uuid(),
   answers:z.record(z.string().regex(/^[A-L](10|[1-9])$/),z.string().regex(/^\d{4}$/))
 });
+const switchTenantSchema = z.object({ tenantId:z.string().min(1).max(120) });
 
 function signCaptchaPayload(payload:string){return crypto.createHmac('sha256',env.JWT_SECRET).update(payload).digest('base64url');}
 function signCaptchaAnswer(nonce:string,answer:string){return crypto.createHmac('sha256',env.JWT_SECRET).update(`captcha:${nonce}:${answer}`).digest('base64url');}
@@ -93,7 +103,26 @@ function isInternalUser(user:any){return Array.isArray(user?.userRoles)&&user.us
 function hasAdminPermission(user:any){return permissionsForUser(user).includes('admin.manage');}
 function roleForUser(user:any){return hasAdminPermission(user)?'admin':isInternalUser(user)?'staff':'client';}
 function publicUser(user:any,role=roleForUser(user)){return{id:user.id,email:user.email,fullName:user.fullName,name:user.fullName,status:user.status,role,permissions:permissionsForUser(user),accessExpiresAt:user.accessExpiresAt||null};}
-function buildSession(user:any,tenant:any,options:{role?:string;license?:any}={}){const token=signAccessToken(user,tenant.id);return{token,tenantId:tenant.id,tenant,user:publicUser(user,options.role||roleForUser(user)),license:options.license||null,expiresAt:tokenExpiresAt(token)};}
+function publicLicense(license:any){
+  if(!license)return null;
+  const{_issuedDeviceCredential,_issuedDeviceCredentialExpiresAt,...safe}=license;
+  return safe;
+}
+
+async function sessionPayload(req:any,res:any,user:any,tenant:any,options:{role?:string;license?:any;rotateResult?:any}={}){
+  const role=options.role||roleForUser(user);
+  await ensureAccountMembership({tenantId:tenant.id,userProfileId:user.id,email:user.email,fullName:user.fullName,roleLabel:role});
+  const cookieSession=options.rotateResult||await issueBrowserSession(req,res,user,tenant.id,{role,audience:role==='client'?'client':'staff'});
+  const accessibleTenants=await listAccessibleTenants(user.id);
+  return{
+    ...cookieSession,
+    tenantId:tenant.id,
+    tenant,
+    user:publicUser(user,role),
+    license:publicLicense(options.license),
+    accessibleTenants
+  };
+}
 
 async function ensureAdminRole(tenantId:string,userId:string){
   const permissionKeys=['admin.manage','clients.manage','inventory.manage','sales.manage','sales.view','purchases.manage','reports.view','modules.manage','payroll.manage','banking.manage','taxes.export','health.manage','gym.manage','communications.manage'];
@@ -104,11 +133,19 @@ async function ensureAdminRole(tenantId:string,userId:string){
   await prisma.userRole.upsert({where:{userId_roleId:{userId,roleId:role.id}},update:{},create:{userId,roleId:role.id}});
 }
 
-function bearerToken(req:any){const header=String(req.header('authorization')||''),[kind,token]=header.trim().split(/\s+/,2);if(kind?.toLowerCase()!=='bearer'||!token)throw new HttpError(401,'Token requerido.');return token;}
 async function authenticatedSession(req:any){
-  let decoded:any;try{decoded=verifyAccessToken(bearerToken(req));}catch{throw new HttpError(401,'Token inválido o expirado.');}
+  const auth=readAccessToken(req);
+  if(!auth)throw new HttpError(401,'Sesión requerida.');
+  let decoded:any;try{decoded=verifyAccessToken(auth.token);}catch{throw new HttpError(401,'Sesión inválida o expirada.');}
+  if(auth.mode==='cookie'&&decoded.sid){
+    const rows=await prisma.$queryRaw<Array<{status:string;expiresAt:Date}>>`
+      SELECT "status","expiresAt" FROM public."UserSession" WHERE "id"=${decoded.sid} AND "userId"=${decoded.sub} AND "tenantId"=${decoded.tenantId} LIMIT 1
+    `;
+    const browserSession=rows[0];
+    if(!browserSession||browserSession.status!=='active'||new Date(browserSession.expiresAt).getTime()<=Date.now())throw new HttpError(401,'La sesión fue revocada o venció.');
+  }
   const user=await prisma.userProfile.findFirst({where:{id:decoded.sub,tenantId:decoded.tenantId,status:'active'},include:{tenant:true,userRoles:userRoleInclude}});
-  if(!user)throw new HttpError(401,'Usuario no encontrado o deshabilitado.');ensureAccessNotExpired(user);return{decoded,user};
+  if(!user)throw new HttpError(401,'Usuario no encontrado o deshabilitado.');ensureAccessNotExpired(user);return{decoded,user,authMode:auth.mode};
 }
 
 router.get('/captcha',(_req,res)=>ok(res,createCaptchaChallenge()));
@@ -116,14 +153,15 @@ router.get('/captcha',(_req,res)=>ok(res,createCaptchaChallenge()));
 router.post('/register',validateBody(registerSchema),asyncHandler(async(req,res)=>{
   const registerKey=req.header('x-admin-register-key')||'',publicAllowed=env.ALLOW_PUBLIC_REGISTER==='true'||(!isProd&&env.ALLOW_PUBLIC_REGISTER==='local'),keyAllowed=Boolean(env.ADMIN_REGISTER_KEY&&registerKey===env.ADMIN_REGISTER_KEY);
   if(!publicAllowed&&!keyAllowed)throw new HttpError(403,'Registro público deshabilitado. La empresa debe ser creada por un administrador.');
-  verifyCaptcha(req.body);const body=req.body,passwordHash=await bcrypt.hash(body.password,12);
+  verifyCaptcha(req.body);const body=req.body,passwordHash=await bcrypt.hash(body.password,12),email=String(body.email).trim().toLowerCase();
   const tenant=await prisma.tenant.upsert({where:{rif:body.tenantRif},update:{name:body.tenantName,legalName:body.legalName||body.tenantName,plan:body.plan||'enterprise',status:'active'},create:{rif:body.tenantRif,name:body.tenantName,legalName:body.legalName||body.tenantName,plan:body.plan||'enterprise',status:'active',settings:{}}});
-  const existing=await prisma.userProfile.findUnique({where:{tenantId_email:{tenantId:tenant.id,email:body.email}}});
+  const existing=await prisma.userProfile.findUnique({where:{tenantId_email:{tenantId:tenant.id,email}}});
   if(existing?.passwordHash)throw new HttpError(409,'Ya existe un usuario con ese email para esta empresa.');
-  const user=existing?await prisma.userProfile.update({where:{id:existing.id},data:{fullName:body.fullName,passwordHash,status:'active'}}):await prisma.userProfile.create({data:{tenantId:tenant.id,email:body.email,fullName:body.fullName,passwordHash,status:'active'}});
+  const user=existing?await prisma.userProfile.update({where:{id:existing.id},data:{fullName:body.fullName,passwordHash,status:'active'}}):await prisma.userProfile.create({data:{tenantId:tenant.id,email,fullName:body.fullName,passwordHash,status:'active'}});
   await ensureAdminRole(tenant.id,user.id);
+  await ensureAccountMembership({tenantId:tenant.id,userProfileId:user.id,email:user.email,fullName:user.fullName,roleLabel:'Administrador'});
   const sessionUser=await prisma.userProfile.findUnique({where:{id:user.id},include:{userRoles:userRoleInclude}});
-  ok(res,buildSession(sessionUser||user,tenant,{role:'admin'}),201);
+  ok(res,await sessionPayload(req,res,sessionUser||user,tenant,{role:'admin'}),201);
 }));
 
 router.post('/login',validateBody(loginSchema),asyncHandler(async(req,res)=>{
@@ -131,7 +169,8 @@ router.post('/login',validateBody(loginSchema),asyncHandler(async(req,res)=>{
   const tenant=await prisma.tenant.findUnique({where:{rif:req.body.tenantRif}});
   if(!tenant){await recordLoginFailure(req);throw new HttpError(401,'Credenciales incorrectas.');}
 
-  const user=await prisma.userProfile.findFirst({where:{tenantId:tenant.id,email:req.body.email},include:{userRoles:userRoleInclude}});
+  const email=String(req.body.email).trim().toLowerCase();
+  const user=await prisma.userProfile.findFirst({where:{tenantId:tenant.id,email},include:{userRoles:userRoleInclude}});
   if(!user){await recordLoginFailure(req);throw new HttpError(401,'Credenciales incorrectas.');}
   if(user.status==='disabled')throw new HttpError(423,'Usuario bloqueado. Comunícate con un administrador para reactivarlo.');
   if(user.status!=='active')throw new HttpError(403,'El usuario todavía no está activo. Comunícate con un administrador.');
@@ -145,37 +184,55 @@ router.post('/login',validateBody(loginSchema),asyncHandler(async(req,res)=>{
     throw new HttpError(401,`Credenciales incorrectas. Quedan ${remaining} intento(s) antes del bloqueo.`);
   }
 
-  const internalUser=isInternalUser(user);
-  if(req.body.accessMode==='client'&&internalUser){
-    throw new HttpError(403,'Esta cuenta pertenece al equipo interno. Usa el acceso interno de ContaGest.');
-  }
-  if(req.body.accessMode==='staff'&&!internalUser){
-    throw new HttpError(403,'Esta cuenta requiere el portal Cliente con licencia.');
-  }
-
   await recordLoginSuccess(req);
-  let license=null;
-  if(!internalUser){
-    if(!req.body.licenseKey||!req.body.deviceId)throw new HttpError(403,'Este usuario requiere licencia y dispositivo autorizado.');
-    license=await validateUserLicense({tenantId:tenant.id,userId:user.id,userEmail:user.email,licenseKey:req.body.licenseKey,deviceId:req.body.deviceId,deviceLabel:req.body.deviceLabel||null,route:'login',ip:req.ip,userAgent:req.headers['user-agent']||null,metadata:{source:'login',accessMode:req.body.accessMode}});
-  }
+  const internalUser=isInternalUser(user);
   const role=roleForUser(user);
-  const mfa=await issueCoordinateChallenge({tenantId:tenant.id,userId:user.id,ip:req.ip,userAgent:req.headers['user-agent']||'',context:{role,license}});
+  let license:any=null;
+  if(!internalUser){
+    license=await validateUserLicense({
+      tenantId:tenant.id,userId:user.id,userEmail:user.email,
+      licenseKey:req.body.licenseKey||null,deviceId:req.body.deviceId||null,
+      deviceCredential:readDeviceCredential(req),deviceLabel:req.body.deviceLabel||null,
+      route:'login',ip:req.ip,userAgent:req.headers['user-agent']||null,
+      metadata:{source:'login',accessMode:'client'}
+    });
+    if(license._issuedDeviceCredential){
+      setDeviceCredentialCookie(res,license._issuedDeviceCredential,license._issuedDeviceCredentialExpiresAt);
+    }
+  }
+  await ensureAccountMembership({tenantId:tenant.id,userProfileId:user.id,email:user.email,fullName:user.fullName,roleLabel:role});
+  const safeLicense=publicLicense(license);
+  const mfa=await issueCoordinateChallenge({tenantId:tenant.id,userId:user.id,ip:req.ip,userAgent:req.headers['user-agent']||'',context:{role,license:safeLicense}});
   if(mfa)return ok(res,{...mfa,user:{email:user.email,fullName:user.fullName},tenant:{id:tenant.id,name:tenant.name,rif:tenant.rif}},202);
-  ok(res,buildSession(user,tenant,{role,license}));
+  ok(res,await sessionPayload(req,res,user,tenant,{role,license:safeLicense}));
 }));
 
 router.post('/login/coordinates',validateBody(coordinateLoginSchema),asyncHandler(async(req,res)=>{
   const verified=await verifyCoordinateChallenge({challengeId:req.body.challengeId,answers:req.body.answers,ip:req.ip,userAgent:req.headers['user-agent']||''});
   const user=await prisma.userProfile.findFirst({where:{id:verified.userId,tenantId:verified.tenantId,status:'active'},include:{tenant:true,userRoles:userRoleInclude}});if(!user)throw new HttpError(401,'Usuario del reto no disponible.');ensureAccessNotExpired(user);
   const context=verified.context as any;
-  ok(res,buildSession(user,user.tenant,{role:context.role||roleForUser(user),license:context.license||null}));
+  ok(res,await sessionPayload(req,res,user,user.tenant,{role:context.role||roleForUser(user),license:context.license||null}));
 }));
 
 router.get('/coordinates/status',asyncHandler(async(req,res)=>{const{user}=await authenticatedSession(req);ok(res,await coordinateCardStatus(user.tenantId,user.id));}));
 router.post('/coordinates/enroll',asyncHandler(async(req,res)=>{const{user}=await authenticatedSession(req);ok(res,await generateCoordinateCard(user.tenantId,user.id),201);}));
 router.post('/coordinates/revoke',asyncHandler(async(req,res)=>{const{user}=await authenticatedSession(req);ok(res,await revokeCoordinateCard(user.tenantId,user.id));}));
-router.get('/me',asyncHandler(async(req,res)=>{const{decoded,user}=await authenticatedSession(req);ok(res,{...decoded,user:publicUser(user),tenant:user.tenant,tenantId:user.tenantId,coordinateCard:await coordinateCardStatus(user.tenantId,user.id)});}));
-router.post('/refresh',asyncHandler(async(req,res)=>{const{user}=await authenticatedSession(req);ok(res,buildSession(user,user.tenant));}));
+router.get('/me',asyncHandler(async(req,res)=>{const{decoded,user}=await authenticatedSession(req);ok(res,{sessionMode:'cookie',tenantId:user.tenantId,user:publicUser(user),tenant:user.tenant,accessibleTenants:await listAccessibleTenants(user.id),coordinateCard:await coordinateCardStatus(user.tenantId,user.id),expiresAt:decoded.exp?decoded.exp*1000:null});}));
+router.get('/tenants',asyncHandler(async(req,res)=>{const{user}=await authenticatedSession(req);ok(res,await listAccessibleTenants(user.id));}));
+router.post('/switch-tenant',validateBody(switchTenantSchema),asyncHandler(async(req,res)=>{
+  const{user}=await authenticatedSession(req);
+  const target=await resolveTenantSwitch(user.id,req.body.tenantId);
+  const targetUser=await prisma.userProfile.findFirst({where:{id:target.userProfileId,tenantId:target.tenantId,status:'active'},include:{tenant:true,userRoles:userRoleInclude}});
+  if(!targetUser)throw new HttpError(403,'La membresía destino ya no está disponible.');
+  await revokeBrowserSession(req,res);
+  ok(res,await sessionPayload(req,res,targetUser,targetUser.tenant,{role:roleForUser(targetUser)}));
+}));
+router.post('/refresh',asyncHandler(async(req,res)=>{
+  const rotated=await rotateBrowserSession(req,res);
+  const user=await prisma.userProfile.findFirst({where:{id:rotated.userId,tenantId:rotated.tenantId,status:'active'},include:{tenant:true,userRoles:userRoleInclude}});
+  if(!user)throw new HttpError(401,'La cuenta ya no está activa.');
+  ok(res,await sessionPayload(req,res,user,user.tenant,{rotateResult:rotated}));
+}));
+router.post('/logout',asyncHandler(async(req,res)=>{await revokeBrowserSession(req,res);ok(res,{loggedOut:true});}));
 
 export default router;
