@@ -20,5 +20,11 @@ export const RbacService = {
   },
   async updateDemoUser(userId, user) {
     return BackendApi.request(`/rbac/demo-users/${encodeURIComponent(userId)}`, { method:'PUT', body:user });
+  },
+  async securityUsers() {
+    return BackendApi.request('/user-security/users');
+  },
+  async updateSecurityUser(userId, changes) {
+    return BackendApi.request(`/user-security/users/${encodeURIComponent(userId)}`, { method:'PATCH', body:changes });
   }
 };
