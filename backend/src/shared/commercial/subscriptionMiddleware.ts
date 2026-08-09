@@ -6,8 +6,10 @@ export async function enforceCommercialSubscription(req:Request,_res:Response,ne
   try{
     const ctx=(req as any).context as {tenantId?:string;userId?:string}|undefined;
     if(!ctx?.tenantId||!ctx.userId)return next();
-    const systemRole=await prisma.userRole.count({where:{userId:ctx.userId,role:{tenantId:ctx.tenantId,system:true}}});
-    if(systemRole)return next();
+    const platformPermission=await prisma.userRole.count({
+      where:{userId:ctx.userId,role:{tenantId:ctx.tenantId,permissions:{some:{permission:{key:'platform.manage'}}}}}
+    });
+    if(platformPermission)return next();
     const license=await prisma.licenseKey.findFirst({
       where:{tenantId:ctx.tenantId,userId:ctx.userId,status:'active',expiresAt:{gt:new Date()}},
       orderBy:{createdAt:'desc'},select:{id:true}
