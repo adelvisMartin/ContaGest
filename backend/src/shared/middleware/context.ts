@@ -42,6 +42,22 @@ const PERMISSION_MODULES: Record<string, string[]> = {
 
 async function resolveBackendJwtContext(token: string, cookieMode = false): Promise<AuthIdentityContext> {
   const decoded = verifyAccessToken(token);
+  if (cookieMode) {
+    if (!decoded.sid) throw new HttpError(401, 'La cookie de acceso no está vinculada a una sesión de servidor.');
+    const sessions = await prisma.$queryRaw<Array<{ status:string; expiresAt:Date }>>`
+      SELECT "status", "expiresAt"
+      FROM public."UserSession"
+      WHERE "id"=${decoded.sid}
+        AND "userId"=${decoded.sub}
+        AND "tenantId"=${decoded.tenantId}
+      LIMIT 1
+    `;
+    const session = sessions[0];
+    if (!session || session.status !== 'active' || new Date(session.expiresAt).getTime() <= Date.now()) {
+      throw new HttpError(401, 'La sesión fue revocada, reemplazada o venció. Inicia sesión nuevamente.');
+    }
+  }
+
   const profile = await prisma.userProfile.findFirst({
     where: { id: decoded.sub, tenantId: decoded.tenantId, status: 'active' },
     select: { id: true, tenantId: true, email: true, accessExpiresAt:true }
