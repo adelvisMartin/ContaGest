@@ -1,0 +1,12 @@
+.cg-device-dialog{width:min(920px,calc(100vw - 24px));max-height:min(760px,calc(100dvh - 32px));border:1px solid var(--cg-border,#d8e1ec);border-radius:18px;padding:0;background:var(--cg-surface,#fff);color:var(--cg-text,#0b1526);box-shadow:0 28px 90px rgba(2,6,23,.28)}
+.cg-device-dialog::backdrop{background:rgba(2,6,23,.62);backdrop-filter:blur(4px)}
+.cg-device-dialog-head{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;padding:18px 20px;border-bottom:1px solid var(--cg-border,#d8e1ec)}
+.cg-device-dialog-head h2{margin:2px 0 4px;font-size:1.15rem}.cg-device-dialog-head p{margin:0;color:var(--cg-text-muted,#5f7188);font-size:.82rem}
+.cg-device-dialog-close{width:38px;height:38px;border:1px solid var(--cg-border,#d8e1ec);border-radius:11px;background:var(--cg-surface-soft,#f7f9fc);color:var(--cg-text,#0b1526);cursor:pointer}
+.cg-device-dialog-body{padding:16px 20px 20px;overflow:auto;max-height:calc(100dvh - 150px)}
+.cg-device-grid{display:grid;gap:10px}.cg-device-card{display:grid;grid-template-columns:minmax(0,1.4fr) minmax(130px,.8fr) auto;gap:12px;align-items:center;padding:14px;border:1px solid var(--cg-border,#d8e1ec);border-radius:14px;background:var(--cg-surface-soft,#f7f9fc)}
+.cg-device-card strong{display:block}.cg-device-meta{display:flex;flex-wrap:wrap;gap:6px 12px;margin-top:5px;color:var(--cg-text-muted,#5f7188);font-size:.74rem}.cg-device-credential{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.75rem;color:var(--cg-text-muted,#5f7188)}
+.cg-device-empty{padding:30px;text-align:center;color:var(--cg-text-muted,#5f7188)}
+.cg-device-revoke{min-height:38px;border:1px solid #fecaca;border-radius:10px;background:#fff1f2;color:#b42318;font-weight:800;padding:0 12px;cursor:pointer}.cg-device-revoke:disabled{opacity:.55;cursor:not-allowed}
+html.dark .cg-device-dialog,html.enterprise .cg-device-dialog{--cg-surface:#0d1b2d;--cg-surface-soft:#12243a;--cg-border:#29435f;--cg-text:#f7fbff;--cg-text-muted:#aec0d2}.cg-device-card[data-status="active"]{box-shadow:inset 3px 0 #12805c}.cg-device-card[data-status="revoked"],.cg-device-card[data-status="blocked"]{box-shadow:inset 3px 0 #b42318}
+@media(max-width:680px){.cg-device-dialog{width:calc(100vw - 16px);max-height:calc(100dvh - 16px)}.cg-device-dialog-head,.cg-device-dialog-body{padding-left:13px;padding-right:13px}.cg-device-card{grid-template-columns:1fr}.cg-device-revoke{width:100%}}
