@@ -1,0 +1,36 @@
+/* ContaGest v11.15 visual QA hotfixes */
+html body .hf-brand-mark,
+html body .login-mark{position:relative!important;overflow:hidden!important;isolation:isolate!important}
+html body .hf-brand-mark::after,
+html body .login-mark::after{
+  content:''!important;
+  position:absolute!important;
+  inset:2px!important;
+  z-index:2!important;
+  border-radius:inherit!important;
+  background:url('/icons/contagest-app.svg') center/contain no-repeat!important;
+  pointer-events:none!important;
+}
+html body .login-mark::after{inset:3px!important}
+
+/* Legacy fallbacks must disappear once the MUI island is mounted. */
+html body [data-cgx-kit]:has(.MuiFormControl-root) > .mui-fallback-hidden,
+html body [data-cgx-kit]:has(.MuiTextField-root) > .mui-fallback-hidden,
+html body [data-cgx-kit='select']:has(.MuiFormControl-root) > label:not(.MuiInputLabel-root),
+html body [data-cgx-kit='field']:has(.MuiTextField-root) > label:not(.MuiInputLabel-root){display:none!important}
+
+@media(max-width:760px){
+  html body .cgx-page-copy,
+  html body .cgx-page-copy p{width:100%!important;max-width:100%!important;min-width:0!important;overflow:visible!important;text-overflow:clip!important;white-space:normal!important;word-break:normal!important;overflow-wrap:anywhere!important}
+  html body .cgx-page-actions .MuiButton-root,
+  html body .cgx-section-actions .MuiButton-root{width:100%!important;max-width:100%!important;justify-content:center!important}
+}
+
+@media(max-width:420px){
+  html body .cgx-page-actions,
+  html body .cgx-section-actions{display:grid!important;grid-template-columns:minmax(0,1fr)!important;overflow:visible!important;width:100%!important}
+  html body .cgx-page-actions > *,
+  html body .cgx-section-actions > *{width:100%!important;min-width:0!important;max-width:100%!important;flex:none!important}
+  html body .cgx-page-actions :is(button,.btn,.cgx-btn,.MuiButton-root),
+  html body .cgx-section-actions :is(button,.btn,.cgx-btn,.MuiButton-root){width:100%!important;max-width:100%!important}
+}
