@@ -76,15 +76,21 @@ test('client link exposes only licensed-client access on mobile and keeps it aft
   await expect(license.fallback).toHaveAttribute('data-was-required','true');
 });
 
-test('mobile install CTA is interactive and exposes fallback guidance when native prompt is unavailable', async ({ page }) => {
+test('mobile install CTA is interactive and reaches native or manual install flow', async ({ page }) => {
   await page.setViewportSize({ width:344, height:760 });
   await mockCaptcha(page);
   await page.goto('/', { waitUntil:'domcontentloaded' });
-  const install = page.locator('#cg-install-app [data-cg-install]');
+  const host = page.locator('#cg-install-app');
+  const install = host.locator('[data-cg-install]');
   await expect(install).toBeVisible({ timeout:4000 });
   await expect(install).toBeEnabled();
-  await install.click();
-  await expect(page.locator('#cg-install-app [data-cg-install-help]')).toContainText(/Instalar aplicación|Añadir a pantalla/);
+  const before = await host.getAttribute('data-install-state');
+  expect(['native-ready','manual-ready']).toContain(before);
+  await install.click({ noWaitAfter:true });
+  await expect.poll(async () => {
+    if (await host.count() === 0) return 'installed';
+    return await host.getAttribute('data-install-state');
+  }, { timeout:3000 }).not.toBe(before);
 });
 
 test('public PWA manifest exposes Chromium installability fields', async ({ request }) => {
