@@ -1,5 +1,8 @@
 import { BackendApi } from './backendApi.js';
 import { AccessControlService } from './accessControlService.js';
+import { installAdminUserSecurityEnhancer } from './adminUserSecurityEnhancer.js';
+
+installAdminUserSecurityEnhancer();
 
 export const RbacService = {
   async summary() {
@@ -20,5 +23,11 @@ export const RbacService = {
   },
   async updateDemoUser(userId, user) {
     return BackendApi.request(`/rbac/demo-users/${encodeURIComponent(userId)}`, { method:'PUT', body:user });
+  },
+  async securityUsers() {
+    return BackendApi.request('/user-security/users');
+  },
+  async updateSecurityUser(userId, changes) {
+    return BackendApi.request(`/user-security/users/${encodeURIComponent(userId)}`, { method:'PATCH', body:changes });
   }
 };

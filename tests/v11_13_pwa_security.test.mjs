@@ -12,10 +12,11 @@ test('captcha token no longer serializes the expected answer', () => {
   assert.match(auth, /password:z\.string\(\)\.min\(12\)\.max\(128\)/);
 });
 
-test('session role defaults to least privilege', () => {
+test('session roles are derived from database permissions instead of an admin default', () => {
   const auth = read('backend/src/modules/auth/auth.routes.ts');
-  assert.match(auth, /function publicUser\(user:any,role='client'\)/);
-  assert.match(auth, /roleForUser\(user\)/);
+  assert.match(auth, /hasAdminPermission/);
+  assert.match(auth, /permissionsForUser/);
+  assert.match(auth, /roleForUser\(user/);
   assert.doesNotMatch(auth, /function publicUser\(user:any,role='admin'\)/);
 });
 
@@ -29,11 +30,11 @@ test('API blocks cross-site unsafe requests and disables sensitive caching', () 
 test('PWA install flow and service worker do not cache API data', () => {
   const installer = read('frontend/public/pwa-install.js');
   const sw = read('frontend/public/sw.js');
-  const manifest = JSON.parse(read('frontend/manifest.webmanifest'));
+  const manifest = JSON.parse(read('frontend/public/manifest.webmanifest'));
   assert.match(installer, /beforeinstallprompt/);
   assert.match(installer, /appinstalled/);
   assert.match(sw, /url\.pathname\.startsWith\('\/api\/'\)/);
-  assert.match(sw, /fetch\(request, \{ cache: 'no-store' \}\)/);
+  assert.match(sw, /cache:'no-store'/);
   assert.equal(manifest.display, 'standalone');
   assert.equal(manifest.scope, '/');
 });

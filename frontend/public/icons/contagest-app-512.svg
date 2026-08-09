@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
+  <title id="title">ContaGest</title><desc id="desc">Icono ContaGest</desc>
+  <defs><linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#0b1f44"/><stop offset="1" stop-color="#2563eb"/></linearGradient></defs>
+  <rect width="512" height="512" rx="112" fill="url(#bg)"/>
+  <path d="M364 174c-25-35-62-54-108-54-79 0-136 58-136 136s57 136 136 136c47 0 86-20 111-57l-57-38c-12 19-31 29-54 29-40 0-68-29-68-70s28-70 68-70c22 0 40 9 52 27l56-39Z" fill="#fff"/>
+  <path d="M296 238h96v58h-96z" fill="#8ec5ff"/>
+</svg>

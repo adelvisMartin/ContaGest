@@ -52,10 +52,11 @@ export const globalRateLimit = rateLimit({
 
 export const authRateLimit = rateLimit({
   windowMs: 15 * 60_000,
-  limit: isProd ? 12 : 40,
+  limit: isProd ? 20 : 60,
+  skip: (req) => ['GET', 'HEAD', 'OPTIONS'].includes(req.method.toUpperCase()),
   standardHeaders: true,
   legacyHeaders: false,
-  message: { ok: false, error: 'Demasiados intentos de autenticación.' }
+  message: { ok: false, error: 'Demasiadas solicitudes de autenticación. Espera unos minutos antes de reintentar.' }
 });
 
 export function enforceProductionSecrets(_req: Request, _res: Response, next: NextFunction) {

@@ -3,8 +3,27 @@ import { defineConfig } from 'vite';
 const pwaInstallPlugin = {
   name: 'contagest-pwa-install',
   transformIndexHtml(html) {
+    const metadata = `    <meta name="application-name" content="ContaGest-VE Enterprise" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="ContaGest" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="robots" content="index,follow,max-image-preview:large" />
+    <link rel="canonical" href="https://conta-gest-frontend.vercel.app/" />
+    <meta property="og:type" content="website" />
+    <meta property="og:locale" content="es_VE" />
+    <meta property="og:site_name" content="ContaGest-VE Enterprise" />
+    <meta property="og:title" content="ContaGest-VE Enterprise | Gestión empresarial" />
+    <meta property="og:description" content="ERP empresarial para ventas, inventario, contabilidad, fiscal, bancos, nómina y operaciones." />
+    <meta property="og:url" content="https://conta-gest-frontend.vercel.app/" />
+    <meta name="twitter:card" content="summary" />
+    <meta name="twitter:title" content="ContaGest-VE Enterprise" />
+    <meta name="twitter:description" content="Gestión empresarial segura, adaptable y centralizada." />`;
     return html
-      .replaceAll('11.12.0', '11.13.0')
+      .replaceAll('11.12.0', '11.14.0')
+      .replaceAll('11.13.0', '11.14.0')
+      .replace(/<link rel="manifest"[^>]*>/, '<link rel="manifest" href="/manifest.webmanifest" />')
+      .replace('</head>', `${metadata}\n</head>`)
       .replace('</body>', '  <script src="/pwa-install.js" defer></script>\n</body>');
   }
 };

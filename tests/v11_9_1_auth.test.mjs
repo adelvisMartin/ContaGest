@@ -29,6 +29,7 @@ test('login clearly separates staff and licensed clients', () => {
   assert.match(enhancer, /Cliente con licencia/);
   assert.match(enhancer, /licenseInput\.required = client/);
   assert.match(enhancer, /login-tech-note/);
+  assert.match(enhancer, /path === '\/cliente'/);
   assert.match(styles, /login-access-switch/);
 });
 
@@ -40,13 +41,12 @@ test('CAPTCHA and login controls are responsive and compact', () => {
   assert.match(styles, /login-submit/);
 });
 
-test('PWA identifies v11.12 and never caches authentication APIs', () => {
-  const manifest = JSON.parse(read('frontend/manifest.webmanifest'));
+test('PWA identifies v11.14 and never caches authentication APIs', () => {
+  const manifest = JSON.parse(read('frontend/public/manifest.webmanifest'));
   const worker = read('frontend/public/sw.js');
   assert.equal(manifest.display, 'standalone');
   assert.equal(manifest.scope, '/');
-  assert.match(worker, /contagest-ve-v11-12-1/);
+  assert.match(worker, /contagest-ve-v11-14-0/);
   assert.match(worker, /url\.pathname\.startsWith\('\/api\/'\)/);
   assert.match(worker, /request\.mode === 'navigate'/);
 });
-

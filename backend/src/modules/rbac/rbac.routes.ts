@@ -22,7 +22,7 @@ const ROLE_BLUEPRINTS = [
   { name: 'Vendedor / Caja', description: 'Clientes, cotizaciones, ventas y pedidos.', system: true, permissions: ['dashboard.view','clients.manage','sales.manage','sales.view','orders.manage','orders.view'] },
   { name: 'Inventario', description: 'Stock, kardex, productos y reportes.', system: true, permissions: ['dashboard.view','inventory.manage','reports.view'] },
   { name: 'RRHH', description: 'Gestión de nómina y empleados.', system: true, permissions: ['dashboard.view','payroll.manage','reports.view'] },
-  { name: 'Demo limitado', description: 'Demo comercial con permisos recortados.', system: true, permissions: ['dashboard.view','clients.manage','sales.view','orders.view','reports.view'] }
+  { name: 'Demo limitado', description: 'Demo comercial con permisos recortados.', system: false, permissions: ['dashboard.view','clients.manage','sales.view','orders.view','reports.view'] }
 ];
 
 const USERS = [
@@ -161,6 +161,7 @@ async function ensureRoleByName(tenantId: string, roleName: string) {
 
 async function upsertDemoUser(tenantId: string, body: z.infer<typeof demoUserSchema>) {
   const role = await ensureRoleByName(tenantId, body.roleName);
+  if (role.system) throw new HttpError(422, 'Los usuarios demo no pueden asignarse a un rol interno del sistema.');
   const existing = await prisma.userProfile.findUnique({ where: { tenantId_email: { tenantId, email: body.email } } });
   if(!existing&&!body.password)throw new HttpError(422,'La contraseña temporal es obligatoria al crear el usuario.');
   const passwordHash = body.password ? await bcrypt.hash(body.password, 12) : undefined;
@@ -215,7 +216,6 @@ router.put('/roles/:name/permissions', asyncHandler(async (req, res) => {
   ok(res, { roleId: role.id, permissionKeys: body.permissionKeys });
 }));
 
-
 router.post('/demo-users', asyncHandler(async (req, res) => {
   const body = demoUserSchema.parse(req.body || {});
   if(!body.password)throw new HttpError(422,'La contraseña temporal es obligatoria.');
@@ -230,4 +230,3 @@ router.put('/demo-users/:idOrEmail', asyncHandler(async (req, res) => {
 }));
 
 export default router;
-

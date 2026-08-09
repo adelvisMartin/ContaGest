@@ -1,9 +1,13 @@
-const CACHE = 'contagest-ve-v11-13-1';
-const APP_SHELL = ['/', '/index.html'];
+const CACHE = 'contagest-ve-v11-14-0';
+const APP_SHELL = ['/', '/index.html', '/manifest.webmanifest', '/icons/contagest-app.svg', '/icons/contagest-app-192.svg', '/icons/contagest-app-512.svg'];
 
 self.addEventListener('install', (event) => {
   self.skipWaiting();
-  event.waitUntil(caches.open(CACHE).then((cache) => cache.addAll(APP_SHELL)).catch(() => undefined));
+  event.waitUntil(
+    caches.open(CACHE).then((cache) => Promise.allSettled(
+      APP_SHELL.map((url) => cache.add(new Request(url, { cache:'reload' })))
+    ))
+  );
 });
 
 self.addEventListener('activate', (event) => {
@@ -30,22 +34,35 @@ self.addEventListener('fetch', (event) => {
 
   if (request.mode === 'navigate') {
     event.respondWith(
-      fetch(request, { cache: 'no-store' })
-        .catch(() => caches.match('/index.html').then((cached) => cached || new Response('ContaGest no está disponible sin conexión.', { status: 503 })))
+      fetch(request, { cache:'no-store' })
+        .then((response) => {
+          if (response.ok) {
+            caches.open(CACHE).then((cache) => cache.put('/index.html', response.clone())).catch(() => undefined);
+          }
+          return response;
+        })
+        .catch(() => caches.match('/index.html').then((cached) => cached || new Response('ContaGest no está disponible sin conexión.', {
+          status:503,
+          headers:{ 'Content-Type':'text/plain; charset=utf-8' }
+        })))
     );
     return;
   }
 
-  const cacheableAsset = ['style', 'script', 'image', 'font', 'manifest'].includes(request.destination);
+  const cacheableAsset = ['style', 'script', 'image', 'font', 'manifest'].includes(request.destination)
+    || ['/manifest.webmanifest', '/icons/contagest-app.svg', '/icons/contagest-app-192.svg', '/icons/contagest-app-512.svg', '/pwa-install.js'].includes(url.pathname);
   if (!cacheableAsset) return;
 
   event.respondWith(
-    caches.match(request).then((cached) => cached || fetch(request).then((response) => {
-      if (response.ok && response.type === 'basic') {
-        caches.open(CACHE).then((cache) => cache.put(request, response.clone())).catch(() => undefined);
-      }
-      return response;
-    }))
+    caches.match(request).then((cached) => {
+      const refresh = fetch(request).then((response) => {
+        if (response.ok && (response.type === 'basic' || response.type === 'cors')) {
+          caches.open(CACHE).then((cache) => cache.put(request, response.clone())).catch(() => undefined);
+        }
+        return response;
+      }).catch(() => cached);
+      return cached || refresh;
+    })
   );
 });
 

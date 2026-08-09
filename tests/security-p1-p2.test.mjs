@@ -47,9 +47,10 @@ test('las dependencias son reproducibles y bcryptjs no usa tipos obsoletos', asy
     read('backend/package.json'),
     read('package-lock.json')
   ]);
-  assert.equal(JSON.parse(root).version, '11.12.0');
-  assert.equal(JSON.parse(frontend).version, '11.12.0');
-  assert.equal(JSON.parse(backend).version, '11.12.0');
+  const rootPackage = JSON.parse(root);
+  assert.equal(rootPackage.version, '11.14.0');
+  assert.equal(JSON.parse(frontend).version, rootPackage.version);
+  assert.equal(JSON.parse(backend).version, rootPackage.version);
   assert.doesNotMatch(root+frontend+backend, /"latest"/);
   assert.doesNotMatch(backend, /@types\/bcryptjs/);
   assert.equal(JSON.parse(lock).lockfileVersion, 3);
