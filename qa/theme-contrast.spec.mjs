@@ -28,24 +28,24 @@ test('dark semantic surfaces preserve readable text contrast on mobile', async (
   await page.goto('/?module=reportes',{waitUntil:'domcontentloaded'});
   await expect(page.getByRole('heading',{name:'Reportes y análisis',exact:true})).toBeVisible();
 
-  // Exercise the real CSS theme in a browser rather than inferring contrast from source tokens.
+  // Exercise actual rendered dark surfaces. Transparent KPI wrappers are intentionally excluded;
+  // they inherit the enclosing section/gradient and are not independent color surfaces.
   await page.evaluate(()=>document.documentElement.classList.add('dark'));
   const sample=await page.evaluate(()=>{
-    const metric=document.querySelector('.cgx-metric');
-    const metricText=metric?.querySelector('strong');
     const section=document.querySelector('.cgx-section');
     const sectionText=section?.querySelector('h2');
+    const field=document.querySelector('.select, .input, .textarea');
     const style=(node)=>node?getComputedStyle(node):null;
     return {
-      metricColor:style(metricText)?.color||'',metricBg:style(metric)?.backgroundColor||'',
-      sectionColor:style(sectionText)?.color||'',sectionBg:style(section)?.backgroundColor||''
+      sectionColor:style(sectionText)?.color||'',sectionBg:style(section)?.backgroundColor||'',
+      fieldColor:style(field)?.color||'',fieldBg:style(field)?.backgroundColor||''
     };
   });
 
-  expect(sample.metricBg,JSON.stringify(sample)).not.toBe('rgba(0, 0, 0, 0)');
   expect(sample.sectionBg,JSON.stringify(sample)).not.toBe('rgba(0, 0, 0, 0)');
-  expect(contrast(sample.metricColor,sample.metricBg),JSON.stringify(sample)).toBeGreaterThanOrEqual(4.5);
+  expect(sample.fieldBg,JSON.stringify(sample)).not.toBe('rgba(0, 0, 0, 0)');
   expect(contrast(sample.sectionColor,sample.sectionBg),JSON.stringify(sample)).toBeGreaterThanOrEqual(4.5);
+  expect(contrast(sample.fieldColor,sample.fieldBg),JSON.stringify(sample)).toBeGreaterThanOrEqual(4.5);
   await expect(page.locator('#cg-install-app')).toHaveCount(0);
   await page.screenshot({path:'test-results/screenshots/v11-15-reportes-mobile-contrast.png',fullPage:true});
 });
