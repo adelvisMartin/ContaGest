@@ -1,6 +1,14 @@
 import { defineConfig } from 'vite';
 
+const pwaInstallPlugin = {
+  name: 'contagest-pwa-install',
+  transformIndexHtml(html) {
+    return html.replace('</body>', '  <script src="/pwa-install.js" defer></script>\n</body>');
+  }
+};
+
 export default defineConfig({
+  plugins: [pwaInstallPlugin],
   build: {
     chunkSizeWarningLimit: 700,
     rollupOptions: {
