@@ -13,6 +13,7 @@
   }
 
   function showManualHelp(host) {
+    host.dataset.installState = 'manual-help';
     let message = host.querySelector('[data-cg-install-help]');
     if (!message) {
       message = document.createElement('div');
@@ -31,6 +32,7 @@
 
     const host = document.createElement('aside');
     host.id = 'cg-install-app';
+    host.dataset.installState = deferredPrompt ? 'native-ready' : 'manual-ready';
     host.setAttribute('role', 'dialog');
     host.setAttribute('aria-label', 'Instalar ContaGest');
     host.innerHTML = `
@@ -50,10 +52,12 @@
     host.querySelector('[data-cg-install]')?.addEventListener('click', async () => {
       const button = host.querySelector('[data-cg-install]');
       if (deferredPrompt) {
+        host.dataset.installState = 'prompting';
         button?.setAttribute('disabled', 'disabled');
         try {
           deferredPrompt.prompt();
           const choice = await deferredPrompt.userChoice;
+          host.dataset.installState = choice?.outcome || 'dismissed';
           if (choice?.outcome === 'accepted') host.remove();
           else showManualHelp(host);
         } catch {
@@ -66,6 +70,7 @@
         return;
       }
 
+      host.dataset.installState = 'manual-requested';
       try { await navigator.serviceWorker?.ready; } catch { /* manual fallback below */ }
       showManualHelp(host);
     });
@@ -74,6 +79,8 @@
   window.addEventListener('beforeinstallprompt', (event) => {
     event.preventDefault();
     deferredPrompt = event;
+    const host = document.getElementById('cg-install-app');
+    if (host) host.dataset.installState = 'native-ready';
     const button = document.querySelector('#cg-install-app [data-cg-install]');
     if (button) button.textContent = 'Instalar';
     mountInstallBanner();
