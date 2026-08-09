@@ -15,33 +15,37 @@ function contrast(a,b) {
 
 async function mockSession(page) {
   await page.addInitScript(() => {
-    localStorage.setItem('contagest_auth_session',JSON.stringify({token:'qa-contrast-session',tenantId:'tenant-contrast',expiresAt:Date.now()+3600000,mode:'qa'}));
+    localStorage.setItem('contagest_auth_session',JSON.stringify({tenantId:'tenant-contrast',expiresAt:Date.now()+3600000,sessionMode:'cookie',mode:'cookie'}));
     localStorage.setItem('contagest_auto_sync_enabled','false');
     localStorage.setItem('contagest_analytics_backend_enabled','false');
   });
   await page.route('**/api/v1/**',(route)=>route.fulfill({status:200,contentType:'application/json',body:JSON.stringify({ok:true,data:[]})}));
 }
 
-test('dark surfaces preserve readable text contrast on mobile', async ({ page }) => {
+test('dark semantic surfaces preserve readable text contrast on mobile', async ({ page }) => {
   await page.setViewportSize({width:390,height:844});
   await mockSession(page);
   await page.goto('/?module=reportes',{waitUntil:'domcontentloaded'});
   await expect(page.getByRole('heading',{name:'Reportes y análisis',exact:true})).toBeVisible();
 
+  // Exercise the real CSS theme in a browser rather than inferring contrast from source tokens.
+  await page.evaluate(()=>document.documentElement.classList.add('dark'));
   const sample=await page.evaluate(()=>{
-    const card=document.querySelector('.hf-kpi-card');
-    const cardText=card?.querySelector('strong') || card?.querySelector('.hf-kpi-value');
-    const sidebar=document.querySelector('.hf-sidebar');
-    const sidebarText=sidebar?.querySelector('.hf-brand-copy strong') || sidebar?.querySelector('h1');
+    const metric=document.querySelector('.cgx-metric');
+    const metricText=metric?.querySelector('strong');
+    const section=document.querySelector('.cgx-section');
+    const sectionText=section?.querySelector('h2');
     const style=(node)=>node?getComputedStyle(node):null;
     return {
-      cardColor:style(cardText)?.color||'',cardBg:style(card)?.backgroundColor||'',
-      sidebarColor:style(sidebarText)?.color||'',sidebarBg:style(sidebar)?.backgroundColor||''
+      metricColor:style(metricText)?.color||'',metricBg:style(metric)?.backgroundColor||'',
+      sectionColor:style(sectionText)?.color||'',sectionBg:style(section)?.backgroundColor||''
     };
   });
 
-  expect(contrast(sample.cardColor,sample.cardBg),JSON.stringify(sample)).toBeGreaterThanOrEqual(4.5);
-  expect(contrast(sample.sidebarColor,sample.sidebarBg),JSON.stringify(sample)).toBeGreaterThanOrEqual(4.5);
+  expect(sample.metricBg,JSON.stringify(sample)).not.toBe('rgba(0, 0, 0, 0)');
+  expect(sample.sectionBg,JSON.stringify(sample)).not.toBe('rgba(0, 0, 0, 0)');
+  expect(contrast(sample.metricColor,sample.metricBg),JSON.stringify(sample)).toBeGreaterThanOrEqual(4.5);
+  expect(contrast(sample.sectionColor,sample.sectionBg),JSON.stringify(sample)).toBeGreaterThanOrEqual(4.5);
   await expect(page.locator('#cg-install-app')).toHaveCount(0);
   await page.screenshot({path:'test-results/screenshots/v11-15-reportes-mobile-contrast.png',fullPage:true});
 });
