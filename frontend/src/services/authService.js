@@ -5,6 +5,7 @@ import '../styles/theme-v1115.css';
 import { installLoginEnhancer } from './loginEnhancer.js';
 import { installSessionAccessGuard } from './sessionAccessGuard.js';
 import { installMultiTenantEnhancer } from './multiTenantEnhancer.js';
+import { installLegalAcceptanceEnhancer } from './legalAcceptanceEnhancer.js';
 import { AuthSession } from './authSession.js';
 import { BackendApi } from './backendApi.js';
 import { LicenseService } from './licenseService.js';
@@ -12,6 +13,7 @@ import { LicenseService } from './licenseService.js';
 installLoginEnhancer();
 installSessionAccessGuard();
 installMultiTenantEnhancer();
+installLegalAcceptanceEnhancer();
 
 const DEMO_USER={id:'demo-admin',name:'Administrador Local',fullName:'Administrador Local',email:'admin@erp.local',role:'admin',permissions:['*']};
 const demoModeEnabled=()=>import.meta?.env?.DEV===true&&import.meta?.env?.VITE_ENABLE_DEMO_MODE==='true';
