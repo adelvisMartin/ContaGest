@@ -3,12 +3,14 @@ import '../styles/login-v119.css';
 import '../styles/modern-enterprise-v1114.css';
 import { installLoginEnhancer } from './loginEnhancer.js';
 import { installSessionAccessGuard } from './sessionAccessGuard.js';
+import { installMultiTenantEnhancer } from './multiTenantEnhancer.js';
 import { AuthSession } from './authSession.js';
 import { BackendApi } from './backendApi.js';
 import { LicenseService } from './licenseService.js';
 
 installLoginEnhancer();
 installSessionAccessGuard();
+installMultiTenantEnhancer();
 
 const DEMO_USER={id:'demo-admin',name:'Administrador Local',fullName:'Administrador Local',email:'admin@erp.local',role:'admin',permissions:['*']};
 const demoModeEnabled=()=>import.meta?.env?.DEV===true&&import.meta?.env?.VITE_ENABLE_DEMO_MODE==='true';
@@ -54,8 +56,8 @@ export const AuthService={
   async tenants(){return BackendApi.request('/auth/tenants');},
   async switchTenant(tenantId){return normalizeSession(await BackendApi.request('/auth/switch-tenant',{method:'POST',body:{tenantId}}));},
   async logout(){
-    try{await BackendApi.request('/auth/logout',{method:'POST',body:{},skipRefresh:true});}catch{/* local metadata must still be cleared */}
     AuthSession.clear();
+    try{await BackendApi.request('/auth/logout',{method:'POST',body:{},skipRefresh:true});}catch{/* HttpOnly cookies expire server-side; local metadata is already cleared. */}
   },
   authHeaders(){return {};}
 };
