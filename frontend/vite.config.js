@@ -4,7 +4,10 @@ const pwaInstallPlugin = {
   name: 'contagest-pwa-install',
   transformIndexHtml(html) {
     return html
-      .replaceAll('11.12.0', '11.13.0')
+      .replaceAll('11.12.0', '11.14.0')
+      .replaceAll('11.13.0', '11.14.0')
+      .replace(/<link rel="manifest"[^>]*>/, '<link rel="manifest" href="/manifest.webmanifest" />')
+      .replace('</head>', '    <meta name="mobile-web-app-capable" content="yes" />\n    <meta name="apple-mobile-web-app-capable" content="yes" />\n    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />\n</head>')
       .replace('</body>', '  <script src="/pwa-install.js" defer></script>\n</body>');
   }
 };
