@@ -20,7 +20,7 @@ const healthPayload = () => ({
   ok: true,
   status: 'healthy',
   service: 'ContaGest-VE API',
-  version: '11.12.0',
+  version: '11.13.0',
   timestamp: new Date().toISOString()
 });
 
@@ -30,13 +30,15 @@ export function createApp() {
   app.set('trust proxy', 1);
 
   app.use(requestId);
-  app.use(securityResponseHeaders);
   app.use(suspiciousRequestGuard);
   app.use(helmet({
     crossOriginResourcePolicy: false,
     contentSecurityPolicy: isProd ? undefined : false,
-    hsts: isProd ? { maxAge: 15552000, includeSubDomains: true, preload: false } : false
+    hsts: isProd ? { maxAge: 31536000, includeSubDomains: true, preload: false } : false,
+    frameguard: { action: 'deny' },
+    referrerPolicy: { policy: 'strict-origin-when-cross-origin' }
   }));
+  app.use(securityResponseHeaders);
   app.use(corsPolicy);
   app.use(globalRateLimit);
   app.use(express.json({ limit: env.JSON_BODY_LIMIT }));
@@ -56,4 +58,3 @@ export function createApp() {
 }
 
 export default createApp();
-
