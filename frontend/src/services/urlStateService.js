@@ -4,7 +4,7 @@ const SAFE_KEYS = new Set([
   ROUTE_PARAM,
   'tab','view','id','patient','member','appointment','encounter','order','study','hospitalization',
   'status','type','kind','category','specialty','search','q','page','pageSize','sort','order',
-  'date','dateFrom','dateTo','from','to','filter','modal','step','mode'
+  'date','dateFrom','dateTo','from','to','filter','modal','step','mode','source','access'
 ]);
 
 let StoreRef = null;
