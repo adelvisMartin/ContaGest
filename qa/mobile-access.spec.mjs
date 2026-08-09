@@ -49,7 +49,7 @@ for (const viewport of [
   });
 }
 
-test('client link exposes only licensed-client access on mobile', async ({ page }) => {
+test('client link exposes only licensed-client access on mobile and keeps it after PWA launch', async ({ page }) => {
   await page.setViewportSize({ width:344, height:760 });
   await mockCaptcha(page);
   await page.goto('/cliente', { waitUntil:'domcontentloaded' });
@@ -60,6 +60,11 @@ test('client link exposes only licensed-client access on mobile', async ({ page 
   await expect(page.locator('[name="licenseKey"]')).toHaveAttribute('required','');
   await expectNoPageOverflow(page);
   await page.screenshot({ path:'test-results/v11-14-cliente-android-344.png', fullPage:true });
+
+  await page.goto('/?source=pwa', { waitUntil:'domcontentloaded' });
+  await expect(page.getByRole('heading',{ name:'Acceso de cliente', exact:true })).toBeVisible();
+  await expect(page.locator('[data-login-access="staff"]')).toHaveCount(0);
+  await expect(page.locator('[name="licenseKey"]')).toBeVisible();
 });
 
 test('public PWA manifest exposes Chromium installability fields', async ({ request }) => {
