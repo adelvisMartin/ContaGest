@@ -27,8 +27,8 @@ test('dark theme preserves readable text/surface contrast on mobile', async ({ p
   await mockSession(page);
   await page.goto('/?module=reportes',{waitUntil:'domcontentloaded'});
   await expect(page.getByRole('heading',{name:'Reportes y análisis',exact:true})).toBeVisible();
-  await page.evaluate(()=>document.documentElement.classList.add('dark'));
-  await page.waitForTimeout(100);
+  await page.getByRole('button',{name:'Cambiar tema'}).click();
+  await page.waitForTimeout(120);
 
   const sample=await page.evaluate(()=>{
     const title=document.querySelector('.cgx-page-header h1');
@@ -38,10 +38,12 @@ test('dark theme preserves readable text/surface contrast on mobile', async ({ p
     const style=(node)=>node?getComputedStyle(node):null;
     return {
       titleColor:style(title)?.color||'',headerBg:style(header)?.backgroundColor||'',
-      metricColor:style(metric)?.color||'',cardBg:style(card)?.backgroundColor||''
+      metricColor:style(metric)?.color||'',cardBg:style(card)?.backgroundColor||'',
+      htmlClass:document.documentElement.className
     };
   });
 
+  expect(sample.htmlClass).toMatch(/dark|enterprise/);
   expect(contrast(sample.titleColor,sample.headerBg),JSON.stringify(sample)).toBeGreaterThanOrEqual(4.5);
   expect(contrast(sample.metricColor,sample.cardBg),JSON.stringify(sample)).toBeGreaterThanOrEqual(4.5);
   await expect(page.locator('#cg-install-app')).toHaveCount(0);

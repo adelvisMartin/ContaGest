@@ -13,24 +13,43 @@ html body .login-mark::after{
 }
 html body .login-mark::after{inset:3px!important}
 
-/* Legacy fallbacks must disappear once the MUI island is mounted. */
+/* Legacy fallbacks and the outlined-input notch must not duplicate field labels. */
 html body [data-cgx-kit]:has(.MuiFormControl-root) > .mui-fallback-hidden,
 html body [data-cgx-kit]:has(.MuiTextField-root) > .mui-fallback-hidden,
 html body [data-cgx-kit='select']:has(.MuiFormControl-root) > label:not(.MuiInputLabel-root),
 html body [data-cgx-kit='field']:has(.MuiTextField-root) > label:not(.MuiInputLabel-root){display:none!important}
+html body .MuiOutlinedInput-notchedOutline legend > span{color:transparent!important;opacity:0!important}
+
+/* Explicit dark surfaces: no dark text may remain on a dark background. */
+html.dark body .cgx-page-header,
+html.enterprise body .cgx-page-header{
+  background-color:#0d1b2d!important;
+  background-image:linear-gradient(135deg,#0d1b2d,#172643)!important;
+  border-color:#29435f!important;
+  color:#f7fbff!important;
+}
+html.dark body .cgx-page-header :is(h1,h2,h3,p,.cgx-eyebrow,strong,span),
+html.enterprise body .cgx-page-header :is(h1,h2,h3,p,.cgx-eyebrow,strong,span){color:#f7fbff!important}
+html.dark body .cgx-page-header p,
+html.enterprise body .cgx-page-header p{color:#d8e5f2!important}
 
 @media(max-width:760px){
+  html body .cgx-page-header,
   html body .cgx-page-copy,
-  html body .cgx-page-copy p{width:100%!important;max-width:100%!important;min-width:0!important;overflow:visible!important;text-overflow:clip!important;white-space:normal!important;word-break:normal!important;overflow-wrap:anywhere!important}
+  html body .cgx-page-copy *{min-width:0!important;max-width:100%!important}
+  html body .cgx-page-copy,
+  html body .cgx-page-copy p{width:100%!important;overflow:visible!important;text-overflow:clip!important;white-space:normal!important;word-break:normal!important;overflow-wrap:anywhere!important}
   html body .cgx-page-actions .MuiButton-root,
-  html body .cgx-section-actions .MuiButton-root{width:100%!important;max-width:100%!important;justify-content:center!important}
+  html body .cgx-section-actions .MuiButton-root{width:100%!important;max-width:100%!important;min-width:0!important;justify-content:center!important}
 }
 
 @media(max-width:420px){
   html body .cgx-page-actions,
-  html body .cgx-section-actions{display:grid!important;grid-template-columns:minmax(0,1fr)!important;overflow:visible!important;width:100%!important}
+  html body .cgx-section-actions{display:grid!important;grid-template-columns:minmax(0,1fr)!important;overflow:visible!important;width:100%!important;max-width:100%!important}
+  html body .cgx-page-actions *,
+  html body .cgx-section-actions *{min-width:0!important;max-width:100%!important;transform:none!important}
   html body .cgx-page-actions > *,
-  html body .cgx-section-actions > *{width:100%!important;min-width:0!important;max-width:100%!important;flex:none!important}
-  html body .cgx-page-actions :is(button,.btn,.cgx-btn,.MuiButton-root),
-  html body .cgx-section-actions :is(button,.btn,.cgx-btn,.MuiButton-root){width:100%!important;max-width:100%!important}
+  html body .cgx-section-actions > *{width:100%!important;min-width:0!important;max-width:100%!important;flex:none!important;margin-inline:0!important}
+  html body .cgx-page-actions :is(button,.btn,.cgx-btn,.MuiButton-root,[data-mui-button-mount]),
+  html body .cgx-section-actions :is(button,.btn,.cgx-btn,.MuiButton-root,[data-mui-button-mount]){width:100%!important;min-width:0!important;max-width:100%!important;margin:0!important;justify-content:center!important}
 }
