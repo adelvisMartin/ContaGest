@@ -1,12 +1,18 @@
 import '../styles/login-enhancer.css';
 
 const ACCESS_MODE_KEY = 'contagest_login_access_mode';
+const PWA_AUDIENCE_KEY = 'contagest_pwa_audience';
 let observer;
 
-function isClientPortal() {
+function portalContext() {
   const path = String(window.location.pathname || '/').replace(/\/+$/, '') || '/';
   const params = new URLSearchParams(window.location.search);
-  return path === '/cliente' || params.get('access') === 'client';
+  const explicitClient = path === '/cliente' || params.get('access') === 'client';
+  const launchedFromPwa = params.get('source') === 'pwa';
+  if (explicitClient) localStorage.setItem(PWA_AUDIENCE_KEY, 'client');
+  else if (!launchedFromPwa && path === '/') localStorage.setItem(PWA_AUDIENCE_KEY, 'staff');
+  const installedClient = launchedFromPwa && localStorage.getItem(PWA_AUDIENCE_KEY) === 'client';
+  return { clientOnly:explicitClient || installedClient, launchedFromPwa };
 }
 
 function updateMarketingCopy(clientOnly = false) {
@@ -36,7 +42,7 @@ function enhanceLogin() {
   form.dataset.accessEnhanced = 'true';
   document.querySelector('.login-tech-note')?.remove();
 
-  const clientOnly = isClientPortal();
+  const { clientOnly } = portalContext();
   updateMarketingCopy(clientOnly);
 
   const licenseDetails = form.querySelector('.login-license-details');
@@ -70,7 +76,10 @@ function enhanceLogin() {
 
   const setMode = (requested) => {
     const mode = clientOnly ? 'client' : requested === 'client' ? 'client' : 'staff';
-    if (!clientOnly) localStorage.setItem(ACCESS_MODE_KEY,mode);
+    if (!clientOnly) {
+      localStorage.setItem(ACCESS_MODE_KEY,mode);
+      localStorage.setItem(PWA_AUDIENCE_KEY,mode);
+    }
     form.dataset.accessMode = mode;
     accessInput.value = mode;
     switcher.querySelectorAll('[data-login-access]').forEach((button)=>{
