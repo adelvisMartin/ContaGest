@@ -1,6 +1,7 @@
 import '../styles/security.css';
 import '../styles/login-v119.css';
 import '../styles/modern-enterprise-v1114.css';
+import '../styles/theme-v1115.css';
 import { installLoginEnhancer } from './loginEnhancer.js';
 import { installSessionAccessGuard } from './sessionAccessGuard.js';
 import { installMultiTenantEnhancer } from './multiTenantEnhancer.js';
