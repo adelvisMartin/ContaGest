@@ -1,5 +1,5 @@
 const CACHE = 'contagest-ve-v11-14-0';
-const APP_SHELL = ['/', '/index.html', '/manifest.webmanifest', '/icons/contagest-app.svg'];
+const APP_SHELL = ['/', '/index.html', '/manifest.webmanifest', '/icons/contagest-app.svg', '/icons/contagest-app-192.svg', '/icons/contagest-app-512.svg'];
 
 self.addEventListener('install', (event) => {
   self.skipWaiting();
@@ -50,7 +50,7 @@ self.addEventListener('fetch', (event) => {
   }
 
   const cacheableAsset = ['style', 'script', 'image', 'font', 'manifest'].includes(request.destination)
-    || ['/manifest.webmanifest', '/icons/contagest-app.svg', '/pwa-install.js'].includes(url.pathname);
+    || ['/manifest.webmanifest', '/icons/contagest-app.svg', '/icons/contagest-app-192.svg', '/icons/contagest-app-512.svg', '/pwa-install.js'].includes(url.pathname);
   if (!cacheableAsset) return;
 
   event.respondWith(
