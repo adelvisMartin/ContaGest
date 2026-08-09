@@ -33,7 +33,8 @@ async function serializeUsers(id:string) {
   const tenant = await prisma.tenant.findUnique({ where:{ id }, select:{ rif:true } });
   if (!tenant) throw new HttpError(404, 'Empresa no encontrada.');
 
-  const [users, roles] = await Promise.all([
+  const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000);
+  const [users, roles, groupedFailures] = await Promise.all([
     prisma.userProfile.findMany({
       where:{ tenantId:id },
       include:{ userRoles:{ include:{ role:true } } },
@@ -43,21 +44,22 @@ async function serializeUsers(id:string) {
       where:{ tenantId:id },
       include:{ permissions:{ include:{ permission:true } } },
       orderBy:{ name:'asc' }
+    }),
+    prisma.authLoginAttempt.groupBy({
+      by:['email'],
+      where:{ tenantRif:tenant.rif, success:false, createdAt:{ gt:cutoff } },
+      _count:{ _all:true },
+      _max:{ createdAt:true }
     })
   ]);
 
-  const securityUsers = await Promise.all(users.map(async (user) => {
-    const failures = await prisma.authLoginAttempt.findMany({
-      where:{
-        tenantRif:tenant.rif,
-        email:user.email.toLowerCase(),
-        success:false,
-        createdAt:{ gt:new Date(Date.now() - 24 * 60 * 60 * 1000) }
-      },
-      orderBy:{ createdAt:'desc' },
-      take:5,
-      select:{ createdAt:true, ipAddress:true }
-    });
+  const failureMap = new Map(groupedFailures.map((entry) => [entry.email.toLowerCase(), {
+    count:Math.min(5, Number(entry._count?._all || 0)),
+    lastFailedAt:entry._max?.createdAt || null
+  }]));
+
+  const securityUsers = users.map((user) => {
+    const failure = failureMap.get(user.email.toLowerCase()) || { count:0, lastFailedAt:null };
     return {
       id:user.id,
       email:user.email,
@@ -65,12 +67,12 @@ async function serializeUsers(id:string) {
       status:user.status,
       accessExpiresAt:user.accessExpiresAt,
       passwordConfigured:Boolean(user.passwordHash),
-      failedAttempts:failures.length,
-      lastFailedAt:failures[0]?.createdAt || null,
+      failedAttempts:failure.count,
+      lastFailedAt:failure.lastFailedAt,
       roles:user.userRoles.map((assignment) => ({ id:assignment.role.id, name:assignment.role.name })),
       primaryRoleId:user.userRoles[0]?.role.id || null
     };
-  }));
+  });
 
   return {
     users:securityUsers,
@@ -100,23 +102,29 @@ router.patch('/users/:userId', asyncHandler(async (req,res) => {
   const self = currentUserId === user.id;
   if (self && body.status === 'disabled') throw new HttpError(409, 'No puedes bloquear tu propia sesión administrativa.');
 
+  let selectedRole:any = null;
   if (body.roleId) {
-    const role = await prisma.role.findFirst({
+    selectedRole = await prisma.role.findFirst({
       where:{ id:body.roleId, tenantId:id },
       include:{ permissions:{ include:{ permission:true } } }
     });
-    if (!role) throw new HttpError(404, 'Rol no encontrado para esta empresa.');
-    if (self && !role.permissions.some((item) => item.permission.key === 'admin.manage')) {
+    if (!selectedRole) throw new HttpError(404, 'Rol no encontrado para esta empresa.');
+    if (self && !selectedRole.permissions.some((item:any) => item.permission.key === 'admin.manage')) {
       throw new HttpError(409, 'No puedes quitarte tu propio permiso administrativo.');
     }
-    await prisma.userRole.deleteMany({ where:{ userId:user.id } });
-    await prisma.userRole.create({ data:{ userId:user.id, roleId:role.id } });
   }
 
   const updateData:any = {};
   if (body.status) updateData.status = body.status;
   if (body.newPassword) updateData.passwordHash = await bcrypt.hash(body.newPassword, 12);
-  if (Object.keys(updateData).length) await prisma.userProfile.update({ where:{ id:user.id }, data:updateData });
+
+  await prisma.$transaction(async (tx) => {
+    if (selectedRole) {
+      await tx.userRole.deleteMany({ where:{ userId:user.id } });
+      await tx.userRole.create({ data:{ userId:user.id, roleId:selectedRole.id } });
+    }
+    if (Object.keys(updateData).length) await tx.userProfile.update({ where:{ id:user.id }, data:updateData });
+  });
 
   if (body.clearFailures || body.status === 'active' || body.newPassword) {
     await clearUserFailures(user.tenant.rif, user.email);
