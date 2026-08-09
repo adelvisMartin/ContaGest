@@ -1,9 +1,10 @@
 import type { Request, Response, NextFunction } from 'express';
-import { randomUUID } from 'node:crypto';
+import crypto, { randomUUID } from 'node:crypto';
 import cors from 'cors';
 import rateLimit from 'express-rate-limit';
 import { env, isProd, isProductionDeployment, jwtSecretReady, licenseSecretReady } from '../../config/env.js';
 import { HttpError } from '../http.js';
+import { COOKIE_NAMES, readCookie } from '../auth/sessionCookies.js';
 
 function normalizeOrigin(value?: string) {
   const trimmed = String(value || '').trim();
@@ -38,7 +39,7 @@ export const corsPolicy = cors({
     return callback(new HttpError(403, `Origen CORS no permitido: ${origin}`));
   },
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'x-request-id', 'x-admin-register-key'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'x-request-id', 'x-admin-register-key', 'x-csrf-token'],
   maxAge: 600
 });
 
@@ -82,11 +83,46 @@ export function suspiciousRequestGuard(req: Request, _res: Response, next: NextF
   next();
 }
 
+const csrfExemptPaths = new Set([
+  '/api/v1/auth/login',
+  '/api/v1/auth/register',
+  '/api/v1/auth/login/coordinates'
+]);
+
+function timingSafeTextEqual(left: string, right: string) {
+  const a = Buffer.from(left);
+  const b = Buffer.from(right);
+  return a.length === b.length && crypto.timingSafeEqual(a, b);
+}
+
+/**
+ * Double-submit CSRF protection for browser cookie sessions.
+ * Bearer-token API clients are not subject to CSRF because the browser cannot attach their Authorization header cross-site.
+ */
+export function csrfProtection(req: Request, _res: Response, next: NextFunction) {
+  const method = req.method.toUpperCase();
+  if (['GET', 'HEAD', 'OPTIONS'].includes(method) || csrfExemptPaths.has(req.path)) return next();
+  const authHeader = String(req.header('authorization') || '');
+  if (/^Bearer\s+/i.test(authHeader)) return next();
+
+  const accessCookie = readCookie(req, COOKIE_NAMES.access);
+  const refreshCookie = readCookie(req, COOKIE_NAMES.refresh);
+  if (!accessCookie && !refreshCookie) return next();
+
+  const cookieToken = readCookie(req, COOKIE_NAMES.csrf) || '';
+  const headerToken = String(req.header('x-csrf-token') || '');
+  if (!cookieToken || !headerToken || !timingSafeTextEqual(cookieToken, headerToken)) {
+    return next(new HttpError(403, 'Validación CSRF requerida. Recarga la sesión e intenta nuevamente.'));
+  }
+  next();
+}
+
 export function securityResponseHeaders(req: Request, res: Response, next: NextFunction) {
   res.setHeader('x-content-type-options', 'nosniff');
   res.setHeader('x-frame-options', 'DENY');
   res.setHeader('referrer-policy', 'strict-origin-when-cross-origin');
-  res.setHeader('permissions-policy', 'camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=()');
+  // Camera and geolocation are legitimate same-origin ERP capabilities (scanner / delivery map).
+  res.setHeader('permissions-policy', 'camera=(self), microphone=(), geolocation=(self), payment=(), usb=(), serial=()');
   res.setHeader('cross-origin-opener-policy', 'same-origin');
   res.setHeader('x-permitted-cross-domain-policies', 'none');
   if (req.path.startsWith('/api/') || req.path === '/health') {
