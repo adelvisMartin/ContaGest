@@ -1,0 +1,86 @@
+name: contagest
+services:
+  db:
+    image: postgres:17-bookworm
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-contagest}
+      POSTGRES_USER: ${POSTGRES_USER:-contagest_owner}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?define POSTGRES_PASSWORD}
+      CONTAGEST_APP_PASSWORD: ${CONTAGEST_APP_PASSWORD:?define CONTAGEST_APP_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./postgres-init/00-roles.sh:/docker-entrypoint-initdb.d/00-roles.sh:ro
+    healthcheck:
+      test: ["CMD-SHELL","pg_isready -U ${POSTGRES_USER:-contagest_owner} -d ${POSTGRES_DB:-contagest}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks: [private]
+  migrate:
+    build:
+      context: ../..
+      dockerfile: ops/docker/Dockerfile.api
+    restart: "no"
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-contagest_owner}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-contagest}?schema=public
+      DIRECT_URL: postgresql://${POSTGRES_USER:-contagest_owner}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-contagest}?schema=public
+      NODE_ENV: production
+    command: ["npm","--workspace","backend","run","prisma:deploy"]
+    networks: [private]
+  api:
+    build:
+      context: ../..
+      dockerfile: ops/docker/Dockerfile.api
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    environment:
+      NODE_ENV: production
+      PORT: 3030
+      API_MODE: prisma
+      DATABASE_RUNTIME_URL: postgresql://contagest_app:${CONTAGEST_APP_PASSWORD}@db:5432/${POSTGRES_DB:-contagest}?schema=public
+      APP_URL: https://${APP_DOMAIN:?define APP_DOMAIN}
+      CORS_ORIGIN: https://${APP_DOMAIN}
+      JWT_SECRET: ${JWT_SECRET:?define JWT_SECRET}
+      LICENSE_HASH_SECRET: ${LICENSE_HASH_SECRET:?define LICENSE_HASH_SECRET}
+      ALLOW_PUBLIC_REGISTER: "false"
+      ALLOW_DEV_TENANT_HEADER: "false"
+      SUPABASE_AUTH_FALLBACK: "false"
+      JSON_BODY_LIMIT: 1mb
+    expose: ["3030"]
+    networks: [private]
+    security_opt: ["no-new-privileges:true"]
+  web:
+    build:
+      context: ../..
+      dockerfile: ops/docker/Dockerfile.web
+      args:
+        VITE_API_BASE_URL: /api/v1
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+    environment:
+      APP_DOMAIN: ${APP_DOMAIN:?define APP_DOMAIN}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - caddy_data:/data
+      - caddy_config:/config
+    networks: [private]
+    security_opt: ["no-new-privileges:true"]
+networks:
+  private:
+    driver: bridge
+volumes:
+  postgres_data:
+  caddy_data:
+  caddy_config:
