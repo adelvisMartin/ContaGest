@@ -1,4 +1,4 @@
-const VERSION = '11.11.0';
+const VERSION = '11.13.0';
 
 export default function healthHandler(_request: unknown, response: any) {
   response.setHeader('Cache-Control', 'no-store');
