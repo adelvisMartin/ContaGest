@@ -49,6 +49,18 @@ function hashOpaque(purpose: string, value: string) {
   return crypto.createHmac('sha256', env.JWT_SECRET).update(`${purpose}:${value}`).digest('hex');
 }
 
+function secureHexEqual(left:string,right:string) {
+  const a=Buffer.from(left,'hex');
+  const b=Buffer.from(right,'hex');
+  return a.length===b.length&&crypto.timingSafeEqual(a,b);
+}
+
+function secureTextEqual(left:string,right:string) {
+  const a=Buffer.from(left);
+  const b=Buffer.from(right);
+  return a.length===b.length&&crypto.timingSafeEqual(a,b);
+}
+
 function baseCookieOptions(httpOnly: boolean) {
   return {
     httpOnly,
@@ -141,8 +153,14 @@ export async function issueBrowserSession(req: Request, res: Response, user: { i
 
 export async function rotateBrowserSession(req: Request, res: Response) {
   const refreshToken = readCookie(req, COOKIE_NAMES.refresh);
+  const csrfCookie = readCookie(req, COOKIE_NAMES.csrf);
+  const csrfHeader = String(req.header('x-csrf-token') || '');
   if (!refreshToken) throw new HttpError(401, 'Sesión de renovación no disponible.');
+  if (!csrfCookie || !csrfHeader || !secureTextEqual(csrfCookie, csrfHeader)) {
+    throw new HttpError(403, 'Validación CSRF requerida para renovar la sesión.');
+  }
   const refreshHash = hashOpaque('refresh', refreshToken);
+  const csrfHash = hashOpaque('csrf', csrfCookie);
   const rows = await prisma.$queryRaw<SessionRow[]>`
     SELECT "id","userId","tenantId","refreshHash","csrfHash","status","rotationCounter","expiresAt"
     FROM public."UserSession"
@@ -156,6 +174,9 @@ export async function rotateBrowserSession(req: Request, res: Response) {
     }
     clearSessionCookies(res);
     throw new HttpError(401, 'La sesión de renovación venció. Inicia sesión nuevamente.');
+  }
+  if (!secureHexEqual(session.csrfHash, csrfHash)) {
+    throw new HttpError(403, 'El token CSRF no pertenece a esta sesión.');
   }
 
   const user = await prisma.userProfile.findFirst({
@@ -179,13 +200,18 @@ export async function rotateBrowserSession(req: Request, res: Response) {
   const nextCsrfHash = hashOpaque('csrf', nextCsrfToken);
   const nextExpiry = new Date(Date.now() + REFRESH_TTL_MS);
 
-  await prisma.$executeRaw`
+  const changed=await prisma.$executeRaw`
     UPDATE public."UserSession"
     SET "refreshHash"=${nextRefreshHash}, "csrfHash"=${nextCsrfHash},
         "rotationCounter"="rotationCounter"+1, "expiresAt"=${nextExpiry},
         "lastSeenAt"=now(), "lastIp"=${req.ip || null}, "lastUserAgent"=${req.headers['user-agent'] || null}, "updatedAt"=now()
-    WHERE "id"=${session.id} AND "refreshHash"=${refreshHash} AND "status"='active'
+    WHERE "id"=${session.id} AND "refreshHash"=${refreshHash} AND "csrfHash"=${csrfHash} AND "status"='active'
   `;
+  if(Number(changed)!==1){
+    await prisma.$executeRaw`UPDATE public."UserSession" SET "status"='revoked',"revokedAt"=now(),"updatedAt"=now() WHERE "id"=${session.id}`;
+    clearSessionCookies(res);
+    throw new HttpError(401,'Se detectó una renovación reutilizada o concurrente. Inicia sesión nuevamente.');
+  }
 
   const accessToken = signAccessToken(user, session.tenantId, session.id);
   setSessionCookies(res, accessToken, nextRefreshToken, nextCsrfToken, nextExpiry);
@@ -219,7 +245,5 @@ export async function validateCsrfAgainstSession(sessionId: string | undefined, 
   `;
   const row = rows[0];
   if (!row || row.status !== 'active' || new Date(row.expiresAt).getTime() <= Date.now()) return false;
-  const left = Buffer.from(row.csrfHash, 'hex');
-  const right = Buffer.from(hash, 'hex');
-  return left.length === right.length && crypto.timingSafeEqual(left, right);
+  return secureHexEqual(row.csrfHash, hash);
 }
