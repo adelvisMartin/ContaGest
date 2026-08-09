@@ -16,7 +16,7 @@ import {
   setDeviceCredentialCookie
 } from '../../shared/auth/sessionCookies.js';
 import { validateUserLicense } from '../../shared/licensing/licenseGuard.js';
-import { ensureAccountMembership, listAccessibleTenants, resolveTenantSwitch } from '../../shared/identity/accountMembership.js';
+import { activeLicenseForProfile, ensureAccountMembership, listAccessibleTenants, resolveTenantSwitch } from '../../shared/identity/accountMembership.js';
 import { coordinateCardStatus, generateCoordinateCard, issueCoordinateChallenge, revokeCoordinateCard, verifyCoordinateChallenge } from '../../shared/auth/coordinateCard.js';
 
 const router = Router();
@@ -114,12 +114,17 @@ async function sessionPayload(req:any,res:any,user:any,tenant:any,options:{role?
   await ensureAccountMembership({tenantId:tenant.id,userProfileId:user.id,email:user.email,fullName:user.fullName,roleLabel:role});
   const cookieSession=options.rotateResult||await issueBrowserSession(req,res,user,tenant.id,{role,audience:role==='client'?'client':'staff'});
   const accessibleTenants=await listAccessibleTenants(user.id);
+  const effectiveLicense=options.license!==undefined
+    ? options.license
+    : role==='client'
+      ? await activeLicenseForProfile(user.id,tenant.id)
+      : null;
   return{
     ...cookieSession,
     tenantId:tenant.id,
     tenant,
     user:publicUser(user,role),
-    license:publicLicense(options.license),
+    license:publicLicense(effectiveLicense),
     accessibleTenants
   };
 }
@@ -217,7 +222,7 @@ router.post('/login/coordinates',validateBody(coordinateLoginSchema),asyncHandle
 router.get('/coordinates/status',asyncHandler(async(req,res)=>{const{user}=await authenticatedSession(req);ok(res,await coordinateCardStatus(user.tenantId,user.id));}));
 router.post('/coordinates/enroll',asyncHandler(async(req,res)=>{const{user}=await authenticatedSession(req);ok(res,await generateCoordinateCard(user.tenantId,user.id),201);}));
 router.post('/coordinates/revoke',asyncHandler(async(req,res)=>{const{user}=await authenticatedSession(req);ok(res,await revokeCoordinateCard(user.tenantId,user.id));}));
-router.get('/me',asyncHandler(async(req,res)=>{const{decoded,user}=await authenticatedSession(req);ok(res,{sessionMode:'cookie',tenantId:user.tenantId,user:publicUser(user),tenant:user.tenant,accessibleTenants:await listAccessibleTenants(user.id),coordinateCard:await coordinateCardStatus(user.tenantId,user.id),expiresAt:decoded.exp?decoded.exp*1000:null});}));
+router.get('/me',asyncHandler(async(req,res)=>{const{decoded,user}=await authenticatedSession(req);ok(res,{sessionMode:'cookie',tenantId:user.tenantId,user:publicUser(user),tenant:user.tenant,license:roleForUser(user)==='client'?await activeLicenseForProfile(user.id,user.tenantId):null,accessibleTenants:await listAccessibleTenants(user.id),coordinateCard:await coordinateCardStatus(user.tenantId,user.id),expiresAt:decoded.exp?decoded.exp*1000:null});}));
 router.get('/tenants',asyncHandler(async(req,res)=>{const{user}=await authenticatedSession(req);ok(res,await listAccessibleTenants(user.id));}));
 router.post('/switch-tenant',validateBody(switchTenantSchema),asyncHandler(async(req,res)=>{
   const{user}=await authenticatedSession(req);
