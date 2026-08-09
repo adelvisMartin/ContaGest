@@ -17,14 +17,21 @@ function parse(value) {
 function normalize(session) {
   if (!session || typeof session !== 'object') return null;
   const tenantId = session.tenantId || session.tenant?.id || null;
-  const token = typeof session.token === 'string' ? session.token.trim() : '';
-  if (!token || !tenantId) return null;
+  if (!tenantId) return null;
+  const sessionMode = session.sessionMode || (session.mode === 'demo' ? 'demo' : 'cookie');
+  const accessExpiresAt = Number(session.accessExpiresAt || session.expiresAt || 0) || null;
+  const sessionExpiry = session.sessionExpiresAt ? Date.parse(session.sessionExpiresAt) : 0;
+  const expiresAt = Number(sessionMode === 'cookie' && sessionExpiry ? sessionExpiry : accessExpiresAt) || null;
+
+  // Never persist a production bearer/access token. HttpOnly cookies are the browser credential.
+  const { token: _discardedToken, ...safe } = session;
   return {
-    ...session,
-    token,
+    ...safe,
+    sessionMode,
+    mode: sessionMode,
     tenantId,
-    expiresAt: Number(session.expiresAt || 0) || null,
-    mode: session.mode || 'api'
+    accessExpiresAt,
+    expiresAt
   };
 }
 
@@ -53,8 +60,11 @@ export const AuthSession = {
 
   get() {
     if (!storageAvailable()) return null;
-    const session = normalize(parse(localStorage.getItem(AUTH_SESSION_KEY))) || migrateLegacySession();
+    const raw = parse(localStorage.getItem(AUTH_SESSION_KEY));
+    const session = normalize(raw) || migrateLegacySession();
     if (!session) return null;
+    // Rewrite any legacy object that still contained a bearer token.
+    if (raw?.token) localStorage.setItem(AUTH_SESSION_KEY, JSON.stringify(session));
     if (session.expiresAt && session.expiresAt <= Date.now()) {
       this.clear();
       return null;
@@ -64,7 +74,7 @@ export const AuthSession = {
 
   set(session) {
     const normalized = normalize(session);
-    if (!normalized) throw new Error('La sesión recibida no contiene token y tenant firmados.');
+    if (!normalized) throw new Error('La sesión recibida no contiene una empresa activa.');
     if (!storageAvailable()) return normalized;
     localStorage.setItem(AUTH_SESSION_KEY, JSON.stringify(normalized));
     removeLegacyKeys();
@@ -78,7 +88,7 @@ export const AuthSession = {
   },
 
   token() {
-    return this.get()?.token || null;
+    return null;
   },
 
   tenantId() {
@@ -86,11 +96,10 @@ export const AuthSession = {
   },
 
   isAuthenticated() {
-    return Boolean(this.get()?.token);
+    return Boolean(this.get()?.tenantId);
   },
 
   authHeaders() {
-    const token = this.token();
-    return token ? { Authorization: `Bearer ${token}` } : {};
+    return {};
   }
 };
