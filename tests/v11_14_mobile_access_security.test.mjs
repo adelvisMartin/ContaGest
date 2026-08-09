@@ -43,17 +43,18 @@ test('five failed passwords disable the account until an admin unlocks it', () =
   assert.match(admin, /bcrypt\.hash\(body\.newPassword, 12\)/);
 });
 
-test('client portal is visually and server-side forced to licensed-client mode', () => {
+test('client portal visual mode remains, while server derives trust from account role and license', () => {
   const enhancer = read('frontend/src/services/loginEnhancer.js');
   const auth = read('backend/src/modules/auth/auth.routes.ts');
   assert.match(enhancer, /path === '\/cliente'/);
   assert.match(enhancer, /clientOnly \? 'client'/);
   assert.match(enhancer, /Cliente con licencia/);
   assert.match(enhancer, /accessInput\.name = 'accessMode'/);
-  assert.match(enhancer, /licenseInput\.required = client/);
-  assert.match(auth, /accessMode:z\.enum\(\['staff','client'\]\)/);
-  assert.match(auth, /accessMode==='client'&&internalUser/);
-  assert.match(auth, /accessMode==='staff'&&!internalUser/);
+  assert.match(auth, /const internalUser=isInternalUser\(user\)/);
+  assert.match(auth, /if\(!internalUser\)/);
+  assert.match(auth, /deviceCredential:readDeviceCredential\(req\)/);
+  assert.doesNotMatch(auth, /accessMode==='client'&&internalUser/);
+  assert.doesNotMatch(auth, /accessMode==='staff'&&!internalUser/);
 });
 
 test('client URL editing cannot grant the admin frontend route and backend APIs enforce admin permission', () => {
