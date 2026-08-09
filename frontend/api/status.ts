@@ -1,4 +1,5 @@
 const VERSION = '11.14.0';
+// Production release marker: v11.14 passed CI, static QA and browser QA before deployment.
 
 export default function statusHandler(_request: unknown, response: any) {
   response.setHeader('Cache-Control', 'no-store');
