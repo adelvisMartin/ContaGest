@@ -10,9 +10,9 @@ CREATE INDEX IF NOT EXISTS "CookiePreference_userId_idx"
 CREATE INDEX IF NOT EXISTS "LegalAcceptance_accountUserId_idx"
   ON public."LegalAcceptance" ("accountUserId")
   WHERE "accountUserId" IS NOT NULL;
-CREATE INDEX IF NOT EXISTS "LicenseKey_membership_idx"
-  ON public."LicenseKey" ("membershipId")
-  WHERE "membershipId" IS NOT NULL;
+CREATE INDEX IF NOT EXISTS "LicenseKey_issuedForMembershipId_idx"
+  ON public."LicenseKey" ("issuedForMembershipId")
+  WHERE "issuedForMembershipId" IS NOT NULL;
 CREATE INDEX IF NOT EXISTS "TenantMembership_tenantId_idx"
   ON public."TenantMembership" ("tenantId");
 CREATE INDEX IF NOT EXISTS "UserSession_tenantId_idx"
