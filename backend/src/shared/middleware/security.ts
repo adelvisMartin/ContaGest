@@ -16,6 +16,11 @@ function normalizeOrigin(value?: string) {
   }
 }
 
+function explicitProductionSecretReady(value?: string) {
+  const secret = String(value || '').trim();
+  return secret.length >= 32 && !/dev[_-]?(secret|license)|change[_-]?me/i.test(secret);
+}
+
 const allowedOrigins = new Set(
   env.CORS_ORIGIN
     .split(',')
@@ -61,8 +66,13 @@ export const authRateLimit = rateLimit({
 });
 
 export function enforceProductionSecrets(_req: Request, _res: Response, next: NextFunction) {
-  if (isProductionDeployment && (!jwtSecretReady || !licenseSecretReady)) {
-    return next(new HttpError(503, 'La seguridad del servidor no está configurada.'));
+  // Preview/dev may derive ephemeral secrets to keep QA inexpensive. Production commercial
+  // must use independent explicit secrets: rotating a DB/service-role credential must never
+  // silently change the license hash key and invalidate issued licenses.
+  const explicitJwtReady = explicitProductionSecretReady(process.env.JWT_SECRET);
+  const explicitLicenseReady = explicitProductionSecretReady(process.env.LICENSE_HASH_SECRET);
+  if (isProductionDeployment && (!jwtSecretReady || !licenseSecretReady || !explicitJwtReady || !explicitLicenseReady)) {
+    return next(new HttpError(503, 'La seguridad del servidor no está configurada. Producción requiere JWT_SECRET y LICENSE_HASH_SECRET explícitos.'));
   }
   next();
 }
