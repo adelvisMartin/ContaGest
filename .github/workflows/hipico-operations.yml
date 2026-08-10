@@ -38,6 +38,7 @@ jobs:
         run: |
           node --check frontend/public/hipico-control/assets/js/whatsapp.js
           node --check frontend/public/hipico-control/assets/js/operations.js
+          node --check frontend/public/hipico-control/assets/js/agent-router.js
       - name: Production wording gate
         shell: bash
         run: |
