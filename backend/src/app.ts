@@ -9,6 +9,7 @@ import { errorHandler, notFound } from './shared/middleware/error.js';
 import {
   authRateLimit,
   corsPolicy,
+  csrfProtection,
   enforceProductionSecrets,
   globalRateLimit,
   requestId,
@@ -42,6 +43,7 @@ export function createApp() {
   app.use(corsPolicy);
   app.use(globalRateLimit);
   app.use(express.json({ limit: env.JSON_BODY_LIMIT }));
+  app.use(csrfProtection);
   app.use(morgan(isProd ? 'combined' : 'dev'));
 
   app.get('/health', (_req, res) => res.json(healthPayload()));

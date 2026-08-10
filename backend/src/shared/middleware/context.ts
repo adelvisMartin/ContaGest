@@ -3,6 +3,7 @@ import { createClient } from '@supabase/supabase-js';
 import { env, isProd } from '../../config/env.js';
 import { prisma } from '../../database/prisma.js';
 import { verifyAccessToken } from '../auth/jwt.js';
+import { readAccessToken, readCsrfToken, validateCsrfAgainstSession } from '../auth/sessionCookies.js';
 import { HttpError } from '../http.js';
 
 const DEV_TENANT_ID_HEADER = 'x-tenant-id';
@@ -13,9 +14,10 @@ type RequestContext = {
   userId?: string;
   authUserId?: string;
   email?: string;
+  sessionId?: string;
   ip?: string;
   userAgent?: string | string[];
-  authMode: 'backend-jwt' | 'supabase' | 'development' | 'anonymous';
+  authMode: 'backend-cookie' | 'backend-jwt' | 'supabase' | 'development' | 'anonymous';
 };
 
 type AuthIdentityContext = Pick<RequestContext, 'authMode'> & Omit<Partial<RequestContext>, 'authMode'>;
@@ -34,28 +36,45 @@ const PERMISSION_MODULES: Record<string, string[]> = {
   'health.manage': ['salud','veterinaria'],
   'gym.manage': ['gimnasio','rutinas','nutricion'],
   'communications.manage': ['mensajes'],
-  'admin.manage': ['admin','configuracion','backend','licencias','demo-control']
+  'admin.manage': ['admin','configuracion','backend','licencias','demo-control'],
+  'platform.manage': ['commercial']
 };
 
-function getBearerToken(req: Request) {
-  const header = req.header('authorization') || '';
-  const [type, token] = header.trim().split(/\s+/, 2);
-  return type?.toLowerCase() === 'bearer' && token ? token : null;
-}
-
-async function resolveBackendJwtContext(token: string): Promise<AuthIdentityContext> {
+async function resolveBackendJwtContext(token: string, cookieMode = false): Promise<AuthIdentityContext> {
   const decoded = verifyAccessToken(token);
+  if (cookieMode) {
+    if (!decoded.sid) throw new HttpError(401, 'La cookie de acceso no está vinculada a una sesión de servidor.');
+    const sessions = await prisma.$queryRaw<Array<{ status:string; expiresAt:Date }>>`
+      SELECT "status", "expiresAt"
+      FROM public."UserSession"
+      WHERE "id"=${decoded.sid}
+        AND "userId"=${decoded.sub}
+        AND "tenantId"=${decoded.tenantId}
+      LIMIT 1
+    `;
+    const session = sessions[0];
+    if (!session || session.status !== 'active' || new Date(session.expiresAt).getTime() <= Date.now()) {
+      throw new HttpError(401, 'La sesión fue revocada, reemplazada o venció. Inicia sesión nuevamente.');
+    }
+  }
+
   const profile = await prisma.userProfile.findFirst({
     where: { id: decoded.sub, tenantId: decoded.tenantId, status: 'active' },
     select: { id: true, tenantId: true, email: true, accessExpiresAt:true }
   });
-  if (!profile) throw new HttpError(403, 'Usuario JWT sin perfil activo.');
+  if (!profile) throw new HttpError(403, 'Usuario de sesión sin perfil activo.');
   if (profile.accessExpiresAt && profile.accessExpiresAt.getTime() <= Date.now()) throw new HttpError(403, 'El acceso temporal venció.');
-  return { authMode:'backend-jwt', userId:profile.id, tenantId:profile.tenantId, email:profile.email };
+  return {
+    authMode:cookieMode ? 'backend-cookie' : 'backend-jwt',
+    userId:profile.id,
+    tenantId:profile.tenantId,
+    email:profile.email,
+    sessionId:decoded.sid
+  };
 }
 
 async function resolveSupabaseContext(token: string): Promise<AuthIdentityContext | null> {
-  if (!env.SUPABASE_URL || !env.SUPABASE_ANON_KEY) return null;
+  if (env.SUPABASE_AUTH_FALLBACK !== 'true' || !env.SUPABASE_URL || !env.SUPABASE_ANON_KEY) return null;
   const supabase = createClient(env.SUPABASE_URL, env.SUPABASE_ANON_KEY, {
     auth: { persistSession:false, autoRefreshToken:false },
     global: { headers: { Authorization:`Bearer ${token}` } }
@@ -68,9 +87,10 @@ async function resolveSupabaseContext(token: string): Promise<AuthIdentityContex
   return { authMode:'supabase', authUserId:data.user.id, userId:profile.id, tenantId:profile.tenantId, email:profile.email || data.user.email || undefined };
 }
 
-async function resolveSignedContext(token: string): Promise<AuthIdentityContext> {
-  try { return await resolveBackendJwtContext(token); }
+async function resolveSignedContext(token: string, cookieMode: boolean): Promise<AuthIdentityContext> {
+  try { return await resolveBackendJwtContext(token, cookieMode); }
   catch (backendError) {
+    if (cookieMode) throw backendError;
     const supabaseContext = await resolveSupabaseContext(token);
     if (supabaseContext) return supabaseContext;
     if (backendError instanceof HttpError && backendError.status === 403) throw backendError;
@@ -80,16 +100,24 @@ async function resolveSignedContext(token: string): Promise<AuthIdentityContext>
 
 export async function requestContext(req: Request, _res: Response, next: NextFunction) {
   try {
-    const token = getBearerToken(req);
-    if (token) {
-      const secureContext = await resolveSignedContext(token);
+    const auth = readAccessToken(req);
+    if (auth) {
+      const cookieMode = auth.mode === 'cookie';
+      const secureContext = await resolveSignedContext(auth.token, cookieMode);
+      if (cookieMode && !['GET','HEAD','OPTIONS'].includes(req.method.toUpperCase())) {
+        const csrfCookie = readCsrfToken(req);
+        const csrfHeader = String(req.header('x-csrf-token') || '');
+        if (!csrfCookie || csrfCookie !== csrfHeader || !await validateCsrfAgainstSession(secureContext.sessionId, csrfCookie)) {
+          throw new HttpError(403, 'La sesión CSRF no es válida. Renueva la sesión e intenta de nuevo.');
+        }
+      }
       (req as any).context = { ...secureContext, ip:req.ip, userAgent:req.headers['user-agent'] } satisfies RequestContext;
       return next();
     }
     const allowDevelopmentHeader = !isProd && env.ALLOW_DEV_TENANT_HEADER === 'true';
     const tenantId = allowDevelopmentHeader ? req.header(DEV_TENANT_ID_HEADER) || req.query.tenantId?.toString() : undefined;
     const userId = allowDevelopmentHeader ? req.header(DEV_USER_ID_HEADER) || req.query.userId?.toString() : undefined;
-    if (isProd && (req.header(DEV_TENANT_ID_HEADER) || req.header(DEV_USER_ID_HEADER))) throw new HttpError(401, 'Los encabezados de tenant y usuario están prohibidos en producción. Usa Authorization: Bearer <JWT>.');
+    if (isProd && (req.header(DEV_TENANT_ID_HEADER) || req.header(DEV_USER_ID_HEADER))) throw new HttpError(401, 'Los encabezados de tenant y usuario están prohibidos en producción. Usa la sesión segura de ContaGest.');
     (req as any).context = { tenantId,userId,ip:req.ip,userAgent:req.headers['user-agent'],authMode:tenantId?'development':'anonymous' } satisfies RequestContext;
     next();
   } catch (error) { next(error); }
@@ -109,10 +137,19 @@ function enabledModules(value: unknown) {
   return [];
 }
 
+async function hasPlatformPermission(ctx: RequestContext) {
+  if (!ctx.userId || !ctx.tenantId) return false;
+  const count = await prisma.userRole.count({
+    where:{ userId:ctx.userId, role:{ tenantId:ctx.tenantId, permissions:{ some:{ permission:{ key:'platform.manage' } } } } }
+  });
+  return count > 0;
+}
+
 async function enforceClientLicense(ctx: RequestContext, permission: string) {
   if (!ctx.userId || !ctx.tenantId) throw new HttpError(401, 'No hay usuario autenticado.');
-  const systemRole = await prisma.userRole.count({ where:{ userId:ctx.userId, role:{ tenantId:ctx.tenantId, system:true } } });
-  if (systemRole) return;
+  // A tenant role flagged as `system` is not proof that this is an internal platform operator.
+  // Only the explicit platform permission may bypass customer licensing.
+  if (await hasPlatformPermission(ctx)) return;
 
   const license = await prisma.licenseKey.findFirst({
     where: { tenantId:ctx.tenantId, userId:ctx.userId, status:'active', expiresAt:{ gt:new Date() } },
@@ -144,4 +181,3 @@ export function requirePermission(permission: string) {
     } catch (error) { next(error); }
   };
 }
-

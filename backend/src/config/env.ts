@@ -16,6 +16,7 @@ const envSchema = z.object({
   SUPABASE_JWT_SECRET: z.string().optional(),
   VERCEL_AUTOMATION_BYPASS_SECRET: z.string().optional(),
   JSON_BODY_LIMIT: z.string().default('1mb'),
+  DATABASE_RUNTIME_URL: z.string().optional(),
   DATABASE_URL: z.string().optional(),
   POSTGRES_PRISMA_URL: z.string().optional(),
   POSTGRES_URL: z.string().optional(),
@@ -27,6 +28,7 @@ const envSchema = z.object({
   SUPABASE_URL: z.string().optional(),
   SUPABASE_ANON_KEY: z.string().optional(),
   SUPABASE_SERVICE_ROLE_KEY: z.string().optional(),
+  SUPABASE_AUTH_FALLBACK: z.string().default('false'),
   API_MODE: z.enum(['prisma','mock']).default('prisma'),
   OPENAI_API_KEY: z.string().optional(),
   OPENAI_MODEL: z.string().default('gpt-5.1-mini'),
@@ -57,7 +59,7 @@ function isSecureSecret(value?: string) {
 }
 
 function deriveSecret(seed: string, purpose: string) {
-  return createHash('sha256').update(`contagest-ve:${purpose}:v11.9.1:${seed}`).digest('base64url');
+  return createHash('sha256').update(`contagest-ve:${purpose}:v11.15:${seed}`).digest('base64url');
 }
 
 const parsedEnv = envSchema.parse(process.env);
@@ -91,6 +93,7 @@ const explicitJwtSecret = String(parsedEnv.JWT_SECRET || '').trim();
 const explicitLicenseSecret = String(parsedEnv.LICENSE_HASH_SECRET || '').trim();
 const privateSeed = parsedEnv.SUPABASE_SERVICE_ROLE_KEY
   || parsedEnv.SUPABASE_JWT_SECRET
+  || parsedEnv.DATABASE_RUNTIME_URL
   || parsedEnv.DATABASE_URL
   || parsedEnv.POSTGRES_PRISMA_URL
   || parsedEnv.POSTGRES_URL

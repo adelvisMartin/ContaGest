@@ -26,16 +26,26 @@ export const LicenseService = {
     return BackendApi.post('/api/v1/licenses', payload);
   },
 
-  async validate(licenseKey, route = 'dashboard') {
-    return BackendApi.post('/api/v1/licenses/validate', { licenseKey, route, deviceId: deviceId(), deviceLabel: deviceLabel() });
+  async validate(licenseKey = '', route = 'dashboard') {
+    return BackendApi.post('/api/v1/licenses/validate', {
+      ...(licenseKey ? { licenseKey } : {}),
+      route,
+      deviceId: deviceId(),
+      deviceLabel: deviceLabel()
+    });
   },
 
-  async heartbeat(licenseKey, route = 'dashboard') {
-    return BackendApi.post('/api/v1/licenses/heartbeat', { licenseKey, route, deviceId: deviceId(), deviceLabel: deviceLabel() });
+  async heartbeat(_licenseKey = '', route = 'dashboard') {
+    // After the first activation, the HttpOnly server-issued device credential is authoritative.
+    return BackendApi.post('/api/v1/licenses/heartbeat', { route, deviceId: deviceId(), deviceLabel: deviceLabel() });
   },
 
   async revoke(id) {
     return BackendApi.request(`/licenses/${encodeURIComponent(id)}/revoke`, { method:'PATCH', body:{} });
+  },
+
+  async revokeDevice(licenseId, activationId) {
+    return BackendApi.request(`/licenses/${encodeURIComponent(licenseId)}/devices/${encodeURIComponent(activationId)}/revoke`, { method:'PATCH', body:{} });
   },
 
   deviceId,

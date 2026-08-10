@@ -3,9 +3,11 @@ import crypto from 'node:crypto';
 import bcrypt from 'bcryptjs';
 import { z } from 'zod';
 import { prisma } from '../../database/prisma.js';
-import { env } from '../../config/env.js';
 import { asyncHandler, HttpError, ok } from '../../shared/http.js';
 import { requireTenant, requirePermission } from '../../shared/middleware/context.js';
+import { ensureAccountMembership } from '../../shared/identity/accountMembership.js';
+import { hashLicenseKey, validateUserLicense } from '../../shared/licensing/licenseGuard.js';
+import { readDeviceCredential, setDeviceCredentialCookie } from '../../shared/auth/sessionCookies.js';
 
 const router = Router();
 router.use(requireTenant);
@@ -26,12 +28,13 @@ const licenseSchema = z.object({
   commercialUse: z.enum(COMMERCIAL_USES).default('evaluacion'),
   maxUsers: z.coerce.number().int().min(1).max(100).default(1),
   maxDevices: z.coerce.number().int().min(1).max(20).default(1),
+  subscriptionId: z.string().uuid().optional(),
   notes: z.string().trim().max(1000).optional()
 });
 
 const validateSchema = z.object({
-  licenseKey: z.string().min(20).max(180),
-  deviceId: z.string().min(8).max(240),
+  licenseKey: z.string().min(20).max(180).optional(),
+  deviceId: z.string().min(8).max(240).optional(),
   deviceLabel: z.string().trim().max(120).optional(),
   route: z.string().max(160).optional(),
   metadata: z.record(z.string(), z.unknown()).optional()
@@ -39,8 +42,8 @@ const validateSchema = z.object({
 
 const permissionByModule: Record<string, string[]> = {
   dashboard: ['reports.view'],
-  ventas: ['sales.view'],
-  cotizacion: ['sales.view'],
+  ventas: ['sales.manage','sales.view'],
+  cotizacion: ['sales.manage','sales.view'],
   clientes: ['clients.manage'],
   inventario: ['inventory.manage'],
   kardex: ['inventory.manage'],
@@ -52,9 +55,14 @@ const permissionByModule: Record<string, string[]> = {
   'libro-mayor': ['reports.view'],
   'balance-sumas-saldos': ['reports.view'],
   'hoja-trabajo': ['reports.view'],
+  'estados-financieros': ['reports.view'],
+  'cierre-contable': ['reports.view'],
+  'plan-cuentas': ['reports.view'],
+  'libro-ventas': ['taxes.export'],
   'asistente-ia': ['reports.view'],
   bancos: ['banking.manage'],
   nomina: ['payroll.manage'],
+  rrhh: ['payroll.manage'],
   tributos: ['taxes.export'],
   salud: ['health.manage'],
   veterinaria: ['health.manage'],
@@ -78,20 +86,6 @@ function generateTemporaryPassword() {
   return `Cg!${crypto.randomBytes(10).toString('base64url')}9a`;
 }
 
-function hashKey(value: string) {
-  return crypto.createHmac('sha256', env.JWT_SECRET).update(value.trim().toUpperCase()).digest('hex');
-}
-
-function hashDevice(value: string) {
-  return crypto.createHmac('sha256', env.JWT_SECRET).update(value.trim()).digest('hex');
-}
-
-function secureEqual(left: string, right: string) {
-  const a = Buffer.from(left, 'hex');
-  const b = Buffer.from(right, 'hex');
-  return a.length === b.length && crypto.timingSafeEqual(a, b);
-}
-
 function normalizeConfig(value: unknown) {
   if (Array.isArray(value)) return { enabled: value, businessSector: 'comercio', commercialUse: 'evaluacion' };
   const data = value && typeof value === 'object' ? value as Record<string, unknown> : {};
@@ -102,7 +96,20 @@ function normalizeConfig(value: unknown) {
   };
 }
 
-function publicLicense(record: any, tenant?: any, extension: any = {}) {
+type LicenseExtension = {
+  id:string;
+  businessCategory:string|null;
+  companyName:string|null;
+  companyRif:string|null;
+  maxUsers:number|null;
+  maxDevices:number|null;
+  activationCount:number|null;
+  revokedAt:Date|null;
+  subscriptionId:string|null;
+  issuedForMembershipId:string|null;
+};
+
+function publicLicense(record: any, tenant?: any, extension: Partial<LicenseExtension> = {}) {
   const config = normalizeConfig(record.modules);
   return {
     id: record.id,
@@ -120,6 +127,7 @@ function publicLicense(record: any, tenant?: any, extension: any = {}) {
     devicesUsed: Number(extension.activationCount || 0),
     companyName: extension.companyName || tenant?.name,
     companyRif: extension.companyRif || tenant?.rif,
+    subscriptionId: extension.subscriptionId || null,
     expiresAt: new Date(record.expiresAt).toISOString(),
     status: record.status,
     lastSeenAt: record.lastSeenAt ? new Date(record.lastSeenAt).toISOString() : null,
@@ -129,13 +137,17 @@ function publicLicense(record: any, tenant?: any, extension: any = {}) {
   };
 }
 
+async function extensionByLicenseId(id:string) {
+  const rows = await prisma.$queryRaw<LicenseExtension[]>`
+    SELECT "id", "businessCategory", "companyName", "companyRif", "maxUsers", "maxDevices", "activationCount", "revokedAt", "subscriptionId", "issuedForMembershipId"
+    FROM public."LicenseKey" WHERE "id"=${id} LIMIT 1
+  `;
+  return rows[0] || null;
+}
+
 async function extensionByLicenseIds(ids: string[]) {
-  if (!ids.length) return new Map<string, any>();
-  const rows = await prisma.$queryRawUnsafe<any[]>(`
-    SELECT "id", "businessCategory", "companyName", "companyRif", "maxUsers", "maxDevices", "activationCount", "revokedAt"
-    FROM public."LicenseKey" WHERE "id" = ANY($1::text[])
-  `, ids);
-  return new Map(rows.map((row) => [row.id, row]));
+  const entries = await Promise.all(ids.map(async (id) => [id, await extensionByLicenseId(id)] as const));
+  return new Map(entries.filter(([, value]) => Boolean(value)) as Array<readonly [string, LicenseExtension]>);
 }
 
 async function assignTrialRole(tenantId: string, userId: string, modules: string[]) {
@@ -148,11 +160,11 @@ async function assignTrialRole(tenantId: string, userId: string, modules: string
     });
   }
 
-  const roleName = `Cliente prueba ${userId.slice(0, 8)}`;
+  const roleName = `Cliente licencia ${userId.slice(0, 8)}`;
   const role = await prisma.role.upsert({
     where: { tenantId_name: { tenantId, name: roleName } },
-    update: { description: 'Acceso limitado por licencia de evaluación.', system: false },
-    create: { tenantId, name: roleName, description: 'Acceso limitado por licencia de evaluación.', system: false }
+    update: { description: 'Acceso limitado por módulos y vigencia de licencia.', system: false },
+    create: { tenantId, name: roleName, description: 'Acceso limitado por módulos y vigencia de licencia.', system: false }
   });
 
   await prisma.rolePermission.deleteMany({ where: { roleId: role.id } });
@@ -186,66 +198,51 @@ async function audit(req: any, action: string, entityId: string, after: unknown)
   });
 }
 
-async function validateLicense(req: any, body: z.infer<typeof validateSchema>) {
+async function assertSubscriptionModules(subscriptionId:string, tenantId:string, modules:string[]) {
+  const subscriptionRows = await prisma.$queryRaw<Array<{ status:string; maxUsers:number }>>`
+    SELECT s."status", s."maxUsers"
+    FROM public."Subscription" s
+    JOIN public."SubscriptionTenant" st ON st."subscriptionId"=s."id"
+    WHERE s."id"=${subscriptionId} AND st."tenantId"=${tenantId} AND st."status"='active'
+    LIMIT 1
+  `;
+  const subscription = subscriptionRows[0];
+  if (!subscription || !['trial','active','past_due'].includes(subscription.status)) {
+    throw new HttpError(403, 'La suscripción no habilita esta empresa.');
+  }
+  const entitlements = await prisma.$queryRaw<Array<{ moduleCode:string }>>`
+    SELECT "moduleCode" FROM public."ModuleEntitlement"
+    WHERE "subscriptionId"=${subscriptionId} AND "status"='active'
+  `;
+  const allowed = new Set(entitlements.map((item) => item.moduleCode));
+  const unauthorized = modules.filter((module) => !allowed.has(module));
+  if (unauthorized.length) {
+    throw new HttpError(403, `La suscripción no incluye: ${unauthorized.slice(0, 6).join(', ')}.`);
+  }
+  return subscription;
+}
+
+async function validateFromRequest(req:any, body:z.infer<typeof validateSchema>) {
   const ctx = req.context;
   if (!ctx.email) throw new HttpError(401, 'La sesión no contiene correo de usuario.');
-  const record = await prisma.licenseKey.findFirst({
-    where: { tenantId: ctx.tenantId, userEmail: ctx.email, status: 'active' },
-    orderBy: { createdAt: 'desc' }
+  const result = await validateUserLicense({
+    tenantId:ctx.tenantId,
+    userId:ctx.userId || null,
+    userEmail:ctx.email,
+    licenseKey:body.licenseKey || null,
+    deviceId:body.deviceId || null,
+    deviceCredential:readDeviceCredential(req),
+    deviceLabel:body.deviceLabel || null,
+    route:body.route || null,
+    ip:req.ip,
+    userAgent:req.headers['user-agent'] || null,
+    metadata:body.metadata || {}
   });
-  if (!record) throw new HttpError(403, 'No existe una licencia activa para este usuario y empresa.');
-  if (record.expiresAt.getTime() <= Date.now()) {
-    await prisma.licenseKey.update({ where: { id: record.id }, data: { status: 'expired' } });
-    throw new HttpError(403, 'La licencia está vencida. Solicita una renovación.');
+  if (result._issuedDeviceCredential) {
+    setDeviceCredentialCookie(req.res, result._issuedDeviceCredential, result._issuedDeviceCredentialExpiresAt);
   }
-  if (!secureEqual(record.keyHash, hashKey(body.licenseKey))) throw new HttpError(403, 'La licencia no pertenece a esta empresa o usuario.');
-
-  const extensionRows = await prisma.$queryRawUnsafe<any[]>(`
-    SELECT "businessCategory", "companyRif", "maxUsers", "maxDevices", "activationCount"
-    FROM public."LicenseKey" WHERE "id" = $1 AND "tenantId" = $2 LIMIT 1
-  `, record.id, ctx.tenantId);
-  const extension = extensionRows[0] || {};
-  const tenant = await prisma.tenant.findUnique({ where: { id: ctx.tenantId }, select: { rif:true } });
-  if (extension.companyRif && tenant && extension.companyRif.trim().toUpperCase() !== tenant.rif.trim().toUpperCase()) {
-    throw new HttpError(403, 'La licencia está vinculada a otra empresa.');
-  }
-
-  const deviceHash = hashDevice(body.deviceId);
-  const existing = await prisma.$queryRawUnsafe<any[]>(`
-    SELECT "id" FROM public."LicenseActivation" WHERE "licenseId" = $1 AND "deviceHash" = $2 LIMIT 1
-  `, record.id, deviceHash);
-  if (!existing.length) {
-    const countRows = await prisma.$queryRawUnsafe<any[]>(`
-      SELECT count(*)::int AS count FROM public."LicenseActivation" WHERE "licenseId" = $1 AND "status" = 'active'
-    `, record.id);
-    if (Number(countRows[0]?.count || 0) >= Number(extension.maxDevices || 1)) {
-      throw new HttpError(403, `La licencia alcanzó el máximo de ${Number(extension.maxDevices || 1)} dispositivo(s).`);
-    }
-  }
-
-  await prisma.$executeRawUnsafe(`
-    INSERT INTO public."LicenseActivation"
-      ("id", "tenantId", "licenseId", "userId", "deviceHash", "deviceLabel", "status", "firstSeenAt", "lastSeenAt", "lastIp", "lastUserAgent", "metadata")
-    VALUES
-      (gen_random_uuid()::text, $1, $2, $3, $4, $5, 'active', now(), now(), $6, $7, $8::jsonb)
-    ON CONFLICT ("licenseId", "deviceHash") DO UPDATE SET
-      "userId" = EXCLUDED."userId", "deviceLabel" = COALESCE(EXCLUDED."deviceLabel", public."LicenseActivation"."deviceLabel"),
-      "status" = 'active', "lastSeenAt" = now(), "lastIp" = EXCLUDED."lastIp", "lastUserAgent" = EXCLUDED."lastUserAgent", "metadata" = EXCLUDED."metadata"
-  `, ctx.tenantId, record.id, ctx.userId || null, deviceHash, body.deviceLabel || null, req.ip, req.headers['user-agent'] || null, JSON.stringify(body.metadata || {}));
-
-  const countRows = await prisma.$queryRawUnsafe<any[]>(`
-    SELECT count(*)::int AS count FROM public."LicenseActivation" WHERE "licenseId" = $1 AND "status" = 'active'
-  `, record.id);
-  const activationCount = Number(countRows[0]?.count || 0);
-  const updated = await prisma.licenseKey.update({
-    where: { id: record.id },
-    data: { lastSeenAt: new Date(), lastRoute: body.route || record.lastRoute }
-  });
-  await prisma.$executeRawUnsafe(`
-    UPDATE public."LicenseKey" SET "activationCount" = $2, "lastIp" = $3, "lastUserAgent" = $4, "updatedAt" = now() WHERE "id" = $1
-  `, record.id, activationCount, req.ip, req.headers['user-agent'] || null);
-
-  return publicLicense(updated, tenant, { ...extension, activationCount });
+  const { _issuedDeviceCredential, _issuedDeviceCredentialExpiresAt, ...publicResult } = result;
+  return publicResult;
 }
 
 router.get('/', requirePermission('admin.manage'), asyncHandler(async (req, res) => {
@@ -255,7 +252,7 @@ router.get('/', requirePermission('admin.manage'), asyncHandler(async (req, res)
     prisma.licenseKey.findMany({ where: { tenantId: ctx.tenantId }, orderBy: { createdAt: 'desc' }, take: 500 })
   ]);
   const extensions = await extensionByLicenseIds(records.map((record) => record.id));
-  ok(res, records.map((record) => publicLicense(record, tenant, extensions.get(record.id))));
+  ok(res, records.map((record) => publicLicense(record, tenant, extensions.get(record.id) || undefined)));
 }));
 
 router.post('/', requirePermission('admin.manage'), asyncHandler(async (req, res) => {
@@ -264,12 +261,20 @@ router.post('/', requirePermission('admin.manage'), asyncHandler(async (req, res
   const tenant = await prisma.tenant.findUnique({ where: { id: ctx.tenantId }, select: { id: true, name: true, rif: true } });
   if (!tenant) throw new HttpError(404, 'Empresa no encontrada.');
 
+  if (body.subscriptionId) {
+    const subscription = await assertSubscriptionModules(body.subscriptionId, ctx.tenantId, body.modules);
+    if (body.maxUsers > Number(subscription.maxUsers || body.maxUsers)) {
+      throw new HttpError(403, 'La licencia excede el límite de usuarios contratado.');
+    }
+  }
+
+  const normalizedEmail = body.userEmail.trim().toLowerCase();
   const existingUser = await prisma.userProfile.findUnique({
-    where: { tenantId_email: { tenantId: ctx.tenantId, email: body.userEmail } },
+    where: { tenantId_email: { tenantId: ctx.tenantId, email: normalizedEmail } },
     include: { userRoles: { include: { role: true } } }
   });
   if (existingUser?.userRoles.some((assignment) => assignment.role.system)) {
-    throw new HttpError(409, 'No se puede reemplazar la credencial de un usuario administrativo mediante una licencia de prueba.');
+    throw new HttpError(409, 'No se puede reemplazar la credencial de un usuario administrativo mediante una licencia comercial.');
   }
 
   const temporaryPassword = generateTemporaryPassword();
@@ -280,14 +285,26 @@ router.post('/', requirePermission('admin.manage'), asyncHandler(async (req, res
         data: { fullName: body.fullName, passwordHash, status: 'active' }
       })
     : await prisma.userProfile.create({
-        data: { tenantId: ctx.tenantId, email: body.userEmail, fullName: body.fullName, passwordHash, status: 'active' }
+        data: { tenantId: ctx.tenantId, email: normalizedEmail, fullName: body.fullName, passwordHash, status: 'active' }
       });
 
+  const membership = await ensureAccountMembership({
+    tenantId:ctx.tenantId,
+    userProfileId:user.id,
+    email:user.email,
+    fullName:user.fullName,
+    roleLabel:body.businessSector === 'contador' ? 'Contador' : body.businessSector === 'comercio' ? 'Operador comercial' : 'Cliente'
+  });
+
   await assignTrialRole(ctx.tenantId, user.id, body.modules);
-  const previous = await prisma.licenseKey.findMany({ where: { tenantId: ctx.tenantId, userEmail: body.userEmail, status: 'active' }, select: { id:true } });
+  const previous = await prisma.licenseKey.findMany({ where: { tenantId: ctx.tenantId, userEmail: normalizedEmail, status: 'active' }, select: { id:true } });
   if (previous.length) {
     await prisma.licenseKey.updateMany({ where: { id: { in: previous.map((item) => item.id) } }, data: { status: 'revoked' } });
-    await prisma.$executeRawUnsafe(`UPDATE public."LicenseActivation" SET "status" = 'revoked' WHERE "licenseId" = ANY($1::text[])`, previous.map((item) => item.id));
+    for (const item of previous) {
+      await prisma.$executeRaw`
+        UPDATE public."LicenseActivation" SET "status"='revoked', "revokedAt"=now() WHERE "licenseId"=${item.id}
+      `;
+    }
   }
 
   const rawKey = generateLicenseKey(body.businessSector);
@@ -297,30 +314,27 @@ router.post('/', requirePermission('admin.manage'), asyncHandler(async (req, res
     data: {
       tenantId: ctx.tenantId,
       userId: user.id,
-      userEmail: body.userEmail,
+      userEmail: normalizedEmail,
       plan: body.plan,
-      keyHash: hashKey(rawKey),
+      keyHash: hashLicenseKey(rawKey),
       keyPreview: `${rawKey.slice(0, 14)}-••••-${rawKey.slice(-4)}`,
       modules: config as any,
       expiresAt,
       status: 'active'
     }
   });
-  await prisma.$executeRawUnsafe(`
-    UPDATE public."LicenseKey" SET "businessCategory" = $2, "companyName" = $3, "companyRif" = $4,
-      "maxUsers" = $5, "maxDevices" = $6, "activationCount" = 0, "metadata" = $7::jsonb, "updatedAt" = now()
-    WHERE "id" = $1
-  `, record.id, body.businessSector, tenant.name, tenant.rif, body.maxUsers, body.maxDevices,
-    JSON.stringify({ commercialUse:body.commercialUse, notes:body.notes || '', issuedBy:ctx.userId || null }));
 
-  const publicData = publicLicense(record, tenant, {
-    businessCategory: body.businessSector,
-    companyName: tenant.name,
-    companyRif: tenant.rif,
-    maxUsers: body.maxUsers,
-    maxDevices: body.maxDevices,
-    activationCount: 0
-  });
+  await prisma.$executeRaw`
+    UPDATE public."LicenseKey"
+    SET "businessCategory"=${body.businessSector}, "companyName"=${tenant.name}, "companyRif"=${tenant.rif},
+        "maxUsers"=${body.maxUsers}, "maxDevices"=${body.maxDevices}, "activationCount"=0,
+        "metadata"=${JSON.stringify({ commercialUse:body.commercialUse, notes:body.notes || '', issuedBy:ctx.userId || null })}::jsonb,
+        "subscriptionId"=${body.subscriptionId || null}, "issuedForMembershipId"=${membership?.id || null}, "updatedAt"=now()
+    WHERE "id"=${record.id}
+  `;
+
+  const extension = await extensionByLicenseId(record.id);
+  const publicData = publicLicense(record, tenant, extension || undefined);
   await audit(req, 'license.create', record.id, publicData);
 
   ok(res, {
@@ -331,23 +345,22 @@ router.post('/', requirePermission('admin.manage'), asyncHandler(async (req, res
       tenantRif: tenant.rif,
       companyName: tenant.name,
       businessSector: body.businessSector,
-      email: body.userEmail,
+      email: normalizedEmail,
       temporaryPassword,
       licenseKey: rawKey,
       expiresAt: expiresAt.toISOString(),
       modules: body.modules
     },
-    warning: 'La licencia y la contraseña se muestran una sola vez. Envíalas por un canal seguro y no publiques capturas.'
+    warning: 'La licencia y la contraseña se muestran una sola vez. El primer dispositivo autorizado recibirá además una credencial segura del servidor.'
   }, 201);
 }));
 
 router.post('/validate', asyncHandler(async (req, res) => {
-  const result = await validateLicense(req, validateSchema.parse(req.body || {}));
-  ok(res, result);
+  ok(res, await validateFromRequest(req, validateSchema.parse(req.body || {})));
 }));
 
 router.post('/heartbeat', asyncHandler(async (req, res) => {
-  const result = await validateLicense(req, validateSchema.parse(req.body || {}));
+  const result = await validateFromRequest(req, validateSchema.parse(req.body || {}));
   ok(res, { accepted: true, license: result, at: new Date().toISOString() });
 }));
 
@@ -356,12 +369,31 @@ router.patch('/:id/revoke', requirePermission('admin.manage'), asyncHandler(asyn
   const record = await prisma.licenseKey.findFirst({ where: { id: req.params.id, tenantId: ctx.tenantId } });
   if (!record) throw new HttpError(404, 'Licencia no encontrada.');
   const updated = await prisma.licenseKey.update({ where: { id: record.id }, data: { status: 'revoked' } });
-  await prisma.$executeRawUnsafe(`UPDATE public."LicenseKey" SET "revokedAt" = now(), "updatedAt" = now() WHERE "id" = $1`, record.id);
-  await prisma.$executeRawUnsafe(`UPDATE public."LicenseActivation" SET "status" = 'revoked' WHERE "licenseId" = $1`, record.id);
-  const extension = (await extensionByLicenseIds([record.id])).get(record.id);
-  const data = publicLicense(updated, undefined, extension);
+  await prisma.$executeRaw`UPDATE public."LicenseKey" SET "revokedAt"=now(), "updatedAt"=now() WHERE "id"=${record.id}`;
+  await prisma.$executeRaw`UPDATE public."LicenseActivation" SET "status"='revoked', "revokedAt"=now() WHERE "licenseId"=${record.id}`;
+  const extension = await extensionByLicenseId(record.id);
+  const data = publicLicense(updated, undefined, extension || undefined);
   await audit(req, 'license.revoke', record.id, data);
   ok(res, data);
+}));
+
+router.patch('/:id/devices/:activationId/revoke', requirePermission('admin.manage'), asyncHandler(async (req,res) => {
+  const ctx=(req as any).context;
+  const rows=await prisma.$queryRaw<Array<{ id:string }>>`
+    SELECT la."id"
+    FROM public."LicenseActivation" la
+    JOIN public."LicenseKey" lk ON lk."id"=la."licenseId"
+    WHERE la."id"=${req.params.activationId} AND lk."id"=${req.params.id} AND lk."tenantId"=${ctx.tenantId}
+    LIMIT 1
+  `;
+  if(!rows[0]) throw new HttpError(404,'Activación no encontrada.');
+  await prisma.$executeRaw`
+    UPDATE public."LicenseActivation"
+    SET "status"='revoked', "revokedAt"=now(), "credentialHash"=NULL, "credentialExpiresAt"=now(), "lastSeenAt"=now()
+    WHERE "id"=${req.params.activationId}
+  `;
+  await audit(req,'license.device.revoke',req.params.id,{activationId:req.params.activationId});
+  ok(res,{id:req.params.activationId,status:'revoked'});
 }));
 
 export default router;

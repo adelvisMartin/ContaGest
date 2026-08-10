@@ -47,6 +47,7 @@ function isPublicRequest(path) {
     || normalized === '/auth/captcha'
     || normalized === '/auth/login'
     || normalized === '/auth/register'
+    || normalized === '/auth/login/coordinates'
     || normalized.startsWith('/auth/password/');
 }
 
@@ -55,6 +56,43 @@ function apiError(message, status, payload) {
   error.status = status;
   error.payload = payload;
   return error;
+}
+
+function cookieValue(...names) {
+  if (typeof document === 'undefined') return '';
+  const cookies = Object.fromEntries(document.cookie.split(';').map((part) => {
+    const index = part.indexOf('=');
+    if (index < 0) return ['', ''];
+    const key = part.slice(0, index).trim();
+    const raw = part.slice(index + 1).trim();
+    try { return [key, decodeURIComponent(raw)]; }
+    catch { return [key, raw]; }
+  }).filter(([key]) => key));
+  for (const name of names) if (cookies[name]) return cookies[name];
+  return '';
+}
+
+function csrfToken() {
+  return cookieValue('__Host-cg_csrf', 'cg_csrf');
+}
+
+function isUnsafeMethod(method = 'GET') {
+  return !['GET', 'HEAD', 'OPTIONS'].includes(String(method || 'GET').toUpperCase());
+}
+
+async function refreshCookieSession(api) {
+  const csrf = csrfToken();
+  if (!csrf) throw apiError('La sesión no se puede renovar sin token CSRF.', 401, {});
+  const response = await fetch(`${api.baseUrl}/auth/refresh`, {
+    method:'POST',
+    credentials:'include',
+    headers:{ 'x-csrf-token':csrf }
+  });
+  const payload = await parseResponse(response);
+  if (!response.ok || payload.ok === false) throw apiError(payload.message || payload.error || 'No se pudo renovar la sesión.', response.status, payload);
+  const data = payload.data ?? payload;
+  if (data?.tenantId) AuthSession.set(data);
+  return data;
 }
 
 export const BackendApi = {
@@ -71,26 +109,49 @@ export const BackendApi = {
   get tenantId() { return AuthSession.tenantId(); },
   setTenantId() { return false; },
   get isReady() { return Boolean(this.baseUrl && AuthSession.isAuthenticated()); },
-  get authHeaders() { return AuthSession.authHeaders(); },
+  get authHeaders() { return {}; },
 
   async request(path, options = {}) {
-    const { noAuth = false, raw = false, headers: customHeaders = {}, ...fetchOptions } = options;
+    const { noAuth = false, raw = false, skipRefresh = false, headers: customHeaders = {}, ...fetchOptions } = options;
     const publicRequest = noAuth || isPublicRequest(path);
+    const method = String(fetchOptions.method || 'GET').toUpperCase();
     const isFormData = typeof FormData !== 'undefined' && fetchOptions.body instanceof FormData;
     const body = fetchOptions.body && typeof fetchOptions.body !== 'string' && !isFormData
       ? JSON.stringify(cleanPayload(fetchOptions.body))
       : fetchOptions.body;
+    const csrf = isUnsafeMethod(method) && !publicRequest ? csrfToken() : '';
     const headers = {
       ...(!isFormData && body !== undefined ? { 'content-type': 'application/json' } : {}),
-      ...(publicRequest ? {} : AuthSession.authHeaders()),
+      ...(csrf ? { 'x-csrf-token':csrf } : {}),
       ...customHeaders
     };
 
-    const response = await fetch(`${this.baseUrl}${path}`, {
+    let response = await fetch(`${this.baseUrl}${path}`, {
       ...fetchOptions,
+      method,
+      credentials:'include',
       headers,
       body
     });
+
+    if (response.status === 401 && !publicRequest && !skipRefresh && path !== '/auth/refresh') {
+      try {
+        await refreshCookieSession(this);
+        const nextCsrf = isUnsafeMethod(method) ? csrfToken() : '';
+        response = await fetch(`${this.baseUrl}${path}`, {
+          ...fetchOptions,
+          method,
+          credentials:'include',
+          headers:{
+            ...headers,
+            ...(nextCsrf ? { 'x-csrf-token':nextCsrf } : {})
+          },
+          body
+        });
+      } catch {
+        AuthSession.clear();
+      }
+    }
 
     if (raw) {
       if (!response.ok) {
@@ -106,7 +167,9 @@ export const BackendApi = {
       if (response.status === 401 && !publicRequest) AuthSession.clear();
       throw apiError(payload.message || payload.error || `HTTP ${response.status}`, response.status, payload);
     }
-    return payload.data ?? payload;
+    const data = payload.data ?? payload;
+    if (String(path).startsWith('/auth/') && data?.tenantId && data?.sessionMode) AuthSession.set(data);
+    return data;
   },
 
   list(resource, q = '') { return this.request(`/${resource}${q ? `?q=${encodeURIComponent(q)}` : ''}`); },

@@ -1,8 +1,14 @@
 import { Router } from 'express';
 import { prisma } from '../database/prisma.js';
 import { requireTenant } from '../shared/middleware/context.js';
+import { enforceCommercialSubscription } from '../shared/commercial/subscriptionMiddleware.js';
+import { requireCurrentLegalAcceptance } from '../shared/legal/legalAcceptanceMiddleware.js';
 import { createCrudRouter } from './crud.factory.js';
-import { clientSchema, supplierSchema, productSchema, bankAccountSchema, taxPeriodSchema, tenantSchema } from './schemas.js';
+import { clientSchema, supplierSchema, productSchema, bankAccountSchema, taxPeriodSchema } from './schemas.js';
+import tenantRoutes from './tenants/tenants.routes.js';
+import legalRoutes from './legal/legal.routes.js';
+import licenseDeviceRoutes from './license-devices/license-devices.routes.js';
+import commercialAccessRoutes from './commercial-access/commercial-access.routes.js';
 import salesRoutes from './sales/sales.routes.js';
 import purchasesRoutes from './purchases/purchases.routes.js';
 import accountingRoutes from './accounting/accounting.routes.js';
@@ -26,6 +32,7 @@ import aiRoutes from './ai/ai.routes.js';
 import demosRoutes from './demos/demos.routes.js';
 import pretestingRoutes from './pretesting/pretesting.routes.js';
 import licenseRoutes from './licenses/licenses.routes.js';
+import commercialRoutes from './commercial/commercial.routes.js';
 import importRoutes from './imports/imports.routes.js';
 import regulatoryRoutes from './regulatory/regulatory.routes.js';
 import rulesRoutes from './rules/rules.routes.js';
@@ -37,7 +44,11 @@ import veterinaryRoutes from './verticals/veterinary.routes.js';
 import mediaRoutes from './media/media.routes.js';
 
 const router = Router();
-router.use('/tenants', createCrudRouter({ model:'tenant' as any, entity:'tenant', permission:'admin.manage', schema:tenantSchema, tenantScoped:false, searchFields:['name','rif'] }));
+// Legal status/acceptance must remain reachable before the legal and commercial gates.
+router.use('/legal', legalRoutes);
+router.use(requireCurrentLegalAcceptance);
+router.use(enforceCommercialSubscription);
+router.use('/tenants', tenantRoutes);
 router.use('/clients', createCrudRouter({ model:'client' as any, entity:'client', permission:'clients.manage', schema:clientSchema, searchFields:['name','rif'] }));
 router.use('/suppliers', createCrudRouter({ model:'supplier' as any, entity:'supplier', permission:'purchases.manage', schema:supplierSchema, searchFields:['name','rif'] }));
 router.use('/products', createCrudRouter({ model:'product' as any, entity:'product', permission:'inventory.manage', schema:productSchema, searchFields:['name','sku'] }));
@@ -66,6 +77,9 @@ router.use('/ai', aiRoutes);
 router.use('/demos', demosRoutes);
 router.use('/pretesting', pretestingRoutes);
 router.use('/licenses', licenseRoutes);
+router.use('/license-devices', licenseDeviceRoutes);
+router.use('/commercial', commercialRoutes);
+router.use('/commercial-access', commercialAccessRoutes);
 router.use('/imports', importRoutes);
 router.use('/regulatory', regulatoryRoutes);
 router.use('/rules', rulesRoutes);
@@ -77,7 +91,7 @@ router.use('/verticals/veterinary', veterinaryRoutes);
 router.use('/media', mediaRoutes);
 router.get('/health/db', requireTenant, async (_req,res,next)=>{
   try {
-    const result=await prisma.$queryRawUnsafe('select now() as now, current_database() as db, current_schema() as schema');
+    const result=await prisma.$queryRaw<Array<{now:Date;db:string;schema:string}>>`select now() as now, current_database() as db, current_schema() as schema`;
     res.json({ok:true,data:{database:result}});
   } catch(error) { next(error); }
 });

@@ -4,13 +4,19 @@ import { readFileSync } from 'node:fs';
 
 const read = (path) => readFileSync(new URL(`../${path}`, import.meta.url), 'utf8');
 
-test('Vercel previews use an isolated derived JWT without weakening production', () => {
+test('Vercel previews use isolated derived secrets without weakening commercial production', () => {
   const env = read('backend/src/config/env.ts');
   const security = read('backend/src/shared/middleware/security.ts');
   assert.match(env, /isVercelPreview/);
   assert.match(env, /preview-jwt/);
+  assert.match(env, /preview-license/);
   assert.match(env, /isProductionDeployment/);
-  assert.match(security, /isProductionDeployment && \(!jwtSecretReady \|\| !licenseSecretReady\)/);
+  assert.match(security, /isProductionDeployment/);
+  assert.match(security, /explicitJwtReady/);
+  assert.match(security, /explicitLicenseReady/);
+  assert.match(security, /process\.env\.JWT_SECRET/);
+  assert.match(security, /process\.env\.LICENSE_HASH_SECRET/);
+  assert.match(security, /Producción requiere JWT_SECRET y LICENSE_HASH_SECRET explícitos/);
 });
 
 test('license hashing is independent from JWT rotation', () => {
