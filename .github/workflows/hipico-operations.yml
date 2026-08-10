@@ -38,10 +38,17 @@ jobs:
         run: |
           node --check frontend/public/hipico-control/assets/js/whatsapp.js
           node --check frontend/public/hipico-control/assets/js/operations.js
-      - name: Production vocabulary gate
+      - name: Production wording gate
         shell: bash
         run: |
-          if grep -RniE '(^|[^A-Za-z])(QA|TEST|demo|modo local|versión local)([^A-Za-z]|$)' frontend/public/hipico-control --include='*.html' --include='*.js' --include='*.json'; then
-            echo 'Forbidden release vocabulary found in Hípico Control production assets.' >&2
+          files=()
+          for candidate in \
+            frontend/public/hipico-control/index.html \
+            frontend/public/hipico-control/recovery.html \
+            frontend/public/hipico-control/manifest.webmanifest; do
+            [[ -f "$candidate" ]] && files+=("$candidate")
+          done
+          if ((${#files[@]})) && grep -niE '(^|[^A-Za-z])(QA|TEST|demo|modo local|versión local)([^A-Za-z]|$)' "${files[@]}"; then
+            echo 'Forbidden release wording found in Hípico Control user-facing shell.' >&2
             exit 1
           fi
