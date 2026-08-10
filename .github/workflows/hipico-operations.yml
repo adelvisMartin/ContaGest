@@ -1,0 +1,47 @@
+name: Hípico Control Operations
+
+on:
+  pull_request:
+    paths:
+      - 'frontend/public/hipico-control/**'
+      - 'frontend/api/hipico/**'
+      - 'supabase/sql/hipico_*.sql'
+      - 'tests/hipico-operations.test.mjs'
+      - 'tests/fixtures/hipico/**'
+      - 'docs/hipico/**'
+      - '.github/workflows/hipico-operations.yml'
+  push:
+    branches:
+      - main
+      - 'feature/hipico-*'
+    paths:
+      - 'frontend/public/hipico-control/**'
+      - 'frontend/api/hipico/**'
+      - 'supabase/sql/hipico_*.sql'
+      - 'tests/hipico-operations.test.mjs'
+      - 'tests/fixtures/hipico/**'
+      - 'docs/hipico/**'
+      - '.github/workflows/hipico-operations.yml'
+
+jobs:
+  operations-regression:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Parser and operations replay
+        run: node --test tests/hipico-operations.test.mjs
+      - name: Syntax checks
+        run: |
+          node --check frontend/public/hipico-control/assets/js/whatsapp.js
+          node --check frontend/public/hipico-control/assets/js/operations.js
+      - name: Production vocabulary gate
+        shell: bash
+        run: |
+          if grep -RniE '(^|[^A-Za-z])(QA|TEST|demo|modo local|versión local)([^A-Za-z]|$)' frontend/public/hipico-control --include='*.html' --include='*.js' --include='*.json'; then
+            echo 'Forbidden release vocabulary found in Hípico Control production assets.' >&2
+            exit 1
+          fi
