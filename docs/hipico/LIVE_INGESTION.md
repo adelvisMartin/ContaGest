@@ -51,13 +51,20 @@ hipico_operation_events
 
 ## Conectores
 
-### 1. Meta Cloud API
-Preferido cuando el canal objetivo esté soportado oficialmente y entregue los eventos necesarios mediante webhook. Es el único conector que puede considerarse cloud-autónomo sin depender de un teléfono encendido, siempre que el escenario real esté soportado por la cuenta y el producto de Meta.
+### 1. WhatsApp Web Group Bridge — primera ruta de prueba del grupo
+Para validar **un grupo real de WhatsApp desde el primer día**, Hípico Control incluye `tools/hipico-whatsapp-bridge`, basado en una sesión web vinculada a una cuenta normal que pertenece al grupo. Escucha `message_create`, conserva el ID del mensaje, remitente, cita y timestamp, guarda primero en spool local y luego envía al backend de Vercel/Supabase.
 
-### 2. Android Companion
-Contingencia para escenarios donde el canal real no tenga una API oficial suficiente. Debe tratarse como puente operacional, no como una supuesta API de WhatsApp. Cualquier capacidad de lectura/respuesta debe probarse en el teléfono real, documentar sus limitaciones y no afirmar captura completa si Android/WhatsApp no exponen un evento.
+La prueba E2E usa `/hipico_status`: el mensaje debe entrar desde el grupo, persistirse en backend y producir una respuesta autorizada en ese mismo grupo. Esto demuestra grupo → listener → backend → Supabase → respuesta al grupo.
 
-### 3. Importación / Compartir / Exportación
+Este conector usa automatización de WhatsApp Web y **no es una API oficial de Meta**. Puede requerir mantenimiento por cambios del cliente web y existe riesgo de restricciones de cuenta. Por eso se valida primero en un grupo controlado, se recomienda una cuenta dedicada para producción y se conserva una segunda implementación intercambiable (por ejemplo WAHA/WPPConnect) detrás de la misma interfaz de conector.
+
+### 2. Meta Cloud API
+Preferido para mensajería individual y para cualquier canal que Meta soporte oficialmente mediante webhook. La documentación oficial actual de Cloud API sigue usando `recipient_type: individual`; por tanto no se utilizará como supuesto listener de un grupo normal hasta que Meta documente y habilite explícitamente ese escenario para la cuenta/canal real.
+
+### 3. Android Companion
+Contingencia cuando la máquina bridge no esté disponible. Debe tratarse como puente operacional, no como una supuesta API de WhatsApp. Cualquier capacidad de lectura/respuesta debe probarse en el teléfono real, documentar sus limitaciones y no afirmar captura completa si Android/WhatsApp no exponen un evento.
+
+### 4. Importación / Compartir / Exportación
 Respaldo y recuperación. Sirve para reconstruir huecos, reconciliar y alimentar el corpus. No es el modo principal de trabajo cuando se declara automatización en vivo.
 
 ## Regla de honestidad operacional
@@ -72,7 +79,7 @@ La interfaz debe mostrar qué nivel de captura existe realmente:
 Nunca se mostrará “Sincronizado” si no existe evidencia de continuidad.
 
 ## Continuidad cuando el teléfono del operador no tiene cobertura
-La pérdida de cobertura del teléfono no debe detener las funciones locales de Hípico Control. Si el conector cloud permanece operativo, el backend puede continuar recibiendo y clasificando mensajes independientemente del teléfono. Si el conector depende del teléfono, la app conserva la operación local y marca que la escucha del canal está interrumpida; al recuperar conectividad debe reconciliar lo faltante antes de afirmar que la jornada está completa.
+La pérdida de cobertura del teléfono no debe detener las funciones locales de Hípico Control. Con Group Bridge, la escucha depende de la máquina donde vive la sesión vinculada y de su Internet, no de la cobertura del teléfono del operador. Si esa máquina continúa conectada, puede seguir leyendo y respondiendo al grupo aunque el teléfono del operador no tenga señal. Si el bridge cae, el sistema marca la interrupción y no afirma continuidad hasta reconciliar.
 
 ## Métricas de jornada
 - mensajes observados;
@@ -91,7 +98,7 @@ La pérdida de cobertura del teléfono no debe detener las funciones locales de 
 ## Gate de producción
 No se activa el modo de respuesta automática general hasta cumplir en una jornada controlada:
 
-1. captura continua del canal real;
+1. captura continua del grupo real;
 2. deduplicación 100 % sobre reentregas conocidas;
 3. recuperación tras interrupción o señal explícita de hueco;
 4. cero apuestas creadas por mensajes de conversación;
