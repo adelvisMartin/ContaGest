@@ -5,6 +5,7 @@ on:
     paths:
       - 'frontend/public/hipico-control/**'
       - 'frontend/api/hipico/**'
+      - 'tools/hipico-whatsapp-bridge/**'
       - 'supabase/sql/hipico_*.sql'
       - 'tests/hipico-operations.test.mjs'
       - 'tests/fixtures/hipico/**'
@@ -17,6 +18,7 @@ on:
     paths:
       - 'frontend/public/hipico-control/**'
       - 'frontend/api/hipico/**'
+      - 'tools/hipico-whatsapp-bridge/**'
       - 'supabase/sql/hipico_*.sql'
       - 'tests/hipico-operations.test.mjs'
       - 'tests/fixtures/hipico/**'
@@ -39,6 +41,8 @@ jobs:
           node --check frontend/public/hipico-control/assets/js/whatsapp.js
           node --check frontend/public/hipico-control/assets/js/operations.js
           node --check frontend/public/hipico-control/assets/js/agent-router.js
+          node --check frontend/api/hipico/group-bridge-ingest.js
+          node --check tools/hipico-whatsapp-bridge/src/index.mjs
       - name: Production wording gate
         shell: bash
         run: |
