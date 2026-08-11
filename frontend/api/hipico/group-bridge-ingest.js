@@ -34,7 +34,9 @@ async function ensureChannel(ownerId, body) {
       source: 'whatsapp_web_linked_device',
       group_id_hash: sha256(groupId),
       auto_send: false,
-      bridge_version: String(body.bridgeVersion || '')
+      bridge_version: String(body.bridgeVersion || ''),
+      channel_role: String(body.channelRole || 'source'),
+      shadow_mode: Boolean(body.shadowMode)
     }
   }];
   const rows = await supabase('hipico_bot_channels?on_conflict=owner_id,group_key', {
@@ -43,6 +45,32 @@ async function ensureChannel(ownerId, body) {
     body: JSON.stringify(payload)
   });
   return rows?.[0] || null;
+}
+
+async function recordShadowPrediction({ ownerId, channel, body, messageRow, classification, confidence }) {
+  if (!body.shadowMode || body.channelRole !== 'source' || !messageRow?.id) return;
+  const sourceExternalMessageId = String(body.externalMessageId || '');
+  await supabase('hipico_shadow_evaluations?on_conflict=owner_id,source_group_key,source_external_message_id,prediction_type', {
+    method: 'POST',
+    headers: { Prefer: 'resolution=ignore-duplicates,return=minimal' },
+    body: JSON.stringify([{
+      owner_id: ownerId,
+      source_group_key: channel.group_key,
+      source_message_id: messageRow.id,
+      source_external_message_id: sourceExternalMessageId,
+      scenario_key: String(body.quotedExternalMessageId || body.externalMessageId || ''),
+      prediction_type: classification,
+      predicted_payload: {
+        classification,
+        confidence,
+        raw_text: String(body.text || ''),
+        sender_id_hash: sha256(String(body.senderId || '')),
+        quoted_external_message_id: body.quotedExternalMessageId || null,
+        automation_state: 'shadow_only'
+      },
+      match_status: classification === 'other' ? 'not_applicable' : 'pending'
+    }])
+  });
 }
 
 export default async function handler(req, res) {
@@ -95,6 +123,8 @@ export default async function handler(req, res) {
         normalized: {
           source: 'web_bridge',
           group_name: String(body.groupName || ''),
+          channel_role: String(body.channelRole || 'source'),
+          shadow_mode: Boolean(body.shadowMode),
           from_me: Boolean(body.fromMe),
           has_media: Boolean(body.hasMedia)
         },
@@ -106,6 +136,17 @@ export default async function handler(req, res) {
     });
 
     const duplicate = !Array.isArray(rows) || rows.length === 0;
+    if (!duplicate) {
+      await recordShadowPrediction({
+        ownerId,
+        channel,
+        body,
+        messageRow: rows[0],
+        classification,
+        confidence
+      });
+    }
+
     const response = {
       accepted: true,
       duplicate,
