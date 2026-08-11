@@ -5,10 +5,9 @@ import qrcode from 'qrcode-terminal';
 import pkg from 'whatsapp-web.js';
 
 const { Client, LocalAuth } = pkg;
-const BRIDGE_VERSION = '0.1.0';
+const BRIDGE_VERSION = '0.2.0';
 const DATA_DIR = path.resolve(process.cwd(), 'data');
 const SPOOL_DIR = path.join(DATA_DIR, 'spool');
-const TARGET_FILE = path.join(DATA_DIR, 'target-group.json');
 
 function required(name) {
   const value = process.env[name];
@@ -16,11 +15,22 @@ function required(name) {
   return value;
 }
 
+function boolEnv(name, fallback = false) {
+  const value = process.env[name];
+  if (value == null || value === '') return fallback;
+  return String(value).toLowerCase() === 'true';
+}
+
 const INGEST_URL = required('HIPICO_INGEST_URL');
 const BRIDGE_TOKEN = required('HIPICO_GROUP_BRIDGE_TOKEN');
-const GROUP_ID_ENV = String(process.env.HIPICO_GROUP_ID || '').trim();
-const GROUP_NAME_ENV = String(process.env.HIPICO_GROUP_NAME || '').trim();
-const INCLUDE_OWN_MESSAGES = String(process.env.HIPICO_INCLUDE_OWN_MESSAGES || 'true').toLowerCase() !== 'false';
+
+// Legacy HIPICO_GROUP_* remains valid for the first lab-only test.
+const SOURCE_GROUP_ID_ENV = String(process.env.HIPICO_SOURCE_GROUP_ID || process.env.HIPICO_GROUP_ID || '').trim();
+const SOURCE_GROUP_NAME_ENV = String(process.env.HIPICO_SOURCE_GROUP_NAME || process.env.HIPICO_GROUP_NAME || '').trim();
+const LAB_GROUP_ID_ENV = String(process.env.HIPICO_LAB_GROUP_ID || '').trim();
+const LAB_GROUP_NAME_ENV = String(process.env.HIPICO_LAB_GROUP_NAME || SOURCE_GROUP_NAME_ENV || '').trim();
+const SHADOW_MODE = boolEnv('HIPICO_SHADOW_MODE', false);
+const INCLUDE_OWN_MESSAGES = boolEnv('HIPICO_INCLUDE_OWN_MESSAGES', true);
 
 await fs.mkdir(SPOOL_DIR, { recursive: true });
 
@@ -28,40 +38,44 @@ function sha256(value) {
   return crypto.createHash('sha256').update(String(value ?? '')).digest('hex');
 }
 
-async function loadSavedTarget() {
+function targetFile(role) {
+  return path.join(DATA_DIR, `target-group-${role}.json`);
+}
+
+async function loadSavedTarget(role) {
   try {
-    return JSON.parse(await fs.readFile(TARGET_FILE, 'utf8'));
+    return JSON.parse(await fs.readFile(targetFile(role), 'utf8'));
   } catch {
     return null;
   }
 }
 
-async function saveTarget(target) {
-  await fs.writeFile(TARGET_FILE, JSON.stringify(target, null, 2), 'utf8');
+async function saveTarget(role, target) {
+  await fs.writeFile(targetFile(role), JSON.stringify(target, null, 2), 'utf8');
 }
 
-async function resolveTargetGroup(client) {
-  if (GROUP_ID_ENV) return { id: GROUP_ID_ENV, name: GROUP_NAME_ENV || 'Grupo WhatsApp' };
-  const saved = await loadSavedTarget();
-  if (saved?.id && (!GROUP_NAME_ENV || saved.name === GROUP_NAME_ENV)) return saved;
+async function resolveTargetGroup(client, role, idEnv, nameEnv) {
+  if (idEnv) return { id: idEnv, name: nameEnv || `Grupo ${role}` };
+  const saved = await loadSavedTarget(role);
+  if (saved?.id && (!nameEnv || saved.name === nameEnv)) return saved;
 
   const chats = await client.getChats();
   const groups = chats.filter((chat) => chat.isGroup).map((chat) => ({ id: chat.id._serialized, name: chat.name }));
 
-  console.log('\nGrupos visibles para esta sesión:');
+  console.log(`\nGrupos visibles para resolver ${role}:`);
   for (const group of groups) console.log(`- ${group.name} :: ${group.id}`);
 
-  if (!GROUP_NAME_ENV) {
-    console.log('\nDefine HIPICO_GROUP_NAME con el nombre exacto del grupo y reinicia el bridge.');
+  if (!nameEnv) {
+    console.log(`\nDefine el nombre exacto para ${role} y reinicia el bridge.`);
     return null;
   }
 
-  const exact = groups.filter((group) => group.name === GROUP_NAME_ENV);
+  const exact = groups.filter((group) => group.name === nameEnv);
   if (exact.length !== 1) {
-    console.log(`\nNo se pudo resolver un único grupo llamado "${GROUP_NAME_ENV}". Coincidencias: ${exact.length}`);
+    console.log(`\nNo se pudo resolver un único grupo ${role} llamado "${nameEnv}". Coincidencias: ${exact.length}`);
     return null;
   }
-  await saveTarget(exact[0]);
+  await saveTarget(role, exact[0]);
   return exact[0];
 }
 
@@ -92,13 +106,15 @@ function eventGroupId(message) {
   return '';
 }
 
-async function buildEvent(message, target) {
+async function buildEvent(message, target, channelRole) {
   const groupId = eventGroupId(message);
   return {
     bridgeVersion: BRIDGE_VERSION,
     externalMessageId: message?.id?._serialized || sha256(`${groupId}|${message.timestamp}|${message.body}`),
     groupId,
     groupName: target.name,
+    channelRole,
+    shadowMode: SHADOW_MODE,
     senderId: message.author || (message.fromMe ? 'self' : message.from || ''),
     senderLabel: await senderLabel(message),
     fromMe: Boolean(message.fromMe),
@@ -111,7 +127,7 @@ async function buildEvent(message, target) {
 }
 
 async function spool(event) {
-  const file = path.join(SPOOL_DIR, `${sha256(event.externalMessageId)}.json`);
+  const file = path.join(SPOOL_DIR, `${sha256(`${event.groupId}|${event.externalMessageId}`)}.json`);
   await fs.writeFile(file, JSON.stringify(event), 'utf8');
   return file;
 }
@@ -131,7 +147,17 @@ async function postEvent(event) {
   return text ? JSON.parse(text) : {};
 }
 
-async function deliverSpoolFile(client, target, file) {
+function responseTargetFor(event, source, lab) {
+  if (SHADOW_MODE && event.channelRole === 'source') return lab;
+  return event.channelRole === 'lab' ? lab : source;
+}
+
+function formatShadowReply(actionText, source) {
+  if (!SHADOW_MODE) return String(actionText);
+  return `🧪 SOMBRA · ${source.name}\n${String(actionText)}`;
+}
+
+async function deliverSpoolFile(client, source, lab, file) {
   let event;
   try {
     event = JSON.parse(await fs.readFile(file, 'utf8'));
@@ -142,20 +168,24 @@ async function deliverSpoolFile(client, target, file) {
 
   try {
     const result = await postEvent(event);
+    const responseTarget = responseTargetFor(event, source, lab);
     for (const action of result.actions || []) {
       if (action?.type !== 'reply' || !action?.text) continue;
-      await client.sendMessage(target.id, String(action.text));
+      const text = SHADOW_MODE && event.channelRole === 'source'
+        ? formatShadowReply(action.text, source)
+        : String(action.text);
+      await client.sendMessage(responseTarget.id, text);
     }
     await fs.unlink(file);
-    console.log(`[OK] ${event.externalMessageId} -> ${result.classification || 'received'}${result.duplicate ? ' (duplicate)' : ''}`);
+    console.log(`[OK] ${event.channelRole}:${event.externalMessageId} -> ${result.classification || 'received'}${result.duplicate ? ' (duplicate)' : ''}`);
   } catch (error) {
-    console.error(`[PENDING] ${event.externalMessageId}: ${error.message}`);
+    console.error(`[PENDING] ${event.channelRole}:${event.externalMessageId}: ${error.message}`);
   }
 }
 
-async function flushSpool(client, target) {
+async function flushSpool(client, source, lab) {
   const entries = (await fs.readdir(SPOOL_DIR)).filter((name) => name.endsWith('.json')).sort();
-  for (const name of entries) await deliverSpoolFile(client, target, path.join(SPOOL_DIR, name));
+  for (const name of entries) await deliverSpoolFile(client, source, lab, path.join(SPOOL_DIR, name));
 }
 
 const client = new Client({
@@ -166,11 +196,12 @@ const client = new Client({
   }
 });
 
-let target = null;
+let source = null;
+let lab = null;
 let flushing = false;
 
 client.on('qr', (qr) => {
-  console.log('\nEscanea este QR desde WhatsApp > Dispositivos vinculados:\n');
+  console.log('\nEscanea este QR desde WhatsApp Business > Dispositivos vinculados:\n');
   qrcode.generate(qr, { small: true });
 });
 
@@ -180,27 +211,54 @@ client.on('disconnected', (reason) => console.error('WhatsApp desconectado:', re
 
 client.on('ready', async () => {
   console.log('WhatsApp Web listo.');
-  target = await resolveTargetGroup(client);
-  if (!target) return;
-  console.log(`Escuchando grupo: ${target.name} :: ${target.id}`);
-  await flushSpool(client, target);
+  source = await resolveTargetGroup(client, 'source', SOURCE_GROUP_ID_ENV, SOURCE_GROUP_NAME_ENV);
+  if (!source) return;
+
+  if (SHADOW_MODE) {
+    lab = await resolveTargetGroup(client, 'lab', LAB_GROUP_ID_ENV, LAB_GROUP_NAME_ENV);
+    if (!lab) return;
+    if (lab.id === source.id) {
+      console.error('SHADOW_MODE requiere que source y lab sean grupos distintos.');
+      return;
+    }
+  } else {
+    lab = source;
+  }
+
+  console.log(`Fuente: ${source.name} :: ${source.id}`);
+  console.log(`Laboratorio: ${lab.name} :: ${lab.id}`);
+  console.log(`Modo sombra: ${SHADOW_MODE ? 'ACTIVO — nunca responde en el grupo fuente' : 'INACTIVO'}`);
+
+  await flushSpool(client, source, lab);
   setInterval(() => {
-    if (!target || flushing) return;
+    if (!source || !lab || flushing) return;
     flushing = true;
-    flushSpool(client, target).finally(() => { flushing = false; });
+    flushSpool(client, source, lab).finally(() => { flushing = false; });
   }, 5000).unref();
 });
 
 client.on('message_create', async (message) => {
   try {
-    if (!target) return;
+    if (!source || !lab) return;
     const groupId = eventGroupId(message);
-    if (!groupId || groupId !== target.id) return;
+    let target = null;
+    let channelRole = null;
+
+    if (groupId === source.id) {
+      target = source;
+      channelRole = 'source';
+    } else if (SHADOW_MODE && groupId === lab.id) {
+      target = lab;
+      channelRole = 'lab';
+    } else {
+      return;
+    }
+
     if (!INCLUDE_OWN_MESSAGES && message.fromMe) return;
 
-    const event = await buildEvent(message, target);
+    const event = await buildEvent(message, target, channelRole);
     const file = await spool(event); // persist locally before any network call
-    await deliverSpoolFile(client, target, file);
+    await deliverSpoolFile(client, source, lab, file);
   } catch (error) {
     console.error('No se pudo procesar el mensaje:', error);
   }
