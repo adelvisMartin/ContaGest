@@ -26,7 +26,7 @@ jobs:
       ALLOW_DEV_TENANT_HEADER: "false"
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Node 22
         uses: actions/setup-node@v7
