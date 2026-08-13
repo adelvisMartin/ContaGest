@@ -19,7 +19,7 @@ for (const viewport of [
   { name:'desktop', width:1366, height:768 },
   { name:'mobile', width:390, height:844 }
 ]) {
-  test(`login keeps focus and typed credentials while background state changes on ${viewport.name}`, async ({ page }) => {
+  test(`login form controls are not hijacked by router and keep focus on ${viewport.name}`, async ({ page }) => {
     await page.setViewportSize({ width:viewport.width, height:viewport.height });
     await mockCaptcha(page);
     await mockDelayedBcvRefresh(page);
@@ -40,22 +40,39 @@ for (const viewport of [
       await expect(field).toBeEditable();
     }
 
+    await page.evaluate(() => {
+      window.__cgOriginalRif = document.querySelector('#loginForm input[name="tenantRif"]');
+      window.__cgCredentialClickPrevented = null;
+      document.addEventListener('click', (event) => {
+        if (event.target?.matches?.('#loginForm input[name="tenantRif"],#loginForm input[name="email"],#loginForm input[name="password"],#loginForm input[name="captchaAnswer"]')) {
+          window.__cgCredentialClickPrevented = event.defaultPrevented;
+        }
+      });
+    });
+
     await rif.click();
     await expect(rif).toBeFocused();
+    await expect.poll(() => page.evaluate(() => window.__cgCredentialClickPrevented)).toBe(false);
+    await page.waitForTimeout(350);
+    expect(await page.evaluate(() => window.__cgOriginalRif === document.querySelector('#loginForm input[name="tenantRif"]'))).toBe(true);
+
     await rif.pressSequentially('0000',{delay:180});
     await page.waitForTimeout(900);
     await expect(rif).toBeFocused();
     await expect(rif).toHaveValue('0000');
+    expect(await page.evaluate(() => window.__cgOriginalRif === document.querySelector('#loginForm input[name="tenantRif"]'))).toBe(true);
     await rif.pressSequentially('0000',{delay:120});
     await expect(rif).toHaveValue('00000000');
 
     await email.click();
+    await expect(email).toBeFocused();
     await email.pressSequentially('qa.user@example.test',{delay:90});
     await page.waitForTimeout(750);
     await expect(email).toHaveValue('qa.user@example.test');
     await expect(email).toBeFocused();
 
     await password.click();
+    await expect(password).toBeFocused();
     await password.pressSequentially('Synthetic-QA-Value-2026',{delay:45});
     await page.waitForTimeout(500);
     await expect(password).toHaveValue('Synthetic-QA-Value-2026');
@@ -63,6 +80,7 @@ for (const viewport of [
     await expect(captcha).not.toBeFocused();
 
     await captcha.click();
+    await expect(captcha).toBeFocused();
     await captcha.pressSequentially('44',{delay:90});
     await expect(captcha).toHaveValue('44');
     await expect(captcha).toBeFocused();
