@@ -23,19 +23,26 @@ for (const viewport of [
   { name: 'desktop', width: 1366, height: 768 },
   { name: 'mobile', width: 390, height: 844 }
 ]) {
-  test(`login credential inputs accept and preserve typing on ${viewport.name}`, async ({ page }) => {
+  test(`login credential inputs are native, visible and editable on ${viewport.name}`, async ({ page }) => {
     await page.setViewportSize({ width: viewport.width, height: viewport.height });
     await mockCaptcha(page);
     await page.goto('/?module=login', { waitUntil: 'domcontentloaded' });
 
-    const rif = page.locator('#loginForm input[name="tenantRif"]');
-    const email = page.locator('#loginForm input[name="email"]');
-    const password = page.locator('#loginForm input[name="password"]');
-    const captcha = page.locator('#loginForm input[name="captchaAnswer"]');
+    const form = page.locator('#loginForm');
+    const rif = form.locator('input[name="tenantRif"]');
+    const email = form.locator('input[name="email"]');
+    const password = form.locator('input[name="password"]');
+    const captcha = form.locator('input[name="captchaAnswer"]');
+
+    await expect(form).toHaveAttribute('data-no-mui', 'true');
+    await expect(form.locator('[data-login-native-field]')).toHaveCount(4);
+    await expect(form.locator('[data-mui-native-mount]')).toHaveCount(0);
+    await expect(form.locator('[data-cgx-kit="field"]')).toHaveCount(0);
 
     for (const field of [rif, email, password, captcha]) {
       await expect(field).toBeVisible();
       await expect(field).toBeEditable();
+      await expect(field).not.toHaveClass(/mui-fallback-hidden/);
     }
 
     await rif.click();
@@ -60,11 +67,19 @@ for (const viewport of [
     await page.keyboard.type('.qa');
     await expect(email).toHaveValue('admin@erp.local.qa');
 
-    const nativeLayer = await page.evaluate(() => ({
-      rifDisplay: getComputedStyle(document.querySelector('#loginForm input[name="tenantRif"]')).display,
-      muiMountDisplay: getComputedStyle(document.querySelector('#loginForm input[name="tenantRif"]')?.parentElement?.querySelector('[data-mui-native-mount]')).display
-    }));
-    expect(nativeLayer.rifDisplay).not.toBe('none');
-    expect(nativeLayer.muiMountDisplay).toBe('none');
+    const nativeState = await page.evaluate(() => {
+      const input = document.querySelector('#loginForm input[name="tenantRif"]');
+      return {
+        display: input ? getComputedStyle(input).display : 'missing',
+        pointerEvents: input ? getComputedStyle(input).pointerEvents : 'missing',
+        hiddenClass: Boolean(input?.classList.contains('mui-fallback-hidden')),
+        muiMounts: document.querySelectorAll('#loginForm [data-mui-native-mount]').length
+      };
+    });
+
+    expect(nativeState.display).not.toBe('none');
+    expect(nativeState.pointerEvents).not.toBe('none');
+    expect(nativeState.hiddenClass).toBe(false);
+    expect(nativeState.muiMounts).toBe(0);
   });
 }
