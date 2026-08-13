@@ -1,0 +1,38 @@
+[8:11 p. m., 9/8/2026] ADMIN-CIERRE: AMERICANAS
+CERRADO CERRADO
+CARRERA CERRADA
+NO MAS JUGADAS
+[8:12 p. m., 9/8/2026] ADMIN-PLANO: CLUB HIPICO TRIPLE COWN
+Del Mar, 9na Carrera
+Pizarra: .....
+TERCIOS
+Juega Jeep 3p (1) con 20.000,00 da Parcero
+Juega Gaceta 3p (2) con 50.000,00 da Paco
+Juega Gaceta 3p (2) con 30.000,00 da Roger
+[8:14 p. m., 9/8/2026] ADMIN-CIERRE: CLUB HIPICO TRIPLE COWN
+Del Mar, 9na Carrera
+TERCIOS
+Juega Jeep 3p (1) con 20.000,00 da Parcero
+Juega Gaceta 3p (2) con 50.000,00 da Paco
+Juega Gaceta 3p (2) con 30.000,00 da Roger
+LLEGADA 9NA 4-9-5-3 DM
+[8:14 p. m., 9/8/2026] ADMIN-PLANO: CLUB HIPICO TRIPLE COWN
+Del Mar, 9na Carrera
+Pizarra: 4.9.5.3..
+TERCIOS
+3p (1) con 20.000,00
+Juega Jeep Bs. -20.000,00
+Consigue Parcero Bs. +19.000,00
+3p (2) con 50.000,00
+Juega Gaceta Bs. -50.000,00
+Consigue Paco Bs. +47.500,00
+3p (2) con 30.000,00
+Juega Gaceta Bs. -30.000,00
+Consigue Roger Bs. +28.500,00
+[8:14 p. m., 9/8/2026] ADMIN-PLANO: CLUB HIPICO TRIPLE COWN
+TERCIO DISPONIBLE
+AREVALO 27.620,00
+BLADI 155,00
+PACO 251.550,00
+PARCERO 283.040,00
+[8:15 p. m., 9/8/2026] ADMIN-CIERRE: BUENAS NOCHES DAMAS Y CABALLEROS ESTO ES TODO POR EL DÍA DE HOY LOS ESPERAMOS MAÑANA NUEVAMENTE
