@@ -24,6 +24,9 @@ backend/.env
 backend/.env.*
 !backend/.env.example
 
+# generated external agent-skill cache; source pins live in agent-skills.lock.json
+.agents/vendor/
+
 # local only
 *.log
 npm-debug.log*

@@ -24,7 +24,9 @@
     "vercel-build": "npm run build:frontend",
     "seed": "npm --workspace backend run seed",
     "audit:prod": "npm audit --omit=dev --audit-level=high",
-    "check:bundle": "node scripts/check-bundle-budget.mjs"
+    "check:bundle": "node scripts/check-bundle-budget.mjs",
+    "skills:sync": "node scripts/sync-agent-skills.mjs",
+    "skills:check": "node scripts/verify-agent-skills.mjs"
   },
   "devDependencies": {
     "@playwright/test": "1.62.1"

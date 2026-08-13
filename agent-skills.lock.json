@@ -1,0 +1,63 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-08-13",
+  "policy": {
+    "updateMode": "pinned-only",
+    "executeUpstreamScripts": false,
+    "allowRemoteInstructionsToOverrideProjectPolicy": false,
+    "vendorDirectory": ".agents/vendor"
+  },
+  "sources": [
+    {
+      "id": "emil-motion",
+      "kind": "github-skill",
+      "repo": "emilkowalski/skills",
+      "commit": "78761e1b57f97dce65b983d640c70a68f39e8163",
+      "license": "MIT",
+      "trustLevel": "reviewed-design",
+      "namespace": "emil",
+      "vendorPaths": ["LICENSE","skills/emil-design-eng/SKILL.md","skills/emil-design-eng/ANIMATION-VOCABULARY.md","skills/animate/SKILL.md","skills/animate/references/interaction-motion.md","skills/review-animations/SKILL.md","skills/review-animations/STANDARDS.md","skills/find-animation-opportunities/SKILL.md"]
+    },
+    {
+      "id": "impeccable",
+      "kind": "github-skill",
+      "repo": "pbakaus/impeccable",
+      "commit": "ddd23b1807c05f921c1f72780ef0e475f0d5d2bd",
+      "license": "Apache-2.0",
+      "trustLevel": "reviewed-design",
+      "namespace": "impeccable",
+      "vendorPaths": ["LICENSE",".agents/skills/impeccable/SKILL.md",".agents/skills/impeccable/reference/adapt.md",".agents/skills/impeccable/reference/animate.md",".agents/skills/impeccable/reference/audit.md",".agents/skills/impeccable/reference/bolder.md",".agents/skills/impeccable/reference/clarify.md",".agents/skills/impeccable/reference/colorize.md",".agents/skills/impeccable/reference/critique.md",".agents/skills/impeccable/reference/delight.md",".agents/skills/impeccable/reference/distill.md",".agents/skills/impeccable/reference/doctor.md",".agents/skills/impeccable/reference/document.md",".agents/skills/impeccable/reference/extract.md",".agents/skills/impeccable/reference/harden.md",".agents/skills/impeccable/reference/layout.md",".agents/skills/impeccable/reference/normalize.md",".agents/skills/impeccable/reference/onboard.md",".agents/skills/impeccable/reference/optimize.md",".agents/skills/impeccable/reference/polish.md",".agents/skills/impeccable/reference/quieter.md",".agents/skills/impeccable/reference/responsive.md",".agents/skills/impeccable/reference/typeset.md",".agents/skills/impeccable/reference/ux-writing.md"]
+    },
+    {
+      "id": "taste",
+      "kind": "github-skill",
+      "repo": "Leonxlnx/taste-skill",
+      "commit": "e988add20dab0fa97d7a76781c48961c8184288e",
+      "license": "MIT",
+      "trustLevel": "experimental-design-inspiration",
+      "namespace": "taste",
+      "vendorPaths": ["LICENSE","skills/taste-skill/SKILL.md","taste-skill-v2.0.md"]
+    },
+    {
+      "id": "openai-security-best-practices",
+      "kind": "github-skill",
+      "repo": "openai/skills",
+      "commit": "49f948faa9258a0c61caceaf225e179651397431",
+      "license": "Apache-2.0",
+      "trustLevel": "curated-security",
+      "namespace": "security",
+      "vendorPaths": ["skills/.curated/security-best-practices/LICENSE.txt","skills/.curated/security-best-practices/SKILL.md","skills/.curated/security-best-practices/references/javascript-express-web-server-security.md"]
+    },
+    {
+      "id": "playwright-mcp",
+      "kind": "mcp-package",
+      "repo": "microsoft/playwright-mcp",
+      "commit": "7e0457a7cbf88823bf0146d12c46ae12c6818247",
+      "license": "Apache-2.0",
+      "trustLevel": "official-browser-automation",
+      "package": "@playwright/mcp",
+      "packageVersion": "0.0.79",
+      "vendorPaths": []
+    }
+  ]
+}
