@@ -1,9 +1,13 @@
 import { AuthService } from '../services/authService.js';
 import { BackendApi } from '../services/backendApi.js';
-import { Field, Button } from '../components/ui/index.js';
+import { Button } from '../components/ui/index.js';
+import { escapeHtml } from '../utils/dom.js';
+
+const safe = (value) => escapeHtml(String(value ?? ''));
 
 function input({name,label,type='text',value='',autocomplete='',required=true,placeholder=''}) {
-  return Field({ name, labelKey:label, type, value, required, placeholder, attrs:autocomplete ? `autocomplete="${autocomplete}"` : '' });
+  const id = `login-${name}`;
+  return `<div class="cgx-field login-native-field" data-login-native-field="${safe(name)}"><label class="label cgx-label" for="${safe(id)}">${safe(label)}</label><input id="${safe(id)}" name="${safe(name)}" type="${safe(type)}" ${required ? 'required' : ''} value="${safe(value)}" ${placeholder ? `placeholder="${safe(placeholder)}"` : ''} ${autocomplete ? `autocomplete="${safe(autocomplete)}"` : ''} class="input cgx-field-normalized" /></div>`;
 }
 
 function captchaBlock(id) {
@@ -27,7 +31,7 @@ export const LoginPage = {
       <section class="login-card">
         <button type="button" class="login-brand" data-route="login" aria-label="Inicio de sesión de ContaGest"><div class="login-mark">C</div><div><h1>ContaGest-VE</h1><p>ERP / CRM empresarial</p></div></button>
         <div class="login-copy"><h2>Iniciar sesión</h2><p>Accede con tu empresa y usuario autorizado.</p></div>
-        <form id="loginForm" class="login-form" novalidate>
+        <form id="loginForm" class="login-form" data-no-mui="true" novalidate>
           <div class="login-fields-grid">${input({name:'tenantRif',label:'RIF empresa',placeholder:'Ej: 00000000',autocomplete:'organization'})}${input({name:'email',label:'Correo electrónico',type:'email',placeholder:'usuario@empresa.com',autocomplete:'email'})}${input({name:'password',label:'Contraseña',type:'password',placeholder:'••••••••',autocomplete:'current-password'})}</div>
           <details class="login-license-details"><summary><span><i class="fa-solid fa-key"></i> Acceso de cliente con licencia</span><small>Solo para cuentas comerciales</small></summary><div class="login-license-body">${input({name:'licenseKey',label:'Clave de licencia',type:'password',required:false,placeholder:'CGVE-…',autocomplete:'off'})}<p><i class="fa-solid fa-building-shield"></i> La licencia se valida contra empresa, correo y dispositivo.</p></div></details>
           ${captchaBlock('login')}
