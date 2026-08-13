@@ -98,12 +98,21 @@ function eventParams(node) {
   return normalizeParams(params);
 }
 
+function routeTriggerFromEvent(event) {
+  const origin = event.target instanceof Element ? event.target : null;
+  if (!origin) return null;
+  if (origin.closest('input,textarea,select,option,[contenteditable="true"],[data-route-ignore]')) return null;
+  const target = origin.closest('[data-route],[data-command-route],[data-breadcrumb-route]');
+  if (!target || target === document.body || target === document.documentElement) return null;
+  return target;
+}
+
 function installListeners() {
   if (installed || typeof window === 'undefined') return;
   installed = true;
 
   document.addEventListener('click', (event) => {
-    const target = event.target instanceof Element ? event.target.closest('[data-route],[data-command-route],[data-breadcrumb-route]') : null;
+    const target = routeTriggerFromEvent(event);
     if (!target) return;
     const route = target.dataset.route || target.dataset.commandRoute || target.dataset.breadcrumbRoute;
     if (!route || !allowedRoutes.has(route) || target.matches(':disabled,[aria-disabled="true"],.is-locked')) return;
