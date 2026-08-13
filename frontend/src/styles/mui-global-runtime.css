@@ -9,35 +9,9 @@
 [data-cgx-kit="textarea"] .MuiOutlinedInput-input{padding:0!important}
 .MuiPopover-root,.MuiModal-root{z-index:1400!important}
 .MuiMenu-paper{border:1px solid rgba(30,61,88,.14);box-shadow:0 18px 48px rgba(30,61,88,.18)!important}
-.login-fields-grid [data-mui-native-mount],.login-form [data-mui-native-mount]{width:100%}
-.login-form .MuiOutlinedInput-root{min-height:46px}
-.login-form .MuiInputLabel-root{font-size:.78rem}
-.login-form .MuiInputBase-input{font-size:.86rem!important}
-
-/*
- * Authentication hotfix v11.15
- * Login credentials must remain native browser inputs. Material UI continues to
- * enhance the rest of the ERP, but the authentication form avoids a second
- * controlled React input layer that can steal focus / reset typing on some
- * browsers and mobile WebViews.
- */
-.login-form [data-cgx-kit="field"] > [data-mui-native-mount]{display:none!important}
-.login-form [data-cgx-kit="field"] > label.mui-fallback-hidden{display:block!important}
-.login-form [data-cgx-kit="field"] > input.mui-fallback-hidden{
-  display:block!important;
-  pointer-events:auto!important;
-  visibility:visible!important;
-  opacity:1!important;
-  position:relative!important;
-  width:100%!important;
-  z-index:1;
-}
-
 .cg-record-fields .MuiFormControl-root,.cg-stack-form .MuiFormControl-root,.cg-inline-form .MuiFormControl-root{min-width:0}
 @media(max-width:760px){
   .MuiDialog-paper{margin:12px!important;max-height:calc(100% - 24px)!important}
   .MuiButton-root{min-height:40px!important}
   .MuiInputBase-input{font-size:16px!important}
-  .login-form .MuiInputBase-input{font-size:16px!important}
-  .login-form [data-cgx-kit="field"] > input.mui-fallback-hidden{font-size:16px!important}
 }
