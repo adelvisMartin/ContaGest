@@ -1,4 +1,3 @@
-import '../styles/legal-consent-v1115.css';
 import { AuthSession } from './authSession.js';
 import { LegalService } from './legalService.js';
 import { BackendApi } from './backendApi.js';
