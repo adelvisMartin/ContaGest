@@ -12,11 +12,11 @@ export const ClientsPage = {
       caption:'Directorio de clientes',
       columns:[
         { key:'name', label:'Nombre', render:(client) => safe(client.name) },
-        { key:'rif', label:'RIF', render:(client) => `${safe(client.rif)} ${isValidRif(client.rif) ? Badge('OK','success') : Badge('Revisar','warning')}` },
+        { key:'rif', label:'RIF', render:(client) => `<span class="cg-inline-pair"><span class="cg-ui-code">${safe(client.rif)}</span>${isValidRif(client.rif) ? Badge('OK','success') : Badge('Revisar','warning')}</span>` },
         { key:'email', label:'Email', render:(client) => safe(client.email) },
         { key:'phone', label:'Teléfono', render:(client) => safe(client.phone) },
         { key:'type', label:'Tipo', render:(client) => safe(client.type) },
-        { key:'source', label:'Persistencia', render:(client) => client.source === 'supabase' ? Badge('Servidor','success') : Badge('Solo desarrollo','warning') },
+        { key:'source', label:'Persistencia', render:(client) => client.source === 'supabase' ? Badge('Sincronizado','success') : Badge('Pendiente de sincronización','warning') },
         { key:'actions', label:'Acciones', render:(client) => ErpRow(
           ErpButton('Cargar cliente al cotizador', { variant:'secondary', icon:'fa-solid fa-file-invoice-dollar', iconOnly:true, data:{ 'load-client':client.id } })
           + ErpButton('Eliminar cliente', { variant:'danger', icon:'fa-solid fa-trash', iconOnly:true, data:{ 'delete-client':client.id } }),
@@ -47,12 +47,12 @@ export const ClientsPage = {
         const saved = await SupabaseSyncService.createClient(data);
         Store.update((draft) => { draft.clients = [saved, ...(draft.clients || []).filter((item) => item.id !== saved.id)]; });
         form.reset();
-        Toast.show('Cliente guardado en el servidor.', 'success');
+        Toast.show('Cliente guardado y sincronizado.', 'success');
       } catch (error) {
         const decision = RuntimePolicy.handlePersistenceFailure(error, 'el cliente');
         if (decision.allowFallback) {
           Store.update((draft) => { draft.clients.unshift({ id:uid('cli'), ...data, source:'local' }); });
-          Toast.show(`Cliente guardado solo para desarrollo. ${decision.message}`, 'warning');
+          Toast.show(`Cliente guardado localmente y pendiente de sincronización. ${decision.message}`, 'warning');
         } else Toast.show(decision.message, 'error');
       } finally { submit?.removeAttribute('disabled'); }
     });

@@ -37,6 +37,8 @@
   "shortcuts": [
     { "name": "Dashboard", "short_name": "Dashboard", "url": "/?module=dashboard" },
     { "name": "Clientes", "short_name": "Clientes", "url": "/?module=clientes" },
-    { "name": "Inventario", "short_name": "Inventario", "url": "/?module=inventario" }
+    { "name": "Psicología y agenda", "short_name": "Psicología", "url": "/?module=psicologia" },
+    { "name": "Clínica veterinaria", "short_name": "Veterinaria", "url": "/?module=veterinaria" },
+    { "name": "Gimnasio y fitness", "short_name": "Gimnasio", "url": "/?module=gimnasio" }
   ]
 }

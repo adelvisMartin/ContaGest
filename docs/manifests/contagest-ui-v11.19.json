@@ -1,0 +1,37 @@
+{
+  "schemaVersion": 1,
+  "product": "ContaGest-VE",
+  "uiVersion": "11.19",
+  "canonical": {
+    "stylesheet": "frontend/src/styles/erp-system.css",
+    "contextStylesheet": "frontend/src/styles/vertical-contexts.css",
+    "components": "frontend/src/components/ui/index.js",
+    "themes": "frontend/src/data/themeCatalog.js",
+    "locales": "frontend/src/i18n/locales.js",
+    "pwaManifest": "frontend/public/manifest.webmanifest"
+  },
+  "typography": {
+    "ui": "Inter",
+    "mono": "system-monospace",
+    "weights": [400, 500, 600, 650, 700]
+  },
+  "layout": {
+    "sidebarDesktopPx": 248,
+    "drawerMaxPx": 264,
+    "headerDesktopPx": 64,
+    "headerMobilePx": 56,
+    "mobileTouchTargetMinPx": 44,
+    "formStackBreakpointPx": 560
+  },
+  "themes": ["sector", "light", "dark", "sky", "soft-blue", "ocean", "forest", "celestial", "spectrum", "executive", "finance", "enterprise"],
+  "locales": ["es", "en", "pt", "zh", "hi", "ar"],
+  "verticals": ["salud", "veterinaria", "psicologia", "gimnasio", "comercio"],
+  "supportWidgetModes": ["peek", "visible", "hidden"],
+  "constraints": {
+    "documentHorizontalOverflow": false,
+    "labelsMayOverlapControlBorder": false,
+    "newVersionedCssOverrides": false,
+    "serverSecretsInFrontend": false,
+    "sensitiveClinicalNarrativesInLocalStorage": false
+  }
+}

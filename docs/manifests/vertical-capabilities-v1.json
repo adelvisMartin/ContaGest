@@ -1,0 +1,45 @@
+{
+  "schemaVersion": 1,
+  "catalogVersion": "2026-08-14",
+  "verticals": {
+    "psychology": {
+      "route": "psicologia",
+      "permission": "health.manage",
+      "status": "mvp-plus",
+      "capabilities": ["patients", "appointments", "week-summary", "confirmation-links", "upcoming-reminders", "confirmation-rate", "no-show-signal"],
+      "planned": ["recurrence", "availability", "waitlist", "secure-intake", "google-oauth-sync", "email-delivery", "whatsapp-templates", "client-self-booking"],
+      "sensitiveLocalStorage": false
+    },
+    "veterinary": {
+      "route": "veterinaria",
+      "permission": "health.manage",
+      "status": "advanced",
+      "capabilities": ["pets-and-guardians", "professionals", "appointments", "clinical-history", "prescriptions", "consents", "laboratory", "studies", "hospitalization", "procedures", "communications"],
+      "planned": ["online-booking", "preventive-recalls", "pre-registration", "resource-scheduling", "pet-parent-portal", "ai-draft-summary"],
+      "aiRequiresProfessionalReview": true
+    },
+    "gym": {
+      "route": "gimnasio",
+      "permission": "gym.manage",
+      "status": "advanced",
+      "personas": ["trainer", "gym-admin"],
+      "capabilities": ["members", "trainers", "memberships", "check-in", "assessments", "routines", "nutrition", "classes", "payments-service", "retention-signals"],
+      "planned": ["workout-log-rir", "exercise-library", "program-phases", "habits", "waitlists", "failed-payment-recovery", "prospect-crm", "recipe-library", "messaging", "coach-in-loop-ai", "multi-location"],
+      "aiFallbackRequired": true
+    },
+    "dentistry": {
+      "route": null,
+      "permission": "health.manage",
+      "status": "architecture-planned",
+      "capabilities": [],
+      "planned": ["patient-agenda", "chair-resource-scheduling", "recalls", "intake-consent", "estimates-payments", "treatment-plans", "odontogram-schema", "dental-kpis", "imaging-connectors"],
+      "fakeClinicalAiAllowed": false
+    }
+  },
+  "crossVertical": {
+    "sharedServices": ["calendar", "communications", "payments", "audit", "documents", "rbac", "i18n", "themes"],
+    "backendOnlySecrets": true,
+    "tenantIsolationRequired": true,
+    "externalAutomationRequiresAuthorizedBackend": true
+  }
+}

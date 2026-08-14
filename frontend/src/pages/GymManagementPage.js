@@ -22,6 +22,29 @@ function summaryCards(summary = {}) {
   </section>`;
 }
 
+function coachCenter(data = {}, selected = null) {
+  const members = data.members || [];
+  const classes = data.classes || [];
+  const expiring = Number(data.summary?.memberships?.expiring || 0);
+  const withoutActivePlan = members.filter((member) => !member.membershipStatus || member.membershipStatus !== 'active').length;
+  const nearCapacity = classes.filter((item) => Number(item.capacity || 0) > 0 && Number(item.bookings || 0) / Number(item.capacity || 1) >= .8).length;
+  const selectedSignals = selected ? [
+    { label:'Evaluación', ok:Boolean((data.assessments || []).length) },
+    { label:'Rutina', ok:Boolean((data.routines || []).length) },
+    { label:'Nutrición', ok:Boolean((data.nutrition || []).length) }
+  ] : [];
+  const coverage = selectedSignals.length ? Math.round(selectedSignals.filter((item)=>item.ok).length / selectedSignals.length * 100) : 0;
+  return `<section class="surface cg-vertical-panel cg-vertical-wide cg-gym-coach-center">
+    <header class="cg-vertical-head"><div><p class="cgx-eyebrow">Coaching y retención</p><h3>Centro de seguimiento</h3><p>Señales operativas para priorizar renovaciones, seguimiento del cliente y ocupación de clases.</p></div></header>
+    <div class="cg-psych-flow-grid">
+      <article class="cg-psych-flow-card"><span>Renovaciones próximas</span><strong>${expiring}</strong><small>membresías vencen en 7 días</small></article>
+      <article class="cg-psych-flow-card"><span>Sin plan activo</span><strong>${withoutActivePlan}</strong><small>clientes requieren seguimiento comercial</small></article>
+      <article class="cg-psych-flow-card"><span>Clases ≥ 80%</span><strong>${nearCapacity}</strong><small>vigilar cupos y demanda</small></article>
+      <article class="cg-psych-flow-card"><span>Cobertura coaching</span><strong>${selected ? `${coverage}%` : '—'}</strong><small>${selected ? safe(selected.fullName) : 'Selecciona un cliente para evaluar su ficha'}</small></article>
+    </div>
+  </section>`;
+}
+
 function memberCards(members) {
   if (!members.length) return '<div class="cgx-empty"><i class="fa-solid fa-user-plus"></i><strong>Sin clientes registrados</strong><p>Crea el primer perfil del gimnasio.</p></div>';
   return `<div class="cg-gym-member-grid">${members.map((member) => {
@@ -103,6 +126,7 @@ export const GymManagementPage = {
       </nav>
 
       <div class="cg-gym-tab-panel ${routeTab==='overview'?'active':''}" data-gym-panel="overview">
+        ${coachCenter(data,selected)}
         <div class="cg-vertical-grid">
           <section class="surface cg-vertical-panel">
             <header class="cg-vertical-head"><div><p class="cgx-eyebrow">Acceso</p><h3>Registrar entrada</h3></div></header>
