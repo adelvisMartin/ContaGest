@@ -22,10 +22,14 @@ export const HealthVerticalService = {
   createPatient(payload) {
     return createWithPhoto((data) => BackendApi.post('/api/v1/verticals/health/patients', data), payload, 'care-patient', 'displayName');
   },
+  updatePatient(id, payload) { return BackendApi.request(`/verticals/health/patients/${encodeURIComponent(id)}`, { method:'PATCH', body:payload }); },
+  archivePatient(id) { return BackendApi.delete(`/api/v1/verticals/health/patients/${encodeURIComponent(id)}`); },
   professionals() { return BackendApi.get('/verticals/health/professionals'); },
   createProfessional(payload) { return BackendApi.post('/api/v1/verticals/health/professionals', payload); },
   appointments(params = {}) { return BackendApi.get(`/verticals/health/appointments${query(params)}`); },
   createAppointment(payload) { return BackendApi.post('/api/v1/verticals/health/appointments', payload); },
+  updateAppointment(id, payload) { return BackendApi.request(`/verticals/health/appointments/${encodeURIComponent(id)}`, { method:'PATCH', body:payload }); },
+  deleteAppointment(id) { return BackendApi.delete(`/api/v1/verticals/health/appointments/${encodeURIComponent(id)}`); },
   encounters(patientId) { return BackendApi.get(`/verticals/health/encounters${query({ patientId })}`); },
   createEncounter(payload) { return BackendApi.post('/api/v1/verticals/health/encounters', payload); },
   createMeasurement(payload) { return BackendApi.post('/api/v1/verticals/health/measurements', payload); },
