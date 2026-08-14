@@ -27,37 +27,48 @@
     align-self:center!important;
   }
 
-  /* Make the BCV action self-explanatory instead of a cryptic acronym button. */
+  /* BCV action: no decorative icon. Acronym is the primary label; purpose is secondary. */
   #btnActualizarTasaTop{
-    min-width:112px!important;
+    min-width:86px!important;
     padding:0 12px!important;
     border-radius:12px!important;
-    gap:7px!important;
+    gap:0!important;
     line-height:1!important;
+    display:grid!important;
+    place-items:center!important;
   }
-  #btnActualizarTasaTop i{display:none!important}
+  #btnActualizarTasaTop i,
   #btnActualizarTasaTop::before{
-    content:""!important;
-    display:block!important;
-    width:14px!important;
-    height:14px!important;
-    flex:0 0 14px!important;
-    transform:none!important;
-    background-color:currentColor!important;
-    -webkit-mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 11a8.1 8.1 0 0 0-15.5-2M4 4v5h5'/%3E%3Cpath d='M4 13a8.1 8.1 0 0 0 15.5 2M20 20v-5h-5'/%3E%3C/svg%3E") center/contain no-repeat!important;
-    mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 11a8.1 8.1 0 0 0-15.5-2M4 4v5h5'/%3E%3Cpath d='M4 13a8.1 8.1 0 0 0 15.5 2M20 20v-5h-5'/%3E%3C/svg%3E") center/contain no-repeat!important;
+    display:none!important;
+    content:none!important;
   }
   #btnActualizarTasaTop span{
+    display:flex!important;
+    flex-direction:column!important;
+    align-items:center!important;
+    justify-content:center!important;
+    gap:2px!important;
     font-size:0!important;
     line-height:1!important;
+    text-align:center!important;
+  }
+  #btnActualizarTasaTop span::before{
+    content:"BCV";
+    font-family:Inter,system-ui,-apple-system,"Segoe UI",sans-serif;
+    font-size:12.5px;
+    font-weight:800;
+    line-height:1;
+    letter-spacing:.025em;
   }
   #btnActualizarTasaTop span::after{
     content:"Actualizar tasa";
     font-family:Inter,system-ui,-apple-system,"Segoe UI",sans-serif;
-    font-size:11.5px;
-    font-weight:700;
+    font-size:8.5px;
+    font-weight:600;
     line-height:1;
-    letter-spacing:-.01em;
+    letter-spacing:.005em;
+    opacity:.86;
+    white-space:nowrap;
   }
 
   /* Theme control uses a centered vector icon; no Font Awesome baseline drift. */
@@ -88,7 +99,7 @@
     mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Ccircle cx='12' cy='12' r='4'/%3E%3Cpath d='M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42' fill='none' stroke='black' stroke-width='2' stroke-linecap='round'/%3E%3C/svg%3E") center/contain no-repeat;
   }
 
-  /* User control: circular neutral avatar, centered initials, no purple rounded square. */
+  /* User control: circular neutral avatar with initials centered in the true inner box. */
   .hf-user-menu{
     padding:3px!important;
     border-radius:13px!important;
@@ -108,9 +119,11 @@
     font-family:Inter,system-ui,-apple-system,"Segoe UI",sans-serif!important;
     font-size:11px!important;
     font-weight:750!important;
-    line-height:1!important;
+    line-height:32px!important;
     letter-spacing:0!important;
     text-align:center!important;
+    text-indent:0!important;
+    vertical-align:middle!important;
   }
   .hf-avatar-button img{
     width:100%!important;
@@ -178,5 +191,5 @@
 }
 
 @media (min-width:1181px) and (max-width:1320px){
-  #btnActualizarTasaTop{min-width:104px!important}
+  #btnActualizarTasaTop{min-width:82px!important}
 }
