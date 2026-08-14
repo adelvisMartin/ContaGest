@@ -1,4 +1,4 @@
-import { PageHeader, Badge, Button, EmptyState } from '../components/ui/index.js';
+import { PageHeader, Badge, Button, EmptyState, MetricGrid } from '../components/ui/index.js';
 import { ORDER_STATUSES, OrderService, orderStatusMeta, updateOrderStatus, estimateEta, buildTrackingUrl, buildWhatsAppOrderMessage, whatsappDeepLink } from '../services/orderService.js';
 import { escapeHtml } from '../utils/dom.js';
 
@@ -17,7 +17,7 @@ export const OrderTrackingPage = {
       const eta=estimateEta(order);
       const selected=selectedOrder===order.id;
       const next=ORDER_STATUSES[Math.min(index+1,ORDER_STATUSES.length-2)];
-      return `<article class="surface cg-tracking-card ${selected?'ring-2 ring-blue-500':''}" data-order-card="${order.id}">
+      return `<article class="surface cg-tracking-card ${selected?'is-selected':''}" data-order-card="${order.id}">
         <div class="cg-tracking-head"><div><h3>${escapeHtml(order.number)}</h3><p>${escapeHtml(order.customer)} · ${escapeHtml(order.phone||'sin teléfono')} · ${escapeHtml(order.serviceMode)}</p>${order.address?`<small>${escapeHtml(order.address)}</small>`:''}</div><div class="grid gap-1 justify-items-end">${Badge(meta.label,meta.tone==='warning'?'warning':meta.tone==='danger'?'danger':'success')}<small>${eta===0?'Entregado':`ETA ${eta} min`}</small></div></div>
         <div class="cg-stepper">${ORDER_STATUSES.filter((step)=>step.key!=='cancelled').map((step,stepIndex)=>`<div class="cg-step ${stepIndex<=index?'done':''}"><span><i class="fa-solid ${step.icon}"></i></span><small>${step.label}</small></div>`).join('')}</div>
         <div class="grid gap-3 md:grid-cols-[1fr_auto]"><div class="cg-order-events">${(order.events||[]).slice(0,5).map((event)=>`<p><strong>${new Date(event.at).toLocaleTimeString('es-VE',{hour:'2-digit',minute:'2-digit'})}</strong> ${escapeHtml(event.message||event.type)}</p>`).join('')||'<p>Sin eventos.</p>'}</div><div class="grid gap-2 content-start">
@@ -31,7 +31,12 @@ export const OrderTrackingPage = {
     }).join('');
     return `<section class="cg-page-stack">
       ${PageHeader({eyebrow:'Última milla',title:'Seguimiento de pedidos',description:'Estados, ETA, comunicaciones y prueba de entrega en una sola vista.',actions:Button({text:'Despacho y mapa',icon:'fa-route',variant:'secondary',attrs:'data-route="delivery-mapa"'})})}
-      <div class="grid gap-3 md:grid-cols-4"><article class="cgx-metric"><div class="cgx-metric-icon"><i class="fa-solid fa-box"></i></div><div><p>Total</p><strong>${orders.length}</strong><small>Pedidos registrados</small></div></article><article class="cgx-metric"><div class="cgx-metric-icon"><i class="fa-solid fa-truck-fast"></i></div><div><p>Abiertos</p><strong>${open}</strong><small>Requieren seguimiento</small></div></article><article class="cgx-metric"><div class="cgx-metric-icon"><i class="fa-solid fa-circle-check"></i></div><div><p>Entregados</p><strong>${delivered}</strong><small>Cierre confirmado</small></div></article><article class="cgx-metric"><div class="cgx-metric-icon"><i class="fa-solid fa-triangle-exclamation"></i></div><div><p>ETA alta</p><strong>${late}</strong><small>Más de 45 minutos</small></div></article></div>
+      ${MetricGrid([
+        {label:'Total',value:String(orders.length),hint:'Pedidos registrados',iconName:'fa-box'},
+        {label:'Abiertos',value:String(open),hint:'Requieren seguimiento',iconName:'fa-truck-fast',tone:open?'warning':'success'},
+        {label:'Entregados',value:String(delivered),hint:'Cierre confirmado',iconName:'fa-circle-check',tone:'success'},
+        {label:'ETA alta',value:String(late),hint:'Más de 45 minutos',iconName:'fa-triangle-exclamation',tone:late?'warning':'success'}
+      ])}
       <div class="cg-tracking-list">${cards||EmptyState({title:'Sin pedidos',description:'Los pedidos aparecerán aquí con su trazabilidad.',iconName:'fa-box-open'})}</div>
     </section>`;
   },

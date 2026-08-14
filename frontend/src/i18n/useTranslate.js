@@ -1,5 +1,5 @@
 import { customerCopyReplacements, routeTranslations, translations } from './translations.js';
-import { legacySpanish, sharedTranslations } from './fallbacks.js';
+import { legacySpanish, routeFallbackTranslations, sharedTranslations } from './fallbacks.js';
 import { DEFAULT_LANGUAGE, LANGUAGE_COMPACT_OPTIONS, LANGUAGE_OPTIONS, getDirection, getLanguageMeta, normalizeLanguage, setI18nLanguage } from './locales.js';
 
 const spanishCatalog = { ...legacySpanish, ...sharedTranslations.es, ...translations.es };
@@ -23,7 +23,11 @@ export function t(key, lang = activeLanguage) {
 
 export function routeT(route, lang = activeLanguage) {
   const normalized = normalizeLanguage(lang);
-  return routeTranslations[normalized]?.[route] ?? routeTranslations.es?.[route] ?? route;
+  return routeTranslations[normalized]?.[route]
+    ?? routeFallbackTranslations[normalized]?.[route]
+    ?? routeTranslations.es?.[route]
+    ?? routeFallbackTranslations.es?.[route]
+    ?? route;
 }
 
 function translateLiteral(value, lang) {
