@@ -1,3 +1,6 @@
-/* ContaGest compatibility entrypoint. The canonical ERP system loads first; contextual vertical accents extend it without creating another legacy override stack. */
+/* ContaGest v11.21 compatibility entrypoint.
+   Contextual vertical accents are intentionally placed in a lower-precedence
+   cascade layer. The canonical ERP system loads after them and owns shell,
+   form anatomy and responsive geometry for every route. */
+@import './vertical-contexts.css' layer(cg.context);
 @import './erp-system.css';
-@import './vertical-contexts.css';
