@@ -28,6 +28,9 @@ const allowedOrigins = new Set(
     .filter(Boolean)
 );
 
+const READ_ONLY_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
+const isReadOnlyRequest = (req: Request) => READ_ONLY_METHODS.has(req.method.toUpperCase());
+
 export function requestId(req: Request, res: Response, next: NextFunction) {
   const incoming = String(req.header('x-request-id') || '');
   const id = /^[A-Za-z0-9._:-]{8,96}$/.test(incoming) ? incoming : randomUUID();
@@ -48,6 +51,7 @@ export const corsPolicy = cors({
   maxAge: 600
 });
 
+/* Tier 1: broad abuse ceiling for every API request. */
 export const globalRateLimit = rateLimit({
   windowMs: 60_000,
   limit: isProd ? 90 : 300,
@@ -56,10 +60,34 @@ export const globalRateLimit = rateLimit({
   message: { ok: false, error: 'Demasiadas solicitudes. Intenta nuevamente en un minuto.' }
 });
 
+/* Tier 2: state-changing business operations. This is intentionally stricter
+   than reads so a compromised browser/session cannot generate an unbounded
+   number of writes, exports or workflow mutations. */
+export const mutationRateLimit = rateLimit({
+  windowMs: 60_000,
+  limit: isProd ? 45 : 180,
+  skip: isReadOnlyRequest,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { ok: false, error: 'Demasiadas operaciones de escritura. Espera un momento antes de continuar.' }
+});
+
+/* Tier 3: endpoints with materially higher CPU, I/O or provider cost. This
+   layer is additive to the global/write ceilings and does not replace RBAC,
+   tenant isolation, validation or provider-side budgets. */
+export const expensiveOperationRateLimit = rateLimit({
+  windowMs: 60_000,
+  limit: isProd ? 12 : 60,
+  skip: (req) => req.method.toUpperCase() === 'OPTIONS',
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { ok: false, error: 'Se alcanzó el límite temporal para esta operación de alto costo. Intenta nuevamente en un minuto.' }
+});
+
 export const authRateLimit = rateLimit({
   windowMs: 15 * 60_000,
   limit: isProd ? 20 : 60,
-  skip: (req) => ['GET', 'HEAD', 'OPTIONS'].includes(req.method.toUpperCase()),
+  skip: isReadOnlyRequest,
   standardHeaders: true,
   legacyHeaders: false,
   message: { ok: false, error: 'Demasiadas solicitudes de autenticación. Espera unos minutos antes de reintentar.' }
@@ -129,7 +157,7 @@ export function suspiciousRequestGuard(req: Request, _res: Response, next: NextF
     return next(new HttpError(400, 'Solicitud bloqueada por patrón sospechoso.'));
   }
 
-  const unsafeMethod = !['GET', 'HEAD', 'OPTIONS'].includes(req.method.toUpperCase());
+  const unsafeMethod = !isReadOnlyRequest(req);
   const fetchSite = String(req.header('sec-fetch-site') || '').toLowerCase();
   if (isProd && unsafeMethod && fetchSite === 'cross-site') {
     return next(new HttpError(403, 'Solicitud cross-site bloqueada.'));
@@ -155,7 +183,7 @@ function timingSafeTextEqual(left: string, right: string) {
  */
 export function csrfProtection(req: Request, _res: Response, next: NextFunction) {
   const method = req.method.toUpperCase();
-  if (['GET', 'HEAD', 'OPTIONS'].includes(method) || csrfExemptPaths.has(req.path)) return next();
+  if (READ_ONLY_METHODS.has(method) || csrfExemptPaths.has(req.path)) return next();
   const authHeader = String(req.header('authorization') || '');
   if (/^Bearer\s+/i.test(authHeader)) return next();
 

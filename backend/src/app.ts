@@ -13,7 +13,9 @@ import {
   cspReportRateLimit,
   csrfProtection,
   enforceProductionSecrets,
+  expensiveOperationRateLimit,
   globalRateLimit,
+  mutationRateLimit,
   requestId,
   suspiciousRequestGuard,
   securityResponseHeaders
@@ -65,7 +67,14 @@ export function createApp() {
 
   app.use(enforceProductionSecrets);
   app.use('/api/v1/auth', authRateLimit, authRoutes);
-  app.use('/api/v1', requestContext, apiRoutes);
+
+  // High-cost routes receive an additional resource-consumption ceiling. The
+  // general mutation limiter remains active below for state-changing requests.
+  app.use(
+    ['/api/v1/ai', '/api/v1/exports', '/api/v1/imports', '/api/v1/reports'],
+    expensiveOperationRateLimit
+  );
+  app.use('/api/v1', mutationRateLimit, requestContext, apiRoutes);
 
   app.use(notFound);
   app.use(errorHandler);
