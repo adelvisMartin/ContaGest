@@ -204,8 +204,14 @@ async function activateOrUpgradeDevice(params: {
 }
 
 export async function validateUserLicense(input: LicenseValidationInput) {
+  const suppliedKeyHash = input.licenseKey ? hashLicenseKey(input.licenseKey) : null;
   const record = await prisma.licenseKey.findFirst({
-    where: { tenantId: input.tenantId, userEmail: input.userEmail, status: 'active' },
+    where: {
+      tenantId: input.tenantId,
+      userEmail: input.userEmail,
+      status: 'active',
+      ...(suppliedKeyHash ? { keyHash: suppliedKeyHash } : {})
+    },
     orderBy: { createdAt: 'desc' }
   });
   if (!record) throw new HttpError(403, 'No existe una licencia activa para este usuario y empresa.');
@@ -277,6 +283,7 @@ export async function validateUserLicense(input: LicenseValidationInput) {
     userEmail: updated.userEmail,
     plan: updated.plan,
     modules: Array.isArray(modulesData.enabled) ? modulesData.enabled.map(String) : [],
+    qaMode: modulesData.qaMode === true,
     businessSector: String(extension.businessCategory || modulesData.businessSector || 'general'),
     commercialUse: String(modulesData.commercialUse || 'evaluacion'),
     maxUsers: Number(extension.maxUsers || 1),
