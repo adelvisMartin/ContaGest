@@ -1,5 +1,9 @@
-const numberFormat = (currency, locale = 'es-VE') => new Intl.NumberFormat(locale, { style: 'currency', currency, minimumFractionDigits: 2, maximumFractionDigits: 2 });
-const plainFormat = new Intl.NumberFormat('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+import { getIntlLocale } from '../i18n/locales.js';
+
+const locale = () => getIntlLocale();
+const numberFormat = (currency) => new Intl.NumberFormat(locale(), { style:'currency', currency, minimumFractionDigits:2, maximumFractionDigits:2 });
+const plainFormat = () => new Intl.NumberFormat(locale(), { minimumFractionDigits:2, maximumFractionDigits:2 });
+
 const parseDateValue = (value) => {
   if (!value) return null;
   if (value instanceof Date) return Number.isNaN(value.getTime()) ? null : value;
@@ -11,15 +15,15 @@ const parseDateValue = (value) => {
 };
 
 export const bs = (value = 0) => numberFormat('VES').format(Number(value) || 0);
-export const usd = (value = 0) => numberFormat('USD', 'en-US').format(Number(value) || 0);
-export const eur = (value = 0) => numberFormat('EUR', 'es-ES').format(Number(value) || 0);
-export const number = (value = 0) => plainFormat.format(Number(value) || 0);
-export const percent = (value = 0) => `${plainFormat.format(Number(value) || 0)}%`;
+export const usd = (value = 0) => numberFormat('USD').format(Number(value) || 0);
+export const eur = (value = 0) => numberFormat('EUR').format(Number(value) || 0);
+export const number = (value = 0) => plainFormat().format(Number(value) || 0);
+export const percent = (value = 0) => `${plainFormat().format(Number(value) || 0)}%`;
 export const shortDate = (value) => {
   const date = parseDateValue(value);
-  return date ? date.toLocaleDateString('es-VE') : '-';
+  return date ? date.toLocaleDateString(locale()) : '-';
 };
 export const dateTime = (value) => {
   const date = parseDateValue(value);
-  return date ? date.toLocaleString('es-VE') : '-';
+  return date ? date.toLocaleString(locale()) : '-';
 };

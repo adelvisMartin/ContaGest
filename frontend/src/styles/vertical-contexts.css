@@ -1,0 +1,73 @@
+/* ContaGest phase 2 contextual UI. Loaded after the canonical ERP system.
+   Light/dark remains global; vertical contexts only tune domain accents. */
+
+/* MUI participates in the same typography contract as vanilla ERPUI. */
+:where(.MuiTypography-root,.MuiButton-root,.MuiInputBase-root,.MuiFormLabel-root,.MuiMenuItem-root,.MuiChip-root,.MuiTableCell-root) { font-family:var(--cg-font-sans) !important; }
+:where(.MuiInputBase-input,.MuiSelect-select,.MuiMenuItem-root,.MuiTableCell-body) { font-weight:var(--cg-font-medium) !important; }
+:where(.MuiButton-root,.MuiInputLabel-root,.MuiChip-root,.MuiTableCell-head,.MuiTab-root) { font-weight:var(--cg-font-semibold) !important; }
+:where(.MuiTypography-h1,.MuiTypography-h2,.MuiTypography-h3,.MuiTypography-h4,.MuiTypography-h5,.MuiTypography-h6) { font-weight:650 !important;letter-spacing:-.025em !important; }
+
+/* Client roles see only actionable navigation; administrators still have every route because none is locked. */
+.hf-menu-item.is-locked,.page-tab.is-locked { display:none !important; }
+.hf-menu-section:not(:has(.hf-menu-item:not(.is-locked))) { display:none; }
+
+/* CSP-safe fixed swatches for Settings. */
+.settings-theme-preview { display:grid !important;grid-template-columns:2fr repeat(3,1fr);min-height:64px;overflow:hidden;border-radius:10px;border:1px solid var(--cg-border); }
+.settings-theme-swatch { display:block;min-width:0;min-height:64px; }
+.settings-theme-light-0 { background:#ffffff; }.settings-theme-light-1 { background:#f4f7fa; }.settings-theme-light-2 { background:#215fd1; }.settings-theme-light-3 { background:#1e3d58; }
+.settings-theme-dark-0 { background:#07111f; }.settings-theme-dark-1 { background:#0e1b2b; }.settings-theme-dark-2 { background:#29435f; }.settings-theme-dark-3 { background:#93c5fd; }
+
+body[data-business-mode="salud"],body[data-route="salud"] { --cg-primary:#0f6f8d;--cg-primary-hover:#0b5870;--cg-focus:#35a9bd;--cg-context-accent:#2a9d8f;--cg-surface-soft:#f2f9fa;--cg-border:#d4e8eb; }
+html.dark body[data-business-mode="salud"],html.dark body[data-route="salud"] { --cg-primary:#72d4e3;--cg-primary-hover:#9be4ee;--cg-context-accent:#65d6c7;--cg-surface-soft:#102a31;--cg-border:#29535c; }
+
+body[data-business-mode="veterinaria"],body[data-route="veterinaria"] { --cg-primary:#2f7d62;--cg-primary-hover:#25644f;--cg-focus:#52a985;--cg-context-accent:#bd7b36;--cg-surface-soft:#f3f8f4;--cg-border:#d6e5db; }
+html.dark body[data-business-mode="veterinaria"],html.dark body[data-route="veterinaria"] { --cg-primary:#74d0ae;--cg-primary-hover:#9de0c5;--cg-context-accent:#e3a662;--cg-surface-soft:#132820;--cg-border:#345545; }
+
+body[data-business-mode="comercio"],body[data-route="ventas"] { --cg-primary:#3157c8;--cg-primary-hover:#2746a5;--cg-focus:#6a83df;--cg-context-accent:#0f8f83; }
+html.dark body[data-business-mode="comercio"],html.dark body[data-route="ventas"] { --cg-primary:#91a9ff;--cg-primary-hover:#b3c2ff;--cg-context-accent:#5fd4c9; }
+
+body[data-business-mode="gimnasio"],body[data-route="gimnasio"],body[data-route="rutinas"],body[data-route="nutricion"] { --cg-primary:#6b46c1;--cg-primary-hover:#55349f;--cg-focus:#9272da;--cg-context-accent:#0f9f8f;--cg-surface-soft:#f7f4fb;--cg-border:#e4daf2; }
+html.dark body[data-business-mode="gimnasio"],html.dark body[data-route="gimnasio"],html.dark body[data-route="rutinas"],html.dark body[data-route="nutricion"] { --cg-primary:#b59ae9;--cg-primary-hover:#cfbaf3;--cg-context-accent:#69d7c9;--cg-surface-soft:#211b2e;--cg-border:#4b3b66; }
+
+body[data-business-mode="salud"] .hf-app-topbar,body[data-business-mode="veterinaria"] .hf-app-topbar,body[data-business-mode="comercio"] .hf-app-topbar,body[data-business-mode="gimnasio"] .hf-app-topbar,
+body[data-route="salud"] .hf-app-topbar,body[data-route="veterinaria"] .hf-app-topbar,body[data-route="ventas"] .hf-app-topbar,body[data-route="gimnasio"] .hf-app-topbar,body[data-route="rutinas"] .hf-app-topbar,body[data-route="nutricion"] .hf-app-topbar { border-bottom-color:color-mix(in srgb,var(--cg-primary) 25%,var(--cg-border)); }
+
+body[data-business-mode="salud"] .hf-menu-item.active,body[data-route="salud"] .hf-menu-item.active,
+body[data-business-mode="veterinaria"] .hf-menu-item.active,body[data-route="veterinaria"] .hf-menu-item.active,
+body[data-business-mode="comercio"] .hf-menu-item.active,body[data-route="ventas"] .hf-menu-item.active,
+body[data-business-mode="gimnasio"] .hf-menu-item.active,body[data-route="gimnasio"] .hf-menu-item.active,body[data-route="rutinas"] .hf-menu-item.active,body[data-route="nutricion"] .hf-menu-item.active { border-color:var(--cg-primary) !important;box-shadow:inset 3px 0 0 var(--cg-primary); }
+
+body[data-route="salud"] .cg-vertical-page .surface,body[data-route="salud"] .cgx-section,
+body[data-route="veterinaria"] .MuiPaper-root,body[data-route="veterinaria"] .cgx-section,
+.cg-sales-workspace .cg-ui-section,.cg-sales-workspace .cgx-metric,
+body[data-route="gimnasio"] .cgx-section,body[data-route="rutinas"] .cgx-section,body[data-route="nutricion"] .cgx-section { border-color:color-mix(in srgb,var(--cg-primary) 18%,var(--cg-border)) !important; }
+
+body[data-route="salud"] .cg-vertical-head i,body[data-route="salud"] .cgx-metric-icon,body[data-route="veterinaria"] .cgx-metric-icon,.cg-sales-workspace .cgx-metric-icon,
+body[data-route="gimnasio"] .cgx-metric-icon,body[data-route="rutinas"] .cgx-metric-icon,body[data-route="nutricion"] .cgx-metric-icon { color:var(--cg-primary) !important; }
+
+body[data-route="veterinaria"] .MuiButton-containedPrimary,body[data-route="veterinaria"] .MuiFab-primary,body[data-route="veterinaria"] .MuiTabs-indicator { background-color:var(--cg-primary) !important; }
+body[data-route="veterinaria"] .MuiButton-outlinedPrimary,body[data-route="veterinaria"] .MuiTab-root.Mui-selected,body[data-route="veterinaria"] .MuiSvgIcon-colorPrimary { color:var(--cg-primary) !important;border-color:color-mix(in srgb,var(--cg-primary) 42%,var(--cg-border)) !important; }
+
+/* Dashboard flow uses native progress rather than inline styles, keeping CSP strictness viable. */
+.cg-flow-list { display:grid;gap:10px; }
+.cg-flow-row { display:grid;grid-template-columns:minmax(58px,.35fr) minmax(180px,1fr) minmax(180px,1fr);align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid var(--cg-border); }
+.cg-flow-row:last-child { border-bottom:0; }
+.cg-flow-row > div { display:grid;grid-template-columns:64px minmax(80px,1fr) minmax(90px,auto);align-items:center;gap:8px;min-width:0; }
+.cg-flow-row span,.cg-flow-row small { color:var(--cg-text-muted);font-size:var(--cg-text-sm); }
+.cg-flow-row small { text-align:end;font-family:var(--cg-font-mono);font-variant-numeric:tabular-nums; }
+.cg-flow-row progress { width:100%;height:8px;border:0;border-radius:999px;overflow:hidden;accent-color:var(--cg-primary); }
+
+.analytics-route-row progress { width:100%;height:7px;border:0;border-radius:999px;overflow:hidden;accent-color:var(--cg-primary);grid-column:1/-1; }
+.analytics-route-row.is-error progress { accent-color:var(--cg-danger); }
+
+html[dir="rtl"] body { direction:rtl; }
+html[dir="rtl"] :where(.cgx-page-header,.cg-ui-page-header,.cg-ui-section-head,.cg-ui-key-value,.hf-user-panel,.cg-record-form) { text-align:start; }
+html[dir="rtl"] :where(.cg-ui-table th,.cg-ui-table td,.cgx-table th,.cgx-table td) { text-align:start; }
+html[dir="rtl"] :where(.cg-u-text-right,.cgx-num,.cg-cell-money) { text-align:end !important; }
+html[dir="rtl"] .hf-menu-item.active { box-shadow:inset -3px 0 0 var(--cg-primary); }
+html[dir="rtl"] .hf-user-panel { direction:rtl; }
+
+@media (max-width:760px) {
+  .cg-flow-row { grid-template-columns:1fr;gap:7px; }
+  .cg-flow-row > div { grid-template-columns:58px minmax(70px,1fr) minmax(82px,auto); }
+}
