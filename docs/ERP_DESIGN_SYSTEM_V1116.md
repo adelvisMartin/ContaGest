@@ -74,20 +74,21 @@ If a separately licensed commercial font is supplied later with explicit web emb
 
 ## Reusable component contract
 
-New screens should consume `frontend/src/components/ui/erp.js` via `frontend/src/components/ui/index.js`.
+Existing production pages keep using the stable exports already provided by `frontend/src/components/ui/kit.js` (`PageHeader`, `Button`, `Field`, `Badge`, `EmptyState`, `DataTable`, etc.). They are not renamed or shadowed.
 
-Available primitives:
+The new canonical primitives live in `frontend/src/components/ui/erp.js` and are re-exported by `frontend/src/components/ui/index.js` with an explicit `Erp*` namespace so migration can be incremental and non-breaking:
 
-- `Stack`;
-- `Row`;
-- `Grid`;
-- `Card`;
-- `PageHeader`;
-- `Button`;
-- `Field`;
-- `Badge`;
-- `EmptyState`;
-- `DataTable`.
+- `ErpStack`;
+- `ErpRow`;
+- `ErpGrid`;
+- `ErpCard`;
+- `ErpPageHeader`;
+- `ErpButton`;
+- `ErpField`;
+- `ErpBadge`;
+- `ErpEmptyState`;
+- `ErpDataTable`;
+- `ErpUi` for grouped access.
 
 These render the canonical `cg-ui-*` classes from `erp-system.css`. Existing pages can be migrated incrementally; a wholesale rewrite is intentionally avoided because fiscal/accounting behavior must not change as a side effect of a UI refactor.
 
