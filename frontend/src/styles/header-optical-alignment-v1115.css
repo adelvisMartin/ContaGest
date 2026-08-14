@@ -1,0 +1,182 @@
+/* ContaGest v11.15 — optical alignment and semantic clarity for the enterprise header.
+   Loaded after header-polish-v1115.css. Keeps all primary controls on one 42px visual axis. */
+
+@media (min-width:1181px){
+  .hf-app-topbar{
+    align-items:center!important;
+  }
+
+  .hf-command-trigger,
+  #btnActualizarTasaTop,
+  #btnTema,
+  .hf-user-menu{
+    align-self:center!important;
+    height:42px!important;
+    min-height:42px!important;
+    max-height:42px!important;
+    box-sizing:border-box!important;
+  }
+
+  .hf-app-topbar-actions{
+    height:42px!important;
+    min-height:42px!important;
+    align-items:center!important;
+  }
+
+  .hf-app-topbar-actions>*{
+    align-self:center!important;
+  }
+
+  /* Make the BCV action self-explanatory instead of a cryptic acronym button. */
+  #btnActualizarTasaTop{
+    min-width:112px!important;
+    padding:0 12px!important;
+    border-radius:12px!important;
+    gap:7px!important;
+    line-height:1!important;
+  }
+  #btnActualizarTasaTop i{display:none!important}
+  #btnActualizarTasaTop::before{
+    content:""!important;
+    display:block!important;
+    width:14px!important;
+    height:14px!important;
+    flex:0 0 14px!important;
+    transform:none!important;
+    background-color:currentColor!important;
+    -webkit-mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 11a8.1 8.1 0 0 0-15.5-2M4 4v5h5'/%3E%3Cpath d='M4 13a8.1 8.1 0 0 0 15.5 2M20 20v-5h-5'/%3E%3C/svg%3E") center/contain no-repeat!important;
+    mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 11a8.1 8.1 0 0 0-15.5-2M4 4v5h5'/%3E%3Cpath d='M4 13a8.1 8.1 0 0 0 15.5 2M20 20v-5h-5'/%3E%3C/svg%3E") center/contain no-repeat!important;
+  }
+  #btnActualizarTasaTop span{
+    font-size:0!important;
+    line-height:1!important;
+  }
+  #btnActualizarTasaTop span::after{
+    content:"Actualizar tasa";
+    font-family:Inter,system-ui,-apple-system,"Segoe UI",sans-serif;
+    font-size:11.5px;
+    font-weight:700;
+    line-height:1;
+    letter-spacing:-.01em;
+  }
+
+  /* Theme control uses a centered vector icon; no Font Awesome baseline drift. */
+  #btnTema{
+    width:42px!important;
+    min-width:42px!important;
+    padding:0!important;
+    border-radius:999px!important;
+    display:grid!important;
+    place-items:center!important;
+  }
+  #btnTema i{display:none!important}
+  #btnTema::before{
+    content:"";
+    width:16px;
+    height:16px;
+    display:block;
+    background-color:#405773;
+    -webkit-mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M20.5 15.1A8.5 8.5 0 0 1 8.9 3.6 8.5 8.5 0 1 0 20.5 15.1Z'/%3E%3C/svg%3E") center/contain no-repeat;
+    mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M20.5 15.1A8.5 8.5 0 0 1 8.9 3.6 8.5 8.5 0 1 0 20.5 15.1Z'/%3E%3C/svg%3E") center/contain no-repeat;
+  }
+  html.dark #btnTema::before,
+  html.enterprise #btnTema::before{
+    width:17px;
+    height:17px;
+    background-color:#f4c84b;
+    -webkit-mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Ccircle cx='12' cy='12' r='4'/%3E%3Cpath d='M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42' fill='none' stroke='black' stroke-width='2' stroke-linecap='round'/%3E%3C/svg%3E") center/contain no-repeat;
+    mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Ccircle cx='12' cy='12' r='4'/%3E%3Cpath d='M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42' fill='none' stroke='black' stroke-width='2' stroke-linecap='round'/%3E%3C/svg%3E") center/contain no-repeat;
+  }
+
+  /* User control: circular neutral avatar, centered initials, no purple rounded square. */
+  .hf-user-menu{
+    padding:3px!important;
+    border-radius:13px!important;
+  }
+  .hf-avatar-button{
+    width:34px!important;
+    min-width:34px!important;
+    height:34px!important;
+    min-height:34px!important;
+    padding:0!important;
+    display:grid!important;
+    place-items:center!important;
+    border-radius:999px!important;
+    border:1px solid #dbe5f3!important;
+    background:#eef4fb!important;
+    color:#294b78!important;
+    font-family:Inter,system-ui,-apple-system,"Segoe UI",sans-serif!important;
+    font-size:11px!important;
+    font-weight:750!important;
+    line-height:1!important;
+    letter-spacing:0!important;
+    text-align:center!important;
+  }
+  .hf-avatar-button img{
+    width:100%!important;
+    height:100%!important;
+    border-radius:999px!important;
+    object-fit:cover!important;
+  }
+  #btnUserMenuToggle{
+    height:34px!important;
+    min-height:34px!important;
+    display:grid!important;
+    place-items:center!important;
+  }
+  #btnUserMenuToggle i{
+    width:auto!important;
+    height:auto!important;
+    line-height:1!important;
+    margin:0!important;
+    transform-origin:center!important;
+  }
+}
+
+/* Wide desktop: BCV status shares the same 42px vertical box as search and actions. */
+@media (min-width:1321px){
+  .hf-app-topbar-actions{padding-left:184px!important}
+
+  .hf-rate-card:not(.hf-rate-source),
+  .hf-rate-source{
+    left:0!important;
+    width:176px!important;
+    max-width:176px!important;
+  }
+
+  .hf-rate-card:not(.hf-rate-source){
+    top:0!important;
+    height:21px!important;
+    min-height:21px!important;
+    align-items:center!important;
+  }
+  .hf-rate-card:not(.hf-rate-source)>span::before{
+    content:"Tasa del día"!important;
+  }
+  .hf-rate-card:not(.hf-rate-source)>strong,
+  #tasaHeader{
+    line-height:1!important;
+  }
+
+  .hf-rate-source{
+    top:22px!important;
+    height:20px!important;
+    min-height:20px!important;
+    align-items:center!important;
+  }
+  .hf-rate-source::before{
+    width:5px!important;
+    height:5px!important;
+    flex-basis:5px!important;
+    box-shadow:none!important;
+  }
+  .hf-rate-source>strong{
+    max-width:162px!important;
+    font-size:10.5px!important;
+    line-height:1!important;
+  }
+}
+
+@media (min-width:1181px) and (max-width:1320px){
+  #btnActualizarTasaTop{min-width:104px!important}
+}
