@@ -1,7 +1,7 @@
 import crypto from 'node:crypto';
 import { prisma } from '../../database/prisma.js';
+import { env } from '../../config/env.js';
 import { HttpError } from '../http.js';
-import { hashLicenseKey } from './licenseGuard.js';
 
 const QA_BOOTSTRAP_SHA256 = '76ea41b2358934dffe36b089ead0e56cc5873b73e6c8100b0e040fd7389da2ba';
 const QA_DURATION_DAYS = 180;
@@ -24,6 +24,10 @@ const QA_PERMISSION_KEYS = Object.freeze([
 
 function digest(value: string) {
   return crypto.createHash('sha256').update(value.trim().toUpperCase()).digest('hex');
+}
+
+function licenseKeyHash(value: string) {
+  return crypto.createHmac('sha256', env.LICENSE_HASH_SECRET).update(value.trim().toUpperCase()).digest('hex');
 }
 
 function secureHexEqual(left: string, right: string) {
@@ -96,7 +100,7 @@ export async function bootstrapQaLicense(input: {
   if (!tenant) throw new HttpError(404, 'Empresa no encontrada.');
 
   const normalizedEmail = input.userEmail.trim().toLowerCase();
-  const keyHash = hashLicenseKey(input.licenseKey!);
+  const keyHash = licenseKeyHash(input.licenseKey!);
   const existingByKey = await prisma.licenseKey.findFirst({ where: { keyHash } });
   if (existingByKey && (existingByKey.tenantId !== input.tenantId || existingByKey.userId !== input.userId)) {
     throw new HttpError(409, 'Esta licencia QA ya fue vinculada a otra sesión de prueba.');
