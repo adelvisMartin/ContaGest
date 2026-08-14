@@ -6,6 +6,7 @@ on:
     branches:
       - main
       - 'feature/**'
+      - 'refactor/**'
 
 permissions:
   contents: read
@@ -19,5 +20,5 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - name: Secret exposure, validation and rate-limit baseline
+      - name: Secret exposure, validation, CSP and rate-limit baseline
         run: node scripts/security-audit.mjs
