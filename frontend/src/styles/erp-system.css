@@ -1,4 +1,4 @@
-/* ContaGest-VE ERP Design System v11.16
+/* ContaGest-VE ERP Design System v11.17
    SINGLE RUNTIME STYLESHEET ENTRYPOINT.
 
    Compatibility note:
@@ -30,8 +30,10 @@
 @layer cg.tokens {
   :root {
     color-scheme: light;
+    /* One branded UI family across web/PWA. Platform fonts are fallbacks only. */
     --cg-font-sans: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI Variable", "Segoe UI", sans-serif;
-    --cg-font-mono: ui-monospace, "SFMono-Regular", "Cascadia Code", "Roboto Mono", "Courier Prime", monospace;
+    /* Functional monospace for figures/code; no second branded text family. */
+    --cg-font-mono: ui-monospace, "SFMono-Regular", "Cascadia Code", "Cascadia Mono", Menlo, Consolas, monospace;
     --cg-font-body: 400;
     --cg-font-medium: 500;
     --cg-font-semibold: 600;
@@ -52,6 +54,10 @@
     --cg-drawer: 264px;
     --cg-header: 64px;
     --cg-header-mobile: 56px;
+    --cg-safe-top: env(safe-area-inset-top, 0px);
+    --cg-safe-right: env(safe-area-inset-right, 0px);
+    --cg-safe-bottom: env(safe-area-inset-bottom, 0px);
+    --cg-safe-left: env(safe-area-inset-left, 0px);
     --cg-bg: #f4f7fb;
     --cg-surface: #ffffff;
     --cg-surface-soft: #f7f9fc;
@@ -88,13 +94,19 @@
 @layer cg.base {
   *, *::before, *::after { box-sizing: border-box; }
   html, body, #app { width: 100%; max-width: 100%; min-width: 0; }
-  html { overflow-x: clip; }
+  html {
+    overflow-x: clip;
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+  }
   body {
     margin: 0;
     min-height: 100vh;
+    min-height: 100dvh;
     overflow-x: clip;
     font-family: var(--cg-font-sans) !important;
     font-weight: var(--cg-font-body) !important;
+    font-synthesis-weight: none;
     color: var(--cg-text);
     background: var(--cg-bg);
     text-rendering: optimizeLegibility;
@@ -107,7 +119,9 @@
   :where(.cgx-metric strong, .kpi strong, .pl-kpi strong, .ds-kpi strong) { font-weight: var(--cg-font-display) !important; }
   :where(.font-black, .font-extrabold) { font-weight: var(--cg-font-display) !important; }
   :where(.font-bold) { font-weight: var(--cg-font-semibold) !important; }
+  :where(code, pre, kbd, samp, .hf-mono, .cgv-num, .cg-u-text-mono) { font-family: var(--cg-font-mono) !important; font-variant-numeric: tabular-nums; }
   :where(img, video, canvas, svg) { max-width: 100%; }
+  :where(button, a, input, select, textarea, [role="button"]) { -webkit-tap-highlight-color: transparent; }
 }
 
 @layer cg.components {
@@ -122,7 +136,7 @@
   .cg-ui-page-title { margin: 0; font-size: var(--cg-text-xl); line-height: 1.12; font-weight: var(--cg-font-heading); }
   .cg-ui-muted { color: var(--cg-text-muted); font-weight: var(--cg-font-body); }
   .cg-ui-control { min-height: var(--cg-control); border: 1px solid var(--cg-border); border-radius: var(--cg-radius-md); background: var(--cg-surface); color: var(--cg-text); font: inherit; }
-  .cg-ui-button { min-height: var(--cg-control); display: inline-flex; align-items: center; justify-content: center; gap: 7px; padding: 0 12px; border: 1px solid transparent; border-radius: var(--cg-radius-md); font-weight: var(--cg-font-semibold); cursor: pointer; }
+  .cg-ui-button { min-height: var(--cg-control); display: inline-flex; align-items: center; justify-content: center; gap: 7px; padding: 0 12px; border: 1px solid transparent; border-radius: var(--cg-radius-md); font-weight: var(--cg-font-semibold); cursor: pointer; touch-action: manipulation; }
   .cg-ui-button-primary { background: var(--cg-primary); color: #fff; }
   .cg-ui-button-primary:hover { background: var(--cg-primary-hover); }
   .cg-ui-button-secondary { background: var(--cg-surface); color: var(--cg-text); border-color: var(--cg-border); }
@@ -138,6 +152,9 @@
   .cg-u-scroll-x { max-width: 100% !important; overflow-x: auto !important; overscroll-behavior-inline: contain; }
   .cg-u-text-mono { font-family: var(--cg-font-mono) !important; font-variant-numeric: tabular-nums; }
   .cg-u-truncate { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .cg-u-safe-top { padding-top: var(--cg-safe-top) !important; }
+  .cg-u-safe-bottom { padding-bottom: var(--cg-safe-bottom) !important; }
+  .cg-u-safe-inline { padding-left: var(--cg-safe-left) !important; padding-right: var(--cg-safe-right) !important; }
 }
 
 @layer cg.responsive {
@@ -146,11 +163,24 @@
     :where(.cg-ui-grid) { grid-template-columns: repeat(auto-fit, minmax(min(100%, 190px), 1fr)); }
   }
   @media (max-width: 760px) {
-    :root { --cg-control: 40px; }
+    :root { --cg-control: 44px; }
     .cg-ui-page-header { align-items: flex-start; flex-direction: column; }
     .cg-ui-page-header > * { width: 100%; }
     .cg-ui-grid { grid-template-columns: minmax(0, 1fr); }
     :where(.hf-app-content, .hf-content, #pages, .hf-route-panel, section, article, form, fieldset) { min-width: 0 !important; max-width: 100% !important; }
+    :where(.hf-app-main, .hf-main, .hf-app-content, .hf-content) { padding-bottom: max(16px, var(--cg-safe-bottom)); }
+    :where(button, .btn, .cgv-btn, .ds-btn, .pl-btn, .cgx-btn, .cg-ui-button) { min-height: 44px; }
+  }
+
+  /* iOS/iPadOS Safari and installed web apps: avoid focus zoom and respect safe areas. */
+  @supports (-webkit-touch-callout: none) {
+    @media (max-width: 1023px) {
+      :where(input, select, textarea, .input, .select, .textarea, .cg-ui-control) { font-size: 16px !important; }
+      :where(.hf-app-topbar, .hf-topbar) {
+        padding-left: max(12px, var(--cg-safe-left));
+        padding-right: max(12px, var(--cg-safe-right));
+      }
+    }
   }
 }
 
@@ -161,5 +191,9 @@
   }
   @media (prefers-reduced-motion: reduce) {
     *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; }
+  }
+  @media (prefers-contrast: more) {
+    :root { --cg-border: #8ca0b8; --cg-focus: #155eef; }
+    html.dark, html.enterprise { --cg-border: #7f9fbd; --cg-focus: #bfdbfe; }
   }
 }
