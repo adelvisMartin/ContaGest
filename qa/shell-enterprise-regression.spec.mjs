@@ -15,7 +15,7 @@ async function openDashboard(page) {
   await seedAuthenticatedUi(page);
   await page.goto('/?module=dashboard', { waitUntil:'domcontentloaded' });
   await page.waitForSelector('.hf-app-topbar', { state:'visible' });
-  await page.waitForTimeout(120);
+  await page.waitForTimeout(150);
 }
 
 const rect = (page, selector) => page.locator(selector).evaluate((node) => {
@@ -34,8 +34,8 @@ test.describe('enterprise shell desktop geometry', () => {
     const sidebar=await rect(page,'.hf-app-sidebar');
     const main=await rect(page,'.hf-app-main');
     const header=await rect(page,'.hf-app-topbar');
-    expect(sidebar.width).toBeGreaterThanOrEqual(248);
-    expect(sidebar.width).toBeLessThanOrEqual(256);
+    expect(sidebar.width).toBeGreaterThanOrEqual(246);
+    expect(sidebar.width).toBeLessThanOrEqual(250);
     expect(Math.abs(main.left-sidebar.right)).toBeLessThanOrEqual(2);
     expect(Math.abs(header.left-main.left)).toBeLessThanOrEqual(2);
     expect(Math.abs(header.right-main.right)).toBeLessThanOrEqual(2);
@@ -54,7 +54,7 @@ test.describe('enterprise shell desktop geometry', () => {
     expect(Math.abs(header.right-1920)).toBeLessThanOrEqual(2);
   });
 
-  test('rate, source, BCV, theme and account controls never overlap', async ({ page }) => {
+  test('rate stack, BCV, theme and account controls never overlap', async ({ page }) => {
     await openDashboard(page);
     const selectors=['.hf-rate-card:not(.hf-rate-source)','.hf-rate-source','#btnActualizarTasaTop','#btnTema','#btnUserMenuToggle'];
     const boxes=[];
@@ -65,6 +65,9 @@ test.describe('enterprise shell desktop geometry', () => {
     for(let i=0;i<boxes.length;i++) for(let j=i+1;j<boxes.length;j++) {
       expect(overlap(boxes[i][1],boxes[j][1]),`${boxes[i][0]} overlaps ${boxes[j][0]}`).toBe(false);
     }
+    const rate=await rect(page,'.hf-rate-card:not(.hf-rate-source)');
+    const source=await rect(page,'.hf-rate-source');
+    expect(source.top).toBeGreaterThanOrEqual(rate.bottom-1);
   });
 });
 
@@ -99,21 +102,24 @@ test.describe('enterprise shell phone behavior', () => {
     expect(audit.body).toBeLessThanOrEqual(391);
   });
 
-  test('mobile side navigation is a non-persistent overlay below 300px wide', async ({ page }) => {
+  test('mobile side navigation is a compact overlay with only the active group expanded', async ({ page }) => {
     await openDashboard(page);
     await page.locator('#btnOpenSidebar').click();
     await expect(page.locator('body')).toHaveClass(/cg-menu-open/);
     const sidebar=await rect(page,'.hf-app-sidebar');
     const main=await rect(page,'.hf-app-main');
-    expect(sidebar.width).toBeLessThanOrEqual(292.5);
+    expect(sidebar.width).toBeLessThanOrEqual(264.5);
     expect(sidebar.left).toBeGreaterThanOrEqual(-1);
     expect(main.left).toBeLessThanOrEqual(1);
     expect(Math.abs(main.width-390)).toBeLessThanOrEqual(2);
     await expect(page.locator('#sidebarBackdrop')).toBeVisible();
+    const expanded=await page.locator('.hf-menu-section[open]').count();
+    expect(expanded).toBeLessThanOrEqual(1);
   });
 
   test('shell uses moderate typography weights', async ({ page }) => {
     await openDashboard(page);
+    await page.locator('#btnOpenSidebar').click();
     const weights=await page.evaluate(()=>({
       menu:getComputedStyle(document.querySelector('.hf-menu-item')).fontWeight,
       button:getComputedStyle(document.querySelector('.page-tab')).fontWeight,
@@ -129,6 +135,7 @@ test.describe('enterprise shell phone behavior', () => {
     await expect(page.locator('.hf-avatar-button')).toBeHidden();
     await page.locator('#btnUserMenuToggle').click();
     await expect(page.locator('#userMenuPanel')).toBeVisible();
+    await expect(page.locator('#btnUserMenuToggle')).toHaveAttribute('aria-expanded','true');
     const panel=await rect(page,'#userMenuPanel');
     expect(panel.right).toBeLessThanOrEqual(390);
     expect(panel.left).toBeGreaterThanOrEqual(0);
@@ -136,10 +143,13 @@ test.describe('enterprise shell phone behavior', () => {
     await expect(page).toHaveURL(/module=configuracion/);
   });
 
-  test('theme switches light to dark in one click', async ({ page }) => {
+  test('theme switches light to dark in one click and only audited choices remain', async ({ page }) => {
     await openDashboard(page);
     await expect(page.locator('html')).not.toHaveClass(/\bdark\b/);
     await page.locator('#btnTema').click();
     await expect(page.locator('html')).toHaveClass(/\bdark\b/);
+    await page.locator('#btnUserMenuToggle').click();
+    const themes=await page.locator('#userMenuTheme option').evaluateAll((items)=>items.map((item)=>item.value));
+    expect(themes).toEqual(['light','dark']);
   });
 });
