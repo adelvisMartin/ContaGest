@@ -16,7 +16,11 @@ export default defineConfig({
     screenshot: 'only-on-failure',
     video: 'retain-on-failure'
   },
-  projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
+  projects: [
+    { name: 'chromium', use: { ...devices['Desktop Chrome'] } },
+    { name: 'webkit-safari', use: { ...devices['Desktop Safari'] } },
+    { name: 'webkit-iphone', use: { ...devices['iPhone 13'] } }
+  ],
   webServer: remoteBaseURL ? undefined : {
     command: 'npm --workspace frontend run dev',
     url: 'http://127.0.0.1:8080',
