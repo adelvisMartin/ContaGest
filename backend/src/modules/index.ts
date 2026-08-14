@@ -41,6 +41,7 @@ import userSecurityRoutes from './user-security/user-security.routes.js';
 import verticalRoutes from './verticals/verticals.routes.js';
 import verticalExtendedRoutes from './verticals/verticals-extended.routes.js';
 import veterinaryRoutes from './verticals/veterinary.routes.js';
+import veterinaryCrudRoutes from './verticals/veterinary-crud.routes.js';
 import mediaRoutes from './media/media.routes.js';
 
 const router = Router();
@@ -86,6 +87,7 @@ router.use('/rules', rulesRoutes);
 router.use('/rbac', rbacRoutes);
 router.use('/user-security', userSecurityRoutes);
 router.use('/verticals', verticalRoutes);
+router.use('/verticals', veterinaryCrudRoutes);
 router.use('/verticals', verticalExtendedRoutes);
 router.use('/verticals/veterinary', veterinaryRoutes);
 router.use('/media', mediaRoutes);
