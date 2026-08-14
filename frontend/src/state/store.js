@@ -6,8 +6,7 @@ const STORAGE_KEY = 'contagest_ve_enterprise_v7_state';
 const listeners = new Set();
 const clone = (value) => JSON.parse(JSON.stringify(value));
 const LOGIN_RENDER_KEYS = new Set(['route', 'pendingMfa', 'profile', 'activeLicense']);
-const OFFICIAL_THEMES = new Set(['light', 'dark']);
-const LEGACY_DARK_THEMES = new Set(['dark', 'enterprise', 'executive', 'finance', 'spectrum']);
+const OFFICIAL_THEMES = new Set(['sector','light','dark','sky','soft-blue','spectrum','executive','finance','enterprise']);
 
 function deepMerge(target, source) {
   if (!source || typeof source !== 'object') return target;
@@ -21,16 +20,12 @@ function deepMerge(target, source) {
 
 function normalizePersistedTheme(theme) {
   const value = String(theme || 'light').trim().toLowerCase();
-  if (OFFICIAL_THEMES.has(value)) return value;
-  return LEGACY_DARK_THEMES.has(value) ? 'dark' : 'light';
+  return OFFICIAL_THEMES.has(value) ? value : 'light';
 }
 
 function normalizeThemePatch(partial) {
   if (!partial?.settings || !Object.prototype.hasOwnProperty.call(partial.settings, 'theme')) return partial;
-  const requested = String(partial.settings.theme || '').trim().toLowerCase();
-  if (OFFICIAL_THEMES.has(requested)) return partial;
-  const current = normalizePersistedTheme(state?.settings?.theme);
-  return deepMerge(partial, { settings: { theme: current === 'dark' ? 'light' : 'dark' } });
+  return deepMerge(partial, { settings: { theme: normalizePersistedTheme(partial.settings.theme) } });
 }
 
 function normalizeCustomerSamples(nextState) {

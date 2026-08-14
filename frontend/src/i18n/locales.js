@@ -1,6 +1,7 @@
 export const LANGUAGES = Object.freeze({
   es: Object.freeze({ code:'es', label:'Español', short:'ES', locale:'es-VE', dir:'ltr' }),
   en: Object.freeze({ code:'en', label:'English', short:'EN', locale:'en-US', dir:'ltr' }),
+  pt: Object.freeze({ code:'pt', label:'Português', short:'PT', locale:'pt-BR', dir:'ltr' }),
   zh: Object.freeze({ code:'zh', label:'中文', short:'中文', locale:'zh-CN', dir:'ltr' }),
   hi: Object.freeze({ code:'hi', label:'हिन्दी', short:'हिं', locale:'hi-IN', dir:'ltr' }),
   ar: Object.freeze({ code:'ar', label:'العربية', short:'عر', locale:'ar', dir:'rtl' })

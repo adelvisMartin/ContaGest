@@ -20,6 +20,8 @@ export const legacySpanish = Object.freeze({
   adminEyebrow:'Administración', adminTitle:'Panel administrativo', adminDesc:'Usuarios, seguridad, RBAC, suscripciones, empresa y configuración.',
   qrEyebrow:'Automatización', qrTitle:'QR y código de barras', qrDesc:'Etiquetas, lectura, validación y conexión con inventario.',
   profileEyebrow:'Cuenta', profileTitle:'Perfil del usuario', profileDesc:'Datos del usuario, rol, plan y sucursal.',
+  psychology:'Psicología', psychologyEyebrow:'Consulta privada', psychologyTitle:'Psicología, pacientes y agenda', psychologyDesc:'Gestiona pacientes, citas, planificación semanal y confirmaciones desde un espacio privado y enfocado.',
+  appointments:'Citas', patients:'Pacientes', thisWeek:'Esta semana', pendingConfirmation:'Por confirmar', calendar:'Calendario', reminder:'Recordatorio', reminders:'Recordatorios',
   hrDashboard:'Recursos humanos', backend:'Integraciones', brandGuidelines:'Manual de marca', adminPanel:'Panel administrativo', stitchViews:'Galería de módulos', demoControl:'Accesos comerciales',
   noResults:'Sin resultados', create:'Crear', update:'Actualizar', view:'Ver', open:'Abrir', send:'Enviar', back:'Volver', next:'Siguiente', previous:'Anterior',
   taxable:'Gravable', exempt:'Exento', quantity:'Cantidad', unitPrice:'Precio unitario', subtotal:'Subtotal', total:'Total', notes:'Notas',
@@ -32,7 +34,9 @@ const sharedEs={
   purchasesEyebrow:'Compras',purchasesTitle:'Compras y facturas de proveedor',purchasesDesc:'Registra compras, IVA crédito, borradores y anulaciones con trazabilidad contable.',
   bankingEyebrow:'Tesorería',bankingTitle:'Bancos y conciliación',bankingDesc:'Cuentas, movimientos, extractos y conciliación con trazabilidad.',
   payrollEyebrow:'RRHH y nómina',payrollTitle:'Nómina por períodos',payrollDesc:'Empleados, incidencias, recibos, aprobación, pago y auditoría.',
-  kardexEyebrow:'Inventario',kardexTitle:'Kardex y costo promedio',kardexDesc:'Entradas, salidas, saldo, costo promedio y valoración del producto.'
+  kardexEyebrow:'Inventario',kardexTitle:'Kardex y costo promedio',kardexDesc:'Entradas, salidas, saldo, costo promedio y valoración del producto.',
+  psychology:'Psicología',psychologyEyebrow:'Consulta privada',psychologyTitle:'Psicología, pacientes y agenda',psychologyDesc:'Gestiona pacientes, citas, planificación semanal y confirmaciones desde un espacio privado y enfocado.',
+  patients:'Pacientes',appointments:'Citas',thisWeek:'Esta semana',pendingConfirmation:'Por confirmar',calendar:'Calendario',reminders:'Recordatorios'
 };
 const sharedEn={
   areaHome:'Home',areaSales:'Sales',areaOperations:'Operations',areaInventory:'Inventory',areaPurchases:'Purchasing',areaAccounting:'Accounting',areaTax:'Tax',areaHr:'HR',areaHealth:'Health',areaFitness:'Fitness',areaCommunication:'Communication',areaAnalytics:'Analytics',areaAdministration:'Administration',areaSupport:'Support',
@@ -40,7 +44,24 @@ const sharedEn={
   purchasesEyebrow:'Purchasing',purchasesTitle:'Purchases and supplier invoices',purchasesDesc:'Record purchases, input VAT, drafts and reversals with accounting traceability.',
   bankingEyebrow:'Treasury',bankingTitle:'Banking and reconciliation',bankingDesc:'Accounts, transactions, statements and reconciliation with traceability.',
   payrollEyebrow:'HR and payroll',payrollTitle:'Payroll by period',payrollDesc:'Employees, payroll events, receipts, approval, payment and audit.',
-  kardexEyebrow:'Inventory',kardexTitle:'Kardex and average cost',kardexDesc:'Incoming, outgoing, balance, average cost and product valuation.'
+  kardexEyebrow:'Inventory',kardexTitle:'Kardex and average cost',kardexDesc:'Incoming, outgoing, balance, average cost and product valuation.',
+  psychology:'Psychology',psychologyEyebrow:'Private practice',psychologyTitle:'Psychology, clients and scheduling',psychologyDesc:'Manage clients, appointments, weekly planning and confirmations in a focused private-practice workspace.',
+  patients:'Clients',appointments:'Appointments',thisWeek:'This week',pendingConfirmation:'Awaiting confirmation',calendar:'Calendar',reminders:'Reminders'
+};
+const sharedPt={
+  areaHome:'Início',areaSales:'Vendas',areaOperations:'Operações',areaInventory:'Estoque',areaPurchases:'Compras',areaAccounting:'Contabilidade',areaTax:'Fiscal',areaHr:'RH',areaHealth:'Saúde',areaFitness:'Fitness',areaCommunication:'Comunicação',areaAnalytics:'Análises',areaAdministration:'Administração',areaSupport:'Suporte',
+  appTitle:'ERP empresarial',dashboard:'Painel',sales:'Vendas',quote:'Orçamentos',clients:'Clientes',history:'Histórico',inventory:'Estoque',taxes:'Tributos',reports:'Relatórios',ledger:'Contabilidade',banking:'Bancos',payroll:'Folha de pagamento',suppliers:'Fornecedores',purchases:'Compras',audit:'Auditoria',analytics:'Análises',tasks:'Tarefas',profile:'Perfil',settings:'Configurações',help:'Ajuda',support:'Suporte',language:'Idioma',theme:'Tema',reportsCurrency:'Moeda dos relatórios',logout:'Sair',changePhoto:'Alterar foto',
+  currentNetTotal:'Total líquido atual',taxableBase:'Base tributável',taxSum:'Tributos',retentions:'Retenções',refreshBcv:'BCV',
+  save:'Salvar',add:'Adicionar',edit:'Editar',delete:'Excluir',clear:'Limpar',search:'Buscar',refresh:'Atualizar',sync:'Sincronizar',print:'Imprimir',download:'Baixar',close:'Fechar',cancel:'Cancelar',confirm:'Confirmar',newRecord:'Novo',noData:'Sem dados',
+  name:'Nome',email:'E-mail',phone:'Telefone',type:'Tipo',address:'Endereço',actions:'Ações',client:'Cliente',date:'Data',amount:'Valor',currency:'Moeda',product:'Produto',qty:'Quantidade',price:'Preço',category:'Categoria',cost:'Custo',margin:'Margem',stock:'Estoque',account:'Conta',description:'Descrição',employee:'Colaborador',salary:'Salário',supplier:'Fornecedor',reference:'Referência',bank:'Banco',status:'Status',title:'Título',module:'Módulo',priority:'Prioridade',role:'Função',plan:'Plano',source:'Fonte',
+  synced:'Sincronizado',pendingSync:'Pendente de sincronização',active:'Ativo',inactive:'Inativo',pending:'Pendente',completed:'Concluído',cancelled:'Cancelado',all:'Todos',today:'Hoje',yes:'Sim',no:'Não',light:'Claro',dark:'Escuro',company:'Empresa',appearance:'Aparência',integrations:'Integrações',backup:'Backup',security:'Segurança',privacy:'Privacidade',
+  purchasesEyebrow:'Compras',purchasesTitle:'Compras e notas de fornecedores',purchasesDesc:'Registre compras, crédito fiscal, rascunhos e estornos com rastreabilidade contábil.',
+  bankingEyebrow:'Tesouraria',bankingTitle:'Bancos e conciliação',bankingDesc:'Contas, movimentações, extratos e conciliação com rastreabilidade.',
+  payrollEyebrow:'RH e folha',payrollTitle:'Folha por período',payrollDesc:'Colaboradores, eventos, recibos, aprovação, pagamento e auditoria.',
+  kardexEyebrow:'Estoque',kardexTitle:'Kardex e custo médio',kardexDesc:'Entradas, saídas, saldo, custo médio e valorização do produto.',
+  psychology:'Psicologia',psychologyEyebrow:'Consultório particular',psychologyTitle:'Psicologia, pacientes e agenda',psychologyDesc:'Gerencie pacientes, consultas, planejamento semanal e confirmações em um espaço focado para consultório particular.',
+  patients:'Pacientes',appointments:'Consultas',thisWeek:'Esta semana',pendingConfirmation:'Aguardando confirmação',calendar:'Calendário',reminders:'Lembretes',
+  unifiedManagement:'Gestão empresarial unificada'
 };
 const sharedZh={
   areaHome:'首页',areaSales:'销售',areaOperations:'运营',areaInventory:'库存',areaPurchases:'采购',areaAccounting:'会计',areaTax:'税务',areaHr:'人力资源',areaHealth:'医疗',areaFitness:'健身',areaCommunication:'沟通',areaAnalytics:'分析',areaAdministration:'管理',areaSupport:'支持',
@@ -67,4 +88,17 @@ const sharedAr={
   kardexEyebrow:'المخزون',kardexTitle:'حركة المخزون ومتوسط التكلفة',kardexDesc:'الوارد والصادر والرصيد ومتوسط التكلفة وتقييم المنتج.'
 };
 
-export const sharedTranslations=Object.freeze({es:Object.freeze(sharedEs),en:Object.freeze(sharedEn),zh:Object.freeze(sharedZh),hi:Object.freeze(sharedHi),ar:Object.freeze(sharedAr)});
+export const sharedTranslations=Object.freeze({
+  es:Object.freeze(sharedEs),en:Object.freeze(sharedEn),pt:Object.freeze(sharedPt),zh:Object.freeze(sharedZh),hi:Object.freeze(sharedHi),ar:Object.freeze(sharedAr)
+});
+
+export const routeFallbackTranslations=Object.freeze({
+  es:Object.freeze({psicologia:'Psicología y agenda'}),
+  en:Object.freeze({psicologia:'Psychology & scheduling'}),
+  pt:Object.freeze({
+    dashboard:'Painel',mobile:'Visão móvel',ventas:'Vendas',cotizacion:'Orçamentos',clientes:'Clientes',historial:'Histórico',pedidos:'Pedidos','pos-sede':'PDV','tracking-pedidos':'Acompanhamento de pedidos','delivery-mapa':'Mapa de entregas',tasks:'Tarefas',inventario:'Estoque','inventario-scan':'Scanner de estoque',kardex:'Kardex',qr:'QR / Código de barras',proveedores:'Fornecedores',compras:'Compras',contabilidad:'Livro diário','plan-cuentas':'Plano de contas','libro-mayor':'Razão geral','balance-sumas-saldos':'Balancete','hoja-trabajo':'Planilha de trabalho','estados-financieros':'Demonstrações financeiras','cierre-contable':'Fechamento contábil',bancos:'Bancos','normativa-contable':'Normas contábeis',tributos:'Tributos','libro-ventas':'Livro de vendas',normativa:'Normas',nomina:'Folha de pagamento',rrhh:'Recursos humanos',salud:'Clínica',veterinaria:'Clínica veterinária',psicologia:'Psicologia e agenda',gimnasio:'Academia',rutinas:'Treinos',nutricion:'Nutrição',mensajes:'Mensagens',analytics:'Análises',reportes:'Relatórios',auditoria:'Auditoria',configuracion:'Configurações',backend:'Integrações',admin:'Administração',marca:'Marca','demo-control':'Acessos comerciais',licencias:'Licenças','importacion-data':'Importação em massa',pretesting:'Status do sistema',ayuda:'Ajuda',soporte:'Suporte','asistente-ia':'Assistente IA',vistas:'Galeria de módulos'
+  }),
+  zh:Object.freeze({psicologia:'心理咨询与预约'}),
+  hi:Object.freeze({psicologia:'मनोविज्ञान और अपॉइंटमेंट'}),
+  ar:Object.freeze({psicologia:'علم النفس والمواعيد'})
+});

@@ -25,11 +25,12 @@ export const MODULE_CATALOG_ACCESS = [
   { route:'tributos', label:'Tributos', permission:'taxes.export', group:'Fiscal' },
   { route:'nomina', label:'Nómina', permission:'payroll.manage', group:'RRHH' },
   { route:'rrhh', label:'RRHH', permission:'payroll.manage', group:'RRHH' },
-  { route:'salud', label:'Clínica y consultorio', permission:'care.manage', group:'Salud' },
-  { route:'veterinaria', label:'Clínica veterinaria', permission:'veterinary.manage', group:'Salud' },
-  { route:'gimnasio', label:'Gimnasio', permission:'fitness.manage', group:'Fitness' },
-  { route:'rutinas', label:'Rutinas', permission:'fitness.manage', group:'Fitness' },
-  { route:'nutricion', label:'Nutrición', permission:'fitness.manage', group:'Fitness' },
+  { route:'salud', label:'Clínica y consultorio', permission:'health.manage', group:'Salud' },
+  { route:'veterinaria', label:'Clínica veterinaria', permission:'health.manage', group:'Salud' },
+  { route:'psicologia', label:'Psicología y agenda', permission:'health.manage', group:'Salud' },
+  { route:'gimnasio', label:'Gimnasio', permission:'gym.manage', group:'Fitness' },
+  { route:'rutinas', label:'Rutinas', permission:'gym.manage', group:'Fitness' },
+  { route:'nutricion', label:'Nutrición', permission:'gym.manage', group:'Fitness' },
   { route:'mensajes', label:'Mensajes', permission:'communications.manage', group:'Comunicación' },
   { route:'pedidos', label:'Pedidos', permission:'orders.manage', group:'Operaciones' },
   { route:'pos-sede', label:'POS sede', permission:'orders.manage', group:'Operaciones' },
@@ -53,7 +54,7 @@ const ROLE_DEFINITIONS = [
   {
     id:'role-admin', name:'Administrador', tone:'danger', description:'Control total de empresa, usuarios, permisos, seguridad, integraciones, reportes y módulos.',
     scope:'Acceso completo. Puede administrar usuarios, límites, módulos, bitácora, monitoreo, integraciones y configuración empresarial.',
-    permissions:['admin.manage','modules.manage','clients.manage','sales.manage','sales.view','inventory.manage','purchases.manage','accounting.manage','banking.manage','taxes.export','payroll.manage','reports.view','audit.view','orders.manage','orders.view','licenses.manage','demos.manage','dashboard.view','settings.manage','support.manage','care.manage','veterinary.manage','fitness.manage','communications.manage'],
+    permissions:['admin.manage','modules.manage','clients.manage','sales.manage','sales.view','inventory.manage','purchases.manage','accounting.manage','banking.manage','taxes.export','payroll.manage','reports.view','audit.view','orders.manage','orders.view','licenses.manage','demos.manage','dashboard.view','settings.manage','support.manage','health.manage','gym.manage','communications.manage','care.manage','veterinary.manage','psychology.manage','fitness.manage'],
     modules:allModules
   },
   {
@@ -81,21 +82,27 @@ const ROLE_DEFINITIONS = [
     modules:['dashboard','clientes','cotizacion','ventas','historial','pedidos','pos-sede','tracking-pedidos','mensajes','soporte']
   },
   {
-    id:'role-clinica', name:'Clínica / Consultorio', tone:'brand', description:'Pacientes, agenda, historias clínicas, facturación y operación del centro de salud.',
-    scope:'Gestiona la operación clínica y administrativa necesaria para atención, cobro, reportes y comunicación con pacientes.',
-    permissions:['dashboard.view','clients.manage','sales.manage','sales.view','care.manage','banking.manage','payroll.manage','reports.view','audit.view','communications.manage'],
-    modules:['dashboard','salud','clientes','cotizacion','ventas','historial','bancos','nomina','rrhh','analytics','reportes','auditoria','mensajes','soporte']
+    id:'role-clinica', name:'Clínica / Consultorio', tone:'brand', description:'Pacientes, agenda, historias clínicas, facturación y operación del consultorio.',
+    scope:'Perfil compacto para profesionales y consultorios pequeños. RRHH y nómina se habilitan aparte cuando exista personal adicional.',
+    permissions:['dashboard.view','clients.manage','sales.manage','sales.view','health.manage','care.manage','banking.manage','reports.view','audit.view','communications.manage'],
+    modules:['dashboard','salud','clientes','cotizacion','ventas','historial','bancos','analytics','reportes','auditoria','mensajes','soporte']
   },
   {
     id:'role-veterinaria', name:'Clínica veterinaria', tone:'success', description:'Mascotas, tutores, historias, vacunas, inventario, compras y facturación.',
-    scope:'Gestiona atención veterinaria, inventario clínico, compras, ventas, comunicaciones y reportes.',
-    permissions:['dashboard.view','clients.manage','sales.manage','sales.view','veterinary.manage','inventory.manage','purchases.manage','banking.manage','payroll.manage','reports.view','audit.view','communications.manage'],
-    modules:['dashboard','veterinaria','clientes','cotizacion','ventas','historial','inventario','inventario-scan','kardex','qr','proveedores','compras','bancos','nomina','rrhh','analytics','reportes','auditoria','mensajes','soporte']
+    scope:'Perfil compacto para veterinarios y PYMES. RRHH y nómina se habilitan aparte cuando exista personal adicional.',
+    permissions:['dashboard.view','clients.manage','sales.manage','sales.view','health.manage','veterinary.manage','inventory.manage','purchases.manage','banking.manage','reports.view','audit.view','communications.manage'],
+    modules:['dashboard','veterinaria','clientes','cotizacion','ventas','historial','inventario','inventario-scan','kardex','qr','proveedores','compras','bancos','analytics','reportes','auditoria','mensajes','soporte']
+  },
+  {
+    id:'role-psicologia', name:'Psicología / Consultorio', tone:'brand', description:'Pacientes, citas, agenda semanal, confirmaciones, seguimiento y cobranza del consultorio.',
+    scope:'Perfil para psicólogos particulares y centros pequeños. Prioriza agenda, pacientes y comunicaciones sin exponer módulos de RRHH por defecto.',
+    permissions:['dashboard.view','clients.manage','sales.manage','sales.view','health.manage','psychology.manage','banking.manage','reports.view','communications.manage'],
+    modules:['dashboard','psicologia','clientes','cotizacion','ventas','historial','bancos','reportes','mensajes','soporte']
   },
   {
     id:'role-gimnasio', name:'Gimnasio / Fitness', tone:'success', description:'Socios, membresías, asistencia, rutinas, nutrición y cobranza.',
     scope:'Gestiona la operación del gimnasio, seguimiento de socios, planes, rutinas y reportes.',
-    permissions:['dashboard.view','clients.manage','sales.manage','sales.view','fitness.manage','inventory.manage','banking.manage','reports.view','communications.manage'],
+    permissions:['dashboard.view','clients.manage','sales.manage','sales.view','gym.manage','fitness.manage','inventory.manage','banking.manage','reports.view','communications.manage'],
     modules:['dashboard','gimnasio','rutinas','nutricion','clientes','cotizacion','ventas','historial','inventario','bancos','analytics','reportes','mensajes','soporte']
   },
   {
@@ -163,6 +170,9 @@ function buildUsers() {
     { id:'user-contador', fullName:'María Contador', email:'contador@empresa.com', roleId:'role-contador', status:'active', demo:false, maxModules:18, demoExpiresAt:null },
     { id:'user-tesoreria', fullName:'Teresa Finanzas', email:'tesoreria@empresa.com', roleId:'role-tesoreria', status:'active', demo:false, maxModules:10, demoExpiresAt:null },
     { id:'user-ventas', fullName:'Carlos Ventas', email:'ventas@empresa.com', roleId:'role-vendedor', status:'active', demo:false, maxModules:10, demoExpiresAt:null },
+    { id:'user-clinica', fullName:'Profesional de salud', email:'consulta@empresa.com', roleId:'role-clinica', status:'active', demo:false, maxModules:12, demoExpiresAt:null },
+    { id:'user-veterinaria', fullName:'Profesional veterinario', email:'veterinaria@empresa.com', roleId:'role-veterinaria', status:'active', demo:false, maxModules:16, demoExpiresAt:null },
+    { id:'user-psicologia', fullName:'Profesional de psicología', email:'psicologia@empresa.com', roleId:'role-psicologia', status:'active', demo:false, maxModules:10, demoExpiresAt:null },
     { id:'user-inventario', fullName:'Ana Inventario', email:'inventario@empresa.com', roleId:'role-inventario', status:'active', demo:false, maxModules:7, demoExpiresAt:null },
     { id:'user-compras', fullName:'Pedro Compras', email:'compras@empresa.com', roleId:'role-compras', status:'active', demo:false, maxModules:7, demoExpiresAt:null },
     { id:'user-rrhh', fullName:'Laura RRHH', email:'rrhh@empresa.com', roleId:'role-rrhh', status:'active', demo:false, maxModules:5, demoExpiresAt:null },
