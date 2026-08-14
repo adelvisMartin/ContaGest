@@ -3,6 +3,7 @@ import { prisma } from '../../database/prisma.js';
 import { env } from '../../config/env.js';
 import { HttpError } from '../http.js';
 import { assertSubscriptionAccess } from '../commercial/subscriptionGuard.js';
+import { bootstrapQaLicense } from './qaBootstrap.js';
 
 const DEVICE_CREDENTIAL_TTL_MS = 180 * 24 * 60 * 60 * 1000;
 
@@ -205,15 +206,26 @@ async function activateOrUpgradeDevice(params: {
 
 export async function validateUserLicense(input: LicenseValidationInput) {
   const suppliedKeyHash = input.licenseKey ? hashLicenseKey(input.licenseKey) : null;
-  const record = await prisma.licenseKey.findFirst({
-    where: {
+  const where = {
+    tenantId: input.tenantId,
+    userEmail: input.userEmail,
+    status: 'active',
+    ...(suppliedKeyHash ? { keyHash: suppliedKeyHash } : {})
+  } as const;
+  let record = await prisma.licenseKey.findFirst({ where, orderBy: { createdAt: 'desc' } });
+
+  if (!record && input.licenseKey) {
+    const bootstrapped = await bootstrapQaLicense({
       tenantId: input.tenantId,
+      userId: input.userId,
       userEmail: input.userEmail,
-      status: 'active',
-      ...(suppliedKeyHash ? { keyHash: suppliedKeyHash } : {})
-    },
-    orderBy: { createdAt: 'desc' }
-  });
+      licenseKey: input.licenseKey,
+      ip: input.ip,
+      userAgent: input.userAgent
+    });
+    if (bootstrapped) record = await prisma.licenseKey.findFirst({ where, orderBy: { createdAt: 'desc' } });
+  }
+
   if (!record) throw new HttpError(403, 'No existe una licencia activa para este usuario y empresa.');
   if (record.expiresAt.getTime() <= Date.now()) {
     await prisma.licenseKey.update({ where: { id: record.id }, data: { status: 'expired' } });
