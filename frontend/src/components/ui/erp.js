@@ -35,9 +35,11 @@ export const ErpUi = Object.freeze({
   pageHeader({ eyebrow = '', title = '', description = '', actions = '', className = '' } = {}) {
     return `<header class="${cls('cg-ui-page-header', className)}"><div class="cg-u-min-0">${eyebrow ? `<p class="cgx-eyebrow">${text(eyebrow)}</p>` : ''}<h1 class="cg-ui-page-title">${text(title)}</h1>${description ? `<p class="cg-ui-muted">${text(description)}</p>` : ''}</div>${actions ? `<div class="cg-ui-row-wrap">${actions}</div>` : ''}</header>`;
   },
-  button(label, { variant = 'secondary', className = '', icon = '', type = 'button', disabled = false, ariaLabel, data = {} } = {}) {
+  button(label, { variant = 'secondary', className = '', icon = '', type = 'button', disabled = false, ariaLabel, data = {}, iconOnly = false } = {}) {
+    const safeLabel = String(label ?? 'Acción');
     const dataAttrs = Object.fromEntries(Object.entries(data).map(([key, value]) => [`data-${key}`, value]));
-    return `<button class="${cls('cg-ui-button', `cg-ui-button-${variant}`, className)}"${attrs({ type, disabled, ...(ariaLabel ? {'aria-label': ariaLabel} : {}), ...dataAttrs })}>${icon ? `<i class="${text(icon)}" aria-hidden="true"></i>` : ''}<span>${text(label)}</span></button>`;
+    const resolvedAriaLabel = ariaLabel || (iconOnly ? safeLabel : undefined);
+    return `<button class="${cls('cg-ui-button', `cg-ui-button-${variant}`, iconOnly && 'cg-ui-button-icon', className)}"${attrs({ type, disabled, ...(resolvedAriaLabel ? {'aria-label': resolvedAriaLabel} : {}), ...dataAttrs })}>${icon ? `<i class="${text(icon)}" aria-hidden="true"></i>` : ''}<span${iconOnly ? ' class="sr-only"' : ''}>${text(safeLabel)}</span></button>`;
   },
   field({ label, name, value = '', type = 'text', placeholder = '', required = false, autocomplete, inputmode, className = '' } = {}) {
     const id = `cg-${String(name || label || 'field').toLowerCase().replace(/[^a-z0-9_-]+/g, '-')}`;
