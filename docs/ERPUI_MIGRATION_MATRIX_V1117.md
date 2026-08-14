@@ -15,11 +15,15 @@ Migrate the complete ERP to one visual contract without changing observable busi
 7. iPhone/iPad installed-PWA behavior must respect safe areas, 44px touch targets and 16px focused form controls.
 8. Tables own horizontal scrolling; the document must not overflow horizontally.
 9. Security hardening is progressive: CSP remains Report-Only until violation telemetry shows the remaining inline/style/script dependencies are safe to remove.
-10. Each logical migration remains a separate commit so any module can be reverted independently.
+10. Financial/fiscal modules require characterization tests before markup migration.
 
 ## Completed foundation
 
 - canonical typography tokens and weights;
+- global five-language i18n infrastructure (`es`, `en`, `zh`, `hi`, `ar`) with RTL support;
+- locale-aware date, number and currency formatting;
+- client-facing copy normalization that removes internal demo/test terminology;
+- contextual palettes and RBAC-focused navigation for clinic, veterinary, seller/commerce and gym verticals;
 - iOS safe-area and touch/input baseline;
 - reusable `ErpStack`, `ErpRow`, `ErpGrid`, `ErpCard`, `ErpSection`, `ErpButton`, `ErpField`, `ErpBadge`, `ErpEmptyState`, `ErpDataTable`;
 - accessible icon-only actions and destructive button state;
@@ -27,7 +31,8 @@ Migrate the complete ERP to one visual contract without changing observable busi
 - WebKit desktop/iPhone Playwright projects;
 - CSP Report-Only collector and dedicated limiter;
 - security CI baseline for secrets, validation, rate limits, CSP telemetry and PWA DOM sinks;
-- managed-auth benchmark document while retaining ContaGest authentication.
+- managed-auth benchmark document while retaining ContaGest authentication;
+- financial characterization tests covering quote taxes/retentions, ledger equality, payroll formula, inventory valuation and weighted-average kardex.
 
 ## Module migration matrix
 
@@ -41,69 +46,69 @@ Migrate the complete ERP to one visual contract without changing observable busi
 | HistoryPage | Medium | **Migrated** | Canonical table/actions; PDF/duplicate/delete/export handlers preserved. |
 | ClientsPage | Medium | **Migrated** | Canonical shell/table/actions; create/sync/delete/cotizador behavior preserved. |
 | SuppliersPage | Medium | **Migrated** | Canonical shell/table/actions; purchase route and persistence behavior preserved. |
-| DashboardPage | Medium | Planned | Normalize KPI hierarchy, grid density and responsive priorities. |
-| AnalyticsPage | Medium | Planned | Normalize KPI/chart shells; preserve analytics service contracts. |
-| ReportsPage | Medium | Planned | Unify filters/report table/export actions. |
-| TasksPage | Medium | Planned | Normalize list/table/actions without changing task state. |
-| InventoryPage | Medium | Planned | Normalize filters, forms, stock table and action density. |
-| KardexPage | Medium | Planned | Canonical financial table and numeric alignment. |
-| PurchasesPage | Medium | Planned | Preserve purchasing flow and supplier integration. |
-| SalesPage | Medium | Planned | Preserve sales flow, fiscal totals and actions. |
+| DashboardPage | Medium | **Migrated** | Real-state KPI hierarchy and CSP-safe monthly flow; invented fallback totals removed. |
+| AnalyticsPage | Medium | **Migrated** | Canonical sections/table; CSP-safe progress bars; analytics contracts preserved. |
+| ReportsPage | Medium | **Migrated** | Canonical filters/KPIs/table/export; values derived from real state. |
+| TasksPage | Medium | **Migrated** | Canonical form/list/board/actions; task service contracts preserved. |
+| InventoryPage | Medium | **Migrated** | Canonical form/table/KPIs; synchronization copy normalized. |
+| KardexPage | Medium | **Migrated** | Canonical financial table, locale-aware timestamps and numeric alignment. |
+| PurchasesPage | Medium | **Migrated** | Purchase creation, draft deletion and accounting reversal actions preserved. |
+| SalesPage | Medium | **Migrated** | Sales/create/sync/quote/delete behavior preserved with seller workspace context. |
 | OrderTrackingPage | Medium | Planned | Normalize status timeline/cards. |
-| BankingPage | Medium | Planned | Financial numeric alignment and responsive table work. |
-| PayrollPage | High | Planned | Characterization tests first; preserve payroll calculations and contracts. |
-| HrDashboardPage | Medium | Planned | Normalize HR KPIs/cards before payroll detail screens. |
-| ChartAccountsPage | High | Planned | Preserve accounting hierarchy and plan-of-accounts interactions. |
-| LedgerPage | High | Planned | Financial-table migration only after characterization tests. |
-| GeneralLedgerPage | High | Planned | Preserve debit/credit totals and report semantics. |
-| TrialBalancePage | High | Planned | Preserve accounting equality and numeric precision. |
-| WorksheetPage | High | Planned | Preserve worksheet calculations and export behavior. |
-| FinancialStatementsPage | High | Planned | Preserve statement grouping/totals and reporting semantics. |
-| AccountingClosePage | High | Planned | Close-period flow requires regression characterization before UI migration. |
-| SalesBookPage | High | Planned | Preserve fiscal columns and tax totals. |
-| TaxesPage | High | Planned | Preserve tax logic and regulatory labels. |
+| BankingPage | Medium | **Migrated** | Accounts/movements/import/export/reconciliation preserved on canonical sections/table. |
+| PayrollPage | High | **Migrated + characterized** | Existing payroll formula covered before markup migration; employee/receipt/period actions preserved. |
+| HrDashboardPage | Medium | Planned | Normalize HR KPIs/cards after payroll detail screen. |
+| ChartAccountsPage | High | Characterization ready | Preserve accounting hierarchy and plan-of-accounts interactions. |
+| LedgerPage | High | Characterization ready | Double-entry tolerance and reversal policy locked before migration. |
+| GeneralLedgerPage | High | Characterization ready | Preserve debit/credit totals and report semantics. |
+| TrialBalancePage | High | Characterization ready | Preserve accounting equality and numeric precision. |
+| WorksheetPage | High | Characterization ready | Preserve worksheet calculations and export behavior. |
+| FinancialStatementsPage | High | Characterization ready | Preserve statement grouping/totals and reporting semantics. |
+| AccountingClosePage | High | Characterization ready | Close-period flow still needs route-specific regression before markup change. |
+| SalesBookPage | High | Characterization ready | Quote/fiscal calculation baseline exists; route-specific tax-book tests next. |
+| TaxesPage | High | Characterization ready | Quote tax/retention calculations locked; UI migration next. |
 | RegulatoryPage | High | Planned | Preserve feed/source behavior; migrate display primitives only. |
-| QuotePage | High | Planned | Quotation/invoice workflow; preserve all IDs and calculation events. |
+| QuotePage | High | **Characterized / UI pending** | Taxes and retentions baseline locked; preserve all form IDs/calculation events during migration. |
 | DataImportPage | Medium | Planned | Normalize upload/drop zone/progress/errors; retain parsers. |
 | QrBarcodePage | Medium | Planned | Normalize scanner/output cards; verify camera permission on iOS/WebKit. |
 | InventoryScannerPage | Medium | Planned | Verify camera lifecycle and PWA safe-area behavior before visual cleanup. |
 | DeliveryMapPage | Medium | Planned | Verify geolocation permissions and map sizing first. |
 | MobilePreviewPage | Low | Planned | Align preview with canonical device/responsive tokens. |
-| ModuleCatalogPage | Low | Planned | Canonical catalog grid/cards/search. |
-| BrandGuidelinesPage | Low | Planned | Replace legacy font examples with canonical Inter/system-mono policy. |
+| ModuleCatalogPage | Low | Planned | Canonical catalog grid/cards/search and customer copy. |
+| BrandGuidelinesPage | Low | Planned | Replace remaining legacy font examples with canonical Inter/system-mono policy. |
 | CommunicationTemplatesPage | Medium | Planned | Normalize editor/list/actions; retain template data contracts. |
 | AiAssistantPage | Medium | Planned | Keep server-only secrets; normalize conversation/tool surfaces. |
 | BackendPage | Low | Planned | Canonical status/diagnostic cards and code typography. |
 | AuditPage | Medium | Planned | Canonical immutable event table and filters. |
 | LicensesPage | High | Planned | Preserve licensing/device controls and security semantics. |
-| SettingsPage | High | Planned | Theme/accessibility/preferences migration after core screens stabilize. |
+| SettingsPage | High | **Migrated foundation** | Five languages, binary theme and client-facing copy done; deeper integration/security panels remain. |
 | ProfilePage | Medium | Planned | Normalize account/profile sections without altering session behavior. |
 | AdminPanelPage | High | Planned | Preserve RBAC/tenant/security controls; migrate in small sub-sections. |
-| DemoControlPage | Medium | Planned | Preserve demo access controls. |
-| PretestingDashboardPage | Medium | Planned | Normalize QA status matrices/cards. |
-| HealthcarePage | High | Planned | Vertical-domain workflows; migrate after shared CRUD/accounting primitives stabilize. |
-| VeterinaryClinicPage | High | Planned | Vertical-domain workflow characterization first. |
-| GymManagementPage | High | Planned | Vertical-domain workflow characterization first. |
+| DemoControlPage | Medium | Copy normalized | Internal identifiers retained; customer-facing copy changed to commercial access terminology. |
+| PretestingDashboardPage | Medium | Copy normalized | Visible naming becomes “Estado del sistema”; deeper ERPUI migration pending. |
+| HealthcarePage | High | Vertical context ready | Clinical palette/RBAC/access priority implemented; workflow-specific ERPUI migration pending. |
+| VeterinaryClinicPage | High | Vertical context ready | Veterinary palette + MUI typography/RBAC implemented; workflow characterization pending. |
+| GymManagementPage | High | Vertical context ready | Fitness palette/RBAC/access priority implemented; workflow characterization pending. |
 | FastFoodPosPage | High | Planned | POS touch flow must retain speed and transaction semantics. |
 | FoodOrdersPage | High | Planned | Preserve order state machine. |
 | LoginPage | Critical | **Deferred / no redesign** | Existing auth is retained. Only security/accessibility fixes after dedicated auth characterization tests. |
 
 ## Batch order
 
-### Batch 1 — low-risk reference/support screens
-Completed: Business Rules, Accounting Standards, Module Maturity, Help, Support CTA.
+### Batch 1 — reference/support screens
+Completed: Business Rules, Accounting Standards, Module Maturity, Help and Support CTA.
 
-### Batch 2 — CRUD/reference operations
-In progress: History, Clients, Suppliers. Next: Dashboard, Tasks, Inventory, Reports, Analytics, Purchases, Sales, Order Tracking and Banking.
+### Batch 2 — operational/CRUD screens
+Completed or materially migrated: History, Clients, Suppliers, Dashboard, Tasks, Inventory, Reports, Analytics, Purchases, Sales, Banking, Kardex and Payroll. Remaining: Order Tracking and related POS/order flows.
 
 ### Batch 3 — accounting/fiscal core
-Chart of Accounts, Ledger, General Ledger, Trial Balance, Worksheet, Financial Statements, Accounting Close, Sales Book, Taxes and Regulatory. These require characterization/regression checks before changing markup.
+Characterization baseline is now active. Next markup migrations: Chart of Accounts, Ledger, General Ledger, Trial Balance, Worksheet, Financial Statements, Accounting Close, Sales Book, Taxes, Regulatory and Quote. These will be changed only behind regression invariants.
 
 ### Batch 4 — device/PWA and vertical modules
 QR/barcode, inventory scanner, delivery map, mobile preview, healthcare, veterinary, gym, POS and food orders. Camera/geolocation/iOS behavior must be tested alongside the visual migration.
 
 ### Batch 5 — administration/security/settings
-Licenses, Audit, Admin Panel, Profile, Settings, Demo Control and pretesting. Authentication remains a separate final stream and is not replaced.
+Licenses, Audit, Admin Panel, Profile, deeper Settings, Commercial Access and System Status. Authentication remains a separate final stream and is not replaced.
 
 ## Definition of done per module
 
@@ -117,4 +122,5 @@ A module can move to **Migrated** only when:
 - no server-only secret is referenced by frontend code;
 - destructive actions remain visually and semantically distinct;
 - automated browser coverage exists when the module has device-specific behavior;
-- CSP telemetry is not worsened by new inline styles/scripts.
+- CSP telemetry is not worsened by new inline styles/scripts;
+- financial/fiscal modules pass their characterization invariants before and after migration.
