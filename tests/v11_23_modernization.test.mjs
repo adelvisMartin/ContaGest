@@ -4,6 +4,9 @@ import fs from 'node:fs';
 
 const read = (path) => fs.readFileSync(new URL(`../${path}`, import.meta.url), 'utf8');
 const app = read('frontend/src/app.js');
+const authService = read('frontend/src/services/authService.js');
+const loginEnhancer = read('frontend/src/services/loginEnhancer.js');
+const legalEnhancer = read('frontend/src/services/legalAcceptanceEnhancer.js');
 const runtimeCss = read('frontend/src/styles/erp-runtime.css');
 const veterinary = read('frontend/src/pages/VeterinaryClinicPageV1123.jsx');
 const hipicoIndex = read('frontend/public/hipico-control/index.html');
@@ -16,6 +19,9 @@ const forbiddenLegacyBrand = ['Triple','Crown'].join(' ');
 test('ContaGest uses one universal runtime CSS entrypoint', () => {
   const imports = [...app.matchAll(/import ['"]\.\/styles\/([^'"]+)['"]/g)].map((match) => match[1]);
   assert.deepEqual(imports, ['erp-runtime.css']);
+  for (const moduleSource of [authService, loginEnhancer, legalEnhancer]) {
+    assert.doesNotMatch(moduleSource, /import ['"]\.\.\/styles\//);
+  }
   assert.match(runtimeCss, /shell-contract\.css.*layer\(cg\.shell-contract\)/s);
   assert.match(runtimeCss, /vertical-contexts\.css.*layer\(cg\.context\)/s);
   assert.match(runtimeCss, /erp-system\.css/);
