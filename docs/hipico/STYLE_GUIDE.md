@@ -8,7 +8,7 @@ Control Hípico es un producto operacional propio: sobrio, preciso, rápido y co
 
 - Nombre visible obligatorio: **CONTROL HÍPICO**.
 - Marca primaria: caballo negro con base verde oliva y detalles dorados suministrado para el producto.
-- Marca prohibida: `Triple Crown` y cualquier derivado visible o funcional.
+- Toda marca histórica anterior está prohibida en assets, metadata, PWA, documentación activa y build visible.
 - El app mark se usa en favicon, PWA, Apple touch icon, splash y Open Graph sin deformar el caballo.
 
 ## Tokens

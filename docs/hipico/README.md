@@ -23,4 +23,4 @@ Se preservan Resumen, Captura, Participantes, Chat WhatsApp, Adelantadas, Histor
 
 ## Regla de identidad
 
-La única marca visible es **CONTROL HÍPICO**. `Triple Crown` no puede aparecer en el build, PWA, metadata, exports, tests visibles ni caches activos.
+La única marca visible y activa es **CONTROL HÍPICO**. Cualquier identidad histórica debe permanecer fuera de build, PWA, metadata, exports, tests visibles y caches activos.

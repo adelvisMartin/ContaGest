@@ -49,7 +49,7 @@ Esta fase no declara terminadas tareas que requieren infraestructura externa o c
 
 ## Definition of Done de una fase
 
-Una fase solo puede marcarse completa cuando: build reproducible; no hay secretos en frontend; no existe identidad Triple Crown en build; flujos funcionales caracterizados mantienen resultados; responsive no presenta overflow accidental; offline conserva datos; service worker puede actualizar/rollback; tests relevantes se ejecutan realmente; existe commit/PR trazable; rollback documentado; y producción corresponde al SHA aprobado.
+Una fase solo puede marcarse completa cuando: build reproducible; no hay secretos en frontend; no existe identidad histórica anterior en el build activo; flujos funcionales caracterizados mantienen resultados; responsive no presenta overflow accidental; offline conserva datos; service worker puede actualizar/rollback; tests relevantes se ejecutan realmente; existe commit/PR trazable; rollback documentado; y producción corresponde al SHA aprobado.
 
 ## Rollback
 

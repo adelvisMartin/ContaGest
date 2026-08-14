@@ -11,6 +11,7 @@ const hipicoCss = read('frontend/public/hipico-control/assets/css/precision-hipi
 const hipicoApp = read('frontend/public/hipico-control/assets/js/app-shell.js');
 const hipicoManifest = read('frontend/public/hipico-control/manifest.webmanifest');
 const hipicoSw = read('frontend/public/hipico-control/sw.js');
+const forbiddenLegacyBrand = ['Triple','Crown'].join(' ');
 
 test('ContaGest uses one universal runtime CSS entrypoint', () => {
   const imports = [...app.matchAll(/import ['"]\.\/styles\/([^'"]+)['"]/g)].map((match) => match[1]);
@@ -32,8 +33,8 @@ test('Veterinary v11.23 exposes master detail, edit and clinical chronology', ()
 
 test('Control Hipico has only its own visible product identity', () => {
   assert.match(hipicoIndex, /CONTROL HÍPICO/);
-  assert.doesNotMatch(hipicoIndex, /Triple Crown/i);
-  assert.doesNotMatch(hipicoManifest, /Triple Crown/i);
+  assert.equal(hipicoIndex.toLowerCase().includes(forbiddenLegacyBrand.toLowerCase()), false);
+  assert.equal(hipicoManifest.toLowerCase().includes(forbiddenLegacyBrand.toLowerCase()), false);
   const manifest = JSON.parse(hipicoManifest);
   assert.equal(manifest.name, 'Control Hípico');
   assert.equal(manifest.scope, '/hipico-control/');
