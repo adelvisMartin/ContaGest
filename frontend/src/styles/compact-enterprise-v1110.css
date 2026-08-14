@@ -1,6 +1,9 @@
-/* ContaGest v11.21 compatibility entrypoint.
-   Contextual vertical accents are intentionally placed in a lower-precedence
-   cascade layer. The canonical ERP system loads after them and owns shell,
-   form anatomy and responsive geometry for every route. */
+/* ContaGest compatibility entrypoint.
+   v11.22 establishes a first-priority shell invariant layer so legacy/context
+   !important rules cannot move or duplicate critical mobile header controls.
+   The canonical ERP system remains the authored runtime source; contextual
+   vertical styling is isolated below the invariant contract during migration. */
+@layer cg.shell-contract, cg.context;
+@import './shell-contract.css' layer(cg.shell-contract);
 @import './vertical-contexts.css' layer(cg.context);
 @import './erp-system.css';
