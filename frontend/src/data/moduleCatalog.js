@@ -1,7 +1,7 @@
 export const MODULE_TIERS = {
-  core: { label:'Core real', tone:'success', description:'Módulos operativos requeridos para producción.' },
-  advanced: { label:'Módulo avanzado', tone:'brand', description:'Módulos especializados con alcance empresarial.' },
-  demo: { label:'Módulo demo/comercial', tone:'warning', description:'Módulos de preventa o personalización.' }
+  core: { label:'Operativo', tone:'success', description:'Funciones esenciales para la operación diaria.' },
+  advanced: { label:'Especializado', tone:'brand', description:'Herramientas especializadas según el área.' },
+  demo: { label:'Opcional', tone:'warning', description:'Extensiones disponibles según el plan y la configuración.' }
 };
 
 export const MODULE_AREAS = [
@@ -65,16 +65,16 @@ export const MODULE_CATALOG = [
   { route:'auditoria', name:'Auditoría', area:'Analítica', tier:'advanced', modes:['contador','salud','veterinaria','gimnasio','admin'] },
 
   { route:'configuracion', name:'Configuración', area:'Administración', tier:'core', modes:['admin'] },
-  { route:'backend', name:'Backend & APIs', area:'Administración', tier:'core', modes:['admin'] },
+  { route:'backend', name:'Integraciones', area:'Administración', tier:'core', modes:['admin'] },
   { route:'admin', name:'Panel admin', area:'Administración', tier:'core', modes:['admin'] },
   { route:'marca', name:'Manual de marca', area:'Administración', tier:'advanced', modes:['admin'] },
-  { route:'demo-control', name:'Control demos', area:'Administración', tier:'core', modes:['admin'] },
+  { route:'demo-control', name:'Accesos comerciales', area:'Administración', tier:'core', modes:['admin'] },
   { route:'licencias', name:'Licencias', area:'Administración', tier:'core', modes:['admin'] },
   { route:'importacion-data', name:'Carga masiva', area:'Administración', tier:'core', modes:['admin','contador','comercio'] },
   { route:'reglas-negocio', name:'Reglas de negocio', area:'Administración', tier:'core', modes:['admin','contador'] },
-  { route:'modulos-madurez', name:'Madurez módulos', area:'Administración', tier:'core', modes:['admin'] },
-  { route:'pretesting', name:'Pretesting QA', area:'Administración', tier:'core', modes:['admin'] },
-  { route:'vistas', name:'Prototipos Stitch', area:'Administración', tier:'demo', modes:['demo','admin'] },
+  { route:'modulos-madurez', name:'Módulos disponibles', area:'Administración', tier:'core', modes:['admin'] },
+  { route:'pretesting', name:'Estado del sistema', area:'Administración', tier:'core', modes:['admin'] },
+  { route:'vistas', name:'Galería de módulos', area:'Administración', tier:'demo', modes:['demo','admin'] },
   { route:'profile', name:'Perfil', area:'Administración', tier:'advanced', modes:ALL_OPERATIONAL_MODES },
 
   { route:'asistente-ia', name:'Asistente IA', area:'Soporte', tier:'advanced', modes:ALL_OPERATIONAL_MODES },
@@ -90,7 +90,7 @@ export const BUSINESS_MODES = {
   salud:{ label:'Modo Salud', description:'Pacientes, profesionales, agenda e historias clínicas.' },
   veterinaria:{ label:'Modo Veterinaria', description:'Mascotas, tutores, agenda, historias y vacunas.' },
   gimnasio:{ label:'Modo Gimnasio', description:'Socios, membresías, asistencia, rutinas y nutrición.' },
-  demo:{ label:'Modo Demo Comercial', description:'Módulos de preventa y vistas demostrativas.' },
+  demo:{ label:'Modo Comercial', description:'Selección de módulos para presentaciones y accesos temporales.' },
   admin:{ label:'Modo Administrador', description:'Todos los módulos, seguridad y configuración.' }
 };
 

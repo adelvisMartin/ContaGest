@@ -1,12 +1,32 @@
-import { PageHeader, Badge } from '../components/ui/index.js';
+import { PageHeader, Badge, ErpGrid, ErpSection, ErpStack } from '../components/ui/index.js';
+import { escapeHtml } from '../utils/dom.js';
 import { MODULE_CATALOG, MODULE_TIERS } from '../data/moduleCatalog.js';
+
+const safe = (value) => escapeHtml(String(value ?? ''));
 
 export const ModuleMaturityPage = {
   render() {
     const groups = Object.entries(MODULE_TIERS).map(([tier, meta]) => {
-      const modules = MODULE_CATALOG.filter((m) => m.tier === tier);
-      return `<article class="surface p-5 rounded-[1.5rem]"><div class="flex items-start justify-between gap-3"><div><h3 class="text-2xl font-black">${meta.label}</h3><p class="subtitle">${meta.description}</p></div>${Badge(String(modules.length), meta.tone)}</div><div class="mt-4 grid gap-2">${modules.map((m) => `<div class="cg-feature-pill"><i class="fa-solid fa-cube"></i><strong>${m.name}</strong><span>${m.area}</span></div>`).join('')}</div></article>`;
+      const modules = MODULE_CATALOG.filter((module) => module.tier === tier);
+      const content = ErpStack(modules.map((module) => `
+        <div class="cg-ui-key-value">
+          <span class="cg-ui-row"><i class="fa-solid fa-cube" aria-hidden="true"></i><strong>${safe(module.name)}</strong></span>
+          <span class="cg-ui-muted">${safe(module.area)}</span>
+        </div>`).join(''), { gap:'sm' });
+
+      return ErpSection({
+        tag:'article',
+        title:meta.label,
+        description:meta.description,
+        actions:Badge(String(modules.length), meta.tone),
+        content
+      });
     }).join('');
-    return `<section class="cg-page-stack">${PageHeader({eyebrowKey:'moduleMaturityEyebrow', titleKey:'moduleMaturityTitle', descKey:'moduleMaturityDesc'})}<div class="pl-grid pl-grid-3">${groups}</div></section>`;
+
+    return `<section class="cg-page-stack">${PageHeader({
+      eyebrowKey:'moduleMaturityEyebrow',
+      titleKey:'moduleMaturityTitle',
+      descKey:'moduleMaturityDesc'
+    })}${ErpGrid(groups, { columns:'three' })}</section>`;
   }
 };

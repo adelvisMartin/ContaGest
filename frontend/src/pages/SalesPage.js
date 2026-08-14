@@ -1,59 +1,59 @@
-import { PageHeader, Field, Select, Button, Table, Badge, StatCard } from '../components/ui/index.js';
+import { PageHeader, Field, Select, Button, Badge, MetricGrid, ErpButton, ErpDataTable, ErpRow, ErpSection } from '../components/ui/index.js';
 import { bs, shortDate } from '../core/formatters.js';
 import { escapeHtml, mountSubmit, qsa, uid, today } from '../utils/dom.js';
 import { RuntimePolicy } from '../services/runtimePolicy.js';
+import { t } from '../i18n/useTranslate.js';
 
-const actionCell = (sale) => `<div class="cg-row-actions">
-  <button class="btn btn-secondary !p-2" type="button" data-send-quote="${sale.id}" aria-label="Cargar venta al cotizador"><i class="fa-solid fa-file-invoice-dollar"></i></button>
-  <button class="btn btn-danger !p-2" type="button" data-delete-sale="${sale.id}" aria-label="Eliminar venta"><i class="fa-solid fa-trash"></i></button>
-</div>`;
+const safe = (value) => escapeHtml(String(value ?? ''));
 
 export const SalesPage = {
   render(state) {
+    const lang = state.settings?.lang || 'es';
     const sales = state.sales || [];
     const total = sales.reduce((sum, item) => sum + Number(item.amount || 0), 0);
     const pending = sales.filter((item) => String(item.status).toLowerCase().includes('pend')).length;
+    const pendingAmount = sales.filter((item) => item.status !== 'Cobrada').reduce((sum,item)=>sum+Number(item.amount||0),0);
     const clientOptions = [{ value:'', label:'Consumidor final / sin cliente' }, ...(state.clients || []).map((client) => ({ value:client.id, label:`${client.name} · ${client.rif}` }))];
-    const rows = sales.map((sale) => `<tr>
-      <td class="cg-cell-strong">${escapeHtml(sale.invoice || sale.id)}</td>
-      <td>${shortDate(sale.date)}</td>
-      <td>${escapeHtml(sale.client)}</td>
-      <td class="cg-cell-money">${bs(sale.amount)}</td>
-      <td>${escapeHtml(sale.method || 'VES')}</td>
-      <td>${Badge(sale.status, sale.status === 'Cobrada' ? 'success' : 'warning')}</td>
-      <td>${sale.source === 'supabase' ? Badge('Servidor','success') : Badge('Solo desarrollo','warning')}</td>
-      <td class="cg-actions-cell">${actionCell(sale)}</td>
-    </tr>`);
 
-    return `<section class="surface rounded-[1.75rem] p-5 sm:p-7">
-      ${PageHeader({
-        eyebrowKey:'salesEyebrow',
-        titleKey:'salesTitle',
-        descKey:'salesDesc',
-        actions: Button({ id:'btnNewSaleFocus', text:'Nueva venta', icon:'fa-plus', attrs:'type="button"' }) + Button({ id:'btnSyncSales', text:'Sincronizar', icon:'fa-cloud-arrow-down', variant:'secondary', attrs:'type="button"' })
-      })}
-      <div class="mb-5 grid gap-4 md:grid-cols-4">
-        ${StatCard({label:'Ventas del período', value:bs(total), hint:'Fuente autoritativa al sincronizar', icon:'fa-cash-register'})}
-        ${StatCard({label:'Documentos', value:String(sales.length), hint:`${pending} pendientes`, icon:'fa-cart-shopping', tone:'accent'})}
-        ${StatCard({label:'Cobranza pendiente', value:bs(sales.filter((item)=>item.status!=='Cobrada').reduce((sum,item)=>sum+Number(item.amount||0),0)), icon:'fa-clock'})}
-        ${StatCard({label:'Ticket promedio', value:bs(total / Math.max(sales.length, 1)), icon:'fa-chart-line'})}
-      </div>
-      <form id="saleForm" class="panel-soft cg-record-form rounded-[1.5rem] p-4">
-        <div class="cg-record-fields cg-fields-compact">
-          ${Field({ labelKey:'date', name:'date', type:'date', value:today() })}
-          ${Field({ labelKey:'invoice', name:'invoice', value:`FAC-${new Date().getFullYear()}-${String(sales.length + 1).padStart(3,'0')}` })}
-          ${Select({ labelKey:'client', name:'clientId', options:clientOptions })}
-          ${Field({ labelKey:'client', name:'client', placeholder:'Nombre libre si no está registrado' })}
-          ${Field({ labelKey:'amount', name:'amount', type:'number', attrs:'step="0.01" min="0"', value:'0' })}
-          ${Select({ labelKey:'status', name:'status', options:[{value:'Cobrada',label:'Cobrada'}, {value:'Pendiente',label:'Pendiente'}, {value:'Anulada',label:'Anulada'}] })}
-          ${Select({ labelKey:'method', name:'method', options:[{value:'Transferencia',label:'Transferencia'}, {value:'Punto',label:'Punto'}, {value:'Efectivo',label:'Efectivo'}, {value:'Crédito',label:'Crédito'}] })}
-        </div>
-        <div class="cg-record-actions">${Button({ text:'Registrar venta', icon:'fa-cash-register', type:'submit' })}</div>
-      </form>
-      <div class="panel-soft cg-record-table rounded-[1.5rem] p-4">
-        ${Table({ headers:[{key:'invoice'}, {key:'date'}, {key:'client'}, {key:'amount'}, {key:'method'}, {key:'status'}, {label:'Persistencia'}, {key:'actions'}], rows })}
-      </div>
-    </section>`;
+    const table = ErpDataTable({
+      caption:'Ventas registradas',
+      columns:[
+        { key:'invoice', label:t('invoice',lang), render:(sale)=>safe(sale.invoice || sale.id) },
+        { key:'date', label:t('date',lang), render:(sale)=>safe(shortDate(sale.date)) },
+        { key:'client', label:t('client',lang), render:(sale)=>safe(sale.client) },
+        { key:'amount', label:t('amount',lang), numeric:true, render:(sale)=>safe(bs(sale.amount)) },
+        { key:'method', label:t('method',lang), render:(sale)=>safe(sale.method || 'VES') },
+        { key:'status', label:t('status',lang), render:(sale)=>Badge(sale.status, sale.status === 'Cobrada' ? 'success' : 'warning') },
+        { key:'source', label:t('sync',lang), render:(sale)=>sale.source === 'supabase' ? Badge(t('synced',lang),'success') : Badge(t('pendingSync',lang),'warning') },
+        { key:'actions', label:t('actions',lang), render:(sale)=>ErpRow(
+          ErpButton('Cargar venta al cotizador', { variant:'secondary', icon:'fa-solid fa-file-invoice-dollar', iconOnly:true, data:{ 'send-quote':sale.id } })
+          + ErpButton(t('delete',lang), { variant:'danger', icon:'fa-solid fa-trash', iconOnly:true, data:{ 'delete-sale':sale.id } }),
+          { wrap:true }
+        ) }
+      ],
+      rows:sales
+    });
+
+    const form = `<form id="saleForm" class="cg-record-form"><div class="cg-record-fields cg-fields-compact">
+      ${Field({ labelKey:'date', name:'date', type:'date', value:today() })}
+      ${Field({ labelKey:'invoice', name:'invoice', value:`FAC-${new Date().getFullYear()}-${String(sales.length + 1).padStart(3,'0')}` })}
+      ${Select({ labelKey:'client', name:'clientId', options:clientOptions })}
+      ${Field({ labelKey:'client', name:'client', placeholder:'Nombre libre si no está registrado' })}
+      ${Field({ labelKey:'amount', name:'amount', type:'number', attrs:'step="0.01" min="0"', value:'0' })}
+      ${Select({ labelKey:'status', name:'status', options:[{value:'Cobrada',label:'Cobrada'}, {value:'Pendiente',label:t('pending',lang)}, {value:'Anulada',label:t('cancelled',lang)}] })}
+      ${Select({ labelKey:'method', name:'method', options:[{value:'Transferencia',label:'Transferencia'}, {value:'Punto',label:'Punto'}, {value:'Efectivo',label:'Efectivo'}, {value:'Crédito',label:'Crédito'}] })}
+      </div><div class="cg-record-actions">${Button({ text:'Registrar venta', icon:'fa-cash-register', type:'submit' })}</div></form>`;
+
+    return `<section class="cg-page-stack cg-sales-workspace">${PageHeader({
+      eyebrowKey:'salesEyebrow', titleKey:'salesTitle', descKey:'salesDesc',
+      actions:Button({ id:'btnNewSaleFocus', text:'Nueva venta', icon:'fa-plus', attrs:'type="button"' })
+        + Button({ id:'btnSyncSales', text:t('sync',lang), icon:'fa-cloud-arrow-down', variant:'secondary', attrs:'type="button"' })
+    })}${MetricGrid([
+      { label:'Ventas del período', value:bs(total), hint:`${sales.length} documentos`, iconName:'fa-cash-register', tone:'success' },
+      { label:'Documentos pendientes', value:String(pending), hint:t('pending',lang), iconName:'fa-clock', tone:pending?'warning':'success' },
+      { label:'Cobranza pendiente', value:bs(pendingAmount), iconName:'fa-wallet', tone:pendingAmount?'warning':'success' },
+      { label:'Ticket promedio', value:bs(total / Math.max(sales.length, 1)), iconName:'fa-chart-line', tone:'brand' }
+    ])}${ErpSection({ title:'Registrar venta', description:'Captura el documento comercial y conserva sus datos para cobranza y seguimiento.', content:form })}${ErpSection({ title:'Ventas registradas', description:'Estado de cobro, sincronización y acciones disponibles.', content:table })}</section>`;
   },
   mount(state, { Store, Toast, navigate, SupabaseSyncService }) {
     document.getElementById('btnSyncSales')?.addEventListener('click', () => SupabaseSyncService.pullSales({ Store, Toast, force:true, silent:false }));
@@ -63,19 +63,19 @@ export const SalesPage = {
       submit?.setAttribute('disabled', 'disabled');
       try {
         const client = (Store.get().clients || []).find((item) => item.id === data.clientId);
-        const saved = await SupabaseSyncService.createSale({ ...data, client: data.client || client?.name || 'Consumidor final' });
+        const saved = await SupabaseSyncService.createSale({ ...data, client:data.client || client?.name || 'Consumidor final' });
         Store.update((draft) => { draft.sales = [saved, ...(draft.sales || []).filter((item) => item.id !== saved.id)]; });
         form.reset();
-        Toast.show('Venta guardada y contabilizada en el servidor.', 'success');
+        Toast.show('Venta guardada y contabilizada.', 'success');
       } catch (error) {
         const decision = RuntimePolicy.handlePersistenceFailure(error, 'la venta');
         if (decision.allowFallback) {
           Store.update((draft) => {
             draft.sales = draft.sales || [];
             draft.sales.unshift({ id:uid('sale'), ...data, amount:Number(data.amount||0), source:'local' });
-            draft.auditLog.unshift({ id:uid('log'), module:'sales', action:'create-sale-development-fallback', at:new Date().toISOString() });
+            draft.auditLog.unshift({ id:uid('log'), module:'sales', action:'create-sale-offline-fallback', at:new Date().toISOString() });
           });
-          Toast.show(`Venta guardada solo para desarrollo. ${decision.message}`, 'warning');
+          Toast.show(`Venta guardada localmente; la sincronización está pendiente. ${decision.message}`, 'warning');
         } else Toast.show(decision.message, 'error');
       } finally { submit?.removeAttribute('disabled'); }
     });

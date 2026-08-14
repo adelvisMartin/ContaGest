@@ -1,5 +1,6 @@
 import { createDefaultState } from '../data/defaults.js';
 import { calculateQuote } from '../core/calculator.js';
+import { normalizeLanguage } from '../i18n/locales.js';
 
 const STORAGE_KEY = 'contagest_ve_enterprise_v7_state';
 const listeners = new Set();
@@ -28,12 +29,17 @@ function normalizeThemePatch(partial) {
   if (!partial?.settings || !Object.prototype.hasOwnProperty.call(partial.settings, 'theme')) return partial;
   const requested = String(partial.settings.theme || '').trim().toLowerCase();
   if (OFFICIAL_THEMES.has(requested)) return partial;
-
-  // Older shell code cycled through several historical visual presets. The
-  // supported UI contract is now intentionally binary: Claro <-> Oscuro.
-  // Any legacy intermediate request from that control becomes a real toggle.
   const current = normalizePersistedTheme(state?.settings?.theme);
   return deepMerge(partial, { settings: { theme: current === 'dark' ? 'light' : 'dark' } });
+}
+
+function normalizeCustomerSamples(nextState) {
+  const settings = nextState.settings || {};
+  if (settings.companyTradeName === 'ContaGest Demo') settings.companyTradeName = 'ContaGest Comercial';
+  if (settings.companySlogan === 'Documento comercial tributario · Vista previa de gestión') settings.companySlogan = 'Gestión empresarial, contable y operativa';
+  nextState.clients = (nextState.clients || []).map((client) => client.name === 'Empresa Demo C.A.' ? { ...client, name:'Distribuidora Metropolitana C.A.', email:client.email === 'compras@clientedemo.com' ? 'compras@distribuidorametropolitana.com' : client.email } : client);
+  nextState.suppliers = (nextState.suppliers || []).map((supplier) => supplier.name === 'Proveedor Demo CA' ? { ...supplier, name:'Suministros Centro C.A.' } : supplier);
+  return nextState;
 }
 
 function hydrate() {
@@ -49,6 +55,8 @@ function hydrate() {
 function normalize(nextState) {
   nextState.settings = nextState.settings || {};
   nextState.settings.theme = normalizePersistedTheme(nextState.settings.theme);
+  nextState.settings.lang = normalizeLanguage(nextState.settings.lang);
+  normalizeCustomerSamples(nextState);
   const rate = Number(nextState.bcv?.rate || 0);
   nextState.calculation = calculateQuote(nextState.quote, rate);
   return nextState;
@@ -85,10 +93,6 @@ export const Store = {
     const result = mutator(draft) || draft;
     state = normalize(result);
     persist();
-    // Background analytics uses Store.update(). While the unauthenticated login
-    // is mounted it must not cause the application shell to replace #app and
-    // destroy the browser's focused credential input. Login transitions use
-    // Store.set({route/pendingMfa/...}) and still notify normally.
     if (previousRoute !== 'login' || state.route !== 'login') emit();
   },
   subscribe(listener) {

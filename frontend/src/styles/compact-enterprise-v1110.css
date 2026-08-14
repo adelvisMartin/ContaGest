@@ -1,2 +1,3 @@
-/* ContaGest compatibility entrypoint. All authored runtime CSS is orchestrated by erp-system.css. */
+/* ContaGest compatibility entrypoint. The canonical ERP system loads first; contextual vertical accents extend it without creating another legacy override stack. */
 @import './erp-system.css';
+@import './vertical-contexts.css';

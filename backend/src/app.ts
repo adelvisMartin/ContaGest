@@ -8,7 +8,9 @@ import { requestContext } from './shared/middleware/context.js';
 import { errorHandler, notFound } from './shared/middleware/error.js';
 import {
   authRateLimit,
+  collectCspReport,
   corsPolicy,
+  cspReportRateLimit,
   csrfProtection,
   enforceProductionSecrets,
   globalRateLimit,
@@ -42,6 +44,17 @@ export function createApp() {
   app.use(securityResponseHeaders);
   app.use(corsPolicy);
   app.use(globalRateLimit);
+
+  // CSP telemetry has no mutation side effect and therefore intentionally sits before
+  // the cookie-session CSRF middleware. It accepts only the reporting content types
+  // and has its own small body/traffic limits.
+  app.post(
+    '/api/v1/security/csp-report',
+    cspReportRateLimit,
+    express.json({ limit: '32kb', type: ['application/csp-report', 'application/reports+json', 'application/json'] }),
+    collectCspReport
+  );
+
   app.use(express.json({ limit: env.JSON_BODY_LIMIT }));
   app.use(csrfProtection);
   app.use(morgan(isProd ? 'combined' : 'dev'));
