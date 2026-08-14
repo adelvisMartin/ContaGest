@@ -1,0 +1,29 @@
+{
+  "id": "/hipico-control/",
+  "name": "Control Hípico",
+  "short_name": "Control Hípico",
+  "description": "Operación hípica profesional, mobile-first y offline-first.",
+  "start_url": "/hipico-control/?source=pwa",
+  "scope": "/hipico-control/",
+  "display": "standalone",
+  "display_override": ["standalone", "minimal-ui"],
+  "orientation": "any",
+  "background_color": "#f4f1e8",
+  "theme_color": "#34423b",
+  "categories": ["productivity", "business", "sports"],
+  "lang": "es-VE",
+  "dir": "ltr",
+  "prefer_related_applications": false,
+  "icons": [
+    {"src":"/hipico-control/assets/brand/icon-192.svg","sizes":"any","type":"image/svg+xml","purpose":"any"},
+    {"src":"/hipico-control/assets/brand/icon-512.svg","sizes":"any","type":"image/svg+xml","purpose":"any"},
+    {"src":"/hipico-control/assets/brand/maskable-192.svg","sizes":"any","type":"image/svg+xml","purpose":"maskable"},
+    {"src":"/hipico-control/assets/brand/maskable-512.svg","sizes":"any","type":"image/svg+xml","purpose":"maskable"}
+  ],
+  "shortcuts": [
+    {"name":"Resumen","short_name":"Resumen","url":"/hipico-control/#resumen","icons":[{"src":"/hipico-control/assets/brand/icon-192.svg","sizes":"any","type":"image/svg+xml"}]},
+    {"name":"Nueva captura","short_name":"Captura","url":"/hipico-control/#captura","icons":[{"src":"/hipico-control/assets/brand/icon-192.svg","sizes":"any","type":"image/svg+xml"}]},
+    {"name":"Participantes","short_name":"Participantes","url":"/hipico-control/#participantes","icons":[{"src":"/hipico-control/assets/brand/icon-192.svg","sizes":"any","type":"image/svg+xml"}]},
+    {"name":"Cierres y saldos","short_name":"Cierres","url":"/hipico-control/#cierres","icons":[{"src":"/hipico-control/assets/brand/icon-192.svg","sizes":"any","type":"image/svg+xml"}]}
+  ]
+}

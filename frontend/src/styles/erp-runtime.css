@@ -1,0 +1,10 @@
+/* ContaGest-VE v11.23 — universal runtime stylesheet entrypoint.
+   app.js imports this file only. Shell invariants are registered first because
+   !important declarations reverse cascade-layer priority. Vertical contexts may
+   alter semantic accents, while erp-system.css remains the authored design core.
+   Historical styles are reachable only through the controlled compatibility
+   layers inside erp-system.css until each module is fully migrated. */
+@layer cg.shell-contract, cg.context;
+@import './shell-contract.css' layer(cg.shell-contract);
+@import './vertical-contexts.css' layer(cg.context);
+@import './erp-system.css';

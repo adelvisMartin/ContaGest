@@ -7,6 +7,7 @@ import { asyncHandler, HttpError, ok } from '../../shared/http.js';
 import { requireTenant, requirePermission } from '../../shared/middleware/context.js';
 import { ensureAccountMembership } from '../../shared/identity/accountMembership.js';
 import { hashLicenseKey, validateUserLicense } from '../../shared/licensing/licenseGuard.js';
+import { bootstrapQaLicense } from '../../shared/licensing/qaBootstrap.js';
 import { readDeviceCredential, setDeviceCredentialCookie } from '../../shared/auth/sessionCookies.js';
 
 const router = Router();
@@ -87,12 +88,13 @@ function generateTemporaryPassword() {
 }
 
 function normalizeConfig(value: unknown) {
-  if (Array.isArray(value)) return { enabled: value, businessSector: 'comercio', commercialUse: 'evaluacion' };
+  if (Array.isArray(value)) return { enabled: value, businessSector: 'comercio', commercialUse: 'evaluacion', qaMode:false };
   const data = value && typeof value === 'object' ? value as Record<string, unknown> : {};
   return {
     enabled: Array.isArray(data.enabled) ? data.enabled.map(String) : [],
     businessSector: String(data.businessSector || 'comercio'),
-    commercialUse: String(data.commercialUse || 'evaluacion')
+    commercialUse: String(data.commercialUse || 'evaluacion'),
+    qaMode: data.qaMode === true
   };
 }
 
@@ -120,6 +122,7 @@ function publicLicense(record: any, tenant?: any, extension: Partial<LicenseExte
     plan: record.plan,
     keyPreview: record.keyPreview,
     modules: config.enabled,
+    qaMode: config.qaMode,
     businessSector: extension.businessCategory || config.businessSector,
     commercialUse: config.commercialUse,
     maxUsers: Number(extension.maxUsers || 1),
@@ -225,6 +228,18 @@ async function assertSubscriptionModules(subscriptionId:string, tenantId:string,
 async function validateFromRequest(req:any, body:z.infer<typeof validateSchema>) {
   const ctx = req.context;
   if (!ctx.email) throw new HttpError(401, 'La sesión no contiene correo de usuario.');
+
+  if (body.licenseKey) {
+    await bootstrapQaLicense({
+      tenantId:ctx.tenantId,
+      userId:ctx.userId || null,
+      userEmail:ctx.email,
+      licenseKey:body.licenseKey,
+      ip:req.ip,
+      userAgent:req.headers['user-agent'] || null
+    });
+  }
+
   const result = await validateUserLicense({
     tenantId:ctx.tenantId,
     userId:ctx.userId || null,

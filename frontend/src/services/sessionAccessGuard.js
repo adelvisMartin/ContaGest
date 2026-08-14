@@ -11,6 +11,13 @@ const normalizeRole = (value = '') => String(value || '')
   .normalize('NFD')
   .replace(/[\u0300-\u036f]/g, '');
 
+const isActiveQaLicense = (state, route) => {
+  const license = state?.activeLicense;
+  if (license?.qaMode !== true || license?.status !== 'active') return false;
+  if (license.expiresAt && new Date(license.expiresAt).getTime() <= Date.now()) return false;
+  return CORE.has(route) || (Array.isArray(license.modules) && license.modules.includes(route));
+};
+
 export function installSessionAccessGuard() {
   if (installed) return;
   installed = true;
@@ -20,6 +27,11 @@ export function installSessionAccessGuard() {
       if (!route || CORE.has(route)) return previous(state, route);
       const allowedByExistingRules = previous(state, route);
       if (!allowedByExistingRules) return false;
+
+      // QA integral is a time-bound, audited license. The backend remains authoritative
+      // for every protected operation; this only prevents stale client-role metadata
+      // from hiding modules explicitly enabled by the active QA license.
+      if (isActiveQaLicense(state, route)) return true;
 
       const profile = state?.profile || {};
       const role = normalizeRole(profile.role);
