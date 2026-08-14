@@ -1,5 +1,6 @@
 @import './theme-v1115.css';
 @import './theme-v1115-hotfix.css';
+@import './header-polish-v1115.css';
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
