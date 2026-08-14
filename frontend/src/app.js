@@ -25,7 +25,16 @@ const pageRegistry={
 };
 const loaded=new Map(),CORE_LICENSE=new Set(['dashboard','profile','ayuda','soporte','login']),REACT_ROUTES=new Set(['veterinaria']);
 const originalCanAccess=AccessControlService.canAccessRoute.bind(AccessControlService);
-AccessControlService.canAccessRoute=(state,route)=>{const license=state?.activeLicense;if(!license)return originalCanAccess(state,route);if(CORE_LICENSE.has(route))return true;return license.status==='active'&&(!license.expiresAt||new Date(license.expiresAt)>new Date())&&Array.isArray(license.modules)&&license.modules.includes(route);};
+AccessControlService.canAccessRoute=(state,route)=>{
+  const allowedByRole=originalCanAccess(state,route);
+  if(!allowedByRole)return false;
+  const session=AuthService.getSession();
+  const license=state?.activeLicense;
+  const enforceLicense=Boolean(license&&session?.audience==='client');
+  if(!enforceLicense)return true;
+  if(CORE_LICENSE.has(route))return true;
+  return license.status==='active'&&(!license.expiresAt||new Date(license.expiresAt)>new Date())&&Array.isArray(license.modules)&&license.modules.includes(route);
+};
 const app=document.getElementById('app');
 let rendering=false,pending=false,lastRoute=null,mountedPage=null,lastSignature='',globalKeys=false,outsideUserMenu=false,autoBcv=false;
 const lastAutoSync=new Map();
