@@ -155,6 +155,14 @@
   .cg-ui-button-primary { background: var(--cg-primary); color: #fff; }
   .cg-ui-button-primary:hover { background: var(--cg-primary-hover); }
   .cg-ui-button-secondary { background: var(--cg-surface); color: var(--cg-text); border-color: var(--cg-border); }
+  .cg-ui-button-secondary:hover { background: var(--cg-surface-soft); }
+  .cg-ui-button-danger { background: #fff1f2; color: #b42318; border-color: #fecdd3; }
+  .cg-ui-button-danger:hover { background: #ffe4e6; }
+  .cg-ui-button-icon { width: var(--cg-control); min-width: var(--cg-control); padding-inline: 0; flex: 0 0 auto; }
+  html.dark .cg-ui-button-danger,
+  html.enterprise .cg-ui-button-danger { background: #3b1216; color: var(--cg-danger); border-color: #7f1d1d; }
+  html.dark .cg-ui-button-danger:hover,
+  html.enterprise .cg-ui-button-danger:hover { background: #4c151c; }
   .cg-ui-table-wrap { width: 100%; max-width: 100%; overflow-x: auto; overscroll-behavior-inline: contain; -webkit-overflow-scrolling: touch; border: 1px solid var(--cg-border); border-radius: var(--cg-radius-md); }
   .cg-ui-table { width: 100%; border-collapse: collapse; background: var(--cg-surface); }
   .cg-ui-table th { padding: 11px 12px; background: var(--cg-surface-soft); border-bottom: 1px solid var(--cg-border); color: var(--cg-text-muted); font-size: var(--cg-text-xs); text-transform: uppercase; letter-spacing: .045em; text-align: left; white-space: nowrap; }
