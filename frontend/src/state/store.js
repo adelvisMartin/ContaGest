@@ -5,6 +5,8 @@ const STORAGE_KEY = 'contagest_ve_enterprise_v7_state';
 const listeners = new Set();
 const clone = (value) => JSON.parse(JSON.stringify(value));
 const LOGIN_RENDER_KEYS = new Set(['route', 'pendingMfa', 'profile', 'activeLicense']);
+const OFFICIAL_THEMES = new Set(['light', 'dark']);
+const LEGACY_DARK_THEMES = new Set(['dark', 'enterprise', 'executive', 'finance', 'spectrum']);
 
 function deepMerge(target, source) {
   if (!source || typeof source !== 'object') return target;
@@ -14,6 +16,24 @@ function deepMerge(target, source) {
     else output[key] = value;
   });
   return output;
+}
+
+function normalizePersistedTheme(theme) {
+  const value = String(theme || 'light').trim().toLowerCase();
+  if (OFFICIAL_THEMES.has(value)) return value;
+  return LEGACY_DARK_THEMES.has(value) ? 'dark' : 'light';
+}
+
+function normalizeThemePatch(partial) {
+  if (!partial?.settings || !Object.prototype.hasOwnProperty.call(partial.settings, 'theme')) return partial;
+  const requested = String(partial.settings.theme || '').trim().toLowerCase();
+  if (OFFICIAL_THEMES.has(requested)) return partial;
+
+  // Older shell code cycled through several historical visual presets. The
+  // supported UI contract is now intentionally binary: Claro <-> Oscuro.
+  // Any legacy intermediate request from that control becomes a real toggle.
+  const current = normalizePersistedTheme(state?.settings?.theme);
+  return deepMerge(partial, { settings: { theme: current === 'dark' ? 'light' : 'dark' } });
 }
 
 function hydrate() {
@@ -27,6 +47,8 @@ function hydrate() {
 }
 
 function normalize(nextState) {
+  nextState.settings = nextState.settings || {};
+  nextState.settings.theme = normalizePersistedTheme(nextState.settings.theme);
   const rate = Number(nextState.bcv?.rate || 0);
   nextState.calculation = calculateQuote(nextState.quote, rate);
   return nextState;
@@ -52,9 +74,10 @@ export const Store = {
   get() { return clone(state); },
   set(partial) {
     const previousRoute = state.route;
-    state = normalize(deepMerge(state, partial));
+    const normalizedPartial = normalizeThemePatch(partial);
+    state = normalize(deepMerge(state, normalizedPartial));
     persist();
-    if (shouldEmitLoginSet(previousRoute, partial)) emit();
+    if (shouldEmitLoginSet(previousRoute, normalizedPartial)) emit();
   },
   update(mutator) {
     const previousRoute = state.route;

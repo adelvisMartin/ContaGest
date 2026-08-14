@@ -1,4 +1,5 @@
 import '../styles/runtime-hotfix-v1110.css';
+import { Store } from '../state/store.js';
 
 const PARAM_BY_NAME = {
   q:'q', search:'search', query:'search', status:'status', type:'type', kind:'kind', category:'category',
@@ -9,6 +10,7 @@ const PARAM_BY_NAME = {
 
 let installed = false;
 let timer = null;
+let resizeTimer = null;
 let serviceRef = null;
 let lastAppliedDeepLink = '';
 
@@ -33,9 +35,89 @@ function parameterFor(control) {
   return '';
 }
 
+function supportedTheme(value) {
+  return String(value || '').toLowerCase() === 'dark' ? 'dark' : 'light';
+}
+
+function syncThemeControls(root = document) {
+  const theme = supportedTheme(Store.get().settings?.theme);
+  const select = root.querySelector?.('#userMenuTheme');
+  if (select) {
+    [...select.options].forEach((option) => {
+      if (!['light','dark'].includes(option.value)) option.remove();
+    });
+    select.value = theme;
+  }
+  const button = root.querySelector?.('#btnTema');
+  if (button) {
+    const next = theme === 'dark' ? 'claro' : 'oscuro';
+    button.setAttribute('aria-label',`Activar tema ${next}`);
+    button.setAttribute('title',`Activar tema ${next}`);
+  }
+}
+
+function syncResponsiveSidebar(root = document) {
+  const sections = [...(root.querySelectorAll?.('.hf-menu-section') || [])];
+  if (!sections.length) return;
+  const mobile = matchMedia('(max-width:1023px)').matches;
+  sections.forEach((section) => {
+    if (mobile) section.open = Boolean(section.querySelector('.hf-menu-item.active'));
+    else section.open = true;
+  });
+}
+
+function closeUserMenu(root = document) {
+  const panel = root.querySelector?.('#userMenuPanel');
+  const toggle = root.querySelector?.('#btnUserMenuToggle');
+  if (!panel || panel.classList.contains('hidden')) return;
+  panel.classList.add('hidden');
+  toggle?.setAttribute('aria-expanded','false');
+}
+
+function installShellInteractionGuard() {
+  document.addEventListener('click',(event)=>{
+    const target=event.target instanceof Element?event.target:null;
+    if(!target)return;
+
+    const themeButton=target.closest('#btnTema');
+    if(themeButton){
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      const current=supportedTheme(Store.get().settings?.theme);
+      Store.set({settings:{theme:current==='dark'?'light':'dark'}});
+      return;
+    }
+
+    const userToggle=target.closest('#btnUserMenuToggle');
+    if(userToggle){
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      const panel=document.getElementById('userMenuPanel');
+      if(!panel)return;
+      const opening=panel.classList.contains('hidden');
+      panel.classList.toggle('hidden',!opening);
+      userToggle.setAttribute('aria-expanded',String(opening));
+      return;
+    }
+
+    const openPanel=document.getElementById('userMenuPanel');
+    if(openPanel&&!openPanel.classList.contains('hidden')&&!target.closest('.hf-user-menu')) closeUserMenu();
+  },true);
+
+  window.addEventListener('keydown',(event)=>{
+    if(event.key==='Escape')closeUserMenu();
+  });
+
+  window.addEventListener('resize',()=>{
+    clearTimeout(resizeTimer);
+    resizeTimer=setTimeout(()=>syncResponsiveSidebar(document),120);
+  });
+}
+
 function install() {
   if (installed) return;
   installed = true;
+  installShellInteractionGuard();
 
   document.addEventListener('input',(event)=>{
     const control=event.target instanceof Element?event.target.closest('[data-query-param]'):null;
@@ -127,6 +209,8 @@ export const QueryParamEnhancer = {
       try{paramsForLink=JSON.parse(node.dataset.queryHref||'{}');}catch{/* ignore */}
       node.setAttribute('href',UrlStateService.href(route,paramsForLink));
     });
+    syncThemeControls(root);
+    syncResponsiveSidebar(root);
     applyDeepLink(root,params,current.route);
   }
 };

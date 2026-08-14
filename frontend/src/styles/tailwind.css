@@ -1,7 +1,1 @@
-@import './theme-v1115.css';
-@import './theme-v1115-hotfix.css';
-@import './header-polish-v1115.css';
-@import './header-optical-alignment-v1115.css';
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+/* Compatibility shim. Runtime styles are centralized in erp-system.css. */

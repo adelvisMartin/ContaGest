@@ -1,0 +1,165 @@
+/* ContaGest-VE ERP Design System v11.16
+   SINGLE RUNTIME STYLESHEET ENTRYPOINT.
+
+   Compatibility note:
+   historical styles are preserved under ./legacy and loaded from here in an
+   explicit order. Existing import paths remain as zero-style shims so modules
+   cannot re-introduce a second cascade. New CSS belongs in this file only.
+*/
+
+@import './legacy/tailwind.css' layer(cg.framework);
+@import './legacy/precision-ledger.css' layer(cg.legacy.foundation);
+@import './legacy/enterprise-refinement.css' layer(cg.legacy.enterprise);
+@import './legacy/modern-enterprise-v1114.css' layer(cg.legacy.enterprise);
+@import './legacy/login-v119.css' layer(cg.legacy.login);
+@import './legacy/login-enhancer.css' layer(cg.legacy.login);
+@import './legacy/security.css' layer(cg.legacy.security);
+@import './legacy/admin-user-security.css' layer(cg.legacy.security);
+@import './legacy/legal-consent-v1115.css' layer(cg.legacy.security);
+@import './legacy/license-devices-v1115.css' layer(cg.legacy.security);
+@import './legacy/media.css' layer(cg.legacy.responsive);
+@import './legacy/theme-v1115.css' layer(cg.theme.legacy);
+@import './legacy/runtime-hotfix-v1110.css' layer(cg.legacy.runtime);
+@import './legacy/header-polish-v1115.css' layer(cg.legacy.shell);
+@import './legacy/header-optical-alignment-v1115.css' layer(cg.legacy.shell);
+@import './legacy/enterprise-shell-v1115.css' layer(cg.shell);
+@import './legacy/compact-enterprise-v1110.css' layer(cg.compat.final);
+
+@layer cg.tokens, cg.base, cg.components, cg.utilities, cg.responsive, cg.a11y;
+
+@layer cg.tokens {
+  :root {
+    color-scheme: light;
+    --cg-font-sans: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI Variable", "Segoe UI", sans-serif;
+    --cg-font-mono: ui-monospace, "SFMono-Regular", "Cascadia Code", "Roboto Mono", "Courier Prime", monospace;
+    --cg-font-body: 400;
+    --cg-font-medium: 500;
+    --cg-font-semibold: 600;
+    --cg-font-heading: 650;
+    --cg-font-display: 700;
+    --cg-text-xs: .6875rem;
+    --cg-text-sm: .75rem;
+    --cg-text-md: .8125rem;
+    --cg-text-base: .875rem;
+    --cg-text-lg: 1rem;
+    --cg-text-xl: clamp(1.25rem, 1.7vw, 1.75rem);
+    --cg-radius-sm: 8px;
+    --cg-radius-md: 10px;
+    --cg-radius-lg: 14px;
+    --cg-control-sm: 36px;
+    --cg-control: 40px;
+    --cg-sidebar: 248px;
+    --cg-drawer: 264px;
+    --cg-header: 64px;
+    --cg-header-mobile: 56px;
+    --cg-bg: #f4f7fb;
+    --cg-surface: #ffffff;
+    --cg-surface-soft: #f7f9fc;
+    --cg-text: #17253a;
+    --cg-text-muted: #66758a;
+    --cg-border: #dbe5f2;
+    --cg-primary: #2457c5;
+    --cg-primary-hover: #1d49a7;
+    --cg-success: #18845d;
+    --cg-warning: #a56308;
+    --cg-danger: #b42318;
+    --cg-focus: #4f8ee8;
+    --cg-shadow: 0 8px 26px rgba(15, 35, 66, .08);
+  }
+  html.dark,
+  html.enterprise {
+    color-scheme: dark;
+    --cg-bg: #071321;
+    --cg-surface: #0d1c2d;
+    --cg-surface-soft: #12243a;
+    --cg-text: #edf5ff;
+    --cg-text-muted: #a9bdd2;
+    --cg-border: #29435f;
+    --cg-primary: #78aff7;
+    --cg-primary-hover: #9bc4fb;
+    --cg-success: #6ee7b7;
+    --cg-warning: #fbbf24;
+    --cg-danger: #fda4af;
+    --cg-focus: #93c5fd;
+    --cg-shadow: 0 10px 34px rgba(0, 0, 0, .28);
+  }
+}
+
+@layer cg.base {
+  *, *::before, *::after { box-sizing: border-box; }
+  html, body, #app { width: 100%; max-width: 100%; min-width: 0; }
+  html { overflow-x: clip; }
+  body {
+    margin: 0;
+    min-height: 100vh;
+    overflow-x: clip;
+    font-family: var(--cg-font-sans) !important;
+    font-weight: var(--cg-font-body) !important;
+    color: var(--cg-text);
+    background: var(--cg-bg);
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+  }
+  :where(p, li, td, small) { font-weight: var(--cg-font-body); }
+  :where(input, select, textarea, .menu-link, .hf-menu-item, .page-tab) { font-weight: var(--cg-font-medium) !important; }
+  :where(button, .btn, .cgv-btn, .ds-btn, .pl-btn, .cgx-btn, label, th) { font-weight: var(--cg-font-semibold) !important; }
+  :where(h1, h2, h3, .cgx-page-header h1, .hf-page-head h2) { font-weight: var(--cg-font-heading) !important; letter-spacing: -.025em; }
+  :where(.cgx-metric strong, .kpi strong, .pl-kpi strong, .ds-kpi strong) { font-weight: var(--cg-font-display) !important; }
+  :where(.font-black, .font-extrabold) { font-weight: var(--cg-font-display) !important; }
+  :where(.font-bold) { font-weight: var(--cg-font-semibold) !important; }
+  :where(img, video, canvas, svg) { max-width: 100%; }
+}
+
+@layer cg.components {
+  .cg-ui-stack { display: grid; gap: 14px; min-width: 0; }
+  .cg-ui-row { display: flex; align-items: center; gap: 10px; min-width: 0; }
+  .cg-ui-row-wrap { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; min-width: 0; }
+  .cg-ui-card { min-width: 0; border: 1px solid var(--cg-border); border-radius: var(--cg-radius-lg); background: var(--cg-surface); box-shadow: var(--cg-shadow); }
+  .cg-ui-card-body { padding: 14px; }
+  .cg-ui-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr)); gap: 12px; min-width: 0; }
+  .cg-ui-page-header { display: flex; justify-content: space-between; align-items: flex-end; gap: 14px; flex-wrap: wrap; min-width: 0; }
+  .cg-ui-page-header > * { min-width: 0; }
+  .cg-ui-page-title { margin: 0; font-size: var(--cg-text-xl); line-height: 1.12; font-weight: var(--cg-font-heading); }
+  .cg-ui-muted { color: var(--cg-text-muted); font-weight: var(--cg-font-body); }
+  .cg-ui-control { min-height: var(--cg-control); border: 1px solid var(--cg-border); border-radius: var(--cg-radius-md); background: var(--cg-surface); color: var(--cg-text); font: inherit; }
+  .cg-ui-button { min-height: var(--cg-control); display: inline-flex; align-items: center; justify-content: center; gap: 7px; padding: 0 12px; border: 1px solid transparent; border-radius: var(--cg-radius-md); font-weight: var(--cg-font-semibold); cursor: pointer; }
+  .cg-ui-button-primary { background: var(--cg-primary); color: #fff; }
+  .cg-ui-button-primary:hover { background: var(--cg-primary-hover); }
+  .cg-ui-button-secondary { background: var(--cg-surface); color: var(--cg-text); border-color: var(--cg-border); }
+  .cg-ui-table-wrap { width: 100%; max-width: 100%; overflow-x: auto; overscroll-behavior-inline: contain; -webkit-overflow-scrolling: touch; }
+  .cg-ui-table { width: 100%; border-collapse: collapse; }
+  .cg-ui-table th { font-size: var(--cg-text-xs); text-transform: uppercase; letter-spacing: .045em; }
+  .cg-ui-table td { font-size: var(--cg-text-md); font-weight: var(--cg-font-body); }
+}
+
+@layer cg.utilities {
+  .cg-u-min-0 { min-width: 0 !important; }
+  .cg-u-w-full { width: 100% !important; max-width: 100% !important; }
+  .cg-u-scroll-x { max-width: 100% !important; overflow-x: auto !important; overscroll-behavior-inline: contain; }
+  .cg-u-text-mono { font-family: var(--cg-font-mono) !important; font-variant-numeric: tabular-nums; }
+  .cg-u-truncate { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+}
+
+@layer cg.responsive {
+  @media (max-width: 1023px) {
+    :where(.hf-app-main, .hf-main) { width: 100% !important; max-width: 100% !important; margin-left: 0 !important; }
+    :where(.cg-ui-grid) { grid-template-columns: repeat(auto-fit, minmax(min(100%, 190px), 1fr)); }
+  }
+  @media (max-width: 760px) {
+    :root { --cg-control: 40px; }
+    .cg-ui-page-header { align-items: flex-start; flex-direction: column; }
+    .cg-ui-page-header > * { width: 100%; }
+    .cg-ui-grid { grid-template-columns: minmax(0, 1fr); }
+    :where(.hf-app-content, .hf-content, #pages, .hf-route-panel, section, article, form, fieldset) { min-width: 0 !important; max-width: 100% !important; }
+  }
+}
+
+@layer cg.a11y {
+  :where(button, a, input, select, textarea, [tabindex]):focus-visible {
+    outline: 3px solid var(--cg-focus) !important;
+    outline-offset: 2px !important;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; }
+  }
+}
