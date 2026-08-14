@@ -72,12 +72,54 @@ test('desktop header actions remain collision free under canonical cascade', asy
   }
 });
 
+test('PWA head exposes canonical manifest and iOS safe-area viewport', async ({ page }) => {
+  await page.goto('/', { waitUntil:'domcontentloaded' });
+  const head = await page.evaluate(() => ({
+    viewport:document.querySelector('meta[name="viewport"]')?.getAttribute('content') || '',
+    manifest:document.querySelector('link[rel="manifest"]')?.getAttribute('href') || '',
+    appleCapable:document.querySelector('meta[name="apple-mobile-web-app-capable"]')?.getAttribute('content') || '',
+    appleTitle:document.querySelector('meta[name="apple-mobile-web-app-title"]')?.getAttribute('content') || '',
+    fontHref:[...document.querySelectorAll('link[href*="fonts.googleapis.com"]')].map((link)=>link.getAttribute('href') || '').join(' ')
+  }));
+  expect(head.viewport).toContain('viewport-fit=cover');
+  expect(head.manifest).toBe('/manifest.webmanifest');
+  expect(head.appleCapable).toBe('yes');
+  expect(head.appleTitle).toBe('ContaGest');
+  expect(head.fontHref).toContain('Inter');
+  expect(head.fontHref).not.toContain('Roboto');
+  expect(head.fontHref).not.toContain('Ubuntu');
+  expect(head.fontHref).not.toContain('Courier');
+});
+
+test('mobile controls use iOS-safe 16px input typography', async ({ page }) => {
+  await page.setViewportSize({ width:390, height:844 });
+  await page.goto('/', { waitUntil:'domcontentloaded' });
+  const fontSize = await page.evaluate(() => {
+    const input=document.createElement('input');
+    input.className='cg-ui-control';
+    document.body.appendChild(input);
+    const result=getComputedStyle(input).fontSize;
+    input.remove();
+    return result;
+  });
+  expect(fontSize).toBe('16px');
+});
+
+test('PWA install helper contains no runtime style injection or innerHTML sink', async ({ request }) => {
+  const response = await request.get('/pwa-install.js');
+  expect(response.ok()).toBe(true);
+  const source = await response.text();
+  expect(source).not.toContain('innerHTML');
+  expect(source).not.toContain("createElement('style')");
+  expect(source).not.toContain('createElement("style")');
+});
+
 test('stable kit exports stay intact and new ERP primitives are namespaced', async () => {
   const ui = await import('../frontend/src/components/ui/index.js');
   for (const key of ['PageHeader','Button','Field','Badge','EmptyState','DataTable']) {
     expect(typeof ui[key], `${key} stable export`).toBe('function');
   }
-  for (const key of ['ErpStack','ErpRow','ErpGrid','ErpCard','ErpPageHeader','ErpButton','ErpField','ErpBadge','ErpEmptyState','ErpDataTable']) {
+  for (const key of ['ErpStack','ErpRow','ErpGrid','ErpCard','ErpSection','ErpPageHeader','ErpButton','ErpField','ErpBadge','ErpEmptyState','ErpDataTable']) {
     expect(typeof ui[key], `${key} namespaced export`).toBe('function');
   }
   expect(typeof ui.ErpUi).toBe('object');
