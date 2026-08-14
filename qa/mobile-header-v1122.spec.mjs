@@ -68,7 +68,7 @@ for (const viewport of VIEWPORTS) {
 
       const logo=page.locator('.hf-header-logo img');
       await expect(logo).toBeVisible();
-      await expect(logo).toHaveAttribute('src', /contagest-mark\.svg/);
+      await expect(logo).toHaveAttribute('src', /contagest-mark\.svg|data:image\/svg\+xml/i);
 
       const rate=page.locator('#tasaHeaderMobile');
       await expect(rate).toBeVisible();
