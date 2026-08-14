@@ -1,13 +1,16 @@
 export const THEME_OPTIONS = Object.freeze([
-  { key:'sector', name:'Adaptativo por sector', description:'Usa la identidad contextual de cada vertical sobre una base clara.' },
-  { key:'light', name:'Claro empresarial', description:'Superficies claras y contraste sobrio para trabajo diario.' },
-  { key:'dark', name:'Oscuro empresarial', description:'Contraste oscuro para jornadas prolongadas o baja iluminación.' },
-  { key:'sky', name:'Azul cielo', description:'Paleta fresca con acentos azules.' },
-  { key:'soft-blue', name:'Azul suave', description:'Azules desaturados y superficies calmadas.' },
-  { key:'spectrum', name:'Espectro', description:'Acentos violeta/índigo para una identidad más dinámica.' },
-  { key:'executive', name:'Ejecutivo', description:'Azul profundo y superficies corporativas.' },
-  { key:'finance', name:'Finanzas', description:'Paleta sobria enfocada en lectura numérica.' },
-  { key:'enterprise', name:'Enterprise oscuro', description:'Modo oscuro de alto contraste para operación empresarial.' }
+  { key:'sector', name:'Adaptativo por sector', description:'Usa la identidad visual del sector activo sin perder el sistema ERP común.' },
+  { key:'light', name:'Claro empresarial', description:'Alta legibilidad para operación diaria y oficinas iluminadas.' },
+  { key:'dark', name:'Oscuro empresarial', description:'Superficies oscuras equilibradas para trabajo prolongado.' },
+  { key:'sky', name:'Azul cielo', description:'Azules limpios con contraste corporativo.' },
+  { key:'soft-blue', name:'Azul suave', description:'Azules desaturados para una lectura más calmada.' },
+  { key:'ocean', name:'Océano profesional', description:'Azules profundos y superficies grises inspirados en Faded Blues de ColorKit.' },
+  { key:'forest', name:'Bosque sereno', description:'Verde grisáceo y azul pizarra para una experiencia natural y sobria.' },
+  { key:'celestial', name:'Celestial suave', description:'Azul, menta y neutros suaves para áreas de atención y planificación.' },
+  { key:'spectrum', name:'Espectro', description:'Acentos violetas y azules para módulos creativos y analíticos.' },
+  { key:'executive', name:'Ejecutivo', description:'Azul marino sobrio orientado a dirección y administración.' },
+  { key:'finance', name:'Finanzas', description:'Verdes contenidos para contabilidad, tesorería y control.' },
+  { key:'enterprise', name:'Enterprise oscuro', description:'Mayor profundidad y contraste para operación intensiva.' }
 ]);
 
 export const SUPPORT_WIDGET_OPTIONS = Object.freeze([

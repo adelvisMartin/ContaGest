@@ -57,6 +57,10 @@ export const PsychologyPracticePage = {
     const todayKey=today();
     const todayAppointments=appointments.filter((item)=>appointmentStart(item)?.toISOString().slice(0,10)===todayKey&&!['cancelled','completed'].includes(String(item.status||'').toLowerCase()));
     const pending=appointments.filter((item)=>['scheduled','pending',''].includes(String(item.status||'').toLowerCase())).length;
+    const noShows=appointments.filter((item)=>String(item.status||'').toLowerCase()==='no_show').length;
+    const active=appointments.filter((item)=>String(item.status||'').toLowerCase()!=='cancelled');
+    const confirmedFlow=active.filter((item)=>['confirmed','checked_in','in_progress','completed'].includes(String(item.status||'').toLowerCase())).length;
+    const confirmationRate=active.length?Math.round((confirmedFlow/active.length)*100):0;
     const patientById=new Map(patients.map((patient)=>[patient.id,patient]));
     const patientOptions=[{value:'',label:'Selecciona un paciente'},...patients.map((patient)=>({value:patient.id,label:patientName(patient)}))];
 
@@ -115,8 +119,8 @@ export const PsychologyPracticePage = {
           <header class="cg-ui-section-head"><div><h2 class="cg-ui-section-title">Agendar cita</h2><p class="cg-ui-muted">Planificación con accesos de confirmación por Calendar, correo y WhatsApp.</p></div></header>
           <div class="cg-ui-section-body grid gap-3">
             ${Select({labelKey:'Paciente',name:'patientId',options:patientOptions})}
-            <div class="grid grid-cols-2 gap-3">${Field({labelKey:'Fecha',name:'date',type:'date',value:today(),required:true})}${Field({labelKey:'Hora',name:'time',type:'time',value:'09:00',required:true})}</div>
-            <div class="grid grid-cols-2 gap-3">${Field({labelKey:'Duración (min)',name:'durationMinutes',type:'number',value:'50',attrs:'min="15" max="240" step="5"'})}${Select({labelKey:'Modalidad',name:'modality',options:[{value:'Presencial',label:'Presencial'},{value:'Videollamada',label:'Videollamada'}]})}</div>
+            <div class="cg-form-grid-2">${Field({labelKey:'Fecha',name:'date',type:'date',value:today(),required:true})}${Field({labelKey:'Hora',name:'time',type:'time',value:'09:00',required:true})}</div>
+            <div class="cg-form-grid-2">${Field({labelKey:'Duración (min)',name:'durationMinutes',type:'number',value:'50',attrs:'min="15" max="240" step="5"'})}${Select({labelKey:'Modalidad',name:'modality',options:[{value:'Presencial',label:'Presencial'},{value:'Videollamada',label:'Videollamada'}]})}</div>
             ${Field({labelKey:'Motivo de agenda',name:'reason',placeholder:'Referencia breve para la agenda'})}
             ${Button({text:'Registrar cita',icon:'fa-calendar-plus',type:'submit'})}
           </div>
@@ -126,6 +130,16 @@ export const PsychologyPracticePage = {
           <header class="cg-ui-section-head"><div><h2 class="cg-ui-section-title">Próximos recordatorios</h2><p class="cg-ui-muted">Ventana de ${Number(state.settings?.appointmentReminderHours||24)} horas.</p></div></header>
           <div class="cg-ui-section-body">${reminderCards||EmptyState({title:'Sin recordatorios próximos',description:'Las citas cercanas aparecerán aquí.',iconName:'fa-bell-slash'})}</div>
         </aside>
+      </section>
+
+      <section class="cg-ui-card cg-ui-section">
+        <header class="cg-ui-section-head"><div><h2 class="cg-ui-section-title">Seguimiento del consultorio</h2><p class="cg-ui-muted">Señales operativas para reducir olvidos y priorizar confirmaciones sin almacenar contenido clínico sensible.</p></div></header>
+        <div class="cg-ui-section-body cg-psych-flow-grid">
+          <article class="cg-psych-flow-card"><span>Confirmación</span><strong>${confirmationRate}%</strong><small>${confirmedFlow} de ${active.length} citas activas</small></article>
+          <article class="cg-psych-flow-card"><span>Próximas ${Number(state.settings?.appointmentReminderHours||24)} h</span><strong>${upcoming.length}</strong><small>requieren seguimiento próximo</small></article>
+          <article class="cg-psych-flow-card"><span>Hoy</span><strong>${todayAppointments.length}</strong><small>sesiones en agenda</small></article>
+          <article class="cg-psych-flow-card"><span>No asistió</span><strong>${noShows}</strong><small>histórico de ausencias</small></article>
+        </div>
       </section>
 
       <section class="cg-ui-card cg-ui-section">

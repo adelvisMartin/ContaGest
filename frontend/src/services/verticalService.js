@@ -1,4 +1,3 @@
-import '../styles/verticals.css';
 import { BackendApi } from './backendApi.js';
 import { MediaService } from './mediaService.js';
 
