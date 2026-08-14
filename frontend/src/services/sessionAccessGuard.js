@@ -3,6 +3,13 @@ import { AccessControlService } from './accessControlService.js';
 let installed = false;
 const CORE = new Set(['dashboard','login','profile','ayuda','soporte']);
 const ADMIN_SENSITIVE = new Set(['admin','backend','configuracion','marca','modulos-madurez','pretesting','licencias','demo-control','vistas','importacion-data']);
+const ADMIN_ROLES = new Set(['admin','administrator','administrador','sysadmin','superadmin']);
+
+const normalizeRole = (value = '') => String(value || '')
+  .trim()
+  .toLowerCase()
+  .normalize('NFD')
+  .replace(/[\u0300-\u036f]/g, '');
 
 export function installSessionAccessGuard() {
   if (installed) return;
@@ -15,18 +22,21 @@ export function installSessionAccessGuard() {
       if (!allowedByExistingRules) return false;
 
       const profile = state?.profile || {};
-      const role = String(profile.role || '').toLowerCase();
+      const role = normalizeRole(profile.role);
       const permissions = Array.isArray(profile.permissions) ? profile.permissions.map(String) : [];
+      const wildcard = permissions.includes('*');
+      const adminPermission = wildcard || permissions.includes('admin.manage');
+      const adminRole = ADMIN_ROLES.has(role);
       const catalogued = AccessControlService.modules.some((item) => item.route === route);
       const required = catalogued ? AccessControlService.routePermission(route) : null;
 
       if (ADMIN_SENSITIVE.has(route)) {
         if (role === 'client') return false;
-        if (required === 'admin.manage' && role !== 'admin') return false;
-        if (permissions.length && required && !permissions.includes(required) && !permissions.includes('admin.manage')) return false;
+        if (required === 'admin.manage' && !adminRole && !adminPermission) return false;
+        if (permissions.length && required && !wildcard && !permissions.includes(required) && !permissions.includes('admin.manage')) return false;
       }
 
-      if (catalogued && permissions.length && required && !permissions.includes(required) && !permissions.includes('admin.manage')) return false;
+      if (catalogued && permissions.length && required && !wildcard && !permissions.includes(required) && !permissions.includes('admin.manage')) return false;
       return true;
     };
   });
