@@ -1,5 +1,3 @@
-import '../styles/login-enhancer.css';
-
 const ACCESS_MODE_KEY = 'contagest_login_access_mode';
 const PWA_AUDIENCE_KEY = 'contagest_pwa_audience';
 let observer;
