@@ -1,5 +1,7 @@
 import { defineConfig, devices } from '@playwright/test';
 
+const remoteBaseURL = String(process.env.QA_BASE_URL || '').trim();
+
 export default defineConfig({
   testDir: './qa',
   timeout: 45_000,
@@ -9,13 +11,13 @@ export default defineConfig({
   retries: 0,
   reporter: [['list'], ['html', { outputFolder: 'playwright-report', open: 'never' }]],
   use: {
-    baseURL: 'http://127.0.0.1:8080',
+    baseURL: remoteBaseURL || 'http://127.0.0.1:8080',
     trace: 'retain-on-failure',
     screenshot: 'only-on-failure',
     video: 'retain-on-failure'
   },
   projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
-  webServer: {
+  webServer: remoteBaseURL ? undefined : {
     command: 'npm --workspace frontend run dev',
     url: 'http://127.0.0.1:8080',
     reuseExistingServer: false,
