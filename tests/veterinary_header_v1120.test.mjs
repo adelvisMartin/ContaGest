@@ -12,10 +12,13 @@ test('veterinary modal preserves drafts until explicit close', async () => {
   assert.match(source, /Los cambios solo se descartan con Cancelar o cerrar/);
 });
 
-test('veterinary dates use controlled ERP date parts instead of native browser calendars', async () => {
+test('veterinary dates use controlled ERP date parts and preserve partial selections', async () => {
   const source = await read('frontend/src/pages/VeterinaryClinicPage.jsx');
   assert.match(source, /const DateParts=/);
   assert.match(source, /MONTHS = \['Enero'/);
+  assert.match(source, /const key=\(part\)=>`__\$\{name\}_\$\{part\}`/);
+  assert.match(source, /partialDateSelected/);
+  assert.match(source, /Completa día, mes y año de nacimiento o deja la fecha vacía/);
   assert.doesNotMatch(source, /type="date"/);
   assert.doesNotMatch(source, /type="datetime-local"/);
 });
