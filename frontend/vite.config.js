@@ -1,5 +1,7 @@
 import { defineConfig } from 'vite';
 
+const canonicalFontStylesheet = 'https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap';
+
 const pwaInstallPlugin = {
   name: 'contagest-pwa-install',
   transformIndexHtml(html) {
@@ -22,6 +24,7 @@ const pwaInstallPlugin = {
     return html
       .replaceAll('11.12.0', '11.14.0')
       .replaceAll('11.13.0', '11.14.0')
+      .replace(/https:\/\/fonts\.googleapis\.com\/css2\?family=[^"]+/, canonicalFontStylesheet)
       .replace(/<link rel="manifest"[^>]*>/, '<link rel="manifest" href="/manifest.webmanifest" />')
       .replace('</head>', `${metadata}\n</head>`)
       .replace('</body>', '  <script src="/pwa-install.js" defer></script>\n</body>');
