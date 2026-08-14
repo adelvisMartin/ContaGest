@@ -10,6 +10,9 @@ const pwaInstallPlugin = {
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-title" content="ContaGest" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="format-detection" content="telephone=no" />
+    <meta name="color-scheme" content="light dark" />
+    <link rel="apple-touch-icon" href="/assets/img/logo.png" />
     <meta name="robots" content="index,follow,max-image-preview:large" />
     <link rel="canonical" href="https://conta-gest-frontend.vercel.app/" />
     <meta property="og:type" content="website" />
@@ -24,8 +27,10 @@ const pwaInstallPlugin = {
     return html
       .replaceAll('11.12.0', '11.14.0')
       .replaceAll('11.13.0', '11.14.0')
+      .replace(/<meta name="viewport"[^>]*>/, '<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />')
       .replace(/https:\/\/fonts\.googleapis\.com\/css2\?family=[^"]+/, canonicalFontStylesheet)
       .replace(/<link rel="manifest"[^>]*>/, '<link rel="manifest" href="/manifest.webmanifest" />')
+      .replace(/<link rel="apple-touch-icon"[^>]*>\s*/g, '')
       .replace('</head>', `${metadata}\n</head>`)
       .replace('</body>', '  <script src="/pwa-install.js" defer></script>\n</body>');
   }
