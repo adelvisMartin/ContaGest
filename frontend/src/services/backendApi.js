@@ -4,7 +4,8 @@ const API_BASE_KEY = 'contagest_api_base_url';
 const isBrowser = typeof window !== 'undefined';
 const isDevelopmentHost = isBrowser && ['localhost', '127.0.0.1'].includes(window.location.hostname);
 const ENV_API_BASE = import.meta?.env?.VITE_API_BASE_URL || '';
-const DEFAULT_API_BASE = (ENV_API_BASE || (isDevelopmentHost ? 'http://localhost:3030/api/v1' : '/api/v1')).replace(/\/$/, '');
+const SAME_ORIGIN_API_BASE = '/api/v1';
+const DEFAULT_API_BASE = (ENV_API_BASE || (isDevelopmentHost ? 'http://localhost:3030/api/v1' : SAME_ORIGIN_API_BASE)).replace(/\/$/, '');
 
 function normalizeBaseUrl(value) {
   const candidate = String(value || DEFAULT_API_BASE).trim().replace(/\/$/, '');
@@ -80,10 +81,30 @@ function isUnsafeMethod(method = 'GET') {
   return !['GET', 'HEAD', 'OPTIONS'].includes(String(method || 'GET').toUpperCase());
 }
 
+function sameOriginFallback(baseUrl) {
+  if (!isBrowser || isDevelopmentHost) return '';
+  const normalized = String(baseUrl || '');
+  if (normalized === SAME_ORIGIN_API_BASE || normalized.endsWith(SAME_ORIGIN_API_BASE) && normalized.startsWith(window.location.origin)) return '';
+  return SAME_ORIGIN_API_BASE;
+}
+
+async function fetchApi(baseUrl, path, options) {
+  try {
+    return await fetch(`${baseUrl}${path}`, options);
+  } catch (error) {
+    const fallback = sameOriginFallback(baseUrl);
+    if (!fallback) throw error;
+    // A stale custom backend URL must never break the production ERP when the
+    // integrated same-origin API is available. Clear it and retry once.
+    localStorage.removeItem(API_BASE_KEY);
+    return fetch(`${fallback}${path}`, options);
+  }
+}
+
 async function refreshCookieSession(api) {
   const csrf = csrfToken();
   if (!csrf) throw apiError('La sesión no se puede renovar sin token CSRF.', 401, {});
-  const response = await fetch(`${api.baseUrl}/auth/refresh`, {
+  const response = await fetchApi(api.baseUrl, '/auth/refresh', {
     method:'POST',
     credentials:'include',
     headers:{ 'x-csrf-token':csrf }
@@ -125,28 +146,28 @@ export const BackendApi = {
       ...(csrf ? { 'x-csrf-token':csrf } : {}),
       ...customHeaders
     };
-
-    let response = await fetch(`${this.baseUrl}${path}`, {
+    const requestOptions = {
       ...fetchOptions,
       method,
       credentials:'include',
       headers,
       body
-    });
+    };
+
+    let response;
+    try {
+      response = await fetchApi(this.baseUrl, path, requestOptions);
+    } catch (error) {
+      throw apiError('No se pudo conectar con la API. Revisa la conexión y vuelve a intentar.', 0, { cause:String(error?.message || error) });
+    }
 
     if (response.status === 401 && !publicRequest && !skipRefresh && path !== '/auth/refresh') {
       try {
         await refreshCookieSession(this);
         const nextCsrf = isUnsafeMethod(method) ? csrfToken() : '';
-        response = await fetch(`${this.baseUrl}${path}`, {
-          ...fetchOptions,
-          method,
-          credentials:'include',
-          headers:{
-            ...headers,
-            ...(nextCsrf ? { 'x-csrf-token':nextCsrf } : {})
-          },
-          body
+        response = await fetchApi(this.baseUrl, path, {
+          ...requestOptions,
+          headers:{ ...headers, ...(nextCsrf ? { 'x-csrf-token':nextCsrf } : {}) }
         });
       } catch {
         AuthSession.clear();
