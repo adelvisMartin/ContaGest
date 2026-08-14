@@ -72,9 +72,13 @@ test('desktop header actions remain collision free under canonical cascade', asy
   }
 });
 
-test('reusable ERP primitives are exported from the UI barrel', async () => {
+test('stable kit exports stay intact and new ERP primitives are namespaced', async () => {
   const ui = await import('../frontend/src/components/ui/index.js');
-  for (const key of ['Stack','Row','Grid','Card','PageHeader','Button','Field','Badge','EmptyState','DataTable']) {
-    expect(typeof ui[key], `${key} export`).toBe('function');
+  for (const key of ['PageHeader','Button','Field','Badge','EmptyState','DataTable']) {
+    expect(typeof ui[key], `${key} stable export`).toBe('function');
   }
+  for (const key of ['ErpStack','ErpRow','ErpGrid','ErpCard','ErpPageHeader','ErpButton','ErpField','ErpBadge','ErpEmptyState','ErpDataTable']) {
+    expect(typeof ui[key], `${key} namespaced export`).toBe('function');
+  }
+  expect(typeof ui.ErpUi).toBe('object');
 });
