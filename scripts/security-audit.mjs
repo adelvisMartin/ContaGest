@@ -47,13 +47,29 @@ for (const rule of ['.env','frontend/.env','backend/.env']) {
 
 const securityPath = path.join(root,'backend/src/shared/middleware/security.ts');
 const security = fs.existsSync(securityPath) ? fs.readFileSync(securityPath,'utf8') : '';
-for (const control of ['globalRateLimit','authRateLimit','csrfProtection','corsPolicy','enforceProductionSecrets']) {
+for (const control of ['globalRateLimit','authRateLimit','cspReportRateLimit','csrfProtection','corsPolicy','enforceProductionSecrets','collectCspReport']) {
   if (!security.includes(control)) findings.push(`security-control-missing: ${control}`);
 }
+
+const appPath = path.join(root,'backend/src/app.ts');
+const app = fs.existsSync(appPath) ? fs.readFileSync(appPath,'utf8') : '';
+if (!app.includes('/api/v1/security/csp-report')) findings.push('csp-report-endpoint-missing');
+if (!app.includes("limit: '32kb'")) findings.push('csp-report-body-limit-missing');
+
+const vercelPath = path.join(root,'vercel.json');
+const vercel = fs.existsSync(vercelPath) ? fs.readFileSync(vercelPath,'utf8') : '';
+if (!vercel.includes('Content-Security-Policy-Report-Only')) findings.push('csp-report-only-header-missing');
+if (!vercel.includes('report-uri /api/v1/security/csp-report')) findings.push('csp-report-uri-missing');
+if (!vercel.includes('camera=(self)') || !vercel.includes('geolocation=(self)')) findings.push('pwa-permissions-policy-misaligned');
 
 const validationPath = path.join(root,'backend/src/shared/middleware/validate.ts');
 const validation = fs.existsSync(validationPath) ? fs.readFileSync(validationPath,'utf8') : '';
 if (!validation.includes('safeParse')) findings.push('validation-control-missing: zod-safeParse');
+
+const pwaInstallPath = path.join(root,'frontend/public/pwa-install.js');
+const pwaInstall = fs.existsSync(pwaInstallPath) ? fs.readFileSync(pwaInstallPath,'utf8') : '';
+if (/\.innerHTML\s*=/.test(pwaInstall)) findings.push('pwa-install-dom-sink: innerHTML');
+if (/createElement\(['"]style['"]\)/.test(pwaInstall)) findings.push('pwa-install-runtime-style-injection');
 
 if (findings.length) {
   console.error('ContaGest security baseline: FAIL');
@@ -65,5 +81,7 @@ console.log('ContaGest security baseline: PASS');
 console.log('- no obvious committed secret material detected');
 console.log('- frontend does not reference server-only secret names');
 console.log('- env files are ignored');
-console.log('- global/auth rate limits, CSRF, CORS and production-secret gates are present');
+console.log('- global/auth/CSP rate limits, CSRF, CORS and production-secret gates are present');
 console.log('- server-side schema validation uses safeParse');
+console.log('- strict CSP is collecting violations in Report-Only mode');
+console.log('- PWA installer avoids innerHTML and runtime style injection');
