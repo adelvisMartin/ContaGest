@@ -21,7 +21,8 @@
         { "key": "Referrer-Policy", "value": "strict-origin-when-cross-origin" },
         { "key": "Permissions-Policy", "value": "camera=(self), microphone=(), geolocation=(self), payment=(), usb=(), serial=()" },
         { "key": "Cross-Origin-Opener-Policy", "value": "same-origin" },
-        { "key": "X-Permitted-Cross-Domain-Policies", "value": "none" }
+        { "key": "X-Permitted-Cross-Domain-Policies", "value": "none" },
+        { "key": "Content-Security-Policy-Report-Only", "value": "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; script-src 'self'; style-src 'self' https://cdnjs.cloudflare.com https://fonts.googleapis.com; img-src 'self' data: blob: https:; connect-src 'self' https: wss: ws://localhost:8080 ws://127.0.0.1:8080 http://localhost:8080 http://127.0.0.1:8080 http://localhost:3030 http://127.0.0.1:3030; font-src 'self' https://cdnjs.cloudflare.com https://fonts.gstatic.com data:; worker-src 'self' blob:; manifest-src 'self'; report-uri /api/v1/security/csp-report" }
       ]
     },
     {
