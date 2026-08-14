@@ -65,6 +65,50 @@ export const authRateLimit = rateLimit({
   message: { ok: false, error: 'Demasiadas solicitudes de autenticación. Espera unos minutos antes de reintentar.' }
 });
 
+// CSP reports are intentionally unauthenticated browser telemetry. Keep the endpoint
+// small, bounded and independently rate-limited so reporting cannot become a DoS path.
+export const cspReportRateLimit = rateLimit({
+  windowMs: 60_000,
+  limit: isProd ? 120 : 300,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { ok: false, error: 'Demasiados reportes de seguridad.' }
+});
+
+function safeReportUrl(value: unknown) {
+  const raw = String(value || '').slice(0, 1200);
+  if (!raw || /^(inline|eval|data|blob):?$/i.test(raw)) return raw.slice(0, 160);
+  try {
+    const url = new URL(raw);
+    return `${url.origin}${url.pathname}`.slice(0, 500);
+  } catch {
+    return raw.slice(0, 300);
+  }
+}
+
+function normalizeCspPayload(input: any) {
+  const envelope = Array.isArray(input) ? input[0] : input;
+  const report = envelope?.['csp-report'] || envelope?.body || envelope || {};
+  return {
+    documentUri: safeReportUrl(report['document-uri'] || report.documentURL || report.documentUri),
+    blockedUri: safeReportUrl(report['blocked-uri'] || report.blockedURL || report.blockedUri),
+    effectiveDirective: String(report['effective-directive'] || report.effectiveDirective || '').slice(0, 120),
+    violatedDirective: String(report['violated-directive'] || report.violatedDirective || '').slice(0, 180),
+    sourceFile: safeReportUrl(report['source-file'] || report.sourceFile),
+    lineNumber: Number(report['line-number'] || report.lineNumber || 0) || undefined,
+    columnNumber: Number(report['column-number'] || report.columnNumber || 0) || undefined,
+    disposition: String(report.disposition || 'report').slice(0, 40)
+  };
+}
+
+export function collectCspReport(req: Request, res: Response) {
+  const report = normalizeCspPayload(req.body);
+  const requestIdValue = String((req as any).requestId || '');
+  // Deliberately avoid persisting cookies, request bodies or URL query strings.
+  console.warn('[security:csp-report]', JSON.stringify({ requestId: requestIdValue, ...report }));
+  res.status(204).end();
+}
+
 export function enforceProductionSecrets(_req: Request, _res: Response, next: NextFunction) {
   // Preview/dev may derive ephemeral secrets to keep QA inexpensive. Production commercial
   // must use independent explicit secrets: rotating a DB/service-role credential must never
