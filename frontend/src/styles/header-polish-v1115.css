@@ -1,0 +1,161 @@
+/* ContaGest v11.15 — enterprise header polish.
+   Keeps operational information compact and prioritizes navigation/user actions. */
+
+@media (min-width:1181px){
+  .hf-app-topbar{
+    min-height:68px!important;
+    padding:8px 18px!important;
+    gap:12px!important;
+  }
+
+  .hf-topbar-left{
+    flex:0 0 auto!important;
+    min-width:238px!important;
+    max-width:250px!important;
+  }
+  .hf-topbar-left>div{min-width:0!important}
+  .hf-topbar-left strong{
+    max-width:none!important;
+    overflow:visible!important;
+    text-overflow:clip!important;
+    white-space:nowrap!important;
+    font-size:18px!important;
+    line-height:1.05!important;
+    letter-spacing:-.025em!important;
+  }
+  .hf-topbar-subtitle{
+    max-width:none!important;
+    font-size:10px!important;
+    letter-spacing:.01em!important;
+  }
+
+  .hf-command-trigger{
+    flex:1 1 360px!important;
+    min-width:280px!important;
+    max-width:430px!important;
+    height:42px!important;
+    min-height:42px!important;
+    padding:0 10px 0 14px!important;
+    border-radius:13px!important;
+    gap:10px!important;
+    box-shadow:none!important;
+  }
+  .hf-command-trigger>i{font-size:13px!important;color:var(--cgx-muted)!important}
+  .hf-command-trigger>span{
+    font-size:13px!important;
+    font-weight:650!important;
+    color:#40536d!important;
+  }
+  .hf-command-trigger kbd{
+    margin-left:auto!important;
+    flex:0 0 auto!important;
+    padding:4px 8px!important;
+    border-radius:8px!important;
+    font-size:10px!important;
+    font-family:Inter,system-ui,-apple-system,"Segoe UI",sans-serif!important;
+    font-weight:650!important;
+    letter-spacing:.02em!important;
+  }
+
+  .hf-app-topbar-actions{
+    position:relative!important;
+    overflow:visible!important;
+    overflow-x:visible!important;
+    overflow-y:visible!important;
+    padding-bottom:0!important;
+    align-items:center!important;
+  }
+
+  .hf-rate-card{
+    border:0!important;
+    background:transparent!important;
+    box-shadow:none!important;
+  }
+  .hf-rate-card span,
+  .hf-rate-card strong{
+    font-family:Inter,system-ui,-apple-system,"Segoe UI",sans-serif!important;
+  }
+
+  #btnActualizarTasaTop{
+    height:40px!important;
+    min-height:40px!important;
+    padding:0 13px!important;
+    border-radius:12px!important;
+    display:inline-flex!important;
+    align-items:center!important;
+    justify-content:center!important;
+    gap:6px!important;
+  }
+  #btnActualizarTasaTop i{font-size:11px!important;line-height:1!important;margin:0!important}
+
+  #btnTema{
+    width:40px!important;
+    min-width:40px!important;
+    height:40px!important;
+    padding:0!important;
+    border-radius:999px!important;
+    display:grid!important;
+    place-items:center!important;
+  }
+  #btnTema i{font-size:13px!important;line-height:1!important;margin:0!important}
+
+  .hf-user-menu{
+    position:relative!important;
+    display:flex!important;
+    align-items:center!important;
+    min-height:40px!important;
+    padding:3px!important;
+    border:1px solid var(--cgx-line)!important;
+    border-radius:13px!important;
+    background:var(--cgx-surface)!important;
+    box-shadow:none!important;
+    overflow:visible!important;
+  }
+  .hf-avatar-button{
+    width:32px!important;
+    min-width:32px!important;
+    height:32px!important;
+    border:0!important;
+    border-radius:10px!important;
+    box-shadow:none!important;
+    font-size:11px!important;
+  }
+  #btnUserMenuToggle{
+    width:28px!important;
+    min-width:28px!important;
+    height:32px!important;
+    border:0!important;
+    border-left:1px solid var(--cgx-line)!important;
+    border-radius:0 9px 9px 0!important;
+    background:transparent!important;
+    color:var(--cgx-muted)!important;
+    display:grid!important;
+    place-items:center!important;
+    padding:0!important;
+    cursor:pointer!important;
+  }
+  #btnUserMenuToggle i{font-size:10px!important;line-height:1!important}
+  #btnUserMenuToggle:hover{background:var(--cgx-surface-2)!important;color:var(--cgx-ink)!important}
+
+  .hf-user-panel{
+    top:calc(100% + 9px)!important;
+    width:min(292px,calc(100vw - 24px))!important;
+    padding:8px!important;
+    border-radius:14px!important;
+  }
+  .hf-user-panel-head{padding:8px 10px 10px!important}
+  .hf-user-panel-head strong{font-size:13px!important;font-weight:700!important}
+  .hf-user-panel-head span{font-size:11px!important;font-weight:500!important}
+  .hf-user-panel button,.hf-user-select{
+    min-height:38px!important;
+    padding:7px 9px!important;
+    border-radius:10px!important;
+    font-size:12px!important;
+    font-weight:600!important;
+  }
+  .hf-user-panel button i,.hf-user-select i{font-size:12px!important}
+}
+
+@media (max-width:1180px){
+  .hf-topbar-left strong{max-width:170px!important}
+}
