@@ -177,40 +177,53 @@
   #btnActualizarTasaTop{min-width:72px!important;width:72px!important}
 }
 
-/* Mobile shell: never squeeze desktop controls into one row. */
+/* Mobile shell: two clean rows only — brand/account controls, then search. */
 @media (max-width:760px){
   .hf-app-topbar{
     display:grid!important;
-    grid-template-columns:minmax(0,1fr)!important;
+    grid-template-columns:minmax(0,1fr) auto!important;
+    grid-template-areas:
+      "brand actions"
+      "search search"!important;
     align-items:center!important;
-    gap:8px!important;
-    padding:8px 10px!important;
+    column-gap:8px!important;
+    row-gap:8px!important;
+    padding:8px 10px 10px!important;
     min-height:auto!important;
+    overflow:visible!important;
   }
+
   .hf-topbar-left{
-    width:100%!important;
+    grid-area:brand!important;
+    width:auto!important;
     min-width:0!important;
-    max-width:none!important;
+    max-width:100%!important;
     margin:0!important;
+    align-self:center!important;
   }
   .hf-topbar-left strong{
-    max-width:none!important;
+    max-width:100%!important;
     overflow:visible!important;
     text-overflow:clip!important;
     white-space:nowrap!important;
   }
+
   .hf-command-trigger{
+    grid-area:search!important;
     width:100%!important;
     max-width:none!important;
     min-width:0!important;
     height:40px!important;
     min-height:40px!important;
     margin:0!important;
+    align-self:center!important;
   }
   .hf-command-trigger kbd{display:none!important}
+
   .hf-app-topbar-actions{
-    width:100%!important;
-    min-width:0!important;
+    grid-area:actions!important;
+    width:auto!important;
+    min-width:auto!important;
     height:40px!important;
     min-height:40px!important;
     display:flex!important;
@@ -218,80 +231,18 @@
     justify-content:flex-end!important;
     gap:6px!important;
     padding:0!important;
+    margin:0!important;
     overflow:visible!important;
   }
+
+  /* Mobile intentionally removes low-priority market controls from the global shell. */
   .hf-app-topbar-actions .mui-select-topbar,
-  .hf-rate-source{display:none!important}
-  .hf-rate-card:not(.hf-rate-source){
-    position:static!important;
-    margin-right:auto!important;
-    width:auto!important;
-    min-width:116px!important;
-    max-width:138px!important;
-    height:40px!important;
-    min-height:40px!important;
-    padding:4px 7px!important;
-    display:flex!important;
-    flex-direction:column!important;
-    align-items:flex-start!important;
-    justify-content:center!important;
-    border:0!important;
-    background:transparent!important;
-    box-shadow:none!important;
-  }
-  .hf-rate-card:not(.hf-rate-source)>span{
-    font-size:8px!important;
-    line-height:1!important;
-    letter-spacing:.045em!important;
-    text-transform:uppercase!important;
-    color:var(--cgx-muted)!important;
-  }
-  .hf-rate-card:not(.hf-rate-source)>strong,
-  #tasaHeader{
-    font-family:Inter,system-ui,-apple-system,"Segoe UI",sans-serif!important;
-    font-size:11px!important;
-    line-height:1.15!important;
-    font-weight:750!important;
-    color:var(--cgx-ink)!important;
-    white-space:nowrap!important;
-  }
+  .hf-rate-card,
+  .hf-rate-source,
   #btnActualizarTasaTop{
-    width:68px!important;
-    min-width:68px!important;
-    height:40px!important;
-    min-height:40px!important;
-    padding:0 6px!important;
-    border-radius:11px!important;
-    display:grid!important;
-    place-items:center!important;
+    display:none!important;
   }
-  #btnActualizarTasaTop i,
-  #btnActualizarTasaTop::before{display:none!important;content:none!important}
-  #btnActualizarTasaTop span{
-    height:100%!important;
-    display:flex!important;
-    flex-direction:column!important;
-    align-items:center!important;
-    justify-content:center!important;
-    gap:2px!important;
-    font-size:0!important;
-  }
-  #btnActualizarTasaTop span::before{
-    content:"BCV";
-    font-family:Inter,system-ui,-apple-system,"Segoe UI",sans-serif;
-    font-size:11px;
-    font-weight:800;
-    line-height:1;
-  }
-  #btnActualizarTasaTop span::after{
-    content:"Actualizar tasa";
-    font-family:Inter,system-ui,-apple-system,"Segoe UI",sans-serif;
-    font-size:7px;
-    font-weight:600;
-    line-height:1;
-    opacity:.84;
-    white-space:nowrap;
-  }
+
   #btnTema{
     width:40px!important;
     min-width:40px!important;
@@ -301,6 +252,7 @@
     display:grid!important;
     place-items:center!important;
     border-radius:999px!important;
+    align-self:center!important;
   }
   #btnTema i{display:none!important}
   #btnTema::before{
@@ -314,14 +266,20 @@
   html.enterprise #btnTema::before{
     background:center/17px 17px no-repeat url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23f4c84b' stroke-width='2' stroke-linecap='round'%3E%3Ccircle cx='12' cy='12' r='4'/%3E%3Cpath d='M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41'/%3E%3C/svg%3E");
   }
+
   .hf-user-menu{
+    width:auto!important;
+    min-width:72px!important;
     height:40px!important;
     min-height:40px!important;
     padding:3px!important;
     display:flex!important;
     align-items:center!important;
+    justify-content:flex-end!important;
+    gap:2px!important;
     border-radius:12px!important;
     overflow:visible!important;
+    align-self:center!important;
   }
   .hf-avatar-button{
     width:32px!important;
@@ -336,18 +294,27 @@
     border:1px solid #dbe5f3!important;
     background:#eef4fb!important;
     color:#294b78!important;
+    font-family:Inter,system-ui,-apple-system,"Segoe UI",sans-serif!important;
     font-size:10px!important;
     font-weight:750!important;
     line-height:1!important;
+    text-align:center!important;
   }
   #btnUserMenuToggle{
-    width:26px!important;
-    min-width:26px!important;
+    width:28px!important;
+    min-width:28px!important;
     height:32px!important;
     min-height:32px!important;
     display:grid!important;
     place-items:center!important;
+    padding:0!important;
   }
+  #btnUserMenuToggle i{
+    line-height:1!important;
+    margin:0!important;
+    transform-origin:center!important;
+  }
+
   .hf-user-panel{
     position:fixed!important;
     top:auto!important;
@@ -364,9 +331,16 @@
 }
 
 @media (max-width:420px){
+  .hf-app-topbar{
+    grid-template-columns:minmax(0,1fr) auto!important;
+    column-gap:6px!important;
+    padding-inline:8px!important;
+  }
   .hf-topbar-subtitle{display:none!important}
   .hf-topbar-left strong{font-size:16px!important}
   .hf-command-trigger>span{font-size:12px!important}
-  .hf-rate-card:not(.hf-rate-source){min-width:108px!important;max-width:118px!important}
-  #btnActualizarTasaTop{width:64px!important;min-width:64px!important}
+  #btnTema{width:38px!important;min-width:38px!important;height:38px!important;min-height:38px!important}
+  .hf-user-menu{height:38px!important;min-height:38px!important;min-width:68px!important}
+  .hf-avatar-button{width:30px!important;min-width:30px!important;height:30px!important;min-height:30px!important}
+  #btnUserMenuToggle{height:30px!important;min-height:30px!important}
 }
