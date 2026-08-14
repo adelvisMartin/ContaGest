@@ -1,13 +1,40 @@
-import { PageHeader, Button, Table } from '../components/ui/index.js';
+import { PageHeader, Button, ErpButton, ErpDataTable, ErpRow, ErpSection } from '../components/ui/index.js';
 import { bs, usd, dateTime } from '../core/formatters.js';
 import { escapeHtml, qsa, downloadText } from '../utils/dom.js';
 import { downloadCsv } from '../services/csv.js';
 import { PdfService } from '../services/pdf.js';
 
+const safe = (value) => escapeHtml(String(value ?? ''));
+
 export const HistoryPage = {
   render(state) {
-    const rows = state.history.map((record) => `<tr><td>${dateTime(record.createdAt)}</td><td>${escapeHtml(record.clientName || '-')}</td><td>${escapeHtml(record.quote?.numeroFactura || '-')}</td><td>${escapeHtml(record.quote?.orden || '-')}</td><td>${bs(record.calculation?.total || 0)}</td><td>${usd(record.calculation?.totalUsdEquivalent || 0)}</td><td><div class="flex flex-wrap gap-2"><button class="btn btn-secondary !p-2" data-pdf-record="${record.id}"><i class="fa-solid fa-file-pdf"></i></button><button class="btn btn-secondary !p-2" data-duplicate-record="${record.id}"><i class="fa-solid fa-copy"></i></button><button class="btn btn-danger !p-2" data-delete-record="${record.id}"><i class="fa-solid fa-trash"></i></button></div></td></tr>`);
-    return `<section class="surface rounded-[1.75rem] p-5 sm:p-7">${PageHeader({ eyebrowKey:'historyEyebrow', titleKey:'historyTitle', descKey:'historyDesc', actions:Button({ id:'btnExportHistoryCsv', text:'Exportar CSV', i18n:'exportCsv', icon:'fa-file-csv', variant:'secondary' }) + Button({ id:'btnExportHistoryJson', text:'Exportar JSON', i18n:'exportJson', icon:'fa-code', variant:'secondary' }) })}<div class="panel-soft rounded-[1.5rem] p-4">${Table({ headers:[{label:'Creado'}, {key:'client'}, {key:'invoice'}, {label:'Orden'}, {label:'Total Bs'}, {label:'Total USD'}, {key:'actions'}], rows })}</div></section>`;
+    const actionsFor = (record) => ErpRow([
+      ErpButton('Generar PDF', { variant:'secondary', icon:'fa-solid fa-file-pdf', iconOnly:true, data:{ 'pdf-record':record.id } }),
+      ErpButton('Duplicar documento', { variant:'secondary', icon:'fa-solid fa-copy', iconOnly:true, data:{ 'duplicate-record':record.id } }),
+      ErpButton('Eliminar registro', { variant:'danger', icon:'fa-solid fa-trash', iconOnly:true, data:{ 'delete-record':record.id } })
+    ].join(''), { wrap:true });
+
+    const table = ErpDataTable({
+      caption:'Histórico de documentos ContaGest',
+      columns:[
+        { key:'createdAt', label:'Creado', render:(record) => safe(dateTime(record.createdAt)) },
+        { key:'clientName', label:'Cliente', render:(record) => safe(record.clientName || '-') },
+        { key:'invoice', label:'Factura', render:(record) => safe(record.quote?.numeroFactura || '-') },
+        { key:'order', label:'Orden', render:(record) => safe(record.quote?.orden || '-') },
+        { key:'totalBs', label:'Total Bs', numeric:true, render:(record) => safe(bs(record.calculation?.total || 0)) },
+        { key:'totalUsd', label:'Total USD', numeric:true, render:(record) => safe(usd(record.calculation?.totalUsdEquivalent || 0)) },
+        { key:'actions', label:'Acciones', render:actionsFor }
+      ],
+      rows:state.history
+    });
+
+    return `<section class="cg-page-stack">${PageHeader({
+      eyebrowKey:'historyEyebrow',
+      titleKey:'historyTitle',
+      descKey:'historyDesc',
+      actions:Button({ id:'btnExportHistoryCsv', text:'Exportar CSV', i18n:'exportCsv', icon:'fa-file-csv', variant:'secondary' })
+        + Button({ id:'btnExportHistoryJson', text:'Exportar JSON', i18n:'exportJson', icon:'fa-code', variant:'secondary' })
+    })}${ErpSection({ title:'Documentos guardados', description:'Consulta, exporta, duplica o genera nuevamente los documentos registrados.', content:table })}</section>`;
   },
   mount(state, { Store, Toast, navigate }) {
     qsa('[data-pdf-record]').forEach((button) => button.addEventListener('click', () => { const s = Store.get(); const record = s.history.find((item) => item.id === button.dataset.pdfRecord); if (record) PdfService.generateQuote(s, record); }));
