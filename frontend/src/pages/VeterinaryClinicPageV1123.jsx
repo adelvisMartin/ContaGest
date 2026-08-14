@@ -109,7 +109,7 @@ function VeterinaryDossier({ state, ctx }) {
         <Typography variant="h6" sx={{fontWeight:700,color:'var(--cg-text)'}}>Ficha e historia médica por mascota</Typography>
         <Typography variant="caption" sx={{color:'var(--cg-text-muted)'}}>Selecciona una mascota para consultar datos, antecedentes y cronología clínica sin perder el contexto.</Typography>
       </Box>
-      <Stack direction="row" gap=.7 flexWrap="wrap">
+      <Stack direction="row" gap={.7} flexWrap="wrap">
         <Button variant="outlined" disabled={!selected} onClick={openEdit} startIcon={<Icon name="fa-pen"/>}>Editar ficha</Button>
         <Button disabled={!selected} onClick={()=>ctx.navigate?.('veterinaria',{tab:'historia',patient:selectedId})} startIcon={<Icon name="fa-file-waveform"/>}>Historia completa</Button>
       </Stack>
@@ -137,10 +137,10 @@ function VeterinaryDossier({ state, ctx }) {
               <KeyValue label="Nacimiento" value={onlyDate(selected.birthDate)}/><KeyValue label="Sexo" value={selected.sex}/><KeyValue label="Color" value={selected.color}/><KeyValue label="Notas" value={selected.notes}/>
             </Box>
           </Box>
-          <Stack gap=.7>
+          <Stack gap={.7}>
             <Alert severity={selected.allergies?'warning':'success'}><b>Alergias:</b> {selected.allergies||'Sin alergias registradas'}</Alert>
             <Alert severity={selected.conditions?'info':'success'}><b>Antecedentes:</b> {selected.conditions||'Sin condiciones registradas'}</Alert>
-            <Paper variant="outlined" sx={{p:1}}><Typography variant="caption" color="text.secondary">Actividad clínica</Typography><Stack direction="row" gap=.5 flexWrap="wrap" mt=.5><Chip size="small" label={`${history.encounters.length} consultas`}/><Chip size="small" label={`${history.labs.length} órdenes`}/><Chip size="small" label={`${history.studies.length} estudios`}/><Chip size="small" label={`${history.procedures.length} procedimientos`}/></Stack></Paper>
+            <Paper variant="outlined" sx={{p:1}}><Typography variant="caption" color="text.secondary">Actividad clínica</Typography><Stack direction="row" gap={.5} flexWrap="wrap" mt={.5}><Chip size="small" label={`${history.encounters.length} consultas`}/><Chip size="small" label={`${history.labs.length} órdenes`}/><Chip size="small" label={`${history.studies.length} estudios`}/><Chip size="small" label={`${history.procedures.length} procedimientos`}/></Stack></Paper>
           </Stack>
         </Box>
         <Paper variant="outlined" sx={{p:1.1,maxHeight:420,overflow:'auto'}}>
