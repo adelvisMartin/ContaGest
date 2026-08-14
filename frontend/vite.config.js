@@ -4,8 +4,10 @@ const canonicalFontStylesheet = 'https://fonts.googleapis.com/css2?family=Inter:
 
 const pwaInstallPlugin = {
   name: 'contagest-pwa-install',
-  transformIndexHtml(html) {
-    const metadata = `    <meta name="application-name" content="ContaGest-VE Enterprise" />
+  transformIndexHtml: {
+    order: 'pre',
+    handler(html) {
+      const metadata = `    <meta name="application-name" content="ContaGest-VE Enterprise" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-title" content="ContaGest" />
@@ -24,15 +26,16 @@ const pwaInstallPlugin = {
     <meta name="twitter:card" content="summary" />
     <meta name="twitter:title" content="ContaGest-VE Enterprise" />
     <meta name="twitter:description" content="Gestión empresarial segura, adaptable y centralizada." />`;
-    return html
-      .replaceAll('11.12.0', '11.14.0')
-      .replaceAll('11.13.0', '11.14.0')
-      .replace(/<meta name="viewport"[^>]*>/, '<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />')
-      .replace(/https:\/\/fonts\.googleapis\.com\/css2\?family=[^"]+/, canonicalFontStylesheet)
-      .replace(/<link rel="manifest"[^>]*>/, '<link rel="manifest" href="/manifest.webmanifest" />')
-      .replace(/<link rel="apple-touch-icon"[^>]*>\s*/g, '')
-      .replace('</head>', `${metadata}\n</head>`)
-      .replace('</body>', '  <script src="/pwa-install.js" defer></script>\n</body>');
+      return html
+        .replaceAll('11.12.0', '11.14.0')
+        .replaceAll('11.13.0', '11.14.0')
+        .replace(/<meta name="viewport"[^>]*>/, '<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />')
+        .replace(/https:\/\/fonts\.googleapis\.com\/css2\?family=[^"]+/, canonicalFontStylesheet)
+        .replace(/<link rel="manifest"[^>]*>/, '<link rel="manifest" href="/manifest.webmanifest" />')
+        .replace(/<link rel="apple-touch-icon"[^>]*>\s*/g, '')
+        .replace('</head>', `${metadata}\n</head>`)
+        .replace('</body>', '  <script src="/pwa-install.js" defer></script>\n</body>');
+    }
   }
 };
 
