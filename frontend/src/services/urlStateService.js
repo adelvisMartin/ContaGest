@@ -6,6 +6,7 @@ const SAFE_KEYS = new Set([
   'status','type','kind','category','specialty','search','q','page','pageSize','sort','order',
   'date','dateFrom','dateTo','from','to','filter','modal','step','mode','source','access'
 ]);
+const SIDEBAR_SECTIONS_KEY = 'cg_sidebar_sections_v1125';
 
 let StoreRef = null;
 let allowedRoutes = new Set();
@@ -22,6 +23,7 @@ const cleanValue = (value) => {
   if (!text || text.length > 180 || !SAFE_PARAM.test(text)) return '';
   return text;
 };
+const isMobileSidebar = () => Boolean(window.matchMedia?.('(max-width:1023px)').matches);
 
 function normalizeParams(input = {}) {
   const output = {};
@@ -32,6 +34,31 @@ function normalizeParams(input = {}) {
     if (value) output[key] = value;
   });
   return output;
+}
+
+function readSidebarSections() {
+  try {
+    const parsed = JSON.parse(sessionStorage.getItem(SIDEBAR_SECTIONS_KEY) || '[]');
+    return new Set(Array.isArray(parsed) ? parsed.map(String) : []);
+  } catch {
+    return new Set();
+  }
+}
+function rememberSidebarSections() {
+  const open = [...document.querySelectorAll('#mainMenu details[data-sidebar-section][open]')]
+    .map((node) => String(node.dataset.sidebarSection || '').trim()).filter(Boolean);
+  try { sessionStorage.setItem(SIDEBAR_SECTIONS_KEY, JSON.stringify(open)); } catch { /* session storage may be unavailable */ }
+}
+function restoreSidebarSections() {
+  const sections = [...document.querySelectorAll('#mainMenu details[data-sidebar-section]')];
+  if (!sections.length) return;
+  const remembered = readSidebarSections();
+  if (!remembered.size) return;
+  sections.forEach((details) => {
+    const name = String(details.dataset.sidebarSection || '');
+    details.open = remembered.has(name);
+    details.querySelector(':scope > summary')?.setAttribute('aria-expanded', String(details.open));
+  });
 }
 
 function legacyHashRoute() {
@@ -111,14 +138,39 @@ function installListeners() {
   if (installed || typeof window === 'undefined') return;
   installed = true;
 
+  // The category header is an accordion control, not a navigation destination.
+  // Handle it before the drawer/listeners can interpret the tap as navigation.
+  document.addEventListener('click', (event) => {
+    const origin = event.target instanceof Element ? event.target : null;
+    const summary = origin?.closest('#mainMenu .cg-area-toggle');
+    if (!summary) return;
+    const details = summary.closest('details[data-sidebar-section]');
+    if (!details) return;
+    event.preventDefault();
+    event.stopPropagation();
+    details.open = !details.open;
+    summary.setAttribute('aria-expanded', String(details.open));
+    rememberSidebarSections();
+  }, true);
+
   document.addEventListener('click', (event) => {
     const target = routeTriggerFromEvent(event);
     if (!target) return;
     const route = target.dataset.route || target.dataset.commandRoute || target.dataset.breadcrumbRoute;
     if (!route || !allowedRoutes.has(route) || target.matches(':disabled,[aria-disabled="true"],.is-locked')) return;
+    const fromSidebar = Boolean(target.closest('#mainMenu'));
+    if (fromSidebar) rememberSidebarSections();
     event.preventDefault();
     UrlStateService.navigate(route, eventParams(target));
-    if (target.closest('#mainMenu') && window.matchMedia?.('(max-width:1023px)').matches) event.stopPropagation();
+    // On mobile the destination navigation is the only action allowed to close/re-render the drawer.
+    // Stopping propagation prevents an older #mainMenu bubble listener from racing the route update.
+    if (fromSidebar && isMobileSidebar()) event.stopPropagation();
+  }, true);
+
+  document.addEventListener('click', (event) => {
+    const button = event.target instanceof Element ? event.target.closest('#btnOpenSidebar') : null;
+    if (!button) return;
+    requestAnimationFrame(restoreSidebarSections);
   }, true);
 
   document.addEventListener('change', (event) => {
@@ -148,6 +200,8 @@ function installListeners() {
     const locationState = readLocation(current.route || 'dashboard');
     notifyStore(locationState.route, 'popstate');
   });
+
+  requestAnimationFrame(restoreSidebarSections);
 }
 
 export const UrlStateService = {
