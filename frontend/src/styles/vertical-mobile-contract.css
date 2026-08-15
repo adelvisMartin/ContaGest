@@ -1,0 +1,161 @@
+/* ContaGest-VE v11.24 · vertical mobile interaction contract.
+   This is a canonical internal module imported only by erp-runtime.css.
+   It owns mobile geometry for mature verticals without creating route hotfixes. */
+
+/* Veterinary MUI dialogs: keep labels, controls and actions physically separated. */
+body[data-route="veterinaria"] .MuiDialogContent-root {
+  overflow-x:hidden !important;
+  padding:18px 16px 22px !important;
+}
+body[data-route="veterinaria"] .MuiDialogContent-root .MuiFormControl-root {
+  position:relative !important;
+  display:flex !important;
+  width:100% !important;
+  min-width:0 !important;
+  margin:4px 0 0 !important;
+  overflow:visible !important;
+}
+body[data-route="veterinaria"] .MuiDialogContent-root .MuiInputLabel-root {
+  position:absolute !important;
+  z-index:2 !important;
+  transform:translate(12px,-8px) scale(.78) !important;
+  transform-origin:top left !important;
+  padding:0 5px !important;
+  background:var(--cg-surface) !important;
+  color:var(--cg-text-muted) !important;
+  line-height:1.25 !important;
+  pointer-events:none !important;
+}
+body[data-route="veterinaria"] .MuiDialogContent-root .MuiOutlinedInput-root {
+  width:100% !important;
+  min-height:46px !important;
+  height:auto !important;
+  overflow:visible !important;
+  align-items:center !important;
+}
+body[data-route="veterinaria"] .MuiDialogContent-root .MuiInputBase-input,
+body[data-route="veterinaria"] .MuiDialogContent-root .MuiSelect-select {
+  min-height:20px !important;
+  padding:13px 12px 10px !important;
+  line-height:1.35 !important;
+}
+body[data-route="veterinaria"] .MuiDialogContent-root .MuiInputBase-multiline {
+  padding:11px 12px !important;
+  align-items:flex-start !important;
+}
+body[data-route="veterinaria"] .MuiDialogContent-root .MuiInputBase-inputMultiline {
+  padding:0 !important;
+}
+body[data-route="veterinaria"] .MuiDialogActions-root {
+  position:sticky !important;
+  bottom:0 !important;
+  z-index:4 !important;
+  gap:8px !important;
+  background:var(--cg-surface) !important;
+  border-top:1px solid var(--cg-border) !important;
+}
+
+/* Fitness navigation: a real scroll strip, never a compressed/overlaid toolbar. */
+.cg-gym-page .cg-vertical-tabs,
+.cg-gym-v1124-tabs {
+  display:flex !important;
+  align-items:stretch !important;
+  gap:6px !important;
+  width:100% !important;
+  max-width:100% !important;
+  padding:6px !important;
+  overflow-x:auto !important;
+  overflow-y:hidden !important;
+  overscroll-behavior-inline:contain !important;
+  scrollbar-width:thin !important;
+  border:1px solid var(--cg-border) !important;
+  border-radius:12px !important;
+  background:var(--cg-surface) !important;
+  box-shadow:none !important;
+  position:relative !important;
+  isolation:isolate !important;
+}
+.cg-gym-page .cg-vertical-tabs::before,
+.cg-gym-page .cg-vertical-tabs::after,
+.cg-gym-v1124-tabs::before,
+.cg-gym-v1124-tabs::after { content:none !important; display:none !important; }
+.cg-gym-page .cg-vertical-tabs > button,
+.cg-gym-v1124-tabs > button {
+  position:static !important;
+  flex:0 0 auto !important;
+  min-width:max-content !important;
+  min-height:40px !important;
+  padding:8px 12px !important;
+  border:1px solid transparent !important;
+  border-radius:9px !important;
+  background:transparent !important;
+  color:var(--cg-text-muted) !important;
+  white-space:nowrap !important;
+  cursor:pointer !important;
+  pointer-events:auto !important;
+  z-index:auto !important;
+}
+.cg-gym-page .cg-vertical-tabs > button.active,
+.cg-gym-v1124-tabs > button.active {
+  color:var(--cg-primary) !important;
+  background:color-mix(in srgb,var(--cg-primary) 9%,var(--cg-surface)) !important;
+  border-color:color-mix(in srgb,var(--cg-primary) 25%,var(--cg-border)) !important;
+}
+.cg-gym-v1124-grid { display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,270px),1fr));gap:12px;min-width:0; }
+.cg-gym-v1124-card { min-width:0;padding:14px;border:1px solid var(--cg-border);border-radius:12px;background:var(--cg-surface); }
+.cg-gym-v1124-card > header { display:flex;align-items:flex-start;justify-content:space-between;gap:10px;margin-bottom:12px; }
+.cg-gym-v1124-card h3 { margin:0;font-size:1rem; }
+.cg-gym-v1124-card p { margin:4px 0 0;color:var(--cg-text-muted);font-size:.75rem; }
+.cg-gym-v1124-form { display:grid;gap:11px;min-width:0; }
+.cg-gym-v1124-form label { display:grid;gap:5px;min-width:0;color:var(--cg-text-muted);font-size:.72rem; }
+.cg-gym-v1124-form :where(input,select,textarea) { width:100% !important;min-width:0 !important;min-height:44px !important;height:auto !important;margin:0 !important;padding:10px 11px !important;border:1px solid var(--cg-border) !important;border-radius:9px !important;background:var(--cg-surface) !important;color:var(--cg-text) !important;line-height:1.35 !important; }
+.cg-gym-v1124-form textarea { min-height:88px !important;resize:vertical; }
+.cg-gym-v1124-form select { appearance:auto !important; }
+.cg-gym-v1124-form .cg-gym-v1124-fields { display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;min-width:0; }
+.cg-gym-v1124-actions { display:flex;gap:8px;flex-wrap:wrap; }
+.cg-gym-v1124-actions > * { flex:1 1 150px; }
+.cg-gym-v1124-prereq { display:grid;gap:10px;padding:13px;border:1px solid color-mix(in srgb,var(--cg-warning) 35%,var(--cg-border));border-radius:12px;background:color-mix(in srgb,var(--cg-warning) 7%,var(--cg-surface)); }
+.cg-gym-v1124-prereq strong { font-size:.84rem; }
+.cg-gym-v1124-prereq p { margin:0;color:var(--cg-text-muted);font-size:.75rem;line-height:1.45; }
+.cg-gym-v1124-status { display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px; }
+.cg-gym-v1124-status article { padding:10px;border:1px solid var(--cg-border);border-radius:10px;background:var(--cg-surface-soft); }
+.cg-gym-v1124-status small { display:block;color:var(--cg-text-muted);font-size:.65rem;text-transform:uppercase;letter-spacing:.045em; }
+.cg-gym-v1124-status strong { display:block;margin-top:3px;font-size:1rem; }
+.cg-gym-v1124-list { display:grid;gap:8px; }
+.cg-gym-v1124-list article { display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px;border:1px solid var(--cg-border);border-radius:9px;background:var(--cg-surface-soft); }
+.cg-gym-v1124-list article > div { min-width:0; }
+.cg-gym-v1124-list strong,.cg-gym-v1124-list small { display:block;overflow:hidden;text-overflow:ellipsis; }
+.cg-gym-v1124-list small { color:var(--cg-text-muted);font-size:.68rem; }
+.cg-gym-v1124-empty { padding:20px 12px;text-align:center;color:var(--cg-text-muted);font-size:.75rem; }
+.cg-gym-v1124-disabled { opacity:.62; }
+.cg-gym-v1124-disabled :where(input,select,textarea,button[type="submit"]) { pointer-events:none !important; }
+
+/* Sidebar details are accordion controls; category taps must only expand/collapse. */
+@media (max-width:1023px) {
+  #mainMenu .hf-menu-section > summary {
+    min-height:44px !important;
+    cursor:pointer !important;
+    touch-action:manipulation !important;
+    user-select:none !important;
+  }
+  #mainMenu .hf-menu-section[open] > .hf-menu-list { display:grid !important; }
+  #mainMenu .hf-menu-section:not([open]) > .hf-menu-list { display:none !important; }
+  #mainMenu .hf-menu-item { min-height:44px !important;touch-action:manipulation !important; }
+  body[data-route="veterinaria"] .MuiDialog-paperFullScreen { width:100% !important;max-width:100% !important;margin:0 !important;border-radius:0 !important; }
+  body[data-route="veterinaria"] .MuiDialogTitle-root { padding:14px 15px !important; }
+  body[data-route="veterinaria"] .MuiDialogContent-root { padding:20px 14px 24px !important; }
+  .cg-gym-v1124-grid { grid-template-columns:1fr; }
+  .cg-gym-v1124-form .cg-gym-v1124-fields { grid-template-columns:1fr; }
+  .cg-gym-v1124-status { grid-template-columns:1fr 1fr; }
+  .cg-gym-page .cg-vertical-tabs,
+  .cg-gym-v1124-tabs { scroll-snap-type:x proximity; }
+  .cg-gym-page .cg-vertical-tabs > button,
+  .cg-gym-v1124-tabs > button { scroll-snap-align:start; }
+}
+
+@media (max-width:480px) {
+  .cg-gym-v1124-status { grid-template-columns:1fr; }
+  .cg-gym-v1124-card { padding:12px; }
+  .cg-gym-v1124-actions { flex-direction:column; }
+  .cg-gym-v1124-actions > * { width:100%;flex-basis:auto; }
+}
