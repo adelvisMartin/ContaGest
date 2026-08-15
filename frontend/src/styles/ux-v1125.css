@@ -1,0 +1,86 @@
+/* ContaGest-VE v11.25 UX contract: mobile navigation, RBAC selection and specialist assistants. */
+
+/* Light theme: light sidebar shell with blue section headers and high-contrast submenu text. */
+html:not(.dark):not(.enterprise) body .hf-app-sidebar.hf-sidebar{
+  background:#f8fbff !important;
+  color:#0f172a !important;
+  border-right:1px solid #cbd5e1 !important;
+  box-shadow:12px 0 34px rgba(15,23,42,.10) !important;
+}
+html:not(.dark):not(.enterprise) body .hf-app-sidebar .hf-brand,
+html:not(.dark):not(.enterprise) body .hf-app-sidebar .hf-sidebar-footer{
+  color:#0f172a !important;
+  border-color:#dbe4ef !important;
+}
+html:not(.dark):not(.enterprise) body .hf-app-sidebar .hf-sidebar-wordmark p,
+html:not(.dark):not(.enterprise) body .hf-app-sidebar .hf-footer-kicker,
+html:not(.dark):not(.enterprise) body .hf-app-sidebar .hf-sidebar-footer span{color:#52657a !important;}
+html:not(.dark):not(.enterprise) body .hf-menu-section{margin:7px 8px !important;border-radius:12px !important;overflow:hidden !important;}
+html:not(.dark):not(.enterprise) body .hf-menu-section>summary{
+  background:linear-gradient(135deg,#2457b8,#315fd2) !important;
+  color:#fff !important;
+  border:1px solid #244fa9 !important;
+  border-radius:10px !important;
+  min-height:44px !important;
+  padding:9px 12px !important;
+}
+html:not(.dark):not(.enterprise) body .hf-menu-section[open]>summary{border-radius:10px 10px 5px 5px !important;}
+html:not(.dark):not(.enterprise) body .hf-menu-list{background:#eef4ff !important;padding:5px !important;border-radius:0 0 10px 10px !important;}
+html:not(.dark):not(.enterprise) body .hf-menu-item{
+  color:#23344d !important;background:transparent !important;border:1px solid transparent !important;box-shadow:none !important;
+}
+html:not(.dark):not(.enterprise) body .hf-menu-item:hover{background:#dfeaff !important;color:#153e8f !important;}
+html:not(.dark):not(.enterprise) body .hf-menu-item.active{
+  background:#173d8f !important;color:#fff !important;border-color:#173d8f !important;box-shadow:inset 3px 0 0 #87aaff !important;
+}
+html:not(.dark):not(.enterprise) body .hf-menu-item.active i,
+html:not(.dark):not(.enterprise) body .hf-menu-item.active span{color:#fff !important;}
+html:not(.dark):not(.enterprise) body .hf-sidebar-collapse{background:#fff !important;color:#173d8f !important;border-color:#cbd5e1 !important;}
+
+/* Demo user create form: prevent native/custom select overlap and expose explicit module selection. */
+.cg-demo-user-form :where(.select,select,.input,input){position:relative !important;z-index:1 !important;background-clip:padding-box !important;}
+.cg-demo-user-form select{appearance:auto !important;-webkit-appearance:menulist !important;padding-right:36px !important;}
+.cg-demo-module-picker{grid-column:1/-1;border:1px solid var(--cg-border);border-radius:14px;padding:14px;background:var(--cg-surface-soft);min-width:0;}
+.cg-demo-module-picker legend{display:flex;align-items:center;justify-content:space-between;gap:12px;width:100%;font-weight:650;color:var(--cg-text);}
+.cg-demo-module-picker legend strong{font-family:var(--cg-font-mono);font-size:12px;background:var(--cg-primary);color:#fff;border-radius:999px;padding:4px 9px;}
+.cg-demo-module-picker>p{margin:5px 0 12px;color:var(--cg-text-muted);font-size:12px;line-height:1.45;}
+.cg-demo-module-grid{display:flex;flex-wrap:wrap;gap:7px;max-height:240px;overflow:auto;padding:2px;}
+.cg-demo-module-badge{position:relative;display:inline-flex;align-items:center;min-height:36px;border:1px solid var(--cg-border);border-radius:999px;background:var(--cg-surface);color:var(--cg-text);cursor:pointer;transition:.15s;}
+.cg-demo-module-badge input{position:absolute;opacity:0;pointer-events:none;}
+.cg-demo-module-badge span{padding:8px 11px;font-size:12px;font-weight:600;white-space:nowrap;}
+.cg-demo-module-badge.is-selected{background:color-mix(in srgb,var(--cg-primary) 13%,var(--cg-surface));border-color:color-mix(in srgb,var(--cg-primary) 55%,var(--cg-border));color:var(--cg-primary);}
+.cg-demo-module-badge:has(input:disabled){opacity:.48;cursor:not-allowed;}
+
+/* Fast birth-date entry avoids the cumbersome Android calendar year navigation. */
+.cg-quick-date{display:grid;gap:6px;min-width:0;}
+.cg-quick-date>span{font-size:12px;font-weight:600;color:var(--cg-text-muted);}
+.cg-quick-date>div{display:grid;grid-template-columns:.75fr 1fr 1fr;gap:7px;}
+.cg-quick-date select{width:100%;min-width:0;min-height:44px;border:1px solid var(--cg-border);border-radius:10px;background:var(--cg-surface);color:var(--cg-text);padding:8px;}
+
+/* Trainer/nutrition quick assistants. */
+.cg-specialist-assistant{margin:12px 0;padding:15px;border:1px solid color-mix(in srgb,var(--cg-primary) 24%,var(--cg-border));border-radius:15px;background:linear-gradient(145deg,color-mix(in srgb,var(--cg-primary) 5%,var(--cg-surface)),var(--cg-surface));box-shadow:0 7px 24px rgba(15,23,42,.06);}
+.cg-specialist-assistant>header{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:12px;}
+.cg-specialist-assistant>header span{display:block;color:var(--cg-primary);font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;}
+.cg-specialist-assistant h3{margin:2px 0 3px;font-size:18px;line-height:1.2;}
+.cg-specialist-assistant header p{margin:0;color:var(--cg-text-muted);font-size:12px;line-height:1.45;}
+.cg-specialist-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,165px),1fr));gap:9px;}
+.cg-specialist-grid label{display:grid;gap:5px;color:var(--cg-text-muted);font-size:11px;font-weight:600;}
+.cg-specialist-grid :where(input,select){width:100%;min-height:42px;border:1px solid var(--cg-border);border-radius:9px;background:var(--cg-surface);color:var(--cg-text);padding:8px 10px;}
+.cg-muscle-picker{display:flex;flex-wrap:wrap;gap:7px;margin:11px 0;}
+.cg-muscle-picker button{min-height:36px;padding:7px 11px;border:1px solid var(--cg-border);border-radius:999px;background:var(--cg-surface);color:var(--cg-text);font-size:12px;font-weight:600;text-transform:capitalize;}
+.cg-muscle-picker button.is-selected{background:var(--cg-primary);border-color:var(--cg-primary);color:#fff;}
+.cg-specialist-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:11px;}.cg-specialist-actions>*{flex:1 1 180px;}
+.cg-specialist-output{margin-top:12px;display:grid;gap:8px;}
+.cg-specialist-output h4{margin:0;font-size:16px;}.cg-specialist-output>p{margin:0;color:var(--cg-text-muted);font-size:12px;line-height:1.5;}
+.cg-specialist-output ol{display:grid;gap:7px;margin:0;padding-left:20px;}.cg-specialist-output li{padding:8px 9px;border:1px solid var(--cg-border);border-radius:9px;background:var(--cg-surface);}.cg-specialist-output li strong,.cg-specialist-output li span,.cg-specialist-output li small{display:block;}.cg-specialist-output li span{margin-top:2px;color:var(--cg-primary);font-size:11px;font-weight:600;}.cg-specialist-output li small{margin-top:3px;color:var(--cg-text-muted);line-height:1.4;}
+.cg-meal-week{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,220px),1fr));gap:8px;}.cg-meal-week article{display:grid;gap:5px;padding:10px;border:1px solid var(--cg-border);border-radius:10px;background:var(--cg-surface);}.cg-meal-week article>span{font-size:11px;line-height:1.4;color:var(--cg-text-muted);}.cg-meal-week article>span::before{content:'• ';color:var(--cg-primary);}
+
+@media(max-width:760px){
+  .cg-demo-user-form{grid-template-columns:1fr !important;}
+  .cg-demo-module-grid{max-height:280px;}
+  .cg-demo-module-badge{flex:1 1 calc(50% - 7px);justify-content:center;}
+  .cg-demo-module-badge span{white-space:normal;text-align:center;}
+  .cg-specialist-grid{grid-template-columns:1fr 1fr;}
+  .cg-specialist-assistant{padding:12px;margin-inline:0;}
+}
+@media(max-width:430px){.cg-specialist-grid{grid-template-columns:1fr;}.cg-quick-date>div{grid-template-columns:.7fr 1fr 1fr;}.cg-demo-module-badge{flex-basis:100%;}}
