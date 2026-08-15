@@ -3,12 +3,13 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
-  <meta name="theme-color" content="#34423b" />
-  <meta name="description" content="Control Hípico: operación hípica profesional, mobile-first y offline-first." />
+  <meta name="theme-color" content="#26362f" />
+  <meta name="description" content="Control Hípico: carreras, tercios, WhatsApp, saldos y cierres con operación offline-first." />
   <meta property="og:title" content="Control Hípico" />
-  <meta property="og:description" content="Misma operación hípica. Mejor ingeniería. Mejor experiencia." />
+  <meta property="og:description" content="Operación hípica móvil y offline-first." />
   <meta property="og:image" content="/hipico-control/assets/brand/icon-512.svg" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="Control Hípico" />
   <link rel="manifest" href="/hipico-control/manifest.webmanifest" />
   <link rel="icon" href="/hipico-control/assets/brand/favicon.svg" type="image/svg+xml" />
@@ -20,79 +21,137 @@
   <title>Control Hípico</title>
 </head>
 <body>
-  <div class="ch-shell">
+  <div class="ch-app">
     <aside class="ch-sidebar" aria-label="Navegación principal">
-      <div class="ch-brand"><img src="/hipico-control/assets/brand/control-hipico-mark.svg" alt="" /><div class="ch-brand-copy"><strong>CONTROL HÍPICO</strong><small>Precision Hípica</small></div></div>
-      <nav class="ch-full-nav" data-nav-full></nav>
-      <div class="ch-sidebar-footer">Offline-first · Estado local visible · Bridge desacoplado</div>
+      <div class="ch-brand ch-brand-side"><img src="/hipico-control/assets/brand/control-hipico-mark.svg" alt="" /><div><strong>CONTROL HÍPICO</strong><small>Operación de carreras</small></div></div>
+      <nav class="ch-drawer-nav" data-nav-full></nav>
+      <footer><span data-sidebar-group>Grupo local</span><small>Offline-first · v1.12 PWA</small></footer>
     </aside>
+
     <div class="ch-workspace">
-      <header class="ch-topbar">
-        <button class="ch-icon-btn" data-menu type="button" aria-label="Abrir menú">☰</button>
-        <div class="ch-brand"><img src="/hipico-control/assets/brand/control-hipico-mark.svg" alt="" /><div class="ch-brand-copy"><strong>CONTROL HÍPICO</strong><small>Operación de jornada</small></div></div>
-        <div class="ch-top-actions">
-          <button class="ch-sync" data-sync-state type="button" title="Estado de sincronización"><span class="ch-dot"></span><span data-sync-label>Local listo</span></button>
-          <button class="ch-icon-btn" data-command-open type="button" aria-label="Buscar o ejecutar acción" title="Ctrl/Cmd + K">⌕</button>
-          <button class="ch-icon-btn" data-theme-toggle type="button" aria-label="Cambiar tema">◐</button>
+      <header class="ch-appbar">
+        <button class="ch-icon-button" data-menu type="button" aria-label="Abrir menú">☰</button>
+        <button class="ch-brand ch-brand-top" data-route="resumen" type="button" aria-label="Ir al resumen"><img src="/hipico-control/assets/brand/control-hipico-mark.svg" alt="" /><span><strong>CONTROL HÍPICO</strong><small data-header-group>Grupo local</small></span></button>
+        <div class="ch-appbar-actions">
+          <button class="ch-sync" data-sync-state type="button"><span class="ch-dot"></span><span data-sync-label>Local</span></button>
+          <button class="ch-icon-button" data-command-open type="button" aria-label="Buscar módulo" title="Ctrl/Cmd + K">⌕</button>
         </div>
       </header>
+
+      <section class="ch-race-strip" aria-label="Contexto operativo">
+        <button type="button" data-group-quick><small>Grupo</small><strong data-context-group>Grupo local</strong></button>
+        <button type="button" data-route="resumen"><small>Carrera</small><strong data-context-race>Sin carrera abierta</strong></button>
+        <span class="ch-state-pill" data-race-state>PREPARACIÓN</span>
+      </section>
+
       <main class="ch-main">
-        <div class="ch-banner" data-offline-banner role="status">Sin conexión. Los cambios compatibles se guardarán localmente y quedarán pendientes de sincronización.</div>
+        <div class="ch-offline-banner" data-offline-banner role="status">Sin conexión. La operación continúa en este dispositivo y las acciones pendientes quedan en outbox.</div>
 
         <section class="ch-page is-active" data-page="resumen">
-          <div class="ch-page-head"><div><p class="ch-eyebrow">Jornada</p><h1>Resumen operativo</h1><p class="ch-copy">Lectura inmediata de actividad, pendientes, saldos y estado local.</p></div><button class="ch-btn ch-btn-secondary" data-route="captura">Nueva captura</button></div>
-          <div class="ch-grid ch-metrics">
-            <article class="ch-card ch-card-pad ch-metric"><small>Operaciones hoy</small><strong data-metric-ops>0</strong></article>
-            <article class="ch-card ch-card-pad ch-metric"><small>Pendientes sync</small><strong data-metric-outbox>0</strong></article>
-            <article class="ch-card ch-card-pad ch-metric"><small>Participantes</small><strong data-metric-participants>0</strong></article>
-            <article class="ch-card ch-card-pad ch-metric"><small>Balance neto</small><strong class="ch-money" data-metric-balance>Bs. 0,00</strong></article>
+          <header class="ch-page-header"><div><p class="ch-kicker">Jornada activa</p><h1>Resumen</h1><p>Abre la carrera, recibe jugadas, revisa WhatsApp, cierra y registra la llegada desde el mismo flujo.</p></div><button class="ch-button ch-button-secondary" data-route="captura">+ Captura</button></header>
+          <div class="ch-kpi-grid">
+            <article><small>Jugadas</small><strong data-metric-ops>0</strong><span>carrera / jornada</span></article>
+            <article><small>Pendientes</small><strong data-metric-outbox>0</strong><span>outbox local</span></article>
+            <article><small>Tercios</small><strong data-metric-participants>0</strong><span>participantes</span></article>
+            <article><small>Disponible</small><strong class="ch-money" data-metric-balance>Bs. 0,00</strong><span>saldo local neto</span></article>
           </div>
-          <div class="ch-grid ch-grid-2">
-            <article class="ch-card ch-card-pad"><p class="ch-eyebrow">Estado</p><div class="ch-status-line"><span><strong>Persistencia local</strong><small>IndexedDB versionado</small></span><span class="ch-badge" data-tone="success">Activo</span></div><div class="ch-status-line"><span><strong>Outbox</strong><small>Reintentos e idempotencia preparados</small></span><span class="ch-badge" data-tone="success">Activo</span></div><div class="ch-status-line"><span><strong>WhatsApp Bridge</strong><small>Automatización solo tras shadow mode</small></span><span class="ch-badge" data-tone="warning">Manual / shadow</span></div></article>
-            <article class="ch-card ch-card-pad"><p class="ch-eyebrow">Actividad reciente</p><div class="ch-list" data-recent-list><div class="ch-empty">Aún no hay operaciones locales.</div></div></article>
-          </div>
-        </section>
 
-        <section class="ch-page" data-page="captura">
-          <div class="ch-page-head"><div><p class="ch-eyebrow">Captura</p><h1>Nueva operación</h1><p class="ch-copy">Registro rápido con validación local y cola de salida. La lógica hípica existente se preserva.</p></div></div>
-          <article class="ch-card ch-card-pad">
-            <form class="ch-form ch-form-2" data-capture-form>
-              <div class="ch-field"><label for="captureParticipant">Participante</label><input class="ch-control" id="captureParticipant" name="participant" required autocomplete="off" /></div>
-              <div class="ch-field"><label for="captureTrack">Hipódromo</label><input class="ch-control" id="captureTrack" name="track" required autocomplete="off" /></div>
-              <div class="ch-field"><label for="captureRace">Carrera</label><input class="ch-control" id="captureRace" name="race" type="number" min="1" inputmode="numeric" required /></div>
-              <div class="ch-field"><label for="capturePlay">Jugada / modalidad</label><input class="ch-control" id="capturePlay" name="play" required autocomplete="off" /></div>
-              <div class="ch-field"><label for="captureHorse">Ejemplar</label><input class="ch-control" id="captureHorse" name="horse" required autocomplete="off" /></div>
-              <div class="ch-field"><label for="captureAmount">Monto</label><input class="ch-control" id="captureAmount" name="amount" type="number" min="0" step="0.01" inputmode="decimal" required /></div>
-              <div class="ch-field ch-field-wide"><label for="captureNotes">Notas</label><textarea class="ch-control" id="captureNotes" name="notes"></textarea></div>
-              <div class="ch-actions ch-field-wide"><button class="ch-btn" type="submit">Guardar localmente</button><button class="ch-btn ch-btn-secondary" type="reset">Limpiar</button></div>
-            </form>
+          <div class="ch-grid ch-grid-2">
+            <article class="ch-panel">
+              <header><div><p class="ch-kicker">Carrera</p><h2>Control de recepción</h2></div><span class="ch-state-pill" data-race-state-card>PREPARACIÓN</span></header>
+              <div data-race-card class="ch-race-card-empty">No hay una carrera abierta. Crea una para comenzar la recepción.</div>
+              <form class="ch-form" data-race-form>
+                <div class="ch-form-row"><label><span>Hipódromo</span><input name="track" placeholder="Del Mar, Gulfstream, La Rinconada…" required /></label><label><span>Carrera</span><input name="number" type="number" min="1" inputmode="numeric" required /></label></div>
+                <div class="ch-actions"><button class="ch-button" type="submit">Abrir carrera</button><button class="ch-button ch-button-secondary" type="button" data-close-race>Cerrar recepción</button></div>
+              </form>
+            </article>
+
+            <article class="ch-panel">
+              <header><div><p class="ch-kicker">Flujo recomendado</p><h2>Estado de la carrera</h2></div></header>
+              <ol class="ch-flow" data-flow-steps>
+                <li data-flow="open"><b>1</b><span>Abrir carrera</span></li><li data-flow="chat"><b>2</b><span>Pegar / recibir chat</span></li><li data-flow="review"><b>3</b><span>Revisar parejas</span></li><li data-flow="close"><b>4</b><span>Cerrar y copiar plano</span></li><li data-flow="result"><b>5</b><span>Aplicar llegada</span></li><li data-flow="settle"><b>6</b><span>Liquidar y saldos</span></li>
+              </ol>
+              <div class="ch-actions"><button class="ch-button ch-button-secondary" data-route="whatsapp">Revisar WhatsApp</button><button class="ch-button ch-button-secondary" data-route="cierres">Cierre / llegada</button></div>
+            </article>
+          </div>
+
+          <article class="ch-panel">
+            <header><div><p class="ch-kicker">Últimos movimientos</p><h2>Actividad reciente</h2></div><button class="ch-link-button" data-route="historial">Ver historial</button></header>
+            <div class="ch-list" data-recent-list><div class="ch-empty">Todavía no hay movimientos locales.</div></div>
           </article>
         </section>
 
-        <section class="ch-page" data-page="participantes">
-          <div class="ch-page-head"><div><p class="ch-eyebrow">Participantes</p><h1>Participantes y saldos</h1><p class="ch-copy">Gestión local de personas, identificadores y estado operativo.</p></div></div>
+        <section class="ch-page" data-page="captura">
+          <header class="ch-page-header"><div><p class="ch-kicker">Recepción manual</p><h1>Captura</h1><p>Registra el lado Juega/Consigue conservando carrera, tercio, jugada, caballo y monto.</p></div></header>
           <div class="ch-grid ch-grid-2">
-            <article class="ch-card ch-card-pad"><form class="ch-form" data-participant-form><div class="ch-field"><label>Nombre</label><input class="ch-control" name="name" required /></div><div class="ch-field"><label>Identificador</label><input class="ch-control" name="code" required /></div><div class="ch-field"><label>Saldo inicial</label><input class="ch-control" name="balance" type="number" step="0.01" inputmode="decimal" value="0" /></div><button class="ch-btn" type="submit">Guardar participante</button></form></article>
-            <article class="ch-card ch-card-pad"><div class="ch-list" data-participant-list><div class="ch-empty">Sin participantes registrados.</div></div></article>
+            <article class="ch-panel">
+              <form class="ch-form" data-capture-form>
+                <label><span>Carrera activa</span><input data-capture-race readonly value="Sin carrera abierta" /></label>
+                <div class="ch-side-toggle" role="group" aria-label="Lado de la jugada"><label><input type="radio" name="side" value="juega" checked><span>Juega</span></label><label><input type="radio" name="side" value="consigue"><span>Consigue / da</span></label></div>
+                <label><span>Participante / tercio</span><select name="participantId" data-participant-select required><option value="">Seleccionar participante</option></select></label>
+                <div class="ch-form-row"><label><span>Jugada</span><input name="play" placeholder="2N, 2/2, 1/2…" required /></label><label><span>Caballo</span><input name="horse" placeholder="1" required /></label></div>
+                <div class="ch-form-row"><label><span>Monto</span><input name="amount" type="number" min="0.01" step="0.01" inputmode="decimal" required /></label><label><span>Tipo</span><select name="timing"><option value="current">Carrera actual</option><option value="advanced">Adelantada</option></select></label></div>
+                <label><span>Nota / origen</span><textarea name="notes" placeholder="Texto de referencia, condición o aclaratoria"></textarea></label>
+                <div class="ch-actions"><button class="ch-button" type="submit">Guardar jugada</button><button class="ch-button ch-button-secondary" type="reset">Limpiar</button></div>
+              </form>
+            </article>
+            <article class="ch-panel"><header><div><p class="ch-kicker">Recepción</p><h2>Jugadas de la carrera</h2></div></header><div class="ch-list" data-current-ops><div class="ch-empty">Sin jugadas registradas.</div></div></article>
+          </div>
+        </section>
+
+        <section class="ch-page" data-page="participantes">
+          <header class="ch-page-header"><div><p class="ch-kicker">Tercios</p><h1>Participantes</h1><p>Nombre, código, teléfono, disponible y aval quedan aislados por grupo.</p></div></header>
+          <div class="ch-grid ch-grid-2">
+            <article class="ch-panel"><form class="ch-form" data-participant-form><div class="ch-form-row"><label><span>Código</span><input name="code" placeholder="PACO" required /></label><label><span>Nombre</span><input name="name" required /></label></div><label><span>Teléfono WhatsApp</span><input name="phone" inputmode="tel" placeholder="+58…" /></label><div class="ch-form-row"><label><span>Disponible inicial</span><input name="balance" type="number" step="0.01" value="0" inputmode="decimal" /></label><label><span>Aval</span><input name="aval" type="number" step="0.01" value="0" inputmode="decimal" /></label></div><button class="ch-button" type="submit">Guardar participante</button></form></article>
+            <article class="ch-panel"><header><div><p class="ch-kicker">Grupo activo</p><h2>Tercios registrados</h2></div></header><div class="ch-list" data-participant-list><div class="ch-empty">Sin participantes registrados.</div></div></article>
           </div>
         </section>
 
         <section class="ch-page" data-page="whatsapp">
-          <div class="ch-page-head"><div><p class="ch-eyebrow">WhatsApp</p><h1>Chat y análisis operativo</h1><p class="ch-copy">Importación manual compatible con el analizador existente. El Bridge permanece desacoplado y en modo seguro.</p></div></div>
-          <div class="ch-grid ch-grid-2"><article class="ch-card ch-card-pad"><div class="ch-field"><label for="whatsappText">Pega una exportación o bloque de mensajes</label><textarea id="whatsappText" class="ch-control" data-whatsapp-input></textarea></div><div class="ch-actions" style="margin-top:10px"><button class="ch-btn" data-whatsapp-analyze type="button">Analizar</button><button class="ch-btn ch-btn-secondary" data-whatsapp-clear type="button">Limpiar</button></div></article><article class="ch-card ch-card-pad"><div data-whatsapp-result><div class="ch-empty">El análisis se ejecuta localmente y no envía mensajes.</div></div></article></div>
+          <header class="ch-page-header"><div><p class="ch-kicker">Bandeja WhatsApp</p><h1>Chat WhatsApp</h1><p>Pega mensajes o usa el Bridge en modo sombra. El motor separa cierres, respuestas citadas, ofertas, resultados y saldos.</p></div><span class="ch-state-pill" data-bridge-state>MANUAL</span></header>
+          <div class="ch-grid ch-grid-2">
+            <article class="ch-panel"><label class="ch-field"><span>Mensajes copiados / exportados</span><textarea data-whatsapp-input class="ch-chat-input" placeholder="Pega aquí el bloque de WhatsApp…"></textarea></label><div class="ch-actions"><button class="ch-button" data-whatsapp-analyze type="button">Analizar</button><button class="ch-button ch-button-secondary" data-whatsapp-clear type="button">Limpiar</button></div><p class="ch-help">La app no valida por sí sola una apuesta monetaria: las coincidencias ambiguas siguen requiriendo revisión del operador.</p></article>
+            <article class="ch-panel"><header><div><p class="ch-kicker">Agentes operativos</p><h2>Clasificación y revisión</h2></div></header><div data-whatsapp-result><div class="ch-empty">Analiza un bloque para ver eventos, parejas, duplicados y revisiones.</div></div></article>
+          </div>
+          <article class="ch-panel"><header><div><p class="ch-kicker">Bridge / chatbot</p><h2>Automatización segura</h2></div><button class="ch-button ch-button-secondary" data-bridge-refresh>Comprobar backend</button></header><div class="ch-bridge-grid"><div><small>Cloud connector</small><strong data-cloud-status>Comprobando…</strong></div><div><small>Modo recomendado</small><strong>Sombra + aprobación</strong></div><div><small>Respuestas monetarias</small><strong>Bloqueadas sin revisión</strong></div></div><p class="ch-help">El Bridge puede escuchar el grupo vinculado, persistir, deduplicar, clasificar y generar respuestas en un grupo laboratorio. El paso a envío automático en el grupo fuente debe pasar primero el gate de shadow mode.</p></article>
         </section>
 
-        <section class="ch-page" data-page="adelantadas"><div class="ch-page-head"><div><p class="ch-eyebrow">Adelantadas</p><h1>Operaciones adelantadas</h1><p class="ch-copy">Vista separada para preservar el flujo actual y evitar mezclar jornadas.</p></div></div><article class="ch-card ch-card-pad"><div class="ch-list" data-advanced-list><div class="ch-empty">Sin operaciones adelantadas locales.</div></div></article></section>
-        <section class="ch-page" data-page="historial"><div class="ch-page-head"><div><p class="ch-eyebrow">Historial</p><h1>Trazabilidad de jornada</h1><p class="ch-copy">Consulta local, búsqueda y reconstrucción de eventos.</p></div></div><article class="ch-card ch-card-pad"><div class="ch-field"><label for="historySearch">Buscar</label><input id="historySearch" class="ch-control" data-history-search placeholder="Participante, hipódromo, jugada o ID" /></div><div class="ch-list" data-history-list style="margin-top:10px"></div></article></section>
-        <section class="ch-page" data-page="cierres"><div class="ch-page-head"><div><p class="ch-eyebrow">Cierres y saldos</p><h1>Consolidación</h1><p class="ch-copy">Totales verificables y cierre operativo sin alterar la lógica vigente.</p></div></div><div class="ch-grid ch-grid-2"><article class="ch-card ch-card-pad"><p class="ch-eyebrow">Balance</p><strong class="ch-money" style="font-size:28px" data-close-balance>Bs. 0,00</strong><p class="ch-copy">Calculado desde registros locales de esta modernización. El motor histórico continúa como fuente funcional de referencia.</p></article><article class="ch-card ch-card-pad"><button class="ch-btn" data-snapshot type="button">Crear snapshot local de jornada</button><div class="ch-copy" data-snapshot-status></div></article></div></section>
-        <section class="ch-page" data-page="polla"><div class="ch-page-head"><div><p class="ch-eyebrow">POLLA</p><h1>Modalidad POLLA</h1><p class="ch-copy">Espacio preservado como contrato funcional; la migración de reglas se realiza sin reinterpretar el negocio.</p></div></div><article class="ch-card ch-card-pad"><div class="ch-empty">La capa visual está preparada para conectar el motor POLLA existente en una fase de caracterización, sin alterar reglas ni históricos.</div></article></section>
-        <section class="ch-page" data-page="configuracion"><div class="ch-page-head"><div><p class="ch-eyebrow">Configuración</p><h1>Preferencias y dispositivo</h1><p class="ch-copy">Tema, estado local, instalación y herramientas operativas.</p></div></div><div class="ch-grid ch-grid-2"><article class="ch-card ch-card-pad"><div class="ch-field"><label for="themeSelect">Tema</label><select id="themeSelect" class="ch-control" data-theme-select><option value="system">Sistema</option><option value="light">Claro</option><option value="dark">Oscuro</option></select></div><div class="ch-status-line"><span><strong>Aplicación instalable</strong><small>PWA standalone</small></span><button class="ch-btn ch-btn-secondary" data-install type="button">Instalar</button></div></article><article class="ch-card ch-card-pad"><button class="ch-btn ch-btn-secondary" data-export type="button">Exportar respaldo local JSON</button><p class="ch-copy">No incluye secretos. Sirve para respaldo operativo y diagnóstico.</p></article></div></section>
+        <section class="ch-page" data-page="adelantadas">
+          <header class="ch-page-header"><div><p class="ch-kicker">Próximas carreras</p><h1>Adelantadas</h1><p>Jugadas capturadas para otra carrera quedan separadas de la recepción actual.</p></div></header><article class="ch-panel"><div class="ch-list" data-advanced-list><div class="ch-empty">No hay jugadas adelantadas.</div></div></article>
+        </section>
+
+        <section class="ch-page" data-page="historial">
+          <header class="ch-page-header"><div><p class="ch-kicker">Trazabilidad</p><h1>Historial</h1><p>Busca por participante, hipódromo, carrera, jugada, caballo o identificador.</p></div></header><article class="ch-panel"><label class="ch-field"><span>Buscar</span><input data-history-search placeholder="Paco, Del Mar, 2N, OP-…" /></label><div class="ch-list ch-list-spaced" data-history-list></div></article>
+        </section>
+
+        <section class="ch-page" data-page="cierres">
+          <header class="ch-page-header"><div><p class="ch-kicker">Cierre y pizarra</p><h1>Cierres y saldos</h1><p>Cierra recepción, registra la llegada oficial y genera snapshots antes de liquidar.</p></div></header>
+          <div class="ch-grid ch-grid-2">
+            <article class="ch-panel"><header><div><p class="ch-kicker">Recepción</p><h2>Cierre de carrera</h2></div></header><div class="ch-callout" data-close-message>Abre una carrera para generar el cierre.</div><div class="ch-actions"><button class="ch-button ch-button-secondary" data-close-race>Cerrar recepción</button><button class="ch-button ch-button-secondary" data-copy-close>Copiar cierre</button></div></article>
+            <article class="ch-panel"><header><div><p class="ch-kicker">Llegada oficial</p><h2>Pizarra</h2></div></header><form class="ch-form" data-result-form><label><span>Orden de llegada</span><input name="board" placeholder="2.1.6.4" required /></label><button class="ch-button" type="submit">Aplicar llegada</button></form><div class="ch-callout" data-result-status>Sin llegada cargada.</div></article>
+            <article class="ch-panel"><header><div><p class="ch-kicker">Control financiero</p><h2>Disponible registrado</h2></div></header><strong class="ch-big-money ch-money" data-close-balance>Bs. 0,00</strong><p class="ch-help">Los saldos mostrados provienen de participantes y snapshots locales; cualquier liquidación debe revisarse contra el plano y la llegada.</p></article>
+            <article class="ch-panel"><header><div><p class="ch-kicker">Recuperación</p><h2>Snapshot de jornada</h2></div></header><button class="ch-button" data-snapshot type="button">Crear snapshot antes de liquidar</button><div class="ch-help" data-snapshot-status></div></article>
+          </div>
+        </section>
+
+        <section class="ch-page" data-page="polla">
+          <header class="ch-page-header"><div><p class="ch-kicker">POLLA</p><h1>Control POLLA</h1><p>La modalidad permanece separada del remate por tercios para no mezclar reglas ni saldos.</p></div></header><article class="ch-panel"><div class="ch-polla-note"><strong>Contrato protegido</strong><p>La PWA conserva esta ruta y sus datos separados. La migración del motor POLLA histórico debe hacerse con casos de caracterización antes de sustituir el motor de la APK.</p></div></article>
+        </section>
+
+        <section class="ch-page" data-page="configuracion">
+          <header class="ch-page-header"><div><p class="ch-kicker">Dispositivo y grupo</p><h1>Configuración</h1><p>Gestiona grupo, tema, PWA, respaldo y continuidad offline.</p></div></header>
+          <div class="ch-grid ch-grid-2">
+            <article class="ch-panel"><form class="ch-form" data-group-form><label><span>Nombre del grupo</span><input name="name" data-group-name placeholder="Grupo principal" required /></label><div class="ch-form-row"><label><span>Moneda</span><select name="currency"><option value="VES">VES</option><option value="USD">USD</option></select></label><label><span>Comisión %</span><input name="commission" type="number" min="0" step="0.01" value="0" /></label></div><button class="ch-button" type="submit">Guardar grupo</button></form></article>
+            <article class="ch-panel"><label class="ch-field"><span>Tema</span><select data-theme-select><option value="system">Sistema</option><option value="light">Claro</option><option value="dark">Oscuro</option></select></label><div class="ch-setting-row"><span><strong>Instalar PWA</strong><small>Aplicación standalone en este dispositivo.</small></span><button class="ch-button ch-button-secondary" data-install type="button">Instalar</button></div><div class="ch-setting-row"><span><strong>Respaldo JSON</strong><small>Grupos, participantes, carreras, jugadas y snapshots.</small></span><button class="ch-button ch-button-secondary" data-export type="button">Descargar</button></div><label class="ch-setting-row ch-upload"><span><strong>Restaurar JSON</strong><small>Importa un respaldo compatible sin depender de internet.</small></span><input type="file" accept="application/json,.json" data-import hidden><button class="ch-button ch-button-secondary" data-import-trigger type="button">Importar</button></label></article>
+          </div>
+        </section>
       </main>
-      <nav class="ch-bottom-nav" aria-label="Accesos frecuentes" data-bottom-nav></nav>
+
+      <nav class="ch-bottom-nav" aria-label="Accesos rápidos" data-bottom-nav></nav>
     </div>
   </div>
 
-  <div class="ch-drawer" data-drawer aria-hidden="true"><div class="ch-backdrop" data-drawer-close></div><aside class="ch-sheet"><div class="ch-brand"><img src="/hipico-control/assets/brand/control-hipico-mark.svg" alt="" /><div class="ch-brand-copy"><strong>CONTROL HÍPICO</strong><small>Menú completo</small></div></div><h2>Navegación</h2><nav class="ch-full-nav" data-nav-drawer></nav></aside></div>
+  <div class="ch-drawer" data-drawer aria-hidden="true"><div class="ch-backdrop" data-drawer-close></div><aside class="ch-sheet"><div class="ch-brand"><img src="/hipico-control/assets/brand/control-hipico-mark.svg" alt="" /><div><strong>CONTROL HÍPICO</strong><small data-drawer-group>Grupo local</small></div></div><nav class="ch-drawer-nav" data-nav-drawer></nav><button class="ch-button ch-button-secondary" data-drawer-close type="button">Cerrar menú</button></aside></div>
   <div class="ch-command" data-command aria-hidden="true"><div class="ch-command-box"><input type="search" data-command-input placeholder="Buscar módulo o acción…" aria-label="Buscar módulo o acción" /><div class="ch-command-results" data-command-results></div></div></div>
   <div class="ch-sr-only" aria-live="polite" data-live></div>
   <script type="module" src="/hipico-control/assets/js/app-shell.js"></script>
