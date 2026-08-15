@@ -1,4 +1,4 @@
-const VERSION='1.0.0';
+const VERSION='1.2.0';
 const CACHE=`control-hipico-shell-v${VERSION}`;
 const RUNTIME=`control-hipico-runtime-v${VERSION}`;
 const SHELL=[
@@ -6,6 +6,7 @@ const SHELL=[
   '/hipico-control/index.html',
   '/hipico-control/manifest.webmanifest',
   '/hipico-control/assets/css/precision-hipica.css',
+  '/hipico-control/assets/css/offline-icons.css',
   '/hipico-control/assets/js/app-shell.js',
   '/hipico-control/assets/js/operations.js',
   '/hipico-control/assets/js/whatsapp.js',
