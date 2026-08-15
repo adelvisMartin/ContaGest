@@ -1,3 +1,5 @@
+import './rc1-recovery.js';
+
 const CLOSE_RE = /NO\s+MAS\s+JUGAD|CARRERA\s+CERRADA|CERRADO\s+CERRADO/i;
 const DAY_CLOSE_RE = /ESTO\s+ES\s+TODO\s+POR\s+EL\s+D[IÍ]A\s+DE\s+HOY|LOS\s+ESPERAMOS\s+MA[NÑ]ANA|CIERRE\s+DE\s+JORNADA/i;
 const BALANCE_HEADER_RE = /\bTERCIO\s+DISPONIBLE\b/i;
