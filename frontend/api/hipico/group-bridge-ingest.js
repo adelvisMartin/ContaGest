@@ -13,6 +13,21 @@ function slug(value) {
     .toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 60) || 'grupo';
 }
 
+function shadowSuggestion(classification, body) {
+  const sender = String(body?.senderLabel || 'remitente').trim() || 'remitente';
+  const suggestions = {
+    offer: `Oferta detectada de ${sender}. Verificar participante, carrera, jugada, caballo y monto antes de emparejar o confirmar.`,
+    reply_review: `Respuesta corta/citada detectada de ${sender}. Correlacionar con el mensaje origen y validar quién toma el monto.`,
+    race_close: 'Cierre de recepción detectado. Confirmar hipódromo y carrera activa antes de publicar plano o bloquear nuevas jugadas.',
+    day_close: 'Cierre de jornada detectado. Revisar carreras pendientes, snapshots y disponibles antes de publicar el cierre final.',
+    result: 'Llegada/pizarra detectada. Confirmar carrera e hipódromo antes de aplicarla al motor de liquidación.',
+    plan_snapshot: 'Plano detectado. Comparar huella, parejas y montos contra la carrera activa antes de aceptarlo.',
+    settlement_snapshot: 'Liquidación detectada. Ejecutar auditor de liquidación; no modificar saldos automáticamente.',
+    balance_snapshot: 'Snapshot de disponibles detectado. Conciliar contra el ledger sin sobrescribir el historial.'
+  };
+  return suggestions[classification] || '';
+}
+
 async function resolveOwnerId() {
   const rows = await supabase('hipico_workspaces?select=owner_id&order=updated_at.desc&limit=1');
   const ownerId = rows?.[0]?.owner_id;
@@ -47,7 +62,7 @@ async function ensureChannel(ownerId, body) {
   return rows?.[0] || null;
 }
 
-async function recordShadowPrediction({ ownerId, channel, body, messageRow, classification, confidence }) {
+async function recordShadowPrediction({ ownerId, channel, body, messageRow, classification, confidence, suggestion }) {
   if (!body.shadowMode || body.channelRole !== 'source' || !messageRow?.id) return;
   const sourceExternalMessageId = String(body.externalMessageId || '');
   await supabase('hipico_shadow_evaluations?on_conflict=owner_id,source_group_key,source_external_message_id,prediction_type', {
@@ -66,7 +81,9 @@ async function recordShadowPrediction({ ownerId, channel, body, messageRow, clas
         raw_text: String(body.text || ''),
         sender_id_hash: sha256(String(body.senderId || '')),
         quoted_external_message_id: body.quotedExternalMessageId || null,
-        automation_state: 'shadow_only'
+        automation_state: 'shadow_only',
+        proposed_reply: suggestion || null,
+        monetary_auto_apply: false
       },
       match_status: classification === 'other' ? 'not_applicable' : 'pending'
     }])
@@ -98,6 +115,7 @@ export default async function handler(req, res) {
     if (!channel?.id) throw new Error('Channel could not be resolved');
 
     const [classification, confidence] = classifyText(text);
+    const suggestion = shadowSuggestion(classification, body);
     const fingerprint = sha256(`${groupId}|${externalMessageId}`);
     const processingStatus = classification === 'other' ? 'ignored' : classification === 'reply_review' ? 'review' : 'processed';
 
@@ -130,21 +148,15 @@ export default async function handler(req, res) {
         },
         metadata: {
           bridge_version: String(body.bridgeVersion || ''),
-          received_by: 'group-bridge-ingest'
+          received_by: 'group-bridge-ingest',
+          proposed_reply: suggestion || null
         }
       }])
     });
 
     const duplicate = !Array.isArray(rows) || rows.length === 0;
     if (!duplicate) {
-      await recordShadowPrediction({
-        ownerId,
-        channel,
-        body,
-        messageRow: rows[0],
-        classification,
-        confidence
-      });
+      await recordShadowPrediction({ ownerId, channel, body, messageRow: rows[0], classification, confidence, suggestion });
     }
 
     const response = {
@@ -153,15 +165,22 @@ export default async function handler(req, res) {
       classification,
       confidence,
       channelKey: channel.group_key,
+      automationMode: body.shadowMode ? 'shadow' : 'manual_guarded',
       actions: []
     };
 
-    // Harmless end-to-end diagnostic. It proves that a real group message reached
-    // Vercel/Supabase and that the bridge can send a backend-authorized reply.
+    // In shadow mode source-group suggestions are routed by the linked-device bridge
+    // to the laboratory group. No monetary action is ever applied here.
+    if (!duplicate && body.shadowMode && body.channelRole === 'source' && suggestion) {
+      response.actions.push({ type: 'reply', text: `🧭 ${suggestion}` });
+    }
+
+    // Harmless end-to-end diagnostic. It proves message -> backend -> authorized
+    // bridge response without changing bets, races or balances.
     if (!duplicate && /^\/hipico_status\s*$/i.test(text.trim())) {
       response.actions.push({
         type: 'reply',
-        text: `Hípico Control conectado ✅\nCanal: ${String(body.groupName || 'WhatsApp')}\nRecepción: activa`
+        text: `Hípico Control conectado ✅\nCanal: ${String(body.groupName || 'WhatsApp')}\nRecepción: activa\nModo: ${body.shadowMode ? 'sombra' : 'manual protegido'}`
       });
     }
 
