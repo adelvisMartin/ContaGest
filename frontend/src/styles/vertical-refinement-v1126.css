@@ -1,0 +1,19 @@
+/* v11.26 vertical refinement: compact clinical dossier + nutrition data lookup. */
+.cg-vet-master-detail{align-items:start!important;}
+.cg-vet-patient-list{border:1px solid var(--cg-border)!important;border-radius:6px!important;background:var(--cg-surface)!important;}
+.cg-vet-list-state{margin-top:6px;padding:8px 10px;border-left:2px solid var(--cg-border);color:var(--cg-text-muted);font-size:11px;line-height:1.4;}
+.cg-vet-facts{gap:0!important;border-top:1px solid var(--cg-border);border-left:1px solid var(--cg-border);}
+.cg-vet-fact{min-width:0;padding:7px 8px;border-right:1px solid var(--cg-border);border-bottom:1px solid var(--cg-border);background:var(--cg-surface);}
+.cg-vet-fact:first-child{border-radius:5px 0 0 0}.cg-vet-fact:nth-child(4){border-radius:0 5px 0 0}.cg-vet-activity{padding:4px 0;}.cg-vet-timeline{max-height:300px;overflow:auto;padding:7px 2px 0;border-top:1px solid var(--cg-border);}
+
+.cg-protein-swaps{display:block!important;margin-top:4px!important;color:var(--cg-primary)!important;line-height:1.45!important;}
+.cg-fooddata-tool{margin-top:14px;padding-top:12px;border-top:1px solid var(--cg-border);}
+.cg-fooddata-tool>header{display:flex;justify-content:space-between;gap:10px;margin-bottom:8px;}.cg-fooddata-tool>header strong,.cg-fooddata-tool>header small{display:block;}.cg-fooddata-tool>header small{margin-top:2px;color:var(--cg-text-muted);font-size:10px;line-height:1.4;}
+.cg-fooddata-search{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:7px;}.cg-fooddata-search input{min-width:0;min-height:42px;border:1px solid var(--cg-border);border-radius:8px;background:var(--cg-surface);color:var(--cg-text);padding:8px 10px;}
+.cg-fooddata-results{display:grid;gap:6px;margin-top:8px;max-height:280px;overflow:auto;}.cg-fooddata-results article{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:3px 10px;padding:8px 9px;border-bottom:1px solid var(--cg-border);background:transparent;}.cg-fooddata-results article:last-child{border-bottom:0;}.cg-fooddata-results article div{min-width:0;}.cg-fooddata-results article strong,.cg-fooddata-results article small{display:block;}.cg-fooddata-results article strong{font-size:11px;line-height:1.3;}.cg-fooddata-results article small{color:var(--cg-text-muted);font-size:9px;line-height:1.35;}.cg-fooddata-results article>span{align-self:center;font-size:10px;font-weight:650;color:var(--cg-primary);white-space:nowrap;}.cg-fooddata-results article>small{grid-column:1/-1;}
+
+@media(max-width:760px){
+  .cg-vet-facts{grid-template-columns:1fr 1fr!important;}.cg-vet-fact:nth-child(4){border-radius:0}.cg-vet-timeline{max-height:240px;}
+  .cg-fooddata-search{grid-template-columns:1fr;}.cg-fooddata-results article{grid-template-columns:1fr;}.cg-fooddata-results article>span{white-space:normal;}
+}
+@media(max-width:430px){.cg-vet-facts{grid-template-columns:1fr!important;}.cg-vet-fact{border-radius:0!important;}}

@@ -1,4 +1,3 @@
-import '../styles/runtime-hotfix-v1110.css';
 import { Store } from '../state/store.js';
 
 const PARAM_BY_NAME = {
@@ -7,6 +6,7 @@ const PARAM_BY_NAME = {
   dateFrom:'dateFrom', dateTo:'dateTo', from:'from', to:'to', view:'view', tab:'tab', mode:'mode',
   patientId:'patient', memberId:'member', appointmentId:'appointment'
 };
+const SIDEBAR_SECTIONS_KEY='cg_sidebar_sections_v1126';
 
 let installed = false;
 let timer = null;
@@ -56,19 +56,26 @@ function syncThemeControls(root = document) {
   }
 }
 
+function rememberedSections(){
+  try{return new Set(JSON.parse(sessionStorage.getItem(SIDEBAR_SECTIONS_KEY)||'[]'));}catch{return new Set();}
+}
 function syncResponsiveSidebar(root = document) {
   const sections = [...(root.querySelectorAll?.('.hf-menu-section') || [])];
   if (!sections.length) return;
   const mobile = matchMedia('(max-width:1023px)').matches;
+  const remembered=rememberedSections();
   sections.forEach((section) => {
-    if (mobile) section.open = Boolean(section.querySelector('.hf-menu-item.active'));
-    else section.open = true;
+    if (!mobile) { section.open = true; return; }
+    const active=Boolean(section.querySelector('.hf-menu-item.active'));
+    const name=String(section.dataset.sidebarSection||'');
+    section.open=active||remembered.has(name);
+    section.querySelector(':scope > summary')?.setAttribute('aria-expanded',String(section.open));
   });
 }
 
 function closeUserMenu(root = document) {
   const panel = root.querySelector?.('#userMenuPanel');
-  const toggle = root.querySelector?.('#btnUserMenuToggle');
+  const toggle = root.querySelector?.('#btnUserMenu');
   if (!panel || panel.classList.contains('hidden')) return;
   panel.classList.add('hidden');
   toggle?.setAttribute('aria-expanded','false');
@@ -81,22 +88,8 @@ function installShellInteractionGuard() {
 
     const themeButton=target.closest('#btnTema');
     if(themeButton){
-      event.preventDefault();
-      event.stopImmediatePropagation();
-      const current=supportedTheme(Store.get().settings?.theme);
-      Store.set({settings:{theme:current==='dark'?'light':'dark'}});
-      return;
-    }
-
-    const userToggle=target.closest('#btnUserMenuToggle');
-    if(userToggle){
-      event.preventDefault();
-      event.stopImmediatePropagation();
-      const panel=document.getElementById('userMenuPanel');
-      if(!panel)return;
-      const opening=panel.classList.contains('hidden');
-      panel.classList.toggle('hidden',!opening);
-      userToggle.setAttribute('aria-expanded',String(opening));
+      // app.js owns the actual theme mutation. This guard exists only to make sure one
+      // click reaches one owner instead of both legacy and runtime theme handlers.
       return;
     }
 

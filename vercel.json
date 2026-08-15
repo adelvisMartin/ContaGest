@@ -4,12 +4,9 @@
   "outputDirectory": "frontend/dist",
   "framework": "vite",
   "functions": {
-    "api/index.js": {
-      "maxDuration": 30
-    },
-    "api/health.ts": {
-      "maxDuration": 30
-    }
+    "api/index.js": { "maxDuration": 30 },
+    "api/health.ts": { "maxDuration": 30 },
+    "api/fooddata.ts": { "maxDuration": 20 }
   },
   "headers": [
     {
@@ -39,17 +36,34 @@
       ]
     },
     {
+      "source": "/hipico-control/sw.js",
+      "headers": [
+        { "key": "Cache-Control", "value": "no-cache, no-store, must-revalidate" },
+        { "key": "Service-Worker-Allowed", "value": "/hipico-control/" }
+      ]
+    },
+    {
       "source": "/manifest.webmanifest",
       "headers": [
         { "key": "Content-Type", "value": "application/manifest+json; charset=utf-8" },
         { "key": "Cache-Control", "value": "public, max-age=3600" }
+      ]
+    },
+    {
+      "source": "/hipico-control/manifest.webmanifest",
+      "headers": [
+        { "key": "Content-Type", "value": "application/manifest+json; charset=utf-8" },
+        { "key": "Cache-Control", "value": "no-cache, max-age=0" }
       ]
     }
   ],
   "routes": [
     { "src": "/health", "dest": "/api/health.ts" },
     { "src": "/api/health", "dest": "/api/health.ts" },
+    { "src": "/api/fooddata", "dest": "/api/fooddata.ts" },
     { "src": "/api/v1/(.*)", "dest": "/api/index.js" },
+    { "src": "/control-hipico", "status": 308, "headers": { "Location": "/hipico-control/" } },
+    { "src": "/control-hipico/(.*)", "status": 308, "headers": { "Location": "/hipico-control/$1" } },
     { "handle": "filesystem" },
     { "src": "/.*", "dest": "/index.html" }
   ]
