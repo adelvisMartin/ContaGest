@@ -55,6 +55,17 @@ test('breadcrumbs use one desktop owner and expose only current module on mobile
   assert.match(css, /\.hf-breadcrumbs-fallback \.hf-breadcrumb-current/);
 });
 
+test('fitness productivity tools are mounted and protein suggestions include local substitutes', () => {
+  const runtime = read('frontend/src/services/queryParamEnhancer.js');
+  const nutrition = read('frontend/src/services/fitnessNutritionService.js');
+  const enhancer = read('frontend/src/services/fitnessProductivityEnhancer.js');
+  assert.match(runtime, /FitnessProductivityEnhancer\.mount\(Store\.get\(\),\{Store,Toast\}\)/);
+  assert.match(nutrition, /Tostadas integrales con pavo[\s\S]*pollo desmechado[\s\S]*huevos \+ claras[\s\S]*atún al natural/);
+  assert.match(nutrition, /Pescado blanco con papa y ensalada[\s\S]*atún o sardinas[\s\S]*pollo[\s\S]*huevos \+ claras/);
+  assert.match(enhancer, /Proteína alternativa:/);
+  assert.match(enhancer, /sustituciones de proteína para adaptar disponibilidad local/);
+});
+
 test('Control Hipico remains a separate product route and never an ERP module', () => {
   const config = JSON.parse(read('vercel.json'));
   const routes = config.routes || [];
