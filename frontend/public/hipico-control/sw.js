@@ -1,4 +1,4 @@
-const VERSION='1.2.1';
+const VERSION='1.3.1';
 const CACHE=`control-hipico-shell-v${VERSION}`;
 const RUNTIME=`control-hipico-runtime-v${VERSION}`;
 const SHELL=[
@@ -10,6 +10,7 @@ const SHELL=[
   '/hipico-control/assets/js/app-shell.js',
   '/hipico-control/assets/js/race-finalization.js',
   '/hipico-control/assets/js/operations.js',
+  '/hipico-control/assets/js/rc1-recovery.js',
   '/hipico-control/assets/js/whatsapp.js',
   '/hipico-control/assets/js/agent-router.js',
   '/hipico-control/assets/brand/control-hipico-mark.svg',
@@ -25,7 +26,7 @@ self.addEventListener('install',(event)=>{
 self.addEventListener('activate',(event)=>{
   event.waitUntil((async()=>{
     const keys=await caches.keys();
-    await Promise.all(keys.filter((key)=>key.startsWith('control-hipico-')&&![CACHE,RUNTIME].includes(key)).map((key)=>caches.delete(key)));
+    await Promise.all(keys.filter((key)=>(key.startsWith('control-hipico-')||key.startsWith('hipico-control-'))&&![CACHE,RUNTIME].includes(key)).map((key)=>caches.delete(key)));
     await self.clients.claim();
     const clients=await self.clients.matchAll({type:'window',includeUncontrolled:true});
     clients.forEach((client)=>client.postMessage({type:'CONTROL_HIPICO_UPDATED',version:VERSION}));
@@ -38,7 +39,7 @@ const isSensitive=(url)=>/\/(?:api|auth|session|license|webhook)(?:\/|$)/i.test(
 
 async function networkFirst(request){
   const cache=await caches.open(RUNTIME);
-  try{const response=await fetch(request);if(response.ok&&!isSensitive(new URL(request.url)))cache.put(request,response.clone());return response;}
+  try{const response=await fetch(request,{cache:'no-store'});if(response.ok&&!isSensitive(new URL(request.url)))cache.put(request,response.clone());return response;}
   catch(error){const cached=await cache.match(request);if(cached)return cached;if(isNavigation(request))return caches.match('/hipico-control/index.html');throw error;}
 }
 async function staleWhileRevalidate(request){
@@ -50,7 +51,7 @@ async function staleWhileRevalidate(request){
 self.addEventListener('fetch',(event)=>{
   const request=event.request;if(request.method!=='GET')return;
   const url=new URL(request.url);if(url.origin!==self.location.origin)return;
-  if(isSensitive(url)){event.respondWith(fetch(request));return;}
+  if(isSensitive(url)){event.respondWith(fetch(request,{cache:'no-store'}));return;}
   if(isNavigation(request)){event.respondWith(networkFirst(request));return;}
   if(isAsset(url)){event.respondWith(staleWhileRevalidate(request));return;}
   event.respondWith(networkFirst(request));

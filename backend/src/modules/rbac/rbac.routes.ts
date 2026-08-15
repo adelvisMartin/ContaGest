@@ -19,6 +19,17 @@ const MODULE_PERMISSIONS = [
 
 const TENANT_PERMISSION_KEYS = new Set(MODULE_PERMISSIONS.map(([key]) => key));
 const PLATFORM_PERMISSION_PREFIX = 'platform.';
+const ADMIN_DEMO_ROUTES = new Set(['admin','backend','configuracion','demo-control','licencias','marca','modulos-madurez','pretesting']);
+const ROUTE_PERMISSION_MAP: Record<string,string> = {
+  dashboard:'dashboard.view', clientes:'clients.manage', cotizacion:'sales.manage', ventas:'sales.manage', historial:'sales.view',
+  'libro-ventas':'taxes.export', inventario:'inventory.manage', 'inventario-scan':'inventory.manage', kardex:'inventory.manage', qr:'inventory.manage',
+  proveedores:'purchases.manage', compras:'purchases.manage', contabilidad:'accounting.manage', 'plan-cuentas':'accounting.manage', 'libro-mayor':'accounting.manage',
+  'balance-sumas-saldos':'accounting.manage', 'hoja-trabajo':'accounting.manage', 'estados-financieros':'reports.view', 'cierre-contable':'accounting.manage',
+  bancos:'banking.manage', tributos:'taxes.export', nomina:'payroll.manage', rrhh:'payroll.manage', salud:'health.manage', veterinaria:'health.manage',
+  psicologia:'health.manage', odontologia:'health.manage', gimnasio:'gym.manage', rutinas:'gym.manage', nutricion:'gym.manage', mensajes:'communications.manage',
+  pedidos:'orders.manage', 'pos-sede':'orders.manage', 'tracking-pedidos':'orders.view', 'delivery-mapa':'orders.manage', analytics:'reports.view', reportes:'reports.view',
+  auditoria:'audit.view', 'importacion-data':'modules.manage', vistas:'modules.manage', ayuda:'dashboard.view', soporte:'dashboard.view'
+};
 
 function assertTenantPermissionKeys(permissionKeys: string[]) {
   const invalid = [...new Set(permissionKeys)].filter((key) => !TENANT_PERMISSION_KEYS.has(key as any));
@@ -39,6 +50,7 @@ const ROLE_BLUEPRINTS = [
   { name: 'Clínica / Consultorio', description: 'Pacientes, agenda, atención, facturación y comunicaciones sin RRHH por defecto.', system: true, permissions: ['dashboard.view','clients.manage','sales.manage','sales.view','health.manage','banking.manage','reports.view','communications.manage'] },
   { name: 'Clínica veterinaria', description: 'Pacientes veterinarios, tutores, agenda, inventario, compras y facturación.', system: true, permissions: ['dashboard.view','clients.manage','sales.manage','sales.view','health.manage','inventory.manage','purchases.manage','banking.manage','reports.view','communications.manage'] },
   { name: 'Psicología / Consultorio', description: 'Pacientes, agenda, confirmaciones, cobranza y reportes del consultorio.', system: true, permissions: ['dashboard.view','clients.manage','sales.manage','sales.view','health.manage','banking.manage','reports.view','communications.manage'] },
+  { name: 'Odontología / Consultorio dental', description: 'Pacientes, odontograma, tratamientos, citas, presupuestos, seguimiento y cobranza.', system: true, permissions: ['dashboard.view','clients.manage','sales.manage','sales.view','health.manage','banking.manage','reports.view','communications.manage'] },
   { name: 'Gimnasio / Fitness', description: 'Socios, membresías, asistencia, rutinas, nutrición y cobranza.', system: true, permissions: ['dashboard.view','clients.manage','sales.manage','sales.view','gym.manage','inventory.manage','banking.manage','reports.view','communications.manage'] },
   { name: 'Demo limitado', description: 'Acceso comercial con permisos recortados y vencimiento.', system: false, permissions: ['dashboard.view','clients.manage','sales.view','orders.view','reports.view'] }
 ];
@@ -91,24 +103,46 @@ async function buildSummary(tenantId: string) {
 
 router.get('/summary', asyncHandler(async (req, res) => { ok(res, await buildSummary(tenantId(req))); }));
 const rolePermissionsSchema = z.object({ permissionKeys: z.array(z.string()).default([]) });
-const demoUserSchema = z.object({ id: z.string().optional(), fullName: z.string().min(2), email: z.string().email(), password: z.string().min(12).max(128).optional(), roleName: z.string().default('Demo limitado'), roleId: z.string().optional(), days: z.coerce.number().min(1).max(365).default(14), maxModules: z.coerce.number().min(1).max(60).default(7), status: z.enum(['active','invited','disabled']).default('active') });
+const demoUserSchema = z.object({
+  id:z.string().optional(), fullName:z.string().min(2), email:z.string().email(), password:z.string().min(12).max(128).optional(),
+  roleName:z.string().default('Demo limitado'), roleId:z.string().optional(), days:z.coerce.number().min(1).max(365).default(14),
+  maxModules:z.coerce.number().min(1).max(60).default(7), enabledModules:z.array(z.string().min(1).max(80)).max(60).default([]),
+  status:z.enum(['active','invited','disabled']).default('active')
+});
 function demoAccessId(tenantId: string, email: string) { return `demo-user-${tenantId}-${email.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`.slice(0, 180); }
 async function ensureRoleByName(tenantId: string, roleName: string) { let role = await prisma.role.findUnique({ where: { tenantId_name: { tenantId, name: roleName } } }); if (!role) { await bootstrapTenant(tenantId); role = await prisma.role.findUnique({ where: { tenantId_name: { tenantId, name: roleName } } }); } if (!role) throw new HttpError(404, `Rol no encontrado: ${roleName}`); return role; }
 
+async function safeDemoRoutesForRole(roleId: string) {
+  await assertRoleIsTenantManaged(roleId);
+  const rows = await prisma.rolePermission.findMany({ where:{ roleId }, include:{ permission:true } });
+  const permissions = new Set(rows.map((row) => row.permission.key));
+  if (permissions.has('admin.manage')) throw new HttpError(422, 'El perfil Administrador no puede convertirse en acceso demo temporal.');
+  return Object.entries(ROUTE_PERMISSION_MAP).filter(([route, permission]) => !ADMIN_DEMO_ROUTES.has(route) && permissions.has(permission)).map(([route]) => route);
+}
+
 async function upsertDemoUser(tenantId: string, body: z.infer<typeof demoUserSchema>) {
-  const role = await ensureRoleByName(tenantId, body.roleName); if (role.system) throw new HttpError(422, 'Los usuarios de acceso temporal no pueden asignarse a un rol interno de la empresa.');
-  const existing = await prisma.userProfile.findUnique({ where: { tenantId_email: { tenantId, email: body.email } } }); if(!existing&&!body.password)throw new HttpError(422,'La contraseña temporal es obligatoria al crear el usuario.');
+  const role = await ensureRoleByName(tenantId, body.roleName);
+  const allowedRoutes = await safeDemoRoutesForRole(role.id);
+  const allowedSet = new Set(allowedRoutes);
+  const requested = [...new Set(body.enabledModules)];
+  const invalid = requested.filter((route) => !allowedSet.has(route));
+  if (invalid.length) throw new HttpError(422, `Módulos no permitidos para ${body.roleName}: ${invalid.join(', ')}`);
+  const enabledModules = (requested.length ? requested : allowedRoutes).slice(0, body.maxModules);
+  if (!enabledModules.length) throw new HttpError(422, 'Selecciona al menos un módulo permitido para el acceso demo.');
+  if (requested.length > body.maxModules) throw new HttpError(422, `El acceso permite máximo ${body.maxModules} módulos.`);
+
+  const existing = await prisma.userProfile.findUnique({ where: { tenantId_email: { tenantId, email: body.email } } });
+  if(!existing&&!body.password)throw new HttpError(422,'La contraseña temporal es obligatoria al crear el usuario.');
   const passwordHash = body.password ? await bcrypt.hash(body.password, 12) : undefined; const expiresAt = new Date(Date.now() + body.days * 86400000);
   const userData = { fullName: body.fullName, email: body.email, status: body.status, accessExpiresAt: expiresAt, ...(passwordHash ? { passwordHash } : {}) };
   const user = existing ? await prisma.userProfile.update({ where: { id: existing.id }, data: userData }) : await prisma.userProfile.create({ data: { tenantId, ...userData, passwordHash:passwordHash! } });
   await prisma.userRole.deleteMany({ where: { userId: user.id } }); await prisma.userRole.create({ data: { userId: user.id, roleId: role.id } });
-  const enabledModules = ROLE_BLUEPRINTS.find((item) => item.name === body.roleName)?.permissions || ['dashboard.view','clients.manage','sales.view'];
   await prisma.demoAccess.upsert({
     where: { id: demoAccessId(tenantId, body.email) },
-    update: { prospect: body.fullName, email: body.email, enabledModules, expiresAt, maxUsers: body.maxModules, status: body.status, notes: `Acceso temporal editable · rol=${body.roleName} · maxModules=${body.maxModules}` },
-    create: { id: demoAccessId(tenantId, body.email), tenantId, prospect: body.fullName, email: body.email, phone: '', enabledModules, expiresAt, maxUsers: body.maxModules, status: body.status, notes: `Acceso temporal editable · rol=${body.roleName} · maxModules=${body.maxModules}` }
+    update: { prospect: body.fullName, email: body.email, enabledModules, expiresAt, maxUsers: 1, status: body.status, notes: `Acceso temporal editable · rol=${body.roleName} · maxModules=${body.maxModules}` },
+    create: { id: demoAccessId(tenantId, body.email), tenantId, prospect: body.fullName, email: body.email, phone: '', enabledModules, expiresAt, maxUsers: 1, status: body.status, notes: `Acceso temporal editable · rol=${body.roleName} · maxModules=${body.maxModules}` }
   });
-  return { id: user.id, email: user.email, fullName: user.fullName, role: role.name, expiresAt, maxModules: body.maxModules };
+  return { id:user.id, email:user.email, fullName:user.fullName, role:role.name, expiresAt, maxModules:body.maxModules, enabledModules };
 }
 
 router.put('/roles/:name/permissions', asyncHandler(async (req, res) => { const body = rolePermissionsSchema.parse(req.body || {}); assertTenantPermissionKeys(body.permissionKeys); const role = await prisma.role.findUnique({ where: { tenantId_name: { tenantId: tenantId(req), name: decodeURIComponent(req.params.name) } } }); if (!role) throw new HttpError(404, 'Rol no encontrado. Ejecuta bootstrap RBAC primero.'); await assertRoleIsTenantManaged(role.id); await setRolePermissions(role.id, body.permissionKeys); ok(res, { roleId: role.id, permissionKeys: body.permissionKeys }); }));

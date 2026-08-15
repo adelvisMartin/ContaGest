@@ -1,0 +1,116 @@
+/* ContaGest-VE v11.25 · sidebar theme contract.
+   Geometry remains owned by shell-contract.css. This file only owns sidebar
+   color/contrast so light themes do not inherit the historical dark drawer. */
+
+html:not(.dark):not(.enterprise) body .hf-app-sidebar.hf-sidebar {
+  background:#f8fbff !important;
+  color:#17324d !important;
+  border-right:1px solid #d8e3ef !important;
+  box-shadow:10px 0 28px rgba(30,61,88,.08) !important;
+}
+html:not(.dark):not(.enterprise) body .hf-app-sidebar .hf-brand,
+html:not(.dark):not(.enterprise) body .hf-app-sidebar .hf-sidebar-actions,
+html:not(.dark):not(.enterprise) body .hf-app-sidebar .hf-sidebar-footer {
+  background:#f8fbff !important;
+  color:#17324d !important;
+  border-color:#d8e3ef !important;
+}
+html:not(.dark):not(.enterprise) body .hf-app-sidebar .hf-sidebar-wordmark h1,
+html:not(.dark):not(.enterprise) body .hf-app-sidebar .hf-sidebar-wordmark p,
+html:not(.dark):not(.enterprise) body .hf-app-sidebar .hf-sidebar-footer strong,
+html:not(.dark):not(.enterprise) body .hf-app-sidebar .hf-sidebar-footer span,
+html:not(.dark):not(.enterprise) body .hf-app-sidebar .hf-footer-kicker {
+  color:#17324d !important;
+}
+html:not(.dark):not(.enterprise) body .hf-app-sidebar .hf-sidebar-collapse,
+html:not(.dark):not(.enterprise) body .hf-app-sidebar .hf-mini-action,
+html:not(.dark):not(.enterprise) body .hf-app-sidebar .hf-logout-link {
+  background:#fff !important;
+  color:#244866 !important;
+  border-color:#cddbe9 !important;
+}
+html:not(.dark):not(.enterprise) body .hf-app-sidebar .hf-new-entry {
+  background:#1f5fbf !important;
+  color:#fff !important;
+  border-color:#1f5fbf !important;
+}
+
+html:not(.dark):not(.enterprise) body #mainMenu .hf-menu-section {
+  color:#17324d !important;
+}
+html:not(.dark):not(.enterprise) body #mainMenu .cg-area-toggle {
+  margin:4px 8px !important;
+  min-height:44px !important;
+  padding:10px 12px !important;
+  border:1px solid #d6e2ee !important;
+  border-radius:10px !important;
+  background:#edf4fb !important;
+  color:#31516d !important;
+  box-shadow:none !important;
+  cursor:pointer !important;
+}
+html:not(.dark):not(.enterprise) body #mainMenu details[open] > .cg-area-toggle {
+  background:#e1ecf8 !important;
+  border-color:#bfd1e4 !important;
+  color:#183f66 !important;
+}
+html:not(.dark):not(.enterprise) body #mainMenu .cg-area-toggle i,
+html:not(.dark):not(.enterprise) body #mainMenu .hf-section-chevron {
+  color:#527899 !important;
+}
+html:not(.dark):not(.enterprise) body #mainMenu .hf-menu-list {
+  padding:2px 8px 8px !important;
+}
+html:not(.dark):not(.enterprise) body #mainMenu .hf-menu-item {
+  min-height:44px !important;
+  margin:3px 0 !important;
+  border:1px solid transparent !important;
+  border-radius:10px !important;
+  background:transparent !important;
+  color:#38546d !important;
+  box-shadow:none !important;
+}
+html:not(.dark):not(.enterprise) body #mainMenu .hf-menu-item:hover,
+html:not(.dark):not(.enterprise) body #mainMenu .hf-menu-item:focus-visible {
+  background:#eaf2fb !important;
+  border-color:#c8d8e8 !important;
+  color:#173f66 !important;
+}
+html:not(.dark):not(.enterprise) body #mainMenu .hf-menu-item.active {
+  background:#255fc2 !important;
+  border-color:#255fc2 !important;
+  color:#fff !important;
+  box-shadow:inset 3px 0 0 #9fc4ff !important;
+}
+html:not(.dark):not(.enterprise) body #mainMenu .hf-menu-item.active i,
+html:not(.dark):not(.enterprise) body #mainMenu .hf-menu-item.active span,
+html:not(.dark):not(.enterprise) body #mainMenu .hf-menu-item.active .hf-tier-dot {
+  color:#fff !important;
+}
+html:not(.dark):not(.enterprise) body #mainMenu .hf-menu-item:not(.active) i {
+  color:#6388a7 !important;
+}
+html:not(.dark):not(.enterprise) body #mainMenu .hf-menu-item.is-locked {
+  color:#899baa !important;
+  background:#f3f6f9 !important;
+}
+
+html.dark body #mainMenu .cg-area-toggle,
+html.enterprise body #mainMenu .cg-area-toggle {
+  min-height:44px !important;
+  cursor:pointer !important;
+}
+html.dark body #mainMenu .hf-menu-item,
+html.enterprise body #mainMenu .hf-menu-item {
+  min-height:44px !important;
+}
+
+@media (max-width:1023px) {
+  html:not(.dark):not(.enterprise) body .hf-app-sidebar.hf-sidebar {
+    background:#f8fbff !important;
+  }
+  body #mainMenu .cg-area-toggle {
+    touch-action:manipulation !important;
+    -webkit-tap-highlight-color:transparent !important;
+  }
+}

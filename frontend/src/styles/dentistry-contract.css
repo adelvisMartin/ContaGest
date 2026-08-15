@@ -1,0 +1,18 @@
+/* ContaGest-VE v11.25 · dentistry workspace */
+.cg-dentistry-workspace { --cg-context-accent:#168b8f; }
+.cg-dental-grid { display:grid !important;grid-template-columns:repeat(2,minmax(0,1fr)) !important;gap:14px !important; }
+.cg-dental-grid > :first-child:nth-last-child(3) { grid-column:auto !important; }
+.cg-dental-treatment-form { display:grid !important;grid-template-columns:repeat(2,minmax(0,1fr)) !important;gap:12px !important; }
+.cg-dental-treatment-form > div:has(.cg-dental-tooth-grid),.cg-dental-treatment-form > .cgx-textarea,.cg-dental-treatment-form > button { grid-column:1/-1 !important; }
+.cg-dental-field-label { display:block !important;margin-bottom:7px !important;color:var(--cg-text-muted) !important;font-size:12px !important;font-weight:600 !important; }
+.cg-dental-tooth-grid { display:grid !important;grid-template-columns:repeat(8,minmax(0,1fr)) !important;gap:6px !important;padding:10px !important;border:1px solid var(--cg-border) !important;border-radius:12px !important;background:var(--cg-surface-soft) !important; }
+.cg-dental-tooth-grid button { min-width:0 !important;min-height:38px !important;padding:5px !important;border:1px solid var(--cg-border) !important;border-radius:8px !important;background:var(--cg-surface) !important;color:var(--cg-text) !important;font-weight:600 !important;cursor:pointer !important; }
+.cg-dental-tooth-grid button:hover,.cg-dental-tooth-grid button:focus-visible { border-color:var(--cg-primary) !important; }
+.cg-dental-tooth-grid button.is-selected { background:var(--cg-primary) !important;border-color:var(--cg-primary) !important;color:#fff !important; }
+.cg-dental-list { display:grid !important;gap:8px !important; }
+.cg-dental-list article { display:flex !important;align-items:flex-start !important;justify-content:space-between !important;gap:10px !important;padding:10px 0 !important;border-bottom:1px solid var(--cg-border) !important; }
+.cg-dental-list article:last-child { border-bottom:0 !important; }
+.cg-dental-list article div { min-width:0 !important; }
+.cg-dental-list strong,.cg-dental-list small { display:block !important; }
+.cg-dental-list small { margin-top:3px !important;color:var(--cg-text-muted) !important;line-height:1.4 !important; }
+@media(max-width:760px){.cg-dental-grid,.cg-dental-treatment-form{grid-template-columns:1fr !important}.cg-dental-tooth-grid{grid-template-columns:repeat(4,minmax(0,1fr)) !important}.cg-dental-tooth-grid button{min-height:44px !important}}

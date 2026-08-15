@@ -28,6 +28,7 @@ export const MODULE_CATALOG_ACCESS = [
   { route:'salud', label:'Clínica y consultorio', permission:'health.manage', group:'Salud' },
   { route:'veterinaria', label:'Clínica veterinaria', permission:'health.manage', group:'Salud' },
   { route:'psicologia', label:'Psicología y agenda', permission:'health.manage', group:'Salud' },
+  { route:'odontologia', label:'Odontología', permission:'health.manage', group:'Salud' },
   { route:'gimnasio', label:'Gimnasio', permission:'gym.manage', group:'Fitness' },
   { route:'rutinas', label:'Rutinas', permission:'gym.manage', group:'Fitness' },
   { route:'nutricion', label:'Nutrición', permission:'gym.manage', group:'Fitness' },
@@ -100,6 +101,12 @@ const ROLE_DEFINITIONS = [
     modules:['dashboard','psicologia','clientes','cotizacion','ventas','historial','bancos','reportes','mensajes','soporte']
   },
   {
+    id:'role-odontologia', name:'Odontología / Consultorio dental', tone:'brand', description:'Pacientes, odontograma, tratamientos, citas, presupuestos, seguimiento y cobranza.',
+    scope:'Perfil para odontólogos y clínicas dentales pequeñas. Prioriza historia odontológica, procedimientos, agenda y comunicación con el paciente.',
+    permissions:['dashboard.view','clients.manage','sales.manage','sales.view','health.manage','care.manage','banking.manage','reports.view','communications.manage'],
+    modules:['dashboard','odontologia','clientes','cotizacion','ventas','historial','bancos','reportes','mensajes','soporte']
+  },
+  {
     id:'role-gimnasio', name:'Gimnasio / Fitness', tone:'success', description:'Socios, membresías, asistencia, rutinas, nutrición y cobranza.',
     scope:'Gestiona la operación del gimnasio, seguimiento de socios, planes, rutinas y reportes.',
     permissions:['dashboard.view','clients.manage','sales.manage','sales.view','gym.manage','fitness.manage','inventory.manage','banking.manage','reports.view','communications.manage'],
@@ -149,18 +156,16 @@ const ROLE_DEFINITIONS = [
   }
 ];
 
-function daysFromNow(days) {
-  return new Date(Date.now() + Number(days || 0) * 86400000).toISOString();
-}
-
-function slugId(value = 'access') {
-  return String(value || 'access').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '').slice(0, 40) || 'access';
-}
-
-function sanitizeUser(user = {}) {
-  const copy = { ...user };
-  delete copy.password;
-  return copy;
+function daysFromNow(days) { return new Date(Date.now() + Number(days || 0) * 86400000).toISOString(); }
+function slugId(value = 'access') { return String(value || 'access').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '').slice(0, 40) || 'access'; }
+function sanitizeUser(user = {}) { const copy = { ...user }; delete copy.password; return copy; }
+function normalizeEnabledModules(value) {
+  if (Array.isArray(value)) return value.map(String).filter(Boolean);
+  if (typeof value === 'string') {
+    try { const parsed=JSON.parse(value); if(Array.isArray(parsed))return parsed.map(String).filter(Boolean); } catch { /* csv fallback */ }
+    return value.split(',').map((item)=>item.trim()).filter(Boolean);
+  }
+  return [];
 }
 
 function buildUsers() {
@@ -173,86 +178,69 @@ function buildUsers() {
     { id:'user-clinica', fullName:'Profesional de salud', email:'consulta@empresa.com', roleId:'role-clinica', status:'active', demo:false, maxModules:12, demoExpiresAt:null },
     { id:'user-veterinaria', fullName:'Profesional veterinario', email:'veterinaria@empresa.com', roleId:'role-veterinaria', status:'active', demo:false, maxModules:16, demoExpiresAt:null },
     { id:'user-psicologia', fullName:'Profesional de psicología', email:'psicologia@empresa.com', roleId:'role-psicologia', status:'active', demo:false, maxModules:10, demoExpiresAt:null },
+    { id:'user-odontologia', fullName:'Profesional odontológico', email:'odontologia@empresa.com', roleId:'role-odontologia', status:'active', demo:false, maxModules:10, demoExpiresAt:null },
     { id:'user-inventario', fullName:'Ana Inventario', email:'inventario@empresa.com', roleId:'role-inventario', status:'active', demo:false, maxModules:7, demoExpiresAt:null },
     { id:'user-compras', fullName:'Pedro Compras', email:'compras@empresa.com', roleId:'role-compras', status:'active', demo:false, maxModules:7, demoExpiresAt:null },
     { id:'user-rrhh', fullName:'Laura RRHH', email:'rrhh@empresa.com', roleId:'role-rrhh', status:'active', demo:false, maxModules:5, demoExpiresAt:null },
     { id:'user-auditor', fullName:'Alejandra Auditoría', email:'auditor@empresa.com', roleId:'role-auditor', status:'active', demo:false, maxModules:7, demoExpiresAt:null },
     { id:'user-soporte', fullName:'Samuel Soporte', email:'soporte@empresa.com', roleId:'role-soporte', status:'active', demo:false, maxModules:7, demoExpiresAt:null },
-    { id:'user-demo', fullName:'Acceso comercial temporal', email:'demo@empresa.com', roleId:'role-demo', status:'active', demo:true, maxModules:7, demoExpiresAt:daysFromNow(14) },
-    { id:'user-readonly-demo', fullName:'Acceso de consulta', email:'lectura@empresa.com', roleId:'role-lectura', status:'active', demo:true, maxModules:4, demoExpiresAt:daysFromNow(7) }
+    { id:'user-demo', fullName:'Acceso comercial temporal', email:'demo@empresa.com', roleId:'role-demo', status:'active', demo:true, maxModules:7, enabledModules:['dashboard','clientes','ventas','pedidos','tracking-pedidos','analytics','soporte'], demoExpiresAt:daysFromNow(14) },
+    { id:'user-readonly-demo', fullName:'Acceso de consulta', email:'lectura@empresa.com', roleId:'role-lectura', status:'active', demo:true, maxModules:4, enabledModules:['dashboard','reportes','analytics','ayuda'], demoExpiresAt:daysFromNow(7) }
   ];
 }
 
 export const AccessControlService = {
   modules:MODULE_CATALOG_ACCESS,
   roles:ROLE_DEFINITIONS,
-  defaultState() {
-    return { activeUserId:'user-admin', roles:ROLE_DEFINITIONS.map((role)=>({ ...role, permissions:[...role.permissions], modules:[...role.modules] })), users:buildUsers(), demoPolicy:{ defaultDays:14, warningDays:3, maxUsers:3, maxModules:7 }, audit:[] };
-  },
+  defaultState() { return { activeUserId:'user-admin', roles:ROLE_DEFINITIONS.map((role)=>({ ...role, permissions:[...role.permissions], modules:[...role.modules] })), users:buildUsers(), demoPolicy:{ defaultDays:14, warningDays:3, maxUsers:3, maxModules:7 }, audit:[] }; },
   ensure(rbac) {
     if (!rbac?.roles?.length || !rbac?.users?.length) return this.defaultState();
-    const base=this.defaultState();
-    const savedRoles=rbac.roles||[];
+    const base=this.defaultState(); const savedRoles=rbac.roles||[];
     const mergedRoles=[...base.roles.map((baseRole)=>({ ...baseRole, ...(savedRoles.find((role)=>role.id===baseRole.id)||{}) })), ...savedRoles.filter((role)=>!base.roles.some((baseRole)=>baseRole.id===role.id))].map((role)=>({ ...role, permissions:role.permissions||[], modules:role.modules||[] }));
     const savedUsers=rbac.users||[];
     const mergedUsers=[...base.users.map((baseUser)=>({ ...baseUser, ...(savedUsers.find((user)=>user.id===baseUser.id)||{}) })), ...savedUsers.filter((user)=>!base.users.some((baseUser)=>baseUser.id===user.id))].map(sanitizeUser);
     return { ...base, ...rbac, roles:mergedRoles, users:mergedUsers };
   },
-  activeUser(state) {
-    const rbac=this.ensure(state?.rbac);
-    return rbac.users.find((user)=>user.id===rbac.activeUserId)||rbac.users[0];
-  },
-  roleForUser(state,user=this.activeUser(state)) {
-    const rbac=this.ensure(state?.rbac);
-    return rbac.roles.find((role)=>role.id===user?.roleId)||rbac.roles[0];
-  },
+  activeUser(state) { const rbac=this.ensure(state?.rbac); return rbac.users.find((user)=>user.id===rbac.activeUserId)||rbac.users[0]; },
+  roleForUser(state,user=this.activeUser(state)) { const rbac=this.ensure(state?.rbac); return rbac.roles.find((role)=>role.id===user?.roleId)||rbac.roles[0]; },
   modulesForRole(role) { return new Set(role?.modules||[]); },
   permissionsForRole(role) { return new Set(role?.permissions||[]); },
   modulesForUser(user,role) {
-    const modules=[...(role?.modules||[])];
-    if(!user?.demo)return modules;
-    const limit=Math.max(1,Number(user.maxModules||this.defaultState().demoPolicy.maxModules||modules.length));
-    return modules.slice(0,limit);
+    const roleModules=[...(role?.modules||[])];
+    if(!user?.demo)return roleModules;
+    const limit=Math.max(1,Number(user.maxModules||this.defaultState().demoPolicy.maxModules||roleModules.length));
+    const explicit=normalizeEnabledModules(user.enabledModules||user.modules).filter((route)=>roleModules.includes(route));
+    return (explicit.length?explicit:roleModules).slice(0,limit);
   },
   canAccessRoute(state,route) {
     if(!route||CORE_ROUTES.includes(route))return true;
-    const user=this.activeUser(state);
-    const role=this.roleForUser(state,user);
+    const user=this.activeUser(state); const role=this.roleForUser(state,user);
     if(role?.id==='role-admin')return true;
     if(ADMIN_ONLY_ROUTES.has(route))return false;
     if(user?.status!=='active')return false;
     if(user?.demo&&user.demoExpiresAt&&new Date(user.demoExpiresAt).getTime()<Date.now())return false;
     return new Set(this.modulesForUser(user,role)).has(route);
   },
-  routeStatus(state,route) {
-    const user=this.activeUser(state);const role=this.roleForUser(state,user);
-    return { allowed:this.canAccessRoute(state,route),user,role };
-  },
+  routeStatus(state,route) { const user=this.activeUser(state);const role=this.roleForUser(state,user);return { allowed:this.canAccessRoute(state,route),user,role }; },
   remaining(user) {
     if(!user?.demo||!user.demoExpiresAt)return { label:'Sin vencimiento',expired:false,days:null,hours:null };
-    const ms=new Date(user.demoExpiresAt).getTime()-Date.now();
-    if(ms<=0)return { label:'Expirado',expired:true,days:0,hours:0 };
-    const days=Math.floor(ms/86400000);const hours=Math.floor((ms%86400000)/3600000);
-    return { label:`${days}d ${hours}h`,expired:false,days,hours };
+    const ms=new Date(user.demoExpiresAt).getTime()-Date.now(); if(ms<=0)return { label:'Expirado',expired:true,days:0,hours:0 };
+    const days=Math.floor(ms/86400000);const hours=Math.floor((ms%86400000)/3600000);return { label:`${days}d ${hours}h`,expired:false,days,hours };
   },
   toggleModule(rbacInput,roleId,route) {
-    const rbac=this.ensure(rbacInput);
-    rbac.roles=rbac.roles.map((role)=>{if(role.id!==roleId)return role;const set=new Set(role.modules||[]);set.has(route)?set.delete(route):set.add(route);if(role.id!=='role-admin')set.add('dashboard');return { ...role,modules:[...set] };});
+    const rbac=this.ensure(rbacInput); rbac.roles=rbac.roles.map((role)=>{if(role.id!==roleId)return role;const set=new Set(role.modules||[]);set.has(route)?set.delete(route):set.add(route);if(role.id!=='role-admin')set.add('dashboard');return { ...role,modules:[...set] };});
     rbac.audit=[{ at:new Date().toISOString(),action:'toggle-module',roleId,route },...(rbac.audit||[])].slice(0,40);return rbac;
   },
-  setActiveUser(rbacInput,userId) {
-    const rbac=this.ensure(rbacInput);return { ...rbac,activeUserId:userId,audit:[{ at:new Date().toISOString(),action:'switch-user',userId },...(rbac.audit||[])].slice(0,40) };
-  },
-  updateDemoDays(rbacInput,userId,days) {
-    const rbac=this.ensure(rbacInput);const expiresAt=daysFromNow(Number(days||0));rbac.users=rbac.users.map((user)=>user.id===userId?{ ...user,demo:true,demoExpiresAt:expiresAt }:user);rbac.audit=[{ at:new Date().toISOString(),action:'update-demo-days',userId,days:Number(days||0) },...(rbac.audit||[])].slice(0,40);return rbac;
-  },
+  setActiveUser(rbacInput,userId) { const rbac=this.ensure(rbacInput);return { ...rbac,activeUserId:userId,audit:[{ at:new Date().toISOString(),action:'switch-user',userId },...(rbac.audit||[])].slice(0,40) }; },
+  updateDemoDays(rbacInput,userId,days) { const rbac=this.ensure(rbacInput);const expiresAt=daysFromNow(Number(days||0));rbac.users=rbac.users.map((user)=>user.id===userId?{ ...user,demo:true,demoExpiresAt:expiresAt }:user);rbac.audit=[{ at:new Date().toISOString(),action:'update-demo-days',userId,days:Number(days||0) },...(rbac.audit||[])].slice(0,40);return rbac; },
   upsertDemoUser(rbacInput,data={}) {
-    const rbac=this.ensure(rbacInput);const email=String(data.email||'').trim().toLowerCase();const id=data.id||`user-demo-${slugId(email||data.fullName||Date.now())}`;const existing=rbac.users.find((user)=>user.id===id||String(user.email).toLowerCase()===email);const roleId=data.roleId||existing?.roleId||'role-demo';const maxModules=Number(data.maxModules||existing?.maxModules||rbac.demoPolicy.maxModules||7);const days=Number(data.days||data.demoDays||14);
-    const user={ ...(existing||{}),id:existing?.id||id,fullName:String(data.fullName||existing?.fullName||'Acceso temporal').trim(),email:email||existing?.email||`access-${Date.now()}@empresa.com`,roleId,status:data.status||existing?.status||'active',demo:true,maxModules,demoExpiresAt:data.demoExpiresAt||daysFromNow(days) };
-    rbac.users=[user,...rbac.users.filter((item)=>item.id!==user.id&&String(item.email).toLowerCase()!==String(user.email).toLowerCase())].map(sanitizeUser);rbac.activeUserId=data.activate?user.id:rbac.activeUserId;rbac.audit=[{ at:new Date().toISOString(),action:existing?'update-demo-user':'create-demo-user',userId:user.id,email:user.email,maxModules },...(rbac.audit||[])].slice(0,60);return rbac;
+    const rbac=this.ensure(rbacInput); const email=String(data.email||'').trim().toLowerCase(); const id=data.id||`user-demo-${slugId(email||data.fullName||Date.now())}`; const existing=rbac.users.find((user)=>user.id===id||String(user.email).toLowerCase()===email); const roleId=data.roleId||existing?.roleId||'role-demo'; const role=rbac.roles.find((item)=>item.id===roleId)||rbac.roles.find((item)=>item.id==='role-demo'); const maxModules=Math.max(1,Number(data.maxModules||existing?.maxModules||rbac.demoPolicy.maxModules||7)); const days=Number(data.days||data.demoDays||14);
+    const requested=normalizeEnabledModules(data.enabledModules!==undefined?data.enabledModules:existing?.enabledModules); const roleModules=role?.modules||[]; const enabledModules=(requested.length?requested:roleModules).filter((route)=>roleModules.includes(route)).slice(0,maxModules);
+    const user={ ...(existing||{}),id:existing?.id||id,fullName:String(data.fullName||existing?.fullName||'Acceso temporal').trim(),email:email||existing?.email||`access-${Date.now()}@empresa.com`,roleId,status:data.status||existing?.status||'active',demo:true,maxModules,enabledModules,demoExpiresAt:data.demoExpiresAt||daysFromNow(days) };
+    rbac.users=[user,...rbac.users.filter((item)=>item.id!==user.id&&String(item.email).toLowerCase()!==String(user.email).toLowerCase())].map(sanitizeUser);rbac.activeUserId=data.activate?user.id:rbac.activeUserId;rbac.audit=[{ at:new Date().toISOString(),action:existing?'update-demo-user':'create-demo-user',userId:user.id,email:user.email,maxModules,enabledModules },...(rbac.audit||[])].slice(0,60);return rbac;
   },
   updateUser(rbacInput,userId,data={}) {
-    const rbac=this.ensure(rbacInput);rbac.users=rbac.users.map((user)=>{if(user.id!==userId)return user;const days=data.days??data.demoDays;return { ...user,fullName:data.fullName??user.fullName,email:data.email??user.email,roleId:data.roleId??user.roleId,status:data.status??user.status,maxModules:data.maxModules!==undefined?Number(data.maxModules):user.maxModules,demo:data.demo!==undefined?Boolean(data.demo):user.demo,demoExpiresAt:days!==undefined?daysFromNow(Number(days)):(data.demoExpiresAt??user.demoExpiresAt) };}).map(sanitizeUser);rbac.audit=[{ at:new Date().toISOString(),action:'edit-user',userId,data:Object.keys(data) },...(rbac.audit||[])].slice(0,60);return rbac;
+    const rbac=this.ensure(rbacInput); rbac.users=rbac.users.map((user)=>{if(user.id!==userId)return user;const days=data.days??data.demoDays;const roleId=data.roleId??user.roleId;const role=rbac.roles.find((item)=>item.id===roleId);const maxModules=data.maxModules!==undefined?Math.max(1,Number(data.maxModules)):user.maxModules;const requested=normalizeEnabledModules(data.enabledModules!==undefined?data.enabledModules:user.enabledModules);const enabledModules=requested.filter((route)=>(role?.modules||[]).includes(route)).slice(0,maxModules);return { ...user,fullName:data.fullName??user.fullName,email:data.email??user.email,roleId,status:data.status??user.status,maxModules,enabledModules,demo:data.demo!==undefined?Boolean(data.demo):user.demo,demoExpiresAt:days!==undefined?daysFromNow(Number(days)):(data.demoExpiresAt??user.demoExpiresAt) };}).map(sanitizeUser);rbac.audit=[{ at:new Date().toISOString(),action:'edit-user',userId,data:Object.keys(data) },...(rbac.audit||[])].slice(0,60);return rbac;
   },
   routePermission(route) { return MODULE_CATALOG_ACCESS.find((item)=>item.route===route)?.permission||'modules.manage'; }
 };
