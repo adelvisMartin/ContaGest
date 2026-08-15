@@ -16,12 +16,8 @@ async function createWithPhoto(create, payload, entityType, altField) {
 
 export const HealthVerticalService = {
   summary() { return BackendApi.get('/verticals/health/summary'); },
-  async patients(params = {}) {
-    return MediaService.signRecords(await BackendApi.get(`/verticals/health/patients${query(params)}`));
-  },
-  createPatient(payload) {
-    return createWithPhoto((data) => BackendApi.post('/api/v1/verticals/health/patients', data), payload, 'care-patient', 'displayName');
-  },
+  async patients(params = {}) { return MediaService.signRecords(await BackendApi.get(`/verticals/health/patients${query(params)}`)); },
+  createPatient(payload) { return createWithPhoto((data) => BackendApi.post('/api/v1/verticals/health/patients', data), payload, 'care-patient', 'displayName'); },
   updatePatient(id, payload) { return BackendApi.request(`/verticals/health/patients/${encodeURIComponent(id)}`, { method:'PATCH', body:payload }); },
   archivePatient(id) { return BackendApi.delete(`/api/v1/verticals/health/patients/${encodeURIComponent(id)}`); },
   professionals() { return BackendApi.get('/verticals/health/professionals'); },
@@ -50,24 +46,20 @@ export const VeterinaryService = {
   createStudy(payload) { return BackendApi.post('/api/v1/verticals/veterinary/studies', payload); },
   hospitalizations(params = {}) { return BackendApi.get(`/verticals/veterinary/hospitalizations${query(params)}`); },
   createHospitalization(payload) { return BackendApi.post('/api/v1/verticals/veterinary/hospitalizations', payload); },
-  updateHospitalizationStatus(id, payload) { return BackendApi.request(`/verticals/veterinary/hospitalizations/${encodeURIComponent(id)}/status`, { method: 'PATCH', body: payload }); },
+  updateHospitalizationStatus(id, payload) { return BackendApi.request(`/verticals/veterinary/hospitalizations/${encodeURIComponent(id)}/status`, { method:'PATCH', body:payload }); },
   observations(hospitalizationId) { return BackendApi.get(`/verticals/veterinary/observations${query({ hospitalizationId })}`); },
   createObservation(payload) { return BackendApi.post('/api/v1/verticals/veterinary/observations', payload); },
   procedures(params = {}) { return BackendApi.get(`/verticals/veterinary/procedures${query(params)}`); },
   createProcedure(payload) { return BackendApi.post('/api/v1/verticals/veterinary/procedures', payload); },
   communications(params = {}) { return BackendApi.get(`/verticals/veterinary/communications${query(params)}`); },
   createCommunication(payload) { return BackendApi.post('/api/v1/verticals/veterinary/communications', payload); },
-  updateAppointmentStatus(id, payload) { return BackendApi.request(`/verticals/veterinary/appointments/${encodeURIComponent(id)}/status`, { method: 'PATCH', body: payload }); }
+  updateAppointmentStatus(id, payload) { return BackendApi.request(`/verticals/veterinary/appointments/${encodeURIComponent(id)}/status`, { method:'PATCH', body:payload }); }
 };
 
 export const GymVerticalService = {
   summary() { return BackendApi.get('/verticals/gym/summary'); },
-  async members(params = {}) {
-    return MediaService.signRecords(await BackendApi.get(`/verticals/gym/members${query(params)}`));
-  },
-  createMember(payload) {
-    return createWithPhoto((data) => BackendApi.post('/api/v1/verticals/gym/members', data), payload, 'gym-member', 'fullName');
-  },
+  async members(params = {}) { return MediaService.signRecords(await BackendApi.get(`/verticals/gym/members${query(params)}`)); },
+  createMember(payload) { return createWithPhoto((data) => BackendApi.post('/api/v1/verticals/gym/members', data), payload, 'gym-member', 'fullName'); },
   trainers() { return BackendApi.get('/verticals/gym/trainers'); },
   createTrainer(payload) { return BackendApi.post('/api/v1/verticals/gym/trainers', payload); },
   plans() { return BackendApi.get('/verticals/gym/plans'); },
@@ -94,3 +86,9 @@ export const CommunicationTemplateService = {
   save(payload) { return BackendApi.post('/api/v1/verticals/communications/templates', payload); },
   render(payload) { return BackendApi.post('/api/v1/verticals/communications/render', payload); }
 };
+
+if (typeof window !== 'undefined') {
+  queueMicrotask(() => import('./fitnessProductivityEnhancer.js')
+    .then(({ installFitnessProductivityEnhancer }) => installFitnessProductivityEnhancer())
+    .catch((error) => console.warn('[ContaGest Fitness Enhancer]', error)));
+}
