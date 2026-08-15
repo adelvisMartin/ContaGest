@@ -1,0 +1,12 @@
+{
+  "product": "control-hipico",
+  "version": "1.13.0-parity.1",
+  "channel": "rc-parity",
+  "baseline": "Hipico-Control-v1.13.0-RC1.apk",
+  "payload": "runtime.zip.b64",
+  "sha256": "6f0d8193987efc8176fef4948e46a4a30743ea33a404df14df1dfe28f9d19e79",
+  "archiveBytes": 107693,
+  "assetPolicy": "reuse frontend/public/hipico-control/assets/brand SVG assets",
+  "scope": "/hipico-control/",
+  "ownership": "independent-product"
+}
