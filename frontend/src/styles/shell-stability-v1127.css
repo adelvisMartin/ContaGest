@@ -1,0 +1,307 @@
+/* ContaGest-VE v11.27 — final shell invariants.
+ * Loaded LAST by erp-runtime.css. This file owns regressions that must never be
+ * reintroduced by legacy compatibility layers: shell geometry, theme toggle,
+ * breadcrumbs, form geometry and compact veterinary dossier presentation.
+ */
+
+:root {
+  --cg-shell-header-h: 56px;
+  --cg-control-h: 44px;
+  --cg-sidebar-light-bg: #f7faff;
+  --cg-sidebar-light-surface: #edf4ff;
+  --cg-sidebar-light-hover: #e2edff;
+  --cg-sidebar-light-text: #24364b;
+  --cg-sidebar-active: #2758b9;
+  --cg-border-subtle: color-mix(in srgb, #64748b 24%, transparent);
+}
+
+/* Header: one row, one owner per icon. */
+.cg-header,
+.app-header,
+.erp-header,
+[data-cg-shell="header"] {
+  min-height: var(--cg-shell-header-h);
+  height: var(--cg-shell-header-h);
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+
+.cg-header-actions,
+.header-actions,
+[data-cg-header-actions] {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  gap: 6px;
+  flex-wrap: nowrap;
+}
+
+/* Prevent legacy pseudo-icons from producing the duplicated sun/moon and
+ * settings chevrons reported on desktop/mobile. The SVG inside the control is
+ * the single visual owner. */
+[data-theme-toggle]::before,
+[data-theme-toggle]::after,
+.theme-toggle::before,
+.theme-toggle::after,
+.theme-switch::before,
+.theme-switch::after,
+[data-account-menu-trigger]::before,
+[data-account-menu-trigger]::after,
+.account-menu-trigger::before,
+.account-menu-trigger::after {
+  content: none !important;
+  display: none !important;
+}
+
+[data-theme-toggle] svg,
+.theme-toggle svg,
+[data-account-menu-trigger] svg,
+.account-menu-trigger svg {
+  width: 18px;
+  height: 18px;
+  flex: 0 0 18px;
+}
+
+/* BCV: secondary information must not dominate the ERP shell. */
+.cg-bcv,
+.bcv-rate,
+[data-bcv-rate] {
+  min-width: 0;
+  max-width: 178px;
+  min-height: 32px;
+  padding: 4px 8px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border-radius: 8px;
+  font-size: 11px;
+  line-height: 1.15;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.cg-bcv .rate-label,
+.bcv-rate .rate-label,
+[data-bcv-rate] .rate-label {
+  font-size: 10px;
+  font-weight: 600;
+  opacity: .72;
+}
+
+.cg-bcv-refresh,
+[data-bcv-refresh] {
+  width: 32px;
+  height: 32px;
+  min-width: 32px;
+  padding: 0;
+  display: inline-grid;
+  place-items: center;
+}
+
+/* Light theme means a light sidebar. Dark sidebar is reserved for dark mode. */
+html:not([data-theme="dark"]) .sidebar,
+html:not([data-theme="dark"]) .erp-sidebar,
+html:not([data-theme="dark"]) [data-cg-sidebar],
+body:not(.dark) .sidebar,
+body:not(.dark) .erp-sidebar {
+  background: var(--cg-sidebar-light-bg) !important;
+  color: var(--cg-sidebar-light-text) !important;
+}
+
+html:not([data-theme="dark"]) .sidebar details > summary,
+html:not([data-theme="dark"]) .erp-sidebar details > summary,
+html:not([data-theme="dark"]) [data-cg-sidebar] details > summary {
+  background: transparent !important;
+  color: var(--cg-sidebar-light-text) !important;
+}
+
+html:not([data-theme="dark"]) .sidebar details > summary:hover,
+html:not([data-theme="dark"]) .erp-sidebar details > summary:hover,
+html:not([data-theme="dark"]) [data-cg-sidebar] details > summary:hover,
+html:not([data-theme="dark"]) .sidebar a:hover,
+html:not([data-theme="dark"]) .erp-sidebar a:hover {
+  background: var(--cg-sidebar-light-hover) !important;
+}
+
+html:not([data-theme="dark"]) .sidebar a[aria-current="page"],
+html:not([data-theme="dark"]) .erp-sidebar a[aria-current="page"],
+html:not([data-theme="dark"]) [data-cg-sidebar] a[aria-current="page"],
+html:not([data-theme="dark"]) .sidebar .active,
+html:not([data-theme="dark"]) .erp-sidebar .active {
+  background: var(--cg-sidebar-active) !important;
+  color: #fff !important;
+}
+
+/* Breadcrumbs: one renderer in desktop. In mobile, retain only the current
+ * module title as a quiet location cue. */
+.cg-breadcrumbs > :is(.mui-breadcrumbs, [data-breadcrumb-renderer="mui"]):nth-of-type(n+2),
+[data-cg-breadcrumbs] > :is(.mui-breadcrumbs, [data-breadcrumb-renderer="mui"]):nth-of-type(n+2) {
+  display: none !important;
+}
+
+/* Universal field contract: wrapper has no decorative input border; the native
+ * input/select/textarea owns the only border. This prevents double rectangles
+ * and labels sitting on border lines. */
+.cg-field,
+.cgx-field,
+[data-cg-field] {
+  border: 0 !important;
+  box-shadow: none !important;
+  background: transparent !important;
+  min-width: 0;
+}
+
+.cg-field > label,
+.cgx-field > label,
+[data-cg-field] > label,
+.cg-field-label,
+.cgx-field-label {
+  position: static !important;
+  inset: auto !important;
+  transform: none !important;
+  display: block;
+  margin: 0 0 6px;
+  padding: 0 !important;
+  background: transparent !important;
+  font-size: 12px;
+  line-height: 1.25;
+  font-weight: 600;
+}
+
+.cg-field :is(input, select, textarea),
+.cgx-field :is(input, select, textarea),
+[data-cg-field] :is(input, select, textarea) {
+  width: 100%;
+  min-width: 0;
+  min-height: var(--cg-control-h);
+  box-sizing: border-box;
+  border: 1px solid var(--cg-border-subtle) !important;
+  border-radius: 8px !important;
+  background-clip: padding-box;
+  padding: 9px 11px;
+  font: inherit;
+}
+
+.cg-field textarea,
+.cgx-field textarea,
+[data-cg-field] textarea {
+  min-height: 96px;
+  resize: vertical;
+}
+
+.cg-field :is(input, select, textarea):focus-visible,
+.cgx-field :is(input, select, textarea):focus-visible,
+[data-cg-field] :is(input, select, textarea):focus-visible {
+  outline: 2px solid color-mix(in srgb, #2758b9 72%, transparent);
+  outline-offset: 2px;
+}
+
+/* Veterinary dossier/history: master-detail, compact facts, no card-inside-card
+ * visual noise. Empty blocks do not reserve a rounded rectangle. */
+.vet-dossier,
+[data-vet-dossier] {
+  display: grid;
+  grid-template-columns: minmax(210px, 0.82fr) minmax(0, 2.18fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.vet-dossier-facts,
+[data-vet-dossier-facts] {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  border-top: 1px solid var(--cg-border-subtle);
+  border-bottom: 1px solid var(--cg-border-subtle);
+  border-radius: 0 !important;
+  overflow: hidden;
+}
+
+.vet-dossier-facts > *,
+[data-vet-dossier-facts] > * {
+  min-width: 0;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--cg-border-subtle);
+  border-radius: 0 !important;
+  box-shadow: none !important;
+}
+
+.vet-dossier-facts > :empty,
+[data-vet-dossier-facts] > :empty,
+.vet-empty-card:empty,
+[data-vet-empty]:empty {
+  display: none !important;
+}
+
+@media (max-width: 1120px) {
+  .cg-bcv,
+  .bcv-rate,
+  [data-bcv-rate] {
+    max-width: 132px;
+  }
+  .cg-bcv .rate-label,
+  .bcv-rate .rate-label,
+  [data-bcv-rate] .rate-label {
+    display: none;
+  }
+}
+
+@media (max-width: 767px) {
+  .cg-header,
+  .app-header,
+  .erp-header,
+  [data-cg-shell="header"] {
+    width: 100%;
+    max-width: 100vw;
+    padding-inline: 10px;
+    gap: 6px;
+    overflow: hidden;
+  }
+
+  .cg-bcv,
+  .bcv-rate,
+  [data-bcv-rate] {
+    max-width: 76px;
+    min-height: 28px;
+    padding-inline: 6px;
+    font-size: 10px;
+  }
+
+  .cg-bcv-refresh,
+  [data-bcv-refresh] {
+    width: 30px;
+    min-width: 30px;
+    height: 30px;
+  }
+
+  .cg-breadcrumbs,
+  [data-cg-breadcrumbs] {
+    min-height: 20px;
+    margin: 2px 0 8px;
+    font-size: 12px !important;
+    line-height: 1.2;
+    font-weight: 500;
+  }
+
+  .cg-breadcrumbs > *:not(:last-child),
+  [data-cg-breadcrumbs] > *:not(:last-child) {
+    display: none !important;
+  }
+
+  .vet-dossier,
+  [data-vet-dossier] {
+    grid-template-columns: 1fr;
+  }
+
+  .vet-dossier-facts,
+  [data-vet-dossier-facts] {
+    grid-template-columns: 1fr;
+  }
+
+  .cg-field :is(input, select, textarea),
+  .cgx-field :is(input, select, textarea),
+  [data-cg-field] :is(input, select, textarea) {
+    font-size: 16px; /* prevents iOS zoom and reduces apparent overlap */
+  }
+}
