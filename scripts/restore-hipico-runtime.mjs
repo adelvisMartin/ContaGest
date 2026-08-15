@@ -8,7 +8,7 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, '..');
 const payloadPath = path.join(root, 'products/hipico-control/runtime/v1.13.0-rc1/runtime.zip.b64');
 const target = path.join(root, 'frontend/public/hipico-control');
-const expectedSha256 = '6f0d8193987efc8176fef4948e46a4a30743ea33a404df14df1dfe28f9d19e79';
+const expectedSha256 = 'a8c36cb5b101e6be5ea1b52fdca3f89240cf18cb5376d7840b7ab3724924f88d';
 const expectedVersion = '1.13.0-parity.1';
 
 const obsolete = [
