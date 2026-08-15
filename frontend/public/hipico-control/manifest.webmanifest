@@ -2,14 +2,14 @@
   "id": "/hipico-control/",
   "name": "Control Hípico",
   "short_name": "Control Hípico",
-  "description": "Operación hípica profesional, mobile-first y offline-first.",
+  "description": "Carreras, tercios, WhatsApp, saldos y cierres con operación offline-first.",
   "start_url": "/hipico-control/?source=pwa",
   "scope": "/hipico-control/",
   "display": "standalone",
   "display_override": ["standalone", "minimal-ui"],
   "orientation": "any",
-  "background_color": "#f4f1e8",
-  "theme_color": "#34423b",
+  "background_color": "#f3f1ea",
+  "theme_color": "#26362f",
   "categories": ["productivity", "business", "sports"],
   "lang": "es-VE",
   "dir": "ltr",
@@ -23,7 +23,8 @@
   "shortcuts": [
     {"name":"Resumen","short_name":"Resumen","url":"/hipico-control/#resumen","icons":[{"src":"/hipico-control/assets/brand/icon-192.svg","sizes":"any","type":"image/svg+xml"}]},
     {"name":"Nueva captura","short_name":"Captura","url":"/hipico-control/#captura","icons":[{"src":"/hipico-control/assets/brand/icon-192.svg","sizes":"any","type":"image/svg+xml"}]},
-    {"name":"Participantes","short_name":"Participantes","url":"/hipico-control/#participantes","icons":[{"src":"/hipico-control/assets/brand/icon-192.svg","sizes":"any","type":"image/svg+xml"}]},
+    {"name":"Chat WhatsApp","short_name":"WhatsApp","url":"/hipico-control/#whatsapp","icons":[{"src":"/hipico-control/assets/brand/icon-192.svg","sizes":"any","type":"image/svg+xml"}]},
+    {"name":"Participantes","short_name":"Tercios","url":"/hipico-control/#participantes","icons":[{"src":"/hipico-control/assets/brand/icon-192.svg","sizes":"any","type":"image/svg+xml"}]},
     {"name":"Cierres y saldos","short_name":"Cierres","url":"/hipico-control/#cierres","icons":[{"src":"/hipico-control/assets/brand/icon-192.svg","sizes":"any","type":"image/svg+xml"}]}
   ]
 }

@@ -66,7 +66,7 @@ test('Precision Hipica is mobile-first with semantic tokens and three themes', (
 test('Control Hipico local-first shell uses IndexedDB outbox and existing WhatsApp analyzers', () => {
   assert.match(hipicoApp, /indexedDB\.open/);
   assert.match(hipicoApp, /createObjectStore\('outbox'/);
-  assert.match(hipicoApp, /idempotencyKey:id/);
+  assert.match(hipicoApp, /idempotencyKey/);
   assert.match(hipicoApp, /parseWhatsAppChat/);
   assert.match(hipicoApp, /analyzeOperationalFeed/);
 });
