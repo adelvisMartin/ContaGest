@@ -6,7 +6,8 @@ const SAFE_KEYS = new Set([
   'status','type','kind','category','specialty','search','q','page','pageSize','sort','order',
   'date','dateFrom','dateTo','from','to','filter','modal','step','mode','source','access'
 ]);
-const SIDEBAR_SECTIONS_KEY = 'cg_sidebar_sections_v1125';
+const SIDEBAR_SECTIONS_KEY = 'cg_sidebar_sections_v1126';
+const ERP_CANONICAL_PATH = '/';
 
 let StoreRef = null;
 let allowedRoutes = new Set();
@@ -47,16 +48,16 @@ function readSidebarSections() {
 function rememberSidebarSections() {
   const open = [...document.querySelectorAll('#mainMenu details[data-sidebar-section][open]')]
     .map((node) => String(node.dataset.sidebarSection || '').trim()).filter(Boolean);
-  try { sessionStorage.setItem(SIDEBAR_SECTIONS_KEY, JSON.stringify(open)); } catch { /* session storage may be unavailable */ }
+  try { sessionStorage.setItem(SIDEBAR_SECTIONS_KEY, JSON.stringify(open)); } catch { /* storage may be unavailable */ }
 }
 function restoreSidebarSections() {
   const sections = [...document.querySelectorAll('#mainMenu details[data-sidebar-section]')];
   if (!sections.length) return;
   const remembered = readSidebarSections();
-  if (!remembered.size) return;
   sections.forEach((details) => {
+    const active = Boolean(details.querySelector('.hf-menu-item.active'));
     const name = String(details.dataset.sidebarSection || '');
-    details.open = remembered.has(name);
+    details.open = active || remembered.has(name);
     details.querySelector(':scope > summary')?.setAttribute('aria-expanded', String(details.open));
   });
 }
@@ -83,16 +84,12 @@ function readLocation(fallbackRoute = 'dashboard') {
 }
 
 function buildUrl(route, params = {}) {
-  const url = new URL(window.location.href);
-  url.hash = '';
-  url.search = '';
   const search = new URLSearchParams();
   search.set(ROUTE_PARAM, cleanRoute(route));
   Object.entries(normalizeParams(params)).forEach(([key, value]) => {
     if (key !== ROUTE_PARAM) search.set(key, value);
   });
-  url.search = search.toString();
-  return `${url.pathname}${url.search}`;
+  return `${ERP_CANONICAL_PATH}?${search.toString()}`;
 }
 
 function notifyStore(route, source = 'url') {
@@ -138,8 +135,8 @@ function installListeners() {
   if (installed || typeof window === 'undefined') return;
   installed = true;
 
-  // The category header is an accordion control, not a navigation destination.
-  // Handle it before the drawer/listeners can interpret the tap as navigation.
+  // Category headers are accordion controls. They never navigate and therefore never
+  // close the mobile drawer. Only a real child route is allowed to trigger navigation.
   document.addEventListener('click', (event) => {
     const origin = event.target instanceof Element ? event.target : null;
     const summary = origin?.closest('#mainMenu .cg-area-toggle');
@@ -148,6 +145,7 @@ function installListeners() {
     if (!details) return;
     event.preventDefault();
     event.stopPropagation();
+    event.stopImmediatePropagation();
     details.open = !details.open;
     summary.setAttribute('aria-expanded', String(details.open));
     rememberSidebarSections();
@@ -161,10 +159,8 @@ function installListeners() {
     const fromSidebar = Boolean(target.closest('#mainMenu'));
     if (fromSidebar) rememberSidebarSections();
     event.preventDefault();
-    UrlStateService.navigate(route, eventParams(target));
-    // On mobile the destination navigation is the only action allowed to close/re-render the drawer.
-    // Stopping propagation prevents an older #mainMenu bubble listener from racing the route update.
     if (fromSidebar && isMobileSidebar()) event.stopPropagation();
+    UrlStateService.navigate(route, eventParams(target));
   }, true);
 
   document.addEventListener('click', (event) => {
@@ -214,6 +210,7 @@ export const UrlStateService = {
     const hasExplicitRoute = new URLSearchParams(window.location.search).has(ROUTE_PARAM) || Boolean(legacyHashRoute());
     if (hasExplicitRoute && locationState.route !== current.route) notifyStore(locationState.route, 'bootstrap');
     else write(current.route || locationState.route, locationState.params, { replace:true, notify:false, preserveCurrent:false });
+    requestAnimationFrame(restoreSidebarSections);
     return this.current();
   },
   current() { const current=StoreRef?.get?.()||{}; return readLocation(current.route||'dashboard'); },
