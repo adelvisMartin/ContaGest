@@ -1,6 +1,7 @@
 const USDA_BASE = 'https://api.nal.usda.gov/fdc/v1';
 const MAX_QUERY = 120;
 const MAX_PAGE_SIZE = 25;
+const USDA_DEMO_KEY = 'DEMO_KEY';
 
 const nutrientNumber = (nutrients: any[] = [], names: string[] = []) => {
   const wanted = new Set(names.map((name) => name.toLowerCase()));
@@ -38,11 +39,11 @@ export default async function foodDataHandler(request: any, response: any) {
     return response.status(405).json({ ok:false, error:'METHOD_NOT_ALLOWED' });
   }
 
-  const apiKey = String(process.env.FDC_API_KEY || '').trim();
-  if (!apiKey) {
-    response.setHeader('Cache-Control', 'no-store');
-    return response.status(503).json({ ok:false, error:'FDC_NOT_CONFIGURED', message:'FoodData Central no está configurado en el servidor.' });
-  }
+  // USDA documents DEMO_KEY for low-volume exploration. Production should set
+  // FDC_API_KEY server-side; the browser never receives either key.
+  const configuredKey = String(process.env.FDC_API_KEY || '').trim();
+  const apiKey = configuredKey || USDA_DEMO_KEY;
+  const keyMode = configuredKey ? 'configured' : 'demo';
 
   const q = String(request.query?.q || '').trim().slice(0, MAX_QUERY);
   const fdcId = String(request.query?.fdcId || '').trim();
@@ -56,7 +57,7 @@ export default async function foodDataHandler(request: any, response: any) {
       if (!upstream.ok) throw new Error(`USDA_${upstream.status}`);
       const payload = await upstream.json();
       response.setHeader('Cache-Control', 'public, s-maxage=21600, stale-while-revalidate=86400');
-      return response.status(200).json({ ok:true, source:'USDA FoodData Central', food:normalizeFood(payload) });
+      return response.status(200).json({ ok:true, source:'USDA FoodData Central', keyMode, food:normalizeFood(payload) });
     }
 
     if (q.length < 2) return response.status(400).json({ ok:false, error:'QUERY_TOO_SHORT', message:'Escribe al menos 2 caracteres.' });
@@ -72,6 +73,7 @@ export default async function foodDataHandler(request: any, response: any) {
     return response.status(200).json({
       ok:true,
       source:'USDA FoodData Central',
+      keyMode,
       query:q,
       totalHits:Number(payload?.totalHits || 0),
       foods:(payload?.foods || []).slice(0, pageSize).map(normalizeFood)
@@ -79,6 +81,13 @@ export default async function foodDataHandler(request: any, response: any) {
   } catch (error: any) {
     console.error('[FoodData Central]', error?.message || error);
     response.setHeader('Cache-Control', 'no-store');
-    return response.status(502).json({ ok:false, error:'FDC_UPSTREAM_ERROR', message:'No se pudo consultar FoodData Central en este momento.' });
+    const demoLimited = keyMode === 'demo';
+    return response.status(502).json({
+      ok:false,
+      error: demoLimited ? 'FDC_DEMO_LIMIT_OR_UPSTREAM_ERROR' : 'FDC_UPSTREAM_ERROR',
+      message: demoLimited
+        ? 'FoodData Central no respondió con la clave pública de demostración. Configura FDC_API_KEY en Vercel para mayor capacidad.'
+        : 'No se pudo consultar FoodData Central en este momento.'
+    });
   }
 }
