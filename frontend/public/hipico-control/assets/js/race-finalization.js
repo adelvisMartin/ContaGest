@@ -29,5 +29,5 @@ document.addEventListener('click',async(event)=>{
   if(!button)return;
   event.preventDefault();button.disabled=true;const old=button.textContent;button.textContent='Finalizando…';
   try{await finalizeReviewedRace();location.hash='resumen';location.reload();}
-  catch(error){button.disabled=false;button.textContent=old;window.dispatchEvent(new CustomEvent('hipico:notice',{detail:{message:error.message}}));}
+  catch(error){button.disabled=false;button.textContent=old;window.alert(error?.message||'No se pudo finalizar la carrera.');}
 });
