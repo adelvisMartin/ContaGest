@@ -16,24 +16,24 @@ const onlyDate = (value) => value ? new Date(value).toLocaleDateString('es-VE') 
 const text = (value) => String(value || '').trim();
 
 function KeyValue({ label, value }) {
-  return <Paper variant="outlined" sx={{p:1.1,minWidth:0,bgcolor:'var(--cg-surface-soft)'}}>
+  return <Box className="cg-vet-fact">
     <Typography variant="caption" sx={{display:'block',color:'var(--cg-text-muted)',fontWeight:600}}>{label}</Typography>
-    <Typography variant="body2" sx={{mt:.25,color:'var(--cg-text)',fontWeight:600,overflowWrap:'anywhere'}}>{value || '—'}</Typography>
-  </Paper>;
+    <Typography variant="body2" sx={{mt:.15,color:'var(--cg-text)',fontWeight:600,overflowWrap:'anywhere'}}>{value || '—'}</Typography>
+  </Box>;
 }
 
 function TimelineItem({ icon, title, meta, body, tone='var(--cg-primary)' }) {
-  return <Box sx={{display:'grid',gridTemplateColumns:'34px minmax(0,1fr)',gap:1,pb:1.1,position:'relative'}}>
-    <Avatar sx={{width:30,height:30,bgcolor:'var(--cg-surface-soft)',color:tone,border:'1px solid var(--cg-border)',fontSize:12}}><Icon name={icon}/></Avatar>
+  return <Box sx={{display:'grid',gridTemplateColumns:'30px minmax(0,1fr)',gap:.9,pb:1,position:'relative'}}>
+    <Avatar sx={{width:27,height:27,bgcolor:'var(--cg-surface-soft)',color:tone,border:'1px solid var(--cg-border)',fontSize:11}}><Icon name={icon}/></Avatar>
     <Box sx={{minWidth:0}}>
       <Typography variant="body2" sx={{fontWeight:650,color:'var(--cg-text)'}}>{title}</Typography>
       <Typography variant="caption" sx={{display:'block',color:'var(--cg-text-muted)'}}>{meta}</Typography>
-      {body ? <Typography variant="body2" sx={{mt:.45,color:'var(--cg-text-muted)',whiteSpace:'pre-wrap'}}>{body}</Typography> : null}
+      {body ? <Typography variant="body2" sx={{mt:.35,color:'var(--cg-text-muted)',whiteSpace:'pre-wrap'}}>{body}</Typography> : null}
     </Box>
   </Box>;
 }
 
-function VeterinaryDossier({ state, ctx }) {
+function VeterinaryDossier({ ctx }) {
   const initialPatient = ctx?.query?.patient || '';
   const [patients,setPatients]=useState([]);
   const [selectedId,setSelectedId]=useState(initialPatient);
@@ -102,52 +102,48 @@ function VeterinaryDossier({ state, ctx }) {
     await loadPatients();
   }
 
-  return <Paper className="cg-vet-dossier" variant="outlined" sx={{p:{xs:1,md:1.3},borderColor:'var(--cg-border)',bgcolor:'var(--cg-surface)'}}>
-    <Stack direction={{xs:'column',sm:'row'}} gap={1} justifyContent="space-between" alignItems={{sm:'center'}} sx={{mb:1}}>
+  return <Paper className="cg-vet-dossier" variant="outlined">
+    <Stack direction={{xs:'column',sm:'row'}} gap={1} justifyContent="space-between" alignItems={{sm:'center'}} sx={{mb:.8}}>
       <Box>
         <Typography variant="caption" sx={{color:'var(--cg-primary)',fontWeight:700,textTransform:'uppercase',letterSpacing:'.08em'}}>Expediente rápido</Typography>
         <Typography variant="h6" sx={{fontWeight:700,color:'var(--cg-text)'}}>Ficha e historia médica por mascota</Typography>
-        <Typography variant="caption" sx={{color:'var(--cg-text-muted)'}}>Selecciona una mascota para consultar datos, antecedentes y cronología clínica sin perder el contexto.</Typography>
+        <Typography variant="caption" sx={{color:'var(--cg-text-muted)'}}>Consulta datos, antecedentes y cronología sin salir del módulo.</Typography>
       </Box>
-      <Stack direction="row" gap={.7} flexWrap="wrap">
-        <Button variant="outlined" disabled={!selected} onClick={openEdit} startIcon={<Icon name="fa-pen"/>}>Editar ficha</Button>
-        <Button disabled={!selected} onClick={()=>ctx.navigate?.('veterinaria',{tab:'historia',patient:selectedId})} startIcon={<Icon name="fa-file-waveform"/>}>Historia completa</Button>
+      <Stack direction="row" gap={.6} flexWrap="wrap">
+        <Button size="small" variant="outlined" disabled={!selected} onClick={openEdit} startIcon={<Icon name="fa-pen"/>}>Editar ficha</Button>
+        <Button size="small" disabled={!selected} onClick={()=>ctx.navigate?.('veterinaria',{tab:'historia',patient:selectedId})} startIcon={<Icon name="fa-file-waveform"/>}>Historia completa</Button>
       </Stack>
     </Stack>
-    <Divider sx={{mb:1.2}}/>
-    <Box sx={{display:'grid',gridTemplateColumns:{xs:'1fr',md:'minmax(220px,300px) minmax(0,1fr)'},gap:1.2}}>
+    <Divider sx={{mb:1}}/>
+    <Box className="cg-vet-master-detail" sx={{display:'grid',gridTemplateColumns:{xs:'1fr',md:'250px minmax(0,1fr)'},gap:1}}>
       <Box sx={{minWidth:0}}>
         <TextField size="small" fullWidth placeholder="Buscar mascota, tutor o microchip" value={search} onChange={(event)=>setSearch(event.target.value)} InputProps={{startAdornment:<InputAdornment position="start"><Icon name="fa-magnifying-glass"/></InputAdornment>}}/>
-        <List dense sx={{mt:.7,maxHeight:{xs:220,md:520},overflow:'auto',border:'1px solid var(--cg-border)',borderRadius:'var(--cg-radius-md)'}}>
-          {loading ? <ListItemText sx={{p:1.2}} primary="Cargando mascotas…"/> : filtered.map((item)=><ListItemButton key={item.id} selected={item.id===selectedId} onClick={()=>setSelectedId(item.id)} sx={{mx:.4,my:.25,borderRadius:1.5}}>
-            <ListItemAvatar><Avatar src={item.photoUrl||''} sx={{width:32,height:32,bgcolor:'var(--cg-primary)'}}>{item.displayName?.slice(0,1)}</Avatar></ListItemAvatar>
+        {loading ? <Box className="cg-vet-list-state">Cargando mascotas…</Box> : filtered.length ? <List dense className="cg-vet-patient-list" sx={{mt:.6,maxHeight:{xs:180,md:390},overflow:'auto'}}>
+          {filtered.map((item)=><ListItemButton key={item.id} selected={item.id===selectedId} onClick={()=>setSelectedId(item.id)}>
+            <ListItemAvatar><Avatar src={item.photoUrl||''} sx={{width:30,height:30,bgcolor:'var(--cg-primary)',fontSize:13}}>{item.displayName?.slice(0,1)}</Avatar></ListItemAvatar>
             <ListItemText primary={item.displayName||'Sin nombre'} secondary={`${item.species||'Mascota'} · ${item.guardianName||'Sin tutor'} · #${shortCode(item.id)}`} primaryTypographyProps={{fontSize:12,fontWeight:650}} secondaryTypographyProps={{fontSize:9,noWrap:true}}/>
           </ListItemButton>)}
-        </List>
+        </List> : <Box className="cg-vet-list-state">No hay mascotas registradas todavía.</Box>}
       </Box>
-      {selected ? <Box sx={{display:'grid',gap:1.1,minWidth:0}}>
-        <Box sx={{display:'grid',gridTemplateColumns:{xs:'1fr',lg:'minmax(0,1fr) 220px'},gap:1}}>
-          <Box>
-            <Stack direction="row" gap={1} alignItems="center" sx={{mb:1}}>
-              <Avatar src={selected.photoUrl||''} sx={{width:48,height:48,bgcolor:'var(--cg-primary)',fontSize:20}}>{selected.displayName?.slice(0,1)}</Avatar>
-              <Box sx={{minWidth:0}}><Typography variant="h6" sx={{fontWeight:700}}>{selected.displayName}</Typography><Typography variant="caption" sx={{color:'var(--cg-text-muted)'}}>{selected.species||'Mascota'} · {selected.breed||'Sin raza'} · expediente #{shortCode(selected.id)}</Typography></Box>
-            </Stack>
-            <Box sx={{display:'grid',gridTemplateColumns:{xs:'1fr 1fr',lg:'repeat(4,minmax(0,1fr))'},gap:.7}}>
-              <KeyValue label="Tutor" value={selected.guardianName}/><KeyValue label="Teléfono" value={selected.guardianPhone}/><KeyValue label="Correo" value={selected.guardianEmail}/><KeyValue label="Microchip" value={selected.microchip}/>
-              <KeyValue label="Nacimiento" value={onlyDate(selected.birthDate)}/><KeyValue label="Sexo" value={selected.sex}/><KeyValue label="Color" value={selected.color}/><KeyValue label="Notas" value={selected.notes}/>
-            </Box>
-          </Box>
-          <Stack gap={.7}>
-            <Alert severity={selected.allergies?'warning':'success'}><b>Alergias:</b> {selected.allergies||'Sin alergias registradas'}</Alert>
-            <Alert severity={selected.conditions?'info':'success'}><b>Antecedentes:</b> {selected.conditions||'Sin condiciones registradas'}</Alert>
-            <Paper variant="outlined" sx={{p:1}}><Typography variant="caption" color="text.secondary">Actividad clínica</Typography><Stack direction="row" gap={.5} flexWrap="wrap" mt={.5}><Chip size="small" label={`${history.encounters.length} consultas`}/><Chip size="small" label={`${history.labs.length} órdenes`}/><Chip size="small" label={`${history.studies.length} estudios`}/><Chip size="small" label={`${history.procedures.length} procedimientos`}/></Stack></Paper>
-          </Stack>
+      {selected ? <Box className="cg-vet-detail" sx={{display:'grid',gap:.9,minWidth:0}}>
+        <Stack direction="row" gap={.9} alignItems="center">
+          <Avatar src={selected.photoUrl||''} sx={{width:42,height:42,bgcolor:'var(--cg-primary)',fontSize:18}}>{selected.displayName?.slice(0,1)}</Avatar>
+          <Box sx={{minWidth:0}}><Typography variant="subtitle1" sx={{fontWeight:700}}>{selected.displayName}</Typography><Typography variant="caption" sx={{color:'var(--cg-text-muted)'}}>{selected.species||'Mascota'} · {selected.breed||'Sin raza'} · #{shortCode(selected.id)}</Typography></Box>
+        </Stack>
+        <Box className="cg-vet-facts" sx={{display:'grid',gridTemplateColumns:{xs:'1fr 1fr',lg:'repeat(4,minmax(0,1fr))'}}}>
+          <KeyValue label="Tutor" value={selected.guardianName}/><KeyValue label="Teléfono" value={selected.guardianPhone}/><KeyValue label="Correo" value={selected.guardianEmail}/><KeyValue label="Microchip" value={selected.microchip}/>
+          <KeyValue label="Nacimiento" value={onlyDate(selected.birthDate)}/><KeyValue label="Sexo" value={selected.sex}/><KeyValue label="Color" value={selected.color}/><KeyValue label="Notas" value={selected.notes}/>
         </Box>
-        <Paper variant="outlined" sx={{p:1.1,maxHeight:420,overflow:'auto'}}>
-          <Typography variant="subtitle2" sx={{fontWeight:700,mb:1}}>Cronología médica</Typography>
-          {timeline.length ? timeline.slice(0,30).map((item,index)=><TimelineItem key={`${item.title}-${item.date}-${index}`} {...item}/>) : <Typography variant="body2" sx={{color:'var(--cg-text-muted)'}}>Todavía no hay consultas, tratamientos, estudios, hospitalizaciones o procedimientos para esta mascota.</Typography>}
-        </Paper>
-      </Box> : <Paper variant="outlined" sx={{p:3,textAlign:'center'}}><Typography variant="subtitle2">Selecciona una mascota para abrir su expediente.</Typography></Paper>}
+        <Stack direction={{xs:'column',lg:'row'}} gap={.6}>
+          <Alert severity={selected.allergies?'warning':'success'} sx={{flex:1}}><b>Alergias:</b> {selected.allergies||'Sin registro'}</Alert>
+          <Alert severity={selected.conditions?'info':'success'} sx={{flex:1}}><b>Antecedentes:</b> {selected.conditions||'Sin registro'}</Alert>
+        </Stack>
+        <Box className="cg-vet-activity"><Stack direction="row" gap={.45} flexWrap="wrap"><Chip size="small" label={`${history.encounters.length} consultas`}/><Chip size="small" label={`${history.labs.length} órdenes`}/><Chip size="small" label={`${history.studies.length} estudios`}/><Chip size="small" label={`${history.procedures.length} procedimientos`}/></Stack></Box>
+        <Box className="cg-vet-timeline">
+          <Typography variant="subtitle2" sx={{fontWeight:700,mb:.7}}>Cronología médica</Typography>
+          {timeline.length ? timeline.slice(0,30).map((item,index)=><TimelineItem key={`${item.title}-${item.date}-${index}`} {...item}/>) : <Typography variant="body2" sx={{color:'var(--cg-text-muted)'}}>Aún no hay eventos clínicos para esta mascota.</Typography>}
+        </Box>
+      </Box> : <Box className="cg-vet-empty"><Typography variant="body2" sx={{color:'var(--cg-text-muted)',fontWeight:600}}>Selecciona o registra una mascota para abrir su expediente.</Typography></Box>}
     </Box>
     <Dialog open={editing} onClose={()=>setEditing(false)} fullWidth maxWidth="md">
       <DialogTitle>Editar ficha · {selected?.displayName}</DialogTitle>
@@ -182,6 +178,6 @@ export const VeterinaryClinicPage={
     if(!host)return;
     try{dossierRoot?.unmount();}catch{}
     dossierRoot=createRoot(host);
-    dossierRoot.render(<VeterinaryDossier state={state} ctx={ctx}/>);
+    dossierRoot.render(<VeterinaryDossier ctx={ctx}/>);
   }
 };
