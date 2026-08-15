@@ -118,7 +118,8 @@ function installListeners() {
     if (!route || !allowedRoutes.has(route) || target.matches(':disabled,[aria-disabled="true"],.is-locked')) return;
     event.preventDefault();
     UrlStateService.navigate(route, eventParams(target));
-  });
+    if (target.closest('#mainMenu') && window.matchMedia?.('(max-width:1023px)').matches) event.stopPropagation();
+  }, true);
 
   document.addEventListener('change', (event) => {
     const field = event.target instanceof Element ? event.target.closest('[data-query-param]') : null;
