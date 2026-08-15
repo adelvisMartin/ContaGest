@@ -1,7 +1,7 @@
-/* ContaGest-VE v11.25 — universal runtime stylesheet entrypoint.
+/* ContaGest-VE v11.26 — universal runtime stylesheet entrypoint.
    app.js imports this file only. Shell invariants are registered first because
    !important declarations reverse cascade-layer priority. ERP system owns the
-   canonical design contract and vertical-mobile-contract owns intentional
+   canonical design contract and vertical/mobile UX contracts own intentional
    responsive geometry for mature verticals. Historical styles remain reachable
    only through controlled compatibility layers inside erp-system.css. */
 @layer cg.shell-contract, cg.context;
@@ -13,3 +13,4 @@
 @import './admin-demo-contract.css';
 @import './dentistry-contract.css';
 @import './fitness-productivity.css';
+@import './shell-ux-v1126.css';
