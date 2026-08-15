@@ -1,307 +1,622 @@
-/* ContaGest-VE v11.27 — final shell invariants.
- * Loaded LAST by erp-runtime.css. This file owns regressions that must never be
- * reintroduced by legacy compatibility layers: shell geometry, theme toggle,
- * breadcrumbs, form geometry and compact veterinary dossier presentation.
+/* ContaGest-VE v11.27 — critical runtime invariants.
+ * Imported inside the FIRST cg.shell-contract cascade layer. Historical CSS
+ * still contains layered !important declarations; important layer priority is
+ * reversed, so this contract intentionally outranks those compatibility rules.
+ * Selectors mirror components/layout.js and muiRuntime.js exactly.
  */
 
 :root {
-  --cg-shell-header-h: 56px;
+  --cg-shell-header-h: 60px;
   --cg-control-h: 44px;
-  --cg-sidebar-light-bg: #f7faff;
-  --cg-sidebar-light-surface: #edf4ff;
-  --cg-sidebar-light-hover: #e2edff;
-  --cg-sidebar-light-text: #24364b;
-  --cg-sidebar-active: #2758b9;
-  --cg-border-subtle: color-mix(in srgb, #64748b 24%, transparent);
+  --cg-sidebar-light-bg: #f8fafc;
+  --cg-sidebar-light-section: #f1f5f9;
+  --cg-sidebar-light-open: #e8eef6;
+  --cg-sidebar-light-hover: #eef4fb;
+  --cg-sidebar-light-text: #1e3448;
+  --cg-sidebar-light-muted: #5b7389;
+  --cg-sidebar-light-accent: #1d4ed8;
+  --cg-shell-border: #d7e1eb;
 }
 
-/* Header: one row, one owner per icon. */
-.cg-header,
-.app-header,
-.erp-header,
-[data-cg-shell="header"] {
+/* --------------------------------------------------------------------------
+   Sidebar — light mode must actually be light
+   -------------------------------------------------------------------------- */
+html:not(.dark):not(.enterprise) body #sidebar.hf-sidebar.hf-app-sidebar.cg-sidebar {
+  background: var(--cg-sidebar-light-bg) !important;
+  color: var(--cg-sidebar-light-text) !important;
+  border-right: 1px solid var(--cg-shell-border) !important;
+  box-shadow: 8px 0 24px rgba(30, 61, 88, .06) !important;
+}
+
+html:not(.dark):not(.enterprise) body #sidebar .hf-brand,
+html:not(.dark):not(.enterprise) body #sidebar .hf-sidebar-actions,
+html:not(.dark):not(.enterprise) body #sidebar .hf-sidebar-footer {
+  background: var(--cg-sidebar-light-bg) !important;
+  color: var(--cg-sidebar-light-text) !important;
+  border-color: var(--cg-shell-border) !important;
+}
+
+html:not(.dark):not(.enterprise) body #sidebar .hf-sidebar-wordmark h1,
+html:not(.dark):not(.enterprise) body #sidebar .hf-sidebar-wordmark p,
+html:not(.dark):not(.enterprise) body #sidebar .hf-sidebar-footer strong,
+html:not(.dark):not(.enterprise) body #sidebar .hf-sidebar-footer span,
+html:not(.dark):not(.enterprise) body #sidebar .hf-footer-kicker {
+  color: var(--cg-sidebar-light-text) !important;
+}
+
+html:not(.dark):not(.enterprise) body #sidebar .hf-sidebar-collapse,
+html:not(.dark):not(.enterprise) body #sidebar .hf-mini-action,
+html:not(.dark):not(.enterprise) body #sidebar .hf-logout-link {
+  background: #fff !important;
+  color: #31526e !important;
+  border-color: #d5e0eb !important;
+  box-shadow: none !important;
+}
+
+html:not(.dark):not(.enterprise) body #sidebar .hf-new-entry {
+  background: #1d4ed8 !important;
+  color: #fff !important;
+  border-color: #1d4ed8 !important;
+  box-shadow: none !important;
+}
+
+html:not(.dark):not(.enterprise) body #mainMenu,
+html:not(.dark):not(.enterprise) body #mainMenu .hf-menu-section,
+html:not(.dark):not(.enterprise) body #mainMenu .hf-menu-list {
+  background: transparent !important;
+  color: var(--cg-sidebar-light-text) !important;
+}
+
+html:not(.dark):not(.enterprise) body #mainMenu .cg-area-toggle {
+  min-height: 40px !important;
+  margin: 3px 7px !important;
+  padding: 8px 10px !important;
+  border: 1px solid #dbe4ed !important;
+  border-radius: 7px !important;
+  background: var(--cg-sidebar-light-section) !important;
+  color: #36536d !important;
+  box-shadow: none !important;
+}
+
+html:not(.dark):not(.enterprise) body #mainMenu details[open] > .cg-area-toggle {
+  background: var(--cg-sidebar-light-open) !important;
+  border-color: #cad8e6 !important;
+  color: #244965 !important;
+}
+
+html:not(.dark):not(.enterprise) body #mainMenu .cg-area-toggle i,
+html:not(.dark):not(.enterprise) body #mainMenu .hf-section-chevron {
+  color: #67839c !important;
+}
+
+html:not(.dark):not(.enterprise) body #mainMenu .hf-menu-list {
+  padding: 1px 8px 7px !important;
+}
+
+html:not(.dark):not(.enterprise) body #mainMenu button.menu-link.hf-menu-item {
+  min-height: 40px !important;
+  margin: 2px 0 !important;
+  padding: 8px 10px !important;
+  border: 1px solid transparent !important;
+  border-radius: 7px !important;
+  background: transparent !important;
+  color: #405d74 !important;
+  box-shadow: none !important;
+}
+
+html:not(.dark):not(.enterprise) body #mainMenu button.menu-link.hf-menu-item:hover,
+html:not(.dark):not(.enterprise) body #mainMenu button.menu-link.hf-menu-item:focus-visible {
+  background: var(--cg-sidebar-light-hover) !important;
+  border-color: #d6e2ed !important;
+  color: #173f66 !important;
+}
+
+html:not(.dark):not(.enterprise) body #mainMenu button.menu-link.hf-menu-item.active {
+  background: var(--cg-sidebar-light-accent) !important;
+  border-color: var(--cg-sidebar-light-accent) !important;
+  border-left: 3px solid #93b8ff !important;
+  color: #fff !important;
+  font-weight: 750 !important;
+  box-shadow: none !important;
+}
+
+html:not(.dark):not(.enterprise) body #mainMenu button.menu-link.hf-menu-item.active i,
+html:not(.dark):not(.enterprise) body #mainMenu button.menu-link.hf-menu-item.active span {
+  color: #fff !important;
+}
+
+html:not(.dark):not(.enterprise) body #mainMenu button.menu-link.hf-menu-item:not(.active) i {
+  color: #6b879f !important;
+}
+
+html:not(.dark):not(.enterprise) body #mainMenu button.menu-link.hf-menu-item.is-locked {
+  background: #f6f8fa !important;
+  color: #8b9eae !important;
+  opacity: .86 !important;
+}
+
+/* --------------------------------------------------------------------------
+   Header — one row, one visual owner per action
+   -------------------------------------------------------------------------- */
+html body .hf-app-topbar.hf-topbar {
   min-height: var(--cg-shell-header-h);
   height: var(--cg-shell-header-h);
-  display: flex;
-  align-items: center;
-  min-width: 0;
+  padding-inline: 16px;
+  gap: 10px;
 }
 
-.cg-header-actions,
-.header-actions,
-[data-cg-header-actions] {
-  display: flex;
-  align-items: center;
+html body .hf-app-topbar-actions.hf-topbar-actions {
   min-width: 0;
-  gap: 6px;
+  gap: 7px;
   flex-wrap: nowrap;
 }
 
-/* Prevent legacy pseudo-icons from producing the duplicated sun/moon and
- * settings chevrons reported on desktop/mobile. The SVG inside the control is
- * the single visual owner. */
-[data-theme-toggle]::before,
-[data-theme-toggle]::after,
-.theme-toggle::before,
-.theme-toggle::after,
-.theme-switch::before,
-.theme-switch::after,
-[data-account-menu-trigger]::before,
-[data-account-menu-trigger]::after,
-.account-menu-trigger::before,
-.account-menu-trigger::after {
+html body .hf-header-logo,
+html body .hf-header-logo img {
+  opacity: 1 !important;
+  visibility: visible !important;
+  object-fit: contain !important;
+}
+
+html body #btnTema,
+html body #btnUserMenu,
+html body #btnOpenSidebar {
+  box-shadow: none !important;
+}
+
+html body #btnTema::before,
+html body #btnTema::after,
+html body #btnUserMenu::before,
+html body #btnUserMenu::after {
   content: none !important;
   display: none !important;
 }
 
-[data-theme-toggle] svg,
-.theme-toggle svg,
-[data-account-menu-trigger] svg,
-.account-menu-trigger svg {
-  width: 18px;
-  height: 18px;
-  flex: 0 0 18px;
+html body #btnTema {
+  display: grid !important;
+  place-items: center !important;
+  width: 36px !important;
+  min-width: 36px !important;
+  height: 36px !important;
+  min-height: 36px !important;
+  padding: 0 !important;
+  border-radius: 8px !important;
+  overflow: hidden !important;
 }
 
-/* BCV: secondary information must not dominate the ERP shell. */
-.cg-bcv,
-.bcv-rate,
-[data-bcv-rate] {
-  min-width: 0;
-  max-width: 178px;
-  min-height: 32px;
-  padding: 4px 8px;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  border-radius: 8px;
-  font-size: 11px;
-  line-height: 1.15;
-  font-weight: 600;
-  white-space: nowrap;
-  overflow: hidden;
-}
-
-.cg-bcv .rate-label,
-.bcv-rate .rate-label,
-[data-bcv-rate] .rate-label {
-  font-size: 10px;
-  font-weight: 600;
-  opacity: .72;
-}
-
-.cg-bcv-refresh,
-[data-bcv-refresh] {
-  width: 32px;
-  height: 32px;
-  min-width: 32px;
-  padding: 0;
-  display: inline-grid;
-  place-items: center;
-}
-
-/* Light theme means a light sidebar. Dark sidebar is reserved for dark mode. */
-html:not([data-theme="dark"]) .sidebar,
-html:not([data-theme="dark"]) .erp-sidebar,
-html:not([data-theme="dark"]) [data-cg-sidebar],
-body:not(.dark) .sidebar,
-body:not(.dark) .erp-sidebar {
-  background: var(--cg-sidebar-light-bg) !important;
-  color: var(--cg-sidebar-light-text) !important;
-}
-
-html:not([data-theme="dark"]) .sidebar details > summary,
-html:not([data-theme="dark"]) .erp-sidebar details > summary,
-html:not([data-theme="dark"]) [data-cg-sidebar] details > summary {
-  background: transparent !important;
-  color: var(--cg-sidebar-light-text) !important;
-}
-
-html:not([data-theme="dark"]) .sidebar details > summary:hover,
-html:not([data-theme="dark"]) .erp-sidebar details > summary:hover,
-html:not([data-theme="dark"]) [data-cg-sidebar] details > summary:hover,
-html:not([data-theme="dark"]) .sidebar a:hover,
-html:not([data-theme="dark"]) .erp-sidebar a:hover {
-  background: var(--cg-sidebar-light-hover) !important;
-}
-
-html:not([data-theme="dark"]) .sidebar a[aria-current="page"],
-html:not([data-theme="dark"]) .erp-sidebar a[aria-current="page"],
-html:not([data-theme="dark"]) [data-cg-sidebar] a[aria-current="page"],
-html:not([data-theme="dark"]) .sidebar .active,
-html:not([data-theme="dark"]) .erp-sidebar .active {
-  background: var(--cg-sidebar-active) !important;
-  color: #fff !important;
-}
-
-/* Breadcrumbs: one renderer in desktop. In mobile, retain only the current
- * module title as a quiet location cue. */
-.cg-breadcrumbs > :is(.mui-breadcrumbs, [data-breadcrumb-renderer="mui"]):nth-of-type(n+2),
-[data-cg-breadcrumbs] > :is(.mui-breadcrumbs, [data-breadcrumb-renderer="mui"]):nth-of-type(n+2) {
+html body #btnTema > i,
+html body #btnTema .material-symbols-outlined {
   display: none !important;
 }
 
-/* Universal field contract: wrapper has no decorative input border; the native
- * input/select/textarea owns the only border. This prevents double rectangles
- * and labels sitting on border lines. */
-.cg-field,
-.cgx-field,
-[data-cg-field] {
-  border: 0 !important;
+html body #btnTema .hf-theme-svg {
+  display: block !important;
+  width: 16px !important;
+  min-width: 16px !important;
+  height: 16px !important;
+  min-height: 16px !important;
+  margin: 0 !important;
+}
+
+html body #btnUserMenu.hf-user-trigger {
+  min-height: 36px !important;
+  height: 36px !important;
+  padding: 2px 5px !important;
+  gap: 4px !important;
+  border-radius: 8px !important;
+}
+
+html body #btnUserMenu .hf-avatar {
+  width: 28px !important;
+  min-width: 28px !important;
+  height: 28px !important;
+  min-height: 28px !important;
+  border-radius: 7px !important;
+}
+
+html body #btnUserMenu .hf-user-chevron {
+  width: 8px !important;
+  font-size: 8px !important;
+  opacity: .58 !important;
+}
+
+html body #userMenuPanel button i,
+html body #userMenuPanel label i {
+  width: 16px !important;
+  min-width: 16px !important;
+  text-align: center !important;
+}
+
+/* BCV: source stays available through title/aria-label, but permanent visual
+   space is reserved for the value + a compact explicit refresh control. */
+html body .hf-rate-compact {
+  display: flex !important;
+  align-items: center !important;
+  width: auto !important;
+  min-width: 122px !important;
+  max-width: 154px !important;
+  min-height: 34px !important;
+  height: 34px !important;
+  gap: 6px !important;
+  padding: 4px 8px !important;
+  border-radius: 8px !important;
+  border: 1px solid var(--cg-border) !important;
+  background: var(--cg-surface) !important;
   box-shadow: none !important;
-  background: transparent !important;
+  overflow: hidden !important;
+}
+
+html body .hf-rate-copy {
+  min-width: 0 !important;
+  line-height: 1.05 !important;
+}
+
+html body .hf-rate-copy > small {
+  display: block !important;
+  margin-bottom: 1px !important;
+  font-size: 8.5px !important;
+  font-weight: 650 !important;
+  color: var(--cg-text-muted) !important;
+}
+
+html body .hf-rate-copy > strong {
+  display: block !important;
+  font-size: 10.5px !important;
+  line-height: 1.05 !important;
+  font-weight: 750 !important;
+  white-space: nowrap !important;
+}
+
+html body .hf-rate-source {
+  display: none !important;
+}
+
+html body #btnActualizarTasaTop.hf-rate-update {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  min-width: 52px !important;
+  height: 34px !important;
+  min-height: 34px !important;
+  gap: 5px !important;
+  padding: 0 8px !important;
+  border-radius: 8px !important;
+  font-size: 10px !important;
+  font-weight: 750 !important;
+  box-shadow: none !important;
+}
+
+/* --------------------------------------------------------------------------
+   Breadcrumbs — desktop gets one renderer; mobile gets a subtle module title
+   -------------------------------------------------------------------------- */
+.hf-breadcrumbs-host {
+  min-width: 0;
+  min-height: 22px;
+  margin: 0 0 8px;
+}
+
+.hf-breadcrumbs-host.mui-breadcrumbs-ready .hf-breadcrumbs-fallback,
+.hf-breadcrumbs-host .hf-breadcrumbs-fallback.mui-fallback-hidden {
+  display: none !important;
+}
+
+.hf-breadcrumbs-host [data-mui-breadcrumb-mount] {
   min-width: 0;
 }
 
-.cg-field > label,
-.cgx-field > label,
-[data-cg-field] > label,
-.cg-field-label,
-.cgx-field-label {
+/* --------------------------------------------------------------------------
+   Forms — one wrapper, one visible label, one control border
+   -------------------------------------------------------------------------- */
+[data-cgx-kit],
+.cgx-field {
+  min-width: 0 !important;
+  max-width: 100% !important;
+  border: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  overflow: visible !important;
+}
+
+[data-cgx-kit] > :is(label, span):first-child,
+.cgx-field > :is(label, span):first-child,
+.cgx-label {
   position: static !important;
   inset: auto !important;
   transform: none !important;
-  display: block;
-  margin: 0 0 6px;
+  display: block !important;
+  width: auto !important;
+  height: auto !important;
+  margin: 0 0 6px !important;
   padding: 0 !important;
   background: transparent !important;
-  font-size: 12px;
-  line-height: 1.25;
-  font-weight: 600;
+  clip: auto !important;
+  clip-path: none !important;
+  overflow: visible !important;
+  white-space: normal !important;
+  font-size: 12px !important;
+  line-height: 1.25 !important;
+  font-weight: 650 !important;
+  color: var(--cg-text-muted) !important;
 }
 
-.cg-field :is(input, select, textarea),
-.cgx-field :is(input, select, textarea),
-[data-cg-field] :is(input, select, textarea) {
-  width: 100%;
-  min-width: 0;
-  min-height: var(--cg-control-h);
-  box-sizing: border-box;
-  border: 1px solid var(--cg-border-subtle) !important;
+[data-cgx-kit] [data-mui-native-mount],
+[data-cgx-kit] [data-mui-mount],
+[data-cgx-kit] .MuiFormControl-root,
+[data-cgx-kit] .MuiInputBase-root,
+[data-cgx-kit] .MuiOutlinedInput-root {
+  width: 100% !important;
+  min-width: 0 !important;
+  max-width: 100% !important;
+  box-sizing: border-box !important;
+}
+
+[data-cgx-kit] .MuiOutlinedInput-root {
+  min-height: var(--cg-control-h) !important;
   border-radius: 8px !important;
-  background-clip: padding-box;
-  padding: 9px 11px;
-  font: inherit;
+  background: var(--cg-surface) !important;
+  box-shadow: none !important;
 }
 
-.cg-field textarea,
-.cgx-field textarea,
-[data-cg-field] textarea {
-  min-height: 96px;
-  resize: vertical;
+[data-cgx-kit] .MuiOutlinedInput-notchedOutline {
+  top: 0 !important;
+  border-width: 1px !important;
+  border-color: var(--cg-border) !important;
 }
 
-.cg-field :is(input, select, textarea):focus-visible,
-.cgx-field :is(input, select, textarea):focus-visible,
-[data-cg-field] :is(input, select, textarea):focus-visible {
-  outline: 2px solid color-mix(in srgb, #2758b9 72%, transparent);
-  outline-offset: 2px;
+[data-cgx-kit] .MuiOutlinedInput-notchedOutline legend {
+  width: 0 !important;
+  max-width: 0 !important;
+  padding: 0 !important;
 }
 
-/* Veterinary dossier/history: master-detail, compact facts, no card-inside-card
- * visual noise. Empty blocks do not reserve a rounded rectangle. */
-.vet-dossier,
-[data-vet-dossier] {
-  display: grid;
-  grid-template-columns: minmax(210px, 0.82fr) minmax(0, 2.18fr);
-  gap: 16px;
-  align-items: start;
+[data-cgx-kit] .MuiInputBase-input,
+[data-cgx-kit] .MuiSelect-select,
+.cgx-field-normalized,
+.cgx-form-normalized :is(input, select, textarea) {
+  min-width: 0 !important;
+  max-width: 100% !important;
+  box-sizing: border-box !important;
 }
 
-.vet-dossier-facts,
-[data-vet-dossier-facts] {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  border-top: 1px solid var(--cg-border-subtle);
-  border-bottom: 1px solid var(--cg-border-subtle);
+.cgx-form-normalized,
+.cg-stack-form,
+.cg-inline-form,
+.cg-clinical-form,
+.cg-record-fields,
+.cg-gym-v1124-form,
+.cg-gym-v1124-fields {
+  min-width: 0 !important;
+  max-width: 100% !important;
+}
+
+/* --------------------------------------------------------------------------
+   Veterinary dossier — compact information hierarchy, not card-inside-card
+   -------------------------------------------------------------------------- */
+.cg-vet-dossier.MuiPaper-root {
+  padding: 12px !important;
+  border-radius: 8px !important;
+  border-color: var(--cg-border) !important;
+  background: var(--cg-surface) !important;
+  box-shadow: none !important;
+}
+
+.cg-vet-master-detail {
+  align-items: start !important;
+  gap: 12px !important;
+}
+
+.cg-vet-patient-list.MuiList-root {
+  margin-top: 6px !important;
+  border: 1px solid var(--cg-border) !important;
+  border-radius: 6px !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+.cg-vet-patient-list .MuiListItemButton-root {
+  min-height: 44px !important;
+  padding: 6px 8px !important;
   border-radius: 0 !important;
-  overflow: hidden;
 }
 
-.vet-dossier-facts > *,
-[data-vet-dossier-facts] > * {
-  min-width: 0;
-  padding: 8px 10px;
-  border-bottom: 1px solid var(--cg-border-subtle);
+.cg-vet-patient-list .MuiListItemButton-root + .MuiListItemButton-root {
+  border-top: 1px solid var(--cg-border) !important;
+}
+
+.cg-vet-patient-list .MuiListItemButton-root.Mui-selected {
+  background: color-mix(in srgb, var(--cg-primary) 10%, transparent) !important;
+}
+
+.cg-vet-detail {
+  gap: 8px !important;
+}
+
+.cg-vet-facts {
+  gap: 0 !important;
+  border: 1px solid var(--cg-border) !important;
+  border-radius: 5px !important;
+  overflow: hidden !important;
+  background: transparent !important;
+}
+
+.cg-vet-fact {
+  min-width: 0 !important;
+  padding: 7px 9px !important;
+  border: 0 !important;
+  border-right: 1px solid var(--cg-border) !important;
+  border-bottom: 1px solid var(--cg-border) !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+.cg-vet-detail .MuiAlert-root {
+  min-height: 34px !important;
+  padding: 4px 8px !important;
+  border-radius: 4px !important;
+  box-shadow: none !important;
+  font-size: 11px !important;
+  line-height: 1.35 !important;
+}
+
+.cg-vet-detail .MuiAlert-icon {
+  margin-right: 6px !important;
+  padding: 1px 0 !important;
+  font-size: 16px !important;
+}
+
+.cg-vet-activity {
+  padding: 2px 0 !important;
+}
+
+.cg-vet-activity .MuiChip-root {
+  height: 26px !important;
+  border-radius: 5px !important;
+  font-size: 10px !important;
+}
+
+.cg-vet-timeline {
+  max-height: 300px !important;
+  overflow: auto !important;
+  padding: 7px 2px 0 !important;
+  border-top: 1px solid var(--cg-border) !important;
+  background: transparent !important;
   border-radius: 0 !important;
   box-shadow: none !important;
 }
 
-.vet-dossier-facts > :empty,
-[data-vet-dossier-facts] > :empty,
-.vet-empty-card:empty,
-[data-vet-empty]:empty {
-  display: none !important;
+.cg-vet-empty {
+  min-height: 0 !important;
+  padding: 10px 2px !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
 }
 
+/* --------------------------------------------------------------------------
+   Responsive contracts
+   -------------------------------------------------------------------------- */
 @media (max-width: 1120px) {
-  .cg-bcv,
-  .bcv-rate,
-  [data-bcv-rate] {
-    max-width: 132px;
+  html body .hf-rate-compact {
+    min-width: 104px !important;
+    max-width: 122px !important;
   }
-  .cg-bcv .rate-label,
-  .bcv-rate .rate-label,
-  [data-bcv-rate] .rate-label {
-    display: none;
+  html body .hf-rate-copy > small { display: none !important; }
+}
+
+@media (max-width: 1023px) {
+  html body #sidebar.hf-sidebar.hf-app-sidebar.cg-sidebar {
+    width: min(86vw, 286px) !important;
+    max-width: min(86vw, 286px) !important;
+    height: 100dvh !important;
+    max-height: 100dvh !important;
+    padding-bottom: max(14px, env(safe-area-inset-bottom, 0px)) !important;
+    overflow: hidden !important;
+    z-index: 80 !important;
+  }
+
+  html body #sidebar #mainMenu {
+    min-height: 0 !important;
+    overflow-y: auto !important;
+    overscroll-behavior: contain !important;
+    -webkit-overflow-scrolling: touch !important;
+  }
+
+  html body #sidebarBackdrop {
+    z-index: 70 !important;
+    background: rgba(9, 20, 35, .46) !important;
+    backdrop-filter: blur(1.5px) !important;
+  }
+
+  html body.cg-menu-open {
+    overflow: hidden !important;
+    touch-action: none !important;
   }
 }
 
-@media (max-width: 767px) {
-  .cg-header,
-  .app-header,
-  .erp-header,
-  [data-cg-shell="header"] {
-    width: 100%;
-    max-width: 100vw;
-    padding-inline: 10px;
-    gap: 6px;
-    overflow: hidden;
-  }
-
-  .cg-bcv,
-  .bcv-rate,
-  [data-bcv-rate] {
-    max-width: 76px;
-    min-height: 28px;
-    padding-inline: 6px;
-    font-size: 10px;
-  }
-
-  .cg-bcv-refresh,
-  [data-bcv-refresh] {
-    width: 30px;
-    min-width: 30px;
-    height: 30px;
-  }
-
-  .cg-breadcrumbs,
-  [data-cg-breadcrumbs] {
-    min-height: 20px;
-    margin: 2px 0 8px;
-    font-size: 12px !important;
-    line-height: 1.2;
-    font-weight: 500;
-  }
-
-  .cg-breadcrumbs > *:not(:last-child),
-  [data-cg-breadcrumbs] > *:not(:last-child) {
+@media (max-width: 760px) {
+  /* shell-contract.css owns exact mobile header geometry. These declarations
+     remove duplicate visuals and restore the requested module context. */
+  html body #btnTema::before,
+  html body #btnTema::after,
+  html body #btnUserMenu::before,
+  html body #btnUserMenu::after {
+    content: none !important;
     display: none !important;
   }
 
-  .vet-dossier,
-  [data-vet-dossier] {
-    grid-template-columns: 1fr;
+  .hf-breadcrumbs-host {
+    min-height: 18px !important;
+    margin: 1px 0 7px !important;
   }
 
-  .vet-dossier-facts,
-  [data-vet-dossier-facts] {
-    grid-template-columns: 1fr;
+  .hf-breadcrumbs-host [data-mui-breadcrumb-mount] {
+    display: none !important;
   }
 
-  .cg-field :is(input, select, textarea),
-  .cgx-field :is(input, select, textarea),
-  [data-cg-field] :is(input, select, textarea) {
-    font-size: 16px; /* prevents iOS zoom and reduces apparent overlap */
+  .hf-breadcrumbs-host .hf-breadcrumbs-fallback,
+  .hf-breadcrumbs-host .hf-breadcrumbs-fallback.mui-fallback-hidden {
+    display: flex !important;
+    align-items: center !important;
+    min-width: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    font-size: 11px !important;
+    line-height: 1.2 !important;
   }
+
+  .hf-breadcrumbs-fallback .hf-breadcrumb-link,
+  .hf-breadcrumbs-fallback > i {
+    display: none !important;
+  }
+
+  .hf-breadcrumbs-fallback .hf-breadcrumb-current {
+    display: block !important;
+    max-width: 100% !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+    white-space: nowrap !important;
+    color: var(--cg-text-muted) !important;
+    font-size: 11px !important;
+    font-weight: 650 !important;
+    letter-spacing: .01em !important;
+  }
+
+  [data-cgx-kit] .MuiInputBase-input,
+  [data-cgx-kit] .MuiSelect-select,
+  .cgx-field-normalized,
+  .cgx-form-normalized :is(input, select, textarea) {
+    font-size: 16px !important;
+  }
+
+  .cg-gym-v1124-fields,
+  .cg-record-fields,
+  .cg-form-grid,
+  .cg-clinical-form {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+
+  .cg-vet-dossier.MuiPaper-root {
+    padding: 9px !important;
+    border-radius: 6px !important;
+  }
+
+  .cg-vet-master-detail {
+    grid-template-columns: minmax(0, 1fr) !important;
+    gap: 10px !important;
+  }
+
+  .cg-vet-facts {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+
+  .cg-vet-timeline { max-height: 240px !important; }
+}
+
+@media (max-width: 430px) {
+  .cg-vet-facts {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+  .cg-vet-fact { border-right: 0 !important; }
 }
