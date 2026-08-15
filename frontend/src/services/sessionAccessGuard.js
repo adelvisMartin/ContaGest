@@ -11,11 +11,26 @@ const normalizeRole = (value = '') => String(value || '')
   .normalize('NFD')
   .replace(/[\u0300-\u036f]/g, '');
 
+const validLicense = (license) => Boolean(
+  license?.status === 'active' && (!license.expiresAt || new Date(license.expiresAt).getTime() > Date.now())
+);
+
 const isActiveQaLicense = (state, route) => {
   const license = state?.activeLicense;
-  if (license?.qaMode !== true || license?.status !== 'active') return false;
-  if (license.expiresAt && new Date(license.expiresAt).getTime() <= Date.now()) return false;
+  if (license?.qaMode !== true || !validLicense(license)) return false;
   return CORE.has(route) || (Array.isArray(license.modules) && license.modules.includes(route));
+};
+
+const profileAccess = (state = {}) => {
+  const profile = state.profile || {};
+  const role = normalizeRole(profile.role);
+  const permissions = Array.isArray(profile.permissions) ? profile.permissions.map(String) : [];
+  return {
+    role,
+    permissions,
+    isClient: role === 'client' || role === 'cliente',
+    isAdmin: ADMIN_ROLES.has(role) || permissions.includes('*') || permissions.includes('admin.manage')
+  };
 };
 
 export function installSessionAccessGuard() {
@@ -24,31 +39,43 @@ export function installSessionAccessGuard() {
   queueMicrotask(() => {
     const previous = AccessControlService.canAccessRoute.bind(AccessControlService);
     AccessControlService.canAccessRoute = (state, route) => {
-      if (!route || CORE.has(route)) return previous(state, route);
+      if (!route) return false;
+      const profile = profileAccess(state);
+      const license = state?.activeLicense;
+
+      // QA evaluation access is intentionally checked BEFORE stale local RBAC metadata.
+      // The backend remains authoritative for protected writes; this only prevents the
+      // navigation shell from hiding modules explicitly granted by an active QA license.
+      if (isActiveQaLicense(state, route)) return true;
+
+      // A signed-in internal administrator must be able to inspect every application
+      // module for QA. Client accounts never inherit this bypass, even when a profile
+      // object was hydrated with broad permissions from a previous session.
+      if (profile.isAdmin && !profile.isClient) return true;
+
+      if (CORE.has(route)) return previous(state, route);
       const allowedByExistingRules = previous(state, route);
       if (!allowedByExistingRules) return false;
 
-      // QA integral is a time-bound, audited license. The backend remains authoritative
-      // for every protected operation; this only prevents stale client-role metadata
-      // from hiding modules explicitly enabled by the active QA license.
-      if (isActiveQaLicense(state, route)) return true;
-
-      const profile = state?.profile || {};
-      const role = normalizeRole(profile.role);
-      const permissions = Array.isArray(profile.permissions) ? profile.permissions.map(String) : [];
-      const wildcard = permissions.includes('*');
-      const adminPermission = wildcard || permissions.includes('admin.manage');
-      const adminRole = ADMIN_ROLES.has(role);
       const catalogued = AccessControlService.modules.some((item) => item.route === route);
       const required = catalogued ? AccessControlService.routePermission(route) : null;
+      const wildcard = profile.permissions.includes('*');
+      const adminPermission = wildcard || profile.permissions.includes('admin.manage');
 
       if (ADMIN_SENSITIVE.has(route)) {
-        if (role === 'client') return false;
-        if (required === 'admin.manage' && !adminRole && !adminPermission) return false;
-        if (permissions.length && required && !wildcard && !permissions.includes(required) && !permissions.includes('admin.manage')) return false;
+        if (profile.isClient) return false;
+        if (required === 'admin.manage' && !profile.isAdmin && !adminPermission) return false;
+        if (profile.permissions.length && required && !wildcard && !profile.permissions.includes(required) && !adminPermission) return false;
       }
 
-      if (catalogued && permissions.length && required && !wildcard && !permissions.includes(required) && !permissions.includes('admin.manage')) return false;
+      // Commercial client access remains license-scoped. An expired or missing license
+      // cannot be converted into access by manipulating local route state.
+      if (profile.isClient && license) {
+        if (!validLicense(license)) return false;
+        if (!CORE.has(route) && (!Array.isArray(license.modules) || !license.modules.includes(route))) return false;
+      }
+
+      if (catalogued && profile.permissions.length && required && !wildcard && !profile.permissions.includes(required) && !adminPermission) return false;
       return true;
     };
   });
