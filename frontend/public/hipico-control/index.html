@@ -18,6 +18,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="/hipico-control/assets/css/precision-hipica.css" />
+  <link rel="stylesheet" href="/hipico-control/assets/css/offline-icons.css" />
   <title>Control Hípico</title>
 </head>
 <body>
@@ -116,27 +117,20 @@
           <article class="ch-panel"><header><div><p class="ch-kicker">Bridge / chatbot</p><h2>Automatización segura</h2></div><button class="ch-button ch-button-secondary" data-bridge-refresh>Comprobar backend</button></header><div class="ch-bridge-grid"><div><small>Cloud connector</small><strong data-cloud-status>Comprobando…</strong></div><div><small>Modo recomendado</small><strong>Sombra + aprobación</strong></div><div><small>Respuestas monetarias</small><strong>Bloqueadas sin revisión</strong></div></div><p class="ch-help">El Bridge puede escuchar el grupo vinculado, persistir, deduplicar, clasificar y generar respuestas en un grupo laboratorio. El paso a envío automático en el grupo fuente debe pasar primero el gate de shadow mode.</p></article>
         </section>
 
-        <section class="ch-page" data-page="adelantadas">
-          <header class="ch-page-header"><div><p class="ch-kicker">Próximas carreras</p><h1>Adelantadas</h1><p>Jugadas capturadas para otra carrera quedan separadas de la recepción actual.</p></div></header><article class="ch-panel"><div class="ch-list" data-advanced-list><div class="ch-empty">No hay jugadas adelantadas.</div></div></article>
-        </section>
-
-        <section class="ch-page" data-page="historial">
-          <header class="ch-page-header"><div><p class="ch-kicker">Trazabilidad</p><h1>Historial</h1><p>Busca por participante, hipódromo, carrera, jugada, caballo o identificador.</p></div></header><article class="ch-panel"><label class="ch-field"><span>Buscar</span><input data-history-search placeholder="Paco, Del Mar, 2N, OP-…" /></label><div class="ch-list ch-list-spaced" data-history-list></div></article>
-        </section>
+        <section class="ch-page" data-page="adelantadas"><header class="ch-page-header"><div><p class="ch-kicker">Próximas carreras</p><h1>Adelantadas</h1><p>Jugadas capturadas para otra carrera quedan separadas de la recepción actual.</p></div></header><article class="ch-panel"><div class="ch-list" data-advanced-list><div class="ch-empty">No hay jugadas adelantadas.</div></div></article></section>
+        <section class="ch-page" data-page="historial"><header class="ch-page-header"><div><p class="ch-kicker">Trazabilidad</p><h1>Historial</h1><p>Busca por participante, hipódromo, carrera, jugada, caballo o identificador.</p></div></header><article class="ch-panel"><label class="ch-field"><span>Buscar</span><input data-history-search placeholder="Paco, Del Mar, 2N, OP-…" /></label><div class="ch-list ch-list-spaced" data-history-list></div></article></section>
 
         <section class="ch-page" data-page="cierres">
           <header class="ch-page-header"><div><p class="ch-kicker">Cierre y pizarra</p><h1>Cierres y saldos</h1><p>Cierra recepción, registra la llegada oficial y genera snapshots antes de liquidar.</p></div></header>
           <div class="ch-grid ch-grid-2">
             <article class="ch-panel"><header><div><p class="ch-kicker">Recepción</p><h2>Cierre de carrera</h2></div></header><div class="ch-callout" data-close-message>Abre una carrera para generar el cierre.</div><div class="ch-actions"><button class="ch-button ch-button-secondary" data-close-race>Cerrar recepción</button><button class="ch-button ch-button-secondary" data-copy-close>Copiar cierre</button></div></article>
             <article class="ch-panel"><header><div><p class="ch-kicker">Llegada oficial</p><h2>Pizarra</h2></div></header><form class="ch-form" data-result-form><label><span>Orden de llegada</span><input name="board" placeholder="2.1.6.4" required /></label><button class="ch-button" type="submit">Aplicar llegada</button></form><div class="ch-callout" data-result-status>Sin llegada cargada.</div></article>
-            <article class="ch-panel"><header><div><p class="ch-kicker">Control financiero</p><h2>Disponible registrado</h2></div></header><strong class="ch-big-money ch-money" data-close-balance>Bs. 0,00</strong><p class="ch-help">Los saldos mostrados provienen de participantes y snapshots locales; cualquier liquidación debe revisarse contra el plano y la llegada.</p></article>
+            <article class="ch-panel"><header><div><p class="ch-kicker">Control financiero</p><h2>Disponible registrado</h2></div></header><strong class="ch-big-money ch-money" data-close-balance>Bs. 0,00</strong><p class="ch-help">Los saldos mostrados provienen de participantes y snapshots locales; cualquier liquidación debe revisarse contra el plano y la llegada.</p><button class="ch-button ch-button-secondary" data-settle-race type="button">Finalizar carrera revisada</button><p class="ch-help">Este paso crea un snapshot y libera la siguiente carrera; no recalcula ni altera saldos automáticamente.</p></article>
             <article class="ch-panel"><header><div><p class="ch-kicker">Recuperación</p><h2>Snapshot de jornada</h2></div></header><button class="ch-button" data-snapshot type="button">Crear snapshot antes de liquidar</button><div class="ch-help" data-snapshot-status></div></article>
           </div>
         </section>
 
-        <section class="ch-page" data-page="polla">
-          <header class="ch-page-header"><div><p class="ch-kicker">POLLA</p><h1>Control POLLA</h1><p>La modalidad permanece separada del remate por tercios para no mezclar reglas ni saldos.</p></div></header><article class="ch-panel"><div class="ch-polla-note"><strong>Contrato protegido</strong><p>La PWA conserva esta ruta y sus datos separados. La migración del motor POLLA histórico debe hacerse con casos de caracterización antes de sustituir el motor de la APK.</p></div></article>
-        </section>
+        <section class="ch-page" data-page="polla"><header class="ch-page-header"><div><p class="ch-kicker">POLLA</p><h1>Control POLLA</h1><p>La modalidad permanece separada del remate por tercios para no mezclar reglas ni saldos.</p></div></header><article class="ch-panel"><div class="ch-polla-note"><strong>Contrato protegido</strong><p>La PWA conserva esta ruta y sus datos separados. La migración del motor POLLA histórico debe hacerse con casos de caracterización antes de sustituir el motor de la APK.</p></div></article></section>
 
         <section class="ch-page" data-page="configuracion">
           <header class="ch-page-header"><div><p class="ch-kicker">Dispositivo y grupo</p><h1>Configuración</h1><p>Gestiona grupo, tema, PWA, respaldo y continuidad offline.</p></div></header>
@@ -146,7 +140,6 @@
           </div>
         </section>
       </main>
-
       <nav class="ch-bottom-nav" aria-label="Accesos rápidos" data-bottom-nav></nav>
     </div>
   </div>
@@ -154,6 +147,7 @@
   <div class="ch-drawer" data-drawer aria-hidden="true"><div class="ch-backdrop" data-drawer-close></div><aside class="ch-sheet"><div class="ch-brand"><img src="/hipico-control/assets/brand/control-hipico-mark.svg" alt="" /><div><strong>CONTROL HÍPICO</strong><small data-drawer-group>Grupo local</small></div></div><nav class="ch-drawer-nav" data-nav-drawer></nav><button class="ch-button ch-button-secondary" data-drawer-close type="button">Cerrar menú</button></aside></div>
   <div class="ch-command" data-command aria-hidden="true"><div class="ch-command-box"><input type="search" data-command-input placeholder="Buscar módulo o acción…" aria-label="Buscar módulo o acción" /><div class="ch-command-results" data-command-results></div></div></div>
   <div class="ch-sr-only" aria-live="polite" data-live></div>
+  <script type="module" src="/hipico-control/assets/js/race-finalization.js"></script>
   <script type="module" src="/hipico-control/assets/js/app-shell.js"></script>
 </body>
 </html>
