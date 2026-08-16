@@ -6,7 +6,7 @@ const STORAGE_KEY = 'contagest_ve_enterprise_v7_state';
 const listeners = new Set();
 const clone = (value) => JSON.parse(JSON.stringify(value));
 const LOGIN_RENDER_KEYS = new Set(['route', 'pendingMfa', 'profile', 'activeLicense']);
-const OFFICIAL_THEMES = new Set(['sector','light','dark','sky','soft-blue','spectrum','executive','finance','enterprise']);
+const OFFICIAL_THEMES = new Set(['light','dark']);
 
 function deepMerge(target, source) {
   if (!source || typeof source !== 'object') return target;
@@ -20,6 +20,9 @@ function deepMerge(target, source) {
 
 function normalizePersistedTheme(theme) {
   const value = String(theme || 'light').trim().toLowerCase();
+  /* v11.27 intentionally retires legacy shell palettes from runtime state.
+     Old persisted values are migrated to light instead of leaving a hidden
+     enterprise/sector class that can repaint the sidebar after an upgrade. */
   return OFFICIAL_THEMES.has(value) ? value : 'light';
 }
 

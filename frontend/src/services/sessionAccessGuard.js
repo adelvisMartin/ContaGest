@@ -1,4 +1,5 @@
 import { AccessControlService } from './accessControlService.js';
+import { AuthSession } from './authSession.js';
 
 let installed = false;
 const CORE = new Set(['dashboard','login','profile','ayuda','soporte']);
@@ -10,6 +11,9 @@ const normalizeRole = (value = '') => String(value || '')
   .toLowerCase()
   .normalize('NFD')
   .replace(/[\u0300-\u036f]/g, '');
+
+const normalizePermissions = (value) => Array.isArray(value) ? value.map(String) : [];
+const roleName = (role) => typeof role === 'string' ? role : (role?.key || role?.slug || role?.name || role?.id || '');
 
 const validLicense = (license) => Boolean(
   license?.status === 'active' && (!license.expiresAt || new Date(license.expiresAt).getTime() > Date.now())
@@ -23,14 +27,47 @@ const isActiveQaLicense = (state, route) => {
 
 const profileAccess = (state = {}) => {
   const profile = state.profile || {};
-  const role = normalizeRole(profile.role);
-  const permissions = Array.isArray(profile.permissions) ? profile.permissions.map(String) : [];
+  const role = normalizeRole(roleName(profile.role));
+  const permissions = normalizePermissions(profile.permissions);
+  const isClient = role === 'client' || role === 'cliente';
   return {
+    source:'profile',
     role,
     permissions,
-    isClient: role === 'client' || role === 'cliente',
-    isAdmin: ADMIN_ROLES.has(role) || permissions.includes('*') || permissions.includes('admin.manage')
+    isClient,
+    isAdmin: !isClient && (ADMIN_ROLES.has(role) || permissions.includes('*') || permissions.includes('admin.manage'))
   };
+};
+
+const sessionAccess = () => {
+  const session = AuthSession.get();
+  if (!session) return null;
+  const user = session.user || {};
+  const role = normalizeRole(roleName(user.role || session.role));
+  const permissions = normalizePermissions(user.permissions || session.permissions);
+  const audience = normalizeRole(session.audience);
+  const isClient = audience === 'client' || role === 'client' || role === 'cliente';
+  return {
+    source:'session',
+    role,
+    permissions,
+    audience,
+    isClient,
+    isAdmin: !isClient && (ADMIN_ROLES.has(role) || permissions.includes('*') || permissions.includes('admin.manage'))
+  };
+};
+
+/* The authenticated session is authoritative for identity. Local profile data is
+   presentation state and may be stale after a role/license/tenant change. A
+   client session must never inherit an old local admin profile. If a staff
+   session does not expose role metadata, we may use the local profile only as a
+   display/navigation fallback; backend authorization remains authoritative. */
+const resolveIdentity = (state = {}) => {
+  const session = sessionAccess();
+  if (!session) return profileAccess(state);
+  if (session.isClient || session.role || session.permissions.length) return session;
+  const local = profileAccess(state);
+  return { ...local, source:'session+profile-fallback', isClient:false };
 };
 
 export function installSessionAccessGuard() {
@@ -40,42 +77,42 @@ export function installSessionAccessGuard() {
     const previous = AccessControlService.canAccessRoute.bind(AccessControlService);
     AccessControlService.canAccessRoute = (state, route) => {
       if (!route) return false;
-      const profile = profileAccess(state);
+      const identity = resolveIdentity(state);
       const license = state?.activeLicense;
 
-      // QA evaluation access is intentionally checked BEFORE stale local RBAC metadata.
-      // The backend remains authoritative for protected writes; this only prevents the
-      // navigation shell from hiding modules explicitly granted by an active QA license.
+      // Explicit QA licenses are evaluated before stale local RBAC metadata, but
+      // only for the routes actually listed in that license.
       if (isActiveQaLicense(state, route)) return true;
 
-      // A signed-in internal administrator must be able to inspect every application
-      // module for QA. Client accounts never inherit this bypass, even when a profile
-      // object was hydrated with broad permissions from a previous session.
-      if (profile.isAdmin && !profile.isClient) return true;
+      // Internal staff administrators can inspect all ERP modules for QA. This
+      // is navigation visibility only; API writes still require backend auth,
+      // tenant context, permissions and commercial/legal gates.
+      if (identity.isAdmin && !identity.isClient) return true;
 
       if (CORE.has(route)) return previous(state, route);
+
+      // Commercial/client sessions are always license-scoped. Missing, expired
+      // or incomplete licenses cannot be converted into access by local RBAC.
+      if (identity.isClient) {
+        if (!validLicense(license)) return false;
+        if (!Array.isArray(license.modules) || !license.modules.includes(route)) return false;
+      }
+
       const allowedByExistingRules = previous(state, route);
       if (!allowedByExistingRules) return false;
 
       const catalogued = AccessControlService.modules.some((item) => item.route === route);
       const required = catalogued ? AccessControlService.routePermission(route) : null;
-      const wildcard = profile.permissions.includes('*');
-      const adminPermission = wildcard || profile.permissions.includes('admin.manage');
+      const wildcard = identity.permissions.includes('*');
+      const adminPermission = wildcard || identity.permissions.includes('admin.manage');
 
       if (ADMIN_SENSITIVE.has(route)) {
-        if (profile.isClient) return false;
-        if (required === 'admin.manage' && !profile.isAdmin && !adminPermission) return false;
-        if (profile.permissions.length && required && !wildcard && !profile.permissions.includes(required) && !adminPermission) return false;
+        if (identity.isClient) return false;
+        if (required === 'admin.manage' && !identity.isAdmin && !adminPermission) return false;
+        if (identity.permissions.length && required && !wildcard && !identity.permissions.includes(required) && !adminPermission) return false;
       }
 
-      // Commercial client access remains license-scoped. An expired or missing license
-      // cannot be converted into access by manipulating local route state.
-      if (profile.isClient && license) {
-        if (!validLicense(license)) return false;
-        if (!CORE.has(route) && (!Array.isArray(license.modules) || !license.modules.includes(route))) return false;
-      }
-
-      if (catalogued && profile.permissions.length && required && !wildcard && !profile.permissions.includes(required) && !adminPermission) return false;
+      if (catalogued && identity.permissions.length && required && !wildcard && !identity.permissions.includes(required) && !adminPermission) return false;
       return true;
     };
   });

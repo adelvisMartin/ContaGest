@@ -1,11 +1,16 @@
-/* ContaGest-VE v11.26 — universal runtime stylesheet entrypoint.
-   app.js imports this file only. Shell invariants are registered first because
-   !important declarations reverse cascade-layer priority. ERP system owns the
-   canonical design contract and vertical/mobile UX contracts own intentional
-   responsive geometry for mature verticals. Historical styles remain reachable
-   only through controlled compatibility layers inside erp-system.css. */
+/* ContaGest-VE v11.27 — universal runtime stylesheet entrypoint.
+   app.js imports this file only.
+
+   IMPORTANT CASCADE CONTRACT:
+   Critical shell rules use !important because historical compatibility layers
+   still do. Important declarations reverse cascade-layer priority, therefore
+   cg.shell-contract is declared FIRST and contains both base geometry and the
+   v11.27 stabilization rules. This intentionally outranks later legacy layers.
+   Business/vertical context stays separate and cannot repaint the global shell.
+*/
 @layer cg.shell-contract, cg.context;
 @import './shell-contract.css' layer(cg.shell-contract);
+@import './shell-stability-v1127.css' layer(cg.shell-contract);
 @import './vertical-contexts.css' layer(cg.context);
 @import './erp-system.css';
 @import './vertical-mobile-contract.css';
