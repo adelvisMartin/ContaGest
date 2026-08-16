@@ -8,8 +8,10 @@
   },
   "description": "Frontend ContaGest-VE Enterprise con UI MUI compacta, RBAC, licencias, PWA y verticales especializadas.",
   "scripts": {
+    "predev": "node ../scripts/restore-hipico-runtime.mjs",
     "dev": "vite --host 0.0.0.0 --port 8080",
     "stage:backend": "node scripts/stage-backend.mjs",
+    "prebuild": "node ../scripts/restore-hipico-runtime.mjs",
     "build": "npm run stage:backend && vite build",
     "preview": "vite preview --host 0.0.0.0 --port 8080"
   },

@@ -4,6 +4,8 @@ import morgan from 'morgan';
 import { env, isProd } from './config/env.js';
 import apiRoutes from './modules/index.js';
 import authRoutes from './modules/auth/auth.routes.js';
+import hipicoWebhookRoutes from './modules/hipico-bot/hipico-webhook.routes.js';
+import hipicoOperatorRoutes from './modules/hipico-bot/hipico-operator.routes.js';
 import { requestContext } from './shared/middleware/context.js';
 import { errorHandler, notFound } from './shared/middleware/error.js';
 import {
@@ -57,9 +59,24 @@ export function createApp() {
     collectCspReport
   );
 
-  app.use(express.json({ limit: env.JSON_BODY_LIMIT }));
-  app.use(csrfProtection);
+  app.use(express.json({
+    limit: env.JSON_BODY_LIMIT,
+    verify: (req, _res, buffer) => {
+      if (String(req.originalUrl || '').startsWith('/api/v1/hipico-bot/webhook')) {
+        (req as any).rawBody = Buffer.from(buffer);
+      }
+    }
+  }));
   app.use(morgan(isProd ? 'combined' : 'dev'));
+
+  // Control Hípico is an independent product that temporarily shares this API
+  // process. Its Meta webhook cannot use browser-cookie CSRF: authenticity is
+  // enforced by x-hub-signature-256. Operator mutations require a separate
+  // HIPICO_BOT_OPERATOR_TOKEN and receive the auth-rate ceiling as well.
+  app.use('/api/v1/hipico-bot', hipicoWebhookRoutes);
+  app.use('/api/v1/hipico-bot', authRateLimit, hipicoOperatorRoutes);
+
+  app.use(csrfProtection);
 
   app.get('/health', (_req, res) => res.json(healthPayload()));
   app.get('/api/health', (_req, res) => res.json(healthPayload()));

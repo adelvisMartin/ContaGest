@@ -1,0 +1,8 @@
+{
+  "appId":"com.adelvis.hipicocontrol.rel",
+  "appName":"Hípico Control",
+  "webDir":"www",
+  "backgroundColor":"#f4f5f7",
+  "server":{"androidScheme":"https","cleartext":false},
+  "android":{"allowMixedContent":false,"captureInput":true,"webContentsDebuggingEnabled":false}
+}
