@@ -13,17 +13,37 @@ test('group bridge uses the dedicated operational classifier and stays shadow on
   assert.match(route,/status:\s*'shadow'/);
   assert.match(route,/actions:\s*\[\]/);
   assert.match(route,/autoEligible:\s*false/);
+  assert.match(route,/operational:\s*result\.entities/);
 });
 
-test('real operational classifier contains recovered RC1 vocabulary and manual gates',()=>{
+test('real operational classifier contains recovered RC1 vocabulary, structure and manual gates',()=>{
   const classifier=read('backend/src/modules/hipico-bot/hipico-operational-classifier.ts');
   for(const token of ['JUEGA','CONSIGUE','TERCIO\\s+DISPONIBLE','TERCIOS','LLEGADA','PIZARRA','POLLA','PARLEY','CIERRA','NO\\s+VA\\s+MAS','DEBE\\s+CONFIRMAR']){
     assert.match(classifier,new RegExp(token));
   }
   assert.match(classifier,/autoEligible:false/);
+  assert.match(classifier,/OperationalEntities/);
+  assert.match(classifier,/parseBoard/);
+  assert.match(classifier,/parseBalances/);
+  assert.match(classifier,/parseSettlementRows/);
   assert.match(classifier,/race_close/);
   assert.match(classifier,/settlement_snapshot/);
   assert.match(classifier,/cancel_or_correction/);
+});
+
+test('operator exposes read-only shadow projection using RC1-compatible matching constraints',()=>{
+  const routes=read('backend/src/modules/hipico-bot/hipico-operator.routes.ts');
+  const projection=read('backend/src/modules/hipico-bot/hipico-shadow-projection.ts');
+  assert.match(routes,/\/shadow-projection/);
+  assert.match(routes,/buildShadowProjection/);
+  assert.match(projection,/left\.play===right\.play/);
+  assert.match(projection,/left\.horse===right\.horse/);
+  assert.match(projection,/left\.sender!==right\.sender/);
+  assert.match(projection,/left\.segmentId===right\.segmentId/);
+  assert.match(projection,/Math\.min\(player\.remaining,receiver\.remaining\)/);
+  assert.match(projection,/lateOffers/);
+  assert.match(projection,/mode:'shadow'/);
+  assert.doesNotMatch(projection,/INSERT|UPDATE|DELETE|sendCloudText|sendMessage/);
 });
 
 test('canonical desktop bridge is Playwright official-web observer, not old injection bridge',()=>{
@@ -38,6 +58,11 @@ test('canonical desktop bridge is Playwright official-web observer, not old inje
   assert.match(runtime,/SPOOL_DIR/);
   const old=read('tools/hipico-whatsapp-bridge/README.md');
   assert.match(old,/DEPRECADO/);
+});
+
+test('backend test gate executes every Hipico bot TypeScript test',()=>{
+  const pkg=JSON.parse(read('backend/package.json'));
+  assert.match(pkg.scripts.test,/src\/modules\/hipico-bot\/\*\.test\.ts/);
 });
 
 test('Hipico persistence migration owns only Hipico bot tables',()=>{
