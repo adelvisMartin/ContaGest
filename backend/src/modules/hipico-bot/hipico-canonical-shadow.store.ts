@@ -20,6 +20,7 @@ type CanonicalPersistInput={
 };
 
 const sha256=(value:string)=>crypto.createHash('sha256').update(value).digest('hex');
+const PREDICTION_TYPE='operational_classification';
 
 export function groupKeyFromName(value:string){
   return String(value||'')
@@ -132,7 +133,9 @@ export async function persistCanonicalShadow(input:CanonicalPersistInput){
   let operationEventId:string|null=null;
   if(OPERATIONAL_INTENTS.has(input.result.intent)){
     const opType=eventType(input.result.intent);
-    const eventKey=`shadow:${input.providerMessageId}:${input.result.intent}`;
+    // Stable per-message event key: a future classifier correction updates the
+    // same pending shadow event instead of creating a second operation.
+    const eventKey=`shadow:${input.providerMessageId}`;
     const opPayload={
       shadow:true,
       source:'whatsapp-web-bridge',
@@ -182,7 +185,7 @@ export async function persistCanonicalShadow(input:CanonicalPersistInput){
        prediction_type,predicted_payload,match_status,notes)
     VALUES
       (${channel.ownerId}::uuid,${channel.groupKey},${channel.groupKey},${messageId}::uuid,${input.providerMessageId},
-       'real-operativa-shadow-v1',${input.result.intent},${JSON.stringify(prediction)}::jsonb,'pending',
+       'real-operativa-shadow-v1',${PREDICTION_TYPE},${JSON.stringify(prediction)}::jsonb,'pending',
        'Prediccion generada por el Bridge de laboratorio; sin efecto operativo.')
     ON CONFLICT (owner_id,source_group_key,source_external_message_id,prediction_type)
     DO UPDATE SET
