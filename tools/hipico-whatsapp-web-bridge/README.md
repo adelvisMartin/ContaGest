@@ -1,90 +1,91 @@
-# Control Hipico · WhatsApp Web Bridge
+# Control Hípico · WhatsApp Web Bridge v1.2.0
 
-Bridge local de laboratorio para observar el grupo normal **`Control hípico lab`** y enviar eventos normalizados al backend de Control Hipico en modo **shadow-only**.
+Bridge local para el siguiente gate de operativa real:
 
-## Motor canonico para QA de grupo
+```text
+CLUB HIPICO TRIPLE CROWN (fuente oficial, SOLO LECTURA)
+        ↓
+WhatsApp Web oficial + Playwright
+        ↓
+backend /api/v1/hipico-bot/bridge/events
+        ↓
+clasificación + evidencia shadow + proyección
+        ↓
+Control hípico lab (simulación opcional, claramente marcada)
+```
 
-La rama de operativa usa Bridge **v1.1.0**:
+## Regla principal
 
-- WhatsApp Web oficial (`https://web.whatsapp.com/`);
-- Google Chrome o Microsoft Edge instalado en Windows;
-- `playwright-core` fijado en `1.62.1`;
-- perfil persistente del navegador;
-- baseline del historial visible para no reprocesarlo al arrancar;
-- IDs vistos persistentes en `data/seen-message-ids.json`;
-- al volver al grupo despues de cambiar de chat/reconexion **no se crea un baseline nuevo**: los mensajes visibles no vistos se procesan;
-- spool local antes de cada POST al backend;
-- reintento de pendientes;
-- `rawMeta` conserva hasta 500 caracteres del metadata visible de WhatsApp para auditoria;
-- captura de diagnostico en `data/bridge.log` y `data/last-error.png`.
+**El grupo oficial nunca es un destino de envío en esta versión.** El runtime no contiene una ruta genérica para escribir en TRIPLE CROWN. Solo puede observar el grupo fuente y, cuando `HIPICO_LAB_SEND_ENABLED=true`, enviar la simulación a `Control hípico lab` después de verificar que el chat activo coincide exactamente con el nombre del LAB.
 
-**No usa** `whatsapp-web.js`, Puppeteer protocol injection, Baileys ni una implementacion propia del protocolo de vinculacion.
+Las apuestas, cierres, resultados, saldos y liquidaciones reales siguen bloqueados. El backend continúa devolviendo `actions: []` y toda evidencia operativa queda en estado shadow/pending.
 
-## Seguridad obligatoria
+## Fuente oficial
 
-`HIPICO_ALLOW_SEND=false` es un kill switch. Si se cambia a `true`, el runtime aborta. Durante este gate el Bridge:
+La fuente se localiza por `HIPICO_SOURCE_GROUP_MATCH=CLUB HIPICO TRIPLE CROWN`. Se usa coincidencia parcial intencionalmente para tolerar el emoji o sufijos visuales del nombre real. Si el grupo está archivado, el Bridge intenta también la búsqueda global de WhatsApp Web; no es necesario desarchivarlo.
 
-- no envia mensajes al grupo;
-- no crea ni confirma apuestas;
-- no cambia saldos o disponibles;
-- no cierra carreras;
-- no aplica llegadas/pizarras;
-- no liquida premios.
+El canal canónico es estable y no depende del texto visible del chat:
 
-El backend `/api/v1/hipico-bot/bridge/events` tambien devuelve siempre `actions: []` y persiste el Outbox del grupo con `status=shadow`.
+```text
+HIPICO_SOURCE_CHANNEL_KEY=club-hipico-triple-crown-official
+```
+
+Si ese canal aún no existe en PostgreSQL, el backend puede aprovisionarlo de forma idempotente **solo** con esa clave permitida y tomando el propietario del canal LAB existente. Si no encuentra exactamente un LAB válido, falla cerrado.
+
+## Laboratorio
+
+```text
+HIPICO_LAB_GROUP_NAME=Control hípico lab
+HIPICO_LAB_CHANNEL_KEY=control-hipico-lab
+HIPICO_LAB_SEND_ENABLED=false
+```
+
+El envío al LAB está desactivado por defecto. `INICIAR.ps1` puede habilitarlo de forma explícita para una sesión de QA. Cada simulación lleva una etiqueta determinista `[SHADOW:xxxxxxxxxx]`; antes y después de enviar el Bridge verifica visualmente esa etiqueta para reducir duplicados después de un reinicio o retry.
+
+## Persistencia y resiliencia
+
+- WhatsApp Web oficial (`https://web.whatsapp.com/`).
+- Chrome o Edge instalado en Windows.
+- `playwright-core` fijado en `1.62.1`.
+- Perfil persistente en `data/chrome-profile/`.
+- IDs vistos del **grupo fuente** en `data/seen-source-message-ids.json`.
+- Compatibilidad de lectura con el viejo `data/seen-message-ids.json` al actualizar desde v1.1.0.
+- Spool de eventos entrantes en `data/spool-events/`.
+- Spool independiente de simulaciones LAB en `data/spool-lab-mirror/`.
+- Un evento fuente se persiste en backend antes de considerarse entregado.
+- Si backend devuelve error/503, el evento permanece en spool y se reintenta.
+- Después de intentar una simulación LAB, el Bridge vuelve siempre al grupo fuente.
+
+## Evidencia canónica
+
+Un mensaje fuente puede quedar registrado en:
+
+1. `HipicoWebhookEvent`: auditoría de transporte.
+2. `HipicoBotOutbox`: compatibilidad `group_bridge`, siempre `shadow`.
+3. `hipico_messages`: mensaje normalizado.
+4. `hipico_operation_events`: evento operativo `pending` cuando aplique.
+5. `hipico_shadow_evaluations`: predicción para comparar posteriormente contra la operación observada.
+
+El código de este gate **no escribe** `hipico_ledger_entries` ni el `hipico_outbox` operativo.
+
+## Multimedia
+
+La v1.2.0 distingue metadata de `image`, `video`, `audio` y `document`/PDF cuando WhatsApp Web lo expone en el DOM. En este gate, un archivo es **contexto**, no autoridad transaccional: una imagen o PDF por sí solo no crea ni confirma una apuesta.
+
+Cuando se incorporen muestras reales de los archivos del grupo, se añadirá una canalización separada de extracción/validación. Hasta entonces el dato que puede representar una intención de apuesta es el mensaje explícito del participante, sujeto además a validación de carrera, segmento, cierre, monto y formato.
 
 ## Windows
 
 1. Ejecuta `INICIAR-CONTROL-HIPICO-WHATSAPP.cmd`.
-2. El setup valida Node, prepara `.env`, protege el token local con Windows DPAPI y valida el endpoint de Vercel.
-3. Instala dependencias y ejecuta `npm run check` + `npm run selftest`.
-4. Abre WhatsApp Web oficial.
-5. Vincula el segundo numero si es la primera ejecucion.
-6. Deja abierto `Control hípico lab` durante la prueba. Si cambias temporalmente de chat, el Bridge conserva los IDs vistos y procesa mensajes nuevos cuando regrese al grupo.
+2. El setup valida Node, token/backend y Playwright.
+3. Abre `web.whatsapp.com` real con el perfil persistente.
+4. Busca automáticamente `CLUB HIPICO TRIPLE CROWN`, incluso si está archivado.
+5. Toma el historial visible inicial como baseline: no se reinterpreta como mensajes nuevos.
+6. Desde ese momento observa únicamente mensajes fuente nuevos.
+7. Si aceptas habilitar el espejo LAB, las respuestas simuladas aparecen solamente en `Control hípico lab`.
 
-La sesion queda en `data/chrome-profile/`. Para desvincular solo el perfil local puede usarse `REINICIAR-WHATSAPP-WEB.cmd`.
+## Política de aprendizaje
 
-## Archivos locales que nunca deben versionarse
+Los mensajes reales no cambian automáticamente los pesos de un modelo ni se convierten directamente en reglas de producción. Se guardan como dataset shadow auditable: mensaje → clasificación → entidades → predicción → resultado/revisión. Solo patrones revisados y consistentes pueden promoverse después a reglas, ejemplos o conocimiento versionado.
 
-- `.env`
-- `node_modules/`
-- `data/chrome-profile/`
-- `data/spool/`
-- `data/seen-message-ids.json`
-- `data/bridge.log`
-- `data/last-error.png`
-
-El token protegido se conserva fuera del proyecto en `%APPDATA%\ControlHipico\bridge-token.dpapi`.
-
-## Evidencia ya obtenida
-
-El gate inicial verifico en un grupo real de laboratorio:
-
-- captura de mensajes de dos participantes;
-- persistencia de la sesion despues de reiniciar;
-- recuperacion despues de cortar/restablecer Internet;
-- POST `202` a Vercel;
-- persistencia en `HipicoWebhookEvent` y `HipicoBotOutbox`;
-- deduplicacion real por `providerMessageId`;
-- cero respuestas automaticas y cero efectos monetarios.
-
-## Operativa shadow
-
-El backend extrae evidencia estructurada para:
-
-- ofertas `JUEGA` / `CONSIGUE`: rol, jugada, caballo y monto;
-- confirmaciones y pendientes;
-- cierre de carrera y numero de carrera cuando esta escrito;
-- llegada/pizarra;
-- `TERCIOS`, `TERCIO DISPONIBLE`, liquidacion/cuadre;
-- POLLA/PARLEY y anulaciones/correcciones.
-
-El endpoint autenticado de operador:
-
-```text
-GET /api/v1/hipico-bot/shadow-projection?limit=100
-```
-
-construye una **proyeccion de solo lectura** usando la regla de emparejamiento RC1: mismo tipo de jugada + mismo caballo + participantes distintos + mismo segmento; los montos parciales usan el menor disponible. Las ofertas posteriores a un cierre quedan como `lateOffers` y no se emparejan.
-
-Esta proyeccion **no escribe jugadas ni saldos**. Sirve para comparar lo que el sistema habria interpretado contra la operativa real del grupo antes de habilitar cualquier modo assist/manual.
+Esto permite medir falsos positivos, falsos negativos, ambigüedades, errores de monto/caballo/carrera y comportamiento después del cierre antes de pasar a `assist/manual approval` y, mucho más adelante, a automatización limitada.
