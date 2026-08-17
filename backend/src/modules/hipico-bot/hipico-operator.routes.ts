@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { HipicoBotStore, operatorTokenValid, promotion, sendCloudText } from './hipico-bot.service.js';
 import { classify } from './hipico-operational-classifier.js';
+import { buildShadowProjection } from './hipico-shadow-projection.js';
 
 const router=Router();
 const idSchema=z.string().min(3).max(120).regex(/^[A-Za-z0-9_-]+$/);
@@ -27,6 +28,10 @@ router.get('/status',async(_req,res)=>res.json({ok:true,data:{
 
 router.get('/events',async(req,res)=>res.json({ok:true,data:await HipicoBotStore.events(limit(req.query.limit))}));
 router.get('/outbox',async(req,res)=>res.json({ok:true,data:await HipicoBotStore.outbox(limit(req.query.limit))}));
+router.get('/shadow-projection',async(req,res)=>{
+  const events=await HipicoBotStore.events(limit(req.query.limit||100));
+  return res.json({ok:true,data:buildShadowProjection(events as any[])});
+});
 
 router.post('/classify',(req,res)=>{
   const parsed=z.object({text:z.string().min(1).max(4000)}).safeParse(req.body);
