@@ -25,6 +25,8 @@ type CanonicalPersistInput={
 
 const sha256=(value:string)=>crypto.createHash('sha256').update(value).digest('hex');
 const PREDICTION_TYPE='operational_classification';
+const OFFICIAL_SOURCE_CHANNEL_KEY=String(process.env.HIPICO_OFFICIAL_SOURCE_CHANNEL_KEY||'club-hipico-triple-crown-official').trim();
+const DEFAULT_LAB_CHANNEL_KEY=String(process.env.HIPICO_LAB_CHANNEL_KEY||'control-hipico-lab').trim();
 
 export function groupKeyFromName(value:string){
   return String(value||'')
@@ -36,10 +38,8 @@ export function groupKeyFromName(value:string){
     .slice(0,120);
 }
 
-async function resolveChannel(groupName:string, explicitKey?:string):Promise<CanonicalChannel>{
-  const groupKey=String(explicitKey||groupKeyFromName(groupName)).trim();
-  if(!groupKey)throw new Error('HIPICO_CANONICAL_GROUP_KEY_EMPTY');
-  const rows=await prisma.$queryRaw<Array<{id:string;ownerId:string;groupKey:string;label:string}>>`
+async function findActiveWebBridge(groupKey:string):Promise<CanonicalChannel[]>{
+  return prisma.$queryRaw<Array<{id:string;ownerId:string;groupKey:string;label:string}>>`
     SELECT id::text AS "id", owner_id::text AS "ownerId", group_key AS "groupKey", label
     FROM public.hipico_bot_channels
     WHERE group_key=${groupKey}
@@ -47,8 +47,45 @@ async function resolveChannel(groupName:string, explicitKey?:string):Promise<Can
       AND status='active'
     LIMIT 2
   `;
-  if(rows.length!==1)throw new Error(rows.length===0?'HIPICO_CANONICAL_CHANNEL_NOT_FOUND':'HIPICO_CANONICAL_CHANNEL_AMBIGUOUS');
+}
+
+async function ensureOfficialSourceChannel(groupName:string, sourceKey:string, labKey:string):Promise<CanonicalChannel>{
+  if(sourceKey!==OFFICIAL_SOURCE_CHANNEL_KEY)throw new Error('HIPICO_SOURCE_CHANNEL_KEY_NOT_ALLOWED');
+  const labRows=await findActiveWebBridge(labKey);
+  if(labRows.length!==1)throw new Error(labRows.length===0?'HIPICO_LAB_CHANNEL_NOT_FOUND':'HIPICO_LAB_CHANNEL_AMBIGUOUS');
+  const lab=labRows[0];
+  const config={
+    mode:'source_read_only',
+    purpose:'official_live_shadow_training',
+    auto_send:false,
+    mirror_lab_channel_key:labKey
+  };
+  const rows=await prisma.$queryRaw<Array<{id:string;ownerId:string;groupKey:string;label:string}>>`
+    INSERT INTO public.hipico_bot_channels (owner_id,group_key,label,channel_type,status,config)
+    VALUES (${lab.ownerId}::uuid,${sourceKey},${String(groupName||'CLUB HIPICO TRIPLE CROWN').slice(0,220)},'web_bridge','active',${JSON.stringify(config)}::jsonb)
+    ON CONFLICT (owner_id,group_key)
+    DO UPDATE SET
+      label=EXCLUDED.label,
+      channel_type='web_bridge',
+      status='active',
+      config=EXCLUDED.config,
+      updated_at=now()
+    RETURNING id::text AS "id",owner_id::text AS "ownerId",group_key AS "groupKey",label
+  `;
+  if(rows.length!==1)throw new Error('HIPICO_SOURCE_CHANNEL_PROVISION_FAILED');
   return rows[0];
+}
+
+async function resolveChannel(input:Pick<CanonicalPersistInput,'groupName'|'channelKey'|'labChannelKey'|'channelRole'>):Promise<CanonicalChannel>{
+  const groupKey=String(input.channelKey||groupKeyFromName(input.groupName)).trim();
+  if(!groupKey)throw new Error('HIPICO_CANONICAL_GROUP_KEY_EMPTY');
+  const rows=await findActiveWebBridge(groupKey);
+  if(rows.length===1)return rows[0];
+  if(rows.length>1)throw new Error('HIPICO_CANONICAL_CHANNEL_AMBIGUOUS');
+  if(input.channelRole==='source'){
+    return ensureOfficialSourceChannel(input.groupName,groupKey,String(input.labChannelKey||DEFAULT_LAB_CHANNEL_KEY).trim());
+  }
+  throw new Error('HIPICO_CANONICAL_CHANNEL_NOT_FOUND');
 }
 
 function eventType(intent:string){
@@ -82,11 +119,13 @@ function amountOf(result:IntentResult){
 
 /**
  * Canonical observation store. Source-group events and lab-group events both
- * stay shadow-only. This function never writes hipico_ledger_entries or the
- * operational hipico_outbox.
+ * stay shadow-only. The only configuration write allowed here is idempotent
+ * provisioning of the single official source channel from the existing LAB
+ * owner. This function never writes hipico_ledger_entries or operational
+ * hipico_outbox.
  */
 export async function persistCanonicalShadow(input:CanonicalPersistInput){
-  const channel=await resolveChannel(input.groupName,input.channelKey);
+  const channel=await resolveChannel(input);
   const normalized=input.result.entities||{};
   const fingerprint=sha256([channel.groupKey,input.providerMessageId,input.sender,input.sentAt,input.body].join('|'));
   const metadata={
@@ -171,7 +210,7 @@ export async function persistCanonicalShadow(input:CanonicalPersistInput){
     operationEventId=opRows[0]?.id||null;
   }
 
-  const labGroupKey=input.labChannelKey||channel.groupKey;
+  const labGroupKey=String(input.labChannelKey||channel.groupKey).trim();
   const scenarioKey=input.channelRole==='source'?'official-source-to-lab-v1':'real-operativa-shadow-v1';
   const prediction={
     shadow:true,
