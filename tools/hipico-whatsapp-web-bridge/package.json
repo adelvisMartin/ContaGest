@@ -7,9 +7,9 @@
     "node": ">=20"
   },
   "scripts": {
-    "check": "node --check src/live-v130.mjs && node --check src/history-sync.mjs && node --check src/selftest.mjs",
+    "check": "node --check src/live-v130.mjs && node --check src/history-v130.mjs && node --check src/selftest.mjs",
     "selftest": "node src/selftest.mjs",
-    "history": "node --env-file=.env src/history-sync.mjs",
+    "history": "node --env-file=.env src/history-v130.mjs",
     "start": "node --env-file=.env src/live-v130.mjs"
   },
   "dependencies": {
