@@ -1,14 +1,17 @@
 import crypto from 'node:crypto';
 import { Router } from 'express';
 import { z } from 'zod';
-import { classify, HipicoBotStore } from './hipico-bot.service.js';
+import { classify } from './hipico-operational-classifier.js';
+import { persistCanonicalShadow } from './hipico-canonical-shadow.store.js';
+import { ensureGroupShadowOutbox, persistBridgeTransportEvent } from './hipico-bridge-transport.store.js';
 
 const router = Router();
 
-// Contract emitted by tools/hipico-whatsapp-bridge. Keep this endpoint isolated
-// from the Meta Cloud API webhook: this is a normal WhatsApp Web group session.
+// Contract emitted by the Control Hipico desktop Bridge. Keep this endpoint
+// isolated from the Meta Cloud API webhook: this is a normal WhatsApp Web
+// group observation channel used for shadow QA.
 const bridgeEventSchema = z.object({
-  bridgeVersion: z.string().min(1).max(40),
+  bridgeVersion: z.string().min(1).max(80),
   externalMessageId: z.string().min(1).max(320),
   groupId: z.string().min(3).max(220),
   groupName: z.string().trim().min(1).max(220),
@@ -21,12 +24,11 @@ const bridgeEventSchema = z.object({
   type: z.string().min(1).max(80).default('chat'),
   text: z.string().max(4000).default(''),
   hasMedia: z.boolean().default(false),
-  quotedExternalMessageId: z.string().max(320).nullable().default(null)
+  quotedExternalMessageId: z.string().max(320).nullable().default(null),
+  rawMeta: z.string().max(500).default('')
 });
 
 function bridgeTokenValid(value: string | undefined) {
-  // HIPICO_GROUP_BRIDGE_TOKEN is the canonical name used by the desktop bridge.
-  // HIPICO_BRIDGE_TOKEN is accepted as a short-lived compatibility alias.
   const expected = String(process.env.HIPICO_GROUP_BRIDGE_TOKEN || process.env.HIPICO_BRIDGE_TOKEN || '');
   if (!expected || !value) return false;
   try {
@@ -44,85 +46,113 @@ router.use((_req, res, next) => {
 /**
  * Shadow-only ingestion endpoint for the normal WhatsApp group Bridge.
  *
- * The linked WhatsApp account filters a configured group and forwards only a
- * normalized event. This endpoint may classify/deduplicate/persist, but it
- * never sends a group reply and never mutates race state, balances, results or
- * settlements. Returning actions:[] also prevents the desktop Bridge from
- * publishing anything during this first laboratory gate.
+ * A successful response requires PostgreSQL persistence in both the transport
+ * audit layer and the canonical Hípico shadow schema. Any partial failure is
+ * returned as 503 so the desktop Bridge keeps the original event in its spool
+ * and retries. All writes are idempotent by provider/external message ID.
+ *
+ * This route NEVER sends a group reply and NEVER mutates live race state,
+ * balances, results, bets, ledger entries or settlements.
  */
 router.post('/bridge/events', async (req, res) => {
   if (!bridgeTokenValid(req.header('x-hipico-bridge-token') || undefined)) {
-    return res.status(401).json({ ok: false, error: 'Token del Bridge Hípico inválido.' });
+    return res.status(401).json({ ok: false, error: 'Token del Bridge Hipico invalido.' });
   }
 
   const parsed = bridgeEventSchema.safeParse(req.body);
   if (!parsed.success) {
-    return res.status(400).json({ ok: false, error: 'Evento del Bridge inválido.' });
+    return res.status(400).json({ ok: false, error: 'Evento del Bridge invalido.' });
   }
 
   const input = parsed.data;
   const providerMessageId = `waweb:${input.externalMessageId}`;
   const result = classify(input.text);
   const sender = input.senderId.replace(/@.*$/, '').slice(0, 220);
+  const transportPayload = {
+    source: 'whatsapp-web-bridge',
+    bridgeVersion: input.bridgeVersion,
+    groupId: input.groupId,
+    groupName: input.groupName,
+    channelRole: input.channelRole,
+    bridgeShadowMode: input.shadowMode,
+    senderRaw: input.senderId,
+    senderLabel: input.senderLabel,
+    fromMe: input.fromMe,
+    sentAt: input.timestamp,
+    rawMeta: input.rawMeta,
+    hasMedia: input.hasMedia,
+    quotedExternalMessageId: input.quotedExternalMessageId,
+    operational: result.entities || null
+  };
 
-  const event = await HipicoBotStore.saveEvent({
-    providerMessageId,
-    phoneNumberId: `group:${input.groupId}`,
-    sender,
-    messageType: input.type,
-    body: input.text,
-    ...result,
-    status: 'classified',
-    payload: {
-      source: 'whatsapp-web-bridge',
-      bridgeVersion: input.bridgeVersion,
-      groupId: input.groupId,
+  try {
+    // No serverless-memory fallback is allowed for the real group gate.
+    const event = await persistBridgeTransportEvent({
+      providerMessageId,
+      phoneNumberId: `group:${input.groupId}`,
+      sender,
+      messageType: input.type,
+      body: input.text,
+      result,
+      payload: transportPayload
+    });
+
+    // Canonical shadow writes are idempotent, therefore a retry can repair a
+    // previous partial failure even when the transport event already exists.
+    const canonical = await persistCanonicalShadow({
       groupName: input.groupName,
-      channelRole: input.channelRole,
-      bridgeShadowMode: input.shadowMode,
-      senderRaw: input.senderId,
+      providerMessageId,
+      sender,
       senderLabel: input.senderLabel,
       fromMe: input.fromMe,
       sentAt: input.timestamp,
-      hasMedia: input.hasMedia,
-      quotedExternalMessageId: input.quotedExternalMessageId
-    }
-  });
+      messageType: input.type,
+      body: input.text,
+      quotedExternalMessageId: input.quotedExternalMessageId,
+      bridgeVersion: input.bridgeVersion,
+      rawMeta: input.rawMeta,
+      transportEventId: event.id,
+      result
+    });
 
-  if (event.inserted === false) {
-    return res.status(200).json({
+    // Compatibility outbox is also an idempotent upsert. It remains shadow
+    // evidence only and is not the operational sending outbox.
+    const outbox = await ensureGroupShadowOutbox({
+      eventId: event.id,
+      recipient: input.groupId,
+      result
+    });
+
+    const responseBody = {
       ok: true,
-      duplicate: true,
+      duplicate: !event.inserted,
       mode: 'shadow',
       classification: result.intent,
-      actions: []
+      actions: [] as never[],
+      data: {
+        eventId: event.id,
+        outboxId: outbox.id,
+        canonical,
+        intent: result.intent,
+        risk: result.risk,
+        entities: result.entities || null,
+        autoEligible: false
+      }
+    };
+
+    return res.status(event.inserted ? 202 : 200).json(responseBody);
+  } catch (error: any) {
+    console.error('[hipico-bridge] persistent shadow ingestion failed', {
+      providerMessageId,
+      groupName: input.groupName,
+      error: error?.message || String(error)
+    });
+    return res.status(503).json({
+      ok: false,
+      retryable: true,
+      error: 'Persistencia shadow de Control Hipico no disponible. El Bridge debe reintentar.'
     });
   }
-
-  const outbox = await HipicoBotStore.queue({
-    eventId: event.id,
-    recipient: input.groupId,
-    targetType: 'group_bridge',
-    message: result.suggestion,
-    intent: result.intent,
-    risk: result.risk,
-    status: 'shadow'
-  });
-
-  return res.status(202).json({
-    ok: true,
-    duplicate: false,
-    mode: 'shadow',
-    classification: result.intent,
-    actions: [],
-    data: {
-      eventId: event.id,
-      outboxId: outbox.id,
-      intent: result.intent,
-      risk: result.risk,
-      autoEligible: false
-    }
-  });
 });
 
 export default router;
