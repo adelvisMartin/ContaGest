@@ -3,10 +3,11 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { chromium } from 'playwright-core';
 
-const VERSION = '1.0.0';
+const VERSION = '1.1.0';
 const DATA_DIR = path.resolve(process.cwd(), 'data');
 const PROFILE_DIR = path.join(DATA_DIR, 'chrome-profile');
 const SPOOL_DIR = path.join(DATA_DIR, 'spool');
+const SEEN_FILE = path.join(DATA_DIR, 'seen-message-ids.json');
 const LOG_FILE = path.join(DATA_DIR, 'bridge.log');
 const ERROR_SCREENSHOT = path.join(DATA_DIR, 'last-error.png');
 
@@ -27,10 +28,12 @@ await fs.mkdir(SPOOL_DIR, { recursive: true });
 
 let context = null;
 let page = null;
-let seen = new Set();
+let seen = await loadSeen();
+let baselineCompletedThisRun = false;
 let targetWasActive = false;
 let flushing = false;
 let stopping = false;
+let seenSaveTimer = null;
 
 function required(name) {
   const value = String(process.env[name] || '').trim();
@@ -56,6 +59,39 @@ function sleep(ms) {
 
 function sha256(value) {
   return crypto.createHash('sha256').update(String(value ?? '')).digest('hex');
+}
+
+async function loadSeen() {
+  try {
+    const data = JSON.parse(await fs.readFile(SEEN_FILE, 'utf8'));
+    return new Set(Array.isArray(data) ? data.filter(Boolean).slice(-5000) : []);
+  } catch {
+    return new Set();
+  }
+}
+
+async function saveSeenNow() {
+  const values = [...seen].slice(-5000);
+  await fs.writeFile(SEEN_FILE, JSON.stringify(values), 'utf8').catch(() => {});
+}
+
+function scheduleSeenSave() {
+  if (seenSaveTimer) return;
+  seenSaveTimer = setTimeout(() => {
+    seenSaveTimer = null;
+    saveSeenNow().catch(() => {});
+  }, 250);
+  seenSaveTimer.unref?.();
+}
+
+function rememberSeen(id) {
+  if (!id) return;
+  if (seen.size >= 5000) {
+    const oldest = seen.values().next().value;
+    if (oldest) seen.delete(oldest);
+  }
+  seen.add(id);
+  scheduleSeenSave();
 }
 
 async function log(line) {
@@ -278,9 +314,15 @@ async function extractVisibleMessages() {
 
 async function baselineCurrentMessages() {
   const rows = await extractVisibleMessages().catch(() => []);
-  for (const row of rows) seen.add(row.id);
-  console.log(`Baseline del grupo: ${rows.length} mensaje(s) visibles ignorados como historial.`);
-  await log(`BASELINE ${rows.length}`);
+  let added = 0;
+  for (const row of rows) {
+    if (!seen.has(row.id)) added += 1;
+    rememberSeen(row.id);
+  }
+  await saveSeenNow();
+  baselineCompletedThisRun = true;
+  console.log(`Baseline del grupo: ${rows.length} mensaje(s) visibles ignorados como historial; ${added} ID(s) nuevos incorporados al baseline.`);
+  await log(`BASELINE visible=${rows.length} added=${added}`);
 }
 
 function rowToEvent(row) {
@@ -301,8 +343,22 @@ function rowToEvent(row) {
     type: row.hasMedia ? 'media' : 'chat',
     text: String(row.text || '').slice(0, 4000),
     hasMedia: Boolean(row.hasMedia),
-    quotedExternalMessageId: null
+    quotedExternalMessageId: null,
+    rawMeta: String(row.pre || '').slice(0, 500)
   };
+}
+
+async function processVisibleRows() {
+  const rows = await extractVisibleMessages();
+  for (const row of rows) {
+    if (seen.has(row.id)) continue;
+
+    const event = rowToEvent(row);
+    const file = await spool(event);
+    rememberSeen(row.id);
+    await deliverFile(file);
+  }
+  await flushSpool();
 }
 
 async function monitor() {
@@ -353,23 +409,18 @@ async function monitor() {
         console.log('Respuestas automaticas: BLOQUEADAS');
         console.log('Operaciones monetarias: BLOQUEADAS');
         console.log('');
-        seen = new Set();
-        await baselineCurrentMessages();
+
+        // Baseline only once per process. If the user temporarily changes chat,
+        // reconnects or the target reactivates, keep the existing seen IDs and
+        // process any new visible messages instead of silently rebasing them.
+        if (!baselineCompletedThisRun) await baselineCurrentMessages();
+        else await processVisibleRows();
+
         targetWasActive = true;
         lastStatus = 'monitoring';
       }
 
-      const rows = await extractVisibleMessages();
-      for (const row of rows) {
-        if (seen.has(row.id)) continue;
-        seen.add(row.id);
-
-        const event = rowToEvent(row);
-        const file = await spool(event);
-        await deliverFile(file);
-      }
-
-      await flushSpool();
+      await processVisibleRows();
       await sleep(POLL_MS);
     } catch (error) {
       console.error(`Monitor: ${error.message}`);
@@ -389,6 +440,7 @@ async function main() {
   console.log('');
   console.log('Este Bridge NO implementa el protocolo de WhatsApp.');
   console.log('Abre y utiliza https://web.whatsapp.com/ real.');
+  console.log(`Seen IDs persistentes cargados: ${seen.size}`);
   console.log('');
 
   const launched = await launchOfficialChrome();
@@ -410,7 +462,7 @@ async function main() {
     timeout: 60000
   });
 
-  await log(`START channel=${launched.channel}`);
+  await log(`START channel=${launched.channel} seen=${seen.size}`);
   await flushSpool();
   await monitor();
 }
@@ -418,6 +470,7 @@ async function main() {
 process.on('SIGINT', async () => {
   stopping = true;
   console.log('\nCerrando Bridge...');
+  try { await saveSeenNow(); } catch {}
   try { await context?.close(); } catch {}
   process.exit(0);
 });
