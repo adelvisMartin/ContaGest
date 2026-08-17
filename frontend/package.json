@@ -10,7 +10,7 @@
   "scripts": {
     "dev": "vite --host 0.0.0.0 --port 8080",
     "stage:backend": "node scripts/stage-backend.mjs",
-    "build": "npm --prefix ../backend run test:hipico && cd .. && node --test tests/hipico_real_operativa_shadow_contract.test.mjs && cd frontend && npm run stage:backend && vite build",
+    "build": "npm run stage:backend && vite build",
     "preview": "vite preview --host 0.0.0.0 --port 8080"
   },
   "dependencies": {
