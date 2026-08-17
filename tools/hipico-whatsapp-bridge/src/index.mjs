@@ -1,11 +1,12 @@
 import fs from 'node:fs/promises';
+import { existsSync } from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import qrcode from 'qrcode-terminal';
 import pkg from 'whatsapp-web.js';
 
 const { Client, LocalAuth } = pkg;
-const BRIDGE_VERSION = '0.2.1';
+const BRIDGE_VERSION = '0.2.2';
 const DATA_DIR = path.resolve(process.cwd(), 'data');
 const SPOOL_DIR = path.join(DATA_DIR, 'spool');
 
@@ -21,20 +22,31 @@ function boolEnv(name, fallback = false) {
   return String(value).toLowerCase() === 'true';
 }
 
+function resolveBrowserExecutable() {
+  const explicit = String(process.env.HIPICO_BROWSER_EXECUTABLE || '').trim();
+  const candidates = [
+    explicit,
+    process.env.PROGRAMFILES && path.join(process.env.PROGRAMFILES, 'Google', 'Chrome', 'Application', 'chrome.exe'),
+    process.env['PROGRAMFILES(X86)'] && path.join(process.env['PROGRAMFILES(X86)'], 'Google', 'Chrome', 'Application', 'chrome.exe'),
+    process.env.LOCALAPPDATA && path.join(process.env.LOCALAPPDATA, 'Google', 'Chrome', 'Application', 'chrome.exe'),
+    process.env.PROGRAMFILES && path.join(process.env.PROGRAMFILES, 'Microsoft', 'Edge', 'Application', 'msedge.exe'),
+    process.env['PROGRAMFILES(X86)'] && path.join(process.env['PROGRAMFILES(X86)'], 'Microsoft', 'Edge', 'Application', 'msedge.exe')
+  ].filter(Boolean);
+  return candidates.find((candidate) => existsSync(candidate)) || '';
+}
+
 const INGEST_URL = required('HIPICO_INGEST_URL');
 const BRIDGE_TOKEN = required('HIPICO_GROUP_BRIDGE_TOKEN');
 
-// Legacy HIPICO_GROUP_* remains valid for the first lab-only test.
 const SOURCE_GROUP_ID_ENV = String(process.env.HIPICO_SOURCE_GROUP_ID || process.env.HIPICO_GROUP_ID || '').trim();
 const SOURCE_GROUP_NAME_ENV = String(process.env.HIPICO_SOURCE_GROUP_NAME || process.env.HIPICO_GROUP_NAME || '').trim();
 const LAB_GROUP_ID_ENV = String(process.env.HIPICO_LAB_GROUP_ID || '').trim();
 const LAB_GROUP_NAME_ENV = String(process.env.HIPICO_LAB_GROUP_NAME || SOURCE_GROUP_NAME_ENV || '').trim();
 const SHADOW_MODE = boolEnv('HIPICO_SHADOW_MODE', false);
 const INCLUDE_OWN_MESSAGES = boolEnv('HIPICO_INCLUDE_OWN_MESSAGES', true);
-// Independent local kill switch. Phase 1 MUST keep this false even if a future
-// backend response accidentally includes a reply action.
 const ALLOW_SEND = boolEnv('HIPICO_ALLOW_SEND', false);
 const PUPPETEER_NO_SANDBOX = boolEnv('HIPICO_PUPPETEER_NO_SANDBOX', false);
+const BROWSER_EXECUTABLE = resolveBrowserExecutable();
 
 await fs.mkdir(SPOOL_DIR, { recursive: true });
 
@@ -158,7 +170,7 @@ function responseTargetFor(event, source, lab) {
 
 function formatShadowReply(actionText, source) {
   if (!SHADOW_MODE) return String(actionText);
-  return `🧪 SOMBRA · ${source.name}\n${String(actionText)}`;
+  return `SOMBRA · ${source.name}\n${String(actionText)}`;
 }
 
 async function deliverSpoolFile(client, source, lab, file) {
@@ -205,11 +217,18 @@ const puppeteerArgs = PUPPETEER_NO_SANDBOX
   ? ['--no-sandbox', '--disable-setuid-sandbox']
   : [];
 
+if (BROWSER_EXECUTABLE) {
+  console.log(`Navegador detectado para WhatsApp Web: ${BROWSER_EXECUTABLE}`);
+} else {
+  console.warn('No se encontro Chrome/Edge del sistema; Puppeteer intentara usar su navegador gestionado.');
+}
+
 const client = new Client({
   authStrategy: new LocalAuth({ clientId: 'hipico-control-group-bridge', dataPath: path.join(DATA_DIR, 'session') }),
   puppeteer: {
     headless: true,
-    args: puppeteerArgs
+    args: puppeteerArgs,
+    ...(BROWSER_EXECUTABLE ? { executablePath: BROWSER_EXECUTABLE } : {})
   }
 });
 
@@ -223,7 +242,7 @@ client.on('qr', (qr) => {
 });
 
 client.on('authenticated', () => console.log('WhatsApp vinculado.'));
-client.on('auth_failure', (message) => console.error('Fallo de autenticación:', message));
+client.on('auth_failure', (message) => console.error('Fallo de autenticacion:', message));
 client.on('disconnected', (reason) => console.error('WhatsApp desconectado:', reason));
 
 client.on('ready', async () => {
@@ -244,8 +263,8 @@ client.on('ready', async () => {
 
   console.log(`Fuente: ${source.name} :: ${source.id}`);
   console.log(`Laboratorio: ${lab.name} :: ${lab.id}`);
-  console.log(`Ingesta backend: SHADOW-ONLY`);
-  console.log(`Envío desde Bridge: ${ALLOW_SEND ? 'HABILITADO' : 'BLOQUEADO'}`);
+  console.log('Ingesta backend: SHADOW-ONLY');
+  console.log(`Envio desde Bridge: ${ALLOW_SEND ? 'HABILITADO' : 'BLOQUEADO'}`);
 
   await flushSpool(client, source, lab);
   setInterval(() => {
@@ -275,7 +294,7 @@ client.on('message_create', async (message) => {
     if (!INCLUDE_OWN_MESSAGES && message.fromMe) return;
 
     const event = await buildEvent(message, target, channelRole);
-    const file = await spool(event); // persist locally before any network call
+    const file = await spool(event);
     await deliverSpoolFile(client, source, lab, file);
   } catch (error) {
     console.error('No se pudo procesar el mensaje:', error);
@@ -283,10 +302,10 @@ client.on('message_create', async (message) => {
 });
 
 process.on('SIGINT', async () => {
-  console.log('\nCerrando Hípico WhatsApp Bridge...');
+  console.log('\nCerrando Control Hipico WhatsApp Bridge...');
   await client.destroy().catch(() => {});
   process.exit(0);
 });
 
-console.log('Iniciando Hípico WhatsApp Group Bridge...');
+console.log('Iniciando Control Hipico WhatsApp Group Bridge...');
 client.initialize();
