@@ -1,0 +1,21 @@
+Juega PP del 3 con 20
+Consigue 1/2 del 5 con 15
+J
+Debe confirmar
+Anula esa jugada
+TERCIOS
+Juega PP del 3 con 20
+Cierra carrera 4
+No va mas la 4
+Juega 1N del 6 con 10
+Llegada 2.1.6.4
+Pizarra: 2 1 6 4
+TERCIOS
+Juega Adel Bs 20
+Consigue Luis Bs 20
+TERCIO DISPONIBLE
+Adel 100
+Luis -50
+Polla 5 con 20
+Cierre de jornada
+Manana vamos temprano
