@@ -19,10 +19,24 @@ Pruebas realizadas en el grupo normal `Control hípico lab` con el Bridge oficia
 - Ninguna respuesta automatica al grupo.
 - Ninguna mutacion monetaria, de carrera, resultado o liquidacion.
 
+## Baseline PostgreSQL no destructivo
+
+Antes de iniciar el corpus de operativa real se registro esta linea base, sin borrar las pruebas anteriores:
+
+```text
+HipicoWebhookEvent = 6
+HipicoBotOutbox    = 6
+last_event_at      = 2026-08-17 04:58:14.799 UTC
+```
+
+Las filas anteriores al baseline corresponden a las pruebas de transporte/persistencia. El corpus operativo debe medirse por filas posteriores a `last_event_at`, evitando limpiar o manipular evidencia ya verificada.
+
 ## Hallazgo corregido en esta rama
 
 `Cierra carrera 4` se clasificaba como `conversation` porque el clasificador anterior solo cubria `cierre/cerrado`. La nueva clasificacion operacional cubre `cierra`, `cerrar`, `cerramos`, `cierren`, `no va mas`, `no mas jugadas`, `carrera cerrada`, `cerrado cerrado` y `fin de carrera`, manteniendo `autoEligible=false`.
 
+La misma rama agrega extraccion estructurada de ofertas, montos, caballo, tipo de jugada, cierre, pizarra, disponibles y liquidacion, ademas de una proyeccion RC1-compatible de emparejamientos que es estrictamente de solo lectura.
+
 ## Siguiente gate
 
-Ejecutar `WHATSAPP_REAL_OPERATIONS_SHADOW_QA.md` contra la rama/despliegue que contiene el clasificador operacional. El criterio sigue siendo observacion y persistencia; no se habilita envio ni ejecucion de operaciones.
+Ejecutar `WHATSAPP_REAL_OPERATIONS_SHADOW_QA.md` contra produccion **despues de aprobar y mergear PR #64**. Produccion conserva el clasificador anterior mientras el PR siga abierto. El criterio sigue siendo observacion y persistencia; no se habilita envio ni ejecucion de operaciones.
