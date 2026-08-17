@@ -29,8 +29,9 @@ router.get('/status',async(_req,res)=>res.json({ok:true,data:{
 router.get('/events',async(req,res)=>res.json({ok:true,data:await HipicoBotStore.events(limit(req.query.limit))}));
 router.get('/outbox',async(req,res)=>res.json({ok:true,data:await HipicoBotStore.outbox(limit(req.query.limit))}));
 router.get('/shadow-projection',async(req,res)=>{
-  const events=await HipicoBotStore.events(limit(req.query.limit||100));
-  return res.json({ok:true,data:buildShadowProjection(events as any[])});
+  const events=await HipicoBotStore.events(limit(req.query.limit||100)) as any[];
+  const groupEvents=events.filter((event)=>String(event?.phoneNumberId||'').startsWith('group:'));
+  return res.json({ok:true,data:buildShadowProjection(groupEvents)});
 });
 
 router.post('/classify',(req,res)=>{
