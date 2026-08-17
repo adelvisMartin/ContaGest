@@ -7,14 +7,13 @@ import { ensureGroupShadowOutbox, persistBridgeTransportEvent } from './hipico-b
 
 const router = Router();
 
-// Contract emitted by the Control Hipico desktop Bridge. Keep this endpoint
-// isolated from the Meta Cloud API webhook: this is a normal WhatsApp Web
-// group observation channel used for shadow QA.
 const bridgeEventSchema = z.object({
   bridgeVersion: z.string().min(1).max(80),
   externalMessageId: z.string().min(1).max(320),
   groupId: z.string().min(3).max(220),
   groupName: z.string().trim().min(1).max(220),
+  channelKey: z.string().trim().min(3).max(120).optional(),
+  labChannelKey: z.string().trim().min(3).max(120).optional(),
   channelRole: z.enum(['source', 'lab']),
   shadowMode: z.boolean(),
   senderId: z.string().min(1).max(220),
@@ -22,6 +21,7 @@ const bridgeEventSchema = z.object({
   fromMe: z.boolean().default(false),
   timestamp: z.string().datetime({ offset: true }),
   type: z.string().min(1).max(80).default('chat'),
+  mediaKind: z.enum(['none', 'image', 'video', 'audio', 'document', 'unknown']).default('none'),
   text: z.string().max(4000).default(''),
   hasMedia: z.boolean().default(false),
   quotedExternalMessageId: z.string().max(320).nullable().default(null),
@@ -38,21 +38,59 @@ function bridgeTokenValid(value: string | undefined) {
   }
 }
 
+function shadowTag(value: string) {
+  return `[SHADOW:${crypto.createHash('sha256').update(value).digest('hex').slice(0, 10)}]`;
+}
+
+function buildLabSimulation(input: z.infer<typeof bridgeEventSchema>, result: ReturnType<typeof classify>, canonical: any) {
+  if (input.channelRole !== 'source') return null;
+  const mirrorTag = shadowTag(input.externalMessageId);
+  const entities = result.entities || {};
+  const details: string[] = [];
+  if (entities.role) details.push(`Rol: ${entities.role === 'player' ? 'JUEGA' : 'CONSIGUE'}`);
+  if (entities.play) details.push(`Jugada: ${entities.play}`);
+  if (entities.horse) details.push(`Caballo: ${entities.horse}`);
+  if (Number.isFinite(Number(entities.amount))) details.push(`Monto: ${Number(entities.amount)}`);
+  if (Number.isFinite(Number(entities.raceNumber))) details.push(`Carrera: ${Number(entities.raceNumber)}`);
+  if (Array.isArray(entities.board) && entities.board.length) details.push(`Pizarra: ${entities.board.join('-')}`);
+  if (Array.isArray(entities.balances) && entities.balances.length) details.push(`Disponibles: ${entities.balances.length} fila(s)`);
+  if (Array.isArray(entities.settlementRows) && entities.settlementRows.length) details.push(`Liquidación: ${entities.settlementRows.length} fila(s)`);
+
+  const visibleMessage = input.text.trim() || `[${input.mediaKind || 'media'} sin texto extraíble]`;
+  const lines = [
+    mirrorTag,
+    '🧪 CONTROL HÍPICO · SIMULACIÓN SHADOW',
+    `Fuente: ${input.groupName}`,
+    `Remitente: ${input.senderLabel || 'participante'}`,
+    `Mensaje: ${visibleMessage.slice(0, 1200)}`,
+    `Lectura: ${result.intent} · riesgo ${result.risk} · confianza ${(Number(result.confidence || 0) * 100).toFixed(1)}%`,
+    ...details,
+    `Propuesta del bot: ${result.suggestion}`,
+    '⚠️ SOLO LABORATORIO: no registró jugada, cierre, resultado, saldo ni liquidación real.'
+  ];
+
+  return {
+    mirrorTag,
+    sourceExternalMessageId: input.externalMessageId,
+    sourceGroupKey: canonical?.groupKey || input.channelKey || null,
+    labGroupKey: input.labChannelKey || null,
+    text: lines.join('\n').slice(0, 3900)
+  };
+}
+
 router.use((_req, res, next) => {
   res.setHeader('Cache-Control', 'no-store, max-age=0');
   next();
 });
 
 /**
- * Shadow-only ingestion endpoint for the normal WhatsApp group Bridge.
+ * Shadow-only ingestion endpoint for WhatsApp Web observation.
  *
- * A successful response requires PostgreSQL persistence in both the transport
- * audit layer and the canonical Hípico shadow schema. Any partial failure is
- * returned as 503 so the desktop Bridge keeps the original event in its spool
- * and retries. All writes are idempotent by provider/external message ID.
- *
- * This route NEVER sends a group reply and NEVER mutates live race state,
- * balances, results, bets, ledger entries or settlements.
+ * channelRole=source is the official operations group and is observation-only.
+ * The response may contain a labSimulation payload for the desktop Bridge to
+ * mirror into a separate QA group. actions is always empty; this endpoint never
+ * sends to WhatsApp and never mutates live race state, balances, bets, results,
+ * ledger entries or settlements.
  */
 router.post('/bridge/events', async (req, res) => {
   if (!bridgeTokenValid(req.header('x-hipico-bridge-token') || undefined)) {
@@ -73,6 +111,8 @@ router.post('/bridge/events', async (req, res) => {
     bridgeVersion: input.bridgeVersion,
     groupId: input.groupId,
     groupName: input.groupName,
+    channelKey: input.channelKey || null,
+    labChannelKey: input.labChannelKey || null,
     channelRole: input.channelRole,
     bridgeShadowMode: input.shadowMode,
     senderRaw: input.senderId,
@@ -81,12 +121,12 @@ router.post('/bridge/events', async (req, res) => {
     sentAt: input.timestamp,
     rawMeta: input.rawMeta,
     hasMedia: input.hasMedia,
+    mediaKind: input.mediaKind,
     quotedExternalMessageId: input.quotedExternalMessageId,
     operational: result.entities || null
   };
 
   try {
-    // No serverless-memory fallback is allowed for the real group gate.
     const event = await persistBridgeTransportEvent({
       providerMessageId,
       phoneNumberId: `group:${input.groupId}`,
@@ -97,16 +137,18 @@ router.post('/bridge/events', async (req, res) => {
       payload: transportPayload
     });
 
-    // Canonical shadow writes are idempotent, therefore a retry can repair a
-    // previous partial failure even when the transport event already exists.
     const canonical = await persistCanonicalShadow({
       groupName: input.groupName,
+      channelKey: input.channelKey,
+      labChannelKey: input.labChannelKey,
+      channelRole: input.channelRole,
       providerMessageId,
       sender,
       senderLabel: input.senderLabel,
       fromMe: input.fromMe,
       sentAt: input.timestamp,
       messageType: input.type,
+      mediaKind: input.mediaKind,
       body: input.text,
       quotedExternalMessageId: input.quotedExternalMessageId,
       bridgeVersion: input.bridgeVersion,
@@ -115,8 +157,6 @@ router.post('/bridge/events', async (req, res) => {
       result
     });
 
-    // Compatibility outbox is also an idempotent upsert. It remains shadow
-    // evidence only and is not the operational sending outbox.
     const outbox = await ensureGroupShadowOutbox({
       eventId: event.id,
       recipient: input.groupId,
@@ -129,6 +169,7 @@ router.post('/bridge/events', async (req, res) => {
       mode: 'shadow',
       classification: result.intent,
       actions: [] as never[],
+      labSimulation: buildLabSimulation(input, result, canonical),
       data: {
         eventId: event.id,
         outboxId: outbox.id,
@@ -145,6 +186,8 @@ router.post('/bridge/events', async (req, res) => {
     console.error('[hipico-bridge] persistent shadow ingestion failed', {
       providerMessageId,
       groupName: input.groupName,
+      channelKey: input.channelKey || null,
+      channelRole: input.channelRole,
       error: error?.message || String(error)
     });
     return res.status(503).json({
