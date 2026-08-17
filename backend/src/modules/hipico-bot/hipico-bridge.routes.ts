@@ -6,6 +6,8 @@ import { persistCanonicalShadow } from './hipico-canonical-shadow.store.js';
 import { ensureGroupShadowOutbox, persistBridgeTransportEvent } from './hipico-bridge-transport.store.js';
 
 const router = Router();
+const OFFICIAL_SOURCE_CHANNEL_KEY=String(process.env.HIPICO_OFFICIAL_SOURCE_CHANNEL_KEY||'club-hipico-triple-crown-official').trim();
+const DEFAULT_LAB_CHANNEL_KEY=String(process.env.HIPICO_LAB_CHANNEL_KEY||'control-hipico-lab').trim();
 
 const bridgeEventSchema = z.object({
   bridgeVersion: z.string().min(1).max(80),
@@ -50,8 +52,8 @@ function buildLabSimulation(input: z.infer<typeof bridgeEventSchema>, result: Re
   if (entities.role) details.push(`Rol: ${entities.role === 'player' ? 'JUEGA' : 'CONSIGUE'}`);
   if (entities.play) details.push(`Jugada: ${entities.play}`);
   if (entities.horse) details.push(`Caballo: ${entities.horse}`);
-  if (Number.isFinite(Number(entities.amount))) details.push(`Monto: ${Number(entities.amount)}`);
-  if (Number.isFinite(Number(entities.raceNumber))) details.push(`Carrera: ${Number(entities.raceNumber)}`);
+  if (entities.amount != null && Number.isFinite(Number(entities.amount))) details.push(`Monto: ${Number(entities.amount)}`);
+  if (entities.raceNumber != null && Number.isFinite(Number(entities.raceNumber))) details.push(`Carrera: ${Number(entities.raceNumber)}`);
   if (Array.isArray(entities.board) && entities.board.length) details.push(`Pizarra: ${entities.board.join('-')}`);
   if (Array.isArray(entities.balances) && entities.balances.length) details.push(`Disponibles: ${entities.balances.length} fila(s)`);
   if (Array.isArray(entities.settlementRows) && entities.settlementRows.length) details.push(`Liquidación: ${entities.settlementRows.length} fila(s)`);
@@ -83,15 +85,6 @@ router.use((_req, res, next) => {
   next();
 });
 
-/**
- * Shadow-only ingestion endpoint for WhatsApp Web observation.
- *
- * channelRole=source is the official operations group and is observation-only.
- * The response may contain a labSimulation payload for the desktop Bridge to
- * mirror into a separate QA group. actions is always empty; this endpoint never
- * sends to WhatsApp and never mutates live race state, balances, bets, results,
- * ledger entries or settlements.
- */
 router.post('/bridge/events', async (req, res) => {
   if (!bridgeTokenValid(req.header('x-hipico-bridge-token') || undefined)) {
     return res.status(401).json({ ok: false, error: 'Token del Bridge Hipico invalido.' });
@@ -103,6 +96,15 @@ router.post('/bridge/events', async (req, res) => {
   }
 
   const input = parsed.data;
+  if(input.channelRole==='source'){
+    if(input.channelKey!==OFFICIAL_SOURCE_CHANNEL_KEY || input.labChannelKey!==DEFAULT_LAB_CHANNEL_KEY){
+      return res.status(400).json({ok:false,error:'Canales source/lab no autorizados para este Bridge.'});
+    }
+    if(!input.shadowMode){
+      return res.status(400).json({ok:false,error:'El grupo oficial solo admite ingestión shadow.'});
+    }
+  }
+
   const providerMessageId = `waweb:${input.externalMessageId}`;
   const result = classify(input.text);
   const sender = input.senderId.replace(/@.*$/, '').slice(0, 220);
