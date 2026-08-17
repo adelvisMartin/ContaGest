@@ -1,10 +1,10 @@
 {
   "name": "hipico-whatsapp-group-bridge",
   "private": true,
-  "version": "0.2.1-shadow",
+  "version": "0.2.2-shadow",
   "type": "module",
   "engines": {
-    "node": ">=22 <23"
+    "node": ">=22"
   },
   "scripts": {
     "start": "node --env-file=.env src/index.mjs",
