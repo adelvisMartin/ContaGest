@@ -52,9 +52,14 @@ finally {
   Pop-Location
 }
 
-Write-Host '[2/5] Instalando dependencias del Bridge...'
+Write-Host '[2/5] Instalando dependencias del Bridge sin descargar Chromium...'
 Push-Location $bridgeDir
 try {
+  # whatsapp-web.js usa Puppeteer, pero en Windows el Bridge usa Chrome/Edge ya instalado.
+  # Esto evita el postinstall que intenta descargar chrome-headless-shell y puede fallar
+  # por archivos parciales/EPERM en la cache local de Puppeteer.
+  $env:PUPPETEER_SKIP_DOWNLOAD = 'true'
+  $env:PUPPETEER_SKIP_CHROME_HEADLESS_SHELL_DOWNLOAD = 'true'
   npm install
   if ($LASTEXITCODE -ne 0) {
     throw 'npm install fallo.'
@@ -101,7 +106,7 @@ if ([string]::IsNullOrWhiteSpace($currentToken) -or $currentToken -eq 'CAMBIA_ES
   try { Set-Clipboard -Value $currentToken } catch {}
   Write-Host ''
   Write-Host 'Se genero HIPICO_GROUP_BRIDGE_TOKEN y se copio al portapapeles.'
-  Write-Host 'Configuralo en Vercel Production antes de iniciar el Bridge.'
+  Write-Host 'Edita la variable HIPICO_GROUP_BRIDGE_TOKEN que YA existe en Vercel Production y pega este valor.'
 }
 
 [System.IO.File]::WriteAllText($envPath, $content, [System.Text.UTF8Encoding]::new($false))
