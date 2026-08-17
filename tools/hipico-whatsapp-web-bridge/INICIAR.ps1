@@ -2,6 +2,7 @@ $ErrorActionPreference = 'Stop'
 $here = Split-Path -Parent $MyInvocation.MyCommand.Path
 $envPath = Join-Path $here '.env'
 $examplePath = Join-Path $here '.env.example'
+$historyReportPath = Join-Path $here 'data\history-sync-report.json'
 $appDataDir = Join-Path $env:APPDATA 'ControlHipico'
 $protectedTokenPath = Join-Path $appDataDir 'bridge-token.dpapi'
 $vercelEnvUrl = 'https://vercel.com/adelvismartin-6485s-projects/conta-gest-frontend/settings/environment-variables'
@@ -27,6 +28,12 @@ function Set-EnvValue([string]$Text,[string]$Name,[string]$Value) {
   }
   if(-not $Text.EndsWith("`n")){$Text+="`r`n"}
   return $Text+"$Name=$Value`r`n"
+}
+
+function Get-EnvValue([string]$Text,[string]$Name,[string]$Fallback='') {
+  $match=[Regex]::Match($Text,"(?m)^$([Regex]::Escape($Name))=(.*)$")
+  if($match.Success){return $match.Groups[1].Value.Trim()}
+  return $Fallback
 }
 
 function Save-ProtectedToken([string]$Token) {
@@ -67,15 +74,23 @@ function Validate-Token([string]$Token) {
   }
 }
 
+function History-IsComplete {
+  if(-not (Test-Path $historyReportPath)){return $false}
+  try {
+    $report=Get-Content $historyReportPath -Raw | ConvertFrom-Json
+    return ($report.stopReason -eq 'stable_oldest_available' -and [int]$report.pending -eq 0)
+  } catch { return $false }
+}
+
 Write-Host ''
 Write-Host '========================================================'
-Write-Host ' CONTROL HIPICO - WHATSAPP WEB BRIDGE v1.2.0'
-Write-Host ' OFICIAL READ-ONLY -> LAB SHADOW'
+Write-Host ' CONTROL HIPICO - WHATSAPP WEB BRIDGE v1.3.0'
+Write-Host ' HISTORICO + OFICIAL READ-ONLY -> LAB SHADOW'
 Write-Host ' Chrome/Edge oficial + Playwright 1.62.1'
 Write-Host '========================================================'
 Write-Host ''
 Write-Host 'Regla dura: este Bridge NUNCA envia al grupo oficial.' -ForegroundColor Green
-Write-Host 'Solo observa TRIPLE CROWN y, opcionalmente, refleja simulaciones en LAB.' -ForegroundColor Green
+Write-Host 'TRIPLE CROWN se usa como fuente de aprendizaje shadow auditable.' -ForegroundColor Green
 Write-Host ''
 
 if(-not (Get-Command node -ErrorAction SilentlyContinue)){Fail 'No encuentro Node.js.'}
@@ -112,13 +127,26 @@ $content = Set-EnvValue $content 'HIPICO_LAB_CHANNEL_KEY' $labKey
 $content = Set-EnvValue $content 'HIPICO_POLL_MS' '1000'
 $content = Set-EnvValue $content 'HIPICO_BACKEND_TIMEOUT_MS' '15000'
 
+foreach($pair in @(
+  @('HIPICO_HISTORY_SYNC_ON_START','true'),
+  @('HIPICO_HISTORY_MAX_MESSAGES','50000'),
+  @('HIPICO_HISTORY_MAX_MINUTES','90'),
+  @('HIPICO_HISTORY_IDLE_ROUNDS','8'),
+  @('HIPICO_HISTORY_PAGE_WAIT_MS','1200'),
+  @('HIPICO_HISTORY_UPLOAD_CONCURRENCY','4')
+)){
+  if([string]::IsNullOrWhiteSpace((Get-EnvValue $content $pair[0] ''))){
+    $content=Set-EnvValue $content $pair[0] $pair[1]
+  }
+}
+
 $existingSend = [Regex]::Match($content,'(?m)^HIPICO_LAB_SEND_ENABLED=(.*)$')
 $sendEnabled = if($existingSend.Success -and $existingSend.Groups[1].Value.Trim().ToLower() -eq 'true'){'true'}else{'false'}
 $content = Set-EnvValue $content 'HIPICO_LAB_SEND_ENABLED' $sendEnabled
 [IO.File]::WriteAllText($envPath,$content,[Text.UTF8Encoding]::new($false))
 
 Write-Host ''
-Write-Host '[1/5] Validando token del backend...'
+Write-Host '[1/6] Validando token del backend...'
 $validation = Validate-Token $token
 if($validation -ne 'ok'){
   try { Set-Clipboard -Value $token } catch {}
@@ -140,26 +168,43 @@ if($validation -ne 'ok'){
 Write-Host 'Backend autenticado: OK' -ForegroundColor Green
 
 Write-Host ''
-Write-Host '[2/5] Instalando/verificando Playwright Core 1.62.1...'
+Write-Host '[2/6] Instalando/verificando Playwright Core 1.62.1...'
 npm install --no-fund --no-audit
 if($LASTEXITCODE -ne 0){Fail 'npm install termino con error.'}
 
 Write-Host ''
-Write-Host '[3/5] Verificando codigo...'
+Write-Host '[3/6] Verificando codigo...'
 npm run check
 if($LASTEXITCODE -ne 0){Fail 'La verificacion de codigo fallo.'}
 
 Write-Host ''
-Write-Host '[4/5] Probando Chrome/Edge con Playwright...'
+Write-Host '[4/6] Probando Chrome/Edge con Playwright...'
 npm run selftest
 if($LASTEXITCODE -ne 0){Fail 'El navegador no paso el self-test.'}
+
+$content = Get-Content $envPath -Raw
+$historyEnabled = (Get-EnvValue $content 'HIPICO_HISTORY_SYNC_ON_START' 'true').ToLowerInvariant() -eq 'true'
+Write-Host ''
+Write-Host '[5/6] Historico oficial TRIPLE CROWN...'
+if($historyEnabled -and -not (History-IsComplete)){
+  Write-Host 'Se ejecutara el backfill de todo el historico que WhatsApp Web permita cargar.' -ForegroundColor Cyan
+  Write-Host 'Puede tardar bastante si existen miles de mensajes. Es reanudable e idempotente.' -ForegroundColor Cyan
+  npm run history
+  if($LASTEXITCODE -ne 0){
+    Write-Host 'El historico no termino completamente. Los pendientes quedaron guardados; continuaremos en vivo y el proximo arranque reintentara.' -ForegroundColor Yellow
+  }
+} elseif($historyEnabled) {
+  Write-Host 'Historico ya marcado como completo respecto de lo disponible en WhatsApp Web. Se omite el backfill.' -ForegroundColor Green
+} else {
+  Write-Host 'Backfill historico deshabilitado por HIPICO_HISTORY_SYNC_ON_START=false.' -ForegroundColor Yellow
+}
 
 Write-Host ''
 Write-Host 'Fuente oficial: CLUB HIPICO TRIPLE CROWN (solo lectura)' -ForegroundColor Green
 Write-Host "Laboratorio: $labGroupName" -ForegroundColor Green
 Write-Host "Espejo hacia LAB actualmente: $sendEnabled" -ForegroundColor Yellow
 if($sendEnabled -ne 'true'){
-  $answer = Read-Host '¿Quieres habilitar AHORA respuestas simuladas SOLO en el grupo LAB? escribe SI para habilitar'
+  $answer = Read-Host 'Quieres habilitar AHORA respuestas simuladas SOLO en el grupo LAB? escribe SI para habilitar'
   if($answer.Trim().ToUpperInvariant() -eq 'SI'){
     $content = Get-Content $envPath -Raw
     $content = Set-EnvValue $content 'HIPICO_LAB_SEND_ENABLED' 'true'
@@ -171,10 +216,10 @@ if($sendEnabled -ne 'true'){
 }
 
 Write-Host ''
-Write-Host '[5/5] Abriendo WhatsApp Web OFICIAL...' -ForegroundColor Cyan
-Write-Host 'El grupo fuente puede estar archivado: el Bridge usa tambien la busqueda global.' -ForegroundColor Green
+Write-Host '[6/6] Iniciando escucha en tiempo real...' -ForegroundColor Cyan
+Write-Host 'El grupo fuente puede permanecer archivado: se usa tambien la busqueda global.' -ForegroundColor Green
 Write-Host 'NO desarchives ni cambies el grupo solo para el Bridge.' -ForegroundColor Green
 Write-Host ''
 
 npm start
-if($LASTEXITCODE -ne 0){Fail 'El Bridge termino con error. Envia data\bridge.log y data\last-error.png si existe.'}
+if($LASTEXITCODE -ne 0){Fail 'El Bridge termino con error. Envia data\bridge.log, data\history-sync-report.json y data\last-error.png si existe.'}
