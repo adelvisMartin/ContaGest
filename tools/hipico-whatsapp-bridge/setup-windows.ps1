@@ -83,7 +83,7 @@ function Set-EnvValue([string]$Text, [string]$Name, [string]$Value) {
 }
 
 $content = Set-EnvValue $content 'HIPICO_INGEST_URL' 'https://conta-gest-frontend.vercel.app/api/v1/hipico-bot/bridge/events'
-$content = Set-EnvValue $content 'HIPICO_GROUP_NAME' 'Control hipico lab'
+$content = Set-EnvValue $content 'HIPICO_GROUP_NAME' 'Control hípico lab'
 $content = Set-EnvValue $content 'HIPICO_SHADOW_MODE' 'false'
 $content = Set-EnvValue $content 'HIPICO_ALLOW_SEND' 'false'
 $content = Set-EnvValue $content 'HIPICO_INCLUDE_OWN_MESSAGES' 'true'
@@ -106,7 +106,7 @@ if ([string]::IsNullOrWhiteSpace($currentToken) -or $currentToken -eq 'CAMBIA_ES
 [System.IO.File]::WriteAllText($envPath, $content, [System.Text.UTF8Encoding]::new($false))
 
 Write-Host '[4/5] Configuracion lista.'
-Write-Host '  Grupo: Control hipico lab'
+Write-Host '  Grupo: Control hípico lab'
 Write-Host '  Envios al grupo: DESACTIVADOS'
 Write-Host '  Modo backend: SHADOW'
 Write-Host ''
