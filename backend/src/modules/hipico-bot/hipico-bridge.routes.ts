@@ -5,18 +5,29 @@ import { classify, HipicoBotStore } from './hipico-bot.service.js';
 
 const router = Router();
 
+// Contract emitted by tools/hipico-whatsapp-bridge. Keep this endpoint isolated
+// from the Meta Cloud API webhook: this is a normal WhatsApp Web group session.
 const bridgeEventSchema = z.object({
-  providerMessageId: z.string().min(1).max(320),
+  bridgeVersion: z.string().min(1).max(40),
+  externalMessageId: z.string().min(1).max(320),
   groupId: z.string().min(3).max(220),
-  groupName: z.string().trim().min(1).max(220).optional(),
-  sender: z.string().min(1).max(220),
-  body: z.string().max(4000).default(''),
-  messageType: z.string().min(1).max(80).default('chat'),
-  sentAt: z.string().datetime({ offset: true }).optional()
+  groupName: z.string().trim().min(1).max(220),
+  channelRole: z.enum(['source', 'lab']),
+  shadowMode: z.boolean(),
+  senderId: z.string().min(1).max(220),
+  senderLabel: z.string().max(220).default(''),
+  fromMe: z.boolean().default(false),
+  timestamp: z.string().datetime({ offset: true }),
+  type: z.string().min(1).max(80).default('chat'),
+  text: z.string().max(4000).default(''),
+  hasMedia: z.boolean().default(false),
+  quotedExternalMessageId: z.string().max(320).nullable().default(null)
 });
 
 function bridgeTokenValid(value: string | undefined) {
-  const expected = String(process.env.HIPICO_BRIDGE_TOKEN || '');
+  // HIPICO_GROUP_BRIDGE_TOKEN is the canonical name used by the desktop bridge.
+  // HIPICO_BRIDGE_TOKEN is accepted as a short-lived compatibility alias.
+  const expected = String(process.env.HIPICO_GROUP_BRIDGE_TOKEN || process.env.HIPICO_BRIDGE_TOKEN || '');
   if (!expected || !value) return false;
   try {
     return crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(value));
@@ -33,11 +44,11 @@ router.use((_req, res, next) => {
 /**
  * Shadow-only ingestion endpoint for the normal WhatsApp group Bridge.
  *
- * This route is deliberately separate from Meta Cloud API. The local Bridge
- * links a dedicated WhatsApp/WhatsApp Business app account through WhatsApp
- * Web, filters one configured group, then forwards normalized events here.
- * The server classifies and deduplicates them but never sends a group reply or
- * applies a monetary/race mutation from this endpoint.
+ * The linked WhatsApp account filters a configured group and forwards only a
+ * normalized event. This endpoint may classify/deduplicate/persist, but it
+ * never sends a group reply and never mutates race state, balances, results or
+ * settlements. Returning actions:[] also prevents the desktop Bridge from
+ * publishing anything during this first laboratory gate.
  */
 router.post('/bridge/events', async (req, res) => {
   if (!bridgeTokenValid(req.header('x-hipico-bridge-token') || undefined)) {
@@ -50,29 +61,42 @@ router.post('/bridge/events', async (req, res) => {
   }
 
   const input = parsed.data;
-  const providerMessageId = `waweb:${input.providerMessageId}`;
-  const result = classify(input.body);
-  const sender = input.sender.replace(/@.*$/, '').slice(0, 220);
+  const providerMessageId = `waweb:${input.externalMessageId}`;
+  const result = classify(input.text);
+  const sender = input.senderId.replace(/@.*$/, '').slice(0, 220);
 
   const event = await HipicoBotStore.saveEvent({
     providerMessageId,
     phoneNumberId: `group:${input.groupId}`,
     sender,
-    messageType: input.messageType,
-    body: input.body,
+    messageType: input.type,
+    body: input.text,
     ...result,
     status: 'classified',
     payload: {
       source: 'whatsapp-web-bridge',
+      bridgeVersion: input.bridgeVersion,
       groupId: input.groupId,
-      groupName: input.groupName || null,
-      senderRaw: input.sender,
-      sentAt: input.sentAt || null
+      groupName: input.groupName,
+      channelRole: input.channelRole,
+      bridgeShadowMode: input.shadowMode,
+      senderRaw: input.senderId,
+      senderLabel: input.senderLabel,
+      fromMe: input.fromMe,
+      sentAt: input.timestamp,
+      hasMedia: input.hasMedia,
+      quotedExternalMessageId: input.quotedExternalMessageId
     }
   });
 
   if (event.inserted === false) {
-    return res.status(200).json({ ok: true, duplicate: true, mode: 'shadow' });
+    return res.status(200).json({
+      ok: true,
+      duplicate: true,
+      mode: 'shadow',
+      classification: result.intent,
+      actions: []
+    });
   }
 
   const outbox = await HipicoBotStore.queue({
@@ -89,6 +113,8 @@ router.post('/bridge/events', async (req, res) => {
     ok: true,
     duplicate: false,
     mode: 'shadow',
+    classification: result.intent,
+    actions: [],
     data: {
       eventId: event.id,
       outboxId: outbox.id,
