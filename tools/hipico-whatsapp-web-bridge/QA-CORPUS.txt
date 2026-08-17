@@ -1,21 +1,61 @@
+# CONTROL HIPICO · CORPUS SHADOW REAL
+# Enviar cada bloque como UN mensaje. Montos solo de laboratorio.
+
+[01 Adel]
 Juega PP del 3 con 20
-Consigue 1/2 del 5 con 15
+
+[02 Segundo participante]
+Consigue PP del 3 con 15
+
+[03 Segundo participante]
 J
+
+[04 Adel]
 Debe confirmar
+
+[05 Adel]
 Anula esa jugada
+
+[06 Adel]
+Consigue 1/2 del 5 con 15
+
+[07 Adel]
+Cierra carrera 4
+
+[08 Segundo participante]
+Juega 1N del 6 con 10
+
+[09 Adel]
+Llegada 2.1.6.4
+
+[10 Adel]
+Pizarra: 2 1 6 4
+
+[11 Adel · UN SOLO MENSAJE MULTILINEA]
 TERCIOS
 Juega PP del 3 con 20
-Cierra carrera 4
-No va mas la 4
+
+[12A Adel]
 Juega 1N del 6 con 10
-Llegada 2.1.6.4
-Pizarra: 2 1 6 4
+
+[12B Segundo participante]
+Consigue 1N del 6 con 10
+
+[13 Adel · UN SOLO MENSAJE MULTILINEA]
 TERCIOS
 Juega Adel Bs 20
 Consigue Luis Bs 20
+
+[14 Adel · UN SOLO MENSAJE MULTILINEA]
 TERCIO DISPONIBLE
 Adel 100
 Luis -50
+
+[15 Segundo participante]
 Polla 5 con 20
+
+[16 Adel]
 Cierre de jornada
+
+[17 Adel]
 Manana vamos temprano
