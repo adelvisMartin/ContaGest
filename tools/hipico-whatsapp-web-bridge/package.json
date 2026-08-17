@@ -1,15 +1,16 @@
 {
   "name": "control-hipico-whatsapp-web-bridge",
   "private": true,
-  "version": "1.2.0",
+  "version": "1.3.0",
   "type": "module",
   "engines": {
     "node": ">=20"
   },
   "scripts": {
-    "check": "node --check src/index.mjs && node --check src/selftest.mjs",
+    "check": "node --check src/live-v130.mjs && node --check src/history-sync.mjs && node --check src/selftest.mjs",
     "selftest": "node src/selftest.mjs",
-    "start": "node --env-file=.env src/index.mjs"
+    "history": "node --env-file=.env src/history-sync.mjs",
+    "start": "node --env-file=.env src/live-v130.mjs"
   },
   "dependencies": {
     "playwright-core": "1.62.1"
