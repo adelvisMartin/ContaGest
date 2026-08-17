@@ -5,12 +5,16 @@ import { OPERATIONAL_INTENTS, type IntentResult } from './hipico-operational-cla
 type CanonicalChannel={id:string;ownerId:string;groupKey:string;label:string};
 type CanonicalPersistInput={
   groupName:string;
+  channelKey?:string;
+  labChannelKey?:string;
+  channelRole:'source'|'lab';
   providerMessageId:string;
   sender:string;
   senderLabel:string;
   fromMe:boolean;
   sentAt:string;
   messageType:string;
+  mediaKind?:string;
   body:string;
   quotedExternalMessageId:string|null;
   bridgeVersion:string;
@@ -32,8 +36,8 @@ export function groupKeyFromName(value:string){
     .slice(0,120);
 }
 
-async function resolveChannel(groupName:string):Promise<CanonicalChannel>{
-  const groupKey=groupKeyFromName(groupName);
+async function resolveChannel(groupName:string, explicitKey?:string):Promise<CanonicalChannel>{
+  const groupKey=String(explicitKey||groupKeyFromName(groupName)).trim();
   if(!groupKey)throw new Error('HIPICO_CANONICAL_GROUP_KEY_EMPTY');
   const rows=await prisma.$queryRaw<Array<{id:string;ownerId:string;groupKey:string;label:string}>>`
     SELECT id::text AS "id", owner_id::text AS "ownerId", group_key AS "groupKey", label
@@ -77,24 +81,22 @@ function amountOf(result:IntentResult){
 }
 
 /**
- * Persists observation-only evidence into the canonical Hípico schema that
- * already exists in PostgreSQL. This function deliberately touches only:
- *   - hipico_messages
- *   - hipico_operation_events
- *   - hipico_shadow_evaluations
- * It does not write ledger, live race state, operational outbox or balances.
+ * Canonical observation store. Source-group events and lab-group events both
+ * stay shadow-only. This function never writes hipico_ledger_entries or the
+ * operational hipico_outbox.
  */
 export async function persistCanonicalShadow(input:CanonicalPersistInput){
-  const channel=await resolveChannel(input.groupName);
+  const channel=await resolveChannel(input.groupName,input.channelKey);
   const normalized=input.result.entities||{};
-  const fingerprint=sha256([
-    channel.groupKey,input.providerMessageId,input.sender,input.sentAt,input.body
-  ].join('|'));
+  const fingerprint=sha256([channel.groupKey,input.providerMessageId,input.sender,input.sentAt,input.body].join('|'));
   const metadata={
     source:'official_web_playwright',
     mode:'shadow_only',
     bridgeVersion:input.bridgeVersion,
     transportEventId:input.transportEventId,
+    channelRole:input.channelRole,
+    labChannelKey:input.labChannelKey||null,
+    mediaKind:input.mediaKind||'none',
     risk:input.result.risk,
     reason:input.result.reason,
     fromMe:input.fromMe,
@@ -133,12 +135,11 @@ export async function persistCanonicalShadow(input:CanonicalPersistInput){
   let operationEventId:string|null=null;
   if(OPERATIONAL_INTENTS.has(input.result.intent)){
     const opType=eventType(input.result.intent);
-    // Stable per-message event key: a future classifier correction updates the
-    // same pending shadow event instead of creating a second operation.
     const eventKey=`shadow:${input.providerMessageId}`;
     const opPayload={
       shadow:true,
       source:'whatsapp-web-bridge',
+      channelRole:input.channelRole,
       intent:input.result.intent,
       risk:input.result.risk,
       reason:input.result.reason,
@@ -170,8 +171,11 @@ export async function persistCanonicalShadow(input:CanonicalPersistInput){
     operationEventId=opRows[0]?.id||null;
   }
 
+  const labGroupKey=input.labChannelKey||channel.groupKey;
+  const scenarioKey=input.channelRole==='source'?'official-source-to-lab-v1':'real-operativa-shadow-v1';
   const prediction={
     shadow:true,
+    channelRole:input.channelRole,
     intent:input.result.intent,
     risk:input.result.risk,
     confidence:input.result.confidence,
@@ -184,9 +188,9 @@ export async function persistCanonicalShadow(input:CanonicalPersistInput){
       (owner_id,source_group_key,lab_group_key,source_message_id,source_external_message_id,scenario_key,
        prediction_type,predicted_payload,match_status,notes)
     VALUES
-      (${channel.ownerId}::uuid,${channel.groupKey},${channel.groupKey},${messageId}::uuid,${input.providerMessageId},
-       'real-operativa-shadow-v1',${PREDICTION_TYPE},${JSON.stringify(prediction)}::jsonb,'pending',
-       'Prediccion generada por el Bridge de laboratorio; sin efecto operativo.')
+      (${channel.ownerId}::uuid,${channel.groupKey},${labGroupKey},${messageId}::uuid,${input.providerMessageId},
+       ${scenarioKey},${PREDICTION_TYPE},${JSON.stringify(prediction)}::jsonb,'pending',
+       ${input.channelRole==='source'?'Prediccion del grupo oficial para validacion en laboratorio; sin efecto operativo.':'Prediccion generada en laboratorio; sin efecto operativo.'})
     ON CONFLICT (owner_id,source_group_key,source_external_message_id,prediction_type)
     DO UPDATE SET
       source_message_id=EXCLUDED.source_message_id,
@@ -202,6 +206,8 @@ export async function persistCanonicalShadow(input:CanonicalPersistInput){
   return{
     channelId:channel.id,
     groupKey:channel.groupKey,
+    channelRole:input.channelRole,
+    labGroupKey,
     messageId,
     operationEventId,
     shadowEvaluationId:shadowRows[0]?.id||null
