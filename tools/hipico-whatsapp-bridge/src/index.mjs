@@ -5,7 +5,7 @@ import qrcode from 'qrcode-terminal';
 import pkg from 'whatsapp-web.js';
 
 const { Client, LocalAuth } = pkg;
-const BRIDGE_VERSION = '0.2.0';
+const BRIDGE_VERSION = '0.2.1';
 const DATA_DIR = path.resolve(process.cwd(), 'data');
 const SPOOL_DIR = path.join(DATA_DIR, 'spool');
 
@@ -31,6 +31,10 @@ const LAB_GROUP_ID_ENV = String(process.env.HIPICO_LAB_GROUP_ID || '').trim();
 const LAB_GROUP_NAME_ENV = String(process.env.HIPICO_LAB_GROUP_NAME || SOURCE_GROUP_NAME_ENV || '').trim();
 const SHADOW_MODE = boolEnv('HIPICO_SHADOW_MODE', false);
 const INCLUDE_OWN_MESSAGES = boolEnv('HIPICO_INCLUDE_OWN_MESSAGES', true);
+// Independent local kill switch. Phase 1 MUST keep this false even if a future
+// backend response accidentally includes a reply action.
+const ALLOW_SEND = boolEnv('HIPICO_ALLOW_SEND', false);
+const PUPPETEER_NO_SANDBOX = boolEnv('HIPICO_PUPPETEER_NO_SANDBOX', false);
 
 await fs.mkdir(SPOOL_DIR, { recursive: true });
 
@@ -168,14 +172,23 @@ async function deliverSpoolFile(client, source, lab, file) {
 
   try {
     const result = await postEvent(event);
-    const responseTarget = responseTargetFor(event, source, lab);
-    for (const action of result.actions || []) {
-      if (action?.type !== 'reply' || !action?.text) continue;
-      const text = SHADOW_MODE && event.channelRole === 'source'
-        ? formatShadowReply(action.text, source)
-        : String(action.text);
-      await client.sendMessage(responseTarget.id, text);
+    const actions = Array.isArray(result.actions) ? result.actions : [];
+
+    if (actions.length && !ALLOW_SEND) {
+      console.log(`[BLOCKED] ${actions.length} acción(es) de salida retenidas por HIPICO_ALLOW_SEND=false`);
     }
+
+    if (ALLOW_SEND) {
+      const responseTarget = responseTargetFor(event, source, lab);
+      for (const action of actions) {
+        if (action?.type !== 'reply' || !action?.text) continue;
+        const text = SHADOW_MODE && event.channelRole === 'source'
+          ? formatShadowReply(action.text, source)
+          : String(action.text);
+        await client.sendMessage(responseTarget.id, text);
+      }
+    }
+
     await fs.unlink(file);
     console.log(`[OK] ${event.channelRole}:${event.externalMessageId} -> ${result.classification || 'received'}${result.duplicate ? ' (duplicate)' : ''}`);
   } catch (error) {
@@ -188,11 +201,15 @@ async function flushSpool(client, source, lab) {
   for (const name of entries) await deliverSpoolFile(client, source, lab, path.join(SPOOL_DIR, name));
 }
 
+const puppeteerArgs = PUPPETEER_NO_SANDBOX
+  ? ['--no-sandbox', '--disable-setuid-sandbox']
+  : [];
+
 const client = new Client({
   authStrategy: new LocalAuth({ clientId: 'hipico-control-group-bridge', dataPath: path.join(DATA_DIR, 'session') }),
   puppeteer: {
     headless: true,
-    args: ['--no-sandbox', '--disable-setuid-sandbox']
+    args: puppeteerArgs
   }
 });
 
@@ -201,7 +218,7 @@ let lab = null;
 let flushing = false;
 
 client.on('qr', (qr) => {
-  console.log('\nEscanea este QR desde WhatsApp Business > Dispositivos vinculados:\n');
+  console.log('\nEscanea este QR desde WhatsApp/WhatsApp Business > Dispositivos vinculados:\n');
   qrcode.generate(qr, { small: true });
 });
 
@@ -227,7 +244,8 @@ client.on('ready', async () => {
 
   console.log(`Fuente: ${source.name} :: ${source.id}`);
   console.log(`Laboratorio: ${lab.name} :: ${lab.id}`);
-  console.log(`Modo sombra: ${SHADOW_MODE ? 'ACTIVO — nunca responde en el grupo fuente' : 'INACTIVO'}`);
+  console.log(`Ingesta backend: SHADOW-ONLY`);
+  console.log(`Envío desde Bridge: ${ALLOW_SEND ? 'HABILITADO' : 'BLOQUEADO'}`);
 
   await flushSpool(client, source, lab);
   setInterval(() => {

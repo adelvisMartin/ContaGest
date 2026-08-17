@@ -24,6 +24,10 @@ backend/.env
 backend/.env.*
 !backend/.env.example
 
+# Control Hipico WhatsApp Web Bridge local session/spool
+# Contains linked-device session material and message retry data.
+tools/hipico-whatsapp-bridge/data/
+
 # generated external agent-skill cache; source pins live in agent-skills.lock.json
 .agents/vendor/
 
