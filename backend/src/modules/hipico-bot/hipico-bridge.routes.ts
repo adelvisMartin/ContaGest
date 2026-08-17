@@ -44,8 +44,9 @@ router.use((_req, res, next) => {
 /**
  * Shadow-only ingestion endpoint for the normal WhatsApp group Bridge.
  *
- * It may classify, deduplicate and persist, but it NEVER sends a group reply
- * and NEVER mutates race state, balances, results, bets or settlements.
+ * It may classify, extract structured evidence, deduplicate and persist, but
+ * it NEVER sends a group reply and NEVER mutates race state, balances,
+ * results, bets or settlements.
  */
 router.post('/bridge/events', async (req, res) => {
   if (!bridgeTokenValid(req.header('x-hipico-bridge-token') || undefined)) {
@@ -82,7 +83,8 @@ router.post('/bridge/events', async (req, res) => {
       fromMe: input.fromMe,
       sentAt: input.timestamp,
       hasMedia: input.hasMedia,
-      quotedExternalMessageId: input.quotedExternalMessageId
+      quotedExternalMessageId: input.quotedExternalMessageId,
+      operational: result.entities || null
     }
   });
 
@@ -117,6 +119,7 @@ router.post('/bridge/events', async (req, res) => {
       outboxId: outbox.id,
       intent: result.intent,
       risk: result.risk,
+      entities: result.entities || null,
       autoEligible: false
     }
   });
