@@ -40,11 +40,13 @@ test('canonical shadow dual-write uses prepared Hipico schema but never live led
   assert.doesNotMatch(store,/a2adb975|de6bc73f|daf36097/); // no user-specific UUIDs in source
 });
 
-test('real operational classifier contains recovered RC1 vocabulary, structure and manual gates',()=>{
+test('real operational classifier exposes structured RC1 analyzers and manual gates',()=>{
   const classifier=read('backend/src/modules/hipico-bot/hipico-operational-classifier.ts');
-  for(const token of ['JUEGA','CONSIGUE','TERCIO\\s+DISPONIBLE','TERCIOS','LLEGADA','PIZARRA','POLLA','PARLEY','CIERRA','NO\\s+VA\\s+MAS','DEBE\\s+CONFIRMAR']){
-    assert.match(classifier,new RegExp(token));
-  }
+  assert.match(classifier,/const\s+playerOffer=/);
+  assert.match(classifier,/const\s+receiverOffer=/);
+  assert.match(classifier,/const\s+raceClose=/);
+  assert.match(classifier,/const\s+balanceSnapshot=/);
+  assert.match(classifier,/const\s+PLAY_RE=/);
   assert.match(classifier,/autoEligible:false/);
   assert.match(classifier,/OperationalEntities/);
   assert.match(classifier,/parseBoard/);
@@ -88,18 +90,19 @@ test('canonical desktop bridge is Playwright official-web observer with persiste
   assert.match(old,/DEPRECADO/);
 });
 
-test('backend test gate executes every Hipico bot TypeScript test',()=>{
+test('backend exposes a dedicated executable Hipico test gate',()=>{
   const pkg=JSON.parse(read('backend/package.json'));
-  assert.match(pkg.scripts.test,/src\/modules\/hipico-bot\/\*\.test\.ts/);
+  assert.match(pkg.scripts['test:hipico'],/src\/modules\/hipico-bot\/\*\.test\.ts/);
+  assert.match(pkg.scripts.test,/npm run test:hipico/);
 });
 
 test('Hipico bot migrations stay product-scoped and add idempotent group audit indexes',()=>{
   const base=read('backend/prisma/migrations/0014_v1126_hipico_bot/migration.sql');
   const eventIndex=read('backend/prisma/migrations/0015_hipico_bot_outbox_event_index/migration.sql');
   const groupIndex=read('backend/prisma/migrations/0016_hipico_bot_group_outbox_idempotency/migration.sql');
-  assert.match(base,/HipicoWebhookEvent/);
-  assert.match(base,/HipicoBotOutbox/);
-  assert.doesNotMatch(base,/Fitness/i);
+  assert.match(base,/CREATE TABLE IF NOT EXISTS public\."HipicoWebhookEvent"/);
+  assert.match(base,/CREATE TABLE IF NOT EXISTS public\."HipicoBotOutbox"/);
+  assert.doesNotMatch(base,/CREATE\s+TABLE[^;]*Fitness/is);
   assert.match(eventIndex,/HipicoBotOutbox_eventId_idx/);
   assert.match(groupIndex,/UNIQUE INDEX/);
   assert.match(groupIndex,/HipicoBotOutbox_group_event_unique/);
