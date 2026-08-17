@@ -7,24 +7,36 @@ $envExamplePath = Join-Path $bridgeDir '.env.example'
 
 function Require-Command([string]$Name, [string]$InstallHint) {
   if (-not (Get-Command $Name -ErrorAction SilentlyContinue)) {
-    throw "No se encontró '$Name'. $InstallHint"
+    throw "No se encontro '$Name'. $InstallHint"
   }
+}
+
+function New-BridgeToken {
+  $bytes = New-Object byte[] 32
+  $rng = [System.Security.Cryptography.RandomNumberGenerator]::Create()
+  try {
+    $rng.GetBytes($bytes)
+  }
+  finally {
+    $rng.Dispose()
+  }
+  return ([System.BitConverter]::ToString($bytes)).Replace('-', '').ToLowerInvariant()
 }
 
 Write-Host ''
 Write-Host '==============================================='
-Write-Host ' Control Hípico · WhatsApp Group Bridge'
-Write-Host ' Configuración automática para Windows'
+Write-Host ' Control Hipico - WhatsApp Group Bridge'
+Write-Host ' Configuracion automatica para Windows'
 Write-Host '==============================================='
 Write-Host ''
 
 Require-Command 'git' 'Instala Git para Windows y vuelve a ejecutar este archivo.'
-Require-Command 'node' 'Instala Node.js 22 LTS o superior y vuelve a ejecutar este archivo.'
+Require-Command 'node' 'Instala Node.js 22 o superior y vuelve a ejecutar este archivo.'
 Require-Command 'npm' 'npm debe instalarse junto con Node.js.'
 
 $nodeMajor = [int](node -p "process.versions.node.split('.')[0]")
 if ($nodeMajor -lt 22) {
-  throw "Control Hípico requiere Node.js 22 o superior. Versión detectada: $(node -v)"
+  throw "Control Hipico requiere Node.js 22 o superior. Version detectada: $(node -v)"
 }
 
 Write-Host '[1/5] Actualizando el repositorio...'
@@ -32,7 +44,7 @@ Push-Location $repoRoot
 try {
   git pull --ff-only
   if ($LASTEXITCODE -ne 0) {
-    throw 'git pull falló. Revisa si tienes cambios locales o si GitHub pide autenticación.'
+    throw 'git pull fallo. Revisa si tienes cambios locales o si GitHub pide autenticacion.'
   }
 }
 finally {
@@ -44,7 +56,7 @@ Push-Location $bridgeDir
 try {
   npm install
   if ($LASTEXITCODE -ne 0) {
-    throw 'npm install falló.'
+    throw 'npm install fallo.'
   }
 }
 finally {
@@ -71,7 +83,7 @@ function Set-EnvValue([string]$Text, [string]$Name, [string]$Value) {
 }
 
 $content = Set-EnvValue $content 'HIPICO_INGEST_URL' 'https://conta-gest-frontend.vercel.app/api/v1/hipico-bot/bridge/events'
-$content = Set-EnvValue $content 'HIPICO_GROUP_NAME' 'Control hípico lab'
+$content = Set-EnvValue $content 'HIPICO_GROUP_NAME' 'Control hipico lab'
 $content = Set-EnvValue $content 'HIPICO_SHADOW_MODE' 'false'
 $content = Set-EnvValue $content 'HIPICO_ALLOW_SEND' 'false'
 $content = Set-EnvValue $content 'HIPICO_INCLUDE_OWN_MESSAGES' 'true'
@@ -83,42 +95,33 @@ if ($tokenMatch.Success) {
 }
 
 if ([string]::IsNullOrWhiteSpace($currentToken) -or $currentToken -eq 'CAMBIA_ESTE_SECRETO_LARGO') {
+  $currentToken = New-BridgeToken
+  $content = Set-EnvValue $content 'HIPICO_GROUP_BRIDGE_TOKEN' $currentToken
+  try { Set-Clipboard -Value $currentToken } catch {}
   Write-Host ''
-  Write-Host 'Falta únicamente el secreto que ya debes tener configurado en Vercel.'
-  Write-Host 'Pégalo aquí. No se mostrará en pantalla y solo se guardará en este .env local.'
-  $secureToken = Read-Host 'HIPICO_GROUP_BRIDGE_TOKEN' -AsSecureString
-  $ptr = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($secureToken)
-  try {
-    $plainToken = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($ptr)
-  }
-  finally {
-    [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($ptr)
-  }
-  if ([string]::IsNullOrWhiteSpace($plainToken) -or $plainToken.Length -lt 24) {
-    throw 'El secreto está vacío o es demasiado corto. Usa el mismo secreto largo configurado en Vercel.'
-  }
-  $content = Set-EnvValue $content 'HIPICO_GROUP_BRIDGE_TOKEN' $plainToken
+  Write-Host 'Se genero HIPICO_GROUP_BRIDGE_TOKEN y se copio al portapapeles.'
+  Write-Host 'Configuralo en Vercel Production antes de iniciar el Bridge.'
 }
 
 [System.IO.File]::WriteAllText($envPath, $content, [System.Text.UTF8Encoding]::new($false))
 
-Write-Host '[4/5] Configuración lista.'
-Write-Host '  Grupo: Control hípico lab'
-Write-Host '  Envíos al grupo: DESACTIVADOS'
+Write-Host '[4/5] Configuracion lista.'
+Write-Host '  Grupo: Control hipico lab'
+Write-Host '  Envios al grupo: DESACTIVADOS'
 Write-Host '  Modo backend: SHADOW'
 Write-Host ''
 Write-Host '[5/5] Iniciando WhatsApp Bridge...'
 Write-Host ''
 Write-Host 'Cuando aparezca el QR:'
 Write-Host 'WhatsApp/WhatsApp Business > Dispositivos vinculados > Vincular dispositivo.'
-Write-Host 'Escanéalo con el segundo número que pertenece al grupo de laboratorio.'
+Write-Host 'Escanealo con el segundo numero que pertenece al grupo de laboratorio.'
 Write-Host ''
 
 Push-Location $bridgeDir
 try {
   npm start
   if ($LASTEXITCODE -ne 0) {
-    throw 'El Bridge terminó con error.'
+    throw 'El Bridge termino con error.'
   }
 }
 finally {
