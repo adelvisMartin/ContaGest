@@ -5,6 +5,7 @@ import { env, isProd } from './config/env.js';
 import apiRoutes from './modules/index.js';
 import authRoutes from './modules/auth/auth.routes.js';
 import hipicoWebhookRoutes from './modules/hipico-bot/hipico-webhook.routes.js';
+import hipicoBridgeRoutes from './modules/hipico-bot/hipico-bridge.routes.js';
 import hipicoOperatorRoutes from './modules/hipico-bot/hipico-operator.routes.js';
 import { requestContext } from './shared/middleware/context.js';
 import { errorHandler, notFound } from './shared/middleware/error.js';
@@ -70,10 +71,13 @@ export function createApp() {
   app.use(morgan(isProd ? 'combined' : 'dev'));
 
   // Control Hípico is an independent product that temporarily shares this API
-  // process. Its Meta webhook cannot use browser-cookie CSRF: authenticity is
-  // enforced by x-hub-signature-256. Operator mutations require a separate
-  // HIPICO_BOT_OPERATOR_TOKEN and receive the auth-rate ceiling as well.
+  // process. Meta webhooks authenticate with x-hub-signature-256. The normal
+  // WhatsApp group laboratory uses a separate persistent WhatsApp Web Bridge,
+  // authenticated with HIPICO_BRIDGE_TOKEN and forced to shadow-only ingestion.
+  // Operator mutations keep their own HIPICO_BOT_OPERATOR_TOKEN. All three
+  // routes sit before browser-cookie CSRF because none uses browser sessions.
   app.use('/api/v1/hipico-bot', hipicoWebhookRoutes);
+  app.use('/api/v1/hipico-bot', authRateLimit, hipicoBridgeRoutes);
   app.use('/api/v1/hipico-bot', authRateLimit, hipicoOperatorRoutes);
 
   app.use(csrfProtection);
