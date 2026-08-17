@@ -24,20 +24,43 @@ test('group bridge uses operational classifier, persistent stores and stays shad
   assert.doesNotMatch(transport,/memoryEvents|memoryOutbox/);
 });
 
-test('canonical shadow dual-write uses prepared Hipico schema but never live ledger/outbox',()=>{
+test('official source creates only a lab simulation and never an outbound action',()=>{
+  const route=read('backend/src/modules/hipico-bot/hipico-bridge.routes.ts');
+  assert.match(route,/channelRole:\s*z\.enum\(\['source',\s*'lab'\]\)/);
+  assert.match(route,/if \(input\.channelRole !== 'source'\) return null/);
+  assert.match(route,/labSimulation:\s*buildLabSimulation/);
+  assert.match(route,/SOLO LABORATORIO/);
+  assert.match(route,/actions:\s*\[\]/);
+  assert.doesNotMatch(route,/sendCloudText|sendMessage/);
+});
+
+test('canonical shadow may provision only the configured official source from existing lab owner',()=>{
   const store=read('backend/src/modules/hipico-bot/hipico-canonical-shadow.store.ts');
-  assert.match(store,/public\.hipico_bot_channels/);
-  assert.match(store,/public\.hipico_messages/);
-  assert.match(store,/public\.hipico_operation_events/);
-  assert.match(store,/public\.hipico_shadow_evaluations/);
-  assert.match(store,/channel_type='web_bridge'/);
-  assert.match(store,/event_state/);
-  assert.match(store,/match_status/);
-  assert.match(store,/'pending'/);
+  assert.match(store,/OFFICIAL_SOURCE_CHANNEL_KEY/);
+  assert.match(store,/club-hipico-triple-crown-official/);
+  assert.match(store,/DEFAULT_LAB_CHANNEL_KEY/);
+  assert.match(store,/control-hipico-lab/);
+  assert.match(store,/HIPICO_SOURCE_CHANNEL_KEY_NOT_ALLOWED/);
+  assert.match(store,/mode:'source_read_only'/);
+  assert.match(store,/auto_send:false/);
+  assert.match(store,/mirror_lab_channel_key/);
+  assert.match(store,/ON CONFLICT \(owner_id,group_key\)/);
   assert.doesNotMatch(store,/public\.hipico_ledger_entries/);
   assert.doesNotMatch(store,/public\.hipico_outbox/);
   assert.doesNotMatch(store,/sendCloudText|sendMessage/);
-  assert.doesNotMatch(store,/a2adb975|de6bc73f|daf36097/); // no user-specific UUIDs in source
+  assert.doesNotMatch(store,/a2adb975|de6bc73f|daf36097/);
+});
+
+test('canonical shadow dual-write keeps source operations pending and evaluations auditable',()=>{
+  const store=read('backend/src/modules/hipico-bot/hipico-canonical-shadow.store.ts');
+  assert.match(store,/public\.hipico_messages/);
+  assert.match(store,/public\.hipico_operation_events/);
+  assert.match(store,/public\.hipico_shadow_evaluations/);
+  assert.match(store,/event_state/);
+  assert.match(store,/match_status/);
+  assert.match(store,/'pending'/);
+  assert.match(store,/official-source-to-lab-v1/);
+  assert.match(store,/operational_classification/);
 });
 
 test('real operational classifier exposes structured RC1 analyzers and manual gates',()=>{
@@ -73,21 +96,39 @@ test('operator exposes read-only shadow projection using RC1-compatible matching
   assert.doesNotMatch(projection,/INSERT|UPDATE|DELETE|sendCloudText|sendMessage/);
 });
 
-test('canonical desktop bridge is Playwright official-web observer with persistent seen IDs',()=>{
+test('Bridge v1.2 observes official source and has a fail-closed LAB-only send path',()=>{
   const pkg=JSON.parse(read('tools/hipico-whatsapp-web-bridge/package.json'));
-  assert.equal(pkg.version,'1.1.0');
+  assert.equal(pkg.version,'1.2.0');
   assert.equal(pkg.dependencies['playwright-core'],'1.62.1');
   assert.equal(pkg.dependencies['whatsapp-web.js'],undefined);
   const runtime=read('tools/hipico-whatsapp-web-bridge/src/index.mjs');
   assert.match(runtime,/https:\/\/web\.whatsapp\.com\//);
   assert.match(runtime,/launchPersistentContext/);
-  assert.match(runtime,/HIPICO_ALLOW_SEND debe permanecer false/);
-  assert.match(runtime,/seen-message-ids\.json/);
-  assert.match(runtime,/baselineCompletedThisRun/);
-  assert.match(runtime,/SPOOL_DIR/);
-  assert.match(runtime,/rawMeta/);
+  assert.match(runtime,/HIPICO_SOURCE_GROUP_MATCH/);
+  assert.match(runtime,/HIPICO_SOURCE_CHANNEL_KEY/);
+  assert.match(runtime,/club-hipico-triple-crown-official/);
+  assert.match(runtime,/HIPICO_LAB_GROUP_NAME/);
+  assert.match(runtime,/HIPICO_LAB_SEND_ENABLED/);
+  assert.match(runtime,/Destino lab no autorizado/);
+  assert.match(runtime,/Guard de destino lab fallo/);
+  assert.match(runtime,/Envio al grupo fuente: IMPOSIBLE POR DISENO/);
+  assert.match(runtime,/seen-source-message-ids\.json/);
+  assert.match(runtime,/spool-events/);
+  assert.match(runtime,/spool-lab-mirror/);
+  assert.match(runtime,/openViaSearch/);
+  assert.match(runtime,/mediaKind/);
+  assert.doesNotMatch(runtime,/HIPICO_ALLOW_SEND/);
   const old=read('tools/hipico-whatsapp-bridge/README.md');
   assert.match(old,/DEPRECADO/);
+});
+
+test('Bridge environment names source and lab separately and lab send defaults off',()=>{
+  const env=read('tools/hipico-whatsapp-web-bridge/.env.example');
+  assert.match(env,/HIPICO_SOURCE_GROUP_MATCH=CLUB HIPICO TRIPLE CROWN/);
+  assert.match(env,/HIPICO_SOURCE_CHANNEL_KEY=club-hipico-triple-crown-official/);
+  assert.match(env,/HIPICO_LAB_GROUP_NAME=Control hípico lab/);
+  assert.match(env,/HIPICO_LAB_CHANNEL_KEY=control-hipico-lab/);
+  assert.match(env,/HIPICO_LAB_SEND_ENABLED=false/);
 });
 
 test('backend exposes a dedicated executable Hipico test gate',()=>{

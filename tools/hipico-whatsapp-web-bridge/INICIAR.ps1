@@ -7,7 +7,10 @@ $protectedTokenPath = Join-Path $appDataDir 'bridge-token.dpapi'
 $vercelEnvUrl = 'https://vercel.com/adelvismartin-6485s-projects/conta-gest-frontend/settings/environment-variables'
 $vercelDeployUrl = 'https://vercel.com/adelvismartin-6485s-projects/conta-gest-frontend/deployments'
 $ingestUrl = 'https://conta-gest-frontend.vercel.app/api/v1/hipico-bot/bridge/events'
-$groupName = 'Control h' + [char]0x00ED + 'pico lab'
+$sourceMatch = 'CLUB HIPICO TRIPLE CROWN'
+$sourceKey = 'club-hipico-triple-crown-official'
+$labGroupName = 'Control h' + [char]0x00ED + 'pico lab'
+$labKey = 'control-hipico-lab'
 
 function Fail([string]$Message) {
   Write-Host ''
@@ -66,11 +69,13 @@ function Validate-Token([string]$Token) {
 
 Write-Host ''
 Write-Host '========================================================'
-Write-Host ' CONTROL HIPICO - WHATSAPP WEB BRIDGE v1.0.0'
-Write-Host ' Chrome oficial + Playwright 1.62.1'
+Write-Host ' CONTROL HIPICO - WHATSAPP WEB BRIDGE v1.2.0'
+Write-Host ' OFICIAL READ-ONLY -> LAB SHADOW'
+Write-Host ' Chrome/Edge oficial + Playwright 1.62.1'
 Write-Host '========================================================'
 Write-Host ''
-Write-Host 'No depende de ninguna carpeta o version anterior.'
+Write-Host 'Regla dura: este Bridge NUNCA envia al grupo oficial.' -ForegroundColor Green
+Write-Host 'Solo observa TRIPLE CROWN y, opcionalmente, refleja simulaciones en LAB.' -ForegroundColor Green
 Write-Host ''
 
 if(-not (Get-Command node -ErrorAction SilentlyContinue)){Fail 'No encuentro Node.js.'}
@@ -100,10 +105,16 @@ if([string]::IsNullOrWhiteSpace($token)){
 
 $content = Set-EnvValue $content 'HIPICO_INGEST_URL' $ingestUrl
 $content = Set-EnvValue $content 'HIPICO_GROUP_BRIDGE_TOKEN' $token
-$content = Set-EnvValue $content 'HIPICO_GROUP_NAME' $groupName
-$content = Set-EnvValue $content 'HIPICO_ALLOW_SEND' 'false'
+$content = Set-EnvValue $content 'HIPICO_SOURCE_GROUP_MATCH' $sourceMatch
+$content = Set-EnvValue $content 'HIPICO_SOURCE_CHANNEL_KEY' $sourceKey
+$content = Set-EnvValue $content 'HIPICO_LAB_GROUP_NAME' $labGroupName
+$content = Set-EnvValue $content 'HIPICO_LAB_CHANNEL_KEY' $labKey
 $content = Set-EnvValue $content 'HIPICO_POLL_MS' '1000'
 $content = Set-EnvValue $content 'HIPICO_BACKEND_TIMEOUT_MS' '15000'
+
+$existingSend = [Regex]::Match($content,'(?m)^HIPICO_LAB_SEND_ENABLED=(.*)$')
+$sendEnabled = if($existingSend.Success -and $existingSend.Groups[1].Value.Trim().ToLower() -eq 'true'){'true'}else{'false'}
+$content = Set-EnvValue $content 'HIPICO_LAB_SEND_ENABLED' $sendEnabled
 [IO.File]::WriteAllText($envPath,$content,[Text.UTF8Encoding]::new($false))
 
 Write-Host ''
@@ -112,9 +123,8 @@ $validation = Validate-Token $token
 if($validation -ne 'ok'){
   try { Set-Clipboard -Value $token } catch {}
   Write-Host ''
-  Write-Host 'Debemos sincronizar UNA VEZ la variable existente de Vercel.' -ForegroundColor Yellow
-  Write-Host 'No crees otra variable. El token nuevo ya esta en el portapapeles.' -ForegroundColor Yellow
-  Write-Host 'Edita HIPICO_GROUP_BRIDGE_TOKEN, manten Production, guarda y redeploy de main.' -ForegroundColor Cyan
+  Write-Host 'Debemos sincronizar UNA VEZ HIPICO_GROUP_BRIDGE_TOKEN en Vercel.' -ForegroundColor Yellow
+  Write-Host 'El token ya esta en el portapapeles. Edita la variable existente, guarda y redeploy de main.' -ForegroundColor Cyan
   Start-Process $vercelEnvUrl
   Read-Host 'Cuando hayas guardado y lanzado el Redeploy, vuelve aqui y presiona ENTER'
   $ok = $false
@@ -125,12 +135,12 @@ if($validation -ne 'ok'){
     Write-Host "Intento $i/30: esperando Vercel..."
     Start-Sleep -Seconds 10
   }
-  if(-not $ok){Start-Process $vercelDeployUrl;Fail 'Vercel no reconocio el token en 5 minutos. Comprueba que el deployment termino READY.'}
+  if(-not $ok){Start-Process $vercelDeployUrl;Fail 'Vercel no reconocio el token en 5 minutos.'}
 }
 Write-Host 'Backend autenticado: OK' -ForegroundColor Green
 
 Write-Host ''
-Write-Host '[2/5] Instalando Playwright Core 1.62.1...'
+Write-Host '[2/5] Instalando/verificando Playwright Core 1.62.1...'
 npm install --no-fund --no-audit
 if($LASTEXITCODE -ne 0){Fail 'npm install termino con error.'}
 
@@ -145,9 +155,25 @@ npm run selftest
 if($LASTEXITCODE -ne 0){Fail 'El navegador no paso el self-test.'}
 
 Write-Host ''
+Write-Host 'Fuente oficial: CLUB HIPICO TRIPLE CROWN (solo lectura)' -ForegroundColor Green
+Write-Host "Laboratorio: $labGroupName" -ForegroundColor Green
+Write-Host "Espejo hacia LAB actualmente: $sendEnabled" -ForegroundColor Yellow
+if($sendEnabled -ne 'true'){
+  $answer = Read-Host '¿Quieres habilitar AHORA respuestas simuladas SOLO en el grupo LAB? escribe SI para habilitar'
+  if($answer.Trim().ToUpperInvariant() -eq 'SI'){
+    $content = Get-Content $envPath -Raw
+    $content = Set-EnvValue $content 'HIPICO_LAB_SEND_ENABLED' 'true'
+    [IO.File]::WriteAllText($envPath,$content,[Text.UTF8Encoding]::new($false))
+    Write-Host 'Espejo LAB habilitado. El grupo oficial sigue sin ruta de envio.' -ForegroundColor Green
+  } else {
+    Write-Host 'Espejo LAB seguira deshabilitado; solo se almacenaran predicciones shadow.' -ForegroundColor Yellow
+  }
+}
+
+Write-Host ''
 Write-Host '[5/5] Abriendo WhatsApp Web OFICIAL...' -ForegroundColor Cyan
-Write-Host 'La ventana usa web.whatsapp.com real. Deja abierto Control hipico lab.' -ForegroundColor Green
-Write-Host 'HIPICO_ALLOW_SEND=false: el Bridge no puede responder.' -ForegroundColor Green
+Write-Host 'El grupo fuente puede estar archivado: el Bridge usa tambien la busqueda global.' -ForegroundColor Green
+Write-Host 'NO desarchives ni cambies el grupo solo para el Bridge.' -ForegroundColor Green
 Write-Host ''
 
 npm start
