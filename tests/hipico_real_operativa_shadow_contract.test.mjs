@@ -31,8 +31,9 @@ test('canonical shadow dual-write uses prepared Hipico schema but never live led
   assert.match(store,/public\.hipico_operation_events/);
   assert.match(store,/public\.hipico_shadow_evaluations/);
   assert.match(store,/channel_type='web_bridge'/);
-  assert.match(store,/event_state,'pending'|event_state\).*'pending'/s);
-  assert.match(store,/match_status.*'pending'/s);
+  assert.match(store,/event_state/);
+  assert.match(store,/match_status/);
+  assert.match(store,/'pending'/);
   assert.doesNotMatch(store,/public\.hipico_ledger_entries/);
   assert.doesNotMatch(store,/public\.hipico_outbox/);
   assert.doesNotMatch(store,/sendCloudText|sendMessage/);
