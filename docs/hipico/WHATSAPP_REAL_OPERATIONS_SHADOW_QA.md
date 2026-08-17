@@ -11,81 +11,150 @@ WhatsApp normal
 → web.whatsapp.com oficial
 → Bridge Playwright local
 → /api/v1/hipico-bot/bridge/events
-→ clasificador operacional
-→ HipicoWebhookEvent
-→ HipicoBotOutbox(status=shadow)
+→ clasificador operacional + entidades
+→ HipicoWebhookEvent                   (auditoria de transporte)
+→ HipicoBotOutbox status=shadow        (compatibilidad/auditoria)
+→ hipico_messages                      (mensaje canonico normalizado)
+→ hipico_operation_events              (evento operativo pending)
+→ hipico_shadow_evaluations            (prediccion shadow pending)
+→ shadow-projection                    (matching RC1 de solo lectura)
 ```
+
+El canal canonico de laboratorio es independiente del canal operativo existente y esta configurado como `web_bridge`, `shadow_only`, `auto_send=false`.
 
 Este gate **no automatiza la operativa**. Ninguna frase de jugada, confirmacion, cierre, resultado, disponibles, liquidacion o POLLA/PARLEY puede modificar datos operativos ni responder al grupo.
 
 ## Condiciones de seguridad obligatorias
 
-- `HIPICO_ALLOW_SEND=false` en el Bridge.
+- `HIPICO_ALLOW_SEND=false` en el Bridge; el runtime aborta si se cambia a `true`.
 - El endpoint del grupo siempre devuelve `actions: []`.
-- Todos los Outbox de `targetType=group_bridge` quedan `status=shadow`.
-- Un mensaje monetario u operativo tiene `autoEligible=false`.
+- Todos los Outbox de compatibilidad `targetType=group_bridge` quedan `status=shadow`.
+- `hipico_operation_events.event_state=pending` durante este gate.
+- `hipico_shadow_evaluations.match_status=pending` hasta revision.
+- Todo intent monetario/operativo tiene `autoEligible=false`.
+- El dual-write canonico **no escribe** `hipico_ledger_entries` ni `hipico_outbox` operativo.
+- Si cualquier persistencia obligatoria falla, el endpoint devuelve HTTP 503 `retryable=true`; el Bridge conserva el evento en `data/spool` y reintenta.
 - No probar con dinero real ni con un grupo de produccion hasta cerrar este gate.
+
+## Linea base PostgreSQL
+
+Antes del corpus real se conservaron las pruebas de transporte ya verificadas:
+
+```text
+HipicoWebhookEvent = 6
+HipicoBotOutbox    = 6
+last_event_at      = 2026-08-17 04:58:14.799 UTC
+```
+
+No se limpia esa evidencia. El corpus se mide por filas posteriores a esa marca y por el canal canonico `control-hipico-lab`.
 
 ## Corpus de prueba operativa
 
-Enviar uno por uno, alternando los dos participantes cuando se indique. Se puede sustituir hipodromo/caballo/monto manteniendo la forma real de trabajo.
+Enviar uno por uno. Los montos son **solo datos de laboratorio**.
 
-| Paso | Mensaje de ejemplo | Intent esperado | Riesgo |
-|---|---|---|---|
-| 1 | `Juega PP del 3 con 20` | `offer_player` | monetary |
-| 2 | `Consigue 1/2 del 5 con 15` | `offer_receiver` | monetary |
-| 3 | `J` | `offer_confirmation` | monetary |
-| 4 | `Debe confirmar` | `pending_confirmation` | monetary |
-| 5 | `Anula esa jugada` | `cancel_or_correction` | monetary |
-| 6 | `TERCIOS\nJuega PP del 3 con 20` | `plan_snapshot` | monetary |
-| 7 | `Cierra carrera 4` | `race_close` | review |
-| 8 | `No va mas la 4` | `race_close` | review |
-| 9 | `Juega 1N del 6 con 10` despues del cierre | `offer_player` | monetary |
-| 10 | `Llegada 2.1.6.4` | `race_result` | review |
-| 11 | `Pizarra: 2 1 6 4` | `race_result` | review |
-| 12 | `TERCIOS\nJuega Adel Bs 20\nConsigue Luis Bs 20` | `settlement_snapshot` | monetary |
-| 13 | `TERCIO DISPONIBLE\nAdel 100\nLuis -50` | `balance_snapshot` | monetary |
-| 14 | `Polla 5 con 20` | `polla_or_parley` | monetary |
-| 15 | `Cierre de jornada` | `day_close` | review |
-| 16 | `Mañana vamos temprano` | `conversation` | review |
+| Paso | Remitente | Mensaje | Intent esperado | Evidencia esperada |
+|---|---|---|---|---|
+| 1 | Adel | `Juega PP del 3 con 20` | `offer_player` | role=player, play=PP, horse=3, amount=20 |
+| 2 | segundo participante | `Consigue PP del 3 con 15` | `offer_receiver` | role=receiver; shadow match=15; JUEGA restante=5 |
+| 3 | segundo participante | `J` | `offer_confirmation` | confirmation=J |
+| 4 | Adel | `Debe confirmar` | `pending_confirmation` | sin efecto operativo |
+| 5 | Adel | `Anula esa jugada` | `cancel_or_correction` | manual review |
+| 6 | Adel | `Consigue 1/2 del 5 con 15` | `offer_receiver` | play=1/2, horse=5, amount=15; no empareja PP/3 |
+| 7 | Adel | `Cierra carrera 4` | `race_close` | raceNumber=4; segmento queda cerrado |
+| 8 | segundo participante | `Juega 1N del 6 con 10` | `offer_player` | aparece como `lateOffer`, no se empareja |
+| 9 | Adel | `Llegada 2.1.6.4` | `race_result` | board=[2,1,6,4] |
+| 10 | Adel | `Pizarra: 2 1 6 4` | `race_result` | board=[2,1,6,4] |
+| 11 | Adel | mensaje multilinea `TERCIOS` + `Juega PP del 3 con 20` | `plan_snapshot` | abre siguiente segmento si el anterior estaba cerrado |
+| 12 | participantes distintos | nuevas `Juega 1N del 6 con 10` y `Consigue 1N del 6 con 10` | offers | solo deben emparejar dentro del nuevo segmento |
+| 13 | Adel | multilinea `TERCIOS` + `Juega Adel Bs 20` + `Consigue Luis Bs 20` | `settlement_snapshot` | filas estructuradas, sin liquidar |
+| 14 | Adel | multilinea `TERCIO DISPONIBLE` + `Adel 100` + `Luis -50` | `balance_snapshot` | disponibles observados, sin modificar saldo |
+| 15 | segundo participante | `Polla 5 con 20` | `polla_or_parley` | manual review, sin efecto monetario |
+| 16 | Adel | `Cierre de jornada` | `day_close` | jornada observada como cerrada en projection |
+| 17 | Adel | `Mañana vamos temprano` | `conversation` | no operacional |
+
+## Reglas que debe demostrar la proyeccion RC1
+
+La proyeccion de solo lectura debe aplicar exactamente estas restricciones:
+
+1. `JUEGA` solo empareja con `CONSIGUE`.
+2. Mismo tipo de jugada (`PP`, `1N`, `1/2`, etc.).
+3. Mismo caballo.
+4. Remitentes distintos; nunca auto-emparejar al mismo participante.
+5. Mismo segmento de carrera.
+6. Matching parcial por `min(JUEGA restante, CONSIGUE restante)`.
+7. Una oferta despues de `race_close` queda en `lateOffers` y no se usa para matching.
+8. Un nuevo `plan_snapshot` puede abrir el segmento siguiente.
+
+La inspeccion se hace mediante el endpoint autenticado de operador:
+
+```text
+GET /api/v1/hipico-bot/shadow-projection?limit=100
+```
 
 ## Pruebas de transporte y resiliencia
 
 1. **Dos participantes:** al menos una oferta desde cada numero. `sender` debe diferenciar ambos remitentes.
-2. **Mismo texto dos veces:** escribir manualmente la misma frase dos veces debe producir dos eventos, porque WhatsApp crea dos IDs diferentes.
+2. **Mismo texto dos veces:** escribir manualmente la misma frase dos veces debe producir dos eventos porque WhatsApp crea dos IDs distintos.
 3. **Reentrega del mismo ID:** el mismo `providerMessageId` debe producir una sola fila y `duplicate=true` en reintentos.
-4. **Reinicio del Bridge:** cerrar consola/Chrome y volver a iniciar. No debe exigir QR mientras la sesion local siga vinculada.
-5. **Corte de Internet:** desconectar unos segundos, reconectar y enviar un mensaje. Debe recuperarse sin perder el evento.
-6. **Backend temporalmente no disponible:** el evento debe permanecer en `data/spool` y reintentarse; no se debe borrar antes del POST exitoso.
+4. **Reinicio del Bridge:** cerrar consola/Chrome y volver a iniciar. La sesion persistente no debe exigir QR mientras siga vinculada.
+5. **Cambio temporal de chat:** al regresar a `Control hípico lab` no se crea un baseline nuevo; IDs persistentes evitan duplicados y los mensajes nuevos visibles se procesan.
+6. **Corte de Internet:** desconectar unos segundos, reconectar y enviar un mensaje. Debe recuperarse sin perder el evento.
+7. **Backend temporalmente no disponible:** el evento permanece en `data/spool` hasta un POST exitoso.
 
-## Validacion en PostgreSQL
+## Validacion PostgreSQL por mensaje
 
-Por cada mensaje nuevo debe existir exactamente una fila en `HipicoWebhookEvent` con:
+Cada mensaje nuevo debe dejar evidencia coherente en las capas aplicables:
+
+### `HipicoWebhookEvent`
 
 - `providerMessageId` unico;
-- `sender` identificado;
-- `body` original;
-- `intent` esperado;
-- `risk` esperado;
-- `status=classified`.
+- `sender`, `body`, `intent`, `risk`;
+- `status=classified`;
+- `payload.operational` con las entidades extraidas.
 
-Y una fila asociada en `HipicoBotOutbox` con:
+### `HipicoBotOutbox`
 
+- una sola fila por evento de grupo;
 - `targetType=group_bridge`;
-- `status=shadow`;
-- `intent` y `risk` consistentes con el evento.
+- `status=shadow`.
 
-## Criterio PASS del gate
+### `hipico_messages`
 
-El gate pasa solo si el corpus completo cumple simultaneamente:
+- `channel_key=control-hipico-lab`;
+- mismo external message ID;
+- `classification` esperada;
+- `normalized` con entidades;
+- `processing_status=processed`.
+
+### `hipico_operation_events`
+
+Solo para intents operativos:
+
+- `event_state=pending`;
+- tipo coherente (`offer`, `counteroffer`, `confirmation`, `race_close`, `result`, etc.);
+- payload marcado `shadow=true`;
+- sin ledger ni efecto real.
+
+### `hipico_shadow_evaluations`
+
+- una evaluacion idempotente por external ID + prediction type;
+- `scenario_key=real-operativa-shadow-v1`;
+- `match_status=pending`;
+- `predicted_payload` con intent/riesgo/entidades.
+
+## Criterio PASS
+
+El gate pasa solo si simultaneamente hay:
 
 - 100% de mensajes nuevos observados por el Bridge;
-- 100% de requests aceptados (`200 duplicate` o `202 new`);
-- 100% de eventos persistidos/deduplicados correctamente;
-- 100% de intents del corpus esperado;
+- 100% de requests exitosos (`202 new` o `200 duplicate`); un `503` debe quedar spooled y luego recuperarse;
+- 100% de persistencia/idempotencia en transporte y esquema canonico;
+- 100% de intents y entidades del corpus esperado;
+- matching/sobrantes/lateOffers correctos segun RC1;
 - cero respuestas del Bridge al grupo;
-- cero mutaciones de carrera/saldos/resultados/liquidacion;
-- recuperacion correcta despues de reinicio y corte de red.
+- cero filas nuevas en ledger/outbox operativo originadas por el gate;
+- cero mutaciones de carrera, saldos, resultados o liquidacion;
+- recuperacion correcta despues de reinicio, cambio de chat y corte de red.
 
 ## Lo que NO habilita este gate
 
