@@ -59,6 +59,38 @@ test('operational intents are never auto eligible',()=>{
   }
 });
 
+test('structured shadow analyzer extracts offer, close, result and balance evidence',()=>{
+  const player=classify('Juega PP del 3 con 20');
+  assert.deepEqual(
+    {role:player.entities?.role,play:player.entities?.play,horse:player.entities?.horse,amount:player.entities?.amount},
+    {role:'player',play:'PP',horse:'3',amount:20}
+  );
+
+  const receiver=classify('Consigue 1/2 del 5 con 15');
+  assert.deepEqual(
+    {role:receiver.entities?.role,play:receiver.entities?.play,horse:receiver.entities?.horse,amount:receiver.entities?.amount},
+    {role:'receiver',play:'1/2',horse:'5',amount:15}
+  );
+
+  const close=classify('Cierra carrera 4');
+  assert.equal(close.entities?.raceNumber,4);
+
+  const board=classify('Llegada 2.1.6.4');
+  assert.deepEqual(board.entities?.board,['2','1','6','4']);
+
+  const balances=classify('TERCIO DISPONIBLE\nAdel 100\nLuis -50');
+  assert.deepEqual(balances.entities?.balances,[
+    {participant:'Adel',available:100},
+    {participant:'Luis',available:-50}
+  ]);
+
+  const settlement=classify('TERCIOS\nJuega Adel Bs 20\nConsigue Luis Bs 20');
+  assert.deepEqual(settlement.entities?.settlementRows,[
+    {role:'player',participant:'Adel',amount:20},
+    {role:'receiver',participant:'Luis',amount:20}
+  ]);
+});
+
 test('close vocabulary wins before broad monetary parsing',()=>{
   const result=classify('Cierra carrera 4');
   assert.equal(result.intent,'race_close');
