@@ -17,7 +17,7 @@
     "build": "tsc -p tsconfig.json",
     "lint": "tsc --noEmit",
     "typecheck": "tsc --noEmit",
-    "test": "node --test",
+    "test": "node --test && tsx --test src/modules/hipico-bot/hipico-operational-classifier.test.ts",
     "prisma:sync-schema": "node scripts/sync-employee-prisma-schema.mjs",
     "prisma:generate": "npm run prisma:sync-schema && prisma generate",
     "prisma:migrate": "npm run prisma:sync-schema && prisma migrate dev",
@@ -67,7 +67,6 @@
     "@types/node": "22.20.1",
     "@types/pdfkit": "0.17.6",
     "@types/pg": "8.20.4",
-    "@types/qrcode": "1.5.6",
     "tsx": "4.23.9",
     "typescript": "5.9.3"
   },
