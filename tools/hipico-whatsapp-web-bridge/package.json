@@ -1,0 +1,17 @@
+{
+  "name": "control-hipico-whatsapp-web-bridge",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "check": "node --check src/index.mjs && node --check src/selftest.mjs",
+    "selftest": "node src/selftest.mjs",
+    "start": "node --env-file=.env src/index.mjs"
+  },
+  "dependencies": {
+    "playwright-core": "1.62.1"
+  }
+}
