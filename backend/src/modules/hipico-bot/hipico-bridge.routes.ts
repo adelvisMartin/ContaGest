@@ -23,7 +23,8 @@ const bridgeEventSchema = z.object({
   type: z.string().min(1).max(80).default('chat'),
   text: z.string().max(4000).default(''),
   hasMedia: z.boolean().default(false),
-  quotedExternalMessageId: z.string().max(320).nullable().default(null)
+  quotedExternalMessageId: z.string().max(320).nullable().default(null),
+  rawMeta: z.string().max(500).default('')
 });
 
 function bridgeTokenValid(value: string | undefined) {
@@ -82,6 +83,7 @@ router.post('/bridge/events', async (req, res) => {
       senderLabel: input.senderLabel,
       fromMe: input.fromMe,
       sentAt: input.timestamp,
+      rawMeta: input.rawMeta,
       hasMedia: input.hasMedia,
       quotedExternalMessageId: input.quotedExternalMessageId,
       operational: result.entities || null
