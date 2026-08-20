@@ -457,6 +457,8 @@ model Employee {
   idNumber    String
   fullName    String
   position    String
+  department  String?
+  hiredAt     DateTime?
   salary      Decimal @default(0) @db.Decimal(18,2)
   active      Boolean @default(true)
   createdAt   DateTime @default(now())
@@ -466,6 +468,8 @@ model Employee {
   receipts    PayrollReceipt[]
 
   @@unique([tenantId, idNumber])
+  @@index([tenantId, department])
+  @@index([tenantId, hiredAt])
 }
 
 model PayrollPeriod {
@@ -856,4 +860,3 @@ model AuthLoginAttempt {
   @@index([tenantRif, email, ipAddress, success, createdAt])
   @@index([createdAt])
 }
-

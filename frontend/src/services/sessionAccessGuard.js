@@ -21,7 +21,7 @@ const validLicense = (license) => Boolean(
 
 const isActiveQaLicense = (state, route) => {
   const license = state?.activeLicense;
-  if (license?.qaMode !== true || !validLicense(license)) return false;
+  if (!license || license.qaMode !== true || !validLicense(license)) return false;
   return CORE.has(route) || (Array.isArray(license.modules) && license.modules.includes(route));
 };
 
@@ -78,6 +78,7 @@ export function installSessionAccessGuard() {
     AccessControlService.canAccessRoute = (state, route) => {
       if (!route) return false;
       const identity = resolveIdentity(state);
+      const role = identity.role;
       const license = state?.activeLicense;
 
       // Explicit QA licenses are evaluated before stale local RBAC metadata, but
@@ -108,7 +109,7 @@ export function installSessionAccessGuard() {
 
       if (ADMIN_SENSITIVE.has(route)) {
         if (identity.isClient) return false;
-        if (required === 'admin.manage' && !identity.isAdmin && !adminPermission) return false;
+        if (required === 'admin.manage' && role !== 'admin' && !identity.isAdmin && !adminPermission) return false;
         if (identity.permissions.length && required && !wildcard && !identity.permissions.includes(required) && !adminPermission) return false;
       }
 

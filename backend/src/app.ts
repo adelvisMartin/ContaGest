@@ -1,4 +1,4 @@
-import express from 'express';
+import express, { type Request } from 'express';
 import helmet from 'helmet';
 import morgan from 'morgan';
 import { env, isProd } from './config/env.js';
@@ -63,7 +63,7 @@ export function createApp() {
   app.use(express.json({
     limit: env.JSON_BODY_LIMIT,
     verify: (req, _res, buffer) => {
-      if (String(req.originalUrl || '').startsWith('/api/v1/hipico-bot/webhook')) {
+      if (String((req as Request).originalUrl || req.url || '').startsWith('/api/v1/hipico-bot/webhook')) {
         (req as any).rawBody = Buffer.from(buffer);
       }
     }

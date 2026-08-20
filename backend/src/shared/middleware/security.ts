@@ -87,7 +87,7 @@ export const expensiveOperationRateLimit = rateLimit({
 export const authRateLimit = rateLimit({
   windowMs: 15 * 60_000,
   limit: isProd ? 20 : 60,
-  skip: isReadOnlyRequest,
+  skip: (req) => ['GET', 'HEAD', 'OPTIONS'].includes(req.method.toUpperCase()),
   standardHeaders: true,
   legacyHeaders: false,
   message: { ok: false, error: 'Demasiadas solicitudes de autenticación. Espera unos minutos antes de reintentar.' }

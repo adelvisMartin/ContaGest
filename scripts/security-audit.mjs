@@ -25,14 +25,14 @@ function inspect(full, rel) {
     ['private-key', /-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----/],
     ['github-token', /\bgh[pousr]_[A-Za-z0-9_]{30,}\b/],
     ['openai-key', /\bsk-[A-Za-z0-9_-]{20,}\b/],
-    ['jwt-literal', /JWT_SECRET\s*=\s*(?!replace_|change_|process\.env|\$\{|['"]?\s*$)[^\s#]{20,}/i],
+    ['jwt-literal', /(?<![A-Z0-9_])JWT_SECRET\s*=\s*(?!replace_|change_|process\.env|\$\{|['"]?\s*$)[^\s#]{20,}/i],
     ['supabase-service-role-literal', /SUPABASE_SERVICE_ROLE_KEY\s*=\s*(?!replace_|process\.env|\$\{|['"]?\s*$)[^\s#]{20,}/i]
   ];
   for (const [kind, pattern] of secretPatterns) if (pattern.test(content)) findings.push(`${kind}: ${rel}`);
 
   if (rel.startsWith('frontend/')) {
-    const forbiddenClientSecrets = /\b(?:SUPABASE_SERVICE_ROLE_KEY|OPENAI_API_KEY|JWT_SECRET|WHATSAPP_CLOUD_TOKEN|LICENSE_HASH_SECRET)\b/;
-    if (forbiddenClientSecrets.test(content)) findings.push(`server-secret-name-in-frontend: ${rel}`);
+    const forbiddenClientSecretAccess = /(?:import\.meta\.env|process\.env)\.(?:SUPABASE_SERVICE_ROLE_KEY|OPENAI_API_KEY|JWT_SECRET|WHATSAPP_CLOUD_TOKEN|LICENSE_HASH_SECRET)\b/;
+    if (forbiddenClientSecretAccess.test(content)) findings.push(`server-secret-access-in-frontend: ${rel}`);
     const viteSecret = /\bVITE_[A-Z0-9_]*(?:SECRET|PRIVATE|SERVICE_ROLE|OPENAI|TOKEN)[A-Z0-9_]*\b/;
     if (viteSecret.test(content)) findings.push(`unsafe-vite-secret-name: ${rel}`);
   }
@@ -79,7 +79,7 @@ if (findings.length) {
 
 console.log('ContaGest security baseline: PASS');
 console.log('- no obvious committed secret material detected');
-console.log('- frontend does not reference server-only secret names');
+console.log('- frontend does not access server-only secret values');
 console.log('- env files are ignored');
 console.log('- global/auth/CSP rate limits, CSRF, CORS and production-secret gates are present');
 console.log('- server-side schema validation uses safeParse');

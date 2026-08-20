@@ -110,6 +110,8 @@ router.post('/bridge/events', async (req, res) => {
   const sender = input.senderId.replace(/@.*$/, '').slice(0, 220);
   const transportPayload = {
     source: 'whatsapp-web-bridge',
+    targetType: 'group_bridge',
+    status: 'shadow',
     bridgeVersion: input.bridgeVersion,
     groupId: input.groupId,
     groupName: input.groupName,
