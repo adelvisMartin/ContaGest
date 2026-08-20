@@ -28,6 +28,34 @@ const PREDICTION_TYPE='operational_classification';
 const OFFICIAL_SOURCE_CHANNEL_KEY=String(process.env.HIPICO_OFFICIAL_SOURCE_CHANNEL_KEY||'club-hipico-triple-crown-official').trim();
 const DEFAULT_LAB_CHANNEL_KEY=String(process.env.HIPICO_LAB_CHANNEL_KEY||'control-hipico-lab').trim();
 
+export async function canonicalShadowReadiness(){
+  const tables=await prisma.$queryRaw<Array<{
+    channels:string|null;
+    messages:string|null;
+    operations:string|null;
+    evaluations:string|null;
+  }>>`
+    SELECT
+      to_regclass('public.hipico_bot_channels')::text AS "channels",
+      to_regclass('public.hipico_messages')::text AS "messages",
+      to_regclass('public.hipico_operation_events')::text AS "operations",
+      to_regclass('public.hipico_shadow_evaluations')::text AS "evaluations"
+  `;
+  const schemaReady=Boolean(
+    tables[0]?.channels&&tables[0]?.messages&&tables[0]?.operations&&tables[0]?.evaluations
+  );
+  if(!schemaReady)return{ready:false,schemaReady:false,labChannelCount:0};
+  const labRows=await prisma.$queryRaw<Array<{count:bigint}>>`
+    SELECT COUNT(*)::bigint AS "count"
+    FROM public.hipico_bot_channels
+    WHERE group_key=${DEFAULT_LAB_CHANNEL_KEY}
+      AND channel_type='web_bridge'
+      AND status='active'
+  `;
+  const labChannelCount=Number(labRows[0]?.count||0);
+  return{ready:labChannelCount===1,schemaReady:true,labChannelCount};
+}
+
 export function groupKeyFromName(value:string){
   return String(value||'')
     .normalize('NFD')

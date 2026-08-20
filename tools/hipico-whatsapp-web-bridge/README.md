@@ -1,4 +1,4 @@
-# Control Hípico · WhatsApp Web Bridge v1.2.0
+# Control Hípico · WhatsApp Web Bridge v1.4.0
 
 Bridge local para el siguiente gate de operativa real:
 
@@ -14,6 +14,11 @@ clasificación + evidencia shadow + proyección
 Control hípico lab (simulación opcional, claramente marcada)
 ```
 
+El modo `production` es el predeterminado y exige backend habilitado, URLs HTTPS,
+token de 32+ caracteres, journal shadow y `/bridge/health` con persistencia lista.
+El modo `shadow-local` existe únicamente para diagnóstico y nunca informa
+`ready=true`.
+
 ## Regla principal
 
 **El grupo oficial nunca es un destino de envío en esta versión.** El runtime no contiene una ruta genérica para escribir en TRIPLE CROWN. Solo puede observar el grupo fuente y, cuando `HIPICO_LAB_SEND_ENABLED=true`, enviar la simulación a `Control hípico lab` después de verificar que el chat activo coincide exactamente con el nombre del LAB.
@@ -22,7 +27,7 @@ Las apuestas, cierres, resultados, saldos y liquidaciones reales siguen bloquead
 
 ## Fuente oficial
 
-La fuente se localiza por `HIPICO_SOURCE_GROUP_MATCH=CLUB HIPICO TRIPLE CROWN`. Se usa coincidencia parcial intencionalmente para tolerar el emoji o sufijos visuales del nombre real. Si el grupo está archivado, el Bridge intenta también la búsqueda global de WhatsApp Web; no es necesario desarchivarlo.
+La fuente se localiza por `HIPICO_SOURCE_GROUP_MATCHES=CLUB HIPICO TRIPLE COWN|CLUB HIPICO TRIPLE CROWN`. Se usa coincidencia parcial intencionalmente para tolerar ambas grafías, emojis o sufijos visuales. Si el grupo está archivado, el Bridge intenta también la búsqueda global de WhatsApp Web; no es necesario desarchivarlo.
 
 El canal canónico es estable y no depende del texto visible del chat:
 
@@ -47,14 +52,17 @@ El envío al LAB está desactivado por defecto. `INICIAR.ps1` puede habilitarlo 
 - WhatsApp Web oficial (`https://web.whatsapp.com/`).
 - Chrome o Edge instalado en Windows.
 - `playwright-core` fijado en `1.62.1`.
-- Perfil persistente en `data/chrome-profile/`.
-- IDs vistos del **grupo fuente** en `data/seen-source-message-ids.json`.
+- Perfil persistente en `%LOCALAPPDATA%\ControlHipicoBridge\data\chrome-profile\`.
+- IDs vistos del **grupo fuente** en `%LOCALAPPDATA%\ControlHipicoBridge\data\seen-source-message-ids.json`.
 - Compatibilidad de lectura con el viejo `data/seen-message-ids.json` al actualizar desde v1.1.0.
 - Spool de eventos entrantes en `data/spool-events/`.
 - Spool independiente de simulaciones LAB en `data/spool-lab-mirror/`.
 - Un evento fuente se persiste en backend antes de considerarse entregado.
 - Si backend devuelve error/503, el evento permanece en spool y se reintenta.
 - Después de intentar una simulación LAB, el Bridge vuelve siempre al grupo fuente.
+- `health.json` publica `readiness.ready`, motivos de degradación y contadores sin exponer el token.
+- El journal nuevo pseudonimiza remitente e IDs; el reporte oculta textos salvo habilitación explícita.
+- Los diagnósticos DOM persisten solo roles y contadores; las capturas de pantalla están desactivadas por defecto para no copiar chats ajenos.
 
 ## Evidencia canónica
 
@@ -76,13 +84,16 @@ Cuando se incorporen muestras reales de los archivos del grupo, se añadirá una
 
 ## Windows
 
-1. Ejecuta `INICIAR-CONTROL-HIPICO-WHATSAPP.cmd`.
-2. El setup valida Node, token/backend y Playwright.
+1. Ejecuta `INICIAR-CONTROL-HIPICO-WHATSAPP.cmd` sin privilegios de administrador.
+2. El setup instala el runtime v1.4.0 bajo `%LOCALAPPDATA%`, recupera el token con DPAPI y valida Node, contratos, navegador, backend y persistencia.
 3. Abre `web.whatsapp.com` real con el perfil persistente.
 4. Busca automáticamente `CLUB HIPICO TRIPLE CROWN`, incluso si está archivado.
 5. Toma el historial visible inicial como baseline: no se reinterpreta como mensajes nuevos.
 6. Desde ese momento observa únicamente mensajes fuente nuevos.
-7. Si aceptas habilitar el espejo LAB, las respuestas simuladas aparecen solamente en `Control hípico lab`.
+7. Las respuestas simuladas aparecen solamente en `Control hípico lab`; el launcher escribe el nombre en UTF-8 sin BOM para evitar `hÃ­pico`.
+
+El procedimiento completo de despliegue, rollback y verificación está en
+`docs/hipico/CONTROL_HIPICO_V140_PRODUCTION_RUNBOOK.md`.
 
 ## Política de aprendizaje
 

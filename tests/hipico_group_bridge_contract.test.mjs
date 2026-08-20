@@ -17,7 +17,9 @@ test('normal WhatsApp group bridge is isolated from Meta webhook and browser CSR
 
 test('group ingestion is authenticated, deduplicated and shadow-only', () => {
   const route = read('backend/src/modules/hipico-bot/hipico-bridge.routes.ts');
-  assert.match(route, /HIPICO_GROUP_BRIDGE_TOKEN/);
+  const security = read('backend/src/modules/hipico-bot/hipico-bridge-security.ts');
+  assert.match(security, /HIPICO_GROUP_BRIDGE_TOKEN/);
+  assert.match(security, /timingSafeEqual/);
   assert.match(route, /x-hipico-bridge-token/);
   assert.match(route, /waweb:\$\{input\.externalMessageId\}/);
   assert.match(route, /targetType: 'group_bridge'/);

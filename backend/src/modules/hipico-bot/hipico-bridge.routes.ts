@@ -2,8 +2,9 @@ import crypto from 'node:crypto';
 import { Router } from 'express';
 import { z } from 'zod';
 import { classify } from './hipico-operational-classifier.js';
-import { persistCanonicalShadow } from './hipico-canonical-shadow.store.js';
-import { ensureGroupShadowOutbox, persistBridgeTransportEvent } from './hipico-bridge-transport.store.js';
+import { canonicalShadowReadiness, persistCanonicalShadow } from './hipico-canonical-shadow.store.js';
+import { bridgePersistenceReady, ensureGroupShadowOutbox, persistBridgeTransportEvent } from './hipico-bridge-transport.store.js';
+import { bridgeTokenConfigured, bridgeTokenValid } from './hipico-bridge-security.js';
 
 const router = Router();
 const OFFICIAL_SOURCE_CHANNEL_KEY=String(process.env.HIPICO_OFFICIAL_SOURCE_CHANNEL_KEY||'club-hipico-triple-crown-official').trim();
@@ -29,16 +30,6 @@ const bridgeEventSchema = z.object({
   quotedExternalMessageId: z.string().max(320).nullable().default(null),
   rawMeta: z.string().max(500).default('')
 });
-
-function bridgeTokenValid(value: string | undefined) {
-  const expected = String(process.env.HIPICO_GROUP_BRIDGE_TOKEN || process.env.HIPICO_BRIDGE_TOKEN || '');
-  if (!expected || !value) return false;
-  try {
-    return crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(value));
-  } catch {
-    return false;
-  }
-}
 
 function shadowTag(value: string) {
   return `[SHADOW:${crypto.createHash('sha256').update(value).digest('hex').slice(0, 10)}]`;
@@ -83,6 +74,52 @@ function buildLabSimulation(input: z.infer<typeof bridgeEventSchema>, result: Re
 router.use((_req, res, next) => {
   res.setHeader('Cache-Control', 'no-store, max-age=0');
   next();
+});
+
+router.get('/bridge/health', async (req, res) => {
+  if (!bridgeTokenValid(req.header('x-hipico-bridge-token') || undefined)) {
+    return res.status(401).json({ ok: false, ready: false, error: 'Token del Bridge Hipico invalido.' });
+  }
+  const base={
+    mode:'shadow',
+    sourceSendPossible:false,
+    sourceChannelKey:OFFICIAL_SOURCE_CHANNEL_KEY,
+    labChannelKey:DEFAULT_LAB_CHANNEL_KEY,
+    buildCommit:String(process.env.VERCEL_GIT_COMMIT_SHA||process.env.GIT_SHA||'unknown')
+  };
+  try{
+    const [transportReady,canonical]=await Promise.all([
+      bridgePersistenceReady(),
+      canonicalShadowReadiness()
+    ]);
+    const tokenReady=bridgeTokenConfigured();
+    const reasons:string[]=[];
+    if(!tokenReady)reasons.push('BRIDGE_TOKEN_NOT_CONFIGURED');
+    if(!transportReady)reasons.push('TRANSPORT_SCHEMA_NOT_READY');
+    if(!canonical.schemaReady)reasons.push('CANONICAL_SCHEMA_NOT_READY');
+    if(canonical.labChannelCount!==1)reasons.push('LAB_CHANNEL_NOT_UNIQUE');
+    const ready=reasons.length===0;
+    return res.status(ready?200:503).json({
+      ok:ready,
+      ready,
+      ...base,
+      reasons,
+      persistence:{
+        transportReady,
+        canonicalSchemaReady:canonical.schemaReady,
+        labChannelCount:canonical.labChannelCount
+      }
+    });
+  }catch(error:any){
+    console.error('[hipico-bridge] readiness check failed',{error:error?.message||String(error)});
+    return res.status(503).json({
+      ok:false,
+      ready:false,
+      ...base,
+      retryable:true,
+      reasons:['PERSISTENCE_CHECK_FAILED']
+    });
+  }
 });
 
 router.post('/bridge/events', async (req, res) => {
