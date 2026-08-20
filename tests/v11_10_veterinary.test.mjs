@@ -18,11 +18,13 @@ test('v11.10 veterinary and compact UI files exist', () => {
 
 test('compact density layer loads after legacy style layers', () => {
   const app = read('frontend/src/app.js');
-  const legacy = app.indexOf("./styles/precision-ledger.css");
-  const compact = app.indexOf("./styles/compact-enterprise-v1110.css");
+  assert.match(app, /styles\/erp-runtime\.css/);
+  const system = read('frontend/src/styles/erp-system.css');
+  const legacy = system.indexOf("./legacy/precision-ledger.css");
+  const compact = system.indexOf("./legacy/compact-enterprise-v1110.css");
   assert.ok(legacy >= 0 && compact > legacy);
-  const css = read('frontend/src/styles/compact-enterprise-v1110.css');
-  assert.match(css, /--cg-sidebar-w:276px/);
+  const css = read('frontend/src/styles/legacy/compact-enterprise-v1110.css');
+  assert.match(css, /--cg-shell-sidebar:248px/);
   assert.match(css, /cgx-page-header h1/);
   assert.match(css, /pretest-hero h2/);
   assert.match(css, /@media\(max-width:760px\)/);

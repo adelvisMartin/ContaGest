@@ -27,18 +27,19 @@ test('phase4 mobile shell keeps real product mark, drawer above backdrop and set
   const mark = await read('frontend/assets/img/contagest-mark.svg');
   assert.match(css, /contagest-mark\.svg/);
   assert.match(css, /\.hf-app-sidebar\.hf-sidebar \{[^}]*z-index:820!important/);
-  assert.match(css, /#sidebarBackdrop \{z-index:800!important/);
+  assert.match(css, /#sidebarBackdrop \{[^}]*z-index:800!important/);
   assert.match(css, /\.hf-user-panel \{[^}]*position:fixed!important/);
   assert.match(css, /@media \(max-width:760px\)[\s\S]*\.hf-header-brand \{display:grid!important/);
-  assert.match(mark, /viewBox="0 0 56 56"/);
+  assert.match(mark, /viewBox="0 0 280 280"/);
 });
 
 test('phase4 WhatsApp support target stays clickable and on-screen', async () => {
   const css = await read('frontend/src/styles/vertical-contexts.css');
   const layout = await read('frontend/src/components/layout.js');
   assert.match(css, /\.cg-whatsapp-float \{[^}]*pointer-events:auto!important/);
-  assert.match(css, /\.cg-whatsapp-float\.cg-whatsapp-peek \{right:max\(4px,var\(--cg-safe-right\)\)!important/);
-  assert.match(layout, /href="https:\/\/wa\.me\/\?text=/);
+  assert.match(css, /\.cg-whatsapp-float\.cg-whatsapp-peek \{[^}]*right:max\(4px,var\(--cg-safe-right\)\)!important/);
+  assert.match(layout, /whatsappBusinessNumber/);
+  assert.match(layout, /https:\/\/api\.whatsapp\.com\/send\?phone=/);
 });
 
 test('phase4 RIF and status badge use one non-wrapping pair instead of overlapping', async () => {

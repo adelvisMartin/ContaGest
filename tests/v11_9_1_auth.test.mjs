@@ -30,7 +30,7 @@ test('license hashing is independent from JWT rotation', () => {
 
 test('login clearly separates staff and licensed clients', () => {
   const enhancer = read('frontend/src/services/loginEnhancer.js');
-  const styles = read('frontend/src/styles/login-enhancer.css');
+  const styles = read('frontend/src/styles/legacy/login-enhancer.css');
   assert.match(enhancer, /Equipo interno/);
   assert.match(enhancer, /Cliente con licencia/);
   assert.match(enhancer, /licenseInput\.required = client/);
@@ -40,7 +40,7 @@ test('login clearly separates staff and licensed clients', () => {
 });
 
 test('CAPTCHA and login controls are responsive and compact', () => {
-  const styles = read('frontend/src/styles/login-v119.css');
+  const styles = read('frontend/src/styles/legacy/login-v119.css');
   assert.match(styles, /login-captcha-body/);
   assert.match(styles, /grid-template-columns:minmax\(118px/);
   assert.match(styles, /@media\(max-width:520px\)/);

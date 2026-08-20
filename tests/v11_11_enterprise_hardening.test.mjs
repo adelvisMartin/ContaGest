@@ -47,7 +47,7 @@ test('React managed veterinary workspace is preserved across auxiliary Store upd
   const app = read('frontend/src/app.js');
   assert.match(app, /REACT_MANAGED_ROUTES/);
   assert.match(app, /veterinaryClinicRoot/);
-  assert.match(app, /signature===lastShellSignature/);
+  assert.match(app, /sig===lastSignature/);
   assert.match(app, /page\.update/);
 });
 
