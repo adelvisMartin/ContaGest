@@ -1,32 +1,32 @@
 # Auditoría de seguridad de la rama de producción
 
-Fecha: 2026-08-20  
-Rama: `feat/production-readiness-ui-qa`
+Fecha: 2026-08-20
+Rama final: `feat/hipico-production-readiness-v140`
 
 ## Resumen ejecutivo
 
-El escáner de secretos y controles locales queda en PASS después de corregir dos falsos positivos del propio detector. La auditoría de dependencias queda en FAIL por cinco vulnerabilidades reportadas por npm (2 moderate, 3 high). No se ejecutó `npm audit fix --force`: la recomendación implica saltos breaking de Prisma y ExcelJS y requiere una decisión separada.
+El escáner de secretos y controles locales queda en PASS. Las cinco vulnerabilidades inicialmente reportadas se corrigieron con overrides explícitos y pruebas de compatibilidad, sin aceptar el downgrade breaking sugerido por `npm audit fix --force`. La auditoría productiva final reporta cero vulnerabilidades.
 
 ## Checks ejecutados
 
 | Check | Resultado | Evidencia |
 |---|---|---|
 | `node scripts/security-audit.mjs` | PASS | No detecta secretos obvios; `.env` está ignorado; controles esperados presentes |
-| `npm audit --omit=dev --audit-level=high` | FAIL | 5 vulnerabilidades: 2 moderate y 3 high |
+| `npm audit --omit=dev --audit-level=high` | PASS | Cero vulnerabilidades en monorepo y Bridge |
 | `npm run skills:check` | PASS | 5 fuentes pinned verificadas |
 | `npm run skills:sync` | BLOCKED | Una fuente pinned responde 404: `emil-motion:skills/emil-design-eng/ANIMATION-VOCABULARY.md` |
-| Browser/RBAC/tenant runtime | NOT EXECUTED | Requiere levantar servicios y fixture autenticado |
+| Browser smoke | PASS parcial | Login y PWA Hípico validados en desktop/móvil; RBAC/tenant autenticado requiere fixtures |
 
 ## Hallazgos y acciones
 
-### SEC-001 — Vulnerabilidades de dependencias
+### SEC-001 — Vulnerabilidades de dependencias — RESUELTO
 
-- Severidad: HIGH; bloqueador de release.
+- Severidad original: HIGH.
 - Alcance: `package-lock.json`, dependencias de producción transitivas de Prisma y ExcelJS.
 - Precondición de abuso: instalar/ejecutar una versión vulnerable en un entorno expuesto a entradas o payloads que alcancen los paquetes afectados.
-- Evidencia: `npm audit --omit=dev --audit-level=high` reporta `deepmerge-ts` vía Prisma y `uuid` vía ExcelJS.
-- Acción propuesta: actualizar cada cadena de dependencia con pruebas de compatibilidad, revisar changelogs y regenerar lockfile; no aceptar `--force` sin revisión de breaking changes.
-- Regresión requerida: typecheck, suite backend, migraciones sobre base efímera, build y smoke tests de importación/exportación.
+- Acción aplicada: override de `deepmerge-ts` a 8.0.1 y `uuid` a 11.1.1, con lockfile regenerado.
+- Evidencia final: auditoría en cero, schema Prisma 6.19.3 válido, smoke ExcelJS con formato condicional, CI y build aprobados.
+- Riesgo residual: mantener estos overrides bajo Dependabot/auditoría hasta que Prisma y ExcelJS actualicen sus rangos transitivos.
 
 ### SEC-002 — Cobertura runtime multi-tenant incompleta
 
@@ -57,4 +57,4 @@ El escáner de secretos y controles locales queda en PASS después de corregir d
 
 ## Veredicto
 
-Seguridad estática: PASS. Release de producción: BLOCKED por dependencias vulnerables y por falta de pruebas runtime de tenant/RBAC. La rama conserva los riesgos para que puedan resolverse con evidencia, no con excepciones silenciosas.
+Seguridad estática y dependencias: PASS. Veredicto de rama: READY FOR QA. Release de producción sigue bloqueado hasta completar pruebas runtime de tenant/RBAC y los gates desplegados del Bridge; los riesgos pendientes quedan explícitos, no exceptuados.

@@ -1,8 +1,8 @@
 # ContaGest baseline audit
 
-Fecha de ejecución: 2026-08-20  
-Rama de trabajo: `feat/production-readiness-ui-qa`  
-Commit inicial recibido: `9447b98` (`chore: capture ContaGest starting state`)  
+Fecha de ejecución: 2026-08-20
+Rama de trabajo: `feat/production-readiness-ui-qa`
+Commit inicial recibido: `9447b98` (`chore: capture ContaGest starting state`)
 Runtime: Node `v22.14.0`, npm `10.9.2`
 
 ## Alcance y método
