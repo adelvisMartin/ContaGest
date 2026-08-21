@@ -1,0 +1,21 @@
+[Unit]
+Description=Control Hipico Bridge readiness check
+After=control-hipico-bridge.service
+
+[Service]
+Type=oneshot
+User=controlhipico
+Group=controlhipico
+WorkingDirectory=/opt/control-hipico-bridge/current/tools/hipico-whatsapp-web-bridge
+EnvironmentFile=/etc/control-hipico-bridge/bridge.env
+Environment=NODE_ENV=production
+Environment=HOME=/var/lib/control-hipico-bridge
+ExecStart=/usr/bin/node src/healthcheck.mjs --ready
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ReadOnlyPaths=/opt/control-hipico-bridge/current
+ReadWritePaths=/var/lib/control-hipico-bridge
+UMask=0077
