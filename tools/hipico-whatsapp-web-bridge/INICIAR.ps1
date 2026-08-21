@@ -1,4 +1,4 @@
-param([switch]$RuntimeMode)
+param([switch]$RuntimeMode,[switch]$EnableLabSend)
 $ErrorActionPreference = 'Stop'
 [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)
 $OutputEncoding = [System.Text.UTF8Encoding]::new($false)
@@ -89,7 +89,9 @@ $dataDir = Join-Path $baseDir 'data'
 if (-not $RuntimeMode) {
   try { Copy-Runtime $sourceRoot $runtimeRoot }
   catch { Fail "No pude preparar el runtime de usuario en $runtimeRoot. Error: $($_.Exception.Message)" }
-  & powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $runtimeRoot 'INICIAR.ps1') -RuntimeMode
+  $runtimeArgs = @('-NoProfile','-ExecutionPolicy','Bypass','-File',(Join-Path $runtimeRoot 'INICIAR.ps1'),'-RuntimeMode')
+  if ($EnableLabSend) { $runtimeArgs += '-EnableLabSend' }
+  & powershell.exe @runtimeArgs
   exit $LASTEXITCODE
 }
 
@@ -145,6 +147,7 @@ if ([string]::IsNullOrWhiteSpace($token)) {
 }
 
 $dataForEnv = ($dataDir -replace '\\','/')
+$labSendValue = if ($EnableLabSend) { 'true' } else { 'false' }
 $envText = @"
 HIPICO_RUNTIME_MODE=production
 HIPICO_BACKEND_SYNC_ENABLED=true
@@ -156,7 +159,7 @@ HIPICO_SOURCE_GROUP_MATCHES=CLUB HIPICO TRIPLE COWN|CLUB HIPICO TRIPLE CROWN
 HIPICO_SOURCE_CHANNEL_KEY=club-hipico-triple-crown-official
 HIPICO_LAB_GROUP_NAME=$LabGroupName
 HIPICO_LAB_CHANNEL_KEY=control-hipico-lab
-HIPICO_LAB_SEND_ENABLED=true
+HIPICO_LAB_SEND_ENABLED=$labSendValue
 HIPICO_POLL_MS=1000
 HIPICO_BACKEND_TIMEOUT_MS=15000
 HIPICO_BACKEND_MAX_RPS=4
@@ -173,6 +176,11 @@ HIPICO_REPORT_INCLUDE_SAMPLES=false
 "@
 [IO.File]::WriteAllText($envPath,$envText,[Text.UTF8Encoding]::new($false))
 Write-Host "LAB UTF-8 configurado: $LabGroupName" -ForegroundColor Green
+if ($EnableLabSend) {
+  Write-Host 'ENVÍO LAB habilitado explícitamente para esta ejecución de QA.' -ForegroundColor Yellow
+} else {
+  Write-Host 'ENVÍO LAB deshabilitado por defecto. Usa -EnableLabSend solo durante QA autorizado.' -ForegroundColor Green
+}
 
 if (Test-Path -LiteralPath $profileResetFlag) { Quarantine-BridgeProfile 'reparación pendiente detectada' }
 
@@ -198,7 +206,7 @@ if ($LASTEXITCODE -ne 0) {
 
 Write-Host '[5/5] Iniciando listener oficial...' -ForegroundColor Cyan
 Write-Host 'FUENTE: CLUB HIPICO TRIPLE COWN/CROWN - SOLO LECTURA' -ForegroundColor Green
-Write-Host "LAB: $LabGroupName - SHADOW HABILITADO" -ForegroundColor Green
+Write-Host "LAB: $LabGroupName - SHADOW $($labSendValue.ToUpperInvariant())" -ForegroundColor Green
 Write-Host 'Ledger, saldos, jugadas y resultados reales: SIN ESCRITURA AUTOMÁTICA.' -ForegroundColor Green
 Write-Host 'Ctrl+C detiene de forma segura.' -ForegroundColor Cyan
 
