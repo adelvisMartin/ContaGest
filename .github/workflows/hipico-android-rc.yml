@@ -6,6 +6,7 @@ on:
     paths:
       - 'android/hipico-control-v1130/**'
       - 'frontend/public/hipico-control/**'
+      - 'products/hipico-control/**'
       - '.github/workflows/hipico-android-rc.yml'
 
 permissions:
@@ -19,7 +20,7 @@ jobs:
   build-debug-apk:
     name: Build reproducible debug APK
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 30
 
     steps:
       - name: Checkout exact revision
@@ -59,32 +60,28 @@ jobs:
         working-directory: android/hipico-control-v1130
         run: npm audit --audit-level=high
 
-      - name: Verify canonical PWA parity before native generation
+      - name: Verify canonical PWA parity
         working-directory: android/hipico-control-v1130
         run: npm run verify:web
 
-      - name: Build debug APK from canonical PWA
+      - name: Build and package QA APK
         working-directory: android/hipico-control-v1130
-        run: npm run android:debug
+        run: npm run android:qa
 
-      - name: Verify APK and produce checksums
+      - name: Verify packaged artifact metadata
         shell: bash
         working-directory: android/hipico-control-v1130
         run: |
-          APK='android/app/build/outputs/apk/debug/app-debug.apk'
-          test -s "$APK"
-          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose "$APK"
-          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$APK" > android/app/build/outputs/apk/debug/app-debug.badging.txt
-          sha256sum "$APK" > android/app/build/outputs/apk/debug/SHA256SUMS.txt
-          cat android/app/build/outputs/apk/debug/SHA256SUMS.txt
+          test -s artifacts/Hipico-Control-v1.13.0-rc2-debug.apk
+          test -s artifacts/SHA256SUMS.txt
+          test -s artifacts/QA_APK_METADATA.json
+          cat artifacts/SHA256SUMS.txt
+          cat artifacts/QA_APK_METADATA.json
 
       - name: Upload QA artifact
         uses: actions/upload-artifact@v4
         with:
           name: control-hipico-v1.13.0-rc2-debug-${{ github.sha }}
-          path: |
-            android/hipico-control-v1130/android/app/build/outputs/apk/debug/app-debug.apk
-            android/hipico-control-v1130/android/app/build/outputs/apk/debug/app-debug.badging.txt
-            android/hipico-control-v1130/android/app/build/outputs/apk/debug/SHA256SUMS.txt
+          path: android/hipico-control-v1130/artifacts/
           if-no-files-found: error
-          retention-days: 7
+          retention-days: 14
