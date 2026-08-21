@@ -96,22 +96,23 @@ test('operator exposes read-only shadow projection using RC1-compatible matching
   assert.doesNotMatch(projection,/INSERT|UPDATE|DELETE|sendCloudText|sendMessage/);
 });
 
-test('Bridge v1.2 observes official source and has a fail-closed LAB-only send path',()=>{
+test('Bridge v1.4 observes official source and has a fail-closed LAB-only send path',()=>{
   const pkg=JSON.parse(read('tools/hipico-whatsapp-web-bridge/package.json'));
-  assert.equal(pkg.version,'1.2.0');
+  assert.equal(pkg.version,'1.4.0');
   assert.equal(pkg.dependencies['playwright-core'],'1.62.1');
   assert.equal(pkg.dependencies['whatsapp-web.js'],undefined);
   const runtime=read('tools/hipico-whatsapp-web-bridge/src/index.mjs');
+  const config=read('tools/hipico-whatsapp-web-bridge/src/runtime-config.mjs');
   assert.match(runtime,/https:\/\/web\.whatsapp\.com\//);
   assert.match(runtime,/launchPersistentContext/);
-  assert.match(runtime,/HIPICO_SOURCE_GROUP_MATCH/);
-  assert.match(runtime,/HIPICO_SOURCE_CHANNEL_KEY/);
-  assert.match(runtime,/club-hipico-triple-crown-official/);
-  assert.match(runtime,/HIPICO_LAB_GROUP_NAME/);
-  assert.match(runtime,/HIPICO_LAB_SEND_ENABLED/);
+  assert.match(runtime,/SOURCE_MATCHES/);
+  assert.match(config,/HIPICO_SOURCE_CHANNEL_KEY/);
+  assert.match(config,/club-hipico-triple-crown-official/);
+  assert.match(runtime,/LAB_GROUP_NAME/);
+  assert.match(runtime,/LAB_SEND_ENABLED/);
   assert.match(runtime,/Destino lab no autorizado/);
-  assert.match(runtime,/Guard de destino lab fallo/);
-  assert.match(runtime,/Envio al grupo fuente: IMPOSIBLE POR DISENO/);
+  assert.match(runtime,/Guard de destino LAB falló/);
+  assert.match(runtime,/Envío al grupo fuente: IMPOSIBLE POR DISEÑO/);
   assert.match(runtime,/seen-source-message-ids\.json/);
   assert.match(runtime,/spool-events/);
   assert.match(runtime,/spool-lab-mirror/);
@@ -124,11 +125,28 @@ test('Bridge v1.2 observes official source and has a fail-closed LAB-only send p
 
 test('Bridge environment names source and lab separately and lab send defaults off',()=>{
   const env=read('tools/hipico-whatsapp-web-bridge/.env.example');
-  assert.match(env,/HIPICO_SOURCE_GROUP_MATCH=CLUB HIPICO TRIPLE CROWN/);
+  assert.match(env,/HIPICO_RUNTIME_MODE=production/);
+  assert.match(env,/HIPICO_BACKEND_SYNC_ENABLED=true/);
+  assert.match(env,/HIPICO_SOURCE_GROUP_MATCHES=CLUB HIPICO TRIPLE COWN\|CLUB HIPICO TRIPLE CROWN/);
   assert.match(env,/HIPICO_SOURCE_CHANNEL_KEY=club-hipico-triple-crown-official/);
   assert.match(env,/HIPICO_LAB_GROUP_NAME=Control hípico lab/);
   assert.match(env,/HIPICO_LAB_CHANNEL_KEY=control-hipico-lab/);
   assert.match(env,/HIPICO_LAB_SEND_ENABLED=false/);
+});
+
+test('Bridge production readiness is authenticated, persistent and source-send closed',()=>{
+  const route=read('backend/src/modules/hipico-bot/hipico-bridge.routes.ts');
+  const security=read('backend/src/modules/hipico-bot/hipico-bridge-security.ts');
+  const canonical=read('backend/src/modules/hipico-bot/hipico-canonical-shadow.store.ts');
+  const preflight=read('tools/hipico-whatsapp-web-bridge/src/preflight.mjs');
+  assert.match(route,/\/bridge\/health/);
+  assert.match(route,/bridgePersistenceReady/);
+  assert.match(route,/canonicalShadowReadiness/);
+  assert.match(route,/sourceSendPossible:false/);
+  assert.match(security,/MIN_BRIDGE_TOKEN_LENGTH=32/);
+  assert.match(canonical,/LAB_CHANNEL_NOT_UNIQUE|labChannelCount/);
+  assert.match(preflight,/body\?\.ready !== true/);
+  assert.match(preflight,/body\?\.sourceSendPossible !== false/);
 });
 
 test('backend exposes a dedicated executable Hipico test gate',()=>{

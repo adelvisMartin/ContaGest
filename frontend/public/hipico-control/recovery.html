@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#75101d">
+  <title>Recuperación · Control Hípico</title>
+  <link rel="stylesheet" href="./assets/css/recovery.css">
+</head>
+<body>
+  <main class="recovery-card">
+    <div class="recovery-mark">HC</div>
+    <h1>Recuperación segura</h1>
+    <p>Esta pantalla restablece únicamente los datos locales de Control Hípico si el módulo principal no logra iniciar.</p>
+    <div id="status" class="recovery-status" aria-live="polite">Lista para recuperar Control Hípico.</div>
+    <div class="recovery-actions">
+      <button id="reset" class="primary" type="button">Restablecer almacenamiento y abrir</button>
+      <a href="./index.html?retry=1">Abrir sin restablecer datos</a>
+    </div>
+    <small>Control Hípico · Recuperación aislada del producto</small>
+  </main>
+  <script src="./assets/js/recovery.js"></script>
+</body>
+</html>

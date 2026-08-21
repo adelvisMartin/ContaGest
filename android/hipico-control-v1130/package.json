@@ -1,10 +1,11 @@
 {
   "name": "hipico-control-android-wrapper",
   "private": true,
-  "version": "1.13.0-parity.2",
+  "version": "1.13.0-rc2",
   "type": "module",
   "scripts": {
     "sync:web": "node scripts/sync-web.mjs",
+    "verify:web": "node scripts/sync-web.mjs --check-only",
     "android:init": "npm run sync:web && node scripts/ensure-android.mjs",
     "cap:sync": "npm run sync:web && node scripts/ensure-android.mjs && npx cap sync android",
     "android:debug": "npm run cap:sync && node scripts/gradle.mjs assembleDebug",
@@ -12,10 +13,10 @@
     "android:release-apk": "npm run cap:sync && node scripts/gradle.mjs assembleRelease"
   },
   "dependencies": {
-    "@capacitor/android": "^7.4.3",
-    "@capacitor/core": "^7.4.3"
+    "@capacitor/android": "7.6.8",
+    "@capacitor/core": "7.6.8"
   },
   "devDependencies": {
-    "@capacitor/cli": "^7.4.3"
+    "@capacitor/cli": "7.6.8"
   }
 }

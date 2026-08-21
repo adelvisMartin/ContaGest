@@ -25,6 +25,13 @@ function summaryCards(summary = {}) {
   </section>`;
 }
 
+function retentionSignals(data = {}) {
+  const summary = data.summary || {};
+  const classes = Array.isArray(data.classes) ? data.classes : [];
+  const highOccupancy = classes.filter((item) => Number(item.capacity || 0) > 0 && Number(item.bookings || 0) / Number(item.capacity) >= 0.8).length;
+  return `<section class="cg-gym-v1124-card cg-gym-retention" aria-labelledby="gym-retention-title"><header><div><h3 id="gym-retention-title">Coaching y retención</h3><p>Señales operativas para priorizar seguimiento antes de perder una membresía.</p></div><i class="fa-solid fa-chart-line" aria-hidden="true"></i></header><div class="cg-gym-v1124-grid cg-gym-retention-grid"><article><span>Renovaciones próximas</span><strong>${Number(summary.memberships?.expiring || 0)}</strong><small>Vencen en los próximos 7 días</small></article><article><span>Clases ≥ 80%</span><strong>${highOccupancy}</strong><small>Sesiones con alta ocupación</small></article><article><span>Clientes con coaching</span><strong>${Number(summary.members?.active || 0)}</strong><small>Usa evaluaciones y rutinas para seguimiento</small></article></div></section>`;
+}
+
 function prerequisites(members, trainers, plans) {
   const missing = [];
   if (!members.length) missing.push('al menos un cliente');
@@ -136,6 +143,7 @@ export const GymManagementPage = {
     return `<section class="cg-page-stack cg-vertical-page cg-gym-page">
       ${PageHeader({eyebrow:'Vertical Fitness',title:'Control integral de gimnasio',description:'Clientes, instructores, membresías, asistencia, evaluaciones, rutinas, nutrición y clases desde una sola vista funcional.',actions:`${Button({id:'btnGymRefresh',text:'Actualizar',icon:'fa-rotate',variant:'secondary'})}${Button({text:'Mensajes WhatsApp',icon:'fa-message',variant:'secondary',attrs:'data-route="mensajes"'})}`})}
       ${summaryCards(data.summary)}
+      ${retentionSignals(data)}
       ${tabs(routeTab)}
       <div data-gym-panel="${safe(routeTab)}">${panel}</div>
     </section>`;

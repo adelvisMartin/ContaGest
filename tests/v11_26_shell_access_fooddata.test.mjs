@@ -17,8 +17,8 @@ const vercel=read('vercel.json');
 
 test('internal administrator and active QA license can see licensed QA modules without client privilege escalation',()=>{
   assert.match(access,/if \(isActiveQaLicense\(state, route\)\) return true/);
-  assert.match(access,/if \(profile\.isAdmin && !profile\.isClient\) return true/);
-  assert.match(access,/if \(profile\.isClient && license\)/);
+  assert.match(access,/if \(identity\.isAdmin && !identity\.isClient\) return true/);
+  assert.match(access,/if \(identity\.isClient\)/);
   assert.match(access,/if \(!validLicense\(license\)\) return false/);
 });
 

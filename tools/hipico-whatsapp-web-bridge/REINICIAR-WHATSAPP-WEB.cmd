@@ -1,15 +1,18 @@
 @echo off
 chcp 65001 >nul
 setlocal
-title Control Hipico - Reiniciar WhatsApp Web
+title Control Hipico - Reparar WhatsApp Web
 cd /d "%~dp0"
 echo.
-echo Esto borra SOLO el perfil local usado por WhatsApp Web.
-echo NO borra el token protegido de Control Hipico ni toca Vercel.
+echo Esta accion AISLA el perfil dedicado de WhatsApp Web para volver a vincularlo.
+echo Conserva token, colas, journal, logs e IDs vistos.
+echo Cierra primero la ventana del Bridge.
 echo.
-set /p CONFIRM=Escribe SI para continuar: 
+set /p CONFIRM=Escribe SI para continuar:
 if /I not "%CONFIRM%"=="SI" exit /b 0
-if exist "data\chrome-profile" rmdir /s /q "data\chrome-profile"
-echo.
-echo Perfil eliminado. Ejecuta INICIAR-CONTROL-HIPICO-WHATSAPP.cmd para vincular otra vez.
-pause
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0REPARAR-WHATSAPP-WEB.ps1"
+if not "%ERRORLEVEL%"=="0" (
+  echo.
+  echo No se pudo aislar el perfil. Confirma que el Bridge y Chrome controlado esten cerrados.
+  pause
+)

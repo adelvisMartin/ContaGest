@@ -1,6 +1,6 @@
 -- Control Hípico v1.13 bot persistence.
 -- Product owner: Control Hípico. This migration intentionally contains no
--- ContaGest ERP/Fitness tables even though both products share PostgreSQL today.
+-- ContaGest ERP tables even though both products share PostgreSQL today.
 
 CREATE TABLE IF NOT EXISTS public."HipicoWebhookEvent" (
   "id" TEXT PRIMARY KEY,

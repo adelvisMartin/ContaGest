@@ -72,7 +72,7 @@ test('demo accounts are not internal system identities', () => {
 });
 
 test('responsive enterprise theme covers mobile phone, tablet and compact screens', () => {
-  const css = read('frontend/src/styles/modern-enterprise-v1114.css');
+  const css = read('frontend/src/styles/erp-system.css') + read('frontend/src/styles/legacy/modern-enterprise-v1114.css');
   for (const width of ['1279px','1023px','767px','479px','359px']) assert.match(css, new RegExp(width.replace('.', '\\.')));
   assert.match(css, /100dvh/);
   assert.match(css, /safe-area-inset/);

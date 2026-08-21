@@ -209,7 +209,7 @@ export const AccessControlService = {
     const roleModules=[...(role?.modules||[])];
     if(!user?.demo)return roleModules;
     const limit=Math.max(1,Number(user.maxModules||this.defaultState().demoPolicy.maxModules||roleModules.length));
-    const explicit=normalizeEnabledModules(user.enabledModules||user.modules).filter((route)=>roleModules.includes(route));
+    const explicit=normalizeEnabledModules(user.enabledModules||user.selectedModules||user.modules).filter((route)=>roleModules.includes(route));
     return (explicit.length?explicit:roleModules).slice(0,limit);
   },
   canAccessRoute(state,route) {
@@ -235,8 +235,8 @@ export const AccessControlService = {
   updateDemoDays(rbacInput,userId,days) { const rbac=this.ensure(rbacInput);const expiresAt=daysFromNow(Number(days||0));rbac.users=rbac.users.map((user)=>user.id===userId?{ ...user,demo:true,demoExpiresAt:expiresAt }:user);rbac.audit=[{ at:new Date().toISOString(),action:'update-demo-days',userId,days:Number(days||0) },...(rbac.audit||[])].slice(0,40);return rbac; },
   upsertDemoUser(rbacInput,data={}) {
     const rbac=this.ensure(rbacInput); const email=String(data.email||'').trim().toLowerCase(); const id=data.id||`user-demo-${slugId(email||data.fullName||Date.now())}`; const existing=rbac.users.find((user)=>user.id===id||String(user.email).toLowerCase()===email); const roleId=data.roleId||existing?.roleId||'role-demo'; const role=rbac.roles.find((item)=>item.id===roleId)||rbac.roles.find((item)=>item.id==='role-demo'); const maxModules=Math.max(1,Number(data.maxModules||existing?.maxModules||rbac.demoPolicy.maxModules||7)); const days=Number(data.days||data.demoDays||14);
-    const requested=normalizeEnabledModules(data.enabledModules!==undefined?data.enabledModules:existing?.enabledModules); const roleModules=role?.modules||[]; const enabledModules=(requested.length?requested:roleModules).filter((route)=>roleModules.includes(route)).slice(0,maxModules);
-    const user={ ...(existing||{}),id:existing?.id||id,fullName:String(data.fullName||existing?.fullName||'Acceso temporal').trim(),email:email||existing?.email||`access-${Date.now()}@empresa.com`,roleId,status:data.status||existing?.status||'active',demo:true,maxModules,enabledModules,demoExpiresAt:data.demoExpiresAt||daysFromNow(days) };
+    const requested=normalizeEnabledModules(data.enabledModules!==undefined?data.enabledModules:data.selectedModules!==undefined?data.selectedModules:existing?.enabledModules||existing?.selectedModules); const roleModules=role?.modules||[]; const enabledModules=(requested.length?requested:roleModules).filter((route)=>roleModules.includes(route)).slice(0,maxModules);
+    const user={ ...(existing||{}),id:existing?.id||id,fullName:String(data.fullName||existing?.fullName||'Acceso temporal').trim(),email:email||existing?.email||`access-${Date.now()}@empresa.com`,roleId,status:data.status||existing?.status||'active',demo:true,maxModules,enabledModules,selectedModules:enabledModules,demoExpiresAt:data.demoExpiresAt||daysFromNow(days) };
     rbac.users=[user,...rbac.users.filter((item)=>item.id!==user.id&&String(item.email).toLowerCase()!==String(user.email).toLowerCase())].map(sanitizeUser);rbac.activeUserId=data.activate?user.id:rbac.activeUserId;rbac.audit=[{ at:new Date().toISOString(),action:existing?'update-demo-user':'create-demo-user',userId:user.id,email:user.email,maxModules,enabledModules },...(rbac.audit||[])].slice(0,60);return rbac;
   },
   updateUser(rbacInput,userId,data={}) {

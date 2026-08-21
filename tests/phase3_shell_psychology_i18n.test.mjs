@@ -71,13 +71,14 @@ test('settings only store non-secret appointment integration identifiers', async
   assert.doesNotMatch(settings, /name="[^"]*(token|secret|privateKey|apiKey)[^"]*"/i);
 });
 
-test('theme catalog is persisted instead of collapsed back to light/dark', async () => {
+test('official theme persistence is binary while legacy palettes remain migration metadata', async () => {
   const store = await read('frontend/src/state/store.js');
   const catalog = await read('frontend/src/data/themeCatalog.js');
-  for (const theme of ['sector','sky','soft-blue','spectrum','executive','finance','enterprise']) {
-    assert.match(store, new RegExp(`['"]${theme.replace('-', '\\-')}['"]`));
-    assert.match(catalog, new RegExp(`key:'${theme.replace('-', '\\-')}'`));
-  }
+  assert.match(store, /OFFICIAL_THEMES = new Set\(\['light','dark'\]\)/);
+  assert.match(store, /normalizePersistedTheme/);
+  assert.match(store, /return OFFICIAL_THEMES\.has\(value\) \? value : 'light'/);
+  assert.match(catalog, /LEGACY_THEME_PRESETS/);
+  assert.match(catalog, /enterprise/);
 });
 
 test('phase3 contextual layer owns desktop sidebar-main geometry and non-clipping KPI contract', async () => {

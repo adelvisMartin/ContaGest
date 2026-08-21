@@ -101,8 +101,8 @@ html[dir="rtl"] body { direction:rtl; }html[dir="rtl"] :where(.cgx-page-header,.
   html body #pages > section,html body .hf-route-panel > .cg-page-stack {width:100%!important;max-width:100%!important;min-width:0!important;}
   html body .hf-kpi-strip {display:grid!important;grid-template-columns:repeat(auto-fit,minmax(min(100%,180px),1fr))!important;gap:12px!important;width:100%!important;max-width:100%!important;overflow:visible!important;}
   html body .hf-kpi-strip > * {min-width:0!important;width:auto!important;max-width:100%!important;}
-  html body .hf-kpi-strip :is(.cgx-metric,.kpi) strong {max-width:100%!important;overflow:visible!important;text-overflow:clip!important;white-space:normal!important;overflow-wrap:anywhere!important;font-size:clamp(1.1rem,1.55vw,1.55rem)!important;line-height:1.12!important;}
-  html body .hf-kpi-strip :is(.cgx-metric,.kpi) small {max-width:100%!important;overflow:visible!important;text-overflow:clip!important;white-space:normal!important;overflow-wrap:anywhere!important;}
+  html body .hf-kpi-strip :is(.cgx-metric,.kpi) strong {display:block!important;max-width:100%!important;overflow:visible!important;text-overflow:clip!important;white-space:nowrap!important;overflow-wrap:normal!important;font-size:clamp(1.05rem,1.55vw,1.55rem)!important;line-height:1.12!important;letter-spacing:-.02em!important;font-variant-numeric:tabular-nums!important;}
+  html body .hf-kpi-strip :is(.cgx-metric,.kpi) small {display:block!important;max-width:100%!important;overflow:visible!important;text-overflow:clip!important;white-space:normal!important;overflow-wrap:anywhere!important;}
   html body :where(.table-wrap,.pl-table-wrap,.ds-table-wrap,.cgv-table-shell,.cg-ui-table-wrap,.cgx-table-wrap) {max-width:100%!important;overflow-x:auto!important;}
   html body .settings-enterprise-layout {width:100%!important;max-width:100%!important;grid-template-columns:minmax(190px,230px) minmax(0,1fr)!important;}
   html body .settings-enterprise-content,html body .settings-section,html body .settings-company-grid,html body .settings-fields,html body .settings-appearance-fields {min-width:0!important;max-width:100%!important;}

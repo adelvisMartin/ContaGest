@@ -1,0 +1,20 @@
+{
+  "product": "control-hipico",
+  "version": "1.13.0-rc2",
+  "channel": "release-candidate",
+  "canonicalSource": "frontend/public/hipico-control",
+  "androidWrapper": "android/hipico-control-v1130",
+  "baselineArtifacts": [
+    {
+      "name": "Hipico-Control-v1.13.0-RC1.apk",
+      "sha256": "b477dbe224596b4e0877f2256dadd6ca812382fb91a8609299dec7a5f48e37de"
+    },
+    {
+      "name": "Control-Hipico-WhatsApp-Bridge-v1.3.3-FIX-GROUP-DETECTION-LAB-INPUT.zip",
+      "sha256": "9275a0c0c5578aba60cb405879ae03bc383e3de47f2429e0782e26f74e2cfc18"
+    }
+  ],
+  "binaryPolicy": "No se versionan APK/ZIP/Base64 duplicados; el runtime Git canónico se sincroniza y verifica por hash antes de cada build Android.",
+  "scope": "/hipico-control/",
+  "ownership": "independent-product"
+}

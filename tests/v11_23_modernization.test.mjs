@@ -75,5 +75,5 @@ test('Control Hipico service worker is versioned and refuses sensitive caching',
   assert.match(hipicoSw, /control-hipico-shell-v/);
   assert.match(hipicoSw, /control-hipico-runtime-v/);
   assert.match(hipicoSw, /api\|auth\|session\|license\|webhook/);
-  assert.match(hipicoSw, /if\(isSensitive\(url\)\)\{event\.respondWith\(fetch\(request\)\)/);
+  assert.match(hipicoSw, /if\(isSensitive\(url\)\)\{event\.respondWith\(fetch\(request,\{cache:'no-store'\}\)\)/);
 });

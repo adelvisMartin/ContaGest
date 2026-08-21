@@ -1,30 +1,73 @@
 {
-  "id": "/hipico-control/",
   "name": "Control Hípico",
-  "short_name": "Control Hípico",
-  "description": "Carreras, tercios, WhatsApp, saldos y cierres con operación offline-first.",
-  "start_url": "/hipico-control/?source=pwa",
-  "scope": "/hipico-control/",
+  "short_name": "Hípico",
+  "description": "Gestión hípica auditable, disponible sin conexión, multigrupo y preparada para automatización operativa.",
+  "id": "./",
+  "start_url": "./?view=dashboard",
+  "scope": "./",
   "display": "standalone",
-  "display_override": ["standalone", "minimal-ui"],
-  "orientation": "any",
-  "background_color": "#f3f1ea",
-  "theme_color": "#26362f",
-  "categories": ["productivity", "business", "sports"],
-  "lang": "es-VE",
-  "dir": "ltr",
-  "prefer_related_applications": false,
+  "background_color": "#f5f5f3",
+  "theme_color": "#75101d",
+  "orientation": "portrait-primary",
   "icons": [
-    {"src":"/hipico-control/assets/brand/icon-192.svg","sizes":"any","type":"image/svg+xml","purpose":"any"},
-    {"src":"/hipico-control/assets/brand/icon-512.svg","sizes":"any","type":"image/svg+xml","purpose":"any"},
-    {"src":"/hipico-control/assets/brand/maskable-192.svg","sizes":"any","type":"image/svg+xml","purpose":"maskable"},
-    {"src":"/hipico-control/assets/brand/maskable-512.svg","sizes":"any","type":"image/svg+xml","purpose":"maskable"}
+    {
+      "src": "./icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "./icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "./icons/icon-192-maskable.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "./icons/icon-512-maskable.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
   ],
   "shortcuts": [
-    {"name":"Resumen","short_name":"Resumen","url":"/hipico-control/#resumen","icons":[{"src":"/hipico-control/assets/brand/icon-192.svg","sizes":"any","type":"image/svg+xml"}]},
-    {"name":"Nueva captura","short_name":"Captura","url":"/hipico-control/#captura","icons":[{"src":"/hipico-control/assets/brand/icon-192.svg","sizes":"any","type":"image/svg+xml"}]},
-    {"name":"Chat WhatsApp","short_name":"WhatsApp","url":"/hipico-control/#whatsapp","icons":[{"src":"/hipico-control/assets/brand/icon-192.svg","sizes":"any","type":"image/svg+xml"}]},
-    {"name":"Participantes","short_name":"Tercios","url":"/hipico-control/#participantes","icons":[{"src":"/hipico-control/assets/brand/icon-192.svg","sizes":"any","type":"image/svg+xml"}]},
-    {"name":"Cierres y saldos","short_name":"Cierres","url":"/hipico-control/#cierres","icons":[{"src":"/hipico-control/assets/brand/icon-192.svg","sizes":"any","type":"image/svg+xml"}]}
+    {
+      "name": "Captura rápida",
+      "short_name": "Capturar",
+      "url": "./?view=race&tab=capture",
+      "icons": [
+        {
+          "src": "./icons/icon-192.png",
+          "sizes": "192x192"
+        }
+      ]
+    },
+    {
+      "name": "Apuestas adelantadas",
+      "short_name": "Adelantadas",
+      "url": "./?view=advanced",
+      "icons": [
+        {
+          "src": "./icons/icon-192.png",
+          "sizes": "192x192"
+        }
+      ]
+    },
+    {
+      "name": "Cierre y saldos",
+      "short_name": "Saldos",
+      "url": "./?view=reports",
+      "icons": [
+        {
+          "src": "./icons/icon-192.png",
+          "sizes": "192x192"
+        }
+      ]
+    }
   ]
 }

@@ -122,6 +122,7 @@ async function safeDemoRoutesForRole(roleId: string) {
 
 async function upsertDemoUser(tenantId: string, body: z.infer<typeof demoUserSchema>) {
   const role = await ensureRoleByName(tenantId, body.roleName);
+  if (role.system) throw new HttpError(422, 'Los roles de sistema no pueden convertirse en acceso demo temporal.');
   const allowedRoutes = await safeDemoRoutesForRole(role.id);
   const allowedSet = new Set(allowedRoutes);
   const requested = [...new Set(body.enabledModules)];

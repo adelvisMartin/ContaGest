@@ -1,31 +1,24 @@
+import fs from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
 import { chromium } from 'playwright-core';
 
-if (!chromium || typeof chromium.launch !== 'function' || typeof chromium.launchPersistentContext !== 'function') {
-  throw new Error('playwright-core no expone Chromium con el contrato esperado.');
-}
-
-let browser;
+const temp = await fs.mkdtemp(path.join(os.tmpdir(), 'hipico-bridge-selftest-'));
+let context;
 let channel = 'chrome';
 try {
-  browser = await chromium.launch({ channel: 'chrome', headless: true });
-} catch (chromeError) {
-  channel = 'msedge';
   try {
-    browser = await chromium.launch({ channel: 'msedge', headless: true });
-  } catch (edgeError) {
-    throw new Error(
-      `No pude abrir Google Chrome ni Microsoft Edge con Playwright. Chrome: ${chromeError.message}. Edge: ${edgeError.message}`
-    );
+    context = await chromium.launchPersistentContext(temp, { headless: true, channel: 'chrome', chromiumSandbox: true });
+  } catch {
+    channel = 'msedge';
+    context = await chromium.launchPersistentContext(temp, { headless: true, channel: 'msedge', chromiumSandbox: true });
   }
+  const page = context.pages()[0] || await context.newPage();
+  await page.setContent('<h1>OK</h1>');
+  const ok = await page.textContent('h1');
+  if (ok !== 'OK') throw new Error('Browser DOM self-test failed');
+  console.log(`SELFTEST_OK playwright=1.62.1 channel=${channel}`);
+} finally {
+  await context?.close().catch(() => {});
+  await fs.rm(temp, { recursive: true, force: true }).catch(() => {});
 }
-
-const page = await browser.newPage();
-await page.goto('data:text/html,<title>Control Hipico</title><h1>OK</h1>');
-const title = await page.title();
-await browser.close();
-
-if (title !== 'Control Hipico') {
-  throw new Error('El navegador no paso la prueba de control.');
-}
-
-console.log(`SELFTEST_OK playwright=1.62.1 channel=${channel}`);

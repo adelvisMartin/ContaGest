@@ -1,0 +1,9 @@
+{
+  "version": "1.13.0-rc2",
+  "channel": "rc",
+  "revision": "production-readiness-parity",
+  "buildId": "1.13.0-rc2",
+  "builtAt": "2026-08-21T01:36:10.449Z",
+  "baseline": "Hipico-Control-v1.13.0-RC1.apk#sha256-b477dbe224596b4e",
+  "source": "git-canonical-web"
+}

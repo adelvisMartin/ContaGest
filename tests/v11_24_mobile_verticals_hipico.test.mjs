@@ -15,7 +15,7 @@ const hipicoSw=read('frontend/public/hipico-control/sw.js');
 const bridge=read('frontend/api/hipico/group-bridge-ingest.js');
 
 test('mobile sidebar routes child modules during capture phase and keeps drawer context',()=>{
-  assert.match(routeService,/document\.addEventListener\('click',[\s\S]*UrlStateService\.navigate\(route,[\s\S]*stopPropagation\(\);[\s\S]*\}, true\);/);
+  assert.match(routeService,/document\.addEventListener\('click',[\s\S]*fromSidebar[\s\S]*event\.stopPropagation\(\)[\s\S]*UrlStateService\.navigate\(route,[\s\S]*\}, true\);/);
   assert.match(routeService,/target\.closest\('#mainMenu'\)/);
 });
 
@@ -69,12 +69,12 @@ test('reviewed race finalization snapshots before releasing next race and never 
   assert.match(hipicoFinalization,/action:'settle_reviewed'/);
 });
 
-test('PWA 1.2.1 caches the offline operational shell but keeps sensitive routes network-only',()=>{
-  assert.match(hipicoSw,/VERSION='1\.2\.1'/);
+test('PWA 1.3.1 caches the offline operational shell but keeps sensitive routes network-only',()=>{
+  assert.match(hipicoSw,/VERSION='1\.3\.1'/);
   assert.match(hipicoSw,/race-finalization\.js/);
   assert.match(hipicoSw,/offline-icons\.css/);
   assert.match(hipicoSw,/api\|auth\|session\|license\|webhook/);
-  assert.match(hipicoSw,/if\(isSensitive\(url\)\)\{event\.respondWith\(fetch\(request\)\)/);
+  assert.match(hipicoSw,/if\(isSensitive\(url\)\)\{event\.respondWith\(fetch\(request,\{cache:'no-store'\}\)\)/);
 });
 
 test('WhatsApp bot suggestions are shadow-only and prohibit monetary auto-apply',()=>{
