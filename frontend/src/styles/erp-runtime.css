@@ -2,15 +2,33 @@
    app.js imports this file only.
 
    Cascade contract:
-   1. shell geometry and vertical context compatibility;
-   2. historical module CSS while migration is in progress;
-   3. contagest-visual-system-v12.css LAST as the only shared visual authority.
+   1. shell geometry remains the strongest !important compatibility layer;
+   2. Visual System v12 is declared immediately after shell, so its !important
+      normalization outranks every later historical/module layer;
+   3. vertical context may supply semantic accents but never shared geometry;
+   4. historical module CSS remains temporarily while pages migrate;
+   5. contagest-visual-system-v12.css is physically imported LAST and is the
+      only shared authority for new typography, spacing, cards, forms, tables,
+      responsive behavior, theming and motion.
 
-   New typography, spacing, cards, forms, tables, responsive behavior, theme
-   geometry and motion MUST be added to contagest-visual-system-v12.css instead
-   of creating another versioned visual hotfix file.
+   CSS cascade layers reverse priority for !important declarations. Declaring
+   the v12 layers here, BEFORE legacy layers are discovered inside erp-system,
+   is intentional: shell > v12 visual contract > context/legacy for important
+   geometry, while semantic v12 tokens remain unique and stable.
 */
-@layer cg.shell-contract, cg.context;
+@layer cg.shell-contract,
+       cg.visual.tokens,
+       cg.visual.foundation,
+       cg.visual.shell,
+       cg.visual.components,
+       cg.visual.forms,
+       cg.visual.tables,
+       cg.visual.modules,
+       cg.visual.motion,
+       cg.visual.responsive,
+       cg.visual.a11y,
+       cg.context;
+
 @import './shell-contract.css' layer(cg.shell-contract);
 @import './shell-stability-v1127.css' layer(cg.shell-contract);
 @import './vertical-contexts.css' layer(cg.context);
