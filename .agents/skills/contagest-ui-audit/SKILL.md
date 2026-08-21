@@ -1,15 +1,25 @@
 ---
 name: contagest-ui-audit
-description: Senior ERP UI/UX, source-ownership, cascade and responsive audit for ContaGest using the canonical v13 visual contract.
+description: Senior ERP UI/UX, source-ownership, shell, contrast, responsive and route-by-route audit for the canonical v14 visual contract.
 ---
 
-# ContaGest UI Audit
+# ContaGest UI Audit v14
 
-Use Impeccable for systematic critique, typography, spacing, responsive, hierarchy and hardening. Use Taste only to challenge generic template output; never copy another product's brand. Use Emil/motion references only after layout, ownership and accessibility are correct.
+Use Impeccable for systematic critique, typography, spacing, hierarchy, responsive and hardening. Use Taste to challenge generic output, never to copy a brand. Use Emil only after layout/functionality are stable. Screenshot/Dribbble references are direction for density, information hierarchy and interaction patterns—not pixel-copy instructions.
+
+## First rule: find the actual visual owner
+Before touching a selector inspect **all** author-style sources:
+
+- `frontend/index.html` — must contain zero global `<style>` blocks;
+- `frontend/src/styles/erp-runtime.css` and its five imports;
+- page markup/inline `style=`;
+- MUI/React `sx`/theme overrides;
+- component classes and pseudo-elements.
+
+A previous audit removed historical CSS files but missed a large inline design system in `index.html`; that unlayered CSS could still dominate the canonical layers. v14 treats document-head CSS as part of the cascade and blocks its return.
 
 ## Canonical authority
-
-`frontend/src/styles/` is a controlled directory. Exactly these files may exist:
+Exactly six CSS files may exist in `frontend/src/styles/`:
 
 ```text
 contagest-visual-system-v12.css
@@ -20,142 +30,97 @@ shell-contract.css
 shell-stability-v1127.css
 ```
 
-`app.js` imports only `erp-runtime.css`. The runtime imports only the other five pillars. No page-local CSS, legacy folder, compatibility shim, Tailwind runtime, Precision Ledger stylesheet, retired theme stylesheet, versioned responsive hotfix or extra shell/header file is permitted.
+`contagest-visual-system-v12.css` is the appearance authority despite the historical filename. `shell-contract.css` owns geometry only. `shell-stability-v1127.css` owns interaction/z-index/overflow only. `module-adapters.css` owns narrow domain geometry only and consumes `--cg-v-*` tokens.
 
-Shared visual decisions belong to `contagest-visual-system-v12.css` and `components/ui/`. Reusable low-level compatibility/layout belongs to `runtime-primitives-v13.css`. Genuine domain geometry belongs to `module-adapters.css` and must consume only `--cg-v-*` tokens.
+## Visual direction
+Operational ERP, not landing page:
+- neutral surfaces and high information density;
+- dark mode near-black/graphite, not blue gradient;
+- light mode is the same geometry with daylight tokens;
+- compact sidebar with primary routes and active domain groups;
+- no global KPI strip repeated on every route;
+- no gradients, glass, giant icon circles, decorative blobs or billboard counters;
+- one type scale: page 20–25, section 16–18, body 12–14, KPI 14–18;
+- numerical values never ellipsized; use tabular numbers, adequate width and controlled scaling;
+- human-readable select labels; UUIDs/technical IDs never replace names unless there is genuinely no display identity.
 
-## Source audit is the first iteration
-
+## Source iteration
 Run:
 
 ```bash
 npm run audit:visual
+npm run audit:functions
 ```
 
-Before making a fix, use the generated report to answer:
+For each route answer:
+1. Which file/component owns the layout?
+2. Which stylesheet/layer owns each shared selector?
+3. Is there hidden/global CSS in `index.html`, page code or MUI?
+4. Does every form have a real submit path?
+5. Does every visible action have a handler/delegation owner?
+6. What service/API does the primary workflow call?
+7. What happens on empty/loading/error/duplicate/permission failure?
+8. Is there a browser test for the actual user action?
 
-- Which file currently owns the bad selector?
-- Is the problem primitive/shared, shell-specific or genuinely domain-specific?
-- Is an old declaration still present when it should be deleted?
-- Is there a page-local `<style>`, CSS import, inline geometry, hardcoded color/size or fixed width?
-- Does the route exist in `qa/support/module-visual-catalog.mjs`?
-- Does a table/kanban own its overflow instead of the document?
+## Six visual iterations per route
+### A Source/ownership
+Delete superseded declarations; do not stack overrides. Check duplicated components, CSS, routes and frameworks.
 
-After the fix run:
+### B Desktop 1440/1024
+First viewport must expose context and primary action. Header/sidebar cannot consume disproportionate space. Cards use the same density/radius. Long amounts and RIF/document values remain complete.
 
-```bash
-npm run audit:visual:strict
-```
+### C Tablet 768
+Collapse operational grids intentionally. Sidebar overlays. Filters/actions remain reachable. Tables own horizontal scroll.
 
-Never solve a cascade bug by adding another global override before identifying ownership.
+### D Mobile 430/390/360
+`document.scrollWidth <= viewport`. No clipped buttons, labels or cards. Monetary values do not wrap. Actions wrap/full-width. Touch controls remain usable.
+
+### E Theme/state/a11y
+Light/Dark change color only. Verify contrast, focus, keyboard, empty/one/many, loading/error/disabled and reduced motion.
+
+### F Functional + cleanup
+Run the route’s primary interaction, remove old code in the same change, then rerun source audit + contracts + Playwright.
+
+## Appointment UX contract
+For Health/Veterinary/Psychology/Dentistry:
+- patient/entity picker shows a real name/contact, not UUID;
+- date, time, duration and modality fit without a giant vertical card;
+- submit action is visible without needless scrolling on normal desktop;
+- create request is executed and failure is visible;
+- exact duplicate/conflict is handled;
+- successful appointment appears immediately in agenda/calendar;
+- agenda is calendar/list oriented and owns its mobile horizontal scroll;
+- confirmation integrations are secondary actions, not visual noise.
+
+## Shell contract
+The sidebar should behave like a professional tool:
+- primary routes first;
+- domain groups collapsed except active group;
+- no tier-dot noise or hundreds of locked rows;
+- account/profile at bottom;
+- collapsed desktop rail retains useful primary icons;
+- mobile becomes a drawer;
+- one topbar: route context, search, rate utility, theme, user;
+- no duplicate logo/brand and no second quick-navigation strip.
 
 ## Print-only exception
-
-Accounting/export helpers may generate standalone HTML for printing. Their CSS is not runtime UI and must be marked explicitly:
+Standalone print/export HTML may embed CSS only as:
 
 ```html
 <style data-cg-print-only>...</style>
 ```
 
-The source auditor removes only these marked blocks before evaluating runtime `<style>`, font sizes, colors, widths and positioning. Do not use `data-cg-print-only` on markup rendered in the application.
-
-## Required six-iteration cycle for every route
-
-### A — Source/ownership
-
-- confirm pageRegistry ↔ QA catalog parity;
-- inspect UI kit adoption;
-- find raw tables/forms/buttons, embedded styles, inline geometry and local CSS;
-- identify duplicate functional/visual implementations;
-- inspect exact selector/token collisions;
-- delete superseded CSS instead of quarantining it indefinitely.
-
-### B — Desktop 1440/1024
-
-- operational title/actions fit first viewport;
-- KPI values remain compact, one-line and tabular;
-- cards use one density/radius vocabulary;
-- flex/grid children use `min-width:0`;
-- dense tables own horizontal scroll;
-- actions/fields do not overlap;
-- no decorative pseudo-element or hero competes with data.
-
-### C — Tablet 768
-
-- operational two-column layouts collapse when needed;
-- sidebar overlays rather than shrinking content;
-- table actions remain reachable;
-- forms avoid unusably narrow columns;
-- charts/progress/metric grids remain readable.
-
-### D — Mobile 430/390/360
-
-- document `scrollWidth <= clientWidth`;
-- monetary values do not wrap;
-- primary actions wrap/full-width instead of clipping;
-- touch targets are usable;
-- tables/tabs/kanban are the only intentional horizontal scrollers;
-- no header, support widget, drawer or floating action covers required content.
-
-### E — Theme/state/accessibility
-
-- only `light` and `dark` exist globally;
-- theme changes color, never geometry;
-- test empty/one/many, long text/amounts, loading/error/disabled;
-- focus-visible and keyboard reachability remain intact;
-- reduced motion is respected.
-
-### F — Cleanup/regression
-
-- remove old selector/file in the same change;
-- rerun strict source audit;
-- rerun static visual contracts;
-- run base Playwright matrix;
-- run deep matrix for all routes and all critical phone widths;
-- capture screenshot evidence on failure;
-- do not call browser PASS unless that run actually executed.
-
-## Critical migration invariants
-
-### Contabilidad / Libro Diario
-
-- uses `PageHeader`, `MetricGrid`, `Section`, canonical fields/buttons/table;
-- print HTML is isolated with `data-cg-print-only`;
-- VES/USD and Debe/Haber remain tabular, nowrap and auditable;
-- preview/table scroll is owned locally.
-
-### Admin / RBAC
-
-- permissions, editable tables and demo/licensing forms cannot create another component scale;
-- domain classes are scoped through `module-adapters.css`;
-- checkbox grids collapse safely and action controls stay reachable at 360 px;
-- destructive and irreversible actions retain clear visual hierarchy.
-
-### Salud / Veterinaria
-
-- `HealthcarePage` is human-only;
-- `veterinaria` resolves only to `VeterinaryClinicPageV1123.jsx`;
-- never reintroduce `animal ?`, `kind:'animal'` or `careImmunizationForm` into Healthcare;
-- MUI veterinary geometry must align with the shared shell/tokens.
-
-### Fitness / Gym
-
-- `cg-gym-*` names may identify domain widgets but may not define an independent design system;
-- all geometry/colors come from `module-adapters.css` + `--cg-v-*`;
-- tabs own horizontal scroll; cards/forms use canonical density;
-- member, trainer, routine and nutrition flows must fit at 360 px without document overflow.
-
-## Anti-template standard
-
-The ERP is information-first. Prefer useful tenant/context, statuses, tailored empty states, dense aligned tables and clear actions over gradients, glass, giant counters, circles/blobs, oversized icon bubbles, landing-page headlines or decorative illustrations.
+The audit removes those blocks from runtime analysis. Never use the marker to hide application UI CSS.
 
 ## Evidence gates
 
 ```bash
 npm run audit:visual:strict
+npm run audit:functions
 npm run test:visual
 npm run test:browser:visual
 npm run test:browser:visual:deep
+npm run test:browser:functional
 ```
 
 Windows:
@@ -164,4 +129,4 @@ Windows:
 .\QA-VISUAL-CONTAGEST.ps1
 ```
 
-Report only `PASS`, `FAIL`, `BLOCKED` or `NOT EXECUTED`. A source gate or build cannot substitute for Playwright browser evidence.
+Only report `PASS`, `FAIL`, `BLOCKED` or `NOT_EXECUTED`. A source/build result does not substitute for browser evidence.
