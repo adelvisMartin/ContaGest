@@ -29,6 +29,7 @@ export const MODULE_VISUAL_CATALOG = Object.freeze([
   { route:'admin', family:'admin', label:'Administración', priority:'critical' },
   { route:'backend', family:'admin', label:'Backend', priority:'high' },
   { route:'vistas', family:'admin', label:'Catálogo de módulos', priority:'medium' },
+  { route:'login', family:'auth', label:'Inicio de sesión', priority:'critical', standalone:true },
   { route:'plan-cuentas', family:'accounting', label:'Plan de cuentas', priority:'critical' },
   { route:'rrhh', family:'hr', label:'Recursos humanos', priority:'high' },
   { route:'analytics', family:'reporting', label:'Analytics', priority:'high' },
