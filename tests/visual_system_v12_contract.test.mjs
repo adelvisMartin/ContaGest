@@ -9,6 +9,8 @@ const runtime = read('frontend/src/styles/erp-runtime.css');
 const visual = read('frontend/src/styles/contagest-visual-system-v12.css');
 const uiReadme = read('frontend/src/components/ui/README.md');
 const agents = read('AGENTS.md');
+const designTokens = read('frontend/src/components/designTokens.js');
+const legacyDs = read('frontend/src/components/designSystem.js');
 
 const normalize = (value) => value.replace(/\s+/g, ' ').trim();
 
@@ -16,7 +18,16 @@ test('canonical visual system is the final shared runtime authority', () => {
   const imports = [...runtime.matchAll(/@import\s+['"]([^'"]+)['"]/g)].map((m) => m[1]);
   assert.equal(imports.at(-1), './contagest-visual-system-v12.css');
   assert.equal(imports.includes('./ui-normalization-v142.css'), false);
-  assert.match(runtime, /New typography, spacing, cards, forms, tables, responsive behavior/);
+  assert.match(runtime, /only shared authority/i);
+});
+
+test('v12 important layer priority is declared before historical module layers', () => {
+  const declaration = normalize(runtime.match(/@layer[\s\S]*?;/)?.[0] || '');
+  assert.match(declaration, /^@layer cg\.shell-contract,/);
+  assert.ok(declaration.indexOf('cg.visual.tokens') > declaration.indexOf('cg.shell-contract'));
+  assert.ok(declaration.indexOf('cg.visual.components') > declaration.indexOf('cg.visual.tokens'));
+  assert.ok(declaration.indexOf('cg.context') > declaration.indexOf('cg.visual.a11y'));
+  assert.ok(runtime.indexOf('@layer') < runtime.indexOf("@import './erp-system.css'"));
 });
 
 test('visual system exposes one tokenized typography and geometry scale', () => {
@@ -31,6 +42,22 @@ test('visual system exposes one tokenized typography and geometry scale', () => 
   assert.match(visual, /--cg-v-text-page:\s*clamp\(1\.25rem[\s\S]*1\.625rem\)/);
   assert.match(visual, /--cg-v-text-kpi:\s*clamp\(1rem[\s\S]*1\.25rem\)/);
   assert.match(visual, /--cg-v-text-section:\s*clamp\(1rem[\s\S]*1\.125rem\)/);
+});
+
+test('legacy JS token facade cannot maintain a second hard-coded palette', () => {
+  assert.match(designTokens, /canonical values live in `styles\/contagest-visual-system-v12\.css`/i);
+  assert.match(designTokens, /var\(--cg-v-brand\)/);
+  assert.match(designTokens, /var\(--cg-v-surface\)/);
+  assert.match(designTokens, /var\(--cg-v-text\)/);
+  assert.doesNotMatch(designTokens, /#[0-9a-fA-F]{6}/);
+});
+
+test('legacy design-system module delegates to the canonical UI kit', () => {
+  assert.match(legacyDs, /from '\.\/ui\/kit\.js'/);
+  assert.match(legacyDs, /MetricCard/);
+  assert.match(legacyDs, /DataTable/);
+  assert.doesNotMatch(legacyDs, /material-symbols-outlined/);
+  assert.doesNotMatch(legacyDs, /class="ds-kpi ds-kpi-/);
 });
 
 test('operational metrics cannot restore blobs, gradients or oversized amounts', () => {
