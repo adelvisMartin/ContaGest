@@ -1,12 +1,14 @@
-/* ContaGest-VE v11.27 — universal runtime stylesheet entrypoint.
+/* ContaGest VE — universal runtime stylesheet entrypoint.
    app.js imports this file only.
 
-   IMPORTANT CASCADE CONTRACT:
-   Critical shell rules use !important because historical compatibility layers
-   still do. Important declarations reverse cascade-layer priority, therefore
-   cg.shell-contract is declared FIRST and contains both base geometry and the
-   v11.27 stabilization rules. This intentionally outranks later legacy layers.
-   Business/vertical context stays separate and cannot repaint the global shell.
+   Cascade contract:
+   1. shell geometry and vertical context compatibility;
+   2. historical module CSS while migration is in progress;
+   3. contagest-visual-system-v12.css LAST as the only shared visual authority.
+
+   New typography, spacing, cards, forms, tables, responsive behavior, theme
+   geometry and motion MUST be added to contagest-visual-system-v12.css instead
+   of creating another versioned visual hotfix file.
 */
 @layer cg.shell-contract, cg.context;
 @import './shell-contract.css' layer(cg.shell-contract);
@@ -21,4 +23,4 @@
 @import './shell-ux-v1126.css';
 @import './vertical-refinement-v1126.css';
 @import './form-contract-v1126.css';
-@import './ui-normalization-v142.css';
+@import './contagest-visual-system-v12.css';
