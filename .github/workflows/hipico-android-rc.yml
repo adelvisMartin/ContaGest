@@ -1,0 +1,90 @@
+name: Control Hipico Android RC
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'android/hipico-control-v1130/**'
+      - 'frontend/public/hipico-control/**'
+      - '.github/workflows/hipico-android-rc.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: hipico-android-rc-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-debug-apk:
+    name: Build reproducible debug APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    steps:
+      - name: Checkout exact revision
+        uses: actions/checkout@v6
+
+      - name: Set up Node 22
+        uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: android/hipico-control-v1130/package-lock.json
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: gradle
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install pinned Android SDK components
+        shell: bash
+        run: |
+          yes | sdkmanager --licenses >/dev/null
+          sdkmanager \
+            'platform-tools' \
+            'platforms;android-35' \
+            'build-tools;35.0.0'
+
+      - name: Install locked wrapper dependencies
+        working-directory: android/hipico-control-v1130
+        run: npm ci --no-audit --no-fund
+
+      - name: Dependency high-severity gate
+        working-directory: android/hipico-control-v1130
+        run: npm audit --audit-level=high
+
+      - name: Verify canonical PWA parity before native generation
+        working-directory: android/hipico-control-v1130
+        run: npm run verify:web
+
+      - name: Build debug APK from canonical PWA
+        working-directory: android/hipico-control-v1130
+        run: npm run android:debug
+
+      - name: Verify APK and produce checksums
+        shell: bash
+        working-directory: android/hipico-control-v1130
+        run: |
+          APK='android/app/build/outputs/apk/debug/app-debug.apk'
+          test -s "$APK"
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose "$APK"
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$APK" > android/app/build/outputs/apk/debug/app-debug.badging.txt
+          sha256sum "$APK" > android/app/build/outputs/apk/debug/SHA256SUMS.txt
+          cat android/app/build/outputs/apk/debug/SHA256SUMS.txt
+
+      - name: Upload QA artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: control-hipico-v1.13.0-rc2-debug-${{ github.sha }}
+          path: |
+            android/hipico-control-v1130/android/app/build/outputs/apk/debug/app-debug.apk
+            android/hipico-control-v1130/android/app/build/outputs/apk/debug/app-debug.badging.txt
+            android/hipico-control-v1130/android/app/build/outputs/apk/debug/SHA256SUMS.txt
+          if-no-files-found: error
+          retention-days: 7

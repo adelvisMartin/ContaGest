@@ -6,6 +6,7 @@ on:
       - 'frontend/public/hipico-control/**'
       - 'frontend/api/hipico/**'
       - 'tools/hipico-whatsapp-bridge/**'
+      - 'tools/hipico-whatsapp-web-bridge/**'
       - 'supabase/sql/hipico_*.sql'
       - 'tests/hipico-operations.test.mjs'
       - 'tests/fixtures/hipico/**'
@@ -15,34 +16,49 @@ on:
     branches:
       - main
       - 'feature/hipico-*'
+      - 'feat/hipico-*'
     paths:
       - 'frontend/public/hipico-control/**'
       - 'frontend/api/hipico/**'
       - 'tools/hipico-whatsapp-bridge/**'
+      - 'tools/hipico-whatsapp-web-bridge/**'
       - 'supabase/sql/hipico_*.sql'
       - 'tests/hipico-operations.test.mjs'
       - 'tests/fixtures/hipico/**'
       - 'docs/hipico/**'
       - '.github/workflows/hipico-operations.yml'
 
+permissions:
+  contents: read
+
 jobs:
   operations-regression:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
         with:
           node-version: '22'
+          cache: npm
+          cache-dependency-path: tools/hipico-whatsapp-web-bridge/package-lock.json
       - name: Parser and operations replay
         run: node --test tests/hipico-operations.test.mjs
-      - name: Syntax checks
+      - name: Legacy bridge and PWA syntax checks
         run: |
           node --check frontend/public/hipico-control/assets/js/whatsapp.js
           node --check frontend/public/hipico-control/assets/js/operations.js
           node --check frontend/public/hipico-control/assets/js/agent-router.js
           node --check frontend/api/hipico/group-bridge-ingest.js
           node --check tools/hipico-whatsapp-bridge/src/index.mjs
+      - name: Install hosted bridge lockfile
+        working-directory: tools/hipico-whatsapp-web-bridge
+        run: npm ci --no-audit --no-fund
+      - name: Hosted bridge syntax and safety tests
+        working-directory: tools/hipico-whatsapp-web-bridge
+        run: |
+          npm run check
+          npm test
       - name: Production wording gate
         shell: bash
         run: |

@@ -26,10 +26,10 @@ jobs:
       ALLOW_DEV_TENANT_HEADER: "false"
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@v6
 
       - name: Node 22
-        uses: actions/setup-node@v7
+        uses: actions/setup-node@v6
         with:
           node-version: 22
 
@@ -56,4 +56,3 @@ jobs:
 
       - name: Production dependency audit
         run: npm run audit:prod
-

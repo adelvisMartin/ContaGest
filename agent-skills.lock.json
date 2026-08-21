@@ -16,7 +16,16 @@
       "license": "MIT",
       "trustLevel": "reviewed-design",
       "namespace": "emil",
-      "vendorPaths": ["LICENSE","skills/emil-design-eng/SKILL.md","skills/emil-design-eng/ANIMATION-VOCABULARY.md","skills/animate/SKILL.md","skills/animate/references/interaction-motion.md","skills/review-animations/SKILL.md","skills/review-animations/STANDARDS.md","skills/find-animation-opportunities/SKILL.md"]
+      "vendorPaths": [
+        "LICENSE",
+        "skills/emil-design-eng/SKILL.md",
+        "skills/animation-vocabulary/SKILL.md",
+        "skills/animate/SKILL.md",
+        "skills/animate/RECIPES.md",
+        "skills/review-animations/SKILL.md",
+        "skills/review-animations/STANDARDS.md",
+        "skills/find-animation-opportunities/SKILL.md"
+      ]
     },
     {
       "id": "impeccable",
@@ -26,7 +35,32 @@
       "license": "Apache-2.0",
       "trustLevel": "reviewed-design",
       "namespace": "impeccable",
-      "vendorPaths": ["LICENSE",".agents/skills/impeccable/SKILL.md",".agents/skills/impeccable/reference/adapt.md",".agents/skills/impeccable/reference/animate.md",".agents/skills/impeccable/reference/audit.md",".agents/skills/impeccable/reference/bolder.md",".agents/skills/impeccable/reference/clarify.md",".agents/skills/impeccable/reference/colorize.md",".agents/skills/impeccable/reference/critique.md",".agents/skills/impeccable/reference/delight.md",".agents/skills/impeccable/reference/distill.md",".agents/skills/impeccable/reference/doctor.md",".agents/skills/impeccable/reference/document.md",".agents/skills/impeccable/reference/extract.md",".agents/skills/impeccable/reference/harden.md",".agents/skills/impeccable/reference/layout.md",".agents/skills/impeccable/reference/normalize.md",".agents/skills/impeccable/reference/onboard.md",".agents/skills/impeccable/reference/optimize.md",".agents/skills/impeccable/reference/polish.md",".agents/skills/impeccable/reference/quieter.md",".agents/skills/impeccable/reference/responsive.md",".agents/skills/impeccable/reference/typeset.md",".agents/skills/impeccable/reference/ux-writing.md"]
+      "vendorPaths": [
+        "LICENSE",
+        ".agents/skills/impeccable/SKILL.md",
+        ".agents/skills/impeccable/reference/adapt.md",
+        ".agents/skills/impeccable/reference/animate.md",
+        ".agents/skills/impeccable/reference/audit.md",
+        ".agents/skills/impeccable/reference/bolder.md",
+        ".agents/skills/impeccable/reference/clarify.md",
+        ".agents/skills/impeccable/reference/colorize.md",
+        ".agents/skills/impeccable/reference/critique.md",
+        ".agents/skills/impeccable/reference/delight.md",
+        ".agents/skills/impeccable/reference/distill.md",
+        ".agents/skills/impeccable/reference/doctor.md",
+        ".agents/skills/impeccable/reference/document.md",
+        ".agents/skills/impeccable/reference/extract.md",
+        ".agents/skills/impeccable/reference/harden.md",
+        ".agents/skills/impeccable/reference/layout.md",
+        ".agents/skills/impeccable/reference/normalize.md",
+        ".agents/skills/impeccable/reference/onboard.md",
+        ".agents/skills/impeccable/reference/optimize.md",
+        ".agents/skills/impeccable/reference/polish.md",
+        ".agents/skills/impeccable/reference/quieter.md",
+        ".agents/skills/impeccable/reference/responsive.md",
+        ".agents/skills/impeccable/reference/typeset.md",
+        ".agents/skills/impeccable/reference/ux-writing.md"
+      ]
     },
     {
       "id": "taste",
@@ -36,7 +70,11 @@
       "license": "MIT",
       "trustLevel": "experimental-design-inspiration",
       "namespace": "taste",
-      "vendorPaths": ["LICENSE","skills/taste-skill/SKILL.md","taste-skill-v2.0.md"]
+      "vendorPaths": [
+        "LICENSE",
+        "skills/taste-skill/SKILL.md",
+        "taste-skill-v2.0.md"
+      ]
     },
     {
       "id": "openai-security-best-practices",
@@ -46,7 +84,11 @@
       "license": "Apache-2.0",
       "trustLevel": "curated-security",
       "namespace": "security",
-      "vendorPaths": ["skills/.curated/security-best-practices/LICENSE.txt","skills/.curated/security-best-practices/SKILL.md","skills/.curated/security-best-practices/references/javascript-express-web-server-security.md"]
+      "vendorPaths": [
+        "skills/.curated/security-best-practices/LICENSE.txt",
+        "skills/.curated/security-best-practices/SKILL.md",
+        "skills/.curated/security-best-practices/references/javascript-express-web-server-security.md"
+      ]
     },
     {
       "id": "playwright-mcp",
