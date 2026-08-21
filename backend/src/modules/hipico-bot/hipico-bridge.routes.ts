@@ -18,12 +18,14 @@ const bridgeEventSchema = z.object({
   labChannelKey: z.string().trim().min(3).max(120).optional(),
   channelRole: z.enum(['source', 'lab']),
   shadowMode: z.boolean(),
+  historySync: z.boolean().default(false),
   senderId: z.string().min(1).max(220),
   senderLabel: z.string().max(220).default(''),
   fromMe: z.boolean().default(false),
   timestamp: z.string().datetime({ offset: true }),
   type: z.string().min(1).max(80).default('chat'),
   mediaKind: z.enum(['none', 'image', 'video', 'audio', 'document', 'unknown']).default('none'),
+  mediaName: z.string().max(240).default(''),
   text: z.string().max(4000).default(''),
   hasMedia: z.boolean().default(false),
   quotedExternalMessageId: z.string().max(320).nullable().default(null),
@@ -45,7 +47,7 @@ function shadowTag(value: string) {
 }
 
 function buildLabSimulation(input: z.infer<typeof bridgeEventSchema>, result: ReturnType<typeof classify>, canonical: any) {
-  if (input.channelRole !== 'source') return null;
+  if (input.channelRole !== 'source' || input.historySync) return null;
   const mirrorTag = shadowTag(input.externalMessageId);
   const entities = result.entities || {};
   const details: string[] = [];
@@ -111,6 +113,7 @@ router.post('/bridge/events', async (req, res) => {
   const transportPayload = {
     source: 'whatsapp-web-bridge',
     bridgeVersion: input.bridgeVersion,
+    historySync: input.historySync,
     groupId: input.groupId,
     groupName: input.groupName,
     channelKey: input.channelKey || null,
@@ -124,6 +127,7 @@ router.post('/bridge/events', async (req, res) => {
     rawMeta: input.rawMeta,
     hasMedia: input.hasMedia,
     mediaKind: input.mediaKind,
+    mediaName: input.mediaName || null,
     quotedExternalMessageId: input.quotedExternalMessageId,
     operational: result.entities || null
   };
@@ -151,6 +155,8 @@ router.post('/bridge/events', async (req, res) => {
       sentAt: input.timestamp,
       messageType: input.type,
       mediaKind: input.mediaKind,
+      mediaName: input.mediaName,
+      historySync: input.historySync,
       body: input.text,
       quotedExternalMessageId: input.quotedExternalMessageId,
       bridgeVersion: input.bridgeVersion,
@@ -169,6 +175,7 @@ router.post('/bridge/events', async (req, res) => {
       ok: true,
       duplicate: !event.inserted,
       mode: 'shadow',
+      historySync: input.historySync,
       classification: result.intent,
       actions: [] as never[],
       labSimulation: buildLabSimulation(input, result, canonical),
@@ -190,6 +197,7 @@ router.post('/bridge/events', async (req, res) => {
       groupName: input.groupName,
       channelKey: input.channelKey || null,
       channelRole: input.channelRole,
+      historySync: input.historySync,
       error: error?.message || String(error)
     });
     return res.status(503).json({
