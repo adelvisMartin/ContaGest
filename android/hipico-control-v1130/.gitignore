@@ -1,5 +1,6 @@
 node_modules/
 www/
+artifacts/
 android/.gradle/
 android/build/
 android/app/build/
