@@ -6,14 +6,20 @@ import path from 'node:path';
 const root = process.cwd();
 const read = (file) => fs.readFileSync(path.join(root, file), 'utf8');
 
-const entry = read('frontend/src/styles/compact-enterprise-v1110.css');
+const runtimeEntry = read('frontend/src/styles/erp-runtime.css');
+const compatibilityEntry = read('frontend/src/styles/compact-enterprise-v1110.css');
 const css = read('frontend/src/styles/ui-normalization-v142.css');
 
-test('cross-module normalization is loaded after the canonical ERP stylesheet', () => {
-  const systemIndex = entry.indexOf("@import './erp-system.css';");
-  const normalizationIndex = entry.indexOf("@import './ui-normalization-v142.css';");
+test('cross-module normalization is loaded last by the actual runtime entrypoint', () => {
+  const systemIndex = runtimeEntry.indexOf("@import './erp-system.css';");
+  const normalizationIndex = runtimeEntry.indexOf("@import './ui-normalization-v142.css';");
   assert.ok(systemIndex >= 0, 'canonical ERP stylesheet import is required');
   assert.ok(normalizationIndex > systemIndex, 'normalization must load after the canonical ERP stylesheet');
+  assert.equal(runtimeEntry.trim().split('\n').at(-1), "@import './ui-normalization-v142.css';", 'normalization must remain the final runtime import');
+});
+
+test('legacy compatibility entrypoint also receives the same normalization contract', () => {
+  assert.match(compatibilityEntry, /@import '\.\/ui-normalization-v142\.css';/);
 });
 
 test('shared KPI cards explicitly remove decorative pseudo-element circles', () => {
