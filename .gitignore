@@ -12,6 +12,7 @@ coverage/
 playwright-report/
 test-results/
 /reports/
+artifacts/qa/
 
 # env/secrets
 .env
@@ -28,6 +29,7 @@ backend/.env.*
 # Contains linked-device session material and message retry data.
 tools/hipico-whatsapp-bridge/data/
 tools/hipico-whatsapp-web-bridge/data/
+tools/hipico-whatsapp-web-bridge/deploy/**/bridge.env
 
 # generated external agent-skill cache; source pins live in agent-skills.lock.json
 .agents/vendor/

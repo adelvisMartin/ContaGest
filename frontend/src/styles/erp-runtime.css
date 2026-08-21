@@ -1,14 +1,37 @@
-/* ContaGest-VE v11.27 — universal runtime stylesheet entrypoint.
+/* ContaGest VE — universal runtime stylesheet entrypoint.
    app.js imports this file only.
 
-   IMPORTANT CASCADE CONTRACT:
-   Critical shell rules use !important because historical compatibility layers
-   still do. Important declarations reverse cascade-layer priority, therefore
-   cg.shell-contract is declared FIRST and contains both base geometry and the
-   v11.27 stabilization rules. This intentionally outranks later legacy layers.
-   Business/vertical context stays separate and cannot repaint the global shell.
+   Cascade contract:
+   1. shell geometry remains the strongest !important compatibility layer;
+   2. Visual System v12 is declared immediately after shell, so its !important
+      normalization outranks every later historical/module layer;
+   3. module adapters may repair legacy route structure using canonical tokens,
+      but cannot override the shared v12 typography/geometry contract;
+   4. vertical context may supply semantic accents but never shared geometry;
+   5. historical module CSS remains temporarily while pages migrate;
+   6. contagest-visual-system-v12.css is physically imported LAST and is the
+      only shared authority for new typography, spacing, cards, forms, tables,
+      responsive behavior, theming and motion.
+
+   CSS cascade layers reverse priority for !important declarations. Declaring
+   the v12 layers here, BEFORE legacy layers are discovered inside erp-system,
+   is intentional: shell > v12 visual contract > module adapters > context/legacy
+   for important geometry, while semantic v12 tokens remain unique and stable.
 */
-@layer cg.shell-contract, cg.context;
+@layer cg.shell-contract,
+       cg.visual.tokens,
+       cg.visual.foundation,
+       cg.visual.shell,
+       cg.visual.components,
+       cg.visual.forms,
+       cg.visual.tables,
+       cg.visual.modules,
+       cg.visual.motion,
+       cg.visual.responsive,
+       cg.visual.a11y,
+       cg.module-adapters,
+       cg.context;
+
 @import './shell-contract.css' layer(cg.shell-contract);
 @import './shell-stability-v1127.css' layer(cg.shell-contract);
 @import './vertical-contexts.css' layer(cg.context);
@@ -21,4 +44,5 @@
 @import './shell-ux-v1126.css';
 @import './vertical-refinement-v1126.css';
 @import './form-contract-v1126.css';
-@import './ui-normalization-v142.css';
+@import './module-adapters.css';
+@import './contagest-visual-system-v12.css';

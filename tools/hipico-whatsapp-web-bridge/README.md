@@ -1,102 +1,142 @@
-# Control Hípico · WhatsApp Web Bridge v1.4.0
+# Control Hípico · WhatsApp Web Bridge v1.4.1
 
-Bridge local para el siguiente gate de operativa real:
+Bridge de Control Hípico para observación y clasificación del grupo oficial mediante WhatsApp Web. El objetivo del corte actual es operar de forma persistente y auditable sin convertir el grupo fuente en un destino de envío ni aplicar efectos monetarios automáticos.
 
 ```text
-CLUB HIPICO TRIPLE CROWN (fuente oficial, SOLO LECTURA)
+CLUB HIPICO TRIPLE COWN/CROWN (fuente oficial, SOLO LECTURA)
         ↓
-WhatsApp Web oficial + Playwright
+WhatsApp Web + Playwright
         ↓
-backend /api/v1/hipico-bot/bridge/events
+spool durable local
+        ↓
+/api/v1/hipico-bot/bridge/events
         ↓
 clasificación + evidencia shadow + proyección
         ↓
-Control hípico lab (simulación opcional, claramente marcada)
+Control hípico lab (opcional durante QA)
 ```
 
-El modo `production` es el predeterminado y exige backend habilitado, URLs HTTPS,
-token de 32+ caracteres, journal shadow y `/bridge/health` con persistencia lista.
-El modo `shadow-local` existe únicamente para diagnóstico y nunca informa
-`ready=true`.
+## Invariantes de seguridad
 
-## Regla principal
+- El grupo oficial no es un destino de envío.
+- Backend mantiene `actions: []` para este gate.
+- Jugadas, saldos, pagos, cierres, resultados, premios y liquidaciones no se aplican automáticamente.
+- LAB send e input están deshabilitados por defecto.
+- Producción exige backend HTTPS, token de 32+ caracteres, journal shadow y pinning de grupos.
+- Los IDs reales de grupos y el token no se versionan.
+- Si backend falla, el evento queda en spool para reintento; no se marca como entregado antes de persistir.
 
-**El grupo oficial nunca es un destino de envío en esta versión.** El runtime no contiene una ruta genérica para escribir en TRIPLE CROWN. Solo puede observar el grupo fuente y, cuando `HIPICO_LAB_SEND_ENABLED=true`, enviar la simulación a `Control hípico lab` después de verificar que el chat activo coincide exactamente con el nombre del LAB.
+## Binding de grupos v1.4.1
 
-Las apuestas, cierres, resultados, saldos y liquidaciones reales siguen bloqueados. El backend continúa devolviendo `actions: []` y toda evidencia operativa queda en estado shadow/pending.
+Los nombres visibles sirven solamente para descubrir chats. Antes de habilitar cualquier automatización LAB se deben capturar los IDs estables `@g.us` de fuente y laboratorio.
 
-## Fuente oficial
+En Windows:
 
-La fuente se localiza por `HIPICO_SOURCE_GROUP_MATCHES=CLUB HIPICO TRIPLE COWN|CLUB HIPICO TRIPLE CROWN`. Se usa coincidencia parcial intencionalmente para tolerar ambas grafías, emojis o sufijos visuales. Si el grupo está archivado, el Bridge intenta también la búsqueda global de WhatsApp Web; no es necesario desarchivarlo.
+```powershell
+.\INICIAR.ps1 -CaptureGroupIds
+```
 
-El canal canónico es estable y no depende del texto visible del chat:
+El asistente abre el perfil dedicado, no envía mensajes y guarda localmente:
 
 ```text
-HIPICO_SOURCE_CHANNEL_KEY=club-hipico-triple-crown-official
+%LOCALAPPDATA%\ControlHipicoBridge\data\group-bindings.json
+%LOCALAPPDATA%\ControlHipicoBridge\data\group-bindings.env
 ```
 
-Si ese canal aún no existe en PostgreSQL, el backend puede aprovisionarlo de forma idempotente **solo** con esa clave permitida y tomando el propietario del canal LAB existente. Si no encuentra exactamente un LAB válido, falla cerrado.
+El archivo no se copia a Git. Fuente y LAB deben resolver a IDs válidos y distintos. `HIPICO_REQUIRE_PINNED_GROUP_IDS=true` es obligatorio en `production`.
 
-## Laboratorio
+## Modos Windows
 
-```text
-HIPICO_LAB_GROUP_NAME=Control hípico lab
-HIPICO_LAB_CHANNEL_KEY=control-hipico-lab
-HIPICO_LAB_SEND_ENABLED=false
+### Observación segura
+
+Doble clic en `INICIAR-CONTROL-HIPICO-WHATSAPP.cmd` o:
+
+```powershell
+.\INICIAR.ps1
 ```
 
-El envío al LAB está desactivado por defecto. `INICIAR.ps1` puede habilitarlo de forma explícita para una sesión de QA. Cada simulación lleva una etiqueta determinista `[SHADOW:xxxxxxxxxx]`; antes y después de enviar el Bridge verifica visualmente esa etiqueta para reducir duplicados después de un reinicio o retry.
+El launcher:
 
-## Persistencia y resiliencia
+1. instala una copia runtime bajo `%LOCALAPPDATA%\ControlHipicoBridge\runtime-v1.4.1`;
+2. preserva perfil y colas bajo `data/`;
+3. exige Node 22;
+4. ejecuta `npm ci`, sintaxis y tests del Bridge;
+5. prueba Chrome/Edge;
+6. valida backend/token/persistencia;
+7. abre WhatsApp Web y observa la fuente.
 
-- WhatsApp Web oficial (`https://web.whatsapp.com/`).
-- Chrome o Edge instalado en Windows.
-- `playwright-core` fijado en `1.62.1`.
-- Perfil persistente en `%LOCALAPPDATA%\ControlHipicoBridge\data\chrome-profile\`.
-- IDs vistos del **grupo fuente** en `%LOCALAPPDATA%\ControlHipicoBridge\data\seen-source-message-ids.json`.
-- Compatibilidad de lectura con el viejo `data/seen-message-ids.json` al actualizar desde v1.1.0.
-- Spool de eventos entrantes en `data/spool-events/`.
-- Spool independiente de simulaciones LAB en `data/spool-lab-mirror/`.
-- Un evento fuente se persiste en backend antes de considerarse entregado.
-- Si backend devuelve error/503, el evento permanece en spool y se reintenta.
-- Después de intentar una simulación LAB, el Bridge vuelve siempre al grupo fuente.
-- `health.json` publica `readiness.ready`, motivos de degradación y contadores sin exponer el token.
-- El journal nuevo pseudonimiza remitente e IDs; el reporte oculta textos salvo habilitación explícita.
-- Los diagnósticos DOM persisten solo roles y contadores; las capturas de pantalla están desactivadas por defecto para no copiar chats ajenos.
+### QA LAB explícito
 
-## Evidencia canónica
+Primero ejecuta el binding. Después, únicamente dentro de una ventana QA:
 
-Un mensaje fuente puede quedar registrado en:
+```powershell
+.\INICIAR.ps1 -EnableLabSend -EnableLabInput
+```
 
-1. `HipicoWebhookEvent`: auditoría de transporte.
-2. `HipicoBotOutbox`: compatibilidad `group_bridge`, siempre `shadow`.
-3. `hipico_messages`: mensaje normalizado.
-4. `hipico_operation_events`: evento operativo `pending` cuando aplique.
-5. `hipico_shadow_evaluations`: predicción para comparar posteriormente contra la operación observada.
+Al terminar vuelve al modo normal sin flags. El kill switch es mantener ambos valores en `false`.
 
-El código de este gate **no escribe** `hipico_ledger_entries` ni el `hipico_outbox` operativo.
+## Persistencia
 
-## Multimedia
+Datos sensibles/mutables viven fuera del código:
 
-La v1.2.0 distingue metadata de `image`, `video`, `audio` y `document`/PDF cuando WhatsApp Web lo expone en el DOM. En este gate, un archivo es **contexto**, no autoridad transaccional: una imagen o PDF por sí solo no crea ni confirma una apuesta.
+- `chrome-profile/`: sesión vinculada;
+- `spool-events/`: eventos aún no entregados;
+- `spool-lab-mirror/`: mirrors LAB pendientes;
+- `seen-source-message-ids.json`: deduplicación fuente;
+- `seen-lab-test-message-ids.json`: deduplicación LAB QA;
+- `training/`: journal shadow pseudonimizado;
+- `health.json`: readiness/counters;
+- `retry-state.json`: backoff de backend.
 
-Cuando se incorporen muestras reales de los archivos del grupo, se añadirá una canalización separada de extracción/validación. Hasta entonces el dato que puede representar una intención de apuesta es el mensaje explícito del participante, sujeto además a validación de carrera, segmento, cierre, monto y formato.
+No borrar `data/` durante una actualización o rollback.
 
-## Windows
+## Hosted worker
 
-1. Ejecuta `INICIAR-CONTROL-HIPICO-WHATSAPP.cmd` sin privilegios de administrador.
-2. El setup instala el runtime v1.4.0 bajo `%LOCALAPPDATA%`, recupera el token con DPAPI y valida Node, contratos, navegador, backend y persistencia.
-3. Abre `web.whatsapp.com` real con el perfil persistente.
-4. Busca automáticamente `CLUB HIPICO TRIPLE CROWN`, incluso si está archivado.
-5. Toma el historial visible inicial como baseline: no se reinterpreta como mensajes nuevos.
-6. Desde ese momento observa únicamente mensajes fuente nuevos.
-7. Las respuestas simuladas aparecen solamente en `Control hípico lab`; el launcher escribe el nombre en UTF-8 sin BOM para evitar `hÃ­pico`.
+Existen dos opciones preparadas:
 
-El procedimiento completo de despliegue, rollback y verificación está en
-`docs/hipico/CONTROL_HIPICO_V140_PRODUCTION_RUNBOOK.md`.
+- `deploy/linux/`: `systemd`, health timer, usuario no-root y filesystem endurecido.
+- `deploy/docker/`: imagen Node 22 + Chrome, usuario 10001, root filesystem read-only, capabilities vacías, límites de CPU/RAM/PIDs y volumen persistente.
 
-## Política de aprendizaje
+El perfil de Windows no se copia ciegamente a un servidor. Cada host debe tener una vinculación controlada y un backup cifrado del estado.
 
-Los mensajes reales no cambian automáticamente los pesos de un modelo ni se convierten directamente en reglas de producción. Se guardan como dataset shadow auditable: mensaje → clasificación → entidades → predicción → resultado/revisión. Solo patrones revisados y consistentes pueden promoverse después a reglas, ejemplos o conocimiento versionado.
+## Health / observabilidad
 
-Esto permite medir falsos positivos, falsos negativos, ambigüedades, errores de monto/caballo/carrera y comportamiento después del cierre antes de pasar a `assist/manual approval` y, mucho más adelante, a automatización limitada.
+`health.json` publica sin secretos:
+
+- versión y timestamp;
+- backend online/degraded;
+- grupo fuente activo por título;
+- `sourceSendPossible=false`;
+- counters de capturados/entregados/mirrors;
+- spool/dead letters;
+- readiness y razones de degradación.
+
+Comandos:
+
+```bash
+npm run healthcheck
+npm run report
+```
+
+Logs y reportes no imprimen texto de chats por defecto. Screenshots de diagnóstico están apagados salvo habilitación explícita.
+
+## QA local
+
+```bash
+npm ci --no-audit --no-fund
+npm run qa
+npm audit --omit=dev --audit-level=high
+npm run selftest
+```
+
+`npm run capture:groups` ejecuta el asistente de binding. `npm run production:check` valida el backend antes de iniciar operación sostenida.
+
+## Android / PWA
+
+El Bridge es independiente del wrapper Android. La PWA canónica de Control Hípico está en `frontend/public/hipico-control`; el wrapper `android/hipico-control-v1130` sincroniza esa misma fuente y verifica hashes antes de compilar.
+
+## Riesgo residual
+
+WhatsApp Web automatizado no es la API oficial de grupos. Cambios del DOM, cierre de sesión o políticas del proveedor pueden requerir revinculación/adaptación. Por eso el sistema conserva spool, health, kill switch y operación shadow antes de cualquier promoción.
+
+La promoción a acciones reales nunca se decide por “el bot parece funcionar”: requiere corpus medido, revisión humana, pruebas negativas y gates separados por tipo de operación.

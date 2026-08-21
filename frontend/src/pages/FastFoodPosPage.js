@@ -1,25 +1,32 @@
-import { PageHeader, Button } from '../components/ui/index.js';
+import { PageHeader, Button, Field, Select, EmptyState } from '../components/ui/index.js';
 import { createOrderDraft } from '../services/orderService.js';
 import { NotificationService } from '../services/notificationService.js';
+import { escapeHtml } from '../utils/dom.js';
 
 const categories = ['Combos','Burgers','Bebidas','Extras'];
+const safe = (value) => escapeHtml(String(value ?? ''));
 const money = (value) => `$${Number(value || 0).toFixed(2)}`;
 
 function productCard(product) {
-  return `<button class="cg-pos-product" data-pos-add="${product.sku}">
-    <span class="cg-pos-icon"><i class="fa-solid ${product.icon || 'fa-utensils'}"></i></span>
-    <strong>${product.name}</strong>
-    <small>${product.category}</small>
-    <b>${money(product.price)}</b>
+  const sku=safe(product.sku);
+  const name=safe(product.name || 'Producto');
+  const category=safe(product.category || 'General');
+  const rawIcon=String(product.icon || 'fa-utensils').replace(/[^a-z0-9-]/gi,'');
+  return `<button type="button" class="cg-pos-product" data-pos-add="${sku}" aria-label="Agregar ${name} a la orden">
+    <span class="cg-pos-icon" aria-hidden="true"><i class="fa-solid ${rawIcon}"></i></span>
+    <strong>${name}</strong>
+    <small>${category}</small>
+    <b>${safe(money(product.price))}</b>
   </button>`;
 }
 
 function cartLine(item) {
+  const sku=safe(item.sku),name=safe(item.name || 'Producto');
   return `<li>
-    <div><strong>${item.name}</strong><span>${item.qty} × ${money(item.price)}</span></div>
-    <div class="cg-cart-line-actions">
-      <button data-cart-dec="${item.sku}">−</button>
-      <button data-cart-inc="${item.sku}">+</button>
+    <div><strong>${name}</strong><span>${safe(item.qty)} × ${safe(money(item.price))}</span></div>
+    <div class="cg-cart-line-actions" aria-label="Cantidad de ${name}">
+      <button type="button" data-cart-dec="${sku}" aria-label="Quitar una unidad de ${name}">−</button>
+      <button type="button" data-cart-inc="${sku}" aria-label="Agregar una unidad de ${name}">+</button>
     </div>
   </li>`;
 }
@@ -30,8 +37,13 @@ export const FastFoodPosPage = {
     const cart = state.posCart || [];
     const subtotal = cart.reduce((sum, item) => sum + item.qty * item.price, 0);
     const total = subtotal * 1.16;
+    const draft=state.posDraft||{};
+    const productContent=products.length
+      ? `<div class="cg-pos-grid">${products.map(productCard).join('')}</div>`
+      : EmptyState({title:'Sin productos disponibles',description:'Agrega productos al menú antes de iniciar una venta.',iconName:'fa-burger'});
+
     return `
-      <section class="cg-pos-shell">
+      <section class="cg-page-stack cg-pos-shell">
         ${PageHeader({
           eyebrowKey: 'posEyebrow',
           titleKey: 'posTitle',
@@ -39,36 +51,40 @@ export const FastFoodPosPage = {
           actions: `${Button({ id: 'btnClearCart', text: 'Vaciar', icon: 'fa-trash', variant: 'secondary' })}${Button({ id: 'btnCreateCounterOrder', text: 'Crear pedido', icon: 'fa-paper-plane', variant: 'primary' })}`
         })}
         <div class="cg-pos-layout">
-          <section class="cg-pos-products surface">
-            <div class="cg-pos-tabs">${categories.map((cat, i) => `<button class="pl-tab ${i===0?'active':''}">${cat}</button>`).join('')}</div>
-            <div class="cg-pos-grid">${products.map(productCard).join('')}</div>
+          <section class="cg-pos-products surface" aria-label="Productos disponibles">
+            <nav class="cg-pos-tabs" aria-label="Categorías del menú">${categories.map((cat, i) => `<button type="button" class="pl-tab ${i===0?'active':''}" aria-pressed="${i===0?'true':'false'}">${safe(cat)}</button>`).join('')}</nav>
+            ${productContent}
           </section>
-          <aside class="cg-pos-cart surface">
-            <h3><i class="fa-solid fa-receipt"></i> Orden actual</h3>
-            <div class="pl-form-grid">
-              <label class="pl-field"><span>Mesa / canal</span><input id="posTable" class="pl-input" value="${state.posDraft?.table || 'Mesa 1'}"></label>
-              <label class="pl-field"><span>Cliente</span><input id="posCustomer" class="pl-input" value="${state.posDraft?.customer || 'Cliente sede'}"></label>
-              <label class="pl-field"><span>Teléfono WhatsApp</span><input id="posPhone" class="pl-input" value="${state.posDraft?.phone || '+584120000000'}"></label>
-              <label class="pl-field"><span>Modo</span><select id="posMode" class="pl-input"><option value="dine_in">Atención en sede</option><option value="pickup">Retiro</option><option value="delivery">Delivery</option></select></label>
+          <aside class="cg-pos-cart surface" aria-label="Orden actual">
+            <h3><i class="fa-solid fa-receipt" aria-hidden="true"></i> Orden actual</h3>
+            <div class="cg-record-fields cg-fields-compact cg-pos-order-fields">
+              ${Field({ id:'posTable', labelKey:'Mesa / canal', name:'table', value:draft.table || 'Mesa 1' })}
+              ${Field({ id:'posCustomer', labelKey:'Cliente', name:'customer', value:draft.customer || 'Cliente sede' })}
+              ${Field({ id:'posPhone', labelKey:'Teléfono WhatsApp', name:'phone', value:draft.phone || '+584120000000', attrs:'inputmode="tel" autocomplete="tel"' })}
+              ${Select({ labelKey:'Modo', name:'mode', value:draft.mode || 'dine_in', attrs:'id="posMode"', options:[
+                {value:'dine_in',label:'Atención en sede'},
+                {value:'pickup',label:'Retiro'},
+                {value:'delivery',label:'Delivery'}
+              ] })}
             </div>
-            <ul class="cg-cart-lines">${cart.length ? cart.map(cartLine).join('') : '<li class="cg-empty-mini">Selecciona productos para vender</li>'}</ul>
-            <div class="cg-cart-total"><span>Subtotal</span><b>${money(subtotal)}</b></div>
-            <div class="cg-cart-total"><span>IVA 16%</span><b>${money(subtotal * .16)}</b></div>
-            <div class="cg-cart-total main"><span>Total</span><b>${money(total)}</b></div>
-            <button id="btnSendOrderWhatsapp" class="btn btn-secondary w-full"><i class="fa-brands fa-whatsapp"></i> Notificar por WhatsApp</button>
+            <ul class="cg-cart-lines" aria-live="polite">${cart.length ? cart.map(cartLine).join('') : '<li class="cg-empty-mini">Selecciona productos para vender</li>'}</ul>
+            <div class="cg-cart-total"><span>Subtotal</span><b>${safe(money(subtotal))}</b></div>
+            <div class="cg-cart-total"><span>IVA 16%</span><b>${safe(money(subtotal * .16))}</b></div>
+            <div class="cg-cart-total main"><span>Total</span><b>${safe(money(total))}</b></div>
+            ${Button({ id:'btnSendOrderWhatsapp', text:'Notificar por WhatsApp', icon:'fa-brands fa-whatsapp', variant:'secondary', className:'w-full' })}
           </aside>
         </div>
       </section>`;
   },
   mount(state, { Store, Toast, navigate, SupabaseSyncService }) {
-    const bySku = new Map((state.fastFoodMenu || []).map((p) => [p.sku, p]));
+    const bySku = new Map((state.fastFoodMenu || []).map((p) => [String(p.sku), p]));
     const updateCart = (sku, delta) => {
       Store.update((draft) => {
-        const product = bySku.get(sku);
+        const product = bySku.get(String(sku));
         if (!product) return draft;
-        const existing = (draft.posCart || []).find((item) => item.sku === sku);
-        if (!existing && delta > 0) draft.posCart = [...(draft.posCart || []), { sku, name: product.name, price: product.price, qty: 1 }];
-        else draft.posCart = (draft.posCart || []).map((item) => item.sku === sku ? { ...item, qty: Math.max(0, item.qty + delta) } : item).filter((item) => item.qty > 0);
+        const existing = (draft.posCart || []).find((item) => String(item.sku) === String(sku));
+        if (!existing && delta > 0) draft.posCart = [...(draft.posCart || []), { sku:product.sku, name:product.name, price:product.price, qty:1 }];
+        else draft.posCart = (draft.posCart || []).map((item) => String(item.sku) === String(sku) ? { ...item, qty: Math.max(0, item.qty + delta) } : item).filter((item) => item.qty > 0);
         return draft;
       });
     };

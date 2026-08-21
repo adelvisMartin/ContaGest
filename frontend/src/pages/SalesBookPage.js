@@ -1,5 +1,6 @@
-import { FiscalTable, EnterpriseButton, EnterpriseKpi } from '../components/ui/index.js';
+import { PageHeader, MetricGrid, Section, DataTable, Button, Badge } from '../components/ui/index.js';
 import { ExportService } from '../services/exportService.js';
+import { escapeHtml } from '../utils/dom.js';
 
 const fallbackRows = [
   { date:'01/11/2023', invoice:'000451', control:'00-00451', rif:'J-31415926-5', name:'Inversiones Pi C.A.', base:2500, iva:400, igtf:0, ret:0, total:2900, status:'OK' },
@@ -8,79 +9,98 @@ const fallbackRows = [
   { date:'15/11/2023', invoice:'000454', control:'00-00454', rif:'J-98765432-1', name:'Corporación Alpha S.A.', base:10000, iva:1600, igtf:0, ret:-300, total:11300, status:'OK' }
 ];
 
-const fmt = (value) => Number(value || 0).toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-const rowFromSale = (sale) => ({
-  date: sale.date || sale.issueDate || new Date().toISOString().slice(0, 10),
-  invoice: sale.invoice || sale.number || sale.id,
-  control: sale.controlNo || '-',
-  rif: sale.client?.rif || '-',
-  name: sale.client || sale.client?.name || sale.notes || 'Consumidor final',
-  base: Number(sale.subtotal || sale.amount || sale.total || 0) / 1.16,
-  iva: Number(sale.iva || 0) || (Number(sale.amount || sale.total || 0) / 1.16) * .16,
-  igtf: Number(sale.igtf || 0),
-  ret: Number(sale.ret || sale.islrRetention || 0),
-  total: Number(sale.amount || sale.total || 0),
-  status: sale.status === 'Anulada' || sale.status === 'cancelled' ? 'ANULADA' : 'OK'
+const safe=(value)=>escapeHtml(String(value??''));
+const fmt=(value)=>Number(value||0).toLocaleString('es-VE',{minimumFractionDigits:2,maximumFractionDigits:2});
+const clientName=(sale)=>{
+  if(typeof sale?.client==='string')return sale.client;
+  return sale?.client?.name||sale?.clientName||sale?.notes||'Consumidor final';
+};
+const clientRif=(sale)=>typeof sale?.client==='object'&&sale.client?sale.client.rif||'-':sale?.clientRif||'-';
+const rowFromSale=(sale)=>({
+  date:sale.date||sale.issueDate||new Date().toISOString().slice(0,10),
+  invoice:sale.invoice||sale.number||sale.id,
+  control:sale.controlNo||'-',
+  rif:clientRif(sale),
+  name:clientName(sale),
+  base:Number(sale.subtotal||sale.amount||sale.total||0)/1.16,
+  iva:Number(sale.iva||0)||(Number(sale.amount||sale.total||0)/1.16)*.16,
+  igtf:Number(sale.igtf||0),
+  ret:Number(sale.ret||sale.islrRetention||0),
+  total:Number(sale.amount||sale.total||0),
+  status:sale.status==='Anulada'||sale.status==='cancelled'?'ANULADA':'OK'
 });
-const totalsOf = (rows) => rows.reduce((acc, row) => {
-  acc.base += Number(row.base || 0); acc.iva += Number(row.iva || 0); acc.igtf += Number(row.igtf || 0); acc.ret += Number(row.ret || 0); acc.total += Number(row.total || 0);
-  return acc;
-}, { base:0, iva:0, igtf:0, ret:0, total:0 });
+const totalsOf=(rows)=>rows.reduce((acc,row)=>{
+  acc.base+=Number(row.base||0);acc.iva+=Number(row.iva||0);acc.igtf+=Number(row.igtf||0);acc.ret+=Number(row.ret||0);acc.total+=Number(row.total||0);return acc;
+},{base:0,iva:0,igtf:0,ret:0,total:0});
 
 export const SalesBookPage = {
   render(state) {
-    const rowsData = (state.sales || []).length ? state.sales.map(rowFromSale) : fallbackRows;
-    const totals = totalsOf(rowsData);
-    const rows = rowsData.map((r) => `
-      <tr class="${r.status === 'ANULADA' ? 'hf-annulled' : ''}">
-        <td>${r.date}</td>
-        <td class="hf-mono hf-linkish ${r.status === 'ANULADA' ? 'line-through' : ''}">${r.invoice}</td>
-        <td class="hf-mono ${r.status === 'ANULADA' ? 'line-through' : ''}">${r.control}</td>
-        <td class="hf-mono">${r.rif}</td>
-        <td class="hf-strong ${r.status === 'ANULADA' ? 'hf-danger-text' : ''}">${r.name}</td>
-        <td class="hf-num">${fmt(r.base)}</td>
-        <td class="hf-num">${fmt(r.iva)}</td>
-        <td class="hf-num ${r.igtf ? 'hf-danger-text' : ''}">${fmt(r.igtf)}</td>
-        <td class="hf-num ${r.ret < 0 ? 'hf-warning-text' : ''}">${fmt(r.ret)}</td>
-        <td class="hf-num hf-total-text">${fmt(r.total)}</td>
-      </tr>`);
-    rows.push(`<tr class="hf-total-row"><td colspan="5" class="text-right uppercase tracking-[.16em]">Totales del período:</td><td class="hf-num">${fmt(totals.base)}</td><td class="hf-num">${fmt(totals.iva)}</td><td class="hf-num hf-danger-text">${fmt(totals.igtf)}</td><td class="hf-num hf-warning-text">${fmt(totals.ret)}</td><td class="hf-num hf-total-text">${fmt(totals.total)}</td></tr>`);
-    return `
-      <section class="hf-salesbook">
-        <div class="hf-page-head">
-          <div><h2>Libro de Ventas</h2><p>Gestión y reporte fiscal mensual desde Supabase cuando el backend está conectado.</p></div>
-          <div class="hf-actions">${EnterpriseButton({ id:'btnSyncSalesBook', text:'Sync Supabase', icon:'cloud_sync', variant:'secondary' })}${EnterpriseButton({ id:'btnSalesBookPrint', text:'PDF fiscal', icon:'print', variant:'secondary' })}${EnterpriseButton({ id:'btnSalesBookExport', text:'XLSX (SENIAT)', icon:'download', variant:'primary' })}${EnterpriseButton({ id:'btnSalesBookTxt', text:'TXT', icon:'description', variant:'secondary' })}</div>
-        </div>
-        <div class="hf-filter-card">
-          <div class="hf-filter-period"><label>Período fiscal</label><div><span>Actual</span><span>${new Date().getFullYear()}</span></div></div>
-          <div class="hf-filter-client"><label>Origen</label><div><span class="material-symbols-outlined">cloud_done</span>${(state.sales || []).some((s)=>s.source==='supabase') ? 'Supabase conectado' : 'Demo/local hasta sincronizar'}</div></div>
-          <div class="hf-filter-status"><label>Estatus</label><div>Todos <span class="material-symbols-outlined">expand_more</span></div></div>
-        </div>
-        ${FiscalTable({ headers:['Fecha','N° Factura','N° Control','RIF Cliente','Razón Social','Base Imponible','IVA (16%)','IGTF (3%)','Ret. ISLR','Total'], rows })}
-        <div class="hf-summary-grid">
-          ${EnterpriseKpi({ label:'Ventas netas', value:`Bs. ${fmt(totals.base)}`, sub:'Base imponible del período' })}
-          ${EnterpriseKpi({ label:'Débito fiscal (IVA)', value:`Bs. ${fmt(totals.iva)}`, sub:'IVA facturado 16%' })}
-          ${EnterpriseKpi({ label:'Facturas procesadas', value:String(rowsData.filter((r)=>r.status !== 'ANULADA').length), sub:`/ ${rowsData.filter((r)=>r.status === 'ANULADA').length} anuladas` })}
-        </div>
-      </section>`;
-  },
-  mount(state, { Toast, Store, SupabaseSyncService }) {
-    const rowsData = (Store.get().sales || []).length ? Store.get().sales.map(rowFromSale) : fallbackRows;
-    const totals = totalsOf(rowsData);
-    document.getElementById('btnSyncSalesBook')?.addEventListener('click', () => SupabaseSyncService.pullSales({ Store, Toast, force:true, silent:false }));
-    document.getElementById('btnSalesBookPrint')?.addEventListener('click', async () => { await ExportService.downloadFiscalPdf('libro-ventas-seniat-periodo-actual', { title:'Libro de Ventas SENIAT · Período actual', rows:rowsData, totals }); Toast.show('PDF fiscal server-side solicitado con hash de integridad.', 'info'); });
-    document.getElementById('btnSalesBookExport')?.addEventListener('click', async () => {
-      await ExportService.downloadXlsx('libro-ventas-seniat-periodo-actual', [
-        { name:'Libro de Ventas', rows:rowsData },
-        { name:'Totales', rows:[totals] },
-        { name:'Auditoría', rows:[{ regla:'Correlativos', estado:'Validar duplicados y anulaciones con motivo' }, { regla:'Cierre de período', estado:'Bloquear edición al declarar' }] }
-      ], 'Libro de Ventas SENIAT');
-      Toast.show('XLSX generado.', 'success');
+    const persisted=state.sales||[];
+    const rowsData=persisted.length?persisted.map(rowFromSale):fallbackRows;
+    const totals=totalsOf(rowsData);
+    const active=rowsData.filter((row)=>row.status!=='ANULADA').length;
+    const annulled=rowsData.length-active;
+    const source=persisted.some((sale)=>sale.source==='supabase')?'Supabase conectado':persisted.length?'Datos locales / pendientes':'Datos de referencia hasta sincronizar';
+
+    const table=DataTable({
+      columns:[
+        {key:'date',label:'Fecha',render:(row)=>safe(row.date)},
+        {key:'invoice',label:'N° Factura',render:(row)=>`<span class="cg-ui-code">${safe(row.invoice)}</span>`},
+        {key:'control',label:'N° Control',render:(row)=>`<span class="cg-ui-code">${safe(row.control)}</span>`},
+        {key:'rif',label:'RIF Cliente',render:(row)=>`<span class="cg-ui-code">${safe(row.rif)}</span>`},
+        {key:'name',label:'Razón Social',render:(row)=>`<strong>${safe(row.name)}</strong>${row.status==='ANULADA'?`<br>${Badge('Anulada','danger')}`:''}`},
+        {key:'base',label:'Base Imponible',align:'right',render:(row)=>safe(fmt(row.base))},
+        {key:'iva',label:'IVA 16%',align:'right',render:(row)=>safe(fmt(row.iva))},
+        {key:'igtf',label:'IGTF 3%',align:'right',render:(row)=>safe(fmt(row.igtf))},
+        {key:'ret',label:'Ret. ISLR',align:'right',render:(row)=>safe(fmt(row.ret))},
+        {key:'total',label:'Total',align:'right',render:(row)=>`<strong>${safe(fmt(row.total))}</strong>`}
+      ],
+      rows:rowsData,
+      empty:'Sin ventas en el período'
     });
-    document.getElementById('btnSalesBookTxt')?.addEventListener('click', () => {
-      const lines = rowsData.map((r) => [r.date, r.invoice, r.rif, r.name, fmt(r.base), fmt(r.iva), fmt(r.total)].join('|')).join('\n');
-      ExportService.downloadTxt('libro-ventas-periodo-actual.txt', [{ contenido: lines }], 'Libro de Ventas TXT');
-      Toast.show('TXT fiscal generado.', 'success');
+
+    return `<section class="cgx-page cg-page-stack cg-salesbook">
+      ${PageHeader({
+        eyebrow:'Fiscal',
+        title:'Libro de Ventas',
+        description:'Gestión y reporte fiscal mensual con lectura compacta, importes alineados y exportación controlada.',
+        meta:[`Período ${new Date().getFullYear()}`,source,`${active} vigentes · ${annulled} anuladas`],
+        actions:`${Button({id:'btnSyncSalesBook',text:'Sync Supabase',icon:'fa-cloud-arrow-down',variant:'secondary'})}${Button({id:'btnSalesBookPrint',text:'PDF fiscal',icon:'fa-print',variant:'secondary'})}${Button({id:'btnSalesBookExport',text:'XLSX SENIAT',icon:'fa-file-excel'})}${Button({id:'btnSalesBookTxt',text:'TXT',icon:'fa-file-lines',variant:'secondary'})}`
+      })}
+      ${MetricGrid([
+        {label:'Ventas netas',value:`Bs. ${fmt(totals.base)}`,hint:'Base imponible del período',iconName:'fa-receipt',tone:'brand'},
+        {label:'Débito fiscal IVA',value:`Bs. ${fmt(totals.iva)}`,hint:'IVA facturado 16%',iconName:'fa-landmark',tone:'warning'},
+        {label:'Total facturado',value:`Bs. ${fmt(totals.total)}`,hint:`IGTF ${fmt(totals.igtf)} · Ret. ${fmt(totals.ret)}`,iconName:'fa-sack-dollar',tone:'success'},
+        {label:'Documentos',value:String(rowsData.length),hint:`${active} vigentes · ${annulled} anuladas`,iconName:'fa-file-invoice',tone:annulled?'warning':'neutral'}
+      ])}
+      ${Section({
+        title:'Detalle fiscal del período',
+        subtitle:'La tabla conserva su propio desplazamiento horizontal cuando las diez columnas no caben en el viewport.',
+        children:table
+      })}
+    </section>`;
+  },
+  mount(_state,{Toast,Store,SupabaseSyncService}) {
+    const rowsData=()=>((Store.get().sales||[]).length?Store.get().sales.map(rowFromSale):fallbackRows);
+    document.getElementById('btnSyncSalesBook')?.addEventListener('click',()=>SupabaseSyncService.pullSales({Store,Toast,force:true,silent:false}));
+    document.getElementById('btnSalesBookPrint')?.addEventListener('click',async()=>{
+      const rows=rowsData();
+      await ExportService.downloadFiscalPdf('libro-ventas-seniat-periodo-actual',{title:'Libro de Ventas SENIAT · Período actual',rows,totals:totalsOf(rows)});
+      Toast.show('PDF fiscal server-side solicitado con hash de integridad.','info');
+    });
+    document.getElementById('btnSalesBookExport')?.addEventListener('click',async()=>{
+      const rows=rowsData(),totals=totalsOf(rows);
+      await ExportService.downloadXlsx('libro-ventas-seniat-periodo-actual',[
+        {name:'Libro de Ventas',rows},
+        {name:'Totales',rows:[totals]},
+        {name:'Auditoría',rows:[{regla:'Correlativos',estado:'Validar duplicados y anulaciones con motivo'},{regla:'Cierre de período',estado:'Bloquear edición al declarar'}]}
+      ],'Libro de Ventas SENIAT');
+      Toast.show('XLSX generado.','success');
+    });
+    document.getElementById('btnSalesBookTxt')?.addEventListener('click',()=>{
+      const lines=rowsData().map((row)=>[row.date,row.invoice,row.rif,row.name,fmt(row.base),fmt(row.iva),fmt(row.total)].join('|')).join('\n');
+      ExportService.downloadTxt('libro-ventas-periodo-actual.txt',[{contenido:lines}],'Libro de Ventas TXT');
+      Toast.show('TXT fiscal generado.','success');
     });
   }
 };

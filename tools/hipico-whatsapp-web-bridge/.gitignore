@@ -2,3 +2,11 @@ node_modules/
 .env
 data/
 *.log
+deploy/**/bridge.env
+group-bindings.json
+group-bindings.env
+*.dpapi
+*.pem
+*.key
+*.p12
+*.pfx

@@ -16,6 +16,12 @@ import {
   assertRuntimeConfig,
   loadRuntimeConfig
 } from './runtime-config.mjs';
+import {
+  assertPinnedGroupIdentity,
+  extractGroupIds,
+  redactGroupId,
+  selectUniqueGroupId
+} from './group-identity.mjs';
 import { assessRuntimeReadiness } from './health-state.mjs';
 
 const config = assertRuntimeConfig(loadRuntimeConfig());
@@ -27,10 +33,13 @@ const {
   healthUrl: HEALTH_URL,
   token: TOKEN,
   sourceMatches: SOURCE_MATCHES,
+  sourceGroupId: SOURCE_GROUP_ID,
   sourceChannelKey: SOURCE_CHANNEL_KEY,
   labGroupName: LAB_GROUP_NAME,
+  labGroupId: LAB_GROUP_ID,
   labChannelKey: LAB_CHANNEL_KEY,
   labSendEnabled: LAB_SEND_ENABLED,
+  requirePinnedGroupIds: REQUIRE_PINNED_GROUP_IDS,
   pollMs: POLL_MS,
   backendTimeoutMs: BACKEND_TIMEOUT_MS,
   backendMaxRps: BACKEND_MAX_RPS,
@@ -217,6 +226,11 @@ async function writeHealth(extra = {}) {
     sourceAliases: SOURCE_MATCHES,
     activeSourceTitle,
     labGroupName: LAB_GROUP_NAME,
+    groupBinding: {
+      required: REQUIRE_PINNED_GROUP_IDS,
+      sourceBound: Boolean(SOURCE_GROUP_ID),
+      labBound: Boolean(LAB_GROUP_ID)
+    },
     labSendEnabled: LAB_SEND_ENABLED,
     labTestInputEnabled: LAB_TEST_INPUT_ENABLED,
     sourceSendPossible: false,
@@ -304,7 +318,6 @@ async function appendTraining(event, classification, backend = null) {
 
 async function spoolJson(dir, key, value) {
   const file = path.join(dir, `${sha256(key)}.json`);
-  // idempotent replacement: exactly one pending file per logical key.
   await fs.writeFile(file, JSON.stringify(value, null, 2), 'utf8');
   return file;
 }
@@ -525,7 +538,6 @@ async function launchOfficialChrome() {
   }
 }
 
-
 async function hasWhatsAppBrowserDatabaseError() {
   if (!page || page.isClosed()) return false;
   const text = await page.locator('body').innerText({ timeout: 1500 }).catch(() => '');
@@ -610,7 +622,53 @@ async function currentChatTitle() {
   const snapshot = await chatDomSnapshot();
   return String(snapshot.currentTitle || '').trim();
 }
-async function currentChatIsSource() { return sourceTitleMatches(await currentChatTitle(), SOURCE_MATCHES); }
+
+async function currentChatGroupId(expectedId = '') {
+  if (!page || page.isClosed()) return '';
+  const values = await page.evaluate(() => {
+    const root = document.querySelector('#main') || document.body;
+    const result = [];
+    for (const node of root.querySelectorAll('[data-id], [id], [data-testid]')) {
+      for (const name of ['data-id', 'id', 'data-testid']) {
+        const value = node.getAttribute?.(name);
+        if (value && value.includes('@g.us')) result.push(value);
+      }
+      if (result.length >= 400) break;
+    }
+    return result;
+  }).catch(() => []);
+  return selectUniqueGroupId(extractGroupIds(values), expectedId);
+}
+
+async function assertCurrentSourceIdentity() {
+  const title = await currentChatTitle();
+  if (!sourceTitleMatches(title, SOURCE_MATCHES)) throw new Error('SOURCE_TITLE_MISMATCH');
+  if (!SOURCE_GROUP_ID) return true;
+  const actualId = await currentChatGroupId(SOURCE_GROUP_ID);
+  assertPinnedGroupIdentity({ role: 'source', expectedId: SOURCE_GROUP_ID, actualId, actualTitle: title });
+  return true;
+}
+
+async function assertCurrentLabIdentity() {
+  const title = await currentChatTitle();
+  const actualId = await currentChatGroupId(LAB_GROUP_ID);
+  assertPinnedGroupIdentity({
+    role: 'lab',
+    expectedId: LAB_GROUP_ID,
+    expectedTitle: LAB_GROUP_NAME,
+    actualId,
+    actualTitle: title,
+    sourceId: SOURCE_GROUP_ID
+  });
+  return true;
+}
+
+async function currentChatIsSource() {
+  const title = await currentChatTitle();
+  if (!sourceTitleMatches(title, SOURCE_MATCHES)) return false;
+  if (!SOURCE_GROUP_ID) return true;
+  return (await currentChatGroupId(SOURCE_GROUP_ID)) === SOURCE_GROUP_ID.toLowerCase();
+}
 
 async function writeDomDiagnostic(reason) {
   if (!page || page.isClosed()) return;
@@ -750,8 +808,7 @@ async function openSourceGroup() {
   if (await currentChatIsSource()) { sourceDiscoveryFailures = 0; return true; }
   for (const alias of SOURCE_MATCHES) {
     if (await openGroup(alias, false)) {
-      const title = await currentChatTitle();
-      if (sourceTitleMatches(title, SOURCE_MATCHES)) { sourceDiscoveryFailures = 0; return true; }
+      if (await currentChatIsSource()) { sourceDiscoveryFailures = 0; return true; }
     }
   }
   sourceDiscoveryFailures += 1;
@@ -816,7 +873,7 @@ function rowToSourceEvent(row) {
   return {
     bridgeVersion: `official-web-playwright-${VERSION}`,
     externalMessageId: externalId,
-    groupId: `official-web:${sha256(SOURCE_CHANNEL_KEY).slice(0, 32)}`,
+    groupId: SOURCE_GROUP_ID || `official-web:${sha256(SOURCE_CHANNEL_KEY).slice(0, 32)}`,
     groupName: activeSourceTitle || SOURCE_MATCHES[0],
     channelKey: SOURCE_CHANNEL_KEY,
     labChannelKey: LAB_CHANNEL_KEY,
@@ -845,8 +902,6 @@ async function captureRow(row) {
   if (['conversation', 'greeting', 'empty'].includes(classification.intent)) nonOperationalCount += 1;
   await appendTraining(event, classification, null);
 
-  // Create a deterministic local shadow proposal immediately. This means learning/testing
-  // continues even when Vercel/Supabase is rate-limited or temporarily offline.
   if (LAB_SEND_ENABLED && shouldMirror(classification)) {
     await queueMirror({
       sourceExternalMessageId: event.externalMessageId,
@@ -859,7 +914,6 @@ async function captureRow(row) {
     });
   }
 
-  // Try once only if backend is currently healthy; the spool owns all later retries.
   if (BACKEND_SYNC_ENABLED && file && Date.now() >= backendNextAllowedAt && backendState !== 'unauthorized') {
     await deliverEventFile(file);
   }
@@ -898,7 +952,17 @@ function localLabTestReply(row, classification) {
   ].join('\n').slice(0, 3900);
 }
 
+async function clearComposerSafely(composer) {
+  try { await composer.fill(''); return; } catch {}
+  try {
+    await composer.click({ timeout: 1000 });
+    await page.keyboard.press('Control+A');
+    await page.keyboard.press('Backspace');
+  } catch {}
+}
+
 async function sendTextInCurrentLab(textValue, tag) {
+  await assertCurrentLabIdentity();
   if (tag && await visibleLabHasTag(tag)) return true;
   const candidates = [
     page.locator('footer div[contenteditable="true"][role="textbox"]').last(),
@@ -912,8 +976,15 @@ async function sendTextInCurrentLab(textValue, tag) {
   if (!composer) throw new Error('No encontré el compositor del grupo LAB.');
   await composer.click({ timeout: 3000 });
   await page.keyboard.insertText(String(textValue).slice(0, 3900));
+  try {
+    await assertCurrentLabIdentity();
+  } catch (error) {
+    await clearComposerSafely(composer);
+    throw error;
+  }
   await page.keyboard.press('Enter');
   await sleep(700);
+  await assertCurrentLabIdentity();
   if (tag && !(await visibleLabHasTag(tag))) throw new Error('No pude verificar la respuesta de prueba en LAB.');
   return true;
 }
@@ -921,11 +992,19 @@ async function sendTextInCurrentLab(textValue, tag) {
 async function processLabTestInput() {
   if (!LAB_TEST_INPUT_ENABLED) return;
   const sourceBefore = await currentChatTitle();
-  const opened = await openGroup(LAB_GROUP_NAME, false);
+  const opened = await openGroup(LAB_GROUP_NAME, true);
   if (!opened || normalize(await currentChatTitle()) !== normalize(LAB_GROUP_NAME)) {
     await log(`LAB_TEST_OPEN_FAIL current=${await currentChatTitle()}`);
     await writeDomDiagnostic('lab-test-open-fail');
     if (sourceTitleMatches(sourceBefore, SOURCE_MATCHES)) await openSourceGroup().catch(() => false);
+    return;
+  }
+  try {
+    await assertCurrentLabIdentity();
+  } catch (error) {
+    await log(`LAB_TEST_IDENTITY_FAIL ${error.message}`);
+    await writeDomDiagnostic('lab-test-identity-fail');
+    await openSourceGroup().catch(() => false);
     return;
   }
 
@@ -968,7 +1047,7 @@ async function sendMirrorToLab(mirror) {
   if (!LAB_SEND_ENABLED) return false;
   if (normalize(mirror.labGroupName) !== normalize(LAB_GROUP_NAME)) throw new Error('Destino lab no autorizado.');
   if (!(await openGroup(LAB_GROUP_NAME, true))) throw new Error(`No pude abrir el grupo lab exacto: ${LAB_GROUP_NAME}`);
-  if (normalize(await currentChatTitle()) !== normalize(LAB_GROUP_NAME)) throw new Error('Guard de destino LAB falló. Envío cancelado.');
+  await assertCurrentLabIdentity();
   if (await visibleLabHasTag(mirror.mirrorTag)) return true;
 
   await sendTextInCurrentLab(String(mirror.text).slice(0, 3900), mirror.mirrorTag);
@@ -1053,19 +1132,20 @@ async function monitor() {
         }
       }
       activeSourceTitle = await currentChatTitle();
-      if (!sourceTitleMatches(activeSourceTitle, SOURCE_MATCHES)) throw new Error('El header activo no coincide con ningún alias fuente autorizado.');
+      await assertCurrentSourceIdentity();
       if (lastStatus !== 'monitoring') {
         console.log(`\nFuente activa: ${activeSourceTitle}`);
+        console.log(`Binding fuente: ${SOURCE_GROUP_ID ? redactGroupId(SOURCE_GROUP_ID) : 'solo nombre (LAB bloqueado)'}`);
         console.log('FUENTE: SOLO LECTURA. El Bridge no contiene ruta de envío hacia el grupo real.');
-        console.log(`LAB: ${LAB_GROUP_NAME} (${LAB_SEND_ENABLED ? 'shadow habilitado' : 'shadow deshabilitado'})`);
+        console.log(`LAB: ${LAB_GROUP_NAME} (${LAB_SEND_ENABLED ? 'shadow habilitado con ID pinneado' : 'shadow deshabilitado'})`);
         console.log('Dinero/ledger/estado real: BLOQUEADOS.\n');
-        await log(`SOURCE_ACTIVE title=${activeSourceTitle} key=${SOURCE_CHANNEL_KEY} labSend=${LAB_SEND_ENABLED}`);
+        await log(`SOURCE_ACTIVE title=${activeSourceTitle} key=${SOURCE_CHANNEL_KEY} sourceBound=${Boolean(SOURCE_GROUP_ID)} labBound=${Boolean(LAB_GROUP_ID)} labSend=${LAB_SEND_ENABLED}`);
         lastStatus = 'monitoring';
       }
+      await assertCurrentSourceIdentity();
       if (!sourceBaselineCompleted) await baselineSourceMessages();
       else await processSourceRows();
 
-      // Network delivery is best-effort and circuit-broken. Capture never waits for backend recovery.
       await flushEventSpool();
       await flushMirrorSpool();
       if (LAB_TEST_INPUT_ENABLED && Date.now() - lastLabTestPollAt >= LAB_TEST_POLL_MS) {
@@ -1093,6 +1173,9 @@ async function main() {
   console.log('Aliases fuente autorizados:');
   for (const alias of SOURCE_MATCHES) console.log(`  - ${alias}`);
   console.log(`Laboratorio: ${LAB_GROUP_NAME}`);
+  console.log(`Pinning IDs: ${REQUIRE_PINNED_GROUP_IDS ? 'OBLIGATORIO' : 'NO REQUERIDO'}`);
+  console.log(`Fuente ID: ${SOURCE_GROUP_ID ? redactGroupId(SOURCE_GROUP_ID) : 'NO CONFIGURADO'}`);
+  console.log(`LAB ID: ${LAB_GROUP_ID ? redactGroupId(LAB_GROUP_ID) : 'NO CONFIGURADO'}`);
   console.log(`Mirror LAB: ${LAB_SEND_ENABLED ? 'HABILITADO' : 'DESHABILITADO'}`);
   console.log(`Entrada de prueba LAB: ${LAB_TEST_INPUT_ENABLED ? 'HABILITADA' : 'DESHABILITADA'}`);
   console.log('Envío al grupo fuente: IMPOSIBLE POR DISEÑO.');
@@ -1127,7 +1210,7 @@ async function main() {
   context.on('page', (newPage) => { if (!page || page.isClosed()) page = newPage; });
   context.on('close', () => { stopping = true; });
   await page.goto('https://web.whatsapp.com/', { waitUntil: 'domcontentloaded', timeout: 60000 });
-  await log(`START v=${VERSION} browser=${launched.channel} seen=${seen.size}`);
+  await log(`START v=${VERSION} browser=${launched.channel} seen=${seen.size} sourceBound=${Boolean(SOURCE_GROUP_ID)} labBound=${Boolean(LAB_GROUP_ID)}`);
   await writeHealth({ startup: true });
   await monitor();
 }

@@ -1,0 +1,617 @@
+/*
+ * ContaGest VE — module adapters
+ *
+ * Transitional structural adapters for mature modules that still expose legacy
+ * class names. This file MUST NOT define a second design system. It consumes the
+ * canonical --cg-v-* tokens and is loaded before contagest-visual-system-v12.css.
+ *
+ * Remove an adapter when the owning page has migrated fully to components/ui.
+ */
+
+@layer cg.module-adapters {
+  /* ------------------------------------------------------------------------
+     Universal module safety
+     ------------------------------------------------------------------------ */
+  body :where(
+    .cg-ledger-page,.cg-rbac-page,.cg-executive-admin,.cg-vertical-page,
+    .cg-psychology-workspace,.cg-dentistry-workspace,.cg-pos-shell,
+    .cg-gym-v1124,.cg-gym-v1124-shell,.cg-sales-workspace,.cg-inventory-workspace
+  ) {
+    width: min(100%, var(--cg-v-page-max));
+    max-width: var(--cg-v-page-max);
+    min-width: 0;
+    margin-inline: auto;
+  }
+
+  body :where(
+    .cg-ledger-page *,.cg-rbac-page *,.cg-vertical-page *,.cg-psychology-workspace *,
+    .cg-dentistry-workspace *,.cg-pos-shell *,.cg-gym-v1124 *,.cg-gym-v1124-shell *
+  ) { box-sizing: border-box; }
+
+  body :where(
+    .cg-ledger-page,.cg-rbac-page,.cg-vertical-page,.cg-psychology-workspace,
+    .cg-dentistry-workspace,.cg-pos-shell,.cg-gym-v1124,.cg-gym-v1124-shell
+  ) :where(h1,h2,h3,h4,strong,p,small,span,label) {
+    overflow-wrap: anywhere;
+  }
+
+  /* ------------------------------------------------------------------------
+     Accounting / ledger
+     ------------------------------------------------------------------------ */
+  body .cg-ledger-page {
+    padding: 0 !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+    background: transparent !important;
+    box-shadow: none !important;
+  }
+
+  body .cg-ledger-kpis {
+    display: grid !important;
+    grid-template-columns: repeat(auto-fit,minmax(min(100%,160px),1fr)) !important;
+    gap: var(--cg-v-space-2) !important;
+    margin: 0 !important;
+  }
+
+  body .cg-ledger-workbench {
+    display: grid !important;
+    grid-template-columns: minmax(0,1.55fr) minmax(260px,.75fr) !important;
+    align-items: start !important;
+    gap: var(--cg-v-space-3) !important;
+    min-width: 0;
+  }
+
+  body :where(.cg-ledger-form,.cg-ledger-preview-card,.cg-ledger-book,.cg-ledger-line-card) {
+    min-width: 0 !important;
+    max-width: 100% !important;
+    border: 1px solid var(--cg-v-border) !important;
+    border-radius: var(--cg-v-radius-lg) !important;
+    background: var(--cg-v-surface) !important;
+    background-image: none !important;
+    box-shadow: var(--cg-v-shadow-1) !important;
+  }
+
+  body :where(.cg-ledger-form,.cg-ledger-preview-card,.cg-ledger-book) {
+    padding: 14px !important;
+  }
+
+  body .cg-ledger-line-card { padding: 12px !important; }
+
+  body :where(.cg-ledger-form-head,.cg-ledger-book-head,.cg-ledger-line-title) {
+    display: flex !important;
+    align-items: flex-start !important;
+    justify-content: space-between !important;
+    gap: var(--cg-v-space-3) !important;
+    min-width: 0;
+  }
+
+  body :where(.cg-ledger-form-head h2,.cg-ledger-preview-card h2,.cg-ledger-book-head h2) {
+    margin: 0 !important;
+    font-size: var(--cg-v-text-section) !important;
+    line-height: 1.25 !important;
+    font-weight: var(--cg-v-weight-semibold) !important;
+  }
+
+  body .cg-ledger-status {
+    max-width: 100%;
+    padding: 4px 8px !important;
+    border: 1px solid var(--cg-v-border) !important;
+    border-radius: var(--cg-v-radius-sm) !important;
+    font-size: var(--cg-v-text-2xs) !important;
+    white-space: nowrap;
+  }
+
+  body .cg-ledger-actions { gap: var(--cg-v-space-2) !important; }
+  body .cg-ledger-preview-card { position: sticky; top: calc(var(--cg-header,64px) + 12px); }
+
+  body :where(.cg-ledger-mini,.cg-ledger-book table) {
+    width: 100%;
+    min-width: 640px;
+    border-collapse: collapse;
+  }
+
+  body .cg-ledger-live-preview {
+    width: 100%;
+    max-width: 100%;
+    overflow-x: auto;
+    overscroll-behavior-inline: contain;
+  }
+
+  body .cg-ledger-template-list {
+    display: grid !important;
+    gap: 6px !important;
+    margin-top: 10px !important;
+  }
+
+  body .cg-ledger-template-list > button {
+    min-height: 38px !important;
+    width: 100%;
+    min-width: 0;
+    padding: 8px 10px !important;
+    border: 1px solid var(--cg-v-border) !important;
+    border-radius: var(--cg-v-radius-sm) !important;
+    background: var(--cg-v-surface-2) !important;
+    color: var(--cg-v-text) !important;
+    text-align: start;
+  }
+
+  /* ------------------------------------------------------------------------
+     Admin / RBAC / licensing surfaces
+     ------------------------------------------------------------------------ */
+  body :where(.cg-admin-command-grid,.cg-rbac-dashboard) {
+    display: grid !important;
+    grid-template-columns: repeat(2,minmax(0,1fr)) !important;
+    gap: var(--cg-v-space-3) !important;
+    min-width: 0;
+  }
+
+  body :where(.cg-enterprise-card,.cg-rbac-section,.cg-rbac-active-card,.cg-rbac-switch-card) {
+    min-width: 0 !important;
+    max-width: 100% !important;
+  }
+
+  body .cg-admin-monitor-grid {
+    display: grid !important;
+    grid-template-columns: repeat(auto-fit,minmax(min(100%,170px),1fr)) !important;
+    gap: var(--cg-v-space-2) !important;
+  }
+
+  body .cg-admin-monitor-grid > article {
+    min-width: 0;
+    min-height: 78px;
+    padding: 10px 11px !important;
+    border: 1px solid var(--cg-v-border) !important;
+    border-radius: var(--cg-v-radius-md) !important;
+    background: var(--cg-v-surface-2) !important;
+  }
+
+  body .cg-admin-monitor-grid > article > strong {
+    display: block;
+    margin-top: 3px;
+    font-size: var(--cg-v-text-kpi) !important;
+    line-height: 1.15 !important;
+    font-variant-numeric: tabular-nums lining-nums;
+  }
+
+  body .cg-rbac-permission-grid {
+    display: grid !important;
+    grid-template-columns: repeat(auto-fit,minmax(min(100%,165px),1fr)) !important;
+    gap: 6px !important;
+    min-width: 0;
+  }
+
+  body .cg-permission-pill {
+    display: flex !important;
+    align-items: center !important;
+    gap: 7px !important;
+    min-width: 0;
+    min-height: 34px;
+    padding: 6px 8px !important;
+    border: 1px solid var(--cg-v-border) !important;
+    border-radius: var(--cg-v-radius-sm) !important;
+    background: var(--cg-v-surface-2) !important;
+  }
+
+  body .cg-permission-pill > input { flex: 0 0 auto; }
+  body .cg-permission-pill > span { min-width: 0; font-size: var(--cg-v-text-xs) !important; }
+
+  body :where(.cg-demo-user-form,.cg-rbac-switch-form) {
+    display: grid !important;
+    grid-template-columns: repeat(auto-fit,minmax(min(100%,220px),1fr)) !important;
+    gap: var(--cg-v-space-3) !important;
+    min-width: 0;
+  }
+
+  body :where(.cg-demo-user-form > [data-demo-module-host],.cg-demo-module-picker,.cg-demo-user-actions) { grid-column: 1 / -1; }
+
+  body .cg-demo-module-grid {
+    display: grid !important;
+    grid-template-columns: repeat(auto-fit,minmax(min(100%,160px),1fr)) !important;
+    gap: 6px !important;
+    min-width: 0;
+  }
+
+  body .cg-demo-module-option {
+    display: flex !important;
+    align-items: center !important;
+    gap: 7px !important;
+    min-height: 36px;
+    min-width: 0;
+    padding: 6px 8px !important;
+    border: 1px solid var(--cg-v-border) !important;
+    border-radius: var(--cg-v-radius-sm) !important;
+  }
+
+  body .cg-admin-inline-input {
+    width: 100% !important;
+    min-width: 110px !important;
+    min-height: 34px !important;
+    font-size: var(--cg-v-text-xs) !important;
+  }
+
+  body :where(.cg-rbac-page .pl-table-wrap,.cg-rbac-page .table-wrap) {
+    max-width: 100%;
+    overflow-x: auto !important;
+  }
+
+  /* ------------------------------------------------------------------------
+     Health / clinic legacy vanilla surface
+     ------------------------------------------------------------------------ */
+  body .cg-vertical-grid {
+    display: grid !important;
+    grid-template-columns: repeat(2,minmax(0,1fr)) !important;
+    gap: var(--cg-v-space-3) !important;
+    min-width: 0;
+  }
+
+  body .cg-vertical-wide { grid-column: 1 / -1; }
+
+  body :where(.cg-vertical-panel,.cg-clinical-note) {
+    min-width: 0 !important;
+    max-width: 100% !important;
+  }
+
+  body :where(.cg-inline-form,.cg-stack-form,.cg-clinical-form) {
+    min-width: 0 !important;
+    max-width: 100% !important;
+    gap: var(--cg-v-space-3) !important;
+  }
+
+  body .cg-inline-form {
+    display: grid !important;
+    grid-template-columns: repeat(auto-fit,minmax(min(100%,210px),1fr)) !important;
+  }
+
+  body .cg-stack-form { display: grid !important; grid-template-columns: minmax(0,1fr) !important; }
+  body .cg-clinical-form { display: grid !important; grid-template-columns: repeat(2,minmax(0,1fr)) !important; }
+  body .cg-clinical-form > :where(label,.cgx-field,.cg-form-actions) { min-width: 0; }
+  body .cg-clinical-form > :where(label:nth-of-type(n+1),.cg-form-actions) { grid-column: 1 / -1; }
+
+  body .cg-two-fields {
+    display: grid !important;
+    grid-template-columns: repeat(2,minmax(0,1fr)) !important;
+    gap: var(--cg-v-space-2) !important;
+    min-width: 0;
+  }
+
+  body :where(.cg-appointment-list,.cg-clinical-timeline,.cg-mini-list) { min-width: 0; }
+  body .cg-appointment-list > article {
+    display: grid !important;
+    grid-template-columns: minmax(110px,.42fr) minmax(0,1fr) auto !important;
+    align-items: center !important;
+    gap: 10px !important;
+    min-width: 0;
+    padding: 9px 0 !important;
+    border-bottom: 1px solid var(--cg-v-border) !important;
+  }
+
+  /* ------------------------------------------------------------------------
+     Psychology / dentistry
+     ------------------------------------------------------------------------ */
+  body :where(.cg-psych-planner-grid,.cg-dental-grid) {
+    display: grid !important;
+    grid-template-columns: repeat(auto-fit,minmax(min(100%,280px),1fr)) !important;
+    gap: var(--cg-v-space-3) !important;
+    min-width: 0;
+  }
+
+  body .cg-psych-flow-grid {
+    display: grid !important;
+    grid-template-columns: repeat(auto-fit,minmax(min(100%,170px),1fr)) !important;
+    gap: var(--cg-v-space-2) !important;
+  }
+
+  body .cg-psych-flow-card {
+    min-width: 0;
+    min-height: 76px;
+    padding: 10px 11px !important;
+    border: 1px solid var(--cg-v-border) !important;
+    border-radius: var(--cg-v-radius-md) !important;
+    background: var(--cg-v-surface-2) !important;
+  }
+
+  body .cg-psych-flow-card > strong {
+    display: block;
+    margin-top: 3px;
+    font-size: var(--cg-v-text-kpi) !important;
+    line-height: 1.15 !important;
+    font-variant-numeric: tabular-nums lining-nums;
+  }
+
+  body .cg-dental-treatment-form {
+    display: grid !important;
+    grid-template-columns: repeat(2,minmax(0,1fr)) !important;
+    gap: var(--cg-v-space-3) !important;
+    min-width: 0;
+  }
+
+  body .cg-dental-treatment-form > :where(div,.cgx-field,.cgx-btn) { min-width: 0; }
+  body .cg-dental-treatment-form > :where(div:nth-of-type(n+1),.cgx-btn) { grid-column: 1 / -1; }
+
+  body .cg-dental-tooth-grid {
+    display: grid !important;
+    grid-template-columns: repeat(auto-fit,minmax(38px,1fr)) !important;
+    gap: 5px !important;
+    min-width: 0;
+  }
+
+  body .cg-dental-tooth-grid > button {
+    min-width: 38px !important;
+    min-height: 38px !important;
+    padding: 0 !important;
+    border: 1px solid var(--cg-v-border) !important;
+    border-radius: var(--cg-v-radius-sm) !important;
+    background: var(--cg-v-surface-2) !important;
+    color: var(--cg-v-text) !important;
+    font-size: var(--cg-v-text-xs) !important;
+    font-variant-numeric: tabular-nums lining-nums;
+  }
+
+  body .cg-dental-tooth-grid > button.is-selected {
+    border-color: var(--cg-v-brand) !important;
+    background: var(--cg-v-brand-soft) !important;
+    color: var(--cg-v-brand) !important;
+  }
+
+  /* ------------------------------------------------------------------------
+     Fitness / gym
+     ------------------------------------------------------------------------ */
+  body :where(.cg-gym-v1124-grid,.cg-gym-retention-grid) {
+    display: grid !important;
+    grid-template-columns: repeat(auto-fit,minmax(min(100%,270px),1fr)) !important;
+    gap: var(--cg-v-space-3) !important;
+    min-width: 0;
+  }
+
+  body :where(.cg-gym-v1124-card,.cg-gym-v1124-status,.cg-gym-v1124-prereq) {
+    min-width: 0 !important;
+    max-width: 100% !important;
+    border: 1px solid var(--cg-v-border) !important;
+    border-radius: var(--cg-v-radius-lg) !important;
+    background: var(--cg-v-surface) !important;
+    background-image: none !important;
+    box-shadow: var(--cg-v-shadow-1) !important;
+  }
+
+  body .cg-gym-v1124-card { padding: 13px !important; }
+
+  body .cg-gym-v1124-card > header {
+    display: flex !important;
+    align-items: flex-start !important;
+    justify-content: space-between !important;
+    gap: var(--cg-v-space-3) !important;
+    margin-bottom: 10px !important;
+  }
+
+  body .cg-gym-v1124-card > header h3 {
+    margin: 0 !important;
+    font-size: var(--cg-v-text-section) !important;
+    line-height: 1.25 !important;
+  }
+
+  body .cg-gym-v1124-card > header p {
+    margin: 3px 0 0 !important;
+    font-size: var(--cg-v-text-xs) !important;
+    line-height: 1.4 !important;
+  }
+
+  body .cg-gym-v1124-tabs {
+    display: flex !important;
+    gap: 5px !important;
+    max-width: 100%;
+    overflow-x: auto !important;
+    overscroll-behavior-inline: contain;
+    scrollbar-width: thin;
+  }
+
+  body .cg-gym-v1124-tabs > button {
+    flex: 0 0 auto;
+    min-height: 36px !important;
+    padding: 0 10px !important;
+    border-radius: var(--cg-v-radius-sm) !important;
+    font-size: var(--cg-v-text-xs) !important;
+    white-space: nowrap;
+  }
+
+  body .cg-gym-v1124-form {
+    display: grid !important;
+    grid-template-columns: minmax(0,1fr) !important;
+    gap: var(--cg-v-space-2) !important;
+    min-width: 0;
+  }
+
+  body .cg-gym-v1124-fields {
+    display: grid !important;
+    grid-template-columns: repeat(2,minmax(0,1fr)) !important;
+    gap: var(--cg-v-space-2) !important;
+    min-width: 0;
+  }
+
+  body :where(.cg-gym-v1124-form input,.cg-gym-v1124-form select,.cg-gym-v1124-form textarea) {
+    width: 100% !important;
+    min-width: 0 !important;
+    min-height: var(--cg-v-control) !important;
+    border: 1px solid var(--cg-v-border) !important;
+    border-radius: var(--cg-v-radius-sm) !important;
+    background: var(--cg-v-surface) !important;
+    color: var(--cg-v-text) !important;
+    font-size: var(--cg-v-text-sm) !important;
+  }
+
+  body .cg-gym-v1124-list { display: grid !important; gap: 0 !important; min-width: 0; }
+  body .cg-gym-v1124-list > article {
+    display: flex !important;
+    align-items: center !important;
+    justify-content: space-between !important;
+    gap: 10px !important;
+    min-width: 0;
+    padding: 9px 0 !important;
+    border-bottom: 1px solid var(--cg-v-border) !important;
+  }
+
+  body .cg-gym-v1124-list > article > div { min-width: 0; }
+
+  /* ------------------------------------------------------------------------
+     Fast-food POS and order board
+     ------------------------------------------------------------------------ */
+  body .cg-pos-layout {
+    display: grid !important;
+    grid-template-columns: minmax(0,1.65fr) minmax(300px,.78fr) !important;
+    align-items: start !important;
+    gap: var(--cg-v-space-3) !important;
+    min-width: 0;
+  }
+
+  body :where(.cg-pos-products,.cg-pos-cart) {
+    min-width: 0 !important;
+    max-width: 100% !important;
+    border-radius: var(--cg-v-radius-lg) !important;
+  }
+
+  body .cg-pos-tabs {
+    display: flex !important;
+    gap: 5px !important;
+    max-width: 100%;
+    overflow-x: auto !important;
+    overscroll-behavior-inline: contain;
+  }
+
+  body .cg-pos-tabs > button {
+    flex: 0 0 auto;
+    min-height: 36px !important;
+    padding: 0 10px !important;
+    border-radius: var(--cg-v-radius-sm) !important;
+    font-size: var(--cg-v-text-xs) !important;
+    white-space: nowrap;
+  }
+
+  body .cg-pos-grid {
+    display: grid !important;
+    grid-template-columns: repeat(auto-fit,minmax(min(100%,135px),1fr)) !important;
+    gap: var(--cg-v-space-2) !important;
+    min-width: 0;
+  }
+
+  body .cg-pos-product {
+    display: grid !important;
+    grid-template-columns: 28px minmax(0,1fr) auto !important;
+    grid-template-areas: "icon title price" "icon meta price" !important;
+    align-items: center !important;
+    gap: 2px 8px !important;
+    min-width: 0 !important;
+    min-height: 74px !important;
+    padding: 9px 10px !important;
+    border: 1px solid var(--cg-v-border) !important;
+    border-radius: var(--cg-v-radius-md) !important;
+    background: var(--cg-v-surface) !important;
+    color: var(--cg-v-text) !important;
+    text-align: start;
+  }
+
+  body .cg-pos-product .cg-pos-icon { grid-area: icon; }
+  body .cg-pos-product > strong { grid-area: title; min-width: 0; font-size: var(--cg-v-text-sm) !important; }
+  body .cg-pos-product > small { grid-area: meta; min-width: 0; font-size: var(--cg-v-text-2xs) !important; color: var(--cg-v-text-muted); }
+  body .cg-pos-product > b { grid-area: price; font-size: var(--cg-v-text-sm) !important; font-variant-numeric: tabular-nums lining-nums; white-space: nowrap; }
+
+  body .cg-pos-cart { padding: 13px !important; }
+  body .cg-pos-cart > h3 { margin: 0 0 10px !important; font-size: var(--cg-v-text-section) !important; }
+  body .cg-cart-lines { display: grid; gap: 0; padding: 0; margin: 10px 0; list-style: none; }
+  body .cg-cart-lines > li { display:flex; align-items:center; justify-content:space-between; gap:10px; min-width:0; padding:8px 0; border-bottom:1px solid var(--cg-v-border); }
+  body .cg-cart-lines > li > div:first-child { min-width:0; }
+  body .cg-cart-line-actions { display:flex; gap:5px; flex:0 0 auto; }
+  body .cg-cart-line-actions > button { width:36px !important; min-width:36px !important; height:36px !important; min-height:36px !important; padding:0 !important; border-radius:var(--cg-v-radius-sm) !important; }
+  body .cg-cart-total { display:flex; justify-content:space-between; gap:10px; padding:6px 0; font-size:var(--cg-v-text-sm); }
+  body .cg-cart-total > b { font-variant-numeric:tabular-nums lining-nums; white-space:nowrap; }
+  body .cg-cart-total.main { padding-top:9px; margin-top:4px; border-top:1px solid var(--cg-v-border); }
+  body .cg-cart-total.main > b { font-size:var(--cg-v-text-lg) !important; }
+
+  body .cg-kanban {
+    display: grid !important;
+    grid-template-columns: repeat(6,minmax(230px,1fr)) !important;
+    gap: var(--cg-v-space-2) !important;
+    max-width: 100%;
+    overflow-x: auto !important;
+    overscroll-behavior-inline: contain;
+    padding-bottom: 6px;
+  }
+
+  body .cg-kanban-col {
+    min-width: 230px;
+    max-width: 320px;
+    border: 1px solid var(--cg-v-border) !important;
+    border-radius: var(--cg-v-radius-lg) !important;
+    background: var(--cg-v-surface-2) !important;
+  }
+
+  body .cg-kanban-col > header {
+    display: flex !important;
+    align-items: center !important;
+    gap: 7px !important;
+    min-height: 38px;
+    padding: 7px 9px !important;
+    border-bottom: 1px solid var(--cg-v-border) !important;
+    font-size: var(--cg-v-text-xs) !important;
+  }
+
+  body .cg-kanban-col > header > strong { margin-inline-start: auto; font-variant-numeric: tabular-nums; }
+  body .cg-kanban-list { display:grid; gap:7px; padding:7px; }
+
+  body .cg-order-card {
+    min-width: 0;
+    padding: 9px !important;
+    border: 1px solid var(--cg-v-border) !important;
+    border-radius: var(--cg-v-radius-md) !important;
+    background: var(--cg-v-surface) !important;
+    box-shadow: none !important;
+  }
+
+  body .cg-order-card h3 { margin:0 !important; font-size:var(--cg-v-text-sm) !important; }
+  body .cg-order-card p { margin:2px 0 0 !important; font-size:var(--cg-v-text-2xs) !important; }
+  body .cg-order-items { display:grid; gap:4px; padding:0; margin:8px 0; list-style:none; }
+  body .cg-order-items li,.cg-order-total { display:flex; justify-content:space-between; gap:8px; min-width:0; font-size:var(--cg-v-text-xs); }
+  body .cg-order-items strong,.cg-order-total strong { flex:0 0 auto; font-variant-numeric:tabular-nums lining-nums; white-space:nowrap; }
+  body .cg-order-actions { display:flex !important; flex-wrap:wrap !important; gap:5px !important; min-width:0; margin-top:8px; }
+  body .cg-order-actions > :where(button,select) { min-height:34px !important; font-size:var(--cg-v-text-2xs) !important; }
+
+  /* ------------------------------------------------------------------------
+     Responsive adapters
+     ------------------------------------------------------------------------ */
+  @media (max-width: 1100px) {
+    body .cg-ledger-workbench { grid-template-columns: minmax(0,1fr) !important; }
+    body .cg-ledger-preview-card { position: static; }
+    body .cg-pos-layout { grid-template-columns: minmax(0,1fr) !important; }
+  }
+
+  @media (max-width: 900px) {
+    body :where(.cg-admin-command-grid,.cg-rbac-dashboard,.cg-vertical-grid) { grid-template-columns: minmax(0,1fr) !important; }
+    body .cg-vertical-wide { grid-column: auto; }
+    body .cg-clinical-form { grid-template-columns: minmax(0,1fr) !important; }
+    body .cg-clinical-form > * { grid-column: auto !important; }
+    body .cg-dental-treatment-form { grid-template-columns: minmax(0,1fr) !important; }
+    body .cg-dental-treatment-form > * { grid-column: auto !important; }
+  }
+
+  @media (max-width: 760px) {
+    body .cg-two-fields,
+    body .cg-gym-v1124-fields { grid-template-columns: minmax(0,1fr) !important; }
+
+    body .cg-appointment-list > article { grid-template-columns: minmax(0,1fr) auto !important; }
+    body .cg-appointment-list > article > time { grid-column: 1 / -1; }
+
+    body .cg-pos-grid { grid-template-columns: repeat(2,minmax(0,1fr)) !important; }
+    body .cg-pos-product { grid-template-columns: 26px minmax(0,1fr) !important; grid-template-areas:"icon title" "icon meta" "price price" !important; min-height:84px !important; }
+    body .cg-pos-product > b { justify-self:start; margin-top:3px; }
+
+    body .cg-gym-v1124-list > article { align-items:flex-start !important; flex-direction:column; }
+    body .cg-gym-v1124-list > article > :last-child { align-self:stretch; max-width:100%; }
+  }
+
+  @media (max-width: 430px) {
+    body :where(.cg-ledger-form,.cg-ledger-preview-card,.cg-ledger-book,.cg-gym-v1124-card,.cg-pos-cart) { padding: 11px !important; }
+    body .cg-rbac-permission-grid,body .cg-demo-module-grid,body .cg-admin-monitor-grid,body .cg-psych-flow-grid { grid-template-columns:minmax(0,1fr) !important; }
+    body .cg-pos-grid { grid-template-columns:minmax(0,1fr) !important; }
+    body .cg-dental-tooth-grid { grid-template-columns: repeat(4,minmax(0,1fr)) !important; }
+    body .cg-order-actions { display:grid !important; grid-template-columns:repeat(2,minmax(0,1fr)) !important; }
+    body .cg-order-actions > select { grid-column:1 / -1; width:100%; }
+  }
+}

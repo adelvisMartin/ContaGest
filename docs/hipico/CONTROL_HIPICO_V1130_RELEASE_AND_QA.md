@@ -1,84 +1,181 @@
-# Control Hípico v1.13.0 RC1 — restauración web y gate de producto
+# Control Hípico v1.13.0 RC2 · release y QA
 
 **Producto:** Control Hípico  
-**Estado:** RC recuperada para QA; no equivale a release Android final hasta completar dispositivo real/Bridge.  
-**Baseline:** `Hipico-Control-v1.13.0-RC1.apk`  
-**Runtime web recuperado:** `1.13.0-parity.1`
+**Runtime/PWA canónico:** `frontend/public/hipico-control`  
+**Wrapper Android:** `android/hipico-control-v1130`  
+**Versión app:** `1.13.0-rc2`  
+**Bridge WhatsApp Web:** `1.4.1`  
+**Estado de código:** `RELEASE CANDIDATE / READY FOR MANUAL QA`
 
-## Frontera de producto
+Control Hípico es un producto independiente de ContaGest ERP aunque comparta temporalmente repositorio, backend y PostgreSQL. Mantiene ruta, PWA, almacenamiento, contratos, migraciones, wrapper Android y ciclo de release propios.
 
-Control Hípico es independiente de ContaGest ERP. Comparte temporalmente repositorio, PostgreSQL y proceso backend, pero mantiene:
+## Fuente canónica
 
-- ruta `/hipico-control/`;
-- PWA, manifest, service worker, IndexedDB/outbox y UI propios;
-- namespace backend `/api/v1/hipico-bot/*`;
-- migraciones con ownership Hípico;
-- release y QA propios;
-- wrapper Android/Capacitor propio.
+Ya no se depende de un `runtime.zip.b64` para reconstruir la app. Ese mecanismo fue retirado porque el artefacto histórico no era una fuente fiable. La fuente que se versiona y revisa es directamente:
 
-No pertenece a `MODULE_CATALOG`, business modes, breadcrumbs ni permisos del ERP.
+```text
+frontend/public/hipico-control/
+```
 
-## Restauración determinista
+El wrapper Android usa `scripts/sync-web.mjs` para copiar únicamente esa fuente a `www/` y verificar rutas/hashes. Antes de compilar:
 
-El runtime recuperado se conserva como `products/hipico-control/runtime/v1.13.0-rc1/runtime.zip.b64` con SHA-256 fijado. `scripts/restore-hipico-runtime.mjs` valida el hash, bloquea path traversal y extrae únicamente dentro de `frontend/public/hipico-control/`.
+```bash
+cd android/hipico-control-v1130
+npm ci --no-audit --no-fund
+npm run verify:web
+```
 
-La restauración reutiliza los SVG de marca ya versionados y elimina únicamente los archivos conocidos del shell simplificado anterior antes de materializar RC1.
+Una divergencia entre PWA y Android debe bloquear el build.
 
-`npm run build:frontend` ejecuta `npm run hipico:restore` antes de Vite; por tanto Vercel y desarrollo local reciben la misma fuente Hípico sin convertirla en módulo ERP.
+## PWA
 
-## Bot / WhatsApp
+El gate manual debe cubrir:
 
-La Cloud API oficial se limita a destinatarios individuales en esta implementación. El grupo requiere un Bridge soportado y permanece fuera de la automatización directa.
-
-Variables server-side:
-
-- `WHATSAPP_CLOUD_TOKEN`
-- `WHATSAPP_PHONE_NUMBER_ID`
-- `WHATSAPP_GRAPH_VERSION`
-- `WHATSAPP_VERIFY_TOKEN`
-- `WHATSAPP_APP_SECRET`
-- `HIPICO_BOT_OPERATOR_TOKEN`
-- `HIPICO_BOT_PROMOTION=shadow|approved|automatic`
-
-### Gates
-
-- `shadow`: clasifica/propone; no envía automáticamente.
-- `approved`: salida requiere aprobación del operador.
-- `automatic`: solo intents seguros y únicamente cuando PostgreSQL Hípico está disponible para idempotencia/auditoría.
-- jugadas, saldos, pagos, cierres, resultados, liquidaciones y premios nunca son auto-elegibles.
-
-El webhook valida `x-hub-signature-256`. La deduplicación usa `providerMessageId` único + `INSERT ... ON CONFLICT DO NOTHING RETURNING`, evitando doble outbox en reenvíos concurrentes.
-
-## Migración
-
-`0014_v1126_hipico_bot` contiene exclusivamente:
-
-- `HipicoWebhookEvent`
-- `HipicoBotOutbox`
-
-Se retiraron las tablas Fitness que estaban mezcladas en el paquete previo: Fitness/Nutrición pertenecen al ERP ContaGest.
+- instalación PWA y actualización;
+- arranque online/offline;
+- service worker y rutas sensibles network-only;
+- persistencia/reinicio;
+- workspace y recuperación sin limpiar storage ajeno;
+- participantes, carreras, POLLA/riesgo, adelantadas, llegada, cierre, liquidación, historial y exportación;
+- feed shadow de WhatsApp;
+- móvil/desktop, rotación y safe areas;
+- ausencia de datos demo/bypass ficticios.
 
 ## Android
 
-`android/hipico-control-v1130/` es un wrapper independiente. `sync:web` ejecuta primero la restauración canónica y copia exclusivamente `/frontend/public/hipico-control` a `www`.
+El build reproducible de QA se genera desde el mismo runtime:
 
-No se versionan keystores, `key.properties`, builds ni `local.properties`.
+```bash
+cd android/hipico-control-v1130
+npm ci --no-audit --no-fund
+npm run android:qa
+```
 
-## QA de salida
+Salida esperada:
 
-Antes de declarar la APK final:
+```text
+artifacts/Hipico-Control-v1.13.0-rc2-debug.apk
+artifacts/SHA256SUMS.txt
+artifacts/QA_APK_METADATA.json
+artifacts/APK_BADGING.txt   # cuando aapt está disponible
+```
 
-1. restauración/hash RC1 verde;
-2. build frontend verde;
-3. PWA: instalación, actualización, offline, cache version y recuperación;
-4. flujo Hípico: captura → participantes → carrera → POLLA/riesgo → adelantadas → llegada → cierre → liquidación → historial/exportación;
-5. IndexedDB/outbox/idempotencia y reinicio de aplicación;
-6. webhook HMAC + dedupe concurrente;
-7. shadow sin side effects monetarios;
-8. Android debug en dispositivo físico: navegación, back button, teclado, safe areas, rotación, reanudación, archivos/exportación;
-9. Bridge/grupo probado por separado antes de cualquier promoción;
-10. release firmado únicamente cuando los puntos anteriores tengan evidencia.
+`package-qa-apk.mjs` copia el APK debug construido, calcula SHA-256 y, cuando Android SDK está disponible, verifica la firma debug con `apksigner` y extrae badging con `aapt`.
+
+No se versionan APK, keystores, `key.properties`, `local.properties` ni secretos de firma.
+
+## Bridge WhatsApp Web v1.4.1
+
+El grupo existente requiere temporalmente automatización de WhatsApp Web. El flujo protegido es:
+
+```text
+FUENTE oficial read-only
+  → captura/deduplicación
+  → spool durable
+  → backend/Supabase shadow
+  → clasificación/sugerencia
+  → LAB opcional durante QA
+```
+
+Antes de cualquier envío LAB se exige binding de IDs estables `@g.us`:
+
+```text
+CONFIGURAR-GRUPOS-HIPICO.cmd
+```
+
+El helper no envía mensajes. Captura fuente y LAB por separado, obliga IDs válidos/distintos y guarda los valores fuera de Git.
+
+Prueba automatizada limitada al LAB:
+
+```text
+PROBAR-HIPICO-LAB.cmd
+```
+
+Antes de escribir/Enter y después del envío el runtime vuelve a validar el nombre y el ID real del LAB. Si cambia el destino, limpia el borrador y falla cerrado.
+
+## Alcance de automatización actual
+
+Puede operar de manera autónoma en este corte para:
+
+- observar nuevos mensajes de la fuente;
+- deduplicar;
+- almacenar spool cuando backend no responde;
+- reintentar con backoff/rate limit;
+- clasificar intención/entidades;
+- persistir evidencia shadow;
+- producir sugerencias;
+- responder automáticamente **solo en LAB** durante una ventana QA explícita.
+
+Permanece deliberadamente bloqueado para:
+
+- confirmar/crear apuestas reales;
+- modificar saldos;
+- escribir ledger;
+- aplicar cierres/resultados/liquidaciones/premios;
+- enviar al grupo fuente.
+
+`actions: []` y `sourceSendPossible=false` son invariantes de este release candidate.
+
+## Backend y migraciones
+
+Las migraciones v1.13 se prueban y autorizan por separado. Seguir `HIPICO_V13_MIGRATION_RUNBOOK.md` para:
+
+- backup/PITR;
+- dry run;
+- doble ejecución/idempotencia;
+- usuario A/B para RLS;
+- grants/RPC `SECURITY INVOKER`;
+- rollback.
+
+No aplicar una migración productiva como efecto lateral de build/deploy.
+
+## Gate unificado local
+
+Desde la raíz del repositorio en Windows:
+
+```powershell
+.\QA-PRODUCCION.ps1
+```
+
+O:
+
+```bash
+npm ci --no-audit --no-fund
+npm run qa:production:full
+```
+
+El reporte queda en:
+
+```text
+artifacts/qa/production-readiness.md
+artifacts/qa/production-readiness.json
+```
+
+Los resultados distinguen `PASS`, `FAIL`, `BLOCKED` y `NOT_EXECUTED`; un build o preview no reemplaza QA físico.
+
+## QA físico Android obligatorio
+
+Instalar el APK debug y comprobar:
+
+1. arranque frío y reanudación;
+2. navegación/back button;
+3. teclado y campos;
+4. orientación/safe areas;
+5. offline/reconexión;
+6. service worker/PWA parity;
+7. Supabase autenticado;
+8. recuperación y persistencia;
+9. exportaciones/archivos;
+10. feed WhatsApp shadow.
+
+## Firma release
+
+Después de pasar QA debug se puede preparar `bundleRelease`/`assembleRelease`. El keystore y contraseñas deben vivir fuera de Git (secrets del pipeline o custodia del propietario). Nunca reutilizar una clave debug como firma productiva.
 
 ## Rollback
 
-El runtime Hípico puede revertirse independientemente del ERP: retirar el commit/PR de este producto devuelve la PWA previa sin tocar `frontend/src/`, `MODULE_CATALOG` ni los verticales ContaGest. Las tablas Hípico requieren migración de rollback explícita si ya contienen datos; nunca se borran como parte de un rollback visual.
+Código/PWA/Android se revierten al SHA anterior conservando los datos. El Bridge se detiene y vuelve a la release anterior sin borrar perfil/colas. Migraciones que ya contengan datos requieren rollback/PITR específico; nunca se borran tablas como parte de un rollback visual.
+
+## Criterio de salida
+
+`PRODUCTION READY` requiere evidencia del SHA final, QA PWA/browser, APK físico, binding/soak del Bridge, RLS staged, backup/restore y firma/release autorizados. Hasta entonces, la denominación correcta es **RELEASE CANDIDATE / READY FOR MANUAL QA**.

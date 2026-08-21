@@ -1,33 +1,37 @@
-import { PageHeader, Button, Badge } from '../components/ui/index.js';
+import { PageHeader, Button, Badge, MetricGrid, EmptyState } from '../components/ui/index.js';
 import { Store } from '../state/store.js';
 import { createOrderDraft, updateOrderStatus, ORDER_STATUSES, orderStatusMeta } from '../services/orderService.js';
 import { NotificationService } from '../services/notificationService.js';
 import { MapsService } from '../services/mapsService.js';
+import { escapeHtml } from '../utils/dom.js';
 
 const money = (value) => `$${Number(value || 0).toFixed(2)}`;
+const safe = (value) => escapeHtml(String(value ?? ''));
 const statusColumns = ['new','accepted','preparing','ready','dispatched','delivered'];
 
 function orderCard(order) {
   const meta = orderStatusMeta(order.status);
+  const id=safe(order.id),number=safe(order.number),customer=safe(order.customer || 'Cliente');
+  const service=order.serviceMode === 'delivery' ? 'Delivery' : order.serviceMode === 'pickup' ? 'Retiro' : 'Sede';
   return `
-    <article class="cg-order-card" data-order-id="${order.id}">
-      <div class="flex items-start justify-between gap-3">
+    <article class="cg-order-card" data-order-id="${id}">
+      <div class="cg-order-card-head">
         <div>
-          <h3>${order.number}</h3>
-          <p>${order.customer || 'Cliente'} · ${order.serviceMode === 'delivery' ? 'Delivery' : order.serviceMode === 'pickup' ? 'Retiro' : 'Sede'}</p>
+          <h3>${number}</h3>
+          <p>${customer} · ${safe(service)}</p>
         </div>
         ${Badge(meta.label, meta.tone === 'danger' ? 'danger' : meta.tone === 'warning' ? 'warning' : meta.tone === 'success' ? 'success' : 'brand')}
       </div>
       <ul class="cg-order-items">
-        ${(order.items || []).slice(0, 4).map((item) => `<li><span>${item.qty} × ${item.name}</span><strong>${money(Number(item.qty||0) * Number(item.price||0))}</strong></li>`).join('')}
+        ${(order.items || []).slice(0, 4).map((item) => `<li><span>${safe(item.qty)} × ${safe(item.name)}</span><strong>${safe(money(Number(item.qty||0) * Number(item.price||0)))}</strong></li>`).join('')}
       </ul>
-      <div class="cg-order-total"><span>Total</span><strong>${money(order.total)}</strong></div>
+      <div class="cg-order-total"><span>Total</span><strong>${safe(money(order.total))}</strong></div>
       <div class="cg-order-actions">
-        <button class="btn btn-secondary" data-whatsapp-order="${order.id}"><i class="fa-brands fa-whatsapp"></i> WhatsApp</button>
-        ${order.address ? `<button class="btn btn-secondary" data-map-order="${order.id}"><i class="fa-solid fa-map-location-dot"></i> Mapa</button>` : ''}
-        <select class="select cg-order-select" data-status-order="${order.id}">
-          ${ORDER_STATUSES.map((s) => `<option value="${s.key}" ${s.key === order.status ? 'selected' : ''}>${s.label}</option>`).join('')}
-        </select>
+        ${Button({ text:'WhatsApp', icon:'fa-comment-dots', variant:'secondary', attrs:`data-whatsapp-order="${id}" type="button"` })}
+        ${order.address ? Button({ text:'Mapa', icon:'fa-map-location-dot', variant:'secondary', attrs:`data-map-order="${id}" type="button"` }) : ''}
+        <label class="cg-order-status-field"><span class="sr-only">Estado del pedido ${number}</span><select class="select cgx-field-normalized cg-order-select" data-status-order="${id}" aria-label="Estado del pedido ${number}">
+          ${ORDER_STATUSES.map((s) => `<option value="${safe(s.key)}" ${s.key === order.status ? 'selected' : ''}>${safe(s.label)}</option>`).join('')}
+        </select></label>
       </div>
     </article>`;
 }
@@ -38,7 +42,7 @@ export const FoodOrdersPage = {
     const total = orders.reduce((sum, order) => sum + Number(order.total || 0), 0);
     const pending = orders.filter((order) => !['delivered','cancelled'].includes(order.status)).length;
     return `
-      <section class="cg-page-stack">
+      <section class="cg-page-stack cg-orders-workspace">
         ${PageHeader({
           eyebrowKey: 'ordersEyebrow',
           titleKey: 'ordersTitle',
@@ -48,22 +52,22 @@ export const FoodOrdersPage = {
             ${Button({ id: 'btnNewFastFood', text: 'Nuevo pedido rápido', icon: 'fa-plus', variant: 'primary' })}
           `
         })}
-        <div class="ds-kpi-grid">
-          <article class="ds-kpi"><div class="ds-kpi-top"><span>Pedidos activos</span><i class="fa-solid fa-bell-concierge"></i></div><strong>${pending}</strong><p>En cocina, caja o delivery</p></article>
-          <article class="ds-kpi"><div class="ds-kpi-top"><span>Ventas pedido</span><i class="fa-solid fa-sack-dollar"></i></div><strong>${money(total)}</strong><p>Acumulado en pedidos</p></article>
-          <article class="ds-kpi"><div class="ds-kpi-top"><span>WhatsApp</span><i class="fa-brands fa-whatsapp"></i></div><strong>${orders.filter(o=>o.notified).length}</strong><p>Notificaciones enviadas</p></article>
-          <article class="ds-kpi"><div class="ds-kpi-top"><span>Delivery</span><i class="fa-solid fa-motorcycle"></i></div><strong>${orders.filter(o=>o.serviceMode==='delivery').length}</strong><p>Con dirección enlazada</p></article>
-        </div>
-        <div class="cg-kanban">
+        ${MetricGrid([
+          {label:'Pedidos activos',value:String(pending),hint:'En cocina, caja o delivery',iconName:'fa-bell-concierge',tone:pending?'warning':'success'},
+          {label:'Ventas pedido',value:money(total),hint:'Acumulado en pedidos',iconName:'fa-sack-dollar',tone:'brand'},
+          {label:'WhatsApp',value:String(orders.filter((order)=>order.notified).length),hint:'Notificaciones enviadas',iconName:'fa-comment-dots',tone:'neutral'},
+          {label:'Delivery',value:String(orders.filter((order)=>order.serviceMode==='delivery').length),hint:'Con dirección enlazada',iconName:'fa-motorcycle',tone:'neutral'}
+        ])}
+        ${orders.length ? `<div class="cg-kanban" aria-label="Tablero de pedidos">
           ${statusColumns.map((status) => {
             const meta = orderStatusMeta(status);
             const list = orders.filter((order) => order.status === status);
-            return `<section class="cg-kanban-col">
-              <header><i class="fa-solid ${meta.icon}"></i><span>${meta.label}</span><strong>${list.length}</strong></header>
+            return `<section class="cg-kanban-col" aria-label="${safe(meta.label)}">
+              <header><i class="fa-solid ${safe(meta.icon)}" aria-hidden="true"></i><span>${safe(meta.label)}</span><strong>${list.length}</strong></header>
               <div class="cg-kanban-list">${list.length ? list.map(orderCard).join('') : '<div class="cg-empty-mini">Sin pedidos</div>'}</div>
             </section>`;
           }).join('')}
-        </div>
+        </div>` : EmptyState({title:'Sin pedidos',description:'Crea un pedido para iniciar el tablero operativo.',iconName:'fa-bell-concierge'})}
       </section>`;
   },
   mount(state, { Store, Toast, SupabaseSyncService }) {
@@ -125,11 +129,11 @@ export const FoodOrdersPage = {
 
     document.querySelectorAll('[data-whatsapp-order]').forEach((button) => {
       button.addEventListener('click', async () => {
-        const order = Store.get().foodOrders?.find((o) => o.id === button.dataset.whatsappOrder);
+        const order = Store.get().foodOrders?.find((item) => item.id === button.dataset.whatsappOrder);
         if (!order) return;
         await NotificationService.notifyOrder(order, 'whatsapp', { companyName: Store.get().settings.companyName, supportPhone: Store.get().support?.whatsapp });
         Store.update((draft) => {
-          draft.foodOrders = (draft.foodOrders || []).map((o) => o.id === order.id ? { ...o, notified: true, notifiedAt: new Date().toISOString() } : o);
+          draft.foodOrders = (draft.foodOrders || []).map((item) => item.id === order.id ? { ...item, notified: true, notifiedAt: new Date().toISOString() } : item);
         });
         Toast.show('WhatsApp abierto para notificación del pedido.', 'success');
       });
@@ -137,7 +141,7 @@ export const FoodOrdersPage = {
 
     document.querySelectorAll('[data-map-order]').forEach((button) => {
       button.addEventListener('click', () => {
-        const order = Store.get().foodOrders?.find((o) => o.id === button.dataset.mapOrder);
+        const order = Store.get().foodOrders?.find((item) => item.id === button.dataset.mapOrder);
         if (order?.address) window.open(MapsService.mapUrl(order.address), '_blank', 'noopener,noreferrer');
       });
     });
