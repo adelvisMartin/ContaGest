@@ -7,3 +7,4 @@
 @import './shell-contract.css' layer(cg.shell-contract);
 @import './vertical-contexts.css' layer(cg.context);
 @import './erp-system.css';
+@import './ui-normalization-v142.css';
