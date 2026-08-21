@@ -1,0 +1,309 @@
+/* ContaGest VE v11.22.1 — canonical cross-module visual normalization.
+   Purpose: keep enterprise density consistent across every module and neutralize
+   legacy decorative KPI treatments that reduce readability or split amounts.
+
+   This file is loaded LAST by compact-enterprise-v1110.css. Keep selectors
+   intentionally broad only for shared shell/KPI/typography primitives. Vertical
+   modules may change semantic accents, never the numeric scale or card geometry. */
+
+:root {
+  --cg-type-caption: .6875rem;
+  --cg-type-label: .75rem;
+  --cg-type-body: .8125rem;
+  --cg-type-body-lg: .875rem;
+  --cg-type-section: clamp(1rem, 1.15vw, 1.125rem);
+  --cg-type-page: clamp(1.35rem, 1.65vw, 1.75rem);
+  --cg-type-kpi: clamp(1rem, 1.15vw, 1.28rem);
+  --cg-type-kpi-compact: clamp(.95rem, 1.05vw, 1.15rem);
+  --cg-kpi-min-height: 82px;
+  --cg-kpi-radius: 12px;
+}
+
+/* --------------------------------------------------------------------------
+   TYPOGRAPHY SCALE — one hierarchy for the complete ERP
+   -------------------------------------------------------------------------- */
+html body {
+  font-size: var(--cg-type-body-lg) !important;
+}
+
+html body :where(
+  .cgx-page-header h1,
+  .cg-ui-page-title,
+  .pl-header h2,
+  .ds-page-header h2,
+  .hf-page-head h2,
+  .pretest-hero h2,
+  .hf-brand-header h2
+) {
+  font-size: var(--cg-type-page) !important;
+  line-height: 1.12 !important;
+  letter-spacing: -.025em !important;
+  font-weight: 650 !important;
+}
+
+html body :where(
+  .cgx-section-head h2,
+  .cg-ui-section-title,
+  .cg-vertical-head h3,
+  .pretest-panel h3,
+  .admin-card h3,
+  .brand-card-title h3
+) {
+  font-size: var(--cg-type-section) !important;
+  line-height: 1.25 !important;
+  letter-spacing: -.012em !important;
+  font-weight: 600 !important;
+}
+
+html body :where(
+  .cgx-page-header > div > p:not(.cgx-eyebrow),
+  .cg-ui-muted,
+  .pl-header p,
+  .ds-page-header p,
+  .hf-page-head p,
+  .cgx-section-head p,
+  .cg-vertical-head p
+) {
+  font-size: var(--cg-type-body) !important;
+  line-height: 1.45 !important;
+}
+
+html body :where(
+  .cgx-eyebrow,
+  .pl-eyebrow,
+  .hf-eyebrow,
+  .kpi-label,
+  .cgx-metric p,
+  .kpi p,
+  .pl-kpi-top,
+  .ds-kpi-top,
+  .cgv-kpi-label,
+  .admin-metric > span
+) {
+  font-size: var(--cg-type-label) !important;
+  line-height: 1.25 !important;
+  letter-spacing: .045em !important;
+  font-weight: 600 !important;
+}
+
+html body :where(
+  .cgx-metric small,
+  .kpi small,
+  .pl-kpi p,
+  .ds-kpi p,
+  .cgv-kpi-sub,
+  .admin-metric small
+) {
+  font-size: var(--cg-type-caption) !important;
+  line-height: 1.35 !important;
+  font-weight: 500 !important;
+}
+
+html body :where(
+  .cgx-table th,
+  .cg-ui-table th,
+  .table th,
+  .pl-table th,
+  .ds-table th,
+  .cgv-table th
+) {
+  font-size: var(--cg-type-caption) !important;
+  line-height: 1.25 !important;
+  letter-spacing: .045em !important;
+}
+
+html body :where(
+  .cgx-table td,
+  .cg-ui-table td,
+  .table td,
+  .pl-table td,
+  .ds-table td,
+  .cgv-table td
+) {
+  font-size: var(--cg-type-body) !important;
+  line-height: 1.4 !important;
+}
+
+/* --------------------------------------------------------------------------
+   KPI / METRIC NORMALIZATION
+
+   Legacy themes created large translucent circles with pseudo-elements and
+   treated the first metric differently. Both behaviours are explicitly removed
+   so every financial/operational metric uses the same hierarchy.
+   -------------------------------------------------------------------------- */
+html body :where(
+  .cgx-metric,
+  .kpi,
+  .pl-kpi,
+  .ds-kpi,
+  .cgv-kpi,
+  .admin-metric,
+  .cg-vertical-kpis article
+) {
+  min-width: 0 !important;
+  min-height: var(--cg-kpi-min-height) !important;
+  padding: 11px 12px !important;
+  border-radius: var(--cg-kpi-radius) !important;
+  background-image: none !important;
+  overflow: hidden !important;
+  isolation: isolate;
+}
+
+/* Kill decorative circles / blobs inherited from historical KPI themes. */
+html body :where(
+  .cgx-metric,
+  .kpi,
+  .pl-kpi,
+  .ds-kpi,
+  .cgv-kpi,
+  .admin-metric,
+  .cg-vertical-kpis article
+)::before,
+html body :where(
+  .cgx-metric,
+  .kpi,
+  .pl-kpi,
+  .ds-kpi,
+  .cgv-kpi,
+  .admin-metric,
+  .cg-vertical-kpis article
+)::after {
+  content: none !important;
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
+  background: none !important;
+  box-shadow: none !important;
+}
+
+html body :where(
+  .cgx-metric > div:not(.cgx-metric-icon),
+  .kpi > div,
+  .pl-kpi > div,
+  .ds-kpi > div,
+  .cgv-kpi > div,
+  .admin-metric > div
+) {
+  min-width: 0 !important;
+  max-width: 100% !important;
+}
+
+html body :where(
+  .cgx-metric strong,
+  .kpi strong,
+  .pl-kpi strong,
+  .ds-kpi strong,
+  .cgv-kpi-value,
+  .admin-metric strong,
+  .cg-vertical-kpis strong,
+  #kpiTotal
+) {
+  display: block !important;
+  width: 100% !important;
+  min-width: 0 !important;
+  max-width: 100% !important;
+  margin: 4px 0 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  color: var(--cg-text, var(--cgx-text, #17253a)) !important;
+  font-family: var(--cg-font-sans, Inter, system-ui, sans-serif) !important;
+  font-size: var(--cg-type-kpi) !important;
+  font-weight: 700 !important;
+  line-height: 1.12 !important;
+  letter-spacing: -.018em !important;
+  font-variant-numeric: tabular-nums lining-nums;
+  white-space: nowrap !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  overflow-wrap: normal !important;
+  word-break: normal !important;
+}
+
+/* The former first-KPI dark pill is intentionally neutralized for consistency. */
+html body .hf-kpi-strip :where(.cgx-metric, .kpi):first-child,
+html body .hf-kpi-strip :where(.cgx-metric, .kpi):first-child > div > strong,
+html body #kpiTotal {
+  background-image: none !important;
+}
+
+html body .hf-kpi-strip :where(.cgx-metric, .kpi):first-child > div > strong,
+html body #kpiTotal {
+  background: transparent !important;
+  color: var(--cg-text, var(--cgx-text, #17253a)) !important;
+  padding: 0 !important;
+}
+
+/* Icon container is the only intentional compact shape inside KPI cards. */
+html body :where(.cgx-metric-icon, .kpi-icon, .cgv-kpi-icon) {
+  width: 34px !important;
+  min-width: 34px !important;
+  height: 34px !important;
+  min-height: 34px !important;
+  border-radius: 9px !important;
+  box-shadow: none !important;
+}
+
+html body :where(.cgx-metric-icon, .kpi-icon, .cgv-kpi-icon) i {
+  font-size: .875rem !important;
+}
+
+/* Shared desktop metric strips stay dense and predictable. */
+html body :where(.hf-kpi-strip, .cgx-metric-grid, .ds-kpi-grid, .cg-vertical-kpis) {
+  gap: 10px !important;
+  align-items: stretch !important;
+}
+
+@media (min-width: 1280px) {
+  html body .hf-kpi-strip :where(.cgx-metric strong, .kpi strong) {
+    font-size: var(--cg-type-kpi-compact) !important;
+  }
+}
+
+@media (max-width: 760px) {
+  :root {
+    --cg-type-page: clamp(1.2rem, 6vw, 1.5rem);
+    --cg-type-kpi: 1rem;
+    --cg-kpi-min-height: 76px;
+  }
+
+  html body :where(
+    .cgx-metric strong,
+    .kpi strong,
+    .pl-kpi strong,
+    .ds-kpi strong,
+    .cgv-kpi-value,
+    .admin-metric strong,
+    .cg-vertical-kpis strong,
+    #kpiTotal
+  ) {
+    white-space: nowrap !important;
+    text-overflow: ellipsis !important;
+  }
+}
+
+/* Dark themes inherit the same scale, only the semantic text color changes. */
+html.dark body :where(
+  .cgx-metric strong,
+  .kpi strong,
+  .pl-kpi strong,
+  .ds-kpi strong,
+  .cgv-kpi-value,
+  .admin-metric strong,
+  .cg-vertical-kpis strong,
+  #kpiTotal
+),
+html.enterprise body :where(
+  .cgx-metric strong,
+  .kpi strong,
+  .pl-kpi strong,
+  .ds-kpi strong,
+  .cgv-kpi-value,
+  .admin-metric strong,
+  .cg-vertical-kpis strong,
+  #kpiTotal
+) {
+  color: var(--cg-text, #edf5ff) !important;
+}
