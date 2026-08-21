@@ -8,6 +8,25 @@ test('source group has no generic sendMessage route', () => {
   assert.equal(/sendMessage\s*\(/.test(source), false);
   assert.match(source, /sendMirrorToLab/);
   assert.match(source, /openGroup\(LAB_GROUP_NAME, true\)/);
+  assert.match(source, /sourceSendPossible: false/);
+});
+
+test('LAB send path requires live stable group identity before and after composing', () => {
+  assert.match(source, /assertPinnedGroupIdentity/);
+  assert.match(source, /SOURCE_GROUP_ID/);
+  assert.match(source, /LAB_GROUP_ID/);
+  assert.match(source, /currentChatGroupId/);
+  assert.match(source, /async function assertCurrentLabIdentity/);
+  assert.match(source, /async function sendTextInCurrentLab[\s\S]*await assertCurrentLabIdentity\(\)/);
+  assert.match(source, /async function sendMirrorToLab[\s\S]*await assertCurrentLabIdentity\(\)/);
+  assert.match(source, /clearComposerSafely/);
+});
+
+test('source monitoring also verifies its pinned ID when configured', () => {
+  assert.match(source, /async function assertCurrentSourceIdentity/);
+  assert.match(source, /async function currentChatIsSource/);
+  assert.match(source, /SOURCE_GROUP_ID \|\| `official-web:/);
+  assert.match(source, /await assertCurrentSourceIdentity\(\)/);
 });
 
 test('429 circuit breaker and retry metadata are present', () => {
@@ -29,7 +48,6 @@ test('local shadow remains available when backend is unavailable', () => {
   assert.match(source, /TRAINING_JOURNAL/);
 });
 
-
 test('browser sandbox is enabled and WhatsApp DB recovery gate exists', () => {
   assert.match(source, /chromiumSandbox:\s*true/);
   assert.match(source, /hasWhatsAppBrowserDatabaseError/);
@@ -44,7 +62,7 @@ test('production mode is loaded through strict configuration', () => {
   assert.match(source, /sourceSendPossible: false/);
 });
 
-test('WhatsApp 2026 group discovery has DOM/header fallback and diagnostics', () => {
+test('WhatsApp group discovery has DOM/header fallback and diagnostics', () => {
   assert.match(source, /chatDomSnapshot/);
   assert.match(source, /clickGroupByNormalizedText/);
   assert.match(source, /DOM_DIAGNOSTIC_FILE/);
