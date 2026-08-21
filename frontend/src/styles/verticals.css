@@ -1,5 +1,0 @@
-/* ContaGest compatibility shim.
-   Historical vertical styling now lives under ./legacy and is loaded once by
-   erp-system.css in a lower cascade layer. New vertical UI belongs in
-   vertical-contexts.css and the canonical ERP design system. */
-@import './compact-enterprise-v1110.css';

@@ -1,169 +1,172 @@
-import { PageHeader, Button, Badge } from '../components/ui/index.js';
+import { PageHeader, Button, Badge, Field, Select, Textarea, MetricGrid, Section, DataTable, EmptyState } from '../components/ui/index.js';
 import { HealthVerticalService } from '../services/verticalService.js';
 import { escapeHtml } from '../utils/dom.js';
 
+const safe = (value) => escapeHtml(String(value ?? ''));
 const localDateTime = (minutes = 0) => {
   const date = new Date(Date.now() + minutes * 60000 - new Date().getTimezoneOffset() * 60000);
   return date.toISOString().slice(0, 16);
 };
+const specialtyOptions = ['Medicina general','Psicología','Traumatología','Pediatría','Cardiología','Nutrición','Fisioterapia'];
+const optionList = (items, label) => items.map((item) => ({ value:item.id, label:label(item) }));
+const statusTone = (status='') => ['confirmed','completed','signed','active'].includes(String(status).toLowerCase()) ? 'success' : ['cancelled','inactive'].includes(String(status).toLowerCase()) ? 'danger' : 'warning';
 
-const value = (item) => escapeHtml(item ?? '');
-const option = (item, label) => `<option value="${value(item.id)}">${value(label)}</option>`;
-
-function summaryCards(summary = {}, animal = false) {
-  return `<section class="cg-vertical-kpis">
-    <article><span>${animal ? 'Mascotas activas' : 'Pacientes activos'}</span><strong>${Number(animal ? summary.patients?.animals : summary.patients?.humans) || 0}</strong><i class="fa-solid ${animal ? 'fa-paw' : 'fa-hospital-user'}"></i></article>
-    <article><span>Citas de hoy</span><strong>${Number(summary.appointmentsToday?.total || 0)}</strong><small>${Number(summary.appointmentsToday?.upcoming || 0)} pendientes</small></article>
-    <article><span>Historias del mes</span><strong>${Number(summary.encountersThisMonth || 0)}</strong><i class="fa-solid fa-notes-medical"></i></article>
-    <article><span>${animal ? 'Vacunas próximas' : 'Seguimientos próximos'}</span><strong>${Number(summary.vaccinesDue || 0)}</strong><i class="fa-solid fa-bell"></i></article>
-  </section>`;
-}
-
-function patientsTable(patients, animal) {
-  if (!patients.length) return '<div class="cgx-empty"><i class="fa-solid fa-folder-open"></i><strong>Sin registros</strong><p>Crea el primer expediente para comenzar.</p></div>';
-  return `<div class="pl-table-wrap"><table class="pl-table"><thead><tr><th>${animal ? 'Mascota' : 'Paciente'}</th><th>${animal ? 'Tutor' : 'Documento'}</th><th>Contacto</th><th>Datos</th><th>Estado</th><th></th></tr></thead><tbody>${patients.map((patient) => `<tr>
-    <td><strong>${value(patient.displayName)}</strong><br><small>${animal ? `${value(patient.species || 'Especie')} · ${value(patient.breed || 'Sin raza')}` : value([patient.firstName,patient.lastName].filter(Boolean).join(' '))}</small></td>
-    <td>${animal ? value(patient.guardianName || 'Sin tutor') : value(patient.idNumber || 'Sin documento')}</td>
-    <td>${value(patient.phone || patient.guardianPhone || '—')}<br><small>${value(patient.email || patient.guardianEmail || '')}</small></td>
-    <td>${animal ? `Microchip: ${value(patient.microchip || '—')}` : `Nacimiento: ${value(patient.birthDate ? String(patient.birthDate).slice(0,10) : '—')}`}</td>
-    <td>${Badge(patient.active ? 'Activo' : 'Inactivo', patient.active ? 'success' : 'warning')}</td>
-    <td><button type="button" class="cgx-icon-action" data-care-patient="${value(patient.id)}" aria-label="Abrir historia"><i class="fa-solid fa-file-waveform"></i></button></td>
-  </tr>`).join('')}</tbody></table></div>`;
-}
-
-function appointmentsList(appointments) {
-  if (!appointments.length) return '<p class="cg-vertical-empty">No hay citas en los próximos 30 días.</p>';
+function appointmentCards(appointments = []) {
+  if (!appointments.length) return EmptyState({ title:'Sin citas próximas', description:'Las citas agendadas aparecerán aquí.', iconName:'fa-calendar-day' });
   return `<div class="cg-appointment-list">${appointments.slice(0,20).map((appointment) => `<article>
     <time>${new Date(appointment.startsAt).toLocaleString('es-VE',{dateStyle:'short',timeStyle:'short'})}</time>
-    <div><strong>${value(appointment.patientName)}</strong><span>${value(appointment.professionalName || 'Profesional por asignar')} · ${value(appointment.reason || appointment.type)}</span></div>
-    ${Badge(appointment.status, ['confirmed','completed'].includes(appointment.status) ? 'success' : appointment.status === 'cancelled' ? 'danger' : 'warning')}
+    <div><strong>${safe(appointment.patientName || 'Paciente')}</strong><span>${safe(appointment.professionalName || 'Profesional por asignar')} · ${safe(appointment.reason || appointment.type || 'Consulta')}</span></div>
+    ${Badge(appointment.status || 'scheduled', statusTone(appointment.status))}
   </article>`).join('')}</div>`;
 }
 
-function encounterList(encounters) {
-  if (!encounters.length) return '<p class="cg-vertical-empty">Selecciona un paciente para consultar o crear su historia.</p>';
-  return encounters.map((encounter) => `<article class="cg-clinical-note">
-    <header><div><strong>${value(encounter.specialty)}</strong><span>${new Date(encounter.createdAt).toLocaleString('es-VE')}</span></div>${Badge(encounter.status, encounter.status === 'signed' ? 'success' : 'warning')}</header>
-    ${encounter.subjective ? `<p><b>Motivo / subjetivo:</b> ${value(encounter.subjective)}</p>` : ''}
-    ${encounter.objective ? `<p><b>Hallazgos:</b> ${value(encounter.objective)}</p>` : ''}
-    ${encounter.assessment ? `<p><b>Evaluación:</b> ${value(encounter.assessment)}</p>` : ''}
-    ${encounter.plan ? `<p><b>Plan:</b> ${value(encounter.plan)}</p>` : ''}
+function encounterCards(encounters = []) {
+  if (!encounters.length) return EmptyState({ title:'Sin notas clínicas', description:'Selecciona un paciente y registra la primera nota.', iconName:'fa-file-medical' });
+  return `<div class="cg-clinical-timeline">${encounters.map((encounter) => `<article class="cg-clinical-note">
+    <header><div><strong>${safe(encounter.specialty || 'Consulta')}</strong><span>${new Date(encounter.createdAt).toLocaleString('es-VE')}</span></div>${Badge(encounter.status || 'signed', statusTone(encounter.status))}</header>
+    ${encounter.subjective ? `<p><b>Motivo / subjetivo:</b> ${safe(encounter.subjective)}</p>` : ''}
+    ${encounter.objective ? `<p><b>Hallazgos:</b> ${safe(encounter.objective)}</p>` : ''}
+    ${encounter.assessment ? `<p><b>Evaluación:</b> ${safe(encounter.assessment)}</p>` : ''}
+    ${encounter.plan ? `<p><b>Plan:</b> ${safe(encounter.plan)}</p>` : ''}
     ${encounter.confidential ? '<small><i class="fa-solid fa-lock"></i> Nota confidencial</small>' : ''}
-  </article>`).join('');
+  </article>`).join('')}</div>`;
 }
 
 export const HealthcarePage = {
   render(state) {
-    const animal = state.route === 'veterinaria';
     const data = state.healthVertical || {};
-    const patients = (data.patients || []).filter((patient) => patient.kind === (animal ? 'animal' : 'human'));
+    const patients = (data.patients || []).filter((patient) => patient.kind === 'human');
     const professionals = data.professionals || [];
-    const appointments = (data.appointments || []).filter((appointment) => appointment.patientKind === (animal ? 'animal' : 'human'));
+    const appointments = (data.appointments || []).filter((appointment) => !appointment.patientKind || appointment.patientKind === 'human');
     const selectedPatient = patients.find((patient) => patient.id === data.selectedPatientId);
-    const specialtyOptions = animal
-      ? ['Medicina veterinaria general','Cirugía veterinaria','Dermatología veterinaria','Vacunación','Hospitalización']
-      : ['Medicina general','Psicología','Traumatología','Pediatría','Cardiología','Nutrición','Fisioterapia'];
+    const summary = data.summary || {};
 
-    return `<section class="cg-page-stack cg-vertical-page">
+    const patientRows = patients.map((patient) => ({
+      ...patient,
+      patient: `<strong>${safe(patient.displayName)}</strong><br><small>${safe([patient.firstName,patient.lastName].filter(Boolean).join(' ') || 'Ficha clínica')}</small>`,
+      document:safe(patient.idNumber || 'Sin documento'),
+      contact:`${safe(patient.phone || '—')}${patient.email ? `<br><small>${safe(patient.email)}</small>` : ''}`,
+      birth:safe(patient.birthDate ? String(patient.birthDate).slice(0,10) : '—'),
+      status:Badge(patient.active === false ? 'Inactivo' : 'Activo', patient.active === false ? 'warning' : 'success'),
+      action:`<button type="button" class="cgx-icon-action" data-care-patient="${safe(patient.id)}" aria-label="Abrir historia de ${safe(patient.displayName)}"><i class="fa-solid fa-file-waveform"></i></button>`
+    }));
+
+    const professionalRows = professionals.map((professional) => ({
+      ...professional,
+      name:`<strong>${safe(professional.fullName)}</strong><br><small>${safe(professional.licenseNumber || 'Sin matrícula')}</small>`,
+      specialty:safe(professional.specialty || 'General'),
+      status:Badge(professional.status || 'active', statusTone(professional.status))
+    }));
+
+    return `<section class="cg-page-stack cg-health-workspace">
       ${PageHeader({
-        eyebrow: animal ? 'Vertical veterinaria' : 'Vertical salud',
-        title: animal ? 'Gestión clínica veterinaria' : 'Gestión médica por especialidades',
-        description: animal
-          ? 'Tutores, mascotas, agenda, historias clínicas, vacunas, mediciones y seguimiento.'
-          : 'Pacientes, profesionales, agenda, historia clínica, mediciones y notas confidenciales por especialidad.',
-        actions: `${Button({id:'btnCareRefresh',text:'Actualizar',icon:'fa-rotate',variant:'secondary'})}${Button({text:'Plantillas WhatsApp',icon:'fa-brands fa-whatsapp',variant:'secondary',attrs:'data-route="mensajes"'})}`
+        eyebrow:'Vertical salud',
+        title:'Gestión médica por especialidades',
+        description:'Pacientes, profesionales, agenda, historia clínica, mediciones y seguimiento dentro del sistema visual único de ContaGest.',
+        actions:`${Button({id:'btnCareRefresh',text:'Actualizar',icon:'fa-rotate',variant:'secondary'})}${Button({text:'Plantillas WhatsApp',icon:'fa-brands fa-whatsapp',variant:'secondary',attrs:'data-route="mensajes"'})}`
       })}
-      ${summaryCards(data.summary, animal)}
 
-      <div class="cg-vertical-grid">
-        <section class="surface cg-vertical-panel cg-vertical-wide">
-          <header class="cg-vertical-head"><div><p class="cgx-eyebrow">Expedientes</p><h3>${animal ? 'Mascotas y tutores' : 'Pacientes'}</h3></div><button type="button" class="cgx-btn cgx-btn-primary" data-toggle-panel="carePatientForm"><i class="fa-solid fa-plus"></i> Nuevo</button></header>
-          <form id="carePatientForm" class="cg-inline-form is-collapsed">
-            <input type="hidden" name="kind" value="${animal ? 'animal' : 'human'}">
-            <label><span>${animal ? 'Nombre de la mascota' : 'Nombre para mostrar'}</span><input class="input" name="displayName" required></label>
-            ${animal ? `
-              <label><span>Especie</span><input class="input" name="species" placeholder="Canino, felino…" required></label>
-              <label><span>Raza</span><input class="input" name="breed"></label>
-              <label><span>Tutor</span><input class="input" name="guardianName" required></label>
-              <label><span>Teléfono tutor</span><input class="input" name="guardianPhone"></label>
-              <label><span>Microchip</span><input class="input" name="microchip"></label>
-            ` : `
-              <label><span>Nombres</span><input class="input" name="firstName"></label>
-              <label><span>Apellidos</span><input class="input" name="lastName"></label>
-              <label><span>Documento</span><input class="input" name="idNumber"></label>
-              <label><span>Teléfono</span><input class="input" name="phone"></label>
-              <label><span>Correo</span><input class="input" type="email" name="email"></label>
-            `}
-            <label><span>Fecha de nacimiento</span><input class="input" type="date" name="birthDate"></label>
-            <label class="cg-form-span"><span>Antecedentes / condiciones</span><textarea class="textarea" name="conditions"></textarea></label>
-            <div class="cg-form-actions">${Button({text:'Guardar expediente',icon:'fa-floppy-disk',type:'submit'})}</div>
-          </form>
-          ${patientsTable(patients, animal)}
-        </section>
+      ${MetricGrid([
+        {label:'Pacientes activos',value:String(Number(summary.patients?.humans || patients.filter((item)=>item.active!==false).length)),hint:`${patients.length} expedientes`,iconName:'fa-hospital-user',tone:'brand'},
+        {label:'Citas de hoy',value:String(Number(summary.appointmentsToday?.total || 0)),hint:`${Number(summary.appointmentsToday?.upcoming || 0)} pendientes`,iconName:'fa-calendar-day',tone:Number(summary.appointmentsToday?.upcoming||0)?'warning':'success'},
+        {label:'Historias del mes',value:String(Number(summary.encountersThisMonth || 0)),hint:'Notas registradas',iconName:'fa-notes-medical',tone:'neutral'},
+        {label:'Seguimientos',value:String(Number(summary.followupsDue || summary.vaccinesDue || 0)),hint:'Próximos controles',iconName:'fa-bell',tone:'neutral'}
+      ])}
 
-        <section class="surface cg-vertical-panel">
-          <header class="cg-vertical-head"><div><p class="cgx-eyebrow">Equipo</p><h3>Profesionales</h3></div></header>
-          <form id="careProfessionalForm" class="cg-stack-form">
-            <input class="input" name="fullName" placeholder="Nombre del profesional" required>
-            <select class="select" name="specialty">${specialtyOptions.map((item) => `<option>${value(item)}</option>`).join('')}</select>
-            <input class="input" name="licenseNumber" placeholder="Matrícula / licencia">
-            ${Button({text:'Agregar profesional',icon:'fa-user-doctor',type:'submit',variant:'secondary'})}
-          </form>
-          <div class="cg-mini-list">${professionals.length ? professionals.map((professional) => `<article><span class="cg-mini-avatar">${value(professional.fullName?.slice(0,2).toUpperCase())}</span><div><strong>${value(professional.fullName)}</strong><small>${value(professional.specialty)}</small></div>${Badge(professional.status,'success')}</article>`).join('') : '<p>Sin profesionales registrados.</p>'}</div>
-        </section>
+      <div class="cg-health-grid">
+        ${Section({
+          title:'Pacientes',
+          subtitle:'Expedientes humanos. Veterinaria tiene su módulo MUI independiente y ya no comparte esta vista.',
+          actions:Button({text:'Nuevo paciente',icon:'fa-plus',attrs:'data-toggle-panel="carePatientForm"'}),
+          className:'cg-health-wide',
+          children:`<form id="carePatientForm" class="cg-record-form is-collapsed">
+            <input type="hidden" name="kind" value="human">
+            <div class="cg-record-fields">
+              ${Field({labelKey:'Nombre para mostrar',name:'displayName',required:true})}
+              ${Field({labelKey:'Nombres',name:'firstName'})}
+              ${Field({labelKey:'Apellidos',name:'lastName'})}
+              ${Field({labelKey:'Documento',name:'idNumber'})}
+              ${Field({labelKey:'Teléfono',name:'phone',attrs:'inputmode="tel" autocomplete="tel"'})}
+              ${Field({labelKey:'Correo',name:'email',type:'email',attrs:'autocomplete="email"'})}
+              ${Field({labelKey:'Fecha de nacimiento',name:'birthDate',type:'date'})}
+              ${Textarea({labelKey:'Antecedentes / condiciones',name:'conditions',className:'cg-field-wide'})}
+            </div>
+            <div class="cg-record-actions">${Button({text:'Guardar expediente',icon:'fa-floppy-disk',type:'submit'})}</div>
+          </form>${patientRows.length ? DataTable({columns:[
+            {key:'patient',label:'Paciente',render:(row)=>row.patient},
+            {key:'document',label:'Documento',render:(row)=>row.document},
+            {key:'contact',label:'Contacto',render:(row)=>row.contact},
+            {key:'birth',label:'Nacimiento',render:(row)=>row.birth},
+            {key:'status',label:'Estado',render:(row)=>row.status},
+            {key:'action',label:'Historia',render:(row)=>row.action}
+          ],rows:patientRows}) : EmptyState({title:'Sin pacientes',description:'Registra el primer expediente para comenzar.',iconName:'fa-user-plus'})}`
+        })}
 
-        <section class="surface cg-vertical-panel">
-          <header class="cg-vertical-head"><div><p class="cgx-eyebrow">Agenda</p><h3>Nueva cita</h3></div></header>
-          <form id="careAppointmentForm" class="cg-stack-form">
-            <select class="select" name="patientId" required><option value="">Seleccionar ${animal ? 'mascota' : 'paciente'}</option>${patients.map((patient) => option(patient,patient.displayName)).join('')}</select>
-            <select class="select" name="professionalId"><option value="">Profesional por asignar</option>${professionals.map((professional) => option(professional,`${professional.fullName} · ${professional.specialty}`)).join('')}</select>
-            <div class="cg-two-fields"><label><span>Inicio</span><input class="input" type="datetime-local" name="startsAt" value="${localDateTime(60)}" required></label><label><span>Fin</span><input class="input" type="datetime-local" name="endsAt" value="${localDateTime(90)}" required></label></div>
-            <input class="input" name="reason" placeholder="Motivo de consulta">
-            ${Button({text:'Agendar cita',icon:'fa-calendar-check',type:'submit'})}
-          </form>
-        </section>
+        ${Section({
+          title:'Profesionales',
+          subtitle:'Equipo disponible para agenda e historia clínica.',
+          children:`<form id="careProfessionalForm" class="cg-record-form"><div class="cg-record-fields">
+            ${Field({labelKey:'Nombre del profesional',name:'fullName',required:true})}
+            ${Select({labelKey:'Especialidad',name:'specialty',options:specialtyOptions.map((value)=>({value,label:value}))})}
+            ${Field({labelKey:'Matrícula / licencia',name:'licenseNumber'})}
+          </div><div class="cg-record-actions">${Button({text:'Agregar profesional',icon:'fa-user-doctor',type:'submit',variant:'secondary'})}</div></form>${professionalRows.length ? DataTable({columns:[{key:'name',label:'Profesional',render:(row)=>row.name},{key:'specialty',label:'Especialidad'},{key:'status',label:'Estado',render:(row)=>row.status}],rows:professionalRows}) : EmptyState({title:'Sin profesionales',description:'Registra el primer profesional.',iconName:'fa-user-doctor'})}`
+        })}
 
-        <section class="surface cg-vertical-panel cg-vertical-wide">
-          <header class="cg-vertical-head"><div><p class="cgx-eyebrow">Agenda próxima</p><h3>Citas y seguimiento</h3></div></header>
-          ${appointmentsList(appointments)}
-        </section>
+        ${Section({
+          title:'Nueva cita',
+          subtitle:'Agenda vinculada a paciente y profesional.',
+          children:`<form id="careAppointmentForm" class="cg-record-form"><div class="cg-record-fields">
+            ${Select({labelKey:'Paciente',name:'patientId',options:[{value:'',label:'Seleccionar paciente'},...optionList(patients,(item)=>item.displayName)]})}
+            ${Select({labelKey:'Profesional',name:'professionalId',options:[{value:'',label:'Profesional por asignar'},...optionList(professionals,(item)=>`${item.fullName} · ${item.specialty}`)]})}
+            ${Field({labelKey:'Inicio',name:'startsAt',type:'datetime-local',value:localDateTime(60),required:true})}
+            ${Field({labelKey:'Fin',name:'endsAt',type:'datetime-local',value:localDateTime(90),required:true})}
+            ${Field({labelKey:'Motivo de consulta',name:'reason',className:'cg-field-wide'})}
+          </div><div class="cg-record-actions">${Button({text:'Agendar cita',icon:'fa-calendar-check',type:'submit'})}</div></form>`
+        })}
 
-        <section class="surface cg-vertical-panel cg-vertical-wide">
-          <header class="cg-vertical-head"><div><p class="cgx-eyebrow">Historia clínica</p><h3>${selectedPatient ? value(selectedPatient.displayName) : 'Selecciona un expediente'}</h3></div></header>
-          ${selectedPatient ? `<form id="careEncounterForm" class="cg-clinical-form">
-            <input type="hidden" name="patientId" value="${value(selectedPatient.id)}">
-            <select class="select" name="professionalId"><option value="">Profesional</option>${professionals.map((professional) => option(professional,professional.fullName)).join('')}</select>
-            <select class="select" name="specialty">${specialtyOptions.map((item) => `<option>${value(item)}</option>`).join('')}</select>
-            <label><span>Motivo / subjetivo</span><textarea class="textarea" name="subjective"></textarea></label>
-            <label><span>Hallazgos / objetivo</span><textarea class="textarea" name="objective"></textarea></label>
-            <label><span>Evaluación / diagnóstico</span><textarea class="textarea" name="assessment"></textarea></label>
-            <label><span>Plan / seguimiento</span><textarea class="textarea" name="plan"></textarea></label>
-            ${!animal ? '<label class="cg-check-row"><input type="checkbox" name="confidential"><span>Nota confidencial (psicología u observación restringida)</span></label>' : ''}
-            <div class="cg-form-actions">${Button({text:'Guardar nota clínica',icon:'fa-file-medical',type:'submit'})}</div>
-          </form>` : ''}
-          <div class="cg-clinical-timeline">${encounterList(data.encounters || [])}</div>
-        </section>
+        ${Section({title:'Agenda próxima',subtitle:'Citas y seguimiento para los próximos días.',className:'cg-health-wide',children:appointmentCards(appointments)})}
 
-        ${selectedPatient ? `<section class="surface cg-vertical-panel">
-          <header class="cg-vertical-head"><div><p class="cgx-eyebrow">Mediciones</p><h3>Registrar control</h3></div></header>
-          <form id="careMeasurementForm" class="cg-stack-form"><input type="hidden" name="patientId" value="${value(selectedPatient.id)}"><select class="select" name="kind"><option value="weight">Peso</option><option value="height">Altura</option><option value="blood_pressure_systolic">Presión sistólica</option><option value="blood_pressure_diastolic">Presión diastólica</option><option value="temperature">Temperatura</option><option value="heart_rate">Frecuencia cardíaca</option></select><div class="cg-two-fields"><input class="input" type="number" step="0.01" name="value" placeholder="Valor" required><input class="input" name="unit" placeholder="kg, cm, mmHg…" required></div>${Button({text:'Guardar medición',icon:'fa-chart-line',type:'submit',variant:'secondary'})}</form>
-        </section>` : ''}
+        ${Section({
+          title:'Historia clínica',
+          subtitle:selectedPatient ? `Expediente: ${selectedPatient.displayName}` : 'Selecciona un paciente desde la tabla para registrar o consultar notas.',
+          className:'cg-health-wide',
+          children:`${selectedPatient ? `<form id="careEncounterForm" class="cg-record-form">
+            <input type="hidden" name="patientId" value="${safe(selectedPatient.id)}">
+            <div class="cg-record-fields">
+              ${Select({labelKey:'Profesional',name:'professionalId',options:[{value:'',label:'Profesional'},...optionList(professionals,(item)=>item.fullName)]})}
+              ${Select({labelKey:'Especialidad',name:'specialty',options:specialtyOptions.map((value)=>({value,label:value}))})}
+              ${Textarea({labelKey:'Motivo / subjetivo',name:'subjective',className:'cg-field-wide'})}
+              ${Textarea({labelKey:'Hallazgos / objetivo',name:'objective',className:'cg-field-wide'})}
+              ${Textarea({labelKey:'Evaluación / diagnóstico',name:'assessment',className:'cg-field-wide'})}
+              ${Textarea({labelKey:'Plan / seguimiento',name:'plan',className:'cg-field-wide'})}
+              <label class="cg-check-row cg-field-wide"><input type="checkbox" name="confidential"><span>Nota confidencial (psicología u observación restringida)</span></label>
+            </div>
+            <div class="cg-record-actions">${Button({text:'Guardar nota clínica',icon:'fa-file-medical',type:'submit'})}</div>
+          </form>` : ''}${encounterCards(data.encounters || [])}`
+        })}
 
-        ${animal && selectedPatient ? `<section class="surface cg-vertical-panel">
-          <header class="cg-vertical-head"><div><p class="cgx-eyebrow">Prevención</p><h3>Vacunas</h3></div></header>
-          <form id="careImmunizationForm" class="cg-stack-form"><input type="hidden" name="patientId" value="${value(selectedPatient.id)}"><input class="input" name="vaccine" placeholder="Vacuna" required><div class="cg-two-fields"><input class="input" name="dose" placeholder="Dosis"><input class="input" name="lot" placeholder="Lote"></div><label><span>Próxima dosis</span><input class="input" type="date" name="nextDueAt"></label>${Button({text:'Registrar vacuna',icon:'fa-syringe',type:'submit',variant:'secondary'})}</form>
-        </section>` : ''}
+        ${selectedPatient ? Section({
+          title:'Mediciones',
+          subtitle:`Controles de ${selectedPatient.displayName}.`,
+          children:`<form id="careMeasurementForm" class="cg-record-form"><input type="hidden" name="patientId" value="${safe(selectedPatient.id)}"><div class="cg-record-fields">
+            ${Select({labelKey:'Tipo de medición',name:'kind',options:[
+              {value:'weight',label:'Peso'},{value:'height',label:'Altura'},{value:'blood_pressure_systolic',label:'Presión sistólica'},
+              {value:'blood_pressure_diastolic',label:'Presión diastólica'},{value:'temperature',label:'Temperatura'},{value:'heart_rate',label:'Frecuencia cardíaca'}
+            ]})}
+            ${Field({labelKey:'Valor',name:'value',type:'number',required:true,attrs:'step="0.01"'})}
+            ${Field({labelKey:'Unidad',name:'unit',placeholder:'kg, cm, mmHg…',required:true})}
+          </div><div class="cg-record-actions">${Button({text:'Guardar medición',icon:'fa-chart-line',type:'submit',variant:'secondary'})}</div></form>`
+        }) : ''}
       </div>
     </section>`;
   },
 
   mount(state, { Store, Toast }) {
-    const animal = state.route === 'veterinaria';
     const load = async ({silent=false}={}) => {
       try {
         const [summary,patients,professionals,appointments] = await Promise.all([
           HealthVerticalService.summary(),
-          HealthVerticalService.patients(),
+          HealthVerticalService.patients({kind:'human'}),
           HealthVerticalService.professionals(),
           HealthVerticalService.appointments()
         ]);
@@ -174,6 +177,7 @@ export const HealthcarePage = {
         if (!silent) Toast.show(error.message,'error');
       }
     };
+
     if (!state.healthVertical?.loaded && !state.healthVertical?.loading) {
       Store.update((draft) => { draft.healthVertical={...(draft.healthVertical||{}),loading:true}; });
       load({silent:true});
@@ -186,15 +190,21 @@ export const HealthcarePage = {
     }));
 
     const handle = (id,service,transform=(data)=>data,success='Registro guardado.') => document.getElementById(id)?.addEventListener('submit',async(event)=>{
-      event.preventDefault(); const form=event.currentTarget; const data=Object.fromEntries(new FormData(form));
+      event.preventDefault();
+      const form=event.currentTarget;
+      if(!form.reportValidity()) return;
+      const data=Object.fromEntries(new FormData(form));
+      const submit=form.querySelector('[type="submit"]');
+      submit?.setAttribute('disabled','disabled');
       try { await service(transform(data,form)); Toast.show(success,'success'); form.reset(); await load({silent:true}); }
       catch(error){Toast.show(error.message,'error');}
+      finally{submit?.removeAttribute('disabled');}
     });
-    handle('carePatientForm',HealthVerticalService.createPatient,(data)=>({...data,active:true}),animal?'Mascota registrada.':'Paciente registrado.');
+
+    handle('carePatientForm',HealthVerticalService.createPatient,(data)=>({...data,kind:'human',active:true}),'Paciente registrado.');
     handle('careProfessionalForm',HealthVerticalService.createProfessional,(data)=>({...data,status:'active',schedule:{}}),'Profesional registrado.');
     handle('careAppointmentForm',HealthVerticalService.createAppointment,(data)=>({...data,status:'scheduled',channel:'onsite'}),'Cita agendada.');
     handle('careEncounterForm',HealthVerticalService.createEncounter,(data,form)=>({...data,confidential:Boolean(form.confidential?.checked),status:'signed',diagnosisCodes:[],clinicalData:{}}),'Historia clínica actualizada.');
     handle('careMeasurementForm',HealthVerticalService.createMeasurement,(data)=>({...data,metadata:{}}),'Medición registrada.');
-    handle('careImmunizationForm',HealthVerticalService.createImmunization,(data)=>data,'Vacuna registrada.');
   }
 };

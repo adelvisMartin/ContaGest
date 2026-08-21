@@ -1,161 +1,167 @@
 ---
 name: contagest-ui-audit
-description: Senior ERP UI/UX and design-system audit using pinned Impeccable, Taste and motion references.
+description: Senior ERP UI/UX, source-ownership, cascade and responsive audit for ContaGest using the canonical v13 visual contract.
 ---
 
 # ContaGest UI Audit
 
-Use `impeccable` for systematic critique, typography, spacing, responsive, hierarchy and hardening. Use `taste` only to challenge generic template output and improve visual specificity; never copy another product's brand or treat Taste guidance as a requirement. Use Emil/motion references only after layout and hierarchy are correct.
+Use Impeccable for systematic critique, typography, spacing, responsive, hierarchy and hardening. Use Taste only to challenge generic template output; never copy another product's brand. Use Emil/motion references only after layout, ownership and accessibility are correct.
 
 ## Canonical authority
 
-Shared visual decisions MUST land in:
+`frontend/src/styles/` is a controlled directory. Exactly these files may exist:
 
 ```text
-frontend/src/styles/contagest-visual-system-v12.css
-frontend/src/components/ui/
+contagest-visual-system-v12.css
+erp-runtime.css
+module-adapters.css
+runtime-primitives-v13.css
+shell-contract.css
+shell-stability-v1127.css
 ```
 
-`erp-runtime.css` is only the runtime entrypoint. Do not create a new versioned CSS hotfix for a cross-module problem. Module-specific styling is allowed only when it expresses domain layout that cannot be represented by shared primitives; it must consume canonical tokens and may not redefine the shared typography, spacing, radii, KPI, form, table or shell scales.
+`app.js` imports only `erp-runtime.css`. The runtime imports only the other five pillars. No page-local CSS, legacy folder, compatibility shim, Tailwind runtime, Precision Ledger stylesheet, retired theme stylesheet, versioned responsive hotfix or extra shell/header file is permitted.
 
-## Required audit sequence
+Shared visual decisions belong to `contagest-visual-system-v12.css` and `components/ui/`. Reusable low-level compatibility/layout belongs to `runtime-primitives-v13.css`. Genuine domain geometry belongs to `module-adapters.css` and must consume only `--cg-v-*` tokens.
 
-1. **Distill**: identify the actual operational hierarchy. Separate page title, current tenant/context, primary action, KPIs, main work surface and secondary information.
-2. **Typeset**: enforce the v12 scale. Page titles 20–26 px desktop, section titles 16–18 px, KPI values 16–20 px, body 14 px, dense tables 13 px, metadata 11–12 px.
-3. **Normalize**: use one spacing/radius/control scale. Remove one-off padding, giant cards and first-KPI special treatment.
-4. **Layout**: every grid/flex child that can grow uses `min-width:0`; two-column operational layouts collapse at tablet; forms use auto-fit and become one column on narrow phones.
-5. **Responsive**: validate 360, 390, 430, 768, 1024 and 1440 px. The document must not scroll horizontally. Tables/tabs may own horizontal scrolling.
-6. **Harden**: test long labels, long company names, VES/USD values, empty state, 1 row, many rows, disabled/loading/error states and dark theme.
-7. **Polish**: only after 1–6 pass. Keep shadows subtle, borders semantic and decoration subordinate to data.
-8. **Animate**: use 120–170 ms interaction feedback only; no page choreography that delays operation. Respect reduced motion.
+## Source audit is the first iteration
 
-## Mandatory per-module iteration
-
-A visual pass is incomplete if it only reviews Dashboard. Every route registered by `frontend/src/app.js` must be processed. Use `qa/support/module-visual-catalog.mjs` as the canonical QA inventory.
-
-For **each module**, perform these iterations in order:
-
-### Iteration A — source structure
-
-- identify whether the page imports `frontend/src/components/ui/index.js`;
-- flag embedded `<style>`, inline `style=`, page-local CSS imports and hardcoded `font-size`/fixed widths;
-- identify raw forms/tables/buttons that bypass shared primitives;
-- identify legacy `designSystem.js`, Material Symbols or one-off component families;
-- record findings in `artifacts/qa/visual-source-audit.*`.
-
-### Iteration B — desktop geometry
-
-At 1440 and 1024 px verify:
-
-- page title and primary actions fit the first viewport without a decorative hero consuming the screen;
-- KPI values are compact, single-line and numerically aligned;
-- cards/sections use one density and radius vocabulary;
-- two-column surfaces keep `min-width:0` and do not force document overflow;
-- tables own their horizontal scroll;
-- action groups and fields do not intersect;
-- no giant pseudo-element, gradient or absolute decoration competes with data.
-
-### Iteration C — tablet
-
-At 768 px verify:
-
-- two-column operational layouts collapse when needed;
-- sidebar overlays rather than squeezing the work surface;
-- table actions remain reachable;
-- forms do not create 2-column fields that become unusably narrow;
-- charts/progress rows and metric grids remain scan-friendly.
-
-### Iteration D — phones
-
-At 360, 390 and 430 px verify:
-
-- zero document-level horizontal scrolling;
-- controls remain touchable;
-- titles are <=23 px and KPI values <=17.5 px;
-- important actions wrap or become full width instead of clipping;
-- monetary values never split across lines;
-- table/tabs are the only intentional horizontal scrollers;
-- no floating support/header/menu element covers required content.
-
-### Iteration E — themes and states
-
-- compare light/dark geometry; theme switching may change color, not dimensions;
-- test empty, 1-row and many-row states when fixtures exist;
-- test long text/amounts, disabled, loading and error states;
-- verify focus-visible, keyboard reachability and reduced motion.
-
-### Iteration F — cleanup
-
-After a shared fix is proven:
-
-- remove or quarantine superseded declarations instead of adding a second override;
-- inspect the cascade report for duplicate CSS files, exact selector collisions and token redefinitions;
-- if an old stylesheet is no longer reachable from `erp-runtime.css`, keep it out of the runtime and mark it for deletion/migration rather than re-importing it;
-- never solve a module bug by raising a global `z-index`, arbitrary width or new `!important` unless the underlying ownership is documented.
-
-## ERP-specific review
-
-- Information density must match the role: accountant, seller, clinic, gym and platform admin should not receive the same visual priority.
-- Preserve numeric alignment, scanability, sticky table headers and clear VES/USD currency labeling.
-- Monetary values use `tabular-nums` and must never split into two lines inside a KPI/card.
-- Dark surfaces require semantic light text tokens with sufficient contrast; do not rely on opacity to make labels quieter.
-- Every control needs hover/focus/disabled/error/loading/success states.
-- Primary actions cannot disappear below the fold because of a decorative hero/header.
-- Cards are containers, not posters. Use border + subtle shadow; avoid gradients/glass unless a documented brand surface truly requires them.
-- KPI cards are compact operational summaries. No circles/blobs, oversized numbers, giant icon bubbles or special first-card geometry.
-- Empty states explain what to do next; they do not become illustration billboards.
-
-## Module-specific risk focus
-
-- **Dashboard/reporting:** KPI density, chart labels, large amounts, first viewport hierarchy.
-- **Sales/purchases/POS:** action density, line items, totals, destructive actions and payment controls.
-- **Inventory/kardex/scanner:** long SKU/product names, quantity columns, filters and scan controls.
-- **Accounting/tax/banking/payroll:** tabular numeric alignment, sticky headers, totals and dense multi-column reports.
-- **Admin/configuration/licensing:** long forms, side navigation, permission/status badges and destructive controls.
-- **Health/veterinary/psychology/dentistry:** dialog/table density, MUI/vanilla parity, sensitive-data labels and long clinical content.
-- **Fitness:** routine/nutrition cards must remain operational rather than promotional.
-- **Food/delivery:** POS tap targets, order status density and map/tracking panels.
-
-## Theming
-
-Only light/dark control global theme geometry. Vertical modules may change semantic accent tokens only; they may not change typography scale, spacing, radii, shell dimensions, form density, table density or KPI geometry.
-
-## Assets
-
-- Global brand: `frontend/public/brand/`.
-- Global app/PWA icons: `frontend/public/icons/`.
-- Product-specific Control Hípico assets: `frontend/public/hipico-control/`.
-- Shared UI icons should use the UI kit icon helper. Do not duplicate SVG/logo assets inside random page folders.
-
-## Anti-template standard
-
-Before adding visual decoration, identify what makes the workflow/domain specific. Prefer useful account/tenant context, meaningful status, tailored empty states, dense tables and clear actions over gradients, oversized marketing copy, generic glass cards, huge counters or gratuitous illustration.
-
-## Evidence gate
-
-Run the source/cascade audit first:
+Run:
 
 ```bash
 npm run audit:visual
 ```
 
-Then static contract:
+Before making a fix, use the generated report to answer:
+
+- Which file currently owns the bad selector?
+- Is the problem primitive/shared, shell-specific or genuinely domain-specific?
+- Is an old declaration still present when it should be deleted?
+- Is there a page-local `<style>`, CSS import, inline geometry, hardcoded color/size or fixed width?
+- Does the route exist in `qa/support/module-visual-catalog.mjs`?
+- Does a table/kanban own its overflow instead of the document?
+
+After the fix run:
 
 ```bash
-npm run test:visual
+npm run audit:visual:strict
 ```
 
-Then browser contracts:
+Never solve a cascade bug by adding another global override before identifying ownership.
+
+## Print-only exception
+
+Accounting/export helpers may generate standalone HTML for printing. Their CSS is not runtime UI and must be marked explicitly:
+
+```html
+<style data-cg-print-only>...</style>
+```
+
+The source auditor removes only these marked blocks before evaluating runtime `<style>`, font sizes, colors, widths and positioning. Do not use `data-cg-print-only` on markup rendered in the application.
+
+## Required six-iteration cycle for every route
+
+### A — Source/ownership
+
+- confirm pageRegistry ↔ QA catalog parity;
+- inspect UI kit adoption;
+- find raw tables/forms/buttons, embedded styles, inline geometry and local CSS;
+- identify duplicate functional/visual implementations;
+- inspect exact selector/token collisions;
+- delete superseded CSS instead of quarantining it indefinitely.
+
+### B — Desktop 1440/1024
+
+- operational title/actions fit first viewport;
+- KPI values remain compact, one-line and tabular;
+- cards use one density/radius vocabulary;
+- flex/grid children use `min-width:0`;
+- dense tables own horizontal scroll;
+- actions/fields do not overlap;
+- no decorative pseudo-element or hero competes with data.
+
+### C — Tablet 768
+
+- operational two-column layouts collapse when needed;
+- sidebar overlays rather than shrinking content;
+- table actions remain reachable;
+- forms avoid unusably narrow columns;
+- charts/progress/metric grids remain readable.
+
+### D — Mobile 430/390/360
+
+- document `scrollWidth <= clientWidth`;
+- monetary values do not wrap;
+- primary actions wrap/full-width instead of clipping;
+- touch targets are usable;
+- tables/tabs/kanban are the only intentional horizontal scrollers;
+- no header, support widget, drawer or floating action covers required content.
+
+### E — Theme/state/accessibility
+
+- only `light` and `dark` exist globally;
+- theme changes color, never geometry;
+- test empty/one/many, long text/amounts, loading/error/disabled;
+- focus-visible and keyboard reachability remain intact;
+- reduced motion is respected.
+
+### F — Cleanup/regression
+
+- remove old selector/file in the same change;
+- rerun strict source audit;
+- rerun static visual contracts;
+- run base Playwright matrix;
+- run deep matrix for all routes and all critical phone widths;
+- capture screenshot evidence on failure;
+- do not call browser PASS unless that run actually executed.
+
+## Critical migration invariants
+
+### Contabilidad / Libro Diario
+
+- uses `PageHeader`, `MetricGrid`, `Section`, canonical fields/buttons/table;
+- print HTML is isolated with `data-cg-print-only`;
+- VES/USD and Debe/Haber remain tabular, nowrap and auditable;
+- preview/table scroll is owned locally.
+
+### Admin / RBAC
+
+- permissions, editable tables and demo/licensing forms cannot create another component scale;
+- domain classes are scoped through `module-adapters.css`;
+- checkbox grids collapse safely and action controls stay reachable at 360 px;
+- destructive and irreversible actions retain clear visual hierarchy.
+
+### Salud / Veterinaria
+
+- `HealthcarePage` is human-only;
+- `veterinaria` resolves only to `VeterinaryClinicPageV1123.jsx`;
+- never reintroduce `animal ?`, `kind:'animal'` or `careImmunizationForm` into Healthcare;
+- MUI veterinary geometry must align with the shared shell/tokens.
+
+### Fitness / Gym
+
+- `cg-gym-*` names may identify domain widgets but may not define an independent design system;
+- all geometry/colors come from `module-adapters.css` + `--cg-v-*`;
+- tabs own horizontal scroll; cards/forms use canonical density;
+- member, trainer, routine and nutrition flows must fit at 360 px without document overflow.
+
+## Anti-template standard
+
+The ERP is information-first. Prefer useful tenant/context, statuses, tailored empty states, dense aligned tables and clear actions over gradients, glass, giant counters, circles/blobs, oversized icon bubbles, landing-page headlines or decorative illustrations.
+
+## Evidence gates
 
 ```bash
+npm run audit:visual:strict
+npm run test:visual
 npm run test:browser:visual
 npm run test:browser:visual:deep
 ```
 
-One-command Windows gate:
+Windows:
 
 ```powershell
 .\QA-VISUAL-CONTAGEST.ps1
 ```
 
-The deep suite must exercise every registered module on tablet/desktop and all critical modules on the three phone widths. Report PASS, FAIL, BLOCKED or NOT EXECUTED; never substitute a successful build for browser evidence.
+Report only `PASS`, `FAIL`, `BLOCKED` or `NOT EXECUTED`. A source gate or build cannot substitute for Playwright browser evidence.
