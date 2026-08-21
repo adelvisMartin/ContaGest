@@ -2,9 +2,13 @@
 
 Este documento convierte la revisión visual en un proceso repetible por **cada ruta real del ERP**, no únicamente por Dashboard. La fuente ejecutable del inventario es `qa/support/module-visual-catalog.mjs` y debe permanecer sincronizada con `pageRegistry` de `frontend/src/app.js`.
 
+El inventario actual contiene **58 rutas**, incluida la pantalla standalone de login. Si se agrega o elimina una ruta, `tests/visual_module_catalog_contract.test.mjs` debe obligar a actualizar esta matriz y el QA profundo.
+
 ## Estado de evidencia
 
 - `SOURCE REVIEWED`: se revisó el código del módulo o su familia y existe una regla/contrato concreto.
+- `MIGRATED`: la vista ya recibió una migración visual concreta hacia primitives/tokens canónicos sin cambiar su objetivo funcional.
+- `MODULE ADAPTER`: existe un adapter estructural temporal, tokenizado y sin paleta propia.
 - `AUTOMATED MATRIX`: el módulo forma parte de la matriz Playwright profunda.
 - `BROWSER PENDING`: el test está escrito pero todavía debe ejecutarse en un runtime con Playwright.
 - `MANUAL PENDING`: requiere además observación humana porque una prueba geométrica no evalúa por completo jerarquía, claridad o densidad.
@@ -31,40 +35,41 @@ Cada módulo pasa por el mismo ciclo:
 | `clientes` | Comercial | alto | formularios largos, RIF, tablas y acciones por fila | AUTOMATED MATRIX · BROWSER PENDING |
 | `ventas` | Comercial | crítico | KPI, alta de venta, tabla 8+ columnas, acciones icon-only | SOURCE REVIEWED · AUTOMATED MATRIX · BROWSER PENDING |
 | `inventario` | Operaciones | crítico | tabla 10 columnas, SKU/nombres largos, stock/badges, importes | SOURCE REVIEWED · AUTOMATED MATRIX · BROWSER PENDING |
-| `tributos` | Contabilidad | crítico | montos fiscales, formularios, tablas y estados | AUTOMATED MATRIX · BROWSER PENDING |
+| `tributos` | Contabilidad | crítico | montos fiscales, formulario de alícuotas, cards y estados | SOURCE REVIEWED · MIGRATED · AUTOMATED MATRIX · BROWSER PENDING |
 | `normativa` | Contabilidad | medio | lectura densa, filtros, estados/alertas | AUTOMATED MATRIX · BROWSER PENDING |
 | `historial` | Operaciones | alto | listas largas, filtros, fechas, acciones | AUTOMATED MATRIX · BROWSER PENDING |
 | `reportes` | Reporting | alto | tablas/gráficos, filtros, exportación, densidad | AUTOMATED MATRIX · BROWSER PENDING |
 | `contabilidad` | Contabilidad | crítico | libro diario, preview, tabla ancha, captura contable | SOURCE REVIEWED · MODULE ADAPTER · AUTOMATED MATRIX · BROWSER PENDING |
-| `libro-mayor` | Contabilidad | crítico | cuentas, saldos, jerarquía numérica, tabla ancha | AUTOMATED MATRIX · BROWSER PENDING |
-| `balance-sumas-saldos` | Contabilidad | crítico | columnas de debe/haber/saldos, totalización | AUTOMATED MATRIX · BROWSER PENDING |
-| `hoja-trabajo` | Contabilidad | crítico | tabla financiera muy ancha, sticky context | AUTOMATED MATRIX · BROWSER PENDING |
-| `estados-financieros` | Contabilidad | crítico | jerarquía de rubros, importes y comparativos | AUTOMATED MATRIX · BROWSER PENDING |
-| `cierre-contable` | Contabilidad | crítico | acciones irreversibles, estados y advertencias | AUTOMATED MATRIX · BROWSER PENDING |
-| `bancos` | Finanzas | crítico | saldos, conciliación, tablas, moneda | AUTOMATED MATRIX · BROWSER PENDING |
-| `nomina` | RRHH | crítico | recibos, empleados, montos y tablas densas | AUTOMATED MATRIX · BROWSER PENDING |
+| `libro-mayor` | Contabilidad | crítico | cuentas, saldos, jerarquía numérica, tabla ancha | SOURCE REVIEWED · AUTOMATED MATRIX · BROWSER PENDING |
+| `balance-sumas-saldos` | Contabilidad | crítico | columnas de debe/haber/saldos, totalización | SOURCE REVIEWED · AUTOMATED MATRIX · BROWSER PENDING |
+| `hoja-trabajo` | Contabilidad | crítico | tabla financiera de 12 columnas, sticky context | SOURCE REVIEWED · AUTOMATED MATRIX · BROWSER PENDING |
+| `estados-financieros` | Contabilidad | crítico | jerarquía de rubros, importes y comparativos | SOURCE REVIEWED · AUTOMATED MATRIX · BROWSER PENDING |
+| `cierre-contable` | Contabilidad | crítico | acciones irreversibles, estados y advertencias | SOURCE REVIEWED · AUTOMATED MATRIX · BROWSER PENDING |
+| `bancos` | Finanzas | crítico | saldos, conciliación, tablas, moneda | SOURCE REVIEWED · AUTOMATED MATRIX · BROWSER PENDING |
+| `nomina` | RRHH | crítico | recibos, empleados, montos y tablas densas | SOURCE REVIEWED · AUTOMATED MATRIX · BROWSER PENDING |
 | `proveedores` | Comercial | alto | formularios/RIF, pagos y tabla | AUTOMATED MATRIX · BROWSER PENDING |
-| `compras` | Comercial | crítico | captura, totales, impuestos, tabla y acciones | AUTOMATED MATRIX · BROWSER PENDING |
+| `compras` | Comercial | crítico | captura, totales, impuestos, tabla y acciones | SOURCE REVIEWED · AUTOMATED MATRIX · BROWSER PENDING |
 | `auditoria` | Gobierno | crítico | bitácora densa, estados, filtros, legibilidad | AUTOMATED MATRIX · BROWSER PENDING |
 | `configuracion` | Admin | alto | formularios extensos, tabs/secciones, theme | SOURCE REVIEWED · AUTOMATED MATRIX · BROWSER PENDING |
 | `ayuda` | Soporte | medio | lectura, navegación y acciones | AUTOMATED MATRIX · BROWSER PENDING |
 | `tasks` | Operaciones | medio | listas/estados, acciones y filtros | AUTOMATED MATRIX · BROWSER PENDING |
 | `profile` | Admin | medio | formularios de cuenta, avatar, controles | AUTOMATED MATRIX · BROWSER PENDING |
 | `mobile` | Admin | medio | preview, escala y contención | AUTOMATED MATRIX · BROWSER PENDING |
-| `libro-ventas` | Contabilidad | crítico | libro fiscal, tabla y montos | AUTOMATED MATRIX · BROWSER PENDING |
+| `libro-ventas` | Contabilidad | crítico | libro fiscal, diez columnas, totales y exportación | SOURCE REVIEWED · MIGRATED · AUTOMATED MATRIX · BROWSER PENDING |
 | `marca` | Admin | bajo | assets, logo, tokens; evitar estilos que muten runtime | AUTOMATED MATRIX · BROWSER PENDING |
 | `admin` | Admin/RBAC | crítico | permisos, tablas editables, checkbox grids, demos | SOURCE REVIEWED · MODULE ADAPTER · AUTOMATED MATRIX · BROWSER PENDING |
 | `backend` | Admin | alto | endpoints/status, código/mono, tablas y controles | AUTOMATED MATRIX · BROWSER PENDING |
 | `vistas` | Admin | medio | catálogo, densidad de cards y navegación | AUTOMATED MATRIX · BROWSER PENDING |
-| `plan-cuentas` | Contabilidad | crítico | árbol/códigos de cuenta, indentación, tabla | AUTOMATED MATRIX · BROWSER PENDING |
+| `login` | Auth | crítico | standalone shell, captcha, MFA, inputs y móvil | SOURCE REVIEWED · AUTOMATED MATRIX · BROWSER PENDING |
+| `plan-cuentas` | Contabilidad | crítico | árbol/códigos de cuenta, indentación, tabla y alta | SOURCE REVIEWED · MIGRATED · AUTOMATED MATRIX · BROWSER PENDING |
 | `rrhh` | RRHH | alto | personal, estados, cards/tablas | AUTOMATED MATRIX · BROWSER PENDING |
 | `analytics` | Reporting | alto | gráficos, etiquetas, filtros, KPI | AUTOMATED MATRIX · BROWSER PENDING |
 | `qr` | Operaciones | medio | scanner/QR, cámara/preview, acciones | AUTOMATED MATRIX · BROWSER PENDING |
 | `inventario-scan` | Operaciones | alto | cámara/lector, producto encontrado, touch | AUTOMATED MATRIX · BROWSER PENDING |
-| `pedidos` | Food | alto | kanban horizontal intencional, cards, estados | SOURCE REVIEWED · MODULE ADAPTER · AUTOMATED MATRIX · BROWSER PENDING |
-| `pos-sede` | Food/POS | crítico | touch targets, productos, carrito, totales, responsive | SOURCE REVIEWED · MODULE ADAPTER · AUTOMATED MATRIX · BROWSER PENDING |
-| `tracking-pedidos` | Food | alto | status/progress y contenido largo | AUTOMATED MATRIX · BROWSER PENDING |
-| `delivery-mapa` | Food | alto | mapa/paneles, overflow y acciones | AUTOMATED MATRIX · BROWSER PENDING |
+| `pedidos` | Food | alto | kanban horizontal intencional, cards, estados | SOURCE REVIEWED · MIGRATED · MODULE ADAPTER · AUTOMATED MATRIX · BROWSER PENDING |
+| `pos-sede` | Food/POS | crítico | touch targets, productos, carrito, totales, responsive | SOURCE REVIEWED · MIGRATED · MODULE ADAPTER · AUTOMATED MATRIX · BROWSER PENDING |
+| `tracking-pedidos` | Food | alto | stepper, ETA, eventos, acciones y texto largo | SOURCE REVIEWED · MIGRATED · AUTOMATED MATRIX · BROWSER PENDING |
+| `delivery-mapa` | Food | alto | despacho, ruta, filtros, enlaces, overflow y acciones | SOURCE REVIEWED · MIGRATED · AUTOMATED MATRIX · BROWSER PENDING |
 | `asistente-ia` | Soporte | medio | conversación, input fijo, mensajes largos | AUTOMATED MATRIX · BROWSER PENDING |
 | `soporte` | Soporte | medio | CTA, formularios y estados | AUTOMATED MATRIX · BROWSER PENDING |
 | `demo-control` | Gobierno | medio | controles de demo y estados | AUTOMATED MATRIX · BROWSER PENDING |
@@ -84,6 +89,18 @@ Cada módulo pasa por el mismo ciclo:
 | `nutricion` | Fitness | alto | misma runtime Gym, formularios/planes/listas | SOURCE REVIEWED · MODULE ADAPTER · AUTOMATED MATRIX · BROWSER PENDING |
 | `mensajes` | Soporte | alto | templates, texto largo, textarea y acciones | AUTOMATED MATRIX · BROWSER PENDING |
 
+## Iteraciones concretas ya aplicadas
+
+La normalización no se quedó únicamente en CSS global. En esta rama ya recibieron cambios directos de vista:
+
+- **Tributos:** se eliminaron `text-xl font-black`, color hardcodeado, radios de 1.5/1.75rem y geometría Tailwind; ahora usa sections, grid, badge y fields canónicos.
+- **Plan de cuentas:** se retiraron headings `text-2xl font-black`, form/table/buttons `pl-*` como autoridad visual y se migró a `PageHeader`, `MetricGrid`, `Section`, `DataTable`, `Field`, `Select`, `Button` y `Badge`.
+- **Libro de ventas:** se retiró el encabezado/filter/KPI visual legacy y Material Symbols de esa vista; ahora los diez campos fiscales viven dentro de una tabla canónica con overflow propio y un resumen compacto.
+- **Pedidos:** métricas y acciones pasan por primitives canónicos; el kanban conserva scroll horizontal intencional porque es una superficie operativa, no un overflow accidental.
+- **POS sede:** el formulario dejó `pl-form-grid/pl-field/pl-input`, los controles táctiles tienen labels accesibles y carrito/productos tienen ownership explícito.
+- **Tracking de pedidos:** se retiró geometría utility/Tailwind de la composición principal, manteniendo stepper/ETA/eventos como contenido de dominio.
+- **Delivery/mapa:** se eliminaron grids arbitrarios y cards `panel-soft rounded-xl`; filtros, métricas, ruta y acciones se componen con primitives/tokens compartidos.
+
 ## Problemas estructurales encontrados durante la revisión de fuente
 
 ### 1. Demasiadas generaciones de CSS siguen presentes
@@ -100,9 +117,9 @@ El store ya normaliza el estado a `light|dark`, pero existen ramas/selectores hi
 
 ### 3. Contabilidad usa mezcla de UI canónica + utilidades/markup legacy
 
-`LedgerPage` usa UI kit pero conserva wrappers `surface`, `panel-soft`, utilities de radius/padding, botones raw y tablas/preview específicos. El HTML de impresión incluye un `<style>` propio que es correcto para el documento exportado pero debe diferenciarse del runtime para evitar falsos positivos del auditor.
+`LedgerPage` usa UI kit pero conserva wrappers `surface`, `panel-soft`, utilities de radius/padding, botones raw y tablas/preview específicos. Los HTML de impresión de varios reportes contienen `<style>` propio; eso es correcto para un documento exportado, pero debe distinguirse del runtime para no crear falsos positivos del auditor.
 
-**Medida:** `module-adapters.css` normaliza workbench, cards, preview, KPI y scroll. La siguiente migración de código debe reemplazar botones raw y separar explícitamente estilos `print-only`.
+**Medida:** `module-adapters.css` normaliza workbench, cards, preview, KPI y scroll. La siguiente migración de código debe reemplazar botones raw y separar explícitamente estilos `print-only` en el auditor.
 
 ### 4. Admin/RBAC es una superficie de alto riesgo de solapamiento
 
@@ -114,25 +131,31 @@ Tiene tablas editables, permisos por checkbox, formularios demo, badges, inputs 
 
 `HealthcarePage` contiene lógica humana y una rama `animal`, pero la ruta real `veterinaria` carga `VeterinaryClinicPageV1123.jsx`. Eso deja una rama veterinaria legacy que debe considerarse duplicación funcional/visual hasta confirmar que ningún flujo la utiliza.
 
-**Medida:** no eliminarla a ciegas; añadirla al inventario de deuda y retirar sólo después de caracterizar imports/uso y probar Veterinaria real.
+**Medida:** no eliminarla a ciegas; retirar únicamente después de caracterizar imports/uso y probar Veterinaria real.
 
 ### 6. Fitness posee un mini design system propio
 
-`GymManagementPage` utiliza muchas clases `cg-gym-v1124-*`, formularios y botones raw y hasta estilos inline históricos. Esto es precisamente el tipo de módulo que puede verse distinto aunque el shell sea correcto.
+`GymManagementPage` utiliza muchas clases `cg-gym-v1124-*`, formularios y botones raw y estilos inline históricos. Esto es precisamente el tipo de módulo que puede verse distinto aunque el shell sea correcto.
 
 **Medida:** adapter tokenizado + fuente auditada; migración progresiva a `components/ui` después de validar operaciones.
 
 ### 7. POS/Pedidos requieren densidad diferente, no diseño diferente
 
-`FastFoodPosPage` y `FoodOrdersPage` usan elementos raw y clases propias. El POS necesita objetivos táctiles; Pedidos necesita un kanban cuyo overflow horizontal **sí es intencional**. Ocultar todo overflow globalmente sería un error.
+POS necesita objetivos táctiles; Pedidos necesita un kanban cuyo overflow horizontal **sí es intencional**. Ocultar todo overflow globalmente sería un error.
 
-**Medida:** el adapter convierte únicamente esos contenedores en dueños explícitos de scroll y normaliza cards/touch targets/totales.
+**Medida:** las vistas ya se migraron parcialmente y el adapter convierte únicamente esos contenedores en dueños explícitos de scroll y normaliza cards/touch targets/totales.
 
 ### 8. Tailwind/utilities y componentes canónicos aún conviven
 
-Algunos módulos incluyen clases como `grid`, `md:grid-cols-*`, `rounded-[...]`, `p-*`, `!p-*` junto al UI kit. Esto no implica un bug automáticamente, pero hace que dos sistemas decidan geometría.
+Algunos módulos siguen incluyendo clases como `grid`, `md:grid-cols-*`, `rounded-[...]`, `p-*`, `!p-*` junto al UI kit. Esto no implica un bug automáticamente, pero hace que dos sistemas decidan geometría.
 
 **Medida:** el source audit las prioriza para migración; Visual System v12 y module adapters deben ser la autoridad final de geometría.
+
+### 9. El login era una superficie fuera del primer inventario visual
+
+`login` es standalone y no monta `#pages`, por lo que una matriz que sólo espere el shell autenticado puede omitirlo silenciosamente.
+
+**Medida:** ahora `login` forma parte del catálogo canónico como ruta crítica y `module-visual-deep-v12.spec.mjs` usa `.login-shell` como punto de montaje específico. Captcha, MFA, inputs y headings también entran en el análisis geométrico móvil.
 
 ## Artefactos de auditoría
 
@@ -165,7 +188,7 @@ Iteración profunda:
 npm run test:browser:visual:deep
 ```
 
-La profunda recorre todas las rutas a 768/1024/1440 y las rutas críticas a 360/390/430. Busca overflow, viewport escape, title/KPI size, pseudo-blobs, field/action overlap, controles bajos, botones recortados, tablas sin scroll owner y drift geométrico Light/Dark.
+La profunda recorre las **58 rutas** a 768/1024/1440 y las rutas críticas a 360/390/430. Busca overflow, viewport escape, title/KPI size, pseudo-blobs, field/action overlap, controles bajos, botones recortados, tablas sin scroll owner y drift geométrico Light/Dark.
 
 En Windows, ejecutar todo junto:
 
