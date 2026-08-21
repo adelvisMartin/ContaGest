@@ -17,8 +17,8 @@ async function seedAuthenticatedUi(page) {
 async function openRoute(page, route, viewport) {
   await page.setViewportSize(viewport);
   await page.goto(`/?module=${route}`, { waitUntil:'domcontentloaded' });
-  await page.waitForSelector('#pages', { state:'attached', timeout:15_000 });
-  await page.waitForTimeout(route === 'veterinaria' ? 420 : 180);
+  await page.waitForSelector(route === 'login' ? '.login-shell' : '#pages', { state:'attached', timeout:15_000 });
+  await page.waitForTimeout(route === 'veterinaria' ? 420 : route === 'login' ? 260 : 180);
 }
 
 async function auditGeometry(page, route, viewport) {
@@ -36,7 +36,7 @@ async function auditGeometry(page, route, viewport) {
     const horizontalOwners=[
       '.table-wrap','.pl-table-wrap','.ds-table-wrap','.cgv-table-shell','.cgx-table-wrap','.cg-ui-table-wrap',
       '.MuiTableContainer-root','.MuiTabs-scroller','.MuiMenu-list','.hf-quickbar','.hf-command-results','#mainMenu',
-      '[data-horizontal-scroll]'
+      '.cg-kanban','.cg-gym-v1124-tabs','.cg-pos-tabs','[data-horizontal-scroll]'
     ].join(',');
     const ignored=[
       '.hf-sidebar','#sidebarBackdrop','.hf-command-layer','.cg-loading-overlay','.MuiPopover-root','.MuiModal-root',
@@ -56,7 +56,7 @@ async function auditGeometry(page, route, viewport) {
       add('viewport-escape',`left=${Math.round(box.left)} right=${Math.round(box.right)} width=${Math.round(box.width)}`,`${node.tagName.toLowerCase()}#${node.id}.${String(node.className||'').replace(/\s+/g,'.').slice(0,100)}`);
     }
 
-    const pageTitles=[...document.querySelectorAll('.cgx-page-header h1,.cg-ui-page-title,.pl-header h2,.ds-page-header h2,.hf-page-head h2,.pretest-hero h2')].filter(visible);
+    const pageTitles=[...document.querySelectorAll('.cgx-page-header h1,.cg-ui-page-title,.pl-header h2,.ds-page-header h2,.hf-page-head h2,.pretest-hero h2,.login-copy h2,.login-panel h2')].filter(visible);
     for(const node of pageTitles){
       const size=parseFloat(getComputedStyle(node).fontSize);
       const max=mobile?23:27;
@@ -84,7 +84,7 @@ async function auditGeometry(page, route, viewport) {
       }
     }
 
-    const actionContainers=[...document.querySelectorAll('.cgx-page-actions,.cgx-section-actions,.cg-row-actions,.cg-record-actions,.cg-form-actions,.settings-actions')].filter(visible);
+    const actionContainers=[...document.querySelectorAll('.cgx-page-actions,.cgx-section-actions,.cg-row-actions,.cg-record-actions,.cg-form-actions,.settings-actions,.coordinate-actions,.cg-order-actions')].filter(visible);
     const overlaps=(nodes)=>{
       const items=nodes.filter(visible).map((node)=>({node,box:rect(node)}));
       const hits=[];
@@ -101,13 +101,13 @@ async function auditGeometry(page, route, viewport) {
       for(const [a,b] of overlaps([...container.children]))add('action-overlap',`${a.textContent?.trim().slice(0,35)} <> ${b.textContent?.trim().slice(0,35)}`,String(container.className||''));
     }
 
-    const fields=[...document.querySelectorAll('form .cgx-field,form .field,form .MuiFormControl-root')].filter(visible);
+    const fields=[...document.querySelectorAll('form .cgx-field,form .field,form .MuiFormControl-root,form .pl-field')].filter(visible);
     for(const [a,b] of overlaps(fields))add('field-overlap',`${String(a.className||'').slice(0,45)} <> ${String(b.className||'').slice(0,45)}`,'form');
 
     const controls=[...document.querySelectorAll('button,input:not([type="hidden"]),select,textarea,[role="button"]')].filter((node)=>visible(node)&&!node.closest(ignored));
     for(const node of controls){
       const box=rect(node),style=getComputedStyle(node);
-      const iconOnly=node.matches('.hf-icon-button,.icon-action-button,.cgx-btn-icon,#btnTema,#btnOpenSidebar')||(!node.textContent?.trim()&&node.querySelector('i,svg'));
+      const iconOnly=node.matches('.hf-icon-button,.icon-action-button,.cgx-btn-icon,#btnTema,#btnOpenSidebar,.login-captcha-refresh')||(!node.textContent?.trim()&&node.querySelector('i,svg'));
       const minHeight=mobile?38:30;
       if(box.height<minHeight&&!iconOnly)add('control-height',`${Math.round(box.height)}px < ${minHeight}px`,`${node.tagName.toLowerCase()} ${node.textContent?.trim().slice(0,45)}`);
       if(box.width>width+2)add('control-width',`${Math.round(box.width)}px > viewport`,node.tagName.toLowerCase());
