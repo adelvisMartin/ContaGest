@@ -247,6 +247,7 @@ export async function persistCanonicalShadow(input:CanonicalPersistInput){
     risk:input.result.risk,
     confidence:input.result.confidence,
     reason:input.result.reason,
+    suggestion:input.result.suggestion,
     entities:normalized,
     operationEventId
   };

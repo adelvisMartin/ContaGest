@@ -1,63 +1,83 @@
-const VERSION='1.3.1';
-const CACHE=`control-hipico-shell-v${VERSION}`;
-const RUNTIME=`control-hipico-runtime-v${VERSION}`;
-const SHELL=[
-  '/hipico-control/',
-  '/hipico-control/index.html',
-  '/hipico-control/manifest.webmanifest',
-  '/hipico-control/assets/css/precision-hipica.css',
-  '/hipico-control/assets/css/offline-icons.css',
-  '/hipico-control/assets/js/app-shell.js',
-  '/hipico-control/assets/js/race-finalization.js',
-  '/hipico-control/assets/js/operations.js',
-  '/hipico-control/assets/js/rc1-recovery.js',
-  '/hipico-control/assets/js/whatsapp.js',
-  '/hipico-control/assets/js/agent-router.js',
-  '/hipico-control/assets/brand/control-hipico-mark.svg',
-  '/hipico-control/assets/brand/icon-192.svg',
-  '/hipico-control/assets/brand/icon-512.svg',
-  '/hipico-control/assets/brand/maskable-192.svg',
-  '/hipico-control/assets/brand/maskable-512.svg'
+const CACHE_VERSION = 'hipico-control-v1.13.0-rc2';
+const APP_SHELL = [
+  './', './index.html', './recovery.html', './manifest.webmanifest', './runtime-config.js', './build-info.json',
+  './icons/icon-192.png', './icons/icon-512.png', './icons/icon-192-maskable.png', './icons/icon-512-maskable.png',
+  './logo-control-hipico.png', './assets/css/styles.css', './assets/css/tokens.css', './assets/css/themes.css',
+  './assets/css/operations-pro.css', './assets/css/recovery.css', './assets/js/compat.js', './assets/js/app.js',
+  './assets/js/config.js', './assets/js/engine.js', './assets/js/format.js', './assets/js/seed.js', './assets/js/store.js',
+  './assets/js/reports.js', './assets/js/sync.js', './assets/js/supabase.js', './assets/js/local-auth.js', './assets/js/ui.js',
+  './assets/js/workspace.js', './assets/js/whatsapp.js', './assets/js/backup.js', './assets/js/recovery.js',
+  './assets/js/resilience.js', './assets/js/agent-router-pro.js', './assets/js/race-state-machine.js'
 ];
 
-self.addEventListener('install',(event)=>{
-  event.waitUntil(caches.open(CACHE).then((cache)=>cache.addAll(SHELL)).then(()=>self.skipWaiting()));
-});
-self.addEventListener('activate',(event)=>{
-  event.waitUntil((async()=>{
-    const keys=await caches.keys();
-    await Promise.all(keys.filter((key)=>(key.startsWith('control-hipico-')||key.startsWith('hipico-control-'))&&![CACHE,RUNTIME].includes(key)).map((key)=>caches.delete(key)));
-    await self.clients.claim();
-    const clients=await self.clients.matchAll({type:'window',includeUncontrolled:true});
-    clients.forEach((client)=>client.postMessage({type:'CONTROL_HIPICO_UPDATED',version:VERSION}));
+function scoped(path) { return new URL(path, self.registration.scope).toString(); }
+function isSensitive(url) {
+  return /\/(?:api|auth)(?:\/|$)|session|token|license|webhook/i.test(url.pathname);
+}
+
+self.addEventListener('install', (event) => {
+  event.waitUntil((async () => {
+    const cache = await caches.open(CACHE_VERSION);
+    await cache.addAll(APP_SHELL.map(scoped));
+    await self.skipWaiting();
   })());
 });
 
-const isNavigation=(request)=>request.mode==='navigate';
-const isAsset=(url)=>/\.(?:css|js|svg|png|jpg|jpeg|webp|woff2?)$/i.test(url.pathname);
-const isSensitive=(url)=>/\/(?:api|auth|session|license|webhook)(?:\/|$)/i.test(url.pathname);
-
-async function networkFirst(request){
-  const cache=await caches.open(RUNTIME);
-  try{const response=await fetch(request,{cache:'no-store'});if(response.ok&&!isSensitive(new URL(request.url)))cache.put(request,response.clone());return response;}
-  catch(error){const cached=await cache.match(request);if(cached)return cached;if(isNavigation(request))return caches.match('/hipico-control/index.html');throw error;}
-}
-async function staleWhileRevalidate(request){
-  const cache=await caches.open(RUNTIME);const cached=await cache.match(request);
-  const network=fetch(request).then((response)=>{if(response.ok)cache.put(request,response.clone());return response;}).catch(()=>null);
-  return cached||network||new Response('',{status:504,statusText:'Offline'});
-}
-
-self.addEventListener('fetch',(event)=>{
-  const request=event.request;if(request.method!=='GET')return;
-  const url=new URL(request.url);if(url.origin!==self.location.origin)return;
-  if(isSensitive(url)){event.respondWith(fetch(request,{cache:'no-store'}));return;}
-  if(isNavigation(request)){event.respondWith(networkFirst(request));return;}
-  if(isAsset(url)){event.respondWith(staleWhileRevalidate(request));return;}
-  event.respondWith(networkFirst(request));
+self.addEventListener('activate', (event) => {
+  event.waitUntil((async () => {
+    const keys = await caches.keys();
+    await Promise.all(keys.filter((key) => key.startsWith('hipico-control-') && key !== CACHE_VERSION).map((key) => caches.delete(key)));
+    await self.clients.claim();
+  })());
 });
 
-self.addEventListener('message',(event)=>{
-  if(event.data?.type==='SKIP_WAITING')self.skipWaiting();
-  if(event.data?.type==='GET_VERSION')event.source?.postMessage?.({type:'CONTROL_HIPICO_VERSION',version:VERSION});
+self.addEventListener('fetch', (event) => {
+  const request = event.request;
+  if (request.method !== 'GET') return;
+  const url = new URL(request.url);
+  const scope = new URL(self.registration.scope);
+  if (url.origin !== scope.origin) return;
+
+  if (isSensitive(url)) {
+    event.respondWith(fetch(request, { cache: 'no-store' }));
+    return;
+  }
+
+  if (request.mode === 'navigate') {
+    event.respondWith((async () => {
+      try {
+        const fresh = await fetch(request);
+        const cache = await caches.open(CACHE_VERSION);
+        cache.put(request, fresh.clone()).catch(() => {});
+        return fresh;
+      } catch (_) {
+        return (await caches.match(request)) || (await caches.match(scoped('./index.html'))) || (await caches.match(scoped('./recovery.html')));
+      }
+    })());
+    return;
+  }
+
+  if (url.pathname.endsWith('/runtime-config.js') || url.pathname.endsWith('/build-info.json')) {
+    event.respondWith(fetch(request, { cache: 'no-store' }).catch(() => caches.match(request)));
+    return;
+  }
+
+  event.respondWith((async () => {
+    const cached = await caches.match(request);
+    if (cached) return cached;
+    try {
+      const response = await fetch(request);
+      if (response.ok) {
+        const cache = await caches.open(CACHE_VERSION);
+        cache.put(request, response.clone()).catch(() => {});
+      }
+      return response;
+    } catch (_) {
+      return cached || Response.error();
+    }
+  })());
+});
+
+self.addEventListener('message', (event) => {
+  if (event.data?.type === 'SKIP_WAITING') self.skipWaiting();
 });
