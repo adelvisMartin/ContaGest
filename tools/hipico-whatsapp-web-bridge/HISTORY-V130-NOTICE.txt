@@ -1,0 +1,7 @@
+Control Hipico WhatsApp Web Bridge v1.3.0
+
+La primera ejecucion sincroniza hacia atras todo el historico que WhatsApp Web permita cargar del grupo CLUB HIPICO TRIPLE CROWN.
+
+El historico es SOLO LECTURA y nunca envia mensajes al grupo oficial ni al laboratorio.
+
+Luego continua automaticamente con la escucha en tiempo real.

@@ -15,6 +15,8 @@ type CanonicalPersistInput={
   sentAt:string;
   messageType:string;
   mediaKind?:string;
+  mediaName?:string;
+  historySync?:boolean;
   body:string;
   quotedExternalMessageId:string|null;
   bridgeVersion:string;
@@ -84,7 +86,7 @@ async function ensureOfficialSourceChannel(groupName:string, sourceKey:string, l
   const lab=labRows[0];
   const config={
     mode:'source_read_only',
-    purpose:'official_live_shadow_training',
+    purpose:'official_live_and_history_shadow_training',
     auto_send:false,
     mirror_lab_channel_key:labKey
   };
@@ -145,13 +147,6 @@ function amountOf(result:IntentResult){
   return Number.isFinite(value)?value:null;
 }
 
-/**
- * Canonical observation store. Source-group events and lab-group events both
- * stay shadow-only. The only configuration write allowed here is idempotent
- * provisioning of the single official source channel from the existing LAB
- * owner. This function never writes hipico_ledger_entries or operational
- * hipico_outbox.
- */
 export async function persistCanonicalShadow(input:CanonicalPersistInput){
   const channel=await resolveChannel(input);
   const normalized=input.result.entities||{};
@@ -163,7 +158,9 @@ export async function persistCanonicalShadow(input:CanonicalPersistInput){
     transportEventId:input.transportEventId,
     channelRole:input.channelRole,
     labChannelKey:input.labChannelKey||null,
+    historySync:Boolean(input.historySync),
     mediaKind:input.mediaKind||'none',
+    mediaName:input.mediaName||null,
     risk:input.result.risk,
     reason:input.result.reason,
     fromMe:input.fromMe,
@@ -207,6 +204,7 @@ export async function persistCanonicalShadow(input:CanonicalPersistInput){
       shadow:true,
       source:'whatsapp-web-bridge',
       channelRole:input.channelRole,
+      historySync:Boolean(input.historySync),
       intent:input.result.intent,
       risk:input.result.risk,
       reason:input.result.reason,
@@ -239,26 +237,30 @@ export async function persistCanonicalShadow(input:CanonicalPersistInput){
   }
 
   const labGroupKey=String(input.labChannelKey||channel.groupKey).trim();
-  const scenarioKey=input.channelRole==='source'?'official-source-to-lab-v1':'real-operativa-shadow-v1';
+  const scenarioKey=input.historySync?'official-history-to-lab-v1':input.channelRole==='source'?'official-source-to-lab-v1':'real-operativa-shadow-v1';
   const prediction={
     shadow:true,
     channelRole:input.channelRole,
+    historySync:Boolean(input.historySync),
     intent:input.result.intent,
     risk:input.result.risk,
     confidence:input.result.confidence,
     reason:input.result.reason,
-    suggestion:input.result.suggestion,
     entities:normalized,
     operationEventId
   };
+  const notes=input.historySync
+    ?'Prediccion historica del grupo oficial; solo dataset shadow, sin respuesta LAB ni efecto operativo.'
+    :input.channelRole==='source'
+      ?'Prediccion del grupo oficial para validacion en laboratorio; sin efecto operativo.'
+      :'Prediccion generada en laboratorio; sin efecto operativo.';
   const shadowRows=await prisma.$queryRaw<Array<{id:string}>>`
     INSERT INTO public.hipico_shadow_evaluations
       (owner_id,source_group_key,lab_group_key,source_message_id,source_external_message_id,scenario_key,
        prediction_type,predicted_payload,match_status,notes)
     VALUES
       (${channel.ownerId}::uuid,${channel.groupKey},${labGroupKey},${messageId}::uuid,${input.providerMessageId},
-       ${scenarioKey},${PREDICTION_TYPE},${JSON.stringify(prediction)}::jsonb,'pending',
-       ${input.channelRole==='source'?'Prediccion del grupo oficial para validacion en laboratorio; sin efecto operativo.':'Prediccion generada en laboratorio; sin efecto operativo.'})
+       ${scenarioKey},${PREDICTION_TYPE},${JSON.stringify(prediction)}::jsonb,'pending',${notes})
     ON CONFLICT (owner_id,source_group_key,source_external_message_id,prediction_type)
     DO UPDATE SET
       source_message_id=EXCLUDED.source_message_id,
@@ -275,6 +277,7 @@ export async function persistCanonicalShadow(input:CanonicalPersistInput){
     channelId:channel.id,
     groupKey:channel.groupKey,
     channelRole:input.channelRole,
+    historySync:Boolean(input.historySync),
     labGroupKey,
     messageId,
     operationEventId,
