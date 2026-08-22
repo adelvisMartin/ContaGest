@@ -1,78 +1,47 @@
-import { PageHeader, Button } from '../components/ui/index.js';
+import { PageHeader, Button, EmptyState, Badge } from '../components/ui/index.js';
+import { escapeHtml } from '../utils/dom.js';
 
 const money = (value) => Number(value || 0).toLocaleString('es-VE', { style:'currency', currency:'USD' });
+const safe=(value)=>escapeHtml(String(value??''));
 
 export const MobilePreviewPage = {
   render(state) {
-    const activeOrders = (state.foodOrders || []).filter((order) => !['delivered','cancelled'].includes(order.status)).length;
-    const lowStock = (state.inventory || []).filter((item) => Number(item.stock || 0) <= Number(item.minStock || 5)).slice(0, 3);
-    const salesToday = (state.history || []).reduce((sum, row) => sum + Number(row.calculation?.totalUsdEquivalent || row.calculation?.totalUsd || 0), 0) || 4250;
+    const activeOrders=(state.foodOrders||[]).filter((order)=>!['delivered','cancelled'].includes(order.status)).length;
+    const lowStock=(state.inventory||[]).filter((item)=>Number(item.stock||0)<=Number(item.minStock||5)).slice(0,4);
+    const salesToday=(state.history||[]).reduce((sum,row)=>sum+Number(row.calculation?.totalUsdEquivalent||row.calculation?.totalUsd||0),0);
 
-    return `<section class="mobile-functional-page">
+    return `<section class="cg-page-stack mobile-functional-page">
       ${PageHeader({
         eyebrowKey:'mobileEyebrow',
         titleKey:'mobileTitle',
         descKey:'mobileDesc',
-        actions: `${Button({ text:'Abrir POS', icon:'fa-utensils', variant:'primary', attrs:'data-route="pos-sede"' })}${Button({ text:'Escanear', icon:'fa-barcode', variant:'secondary', attrs:'data-route="inventario-scan"' })}`
+        actions:`${Button({text:'Abrir POS',icon:'fa-cash-register',variant:'primary',attrs:'data-route="pos-sede"'})}${Button({text:'Escanear',icon:'fa-barcode',variant:'secondary',attrs:'data-route="inventario-scan"'})}`
       })}
       <div class="mobile-command-layout">
         <section class="mobile-command-card surface">
-          <header class="mobile-command-header">
-            <div class="mobile-command-brand"><div class="hf-brand-mark">C</div><div><h3>Mobile Ops</h3><p>Vista operativa conectable a backend</p></div></div>
-            <div class="mobile-command-actions">
-              <button type="button" data-route="analytics" aria-label="Analítica"><i class="fa-solid fa-chart-line"></i></button>
-              <button type="button" data-route="configuracion" aria-label="Configuración"><i class="fa-solid fa-gear"></i></button>
-            </div>
-          </header>
-
+          <header class="mobile-command-header"><div><p class="cgx-eyebrow">Operación móvil</p><h3>Accesos rápidos</h3><p class="cg-ui-muted">Datos reales del estado actual; sin registros de demostración inyectados.</p></div><div>${Badge('Vista operativa','brand')}</div></header>
           <div class="mobile-kpi-grid">
-            <button type="button" data-route="ventas" class="mobile-kpi-tile"><span>Ventas hoy</span><strong>${money(salesToday)}</strong><small>Ir a ventas</small></button>
-            <button type="button" data-route="pedidos" class="mobile-kpi-tile"><span>Pedidos</span><strong>${activeOrders}</strong><small>Seguimiento</small></button>
+            <button type="button" data-route="ventas" class="mobile-kpi-tile"><span>Ventas registradas</span><strong>${safe(money(salesToday))}</strong><small>Abrir ventas</small></button>
+            <button type="button" data-route="pedidos" class="mobile-kpi-tile"><span>Pedidos activos</span><strong>${activeOrders}</strong><small>Abrir seguimiento</small></button>
           </div>
-
           <div class="mobile-action-grid">
             <button type="button" data-route="pos-sede"><i class="fa-solid fa-cash-register"></i><span>POS sede</span></button>
             <button type="button" data-route="inventario-scan"><i class="fa-solid fa-barcode"></i><span>Escáner</span></button>
             <button type="button" data-route="pedidos"><i class="fa-solid fa-bell-concierge"></i><span>Pedidos</span></button>
             <button type="button" data-route="delivery-mapa"><i class="fa-solid fa-map-location-dot"></i><span>Rutas</span></button>
           </div>
-
           <section class="mobile-alert-list">
             <div class="mobile-section-title"><span>Alertas de inventario</span><button type="button" data-route="kardex">Ver kardex</button></div>
-            ${(lowStock.length ? lowStock : [
-              { sku:'THHN-12', name:'Cable THHN 12 AWG', stock:2, minStock:5 },
-              { sku:'LED-9W', name:'Bombillos LED 9W', stock:15, minStock:20 }
-            ]).map((item) => `<article class="mobile-alert-item">
-              <div><strong>${item.name}</strong><p>${item.sku || 'SKU'} · Stock ${item.stock ?? 0} / mínimo ${item.minStock ?? 0}</p></div>
-              <button type="button" data-backend-action="inventory.restock" data-endpoint="/api/v1/products/${item.id || item.sku || 'sku'}/restock">Reabastecer</button>
-            </article>`).join('')}
+            ${lowStock.length?lowStock.map((item)=>`<article class="mobile-alert-item"><div><strong>${safe(item.name||'Producto')}</strong><p>${safe(item.sku||'SKU')} · Stock ${safe(item.stock??0)} / mínimo ${safe(item.minStock??0)}</p></div><button type="button" data-route="inventario">Revisar stock</button></article>`).join(''):EmptyState({title:'Sin alertas de stock',description:'No hay productos registrados por debajo del mínimo.',iconName:'fa-box-open'})}
           </section>
-
-          <section class="mobile-soft-chart">
-            <div><strong>Análisis semanal</strong><p>Ventas vs pedidos</p></div>
-            <div class="mobile-bars">
-              ${[44,58,51,68,74,62].map((h, idx) => `<span style="height:${h}%"></span>`).join('')}
-            </div>
-          </section>
-
-          <nav class="mobile-bottom-nav" aria-label="Mobile quick nav">
+          <nav class="mobile-bottom-nav" aria-label="Navegación móvil rápida">
             <button type="button" data-route="dashboard" class="active"><i class="fa-solid fa-table-cells-large"></i><span>Inicio</span></button>
             <button type="button" data-route="ventas"><i class="fa-solid fa-receipt"></i><span>Ventas</span></button>
             <button type="button" data-route="inventario"><i class="fa-solid fa-boxes-stacked"></i><span>Stock</span></button>
             <button type="button" data-route="profile"><i class="fa-solid fa-user"></i><span>Perfil</span></button>
           </nav>
         </section>
-
-        <aside class="surface mobile-backend-card">
-          <h3>Funcionalidad real preparada</h3>
-          <p>Esta vista ya no es un mock visual: cada botón navega a módulos existentes o queda marcado con endpoint para backend/Supabase.</p>
-          <ul>
-            <li><strong>POS:</strong> crea pedido operativo.</li>
-            <li><strong>Escáner:</strong> inventario con código de barras.</li>
-            <li><strong>Reabastecer:</strong> acción lista para endpoint.</li>
-            <li><strong>Kardex:</strong> trazabilidad de movimientos.</li>
-          </ul>
-        </aside>
+        <aside class="surface mobile-backend-card"><h3>Atajos conectados</h3><p>Los controles de esta vista únicamente navegan a módulos operativos existentes. Las mutaciones de inventario, ventas y pedidos se realizan dentro de sus flujos autorizados.</p><ul><li><strong>POS:</strong> crea pedidos desde el módulo de caja.</li><li><strong>Escáner:</strong> registra lecturas de inventario.</li><li><strong>Stock:</strong> los ajustes se hacen en Inventario/Kardex.</li><li><strong>Delivery:</strong> abre despacho y seguimiento.</li></ul></aside>
       </div>
     </section>`;
   },
