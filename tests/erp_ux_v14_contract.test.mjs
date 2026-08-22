@@ -46,6 +46,24 @@ test('psychology appointment flow has a compact calendar, safe labels and a real
   assert.match(adapters,/cg-psych-editor-grid/);
 });
 
+test('veterinary route and dossier share the canonical ContaGest MUI theme',()=>{
+  const app=read('frontend','src','app.js');
+  const mui=read('frontend','src','components','muiRuntime.js');
+  const veterinary=read('frontend','src','pages','VeterinaryClinicPage.jsx');
+  const dossier=read('frontend','src','pages','VeterinaryClinicPageV1123.jsx');
+  assert.match(app,/veterinaria:\['\.\/pages\/VeterinaryClinicPageV1123\.jsx','VeterinaryClinicPage'\]/);
+  assert.match(mui,/export function createContaGestMuiTheme/);
+  assert.doesNotMatch(mui,/mui-global-runtime\.css|enterprise/);
+  assert.match(veterinary,/createContaGestMuiTheme/);
+  assert.doesNotMatch(veterinary,/createVetTheme|createTheme\(|<CssBaseline|<Toaster/);
+  assert.match(dossier,/createContaGestMuiTheme/);
+  assert.match(dossier,/<ThemeProvider theme=\{theme\}>/);
+  assert.doesNotMatch(dossier,/createTheme\(|enterprise/);
+  assert.match(veterinary,/HealthVerticalService\.createAppointment/);
+  assert.match(veterinary,/HealthVerticalService\.updateAppointment/);
+  assert.match(veterinary,/HealthVerticalService\.deleteAppointment/);
+});
+
 test('route catalog remains exhaustive',()=>{
   assert.equal(MODULE_VISUAL_ROUTES.length,58);
   assert.equal(new Set(MODULE_VISUAL_ROUTES).size,58);
