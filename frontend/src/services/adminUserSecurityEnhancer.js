@@ -2,7 +2,7 @@ import { BackendApi } from './backendApi.js';
 
 let observer;
 let busy = false;
-const escapeHtml = (value='') => String(value).replace(/[&<>'"]/g,(char)=>({ '&':'&amp;','<':'&lt;','>':'&gt',"'":'&#39;','"':'&quot;' }[char]));
+const escapeHtml = (value='') => String(value).replace(/[&<>'"]/g,(char)=>({ '&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;' }[char]));
 
 function statusNode(section){return section?.querySelector('[data-security-status]');}
 function setStatus(section,message='',tone=''){const node=statusNode(section);if(node){node.textContent=message;node.dataset.tone=tone;}}
