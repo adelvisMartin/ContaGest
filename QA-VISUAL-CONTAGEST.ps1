@@ -52,9 +52,9 @@ Write-Host "[$step/$total] Auditoria ESTRICTA visual/source/shell..." -Foregroun
 if ($LASTEXITCODE -ne 0) { Fail 'El gate estructural visual v14 fallo. Revisa artifacts\qa\visual-source-audit.md.' }
 $step++
 
-Write-Host "[$step/$total] Inventario funcional de las 58 rutas..." -ForegroundColor Cyan
-& $npm.Source run audit:functions
-if ($LASTEXITCODE -ne 0) { Fail 'El inventario funcional no pudo ejecutarse.' }
+Write-Host "[$step/$total] Auditoria FUNCIONAL ESTRICTA de las 58 rutas..." -ForegroundColor Cyan
+& $npm.Source run audit:functions:strict
+if ($LASTEXITCODE -ne 0) { Fail 'El gate funcional de las 58 rutas fallo. Revisa artifacts\qa\module-function-audit.md.' }
 $step++
 
 Write-Host "[$step/$total] Contratos estaticos visuales/funcionales..." -ForegroundColor Cyan
