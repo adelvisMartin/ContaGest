@@ -1,73 +1,60 @@
-import { DS } from '../components/ui/index.js';
+import { PageHeader, MetricGrid, Section, Field, Button, Badge } from '../components/ui/index.js';
 import { BackendApi } from '../services/backendApi.js';
-import { SupabaseConfig } from '../services/supabaseClient.js';
 import { BcvService } from '../services/bcvService.js';
+import { escapeHtml } from '../utils/dom.js';
+
+const safe=(value)=>escapeHtml(String(value??''));
 
 export const BackendPage = {
   render() {
-    const supa = SupabaseConfig.get();
-    const kpis = [
-      { label:'API base', value: BackendApi.baseUrl, sub:'URL usada por el frontend', iconName:'api' },
-      { label:'Tenant activo', value: BackendApi.tenantId || 'No configurado', sub:'x-tenant-id para requests', tone: BackendApi.tenantId ? 'success' : 'warning', iconName:'domain' },
-      { label:'Supabase', value: SupabaseConfig.isConfigured() ? 'Configurado' : 'Pendiente', sub:'URL + anon key', tone: SupabaseConfig.isConfigured() ? 'success' : 'warning', iconName:'database' },
-      { label:'BCV realtime', value:'Fallback chain', sub:'Backend → DolarAPI → Rafnixg → PyDolarVE → cache/manual', iconName:'currency_exchange' }
-    ];
-    return `<section class="grid gap-6">
-      ${DS.PageHeader({ title:'Backend & Supabase', subtitle:'Panel educativo para conectar el frontend con API real, tenant activo y Supabase.', actions: `${DS.Button({id:'btnBackendDb', label:'Probar DB', iconName:'database', variant:'primary'})}${DS.Button({id:'btnBackendHealth', label:'Probar API', iconName:'health_and_safety', variant:'primary'})}${DS.Button({id:'btnSyncCoreSupabase', label:'Sync módulos', iconName:'cloud_sync', variant:'secondary'})}${DS.Button({id:'btnBackendBcv', label:'Probar BCV', iconName:'currency_exchange', variant:'secondary'})}` })}
-      <div class="ds-kpi-grid">${kpis.map(k=>DS.Kpi(k)).join('')}</div>
-      <section class="surface rounded-[1.5rem] p-6">
-        <h3 class="text-2xl font-black text-[#00236f] dark:text-white">Configuración rápida</h3>
-        ${DS.Form({ id:'backendConfigForm', submitLabel:'Guardar configuración', fields:[
-          { name:'apiBase', label:'API Base URL', value: BackendApi.baseUrl, required:true },
-          { name:'tenantId', label:'Tenant ID', value: BackendApi.tenantId || 'demo-tenant', placeholder:'demo-tenant' },
-          { name:'supabaseUrl', label:'Supabase URL', value:supa.url || '', placeholder:'https://xxxxx.supabase.co' },
-          { name:'supabaseAnonKey', label:'Supabase anon key', value:supa.anonKey || '' }
-        ]})}
-      </section>
-      <section class="surface rounded-[1.5rem] p-6">
-        <h3 class="text-2xl font-black text-[#00236f] dark:text-white">Cómo se usa</h3>
-        <ol class="mt-4 grid gap-3 text-sm font-bold text-slate-700 dark:text-slate-200">
-          <li>1. Ejecuta <code>cd backend && npm install && npm run dev</code>.</li>
-          <li>2. Para testing usa <code>demo-tenant</code>, creado por el SQL bootstrap.</li>
-          <li>3. Pega el Tenant ID aquí para que el frontend mande <code>x-tenant-id</code>.</li>
-          <li>4. Cuando actives Supabase Auth, cambia el header demo por JWT + RLS.</li>
-        </ol>
-      </section>
+    const tenantId=BackendApi.tenantId || '';
+    const sameOrigin=BackendApi.baseUrl === '/api/v1';
+    return `<section class="cg-page-stack">
+      ${PageHeader({
+        eyebrow:'Administración · Integraciones',
+        title:'Backend e integraciones',
+        description:'Diagnóstico de la API y del tenant firmado en la sesión. El navegador no puede cambiar el tenant ni almacenar secretos del servidor.',
+        actions:`${Button({id:'btnBackendHealth',text:'Probar API',icon:'fa-heart-pulse',variant:'primary'})}${Button({id:'btnBackendDb',text:'Probar DB',icon:'fa-database',variant:'secondary'})}${Button({id:'btnSyncCoreSupabase',text:'Sincronizar módulos',icon:'fa-cloud-arrow-down',variant:'secondary'})}${Button({id:'btnBackendBcv',text:'Probar BCV',icon:'fa-money-bill-transfer',variant:'secondary'})}`
+      })}
+      ${MetricGrid([
+        {label:'API',value:sameOrigin?'Mismo origen':'Personalizada',hint:safe(BackendApi.baseUrl),iconName:'fa-server',tone:'brand'},
+        {label:'Tenant de sesión',value:tenantId?'Asignado':'Sin sesión',hint:tenantId?safe(tenantId):'Se obtiene del login; no es editable',iconName:'fa-building-shield',tone:tenantId?'success':'warning'},
+        {label:'Autenticación',value:BackendApi.isReady?'Activa':'Pendiente',hint:'Cookie HttpOnly + CSRF en mutaciones',iconName:'fa-shield-halved',tone:BackendApi.isReady?'success':'warning'},
+        {label:'BCV',value:'Diagnóstico',hint:'Fuente y fallback se resuelven por servicio',iconName:'fa-landmark',tone:'neutral'}
+      ])}
+      ${Section({
+        title:'Endpoint de desarrollo',
+        subtitle:'En producción se recomienda /api/v1 del mismo origen. Esta preferencia nunca modifica el tenant autenticado.',
+        children:`<form id="backendConfigForm" class="cg-record-form"><div class="cg-record-fields">${Field({labelKey:'API Base URL',name:'apiBase',value:BackendApi.baseUrl,required:true})}</div><div class="cg-record-actions">${Button({text:'Guardar endpoint',icon:'fa-floppy-disk',type:'submit'})}</div></form>`
+      })}
+      ${Section({
+        title:'Contrato de seguridad',
+        subtitle:'La identidad empresarial se deriva exclusivamente de la sesión autorizada.',
+        children:`<div class="cg-ui-stack cg-ui-gap-sm"><p>${Badge('Tenant no editable','success')} El frontend no envía un tenant arbitrario para elevar o cambiar alcance.</p><p>${Badge('Secretos server-only','success')} Claves privadas, service-role, credenciales de correo y proveedores permanecen fuera del navegador.</p><p>${Badge('Sesión + RBAC','success')} Cada operación debe validar tenant, rol/licencia y autorización en backend.</p></div>`
+      })}
     </section>`;
   },
-  mount(_state, { Toast, render, Store, SupabaseSyncService }) {
+  mount(_state, { Toast, Store, SupabaseSyncService }) {
     document.getElementById('backendConfigForm')?.addEventListener('submit', (event) => {
       event.preventDefault();
-      const data = Object.fromEntries(new FormData(event.currentTarget));
+      const data=Object.fromEntries(new FormData(event.currentTarget));
       BackendApi.setBaseUrl(data.apiBase);
-      BackendApi.setTenantId(data.tenantId);
-      SupabaseConfig.set({ url:data.supabaseUrl, anonKey:data.supabaseAnonKey });
-      Toast.show('Configuración backend guardada.', 'success');
-      render();
+      Toast.show('Endpoint de API guardado. El tenant continúa ligado a la sesión.', 'success');
     });
     document.getElementById('btnBackendDb')?.addEventListener('click', async () => {
-      try {
-        const result = await BackendApi.request('/health/db');
-        Toast.show(`DB OK: ${JSON.stringify(result.database?.[0] || result.database || {})}`, 'success');
-      } catch (error) {
-        Toast.show(error.message, 'error');
-      }
+      try { const result=await BackendApi.request('/health/db'); Toast.show(`DB operativa: ${JSON.stringify(result.database?.[0] || result.database || {})}`, 'success'); }
+      catch (error) { Toast.show(error.message, 'error'); }
     });
     document.getElementById('btnBackendHealth')?.addEventListener('click', async () => {
-      try { const health = await BackendApi.health(); Toast.show(`Backend OK: ${health.service || health.mode || 'API'}`, 'success'); }
+      try { const health=await BackendApi.health(); Toast.show(`Backend operativo: ${health.service || health.mode || 'API'}`, 'success'); }
       catch (error) { Toast.show(error.message, 'error'); }
     });
     document.getElementById('btnSyncCoreSupabase')?.addEventListener('click', async () => {
-      try {
-        await SupabaseSyncService.syncCore({ Store, Toast, force:true, silent:false });
-        Toast.show('Módulos principales sincronizados con Supabase.', 'success');
-        render();
-      } catch (error) {
-        Toast.show(error.message, 'error');
-      }
+      try { await SupabaseSyncService.syncCore({Store,Toast,force:true,silent:false}); Toast.show('Módulos principales sincronizados.', 'success'); }
+      catch (error) { Toast.show(error.message, 'error'); }
     });
     document.getElementById('btnBackendBcv')?.addEventListener('click', async () => {
-      try { const result = await BcvService.fetchRate({ allowStale:true }); Toast.show(`BCV: Bs. ${result.rate} · ${result.source}`, result.stale ? 'warning' : 'success'); }
+      try { const result=await BcvService.fetchRate({allowStale:true}); Toast.show(`BCV: Bs. ${result.rate} · ${result.source}`, result.stale?'warning':'success'); }
       catch (error) { Toast.show(error.message, 'error'); }
     });
   }
