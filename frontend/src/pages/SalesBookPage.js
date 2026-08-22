@@ -2,13 +2,6 @@ import { PageHeader, MetricGrid, Section, DataTable, Button, Badge } from '../co
 import { ExportService } from '../services/exportService.js';
 import { escapeHtml } from '../utils/dom.js';
 
-const fallbackRows = [
-  { date:'01/11/2023', invoice:'000451', control:'00-00451', rif:'J-31415926-5', name:'Inversiones Pi C.A.', base:2500, iva:400, igtf:0, ret:0, total:2900, status:'OK' },
-  { date:'05/11/2023', invoice:'000452', control:'00-00452', rif:'V-12345678-0', name:'Juan Pérez', base:150, iva:24, igtf:4.5, ret:0, total:178.5, status:'OK' },
-  { date:'10/11/2023', invoice:'000453', control:'00-00453', rif:'-', name:'ANULADA', base:0, iva:0, igtf:0, ret:0, total:0, status:'ANULADA' },
-  { date:'15/11/2023', invoice:'000454', control:'00-00454', rif:'J-98765432-1', name:'Corporación Alpha S.A.', base:10000, iva:1600, igtf:0, ret:-300, total:11300, status:'OK' }
-];
-
 const safe=(value)=>escapeHtml(String(value??''));
 const fmt=(value)=>Number(value||0).toLocaleString('es-VE',{minimumFractionDigits:2,maximumFractionDigits:2});
 const clientName=(sale)=>{
@@ -17,7 +10,7 @@ const clientName=(sale)=>{
 };
 const clientRif=(sale)=>typeof sale?.client==='object'&&sale.client?sale.client.rif||'-':sale?.clientRif||'-';
 const rowFromSale=(sale)=>({
-  date:sale.date||sale.issueDate||new Date().toISOString().slice(0,10),
+  date:sale.date||sale.issueDate||sale.createdAt||'',
   invoice:sale.invoice||sale.number||sale.id,
   control:sale.controlNo||'-',
   rif:clientRif(sale),
@@ -36,11 +29,11 @@ const totalsOf=(rows)=>rows.reduce((acc,row)=>{
 export const SalesBookPage = {
   render(state) {
     const persisted=state.sales||[];
-    const rowsData=persisted.length?persisted.map(rowFromSale):fallbackRows;
+    const rowsData=persisted.map(rowFromSale);
     const totals=totalsOf(rowsData);
     const active=rowsData.filter((row)=>row.status!=='ANULADA').length;
     const annulled=rowsData.length-active;
-    const source=persisted.some((sale)=>sale.source==='supabase')?'Supabase conectado':persisted.length?'Datos locales / pendientes':'Datos de referencia hasta sincronizar';
+    const source=persisted.some((sale)=>sale.source==='supabase')?'Datos sincronizados':'Sincronización pendiente o datos locales';
 
     const table=DataTable({
       columns:[
@@ -56,16 +49,16 @@ export const SalesBookPage = {
         {key:'total',label:'Total',align:'right',render:(row)=>`<strong>${safe(fmt(row.total))}</strong>`}
       ],
       rows:rowsData,
-      empty:'Sin ventas en el período'
+      empty:'Sin ventas reales sincronizadas en el período.'
     });
 
     return `<section class="cgx-page cg-page-stack cg-salesbook">
       ${PageHeader({
         eyebrow:'Fiscal',
         title:'Libro de Ventas',
-        description:'Gestión y reporte fiscal mensual con lectura compacta, importes alineados y exportación controlada.',
+        description:'Reporte fiscal construido únicamente con documentos registrados. Nunca se inyectan facturas, RIF o montos de demostración en el libro fiscal.',
         meta:[`Período ${new Date().getFullYear()}`,source,`${active} vigentes · ${annulled} anuladas`],
-        actions:`${Button({id:'btnSyncSalesBook',text:'Sync Supabase',icon:'fa-cloud-arrow-down',variant:'secondary'})}${Button({id:'btnSalesBookPrint',text:'PDF fiscal',icon:'fa-print',variant:'secondary'})}${Button({id:'btnSalesBookExport',text:'XLSX SENIAT',icon:'fa-file-excel'})}${Button({id:'btnSalesBookTxt',text:'TXT',icon:'fa-file-lines',variant:'secondary'})}`
+        actions:`${Button({id:'btnSyncSalesBook',text:'Sincronizar',icon:'fa-cloud-arrow-down',variant:'secondary'})}${Button({id:'btnSalesBookPrint',text:'PDF fiscal',icon:'fa-print',variant:'secondary'})}${Button({id:'btnSalesBookExport',text:'XLSX SENIAT',icon:'fa-file-excel'})}${Button({id:'btnSalesBookTxt',text:'TXT',icon:'fa-file-lines',variant:'secondary'})}`
       })}
       ${MetricGrid([
         {label:'Ventas netas',value:`Bs. ${fmt(totals.base)}`,hint:'Base imponible del período',iconName:'fa-receipt',tone:'brand'},
@@ -81,26 +74,24 @@ export const SalesBookPage = {
     </section>`;
   },
   mount(_state,{Toast,Store,SupabaseSyncService}) {
-    const rowsData=()=>((Store.get().sales||[]).length?Store.get().sales.map(rowFromSale):fallbackRows);
+    const rowsData=()=>((Store.get().sales||[]).map(rowFromSale));
+    const requireRows=()=>{const rows=rowsData();if(!rows.length){Toast.show('No hay ventas reales para exportar en este período. Sincroniza o registra documentos primero.','warning');return null;}return rows;};
     document.getElementById('btnSyncSalesBook')?.addEventListener('click',()=>SupabaseSyncService.pullSales({Store,Toast,force:true,silent:false}));
     document.getElementById('btnSalesBookPrint')?.addEventListener('click',async()=>{
-      const rows=rowsData();
+      const rows=requireRows();if(!rows)return;
       await ExportService.downloadFiscalPdf('libro-ventas-seniat-periodo-actual',{title:'Libro de Ventas SENIAT · Período actual',rows,totals:totalsOf(rows)});
-      Toast.show('PDF fiscal server-side solicitado con hash de integridad.','info');
+      Toast.show('PDF fiscal server-side solicitado con datos registrados.','info');
     });
     document.getElementById('btnSalesBookExport')?.addEventListener('click',async()=>{
-      const rows=rowsData(),totals=totalsOf(rows);
-      await ExportService.downloadXlsx('libro-ventas-seniat-periodo-actual',[
-        {name:'Libro de Ventas',rows},
-        {name:'Totales',rows:[totals]},
-        {name:'Auditoría',rows:[{regla:'Correlativos',estado:'Validar duplicados y anulaciones con motivo'},{regla:'Cierre de período',estado:'Bloquear edición al declarar'}]}
-      ],'Libro de Ventas SENIAT');
-      Toast.show('XLSX generado.','success');
+      const rows=requireRows();if(!rows)return;const totals=totalsOf(rows);
+      await ExportService.downloadXlsx('libro-ventas-seniat-periodo-actual',[{name:'Libro de Ventas',rows},{name:'Totales',rows:[totals]},{name:'Auditoría',rows:[{regla:'Correlativos',estado:'Validar duplicados y anulaciones con motivo'},{regla:'Cierre de período',estado:'Bloquear edición al declarar'}]}],'Libro de Ventas SENIAT');
+      Toast.show('XLSX generado con documentos registrados.','success');
     });
     document.getElementById('btnSalesBookTxt')?.addEventListener('click',()=>{
-      const lines=rowsData().map((row)=>[row.date,row.invoice,row.rif,row.name,fmt(row.base),fmt(row.iva),fmt(row.total)].join('|')).join('\n');
+      const rows=requireRows();if(!rows)return;
+      const lines=rows.map((row)=>[row.date,row.invoice,row.rif,row.name,fmt(row.base),fmt(row.iva),fmt(row.total)].join('|')).join('\n');
       ExportService.downloadTxt('libro-ventas-periodo-actual.txt',[{contenido:lines}],'Libro de Ventas TXT');
-      Toast.show('TXT fiscal generado.','success');
+      Toast.show('TXT fiscal generado con documentos registrados.','success');
     });
   }
 };
