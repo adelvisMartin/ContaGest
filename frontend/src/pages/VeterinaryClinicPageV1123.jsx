@@ -3,8 +3,9 @@ import { createRoot } from 'react-dom/client';
 import {
   Alert, Avatar, Box, Button, Chip, Dialog, DialogActions, DialogContent, DialogTitle,
   Divider, InputAdornment, List, ListItemAvatar, ListItemButton, ListItemText, MenuItem,
-  Paper, Stack, TextField, Typography
+  Paper, Stack, TextField, ThemeProvider, Typography
 } from '@mui/material';
+import { createContaGestMuiTheme } from '../components/muiRuntime.js';
 import { HealthVerticalService, VeterinaryService } from '../services/verticalService.js';
 import { VeterinaryClinicPage as VeterinaryClinicLegacy } from './VeterinaryClinicPage.jsx';
 
@@ -17,23 +18,24 @@ const text = (value) => String(value || '').trim();
 
 function KeyValue({ label, value }) {
   return <Box className="cg-vet-fact">
-    <Typography variant="caption" sx={{display:'block',color:'var(--cg-text-muted)',fontWeight:600}}>{label}</Typography>
-    <Typography variant="body2" sx={{mt:.15,color:'var(--cg-text)',fontWeight:600,overflowWrap:'anywhere'}}>{value || '—'}</Typography>
+    <Typography variant="caption" color="text.secondary" sx={{display:'block',fontWeight:600}}>{label}</Typography>
+    <Typography variant="body2" color="text.primary" sx={{mt:.15,fontWeight:600,overflowWrap:'anywhere'}}>{value || '—'}</Typography>
   </Box>;
 }
 
-function TimelineItem({ icon, title, meta, body, tone='var(--cg-primary)' }) {
+function TimelineItem({ icon, title, meta, body, tone='primary.main' }) {
   return <Box sx={{display:'grid',gridTemplateColumns:'30px minmax(0,1fr)',gap:.9,pb:1,position:'relative'}}>
-    <Avatar sx={{width:27,height:27,bgcolor:'var(--cg-surface-soft)',color:tone,border:'1px solid var(--cg-border)',fontSize:11}}><Icon name={icon}/></Avatar>
+    <Avatar variant="rounded" sx={{width:27,height:27,bgcolor:'action.hover',color:tone,border:'1px solid',borderColor:'divider',borderRadius:'7px',fontSize:11}}><Icon name={icon}/></Avatar>
     <Box sx={{minWidth:0}}>
-      <Typography variant="body2" sx={{fontWeight:650,color:'var(--cg-text)'}}>{title}</Typography>
-      <Typography variant="caption" sx={{display:'block',color:'var(--cg-text-muted)'}}>{meta}</Typography>
-      {body ? <Typography variant="body2" sx={{mt:.35,color:'var(--cg-text-muted)',whiteSpace:'pre-wrap'}}>{body}</Typography> : null}
+      <Typography variant="body2" color="text.primary" sx={{fontWeight:600}}>{title}</Typography>
+      <Typography variant="caption" color="text.secondary" sx={{display:'block'}}>{meta}</Typography>
+      {body ? <Typography variant="body2" color="text.secondary" sx={{mt:.35,whiteSpace:'pre-wrap'}}>{body}</Typography> : null}
     </Box>
   </Box>;
 }
 
-function VeterinaryDossier({ ctx }) {
+function VeterinaryDossier({ ctx, state }) {
+  const theme=useMemo(()=>createContaGestMuiTheme(state?.settings?.theme==='dark'?'dark':'light'),[state?.settings?.theme]);
   const initialPatient = ctx?.query?.patient || '';
   const [patients,setPatients]=useState([]);
   const [selectedId,setSelectedId]=useState(initialPatient);
@@ -102,12 +104,12 @@ function VeterinaryDossier({ ctx }) {
     await loadPatients();
   }
 
-  return <Paper className="cg-vet-dossier" variant="outlined">
+  return <ThemeProvider theme={theme}><Paper className="cg-vet-dossier" variant="outlined" sx={{p:1.5}}>
     <Stack direction={{xs:'column',sm:'row'}} gap={1} justifyContent="space-between" alignItems={{sm:'center'}} sx={{mb:.8}}>
-      <Box>
-        <Typography variant="caption" sx={{color:'var(--cg-primary)',fontWeight:700,textTransform:'uppercase',letterSpacing:'.08em'}}>Expediente rápido</Typography>
-        <Typography variant="h6" sx={{fontWeight:700,color:'var(--cg-text)'}}>Ficha e historia médica por mascota</Typography>
-        <Typography variant="caption" sx={{color:'var(--cg-text-muted)'}}>Consulta datos, antecedentes y cronología sin salir del módulo.</Typography>
+      <Box sx={{minWidth:0}}>
+        <Typography variant="caption" color="primary" sx={{fontWeight:600,textTransform:'uppercase',letterSpacing:'.08em'}}>Expediente rápido</Typography>
+        <Typography variant="h6">Ficha e historia médica por mascota</Typography>
+        <Typography variant="caption" color="text.secondary">Consulta datos, antecedentes y cronología sin salir del módulo.</Typography>
       </Box>
       <Stack direction="row" gap={.6} flexWrap="wrap">
         <Button size="small" variant="outlined" disabled={!selected} onClick={openEdit} startIcon={<Icon name="fa-pen"/>}>Editar ficha</Button>
@@ -119,16 +121,16 @@ function VeterinaryDossier({ ctx }) {
       <Box sx={{minWidth:0}}>
         <TextField size="small" fullWidth placeholder="Buscar mascota, tutor o microchip" value={search} onChange={(event)=>setSearch(event.target.value)} InputProps={{startAdornment:<InputAdornment position="start"><Icon name="fa-magnifying-glass"/></InputAdornment>}}/>
         {loading ? <Box className="cg-vet-list-state">Cargando mascotas…</Box> : filtered.length ? <List dense className="cg-vet-patient-list" sx={{mt:.6,maxHeight:{xs:180,md:390},overflow:'auto'}}>
-          {filtered.map((item)=><ListItemButton key={item.id} selected={item.id===selectedId} onClick={()=>setSelectedId(item.id)}>
-            <ListItemAvatar><Avatar src={item.photoUrl||''} sx={{width:30,height:30,bgcolor:'var(--cg-primary)',fontSize:13}}>{item.displayName?.slice(0,1)}</Avatar></ListItemAvatar>
-            <ListItemText primary={item.displayName||'Sin nombre'} secondary={`${item.species||'Mascota'} · ${item.guardianName||'Sin tutor'} · #${shortCode(item.id)}`} primaryTypographyProps={{fontSize:12,fontWeight:650}} secondaryTypographyProps={{fontSize:9,noWrap:true}}/>
+          {filtered.map((item)=><ListItemButton key={item.id} selected={item.id===selectedId} onClick={()=>setSelectedId(item.id)} sx={{borderRadius:1}}>
+            <ListItemAvatar><Avatar variant="rounded" src={item.photoUrl||''} sx={{width:30,height:30,borderRadius:'7px',bgcolor:'primary.main',fontSize:13}}>{item.displayName?.slice(0,1)}</Avatar></ListItemAvatar>
+            <ListItemText primary={item.displayName||'Sin nombre'} secondary={`${item.species||'Mascota'} · ${item.guardianName||'Sin tutor'} · #${shortCode(item.id)}`} primaryTypographyProps={{fontSize:13,fontWeight:600}} secondaryTypographyProps={{fontSize:11,noWrap:true}}/>
           </ListItemButton>)}
         </List> : <Box className="cg-vet-list-state">No hay mascotas registradas todavía.</Box>}
       </Box>
       {selected ? <Box className="cg-vet-detail" sx={{display:'grid',gap:.9,minWidth:0}}>
         <Stack direction="row" gap={.9} alignItems="center">
-          <Avatar src={selected.photoUrl||''} sx={{width:42,height:42,bgcolor:'var(--cg-primary)',fontSize:18}}>{selected.displayName?.slice(0,1)}</Avatar>
-          <Box sx={{minWidth:0}}><Typography variant="subtitle1" sx={{fontWeight:700}}>{selected.displayName}</Typography><Typography variant="caption" sx={{color:'var(--cg-text-muted)'}}>{selected.species||'Mascota'} · {selected.breed||'Sin raza'} · #{shortCode(selected.id)}</Typography></Box>
+          <Avatar variant="rounded" src={selected.photoUrl||''} sx={{width:42,height:42,borderRadius:'9px',bgcolor:'primary.main',fontSize:18}}>{selected.displayName?.slice(0,1)}</Avatar>
+          <Box sx={{minWidth:0}}><Typography variant="subtitle1">{selected.displayName}</Typography><Typography variant="caption" color="text.secondary">{selected.species||'Mascota'} · {selected.breed||'Sin raza'} · #{shortCode(selected.id)}</Typography></Box>
         </Stack>
         <Box className="cg-vet-facts" sx={{display:'grid',gridTemplateColumns:{xs:'1fr 1fr',lg:'repeat(4,minmax(0,1fr))'}}}>
           <KeyValue label="Tutor" value={selected.guardianName}/><KeyValue label="Teléfono" value={selected.guardianPhone}/><KeyValue label="Correo" value={selected.guardianEmail}/><KeyValue label="Microchip" value={selected.microchip}/>
@@ -140,10 +142,10 @@ function VeterinaryDossier({ ctx }) {
         </Stack>
         <Box className="cg-vet-activity"><Stack direction="row" gap={.45} flexWrap="wrap"><Chip size="small" label={`${history.encounters.length} consultas`}/><Chip size="small" label={`${history.labs.length} órdenes`}/><Chip size="small" label={`${history.studies.length} estudios`}/><Chip size="small" label={`${history.procedures.length} procedimientos`}/></Stack></Box>
         <Box className="cg-vet-timeline">
-          <Typography variant="subtitle2" sx={{fontWeight:700,mb:.7}}>Cronología médica</Typography>
-          {timeline.length ? timeline.slice(0,30).map((item,index)=><TimelineItem key={`${item.title}-${item.date}-${index}`} {...item}/>) : <Typography variant="body2" sx={{color:'var(--cg-text-muted)'}}>Aún no hay eventos clínicos para esta mascota.</Typography>}
+          <Typography variant="subtitle2" sx={{mb:.7}}>Cronología médica</Typography>
+          {timeline.length ? timeline.slice(0,30).map((item,index)=><TimelineItem key={`${item.title}-${item.date}-${index}`} {...item}/>) : <Typography variant="body2" color="text.secondary">Aún no hay eventos clínicos para esta mascota.</Typography>}
         </Box>
-      </Box> : <Box className="cg-vet-empty"><Typography variant="body2" sx={{color:'var(--cg-text-muted)',fontWeight:600}}>Selecciona o registra una mascota para abrir su expediente.</Typography></Box>}
+      </Box> : <Box className="cg-vet-empty"><Typography variant="body2" color="text.secondary" sx={{fontWeight:600}}>Selecciona o registra una mascota para abrir su expediente.</Typography></Box>}
     </Box>
     <Dialog open={editing} onClose={()=>setEditing(false)} fullWidth maxWidth="md">
       <DialogTitle>Editar ficha · {selected?.displayName}</DialogTitle>
@@ -164,7 +166,7 @@ function VeterinaryDossier({ ctx }) {
       </Box></DialogContent>
       <DialogActions><Button onClick={()=>setEditing(false)} color="inherit">Cancelar</Button><Button onClick={()=>save().catch(()=>null)}>Guardar cambios</Button></DialogActions>
     </Dialog>
-  </Paper>;
+  </Paper></ThemeProvider>;
 }
 
 let dossierRoot=null;
@@ -178,6 +180,6 @@ export const VeterinaryClinicPage={
     if(!host)return;
     try{dossierRoot?.unmount();}catch{}
     dossierRoot=createRoot(host);
-    dossierRoot.render(<VeterinaryDossier ctx={ctx}/>);
+    dossierRoot.render(<VeterinaryDossier ctx={ctx} state={state}/>);
   }
 };

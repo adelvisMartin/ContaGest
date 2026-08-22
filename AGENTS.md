@@ -1,154 +1,178 @@
-# ContaGest: guía para agentes y colaboradores
+# ContaGest VE · Agent Engineering Contract v14
 
-## Objetivo
+## Mission
+ContaGest is a Venezuelan multi-tenant horizontal ERP with optional vertical packs. Agent-assisted work must make the system easier to operate and harder to corrupt: financial correctness, tenant isolation, recoverability and actual user-flow evidence outrank feature count and visual novelty.
 
-ContaGest es un ERP contable multi-tenant para Venezuela con módulos horizontales, verticales operativas y un backend Express/Prisma. Los cambios deben conservar trazabilidad fiscal, aislamiento por tenant y una experiencia densa, consistente y legible para operación diaria.
-
-## Mapa rápido
-
-- `backend/src/app.ts`: composición Express, middleware, seguridad y rutas.
-- `backend/src/modules/`: dominios backend y servicios por módulo.
-- `backend/prisma/schema.prisma`: modelo persistente; cada entidad de negocio debe mantener `tenantId` y sus índices/relaciones.
-- `backend/prisma/migrations/`: cambios de esquema versionados; nunca editar una migración aplicada para corregir historia.
-- `frontend/src/app.js`: registro, carga y ciclo de vida de páginas. Los únicos temas globales son `light|dark`.
-- `frontend/src/pages/`: vistas de negocio; reutilizar componentes y servicios existentes.
-- `frontend/src/components/ui/`: kit visual compartido y primera opción para cualquier UI nueva.
-- `frontend/src/styles/erp-runtime.css`: único entrypoint CSS importado por `app.js`.
-- `frontend/src/styles/contagest-visual-system-v12.css`: autoridad final de tokens, tipografía, densidad, surfaces, forms, tablas, estados, responsive, light/dark y motion.
-- `frontend/src/styles/runtime-primitives-v13.css`: primitives internas de layout/compatibilidad, siempre expresadas con `--cg-v-*`.
-- `frontend/src/styles/module-adapters.css`: única ubicación permitida para geometría estrictamente específica de dominio que no quepa en el UI kit.
-- `frontend/src/styles/shell-contract.css` + `shell-stability-v1127.css`: invariantes actuales del shell/MUI.
-- `scripts/visual-system-audit.mjs`: gate ejecutable de ownership, cascada, rutas, temas y migraciones críticas.
-- `qa/support/module-visual-catalog.mjs`: inventario obligatorio de todas las rutas para QA visual.
-- `tests/`: contratos Node; `qa/` y `playwright.config.mjs`: QA browser.
-
-## Contrato visual v13 — no negociable
-
-`frontend/src/styles/` debe contener únicamente estos seis archivos:
+## Product boundaries
 
 ```text
-contagest-visual-system-v12.css
-erp-runtime.css
-module-adapters.css
-runtime-primitives-v13.css
-shell-contract.css
-shell-stability-v1127.css
+Platform Core  → tenant, identity, RBAC, licensing, audit, configuration
+Financial Core → accounting, banking, taxes, closing, payroll
+Commercial     → customers, suppliers, sales, purchases, inventory
+Operations     → imports, analytics, reports, tasks, notifications
+Vertical Packs → Health, Veterinary, Psychology, Dentistry, Fitness, Food
 ```
 
-Está prohibido reintroducir:
+Verticals may depend on shared core contracts. Core accounting/auth must not depend on a vertical UI.
 
-- `styles/legacy/`;
-- Tailwind CSS runtime para decidir geometría del ERP;
-- Precision Ledger como stylesheet independiente;
-- otro shell/header versionado;
-- themes `sector`, `enterprise`, `executive`, `finance`, `sky`, `soft-blue`, `spectrum`, `ocean`, `forest` o `celestial`;
-- `runtime-hotfix-*`, `responsive-system-*` o compatibility shims;
-- CSS importado directamente por una página;
-- un nuevo `*-vNN.css` para corregir una sola pantalla.
+## Visual ownership
+`frontend/index.html` must contain **zero global `<style>` blocks**. A historical inline design system once survived CSS-file cleanup and overrode the canonical layered styles; the v14 audit now blocks that regression.
 
-Si un módulo necesita estructura genuinamente propia, primero se intenta resolver con `components/ui`. Si no alcanza, la regla vive en `module-adapters.css`, usa sólo tokens `--cg-v-*`, queda scoped al módulo y debe incluir/regresar con QA.
+`frontend/src/styles/` contains exactly six CSS owners:
 
-## Skills y precedencia
+```text
+contagest-visual-system-v12.css   # canonical appearance/tokens; filename retained for import stability
+erp-runtime.css                    # only CSS entrypoint imported by app.js
+module-adapters.css                # domain geometry only
+runtime-primitives-v13.css         # low-level tokenized primitives
+shell-contract.css                 # shell geometry only
+shell-stability-v1127.css          # shell interaction/z-index/overflow only
+```
 
-Para cambios visuales usar en este orden:
+No `styles/legacy`, Tailwind runtime, Precision Ledger stylesheet, page-local CSS import, alternate shell/header, versioned hotfix CSS, theme preset stylesheet or hidden inline global CSS may be introduced.
 
-1. `.agents/skills/contagest-erp-orchestrator/SKILL.md` — alcance, seguridad y gates.
-2. `.agents/skills/contagest-ui-audit/SKILL.md` — source/cascade, jerarquía, spacing, typography, responsive y anti-template.
-3. `.agents/skills/contagest-motion/SKILL.md` — motion funcional después de estabilizar layout.
-4. Referencias pinned de Impeccable/Emil como apoyo.
-5. Taste sólo como inspiración crítica; nunca como autoridad de marca.
+Global themes are only `light` and `dark`. Dark is a neutral near-black operational workspace; light is its daylight counterpart. Theme changes color, never geometry.
 
-La política de ContaGest, accesibilidad, seguridad, contabilidad y tenant isolation siempre prevalece sobre una recomendación externa.
+## UI standards
+- page title: 20–25px desktop; 18–22px mobile;
+- section title: 16–18px;
+- operational/body copy: 12–14px;
+- KPI/value: 14–18px, tabular numbers, never ellipsized or split into decorative circles;
+- controls: 38px desktop, 44px touch where appropriate;
+- no gradients/glass/decorative blobs in operational routes;
+- no global dashboard KPI strip injected into every module;
+- sidebar is mode-scoped: show primary work and the active domain, not the entire ERP as locked text;
+- document never owns horizontal overflow; tables/calendar/kanban/tabs may own it explicitly;
+- mobile gates: 360/390/430; tablet 768; laptop 1024; desktop 1440;
+- visible IDs/UUIDs are not human labels when a display identity exists;
+- focus, keyboard, `aria-*`, contrast and reduced motion are required.
 
-## Gates obligatorios
+## Mandatory skills by risk
 
-Ejecutar desde la raíz:
+### Always start with
+1. `.agents/skills/contagest-erp-orchestrator/SKILL.md`
+2. `.agents/skills/contagest-systematic-debugging/SKILL.md` for an existing defect
+3. `.agents/skills/contagest-release-evidence/SKILL.md` before completion claims
 
-```powershell
+### Financial/domain
+- `contagest-accounting-integrity`
+- `contagest-tenant-isolation-rbac`
+- `contagest-db-migration-safety`
+- `contagest-bcp-dr`
+
+### UI/functionality
+- `contagest-ui-audit`
+- `contagest-functional-module-audit`
+- `contagest-motion` only after geometry/functionality are stable
+
+### Security
+- `contagest-appsec-review`
+- `contagest-secure-verification`
+
+External Impeccable/Emil references are advisory and pinned. Taste is inspiration only. Project accounting/security/accessibility policy always wins.
+
+## Deterministic agent routing
+Before a non-trivial change, run:
+
+```bash
+npm run agent:gates -- --base main
+```
+
+`qa/support/domain-risk-catalog.mjs` maps the diff to required agents, skills and test classes. Do not manually downgrade a `critical` domain because a change appears small.
+
+## Functional audit
+Every route registered in `pageRegistry` must exist in `qa/support/module-visual-catalog.mjs`. The current catalog contains 58 routes.
+
+Run:
+
+```bash
+npm run audit:functions
+npm run audit:visual:strict
+```
+
+The functional audit inventories, route by route: `render`, `mount`, forms, submit bindings, buttons, service methods, store writes, validation, feedback, destructive-operation signals and findings. A visible control without a real workflow is a defect even when the page renders.
+
+Appointment modules must prove entity selection, human labels, date/time validation, create request, duplicate/conflict behavior, immediate agenda update, persistence after refresh and error feedback.
+
+## Accounting invariants
+- `Σ debit == Σ credit` for posted documents;
+- posted ordinary records are immutable; correct through reversal/adjustment;
+- closed periods reject mutation server-side;
+- money uses Decimal/domain money primitives;
+- retries cannot create duplicate financial effect;
+- issued fiscal sequences cannot be silently deleted/renumbered;
+- exchange rate, currency, fiscal period, source and actor remain reconstructable;
+- financial mutation produces audit evidence.
+
+## Tenant/RBAC invariants
+- authenticated server context resolves tenant; browser `tenantId/RIF/role/plan` is never authority;
+- A→B and B→A data access is denied for read/write/export/search/background work;
+- tenant roles cannot bind `platform.*` permissions;
+- subscription entitlement, license and RBAC are separate gates;
+- PWA/cache/export/storage keys are tenant scoped;
+- same email does not silently merge tenant membership;
+- RIF correction is controlled, not ordinary CRUD.
+
+## DB/migration invariants
+- one declared schema source of truth; no silent Prisma/SQL drift;
+- applied migrations are immutable;
+- rebuild PostgreSQL from zero and test representative upgrade before production;
+- critical business rules have DB constraints/RLS/triggers where appropriate;
+- destructive DDL requires backup/restore and explicit authorization;
+- never experiment against production.
+
+## Verification
+Use exact statuses only:
+
+```text
+PASS
+FAIL
+BLOCKED
+NOT_EXECUTED
+```
+
+A test is PASS only when it actually ran on the candidate SHA. Build/HTTP 200/Vercel READY/source review are not browser QA.
+
+Expected gates, depending on risk:
+
+```bash
 npm ci
+npm run skills:check
+npm run agent:gates -- --base main
 npm run typecheck
 npm test
-npm run build
-npm run check:bundle
-npm run audit:prod
-npm run skills:check
 npm run audit:visual:strict
+npm run audit:functions
 npm run test:visual
 npm run test:browser:visual
 npm run test:browser:visual:deep
+npm run test:browser:functional
+npm run build
+npm run check:bundle
+npm run audit:prod
 ```
 
-En Windows puede usarse `QA-VISUAL-CONTAGEST.ps1` para la cadena visual. Un build exitoso NO equivale a QA browser. Reportar siempre `PASS`, `FAIL`, `BLOCKED` o `NOT EXECUTED` con evidencia.
+Windows full UX gate:
 
-## Reglas del auditor visual
-
-Antes de tocar CSS o markup, ejecutar `npm run audit:visual`. Después del cambio ejecutar `npm run audit:visual:strict`.
-
-El strict gate debe fallar si aparece cualquiera de estos casos:
-
-- una ruta de `pageRegistry` fuera del catálogo de QA o viceversa;
-- un CSS adicional a los seis pilares;
-- un import de runtime fuera de los pilares autorizados;
-- un `styles/legacy/` recreado;
-- un `<style>` que afecte UI runtime;
-- un import CSS desde una vista;
-- themes retirados en catálogo/runtime;
-- regresión de la separación Salud/Veterinaria;
-- pérdida del contrato canónico de Libro Diario, Admin/RBAC o Gym.
-
-Los estilos que pertenecen exclusivamente a un documento de impresión deben marcarse:
-
-```html
-<style data-cg-print-only>...</style>
+```powershell
+.\QA-VISUAL-CONTAGEST.ps1
 ```
 
-El auditor los separa del runtime visual; no usar esa marca para ocultar estilos de interfaz.
+## Independent review
+The author of a P0/P1 change does not approve it alone. Preferred flow:
 
-## Reglas de seguridad y dominio
+```text
+Orchestrator → domain implementer → DB/API/security as required → QA → SRE/release → owner
+```
 
-- Resolver tenant desde sesión/control de acceso; nunca aceptar `tenantId` del cliente como autoridad.
-- Toda consulta/mutación aplica tenant isolation, autorización por rol/licencia y validación de entrada.
-- Los secretos server-only viven en backend/env; jamás valores reales en frontend o repo.
-- El RIF es identidad fiscal; una corrección requiere flujo autorizado y evidencia.
-- Asientos, libros, impuestos, cierres y documentos fiscales requieren idempotencia, auditoría y precisión monetaria.
-- No probar migraciones destructivas contra producción.
-- Control Hípico mantiene su aislamiento funcional/offline-first y no se mezcla con módulos core sin contrato explícito.
+Red-team review is independent and non-destructive.
 
-## UI/UX y accesibilidad
+## Release/production
+- dedicated branch;
+- preserve unrelated work;
+- no merge/deploy/migration/signing without explicit owner authorization;
+- production identity: GitHub `main` SHA = deployment source SHA = `/api/health` build commit;
+- backup is not verified recovery until a restore drill succeeds;
+- never claim legal/SENIAT/clinical compliance without professional scope and evidence.
 
-- Títulos operacionales: 20–26 px desktop; títulos de sección 16–18 px; KPI 16–20 px. No usar escala de landing page.
-- Labels en flujo normal; no usar `position:absolute` para acomodar formularios.
-- KPI/importes usan `tabular-nums`; moneda no se parte en dos líneas ni vive en círculos/blobs.
-- La página no tiene scroll horizontal. Sólo tablas, tabs, kanban u otro owner explícito puede tener `overflow-x:auto`.
-- Todo hijo de grid/flex que pueda crecer debe tolerar `min-width:0`.
-- Mantener contraste, foco visible, teclado, `aria-*` y touch targets adecuados.
-- Evitar gradientes, glass, sombras pesadas, hero marketing y decoración que compita con datos.
-- Mobile: una columna cuando corresponda, acciones envueltas, cero clipping a 360/390/430.
-- Motion 120–170 ms y feedback funcional; respetar `prefers-reduced-motion`.
-
-## Reglas por módulos críticos
-
-- **Contabilidad:** UI kit canónico, tablas con owner de scroll, importes alineados y `data-cg-print-only` para impresión aislada.
-- **Admin/RBAC:** permisos, tablas, formularios y controles comparten primitives; no crear mini sistema administrativo.
-- **Salud:** `HealthcarePage` es exclusivamente humano. Veterinaria usa `VeterinaryClinicPageV1123.jsx`; no recrear una segunda rama animal.
-- **Fitness/Gym:** las clases `cg-gym-*` son identificadores de dominio, no un design system; toda geometría vive en `module-adapters.css` y usa tokens canónicos.
-- **POS/Pedidos:** touch targets correctos y scroll horizontal sólo donde el flujo operativo lo exige.
-
-## Assets
-
-- Marca global: `frontend/public/brand/`.
-- Iconos PWA/app: `frontend/public/icons/`.
-- Control Hípico: `frontend/public/hipico-control/`.
-- No duplicar logos ni assets globales dentro de módulos.
-
-## Flujo de cambios
-
-1. Trabajar en rama dedicada.
-2. Leer módulo, contratos y audit actual antes de modificar.
-3. Corregir primero ownership/primitives, después el módulo, y sólo al final polish/motion.
-4. Reejecutar source audit, contratos estáticos y browser matrix proporcional al riesgo.
-5. Eliminar declaraciones/archivos supersedidos en el mismo cambio; no acumular overrides.
-6. Documentar evidencia y riesgos reales.
-7. No hacer merge ni deploy sin solicitud expresa. Push/PR sólo cuando haya autorización explícita.
-
-Definition of Done: comportamiento preservado, tenant/RBAC/seguridad intactos, una sola cascada visual, UI responsive/accesible, gates relevantes ejecutados y estado de evidencia explícito.
+Definition of Done: business behavior characterized, tenant/financial invariants preserved, one visual owner, responsive and accessible UI, required gates actually executed, evidence bound to the final SHA, residual risks stated and rollback documented.
