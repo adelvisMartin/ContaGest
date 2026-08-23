@@ -8,9 +8,20 @@ const safe=(value)=>escapeHtml(String(value??''));
 const statusLabel=(status)=>({draft:'Borrador',approved:'Aprobado',paid:'Pagado',cancelled:'Cancelado'}[status]||status||'Borrador');
 const statusValue=(label)=>({Borrador:'draft',Aprobado:'approved',Pagado:'paid',Cancelado:'cancelled'}[label]||label||'draft');
 const payrollTone=(status)=>status==='Aprobado'||status==='Pagado'?'success':status==='Cancelado'?'danger':'warning';
+const nextPayrollStatus=(status)=>status==='draft'?'approved':status==='approved'?'paid':null;
 
 function flattenPeriods(periods=[]){
   return periods.flatMap((period)=>(period.receipts||[]).map((receipt)=>({...receipt,periodId:period.id,period:period.period,status:statusLabel(period.status),date:receipt.date||receipt.createdAt,employerContributions:Number(receipt.employerContributions||0)})));
+}
+
+function payrollActions(record){
+  const current=statusValue(record.status);
+  const next=nextPayrollStatus(current);
+  const actions=[];
+  if(next)actions.push(ErpButton(next==='approved'?'Aprobar período':'Marcar período pagado',{variant:'secondary',icon:'fa-solid fa-check-double',iconOnly:true,data:{'payroll-status':record.periodId,'payroll-current':current}}));
+  if(current==='draft')actions.push(ErpButton('Eliminar recibo en borrador',{variant:'danger',icon:'fa-solid fa-trash',iconOnly:true,data:{'delete-payroll':record.id,'payroll-period-status':current}}));
+  if(!actions.length)return Badge(current==='paid'?'Estado final':'Estado terminal',current==='paid'?'success':'danger');
+  return ErpRow(actions.join(''),{wrap:true});
 }
 
 export const PayrollPage = {
@@ -39,7 +50,7 @@ export const PayrollPage = {
         {key:'deductions',label:'Deducciones',numeric:true,render:(record)=>safe(bs(record.result?.totalDeductions))},
         {key:'net',label:'Neto',numeric:true,render:(record)=>safe(bs(record.result?.net))},
         {key:'status',label:'Estado',render:(record)=>Badge(record.status||'Borrador',payrollTone(record.status))},
-        {key:'actions',label:'Acciones',render:(record)=>ErpRow(ErpButton('Avanzar período',{variant:'secondary',icon:'fa-solid fa-check-double',iconOnly:true,data:{'payroll-status':record.periodId,'payroll-current':statusValue(record.status)}})+ErpButton('Eliminar recibo',{variant:'danger',icon:'fa-solid fa-trash',iconOnly:true,data:{'delete-payroll':record.id,'payroll-period-status':statusValue(record.status)}}),{wrap:true})}
+        {key:'actions',label:'Acciones',render:payrollActions}
       ],rows:filtered
     });
 
@@ -52,16 +63,35 @@ export const PayrollPage = {
       {label:'Bruto',value:bs(totalGross),iconName:'fa-money-bill-wave',tone:'brand'},
       {label:'Neto',value:bs(totalNet),iconName:'fa-sack-dollar',tone:'success'},
       {label:'Períodos borrador',value:String(pendingPeriods),hint:`Costo patronal ${bs(employerCost)}`,iconName:'fa-clock',tone:pendingPeriods?'warning':'success'}
-    ])}${employees.length?ErpGrid(employeeCards,{columns:'four'}):EmptyState({title:'Sin empleados',description:'Registra el primer trabajador.',iconName:'fa-user-plus'})}<div class="cg-ui-grid cg-ui-grid-two">${ErpSection({title:'Nuevo empleado',description:'Ficha laboral para generar períodos.',content:employeeForm})}${ErpSection({title:'Generar recibo',description:'Crea o reutiliza un período en borrador.',content:payrollForm})}</div>${ErpSection({title:'Recibos y aprobación',description:'El período avanza Borrador → Aprobado → Pagado.',content:`${toolbar}${table}`})}</section>`;
+    ])}${employees.length?ErpGrid(employeeCards,{columns:'four'}):EmptyState({title:'Sin empleados',description:'Registra el primer trabajador.',iconName:'fa-user-plus'})}<div class="cg-ui-grid cg-ui-grid-two">${ErpSection({title:'Nuevo empleado',description:'Ficha laboral para generar períodos.',content:employeeForm})}${ErpSection({title:'Generar recibo',description:'Crea o reutiliza un período en borrador.',content:payrollForm})}</div>${ErpSection({title:'Recibos y aprobación',description:'Flujo irreversible hacia adelante: Borrador → Aprobado → Pagado. Pagado y Cancelado son estados terminales.',content:`${toolbar}${table}`})}</section>`;
   },
-  mount(state,{Store,Toast,Loading}) {
+  mount(state,{Store,Toast,Loading,Modal}) {
     const load=async({silent=false}={})=>{try{if(!silent)Loading?.mount?.('Cargando nómina…');const [employees,periods]=await Promise.all([PayrollService.employees(),PayrollService.periods()]);Store.set({payroll:{...(Store.get().payroll||{}),employees,periods,records:flattenPeriods(periods)},payrollLoadedAt:new Date().toISOString()});}catch(error){Toast.show(`No se pudo cargar nómina: ${error.message}`,'error');}finally{if(!silent)Loading?.unmount?.();}};
     if(!state.payrollLoadedAt)load({silent:true});
     document.getElementById('btnPayrollRefresh')?.addEventListener('click',()=>load());
     mountSubmit('#employeeForm',async(data,form)=>{const submit=form.querySelector('[type="submit"]');submit?.setAttribute('disabled','disabled');try{const employee=await PayrollService.createEmployee(data);Store.update((draft)=>{draft.payroll=draft.payroll||{records:[],employees:[],periods:[]};draft.payroll.employees=[employee,...(draft.payroll.employees||[]).filter((item)=>item.id!==employee.id)];});form.reset();Toast.show('Empleado guardado en el servidor.','success');}catch(error){Toast.show(`No se registró el empleado: ${error.message}`,'error');}finally{submit?.removeAttribute('disabled');}});
     mountSubmit('#payrollForm',async(data,form)=>{const employee=(Store.get().payroll?.employees||[]).find((item)=>item.id===data.employeeId);if(!employee)return Toast.show('Selecciona un empleado.','error');const result=calculatePayroll({...data,salary:employee.salary});const submit=form.querySelector('[type="submit"]');submit?.setAttribute('disabled','disabled');try{await PayrollService.createReceipt({...data,gross:result.gross,deductions:result.totalDeductions,net:result.net,department:employee.department});form.reset();Toast.show(`Recibo guardado. Neto: ${bs(result.net)}`,'success');await load({silent:true});}catch(error){Toast.show(`No se guardó el recibo: ${error.message}`,'error');}finally{submit?.removeAttribute('disabled');}});
-    qsa('[data-payroll-status]').forEach((button)=>button.addEventListener('click',async()=>{const current=button.dataset.payrollCurrent;const next=current==='draft'?'approved':current==='approved'?'paid':'draft';try{await PayrollService.setPeriodStatus(button.dataset.payrollStatus,next);Toast.show(`Período actualizado a ${statusLabel(next)}.`,'success');await load({silent:true});}catch(error){Toast.show(`No se actualizó el período: ${error.message}`,'error');}}));
-    qsa('[data-delete-payroll]').forEach((button)=>button.addEventListener('click',async()=>{if(button.dataset.payrollPeriodStatus!=='draft')return Toast.show('Solo se eliminan recibos de períodos en borrador.','warning');try{await PayrollService.removeReceipt(button.dataset.deletePayroll);Toast.show('Recibo eliminado y período recalculado.','success');await load({silent:true});}catch(error){Toast.show(`No se eliminó el recibo: ${error.message}`,'error');}}));
+    qsa('[data-payroll-status]').forEach((button)=>button.addEventListener('click',()=>{
+      const current=button.dataset.payrollCurrent;
+      const next=nextPayrollStatus(current);
+      if(!next)return Toast.show('Este período ya está en un estado terminal.','warning');
+      Modal.confirm({
+        title:next==='approved'?'Aprobar período':'Marcar período como pagado',
+        body:next==='approved'?'Después de aprobar ya no se podrán editar ni eliminar recibos del período.':'Marcar como pagado es terminal: el período no volverá a borrador ni aprobado.',
+        confirmText:next==='approved'?'Aprobar período':'Confirmar pago',
+        tone:'warning',
+        onConfirm:async()=>{try{await PayrollService.setPeriodStatus(button.dataset.payrollStatus,next);Toast.show(`Período actualizado a ${statusLabel(next)}.`,'success');await load({silent:true});}catch(error){Toast.show(`No se actualizó el período: ${error.message}`,'error');}}
+      });
+    }));
+    qsa('[data-delete-payroll]').forEach((button)=>button.addEventListener('click',()=>{
+      if(button.dataset.payrollPeriodStatus!=='draft')return Toast.show('Solo se eliminan recibos de períodos en borrador.','warning');
+      Modal.confirm({
+        title:'Eliminar recibo en borrador',
+        body:'El recibo aún no está aprobado. La eliminación recalculará los totales del período y quedará auditada en el servidor.',
+        confirmText:'Eliminar recibo',
+        onConfirm:async()=>{try{await PayrollService.removeReceipt(button.dataset.deletePayroll);Toast.show('Recibo eliminado y período recalculado.','success');await load({silent:true});}catch(error){Toast.show(`No se eliminó el recibo: ${error.message}`,'error');}}
+      });
+    }));
     document.getElementById('btnPayrollExport')?.addEventListener('click',()=>{const rows=Store.get().payroll?.records||[];const csv=['date,period,employee,gross,deductions,net,status',...rows.map((row)=>[row.date,row.period,JSON.stringify(row.employee||''),row.result?.gross||0,row.result?.totalDeductions||0,row.result?.net||0,row.status].join(','))].join('\n');const link=document.createElement('a');link.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'}));link.download='nomina-contagest.csv';link.click();URL.revokeObjectURL(link.href);Toast.show('Nómina exportada.','success');});
   }
 };
