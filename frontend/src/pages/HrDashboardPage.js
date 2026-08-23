@@ -1,31 +1,60 @@
-import { DS } from '../components/ui/index.js';
+import { PageHeader, MetricGrid, Button, Badge, ErpDataTable, ErpGrid, ErpSection } from '../components/ui/index.js';
 import { bs } from '../core/formatters.js';
 import { ExportService } from '../services/exportService.js';
+import { escapeHtml } from '../utils/dom.js';
+
+const safe=(value)=>escapeHtml(String(value??''));
 
 export const HrDashboardPage = {
   render(state) {
     const records = state.payroll?.records || [];
-    const gross = records.reduce((s, r) => s + Number(r.result?.gross || 0), 0);
-    const net = records.reduce((s, r) => s + Number(r.result?.net || 0), 0);
-    const deductions = records.reduce((s, r) => s + Number(r.result?.totalDeductions || 0), 0);
-    const rows = records.slice(0, 12).map((r) => ({ empleado: r.employee, fecha: r.date, bruto: bs(r.result?.gross), deducciones: bs(r.result?.totalDeductions), neto: bs(r.result?.net) }));
-    return DS.ResourcePage({
-      title: 'Recursos Humanos & Nómina',
-      subtitle: 'KPIs de nómina, incidencias, obligaciones laborales y parámetros vigentes.',
-      actions: '<button id="btnHrXlsx" class="ds-btn ds-btn-primary"><span class="material-symbols-outlined">download</span>XLSX</button><button id="btnHrPdf" class="ds-btn ds-btn-secondary"><span class="material-symbols-outlined">picture_as_pdf</span>PDF fiscal</button>',
-      kpis: [
-        { label: 'Recibos', value: records.length, sub: 'Procesados', iconName: 'receipt_long', tone: 'info' },
-        { label: 'Bruto', value: bs(gross), sub: 'Período', iconName: 'payments', tone: 'neutral' },
-        { label: 'Deducciones', value: bs(deductions), sub: 'Trabajador / legales', iconName: 'remove_circle', tone: 'warning' },
-        { label: 'Neto', value: bs(net), sub: 'Por pagar', iconName: 'account_balance_wallet', tone: 'success' }
-      ],
-      columns: [{key:'empleado',label:'Empleado'}, {key:'fecha',label:'Fecha'}, {key:'bruto',label:'Bruto'}, {key:'deducciones',label:'Deducciones'}, {key:'neto',label:'Neto'}],
-      rows
-    }) + `<section class="pl-card pl-card-pad mt-6"><h3 class="text-2xl font-black">Parámetros laborales versionados</h3><p class="subtitle mt-2">IVSS, FAOV, INCES, vacaciones, utilidades y prestaciones se manejan por vigencia para evitar cálculos obsoletos.</p><div class="mt-4 grid gap-3 md:grid-cols-3"><div class="pl-card pl-card-pad"><strong>IVSS</strong><p>Empleado y patronal por vigencia</p></div><div class="pl-card pl-card-pad"><strong>FAOV</strong><p>Empleado y patronal por vigencia</p></div><div class="pl-card pl-card-pad"><strong>LOTTT</strong><p>Prestaciones, vacaciones y utilidades</p></div></div></section>`;
+    const gross = records.reduce((sum, record) => sum + Number(record.result?.gross || 0), 0);
+    const net = records.reduce((sum, record) => sum + Number(record.result?.net || 0), 0);
+    const deductions = records.reduce((sum, record) => sum + Number(record.result?.totalDeductions || 0), 0);
+    const rows = records.slice(0, 50);
+    const payrollTable=ErpDataTable({
+      caption:'Resumen de recibos de nómina',
+      columns:[
+        {key:'employee',label:'Empleado',render:(record)=>safe(record.employee||record.employeeName||'—')},
+        {key:'date',label:'Fecha',render:(record)=>safe(record.date||'—')},
+        {key:'gross',label:'Bruto',numeric:true,render:(record)=>safe(bs(record.result?.gross||0))},
+        {key:'deductions',label:'Deducciones',numeric:true,render:(record)=>safe(bs(record.result?.totalDeductions||0))},
+        {key:'net',label:'Neto',numeric:true,render:(record)=>`<strong>${safe(bs(record.result?.net||0))}</strong>`}
+      ],rows
+    });
+    const parameterCards=[
+      ['IVSS','Empleado y patronal por vigencia','fa-shield-heart'],
+      ['FAOV','Empleado y patronal por vigencia','fa-house'],
+      ['LOTTT','Prestaciones, vacaciones y utilidades','fa-scale-balanced']
+    ].map(([title,description,icon])=>ErpSection({tag:'article',title,description,actions:Badge('Versionado','brand'),content:`<span class="cgx-metric-icon"><i class="fa-solid ${icon}" aria-hidden="true"></i></span>`})).join('');
+
+    return `<section class="cg-page-stack">
+      ${PageHeader({eyebrow:'RRHH',title:'Recursos Humanos y Nómina',description:'Indicadores laborales derivados de los recibos disponibles y parámetros versionados por vigencia.',actions:`${Button({id:'btnHrXlsx',text:'Exportar XLSX',icon:'fa-file-excel'})}${Button({id:'btnHrPdf',text:'PDF fiscal',icon:'fa-file-pdf',variant:'secondary'})}`})}
+      ${MetricGrid([
+        {label:'Recibos',value:String(records.length),hint:'Registros disponibles',iconName:'fa-receipt',tone:'neutral'},
+        {label:'Bruto',value:bs(gross),hint:'Total evaluado',iconName:'fa-money-bill-wave',tone:'brand'},
+        {label:'Deducciones',value:bs(deductions),hint:'Trabajador / legales',iconName:'fa-minus-circle',tone:'warning'},
+        {label:'Neto',value:bs(net),hint:'Total por pagar',iconName:'fa-wallet',tone:'success'}
+      ])}
+      ${ErpSection({title:'Resumen de nómina',description:'Esta vista resume recibos existentes; la aprobación y pago de períodos se realiza en el módulo Nómina.',content:payrollTable})}
+      ${ErpSection({title:'Parámetros laborales versionados',description:'IVSS, FAOV, INCES, vacaciones, utilidades y prestaciones deben resolverse por fecha de vigencia. Ningún porcentaje mostrado por el sistema debe asumirse vigente sin su versión efectiva.',content:ErpGrid(parameterCards,{columns:'three'})})}
+    </section>`;
   },
   mount(state, { Toast }) {
-    const rows = (state.payroll?.records || []).map((r) => ({ empleado: r.employee, fecha: r.date, bruto: r.result?.gross, deducciones: r.result?.totalDeductions, neto: r.result?.net }));
-    document.getElementById('btnHrXlsx')?.addEventListener('click', async () => { await ExportService.downloadXlsx('rrhh-nomina-contagest', [{ name: 'Nómina', rows }], 'RRHH y Nómina'); Toast.show('XLSX de RRHH solicitado.', 'success'); });
-    document.getElementById('btnHrPdf')?.addEventListener('click', async () => { await ExportService.downloadFiscalPdf('rrhh-nomina-contagest', { title: 'Resumen de nómina', rows }); Toast.show('PDF fiscal server-side solicitado.', 'info'); });
+    const exportRows = () => (state.payroll?.records || []).map((record) => ({
+      empleado:record.employee||record.employeeName||'',
+      fecha:record.date,
+      bruto:record.result?.gross,
+      deducciones:record.result?.totalDeductions,
+      neto:record.result?.net
+    }));
+    document.getElementById('btnHrXlsx')?.addEventListener('click', async () => {
+      await ExportService.downloadXlsx('rrhh-nomina-contagest', [{ name:'Nómina', rows:exportRows() }], 'RRHH y Nómina');
+      Toast.show('XLSX de RRHH solicitado.', 'success');
+    });
+    document.getElementById('btnHrPdf')?.addEventListener('click', async () => {
+      await ExportService.downloadFiscalPdf('rrhh-nomina-contagest', { title:'Resumen de nómina', rows:exportRows() });
+      Toast.show('PDF de resumen de nómina solicitado al backend.', 'info');
+    });
   }
 };
