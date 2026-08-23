@@ -3,108 +3,119 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 
-const root = process.cwd();
-const read = (file) => fs.readFileSync(path.join(root, file), 'utf8');
-const runtime = read('frontend/src/styles/erp-runtime.css');
-const visual = read('frontend/src/styles/contagest-visual-system-v12.css');
-const uiReadme = read('frontend/src/components/ui/README.md');
-const agents = read('AGENTS.md');
-const designTokens = read('frontend/src/components/designTokens.js');
-const legacyDs = read('frontend/src/components/designSystem.js');
+const root=process.cwd();
+const read=(file)=>fs.readFileSync(path.join(root,file),'utf8');
+const runtime=read('frontend/src/styles/erp-runtime.css');
+const visual=read('frontend/src/styles/contagest-visual-system-v12.css');
+const shell=read('frontend/src/styles/shell-contract.css');
+const layout=read('frontend/src/components/layout.js');
+const kit=read('frontend/src/components/ui/kit.js');
+const mui=read('frontend/src/components/muiRuntime.js');
+const designTokens=read('frontend/src/components/designTokens.js');
+const legacyDs=read('frontend/src/components/designSystem.js');
 
-const normalize = (value) => value.replace(/\s+/g, ' ').trim();
+function importsOf(source){return[...source.matchAll(/@import\s+(?:url\()?['"]([^'"]+\.css)['"]/g)].map((match)=>match[1]);}
 
-test('canonical visual system is the final shared runtime authority', () => {
-  const imports = [...runtime.matchAll(/@import\s+['"]([^'"]+)['"]/g)].map((m) => m[1]);
-  assert.equal(imports.at(-1), './contagest-visual-system-v12.css');
-  assert.equal(imports.includes('./ui-normalization-v142.css'), false);
-  assert.match(runtime, /only shared authority/i);
+test('runtime has one deterministic five-owner cascade ending in canonical appearance',()=>{
+  assert.deepEqual(importsOf(runtime),[
+    './shell-contract.css',
+    './shell-stability-v1127.css',
+    './runtime-primitives-v13.css',
+    './module-adapters.css',
+    './contagest-visual-system-v12.css'
+  ]);
+  assert.match(runtime,/active visual\s+contract is v15/i);
+  assert.match(runtime,/FINAL canonical appearance authority/i);
 });
 
-test('v12 important layer priority is declared before historical module layers', () => {
-  const declaration = normalize(runtime.match(/@layer[\s\S]*?;/)?.[0] || '');
-  assert.match(declaration, /^@layer cg\.shell-contract,/);
-  assert.ok(declaration.indexOf('cg.visual.tokens') > declaration.indexOf('cg.shell-contract'));
-  assert.ok(declaration.indexOf('cg.visual.components') > declaration.indexOf('cg.visual.tokens'));
-  assert.ok(declaration.indexOf('cg.context') > declaration.indexOf('cg.visual.a11y'));
-  assert.ok(runtime.indexOf('@layer') < runtime.indexOf("@import './erp-system.css'"));
-});
-
-test('visual system exposes one tokenized typography and geometry scale', () => {
-  for (const token of [
+test('v15 exposes one compact tokenized type and geometry scale',()=>{
+  for(const token of [
     '--cg-v-text-2xs','--cg-v-text-xs','--cg-v-text-sm','--cg-v-text-md','--cg-v-text-lg',
     '--cg-v-text-section','--cg-v-text-page','--cg-v-text-kpi',
     '--cg-v-space-1','--cg-v-space-2','--cg-v-space-3','--cg-v-space-4',
     '--cg-v-radius-sm','--cg-v-radius-md','--cg-v-radius-lg',
     '--cg-v-control','--cg-v-control-touch','--cg-v-page-max','--cg-v-kpi-min'
-  ]) assert.match(visual, new RegExp(token.replaceAll('-', '\\-')));
-
-  assert.match(visual, /--cg-v-text-page:\s*clamp\(1\.25rem[\s\S]*1\.625rem\)/);
-  assert.match(visual, /--cg-v-text-kpi:\s*clamp\(1rem[\s\S]*1\.25rem\)/);
-  assert.match(visual, /--cg-v-text-section:\s*clamp\(1rem[\s\S]*1\.125rem\)/);
+  ])assert.match(visual,new RegExp(token.replaceAll('-','\\-')));
+  assert.match(visual,/--cg-v-text-page:\s*clamp\(20px,[^;]*24px\)/);
+  assert.match(visual,/--cg-v-text-kpi:\s*clamp\(16px,[^;]*20px\)/);
+  assert.match(visual,/--cg-v-text-section:\s*clamp\(15px,[^;]*17px\)/);
+  assert.match(visual,/--cg-v-control:\s*38px/);
+  assert.match(visual,/--cg-v-control-touch:\s*44px/);
+  assert.match(visual,/--cg-v-table-row:\s*40px/);
 });
 
-test('legacy JS token facade cannot maintain a second hard-coded palette', () => {
-  assert.match(designTokens, /canonical values live in `styles\/contagest-visual-system-v12\.css`/i);
-  assert.match(designTokens, /var\(--cg-v-brand\)/);
-  assert.match(designTokens, /var\(--cg-v-surface\)/);
-  assert.match(designTokens, /var\(--cg-v-text\)/);
-  assert.doesNotMatch(designTokens, /#[0-9a-fA-F]{6}/);
+test('light and dark palettes are graphite-neutral and geometrically identical',()=>{
+  assert.match(visual,/--cg-v-bg:\s*#f4f5f7/i);
+  assert.match(visual,/--cg-v-surface:\s*#ffffff/i);
+  assert.match(visual,/--cg-v-brand:\s*#5661e8/i);
+  assert.match(visual,/html\.dark,[\s\S]*--cg-v-bg:\s*#111214/i);
+  assert.match(visual,/html\.dark,[\s\S]*--cg-v-surface:\s*#181a1d/i);
+  assert.match(visual,/html\.dark,[\s\S]*--cg-v-brand:\s*#7c86ff/i);
+  assert.doesNotMatch(visual,/(?:linear|radial|conic)-gradient\s*\(/i);
+  assert.doesNotMatch(visual,/backdrop-filter\s*:/i);
 });
 
-test('legacy design-system module delegates to the canonical UI kit', () => {
-  assert.match(legacyDs, /from '\.\/ui\/kit\.js'/);
-  assert.match(legacyDs, /MetricCard/);
-  assert.match(legacyDs, /DataTable/);
-  assert.doesNotMatch(legacyDs, /material-symbols-outlined/);
-  assert.doesNotMatch(legacyDs, /class="ds-kpi ds-kpi-/);
+test('shell follows compact enterprise navigation contract',()=>{
+  assert.match(shell,/--cg-sidebar:\s*244px/);
+  assert.match(shell,/--cg-sidebar-collapsed:\s*68px/);
+  assert.match(shell,/--cg-header:\s*60px/);
+  assert.match(layout,/Espacio de trabajo/);
+  assert.match(layout,/hf-area-meta/);
+  assert.match(layout,/hf-sidebar-mini-actions/);
+  assert.match(layout,/hf-create-button/);
+  assert.match(layout,/Buscar en ContaGest/);
+  assert.match(layout,/modulesByArea\(state\.settings\?\.businessMode\|\|'admin',\{includeAll:false\}\)/);
+  assert.doesNotMatch(layout,/hf-kpi-strip|hf-quickbar/);
 });
 
-test('operational metrics cannot restore blobs, gradients or oversized amounts', () => {
-  const compact = normalize(visual);
-  assert.match(compact, /cgx-metric[\s\S]*grid-template-columns: 30px minmax\(0,1fr\)/);
-  assert.match(compact, /cgx-metric[\s\S]*min-height: 76px/);
-  assert.match(compact, /cgx-metric[\s\S]*font-size: var\(--cg-v-text-kpi\)/);
-  assert.match(visual, /::before,[\s\S]*::after\s*\{[\s\S]*content:\s*none\s*!important/);
-  assert.match(visual, /first-child[\s\S]*grid-column:\s*auto\s*!important/);
-  assert.match(visual, /background-image:\s*none\s*!important/);
+test('canonical metrics never ellipsize financial values or restore decorative KPI blobs',()=>{
+  assert.match(visual,/\.cgx-metric\s*\{[\s\S]*min-height:\s*112px/);
+  assert.match(visual,/\.cgx-metric-icon\s*\{[\s\S]*width:\s*26px/);
+  assert.match(visual,/\.cgx-metric-main strong\s*\{[\s\S]*overflow:visible!important/);
+  assert.match(visual,/\.cgx-metric-main strong\s*\{[\s\S]*text-overflow:clip!important/);
+  assert.match(visual,/\.cgx-metric-main strong\s*\{[\s\S]*white-space:nowrap!important/);
+  assert.doesNotMatch(visual,/\.cgx-metric[^}]*border-radius:\s*50%/i);
 });
 
-test('shared components own overflow rather than the document', () => {
-  assert.match(visual, /html\s*\{[\s\S]*overflow-x:\s*clip/);
-  assert.match(visual, /body\s*\{[\s\S]*overflow-x:\s*clip/);
-  assert.match(visual, /cgx-table-wrap[\s\S]*overflow-x:\s*auto\s*!important/);
-  assert.match(visual, /min-width:\s*0\s*!important/);
-  assert.match(visual, /@media \(max-width: 760px\)/);
-  assert.match(visual, /@media \(max-width: 520px\)/);
+test('shared components use the v15 markup contract and accessible field labels',()=>{
+  assert.match(kit,/cgx-metric-top/);
+  assert.match(kit,/cgx-metric-main/);
+  assert.match(kit,/cgx-page-overline/);
+  assert.match(kit,/scope="col"/);
+  assert.match(kit,/for=\"\$\{safe\(inputId\)\}\"/);
+  assert.doesNotMatch(kit,/ds-btn ds-btn-/);
+  assert.doesNotMatch(kit,/cgv-btn cgv-btn-/);
 });
 
-test('forms and tables use dense ERP dimensions', () => {
-  assert.match(visual, /--cg-v-control:\s*38px/);
-  assert.match(visual, /--cg-v-control-touch:\s*44px/);
-  assert.match(visual, /--cg-v-table-row:\s*42px/);
-  assert.match(visual, /font-variant-numeric:\s*tabular-nums lining-nums/);
-  assert.match(visual, /position:\s*sticky;[\s\S]*top:\s*0/);
+test('MUI islands share exactly the same v15 light-dark direction',()=>{
+  assert.match(mui,/bg:'#111214'/);
+  assert.match(mui,/surface:'#181a1d'/);
+  assert.match(mui,/brand:'#7c86ff'/);
+  assert.match(mui,/bg:'#f4f5f7'/);
+  assert.match(mui,/surface:'#ffffff'/);
+  assert.match(mui,/brand:'#5661e8'/);
+  assert.doesNotMatch(mui,/createVetTheme|enterprise/);
 });
 
-test('theming is semantic and keeps light/dark geometry identical', () => {
-  assert.match(visual, /html\.dark,[\s\S]*html\[data-theme="dark"\]/);
-  for (const semantic of ['--cg-v-bg','--cg-v-surface','--cg-v-text','--cg-v-text-muted','--cg-v-border','--cg-v-brand','--cg-v-focus']) {
-    assert.ok((visual.match(new RegExp(semantic.replaceAll('-', '\\-'), 'g')) || []).length >= 2, `${semantic} must exist in light and dark tokens`);
-  }
-  assert.doesNotMatch(visual, /theme-(?:sky|soft-blue|spectrum|finance|executive)[\s,{]/);
+test('legacy JS token facades cannot maintain another hard-coded palette',()=>{
+  assert.match(designTokens,/canonical values live in `styles\/contagest-visual-system-v12\.css`/i);
+  assert.match(designTokens,/var\(--cg-v-brand\)/);
+  assert.doesNotMatch(designTokens,/#(?:[0-9a-fA-F]{6})\b/);
+  assert.match(legacyDs,/from '\.\/ui\/kit\.js'/);
+  assert.doesNotMatch(legacyDs,/material-symbols-outlined/);
 });
 
-test('motion remains short, functional and reduced-motion safe', () => {
-  assert.match(visual, /--cg-v-duration-fast:\s*120ms/);
-  assert.match(visual, /--cg-v-duration:\s*170ms/);
-  assert.match(visual, /prefers-reduced-motion:\s*reduce/);
-  assert.doesNotMatch(visual, /animation-duration:\s*[1-9](?:\.\d+)?s/);
+test('document owns no horizontal scroll and component owners do',()=>{
+  assert.match(visual,/html\s*\{[^}]*overflow-x:clip/);
+  assert.match(visual,/body\s*\{[\s\S]*overflow-x:clip/);
+  assert.match(visual,/cgx-table-wrap[\s\S]*overflow-x:auto/);
+  assert.match(visual,/@media \(max-width:760px\)/);
+  assert.match(visual,/@media \(max-width:430px\)/);
 });
 
-test('UI and agent documentation point at the canonical visual authority', () => {
-  assert.match(uiReadme, /contagest-visual-system-v12\.css/);
-  assert.match(uiReadme, /MetricGrid/);
-  assert.match(agents, /contagest-visual-system-v12\.css/);
-  assert.match(agents, /contagest-ui-audit/);
+test('motion is short functional and reduced-motion safe',()=>{
+  assert.match(visual,/--cg-v-duration-fast:\s*120ms/);
+  assert.match(visual,/--cg-v-duration:\s*170ms/);
+  assert.match(visual,/prefers-reduced-motion:reduce/);
+  assert.doesNotMatch(visual,/animation-duration:\s*[1-9](?:\.\d+)?s/);
 });
