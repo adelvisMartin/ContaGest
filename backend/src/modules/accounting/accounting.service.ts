@@ -11,8 +11,22 @@ export function assertBalanced(lines: LedgerLineInput[]) {
   return { debit, credit };
 }
 
+export async function assertPeriodOpen(tenantId: string, fiscalPeriod: string) {
+  const closed = await prisma.closingPeriod.findFirst({
+    where: {
+      tenantId,
+      period:fiscalPeriod,
+      status:'closed',
+      module:{ in:['accounting','all'] }
+    },
+    select:{ id:true, period:true, module:true, closedAt:true }
+  });
+  if (closed) throw new HttpError(409, `El período ${fiscalPeriod} está cerrado para contabilidad. Registra la corrección en un período abierto mediante reverso o ajuste autorizado.`);
+}
+
 export async function createLedgerEntry(input: { tenantId: string; fiscalPeriod: string; description: string; source?: any; sourceId?: string; lines: LedgerLineInput[] }) {
   assertBalanced(input.lines);
+  await assertPeriodOpen(input.tenantId, input.fiscalPeriod);
   return prisma.ledgerEntry.create({
     data: {
       tenantId: input.tenantId,
