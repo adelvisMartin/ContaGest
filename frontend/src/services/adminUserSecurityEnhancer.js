@@ -1,4 +1,3 @@
-import '../styles/admin-user-security.css';
 import { BackendApi } from './backendApi.js';
 
 let observer;

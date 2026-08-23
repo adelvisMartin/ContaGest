@@ -1,4 +1,3 @@
-import '../styles/enterprise-refinement.css';
 import { PageHeader, Button, Badge, EmptyState } from '../components/ui/index.js';
 import { AiAssistantService } from '../services/aiAssistantService.js';
 import { AnalyticsService } from '../services/analyticsService.js';
