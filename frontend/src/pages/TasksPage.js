@@ -7,6 +7,12 @@ const STATUSES=['Pendiente','En proceso','En revisión','Completada'];
 const safe=(value)=>escapeHtml(String(value??''));
 const statusTone=(status)=>status==='Completada'?'success':status==='En revisión'?'brand':status==='En proceso'?'warning':'neutral';
 const priorityTone=(priority)=>priority==='Crítica'?'danger':priority==='Alta'?'warning':priority==='Baja'?'neutral':'brand';
+const nextTaskStatus=(status)=>({Pendiente:'En proceso','En proceso':'En revisión','En revisión':'Completada'}[status]||null);
+
+function taskActions(task){
+  const next=nextTaskStatus(task.status||'Pendiente');
+  return ErpRow(`${next?ErpButton(`Mover a ${next}`,{variant:'secondary',icon:'fa-solid fa-arrow-right',data:{'task-status':task.id}}):Badge('Flujo completado','success')}${ErpButton('Archivar tarea',{variant:'danger',icon:'fa-solid fa-box-archive',iconOnly:true,data:{'delete-task':task.id}})}`,{wrap:true});
+}
 
 function taskCard(task){
   const meta=[`Inicio: ${shortDate(task.start||task.createdAt)}`,`Vence: ${shortDate(task.due)}`,task.recurrence&&task.recurrence!=='No'?`Repite: ${task.recurrence}`:'',task.dependsOn?`Depende de: ${task.dependsOn}`:''].filter(Boolean).map((value)=>`<span>${safe(value)}</span>`).join('');
@@ -14,7 +20,7 @@ function taskCard(task){
     title:task.title,
     description:`${task.module||'General'} · ${task.assignee||'Sin asignar'}`,
     actions:Badge(task.priority||'Media',priorityTone(task.priority)),
-    content:`<p class="cg-ui-muted">${safe(task.description||'Sin descripción')}</p><div class="cgx-meta-row">${meta}</div>${ErpRow(ErpButton(task.status||'Pendiente',{variant:'secondary',icon:'fa-solid fa-rotate',data:{'task-status':task.id}})+ErpButton('Archivar tarea',{variant:'danger',icon:'fa-solid fa-box-archive',iconOnly:true,data:{'delete-task':task.id}}),{wrap:true})}`
+    content:`<p class="cg-ui-muted">${safe(task.description||'Sin descripción')}</p><div class="cgx-meta-row">${meta}</div>${taskActions(task)}`
   });
 }
 
@@ -40,7 +46,7 @@ export const TasksPage={
         {key:'due',label:'Vence',render:(task)=>safe(shortDate(task.due))},
         {key:'priority',label:'Prioridad',render:(task)=>Badge(task.priority||'Media',priorityTone(task.priority))},
         {key:'status',label:'Estado',render:(task)=>Badge(task.status||'Pendiente',statusTone(task.status))},
-        {key:'actions',label:'Acciones',render:(task)=>ErpRow(ErpButton('Cambiar estado',{variant:'secondary',icon:'fa-solid fa-rotate',iconOnly:true,data:{'task-status':task.id}})+ErpButton('Archivar',{variant:'danger',icon:'fa-solid fa-box-archive',iconOnly:true,data:{'delete-task':task.id}}),{wrap:true})}
+        {key:'actions',label:'Acciones',render:taskActions}
       ],
       rows:filtered
     });
@@ -54,9 +60,9 @@ export const TasksPage={
       {label:'Críticas',value:String(critical),iconName:'fa-triangle-exclamation',tone:critical?'warning':'success'},
       {label:'Vencidas',value:String(overdue),iconName:'fa-clock',tone:overdue?'danger':'success'},
       {label:'Completadas',value:String(tasks.length-pending),iconName:'fa-circle-check',tone:'success'}
-    ])}${toolbar}<div class="cg-ui-grid cg-ui-grid-two cg-tasks-layout">${ErpSection({title:'Nueva tarea',description:'Define alcance, responsable y secuencia.',content:form})}${view==='board'?ErpSection({title:'Tablero',description:'Estado actual del plan de trabajo.',content:board}):ErpSection({title:'Plan de trabajo',description:'Tareas filtradas y acciones disponibles.',content:table})}</div></section>`;
+    ])}${toolbar}<div class="cg-ui-grid cg-ui-grid-two cg-tasks-layout">${ErpSection({title:'Nueva tarea',description:'Define alcance, responsable y secuencia.',content:form})}${view==='board'?ErpSection({title:'Tablero',description:'Estado actual del plan de trabajo.',content:board}):ErpSection({title:'Plan de trabajo',description:'El estado avanza Pendiente → En proceso → En revisión → Completada. Una tarea completada no vuelve a Pendiente por un clic accidental.',content:table})}</div></section>`;
   },
-  mount(state,{Store,Toast,UrlStateService,Loading}){
+  mount(state,{Store,Toast,UrlStateService,Loading,Modal}){
     const params=UrlStateService.getParams();
     const load=async({silent=false}={})=>{try{if(!silent)Loading?.mount?.('Cargando tareas…');const tasks=await TasksService.list({search:params.search,status:params.status});Store.set({tasks,tasksLoadedAt:new Date().toISOString()});}catch(error){Toast.show(`No se pudieron cargar las tareas: ${error.message}`,'error');}finally{if(!silent)Loading?.unmount?.();}};
     if(!state.tasksLoadedAt)load({silent:true});
@@ -64,7 +70,10 @@ export const TasksPage={
     document.getElementById('btnTaskList')?.addEventListener('click',()=>UrlStateService.setParams({view:'list'}));
     document.getElementById('btnTaskBoard')?.addEventListener('click',()=>UrlStateService.setParams({view:'board'}));
     mountSubmit('#taskForm',async(data,form)=>{const submit=form.querySelector('[type="submit"]');submit?.setAttribute('disabled','disabled');try{const task=await TasksService.create(data);Store.update((draft)=>{draft.tasks=[task,...(draft.tasks||[]).filter((item)=>item.id!==task.id)];draft.tasksLoadedAt=new Date().toISOString();});form.reset();Toast.show('Tarea creada.','success');}catch(error){Toast.show(`No se creó la tarea: ${error.message}`,'error');}finally{submit?.removeAttribute('disabled');}});
-    qsa('[data-task-status]').forEach((button)=>button.addEventListener('click',async()=>{const task=(Store.get().tasks||[]).find((item)=>item.id===button.dataset.taskStatus);if(!task)return;const index=STATUSES.indexOf(task.status||'Pendiente');const next=STATUSES[(index+1)%STATUSES.length];try{const updated=await TasksService.setStatus(task.id,next);Store.update((draft)=>{draft.tasks=(draft.tasks||[]).map((item)=>item.id===updated.id?updated:item);});Toast.show(`Tarea movida a ${next}.`,'success');}catch(error){Toast.show(`No se actualizó la tarea: ${error.message}`,'error');}}));
-    qsa('[data-delete-task]').forEach((button)=>button.addEventListener('click',async()=>{try{await TasksService.archive(button.dataset.deleteTask);Store.update((draft)=>{draft.tasks=(draft.tasks||[]).filter((item)=>item.id!==button.dataset.deleteTask);});Toast.show('Tarea archivada.','success');}catch(error){Toast.show(`No se archivó la tarea: ${error.message}`,'error');}}));
+    qsa('[data-task-status]').forEach((button)=>button.addEventListener('click',async()=>{const task=(Store.get().tasks||[]).find((item)=>item.id===button.dataset.taskStatus);if(!task)return;const next=nextTaskStatus(task.status||'Pendiente');if(!next)return Toast.show('La tarea ya está completada.','warning');try{const updated=await TasksService.setStatus(task.id,next);Store.update((draft)=>{draft.tasks=(draft.tasks||[]).map((item)=>item.id===updated.id?updated:item);});Toast.show(`Tarea movida a ${next}.`,'success');}catch(error){Toast.show(`No se actualizó la tarea: ${error.message}`,'error');}}));
+    qsa('[data-delete-task]').forEach((button)=>button.addEventListener('click',()=>{
+      const task=(Store.get().tasks||[]).find((item)=>item.id===button.dataset.deleteTask);
+      Modal.confirm({title:'Archivar tarea',body:`${task?.title || 'Esta tarea'} saldrá del plan activo, pero la operación debe conservarse como archivo y no como borrado silencioso.`,confirmText:'Archivar',onConfirm:async()=>{try{await TasksService.archive(button.dataset.deleteTask);Store.update((draft)=>{draft.tasks=(draft.tasks||[]).filter((item)=>item.id!==button.dataset.deleteTask);});Toast.show('Tarea archivada.','success');}catch(error){Toast.show(`No se archivó la tarea: ${error.message}`,'error');}}});
+    }));
   }
 };
