@@ -42,8 +42,14 @@ jobs:
       - name: TypeScript
         run: npm run typecheck
 
-      - name: Characterization tests
+      - name: Characterization and contract tests
         run: npm test
+
+      - name: ERP visual system audit 58 routes
+        run: npm run audit:visual:strict
+
+      - name: ERP module function source audit 58 routes
+        run: npm run audit:functions:strict
 
       - name: Frontend build
         run: npm run build:frontend
