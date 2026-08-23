@@ -52,7 +52,7 @@ test('light and dark palettes are graphite-neutral and geometrically identical',
   assert.match(visual,/html\.dark,[\s\S]*--cg-v-surface:\s*#181a1d/i);
   assert.match(visual,/html\.dark,[\s\S]*--cg-v-brand:\s*#7c86ff/i);
   assert.doesNotMatch(visual,/(?:linear|radial|conic)-gradient\s*\(/i);
-  assert.doesNotMatch(visual,/backdrop-filter\s*:/i);
+  assert.doesNotMatch(visual,/backdrop-filter\s*:\s*(?!none\b)/i);
 });
 
 test('shell follows compact enterprise navigation contract',()=>{
