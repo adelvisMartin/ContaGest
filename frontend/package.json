@@ -10,7 +10,8 @@
   "scripts": {
     "dev": "vite --host 0.0.0.0 --port 8080",
     "stage:backend": "node scripts/stage-backend.mjs",
-    "build": "npm run stage:backend && vite build",
+    "preqa:source": "cd .. && node --test tests/erp_preqa_v16_contract.test.mjs && node scripts/visual-system-audit.mjs --strict && node scripts/erp-module-function-audit.mjs --strict",
+    "build": "npm run preqa:source && npm run stage:backend && vite build",
     "preview": "vite preview --host 0.0.0.0 --port 8080"
   },
   "dependencies": {
@@ -29,7 +30,7 @@
     "vite": "8.2.1",
     "typescript": "5.9.3",
     "tailwindcss": "3.4.19",
-    "postcss": "8.5.26",
+    "postcss": "8.5.6",
     "autoprefixer": "10.5.4"
   }
 }
