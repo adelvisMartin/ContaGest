@@ -26,6 +26,12 @@ const context = (req:any) => req.context as { tenantId:string; userId?:string; i
 const serializeReceipt = (receipt:any) => ({ ...receipt, gross:Number(receipt.gross), deductions:Number(receipt.deductions), net:Number(receipt.net) });
 const serializePeriod = (period:any) => ({ ...period, totalGross:Number(period.totalGross), totalDeductions:Number(period.totalDeductions), totalNet:Number(period.totalNet), receipts:(period.receipts || []).map(serializeReceipt) });
 const toJson = (value: unknown): Prisma.InputJsonValue => JSON.parse(JSON.stringify(value ?? {})) as Prisma.InputJsonValue;
+const allowedStatusTransitions: Record<string, string[]> = {
+  draft:['approved','cancelled'],
+  approved:['paid','cancelled'],
+  paid:[],
+  cancelled:[]
+};
 
 async function recalculatePeriod(periodId:string) {
   const totals = await prisma.payrollReceipt.aggregate({
@@ -90,9 +96,13 @@ router.patch('/periods/:id/status', validateBody(statusSchema), asyncHandler(asy
   const ctx=context(req);
   const existing=await prisma.payrollPeriod.findFirst({ where:{ id:req.params.id,tenantId:ctx.tenantId }, include:{ receipts:true } });
   if(!existing)throw new HttpError(404,'Período de nómina no encontrado.');
-  if(req.body.status === 'approved' && !existing.receipts.length)throw new HttpError(409,'No se puede aprobar un período sin recibos.');
-  const updated=await prisma.payrollPeriod.update({ where:{ id:existing.id },data:{ status:req.body.status },include:{ receipts:{ include:{ employee:true } } } });
-  await writeAudit({ tenantId:ctx.tenantId,userId:ctx.userId,action:`payroll.period-${req.body.status}`,entity:'PayrollPeriod',entityId:updated.id,before:serializePeriod(existing),after:serializePeriod(updated),ipAddress:ctx.ip,userAgent:ctx.userAgent });
+  const nextStatus=String(req.body.status);
+  if(!allowedStatusTransitions[String(existing.status)]?.includes(nextStatus)){
+    throw new HttpError(409,`Transición de nómina no permitida: ${existing.status} → ${nextStatus}. Los períodos pagados o cancelados son terminales.`);
+  }
+  if(nextStatus === 'approved' && !existing.receipts.length)throw new HttpError(409,'No se puede aprobar un período sin recibos.');
+  const updated=await prisma.payrollPeriod.update({ where:{ id:existing.id },data:{ status:nextStatus as any },include:{ receipts:{ include:{ employee:true } } } });
+  await writeAudit({ tenantId:ctx.tenantId,userId:ctx.userId,action:`payroll.period-${nextStatus}`,entity:'PayrollPeriod',entityId:updated.id,before:serializePeriod(existing),after:serializePeriod(updated),ipAddress:ctx.ip,userAgent:ctx.userAgent });
   ok(res,serializePeriod(updated));
 }));
 
