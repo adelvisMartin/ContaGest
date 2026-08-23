@@ -1,14 +1,13 @@
 /*
- * ContaGest VE — shell geometry contract v14
- * Structural invariants only. Color, typography and decorative treatment live
- * in contagest-visual-system-v12.css. Keep this file free of product palettes.
+ * ContaGest VE — shell geometry contract v15
+ * Structural invariants only. Appearance belongs to the canonical visual system.
  */
 
 :root {
-  --cg-sidebar: 232px;
-  --cg-sidebar-collapsed: 64px;
-  --cg-header: 56px;
-  --cg-header-mobile: 52px;
+  --cg-sidebar: 244px;
+  --cg-sidebar-collapsed: 68px;
+  --cg-header: 60px;
+  --cg-header-mobile: 54px;
   --cg-safe-top: env(safe-area-inset-top, 0px);
   --cg-safe-right: env(safe-area-inset-right, 0px);
   --cg-safe-bottom: env(safe-area-inset-bottom, 0px);
@@ -16,7 +15,8 @@
 }
 
 .hf-rate-mobile { display:none; }
-.hf-theme-svg { display:block; width:16px; height:16px; flex:0 0 auto; }
+.hf-theme-svg,.hf-menu-svg { display:block; width:16px; height:16px; flex:0 0 auto; }
+.hf-menu-svg path { fill:none; stroke:currentColor; stroke-width:1.8; stroke-linecap:round; }
 
 html body .hf-app-sidebar.hf-sidebar {
   position:fixed;
@@ -29,7 +29,7 @@ html body .hf-app-sidebar.hf-sidebar {
   max-width:var(--cg-sidebar);
   height:100dvh;
   overflow:hidden;
-  transition:width 150ms ease, transform 150ms ease;
+  transition:width 160ms ease, transform 160ms ease;
 }
 
 html body .hf-app-main.hf-main {
@@ -37,7 +37,7 @@ html body .hf-app-main.hf-main {
   min-width:0;
   min-height:100dvh;
   margin-left:var(--cg-sidebar);
-  transition:margin-left 150ms ease;
+  transition:margin-left 160ms ease;
 }
 
 html body .hf-app-topbar.hf-topbar {
@@ -45,14 +45,14 @@ html body .hf-app-topbar.hf-topbar {
   top:0;
   z-index:60;
   display:grid;
-  grid-template-columns:minmax(0,1fr) minmax(180px,360px) minmax(0,1fr);
+  grid-template-columns:minmax(160px,1fr) minmax(260px,440px) auto;
   align-items:center;
   width:100%;
   min-width:0;
   height:var(--cg-header);
   min-height:var(--cg-header);
-  gap:10px;
-  padding:0 14px;
+  gap:12px;
+  padding:0 18px;
 }
 
 html body .hf-topbar-left,
@@ -62,7 +62,7 @@ html body .hf-app-topbar-actions {
   min-width:0;
 }
 html body .hf-app-topbar-actions { justify-content:flex-end; gap:6px; }
-html body .hf-topbar-left { gap:8px; }
+html body .hf-topbar-left { gap:9px; }
 
 html body .hf-content.hf-app-content {
   width:100%;
@@ -70,7 +70,6 @@ html body .hf-content.hf-app-content {
   max-width:none;
 }
 
-html body .cg-sidebar-collapsed .hf-app-sidebar.hf-sidebar,
 html body #sidebar.is-collapsed {
   width:var(--cg-sidebar-collapsed);
   min-width:var(--cg-sidebar-collapsed);
@@ -78,124 +77,94 @@ html body #sidebar.is-collapsed {
 }
 html body.cg-sidebar-collapsed .hf-app-main.hf-main { margin-left:var(--cg-sidebar-collapsed); }
 
-/* Desktop rail: preserve primary navigation icons, hide verbose module tree. */
 @media (min-width:1024px) {
   html body #sidebar.is-collapsed .hf-sidebar-wordmark,
-  html body #sidebar.is-collapsed .hf-new-entry span,
   html body #sidebar.is-collapsed .hf-sidebar-label,
   html body #sidebar.is-collapsed .hf-module-nav,
-  html body #sidebar.is-collapsed .hf-menu-item span,
+  html body #sidebar.is-collapsed .hf-menu-item > span:not(.hf-menu-item-icon),
   html body #sidebar.is-collapsed .hf-sidebar-account > span:nth-child(2),
-  html body #sidebar.is-collapsed .hf-sidebar-account > i {
+  html body #sidebar.is-collapsed .hf-sidebar-account > i,
+  html body #sidebar.is-collapsed .hf-sidebar-mini-actions {
     display:none !important;
   }
   html body #sidebar.is-collapsed .hf-brand,
-  html body #sidebar.is-collapsed .hf-sidebar-create,
   html body #sidebar.is-collapsed .hf-primary-list,
-  html body #sidebar.is-collapsed .hf-sidebar-footer { padding-inline:10px; }
-  html body #sidebar.is-collapsed .hf-brand { justify-content:center; }
+  html body #sidebar.is-collapsed .hf-sidebar-footer { padding-inline:11px; }
+  html body #sidebar.is-collapsed .hf-brand { justify-content:center; gap:0; }
   html body #sidebar.is-collapsed .hf-brand-mark { display:none; }
-  html body #sidebar.is-collapsed .hf-sidebar-collapse {
-    position:static;
-    transform:rotate(180deg);
-  }
-  html body #sidebar.is-collapsed .hf-new-entry,
+  html body #sidebar.is-collapsed .hf-sidebar-collapse { transform:rotate(180deg); }
   html body #sidebar.is-collapsed .hf-menu-item,
   html body #sidebar.is-collapsed .hf-sidebar-account {
-    width:42px;
-    min-width:42px;
-    max-width:42px;
+    width:44px;
+    min-width:44px;
+    max-width:44px;
     justify-content:center;
     padding-inline:0;
   }
-  html body #sidebar.is-collapsed .hf-menu-item i { margin:0; }
+  html body #sidebar.is-collapsed .hf-menu-item-icon { margin:0; }
+}
+
+@media (max-width:1240px) {
+  html body .hf-app-topbar.hf-topbar { grid-template-columns:minmax(140px,1fr) minmax(220px,360px) auto; padding-inline:14px; }
+  html body .hf-create-button span { display:none; }
+  html body .hf-create-button { width:36px; min-width:36px; padding:0; justify-content:center; }
 }
 
 @media (max-width:1023px) {
-  :root { --cg-sidebar: min(86vw,280px); }
-
+  :root { --cg-sidebar: min(84vw,286px); }
   html body .hf-app-sidebar.hf-sidebar {
-    width:var(--cg-sidebar) !important;
-    min-width:var(--cg-sidebar) !important;
-    max-width:var(--cg-sidebar) !important;
+    width:var(--cg-sidebar)!important;
+    min-width:var(--cg-sidebar)!important;
+    max-width:var(--cg-sidebar)!important;
     transform:translateX(-102%);
-    box-shadow:none;
   }
   html body .hf-app-sidebar.hf-sidebar:not(.is-collapsed),
-  html body.cg-menu-open .hf-app-sidebar.hf-sidebar {
-    transform:translateX(0);
-  }
+  html body.cg-menu-open .hf-app-sidebar.hf-sidebar { transform:translateX(0); }
   html body .hf-app-main.hf-main,
-  html body.cg-sidebar-collapsed .hf-app-main.hf-main {
-    width:100%;
-    margin-left:0;
-  }
+  html body.cg-sidebar-collapsed .hf-app-main.hf-main { width:100%; margin-left:0; }
   html body .hf-app-topbar.hf-topbar {
-    grid-template-columns:minmax(0,1fr) auto;
+    grid-template-columns:minmax(0,1fr) auto auto;
     height:var(--cg-header-mobile);
     min-height:var(--cg-header-mobile);
-    padding-left:max(8px,var(--cg-safe-left));
-    padding-right:max(8px,var(--cg-safe-right));
+    padding-left:max(9px,var(--cg-safe-left));
+    padding-right:max(9px,var(--cg-safe-right));
     gap:6px;
   }
   html body #btnCommandPalette.hf-command-trigger {
     grid-column:2;
-    grid-row:1;
-    width:34px;
-    min-width:34px;
-    height:34px;
-    min-height:34px;
+    width:36px;
+    min-width:36px;
+    height:36px;
+    min-height:36px;
     padding:0;
   }
   html body #btnCommandPalette.hf-command-trigger > span,
   html body #btnCommandPalette.hf-command-trigger > kbd { display:none; }
-  html body .hf-app-topbar-actions {
-    grid-column:3;
-    display:flex;
-  }
+  html body .hf-app-topbar-actions { grid-column:3; }
   html body .hf-header-context span { display:none; }
 }
 
 @media (max-width:760px) {
-  html body .hf-app-topbar.hf-topbar {
-    display:flex;
-    flex-flow:row nowrap;
-    justify-content:flex-start;
-  }
+  html body .hf-app-topbar.hf-topbar { display:flex; flex-flow:row nowrap; justify-content:flex-start; }
   html body .hf-topbar-left { flex:1 1 auto; overflow:hidden; }
   html body .hf-header-context { min-width:0; overflow:hidden; }
-  html body .hf-header-context strong {
-    display:block;
-    overflow:hidden;
-    text-overflow:ellipsis;
-    white-space:nowrap;
-  }
-  html body #btnCommandPalette.hf-command-trigger { flex:0 0 32px; width:32px; min-width:32px; height:32px; min-height:32px; }
-  html body .hf-app-topbar-actions { flex:0 0 auto; gap:3px; }
-  html body .hf-rate-compact { display:none !important; }
-  html body #btnActualizarTasaTop { display:none !important; }
+  html body .hf-header-context strong { display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  html body #btnCommandPalette.hf-command-trigger { flex:0 0 34px; width:34px; min-width:34px; height:34px; min-height:34px; }
+  html body .hf-app-topbar-actions { flex:0 0 auto; gap:4px; }
+  html body .hf-rate-compact,
+  html body #btnActualizarTasaTop,
+  html body .hf-create-button { display:none!important; }
   html body #btnTema,
   html body #btnUserMenu,
-  html body #btnOpenSidebar {
-    width:32px;
-    min-width:32px;
-    height:32px;
-    min-height:32px;
-    padding:0;
-  }
-  html body .hf-user-trigger .hf-avatar {
-    width:24px;
-    min-width:24px;
-    height:24px;
-    min-height:24px;
-  }
+  html body #btnOpenSidebar { width:34px; min-width:34px; height:34px; min-height:34px; padding:0; }
+  html body .hf-user-trigger .hf-avatar { width:26px; min-width:26px; height:26px; min-height:26px; }
 }
 
 @media (max-width:380px) {
   html body .hf-app-topbar.hf-topbar { gap:3px; padding-inline:6px; }
-  html body .hf-header-context strong { max-width:120px; }
+  html body .hf-header-context strong { max-width:132px; }
   html body #btnCommandPalette.hf-command-trigger,
   html body #btnTema,
   html body #btnUserMenu,
-  html body #btnOpenSidebar { width:30px; min-width:30px; height:30px; min-height:30px; }
+  html body #btnOpenSidebar { width:32px; min-width:32px; height:32px; min-height:32px; }
 }
