@@ -21,8 +21,10 @@ test('pre-QA v16 covers all 58 registered runtime routes',()=>{
   assert.equal(new Set(expectedRoutes).size,58);
   const app=read('frontend','src','app.js');
   const catalog=read('frontend','src','data','moduleCatalog.js');
+  const visualCatalog=read('qa','support','module-visual-catalog.mjs');
   for(const route of expectedRoutes){
     assert.match(app,new RegExp(`(?:^|[,\\s])['\"]?${route.replaceAll('-','\\-')}['\"]?\\s*:`),`runtime registry missing ${route}`);
+    assert.match(visualCatalog,new RegExp(`route:'${route.replaceAll('-','\\-')}'`),`visual audit catalog missing ${route}`);
     if(route!=='login')assert.match(catalog,new RegExp(`route:'${route.replaceAll('-','\\-')}'`),`module catalog missing ${route}`);
   }
   assert.doesNotMatch(catalog,/route:'login'/,'login is intentionally runtime-only, not a licensed module');
@@ -88,6 +90,13 @@ test('Accounting close bootstrap is deduplicated and only marks loaded after bac
   assert.match(source,/if\(periodsLoadPromise\)return periodsLoadPromise/);
   assert.match(source,/periodsLoaded=true/);
   assert.doesNotMatch(source,/load\(\{silent:true\}\)\.then\(\(\)=>Store\.update/);
+});
+
+test('exports use the secure shared API client instead of dev tenant headers or localhost',()=>{
+  const source=read('frontend','src','services','exportService.js');
+  assert.match(source,/BackendApi\.request\(endpoint/);
+  assert.doesNotMatch(source,/\bfetch\s*\(/);
+  assert.doesNotMatch(source,/x-tenant-id|contagest_tenant_id|localhost:3030/);
 });
 
 test('previous v16 financial safety fixes remain in place',()=>{
