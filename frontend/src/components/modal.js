@@ -1,32 +1,58 @@
+const text = (value) => String(value ?? '').replace(/[&<>"']/g, (char) => ({
+  '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#039;'
+}[char]));
+
 export const Modal = {
-  open({ title = '', body = '', actions = '' }) {
+  open({ title = '', body = '', actions = '', ariaLabel = '' }) {
     const root = document.getElementById('modal-root');
+    if (!root) return null;
     document.body.classList.add('modal-open');
     root.innerHTML = `
-      <div class="fixed inset-0 z-[90] flex items-center justify-center bg-black/60 p-4" data-modal-backdrop>
-        <section class="max-h-[90vh] w-full max-w-3xl overflow-auto rounded-[1.5rem] bg-white p-5 shadow-2xl dark:bg-slate-900 sm:p-7">
-          <div class="mb-4 flex items-start justify-between gap-3">
-            <h3 class="text-2xl font-black text-[#1e3a8a] dark:text-white">${title}</h3>
-            <button data-modal-close class="rounded-xl bg-slate-100 px-3 py-2 font-black text-slate-900 hover:bg-slate-200 dark:bg-slate-800 dark:text-white">×</button>
-          </div>
-          <div>${body}</div>
-          ${actions ? `<div class="mt-6 flex flex-wrap justify-end gap-2">${actions}</div>` : ''}
+      <div class="cg-modal-backdrop" data-modal-backdrop>
+        <section class="cg-modal" role="dialog" aria-modal="true" aria-label="${text(ariaLabel || title || 'Diálogo')}">
+          <header class="cg-modal-header">
+            <h2 class="cg-modal-title">${text(title)}</h2>
+            <button type="button" data-modal-close class="cg-modal-close" aria-label="Cerrar diálogo"><i class="fa-solid fa-xmark" aria-hidden="true"></i></button>
+          </header>
+          <div class="cg-modal-body">${body}</div>
+          ${actions ? `<footer class="cg-modal-actions">${actions}</footer>` : ''}
         </section>
       </div>`;
-    root.querySelectorAll('[data-modal-close], [data-modal-backdrop]').forEach((element) => {
-      element.addEventListener('click', (event) => { if (event.target === element) this.close(); });
+    const dialog = root.querySelector('.cg-modal');
+    const closeButton = root.querySelector('[data-modal-close]');
+    const close = () => this.close();
+    closeButton?.addEventListener('click', close);
+    root.querySelector('[data-modal-backdrop]')?.addEventListener('click', (event) => {
+      if (event.target === event.currentTarget) close();
     });
+    requestAnimationFrame(() => closeButton?.focus());
+    return dialog;
   },
+
   close() {
-    document.getElementById('modal-root').innerHTML = '';
+    const root = document.getElementById('modal-root');
+    if (root) root.innerHTML = '';
     document.body.classList.remove('modal-open');
   },
-  confirm({ title, body, confirmText = 'Eliminar', cancelText = 'Cancelar', onConfirm }) {
-    this.open({
-      title,
-      body: `<p class="text-base font-bold text-slate-700 dark:text-slate-200">${body}</p>`,
-      actions: `<button data-modal-close class="btn btn-secondary">${cancelText}</button><button id="modalConfirmBtn" class="btn btn-danger">${confirmText}</button>`
+
+  confirm({ title, body, message, confirmText = 'Confirmar', cancelText = 'Cancelar', tone = 'danger', onConfirm }) {
+    return new Promise((resolve) => {
+      const root = document.getElementById('modal-root');
+      const finish = (value) => { this.close(); resolve(value); };
+      const variant = tone === 'danger' ? 'danger' : 'primary';
+      this.open({
+        title,
+        body:`<p class="cg-modal-message">${text(body ?? message ?? '')}</p>`,
+        actions:`<button type="button" id="modalCancelBtn" class="cg-ui-button cg-ui-button-secondary">${text(cancelText)}</button><button type="button" id="modalConfirmBtn" class="cg-ui-button cg-ui-button-${variant}">${text(confirmText)}</button>`
+      });
+      const backdrop = root?.querySelector('[data-modal-backdrop]');
+      root?.querySelector('#modalCancelBtn')?.addEventListener('click', () => finish(false), { once:true });
+      root?.querySelector('#modalConfirmBtn')?.addEventListener('click', async () => {
+        try { await onConfirm?.(); finish(true); }
+        catch (error) { finish(false); throw error; }
+      }, { once:true });
+      root?.querySelector('[data-modal-close]')?.addEventListener('click', () => resolve(false), { once:true });
+      backdrop?.addEventListener('click', (event) => { if (event.target === backdrop) resolve(false); }, { once:true });
     });
-    document.getElementById('modalConfirmBtn').addEventListener('click', () => { onConfirm?.(); this.close(); });
   }
 };
