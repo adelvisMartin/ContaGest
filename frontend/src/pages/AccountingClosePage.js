@@ -6,6 +6,7 @@ import { BackendApi } from '../services/backendApi.js';
 
 const statusLabel=(status)=>status==='closed'?'Cerrado':'Abierto';
 const periodCode=()=>new Date().toISOString().slice(0,7);
+let periodsLoadPromise=null;
 
 export const AccountingClosePage = {
   render(state) {
@@ -34,9 +35,26 @@ export const AccountingClosePage = {
     </section>`;
   },
   mount(state, { Store, Toast, Loading, Modal }) {
-    const load=async({silent=false}={})=>{try{if(!silent)Loading?.mount?.('Cargando períodos contables…');const periods=await BackendApi.get('/accounting/closing-periods');Store.update((draft)=>{draft.accounting=draft.accounting||{};draft.accounting.periods=periods||[];});}catch(error){Toast.show(`No se cargaron los períodos: ${error.message}`,'error');}finally{if(!silent)Loading?.unmount?.();}};
-    if(!state.accounting?.periodsLoaded)load({silent:true}).then(()=>Store.update((draft)=>{draft.accounting=draft.accounting||{};draft.accounting.periodsLoaded=true;}));
-    document.getElementById('btnClosingRefresh')?.addEventListener('click',()=>load());
+    const load=({silent=false}={})=>{
+      if(periodsLoadPromise)return periodsLoadPromise;
+      periodsLoadPromise=(async()=>{
+        try{
+          if(!silent)Loading?.mount?.('Cargando períodos contables…');
+          const periods=await BackendApi.get('/accounting/closing-periods');
+          Store.update((draft)=>{draft.accounting=draft.accounting||{};draft.accounting.periods=periods||[];draft.accounting.periodsLoaded=true;});
+          return periods||[];
+        }catch(error){
+          Toast.show(`No se cargaron los períodos: ${error.message}`,'error');
+          throw error;
+        }finally{
+          if(!silent)Loading?.unmount?.();
+          periodsLoadPromise=null;
+        }
+      })();
+      return periodsLoadPromise;
+    };
+    if(!state.accounting?.periodsLoaded)void load({silent:true}).catch(()=>undefined);
+    document.getElementById('btnClosingRefresh')?.addEventListener('click',()=>void load().catch(()=>undefined));
     mountSubmit('#periodForm',async(data,form)=>{const submit=form.querySelector('[type="submit"]');submit?.setAttribute('disabled','disabled');try{await BackendApi.post('/accounting/closing-periods',{period:data.period,note:data.note||''});Toast.show('Período contable creado en estado abierto.','success');form.reset();if(form.elements.period)form.elements.period.value=periodCode();await load({silent:true});}catch(error){Toast.show(`No se creó el período: ${error.message}`,'error');}finally{submit?.removeAttribute('disabled');}});
     qsa('[data-close-period]').forEach((button)=>button.addEventListener('click',()=>{
       const period=(Store.get().accounting?.periods||[]).find((item)=>item.id===button.dataset.closePeriod);
