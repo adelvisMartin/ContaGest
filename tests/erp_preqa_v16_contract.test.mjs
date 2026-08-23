@@ -8,7 +8,7 @@ const read=(...parts)=>fs.readFileSync(path.join(root,...parts),'utf8');
 const page=(name)=>read('frontend','src','pages',name);
 
 const expectedRoutes=[
-  'dashboard','mobile','ventas','cotizacion','clientes','historial','pos-sede','pedidos','tracking-pedidos','delivery-mapa','tasks',
+  'dashboard','mobile','login','ventas','cotizacion','clientes','historial','pos-sede','pedidos','tracking-pedidos','delivery-mapa','tasks',
   'inventario','inventario-scan','kardex','qr','proveedores','compras','contabilidad','plan-cuentas','libro-mayor','balance-sumas-saldos',
   'hoja-trabajo','estados-financieros','cierre-contable','bancos','normativa-contable','tributos','libro-ventas','normativa','nomina','rrhh',
   'salud','veterinaria','psicologia','odontologia','gimnasio','rutinas','nutricion','mensajes','analytics','reportes','auditoria','configuracion',
@@ -16,10 +16,16 @@ const expectedRoutes=[
   'asistente-ia','soporte','ayuda'
 ];
 
-test('pre-QA v16 covers the 58 registered product routes',()=>{
+test('pre-QA v16 covers all 58 registered runtime routes',()=>{
   assert.equal(expectedRoutes.length,58);
+  assert.equal(new Set(expectedRoutes).size,58);
+  const app=read('frontend','src','app.js');
   const catalog=read('frontend','src','data','moduleCatalog.js');
-  for(const route of expectedRoutes)assert.match(catalog,new RegExp(`route:'${route.replaceAll('-','\\-')}'`),`missing ${route}`);
+  for(const route of expectedRoutes){
+    assert.match(app,new RegExp(`(?:^|[,\\s])['\"]?${route.replaceAll('-','\\-')}['\"]?\\s*:`),`runtime registry missing ${route}`);
+    if(route!=='login')assert.match(catalog,new RegExp(`route:'${route.replaceAll('-','\\-')}'`),`module catalog missing ${route}`);
+  }
+  assert.doesNotMatch(catalog,/route:'login'/,'login is intentionally runtime-only, not a licensed module');
 });
 
 test('legacy visual hotspots migrated to canonical contracts',()=>{
