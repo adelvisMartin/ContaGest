@@ -12,7 +12,7 @@ export const SalesPage = {
     const sales = state.sales || [];
     const total = sales.reduce((sum, item) => sum + Number(item.amount || 0), 0);
     const pending = sales.filter((item) => String(item.status).toLowerCase().includes('pend')).length;
-    const pendingAmount = sales.filter((item) => item.status !== 'Cobrada').reduce((sum,item)=>sum+Number(item.amount||0),0);
+    const pendingAmount = sales.filter((item) => item.status !== 'Cobrada' && item.status !== 'Anulada').reduce((sum,item)=>sum+Number(item.amount||0),0);
     const clientOptions = [{ value:'', label:'Consumidor final / sin cliente' }, ...(state.clients || []).map((client) => ({ value:client.id, label:`${client.name} · ${client.rif}` }))];
 
     const table = ErpDataTable({
@@ -23,11 +23,10 @@ export const SalesPage = {
         { key:'client', label:t('client',lang), render:(sale)=>safe(sale.client) },
         { key:'amount', label:t('amount',lang), numeric:true, render:(sale)=>safe(bs(sale.amount)) },
         { key:'method', label:t('method',lang), render:(sale)=>safe(sale.method || 'VES') },
-        { key:'status', label:t('status',lang), render:(sale)=>Badge(sale.status, sale.status === 'Cobrada' ? 'success' : 'warning') },
+        { key:'status', label:t('status',lang), render:(sale)=>Badge(sale.status, sale.status === 'Cobrada' ? 'success' : sale.status === 'Anulada' ? 'danger' : 'warning') },
         { key:'source', label:t('sync',lang), render:(sale)=>sale.source === 'supabase' ? Badge(t('synced',lang),'success') : Badge(t('pendingSync',lang),'warning') },
         { key:'actions', label:t('actions',lang), render:(sale)=>ErpRow(
-          ErpButton('Cargar venta al cotizador', { variant:'secondary', icon:'fa-solid fa-file-invoice-dollar', iconOnly:true, data:{ 'send-quote':sale.id } })
-          + ErpButton(t('delete',lang), { variant:'danger', icon:'fa-solid fa-trash', iconOnly:true, data:{ 'delete-sale':sale.id } }),
+          ErpButton('Cargar venta al cotizador', { variant:'secondary', icon:'fa-solid fa-file-invoice-dollar', iconOnly:true, data:{ 'send-quote':sale.id } }),
           { wrap:true }
         ) }
       ],
@@ -40,7 +39,7 @@ export const SalesPage = {
       ${Select({ labelKey:'client', name:'clientId', options:clientOptions })}
       ${Field({ labelKey:'client', name:'client', placeholder:'Nombre libre si no está registrado' })}
       ${Field({ labelKey:'amount', name:'amount', type:'number', attrs:'step="0.01" min="0"', value:'0' })}
-      ${Select({ labelKey:'status', name:'status', options:[{value:'Cobrada',label:'Cobrada'}, {value:'Pendiente',label:t('pending',lang)}, {value:'Anulada',label:t('cancelled',lang)}] })}
+      ${Select({ labelKey:'status', name:'status', options:[{value:'Cobrada',label:'Cobrada'}, {value:'Pendiente',label:t('pending',lang)}, {value:'Borrador',label:'Borrador'}] })}
       ${Select({ labelKey:'method', name:'method', options:[{value:'Transferencia',label:'Transferencia'}, {value:'Punto',label:'Punto'}, {value:'Efectivo',label:'Efectivo'}, {value:'Crédito',label:'Crédito'}] })}
       </div><div class="cg-record-actions">${Button({ text:'Registrar venta', icon:'fa-cash-register', type:'submit' })}</div></form>`;
 
@@ -53,7 +52,7 @@ export const SalesPage = {
       { label:'Documentos pendientes', value:String(pending), hint:t('pending',lang), iconName:'fa-clock', tone:pending?'warning':'success' },
       { label:'Cobranza pendiente', value:bs(pendingAmount), iconName:'fa-wallet', tone:pendingAmount?'warning':'success' },
       { label:'Ticket promedio', value:bs(total / Math.max(sales.length, 1)), iconName:'fa-chart-line', tone:'brand' }
-    ])}${ErpSection({ title:'Registrar venta', description:'Captura el documento comercial y conserva sus datos para cobranza y seguimiento.', content:form })}${ErpSection({ title:'Ventas registradas', description:'Estado de cobro, sincronización y acciones disponibles.', content:table })}</section>`;
+    ])}${ErpSection({ title:'Registrar venta', description:'Captura el documento comercial. Una venta registrada no se elimina desde la interfaz; las anulaciones deben conservar trazabilidad contable y de auditoría.', content:form })}${ErpSection({ title:'Ventas registradas', description:'Estado de cobro, sincronización y acciones seguras disponibles.', content:table })}</section>`;
   },
   mount(state, { Store, Toast, navigate, SupabaseSyncService }) {
     document.getElementById('btnSyncSales')?.addEventListener('click', () => SupabaseSyncService.pullSales({ Store, Toast, force:true, silent:false }));
@@ -79,7 +78,6 @@ export const SalesPage = {
         } else Toast.show(decision.message, 'error');
       } finally { submit?.removeAttribute('disabled'); }
     });
-    qsa('[data-delete-sale]').forEach((button) => button.addEventListener('click', () => Store.update((draft) => { draft.sales = (draft.sales || []).filter((item) => item.id !== button.dataset.deleteSale); })));
     qsa('[data-send-quote]').forEach((button) => button.addEventListener('click', () => {
       const sale = (state.sales || []).find((item) => item.id === button.dataset.sendQuote);
       if (!sale) return;

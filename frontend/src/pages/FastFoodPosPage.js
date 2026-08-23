@@ -40,15 +40,16 @@ export const FastFoodPosPage = {
     const draft=state.posDraft||{};
     const productContent=products.length
       ? `<div class="cg-pos-grid">${products.map(productCard).join('')}</div>`
-      : EmptyState({title:'Sin productos disponibles',description:'Agrega productos al menú antes de iniciar una venta.',iconName:'fa-burger'});
+      : EmptyState({title:'Sin productos disponibles',description:'Agrega productos reales al menú antes de iniciar una venta.',iconName:'fa-burger'});
 
     return `
       <section class="cg-page-stack cg-pos-shell">
         ${PageHeader({
-          eyebrowKey: 'posEyebrow',
-          titleKey: 'posTitle',
-          descKey: 'posDesc',
-          actions: `${Button({ id: 'btnClearCart', text: 'Vaciar', icon: 'fa-trash', variant: 'secondary' })}${Button({ id: 'btnCreateCounterOrder', text: 'Crear pedido', icon: 'fa-paper-plane', variant: 'primary' })}`
+          eyebrowKey:'posEyebrow',
+          titleKey:'posTitle',
+          descKey:'posDesc',
+          actions:`${Button({ id:'btnClearCart', text:'Vaciar', icon:'fa-trash', variant:'secondary' })}${Button({ id:'btnCreateCounterOrder', text:'Crear pedido', icon:'fa-paper-plane', variant:'primary' })}`,
+          meta:['Carrito persistente','Pedido real','Canal y cliente explícitos']
         })}
         <div class="cg-pos-layout">
           <section class="cg-pos-products surface" aria-label="Productos disponibles">
@@ -58,9 +59,9 @@ export const FastFoodPosPage = {
           <aside class="cg-pos-cart surface" aria-label="Orden actual">
             <h3><i class="fa-solid fa-receipt" aria-hidden="true"></i> Orden actual</h3>
             <div class="cg-record-fields cg-fields-compact cg-pos-order-fields">
-              ${Field({ id:'posTable', labelKey:'Mesa / canal', name:'table', value:draft.table || 'Mesa 1' })}
-              ${Field({ id:'posCustomer', labelKey:'Cliente', name:'customer', value:draft.customer || 'Cliente sede' })}
-              ${Field({ id:'posPhone', labelKey:'Teléfono WhatsApp', name:'phone', value:draft.phone || '+584120000000', attrs:'inputmode="tel" autocomplete="tel"' })}
+              ${Field({ id:'posTable', labelKey:'Mesa / canal', name:'table', value:draft.table || '', placeholder:'Ej. Mesa 4, mostrador o retiro' })}
+              ${Field({ id:'posCustomer', labelKey:'Cliente', name:'customer', value:draft.customer || '', placeholder:'Nombre del cliente' })}
+              ${Field({ id:'posPhone', labelKey:'Teléfono WhatsApp', name:'phone', value:draft.phone || '', placeholder:'Ej. +58 412 0000000', attrs:'inputmode="tel" autocomplete="tel"' })}
               ${Select({ labelKey:'Modo', name:'mode', value:draft.mode || 'dine_in', attrs:'id="posMode"', options:[
                 {value:'dine_in',label:'Atención en sede'},
                 {value:'pickup',label:'Retiro'},
@@ -96,17 +97,18 @@ export const FastFoodPosPage = {
     const buildOrder = () => {
       const latest = Store.get();
       return createOrderDraft({
-        source: 'counter',
-        serviceMode: document.getElementById('posMode')?.value || 'dine_in',
-        table: document.getElementById('posTable')?.value || '',
-        customer: document.getElementById('posCustomer')?.value || '',
-        phone: document.getElementById('posPhone')?.value || '',
-        items: latest.posCart || []
+        source:'counter',
+        serviceMode:document.getElementById('posMode')?.value || 'dine_in',
+        table:document.getElementById('posTable')?.value || '',
+        customer:document.getElementById('posCustomer')?.value || '',
+        phone:document.getElementById('posPhone')?.value || '',
+        items:latest.posCart || []
       });
     };
     document.getElementById('btnCreateCounterOrder')?.addEventListener('click', async () => {
       const order = buildOrder();
       if (!order.items.length) return Toast.show('Agrega productos antes de crear el pedido.', 'warning');
+      if (!String(order.customer||'').trim()) return Toast.show('Indica el nombre del cliente.', 'warning');
       try {
         const saved = await SupabaseSyncService.createFoodOrder(order);
         Store.update((draft) => { draft.foodOrders = [saved, ...(draft.foodOrders || []).filter((item) => item.id !== saved.id)]; draft.posCart = []; });
@@ -120,6 +122,7 @@ export const FastFoodPosPage = {
     document.getElementById('btnSendOrderWhatsapp')?.addEventListener('click', async () => {
       const order = buildOrder();
       if (!order.items.length) return Toast.show('Agrega productos antes de notificar.', 'warning');
+      if (!String(order.phone||'').trim()) return Toast.show('Indica el teléfono real del cliente antes de abrir WhatsApp.', 'warning');
       await NotificationService.notifyOrder(order, 'whatsapp', { companyName: Store.get().settings.companyName });
     });
   }

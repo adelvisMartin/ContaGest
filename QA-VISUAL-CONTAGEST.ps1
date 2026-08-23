@@ -25,14 +25,14 @@ if (-not $npm) { Fail 'No encuentro npm.cmd.' }
 
 Write-Host ''
 Write-Host '====================================================================' -ForegroundColor Cyan
-Write-Host ' CONTAGEST · QA ERP UX + FUNCIONAL v14 · 58 MODULOS' -ForegroundColor Cyan
+Write-Host ' CONTAGEST · QA ERP UX v15 · 58 MODULOS · LIGHT/DARK' -ForegroundColor Cyan
 Write-Host '====================================================================' -ForegroundColor Cyan
-Write-Host 'Source ownership, shell, dark/light, 58 rutas, formularios, handlers,' -ForegroundColor DarkGray
-Write-Host 'overflow, solapamientos, KPIs, agenda Psicologia y browser real.' -ForegroundColor DarkGray
+Write-Host 'Source ownership, shell, contraste WCAG, responsive, 58 rutas,' -ForegroundColor DarkGray
+Write-Host 'formularios, handlers, overflow, KPIs, agendas y browser real.' -ForegroundColor DarkGray
 Write-Host 'Viewports objetivo: 360, 390, 430, 768, 1024 y 1440 px.' -ForegroundColor DarkGray
 Write-Host ''
 
-$total = if ($SkipDeepBrowser) { 7 } else { 9 }
+$total = if ($SkipDeepBrowser) { 8 } else { 10 }
 $step = 1
 
 if (-not $SkipInstall) {
@@ -49,7 +49,7 @@ $step++
 
 Write-Host "[$step/$total] Auditoria ESTRICTA visual/source/shell..." -ForegroundColor Cyan
 & $npm.Source run audit:visual:strict
-if ($LASTEXITCODE -ne 0) { Fail 'El gate estructural visual v14 fallo. Revisa artifacts\qa\visual-source-audit.md.' }
+if ($LASTEXITCODE -ne 0) { Fail 'El gate estructural visual v15 fallo. Revisa artifacts\qa\visual-source-audit.md.' }
 $step++
 
 Write-Host "[$step/$total] Auditoria FUNCIONAL ESTRICTA de las 58 rutas..." -ForegroundColor Cyan
@@ -57,9 +57,9 @@ Write-Host "[$step/$total] Auditoria FUNCIONAL ESTRICTA de las 58 rutas..." -For
 if ($LASTEXITCODE -ne 0) { Fail 'El gate funcional de las 58 rutas fallo. Revisa artifacts\qa\module-function-audit.md.' }
 $step++
 
-Write-Host "[$step/$total] Contratos estaticos visuales/funcionales..." -ForegroundColor Cyan
+Write-Host "[$step/$total] Contratos estaticos visuales/funcionales v15..." -ForegroundColor Cyan
 & $npm.Source run test:visual
-if ($LASTEXITCODE -ne 0) { Fail 'Los contratos estaticos visuales v14 fallaron.' }
+if ($LASTEXITCODE -ne 0) { Fail 'Los contratos estaticos visuales v15 fallaron.' }
 $step++
 
 Write-Host "[$step/$total] Playwright visual/responsive base..." -ForegroundColor Cyan
@@ -67,7 +67,12 @@ Write-Host "[$step/$total] Playwright visual/responsive base..." -ForegroundColo
 if ($LASTEXITCODE -ne 0) { Fail 'El QA visual base fallo. Revisa ruta, estado y viewport reportados.' }
 $step++
 
-Write-Host "[$step/$total] Playwright funcional: rutas, shell y agenda..." -ForegroundColor Cyan
+Write-Host "[$step/$total] Playwright contraste Light/Dark sobre 58 rutas..." -ForegroundColor Cyan
+& $npm.Source run test:browser:contrast
+if ($LASTEXITCODE -ne 0) { Fail 'El QA de contraste v15 detecto texto insuficientemente legible. Revisa screenshots de Playwright.' }
+$step++
+
+Write-Host "[$step/$total] Playwright funcional: rutas, shell y agendas..." -ForegroundColor Cyan
 & $npm.Source run test:browser:functional
 if ($LASTEXITCODE -ne 0) { Fail 'El smoke funcional browser fallo. Revisa el flujo y trace de Playwright.' }
 $step++
@@ -84,11 +89,11 @@ if (-not $SkipDeepBrowser) {
 }
 
 Write-Host ''
-Write-Host 'QA ERP UX v14: PASS' -ForegroundColor Green
+Write-Host 'QA ERP UX v15: PASS' -ForegroundColor Green
 Write-Host 'Reportes:' -ForegroundColor Green
 Write-Host '  artifacts\qa\visual-source-audit.md' -ForegroundColor DarkGray
 Write-Host '  artifacts\qa\visual-source-audit.json' -ForegroundColor DarkGray
 Write-Host '  artifacts\qa\module-function-audit.md' -ForegroundColor DarkGray
 Write-Host '  artifacts\qa\module-function-audit.json' -ForegroundColor DarkGray
 Write-Host ''
-Write-Host 'Este PASS solo aparece si los comandos anteriores se ejecutaron realmente.' -ForegroundColor Green
+Write-Host 'Este PASS solo aparece si source, contratos, contraste, browser y build se ejecutaron realmente.' -ForegroundColor Green

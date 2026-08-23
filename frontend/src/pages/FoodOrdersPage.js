@@ -1,6 +1,6 @@
 import { PageHeader, Button, Badge, MetricGrid, EmptyState } from '../components/ui/index.js';
 import { Store } from '../state/store.js';
-import { createOrderDraft, updateOrderStatus, ORDER_STATUSES, orderStatusMeta } from '../services/orderService.js';
+import { updateOrderStatus, ORDER_STATUSES, orderStatusMeta } from '../services/orderService.js';
 import { NotificationService } from '../services/notificationService.js';
 import { MapsService } from '../services/mapsService.js';
 import { escapeHtml } from '../utils/dom.js';
@@ -44,13 +44,11 @@ export const FoodOrdersPage = {
     return `
       <section class="cg-page-stack cg-orders-workspace">
         ${PageHeader({
-          eyebrowKey: 'ordersEyebrow',
-          titleKey: 'ordersTitle',
-          descKey: 'ordersDesc',
-          actions: `
-            ${Button({ id: 'btnSeedFastFood', text: 'Pedido demo', icon: 'fa-burger', variant: 'secondary' })}
-            ${Button({ id: 'btnNewFastFood', text: 'Nuevo pedido rápido', icon: 'fa-plus', variant: 'primary' })}
-          `
+          eyebrowKey:'ordersEyebrow',
+          titleKey:'ordersTitle',
+          descKey:'ordersDesc',
+          actions:Button({ text:'Crear pedido en POS', icon:'fa-plus', route:'pos-sede', variant:'primary' }),
+          meta:['Pedidos reales del tenant','Estados operativos','WhatsApp y delivery']
         })}
         ${MetricGrid([
           {label:'Pedidos activos',value:String(pending),hint:'En cocina, caja o delivery',iconName:'fa-bell-concierge',tone:pending?'warning':'success'},
@@ -67,49 +65,10 @@ export const FoodOrdersPage = {
               <div class="cg-kanban-list">${list.length ? list.map(orderCard).join('') : '<div class="cg-empty-mini">Sin pedidos</div>'}</div>
             </section>`;
           }).join('')}
-        </div>` : EmptyState({title:'Sin pedidos',description:'Crea un pedido para iniciar el tablero operativo.',iconName:'fa-bell-concierge'})}
+        </div>` : EmptyState({title:'Sin pedidos',description:'Crea el primer pedido desde el POS. Esta vista ya no genera clientes, teléfonos ni productos ficticios.',iconName:'fa-bell-concierge'})}
       </section>`;
   },
-  mount(state, { Store, Toast, SupabaseSyncService }) {
-    const sampleItems = [
-      { sku: 'BUR-CLAS', name: 'Burger clásica', qty: 2, price: 7.5 },
-      { sku: 'PAP-MED', name: 'Papas medianas', qty: 1, price: 2.5 },
-      { sku: 'REF-355', name: 'Refresco 355ml', qty: 2, price: 1.8 }
-    ];
-    const createDemo = (mode = 'delivery') => createOrderDraft({
-      source: 'whatsapp',
-      serviceMode: mode,
-      table: mode === 'dine_in' ? 'Mesa 4' : '',
-      customer: mode === 'delivery' ? 'Carlos Pérez' : 'Cliente sede',
-      phone: '+584120000000',
-      address: mode === 'delivery' ? 'Altamira, Caracas, Venezuela' : '',
-      items: sampleItems,
-      notes: 'Sin cebolla, entregar con punto.'
-    });
-
-    const persistOrder = async (order, successMessage) => {
-      try {
-        const saved = await SupabaseSyncService.createFoodOrder(order);
-        Store.update((draft) => {
-          draft.foodOrders = [saved, ...(draft.foodOrders || []).filter((item) => item.id !== saved.id)];
-        });
-        Toast.show(`${successMessage} Guardado en Supabase.`, 'success');
-      } catch (error) {
-        Store.update((draft) => {
-          draft.foodOrders = [{ ...order, source:'local' }, ...(draft.foodOrders || [])];
-        });
-        Toast.show(`${successMessage} Guardado localmente. Backend: ${error.message}`, 'warning');
-      }
-    };
-
-    document.getElementById('btnSeedFastFood')?.addEventListener('click', () => {
-      persistOrder(createDemo('delivery'), 'Pedido demo creado.');
-    });
-
-    document.getElementById('btnNewFastFood')?.addEventListener('click', () => {
-      persistOrder(createDemo('dine_in'), 'Pedido rápido de sede creado.');
-    });
-
+  mount(_state, { Store, Toast, SupabaseSyncService }) {
     document.querySelectorAll('[data-status-order]').forEach((select) => {
       select.addEventListener('change', async () => {
         try {

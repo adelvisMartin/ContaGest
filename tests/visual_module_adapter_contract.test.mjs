@@ -10,34 +10,37 @@ const adapters=read('frontend/src/styles/module-adapters.css');
 const pos=read('frontend/src/pages/FastFoodPosPage.js');
 const store=read('frontend/src/state/store.js');
 
-test('module adapters load below v12 authority and before the final canonical stylesheet',()=>{
+test('module adapters load before the final canonical appearance authority',()=>{
   const moduleIndex=runtime.indexOf("@import './module-adapters.css'");
   const visualIndex=runtime.indexOf("@import './contagest-visual-system-v12.css'");
   assert.ok(moduleIndex>0,'module adapters must be imported');
   assert.ok(visualIndex>moduleIndex,'canonical visual system must remain physically last');
   assert.match(runtime,/cg\.module-adapters/);
-  assert.match(runtime,/shell > v12 visual contract > module adapters > context\/legacy/);
+  assert.match(runtime,/FINAL canonical appearance authority/i);
 });
 
-test('module adapter is tokenized and does not create another palette or decorative system',()=>{
+test('module adapter remains tokenized and cannot create another palette or decorative system',()=>{
   assert.doesNotMatch(adapters,/#(?:[0-9a-f]{3}|[0-9a-f]{6}|[0-9a-f]{8})\b/i);
   assert.doesNotMatch(adapters,/(?:linear|radial|conic)-gradient\s*\(/i);
   assert.doesNotMatch(adapters,/font-size\s*:\s*(?:2[2-9]|[3-9]\d)px/i);
   for(const token of ['--cg-v-border','--cg-v-surface','--cg-v-text','--cg-v-text-kpi','--cg-v-radius-md','--cg-v-control'])assert.match(adapters,new RegExp(token.replaceAll('-','\\-')));
 });
 
-test('high-risk legacy module families have explicit structural adapters',()=>{
+test('high-risk module families have explicit structural ownership without independent themes',()=>{
   for(const selector of [
-    '.cg-ledger-workbench','.cg-rbac-permission-grid','.cg-vertical-grid','.cg-psych-planner-grid',
+    '.cg-ledger-workbench','.cg-rbac-permission-grid','.cg-vertical-grid','.cg-psych-editor-grid',
     '.cg-dental-tooth-grid','.cg-gym-v1124-grid','.cg-pos-layout','.cg-kanban'
   ])assert.ok(adapters.includes(selector),`missing adapter ${selector}`);
-  assert.match(adapters,/@media \(max-width: 1100px\)/);
-  assert.match(adapters,/@media \(max-width: 900px\)/);
-  assert.match(adapters,/@media \(max-width: 760px\)/);
-  assert.match(adapters,/@media \(max-width: 430px\)/);
+  for(const breakpoint of ['1100px','900px','760px','430px'])assert.ok(adapters.includes(`max-width:${breakpoint}`)||adapters.includes(`max-width: ${breakpoint}`),`missing ${breakpoint} breakpoint`);
 });
 
-test('POS iteration removes the legacy form grid and provides explicit accessible touch buttons',()=>{
+test('appointment calendar owns its horizontal overflow rather than document',()=>{
+  assert.match(adapters,/cg-psych-calendar/);
+  assert.match(adapters,/cg-psychology-workspace[\s\S]*overflow-x:auto/);
+  assert.match(adapters,/cg-appointment-list/);
+});
+
+test('POS keeps explicit accessible touch actions',()=>{
   assert.match(pos,/Field, Select, EmptyState/);
   assert.doesNotMatch(pos,/pl-form-grid/);
   assert.doesNotMatch(pos,/pl-field/);
@@ -49,7 +52,7 @@ test('POS iteration removes the legacy form grid and provides explicit accessibl
   assert.match(pos,/escapeHtml/);
 });
 
-test('persisted theme state remains binary despite historical CSS still being audited',()=>{
+test('persisted theme state remains binary',()=>{
   assert.match(store,/OFFICIAL_THEMES\s*=\s*new Set\(\['light','dark'\]\)/);
   assert.match(store,/return OFFICIAL_THEMES\.has\(value\) \? value : 'light'/);
 });
