@@ -6,6 +6,8 @@ const isDevelopmentHost = isBrowser && ['localhost', '127.0.0.1'].includes(windo
 const ENV_API_BASE = import.meta?.env?.VITE_API_BASE_URL || '';
 const SAME_ORIGIN_API_BASE = '/api/v1';
 const DEFAULT_API_BASE = (ENV_API_BASE || (isDevelopmentHost ? 'http://localhost:3030/api/v1' : SAME_ORIGIN_API_BASE)).replace(/\/$/, '');
+let refreshInFlight = null;
+let authExpiredSignalled = false;
 
 function normalizeBaseUrl(value) {
   const candidate = String(value || DEFAULT_API_BASE).trim().replace(/\/$/, '');
@@ -88,6 +90,18 @@ function sameOriginFallback(baseUrl) {
   return SAME_ORIGIN_API_BASE;
 }
 
+function markAuthHealthy() {
+  authExpiredSignalled = false;
+}
+
+function expireBrowserSession(reason = 'session_expired') {
+  const hadSession = Boolean(AuthSession.get()?.tenantId);
+  AuthSession.clear();
+  if (!isBrowser || !hadSession || authExpiredSignalled) return;
+  authExpiredSignalled = true;
+  window.dispatchEvent(new CustomEvent('cg:auth-expired', { detail:{ reason } }));
+}
+
 async function fetchApi(baseUrl, path, options) {
   try {
     return await fetch(`${baseUrl}${path}`, options);
@@ -113,7 +127,16 @@ async function refreshCookieSession(api) {
   if (!response.ok || payload.ok === false) throw apiError(payload.message || payload.error || 'No se pudo renovar la sesión.', response.status, payload);
   const data = payload.data ?? payload;
   if (data?.tenantId) AuthSession.set(data);
+  markAuthHealthy();
   return data;
+}
+
+function refreshCookieSessionSingleFlight(api) {
+  if (refreshInFlight) return refreshInFlight;
+  refreshInFlight = refreshCookieSession(api).finally(() => {
+    refreshInFlight = null;
+  });
+  return refreshInFlight;
 }
 
 export const BackendApi = {
@@ -163,21 +186,23 @@ export const BackendApi = {
 
     if (response.status === 401 && !publicRequest && !skipRefresh && path !== '/auth/refresh') {
       try {
-        await refreshCookieSession(this);
+        // Refresh tokens/cookies may rotate. All concurrent 401 responses must
+        // await one shared refresh or they can invalidate the session each other.
+        await refreshCookieSessionSingleFlight(this);
         const nextCsrf = isUnsafeMethod(method) ? csrfToken() : '';
         response = await fetchApi(this.baseUrl, path, {
           ...requestOptions,
           headers:{ ...headers, ...(nextCsrf ? { 'x-csrf-token':nextCsrf } : {}) }
         });
-      } catch {
-        AuthSession.clear();
+      } catch (error) {
+        expireBrowserSession(error?.message || 'refresh_failed');
       }
     }
 
     if (raw) {
       if (!response.ok) {
         const payload = await parseResponse(response);
-        if (response.status === 401 && !publicRequest) AuthSession.clear();
+        if (response.status === 401 && !publicRequest) expireBrowserSession(payload.message || payload.error || 'unauthorized');
         throw apiError(payload.message || payload.error || `HTTP ${response.status}`, response.status, payload);
       }
       return response;
@@ -185,11 +210,14 @@ export const BackendApi = {
 
     const payload = await parseResponse(response);
     if (!response.ok || payload.ok === false) {
-      if (response.status === 401 && !publicRequest) AuthSession.clear();
+      if (response.status === 401 && !publicRequest) expireBrowserSession(payload.message || payload.error || 'unauthorized');
       throw apiError(payload.message || payload.error || `HTTP ${response.status}`, response.status, payload);
     }
     const data = payload.data ?? payload;
-    if (String(path).startsWith('/auth/') && data?.tenantId && data?.sessionMode) AuthSession.set(data);
+    if (String(path).startsWith('/auth/') && data?.tenantId && data?.sessionMode) {
+      AuthSession.set(data);
+      markAuthHealthy();
+    }
     return data;
   },
 
