@@ -14,7 +14,7 @@
     --cg-sidebar: 248px;
     --cg-drawer: 264px;
     --cg-header: 60px;
-    --cg-header-mobile: 56px;
+    --cg-header-mobile: 60px;
     --cg-safe-top: env(safe-area-inset-top, 0px);
     --cg-safe-right: env(safe-area-inset-right, 0px);
     --cg-safe-bottom: env(safe-area-inset-bottom, 0px);
@@ -255,7 +255,15 @@
 
   @media (max-width:760px) {
     .cg-ui-grid-two,.cg-ui-grid-three,.cg-ui-grid-four { grid-template-columns:minmax(0,1fr); }
-    .cg-record-actions,.cg-form-actions,.cg-row-actions { align-items:stretch; }
-    .cg-record-actions > *,.cg-form-actions > * { max-width:100%; }
+    :where(.btn,.pl-btn,.ds-btn,.cgv-btn,.cgx-btn,.cg-ui-button,.MuiButton-root,.MuiIconButton-root) { min-height:var(--cg-v-control-touch) !important; }
+    :where(.MuiIconButton-root) { min-width:var(--cg-v-control-touch) !important; }
+    :where(.input,.select,.pl-input,.cg-admin-inline-input,.MuiOutlinedInput-root) { min-height:var(--cg-v-control-touch) !important; }
+    .cg-record-actions,.cg-form-actions,.cg-row-actions { width:100%; align-items:stretch; justify-content:stretch; }
+    .cg-record-actions > *,.cg-form-actions > *,.cg-row-actions > * { min-height:var(--cg-v-control-touch) !important; max-width:100%; flex:1 1 132px; }
+  }
+
+  @media (max-width:430px) {
+    .cg-record-actions,.cg-form-actions,.cg-row-actions { display:grid; grid-template-columns:minmax(0,1fr); }
+    .cg-record-actions > *,.cg-form-actions > *,.cg-row-actions > * { width:100%; }
   }
 }
