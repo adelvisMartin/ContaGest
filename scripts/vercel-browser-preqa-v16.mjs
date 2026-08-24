@@ -21,7 +21,9 @@ function run(command,args,env={}){
 // The repository already locks @playwright/test at the root, so materialize the
 // existing lock graph here rather than downloading an unpinned CLI via npx.
 run('npm',['install','--include=dev','--ignore-scripts','--no-audit','--no-fund']);
-run('npx',['--no-install','playwright','install','chromium']);
+// Playwright's browser archive alone is insufficient on a minimal Vercel Linux
+// image. --with-deps installs the exact native libraries required by Chromium.
+run('npx',['--no-install','playwright','install','--with-deps','chromium']);
 run('npx',['--no-install','playwright','test',
   'qa/login-auth-runtime-v161.spec.mjs',
   'qa/erp-functional-smoke-v14.spec.mjs',
