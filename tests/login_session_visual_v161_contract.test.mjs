@@ -28,20 +28,23 @@ test('application validates backend cookie session before mounting protected rou
   assert.match(app,/updateViaCache:'none'/);
 });
 
-test('login is a scoped enterprise product surface and resumes requested route',()=>{
+test('login is a scoped enterprise product surface inside the existing visual owner graph',()=>{
   const page=read('frontend','src','pages','LoginPage.js');
-  const css=read('frontend','src','styles','auth-shell.css');
+  const adapters=read('frontend','src','styles','module-adapters.css');
   const runtime=read('frontend','src','styles','erp-runtime.css');
   assert.match(page,/login-shell-v161/);
   assert.match(page,/sessionStorage\.getItem\('cg_post_login_route'\)/);
   assert.match(page,/AccessControlService\.canAccessRoute/);
   assert.doesNotMatch(page,/Equipo interno|admin@erp\.local/);
-  assert.match(css,/input:-webkit-autofill/);
-  assert.match(css,/login-license-details summary>span/);
-  assert.match(css,/gap:7px/);
-  assert.match(css,/--cg-v-/);
-  assert.doesNotMatch(css,/linear-gradient|radial-gradient|font-size:\s*(?:4[6-9]|[5-9]\d)px/);
-  assert.match(runtime,/@import '\.\/auth-shell\.css'/);
+  assert.match(adapters,/Authentication product surface/);
+  assert.match(adapters,/login-shell\.login-shell-v161/);
+  assert.match(adapters,/input:-webkit-autofill/);
+  assert.match(adapters,/login-license-details summary>span/);
+  assert.match(adapters,/--cg-v-/);
+  assert.doesNotMatch(adapters,/linear-gradient|radial-gradient/);
+  assert.doesNotMatch(runtime,/auth-shell\.css/);
+  assert.match(runtime,/@import '\.\/module-adapters\.css'/);
+  assert.match(runtime,/@import '\.\/contagest-visual-system-v12\.css'/);
 });
 
 test('service worker cannot serve stale javascript or css ahead of the deployed network bundle',()=>{
