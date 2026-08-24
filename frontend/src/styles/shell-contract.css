@@ -1,5 +1,5 @@
 /*
- * ContaGest VE — shell geometry contract v16.2
+ * ContaGest VE — shell geometry contract v16.3
  * Structural invariants only. Appearance belongs to the canonical visual system.
  */
 
@@ -174,11 +174,11 @@ html body.modal-open { overflow:hidden; }
   }
   html body #btnCommandPalette.hf-command-trigger {
     grid-column:2;
-    width:var(--cg-v-control-touch);
-    min-width:var(--cg-v-control-touch);
-    height:var(--cg-v-control-touch);
-    min-height:var(--cg-v-control-touch);
-    padding:0;
+    width:var(--cg-v-control-touch)!important;
+    min-width:var(--cg-v-control-touch)!important;
+    height:var(--cg-v-control-touch)!important;
+    min-height:var(--cg-v-control-touch)!important;
+    padding:0!important;
   }
   html body #btnCommandPalette.hf-command-trigger > span,
   html body #btnCommandPalette.hf-command-trigger > kbd { display:none; }
@@ -188,9 +188,21 @@ html body.modal-open { overflow:hidden; }
   html body #mainMenu .cg-area-toggle,
   html body .hf-sidebar-account,
   html body .hf-sidebar-mini-actions > button,
-  html body .hf-sidebar-collapse { min-height:var(--cg-v-control-touch); }
+  html body .hf-sidebar-collapse { min-height:var(--cg-v-control-touch)!important; }
   html body .hf-user-panel > button,
-  html body .hf-user-select select { min-height:var(--cg-v-control-touch); }
+  html body .hf-user-select select { min-height:var(--cg-v-control-touch)!important; }
+  html body #btnOpenSidebar,
+  html body #btnTema,
+  html body #btnUserMenu,
+  html body #btnActualizarTasaTop,
+  html body .hf-create-button {
+    width:var(--cg-v-control-touch)!important;
+    min-width:var(--cg-v-control-touch)!important;
+    height:var(--cg-v-control-touch)!important;
+    min-height:var(--cg-v-control-touch)!important;
+    padding:0!important;
+    justify-content:center;
+  }
 }
 
 @media (max-width:760px) {
@@ -198,14 +210,11 @@ html body.modal-open { overflow:hidden; }
   html body .hf-topbar-left { flex:1 1 auto; overflow:hidden; gap:6px; }
   html body .hf-header-context { min-width:0; overflow:hidden; }
   html body .hf-header-context strong { display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-  html body #btnCommandPalette.hf-command-trigger { flex:0 0 var(--cg-v-control-touch); width:var(--cg-v-control-touch); min-width:var(--cg-v-control-touch); height:var(--cg-v-control-touch); min-height:var(--cg-v-control-touch); }
+  html body #btnCommandPalette.hf-command-trigger { flex:0 0 var(--cg-v-control-touch); }
   html body .hf-app-topbar-actions { flex:0 0 auto; gap:4px; }
   html body .hf-rate-compact,
   html body #btnActualizarTasaTop,
   html body .hf-create-button { display:none!important; }
-  html body #btnTema,
-  html body #btnUserMenu,
-  html body #btnOpenSidebar { width:var(--cg-v-control-touch); min-width:var(--cg-v-control-touch); height:var(--cg-v-control-touch); min-height:var(--cg-v-control-touch); padding:0; }
   html body .hf-user-trigger .hf-avatar { width:30px; min-width:30px; height:30px; min-height:30px; }
   html body .cg-modal-backdrop { align-items:flex-end; padding:8px max(8px,var(--cg-safe-right)) max(8px,var(--cg-safe-bottom)) max(8px,var(--cg-safe-left)); }
   html body .cg-modal { width:100%; max-height:92dvh; border-bottom-left-radius:0; border-bottom-right-radius:0; }
@@ -220,8 +229,4 @@ html body.modal-open { overflow:hidden; }
 @media (max-width:380px) {
   html body .hf-app-topbar.hf-topbar { gap:2px; padding-inline:5px; }
   html body .hf-header-context strong { max-width:116px; }
-  html body #btnCommandPalette.hf-command-trigger,
-  html body #btnTema,
-  html body #btnUserMenu,
-  html body #btnOpenSidebar { width:var(--cg-v-control-touch); min-width:var(--cg-v-control-touch); height:var(--cg-v-control-touch); min-height:var(--cg-v-control-touch); }
 }
