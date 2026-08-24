@@ -78,7 +78,7 @@ test('MUI follows React 19 slot APIs, mobile touch, non-dead breadcrumbs and dar
   assert.match(mui,/if\(!item\.route\)return React\.createElement\(Mui\.Typography/);
 });
 
-test('PR browser gate covers every module at three phone widths, real navigation and safe action clicks',()=>{
+test('PR browser gate covers every module at three phone widths, real navigation and observable action clicks',()=>{
   const runner=read('scripts','vercel-browser-preqa-v16.mjs');
   const spec=read('qa','mobile-deep-v162.spec.mjs');
   const navigation=read('qa','mobile-navigation-v163.spec.mjs');
@@ -95,9 +95,11 @@ test('PR browser gate covers every module at three phone widths, real navigation
   assert.match(spec,/occludedTargets/);
   assert.match(spec,/primary action contrast stays readable/);
   assert.match(navigation,/every actual sidebar route button navigates/);
-  assert.match(navigation,/command palette opens, filters and navigates/);
-  assert.match(actions,/every visible module action and submit can be invoked/);
+  assert.match(navigation,/command palette opens, filters, navigates and closes/);
+  assert.match(actions,/every visible module action and submit has a safe runtime contract and an observable effect/);
   assert.match(actions,/QA controlled backend refusal/);
+  assert.match(actions,/route-button-did-not-navigate/);
+  assert.match(actions,/valid-submit-no-effect/);
 });
 
 test('service worker cannot serve stale javascript or css ahead of the deployed network bundle',()=>{
