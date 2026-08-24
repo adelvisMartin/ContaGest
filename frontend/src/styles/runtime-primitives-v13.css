@@ -192,6 +192,8 @@
     touch-action:manipulation;
   }
   :where(.btn-primary,.pl-btn-primary,.ds-btn-primary,.cgv-btn-primary,.cgx-btn-primary) { background:var(--cg-v-brand); color:#fff; }
+  html.dark :where(.btn-primary,.pl-btn-primary,.ds-btn-primary,.cgv-btn-primary,.cgx-btn-primary),
+  html[data-theme="dark"] :where(.btn-primary,.pl-btn-primary,.ds-btn-primary,.cgv-btn-primary,.cgx-btn-primary) { color:var(--cg-v-bg) !important; }
   :where(.btn-secondary,.pl-btn-secondary,.ds-btn-secondary,.cgv-btn-secondary,.cgx-btn-secondary) { border-color:var(--cg-v-border); background:var(--cg-v-surface); color:var(--cg-v-text); }
   :where(.btn-danger,.pl-btn-danger,.ds-btn-danger,.cgv-btn-danger,.cgx-btn-danger) { border-color:color-mix(in srgb,var(--cg-v-danger) 35%,var(--cg-v-border)); background:var(--cg-v-danger-soft); color:var(--cg-v-danger); }
   :where(.btn,.pl-btn,.ds-btn,.cgv-btn,.cgx-btn):disabled { opacity:.55; cursor:not-allowed; }
