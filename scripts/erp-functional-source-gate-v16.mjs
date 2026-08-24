@@ -19,7 +19,7 @@ const blocking=[];
 const advisory=[];
 for(const module of report.modules||[]){
   for(const finding of module.findings||[]){
-    const item={route:module.route,file:module.file,severity:finding.severity,code:finding.code,detail:finding.detail};
+    const item={route:module.route,file:module.file,priority:module.priority,severity:finding.severity,code:finding.code,detail:finding.detail};
     if(['critical','high'].includes(finding.severity))blocking.push(item); else advisory.push(item);
   }
 }
@@ -28,10 +28,13 @@ console.log(`[function-gate] ${report.summary?.routes||0} rutas · ${report.summ
 for(const item of blocking){
   console.error(`[function-gate][${item.severity.toUpperCase()}] ${item.route} (${item.file}) · ${item.code} · ${item.detail}`);
 }
-if(advisory.length)console.log(`[function-gate] ${advisory.length} hallazgo(s) medium/low quedan registrados como revisión no bloqueante.`);
+if(advisory.length){
+  console.log(`[function-gate] ${advisory.length} hallazgo(s) medium/low requieren revisión explícita:`);
+  for(const item of advisory)console.log(`[function-gate][ADVISORY:${item.severity}] ${item.route} · prioridad=${item.priority} · ${item.code} · ${item.detail}`);
+}
 if(!report.summary?.parity?.ok){
   console.error('[function-gate][CRITICAL] El registro runtime y el catálogo QA no tienen paridad.');
   process.exit(1);
 }
 if(blocking.length)process.exit(1);
-console.log('[function-gate][PASS] No quedan controles/formularios high/critical sin contrato funcional detectable.');
+console.log('[function-gate][PASS] No quedan controles/formularios high/critical sin contrato funcional detectable; advisories quedan visibles para triaje exhaustivo.');
