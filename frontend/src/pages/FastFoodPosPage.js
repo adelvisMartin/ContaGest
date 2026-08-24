@@ -6,6 +6,7 @@ import { escapeHtml } from '../utils/dom.js';
 const categories = ['Combos','Burgers','Bebidas','Extras'];
 const safe = (value) => escapeHtml(String(value ?? ''));
 const money = (value) => `$${Number(value || 0).toFixed(2)}`;
+const normalizeCategory=(value)=>String(value||'').trim().toLocaleLowerCase('es');
 
 function productCard(product) {
   const sku=safe(product.sku);
@@ -34,13 +35,18 @@ function cartLine(item) {
 export const FastFoodPosPage = {
   render(state) {
     const products = state.fastFoodMenu || [];
+    const requestedCategory=categories.includes(state.posCategory)?state.posCategory:categories[0];
+    const selectedCategory=products.some((product)=>normalizeCategory(product.category)===normalizeCategory(requestedCategory))
+      ? requestedCategory
+      : (categories.find((category)=>products.some((product)=>normalizeCategory(product.category)===normalizeCategory(category)))||requestedCategory);
+    const visibleProducts=products.filter((product)=>normalizeCategory(product.category)===normalizeCategory(selectedCategory));
     const cart = state.posCart || [];
     const subtotal = cart.reduce((sum, item) => sum + item.qty * item.price, 0);
     const total = subtotal * 1.16;
     const draft=state.posDraft||{};
-    const productContent=products.length
-      ? `<div class="cg-pos-grid">${products.map(productCard).join('')}</div>`
-      : EmptyState({title:'Sin productos disponibles',description:'Agrega productos reales al menú antes de iniciar una venta.',iconName:'fa-burger'});
+    const productContent=visibleProducts.length
+      ? `<div class="cg-pos-grid" id="posProductGrid" aria-live="polite">${visibleProducts.map(productCard).join('')}</div>`
+      : EmptyState({title:'Sin productos en esta categoría',description:`No hay productos configurados en ${selectedCategory}.`,iconName:'fa-burger'});
 
     return `
       <section class="cg-page-stack cg-pos-shell">
@@ -53,7 +59,7 @@ export const FastFoodPosPage = {
         })}
         <div class="cg-pos-layout">
           <section class="cg-pos-products surface" aria-label="Productos disponibles">
-            <nav class="cg-pos-tabs" aria-label="Categorías del menú">${categories.map((cat, i) => `<button type="button" class="pl-tab ${i===0?'active':''}" aria-pressed="${i===0?'true':'false'}">${safe(cat)}</button>`).join('')}</nav>
+            <nav class="cg-pos-tabs" aria-label="Categorías del menú">${categories.map((cat) => `<button type="button" class="pl-tab ${cat===selectedCategory?'active':''}" data-pos-category="${safe(cat)}" aria-pressed="${cat===selectedCategory?'true':'false'}" aria-controls="posProductGrid">${safe(cat)}</button>`).join('')}</nav>
             ${productContent}
           </section>
           <aside class="cg-pos-cart surface" aria-label="Orden actual">
@@ -89,6 +95,10 @@ export const FastFoodPosPage = {
         return draft;
       });
     };
+    document.querySelectorAll('[data-pos-category]').forEach((button)=>button.addEventListener('click',()=>{
+      const category=button.dataset.posCategory;
+      if(category&&category!==Store.get().posCategory)Store.set({posCategory:category});
+    }));
     document.querySelectorAll('[data-pos-add]').forEach((button) => button.addEventListener('click', () => updateCart(button.dataset.posAdd, 1)));
     document.querySelectorAll('[data-cart-inc]').forEach((button) => button.addEventListener('click', () => updateCart(button.dataset.cartInc, 1)));
     document.querySelectorAll('[data-cart-dec]').forEach((button) => button.addEventListener('click', () => updateCart(button.dataset.cartDec, -1)));

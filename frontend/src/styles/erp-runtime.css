@@ -1,17 +1,17 @@
 /*
- * ContaGest VE — canonical runtime stylesheet entrypoint · v15
+ * ContaGest VE — canonical runtime stylesheet entrypoint · v16.1
  *
  * Exactly five imported visual owners are permitted:
  * 1) shell-contract.css              -> shell geometry and responsive chrome;
  * 2) shell-stability-v1127.css       -> interaction/z-index/overflow safety;
  * 3) runtime-primitives-v13.css      -> low-level layout compatibility primitives;
- * 4) module-adapters.css             -> narrow domain-specific geometry;
+ * 4) module-adapters.css             -> narrow domain-specific geometry, including auth;
  * 5) contagest-visual-system-v12.css -> FINAL canonical appearance authority.
  *
  * Historical filenames are kept only for import stability. The active visual
- * contract is v15. No page-local CSS, Tailwind runtime, Precision Ledger theme,
- * alternate palette, gradient pack, responsive hotfix or second design system
- * may be added to the graph.
+ * contract is v16.1. Authentication remains scoped inside the existing adapter
+ * owner and consumes the global --cg-v-* tokens; no sixth theme/style owner is
+ * introduced.
  */
 @layer cg.shell-contract,
        cg.primitives,

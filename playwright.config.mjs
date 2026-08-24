@@ -1,6 +1,14 @@
 import { defineConfig, devices } from '@playwright/test';
 
 const remoteBaseURL = String(process.env.QA_BASE_URL || '').trim();
+const serverlessChromium = String(process.env.CG_PLAYWRIGHT_CHROMIUM_EXECUTABLE || '').trim();
+let serverlessChromiumArgs=[];
+try { serverlessChromiumArgs=JSON.parse(process.env.CG_PLAYWRIGHT_CHROMIUM_ARGS || '[]'); }
+catch { serverlessChromiumArgs=[]; }
+const chromiumLaunchOptions=serverlessChromium?{
+  executablePath:serverlessChromium,
+  args:Array.isArray(serverlessChromiumArgs)?serverlessChromiumArgs:[]
+}:undefined;
 
 export default defineConfig({
   testDir: './qa',
@@ -17,7 +25,7 @@ export default defineConfig({
     video: 'retain-on-failure'
   },
   projects: [
-    { name: 'chromium', use: { ...devices['Desktop Chrome'] } },
+    { name: 'chromium', use: { ...devices['Desktop Chrome'], ...(chromiumLaunchOptions?{launchOptions:chromiumLaunchOptions}:{}) } },
     { name: 'webkit-safari', use: { ...devices['Desktop Safari'] } },
     { name: 'webkit-iphone', use: { ...devices['iPhone 13'] } }
   ],

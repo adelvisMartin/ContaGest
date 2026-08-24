@@ -3,15 +3,16 @@ import { MODULE_VISUAL_CATALOG } from './support/module-visual-catalog.mjs';
 
 test.setTimeout(300_000);
 
-async function seedAuthenticatedUi(page) {
-  await page.addInitScript(() => {
-    localStorage.setItem('contagest_auth_session', JSON.stringify({
-      sessionMode:'cookie', mode:'cookie', tenantId:'qa-tenant',
-      tenant:{ id:'qa-tenant', name:'ContaGest QA', rif:'J-00000000-0', plan:'enterprise' },
-      user:{ id:'qa-admin', name:'QA Admin', fullName:'QA Admin', email:'qa@contagest.local', role:'admin', permissions:['*'] },
-      audience:'staff', expiresAt:Date.now()+8*60*60*1000
-    }));
-  });
+const QA_SESSION={
+  sessionMode:'cookie',mode:'cookie',tenantId:'qa-tenant',
+  tenant:{id:'qa-tenant',name:'ContaGest QA',rif:'J-00000000-0',plan:'enterprise'},
+  user:{id:'qa-admin',name:'QA Admin',fullName:'QA Admin',email:'qa@contagest.local',role:'admin',permissions:['*']},
+  audience:'staff',expiresAt:Date.now()+8*60*60*1000
+};
+
+async function seedAuthenticatedUi(page){
+  await page.addInitScript((session)=>localStorage.setItem('contagest_auth_session',JSON.stringify(session)),QA_SESSION);
+  await page.route('**/api/v1/auth/me',async(route)=>route.fulfill({status:200,contentType:'application/json',body:JSON.stringify({ok:true,data:QA_SESSION})}));
 }
 
 async function openRoute(page,route){
@@ -30,13 +31,15 @@ test('58 registered routes mount without duplicate DOM ids or legacy global chro
     try{
       await openRoute(page,item.route);
       const audit=await page.evaluate((route)=>{
-        const ids=[...document.querySelectorAll('[id]')].map((node)=>node.id).filter(Boolean),counts=ids.reduce((map,id)=>map.set(id,(map.get(id)||0)+1),new Map()),duplicates=[...counts].filter(([,value])=>value>1).map(([id,value])=>({id,count:value}));
+        const ids=[...document.querySelectorAll('[id]')].map((node)=>node.id).filter(Boolean);
+        const counts=ids.reduce((map,id)=>map.set(id,(map.get(id)||0)+1),new Map());
+        const duplicates=[...counts].filter(([,value])=>value>1).map(([id,value])=>({id,count:value}));
         const root=route==='login'?document.querySelector('.login-shell'):document.querySelector('#pages');
         const visible=(node)=>{if(!(node instanceof HTMLElement))return false;const style=getComputedStyle(node),rect=node.getBoundingClientRect();return style.display!=='none'&&style.visibility!=='hidden'&&rect.width>1&&rect.height>1;};
         const clippedButtons=[...document.querySelectorAll('button')].filter(visible).filter((node)=>node.scrollWidth>node.clientWidth+3&&getComputedStyle(node).whiteSpace==='nowrap').slice(0,8).map((node)=>node.textContent?.trim().slice(0,70));
         return{hasRoot:Boolean(root&&root.textContent?.trim()),duplicates,clippedButtons,globalKpi:Boolean(document.querySelector('.hf-kpi-strip')),quickbar:Boolean(document.querySelector('.hf-quickbar')),openMenuGroups:document.querySelectorAll('.hf-menu-section[open]').length,docOverflow:document.documentElement.scrollWidth>innerWidth+2};
       },item.route);
-      if(!audit.hasRoot||audit.duplicates.length||audit.clippedButtons.length||audit.globalKpi||audit.quickbar||audit.docOverflow)failures.push({route:item.route,audit,pageErrors});
+      if(!audit.hasRoot||audit.duplicates.length||audit.clippedButtons.length||audit.globalKpi||audit.quickbar||audit.docOverflow||pageErrors.length)failures.push({route:item.route,audit,pageErrors});
     }catch(error){failures.push({route:item.route,error:String(error?.message||error),pageErrors});}
     finally{page.off('pageerror',listener);}
   }

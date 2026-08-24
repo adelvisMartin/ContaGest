@@ -1,4 +1,4 @@
-const CACHE = 'contagest-ve-v11-14-0';
+const CACHE = 'contagest-ve-v11-16-1';
 const APP_SHELL = ['/', '/index.html', '/manifest.webmanifest', '/icons/contagest-app.svg', '/icons/contagest-app-192.svg', '/icons/contagest-app-512.svg'];
 
 self.addEventListener('install', (event) => {
@@ -26,6 +26,17 @@ function isSensitiveRequest(url) {
     || url.pathname.includes('/admin');
 }
 
+function networkFirst(request) {
+  return fetch(request, { cache:'no-store' })
+    .then((response) => {
+      if (response.ok && (response.type === 'basic' || response.type === 'cors')) {
+        caches.open(CACHE).then((cache) => cache.put(request, response.clone())).catch(() => undefined);
+      }
+      return response;
+    })
+    .catch(() => caches.match(request).then((cached) => cached || new Response('Recurso no disponible sin conexión.', { status:503 })));
+}
+
 self.addEventListener('fetch', (event) => {
   const { request } = event;
   if (request.method !== 'GET') return;
@@ -49,7 +60,14 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  const cacheableAsset = ['style', 'script', 'image', 'font', 'manifest'].includes(request.destination)
+  // JS and CSS must prefer the network so a deployment cannot leave an open
+  // browser tab mixing an old UI bundle with a newly deployed backend.
+  if (request.destination === 'script' || request.destination === 'style') {
+    event.respondWith(networkFirst(request));
+    return;
+  }
+
+  const cacheableAsset = ['image', 'font', 'manifest'].includes(request.destination)
     || ['/manifest.webmanifest', '/icons/contagest-app.svg', '/icons/contagest-app-192.svg', '/icons/contagest-app-512.svg', '/pwa-install.js'].includes(url.pathname);
   if (!cacheableAsset) return;
 
