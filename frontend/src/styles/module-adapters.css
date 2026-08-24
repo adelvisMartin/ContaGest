@@ -65,7 +65,7 @@
   body .cg-psych-day>header { display:flex; align-items:center; justify-content:space-between; min-height:38px; padding:7px 8px; border-bottom:1px solid var(--cg-v-border); background:var(--cg-v-surface-2); }
   body .cg-psych-day>header span { color:var(--cg-v-text-subtle); font-size:9px!important; font-weight:var(--cg-v-weight-semibold); text-transform:uppercase; }
   body .cg-psych-day>header strong { display:grid; place-items:center; width:24px; height:24px; border-radius:50%; color:var(--cg-v-text); font-size:11px!important; font-variant-numeric:tabular-nums; }
-  body .cg-psych-day.is-today>header strong { background:var(--cg-v-brand); color:#fff; }
+  body .cg-psych-day.is-today>header strong { background:var(--cg-v-brand); color:var(--cg-v-bg); }
   body .cg-psych-day>div { display:grid; align-content:start; gap:5px; min-height:128px; padding:6px; }
   body .cg-psych-event { display:grid; grid-template-columns:auto minmax(0,1fr); gap:1px 6px; padding:6px; border:1px solid var(--cg-v-border); border-left:2px solid var(--cg-v-brand); border-radius:var(--cg-v-radius-sm); background:var(--cg-v-surface-2); }
   body .cg-psych-event time { grid-row:1/span 2; color:var(--cg-v-text-subtle); font-family:var(--cg-v-font-mono); font-size:8px!important; font-variant-numeric:tabular-nums; }
