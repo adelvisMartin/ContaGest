@@ -36,6 +36,9 @@ execute('npm',['install','--include=dev','--ignore-scripts','--no-audit','--no-f
 // This package is QA-only and installed with --no-save so production runtime
 // dependencies and the committed lock graph remain untouched.
 execute('npm',['install','--no-save','--ignore-scripts','--no-audit','--no-fund',`@sparticuz/chromium@${SERVERLESS_CHROMIUM_VERSION}`]);
+// Retained-on-failure videos are useful QA evidence. Playwright's FFmpeg archive
+// is self-contained and does not require apt/system browser dependencies.
+execute('npx',['--no-install','playwright','install','ffmpeg']);
 
 const probeSource=`
   import chromium from '@sparticuz/chromium';
