@@ -18,8 +18,13 @@ export const DemoAccessService = {
       notes: 'Demo comercial controlado'
     };
   },
+  async list() {
+    return BackendApi.get('/demos/access');
+  },
   async saveDemo(demo) {
-    try { return await BackendApi.post('/api/v1/demos/access', demo); }
-    catch (error) { return { ok: false, offline: true, error: error.message, data: demo }; }
+    // BackendApi already owns /api/v1, cookies, CSRF and tenant identity.
+    // Never prepend /api/v1 again and never convert a persistence failure into
+    // a fake local success.
+    return BackendApi.post('/demos/access', demo);
   }
 };
