@@ -216,6 +216,23 @@ html body.modal-open { overflow:hidden; }
   html body #btnActualizarTasaTop,
   html body .hf-create-button { display:none!important; }
   html body .hf-user-trigger .hf-avatar { width:30px; min-width:30px; height:30px; min-height:30px; }
+
+  /* Mobile interaction contract. Module-specific CSS may alter appearance, but
+     operational tap targets cannot shrink below the shared 44px touch token. */
+  html body #pages :where(button,summary,input:not([type="hidden"]):not([type="checkbox"]):not([type="radio"]),select,textarea),
+  html body .login-shell-v161 :where(button,summary,input:not([type="hidden"]):not([type="checkbox"]):not([type="radio"]),select,textarea) {
+    min-height:var(--cg-v-control-touch)!important;
+  }
+  html body #pages button:has(>i:only-child),
+  html body #pages button:has(>svg:only-child),
+  html body .login-shell-v161 button:has(>i:only-child),
+  html body .login-shell-v161 button:has(>svg:only-child),
+  html body .login-shell-v161 .login-captcha-refresh {
+    min-width:var(--cg-v-control-touch)!important;
+    width:var(--cg-v-control-touch)!important;
+    height:var(--cg-v-control-touch)!important;
+  }
+
   html body .cg-modal-backdrop { align-items:flex-end; padding:8px max(8px,var(--cg-safe-right)) max(8px,var(--cg-safe-bottom)) max(8px,var(--cg-safe-left)); }
   html body .cg-modal { width:100%; max-height:92dvh; border-bottom-left-radius:0; border-bottom-right-radius:0; }
   html body .cg-modal-actions { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); align-items:stretch; }
