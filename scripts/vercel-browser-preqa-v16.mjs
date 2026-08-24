@@ -27,17 +27,8 @@ function execute(command,args,{env={},capture=false}={}){
   return result;
 }
 
-// Vercel installs from the frontend workspace and can omit root devDependencies.
-// Materialize the repository-pinned Playwright tools first.
 execute('npm',['install','--include=dev','--ignore-scripts','--no-audit','--no-fund']);
-
-// Vercel's minimal build image has neither libnspr4 nor apt-get. Use an exact,
-// serverless Chromium build instead of weakening/skipping the browser gate.
-// This package is QA-only and installed with --no-save so production runtime
-// dependencies and the committed lock graph remain untouched.
 execute('npm',['install','--no-save','--ignore-scripts','--no-audit','--no-fund',`@sparticuz/chromium@${SERVERLESS_CHROMIUM_VERSION}`]);
-// Retained-on-failure videos are useful QA evidence. Playwright's FFmpeg archive
-// is self-contained and does not require apt/system browser dependencies.
 execute('npx',['--no-install','playwright','install','ffmpeg']);
 
 const probeSource=`
@@ -78,6 +69,7 @@ execute('npx',['--no-install','playwright','test',
   'qa/login-auth-runtime-v161.spec.mjs',
   'qa/erp-functional-smoke-v14.spec.mjs',
   'qa/ui-controls-runtime-v16.spec.mjs',
+  'qa/mobile-deep-v162.spec.mjs',
   '--project=chromium'
 ],{env:{
   ...browserConfig.runtimeEnv,
@@ -86,4 +78,4 @@ execute('npx',['--no-install','playwright','test',
   CG_PLAYWRIGHT_CHROMIUM_EXECUTABLE:browserConfig.executablePath,
   CG_PLAYWRIGHT_CHROMIUM_ARGS:JSON.stringify(browserConfig.args)
 }});
-console.log('[browser-preqa][PASS] Chromium auth/login + functional smoke + 58-route runtime control audit passed.');
+console.log('[browser-preqa][PASS] Chromium auth/login + functional smoke + 58-route controls + deep mobile QA passed.');
