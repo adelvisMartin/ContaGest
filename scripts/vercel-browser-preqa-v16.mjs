@@ -41,7 +41,12 @@ const probeSource=`
   import chromium from '@sparticuz/chromium';
   chromium.setGraphicsMode=false;
   const executablePath=await chromium.executablePath();
-  process.stdout.write('__CG_CHROMIUM__'+JSON.stringify({executablePath,args:chromium.args}));
+  const runtimeEnv={
+    LD_LIBRARY_PATH:process.env.LD_LIBRARY_PATH||'',
+    FONTCONFIG_PATH:process.env.FONTCONFIG_PATH||'',
+    HOME:process.env.HOME||''
+  };
+  process.stdout.write('__CG_CHROMIUM__'+JSON.stringify({executablePath,args:chromium.args,runtimeEnv}));
 `;
 const probe=execute(process.execPath,['--input-type=module','--eval',probeSource],{capture:true});
 const marker='__CG_CHROMIUM__';
@@ -59,7 +64,12 @@ if(!browserConfig?.executablePath||!Array.isArray(browserConfig?.args)){
   console.error('[browser-preqa] Chromium serverless no devolvió executablePath/args válidos.');
   process.exit(1);
 }
+if(!String(browserConfig.runtimeEnv?.LD_LIBRARY_PATH||'').includes('/tmp/al2023/lib')){
+  console.error(`[browser-preqa] La capa AL2023 no quedó activa: ${browserConfig.runtimeEnv?.LD_LIBRARY_PATH||'(vacío)'}`);
+  process.exit(1);
+}
 console.log(`[browser-preqa] Chromium serverless ${SERVERLESS_CHROMIUM_VERSION}: ${browserConfig.executablePath}`);
+console.log(`[browser-preqa] AL2023 libs: ${browserConfig.runtimeEnv.LD_LIBRARY_PATH}`);
 
 execute('npx',['--no-install','playwright','test',
   'qa/login-auth-runtime-v161.spec.mjs',
@@ -67,6 +77,7 @@ execute('npx',['--no-install','playwright','test',
   'qa/ui-controls-runtime-v16.spec.mjs',
   '--project=chromium'
 ],{env:{
+  ...browserConfig.runtimeEnv,
   CI:'1',
   PLAYWRIGHT_HTML_OPEN:'never',
   CG_PLAYWRIGHT_CHROMIUM_EXECUTABLE:browserConfig.executablePath,
