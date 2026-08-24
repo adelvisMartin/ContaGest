@@ -1,5 +1,5 @@
 /*
- * ContaGest VE — shell geometry contract v16
+ * ContaGest VE — shell geometry contract v16.2
  * Structural invariants only. Appearance belongs to the canonical visual system.
  */
 
@@ -7,7 +7,7 @@
   --cg-sidebar: 244px;
   --cg-sidebar-collapsed: 68px;
   --cg-header: 60px;
-  --cg-header-mobile: 54px;
+  --cg-header-mobile: 60px;
   --cg-safe-top: env(safe-area-inset-top, 0px);
   --cg-safe-right: env(safe-area-inset-right, 0px);
   --cg-safe-bottom: env(safe-area-inset-bottom, 0px);
@@ -149,11 +149,11 @@ html body.modal-open { overflow:hidden; }
 @media (max-width:1240px) {
   html body .hf-app-topbar.hf-topbar { grid-template-columns:minmax(140px,1fr) minmax(220px,360px) auto; padding-inline:14px; }
   html body .hf-create-button span { display:none; }
-  html body .hf-create-button { width:36px; min-width:36px; padding:0; justify-content:center; }
+  html body .hf-create-button { width:38px; min-width:38px; padding:0; justify-content:center; }
 }
 
 @media (max-width:1023px) {
-  :root { --cg-sidebar: min(84vw,286px); }
+  :root { --cg-sidebar: min(86vw,300px); }
   html body .hf-app-sidebar.hf-sidebar {
     width:var(--cg-sidebar)!important;
     min-width:var(--cg-sidebar)!important;
@@ -168,48 +168,60 @@ html body.modal-open { overflow:hidden; }
     grid-template-columns:minmax(0,1fr) auto auto;
     height:var(--cg-header-mobile);
     min-height:var(--cg-header-mobile);
-    padding-left:max(9px,var(--cg-safe-left));
-    padding-right:max(9px,var(--cg-safe-right));
+    padding-left:max(8px,var(--cg-safe-left));
+    padding-right:max(8px,var(--cg-safe-right));
     gap:6px;
   }
   html body #btnCommandPalette.hf-command-trigger {
     grid-column:2;
-    width:36px;
-    min-width:36px;
-    height:36px;
-    min-height:36px;
+    width:var(--cg-v-control-touch);
+    min-width:var(--cg-v-control-touch);
+    height:var(--cg-v-control-touch);
+    min-height:var(--cg-v-control-touch);
     padding:0;
   }
   html body #btnCommandPalette.hf-command-trigger > span,
   html body #btnCommandPalette.hf-command-trigger > kbd { display:none; }
   html body .hf-app-topbar-actions { grid-column:3; }
   html body .hf-header-context span { display:none; }
+  html body #mainMenu .hf-menu-item,
+  html body #mainMenu .cg-area-toggle,
+  html body .hf-sidebar-account,
+  html body .hf-sidebar-mini-actions > button,
+  html body .hf-sidebar-collapse { min-height:var(--cg-v-control-touch); }
+  html body .hf-user-panel > button,
+  html body .hf-user-select select { min-height:var(--cg-v-control-touch); }
 }
 
 @media (max-width:760px) {
   html body .hf-app-topbar.hf-topbar { display:flex; flex-flow:row nowrap; justify-content:flex-start; }
-  html body .hf-topbar-left { flex:1 1 auto; overflow:hidden; }
+  html body .hf-topbar-left { flex:1 1 auto; overflow:hidden; gap:6px; }
   html body .hf-header-context { min-width:0; overflow:hidden; }
   html body .hf-header-context strong { display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-  html body #btnCommandPalette.hf-command-trigger { flex:0 0 34px; width:34px; min-width:34px; height:34px; min-height:34px; }
+  html body #btnCommandPalette.hf-command-trigger { flex:0 0 var(--cg-v-control-touch); width:var(--cg-v-control-touch); min-width:var(--cg-v-control-touch); height:var(--cg-v-control-touch); min-height:var(--cg-v-control-touch); }
   html body .hf-app-topbar-actions { flex:0 0 auto; gap:4px; }
   html body .hf-rate-compact,
   html body #btnActualizarTasaTop,
   html body .hf-create-button { display:none!important; }
   html body #btnTema,
   html body #btnUserMenu,
-  html body #btnOpenSidebar { width:34px; min-width:34px; height:34px; min-height:34px; padding:0; }
-  html body .hf-user-trigger .hf-avatar { width:26px; min-width:26px; height:26px; min-height:26px; }
-  html body .cg-modal-backdrop { align-items:flex-end; padding:8px; }
+  html body #btnOpenSidebar { width:var(--cg-v-control-touch); min-width:var(--cg-v-control-touch); height:var(--cg-v-control-touch); min-height:var(--cg-v-control-touch); padding:0; }
+  html body .hf-user-trigger .hf-avatar { width:30px; min-width:30px; height:30px; min-height:30px; }
+  html body .cg-modal-backdrop { align-items:flex-end; padding:8px max(8px,var(--cg-safe-right)) max(8px,var(--cg-safe-bottom)) max(8px,var(--cg-safe-left)); }
   html body .cg-modal { width:100%; max-height:92dvh; border-bottom-left-radius:0; border-bottom-right-radius:0; }
-  html body .cg-modal-actions > * { flex:1 1 140px; }
+  html body .cg-modal-actions { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); align-items:stretch; }
+  html body .cg-modal-actions > * { width:100%; min-height:var(--cg-v-control-touch); }
+}
+
+@media (max-width:430px) {
+  html body .cg-modal-actions { grid-template-columns:minmax(0,1fr); }
 }
 
 @media (max-width:380px) {
-  html body .hf-app-topbar.hf-topbar { gap:3px; padding-inline:6px; }
-  html body .hf-header-context strong { max-width:132px; }
+  html body .hf-app-topbar.hf-topbar { gap:2px; padding-inline:5px; }
+  html body .hf-header-context strong { max-width:116px; }
   html body #btnCommandPalette.hf-command-trigger,
   html body #btnTema,
   html body #btnUserMenu,
-  html body #btnOpenSidebar { width:32px; min-width:32px; height:32px; min-height:32px; }
+  html body #btnOpenSidebar { width:var(--cg-v-control-touch); min-width:var(--cg-v-control-touch); height:var(--cg-v-control-touch); min-height:var(--cg-v-control-touch); }
 }
