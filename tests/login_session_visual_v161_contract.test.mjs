@@ -47,6 +47,41 @@ test('login is a scoped enterprise product surface inside the existing visual ow
   assert.match(runtime,/@import '\.\/contagest-visual-system-v12\.css'/);
 });
 
+test('shared shell controls are explicit buttons and mobile touch geometry is at least 44px',()=>{
+  const layout=read('frontend','src','components','layout.js');
+  const shell=read('frontend','src','styles','shell-contract.css');
+  const primitives=read('frontend','src','styles','runtime-primitives-v13.css');
+  assert.match(layout,/return `<button type="button" class="menu-link hf-menu-item/);
+  assert.match(layout,/<button type="button" class="hf-sidebar-account"/);
+  assert.match(layout,/<button id="btnUserMenu" type="button"/);
+  assert.match(shell,/--cg-header-mobile:\s*60px/);
+  assert.match(shell,/#btnCommandPalette\.hf-command-trigger[\s\S]*var\(--cg-v-control-touch\)/);
+  assert.match(shell,/#btnTema,[\s\S]*#btnUserMenu,[\s\S]*#btnOpenSidebar[\s\S]*var\(--cg-v-control-touch\)/);
+  assert.match(primitives,/@media \(max-width:760px\)[\s\S]*MuiButton-root[\s\S]*--cg-v-control-touch/);
+  assert.match(primitives,/html\.dark[\s\S]*cgx-btn-primary[\s\S]*color:var\(--cg-v-bg\) !important/);
+});
+
+test('MUI follows mobile touch, non-dead breadcrumbs and accessible dark primary contrast',()=>{
+  const mui=read('frontend','src','components','muiRuntime.js');
+  assert.match(mui,/subtle:'#808690'/);
+  assert.match(mui,/subtle:'#707783'/);
+  assert.match(mui,/const onBrand=dark\?'#111214':'#ffffff'/);
+  assert.match(mui,/primary: \{ main: palette\.brand, contrastText:onBrand \}/);
+  assert.match(mui,/MuiIconButton:[\s\S]*max-width:760px[\s\S]*minWidth:44,minHeight:44/);
+  assert.match(mui,/if\(!item\.route\)return React\.createElement\(Mui\.Typography/);
+});
+
+test('PR browser gate includes deep mobile audit for the complete module catalog',()=>{
+  const runner=read('scripts','vercel-browser-preqa-v16.mjs');
+  const spec=read('qa','mobile-deep-v162.spec.mjs');
+  assert.match(runner,/qa\/mobile-deep-v162\.spec\.mjs/);
+  assert.match(spec,/MODULE_VISUAL_CATALOG/);
+  assert.match(spec,/width:390,height:844/);
+  assert.match(spec,/short-target/);
+  assert.match(spec,/overlapFindings/);
+  assert.match(spec,/primary action contrast stays readable/);
+});
+
 test('service worker cannot serve stale javascript or css ahead of the deployed network bundle',()=>{
   const sw=read('frontend','public','sw.js');
   assert.match(sw,/contagest-ve-v11-16-1/);
