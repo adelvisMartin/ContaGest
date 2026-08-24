@@ -118,8 +118,8 @@ test('canonical icon helper preserves Font Awesome family instead of forcing fa-
   const kit=read('frontend','src','components','ui','kit.js');
   assert.match(kit,/const faFamilies\s*=\s*new Set/);
   assert.match(kit,/family=tokens\.find/);
-  assert.match(kit,/class=\\"\$\{safe\(spec\.family\)\}/);
-  assert.doesNotMatch(kit,/return `<i class=\\"fa-solid \$\{safe\(fa\)\}/);
+  assert.ok(kit.includes('class="${safe(spec.family)} ${safe(spec.icon)} ${safe(className)}"'));
+  assert.ok(!kit.includes('class="fa-solid ${safe(fa)}'));
 });
 
 test('source gates cover functional bindings plus buttons and icons before Vite build',()=>{
