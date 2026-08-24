@@ -1,8 +1,14 @@
 import { test, expect } from '@playwright/test';
 import { MODULE_VISUAL_CATALOG } from './support/module-visual-catalog.mjs';
 
-test.setTimeout(360_000);
-test.use({viewport:{width:390,height:844},hasTouch:true,isMobile:true});
+test.setTimeout(420_000);
+test.use({hasTouch:true,isMobile:true});
+
+const MOBILE_VIEWPORTS=Object.freeze([
+  {name:'phone-360',width:360,height:800},
+  {name:'phone-390',width:390,height:844},
+  {name:'phone-430',width:430,height:932}
+]);
 
 const QA_SESSION={
   sessionMode:'cookie',mode:'cookie',tenantId:'qa-tenant',
@@ -12,31 +18,36 @@ const QA_SESSION={
 };
 
 async function seed(page){
-  await page.addInitScript((session)=>localStorage.setItem('contagest_auth_session',JSON.stringify(session)),QA_SESSION);
+  await page.addInitScript((session)=>{
+    localStorage.setItem('contagest_auth_session',JSON.stringify(session));
+    window.confirm=()=>false;
+    window.open=()=>null;
+  },QA_SESSION);
   await page.route('**/api/v1/auth/me',async(route)=>route.fulfill({status:200,contentType:'application/json',body:JSON.stringify({ok:true,data:QA_SESSION})}));
 }
 
 async function openRoute(page,route){
   await page.goto(`/?module=${route}`,{waitUntil:'domcontentloaded'});
   await page.waitForSelector('#pages',{state:'attached',timeout:20_000});
-  await page.waitForTimeout(route==='veterinaria'?420:130);
+  await page.waitForTimeout(route==='veterinaria'?420:120);
 }
 
 async function auditMobile(page,route){
   return page.evaluate((activeRoute)=>{
-    const width=innerWidth;
+    const width=innerWidth,height=innerHeight;
     const visible=(node)=>{
       if(!(node instanceof HTMLElement))return false;
       const style=getComputedStyle(node),r=node.getBoundingClientRect();
       return style.display!=='none'&&style.visibility!=='hidden'&&Number(style.opacity)!==0&&r.width>1&&r.height>1;
     };
+    const inViewport=(node)=>{const r=node.getBoundingClientRect();return r.bottom>0&&r.top<height&&r.right>0&&r.left<width;};
     const intentionalScroll='.table-wrap,.pl-table-wrap,.ds-table-wrap,.cgv-table-shell,.cgx-table-wrap,.MuiTableContainer-root,.MuiTabs-scroller,.hf-command-results,#mainMenu,.cg-psychology-workspace .cgx-section-body:has(>.cg-psych-calendar),.cg-kanban,.hf-gym-tabs,.cg-gym-v1124-tabs,.cg-pos-tabs';
     const ignoredOffcanvas='.hf-sidebar,#sidebarBackdrop,.hf-command-layer,.MuiPopover-root,.MuiModal-root,.cg-modal-backdrop';
     const offenders=[...document.querySelectorAll('body *')].filter(visible).filter((node)=>{
       if(node.closest(intentionalScroll)||node.closest(ignoredOffcanvas))return false;
       const r=node.getBoundingClientRect();
       return r.left<-2||r.right>width+2;
-    }).slice(0,12).map((node)=>{const r=node.getBoundingClientRect();return{tag:node.tagName.toLowerCase(),id:node.id||'',className:String(node.className||'').slice(0,100),left:Math.round(r.left),right:Math.round(r.right),width:Math.round(r.width)};});
+    }).slice(0,16).map((node)=>{const r=node.getBoundingClientRect();return{tag:node.tagName.toLowerCase(),id:node.id||'',className:String(node.className||'').slice(0,100),left:Math.round(r.left),right:Math.round(r.right),width:Math.round(r.width)};});
 
     const targetFindings=[];
     const interactive=[...document.querySelectorAll('button,summary,a[href],input:not([type="hidden"]):not([type="checkbox"]):not([type="radio"]),select,textarea')].filter(visible);
@@ -59,33 +70,54 @@ async function auditMobile(page,route){
         if(a.contains(b)||b.contains(a))continue;
         if(a.closest('.hf-sidebar')!==b.closest('.hf-sidebar'))continue;
         const hit=intersection(a.getBoundingClientRect(),b.getBoundingClientRect());
-        if(hit.x>3&&hit.y>3){overlapFindings.push({a:(a.id||a.className||a.tagName).toString().slice(0,80),b:(b.id||b.className||b.tagName).toString().slice(0,80),x:Math.round(hit.x),y:Math.round(hit.y)});if(overlapFindings.length>=10)break;}
+        if(hit.x>3&&hit.y>3){overlapFindings.push({a:(a.id||a.className||a.tagName).toString().slice(0,80),b:(b.id||b.className||b.tagName).toString().slice(0,80),x:Math.round(hit.x),y:Math.round(hit.y)});if(overlapFindings.length>=12)break;}
       }
-      if(overlapFindings.length>=10)break;
+      if(overlapFindings.length>=12)break;
+    }
+
+    const occludedTargets=[];
+    for(const node of clickables.filter(inViewport)){
+      if(node.closest(ignoredOffcanvas)||node.closest('.MuiPopover-root'))continue;
+      const r=node.getBoundingClientRect(),x=Math.max(0,Math.min(width-1,r.left+r.width/2)),y=Math.max(0,Math.min(height-1,r.top+r.height/2));
+      const top=document.elementFromPoint(x,y);
+      if(top&&top!==node&&!node.contains(top)&&!top.contains(node)){
+        occludedTargets.push({target:(node.id||node.getAttribute('aria-label')||node.textContent||node.className||node.tagName).toString().replace(/\s+/g,' ').trim().slice(0,80),coveredBy:(top.id||top.className||top.tagName).toString().slice(0,80)});
+        if(occludedTargets.length>=10)break;
+      }
     }
 
     const clippedButtons=[...document.querySelectorAll('button')].filter(visible).filter((node)=>{
       const style=getComputedStyle(node);
       return style.whiteSpace==='nowrap'&&node.scrollWidth>node.clientWidth+3;
-    }).slice(0,10).map((node)=>({id:node.id||'',label:String(node.textContent||node.getAttribute('aria-label')||'').trim().slice(0,80),scroll:node.scrollWidth,client:node.clientWidth}));
+    }).slice(0,12).map((node)=>({id:node.id||'',label:String(node.textContent||node.getAttribute('aria-label')||'').trim().slice(0,80),scroll:node.scrollWidth,client:node.clientWidth}));
 
     const actionSymmetry=[];
-    document.querySelectorAll('.cgx-page-actions,.cgx-section-actions,.cg-form-actions,.cg-record-actions,.cg-row-actions').forEach((group)=>{
+    document.querySelectorAll('.cgx-page-actions,.cgx-section-actions,.cg-form-actions,.cg-record-actions,.cg-row-actions,.cg-modal-actions').forEach((group)=>{
       if(!visible(group))return;
       const items=[...group.children].filter(visible).map((node)=>node.getBoundingClientRect().height);
       if(items.length>1&&Math.max(...items)-Math.min(...items)>4)actionSymmetry.push({className:String(group.className),heights:items.map((v)=>Math.round(v))});
     });
 
+    const typography=[];
+    document.querySelectorAll('#pages h1,#pages .cgx-metric-main strong,#pages .kpi strong').forEach((node)=>{
+      if(!visible(node))return;
+      const px=parseFloat(getComputedStyle(node).fontSize)||0;
+      const limit=node.matches('h1')?28:22;
+      if(px>limit+.1)typography.push({kind:node.matches('h1')?'page-title':'metric',text:String(node.textContent||'').trim().slice(0,70),px,limit});
+    });
+
     return{
       route:activeRoute,
-      viewport:width,
+      viewport:{width,height},
       documentWidth:document.documentElement.scrollWidth,
       bodyWidth:document.body.scrollWidth,
       offenders,
-      targetFindings:targetFindings.slice(0,16),
+      targetFindings:targetFindings.slice(0,20),
       overlapFindings,
+      occludedTargets,
       clippedButtons,
-      actionSymmetry
+      actionSymmetry,
+      typography
     };
   },route);
 }
@@ -97,31 +129,34 @@ function contrast(a,b){const l1=luminance(a),l2=luminance(b);return (Math.max(l1
 async function primaryContrast(page){
   return page.evaluate(()=>{
     const visible=(node)=>{if(!(node instanceof HTMLElement))return false;const s=getComputedStyle(node),r=node.getBoundingClientRect();return s.display!=='none'&&s.visibility!=='hidden'&&r.width>1&&r.height>1;};
-    const samples=[...document.querySelectorAll('.cgx-btn-primary,.btn-primary,.MuiButton-containedPrimary')].filter(visible).slice(0,10).map((node)=>{const s=getComputedStyle(node);return{label:String(node.textContent||node.getAttribute('aria-label')||'').trim().slice(0,60),color:s.color,background:s.backgroundColor};});
-    return samples;
+    return [...document.querySelectorAll('.cgx-btn-primary,.btn-primary,.MuiButton-containedPrimary')].filter(visible).slice(0,12).map((node)=>{const s=getComputedStyle(node);return{label:String(node.textContent||node.getAttribute('aria-label')||'').trim().slice(0,60),color:s.color,background:s.backgroundColor};});
   });
 }
 
-test('all registered modules remain touch-safe, symmetric and inside a 390px viewport',async({page})=>{
-  await seed(page);
-  const failures=[];
-  for(const item of MODULE_VISUAL_CATALOG){
-    if(item.route==='login')continue;
-    const pageErrors=[];
-    const onError=(error)=>pageErrors.push(String(error?.message||error));
-    page.on('pageerror',onError);
-    try{
-      await openRoute(page,item.route);
-      const audit=await auditMobile(page,item.route);
-      if(audit.documentWidth>391||audit.bodyWidth>391||audit.offenders.length||audit.targetFindings.length||audit.overlapFindings.length||audit.clippedButtons.length||audit.actionSymmetry.length||pageErrors.length){failures.push({...audit,pageErrors});}
-    }catch(error){failures.push({route:item.route,error:String(error?.message||error),pageErrors});}
-    finally{page.off('pageerror',onError);}
-  }
-  console.log(`[mobile-deep-v162] rutas=${MODULE_VISUAL_CATALOG.filter((item)=>item.route!=='login').length} fallos=${failures.length}`);
-  expect(failures,JSON.stringify(failures,null,2)).toEqual([]);
-});
+for(const viewport of MOBILE_VIEWPORTS){
+  test(`all registered modules remain touch-safe, symmetric and inside ${viewport.width}px`,async({page})=>{
+    await page.setViewportSize({width:viewport.width,height:viewport.height});
+    await seed(page);
+    const failures=[];
+    for(const item of MODULE_VISUAL_CATALOG){
+      if(item.route==='login')continue;
+      const pageErrors=[];
+      const onError=(error)=>pageErrors.push(String(error?.message||error));
+      page.on('pageerror',onError);
+      try{
+        await openRoute(page,item.route);
+        const audit=await auditMobile(page,item.route);
+        if(audit.documentWidth>viewport.width+1||audit.bodyWidth>viewport.width+1||audit.offenders.length||audit.targetFindings.length||audit.overlapFindings.length||audit.occludedTargets.length||audit.clippedButtons.length||audit.actionSymmetry.length||audit.typography.length||pageErrors.length)failures.push({...audit,pageErrors});
+      }catch(error){failures.push({route:item.route,error:String(error?.message||error),pageErrors});}
+      finally{page.off('pageerror',onError);}
+    }
+    console.log(`[mobile-deep-v163] viewport=${viewport.name} rutas=${MODULE_VISUAL_CATALOG.filter((item)=>item.route!=='login').length} fallos=${failures.length}`);
+    expect(failures,JSON.stringify(failures,null,2)).toEqual([]);
+  });
+}
 
 test('mobile shell controls work and primary action contrast stays readable in light/dark',async({page})=>{
+  await page.setViewportSize({width:390,height:844});
   await seed(page);
   await openRoute(page,'dashboard');
 
