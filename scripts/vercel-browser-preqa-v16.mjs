@@ -17,9 +17,10 @@ function run(command,args,env={}){
   if(result.status!==0)process.exit(result.status||1);
 }
 
-// GitHub Actions is currently failing before runner steps. Vercel PR previews are
-// an independent Linux execution environment, so install only Chromium here and
-// exercise authentication, functional smoke and the complete 58-route control audit.
+// Vercel installs from the frontend workspace and can omit root devDependencies.
+// The repository already locks @playwright/test at the root, so materialize the
+// existing lock graph here rather than downloading an unpinned CLI via npx.
+run('npm',['install','--include=dev','--ignore-scripts','--no-audit','--no-fund']);
 run('npx',['--no-install','playwright','install','chromium']);
 run('npx',['--no-install','playwright','test',
   'qa/login-auth-runtime-v161.spec.mjs',
