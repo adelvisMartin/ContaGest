@@ -6,6 +6,7 @@ const staleSession={
   user:{id:'qa-user',name:'QA User',fullName:'QA User',email:'qa@contagest.local',role:'admin',permissions:['*']},
   audience:'staff',expiresAt:Date.now()+8*60*60*1000
 };
+const LOGIN_VIEWPORTS=[{width:360,height:800},{width:390,height:844},{width:430,height:932}];
 
 async function mockCaptcha(page){
   await page.route('**/api/v1/auth/captcha',async(route)=>route.fulfill({
@@ -66,22 +67,26 @@ test('desktop login is compact, aligned and has explicit icon/text spacing',asyn
   expect(card.right).toBeLessThanOrEqual(1440);
 });
 
-test.describe('mobile authentication layout',()=>{
-  test.use({viewport:{width:390,height:844}});
-  test('login fits viewport, hides secondary panel and preserves touch targets',async({page})=>{
+for(const viewport of LOGIN_VIEWPORTS){
+  test(`mobile login ${viewport.width}px fits viewport and every visible control remains touch-safe`,async({page})=>{
+    await page.setViewportSize(viewport);
     await mockCaptcha(page);
     await page.goto('/?module=login',{waitUntil:'domcontentloaded'});
     await expect(page.locator('.login-shell-v161')).toBeVisible();
     await expect(page.locator('.login-panel')).toBeHidden();
-    const audit=await page.evaluate(()=>({doc:document.documentElement.scrollWidth,body:document.body.scrollWidth,width:innerWidth}));
-    expect(audit.doc,JSON.stringify(audit)).toBeLessThanOrEqual(391);
-    expect(audit.body,JSON.stringify(audit)).toBeLessThanOrEqual(391);
-    const submit=await visibleGeometry(page,'.login-submit');
-    expect(submit.height).toBeGreaterThanOrEqual(44);
-    const inputs=page.locator('.login-card input:not([type="hidden"])');
-    for(let i=0;i<await inputs.count();i+=1){
-      const box=await inputs.nth(i).boundingBox();
-      if(box)expect(box.width).toBeLessThanOrEqual(370);
+    const audit=await page.evaluate(()=>{
+      const width=innerWidth;
+      const visible=(node)=>{const r=node.getBoundingClientRect(),s=getComputedStyle(node);return s.display!=='none'&&s.visibility!=='hidden'&&r.width>1&&r.height>1;};
+      const controls=[...document.querySelectorAll('.login-card button,.login-card summary,.login-card input:not([type="hidden"])')].filter(visible).map((node)=>{const r=node.getBoundingClientRect();return{tag:node.tagName.toLowerCase(),id:node.id||'',label:String(node.getAttribute('aria-label')||node.textContent||node.getAttribute('placeholder')||'').replace(/\s+/g,' ').trim().slice(0,80),width:r.width,height:r.height,left:r.left,right:r.right};});
+      return{doc:document.documentElement.scrollWidth,body:document.body.scrollWidth,width,controls};
+    });
+    expect(audit.doc,JSON.stringify(audit)).toBeLessThanOrEqual(viewport.width+1);
+    expect(audit.body,JSON.stringify(audit)).toBeLessThanOrEqual(viewport.width+1);
+    for(const control of audit.controls){
+      expect(control.height,JSON.stringify(control)).toBeGreaterThanOrEqual(43.5);
+      expect(control.left,JSON.stringify(control)).toBeGreaterThanOrEqual(-1);
+      expect(control.right,JSON.stringify(control)).toBeLessThanOrEqual(viewport.width+1);
+      if(control.tag==='button'&&!control.label)throw new Error(`Botón móvil sin nombre accesible: ${JSON.stringify(control)}`);
     }
   });
-});
+}
