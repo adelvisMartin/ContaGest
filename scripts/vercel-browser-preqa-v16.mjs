@@ -11,7 +11,7 @@ if(isVercel&&(!isPreview||!pr)){
   process.exit(0);
 }
 
-function execute(command,args,{env={},capture=false}={}){
+function execute(command,args,{env={},capture=false,allowFailure=false}={}){
   console.log(`[browser-preqa] ${command} ${args.join(' ')}`);
   const result=spawnSync(command,args,{
     cwd:root,
@@ -19,8 +19,12 @@ function execute(command,args,{env={},capture=false}={}){
     encoding:capture?'utf8':undefined,
     env:{...process.env,...env}
   });
-  if(result.error){console.error(`[browser-preqa] ${result.error.message}`);process.exit(1);}
-  if(result.status!==0){
+  if(result.error){
+    console.error(`[browser-preqa] ${result.error.message}`);
+    if(!allowFailure)process.exit(1);
+    return{...result,status:result.status||1};
+  }
+  if(result.status!==0&&!allowFailure){
     if(capture){if(result.stdout)process.stdout.write(result.stdout);if(result.stderr)process.stderr.write(result.stderr);}
     process.exit(result.status||1);
   }
@@ -65,17 +69,36 @@ if(!String(browserConfig.runtimeEnv?.LD_LIBRARY_PATH||'').includes('/tmp/al2023/
 console.log(`[browser-preqa] Chromium serverless ${SERVERLESS_CHROMIUM_VERSION}: ${browserConfig.executablePath}`);
 console.log(`[browser-preqa] AL2023 libs: ${browserConfig.runtimeEnv.LD_LIBRARY_PATH}`);
 
-execute('npx',['--no-install','playwright','test',
-  'qa/login-auth-runtime-v161.spec.mjs',
-  'qa/erp-functional-smoke-v14.spec.mjs',
-  'qa/ui-controls-runtime-v16.spec.mjs',
-  'qa/mobile-deep-v162.spec.mjs',
-  '--project=chromium'
-],{env:{
+const browserEnv={
   ...browserConfig.runtimeEnv,
   CI:'1',
   PLAYWRIGHT_HTML_OPEN:'never',
   CG_PLAYWRIGHT_CHROMIUM_EXECUTABLE:browserConfig.executablePath,
   CG_PLAYWRIGHT_CHROMIUM_ARGS:JSON.stringify(browserConfig.args)
-}});
-console.log('[browser-preqa][PASS] Chromium auth/login + functional smoke + 58-route controls + deep mobile QA passed.');
+};
+const failures=[];
+function runGroup(label,args){
+  console.log(`\n[browser-preqa] ===== ${label} =====`);
+  const result=execute('npx',['--no-install','playwright','test',...args,'--project=chromium','--workers=1'],{env:browserEnv,allowFailure:true});
+  if(result.status!==0){failures.push({label,status:result.status||1});console.error(`[browser-preqa][FAIL] ${label}`);}
+  else console.log(`[browser-preqa][PASS] ${label}`);
+}
+
+// Long catalog passes run in isolated Chromium processes. This prevents one
+// memory-heavy route sweep from poisoning the next QA layer on serverless CI.
+runGroup('auth + login', ['qa/login-auth-runtime-v161.spec.mjs']);
+runGroup('58-route mount + DOM integrity', ['qa/erp-functional-smoke-v14.spec.mjs','--grep','58 registered routes']);
+runGroup('functional scenarios + sidebar + theme', ['qa/erp-functional-smoke-v14.spec.mjs','--grep-invert','58 registered routes']);
+runGroup('58-route runtime button/icon contracts', ['qa/ui-controls-runtime-v16.spec.mjs']);
+runGroup('mobile deep 360px', ['qa/mobile-deep-v162.spec.mjs','--grep','inside 360px']);
+runGroup('mobile deep 390px', ['qa/mobile-deep-v162.spec.mjs','--grep','inside 390px']);
+runGroup('mobile deep 430px', ['qa/mobile-deep-v162.spec.mjs','--grep','inside 430px']);
+runGroup('mobile shell + light/dark contrast', ['qa/mobile-deep-v162.spec.mjs','--grep','mobile shell controls']);
+runGroup('safe click-smoke for module actions/submits', ['qa/module-actions-runtime-v163.spec.mjs']);
+
+if(failures.length){
+  console.error(`\n[browser-preqa] ${failures.length} grupo(s) fallaron:`);
+  failures.forEach((item)=>console.error(` - ${item.label} (exit ${item.status})`));
+  process.exit(1);
+}
+console.log('\n[browser-preqa][PASS] Auth, 58-route mount, functional scenarios, runtime controls, 360/390/430 mobile QA, contrast and safe click-smoke passed in isolated Chromium processes.');
