@@ -31,10 +31,13 @@ test('pre-QA v16 covers all 58 registered runtime routes',()=>{
 });
 
 test('legacy visual hotspots migrated to canonical contracts',()=>{
-  const regulatory=page('RegulatoryPage.js');
-  const audit=page('AuditPage.js');
-  const hr=page('HrDashboardPage.js');
-  for(const [name,source] of [['Regulatory',regulatory],['Audit',audit],['RRHH',hr]]){
+  const targets=[
+    ['Regulatory',page('RegulatoryPage.js')],
+    ['Audit',page('AuditPage.js')],
+    ['RRHH',page('HrDashboardPage.js')],
+    ['Demo Control',page('DemoControlPage.js')]
+  ];
+  for(const [name,source] of targets){
     assert.doesNotMatch(source,/rounded-\[|text-\[#|font-black|material-symbols|\bpl-card\b|\bds-btn\b/,`${name} retains legacy visual markup`);
     assert.match(source,/components\/ui\/index\.js/);
   }
@@ -97,6 +100,34 @@ test('exports use the secure shared API client instead of dev tenant headers or 
   assert.match(source,/BackendApi\.request\(endpoint/);
   assert.doesNotMatch(source,/\bfetch\s*\(/);
   assert.doesNotMatch(source,/x-tenant-id|contagest_tenant_id|localhost:3030/);
+});
+
+test('Demo Control persists through authenticated API and never reports an offline save as success',()=>{
+  const service=read('frontend','src','services','demoAccessService.js');
+  const view=page('DemoControlPage.js');
+  assert.match(service,/BackendApi\.post\('\/demos\/access'/);
+  assert.match(service,/BackendApi\.get\('\/demos\/access'/);
+  assert.doesNotMatch(service,/\/api\/v1\/demos\/access/);
+  assert.doesNotMatch(service,/offline:\s*true/);
+  assert.match(view,/await DemoAccessService\.saveDemo/);
+  assert.match(view,/await RbacService\.updateDemoUser/);
+  assert.match(view,/actualizado y persistido en RBAC/);
+});
+
+test('canonical icon helper preserves Font Awesome family instead of forcing fa-solid',()=>{
+  const kit=read('frontend','src','components','ui','kit.js');
+  assert.match(kit,/const faFamilies\s*=\s*new Set/);
+  assert.match(kit,/family=tokens\.find/);
+  assert.match(kit,/class=\\"\$\{safe\(spec\.family\)\}/);
+  assert.doesNotMatch(kit,/return `<i class=\\"fa-solid \$\{safe\(fa\)\}/);
+});
+
+test('source gates cover functional bindings plus buttons and icons before Vite build',()=>{
+  const frontendPackage=JSON.parse(read('frontend','package.json'));
+  assert.match(frontendPackage.scripts['preqa:source'],/visual-source-gate-v16\.mjs/);
+  assert.match(frontendPackage.scripts['preqa:source'],/erp-functional-source-gate-v16\.mjs/);
+  assert.match(frontendPackage.scripts['preqa:source'],/ui-control-audit-v16\.mjs/);
+  assert.match(frontendPackage.scripts.build,/preqa:source.*stage:backend.*vite build/);
 });
 
 test('previous v16 financial safety fixes remain in place',()=>{
