@@ -13,10 +13,12 @@ const QA_SESSION={
 const CONTEXTS=Object.freeze([
   {name:'desktop-light',width:1440,height:900,theme:'light'},
   {name:'desktop-dark',width:1440,height:900,theme:'dark'},
+  {name:'laptop-1024-light',width:1024,height:768,theme:'light'},
+  {name:'tablet-768-dark',width:768,height:1024,theme:'dark',touch:true},
+  {name:'mobile-430-light',width:430,height:932,theme:'light',touch:true},
   {name:'mobile-light',width:390,height:844,theme:'light',touch:true},
   {name:'mobile-dark',width:390,height:844,theme:'dark',touch:true},
-  {name:'mobile-edge-360-dark',width:360,height:800,theme:'dark',touch:true},
-  {name:'tablet-768-dark',width:768,height:1024,theme:'dark',touch:true}
+  {name:'mobile-edge-360-dark',width:360,height:800,theme:'dark',touch:true}
 ]);
 
 async function seed(page){
