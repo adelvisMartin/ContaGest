@@ -86,7 +86,7 @@ function runGroup(label,args){
 
 // Long catalog passes run in isolated Chromium processes. This prevents one
 // memory-heavy route sweep from poisoning the next QA layer on serverless CI.
-runGroup('auth + login', ['qa/login-auth-runtime-v161.spec.mjs']);
+runGroup('auth + login 360/390/430', ['qa/login-auth-runtime-v161.spec.mjs']);
 runGroup('58-route mount + DOM integrity', ['qa/erp-functional-smoke-v14.spec.mjs','--grep','58 registered routes']);
 runGroup('functional scenarios + sidebar + theme', ['qa/erp-functional-smoke-v14.spec.mjs','--grep-invert','58 registered routes']);
 runGroup('58-route runtime button/icon contracts', ['qa/ui-controls-runtime-v16.spec.mjs']);
@@ -94,6 +94,7 @@ runGroup('mobile deep 360px', ['qa/mobile-deep-v162.spec.mjs','--grep','inside 3
 runGroup('mobile deep 390px', ['qa/mobile-deep-v162.spec.mjs','--grep','inside 390px']);
 runGroup('mobile deep 430px', ['qa/mobile-deep-v162.spec.mjs','--grep','inside 430px']);
 runGroup('mobile shell + light/dark contrast', ['qa/mobile-deep-v162.spec.mjs','--grep','mobile shell controls']);
+runGroup('mobile sidebar + command navigation', ['qa/mobile-navigation-v163.spec.mjs']);
 runGroup('safe click-smoke for module actions/submits', ['qa/module-actions-runtime-v163.spec.mjs']);
 
 if(failures.length){
@@ -101,4 +102,4 @@ if(failures.length){
   failures.forEach((item)=>console.error(` - ${item.label} (exit ${item.status})`));
   process.exit(1);
 }
-console.log('\n[browser-preqa][PASS] Auth, 58-route mount, functional scenarios, runtime controls, 360/390/430 mobile QA, contrast and safe click-smoke passed in isolated Chromium processes.');
+console.log('\n[browser-preqa][PASS] Auth/login, 58-route mount, functional scenarios, runtime controls, 360/390/430 mobile QA, contrast, real sidebar/command navigation and safe click-smoke passed in isolated Chromium processes.');
