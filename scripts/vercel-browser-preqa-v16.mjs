@@ -17,12 +17,17 @@ function run(command,args,env={}){
   if(result.status!==0)process.exit(result.status||1);
 }
 
-// GitHub Actions is currently failing before runner steps. Vercel preview is an
-// independent Linux execution environment, so install only Chromium here and
-// run the browser gates against the local Vite dev server defined by Playwright.
+// GitHub Actions is currently failing before runner steps. Vercel PR previews are
+// an independent Linux execution environment, so install only Chromium here and
+// exercise authentication, functional smoke and the complete 58-route control audit.
 run('npx',['--no-install','playwright','install','chromium']);
-run('npx',['--no-install','playwright','test','qa/erp-functional-smoke-v14.spec.mjs','qa/ui-controls-runtime-v16.spec.mjs','--project=chromium'],{
+run('npx',['--no-install','playwright','test',
+  'qa/login-auth-runtime-v161.spec.mjs',
+  'qa/erp-functional-smoke-v14.spec.mjs',
+  'qa/ui-controls-runtime-v16.spec.mjs',
+  '--project=chromium'
+],{
   CI:'1',
   PLAYWRIGHT_HTML_OPEN:'never'
 });
-console.log('[browser-preqa][PASS] Chromium functional smoke + 58-route runtime control audit passed.');
+console.log('[browser-preqa][PASS] Chromium auth/login + functional smoke + 58-route runtime control audit passed.');
