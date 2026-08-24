@@ -3,14 +3,16 @@ import { MODULE_VISUAL_CATALOG } from './support/module-visual-catalog.mjs';
 
 test.setTimeout(360_000);
 
+const QA_SESSION={
+  sessionMode:'cookie',mode:'cookie',tenantId:'qa-tenant',
+  tenant:{id:'qa-tenant',name:'ContaGest QA',rif:'J-00000000-0',plan:'enterprise'},
+  user:{id:'qa-admin',name:'QA Admin',fullName:'QA Admin',email:'qa@contagest.local',role:'admin',permissions:['*']},
+  audience:'staff',expiresAt:Date.now()+8*60*60*1000
+};
+
 async function seedAndInstrument(page){
-  await page.addInitScript(()=>{
-    localStorage.setItem('contagest_auth_session',JSON.stringify({
-      sessionMode:'cookie',mode:'cookie',tenantId:'qa-tenant',
-      tenant:{id:'qa-tenant',name:'ContaGest QA',rif:'J-00000000-0',plan:'enterprise'},
-      user:{id:'qa-admin',name:'QA Admin',fullName:'QA Admin',email:'qa@contagest.local',role:'admin',permissions:['*']},
-      audience:'staff',expiresAt:Date.now()+8*60*60*1000
-    }));
+  await page.addInitScript((session)=>{
+    localStorage.setItem('contagest_auth_session',JSON.stringify(session));
     const original=EventTarget.prototype.addEventListener;
     EventTarget.prototype.addEventListener=function(type,listener,options){
       if(this instanceof Element && ['click','submit','change','input','keydown'].includes(String(type))){
@@ -20,7 +22,8 @@ async function seedAndInstrument(page){
       }
       return original.call(this,type,listener,options);
     };
-  });
+  },QA_SESSION);
+  await page.route('**/api/v1/auth/me',async(route)=>route.fulfill({status:200,contentType:'application/json',body:JSON.stringify({ok:true,data:QA_SESSION})}));
 }
 
 async function openRoute(page,route){
