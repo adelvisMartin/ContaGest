@@ -1,5 +1,5 @@
 /*
- * ContaGest VE — shell geometry contract v16.3
+ * ContaGest VE — shell geometry contract v16.4
  * Structural invariants only. Appearance belongs to the canonical visual system.
  */
 
@@ -17,6 +17,10 @@
 .hf-rate-mobile { display:none; }
 .hf-theme-svg,.hf-menu-svg { display:block; width:16px; height:16px; flex:0 0 auto; }
 .hf-menu-svg path { fill:none; stroke:currentColor; stroke-width:1.8; stroke-linecap:round; }
+/* Item counts added noise without improving navigation. The area name + chevron
+   are the only information required in the sidebar accordion. */
+html body .hf-area-meta small { display:none!important; }
+html body .hf-area-meta { gap:0!important; }
 
 html body .hf-app-sidebar.hf-sidebar {
   position:fixed;
@@ -192,6 +196,7 @@ html body.modal-open { overflow:hidden; }
   html body .hf-user-panel > button,
   html body .hf-user-select select { min-height:var(--cg-v-control-touch)!important; }
   html body #btnOpenSidebar,
+  html body #btnCloseSidebar,
   html body #btnTema,
   html body #btnUserMenu,
   html body #btnActualizarTasaTop,
@@ -227,10 +232,39 @@ html body.modal-open { overflow:hidden; }
   html body #pages button:has(>svg:only-child),
   html body .login-shell-v161 button:has(>i:only-child),
   html body .login-shell-v161 button:has(>svg:only-child),
-  html body .login-shell-v161 .login-captcha-refresh {
+  html body .login-shell-v161 .login-captcha-refresh,
+  html body #btnWhatsappSupport {
     min-width:var(--cg-v-control-touch)!important;
     width:var(--cg-v-control-touch)!important;
     height:var(--cg-v-control-touch)!important;
+    min-height:var(--cg-v-control-touch)!important;
+  }
+
+  /* Icon and text are separate flex items. Icons never shrink into labels. */
+  html body #pages :where(button,.cgx-btn,.btn,.ds-btn,.cgv-btn)>:where(i,svg),
+  html body .login-shell-v161 :where(button,.cgx-btn,.btn)>:where(i,svg) { flex:0 0 auto!important; }
+  html body #pages :where(button,.cgx-btn,.btn,.ds-btn,.cgv-btn)>span,
+  html body .login-shell-v161 :where(button,.cgx-btn,.btn)>span { min-width:0; }
+
+  /* Horizontal tab owners scroll; their children size to their complete label. */
+  html body #pages :where(.cg-gym-v1124-tabs,.cg-pos-tabs,.cg-vertical-tabs,.page-tabs,.cgx-tabs) {
+    max-width:100%; overflow-x:auto!important; overscroll-behavior-inline:contain;
+  }
+  html body #pages :where(.cg-gym-v1124-tabs,.cg-pos-tabs,.cg-vertical-tabs,.page-tabs,.cgx-tabs)>button {
+    flex:0 0 auto!important;
+    width:auto!important;
+    min-width:max-content!important;
+    max-width:none!important;
+    padding-inline:12px!important;
+    white-space:nowrap!important;
+  }
+
+  /* Action rows may wrap their labels rather than clipping them. */
+  html body #pages :where(.cgx-page-actions,.cgx-section-actions,.cg-form-actions) :where(button,.cgx-btn,.btn) {
+    max-width:100%;
+    height:auto;
+    white-space:normal!important;
+    line-height:1.25!important;
   }
 
   html body .cg-modal-backdrop { align-items:flex-end; padding:8px max(8px,var(--cg-safe-right)) max(8px,var(--cg-safe-bottom)) max(8px,var(--cg-safe-left)); }
