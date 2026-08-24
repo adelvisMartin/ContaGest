@@ -16,14 +16,15 @@ export function createContaGestMuiTheme(mode = 'light') {
   const normalized = mode === 'dark' ? 'dark' : 'light';
   const dark = normalized === 'dark';
   const palette = dark ? {
-    bg:'#111214', surface:'#181a1d', surface2:'#1f2125', text:'#f4f5f7', muted:'#a4a9b2', subtle:'#737984', border:'#2b2e34', borderStrong:'#3d4149', brand:'#7c86ff', brandHover:'#939bff', brandSoft:'#252942'
+    bg:'#111214', surface:'#181a1d', surface2:'#1f2125', text:'#f4f5f7', muted:'#a4a9b2', subtle:'#808690', border:'#2b2e34', borderStrong:'#3d4149', brand:'#7c86ff', brandHover:'#939bff', brandSoft:'#252942'
   } : {
-    bg:'#f4f5f7', surface:'#ffffff', surface2:'#f8f9fb', text:'#17191d', muted:'#626874', subtle:'#8b919c', border:'#e1e4e9', borderStrong:'#cfd3da', brand:'#5661e8', brandHover:'#4650ca', brandSoft:'#eef0ff'
+    bg:'#f4f5f7', surface:'#ffffff', surface2:'#f8f9fb', text:'#17191d', muted:'#626874', subtle:'#707783', border:'#e1e4e9', borderStrong:'#cfd3da', brand:'#5661e8', brandHover:'#4650ca', brandSoft:'#eef0ff'
   };
+  const onBrand=dark?'#111214':'#ffffff';
   return Mui.createTheme({
     palette: {
       mode: normalized,
-      primary: { main: palette.brand },
+      primary: { main: palette.brand, contrastText:onBrand },
       secondary: { main: palette.muted },
       success: { main: dark ? '#69c5a3' : '#157357' },
       warning: { main: dark ? '#e4b461' : '#94620d' },
@@ -52,15 +53,15 @@ export function createContaGestMuiTheme(mode = 'light') {
       MuiCssBaseline:{styleOverrides:{body:{backgroundImage:'none',backgroundColor:palette.bg,color:palette.text}}},
       MuiPaper:{styleOverrides:{root:{backgroundImage:'none',borderColor:palette.border}}},
       MuiCard:{styleOverrides:{root:{backgroundImage:'none',border:`1px solid ${palette.border}`,borderRadius:12,boxShadow:dark?'0 1px 2px rgba(0,0,0,.20), 0 5px 18px rgba(0,0,0,.12)':'0 1px 2px rgba(17,24,39,.035), 0 4px 14px rgba(17,24,39,.025)'}}},
-      MuiButton:{defaultProps:{disableElevation:true,size:'small'},styleOverrides:{root:{minHeight:38,borderRadius:8,paddingInline:11,whiteSpace:'nowrap',boxShadow:'none',fontSize:11},containedPrimary:{'&:hover':{backgroundColor:palette.brandHover}}}},
-      MuiIconButton:{styleOverrides:{root:{borderRadius:8}}},
+      MuiButton:{defaultProps:{disableElevation:true,size:'small'},styleOverrides:{root:{minHeight:38,borderRadius:8,paddingInline:11,whiteSpace:'nowrap',boxShadow:'none',fontSize:11,'@media (max-width:760px)':{minHeight:44}},containedPrimary:{color:onBrand,'&:hover':{backgroundColor:palette.brandHover,color:onBrand}}}},
+      MuiIconButton:{styleOverrides:{root:{borderRadius:8,'@media (max-width:760px)':{minWidth:44,minHeight:44}}}},
       MuiTextField:{defaultProps:{size:'small',fullWidth:true,variant:'outlined',InputLabelProps:{shrink:true}}},
-      MuiOutlinedInput:{styleOverrides:{root:{minHeight:38,borderRadius:8,backgroundColor:palette.surface,alignItems:'center','& .MuiOutlinedInput-notchedOutline':{borderColor:palette.borderStrong},'&:hover .MuiOutlinedInput-notchedOutline':{borderColor:palette.subtle},'&.Mui-focused .MuiOutlinedInput-notchedOutline':{borderColor:palette.brand,borderWidth:1.5}},input:{padding:'9px 10px',fontSize:12,fontWeight:400},inputMultiline:{padding:0}}},
+      MuiOutlinedInput:{styleOverrides:{root:{minHeight:38,borderRadius:8,backgroundColor:palette.surface,alignItems:'center','& .MuiOutlinedInput-notchedOutline':{borderColor:palette.borderStrong},'&:hover .MuiOutlinedInput-notchedOutline':{borderColor:palette.subtle},'&.Mui-focused .MuiOutlinedInput-notchedOutline':{borderColor:palette.brand,borderWidth:1.5},'@media (max-width:760px)':{minHeight:44}},input:{padding:'9px 10px',fontSize:12,fontWeight:400},inputMultiline:{padding:0}}},
       MuiInputBase:{styleOverrides:{inputMultiline:{padding:0,lineHeight:1.48}}},
       MuiInputLabel:{styleOverrides:{root:{fontSize:10,fontWeight:600,color:palette.muted}}},
       MuiSelect:{styleOverrides:{select:{paddingBlock:'8px',fontSize:12,fontWeight:500}}},
-      MuiMenuItem:{styleOverrides:{root:{minHeight:34,margin:'2px 5px',borderRadius:7,fontSize:12,fontWeight:500}}},
-      MuiTab:{styleOverrides:{root:{minHeight:36,minWidth:0,padding:'7px 10px',fontSize:11,fontWeight:600,textTransform:'none'}}},
+      MuiMenuItem:{styleOverrides:{root:{minHeight:34,margin:'2px 5px',borderRadius:7,fontSize:12,fontWeight:500,'@media (max-width:760px)':{minHeight:44}}}},
+      MuiTab:{styleOverrides:{root:{minHeight:36,minWidth:0,padding:'7px 10px',fontSize:11,fontWeight:600,textTransform:'none','@media (max-width:760px)':{minHeight:44}}}},
       MuiTabs:{styleOverrides:{root:{minHeight:36},indicator:{height:2,borderRadius:4}}},
       MuiTableContainer:{styleOverrides:{root:{border:`1px solid ${palette.border}`,borderRadius:10,boxShadow:'none'}}},
       MuiTableCell:{styleOverrides:{root:{padding:'9px 10px',fontSize:11,borderColor:palette.border},head:{fontSize:9,fontWeight:650,textTransform:'uppercase',letterSpacing:'.045em',color:palette.subtle,backgroundColor:palette.surface2}}},
@@ -116,8 +117,8 @@ function SelectIsland({ node, state }) {
 }
 
 function icon(name){return React.createElement('i',{className:`fa-solid ${name||'fa-circle-dot'}`,style:{fontSize:11}});}function navigate(route){if(route)window.dispatchEvent(new CustomEvent('cg:navigate',{detail:{route}}));}
-function QuickTabsIsland({node,state}){const items=parseJson(node.dataset.items,[]);return React.createElement(Theme,{state},React.createElement(Mui.Box,{sx:{display:'flex',alignItems:'center',gap:.5,overflowX:'auto',py:.2,px:.2,scrollbarWidth:'none'}},items.map((item)=>React.createElement(Mui.Chip,{key:item.route,icon:icon(item.locked?'fa-lock':item.icon),label:item.label,color:item.active?'primary':'default',variant:item.active?'filled':'outlined',clickable:!item.active&&!item.locked,disabled:Boolean(item.locked),'aria-current':item.active?'page':undefined,title:item.locked?'Bloqueado por rol/perfil activo':item.label,onClick:()=>!item.active&&!item.locked&&navigate(item.route),sx:{flex:'0 0 auto',opacity:1,'& .MuiChip-icon':{color:item.active?'#fff':'primary.main'}}}))));}
-function BreadcrumbsIsland({node,state}){const items=parseJson(node.dataset.items,[]);return React.createElement(Theme,{state},React.createElement(Mui.Breadcrumbs,{separator:'›',maxItems:4,'aria-label':'breadcrumb'},items.map((item,index)=>item.current?React.createElement(Mui.Typography,{key:`${item.label}-${index}`,color:'text.secondary',sx:{fontSize:10,fontWeight:500},'aria-current':'page'},item.label):React.createElement(Mui.Link,{key:`${item.label}-${index}`,component:'button',type:'button',underline:item.route?'hover':'none',color:'inherit',onClick:()=>item.route&&navigate(item.route),sx:{border:0,bgcolor:'transparent',p:0,fontSize:10,fontWeight:500,cursor:item.route?'pointer':'default'}},item.label))));}
+function QuickTabsIsland({node,state}){const items=parseJson(node.dataset.items,[]);return React.createElement(Theme,{state},React.createElement(Mui.Box,{sx:{display:'flex',alignItems:'center',gap:.5,overflowX:'auto',py:.2,px:.2,scrollbarWidth:'none'}},items.map((item)=>React.createElement(Mui.Chip,{key:item.route,icon:icon(item.locked?'fa-lock':item.icon),label:item.label,color:item.active?'primary':'default',variant:item.active?'filled':'outlined',clickable:!item.active&&!item.locked,disabled:Boolean(item.locked),'aria-current':item.active?'page':undefined,title:item.locked?'Bloqueado por rol/perfil activo':item.label,onClick:()=>!item.active&&!item.locked&&navigate(item.route),sx:{flex:'0 0 auto',opacity:1,'& .MuiChip-icon':{color:item.active?'primary.contrastText':'primary.main'}}}))));}
+function BreadcrumbsIsland({node,state}){const items=parseJson(node.dataset.items,[]);return React.createElement(Theme,{state},React.createElement(Mui.Breadcrumbs,{separator:'›',maxItems:4,'aria-label':'breadcrumb'},items.map((item,index)=>{const key=`${item.label}-${index}`;if(item.current)return React.createElement(Mui.Typography,{key,color:'text.secondary',sx:{fontSize:10,fontWeight:500},'aria-current':'page'},item.label);if(!item.route)return React.createElement(Mui.Typography,{key,component:'span',color:'text.secondary',sx:{fontSize:10,fontWeight:500}},item.label);return React.createElement(Mui.Link,{key,component:'button',type:'button',underline:'hover',color:'inherit',onClick:()=>navigate(item.route),sx:{border:0,bgcolor:'transparent',p:0,fontSize:10,fontWeight:500,cursor:'pointer'}},item.label);})));}
 function ButtonIsland({node,state}){const fallback=node.querySelector('[data-mui-button-fallback]');const label=node.dataset.muiText||fallback?.textContent?.trim()||'Acción';const iconName=node.dataset.muiIcon||'';const variant=node.dataset.muiVariant||'contained';const color=node.dataset.muiColor||'primary';return React.createElement(Theme,{state},React.createElement(Mui.Button,{variant,color,startIcon:iconName?icon(iconName):undefined,onClick:()=>fallback?.click(),sx:{whiteSpace:'nowrap'}},label));}
 
 function mount(node,marker,mountSelector,element){if(!node||node.dataset[marker]==='true')return;const target=node.querySelector(mountSelector);if(!target)return;node.dataset[marker]='true';const root=createRoot(target);root.render(element);mountedRoots.set(node,root);return root;}
