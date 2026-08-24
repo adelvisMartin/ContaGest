@@ -19,16 +19,12 @@ const CONTEXTS=Object.freeze([
   {name:'tablet-768-dark',width:768,height:1024,theme:'dark',touch:true}
 ]);
 
-async function seed(page,theme){
-  await page.addInitScript(({session,themeName})=>{
+async function seed(page){
+  await page.addInitScript((session)=>{
     localStorage.setItem('contagest_auth_session',JSON.stringify(session));
-    const key='contagest_ve_enterprise_v7_state';
-    let previous={};
-    try{previous=JSON.parse(localStorage.getItem(key)||'{}')||{};}catch{}
-    localStorage.setItem(key,JSON.stringify({...previous,settings:{...(previous.settings||{}),theme:themeName}}));
     window.confirm=()=>false;
     window.open=()=>null;
-  },{session:QA_SESSION,themeName:theme});
+  },QA_SESSION);
   await page.route('**/api/v1/**',async(route)=>{
     const request=route.request();
     const pathname=new URL(request.url()).pathname;
@@ -39,8 +35,19 @@ async function seed(page,theme){
   });
 }
 
-async function openRoute(page,item,ctx){
+async function persistTheme(page,theme){
+  if(!page.url().startsWith('http'))return;
+  await page.evaluate((themeName)=>{
+    const key='contagest_ve_enterprise_v7_state';
+    let previous={};
+    try{previous=JSON.parse(localStorage.getItem(key)||'{}')||{};}catch{}
+    localStorage.setItem(key,JSON.stringify({...previous,settings:{...(previous.settings||{}),theme:themeName}}));
+  },theme);
+}
+
+async function openRoute(page,item,ctx,index){
   await page.setViewportSize({width:ctx.width,height:ctx.height});
+  if(index>0)await persistTheme(page,ctx.theme);
   await page.goto(`/?module=${encodeURIComponent(item.route)}`,{waitUntil:'domcontentloaded'});
   const root=item.standalone?'.login-shell':'#pages';
   await page.waitForSelector(root,{state:'attached',timeout:20_000});
@@ -80,7 +87,7 @@ function auditSource(){
   const buttons=[...root.querySelectorAll('button,[role="button"],summary,a.cg-whatsapp-float')].filter(visible);
   for(const button of buttons){
     const r=button.getBoundingClientRect();
-    if(innerWidth<=430&&(r.height<43.5||r.width<43.5&&!(button.textContent||'').trim())){
+    if(innerWidth<=430&&(r.height<43.5||(r.width<43.5&&!(button.textContent||'').trim()))){
       findings.push({kind:'touch-target',target:label(button),width:Math.round(r.width),height:Math.round(r.height)});
     }
     const icon=button.querySelector(':scope > i,:scope > svg');
@@ -123,8 +130,10 @@ function auditSource(){
 
 for(const item of MODULE_VISUAL_CATALOG){
   test(`${item.route} · deep desktop/mobile light/dark audit`,async({page})=>{
+    await seed(page);
     const routeFindings=[];
-    for(const ctx of CONTEXTS){
+    for(let index=0;index<CONTEXTS.length;index+=1){
+      const ctx=CONTEXTS[index];
       const pageErrors=[];
       const consoleErrors=[];
       const onPageError=(error)=>pageErrors.push(String(error?.message||error));
@@ -134,14 +143,13 @@ for(const item of MODULE_VISUAL_CATALOG){
       };
       page.on('pageerror',onPageError);page.on('console',onConsole);
       try{
-        await seed(page,ctx.theme);
-        await openRoute(page,item,ctx);
+        await openRoute(page,item,ctx,index);
         const findings=await page.evaluate(auditSource);
         const htmlTheme=await page.locator('html').getAttribute('data-theme');
         if(htmlTheme!==ctx.theme)findings.push({kind:'theme-mismatch',expected:ctx.theme,actual:htmlTheme});
         if(findings.length||pageErrors.length||consoleErrors.length)routeFindings.push({context:ctx.name,findings,pageErrors,consoleErrors:consoleErrors.slice(0,8)});
       }catch(error){routeFindings.push({context:ctx.name,error:String(error?.message||error),pageErrors,consoleErrors:consoleErrors.slice(0,8)});}
-      finally{page.off('pageerror',onPageError);page.off('console',onConsole);await page.unrouteAll({behavior:'ignoreErrors'}).catch(()=>null);}
+      finally{page.off('pageerror',onPageError);page.off('console',onConsole);}
     }
     console.log(`[route-v164] ${item.route} contexts=${CONTEXTS.length} failures=${routeFindings.length}`);
     expect(routeFindings,JSON.stringify(routeFindings,null,2)).toEqual([]);
