@@ -55,7 +55,7 @@ export const AiAssistantPage = {
           <div class="cg-ai-shell surface">
             <div id="aiMessages" class="cg-ai-messages" aria-live="polite">${messages.map(messageHtml).join('')}</div>
             <div class="cg-ai-suggestions" aria-label="Consultas sugeridas">${suggestions.slice(0,6).map((suggestion)=>`<button type="button" data-ai-prompt="${escapeHtml(suggestion)}"><i class="fa-solid fa-arrow-trend-up"></i>${escapeHtml(suggestion)}</button>`).join('')}</div>
-            <form id="aiForm" class="cg-ai-form"><label class="sr-only" for="aiInput">Consulta para el asistente</label><textarea id="aiInput" class="input cg-ai-input" rows="2" maxlength="4000" placeholder="Ejemplo: revisa ventas vencidas, stock crítico y asientos pendientes…"></textarea><button id="btnAiSend" class="btn btn-primary cg-ai-send" type="submit"><i class="fa-solid fa-paper-plane"></i><span>Enviar</span></button></form>
+            <form id="aiForm" class="cg-ai-form"><label class="sr-only" for="aiInput">Consulta para el asistente</label><textarea id="aiInput" class="input cg-ai-input" rows="2" required maxlength="4000" placeholder="Ejemplo: revisa ventas vencidas, stock crítico y asientos pendientes…"></textarea><button id="btnAiSend" class="btn btn-primary cg-ai-send" type="submit"><i class="fa-solid fa-paper-plane"></i><span>Enviar</span></button></form>
             <footer class="cg-ai-footer"><span><i class="fa-solid fa-circle-info"></i> Verifica decisiones fiscales, médicas y financieras.</span><span>Enter envía · Shift+Enter crea una línea</span></footer>
           </div>
           ${actionCards(pendingActions)}
@@ -105,7 +105,7 @@ export const AiAssistantPage = {
 
     const form=document.getElementById('aiForm');
     const input=document.getElementById('aiInput');
-    form?.addEventListener('submit',(event)=>{event.preventDefault();const value=input?.value||'';if(input)input.value='';send(value);});
+    form?.addEventListener('submit',(event)=>{event.preventDefault();if(!event.currentTarget.reportValidity())return;const value=input?.value||'';if(input)input.value='';send(value);});
     input?.addEventListener('keydown',(event)=>{if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();form?.requestSubmit();}});
     document.querySelectorAll('[data-ai-prompt]').forEach((button)=>button.addEventListener('click',()=>send(button.dataset.aiPrompt)));
     document.getElementById('btnAiSuggestion')?.addEventListener('click',()=>send('Haz una auditoría rápida de ventas vencidas, stock crítico, compras pendientes, caja y asientos sin publicar.'));
