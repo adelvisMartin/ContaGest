@@ -14,19 +14,19 @@ function objectRowsToHtmlTable(rows = [], title = 'Exportación ContaGest-VE') {
 }
 async function downloadBlobFromBackend(endpoint, payload, fallback) {
   try {
-    const baseUrl = localStorage.getItem('contagest_api_base_url') || 'http://localhost:3030/api/v1';
-    const response = await fetch(`${baseUrl}${endpoint}`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-tenant-id': localStorage.getItem('contagest_tenant_id') || 'demo-tenant' }, body: JSON.stringify(payload) });
-    if (!response.ok) throw new Error(`Backend export ${response.status}`);
+    const response = await BackendApi.request(endpoint, { method:'POST', body:payload, raw:true });
     const blob = await response.blob();
     const disposition = response.headers.get('content-disposition') || '';
     const filename = disposition.match(/filename="?([^";]+)"?/i)?.[1] || `${payload.filename || 'contagest-export'}.bin`;
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
-    a.href = url; a.download = filename; a.click();
+    a.href = url;
+    a.download = filename;
+    a.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
     return true;
   } catch (error) {
-    console.warn('[ExportService] backend unavailable, using fallback', error);
+    console.warn('[ExportService] backend export unavailable; using explicit local fallback', error);
     fallback?.();
     return false;
   }

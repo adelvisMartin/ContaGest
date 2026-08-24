@@ -27,6 +27,11 @@ export const ModuleMaturityPage = {
       eyebrowKey:'moduleMaturityEyebrow',
       titleKey:'moduleMaturityTitle',
       descKey:'moduleMaturityDesc'
+    })}${ErpSection({
+      title:'Cómo interpretar esta clasificación',
+      description:'Las categorías de esta vista provienen del catálogo de producto y describen alcance/tier comercial. No certifican madurez técnica, funcionamiento runtime, APIs, base de datos, accesibilidad ni QA. Hasta que exista evidencia ejecutada, esos gates permanecen NOT_EXECUTED.',
+      actions:Badge('CATÁLOGO · NO QA PASS','warning'),
+      content:'<p class="cg-ui-muted">La validación real se obtiene por contratos automatizados, integración, Playwright, seguridad y pruebas posteriores al merge sobre el SHA desplegado.</p>'
     })}${ErpGrid(groups, { columns:'three' })}</section>`;
   }
 };

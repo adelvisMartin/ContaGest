@@ -3,7 +3,6 @@ import { escapeHtml } from '../../utils/dom.js';
 const safe = (value) => escapeHtml(String(value ?? ''));
 const rawAttrs = (attrs = '') => String(attrs || '');
 const hasAttr = (attrs, name) => new RegExp(`\\b${name}\\s*=`).test(String(attrs || ''));
-const faName = (name = '') => String(name || '').replace(/^fa-solid\s+/, '').trim();
 const materialAliases = {
   api:'fa-plug',domain:'fa-building',database:'fa-database',currency_exchange:'fa-money-bill-trend-up',
   health_and_safety:'fa-heart-pulse',cloud_sync:'fa-cloud-arrow-up',cloud_done:'fa-cloud-circle-check',
@@ -16,13 +15,22 @@ const materialAliases = {
   apps:'fa-grip',dashboard:'fa-chart-pie',sitemap:'fa-sitemap',pen_nib:'fa-pen-nib',
   chart_line:'fa-chart-line',building_columns:'fa-building-columns'
 };
+const faFamilies = new Set(['fa-solid','fa-regular','fa-brands','fa-light','fa-thin','fa-duotone','fa-sharp']);
+
+function normalizeIconSpec(name = '') {
+  const tokens=String(name||'').trim().split(/\s+/).filter(Boolean);
+  const family=tokens.find((token)=>faFamilies.has(token))||'fa-solid';
+  const explicitIcon=tokens.find((token)=>token.startsWith('fa-')&&!faFamilies.has(token));
+  const aliasToken=tokens.find((token)=>!token.startsWith('fa-'))||'';
+  const candidate=explicitIcon||materialAliases[aliasToken]||materialAliases[aliasToken.replace(/-/g,'_')]||'fa-circle-dot';
+  return { family, icon:candidate.startsWith('fa-')?candidate:'fa-circle-dot' };
+}
 
 export const cx = (...classes) => classes.filter(Boolean).join(' ');
 export const money = (value, currency = 'Bs.') => `${currency} ${Number(value || 0).toLocaleString('es-VE',{minimumFractionDigits:2,maximumFractionDigits:2})}`;
 export const icon = (name = 'fa-circle-dot', className = '') => {
-  const normalized=faName(name);
-  const fa=normalized.startsWith('fa-')?normalized:(materialAliases[normalized]||materialAliases[normalized.replace(/-/g,'_')]||'fa-circle-dot');
-  return `<i class="fa-solid ${safe(fa)} ${safe(className)}" aria-hidden="true"></i>`;
+  const spec=normalizeIconSpec(name);
+  return `<i class="${safe(spec.family)} ${safe(spec.icon)} ${safe(className)}" aria-hidden="true"></i>`;
 };
 export const Icon=(name,className='w-5')=>icon(name,className);
 export const MaterialIcon=(name,className='')=>icon(name,className);
