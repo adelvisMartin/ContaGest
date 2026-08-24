@@ -20,7 +20,7 @@ function registry(){
 
 function variableEventBinding(source,id,event='click'){
   const escaped=regexEscape(id);
-  const assignment=new RegExp(`(?:const|let|var)\\s+([A-Za-z_$][\\w$]*)\\s*=\\s*document\\.getElementById\\(['\"]${escaped}['\"]\\)`,'g');
+  const assignment=new RegExp(`(?:const|let|var)\\s+([A-Za-z_$][\\w$]*)\\s*=\\s*(?:document\\.getElementById\\(['\"]${escaped}['\"]\\)|qs\\(['\"]#${escaped}['\"]\\))`,'g');
   for(const match of source.matchAll(assignment)){
     const variable=regexEscape(match[1]);
     if(new RegExp(`${variable}\\?*\\.addEventListener\\(['\"]${event}['\"]`).test(source))return true;
@@ -30,8 +30,10 @@ function variableEventBinding(source,id,event='click'){
 
 function hasIdAction(source,id){
   const escaped=regexEscape(id);
-  return new RegExp(`getElementById\\(['\"]${escaped}['\"]\\)[\\s\\S]{0,220}?addEventListener`).test(source)
-    || new RegExp(`querySelector\\(['\"]#${escaped}['\"]\\)[\\s\\S]{0,220}?addEventListener`).test(source)
+  return new RegExp(`getElementById\\(['\"]${escaped}['\"]\\)[\\s\\S]{0,260}?addEventListener`).test(source)
+    || new RegExp(`querySelector\\(['\"]#${escaped}['\"]\\)[\\s\\S]{0,260}?addEventListener`).test(source)
+    || new RegExp(`\\bqs\\(['\"]#${escaped}['\"]\\)\\?*\\.addEventListener`).test(source)
+    || new RegExp(`\\bqsa\\(['\"]#${escaped}['\"]\\)[\\s\\S]{0,180}?addEventListener`).test(source)
     || variableEventBinding(source,id,'click')
     || variableEventBinding(source,id,'change')
     || variableEventBinding(source,id,'input');
@@ -39,7 +41,7 @@ function hasIdAction(source,id){
 
 function dataConsumer(source,name){
   const escaped=regexEscape(name),property=regexEscape(camel(name));
-  return new RegExp(`(?:querySelector(?:All)?|closest|matches)\\([^)]*\\[data-${escaped}(?:[=\\]])`).test(source)
+  return new RegExp(`(?:querySelector(?:All)?|closest|matches|qs|qsa)\\([^)]*\\[data-${escaped}(?:[=\\]])`).test(source)
     || new RegExp(`dataset\\.${property}\\b`).test(source)
     || new RegExp(`dataset\\[['\"]${escaped}['\"]\\]`).test(source);
 }
@@ -67,14 +69,16 @@ for(const file of uniqueFiles){
   const source=read('frontend','src','pages',file);
   const combined=`${source}\n${globalConsumers}`;
 
-  for(const match of source.matchAll(/<button\b([^>]*)>([\s\S]*?)<\/button>/gi)){
+  // Deliberately case-sensitive: React/MUI <Button> is not a native <button>
+  // and has different default semantics/accessibility handling.
+  for(const match of source.matchAll(/<button\b([^>]*)>([\s\S]*?)<\/button>/g)){
     metrics.rawButtons++;
     const attrs=attrsMap(match[1]);
     const body=match[2];
     const type=String(attrs.type||'').toLowerCase();
     const id=attrs.id||'';
     const dynamicId=id.includes('${');
-    const visible=body.replace(/<[^>]+>/g,' ').replace(/\$\{[^}]*\}/g,' ').replace(/\s+/g,' ').trim();
+    const visible=body.replace(/<[^>]+>/g,' ').replace(/\$\{[^}]*\}/g,' dynamic ').replace(/\s+/g,' ').trim();
     const iconOnly=!visible && /<(?:i|svg)\b/i.test(body);
     if(iconOnly){
       metrics.iconOnlyButtons++;
