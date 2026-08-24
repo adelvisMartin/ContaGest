@@ -47,7 +47,7 @@ test('login is a scoped enterprise product surface inside the existing visual ow
   assert.match(runtime,/@import '\.\/contagest-visual-system-v12\.css'/);
 });
 
-test('shared shell controls are explicit buttons and mobile touch geometry is at least 44px',()=>{
+test('shared shell and every mobile module control use the 44px touch contract',()=>{
   const layout=read('frontend','src','components','layout.js');
   const shell=read('frontend','src','styles','shell-contract.css');
   const primitives=read('frontend','src','styles','runtime-primitives-v13.css');
@@ -56,30 +56,48 @@ test('shared shell controls are explicit buttons and mobile touch geometry is at
   assert.match(layout,/<button id="btnUserMenu" type="button"/);
   assert.match(shell,/--cg-header-mobile:\s*60px/);
   assert.match(shell,/#btnCommandPalette\.hf-command-trigger[\s\S]*var\(--cg-v-control-touch\)/);
-  assert.match(shell,/#btnTema,[\s\S]*#btnUserMenu,[\s\S]*#btnOpenSidebar[\s\S]*var\(--cg-v-control-touch\)/);
+  assert.match(shell,/#btnOpenSidebar,[\s\S]*#btnTema,[\s\S]*#btnUserMenu[\s\S]*var\(--cg-v-control-touch\)/);
+  assert.match(shell,/#pages :where\(button,summary,input:not/);
+  assert.match(shell,/login-shell-v161 :where\(button,summary,input:not/);
+  assert.match(shell,/login-captcha-refresh[\s\S]*min-width:var\(--cg-v-control-touch\)!important/);
   assert.match(primitives,/@media \(max-width:760px\)[\s\S]*MuiButton-root[\s\S]*--cg-v-control-touch/);
   assert.match(primitives,/html\.dark[\s\S]*cgx-btn-primary[\s\S]*color:var\(--cg-v-bg\) !important/);
 });
 
-test('MUI follows mobile touch, non-dead breadcrumbs and accessible dark primary contrast',()=>{
+test('MUI follows React 19 slot APIs, mobile touch, non-dead breadcrumbs and dark primary contrast',()=>{
   const mui=read('frontend','src','components','muiRuntime.js');
   assert.match(mui,/subtle:'#808690'/);
   assert.match(mui,/subtle:'#707783'/);
   assert.match(mui,/const onBrand=dark\?'#111214':'#ffffff'/);
-  assert.match(mui,/primary: \{ main: palette\.brand, contrastText:onBrand \}/);
+  assert.match(mui,/primary:\{main:palette\.brand,contrastText:onBrand\}/);
   assert.match(mui,/MuiIconButton:[\s\S]*max-width:760px[\s\S]*minWidth:44,minHeight:44/);
+  assert.match(mui,/slotProps:\{inputLabel:\{shrink:true\}\}/);
+  assert.match(mui,/htmlInput:\{min:fallback\.min/);
+  assert.doesNotMatch(mui,/\bInputProps\s*:/);
+  assert.doesNotMatch(mui,/\bInputLabelProps\s*:/);
   assert.match(mui,/if\(!item\.route\)return React\.createElement\(Mui\.Typography/);
 });
 
-test('PR browser gate includes deep mobile audit for the complete module catalog',()=>{
+test('PR browser gate covers every module at three phone widths, real navigation and safe action clicks',()=>{
   const runner=read('scripts','vercel-browser-preqa-v16.mjs');
   const spec=read('qa','mobile-deep-v162.spec.mjs');
+  const navigation=read('qa','mobile-navigation-v163.spec.mjs');
+  const actions=read('qa','module-actions-runtime-v163.spec.mjs');
   assert.match(runner,/qa\/mobile-deep-v162\.spec\.mjs/);
+  assert.match(runner,/qa\/mobile-navigation-v163\.spec\.mjs/);
+  assert.match(runner,/qa\/module-actions-runtime-v163\.spec\.mjs/);
   assert.match(spec,/MODULE_VISUAL_CATALOG/);
-  assert.match(spec,/width:390,height:844/);
+  assert.match(spec,/name:'phone-360',width:360,height:800/);
+  assert.match(spec,/name:'phone-390',width:390,height:844/);
+  assert.match(spec,/name:'phone-430',width:430,height:932/);
   assert.match(spec,/short-target/);
   assert.match(spec,/overlapFindings/);
+  assert.match(spec,/occludedTargets/);
   assert.match(spec,/primary action contrast stays readable/);
+  assert.match(navigation,/every actual sidebar route button navigates/);
+  assert.match(navigation,/command palette opens, filters and navigates/);
+  assert.match(actions,/every visible module action and submit can be invoked/);
+  assert.match(actions,/QA controlled backend refusal/);
 });
 
 test('service worker cannot serve stale javascript or css ahead of the deployed network bundle',()=>{
