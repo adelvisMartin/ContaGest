@@ -42,7 +42,7 @@ function menuSections(state){
     const items=rawItems.filter((item)=>!PRIMARY_ROUTES.includes(item.route));
     if(!items.length)return'';
     const open=area===activeArea;
-    return `<details class="hf-menu-section" data-sidebar-section="${escapeHtml(area)}" ${open?'open':''}><summary class="cg-area-toggle"><span><span class="hf-area-icon"><i class="fa-solid ${areaIcon(area)}"></i></span><span data-i18n="${AREA_I18N[area]||''}">${escapeHtml(area)}</span></span><span class="hf-area-meta"><small>${items.length}</small><i class="fa-solid fa-chevron-down hf-section-chevron"></i></span></summary><div class="hf-menu-list">${items.map((item)=>moduleButton(item,activeRoute,state)).join('')}</div></details>`;
+    return `<details name="cg-sidebar-modules" class="hf-menu-section" data-sidebar-section="${escapeHtml(area)}" ${open?'open':''}><summary class="cg-area-toggle"><span><span class="hf-area-icon"><i class="fa-solid ${areaIcon(area)}"></i></span><span data-i18n="${AREA_I18N[area]||''}">${escapeHtml(area)}</span></span><span class="hf-area-meta"><small>${items.length}</small><i class="fa-solid fa-chevron-down hf-section-chevron"></i></span></summary><div class="hf-menu-list">${items.map((item)=>moduleButton(item,activeRoute,state)).join('')}</div></details>`;
   }).join('');
 }
 const themeOptions=(current)=>THEME_OPTIONS.map((item)=>`<option value="${item.key}" ${current===item.key?'selected':''}>${escapeHtml(item.name)}</option>`).join('');
