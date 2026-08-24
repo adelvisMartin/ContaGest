@@ -10,7 +10,7 @@
   "scripts": {
     "dev": "vite --host 0.0.0.0 --port 8080",
     "stage:backend": "node scripts/stage-backend.mjs",
-    "preqa:source": "cd .. && node --test tests/erp_preqa_v16_contract.test.mjs && node scripts/visual-source-gate-v16.mjs && node scripts/erp-module-function-audit.mjs --strict",
+    "preqa:source": "cd .. && node --test tests/erp_preqa_v16_contract.test.mjs && node scripts/visual-source-gate-v16.mjs && node scripts/erp-functional-source-gate-v16.mjs",
     "build": "npm run preqa:source && npm run stage:backend && vite build",
     "preview": "vite preview --host 0.0.0.0 --port 8080"
   },
