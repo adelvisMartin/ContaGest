@@ -1,13 +1,16 @@
 import { spawnSync } from 'node:child_process';
+import { MODULE_VISUAL_CATALOG } from '../qa/support/module-visual-catalog.mjs';
 
 const root=process.cwd();
 const isVercel=Boolean(process.env.VERCEL);
 const isPreview=process.env.VERCEL_ENV==='preview';
 const pr=String(process.env.VERCEL_GIT_PULL_REQUEST_ID||'').trim();
+const gitRef=String(process.env.VERCEL_GIT_COMMIT_REF||'').trim();
+const isPostMerge58x5=gitRef==='qa/postmerge-58x5-verification';
 const SERVERLESS_CHROMIUM_VERSION='149.0.0';
 
-if(isVercel&&(!isPreview||!pr)){
-  console.log(`[browser-preqa] Skip: Vercel ${process.env.VERCEL_ENV||'unknown'} build is not a pull-request preview.`);
+if(isVercel&&(!isPreview||(!pr&&!isPostMerge58x5))){
+  console.log(`[browser-preqa] Skip: Vercel ${process.env.VERCEL_ENV||'unknown'} build is not an approved PR/58x5 preview (${gitRef||'no-ref'}).`);
   process.exit(0);
 }
 
@@ -20,6 +23,16 @@ function execute(command,args,{env={},capture=false,allowFailure=false}={}){
 }
 
 execute('npm',['install','--include=dev','--ignore-scripts','--no-audit','--no-fund']);
+
+if(isPostMerge58x5){
+  console.log('\n[browser-preqa] ===== REAL BACKEND / POSTGRES PERSISTENCE =====');
+  execute('npm',['run','test:backend:persistence:real']);
+  console.log('\n[browser-preqa] ===== REACT DOCTOR CHANGED =====');
+  execute('npm',['run','doctor:changed']);
+  console.log('\n[browser-preqa] ===== REACT DOCTOR DESIGN =====');
+  execute('npm',['run','doctor:design']);
+}
+
 execute('npm',['install','--no-save','--ignore-scripts','--no-audit','--no-fund',`@sparticuz/chromium@${SERVERLESS_CHROMIUM_VERSION}`]);
 execute('npx',['--no-install','playwright','install','ffmpeg']);
 
@@ -47,10 +60,17 @@ function runGroup(label,args){
   if(result.status!==0){failures.push({label,status:result.status||1});console.error(`[browser-preqa][FAIL] ${label}`);}else console.log(`[browser-preqa][PASS] ${label}`);
 }
 
-// Vercel's serverless Chromium can terminate the whole browser context between
-// tests even when the preceding assertion passed. Each logical browser test is
-// therefore launched in its own Playwright process. Catalog-wide single tests
-// remain one process because their internal route loop is the subject under test.
+function regexEscape(value){return String(value).replace(/[.*+?^${}()|[\]\\]/g,'\\$&');}
+function routeBatches(size=6){
+  const routes=MODULE_VISUAL_CATALOG.map((item)=>item.route);
+  const result=[];
+  for(let index=0;index<routes.length;index+=size)result.push(routes.slice(index,index+size));
+  return result;
+}
+
+// Vercel's serverless Chromium can terminate the browser context under very long
+// suites. Keep logical flows isolated and execute the exhaustive 58-route audit
+// in small deterministic batches. Each route is still its own Playwright test.
 runGroup('auth stale-session rejection',['qa/login-auth-runtime-v161.spec.mjs','--grep','stale local session']);
 runGroup('login desktop geometry',['qa/login-auth-runtime-v161.spec.mjs','--grep','desktop login']);
 runGroup('login mobile 360px',['qa/login-auth-runtime-v161.spec.mjs','--grep','mobile login 360px']);
@@ -69,5 +89,15 @@ runGroup('mobile sidebar navigation',['qa/mobile-navigation-v163.spec.mjs','--gr
 runGroup('mobile command navigation',['qa/mobile-navigation-v163.spec.mjs','--grep','command palette opens']);
 runGroup('observable safe click-smoke',['qa/module-actions-runtime-v163.spec.mjs']);
 
+if(isPostMerge58x5){
+  routeBatches(6).forEach((routes,index)=>{
+    const pattern=`^(?:${routes.map(regexEscape).join('|')}) · deep desktop/mobile light/dark audit$`;
+    runGroup(`58x5 exhaustive views batch ${index+1}/${Math.ceil(MODULE_VISUAL_CATALOG.length/6)} [${routes.join(', ')}]`,['qa/exhaustive-route-v164.spec.mjs','--grep',pattern]);
+  });
+  runGroup('58x5 route transition: sequential all routes',['qa/route-transition-v164.spec.mjs','--grep','all registered protected routes']);
+  runGroup('58x5 route transition: rapid async navigation',['qa/route-transition-v164.spec.mjs','--grep','rapid navigation']);
+  runGroup('58x5 route transition: command palette real navigation',['qa/route-transition-v164.spec.mjs','--grep','real command palette']);
+}
+
 if(failures.length){console.error(`\n[browser-preqa] ${failures.length} grupo(s) fallaron:`);failures.forEach((item)=>console.error(` - ${item.label} (exit ${item.status})`));process.exit(1);}
-console.log('\n[browser-preqa][PASS] Todos los grupos aislados de auth, navegación, 58 rutas, 360/390/430, contraste y acciones observables pasaron.');
+console.log('\n[browser-preqa][PASS] Auth, navegación, controles, responsive y auditoría 58x5 ejecutados sin fallos en Chromium.');
