@@ -33,14 +33,13 @@ export function parseRetryAfterMs(headers, now = Date.now()) {
     if (Number.isFinite(date)) return Math.max(1000, date - now);
   }
 
-  // express-rate-limit standard headers may expose remaining/reset information.
   const reset = headers?.get?.('ratelimit-reset') || headers?.get?.('x-ratelimit-reset') || '';
   if (reset) {
     const numeric = Number(reset);
     if (Number.isFinite(numeric)) {
-      if (numeric > 10_000_000_000) return Math.max(1000, numeric - now); // epoch ms
-      if (numeric > 1_000_000_000) return Math.max(1000, numeric * 1000 - now); // epoch sec
-      return Math.max(1000, numeric * 1000); // delta sec
+      if (numeric > 10_000_000_000) return Math.max(1000, numeric - now);
+      if (numeric > 1_000_000_000) return Math.max(1000, numeric * 1000 - now);
+      return Math.max(1000, numeric * 1000);
     }
   }
   return null;
@@ -92,8 +91,8 @@ export function parseWhatsAppPre(pre, fallbackNow = new Date()) {
   const tm = timePart.match(/(\d{1,2}):(\d{2})\s*(.*)$/);
   if (!dm || !tm) return { timestamp: fallbackNow.toISOString(), senderLabel, parsed: false };
 
-  let day = Number(dm[1]);
-  let month = Number(dm[2]);
+  const day = Number(dm[1]);
+  const month = Number(dm[2]);
   let year = Number(dm[3]);
   if (year < 100) year += 2000;
   let hour = Number(tm[1]);
@@ -112,7 +111,7 @@ const plain = (value) => String(value || '').normalize('NFD').replace(/[\u0300-\
 const canonical = (value) => plain(value).replace(/[“”"'`]/g, '').replace(/\s+/g, ' ').trim().toUpperCase();
 const raceClose = /\b(?:CIERRA|CIERRE|CERRAR|CERRAMOS|CIERREN|CERRADA|CERRADO|NO\s+MAS\s+JUGADAS?|NO\s+VA\s+MAS|CARRERA\s+CERRADA|CERRADO\s+CERRADO|FIN\s+DE\s+CARRERA)\b/;
 const dayClose = /\b(?:ESTO\s+ES\s+TODO\s+POR\s+EL\s+DIA\s+DE\s+HOY|LOS\s+ESPERAMOS\s+MANANA|CIERRE\s+DE\s+JORNADA|CERRAMOS\s+LA\s+JORNADA)\b/;
-const result = /\b(?:LLEGADA|PIZARRA|RESULTADO|GANO|PRIMERO|SEGUNDO|TERCERO)\b/;
+const resultWord = /\b(?:LLEGADA|PIZARRA|RESULTADO|GANO|PRIMERO|SEGUNDO|TERCERO)\b/;
 const balanceSnapshot = /\bTERCIO\s+DISPONIBLE\b/;
 const settlementWord = /\b(?:LIQUIDACION|LIQUIDAR|LIQUIDADO|CUADRE|CUADRE\s+FINAL)\b/;
 const planWord = /\bTERCIOS\b/;
@@ -122,10 +121,103 @@ const pendingConfirmation = /\b(?:DEBE\s+CONFIRMAR|POR\s+CONFIRMAR|FALTA\s+CONFI
 const exactConfirmation = /^(?:J|JUGANDO|SF|S\s*\/\s*F|SE\s+FUE|OK|CONFIRMADO)$/;
 const cancelOrCorrection = /\b(?:ANULA|ANULADO|ANULAR|CANCELA|CANCELADO|CANCELAR|CORRIGE|CORREGIR|CORRECCION|BORRA\s+(?:ESA|LA)\s+JUGADA|CAMBIA\s+(?:ESA|LA)\s+JUGADA)\b/;
 const pollaOrParley = /\b(?:POLLA|PARLEY)\b/;
-const genericMonetary = /\b(?:APUESTA|JUGADA|MONTO|SALDO|DISPONIBLE|DISPONIBLES|DEBO|DEBE|PAGO|COBRO|PREMIO|RIESGO)\b|\b\d+(?:[.,]\d+)?\s*(?:K|MIL|MM?|MILLON(?:ES)?|BS|USD|\$)\b/;
+const genericMonetary = /\b(?:APUESTA|JUGADA|MONTO|SALDO|DISPONIBLE|DISPONIBLES|DEBO|DEBE|PAGO|COBRO|PREMIO|RIESGO)\b|\b\d[\d.,]*\s*(?:K|MIL|MM?|MILLON(?:ES)?|BS\.?|USD|\$)\b/;
 const greeting = /^(?:HOLA|BUENAS?|SALUDOS|BUEN\s+DIA|BUENAS\s+TARDES|BUENAS\s+NOCHES)\b/;
 const help = /\b(?:AYUDA|COMO\s+FUNCIONA|INSTRUCCIONES|MENU|OPCIONES)\b/;
 const status = /\b(?:ESTADO|RECIBIDO|PENDIENTE|REVISANDO|YA\s+LLEGO)\b/;
+
+const PLAY_RE = /(?:\d{1,2}\s*A\s*\d{1,2}(?:[.,]\d+)?|[1-6]\s*(?:Y|\/)\s*[1-6]|[1-6]NN?|[1-6]P|PP|PK|MAR|PLA|SHOW|RET|TF|LOGRO)/i;
+const NUMBER_SOURCE = '[+-]?(?:\\d{1,3}(?:\\.\\d{3})+(?:,\\d{1,2})?|\\d+(?:[.,]\\d+)?)';
+const UNIT_SOURCE = '(?:K|MIL|MM?|MILLON(?:ES)?|BS\\.?|USD|\\$)?';
+
+function numeric(raw) {
+  const value = String(raw || '').trim();
+  if (!value) return null;
+  let normalized = value;
+  if (value.includes(',') && value.includes('.')) normalized = value.replace(/\./g, '').replace(',', '.');
+  else if (value.includes(',')) normalized = value.replace(',', '.');
+  else if (/^[+-]?\d{1,3}(?:\.\d{3})+$/.test(value)) normalized = value.replace(/\./g, '');
+  const number = Number(normalized);
+  return Number.isFinite(number) ? number : null;
+}
+
+function withUnit(value, unit) {
+  if (value == null) return null;
+  const u = canonical(unit).replace(/\./g, '');
+  if (u === 'K' || u === 'MIL') return value * 1000;
+  if (u === 'M' || u === 'MM' || u === 'MILLON' || u === 'MILLONES') return value * 1000000;
+  return value;
+}
+
+function normalizePlay(raw) {
+  let value = canonical(raw).replace(/\s/g, '');
+  if (/^[1-6]Y[1-6]$/.test(value)) value = value.replace('Y', '/');
+  if (/^[1-6]NN$/.test(value)) value = `${value[0]}N`;
+  if (/^\d{1,2}A\d{1,2}/.test(value)) value = value.replace(',', '.');
+  return value;
+}
+
+function extractAmount(raw) {
+  const source = plain(raw);
+  const con = [...source.matchAll(new RegExp(`\\bcon\\s+(${NUMBER_SOURCE})\\s*(${UNIT_SOURCE})`, 'gi'))].at(-1);
+  if (con) return withUnit(numeric(con[1]), con[2] || '');
+  const units = [...source.matchAll(new RegExp(`(?:BS\\.?\\s*)?(${NUMBER_SOURCE})\\s*(K|MIL|MM?|MILLON(?:ES)?|BS\\.?|USD|\\$)\\b`, 'gi'))].at(-1);
+  return units ? withUnit(numeric(units[1]), units[2] || '') : null;
+}
+
+function normalizeHorse(raw) {
+  return String(raw || '').replace(/\s/g, '').replace(/X/gi, '*').toUpperCase();
+}
+
+function extractHorse(raw) {
+  const c = canonical(raw);
+  const direct = c.match(/\b(?:DEL?|CABALLO|EL)\s+(\d+(?:\s*[X*]\s*\d+)?|PA|IM|RE)\b/);
+  if (direct) return normalizeHorse(direct[1]);
+  const al = c.match(/\bAL\s+(?:CABALLO\s+)?(\d+(?:\s*[X*]\s*\d+)?|PA|IM|RE)\b/);
+  if (al) return normalizeHorse(al[1]);
+  const parenthesized = c.match(new RegExp(`${PLAY_RE.source}\\s*\\(\\s*(\\d+|PA|IM|RE)\\s*\\)`, 'i'));
+  if (parenthesized) return normalizeHorse(parenthesized[1]);
+  const pair = c.replace(/^(?:JUEGO|JUEGA|CONSIGO|CONSIGUE)\s+/, '').match(/^(\d+)\s*[X*]\s*(\d+)\b/);
+  if (pair) return `${pair[1]}*${pair[2]}`;
+  const playMatch = c.match(PLAY_RE);
+  if (playMatch?.index != null) {
+    const after = c.slice(playMatch.index + playMatch[0].length).trim();
+    const bare = after.match(/^(\d+|PA|IM|RE)\b/);
+    if (bare) return normalizeHorse(bare[1]);
+  }
+  return '';
+}
+
+function planParties(raw) {
+  const source = plain(raw).trim();
+  if (!/^JUEGA\b/i.test(source)) return {};
+  const re = new RegExp(`^JUEGA\\s+(.+?)\\s+(${PLAY_RE.source})\\s*(?:\\([^)]*\\))?\\s+CON\\b[\\s\\S]*?\\bDA\\s+(.+?)\\s*$`, 'i');
+  const match = source.match(re);
+  if (!match) return {};
+  return { participant: match[1].trim(), counterparty: match[3].trim() };
+}
+
+export function parseOperationalOffer(raw) {
+  const c = canonical(raw);
+  const player = playerOffer.test(c);
+  const receiver = receiverOffer.test(c);
+  if (!player && !receiver) return null;
+  const pair = c.replace(/^(?:JUEGO|JUEGA|CONSIGO|CONSIGUE)\s+/, '').match(/^(\d+)\s*[X*]\s*(\d+)\b/);
+  const playMatch = c.match(PLAY_RE);
+  const parties = planParties(raw);
+  return {
+    role: receiver ? 'receiver' : 'player',
+    play: pair ? 'PP' : (playMatch ? normalizePlay(playMatch[0]) : ''),
+    horse: extractHorse(raw),
+    amount: extractAmount(raw),
+    ...parties,
+    raw: String(raw || '').trim()
+  };
+}
+
+function parseOffers(text) {
+  return String(text || '').split(/\n+/).map((line) => parseOperationalOffer(line)).filter(Boolean);
+}
 
 function parseBoard(text) {
   const source = plain(text);
@@ -144,43 +236,61 @@ function parseRaceNumber(text) {
   return short ? Number(short[1]) : null;
 }
 
-function basicOffer(text, role) {
-  const c = canonical(text);
-  const amountMatch = c.match(/\bCON\s+(\d+(?:[.,]\d+)?)\s*(K|MIL|MM?|MILLON(?:ES)?|BS|USD)?\b/) ||
-    c.match(/^(?:JUEGO|JUEGA|CONSIGO|CONSIGUE)\s+(\d+(?:[.,]\d+)?)\s+(?:AL|AL\s+CABALLO|CABALLO)\b/);
-  let amount = amountMatch ? Number(String(amountMatch[1]).replace(',', '.')) : null;
-  const unit = amountMatch?.[2] || '';
-  if (amount != null && /^(K|MIL)$/i.test(unit)) amount *= 1000;
-  if (amount != null && /^(M|MM|MILLON|MILLONES)$/i.test(unit)) amount *= 1000000;
-  const horseMatch = c.match(/\b(?:DEL?|CABALLO|AL)\s+(?:CABALLO\s+)?([0-9]+(?:\s*[X*]\s*[0-9]+)?|PA|IM|RE)\b/);
-  const playMatch = c.match(/\b(?:[1-6]\s*(?:Y|\/)\s*[1-6]|[1-6]NN?|[1-6]P|PP|PK|MAR|PLA|SHOW|RET|TF|LOGRO)\b/);
-  return {
-    role,
-    amount,
-    horse: horseMatch ? horseMatch[1].replace(/\s/g, '').replace(/X/g, '*') : '',
-    play: playMatch ? playMatch[0].replace(/Y/g, '/').replace(/\s/g, '') : ''
-  };
+function parseBalances(text) {
+  const lines = String(text || '').split(/\n+/).map((line) => line.trim()).filter(Boolean);
+  const start = lines.findIndex((line) => balanceSnapshot.test(canonical(line)));
+  if (start < 0) return [];
+  const rows = [];
+  for (const line of lines.slice(start + 1)) {
+    const match = line.match(/^(.+?)\s+(?:Bs\.?\s*)?([+-]?[\d.]+(?:,\d{1,2})?)\s*$/i);
+    if (!match) continue;
+    const available = numeric(match[2]);
+    if (available == null) continue;
+    rows.push({ participant: match[1].trim(), available });
+  }
+  return rows;
+}
+
+function parseSettlementRows(text) {
+  const rows = [];
+  for (const line of String(text || '').split(/\n+/).map((item) => item.trim()).filter(Boolean)) {
+    const match = line.match(/^(Juega|Consigue)\s+(.+?)\s+Bs\.?\s+([+-]?[\d.]+(?:,\d{1,2})?)\s*$/i);
+    if (!match) continue;
+    const amount = numeric(match[3]);
+    if (amount == null) continue;
+    rows.push({ role: /^Consigue$/i.test(match[1]) ? 'receiver' : 'player', participant: match[2].trim(), amount });
+  }
+  return rows;
 }
 
 export function classifyLocal(text) {
   const body = String(text || '').trim();
   if (!body) return { intent: 'empty', risk: 'review', confidence: 0, entities: {} };
   const c = canonical(body);
-  if (dayClose.test(c)) return { intent: 'day_close', risk: 'review', confidence: 0.995, entities: {} };
-  if (raceClose.test(c)) return { intent: 'race_close', risk: 'review', confidence: 0.995, entities: { raceNumber: parseRaceNumber(body) } };
-  if (result.test(c)) return { intent: 'race_result', risk: 'review', confidence: 0.99, entities: { board: parseBoard(body) } };
-  if (balanceSnapshot.test(c)) return { intent: 'balance_snapshot', risk: 'monetary', confidence: 0.995, entities: {} };
+  const board = parseBoard(body);
   const hasJuega = /\bJUEGA\b/.test(c);
   const hasConsigue = /\bCONSIGUE\b/.test(c);
-  if (settlementWord.test(c) || (planWord.test(c) && hasJuega && hasConsigue)) return { intent: 'settlement_snapshot', risk: 'monetary', confidence: 0.985, entities: {} };
-  if (planWord.test(c) && hasJuega) return { intent: 'plan_snapshot', risk: 'monetary', confidence: 0.98, entities: {} };
+  const settlementRows = parseSettlementRows(body);
+
+  if (dayClose.test(c)) return { intent: 'day_close', risk: 'review', confidence: 0.995, entities: {} };
+  if (raceClose.test(c)) return { intent: 'race_close', risk: 'review', confidence: 0.995, entities: { raceNumber: parseRaceNumber(body) } };
+  if (balanceSnapshot.test(c)) return { intent: 'balance_snapshot', risk: 'monetary', confidence: 0.995, entities: { balances: parseBalances(body) } };
+  if (settlementWord.test(c) || settlementRows.length > 0 || (planWord.test(c) && hasJuega && hasConsigue)) {
+    return { intent: 'settlement_snapshot', risk: 'monetary', confidence: 0.99, entities: { board, offers: parseOffers(body), settlementRows } };
+  }
+  if (planWord.test(c) && hasJuega) {
+    return { intent: 'plan_snapshot', risk: 'monetary', confidence: 0.985, entities: { board, offers: parseOffers(body) } };
+  }
+  if (resultWord.test(c) && board.length) return { intent: 'race_result', risk: 'review', confidence: 0.99, entities: { board } };
   if (pendingConfirmation.test(c)) return { intent: 'pending_confirmation', risk: 'monetary', confidence: 0.985, entities: { confirmation: c } };
   if (cancelOrCorrection.test(c)) return { intent: 'cancel_or_correction', risk: 'monetary', confidence: 0.985, entities: {} };
   if (exactConfirmation.test(c)) return { intent: 'offer_confirmation', risk: 'monetary', confidence: 0.98, entities: { confirmation: c } };
-  if (receiverOffer.test(c)) return { intent: 'offer_receiver', risk: 'monetary', confidence: 0.995, entities: basicOffer(body, 'receiver') };
-  if (playerOffer.test(c)) return { intent: 'offer_player', risk: 'monetary', confidence: 0.995, entities: basicOffer(body, 'player') };
-  if (pollaOrParley.test(c)) return { intent: 'polla_or_parley', risk: 'monetary', confidence: 0.99, entities: {} };
-  if (genericMonetary.test(c)) return { intent: 'betting_or_balance', risk: 'monetary', confidence: 0.92, entities: {} };
+  if (receiverOffer.test(c) || playerOffer.test(c)) {
+    const offer = parseOperationalOffer(body);
+    return { intent: offer?.role === 'receiver' ? 'offer_receiver' : 'offer_player', risk: 'monetary', confidence: 0.995, entities: offer || {} };
+  }
+  if (pollaOrParley.test(c)) return { intent: 'polla_or_parley', risk: 'monetary', confidence: 0.99, entities: { amount: extractAmount(body) } };
+  if (genericMonetary.test(c)) return { intent: 'betting_or_balance', risk: 'monetary', confidence: 0.92, entities: { amount: extractAmount(body) } };
   if (greeting.test(c)) return { intent: 'greeting', risk: 'safe', confidence: 0.995, entities: {} };
   if (help.test(c)) return { intent: 'help', risk: 'safe', confidence: 0.99, entities: {} };
   if (status.test(c)) return { intent: 'status_non_monetary', risk: 'safe', confidence: 0.97, entities: {} };
