@@ -20,6 +20,12 @@ test('extracts stable @g.us IDs from WhatsApp DOM-like attributes', () => {
   assert.deepEqual(ids.sort(), [labId, sourceId].sort());
 });
 
+test('DOM separators do not become part of the group JID', () => {
+  assert.deepEqual(extractGroupIds(`row_${sourceId}_tail`), [sourceId]);
+  assert.deepEqual(extractGroupIds(`prefix:${labId};suffix`), [labId]);
+  assert.deepEqual(extractGroupIds(`bad_${sourceId}x_tail`), []);
+});
+
 test('normalization rejects user and malformed JIDs', () => {
   assert.equal(normalizeGroupId(sourceId.toUpperCase()), sourceId);
   assert.equal(normalizeGroupId('584121234567@s.whatsapp.net'), '');
