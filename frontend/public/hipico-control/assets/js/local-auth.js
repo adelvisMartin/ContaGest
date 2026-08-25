@@ -2,6 +2,7 @@ import { getSetting, setSetting } from './store.js';
 
 const ENROLLMENT_KEY = 'localAdminEnrollmentV2';
 const PBKDF2_ITERATIONS = 310000;
+const MIN_LOCAL_PASSWORD_LENGTH = 12;
 
 function bytesToHex(buffer) {
   return Array.from(new Uint8Array(buffer), (byte) => byte.toString(16).padStart(2, '0')).join('');
@@ -53,7 +54,7 @@ export async function hasLocalAdminEnrollment() {
 export async function enrollLocalAdmin(email, password) {
   const normalizedEmail = String(email || '').trim().toLowerCase();
   if (!/^\S+@\S+\.\S+$/.test(normalizedEmail)) throw new Error('Escribe un correo válido.');
-  if (String(password || '').length < 10) throw new Error('La contraseña debe tener al menos 10 caracteres.');
+  if (String(password || '').length < MIN_LOCAL_PASSWORD_LENGTH) throw new Error(`La contraseña debe tener al menos ${MIN_LOCAL_PASSWORD_LENGTH} caracteres.`);
   requireCrypto();
   const salt = globalThis.crypto.getRandomValues(new Uint8Array(16));
   const verifier = await deriveVerifier(password, salt);
@@ -83,4 +84,4 @@ export async function verifyLocalAdmin(email, password) {
   return constantTimeEqual(verifier, hexToBytes(record.verifier));
 }
 
-export const __test__ = { bytesToHex, hexToBytes, constantTimeEqual, deriveVerifier, PBKDF2_ITERATIONS };
+export const __test__ = { bytesToHex, hexToBytes, constantTimeEqual, deriveVerifier, PBKDF2_ITERATIONS, MIN_LOCAL_PASSWORD_LENGTH };
