@@ -9,6 +9,11 @@ const QA_SESSION={
   user:{id:'qa-admin',name:'QA Admin',fullName:'QA Admin',email:'qa@contagest.local',role:'admin',permissions:['*']},
   audience:'staff',expiresAt:Date.now()+8*60*60*1000
 };
+const QA_ANIMAL={
+  id:'qa-animal-00000001',kind:'animal',active:true,displayName:'Apolo',species:'Perro',breed:'Labrador',
+  guardianName:'Tutor QA',guardianPhone:'0414-0000000',guardianEmail:'qa@example.test',microchip:'QA-CHIP-001',
+  sex:'male',color:'Dorado',allergies:'Sin registro',conditions:'Sin registro',notes:'Paciente representativo para QA visual.'
+};
 const CONTEXTS=[
   {name:'desktop-light',width:1440,height:900,theme:'light'},
   {name:'desktop-dark',width:1440,height:900,theme:'dark'},
@@ -22,6 +27,7 @@ async function seed(page){
     const request=route.request(),pathname=new URL(request.url()).pathname;
     if(pathname.endsWith('/auth/me'))return route.fulfill({status:200,contentType:'application/json',body:JSON.stringify({ok:true,data:QA_SESSION})});
     if(pathname.endsWith('/auth/captcha'))return route.fulfill({status:200,contentType:'application/json',body:JSON.stringify({ok:true,data:{token:'qa',question:'2 + 2',prompt:'Resuelve 2 + 2',expiresAt:new Date(Date.now()+300000).toISOString()}})});
+    if(pathname.endsWith('/verticals/health/patients')&&request.method()==='GET')return route.fulfill({status:200,contentType:'application/json',body:JSON.stringify({ok:true,data:[QA_ANIMAL]})});
     return route.fulfill({status:200,contentType:'application/json',body:JSON.stringify({ok:true,data:request.method()==='GET'?[]:{}})});
   });
 }
@@ -50,6 +56,7 @@ function inspectComposition(){
     const rect=button.getBoundingClientRect(),hasText=Boolean(String(button.textContent||'').trim());
     if(hasText&&innerWidth>760&&rect.height>49&&!button.closest('.coordinate-challenge-layer'))findings.push({kind:'oversized-action',target:label(button),height:Math.round(rect.height)});
     if(hasText&&innerWidth<=760&&rect.height>57&&!button.closest('.coordinate-challenge-layer'))findings.push({kind:'oversized-mobile-action',target:label(button),height:Math.round(rect.height)});
+    if(innerWidth>760&&button.closest('.cg-vet-dossier-actions')&&rect.height>38)findings.push({kind:'vet-dossier-action-too-tall',target:label(button),height:Math.round(rect.height)});
     const icon=button.querySelector('.MuiButton-startIcon i,.MuiButton-endIcon i,:scope > i,:scope > svg,:scope > span > i,:scope > span > svg');
     if(icon&&visible(icon)){
       const ir=icon.getBoundingClientRect();
@@ -84,7 +91,10 @@ function inspectComposition(){
   const identity=root.querySelector('.cg-vet-identity');
   if(identity&&visible(identity)){
     const children=[...identity.children].filter(visible);
-    if(children.length>=2){const avatar=children[0].getBoundingClientRect(),copy=children[1].getBoundingClientRect(),gap=copy.left-avatar.right;if(gap<10)findings.push({kind:'identity-gap-too-tight',gap:Math.round(gap*10)/10});}
+    if(children.length>=2){
+      const avatar=children[0].getBoundingClientRect(),copy=children[1].getBoundingClientRect(),gap=copy.left-avatar.right;
+      if(gap<11.5)findings.push({kind:'identity-gap-too-tight',gap:Math.round(gap*10)/10});
+    }
   }
 
   const dossierHead=root.querySelector('.cg-vet-dossier-head');
@@ -92,9 +102,17 @@ function inspectComposition(){
     const children=[...dossierHead.children].filter(visible);
     if(children.length>=2){
       const copy=children[0].getBoundingClientRect(),buttons=children[1].getBoundingClientRect();
-      if(buttons.top<copy.bottom){const gap=buttons.left-copy.right;if(gap<12)findings.push({kind:'header-action-proximity',gap:Math.round(gap*10)/10});}
+      if(buttons.top<copy.bottom){const gap=buttons.left-copy.right;if(gap<14)findings.push({kind:'header-action-proximity',gap:Math.round(gap*10)/10});}
       else {const gap=buttons.top-copy.bottom;if(gap<10)findings.push({kind:'header-action-proximity',gap:Math.round(gap*10)/10});}
     }
+  }
+
+  const submit=root.querySelector('.login-submit');
+  if(submit&&visible(submit)){
+    const rgb=(value)=>{const match=String(value||'').match(/rgba?\((\d+)[, ]+(\d+)[, ]+(\d+)/i);return match?[Number(match[1]),Number(match[2]),Number(match[3])]:null;};
+    const luminance=(triplet)=>triplet.map((v)=>{const s=v/255;return s<=.03928?s/12.92:((s+.055)/1.055)**2.4;}).reduce((sum,v,index)=>sum+v*[.2126,.7152,.0722][index],0);
+    const style=getComputedStyle(submit),fg=rgb(style.color),bg=rgb(style.backgroundColor);
+    if(fg&&bg){const a=luminance(fg),b=luminance(bg),ratio=(Math.max(a,b)+.05)/(Math.min(a,b)+.05);if(ratio<4.5)findings.push({kind:'login-primary-low-contrast',ratio:Math.round(ratio*100)/100});}
   }
 
   const criticalText=[...root.querySelectorAll('h1,h2,h3,h4,label,button,summary,.cgx-btn,.MuiButton-root,.MuiTab-root')].filter(visible);
@@ -115,7 +133,7 @@ for(const item of MODULE_VISUAL_CATALOG){
       await page.setViewportSize({width:context.width,height:context.height});
       await page.goto(`/?module=${encodeURIComponent(item.route)}`,{waitUntil:'domcontentloaded'});
       await page.waitForSelector(item.standalone?'.login-shell':'#pages',{timeout:20_000});
-      await page.waitForTimeout(item.route==='veterinaria'?700:180);
+      await page.waitForTimeout(item.route==='veterinaria'?900:180);
       const findings=await page.evaluate(inspectComposition);
       if(findings.length)failures.push({context:context.name,findings});
     }

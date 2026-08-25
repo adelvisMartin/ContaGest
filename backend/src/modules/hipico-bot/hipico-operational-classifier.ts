@@ -3,6 +3,8 @@ export type OperationalOffer={
   play:string;
   horse:string;
   amount:number|null;
+  participant?:string;
+  counterparty?:string;
   raw:string;
 };
 
@@ -14,6 +16,8 @@ export type OperationalEntities={
   play?:string;
   horse?:string;
   amount?:number|null;
+  participant?:string;
+  counterparty?:string;
   raceNumber?:number|null;
   board?:string[];
   balances?:OperationalBalance[];
@@ -48,7 +52,7 @@ const canonical=(value:string)=>plain(value)
 
 const raceClose=/\b(?:CIERRA|CIERRE|CERRAR|CERRAMOS|CIERREN|CERRADA|CERRADO|NO\s+MAS\s+JUGADAS?|NO\s+VA\s+MAS|CARRERA\s+CERRADA|CERRADO\s+CERRADO|FIN\s+DE\s+CARRERA)\b/;
 const dayClose=/\b(?:ESTO\s+ES\s+TODO\s+POR\s+EL\s+DIA\s+DE\s+HOY|LOS\s+ESPERAMOS\s+MANANA|CIERRE\s+DE\s+JORNADA|CERRAMOS\s+LA\s+JORNADA)\b/;
-const result=/\b(?:LLEGADA|PIZARRA|RESULTADO|GANO|PRIMERO|SEGUNDO|TERCERO)\b/;
+const resultWord=/\b(?:LLEGADA|PIZARRA|RESULTADO|GANO|PRIMERO|SEGUNDO|TERCERO)\b/;
 const balanceSnapshot=/\bTERCIO\s+DISPONIBLE\b/;
 const settlementWord=/\b(?:LIQUIDACION|LIQUIDAR|LIQUIDADO|CUADRE|CUADRE\s+FINAL)\b/;
 const planWord=/\bTERCIOS\b/;
@@ -58,13 +62,14 @@ const pendingConfirmation=/\b(?:DEBE\s+CONFIRMAR|POR\s+CONFIRMAR|FALTA\s+CONFIRM
 const exactConfirmation=/^(?:J|JUGANDO|SF|S\s*\/\s*F|SE\s+FUE|OK|CONFIRMADO)$/;
 const cancelOrCorrection=/\b(?:ANULA|ANULADO|ANULAR|CANCELA|CANCELADO|CANCELAR|CORRIGE|CORREGIR|CORRECCION|BORRA\s+(?:ESA|LA)\s+JUGADA|CAMBIA\s+(?:ESA|LA)\s+JUGADA)\b/;
 const pollaOrParley=/\b(?:POLLA|PARLEY)\b/;
-const genericMonetary=/\b(?:APUESTA|JUGADA|MONTO|SALDO|DISPONIBLE|DISPONIBLES|DEBO|DEBE|PAGO|COBRO|PREMIO|RIESGO)\b|\b\d+(?:[.,]\d+)?\s*(?:K|MIL|MM?|MILLON(?:ES)?|BS|USD|\$)\b/;
+const genericMonetary=/\b(?:APUESTA|JUGADA|MONTO|SALDO|DISPONIBLE|DISPONIBLES|DEBO|DEBE|PAGO|COBRO|PREMIO|RIESGO)\b|\b\d[\d.,]*\s*(?:K|MIL|MM?|MILLON(?:ES)?|BS\.?|USD|\$)\b/;
 const greeting=/^(?:HOLA|BUENAS?|SALUDOS|BUEN\s+DIA|BUENAS\s+TARDES|BUENAS\s+NOCHES)\b/;
 const help=/\b(?:AYUDA|COMO\s+FUNCIONA|INSTRUCCIONES|MENU|OPCIONES)\b/;
 const status=/\b(?:ESTADO|RECIBIDO|PENDIENTE|REVISANDO|YA\s+LLEGO)\b/;
 
-const PLAY_RE=/(?:10A\s*\d+(?:[.,]\d+)?|[1-6]\s*(?:Y|\/)\s*[1-6]|[1-6]NN?|[1-6]P|PP|PK|MAR|PLA|SHOW|RET|TF|LOGRO)/i;
-const UNIT_RE='(?:K|MIL|MM?|MILLON(?:ES)?|BS\\.?|USD|\\$)?';
+const PLAY_RE=/(?:\d{1,2}\s*A\s*\d{1,2}(?:[.,]\d+)?|[1-6]\s*(?:Y|\/)\s*[1-6]|[1-6]NN?|[1-6]P|PP|PK|MAR|PLA|SHOW|RET|TF|LOGRO)/i;
+const NUMBER_SOURCE='[+-]?(?:\\d{1,3}(?:\\.\\d{3})+(?:,\\d{1,2})?|\\d+(?:[.,]\\d+)?)';
+const UNIT_SOURCE='(?:K|MIL|MM?|MILLON(?:ES)?|BS\\.?|USD|\\$)?';
 
 function numeric(raw:string){
   const value=String(raw||'').trim();
@@ -72,7 +77,7 @@ function numeric(raw:string){
   let normalized=value;
   if(value.includes(',')&&value.includes('.'))normalized=value.replace(/\./g,'').replace(',','.');
   else if(value.includes(','))normalized=value.replace(',','.');
-  else if(/^\d{1,3}(?:\.\d{3})+$/.test(value))normalized=value.replace(/\./g,'');
+  else if(/^[+-]?\d{1,3}(?:\.\d{3})+$/.test(value))normalized=value.replace(/\./g,'');
   const number=Number(normalized);
   return Number.isFinite(number)?number:null;
 }
@@ -89,30 +94,47 @@ function normalizePlay(raw:string){
   let value=canonical(raw).replace(/\s/g,'');
   if(/^[1-6]Y[1-6]$/.test(value))value=value.replace('Y','/');
   if(/^[1-6]NN$/.test(value))value=`${value[0]}N`;
-  if(/^10A/.test(value))value=value.replace(',','.');
+  if(/^\d{1,2}A\d{1,2}/.test(value))value=value.replace(',','.');
   return value;
 }
 
 function extractAmount(raw:string){
   const source=plain(raw);
-  const con=[...source.matchAll(new RegExp(`\\bcon\\s+(\\d+(?:[.,]\\d+)?)\\s*(${UNIT_RE})`,'gi'))].at(-1);
+  const con=[...source.matchAll(new RegExp(`\\bcon\\s+(${NUMBER_SOURCE})\\s*(${UNIT_SOURCE})`,'gi'))].at(-1);
   if(con)return withUnit(numeric(con[1]),con[2]||'');
-
-  const leading=source.match(/^\s*(?:JUEGO|JUEGA|CONSIGO|CONSIGUE)\s+(\d+(?:[.,]\d+)?)\s+(?:AL|AL\s+CABALLO|CABALLO)\b/i);
-  if(leading)return numeric(leading[1]);
-
-  const units=[...source.matchAll(new RegExp(`(?:BS\\.?\\s*)?(\\d+(?:[.,]\\d+)?)\\s*(K|MIL|MM?|MILLON(?:ES)?|BS\\.?|USD|\\$)\\b`,'gi'))].at(-1);
+  const units=[...source.matchAll(new RegExp(`(?:BS\\.?\\s*)?(${NUMBER_SOURCE})\\s*(K|MIL|MM?|MILLON(?:ES)?|BS\\.?|USD|\\$)\\b`,'gi'))].at(-1);
   return units?withUnit(numeric(units[1]),units[2]||''):null;
+}
+
+function normalizeHorse(raw:string){
+  return String(raw||'').replace(/\s/g,'').replace(/X/gi,'*').toUpperCase();
 }
 
 function extractHorse(raw:string){
   const c=canonical(raw);
-  const direct=c.match(/\b(?:DEL?|CABALLO)\s+([0-9]+(?:\s*[X*]\s*[0-9]+)?|PA|IM|RE)\b/);
-  if(direct)return direct[1].replace(/\s/g,'').replace(/X/g,'*');
-  const al=c.match(/\bAL\s+(?:CABALLO\s+)?([0-9]+(?:\s*[X*]\s*[0-9]+)?|PA|IM|RE)\b/);
-  if(al)return al[1].replace(/\s/g,'').replace(/X/g,'*');
+  const direct=c.match(/\b(?:DEL?|CABALLO|EL)\s+(\d+(?:\s*[X*]\s*\d+)?|PA|IM|RE)\b/);
+  if(direct)return normalizeHorse(direct[1]);
+  const al=c.match(/\bAL\s+(?:CABALLO\s+)?(\d+(?:\s*[X*]\s*\d+)?|PA|IM|RE)\b/);
+  if(al)return normalizeHorse(al[1]);
+  const parenthesized=c.match(new RegExp(`${PLAY_RE.source}\\s*\\(\\s*(\\d+|PA|IM|RE)\\s*\\)`,'i'));
+  if(parenthesized)return normalizeHorse(parenthesized[1]);
   const pair=c.replace(/^(?:JUEGO|JUEGA|CONSIGO|CONSIGUE)\s+/,'').match(/^(\d+)\s*[X*]\s*(\d+)\b/);
-  return pair?`${pair[1]}*${pair[2]}`:'';
+  if(pair)return `${pair[1]}*${pair[2]}`;
+  const playMatch=c.match(PLAY_RE);
+  if(playMatch?.index!==undefined){
+    const after=c.slice(playMatch.index+playMatch[0].length).trim();
+    const bare=after.match(/^(\d+|PA|IM|RE)\b/);
+    if(bare)return normalizeHorse(bare[1]);
+  }
+  return '';
+}
+
+function planParties(raw:string):{participant?:string;counterparty?:string}{
+  const source=plain(raw).trim();
+  if(!/^JUEGA\b/i.test(source))return{};
+  const re=new RegExp(`^JUEGA\\s+(.+?)\\s+(${PLAY_RE.source})\\s*(?:\\([^)]*\\))?\\s+CON\\b[\\s\\S]*?\\bDA\\s+(.+?)\\s*$`,'i');
+  const match=source.match(re);
+  return match?{participant:match[1].trim(),counterparty:match[3].trim()}:{};
 }
 
 function offerFromLine(raw:string):OperationalOffer|null{
@@ -122,12 +144,13 @@ function offerFromLine(raw:string):OperationalOffer|null{
   if(!player&&!receiver)return null;
   const pair=c.replace(/^(?:JUEGO|JUEGA|CONSIGO|CONSIGUE)\s+/,'').match(/^(\d+)\s*[X*]\s*(\d+)\b/);
   const playMatch=c.match(PLAY_RE);
-  const play=pair?'PP':(playMatch?normalizePlay(playMatch[0]):'');
+  const parties=planParties(raw);
   return{
     role:receiver?'receiver':'player',
-    play,
+    play:pair?'PP':(playMatch?normalizePlay(playMatch[0]):''),
     horse:extractHorse(raw),
     amount:extractAmount(raw),
+    ...parties,
     raw:String(raw||'').trim()
   };
 }
@@ -194,16 +217,17 @@ export function classify(text:string):IntentResult {
   const body=String(text||'').trim();
   if(!body)return{intent:'empty',risk:'review',confidence:0,suggestion:'No recibi texto para analizar.',autoEligible:false,reason:'EMPTY'};
   const c=canonical(body);
+  const board=parseBoard(body);
+  const hasJuega=/\bJUEGA\b/.test(c);
+  const hasConsigue=/\bCONSIGUE\b/.test(c);
+  const settlementRows=parseSettlementRows(body);
 
   if(dayClose.test(c))return operational('day_close','review',.995,'Cierre de jornada detectado. Queda registrado para revision; no se cambia automaticamente el estado de la jornada.','DAY_CLOSE_REVIEW_GATE');
   if(raceClose.test(c))return operational('race_close','review',.995,'Cierre de carrera detectado. Se validara la carrera activa antes de aceptar cualquier cambio de estado.','CLOSE_REVIEW_GATE',{raceNumber:parseRaceNumber(body)});
-  if(result.test(c))return operational('race_result','review',.99,'Llegada o pizarra detectada. Se validara contra la carrera activa antes de aplicar resultados.','RESULT_REVIEW_GATE',{board:parseBoard(body)});
   if(balanceSnapshot.test(c))return operational('balance_snapshot','monetary',.995,'Snapshot de disponibles detectado. Se conserva para conciliacion y revision; no modifica saldos automaticamente.','BALANCE_SNAPSHOT_REVIEW_GATE',{balances:parseBalances(body)});
-
-  const hasJuega=/\bJUEGA\b/.test(c);
-  const hasConsigue=/\bCONSIGUE\b/.test(c);
-  if(settlementWord.test(c)||(planWord.test(c)&&hasJuega&&hasConsigue))return operational('settlement_snapshot','monetary',.985,'Liquidacion o cuadre detectado. Requiere conciliacion completa antes de afectar saldos o premios.','SETTLEMENT_REVIEW_GATE',{offers:parseOffers(body),settlementRows:parseSettlementRows(body)});
-  if(planWord.test(c)&&hasJuega)return operational('plan_snapshot','monetary',.98,'Plano de tercios detectado. Se registra para comparar ofertas y confirmaciones; no ejecuta jugadas.','PLAN_REVIEW_GATE',{offers:parseOffers(body)});
+  if(settlementWord.test(c)||settlementRows.length>0||(planWord.test(c)&&hasJuega&&hasConsigue))return operational('settlement_snapshot','monetary',.99,'Liquidacion o cuadre detectado. Requiere conciliacion completa antes de afectar saldos o premios.','SETTLEMENT_REVIEW_GATE',{board,offers:parseOffers(body),settlementRows});
+  if(planWord.test(c)&&hasJuega)return operational('plan_snapshot','monetary',.985,'Plano de tercios detectado. Se registra para comparar ofertas y confirmaciones; no ejecuta jugadas.','PLAN_REVIEW_GATE',{board,offers:parseOffers(body)});
+  if(resultWord.test(c)&&board.length)return operational('race_result','review',.99,'Llegada o pizarra detectada. Se validara contra la carrera activa antes de aplicar resultados.','RESULT_REVIEW_GATE',{board});
   if(pendingConfirmation.test(c))return operational('pending_confirmation','monetary',.985,'Confirmacion pendiente detectada. La jugada permanece sin efecto hasta quedar vinculada y validada.','PENDING_CONFIRMATION_GATE',{confirmation:c});
   if(cancelOrCorrection.test(c))return operational('cancel_or_correction','monetary',.985,'Anulacion o correccion detectada. Debe vincularse a la jugada original antes de cualquier cambio.','CORRECTION_REVIEW_GATE');
   if(exactConfirmation.test(c))return operational('offer_confirmation','monetary',.98,'Confirmacion corta detectada. Debe enlazarse con la oferta correcta antes de confirmar la operacion.','CONFIRMATION_REVIEW_GATE',{confirmation:c});
@@ -211,7 +235,11 @@ export function classify(text:string):IntentResult {
   if(receiverOffer.test(c)||playerOffer.test(c)){
     const offer=offerFromLine(body);
     const receiver=Boolean(offer?.role==='receiver');
-    return operational(receiver?'offer_receiver':'offer_player','monetary',.995,receiver?'Oferta CONSIGUE detectada. Queda pendiente de emparejamiento y validacion; no afecta saldos.':'Oferta JUEGA detectada. Queda pendiente de emparejamiento y validacion; no afecta saldos.',receiver?'RECEIVER_OFFER_REVIEW_GATE':'PLAYER_OFFER_REVIEW_GATE',offer?{role:offer.role,play:offer.play,horse:offer.horse,amount:offer.amount,offers:[offer]}:{});
+    const entities=offer?{
+      role:offer.role,play:offer.play,horse:offer.horse,amount:offer.amount,
+      participant:offer.participant,counterparty:offer.counterparty,offers:[offer]
+    }:{};
+    return operational(receiver?'offer_receiver':'offer_player','monetary',.995,receiver?'Oferta CONSIGUE detectada. Queda pendiente de emparejamiento y validacion; no afecta saldos.':'Oferta JUEGA detectada. Queda pendiente de emparejamiento y validacion; no afecta saldos.',receiver?'RECEIVER_OFFER_REVIEW_GATE':'PLAYER_OFFER_REVIEW_GATE',entities);
   }
 
   if(pollaOrParley.test(c))return operational('polla_or_parley','monetary',.99,'Operacion POLLA/PARLEY detectada. Requiere revision del operador antes de cualquier efecto monetario.','POLLA_PARLEY_REVIEW_GATE',{amount:extractAmount(body)});
