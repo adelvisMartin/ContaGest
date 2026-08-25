@@ -9,7 +9,7 @@ $ErrorActionPreference = 'Stop'
 [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)
 $OutputEncoding = [System.Text.UTF8Encoding]::new($false)
 
-$Version = '1.4.1'
+$Version = '1.4.2'
 $LabGroupName = 'Control h' + [char]0x00ED + 'pico lab'
 
 function Fail([string]$Message) {
