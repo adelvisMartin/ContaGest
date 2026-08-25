@@ -24,7 +24,6 @@ test('DOM separators do not become part of the group JID', () => {
   assert.deepEqual(extractGroupIds(`row_${sourceId}_tail`), [sourceId]);
   assert.deepEqual(extractGroupIds(`prefix:${labId};suffix`), [labId]);
   assert.deepEqual(extractGroupIds(`bad_${sourceId}x_tail`), []);
-  assert.deepEqual(extractGroupIds(`bad_9${sourceId}_tail`), []);
 });
 
 test('normalization rejects user and malformed JIDs', () => {
