@@ -3,13 +3,8 @@
   "version": "11.14.0",
   "private": true,
   "type": "module",
-  "engines": {
-    "node": "22.x"
-  },
-  "workspaces": [
-    "frontend",
-    "backend"
-  ],
+  "engines": {"node": "22.x"},
+  "workspaces": ["frontend","backend"],
   "scripts": {
     "dev:frontend": "npm --workspace frontend run dev",
     "dev:backend": "npm --workspace backend run dev",
@@ -28,7 +23,11 @@
     "test:browser:visual:deep": "playwright test qa/module-visual-deep-v12.spec.mjs",
     "test:browser:contrast": "playwright test qa/contrast-v15.spec.mjs",
     "test:browser:functional": "playwright test qa/erp-functional-smoke-v14.spec.mjs",
-    "test:browser:58": "playwright test qa/exhaustive-route-v164.spec.mjs qa/route-transition-v164.spec.mjs --workers=1",
+    "test:browser:fine-composition": "playwright test qa/fine-composition-v166.spec.mjs --workers=1",
+    "test:browser:58": "playwright test qa/exhaustive-route-v164.spec.mjs qa/fine-composition-v166.spec.mjs qa/route-transition-v164.spec.mjs --workers=1",
+    "test:backend:persistence:real": "npm --workspace backend exec -- tsx --test ../qa/postmerge-backend-persistence-v17.test.ts",
+    "test:backend:financial:real": "npm --workspace backend exec -- tsx --test ../qa/postmerge-financial-domain-v17.test.ts",
+    "test:qa:58x5": "npm run test:backend:persistence:real && npm run test:backend:financial:real && npm run doctor:changed && npm run doctor:design && npm run test:browser:58",
     "audit:visual": "node scripts/visual-system-audit.mjs",
     "audit:visual:strict": "node scripts/visual-system-audit.mjs --strict",
     "audit:functions": "node scripts/erp-module-function-audit.mjs",
@@ -51,11 +50,6 @@
     "skills:sync": "node scripts/sync-agent-skills.mjs",
     "skills:check": "node scripts/verify-agent-skills.mjs"
   },
-  "devDependencies": {
-    "@playwright/test": "1.62.1"
-  },
-  "overrides": {
-    "deepmerge-ts": "8.0.1",
-    "uuid": "11.1.1"
-  }
+  "devDependencies": {"@playwright/test": "1.62.1"},
+  "overrides": {"deepmerge-ts": "8.0.1","uuid": "11.1.1"}
 }
