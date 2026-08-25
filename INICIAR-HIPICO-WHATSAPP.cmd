@@ -4,7 +4,7 @@ cd /d "%~dp0"
 
 echo.
 echo ==============================================================
-echo  CONTROL HIPICO - WHATSAPP BRIDGE v1.4.1
+echo  CONTROL HIPICO - WHATSAPP BRIDGE v1.4.2
 echo ==============================================================
 echo Modo normal: fuente SOLO LECTURA, LAB sin envio automatico.
 echo Para configurar IDs de grupos use CONFIGURAR-GRUPOS-HIPICO.cmd.
