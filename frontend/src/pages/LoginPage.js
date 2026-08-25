@@ -40,7 +40,7 @@ export const LoginPage = {
           <details class="login-license-details"><summary><span><i class="fa-solid fa-key" aria-hidden="true"></i><span>Acceso con licencia comercial</span></span><small>Opcional</small></summary><div class="login-license-body">${input({name:'licenseKey',label:'Clave de licencia',type:'password',required:false,placeholder:'CGVE-…',autocomplete:'off'})}<p><i class="fa-solid fa-building-shield" aria-hidden="true"></i><span>La licencia se valida contra empresa, usuario y dispositivo.</span></p></div></details>
           ${captchaBlock('login')}
           <div class="login-form-status" aria-live="polite" data-login-status></div>
-          ${Button({label:'Entrar a ContaGest',iconName:'fa-arrow-right-to-bracket',variant:'primary',type:'submit',className:'w-full login-submit'})}
+          ${Button({label:'Entrar a ContaGest',iconName:'fa-arrow-right-to-bracket',variant:'primary',type:'submit',className:'w-full login-submit',attrs:'style="color:var(--cg-v-bg)!important"'})}
         </form>
         <div class="login-privacy"><i class="fa-solid fa-lock" aria-hidden="true"></i><span>Sesión cifrada, permisos por rol y aislamiento por empresa.</span></div>
       </section>
