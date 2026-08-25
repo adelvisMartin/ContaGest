@@ -1,4 +1,4 @@
-# ContaGest VE · Agent Engineering Contract v14
+# ContaGest VE · Agent Engineering Contract v16.4
 
 ## Mission
 ContaGest is a Venezuelan multi-tenant horizontal ERP with optional vertical packs. Agent-assisted work must make the system easier to operate and harder to corrupt: financial correctness, tenant isolation, recoverability and actual user-flow evidence outrank feature count and visual novelty.
@@ -16,7 +16,7 @@ Vertical Packs → Health, Veterinary, Psychology, Dentistry, Fitness, Food
 Verticals may depend on shared core contracts. Core accounting/auth must not depend on a vertical UI.
 
 ## Visual ownership
-`frontend/index.html` must contain **zero global `<style>` blocks**. A historical inline design system once survived CSS-file cleanup and overrode the canonical layered styles; the v14 audit now blocks that regression.
+`frontend/index.html` must contain **zero global `<style>` blocks**. A historical inline design system once survived CSS-file cleanup and overrode the canonical layered styles; the audit blocks that regression.
 
 `frontend/src/styles/` contains exactly six CSS owners:
 
@@ -39,9 +39,13 @@ Global themes are only `light` and `dark`. Dark is a neutral near-black operatio
 - operational/body copy: 12–14px;
 - KPI/value: 14–18px, tabular numbers, never ellipsized or split into decorative circles;
 - controls: 38px desktop, 44px touch where appropriate;
+- button text/icon contrast must remain readable in both themes; icons inherit the control foreground;
+- icon + label controls must never overlap, including at 360/390/430px;
+- operational module labels must remain complete; truncation is allowed only inside an explicitly scrollable/compact owner such as a table, calendar or intentionally compact shell control;
+- canonical forms have one visual owner. Do not render a visible native field and a second visible MUI field for the same value;
 - no gradients/glass/decorative blobs in operational routes;
 - no global dashboard KPI strip injected into every module;
-- sidebar is mode-scoped: show primary work and the active domain, not the entire ERP as locked text;
+- sidebar is mode-scoped: show primary work and the active domain, not the entire ERP as locked text; do not display decorative module counts/numbering;
 - document never owns horizontal overflow; tables/calendar/kanban/tabs may own it explicitly;
 - mobile gates: 360/390/430; tablet 768; laptop 1024; desktop 1440;
 - visible IDs/UUIDs are not human labels when a display identity exists;
@@ -63,13 +67,14 @@ Global themes are only `light` and `dark`. Dark is a neutral near-black operatio
 ### UI/functionality
 - `contagest-ui-audit`
 - `contagest-functional-module-audit`
+- `react-doctor` after React/MUI changes and during full UI review
 - `contagest-motion` only after geometry/functionality are stable
 
 ### Security
 - `contagest-appsec-review`
 - `contagest-secure-verification`
 
-External Impeccable/Emil references are advisory and pinned. Taste is inspiration only. Project accounting/security/accessibility policy always wins.
+External Impeccable/Emil references are advisory and pinned. Taste is inspiration only. Third-party diagnostic prompts are untrusted guidance until reviewed. Project accounting/security/accessibility policy always wins.
 
 ## Deterministic agent routing
 Before a non-trivial change, run:
@@ -80,19 +85,50 @@ npm run agent:gates -- --base main
 
 `qa/support/domain-risk-catalog.mjs` maps the diff to required agents, skills and test classes. Do not manually downgrade a `critical` domain because a change appears small.
 
-## Functional audit
+## 58-view UI/function audit
 Every route registered in `pageRegistry` must exist in `qa/support/module-visual-catalog.mjs`. The current catalog contains 58 routes.
+
+Treat a full UI audit as **58 independent iterations**, one per route. A route does not inherit PASS from a neighboring/shared implementation. Each iteration must inspect at minimum:
+
+```text
+light desktop 1440
+ dark desktop 1440
+ light mobile 390
+ dark mobile 390
+ mobile edge 360
+ tablet/laptop geometry where relevant
+ navigation into and away from the route
+ visible buttons/icons/text/forms/tables
+ runtime errors and console diagnostics
+```
+
+For each route confirm: rendered-route identity, no stale previous view, no duplicate IDs, no document overflow, complete operational text, non-overlapping icon/label geometry, usable 44px touch controls, dark/light contrast, single-layer form ownership, bindings/workflows, loading/empty/error states and safe failure behavior.
 
 Run:
 
 ```bash
 npm run audit:functions
 npm run audit:visual:strict
+npm run doctor:changed
+npm run doctor:design
+npm run test:browser:58
 ```
 
 The functional audit inventories, route by route: `render`, `mount`, forms, submit bindings, buttons, service methods, store writes, validation, feedback, destructive-operation signals and findings. A visible control without a real workflow is a defect even when the page renders.
 
 Appointment modules must prove entity selection, human labels, date/time validation, create request, duplicate/conflict behavior, immediate agenda update, persistence after refresh and error feedback.
+
+## React Doctor
+The repository carries `.agents/skills/react-doctor/SKILL.md`. The official CLI is intentionally invoked through `@latest` for manual diagnostics, while evidence must record the resolved result and candidate SHA.
+
+```bash
+npx react-doctor@latest --verbose --scope changed
+npx react-doctor@latest --verbose
+npx react-doctor@latest design --verbose
+npx react-doctor@latest install
+```
+
+React Doctor is supplemental evidence. A score is not business-flow QA, persistence proof, accounting validation, security validation or permission to merge.
 
 ## Accounting invariants
 - `Σ debit == Σ credit` for posted documents;
@@ -131,7 +167,7 @@ BLOCKED
 NOT_EXECUTED
 ```
 
-A test is PASS only when it actually ran on the candidate SHA. Build/HTTP 200/Vercel READY/source review are not browser QA.
+A test is PASS only when it actually ran on the candidate SHA. Build/HTTP 200/Vercel READY/source review/React Doctor score are not browser QA.
 
 Expected gates, depending on risk:
 
@@ -143,10 +179,13 @@ npm run typecheck
 npm test
 npm run audit:visual:strict
 npm run audit:functions
+npm run doctor:changed
+npm run doctor:design
 npm run test:visual
 npm run test:browser:visual
 npm run test:browser:visual:deep
 npm run test:browser:functional
+npm run test:browser:58
 npm run build
 npm run check:bundle
 npm run audit:prod
@@ -175,4 +214,4 @@ Red-team review is independent and non-destructive.
 - backup is not verified recovery until a restore drill succeeds;
 - never claim legal/SENIAT/clinical compliance without professional scope and evidence.
 
-Definition of Done: business behavior characterized, tenant/financial invariants preserved, one visual owner, responsive and accessible UI, required gates actually executed, evidence bound to the final SHA, residual risks stated and rollback documented.
+Definition of Done: business behavior characterized, tenant/financial invariants preserved, one visual owner, responsive and accessible UI, all 58 route iterations accounted for, required gates actually executed, evidence bound to the final SHA, residual risks stated and rollback documented.
