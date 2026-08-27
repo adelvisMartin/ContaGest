@@ -7,7 +7,7 @@
 
 ## 1. Documentos que deben revisarse como un conjunto
 
-Fuente canónica runtime: `backend/src/shared/legal/legalCatalog.ts`.
+Fuente canónica runtime de textos: `backend/src/shared/legal/legalCatalog.ts`.
 
 - Términos y Condiciones (`terms`).
 - Aviso de Privacidad (`privacy`).
@@ -18,7 +18,9 @@ Fuente canónica runtime: `backend/src/shared/legal/legalCatalog.ts`.
 - `docs/legal/VENEZUELA_LEGAL_SOURCES_REVIEW_V1.md`.
 - `docs/legal/PRODUCTION_LEGAL_CHECKLIST.md`.
 
-La revisión debe referirse expresamente a la misma versión que se desplegará. Si el profesional exige cambios materiales, debe incrementarse `LEGAL_DOCUMENT_VERSION`, regenerarse el hash runtime y repetirse la aprobación sobre la nueva versión.
+La atestación canónica que viaja dentro del backend está en `backend/src/shared/legal/LEGAL_RELEASE_ATTESTATION.json`. En este branch permanece deliberadamente en `status: "pending"`; el archivo `docs/legal/LEGAL_RELEASE_ATTESTATION.example.json` documenta el mismo esquema.
+
+La revisión debe referirse expresamente a la misma versión que se desplegará. Si el profesional exige cambios materiales, debe incrementarse `LEGAL_DOCUMENT_VERSION`, regenerarse la evidencia técnica aplicable y repetirse la aprobación sobre la nueva versión.
 
 ## 2. Identidad contractual que debe suministrar el propietario
 
@@ -31,7 +33,7 @@ La revisión debe referirse expresamente a la misma versión que se desplegará.
 | Correo de soporte | PENDIENTE |
 | Persona con facultad para contratar/facturar | PENDIENTE |
 
-Los cinco primeros valores se materializan en `LEGAL_PROVIDER_NAME`, `LEGAL_PROVIDER_RIF`, `LEGAL_PROVIDER_ADDRESS`, `LEGAL_CONTACT_EMAIL` y `LEGAL_SUPPORT_EMAIL` únicamente después de su confirmación.
+Los cinco primeros valores se materializan en `LEGAL_PROVIDER_NAME`, `LEGAL_PROVIDER_RIF`, `LEGAL_PROVIDER_ADDRESS`, `LEGAL_CONTACT_EMAIL` y `LEGAL_SUPPORT_EMAIL` únicamente después de su confirmación. La misma identidad debe copiarse al objeto `provider` de la atestación canónica; el runtime exige coincidencia exacta para impedir que una revisión emitida para un prestador sea reutilizada con otro.
 
 ## 3. Decisiones que el profesional debe resolver expresamente
 
@@ -113,11 +115,12 @@ La revisión final debe quedar identificada, fechada y vinculada al release. Com
 2. jurisdicción declarada `VE`/`Venezuela`;
 3. fecha de revisión;
 4. versión exacta de `LEGAL_DOCUMENT_VERSION`;
-5. documento/memo/carta de revisión con referencia estable;
-6. SHA-256 del archivo de evidencia;
-7. lista de aprobaciones y condiciones/observaciones;
-8. confirmación expresa o corrección de la política de IP/evidencia;
-9. confirmación del addendum de salud humana o prohibición de habilitarlo.
+5. identidad contractual exacta del prestador revisado;
+6. documento/memo/carta de revisión con referencia estable;
+7. SHA-256 del archivo de evidencia;
+8. lista de aprobaciones y condiciones/observaciones;
+9. confirmación expresa o corrección de la política de IP/evidencia;
+10. confirmación del addendum de salud humana o prohibición de habilitarlo.
 
 No se debe guardar una mera casilla `approved=true` sin conservar la evidencia profesional referenciada.
 
@@ -125,10 +128,17 @@ No se debe guardar una mera casilla `approved=true` sin conservar la evidencia p
 
 1. Aplicar al texto cualquier corrección exigida.
 2. Incrementar `LEGAL_DOCUMENT_VERSION` si hubo cambio material.
-3. Obtener aprobación final sobre esa versión exacta.
+3. Obtener aprobación final sobre esa versión exacta y la identidad exacta del prestador.
 4. Calcular SHA-256 del archivo profesional.
-5. Crear `docs/legal/LEGAL_RELEASE_ATTESTATION.json` usando el esquema de `LEGAL_RELEASE_ATTESTATION.example.json`.
-6. Configurar en producción la identidad `LEGAL_PROVIDER_*`.
+5. Actualizar `backend/src/shared/legal/LEGAL_RELEASE_ATTESTATION.json` usando el esquema de `docs/legal/LEGAL_RELEASE_ATTESTATION.example.json`:
+   - `status: "approved"`;
+   - fecha válida;
+   - versión exacta;
+   - objeto `provider` exacto;
+   - revisor/jurisdicción;
+   - referencia + SHA-256 de evidencia;
+   - todas las aprobaciones obligatorias en `true`.
+6. Configurar en producción la misma identidad `LEGAL_PROVIDER_*` declarada en la atestación.
 7. Configurar:
    - `LEGAL_REVIEW_APPROVED_VERSION=<versión aprobada>`
    - `LEGAL_REVIEW_EVIDENCE_SHA256=<SHA-256 de la evidencia>`
@@ -136,6 +146,8 @@ No se debe guardar una mera casilla `approved=true` sin conservar la evidencia p
 9. Ejecutar E2E de primer acceso, rechazo y reaceptación sobre el SHA candidato.
 10. Adjuntar reportes/evidencia al release antes de habilitar el primer tenant real.
 
+La atestación de `backend/src/shared/legal/LEGAL_RELEASE_ATTESTATION.json` queda empaquetada con el backend y se valida también en runtime. `LEGAL_RELEASE_ATTESTATION_PATH` existe únicamente para pruebas/control del gate CLI; un archivo externo no sustituye la atestación canónica incluida en el build productivo.
+
 ## 6. Criterio de no aprobación
 
-Si falta una decisión obligatoria, la revisión contiene reservas no resueltas, la versión aprobada no coincide con el runtime o no existe evidencia verificable, el estado correcto es **BLOCKED**. No completar la atestación con valores ficticios para obtener un gate verde.
+Si falta una decisión obligatoria, la revisión contiene reservas no resueltas, la identidad/versión aprobada no coincide con el runtime, la atestación incluida en el build sigue `pending` o no existe evidencia verificable, el estado correcto es **BLOCKED**. No completar la atestación con valores ficticios para obtener un gate verde.
