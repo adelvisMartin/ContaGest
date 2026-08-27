@@ -20,9 +20,8 @@ export const bankAccountSchema = z.object({
   bankName: z.string().min(2),
   accountNo: z.string().min(4),
   currency: z.string().optional(),
-  balance: decimalSchema('money').optional(),
   active: z.boolean().optional()
-});
+}).strict();
 export const employeeSchema = z.object({
   idNumber: z.string().min(4),
   fullName: z.string().min(2),

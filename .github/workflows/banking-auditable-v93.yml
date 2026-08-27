@@ -1,0 +1,128 @@
+name: "Banking #93 · Saldos auditables"
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'backend/src/modules/banking/**'
+      - 'backend/src/modules/schemas.ts'
+      - 'backend/prisma/**'
+      - 'frontend/src/pages/BankingPage.js'
+      - 'frontend/src/services/enterpriseOperationsService.js'
+      - 'qa/banking-auditable-v93.test.ts'
+      - 'qa/financial-idempotency-v92.test.ts'
+      - 'qa/support/real-backend-harness.ts'
+      - 'docs/ADR_BANKING_AUDITABLE_BALANCE_V93.md'
+      - '.github/workflows/banking-auditable-v93.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: banking-v93-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  banking-postgres-real:
+    name: Banking audit + PostgreSQL real
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: contagest_banking_v93
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d contagest_banking_v93"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+
+    env:
+      NODE_ENV: test
+      API_MODE: prisma
+      DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/contagest_banking_v93?schema=public
+      DIRECT_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/contagest_banking_v93?schema=public
+      APP_URL: http://127.0.0.1:8080
+      CORS_ORIGIN: http://127.0.0.1:8080
+      JWT_SECRET: banking_v93_only_jwt_secret_0123456789abcdefghijklmnopqrstuvwxyz_ABCDEF
+      LICENSE_HASH_SECRET: banking_v93_only_license_secret_0123456789abcdefghijklmnopqrstuvwxyz_XYZ
+      SEED_ADMIN_PASSWORD: BankingV93-QA-Only-Password-2026!
+      ALLOW_DEV_TENANT_HEADER: 'false'
+      SUPABASE_AUTH_FALLBACK: 'false'
+      ALLOW_PUBLIC_REGISTER: 'false'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Node 22
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies and PostgreSQL client
+        run: |
+          npm ci --no-audit --no-fund
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client
+
+      - name: Prepare minimum Supabase contracts
+        env:
+          PGPASSWORD: postgres
+        shell: bash
+        run: |
+          set -o pipefail
+          psql -h 127.0.0.1 -U postgres -d contagest_banking_v93 -v ON_ERROR_STOP=1 -f ops/database/prepare-supabase-ephemeral.sql 2>&1 | tee prerequisitos-v93.log
+
+      - name: Apply canonical migrations
+        shell: bash
+        run: |
+          set -o pipefail
+          npm --workspace backend run prisma:deploy 2>&1 | tee migration-v93.log
+          npx prisma migrate status --schema backend/prisma/schema.prisma 2>&1 | tee -a migration-v93.log
+
+      - name: Seed QA tenant
+        shell: bash
+        run: |
+          set -o pipefail
+          npm --workspace backend run seed 2>&1 | tee seed-v93.log
+
+      - name: Typecheck backend
+        run: npm --workspace backend run typecheck
+
+      - name: Execute banking #93 API + DB suite
+        shell: bash
+        run: |
+          set -o pipefail
+          npm --workspace backend exec -- tsx --test ../qa/banking-auditable-v93.test.ts 2>&1 | tee banking-v93.log
+
+      - name: Execute idempotency regression #92
+        shell: bash
+        run: |
+          set -o pipefail
+          npm run test:backend:idempotency:real 2>&1 | tee idempotency-regression-v93.log
+
+      - name: Build backend
+        run: npm run build:backend
+
+      - name: Preserve #93 evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: evidencia-banking-auditable-v93
+          path: |
+            prerequisitos-v93.log
+            migration-v93.log
+            seed-v93.log
+            banking-v93.log
+            idempotency-regression-v93.log
+          if-no-files-found: warn
+          retention-days: 14
