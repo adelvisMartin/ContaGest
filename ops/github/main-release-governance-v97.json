@@ -23,9 +23,9 @@
         "reason": "GitHub Actions jobs were created without assigned runner on 2026-08-27 (steps=[])."
       },
       {
-        "context": "PostgreSQL #28 · reglas anti-tenant reales / Migraciones + constraints v11.15",
+        "context": "PostgreSQL / Migraciones + constraints v11.15",
         "status": "CANDIDATE_BLOCKED",
-        "reason": "Issue #28 is implemented, but the check must demonstrate stable real runner executions before becoming required."
+        "reason": "GitHub currently registers the unquoted workflow name as PostgreSQL; issue #28 is implemented, but the check must demonstrate stable real runner executions before becoming required."
       },
       {
         "context": "ContaGest Browser QA / playwright",
