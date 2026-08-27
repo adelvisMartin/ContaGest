@@ -29,6 +29,10 @@ import {
 
 const router = Router();
 const userRoleInclude = { include:{ role:{ include:{ permissions:{ include:{ permission:true } } } } } } as const;
+// Unknown/inactive identities still pay a bcrypt cost comparable to a real password
+// check. The dummy hash is never authoritative: a real active user + passwordHash is
+// still required before authentication can succeed.
+const dummyPasswordHashPromise = bcrypt.hash('contagest-invalid-login-timing-equalizer',12);
 
 function ensureAccessNotExpired(user:{accessExpiresAt?:Date|null}) {
   if(user.accessExpiresAt&&user.accessExpiresAt.getTime()<=Date.now())throw new HttpError(403,'El acceso temporal venció. Solicita una nueva invitación.');
@@ -151,26 +155,22 @@ router.post('/login',validateBody(loginSchema),asyncHandler(async(req,res)=>{
     throw new HttpError(401,INVALID_LOGIN_MESSAGE);
   }
 
-  const tenant=await prisma.tenant.findUnique({where:{rif:req.body.tenantRif}});
-  if(!tenant){
-    await recordLoginFailure(req,{reason:'tenant_not_found'});
-    throw new HttpError(401,INVALID_LOGIN_MESSAGE);
-  }
+  const tenant=await prisma.tenant.findUnique({where:{rif:throttle.identity.tenantRif}});
+  const user=tenant
+    ? await prisma.userProfile.findFirst({where:{tenantId:tenant.id,email:throttle.identity.email},include:{userRoles:userRoleInclude}})
+    : null;
+  const candidateHash=user?.passwordHash||await dummyPasswordHashPromise;
+  const passwordValid=await bcrypt.compare(req.body.password,candidateHash);
 
-  const email=throttle.identity.email;
-  const user=await prisma.userProfile.findFirst({where:{tenantId:tenant.id,email},include:{userRoles:userRoleInclude}});
-  if(!user){
-    await recordLoginFailure(req,{tenantId:tenant.id,reason:'user_not_found'});
-    throw new HttpError(401,INVALID_LOGIN_MESSAGE);
-  }
-  if(user.status!=='active'){
-    await recordLoginFailure(req,{tenantId:tenant.id,reason:'account_inactive'});
-    throw new HttpError(401,INVALID_LOGIN_MESSAGE);
-  }
-
-  const valid=Boolean(user.passwordHash)&&await bcrypt.compare(req.body.password,user.passwordHash);
-  if(!valid){
-    await recordLoginFailure(req,{tenantId:tenant.id,reason:'invalid_password'});
+  if(!tenant||!user||user.status!=='active'||!user.passwordHash||!passwordValid){
+    const reason=!tenant
+      ? 'tenant_not_found'
+      : !user
+        ? 'user_not_found'
+        : user.status!=='active'
+          ? 'account_inactive'
+          : 'invalid_password';
+    await recordLoginFailure(req,{tenantId:tenant?.id,reason});
     throw new HttpError(401,INVALID_LOGIN_MESSAGE);
   }
 
