@@ -1,0 +1,63 @@
+{
+  "schemaVersion": 1,
+  "issue": 97,
+  "repository": "adelvisMartin/ContaGest",
+  "targetBranch": "main",
+  "policy": {
+    "normalIntegration": "pull-request-only",
+    "forcePush": "blocked",
+    "deletion": "blocked",
+    "conversationResolution": "required",
+    "adminsEnforced": true,
+    "minimumGitHubApprovals": 0,
+    "p0p1IndependentReview": "required-by-AGENTS",
+    "mergeQueue": "not-enabled"
+  },
+  "requiredChecks": {
+    "active": [],
+    "activationRule": "Only promote a candidate after repeated real executions on candidate SHAs; BLOCKED/NOT_EXECUTED infrastructure states are not PASS.",
+    "candidates": [
+      {
+        "context": "ContaGest CI / validate",
+        "status": "CANDIDATE_BLOCKED",
+        "reason": "GitHub Actions jobs were created without assigned runner on 2026-08-27 (steps=[])."
+      },
+      {
+        "context": "PostgreSQL / Migraciones + constraints v11.15",
+        "status": "CANDIDATE_BLOCKED",
+        "reason": "GitHub currently registers the unquoted workflow name as PostgreSQL; issue #28 is implemented, but the check must demonstrate stable real runner executions before becoming required."
+      },
+      {
+        "context": "ContaGest Browser QA / playwright",
+        "status": "INFORMATIONAL_UNTIL_STABLE",
+        "reason": "Browser QA is valuable but must not become a permanent infrastructure deadlock while runners are unavailable."
+      },
+      {
+        "context": "Accessibility WCAG22 / wcag22-aa",
+        "status": "PENDING_ISSUE_99_AND_STABILITY",
+        "reason": "Promote only after #99 is merged and the gate has repeated real executions."
+      }
+    ]
+  },
+  "breakGlass": {
+    "authorizedPrincipal": "repository-owner:adelvisMartin",
+    "generalAdminBypass": false,
+    "allowedReasons": [
+      "github-actions-runner-outage",
+      "github-platform-incident",
+      "critical-production-recovery"
+    ],
+    "requirements": [
+      "Open or reference a release/governance incident with reason and candidate SHA before bypass.",
+      "Record checks as BLOCKED, never PASS, when infrastructure did not execute them.",
+      "Use the smallest temporary rule change necessary; do not enable force-push or branch deletion.",
+      "Restore the canonical protection immediately after the exceptional integration.",
+      "Attach post-event evidence: PR, merge SHA, actor, reason, checks, timestamps and restoration verification.",
+      "Obtain independent review after the event for P0/P1 if it was impossible before the emergency merge."
+    ]
+  },
+  "rollback": {
+    "source": "ops/github/main-branch-protection-v97.json",
+    "principle": "Rollback a bad protection configuration by restoring the last known-good policy; never solve a configuration mistake by leaving main permanently unprotected."
+  }
+}
