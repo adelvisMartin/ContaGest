@@ -91,4 +91,45 @@
     background:var(--cg-v-danger-soft)!important;
     color:var(--cg-v-danger)!important;
   }
+
+  /* Configuration tabs are a flat navigation control, not an elevated card. */
+  body .settings-navigation,
+  body .settings-navigation .settings-nav-button {
+    box-shadow:none!important;
+  }
+
+  /* Keep login controls in independent rows. This prevents icon buttons from
+     intruding into adjacent fields when font metrics, CAPTCHA state or viewport
+     dimensions vary between browsers. */
+  body .login-shell-v161 .login-form,
+  body .login-shell-v161 .login-captcha {
+    display:grid;
+    min-width:0;
+  }
+
+  body .login-shell-v161 .login-captcha-head {
+    display:grid;
+    grid-template-columns:28px minmax(0,1fr) 30px;
+    align-items:center;
+    gap:8px;
+    min-width:0;
+  }
+
+  body .login-shell-v161 .login-captcha-refresh {
+    position:static!important;
+    grid-column:3;
+    justify-self:end;
+  }
+
+  body .login-shell-v161 .login-captcha-body {
+    position:relative;
+    z-index:0;
+    min-width:0;
+  }
+
+  body .login-shell-v161 .login-form-status,
+  body .login-shell-v161 .login-submit {
+    position:relative;
+    z-index:0;
+  }
 }
