@@ -1,0 +1,96 @@
+{
+  "schemaVersion": 1,
+  "issue": 101,
+  "product": "ContaGest VE",
+  "snapshot": {
+    "mainSha": "a24bec379f9cf9121dcd8164d04f63dc332a608e",
+    "capturedAt": "2026-08-27",
+    "evidenceState": "SOURCE_REVIEW",
+    "productionReady": false,
+    "epicComplete": false
+  },
+  "deliveryContract": {
+    "ticketToBranchToPr": true,
+    "onePrimaryResponsibilityPerPr": true,
+    "allowedEvidenceStates": ["PASS", "FAIL", "BLOCKED", "NOT_EXECUTED", "SOURCE_REVIEW"],
+    "notExecutedIsNeverPass": true,
+    "buildIsNotRelease": true
+  },
+  "priorityOrder": [
+    "financial-correctness",
+    "tenant-isolation",
+    "data-integrity",
+    "recoverability",
+    "security",
+    "business-workflow",
+    "accessibility-usability",
+    "performance",
+    "visual-polish",
+    "novelty"
+  ],
+  "verifiedCurrentGates": [
+    {
+      "issue": 97,
+      "area": "release-governance",
+      "status": "BLOCKED",
+      "evidence": "Declarative governance merged in PR #149, but GitHub branch metadata at main@a24bec379f9cf9121dcd8164d04f63dc332a608e still reports protected=false.",
+      "exit": "main protected=true with structural rules verified live and stable required checks promoted progressively."
+    },
+    {
+      "issue": 98,
+      "area": "observability",
+      "status": "PASS",
+      "scope": "issue-lifecycle",
+      "evidence": "GitHub issue #98 is closed as completed; runtime/release claims still require candidate-SHA evidence when promoted."
+    },
+    {
+      "issue": 99,
+      "area": "accessibility-foundation",
+      "status": "PASS",
+      "scope": "issue-lifecycle",
+      "evidence": "GitHub issue #99 is closed as completed; this does not constitute external WCAG certification."
+    },
+    {
+      "issue": 100,
+      "area": "design-system",
+      "status": "SOURCE_REVIEW",
+      "evidence": "Foundation work is isolated in a dedicated PR and must pass browser/accessibility/bundle evidence before merge/closure."
+    },
+    {
+      "issue": 29,
+      "area": "production-legal",
+      "status": "BLOCKED",
+      "evidence": "Technical fail-closed gate is merged, but professional Venezuelan review, real provider identity and approved attestation remain external release blockers."
+    },
+    {
+      "issue": 134,
+      "area": "ci-infrastructure",
+      "status": "BLOCKED",
+      "evidence": "GitHub issue #134 remains open for jobs ending before runner assignment; blocked jobs are not product FAIL and never PASS."
+    }
+  ],
+  "wave2Verification": [
+    { "issue": 155, "name": "cross-module-system-qa", "status": "SOURCE_REVIEW" },
+    { "issue": 156, "name": "financial-golden-reconciliation", "status": "SOURCE_REVIEW" },
+    { "issue": 157, "name": "performance-capacity-baseline", "status": "SOURCE_REVIEW" }
+  ],
+  "epicExitCriteria": [
+    "no-open-p0-findings-for-contagest-scope",
+    "p1-financial-wave-backed-by-real-postgresql-evidence",
+    "iam-and-db-ci-demonstrated",
+    "restore-drill-demonstrated-not-backup-only",
+    "main-protected-with-real-gates",
+    "golden-financial-dataset-reconciles-supported-modules",
+    "tenant-a-b-negative-tests-cover-critical-resources",
+    "observability-identifies-candidate-sha-request-id-and-readiness",
+    "accessibility-has-automated-and-manual-evidence",
+    "canonical-design-system-governs-new-modules",
+    "production-claims-do-not-exceed-evidence"
+  ],
+  "productBoundary": {
+    "hipicoAuthority": false,
+    "controlHipicoEpic": 102,
+    "rule": "Control Hipico shares a repository temporarily but is not governed as a ContaGest ERP module by Epic #101."
+  },
+  "closureRule": "Epic #101 remains open until every exit criterion is evidenced. Closing child issues or merging this snapshot PR is insufficient."
+}
