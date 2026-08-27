@@ -92,7 +92,7 @@ router.patch('/:id/cancel',requirePermission('sales.manage'),validateBody(cancel
     }
   },async(tx)=>{
     const lockKey=`${scope}:${ctx.tenantId}:${saleId}`;
-    await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtextextended(${lockKey}, 0))`;
+    await tx.$queryRaw<Array<{locked:string|null}>>`SELECT pg_advisory_xact_lock(hashtextextended(${lockKey}, 0))::text AS locked`;
 
     const sale=await tx.salesInvoice.findFirst({where:{id:saleId,tenantId:ctx.tenantId},include:{lines:true}});
     if(!sale)throw new HttpError(404,'Venta no encontrada.');
