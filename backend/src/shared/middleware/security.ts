@@ -5,6 +5,8 @@ import rateLimit from 'express-rate-limit';
 import { env, isProd, isProductionDeployment, jwtSecretReady, licenseSecretReady } from '../../config/env.js';
 import { HttpError } from '../http.js';
 import { COOKIE_NAMES, readCookie } from '../auth/sessionCookies.js';
+import { recordRateLimit } from '../observability/metrics.js';
+import { requestLogger, requestRouteTemplate, sanitizeLogValue } from '../observability/logger.js';
 
 function normalizeOrigin(value?: string) {
   const trimmed = String(value || '').trim();
@@ -52,13 +54,29 @@ export const corsPolicy = cors({
   maxAge: 600
 });
 
+function rateLimitHandler(limiter: string) {
+  return (req: Request, res: Response, _next: NextFunction, options: any) => {
+    recordRateLimit(limiter);
+    requestLogger(req).warn({
+      event: 'rate_limit.activated',
+      requestId: sanitizeLogValue((req as any).requestId || '', 96) || undefined,
+      limiter,
+      route: requestRouteTemplate(req),
+      method: sanitizeLogValue(req.method || 'UNKNOWN', 12).toUpperCase(),
+      status: Number(options?.statusCode || 429)
+    }, 'rate limit activated');
+    res.status(Number(options?.statusCode || 429)).send(options?.message || { ok: false, error: 'Demasiadas solicitudes.' });
+  };
+}
+
 /* Tier 1: broad abuse ceiling for every API request. */
 export const globalRateLimit = rateLimit({
   windowMs: 60_000,
   limit: isProd ? 90 : 300,
   standardHeaders: true,
   legacyHeaders: false,
-  message: { ok: false, error: 'Demasiadas solicitudes. Intenta nuevamente en un minuto.' }
+  message: { ok: false, error: 'Demasiadas solicitudes. Intenta nuevamente en un minuto.' },
+  handler: rateLimitHandler('global')
 });
 
 /* Tier 2: state-changing business operations. This is intentionally stricter
@@ -70,7 +88,8 @@ export const mutationRateLimit = rateLimit({
   skip: isReadOnlyRequest,
   standardHeaders: true,
   legacyHeaders: false,
-  message: { ok: false, error: 'Demasiadas operaciones de escritura. Espera un momento antes de continuar.' }
+  message: { ok: false, error: 'Demasiadas operaciones de escritura. Espera un momento antes de continuar.' },
+  handler: rateLimitHandler('mutation')
 });
 
 /* Tier 3: endpoints with materially higher CPU, I/O or provider cost. This
@@ -82,7 +101,8 @@ export const expensiveOperationRateLimit = rateLimit({
   skip: (req) => req.method.toUpperCase() === 'OPTIONS',
   standardHeaders: true,
   legacyHeaders: false,
-  message: { ok: false, error: 'Se alcanzó el límite temporal para esta operación de alto costo. Intenta nuevamente en un minuto.' }
+  message: { ok: false, error: 'Se alcanzó el límite temporal para esta operación de alto costo. Intenta nuevamente en un minuto.' },
+  handler: rateLimitHandler('expensive_operation')
 });
 
 export const authRateLimit = rateLimit({
@@ -91,7 +111,8 @@ export const authRateLimit = rateLimit({
   skip: (req) => ['GET', 'HEAD', 'OPTIONS'].includes(req.method.toUpperCase()),
   standardHeaders: true,
   legacyHeaders: false,
-  message: { ok: false, error: 'Demasiadas solicitudes de autenticación. Espera unos minutos antes de reintentar.' }
+  message: { ok: false, error: 'Demasiadas solicitudes de autenticación. Espera unos minutos antes de reintentar.' },
+  handler: rateLimitHandler('auth_transport')
 });
 
 // CSP reports are intentionally unauthenticated browser telemetry. Keep the endpoint
@@ -101,7 +122,8 @@ export const cspReportRateLimit = rateLimit({
   limit: isProd ? 120 : 300,
   standardHeaders: true,
   legacyHeaders: false,
-  message: { ok: false, error: 'Demasiados reportes de seguridad.' }
+  message: { ok: false, error: 'Demasiados reportes de seguridad.' },
+  handler: rateLimitHandler('csp_report')
 });
 
 function safeReportUrl(value: unknown) {
@@ -111,7 +133,9 @@ function safeReportUrl(value: unknown) {
     const url = new URL(raw);
     return `${url.origin}${url.pathname}`.slice(0, 500);
   } catch {
-    return raw.slice(0, 300);
+    // Malformed report URLs are untrusted. Do not echo arbitrary text that may
+    // contain query strings, user identifiers or log-control characters.
+    return 'invalid-url';
   }
 }
 
@@ -121,12 +145,12 @@ function normalizeCspPayload(input: any) {
   return {
     documentUri: safeReportUrl(report['document-uri'] || report.documentURL || report.documentUri),
     blockedUri: safeReportUrl(report['blocked-uri'] || report.blockedURL || report.blockedUri),
-    effectiveDirective: String(report['effective-directive'] || report.effectiveDirective || '').slice(0, 120),
-    violatedDirective: String(report['violated-directive'] || report.violatedDirective || '').slice(0, 180),
+    effectiveDirective: sanitizeLogValue(report['effective-directive'] || report.effectiveDirective || '', 120),
+    violatedDirective: sanitizeLogValue(report['violated-directive'] || report.violatedDirective || '', 180),
     sourceFile: safeReportUrl(report['source-file'] || report.sourceFile),
     lineNumber: Number(report['line-number'] || report.lineNumber || 0) || undefined,
     columnNumber: Number(report['column-number'] || report.columnNumber || 0) || undefined,
-    disposition: String(report.disposition || 'report').slice(0, 40)
+    disposition: sanitizeLogValue(report.disposition || 'report', 40)
   };
 }
 
@@ -134,7 +158,11 @@ export function collectCspReport(req: Request, res: Response) {
   const report = normalizeCspPayload(req.body);
   const requestIdValue = String((req as any).requestId || '');
   // Deliberately avoid persisting cookies, request bodies or URL query strings.
-  console.warn('[security:csp-report]', JSON.stringify({ requestId: requestIdValue, ...report }));
+  requestLogger(req).warn({
+    event: 'security.csp_report',
+    requestId: requestIdValue,
+    ...report
+  }, 'CSP report received');
   res.status(204).end();
 }
 
@@ -208,7 +236,7 @@ export function securityResponseHeaders(req: Request, res: Response, next: NextF
   res.setHeader('permissions-policy', 'camera=(self), microphone=(), geolocation=(self), payment=(), usb=(), serial=()');
   res.setHeader('cross-origin-opener-policy', 'same-origin');
   res.setHeader('x-permitted-cross-domain-policies', 'none');
-  if (req.path.startsWith('/api/') || req.path === '/health') {
+  if (req.path.startsWith('/api/') || req.path.startsWith('/health') || req.path === '/metrics') {
     res.setHeader('cache-control', 'no-store, max-age=0');
     res.setHeader('pragma', 'no-cache');
   }
