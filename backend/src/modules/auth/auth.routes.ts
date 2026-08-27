@@ -19,43 +19,20 @@ import { validateUserLicense } from '../../shared/licensing/licenseGuard.js';
 import { activeLicenseForProfile, ensureAccountMembership, listAccessibleTenants, resolveTenantSwitch } from '../../shared/identity/accountMembership.js';
 import { hasPlatformAccess } from '../../shared/identity/platformAccess.js';
 import { coordinateCardStatus, generateCoordinateCard, issueCoordinateChallenge, revokeCoordinateCard, verifyCoordinateChallenge } from '../../shared/auth/coordinateCard.js';
+import {
+  getLoginThrottleState,
+  INVALID_LOGIN_MESSAGE,
+  logAuthSecurityEvent,
+  recordLoginFailure,
+  recordLoginSuccess
+} from './auth.throttle.js';
 
 const router = Router();
-const LOGIN_FAILURE_WINDOW_MS = 24 * 60 * 60 * 1000;
-const LOGIN_FAILURE_LIMIT = 5;
 const userRoleInclude = { include:{ role:{ include:{ permissions:{ include:{ permission:true } } } } } } as const;
-
-function loginIdentity(req:any) {
-  return {
-    tenantRif:String(req.body?.tenantRif || '').trim().toUpperCase(),
-    email:String(req.body?.email || '').trim().toLowerCase(),
-    ipAddress:String(req.ip || 'unknown').slice(0, 120)
-  };
-}
-
-async function failureCount(req:any) {
-  const identity=loginIdentity(req);
-  return prisma.authLoginAttempt.count({
-    where:{tenantRif:identity.tenantRif,email:identity.email,success:false,createdAt:{gt:new Date(Date.now()-LOGIN_FAILURE_WINDOW_MS)}}
-  });
-}
-
-async function recordLoginFailure(req:any,userId?:string) {
-  const identity=loginIdentity(req);
-  await prisma.authLoginAttempt.create({data:{...identity,success:false}});
-  const failures=await failureCount(req);
-  if(userId&&failures>=LOGIN_FAILURE_LIMIT){
-    await prisma.userProfile.updateMany({where:{id:userId,status:'active'},data:{status:'disabled'}});
-  }
-  return failures;
-}
-
-async function recordLoginSuccess(req:any) {
-  const identity=loginIdentity(req);
-  await prisma.authLoginAttempt.create({data:{...identity,success:true}});
-  await prisma.authLoginAttempt.deleteMany({where:{tenantRif:identity.tenantRif,email:identity.email,success:false}});
-  void prisma.authLoginAttempt.deleteMany({where:{createdAt:{lt:new Date(Date.now()-90*86400000)}}}).catch(()=>undefined);
-}
+// Unknown/inactive identities still pay a bcrypt cost comparable to a real password
+// check. The dummy hash is never authoritative: a real active user + passwordHash is
+// still required before authentication can succeed.
+const dummyPasswordHashPromise = bcrypt.hash('contagest-invalid-login-timing-equalizer',12);
 
 function ensureAccessNotExpired(user:{accessExpiresAt?:Date|null}) {
   if(user.accessExpiresAt&&user.accessExpiresAt.getTime()<=Date.now())throw new HttpError(403,'El acceso temporal venció. Solicita una nueva invitación.');
@@ -172,25 +149,33 @@ router.post('/register',validateBody(registerSchema),asyncHandler(async(req,res)
 
 router.post('/login',validateBody(loginSchema),asyncHandler(async(req,res)=>{
   verifyCaptcha(req.body);
-  const tenant=await prisma.tenant.findUnique({where:{rif:req.body.tenantRif}});
-  if(!tenant){await recordLoginFailure(req);throw new HttpError(401,'Credenciales incorrectas.');}
-
-  const email=String(req.body.email).trim().toLowerCase();
-  const user=await prisma.userProfile.findFirst({where:{tenantId:tenant.id,email},include:{userRoles:userRoleInclude}});
-  if(!user){await recordLoginFailure(req);throw new HttpError(401,'Credenciales incorrectas.');}
-  if(user.status==='disabled')throw new HttpError(423,'Usuario bloqueado. Comunícate con un administrador para reactivarlo.');
-  if(user.status!=='active')throw new HttpError(403,'El usuario todavía no está activo. Comunícate con un administrador.');
-
-  ensureAccessNotExpired(user);
-  const valid=Boolean(user.passwordHash)&&await bcrypt.compare(req.body.password,user.passwordHash);
-  if(!valid){
-    const failures=await recordLoginFailure(req,user.id);
-    if(failures>=LOGIN_FAILURE_LIMIT)throw new HttpError(423,'Usuario bloqueado después de 5 intentos fallidos. Comunícate con un administrador.');
-    const remaining=Math.max(0,LOGIN_FAILURE_LIMIT-failures);
-    throw new HttpError(401,`Credenciales incorrectas. Quedan ${remaining} intento(s) antes del bloqueo.`);
+  const throttle=await getLoginThrottleState(req);
+  if(throttle.state.locked){
+    logAuthSecurityEvent('auth.login.failed',req,throttle.identity,{reason:'throttled'});
+    throw new HttpError(401,INVALID_LOGIN_MESSAGE);
   }
 
-  await recordLoginSuccess(req);
+  const tenant=await prisma.tenant.findFirst({where:{rif:{equals:throttle.identity.tenantRif,mode:'insensitive'}}});
+  const user=tenant
+    ? await prisma.userProfile.findFirst({where:{tenantId:tenant.id,email:throttle.identity.email},include:{userRoles:userRoleInclude}})
+    : null;
+  const candidateHash=user?.passwordHash||await dummyPasswordHashPromise;
+  const passwordValid=await bcrypt.compare(req.body.password,candidateHash);
+
+  if(!tenant||!user||user.status!=='active'||!user.passwordHash||!passwordValid){
+    const reason=!tenant
+      ? 'tenant_not_found'
+      : !user
+        ? 'user_not_found'
+        : user.status!=='active'
+          ? 'account_inactive'
+          : 'invalid_password';
+    await recordLoginFailure(req,{tenantId:tenant?.id,reason});
+    throw new HttpError(401,INVALID_LOGIN_MESSAGE);
+  }
+
+  await recordLoginSuccess(req,tenant.id);
+  ensureAccessNotExpired(user);
   const platformOperator=await hasPlatformAccess({userId:user.id,tenantId:tenant.id});
   const role=roleForUser(user,platformOperator);
   let license:any=null;

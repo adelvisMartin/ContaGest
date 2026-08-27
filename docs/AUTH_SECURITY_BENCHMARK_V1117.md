@@ -11,8 +11,12 @@ The current backend already has a meaningful security foundation:
 - passwords are hashed with bcrypt (cost 12);
 - registration enforces 12–128 character passwords;
 - login and registration use a signed, expiring CAPTCHA challenge;
-- failed logins are recorded by tenant/email/IP;
-- five failed credential attempts within the configured window disable the user until administrator intervention;
+- failed logins are recorded by normalized tenant/email plus IP signal;
+- password login uses an account-identity temporary throttle derived from `AuthLoginAttempt`; failed credentials never convert `UserProfile.status` to `disabled`;
+- the default throttle policy is five failures inside a 15-minute observation window followed by a 15-minute temporary lock, with all values configurable and documented as deployment policy rather than OWASP mandates;
+- a successful credential event resets the defensive counter logically while historical attempts remain available until retention cleanup;
+- throttled requests do not append new failure rows, so repeated requests cannot extend the temporary lock indefinitely;
+- tenant-not-found, user-not-found, inactive-account, wrong-password and account-throttle login failures use the same public `401 Credenciales incorrectas.` response;
 - authentication endpoints have a dedicated rate limiter in addition to the global API limiter;
 - browser sessions use HttpOnly cookie-backed server sessions and the database session is checked for active/revoked/expired state;
 - cookie mutations use double-submit CSRF protection;
@@ -23,11 +27,29 @@ The current backend already has a meaningful security foundation:
 Primary implementation references in this repository:
 
 - `backend/src/modules/auth/auth.routes.ts`
+- `backend/src/modules/auth/auth.throttle.ts`
 - `backend/src/shared/middleware/security.ts`
 - `backend/src/shared/auth/sessionCookies.ts`
 - `backend/src/shared/auth/coordinateCard.ts`
+- `docs/AUTH_THROTTLE_ISSUE_89.md`
 
 ## External benchmark: patterns worth adopting
+
+### OWASP Authentication Cheat Sheet
+
+Official reference:
+
+- https://cheatsheetseries.owasp.org/cheatsheets/Authentication_Cheat_Sheet.html
+
+Patterns applied by issue #89:
+
+1. Associate the failed-login counter with the account identity, not solely with source IP.
+2. Treat threshold, observation window and lock duration as policy decisions requiring a security/usability balance.
+3. Design lockout/throttling so an attacker cannot trivially turn it into permanent denial of service against another user.
+4. Keep CAPTCHA as defense in depth rather than the only brute-force control.
+5. Log authentication failures/lock activity without storing credentials or sensitive request bodies.
+
+ContaGest status: the legacy permanent five-failure administrative disable has been replaced by a bounded temporary account throttle while CAPTCHA and transport rate limiting remain active.
 
 ### Auth0
 
@@ -39,11 +61,11 @@ Official references:
 Patterns to retain/adopt:
 
 1. **Layered attack protection**, not a single login counter: account-focused brute-force protection plus IP-velocity/bot controls.
-2. Return `429` when traffic crosses an abuse threshold rather than allowing unbounded retries.
+2. Return an explicit abuse response at transport-rate-limit boundaries rather than allowing unbounded retries.
 3. Monitor suspicious login activity independently from successful authentication.
 4. Consider breached-password detection as a separate future control instead of embedding an external breach lookup directly into the login request path.
 
-ContaGest status: account lockout, CAPTCHA and endpoint rate limits already cover the core pattern. Future work should improve security telemetry and IP/device risk signals rather than redesign the login screen.
+ContaGest status: temporary account throttle, CAPTCHA and endpoint rate limits cover the core layered pattern. Future work may improve adaptive IP/device risk signals without redesigning the login screen.
 
 ### Supabase Auth
 
@@ -98,22 +120,22 @@ Patterns to adopt selectively:
 
 ContaGest status: password policy already has a 12-character minimum. No Firebase dependency is introduced. App/device attestation is retained as a future optional defense layer for native/mobile distribution.
 
-## Adopted phase-2 controls
+## Adopted phase controls
 
-- PWA and iOS interaction hardening without changing the login contract.
-- One canonical typography system and safe-area/mobile touch targets.
+- PWA and iOS interaction hardening without changing the login credential contract.
 - Dedicated CSP violation collector with independent rate limiting and bounded payloads.
 - Strict CSP introduced in **Report-Only** mode before enforcement.
 - Same-origin camera/geolocation permissions aligned with legitimate scanner/map ERP capabilities.
 - Existing server-side input validation through Zod remains the source of truth.
-- Existing authentication rate limiting, CAPTCHA, account lockout, CSRF and MFA remain enabled.
+- Existing authentication rate limiting, CAPTCHA, temporary account throttle, CSRF and MFA remain enabled.
+- Authentication telemetry emits `auth.login.failed`, `auth.throttle.activated`, `auth.throttle.expired` and `auth.login.succeeded` with request correlation and pseudonymized identity, never password/token/CAPTCHA payloads.
 
 ## Next hardening steps
 
 1. Observe CSP reports and remove inline styles/unsafe DOM sinks module-by-module.
-2. Add characterization tests around login/session/MFA before changing authentication policy.
+2. Continue characterization/regression tests around login/session/MFA before changing authentication policy.
 3. Add explicit idle/maximum session policies for administrator/high-risk roles.
-4. Add security-event telemetry for rate-limit, account-lock, MFA failure and suspicious-request events without storing credentials or sensitive request bodies.
+4. Evaluate adaptive device/IP risk scoring as a separate defense-in-depth ticket; do not make IP the sole account-throttle key.
 5. Inventory privileged DOM sinks and evaluate Trusted Types in report/compatibility mode before any enforcement.
 6. Consider compromised-password screening during password creation/reset, not as a blocking network dependency on every login.
 7. If a native iOS wrapper is shipped later, evaluate platform attestation as a complementary control.
@@ -125,3 +147,4 @@ ContaGest status: password policy already has a 12-character minimum. No Firebas
 - No Firebase/Auth0/Supabase credential or SDK introduced into the frontend.
 - No API secret is moved to browser code.
 - No weakening of tenant/RBAC/license checks.
+- No automatic administrative account reactivation or deactivation as a side effect of login throttling.
