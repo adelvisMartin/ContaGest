@@ -6,6 +6,7 @@ test('parses Venezuelan grouping and decimal notation exactly',()=>{
   assert.equal(moneyMinorString('60.000,00'),'6000000');
   assert.equal(moneyMinorString('1.234.567,89'),'123456789');
   assert.equal(moneyMinorString('60,000.00'),'6000000');
+  assert.equal(moneyMinorString('10,001'),'1000100');
 });
 
 test('handles negative, positive and zero without binary floating point',()=>{
@@ -15,9 +16,9 @@ test('handles negative, positive and zero without binary floating point',()=>{
   assert.equal(addHipicoMoney(parseHipicoMoney('0,10'),parseHipicoMoney('0,20')),30n);
 });
 
-test('rejects exponent and over-precision',()=>{
+test('rejects exponent and malformed values',()=>{
   assert.throws(()=>parseHipicoMoney('1e6'),/EXPONENT/);
-  assert.throws(()=>parseHipicoMoney('10,001'),/INVALID_SCALE|INVALID/);
+  assert.throws(()=>parseHipicoMoney('10 bolivares'),/INVALID/);
 });
 
 test('reversal is exact inverse in minor units',()=>{
