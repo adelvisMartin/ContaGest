@@ -4,8 +4,12 @@ import { createRealBackendHarness } from './support/real-backend-harness.ts';
 import { signAccessToken } from '../backend/src/shared/auth/jwt.ts';
 
 const RUN = `QA91-AUTHZ-${Date.now().toString(36).toUpperCase()}`;
+const CUSTOMER_ID = `${RUN}-customer`;
+const SUBSCRIPTION_ID = `${RUN}-subscription`;
+const SUBSCRIPTION_TENANT_ID = `${RUN}-subscription-tenant`;
+const LICENSE_ID = `${RUN}-license`;
 
-test('issue #91 authenticated user without accounting permissions cannot view, post or reverse ledger', async (t) => {
+test('issue #91 authenticated licensed user without accounting permissions cannot view, post or reverse ledger', async (t) => {
   const h = await createRealBackendHarness();
   t.after(async () => h.close());
 
@@ -20,23 +24,42 @@ test('issue #91 authenticated user without accounting permissions cannot view, p
       status: 'active'
     }
   });
-  await h.prisma.licenseKey.create({
-    data: {
-      tenantId: h.tenant.id,
-      userId: user.id,
-      userEmail: user.email,
-      plan: 'qa',
-      keyHash: `${RUN}-HASH`,
-      keyPreview: `${RUN.slice(0, 12)}…`,
-      expiresAt: new Date('2099-12-31T23:59:59.000Z'),
-      status: 'active',
-      modules: []
-    }
-  });
+
+  // Honor the same commercial entitlement chain enforced by the #28 database triggers.
+  // The test intentionally grants identity + active license, but no accounting role/permission,
+  // so the expected denial exercises RBAC rather than failing earlier on licensing.
+  await h.prisma.$executeRaw`
+    INSERT INTO public."CustomerAccount"
+      ("id","legalName","rif","segment","status","metadata","createdAt","updatedAt")
+    VALUES
+      (${CUSTOMER_ID},${`${RUN} Customer`},${`J-${RUN.slice(-8)}`},'qa','active','{}'::jsonb,now(),now())
+  `;
+  await h.prisma.$executeRaw`
+    INSERT INTO public."Subscription"
+      ("id","customerAccountId","planCode","customerSegment","billingCycle","currency","amount","status","startsAt","maxTenants","maxUsers","supportLevel","metadata","createdAt","updatedAt")
+    VALUES
+      (${SUBSCRIPTION_ID},${CUSTOMER_ID},'qa91','qa','monthly','USD',1,'active',now(),1,1,'standard','{}'::jsonb,now(),now())
+  `;
+  await h.prisma.$executeRaw`
+    INSERT INTO public."SubscriptionTenant"
+      ("id","subscriptionId","tenantId","status","createdAt","updatedAt")
+    VALUES
+      (${SUBSCRIPTION_TENANT_ID},${SUBSCRIPTION_ID},${h.tenant.id},'active',now(),now())
+  `;
+  const keyHash = `${RUN.replace(/[^A-Z0-9]/gi, '').padEnd(64, '9').slice(0, 64)}`;
+  await h.prisma.$executeRaw`
+    INSERT INTO public."LicenseKey"
+      ("id","tenantId","userId","userEmail","plan","keyHash","keyPreview","modules","expiresAt","status","subscriptionId","createdAt","updatedAt")
+    VALUES
+      (${LICENSE_ID},${h.tenant.id},${user.id},${user.email},'qa91',${keyHash},${`${RUN.slice(0, 12)}…`},'[]'::jsonb,'2099-12-31T23:59:59.000Z'::timestamptz,'active',${SUBSCRIPTION_ID},now(),now())
+  `;
+
   const token = signAccessToken({ id: user.id, email: user.email }, h.tenant.id);
 
-  await h.status('/accounting/entries', 403, { method: 'GET' }, token);
-  await h.status('/accounting/entries', 403, {
+  const viewDenied = await h.status('/accounting/entries', 403, { method: 'GET' }, token);
+  assert.match(JSON.stringify(viewDenied.payload), /Permiso requerido: accounting\.view/i);
+
+  const createDenied = await h.status('/accounting/entries', 403, {
     method: 'POST',
     body: JSON.stringify({
       fiscalPeriod: '2097-09',
@@ -47,6 +70,7 @@ test('issue #91 authenticated user without accounting permissions cannot view, p
       ]
     })
   }, token);
+  assert.match(JSON.stringify(createDenied.payload), /Permiso requerido: accounting\.post/i);
 
   const adminDraft = await h.ok('/accounting/entries', {
     method: 'POST',
@@ -62,9 +86,11 @@ test('issue #91 authenticated user without accounting permissions cannot view, p
   const adminPosted = await h.ok(`/accounting/entries/${adminDraft.id}/post`, { method: 'POST' });
   assert.equal(adminPosted.posted, true);
 
-  await h.status(`/accounting/entries/${adminPosted.id}/post`, 403, { method: 'POST' }, token);
-  await h.status(`/accounting/entries/${adminPosted.id}/reverse`, 403, {
+  const postDenied = await h.status(`/accounting/entries/${adminPosted.id}/post`, 403, { method: 'POST' }, token);
+  assert.match(JSON.stringify(postDenied.payload), /Permiso requerido: accounting\.post/i);
+  const reverseDenied = await h.status(`/accounting/entries/${adminPosted.id}/reverse`, 403, {
     method: 'POST',
     body: JSON.stringify({ fiscalPeriod: '2097-10' })
   }, token);
+  assert.match(JSON.stringify(reverseDenied.payload), /Permiso requerido: accounting\.post/i);
 });
