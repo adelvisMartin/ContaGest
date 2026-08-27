@@ -32,7 +32,7 @@ test('issue #92 financial idempotency is transactional on real PostgreSQL',async
   t.after(async()=>{
     await h.prisma.idempotencyRecord.deleteMany({where:{OR:[{tenantId:h.tenant.id,requestId:{startsWith:RUN}},{tenantId:tenantB.id}]}}).catch(()=>undefined);
     await h.prisma.auditLog.deleteMany({where:{tenantId:h.tenant.id,OR:[{entityId:{in:auditEntityIds}},{after:{path:['requestId'],string_starts_with:RUN} as any}]}}).catch(()=>undefined);
-    await h.prisma.ledgerEntry.deleteMany({where:{tenantId:h.tenant.id,OR:[{sourceId:{startsWith:RUN}},{description:{startsWith:RUN}}]}}).catch(()=>undefined);
+    await h.prisma.ledgerEntry.deleteMany({where:{tenantId:h.tenant.id,OR:[{sourceId:{startsWith:RUN}},{description:{contains:RUN}}]}}).catch(()=>undefined);
     await h.prisma.salesInvoice.deleteMany({where:{tenantId:h.tenant.id,number:{startsWith:RUN}}}).catch(()=>undefined);
     await h.prisma.purchaseInvoice.deleteMany({where:{tenantId:h.tenant.id,number:{startsWith:RUN}}}).catch(()=>undefined);
     await h.prisma.bankMovement.deleteMany({where:{tenantId:h.tenant.id,description:{startsWith:RUN}}}).catch(()=>undefined);
@@ -59,6 +59,18 @@ test('issue #92 financial idempotency is transactional on real PostgreSQL',async
     assert.equal(record?.expiresAt,null);
   });
 
+  await t.test('20 concurrent retries cancel one sale with one reversal',async()=>{
+    const number=`${RUN}-SALE-CANCEL`;
+    const sale=await h.ok('/sales',{method:'POST',headers:headers('SALE-CANCEL-CREATE'),body:JSON.stringify({number,fiscalPeriod:OPEN_PERIOD,status:'issued',currency:'VES',lines:[{description:`${RUN} sale cancel`,quantity:1,unitPrice:40,taxRate:16}]})});
+    auditEntityIds.push(sale.id);
+    const results=await concurrent(h,`/sales/${sale.id}/cancel`,20,{method:'PATCH',headers:headers('SALE-CANCEL'),body:JSON.stringify({reason:'QA concurrent cancellation'})});
+    const reversalIds=new Set(results.map((result:any)=>result.data.reversalId).filter(Boolean));
+    assert.equal(reversalIds.size,1,'Concurrent sale cancellation returned multiple reversals');
+    assert.equal(await h.prisma.ledgerEntry.count({where:{tenantId:h.tenant.id,source:'manual',sourceId:`sales-cancel:${sale.id}`}}),1,'Concurrent sale cancellation created duplicate reversals');
+    const stored=await h.prisma.salesInvoice.findUnique({where:{id:sale.id}});
+    assert.equal(stored?.status,'cancelled');
+  });
+
   await t.test('5 concurrent purchase retries create one invoice and one ledger effect',async()=>{
     const number=`${RUN}-PURCHASE-5`;
     const body={number,fiscalPeriod:OPEN_PERIOD,status:'issued',lines:[{description:`${RUN} purchase`,quantity:3,unitCost:20,taxRate:16}]};
@@ -68,6 +80,19 @@ test('issue #92 financial idempotency is transactional on real PostgreSQL',async
     const purchaseId=[...ids][0] as string;auditEntityIds.push(purchaseId);
     assert.equal(await h.prisma.purchaseInvoice.count({where:{tenantId:h.tenant.id,number}}),1);
     assert.equal(await h.prisma.ledgerEntry.count({where:{tenantId:h.tenant.id,source:'purchase',sourceId:purchaseId}}),1);
+  });
+
+  await t.test('different keys cannot race a purchase cancellation into duplicate reversals',async()=>{
+    const number=`${RUN}-PURCHASE-CANCEL`;
+    const purchase=await h.ok('/purchases',{method:'POST',headers:headers('PURCHASE-CANCEL-CREATE'),body:JSON.stringify({number,fiscalPeriod:OPEN_PERIOD,status:'issued',lines:[{description:`${RUN} purchase cancel`,quantity:1,unitCost:30,taxRate:16}]})});
+    auditEntityIds.push(purchase.id);
+    const path=`/purchases/${purchase.id}/cancel`;
+    const body=JSON.stringify({reason:'QA serialized cancellation'});
+    const results=await Promise.all(Array.from({length:5},(_,index)=>h.request(path,{method:'PATCH',headers:headers(`PURCHASE-CANCEL-${index}`),body})));
+    for(const result of results)assert.equal(result.response.status,200,`${path} -> ${result.response.status}: ${JSON.stringify(result.payload)}`);
+    assert.equal(await h.prisma.ledgerEntry.count({where:{tenantId:h.tenant.id,source:'manual',sourceId:`purchase-cancel:${purchase.id}`}}),1,'Distinct idempotency keys raced into duplicate purchase reversals');
+    const stored=await h.prisma.purchaseInvoice.findUnique({where:{id:purchase.id}});
+    assert.equal(stored?.status,'cancelled');
   });
 
   await t.test('20 concurrent bank retries move the balance once',async()=>{
