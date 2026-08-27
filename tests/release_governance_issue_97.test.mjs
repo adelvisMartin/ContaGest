@@ -27,7 +27,7 @@ test('issue #97 no crea bypass general de administradores', () => {
 test('issue #97 documenta nombres reales de checks existentes', () => {
   const candidates = new Set(governance.requiredChecks.candidates.map((entry) => entry.context));
   assert.ok(candidates.has('ContaGest CI / validate'));
-  assert.ok(candidates.has('PostgreSQL #28 · reglas anti-tenant reales / Migraciones + constraints v11.15'));
+  assert.ok(candidates.has('PostgreSQL / Migraciones + constraints v11.15'));
   assert.ok(candidates.has('ContaGest Browser QA / playwright'));
 
   assert.match(ci, /^name:\s*ContaGest CI/m);
@@ -36,6 +36,7 @@ test('issue #97 documenta nombres reales de checks existentes', () => {
   assert.match(postgres, /^\s{4}name:\s*Migraciones \+ constraints v11\.15/m);
   assert.match(browser, /^name:\s*ContaGest Browser QA/m);
   assert.match(browser, /^\s{2}playwright:/m);
+  assert.match(docs, /contexto candidato correcto es:[\s\S]*PostgreSQL \/ Migraciones \+ constraints v11\.15/);
 });
 
 test('issue #97 no promueve checks bloqueados a required', () => {
