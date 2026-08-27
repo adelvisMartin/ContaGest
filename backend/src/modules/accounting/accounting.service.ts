@@ -46,13 +46,37 @@ export async function assertPeriodOpen(tenantId: string, fiscalPeriod: string) {
   if (closed) throw new HttpError(409, `El período ${fiscalPeriod} está cerrado para contabilidad. Registra la corrección en un período abierto mediante reverso o ajuste autorizado.`);
 }
 
-export async function createLedgerEntry(input: { tenantId: string; fiscalPeriod: string; description: string; source?: any; sourceId?: string; lines: LedgerLineInput[] }) {
-  const normalizedLines = input.lines.map((line) => ({
+function normalizeLedgerLines(lines: LedgerLineInput[]) {
+  return lines.map((line) => ({
     ...line,
     debit: money(line.debit ?? ZERO),
     credit: money(line.credit ?? ZERO),
     exchangeRate: exchangeRate(line.exchangeRate ?? ONE)
   }));
+}
+
+export function inverseLedgerLines(lines: LedgerLineInput[]) {
+  const inverse = lines.map((line) => ({
+    accountCode: line.accountCode,
+    accountName: line.accountName,
+    debit: money(line.credit ?? ZERO),
+    credit: money(line.debit ?? ZERO),
+    currency: line.currency || 'VES',
+    exchangeRate: exchangeRate(line.exchangeRate ?? ONE)
+  }));
+  assertBalanced(inverse);
+  return inverse;
+}
+
+export async function createLedgerEntry(input: {
+  tenantId: string;
+  fiscalPeriod: string;
+  description: string;
+  source?: any;
+  sourceId?: string;
+  lines: LedgerLineInput[];
+}) {
+  const normalizedLines = normalizeLedgerLines(input.lines);
   assertBalanced(normalizedLines);
   await assertPeriodOpen(input.tenantId, input.fiscalPeriod);
   return prisma.ledgerEntry.create({
@@ -62,6 +86,9 @@ export async function createLedgerEntry(input: { tenantId: string; fiscalPeriod:
       description: input.description,
       source: input.source || 'manual',
       sourceId: input.sourceId,
+      posted: false,
+      postedAt: null,
+      postedBy: null,
       lines: {
         create: normalizedLines.map((line) => ({
           accountCode: line.accountCode,
@@ -73,8 +100,81 @@ export async function createLedgerEntry(input: { tenantId: string; fiscalPeriod:
         }))
       }
     },
-    include: { lines: true }
+    include: { lines: true, reversalOf: true, reversedBy: true }
   });
+}
+
+export async function postLedgerEntry(input: { tenantId: string; entryId: string; postedBy?: string }) {
+  const entry = await prisma.ledgerEntry.findFirst({
+    where: { id: input.entryId, tenantId: input.tenantId },
+    include: { lines: true, reversalOf: true, reversedBy: true }
+  });
+  if (!entry) throw new HttpError(404, 'Asiento contable no encontrado.');
+  if (entry.posted) throw new HttpError(409, 'El asiento ya está contabilizado y es inmutable.');
+  if (entry.reversalOfId) throw new HttpError(409, 'Un reverso debe crearse ya contabilizado; no puede postearse como borrador.');
+
+  assertBalanced(entry.lines);
+  await assertPeriodOpen(input.tenantId, entry.fiscalPeriod);
+
+  const postedAt = new Date();
+  return prisma.ledgerEntry.update({
+    where: { id: entry.id },
+    data: { posted: true, postedAt, postedBy: input.postedBy || null },
+    include: { lines: true, reversalOf: true, reversedBy: true }
+  });
+}
+
+export async function reverseLedgerEntry(input: {
+  tenantId: string;
+  entryId: string;
+  fiscalPeriod: string;
+  postedBy?: string;
+  date?: Date;
+  description?: string;
+}) {
+  const original = await prisma.ledgerEntry.findFirst({
+    where: { id: input.entryId, tenantId: input.tenantId },
+    include: { lines: true, reversalOf: true, reversedBy: true }
+  });
+  if (!original) throw new HttpError(404, 'Asiento contable no encontrado.');
+  if (!original.posted) throw new HttpError(409, 'Solo un asiento contabilizado puede reversarse.');
+  if (original.reversalOfId) throw new HttpError(409, 'No se permite reversar un reverso. Registra un ajuste nuevo y auditable.');
+  if (original.reversedBy) throw new HttpError(409, 'El asiento ya posee un reverso relacionado.');
+
+  await assertPeriodOpen(input.tenantId, input.fiscalPeriod);
+  const lines = inverseLedgerLines(original.lines);
+  const postedAt = new Date();
+
+  try {
+    return await prisma.ledgerEntry.create({
+      data: {
+        tenantId: input.tenantId,
+        date: input.date || postedAt,
+        fiscalPeriod: input.fiscalPeriod,
+        description: input.description || `Reverso de asiento ${original.id}`,
+        source: 'manual',
+        sourceId: `ledger-reversal:${original.id}`,
+        posted: true,
+        postedAt,
+        postedBy: input.postedBy || null,
+        reversalOfId: original.id,
+        lines: {
+          create: lines.map((line) => ({
+            accountCode: line.accountCode,
+            accountName: line.accountName,
+            debit: line.debit,
+            credit: line.credit,
+            currency: line.currency,
+            exchangeRate: line.exchangeRate
+          }))
+        }
+      },
+      include: { lines: true, reversalOf: true, reversedBy: true }
+    });
+  } catch (error: any) {
+    if (error?.code === 'P2002') throw new HttpError(409, 'El asiento ya fue reversado.');
+    throw error;
+  }
 }
 
 export function salesInvoiceLinesForLedger(invoice: { subtotal: DecimalInput; iva: DecimalInput; igtf: DecimalInput; total: DecimalInput }) {
