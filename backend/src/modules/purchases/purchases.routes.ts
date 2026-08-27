@@ -117,7 +117,7 @@ router.patch('/:id/cancel', validateBody(cancellationSchema), asyncHandler(async
     }
   }, async (tx) => {
     const lockKey = `${scope}:${ctx.tenantId}:${purchaseId}`;
-    await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtextextended(${lockKey}, 0))`;
+    await tx.$queryRaw<Array<{locked:string|null}>>`SELECT pg_advisory_xact_lock(hashtextextended(${lockKey}, 0))::text AS locked`;
 
     const purchase = await tx.purchaseInvoice.findFirst({ where: { id: purchaseId, tenantId: ctx.tenantId }, include: { supplier: true, lines: true } });
     if (!purchase) throw new HttpError(404, 'Compra no encontrada.');
@@ -157,7 +157,7 @@ router.delete('/:id', asyncHandler(async (req, res) => {
   if (purchase.status !== 'draft') throw new HttpError(409, 'Solo se eliminan compras en borrador. Las compras emitidas deben anularse.');
   await prisma.purchaseInvoice.delete({ where: { id: purchase.id } });
   await writeAudit({ tenantId: ctx.tenantId, userId: ctx.userId, action: 'delete-draft', entity: 'PurchaseInvoice', entityId: purchase.id, before: purchase, ipAddress: ctx.ip, userAgent: ctx.userAgent });
-  ok(res, { deleted: true, id: purchase.id });
+  ok(res, { deleted:true, id:purchase.id });
 }));
 
 export default router;
