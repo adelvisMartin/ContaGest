@@ -29,10 +29,10 @@ function delegatedDynamicBinding(source,formId){
   const escaped=regexEscape(formId),formPattern=new RegExp(`<form\\b[^>]*id=["']${escaped}["'][^>]*>`),tag=source.match(formPattern)?.[0]||'',dataAttrs=[...tag.matchAll(/\bdata-([a-z0-9-]+)=/gi)].map((match)=>match[1]);
   return dataAttrs.some((name)=>{const attr=regexEscape(name);return new RegExp(`querySelectorAll\\(['\"]\\[data-${attr}\\]['\"]\\)[\\s\\S]{0,300}?addEventListener\\(['\"]submit['\"]`).test(source);});
 }
-function externalValidatedActionBinding(source,formId){
+function externalActionBinding(source,formId){
   const id=regexEscape(formId);
-  const clickToForm=new RegExp(`addEventListener\\(['\"]click['\"][\\s\\S]{0,520}?getElementById\\(['\"]${id}['\"]\\)[\\s\\S]{0,260}?reportValidity\\(`);
-  return clickToForm.test(source);
+  const directFormRead=new RegExp(`addEventListener\\(['\"]click['\"][\\s\\S]{0,760}?(?:getElementById\\(['\"]${id}['\"]\\)|querySelector(?:All)?\\(['\"][^'\"]*#${id}(?:\\b|\\s|[.#:[\\]])[^'\"]*['\"]\\))`);
+  return directFormRead.test(source);
 }
 function hasFormBinding(source,formId){
   const id=regexEscape(formId);
@@ -43,7 +43,7 @@ function hasFormBinding(source,formId){
   const helperDefinition=/\b(?:const|function)\s+(bind|handle|bindForm|bindSubmit)\b[\s\S]{0,260}?getElementById\(id\)\?*\.addEventListener\(['"]submit['"]/.exec(source);
   if(helperDefinition){const helper=regexEscape(helperDefinition[1]);if(new RegExp(`\\b${helper}\\(['\"]${id}['\"]`).test(source))return true;}
   if(delegatedDynamicBinding(source,formId))return true;
-  if(externalValidatedActionBinding(source,formId))return true;
+  if(externalActionBinding(source,formId))return true;
   return false;
 }
 
@@ -112,7 +112,7 @@ const lines=['# ContaGest · Module Function Audit v16.3','',`Generado: ${report
 for(const module of modules)lines.push(`| ${esc(module.route)} | ${esc(module.family)} | ${esc(module.priority)} | ${module.score} | ${module.signals.forms.length} | ${module.signals.boundForms.length} | ${module.signals.services.length} | ${esc(module.findings.map((item)=>`${item.severity}:${item.code}`).join(', ')||'—')} |`);
 lines.push('','## Detalle por ruta','');
 for(const module of modules){lines.push(`### ${module.route} · ${module.label}`,'',`- render: ${module.signals.hasRender?'sí':'NO'} · mount: ${module.signals.hasMount?'sí':'no (render/global enhancer)'} · forms: ${module.signals.forms.join(', ')||'—'} · bound: ${module.signals.boundForms.join(', ')||'—'}`,`- servicios: ${module.signals.services.join(', ')||'—'}`,`- destructivas reales: ${module.signals.destructiveSignals.join(', ')||'—'} · confirmación: ${module.signals.confirmationSignals.join(', ')||'—'}`,`- feedback: Toast=${module.signals.toasts}, Loading=${module.signals.loading}, catch=${module.signals.tryCatch}, validación=${module.signals.validation}`,`- findings: ${module.findings.map((item)=>`${item.severity}/${item.code}: ${item.detail}`).join(' · ')||'ninguno'}`,'');}
-lines.push('## Interpretación','','El auditor v16.3 considera binding funcional tanto el submit directo/delegado como una acción modal externa que localiza el formulario y exige reportValidity() antes de ejecutar el servicio. Esto evita falsos positivos en modales cuyos botones de acción viven fuera del elemento <form> sin relajar la validación. La evidencia browser sigue siendo obligatoria para demostrar comportamiento en runtime.');
+lines.push('## Interpretación','','El auditor v16.3 considera binding funcional tanto el submit directo/delegado como una acción modal externa cuyo listener de click referencia explícitamente el formulario que procesa. Esto cubre modales cuyas acciones viven fuera del elemento <form> sin ocultar controles realmente huérfanos; las señales de validación siguen auditándose por separado. La evidencia browser sigue siendo obligatoria para demostrar comportamiento en runtime.');
 fs.writeFileSync(path.join(outDir,'module-function-audit.md'),`${lines.join('\n')}\n`);
 console.log(`Functional audit v16.3: ${summary.routes} rutas · ${summary.forms} forms · ${summary.boundForms} bindings · ${summary.criticalHighFindings} high/critical · score medio ${summary.averageScore}.`);
 if(strict&&(!parity.ok||criticalFindings.length))process.exitCode=1;
