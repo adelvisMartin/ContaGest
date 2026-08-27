@@ -18,22 +18,28 @@ test('issue #100 Cg primitives reuse the canonical ContaGest MUI theme instead o
   assert.match(muiRuntime, /export function createContaGestMuiTheme/);
 });
 
-test('issue #100 initial Cg set covers foundation primitives and accessibility names', () => {
+test('issue #100 initial Cg set covers foundation primitives and accessibility contracts', () => {
   for (const name of ['CgButton','CgIconButton','CgTextField','CgSelect','CgDialog','CgPageHeader','CgStatusChip','CgEmptyState','CgMoney','CgDataTable']) {
     assert.match(primitives, new RegExp(`export function ${name}\\b`));
   }
   assert.match(primitives, /CgIconButton requires an accessible label/);
+  assert.match(primitives, /CgTextField requires a persistent label/);
+  assert.match(primitives, /CgSelect requires a persistent label/);
+  assert.match(primitives, /CgDialog requires an accessible title/);
   assert.match(primitives, /aria-label=\{label\}/);
   assert.match(primitives, /const titleId = `cg-dialog-title-/);
   assert.match(primitives, /aria-labelledby=\{titleId\}/);
+  assert.match(primitives, /scope="col"/);
 });
 
 test('issue #100 CgMoney preserves exact decimal strings and refuses UI-side rounding', () => {
   const large = formatMoneyExact('9007199254740993.07', { currency: 'USD', locale: 'es-VE' });
   assert.match(large.replace(/\D/g, ''), /900719925474099307/);
   assert.equal(formatMoneyExact('0.1', { currency: 'USD', locale: 'es-VE' }).replace(/\D/g, '').endsWith('010'), true);
+  assert.equal(formatMoneyExact('-0.01', { currency: 'USD', locale: 'es-VE' }).replace(/\D/g, '').endsWith('001'), true);
   assert.equal(formatMoneyExact('1.234', { currency: 'USD', locale: 'es-VE' }), '—');
   assert.equal(formatMoneyExact(1234.5, { currency: 'USD', locale: 'es-VE' }), '—');
+  assert.equal(formatMoneyExact('12.00', { currency: 'INVALID-CURRENCY', locale: 'es-VE' }), '—');
   assert.doesNotMatch(primitives, /Number\s*\(/);
   assert.match(primitives, /formatMoneyExact/);
 });
