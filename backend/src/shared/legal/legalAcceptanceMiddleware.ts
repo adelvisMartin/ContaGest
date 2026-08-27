@@ -1,15 +1,8 @@
 import type {Request,Response,NextFunction} from 'express';
 import {prisma} from '../../database/prisma.js';
+import {hasPlatformAccess} from '../identity/platformAccess.js';
 import {HttpError} from '../http.js';
 import {currentLegalDocuments} from './legalCatalog.js';
-
-async function isPlatformOperator(userId:string,tenantId:string){
-  const count=await prisma.userRole.count({where:{
-    userId,
-    role:{tenantId,permissions:{some:{permission:{key:'platform.manage'}}}}
-  }});
-  return count>0;
-}
 
 async function hasLicensedCustomerAccess(userId:string,tenantId:string){
   const count=await prisma.licenseKey.count({where:{userId,tenantId,status:'active',expiresAt:{gt:new Date()}}});
@@ -20,9 +13,9 @@ export async function requireCurrentLegalAcceptance(req:Request,_res:Response,ne
   try{
     const ctx=(req as any).context as {tenantId?:string;userId?:string}|undefined;
     if(!ctx?.tenantId||!ctx.userId)return next();
-    if(await isPlatformOperator(ctx.userId,ctx.tenantId))return next();
-    // The first-access adhesion flow is a customer-license gate. Internal/staff sessions
-    // without a customer license are not trapped behind a UI that is intentionally client-only.
+    if(await hasPlatformAccess(ctx))return next();
+    // The first-access adhesion flow is a customer-license gate. Only a verified
+    // platform identity may bypass it; Role.system is never used as authority.
     if(!await hasLicensedCustomerAccess(ctx.userId,ctx.tenantId))return next();
     const required=currentLegalDocuments().filter((doc)=>doc.required);
     const accepted=await prisma.$queryRaw<Array<{documentCode:string;documentVersion:string;documentHash:string}>>`
