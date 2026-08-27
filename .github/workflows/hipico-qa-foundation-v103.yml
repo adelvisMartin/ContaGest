@@ -30,7 +30,7 @@ jobs:
   qa-foundation:
     name: PWA + backend + Bridge evidence
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 35
     env:
       HIPICO_QA_ANDROID: skip
     steps:
@@ -45,10 +45,17 @@ jobs:
           node-version: '22'
           cache: npm
 
+      - name: Install root lock and Chromium for browser preflight
+        run: |
+          npm ci --no-audit --no-fund
+          npx playwright install --with-deps chromium
+
       - name: Runner contract regression
         run: node --test tests/hipico_qa_runner_issue_103.test.mjs
 
       - name: Execute canonical Hípico QA runner
+        env:
+          HIPICO_QA_SKIP_INSTALL: '1'
         run: npm run qa:hipico -- --mode=ci
 
       - name: Preserve SHA-bound evidence

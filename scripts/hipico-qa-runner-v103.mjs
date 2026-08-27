@@ -15,8 +15,11 @@ const BLOCKED_PATTERNS = [
   /ETIMEDOUT/i,
   /ECONNRESET/i,
   /network is unreachable/i,
+  /fetch failed/i,
+  /socket hang up/i,
   /rate limit/i,
   /429\b/,
+  /Playwright Chromium executable missing/i,
   /Android SDK.*not found/i,
   /JAVA_HOME.*not set/i,
 ];
@@ -114,21 +117,23 @@ function fileInventory(root, paths) {
 }
 
 function aggregateStatus(results) {
-  if (results.some((item) => item.status === 'FAIL')) return 'FAIL';
-  if (results.some((item) => item.status === 'BLOCKED')) return 'BLOCKED';
-  if (results.some((item) => item.status === 'NOT_EXECUTED')) return 'NOT_EXECUTED';
+  const required = results.filter((item) => item.required !== false);
+  if (required.some((item) => item.status === 'FAIL')) return 'FAIL';
+  if (required.some((item) => item.status === 'BLOCKED')) return 'BLOCKED';
+  if (required.some((item) => item.status === 'NOT_EXECUTED')) return 'NOT_EXECUTED';
   return 'PASS';
 }
 
 function step(name, runner, options = {}) {
+  const required = options.required !== false;
   if (process.env.HIPICO_QA_TEST_INJECT_FAIL === name) {
-    return { name, status: 'FAIL', command: '[injected-test-failure]', cwd: '.', exitCode: 97, durationMs: 0, output: 'Deliberate #103 regression fixture.' };
+    return { name, required, status: 'FAIL', command: '[injected-test-failure]', cwd: '.', exitCode: 97, durationMs: 0, output: 'Deliberate #103 regression fixture.' };
   }
   if (options.skip) {
-    return { name, status: 'NOT_EXECUTED', command: options.command || '', cwd: options.cwd || '.', exitCode: null, durationMs: 0, output: options.reason || 'Skipped by explicit mode.' };
+    return { name, required, status: 'NOT_EXECUTED', command: options.command || '', cwd: options.cwd || '.', exitCode: null, durationMs: 0, output: options.reason || 'Skipped by explicit mode.' };
   }
   const result = runner();
-  return { name, ...result };
+  return { name, required, ...result };
 }
 
 function commandStep(name, command, args, options = {}) {
@@ -139,6 +144,22 @@ function androidToolchainAvailable() {
   const hasJava = runProcess('java', ['-version']).status === 'PASS';
   const sdkRoot = process.env.ANDROID_HOME || process.env.ANDROID_SDK_ROOT || '';
   return hasJava && Boolean(sdkRoot) && existsSync(sdkRoot);
+}
+
+function pwaContract(root) {
+  try {
+    const base = join(root, 'frontend', 'public', 'hipico-control');
+    const required = ['index.html', 'manifest.webmanifest', 'sw.js', 'runtime-config.js'];
+    const missing = required.filter((file) => !existsSync(join(base, file)));
+    if (missing.length) return { status: 'FAIL', command: '[internal pwa contract]', cwd: 'frontend/public/hipico-control', exitCode: 1, durationMs: 0, output: `Missing: ${missing.join(', ')}` };
+    const manifest = JSON.parse(readFileSync(join(base, 'manifest.webmanifest'), 'utf8'));
+    if (!manifest.name || !manifest.start_url || !Array.isArray(manifest.icons) || !manifest.icons.length) {
+      return { status: 'FAIL', command: '[internal pwa contract]', cwd: 'frontend/public/hipico-control', exitCode: 1, durationMs: 0, output: 'Manifest lacks name/start_url/icons.' };
+    }
+    return { status: 'PASS', command: '[internal pwa contract]', cwd: 'frontend/public/hipico-control', exitCode: 0, durationMs: 0, output: 'Canonical PWA shell and manifest present.' };
+  } catch (error) {
+    return { status: 'FAIL', command: '[internal pwa contract]', cwd: 'frontend/public/hipico-control', exitCode: 1, durationMs: 0, output: redact(error?.message || String(error)) };
+  }
 }
 
 function writeEvidence({ root, metadata, results, mode }) {
@@ -176,18 +197,19 @@ function writeEvidence({ root, metadata, results, mode }) {
     `- Branch: \`${metadata.branch}\``,
     `- Dirty working tree: **${metadata.dirty ? 'YES' : 'NO'}** (${metadata.dirtyEntryCount} entries)`,
     `- Mode: \`${mode}\``,
-    `- Overall: **${overall}**`,
+    `- Overall required scope: **${overall}**`,
     `- Generated: ${report.generatedAt}`,
     '',
-    '| Step | Status | Exit | Duration ms |',
-    '|---|---|---:|---:|',
-    ...results.map((item) => `| ${item.name} | **${item.status}** | ${item.exitCode ?? '—'} | ${item.durationMs ?? 0} |`),
+    '| Step | Required | Status | Exit | Duration ms |',
+    '|---|---|---|---:|---:|',
+    ...results.map((item) => `| ${item.name} | ${item.required === false ? 'no' : 'yes'} | **${item.status}** | ${item.exitCode ?? '—'} | ${item.durationMs ?? 0} |`),
     '',
     '## Notes',
     '',
     '- `PASS` means the step actually executed successfully on the candidate SHA.',
     '- `BLOCKED` means missing/unavailable infrastructure or toolchain; it is never promoted to PASS.',
     '- `NOT_EXECUTED` means the selected mode intentionally did not execute that step.',
+    '- An optional NOT_EXECUTED step remains NOT_EXECUTED even when the required scope is PASS.',
     '- Logs are redacted before persistence; raw phone numbers, bearer tokens and full WhatsApp group IDs are not evidence fields.',
     '',
   ];
@@ -220,16 +242,26 @@ export function runQa(argv = process.argv.slice(2), root = REPO_ROOT) {
   results.push(commandStep('install-root-lock', npm, ['ci', '--no-audit', '--no-fund'], {
     cwd: root,
     skip: skipInstall,
+    required: mode !== 'quick',
     reason: 'HIPICO_QA_SKIP_INSTALL=1',
   }));
 
+  results.push(commandStep('preflight-playwright-chromium', process.execPath, [
+    '--input-type=module',
+    '-e',
+    "import { chromium } from '@playwright/test'; import { existsSync } from 'node:fs'; const p=chromium.executablePath(); if(!existsSync(p)){console.error('Playwright Chromium executable missing');process.exit(2)} console.log('Playwright Chromium available')",
+  ], { cwd: root }));
+
+  results.push(commandStep('backend-typecheck', npm, ['--workspace', 'backend', 'run', 'typecheck'], { cwd: root }));
+  results.push(commandStep('backend-audit-high', npm, ['audit', '--workspace', 'backend', '--omit=dev', '--audit-level=high'], { cwd: root }));
   results.push(commandStep('backend-hipico-tests', npm, ['run', 'test:hipico'], { cwd: root }));
 
   const rootTests = discoverRootHipicoTests(root);
   results.push(rootTests.length
     ? commandStep('root-hipico-contracts', 'node', ['--test', ...rootTests], { cwd: root })
-    : { name: 'root-hipico-contracts', status: 'BLOCKED', command: 'node --test tests/hipico*.test.mjs', cwd: '.', exitCode: null, durationMs: 0, output: 'No Hípico root contract tests discovered.' });
+    : { name: 'root-hipico-contracts', required: true, status: 'BLOCKED', command: 'node --test tests/hipico*.test.mjs', cwd: '.', exitCode: null, durationMs: 0, output: 'No Hípico root contract tests discovered.' });
 
+  results.push(step('pwa-contract', () => pwaContract(root)));
   const pwaFiles = [
     'frontend/public/hipico-control/assets/js/whatsapp.js',
     'frontend/public/hipico-control/assets/js/operations.js',
@@ -241,16 +273,14 @@ export function runQa(argv = process.argv.slice(2), root = REPO_ROOT) {
   ].filter((entry) => existsSync(join(root, entry)));
   results.push(pwaFiles.length
     ? commandStep('pwa-backend-static-syntax', 'node', ['--check', pwaFiles[0]], { cwd: root })
-    : { name: 'pwa-backend-static-syntax', status: 'BLOCKED', command: 'node --check', cwd: '.', exitCode: null, durationMs: 0, output: 'Canonical PWA syntax target missing.' });
-  for (const file of pwaFiles.slice(1)) {
-    const item = commandStep(`syntax:${file}`, 'node', ['--check', file], { cwd: root });
-    results.push(item);
-  }
+    : { name: 'pwa-backend-static-syntax', required: true, status: 'BLOCKED', command: 'node --check', cwd: '.', exitCode: null, durationMs: 0, output: 'Canonical PWA syntax target missing.' });
+  for (const file of pwaFiles.slice(1)) results.push(commandStep(`syntax:${file}`, 'node', ['--check', file], { cwd: root }));
 
   const bridgeRoot = join(root, 'tools', 'hipico-whatsapp-web-bridge');
   results.push(commandStep('bridge-install-lock', npm, ['ci', '--no-audit', '--no-fund'], {
     cwd: bridgeRoot,
     skip: skipInstall,
+    required: mode !== 'quick',
     reason: 'HIPICO_QA_SKIP_INSTALL=1',
   }));
   results.push(commandStep('bridge-check-and-tests', npm, ['run', 'qa'], { cwd: bridgeRoot }));
@@ -262,18 +292,19 @@ export function runQa(argv = process.argv.slice(2), root = REPO_ROOT) {
     ? commandStep('android-web-parity-install', npm, ['ci', '--no-audit', '--no-fund'], {
         cwd: androidRoot,
         skip: skipInstall,
+        required: mode !== 'quick',
         reason: 'HIPICO_QA_SKIP_INSTALL=1',
       })
-    : { name: 'android-web-parity-install', status: 'NOT_EXECUTED', command: '', cwd: 'android/hipico-control-v1130', exitCode: null, durationMs: 0, output: 'Android wrapper is not present in this checkout.' });
+    : { name: 'android-web-parity-install', required: true, status: 'NOT_EXECUTED', command: '', cwd: 'android/hipico-control-v1130', exitCode: null, durationMs: 0, output: 'Android wrapper is not present in this checkout.' });
   results.push(androidExists
     ? commandStep('android-web-parity', npm, ['run', 'verify:web'], { cwd: androidRoot })
-    : { name: 'android-web-parity', status: 'NOT_EXECUTED', command: '', cwd: 'android/hipico-control-v1130', exitCode: null, durationMs: 0, output: 'Android wrapper is not present in this checkout.' });
+    : { name: 'android-web-parity', required: true, status: 'NOT_EXECUTED', command: '', cwd: 'android/hipico-control-v1130', exitCode: null, durationMs: 0, output: 'Android wrapper is not present in this checkout.' });
 
   const requestAndroidBuild = process.env.HIPICO_QA_ANDROID === 'build' || (mode === 'full' && process.env.HIPICO_QA_ANDROID !== 'skip');
   if (!androidExists || !requestAndroidBuild) {
-    results.push({ name: 'android-debug-apk', status: 'NOT_EXECUTED', command: 'npm run android:qa', cwd: 'android/hipico-control-v1130', exitCode: null, durationMs: 0, output: 'APK build not requested in this mode. Use HIPICO_QA_ANDROID=build.' });
+    results.push({ name: 'android-debug-apk', required: mode === 'full' && process.env.HIPICO_QA_ANDROID !== 'skip', status: 'NOT_EXECUTED', command: 'npm run android:qa', cwd: 'android/hipico-control-v1130', exitCode: null, durationMs: 0, output: 'APK build not requested in this scope. Use HIPICO_QA_ANDROID=build.' });
   } else if (!androidToolchainAvailable()) {
-    results.push({ name: 'android-debug-apk', status: 'BLOCKED', command: 'npm run android:qa', cwd: 'android/hipico-control-v1130', exitCode: null, durationMs: 0, output: 'JDK/Android SDK toolchain not available. No APK build was claimed.' });
+    results.push({ name: 'android-debug-apk', required: true, status: 'BLOCKED', command: 'npm run android:qa', cwd: 'android/hipico-control-v1130', exitCode: null, durationMs: 0, output: 'JDK/Android SDK toolchain not available. No APK build was claimed.' });
   } else {
     results.push(commandStep('android-debug-apk', npm, ['run', 'android:qa'], { cwd: androidRoot }));
   }
@@ -285,7 +316,7 @@ export function runQa(argv = process.argv.slice(2), root = REPO_ROOT) {
     'tools/hipico-whatsapp-web-bridge/package-lock.json',
     'android/hipico-control-v1130/package-lock.json',
   ]);
-  results.push({ name: 'artifact-source-hashes', status: inventory.length >= 4 ? 'PASS' : 'BLOCKED', command: '[internal sha256]', cwd: '.', exitCode: inventory.length >= 4 ? 0 : null, durationMs: 0, output: JSON.stringify(inventory) });
+  results.push({ name: 'artifact-source-hashes', required: true, status: inventory.length >= 4 ? 'PASS' : 'BLOCKED', command: '[internal sha256]', cwd: '.', exitCode: inventory.length >= 4 ? 0 : null, durationMs: 0, output: JSON.stringify(inventory) });
 
   const evidence = writeEvidence({ root, metadata, results, mode });
   console.log(`[hipico-qa-v103] ${evidence.overall} · ${metadata.sha} · ${relative(root, evidence.runDir)}`);
