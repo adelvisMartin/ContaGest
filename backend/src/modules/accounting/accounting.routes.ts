@@ -7,7 +7,7 @@ import { validateBody } from '../../shared/middleware/validate.js';
 import { writeAudit } from '../../shared/services/audit.service.js';
 import { add, serializeDecimal, serializeLegacyNumber, subtract, ZERO } from '../../shared/financial/decimal.js';
 import { decimalSchema } from '../../shared/financial/zod.js';
-import { createLedgerEntry } from './accounting.service.js';
+import { createLedgerEntry, postLedgerEntry, reverseLedgerEntry } from './accounting.service.js';
 
 const router = Router();
 router.use(requireTenant);
@@ -24,20 +24,63 @@ const entrySchema = z.object({
     exchangeRate: decimalSchema('exchangeRate', { defaultValue: 1, positive: true })
   })).min(2)
 });
+const reversalSchema = z.object({
+  fiscalPeriod: z.string().regex(/^\d{4}-\d{2}$/, 'Usa formato AAAA-MM.'),
+  date: z.coerce.date().optional(),
+  description: z.string().trim().min(3).max(500).optional()
+});
 const closingPeriodSchema = z.object({ period: z.string().regex(/^\d{4}-\d{2}$/, 'Usa formato AAAA-MM.'), note: z.string().max(500).optional() });
 const closeSchema = z.object({ note: z.string().max(500).optional() });
 const context = (req: any) => req.context as { tenantId: string; userId?: string; ip?: string; userAgent?: string };
 
 router.get('/entries', requirePermission('accounting.view'), asyncHandler(async (req, res) => {
   const tenantId = context(req).tenantId;
-  ok(res, await prisma.ledgerEntry.findMany({ where: { tenantId }, include: { lines: true }, orderBy: { date: 'desc' }, take: 100 }));
+  ok(res, await prisma.ledgerEntry.findMany({
+    where: { tenantId },
+    include: { lines: true, reversalOf: { select: { id: true, fiscalPeriod: true, postedAt: true } }, reversedBy: { select: { id: true, fiscalPeriod: true, postedAt: true } } },
+    orderBy: { date: 'desc' },
+    take: 100
+  }));
 }));
+
 router.post('/entries', requirePermission('accounting.post'), validateBody(entrySchema), asyncHandler(async (req, res) => {
-  ok(res, await createLedgerEntry({ tenantId: context(req).tenantId, ...req.body }));
+  const ctx = context(req);
+  const created = await createLedgerEntry({ tenantId: ctx.tenantId, ...req.body });
+  await writeAudit({ tenantId: ctx.tenantId, userId: ctx.userId, action: 'ledger.entry.created', entity: 'LedgerEntry', entityId: created.id, after: created, ipAddress: ctx.ip, userAgent: ctx.userAgent });
+  ok(res, created);
 }));
+
+router.post('/entries/:id/post', requirePermission('accounting.post'), asyncHandler(async (req, res) => {
+  const ctx = context(req);
+  const before = await prisma.ledgerEntry.findFirst({ where: { id: req.params.id, tenantId: ctx.tenantId }, include: { lines: true } });
+  if (!before) throw new HttpError(404, 'Asiento contable no encontrado.');
+  const posted = await postLedgerEntry({ tenantId: ctx.tenantId, entryId: before.id, postedBy: ctx.userId });
+  await writeAudit({ tenantId: ctx.tenantId, userId: ctx.userId, action: 'ledger.entry.posted', entity: 'LedgerEntry', entityId: posted.id, before, after: posted, ipAddress: ctx.ip, userAgent: ctx.userAgent });
+  ok(res, posted);
+}));
+
+router.post('/entries/:id/reverse', requirePermission('accounting.post'), validateBody(reversalSchema), asyncHandler(async (req, res) => {
+  const ctx = context(req);
+  const original = await prisma.ledgerEntry.findFirst({ where: { id: req.params.id, tenantId: ctx.tenantId }, include: { lines: true } });
+  if (!original) throw new HttpError(404, 'Asiento contable no encontrado.');
+  const reversal = await reverseLedgerEntry({ tenantId: ctx.tenantId, entryId: original.id, postedBy: ctx.userId, ...req.body });
+  await writeAudit({
+    tenantId: ctx.tenantId,
+    userId: ctx.userId,
+    action: 'ledger.entry.reversed',
+    entity: 'LedgerEntry',
+    entityId: reversal.id,
+    before: original,
+    after: { reversal, reversalOfId: original.id },
+    ipAddress: ctx.ip,
+    userAgent: ctx.userAgent
+  });
+  ok(res, reversal);
+}));
+
 router.get('/trial-balance', requirePermission('accounting.view'), asyncHandler(async (req, res) => {
   const tenantId = context(req).tenantId;
-  const entries = await prisma.ledgerEntry.findMany({ where: { tenantId }, include: { lines: true } });
+  const entries = await prisma.ledgerEntry.findMany({ where: { tenantId, posted: true }, include: { lines: true } });
   const accounts = new Map<string, { accountCode: string; accountName: string; debit: typeof ZERO; credit: typeof ZERO }>();
   for (const entry of entries) for (const line of entry.lines) {
     const key = line.accountCode;
