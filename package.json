@@ -28,7 +28,7 @@
     "test:backend:persistence:real": "npm --workspace backend exec -- tsx --test ../qa/postmerge-backend-persistence-v17.test.ts",
     "test:backend:financial:real": "npm --workspace backend exec -- tsx --test ../qa/postmerge-financial-domain-v17.test.ts",
     "test:backend:idempotency:real": "npm --workspace backend exec -- tsx --test ../qa/financial-idempotency-v92.test.ts",
-    "test:backend:commercial:real": "npm --workspace backend exec -- tsx --test ../qa/commercial-backend-real-v23.test.ts",
+    "test:backend:commercial:real": "npm --workspace backend exec -- tsx --test ../qa/commercial-backend-real-v23.test.ts ../qa/financial-idempotency-v92.test.ts",
     "test:qa:58x5": "npm run test:backend:persistence:real && npm run test:backend:financial:real && npm run doctor:changed && npm run doctor:design && npm run test:browser:58",
     "audit:visual": "node scripts/visual-system-audit.mjs",
     "audit:visual:strict": "node scripts/visual-system-audit.mjs --strict",
