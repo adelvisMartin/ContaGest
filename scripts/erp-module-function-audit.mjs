@@ -31,8 +31,9 @@ function delegatedDynamicBinding(source,formId){
 }
 function externalActionBinding(source,formId){
   const id=regexEscape(formId);
-  const directFormRead=new RegExp(`addEventListener\\(['\"]click['\"][\\s\\S]{0,760}?(?:getElementById\\(['\"]${id}['\"]\\)|querySelector(?:All)?\\(['\"][^'\"]*#${id}(?:\\b|\\s|[.#:[\\]])[^'\"]*['\"]\\))`);
-  return directFormRead.test(source);
+  const byId=new RegExp(`addEventListener\\(['\"]click['\"][\\s\\S]{0,900}?getElementById\\(['\"]${id}['\"]\\)`);
+  const bySelector=new RegExp(`addEventListener\\(['\"]click['\"][\\s\\S]{0,900}?['\"][^'\"]*#${id}[^'\"]*['\"]`);
+  return byId.test(source)||bySelector.test(source);
 }
 function hasFormBinding(source,formId){
   const id=regexEscape(formId);
@@ -112,7 +113,7 @@ const lines=['# ContaGest · Module Function Audit v16.3','',`Generado: ${report
 for(const module of modules)lines.push(`| ${esc(module.route)} | ${esc(module.family)} | ${esc(module.priority)} | ${module.score} | ${module.signals.forms.length} | ${module.signals.boundForms.length} | ${module.signals.services.length} | ${esc(module.findings.map((item)=>`${item.severity}:${item.code}`).join(', ')||'—')} |`);
 lines.push('','## Detalle por ruta','');
 for(const module of modules){lines.push(`### ${module.route} · ${module.label}`,'',`- render: ${module.signals.hasRender?'sí':'NO'} · mount: ${module.signals.hasMount?'sí':'no (render/global enhancer)'} · forms: ${module.signals.forms.join(', ')||'—'} · bound: ${module.signals.boundForms.join(', ')||'—'}`,`- servicios: ${module.signals.services.join(', ')||'—'}`,`- destructivas reales: ${module.signals.destructiveSignals.join(', ')||'—'} · confirmación: ${module.signals.confirmationSignals.join(', ')||'—'}`,`- feedback: Toast=${module.signals.toasts}, Loading=${module.signals.loading}, catch=${module.signals.tryCatch}, validación=${module.signals.validation}`,`- findings: ${module.findings.map((item)=>`${item.severity}/${item.code}: ${item.detail}`).join(' · ')||'ninguno'}`,'');}
-lines.push('## Interpretación','','El auditor v16.3 considera binding funcional tanto el submit directo/delegado como una acción modal externa cuyo listener de click referencia explícitamente el formulario que procesa. Esto cubre modales cuyas acciones viven fuera del elemento <form> sin ocultar controles realmente huérfanos; las señales de validación siguen auditándose por separado. La evidencia browser sigue siendo obligatoria para demostrar comportamiento en runtime.');
+lines.push('## Interpretación','','El auditor v16.3 considera binding funcional tanto el submit directo/delegado como una acción modal externa cuyo listener de click referencia explícitamente el formulario que procesa, ya sea por getElementById() o por un selector #formId. Esto cubre modales cuyas acciones viven fuera del elemento <form> sin ocultar controles realmente huérfanos; las señales de validación siguen auditándose por separado. La evidencia browser sigue siendo obligatoria para demostrar comportamiento en runtime.');
 fs.writeFileSync(path.join(outDir,'module-function-audit.md'),`${lines.join('\n')}\n`);
 console.log(`Functional audit v16.3: ${summary.routes} rutas · ${summary.forms} forms · ${summary.boundForms} bindings · ${summary.criticalHighFindings} high/critical · score medio ${summary.averageScore}.`);
 if(strict&&(!parity.ok||criticalFindings.length))process.exitCode=1;
