@@ -6,6 +6,7 @@ import { requirePermission, requireTenant } from '../../shared/middleware/contex
 import { validateBody } from '../../shared/middleware/validate.js';
 import { assertBalanced, assertPeriodOpen, salesInvoiceLinesForLedger } from '../accounting/accounting.service.js';
 import { writeAudit } from '../../shared/services/audit.service.js';
+import { runFinancialIdempotentMutation } from '../../shared/services/financial-idempotency.service.js';
 
 const router = Router();
 router.use(requireTenant);
@@ -14,6 +15,8 @@ const lineSchema = z.object({ productId: z.string().optional(), description: z.s
 const saleSchema = z.object({ clientId: z.string().optional(), number: z.string().min(1), controlNo: z.string().optional(), issueDate: z.coerce.date().optional(), fiscalPeriod: z.string().min(6), currency: z.string().default('VES'), exchangeRate: z.coerce.number().default(1), status: z.enum(['draft','issued','paid','overdue']).default('issued'), notes: z.string().optional(), lines: z.array(lineSchema).min(1) });
 const cancellationSchema=z.object({reason:z.string().trim().min(3).max(500).optional()});
 const context=(req:any)=>req.context as {tenantId:string;userId?:string;ip?:string;userAgent?:string};
+const requestId=(req:any)=>String(req.requestId||'')||null;
+const idempotencyKey=(req:any)=>req.header('Idempotency-Key')||null;
 
 router.get('/', requirePermission('sales.view'), asyncHandler(async (req, res) => {
   const tenantId = context(req).tenantId;
@@ -27,9 +30,15 @@ router.post('/', requirePermission('sales.manage'), validateBody(saleSchema), as
   const subtotal=lines.reduce((sum:number,line:any)=>sum+line.total,0);
   const iva=lines.reduce((sum:number,line:any)=>sum+(line.total*Number(line.taxRate||0)/100),0);
   const total=subtotal+iva;
-  if(req.body.status!=='draft')await assertPeriodOpen(ctx.tenantId,req.body.fiscalPeriod);
 
-  const result=await prisma.$transaction(async(tx)=>{
+  const execution=await runFinancialIdempotentMutation({
+    tenantId:ctx.tenantId,
+    scope:'sales.create',
+    key:idempotencyKey(req),
+    request:req.body,
+    requestId:requestId(req)
+  },async(tx)=>{
+    if(req.body.status!=='draft')await assertPeriodOpen(ctx.tenantId,req.body.fiscalPeriod,tx);
     const sale=await tx.salesInvoice.create({
       data:{tenantId:ctx.tenantId,clientId:req.body.clientId,number:req.body.number,controlNo:req.body.controlNo,issueDate:req.body.issueDate,fiscalPeriod:req.body.fiscalPeriod,currency:req.body.currency,exchangeRate:req.body.exchangeRate,subtotal,iva,total,status:req.body.status,notes:req.body.notes,lines:{create:lines}},
       include:{lines:true}
@@ -43,10 +52,16 @@ router.post('/', requirePermission('sales.manage'), validateBody(saleSchema), as
       });
       ledgerEntryId=ledger.id;
     }
-    return{sale,ledgerEntryId};
+    return{data:{...sale,ledgerEntryId},resourceType:'SalesInvoice',resourceId:sale.id};
   });
-  await writeAudit({tenantId:ctx.tenantId,userId:ctx.userId,action:'create',entity:'salesInvoice',entityId:result.sale.id,after:{...result.sale,ledgerEntryId:result.ledgerEntryId},ipAddress:ctx.ip,userAgent:ctx.userAgent});
-  ok(res,{...result.sale,ledgerEntryId:result.ledgerEntryId});
+
+  res.setHeader('Idempotency-Replayed',execution.replayed?'true':'false');
+  if(execution.replayed){
+    await writeAudit({tenantId:ctx.tenantId,userId:ctx.userId,action:'idempotency.replay',entity:'salesInvoice',entityId:(execution.data as any).id,after:{scope:'sales.create',recordId:execution.recordId,originalRequestId:execution.originalRequestId,requestId:requestId(req)},ipAddress:ctx.ip,userAgent:ctx.userAgent});
+  }else{
+    await writeAudit({tenantId:ctx.tenantId,userId:ctx.userId,action:'create',entity:'salesInvoice',entityId:(execution.data as any).id,after:execution.data,ipAddress:ctx.ip,userAgent:ctx.userAgent});
+  }
+  ok(res,execution.data,execution.responseCode);
 }));
 
 router.patch('/:id/cancel',requirePermission('sales.manage'),validateBody(cancellationSchema),asyncHandler(async(req,res)=>{
