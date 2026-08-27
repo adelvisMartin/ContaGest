@@ -41,8 +41,9 @@ CREATE TRIGGER hipico_shadow_prediction_immutable
 BEFORE UPDATE OR DELETE ON public.hipico_shadow_prediction_versions
 FOR EACH ROW EXECUTE FUNCTION public.hipico_shadow_prediction_immutable_guard();
 
--- Existing canonical table historically used ON CONFLICT DO UPDATE. Preserve the
--- first predicted payload there as well so retries cannot rewrite historical truth.
+-- Existing canonical installations historically used ON CONFLICT DO UPDATE.
+-- Freeze the original prediction only when that legacy table already exists;
+-- a clean migration must not depend on out-of-band schema state.
 CREATE OR REPLACE FUNCTION public.hipico_shadow_existing_prediction_freeze()
 RETURNS trigger LANGUAGE plpgsql AS $$
 BEGIN
@@ -53,7 +54,13 @@ BEGIN
   RETURN NEW;
 END;
 $$;
-DROP TRIGGER IF EXISTS hipico_shadow_existing_prediction_freeze_trg ON public.hipico_shadow_evaluations;
-CREATE TRIGGER hipico_shadow_existing_prediction_freeze_trg
-BEFORE UPDATE ON public.hipico_shadow_evaluations
-FOR EACH ROW EXECUTE FUNCTION public.hipico_shadow_existing_prediction_freeze();
+DO $$
+BEGIN
+  IF to_regclass('public.hipico_shadow_evaluations') IS NOT NULL THEN
+    DROP TRIGGER IF EXISTS hipico_shadow_existing_prediction_freeze_trg ON public.hipico_shadow_evaluations;
+    CREATE TRIGGER hipico_shadow_existing_prediction_freeze_trg
+      BEFORE UPDATE ON public.hipico_shadow_evaluations
+      FOR EACH ROW EXECUTE FUNCTION public.hipico_shadow_existing_prediction_freeze();
+  END IF;
+END;
+$$;
