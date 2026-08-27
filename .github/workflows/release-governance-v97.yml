@@ -1,4 +1,4 @@
-name: Release Governance #97
+name: "Release Governance #97"
 
 on:
   pull_request:
