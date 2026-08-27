@@ -8,7 +8,7 @@ const read = (file) => fs.readFileSync(path.join(root, file), 'utf8');
 const profile = read('frontend/src/pages/ProfilePage.js');
 const visual = read('frontend/src/styles/contagest-visual-system-v12.css');
 
-test('profile route composes canonical visual primitives instead of raw stacked controls', () => {
+test('profile route composes the canonical visual primitives instead of raw stacked controls', () => {
   for (const selector of ['cgx-metric-grid', 'cgx-section', 'cgx-section-head', 'cgx-section-body', 'cg-record-fields', 'cgx-module-standard']) {
     assert.ok(profile.includes(selector), `profile must use ${selector}`);
   }
@@ -26,7 +26,7 @@ test('profile keeps field and icon-label spacing owned by the canonical visual s
   assert.match(visual, /@media \(max-width:430px\)[\s\S]*cg-form-actions>\.cgx-btn[^\{]*\{[^}]*width:100%/);
 });
 
-test('profile security panel remains accessible and wired to existing workflows', () => {
+test('profile security panel remains accessible and wired to the existing workflows', () => {
   assert.match(profile, /aria-labelledby="profileInformationTitle"/);
   assert.match(profile, /aria-labelledby="coordinateSecurityTitle"/);
   assert.match(profile, /aria-busy=/);
