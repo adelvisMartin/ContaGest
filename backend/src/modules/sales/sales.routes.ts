@@ -154,14 +154,17 @@ router.patch('/:id/cancel', requirePermission('sales.manage'), validateBody(canc
   if (sale.status === 'cancelled') {
     return ok(res, { sale, reversalId: original?.reversedBy?.id || null, alreadyCancelled: true });
   }
+  if (!original) {
+    throw new HttpError(409, 'La venta emitida no posee un asiento contable original. Debe conciliarse antes de anular; no se permite cancelar sin efecto contable trazable.');
+  }
 
   const reversalFiscalPeriod = req.body.reversalFiscalPeriod || sale.fiscalPeriod;
   await assertPeriodOpen(ctx.tenantId, reversalFiscalPeriod);
-  if (original && !original.posted) throw new HttpError(409, 'El asiento original de la venta no está contabilizado. Resuelve el backfill/inconsistencia antes de anular.');
+  if (!original.posted) throw new HttpError(409, 'El asiento original de la venta no está contabilizado. Resuelve el backfill/inconsistencia antes de anular.');
 
   const result = await prisma.$transaction(async (tx) => {
-    let reversalId: string | null = original?.reversedBy?.id || null;
-    if (original && !reversalId) {
+    let reversalId: string | null = original.reversedBy?.id || null;
+    if (!reversalId) {
       const reversalLines = inverseLedgerLines(original.lines);
       const draftReversal = await tx.ledgerEntry.create({
         data: {
@@ -208,7 +211,7 @@ router.patch('/:id/cancel', requirePermission('sales.manage'), validateBody(canc
       reversalId = reversal.id;
     }
     const cancelled = await tx.salesInvoice.update({ where: { id: sale.id }, data: { status: 'cancelled' }, include: { lines: true } });
-    return { sale: cancelled, reversalId, reversedEntries: original ? [original.id] : [], accountingWarning: original ? null : 'La venta no tenía asiento contable asociado.' };
+    return { sale: cancelled, reversalId, reversedEntries: [original.id] };
   });
   await writeAudit({ tenantId: ctx.tenantId, userId: ctx.userId, action: 'cancel', entity: 'salesInvoice', entityId: sale.id, before: sale, after: { ...result, reason: req.body.reason || 'Anulación solicitada desde Ventas', reversalFiscalPeriod }, ipAddress: ctx.ip, userAgent: ctx.userAgent });
   ok(res, result);
