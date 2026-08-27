@@ -4,6 +4,7 @@ export const DECIMAL_SCALE = {
   money: 2,
   quantity: 3,
   exchangeRate: 4,
+  rate: 4,
   percentage: 2
 } as const;
 
@@ -11,6 +12,7 @@ export const DECIMAL_PRECISION = {
   money: 18,
   quantity: 18,
   exchangeRate: 18,
+  rate: 18,
   percentage: 5
 } as const;
 
@@ -93,6 +95,10 @@ export function exchangeRate(value: DecimalInput): DecimalValue {
   return parseDecimal(value, 'exchangeRate');
 }
 
+export function rate(value: DecimalInput): DecimalValue {
+  return parseDecimal(value, 'rate');
+}
+
 export function percentage(value: DecimalInput): DecimalValue {
   return parseDecimal(value, 'percentage');
 }
@@ -131,8 +137,8 @@ export function quantizeMoney(value: DecimalInput): DecimalValue {
   return quantize(value, DECIMAL_SCALE.money);
 }
 
-export function percentOf(amount: DecimalInput, rate: DecimalInput): DecimalValue {
-  return divide(multiply(amount, rate), HUNDRED);
+export function percentOf(amount: DecimalInput, percentageRate: DecimalInput): DecimalValue {
+  return divide(multiply(amount, percentageRate), HUNDRED);
 }
 
 export function assertNonNegative(value: DecimalValue): DecimalValue {
