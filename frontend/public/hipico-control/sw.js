@@ -19,7 +19,7 @@ function isAllowedStatic(url) { return APP_SHELL_URLS.has(url.toString()); }
 self.addEventListener('install', (event) => {
   event.waitUntil((async () => {
     const cache = await caches.open(CACHE_VERSION);
-    await cache.addAll(APP_SHELL_URLS);
+    await cache.addAll([...APP_SHELL_URLS]);
     await self.skipWaiting();
   })());
 });
