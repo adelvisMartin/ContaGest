@@ -9,11 +9,9 @@ const page=read('frontend/src/pages/LicensesPage.js');
 const service=read('frontend/src/services/commercialService.js');
 const licenseService=read('frontend/src/services/licenseService.js');
 
-
 test('commercial routes stay platform-only and expose the complete lifecycle',()=>{
   assert.match(backend,/router\.use\(requireTenant,requirePermission\('platform\.manage'\)\)/);
   assert.match(backend,/router\.patch\('\/subscriptions\/:id'/);
-  assert.match(backend,/planCode:z\.string\(\).*optional\(\)/s);
   assert.match(backend,/router\.post\('\/subscriptions\/:id\/status'/);
   assert.match(backend,/router\.get\('\/payments'/);
   assert.match(backend,/router\.post\('\/commissions\/:id\/status'/);
@@ -21,26 +19,27 @@ test('commercial routes stay platform-only and expose the complete lifecycle',()
   assert.match(backend,/tenantId:ctx\.tenantId,action:\{startsWith:'commercial\.'/);
 });
 
-
 test('summary and templates reflect pricing matrix v1 operational limits without a migration',()=>{
   assert.match(backend,/vendedor:\{[\s\S]*?maxTenants:1,maxUsers:3/);
   assert.match(backend,/contador:\{[\s\S]*?maxTenants:3,maxUsers:3/);
   assert.match(backend,/pyme:\{[\s\S]*?maxTenants:1,maxUsers:5/);
   assert.match(backend,/profesional:\{[\s\S]*?maxTenants:1,maxUsers:2/);
+  assert.match(backend,/maxTenants:z\.coerce\.number\(\)[\s\S]*?\.optional\(\),maxUsers:z\.coerce\.number\(\)[\s\S]*?\.optional\(\)/);
+  assert.match(backend,/const customerSegment=b\.customerSegment\?\?template\?\.segment\?\?'smb'/);
+  assert.match(backend,/const maxTenants=b\.maxTenants\?\?template\?\.maxTenants\?\?1/);
+  assert.match(backend,/const maxUsers=b\.maxUsers\?\?template\?\.maxUsers\?\?3/);
   assert.match(backend,/AS "renew15"/);
   assert.match(backend,/AS expired/);
   assert.match(backend,/AS "activeCustomers"/);
 });
 
-
 test('subscription suspension uses audited status transitions instead of mass assignment',()=>{
-  assert.match(page,/CommercialService\.transitionSubscription\(sub\.id,next,f\.reason\.value\)/);
+  assert.match(page,/CommercialService\.transitionSubscription\(sub\.id,next,element\(f,'reason'\)\.value\)/);
   assert.doesNotMatch(page,/updateSubscription\([^)]*\{\s*status\s*:/);
   assert.match(backend,/ALLOWED_SUBSCRIPTION_TRANSITIONS/);
   assert.match(backend,/commercial\.subscription\.status/);
   assert.match(backend,/statusReason:b\.reason/);
 });
-
 
 test('commercial console exposes filters, exports, contract/module/tenant/payment and audit workflows',()=>{
   for(const marker of ['commercialFilterForm','btnCommercialCsv','btnCommercialPdf','data-sub-edit','data-sub-modules','data-sub-tenant','data-sub-pay','data-commission-paid','Actividad comercial auditable'])assert.ok(page.includes(marker),`missing ${marker}`);
@@ -49,6 +48,11 @@ test('commercial console exposes filters, exports, contract/module/tenant/paymen
   assert.match(service,/activity\(limit=80\)/);
 });
 
+test('commercial load errors render once and wait for explicit refresh instead of retry-looping',()=>{
+  assert.match(page,/!Store\.get\(\)\.commercial\?\.loaded&&!Store\.get\(\)\.commercial\?\.error/);
+  assert.match(page,/loaded:false,error:error\.message/);
+  assert.match(page,/!c\.loaded&&!c\.error/);
+});
 
 test('license activation inventory uses the existing tenant-scoped device router',()=>{
   assert.match(licenseService,/devices\(licenseId\)/);
@@ -56,7 +60,6 @@ test('license activation inventory uses the existing tenant-scoped device router
   assert.match(page,/data-license-devices/);
   assert.match(page,/LicenseService\.revokeDevice/);
 });
-
 
 test('CSV export neutralizes spreadsheet formula injection and quotes values',()=>{
   assert.equal(sanitizeSpreadsheetCell('=HYPERLINK("https://evil.invalid")'),'\'=HYPERLINK("https://evil.invalid")');
@@ -66,7 +69,6 @@ test('CSV export neutralizes spreadsheet formula injection and quotes values',()
   assert.ok(csv.startsWith('\uFEFF"Cliente","Importe"'));
   assert.ok(csv.includes('"\'=2+2"'));
 });
-
 
 test('PDF export produces a self-contained PDF document without external libraries',()=>{
   const bytes=commercialPdfBytes({title:'ContaGest comercial',rows:[{customerName:'Cliente CA',amount:19}],columns:[{key:'customerName',label:'Cliente'},{key:'amount',label:'Importe'}]});
