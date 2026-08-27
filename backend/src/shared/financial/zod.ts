@@ -11,7 +11,6 @@ import {
 
 type DecimalSchemaOptions = {
   defaultValue?: DecimalInput;
-  optional?: boolean;
   nonnegative?: boolean;
   positive?: boolean;
 };
@@ -25,10 +24,9 @@ export function decimalSchema(kind: DecimalKind, options: DecimalSchemaOptions =
   const input = z.preprocess((value) => {
     if (value === undefined && options.defaultValue !== undefined) return options.defaultValue;
     return value;
-  }, options.optional && options.defaultValue === undefined ? decimalTransport.optional() : decimalTransport);
+  }, decimalTransport);
 
-  return input.transform((value, ctx): DecimalValue | undefined => {
-    if (value === undefined) return undefined;
+  return input.transform((value, ctx): DecimalValue => {
     try {
       const parsed = parseDecimal(value, kind);
       if (options.positive) return assertPositive(parsed);
