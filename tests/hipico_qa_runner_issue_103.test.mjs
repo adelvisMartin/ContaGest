@@ -44,6 +44,34 @@ test('issue #103 browser preflight actually launches Chromium instead of checkin
   assert.match(runnerSource, /Playwright Chromium launch PASS/);
 });
 
+test('issue #103 canonical static sources cannot disappear silently', () => {
+  for (const path of [
+    'frontend/public/hipico-control/assets/js/whatsapp.js',
+    'frontend/public/hipico-control/assets/js/operations.js',
+    'frontend/public/hipico-control/assets/js/agent-router.js',
+    'frontend/public/hipico-control/sw.js',
+    'frontend/public/hipico-control/runtime-config.js',
+    'frontend/api/hipico/group-bridge-ingest.js',
+    'tools/hipico-whatsapp-bridge/src/index.mjs',
+  ]) assert.match(runnerSource, new RegExp(path.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+  assert.match(runnerSource, /pwa-static-targets-present/);
+  assert.match(runnerSource, /Missing canonical static targets/);
+  assert.match(runnerSource, /missingSyntaxTargets\.length \? 'FAIL' : 'PASS'/);
+});
+
+test('issue #103 artifact hashes require the complete canonical source set', () => {
+  for (const path of [
+    'frontend/public/hipico-control/manifest.webmanifest',
+    'frontend/public/hipico-control/sw.js',
+    'frontend/public/hipico-control/build-info.json',
+    'tools/hipico-whatsapp-web-bridge/package-lock.json',
+    'android/hipico-control-v1130/package-lock.json',
+  ]) assert.match(runnerSource, new RegExp(path.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+  assert.match(runnerSource, /missingArtifactSources/);
+  assert.match(runnerSource, /missingArtifactSources\.length \? 'BLOCKED' : 'PASS'/);
+  assert.doesNotMatch(runnerSource, /inventory\.length\s*>=\s*4/);
+});
+
 test('issue #103 redacts tokens, Venezuelan phones and full WhatsApp group IDs', () => {
   const raw = [
     'Authorization: Bearer abcdefghijklmnop.0123456789',
