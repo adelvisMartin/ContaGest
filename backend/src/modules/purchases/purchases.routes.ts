@@ -5,6 +5,7 @@ import { asyncHandler, HttpError, ok } from '../../shared/http.js';
 import { requirePermission, requireTenant } from '../../shared/middleware/context.js';
 import { validateBody } from '../../shared/middleware/validate.js';
 import { writeAudit } from '../../shared/services/audit.service.js';
+import { runFinancialIdempotentMutation } from '../../shared/services/financial-idempotency.service.js';
 import { assertBalanced, assertPeriodOpen, purchaseInvoiceLinesForLedger } from '../accounting/accounting.service.js';
 import { calculateInvoiceTotals } from '../../shared/financial/invoice.js';
 import { decimalSchema } from '../../shared/financial/zod.js';
@@ -33,6 +34,8 @@ const purchaseSchema = z.object({
 
 const cancellationSchema = z.object({ reason: z.string().trim().min(3).max(500).optional() });
 const context = (req: any) => req.context as { tenantId: string; userId?: string; ip?: string; userAgent?: string };
+const requestId = (req: any) => String(req.requestId || '') || null;
+const idempotencyKey = (req: any) => req.header('Idempotency-Key') || null;
 
 router.get('/', asyncHandler(async (req, res) => {
   const { tenantId } = context(req);
@@ -51,9 +54,22 @@ router.post('/', validateBody(purchaseSchema), asyncHandler(async (req, res) => 
   const subtotal = calculated.subtotal;
   const iva = calculated.tax;
   const total = calculated.total;
-  if (req.body.status !== 'draft') await assertPeriodOpen(ctx.tenantId, req.body.fiscalPeriod);
 
-  const result = await prisma.$transaction(async (tx) => {
+  const execution = await runFinancialIdempotentMutation({
+    tenantId: ctx.tenantId,
+    scope: 'purchases.create',
+    key: idempotencyKey(req),
+    request: req.body,
+    requestId: requestId(req),
+    replay: async (tx, record) => {
+      if (!record.resourceId) throw new HttpError(409, 'El resultado original de la compra no tiene recurso asociado.', { code: 'IDEMPOTENCY_RESULT_UNAVAILABLE', scope: 'purchases.create' });
+      const purchase = await tx.purchaseInvoice.findFirst({ where: { id: record.resourceId, tenantId: ctx.tenantId }, include: { supplier: true, lines: true } });
+      if (!purchase) throw new HttpError(409, 'La compra original ya no puede reconstruirse.', { code: 'IDEMPOTENCY_RESULT_UNAVAILABLE', scope: 'purchases.create' });
+      const ledger = await tx.ledgerEntry.findFirst({ where: { tenantId: ctx.tenantId, source: 'purchase', sourceId: purchase.id }, select: { id: true } });
+      return { ...purchase, ledgerEntryId: ledger?.id || null };
+    }
+  }, async (tx) => {
+    if (req.body.status !== 'draft') await assertPeriodOpen(ctx.tenantId, req.body.fiscalPeriod, tx);
     const purchase = await tx.purchaseInvoice.create({
       data: { tenantId: ctx.tenantId, supplierId: req.body.supplierId, number: req.body.number, controlNo: req.body.controlNo, fiscalPeriod: req.body.fiscalPeriod, subtotal, iva, total, status: req.body.status, ocrStatus: req.body.ocrStatus, lines: { create: lines } },
       include: { supplier: true, lines: true }
@@ -85,27 +101,53 @@ router.post('/', validateBody(purchaseSchema), asyncHandler(async (req, res) => 
       });
       ledgerEntryId = ledgerEntry.id;
     }
-    return { purchase, ledgerEntryId };
+    return { data: { ...purchase, ledgerEntryId }, resourceType: 'PurchaseInvoice', resourceId: purchase.id };
   });
 
-  await writeAudit({ tenantId: ctx.tenantId, userId: ctx.userId, action: 'create', entity: 'PurchaseInvoice', entityId: result.purchase.id, after: { ...result.purchase, ledgerEntryId: result.ledgerEntryId }, ipAddress: ctx.ip, userAgent: ctx.userAgent });
-  ok(res, { ...result.purchase, ledgerEntryId: result.ledgerEntryId });
+  res.setHeader('Idempotency-Replayed', execution.replayed ? 'true' : 'false');
+  if (execution.replayed) {
+    await writeAudit({ tenantId: ctx.tenantId, userId: ctx.userId, action: 'idempotency.replay', entity: 'PurchaseInvoice', entityId: (execution.data as any).id, after: { scope: 'purchases.create', recordId: execution.recordId, originalRequestId: execution.originalRequestId, requestId: requestId(req) }, ipAddress: ctx.ip, userAgent: ctx.userAgent });
+  } else {
+    await writeAudit({ tenantId: ctx.tenantId, userId: ctx.userId, action: 'create', entity: 'PurchaseInvoice', entityId: (execution.data as any).id, after: execution.data, ipAddress: ctx.ip, userAgent: ctx.userAgent });
+  }
+  ok(res, execution.data, execution.responseCode);
 }));
 
 router.patch('/:id/cancel', validateBody(cancellationSchema), asyncHandler(async (req, res) => {
   const ctx = context(req);
-  const purchase = await prisma.purchaseInvoice.findFirst({ where: { id: req.params.id, tenantId: ctx.tenantId }, include: { supplier: true, lines: true } });
-  if (!purchase) throw new HttpError(404, 'Compra no encontrada.');
-  if (purchase.status === 'draft') throw new HttpError(409, 'Los borradores se eliminan; no se anulan.');
+  const purchaseId = req.params.id;
+  const scope = 'purchases.cancel';
+  let beforePurchase: any = null;
 
-  const reversalSourceId = `purchase-cancel:${purchase.id}`;
-  if (purchase.status === 'cancelled') {
-    const reversal = await prisma.ledgerEntry.findFirst({ where: { tenantId: ctx.tenantId, source: 'manual', sourceId: reversalSourceId } });
-    return ok(res, { purchase, reversalId: reversal?.id || null, alreadyCancelled: true });
-  }
-  await assertPeriodOpen(ctx.tenantId, purchase.fiscalPeriod);
+  const execution = await runFinancialIdempotentMutation({
+    tenantId: ctx.tenantId,
+    scope,
+    key: idempotencyKey(req),
+    request: { purchaseId, ...req.body },
+    requestId: requestId(req),
+    replay: async (tx, record) => {
+      const resourceId = record.resourceId || purchaseId;
+      const purchase = await tx.purchaseInvoice.findFirst({ where: { id: resourceId, tenantId: ctx.tenantId }, include: { supplier: true, lines: true } });
+      if (!purchase) throw new HttpError(409, 'La anulación original ya no puede reconstruirse.', { code: 'IDEMPOTENCY_RESULT_UNAVAILABLE', scope });
+      const reversal = await tx.ledgerEntry.findFirst({ where: { tenantId: ctx.tenantId, source: 'manual', sourceId: `purchase-cancel:${purchase.id}` } });
+      return { purchase, reversalId: reversal?.id || null, alreadyCancelled: true };
+    }
+  }, async (tx) => {
+    const lockKey = `${scope}:${ctx.tenantId}:${purchaseId}`;
+    await tx.$queryRaw<Array<{ locked: string | null }>>`SELECT pg_advisory_xact_lock(hashtextextended(${lockKey}, 0))::text AS locked`;
 
-  const result = await prisma.$transaction(async (tx) => {
+    const purchase = await tx.purchaseInvoice.findFirst({ where: { id: purchaseId, tenantId: ctx.tenantId }, include: { supplier: true, lines: true } });
+    if (!purchase) throw new HttpError(404, 'Compra no encontrada.');
+    beforePurchase = purchase;
+    if (purchase.status === 'draft') throw new HttpError(409, 'Los borradores se eliminan; no se anulan.');
+
+    const reversalSourceId = `purchase-cancel:${purchase.id}`;
+    if (purchase.status === 'cancelled') {
+      const reversal = await tx.ledgerEntry.findFirst({ where: { tenantId: ctx.tenantId, source: 'manual', sourceId: reversalSourceId } });
+      return { data: { purchase, reversalId: reversal?.id || null, alreadyCancelled: true }, resourceType: 'PurchaseInvoice', resourceId: purchase.id };
+    }
+
+    await assertPeriodOpen(ctx.tenantId, purchase.fiscalPeriod, tx);
     const originalEntries = await tx.ledgerEntry.findMany({ where: { tenantId: ctx.tenantId, OR: [{ purchaseInvoiceId: purchase.id }, { source: 'purchase', sourceId: purchase.id }] }, include: { lines: true } });
     let reversal = await tx.ledgerEntry.findFirst({ where: { tenantId: ctx.tenantId, source: 'manual', sourceId: reversalSourceId } });
     const originalLines = originalEntries.flatMap((entry) => entry.lines);
@@ -133,11 +175,16 @@ router.patch('/:id/cancel', validateBody(cancellationSchema), asyncHandler(async
       });
     }
     const cancelled = await tx.purchaseInvoice.update({ where: { id: purchase.id }, data: { status: 'cancelled' }, include: { supplier: true, lines: true } });
-    return { purchase: cancelled, reversalId: reversal?.id || null, reversedEntries: originalEntries.map((entry) => entry.id), accountingWarning: originalLines.length ? null : 'La compra no tenía asiento contable asociado.' };
+    return { data: { purchase: cancelled, reversalId: reversal?.id || null, reversedEntries: originalEntries.map((entry) => entry.id), accountingWarning: originalLines.length ? null : 'La compra no tenía asiento contable asociado.', alreadyCancelled: false }, resourceType: 'PurchaseInvoice', resourceId: purchase.id };
   });
 
-  await writeAudit({ tenantId: ctx.tenantId, userId: ctx.userId, action: 'cancel', entity: 'PurchaseInvoice', entityId: purchase.id, before: purchase, after: { ...result, reason: req.body.reason || 'Anulación solicitada desde Compras' }, ipAddress: ctx.ip, userAgent: ctx.userAgent });
-  ok(res, result);
+  res.setHeader('Idempotency-Replayed', execution.replayed ? 'true' : 'false');
+  if (execution.replayed) {
+    await writeAudit({ tenantId: ctx.tenantId, userId: ctx.userId, action: 'idempotency.replay', entity: 'PurchaseInvoice', entityId: purchaseId, after: { scope, recordId: execution.recordId, originalRequestId: execution.originalRequestId, requestId: requestId(req) }, ipAddress: ctx.ip, userAgent: ctx.userAgent });
+  } else {
+    await writeAudit({ tenantId: ctx.tenantId, userId: ctx.userId, action: 'cancel', entity: 'PurchaseInvoice', entityId: purchaseId, before: beforePurchase, after: { ...execution.data, reason: req.body.reason || 'Anulación solicitada desde Compras' }, ipAddress: ctx.ip, userAgent: ctx.userAgent });
+  }
+  ok(res, execution.data, execution.responseCode);
 }));
 
 router.delete('/:id', asyncHandler(async (req, res) => {

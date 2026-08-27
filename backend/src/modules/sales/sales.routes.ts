@@ -6,6 +6,7 @@ import { requirePermission, requireTenant } from '../../shared/middleware/contex
 import { validateBody } from '../../shared/middleware/validate.js';
 import { assertBalanced, assertPeriodOpen, salesInvoiceLinesForLedger } from '../accounting/accounting.service.js';
 import { writeAudit } from '../../shared/services/audit.service.js';
+import { runFinancialIdempotentMutation } from '../../shared/services/financial-idempotency.service.js';
 import { calculateInvoiceTotals } from '../../shared/financial/invoice.js';
 import { decimalSchema } from '../../shared/financial/zod.js';
 import { ONE, ZERO } from '../../shared/financial/decimal.js';
@@ -34,6 +35,8 @@ const saleSchema = z.object({
 });
 const cancellationSchema = z.object({ reason: z.string().trim().min(3).max(500).optional() });
 const context = (req: any) => req.context as { tenantId: string; userId?: string; ip?: string; userAgent?: string };
+const requestId = (req: any) => String(req.requestId || '') || null;
+const idempotencyKey = (req: any) => req.header('Idempotency-Key') || null;
 
 router.get('/', requirePermission('sales.view'), asyncHandler(async (req, res) => {
   const tenantId = context(req).tenantId;
@@ -52,9 +55,22 @@ router.post('/', requirePermission('sales.manage'), validateBody(saleSchema), as
   const subtotal = calculated.subtotal;
   const iva = calculated.tax;
   const total = calculated.total;
-  if (req.body.status !== 'draft') await assertPeriodOpen(ctx.tenantId, req.body.fiscalPeriod);
 
-  const result = await prisma.$transaction(async (tx) => {
+  const execution = await runFinancialIdempotentMutation({
+    tenantId: ctx.tenantId,
+    scope: 'sales.create',
+    key: idempotencyKey(req),
+    request: req.body,
+    requestId: requestId(req),
+    replay: async (tx, record) => {
+      if (!record.resourceId) throw new HttpError(409, 'El resultado original de la venta no tiene recurso asociado.', { code: 'IDEMPOTENCY_RESULT_UNAVAILABLE', scope: 'sales.create' });
+      const sale = await tx.salesInvoice.findFirst({ where: { id: record.resourceId, tenantId: ctx.tenantId }, include: { lines: true } });
+      if (!sale) throw new HttpError(409, 'La venta original ya no puede reconstruirse.', { code: 'IDEMPOTENCY_RESULT_UNAVAILABLE', scope: 'sales.create' });
+      const ledger = await tx.ledgerEntry.findFirst({ where: { tenantId: ctx.tenantId, source: 'sales', sourceId: sale.id }, select: { id: true } });
+      return { ...sale, ledgerEntryId: ledger?.id || null };
+    }
+  }, async (tx) => {
+    if (req.body.status !== 'draft') await assertPeriodOpen(ctx.tenantId, req.body.fiscalPeriod, tx);
     const sale = await tx.salesInvoice.create({
       data: {
         tenantId: ctx.tenantId,
@@ -100,24 +116,53 @@ router.post('/', requirePermission('sales.manage'), validateBody(saleSchema), as
       });
       ledgerEntryId = ledger.id;
     }
-    return { sale, ledgerEntryId };
+    return { data: { ...sale, ledgerEntryId }, resourceType: 'SalesInvoice', resourceId: sale.id };
   });
-  await writeAudit({ tenantId: ctx.tenantId, userId: ctx.userId, action: 'create', entity: 'salesInvoice', entityId: result.sale.id, after: { ...result.sale, ledgerEntryId: result.ledgerEntryId }, ipAddress: ctx.ip, userAgent: ctx.userAgent });
-  ok(res, { ...result.sale, ledgerEntryId: result.ledgerEntryId });
+
+  res.setHeader('Idempotency-Replayed', execution.replayed ? 'true' : 'false');
+  if (execution.replayed) {
+    await writeAudit({ tenantId: ctx.tenantId, userId: ctx.userId, action: 'idempotency.replay', entity: 'salesInvoice', entityId: (execution.data as any).id, after: { scope: 'sales.create', recordId: execution.recordId, originalRequestId: execution.originalRequestId, requestId: requestId(req) }, ipAddress: ctx.ip, userAgent: ctx.userAgent });
+  } else {
+    await writeAudit({ tenantId: ctx.tenantId, userId: ctx.userId, action: 'create', entity: 'salesInvoice', entityId: (execution.data as any).id, after: execution.data, ipAddress: ctx.ip, userAgent: ctx.userAgent });
+  }
+  ok(res, execution.data, execution.responseCode);
 }));
 
 router.patch('/:id/cancel', requirePermission('sales.manage'), validateBody(cancellationSchema), asyncHandler(async (req, res) => {
   const ctx = context(req);
-  const sale = await prisma.salesInvoice.findFirst({ where: { id: req.params.id, tenantId: ctx.tenantId }, include: { lines: true } });
-  if (!sale) throw new HttpError(404, 'Venta no encontrada.');
-  if (sale.status === 'draft') throw new HttpError(409, 'Los borradores se eliminan; no se anulan.');
-  const reversalSourceId = `sales-cancel:${sale.id}`;
-  if (sale.status === 'cancelled') {
-    const reversal = await prisma.ledgerEntry.findFirst({ where: { tenantId: ctx.tenantId, source: 'manual', sourceId: reversalSourceId } });
-    return ok(res, { sale, reversalId: reversal?.id || null, alreadyCancelled: true });
-  }
-  await assertPeriodOpen(ctx.tenantId, sale.fiscalPeriod);
-  const result = await prisma.$transaction(async (tx) => {
+  const saleId = req.params.id;
+  const scope = 'sales.cancel';
+  let beforeSale: any = null;
+
+  const execution = await runFinancialIdempotentMutation({
+    tenantId: ctx.tenantId,
+    scope,
+    key: idempotencyKey(req),
+    request: { saleId, ...req.body },
+    requestId: requestId(req),
+    replay: async (tx, record) => {
+      const resourceId = record.resourceId || saleId;
+      const sale = await tx.salesInvoice.findFirst({ where: { id: resourceId, tenantId: ctx.tenantId }, include: { lines: true } });
+      if (!sale) throw new HttpError(409, 'La anulación original ya no puede reconstruirse.', { code: 'IDEMPOTENCY_RESULT_UNAVAILABLE', scope });
+      const reversal = await tx.ledgerEntry.findFirst({ where: { tenantId: ctx.tenantId, source: 'manual', sourceId: `sales-cancel:${sale.id}` } });
+      return { sale, reversalId: reversal?.id || null, alreadyCancelled: true };
+    }
+  }, async (tx) => {
+    const lockKey = `${scope}:${ctx.tenantId}:${saleId}`;
+    await tx.$queryRaw<Array<{ locked: string | null }>>`SELECT pg_advisory_xact_lock(hashtextextended(${lockKey}, 0))::text AS locked`;
+
+    const sale = await tx.salesInvoice.findFirst({ where: { id: saleId, tenantId: ctx.tenantId }, include: { lines: true } });
+    if (!sale) throw new HttpError(404, 'Venta no encontrada.');
+    beforeSale = sale;
+    if (sale.status === 'draft') throw new HttpError(409, 'Los borradores se eliminan; no se anulan.');
+
+    const reversalSourceId = `sales-cancel:${sale.id}`;
+    if (sale.status === 'cancelled') {
+      const reversal = await tx.ledgerEntry.findFirst({ where: { tenantId: ctx.tenantId, source: 'manual', sourceId: reversalSourceId } });
+      return { data: { sale, reversalId: reversal?.id || null, alreadyCancelled: true }, resourceType: 'SalesInvoice', resourceId: sale.id };
+    }
+
+    await assertPeriodOpen(ctx.tenantId, sale.fiscalPeriod, tx);
     const originals = await tx.ledgerEntry.findMany({ where: { tenantId: ctx.tenantId, OR: [{ salesInvoiceId: sale.id }, { source: 'sales', sourceId: sale.id }] }, include: { lines: true } });
     let reversal = await tx.ledgerEntry.findFirst({ where: { tenantId: ctx.tenantId, source: 'manual', sourceId: reversalSourceId } });
     const originalLines = originals.flatMap((entry) => entry.lines);
@@ -145,10 +190,16 @@ router.patch('/:id/cancel', requirePermission('sales.manage'), validateBody(canc
       });
     }
     const cancelled = await tx.salesInvoice.update({ where: { id: sale.id }, data: { status: 'cancelled' }, include: { lines: true } });
-    return { sale: cancelled, reversalId: reversal?.id || null, reversedEntries: originals.map((entry) => entry.id), accountingWarning: originalLines.length ? null : 'La venta no tenía asiento contable asociado.' };
+    return { data: { sale: cancelled, reversalId: reversal?.id || null, reversedEntries: originals.map((entry) => entry.id), accountingWarning: originalLines.length ? null : 'La venta no tenía asiento contable asociado.', alreadyCancelled: false }, resourceType: 'SalesInvoice', resourceId: sale.id };
   });
-  await writeAudit({ tenantId: ctx.tenantId, userId: ctx.userId, action: 'cancel', entity: 'salesInvoice', entityId: sale.id, before: sale, after: { ...result, reason: req.body.reason || 'Anulación solicitada desde Ventas' }, ipAddress: ctx.ip, userAgent: ctx.userAgent });
-  ok(res, result);
+
+  res.setHeader('Idempotency-Replayed', execution.replayed ? 'true' : 'false');
+  if (execution.replayed) {
+    await writeAudit({ tenantId: ctx.tenantId, userId: ctx.userId, action: 'idempotency.replay', entity: 'salesInvoice', entityId: saleId, after: { scope, recordId: execution.recordId, originalRequestId: execution.originalRequestId, requestId: requestId(req) }, ipAddress: ctx.ip, userAgent: ctx.userAgent });
+  } else {
+    await writeAudit({ tenantId: ctx.tenantId, userId: ctx.userId, action: 'cancel', entity: 'salesInvoice', entityId: saleId, before: beforeSale, after: { ...execution.data, reason: req.body.reason || 'Anulación solicitada desde Ventas' }, ipAddress: ctx.ip, userAgent: ctx.userAgent });
+  }
+  ok(res, execution.data, execution.responseCode);
 }));
 
 router.delete('/:id', requirePermission('sales.manage'), asyncHandler(async (req, res) => {

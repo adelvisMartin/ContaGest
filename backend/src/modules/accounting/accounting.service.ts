@@ -1,3 +1,4 @@
+import type { Prisma } from '@prisma/client';
 import { prisma } from '../../database/prisma.js';
 import { HttpError } from '../../shared/http.js';
 import {
@@ -20,6 +21,8 @@ export type LedgerLineInput = {
   exchangeRate?: DecimalInput;
 };
 
+type AccountingDb = Pick<Prisma.TransactionClient, 'closingPeriod' | 'ledgerEntry'>;
+
 export function assertBalanced(lines: LedgerLineInput[]) {
   const debit = add(...lines.map((line) => money(line.debit ?? ZERO)));
   const credit = add(...lines.map((line) => money(line.credit ?? ZERO)));
@@ -33,8 +36,8 @@ export function assertBalanced(lines: LedgerLineInput[]) {
   return { debit, credit };
 }
 
-export async function assertPeriodOpen(tenantId: string, fiscalPeriod: string) {
-  const closed = await prisma.closingPeriod.findFirst({
+export async function assertPeriodOpen(tenantId: string, fiscalPeriod: string, db: AccountingDb = prisma) {
+  const closed = await db.closingPeriod.findFirst({
     where: {
       tenantId,
       period: fiscalPeriod,
@@ -46,7 +49,10 @@ export async function assertPeriodOpen(tenantId: string, fiscalPeriod: string) {
   if (closed) throw new HttpError(409, `El período ${fiscalPeriod} está cerrado para contabilidad. Registra la corrección en un período abierto mediante reverso o ajuste autorizado.`);
 }
 
-export async function createLedgerEntry(input: { tenantId: string; fiscalPeriod: string; description: string; source?: any; sourceId?: string; lines: LedgerLineInput[] }) {
+export async function createLedgerEntry(
+  input: { tenantId: string; fiscalPeriod: string; description: string; source?: any; sourceId?: string; lines: LedgerLineInput[] },
+  db: AccountingDb = prisma
+) {
   const normalizedLines = input.lines.map((line) => ({
     ...line,
     debit: money(line.debit ?? ZERO),
@@ -54,8 +60,8 @@ export async function createLedgerEntry(input: { tenantId: string; fiscalPeriod:
     exchangeRate: exchangeRate(line.exchangeRate ?? ONE)
   }));
   assertBalanced(normalizedLines);
-  await assertPeriodOpen(input.tenantId, input.fiscalPeriod);
-  return prisma.ledgerEntry.create({
+  await assertPeriodOpen(input.tenantId, input.fiscalPeriod, db);
+  return db.ledgerEntry.create({
     data: {
       tenantId: input.tenantId,
       fiscalPeriod: input.fiscalPeriod,
