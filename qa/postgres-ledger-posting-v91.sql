@@ -27,7 +27,7 @@ END $$;
 
 -- Build a valid draft, then perform the only allowed DRAFT -> POSTED transition.
 INSERT INTO "LedgerEntry" ("id","tenantId","fiscalPeriod","description","source","posted")
-VALUES ('qa91-original-a','qa91-tenant-a','2099-01','Original QA 91','manual',FALSE);
+VALUES ('qa91-original-a','qa91-tenant-a','2099-01','Original QA 91 A','manual',FALSE);
 INSERT INTO "LedgerLine" ("id","entryId","accountCode","accountName","debit","credit") VALUES
   ('qa91-original-a-d','qa91-original-a','1.1','Caja',10.00,0.00),
   ('qa91-original-a-c','qa91-original-a','4.1','Ingreso',0.00,10.00);
@@ -105,7 +105,7 @@ END $$;
 
 -- A valid same-tenant reversal is another balanced entry, linked to the immutable original.
 INSERT INTO "LedgerEntry" ("id","tenantId","fiscalPeriod","description","source","sourceId","posted")
-VALUES ('qa91-reversal-a','qa91-tenant-a','2099-02','Reversal QA 91','manual','ledger-reversal:qa91-original-a',FALSE);
+VALUES ('qa91-reversal-a','qa91-tenant-a','2099-02','Reversal QA 91 A','manual','ledger-reversal:qa91-original-a',FALSE);
 INSERT INTO "LedgerLine" ("id","entryId","accountCode","accountName","debit","credit") VALUES
   ('qa91-reversal-a-d','qa91-reversal-a','1.1','Caja',0.00,10.00),
   ('qa91-reversal-a-c','qa91-reversal-a','4.1','Ingreso',10.00,0.00);
@@ -121,7 +121,7 @@ BEGIN
   ) THEN RAISE EXCEPTION 'qa91_reversal_relation_missing'; END IF;
   IF NOT EXISTS (
     SELECT 1 FROM "LedgerEntry"
-    WHERE "id"='qa91-original-a' AND "description"='Original QA 91' AND "posted"=TRUE
+    WHERE "id"='qa91-original-a' AND "description"='Original QA 91 A' AND "posted"=TRUE
   ) THEN RAISE EXCEPTION 'qa91_original_changed_after_reversal'; END IF;
 END $$;
 
@@ -160,19 +160,45 @@ BEGIN
   END;
 END $$;
 
--- Tenant A cannot be referenced by a reversal in tenant B.
+-- A -> B isolation: tenant B cannot reverse tenant A's original.
 INSERT INTO "LedgerEntry" ("id","tenantId","fiscalPeriod","description","source","posted")
-VALUES ('qa91-cross-tenant','qa91-tenant-b','2099-02','Cross tenant reversal','manual',FALSE);
+VALUES ('qa91-cross-tenant-b-to-a','qa91-tenant-b','2099-02','Cross tenant B to A','manual',FALSE);
 INSERT INTO "LedgerLine" ("id","entryId","accountCode","accountName","debit","credit") VALUES
-  ('qa91-cross-tenant-d','qa91-cross-tenant','1.1','Caja',0.00,10.00),
-  ('qa91-cross-tenant-c','qa91-cross-tenant','4.1','Ingreso',10.00,0.00);
+  ('qa91-cross-tenant-b-to-a-d','qa91-cross-tenant-b-to-a','1.1','Caja',0.00,10.00),
+  ('qa91-cross-tenant-b-to-a-c','qa91-cross-tenant-b-to-a','4.1','Ingreso',10.00,0.00);
 DO $$
 BEGIN
   BEGIN
     UPDATE "LedgerEntry"
     SET "posted"=TRUE,"postedAt"=now(),"reversalOfId"='qa91-original-a'
-    WHERE "id"='qa91-cross-tenant';
+    WHERE "id"='qa91-cross-tenant-b-to-a';
     RAISE EXCEPTION 'expected_cross_tenant_reversal_rejection';
+  EXCEPTION WHEN check_violation THEN
+    IF SQLERRM <> 'ledger_reversal_cross_tenant' THEN RAISE; END IF;
+  END;
+END $$;
+
+-- Build a posted original for tenant B so the reverse direction is tested independently.
+INSERT INTO "LedgerEntry" ("id","tenantId","fiscalPeriod","description","source","posted")
+VALUES ('qa91-original-b','qa91-tenant-b','2099-01','Original QA 91 B','manual',FALSE);
+INSERT INTO "LedgerLine" ("id","entryId","accountCode","accountName","debit","credit") VALUES
+  ('qa91-original-b-d','qa91-original-b','1.1','Caja B',7.00,0.00),
+  ('qa91-original-b-c','qa91-original-b','4.1','Ingreso B',0.00,7.00);
+UPDATE "LedgerEntry" SET "posted"=TRUE,"postedAt"=now(),"postedBy"='qa91-actor-b' WHERE "id"='qa91-original-b';
+
+-- B -> A isolation: tenant A cannot reverse tenant B's original.
+INSERT INTO "LedgerEntry" ("id","tenantId","fiscalPeriod","description","source","posted")
+VALUES ('qa91-cross-tenant-a-to-b','qa91-tenant-a','2099-03','Cross tenant A to B','manual',FALSE);
+INSERT INTO "LedgerLine" ("id","entryId","accountCode","accountName","debit","credit") VALUES
+  ('qa91-cross-tenant-a-to-b-d','qa91-cross-tenant-a-to-b','1.1','Caja B',0.00,7.00),
+  ('qa91-cross-tenant-a-to-b-c','qa91-cross-tenant-a-to-b','4.1','Ingreso B',7.00,0.00);
+DO $$
+BEGIN
+  BEGIN
+    UPDATE "LedgerEntry"
+    SET "posted"=TRUE,"postedAt"=now(),"reversalOfId"='qa91-original-b'
+    WHERE "id"='qa91-cross-tenant-a-to-b';
+    RAISE EXCEPTION 'expected_reverse_cross_tenant_rejection';
   EXCEPTION WHEN check_violation THEN
     IF SQLERRM <> 'ledger_reversal_cross_tenant' THEN RAISE; END IF;
   END;
