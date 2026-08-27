@@ -73,16 +73,39 @@ router.post('/', requirePermission('sales.manage'), validateBody(saleSchema), as
 
 router.patch('/:id/cancel',requirePermission('sales.manage'),validateBody(cancellationSchema),asyncHandler(async(req,res)=>{
   const ctx=context(req);
-  const sale=await prisma.salesInvoice.findFirst({where:{id:req.params.id,tenantId:ctx.tenantId},include:{lines:true}});
-  if(!sale)throw new HttpError(404,'Venta no encontrada.');
-  if(sale.status==='draft')throw new HttpError(409,'Los borradores se eliminan; no se anulan.');
-  const reversalSourceId=`sales-cancel:${sale.id}`;
-  if(sale.status==='cancelled'){
-    const reversal=await prisma.ledgerEntry.findFirst({where:{tenantId:ctx.tenantId,source:'manual',sourceId:reversalSourceId}});
-    return ok(res,{sale,reversalId:reversal?.id||null,alreadyCancelled:true});
-  }
-  await assertPeriodOpen(ctx.tenantId,sale.fiscalPeriod);
-  const result=await prisma.$transaction(async(tx)=>{
+  const saleId=req.params.id;
+  const scope='sales.cancel';
+  let beforeSale:any=null;
+
+  const execution=await runFinancialIdempotentMutation({
+    tenantId:ctx.tenantId,
+    scope,
+    key:idempotencyKey(req),
+    request:{saleId,...req.body},
+    requestId:requestId(req),
+    replay:async(tx,record)=>{
+      const resourceId=record.resourceId||saleId;
+      const sale=await tx.salesInvoice.findFirst({where:{id:resourceId,tenantId:ctx.tenantId},include:{lines:true}});
+      if(!sale)throw new HttpError(409,'La anulación original ya no puede reconstruirse.',{code:'IDEMPOTENCY_RESULT_UNAVAILABLE',scope});
+      const reversal=await tx.ledgerEntry.findFirst({where:{tenantId:ctx.tenantId,source:'manual',sourceId:`sales-cancel:${sale.id}`}});
+      return{sale,reversalId:reversal?.id||null,alreadyCancelled:true};
+    }
+  },async(tx)=>{
+    const lockKey=`${scope}:${ctx.tenantId}:${saleId}`;
+    await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtextextended(${lockKey}, 0))`;
+
+    const sale=await tx.salesInvoice.findFirst({where:{id:saleId,tenantId:ctx.tenantId},include:{lines:true}});
+    if(!sale)throw new HttpError(404,'Venta no encontrada.');
+    beforeSale=sale;
+    if(sale.status==='draft')throw new HttpError(409,'Los borradores se eliminan; no se anulan.');
+
+    const reversalSourceId=`sales-cancel:${sale.id}`;
+    if(sale.status==='cancelled'){
+      const reversal=await tx.ledgerEntry.findFirst({where:{tenantId:ctx.tenantId,source:'manual',sourceId:reversalSourceId}});
+      return{data:{sale,reversalId:reversal?.id||null,alreadyCancelled:true},resourceType:'SalesInvoice',resourceId:sale.id};
+    }
+
+    await assertPeriodOpen(ctx.tenantId,sale.fiscalPeriod,tx);
     const originals=await tx.ledgerEntry.findMany({where:{tenantId:ctx.tenantId,OR:[{salesInvoiceId:sale.id},{source:'sales',sourceId:sale.id}]},include:{lines:true}});
     let reversal=await tx.ledgerEntry.findFirst({where:{tenantId:ctx.tenantId,source:'manual',sourceId:reversalSourceId}});
     const originalLines=originals.flatMap((entry)=>entry.lines);
@@ -90,10 +113,16 @@ router.patch('/:id/cancel',requirePermission('sales.manage'),validateBody(cancel
       reversal=await tx.ledgerEntry.create({data:{tenantId:ctx.tenantId,fiscalPeriod:sale.fiscalPeriod,description:`Reverso por anulación de venta ${sale.number}`,source:'manual',sourceId:reversalSourceId,salesInvoiceId:sale.id,posted:originals.some((entry)=>entry.posted),lines:{create:originalLines.map((line)=>({accountCode:line.accountCode,accountName:line.accountName,debit:Number(line.credit||0),credit:Number(line.debit||0),currency:line.currency,exchangeRate:Number(line.exchangeRate||1)}))}}});
     }
     const cancelled=await tx.salesInvoice.update({where:{id:sale.id},data:{status:'cancelled'},include:{lines:true}});
-    return{sale:cancelled,reversalId:reversal?.id||null,reversedEntries:originals.map((entry)=>entry.id),accountingWarning:originalLines.length?null:'La venta no tenía asiento contable asociado.'};
+    return{data:{sale:cancelled,reversalId:reversal?.id||null,reversedEntries:originals.map((entry)=>entry.id),accountingWarning:originalLines.length?null:'La venta no tenía asiento contable asociado.',alreadyCancelled:false},resourceType:'SalesInvoice',resourceId:sale.id};
   });
-  await writeAudit({tenantId:ctx.tenantId,userId:ctx.userId,action:'cancel',entity:'salesInvoice',entityId:sale.id,before:sale,after:{...result,reason:req.body.reason||'Anulación solicitada desde Ventas'},ipAddress:ctx.ip,userAgent:ctx.userAgent});
-  ok(res,result);
+
+  res.setHeader('Idempotency-Replayed',execution.replayed?'true':'false');
+  if(execution.replayed){
+    await writeAudit({tenantId:ctx.tenantId,userId:ctx.userId,action:'idempotency.replay',entity:'salesInvoice',entityId:saleId,after:{scope,recordId:execution.recordId,originalRequestId:execution.originalRequestId,requestId:requestId(req)},ipAddress:ctx.ip,userAgent:ctx.userAgent});
+  }else{
+    await writeAudit({tenantId:ctx.tenantId,userId:ctx.userId,action:'cancel',entity:'salesInvoice',entityId:saleId,before:beforeSale,after:{...execution.data,reason:req.body.reason||'Anulación solicitada desde Ventas'},ipAddress:ctx.ip,userAgent:ctx.userAgent});
+  }
+  ok(res,execution.data,execution.responseCode);
 }));
 
 router.delete('/:id',requirePermission('sales.manage'),asyncHandler(async(req,res)=>{
