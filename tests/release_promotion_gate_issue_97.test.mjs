@@ -5,14 +5,26 @@ import test from 'node:test';
 const promotion = readFileSync(new URL('../scripts/release-promotion-gate-v97.mjs', import.meta.url), 'utf8');
 const verifier = readFileSync(new URL('../scripts/verify-main-protection-v97.mjs', import.meta.url), 'utf8');
 
-test('issue #97 release promotion requires legal and live main governance before full readiness', () => {
+test('issue #97 release promotion requires candidate, legal and live main governance before full readiness', () => {
+  assert.match(promotion, /candidate-reproducibility/);
   assert.match(promotion, /qa:legal:production/);
   assert.match(promotion, /verify-main-protection-v97\.mjs/);
   assert.match(promotion, /production-readiness\.mjs/);
+  const candidateIndex = promotion.indexOf("'candidate-reproducibility'");
   const legalIndex = promotion.indexOf("'legal-production'");
   const governanceIndex = promotion.indexOf("'main-governance-live'");
   const fullIndex = promotion.indexOf("'production-readiness-full'");
-  assert.ok(legalIndex >= 0 && governanceIndex > legalIndex && fullIndex > governanceIndex);
+  assert.ok(candidateIndex >= 0 && legalIndex > candidateIndex && governanceIndex > legalIndex && fullIndex > governanceIndex);
+});
+
+test('issue #97 promotion evidence is bound to exact SHA/branch and rejects dirty state', () => {
+  assert.match(promotion, /git.*rev-parse|rev-parse/);
+  assert.match(promotion, /status', '--porcelain=v1/);
+  assert.match(promotion, /candidate\.dirty/);
+  assert.match(promotion, /evidence\.candidateSha !== candidate\.sha/);
+  assert.match(verifier, /candidateSha: candidateSha \|\| null/);
+  assert.match(verifier, /candidateDirty/);
+  assert.match(verifier, /working tree está dirty/);
 });
 
 test('issue #97 BLOCKED and NOT_EXECUTED can never become promotion PASS', () => {
