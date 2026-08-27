@@ -34,7 +34,7 @@ async function expectStatus(base:string,token:string,path:string,status:number,o
   return result;
 }
 
-test('issue #23 real DB: customer → subscription → tenants → status → payment → commission → audit',async(t)=>{
+test('issue #23/#30 real DB: customer → subscription → governed restriction case → payment → commission → audit',async(t)=>{
   assert.notEqual(String(process.env.NODE_ENV||'').toLowerCase(),'production','Real commercial QA must never run with NODE_ENV=production');
   const tenant=await prisma.tenant.findUnique({where:{rif:QA_TENANT_RIF}});
   assert.ok(tenant,`QA tenant ${QA_TENANT_RIF} not found; run the normal QA database seed first`);
@@ -47,6 +47,8 @@ test('issue #23 real DB: customer → subscription → tenants → status → pa
   let customerId='';
   let agentId='';
   let subscriptionId='';
+  let restrictionCaseId='';
+  let terminationCaseId='';
   let paymentId='';
   let commissionId='';
   let tempTenantId='';
@@ -60,9 +62,10 @@ test('issue #23 real DB: customer → subscription → tenants → status → pa
 
   t.after(async()=>{
     await new Promise<void>((resolve)=>server.close(()=>resolve()));
-    const entityIds=[customerId,agentId,subscriptionId,paymentId,commissionId].filter(Boolean);
+    const entityIds=[customerId,agentId,subscriptionId,restrictionCaseId,terminationCaseId,paymentId,commissionId].filter(Boolean);
     if(entityIds.length)await prisma.auditLog.deleteMany({where:{entityId:{in:entityIds},createdAt:{gte:STARTED_AT}}}).catch(()=>undefined);
     if(subscriptionId){
+      await prisma.$executeRaw`DELETE FROM public."ServiceRestrictionCase" WHERE "subscriptionId"=${subscriptionId}`.catch(()=>undefined);
       await prisma.$executeRaw`DELETE FROM public."Commission" WHERE "subscriptionId"=${subscriptionId}`.catch(()=>undefined);
       await prisma.$executeRaw`DELETE FROM public."SubscriptionPayment" WHERE "subscriptionId"=${subscriptionId}`.catch(()=>undefined);
       await prisma.$executeRaw`DELETE FROM public."ModuleEntitlement" WHERE "subscriptionId"=${subscriptionId}`.catch(()=>undefined);
@@ -82,13 +85,14 @@ test('issue #23 real DB: customer → subscription → tenants → status → pa
     await expectStatus(base,restrictedToken,'/commercial/summary',403);
   });
 
-  await t.test('creates customer, seller and contador subscription using server-side plan defaults',async()=>{
+  await t.test('creates customer, seller and active contador subscription using server-side plan defaults',async()=>{
     const customer=await expectOk(base,token,'/commercial/customers',{method:'POST',body:JSON.stringify({legalName:`${RUN} Cliente`,rif:`J-${RUN}`,contactName:'QA Issue 23',email:`customer.${RUN.toLowerCase()}@qa.local`})});
     customerId=String(customer.id||'');assert.ok(customerId);
     const agent=await expectOk(base,token,'/commercial/agents',{method:'POST',body:JSON.stringify({name:`${RUN} Vendedor`,email:`agent.${RUN.toLowerCase()}@qa.local`,commissionRate:10})});
     agentId=String(agent.id||'');assert.ok(agentId);
-    const subscription=await expectOk(base,token,'/commercial/subscriptions',{method:'POST',body:JSON.stringify({customerAccountId:customerId,salesAgentId:agentId,planCode:'contador',billingCycle:'monthly',currency:'USD',amount:45,status:'trial'})});
+    const subscription=await expectOk(base,token,'/commercial/subscriptions',{method:'POST',body:JSON.stringify({customerAccountId:customerId,salesAgentId:agentId,planCode:'contador',billingCycle:'monthly',currency:'USD',amount:45,status:'active'})});
     subscriptionId=String(subscription.id||'');assert.ok(subscriptionId);
+    assert.equal(subscription.status,'active');
     assert.equal(Number(subscription.maxTenants),3,'contador must inherit maxTenants=3 from the plan template');
     assert.equal(Number(subscription.maxUsers),3,'contador must inherit maxUsers=3 from the plan template');
     assert.equal(String(subscription.customerSegment),'accounting');
@@ -107,15 +111,23 @@ test('issue #23 real DB: customer → subscription → tenants → status → pa
     assert.equal(Number(updated.maxTenants),2);assert.equal(Number(updated.maxUsers),4);
   });
 
-  await t.test('updates modules and executes audited active/suspended/active transitions without deleting data',async()=>{
+  await t.test('retires legacy status mutation and executes governed suspend/reactivate without deleting data',async()=>{
     const updated=await expectOk(base,token,`/commercial/subscriptions/${subscriptionId}/modules`,{method:'PUT',body:JSON.stringify({replace:true,modules:[{moduleCode:'dashboard',kind:'core',quantity:1},{moduleCode:'gimnasio',kind:'vertical',quantity:1}]})});
     assert.ok(updated.modules.some((item:any)=>item.moduleCode==='gimnasio'&&item.status==='active'));
-    let status=await expectOk(base,token,`/commercial/subscriptions/${subscriptionId}/status`,{method:'POST',body:JSON.stringify({status:'active',reason:'QA activate issue 23'})});
-    assert.equal(status.status,'active');
-    status=await expectOk(base,token,`/commercial/subscriptions/${subscriptionId}/status`,{method:'POST',body:JSON.stringify({status:'suspended',reason:'QA suspension without data deletion'})});
-    assert.equal(status.status,'suspended');assert.equal(status.tenants.filter((item:any)=>item.status==='active').length,2);
-    status=await expectOk(base,token,`/commercial/subscriptions/${subscriptionId}/status`,{method:'POST',body:JSON.stringify({status:'active',reason:'QA reactivation'})});
-    assert.equal(status.status,'active');
+    await expectStatus(base,token,`/commercial/subscriptions/${subscriptionId}/status`,410,{method:'POST',body:JSON.stringify({status:'suspended',reason:'legacy bypass must be retired'})});
+    await expectStatus(base,token,`/commercial/subscriptions/${subscriptionId}`,422,{method:'PATCH',body:JSON.stringify({status:'suspended'})});
+
+    const suspended=await expectOk(base,token,`/commercial/subscriptions/${subscriptionId}/suspend`,{method:'POST',body:JSON.stringify({reasonCode:'SEC_ATTACK_ACTIVE',scope:'subscription',evidenceRef:`incident:${RUN}`,effectiveAt:new Date().toISOString()})});
+    restrictionCaseId=String(suspended.case?.id||'');assert.ok(restrictionCaseId);
+    assert.equal(suspended.subscription.status,'suspended');
+    assert.equal(suspended.subscription.tenants.filter((item:any)=>item.status==='active').length,2);
+    const cases=await expectOk(base,token,`/commercial/subscriptions/${subscriptionId}/restriction-cases`);
+    assert.ok(cases.some((item:any)=>String(item.id)===restrictionCaseId&&item.reasonCode==='SEC_ATTACK_ACTIVE'&&item.status==='open'));
+
+    const reactivated=await expectOk(base,token,`/commercial/subscriptions/${subscriptionId}/reactivate`,{method:'POST',body:JSON.stringify({caseId:restrictionCaseId,evidenceRef:`resolved:${RUN}`,effectiveAt:new Date().toISOString()})});
+    assert.equal(reactivated.subscription.status,'active');
+    assert.equal(reactivated.case.status,'resolved');
+    assert.equal(String(reactivated.case.id),restrictionCaseId);
   });
 
   await t.test('registers a paid period, exposes 7-day renewal, earns and pays seller commission',async()=>{
@@ -137,12 +149,23 @@ test('issue #23 real DB: customer → subscription → tenants → status → pa
     assert.equal(paid.status,'paid');assert.ok(paid.paidAt);
   });
 
-  await t.test('filters and commercial audit expose the created lifecycle without audit payload leakage',async()=>{
+  await t.test('termination requires a distinct second reviewer',async()=>{
+    const requested=await expectOk(base,token,`/commercial/subscriptions/${subscriptionId}/terminate`,{method:'POST',body:JSON.stringify({reasonCode:'CUSTOMER_CANCEL',scope:'subscription',evidenceRef:`customer-request:${RUN}`,terminalStatus:'cancelled',effectiveAt:new Date().toISOString()})});
+    terminationCaseId=String(requested.case?.id||'');assert.ok(terminationCaseId);
+    assert.equal(requested.reviewRequired,true);
+    assert.equal(requested.case.status,'pending_review');
+    assert.equal(requested.subscription.status,'active','first confirmation must not terminate the subscription');
+    await expectStatus(base,token,`/commercial/subscriptions/${subscriptionId}/terminate`,403,{method:'POST',body:JSON.stringify({caseId:terminationCaseId,confirm:true})});
+  });
+
+  await t.test('filters and commercial audit expose the governed lifecycle without raw payload leakage',async()=>{
     const filtered=await expectOk(base,token,`/commercial/subscriptions?planCode=contador&salesAgentId=${encodeURIComponent(agentId)}&status=active`);
     assert.ok(filtered.some((row:any)=>String(row.id)===subscriptionId));
     const activity=await expectOk(base,token,'/commercial/activity?limit=250');
-    const relevant=activity.filter((row:any)=>[customerId,agentId,subscriptionId,paymentId,commissionId].includes(String(row.entityId)));
-    assert.ok(relevant.some((row:any)=>row.action==='commercial.subscription.status'));
+    const relevant=activity.filter((row:any)=>[customerId,agentId,subscriptionId,restrictionCaseId,terminationCaseId,paymentId,commissionId].includes(String(row.entityId)));
+    assert.ok(relevant.some((row:any)=>row.action==='commercial.subscription.suspend'&&String(row.entityId)===restrictionCaseId));
+    assert.ok(relevant.some((row:any)=>row.action==='commercial.subscription.reactivate'&&String(row.entityId)===restrictionCaseId));
+    assert.ok(relevant.some((row:any)=>row.action==='commercial.subscription.termination.request'&&String(row.entityId)===terminationCaseId));
     assert.ok(relevant.some((row:any)=>row.action==='commercial.payment.create'));
     assert.ok(relevant.some((row:any)=>row.action==='commercial.commission.status'));
     assert.ok(relevant.every((row:any)=>!Object.hasOwn(row,'before')&&!Object.hasOwn(row,'after')),'activity endpoint must not expose raw audit payloads');
