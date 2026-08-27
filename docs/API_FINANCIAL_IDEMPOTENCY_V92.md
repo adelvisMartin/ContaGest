@@ -15,17 +15,21 @@ La key no identifica al tenant. El tenant se obtiene de la sesión/autenticació
 | Endpoint | Scope de servidor | Cliente web oficial |
 | --- | --- | --- |
 | `POST /api/v1/sales` (status distinto de `draft`) | `sales.create` | key automática |
+| `PATCH /api/v1/sales/:id/cancel` | `sales.cancel` | key automática |
 | `POST /api/v1/purchases` (status distinto de `draft`) | `purchases.create` | key automática |
+| `PATCH /api/v1/purchases/:id/cancel` | `purchases.cancel` | key automática |
 | `POST /api/v1/banking/movements` | `banking.movements.create` | key automática |
 | `POST /api/v1/accounting/entries` | `accounting.entries.create` | key automática |
 
-Los drafts pueden seguir creándose sin key. Si un consumidor suministra key, la primitiva puede proteger también el request, pero la obligación funcional de #92 se centra en efectos financieros.
+Los drafts pueden seguir creándose sin key. Si un consumidor suministra key, la primitive puede proteger también el request, pero la obligación funcional de #92 se centra en efectos financieros.
+
+En cancelaciones, el `:id` del documento se incorpora al request canónico. Reutilizar la misma key para cancelar otro documento produce conflicto aunque el body sea idéntico.
 
 ## Reglas
 
 ### Mismo tenant + scope + key + mismo request
 
-El servidor devuelve el resultado lógico original y no vuelve a ejecutar el efecto. Para los cuatro scopes iniciales la respuesta se reconstruye desde `resourceId` usando siempre el tenant autenticado; no se persiste un snapshot de la respuesta financiera.
+El servidor devuelve el resultado lógico original y no vuelve a ejecutar el efecto. En los scopes financieros iniciales la respuesta se reconstruye desde `resourceId` usando siempre el tenant autenticado; no se persiste un snapshot financiero completo.
 
 Respuesta adicional:
 
@@ -91,7 +95,8 @@ El hash se calcula sobre el request **después de validación Zod**, no sobre by
 - fechas usan ISO 8601;
 - `-0` se normaliza a `0`;
 - valores `undefined` de objetos se omiten;
-- números no finitos son rechazados.
+- números no finitos son rechazados;
+- parámetros de ruta relevantes se incorporan explícitamente en operaciones como cancelación.
 
 Esto permite que representaciones equivalentes produzcan el mismo hash sin ignorar diferencias económicas materiales.
 
@@ -102,13 +107,21 @@ Esto permite que representaciones equivalentes produzcan el mismo hash sin ignor
 3. Si pierde la respuesta por red/timeout, reintenta **con la misma key y el mismo payload lógico**.
 4. Si recibe `409 IDEMPOTENCY_KEY_REUSED`, no debe generar automáticamente una key nueva para el payload distinto; debe tratarlo como conflicto de programación/estado del cliente.
 
-El cliente web de ContaGest ya reutiliza la misma key en su retry de red y cuando un `401` provoca refresh de sesión y reenvío del request.
+El cliente web de ContaGest reutiliza la misma key en su retry de red y cuando un `401` provoca refresh de sesión y reenvío del request.
+
+También usa single-flight para submits financieros idénticos que están simultáneamente en curso: mismo método + ruta + payload comparte una key hasta que todas esas llamadas terminan. Esto cubre el caso práctico de double-click concurrente. Si una integración necesita ejecutar dos operaciones deliberadamente idénticas al mismo tiempo, debe proporcionar keys explícitas distintas.
+
+## Cancelaciones y reversos
+
+`PATCH /sales/:id/cancel` y `PATCH /purchases/:id/cancel` usan idempotencia por key y además un advisory lock transaccional por `tenant + documento`.
+
+Esto evita una carrera incluso cuando dos consumidores envían keys distintas: sólo una transacción puede evaluar y crear el reverso a la vez; la siguiente observa el documento ya cancelado y reutiliza el reverso existente.
 
 ## Compatibilidad temporal sin key
 
-La versión inicial no rompe clientes legacy: si el header falta, el backend ejecuta el flujo anterior y registra `idempotency.missing`.
+La versión inicial no rompe clientes legacy: si el header falta, el backend ejecuta la operación y registra `idempotency.missing`.
 
-**Importante:** un request sin key no obtiene garantía de deduplicación. Esta compatibilidad debe retirarse en una versión posterior cuando los consumidores hayan migrado.
+**Importante:** un request sin key no obtiene garantía general de deduplicación por retry. Las cancelaciones sí conservan protección adicional mediante lock por documento y `sourceId` determinista. Esta compatibilidad debe retirarse en una versión posterior cuando los consumidores hayan migrado.
 
 ## Tenant isolation
 
@@ -131,9 +144,9 @@ No se guarda:
 - cookies;
 - tokens;
 - Authorization header;
-- snapshot de respuesta de ventas, compras, movimientos bancarios o asientos manuales.
+- snapshot financiero completo de ventas, compras, cancelaciones, movimientos bancarios o asientos manuales.
 
-Se guarda hash SHA-256 de key/request, estado, `resourceType`, `resourceId`, código HTTP y metadatos de correlación. En esos cuatro flujos `responsePayload` queda `NULL` y el replay se reconstruye desde la entidad del tenant.
+Se guarda hash SHA-256 de key/request, estado, `resourceType`, `resourceId`, código HTTP y metadatos de correlación. En los consumidores con callback de replay `responsePayload` queda `NULL` y la respuesta se reconstruye desde la entidad del tenant.
 
 ## Retención
 
@@ -152,7 +165,27 @@ idempotency.failed
 idempotency.missing
 ```
 
-`idempotency.concurrent_wait` se emite cuando la colisión de reserva hace esperar apreciablemente a un retry concurrente. Los logs no deben incluir la key completa ni snapshots sensibles.
+`idempotency.concurrent_wait` se emite cuando la colisión de reserva hace esperar apreciablemente a un retry concurrente. Los logs no incluyen la key completa ni snapshots sensibles.
+
+## QA en PostgreSQL real
+
+`qa/financial-idempotency-v92.test.ts` cubre:
+
+- 20 retries concurrentes de venta → una factura y un asiento;
+- 20 retries concurrentes de cancelación de venta → un reverso;
+- 5 retries concurrentes de compra → una factura y un asiento;
+- cancelación de compra con keys distintas → un único reverso gracias al lock por documento;
+- 20 movimientos bancarios concurrentes → una modificación de saldo;
+- 2 postings manuales concurrentes → un asiento;
+- misma key + payload distinto → `409` tipado;
+- rollback antes de commit + retry posterior;
+- replay después de perder la primera respuesta;
+- separación tenant A/B;
+- misma key en scopes distintos;
+- key malformada;
+- `responsePayload = NULL` para replay reconstruible.
+
+El script existente `test:backend:commercial:real` ejecuta también esta suite, por lo que el workflow PostgreSQL E2E existente la incluye cuando los runners de GitHub Actions están disponibles.
 
 ## Nuevos módulos
 
@@ -161,11 +194,13 @@ Para integrar otra mutación financiera:
 1. definir un scope constante y específico;
 2. pasar el tenant del contexto autenticado;
 3. usar el request ya validado como entrada del hash;
-4. ejecutar **todo** el efecto dentro del `TransactionClient` recibido por `runFinancialIdempotentMutation`;
-5. devolver `resourceType/resourceId` cuando exista;
-6. preferir un callback `replay` que reconstruya la respuesta con `resourceId + tenantId` en lugar de persistir snapshots;
-7. añadir pruebas de misma key/mismo payload, key reutilizada con payload distinto, concurrencia, scopes distintos y tenant isolation;
-8. no reemplazar constraints de negocio existentes.
+4. incluir parámetros de ruta que cambien la identidad lógica del request;
+5. ejecutar **todo** el efecto dentro del `TransactionClient` recibido por `runFinancialIdempotentMutation`;
+6. devolver `resourceType/resourceId` cuando exista;
+7. preferir un callback `replay` que reconstruya la respuesta con `resourceId + tenantId` en lugar de persistir snapshots;
+8. añadir pruebas de misma key/mismo payload, key reutilizada con payload distinto, concurrencia, scopes distintos y tenant isolation;
+9. añadir un lock/constraint de negocio cuando distintas keys todavía puedan representar la misma operación irreversible;
+10. no reemplazar constraints de negocio existentes.
 
 ## OpenAPI
 
