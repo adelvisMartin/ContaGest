@@ -14,24 +14,26 @@ export const KardexPage = {
     const movements=(state.inventoryMovements||[]).filter((movement)=>{
       if(movement.productId&&product.id)return String(movement.productId)===String(product.id);
       if(movement.sku&&product.sku)return String(movement.sku)===String(product.sku);
-      return true;
+      return false;
     });
-    const sample=[{id:'ini',at:product.createdAt||new Date().toISOString(),sku:product.sku,productId:product.id,type:'in',qty:Number(product.stock||0),unitCost:Number(product.costUsd||product.cost||0),note:'Saldo disponible al iniciar la vista'},...movements];
-    const rows=buildKardex({product,movements:sample});
+    const rows=buildKardex({product,movements});
     const table=ErpDataTable({
       caption:`Kardex ${product.sku||product.name||''}`,
       columns:[
         {key:'at',label:'Fecha',render:(row)=>safe(dateTime(row.at||row.createdAt))},
-        {key:'type',label:'Tipo',render:(row)=>Badge(safe(row.type||'-'),'neutral')},
+        {key:'type',label:'Tipo',render:(row)=>Badge(safe(row.lifecycle==='reversal'?`reverso/${row.type}`:row.type||'-'),row.lifecycle==='reversal'?'warning':'neutral')},
         {key:'inQty',label:'Entrada',numeric:true,render:(row)=>safe(row.inQty)},
         {key:'outQty',label:'Salida',numeric:true,render:(row)=>safe(row.outQty)},
-        {key:'balanceQty',label:'Saldo',numeric:true,render:(row)=>safe(row.balanceQty)},
+        {key:'balanceQty',label:'Stock',numeric:true,render:(row)=>safe(row.balanceQty)},
+        {key:'reservedQty',label:'Reservado',numeric:true,render:(row)=>safe(row.reservedQty)},
+        {key:'availableQty',label:'Disponible',numeric:true,render:(row)=>safe(row.availableQty)},
         {key:'averageCost',label:'Costo prom.',numeric:true,render:(row)=>safe(usd(row.averageCost))},
         {key:'balanceValue',label:'Valor',numeric:true,render:(row)=>safe(usd(row.balanceValue))},
-        {key:'note',label:'Nota',render:(row)=>safe(row.note||'')}
+        {key:'note',label:'Motivo / referencia',render:(row)=>safe(row.reason||row.note||row.reasonCode||row.source||'')}
       ],rows
     });
     const selector=Select({labelKey:'Producto',name:'kardexProduct',value:String(product.id||product.sku||''),options:products.map((item)=>({value:String(item.id||item.sku),label:`${item.sku||'SKU'} · ${item.name||'Producto'}`})),attrs:'data-query-param="product"'});
-    return `<section class="cg-page-stack">${PageHeader({eyebrowKey:'kardexEyebrow',titleKey:'kardexTitle',descKey:'kardexDesc'})}${ErpSection({title:'Producto a consultar',description:'Selecciona cualquier producto del inventario; el Kardex ya no queda fijado al primer registro.',content:`<div class="cg-record-fields cg-fields-compact">${selector}</div>`})}${ErpSection({title:`${safe(product.name||'Producto')} · ${safe(product.sku||'SKU')}`,description:'Costo promedio ponderado. Los movimientos se filtran por producto y conservan su historial operativo.',content:table})}</section>`;
+    const legacyWarning=!movements.length&&Number(product.stock||0)!==0?`<div class="alert alert-warning"><strong>Saldo histórico sin Kardex reconstruible.</strong> El sistema no inventa un movimiento inicial. Registra/migra el baseline mediante el workflow autorizado antes de declarar integridad.</div>`:'';
+    return `<section class="cg-page-stack">${PageHeader({eyebrowKey:'kardexEyebrow',titleKey:'kardexTitle',descKey:'kardexDesc'})}${ErpSection({title:'Producto a consultar',description:'Selecciona cualquier producto del inventario. Stock y reservas se reconstruyen exclusivamente desde movimientos persistidos.',content:`<div class="cg-record-fields cg-fields-compact">${selector}</div>${legacyWarning}`})}${movements.length?ErpSection({title:`${safe(product.name||'Producto')} · ${safe(product.sku||'SKU')}`,description:'Kardex append-only: entradas, salidas, ajustes, reservas, liberaciones y reversos.',content:table}):EmptyState({title:'Sin movimientos auditables',description:'Este producto todavía no posee movimientos persistidos. El saldo materializado no se usa como evidencia sustituta.',iconName:'fa-clock-rotate-left'})}</section>`;
   }
 };

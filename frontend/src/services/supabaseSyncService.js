@@ -94,6 +94,7 @@ function normalizeProduct(product) {
     category: product.description || 'Inventario',
     stock: number(product.stock),
     reserved: number(product.reserved),
+    available: number(product.available, number(product.stock) - number(product.reserved)),
     min: number(product.minStock),
     costUsd: number(product.cost),
     priceUsd: number(product.price),
@@ -107,14 +108,23 @@ function productPayload(data) {
     sku: data.sku,
     name: data.name,
     description: strip(data.category) || 'Inventario',
-    unit: 'UND',
-    stock: number(data.stock),
-    reserved: number(data.reserved),
+    unit: strip(data.unit) || 'UND',
     minStock: number(data.min),
     cost: number(data.costUsd),
     price: number(data.priceUsd),
     taxRate: number(data.taxRate, 16),
     active: true
+  };
+}
+
+function normalizeInventoryMovement(movement) {
+  return {
+    ...movement,
+    qty: number(movement.quantity),
+    quantity: number(movement.quantity),
+    unitCost: movement.unitCost == null ? null : number(movement.unitCost),
+    at: movement.createdAt,
+    source: movement.source || 'inventory'
   };
 }
 
@@ -277,7 +287,7 @@ export const SupabaseSyncService = {
   mappers: {
     normalizeClient, clientPayload,
     normalizeSupplier, supplierPayload,
-    normalizeProduct, productPayload,
+    normalizeProduct, productPayload, normalizeInventoryMovement,
     normalizeSale, salePayload,
     normalizePurchase, purchasePayload,
     normalizeLedgerEntry, ledgerPayload,
@@ -291,7 +301,7 @@ export const SupabaseSyncService = {
     return safePull('suppliers', () => BackendApi.list('suppliers'), (data) => updateState(ctx.Store, { suppliers: data.map(normalizeSupplier) }), ctx);
   },
   async pullProducts(ctx = {}) {
-    return safePull('products', () => BackendApi.list('products'), (data) => updateState(ctx.Store, { inventory: data.map(normalizeProduct) }), ctx);
+    return safePull('products', () => Promise.all([BackendApi.list('products'), BackendApi.get('/inventory/movements')]), ([products, movements]) => updateState(ctx.Store, { inventory: products.map(normalizeProduct), inventoryMovements: (movements || []).map(normalizeInventoryMovement) }), ctx);
   },
   async pullSales(ctx = {}) {
     return safePull('sales', () => BackendApi.list('sales'), (data) => updateState(ctx.Store, { sales: data.map(normalizeSale) }), ctx);
@@ -318,7 +328,7 @@ export const SupabaseSyncService = {
       compras: () => Promise.all([this.pullSuppliers(ctx), this.pullPurchases(ctx)]),
       proveedores: () => this.pullSuppliers(ctx),
       contabilidad: () => this.pullLedger(ctx),
-      kardex: () => Promise.all([this.pullProducts(ctx), this.pullLedger(ctx)]),
+      kardex: () => this.pullProducts(ctx),
       'plan-cuentas': () => this.pullChartAccounts(ctx),
       pedidos: () => this.pullFoodOrders(ctx),
       'pos-sede': () => this.pullFoodOrders(ctx),
@@ -355,5 +365,5 @@ export const SupabaseSyncService = {
   async createLedgerEntry(data) { return normalizeLedgerEntry(await BackendApi.request('/accounting/entries', { method: 'POST', body: ledgerPayload(data) })); },
 
   async createFoodOrder(order) { return normalizeFoodOrder(await BackendApi.request('/food/orders', { method: 'POST', body: order })); },
-  async updateFoodOrderStatus(orderId, status) { return normalizeFoodOrder(await BackendApi.request(`/food/orders/${encodeURIComponent(orderId)}/status`, { method: 'POST', body: { status } })); }
+  async updateFoodOrderStatus(orderId, status) { return normalizeFoodOrder(await BackendApi.request(`/food/orders/${encodeURIComponent(orderId)}/status`, { method: 'POST', body: { status })); }
 };
