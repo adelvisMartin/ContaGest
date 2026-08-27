@@ -1,0 +1,37 @@
+{
+  "schemaVersion": 1,
+  "status": "pending",
+  "reviewedAt": null,
+  "legalDocumentVersion": "2026-08-09.v1",
+  "provider": {
+    "name": "",
+    "rif": "",
+    "address": "",
+    "legalEmail": "",
+    "supportEmail": ""
+  },
+  "reviewer": {
+    "name": "",
+    "jurisdiction": "VE"
+  },
+  "evidence": {
+    "reference": "",
+    "sha256": ""
+  },
+  "approvals": {
+    "professionalReview": false,
+    "providerIdentity": false,
+    "terms": false,
+    "privacy": false,
+    "cookies": false,
+    "acceptableUse": false,
+    "suspensionTermination": false,
+    "jurisdictionDisputes": false,
+    "billingTaxCurrency": false,
+    "accountingTaxRetention": false,
+    "subprocessorsTransfers": false,
+    "cancellationRefundDelinquency": false,
+    "ipEvidencePolicy": false,
+    "humanHealthAddendum": false
+  }
+}
