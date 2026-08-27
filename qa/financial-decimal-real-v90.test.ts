@@ -4,7 +4,20 @@ import { createRealBackendHarness } from './support/real-backend-harness.ts';
 
 const RUN = `QA90-${Date.now().toString(36).toUpperCase()}`;
 const PERIOD = '2096-09';
-const fixed = (value: any, scale = 2) => value?.toFixed ? value.toFixed(scale) : String(value);
+
+function assertExactReversal(original: any, reversal: any) {
+  assert.ok(original?.lines?.length, 'Original ledger has no lines');
+  assert.ok(reversal?.lines?.length, 'Reversal ledger has no lines');
+  assert.equal(reversal.lines.length, original.lines.length, 'Reversal line count differs from original');
+  for (const originalLine of original.lines) {
+    const reversedLine = reversal.lines.find((line: any) => line.accountCode === originalLine.accountCode);
+    assert.ok(reversedLine, `Missing reversal line for ${originalLine.accountCode}`);
+    assert.equal(reversedLine.debit.toFixed(2), originalLine.credit.toFixed(2), `Debit reversal mismatch for ${originalLine.accountCode}`);
+    assert.equal(reversedLine.credit.toFixed(2), originalLine.debit.toFixed(2), `Credit reversal mismatch for ${originalLine.accountCode}`);
+    assert.equal(reversedLine.currency, originalLine.currency, `Currency reversal mismatch for ${originalLine.accountCode}`);
+    assert.equal(reversedLine.exchangeRate.toFixed(4), originalLine.exchangeRate.toFixed(4), `Exchange-rate reversal mismatch for ${originalLine.accountCode}`);
+  }
+}
 
 test('issue #90 decimal financial core reconciles API, domain and PostgreSQL exactly', async (t) => {
   const h = await createRealBackendHarness();
@@ -59,7 +72,7 @@ test('issue #90 decimal financial core reconciles API, domain and PostgreSQL exa
     assert.equal(row.balanceExact, '0.10');
   });
 
-  await t.test('sales golden dataset persists line totals, IVA, total and ledger without residues', async () => {
+  await t.test('sales golden dataset persists exact totals, posting and reversible ledger', async () => {
     const sale = await h.ok('/sales', {
       method: 'POST',
       body: JSON.stringify({
@@ -76,22 +89,39 @@ test('issue #90 decimal financial core reconciles API, domain and PostgreSQL exa
     });
     ids.sales.push(sale.id);
     if (sale.ledgerEntryId) ids.ledgers.push(sale.ledgerEntryId);
-    const stored = await h.prisma.salesInvoice.findUnique({ where: { id: sale.id }, include: { lines: true, ledgerEntries: { include: { lines: true } } } });
+    const stored = await h.prisma.salesInvoice.findUnique({ where: { id: sale.id }, include: { lines: true } });
     assert.ok(stored);
     assert.deepEqual(stored.lines.map((line) => line.total.toFixed(2)), ['3.33', '0.20']);
     assert.equal(stored.subtotal.toFixed(2), '3.53');
     assert.equal(stored.iva.toFixed(2), '0.56');
     assert.equal(stored.total.toFixed(2), '4.09');
     assert.equal(stored.exchangeRate.toFixed(4), '36.1234');
-    const ledger = stored.ledgerEntries[0];
-    assert.ok(ledger);
-    const debit = ledger.lines.reduce((sum, line) => sum.plus(line.debit), stored.total.minus(stored.total));
-    const credit = ledger.lines.reduce((sum, line) => sum.plus(line.credit), stored.total.minus(stored.total));
+
+    const originalLedger = await h.prisma.ledgerEntry.findFirst({
+      where: { tenantId: h.tenant.id, source: 'sales', sourceId: sale.id },
+      include: { lines: true }
+    });
+    assert.ok(originalLedger);
+    const debit = originalLedger.lines.reduce((sum, line) => sum.plus(line.debit), stored.total.minus(stored.total));
+    const credit = originalLedger.lines.reduce((sum, line) => sum.plus(line.credit), stored.total.minus(stored.total));
     assert.equal(debit.toFixed(2), '4.09');
     assert.equal(credit.toFixed(2), '4.09');
+
+    const cancelled = await h.ok(`/sales/${sale.id}/cancel`, {
+      method: 'PATCH',
+      body: JSON.stringify({ reason: 'QA90 exact decimal reversal' })
+    });
+    assert.equal(cancelled.sale.status, 'cancelled');
+    assert.ok(cancelled.reversalId);
+    ids.ledgers.push(cancelled.reversalId);
+    const reversal = await h.prisma.ledgerEntry.findUnique({ where: { id: cancelled.reversalId }, include: { lines: true } });
+    assertExactReversal(originalLedger, reversal);
+    const repeated = await h.ok(`/sales/${sale.id}/cancel`, { method: 'PATCH', body: JSON.stringify({ reason: 'QA90 idempotency' }) });
+    assert.equal(repeated.alreadyCancelled, true);
+    assert.equal(repeated.reversalId, cancelled.reversalId);
   });
 
-  await t.test('purchase golden dataset uses the same centralized rounding boundary', async () => {
+  await t.test('purchase golden dataset uses the same rounding boundary and exact reversal', async () => {
     const purchase = await h.ok('/purchases', {
       method: 'POST',
       body: JSON.stringify({
@@ -109,6 +139,24 @@ test('issue #90 decimal financial core reconciles API, domain and PostgreSQL exa
     assert.equal(stored.subtotal.toFixed(2), '20.09');
     assert.equal(stored.iva.toFixed(2), '3.21');
     assert.equal(stored.total.toFixed(2), '23.30');
+
+    const originalLedger = await h.prisma.ledgerEntry.findFirst({
+      where: { tenantId: h.tenant.id, source: 'purchase', sourceId: purchase.id },
+      include: { lines: true }
+    });
+    assert.ok(originalLedger);
+    const cancelled = await h.ok(`/purchases/${purchase.id}/cancel`, {
+      method: 'PATCH',
+      body: JSON.stringify({ reason: 'QA90 exact purchase reversal' })
+    });
+    assert.equal(cancelled.purchase.status, 'cancelled');
+    assert.ok(cancelled.reversalId);
+    ids.ledgers.push(cancelled.reversalId);
+    const reversal = await h.prisma.ledgerEntry.findUnique({ where: { id: cancelled.reversalId }, include: { lines: true } });
+    assertExactReversal(originalLedger, reversal);
+    const repeated = await h.ok(`/purchases/${purchase.id}/cancel`, { method: 'PATCH', body: JSON.stringify({ reason: 'QA90 idempotency' }) });
+    assert.equal(repeated.alreadyCancelled, true);
+    assert.equal(repeated.reversalId, cancelled.reversalId);
   });
 
   await t.test('bank balance applies and reverses 0.20 over 0.10 exactly', async () => {
