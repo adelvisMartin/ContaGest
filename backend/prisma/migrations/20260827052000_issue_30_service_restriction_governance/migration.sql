@@ -40,6 +40,43 @@ CREATE INDEX IF NOT EXISTS "ServiceRestrictionCase_reason_idx"
 CREATE INDEX IF NOT EXISTS "ServiceRestrictionCase_review_idx"
   ON public."ServiceRestrictionCase" ("status", "action", "openedAt" DESC)
   WHERE "status" = 'pending_review';
+CREATE UNIQUE INDEX IF NOT EXISTS "ServiceRestrictionCase_one_active_per_subscription"
+  ON public."ServiceRestrictionCase" ("subscriptionId")
+  WHERE "status" IN ('open','pending_review');
+
+CREATE OR REPLACE FUNCTION private.enforce_service_restriction_case_transition()
+RETURNS trigger
+LANGUAGE plpgsql
+SET search_path = pg_catalog, public, private
+AS $$
+BEGIN
+  IF OLD."status" IN ('resolved','void') THEN
+    RAISE EXCEPTION 'service_restriction_case_already_closed' USING ERRCODE = '23514';
+  END IF;
+  IF OLD."subscriptionId" IS DISTINCT FROM NEW."subscriptionId"
+     OR OLD."action" IS DISTINCT FROM NEW."action"
+     OR OLD."targetStatus" IS DISTINCT FROM NEW."targetStatus"
+     OR OLD."reasonCode" IS DISTINCT FROM NEW."reasonCode"
+     OR OLD."scope" IS DISTINCT FROM NEW."scope"
+     OR OLD."actorId" IS DISTINCT FROM NEW."actorId"
+     OR OLD."openedAt" IS DISTINCT FROM NEW."openedAt" THEN
+    RAISE EXCEPTION 'service_restriction_case_identity_is_immutable' USING ERRCODE = '23514';
+  END IF;
+  IF OLD."status" = 'open' AND NEW."status" NOT IN ('open','resolved','void') THEN
+    RAISE EXCEPTION 'invalid_service_restriction_case_transition' USING ERRCODE = '23514';
+  END IF;
+  IF OLD."status" = 'pending_review' AND NEW."status" NOT IN ('pending_review','resolved','void') THEN
+    RAISE EXCEPTION 'invalid_service_restriction_case_transition' USING ERRCODE = '23514';
+  END IF;
+  RETURN NEW;
+END $$;
+REVOKE ALL ON FUNCTION private.enforce_service_restriction_case_transition() FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION private.enforce_service_restriction_case_transition() TO service_role;
+
+DROP TRIGGER IF EXISTS "ServiceRestrictionCase_transition_guard" ON public."ServiceRestrictionCase";
+CREATE TRIGGER "ServiceRestrictionCase_transition_guard"
+BEFORE UPDATE ON public."ServiceRestrictionCase"
+FOR EACH ROW EXECUTE FUNCTION private.enforce_service_restriction_case_transition();
 
 ALTER TABLE public."ServiceRestrictionCase" ENABLE ROW LEVEL SECURITY;
 REVOKE ALL PRIVILEGES ON TABLE public."ServiceRestrictionCase" FROM anon, authenticated;
