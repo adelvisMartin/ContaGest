@@ -155,7 +155,7 @@ router.post('/login',validateBody(loginSchema),asyncHandler(async(req,res)=>{
     throw new HttpError(401,INVALID_LOGIN_MESSAGE);
   }
 
-  const tenant=await prisma.tenant.findUnique({where:{rif:throttle.identity.tenantRif}});
+  const tenant=await prisma.tenant.findFirst({where:{rif:{equals:throttle.identity.tenantRif,mode:'insensitive'}}});
   const user=tenant
     ? await prisma.userProfile.findFirst({where:{tenantId:tenant.id,email:throttle.identity.email},include:{userRoles:userRoleInclude}})
     : null;
