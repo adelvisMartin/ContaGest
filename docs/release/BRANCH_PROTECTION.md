@@ -113,6 +113,31 @@ Estados permitidos:
 - `BLOCKED`: GitHub no permitió inspeccionar la regla o infraestructura impidió la verificación;
 - `NOT_EXECUTED`: no se ejecutó la consulta live.
 
+## Gate de promoción formal
+
+La configuración declarativa y el readiness del código no deben evaluarse como mundos separados. Antes de una promoción formal se ejecuta:
+
+```bash
+GITHUB_TOKEN=... node scripts/release-promotion-gate-v97.mjs
+```
+
+Este orquestador exige en orden:
+
+1. gate legal de producción;
+2. verificación **live** de protección de `main`;
+3. readiness completo sólo cuando los dos gates críticos anteriores están en `PASS`.
+
+Genera:
+
+```text
+artifacts/release/promotion-v97.json
+artifacts/release/promotion-v97.md
+```
+
+Si legal o governance están `BLOCKED`, el QA costoso queda explícitamente `NOT_EXECUTED` y la promoción queda `BLOCKED`; no se fabrica un verde parcial. El script nunca aplica branch protection, mergea, despliega ni firma releases.
+
+Mientras GitHub reporte `main protected=false`, una ejecución con permisos de lectura debe terminar `FAIL`; si la plataforma/plan impide leer protection, debe terminar `BLOCKED`. Ninguno de esos estados autoriza promoción.
+
 ## Governance test
 
 Después de activar la protección en GitHub, usar una rama efímera y un PR de prueba. No usar `main` como laboratorio destructivo.
