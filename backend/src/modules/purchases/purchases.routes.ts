@@ -5,7 +5,7 @@ import { asyncHandler, HttpError, ok } from '../../shared/http.js';
 import { requirePermission, requireTenant } from '../../shared/middleware/context.js';
 import { validateBody } from '../../shared/middleware/validate.js';
 import { writeAudit } from '../../shared/services/audit.service.js';
-import { assertBalanced, assertPeriodOpen, purchaseInvoiceLinesForLedger } from '../accounting/accounting.service.js';
+import { assertBalanced, assertPeriodOpen, inverseLedgerLines, purchaseInvoiceLinesForLedger } from '../accounting/accounting.service.js';
 import { calculateInvoiceTotals } from '../../shared/financial/invoice.js';
 import { decimalSchema } from '../../shared/financial/zod.js';
 import { ONE, ZERO } from '../../shared/financial/decimal.js';
@@ -31,7 +31,11 @@ const purchaseSchema = z.object({
   lines: z.array(lineSchema).min(1)
 });
 
-const cancellationSchema = z.object({ reason: z.string().trim().min(3).max(500).optional() });
+const cancellationSchema = z.object({
+  reason: z.string().trim().min(3).max(500).optional(),
+  reversalFiscalPeriod: z.string().regex(/^\d{4}-\d{2}$/, 'Usa formato AAAA-MM.').optional(),
+  reversalDate: z.coerce.date().optional()
+});
 const context = (req: any) => req.context as { tenantId: string; userId?: string; ip?: string; userAgent?: string };
 
 router.get('/', asyncHandler(async (req, res) => {
@@ -63,7 +67,7 @@ router.post('/', validateBody(purchaseSchema), asyncHandler(async (req, res) => 
     if (purchase.status !== 'draft') {
       const ledgerLines = purchaseInvoiceLinesForLedger(purchase);
       assertBalanced(ledgerLines);
-      const ledgerEntry = await tx.ledgerEntry.create({
+      const draftLedger = await tx.ledgerEntry.create({
         data: {
           tenantId: ctx.tenantId,
           fiscalPeriod: purchase.fiscalPeriod,
@@ -71,6 +75,9 @@ router.post('/', validateBody(purchaseSchema), asyncHandler(async (req, res) => 
           source: 'purchase',
           sourceId: purchase.id,
           purchaseInvoiceId: purchase.id,
+          posted: false,
+          postedAt: null,
+          postedBy: null,
           lines: {
             create: ledgerLines.map((line) => ({
               accountCode: line.accountCode,
@@ -81,6 +88,24 @@ router.post('/', validateBody(purchaseSchema), asyncHandler(async (req, res) => 
               exchangeRate: ONE
             }))
           }
+        }
+      });
+      const postedAt = new Date();
+      const ledgerEntry = await tx.ledgerEntry.update({
+        where: { id: draftLedger.id },
+        data: { posted: true, postedAt, postedBy: ctx.userId || null }
+      });
+      await tx.auditLog.create({
+        data: {
+          tenantId: ctx.tenantId,
+          userId: ctx.userId || null,
+          action: 'ledger.entry.posted',
+          entity: 'LedgerEntry',
+          entityId: ledgerEntry.id,
+          before: { posted: false, source: 'purchase', sourceId: purchase.id, fiscalPeriod: purchase.fiscalPeriod },
+          after: { posted: true, postedAt: postedAt.toISOString(), postedBy: ctx.userId || null, source: 'purchase', sourceId: purchase.id, fiscalPeriod: purchase.fiscalPeriod },
+          ipAddress: ctx.ip || null,
+          userAgent: ctx.userAgent || null
         }
       });
       ledgerEntryId = ledgerEntry.id;
@@ -98,45 +123,82 @@ router.patch('/:id/cancel', validateBody(cancellationSchema), asyncHandler(async
   if (!purchase) throw new HttpError(404, 'Compra no encontrada.');
   if (purchase.status === 'draft') throw new HttpError(409, 'Los borradores se eliminan; no se anulan.');
 
-  const reversalSourceId = `purchase-cancel:${purchase.id}`;
+  const originals = await prisma.ledgerEntry.findMany({
+    where: {
+      tenantId: ctx.tenantId,
+      reversalOfId: null,
+      OR: [
+        { source: 'purchase', sourceId: purchase.id },
+        { source: 'purchase', purchaseInvoiceId: purchase.id }
+      ]
+    },
+    include: { lines: true, reversedBy: true },
+    orderBy: { createdAt: 'asc' }
+  });
+  if (originals.length > 1) throw new HttpError(409, 'La compra posee múltiples asientos originales. Requiere conciliación antes de anular para evitar un reverso ambiguo.');
+  const original = originals[0] || null;
+
   if (purchase.status === 'cancelled') {
-    const reversal = await prisma.ledgerEntry.findFirst({ where: { tenantId: ctx.tenantId, source: 'manual', sourceId: reversalSourceId } });
-    return ok(res, { purchase, reversalId: reversal?.id || null, alreadyCancelled: true });
+    return ok(res, { purchase, reversalId: original?.reversedBy?.id || null, alreadyCancelled: true });
   }
-  await assertPeriodOpen(ctx.tenantId, purchase.fiscalPeriod);
+
+  const reversalFiscalPeriod = req.body.reversalFiscalPeriod || purchase.fiscalPeriod;
+  await assertPeriodOpen(ctx.tenantId, reversalFiscalPeriod);
+  if (original && !original.posted) throw new HttpError(409, 'El asiento original de la compra no está contabilizado. Resuelve el backfill/inconsistencia antes de anular.');
 
   const result = await prisma.$transaction(async (tx) => {
-    const originalEntries = await tx.ledgerEntry.findMany({ where: { tenantId: ctx.tenantId, OR: [{ purchaseInvoiceId: purchase.id }, { source: 'purchase', sourceId: purchase.id }] }, include: { lines: true } });
-    let reversal = await tx.ledgerEntry.findFirst({ where: { tenantId: ctx.tenantId, source: 'manual', sourceId: reversalSourceId } });
-    const originalLines = originalEntries.flatMap((entry) => entry.lines);
-    if (!reversal && originalLines.length) {
-      reversal = await tx.ledgerEntry.create({
+    let reversalId: string | null = original?.reversedBy?.id || null;
+    if (original && !reversalId) {
+      const reversalLines = inverseLedgerLines(original.lines);
+      const draftReversal = await tx.ledgerEntry.create({
         data: {
           tenantId: ctx.tenantId,
-          fiscalPeriod: purchase.fiscalPeriod,
+          date: req.body.reversalDate || new Date(),
+          fiscalPeriod: reversalFiscalPeriod,
           description: `Reverso por anulación de compra ${purchase.number}`,
           source: 'manual',
-          sourceId: reversalSourceId,
+          sourceId: `purchase-cancel:${purchase.id}`,
           purchaseInvoiceId: purchase.id,
-          posted: originalEntries.some((entry) => entry.posted),
+          posted: false,
+          postedAt: null,
+          postedBy: null,
           lines: {
-            create: originalLines.map((line) => ({
+            create: reversalLines.map((line) => ({
               accountCode: line.accountCode,
               accountName: line.accountName,
-              debit: line.credit,
-              credit: line.debit,
+              debit: line.debit,
+              credit: line.credit,
               currency: line.currency,
               exchangeRate: line.exchangeRate
             }))
           }
         }
       });
+      const postedAt = new Date();
+      const reversal = await tx.ledgerEntry.update({
+        where: { id: draftReversal.id },
+        data: { posted: true, postedAt, postedBy: ctx.userId || null, reversalOfId: original.id }
+      });
+      await tx.auditLog.create({
+        data: {
+          tenantId: ctx.tenantId,
+          userId: ctx.userId || null,
+          action: 'ledger.entry.reversed',
+          entity: 'LedgerEntry',
+          entityId: reversal.id,
+          before: { originalId: original.id, fiscalPeriod: original.fiscalPeriod, source: 'purchase' },
+          after: { reversalId: reversal.id, reversalOfId: original.id, fiscalPeriod: reversalFiscalPeriod, postedAt: postedAt.toISOString(), source: 'purchase-cancel' },
+          ipAddress: ctx.ip || null,
+          userAgent: ctx.userAgent || null
+        }
+      });
+      reversalId = reversal.id;
     }
     const cancelled = await tx.purchaseInvoice.update({ where: { id: purchase.id }, data: { status: 'cancelled' }, include: { supplier: true, lines: true } });
-    return { purchase: cancelled, reversalId: reversal?.id || null, reversedEntries: originalEntries.map((entry) => entry.id), accountingWarning: originalLines.length ? null : 'La compra no tenía asiento contable asociado.' };
+    return { purchase: cancelled, reversalId, reversedEntries: original ? [original.id] : [], accountingWarning: original ? null : 'La compra no tenía asiento contable asociado.' };
   });
 
-  await writeAudit({ tenantId: ctx.tenantId, userId: ctx.userId, action: 'cancel', entity: 'PurchaseInvoice', entityId: purchase.id, before: purchase, after: { ...result, reason: req.body.reason || 'Anulación solicitada desde Compras' }, ipAddress: ctx.ip, userAgent: ctx.userAgent });
+  await writeAudit({ tenantId: ctx.tenantId, userId: ctx.userId, action: 'cancel', entity: 'PurchaseInvoice', entityId: purchase.id, before: purchase, after: { ...result, reason: req.body.reason || 'Anulación solicitada desde Compras', reversalFiscalPeriod }, ipAddress: ctx.ip, userAgent: ctx.userAgent });
   ok(res, result);
 }));
 
