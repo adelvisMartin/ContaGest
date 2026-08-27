@@ -2,7 +2,7 @@
 
 ## Objetivo
 
-Retirar del toolchain los paquetes obsoletos reportados durante la instalación sin alterar la API pública utilizada por ContaGest.
+Retirar del toolchain los paquetes obsoletos reportados durante la instalación sin alterar la API pública utilizada por ContaGest y mantener el `package-lock.json` sincronizado con los manifiestos.
 
 Paquetes objetivo:
 
@@ -13,66 +13,65 @@ Paquetes objetivo:
 - `fstream@1.0.12`
 - `uuid@8.3.2`
 
-## Causa raíz identificada
+## Causa raíz y reapertura
 
-La cadena obsoleta parte de `exceljs@4.4.0`. Para mantener el specifier público usado por el backend (`exceljs`) y reducir el riesgo de refactor funcional, el manifiesto pasa a un alias npm dirigido al fork mantenido:
+La investigación original identificó que la cadena obsoleta partía de `exceljs@4.4.0`. El backend pasó a conservar el specifier público `exceljs` mediante el alias npm:
 
 ```json
 "exceljs": "npm:@excel.js/exceljs@0.15.0"
 ```
 
-El reemplazo conserva las superficies de `Workbook` y XLSX que deben validarse en el QA funcional antes del merge.
+Después del merge de #127, el manifiesto permaneció correcto, pero el `package-lock.json` de `main` volvió a declarar `backend.dependencies.exceljs` como `4.4.0`. Esa deriva manifiesto/lock hace que la corrección no sea reproducible con `npm ci` y justifica la reapertura de #26.
 
-## Evidencia de resolución de dependencias
+La resolución de seguimiento añade un gate específico que regenera el lock con npm, exige que el archivo versionado sea idéntico al resultado reproducible y falla si reaparece cualquiera de las seis versiones objetivo.
 
-Se regeneró un `package-lock.json` con npm en Node 22 usando el manifiesto actualizado, sin editar el lock manualmente.
+## Invariantes verificadas por el gate
 
-Resultado observado durante esa regeneración:
+`tests/toolchain_dependency_cleanup_issue_26.test.mjs` comprueba que:
 
-- 472 paquetes auditados por npm;
-- lock generado: 214520 bytes;
-- SHA-256 del lock generado: `43f2e4a74b109dbc348db589f113f91cfffc404bc8e49d3a8b9060486e0b42d2`;
-- los seis paquetes obsoletos objetivo dejan de formar parte del árbol generado.
+1. `backend/package.json` usa el alias mantenido;
+2. `package-lock.json` declara el mismo alias para el workspace backend;
+3. el paquete instalado bajo `node_modules/exceljs` corresponde a la versión `0.15.0` del fork;
+4. ninguna entrada del lock contiene las versiones transitorias objetivo;
+5. `@types/bcryptjs` no reaparece.
 
-> Importante: esta evidencia prueba la resolución del árbol generada por npm, pero no sustituye el QA completo de la aplicación.
+`.github/workflows/toolchain-deps-v26.yml` añade evidencia ejecutable:
 
-## QA pendiente antes del merge
+- regeneración determinista del lock con Node 22;
+- artifact del lock regenerado ligado al SHA candidato;
+- comparación `git diff --exit-code package-lock.json`;
+- `npm ci` limpio;
+- `npm ls` de los seis paquetes objetivo;
+- regresión Node del lock;
+- smoke XLSX de escritura + lectura con ExcelJS.
 
-El PR se deja deliberadamente con QA pendiente a petición del responsable del repositorio. No debe interpretarse como PASS de producción.
-
-Ejecutar como mínimo:
+## Criterio de PASS
 
 ```bash
-npm install --package-lock-only --ignore-scripts
-npm ci
-npm ls rimraf lodash.isequal inflight glob fstream uuid
+npm install --package-lock-only --ignore-scripts --no-audit --no-fund
 node --test tests/toolchain_dependency_cleanup_issue_26.test.mjs
-npm --workspace backend run typecheck
-npm run build
+git diff --exit-code -- package-lock.json
+npm ci --ignore-scripts --no-audit --no-fund
+npm ls rimraf lodash.isequal inflight glob fstream uuid --all
 ```
 
-Además, hacer smoke funcional de cualquier flujo que genere o lea XLSX/Excel para confirmar compatibilidad observable con el fork mantenido.
+La salida de `npm ls` puede ser vacía; lo obligatorio es que no aparezcan las versiones objetivo y que el test contractual permanezca verde.
 
-### Criterio esperado para las dependencias objetivo
+## QA funcional
 
-`npm ls rimraf lodash.isequal inflight glob fstream uuid` no debe mostrar las versiones obsoletas indicadas por #26.
+Además del gate de dependencias, debe mantenerse el smoke de compatibilidad de ExcelJS: crear un workbook, serializarlo a XLSX, volver a cargarlo y confirmar el contenido. Esto reduce el riesgo de que la sustitución mantenga el nombre del paquete pero rompa la superficie utilizada por ContaGest.
 
-## Seguridad / npm audit
+## Seguridad / supply chain
 
-Durante la regeneración aislada del lock, npm informó actualmente 3 vulnerabilidades HIGH asociadas a la cadena de Prisma/deepmerge-ts. Ese hallazgo no nace del cambio de ExcelJS y debe tratarse de forma separada para evitar mezclar un upgrade de persistencia con este mantenimiento.
-
-Por lo tanto, este PR **no declara `npm audit` como PASS**.
-
-## Riesgo
-
-**Medio hasta completar QA.** El nombre importado por la aplicación continúa siendo `exceljs`, pero cambia la implementación instalada detrás del alias npm. El riesgo principal es una incompatibilidad no detectada en generación/lectura de archivos XLSX.
+Este ticket no autoriza upgrades indiscriminados de Prisma, PostgreSQL ni otras cadenas no relacionadas. Cualquier vulnerabilidad residual fuera de los seis paquetes objetivo debe conservar su propia evidencia y ticket para evitar mezclar una limpieza acotada con cambios de persistencia de mayor riesgo.
 
 ## Rollback
 
-Si el QA detecta una regresión funcional:
+Si el fork mantenido demuestra incompatibilidad funcional:
 
-1. revertir el cambio de `backend/package.json` a `exceljs@4.4.0`;
-2. regenerar `package-lock.json` con npm;
-3. ejecutar nuevamente instalación, typecheck y smoke XLSX.
+1. revertir el alias de `backend/package.json`;
+2. regenerar `package-lock.json` con npm, nunca editarlo parcialmente a mano;
+3. ejecutar el gate completo y el smoke XLSX;
+4. reabrir #26 con la cadena transitoria resultante documentada.
 
-El rollback restaura el comportamiento anterior, pero también restaura la deuda de dependencias obsoletas que motivó #26.
+El rollback puede restaurar la deuda original, por lo que no debe presentarse como cierre del issue.
