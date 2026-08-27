@@ -23,7 +23,8 @@ test('issue #100 initial Cg set covers foundation primitives and accessibility n
   }
   assert.match(primitives, /CgIconButton requires an accessible label/);
   assert.match(primitives, /aria-label=\{label\}/);
-  assert.match(primitives, /aria-labelledby="cg-dialog-title"/);
+  assert.match(primitives, /const titleId = `cg-dialog-title-/);
+  assert.match(primitives, /aria-labelledby=\{titleId\}/);
 });
 
 test('issue #100 pilots are low-risk surfaces and prevent legacy double promotion', () => {
