@@ -10,12 +10,10 @@ export const productSchema = z.object({
   unit: z.string().optional(),
   cost: decimalSchema('money', { nonnegative: true }).optional(),
   price: decimalSchema('money', { nonnegative: true }).optional(),
-  stock: decimalSchema('quantity', { nonnegative: true }).optional(),
-  reserved: decimalSchema('quantity', { nonnegative: true }).optional(),
   minStock: decimalSchema('quantity', { nonnegative: true }).optional(),
   taxRate: decimalSchema('percentage', { nonnegative: true }).optional(),
   active: z.boolean().optional()
-});
+}).strict();
 export const bankAccountSchema = z.object({
   bankName: z.string().min(2),
   accountNo: z.string().min(4),

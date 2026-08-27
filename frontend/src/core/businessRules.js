@@ -63,22 +63,33 @@ export function applyOrderBusinessTransition({ order, nextStatus, inventory = []
 }
 
 export function buildKardex({ product, movements = [] }) {
-  let qty = 0;
+  let stock = 0;
+  let reserved = 0;
   let avgCost = Number(product?.costUsd || 0);
-  let totalCost = qty * avgCost;
+  let totalCost = 0;
   return movements.filter((m) => !product?.sku || m.sku === product.sku || m.productId === product.id).map((m) => {
-    const inQty = ['in','return','adjustment_in'].includes(m.type) ? Number(m.qty || m.quantity || 0) : 0;
-    const outQty = ['out','reservation','shrinkage','adjustment_out'].includes(m.type) ? Number(m.qty || m.quantity || 0) : 0;
-    const unitCost = Number(m.unitCost || avgCost || 0);
+    const raw = Number(m.qty ?? m.quantity ?? 0);
+    let inQty = 0;
+    let outQty = 0;
+    let reservedDelta = 0;
+    if (m.type === 'in' || m.type === 'return') inQty = Math.abs(raw);
+    else if (m.type === 'out' || m.type === 'shrinkage') outQty = Math.abs(raw);
+    else if (m.type === 'adjustment') {
+      if (raw >= 0) inQty = raw;
+      else outQty = Math.abs(raw);
+    } else if (m.type === 'reservation') reservedDelta = Math.abs(raw);
+    else if (m.type === 'release') reservedDelta = -Math.abs(raw);
+    const unitCost = Number(m.unitCost ?? avgCost ?? 0);
     if (inQty > 0) {
       totalCost += inQty * unitCost;
-      qty += inQty;
-      avgCost = qty ? totalCost / qty : avgCost;
+      stock += inQty;
+      avgCost = stock ? totalCost / stock : avgCost;
     }
     if (outQty > 0) {
-      qty -= outQty;
-      totalCost = Math.max(0, qty * avgCost);
+      stock -= outQty;
+      totalCost = Math.max(0, stock * avgCost);
     }
-    return { ...m, inQty, outQty, balanceQty: qty, averageCost: avgCost, balanceValue: totalCost };
+    if (reservedDelta !== 0) reserved += reservedDelta;
+    return { ...m, inQty, outQty, reservedDelta, balanceQty: stock, reservedQty: reserved, availableQty: stock - reserved, averageCost: avgCost, balanceValue: totalCost };
   });
 }

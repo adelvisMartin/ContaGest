@@ -5,7 +5,7 @@ import {
   requestRouteTemplate,
   sanitizeLogValue
 } from './logger.js';
-import { recordHttpRequest } from './metrics.js';
+import { recordHttpRequest, recordImportBatchDuration } from './metrics.js';
 
 function durationMs(startedAt: bigint) {
   return Number(process.hrtime.bigint() - startedAt) / 1_000_000;
@@ -30,6 +30,9 @@ export function requestObservability(req: Request, res: Response, next: NextFunc
     const tenantRef = tenantId ? pseudonymizeIdentifier('tenant', tenantId) : undefined;
 
     recordHttpRequest({ method, route, status, durationMs: elapsedMs });
+    if (method !== 'GET' && String(req.originalUrl || '').startsWith('/api/v1/imports')) {
+      recordImportBatchDuration(elapsedMs);
+    }
 
     const fields = {
       event: aborted ? 'http.request.aborted' : 'http.request',

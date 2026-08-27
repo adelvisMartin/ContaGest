@@ -1,0 +1,82 @@
+name: "Inventory #94 · Saldos derivados"
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'backend/src/modules/inventory/**'
+      - 'backend/src/modules/schemas.ts'
+      - 'backend/src/modules/index.ts'
+      - 'backend/prisma/**'
+      - 'frontend/src/pages/InventoryPage.js'
+      - 'frontend/src/pages/KardexPage.js'
+      - 'frontend/src/core/businessRules.js'
+      - 'frontend/src/services/inventoryService.js'
+      - 'frontend/src/services/supabaseSyncService.js'
+      - 'qa/inventory-derived-v94.test.ts'
+      - '.github/workflows/inventory-derived-v94.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: inventory-v94-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  inventory-postgres-real:
+    name: Inventory audit + PostgreSQL real
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: contagest_inventory_v94
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres -d contagest_inventory_v94"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      NODE_ENV: test
+      API_MODE: prisma
+      DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/contagest_inventory_v94?schema=public
+      DIRECT_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/contagest_inventory_v94?schema=public
+      APP_URL: http://127.0.0.1:8080
+      CORS_ORIGIN: http://127.0.0.1:8080
+      JWT_SECRET: inventory_v94_only_jwt_secret_0123456789abcdefghijklmnopqrstuvwxyz
+      LICENSE_HASH_SECRET: inventory_v94_only_license_secret_0123456789abcdefghijklmnopqrstuvwxyz
+      SEED_ADMIN_PASSWORD: InventoryV94-QA-Password-2026!
+      ALLOW_DEV_TENANT_HEADER: 'false'
+      SUPABASE_AUTH_FALLBACK: 'false'
+      ALLOW_PUBLIC_REGISTER: 'false'
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install
+        run: npm ci --no-audit --no-fund
+      - name: Prepare PostgreSQL contracts
+        env: { PGPASSWORD: postgres }
+        run: psql -h 127.0.0.1 -U postgres -d contagest_inventory_v94 -v ON_ERROR_STOP=1 -f ops/database/prepare-supabase-ephemeral.sql
+      - name: Migrate
+        run: npm --workspace backend run prisma:deploy
+      - name: Seed
+        run: npm --workspace backend run seed
+      - name: Prisma validate
+        run: npm --workspace backend run db:validate
+      - name: TypeScript
+        run: npm --workspace backend run typecheck
+      - name: Inventory PostgreSQL suite
+        run: npm --workspace backend exec -- tsx --test ../qa/inventory-derived-v94.test.ts
+      - name: Idempotency regression
+        run: npm run test:backend:idempotency:real
+      - name: Build
+        run: npm run build
