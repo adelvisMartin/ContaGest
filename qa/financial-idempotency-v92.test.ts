@@ -27,10 +27,11 @@ test('issue #92 financial idempotency is transactional on real PostgreSQL',async
   const tenantB=await h.prisma.tenant.create({data:{rif:`${RUN}-RIF-B`,name:`${RUN} Tenant B`,legalName:`${RUN} Tenant B`}});
   const moduleRecordIds:string[]=[];
   const bankAccountIds:string[]=[];
+  const auditEntityIds:string[]=[];
 
   t.after(async()=>{
     await h.prisma.idempotencyRecord.deleteMany({where:{OR:[{tenantId:h.tenant.id,requestId:{startsWith:RUN}},{tenantId:tenantB.id}]}}).catch(()=>undefined);
-    await h.prisma.auditLog.deleteMany({where:{tenantId:h.tenant.id,OR:[{action:'idempotency.replay'},{entityId:{startsWith:RUN}}]}}).catch(()=>undefined);
+    await h.prisma.auditLog.deleteMany({where:{tenantId:h.tenant.id,OR:[{entityId:{in:auditEntityIds}},{after:{path:['requestId'],string_starts_with:RUN} as any}]}}).catch(()=>undefined);
     await h.prisma.ledgerEntry.deleteMany({where:{tenantId:h.tenant.id,OR:[{sourceId:{startsWith:RUN}},{description:{startsWith:RUN}}]}}).catch(()=>undefined);
     await h.prisma.salesInvoice.deleteMany({where:{tenantId:h.tenant.id,number:{startsWith:RUN}}}).catch(()=>undefined);
     await h.prisma.purchaseInvoice.deleteMany({where:{tenantId:h.tenant.id,number:{startsWith:RUN}}}).catch(()=>undefined);
@@ -47,12 +48,13 @@ test('issue #92 financial idempotency is transactional on real PostgreSQL',async
     const results=await concurrent(h,'/sales',20,{method:'POST',headers:headers('SALE20'),body:JSON.stringify(body)});
     const ids=new Set(results.map((result:any)=>result.data.id));
     assert.equal(ids.size,1,'Concurrent sale retries returned different invoices');
-    const saleId=[...ids][0] as string;
+    const saleId=[...ids][0] as string;auditEntityIds.push(saleId);
     assert.equal(await h.prisma.salesInvoice.count({where:{tenantId:h.tenant.id,number}}),1);
     assert.equal(await h.prisma.ledgerEntry.count({where:{tenantId:h.tenant.id,source:'sales',sourceId:saleId}}),1);
     const record=await h.prisma.idempotencyRecord.findUnique({where:{tenantId_scope_keyHash:{tenantId:h.tenant.id,scope:'sales.create',keyHash:hashIdempotencyKey(key('SALE20'))}}});
     assert.equal(record?.status,'succeeded');
     assert.equal(record?.resourceId,saleId);
+    assert.equal(record?.responsePayload,null,'Financial route persisted a response snapshot instead of reconstructing it');
     assert.ok(num(record?.hitCount)>=19,`Expected at least 19 replay hits, got ${record?.hitCount}`);
     assert.equal(record?.expiresAt,null);
   });
@@ -63,18 +65,18 @@ test('issue #92 financial idempotency is transactional on real PostgreSQL',async
     const results=await concurrent(h,'/purchases',5,{method:'POST',headers:headers('PURCHASE5'),body:JSON.stringify(body)});
     const ids=new Set(results.map((result:any)=>result.data.id));
     assert.equal(ids.size,1);
-    const purchaseId=[...ids][0] as string;
+    const purchaseId=[...ids][0] as string;auditEntityIds.push(purchaseId);
     assert.equal(await h.prisma.purchaseInvoice.count({where:{tenantId:h.tenant.id,number}}),1);
     assert.equal(await h.prisma.ledgerEntry.count({where:{tenantId:h.tenant.id,source:'purchase',sourceId:purchaseId}}),1);
   });
 
   await t.test('20 concurrent bank retries move the balance once',async()=>{
     const account=await h.ok('/bank-accounts',{method:'POST',body:JSON.stringify({bankName:`${RUN} Bank`,accountNo:`${RUN}-BANK-20`,currency:'USD',balance:100})});
-    bankAccountIds.push(account.id);
+    bankAccountIds.push(account.id);auditEntityIds.push(account.id);
     const body={accountId:account.id,description:`${RUN} bank 20`,reference:RUN,type:'income',currency:'USD',amount:35.5};
     const results=await concurrent(h,'/banking/movements',20,{method:'POST',headers:headers('BANK20'),body:JSON.stringify(body)});
     const ids=new Set(results.map((result:any)=>result.data.id));
-    assert.equal(ids.size,1);
+    assert.equal(ids.size,1);auditEntityIds.push([...ids][0] as string);
     assert.equal(await h.prisma.bankMovement.count({where:{tenantId:h.tenant.id,accountId:account.id,description:body.description}}),1);
     const stored=await h.prisma.bankAccount.findUnique({where:{id:account.id}});
     assert.equal(num(stored?.balance),135.5,'Concurrent retry changed bank balance more than once');
@@ -83,15 +85,16 @@ test('issue #92 financial idempotency is transactional on real PostgreSQL',async
   await t.test('2 concurrent accounting retries create one balanced entry',async()=>{
     const body={fiscalPeriod:OPEN_PERIOD,description:`${RUN} manual ledger`,source:'manual',lines:[{accountCode:`${RUN}.D`,accountName:'QA debit',debit:10,credit:0},{accountCode:`${RUN}.C`,accountName:'QA credit',debit:0,credit:10}]};
     const results=await concurrent(h,'/accounting/entries',2,{method:'POST',headers:headers('LEDGER2'),body:JSON.stringify(body)});
-    assert.equal(new Set(results.map((result:any)=>result.data.id)).size,1);
+    const ids=new Set(results.map((result:any)=>result.data.id));
+    assert.equal(ids.size,1);auditEntityIds.push([...ids][0] as string);
     assert.equal(await h.prisma.ledgerEntry.count({where:{tenantId:h.tenant.id,description:body.description}}),1);
   });
 
   await t.test('same key with a different validated payload returns typed 409',async()=>{
     const account=await h.ok('/bank-accounts',{method:'POST',body:JSON.stringify({bankName:`${RUN} Conflict Bank`,accountNo:`${RUN}-BANK-CONFLICT`,currency:'USD',balance:0})});
-    bankAccountIds.push(account.id);
+    bankAccountIds.push(account.id);auditEntityIds.push(account.id);
     const first={accountId:account.id,description:`${RUN} conflict`,type:'income',currency:'USD',amount:10};
-    await h.ok('/banking/movements',{method:'POST',headers:headers('CONFLICT','CONFLICT-A'),body:JSON.stringify(first)});
+    const created=await h.ok('/banking/movements',{method:'POST',headers:headers('CONFLICT','CONFLICT-A'),body:JSON.stringify(first)});auditEntityIds.push(created.id);
     const second=await h.status('/banking/movements',409,{method:'POST',headers:headers('CONFLICT','CONFLICT-B'),body:JSON.stringify({...first,amount:11})});
     assert.equal(second.payload?.details?.code,'IDEMPOTENCY_KEY_REUSED');
     const stored=await h.prisma.bankAccount.findUnique({where:{id:account.id}});
@@ -104,8 +107,8 @@ test('issue #92 financial idempotency is transactional on real PostgreSQL',async
     await h.status('/banking/movements',404,{method:'POST',headers:headers('ROLLBACK','ROLLBACK-A'),body:JSON.stringify(body)});
     assert.equal(await h.prisma.idempotencyRecord.count({where:{tenantId:h.tenant.id,scope:'banking.movements.create',keyHash:hashIdempotencyKey(key('ROLLBACK'))}}),0,'Failed transaction left a reservation behind');
     await h.prisma.bankAccount.create({data:{id:accountId,tenantId:h.tenant.id,bankName:`${RUN} Later Bank`,accountNo:`${RUN}-BANK-LATER`,currency:'USD',balance:0}});
-    bankAccountIds.push(accountId);
-    const retry=await h.ok('/banking/movements',{method:'POST',headers:headers('ROLLBACK','ROLLBACK-B'),body:JSON.stringify(body)});
+    bankAccountIds.push(accountId);auditEntityIds.push(accountId);
+    const retry=await h.ok('/banking/movements',{method:'POST',headers:headers('ROLLBACK','ROLLBACK-B'),body:JSON.stringify(body)});auditEntityIds.push(retry.id);
     assert.equal(retry.id!==undefined,true);
     const stored=await h.prisma.bankAccount.findUnique({where:{id:accountId}});
     assert.equal(num(stored?.balance),7);
@@ -113,10 +116,10 @@ test('issue #92 financial idempotency is transactional on real PostgreSQL',async
 
   await t.test('a committed result is replayable after the caller loses/ignores the first response',async()=>{
     const account=await h.ok('/bank-accounts',{method:'POST',body:JSON.stringify({bankName:`${RUN} Replay Bank`,accountNo:`${RUN}-BANK-REPLAY`,currency:'USD',balance:50})});
-    bankAccountIds.push(account.id);
+    bankAccountIds.push(account.id);auditEntityIds.push(account.id);
     const body={accountId:account.id,description:`${RUN} replay`,type:'expense',currency:'USD',amount:8};
     const first=await h.request('/banking/movements',{method:'POST',headers:headers('REPLAY','REPLAY-A'),body:JSON.stringify(body)});
-    assert.equal(first.response.status,200);
+    assert.equal(first.response.status,200);auditEntityIds.push(first.data.id);
     const second=await h.request('/banking/movements',{method:'POST',headers:headers('REPLAY','REPLAY-B'),body:JSON.stringify(body)});
     assert.equal(second.response.status,200);
     assert.equal(first.data.id,second.data.id);
@@ -138,9 +141,21 @@ test('issue #92 financial idempotency is transactional on real PostgreSQL',async
     assert.equal(await h.prisma.idempotencyRecord.count({where:{scope:'qa92.tenant-isolation',keyHash:hashIdempotencyKey(sharedKey),tenantId:{in:[h.tenant.id,tenantB.id]}}}),2);
   });
 
+  await t.test('same key is independent across operation scopes in one tenant',async()=>{
+    const sharedKey=key('SCOPES');
+    const a=await runFinancialIdempotentMutation({tenantId:h.tenant.id,scope:'qa92.scope-a',key:sharedKey,request:{value:'a'},requestId:`${RUN}-SCOPE-A`},async(tx)=>{
+      const row=await tx.moduleRecord.create({data:{tenantId:h.tenant.id,moduleSlug:'qa92',title:`${RUN}-SCOPE-A`,status:'test',payload:{value:'a'}}});moduleRecordIds.push(row.id);return{data:{id:row.id},resourceType:'ModuleRecord',resourceId:row.id};
+    });
+    const b=await runFinancialIdempotentMutation({tenantId:h.tenant.id,scope:'qa92.scope-b',key:sharedKey,request:{value:'b'},requestId:`${RUN}-SCOPE-B`},async(tx)=>{
+      const row=await tx.moduleRecord.create({data:{tenantId:h.tenant.id,moduleSlug:'qa92',title:`${RUN}-SCOPE-B`,status:'test',payload:{value:'b'}}});moduleRecordIds.push(row.id);return{data:{id:row.id},resourceType:'ModuleRecord',resourceId:row.id};
+    });
+    assert.notEqual(a.data.id,b.data.id);
+    assert.equal(await h.prisma.idempotencyRecord.count({where:{tenantId:h.tenant.id,keyHash:hashIdempotencyKey(sharedKey),scope:{in:['qa92.scope-a','qa92.scope-b']}}}),2);
+  });
+
   await t.test('malformed key is rejected without executing the effect',async()=>{
     const account=await h.ok('/bank-accounts',{method:'POST',body:JSON.stringify({bankName:`${RUN} Invalid Key Bank`,accountNo:`${RUN}-BANK-INVALID`,currency:'USD',balance:0})});
-    bankAccountIds.push(account.id);
+    bankAccountIds.push(account.id);auditEntityIds.push(account.id);
     const body={accountId:account.id,description:`${RUN} invalid key`,type:'income',currency:'USD',amount:5};
     const result=await h.status('/banking/movements',400,{method:'POST',headers:{'Idempotency-Key':'short','x-request-id':`${RUN}-INVALID`},body:JSON.stringify(body)});
     assert.equal(result.payload?.details?.code,'IDEMPOTENCY_KEY_INVALID');
