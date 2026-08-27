@@ -1,6 +1,8 @@
 import crypto from 'node:crypto';
 import { prisma } from '../../database/prisma.js';
 import { env } from '../../config/env.js';
+import { logger, pseudonymizeIdentifier, sanitizeLogValue } from '../../shared/observability/logger.js';
+import { recordAuthEvent } from '../../shared/observability/metrics.js';
 
 export const INVALID_LOGIN_MESSAGE = 'Credenciales incorrectas.';
 
@@ -174,15 +176,23 @@ export function logAuthSecurityEvent(
   identity: LoginIdentity,
   details: Record<string, unknown> = {}
 ) {
+  const tenantId = typeof details.tenantId === 'string' ? details.tenantId : '';
+  const safeDetails = Object.fromEntries(
+    Object.entries(details)
+      .filter(([key]) => key !== 'tenantId')
+      .map(([key, value]) => [sanitizeLogValue(key, 64), typeof value === 'string' ? sanitizeLogValue(value, 240) : value])
+  );
   const payload = {
     event,
-    requestId: String(req.requestId || ''),
-    tenantId: typeof details.tenantId === 'string' ? details.tenantId : undefined,
+    requestId: sanitizeLogValue(req.requestId || '', 96) || undefined,
+    tenantRef: tenantId ? pseudonymizeIdentifier('tenant', tenantId) : undefined,
     identityHash: telemetryIdentityHash(identity),
-    ...Object.fromEntries(Object.entries(details).filter(([key]) => key !== 'tenantId' || typeof details.tenantId !== 'string'))
+    ...safeDetails
   };
+
+  recordAuthEvent(event);
   // Never pass req.body, cookies, authorization headers, passwords, CAPTCHA tokens or license keys here.
-  console.info('[security:auth]', JSON.stringify(payload));
+  logger.info(payload, 'authentication security event');
 }
 
 async function attemptsForIdentity(identity: LoginIdentity, now: Date, policy: LoginThrottlePolicy) {

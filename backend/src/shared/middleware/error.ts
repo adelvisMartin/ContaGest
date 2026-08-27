@@ -1,5 +1,6 @@
 import type { Request, Response, NextFunction } from 'express';
 import { HttpError } from '../http.js';
+import { requestLogger, requestRouteTemplate, sanitizeLogValue } from '../observability/logger.js';
 
 function databaseMessage(error: Error) {
   const msg = String(error.message || '');
@@ -18,13 +19,37 @@ function databaseMessage(error: Error) {
 }
 
 export function notFound(req: Request, res: Response) {
-  res.status(404).json({ ok: false, message: `Ruta no encontrada: ${req.method} ${req.originalUrl}` });
+  const requestId = sanitizeLogValue((req as any).requestId || '', 96);
+  res.status(404).json({
+    ok: false,
+    message: `Ruta no encontrada: ${req.method} ${req.originalUrl}`,
+    requestId
+  });
 }
 
-export function errorHandler(error: Error, _req: Request, res: Response, _next: NextFunction) {
+export function errorHandler(error: Error, req: Request, res: Response, _next: NextFunction) {
   const db = databaseMessage(error);
   const status = db?.status || (error instanceof HttpError ? error.status : 500);
-  const payload: Record<string, unknown> = { ok: false, message: db?.message || error.message || 'Error interno' };
+  const requestId = sanitizeLogValue((req as any).requestId || '', 96);
+  const errorCode = sanitizeLogValue((error as any)?.code || '', 80) || undefined;
+
+  const logFields = {
+    event: 'http.error',
+    requestId: requestId || undefined,
+    route: requestRouteTemplate(req),
+    method: sanitizeLogValue(req.method || 'UNKNOWN', 12).toUpperCase(),
+    status,
+    errorType: sanitizeLogValue(error?.name || 'Error', 80),
+    errorCode
+  };
+  if (status >= 500) requestLogger(req).error(logFields, 'request failed');
+  else requestLogger(req).warn(logFields, 'request rejected');
+
+  const payload: Record<string, unknown> = {
+    ok: false,
+    message: db?.message || error.message || 'Error interno',
+    requestId
+  };
   if (error instanceof HttpError && error.details) payload.details = error.details;
   if (process.env.NODE_ENV === 'development') payload.stack = error.stack;
   res.status(status).json(payload);

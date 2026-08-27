@@ -1,6 +1,5 @@
 import express, { type Request } from 'express';
 import helmet from 'helmet';
-import morgan from 'morgan';
 import { env, isProd } from './config/env.js';
 import apiRoutes from './modules/index.js';
 import authRoutes from './modules/auth/auth.routes.js';
@@ -23,21 +22,16 @@ import {
   suspiciousRequestGuard,
   securityResponseHeaders
 } from './shared/middleware/security.js';
+import { registerHealthRoutes, type ReadinessCheck } from './shared/observability/health.js';
+import { requestObservability } from './shared/observability/http.js';
 
-const healthPayload = () => ({
-  ok: true,
-  status: 'healthy',
-  service: 'ContaGest-VE API',
-  version: '11.14.0',
-  timestamp: new Date().toISOString()
-});
-
-export function createApp() {
+export function createApp(options: { readinessCheck?: ReadinessCheck } = {}) {
   const app = express();
   app.disable('x-powered-by');
   app.set('trust proxy', 1);
 
   app.use(requestId);
+  app.use(requestObservability);
   app.use(suspiciousRequestGuard);
   app.use(helmet({
     crossOriginResourcePolicy: false,
@@ -48,6 +42,11 @@ export function createApp() {
   }));
   app.use(securityResponseHeaders);
   app.use(corsPolicy);
+
+  // Platform probes must remain independent from business authentication and
+  // mutation gates. Readiness performs its own bounded/cached DB check.
+  registerHealthRoutes(app, { readinessCheck: options.readinessCheck });
+
   app.use(globalRateLimit);
 
   // CSP telemetry has no mutation side effect and therefore intentionally sits before
@@ -68,7 +67,6 @@ export function createApp() {
       }
     }
   }));
-  app.use(morgan(isProd ? 'combined' : 'dev'));
 
   // Control Hípico is an independent product that temporarily shares this API
   // process. Meta webhooks authenticate with x-hub-signature-256. The normal
@@ -81,10 +79,6 @@ export function createApp() {
   app.use('/api/v1/hipico-bot', authRateLimit, hipicoOperatorRoutes);
 
   app.use(csrfProtection);
-
-  app.get('/health', (_req, res) => res.json(healthPayload()));
-  app.get('/api/health', (_req, res) => res.json(healthPayload()));
-  app.get('/api/v1/health', (_req, res) => res.json(healthPayload()));
 
   app.use(enforceProductionSecrets);
   app.use('/api/v1/auth', authRateLimit, authRoutes);
