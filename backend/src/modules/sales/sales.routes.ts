@@ -82,8 +82,7 @@ router.post('/', requirePermission('sales.manage'), validateBody(saleSchema), as
     if (sale.status !== 'draft') {
       const ledgerLines = salesInvoiceLinesForLedger(sale);
       assertBalanced(ledgerLines);
-      const postedAt = new Date();
-      const ledger = await tx.ledgerEntry.create({
+      const draftLedger = await tx.ledgerEntry.create({
         data: {
           tenantId: ctx.tenantId,
           fiscalPeriod: sale.fiscalPeriod,
@@ -91,9 +90,9 @@ router.post('/', requirePermission('sales.manage'), validateBody(saleSchema), as
           source: 'sales',
           sourceId: sale.id,
           salesInvoiceId: sale.id,
-          posted: true,
-          postedAt,
-          postedBy: ctx.userId || null,
+          posted: false,
+          postedAt: null,
+          postedBy: null,
           lines: {
             create: ledgerLines.map((line) => ({
               accountCode: line.accountCode,
@@ -104,6 +103,24 @@ router.post('/', requirePermission('sales.manage'), validateBody(saleSchema), as
               exchangeRate: sale.exchangeRate ?? ONE
             }))
           }
+        }
+      });
+      const postedAt = new Date();
+      const ledger = await tx.ledgerEntry.update({
+        where: { id: draftLedger.id },
+        data: { posted: true, postedAt, postedBy: ctx.userId || null }
+      });
+      await tx.auditLog.create({
+        data: {
+          tenantId: ctx.tenantId,
+          userId: ctx.userId || null,
+          action: 'ledger.entry.posted',
+          entity: 'LedgerEntry',
+          entityId: ledger.id,
+          before: { posted: false, source: 'sales', sourceId: sale.id, fiscalPeriod: sale.fiscalPeriod },
+          after: { posted: true, postedAt: postedAt.toISOString(), postedBy: ctx.userId || null, source: 'sales', sourceId: sale.id, fiscalPeriod: sale.fiscalPeriod },
+          ipAddress: ctx.ip || null,
+          userAgent: ctx.userAgent || null
         }
       });
       ledgerEntryId = ledger.id;
@@ -120,7 +137,14 @@ router.patch('/:id/cancel', requirePermission('sales.manage'), validateBody(canc
   if (!sale) throw new HttpError(404, 'Venta no encontrada.');
   if (sale.status === 'draft') throw new HttpError(409, 'Los borradores se eliminan; no se anulan.');
   const originals = await prisma.ledgerEntry.findMany({
-    where: { tenantId: ctx.tenantId, OR: [{ salesInvoiceId: sale.id }, { source: 'sales', sourceId: sale.id }] },
+    where: {
+      tenantId: ctx.tenantId,
+      reversalOfId: null,
+      OR: [
+        { source: 'sales', sourceId: sale.id },
+        { source: 'sales', salesInvoiceId: sale.id }
+      ]
+    },
     include: { lines: true, reversedBy: true },
     orderBy: { createdAt: 'asc' }
   });
@@ -139,20 +163,18 @@ router.patch('/:id/cancel', requirePermission('sales.manage'), validateBody(canc
     let reversalId: string | null = original?.reversedBy?.id || null;
     if (original && !reversalId) {
       const reversalLines = inverseLedgerLines(original.lines);
-      const postedAt = new Date();
-      const reversal = await tx.ledgerEntry.create({
+      const draftReversal = await tx.ledgerEntry.create({
         data: {
           tenantId: ctx.tenantId,
-          date: req.body.reversalDate || postedAt,
+          date: req.body.reversalDate || new Date(),
           fiscalPeriod: reversalFiscalPeriod,
           description: `Reverso por anulación de venta ${sale.number}`,
           source: 'manual',
           sourceId: `sales-cancel:${sale.id}`,
           salesInvoiceId: sale.id,
-          posted: true,
-          postedAt,
-          postedBy: ctx.userId || null,
-          reversalOfId: original.id,
+          posted: false,
+          postedAt: null,
+          postedBy: null,
           lines: {
             create: reversalLines.map((line) => ({
               accountCode: line.accountCode,
@@ -165,15 +187,30 @@ router.patch('/:id/cancel', requirePermission('sales.manage'), validateBody(canc
           }
         }
       });
+      const postedAt = new Date();
+      const reversal = await tx.ledgerEntry.update({
+        where: { id: draftReversal.id },
+        data: { posted: true, postedAt, postedBy: ctx.userId || null, reversalOfId: original.id }
+      });
+      await tx.auditLog.create({
+        data: {
+          tenantId: ctx.tenantId,
+          userId: ctx.userId || null,
+          action: 'ledger.entry.reversed',
+          entity: 'LedgerEntry',
+          entityId: reversal.id,
+          before: { originalId: original.id, fiscalPeriod: original.fiscalPeriod, source: 'sales' },
+          after: { reversalId: reversal.id, reversalOfId: original.id, fiscalPeriod: reversalFiscalPeriod, postedAt: postedAt.toISOString(), source: 'sales-cancel' },
+          ipAddress: ctx.ip || null,
+          userAgent: ctx.userAgent || null
+        }
+      });
       reversalId = reversal.id;
     }
     const cancelled = await tx.salesInvoice.update({ where: { id: sale.id }, data: { status: 'cancelled' }, include: { lines: true } });
     return { sale: cancelled, reversalId, reversedEntries: original ? [original.id] : [], accountingWarning: original ? null : 'La venta no tenía asiento contable asociado.' };
   });
   await writeAudit({ tenantId: ctx.tenantId, userId: ctx.userId, action: 'cancel', entity: 'salesInvoice', entityId: sale.id, before: sale, after: { ...result, reason: req.body.reason || 'Anulación solicitada desde Ventas', reversalFiscalPeriod }, ipAddress: ctx.ip, userAgent: ctx.userAgent });
-  if (result.reversalId) {
-    await writeAudit({ tenantId: ctx.tenantId, userId: ctx.userId, action: 'ledger.entry.reversed', entity: 'LedgerEntry', entityId: result.reversalId, before: original, after: { reversalId: result.reversalId, reversalOfId: original?.id, source: 'sales-cancel' }, ipAddress: ctx.ip, userAgent: ctx.userAgent });
-  }
   ok(res, result);
 }));
 
