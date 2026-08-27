@@ -3,7 +3,9 @@ import {z} from 'zod';
 import {prisma} from '../../database/prisma.js';
 import {asyncHandler,HttpError,ok} from '../../shared/http.js';
 import {requireTenant} from '../../shared/middleware/context.js';
-import {currentLegalDocuments,legalProductionReady,legalProvider} from '../../shared/legal/legalCatalog.js';
+import {currentLegalDocuments,legalProvider} from '../../shared/legal/legalCatalog.js';
+import {legalEvidencePrivacyContext} from '../../shared/legal/legalEvidencePolicy.js';
+import {legalRuntimeProductionReady} from '../../shared/legal/legalReleaseRuntimeGate.js';
 import {isProd} from '../../config/env.js';
 
 const router=Router();
@@ -42,30 +44,31 @@ router.get('/status',asyncHandler(async(req,res)=>{
     SELECT "necessaryAcknowledged","analyticsEnabled","marketingEnabled","updatedAt"
     FROM public."CookiePreference" WHERE "tenantId"=${ctx.tenantId} AND "userId"=${ctx.userId} LIMIT 1
   `;
-  ok(res,{productionReady:legalProductionReady(),provider:legalProvider(),documents,pendingCodes:pending.map((doc)=>doc.code),accepted,pending:pending.length>0,cookiePreferences:prefs[0]||{necessaryAcknowledged:false,analyticsEnabled:false,marketingEnabled:false}});
+  ok(res,{productionReady:legalRuntimeProductionReady(),provider:legalProvider(),documents,pendingCodes:pending.map((doc)=>doc.code),accepted,pending:pending.length>0,cookiePreferences:prefs[0]||{necessaryAcknowledged:false,analyticsEnabled:false,marketingEnabled:false}});
 }));
 
 router.post('/accept',asyncHandler(async(req,res)=>{
   const ctx=context(req);const body=acceptSchema.parse(req.body||{});
   if(body.marketingCookies)throw new HttpError(422,'ContaGest no habilita cookies de marketing en esta versión.');
-  if(isProd&&!legalProductionReady())throw new HttpError(503,'La identidad legal del proveedor debe configurarse antes de aceptar clientes en producción.');
+  if(isProd&&!legalRuntimeProductionReady())throw new HttpError(503,'El gate legal de producción requiere identidad real del proveedor y evidencia profesional aprobada para la versión vigente.');
   const catalog=currentLegalDocuments();const required=catalog.filter((doc)=>doc.required);
   const supplied=new Map(body.documents.map((item)=>[item.code,item]));
   for(const doc of required){const item=supplied.get(doc.code);if(!item||item.version!==doc.version||item.hash!==doc.hash)throw new HttpError(409,`Debes aceptar la versión vigente de ${doc.title}.`);}
   const accountUserId=await accountUserIdFor(ctx.userId);
+  const evidence=legalEvidencePrivacyContext();
   for(const doc of required){
     await prisma.$executeRaw`
       INSERT INTO public."LegalAcceptance" ("id","tenantId","userId","accountUserId","documentCode","documentVersion","documentHash","acceptedAt","acceptanceMethod","locale","ipAddress","userAgent","metadata","createdAt")
-      VALUES (gen_random_uuid()::text,${ctx.tenantId},${ctx.userId},${accountUserId},${doc.code},${doc.version},${doc.hash},now(),'explicit-checkbox',${body.locale},${req.ip||null},${req.headers['user-agent']||null},${JSON.stringify({effectiveAt:doc.effectiveAt})}::jsonb,now())
+      VALUES (gen_random_uuid()::text,${ctx.tenantId},${ctx.userId},${accountUserId},${doc.code},${doc.version},${doc.hash},now(),'explicit-checkbox',${body.locale},${evidence.ipAddress},${evidence.userAgent},${JSON.stringify({...evidence.metadata,effectiveAt:doc.effectiveAt})}::jsonb,now())
       ON CONFLICT ("tenantId","userId","documentCode","documentVersion","documentHash") DO NOTHING
     `;
   }
   await prisma.$executeRaw`
     INSERT INTO public."CookiePreference" ("id","tenantId","userId","necessaryAcknowledged","analyticsEnabled","marketingEnabled","updatedAt","updatedIp","updatedUserAgent")
-    VALUES (gen_random_uuid()::text,${ctx.tenantId},${ctx.userId},true,${body.analyticsCookies},false,now(),${req.ip||null},${req.headers['user-agent']||null})
+    VALUES (gen_random_uuid()::text,${ctx.tenantId},${ctx.userId},true,${body.analyticsCookies},false,now(),${evidence.ipAddress},${evidence.userAgent})
     ON CONFLICT ("tenantId","userId") DO UPDATE SET "necessaryAcknowledged"=true,"analyticsEnabled"=EXCLUDED."analyticsEnabled","marketingEnabled"=false,"updatedAt"=now(),"updatedIp"=EXCLUDED."updatedIp","updatedUserAgent"=EXCLUDED."updatedUserAgent"
   `;
-  await prisma.auditLog.create({data:{tenantId:ctx.tenantId,userId:ctx.userId,action:'legal.accept.current',entity:'LegalAcceptance',entityId:ctx.userId,after:{documents:required.map((d)=>({code:d.code,version:d.version,hash:d.hash})),analyticsCookies:body.analyticsCookies} as any,ipAddress:req.ip,userAgent:req.headers['user-agent']||null}});
+  await prisma.auditLog.create({data:{tenantId:ctx.tenantId,userId:ctx.userId,action:'legal.accept.current',entity:'LegalAcceptance',entityId:ctx.userId,after:{documents:required.map((d)=>({code:d.code,version:d.version,hash:d.hash})),analyticsCookies:body.analyticsCookies,evidencePrivacyPolicy:evidence.metadata.evidencePrivacyPolicy} as any,ipAddress:evidence.ipAddress,userAgent:evidence.userAgent}});
   ok(res,{accepted:true,documents:required.map((doc)=>({code:doc.code,version:doc.version,hash:doc.hash})),cookiePreferences:{necessaryAcknowledged:true,analyticsEnabled:body.analyticsCookies,marketingEnabled:false}});
 }));
 
@@ -74,7 +77,8 @@ router.patch('/cookie-preferences',asyncHandler(async(req,res)=>{
   if(body.marketingCookies)throw new HttpError(422,'Las cookies de marketing no están disponibles.');
   const existing=await prisma.$queryRaw<Array<{id:string}>>`SELECT "id" FROM public."CookiePreference" WHERE "tenantId"=${ctx.tenantId} AND "userId"=${ctx.userId} LIMIT 1`;
   if(!existing[0])throw new HttpError(428,'Primero debes completar la aceptación inicial de cookies necesarias.');
-  await prisma.$executeRaw`UPDATE public."CookiePreference" SET "analyticsEnabled"=${body.analyticsCookies},"marketingEnabled"=false,"updatedAt"=now(),"updatedIp"=${req.ip||null},"updatedUserAgent"=${req.headers['user-agent']||null} WHERE "id"=${existing[0].id}`;
+  const evidence=legalEvidencePrivacyContext();
+  await prisma.$executeRaw`UPDATE public."CookiePreference" SET "analyticsEnabled"=${body.analyticsCookies},"marketingEnabled"=false,"updatedAt"=now(),"updatedIp"=${evidence.ipAddress},"updatedUserAgent"=${evidence.userAgent} WHERE "id"=${existing[0].id}`;
   ok(res,{necessaryAcknowledged:true,analyticsEnabled:body.analyticsCookies,marketingEnabled:false});
 }));
 

@@ -102,6 +102,16 @@ function expireBrowserSession(reason = 'session_expired') {
   window.dispatchEvent(new CustomEvent('cg:auth-expired', { detail:{ reason } }));
 }
 
+function signalLegalAcceptanceRequired(path, payload = {}) {
+  if (!isBrowser || String(path || '').startsWith('/legal/')) return;
+  window.dispatchEvent(new CustomEvent('cg:legal-required', {
+    detail: {
+      path: String(path || ''),
+      pendingCodes: Array.isArray(payload?.pendingCodes) ? payload.pendingCodes : []
+    }
+  }));
+}
+
 async function fetchApi(baseUrl, path, options) {
   try {
     return await fetch(`${baseUrl}${path}`, options);
@@ -203,6 +213,7 @@ export const BackendApi = {
       if (!response.ok) {
         const payload = await parseResponse(response);
         if (response.status === 401 && !publicRequest) expireBrowserSession(payload.message || payload.error || 'unauthorized');
+        if (response.status === 428 && !publicRequest) signalLegalAcceptanceRequired(path, payload);
         throw apiError(payload.message || payload.error || `HTTP ${response.status}`, response.status, payload);
       }
       return response;
@@ -211,6 +222,7 @@ export const BackendApi = {
     const payload = await parseResponse(response);
     if (!response.ok || payload.ok === false) {
       if (response.status === 401 && !publicRequest) expireBrowserSession(payload.message || payload.error || 'unauthorized');
+      if (response.status === 428 && !publicRequest) signalLegalAcceptanceRequired(path, payload);
       throw apiError(payload.message || payload.error || `HTTP ${response.status}`, response.status, payload);
     }
     const data = payload.data ?? payload;

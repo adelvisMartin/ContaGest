@@ -59,7 +59,7 @@ function mount(status,session){
   layer.dataset.route='';
   layer.innerHTML=`<section class="cg-legal-dialog" role="dialog" aria-modal="true" aria-labelledby="cgLegalTitle" aria-describedby="cgLegalIntro">
     <header><div><p class="cg-legal-eyebrow">Primer acceso · consentimiento contractual</p><h1 id="cgLegalTitle">Antes de continuar en ContaGest</h1><p id="cgLegalIntro">Revisa y acepta las versiones vigentes. La aceptación queda registrada con usuario, empresa, versión, fecha y evidencia técnica.</p></div><span class="cg-legal-version">${escapeHtml(documents[0]?.version||'')}</span></header>
-    ${status.productionReady===false?'<div class="cg-legal-dev-warning"><strong>Entorno de prueba:</strong> falta completar la identidad jurídica del proveedor. Esta versión no debe usarse para dar de alta clientes reales.</div>':''}
+    ${status.productionReady===false?'<div class="cg-legal-dev-warning"><strong>Entorno de prueba:</strong> el gate legal de producción está incompleto (identidad del proveedor y/o revisión profesional). Esta versión no debe usarse para dar de alta clientes reales.</div>':''}
     <div class="cg-legal-docs">${documents.map((doc,index)=>`<details ${index===0?'open':''}><summary><span>${escapeHtml(doc.title)}</span><small>Vigente desde ${escapeHtml(doc.effectiveAt||'')}</small></summary><div class="cg-legal-doc-body">${paragraphHtml(doc.body)}</div><label class="cg-legal-check"><input type="checkbox" data-legal-document="${escapeHtml(doc.code)}" ${draft.documents.has(doc.code)?'checked':''}><span>He leído y acepto <strong>${escapeHtml(doc.title)}</strong>.</span></label></details>`).join('')}</div>
     <section class="cg-legal-cookie-box"><h2>Cookies y privacidad del dispositivo</h2><label class="cg-legal-check"><input id="cgNecessaryCookies" type="checkbox" ${draft.necessary?'checked':''}><span>Entiendo y acepto el uso de cookies <strong>estrictamente necesarias</strong> de sesión, renovación, CSRF y credencial de dispositivo. Sin ellas el acceso seguro puede no funcionar.</span></label><label class="cg-legal-check cg-legal-optional"><input id="cgAnalyticsCookies" type="checkbox" ${draft.analytics?'checked':''}><span><strong>Opcional:</strong> permito enviar analítica técnica de uso al backend para mejorar el producto. Puedo retirarla después. Está desactivada por defecto.</span></label><p>No se habilitan cookies de marketing en esta versión.</p></section>
     <div id="cgLegalError" class="cg-legal-error" role="alert" hidden></div>
@@ -102,10 +102,20 @@ async function check(){
   finally{checking=false;}
 }
 
+function invalidateAcceptanceCache(){
+  const session=AuthSession.get();
+  if(!session||session.sessionMode==='demo'||session.audience!=='client')return;
+  const key=cacheKey(session);
+  sessionStorage.removeItem(key);
+  draftByKey.delete(key);
+  if(!activeLayer())queueMicrotask(check);
+}
+
 export function installLegalAcceptanceEnhancer(){
   if(installed||typeof window==='undefined')return;installed=true;
   const originalSet=AuthSession.set.bind(AuthSession);AuthSession.set=(session)=>{const result=originalSet(session);queueMicrotask(check);return result;};
   const originalClear=AuthSession.clear.bind(AuthSession);AuthSession.clear=()=>{originalClear();releaseModal({clearDraft:true});};
+  window.addEventListener('cg:legal-required',invalidateAcceptanceCache);
   window.addEventListener('focus',()=>check());
   window.addEventListener('pageshow',()=>check());
   queueMicrotask(check);
