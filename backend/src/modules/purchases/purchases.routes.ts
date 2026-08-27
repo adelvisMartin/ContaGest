@@ -52,7 +52,14 @@ router.post('/', validateBody(purchaseSchema), asyncHandler(async (req, res) => 
     scope: 'purchases.create',
     key: idempotencyKey(req),
     request: req.body,
-    requestId: requestId(req)
+    requestId: requestId(req),
+    replay: async (tx, record) => {
+      if (!record.resourceId) throw new HttpError(409, 'El resultado original de la compra no tiene recurso asociado.', { code:'IDEMPOTENCY_RESULT_UNAVAILABLE', scope:'purchases.create' });
+      const purchase = await tx.purchaseInvoice.findFirst({ where:{ id:record.resourceId, tenantId:ctx.tenantId }, include:{ supplier:true, lines:true } });
+      if (!purchase) throw new HttpError(409, 'La compra original ya no puede reconstruirse.', { code:'IDEMPOTENCY_RESULT_UNAVAILABLE', scope:'purchases.create' });
+      const ledger = await tx.ledgerEntry.findFirst({ where:{ tenantId:ctx.tenantId, source:'purchase', sourceId:purchase.id }, select:{ id:true } });
+      return { ...purchase, ledgerEntryId:ledger?.id || null };
+    }
   }, async (tx) => {
     if (req.body.status !== 'draft') await assertPeriodOpen(ctx.tenantId, req.body.fiscalPeriod, tx);
     const purchase = await tx.purchaseInvoice.create({
