@@ -18,6 +18,15 @@ test('issue 30 creates a durable governed case ledger',()=>{
   assert.match(backup,/^ServiceRestrictionCase$/m);
 });
 
+test('issue 30 database prevents concurrent active cases and rewrites of closed evidence',()=>{
+  assert.match(migration,/ServiceRestrictionCase_one_active_per_subscription/);
+  assert.match(migration,/WHERE "status" IN \('open','pending_review'\)/);
+  assert.match(migration,/enforce_service_restriction_case_transition/);
+  assert.match(migration,/service_restriction_case_already_closed/);
+  assert.match(migration,/service_restriction_case_identity_is_immutable/);
+  assert.match(migration,/ServiceRestrictionCase_transition_guard/);
+});
+
 test('issue 30 governance router precedes legacy commercial routes and closes status bypasses',()=>{
   const governed=modules.indexOf("router.use('/commercial', serviceRestrictionRoutes)");
   const legacy=modules.indexOf("router.use('/commercial', commercialRoutes)");
