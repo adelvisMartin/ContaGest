@@ -54,8 +54,6 @@ jobs:
         run: node --test tests/hipico_qa_runner_issue_103.test.mjs
 
       - name: Execute canonical Hípico QA runner
-        env:
-          HIPICO_QA_SKIP_INSTALL: '1'
         run: npm run qa:hipico -- --mode=ci
 
       - name: Preserve SHA-bound evidence
