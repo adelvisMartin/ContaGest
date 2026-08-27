@@ -41,6 +41,8 @@ Para facturas bajo el esquema actual:
 3. el impuesto se calcula sobre esos totales de línea persistibles y se redondea una vez, después de agregarlos, a 2 decimales;
 4. el total de factura es `subtotal + impuesto`, ambos ya en escala monetaria.
 
+Los porcentajes se expresan como porcentaje humano (`16.00` significa 16 %, no `0.16`) y pasan por `percentOf`, de forma que IVA y cálculos porcentuales tipo retención compartan la misma semántica decimal. Este primitive no introduce tasas legales nuevas.
+
 Para KPI monetarios de RRHH, los importes persistidos se agregan como Decimal y un promedio se cuantiza a 2 decimales únicamente al producir el valor monetario del KPI.
 
 Esta ADR **no redefine reglas tributarias venezolanas** ni decide cómo debe redondearse una obligación fiscal cuando una norma específica establezca otra regla. Una modificación regulatoria debe aportar su fuente y ticket propio.
@@ -49,7 +51,7 @@ Esta ADR **no redefine reglas tributarias venezolanas** ni decide cómo debe red
 
 `assertBalanced` suma débitos y créditos como Decimal y exige igualdad decimal exacta. No existe tolerancia floating-point ni redondeo tardío para hacer parecer balanceado un asiento.
 
-Reversos copian e intercambian los `Decimal` persistidos; no pasan por `Number`.
+Reversos copian e intercambian los `Decimal` persistidos; no pasan por `Number`. Las pruebas PostgreSQL verifican la inversión exacta de débito/crédito, moneda y tasa de cambio, además de la idempotencia de una segunda solicitud de anulación.
 
 ## API y compatibilidad
 
@@ -86,6 +88,12 @@ Ejemplos:
 
 `serializeLegacyNumber()` está permitido **solo en la frontera de respuesta**. Nunca debe alimentar cálculos, persistencia, balances o decisiones de negocio. Un ticket posterior puede retirar los campos numéricos legacy después de migrar consumidores.
 
+## Errores y observabilidad
+
+Los errores del primitive son `DecimalDomainError` con códigos estables (`DECIMAL_INVALID`, `DECIMAL_TOO_LONG`, `DECIMAL_SCALE`, `DECIMAL_PRECISION`, `DECIMAL_NEGATIVE`, `DECIMAL_NOT_POSITIVE`, `DECIMAL_DIVIDE_BY_ZERO`). La validación HTTP traduce entradas inválidas al contrato 422 existente sin registrar por defecto el dataset financiero completo.
+
+No se añaden métricas de alta cardinalidad en #90. Si el volumen de errores decimales justifica telemetría, debe contabilizar códigos/tipos agregados y no importes o documentos completos.
+
 ## Persistencia
 
 No se modifica el DDL en #90 porque la auditoría del schema actual confirmó escalas suficientes para este cambio. Los Decimal se mantienen hasta Prisma/PostgreSQL.
@@ -104,12 +112,16 @@ La ruta fiscal inspeccionada no realiza aritmética monetaria, por lo que no se 
 
 ## Pruebas obligatorias
 
-- primitive: `0.1 + 0.2`, suma/resta/multiplicación/división, límites de escala/precisión, positivos/negativos y `x.xx5`;
+- primitive: `0.1 + 0.2`, suma/resta/multiplicación/división/comparación, límites de escala/precisión, positivos/negativos y `x.xx5`;
+- porcentaje: IVA y cálculo porcentual tipo retención con resultado exacto;
 - golden invoices con cantidades, porcentajes fraccionarios y tasa de cambio;
 - ledger exacto `0.10 + 0.20 == 0.30`;
-- PostgreSQL real: venta → factura → asiento, compra → asiento, banco antes/después, trial balance y agregados de nómina;
+- PostgreSQL real: venta → factura → asiento → reverso exacto/idempotente; compra → asiento → reverso exacto/idempotente; banco antes/después; trial balance y agregados de nómina;
+- regresión del flujo financiero histórico sobre la misma base PostgreSQL efímera;
 - contratos estáticos que impiden reintroducir `Number` en los caminos monetarios críticos;
 - casos inválidos: `NaN`, `Infinity`, notación exponencial, escala excesiva y precisión fuera de rango.
+
+Las comparaciones golden se realizan sobre representación decimal exacta (`toFixed`/string únicamente como aserción de representación), nunca mediante tolerancias floating-point.
 
 ## Migración desde `Number`
 
