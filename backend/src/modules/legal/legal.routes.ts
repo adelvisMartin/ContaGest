@@ -9,6 +9,14 @@ import {legalRuntimeProductionReady} from '../../shared/legal/legalReleaseRuntim
 import {isProd} from '../../config/env.js';
 
 const router=Router();
+
+// Public, read-only catalog used from the login screen. It deliberately exposes
+// only the canonical current policies and provider identity; acceptance evidence,
+// cookie preferences, tenant ids and user ids remain behind requireTenant.
+router.get('/public',(_req,res)=>{
+  ok(res,{productionReady:legalRuntimeProductionReady(),provider:legalProvider(),documents:currentLegalDocuments()});
+});
+
 router.use(requireTenant);
 
 const acceptSchema=z.object({
