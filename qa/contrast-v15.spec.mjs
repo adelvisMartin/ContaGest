@@ -11,9 +11,10 @@ async function seed(page,theme){
       user:{id:'qa-admin',name:'QA Admin',fullName:'QA Admin',email:'qa@contagest.local',role:'admin',permissions:['*']},
       audience:'staff',expiresAt:Date.now()+8*60*60*1000
     }));
-    const current=JSON.parse(localStorage.getItem('contagest_state')||'{}');
+    const stateKey='contagest_ve_enterprise_v7_state';
+    const current=JSON.parse(localStorage.getItem(stateKey)||'{}');
     current.settings={...(current.settings||{}),theme};
-    localStorage.setItem('contagest_state',JSON.stringify(current));
+    localStorage.setItem(stateKey,JSON.stringify(current));
   },{theme});
 }
 
