@@ -10,11 +10,16 @@ on:
       - 'backend/src/modules/purchases/**'
       - 'backend/src/modules/banking/**'
       - 'backend/src/modules/payroll/**'
+      - 'backend/src/modules/employees/**'
+      - 'backend/src/modules/hr/**'
+      - 'backend/src/modules/currency/**'
       - 'backend/src/modules/schemas.ts'
       - 'backend/prisma/**'
       - 'qa/financial-decimal-v90.test.ts'
       - 'qa/financial-decimal-real-v90.test.ts'
       - 'qa/support/real-backend-harness.ts'
+      - 'tests/financial_decimal_issue_90.test.mjs'
+      - 'docs/ADR_FINANCIAL_DECIMAL_V90.md'
       - 'ops/database/prepare-supabase-ephemeral.sql'
       - 'package.json'
       - 'package-lock.json'
@@ -104,6 +109,9 @@ jobs:
       - name: Validar tipos del backend
         run: npm --workspace backend run typecheck
 
+      - name: Ejecutar contratos estáticos #90
+        run: node --test tests/financial_decimal_issue_90.test.mjs
+
       - name: Ejecutar primitive y golden datasets
         shell: bash
         run: |
@@ -124,7 +132,7 @@ jobs:
         run: |
           {
             echo '=== Tipos financieros ==='
-            psql -h 127.0.0.1 -U postgres -d contagest_financial_v90 -Atc "SELECT table_name || chr(9) || column_name || chr(9) || data_type || chr(9) || numeric_precision || chr(9) || numeric_scale FROM information_schema.columns WHERE table_schema='public' AND ((table_name='SalesInvoice' AND column_name IN ('subtotal','iva','total','exchangeRate')) OR (table_name='SalesInvoiceLine' AND column_name IN ('quantity','unitPrice','total','taxRate')) OR (table_name='LedgerLine' AND column_name IN ('debit','credit','exchangeRate')) OR (table_name='BankAccount' AND column_name='balance') OR (table_name='BankMovement' AND column_name IN ('debit','credit')) OR (table_name='PayrollPeriod' AND column_name IN ('totalGross','totalDeductions','totalNet'))) ORDER BY table_name,column_name;" || true
+            psql -h 127.0.0.1 -U postgres -d contagest_financial_v90 -Atc "SELECT table_name || chr(9) || column_name || chr(9) || data_type || chr(9) || numeric_precision || chr(9) || numeric_scale FROM information_schema.columns WHERE table_schema='public' AND ((table_name='SalesInvoice' AND column_name IN ('subtotal','iva','total','exchangeRate')) OR (table_name='SalesInvoiceLine' AND column_name IN ('quantity','unitPrice','total','taxRate')) OR (table_name='LedgerLine' AND column_name IN ('debit','credit','exchangeRate')) OR (table_name='BankAccount' AND column_name='balance') OR (table_name='BankMovement' AND column_name IN ('debit','credit')) OR (table_name='Employee' AND column_name='salary') OR (table_name='PayrollPeriod' AND column_name IN ('totalGross','totalDeductions','totalNet')) OR (table_name='HrParameter' AND column_name='value')) ORDER BY table_name,column_name;" || true
           } > financial-schema-v90.log 2>&1
 
       - name: Conservar evidencia #90
