@@ -11,7 +11,12 @@ execFileSync('npm', ['install', '--package-lock-only', '--ignore-scripts'], {
 
 const lock = readFileSync('package-lock.json');
 const packed = gzipSync(lock, { level: 9 }).toString('base64');
-console.log(`ISSUE26_LOCK_GZIP_BASE64 ${packed}`);
+const chunkSize = 8000;
+const total = Math.ceil(packed.length / chunkSize);
+for (let i = 0; i < total; i += 1) {
+  const chunk = packed.slice(i * chunkSize, (i + 1) * chunkSize);
+  console.log(`ISSUE26_LOCK_GZIP_PART ${i + 1}/${total} ${chunk}`);
+}
 
 mkdirSync('frontend/dist', { recursive: true });
 copyFileSync('package-lock.json', 'frontend/dist/issue26-package-lock.json');
