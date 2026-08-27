@@ -13,6 +13,7 @@ on:
       - 'frontend/src/utils/commercialExport.js'
       - 'qa/commercial-backend-real-v23.test.ts'
       - 'tests/commercial_console_issue_23.test.mjs'
+      - 'ops/database/prepare-supabase-ephemeral.sql'
       - 'package.json'
       - '.github/workflows/e2e-commercial-v23.yml'
   workflow_dispatch:
@@ -32,7 +33,7 @@ jobs:
 
     services:
       postgres:
-        image: postgres:16-alpine
+        image: postgres:17-alpine
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
@@ -67,28 +68,16 @@ jobs:
           node-version: 22
           cache: npm
 
-      - name: Instalar dependencias bloqueadas
-        run: npm ci --no-audit --no-fund
-
-      - name: Preparar roles compatibles con Supabase en la base temporal
-        shell: bash
+      - name: Instalar dependencias bloqueadas y cliente PostgreSQL
         run: |
-          cat > /tmp/contagest-e2e-roles.sql <<'SQL'
-          DO $$
-          BEGIN
-            IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'anon') THEN
-              CREATE ROLE anon NOLOGIN;
-            END IF;
-            IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'authenticated') THEN
-              CREATE ROLE authenticated NOLOGIN;
-            END IF;
-            IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'service_role') THEN
-              CREATE ROLE service_role NOLOGIN;
-            END IF;
-          END
-          $$;
-          SQL
-          npm --workspace backend exec -- prisma db execute --file /tmp/contagest-e2e-roles.sql --schema prisma/schema.prisma
+          npm ci --no-audit --no-fund
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client
+
+      - name: Preparar contratos compatibles con Supabase en la base temporal
+        env:
+          PGPASSWORD: postgres
+        run: psql -h 127.0.0.1 -U postgres -d contagest_e2e -f ops/database/prepare-supabase-ephemeral.sql
 
       - name: Aplicar historial de migraciones solo en PostgreSQL efímero
         run: npm --workspace backend run prisma:deploy
