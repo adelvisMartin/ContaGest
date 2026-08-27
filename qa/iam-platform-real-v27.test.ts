@@ -4,6 +4,7 @@ import bcrypt from 'bcryptjs';
 import { createApp } from '../backend/src/app.js';
 import { prisma } from '../backend/src/database/prisma.js';
 import { hasPlatformAccess } from '../backend/src/shared/identity/platformAccess.js';
+import { currentLegalDocuments } from '../backend/src/shared/legal/legalCatalog.js';
 
 const suffix=crypto.randomBytes(5).toString('hex');
 const rif=`J-27${suffix.slice(0,7)}`.toUpperCase();
@@ -93,7 +94,7 @@ async function main(){
   );
   await prisma.$executeRawUnsafe(
     'INSERT INTO public."Subscription" ("id","customerAccountId","planCode","customerSegment","billingCycle","currency","amount","status","startsAt","maxTenants","maxUsers","supportLevel","metadata","createdAt","updatedAt") VALUES ($1,$2,$3,$4,$5,$6,$7,$8,now(),$9,$10,$11,\'{}\'::jsonb,now(),now())',
-    subscriptionId,customerId,'qa27','smb','monthly','USD',10,'suspended',1,3,'standard'
+    subscriptionId,customerId,'qa27','smb','monthly','USD',10,'active',1,3,'standard'
   );
   await prisma.$executeRawUnsafe(
     'INSERT INTO public."SubscriptionTenant" ("id","subscriptionId","tenantId","status","createdAt","updatedAt") VALUES (gen_random_uuid()::text,$1,$2,\'active\',now(),now())',
@@ -102,10 +103,20 @@ async function main(){
   const license=await prisma.licenseKey.create({data:{tenantId,userId,userEmail:email,plan:'qa27',keyHash:crypto.randomBytes(32).toString('hex'),keyPreview:'qa27…test',modules:['clientes'],expiresAt:new Date(Date.now()+86400000),status:'active'}});
   await prisma.$executeRawUnsafe('UPDATE public."LicenseKey" SET "subscriptionId"=$1 WHERE "id"=$2',subscriptionId,license.id);
 
-  const suspendedResponse=await request(base,'/api/v1/commercial/plans',{
+  for(const doc of currentLegalDocuments().filter((item)=>item.required)){
+    await prisma.$executeRawUnsafe(
+      'INSERT INTO public."LegalAcceptance" ("tenantId","userId","documentCode","documentVersion","documentHash","acceptanceMethod","locale","metadata","createdAt") VALUES ($1,$2,$3,$4,$5,\'qa-e2e\',\'es-VE\',\'{}\'::jsonb,now()) ON CONFLICT DO NOTHING',
+      tenantId,userId,doc.code,doc.version,doc.hash
+    );
+  }
+  await prisma.$executeRawUnsafe('UPDATE public."Subscription" SET "status"=\'suspended\',"updatedAt"=now() WHERE "id"=$1',subscriptionId);
+
+  const suspendedResponse=await request(base,'/api/v1/clients',{
     headers:{'x-tenant-id':tenantId,'x-user-id':userId}
   });
-  assert.equal(suspendedResponse.status,403,'system=true no debe saltarse una suscripción suspendida');
+  assert.equal(suspendedResponse.status,403,'system=true no debe saltarse enforceCommercialSubscription en una ruta tenant');
+  const suspendedBody:any=await suspendedResponse.json().catch(()=>null);
+  assert.match(String(suspendedBody?.error?.message||suspendedBody?.message||''),/suscripci[oó]n|suspended|suspendida/i,'el 403 debe provenir del gate comercial y no de platform.manage');
 
   console.log('[iam-platform-real-v27][PASS] tenant admin system=true no bypassa login/licencia, platform ni suscripción; DB rechazó platform.manage');
 }
