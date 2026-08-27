@@ -43,11 +43,11 @@ Therefore the Epic exit criterion `main protected with real gates` remains **BLO
 
 ### Observability · #98
 
-GitHub issue #98 is closed as completed. This is useful roadmap progress, not blanket proof that every future deployment has healthy readiness/logging evidence. Release assertions still bind to the candidate SHA.
+GitHub issue #98 is closed as completed, but this snapshot records the area as **SOURCE_REVIEW**, not runtime PASS. Issue lifecycle is useful roadmap metadata; candidate-SHA readiness/logging verification remains `NOT_EXECUTED` until the relevant checks execute for the release being evaluated.
 
 ### Accessibility · #99
 
-GitHub issue #99 is closed as completed. The automated/manual accessibility foundation can protect future UI work, including #100, but it is not an external WCAG certification.
+GitHub issue #99 is closed as completed, but this snapshot records the area as **SOURCE_REVIEW**, not browser/manual PASS. The accessibility foundation can protect future UI work, including #100, but the lifecycle state is not candidate-SHA browser evidence and is not an external WCAG certification.
 
 ### Design System · #100
 
