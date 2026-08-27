@@ -1,0 +1,1 @@
+Canonical observability primitives live in observability.mjs. Diagnostics must redact before persistence/export. Support bundles are allow-listed and write-once.
