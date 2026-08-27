@@ -14,7 +14,7 @@ router.use(requireTenant);
 const entrySchema = z.object({
   fiscalPeriod: z.string().min(6),
   description: z.string().min(2),
-  source: z.enum(['manual', 'sales', 'purchase', 'payroll', 'banking', 'tax', 'inventory']).default('manual'),
+  source: z.literal('manual').optional(),
   lines: z.array(z.object({
     accountCode: z.string().min(1),
     accountName: z.string().min(2),
@@ -45,35 +45,30 @@ router.get('/entries', requirePermission('accounting.view'), asyncHandler(async 
 
 router.post('/entries', requirePermission('accounting.post'), validateBody(entrySchema), asyncHandler(async (req, res) => {
   const ctx = context(req);
-  const created = await createLedgerEntry({ tenantId: ctx.tenantId, ...req.body });
+  const created = await createLedgerEntry({ tenantId: ctx.tenantId, ...req.body, source: 'manual' });
   await writeAudit({ tenantId: ctx.tenantId, userId: ctx.userId, action: 'ledger.entry.created', entity: 'LedgerEntry', entityId: created.id, after: created, ipAddress: ctx.ip, userAgent: ctx.userAgent });
   ok(res, created);
 }));
 
 router.post('/entries/:id/post', requirePermission('accounting.post'), asyncHandler(async (req, res) => {
   const ctx = context(req);
-  const before = await prisma.ledgerEntry.findFirst({ where: { id: req.params.id, tenantId: ctx.tenantId }, include: { lines: true } });
-  if (!before) throw new HttpError(404, 'Asiento contable no encontrado.');
-  const posted = await postLedgerEntry({ tenantId: ctx.tenantId, entryId: before.id, postedBy: ctx.userId });
-  await writeAudit({ tenantId: ctx.tenantId, userId: ctx.userId, action: 'ledger.entry.posted', entity: 'LedgerEntry', entityId: posted.id, before, after: posted, ipAddress: ctx.ip, userAgent: ctx.userAgent });
+  const posted = await postLedgerEntry({
+    tenantId: ctx.tenantId,
+    entryId: req.params.id,
+    postedBy: ctx.userId,
+    audit: { userId: ctx.userId, ipAddress: ctx.ip, userAgent: ctx.userAgent }
+  });
   ok(res, posted);
 }));
 
 router.post('/entries/:id/reverse', requirePermission('accounting.post'), validateBody(reversalSchema), asyncHandler(async (req, res) => {
   const ctx = context(req);
-  const original = await prisma.ledgerEntry.findFirst({ where: { id: req.params.id, tenantId: ctx.tenantId }, include: { lines: true } });
-  if (!original) throw new HttpError(404, 'Asiento contable no encontrado.');
-  const reversal = await reverseLedgerEntry({ tenantId: ctx.tenantId, entryId: original.id, postedBy: ctx.userId, ...req.body });
-  await writeAudit({
+  const reversal = await reverseLedgerEntry({
     tenantId: ctx.tenantId,
-    userId: ctx.userId,
-    action: 'ledger.entry.reversed',
-    entity: 'LedgerEntry',
-    entityId: reversal.id,
-    before: original,
-    after: { reversal, reversalOfId: original.id },
-    ipAddress: ctx.ip,
-    userAgent: ctx.userAgent
+    entryId: req.params.id,
+    postedBy: ctx.userId,
+    audit: { userId: ctx.userId, ipAddress: ctx.ip, userAgent: ctx.userAgent },
+    ...req.body
   });
   ok(res, reversal);
 }));
