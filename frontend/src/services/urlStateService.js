@@ -157,10 +157,16 @@ function installListeners() {
     const route = target.dataset.route || target.dataset.commandRoute || target.dataset.breadcrumbRoute;
     if (!route || !allowedRoutes.has(route) || target.matches(':disabled,[aria-disabled="true"],.is-locked')) return;
     const fromSidebar = Boolean(target.closest('#mainMenu'));
+    const fromCommandPalette = Boolean(target.dataset.commandRoute);
     if (fromSidebar) rememberSidebarSections();
     event.preventDefault();
     if (fromSidebar && isMobileSidebar()) event.stopPropagation();
-    UrlStateService.navigate(route, eventParams(target));
+    const params = eventParams(target);
+    // The command palette lives inside a layer that is removed as soon as Store updates.
+    // Defer its navigation until the current click dispatch has completed so touch/click
+    // activation cannot lose its target while the event is still being delivered.
+    if (fromCommandPalette) queueMicrotask(() => UrlStateService.navigate(route, params));
+    else UrlStateService.navigate(route, params);
   }, true);
 
   document.addEventListener('click', (event) => {
