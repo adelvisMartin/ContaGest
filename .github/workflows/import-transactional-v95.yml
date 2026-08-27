@@ -1,0 +1,79 @@
+name: "Imports #95 · Batch transaccional"
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'backend/src/modules/imports/**'
+      - 'backend/prisma/**'
+      - 'frontend/src/pages/DataImportPage.js'
+      - 'frontend/src/services/dataImportService.js'
+      - 'qa/import-transactional-v95.test.ts'
+      - 'tests/import_pipeline_issue_95.test.mjs'
+      - 'docs/ADR_TRANSACTIONAL_IMPORT_V95.md'
+      - '.github/workflows/import-transactional-v95.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: imports-v95-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  import-postgres-real:
+    name: Import dry-run + commit + rollback PostgreSQL
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: contagest_import_v95
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres -d contagest_import_v95"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      NODE_ENV: test
+      API_MODE: prisma
+      DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/contagest_import_v95?schema=public
+      DIRECT_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/contagest_import_v95?schema=public
+      APP_URL: http://127.0.0.1:8080
+      CORS_ORIGIN: http://127.0.0.1:8080
+      JWT_SECRET: import_v95_only_jwt_secret_0123456789abcdefghijklmnopqrstuvwxyz
+      LICENSE_HASH_SECRET: import_v95_only_license_secret_0123456789abcdefghijklmnopqrstuvwxyz
+      SEED_ADMIN_PASSWORD: ImportV95-QA-Password-2026!
+      ALLOW_DEV_TENANT_HEADER: 'false'
+      SUPABASE_AUTH_FALLBACK: 'false'
+      ALLOW_PUBLIC_REGISTER: 'false'
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install
+        run: npm ci --no-audit --no-fund
+      - name: Prepare PostgreSQL contracts
+        env: { PGPASSWORD: postgres }
+        run: psql -h 127.0.0.1 -U postgres -d contagest_import_v95 -v ON_ERROR_STOP=1 -f ops/database/prepare-supabase-ephemeral.sql
+      - name: Migrate
+        run: npm --workspace backend run prisma:deploy
+      - name: Seed
+        run: npm --workspace backend run seed
+      - name: Prisma validate
+        run: npm --workspace backend run db:validate
+      - name: TypeScript
+        run: npm --workspace backend run typecheck
+      - name: Parser and source contracts
+        run: node --test tests/import_pipeline_issue_95.test.mjs
+      - name: Import PostgreSQL suite
+        run: npm --workspace backend exec -- tsx --test ../qa/import-transactional-v95.test.ts
+      - name: Build
+        run: npm run build
