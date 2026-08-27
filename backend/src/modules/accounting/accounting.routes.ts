@@ -28,7 +28,13 @@ router.post('/entries', requirePermission('accounting.post'), validateBody(entry
     scope:'accounting.entries.create',
     key:idempotencyKey(req),
     request:req.body,
-    requestId:requestId(req)
+    requestId:requestId(req),
+    replay:async(tx,record)=>{
+      if(!record.resourceId)throw new HttpError(409,'El resultado original del asiento no tiene recurso asociado.',{code:'IDEMPOTENCY_RESULT_UNAVAILABLE',scope:'accounting.entries.create'});
+      const entry=await tx.ledgerEntry.findFirst({where:{id:record.resourceId,tenantId:ctx.tenantId},include:{lines:true}});
+      if(!entry)throw new HttpError(409,'El asiento original ya no puede reconstruirse.',{code:'IDEMPOTENCY_RESULT_UNAVAILABLE',scope:'accounting.entries.create'});
+      return entry;
+    }
   },async(tx)=>{
     const entry=await createLedgerEntry({tenantId:ctx.tenantId,...req.body},tx);
     return{data:entry,resourceType:'LedgerEntry',resourceId:entry.id};
