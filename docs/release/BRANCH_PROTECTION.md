@@ -30,16 +30,30 @@ La regla estructural **no** convierte un check inestable en required.
 
 ## Required checks
 
-La tabla se mantiene en `ops/github/main-release-governance-v97.json` y debe corresponder a nombres reales de workflow/job.
+La tabla se mantiene en `ops/github/main-release-governance-v97.json` y debe corresponder a nombres **observados realmente por GitHub**, no sólo al texto esperado leyendo YAML.
 
 | Contexto | Estado inicial | Condición de promoción |
 |---|---|---|
 | `ContaGest CI / validate` | candidate/blockado | ejecuciones reales repetidas y confiables |
-| `PostgreSQL #28 · reglas anti-tenant reales / Migraciones + constraints v11.15` | candidate/blockado | reconstrucción PostgreSQL real estable por SHA |
+| `PostgreSQL / Migraciones + constraints v11.15` | candidate/blockado | reconstrucción PostgreSQL real estable por SHA |
 | `ContaGest Browser QA / playwright` | informativo | disponibilidad suficientemente estable |
 | `Accessibility WCAG22 / wcag22-aa` | pendiente #99 | #99 mergeado + ejecuciones reales estables |
 
-El gate PostgreSQL #28 ya existe y su propio PR identifica exactamente el contexto que debe promoverse cuando sea confiable. No se inventan nombres alternativos.
+### Hallazgo de nombre real del gate #28
+
+`.github/workflows/postgres-tenant-rules-v28.yml` declara sin comillas:
+
+```yaml
+name: PostgreSQL #28 · reglas anti-tenant reales
+```
+
+En YAML, `#28 ...` se interpreta como comentario. Los workflow runs observados por GitHub se llaman realmente `PostgreSQL`, y el job se llama `Migraciones + constraints v11.15`. Por eso el contexto candidato correcto es:
+
+```text
+PostgreSQL / Migraciones + constraints v11.15
+```
+
+No se usa el nombre histórico documentado por el PR #130 porque sería un required check inexistente, uno de los casos negativos explícitos de #97.
 
 ### Política de promoción
 
