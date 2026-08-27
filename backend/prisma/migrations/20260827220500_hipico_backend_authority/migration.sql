@@ -4,17 +4,17 @@
 
 DO $$
 DECLARE
-  table_name text;
+  target_table text;
 BEGIN
-  FOREACH table_name IN ARRAY ARRAY[
+  FOREACH target_table IN ARRAY ARRAY[
     'hipico_profiles',
     'hipico_workspaces',
     'hipico_audit_events',
     'hipico_shadow_evaluations'
   ] LOOP
-    IF to_regclass(format('public.%I', table_name)) IS NOT NULL THEN
-      EXECUTE format('ALTER TABLE public.%I ENABLE ROW LEVEL SECURITY', table_name);
-      EXECUTE format('ALTER TABLE public.%I FORCE ROW LEVEL SECURITY', table_name);
+    IF to_regclass(format('public.%I', target_table)) IS NOT NULL THEN
+      EXECUTE format('ALTER TABLE public.%I ENABLE ROW LEVEL SECURITY', target_table);
+      EXECUTE format('ALTER TABLE public.%I FORCE ROW LEVEL SECURITY', target_table);
     END IF;
   END LOOP;
 END $$;
@@ -22,35 +22,26 @@ END $$;
 -- Owner-scoped policies are installed only when Supabase auth.uid() is available and the expected owner_id column exists.
 DO $$
 DECLARE
-  table_name text;
-  policy_name text;
+  target_table text;
+  target_policy text;
   has_owner boolean;
 BEGIN
   IF to_regnamespace('auth') IS NULL THEN
     RETURN;
   END IF;
 
-  FOREACH table_name IN ARRAY ARRAY['hipico_profiles', 'hipico_workspaces', 'hipico_audit_events'] LOOP
-    IF to_regclass(format('public.%I', table_name)) IS NULL THEN
+  FOREACH target_table IN ARRAY ARRAY['hipico_profiles', 'hipico_workspaces', 'hipico_audit_events'] LOOP
+    IF to_regclass(format('public.%I', target_table)) IS NULL THEN
       CONTINUE;
     END IF;
 
-    SELECT EXISTS (
-      SELECT 1
-      FROM information_schema.columns
-      WHERE table_schema = 'public'
-        AND table_name = table_name
-        AND column_name = 'owner_id'
-    ) INTO has_owner;
-
-    -- information_schema variable ambiguity is avoided by the explicit second check below.
     SELECT EXISTS (
       SELECT 1
       FROM pg_attribute a
       JOIN pg_class c ON c.oid = a.attrelid
       JOIN pg_namespace n ON n.oid = c.relnamespace
       WHERE n.nspname = 'public'
-        AND c.relname = table_name
+        AND c.relname = target_table
         AND a.attname = 'owner_id'
         AND a.attnum > 0
         AND NOT a.attisdropped
@@ -60,17 +51,17 @@ BEGIN
       CONTINUE;
     END IF;
 
-    policy_name := format('%s_owner_isolation_v116', table_name);
+    target_policy := format('%s_owner_isolation_v116', target_table);
     IF NOT EXISTS (
       SELECT 1 FROM pg_policies
       WHERE schemaname = 'public'
-        AND tablename = table_name
-        AND policyname = policy_name
+        AND tablename = target_table
+        AND policyname = target_policy
     ) THEN
       EXECUTE format(
         'CREATE POLICY %I ON public.%I FOR ALL TO authenticated USING (owner_id = auth.uid()) WITH CHECK (owner_id = auth.uid())',
-        policy_name,
-        table_name
+        target_policy,
+        target_table
       );
     END IF;
   END LOOP;
