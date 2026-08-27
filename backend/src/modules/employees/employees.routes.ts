@@ -6,6 +6,8 @@ import { asyncHandler, HttpError, ok } from '../../shared/http.js';
 import { requirePermission, requireTenant } from '../../shared/middleware/context.js';
 import { validateBody } from '../../shared/middleware/validate.js';
 import { writeAudit } from '../../shared/services/audit.service.js';
+import { money, serializeDecimal, serializeLegacyNumber, ZERO } from '../../shared/financial/decimal.js';
+import { decimalSchema } from '../../shared/financial/zod.js';
 
 const router = Router();
 router.use(requireTenant, requirePermission('payroll.manage'));
@@ -16,7 +18,7 @@ const employeeSchema = z.object({
   position: z.string().trim().min(2).max(120),
   department: z.string().trim().max(120).optional(),
   hiredAt: z.coerce.date().optional(),
-  salary: z.coerce.number().nonnegative().optional(),
+  salary: decimalSchema('money', { nonnegative: true }).optional(),
   active: z.boolean().optional()
 });
 
@@ -27,10 +29,14 @@ const context = (req: any) => req.context as {
   userAgent?: string;
 };
 
-const serialize = (employee: any) => ({
-  ...employee,
-  salary: Number(employee.salary || 0)
-});
+const serialize = (employee: any) => {
+  const salary = money(employee.salary ?? ZERO);
+  return {
+    ...employee,
+    salary: serializeLegacyNumber(salary),
+    salaryExact: serializeDecimal(salary, 2)
+  };
+};
 
 router.get('/', asyncHandler(async (req, res) => {
   const ctx = context(req);
@@ -69,6 +75,7 @@ router.get('/:id', asyncHandler(async (req, res) => {
 router.post('/', validateBody(employeeSchema), asyncHandler(async (req, res) => {
   const ctx = context(req);
   const id = randomUUID();
+  const salary = req.body.salary ?? ZERO;
   const rows = await prisma.$queryRawUnsafe<any[]>(
     `INSERT INTO "Employee" ("id", "tenantId", "idNumber", "fullName", "position", "department", "hiredAt", "salary", "active", "createdAt", "updatedAt")
      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW(), NOW())
@@ -80,7 +87,7 @@ router.post('/', validateBody(employeeSchema), asyncHandler(async (req, res) => 
     req.body.position,
     req.body.department || null,
     req.body.hiredAt || null,
-    Number(req.body.salary || 0),
+    salary,
     req.body.active !== false
   );
   const employee = serialize(rows[0]);
@@ -105,7 +112,7 @@ router.put('/:id', validateBody(employeeSchema.partial()), asyncHandler(async (r
     position: req.body.position ?? before.position,
     department: req.body.department === undefined ? before.department : (req.body.department || null),
     hiredAt: req.body.hiredAt === undefined ? before.hiredAt : (req.body.hiredAt || null),
-    salary: req.body.salary === undefined ? Number(before.salary || 0) : Number(req.body.salary),
+    salary: req.body.salary === undefined ? money(before.salary ?? ZERO) : req.body.salary,
     active: req.body.active === undefined ? before.active : req.body.active
   };
 
