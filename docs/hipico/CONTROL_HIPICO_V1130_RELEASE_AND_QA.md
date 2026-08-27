@@ -129,29 +129,46 @@ Las migraciones v1.13 se prueban y autorizan por separado. Seguir `HIPICO_V13_MI
 
 No aplicar una migración productiva como efecto lateral de build/deploy.
 
-## Gate unificado local
+## Gate canónico local · Issue #103
 
-Desde la raíz del repositorio en Windows:
-
-```powershell
-.\QA-PRODUCCION.ps1
-```
-
-O:
+Desde la raíz del repositorio, el único comando canónico para la suite automatizable de Control Hípico es:
 
 ```bash
-npm ci --no-audit --no-fund
-npm run qa:production:full
+npm run qa:hipico -- --mode=full
 ```
 
-El reporte queda en:
+Para exigir compilación APK cuando JDK + Android SDK estén disponibles:
+
+```bash
+HIPICO_QA_ANDROID=build npm run qa:hipico -- --mode=full
+```
+
+En Windows/PowerShell:
+
+```powershell
+$env:HIPICO_QA_ANDROID='build'
+npm run qa:hipico -- --mode=full
+```
+
+El runner #103:
+
+- captura SHA, branch y dirty state sin reset/clean/stash;
+- ejecuta backend + contratos PWA/API + Bridge + audit + paridad Android;
+- diferencia `PASS`, `FAIL`, `BLOCKED`, `NOT_EXECUTED`;
+- redacciona tokens, teléfonos e IDs completos de grupos;
+- escribe Markdown + JSON + SHA256SUMS por candidate SHA.
+
+Evidencia:
 
 ```text
-artifacts/qa/production-readiness.md
-artifacts/qa/production-readiness.json
+artifacts/qa/hipico-v103/<candidate-sha>/<run-id>/qa-report.md
+artifacts/qa/hipico-v103/<candidate-sha>/<run-id>/qa-report.json
+artifacts/qa/hipico-v103/<candidate-sha>/<run-id>/SHA256SUMS.txt
 ```
 
-Los resultados distinguen `PASS`, `FAIL`, `BLOCKED` y `NOT_EXECUTED`; un build o preview no reemplaza QA físico.
+Ver `docs/hipico/QA-RUNNER.md` para modos, exit codes y límites.
+
+`QA-PRODUCCION.ps1` / `qa:production:full` siguen perteneciendo al readiness general de ContaGest y **no sustituyen** el gate de producto Hípico.
 
 ## QA físico Android obligatorio
 
@@ -167,6 +184,8 @@ Instalar el APK debug y comprobar:
 8. recuperación y persistencia;
 9. exportaciones/archivos;
 10. feed WhatsApp shadow.
+
+Build APK `PASS` no equivale a instalación física `PASS`.
 
 ## Firma release
 
