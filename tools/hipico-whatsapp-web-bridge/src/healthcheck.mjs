@@ -1,5 +1,6 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { classifyHealth, deriveOperationalMetrics, redactDiagnostic } from './observability.mjs';
 
 function dataDir() {
   return path.resolve(String(
@@ -12,20 +13,25 @@ function dataDir() {
 
 const requireReady = process.argv.includes('--ready');
 const maxAgeMs = Math.max(15000, Math.min(15 * 60 * 1000, Number(process.env.HIPICO_HEALTH_MAX_AGE_MS || 120000)));
+const backlogWarnAgeMs = Math.max(30000, Number(process.env.HIPICO_BACKLOG_WARN_AGE_MS || 5 * 60 * 1000));
 const file = path.join(dataDir(), 'health.json');
 
-function finish(ok, reason, health = null) {
-  const payload = {
+function finish(ok, reason, health = null, status = null) {
+  const payload = redactDiagnostic({
     ts: new Date().toISOString(),
     service: 'control-hipico-whatsapp-bridge',
     ok,
     reason,
     requireReady,
+    state: status?.state || 'down',
+    degraded: status?.degraded === true,
+    reasons: status?.reasons || [reason],
     healthTimestamp: health?.timestamp || null,
-    ready: health?.readiness?.ready === true,
+    ready: status?.ready === true,
     runtimeMode: health?.runtimeMode || null,
-    sourceSendPossible: health?.sourceSendPossible ?? null
-  };
+    sourceSendPossible: health?.sourceSendPossible ?? null,
+    metrics: health ? deriveOperationalMetrics(health) : null
+  });
   process.stdout.write(`${JSON.stringify(payload)}\n`);
   process.exitCode = ok ? 0 : 1;
 }
@@ -33,12 +39,10 @@ function finish(ok, reason, health = null) {
 try {
   const raw = await fs.readFile(file, 'utf8');
   const health = JSON.parse(raw);
-  const stamp = Date.parse(String(health?.timestamp || ''));
-  if (!Number.isFinite(stamp)) finish(false, 'HEALTH_TIMESTAMP_INVALID', health);
-  else if (Date.now() - stamp > maxAgeMs) finish(false, 'HEALTH_STALE', health);
-  else if (health?.sourceSendPossible !== false) finish(false, 'SOURCE_SEND_GUARD_INVALID', health);
-  else if (requireReady && health?.readiness?.ready !== true) finish(false, 'RUNTIME_NOT_READY', health);
-  else finish(true, 'HEALTH_OK', health);
+  const status = classifyHealth(health, { maxAgeMs, backlogWarnAgeMs });
+  if (!status.live) finish(false, status.reasons[0] || 'HEALTH_DOWN', health, status);
+  else if (requireReady && !status.ready) finish(false, status.reasons[0] || 'RUNTIME_NOT_READY', health, status);
+  else finish(true, status.degraded ? 'HEALTH_DEGRADED' : 'HEALTH_OK', health, status);
 } catch (error) {
   finish(false, error?.code === 'ENOENT' ? 'HEALTH_FILE_MISSING' : 'HEALTH_READ_FAILED');
 }
