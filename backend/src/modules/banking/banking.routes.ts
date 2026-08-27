@@ -78,7 +78,13 @@ router.post('/movements', validateBody(movementSchema), asyncHandler(async (req,
     scope: 'banking.movements.create',
     key: idempotencyKey(req),
     request: input,
-    requestId: requestId(req)
+    requestId: requestId(req),
+    replay: async (tx, record) => {
+      if (!record.resourceId) throw new HttpError(409, 'El resultado original del movimiento no tiene recurso asociado.', { code:'IDEMPOTENCY_RESULT_UNAVAILABLE', scope:'banking.movements.create' });
+      const movement = await tx.bankMovement.findFirst({ where:{ id:record.resourceId, tenantId:ctx.tenantId }, include:{ account:true } });
+      if (!movement) throw new HttpError(409, 'El movimiento bancario original ya no puede reconstruirse.', { code:'IDEMPOTENCY_RESULT_UNAVAILABLE', scope:'banking.movements.create' });
+      return serializeMovement(movement);
+    }
   }, async (tx) => {
     const account = await tx.bankAccount.findFirst({ where:{ id:input.accountId, tenantId:ctx.tenantId, active:true } });
     if (!account) throw new HttpError(404, 'Cuenta bancaria no encontrada para el tenant activo.');
