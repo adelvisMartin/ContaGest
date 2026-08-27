@@ -1,0 +1,151 @@
+name: Seguridad DB y recuperación
+
+on:
+  schedule:
+    - cron: '17 * * * *'
+    - cron: '23 3 * * *'
+    - cron: '37 4 1 * *'
+  workflow_dispatch:
+    inputs:
+      operation:
+        description: Operación segura a ejecutar
+        required: true
+        default: monitor
+        type: choice
+        options:
+          - monitor
+          - backup
+          - restore
+
+permissions:
+  contents: read
+
+concurrency:
+  group: db-security-${{ github.event.schedule || inputs.operation || github.run_id }}
+  cancel-in-progress: false
+
+env:
+  BACKUP_SCOPE: contagest-shared
+
+jobs:
+  monitor:
+    name: Monitor de privilegios y DML
+    if: >-
+      vars.DB_SECURITY_OPERATIONS_ENABLED == 'true' &&
+      ((github.event_name == 'schedule' && github.event.schedule == '17 * * * *') ||
+       (github.event_name == 'workflow_dispatch' && inputs.operation == 'monitor'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+      - name: Instalar dependencias bloqueadas
+        run: npm ci --ignore-scripts
+      - name: Detectar DML masivo y cambios sensibles
+        env:
+          DATABASE_MONITOR_URL: ${{ secrets.DATABASE_MONITOR_URL }}
+          DATABASE_MONITOR_EXPECTED_ROLE: contagest_monitor
+          DB_MASS_CHANGE_ROW_THRESHOLD: ${{ vars.DB_MASS_CHANGE_ROW_THRESHOLD || '500' }}
+          DB_SECURITY_AUDIT_WINDOW_MINUTES: '70'
+          SECURITY_ALERT_WEBHOOK_URL: ${{ secrets.SECURITY_ALERT_WEBHOOK_URL }}
+        run: node backend/scripts/security-db-monitor.mjs
+
+  backup:
+    name: Backup lógico cifrado off-site
+    if: >-
+      vars.DB_SECURITY_OPERATIONS_ENABLED == 'true' &&
+      ((github.event_name == 'schedule' && github.event.schedule == '23 3 * * *') ||
+       (github.event_name == 'workflow_dispatch' && inputs.operation == 'backup'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - name: Instalar PostgreSQL client, age y rclone
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client age rclone
+      - name: Preparar configuración rclone aislada
+        env:
+          RCLONE_CONFIG_B64: ${{ secrets.RCLONE_CONFIG_B64 }}
+        run: |
+          test -n "$RCLONE_CONFIG_B64"
+          printf '%s' "$RCLONE_CONFIG_B64" | base64 --decode > "$RUNNER_TEMP/rclone.conf"
+          chmod 600 "$RUNNER_TEMP/rclone.conf"
+      - name: Crear y verificar backup cifrado externo
+        env:
+          DATABASE_BACKUP_URL: ${{ secrets.DATABASE_BACKUP_URL }}
+          DATABASE_BACKUP_EXPECTED_ROLE: contagest_backup
+          BACKUP_AGE_RECIPIENT: ${{ secrets.BACKUP_AGE_RECIPIENT }}
+          RCLONE_CONFIG: ${{ runner.temp }}/rclone.conf
+          RCLONE_REMOTE: ${{ secrets.RCLONE_REMOTE }}
+          BACKUP_DIR: ${{ runner.temp }}/contagest-backups
+          LOCAL_RETENTION_DAYS: '1'
+        run: bash ops/backup/backup-postgres.sh
+
+  restore-drill:
+    name: Simulacro mensual de restauración
+    if: >-
+      vars.DB_SECURITY_OPERATIONS_ENABLED == 'true' &&
+      ((github.event_name == 'schedule' && github.event.schedule == '37 4 1 * *') ||
+       (github.event_name == 'workflow_dispatch' && inputs.operation == 'restore'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: restore-drill-only
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v7
+      - name: Instalar PostgreSQL client, age y rclone
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client age rclone
+      - name: Preparar credenciales de recuperación
+        env:
+          RCLONE_CONFIG_B64: ${{ secrets.RCLONE_CONFIG_B64 }}
+          BACKUP_AGE_IDENTITY_B64: ${{ secrets.BACKUP_AGE_IDENTITY_B64 }}
+        run: |
+          test -n "$RCLONE_CONFIG_B64"
+          test -n "$BACKUP_AGE_IDENTITY_B64"
+          printf '%s' "$RCLONE_CONFIG_B64" | base64 --decode > "$RUNNER_TEMP/rclone.conf"
+          printf '%s' "$BACKUP_AGE_IDENTITY_B64" | base64 --decode > "$RUNNER_TEMP/age-identity.txt"
+          chmod 600 "$RUNNER_TEMP/rclone.conf" "$RUNNER_TEMP/age-identity.txt"
+      - name: Descargar el backup externo más reciente
+        id: latest
+        env:
+          RCLONE_CONFIG: ${{ runner.temp }}/rclone.conf
+          RCLONE_REMOTE: ${{ secrets.RCLONE_REMOTE }}
+        run: |
+          set -euo pipefail
+          latest="$(rclone lsf "${RCLONE_REMOTE%/}" --dirs-only | sed 's#/$##' | sort | tail -n 1)"
+          test -n "$latest"
+          mkdir -p "$RUNNER_TEMP/restore-source"
+          rclone copy "${RCLONE_REMOTE%/}/$latest" "$RUNNER_TEMP/restore-source"
+          backup="$(find "$RUNNER_TEMP/restore-source" -maxdepth 1 -type f -name '*.dump.age' | head -n 1)"
+          test -n "$backup"
+          test -f "${backup}.sha256"
+          echo "backup=$backup" >> "$GITHUB_OUTPUT"
+      - name: Crear base desechable
+        env:
+          PGPASSWORD: restore-drill-only
+        run: createdb -h 127.0.0.1 -U postgres contagest_drill
+      - name: Restaurar, validar integridad y contar entidades críticas
+        env:
+          RESTORE_DATABASE_URL: postgresql://postgres:restore-drill-only@127.0.0.1:5432/contagest_drill
+          BACKUP_FILE: ${{ steps.latest.outputs.backup }}
+          AGE_IDENTITY: ${{ runner.temp }}/age-identity.txt
+          PRIMARY_DATABASE_HOST: db.soxzatxiwlfsvtblrqal.supabase.co
+        run: bash ops/backup/restore-drill.sh
