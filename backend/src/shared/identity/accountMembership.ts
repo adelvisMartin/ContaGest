@@ -1,6 +1,7 @@
 import { prisma } from '../../database/prisma.js';
 import { HttpError } from '../http.js';
 import { assertSubscriptionAccess } from '../commercial/subscriptionGuard.js';
+import { hasPlatformAccess, PLATFORM_TENANT_RIF } from './platformAccess.js';
 
 export type MembershipIdentityInput = {
   tenantId:string;
@@ -155,10 +156,10 @@ export async function listAccessibleTenants(userProfileId:string) {
            t."rif", t."name", t."legalName", t."status"::text AS "tenantStatus",
            EXISTS (
              SELECT 1 FROM public."UserRole" ur
-             JOIN public."Role" r ON r."id"=ur."roleId" AND r."tenantId"=tm."tenantId"
+             JOIN public."Role" r ON r."id"=ur."roleId" AND r."tenantId"=tm."tenantId" AND r."scope"='platform'
              JOIN public."RolePermission" rp ON rp."roleId"=r."id"
              JOIN public."Permission" p ON p."id"=rp."permissionId" AND p."key"='platform.manage'
-             WHERE ur."userId"=tm."userProfileId"
+             WHERE ur."userId"=tm."userProfileId" AND t."rif"=${PLATFORM_TENANT_RIF}
            ) AS "hasPlatformPermission",
            lk."status" AS "licenseStatus", lk."expiresAt" AS "licenseExpiresAt", lk."subscriptionId"
     FROM public."TenantMembership" tm
@@ -195,8 +196,7 @@ export async function resolveTenantSwitch(currentUserProfileId:string, targetTen
   `;
   const target=rows[0];
   if(!target)throw new HttpError(403,'La cuenta no tiene membresía activa en la empresa solicitada.');
-  const platformPermission=await prisma.userRole.count({where:{userId:target.userProfileId,role:{tenantId:target.tenantId,permissions:{some:{permission:{key:'platform.manage'}}}}}});
-  if(!platformPermission){
+  if(!await hasPlatformAccess({userId:target.userProfileId,tenantId:target.tenantId})){
     const license=await activeLicenseForProfile(target.userProfileId,target.tenantId);
     if(!license)throw new HttpError(403,'La empresa solicitada no está cubierta por una licencia activa para esta cuenta.');
     await assertSubscriptionAccess(license.subscriptionId||null,target.tenantId);

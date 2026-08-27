@@ -4,6 +4,7 @@ import { env, isProd } from '../../config/env.js';
 import { prisma } from '../../database/prisma.js';
 import { verifyAccessToken } from '../auth/jwt.js';
 import { readAccessToken, readCsrfToken, validateCsrfAgainstSession } from '../auth/sessionCookies.js';
+import { hasPlatformAccess, isPlatformPermission } from '../identity/platformAccess.js';
 import { HttpError } from '../http.js';
 
 const DEV_TENANT_ID_HEADER = 'x-tenant-id';
@@ -137,19 +138,11 @@ function enabledModules(value: unknown) {
   return [];
 }
 
-async function hasPlatformPermission(ctx: RequestContext) {
-  if (!ctx.userId || !ctx.tenantId) return false;
-  const count = await prisma.userRole.count({
-    where:{ userId:ctx.userId, role:{ tenantId:ctx.tenantId, permissions:{ some:{ permission:{ key:'platform.manage' } } } } }
-  });
-  return count > 0;
-}
-
 async function enforceClientLicense(ctx: RequestContext, permission: string) {
   if (!ctx.userId || !ctx.tenantId) throw new HttpError(401, 'No hay usuario autenticado.');
-  // A tenant role flagged as `system` is not proof that this is an internal platform operator.
-  // Only the explicit platform permission may bypass customer licensing.
-  if (await hasPlatformPermission(ctx)) return;
+  // `Role.system` is role lifecycle metadata only. The only customer-license bypass is
+  // a verified platform-scoped identity carrying platform.manage in the internal tenant.
+  if (await hasPlatformAccess(ctx)) return;
 
   const license = await prisma.licenseKey.findFirst({
     where: { tenantId:ctx.tenantId, userId:ctx.userId, status:'active', expiresAt:{ gt:new Date() } },
@@ -171,6 +164,11 @@ export function requirePermission(permission: string) {
       if (!ctx?.tenantId) return next(new HttpError(401, 'No hay tenant activo.'));
       if (ctx.authMode === 'development' && !ctx.userId && env.ALLOW_DEV_TENANT_HEADER === 'true') return next();
       if (!ctx.userId) return next(new HttpError(401, 'No hay usuario autenticado.'));
+
+      if (isPlatformPermission(permission)) {
+        if (!await hasPlatformAccess(ctx, permission)) return next(new HttpError(403, `Permiso de plataforma requerido: ${permission}`));
+        return next();
+      }
 
       await enforceClientLicense(ctx, permission);
       const allowed = await prisma.userRole.count({

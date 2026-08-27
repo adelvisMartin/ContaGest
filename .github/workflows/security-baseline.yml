@@ -8,6 +8,7 @@ on:
       - 'feature/**'
       - 'feat/**'
       - 'refactor/**'
+      - 'security/**'
 
 permissions:
   contents: read
@@ -25,3 +26,5 @@ jobs:
         run: node scripts/security-audit.mjs
       - name: Contratos de seguridad de base de datos y recuperación
         run: node scripts/db-security-contract-audit.mjs
+      - name: Aislamiento IAM tenant/platform
+        run: node scripts/iam-platform-isolation-audit.mjs

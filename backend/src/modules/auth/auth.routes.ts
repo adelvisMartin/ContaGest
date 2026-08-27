@@ -17,6 +17,7 @@ import {
 } from '../../shared/auth/sessionCookies.js';
 import { validateUserLicense } from '../../shared/licensing/licenseGuard.js';
 import { activeLicenseForProfile, ensureAccountMembership, listAccessibleTenants, resolveTenantSwitch } from '../../shared/identity/accountMembership.js';
+import { hasPlatformAccess } from '../../shared/identity/platformAccess.js';
 import { coordinateCardStatus, generateCoordinateCard, issueCoordinateChallenge, revokeCoordinateCard, verifyCoordinateChallenge } from '../../shared/auth/coordinateCard.js';
 
 const router = Router();
@@ -99,10 +100,9 @@ function verifyCaptcha(body:{captchaToken?:string;captchaAnswer?:string}){
 function permissionsForUser(user:any){
   return [...new Set((user?.userRoles||[]).flatMap((assignment:any)=>(assignment?.role?.permissions||[]).map((item:any)=>item?.permission?.key).filter(Boolean)))];
 }
-function isInternalUser(user:any){return Array.isArray(user?.userRoles)&&user.userRoles.some((assignment:any)=>assignment?.role?.system===true);}
 function hasAdminPermission(user:any){return permissionsForUser(user).includes('admin.manage');}
-function roleForUser(user:any){return hasAdminPermission(user)?'admin':isInternalUser(user)?'staff':'client';}
-function publicUser(user:any,role=roleForUser(user)){return{id:user.id,email:user.email,fullName:user.fullName,name:user.fullName,status:user.status,role,permissions:permissionsForUser(user),accessExpiresAt:user.accessExpiresAt||null};}
+function roleForUser(user:any,platformOperator=false){return hasAdminPermission(user)?'admin':platformOperator?'staff':'client';}
+function publicUser(user:any,role:string){return{id:user.id,email:user.email,fullName:user.fullName,name:user.fullName,status:user.status,role,permissions:permissionsForUser(user),accessExpiresAt:user.accessExpiresAt||null};}
 function publicLicense(license:any){
   if(!license)return null;
   const{_issuedDeviceCredential,_issuedDeviceCredentialExpiresAt,...safe}=license;
@@ -110,15 +110,16 @@ function publicLicense(license:any){
 }
 
 async function sessionPayload(req:any,res:any,user:any,tenant:any,options:{role?:string;license?:any;rotateResult?:any}={}){
-  const role=options.role||roleForUser(user);
+  const platformOperator=await hasPlatformAccess({userId:user.id,tenantId:tenant.id});
+  const role=options.role||roleForUser(user,platformOperator);
   await ensureAccountMembership({tenantId:tenant.id,userProfileId:user.id,email:user.email,fullName:user.fullName,roleLabel:role});
   const cookieSession=options.rotateResult||await issueBrowserSession(req,res,user,tenant.id,{role,audience:role==='client'?'client':'staff'});
   const accessibleTenants=await listAccessibleTenants(user.id);
   const effectiveLicense=options.license!==undefined
     ? options.license
-    : role==='client'
-      ? await activeLicenseForProfile(user.id,tenant.id)
-      : null;
+    : platformOperator
+      ? null
+      : await activeLicenseForProfile(user.id,tenant.id);
   return{
     ...cookieSession,
     tenantId:tenant.id,
@@ -190,10 +191,10 @@ router.post('/login',validateBody(loginSchema),asyncHandler(async(req,res)=>{
   }
 
   await recordLoginSuccess(req);
-  const internalUser=isInternalUser(user);
-  const role=roleForUser(user);
+  const platformOperator=await hasPlatformAccess({userId:user.id,tenantId:tenant.id});
+  const role=roleForUser(user,platformOperator);
   let license:any=null;
-  if(!internalUser){
+  if(!platformOperator){
     license=await validateUserLicense({
       tenantId:tenant.id,userId:user.id,userEmail:user.email,
       licenseKey:req.body.licenseKey||null,deviceId:req.body.deviceId||null,
@@ -216,13 +217,13 @@ router.post('/login/coordinates',validateBody(coordinateLoginSchema),asyncHandle
   const verified=await verifyCoordinateChallenge({challengeId:req.body.challengeId,answers:req.body.answers,ip:req.ip,userAgent:req.headers['user-agent']||''});
   const user=await prisma.userProfile.findFirst({where:{id:verified.userId,tenantId:verified.tenantId,status:'active'},include:{tenant:true,userRoles:userRoleInclude}});if(!user)throw new HttpError(401,'Usuario del reto no disponible.');ensureAccessNotExpired(user);
   const context=verified.context as any;
-  ok(res,await sessionPayload(req,res,user,user.tenant,{role:context.role||roleForUser(user),license:context.license||null}));
+  ok(res,await sessionPayload(req,res,user,user.tenant,{role:context.role,license:context.license||null}));
 }));
 
 router.get('/coordinates/status',asyncHandler(async(req,res)=>{const{user}=await authenticatedSession(req);ok(res,await coordinateCardStatus(user.tenantId,user.id));}));
 router.post('/coordinates/enroll',asyncHandler(async(req,res)=>{const{user}=await authenticatedSession(req);ok(res,await generateCoordinateCard(user.tenantId,user.id),201);}));
 router.post('/coordinates/revoke',asyncHandler(async(req,res)=>{const{user}=await authenticatedSession(req);ok(res,await revokeCoordinateCard(user.tenantId,user.id));}));
-router.get('/me',asyncHandler(async(req,res)=>{const{decoded,user}=await authenticatedSession(req);ok(res,{sessionMode:'cookie',tenantId:user.tenantId,user:publicUser(user),tenant:user.tenant,license:roleForUser(user)==='client'?await activeLicenseForProfile(user.id,user.tenantId):null,accessibleTenants:await listAccessibleTenants(user.id),coordinateCard:await coordinateCardStatus(user.tenantId,user.id),expiresAt:decoded.exp?decoded.exp*1000:null});}));
+router.get('/me',asyncHandler(async(req,res)=>{const{decoded,user}=await authenticatedSession(req);const platformOperator=await hasPlatformAccess({userId:user.id,tenantId:user.tenantId});const role=roleForUser(user,platformOperator);ok(res,{sessionMode:'cookie',tenantId:user.tenantId,user:publicUser(user,role),tenant:user.tenant,license:platformOperator?null:await activeLicenseForProfile(user.id,user.tenantId),accessibleTenants:await listAccessibleTenants(user.id),coordinateCard:await coordinateCardStatus(user.tenantId,user.id),expiresAt:decoded.exp?decoded.exp*1000:null});}));
 router.get('/tenants',asyncHandler(async(req,res)=>{const{user}=await authenticatedSession(req);ok(res,await listAccessibleTenants(user.id));}));
 router.post('/switch-tenant',validateBody(switchTenantSchema),asyncHandler(async(req,res)=>{
   const{user}=await authenticatedSession(req);
@@ -230,7 +231,7 @@ router.post('/switch-tenant',validateBody(switchTenantSchema),asyncHandler(async
   const targetUser=await prisma.userProfile.findFirst({where:{id:target.userProfileId,tenantId:target.tenantId,status:'active'},include:{tenant:true,userRoles:userRoleInclude}});
   if(!targetUser)throw new HttpError(403,'La membresía destino ya no está disponible.');
   await revokeBrowserSession(req,res);
-  ok(res,await sessionPayload(req,res,targetUser,targetUser.tenant,{role:roleForUser(targetUser)}));
+  ok(res,await sessionPayload(req,res,targetUser,targetUser.tenant));
 }));
 router.post('/refresh',asyncHandler(async(req,res)=>{
   const rotated=await rotateBrowserSession(req,res);
