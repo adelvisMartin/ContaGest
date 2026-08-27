@@ -18,7 +18,18 @@ test('issue #101 snapshot is bound to a concrete main SHA and is not production-
 test('issue #101 keeps exact evidence states and never promotes unexecuted work', () => {
   assert.deepEqual(new Set(roadmap.deliveryContract.allowedEvidenceStates), allowed);
   assert.equal(roadmap.deliveryContract.notExecutedIsNeverPass, true);
+  assert.equal(roadmap.deliveryContract.closedIssueIsNotRuntimePass, true);
   for (const gate of roadmap.verifiedCurrentGates) assert.ok(allowed.has(gate.status), `${gate.area} has unsupported status ${gate.status}`);
+});
+
+test('issue #101 closed child lifecycle does not become runtime PASS', () => {
+  for (const issue of [98, 99]) {
+    const gate = roadmap.verifiedCurrentGates.find((entry) => entry.issue === issue);
+    assert.equal(gate?.lifecycleState, 'closed-completed');
+    assert.equal(gate?.status, 'SOURCE_REVIEW');
+    assert.equal(gate?.runtimeEvidence, 'NOT_EXECUTED');
+  }
+  assert.match(docs, /lifecycle state is not candidate-SHA browser evidence|Issue lifecycle is useful roadmap metadata/);
 });
 
 test('issue #101 records live governance and legal blockers explicitly', () => {
