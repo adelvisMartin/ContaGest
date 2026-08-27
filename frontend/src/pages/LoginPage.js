@@ -1,9 +1,11 @@
 import { AuthService } from '../services/authService.js';
 import { BackendApi } from '../services/backendApi.js';
+import { LegalService } from '../services/legalService.js';
 import { Button } from '../components/ui/index.js';
 import { escapeHtml } from '../utils/dom.js';
 
 const safe = (value) => escapeHtml(String(value ?? ''));
+const legalBody=(body)=>String(body||'').split(/\n{2,}/).filter(Boolean).map((paragraph)=>`<p>${safe(paragraph).replace(/\n/g,'<br>')}</p>`).join('');
 
 function input({name,label,type='text',value='',autocomplete='',required=true,placeholder=''}) {
   const id = `login-${name}`;
@@ -28,6 +30,11 @@ function assurance(icon,title,copy) {
   return `<article class="login-assurance"><span><i class="fa-solid ${safe(icon)}" aria-hidden="true"></i></span><div><strong>${safe(title)}</strong><p>${safe(copy)}</p></div></article>`;
 }
 
+function publicLegalDialog(catalog){
+  const documents=Array.isArray(catalog?.documents)?catalog.documents:[];
+  return `<div class="coordinate-challenge-layer" role="dialog" aria-modal="true" aria-labelledby="publicLegalTitle" data-public-legal-dialog><section class="coordinate-challenge-card"><header><span><i class="fa-solid fa-scale-balanced" aria-hidden="true"></i></span><div><p class="cgx-eyebrow">Información permanente</p><h2 id="publicLegalTitle">Legal y privacidad</h2><p>Consulta las políticas vigentes antes de iniciar sesión. Esta lectura no registra aceptación.</p></div></header><div class="cgx-module-standard">${documents.map((doc)=>`<details class="cgx-section"><summary><strong>${safe(doc.title)}</strong> · versión ${safe(doc.version)} · vigente desde ${safe(doc.effectiveAt)}</summary><div class="cgx-section-body">${legalBody(doc.body)}</div></details>`).join('')}<div class="coordinate-actions">${Button({id:'btnClosePublicLegal',label:'Cerrar',iconName:'fa-xmark',variant:'secondary',type:'button'})}</div></div></section></div>`;
+}
+
 export const LoginPage = {
   standalone:true,
   render(state) {
@@ -42,7 +49,7 @@ export const LoginPage = {
           <div class="login-form-status" aria-live="polite" data-login-status></div>
           ${Button({label:'Entrar a ContaGest',iconName:'fa-arrow-right-to-bracket',variant:'primary',type:'submit',className:'w-full login-submit'})}
         </form>
-        <div class="login-privacy"><i class="fa-solid fa-lock" aria-hidden="true"></i><span>Sesión cifrada, permisos por rol y aislamiento por empresa.</span></div>
+        <div class="login-privacy"><i class="fa-solid fa-lock" aria-hidden="true"></i><span>Sesión cifrada, permisos por rol y aislamiento por empresa.</span>${Button({id:'btnOpenLegalPolicies',label:'Legal y privacidad',iconName:'fa-scale-balanced',variant:'secondary',type:'button'})}</div>
       </section>
       <section class="login-panel" aria-label="Seguridad y alcance de ContaGest"><div class="login-panel-inner"><span class="login-panel-badge"><i class="fa-solid fa-building" aria-hidden="true"></i><span>ContaGest Enterprise</span></span><h2>Un acceso claro para toda la operación.</h2><p class="login-panel-lead">Cada usuario entra únicamente a los módulos, empresas y funciones que le corresponden.</p><div class="login-assurance-grid">${assurance('fa-user-shield','Permisos por rol','La navegación refleja el alcance real del usuario.')}${assurance('fa-building-lock','Aislamiento por empresa','Cada RIF mantiene sus datos y contexto separados.')}${assurance('fa-layer-group','Verticales adaptables','Comercio, contabilidad, salud, veterinaria y más.')}${assurance('fa-display','Responsive real','La misma operación se adapta a escritorio, tablet y móvil.')}</div><div class="login-panel-foot"><i class="fa-solid fa-circle-check" aria-hidden="true"></i><span>Las cuentas de prueba y clientes se habilitan mediante invitación o licencia; no se publican credenciales administrativas.</span></div></div></section>
       ${coordinateChallenge(state.pendingMfa)}
@@ -89,6 +96,7 @@ export const LoginPage = {
     };
     const loginForm=document.getElementById('loginForm');
     loadCaptcha(loginForm);
+    document.getElementById('btnOpenLegalPolicies')?.addEventListener('click',async()=>{const button=document.getElementById('btnOpenLegalPolicies');button?.setAttribute('disabled','disabled');try{const catalog=await LegalService.publicCatalog();document.querySelector('[data-public-legal-dialog]')?.remove();document.body.insertAdjacentHTML('beforeend',publicLegalDialog(catalog));const dialog=document.querySelector('[data-public-legal-dialog]');const close=()=>dialog?.remove();document.getElementById('btnClosePublicLegal')?.addEventListener('click',close);dialog?.addEventListener('click',(event)=>{if(event.target===dialog)close();});document.getElementById('btnClosePublicLegal')?.focus();}catch(error){Toast.show(error.message||'No se pudieron consultar las políticas vigentes.','error');}finally{button?.removeAttribute('disabled');}});
     document.querySelectorAll('[data-captcha-refresh]').forEach((button)=>button.addEventListener('click',()=>loadCaptcha(button.closest('form'))));
     loginForm?.addEventListener('submit',async(event)=>{
       event.preventDefault();
