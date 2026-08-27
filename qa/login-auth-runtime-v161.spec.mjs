@@ -44,12 +44,20 @@ test('desktop login is compact, aligned and has explicit icon/text spacing',asyn
   const audit=await page.evaluate(()=>{
     const width=innerWidth,doc=document.documentElement;
     const visible=(node)=>{const r=node.getBoundingClientRect(),s=getComputedStyle(node);return s.display!=='none'&&s.visibility!=='hidden'&&r.width>1&&r.height>1;};
+    const describe=(node)=>({
+      tag:node.tagName,
+      id:node.id||'',
+      name:node.getAttribute('name')||'',
+      className:typeof node.className==='string'?node.className:'',
+      label:String(node.getAttribute('aria-label')||node.getAttribute('placeholder')||node.textContent||'').replace(/\s+/g,' ').trim().slice(0,80),
+      rect:(()=>{const r=node.getBoundingClientRect();return{left:r.left,right:r.right,top:r.top,bottom:r.bottom,width:r.width,height:r.height};})()
+    });
     const overlaps=[];
     const nodes=[...document.querySelectorAll('.login-card input,.login-card button,.login-card summary,.login-card .login-captcha-question')].filter(visible);
     for(let i=0;i<nodes.length;i+=1)for(let j=i+1;j<nodes.length;j+=1){
       if(nodes[i].contains(nodes[j])||nodes[j].contains(nodes[i]))continue;
       const a=nodes[i].getBoundingClientRect(),b=nodes[j].getBoundingClientRect();
-      if(Math.min(a.right,b.right)-Math.max(a.left,b.left)>2&&Math.min(a.bottom,b.bottom)-Math.max(a.top,b.top)>2)overlaps.push([nodes[i].tagName,nodes[j].tagName]);
+      if(Math.min(a.right,b.right)-Math.max(a.left,b.left)>2&&Math.min(a.bottom,b.bottom)-Math.max(a.top,b.top)>2)overlaps.push({a:describe(nodes[i]),b:describe(nodes[j])});
     }
     const iconText=[...document.querySelectorAll('.login-kicker,.login-license-details summary>span,.login-privacy,.login-panel-badge,.login-assurance')].filter(visible).map((node)=>({className:node.className,gap:parseFloat(getComputedStyle(node).gap)||0}));
     const title=document.querySelector('.login-panel h2');

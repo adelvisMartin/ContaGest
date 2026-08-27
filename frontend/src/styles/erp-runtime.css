@@ -32,3 +32,63 @@
 @import './runtime-primitives-v13.css';
 @import './module-adapters.css';
 @import './contagest-visual-system-v12.css';
+
+/*
+ * Cascade hardening for canonical button variants.
+ *
+ * The base `.cgx-btn` rule intentionally has enough specificity to normalize
+ * legacy buttons. Variant selectors therefore need an equally explicit class
+ * chain so their non-hover state cannot fall back to the neutral surface.
+ * Keeping this correction inside the existing cg.visual.components layer
+ * preserves the five-owner stylesheet contract and the light/dark token model.
+ */
+@layer cg.visual.components {
+  body .cgx-btn.cgx-btn-primary,
+  body .btn.btn-primary,
+  body .ds-btn.ds-btn-primary,
+  body .cgv-btn.cgv-btn-primary {
+    border-color:var(--cg-v-brand)!important;
+    background:var(--cg-v-brand)!important;
+    color:#fff!important;
+  }
+
+  html.dark body .cgx-btn.cgx-btn-primary,
+  html.dark body .btn.btn-primary,
+  html[data-theme="dark"] body .cgx-btn.cgx-btn-primary,
+  html[data-theme="dark"] body .btn.btn-primary {
+    color:var(--cg-v-bg)!important;
+  }
+
+  body .cgx-btn.cgx-btn-primary:hover,
+  body .btn.btn-primary:hover {
+    border-color:var(--cg-v-brand-hover)!important;
+    background:var(--cg-v-brand-hover)!important;
+  }
+
+  body .cgx-btn.cgx-btn-secondary,
+  body .btn.btn-secondary,
+  body .ds-btn.ds-btn-secondary,
+  body .cgv-btn.cgv-btn-secondary,
+  body .cgx-btn.cgx-btn-ghost,
+  body .btn.btn-ghost {
+    border-color:var(--cg-v-border)!important;
+    background:var(--cg-v-surface)!important;
+    color:var(--cg-v-text-muted)!important;
+  }
+
+  body .cgx-btn.cgx-btn-secondary:hover,
+  body .btn.btn-secondary:hover,
+  body .cgx-btn.cgx-btn-ghost:hover,
+  body .btn.btn-ghost:hover {
+    border-color:var(--cg-v-border-strong)!important;
+    background:var(--cg-v-surface-2)!important;
+    color:var(--cg-v-text)!important;
+  }
+
+  body .cgx-btn.cgx-btn-danger,
+  body .btn.btn-danger {
+    border-color:color-mix(in srgb,var(--cg-v-danger) 35%,var(--cg-v-border))!important;
+    background:var(--cg-v-danger-soft)!important;
+    color:var(--cg-v-danger)!important;
+  }
+}
