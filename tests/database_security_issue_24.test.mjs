@@ -8,6 +8,7 @@ const prismaRuntime = read('backend/src/database/prisma.ts');
 const envExample = read('backend/.env.example');
 const provision = read('ops/database/provision-security-roles.sql');
 const verify = read('ops/database/verify-security-roles.sql');
+const ephemeral = read('ops/database/prepare-supabase-ephemeral.sql');
 const backup = read('ops/backup/backup-postgres.sh');
 const restore = read('ops/backup/restore-drill.sh');
 const tableInventory = read('ops/backup/contagest-public-tables.txt');
@@ -52,9 +53,21 @@ test('verification gate checks privilege drift, cross-product scope and monitor 
   assert.match(verify, /contagest_security_metric_snapshot/);
 });
 
-test('off-site backup requires dedicated role, encryption, checksum and remote verification', () => {
+test('Supabase compatibility helper is explicitly restricted to disposable databases', () => {
+  assert.match(ephemeral, /\(_e2e\|_drill\|_restore\)/);
+  assert.match(ephemeral, /Refusing Supabase compatibility stubs in non-ephemeral database/);
+  for (const role of ['anon', 'authenticated', 'service_role', 'authenticator']) assert.match(ephemeral, new RegExp(`rolname='${role}'`));
+  assert.match(ephemeral, /FUNCTION auth\.uid\(\)/);
+  assert.match(ephemeral, /FUNCTION auth\.jwt\(\)/);
+});
+
+test('off-site backup requires dedicated role, RLS-safe data-only dump, encryption and remote verification', () => {
   assert.match(backup, /DATABASE_BACKUP_URL/);
   assert.match(backup, /DATABASE_BACKUP_EXPECTED_ROLE:-contagest_backup/);
+  assert.match(backup, /--data-only/);
+  assert.match(backup, /--enable-row-security/);
+  assert.match(backup, /schemaRevision/);
+  assert.match(backup, /tableManifestSha256/);
   assert.match(backup, /BACKUP_AGE_RECIPIENT/);
   assert.match(backup, /RCLONE_REMOTE/);
   assert.match(backup, /pg_restore --list/);
@@ -71,12 +84,14 @@ test('backup inventory contains security/commercial tables discovered in the liv
   }
 });
 
-test('restore drill is destructive only against explicitly disposable databases and validates checksum first', () => {
+test('restore drill requires prebuilt schema, disposable DB, checksums and data-only restore', () => {
   assert.match(restore, /\(_restore\|_drill\)/);
   assert.match(restore, /PRIMARY_DATABASE_HOST/);
   assert.match(restore, /sha256sum --check/);
-  assert.match(restore, /pg_restore --list/);
-  assert.match(restore, /Subscription table missing/);
+  assert.match(restore, /TABLE_MANIFEST_SHA256/);
+  assert.match(restore, /for critical in Tenant UserProfile LicenseKey AuditLog Subscription/);
+  assert.match(restore, /TRUNCATE TABLE public/);
+  assert.match(restore, /pg_restore --dbname .* --data-only --disable-triggers/);
 });
 
 test('DB monitor uses hourly deltas, checks role drift and audits license/RBAC changes', () => {
@@ -88,7 +103,7 @@ test('DB monitor uses hourly deltas, checks role drift and audits license/RBAC c
   assert.doesNotMatch(monitor, /rejectUnauthorized:\s*false/);
 });
 
-test('operations workflow separates hourly monitor, daily backup and monthly restore drill', () => {
+test('operations workflow separates hourly monitor, daily backup and exact-schema monthly restore drill', () => {
   assert.match(workflow, /cron: '17 \* \* \* \*'/);
   assert.match(workflow, /cron: '23 3 \* \* \*'/);
   assert.match(workflow, /cron: '37 4 1 \* \*'/);
@@ -96,6 +111,9 @@ test('operations workflow separates hourly monitor, daily backup and monthly res
   assert.match(workflow, /postgres:17/);
   assert.match(workflow, /contagest_drill/);
   assert.match(workflow, /BACKUP_AGE_IDENTITY_B64/);
+  assert.match(workflow, /schema_revision/);
+  assert.match(workflow, /git archive/);
+  assert.match(workflow, /prisma migrate deploy/);
 });
 
 test('runbook documents fail-closed activation, external immutability, RPO/RTO and tenant isolation residual risk', () => {
