@@ -32,6 +32,7 @@ import aiRoutes from './ai/ai.routes.js';
 import demosRoutes from './demos/demos.routes.js';
 import pretestingRoutes from './pretesting/pretesting.routes.js';
 import licenseRoutes from './licenses/licenses.routes.js';
+import serviceRestrictionRoutes from './commercial/service-restrictions.routes.js';
 import commercialRoutes from './commercial/commercial.routes.js';
 import importRoutes from './imports/imports.routes.js';
 import regulatoryRoutes from './regulatory/regulatory.routes.js';
@@ -79,6 +80,9 @@ router.use('/demos', demosRoutes);
 router.use('/pretesting', pretestingRoutes);
 router.use('/licenses', licenseRoutes);
 router.use('/license-devices', licenseDeviceRoutes);
+// Governance routes must run before the historical commercial router so restricted
+// status mutations and paid-payment reactivation cannot bypass the case workflow.
+router.use('/commercial', serviceRestrictionRoutes);
 router.use('/commercial', commercialRoutes);
 router.use('/commercial-access', commercialAccessRoutes);
 router.use('/imports', importRoutes);
