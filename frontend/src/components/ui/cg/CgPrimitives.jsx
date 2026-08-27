@@ -45,26 +45,18 @@ export function CgIconButton({ label, children, ...props }) {
 
 export function CgTextField({ label, helperText, errorText, ...props }) {
   const error = Boolean(errorText || props.error);
-  return (
-    <TextField
-      label={label}
-      error={error}
-      helperText={errorText || helperText}
-      {...props}
-    />
-  );
+  return <TextField label={label} error={error} helperText={errorText || helperText} {...props} />;
 }
 
 export function CgSelect({ label, value, options = [], onChange, id, ...props }) {
-  const selectId = id || React.useId().replace(/:/g, '');
+  const generatedId = React.useId().replace(/:/g, '');
+  const selectId = id || `cg-select-${generatedId}`;
   const labelId = `${selectId}-label`;
   return (
     <FormControl fullWidth size="small">
       <InputLabel id={labelId}>{label}</InputLabel>
       <Select id={selectId} labelId={labelId} label={label} value={value} onChange={onChange} {...props}>
-        {options.map((option) => (
-          <MenuItem key={String(option.value)} value={option.value}>{option.label}</MenuItem>
-        ))}
+        {options.map((option) => <MenuItem key={String(option.value)} value={option.value}>{option.label}</MenuItem>)}
       </Select>
     </FormControl>
   );
@@ -79,9 +71,7 @@ export function CgPageHeader({ eyebrow = 'ContaGest', title, description, action
   return (
     <Stack direction={{ xs: 'column', sm: 'row' }} gap={2} justifyContent="space-between" alignItems={{ xs: 'stretch', sm: 'flex-start' }}>
       <Box sx={{ minWidth: 0 }}>
-        <Typography variant="caption" component="p" color="text.secondary" sx={{ textTransform: 'uppercase', letterSpacing: '.06em', fontWeight: 700, mb: .5 }}>
-          {eyebrow}
-        </Typography>
+        <Typography variant="caption" component="p" color="text.secondary" sx={{ textTransform: 'uppercase', letterSpacing: '.06em', fontWeight: 700, mb: .5 }}>{eyebrow}</Typography>
         <Typography variant="h4" component="h1">{title}</Typography>
         {description ? <Typography variant="body2" color="text.secondary" sx={{ mt: .75, maxWidth: 760 }}>{description}</Typography> : null}
       </Box>
@@ -105,9 +95,11 @@ export function CgState({ severity = 'info', title, children }) {
 }
 
 export function CgDialog({ open, title, children, onClose, confirmLabel = 'Confirmar', onConfirm, destructive = false }) {
+  const generatedId = React.useId().replace(/:/g, '');
+  const titleId = `cg-dialog-title-${generatedId}`;
   return (
-    <Dialog open={open} onClose={onClose} fullWidth maxWidth="sm" aria-labelledby="cg-dialog-title">
-      <DialogTitle id="cg-dialog-title">{title}</DialogTitle>
+    <Dialog open={open} onClose={onClose} fullWidth maxWidth="sm" aria-labelledby={titleId}>
+      <DialogTitle id={titleId}>{title}</DialogTitle>
       <DialogContent>{children}</DialogContent>
       <DialogActions>
         <CgButton variant="text" onClick={onClose}>Cancelar</CgButton>
@@ -130,19 +122,11 @@ export function CgDataTable({ columns = [], rows = [], getRowId = (row, index) =
   return (
     <TableContainer component={Paper} variant="outlined">
       <Table size="small">
-        <TableHead>
-          <TableRow>
-            {columns.map((column) => <TableCell key={column.key} align={column.align || 'left'}>{column.label}</TableCell>)}
-          </TableRow>
-        </TableHead>
+        <TableHead><TableRow>{columns.map((column) => <TableCell key={column.key} align={column.align || 'left'}>{column.label}</TableCell>)}</TableRow></TableHead>
         <TableBody>
           {rows.map((row, index) => (
             <TableRow key={getRowId(row, index)} hover>
-              {columns.map((column) => (
-                <TableCell key={column.key} align={column.align || 'left'}>
-                  {column.render ? column.render(row) : row[column.key]}
-                </TableCell>
-              ))}
+              {columns.map((column) => <TableCell key={column.key} align={column.align || 'left'}>{column.render ? column.render(row) : row[column.key]}</TableCell>)}
             </TableRow>
           ))}
         </TableBody>
