@@ -4,6 +4,8 @@ import { prisma } from '../../database/prisma.js';
 import { asyncHandler } from '../../shared/http.js';
 import { requireTenant } from '../../shared/middleware/context.js';
 import { validateBody } from '../../shared/middleware/validate.js';
+import { add, divide, quantizeMoney, serializeDecimal, serializeLegacyNumber, ZERO } from '../../shared/financial/decimal.js';
+import { decimalSchema } from '../../shared/financial/zod.js';
 
 const router = Router();
 router.use(requireTenant);
@@ -11,7 +13,7 @@ router.use(requireTenant);
 const paramSchema = z.object({
   code: z.string(),
   name: z.string(),
-  value: z.number(),
+  value: decimalSchema('exchangeRate'),
   unit: z.string().default('percent'),
   effectiveFrom: z.string(),
   effectiveTo: z.string().optional().nullable(),
@@ -31,13 +33,16 @@ router.get('/kpis', asyncHandler(async (req, res) => {
     })
   ]);
 
-  const payroll = periods.reduce((sum, period) => sum + Number(period.totalNet || 0), 0);
-  const averageSalary = employees.reduce((sum, employee) => sum + Number(employee.salary || 0), 0) / Math.max(employees.length, 1);
+  const payroll = add(...periods.map((period) => period.totalNet));
+  const salaryTotal = add(...employees.map((employee) => employee.salary));
+  const averageSalary = employees.length ? quantizeMoney(divide(salaryTotal, employees.length)) : ZERO;
 
   res.json({
     activeEmployees: employees.length,
-    averageSalary,
-    payrollLastPeriods: payroll,
+    averageSalary: serializeLegacyNumber(averageSalary),
+    averageSalaryExact: serializeDecimal(averageSalary, 2),
+    payrollLastPeriods: serializeLegacyNumber(payroll),
+    payrollLastPeriodsExact: serializeDecimal(payroll, 2),
     openPeriods: periods.filter((period) => period.status === 'draft').length
   });
 }));
