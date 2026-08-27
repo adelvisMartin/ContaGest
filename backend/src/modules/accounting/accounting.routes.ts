@@ -5,6 +5,7 @@ import { asyncHandler, HttpError, ok } from '../../shared/http.js';
 import { requirePermission, requireTenant } from '../../shared/middleware/context.js';
 import { validateBody } from '../../shared/middleware/validate.js';
 import { writeAudit } from '../../shared/services/audit.service.js';
+import { runFinancialIdempotentMutation } from '../../shared/services/financial-idempotency.service.js';
 import { createLedgerEntry } from './accounting.service.js';
 
 const router = Router();
@@ -13,13 +14,32 @@ const entrySchema = z.object({ fiscalPeriod: z.string().min(6), description: z.s
 const closingPeriodSchema = z.object({ period:z.string().regex(/^\d{4}-\d{2}$/,'Usa formato AAAA-MM.'), note:z.string().max(500).optional() });
 const closeSchema = z.object({ note:z.string().max(500).optional() });
 const context=(req:any)=>req.context as { tenantId:string; userId?:string; ip?:string; userAgent?:string };
+const requestId=(req:any)=>String(req.requestId||'')||null;
+const idempotencyKey=(req:any)=>req.header('Idempotency-Key')||null;
 
 router.get('/entries', requirePermission('accounting.view'), asyncHandler(async (req, res) => {
   const tenantId = context(req).tenantId;
   ok(res, await prisma.ledgerEntry.findMany({ where: { tenantId }, include: { lines: true }, orderBy: { date: 'desc' }, take: 100 }));
 }));
 router.post('/entries', requirePermission('accounting.post'), validateBody(entrySchema), asyncHandler(async (req, res) => {
-  ok(res, await createLedgerEntry({ tenantId: context(req).tenantId, ...req.body }));
+  const ctx=context(req);
+  const execution=await runFinancialIdempotentMutation({
+    tenantId:ctx.tenantId,
+    scope:'accounting.entries.create',
+    key:idempotencyKey(req),
+    request:req.body,
+    requestId:requestId(req)
+  },async(tx)=>{
+    const entry=await createLedgerEntry({tenantId:ctx.tenantId,...req.body},tx);
+    return{data:entry,resourceType:'LedgerEntry',resourceId:entry.id};
+  });
+  res.setHeader('Idempotency-Replayed',execution.replayed?'true':'false');
+  if(execution.replayed){
+    await writeAudit({tenantId:ctx.tenantId,userId:ctx.userId,action:'idempotency.replay',entity:'LedgerEntry',entityId:(execution.data as any).id,after:{scope:'accounting.entries.create',recordId:execution.recordId,originalRequestId:execution.originalRequestId,requestId:requestId(req)},ipAddress:ctx.ip,userAgent:ctx.userAgent});
+  }else{
+    await writeAudit({tenantId:ctx.tenantId,userId:ctx.userId,action:'accounting.entry-create',entity:'LedgerEntry',entityId:(execution.data as any).id,after:execution.data,ipAddress:ctx.ip,userAgent:ctx.userAgent});
+  }
+  ok(res,execution.data,execution.responseCode);
 }));
 router.get('/trial-balance', requirePermission('accounting.view'), asyncHandler(async (req, res) => {
   const tenantId = context(req).tenantId;
