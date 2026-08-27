@@ -40,17 +40,19 @@ export function CgButton({ children, variant = 'contained', ...props }) {
 }
 
 export function CgIconButton({ label, children, ...props }) {
-  if (!label) throw new Error('CgIconButton requires an accessible label.');
+  if (!String(label || '').trim()) throw new Error('CgIconButton requires an accessible label.');
   return <IconButton aria-label={label} title={label} {...props}>{children}</IconButton>;
 }
 
 export function CgTextField({ label, helperText, errorText, ...props }) {
+  if (!String(label || '').trim()) throw new Error('CgTextField requires a persistent label.');
   const error = Boolean(errorText || props.error);
   return <TextField label={label} error={error} helperText={errorText || helperText} {...props} />;
 }
 
 export function CgSelect({ label, value, options = [], onChange, id, ...props }) {
   const generatedId = React.useId().replace(/:/g, '');
+  if (!String(label || '').trim()) throw new Error('CgSelect requires a persistent label.');
   const selectId = id || `cg-select-${generatedId}`;
   const labelId = `${selectId}-label`;
   return (
@@ -97,6 +99,7 @@ export function CgState({ severity = 'info', title, children }) {
 
 export function CgDialog({ open, title, children, onClose, confirmLabel = 'Confirmar', onConfirm, destructive = false }) {
   const generatedId = React.useId().replace(/:/g, '');
+  if (!String(title || '').trim()) throw new Error('CgDialog requires an accessible title.');
   const titleId = `cg-dialog-title-${generatedId}`;
   return (
     <Dialog open={open} onClose={onClose} fullWidth maxWidth="sm" aria-labelledby={titleId}>
@@ -120,7 +123,7 @@ export function CgDataTable({ columns = [], rows = [], getRowId = (row, index) =
   return (
     <TableContainer component={Paper} variant="outlined">
       <Table size="small">
-        <TableHead><TableRow>{columns.map((column) => <TableCell key={column.key} align={column.align || 'left'}>{column.label}</TableCell>)}</TableRow></TableHead>
+        <TableHead><TableRow>{columns.map((column) => <TableCell key={column.key} scope="col" align={column.align || 'left'}>{column.label}</TableCell>)}</TableRow></TableHead>
         <TableBody>
           {rows.map((row, index) => (
             <TableRow key={getRowId(row, index)} hover>
