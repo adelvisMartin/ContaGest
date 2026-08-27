@@ -6,6 +6,9 @@ import { requirePermission, requireTenant } from '../../shared/middleware/contex
 import { validateBody } from '../../shared/middleware/validate.js';
 import { writeAudit } from '../../shared/services/audit.service.js';
 import { assertBalanced, assertPeriodOpen, purchaseInvoiceLinesForLedger } from '../accounting/accounting.service.js';
+import { calculateInvoiceTotals } from '../../shared/financial/invoice.js';
+import { decimalSchema } from '../../shared/financial/zod.js';
+import { ONE, ZERO } from '../../shared/financial/decimal.js';
 
 const router = Router();
 router.use(requireTenant, requirePermission('purchases.manage'));
@@ -13,9 +16,9 @@ router.use(requireTenant, requirePermission('purchases.manage'));
 const lineSchema = z.object({
   productId: z.string().optional(),
   description: z.string().min(2),
-  quantity: z.coerce.number().positive(),
-  unitCost: z.coerce.number().nonnegative(),
-  taxRate: z.coerce.number().default(16)
+  quantity: decimalSchema('quantity', { positive: true }),
+  unitCost: decimalSchema('money', { nonnegative: true }),
+  taxRate: decimalSchema('percentage', { defaultValue: 16, nonnegative: true })
 });
 
 const purchaseSchema = z.object({
@@ -39,10 +42,15 @@ router.get('/', asyncHandler(async (req, res) => {
 
 router.post('/', validateBody(purchaseSchema), asyncHandler(async (req, res) => {
   const ctx = context(req);
-  const lines = req.body.lines.map((line: any) => ({ ...line, total: Number(line.quantity) * Number(line.unitCost) }));
-  const subtotal = lines.reduce((sum: number, line: any) => sum + line.total, 0);
-  const iva = lines.reduce((sum: number, line: any) => sum + (line.total * Number(line.taxRate || 0) / 100), 0);
-  const total = subtotal + iva;
+  const calculated = calculateInvoiceTotals(req.body.lines.map((line: any) => ({
+    quantity: line.quantity,
+    unitAmount: line.unitCost,
+    taxRate: line.taxRate
+  })));
+  const lines = req.body.lines.map((line: any, index: number) => ({ ...line, total: calculated.lines[index].total }));
+  const subtotal = calculated.subtotal;
+  const iva = calculated.tax;
+  const total = calculated.total;
   if (req.body.status !== 'draft') await assertPeriodOpen(ctx.tenantId, req.body.fiscalPeriod);
 
   const result = await prisma.$transaction(async (tx) => {
@@ -63,7 +71,16 @@ router.post('/', validateBody(purchaseSchema), asyncHandler(async (req, res) => 
           source: 'purchase',
           sourceId: purchase.id,
           purchaseInvoiceId: purchase.id,
-          lines: { create: ledgerLines.map((line) => ({ accountCode: line.accountCode, accountName: line.accountName, debit: Number(line.debit || 0), credit: Number(line.credit || 0), currency: 'VES', exchangeRate: 1 })) }
+          lines: {
+            create: ledgerLines.map((line) => ({
+              accountCode: line.accountCode,
+              accountName: line.accountName,
+              debit: line.debit ?? ZERO,
+              credit: line.credit ?? ZERO,
+              currency: 'VES',
+              exchangeRate: ONE
+            }))
+          }
         }
       });
       ledgerEntryId = ledgerEntry.id;
@@ -93,7 +110,27 @@ router.patch('/:id/cancel', validateBody(cancellationSchema), asyncHandler(async
     let reversal = await tx.ledgerEntry.findFirst({ where: { tenantId: ctx.tenantId, source: 'manual', sourceId: reversalSourceId } });
     const originalLines = originalEntries.flatMap((entry) => entry.lines);
     if (!reversal && originalLines.length) {
-      reversal = await tx.ledgerEntry.create({ data: { tenantId: ctx.tenantId, fiscalPeriod: purchase.fiscalPeriod, description: `Reverso por anulación de compra ${purchase.number}`, source: 'manual', sourceId: reversalSourceId, purchaseInvoiceId: purchase.id, posted: originalEntries.some((entry) => entry.posted), lines: { create: originalLines.map((line) => ({ accountCode: line.accountCode, accountName: line.accountName, debit: Number(line.credit || 0), credit: Number(line.debit || 0), currency: line.currency, exchangeRate: Number(line.exchangeRate || 1) })) } } });
+      reversal = await tx.ledgerEntry.create({
+        data: {
+          tenantId: ctx.tenantId,
+          fiscalPeriod: purchase.fiscalPeriod,
+          description: `Reverso por anulación de compra ${purchase.number}`,
+          source: 'manual',
+          sourceId: reversalSourceId,
+          purchaseInvoiceId: purchase.id,
+          posted: originalEntries.some((entry) => entry.posted),
+          lines: {
+            create: originalLines.map((line) => ({
+              accountCode: line.accountCode,
+              accountName: line.accountName,
+              debit: line.credit,
+              credit: line.debit,
+              currency: line.currency,
+              exchangeRate: line.exchangeRate
+            }))
+          }
+        }
+      });
     }
     const cancelled = await tx.purchaseInvoice.update({ where: { id: purchase.id }, data: { status: 'cancelled' }, include: { supplier: true, lines: true } });
     return { purchase: cancelled, reversalId: reversal?.id || null, reversedEntries: originalEntries.map((entry) => entry.id), accountingWarning: originalLines.length ? null : 'La compra no tenía asiento contable asociado.' };

@@ -1,16 +1,13 @@
 name: ContaGest Static QA
 
+# The repository characterization tests are already covered by `npm test` in
+# ci.yml. Keep this focused workflow available for manual diagnostics without
+# charging every pull request twice for the same assertions.
 on:
-  pull_request:
-    branches: [main]
-    types: [opened, synchronize, reopened, ready_for_review]
+  workflow_dispatch:
 
 permissions:
   contents: read
-
-concurrency:
-  group: contagest-static-${{ github.event.pull_request.number }}
-  cancel-in-progress: true
 
 jobs:
   characterize:

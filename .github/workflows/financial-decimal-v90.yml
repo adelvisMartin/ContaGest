@@ -1,0 +1,161 @@
+name: "Financial #90 · Decimal exacto"
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'backend/src/shared/financial/**'
+      - 'backend/src/modules/accounting/**'
+      - 'backend/src/modules/sales/**'
+      - 'backend/src/modules/purchases/**'
+      - 'backend/src/modules/banking/**'
+      - 'backend/src/modules/payroll/**'
+      - 'backend/src/modules/employees/**'
+      - 'backend/src/modules/hr/**'
+      - 'backend/src/modules/currency/**'
+      - 'backend/src/modules/schemas.ts'
+      - 'backend/prisma/**'
+      - 'qa/financial-decimal-v90.test.ts'
+      - 'qa/financial-decimal-real-v90.test.ts'
+      - 'qa/support/real-backend-harness.ts'
+      - 'qa/postmerge-financial-domain-v17.test.ts'
+      - 'tests/financial_decimal_issue_90.test.mjs'
+      - 'docs/ADR_FINANCIAL_DECIMAL_V90.md'
+      - 'ops/database/prepare-supabase-ephemeral.sql'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/financial-decimal-v90.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: financial-v90-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  decimal-postgres-real:
+    name: Decimal golden + PostgreSQL real
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: contagest_financial_v90
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d contagest_financial_v90"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+
+    env:
+      NODE_ENV: test
+      API_MODE: prisma
+      DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/contagest_financial_v90?schema=public
+      DIRECT_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/contagest_financial_v90?schema=public
+      APP_URL: http://127.0.0.1:8080
+      CORS_ORIGIN: http://127.0.0.1:8080
+      JWT_SECRET: financial_v90_only_jwt_secret_0123456789abcdefghijklmnopqrstuvwxyz_ABCDEF
+      LICENSE_HASH_SECRET: financial_v90_only_license_secret_0123456789abcdefghijklmnopqrstuvwxyz_XYZ
+      SEED_ADMIN_PASSWORD: FinancialV90-QA-Only-Password-2026!
+      ALLOW_DEV_TENANT_HEADER: 'false'
+      SUPABASE_AUTH_FALLBACK: 'false'
+      ALLOW_PUBLIC_REGISTER: 'false'
+
+    steps:
+      - name: Descargar código
+        uses: actions/checkout@v7
+
+      - name: Configurar Node 22
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Instalar dependencias y cliente PostgreSQL
+        run: |
+          npm ci --no-audit --no-fund
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client
+
+      - name: Preparar contratos Supabase mínimos
+        env:
+          PGPASSWORD: postgres
+        shell: bash
+        run: |
+          set -o pipefail
+          psql -h 127.0.0.1 -U postgres -d contagest_financial_v90 \
+            -v ON_ERROR_STOP=1 \
+            -f ops/database/prepare-supabase-ephemeral.sql 2>&1 | tee prerequisitos-v90.log
+
+      - name: Aplicar historial canónico de migraciones
+        shell: bash
+        run: |
+          set -o pipefail
+          npm --workspace backend run prisma:deploy 2>&1 | tee migration-v90.log
+          npx prisma migrate status --schema backend/prisma/schema.prisma 2>&1 | tee -a migration-v90.log
+
+      - name: Preparar tenant QA
+        shell: bash
+        run: |
+          set -o pipefail
+          npm --workspace backend run seed 2>&1 | tee seed-v90.log
+
+      - name: Validar tipos del backend
+        run: npm --workspace backend run typecheck
+
+      - name: "Ejecutar contratos estáticos #90"
+        run: node --test tests/financial_decimal_issue_90.test.mjs
+
+      - name: Ejecutar primitive y golden datasets
+        shell: bash
+        run: |
+          set -o pipefail
+          npm run test:financial:decimal 2>&1 | tee financial-decimal-unit-v90.log
+
+      - name: Ejecutar API + PostgreSQL real
+        shell: bash
+        run: |
+          set -o pipefail
+          npm run test:backend:financial:decimal:real 2>&1 | tee financial-decimal-real-v90.log
+
+      - name: Ejecutar regresión financiera existente
+        shell: bash
+        run: |
+          set -o pipefail
+          npm run test:backend:financial:real 2>&1 | tee financial-regression-v90.log
+
+      - name: Verificar tipos exactos y escalas en PostgreSQL
+        if: always()
+        env:
+          PGPASSWORD: postgres
+        shell: bash
+        run: |
+          set -o pipefail
+          {
+            echo '=== Tipos financieros ==='
+            psql -h 127.0.0.1 -U postgres -d contagest_financial_v90 -v ON_ERROR_STOP=1 -Atc "SELECT table_name || chr(9) || column_name || chr(9) || data_type || chr(9) || numeric_precision || chr(9) || numeric_scale FROM information_schema.columns WHERE table_schema='public' AND ((table_name='SalesInvoice' AND column_name IN ('subtotal','iva','total','exchangeRate')) OR (table_name='SalesInvoiceLine' AND column_name IN ('quantity','unitPrice','total','taxRate')) OR (table_name='PurchaseInvoice' AND column_name IN ('subtotal','iva','total')) OR (table_name='PurchaseInvoiceLine' AND column_name IN ('quantity','unitCost','total','taxRate')) OR (table_name='LedgerLine' AND column_name IN ('debit','credit','exchangeRate')) OR (table_name='BankAccount' AND column_name='balance') OR (table_name='BankMovement' AND column_name IN ('debit','credit')) OR (table_name='Employee' AND column_name='salary') OR (table_name='PayrollPeriod' AND column_name IN ('totalGross','totalDeductions','totalNet')) OR (table_name='PayrollReceipt' AND column_name IN ('gross','deductions','net')) OR (table_name='TaxPeriod' AND column_name IN ('ivaDebit','ivaCredit','igtfPaid')) OR (table_name='HrParameter' AND column_name='value') OR (table_name='Product' AND column_name IN ('cost','price','stock','reserved','minStock','taxRate'))) ORDER BY table_name,column_name;"
+          } > financial-schema-v90.log 2>&1
+
+      - name: Conservar evidencia #90
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: evidencia-financial-decimal-v90
+          path: |
+            prerequisitos-v90.log
+            migration-v90.log
+            seed-v90.log
+            financial-decimal-unit-v90.log
+            financial-decimal-real-v90.log
+            financial-regression-v90.log
+            financial-schema-v90.log
+          if-no-files-found: warn
+          retention-days: 14
