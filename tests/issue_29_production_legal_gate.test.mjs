@@ -31,6 +31,13 @@ const approvedAttestation=()=>({
   status:'approved',
   reviewedAt:'2026-08-27T12:00:00.000Z',
   legalDocumentVersion:version,
+  provider:{
+    name:providerEnv.LEGAL_PROVIDER_NAME,
+    rif:providerEnv.LEGAL_PROVIDER_RIF,
+    address:providerEnv.LEGAL_PROVIDER_ADDRESS,
+    legalEmail:providerEnv.LEGAL_CONTACT_EMAIL,
+    supportEmail:providerEnv.LEGAL_SUPPORT_EMAIL
+  },
   reviewer:{name:'Profesional QA',jurisdiction:'VE'},
   evidence:{reference:'qa://issue-29/professional-review',sha256:evidenceSha},
   approvals:Object.fromEntries(approvalKeys.map((key)=>[key,true]))
@@ -52,7 +59,7 @@ test('issue #29 production legal gate fails closed when professional attestation
   assert.match(result.stdout,/attestation\.exists/);
 });
 
-test('issue #29 production legal gate accepts only a complete attestation for the canonical version',()=>{
+test('issue #29 production legal gate accepts only a complete attestation for canonical version and provider',()=>{
   assert.ok(version,'LEGAL_DOCUMENT_VERSION must be discoverable');
   const file=path.join(os.tmpdir(),`contagest-legal-approved-${process.pid}-${Date.now()}.json`);
   fs.writeFileSync(file,JSON.stringify(approvedAttestation()),'utf8');
@@ -61,6 +68,7 @@ test('issue #29 production legal gate accepts only a complete attestation for th
     assert.equal(result.status,0,`${result.stdout}\n${result.stderr}`);
     assert.match(result.stdout,/VERDICT: PASS/);
     assert.match(result.stdout,/runtime\.evidence\.matches-attestation/);
+    assert.match(result.stdout,/attestation\.provider\.name/);
   }finally{fs.rmSync(file,{force:true});}
 });
 
@@ -88,6 +96,16 @@ test('issue #29 production legal gate rejects runtime evidence that does not mat
   }finally{fs.rmSync(file,{force:true});}
 });
 
+test('issue #29 production legal gate rejects provider identity that differs from the reviewed attestation',()=>{
+  const file=path.join(os.tmpdir(),`contagest-legal-provider-mismatch-${process.pid}-${Date.now()}.json`);
+  fs.writeFileSync(file,JSON.stringify(approvedAttestation()),'utf8');
+  try{
+    const result=runGate(file,{LEGAL_PROVIDER_RIF:'J-00000000-0'});
+    assert.notEqual(result.status,0);
+    assert.match(result.stdout,/attestation\.provider\.rif/);
+  }finally{fs.rmSync(file,{force:true});}
+});
+
 test('public production QA scripts require the legal gate before readiness checks',()=>{
   const pkg=JSON.parse(read('package.json'));
   assert.equal(pkg.scripts['qa:legal:production'],'node scripts/legal-production-gate.mjs');
@@ -95,7 +113,21 @@ test('public production QA scripts require the legal gate before readiness check
   assert.match(pkg.scripts['qa:production:full'],/^npm run qa:legal:production && /);
 });
 
-test('licensed customer runtime fails closed without real provider identity and professional review evidence',()=>{
+test('bundled release attestation is canonical and remains pending until real professional approval',()=>{
+  const bundled=JSON.parse(read('backend/src/shared/legal/LEGAL_RELEASE_ATTESTATION.json'));
+  const runtimeGate=read('backend/src/shared/legal/legalReleaseRuntimeGate.ts');
+  const cliGate=read('scripts/legal-production-gate.mjs');
+  assert.equal(bundled.status,'pending');
+  assert.equal(bundled.legalDocumentVersion,version);
+  assert.match(runtimeGate,/LEGAL_RELEASE_ATTESTATION\.json/);
+  assert.match(runtimeGate,/legalBundledAttestationReady/);
+  assert.match(runtimeGate,/attestation as any\)\.status==='approved'/);
+  assert.match(runtimeGate,/requiredApprovals\.every/);
+  assert.match(runtimeGate,/provider\?\.rif/);
+  assert.match(cliGate,/backend.*src.*shared.*legal.*LEGAL_RELEASE_ATTESTATION\.json/s);
+});
+
+test('licensed customer runtime fails closed without real provider identity and bundled professional review evidence',()=>{
   const runtimeGate=read('backend/src/shared/legal/legalReleaseRuntimeGate.ts');
   const middleware=read('backend/src/shared/legal/legalAcceptanceMiddleware.ts');
   const routes=read('backend/src/modules/legal/legal.routes.ts');
@@ -105,6 +137,8 @@ test('licensed customer runtime fails closed without real provider identity and 
   assert.match(runtimeGate,/LEGAL_REVIEW_APPROVED_VERSION/);
   assert.match(runtimeGate,/LEGAL_REVIEW_EVIDENCE_SHA256/);
   assert.match(runtimeGate,/approvedVersion===LEGAL_DOCUMENT_VERSION/);
+  assert.match(runtimeGate,/evidenceSha256\.toLowerCase\(\)===attestationSha256\.toLowerCase\(\)/);
+  assert.match(runtimeGate,/legalBundledAttestationReady\(\)/);
   assert.match(runtimeGate,/legalProviderIdentityReady\(\)&&legalProfessionalReviewReady\(\)/);
   assert.match(middleware,/isProd&&!legalRuntimeProductionReady\(\)/);
   assert.match(middleware,/new HttpError\(503/);
