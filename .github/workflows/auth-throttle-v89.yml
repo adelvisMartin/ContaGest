@@ -1,4 +1,4 @@
-name: Auth #89 · throttle anti-DoS real
+name: "Auth #89 · throttle anti-DoS real"
 
 on:
   pull_request:
@@ -122,7 +122,7 @@ jobs:
           grep -n "authRateLimit, authRoutes" backend/src/app.ts
           grep -n "INVALID_LOGIN_MESSAGE" backend/src/modules/auth/auth.routes.ts
           grep -n "dummyPasswordHashPromise" backend/src/modules/auth/auth.routes.ts
-          grep -n "rif:throttle.identity.tenantRif" backend/src/modules/auth/auth.routes.ts
+          grep -n "mode:'insensitive'" backend/src/modules/auth/auth.routes.ts
           grep -n "maybePruneExpiredLoginAttempts" backend/src/modules/auth/auth.throttle.ts
 
       - name: Lint y contratos globales
