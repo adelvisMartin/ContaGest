@@ -35,7 +35,7 @@ CREATE TABLE IF NOT EXISTS public.hipico_domain_events (
   schema_version INTEGER NOT NULL DEFAULT 1 CHECK (schema_version > 0),
   event_timestamp TIMESTAMPTZ NOT NULL,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-  UNIQUE (owner_id, group_key, source_message_key)
+  UNIQUE (owner_id, group_key, aggregate_kind, aggregate_key, source_message_key, event_type)
 );
 
 CREATE INDEX IF NOT EXISTS hipico_domain_events_aggregate_created_idx
