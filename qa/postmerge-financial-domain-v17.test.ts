@@ -26,17 +26,24 @@ test('post-merge financial workflows persist and enforce domain invariants',asyn
     await h.close();
   });
 
-  await t.test('contabilidad: balanced entry persists; unbalanced entry is rejected',async()=>{
+  await t.test('contabilidad: balanced draft persists, explicit post publishes it; unbalanced entry is rejected',async()=>{
     const entry=await h.ok('/accounting/entries',{method:'POST',body:JSON.stringify({fiscalPeriod:OPEN_PERIOD,description:`${RUN} asiento balanceado`,source:'manual',lines:[{accountCode:`${RUN}.D`,accountName:'QA Débito',debit:100,credit:0},{accountCode:`${RUN}.C`,accountName:'QA Crédito',debit:0,credit:100}]})});
     ids.ledgers.push(entry.id);
     assert.equal(entry.fiscalPeriod,OPEN_PERIOD);
+    assert.equal(entry.posted,false,'Manual ledger must start as DRAFT');
     assert.equal(balanced(entry.lines),true,'Ledger entry is not balanced');
     const stored=await h.prisma.ledgerEntry.findFirst({where:{id:entry.id,tenantId:h.tenant.id},include:{lines:true}});
     assert.ok(stored,'Ledger entry did not persist');
     assert.equal(balanced(stored.lines),true,'Stored ledger entry is not balanced');
     await h.status('/accounting/entries',422,{method:'POST',body:JSON.stringify({fiscalPeriod:OPEN_PERIOD,description:`${RUN} descuadrado`,source:'manual',lines:[{accountCode:'QA.D',accountName:'Débito',debit:100},{accountCode:'QA.C',accountName:'Crédito',credit:90}]})});
+
+    const beforePostTrial=await h.ok('/accounting/trial-balance');
+    assert.equal(beforePostTrial.some((row:any)=>row.accountCode===`${RUN}.D`),false,'DRAFT leaked into trial balance');
+    const posted=await h.ok(`/accounting/entries/${entry.id}/post`,{method:'POST'});
+    assert.equal(posted.posted,true);
+    assert.ok(posted.postedAt);
     const trial=await h.ok('/accounting/trial-balance');
-    assert.ok(Array.isArray(trial)&&trial.some((row:any)=>row.accountCode===`${RUN}.D`),'Trial balance omitted persisted account');
+    assert.ok(Array.isArray(trial)&&trial.some((row:any)=>row.accountCode===`${RUN}.D`),'Trial balance omitted posted account');
   });
 
   await t.test('ventas: draft delete, issued atomic posting, cancellation reversal and idempotency',async()=>{
@@ -55,6 +62,8 @@ test('post-merge financial workflows persist and enforce domain invariants',asyn
     assert.equal(num(sale.subtotal),60);assert.equal(num(sale.iva),8);assert.equal(num(sale.total),68);
     const ledger=await h.prisma.ledgerEntry.findFirst({where:{tenantId:h.tenant.id,source:'sales',sourceId:sale.id},include:{lines:true}});
     assert.ok(ledger,'Issued sale did not create ledger');ids.ledgers.push(ledger.id);
+    assert.equal(ledger.posted,true,'Issued sale ledger is not POSTED');
+    assert.ok(ledger.postedAt,'Issued sale ledger lacks posting timestamp');
     assert.equal(ledger.salesInvoiceId,sale.id,'Sales ledger is not linked to invoice');
     assert.equal(balanced(ledger.lines),true,'Sales ledger is not balanced');
     assert.equal(ledger.lines.reduce((s,l)=>s+num(l.debit),0),68);
@@ -62,7 +71,7 @@ test('post-merge financial workflows persist and enforce domain invariants',asyn
     const cancelled=await h.ok(`/sales/${sale.id}/cancel`,{method:'PATCH',body:JSON.stringify({reason:'QA cancellation verification'})});
     assert.equal(cancelled.sale.status,'cancelled');assert.ok(cancelled.reversalId,'Sale cancellation did not create reversal');ids.ledgers.push(cancelled.reversalId);
     const reversal=await h.prisma.ledgerEntry.findUnique({where:{id:cancelled.reversalId},include:{lines:true}});
-    assert.ok(reversal);assert.equal(balanced(reversal.lines),true,'Sales reversal is not balanced');
+    assert.ok(reversal);assert.equal(reversal.posted,true);assert.equal(reversal.reversalOfId,ledger.id);assert.equal(balanced(reversal.lines),true,'Sales reversal is not balanced');
     assert.equal(reversal.lines.reduce((s,l)=>s+num(l.credit),0),68,'Sales reversal did not invert original debit');
     const again=await h.ok(`/sales/${sale.id}/cancel`,{method:'PATCH',body:JSON.stringify({reason:'QA idempotency'})});
     assert.equal(again.alreadyCancelled,true);assert.equal(again.reversalId,cancelled.reversalId,'Repeated cancellation created/returned another reversal');
@@ -74,11 +83,11 @@ test('post-merge financial workflows persist and enforce domain invariants',asyn
     ids.purchases.push(purchase.id);if(purchase.ledgerEntryId)ids.ledgers.push(purchase.ledgerEntryId);
     assert.equal(num(purchase.subtotal),60);assert.equal(num(purchase.iva),9.6);assert.equal(num(purchase.total),69.6);
     const ledger=await h.prisma.ledgerEntry.findFirst({where:{tenantId:h.tenant.id,source:'purchase',sourceId:purchase.id},include:{lines:true}});
-    assert.ok(ledger);ids.ledgers.push(ledger.id);assert.equal(balanced(ledger.lines),true);
+    assert.ok(ledger);ids.ledgers.push(ledger.id);assert.equal(ledger.posted,true);assert.ok(ledger.postedAt);assert.equal(balanced(ledger.lines),true);
     const cancelled=await h.ok(`/purchases/${purchase.id}/cancel`,{method:'PATCH',body:JSON.stringify({reason:'QA purchase cancellation'})});
     assert.equal(cancelled.purchase.status,'cancelled');assert.ok(cancelled.reversalId);ids.ledgers.push(cancelled.reversalId);
     const reversal=await h.prisma.ledgerEntry.findUnique({where:{id:cancelled.reversalId},include:{lines:true}});
-    assert.ok(reversal);assert.equal(balanced(reversal.lines),true,'Purchase reversal is not balanced');
+    assert.ok(reversal);assert.equal(reversal.posted,true);assert.equal(reversal.reversalOfId,ledger.id);assert.equal(balanced(reversal.lines),true,'Purchase reversal is not balanced');
     const again=await h.ok(`/purchases/${purchase.id}/cancel`,{method:'PATCH',body:JSON.stringify({reason:'QA idempotency'})});
     assert.equal(again.alreadyCancelled,true);assert.equal(again.reversalId,cancelled.reversalId);
   });

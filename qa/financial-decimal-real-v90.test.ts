@@ -59,6 +59,7 @@ test('issue #90 decimal financial core reconciles API, domain and PostgreSQL exa
       })
     });
     ids.ledgers.push(entry.id);
+    assert.equal(entry.posted, false, 'Manual ledger must start as DRAFT under #91');
     const stored = await h.prisma.ledgerEntry.findUnique({ where: { id: entry.id }, include: { lines: true } });
     assert.ok(stored);
     const debit = stored.lines.reduce((sum, line) => sum.plus(line.debit), stored.lines[0].debit.minus(stored.lines[0].debit));
@@ -66,8 +67,16 @@ test('issue #90 decimal financial core reconciles API, domain and PostgreSQL exa
     assert.equal(debit.toFixed(2), '0.30');
     assert.equal(credit.toFixed(2), '0.30');
 
+    const beforePostTrial = await h.ok('/accounting/trial-balance');
+    assert.equal(beforePostTrial.some((item: any) => item.accountCode === `${RUN}.D1`), false, 'DRAFT leaked into trial balance');
+
+    const posted = await h.ok(`/accounting/entries/${entry.id}/post`, { method: 'POST' });
+    assert.equal(posted.posted, true);
+    assert.ok(posted.postedAt);
+
     const trial = await h.ok('/accounting/trial-balance');
     const row = trial.find((item: any) => item.accountCode === `${RUN}.D1`);
+    assert.ok(row, 'Posted manual ledger missing from trial balance');
     assert.equal(row.debitExact, '0.10');
     assert.equal(row.balanceExact, '0.10');
   });
@@ -102,6 +111,7 @@ test('issue #90 decimal financial core reconciles API, domain and PostgreSQL exa
       include: { lines: true }
     });
     assert.ok(originalLedger);
+    assert.equal(originalLedger.posted, true);
     const debit = originalLedger.lines.reduce((sum, line) => sum.plus(line.debit), stored.total.minus(stored.total));
     const credit = originalLedger.lines.reduce((sum, line) => sum.plus(line.credit), stored.total.minus(stored.total));
     assert.equal(debit.toFixed(2), '4.09');
@@ -145,6 +155,7 @@ test('issue #90 decimal financial core reconciles API, domain and PostgreSQL exa
       include: { lines: true }
     });
     assert.ok(originalLedger);
+    assert.equal(originalLedger.posted, true);
     const cancelled = await h.ok(`/purchases/${purchase.id}/cancel`, {
       method: 'PATCH',
       body: JSON.stringify({ reason: 'QA90 exact purchase reversal' })

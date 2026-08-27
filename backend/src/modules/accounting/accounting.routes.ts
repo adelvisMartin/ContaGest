@@ -8,15 +8,21 @@ import { writeAudit } from '../../shared/services/audit.service.js';
 import { runFinancialIdempotentMutation } from '../../shared/services/financial-idempotency.service.js';
 import { add, serializeDecimal, serializeLegacyNumber, subtract, ZERO } from '../../shared/financial/decimal.js';
 import { decimalSchema } from '../../shared/financial/zod.js';
-import { createLedgerEntry } from './accounting.service.js';
+import {
+  createLedgerEntry,
+  deleteDraftLedgerEntry,
+  postLedgerEntry,
+  reverseLedgerEntry,
+  updateDraftLedgerEntry
+} from './accounting.service.js';
 
 const router = Router();
 router.use(requireTenant);
 
 const entrySchema = z.object({
-  fiscalPeriod: z.string().min(6),
-  description: z.string().min(2),
-  source: z.enum(['manual', 'sales', 'purchase', 'payroll', 'banking', 'tax', 'inventory']).default('manual'),
+  fiscalPeriod: z.string().regex(/^\d{4}-\d{2}$/, 'Usa formato AAAA-MM.'),
+  description: z.string().trim().min(2).max(500),
+  source: z.literal('manual').optional(),
   lines: z.array(z.object({
     accountCode: z.string().min(1),
     accountName: z.string().min(2),
@@ -26,6 +32,11 @@ const entrySchema = z.object({
     exchangeRate: decimalSchema('exchangeRate', { defaultValue: 1, positive: true })
   })).min(2)
 });
+const reversalSchema = z.object({
+  fiscalPeriod: z.string().regex(/^\d{4}-\d{2}$/, 'Usa formato AAAA-MM.'),
+  date: z.coerce.date().optional(),
+  description: z.string().trim().min(3).max(500).optional()
+});
 const closingPeriodSchema = z.object({ period: z.string().regex(/^\d{4}-\d{2}$/, 'Usa formato AAAA-MM.'), note: z.string().max(500).optional() });
 const closeSchema = z.object({ note: z.string().max(500).optional() });
 const context = (req: any) => req.context as { tenantId: string; userId?: string; ip?: string; userAgent?: string };
@@ -34,7 +45,16 @@ const idempotencyKey = (req: any) => req.header('Idempotency-Key') || null;
 
 router.get('/entries', requirePermission('accounting.view'), asyncHandler(async (req, res) => {
   const tenantId = context(req).tenantId;
-  ok(res, await prisma.ledgerEntry.findMany({ where: { tenantId }, include: { lines: true }, orderBy: { date: 'desc' }, take: 100 }));
+  ok(res, await prisma.ledgerEntry.findMany({
+    where: { tenantId },
+    include: {
+      lines: true,
+      reversalOf: { select: { id: true, fiscalPeriod: true, postedAt: true } },
+      reversedBy: { select: { id: true, fiscalPeriod: true, postedAt: true } }
+    },
+    orderBy: { date: 'desc' },
+    take: 100
+  }));
 }));
 
 router.post('/entries', requirePermission('accounting.post'), validateBody(entrySchema), asyncHandler(async (req, res) => {
@@ -47,26 +67,74 @@ router.post('/entries', requirePermission('accounting.post'), validateBody(entry
     requestId: requestId(req),
     replay: async (tx, record) => {
       if (!record.resourceId) throw new HttpError(409, 'El resultado original del asiento no tiene recurso asociado.', { code: 'IDEMPOTENCY_RESULT_UNAVAILABLE', scope: 'accounting.entries.create' });
-      const entry = await tx.ledgerEntry.findFirst({ where: { id: record.resourceId, tenantId: ctx.tenantId }, include: { lines: true } });
+      const entry = await tx.ledgerEntry.findFirst({
+        where: { id: record.resourceId, tenantId: ctx.tenantId },
+        include: { lines: true, reversalOf: true, reversedBy: true }
+      });
       if (!entry) throw new HttpError(409, 'El asiento original ya no puede reconstruirse.', { code: 'IDEMPOTENCY_RESULT_UNAVAILABLE', scope: 'accounting.entries.create' });
       return entry;
     }
   }, async (tx) => {
-    const entry = await createLedgerEntry({ tenantId: ctx.tenantId, ...req.body }, tx);
+    const entry = await createLedgerEntry({ tenantId: ctx.tenantId, ...req.body, source: 'manual' }, tx);
     return { data: entry, resourceType: 'LedgerEntry', resourceId: entry.id };
   });
   res.setHeader('Idempotency-Replayed', execution.replayed ? 'true' : 'false');
   if (execution.replayed) {
     await writeAudit({ tenantId: ctx.tenantId, userId: ctx.userId, action: 'idempotency.replay', entity: 'LedgerEntry', entityId: (execution.data as any).id, after: { scope: 'accounting.entries.create', recordId: execution.recordId, originalRequestId: execution.originalRequestId, requestId: requestId(req) }, ipAddress: ctx.ip, userAgent: ctx.userAgent });
   } else {
-    await writeAudit({ tenantId: ctx.tenantId, userId: ctx.userId, action: 'accounting.entry-create', entity: 'LedgerEntry', entityId: (execution.data as any).id, after: execution.data, ipAddress: ctx.ip, userAgent: ctx.userAgent });
+    await writeAudit({ tenantId: ctx.tenantId, userId: ctx.userId, action: 'ledger.entry.created', entity: 'LedgerEntry', entityId: (execution.data as any).id, after: { entry: execution.data, requestId: requestId(req) }, ipAddress: ctx.ip, userAgent: ctx.userAgent });
   }
   ok(res, execution.data, execution.responseCode);
 }));
 
+router.patch('/entries/:id', requirePermission('accounting.post'), validateBody(entrySchema), asyncHandler(async (req, res) => {
+  const ctx = context(req);
+  const before = await prisma.ledgerEntry.findFirst({ where: { id: req.params.id, tenantId: ctx.tenantId }, include: { lines: true } });
+  if (!before) throw new HttpError(404, 'Asiento contable no encontrado.');
+  const updated = await updateDraftLedgerEntry({
+    tenantId: ctx.tenantId,
+    entryId: before.id,
+    fiscalPeriod: req.body.fiscalPeriod,
+    description: req.body.description,
+    lines: req.body.lines
+  });
+  await writeAudit({ tenantId: ctx.tenantId, userId: ctx.userId, action: 'ledger.entry.draft-updated', entity: 'LedgerEntry', entityId: updated.id, before, after: { entry: updated, requestId: requestId(req) }, ipAddress: ctx.ip, userAgent: ctx.userAgent });
+  ok(res, updated);
+}));
+
+router.delete('/entries/:id', requirePermission('accounting.post'), asyncHandler(async (req, res) => {
+  const ctx = context(req);
+  const deleted = await deleteDraftLedgerEntry({ tenantId: ctx.tenantId, entryId: req.params.id });
+  await writeAudit({ tenantId: ctx.tenantId, userId: ctx.userId, action: 'ledger.entry.draft-deleted', entity: 'LedgerEntry', entityId: deleted.id, before: deleted, after: { requestId: requestId(req) }, ipAddress: ctx.ip, userAgent: ctx.userAgent });
+  ok(res, { deleted: true, id: deleted.id });
+}));
+
+router.post('/entries/:id/post', requirePermission('accounting.post'), asyncHandler(async (req, res) => {
+  const ctx = context(req);
+  const posted = await postLedgerEntry({
+    tenantId: ctx.tenantId,
+    entryId: req.params.id,
+    postedBy: ctx.userId,
+    audit: { userId: ctx.userId, ipAddress: ctx.ip, userAgent: ctx.userAgent }
+  });
+  ok(res, posted);
+}));
+
+router.post('/entries/:id/reverse', requirePermission('accounting.post'), validateBody(reversalSchema), asyncHandler(async (req, res) => {
+  const ctx = context(req);
+  const reversal = await reverseLedgerEntry({
+    tenantId: ctx.tenantId,
+    entryId: req.params.id,
+    postedBy: ctx.userId,
+    audit: { userId: ctx.userId, ipAddress: ctx.ip, userAgent: ctx.userAgent },
+    ...req.body
+  });
+  ok(res, reversal);
+}));
+
 router.get('/trial-balance', requirePermission('accounting.view'), asyncHandler(async (req, res) => {
   const tenantId = context(req).tenantId;
-  const entries = await prisma.ledgerEntry.findMany({ where: { tenantId }, include: { lines: true } });
+  const entries = await prisma.ledgerEntry.findMany({ where: { tenantId, posted: true }, include: { lines: true } });
   const accounts = new Map<string, { accountCode: string; accountName: string; debit: typeof ZERO; credit: typeof ZERO }>();
   for (const entry of entries) for (const line of entry.lines) {
     const key = line.accountCode;
@@ -92,11 +160,7 @@ router.get('/trial-balance', requirePermission('accounting.view'), asyncHandler(
 
 router.get('/closing-periods', requirePermission('accounting.view'), asyncHandler(async (req, res) => {
   const ctx = context(req);
-  const periods = await prisma.closingPeriod.findMany({
-    where: { tenantId: ctx.tenantId, module: 'accounting' },
-    orderBy: { period: 'desc' },
-    take: 120
-  });
+  const periods = await prisma.closingPeriod.findMany({ where: { tenantId: ctx.tenantId, module: 'accounting' }, orderBy: { period: 'desc' }, take: 120 });
   ok(res, periods);
 }));
 

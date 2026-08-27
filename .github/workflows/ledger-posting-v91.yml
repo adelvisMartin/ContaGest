@@ -1,0 +1,248 @@
+name: "Accounting #91 · immutable ledger posting"
+
+on:
+  pull_request:
+    paths:
+      - 'backend/prisma/**'
+      - 'backend/src/modules/accounting/**'
+      - 'backend/src/modules/sales/**'
+      - 'backend/src/modules/purchases/**'
+      - 'backend/src/shared/financial/**'
+      - 'qa/ledger-posting-v91.test.ts'
+      - 'qa/ledger-posting-real-v91.test.ts'
+      - 'qa/postgres-ledger-posting-v91.sql'
+      - 'qa/financial-decimal-real-v90.test.ts'
+      - 'qa/postmerge-financial-domain-v17.test.ts'
+      - 'qa/support/real-backend-harness.ts'
+      - 'tests/ledger_posting_issue_91.test.mjs'
+      - 'scripts/run-ledger-upgrade-v91.sh'
+      - 'docs/ADR_LEDGER_POSTING_LIFECYCLE_V91.md'
+      - 'docs/RUNBOOK_LEDGER_REVERSALS_BACKFILL_V91.md'
+      - 'ops/database/prepare-supabase-ephemeral.sql'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/ledger-posting-v91.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ledger-v91-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ledger-posting-postgres:
+    name: Lifecycle + API + DB + upgrade
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: contagest_ledger_v91_e2e
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d contagest_ledger_v91_e2e"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+
+    env:
+      NODE_ENV: test
+      API_MODE: prisma
+      DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/contagest_ledger_v91_e2e?schema=public
+      DIRECT_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/contagest_ledger_v91_e2e?schema=public
+      APP_URL: http://127.0.0.1:8080
+      CORS_ORIGIN: http://127.0.0.1:8080
+      JWT_SECRET: ledger_v91_only_jwt_secret_0123456789abcdefghijklmnopqrstuvwxyz_ABCDEF
+      LICENSE_HASH_SECRET: ledger_v91_only_license_secret_0123456789abcdefghijklmnopqrstuvwxyz_XYZ
+      SEED_ADMIN_PASSWORD: LedgerV91-QA-Only-Password-2026!
+      ALLOW_DEV_TENANT_HEADER: 'true'
+      SUPABASE_AUTH_FALLBACK: 'false'
+      ALLOW_PUBLIC_REGISTER: 'false'
+
+    steps:
+      - name: Descargar código y todo el historial requerido por gates
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Configurar Node 22
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Instalar dependencias bloqueadas y cliente PostgreSQL
+        run: |
+          set -o pipefail
+          npm ci --no-audit --no-fund 2>&1 | tee npm-ci-v91.log
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client
+
+      - name: Preparar contratos Supabase mínimos en DB efímera
+        env:
+          PGPASSWORD: postgres
+        shell: bash
+        run: |
+          set -o pipefail
+          psql -h 127.0.0.1 -U postgres -d contagest_ledger_v91_e2e \
+            -v ON_ERROR_STOP=1 \
+            -f ops/database/prepare-supabase-ephemeral.sql 2>&1 | tee prerequisitos-v91.log
+
+      - name: Validar Prisma y generar cliente
+        shell: bash
+        run: |
+          set -o pipefail
+          npm --workspace backend run prisma:sync-schema 2>&1 | tee prisma-validate-generate-v91.log
+          npx prisma validate --schema backend/prisma/schema.prisma 2>&1 | tee -a prisma-validate-generate-v91.log
+          npm --workspace backend run prisma:generate 2>&1 | tee -a prisma-validate-generate-v91.log
+
+      - name: Reconstruir PostgreSQL desde cero con historial canónico
+        shell: bash
+        run: |
+          set -o pipefail
+          npm --workspace backend run prisma:deploy 2>&1 | tee migration-from-zero-v91.log
+          npx prisma migrate status --schema backend/prisma/schema.prisma 2>&1 | tee -a migration-from-zero-v91.log
+
+      - name: Seed QA sobre DB reconstruida
+        shell: bash
+        run: |
+          set -o pipefail
+          npm --workspace backend run seed 2>&1 | tee seed-v91.log
+
+      - name: Clonar snapshot efímero para pruebas destructivas #91
+        env:
+          PGPASSWORD: postgres
+        shell: bash
+        run: |
+          set -o pipefail
+          dropdb -h 127.0.0.1 -U postgres --if-exists contagest_ledger_v91
+          createdb -h 127.0.0.1 -U postgres -T contagest_ledger_v91_e2e contagest_ledger_v91
+          psql -h 127.0.0.1 -U postgres -d contagest_ledger_v91 -Atc 'select current_database(), current_setting('"'"'server_version'"'"');' | tee clone-v91.log
+
+      - name: Verificar skills y routing determinista
+        shell: bash
+        run: |
+          set -o pipefail
+          npm run skills:check 2>&1 | tee skills-v91.log
+          npm run agent:gates -- --base "${{ github.base_ref || 'main' }}" 2>&1 | tee agent-gates-v91.log
+
+      - name: Typecheck + lint + contratos estáticos
+        shell: bash
+        run: |
+          set -o pipefail
+          npm run typecheck 2>&1 | tee typecheck-v91.log
+          npm run lint 2>&1 | tee lint-v91.log
+
+      - name: Unit lifecycle y Decimal exacto
+        shell: bash
+        run: |
+          set -o pipefail
+          npm run test:ledger:unit 2>&1 | tee ledger-unit-v91.log
+          npm run test:financial:decimal 2>&1 | tee decimal-unit-v91.log
+
+      - name: API real DRAFT → POSTED, ventas, compras, reversos y tenant A↔B
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/contagest_ledger_v91?schema=public
+          DIRECT_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/contagest_ledger_v91?schema=public
+        shell: bash
+        run: |
+          set -o pipefail
+          npm run test:backend:ledger:real 2>&1 | tee ledger-api-real-v91.log
+
+      - name: Enforcement directo PostgreSQL
+        env:
+          PGPASSWORD: postgres
+        shell: bash
+        run: |
+          set -o pipefail
+          psql -h 127.0.0.1 -U postgres -d contagest_ledger_v91 \
+            -v ON_ERROR_STOP=1 \
+            -f qa/postgres-ledger-posting-v91.sql 2>&1 | tee ledger-db-real-v91.log
+
+      - name: Upgrade representativo y backfill fail-closed
+        env:
+          PGPASSWORD: postgres
+        shell: bash
+        run: |
+          set -o pipefail
+          dropdb -h 127.0.0.1 -U postgres --if-exists contagest_ledger_v91_upgrade_drill
+          dropdb -h 127.0.0.1 -U postgres --if-exists contagest_ledger_v91_ambiguous_drill
+          createdb -h 127.0.0.1 -U postgres contagest_ledger_v91_upgrade_drill
+          createdb -h 127.0.0.1 -U postgres contagest_ledger_v91_ambiguous_drill
+          bash scripts/run-ledger-upgrade-v91.sh \
+            postgresql://postgres:postgres@127.0.0.1:5432/contagest_ledger_v91_upgrade_drill \
+            postgresql://postgres:postgres@127.0.0.1:5432/contagest_ledger_v91_ambiguous_drill \
+            2>&1 | tee ledger-upgrade-v91.log
+
+      - name: Regresión financiera histórica
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/contagest_ledger_v91?schema=public
+          DIRECT_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/contagest_ledger_v91?schema=public
+        shell: bash
+        run: |
+          set -o pipefail
+          npm run test:backend:financial:real 2>&1 | tee financial-regression-v91.log
+          npm run test:backend:financial:decimal:real 2>&1 | tee financial-decimal-real-v91.log
+
+      - name: Build backend
+        shell: bash
+        run: |
+          set -o pipefail
+          npm run build:backend 2>&1 | tee build-backend-v91.log
+
+      - name: Inventario de constraints, triggers, migraciones y auditoría
+        if: always()
+        env:
+          PGPASSWORD: postgres
+        shell: bash
+        run: |
+          {
+            echo '=== PostgreSQL ==='
+            psql -h 127.0.0.1 -U postgres -d contagest_ledger_v91 -Atc 'select version();' || true
+            echo '=== Migraciones canónicas ==='
+            psql -h 127.0.0.1 -U postgres -d contagest_ledger_v91 -Atc 'select migration_name || chr(9) || finished_at from "_prisma_migrations" where rolled_back_at is null order by finished_at;' || true
+            echo '=== LedgerEntry metadata ==='
+            psql -h 127.0.0.1 -U postgres -d contagest_ledger_v91 -Atc "select column_name || chr(9) || data_type || chr(9) || is_nullable from information_schema.columns where table_schema='public' and table_name='LedgerEntry' and column_name in ('posted','postedAt','postedBy','reversalOfId') order by column_name;" || true
+            echo '=== Triggers #91 ==='
+            psql -h 127.0.0.1 -U postgres -d contagest_ledger_v91 -Atc "select event_object_table || chr(9) || trigger_name || chr(9) || action_timing from information_schema.triggers where trigger_name in ('LedgerEntry_lifecycle_guard','LedgerLine_posted_guard','LedgerEntry_period_gate') order by trigger_name;" || true
+            echo '=== Constraints #91 ==='
+            psql -h 127.0.0.1 -U postgres -d contagest_ledger_v91 -Atc "select conname || chr(9) || contype from pg_constraint where conname in ('LedgerEntry_reversalOfId_key','LedgerEntry_reversalOfId_fkey','LedgerEntry_posted_metadata_check') order by conname;" || true
+            echo '=== Audit events #91 ==='
+            psql -h 127.0.0.1 -U postgres -d contagest_ledger_v91 -Atc "select action || chr(9) || count(*) from \"AuditLog\" where action in ('ledger.entry.posted','ledger.entry.reversed') group by action order by action;" || true
+          } > ledger-inventory-v91.log 2>&1
+
+      - name: Conservar evidencia SHA-bound #91
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: evidencia-ledger-posting-v91-${{ github.sha }}
+          path: |
+            npm-ci-v91.log
+            prerequisitos-v91.log
+            prisma-validate-generate-v91.log
+            migration-from-zero-v91.log
+            seed-v91.log
+            clone-v91.log
+            skills-v91.log
+            agent-gates-v91.log
+            typecheck-v91.log
+            lint-v91.log
+            ledger-unit-v91.log
+            decimal-unit-v91.log
+            ledger-api-real-v91.log
+            ledger-db-real-v91.log
+            ledger-upgrade-v91.log
+            ledger-v91-ambiguous-migration.log
+            financial-regression-v91.log
+            financial-decimal-real-v91.log
+            build-backend-v91.log
+            ledger-inventory-v91.log
+          if-no-files-found: warn
+          retention-days: 14
