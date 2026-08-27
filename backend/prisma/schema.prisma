@@ -391,6 +391,9 @@ model LedgerEntry {
   salesInvoiceId String?
   purchaseInvoiceId String?
   posted      Boolean  @default(false)
+  postedAt    DateTime?
+  postedBy    String?
+  reversalOfId String? @unique
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
@@ -398,8 +401,13 @@ model LedgerEntry {
   lines       LedgerLine[]
   salesInvoice SalesInvoice? @relation(fields: [salesInvoiceId], references: [id], onDelete: SetNull)
   purchaseInvoice PurchaseInvoice? @relation(fields: [purchaseInvoiceId], references: [id], onDelete: SetNull)
+  reversalOf  LedgerEntry? @relation("LedgerReversal", fields: [reversalOfId], references: [id], onDelete: Restrict)
+  reversedBy  LedgerEntry? @relation("LedgerReversal")
 
   @@index([tenantId, fiscalPeriod])
+  @@index([tenantId, source, sourceId])
+  @@index([tenantId, reversalOfId])
+  @@index([tenantId, posted, fiscalPeriod])
 }
 
 model LedgerLine {
