@@ -1,4 +1,5 @@
-import { PrismaClient } from '@prisma/client';
+import { randomUUID } from 'node:crypto';
+import { Prisma, PrismaClient } from '@prisma/client';
 import bcrypt from 'bcryptjs';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -23,7 +24,8 @@ async function seedPermissions() {
     ['sales.manage', 'Gestionar ventas'],
     ['sales.view', 'Ver ventas'],
     ['purchases.manage', 'Gestionar compras'],
-    ['inventory.manage', 'Gestionar inventario'],
+    ['inventory.manage', 'Gestionar movimientos ordinarios de inventario'],
+    ['inventory.adjust', 'Ajustar y reversar inventario con motivo auditable'],
     ['accounting.post', 'Postear asientos'],
     ['accounting.view', 'Ver contabilidad'],
     ['banking.manage', 'Gestionar bancos y conciliación'],
@@ -114,9 +116,24 @@ async function seedOperationalData(tenantId: string) {
 
   const product = await prisma.product.upsert({
     where: { tenantId_sku: { tenantId, sku: 'CG-DEMO-001' } },
-    update: { name: 'Producto Demo', cost: 12.5, price: 20, stock: 18, minStock: 5, taxRate: 16 },
-    create: { tenantId, sku: 'CG-DEMO-001', name: 'Producto Demo', cost: 12.5, price: 20, stock: 18, minStock: 5, taxRate: 16, barcode: '7591000000001' }
+    update: { name: 'Producto Demo', cost: 12.5, price: 20, minStock: 5, taxRate: 16 },
+    create: { tenantId, sku: 'CG-DEMO-001', name: 'Producto Demo', cost: 12.5, price: 20, stock: 0, reserved: 0, minStock: 5, taxRate: 16, barcode: '7591000000001' }
   });
+
+  const seedOpening = await prisma.inventoryMovement.findFirst({ where: { tenantId, productId: product.id, source: 'seed-opening' } });
+  if (!seedOpening && product.stock.eq(0) && product.reserved.eq(0)) {
+    await prisma.$transaction(async (tx) => {
+      const movement = await tx.inventoryMovement.create({ data: { tenantId, productId: product.id, type: 'in', quantity: 18, unitCost: 12.5, source: 'seed-opening', sourceId: 'CG-DEMO-001', note: 'Saldo inicial demo creado por seed.' } });
+      await tx.product.update({ where: { id: product.id }, data: { stock: { increment: 18 } } });
+      await tx.$executeRaw(Prisma.sql`
+        INSERT INTO "InventoryMovementAuditLink"
+          ("id","tenantId","productId","originalMovementId","relatedMovementId","kind","reasonCode","reason","createdBy")
+        VALUES
+          (${randomUUID()},${tenantId},${product.id},NULL,${movement.id},'opening','SEED_OPENING','Saldo inicial demo creado por seed.',NULL)
+        ON CONFLICT DO NOTHING
+      `);
+    });
+  }
 
   const sale = await prisma.salesInvoice.upsert({
     where: { tenantId_number: { tenantId, number: 'FAC-2026-001' } },
