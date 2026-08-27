@@ -36,6 +36,27 @@ BEGIN
      OR pg_has_role('contagest_monitor','service_role','member') THEN
     RAISE EXCEPTION 'Ningún rol ContaGest puede heredar service_role.';
   END IF;
+
+  IF to_regclass('private.contagest_security_metric_snapshot') IS NULL THEN
+    RAISE EXCEPTION 'Falta el snapshot privado del monitor.';
+  END IF;
+  IF NOT has_table_privilege('contagest_monitor','private.contagest_security_metric_snapshot','SELECT,INSERT,UPDATE') THEN
+    RAISE EXCEPTION 'contagest_monitor no puede mantener su snapshot privado.';
+  END IF;
+  IF has_table_privilege('contagest_monitor','private.contagest_security_metric_snapshot','DELETE') THEN
+    RAISE EXCEPTION 'contagest_monitor no debe poder borrar el snapshot.';
+  END IF;
+
+  -- El rol runtime no debe alcanzar tablas lower_snake_case compartidas con otros productos.
+  IF EXISTS (
+    SELECT 1
+    FROM pg_class c
+    JOIN pg_namespace n ON n.oid=c.relnamespace
+    WHERE n.nspname='public' AND c.relkind IN ('r','p') AND c.relname ~ '^[a-z]'
+      AND has_table_privilege('contagest_runtime', format('%I.%I', n.nspname, c.relname), 'SELECT')
+  ) THEN
+    RAISE EXCEPTION 'contagest_runtime tiene acceso a una tabla lower_snake_case fuera de su scope.';
+  END IF;
 END $$;
 
 SELECT
@@ -44,6 +65,14 @@ SELECT
   has_table_privilege('contagest_runtime','public."AuditLog"','SELECT') AS runtime_select,
   has_table_privilege('contagest_runtime','public."AuditLog"','TRUNCATE') AS runtime_truncate,
   has_table_privilege('contagest_backup','public."AuditLog"','SELECT') AS backup_select,
-  has_table_privilege('contagest_backup','public."AuditLog"','DELETE') AS backup_delete;
+  has_table_privilege('contagest_backup','public."AuditLog"','DELETE') AS backup_delete,
+  has_table_privilege('contagest_monitor','private.contagest_security_metric_snapshot','UPDATE') AS monitor_snapshot_update,
+  has_table_privilege('contagest_monitor','private.contagest_security_metric_snapshot','DELETE') AS monitor_snapshot_delete;
 
-\echo 'Verificación de roles ContaGest completada.'
+SELECT c.relname AS table_name,
+       has_table_privilege('contagest_runtime', format('%I.%I', n.nspname, c.relname), 'SELECT') AS runtime_select
+FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
+WHERE n.nspname='public' AND c.relkind IN ('r','p')
+ORDER BY c.relname;
+
+\echo 'Verificación de roles ContaGest: PASS si no hubo excepción.'
