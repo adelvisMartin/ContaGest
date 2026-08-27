@@ -32,6 +32,10 @@ export type LoginThrottleState = {
   shouldEmitExpired: boolean;
 };
 
+const RETENTION_CLEANUP_INTERVAL_MS = 60 * 60 * 1000;
+const RETENTION_CLEANUP_RETRY_MS = 60 * 1000;
+let nextRetentionCleanupAt = 0;
+
 function boundedInteger(
   source: NodeJS.ProcessEnv,
   name: string,
@@ -194,6 +198,22 @@ async function attemptsForIdentity(identity: LoginIdentity, now: Date, policy: L
   });
 }
 
+async function maybePruneExpiredLoginAttempts(now: Date, policy: LoginThrottlePolicy) {
+  const nowMs = now.getTime();
+  if (nowMs < nextRetentionCleanupAt) return;
+
+  // Claim the cleanup window before touching the DB so concurrent login requests
+  // do not all execute a global retention delete. A failed cleanup retries soon.
+  nextRetentionCleanupAt = nowMs + RETENTION_CLEANUP_INTERVAL_MS;
+  try {
+    await prisma.authLoginAttempt.deleteMany({
+      where: { createdAt: { lt: new Date(nowMs - policy.retentionMs) } }
+    });
+  } catch {
+    nextRetentionCleanupAt = Math.min(nextRetentionCleanupAt, nowMs + RETENTION_CLEANUP_RETRY_MS);
+  }
+}
+
 export async function getLoginThrottleState(req: any, now = new Date()) {
   const identity = loginIdentityFromRequest(req);
   const policy = loadLoginThrottlePolicy();
@@ -220,6 +240,7 @@ export async function recordLoginFailure(
     data: { ...identity, success: false },
     select: { id: true, success: true, createdAt: true }
   });
+  await maybePruneExpiredLoginAttempts(now, policy);
   const attempts = await attemptsForIdentity(identity, now, policy);
   const state = evaluateLoginThrottle(attempts, now, policy);
 
@@ -242,11 +263,8 @@ export async function recordLoginFailure(
 
 export async function recordLoginSuccess(req: any, tenantId?: string, now = new Date()) {
   const identity = loginIdentityFromRequest(req);
-  await prisma.authLoginAttempt.create({ data: { ...identity, success: true } });
-  logAuthSecurityEvent('auth.login.succeeded', req, identity, { tenantId });
-
   const policy = loadLoginThrottlePolicy();
-  void prisma.authLoginAttempt.deleteMany({
-    where: { createdAt: { lt: new Date(now.getTime() - policy.retentionMs) } }
-  }).catch(() => undefined);
+  await prisma.authLoginAttempt.create({ data: { ...identity, success: true } });
+  await maybePruneExpiredLoginAttempts(now, policy);
+  logAuthSecurityEvent('auth.login.succeeded', req, identity, { tenantId });
 }
