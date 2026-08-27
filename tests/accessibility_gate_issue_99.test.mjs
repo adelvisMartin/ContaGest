@@ -8,6 +8,8 @@ const workflow = readFileSync(new URL('../.github/workflows/accessibility-wcag22
 const docs = readFileSync(new URL('../docs/qa/ACCESSIBILITY_WCAG22.md', import.meta.url), 'utf8');
 const waivers = JSON.parse(readFileSync(new URL('../qa/accessibility-waivers-v99.json', import.meta.url), 'utf8'));
 const spec = readFileSync(new URL('../qa/accessibility-wcag22-v99.spec.mjs', import.meta.url), 'utf8');
+const contrast = readFileSync(new URL('../qa/contrast-v15.spec.mjs', import.meta.url), 'utf8');
+const store = readFileSync(new URL('../frontend/src/state/store.js', import.meta.url), 'utf8');
 
 test('issue #99 mantiene el catálogo vigente de 58 rutas como fuente del gate', () => {
   assert.equal(MODULE_VISUAL_CATALOG.length, 58);
@@ -21,6 +23,13 @@ test('issue #99 expone un script de QA accesible y un job con nombre estable', (
   assert.match(workflow, /npm run test:browser:a11y/);
   assert.match(workflow, /npm run test:browser:contrast/);
   assert.match(workflow, /artifacts\/qa\/accessibility-v99/);
+});
+
+test('issue #99 usa la storage key canónica para contraste light/dark', () => {
+  const canonicalKey = store.match(/const STORAGE_KEY = '([^']+)'/)?.[1];
+  assert.equal(canonicalKey, 'contagest_ve_enterprise_v7_state');
+  assert.match(contrast, new RegExp(canonicalKey));
+  assert.doesNotMatch(contrast, /localStorage\.getItem\('contagest_state'/);
 });
 
 test('issue #99 conserva waivers explícitos, vacíos por defecto y documentados', () => {
