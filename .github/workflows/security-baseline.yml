@@ -2,16 +2,18 @@ name: security-baseline
 
 on:
   pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened, ready_for_review]
   push:
-    branches:
-      - main
-      - 'feature/**'
-      - 'feat/**'
-      - 'refactor/**'
-      - 'security/**'
+    branches: [main]
+  workflow_dispatch:
 
 permissions:
   contents: read
+
+concurrency:
+  group: contagest-security-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 jobs:
   appsec-baseline:
