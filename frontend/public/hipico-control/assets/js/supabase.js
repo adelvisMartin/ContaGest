@@ -1,7 +1,19 @@
-import { CLOUD_CONFIG, cloudConfigurationStatus } from "./config.js";
+import { CLOUD_CONFIG, canUseLabDirectTableFallback, cloudConfigurationStatus } from "./config.js";
 import { loadCloudSession, saveCloudSession } from "./store.js";
 let cachedSession = null;
 let refreshPromise = null;
+
+export class BackendAuthorityError extends Error {
+    constructor(capability, cause = null) {
+        super(`La capacidad segura '${capability}' no está disponible en este despliegue.`);
+        this.name = "BackendAuthorityError";
+        this.code = "HIPICO_RPC_REQUIRED";
+        this.capability = capability;
+        this.cause = cause || null;
+        this.retryable = false;
+    }
+}
+
 function requireCloudConfiguration() {
     if (!cloudConfigurationStatus().configured) {
         throw new Error("La sincronización no está configurada para este despliegue.");
@@ -24,6 +36,12 @@ function errorMessage(body, status) {
 }
 function isRpcUnavailable(error) {
     return (error === null || error === void 0 ? void 0 : error.status) === 404 || ["PGRST202", "42883"].includes(error === null || error === void 0 ? void 0 : error.code);
+}
+function requireRpcOrLabFallback(error, capability) {
+    if (!isRpcUnavailable(error))
+        throw error;
+    if (!canUseLabDirectTableFallback())
+        throw new BackendAuthorityError(capability, error);
 }
 export function isVersionConflict(error) {
     var _a;
@@ -99,9 +117,8 @@ export function currentSession() {
     return (cachedSession === null || cachedSession === void 0 ? void 0 : cachedSession.access_token) ? cachedSession : null;
 }
 export function sessionRole(session = currentSession()) {
-    var _a, _b, _c, _d;
+    var _a, _b;
     return String(((_b = (_a = session === null || session === void 0 ? void 0 : session.user) === null || _a === void 0 ? void 0 : _a.app_metadata) === null || _b === void 0 ? void 0 : _b.role)
-        || ((_d = (_c = session === null || session === void 0 ? void 0 : session.user) === null || _c === void 0 ? void 0 : _c.user_metadata) === null || _d === void 0 ? void 0 : _d.role)
         || "operator").toLowerCase();
 }
 export function isAdminSession(session = currentSession()) {
@@ -196,8 +213,7 @@ export async function fetchCloudProfile() {
         });
     }
     catch (error) {
-        if (!isRpcUnavailable(error))
-            throw error;
+        requireRpcOrLabFallback(error, "profile.read");
         const session = currentSession();
         const rows = await authorizedRequest(`/rest/v1/${CLOUD_CONFIG.profileTable}?owner_id=eq.${encodeURIComponent(((_a = session === null || session === void 0 ? void 0 : session.user) === null || _a === void 0 ? void 0 : _a.id) || "")}&select=owner_id,display_name,role,preferences,updated_at&limit=1`);
         return (_b = rows === null || rows === void 0 ? void 0 : rows[0]) !== null && _b !== void 0 ? _b : null;
@@ -213,16 +229,26 @@ export async function fetchCloudWorkspace() {
         return (_a = rows === null || rows === void 0 ? void 0 : rows[0]) !== null && _a !== void 0 ? _a : null;
     }
     catch (error) {
-        if (!isRpcUnavailable(error))
-            throw error;
+        requireRpcOrLabFallback(error, "workspace.read");
         const rows = await authorizedRequest(`/rest/v1/${CLOUD_CONFIG.workspaceTable}?select=id,state,version,updated_at&order=updated_at.desc&limit=1`);
         return (_b = rows === null || rows === void 0 ? void 0 : rows[0]) !== null && _b !== void 0 ? _b : null;
     }
 }
 export async function fetchRecentShadowEvaluations(limit = 12) {
+    var _a;
     const safeLimit = Math.min(30, Math.max(1, Math.trunc(Number(limit) || 12)));
-    const select = "id,source_group_key,lab_group_key,source_external_message_id,prediction_type,predicted_payload,predicted_at,match_status,reviewed_at";
-    return authorizedRequest(`/rest/v1/${CLOUD_CONFIG.shadowTable}?select=${select}&order=predicted_at.desc&limit=${safeLimit}`);
+    try {
+        const rows = await authorizedRequest(`/rest/v1/rpc/${CLOUD_CONFIG.recentShadowRpc}`, {
+            method: "POST",
+            body: JSON.stringify({ p_limit: safeLimit })
+        });
+        return Array.isArray(rows) ? rows : [];
+    }
+    catch (error) {
+        requireRpcOrLabFallback(error, "shadow.read_recent");
+        const select = "id,source_group_key,lab_group_key,source_external_message_id,prediction_type,predicted_payload,predicted_at,match_status,reviewed_at";
+        return (_a = await authorizedRequest(`/rest/v1/${CLOUD_CONFIG.shadowTable}?select=${select}&order=predicted_at.desc&limit=${safeLimit}`)) !== null && _a !== void 0 ? _a : [];
+    }
 }
 export async function saveCloudWorkspace(workspace, existingId = null, expectedVersion = 0) {
     var _a, _b;
@@ -240,8 +266,7 @@ export async function saveCloudWorkspace(workspace, existingId = null, expectedV
         });
     }
     catch (error) {
-        if (!isRpcUnavailable(error))
-            throw error;
+        requireRpcOrLabFallback(error, "workspace.write");
         const body = {
             owner_id: session.user.id,
             name: workspace.config.clubName || "Control Hípico",
@@ -275,8 +300,7 @@ export async function appendCloudAudit(event, workspaceId = null) {
         });
     }
     catch (error) {
-        if (!isRpcUnavailable(error))
-            throw error;
+        requireRpcOrLabFallback(error, "audit.append");
         await authorizedRequest(`/rest/v1/${CLOUD_CONFIG.auditTable}`, {
             method: "POST",
             headers: { Prefer: "return=minimal" },
@@ -296,5 +320,7 @@ export const __test__ = {
     validateCredentials,
     errorMessage,
     isVersionConflict,
-    sessionRole
+    isRpcUnavailable,
+    sessionRole,
+    requireRpcOrLabFallback
 };
