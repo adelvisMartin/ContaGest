@@ -13,7 +13,7 @@ router.use(requireTenant);
 const paramSchema = z.object({
   code: z.string(),
   name: z.string(),
-  value: decimalSchema('exchangeRate'),
+  value: decimalSchema('rate'),
   unit: z.string().default('percent'),
   effectiveFrom: z.string(),
   effectiveTo: z.string().optional().nullable(),
