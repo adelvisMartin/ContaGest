@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "parserVersion": "operational-classifier-v1",
+  "sanitized": true,
+  "cases": [
+    {"id":"offer-2p-k","text":"Juego 2p del 1 50k","expected":{"intent":"offer_player","entities":{"play":"2P","horse":"1","amount":50000}}},
+    {"id":"offer-half","text":"Juego 1y2 1 con 100k","expected":{"intent":"offer_player","entities":{"play":"1/2","horse":"1","amount":100000}}},
+    {"id":"offer-1p","text":"Juego 1p 1 con 100k","expected":{"intent":"offer_player","entities":{"play":"1P","horse":"1","amount":100000}}},
+    {"id":"offer-2n","text":"Juego 2n del 1 50k","expected":{"intent":"offer_player","entities":{"play":"2N","horse":"1","amount":50000}}},
+    {"id":"offer-10a8","text":"Juego 10a8 el 1 40k","expected":{"intent":"offer_player","entities":{"play":"10A8","horse":"1","amount":40000}}},
+    {"id":"race-close","text":"CERRADO CERRADO NO HAY MAS JUGADA","expected":{"intent":"race_close"}},
+    {"id":"arrival","text":"Llegada 2.4.10","expected":{"intent":"race_result","entities":{"board":["2","4","10"]}}},
+    {"id":"day-close","text":"BUENAS NOCHES DAMAS Y CABALLEROS ESTO ES TODO POR EL DÍA DE HOY","expected":{"intent":"day_close"}},
+    {"id":"conversation","text":"La gente se fue a dormir 😴","expected":{"intent":"conversation"}},
+    {"id":"confirmation","text":"Se fue","expected":{"intent":"offer_confirmation"}},
+    {"id":"plan-pizarra-placeholder","text":"Club Hipico Triple Cowns\nPresque Isle, 8va Carrera\nRet:\nPizarra: .....\n\nTERCIOS\nJuega Gaceta 3/3 (3) con 60.000,00 da Roca\nJuega Dakota 3/3 (3) con 30.000,00 da Arevalo\nJuega Dakota 3/3 (3) con 40.000,00 da Sinner\nJuega Dakota 3n (3) con 40.000,00 da Roca","expected":{"intent":"plan_snapshot","entities":{"board":[],"offersLength":4}}},
+    {"id":"settlement-signed","text":"Club Hipico Triple Cowns\nPresque Isle, 8va Carrera\nPizarra: 2.4.10...\n\nTERCIOS\n3/3 (3) con 60.000,00\nJuega Gaceta Bs. -60.000,00\nConsigue Roca Bs. +57.000,00\n3/3 (3) con 30.000,00\nJuega Dakota Bs. -30.000,00\nConsigue Arevalo Bs. +28.500,00","expected":{"intent":"settlement_snapshot","entities":{"board":["2","4","10"],"settlementRowsLength":4}}},
+    {"id":"balance-negative-positive-zero","text":"Club Hipico Triple Cowns\nTERCIO\tDISPONIBLE\nAREVALO\t-243.030,00\nCANARIO\t-28.500,00\nDAKOTA\t496.600,00\nNAVAS\t952.880,00\nROCA\t808.990,00\nYANKEE\t0,00","expected":{"intent":"balance_snapshot","entities":{"balancesLength":6}}},
+    {"id":"ambiguous-correction","text":"Cambia esa jugada, creo que eran 50k pero revisa primero","expected":{"intent":"cancel_or_correction","review":true}},
+    {"id":"generic-monetary-review","text":"Revisa el saldo 150k porque no me cuadra","expected":{"intent":"betting_or_balance","review":true}}
+  ]
+}
