@@ -25,7 +25,11 @@ No habilitar clientes reales hasta completar todos los ítems obligatorios.
 ## Controles técnicos de #29
 
 - [x] La API continúa bloqueando producción mientras la identidad contractual tenga placeholders.
-- [x] El runtime exige además `LEGAL_REVIEW_APPROVED_VERSION` igual a `LEGAL_DOCUMENT_VERSION` y `LEGAL_REVIEW_EVIDENCE_SHA256` válido antes de permitir aceptación o APIs de negocio a un cliente licenciado en producción.
+- [x] La validación runtime de identidad rechaza valores vacíos, placeholders, `example.com` y correos con formato inválido.
+- [x] El runtime exige `LEGAL_REVIEW_APPROVED_VERSION` igual a `LEGAL_DOCUMENT_VERSION` y `LEGAL_REVIEW_EVIDENCE_SHA256` válido antes de permitir aceptación o APIs de negocio a un cliente licenciado en producción.
+- [x] La atestación canónica `backend/src/shared/legal/LEGAL_RELEASE_ATTESTATION.json` forma parte del build; en este branch permanece `pending` y por sí sola mantiene producción cerrada.
+- [x] El runtime exige que esa atestación esté `approved`, tenga revisor/jurisdicción/evidencia/aprobaciones completas, coincida con la versión vigente y con la identidad exacta del proveedor configurado.
+- [x] El SHA-256 configurado en runtime debe coincidir con el SHA-256 declarado por la atestación incluida en el build.
 - [x] `backend/.env.example` documenta las variables de identidad y de vínculo con la revisión profesional sin inventar valores reales.
 - [x] La evidencia contractual nueva aplica la política `authenticated-context-no-network-identifiers.v1`: no persiste IP ni user-agent crudos en `LegalAcceptance`, `CookiePreference` ni el `AuditLog` generado por la aceptación.
 - [x] El backend sigue siendo autoridad: una versión/hash vigente no aceptada devuelve HTTP 428 en APIs protegidas.
@@ -37,13 +41,16 @@ La decisión de ingeniería de no conservar identificadores de red en la evidenc
 
 ## Atestación profesional vinculada al release
 
-El archivo de ejemplo es `docs/legal/LEGAL_RELEASE_ATTESTATION.example.json`. Una aprobación real debe materializarse como `docs/legal/LEGAL_RELEASE_ATTESTATION.json` (o proporcionarse al gate mediante `LEGAL_RELEASE_ATTESTATION_PATH`) y debe:
+El esquema de referencia es `docs/legal/LEGAL_RELEASE_ATTESTATION.example.json`. La atestación que realmente controla el runtime es `backend/src/shared/legal/LEGAL_RELEASE_ATTESTATION.json` y debe viajar en el mismo build que se pretende habilitar.
+
+Una aprobación real debe:
 
 1. declarar `status: "approved"`;
 2. coincidir exactamente con `LEGAL_DOCUMENT_VERSION`;
-3. identificar al profesional revisor y jurisdicción `VE`/`Venezuela`;
-4. referenciar la evidencia profesional adjunta al release y registrar su SHA-256;
-5. marcar explícitamente cada decisión jurídica/contractual obligatoria como aprobada.
+3. contener el objeto `provider` con nombre/RIF/domicilio/correos exactos del entorno productivo;
+4. identificar al profesional revisor y jurisdicción `VE`/`Venezuela`;
+5. referenciar la evidencia profesional adjunta al release y registrar su SHA-256;
+6. marcar explícitamente cada decisión jurídica/contractual obligatoria como aprobada.
 
 Después de aprobarla, el entorno de producción debe configurar:
 
@@ -52,7 +59,9 @@ LEGAL_REVIEW_APPROVED_VERSION=<misma LEGAL_DOCUMENT_VERSION aprobada>
 LEGAL_REVIEW_EVIDENCE_SHA256=<mismo SHA-256 declarado en la atestación>
 ```
 
-El gate verifica **presencia, versión, vínculo runtime e integridad declarada de la atestación**. No puede verificar que el criterio jurídico del profesional sea correcto ni convierte la automatización en asesoría jurídica.
+El runtime verifica además que la identidad `LEGAL_PROVIDER_*` coincida exactamente con el objeto `provider` de la atestación incluida en el build. `LEGAL_RELEASE_ATTESTATION_PATH` es únicamente un override para pruebas del gate CLI; no reemplaza la atestación canónica empaquetada.
+
+El gate verifica **presencia, versión, identidad, vínculo runtime e integridad declarada de la atestación**. No puede verificar que el criterio jurídico del profesional sea correcto ni convierte la automatización en asesoría jurídica.
 
 ### Comandos
 
