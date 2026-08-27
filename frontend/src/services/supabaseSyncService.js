@@ -365,5 +365,5 @@ export const SupabaseSyncService = {
   async createLedgerEntry(data) { return normalizeLedgerEntry(await BackendApi.request('/accounting/entries', { method: 'POST', body: ledgerPayload(data) })); },
 
   async createFoodOrder(order) { return normalizeFoodOrder(await BackendApi.request('/food/orders', { method: 'POST', body: order })); },
-  async updateFoodOrderStatus(orderId, status) { return normalizeFoodOrder(await BackendApi.request(`/food/orders/${encodeURIComponent(orderId)}/status`, { method: 'POST', body: { status })); }
+  async updateFoodOrderStatus(orderId, status) { return normalizeFoodOrder(await BackendApi.request(`/food/orders/${encodeURIComponent(orderId)}/status`, { method: 'POST', body: { status } })); }
 };
