@@ -1,7 +1,6 @@
 import { createHash } from 'node:crypto';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
 import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
@@ -20,6 +19,10 @@ const BLOCKED_PATTERNS = [
   /rate limit/i,
   /429\b/,
   /Playwright Chromium executable missing/i,
+  /Host system is missing dependencies/i,
+  /error while loading shared libraries/i,
+  /browserType\.launch/i,
+  /sandbox.*failed/i,
   /Android SDK.*not found/i,
   /JAVA_HOME.*not set/i,
 ];
@@ -164,7 +167,7 @@ function pwaContract(root) {
 
 function writeEvidence({ root, metadata, results, mode }) {
   const safeSha = /^[0-9a-f]{40}$/i.test(metadata.sha) ? metadata.sha : 'unknown-sha';
-  const runId = new Date().toISOString().replace(/[:.]/g, '-');
+  const runId = `${new Date().toISOString().replace(/[:.]/g, '-')}-${process.pid}`;
   const artifactRoot = resolve(process.env.HIPICO_QA_ARTIFACT_DIR || join(root, 'artifacts', 'qa', 'hipico-v103'));
   const runDir = join(artifactRoot, safeSha, runId);
   mkdirSync(runDir, { recursive: true });
@@ -173,7 +176,7 @@ function writeEvidence({ root, metadata, results, mode }) {
   const jsonPath = join(runDir, 'qa-report.json');
   const mdPath = join(runDir, 'qa-report.md');
   const report = {
-    schemaVersion: 1,
+    schemaVersion: 2,
     issue: 103,
     product: 'Control Hipico',
     generatedAt: new Date().toISOString(),
@@ -228,6 +231,16 @@ export function runQa(argv = process.argv.slice(2), root = REPO_ROOT) {
 
   const metadata = captureGitMetadata(root);
   const results = [];
+  results.push({
+    name: 'preflight-candidate-sha',
+    required: true,
+    status: /^[0-9a-f]{40}$/i.test(metadata.sha) ? 'PASS' : 'BLOCKED',
+    command: 'git rev-parse HEAD',
+    cwd: '.',
+    exitCode: /^[0-9a-f]{40}$/i.test(metadata.sha) ? 0 : null,
+    durationMs: 0,
+    output: metadata.sha,
+  });
 
   results.push(step('preflight-node22', () => ({
     status: nodeMajor() === 22 ? 'PASS' : 'BLOCKED',
@@ -249,7 +262,7 @@ export function runQa(argv = process.argv.slice(2), root = REPO_ROOT) {
   results.push(commandStep('preflight-playwright-chromium', process.execPath, [
     '--input-type=module',
     '-e',
-    "import { chromium } from '@playwright/test'; import { existsSync } from 'node:fs'; const p=chromium.executablePath(); if(!existsSync(p)){console.error('Playwright Chromium executable missing');process.exit(2)} console.log('Playwright Chromium available')",
+    "import { chromium } from '@playwright/test'; import { existsSync } from 'node:fs'; const p=chromium.executablePath(); if(!existsSync(p)){console.error('Playwright Chromium executable missing');process.exit(2)} const browser=await chromium.launch({headless:true}); await browser.close(); console.log('Playwright Chromium launch PASS')",
   ], { cwd: root }));
 
   results.push(commandStep('backend-typecheck', npm, ['--workspace', 'backend', 'run', 'typecheck'], { cwd: root }));
@@ -330,10 +343,13 @@ if (isMain) {
   try {
     process.exitCode = runQa();
   } catch (error) {
-    const fallbackDir = join(tmpdir(), 'hipico-qa-v103-fatal');
-    mkdirSync(fallbackDir, { recursive: true });
+    const metadata = captureGitMetadata(REPO_ROOT);
+    const safeSha = /^[0-9a-f]{40}$/i.test(metadata.sha) ? metadata.sha : 'unknown-sha';
+    const fatalDir = join(REPO_ROOT, 'artifacts', 'qa', 'hipico-v103', safeSha, `fatal-${Date.now()}-${process.pid}`);
+    mkdirSync(fatalDir, { recursive: true });
     const message = redact(error?.stack || error?.message || String(error));
-    writeFileSync(join(fallbackDir, 'fatal.txt'), message, 'utf8');
+    writeFileSync(join(fatalDir, 'fatal.txt'), message, 'utf8');
+    writeFileSync(join(fatalDir, 'fatal.json'), `${JSON.stringify({ schemaVersion: 1, issue: 103, status: 'FAIL', candidate: metadata, error: message }, null, 2)}\n`, 'utf8');
     console.error(`[hipico-qa-v103] FAIL: ${message}`);
     process.exitCode = 1;
   }
