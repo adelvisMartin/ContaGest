@@ -135,8 +135,8 @@ test('previous v16 financial safety fixes remain in place',()=>{
   const banking=page('BankingPage.js');
   const dataImport=page('DataImportPage.js');
   const qr=page('QrBarcodePage.js');
-  assert.match(payroll,/paid:\[\]/);
-  assert.match(payroll,/cancelled:\[\]/);
+  assert.match(payroll,/paid:\s*\[\s*\]/);
+  assert.match(payroll,/cancelled:\s*\[\s*\]/);
   assert.match(payroll,/Transición de nómina no permitida/);
   assert.doesNotMatch(banking,/removeMovement|data-delete-bank-movement/);
   assert.doesNotMatch(dataImport,/Aplicar importación validada/);
