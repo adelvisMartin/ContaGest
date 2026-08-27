@@ -3,14 +3,17 @@ import assert from 'node:assert/strict';
 import {
   DecimalDomainError,
   add,
+  compare,
   divide,
   exchangeRate,
   money,
   multiply,
   parseDecimal,
+  percentOf,
   percentage,
   quantity,
   quantizeMoney,
+  rate,
   serializeDecimal,
   subtract
 } from '../backend/src/shared/financial/decimal.ts';
@@ -22,9 +25,13 @@ test('issue #90 canonical decimal primitive is exact and rejects unsafe transpor
   assert.equal(serializeDecimal(subtract('1.00', '0.10'), 2), '0.90');
   assert.equal(serializeDecimal(multiply('1.25', '4'), 2), '5.00');
   assert.equal(serializeDecimal(divide('1', '4'), 2), '0.25');
+  assert.equal(compare('0.30', add('0.10', '0.20')), 0);
+  assert.equal(compare('0.29', '0.30'), -1);
+  assert.equal(compare('0.31', '0.30'), 1);
   assert.equal(serializeDecimal(quantizeMoney('1.005'), 2), '1.01');
   assert.equal(serializeDecimal(quantizeMoney('-1.005'), 2), '-1.01');
   assert.equal(serializeDecimal(exchangeRate('36.1234'), 4), '36.1234');
+  assert.equal(serializeDecimal(rate('4.1250'), 4), '4.1250');
   assert.equal(serializeDecimal(quantity('1.234'), 3), '1.234');
   assert.equal(serializeDecimal(percentage('16.25'), 2), '16.25');
   assert.equal(serializeDecimal(money('9999999999999999.99'), 2), '9999999999999999.99');
@@ -38,6 +45,15 @@ test('issue #90 canonical decimal primitive is exact and rejects unsafe transpor
   assert.throws(() => exchangeRate('1.00001'), DecimalDomainError);
   assert.throws(() => parseDecimal('10000000000000000.00', 'money'), DecimalDomainError);
   assert.throws(() => money('9'.repeat(65)), DecimalDomainError);
+});
+
+test('issue #90 percentage helper keeps IVA and retention-style calculations decimal', () => {
+  const taxableBase = money('1234.56');
+  const iva = quantizeMoney(percentOf(taxableBase, percentage('16.00')));
+  const retention = quantizeMoney(percentOf(taxableBase, percentage('2.75')));
+  assert.equal(serializeDecimal(iva, 2), '197.53');
+  assert.equal(serializeDecimal(retention, 2), '33.95');
+  assert.equal(serializeDecimal(subtract(taxableBase, retention), 2), '1200.61');
 });
 
 test('issue #90 golden invoice dataset rounds only at documented persistence boundaries', () => {
