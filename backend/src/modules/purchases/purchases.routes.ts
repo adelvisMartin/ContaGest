@@ -5,6 +5,7 @@ import { asyncHandler, HttpError, ok } from '../../shared/http.js';
 import { requirePermission, requireTenant } from '../../shared/middleware/context.js';
 import { validateBody } from '../../shared/middleware/validate.js';
 import { writeAudit } from '../../shared/services/audit.service.js';
+import { runFinancialIdempotentMutation } from '../../shared/services/financial-idempotency.service.js';
 import { assertBalanced, assertPeriodOpen, purchaseInvoiceLinesForLedger } from '../accounting/accounting.service.js';
 
 const router = Router();
@@ -30,6 +31,8 @@ const purchaseSchema = z.object({
 
 const cancellationSchema = z.object({ reason: z.string().trim().min(3).max(500).optional() });
 const context = (req: any) => req.context as { tenantId: string; userId?: string; ip?: string; userAgent?: string };
+const requestId = (req: any) => String(req.requestId || '') || null;
+const idempotencyKey = (req: any) => req.header('Idempotency-Key') || null;
 
 router.get('/', asyncHandler(async (req, res) => {
   const { tenantId } = context(req);
@@ -43,9 +46,15 @@ router.post('/', validateBody(purchaseSchema), asyncHandler(async (req, res) => 
   const subtotal = lines.reduce((sum: number, line: any) => sum + line.total, 0);
   const iva = lines.reduce((sum: number, line: any) => sum + (line.total * Number(line.taxRate || 0) / 100), 0);
   const total = subtotal + iva;
-  if (req.body.status !== 'draft') await assertPeriodOpen(ctx.tenantId, req.body.fiscalPeriod);
 
-  const result = await prisma.$transaction(async (tx) => {
+  const execution = await runFinancialIdempotentMutation({
+    tenantId: ctx.tenantId,
+    scope: 'purchases.create',
+    key: idempotencyKey(req),
+    request: req.body,
+    requestId: requestId(req)
+  }, async (tx) => {
+    if (req.body.status !== 'draft') await assertPeriodOpen(ctx.tenantId, req.body.fiscalPeriod, tx);
     const purchase = await tx.purchaseInvoice.create({
       data: { tenantId: ctx.tenantId, supplierId: req.body.supplierId, number: req.body.number, controlNo: req.body.controlNo, fiscalPeriod: req.body.fiscalPeriod, subtotal, iva, total, status: req.body.status, ocrStatus: req.body.ocrStatus, lines: { create: lines } },
       include: { supplier: true, lines: true }
@@ -68,11 +77,16 @@ router.post('/', validateBody(purchaseSchema), asyncHandler(async (req, res) => 
       });
       ledgerEntryId = ledgerEntry.id;
     }
-    return { purchase, ledgerEntryId };
+    return { data: { ...purchase, ledgerEntryId }, resourceType: 'PurchaseInvoice', resourceId: purchase.id };
   });
 
-  await writeAudit({ tenantId: ctx.tenantId, userId: ctx.userId, action: 'create', entity: 'PurchaseInvoice', entityId: result.purchase.id, after: { ...result.purchase, ledgerEntryId: result.ledgerEntryId }, ipAddress: ctx.ip, userAgent: ctx.userAgent });
-  ok(res, { ...result.purchase, ledgerEntryId: result.ledgerEntryId });
+  res.setHeader('Idempotency-Replayed', execution.replayed ? 'true' : 'false');
+  if (execution.replayed) {
+    await writeAudit({ tenantId: ctx.tenantId, userId: ctx.userId, action: 'idempotency.replay', entity: 'PurchaseInvoice', entityId: (execution.data as any).id, after: { scope: 'purchases.create', recordId: execution.recordId, originalRequestId: execution.originalRequestId, requestId: requestId(req) }, ipAddress: ctx.ip, userAgent: ctx.userAgent });
+  } else {
+    await writeAudit({ tenantId: ctx.tenantId, userId: ctx.userId, action: 'create', entity: 'PurchaseInvoice', entityId: (execution.data as any).id, after: execution.data, ipAddress: ctx.ip, userAgent: ctx.userAgent });
+  }
+  ok(res, execution.data, execution.responseCode);
 }));
 
 router.patch('/:id/cancel', validateBody(cancellationSchema), asyncHandler(async (req, res) => {
