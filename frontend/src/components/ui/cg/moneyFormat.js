@@ -18,29 +18,33 @@ export function formatMoneyExact(value, { currency = 'USD', locale = 'es-VE' } =
   const parsed = parseExactMoney(value);
   if (!parsed) return '—';
 
-  const isNegativeZero = parsed.negative && parsed.integer === '0';
-  const signedInteger = isNegativeZero
-    ? -1n
-    : BigInt(`${parsed.negative ? '-' : ''}${parsed.integer}`);
+  try {
+    const isNegativeZero = parsed.negative && parsed.integer === '0';
+    const signedInteger = isNegativeZero
+      ? -1n
+      : BigInt(`${parsed.negative ? '-' : ''}${parsed.integer}`);
 
-  const formatter = new Intl.NumberFormat(locale, {
-    style: 'currency',
-    currency,
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 0,
-  });
-  const parts = formatter.formatToParts(signedInteger);
-  if (isNegativeZero) {
-    const integerPart = parts.find((part) => part.type === 'integer');
-    if (integerPart) integerPart.value = '0';
+    const formatter = new Intl.NumberFormat(locale, {
+      style: 'currency',
+      currency,
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 0,
+    });
+    const parts = formatter.formatToParts(signedInteger);
+    if (isNegativeZero) {
+      const integerPart = parts.find((part) => part.type === 'integer');
+      if (integerPart) integerPart.value = '0';
+    }
+
+    const lastIntegerIndex = parts.reduce(
+      (index, part, current) => (part.type === 'integer' ? current : index),
+      -1,
+    );
+    if (lastIntegerIndex < 0) return '—';
+
+    const fraction = `${decimalSeparator(locale)}${parsed.fraction}`;
+    return parts.map((part, index) => `${part.value}${index === lastIntegerIndex ? fraction : ''}`).join('');
+  } catch {
+    return '—';
   }
-
-  const lastIntegerIndex = parts.reduce(
-    (index, part, current) => (part.type === 'integer' ? current : index),
-    -1,
-  );
-  if (lastIntegerIndex < 0) return '—';
-
-  const fraction = `${decimalSeparator(locale)}${parsed.fraction}`;
-  return parts.map((part, index) => `${part.value}${index === lastIntegerIndex ? fraction : ''}`).join('');
 }
