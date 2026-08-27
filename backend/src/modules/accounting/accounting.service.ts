@@ -26,6 +26,32 @@ export type LedgerAuditContext = {
   userAgent?: string;
 };
 
+export type LedgerLifecycleAction = 'post' | 'reverse' | 'edit' | 'delete';
+export type LedgerLifecycleSnapshot = {
+  posted: boolean;
+  reversalOfId?: string | null;
+  reversedBy?: { id?: string } | null;
+};
+
+export function assertLedgerActionAllowed(entry: LedgerLifecycleSnapshot, action: LedgerLifecycleAction) {
+  if (action === 'post') {
+    if (entry.posted) throw new HttpError(409, 'El asiento ya está contabilizado y es inmutable.');
+    if (entry.reversalOfId) throw new HttpError(409, 'Un reverso no puede existir como borrador.');
+    return;
+  }
+
+  if (action === 'reverse') {
+    if (!entry.posted) throw new HttpError(409, 'Solo un asiento contabilizado puede reversarse.');
+    if (entry.reversalOfId) throw new HttpError(409, 'No se permite reversar un reverso. Registra un ajuste nuevo y auditable.');
+    if (entry.reversedBy) throw new HttpError(409, 'El asiento ya posee un reverso relacionado.');
+    return;
+  }
+
+  if (entry.posted) {
+    throw new HttpError(409, 'El asiento contabilizado es inmutable. Usa reverso o ajuste; no edites ni borres el histórico.');
+  }
+}
+
 export function assertBalanced(lines: LedgerLineInput[]) {
   const debit = add(...lines.map((line) => money(line.debit ?? ZERO)));
   const credit = add(...lines.map((line) => money(line.credit ?? ZERO)));
@@ -110,6 +136,59 @@ export async function createLedgerEntry(input: {
   });
 }
 
+export async function updateDraftLedgerEntry(input: {
+  tenantId: string;
+  entryId: string;
+  fiscalPeriod: string;
+  description: string;
+  lines: LedgerLineInput[];
+}) {
+  const entry = await prisma.ledgerEntry.findFirst({
+    where: { id: input.entryId, tenantId: input.tenantId },
+    include: { lines: true, reversalOf: true, reversedBy: true }
+  });
+  if (!entry) throw new HttpError(404, 'Asiento contable no encontrado.');
+  assertLedgerActionAllowed(entry, 'edit');
+  if (entry.source !== 'manual') throw new HttpError(409, 'Solo los asientos manuales en borrador pueden editarse.');
+
+  const normalizedLines = normalizeLedgerLines(input.lines);
+  assertBalanced(normalizedLines);
+  await assertPeriodOpen(input.tenantId, input.fiscalPeriod);
+
+  return prisma.ledgerEntry.update({
+    where: { id: entry.id },
+    data: {
+      fiscalPeriod: input.fiscalPeriod,
+      description: input.description,
+      lines: {
+        deleteMany: {},
+        create: normalizedLines.map((line) => ({
+          accountCode: line.accountCode,
+          accountName: line.accountName,
+          debit: line.debit,
+          credit: line.credit,
+          currency: line.currency || 'VES',
+          exchangeRate: line.exchangeRate
+        }))
+      }
+    },
+    include: { lines: true, reversalOf: true, reversedBy: true }
+  });
+}
+
+export async function deleteDraftLedgerEntry(input: { tenantId: string; entryId: string }) {
+  const entry = await prisma.ledgerEntry.findFirst({
+    where: { id: input.entryId, tenantId: input.tenantId },
+    include: { lines: true, reversalOf: true, reversedBy: true }
+  });
+  if (!entry) throw new HttpError(404, 'Asiento contable no encontrado.');
+  assertLedgerActionAllowed(entry, 'delete');
+  if (entry.source !== 'manual') throw new HttpError(409, 'Solo los asientos manuales en borrador pueden eliminarse.');
+  await assertPeriodOpen(input.tenantId, entry.fiscalPeriod);
+  await prisma.ledgerEntry.delete({ where: { id: entry.id } });
+  return entry;
+}
+
 export async function postLedgerEntry(input: {
   tenantId: string;
   entryId: string;
@@ -121,17 +200,20 @@ export async function postLedgerEntry(input: {
     include: { lines: true, reversalOf: true, reversedBy: true }
   });
   if (!entry) throw new HttpError(404, 'Asiento contable no encontrado.');
-  if (entry.posted) throw new HttpError(409, 'El asiento ya está contabilizado y es inmutable.');
-  if (entry.reversalOfId) throw new HttpError(409, 'Un reverso no puede existir como borrador.');
+  assertLedgerActionAllowed(entry, 'post');
 
   assertBalanced(entry.lines);
   await assertPeriodOpen(input.tenantId, entry.fiscalPeriod);
 
   const postedAt = new Date();
   return prisma.$transaction(async (tx) => {
-    const posted = await tx.ledgerEntry.update({
+    const updated = await tx.ledgerEntry.updateMany({
+      where: { id: entry.id, tenantId: input.tenantId, posted: false },
+      data: { posted: true, postedAt, postedBy: input.postedBy || null }
+    });
+    if (updated.count !== 1) throw new HttpError(409, 'El asiento ya fue contabilizado por otra operación.');
+    const posted = await tx.ledgerEntry.findUniqueOrThrow({
       where: { id: entry.id },
-      data: { posted: true, postedAt, postedBy: input.postedBy || null },
       include: { lines: true, reversalOf: true, reversedBy: true }
     });
     await tx.auditLog.create({
@@ -165,9 +247,7 @@ export async function reverseLedgerEntry(input: {
     include: { lines: true, reversalOf: true, reversedBy: true }
   });
   if (!original) throw new HttpError(404, 'Asiento contable no encontrado.');
-  if (!original.posted) throw new HttpError(409, 'Solo un asiento contabilizado puede reversarse.');
-  if (original.reversalOfId) throw new HttpError(409, 'No se permite reversar un reverso. Registra un ajuste nuevo y auditable.');
-  if (original.reversedBy) throw new HttpError(409, 'El asiento ya posee un reverso relacionado.');
+  assertLedgerActionAllowed(original, 'reverse');
 
   await assertPeriodOpen(input.tenantId, input.fiscalPeriod);
   const lines = inverseLedgerLines(original.lines);
