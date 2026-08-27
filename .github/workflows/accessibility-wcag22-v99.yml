@@ -1,0 +1,66 @@
+name: Accessibility WCAG22
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened, ready_for_review]
+  schedule:
+    - cron: '25 6 * * *'
+  workflow_dispatch:
+    inputs:
+      matrix:
+        description: Accessibility matrix mode
+        required: false
+        default: full
+        type: choice
+        options:
+          - ci
+          - full
+
+permissions:
+  contents: read
+
+concurrency:
+  group: contagest-a11y-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  wcag22-aa:
+    name: wcag22-aa
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      CG_A11Y_MATRIX: ${{ github.event_name == 'schedule' && 'full' || (github.event_name == 'workflow_dispatch' && inputs.matrix || 'ci') }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Node 22
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install locked dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: WCAG 2.2 automated baseline
+        run: npm run test:browser:a11y
+
+      - name: Existing contrast gate
+        run: npm run test:browser:contrast -- --project=chromium
+
+      - name: Upload WCAG evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: accessibility-v99-${{ github.sha }}
+          path: |
+            artifacts/qa/accessibility-v99/
+            playwright-report/
+            test-results/
+          if-no-files-found: warn
+          retention-days: 14
