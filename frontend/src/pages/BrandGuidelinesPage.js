@@ -25,13 +25,13 @@ export const BrandGuidelinesPage = {
       ${PageHeader({
         eyebrow:'Sistema visual',
         title:'Guía de interfaz ContaGest v15',
-        description:'Contrato visual operativo para que los 58 módulos compartan la misma jerarquía, densidad, navegación y comportamiento Light/Dark.',
+        description:'Contrato visual operativo para que los módulos compartan la misma jerarquía, densidad, navegación y comportamiento Light/Dark.',
         actions:`${Button({id:'btnBrandAssets',text:'Exportar tokens',icon:'fa-download',variant:'secondary'})}${Button({id:'btnTechDoc',text:'Arquitectura',icon:'fa-code',variant:'secondary'})}${Button({id:'btnBrandGuide',text:'Claims y marca',icon:'fa-file-lines'})}`,
         meta:['Light/Dark misma geometría','Inter + Font Awesome','Sin gradients / glass / blobs']
       })}
       ${Section({
         title:'Principios no negociables',
-        subtitle:'ContaGest es una herramienta ERP de productividad, no una landing page.',
+        subtitle:'ContaGest es una herramienta ERP de productividad; el sitio comercial público tiene una superficie separada.',
         children:`<div class="cgx-action-list"><div>${Badge('Densidad','brand')} <strong>Información primero</strong><p>Shell compacto, controles de 38 px y tarjetas que priorizan lectura rápida.</p></div><div>${Badge('Jerarquía','success')} <strong>Una escala tipográfica</strong><p>Los títulos, KPI, labels y tablas conservan la misma escala en todos los dominios.</p></div><div>${Badge('Theming','brand')} <strong>Light y Dark equivalentes</strong><p>El tema cambia color y contraste, nunca la geometría ni la ubicación de acciones.</p></div><div>${Badge('Datos','warning')} <strong>Números completos</strong><p>Moneda, RIF, documentos y valores financieros usan números tabulares y no se recortan.</p></div></div>`
       })}
       ${Section({
@@ -55,9 +55,14 @@ export const BrandGuidelinesPage = {
         children:`<div class="cgx-action-list"><div><strong>Font Awesome</strong><p>Es la familia canónica del shell y de las vistas vanilla. MUI mantiene iconos compatibles sin crear otra identidad.</p></div><div><strong>Motion funcional</strong><p>120–170 ms para hover, selección, apertura y feedback. Se respeta <code>prefers-reduced-motion</code>.</p></div><div><strong>Accesibilidad</strong><p>Foco visible, contraste verificable, controles táctiles y labels asociados a inputs.</p></div><div><strong>Responsive</strong><p>360 / 390 / 430 / 768 / 1024 / 1440. Sólo tablas, tabs, kanban o calendarios pueden poseer scroll horizontal.</p></div></div>`
       })}
       ${Section({
-        title:'Marca y comunicación',
-        subtitle:'La identidad de producto no debe confundirse con decoraciones del ERP.',
-        children:`<div class="cgx-action-list"><div><strong>ContaGest</strong><p>ERP empresarial modular para operación, contabilidad y verticales autorizadas.</p></div><div><strong>Logo</strong><p>Los assets globales viven en <code>frontend/public/brand/</code>. No duplicar logos por módulo.</p></div><div><strong>Claims</strong><p>No usar “inhackeable”, “seguridad blindada” ni integraciones regulatorias universales sin evidencia.</p></div><div><strong>Fuente de verdad</strong><p>El visual owner es <code>contagest-visual-system-v12.css</code> por estabilidad de import, aunque su contrato actual sea v15.</p></div></div>`
+        title:'Assets canónicos v11.15',
+        subtitle:'La aplicación y el sitio público reutilizan una sola identidad. No crear logos o iconos alternativos por módulo.',
+        children:`<div class="cgx-action-list"><div><strong>Icono de aplicación</strong><p><img src="/icons/contagest-app.svg" alt="Icono canónico de ContaGest" width="88" height="88" loading="lazy"></p><code>/icons/contagest-app.svg</code></div><div><strong>Logotipo principal</strong><p><img src="/brand/contagest-logo.svg" alt="Logotipo canónico de ContaGest" width="280" height="72" loading="lazy"></p><code>/brand/contagest-logo.svg</code></div></div>`
+      })}
+      ${Section({
+        title:'Marca, SEO y claims',
+        subtitle:'La comunicación pública debe reflejar el producto comprobable y mantener la aplicación privada fuera del índice.',
+        children:`<div class="cgx-action-list"><div>${Badge('Disponible','success')} <strong>Capacidades verificadas</strong><p>ERP modular, ventas, inventario, contabilidad, bancos, reportes, PWA, roles, permisos y licencias según módulos habilitados.</p></div><div>${Badge('Condicional','warning')} <strong>Proveedor/configuración requerida</strong><p>IA, WhatsApp/SMS/email, automatización BCV y backup externo sólo se publican como activos cuando el ambiente correspondiente está configurado y verificado.</p></div><div>${Badge('Planificado','brand')} <strong>Integraciones no verificadas</strong><p>Validación SENIAT o conciliación bancaria universal en tiempo real deben etiquetarse como planificadas hasta existir integración productiva probada.</p></div><div>${Badge('Prohibido','danger')} <strong>Garantías absolutas</strong><p>No usar “inhackeable”, “100% seguro”, “seguridad blindada”, “cifrado de extremo a extremo” para toda la app ni certificaciones sin evidencia.</p></div><div><strong>Separación SEO</strong><p>La aplicación privada vive en <code>/</code> con rutas <code>?module=…</code> y usa <code>noindex</code>. El sitio comercial indexable vive en <code>/soluciones/</code> y sus verticales.</p></div><div><strong>Fuentes de verdad</strong><p>Claims: <code>docs/MARKETING_CLAIMS_REGISTER.md</code>. Precios: <code>docs/COMMERCIAL_PRICING_V1.md</code>.</p></div></div>`
       })}
     </section>`;
   },
@@ -74,11 +79,16 @@ export const BrandGuidelinesPage = {
       'KPI: 16–20 px',
       'Control: 38 px',
       'Sidebar: 244 px / 68 px rail',
+      'App icon: /icons/contagest-app.svg',
+      'Brand logo: /brand/contagest-logo.svg',
+      'Marketing public: /soluciones/',
+      'Aplicación privada: / + ?module=… + noindex',
       'Source: frontend/src/styles/contagest-visual-system-v12.css',
-      'Claims: docs/MARKETING_CLAIMS_REGISTER.md'
+      'Claims: docs/MARKETING_CLAIMS_REGISTER.md',
+      'Pricing: docs/COMMERCIAL_PRICING_V1.md'
     ].join('\n');
-    document.getElementById('btnBrandAssets')?.addEventListener('click',()=>{downloadText('contagest-visual-system-v15.txt',content);Toast.show('Tokens v15 exportados.','success');});
+    document.getElementById('btnBrandAssets')?.addEventListener('click',()=>{downloadText('contagest-visual-system-v15.txt',content);Toast.show('Tokens y assets v15 exportados.','success');});
     document.getElementById('btnTechDoc')?.addEventListener('click',()=>Toast.show('Arquitectura: docs/ARCHITECTURE.md y docs/design-system/.','info'));
-    document.getElementById('btnBrandGuide')?.addEventListener('click',()=>Toast.show('Guías: docs/BRAND_GUIDELINES.md y docs/MARKETING_CLAIMS_REGISTER.md.','info'));
+    document.getElementById('btnBrandGuide')?.addEventListener('click',()=>Toast.show('Guías: docs/BRAND_GUIDELINES.md, docs/MARKETING_CLAIMS_REGISTER.md y docs/MARKETING_SEO_V1.md.','info'));
   }
 };
