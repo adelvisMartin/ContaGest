@@ -14,6 +14,9 @@ test('issue 30 creates a durable governed case ledger',()=>{
   for(const field of ['subscriptionId','reasonCode','scope','evidenceRef','actorId','openedAt','effectiveAt','noticeAt','cureDeadline','appealDeadline','resolvedAt']) assert.ok(migration.includes(`"${field}"`),`missing ${field}`);
   assert.match(migration,/evidence_required/);
   assert.match(migration,/review_separation/);
+  assert.match(migration,/action_target_check/);
+  assert.match(migration,/action_status_check/);
+  assert.match(migration,/termination_reviewer/);
   assert.match(migration,/ENABLE ROW LEVEL SECURITY/);
   assert.match(backup,/^ServiceRestrictionCase$/m);
 });
@@ -25,6 +28,17 @@ test('issue 30 database prevents concurrent active cases and rewrites of closed 
   assert.match(migration,/service_restriction_case_already_closed/);
   assert.match(migration,/service_restriction_case_identity_is_immutable/);
   assert.match(migration,/ServiceRestrictionCase_transition_guard/);
+});
+
+test('issue 30 database independently enforces billing grace, cure and allowed reason/action policy',()=>{
+  assert.match(migration,/enforce_service_restriction_case_open/);
+  assert.match(migration,/billing_restriction_requires_past_due_subscription/);
+  assert.match(migration,/billing_grace_period_not_elapsed/);
+  assert.match(migration,/billing_notice_not_elapsed/);
+  assert.match(migration,/contract_cure_deadline_not_elapsed/);
+  assert.match(migration,/reason_code_not_allowed_for_subscription_suspension/);
+  assert.match(migration,/reason_code_not_allowed_for_subscription_termination/);
+  assert.match(migration,/ServiceRestrictionCase_open_guard/);
 });
 
 test('issue 30 governance router precedes legacy commercial routes and closes status bypasses',()=>{
