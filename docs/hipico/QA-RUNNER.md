@@ -23,7 +23,9 @@ artifacts/qa/hipico-v103/<candidate-sha>/<run-id>/
   SHA256SUMS.txt
 ```
 
-Cada ejecución queda ligada al SHA observado. Ejecutar dos veces el mismo SHA crea dos run directories independientes y conserva hashes de la evidencia de cada ejecución.
+Cada ejecución queda ligada al SHA observado. Un SHA desconocido produce `BLOCKED`; nunca se publica como candidato verificado. Ejecutar dos veces el mismo SHA crea directorios de ejecución independientes (timestamp + PID) y conserva hashes propios.
+
+Si el runner termina por una excepción no controlada, la evidencia fatal también queda bajo `artifacts/qa/hipico-v103/<candidate-sha>/fatal-*`; no se desvía a un directorio temporal sin relación con el candidato.
 
 ## Estados permitidos
 
@@ -89,21 +91,30 @@ HIPICO_QA_SKIP_INSTALL=1 HIPICO_QA_ANDROID=skip npm run qa:hipico -- --mode=quic
 
 El runner ejecuta o verifica:
 
-1. Node 22, npm y git;
-2. `npm ci` raíz desde lockfile;
-3. backend Hípico (`npm run test:hipico`);
-4. todos los contratos raíz `tests/hipico*.test.mjs` presentes en el checkout;
-5. sintaxis de PWA, service worker, runtime config, API bridge y bridge legacy;
-6. instalación bloqueada del WhatsApp Web Bridge;
-7. `npm run qa` del Bridge;
-8. `npm audit --audit-level=high` del Bridge;
-9. instalación del wrapper Android;
-10. `npm run verify:web` para paridad PWA↔wrapper;
-11. APK debug si se solicita y el toolchain existe;
-12. hashes SHA-256 de fuentes/lockfiles representativos;
-13. Markdown + JSON + SHA256SUMS ligados al candidate SHA.
+1. candidate SHA exacto, branch y dirty state;
+2. Node 22, npm y git;
+3. `npm ci` raíz desde lockfile;
+4. lanzamiento real de Playwright Chromium headless y cierre limpio; comprobar sólo que exista el ejecutable no es suficiente;
+5. typecheck del backend;
+6. auditoría de dependencias backend high severity;
+7. backend Hípico (`npm run test:hipico`);
+8. todos los contratos raíz `tests/hipico*.test.mjs` presentes en el checkout;
+9. PWA manifest/shell;
+10. presencia + sintaxis de los targets canónicos PWA/API/Bridge; un archivo esperado faltante produce `FAIL`, no desaparece del reporte;
+11. instalación bloqueada del WhatsApp Web Bridge;
+12. `npm run qa` del Bridge;
+13. `npm audit --audit-level=high` del Bridge;
+14. instalación del wrapper Android;
+15. `npm run verify:web` para paridad PWA↔wrapper;
+16. APK debug si se solicita y el toolchain existe;
+17. SHA-256 del conjunto canónico completo de manifest, service worker, build-info y lockfiles Bridge/Android; falta cualquiera => `BLOCKED`;
+18. Markdown + JSON + SHA256SUMS ligados al candidate SHA.
 
 El runner **no** escribe en un grupo real de WhatsApp, no habilita `HIPICO_ALLOW_SEND`, no crea apuestas, no modifica saldo/ledger y no ejecuta QA físico Android.
+
+## Static/lint contract
+
+Control Hípico no introduce ESLint como dependencia ficticia sólo para cumplir el nombre “lint”. La higiene automatizable se compone de los contratos existentes y checks reproducibles del stack: typecheck backend, `node --check` sobre los targets JS canónicos, tests de contratos y audits de dependencias. Si el repositorio adopta un linter canónico en el futuro, se incorpora a este gate mediante un ticket/commit explícito, no mediante una herramienta inventada en documentación.
 
 ## Redacción de evidencia
 
@@ -122,17 +133,22 @@ No usar el reporte como mecanismo para volcar `.env`, cookies, perfiles WhatsApp
 
 - comando deliberadamente roto → `FAIL` + exit no-cero;
 - tool inexistente → `BLOCKED`;
-- clasificación de fallos de red/toolchain;
+- clasificación de fallos de red/browser/toolchain;
+- lanzamiento real de Chromium;
+- target canónico faltante no puede omitirse silenciosamente;
+- inventario de hashes exige el conjunto completo;
 - redacción de token/teléfono/group ID;
 - repo temporal en una ruta con espacios;
 - dirty working tree conservado, sin clean/reset/stash;
+- candidate SHA desconocido no obtiene PASS;
+- evidencia fatal permanece SHA-bound;
 - SHA-256 determinista en ejecución repetida.
 
 El runner incluye además el hook de test `HIPICO_QA_TEST_INJECT_FAIL=<step>`. Sólo existe para fixtures controladas; no debe configurarse en release.
 
 ## Browser/PWA
 
-#103 establece la base de evidencia, no sustituye #105. La matriz visual/funcional responsive y navegador real pertenece a #105. Un check estático de PWA no se documenta como browser PASS.
+#103 establece el preflight real de navegador y la base de evidencia, pero no sustituye #105. Lanzar Chromium correctamente demuestra que el browser toolchain funciona; **no** demuestra por sí solo QA visual/funcional de las vistas. La matriz visual/funcional responsive y navegador real pertenece a #105.
 
 ## Android físico
 
@@ -167,8 +183,10 @@ production group PASS
 Una release candidate Hípico sólo puede citar este gate si el reporte:
 
 - contiene el SHA exacto que se quiere promover;
+- conserva el estado dirty capturado y no oculta cambios locales;
 - no fue editado manualmente;
 - conserva `SHA256SUMS.txt`;
 - no contiene `FAIL`;
 - no oculta `BLOCKED/NOT_EXECUTED`;
+- contiene el inventario canónico completo de fuentes/lockfiles esperado;
 - se complementa con los gates físicos/browser/release requeridos por el alcance de la release.
