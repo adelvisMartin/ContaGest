@@ -97,6 +97,7 @@ model Tenant {
   addressGeocodes AddressGeocode[]
   importBatches ImportBatch[]
   regulatoryFeeds RegulatoryFeed[]
+  idempotencyRecords IdempotencyRecord[]
 
   @@index([rif])
 }
@@ -847,6 +848,32 @@ model RegulatoryFeed {
 
   @@unique([tenantId, sourceKey])
   @@index([tenantId, kind])
+}
+
+model IdempotencyRecord {
+  id              String   @id @default(uuid())
+  tenantId        String
+  scope           String   @db.VarChar(80)
+  keyHash         String   @db.Char(64)
+  requestHash     String   @db.Char(64)
+  status          String   @default("processing") @db.VarChar(16)
+  resourceType    String?  @db.VarChar(80)
+  resourceId      String?
+  responseCode    Int?
+  responsePayload Json?
+  requestId       String?  @db.VarChar(96)
+  lastRequestId   String?  @db.VarChar(96)
+  hitCount        Int      @default(0)
+  createdAt       DateTime @default(now())
+  completedAt     DateTime?
+  lastSeenAt      DateTime @default(now())
+  expiresAt       DateTime?
+
+  tenant          Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, scope, keyHash])
+  @@index([tenantId, status, lastSeenAt])
+  @@index([tenantId, createdAt])
 }
 
 model AuthLoginAttempt {
