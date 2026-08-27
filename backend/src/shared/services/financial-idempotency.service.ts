@@ -36,20 +36,32 @@ export type FinancialIdempotencyEffect<T> = {
   responseCode?: number;
 };
 
+export type FinancialIdempotencyReplayRecord = {
+  recordId: string;
+  resourceType: string | null;
+  resourceId: string | null;
+  responsePayload: unknown;
+  originalRequestId: string | null;
+};
+
 export type FinancialIdempotencyExecution<T> = {
   data: T;
   responseCode: number;
   replayed: boolean;
   recordId?: string;
   originalRequestId?: string | null;
+  resourceType?: string | null;
+  resourceId?: string | null;
+  concurrentWaitMs?: number;
 };
 
-export type FinancialIdempotencyInput = {
+export type FinancialIdempotencyInput<T = unknown> = {
   tenantId: string;
   scope: string;
   key?: string | null;
   request: unknown;
   requestId?: string | null;
+  replay?: (tx: Prisma.TransactionClient, record: FinancialIdempotencyReplayRecord) => Promise<T>;
 };
 
 function canonicalize(value: unknown): unknown {
@@ -108,7 +120,7 @@ function serializeResponse(value: unknown) {
   return json;
 }
 
-function emitIdempotencyEvent(event: string, input: { tenantId: string; scope: string; requestId?: string | null; recordId?: string; resourceType?: string | null; resourceId?: string | null }) {
+function emitIdempotencyEvent(event: string, input: { tenantId: string; scope: string; requestId?: string | null; recordId?: string; resourceType?: string | null; resourceId?: string | null; waitMs?: number }) {
   console.info('[financial-idempotency]', JSON.stringify({
     event,
     tenantId: input.tenantId,
@@ -116,7 +128,8 @@ function emitIdempotencyEvent(event: string, input: { tenantId: string; scope: s
     requestId: input.requestId || undefined,
     recordId: input.recordId,
     resourceType: input.resourceType || undefined,
-    resourceId: input.resourceId || undefined
+    resourceId: input.resourceId || undefined,
+    waitMs: input.waitMs
   }));
 }
 
@@ -137,19 +150,26 @@ async function lookupRecord(tx: Prisma.TransactionClient, tenantId: string, scop
 
 async function executeWithinTransaction<T>(
   tx: Prisma.TransactionClient,
-  input: Required<Pick<FinancialIdempotencyInput, 'tenantId' | 'scope' | 'request'>> & Pick<FinancialIdempotencyInput, 'key' | 'requestId'>,
+  input: FinancialIdempotencyInput<T>,
   effect: (tx: Prisma.TransactionClient) => Promise<FinancialIdempotencyEffect<T>>
 ): Promise<FinancialIdempotencyExecution<T>> {
   const key = normalizeIdempotencyKey(input.key);
   if (!key) {
     const result = await effect(tx);
-    return { data: result.data, responseCode: result.responseCode || 200, replayed: false };
+    return {
+      data: result.data,
+      responseCode: result.responseCode || 200,
+      replayed: false,
+      resourceType: result.resourceType || null,
+      resourceId: result.resourceId || null
+    };
   }
 
   const scope = normalizeIdempotencyScope(input.scope);
   const keyHash = hashIdempotencyKey(key);
   const requestHash = canonicalRequestHash(input.request);
   const recordId = randomUUID();
+  const reservationStartedAt = Date.now();
   const inserted = await tx.$queryRaw<Array<{ id: string }>>`
     INSERT INTO public."IdempotencyRecord" (
       "id", "tenantId", "scope", "keyHash", "requestHash", "status",
@@ -161,6 +181,7 @@ async function executeWithinTransaction<T>(
     ON CONFLICT ("tenantId", "scope", "keyHash") DO NOTHING
     RETURNING "id"
   `;
+  const reservationWaitMs = Date.now() - reservationStartedAt;
 
   if (!inserted.length) {
     const existing = await lookupRecord(tx, input.tenantId, scope, keyHash);
@@ -178,6 +199,23 @@ async function executeWithinTransaction<T>(
       });
     }
 
+    const replayRecord: FinancialIdempotencyReplayRecord = {
+      recordId: existing.id,
+      resourceType: existing.resourceType,
+      resourceId: existing.resourceId,
+      responsePayload: existing.responsePayload,
+      originalRequestId: existing.requestId
+    };
+    let replayData: T;
+    if (input.replay) {
+      replayData = await input.replay(tx, replayRecord);
+    } else {
+      if (existing.responsePayload === null || existing.responsePayload === undefined) {
+        throw new HttpError(409, 'El resultado original ya no puede reconstruirse.', { code: 'IDEMPOTENCY_RESULT_UNAVAILABLE', scope });
+      }
+      replayData = existing.responsePayload as T;
+    }
+
     await tx.$executeRaw`
       UPDATE public."IdempotencyRecord"
       SET "lastRequestId" = ${input.requestId || null},
@@ -187,17 +225,20 @@ async function executeWithinTransaction<T>(
     `;
 
     return {
-      data: existing.responsePayload as T,
+      data: replayData,
       responseCode: existing.responseCode || 200,
       replayed: true,
       recordId: existing.id,
-      originalRequestId: existing.requestId
+      originalRequestId: existing.requestId,
+      resourceType: existing.resourceType,
+      resourceId: existing.resourceId,
+      concurrentWaitMs: reservationWaitMs
     };
   }
 
   const result = await effect(tx);
   const responseCode = result.responseCode || 200;
-  const responseJson = serializeResponse(result.data);
+  const responseJson = input.replay ? null : serializeResponse(result.data);
   await tx.$executeRaw`
     UPDATE public."IdempotencyRecord"
     SET "status" = 'succeeded',
@@ -215,25 +256,38 @@ async function executeWithinTransaction<T>(
     responseCode,
     replayed: false,
     recordId,
-    originalRequestId: input.requestId || null
+    originalRequestId: input.requestId || null,
+    resourceType: result.resourceType || null,
+    resourceId: result.resourceId || null
   };
 }
 
 export async function runFinancialIdempotentMutation<T>(
-  input: FinancialIdempotencyInput,
+  input: FinancialIdempotencyInput<T>,
   effect: (tx: Prisma.TransactionClient) => Promise<FinancialIdempotencyEffect<T>>
 ): Promise<FinancialIdempotencyExecution<T>> {
   const scope = normalizeIdempotencyScope(input.scope);
   const key = normalizeIdempotencyKey(input.key);
   try {
     const execution = await prisma.$transaction((tx) => executeWithinTransaction(tx, { ...input, scope, key }, effect));
+    if (key && execution.replayed && execution.concurrentWaitMs && execution.concurrentWaitMs >= 25) {
+      emitIdempotencyEvent('idempotency.concurrent_wait', {
+        tenantId: input.tenantId,
+        scope,
+        requestId: input.requestId,
+        recordId: execution.recordId,
+        resourceType: execution.resourceType,
+        resourceId: execution.resourceId,
+        waitMs: execution.concurrentWaitMs
+      });
+    }
     emitIdempotencyEvent(key ? (execution.replayed ? 'idempotency.hit' : 'idempotency.miss') : 'idempotency.missing', {
       tenantId: input.tenantId,
       scope,
       requestId: input.requestId,
       recordId: execution.recordId,
-      resourceType: undefined,
-      resourceId: undefined
+      resourceType: execution.resourceType,
+      resourceId: execution.resourceId
     });
     return execution;
   } catch (error) {
