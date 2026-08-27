@@ -1,0 +1,64 @@
+name: Release Governance #97
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'ops/github/main-branch-protection-v97.json'
+      - 'ops/github/main-release-governance-v97.json'
+      - 'scripts/verify-main-protection-v97.mjs'
+      - 'tests/release_governance_issue_97.test.mjs'
+      - 'docs/release/BRANCH_PROTECTION.md'
+      - '.github/workflows/release-governance-v97.yml'
+      - '.github/workflows/ci.yml'
+      - '.github/workflows/postgres-tenant-rules-v28.yml'
+      - '.github/workflows/qa-browser.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  governance-contract:
+    name: governance-contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Node 22
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+
+      - name: Validate declarative governance contract
+        run: node --test tests/release_governance_issue_97.test.mjs
+
+  live-main-protection:
+    name: live-main-protection
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Node 22
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+
+      - name: Inspect live main protection
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node scripts/verify-main-protection-v97.mjs
+
+      - name: Preserve governance snapshot
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: governance-v97-${{ github.sha }}
+          path: artifacts/release/governance-v97.json
+          if-no-files-found: warn
+          retention-days: 30
