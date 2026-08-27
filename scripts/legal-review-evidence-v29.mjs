@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
+import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { dirname, join, relative, resolve } from 'node:path';
+import { join, relative, resolve } from 'node:path';
 
 const root = process.cwd();
 const outputDir = resolve(process.env.LEGAL_EVIDENCE_OUTPUT_DIR || join(root, 'artifacts', 'release', 'legal-v29'));
@@ -12,9 +13,20 @@ const canonicalFiles = [
   'docs/legal/PRODUCTION_LEGAL_CHECKLIST.md',
   'docs/legal/VENEZUELA_LEGAL_SOURCES_REVIEW_V1.md',
 ];
+const providerKeys = ['name', 'rif', 'address', 'legalEmail', 'supportEmail'];
 
 const sha256 = (buffer) => createHash('sha256').update(buffer).digest('hex');
 const normalize = (value) => String(value || '').replace(/\r\n/g, '\n');
+const gitText = (args) => {
+  try { return execFileSync('git', args, { cwd: root, encoding: 'utf8', windowsHide: true }).trim(); }
+  catch { return ''; }
+};
+
+const candidate = {
+  sha: gitText(['rev-parse', 'HEAD']) || null,
+  branch: gitText(['branch', '--show-current']) || 'DETACHED',
+  dirty: Boolean(gitText(['status', '--porcelain=v1'])),
+};
 
 const files = canonicalFiles.map((path) => {
   const absolute = join(root, path);
@@ -32,33 +44,44 @@ const catalog = existsSync(join(root, 'backend/src/shared/legal/legalCatalog.ts'
   ? normalize(readFileSync(join(root, 'backend/src/shared/legal/legalCatalog.ts'), 'utf8'))
   : '';
 const legalDocumentVersion = catalog.match(/LEGAL_DOCUMENT_VERSION\s*=\s*['"]([^'"]+)['"]/)?.[1] || null;
+const providerComplete = providerKeys.every((key) => String(attestation?.provider?.[key] || '').trim());
 
 const blockers = [];
 if (files.some((entry) => entry.status !== 'PRESENT')) blockers.push('canonical-file-missing');
+if (!candidate.sha || !/^[0-9a-f]{40}$/i.test(candidate.sha)) blockers.push('candidate-sha-unknown');
+if (candidate.dirty) blockers.push('working-tree-dirty');
 if (!attestation) blockers.push('attestation-invalid-or-missing');
 if (attestation?.status !== 'approved') blockers.push('professional-attestation-not-approved');
+if (attestation?.approvals?.professionalReview !== true) blockers.push('professional-review-approval-missing');
+if (attestation?.approvals?.providerIdentity !== true || !providerComplete) blockers.push('provider-identity-not-approved');
 if (!legalDocumentVersion || attestation?.legalDocumentVersion !== legalDocumentVersion) blockers.push('attestation-version-mismatch');
 if (!String(attestation?.reviewer?.name || '').trim()) blockers.push('reviewer-not-identified');
 if (!/^[a-f0-9]{64}$/i.test(String(attestation?.evidence?.sha256 || ''))) blockers.push('professional-evidence-hash-missing');
 if (!String(attestation?.evidence?.reference || '').trim()) blockers.push('professional-evidence-reference-missing');
 
 const verdict = blockers.length ? 'BLOCKED' : 'PASS';
-const manifestCore = {
-  schemaVersion: 1,
+const contentSetSha256 = sha256(Buffer.from(JSON.stringify({
+  legalDocumentVersion,
+  files: files.map(({ path, status, sha256: digest, bytes }) => ({ path, status, sha256: digest, bytes })),
+})));
+const report = {
+  schemaVersion: 2,
   issue: 29,
   product: 'ContaGest VE',
   verdict,
   generatedAt: new Date().toISOString(),
+  candidate,
   legalDocumentVersion,
+  contentSetSha256,
   attestationStatus: attestation?.status || null,
+  professionalReviewApproved: attestation?.approvals?.professionalReview === true,
+  providerIdentityApproved: attestation?.approvals?.providerIdentity === true && providerComplete,
   reviewer: attestation?.reviewer?.name ? { name: attestation.reviewer.name, jurisdiction: attestation.reviewer.jurisdiction || null } : null,
   evidenceReference: attestation?.evidence?.reference || null,
   evidenceSha256: attestation?.evidence?.sha256 || null,
   blockers,
   files,
 };
-const manifestHash = sha256(Buffer.from(JSON.stringify(manifestCore)));
-const report = { ...manifestCore, manifestSha256: manifestHash };
 
 mkdirSync(outputDir, { recursive: true });
 const jsonPath = join(outputDir, 'LEGAL_REVIEW_EVIDENCE.json');
@@ -69,9 +92,12 @@ writeFileSync(mdPath, [
   '# ContaGest #29 · professional legal review evidence',
   '',
   `- Verdict: **${verdict}**`,
+  `- Candidate SHA: \`${candidate.sha || 'UNKNOWN'}\``,
+  `- Branch: \`${candidate.branch}\``,
+  `- Dirty working tree: **${candidate.dirty ? 'YES' : 'NO'}**`,
   `- Legal document version: \`${legalDocumentVersion || 'UNKNOWN'}\``,
   `- Attestation status: \`${attestation?.status || 'UNKNOWN'}\``,
-  `- Manifest SHA-256: \`${manifestHash}\``,
+  `- Canonical content-set SHA-256: \`${contentSetSha256}\``,
   '',
   '## Canonical files',
   '',
@@ -83,11 +109,11 @@ writeFileSync(mdPath, [
   '',
   ...(blockers.length ? blockers.map((blocker) => `- ${blocker}`) : ['- none']),
   '',
-  '> PASS proves a version/hash chain only. It does not turn engineering output into legal advice and does not replace professional review.',
+  '> PASS proves a candidate-bound version/hash chain only. It does not turn engineering output into legal advice and does not replace professional review.',
   '',
 ].join('\n'), 'utf8');
 writeFileSync(sumsPath, [jsonPath, mdPath].map((file) => `${sha256(readFileSync(file))}  ${relative(outputDir, file)}`).join('\n') + '\n', 'utf8');
 
-console.log(`[legal-evidence-v29] ${verdict} · version=${legalDocumentVersion || 'UNKNOWN'} · ${relative(root, outputDir)}`);
+console.log(`[legal-evidence-v29] ${verdict} · sha=${candidate.sha || 'UNKNOWN'} · version=${legalDocumentVersion || 'UNKNOWN'} · ${relative(root, outputDir)}`);
 for (const blocker of blockers) console.log(`BLOCKED ${blocker}`);
 process.exitCode = verdict === 'PASS' ? 0 : 2;
