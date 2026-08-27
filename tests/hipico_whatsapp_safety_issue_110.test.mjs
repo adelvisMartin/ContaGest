@@ -10,7 +10,7 @@ const SOURCE='120363111111111111-1111111111@g.us';
 const LAB='120363222222222222-2222222222@g.us';
 
 test('DOM wrappers and underscores still resolve the pinned JID only',()=>{
-  assert.deepEqual(extractGroupIds(`false_${SOURCE}_ABC`,{'data-id':`true_${LAB}_XYZ`}),[SOURCE,LAB]);
+  assert.deepEqual(extractGroupIds(`false_${SOURCE}_ABC`,`data-id=true_${LAB}_XYZ`),[SOURCE,LAB]);
   assert.equal(selectUniqueGroupId([`bad_${SOURCE}_x`,SOURCE],SOURCE),SOURCE);
   assert.equal(normalizeGroupId(`false_${SOURCE}_x`),'');
 });
