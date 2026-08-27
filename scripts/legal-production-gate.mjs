@@ -3,7 +3,7 @@ import path from 'node:path';
 
 const root = process.cwd();
 const catalogPath = path.join(root, 'backend', 'src', 'shared', 'legal', 'legalCatalog.ts');
-const defaultAttestationPath = path.join(root, 'docs', 'legal', 'LEGAL_RELEASE_ATTESTATION.json');
+const defaultAttestationPath = path.join(root, 'backend', 'src', 'shared', 'legal', 'LEGAL_RELEASE_ATTESTATION.json');
 const attestationPath = process.env.LEGAL_RELEASE_ATTESTATION_PATH
   ? path.resolve(process.env.LEGAL_RELEASE_ATTESTATION_PATH)
   : defaultAttestationPath;
@@ -16,6 +16,13 @@ const providerFields = [
   'LEGAL_CONTACT_EMAIL',
   'LEGAL_SUPPORT_EMAIL'
 ];
+const providerAttestationMap = {
+  LEGAL_PROVIDER_NAME:'name',
+  LEGAL_PROVIDER_RIF:'rif',
+  LEGAL_PROVIDER_ADDRESS:'address',
+  LEGAL_CONTACT_EMAIL:'legalEmail',
+  LEGAL_SUPPORT_EMAIL:'supportEmail'
+};
 
 const requiredApprovals = [
   'professionalReview',
@@ -111,6 +118,14 @@ if (attestation) {
     'LEGAL_REVIEW_EVIDENCE_SHA256 debe coincidir con el hash declarado en la atestación.'
   );
 
+  for (const [envName,attestationName] of Object.entries(providerAttestationMap)) {
+    addCheck(
+      `attestation.provider.${attestationName}`,
+      valueOf(envName)===String(attestation.provider?.[attestationName]||'').trim(),
+      `${attestationName} debe coincidir exactamente con ${envName}.`
+    );
+  }
+
   for (const approval of requiredApprovals) {
     addCheck(`approval.${approval}`, attestation.approvals?.[approval] === true, `La aprobación ${approval} debe ser true.`);
   }
@@ -135,7 +150,7 @@ for (const check of checks) console.log(`${check.pass ? 'PASS' : 'BLOCKED'}  ${c
 console.log(`\nVERDICT: ${verdict}`);
 console.log(`Evidence report: ${path.relative(root, reportPath)}`);
 if (verdict !== 'PASS') {
-  console.log('No autoriza clientes/datos reales. Complete identidad, atestación profesional y variables runtime vinculadas a la versión legal vigente.');
+  console.log('No autoriza clientes/datos reales. Complete identidad, atestación profesional versionada y variables runtime vinculadas a la versión legal vigente.');
 }
 
 process.exitCode = failures.length ? 1 : 0;
