@@ -31,7 +31,7 @@ test('semantic tokens cover color, density, type, elevation, touch and safe area
     '--hc-space-1', '--hc-space-16', '--hc-radius-md', '--hc-shadow-dialog',
     '--hc-font-sans', '--hc-font-mono', '--hc-touch', '--hc-content',
     '--hc-safe-top', '--hc-safe-bottom', '--hc-motion'
-  ]) assert.match(css, new RegExp(token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+  ]) assert.ok(css.includes(token), `missing semantic token ${token}`);
   assert.match(css, /--hc-touch:\s*44px/);
 });
 
@@ -51,7 +51,7 @@ test('canonical primitives define focus, tabular data and required async states'
 });
 
 test('style guide declares canonical ownership and required QA widths', async () => {
-  const guide = await read('../../../../docs/hipico/STYLE_GUIDE.md');
+  const guide = await read('../../../docs/hipico/STYLE_GUIDE.md');
   assert.match(guide, /única referencia vigente/i);
   assert.match(guide, /--hc-\*/);
   assert.match(guide, /360, 390, 430, 768, 1366 y 1920/);
