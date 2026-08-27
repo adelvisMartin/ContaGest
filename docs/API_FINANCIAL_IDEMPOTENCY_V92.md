@@ -25,7 +25,7 @@ Los drafts pueden seguir creándose sin key. Si un consumidor suministra key, la
 
 ### Mismo tenant + scope + key + mismo request
 
-El servidor devuelve el resultado lógico original y no vuelve a ejecutar el efecto.
+El servidor devuelve el resultado lógico original y no vuelve a ejecutar el efecto. Para los cuatro scopes iniciales la respuesta se reconstruye desde `resourceId` usando siempre el tenant autenticado; no se persiste un snapshot de la respuesta financiera.
 
 Respuesta adicional:
 
@@ -52,6 +52,25 @@ Content-Type: application/json
   "message": "Idempotency-Key ya fue utilizada con un request diferente.",
   "details": {
     "code": "IDEMPOTENCY_KEY_REUSED",
+    "scope": "banking.movements.create"
+  }
+}
+```
+
+### Resultado histórico no reconstruible
+
+Si el registro idempotente existe pero el recurso original fue eliminado por una política independiente, el servidor no ejecuta el efecto otra vez y tampoco inventa una respuesta:
+
+```http
+HTTP/1.1 409 Conflict
+```
+
+```json
+{
+  "ok": false,
+  "message": "El movimiento bancario original ya no puede reconstruirse.",
+  "details": {
+    "code": "IDEMPOTENCY_RESULT_UNAVAILABLE",
     "scope": "banking.movements.create"
   }
 }
@@ -99,7 +118,9 @@ Una key idéntica puede existir en tenants distintos porque la constraint es:
 (tenantId, scope, keyHash)
 ```
 
-El cliente nunca envía `tenantId` como parte autorizante del contrato. Todo lookup usa el tenant resuelto por el servidor.
+El cliente nunca envía `tenantId` como parte autorizante del contrato. Todo lookup y toda reconstrucción de replay usan el tenant resuelto por el servidor.
+
+La misma key también puede reutilizarse en scopes distintos sin colisión, porque el scope de operación forma parte de la identidad persistida.
 
 ## Persistencia y privacidad
 
@@ -109,9 +130,10 @@ No se guarda:
 - request body raw;
 - cookies;
 - tokens;
-- Authorization header.
+- Authorization header;
+- snapshot de respuesta de ventas, compras, movimientos bancarios o asientos manuales.
 
-Se guarda hash SHA-256 de key/request, estado, referencia de recurso, respuesta reducida y metadatos de correlación.
+Se guarda hash SHA-256 de key/request, estado, `resourceType`, `resourceId`, código HTTP y metadatos de correlación. En esos cuatro flujos `responsePayload` queda `NULL` y el replay se reconstruye desde la entidad del tenant.
 
 ## Retención
 
@@ -125,11 +147,12 @@ Eventos esperados:
 idempotency.miss
 idempotency.hit
 idempotency.conflict
+idempotency.concurrent_wait
 idempotency.failed
 idempotency.missing
 ```
 
-Los logs no deben incluir la key completa ni snapshots sensibles.
+`idempotency.concurrent_wait` se emite cuando la colisión de reserva hace esperar apreciablemente a un retry concurrente. Los logs no deben incluir la key completa ni snapshots sensibles.
 
 ## Nuevos módulos
 
@@ -140,8 +163,9 @@ Para integrar otra mutación financiera:
 3. usar el request ya validado como entrada del hash;
 4. ejecutar **todo** el efecto dentro del `TransactionClient` recibido por `runFinancialIdempotentMutation`;
 5. devolver `resourceType/resourceId` cuando exista;
-6. añadir pruebas de misma key/mismo payload, key reutilizada con payload distinto, concurrencia y tenant isolation;
-7. no reemplazar constraints de negocio existentes.
+6. preferir un callback `replay` que reconstruya la respuesta con `resourceId + tenantId` en lugar de persistir snapshots;
+7. añadir pruebas de misma key/mismo payload, key reutilizada con payload distinto, concurrencia, scopes distintos y tenant isolation;
+8. no reemplazar constraints de negocio existentes.
 
 ## OpenAPI
 
