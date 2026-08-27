@@ -95,13 +95,17 @@ test('public production QA scripts require the legal gate before readiness check
   assert.match(pkg.scripts['qa:production:full'],/^npm run qa:legal:production && /);
 });
 
-test('licensed customer runtime fails closed without provider and professional review evidence',()=>{
+test('licensed customer runtime fails closed without real provider identity and professional review evidence',()=>{
   const runtimeGate=read('backend/src/shared/legal/legalReleaseRuntimeGate.ts');
   const middleware=read('backend/src/shared/legal/legalAcceptanceMiddleware.ts');
   const routes=read('backend/src/modules/legal/legal.routes.ts');
+  assert.match(runtimeGate,/legalProviderIdentityReady/);
+  assert.match(runtimeGate,/example\\\.com|example\\\.com/i);
+  assert.match(runtimeGate,/emailPattern/);
   assert.match(runtimeGate,/LEGAL_REVIEW_APPROVED_VERSION/);
   assert.match(runtimeGate,/LEGAL_REVIEW_EVIDENCE_SHA256/);
   assert.match(runtimeGate,/approvedVersion===LEGAL_DOCUMENT_VERSION/);
+  assert.match(runtimeGate,/legalProviderIdentityReady\(\)&&legalProfessionalReviewReady\(\)/);
   assert.match(middleware,/isProd&&!legalRuntimeProductionReady\(\)/);
   assert.match(middleware,/new HttpError\(503/);
   assert.match(routes,/productionReady:legalRuntimeProductionReady\(\)/);
