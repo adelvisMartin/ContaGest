@@ -19,7 +19,7 @@ BEGIN
   END LOOP;
 END $$;
 
--- Owner-scoped policies are installed only when Supabase auth.uid() is available and the expected owner_id column exists.
+-- Owner-scoped policies are RESTRICTIVE so they still constrain access if older permissive policies exist.
 DO $$
 DECLARE
   target_table text;
@@ -59,7 +59,7 @@ BEGIN
         AND policyname = target_policy
     ) THEN
       EXECUTE format(
-        'CREATE POLICY %I ON public.%I FOR ALL TO authenticated USING (owner_id = auth.uid()) WITH CHECK (owner_id = auth.uid())',
+        'CREATE POLICY %I ON public.%I AS RESTRICTIVE FOR ALL TO authenticated USING (owner_id = auth.uid()) WITH CHECK (owner_id = auth.uid())',
         target_policy,
         target_table
       );
@@ -92,7 +92,7 @@ BEGIN
       AND tablename = 'hipico_shadow_evaluations'
       AND policyname = 'hipico_shadow_evaluations_owner_isolation_v116'
   ) THEN
-    EXECUTE 'CREATE POLICY hipico_shadow_evaluations_owner_isolation_v116 ON public.hipico_shadow_evaluations FOR SELECT TO authenticated USING (owner_id = auth.uid())';
+    EXECUTE 'CREATE POLICY hipico_shadow_evaluations_owner_isolation_v116 ON public.hipico_shadow_evaluations AS RESTRICTIVE FOR SELECT TO authenticated USING (owner_id = auth.uid())';
   END IF;
 END $$;
 
