@@ -1,28 +1,168 @@
 -- Issue #91: formal ledger posting lifecycle and immutable posted history.
--- This migration is additive and intentionally does not guess whether legacy posted=false rows are drafts.
+-- Additive migration with fail-closed preflight for ambiguous legacy accounting rows.
+-- A production operator must run the documented backup/preflight procedure before deploy.
+
+-- PRE-FLIGHT 1: every ledger row already marked posted must be structurally balanced.
+DO $$
+DECLARE
+  invalid_count BIGINT;
+BEGIN
+  SELECT COUNT(*) INTO invalid_count
+  FROM (
+    SELECT le."id"
+    FROM "LedgerEntry" le
+    LEFT JOIN "LedgerLine" ll ON ll."entryId" = le."id"
+    WHERE le."posted" = TRUE
+    GROUP BY le."id"
+    HAVING COUNT(ll."id") < 2
+       OR COALESCE(SUM(ll."debit"), 0) <> COALESCE(SUM(ll."credit"), 0)
+       OR COUNT(*) FILTER (WHERE ll."debit" < 0 OR ll."credit" < 0 OR (ll."debit" <> 0 AND ll."credit" <> 0)) > 0
+  ) invalid_posted;
+
+  IF invalid_count > 0 THEN
+    RAISE EXCEPTION USING
+      ERRCODE = '23514',
+      MESSAGE = 'issue_91_existing_posted_entries_invalid',
+      DETAIL = format('%s already-posted entries are empty, unbalanced, negative, or contain debit+credit on one line. Resolve before migration.', invalid_count);
+  END IF;
+END $$;
+
+-- PRE-FLIGHT 2: only clearly issued/current sales and purchases are safe for automatic backfill.
+-- Draft, cancelled, orphaned, duplicated or otherwise ambiguous operational ledger rows stop the migration.
+DO $$
+DECLARE
+  ambiguous_count BIGINT;
+BEGIN
+  SELECT COUNT(*) INTO ambiguous_count
+  FROM "LedgerEntry" le
+  WHERE le."posted" = FALSE
+    AND le."source" = 'sales'::"LedgerSource"
+    AND NOT EXISTS (
+      SELECT 1
+      FROM "SalesInvoice" s
+      WHERE s."tenantId" = le."tenantId"
+        AND s."status" IN ('issued'::"InvoiceStatus", 'paid'::"InvoiceStatus", 'overdue'::"InvoiceStatus")
+        AND (s."id" = le."salesInvoiceId" OR (le."salesInvoiceId" IS NULL AND s."id" = le."sourceId"))
+    );
+
+  SELECT ambiguous_count + COUNT(*) INTO ambiguous_count
+  FROM "LedgerEntry" le
+  WHERE le."posted" = FALSE
+    AND le."source" = 'purchase'::"LedgerSource"
+    AND NOT EXISTS (
+      SELECT 1
+      FROM "PurchaseInvoice" p
+      WHERE p."tenantId" = le."tenantId"
+        AND p."status" IN ('issued'::"InvoiceStatus", 'paid'::"InvoiceStatus", 'overdue'::"InvoiceStatus")
+        AND (p."id" = le."purchaseInvoiceId" OR (le."purchaseInvoiceId" IS NULL AND p."id" = le."sourceId"))
+    );
+
+  -- Old cancellation reversals were manual rows linked to the invoice. A false row here
+  -- cannot be inferred safely without reviewing the original/reversal pair.
+  SELECT ambiguous_count + COUNT(*) INTO ambiguous_count
+  FROM "LedgerEntry" le
+  WHERE le."posted" = FALSE
+    AND le."source" = 'manual'::"LedgerSource"
+    AND (
+      (le."salesInvoiceId" IS NOT NULL AND EXISTS (
+        SELECT 1 FROM "SalesInvoice" s
+        WHERE s."id" = le."salesInvoiceId" AND s."tenantId" = le."tenantId" AND s."status" = 'cancelled'::"InvoiceStatus"
+      ))
+      OR
+      (le."purchaseInvoiceId" IS NOT NULL AND EXISTS (
+        SELECT 1 FROM "PurchaseInvoice" p
+        WHERE p."id" = le."purchaseInvoiceId" AND p."tenantId" = le."tenantId" AND p."status" = 'cancelled'::"InvoiceStatus"
+      ))
+      OR le."sourceId" LIKE 'sales-cancel:%'
+      OR le."sourceId" LIKE 'purchase-cancel:%'
+    );
+
+  IF ambiguous_count > 0 THEN
+    RAISE EXCEPTION USING
+      ERRCODE = '23514',
+      MESSAGE = 'issue_91_ambiguous_legacy_ledger_rows',
+      DETAIL = format('%s legacy operational rows require explicit classification. Run docs/RUNBOOK_LEDGER_REVERSALS_BACKFILL_V91.md before retrying.', ambiguous_count);
+  END IF;
+END $$;
+
+-- PRE-FLIGHT 3: safe operational candidates must also balance before they are marked posted.
+DO $$
+DECLARE
+  invalid_count BIGINT;
+BEGIN
+  SELECT COUNT(*) INTO invalid_count
+  FROM (
+    SELECT le."id"
+    FROM "LedgerEntry" le
+    JOIN "SalesInvoice" s
+      ON s."tenantId" = le."tenantId"
+     AND (s."id" = le."salesInvoiceId" OR (le."salesInvoiceId" IS NULL AND s."id" = le."sourceId"))
+    LEFT JOIN "LedgerLine" ll ON ll."entryId" = le."id"
+    WHERE le."posted" = FALSE
+      AND le."source" = 'sales'::"LedgerSource"
+      AND s."status" IN ('issued'::"InvoiceStatus", 'paid'::"InvoiceStatus", 'overdue'::"InvoiceStatus")
+    GROUP BY le."id"
+    HAVING COUNT(ll."id") < 2
+       OR COALESCE(SUM(ll."debit"), 0) <> COALESCE(SUM(ll."credit"), 0)
+       OR COUNT(*) FILTER (WHERE ll."debit" < 0 OR ll."credit" < 0 OR (ll."debit" <> 0 AND ll."credit" <> 0)) > 0
+
+    UNION ALL
+
+    SELECT le."id"
+    FROM "LedgerEntry" le
+    JOIN "PurchaseInvoice" p
+      ON p."tenantId" = le."tenantId"
+     AND (p."id" = le."purchaseInvoiceId" OR (le."purchaseInvoiceId" IS NULL AND p."id" = le."sourceId"))
+    LEFT JOIN "LedgerLine" ll ON ll."entryId" = le."id"
+    WHERE le."posted" = FALSE
+      AND le."source" = 'purchase'::"LedgerSource"
+      AND p."status" IN ('issued'::"InvoiceStatus", 'paid'::"InvoiceStatus", 'overdue'::"InvoiceStatus")
+    GROUP BY le."id"
+    HAVING COUNT(ll."id") < 2
+       OR COALESCE(SUM(ll."debit"), 0) <> COALESCE(SUM(ll."credit"), 0)
+       OR COUNT(*) FILTER (WHERE ll."debit" < 0 OR ll."credit" < 0 OR (ll."debit" <> 0 AND ll."credit" <> 0)) > 0
+  ) invalid_candidates;
+
+  IF invalid_count > 0 THEN
+    RAISE EXCEPTION USING
+      ERRCODE = '23514',
+      MESSAGE = 'issue_91_backfill_candidate_unbalanced',
+      DETAIL = format('%s operational entries cannot be backfilled because their lines are invalid.', invalid_count);
+  END IF;
+END $$;
 
 ALTER TABLE "LedgerEntry"
   ADD COLUMN IF NOT EXISTS "postedAt" TIMESTAMP(3),
   ADD COLUMN IF NOT EXISTS "postedBy" TEXT,
   ADD COLUMN IF NOT EXISTS "reversalOfId" TEXT;
 
--- Historical rows that were already explicitly posted keep their original content;
--- only the missing posting timestamp is reconstructed from createdAt. Actor remains NULL
--- when historical evidence does not exist.
+-- Existing explicitly-posted history keeps its original content. The only reconstructed
+-- metadata is postedAt=createdAt; postedBy stays NULL because no historical actor evidence exists.
 UPDATE "LedgerEntry"
 SET "postedAt" = COALESCE("postedAt", "createdAt")
 WHERE "posted" = TRUE AND "postedAt" IS NULL;
 
-DO $$
-DECLARE
-  ambiguous_count BIGINT;
-BEGIN
-  SELECT COUNT(*) INTO ambiguous_count
-  FROM "LedgerEntry"
-  WHERE "posted" = FALSE
-    AND "source" IN ('sales'::"LedgerSource", 'purchase'::"LedgerSource");
-  RAISE NOTICE 'issue_91_ambiguous_operational_ledger_rows=% (left unchanged; see backfill runbook)', ambiguous_count;
-END $$;
+-- Deterministic legacy backfill: current non-draft/non-cancelled sales/purchases that already
+-- have a balanced ledger entry are accounting effects, not user-editable drafts.
+UPDATE "LedgerEntry" le
+SET "posted" = TRUE,
+    "postedAt" = COALESCE(le."postedAt", le."createdAt")
+FROM "SalesInvoice" s
+WHERE le."posted" = FALSE
+  AND le."source" = 'sales'::"LedgerSource"
+  AND s."tenantId" = le."tenantId"
+  AND s."status" IN ('issued'::"InvoiceStatus", 'paid'::"InvoiceStatus", 'overdue'::"InvoiceStatus")
+  AND (s."id" = le."salesInvoiceId" OR (le."salesInvoiceId" IS NULL AND s."id" = le."sourceId"));
+
+UPDATE "LedgerEntry" le
+SET "posted" = TRUE,
+    "postedAt" = COALESCE(le."postedAt", le."createdAt")
+FROM "PurchaseInvoice" p
+WHERE le."posted" = FALSE
+  AND le."source" = 'purchase'::"LedgerSource"
+  AND p."tenantId" = le."tenantId"
+  AND p."status" IN ('issued'::"InvoiceStatus", 'paid'::"InvoiceStatus", 'overdue'::"InvoiceStatus")
+  AND (p."id" = le."purchaseInvoiceId" OR (le."purchaseInvoiceId" IS NULL AND p."id" = le."sourceId"));
 
 ALTER TABLE "LedgerEntry"
   ADD CONSTRAINT "LedgerEntry_reversalOfId_key" UNIQUE ("reversalOfId");
@@ -35,7 +175,7 @@ ALTER TABLE "LedgerEntry"
 ALTER TABLE "LedgerEntry"
   ADD CONSTRAINT "LedgerEntry_posted_metadata_check"
   CHECK (
-    ("posted" = FALSE AND "postedAt" IS NULL)
+    ("posted" = FALSE AND "postedAt" IS NULL AND "postedBy" IS NULL AND "reversalOfId" IS NULL)
     OR ("posted" = TRUE AND "postedAt" IS NOT NULL)
   );
 
@@ -54,24 +194,60 @@ DECLARE
   original_tenant TEXT;
   original_posted BOOLEAN;
   original_reversal_of TEXT;
+  line_count BIGINT;
+  invalid_line_count BIGINT;
+  total_debit NUMERIC;
+  total_credit NUMERIC;
 BEGIN
-  IF TG_OP IN ('UPDATE', 'DELETE') AND OLD."posted" = TRUE THEN
+  IF TG_OP = 'INSERT' THEN
+    IF NEW."posted" = TRUE THEN
+      RAISE EXCEPTION USING
+        ERRCODE = '23514',
+        MESSAGE = 'ledger_posted_requires_transition',
+        DETAIL = 'Create the entry and its lines as DRAFT, then post it in the same transaction.';
+    END IF;
+    IF NEW."postedAt" IS NOT NULL OR NEW."postedBy" IS NOT NULL OR NEW."reversalOfId" IS NOT NULL THEN
+      RAISE EXCEPTION USING ERRCODE = '23514', MESSAGE = 'ledger_draft_has_posting_metadata';
+    END IF;
+    RETURN NEW;
+  END IF;
+
+  IF OLD."posted" = TRUE THEN
     RAISE EXCEPTION USING
       ERRCODE = '23514',
       MESSAGE = 'ledger_posted_immutable',
-      DETAIL = 'A posted LedgerEntry cannot be updated, deleted, or returned to draft; use a reversal/adjustment.';
+      DETAIL = 'A posted LedgerEntry cannot be updated or deleted; use a reversal/adjustment.';
   END IF;
 
   IF TG_OP = 'DELETE' THEN
     RETURN OLD;
   END IF;
 
-  IF NEW."posted" = TRUE AND NEW."postedAt" IS NULL THEN
+  IF NEW."posted" = FALSE THEN
+    IF NEW."postedAt" IS NOT NULL OR NEW."postedBy" IS NOT NULL OR NEW."reversalOfId" IS NOT NULL THEN
+      RAISE EXCEPTION USING ERRCODE = '23514', MESSAGE = 'ledger_draft_has_posting_metadata';
+    END IF;
+    RETURN NEW;
+  END IF;
+
+  -- The only state transition from a draft is DRAFT -> POSTED.
+  IF NEW."postedAt" IS NULL THEN
     RAISE EXCEPTION USING ERRCODE = '23514', MESSAGE = 'ledger_posted_requires_posted_at';
   END IF;
 
-  IF NEW."posted" = FALSE AND NEW."postedAt" IS NOT NULL THEN
-    RAISE EXCEPTION USING ERRCODE = '23514', MESSAGE = 'ledger_draft_cannot_have_posted_at';
+  SELECT COUNT(*),
+         COUNT(*) FILTER (WHERE "debit" < 0 OR "credit" < 0 OR ("debit" <> 0 AND "credit" <> 0)),
+         COALESCE(SUM("debit"), 0),
+         COALESCE(SUM("credit"), 0)
+    INTO line_count, invalid_line_count, total_debit, total_credit
+  FROM "LedgerLine"
+  WHERE "entryId" = NEW."id";
+
+  IF line_count < 2 OR invalid_line_count > 0 OR total_debit <> total_credit THEN
+    RAISE EXCEPTION USING
+      ERRCODE = '23514',
+      MESSAGE = 'ledger_unbalanced_posting',
+      DETAIL = format('lines=%s invalid_lines=%s debit=%s credit=%s', line_count, invalid_line_count, total_debit, total_credit);
   END IF;
 
   IF NEW."reversalOfId" IS NOT NULL THEN
@@ -87,21 +263,14 @@ BEGIN
     IF NOT FOUND THEN
       RAISE EXCEPTION USING ERRCODE = '23503', MESSAGE = 'ledger_reversal_original_not_found';
     END IF;
-
     IF original_tenant <> NEW."tenantId" THEN
       RAISE EXCEPTION USING ERRCODE = '23514', MESSAGE = 'ledger_reversal_cross_tenant';
     END IF;
-
     IF original_posted IS DISTINCT FROM TRUE THEN
       RAISE EXCEPTION USING ERRCODE = '23514', MESSAGE = 'ledger_reversal_original_not_posted';
     END IF;
-
     IF original_reversal_of IS NOT NULL THEN
       RAISE EXCEPTION USING ERRCODE = '23514', MESSAGE = 'ledger_reversal_chain_not_allowed';
-    END IF;
-
-    IF NEW."posted" IS DISTINCT FROM TRUE THEN
-      RAISE EXCEPTION USING ERRCODE = '23514', MESSAGE = 'ledger_reversal_must_be_posted';
     END IF;
   END IF;
 
