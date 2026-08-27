@@ -8,6 +8,7 @@ const SAME_ORIGIN_API_BASE = '/api/v1';
 const DEFAULT_API_BASE = (ENV_API_BASE || (isDevelopmentHost ? 'http://localhost:3030/api/v1' : SAME_ORIGIN_API_BASE)).replace(/\/$/, '');
 let refreshInFlight = null;
 let authExpiredSignalled = false;
+const financialInFlightKeys = new Map();
 
 function normalizeBaseUrl(value) {
   const candidate = String(value || DEFAULT_API_BASE).trim().replace(/\/$/, '');
@@ -36,11 +37,24 @@ function cleanPayload(value) {
   );
 }
 
+function stableRequestValue(value) {
+  if (Array.isArray(value)) return value.map(stableRequestValue);
+  if (!value || typeof value !== 'object') return value;
+  return Object.fromEntries(Object.keys(value).sort().map((key) => [key, stableRequestValue(value[key])]));
+}
+
+function normalizedFinancialPath(path) {
+  return String(path || '').split('?')[0].replace(/^\/api\/v1/, '');
+}
+
 function needsFinancialIdempotency(method, path, body) {
-  if (String(method || 'GET').toUpperCase() !== 'POST') return false;
-  const normalized = String(path || '').split('?')[0].replace(/^\/api\/v1/, '');
-  if (normalized === '/banking/movements' || normalized === '/accounting/entries') return true;
-  if (normalized === '/sales' || normalized === '/purchases') return String(body?.status || 'issued') !== 'draft';
+  const normalizedMethod = String(method || 'GET').toUpperCase();
+  const normalized = normalizedFinancialPath(path);
+  if (normalizedMethod === 'POST') {
+    if (normalized === '/banking/movements' || normalized === '/accounting/entries') return true;
+    if (normalized === '/sales' || normalized === '/purchases') return String(body?.status || 'issued') !== 'draft';
+  }
+  if (normalizedMethod === 'PATCH' && /^\/(sales|purchases)\/[^/]+\/cancel$/.test(normalized)) return true;
   return false;
 }
 
@@ -53,6 +67,29 @@ function createFinancialIdempotencyKey() {
     return `cg-${Array.from(bytes, (value) => value.toString(16).padStart(2, '0')).join('')}`;
   }
   return '';
+}
+
+function financialRequestSignature(method, path, body) {
+  return `${String(method || 'GET').toUpperCase()}:${normalizedFinancialPath(path)}:${JSON.stringify(stableRequestValue(body))}`;
+}
+
+function acquireFinancialIdempotencyKey(signature) {
+  const existing = financialInFlightKeys.get(signature);
+  if (existing) {
+    existing.refs += 1;
+    return existing.key;
+  }
+  const key = createFinancialIdempotencyKey();
+  if (key) financialInFlightKeys.set(signature, { key, refs:1 });
+  return key;
+}
+
+function releaseFinancialIdempotencyKey(signature, key) {
+  if (!signature || !key) return;
+  const existing = financialInFlightKeys.get(signature);
+  if (!existing || existing.key !== key) return;
+  existing.refs -= 1;
+  if (existing.refs <= 0) financialInFlightKeys.delete(signature);
 }
 
 async function parseResponse(response) {
@@ -127,8 +164,6 @@ async function fetchApi(baseUrl, path, options) {
   } catch (error) {
     const fallback = sameOriginFallback(baseUrl);
     if (!fallback) throw error;
-    // A stale custom backend URL must never break the production ERP when the
-    // integrated same-origin API is available. Clear it and retry once.
     localStorage.removeItem(API_BASE_KEY);
     return fetch(`${fallback}${path}`, options);
   }
@@ -186,9 +221,9 @@ export const BackendApi = {
       : cleanedBody;
     const csrf = isUnsafeMethod(method) && !publicRequest ? csrfToken() : '';
     const explicitIdempotencyKey = customHeaders['Idempotency-Key'] || customHeaders['idempotency-key'] || '';
-    const generatedIdempotencyKey = !explicitIdempotencyKey && needsFinancialIdempotency(method, path, cleanedBody)
-      ? createFinancialIdempotencyKey()
-      : '';
+    const shouldProtect = !explicitIdempotencyKey && needsFinancialIdempotency(method, path, cleanedBody);
+    const idempotencySignature = shouldProtect ? financialRequestSignature(method, path, cleanedBody) : '';
+    const generatedIdempotencyKey = shouldProtect ? acquireFinancialIdempotencyKey(idempotencySignature) : '';
     const idempotencyKey = explicitIdempotencyKey || generatedIdempotencyKey;
     const headers = {
       ...(!isFormData && body !== undefined ? { 'content-type': 'application/json' } : {}),
@@ -204,59 +239,58 @@ export const BackendApi = {
       body
     };
 
-    let response;
     try {
-      response = await fetchApi(this.baseUrl, path, requestOptions);
-    } catch (error) {
-      if (idempotencyKey) {
-        try {
-          // Financial retries reuse the exact same key. If the first request committed
-          // but its response was lost, the server returns the stored result instead of
-          // executing the effect again.
-          response = await fetchApi(this.baseUrl, path, requestOptions);
-        } catch (retryError) {
-          throw apiError('No se pudo conectar con la API. Revisa la conexión y vuelve a intentar.', 0, { cause:String(retryError?.message || retryError), idempotent:true });
-        }
-      } else {
-        throw apiError('No se pudo conectar con la API. Revisa la conexión y vuelve a intentar.', 0, { cause:String(error?.message || error) });
-      }
-    }
-
-    if (response.status === 401 && !publicRequest && !skipRefresh && path !== '/auth/refresh') {
+      let response;
       try {
-        // Refresh tokens/cookies may rotate. All concurrent 401 responses must
-        // await one shared refresh or they can invalidate the session each other.
-        await refreshCookieSessionSingleFlight(this);
-        const nextCsrf = isUnsafeMethod(method) ? csrfToken() : '';
-        response = await fetchApi(this.baseUrl, path, {
-          ...requestOptions,
-          headers:{ ...headers, ...(nextCsrf ? { 'x-csrf-token':nextCsrf } : {}) }
-        });
+        response = await fetchApi(this.baseUrl, path, requestOptions);
       } catch (error) {
-        expireBrowserSession(error?.message || 'refresh_failed');
+        if (idempotencyKey) {
+          try {
+            response = await fetchApi(this.baseUrl, path, requestOptions);
+          } catch (retryError) {
+            throw apiError('No se pudo conectar con la API. Revisa la conexión y vuelve a intentar.', 0, { cause:String(retryError?.message || retryError), idempotent:true });
+          }
+        } else {
+          throw apiError('No se pudo conectar con la API. Revisa la conexión y vuelve a intentar.', 0, { cause:String(error?.message || error) });
+        }
       }
-    }
 
-    if (raw) {
-      if (!response.ok) {
-        const payload = await parseResponse(response);
+      if (response.status === 401 && !publicRequest && !skipRefresh && path !== '/auth/refresh') {
+        try {
+          await refreshCookieSessionSingleFlight(this);
+          const nextCsrf = isUnsafeMethod(method) ? csrfToken() : '';
+          response = await fetchApi(this.baseUrl, path, {
+            ...requestOptions,
+            headers:{ ...headers, ...(nextCsrf ? { 'x-csrf-token':nextCsrf } : {}) }
+          });
+        } catch (error) {
+          expireBrowserSession(error?.message || 'refresh_failed');
+        }
+      }
+
+      if (raw) {
+        if (!response.ok) {
+          const payload = await parseResponse(response);
+          if (response.status === 401 && !publicRequest) expireBrowserSession(payload.message || payload.error || 'unauthorized');
+          throw apiError(payload.message || payload.error || `HTTP ${response.status}`, response.status, payload);
+        }
+        return response;
+      }
+
+      const payload = await parseResponse(response);
+      if (!response.ok || payload.ok === false) {
         if (response.status === 401 && !publicRequest) expireBrowserSession(payload.message || payload.error || 'unauthorized');
         throw apiError(payload.message || payload.error || `HTTP ${response.status}`, response.status, payload);
       }
-      return response;
+      const data = payload.data ?? payload;
+      if (String(path).startsWith('/auth/') && data?.tenantId && data?.sessionMode) {
+        AuthSession.set(data);
+        markAuthHealthy();
+      }
+      return data;
+    } finally {
+      if (generatedIdempotencyKey) releaseFinancialIdempotencyKey(idempotencySignature, generatedIdempotencyKey);
     }
-
-    const payload = await parseResponse(response);
-    if (!response.ok || payload.ok === false) {
-      if (response.status === 401 && !publicRequest) expireBrowserSession(payload.message || payload.error || 'unauthorized');
-      throw apiError(payload.message || payload.error || `HTTP ${response.status}`, response.status, payload);
-    }
-    const data = payload.data ?? payload;
-    if (String(path).startsWith('/auth/') && data?.tenantId && data?.sessionMode) {
-      AuthSession.set(data);
-      markAuthHealthy();
-    }
-    return data;
   },
 
   list(resource, q = '') { return this.request(`/${resource}${q ? `?q=${encodeURIComponent(q)}` : ''}`); },
@@ -266,6 +300,7 @@ export const BackendApi = {
   get(path) { return this.request(path); },
   post(path, data) { return this.request(path.replace(/^\/api\/v1/, ''), { method: 'POST', body: data }); },
   put(path, data) { return this.request(path.replace(/^\/api\/v1/, ''), { method: 'PUT', body: data }); },
+  patch(path, data) { return this.request(path.replace(/^\/api\/v1/, ''), { method: 'PATCH', body: data }); },
   delete(path) { return this.request(path.replace(/^\/api\/v1/, ''), { method: 'DELETE' }); },
   health() { return this.request('/health', { noAuth: true }); },
   cleanPayload
