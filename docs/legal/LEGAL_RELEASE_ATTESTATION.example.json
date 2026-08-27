@@ -3,6 +3,13 @@
   "status": "pending",
   "reviewedAt": null,
   "legalDocumentVersion": "2026-08-09.v1",
+  "provider": {
+    "name": "",
+    "rif": "",
+    "address": "",
+    "legalEmail": "",
+    "supportEmail": ""
+  },
   "reviewer": {
     "name": "",
     "jurisdiction": "VE"
