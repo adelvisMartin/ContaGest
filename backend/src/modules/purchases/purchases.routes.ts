@@ -7,6 +7,9 @@ import { validateBody } from '../../shared/middleware/validate.js';
 import { writeAudit } from '../../shared/services/audit.service.js';
 import { runFinancialIdempotentMutation } from '../../shared/services/financial-idempotency.service.js';
 import { assertBalanced, assertPeriodOpen, purchaseInvoiceLinesForLedger } from '../accounting/accounting.service.js';
+import { calculateInvoiceTotals } from '../../shared/financial/invoice.js';
+import { decimalSchema } from '../../shared/financial/zod.js';
+import { ONE, ZERO } from '../../shared/financial/decimal.js';
 
 const router = Router();
 router.use(requireTenant, requirePermission('purchases.manage'));
@@ -14,9 +17,9 @@ router.use(requireTenant, requirePermission('purchases.manage'));
 const lineSchema = z.object({
   productId: z.string().optional(),
   description: z.string().min(2),
-  quantity: z.coerce.number().positive(),
-  unitCost: z.coerce.number().nonnegative(),
-  taxRate: z.coerce.number().default(16)
+  quantity: decimalSchema('quantity', { positive: true }),
+  unitCost: decimalSchema('money', { nonnegative: true }),
+  taxRate: decimalSchema('percentage', { defaultValue: 16, nonnegative: true })
 });
 
 const purchaseSchema = z.object({
@@ -42,10 +45,15 @@ router.get('/', asyncHandler(async (req, res) => {
 
 router.post('/', validateBody(purchaseSchema), asyncHandler(async (req, res) => {
   const ctx = context(req);
-  const lines = req.body.lines.map((line: any) => ({ ...line, total: Number(line.quantity) * Number(line.unitCost) }));
-  const subtotal = lines.reduce((sum: number, line: any) => sum + line.total, 0);
-  const iva = lines.reduce((sum: number, line: any) => sum + (line.total * Number(line.taxRate || 0) / 100), 0);
-  const total = subtotal + iva;
+  const calculated = calculateInvoiceTotals(req.body.lines.map((line: any) => ({
+    quantity: line.quantity,
+    unitAmount: line.unitCost,
+    taxRate: line.taxRate
+  })));
+  const lines = req.body.lines.map((line: any, index: number) => ({ ...line, total: calculated.lines[index].total }));
+  const subtotal = calculated.subtotal;
+  const iva = calculated.tax;
+  const total = calculated.total;
 
   const execution = await runFinancialIdempotentMutation({
     tenantId: ctx.tenantId,
@@ -54,11 +62,11 @@ router.post('/', validateBody(purchaseSchema), asyncHandler(async (req, res) => 
     request: req.body,
     requestId: requestId(req),
     replay: async (tx, record) => {
-      if (!record.resourceId) throw new HttpError(409, 'El resultado original de la compra no tiene recurso asociado.', { code:'IDEMPOTENCY_RESULT_UNAVAILABLE', scope:'purchases.create' });
-      const purchase = await tx.purchaseInvoice.findFirst({ where:{ id:record.resourceId, tenantId:ctx.tenantId }, include:{ supplier:true, lines:true } });
-      if (!purchase) throw new HttpError(409, 'La compra original ya no puede reconstruirse.', { code:'IDEMPOTENCY_RESULT_UNAVAILABLE', scope:'purchases.create' });
-      const ledger = await tx.ledgerEntry.findFirst({ where:{ tenantId:ctx.tenantId, source:'purchase', sourceId:purchase.id }, select:{ id:true } });
-      return { ...purchase, ledgerEntryId:ledger?.id || null };
+      if (!record.resourceId) throw new HttpError(409, 'El resultado original de la compra no tiene recurso asociado.', { code: 'IDEMPOTENCY_RESULT_UNAVAILABLE', scope: 'purchases.create' });
+      const purchase = await tx.purchaseInvoice.findFirst({ where: { id: record.resourceId, tenantId: ctx.tenantId }, include: { supplier: true, lines: true } });
+      if (!purchase) throw new HttpError(409, 'La compra original ya no puede reconstruirse.', { code: 'IDEMPOTENCY_RESULT_UNAVAILABLE', scope: 'purchases.create' });
+      const ledger = await tx.ledgerEntry.findFirst({ where: { tenantId: ctx.tenantId, source: 'purchase', sourceId: purchase.id }, select: { id: true } });
+      return { ...purchase, ledgerEntryId: ledger?.id || null };
     }
   }, async (tx) => {
     if (req.body.status !== 'draft') await assertPeriodOpen(ctx.tenantId, req.body.fiscalPeriod, tx);
@@ -79,7 +87,16 @@ router.post('/', validateBody(purchaseSchema), asyncHandler(async (req, res) => 
           source: 'purchase',
           sourceId: purchase.id,
           purchaseInvoiceId: purchase.id,
-          lines: { create: ledgerLines.map((line) => ({ accountCode: line.accountCode, accountName: line.accountName, debit: Number(line.debit || 0), credit: Number(line.credit || 0), currency: 'VES', exchangeRate: 1 })) }
+          lines: {
+            create: ledgerLines.map((line) => ({
+              accountCode: line.accountCode,
+              accountName: line.accountName,
+              debit: line.debit ?? ZERO,
+              credit: line.credit ?? ZERO,
+              currency: 'VES',
+              exchangeRate: ONE
+            }))
+          }
         }
       });
       ledgerEntryId = ledgerEntry.id;
@@ -111,13 +128,13 @@ router.patch('/:id/cancel', validateBody(cancellationSchema), asyncHandler(async
     replay: async (tx, record) => {
       const resourceId = record.resourceId || purchaseId;
       const purchase = await tx.purchaseInvoice.findFirst({ where: { id: resourceId, tenantId: ctx.tenantId }, include: { supplier: true, lines: true } });
-      if (!purchase) throw new HttpError(409, 'La anulación original ya no puede reconstruirse.', { code:'IDEMPOTENCY_RESULT_UNAVAILABLE', scope });
+      if (!purchase) throw new HttpError(409, 'La anulación original ya no puede reconstruirse.', { code: 'IDEMPOTENCY_RESULT_UNAVAILABLE', scope });
       const reversal = await tx.ledgerEntry.findFirst({ where: { tenantId: ctx.tenantId, source: 'manual', sourceId: `purchase-cancel:${purchase.id}` } });
       return { purchase, reversalId: reversal?.id || null, alreadyCancelled: true };
     }
   }, async (tx) => {
     const lockKey = `${scope}:${ctx.tenantId}:${purchaseId}`;
-    await tx.$queryRaw<Array<{locked:string|null}>>`SELECT pg_advisory_xact_lock(hashtextextended(${lockKey}, 0))::text AS locked`;
+    await tx.$queryRaw<Array<{ locked: string | null }>>`SELECT pg_advisory_xact_lock(hashtextextended(${lockKey}, 0))::text AS locked`;
 
     const purchase = await tx.purchaseInvoice.findFirst({ where: { id: purchaseId, tenantId: ctx.tenantId }, include: { supplier: true, lines: true } });
     if (!purchase) throw new HttpError(404, 'Compra no encontrada.');
@@ -135,7 +152,27 @@ router.patch('/:id/cancel', validateBody(cancellationSchema), asyncHandler(async
     let reversal = await tx.ledgerEntry.findFirst({ where: { tenantId: ctx.tenantId, source: 'manual', sourceId: reversalSourceId } });
     const originalLines = originalEntries.flatMap((entry) => entry.lines);
     if (!reversal && originalLines.length) {
-      reversal = await tx.ledgerEntry.create({ data: { tenantId: ctx.tenantId, fiscalPeriod: purchase.fiscalPeriod, description: `Reverso por anulación de compra ${purchase.number}`, source: 'manual', sourceId: reversalSourceId, purchaseInvoiceId: purchase.id, posted: originalEntries.some((entry) => entry.posted), lines: { create: originalLines.map((line) => ({ accountCode: line.accountCode, accountName: line.accountName, debit: Number(line.credit || 0), credit: Number(line.debit || 0), currency: line.currency, exchangeRate: Number(line.exchangeRate || 1) })) } } });
+      reversal = await tx.ledgerEntry.create({
+        data: {
+          tenantId: ctx.tenantId,
+          fiscalPeriod: purchase.fiscalPeriod,
+          description: `Reverso por anulación de compra ${purchase.number}`,
+          source: 'manual',
+          sourceId: reversalSourceId,
+          purchaseInvoiceId: purchase.id,
+          posted: originalEntries.some((entry) => entry.posted),
+          lines: {
+            create: originalLines.map((line) => ({
+              accountCode: line.accountCode,
+              accountName: line.accountName,
+              debit: line.credit,
+              credit: line.debit,
+              currency: line.currency,
+              exchangeRate: line.exchangeRate
+            }))
+          }
+        }
+      });
     }
     const cancelled = await tx.purchaseInvoice.update({ where: { id: purchase.id }, data: { status: 'cancelled' }, include: { supplier: true, lines: true } });
     return { data: { purchase: cancelled, reversalId: reversal?.id || null, reversedEntries: originalEntries.map((entry) => entry.id), accountingWarning: originalLines.length ? null : 'La compra no tenía asiento contable asociado.', alreadyCancelled: false }, resourceType: 'PurchaseInvoice', resourceId: purchase.id };
@@ -157,7 +194,7 @@ router.delete('/:id', asyncHandler(async (req, res) => {
   if (purchase.status !== 'draft') throw new HttpError(409, 'Solo se eliminan compras en borrador. Las compras emitidas deben anularse.');
   await prisma.purchaseInvoice.delete({ where: { id: purchase.id } });
   await writeAudit({ tenantId: ctx.tenantId, userId: ctx.userId, action: 'delete-draft', entity: 'PurchaseInvoice', entityId: purchase.id, before: purchase, ipAddress: ctx.ip, userAgent: ctx.userAgent });
-  ok(res, { deleted:true, id:purchase.id });
+  ok(res, { deleted: true, id: purchase.id });
 }));
 
 export default router;
