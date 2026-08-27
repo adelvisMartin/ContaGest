@@ -9,17 +9,25 @@ export type PlatformIdentity = {
   tenantId?: string | null;
 };
 
+export function isPlatformPermission(permission: string): boolean {
+  return String(permission || '').startsWith('platform.');
+}
+
 /**
  * Platform authority is intentionally stricter than a permission lookup.
  * A platform operator must be assigned through a platform-scoped role that
- * belongs to ContaGest's internal tenant and explicitly carries platform.manage.
- * Role.system is metadata only and is never an authorization signal.
+ * belongs to ContaGest's internal tenant and explicitly carries the requested
+ * platform permission. Role.system is metadata only and is never an
+ * authorization signal.
  *
  * The query is intentionally SQL until the historical Role.scope column is
  * represented by every generated Prisma client deployed in the fleet.
  */
-export async function hasPlatformAccess(identity: PlatformIdentity): Promise<boolean> {
-  if (!identity.userId || !identity.tenantId) return false;
+export async function hasPlatformAccess(
+  identity: PlatformIdentity,
+  permission = PLATFORM_PERMISSION_KEY
+): Promise<boolean> {
+  if (!identity.userId || !identity.tenantId || !isPlatformPermission(permission)) return false;
 
   const rows = await prisma.$queryRaw<Array<{ allowed: boolean }>>`
     SELECT EXISTS (
@@ -33,13 +41,9 @@ export async function hasPlatformAccess(identity: PlatformIdentity): Promise<boo
         AND r."tenantId" = ${identity.tenantId}
         AND r."scope" = ${PLATFORM_ROLE_SCOPE}
         AND t."rif" = ${PLATFORM_TENANT_RIF}
-        AND p."key" = ${PLATFORM_PERMISSION_KEY}
+        AND p."key" = ${permission}
     ) AS "allowed"
   `;
 
   return rows[0]?.allowed === true;
-}
-
-export function isPlatformPermission(permission: string): boolean {
-  return String(permission || '').startsWith('platform.');
 }
