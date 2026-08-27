@@ -14,7 +14,8 @@
     "onePrimaryResponsibilityPerPr": true,
     "allowedEvidenceStates": ["PASS", "FAIL", "BLOCKED", "NOT_EXECUTED", "SOURCE_REVIEW"],
     "notExecutedIsNeverPass": true,
-    "buildIsNotRelease": true
+    "buildIsNotRelease": true,
+    "closedIssueIsNotRuntimePass": true
   },
   "priorityOrder": [
     "financial-correctness",
@@ -39,16 +40,18 @@
     {
       "issue": 98,
       "area": "observability",
-      "status": "PASS",
-      "scope": "issue-lifecycle",
-      "evidence": "GitHub issue #98 is closed as completed; runtime/release claims still require candidate-SHA evidence when promoted."
+      "status": "SOURCE_REVIEW",
+      "lifecycleState": "closed-completed",
+      "runtimeEvidence": "NOT_EXECUTED",
+      "evidence": "GitHub issue #98 is closed as completed, but issue lifecycle alone is not candidate-SHA runtime evidence. Release verification must re-execute the relevant observability/readiness checks."
     },
     {
       "issue": 99,
       "area": "accessibility-foundation",
-      "status": "PASS",
-      "scope": "issue-lifecycle",
-      "evidence": "GitHub issue #99 is closed as completed; this does not constitute external WCAG certification."
+      "status": "SOURCE_REVIEW",
+      "lifecycleState": "closed-completed",
+      "runtimeEvidence": "NOT_EXECUTED",
+      "evidence": "GitHub issue #99 is closed as completed, but lifecycle state is not browser/manual accessibility evidence for this snapshot and does not constitute external WCAG certification."
     },
     {
       "issue": 100,
