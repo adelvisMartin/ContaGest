@@ -27,6 +27,7 @@ import {
   Typography,
 } from '@mui/material';
 import { createContaGestMuiTheme, muiModeFor } from '../../muiRuntime.js';
+import { formatMoneyExact } from './moneyFormat.js';
 
 export function CgProvider({ state, children }) {
   const mode = muiModeFor(state);
@@ -110,10 +111,7 @@ export function CgDialog({ open, title, children, onClose, confirmLabel = 'Confi
 }
 
 export function CgMoney({ value, currency = 'USD', locale = 'es-VE' }) {
-  const numeric = typeof value === 'number' ? value : Number(String(value ?? '0'));
-  const output = Number.isFinite(numeric)
-    ? new Intl.NumberFormat(locale, { style: 'currency', currency, minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(numeric)
-    : '—';
+  const output = formatMoneyExact(value, { currency, locale });
   return <Box component="span" sx={{ fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>{output}</Box>;
 }
 
