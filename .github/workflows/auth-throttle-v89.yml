@@ -9,6 +9,7 @@ on:
       - 'backend/.env.example'
       - 'backend/prisma/**'
       - 'qa/auth-throttle-issue-89.test.ts'
+      - 'qa/auth-throttle-hardening-issue-89.test.ts'
       - 'docs/AUTH_THROTTLE_ISSUE_89.md'
       - 'docs/AUTH_SECURITY_BENCHMARK_V1117.md'
       - '.github/workflows/auth-throttle-v89.yml'
@@ -104,6 +105,12 @@ jobs:
           set -o pipefail
           npm --workspace backend exec -- tsx --test ../qa/auth-throttle-issue-89.test.ts 2>&1 | tee auth-integration-v89.log
 
+      - name: Security · enumeración, timing coarse guard y retención sin login válido
+        shell: bash
+        run: |
+          set -o pipefail
+          npm --workspace backend exec -- tsx --test ../qa/auth-throttle-hardening-issue-89.test.ts 2>&1 | tee auth-hardening-v89.log
+
       - name: Contrato estático anti-regresión
         shell: bash
         run: |
@@ -114,6 +121,15 @@ jobs:
           grep -n "verifyCaptcha(req.body)" backend/src/modules/auth/auth.routes.ts
           grep -n "authRateLimit, authRoutes" backend/src/app.ts
           grep -n "INVALID_LOGIN_MESSAGE" backend/src/modules/auth/auth.routes.ts
+          grep -n "dummyPasswordHashPromise" backend/src/modules/auth/auth.routes.ts
+          grep -n "rif:throttle.identity.tenantRif" backend/src/modules/auth/auth.routes.ts
+          grep -n "maybePruneExpiredLoginAttempts" backend/src/modules/auth/auth.throttle.ts
+
+      - name: Lint y contratos globales
+        shell: bash
+        run: |
+          set -o pipefail
+          npm run lint 2>&1 | tee auth-lint-v89.log
 
       - name: Typecheck y build backend
         shell: bash
@@ -145,6 +161,8 @@ jobs:
             migration-v89.log
             auth-unit-v89.log
             auth-integration-v89.log
+            auth-hardening-v89.log
+            auth-lint-v89.log
             auth-typecheck-v89.log
             auth-build-v89.log
             candidate-v89.txt
