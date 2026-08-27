@@ -5,18 +5,27 @@ import { commercialCsv, commercialPdfBytes, sanitizeSpreadsheetCell } from '../f
 
 const read=(path)=>fs.readFileSync(new URL(`../${path}`,import.meta.url),'utf8');
 const backend=read('backend/src/modules/commercial/commercial.routes.ts');
+const governance=read('backend/src/modules/commercial/service-restrictions.routes.ts');
+const moduleIndex=read('backend/src/modules/index.ts');
 const page=read('frontend/src/pages/LicensesPage.js');
 const service=read('frontend/src/services/commercialService.js');
+const enhancer=read('frontend/src/services/commercialAccessEnhancer.js');
 const licenseService=read('frontend/src/services/licenseService.js');
 
-test('commercial routes stay platform-only and expose the complete lifecycle',()=>{
+test('commercial routes stay platform-only and expose the complete governed lifecycle',()=>{
   assert.match(backend,/router\.use\(requireTenant,requirePermission\('platform\.manage'\)\)/);
+  assert.match(governance,/router\.use\(requireTenant,requirePermission\('platform\.manage'\)\)/);
   assert.match(backend,/router\.patch\('\/subscriptions\/:id'/);
-  assert.match(backend,/router\.post\('\/subscriptions\/:id\/status'/);
+  assert.match(governance,/router\.post\('\/subscriptions\/:id\/suspend'/);
+  assert.match(governance,/router\.post\('\/subscriptions\/:id\/reactivate'/);
+  assert.match(governance,/router\.post\('\/subscriptions\/:id\/terminate'/);
   assert.match(backend,/router\.get\('\/payments'/);
   assert.match(backend,/router\.post\('\/commissions\/:id\/status'/);
   assert.match(backend,/router\.get\('\/activity'/);
   assert.match(backend,/tenantId:ctx\.tenantId,action:\{startsWith:'commercial\.'/);
+  const governed=moduleIndex.indexOf("router.use('/commercial', serviceRestrictionRoutes)");
+  const legacy=moduleIndex.indexOf("router.use('/commercial', commercialRoutes)");
+  assert.ok(governed>=0&&legacy>governed,'governance router must intercept commercial mutations before the historical router');
 });
 
 test('summary and templates reflect pricing matrix v1 operational limits without a migration',()=>{
@@ -33,12 +42,20 @@ test('summary and templates reflect pricing matrix v1 operational limits without
   assert.match(backend,/AS "activeCustomers"/);
 });
 
-test('subscription suspension uses audited status transitions instead of mass assignment',()=>{
-  assert.match(page,/CommercialService\.transitionSubscription\(sub\.id,next,element\(f,'reason'\)\.value\)/);
+test('subscription restriction fails closed through durable governed cases instead of free-text status mutation',()=>{
+  assert.match(governance,/endpoint genérico de estado fue retirado/);
+  assert.match(governance,/Subscription\.status no puede modificarse por PATCH/);
+  assert.match(governance,/ServiceRestrictionCase/);
+  assert.match(governance,/commercial\.subscription\.suspend/);
+  assert.match(governance,/commercial\.subscription\.reactivate/);
+  assert.match(governance,/commercial\.subscription\.terminate/);
+  assert.match(service,/suspendSubscription/);
+  assert.match(service,/reactivateSubscription/);
+  assert.match(service,/terminateSubscription/);
+  assert.match(service,/transición genérica fue retirada/);
   assert.doesNotMatch(page,/updateSubscription\([^)]*\{\s*status\s*:/);
-  assert.match(backend,/ALLOWED_SUBSCRIPTION_TRANSITIONS/);
-  assert.match(backend,/commercial\.subscription\.status/);
-  assert.match(backend,/statusReason:b\.reason/);
+  assert.match(enhancer,/oldButton\.replaceWith\(clone\)/);
+  assert.match(enhancer,/data-governance-bound|governanceBound/);
 });
 
 test('commercial console exposes filters, exports, contract/module/tenant/payment and audit workflows',()=>{
