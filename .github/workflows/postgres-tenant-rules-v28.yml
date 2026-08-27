@@ -1,0 +1,131 @@
+name: PostgreSQL #28 · reglas anti-tenant reales
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'backend/prisma/**'
+      - 'ops/database/prepare-supabase-ephemeral.sql'
+      - 'qa/postgres-tenant-rules-v28.sql'
+      - 'scripts/run-postgres-tenant-rules-v28.sh'
+      - 'tests/postgres_tenant_rules_issue_28.test.mjs'
+      - '.github/workflows/postgres-tenant-rules-v28.yml'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'backend/package.json'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: postgres-v28-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  postgres-anti-tenant:
+    name: Migraciones + constraints v11.15
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: contagest_rules_e2e
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d contagest_rules_e2e"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+
+    env:
+      NODE_ENV: test
+      API_MODE: prisma
+      DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/contagest_rules_e2e?schema=public
+      DIRECT_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/contagest_rules_e2e?schema=public
+      JWT_SECRET: qa28_only_jwt_secret_0123456789abcdefghijklmnopqrstuvwxyz_ABCDEF
+      LICENSE_HASH_SECRET: qa28_only_license_secret_0123456789abcdefghijklmnopqrstuvwxyz_XYZ
+      SUPABASE_AUTH_FALLBACK: 'false'
+      ALLOW_DEV_TENANT_HEADER: 'false'
+
+    steps:
+      - name: Descargar código
+        uses: actions/checkout@v7
+
+      - name: Configurar Node 22
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Instalar dependencias bloqueadas y cliente PostgreSQL
+        run: |
+          npm ci --no-audit --no-fund
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client
+
+      - name: Preparar prerequisitos Supabase mínimos en base efímera
+        env:
+          PGPASSWORD: postgres
+        shell: bash
+        run: |
+          set -o pipefail
+          psql -h 127.0.0.1 -U postgres -d contagest_rules_e2e \
+            -v ON_ERROR_STOP=1 \
+            -f ops/database/prepare-supabase-ephemeral.sql 2>&1 | tee prerequisitos-v28.log
+
+      - name: Aplicar historial canónico de migraciones
+        shell: bash
+        run: |
+          set -o pipefail
+          npm --workspace backend run prisma:deploy 2>&1 | tee migration-v28.log
+
+      - name: Verificar estado de migraciones
+        shell: bash
+        run: |
+          set -o pipefail
+          npx prisma migrate status --schema backend/prisma/schema.prisma 2>&1 | tee -a migration-v28.log
+
+      - name: Ejecutar contrato estático del gate #28
+        run: node --test tests/postgres_tenant_rules_issue_28.test.mjs
+
+      - name: Ejecutar reglas anti-tenant sobre PostgreSQL real
+        shell: bash
+        run: |
+          set -o pipefail
+          bash scripts/run-postgres-tenant-rules-v28.sh 2>&1 | tee tenant-rules-v28.log
+
+      - name: Capturar inventario y estado de constraints críticos
+        if: always()
+        env:
+          PGPASSWORD: postgres
+        shell: bash
+        run: |
+          {
+            echo '=== PostgreSQL ==='
+            psql -h 127.0.0.1 -U postgres -d contagest_rules_e2e -Atc 'select version();' || true
+            echo '=== Migraciones aplicadas ==='
+            psql -h 127.0.0.1 -U postgres -d contagest_rules_e2e -Atc 'select migration_name || chr(9) || finished_at from "_prisma_migrations" where rolled_back_at is null order by finished_at;' || true
+            echo '=== Triggers críticos ==='
+            psql -h 127.0.0.1 -U postgres -d contagest_rules_e2e -Atc "select event_object_table || chr(9) || trigger_name from information_schema.triggers where trigger_name in ('Tenant_rif_immutable','SubscriptionTenant_limit_trigger','trg_subscription_user_limit','LicenseKey_subscription_tenant_trigger') order by trigger_name;" || true
+            echo '=== RLS legal ==='
+            psql -h 127.0.0.1 -U postgres -d contagest_rules_e2e -Atc "select relname || chr(9) || relrowsecurity from pg_class c join pg_namespace n on n.oid=c.relnamespace where n.nspname='public' and relname in ('LegalAcceptance','CookiePreference') order by relname;" || true
+          } > db-inventory-v28.log 2>&1
+
+      - name: Conservar evidencia de migraciones y constraints
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: evidencia-postgresql-v28
+          path: |
+            prerequisitos-v28.log
+            migration-v28.log
+            tenant-rules-v28.log
+            db-inventory-v28.log
+          if-no-files-found: warn
+          retention-days: 14
