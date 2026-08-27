@@ -45,23 +45,23 @@ export type HipicoReduction={
 };
 
 const RACE_TRANSITIONS:Record<HipicoRaceState,ReadonlySet<HipicoRaceState>>={
-  PREPARING:new Set(['OPEN','CLOSED']),
-  OPEN:new Set(['CLOSED']),
-  CLOSED:new Set(['RESULT_RECEIVED']),
-  RESULT_RECEIVED:new Set(['SETTLEMENT_READY']),
-  SETTLEMENT_READY:new Set(['SETTLED']),
-  SETTLED:new Set(['BALANCED','PUBLISHED']),
-  BALANCED:new Set(['PUBLISHED']),
-  PUBLISHED:new Set(['ARCHIVED']),
-  ARCHIVED:new Set()
+  PREPARING:new Set<HipicoRaceState>(['OPEN','CLOSED']),
+  OPEN:new Set<HipicoRaceState>(['CLOSED']),
+  CLOSED:new Set<HipicoRaceState>(['RESULT_RECEIVED']),
+  RESULT_RECEIVED:new Set<HipicoRaceState>(['SETTLEMENT_READY']),
+  SETTLEMENT_READY:new Set<HipicoRaceState>(['SETTLED']),
+  SETTLED:new Set<HipicoRaceState>(['BALANCED','PUBLISHED']),
+  BALANCED:new Set<HipicoRaceState>(['PUBLISHED']),
+  PUBLISHED:new Set<HipicoRaceState>(['ARCHIVED']),
+  ARCHIVED:new Set<HipicoRaceState>()
 };
 
 const DAY_TRANSITIONS:Record<HipicoDayState,ReadonlySet<HipicoDayState>>={
-  PREPARING:new Set(['OPEN']),
-  OPEN:new Set(['CLOSING']),
-  CLOSING:new Set(['CLOSED']),
-  CLOSED:new Set(['ARCHIVED']),
-  ARCHIVED:new Set()
+  PREPARING:new Set<HipicoDayState>(['OPEN']),
+  OPEN:new Set<HipicoDayState>(['CLOSING']),
+  CLOSING:new Set<HipicoDayState>(['CLOSED']),
+  CLOSED:new Set<HipicoDayState>(['ARCHIVED']),
+  ARCHIVED:new Set<HipicoDayState>()
 };
 
 const RACE_TARGET:Partial<Record<HipicoDomainEventType,HipicoRaceState>>={
@@ -75,7 +75,7 @@ const DAY_TARGET:Partial<Record<HipicoDomainEventType,HipicoDayState>>={
 const EVIDENCE_ONLY=new Set<HipicoDomainEventType>(['BET_RECORDED','CORRECTION','REVERSAL']);
 
 export function initialHipicoState(kind:HipicoAggregateKind):HipicoReducerState{
-  return{kind,status:'PREPARING',stateVersion:0,seenSourceMessageKeys:new Set()};
+  return{kind,status:'PREPARING',stateVersion:0,seenSourceMessageKeys:new Set<string>()};
 }
 
 export function canHipicoTransition(kind:HipicoAggregateKind,from:HipicoState,to:HipicoState){
@@ -91,8 +91,8 @@ export function reduceHipicoDomainEvent(current:HipicoReducerState,event:HipicoD
   if(current.seenSourceMessageKeys.has(key)){
     return{state:current,disposition:'duplicate',previousState,nextState:previousState,reason:'DUPLICATE_SOURCE_MESSAGE'};
   }
-  const seen=new Set(current.seenSourceMessageKeys);seen.add(key);
-  const withSeen={...current,seenSourceMessageKeys:seen};
+  const seen=new Set<string>(current.seenSourceMessageKeys);seen.add(key);
+  const withSeen:HipicoReducerState={...current,seenSourceMessageKeys:seen};
 
   if(event.type==='AMBIGUOUS'||event.type==='UNKNOWN'||event.requiresReview){
     return{state:withSeen,disposition:'review',previousState,nextState:previousState,reason:'AMBIGUOUS_OR_UNKNOWN'};
