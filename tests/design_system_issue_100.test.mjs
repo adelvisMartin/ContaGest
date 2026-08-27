@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
+import { formatMoneyExact } from '../frontend/src/components/ui/cg/moneyFormat.js';
 
 const primitives = readFileSync(new URL('../frontend/src/components/ui/cg/CgPrimitives.jsx', import.meta.url), 'utf8');
 const muiRuntime = readFileSync(new URL('../frontend/src/components/muiRuntime.js', import.meta.url), 'utf8');
@@ -25,6 +26,16 @@ test('issue #100 initial Cg set covers foundation primitives and accessibility n
   assert.match(primitives, /aria-label=\{label\}/);
   assert.match(primitives, /const titleId = `cg-dialog-title-/);
   assert.match(primitives, /aria-labelledby=\{titleId\}/);
+});
+
+test('issue #100 CgMoney preserves exact decimal strings and refuses UI-side rounding', () => {
+  const large = formatMoneyExact('9007199254740993.07', { currency: 'USD', locale: 'es-VE' });
+  assert.match(large.replace(/\D/g, ''), /900719925474099307/);
+  assert.equal(formatMoneyExact('0.1', { currency: 'USD', locale: 'es-VE' }).replace(/\D/g, '').endsWith('010'), true);
+  assert.equal(formatMoneyExact('1.234', { currency: 'USD', locale: 'es-VE' }), '—');
+  assert.equal(formatMoneyExact(1234.5, { currency: 'USD', locale: 'es-VE' }), '—');
+  assert.doesNotMatch(primitives, /Number\s*\(/);
+  assert.match(primitives, /formatMoneyExact/);
 });
 
 test('issue #100 pilots are low-risk surfaces and prevent legacy double promotion', () => {
