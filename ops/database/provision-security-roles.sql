@@ -26,15 +26,9 @@
 
 DO $$
 BEGIN
-  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname='contagest_runtime') THEN
-    CREATE ROLE contagest_runtime;
-  END IF;
-  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname='contagest_backup') THEN
-    CREATE ROLE contagest_backup;
-  END IF;
-  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname='contagest_monitor') THEN
-    CREATE ROLE contagest_monitor;
-  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname='contagest_runtime') THEN CREATE ROLE contagest_runtime; END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname='contagest_backup') THEN CREATE ROLE contagest_backup; END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname='contagest_monitor') THEN CREATE ROLE contagest_monitor; END IF;
 END $$;
 
 ALTER ROLE contagest_runtime WITH LOGIN PASSWORD :'runtime_password'
@@ -58,24 +52,46 @@ GRANT CONNECT ON DATABASE :"target_database" TO contagest_runtime, contagest_bac
 GRANT USAGE ON SCHEMA public TO contagest_runtime, contagest_backup, contagest_monitor;
 REVOKE CREATE ON SCHEMA public FROM contagest_runtime, contagest_backup, contagest_monitor;
 
--- Runtime: DML sin DDL/TRUNCATE/roles. El scope se limita al esquema public de la app.
-GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO contagest_runtime;
-REVOKE TRUNCATE, REFERENCES, TRIGGER ON ALL TABLES IN SCHEMA public FROM contagest_runtime;
-GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO contagest_runtime;
+-- Scope contractual: las tablas gestionadas por Prisma/ContaGest usan nombres PascalCase.
+-- El proyecto Supabase contiene además tablas lower_snake_case de productos auxiliares;
+-- esos objetos NO se conceden a los roles del backend ContaGest.
+DO $$
+DECLARE
+  rec record;
+BEGIN
+  FOR rec IN
+    SELECT c.relname, c.relrowsecurity
+    FROM pg_class c
+    JOIN pg_namespace n ON n.oid=c.relnamespace
+    WHERE n.nspname='public'
+      AND c.relkind IN ('r','p')
+      AND c.relname ~ '^[A-Z]'
+    ORDER BY c.relname
+  LOOP
+    EXECUTE format('GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.%I TO contagest_runtime', rec.relname);
+    EXECUTE format('REVOKE TRUNCATE, REFERENCES, TRIGGER ON TABLE public.%I FROM contagest_runtime', rec.relname);
 
--- Backup: solo lectura. No DELETE/UPDATE/INSERT/TRUNCATE ni DDL.
-GRANT SELECT ON ALL TABLES IN SCHEMA public TO contagest_backup;
-GRANT SELECT ON ALL SEQUENCES IN SCHEMA public TO contagest_backup;
-REVOKE INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER ON ALL TABLES IN SCHEMA public FROM contagest_backup;
+    EXECUTE format('GRANT SELECT ON TABLE public.%I TO contagest_backup', rec.relname);
+    EXECUTE format('REVOKE INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER ON TABLE public.%I FROM contagest_backup', rec.relname);
 
--- Monitor: auditoría y estadísticas, sin acceso de escritura.
-GRANT pg_read_all_stats TO contagest_monitor;
-GRANT SELECT ON TABLE public."AuditLog" TO contagest_monitor;
-REVOKE INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER ON ALL TABLES IN SCHEMA public FROM contagest_monitor;
+    EXECUTE format('REVOKE ALL PRIVILEGES ON TABLE public.%I FROM contagest_monitor', rec.relname);
 
--- El backend actual aplica tenant/RBAC en la capa de aplicación. Para que el rol dedicado
--- no necesite BYPASSRLS ni heredar service_role, se crean políticas SOLO para este rol y
--- SOLO en public. Esto mantiene fuera de alcance auth/storage y futuros esquemas.
+    IF rec.relrowsecurity THEN
+      EXECUTE format('DROP POLICY IF EXISTS contagest_runtime_backend_all ON public.%I', rec.relname);
+      EXECUTE format(
+        'CREATE POLICY contagest_runtime_backend_all ON public.%I FOR ALL TO contagest_runtime USING (true) WITH CHECK (true)',
+        rec.relname
+      );
+      EXECUTE format('DROP POLICY IF EXISTS contagest_backup_read_all ON public.%I', rec.relname);
+      EXECUTE format(
+        'CREATE POLICY contagest_backup_read_all ON public.%I FOR SELECT TO contagest_backup USING (true)',
+        rec.relname
+      );
+    END IF;
+  END LOOP;
+END $$;
+
+-- Secuencias Prisma: runtime las usa para compatibilidad; backup solo puede leerlas.
 DO $$
 DECLARE
   rec record;
@@ -84,27 +100,22 @@ BEGIN
     SELECT c.relname
     FROM pg_class c
     JOIN pg_namespace n ON n.oid=c.relnamespace
-    WHERE n.nspname='public' AND c.relkind='r' AND c.relrowsecurity
+    WHERE n.nspname='public' AND c.relkind='S'
   LOOP
-    EXECUTE format('DROP POLICY IF EXISTS contagest_runtime_backend_all ON public.%I', rec.relname);
-    EXECUTE format(
-      'CREATE POLICY contagest_runtime_backend_all ON public.%I FOR ALL TO contagest_runtime USING (true) WITH CHECK (true)',
-      rec.relname
-    );
-    EXECUTE format('DROP POLICY IF EXISTS contagest_backup_read_all ON public.%I', rec.relname);
-    EXECUTE format(
-      'CREATE POLICY contagest_backup_read_all ON public.%I FOR SELECT TO contagest_backup USING (true)',
-      rec.relname
-    );
+    EXECUTE format('GRANT USAGE, SELECT ON SEQUENCE public.%I TO contagest_runtime', rec.relname);
+    EXECUTE format('GRANT SELECT ON SEQUENCE public.%I TO contagest_backup', rec.relname);
   END LOOP;
 END $$;
 
--- Monitor solo necesita AuditLog bajo RLS.
+-- Monitor: estadísticas + auditoría, sin permiso de escritura en tablas de negocio.
+GRANT pg_read_all_stats TO contagest_monitor;
+GRANT SELECT ON TABLE public."AuditLog" TO contagest_monitor;
 DROP POLICY IF EXISTS contagest_monitor_audit_read ON public."AuditLog";
 CREATE POLICY contagest_monitor_audit_read ON public."AuditLog"
   FOR SELECT TO contagest_monitor USING (true);
 
--- Nunca otorgar membresía de service_role/postgres a estos roles.
+-- Nunca otorgar herencia de roles que eludan RLS ni privilegios de plataforma Supabase.
 REVOKE service_role FROM contagest_runtime, contagest_backup, contagest_monitor;
 
 \echo 'Roles de seguridad ContaGest provisionados. Ejecuta verify-security-roles.sql antes de rotar Vercel.'
+\echo 'Tras cada migración que añada tablas Prisma, vuelve a ejecutar este script con passwords rotados/seguros.'
