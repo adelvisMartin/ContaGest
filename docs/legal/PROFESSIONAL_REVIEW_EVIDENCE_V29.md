@@ -30,16 +30,16 @@ artifacts/release/legal-v29/SHA256SUMS.txt
 
 Con la atestación pendiente el comando termina con código `2` y veredicto `BLOCKED`. Esto es intencional.
 
-El manifest registra hashes SHA-256 de:
+El manifest registra:
 
-- catálogo legal canónico/versionado;
-- atestación empaquetada;
-- matriz jurídica de ingeniería;
-- handoff para revisión profesional;
-- checklist de producción;
-- revisión de fuentes venezolanas.
+- candidate SHA, branch y estado dirty;
+- `LEGAL_DOCUMENT_VERSION`;
+- `contentSetSha256` estable del conjunto canónico revisable;
+- hashes SHA-256 individuales de catálogo, atestación, matriz, handoff, checklist y revisión de fuentes;
+- estado de aprobación profesional e identidad del proveedor;
+- referencia/hash de la evidencia externa aprobada cuando exista.
 
-Así el profesional y el release owner pueden demostrar qué archivos concretos formaron el paquete entregado.
+Un SHA desconocido o un working tree dirty bloquean el gate de evidencia: los archivos revisados deben poder corresponder de forma reproducible a un commit exacto.
 
 ## Entrega al profesional
 
@@ -65,7 +65,8 @@ Una vez recibida la revisión profesional:
 - calcular SHA-256 del archivo/paquete de evidencia aprobado;
 - completar la referencia y hash en la atestación canónica;
 - completar identidad exacta del proveedor revisado;
-- marcar únicamente los `approvals` efectivamente cubiertos;
+- marcar `approvals.professionalReview=true` y `approvals.providerIdentity=true` sólo cuando estén efectivamente cubiertos;
+- marcar únicamente los demás `approvals` efectivamente cubiertos;
 - fijar `reviewedAt`, reviewer y jurisdicción;
 - conservar el mismo `LEGAL_DOCUMENT_VERSION` revisado; si cambian textos materiales, versionar y revisar de nuevo.
 
@@ -102,7 +103,7 @@ npm run qa:legal:evidence
 npm run qa:legal:production
 ```
 
-Ambos deben ejecutarse sobre el SHA candidato. Después corresponde el E2E de primer acceso, rechazo/logout y reaceptación de nueva versión.
+Ambos deben ejecutarse sobre el SHA candidato **limpio**. Después corresponde el E2E de primer acceso, rechazo/logout y reaceptación de nueva versión.
 
 `PASS` de estos comandos demuestra integridad técnica de la cadena y configuración; no sustituye el juicio del profesional que realizó la revisión.
 
