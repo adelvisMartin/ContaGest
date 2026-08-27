@@ -18,6 +18,7 @@ export const CLOUD_CONFIG = Object.freeze({
     saveWorkspaceRpc: String(runtime.saveWorkspaceRpc || "hipico_save_workspace"),
     appendAuditRpc: String(runtime.appendAuditRpc || "hipico_append_audit"),
     profileRpc: String(runtime.profileRpc || "hipico_get_profile"),
+    recentShadowRpc: String(runtime.recentShadowRpc || "hipico_recent_shadow_evaluations"),
     deploymentMode: normalizeDeploymentMode(runtime.deploymentMode),
     allowLabDirectTableFallback: runtime.allowLabDirectTableFallback === true,
     allowSignup: runtime.allowSignup === true,
