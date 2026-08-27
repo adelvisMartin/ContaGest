@@ -9,6 +9,7 @@ const gate = readFileSync(new URL('../scripts/legal-production-gate.mjs', import
 test('issue #29 canonical attestation remains fail-closed until professional approval exists', () => {
   assert.equal(attestation.status, 'pending');
   assert.equal(attestation.approvals.professionalReview, false);
+  assert.equal(attestation.approvals.providerIdentity, false);
   assert.equal(attestation.reviewer.name, '');
   assert.equal(attestation.evidence.sha256, '');
 });
@@ -21,7 +22,12 @@ test('issue #29 evidence manifest hashes canonical legal inputs and never fabric
     'docs/legal/PRODUCTION_LEGAL_CHECKLIST.md',
   ]) assert.match(script, new RegExp(path.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
   assert.match(script, /professional-attestation-not-approved/);
-  assert.match(script, /PASS proves a version\/hash chain only/);
+  assert.match(script, /professional-review-approval-missing/);
+  assert.match(script, /provider-identity-not-approved/);
+  assert.match(script, /candidate-sha-unknown/);
+  assert.match(script, /working-tree-dirty/);
+  assert.match(script, /contentSetSha256/);
+  assert.match(script, /PASS proves a candidate-bound version\/hash chain only/);
   assert.doesNotMatch(script, /status\s*[:=]\s*['"]approved['"]/);
 });
 
@@ -30,4 +36,6 @@ test('issue #29 production gate still requires exact professional evidence SHA a
   assert.match(gate, /LEGAL_PROVIDER_NAME/);
   assert.match(gate, /runtime\.evidence\.matches-attestation/);
   assert.match(gate, /attestation\.status/);
+  assert.match(gate, /approval\.professionalReview/);
+  assert.match(gate, /approval\.providerIdentity/);
 });
