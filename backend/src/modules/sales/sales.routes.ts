@@ -36,7 +36,14 @@ router.post('/', requirePermission('sales.manage'), validateBody(saleSchema), as
     scope:'sales.create',
     key:idempotencyKey(req),
     request:req.body,
-    requestId:requestId(req)
+    requestId:requestId(req),
+    replay:async(tx,record)=>{
+      if(!record.resourceId)throw new HttpError(409,'El resultado original de la venta no tiene recurso asociado.',{code:'IDEMPOTENCY_RESULT_UNAVAILABLE',scope:'sales.create'});
+      const sale=await tx.salesInvoice.findFirst({where:{id:record.resourceId,tenantId:ctx.tenantId},include:{lines:true}});
+      if(!sale)throw new HttpError(409,'La venta original ya no puede reconstruirse.',{code:'IDEMPOTENCY_RESULT_UNAVAILABLE',scope:'sales.create'});
+      const ledger=await tx.ledgerEntry.findFirst({where:{tenantId:ctx.tenantId,source:'sales',sourceId:sale.id},select:{id:true}});
+      return{...sale,ledgerEntryId:ledger?.id||null};
+    }
   },async(tx)=>{
     if(req.body.status!=='draft')await assertPeriodOpen(ctx.tenantId,req.body.fiscalPeriod,tx);
     const sale=await tx.salesInvoice.create({
