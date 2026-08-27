@@ -44,8 +44,12 @@ export const LicenseService = {
     return BackendApi.request(`/licenses/${encodeURIComponent(id)}/revoke`, { method:'PATCH', body:{} });
   },
 
+  async devices(licenseId) {
+    return BackendApi.get(`/license-devices/${encodeURIComponent(licenseId)}`);
+  },
+
   async revokeDevice(licenseId, activationId) {
-    return BackendApi.request(`/licenses/${encodeURIComponent(licenseId)}/devices/${encodeURIComponent(activationId)}/revoke`, { method:'PATCH', body:{} });
+    return BackendApi.request(`/license-devices/${encodeURIComponent(licenseId)}/${encodeURIComponent(activationId)}/revoke`, { method:'PATCH', body:{} });
   },
 
   deviceId,
