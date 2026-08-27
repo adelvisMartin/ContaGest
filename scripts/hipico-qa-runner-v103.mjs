@@ -275,7 +275,7 @@ export function runQa(argv = process.argv.slice(2), root = REPO_ROOT) {
     : { name: 'root-hipico-contracts', required: true, status: 'BLOCKED', command: 'node --test tests/hipico*.test.mjs', cwd: '.', exitCode: null, durationMs: 0, output: 'No Hípico root contract tests discovered.' });
 
   results.push(step('pwa-contract', () => pwaContract(root)));
-  const pwaFiles = [
+  const pwaSyntaxTargets = [
     'frontend/public/hipico-control/assets/js/whatsapp.js',
     'frontend/public/hipico-control/assets/js/operations.js',
     'frontend/public/hipico-control/assets/js/agent-router.js',
@@ -283,11 +283,21 @@ export function runQa(argv = process.argv.slice(2), root = REPO_ROOT) {
     'frontend/public/hipico-control/runtime-config.js',
     'frontend/api/hipico/group-bridge-ingest.js',
     'tools/hipico-whatsapp-bridge/src/index.mjs',
-  ].filter((entry) => existsSync(join(root, entry)));
-  results.push(pwaFiles.length
-    ? commandStep('pwa-backend-static-syntax', 'node', ['--check', pwaFiles[0]], { cwd: root })
-    : { name: 'pwa-backend-static-syntax', required: true, status: 'BLOCKED', command: 'node --check', cwd: '.', exitCode: null, durationMs: 0, output: 'Canonical PWA syntax target missing.' });
-  for (const file of pwaFiles.slice(1)) results.push(commandStep(`syntax:${file}`, 'node', ['--check', file], { cwd: root }));
+  ];
+  const missingSyntaxTargets = pwaSyntaxTargets.filter((entry) => !existsSync(join(root, entry)));
+  results.push({
+    name: 'pwa-static-targets-present',
+    required: true,
+    status: missingSyntaxTargets.length ? 'FAIL' : 'PASS',
+    command: '[internal source inventory]',
+    cwd: '.',
+    exitCode: missingSyntaxTargets.length ? 1 : 0,
+    durationMs: 0,
+    output: missingSyntaxTargets.length ? `Missing canonical static targets: ${missingSyntaxTargets.join(', ')}` : 'All canonical static targets present.',
+  });
+  for (const file of pwaSyntaxTargets.filter((entry) => existsSync(join(root, entry)))) {
+    results.push(commandStep(`syntax:${file}`, 'node', ['--check', file], { cwd: root }));
+  }
 
   const bridgeRoot = join(root, 'tools', 'hipico-whatsapp-web-bridge');
   results.push(commandStep('bridge-install-lock', npm, ['ci', '--no-audit', '--no-fund'], {
@@ -322,14 +332,26 @@ export function runQa(argv = process.argv.slice(2), root = REPO_ROOT) {
     results.push(commandStep('android-debug-apk', npm, ['run', 'android:qa'], { cwd: androidRoot }));
   }
 
-  const inventory = fileInventory(root, [
+  const artifactSources = [
     'frontend/public/hipico-control/manifest.webmanifest',
     'frontend/public/hipico-control/sw.js',
     'frontend/public/hipico-control/build-info.json',
     'tools/hipico-whatsapp-web-bridge/package-lock.json',
     'android/hipico-control-v1130/package-lock.json',
-  ]);
-  results.push({ name: 'artifact-source-hashes', required: true, status: inventory.length >= 4 ? 'PASS' : 'BLOCKED', command: '[internal sha256]', cwd: '.', exitCode: inventory.length >= 4 ? 0 : null, durationMs: 0, output: JSON.stringify(inventory) });
+  ];
+  const inventory = fileInventory(root, artifactSources);
+  const inventoried = new Set(inventory.map((entry) => entry.path));
+  const missingArtifactSources = artifactSources.filter((entry) => !inventoried.has(entry));
+  results.push({
+    name: 'artifact-source-hashes',
+    required: true,
+    status: missingArtifactSources.length ? 'BLOCKED' : 'PASS',
+    command: '[internal sha256]',
+    cwd: '.',
+    exitCode: missingArtifactSources.length ? null : 0,
+    durationMs: 0,
+    output: JSON.stringify({ inventory, missing: missingArtifactSources }),
+  });
 
   const evidence = writeEvidence({ root, metadata, results, mode });
   console.log(`[hipico-qa-v103] ${evidence.overall} · ${metadata.sha} · ${relative(root, evidence.runDir)}`);
