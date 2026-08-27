@@ -1,38 +1,33 @@
 import { defineConfig } from 'vite';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
+const rootDir = dirname(fileURLToPath(import.meta.url));
 const canonicalFontStylesheet = 'https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap';
 
-const pwaInstallPlugin = {
-  name: 'contagest-pwa-install',
+const privateAppPlugin = {
+  name: 'contagest-private-app-shell',
   transformIndexHtml: {
     order: 'pre',
     handler(html) {
+      // Marketing pages are independent HTML entries. Never inject private-app PWA or SEO
+      // metadata into them; the marker exists only in frontend/index.html.
+      if (!html.includes('data-contagest-private-app')) return html;
+
       const metadata = `    <meta name="application-name" content="ContaGest-VE Enterprise" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-title" content="ContaGest" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="format-detection" content="telephone=no" />
-    <meta name="color-scheme" content="light dark" />
-    <link rel="apple-touch-icon" href="/assets/img/logo.png" />
-    <meta name="robots" content="index,follow,max-image-preview:large" />
-    <link rel="canonical" href="https://conta-gest-frontend.vercel.app/" />
-    <meta property="og:type" content="website" />
-    <meta property="og:locale" content="es_VE" />
-    <meta property="og:site_name" content="ContaGest-VE Enterprise" />
-    <meta property="og:title" content="ContaGest-VE Enterprise | Gestión empresarial" />
-    <meta property="og:description" content="ERP empresarial para ventas, inventario, contabilidad, fiscal, bancos, nómina y operaciones." />
-    <meta property="og:url" content="https://conta-gest-frontend.vercel.app/" />
-    <meta name="twitter:card" content="summary" />
-    <meta name="twitter:title" content="ContaGest-VE Enterprise" />
-    <meta name="twitter:description" content="Gestión empresarial segura, adaptable y centralizada." />`;
+    <meta name="color-scheme" content="light dark" />`;
+
       return html
         .replaceAll('11.12.0', '11.14.0')
         .replaceAll('11.13.0', '11.14.0')
         .replace(/<meta name="viewport"[^>]*>/, '<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />')
         .replace(/https:\/\/fonts\.googleapis\.com\/css2\?family=[^"]+/, canonicalFontStylesheet)
         .replace(/<link rel="manifest"[^>]*>/, '<link rel="manifest" href="/manifest.webmanifest" />')
-        .replace(/<link rel="apple-touch-icon"[^>]*>\s*/g, '')
         .replace('</head>', `${metadata}\n</head>`)
         .replace('</body>', '  <script src="/pwa-install.js" defer></script>\n</body>');
     }
@@ -40,10 +35,19 @@ const pwaInstallPlugin = {
 };
 
 export default defineConfig({
-  plugins: [pwaInstallPlugin],
+  plugins: [privateAppPlugin],
   build: {
     chunkSizeWarningLimit: 700,
     rollupOptions: {
+      input: {
+        app: resolve(rootDir, 'index.html'),
+        soluciones: resolve(rootDir, 'soluciones/index.html'),
+        'soluciones-comercios': resolve(rootDir, 'soluciones/comercios/index.html'),
+        'soluciones-contadores': resolve(rootDir, 'soluciones/contadores/index.html'),
+        'soluciones-salud-veterinaria': resolve(rootDir, 'soluciones/salud-veterinaria/index.html'),
+        'soluciones-gimnasios': resolve(rootDir, 'soluciones/gimnasios/index.html'),
+        'soluciones-multiempresa': resolve(rootDir, 'soluciones/multiempresa/index.html')
+      },
       output: {
         manualChunks(id) {
           if (!id.includes('node_modules')) return undefined;

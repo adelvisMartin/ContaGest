@@ -1,0 +1,10 @@
+User-agent: *
+Allow: /soluciones/
+Allow: /brand/
+Allow: /icons/
+Disallow: /api/
+Disallow: /index.html
+Disallow: /*?module=
+Disallow: /*&module=
+
+Sitemap: https://conta-gest-frontend.vercel.app/sitemap.xml
