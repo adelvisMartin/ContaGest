@@ -24,6 +24,23 @@ test('canonical request hashing ignores object key insertion order', () => {
   assert.equal(canonicalRequestHash(left), canonicalRequestHash(right));
 });
 
+test('same idempotency key and same logical payload resolve to the same identity hashes', () => {
+  const key = 'sale-retry-01J6A6D2K4W2N8TRXQ0A123456';
+  const first = { number:'F-001', amount:10, meta:{ currency:'USD', rate:1 } };
+  const retry = { meta:{ rate:1, currency:'USD' }, amount:10, number:'F-001' };
+  assert.equal(hashIdempotencyKey(key), hashIdempotencyKey(key));
+  assert.equal(canonicalRequestHash(first), canonicalRequestHash(retry));
+});
+
+test('same idempotency key and materially different payload have different request hashes', () => {
+  const key = 'sale-retry-01J6A6D2K4W2N8TRXQ0A123456';
+  assert.equal(hashIdempotencyKey(key), hashIdempotencyKey(key));
+  assert.notEqual(
+    canonicalRequestHash({ number:'F-001', amount:10, currency:'USD' }),
+    canonicalRequestHash({ number:'F-001', amount:11, currency:'USD' })
+  );
+});
+
 test('canonical request hashing distinguishes materially different payloads', () => {
   assert.notEqual(
     canonicalRequestHash({ amount: 10, currency: 'USD' }),
