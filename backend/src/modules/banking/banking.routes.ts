@@ -5,6 +5,7 @@ import { requirePermission, requireTenant } from '../../shared/middleware/contex
 import { HttpError, asyncHandler, ok } from '../../shared/http.js';
 import { validateBody } from '../../shared/middleware/validate.js';
 import { writeAudit } from '../../shared/services/audit.service.js';
+import { runFinancialIdempotentMutation } from '../../shared/services/financial-idempotency.service.js';
 
 const router = Router();
 router.use(requireTenant, requirePermission('banking.manage'));
@@ -25,6 +26,8 @@ const reconcileSchema = z.object({
 });
 
 const context = (req: any) => req.context as { tenantId: string; userId?: string; ip?: string; userAgent?: string };
+const requestId = (req: any) => String(req.requestId || '') || null;
+const idempotencyKey = (req: any) => req.header('Idempotency-Key') || null;
 const serializeMovement = (movement: any) => ({
   ...movement,
   amount: Number(movement.credit || 0) > 0 ? Number(movement.credit) : Number(movement.debit || 0),
@@ -70,11 +73,17 @@ router.get('/movements', asyncHandler(async (req, res) => {
 router.post('/movements', validateBody(movementSchema), asyncHandler(async (req, res) => {
   const ctx = context(req);
   const input = req.body as z.infer<typeof movementSchema>;
-  const account = await prisma.bankAccount.findFirst({ where:{ id:input.accountId, tenantId:ctx.tenantId, active:true } });
-  if (!account) throw new HttpError(404, 'Cuenta bancaria no encontrada para el tenant activo.');
-  if (input.currency && input.currency !== account.currency) throw new HttpError(409, 'La moneda del movimiento no coincide con la cuenta.');
-  const delta = input.type === 'income' ? input.amount : -input.amount;
-  const created = await prisma.$transaction(async (tx) => {
+  const execution = await runFinancialIdempotentMutation({
+    tenantId: ctx.tenantId,
+    scope: 'banking.movements.create',
+    key: idempotencyKey(req),
+    request: input,
+    requestId: requestId(req)
+  }, async (tx) => {
+    const account = await tx.bankAccount.findFirst({ where:{ id:input.accountId, tenantId:ctx.tenantId, active:true } });
+    if (!account) throw new HttpError(404, 'Cuenta bancaria no encontrada para el tenant activo.');
+    if (input.currency && input.currency !== account.currency) throw new HttpError(409, 'La moneda del movimiento no coincide con la cuenta.');
+    const delta = input.type === 'income' ? input.amount : -input.amount;
     const movement = await tx.bankMovement.create({
       data: {
         tenantId:ctx.tenantId,
@@ -89,10 +98,16 @@ router.post('/movements', validateBody(movementSchema), asyncHandler(async (req,
       include:{ account:true }
     });
     await tx.bankAccount.update({ where:{ id:account.id }, data:{ balance:{ increment:delta } } });
-    return movement;
+    return { data: serializeMovement(movement), resourceType: 'BankMovement', resourceId: movement.id };
   });
-  await writeAudit({ tenantId:ctx.tenantId, userId:ctx.userId, action:'banking.create-movement', entity:'BankMovement', entityId:created.id, after:serializeMovement(created), ipAddress:ctx.ip, userAgent:ctx.userAgent });
-  ok(res, serializeMovement(created));
+
+  res.setHeader('Idempotency-Replayed', execution.replayed ? 'true' : 'false');
+  if (execution.replayed) {
+    await writeAudit({ tenantId:ctx.tenantId, userId:ctx.userId, action:'idempotency.replay', entity:'BankMovement', entityId:(execution.data as any).id, after:{scope:'banking.movements.create',recordId:execution.recordId,originalRequestId:execution.originalRequestId,requestId:requestId(req)}, ipAddress:ctx.ip, userAgent:ctx.userAgent });
+  } else {
+    await writeAudit({ tenantId:ctx.tenantId, userId:ctx.userId, action:'banking.create-movement', entity:'BankMovement', entityId:(execution.data as any).id, after:execution.data, ipAddress:ctx.ip, userAgent:ctx.userAgent });
+  }
+  ok(res, execution.data, execution.responseCode);
 }));
 
 router.patch('/movements/:id/reconcile', validateBody(reconcileSchema), asyncHandler(async (req, res) => {
