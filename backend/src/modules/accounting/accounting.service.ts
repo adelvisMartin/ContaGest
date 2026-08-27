@@ -1,7 +1,9 @@
+import type { Prisma } from '@prisma/client';
 import { prisma } from '../../database/prisma.js';
 import { HttpError } from '../../shared/http.js';
 
 export type LedgerLineInput = { accountCode: string; accountName: string; debit?: number; credit?: number; currency?: string; exchangeRate?: number };
+type AccountingDb = Pick<Prisma.TransactionClient, 'closingPeriod' | 'ledgerEntry'>;
 
 export function assertBalanced(lines: LedgerLineInput[]) {
   const debit = lines.reduce((s, l) => s + Number(l.debit || 0), 0);
@@ -11,8 +13,8 @@ export function assertBalanced(lines: LedgerLineInput[]) {
   return { debit, credit };
 }
 
-export async function assertPeriodOpen(tenantId: string, fiscalPeriod: string) {
-  const closed = await prisma.closingPeriod.findFirst({
+export async function assertPeriodOpen(tenantId: string, fiscalPeriod: string, db: AccountingDb = prisma) {
+  const closed = await db.closingPeriod.findFirst({
     where: {
       tenantId,
       period:fiscalPeriod,
@@ -24,10 +26,10 @@ export async function assertPeriodOpen(tenantId: string, fiscalPeriod: string) {
   if (closed) throw new HttpError(409, `El período ${fiscalPeriod} está cerrado para contabilidad. Registra la corrección en un período abierto mediante reverso o ajuste autorizado.`);
 }
 
-export async function createLedgerEntry(input: { tenantId: string; fiscalPeriod: string; description: string; source?: any; sourceId?: string; lines: LedgerLineInput[] }) {
+export async function createLedgerEntry(input: { tenantId: string; fiscalPeriod: string; description: string; source?: any; sourceId?: string; lines: LedgerLineInput[] }, db: AccountingDb = prisma) {
   assertBalanced(input.lines);
-  await assertPeriodOpen(input.tenantId, input.fiscalPeriod);
-  return prisma.ledgerEntry.create({
+  await assertPeriodOpen(input.tenantId, input.fiscalPeriod, db);
+  return db.ledgerEntry.create({
     data: {
       tenantId: input.tenantId,
       fiscalPeriod: input.fiscalPeriod,
