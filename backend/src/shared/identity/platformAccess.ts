@@ -14,35 +14,30 @@ export type PlatformIdentity = {
  * A platform operator must be assigned through a platform-scoped role that
  * belongs to ContaGest's internal tenant and explicitly carries platform.manage.
  * Role.system is metadata only and is never an authorization signal.
+ *
+ * The query is intentionally SQL until the historical Role.scope column is
+ * represented by every generated Prisma client deployed in the fleet.
  */
 export async function hasPlatformAccess(identity: PlatformIdentity): Promise<boolean> {
   if (!identity.userId || !identity.tenantId) return false;
 
-  const assignment = await prisma.userRole.findFirst({
-    where: {
-      userId: identity.userId,
-      role: {
-        tenantId: identity.tenantId,
-        scope: PLATFORM_ROLE_SCOPE,
-        tenant: { rif: PLATFORM_TENANT_RIF },
-        permissions: { some: { permission: { key: PLATFORM_PERMISSION_KEY } } }
-      }
-    },
-    select: { userId: true }
-  });
+  const rows = await prisma.$queryRaw<Array<{ allowed: boolean }>>`
+    SELECT EXISTS (
+      SELECT 1
+      FROM public."UserRole" ur
+      JOIN public."Role" r ON r."id" = ur."roleId"
+      JOIN public."Tenant" t ON t."id" = r."tenantId"
+      JOIN public."RolePermission" rp ON rp."roleId" = r."id"
+      JOIN public."Permission" p ON p."id" = rp."permissionId"
+      WHERE ur."userId" = ${identity.userId}
+        AND r."tenantId" = ${identity.tenantId}
+        AND r."scope" = ${PLATFORM_ROLE_SCOPE}
+        AND t."rif" = ${PLATFORM_TENANT_RIF}
+        AND p."key" = ${PLATFORM_PERMISSION_KEY}
+    ) AS "allowed"
+  `;
 
-  return Boolean(assignment);
-}
-
-export function isPlatformUserSnapshot(user: any, tenantRif?: string | null): boolean {
-  if (String(tenantRif || '').trim().toUpperCase() !== PLATFORM_TENANT_RIF) return false;
-  const assignments = Array.isArray(user?.userRoles) ? user.userRoles : [];
-  return assignments.some((assignment: any) => {
-    const role = assignment?.role;
-    if (role?.scope !== PLATFORM_ROLE_SCOPE) return false;
-    const permissions = Array.isArray(role?.permissions) ? role.permissions : [];
-    return permissions.some((item: any) => item?.permission?.key === PLATFORM_PERMISSION_KEY);
-  });
+  return rows[0]?.allowed === true;
 }
 
 export function isPlatformPermission(permission: string): boolean {
