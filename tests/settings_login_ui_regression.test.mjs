@@ -9,6 +9,7 @@ const settings=read('frontend/src/pages/SettingsPage.js');
 const login=read('frontend/src/pages/LoginPage.js');
 const runtime=read('frontend/src/styles/erp-runtime.css');
 const visual=read('frontend/src/styles/contagest-visual-system-v12.css');
+const urlState=read('frontend/src/services/urlStateService.js');
 
 test('settings route uses canonical sections and button-based navigation',()=>{
   for(const token of ['settings-navigation','cgx-section-head','cgx-section-body','cg-record-fields','cgx-dashboard-grid','cgx-module-standard']){
@@ -38,10 +39,22 @@ test('canonical buttons have visible non-hover variant backgrounds',()=>{
   assert.match(runtime,/body \.cgx-btn\.cgx-btn-danger[\s\S]*background:var\(--cg-v-danger-soft\)!important/);
 });
 
+test('settings navigation is flat and login control rows cannot overlap',()=>{
+  assert.match(runtime,/body \.settings-navigation,[\s\S]*settings-nav-button[\s\S]*box-shadow:none!important/);
+  assert.match(runtime,/login-captcha-head[\s\S]*grid-template-columns:28px minmax\(0,1fr\) 30px/);
+  assert.match(runtime,/login-captcha-refresh[\s\S]*position:static!important/);
+  assert.match(runtime,/login-captcha-body[\s\S]*position:relative/);
+});
+
 test('login submit uses the shared primary style without a page-level color override',()=>{
   assert.match(login,/className:'w-full login-submit'/);
   assert.doesNotMatch(login,/login-submit[^\n]*style=/);
   assert.doesNotMatch(login,/color:var\(--cg-v-bg\)!important/);
   assert.match(login,/AuthService\.login/);
   assert.match(login,/AuthService\.completeCoordinateLogin/);
+});
+
+test('command palette navigation completes the click before rerendering the route',()=>{
+  assert.match(urlState,/const fromCommandPalette = Boolean\(target\.dataset\.commandRoute\)/);
+  assert.match(urlState,/if \(fromCommandPalette\) queueMicrotask\(\(\) => UrlStateService\.navigate\(route, params\)\)/);
 });
