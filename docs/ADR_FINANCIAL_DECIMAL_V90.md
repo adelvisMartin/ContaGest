@@ -6,7 +6,7 @@
 
 ## Contexto
 
-PostgreSQL/Prisma ya persiste dinero con `Decimal(18,2)`, cantidades con `Decimal(18,3)`, tasas de cambio con `Decimal(18,4)` y porcentajes fiscales habituales con `Decimal(5,2)`. El problema estaba en la capa de aplicación: distintos módulos convertían esos valores a `Number` antes de sumar, multiplicar, calcular impuestos, balancear asientos o actualizar saldos.
+PostgreSQL/Prisma ya persiste dinero con `Decimal(18,2)`, cantidades con `Decimal(18,3)`, tasas de cambio y parámetros de tasa con `Decimal(18,4)`, y porcentajes fiscales habituales con `Decimal(5,2)`. El problema estaba en la capa de aplicación: distintos módulos convertían esos valores a `Number` antes de sumar, multiplicar, calcular impuestos, balancear asientos, calcular KPI o actualizar saldos.
 
 ## Decisión
 
@@ -25,7 +25,8 @@ Los helpers canónicos viven en:
 | dinero | 2 | 18 | `money()` |
 | cantidad / stock | 3 | 18 | `quantity()` |
 | tasa de cambio | 4 | 18 | `exchangeRate()` |
-| porcentaje | 2 | 5 | `percentage()` |
+| tasa/parámetro genérico | 4 | 18 | `rate()` |
+| porcentaje fiscal de línea | 2 | 5 | `percentage()` |
 
 Las entradas con más decimales de los permitidos se rechazan; no se truncan silenciosamente. También se rechazan `NaN`, `Infinity`, notación exponencial y valores que excedan la precisión declarada.
 
@@ -39,6 +40,8 @@ Para facturas bajo el esquema actual:
 2. `cantidad × precio/costo` se redondea a 2 decimales cuando se materializa el `total` de la línea (`Decimal(18,2)`);
 3. el impuesto se calcula sobre esos totales de línea persistibles y se redondea una vez, después de agregarlos, a 2 decimales;
 4. el total de factura es `subtotal + impuesto`, ambos ya en escala monetaria.
+
+Para KPI monetarios de RRHH, los importes persistidos se agregan como Decimal y un promedio se cuantiza a 2 decimales únicamente al producir el valor monetario del KPI.
 
 Esta ADR **no redefine reglas tributarias venezolanas** ni decide cómo debe redondearse una obligación fiscal cuando una norma específica establezca otra regla. Una modificación regulatoria debe aportar su fuente y ticket propio.
 
@@ -59,9 +62,11 @@ Durante la transición se aceptan:
 
 El backend convierte inmediatamente la entrada al primitive Decimal. Para cifras grandes o cuando el valor exacto de transporte importe, el cliente debe enviar string; un JSON number puede haber perdido precisión antes de llegar al servidor.
 
+Las tasas BCV externas también se normalizan como Decimal antes de entrar al caché de aplicación. Un proveedor que entregue una tasa fuera de `Decimal(18,4)` se considera inválido para este contrato en lugar de truncarse silenciosamente.
+
 ### Salida
 
-Los objetos Prisma conservan su serialización decimal. En endpoints que históricamente devolvían números (`banking`, `payroll`, `trial-balance`) se mantiene temporalmente el campo numérico legacy y se agrega su equivalente exacto `*Exact` como string decimal.
+Los objetos Prisma conservan su serialización decimal. En endpoints que históricamente devolvían números (`banking`, `payroll`, `employees`, `hr/kpis`, `currency/bcv`, `trial-balance`) se mantiene temporalmente el campo numérico legacy y se agrega su equivalente exacto `*Exact` como string decimal.
 
 Ejemplos:
 
@@ -91,10 +96,11 @@ No se modifica el DDL en #90 porque la auditoría del schema actual confirmó es
 - ventas: líneas, subtotal, IVA, total, posting y reversos;
 - compras: líneas, subtotal, IVA, total, posting y reversos;
 - bancos: movimientos, deltas, balance y borrado de movimiento;
-- nómina: entradas y agregados de período;
+- nómina/RRHH: recibos, agregados de período, salario de empleado y KPI monetarios;
+- moneda: normalización de tasa BCV y compatibilidad de respuesta;
 - CRUD financiero: producto/costo/precio/stock, cuenta bancaria, salario y períodos fiscales.
 
-La ruta fiscal inspeccionada no realiza aritmética monetaria, por lo que no se alteró.
+La ruta fiscal inspeccionada no realiza aritmética monetaria, por lo que no se alteró. El módulo `reports` actual publica contratos vacíos y no recalcula importes; `exports` transporta valores recibidos sin volver a derivar totales. Por eso no existe allí un segundo cálculo monetario que migrar en este ticket.
 
 ## Pruebas obligatorias
 
@@ -102,6 +108,7 @@ La ruta fiscal inspeccionada no realiza aritmética monetaria, por lo que no se 
 - golden invoices con cantidades, porcentajes fraccionarios y tasa de cambio;
 - ledger exacto `0.10 + 0.20 == 0.30`;
 - PostgreSQL real: venta → factura → asiento, compra → asiento, banco antes/después, trial balance y agregados de nómina;
+- contratos estáticos que impiden reintroducir `Number` en los caminos monetarios críticos;
 - casos inválidos: `NaN`, `Infinity`, notación exponencial, escala excesiva y precisión fuera de rango.
 
 ## Migración desde `Number`
