@@ -10,6 +10,11 @@ const queryString = (params = {}) => {
   return result ? `?${result}` : '';
 };
 
+const idempotencyHeaders = () => {
+  const id = globalThis.crypto?.randomUUID?.();
+  return id ? { 'Idempotency-Key':`cg-${id}` } : {};
+};
+
 export const TasksService = {
   list(filters = {}) { return BackendApi.get(`/tasks${queryString({ q:filters.search, status:filters.status })}`); },
   create(data) { return BackendApi.post('/tasks', data); },
@@ -42,17 +47,35 @@ export const BankingService = {
     return (rows||[]).map(mapMovement);
   },
   async createAccount(data) {
-    return mapAccount(await BackendApi.create('bank-accounts',{
-      bankName:data.bank,
-      accountNo:data.account,
-      currency:data.currency,
-      balance:Number(data.openingBalance||0),
-      active:true
-    }));
+    const account = await BackendApi.request('/banking/accounts',{
+      method:'POST',
+      headers:idempotencyHeaders(),
+      body:{
+        bankName:data.bank,
+        accountNo:data.account,
+        currency:data.currency,
+        openingBalance:String(data.openingBalance||'0')
+      }
+    });
+    return mapAccount(account);
   },
-  createMovement(data) { return BackendApi.post('/banking/movements',{...data,amount:Number(data.amount||0)}).then(mapMovement); },
-  reconcile(id,matched) { return BackendApi.request(`/banking/movements/${encodeURIComponent(id)}/reconcile`,{method:'PATCH',body:{matched}}).then(mapMovement); },
-  removeMovement(id) { return BackendApi.delete(`/banking/movements/${encodeURIComponent(id)}`); }
+  createMovement(data) { return BackendApi.post('/banking/movements',{...data,amount:String(data.amount||'0')}).then(mapMovement); },
+  reconcile(id,matched,ledgerEntryId) {
+    return BackendApi.request(`/banking/movements/${encodeURIComponent(id)}/reconcile`,{
+      method:'PATCH',
+      body:{matched,...(ledgerEntryId!==undefined?{ledgerEntryId}: {})}
+    }).then(mapMovement);
+  },
+  reverse(id,reason) {
+    return BackendApi.request(`/banking/movements/${encodeURIComponent(id)}/reverse`,{
+      method:'POST',headers:idempotencyHeaders(),body:{reason}
+    }).then(mapMovement);
+  },
+  correct(id,data) {
+    return BackendApi.request(`/banking/movements/${encodeURIComponent(id)}/correct`,{
+      method:'POST',headers:idempotencyHeaders(),body:{...data,amount:String(data.amount||'0')}
+    });
+  }
 };
 
 const mapEmployee = (employee) => ({
