@@ -1,5 +1,6 @@
 import { execFileSync } from 'node:child_process';
 import { copyFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { gzipSync } from 'node:zlib';
 
 console.log('[issue26] regenerando package-lock con npm...');
@@ -11,11 +12,13 @@ execFileSync('npm', ['install', '--package-lock-only', '--ignore-scripts'], {
 
 const lock = readFileSync('package-lock.json');
 const packed = gzipSync(lock, { level: 9 }).toString('base64');
-const chunkSize = 8000;
+const sha256 = createHash('sha256').update(lock).digest('hex');
+const chunkSize = 3500;
 const total = Math.ceil(packed.length / chunkSize);
+console.log(`ISSUE26_LOCK_META bytes=${lock.length} packed=${packed.length} sha256=${sha256} parts=${total}`);
 for (let i = 0; i < total; i += 1) {
   const chunk = packed.slice(i * chunkSize, (i + 1) * chunkSize);
-  console.log(`ISSUE26_LOCK_GZIP_PART ${i + 1}/${total} ${chunk}`);
+  console.log(`ISSUE26_LOCK_PART_${String(i + 1).padStart(2, '0')}_OF_${String(total).padStart(2, '0')} ${chunk}`);
 }
 
 mkdirSync('frontend/dist', { recursive: true });
