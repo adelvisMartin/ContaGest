@@ -36,6 +36,25 @@ function cleanPayload(value) {
   );
 }
 
+function needsFinancialIdempotency(method, path, body) {
+  if (String(method || 'GET').toUpperCase() !== 'POST') return false;
+  const normalized = String(path || '').split('?')[0].replace(/^\/api\/v1/, '');
+  if (normalized === '/banking/movements' || normalized === '/accounting/entries') return true;
+  if (normalized === '/sales' || normalized === '/purchases') return String(body?.status || 'issued') !== 'draft';
+  return false;
+}
+
+function createFinancialIdempotencyKey() {
+  if (!isBrowser || !globalThis.crypto) return '';
+  if (typeof globalThis.crypto.randomUUID === 'function') return `cg-${globalThis.crypto.randomUUID()}`;
+  if (typeof globalThis.crypto.getRandomValues === 'function') {
+    const bytes = new Uint8Array(24);
+    globalThis.crypto.getRandomValues(bytes);
+    return `cg-${Array.from(bytes, (value) => value.toString(16).padStart(2, '0')).join('')}`;
+  }
+  return '';
+}
+
 async function parseResponse(response) {
   const contentType = response.headers.get('content-type') || '';
   if (contentType.includes('application/json')) return response.json().catch(() => ({}));
@@ -159,14 +178,22 @@ export const BackendApi = {
     const { noAuth = false, raw = false, skipRefresh = false, headers: customHeaders = {}, ...fetchOptions } = options;
     const publicRequest = noAuth || isPublicRequest(path);
     const method = String(fetchOptions.method || 'GET').toUpperCase();
-    const isFormData = typeof FormData !== 'undefined' && fetchOptions.body instanceof FormData;
-    const body = fetchOptions.body && typeof fetchOptions.body !== 'string' && !isFormData
-      ? JSON.stringify(cleanPayload(fetchOptions.body))
-      : fetchOptions.body;
+    const rawBody = fetchOptions.body;
+    const isFormData = typeof FormData !== 'undefined' && rawBody instanceof FormData;
+    const cleanedBody = rawBody && typeof rawBody !== 'string' && !isFormData ? cleanPayload(rawBody) : rawBody;
+    const body = cleanedBody && typeof cleanedBody !== 'string' && !isFormData
+      ? JSON.stringify(cleanedBody)
+      : cleanedBody;
     const csrf = isUnsafeMethod(method) && !publicRequest ? csrfToken() : '';
+    const explicitIdempotencyKey = customHeaders['Idempotency-Key'] || customHeaders['idempotency-key'] || '';
+    const generatedIdempotencyKey = !explicitIdempotencyKey && needsFinancialIdempotency(method, path, cleanedBody)
+      ? createFinancialIdempotencyKey()
+      : '';
+    const idempotencyKey = explicitIdempotencyKey || generatedIdempotencyKey;
     const headers = {
       ...(!isFormData && body !== undefined ? { 'content-type': 'application/json' } : {}),
       ...(csrf ? { 'x-csrf-token':csrf } : {}),
+      ...(idempotencyKey ? { 'Idempotency-Key':idempotencyKey } : {}),
       ...customHeaders
     };
     const requestOptions = {
@@ -181,7 +208,18 @@ export const BackendApi = {
     try {
       response = await fetchApi(this.baseUrl, path, requestOptions);
     } catch (error) {
-      throw apiError('No se pudo conectar con la API. Revisa la conexión y vuelve a intentar.', 0, { cause:String(error?.message || error) });
+      if (idempotencyKey) {
+        try {
+          // Financial retries reuse the exact same key. If the first request committed
+          // but its response was lost, the server returns the stored result instead of
+          // executing the effect again.
+          response = await fetchApi(this.baseUrl, path, requestOptions);
+        } catch (retryError) {
+          throw apiError('No se pudo conectar con la API. Revisa la conexión y vuelve a intentar.', 0, { cause:String(retryError?.message || retryError), idempotent:true });
+        }
+      } else {
+        throw apiError('No se pudo conectar con la API. Revisa la conexión y vuelve a intentar.', 0, { cause:String(error?.message || error) });
+      }
     }
 
     if (response.status === 401 && !publicRequest && !skipRefresh && path !== '/auth/refresh') {
