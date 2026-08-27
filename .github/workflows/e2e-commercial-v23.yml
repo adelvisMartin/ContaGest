@@ -1,4 +1,4 @@
-name: E2E comercial #23 · PostgreSQL efímero
+name: E2E comercial #23/#30 · PostgreSQL efímero
 
 on:
   pull_request:
@@ -9,10 +9,12 @@ on:
       - 'backend/prisma/**'
       - 'frontend/src/pages/LicensesPage.js'
       - 'frontend/src/services/commercialService.js'
+      - 'frontend/src/services/commercialAccessEnhancer.js'
       - 'frontend/src/services/licenseService.js'
       - 'frontend/src/utils/commercialExport.js'
       - 'qa/commercial-backend-real-v23.test.ts'
       - 'tests/commercial_console_issue_23.test.mjs'
+      - 'tests/v11_15_service_restriction_governance.test.mjs'
       - 'ops/database/prepare-supabase-ephemeral.sql'
       - 'package.json'
       - '.github/workflows/e2e-commercial-v23.yml'
@@ -88,8 +90,8 @@ jobs:
       - name: Validar tipos del backend
         run: npm run typecheck
 
-      - name: Ejecutar contratos de regresión del issue #23
-        run: node --test tests/commercial_console_issue_23.test.mjs
+      - name: Ejecutar contratos comerciales y de gobernanza
+        run: node --test tests/commercial_console_issue_23.test.mjs tests/v11_15_service_restriction_governance.test.mjs
 
       - name: Ejecutar E2E comercial con backend y PostgreSQL reales
         shell: bash
@@ -101,7 +103,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: evidencia-e2e-comercial-v23
+          name: evidencia-e2e-comercial-v23-30
           path: e2e-commercial-v23.log
           if-no-files-found: warn
           retention-days: 14
