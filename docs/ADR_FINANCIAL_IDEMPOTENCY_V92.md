@@ -17,7 +17,7 @@ Toda mutación financiera que adopte este contrato usa:
 
 `tenant autenticado + scope de servidor + Idempotency-Key opaca + hash canónico del request validado`.
 
-El servidor persiste `IdempotencyRecord` en PostgreSQL. La reserva de la key, el efecto financiero y el guardado del resultado ocurren dentro de la misma transacción.
+El servidor persiste `IdempotencyRecord` en PostgreSQL. La reserva de la key, el efecto financiero y el guardado de su referencia ocurren dentro de la misma transacción.
 
 ### Identidad
 
@@ -33,7 +33,7 @@ La primera transacción intenta insertar `(tenantId, scope, keyHash)` con `ON CO
 
 PostgreSQL serializa la colisión mediante el unique index. Un request concurrente con la misma identidad espera la resolución de la primera transacción y luego:
 
-1. si `requestHash` coincide y el estado es `succeeded`, reutiliza `responsePayload`;
+1. si `requestHash` coincide y el estado es `succeeded`, reconstruye el resultado desde `resourceId` dentro del mismo tenant;
 2. si el hash difiere, responde `409 IDEMPOTENCY_KEY_REUSED`;
 3. si la primera transacción hace rollback, su reserva desaparece y el retry puede convertirse en propietario.
 
@@ -64,9 +64,11 @@ Esta compatibilidad es transitoria: clientes legacy sin key no obtienen garantí
 
 Una futura política de retención sólo podrá expirar keys si existe evidencia de que la ventana de replay ya no puede producir un duplicado empresarial o si una constraint de negocio duradera conserva la misma garantía.
 
-## Respuesta almacenada
+## Respuesta reconstruible
 
-Se persiste únicamente la respuesta necesaria para reproducir el resultado lógico, junto con:
+Para ventas, compras, movimientos bancarios y asientos manuales no se persiste un snapshot de respuesta: `responsePayload` queda `NULL`.
+
+Se conserva únicamente:
 
 - `resourceType`;
 - `resourceId`;
@@ -76,6 +78,10 @@ Se persiste únicamente la respuesta necesaria para reproducir el resultado lóg
 - `hitCount`;
 - timestamps.
 
+En un replay, cada consumidor vuelve a consultar el recurso mediante `resourceId + tenantId` y reconstruye la forma pública de la respuesta. Si el recurso ya no existe, responde `409 IDEMPOTENCY_RESULT_UNAVAILABLE`; nunca responde datos de otro tenant ni inventa un resultado.
+
+La primitiva mantiene un fallback de `responsePayload` para futuros consumidores sin reconstrucción explícita, pero los cuatro flujos financieros iniciales no lo usan.
+
 ## Observabilidad
 
 Eventos estructurados, sin key raw ni payload:
@@ -83,6 +89,7 @@ Eventos estructurados, sin key raw ni payload:
 - `idempotency.miss`
 - `idempotency.hit`
 - `idempotency.conflict`
+- `idempotency.concurrent_wait` cuando la reserva queda bloqueada por una colisión concurrente apreciable
 - `idempotency.failed`
 - `idempotency.missing`
 
@@ -94,6 +101,8 @@ Los replays exitosos generan además evidencia `idempotency.replay` en `AuditLog
 - tenant: sólo contexto autenticado;
 - scope: sólo servidor;
 - hashes SHA-256 en persistencia;
+- los flujos financieros iniciales no persisten snapshots de respuesta;
+- reconstrucción de replay filtrada por `resourceId + tenantId`;
 - CORS permite `Idempotency-Key` únicamente dentro de la política de orígenes existente;
 - rate limits existentes siguen aplicando;
 - idempotencia no sustituye RBAC, aislamiento tenant, período abierto, balance contable ni constraints de negocio.
@@ -110,11 +119,12 @@ El cambio de datos es aditivo. Para rollback de aplicación puede revertirse el 
 - la semántica es consistente entre módulos;
 - conflictos de key/payload son detectables;
 - existe correlación entre request original y replay;
-- la constraint de concurrencia vive en PostgreSQL, no sólo en memoria del proceso.
+- la constraint de concurrencia vive en PostgreSQL, no sólo en memoria del proceso;
+- los consumidores financieros iniciales minimizan datos persistidos al reconstruir la respuesta desde la entidad.
 
 ### Costes / riesgo residual
 
-- una respuesta reducida ocupa almacenamiento adicional;
+- cada replay reconstruido requiere una lectura del recurso y, en ventas/compras, una lectura de su asiento asociado;
 - clientes legacy sin header siguen fuera de la garantía durante la transición;
 - #90 (Money/Decimal) y #91 (posting/ledger inmutable) siguen siendo dependencias complementarias, no absorbidas por este ADR;
 - exactly-once distribuido con proveedores externos permanece fuera de alcance.
