@@ -60,9 +60,9 @@ const customerSchema=z.object({
 const agentSchema=z.object({name:z.string().trim().min(2).max(120),email:z.string().email().optional(),phone:z.string().trim().max(60).optional(),commissionRate:z.coerce.number().min(0).max(100).default(10),notes:z.string().trim().max(1000).optional()});
 const subscriptionSchema=z.object({
   customerAccountId:z.string().min(1).max(120),salesAgentId:z.string().min(1).max(120).optional(),planCode:z.string().trim().min(2).max(80),
-  customerSegment:z.string().trim().max(80).default('smb'),billingCycle:z.enum(['monthly','quarterly','semiannual','annual','manual']).default('monthly'),
+  customerSegment:z.string().trim().max(80).optional(),billingCycle:z.enum(['monthly','quarterly','semiannual','annual','manual']).default('monthly'),
   currency:z.string().trim().min(3).max(8).default('USD'),amount:z.coerce.number().min(0).default(0),status:z.enum(SUBSCRIPTION_STATUSES).default('trial'),
-  startsAt:z.coerce.date().optional(),nextRenewalAt:z.coerce.date().optional(),graceUntil:z.coerce.date().optional(),maxTenants:z.coerce.number().int().min(1).max(1000).default(1),maxUsers:z.coerce.number().int().min(1).max(100000).default(3),
+  startsAt:z.coerce.date().optional(),nextRenewalAt:z.coerce.date().optional(),graceUntil:z.coerce.date().optional(),maxTenants:z.coerce.number().int().min(1).max(1000).optional(),maxUsers:z.coerce.number().int().min(1).max(100000).optional(),
   supportLevel:z.string().trim().max(50).default('standard'),modules:z.array(z.string().min(1).max(100)).default([]),packages:z.array(z.string().min(1).max(80)).default([]),additionalTenantUnitPriceUsd:z.coerce.number().min(0).default(12)
 });
 const patchSubscriptionSchema=z.object({
@@ -143,10 +143,14 @@ router.get('/subscriptions',asyncHandler(async(req,res)=>{
 router.post('/subscriptions',asyncHandler(async(req,res)=>{
   const b=subscriptionSchema.parse(req.body||{});const customer=await prisma.$queryRaw<any[]>`SELECT "id" FROM public."CustomerAccount" WHERE "id"=${b.customerAccountId} LIMIT 1`;if(!customer[0])throw new HttpError(404,'Cliente comercial no encontrado.');
   if(b.salesAgentId){const agent=await prisma.$queryRaw<any[]>`SELECT "id" FROM public."SalesAgent" WHERE "id"=${b.salesAgentId} AND "status"='active' LIMIT 1`;if(!agent[0])throw new HttpError(404,'Vendedor activo no encontrado.');}
-  const template=(PLAN_TEMPLATES as any)[b.planCode];const modules=b.modules.length?b.modules:(template?.modules||[]);const maxTenants=b.maxTenants||(template?.maxTenants||1);const maxUsers=b.maxUsers||(template?.maxUsers||3);
+  const template=(PLAN_TEMPLATES as any)[b.planCode];
+  const modules=b.modules.length?b.modules:(template?.modules||[]);
+  const customerSegment=b.customerSegment??template?.segment??'smb';
+  const maxTenants=b.maxTenants??template?.maxTenants??1;
+  const maxUsers=b.maxUsers??template?.maxUsers??3;
   const startsAt=b.startsAt||new Date();const rows=await prisma.$queryRaw<any[]>`
     INSERT INTO public."Subscription" ("id","customerAccountId","salesAgentId","planCode","customerSegment","billingCycle","currency","amount","status","startsAt","nextRenewalAt","graceUntil","maxTenants","maxUsers","supportLevel","metadata","createdAt","updatedAt")
-    VALUES (gen_random_uuid()::text,${b.customerAccountId},${b.salesAgentId||null},${b.planCode},${b.customerSegment},${b.billingCycle},${b.currency.toUpperCase()},${b.amount},${b.status},${startsAt},${b.nextRenewalAt||null},${b.graceUntil||null},${maxTenants},${maxUsers},${b.supportLevel},${JSON.stringify({additionalTenantUnitPriceUsd:b.additionalTenantUnitPriceUsd,packages:b.packages})}::jsonb,now(),now()) RETURNING *`;
+    VALUES (gen_random_uuid()::text,${b.customerAccountId},${b.salesAgentId||null},${b.planCode},${customerSegment},${b.billingCycle},${b.currency.toUpperCase()},${b.amount},${b.status},${startsAt},${b.nextRenewalAt||null},${b.graceUntil||null},${maxTenants},${maxUsers},${b.supportLevel},${JSON.stringify({additionalTenantUnitPriceUsd:b.additionalTenantUnitPriceUsd,packages:b.packages})}::jsonb,now(),now()) RETURNING *`;
   const sub=rows[0];const entries:Array<{moduleCode:string;kind:string}>=modules.map((moduleCode:string)=>({moduleCode,kind:'core'}));for(const packageKey of b.packages){const pkg=(OPTIONAL_PACKAGES as any)[packageKey];if(pkg)for(const moduleCode of pkg.modules)entries.push({moduleCode,kind:pkg.kind});}
   for(const item of [...new Map(entries.map(item=>[item.moduleCode,item])).values()])await prisma.$executeRaw`INSERT INTO public."ModuleEntitlement" ("id","subscriptionId","moduleCode","kind","status","quantity","metadata","createdAt","updatedAt") VALUES (gen_random_uuid()::text,${sub.id},${item.moduleCode},${item.kind},'active',1,'{}'::jsonb,now(),now()) ON CONFLICT ("subscriptionId","moduleCode") DO UPDATE SET "kind"=EXCLUDED."kind","status"='active',"updatedAt"=now()`;
   await prisma.$executeRaw`UPDATE public."CustomerAccount" SET "status"=CASE WHEN ${b.status}='trial' THEN 'trial' ELSE 'active' END,"updatedAt"=now() WHERE "id"=${b.customerAccountId}`;
