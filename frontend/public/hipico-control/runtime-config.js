@@ -9,5 +9,8 @@ globalThis.__HIPICO_CONFIG__ = Object.freeze({
   "saveWorkspaceRpc": "hipico_save_workspace",
   "appendAuditRpc": "hipico_append_audit",
   "profileRpc": "hipico_get_profile",
+  "recentShadowRpc": "hipico_recent_shadow_evaluations",
+  "deploymentMode": "production",
+  "allowLabDirectTableFallback": false,
   "allowSignup": false
 });
