@@ -13,6 +13,8 @@ import {
   sha256File,
 } from '../scripts/hipico-qa-runner-v103.mjs';
 
+const runnerSource = readFileSync(new URL('../scripts/hipico-qa-runner-v103.mjs', import.meta.url), 'utf8');
+
 test('issue #103 only exposes exact evidence states', () => {
   assert.deepEqual(EVIDENCE_STATES, ['PASS', 'FAIL', 'BLOCKED', 'NOT_EXECUTED']);
 });
@@ -29,10 +31,17 @@ test('issue #103 missing tool is BLOCKED and never PASS', () => {
   assert.notEqual(result.status, 'PASS');
 });
 
-test('issue #103 recognizes external network/toolchain blockers', () => {
+test('issue #103 recognizes external network/browser/toolchain blockers', () => {
   assert.equal(classifyFailure('npm ERR! code EAI_AGAIN'), 'BLOCKED');
   assert.equal(classifyFailure('Android SDK was not found'), 'BLOCKED');
+  assert.equal(classifyFailure('browserType.launch: Host system is missing dependencies'), 'BLOCKED');
   assert.equal(classifyFailure('AssertionError: expected 2 but got 3'), 'FAIL');
+});
+
+test('issue #103 browser preflight actually launches Chromium instead of checking a path only', () => {
+  assert.match(runnerSource, /chromium\.launch\(\{headless:true\}\)/);
+  assert.match(runnerSource, /await browser\.close\(\)/);
+  assert.match(runnerSource, /Playwright Chromium launch PASS/);
 });
 
 test('issue #103 redacts tokens, Venezuelan phones and full WhatsApp group IDs', () => {
@@ -67,6 +76,13 @@ test('issue #103 captures SHA/branch/dirty state without cleaning a path with sp
   assert.equal(dirty.sha, clean.sha);
   assert.equal(dirty.dirty, true);
   assert.equal(readFileSync(join(repo, 'untracked.txt'), 'utf8'), 'keep me\n');
+});
+
+test('issue #103 refuses to call unknown candidate SHA a verified run and keeps fatal evidence SHA-bound', () => {
+  assert.match(runnerSource, /preflight-candidate-sha/);
+  assert.match(runnerSource, /status: \/\^\[0-9a-f\]\{40\}\$\/i\.test\(metadata\.sha\) \? 'PASS' : 'BLOCKED'/);
+  assert.match(runnerSource, /artifacts', 'qa', 'hipico-v103', safeSha/);
+  assert.doesNotMatch(runnerSource, /tmpdir\(\).*hipico-qa-v103-fatal/);
 });
 
 test('issue #103 SHA-256 evidence is deterministic across repeated reads', () => {
