@@ -1,0 +1,120 @@
+/* Control Hípico canonical component layer.
+ * New UI must use these contracts or an explicitly documented domain component.
+ */
+
+:where(button, [role="button"], a, input, select, textarea):focus-visible {
+  outline: 2px solid var(--hc-focus);
+  outline-offset: 2px;
+  box-shadow: var(--hc-focus-ring);
+}
+
+:where(.button, .icon-button, .nav-button, .tab, .quick-action, .quick-chip, .race-pill, .race-arrow) {
+  min-height: var(--hc-touch);
+  transition: background-color var(--hc-motion-fast) var(--hc-ease), border-color var(--hc-motion-fast) var(--hc-ease), color var(--hc-motion-fast) var(--hc-ease), transform var(--hc-motion-fast) var(--hc-ease);
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.button {
+  border-radius: var(--hc-radius-sm);
+  font-weight: var(--hc-weight-bold);
+}
+.button--primary { background: var(--hc-brand); color: #fff; border-color: var(--hc-brand); }
+.button--primary:hover { background: var(--hc-brand-strong); border-color: var(--hc-brand-strong); }
+.button--success { background: var(--hc-success-soft); color: var(--hc-success); }
+.button--danger { background: var(--hc-danger-soft); color: var(--hc-danger); }
+.button--ghost { background: transparent; }
+.button:disabled, .button[aria-disabled="true"] { opacity: .52; cursor: not-allowed; transform: none; }
+.icon-button { width: var(--hc-touch); min-width: var(--hc-touch); padding: 0; border-radius: var(--hc-radius-sm); }
+
+.input, .select, .textarea {
+  min-height: var(--hc-touch);
+  border-radius: var(--hc-radius-sm);
+  border-color: var(--hc-border);
+  background: var(--hc-surface);
+  color: var(--hc-text);
+}
+.input::placeholder, .textarea::placeholder { color: var(--hc-text-disabled); }
+.input[aria-invalid="true"], .select[aria-invalid="true"], .textarea[aria-invalid="true"] { border-color: var(--hc-danger); }
+.field label { color: var(--hc-text-subtle); font-size: var(--hc-font-size-sm); font-weight: var(--hc-weight-bold); }
+.field__error { color: var(--hc-danger); font-size: var(--hc-font-size-sm); }
+.field__hint { color: var(--hc-text-subtle); font-size: var(--hc-font-size-sm); }
+
+.dialog, .modal {
+  border: 1px solid var(--hc-border);
+  border-radius: var(--hc-radius-lg);
+  background: var(--hc-surface);
+  color: var(--hc-text);
+  box-shadow: var(--hc-shadow-dialog);
+  max-width: min(640px, calc(100vw - 2 * var(--hc-space-4)));
+  max-height: min(88dvh, 920px);
+  overflow: auto;
+}
+.drawer { background: var(--hc-surface); border-color: var(--hc-border); }
+
+.tabs { border-color: var(--hc-border); border-radius: var(--hc-radius-sm); background: var(--hc-surface-muted); }
+.tab { border-radius: var(--hc-radius-xs); font-weight: var(--hc-weight-bold); }
+.tab.is-active, .tab[aria-selected="true"] { background: var(--hc-brand-soft); color: var(--hc-brand-strong); }
+
+.badge { border-radius: var(--hc-radius-pill); font-variant-numeric: tabular-nums; }
+.badge--success { background: var(--hc-success-soft); color: var(--hc-success); }
+.badge--warning { background: var(--hc-warning-soft); color: var(--hc-warning); }
+.badge--danger { background: var(--hc-danger-soft); color: var(--hc-danger); }
+.badge--info { background: var(--hc-info-soft); color: var(--hc-info); }
+
+.card, .kpi { border-color: var(--hc-border); background: var(--hc-surface); box-shadow: var(--hc-shadow-1); }
+.kpi strong, .money, .amount, .balance, .result-number, .tabular-number,
+.summary-table td, .summary-table th, [data-money], [data-balance], [data-result] {
+  font-variant-numeric: tabular-nums lining-nums;
+}
+.money, .amount, .balance { white-space: nowrap; }
+.amount-positive { color: var(--hc-success); }
+.amount-negative { color: var(--hc-danger); }
+
+.table-wrap { max-width: 100%; overflow: auto; overscroll-behavior-inline: contain; }
+.summary-table { min-width: 100%; }
+.summary-table th { text-align: left; color: var(--hc-text-subtle); font-size: var(--hc-font-size-sm); }
+.list { display: grid; gap: var(--hc-space-2); margin: 0; padding: 0; list-style: none; }
+.list__item { min-height: var(--hc-touch); border-bottom: 1px solid var(--hc-border); padding: var(--hc-space-3) 0; }
+
+/* Shared operational state primitive. */
+.ui-state {
+  display: grid;
+  gap: var(--hc-space-2);
+  justify-items: start;
+  padding: var(--hc-space-5);
+  border: 1px solid var(--hc-border);
+  border-radius: var(--hc-radius-md);
+  background: var(--hc-surface-raised);
+  color: var(--hc-text-subtle);
+}
+.ui-state__title { margin: 0; color: var(--hc-text); font-size: var(--hc-font-size-lg); }
+.ui-state[data-state="error"] { border-color: color-mix(in srgb, var(--hc-danger) 35%, var(--hc-border)); background: var(--hc-danger-soft); }
+.ui-state[data-state="offline"], .ui-state[data-state="stale"] { border-color: color-mix(in srgb, var(--hc-warning) 35%, var(--hc-border)); background: var(--hc-warning-soft); }
+.ui-state[data-state="permission"] { border-color: color-mix(in srgb, var(--hc-info) 35%, var(--hc-border)); background: var(--hc-info-soft); }
+.ui-state[data-state="loading"]::before {
+  content: ""; width: 20px; height: 20px; border: 2px solid var(--hc-border); border-top-color: var(--hc-brand); border-radius: 50%; animation: hc-spin .8s linear infinite;
+}
+@keyframes hc-spin { to { transform: rotate(360deg); } }
+
+/* Pilot normalization: auth, workspace shell and operation cards now inherit canonical contracts. */
+.auth-card, .sidebar, .topbar, .card, .race-card, .quick-action, .risk-card, .bet-card { border-color: var(--hc-border); }
+.auth-card, .card, .race-card, .quick-action, .risk-card, .bet-card { background-color: var(--hc-surface); }
+.nav-button.is-active, .race-pill.is-active, .quick-chip:hover { background: var(--hc-brand-soft); color: var(--hc-brand-strong); }
+
+@media (max-width: 430px) {
+  .content { padding-inline: var(--hc-space-3); }
+  .page-head { align-items: stretch; }
+  .page-actions, .row-actions { width: 100%; }
+  .page-actions > .button, .row-actions > .button { flex: 1 1 auto; }
+  .dialog, .modal { max-width: calc(100vw - 2 * var(--hc-space-3)); }
+}
+
+@media (min-width: 431px) and (max-width: 768px) {
+  .content { padding-inline: var(--hc-space-5); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ui-state[data-state="loading"]::before { animation: none; border-top-color: var(--hc-border-strong); }
+  :where(.button, .icon-button, .nav-button, .tab, .quick-action, .quick-chip, .race-pill, .race-arrow) { transition: none; }
+}

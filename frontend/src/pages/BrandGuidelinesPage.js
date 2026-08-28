@@ -1,4 +1,5 @@
 import { Badge, Button, DataTable, PageHeader, Section } from '../components/ui/index.js';
+import { mountCgFoundationPilot } from '../components/ui/cg/CgPrimitives.jsx';
 import { downloadText } from '../utils/dom.js';
 
 const paletteRows = [
@@ -24,10 +25,15 @@ export const BrandGuidelinesPage = {
     return `<section class="cgx-page cg-brand-guide-v15">
       ${PageHeader({
         eyebrow:'Sistema visual',
-        title:'Guía de interfaz ContaGest v15',
-        description:'Contrato visual operativo para que los módulos compartan la misma jerarquía, densidad, navegación y comportamiento Light/Dark.',
+        title:'Guía de interfaz ContaGest',
+        description:'Contrato visual operativo para que los módulos compartan jerarquía, densidad, navegación, accesibilidad y comportamiento Light/Dark.',
         actions:`${Button({id:'btnBrandAssets',text:'Exportar tokens',icon:'fa-download',variant:'secondary'})}${Button({id:'btnTechDoc',text:'Arquitectura',icon:'fa-code',variant:'secondary'})}${Button({id:'btnBrandGuide',text:'Claims y marca',icon:'fa-file-lines'})}`,
-        meta:['Light/Dark misma geometría','Inter + Font Awesome','Sin gradients / glass / blobs']
+        meta:['MUI 9 canónico + Cg*','Light/Dark misma geometría','Sin gradients / glass / blobs']
+      })}
+      ${Section({
+        title:'Foundation MUI 9 · piloto #100',
+        subtitle:'Superficie de bajo riesgo para validar primitives Cg* sin reescribir rutas operativas ni crear otro theme.',
+        children:'<div id="cgDesignSystemPilot" data-no-mui></div>'
       })}
       ${Section({
         title:'Principios no negociables',
@@ -66,9 +72,12 @@ export const BrandGuidelinesPage = {
       })}
     </section>`;
   },
-  mount(_state,{Toast}) {
+  mount(state,{Toast}) {
+    mountCgFoundationPilot(document.getElementById('cgDesignSystemPilot'), state, 'brand');
     const content = [
-      'ContaGest Visual System v15',
+      'ContaGest Design System · MUI 9 foundation #100',
+      'Canonical theme factory: frontend/src/components/muiRuntime.js#createContaGestMuiTheme',
+      'Canonical Cg primitives: frontend/src/components/ui/cg/CgPrimitives.jsx',
       'Light BG: #F4F5F7',
       'Light surface: #FFFFFF',
       'Dark BG: #111214',
@@ -77,7 +86,7 @@ export const BrandGuidelinesPage = {
       'Dark brand: #7C86FF',
       'Page title: 20–24 px',
       'KPI: 16–20 px',
-      'Control: 38 px',
+      'Control: 38 px desktop / 44 px touch',
       'Sidebar: 244 px / 68 px rail',
       'App icon: /icons/contagest-app.svg',
       'Brand logo: /brand/contagest-logo.svg',
@@ -87,8 +96,8 @@ export const BrandGuidelinesPage = {
       'Claims: docs/MARKETING_CLAIMS_REGISTER.md',
       'Pricing: docs/COMMERCIAL_PRICING_V1.md'
     ].join('\n');
-    document.getElementById('btnBrandAssets')?.addEventListener('click',()=>{downloadText('contagest-visual-system-v15.txt',content);Toast.show('Tokens y assets v15 exportados.','success');});
-    document.getElementById('btnTechDoc')?.addEventListener('click',()=>Toast.show('Arquitectura: docs/ARCHITECTURE.md y docs/design-system/.','info'));
+    document.getElementById('btnBrandAssets')?.addEventListener('click',()=>{downloadText('contagest-design-system-foundation.txt',content);Toast.show('Tokens y contrato del Design System exportados.','success');});
+    document.getElementById('btnTechDoc')?.addEventListener('click',()=>Toast.show('Arquitectura: docs/design/ADR-100-MUI9-DESIGN-SYSTEM.md y docs/design/DESIGN_SYSTEM.md.','info'));
     document.getElementById('btnBrandGuide')?.addEventListener('click',()=>Toast.show('Guías: docs/BRAND_GUIDELINES.md, docs/MARKETING_CLAIMS_REGISTER.md y docs/MARKETING_SEO_V1.md.','info'));
   }
 };
