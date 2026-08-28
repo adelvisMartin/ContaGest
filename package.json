@@ -51,6 +51,7 @@
     "qa:ui:58": "npm run audit:visual:strict && npm run audit:functions:strict && npm run doctor:changed && npm run doctor:design && npm run test:browser:58",
     "qa:a11y": "npm run test:browser:a11y && npm run test:browser:contrast",
     "ci": "npm run lint && npm run test && npm run build && npm run check:bundle",
+    "qa:legal:evidence": "node scripts/legal-review-evidence-v29.mjs",
     "qa:legal:production": "node scripts/legal-production-gate.mjs",
     "qa:production": "npm run qa:legal:production && node scripts/production-readiness.mjs",
     "qa:production:full": "npm run qa:legal:production && node scripts/production-readiness.mjs --full",
