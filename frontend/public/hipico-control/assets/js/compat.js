@@ -127,4 +127,8 @@
   watchdog = setTimeout(() => {
     if (!globalScope.__HIPICO_BOOT_OK__) globalScope.__HIPICO_BOOT_FAIL__("El arranque superó 12 segundos. Usa Reintentar o Recuperación segura.");
   }, 12000);
+
+  // Independent trust-state indicator: it does not modify money or sync; it only
+  // makes offline/stale authority visible even while the main UI is being refactored.
+  import("./offline-status.js").catch(() => {});
 })(typeof globalThis !== "undefined" ? globalThis : window);
