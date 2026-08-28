@@ -14,6 +14,8 @@
     "typecheck": "npm --workspace backend run typecheck",
     "lint": "npm run typecheck && node --test tests/*.test.mjs",
     "test:hipico": "npm --workspace backend run test:hipico && node --test tests/hipico_real_operativa_shadow_contract.test.mjs tests/hipico_v13_security_contract.test.mjs",
+    "test:hipico:runner": "node --test tests/hipico_qa_runner_issue_103.test.mjs",
+    "qa:hipico": "node scripts/hipico-qa-runner-v103.mjs",
     "test:visual": "node --test tests/visual_system_v12_contract.test.mjs tests/visual_module_catalog_contract.test.mjs tests/visual_module_adapter_contract.test.mjs tests/visual_consolidation_v13_contract.test.mjs tests/erp_ux_v14_contract.test.mjs",
     "test:visual:v15": "node --test tests/visual_system_v12_contract.test.mjs tests/visual_module_adapter_contract.test.mjs tests/erp_ux_v14_contract.test.mjs",
     "test:visual:v14": "npm run test:visual:v15",

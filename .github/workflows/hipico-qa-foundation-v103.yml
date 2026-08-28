@@ -1,0 +1,94 @@
+name: Control Hipico QA Foundation #103
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'frontend/public/hipico-control/**'
+      - 'frontend/api/hipico/**'
+      - 'backend/src/modules/hipico-bot/**'
+      - 'tools/hipico-whatsapp-bridge/**'
+      - 'tools/hipico-whatsapp-web-bridge/**'
+      - 'android/hipico-control-v1130/**'
+      - 'tests/hipico*.test.mjs'
+      - 'scripts/hipico-qa-runner-v103.mjs'
+      - 'docs/hipico/QA-RUNNER.md'
+      - 'docs/hipico/CONTROL_HIPICO_V1130_RELEASE_AND_QA.md'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/hipico-qa-foundation-v103.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: hipico-qa-v103-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  qa-foundation:
+    name: PWA + backend + Bridge evidence
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      HIPICO_QA_ANDROID: skip
+    steps:
+      - name: Checkout exact candidate
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Configure Node 22
+        uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install root lock and Chromium for browser preflight
+        run: |
+          npm ci --no-audit --no-fund
+          npx playwright install --with-deps chromium
+
+      - name: Runner contract regression
+        run: node --test tests/hipico_qa_runner_issue_103.test.mjs
+
+      - name: Execute canonical Hípico QA runner
+        run: npm run qa:hipico -- --mode=ci
+
+      - name: Preserve SHA-bound evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: hipico-qa-v103-${{ github.sha }}
+          path: artifacts/qa/hipico-v103/
+          if-no-files-found: error
+          retention-days: 30
+
+  android-wrapper-parity:
+    name: Android wrapper parity contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout exact candidate
+        uses: actions/checkout@v7
+
+      - name: Configure Node 22
+        uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: android/hipico-control-v1130/package-lock.json
+
+      - name: Install Android wrapper lockfile
+        working-directory: android/hipico-control-v1130
+        run: npm ci --no-audit --no-fund
+
+      - name: Verify PWA and wrapper parity
+        working-directory: android/hipico-control-v1130
+        run: npm run verify:web
+
+      - name: Explain APK boundary
+        run: |
+          echo 'Parity PASS does not claim APK build/install PASS.'
+          echo 'The dedicated hipico-android-rc workflow remains authoritative for JDK/Android SDK APK build evidence.'
