@@ -106,12 +106,40 @@ El reporte vive en:
 artifacts/release/governance-v97.json
 ```
 
+El verificador captura candidate SHA, branch y dirty state. Un SHA desconocido o un working tree dirty queda `BLOCKED`: no existe evidencia reproducible si los bytes evaluados no corresponden al commit indicado.
+
 Estados permitidos:
 
 - `PASS`: protección live leída y todas las reglas estructurales mínimas presentes;
 - `FAIL`: GitHub respondió y la protección está ausente/incompleta;
-- `BLOCKED`: GitHub no permitió inspeccionar la regla o infraestructura impidió la verificación;
+- `BLOCKED`: GitHub no permitió inspeccionar la regla, el candidato no es reproducible o infraestructura impidió la verificación;
 - `NOT_EXECUTED`: no se ejecutó la consulta live.
+
+## Gate de promoción formal
+
+La configuración declarativa y el readiness del código no deben evaluarse como mundos separados. Antes de una promoción formal se ejecuta:
+
+```bash
+GITHUB_TOKEN=... node scripts/release-promotion-gate-v97.mjs
+```
+
+Este orquestador exige estrictamente en orden:
+
+1. **candidate reproducibility**: SHA de 40 hex, branch capturada y working tree limpio;
+2. gate legal de producción;
+3. verificación **live** de protección de `main`, ligada al mismo candidate SHA;
+4. readiness completo sólo cuando los tres gates anteriores están en `PASS`.
+
+Genera:
+
+```text
+artifacts/release/promotion-v97.json
+artifacts/release/promotion-v97.md
+```
+
+Si el candidato no es reproducible, legal/governance/readiness quedan `NOT_EXECUTED`. Si legal o governance están `BLOCKED`, el QA costoso queda explícitamente `NOT_EXECUTED` y la promoción queda `BLOCKED`; no se fabrica un verde parcial. El script nunca aplica branch protection, mergea, despliega ni firma releases.
+
+Mientras GitHub reporte `main protected=false`, una ejecución con permisos de lectura debe terminar `FAIL`; si la plataforma/plan impide leer protection, debe terminar `BLOCKED`. Ninguno de esos estados autoriza promoción.
 
 ## Governance test
 

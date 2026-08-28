@@ -1,18 +1,34 @@
+import { execFileSync } from 'node:child_process';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 
 const repository = String(process.env.GITHUB_REPOSITORY || 'adelvisMartin/ContaGest').trim();
 const branch = String(process.env.CG_GOVERNANCE_BRANCH || 'main').trim();
 const token = String(process.env.GITHUB_TOKEN || '').trim();
-const candidateSha = String(process.env.GITHUB_SHA || 'local').trim();
 const reportPath = resolve(process.env.CG_GOVERNANCE_REPORT || 'artifacts/release/governance-v97.json');
 
+function gitText(args) {
+  try { return execFileSync('git', args, { cwd: process.cwd(), encoding: 'utf8', windowsHide: true }).trim(); }
+  catch { return ''; }
+}
+
+const candidateSha = String(process.env.GITHUB_SHA || gitText(['rev-parse', 'HEAD']) || '').trim();
+const candidateBranch = String(
+  process.env.GITHUB_HEAD_REF
+  || process.env.GITHUB_REF_NAME
+  || gitText(['branch', '--show-current'])
+  || 'DETACHED',
+).trim();
+const candidateDirty = Boolean(gitText(['status', '--porcelain=v1']));
+
 const report = {
-  schemaVersion: 1,
+  schemaVersion: 2,
   issue: 97,
   repository,
   branch,
-  candidateSha,
+  candidateSha: candidateSha || null,
+  candidateBranch,
+  candidateDirty,
   checkedAt: new Date().toISOString(),
   status: 'NOT_EXECUTED',
   branchProtected: null,
@@ -49,7 +65,11 @@ async function github(path) {
   return { response, body };
 }
 
-if (!token) {
+if (!candidateSha || !/^[0-9a-f]{40}$/i.test(candidateSha)) {
+  fail('BLOCKED', 'No se pudo ligar la verificación a un candidate SHA exacto.', 2);
+} else if (candidateDirty) {
+  fail('BLOCKED', 'El working tree está dirty; la evidencia live no corresponde de forma reproducible al candidate SHA.', 2);
+} else if (!token) {
   fail('NOT_EXECUTED', 'GITHUB_TOKEN no está disponible; no se consultó protección live.', 2);
 } else {
   try {
@@ -104,7 +124,7 @@ if (!token) {
           } else {
             report.status = 'PASS';
             persist();
-            console.log(`[governance-v97] PASS ${repository}@${branch}; required checks=${report.requiredStatusChecks.length}`);
+            console.log(`[governance-v97] PASS ${repository}@${branch}; candidate=${candidateSha}; required checks=${report.requiredStatusChecks.length}`);
           }
         }
       }
