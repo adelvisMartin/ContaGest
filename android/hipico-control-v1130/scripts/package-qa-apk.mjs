@@ -6,11 +6,15 @@ import { fileURLToPath } from 'node:url';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const wrapper = path.resolve(here, '..');
+const repo = path.resolve(wrapper, '../..');
 const inputApk = path.join(wrapper, 'android', 'app', 'build', 'outputs', 'apk', 'debug', 'app-debug.apk');
 const outDir = path.join(wrapper, 'artifacts');
-const version = JSON.parse(fs.readFileSync(path.join(wrapper, 'package.json'), 'utf8')).version;
+const wrapperPackage = JSON.parse(fs.readFileSync(path.join(wrapper, 'package.json'), 'utf8'));
+const policy = JSON.parse(fs.readFileSync(path.join(repo, 'products/hipico-control/release-policy.json'), 'utf8'));
+const version = wrapperPackage.version;
 const outputApk = path.join(outDir, `Hipico-Control-v${version}-debug.apk`);
 
+if (version !== policy.version) throw new Error(`Wrapper ${version} != release policy ${policy.version}`);
 if (!fs.existsSync(inputApk) || fs.statSync(inputApk).size === 0) {
   throw new Error(`APK debug no encontrado: ${inputApk}`);
 }
@@ -49,10 +53,18 @@ if (aapt) {
   if (result.status === 0) fs.writeFileSync(path.join(outDir, 'APK_BADGING.txt'), result.stdout, 'utf8');
 }
 
+const candidateSha = String(process.env.HIPICO_RELEASE_SHA || process.env.GITHUB_SHA || 'unknown-sha').trim();
 fs.writeFileSync(path.join(outDir, 'SHA256SUMS.txt'), `${sha256}  ${path.basename(outputApk)}\n`, 'utf8');
 fs.writeFileSync(path.join(outDir, 'QA_APK_METADATA.json'), JSON.stringify({
   generatedAt: new Date().toISOString(),
+  candidateSha,
   version,
+  versionCode: policy.versionCode,
+  channel: policy.channel,
+  workspaceSchema: policy.workspaceSchema,
+  parserContract: policy.parserContract,
+  applicationId: policy.androidApplicationId,
+  signingClass: policy.signing.debugQa,
   file: path.basename(outputApk),
   ...checks
 }, null, 2));
