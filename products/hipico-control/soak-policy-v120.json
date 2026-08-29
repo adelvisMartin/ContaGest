@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "product": "control-hipico",
+  "releaseMinimumHours": 24,
+  "recommendedHours": 48,
+  "preferredRcHours": 72,
+  "sampleSeconds": 30,
+  "thresholds": {
+    "maxRssGrowthMbPerHour": 32,
+    "maxHeapGrowthMbPerHour": 24,
+    "maxEventLoopP95Ms": 250,
+    "maxBacklogAgeSeconds": 120,
+    "maxUnexpectedDuplicateResponses": 0,
+    "maxLostDecisions": 0,
+    "maxContextLeaks": 0,
+    "maxHealthFailureRate": 0.01
+  },
+  "requiredDrills": [
+    "bridge-restart",
+    "backend-restart",
+    "lab-reconnect",
+    "source-session-reconnect-readonly"
+  ],
+  "allowedDrillStatuses": ["PASS", "FAIL", "BLOCKED", "NOT_EXECUTED"],
+  "sourceInvariant": "SOURCE remains read-only for the entire run; all generated replay/response traffic is LAB/local only.",
+  "releaseRule": "Duration >=24h, all required drills PASS, no threshold violation and exact candidate SHA are required for release PASS. Short runs are SMOKE_ONLY."
+}
