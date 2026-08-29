@@ -24,6 +24,7 @@ export type PersistenceEvidence = {
 
 export type HandoffState = {
   conversationKey: string;
+  groupKey: string;
   participantId: string;
   raceId: string | null;
   ownership: 'bot' | 'human';
@@ -56,9 +57,11 @@ function iso(value: Date | string | number = new Date()) {
   return date.toISOString();
 }
 
-export function conversationKey(participantId: string, raceId?: string | null) {
-  const raw = `${String(participantId || '').trim().toLowerCase()}|${String(raceId || 'global').trim().toLowerCase()}`;
-  if (!raw.split('|')[0]) throw new Error('participantId obligatorio para handoff.');
+export function conversationKey(groupKey: string, participantId: string, raceId?: string | null) {
+  const group = String(groupKey || '').trim().toLowerCase();
+  const participant = String(participantId || '').trim().toLowerCase();
+  if (!group || !participant) throw new Error('groupKey y participantId son obligatorios para handoff.');
+  const raw = `${group}|${participant}|${String(raceId || 'global').trim().toLowerCase()}`;
   return `hconv_${crypto.createHash('sha256').update(raw).digest('hex').slice(0, 24)}`;
 }
 
@@ -66,9 +69,10 @@ export function responseIdempotencyKey(decision: Pick<ConversationDecision, 'sou
   return `resp_${crypto.createHash('sha256').update(`${decision.sourceMessageId}|${decision.policyVersion}|${RESPONSE_POLICY_VERSION}`).digest('hex').slice(0, 32)}`;
 }
 
-export function initialHandoffState(participantId: string, raceId: string | null = null, at: Date | string | number = new Date()): HandoffState {
+export function initialHandoffState(groupKey: string, participantId: string, raceId: string | null = null, at: Date | string | number = new Date()): HandoffState {
   return {
-    conversationKey: conversationKey(participantId, raceId),
+    conversationKey: conversationKey(groupKey, participantId, raceId),
+    groupKey,
     participantId,
     raceId,
     ownership: 'bot',
