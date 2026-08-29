@@ -135,9 +135,10 @@ export function runLabScenario(scenario: LabScenario, options: { epochMs?: numbe
   let pass = 0;
   let fail = 0;
 
-  const ordered = scenario.events
-    .map((event, index) => ({ event, index }))
-    .sort((a, b) => a.event.atMs - b.event.atMs || a.index - b.index);
+  // Array order is delivery order. atMs is the message timestamp offset, so a
+  // later-delivered event can intentionally carry an older timestamp and prove
+  // reconnect/out-of-order behavior deterministically.
+  const ordered = scenario.events.map((event, index) => ({ event, index }));
 
   for (let sequence = 0; sequence < ordered.length; sequence += 1) {
     const event = ordered[sequence].event;
