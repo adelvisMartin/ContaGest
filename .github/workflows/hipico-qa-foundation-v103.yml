@@ -11,8 +11,13 @@ on:
       - 'tools/hipico-whatsapp-web-bridge/**'
       - 'android/hipico-control-v1130/**'
       - 'tests/hipico*.test.mjs'
+      - 'qa/hipico-visual-functional-v105.spec.mjs'
+      - 'qa/support/hipico-visual-catalog-v105.mjs'
+      - 'qa/support/hipico-layout-detector-v105.mjs'
+      - 'qa/fixtures/hipico-v105-broken-overflow.html'
       - 'scripts/hipico-qa-runner-v103.mjs'
       - 'docs/hipico/QA-RUNNER.md'
+      - 'docs/hipico/QA-VISUAL-FUNCTIONAL-MATRIX.md'
       - 'docs/hipico/CONTROL_HIPICO_V1130_RELEASE_AND_QA.md'
       - 'package.json'
       - 'package-lock.json'
@@ -63,6 +68,41 @@ jobs:
           name: hipico-qa-v103-${{ github.sha }}
           path: artifacts/qa/hipico-v103/
           if-no-files-found: error
+          retention-days: 30
+
+  visual-functional-matrix:
+    name: Visual/function matrix #105
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - name: Checkout exact candidate
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Configure Node 22
+        uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install root lock and Chromium
+        run: |
+          npm ci --no-audit --no-fund
+          npx playwright install --with-deps chromium
+
+      - name: Execute matrix contract + real browser render
+        env:
+          HIPICO_QA_SHA: ${{ github.sha }}
+        run: npm run qa:hipico:visual
+
+      - name: Preserve view-by-view screenshots
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: hipico-visual-v105-${{ github.sha }}
+          path: artifacts/qa/hipico-v105/
+          if-no-files-found: warn
           retention-days: 30
 
   android-wrapper-parity:
