@@ -1,0 +1,20 @@
+{
+  "product": "control-hipico",
+  "version": "1.13.0-rc2",
+  "versionCode": 1130002,
+  "channel": "pilot",
+  "workspaceSchema": 10,
+  "parserContract": "whatsapp-parser-v1",
+  "androidApplicationId": "com.adelvis.hipicocontrol.rel",
+  "artifactRetentionDays": 30,
+  "allowedChannels": ["lab", "pilot", "stable"],
+  "signing": {
+    "debugQa": "ephemeral-debug",
+    "release": "external-secret-only"
+  },
+  "promotion": {
+    "requiresP0Green": true,
+    "requiresPhysicalQa": true,
+    "requiresExplicitApproval": true
+  }
+}

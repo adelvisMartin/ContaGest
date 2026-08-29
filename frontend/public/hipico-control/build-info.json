@@ -1,9 +1,13 @@
 {
   "version": "1.13.0-rc2",
-  "channel": "rc",
-  "revision": "production-readiness-parity",
+  "channel": "pilot",
+  "revision": "release-distribution-v118",
   "buildId": "1.13.0-rc2",
   "builtAt": "2026-08-21T01:36:10.449Z",
   "baseline": "Hipico-Control-v1.13.0-RC1.apk#sha256-b477dbe224596b4e",
-  "source": "git-canonical-web"
+  "source": "git-canonical-web",
+  "compatibility": {
+    "workspaceSchema": 10,
+    "parserContract": "whatsapp-parser-v1"
+  }
 }

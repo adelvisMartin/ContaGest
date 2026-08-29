@@ -8,12 +8,13 @@ const wrapper = path.resolve(here, '..');
 const repo = path.resolve(wrapper, '../..');
 const source = path.resolve(repo, 'frontend/public/hipico-control');
 const target = path.resolve(wrapper, 'www');
-const expectedVersion = '1.13.0-rc2';
+const releasePolicy = JSON.parse(fs.readFileSync(path.join(repo, 'products/hipico-control/release-policy.json'), 'utf8'));
+const expectedVersion = releasePolicy.version;
 const checkOnly = process.argv.includes('--check-only');
 const required = [
   'index.html', 'manifest.webmanifest', 'sw.js', 'runtime-config.js', 'build-info.json',
   'assets/js/app.js', 'assets/js/store.js', 'assets/js/supabase.js', 'assets/js/whatsapp.js',
-  'assets/css/styles.css', 'assets/css/tokens.css', 'assets/css/themes.css', 'assets/css/operations-pro.css',
+  'assets/css/styles.css', 'assets/css/tokens.css', 'assets/css/themes.css', 'assets/css/components.css', 'assets/css/operations-pro.css',
   'icons/icon-192.png', 'icons/icon-512.png'
 ];
 
