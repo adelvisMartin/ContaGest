@@ -2,6 +2,7 @@ import crypto from 'node:crypto';
 import { Router } from 'express';
 import { z } from 'zod';
 import { classify } from './hipico-operational-classifier.js';
+import { decideConversation } from './hipico-conversation-engine.js';
 import { canonicalShadowReadiness, persistCanonicalShadow } from './hipico-canonical-shadow.store.js';
 import { bridgePersistenceReady, ensureGroupShadowOutbox, persistBridgeTransportEvent } from './hipico-bridge-transport.store.js';
 import { bridgeTokenConfigured, bridgeTokenValid } from './hipico-bridge-security.js';
@@ -210,6 +211,20 @@ router.post('/bridge/events', async (req, res) => {
       result
     });
 
+    const conversationDecision = decideConversation(
+      {
+        sourceMessageId: input.externalMessageId,
+        participantId: sender,
+        text: input.text,
+        timestamp: input.timestamp,
+        raceId: result.entities?.raceNumber == null ? null : String(result.entities.raceNumber),
+        quotedSourceMessageId: input.quotedExternalMessageId,
+        mediaKind: input.mediaKind
+      },
+      { seenSourceMessageIds: event.inserted ? [] : [input.externalMessageId] },
+      () => result
+    );
+
     const responseBody = {
       ok: true,
       duplicate: !event.inserted,
@@ -217,6 +232,7 @@ router.post('/bridge/events', async (req, res) => {
       historySync: input.historySync,
       classification: result.intent,
       actions: [] as never[],
+      conversationDecision,
       labSimulation: buildLabSimulation(input, result, canonical),
       data: {
         eventId: event.id,
