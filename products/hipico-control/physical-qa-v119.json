@@ -1,0 +1,30 @@
+{
+  "version": 1,
+  "product": "control-hipico",
+  "requiredModes": ["pwa-browser", "pwa-standalone", "android-apk"],
+  "requiredSessionTopology": {
+    "source": "read-only",
+    "lab": "only-write-destination-during-gate",
+    "simultaneousSessions": 2
+  },
+  "scenarios": [
+    {"id":"fresh-install","title":"Instalación limpia / first launch","requiresDevice":true},
+    {"id":"upgrade-install","title":"Upgrade APK/PWA conservando estado compatible","requiresDevice":true},
+    {"id":"foreground-background","title":"Foreground → background → resume","requiresDevice":true},
+    {"id":"process-kill","title":"Process kill y recuperación","requiresDevice":true},
+    {"id":"reboot","title":"Reboot y recuperación","requiresDevice":true},
+    {"id":"permissions","title":"Permisos/storage concedidos y denegados","requiresDevice":true},
+    {"id":"offline-reconnect","title":"Offline → reconnect sin destino incorrecto","requiresDevice":true},
+    {"id":"source-lab-two-sessions","title":"Dos sesiones WhatsApp Web SOURCE/LAB separadas","requiresExternalSession":true},
+    {"id":"qr-session-recovery","title":"QR/login/session expiry y recovery","requiresExternalSession":true},
+    {"id":"group-identity-change","title":"Cambio nombre/alias no altera group ID pinneado","requiresExternalSession":true},
+    {"id":"source-to-lab-e2e-day-1","title":"Jornada real 1: SOURCE nuevo → parse → prediction → LAB","requiresExternalSession":true},
+    {"id":"source-to-lab-e2e-day-2","title":"Jornada real 2: SOURCE nuevo → parse → prediction → LAB","requiresExternalSession":true},
+    {"id":"screen-scroll-overlap","title":"Scroll/touch/modal/overlap en móvil","requiresDevice":true},
+    {"id":"battery-memory-basic","title":"Batería/memoria básica durante jornada","requiresDevice":true},
+    {"id":"backup-restore-device","title":"Restore v2 en dispositivo/perfil limpio","requiresDevice":true},
+    {"id":"handoff-restart","title":"Takeover humano persiste durante restart","requiresDevice":true}
+  ],
+  "allowedStatuses": ["PASS", "FAIL", "BLOCKED", "NOT_EXECUTED"],
+  "releaseRule": "No se permite cerrar #119 si un escenario requerido está NOT_EXECUTED/BLOCKED o si existe FAIL P0/P1 sin resolver. SOURCE debe conservar cero escritura durante todo el gate."
+}
