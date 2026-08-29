@@ -1,0 +1,71 @@
+{
+  "reviewedAt": "2026-08-29",
+  "decision": "NO_GO",
+  "decisionReason": "WhatsApp Business Messaging Policy currently prohibits use of WhatsApp Business Services to buy, sell, promote or otherwise facilitate gambling; direct group automation capability for the intended production path is not independently verified as authorized.",
+  "jurisdiction": {
+    "status": "UNCONFIRMED",
+    "country": null,
+    "requiredBeforeReconsideration": true
+  },
+  "flow": {
+    "nature": "real-money betting group operations",
+    "activities": [
+      "receive betting-related messages",
+      "classify/interpret plays",
+      "potentially respond/confirm betting-related operations"
+    ],
+    "regulatedActivity": true
+  },
+  "candidateChannels": [
+    {
+      "channel": "WhatsApp Business Platform / Cloud API",
+      "groupWriteCapability": "NOT_VERIFIED_AUTHORIZED",
+      "policyStatus": "NO_GO_GAMBLING_PROHIBITED"
+    },
+    {
+      "channel": "WhatsApp Business App",
+      "groupWriteCapability": "TECHNICALLY_POSSIBLE_MANUALLY_BUT_AUTOMATION_NOT_AUTHORIZED_BY_THIS_EVIDENCE",
+      "policyStatus": "NO_GO_GAMBLING_PROHIBITED"
+    },
+    {
+      "channel": "personal WhatsApp Web browser automation",
+      "groupWriteCapability": "TECHNICALLY_OBSERVED_IN_LAB_NOT_PLATFORM_AUTHORIZATION",
+      "policyStatus": "NO_GO_UNAUTHORIZED_AUTOMATION_RISK"
+    }
+  ],
+  "officialSources": [
+    {
+      "url": "https://business.whatsapp.com/policy/",
+      "title": "WhatsApp Business Messaging Policy",
+      "finding": "Business Services prohibit buying, selling, promoting or facilitating certain regulated/restricted goods and services including gambling; the policy states the prohibitions apply even if the business has local/global licenses or approvals."
+    },
+    {
+      "url": "https://www.whatsapp.com/legal/business-solution-terms",
+      "title": "WhatsApp Business Solution Terms",
+      "finding": "Use of the Business Solution must comply with technical/product documentation and the WhatsApp Business Messaging Policy."
+    },
+    {
+      "url": "https://www.whatsapp.com/legal/terms-of-service",
+      "title": "WhatsApp Terms of Service",
+      "finding": "Terms restrict illegal/impermissible bulk or auto-messaging and non-personal use unless otherwise authorized."
+    },
+    {
+      "url": "https://faq.whatsapp.com/5957850900902049",
+      "title": "Unauthorized use of automated or bulk messaging on WhatsApp",
+      "finding": "WhatsApp warns against unauthorized automated/bulk messaging and describes enforcement risk."
+    },
+    {
+      "url": "https://www.whatsapp.com/legal/",
+      "title": "WhatsApp Legal Resources",
+      "finding": "Legal hub reviewed; WhatsApp indicates Business terms updates scheduled to take effect September 23, 2026, so evidence must be re-reviewed before any future promotion decision."
+    }
+  ],
+  "reconsiderationRequirements": [
+    "confirm actual operating jurisdiction and legal status of the betting activity",
+    "obtain current official platform evidence for the exact connector/capability",
+    "prove the intended betting-related use is permitted under the then-current WhatsApp policies",
+    "obtain any platform approvals and local licenses/permissions required",
+    "complete physical QA, security, soak and promotion evidence for the candidate SHA"
+  ],
+  "safeAlternative": "Keep SOURCE read-only and use local/LAB tools for analysis and operator assistance. Human operators may act through an independently lawful and platform-permitted workflow; the software must not enable direct automated production group writing while the gate is NO_GO."
+}
