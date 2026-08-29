@@ -25,9 +25,9 @@ if (groovy) {
   source = source.replace(/\bversionName\s*=\s*["'][^"']+["']/, `versionName = "${policy.version}"`);
 }
 
-if (source === original || !source.includes(String(policy.versionCode)) || !source.includes(policy.version)) {
+if (!source.includes(String(policy.versionCode)) || !source.includes(policy.version)) {
   throw new Error(`No se pudo fijar versionCode/versionName en ${gradleFile}`);
 }
 
-fs.writeFileSync(gradleFile, source, 'utf8');
-console.log(`Android release metadata: versionName=${policy.version} versionCode=${policy.versionCode}`);
+if (source !== original) fs.writeFileSync(gradleFile, source, 'utf8');
+console.log(`Android release metadata: versionName=${policy.version} versionCode=${policy.versionCode}${source === original ? ' (ya configurado)' : ''}`);
