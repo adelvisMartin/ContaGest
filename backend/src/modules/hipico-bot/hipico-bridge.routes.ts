@@ -3,9 +3,12 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { classify } from './hipico-operational-classifier.js';
 import { decideConversation } from './hipico-conversation-engine.js';
+import { applyOperatorCommand, planSafeResponse, updateHandoffAfterDecision } from './hipico-response-safety.js';
+import { loadHandoff, persistResponsePlan, responseSafetyReadiness, saveHandoff } from './hipico-handoff.store.js';
 import { canonicalShadowReadiness, persistCanonicalShadow } from './hipico-canonical-shadow.store.js';
 import { bridgePersistenceReady, ensureGroupShadowOutbox, persistBridgeTransportEvent } from './hipico-bridge-transport.store.js';
 import { bridgeTokenConfigured, bridgeTokenValid } from './hipico-bridge-security.js';
+import { operatorTokenConfigured, operatorTokenValid } from './hipico-operator-security.js';
 
 const router = Router();
 const OFFICIAL_SOURCE_CHANNEL_KEY=String(process.env.HIPICO_OFFICIAL_SOURCE_CHANNEL_KEY||'club-hipico-triple-crown-official').trim();
@@ -34,6 +37,16 @@ const bridgeEventSchema = z.object({
   rawMeta: z.string().max(500).default('')
 });
 
+const handoffCommandSchema = z.object({
+  groupKey: z.string().trim().min(3).max(120),
+  participantId: z.string().trim().min(1).max(220),
+  raceId: z.string().trim().max(120).nullable().default(null),
+  command: z.enum(['pause','resume','escalate','resolve','reject']),
+  operatorId: z.string().trim().min(1).max(220),
+  reason: z.string().trim().max(500).optional(),
+  ttlMs: z.number().int().min(0).max(24*60*60*1000).optional()
+});
+
 function shadowTag(value: string) {
   return `[SHADOW:${crypto.createHash('sha256').update(value).digest('hex').slice(0, 10)}]`;
 }
@@ -51,7 +64,6 @@ function buildLabSimulation(input: z.infer<typeof bridgeEventSchema>, result: Re
   if (Array.isArray(entities.board) && entities.board.length) details.push(`Pizarra: ${entities.board.join('-')}`);
   if (Array.isArray(entities.balances) && entities.balances.length) details.push(`Disponibles: ${entities.balances.length} fila(s)`);
   if (Array.isArray(entities.settlementRows) && entities.settlementRows.length) details.push(`Liquidación: ${entities.settlementRows.length} fila(s)`);
-
   const visibleMessage = input.text.trim() || `[${input.mediaKind || 'media'} sin texto extraíble]`;
   const lines = [
     mirrorTag,
@@ -64,14 +76,7 @@ function buildLabSimulation(input: z.infer<typeof bridgeEventSchema>, result: Re
     `Propuesta del bot: ${result.suggestion}`,
     '⚠️ SOLO LABORATORIO: no registró jugada, cierre, resultado, saldo ni liquidación real.'
   ];
-
-  return {
-    mirrorTag,
-    sourceExternalMessageId: input.externalMessageId,
-    sourceGroupKey: canonical?.groupKey || input.channelKey || null,
-    labGroupKey: input.labChannelKey || null,
-    text: lines.join('\n').slice(0, 3900)
-  };
+  return { mirrorTag, sourceExternalMessageId: input.externalMessageId, sourceGroupKey: canonical?.groupKey || input.channelKey || null, labGroupKey: input.labChannelKey || null, text: lines.join('\n').slice(0, 3900) };
 }
 
 router.use((_req, res, next) => {
@@ -80,21 +85,10 @@ router.use((_req, res, next) => {
 });
 
 router.get('/bridge/health', async (req, res) => {
-  if (!bridgeTokenValid(req.header('x-hipico-bridge-token') || undefined)) {
-    return res.status(401).json({ ok: false, ready: false, error: 'Token del Bridge Hipico invalido.' });
-  }
-  const base={
-    mode:'shadow',
-    sourceSendPossible:false,
-    sourceChannelKey:OFFICIAL_SOURCE_CHANNEL_KEY,
-    labChannelKey:DEFAULT_LAB_CHANNEL_KEY,
-    buildCommit:String(process.env.VERCEL_GIT_COMMIT_SHA||process.env.GIT_SHA||'unknown')
-  };
+  if (!bridgeTokenValid(req.header('x-hipico-bridge-token') || undefined)) return res.status(401).json({ ok:false, ready:false, error:'Token del Bridge Hipico invalido.' });
+  const base={ mode:'shadow', sourceSendPossible:false, sourceChannelKey:OFFICIAL_SOURCE_CHANNEL_KEY, labChannelKey:DEFAULT_LAB_CHANNEL_KEY, buildCommit:String(process.env.VERCEL_GIT_COMMIT_SHA||process.env.GIT_SHA||'unknown') };
   try{
-    const [transportReady,canonical]=await Promise.all([
-      bridgePersistenceReady(),
-      canonicalShadowReadiness()
-    ]);
+    const [transportReady,canonical,responseSafety]=await Promise.all([bridgePersistenceReady(),canonicalShadowReadiness(),responseSafetyReadiness()]);
     const tokenReady=bridgeTokenConfigured();
     const reasons:string[]=[];
     if(!tokenReady)reasons.push('BRIDGE_TOKEN_NOT_CONFIGURED');
@@ -102,164 +96,66 @@ router.get('/bridge/health', async (req, res) => {
     if(!canonical.schemaReady)reasons.push('CANONICAL_SCHEMA_NOT_READY');
     if(canonical.labChannelCount!==1)reasons.push('LAB_CHANNEL_NOT_UNIQUE');
     const ready=reasons.length===0;
-    return res.status(ready?200:503).json({
-      ok:ready,
-      ready,
-      ...base,
-      reasons,
-      persistence:{
-        transportReady,
-        canonicalSchemaReady:canonical.schemaReady,
-        labChannelCount:canonical.labChannelCount
-      }
-    });
+    return res.status(ready?200:503).json({ ok:ready, ready, ...base, reasons, persistence:{transportReady,canonicalSchemaReady:canonical.schemaReady,labChannelCount:canonical.labChannelCount,responseSafetyReady:responseSafety.ready}, operatorControlConfigured:operatorTokenConfigured() });
   }catch(error:any){
     console.error('[hipico-bridge] readiness check failed',{error:error?.message||String(error)});
-    return res.status(503).json({
-      ok:false,
-      ready:false,
-      ...base,
-      retryable:true,
-      reasons:['PERSISTENCE_CHECK_FAILED']
-    });
+    return res.status(503).json({ok:false,ready:false,...base,retryable:true,reasons:['PERSISTENCE_CHECK_FAILED']});
+  }
+});
+
+router.post('/bridge/handoff', async (req, res) => {
+  if (!operatorTokenValid(req.header('x-hipico-operator-token') || undefined)) return res.status(401).json({ ok:false, error:'Control de operador no autenticado.' });
+  const parsed=handoffCommandSchema.safeParse(req.body);
+  if(!parsed.success)return res.status(400).json({ok:false,error:'Comando de handoff inválido.'});
+  try{
+    const input=parsed.data;
+    const current=await loadHandoff(input.groupKey,input.participantId,input.raceId);
+    const next=applyOperatorCommand(current,input.command,{authenticatedOperator:true,operatorId:input.operatorId,reason:input.reason,ttlMs:input.ttlMs});
+    await saveHandoff(next,{eventType:`operator_${input.command}`,actorId:input.operatorId,payload:{reason:input.reason||null,ttlMs:input.ttlMs||null}});
+    return res.json({ok:true,handoff:next});
+  }catch(error:any){
+    console.error('[hipico-handoff] operator command failed',{error:error?.message||String(error)});
+    return res.status(503).json({ok:false,retryable:true,error:'No se pudo persistir el takeover del operador.'});
   }
 });
 
 router.post('/bridge/events', async (req, res) => {
-  if (!bridgeTokenValid(req.header('x-hipico-bridge-token') || undefined)) {
-    return res.status(401).json({ ok: false, error: 'Token del Bridge Hipico invalido.' });
-  }
-
-  const parsed = bridgeEventSchema.safeParse(req.body);
-  if (!parsed.success) {
-    return res.status(400).json({ ok: false, error: 'Evento del Bridge invalido.' });
-  }
-
-  const input = parsed.data;
+  if (!bridgeTokenValid(req.header('x-hipico-bridge-token') || undefined)) return res.status(401).json({ ok:false, error:'Token del Bridge Hipico invalido.' });
+  const parsed=bridgeEventSchema.safeParse(req.body);
+  if(!parsed.success)return res.status(400).json({ok:false,error:'Evento del Bridge invalido.'});
+  const input=parsed.data;
   if(input.channelRole==='source'){
-    if(input.channelKey!==OFFICIAL_SOURCE_CHANNEL_KEY || input.labChannelKey!==DEFAULT_LAB_CHANNEL_KEY){
-      return res.status(400).json({ok:false,error:'Canales source/lab no autorizados para este Bridge.'});
-    }
-    if(!input.shadowMode){
-      return res.status(400).json({ok:false,error:'El grupo oficial solo admite ingestión shadow.'});
-    }
+    if(input.channelKey!==OFFICIAL_SOURCE_CHANNEL_KEY || input.labChannelKey!==DEFAULT_LAB_CHANNEL_KEY)return res.status(400).json({ok:false,error:'Canales source/lab no autorizados para este Bridge.'});
+    if(!input.shadowMode)return res.status(400).json({ok:false,error:'El grupo oficial solo admite ingestión shadow.'});
   }
-
-  const providerMessageId = `waweb:${input.externalMessageId}`;
-  const result = classify(input.text);
-  const sender = input.senderId.replace(/@.*$/, '').slice(0, 220);
-  const transportPayload = {
-    source: 'whatsapp-web-bridge',
-    targetType: 'group_bridge',
-    status: 'shadow',
-    bridgeVersion: input.bridgeVersion,
-    historySync: input.historySync,
-    groupId: input.groupId,
-    groupName: input.groupName,
-    channelKey: input.channelKey || null,
-    labChannelKey: input.labChannelKey || null,
-    channelRole: input.channelRole,
-    bridgeShadowMode: input.shadowMode,
-    senderRaw: input.senderId,
-    senderLabel: input.senderLabel,
-    fromMe: input.fromMe,
-    sentAt: input.timestamp,
-    rawMeta: input.rawMeta,
-    hasMedia: input.hasMedia,
-    mediaKind: input.mediaKind,
-    mediaName: input.mediaName || null,
-    quotedExternalMessageId: input.quotedExternalMessageId,
-    operational: result.entities || null
-  };
-
-  try {
-    const event = await persistBridgeTransportEvent({
-      providerMessageId,
-      phoneNumberId: `group:${input.groupId}`,
-      sender,
-      messageType: input.type,
-      body: input.text,
-      result,
-      payload: transportPayload
-    });
-
-    const canonical = await persistCanonicalShadow({
-      groupName: input.groupName,
-      channelKey: input.channelKey,
-      labChannelKey: input.labChannelKey,
-      channelRole: input.channelRole,
-      providerMessageId,
-      sender,
-      senderLabel: input.senderLabel,
-      fromMe: input.fromMe,
-      sentAt: input.timestamp,
-      messageType: input.type,
-      mediaKind: input.mediaKind,
-      mediaName: input.mediaName,
-      historySync: input.historySync,
-      body: input.text,
-      quotedExternalMessageId: input.quotedExternalMessageId,
-      bridgeVersion: input.bridgeVersion,
-      rawMeta: input.rawMeta,
-      transportEventId: event.id,
-      result
-    });
-
-    const outbox = await ensureGroupShadowOutbox({
-      eventId: event.id,
-      recipient: input.groupId,
-      result
-    });
-
-    const conversationDecision = decideConversation(
-      {
-        sourceMessageId: input.externalMessageId,
-        participantId: sender,
-        text: input.text,
-        timestamp: input.timestamp,
-        raceId: result.entities?.raceNumber == null ? null : String(result.entities.raceNumber),
-        quotedSourceMessageId: input.quotedExternalMessageId,
-        mediaKind: input.mediaKind
-      },
-      { seenSourceMessageIds: event.inserted ? [] : [input.externalMessageId] },
-      () => result
-    );
-
-    const responseBody = {
-      ok: true,
-      duplicate: !event.inserted,
-      mode: 'shadow',
-      historySync: input.historySync,
-      classification: result.intent,
-      actions: [] as never[],
-      conversationDecision,
-      labSimulation: buildLabSimulation(input, result, canonical),
-      data: {
-        eventId: event.id,
-        outboxId: outbox.id,
-        canonical,
-        intent: result.intent,
-        risk: result.risk,
-        entities: result.entities || null,
-        autoEligible: false
+  const providerMessageId=`waweb:${input.externalMessageId}`;
+  const result=classify(input.text);
+  const sender=input.senderId.replace(/@.*$/,'').slice(0,220);
+  const raceId=result.entities?.raceNumber==null?null:String(result.entities.raceNumber);
+  const transportPayload={source:'whatsapp-web-bridge',targetType:'group_bridge',status:'shadow',bridgeVersion:input.bridgeVersion,historySync:input.historySync,groupId:input.groupId,groupName:input.groupName,channelKey:input.channelKey||null,labChannelKey:input.labChannelKey||null,channelRole:input.channelRole,bridgeShadowMode:input.shadowMode,senderRaw:input.senderId,senderLabel:input.senderLabel,fromMe:input.fromMe,sentAt:input.timestamp,rawMeta:input.rawMeta,hasMedia:input.hasMedia,mediaKind:input.mediaKind,mediaName:input.mediaName||null,quotedExternalMessageId:input.quotedExternalMessageId,operational:result.entities||null};
+  try{
+    const event=await persistBridgeTransportEvent({providerMessageId,phoneNumberId:`group:${input.groupId}`,sender,messageType:input.type,body:input.text,result,payload:transportPayload});
+    const canonical=await persistCanonicalShadow({groupName:input.groupName,channelKey:input.channelKey,labChannelKey:input.labChannelKey,channelRole:input.channelRole,providerMessageId,sender,senderLabel:input.senderLabel,fromMe:input.fromMe,sentAt:input.timestamp,messageType:input.type,mediaKind:input.mediaKind,mediaName:input.mediaName,historySync:input.historySync,body:input.text,quotedExternalMessageId:input.quotedExternalMessageId,bridgeVersion:input.bridgeVersion,rawMeta:input.rawMeta,transportEventId:event.id,result});
+    const outbox=await ensureGroupShadowOutbox({eventId:event.id,recipient:input.groupId,result});
+    const safetyReady=await responseSafetyReadiness();
+    const groupKey=String(canonical?.groupKey||input.channelKey||input.groupId);
+    let handoffState=safetyReady.ready&&!input.historySync?await loadHandoff(groupKey,sender,raceId):null;
+    const conversationDecision=decideConversation({sourceMessageId:input.externalMessageId,participantId:sender,text:input.text,timestamp:input.timestamp,raceId,quotedSourceMessageId:input.quotedExternalMessageId,mediaKind:input.mediaKind},{seenSourceMessageIds:event.inserted?[]:[input.externalMessageId],humanOwnedParticipantIds:handoffState?.ownership==='human'?[sender]:[]},()=>result);
+    if(handoffState&&!input.historySync){
+      const next=updateHandoffAfterDecision(handoffState,conversationDecision,input.timestamp);
+      if(JSON.stringify(next)!==JSON.stringify(handoffState)){
+        await saveHandoff(next,{eventType:'decision_transition',sourceMessageId:input.externalMessageId,correlationId:conversationDecision.correlationId,payload:{decision:conversationDecision.decision,reason:conversationDecision.decisionReason}});
+        handoffState=next;
       }
-    };
-
-    return res.status(event.inserted ? 202 : 200).json(responseBody);
-  } catch (error: any) {
-    console.error('[hipico-bridge] persistent shadow ingestion failed', {
-      providerMessageId,
-      groupName: input.groupName,
-      channelKey: input.channelKey || null,
-      channelRole: input.channelRole,
-      historySync: input.historySync,
-      error: error?.message || String(error)
-    });
-    return res.status(503).json({
-      ok: false,
-      retryable: true,
-      error: 'Persistencia shadow de Control Hipico no disponible. El Bridge debe reintentar.'
-    });
+    }
+    let responsePlan=planSafeResponse(conversationDecision,{handoffState,systemHealthy:safetyReady.ready});
+    if(input.historySync)responsePlan={...responsePlan,intent:'NONE',text:null,canSend:false,confirmationVerified:false,evidence:null,handoffRequired:false,reason:'HISTORY_SYNC_NO_RESPONSE'};
+    const responseReceipt=safetyReady.ready&&!input.historySync?await persistResponsePlan(responsePlan):null;
+    const responseBody={ok:true,duplicate:!event.inserted,mode:'shadow',historySync:input.historySync,classification:result.intent,actions:[] as never[],conversationDecision,responsePlan,responseReceipt,labSimulation:buildLabSimulation(input,result,canonical),data:{eventId:event.id,outboxId:outbox.id,canonical,intent:result.intent,risk:result.risk,entities:result.entities||null,autoEligible:false}};
+    return res.status(event.inserted?202:200).json(responseBody);
+  }catch(error:any){
+    console.error('[hipico-bridge] persistent shadow ingestion failed',{providerMessageId,groupName:input.groupName,channelKey:input.channelKey||null,channelRole:input.channelRole,historySync:input.historySync,error:error?.message||String(error)});
+    return res.status(503).json({ok:false,retryable:true,error:'Persistencia shadow de Control Hipico no disponible. El Bridge debe reintentar.'});
   }
 });
 
