@@ -7,7 +7,8 @@ const APP_SHELL = [
   './assets/js/config.js', './assets/js/engine.js', './assets/js/format.js', './assets/js/seed.js', './assets/js/store.js',
   './assets/js/store-v2.js', './assets/js/offline-status.js', './assets/js/reports.js', './assets/js/sync.js', './assets/js/supabase.js',
   './assets/js/local-auth.js', './assets/js/ui.js', './assets/js/workspace.js', './assets/js/whatsapp.js', './assets/js/backup.js',
-  './assets/js/recovery.js', './assets/js/resilience.js', './assets/js/agent-router-pro.js', './assets/js/race-state-machine.js'
+  './assets/js/backup-v2.js', './assets/js/backup-secure-ui.js', './assets/js/recovery.js', './assets/js/resilience.js',
+  './assets/js/agent-router-pro.js', './assets/js/race-state-machine.js'
 ];
 
 function scoped(path) { return new URL(path, self.registration.scope).toString(); }
