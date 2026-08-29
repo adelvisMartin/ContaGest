@@ -25,6 +25,10 @@ export async function atomicWriteJson(file,value){
     await handle.sync();
     await handle.close();handle=null;
     await fs.rename(tmp,file);
+    try{
+      const dirHandle=await fs.open(path.dirname(file),'r');
+      try{await dirHandle.sync();}finally{await dirHandle.close();}
+    }catch{}
   }catch(error){
     try{await handle?.close();}catch{}
     try{await fs.rm(tmp,{force:true});}catch{}
@@ -52,12 +56,12 @@ export function transitionSpool(record,state,extra={}){
   return{...record,...extra,state,updatedAt:new Date().toISOString()};
 }
 
-export function registerFailure(record,error,{baseMs=5000,maxMs=900000,jitter=.2,random=Math.random}={}){
+export function registerFailure(record,error,{baseMs=5000,maxMs=900000,jitter=.2,random=Math.random,now=Date.now}={}){
   const attempts=Number(record.attempts||0)+1;
   if(attempts>=Number(record.maxAttempts||8))return transitionSpool(record,'quarantined',{attempts,lastError:String(error?.message||error),nextAttemptAt:0});
   const raw=Math.min(maxMs,baseMs*2**Math.max(0,attempts-1));
   const factor=1+((random()*2)-1)*jitter;
-  return transitionSpool(record,'failed',{attempts,lastError:String(error?.message||error),nextAttemptAt:Date.now()+Math.max(0,Math.round(raw*factor))});
+  return transitionSpool(record,'failed',{attempts,lastError:String(error?.message||error),nextAttemptAt:now()+Math.max(0,Math.round(raw*factor))});
 }
 
 export function expireIfOld(record,{maxAgeMs,now=Date.now()}={}){
