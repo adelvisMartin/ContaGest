@@ -72,9 +72,11 @@ jobs:
         working-directory: android/hipico-control-v1130
         run: npm audit --audit-level=high
 
-      - name: Verify canonical PWA parity
+      - name: Sync and verify canonical PWA parity
         working-directory: android/hipico-control-v1130
-        run: npm run verify:web
+        run: |
+          npm run sync:web
+          npm run verify:web
 
       - name: Build and package QA APK
         working-directory: android/hipico-control-v1130
