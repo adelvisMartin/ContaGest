@@ -57,3 +57,4 @@ function start() {
 }
 
 document.readyState === 'loading' ? document.addEventListener('DOMContentLoaded', start, { once: true }) : start();
+import('./backup-secure-ui.js').catch(() => {});
