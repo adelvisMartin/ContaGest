@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { execFileSync } from 'node:child_process';
-import { mkdirSync } from 'node:fs';
+import { mkdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { HIPICO_VIEWS, HIPICO_VIEWPORTS, buildHipicoQaFixture } from './support/hipico-visual-catalog-v105.mjs';
 import { detectHipicoLayoutIssues } from './support/hipico-layout-detector-v105.mjs';
@@ -128,7 +128,8 @@ test.describe('Estados representativos por vista', () => {
 
 test('fixture roto deliberado demuestra que el detector bloquea regresiones', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.goto('/qa/fixtures/hipico-v105-broken-overflow.html');
+  const brokenFixture = readFileSync(new URL('./fixtures/hipico-v105-broken-overflow.html', import.meta.url), 'utf8');
+  await page.setContent(brokenFixture, { waitUntil: 'domcontentloaded' });
   const issues = await page.evaluate(detectHipicoLayoutIssues, { touch: true });
   const types = new Set(issues.map((issue) => issue.type));
   expect(types.has('document-overflow-x')).toBe(true);
