@@ -44,6 +44,13 @@ function extract(pattern, source, label) {
   return match[1];
 }
 
+function applicationVersionFromHtml(source) {
+  const tag = source.match(/<meta\b[^>]*\bname=["']application-version["'][^>]*>/i)?.[0]
+    || source.match(/<meta\b[^>]*\bcontent=["'][^"']+["'][^>]*\bname=["']application-version["'][^>]*>/i)?.[0];
+  assert(tag, 'no se encontró meta application-version');
+  return extract(/\bcontent=["']([^"']+)["']/i, tag, 'meta application-version');
+}
+
 const policy = readJson('products/hipico-control/release-policy.json');
 const buildInfo = readJson('frontend/public/hipico-control/build-info.json');
 const androidPackage = readJson('android/hipico-control-v1130/package.json');
@@ -54,8 +61,7 @@ const serviceWorkerSource = read('frontend/public/hipico-control/sw.js');
 const workspaceSource = read('frontend/public/hipico-control/assets/js/workspace.js');
 
 const appVersion = extract(/APP_VERSION\s*=\s*["']([^"']+)["']/, configSource, 'APP_VERSION');
-const htmlVersion = extract(/name=["']application-version["'][^>]*content=["']([^"']+)["']|content=["']([^"']+)["'][^>]*name=["']application-version["']/, indexSource, 'meta application-version');
-const resolvedHtmlVersion = htmlVersion || indexSource.match(/content=["']([^"']+)["'][^>]*name=["']application-version["']/)?.[1];
+const htmlVersion = applicationVersionFromHtml(indexSource);
 const cacheVersion = extract(/CACHE_VERSION\s*=\s*["']hipico-control-v([^"']+)["']/, serviceWorkerSource, 'CACHE_VERSION');
 const workspaceSchema = Number(extract(/workspace\.schemaVersion\s*=\s*(\d+)/, workspaceSource, 'workspace schema'));
 
@@ -63,9 +69,12 @@ assert(policy.product === 'control-hipico', 'product id inválido');
 assert(policy.allowedChannels?.includes(policy.channel), `channel ${policy.channel} no está permitido`);
 assert(Number.isInteger(policy.versionCode) && policy.versionCode > 0, 'versionCode debe ser entero positivo');
 assert(policy.version === buildInfo.version, `build-info ${buildInfo.version} != policy ${policy.version}`);
+assert(policy.channel === buildInfo.channel, `build-info channel ${buildInfo.channel} != policy ${policy.channel}`);
+assert(policy.workspaceSchema === Number(buildInfo.compatibility?.workspaceSchema), 'workspace compatibility de build-info no coincide');
+assert(policy.parserContract === buildInfo.compatibility?.parserContract, 'parser compatibility de build-info no coincide');
 assert(policy.version === androidPackage.version, `Android package ${androidPackage.version} != policy ${policy.version}`);
 assert(policy.version === appVersion, `APP_VERSION ${appVersion} != policy ${policy.version}`);
-assert(policy.version === resolvedHtmlVersion, `HTML application-version ${resolvedHtmlVersion} != policy ${policy.version}`);
+assert(policy.version === htmlVersion, `HTML application-version ${htmlVersion} != policy ${policy.version}`);
 assert(policy.version === cacheVersion, `Service Worker ${cacheVersion} != policy ${policy.version}`);
 assert(policy.workspaceSchema === workspaceSchema, `workspace schema ${workspaceSchema} != policy ${policy.workspaceSchema}`);
 assert(policy.androidApplicationId === capacitor.appId, `appId ${capacitor.appId} != policy ${policy.androidApplicationId}`);
@@ -118,8 +127,10 @@ const manifest = {
   },
   contracts: {
     buildInfoVersion: buildInfo.version,
+    buildInfoChannel: buildInfo.channel,
+    buildInfoCompatibility: buildInfo.compatibility,
     appVersion,
-    htmlVersion: resolvedHtmlVersion,
+    htmlVersion,
     serviceWorkerVersion: cacheVersion,
     androidPackageVersion: androidPackage.version,
     workspaceSchema,
