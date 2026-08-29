@@ -23,6 +23,7 @@ import {
   selectUniqueGroupId
 } from './group-identity.mjs';
 import { assessRuntimeReadiness } from './health-state.mjs';
+import { createBridgeSpoolRuntime } from './spool-runtime.mjs';
 
 const config = assertRuntimeConfig(loadRuntimeConfig());
 const {
@@ -54,9 +55,10 @@ const {
   labTestBootstrapLimit: LAB_TEST_BOOTSTRAP_LIMIT
 } = config;
 const PROFILE_DIR = path.join(DATA_DIR, 'chrome-profile');
-const EVENT_SPOOL_DIR = path.join(DATA_DIR, 'spool-events');
-const MIRROR_SPOOL_DIR = path.join(DATA_DIR, 'spool-lab-mirror');
-const DEADLETTER_DIR = path.join(DATA_DIR, 'dead-letter');
+const LEGACY_EVENT_SPOOL_DIR = path.join(DATA_DIR, 'spool-events');
+const LEGACY_MIRROR_SPOOL_DIR = path.join(DATA_DIR, 'spool-lab-mirror');
+const LEGACY_DEADLETTER_DIR = path.join(DATA_DIR, 'dead-letter');
+const SPOOL_V2_DIR = path.join(DATA_DIR, 'spool-v2');
 const TRAINING_DIR = path.join(DATA_DIR, 'training');
 const SEEN_FILE = path.join(DATA_DIR, 'seen-source-message-ids.json');
 const LAB_SEEN_FILE = path.join(DATA_DIR, 'seen-lab-test-message-ids.json');
@@ -72,7 +74,7 @@ const TRAINING_JOURNAL = path.join(TRAINING_DIR, `shadow-${new Date().toISOStrin
 function sleep(ms) { return new Promise((resolve) => setTimeout(resolve, ms)); }
 function isoNow() { return new Date().toISOString(); }
 
-for (const dir of [DATA_DIR, PROFILE_DIR, EVENT_SPOOL_DIR, MIRROR_SPOOL_DIR, DEADLETTER_DIR, TRAINING_DIR]) {
+for (const dir of [DATA_DIR, PROFILE_DIR, LEGACY_EVENT_SPOOL_DIR, LEGACY_MIRROR_SPOOL_DIR, LEGACY_DEADLETTER_DIR, TRAINING_DIR]) {
   await fs.mkdir(dir, { recursive: true });
 }
 
@@ -181,6 +183,18 @@ function rememberLabSeen(id) {
 async function log(line) {
   await fs.appendFile(LOG_FILE, `[${isoNow()}] ${line}\n`, 'utf8').catch(() => {});
 }
+
+const spoolRuntime = createBridgeSpoolRuntime({
+  rootDir: SPOOL_V2_DIR,
+  legacyEventDir: LEGACY_EVENT_SPOOL_DIR,
+  legacyMirrorDir: LEGACY_MIRROR_SPOOL_DIR,
+  legacyDeadLetterDir: LEGACY_DEADLETTER_DIR,
+  parserVersion: 'whatsapp-parser-v1',
+  baseMs: BACKOFF_BASE_MS,
+  maxMs: BACKOFF_MAX_MS,
+  jitter: 0.1,
+  logger: log
+});
 async function screenshot(tag = 'error') {
   if (!DIAGNOSTIC_SCREENSHOTS_ENABLED) return;
   if (!page || page.isClosed()) return;
@@ -190,12 +204,9 @@ async function screenshot(tag = 'error') {
   } catch {}
 }
 
-async function countJson(dir) {
-  try { return (await fs.readdir(dir)).filter((name) => name.endsWith('.json')).length; }
-  catch { return 0; }
-}
 async function writeHealth(extra = {}) {
   const now = Date.now();
+  const spool = await spoolRuntime.snapshot();
   const counters = {
     captured: capturedCount,
     delivered: deliveredCount,
@@ -204,9 +215,10 @@ async function writeHealth(extra = {}) {
     nonOperational: nonOperationalCount,
     seenIds: seen.size,
     labSeenIds: labSeen.size,
-    eventSpool: await countJson(EVENT_SPOOL_DIR),
-    mirrorSpool: await countJson(MIRROR_SPOOL_DIR),
-    deadLetters: await countJson(DEADLETTER_DIR)
+    eventSpool: spool.pendingBackend,
+    mirrorSpool: spool.pendingLab,
+    deadLetters: spool.quarantined,
+    spoolStates: spool.counts
   };
   const readiness = assessRuntimeReadiness({
     runtimeMode: RUNTIME_MODE,
@@ -316,22 +328,11 @@ async function appendTraining(event, classification, backend = null) {
   await fs.appendFile(TRAINING_JOURNAL, `${JSON.stringify(row)}\n`, 'utf8').catch(() => {});
 }
 
-async function spoolJson(dir, key, value) {
-  const file = path.join(dir, `${sha256(key)}.json`);
-  await fs.writeFile(file, JSON.stringify(value, null, 2), 'utf8');
-  return file;
-}
 async function queueEvent(event) {
-  return spoolJson(EVENT_SPOOL_DIR, `${event.channelKey}|${event.externalMessageId}`, {
-    event,
-    attempts: 0,
-    nextAttemptAt: 0,
-    lastError: null,
-    queuedAt: isoNow()
-  });
+  return spoolRuntime.queueBackendEvent(event);
 }
 async function queueMirror(mirror) {
-  return spoolJson(MIRROR_SPOOL_DIR, mirror.sourceExternalMessageId, mirror);
+  return spoolRuntime.queueLabMirror(mirror);
 }
 
 function classifyHttpFailure(response, body, raw) {
@@ -444,23 +445,12 @@ async function enterBackendCooldown(error, meta) {
   console.log(`\n[BACKEND ${backendState.toUpperCase()}] Pausa ${Math.ceil(wait / 1000)}s. WhatsApp seguirá leyendo y guardando localmente.\n`);
 }
 
-async function deadLetter(file, wrapper, reason) {
-  const destination = path.join(DEADLETTER_DIR, path.basename(file));
-  wrapper.deadLetterAt = isoNow();
-  wrapper.deadLetterReason = reason;
-  await fs.writeFile(destination, JSON.stringify(wrapper, null, 2), 'utf8');
-  await fs.unlink(file).catch(() => {});
-  await log(`DEADLETTER ${wrapper?.event?.externalMessageId || ''} ${reason}`);
-}
-
-async function deliverEventFile(file) {
-  let wrapper;
-  try { wrapper = JSON.parse(await fs.readFile(file, 'utf8')); }
-  catch { await fs.unlink(file).catch(() => {}); return { status: 'corrupt' }; }
-  const event = wrapper.event || wrapper;
-  if (!event?.externalMessageId) { await deadLetter(file, wrapper, 'Evento sin externalMessageId'); return { status: 'dead' }; }
-  const nextAt = Number(wrapper.nextAttemptAt || 0);
-  if (Date.now() < nextAt || Date.now() < backendNextAllowedAt) return { status: 'deferred' };
+async function deliverBackendEvent(event) {
+  if (!event?.externalMessageId) {
+    const error = new Error('Evento sin externalMessageId');
+    error.retryable = false;
+    throw error;
+  }
 
   try {
     const result = await backendPost(event);
@@ -476,55 +466,41 @@ async function deliverEventFile(file) {
         createdAt: isoNow()
       });
     }
-    await fs.unlink(file).catch(() => {});
     deliveredCount += 1;
     await log(`DELIVERED ${event.externalMessageId} ${result?.classification || 'received'} duplicate=${Boolean(result?.duplicate)}`);
-    return { status: 'delivered' };
+    return result;
   } catch (error) {
     if (error?.status === 401) {
+      const retryAfterMs = 60 * 60 * 1000;
       backendState = 'unauthorized';
       lastBackendReason = error.message;
-      wrapper.attempts = Number(wrapper.attempts || 0) + 1;
-      wrapper.nextAttemptAt = Date.now() + 60 * 60 * 1000;
-      wrapper.lastError = String(error.message || error).slice(0, 500);
-      await fs.writeFile(file, JSON.stringify(wrapper, null, 2), 'utf8').catch(() => {});
-      backendNextAllowedAt = wrapper.nextAttemptAt;
+      backendNextAllowedAt = Date.now() + retryAfterMs;
+      error.retryable = true;
+      error.retryAfterMs = Math.max(Number(error.retryAfterMs || 0), retryAfterMs);
       await saveRetryState();
-      console.error('\n[SEGURIDAD] Token del Bridge rechazado. Los eventos permanecen en spool; la captura local sigue activa.\n');
-      return { status: 'deferred' };
+      console.error('\n[SEGURIDAD] Token del Bridge rechazado. Los eventos permanecen en spool v2; la captura local sigue activa.\n');
+    } else if (error?.retryable === false || (error?.status >= 400 && error?.status < 500 && error?.status !== 408 && error?.status !== 409 && error?.status !== 425 && error?.status !== 429)) {
+      error.retryable = false;
+      console.error(`[QUARANTINE] ${event.externalMessageId}: ${error.message}`);
+    } else {
+      await enterBackendCooldown(error, event);
     }
-    if (error?.retryable === false || (error?.status >= 400 && error?.status < 500 && error?.status !== 408 && error?.status !== 409 && error?.status !== 425 && error?.status !== 429)) {
-      await deadLetter(file, wrapper, error.message);
-      console.error(`[DEADLETTER] ${event.externalMessageId}: ${error.message}`);
-      return { status: 'dead' };
-    }
-
-    wrapper.attempts = Number(wrapper.attempts || 0) + 1;
-    const perItemWait = Math.max(
-      Number(error?.retryAfterMs || 0),
-      computeBackoffMs(wrapper.attempts, { baseMs: BACKOFF_BASE_MS, maxMs: BACKOFF_MAX_MS, jitter: 0.1 })
-    );
-    wrapper.nextAttemptAt = Date.now() + perItemWait;
-    wrapper.lastError = String(error.message || error).slice(0, 500);
-    await fs.writeFile(file, JSON.stringify(wrapper, null, 2), 'utf8').catch(() => {});
-    await enterBackendCooldown(error, event);
-    return { status: 'deferred' };
+    throw error;
   }
 }
 
-async function flushEventSpool() {
+async function flushEventSpool(limit = BACKEND_MAX_PER_FLUSH) {
   if (!BACKEND_SYNC_ENABLED) return;
   if (flushingEvents || Date.now() < backendNextAllowedAt) return;
   flushingEvents = true;
   try {
-    const files = (await fs.readdir(EVENT_SPOOL_DIR)).filter((name) => name.endsWith('.json')).sort();
-    let handled = 0;
-    for (const name of files) {
-      if (handled >= BACKEND_MAX_PER_FLUSH || Date.now() < backendNextAllowedAt) break;
-      const result = await deliverEventFile(path.join(EVENT_SPOOL_DIR, name));
-      if (result?.status !== 'deferred') handled += 1;
-      if (backendState === 'throttled' || backendState === 'degraded') break;
-    }
+    return await spoolRuntime.flushBackend(deliverBackendEvent, {
+      limit,
+      canContinue: () => (
+        Date.now() >= backendNextAllowedAt &&
+        !['unauthorized', 'throttled', 'degraded'].includes(backendState)
+      )
+    });
   } finally { flushingEvents = false; }
 }
 
@@ -553,7 +529,7 @@ async function requestCleanProfileReset(reason) {
     version: VERSION,
     reason,
     profileDir: PROFILE_DIR,
-    preserve: ['spool-events', 'spool-lab-mirror', 'training', 'seen-source-message-ids.json']
+    preserve: ['spool-v2', 'spool-events', 'spool-lab-mirror', 'dead-letter', 'training', 'seen-source-message-ids.json']
   };
   await fs.writeFile(PROFILE_RESET_FLAG, JSON.stringify(payload, null, 2), 'utf8').catch(() => {});
   await log(`PROFILE_RESET_REQUIRED ${reason}`);
@@ -895,12 +871,13 @@ function rowToSourceEvent(row) {
 async function captureRow(row) {
   const event = rowToSourceEvent(row);
   const classification = classifyLocal(event.text);
-  const file = BACKEND_SYNC_ENABLED ? await queueEvent(event) : null;
-  rememberSeen(row.id);
-  capturedCount += 1;
-  lastSourceSeenAt = isoNow();
-  if (['conversation', 'greeting', 'empty'].includes(classification.intent)) nonOperationalCount += 1;
-  await appendTraining(event, classification, null);
+
+  if (BACKEND_SYNC_ENABLED) {
+    await queueEvent(event);
+    if (Date.now() >= backendNextAllowedAt && backendState !== 'unauthorized') {
+      await flushEventSpool(1);
+    }
+  }
 
   if (LAB_SEND_ENABLED && shouldMirror(classification)) {
     await queueMirror({
@@ -914,9 +891,11 @@ async function captureRow(row) {
     });
   }
 
-  if (BACKEND_SYNC_ENABLED && file && Date.now() >= backendNextAllowedAt && backendState !== 'unauthorized') {
-    await deliverEventFile(file);
-  }
+  rememberSeen(row.id);
+  capturedCount += 1;
+  lastSourceSeenAt = isoNow();
+  if (['conversation', 'greeting', 'empty'].includes(classification.intent)) nonOperationalCount += 1;
+  await appendTraining(event, classification, null);
 }
 
 async function processSourceRows() {
@@ -1055,14 +1034,17 @@ async function sendMirrorToLab(mirror) {
   await log(`LAB_SENT ${mirror.sourceExternalMessageId} ${mirror.mirrorTag} source=${mirror.source}`);
   return true;
 }
-async function deliverMirrorFile(file) {
-  let mirror;
-  try { mirror = JSON.parse(await fs.readFile(file, 'utf8')); }
-  catch { await fs.unlink(file).catch(() => {}); return; }
+async function deliverLabMirror(mirror) {
   try {
-    if (await sendMirrorToLab(mirror)) await fs.unlink(file).catch(() => {});
+    const delivered = await sendMirrorToLab(mirror);
+    if (!delivered) {
+      const error = new Error('LAB_SEND_DISABLED');
+      error.retryable = true;
+      throw error;
+    }
   } catch (error) {
     await log(`LAB_PENDING ${mirror?.sourceExternalMessageId || 'unknown'} ${error.message}`);
+    throw error;
   } finally {
     if (await openSourceGroup().catch(() => false)) activeSourceTitle = await currentChatTitle();
   }
@@ -1071,15 +1053,15 @@ async function flushMirrorSpool() {
   if (!LAB_SEND_ENABLED || flushingMirrors) return;
   flushingMirrors = true;
   try {
-    const files = (await fs.readdir(MIRROR_SPOOL_DIR)).filter((name) => name.endsWith('.json')).sort().slice(0, 8);
-    for (const name of files) await deliverMirrorFile(path.join(MIRROR_SPOOL_DIR, name));
+    return await spoolRuntime.flushLab(deliverLabMirror, { limit: 8 });
   } finally { flushingMirrors = false; }
 }
 
 async function printHealthSummary(force = false) {
-  const eventSpool = await countJson(EVENT_SPOOL_DIR);
-  const mirrorSpool = await countJson(MIRROR_SPOOL_DIR);
-  const deadLetters = await countJson(DEADLETTER_DIR);
+  const spool = await spoolRuntime.snapshot();
+  const eventSpool = spool.pendingBackend;
+  const mirrorSpool = spool.pendingLab;
+  const deadLetters = spool.quarantined;
   const cooldown = Math.max(0, backendNextAllowedAt - Date.now());
   const backendLabel = BACKEND_SYNC_ENABLED ? backendState : 'local-only';
   const readiness = assessRuntimeReadiness({
@@ -1166,7 +1148,7 @@ async function monitor() {
 async function main() {
   console.log('\n========================================================');
   console.log(` CONTROL HÍPICO - WHATSAPP WEB BRIDGE v${VERSION}`);
-  console.log(' FUENTE REAL READ-ONLY -> LAB SHADOW + SPOOL DURABLE');
+  console.log(' FUENTE REAL READ-ONLY -> LAB SHADOW + SPOOL V2 DURABLE');
   console.log(' Chrome/Edge oficial + Playwright 1.62.1');
   console.log('========================================================\n');
   console.log('No implementa el protocolo de WhatsApp: controla web.whatsapp.com real.');
@@ -1181,8 +1163,16 @@ async function main() {
   console.log('Envío al grupo fuente: IMPOSIBLE POR DISEÑO.');
   console.log(`Seen IDs cargados: ${seen.size}`);
   console.log(`Modo runtime: ${RUNTIME_MODE}`);
-  console.log(`Backend cloud: ${BACKEND_SYNC_ENABLED ? 'HABILITADO CON SPOOL DURABLE' : 'DESACTIVADO - SHADOW LOCAL'}`);
+  console.log(`Backend cloud: ${BACKEND_SYNC_ENABLED ? 'HABILITADO CON SPOOL V2 DURABLE' : 'DESACTIVADO - SHADOW LOCAL'}`);
   console.log(`Datos locales: ${DATA_DIR}\n`);
+
+  const spoolInit = await spoolRuntime.initialize();
+  const legacyMigrated = spoolInit.events.migrated + spoolInit.mirrors.migrated + spoolInit.dead.migrated;
+  const legacyCorrupt = spoolInit.events.corrupt + spoolInit.mirrors.corrupt + spoolInit.dead.corrupt;
+  if (legacyMigrated || legacyCorrupt) {
+    console.log(`Spool v2: ${legacyMigrated} registro(s) legacy en cuarentena; ${legacyCorrupt} corrupto(s) aislado(s).`);
+    await log(`SPOOL_V2_INIT legacy=${legacyMigrated} corrupt=${legacyCorrupt}`);
+  }
 
   const health = await backendHealth();
   backendState = health.state;
