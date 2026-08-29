@@ -25,7 +25,7 @@ const execute=args.execute==='true';
 if(!expectedDestination)throw new Error('REPLAY_KIND_OR_DESTINATION_NOT_CONFIGURED');
 if(!destination)throw new Error('REPLAY_DESTINATION_REQUIRED');
 
-const runtime=createBridgeSpoolRuntime({rootDir,parserVersion:String(args.parser||config.version||'unknown')});
+const runtime=createBridgeSpoolRuntime({rootDir,parserVersion:String(args.parser||'whatsapp-parser-v1')});
 const plan=await runtime.replayPlan({kind,destination,expectedDestination,from:args.from||null,to:args.to||null,limit});
 console.log(JSON.stringify({mode:execute?'REQUEUE_REQUESTED':'DRY_RUN',rootDir,...plan},null,2));
 
