@@ -1,7 +1,7 @@
 {
-  "reviewedAt": "2026-08-29",
+  "reviewedAt": "2026-08-30",
   "decision": "NO_GO",
-  "decisionReason": "WhatsApp Business Messaging Policy currently prohibits use of WhatsApp Business Services to buy, sell, promote or otherwise facilitate gambling; direct group automation capability for the intended production path is not independently verified as authorized.",
+  "decisionReason": "La política oficial vigente/revisada de WhatsApp Business prohíbe usar los Servicios de WhatsApp Business para comprar, vender, promocionar o facilitar bienes/servicios regulados o restringidos e incluye expresamente apuestas con dinero real; además, la autorización de automatización grupal para el flujo productivo pretendido no está demostrada.",
   "jurisdiction": {
     "status": "UNCONFIRMED",
     "country": null,
@@ -20,12 +20,12 @@
     {
       "channel": "WhatsApp Business Platform / Cloud API",
       "groupWriteCapability": "NOT_VERIFIED_AUTHORIZED",
-      "policyStatus": "NO_GO_GAMBLING_PROHIBITED"
+      "policyStatus": "NO_GO_REAL_MONEY_GAMBLING_PROHIBITED"
     },
     {
       "channel": "WhatsApp Business App",
       "groupWriteCapability": "TECHNICALLY_POSSIBLE_MANUALLY_BUT_AUTOMATION_NOT_AUTHORIZED_BY_THIS_EVIDENCE",
-      "policyStatus": "NO_GO_GAMBLING_PROHIBITED"
+      "policyStatus": "NO_GO_REAL_MONEY_GAMBLING_PROHIBITED"
     },
     {
       "channel": "personal WhatsApp Web browser automation",
@@ -35,29 +35,28 @@
   ],
   "officialSources": [
     {
-      "url": "https://business.whatsapp.com/policy/",
-      "title": "WhatsApp Business Messaging Policy",
-      "finding": "Business Services prohibit buying, selling, promoting or facilitating certain regulated/restricted goods and services including gambling; the policy states the prohibitions apply even if the business has local/global licenses or approvals."
+      "url": "https://business.whatsapp.com/policy/preview?lang=es_LA",
+      "title": "Política de mensajes de WhatsApp Business",
+      "reviewedAt": "2026-08-30",
+      "finding": "La sección de organizaciones y usos prohibidos incluye expresamente 'Apuestas con dinero real' entre los bienes y servicios regulados/restringidos cuyo intercambio no puede comprarse, venderse, promocionarse ni facilitarse mediante los Servicios de WhatsApp Business; la propia política indica que estas prohibiciones aplican independientemente de licencias o aprobaciones locales/internacionales."
     },
     {
       "url": "https://www.whatsapp.com/legal/business-solution-terms",
       "title": "WhatsApp Business Solution Terms",
-      "finding": "Use of the Business Solution must comply with technical/product documentation and the WhatsApp Business Messaging Policy."
+      "reviewedAt": "2026-08-30",
+      "finding": "Las condiciones de la solución obligan a utilizar WhatsApp Business conforme a la documentación técnica/producto y la WhatsApp Business Messaging Policy."
     },
     {
-      "url": "https://www.whatsapp.com/legal/terms-of-service",
-      "title": "WhatsApp Terms of Service",
-      "finding": "Terms restrict illegal/impermissible bulk or auto-messaging and non-personal use unless otherwise authorized."
-    },
-    {
-      "url": "https://faq.whatsapp.com/5957850900902049",
-      "title": "Unauthorized use of automated or bulk messaging on WhatsApp",
-      "finding": "WhatsApp warns against unauthorized automated/bulk messaging and describes enforcement risk."
+      "url": "https://www.whatsapp.com/legal/meta-terms-whatsapp-business",
+      "title": "Meta Terms for WhatsApp Business",
+      "reviewedAt": "2026-08-30",
+      "finding": "El acceso a la solución/API de WhatsApp Business queda sujeto al acuerdo y demás condiciones/políticas incorporadas; Meta anuncia cambios de términos con vigencia 2026-09-23, lo que obliga a una nueva revisión antes de cualquier reconsideración futura."
     },
     {
       "url": "https://www.whatsapp.com/legal/",
       "title": "WhatsApp Legal Resources",
-      "finding": "Legal hub reviewed; WhatsApp indicates Business terms updates scheduled to take effect September 23, 2026, so evidence must be re-reviewed before any future promotion decision."
+      "reviewedAt": "2026-08-30",
+      "finding": "El hub legal continúa anunciando actualización de condiciones para empresas efectiva 2026-09-23; la evidencia de #154 debe mantenerse reciente y volver a evaluarse si cambian las políticas."
     }
   ],
   "reconsiderationRequirements": [
@@ -67,5 +66,6 @@
     "obtain any platform approvals and local licenses/permissions required",
     "complete physical QA, security, soak and promotion evidence for the candidate SHA"
   ],
-  "safeAlternative": "Keep SOURCE read-only and use local/LAB tools for analysis and operator assistance. Human operators may act through an independently lawful and platform-permitted workflow; the software must not enable direct automated production group writing while the gate is NO_GO."
+  "safeAlternative": "Mantener SOURCE únicamente en lectura y usar LAB/local para análisis, simulación y asistencia al operador. El software no debe habilitar escritura automatizada al grupo real mientras el gate permanezca NO_GO.",
+  "nextMandatoryPolicyReview": "2026-09-23"
 }
