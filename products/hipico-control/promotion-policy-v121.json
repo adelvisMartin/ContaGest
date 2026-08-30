@@ -1,0 +1,56 @@
+{
+  "version": "hipico-promotion-v121.1",
+  "defaultMode": "shadow",
+  "modes": {
+    "shadow": {
+      "sourceRead": true,
+      "labWrite": true,
+      "sourceWrite": false,
+      "monetaryWrite": false,
+      "requiresApproval": false
+    },
+    "assisted": {
+      "sourceRead": true,
+      "labWrite": true,
+      "sourceWrite": false,
+      "monetaryWrite": false,
+      "requiresApproval": true
+    },
+    "production": {
+      "sourceRead": true,
+      "labWrite": true,
+      "sourceWrite": true,
+      "monetaryWrite": false,
+      "requiresApproval": true
+    }
+  },
+  "productionGates": {
+    "physicalQa119": "PASS",
+    "soak120": "PASS",
+    "security114": "PASS",
+    "conversationAppsec153": "PASS",
+    "whatsappCompliance154": "GO",
+    "explicitApproval": true,
+    "candidateShaBound": true
+  },
+  "canary": {
+    "required": true,
+    "maxSitesInitial": 1,
+    "maxDurationHoursBeforeReview": 24
+  },
+  "killSwitch": {
+    "localFile": ".hipico-kill-switch",
+    "forcedMode": "shadow",
+    "mustNotRequireInternet": true
+  },
+  "rollback": {
+    "targetMode": "shadow",
+    "preserveHistory": true,
+    "preserveEvidence": true
+  },
+  "notes": [
+    "No percentage or parser accuracy score can promote production by itself.",
+    "Current WhatsApp production compliance evidence is NO_GO; therefore production must remain blocked.",
+    "Monetary write remains disabled by this policy even if non-monetary production transport is later authorized."
+  ]
+}
