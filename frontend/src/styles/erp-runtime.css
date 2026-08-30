@@ -92,3 +92,198 @@
     color:var(--cg-v-danger)!important;
   }
 }
+
+/*
+ * #181 — shared mobile migration adapter.
+ * `app.js::normalizeVisuals()` tags every rendered ERP route with
+ * `.cgx-module-standard`; these rules therefore apply to the canonical 58-route
+ * registry instead of fixing pages one-by-one. Domain selectors below cover the
+ * first high-friction wave seen in device captures: Gym/Nutrition/Inventory.
+ */
+@layer cg.visual.responsive {
+  #pages,
+  #pages .cgx-module-standard,
+  #pages .cg-page-stack,
+  #pages .cg-vertical-page,
+  #pages .cg-inventory-workspace {
+    min-width:0;
+    max-width:100%;
+  }
+
+  #pages .table-wrap,
+  #pages .pl-table-wrap,
+  #pages .ds-table-wrap,
+  #pages .cgv-table-shell,
+  #pages .cgx-table-wrap,
+  #pages .MuiTableContainer-root {
+    max-width:100%;
+    min-width:0;
+    overflow-x:auto;
+    overscroll-behavior-inline:contain;
+    -webkit-overflow-scrolling:touch;
+  }
+
+  #pages .cgx-btn,
+  #pages .btn,
+  #pages .cg-vertical-tabs button,
+  #pages .cg-gym-v1124-tabs button {
+    column-gap:.5rem;
+  }
+
+  #pages .cgx-btn > i,
+  #pages .btn > i,
+  #pages button > i {
+    flex:0 0 auto;
+  }
+
+  @media (max-width:767px) {
+    html,
+    body,
+    #app,
+    #pages {
+      max-width:100%;
+    }
+
+    #pages .cgx-module-standard,
+    #pages .cg-page-stack,
+    #pages .cg-vertical-page,
+    #pages .cg-inventory-workspace {
+      overflow-x:clip;
+    }
+
+    #pages .cg-vertical-tabs,
+    #pages .cg-gym-v1124-tabs,
+    #pages .page-tabs,
+    #pages .cgx-tabs {
+      display:flex;
+      width:100%;
+      max-width:100%;
+      min-width:0;
+      gap:.5rem;
+      overflow-x:auto;
+      overscroll-behavior-inline:contain;
+      scroll-snap-type:x proximity;
+      scrollbar-width:thin;
+      -webkit-overflow-scrolling:touch;
+      padding-block:.35rem;
+    }
+
+    #pages .cg-vertical-tabs > *,
+    #pages .cg-gym-v1124-tabs > *,
+    #pages .page-tabs > *,
+    #pages .cgx-tabs > * {
+      flex:0 0 auto;
+      min-height:44px;
+      scroll-snap-align:start;
+    }
+
+    #pages .cg-record-actions,
+    #pages .cg-gym-v1124-actions,
+    #pages .cgx-actions,
+    #pages .form-actions {
+      display:flex;
+      flex-wrap:wrap;
+      gap:.75rem;
+      min-width:0;
+    }
+
+    #pages .cg-record-actions .cgx-btn,
+    #pages .cg-gym-v1124-actions .cgx-btn,
+    #pages .cgx-actions .cgx-btn,
+    #pages .form-actions .cgx-btn {
+      min-height:44px;
+    }
+
+    #pages input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
+    #pages select,
+    #pages textarea {
+      min-height:44px;
+      max-width:100%;
+      font-size:16px;
+    }
+
+    #pages textarea { min-height:96px; }
+
+    #pages .cg-record-fields,
+    #pages .cg-fields-compact,
+    #pages .cg-gym-v1124-grid,
+    #pages .cg-gym-v1124-fields,
+    #pages .cg-gym-retention-grid {
+      grid-template-columns:minmax(0,1fr)!important;
+      min-width:0;
+      max-width:100%;
+    }
+
+    #pages .cg-vertical-kpis,
+    #pages .cg-gym-kpis {
+      display:grid;
+      grid-template-columns:repeat(2,minmax(0,1fr))!important;
+      gap:.75rem!important;
+      min-width:0;
+      max-width:100%;
+    }
+
+    #pages .cg-vertical-kpis > *,
+    #pages .cg-gym-kpis > *,
+    #pages .cg-gym-v1124-card,
+    #pages .cg-gym-v1124-list > article,
+    #pages .cg-gym-v1124-status > article {
+      min-width:0;
+      max-width:100%;
+      overflow-wrap:anywhere;
+    }
+
+    #pages .cg-gym-v1124-card > header,
+    #pages .cg-gym-v1124-list > article {
+      display:flex;
+      flex-wrap:wrap;
+      gap:.75rem;
+      align-items:flex-start;
+    }
+
+    #pages .cg-gym-v1124-card > header > div,
+    #pages .cg-gym-v1124-list > article > div {
+      flex:1 1 220px;
+      min-width:0;
+    }
+
+    #pages .cg-gym-v1124-card > header > .cgx-btn,
+    #pages .cg-gym-v1124-list > article > .cgx-btn {
+      min-height:44px;
+      flex:0 1 auto;
+    }
+
+    #pages .cg-record-form,
+    #pages .cg-gym-v1124-form,
+    #pages .cg-stack-form,
+    #pages .cg-inline-form {
+      min-width:0;
+      max-width:100%;
+    }
+  }
+
+  @media (max-width:430px) {
+    #pages .cgx-module-standard,
+    #pages .cg-page-stack,
+    #pages .cg-vertical-page {
+      padding-inline:clamp(.75rem,3.5vw,1rem);
+    }
+
+    #pages .cg-record-actions .cgx-btn,
+    #pages .cg-gym-v1124-actions .cgx-btn,
+    #pages .form-actions .cgx-btn {
+      flex:1 1 140px;
+    }
+
+    #pages .cg-vertical-kpis > article,
+    #pages .cg-gym-kpis > article {
+      padding:.85rem!important;
+    }
+
+    #pages .cg-vertical-kpis strong,
+    #pages .cg-gym-kpis strong {
+      overflow-wrap:anywhere;
+      line-height:1.15;
+    }
+  }
+}
