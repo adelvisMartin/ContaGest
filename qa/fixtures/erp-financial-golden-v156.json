@@ -1,0 +1,95 @@
+{
+  "schemaVersion": 1,
+  "datasetVersion": "erp-financial-golden-v156.1",
+  "synthetic": true,
+  "currency": "TEST",
+  "fiscalRates": {
+    "source": "SYNTHETIC_TEST_ONLY",
+    "vatBasisPoints": 1600,
+    "notes": "No representa BCV, SENIAT ni una tasa legal vigente. Sólo sirve para invariantes deterministas."
+  },
+  "inventory": {
+    "valuationMethod": "fixed-standard-cost",
+    "sku": "QA-GOLD-001",
+    "standardCostCents": 500,
+    "openingQuantityMilli": 100000,
+    "purchasesQuantityMilli": 20000,
+    "salesQuantityMilli": 30000,
+    "expectedClosingQuantityMilli": 90000,
+    "expectedClosingValueCents": 45000
+  },
+  "receivables": {
+    "salesGrossCents": 34800,
+    "collectionsCents": 20000,
+    "expectedClosingCents": 14800
+  },
+  "payables": {
+    "purchasesGrossCents": 13920,
+    "paymentsCents": 5000,
+    "expectedClosingCents": 8920
+  },
+  "bank": {
+    "openingCents": 100000,
+    "inflowsCents": 20000,
+    "outflowsCents": 20000,
+    "expectedClosingCents": 100000,
+    "statementClosingCents": 100000,
+    "expectedUnreconciledCents": 0
+  },
+  "payroll": {
+    "grossCents": 20000,
+    "deductionsCents": 5000,
+    "expectedNetCents": 15000
+  },
+  "tax": {
+    "outputVatCents": 4800,
+    "inputVatCents": 1920,
+    "expectedVatPayableCents": 2880
+  },
+  "ledgerEntries": [
+    {
+      "id": "sale-001",
+      "idempotencyKey": "gold-sale-001",
+      "lines": [
+        {"account":"AR","debitCents":34800,"creditCents":0},
+        {"account":"REVENUE","debitCents":0,"creditCents":30000},
+        {"account":"VAT_OUTPUT","debitCents":0,"creditCents":4800}
+      ]
+    },
+    {
+      "id": "collection-001",
+      "idempotencyKey": "gold-collection-001",
+      "lines": [
+        {"account":"BANK","debitCents":20000,"creditCents":0},
+        {"account":"AR","debitCents":0,"creditCents":20000}
+      ]
+    },
+    {
+      "id": "purchase-001",
+      "idempotencyKey": "gold-purchase-001",
+      "lines": [
+        {"account":"INVENTORY","debitCents":12000,"creditCents":0},
+        {"account":"VAT_INPUT","debitCents":1920,"creditCents":0},
+        {"account":"AP","debitCents":0,"creditCents":13920}
+      ]
+    },
+    {
+      "id": "supplier-payment-001",
+      "idempotencyKey": "gold-supplier-payment-001",
+      "lines": [
+        {"account":"AP","debitCents":5000,"creditCents":0},
+        {"account":"BANK","debitCents":0,"creditCents":5000}
+      ]
+    },
+    {
+      "id": "payroll-001",
+      "idempotencyKey": "gold-payroll-001",
+      "lines": [
+        {"account":"PAYROLL_EXPENSE","debitCents":20000,"creditCents":0},
+        {"account":"BANK","debitCents":0,"creditCents":15000},
+        {"account":"PAYROLL_PAYABLE","debitCents":0,"creditCents":5000}
+      ]
+    }
+  ],
+  "duplicateReplay": ["gold-sale-001", "gold-collection-001", "gold-sale-001"]
+}
