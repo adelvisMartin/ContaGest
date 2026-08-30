@@ -1,4 +1,4 @@
-const CACHE = 'contagest-ve-v11-16-1';
+const CACHE = 'contagest-ve-v11-16-2';
 const APP_SHELL = ['/', '/index.html', '/manifest.webmanifest', '/icons/contagest-app.svg', '/icons/contagest-app-192.svg', '/icons/contagest-app-512.svg'];
 
 self.addEventListener('install', (event) => {
@@ -42,6 +42,20 @@ self.addEventListener('fetch', (event) => {
   if (request.method !== 'GET') return;
   const url = new URL(request.url);
   if (url.origin !== self.location.origin || isSensitiveRequest(url)) return;
+
+  // Build identity is release evidence. It must never be satisfied by a stale
+  // service-worker cache because #182 compares the served SHA with the exact
+  // candidate being promoted.
+  if (url.pathname === '/build-info.json') {
+    event.respondWith(fetch(request, { cache:'no-store' }).catch(() => new Response(JSON.stringify({
+      schemaVersion:1,
+      product:'contagest-erp',
+      candidateSha:'unavailable-offline',
+      bound:false,
+      error:'BUILD_IDENTITY_OFFLINE'
+    }), { status:503, headers:{ 'Content-Type':'application/json; charset=utf-8', 'Cache-Control':'no-store' } })));
+    return;
+  }
 
   if (request.mode === 'navigate') {
     event.respondWith(
