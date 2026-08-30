@@ -1,0 +1,25 @@
+{
+  "version": "erp-performance-v157.1",
+  "targetsAreProvisionalUntilMeasured": true,
+  "frontend": {
+    "startupP95Ms": 3000,
+    "routeSwitchP95Ms": 800,
+    "saveP95Ms": 1500,
+    "import1000RowsP95Ms": 10000,
+    "tableRender": {
+      "100RowsP95Ms": 500,
+      "1000RowsP95Ms": 1500,
+      "10000RowsP95Ms": 4000
+    },
+    "longSessionHeapGrowthPctMax": 30
+  },
+  "backend": {
+    "apiP50Ms": 250,
+    "apiP95Ms": 1000,
+    "apiP99Ms": 2000,
+    "errorRatePctMax": 1,
+    "throughputRpsMin": 20
+  },
+  "profiles": ["cold", "warm", "repeated-navigation", "long-session", "network-throttled"],
+  "truthStates": ["PASS", "FAIL", "BLOCKED", "NOT_EXECUTED", "MEASURED_PROVISIONAL"]
+}
