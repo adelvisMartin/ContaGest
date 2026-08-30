@@ -1,0 +1,49 @@
+name: Runner Probe #134
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/runner-probe-v134.yml'
+      - 'docs/qa/GITHUB-ACTIONS-RUNNER-134.md'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  ubuntu-runner-probe:
+    name: ubuntu-latest probe
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Prove runner executed steps
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "RUNNER_PROBE_EXECUTED=true"
+          echo "sha=${GITHUB_SHA}"
+          echo "runner=${RUNNER_NAME:-unknown}"
+          node --version
+
+      - name: Persist non-sensitive probe evidence
+        shell: bash
+        run: |
+          mkdir -p artifacts/qa/runner-v134
+          cat > artifacts/qa/runner-v134/probe.txt <<EOF
+          status=EXECUTED
+          sha=${GITHUB_SHA}
+          runner=${RUNNER_NAME:-unknown}
+          os=${RUNNER_OS:-unknown}
+          arch=${RUNNER_ARCH:-unknown}
+          EOF
+
+      - name: Upload probe evidence
+        uses: actions/upload-artifact@v7
+        with:
+          name: runner-probe-v134-${{ github.sha }}
+          path: artifacts/qa/runner-v134/probe.txt
+          if-no-files-found: error
