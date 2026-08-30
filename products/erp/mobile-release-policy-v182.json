@@ -1,0 +1,21 @@
+{
+  "version":"erp-mobile-release-v182.1",
+  "routeCount":58,
+  "requiredViewports":[360,390,430,768,1440],
+  "productionMobileViewports":[360,390,430],
+  "required":{
+    "servedShaMatchesCandidate":true,
+    "buildIdentityBound":true,
+    "serviceWorkerFresh":true,
+    "pwaInstallUpgradeVerified":true,
+    "noDocumentHorizontalOverflow":true,
+    "mobileRoutesVerified":58,
+    "criticalActionsReachable":true
+  },
+  "truthStates":["PASS","FAIL","BLOCKED","NOT_EXECUTED"],
+  "notes":[
+    "Source review does not prove the deployed artifact.",
+    "local-unbound build identity is never release evidence.",
+    "A stale service worker/cache blocks promotion even when source SHA is correct."
+  ]
+}
