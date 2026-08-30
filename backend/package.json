@@ -4,12 +4,8 @@
   "type": "module",
   "private": true,
   "main": "./src/app.ts",
-  "exports": {
-    ".": "./src/app.ts"
-  },
-  "engines": {
-    "node": "22.x"
-  },
+  "exports": { ".": "./src/app.ts" },
+  "engines": { "node": "22.x" },
   "description": "Backend ContaGest-VE Enterprise con RBAC, licencias, MFA, Prisma/Supabase, verticales clínicas y endurecimiento operativo.",
   "scripts": {
     "dev": "tsx watch src/server.ts",
@@ -21,6 +17,8 @@
     "test:hipico": "tsx --test src/modules/hipico-bot/*.test.ts",
     "lab:hipico": "tsx scripts/hipico-lab-simulator.ts --all",
     "lab:hipico:interactive": "tsx scripts/hipico-lab-simulator.ts --interactive",
+    "soak:hipico": "tsx scripts/hipico-soak-v120.ts",
+    "soak:hipico:smoke": "tsx scripts/hipico-soak-v120.ts --duration-minutes=0.1 --sample-seconds=1",
     "test:observability": "tsx --test ../qa/observability-v98.test.ts",
     "test": "node --test && npm run test:financial-idempotency && npm run test:hipico && npm run test:observability",
     "prisma:sync-schema": "node scripts/sync-employee-prisma-schema.mjs",
@@ -75,7 +73,5 @@
     "tsx": "4.23.12",
     "typescript": "5.9.3"
   },
-  "prisma": {
-    "seed": "tsx prisma/seed.ts"
-  }
+  "prisma": { "seed": "tsx prisma/seed.ts" }
 }
