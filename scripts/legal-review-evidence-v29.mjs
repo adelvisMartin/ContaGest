@@ -14,6 +14,22 @@ const canonicalFiles = [
   'docs/legal/VENEZUELA_LEGAL_SOURCES_REVIEW_V1.md',
 ];
 const providerKeys = ['name', 'rif', 'address', 'legalEmail', 'supportEmail'];
+const requiredApprovals = [
+  'professionalReview',
+  'providerIdentity',
+  'terms',
+  'privacy',
+  'cookies',
+  'acceptableUse',
+  'suspensionTermination',
+  'jurisdictionDisputes',
+  'billingTaxCurrency',
+  'accountingTaxRetention',
+  'subprocessorsTransfers',
+  'cancellationRefundDelinquency',
+  'ipEvidencePolicy',
+  'humanHealthAddendum',
+];
 
 const sha256 = (buffer) => createHash('sha256').update(buffer).digest('hex');
 const normalize = (value) => String(value || '').replace(/\r\n/g, '\n');
@@ -45,27 +61,34 @@ const catalog = existsSync(join(root, 'backend/src/shared/legal/legalCatalog.ts'
   : '';
 const legalDocumentVersion = catalog.match(/LEGAL_DOCUMENT_VERSION\s*=\s*['"]([^'"]+)['"]/)?.[1] || null;
 const providerComplete = providerKeys.every((key) => String(attestation?.provider?.[key] || '').trim());
+const reviewedAt = Date.parse(String(attestation?.reviewedAt || ''));
 
 const blockers = [];
 if (files.some((entry) => entry.status !== 'PRESENT')) blockers.push('canonical-file-missing');
 if (!candidate.sha || !/^[0-9a-f]{40}$/i.test(candidate.sha)) blockers.push('candidate-sha-unknown');
 if (candidate.dirty) blockers.push('working-tree-dirty');
 if (!attestation) blockers.push('attestation-invalid-or-missing');
+if (attestation?.schemaVersion !== 1) blockers.push('attestation-schema-version-invalid');
 if (attestation?.status !== 'approved') blockers.push('professional-attestation-not-approved');
-if (attestation?.approvals?.professionalReview !== true) blockers.push('professional-review-approval-missing');
-if (attestation?.approvals?.providerIdentity !== true || !providerComplete) blockers.push('provider-identity-not-approved');
+if (!Number.isFinite(reviewedAt)) blockers.push('professional-reviewed-at-missing');
+if (!providerComplete) blockers.push('provider-identity-incomplete');
 if (!legalDocumentVersion || attestation?.legalDocumentVersion !== legalDocumentVersion) blockers.push('attestation-version-mismatch');
 if (!String(attestation?.reviewer?.name || '').trim()) blockers.push('reviewer-not-identified');
+if (!/^(VE|Venezuela)$/i.test(String(attestation?.reviewer?.jurisdiction || '').trim())) blockers.push('reviewer-jurisdiction-not-venezuela');
 if (!/^[a-f0-9]{64}$/i.test(String(attestation?.evidence?.sha256 || ''))) blockers.push('professional-evidence-hash-missing');
 if (!String(attestation?.evidence?.reference || '').trim()) blockers.push('professional-evidence-reference-missing');
+for (const approval of requiredApprovals) {
+  if (attestation?.approvals?.[approval] !== true) blockers.push(`approval-${approval}-missing`);
+}
 
 const verdict = blockers.length ? 'BLOCKED' : 'PASS';
 const contentSetSha256 = sha256(Buffer.from(JSON.stringify({
   legalDocumentVersion,
   files: files.map(({ path, status, sha256: digest, bytes }) => ({ path, status, sha256: digest, bytes })),
 })));
+const approvalState = Object.fromEntries(requiredApprovals.map((name) => [name, attestation?.approvals?.[name] === true]));
 const report = {
-  schemaVersion: 2,
+  schemaVersion: 3,
   issue: 29,
   product: 'ContaGest VE',
   verdict,
@@ -74,7 +97,9 @@ const report = {
   legalDocumentVersion,
   contentSetSha256,
   attestationStatus: attestation?.status || null,
-  professionalReviewApproved: attestation?.approvals?.professionalReview === true,
+  reviewedAt: Number.isFinite(reviewedAt) ? new Date(reviewedAt).toISOString() : null,
+  approvals: approvalState,
+  approvalsComplete: requiredApprovals.every((name) => approvalState[name] === true),
   providerIdentityApproved: attestation?.approvals?.providerIdentity === true && providerComplete,
   reviewer: attestation?.reviewer?.name ? { name: attestation.reviewer.name, jurisdiction: attestation.reviewer.jurisdiction || null } : null,
   evidenceReference: attestation?.evidence?.reference || null,
@@ -97,7 +122,13 @@ writeFileSync(mdPath, [
   `- Dirty working tree: **${candidate.dirty ? 'YES' : 'NO'}**`,
   `- Legal document version: \`${legalDocumentVersion || 'UNKNOWN'}\``,
   `- Attestation status: \`${attestation?.status || 'UNKNOWN'}\``,
+  `- Reviewed at: \`${report.reviewedAt || 'MISSING'}\``,
+  `- All required approvals: **${report.approvalsComplete ? 'YES' : 'NO'}**`,
   `- Canonical content-set SHA-256: \`${contentSetSha256}\``,
+  '',
+  '## Required approvals',
+  '',
+  ...requiredApprovals.map((name) => `- ${approvalState[name] ? 'PASS' : 'BLOCKED'} \`${name}\``),
   '',
   '## Canonical files',
   '',
