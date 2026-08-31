@@ -1,6 +1,16 @@
 {
-  "version": "erp-performance-v157.1",
+  "version": "erp-performance-v157.2",
   "targetsAreProvisionalUntilMeasured": true,
+  "workloadModel": {
+    "profiles": [
+      "finance-admin",
+      "operations-clerk",
+      "read-only-analyst"
+    ],
+    "expectedPeakConcurrentUsers": "MEASURE_AND_DECLARE",
+    "requiredLoadFactors": [1, 3],
+    "fixturePolicy": "SYNTHETIC_OR_SANITIZED_ONLY"
+  },
   "frontend": {
     "startupP95Ms": 3000,
     "routeSwitchP95Ms": 800,
@@ -11,15 +21,34 @@
       "1000RowsP95Ms": 1500,
       "10000RowsP95Ms": 4000
     },
-    "longSessionHeapGrowthPctMax": 30
+    "longSessionHeapGrowthPctMax": 30,
+    "longTaskCountPerMinuteMax": 5
   },
   "backend": {
     "apiP50Ms": 250,
     "apiP95Ms": 1000,
     "apiP99Ms": 2000,
     "errorRatePctMax": 1,
-    "throughputRpsMin": 20
+    "throughputRpsMin": 20,
+    "dbQueryP95Ms": 500,
+    "poolSaturationPctMax": 80,
+    "slowQueryCountMax": 0,
+    "nPlusOneFindingCountMax": 0,
+    "deadlockCountMax": 0,
+    "crossTenantLeakCountMax": 0
   },
+  "heavyProcesses": {
+    "required": ["import", "export", "report"],
+    "requiredOutcomes": ["success", "controlled-error", "cancellation-or-explicit-non-cancellable-contract"]
+  },
+  "degradationScenarios": [
+    "slow-db",
+    "pool-saturation",
+    "external-timeout",
+    "memory-pressure",
+    "large-payload",
+    "multi-user-concurrency"
+  ],
   "profiles": ["cold", "warm", "repeated-navigation", "long-session", "network-throttled"],
   "truthStates": ["PASS", "FAIL", "BLOCKED", "NOT_EXECUTED", "MEASURED_PROVISIONAL"]
 }
