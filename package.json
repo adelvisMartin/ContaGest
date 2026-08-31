@@ -22,6 +22,7 @@
     "qa:today": "node scripts/qa-today.mjs instructions",
     "qa:today:prepare": "node scripts/qa-today.mjs prepare",
     "qa:today:status": "node scripts/qa-today.mjs status",
+    "qa:actions:diagnose": "node scripts/github-actions-diagnostics-v134.mjs",
     "test:visual": "node --test tests/visual_system_v12_contract.test.mjs tests/visual_module_catalog_contract.test.mjs tests/visual_module_adapter_contract.test.mjs tests/visual_consolidation_v13_contract.test.mjs tests/erp_ux_v14_contract.test.mjs",
     "test:visual:v15": "node --test tests/visual_system_v12_contract.test.mjs tests/visual_module_adapter_contract.test.mjs tests/erp_ux_v14_contract.test.mjs",
     "test:visual:v14": "npm run test:visual:v15",
