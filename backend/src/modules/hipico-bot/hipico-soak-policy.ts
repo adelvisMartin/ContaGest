@@ -1,8 +1,11 @@
+export type EvidenceStatus='PASS'|'FAIL'|'BLOCKED'|'NOT_EXECUTED';
+export type SoakDrillEvidence={status:EvidenceStatus;at?:string|null;evidence?:string[]};
 export type SoakThresholds={
   maxRssGrowthMbPerHour:number;
   maxHeapGrowthMbPerHour:number;
   maxEventLoopP95Ms:number;
   maxBacklogAgeSeconds:number;
+  maxSpoolBytes:number;
   maxUnexpectedDuplicateResponses:number;
   maxLostDecisions:number;
   maxContextLeaks:number;
@@ -18,14 +21,17 @@ export type SoakSummaryInput={
   heapEndMb:number;
   eventLoopP95Ms:number;
   maxBacklogAgeSeconds:number;
+  maxSpoolBytes:number;
   unexpectedDuplicateResponses:number;
   lostDecisions:number;
   contextLeaks:number;
+  healthConfigured:boolean;
+  spoolConfigured:boolean;
   healthChecks:number;
   healthFailures:number;
-  sourceReadOnly:'PASS'|'FAIL'|'BLOCKED'|'NOT_EXECUTED';
-  labOnlyWriteDestination:'PASS'|'FAIL'|'BLOCKED'|'NOT_EXECUTED';
-  drills:Record<string,'PASS'|'FAIL'|'BLOCKED'|'NOT_EXECUTED'>;
+  sourceReadOnly:EvidenceStatus;
+  labOnlyWriteDestination:EvidenceStatus;
+  drills:Record<string,SoakDrillEvidence>;
 };
 export type SoakEvaluation={
   status:'PASS'|'FAIL'|'BLOCKED'|'SMOKE_ONLY'|'NOT_EXECUTED';
@@ -35,31 +41,55 @@ export type SoakEvaluation={
   rssGrowthMbPerHour:number;
   heapGrowthMbPerHour:number;
   healthFailureRate:number;
+  healthCoverageRatio:number;
+};
+export type SoakPolicy={
+  releaseMinimumHours:number;
+  requiredDrills:string[];
+  minimumHealthCoverageRatio:number;
+  drillEvidenceRequired:boolean;
+  healthEndpointRequiredForRelease:boolean;
+  spoolPathRequiredForRelease:boolean;
+  thresholds:SoakThresholds;
 };
 
-export function evaluateSoak(input:SoakSummaryInput,policy:{releaseMinimumHours:number;requiredDrills:string[];thresholds:SoakThresholds}):SoakEvaluation{
+export function evaluateSoak(input:SoakSummaryInput,policy:SoakPolicy):SoakEvaluation{
   const durationHours=input.durationMs/3_600_000;
   const divisor=Math.max(durationHours,1/3600);
   const rssGrowthMbPerHour=(input.rssEndMb-input.rssStartMb)/divisor;
   const heapGrowthMbPerHour=(input.heapEndMb-input.heapStartMb)/divisor;
   const healthFailureRate=input.healthChecks?input.healthFailures/input.healthChecks:0;
+  const healthCoverageRatio=input.samples?input.healthChecks/input.samples:0;
   const violations:string[]=[];const blocked:string[]=[];
+
   if(!/^[a-f0-9]{40}$/i.test(input.candidateSha))blocked.push('CANDIDATE_SHA_UNBOUND');
   if(input.sourceReadOnly!=='PASS')blocked.push(`SOURCE_READ_ONLY_${input.sourceReadOnly}`);
   if(input.labOnlyWriteDestination!=='PASS')blocked.push(`LAB_ONLY_WRITE_${input.labOnlyWriteDestination}`);
-  for(const drill of policy.requiredDrills){const state=input.drills[drill]||'NOT_EXECUTED';if(state==='FAIL')violations.push(`DRILL_${drill}_FAIL`);else if(state!=='PASS')blocked.push(`DRILL_${drill}_${state}`);}
+  if(policy.healthEndpointRequiredForRelease&&!input.healthConfigured)blocked.push('HEALTH_ENDPOINT_NOT_CONFIGURED');
+  if(policy.spoolPathRequiredForRelease&&!input.spoolConfigured)blocked.push('SPOOL_PATH_NOT_CONFIGURED');
+  if(input.healthConfigured&&healthCoverageRatio<policy.minimumHealthCoverageRatio)blocked.push('HEALTH_COVERAGE_INCOMPLETE');
+
+  for(const drill of policy.requiredDrills){
+    const evidence=input.drills[drill]||{status:'NOT_EXECUTED' as const};
+    if(evidence.status==='FAIL')violations.push(`DRILL_${drill}_FAIL`);
+    else if(evidence.status!=='PASS')blocked.push(`DRILL_${drill}_${evidence.status}`);
+    else if(policy.drillEvidenceRequired&&(!evidence.at||!Array.isArray(evidence.evidence)||evidence.evidence.length===0))blocked.push(`DRILL_${drill}_EVIDENCE_MISSING`);
+  }
+
   if(rssGrowthMbPerHour>policy.thresholds.maxRssGrowthMbPerHour)violations.push('RSS_GROWTH');
   if(heapGrowthMbPerHour>policy.thresholds.maxHeapGrowthMbPerHour)violations.push('HEAP_GROWTH');
   if(input.eventLoopP95Ms>policy.thresholds.maxEventLoopP95Ms)violations.push('EVENT_LOOP_P95');
   if(input.maxBacklogAgeSeconds>policy.thresholds.maxBacklogAgeSeconds)violations.push('BACKLOG_AGE');
+  if(input.maxSpoolBytes>policy.thresholds.maxSpoolBytes)violations.push('SPOOL_BYTES');
   if(input.unexpectedDuplicateResponses>policy.thresholds.maxUnexpectedDuplicateResponses)violations.push('DUPLICATE_RESPONSE');
   if(input.lostDecisions>policy.thresholds.maxLostDecisions)violations.push('LOST_DECISION');
   if(input.contextLeaks>policy.thresholds.maxContextLeaks)violations.push('CONTEXT_LEAK');
   if(healthFailureRate>policy.thresholds.maxHealthFailureRate)violations.push('HEALTH_FAILURE_RATE');
+
   let status:SoakEvaluation['status']='PASS';
   if(violations.length)status='FAIL';
   else if(blocked.length)status='BLOCKED';
   else if(durationHours<policy.releaseMinimumHours)status='SMOKE_ONLY';
   if(input.samples===0)status='NOT_EXECUTED';
-  return{status,violations,blocked,durationHours,rssGrowthMbPerHour,heapGrowthMbPerHour,healthFailureRate};
+  return{status,violations,blocked,durationHours,rssGrowthMbPerHour,heapGrowthMbPerHour,healthFailureRate,healthCoverageRatio};
 }
