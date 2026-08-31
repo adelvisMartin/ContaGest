@@ -6,6 +6,7 @@
   "preferredRcHours": 72,
   "sampleSeconds": 30,
   "minimumHealthCoverageRatio": 0.9,
+  "minimumSpoolCoverageRatio": 0.9,
   "thresholds": {
     "maxRssGrowthMbPerHour": 32,
     "maxHeapGrowthMbPerHour": 24,
@@ -28,5 +29,5 @@
   "healthEndpointRequiredForRelease": true,
   "spoolPathRequiredForRelease": true,
   "sourceInvariant": "SOURCE remains read-only for the entire run; all generated replay/response traffic is LAB/local only.",
-  "releaseRule": "Duration >=24h, health coverage >=90%, spool observed, all required drills PASS with evidence, no threshold violation and exact candidate SHA are required for release PASS. Short runs are SMOKE_ONLY."
+  "releaseRule": "Duration >=24h, health coverage >=90%, valid spool-v2 structure observed >=90%, all required drills PASS with evidence, no threshold violation and exact candidate SHA are required for release PASS. Short runs are SMOKE_ONLY."
 }
