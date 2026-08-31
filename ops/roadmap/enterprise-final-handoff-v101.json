@@ -1,0 +1,85 @@
+{
+  "schemaVersion": 1,
+  "issue": 101,
+  "product": "ContaGest VE ERP",
+  "snapshotAt": "2026-08-31T05:00:00Z",
+  "mainShaAtSnapshot": "69c843913bef26c9d766ffa61415def494a22de9",
+  "implementationHandoffReady": true,
+  "epicComplete": false,
+  "productionReady": false,
+  "closedIssueIsNotRuntimePass": true,
+  "openChildIssuesAtSnapshot": [29, 97, 134, 155, 157],
+  "finalGates": [
+    {
+      "issue": 155,
+      "area": "system-e2e",
+      "repositoryWork": "CORRECTION_PR_OPEN",
+      "pullRequest": 205,
+      "remaining": [
+        "merge viewport-complete schema v2",
+        "execute 3654-case route-state-role-viewport evidence on candidate SHA",
+        "harvest and resolve P0/P1 findings"
+      ],
+      "canCloseFromMergeAlone": false
+    },
+    {
+      "issue": 157,
+      "area": "performance-capacity",
+      "repositoryWork": "CORRECTION_PR_OPEN",
+      "pullRequest": 206,
+      "remaining": [
+        "merge capacity evidence schema v2",
+        "measure expected peak concurrency",
+        "execute 1x and 3x workloads and degradation scenarios",
+        "replace provisional budgets only with measured evidence"
+      ],
+      "canCloseFromMergeAlone": false
+    },
+    {
+      "issue": 134,
+      "area": "github-actions-infrastructure",
+      "repositoryWork": "DIAGNOSTIC_PR_OPEN",
+      "pullRequest": 210,
+      "observedExternalState": "HOSTED_RUNNER_NOT_ASSIGNED",
+      "remaining": [
+        "restore real GitHub-hosted runner assignment",
+        "execute Runner Probe steps",
+        "execute ContaGest CI steps",
+        "execute PostgreSQL workflow steps",
+        "record proven root cause and recovery"
+      ],
+      "canCloseFromMergeAlone": false
+    },
+    {
+      "issue": 97,
+      "area": "release-governance",
+      "repositoryWork": "APPLY_PR_OPEN",
+      "pullRequest": 211,
+      "observedExternalState": "MAIN_UNPROTECTED",
+      "remaining": [
+        "apply structural branch protection with admin GitHub session",
+        "verify main protected=true",
+        "after #134 recovery promote stable required checks",
+        "perform rejection/governance drill"
+      ],
+      "canCloseFromMergeAlone": false
+    },
+    {
+      "issue": 29,
+      "area": "production-legal",
+      "repositoryWork": "EVIDENCE_PARITY_PR_OPEN",
+      "pullRequest": 209,
+      "observedExternalState": "PROFESSIONAL_REVIEW_AND_PROVIDER_IDENTITY_PENDING",
+      "remaining": [
+        "merge evidence gate parity",
+        "supply real provider identity",
+        "obtain Venezuelan professional legal review",
+        "approve all attestation decisions with evidence hash",
+        "execute legal first-access/reject/reaccept E2E"
+      ],
+      "canCloseFromMergeAlone": false
+    }
+  ],
+  "closureRule": "EPIC #101 remains open until all final gates are evidenced on the relevant candidate SHA. IMPLEMENTED, MERGED or CLOSED child issues do not imply runtime PASS.",
+  "nextPhase": "merge corrective PRs, freeze candidate SHA, execute ERP QA/performance/legal/governance gates, create atomic defect PRs only for observed failures"
+}
