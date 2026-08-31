@@ -29,6 +29,8 @@ export type SoakSummaryInput={
   spoolConfigured:boolean;
   healthChecks:number;
   healthFailures:number;
+  spoolChecks:number;
+  spoolAvailableChecks:number;
   sourceReadOnly:EvidenceStatus;
   labOnlyWriteDestination:EvidenceStatus;
   drills:Record<string,SoakDrillEvidence>;
@@ -42,11 +44,13 @@ export type SoakEvaluation={
   heapGrowthMbPerHour:number;
   healthFailureRate:number;
   healthCoverageRatio:number;
+  spoolCoverageRatio:number;
 };
 export type SoakPolicy={
   releaseMinimumHours:number;
   requiredDrills:string[];
   minimumHealthCoverageRatio:number;
+  minimumSpoolCoverageRatio:number;
   drillEvidenceRequired:boolean;
   healthEndpointRequiredForRelease:boolean;
   spoolPathRequiredForRelease:boolean;
@@ -60,6 +64,7 @@ export function evaluateSoak(input:SoakSummaryInput,policy:SoakPolicy):SoakEvalu
   const heapGrowthMbPerHour=(input.heapEndMb-input.heapStartMb)/divisor;
   const healthFailureRate=input.healthChecks?input.healthFailures/input.healthChecks:0;
   const healthCoverageRatio=input.samples?input.healthChecks/input.samples:0;
+  const spoolCoverageRatio=input.spoolChecks?input.spoolAvailableChecks/input.spoolChecks:0;
   const violations:string[]=[];const blocked:string[]=[];
 
   if(!/^[a-f0-9]{40}$/i.test(input.candidateSha))blocked.push('CANDIDATE_SHA_UNBOUND');
@@ -68,6 +73,7 @@ export function evaluateSoak(input:SoakSummaryInput,policy:SoakPolicy):SoakEvalu
   if(policy.healthEndpointRequiredForRelease&&!input.healthConfigured)blocked.push('HEALTH_ENDPOINT_NOT_CONFIGURED');
   if(policy.spoolPathRequiredForRelease&&!input.spoolConfigured)blocked.push('SPOOL_PATH_NOT_CONFIGURED');
   if(input.healthConfigured&&healthCoverageRatio<policy.minimumHealthCoverageRatio)blocked.push('HEALTH_COVERAGE_INCOMPLETE');
+  if(input.spoolConfigured&&spoolCoverageRatio<policy.minimumSpoolCoverageRatio)blocked.push('SPOOL_COVERAGE_INCOMPLETE');
 
   for(const drill of policy.requiredDrills){
     const evidence=input.drills[drill]||{status:'NOT_EXECUTED' as const};
@@ -91,5 +97,5 @@ export function evaluateSoak(input:SoakSummaryInput,policy:SoakPolicy):SoakEvalu
   else if(blocked.length)status='BLOCKED';
   else if(durationHours<policy.releaseMinimumHours)status='SMOKE_ONLY';
   if(input.samples===0)status='NOT_EXECUTED';
-  return{status,violations,blocked,durationHours,rssGrowthMbPerHour,heapGrowthMbPerHour,healthFailureRate,healthCoverageRatio};
+  return{status,violations,blocked,durationHours,rssGrowthMbPerHour,heapGrowthMbPerHour,healthFailureRate,healthCoverageRatio,spoolCoverageRatio};
 }
