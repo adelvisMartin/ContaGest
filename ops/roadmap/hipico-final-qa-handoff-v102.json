@@ -1,0 +1,55 @@
+{
+  "schemaVersion": 1,
+  "issue": 102,
+  "product": "Control Hipico",
+  "snapshotAt": "2026-08-31T05:03:00Z",
+  "mainShaAtSnapshot": "69c843913bef26c9d766ffa61415def494a22de9",
+  "implementationHandoffReady": true,
+  "epicComplete": false,
+  "releaseReady": false,
+  "productionWriteAllowed": false,
+  "sourceMode": "READ_ONLY",
+  "labWriteAllowedDuringQa": true,
+  "openChildIssuesAtSnapshot": [119, 120],
+  "finalExecutionGates": [
+    {
+      "issue": 119,
+      "area": "physical-qa",
+      "repositoryWork": "SCHEMA_V2_PR_OPEN",
+      "pullRequest": 207,
+      "remaining": [
+        "merge device-mode matrix schema v2",
+        "freeze final candidate SHA",
+        "execute PWA browser, PWA standalone and Android APK environments",
+        "execute all scenarios per environment",
+        "prove SOURCE read-only, LAB-only write and safe session fallback",
+        "complete two real SOURCE-to-LAB QA jornadas with sanitized evidence"
+      ],
+      "canCloseFromMergeAlone": false
+    },
+    {
+      "issue": 120,
+      "area": "capacity-soak",
+      "repositoryWork": "SCHEMA_V2_PR_OPEN",
+      "pullRequest": 208,
+      "remaining": [
+        "merge observed soak evidence schema v2",
+        "execute at least 24 hours on candidate SHA",
+        "observe health and spool continuously",
+        "evidence bridge/backend restart and SOURCE/LAB reconnect drills",
+        "confirm thresholds, zero unexplained duplicates/loss/context leaks"
+      ],
+      "canCloseFromMergeAlone": false
+    }
+  ],
+  "productionComplianceGate": {
+    "sourceIssue": 154,
+    "evidenceFile": "products/hipico-control/whatsapp-production-evidence.json",
+    "reviewedAt": "2026-08-30",
+    "decision": "NO_GO",
+    "nextMandatoryPolicyReview": "2026-09-23",
+    "effect": "Even if #119 and #120 pass, automated production write to the real betting group remains disabled until current official platform evidence permits the exact use/capability and all other authorization requirements are proven."
+  },
+  "closureRule": "EPIC #102 remains open until #119 and #120 have real evidence on the final candidate SHA and no unresolved P0/P1 finding remains. Production WhatsApp write remains independently fail-closed while compliance evidence is NO_GO.",
+  "nextPhase": "merge PRs 207/208, freeze candidate SHA, execute physical QA and soak, create atomic corrective PRs only for observed defects, then reassess the EPIC and promotion policy"
+}
