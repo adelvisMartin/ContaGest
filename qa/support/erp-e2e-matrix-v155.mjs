@@ -11,10 +11,27 @@ export const ERP_E2E_VIEWPORTS_V155=Object.freeze([
 ]);
 export const ERP_E2E_ROUTES_V155=Object.freeze(MODULE_VISUAL_CATALOG.map(({route,family,priority,label})=>({route,family,priority,label})));
 
+/**
+ * Canonical evidence dimension for #155.
+ * A case is only complete when route, state, role AND viewport are explicit.
+ * Keeping viewport outside the case allowed a route/state/role tuple to appear
+ * covered even if it had only been rendered at one geometry.
+ */
 export function buildErpE2EMatrixV155(){
   return ERP_E2E_ROUTES_V155.flatMap((route)=>
     ERP_E2E_STATES_V155.flatMap((state)=>
-      ERP_E2E_ROLES_V155.map((role)=>({route:route.route,family:route.family,priority:route.priority,state,role}))
+      ERP_E2E_ROLES_V155.flatMap((role)=>
+        ERP_E2E_VIEWPORTS_V155.map((viewport)=>({
+          route:route.route,
+          family:route.family,
+          priority:route.priority,
+          state,
+          role,
+          viewport:viewport.name,
+          width:viewport.width,
+          height:viewport.height
+        }))
+      )
     )
   );
 }
