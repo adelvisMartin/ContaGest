@@ -4,6 +4,8 @@
 
 En v1 `--health-url` y `--spool-path` eran opcionales. Un run largo podía tener `healthChecks=0` y backlog `0` simplemente porque esas dimensiones no se observaron. Los recovery drills también podían declararse `PASS` por argumento CLI sin evidencia adjunta.
 
+Además, spool v2 guarda records dentro de subdirectorios por estado (`queued`, `failed`, `sent`, `quarantined`, `replayed`, `expired`). Una inspección sólo del directorio raíz devolvería falsamente 0 archivos/bytes aunque existiera cola real.
+
 Eso no es suficiente para un gate de 24–72 h.
 
 ## Requisitos v2
@@ -17,7 +19,9 @@ Para `PASS` de release se exige:
 - health endpoint configurado;
 - spool path configurado;
 - health coverage >=90% de las muestras;
-- spool bytes y backlog age medidos;
+- estructura spool v2 válida (`queued/` + `failed/`) observada >=90% de las muestras;
+- tamaño total del spool medido recursivamente;
+- backlog age calculado sólo sobre records activos `queued + failed`, no sobre `sent/replayed` históricos;
 - 4 drills requeridos con `status=PASS`, timestamp y al menos una referencia de evidencia;
 - cero pérdida/duplicado/context leak por encima de policy;
 - memoria/event-loop/backlog/spool/health dentro de thresholds.
