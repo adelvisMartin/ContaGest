@@ -24,7 +24,7 @@ const samplesFile=path.join(outDir,'samples.jsonl');
 const scenario=labScenarioById('pre-close-load');if(!scenario)throw new Error('Falta scenario pre-close-load de #151.');
 const eventLoop=monitorEventLoopDelay({resolution:20});eventLoop.enable();
 const cpuStart=process.cpuUsage();const memoryStart=process.memoryUsage();const start=Date.now();
-let healthChecks=0,healthFailures=0,decisions=0,lostDecisions=0,duplicateResponses=0,contextLeaks=0,maxBacklogAgeSeconds=0,maxSpoolBytes=0;
+let healthChecks=0,healthFailures=0,spoolChecks=0,spoolAvailableChecks=0,decisions=0,lostDecisions=0,duplicateResponses=0,contextLeaks=0,maxBacklogAgeSeconds=0,maxSpoolBytes=0;
 
 function loadDrills():Record<string,SoakDrillEvidence>{
   const fallback=Object.fromEntries(policy.requiredDrills.map((id:string)=>[
@@ -45,15 +45,44 @@ function loadDrills():Record<string,SoakDrillEvidence>{
 }
 const drills=loadDrills();
 
-function dirStats(target:string){
-  if(!target||!fs.existsSync(target))return{files:0,bytes:0,oldestAgeSeconds:0};
-  let files=0,bytes=0,oldest=Date.now();
-  for(const entry of fs.readdirSync(target,{withFileTypes:true})){
-    if(!entry.isFile())continue;
-    const full=path.join(target,entry.name);const stat=fs.statSync(full);
-    files+=1;bytes+=stat.size;oldest=Math.min(oldest,stat.mtimeMs);
+type FileStats={files:number;bytes:number;oldestMtimeMs:number|null};
+function recursiveFileStats(target:string):FileStats{
+  if(!target||!fs.existsSync(target))return{files:0,bytes:0,oldestMtimeMs:null};
+  const stack=[target];let files=0,bytes=0,oldestMtimeMs:number|null=null;
+  while(stack.length){
+    const current=stack.pop()!;
+    for(const entry of fs.readdirSync(current,{withFileTypes:true})){
+      const full=path.join(current,entry.name);
+      if(entry.isDirectory()){stack.push(full);continue;}
+      if(!entry.isFile())continue;
+      const stat=fs.statSync(full);
+      files+=1;bytes+=stat.size;
+      oldestMtimeMs=oldestMtimeMs===null?stat.mtimeMs:Math.min(oldestMtimeMs,stat.mtimeMs);
+    }
   }
-  return{files,bytes,oldestAgeSeconds:files?(Date.now()-oldest)/1000:0};
+  return{files,bytes,oldestMtimeMs};
+}
+function spoolStats(target:string){
+  spoolChecks+=1;
+  if(!target||!fs.existsSync(target))return{available:false,files:0,bytes:0,activeFiles:0,oldestAgeSeconds:0};
+  const queuedDir=path.join(target,'queued');
+  const failedDir=path.join(target,'failed');
+  const available=fs.existsSync(queuedDir)&&fs.existsSync(failedDir);
+  if(available)spoolAvailableChecks+=1;
+  const total=recursiveFileStats(target);
+  const queued=recursiveFileStats(queuedDir);
+  const failed=recursiveFileStats(failedDir);
+  const oldestCandidates=[queued.oldestMtimeMs,failed.oldestMtimeMs].filter((value):value is number=>value!==null);
+  const oldestActive=oldestCandidates.length?Math.min(...oldestCandidates):null;
+  return{
+    available,
+    files:total.files,
+    bytes:total.bytes,
+    activeFiles:queued.files+failed.files,
+    queuedFiles:queued.files,
+    failedFiles:failed.files,
+    oldestAgeSeconds:oldestActive===null?0:Math.max(0,(Date.now()-oldestActive)/1000)
+  };
 }
 async function health(){
   if(!healthUrl)return null;healthChecks+=1;
@@ -76,7 +105,7 @@ while(Date.now()<endAt){
   lostDecisions+=run.summary.lostDecisions;
   duplicateResponses+=run.summary.duplicateResponses;
   contextLeaks+=run.summary.contextLeaks;
-  const spool=dirStats(spoolPath);
+  const spool=spoolStats(spoolPath);
   maxBacklogAgeSeconds=Math.max(maxBacklogAgeSeconds,spool.oldestAgeSeconds);
   maxSpoolBytes=Math.max(maxSpoolBytes,spool.bytes);
   const mem=process.memoryUsage();const cpu=process.cpuUsage(cpuStart);const healthState=await health();
@@ -94,7 +123,8 @@ const summaryInput:SoakSummaryInput={
   eventLoopP95Ms,maxBacklogAgeSeconds,maxSpoolBytes,
   unexpectedDuplicateResponses:duplicateResponses,lostDecisions,contextLeaks,
   healthConfigured:Boolean(healthUrl),spoolConfigured:Boolean(spoolPath),
-  healthChecks,healthFailures,sourceReadOnly,labOnlyWriteDestination,drills
+  healthChecks,healthFailures,spoolChecks,spoolAvailableChecks,
+  sourceReadOnly,labOnlyWriteDestination,drills
 };
 const evaluation=evaluateSoak(summaryInput,policy);
 const final={
