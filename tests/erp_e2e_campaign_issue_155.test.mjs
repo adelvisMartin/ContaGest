@@ -7,20 +7,32 @@ test('catalog has exactly 58 unique ERP routes',()=>{
   assert.equal(new Set(ERP_E2E_ROUTES_V155.map((item)=>item.route)).size,58);
 });
 
-test('required viewports include 390 tablet and desktop',()=>{
+test('required viewports include mobile tablet and desktop',()=>{
   assert.deepEqual(ERP_E2E_VIEWPORTS_V155.map((v)=>[v.width,v.height]),[[390,844],[768,1024],[1440,900]]);
 });
 
-test('matrix covers every route state and role',()=>{
+test('matrix covers every route state role and viewport exactly once',()=>{
   const matrix=buildErpE2EMatrixV155();
-  assert.equal(matrix.length,58*ERP_E2E_STATES_V155.length*ERP_E2E_ROLES_V155.length);
+  assert.equal(matrix.length,58*ERP_E2E_STATES_V155.length*ERP_E2E_ROLES_V155.length*ERP_E2E_VIEWPORTS_V155.length);
   for(const route of ERP_E2E_ROUTES_V155){
     for(const state of ERP_E2E_STATES_V155){
       for(const role of ERP_E2E_ROLES_V155){
-        assert.equal(matrix.filter((item)=>item.route===route.route&&item.state===state&&item.role===role).length,1,`${route.route}/${state}/${role}`);
+        for(const viewport of ERP_E2E_VIEWPORTS_V155){
+          const matches=matrix.filter((item)=>item.route===route.route&&item.state===state&&item.role===role&&item.viewport===viewport.name);
+          assert.equal(matches.length,1,`${route.route}/${state}/${role}/${viewport.name}`);
+          assert.equal(matches[0].width,viewport.width);
+          assert.equal(matches[0].height,viewport.height);
+        }
       }
     }
   }
+});
+
+test('viewport is part of the evidence identity',()=>{
+  const matrix=buildErpE2EMatrixV155();
+  const identities=new Set(matrix.map((item)=>`${item.route}|${item.state}|${item.role}|${item.viewport}`));
+  assert.equal(identities.size,matrix.length);
+  assert.equal(matrix.some((item)=>!item.viewport),false);
 });
 
 test('critical financial routes are in matrix',()=>{
