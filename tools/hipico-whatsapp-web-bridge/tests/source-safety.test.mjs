@@ -29,17 +29,36 @@ test('source monitoring also verifies its pinned ID when configured', () => {
   assert.match(source, /await assertCurrentSourceIdentity\(\)/);
 });
 
-test('429 circuit breaker and retry metadata are present', () => {
+test('429 circuit breaker persists Retry-After/backoff state and exposes next retry metadata', () => {
+  assert.match(source, /response\.status === 429/);
   assert.match(source, /parseRetryAfterMs/);
-  assert.match(source, /backendNextAllowedAt/);
   assert.match(source, /computeBackoffMs/);
-  assert.match(source, /nextAttemptAt/);
+  assert.match(source, /backendNextAllowedAt/);
+  assert.match(source, /RETRY_STATE_FILE/);
+  assert.match(source, /async function saveRetryState/);
+  assert.match(source, /nextRetryAt:/);
+
+  const classifyAt = source.indexOf('response.status === 429');
+  const cooldownAt = source.indexOf('backendNextAllowedAt = Date.now() + wait');
+  const persistAt = source.indexOf('await saveRetryState();', cooldownAt);
+  assert.ok(classifyAt >= 0, '429 must be classified explicitly');
+  assert.ok(cooldownAt > classifyAt, 'cooldown must be derived after HTTP failure classification');
+  assert.ok(persistAt > cooldownAt, 'cooldown state must be persisted after calculating next allowed attempt');
 });
 
-test('capture queues locally before backend delivery', () => {
-  assert.match(source, /BACKEND_SYNC_ENABLED \? await queueEvent\(event\) : null/);
+test('capture persists durable backend work before flush and before marking source message seen', () => {
+  assert.match(source, /if \(BACKEND_SYNC_ENABLED\) \{[\s\S]*await queueEvent\(event\);[\s\S]*await flushEventSpool\(1\);[\s\S]*\}/);
   assert.match(source, /await appendTraining\(event, classification, null\)/);
   assert.match(source, /await queueMirror\(/);
+
+  const captureStart = source.indexOf('async function captureRow(row)');
+  const queueAt = source.indexOf('await queueEvent(event);', captureStart);
+  const flushAt = source.indexOf('await flushEventSpool(1);', queueAt);
+  const seenAt = source.indexOf('rememberSeen(row.id);', captureStart);
+  assert.ok(captureStart >= 0, 'captureRow must exist');
+  assert.ok(queueAt > captureStart, 'backend event must be durably queued during capture');
+  assert.ok(flushAt > queueAt, 'delivery flush must happen only after durable enqueue');
+  assert.ok(seenAt > flushAt, 'source message must be marked seen only after durable work has been queued');
 });
 
 test('local shadow remains available when backend is unavailable', () => {
