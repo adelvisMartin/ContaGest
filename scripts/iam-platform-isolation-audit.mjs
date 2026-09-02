@@ -4,6 +4,9 @@ import process from 'node:process';
 
 const root = process.cwd();
 const read = (file) => fs.readFileSync(path.join(root, file), 'utf8');
+const executableSource = (source) => source
+  .replace(/\/\*[\s\S]*?\*\//g, '')
+  .replace(/(^|\s)\/\/.*$/gm, '$1');
 const failures = [];
 const assert = (condition, message) => { if (!condition) failures.push(message); };
 
@@ -16,7 +19,7 @@ const sensitiveFiles = [
 ];
 
 for (const file of sensitiveFiles) {
-  const source = read(file);
+  const source = executableSource(read(file));
   assert(!/role\?*\.system|role\?\.system|role\.system|system\s*===\s*true/i.test(source), `${file}: Role.system no puede decidir autorización o bypass`);
   assert(!/permissions\s*:\s*\{\s*some\s*:\s*\{\s*permission\s*:\s*\{\s*key\s*:\s*['"]platform\.manage['"]/s.test(source), `${file}: platform.manage debe resolverse mediante platformAccess.ts`);
 }
@@ -31,7 +34,7 @@ const auth = read('backend/src/modules/auth/auth.routes.ts');
 assert(auth.includes("import { hasPlatformAccess }"), 'auth login debe consumir la identidad explícita de plataforma');
 assert(auth.includes('const platformOperator=await hasPlatformAccess'), 'auth login debe resolver platformOperator antes del bypass de licencia');
 assert(auth.includes('if(!platformOperator){'), 'auth login sólo puede omitir licencia para platformOperator verificado');
-assert(!auth.includes('isInternalUser('), 'auth no debe conservar el atajo isInternalUser basado en system');
+assert(!executableSource(auth).includes('isInternalUser('), 'auth no debe conservar el atajo isInternalUser basado en system');
 
 const context = read('backend/src/shared/middleware/context.ts');
 assert(context.includes('if (isPlatformPermission(permission))'), 'requirePermission debe separar permisos globales de permisos tenant');
