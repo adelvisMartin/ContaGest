@@ -71,6 +71,7 @@ jobs:
           node --test tests/toolchain_dependency_cleanup_issue_26.test.mjs
 
       - name: ExcelJS compatibility smoke
+        working-directory: backend
         run: |
           node --input-type=module <<'NODE'
           import ExcelJS from 'exceljs';
