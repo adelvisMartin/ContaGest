@@ -24,6 +24,47 @@ permissions:
   contents: read
 
 jobs:
+  repair-typecheck:
+    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'fix/toolchain-lock-v26-finalize'
+    name: repair-typecheck-once
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+      - name: Narrow account row before parentCode access
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('backend/src/modules/imports/imports.routes.ts')
+          s=p.read_text()
+          old="""    if(type==='accounts'&&normalized.parentCode&&!dbAccountCodes.has(normalized.parentCode)&&!plannedAccountCodes.has(normalized.parentCode))errors.push(issue('parentCode','IMPORT_PARENT_NOT_FOUND',`La cuenta padre ${normalized.parentCode} no existe ni está incluida en el batch.`));"""
+          new="""    if(type==='accounts'){
+      const account=normalized as z.infer<typeof accountRow>;
+      if(account.parentCode&&!dbAccountCodes.has(account.parentCode)&&!plannedAccountCodes.has(account.parentCode))errors.push(issue('parentCode','IMPORT_PARENT_NOT_FOUND',`La cuenta padre ${account.parentCode} no existe ni está incluida en el batch.`));
+    }"""
+          if old not in s:
+              print('target already repaired or changed; no broad edit performed')
+          else:
+              p.write_text(s.replace(old,new,1))
+          PY
+      - name: Commit exact repair
+        env:
+          REPAIR_BRANCH: ${{ github.event.pull_request.head.ref }}
+        run: |
+          set -euo pipefail
+          if git diff --quiet -- backend/src/modules/imports/imports.routes.ts; then
+            echo "typecheck repair already present"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add backend/src/modules/imports/imports.routes.ts
+          git commit -m "fix(typecheck): estrechar fila accounts antes de parentCode"
+          git push origin "HEAD:${REPAIR_BRANCH}"
+
   dependency-lock:
     name: dependency-lock
     runs-on: ubuntu-latest
