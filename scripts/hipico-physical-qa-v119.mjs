@@ -8,7 +8,8 @@ const root=process.cwd();
 const catalog=JSON.parse(fs.readFileSync(path.join(root,'products/hipico-control/physical-qa-v119.json'),'utf8'));
 const args=process.argv.slice(2);
 const command=args[0]||'status';
-const fileArg=args.find((arg)=>arg.startsWith('--file='))?.slice(7)||null;
+const value=(name)=>args.find((arg)=>arg.startsWith(`--${name}=`))?.slice(name.length+3)??null;
+const fileArg=value('file');
 
 function gitSha(){
   const env=String(process.env.GITHUB_SHA||process.env.VERCEL_GIT_COMMIT_SHA||process.env.GIT_SHA||'').trim();
@@ -17,38 +18,60 @@ function gitSha(){
 }
 function sha256File(file){return crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex');}
 function artifactDir(candidateSha){return path.join(root,'artifacts','qa','hipico-v119',candidateSha);}
+function scenarioTemplate(){return Object.fromEntries(catalog.scenarios.map((scenario)=>[scenario.id,{status:'NOT_EXECUTED',severity:null,notes:'',evidence:[]}]))}
 function template(candidateSha){
   return{
-    schemaVersion:1,
+    schemaVersion:2,
     product:'control-hipico',
     candidateSha,
     startedAt:new Date().toISOString(),
     completedAt:null,
     operator:null,
-    environment:{device:null,androidVersion:null,oem:null,browser:null,browserVersion:null,pwaMode:null,apkVersion:null,apkSha256:null,sourceSessionIdHash:null,labSessionIdHash:null},
-    invariants:{sourceReadOnly:'NOT_EXECUTED',labOnlyWriteDestination:'NOT_EXECUTED',sessionFallbackSafe:'NOT_EXECUTED'},
-    scenarios:Object.fromEntries(catalog.scenarios.map((scenario)=>[scenario.id,{status:'NOT_EXECUTED',severity:null,notes:'',evidence:[]}]))
+    requiredModes:catalog.requiredModes,
+    environments:[],
+    invariants:{sourceReadOnly:'NOT_EXECUTED',labOnlyWriteDestination:'NOT_EXECUTED',sessionFallbackSafe:'NOT_EXECUTED'}
   };
+}
+function parseEvidenceList(raw){
+  if(!raw)return[];
+  return raw.split(',').map((item)=>item.trim()).filter(Boolean);
+}
+function validateEvidencePath(rel){
+  return typeof rel==='string'&&rel.length>0&&!rel.includes('..')&&!path.isAbsolute(rel);
 }
 function validate(result){
   const errors=[];const allowed=new Set(catalog.allowedStatuses);
+  if(result.schemaVersion!==2)errors.push('schemaVersion 2 requerida; reinicializa la evidencia física.');
   if(!/^[a-f0-9]{40}$/i.test(String(result.candidateSha||'')))errors.push('candidateSha debe ser SHA Git de 40 caracteres.');
-  for(const scenario of catalog.scenarios){const row=result.scenarios?.[scenario.id];if(!row)errors.push(`Falta escenario ${scenario.id}.`);else if(!allowed.has(row.status))errors.push(`${scenario.id}: status inválido ${row.status}.`);}
+  if(!Array.isArray(result.environments))errors.push('environments debe ser un arreglo.');
+  const ids=new Set();
+  for(const env of result.environments||[]){
+    if(!/^[a-z0-9][a-z0-9._-]{1,63}$/i.test(String(env.id||'')))errors.push('Environment id inválido.');
+    else if(ids.has(env.id))errors.push(`Environment duplicado ${env.id}.`);else ids.add(env.id);
+    if(!catalog.requiredModes.includes(env.mode))errors.push(`${env.id}: mode inválido ${env.mode}.`);
+    if(!String(env.device||'').trim())errors.push(`${env.id}: device requerido.`);
+    for(const scenario of catalog.scenarios){
+      const row=env.scenarios?.[scenario.id];
+      if(!row)errors.push(`${env.id}: falta escenario ${scenario.id}.`);
+      else if(!allowed.has(row.status))errors.push(`${env.id}/${scenario.id}: status inválido ${row.status}.`);
+    }
+    for(const [id,row] of Object.entries(env.scenarios||{}))for(const evidence of row.evidence||[]){if(!validateEvidencePath(evidence))errors.push(`${env.id}/${id}: evidence path inválido.`);}
+  }
+  for(const mode of catalog.requiredModes)if(!(result.environments||[]).some((env)=>env.mode===mode))errors.push(`Falta environment requerido para mode ${mode}.`);
   for(const key of ['sourceReadOnly','labOnlyWriteDestination','sessionFallbackSafe'])if(!allowed.has(result.invariants?.[key]))errors.push(`Invariant ${key} inválida.`);
-  for(const [id,row] of Object.entries(result.scenarios||{}))for(const evidence of row.evidence||[]){if(typeof evidence!=='string'||evidence.includes('..'))errors.push(`${id}: evidence path inválido.`);}
   return errors;
 }
 function summary(result){
   const counts={PASS:0,FAIL:0,BLOCKED:0,NOT_EXECUTED:0};
-  for(const row of Object.values(result.scenarios||{}))counts[row.status]=(counts[row.status]||0)+1;
-  const invariantValues=Object.values(result.invariants||{});
+  for(const env of result.environments||[])for(const row of Object.values(env.scenarios||{}))counts[row.status]=(counts[row.status]||0)+1;
+  const modeCoverage=Object.fromEntries(catalog.requiredModes.map((mode)=>[mode,(result.environments||[]).filter((env)=>env.mode===mode).length]));
   const sourceSafe=result.invariants?.sourceReadOnly==='PASS'&&result.invariants?.labOnlyWriteDestination==='PASS'&&result.invariants?.sessionFallbackSafe==='PASS';
-  const complete=counts.FAIL===0&&counts.BLOCKED===0&&counts.NOT_EXECUTED===0&&sourceSafe;
-  return{counts,invariants:invariantValues,releasePhysicalGate:complete?'PASS':'NOT_READY'};
+  const requiredModesCovered=catalog.requiredModes.every((mode)=>modeCoverage[mode]>0);
+  const expectedCases=(result.environments||[]).length*catalog.scenarios.length;
+  const complete=expectedCases>0&&counts.PASS===expectedCases&&counts.FAIL===0&&counts.BLOCKED===0&&counts.NOT_EXECUTED===0&&sourceSafe&&requiredModesCovered;
+  return{counts,totalCases:expectedCases,environments:(result.environments||[]).length,modeCoverage,requiredModesCovered,sourceSafe,releasePhysicalGate:complete?'PASS':'NOT_READY'};
 }
-function writeManifest(result,target){
-  const dir=path.dirname(target);fs.mkdirSync(dir,{recursive:true});fs.writeFileSync(target,`${JSON.stringify(result,null,2)}\n`);
-}
+function writeManifest(result,target){const dir=path.dirname(target);fs.mkdirSync(dir,{recursive:true});fs.writeFileSync(target,`${JSON.stringify(result,null,2)}\n`);}
 
 const sha=gitSha();
 if(command==='init'){
@@ -60,13 +83,39 @@ if(command==='init'){
 
 const target=fileArg||(/^[a-f0-9]{40}$/i.test(sha)?path.join(artifactDir(sha),'physical-qa.json'):null);
 if(!target||!fs.existsSync(target)){console.error('No existe evidence file. Ejecuta: node scripts/hipico-physical-qa-v119.mjs init');process.exit(2);}
-const result=JSON.parse(fs.readFileSync(target,'utf8'));
+let result=JSON.parse(fs.readFileSync(target,'utf8'));
+if(result.schemaVersion!==2){console.error('Evidence schema v1 no demuestra device×mode. Reinicializa #119 con schema v2.');process.exit(2);}
+
+if(command==='add-env'){
+  const id=value('id');const mode=value('mode');const device=value('device');
+  if(!id||!mode||!device){console.error('Uso: add-env --id=<id> --mode=<pwa-browser|pwa-standalone|android-apk> --device=<modelo>');process.exit(2);}
+  if(!catalog.requiredModes.includes(mode)){console.error(`Mode inválido: ${mode}`);process.exit(2);}
+  if(result.environments.some((env)=>env.id===id)){console.error(`Environment duplicado: ${id}`);process.exit(2);}
+  result.environments.push({id,mode,device,androidVersion:value('android'),oem:value('oem'),browser:value('browser'),browserVersion:value('browser-version'),apkVersion:value('apk-version'),apkSha256:value('apk-sha256'),sourceSessionIdHash:value('source-session-hash'),labSessionIdHash:value('lab-session-hash'),scenarios:scenarioTemplate()});
+  writeManifest(result,target);console.log(JSON.stringify({added:id,mode,device}));process.exit(0);
+}
+if(command==='record'){
+  const envId=value('env');const scenarioId=value('scenario');const status=value('status');
+  const env=result.environments.find((item)=>item.id===envId);
+  if(!env){console.error(`Environment no encontrado: ${envId}`);process.exit(2);}
+  if(!catalog.scenarios.some((item)=>item.id===scenarioId)){console.error(`Scenario no encontrado: ${scenarioId}`);process.exit(2);}
+  if(!catalog.allowedStatuses.includes(status)){console.error(`Status inválido: ${status}`);process.exit(2);}
+  env.scenarios[scenarioId]={status,severity:value('severity'),notes:value('notes')||'',evidence:parseEvidenceList(value('evidence'))};
+  writeManifest(result,target);console.log(JSON.stringify({env:envId,scenario:scenarioId,status}));process.exit(0);
+}
+if(command==='invariant'){
+  const name=value('name');const status=value('status');
+  if(!['sourceReadOnly','labOnlyWriteDestination','sessionFallbackSafe'].includes(name)){console.error(`Invariant inválida: ${name}`);process.exit(2);}
+  if(!catalog.allowedStatuses.includes(status)){console.error(`Status inválido: ${status}`);process.exit(2);}
+  result.invariants[name]=status;writeManifest(result,target);console.log(JSON.stringify({invariant:name,status}));process.exit(0);
+}
+
 const errors=validate(result);if(errors.length){console.error(errors.join('\n'));process.exit(1);}
 const report=summary(result);
 if(command==='status'){console.log(JSON.stringify(report,null,2));process.exit(0);}
 if(command==='check'){
   const dir=path.dirname(target);const evidenceFiles=[];
-  for(const [id,row] of Object.entries(result.scenarios)){for(const rel of row.evidence||[]){const full=path.resolve(dir,rel);if(!full.startsWith(path.resolve(dir)+path.sep)||!fs.existsSync(full)){console.error(`${id}: evidence faltante ${rel}`);process.exit(1);}evidenceFiles.push({scenario:id,path:rel,sha256:sha256File(full)});}}
+  for(const env of result.environments){for(const [id,row] of Object.entries(env.scenarios)){for(const rel of row.evidence||[]){const full=path.resolve(dir,rel);if(!full.startsWith(path.resolve(dir)+path.sep)||!fs.existsSync(full)){console.error(`${env.id}/${id}: evidence faltante ${rel}`);process.exit(1);}evidenceFiles.push({environment:env.id,scenario:id,path:rel,sha256:sha256File(full)});}}}
   const final={...result,completedAt:result.completedAt||new Date().toISOString(),summary:report,evidenceFiles};
   const manifest=path.join(dir,'manifest.json');writeManifest(final,manifest);
   fs.writeFileSync(path.join(dir,'SHA256SUMS.txt'),evidenceFiles.map((item)=>`${item.sha256}  ${item.path}`).join('\n')+(evidenceFiles.length?'\n':''));
@@ -74,4 +123,4 @@ if(command==='check'){
   if(report.releasePhysicalGate!=='PASS')process.exit(3);
   process.exit(0);
 }
-console.error(`Comando desconocido: ${command}. Usa init|status|check.`);process.exit(2);
+console.error(`Comando desconocido: ${command}. Usa init|add-env|record|invariant|status|check.`);process.exit(2);
