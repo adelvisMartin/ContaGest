@@ -1,0 +1,210 @@
+name: ERP System QA Campaign #155
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'frontend/**'
+      - 'backend/**'
+      - 'qa/**'
+      - 'scripts/**'
+      - 'tests/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'playwright.config.mjs'
+      - '.github/workflows/erp-system-qa-campaign-v155.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CANDIDATE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+  CI: 'true'
+
+concurrency:
+  group: erp-system-qa-v155-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  contract:
+    name: Contract and broken-fixture gate
+    if: github.event_name == 'workflow_dispatch' || startsWith(github.head_ref, 'test/erp-155-')
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Five-dimensional matrix contract
+        run: node --test tests/erp_e2e_campaign_issue_155.test.mjs tests/erp_e2e_campaign_v3_issue_155.test.mjs
+      - name: Evidence template must start NOT_EXECUTED
+        run: |
+          CANDIDATE_SHA="$CANDIDATE_SHA" node scripts/erp-e2e-evidence-v155.mjs init
+          CANDIDATE_SHA="$CANDIDATE_SHA" node scripts/erp-e2e-evidence-v155.mjs status || true
+      - name: Upload contract template
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: erp155-contract-${{ env.CANDIDATE_SHA }}
+          path: artifacts/qa/erp-v155/${{ env.CANDIDATE_SHA }}
+          if-no-files-found: warn
+          retention-days: 14
+
+  browser-matrix:
+    name: ${{ matrix.role }} / ${{ matrix.viewport }}
+    if: github.event_name == 'workflow_dispatch' || startsWith(github.head_ref, 'test/erp-155-')
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      max-parallel: 9
+      matrix:
+        role: [admin, operator, read-only]
+        viewport:
+          - phone-360
+          - phone-390
+          - phone-430
+          - tablet-768
+          - desktop-1366
+          - desktop-1920
+          - phone-360-landscape
+          - phone-390-landscape
+          - phone-430-landscape
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+      - name: Execute every route, state and critical flow in this shard
+        id: campaign
+        continue-on-error: true
+        env:
+          QA_ROLE: ${{ matrix.role }}
+          QA_VIEWPORT: ${{ matrix.viewport }}
+        run: npx playwright test qa/erp-system-campaign-v155.spec.mjs --project=chromium --workers=1 --reporter=list
+      - name: Record shard outcome
+        if: always()
+        run: |
+          mkdir -p "artifacts/qa/erp-v155-shards/$CANDIDATE_SHA/${{ matrix.role }}__${{ matrix.viewport }}"
+          printf '%s\n' '{"playwrightOutcome":"${{ steps.campaign.outcome }}","candidateSha":"'"$CANDIDATE_SHA"'","role":"${{ matrix.role }}","viewport":"${{ matrix.viewport }}"}' > "artifacts/qa/erp-v155-shards/$CANDIDATE_SHA/${{ matrix.role }}__${{ matrix.viewport }}/job-outcome.json"
+      - name: Upload shard evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: erp155-${{ matrix.role }}-${{ matrix.viewport }}
+          path: |
+            artifacts/qa/erp-v155-shards/${{ env.CANDIDATE_SHA }}/${{ matrix.role }}__${{ matrix.viewport }}
+            test-results
+          if-no-files-found: warn
+          retention-days: 14
+
+  regression-pack:
+    name: Existing 58-route functional/a11y/reliability pack
+    if: github.event_name == 'workflow_dispatch' || startsWith(github.head_ref, 'test/erp-155-')
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    outputs:
+      verdict: ${{ steps.classify.outputs.verdict }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Install Chromium and WebKit
+        run: npx playwright install --with-deps chromium webkit
+      - name: 58-route visual/composition/navigation suite
+        id: routes
+        continue-on-error: true
+        run: npm run test:browser:58
+      - name: Functional module flows
+        id: functional
+        continue-on-error: true
+        run: npm run test:browser:functional
+      - name: Multi-session refresh restart tenant and PWA reliability
+        id: reliability
+        continue-on-error: true
+        run: npx playwright test qa/erp-system-reliability-v155.spec.mjs --project=chromium --workers=1
+      - name: WCAG 2.2 and contrast
+        id: a11y
+        continue-on-error: true
+        run: npm run test:browser:a11y
+      - name: Source visual contracts
+        id: source
+        continue-on-error: true
+        run: npm run test:visual
+      - name: Classify regression pack
+        id: classify
+        if: always()
+        run: |
+          mkdir -p "artifacts/qa/erp-v155-regression/$CANDIDATE_SHA"
+          ROUTES='${{ steps.routes.outcome }}'
+          FUNCTIONAL='${{ steps.functional.outcome }}'
+          RELIABILITY='${{ steps.reliability.outcome }}'
+          A11Y='${{ steps.a11y.outcome }}'
+          SOURCE='${{ steps.source.outcome }}'
+          VERDICT=PASS
+          for VALUE in "$ROUTES" "$FUNCTIONAL" "$RELIABILITY" "$A11Y" "$SOURCE"; do
+            if [ "$VALUE" != "success" ]; then VERDICT=FAIL; fi
+          done
+          printf '{"candidateSha":"%s","verdict":"%s","routes":"%s","functional":"%s","reliability":"%s","a11y":"%s","source":"%s"}\n' "$CANDIDATE_SHA" "$VERDICT" "$ROUTES" "$FUNCTIONAL" "$RELIABILITY" "$A11Y" "$SOURCE" > "artifacts/qa/erp-v155-regression/$CANDIDATE_SHA/summary.json"
+          echo "verdict=$VERDICT" >> "$GITHUB_OUTPUT"
+      - name: Upload regression evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: erp155-regression-${{ env.CANDIDATE_SHA }}
+          path: |
+            artifacts/qa/erp-v155-regression/${{ env.CANDIDATE_SHA }}
+            playwright-report
+            test-results
+          if-no-files-found: warn
+          retention-days: 14
+
+  aggregate:
+    name: Aggregate evidence and fail closed
+    if: always() && (github.event_name == 'workflow_dispatch' || startsWith(github.head_ref, 'test/erp-155-'))
+    needs: [contract, browser-matrix, regression-pack]
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Download all QA campaign artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: erp155-*
+          path: artifacts/qa/erp-v155-shards/${{ env.CANDIDATE_SHA }}
+          merge-multiple: false
+      - name: Aggregate five-dimensional matrix and defect candidates
+        id: aggregate
+        continue-on-error: true
+        run: CANDIDATE_SHA="$CANDIDATE_SHA" node scripts/erp-system-qa-aggregate-v155.mjs
+      - name: Upload final QA campaign report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: erp155-final-${{ env.CANDIDATE_SHA }}
+          path: artifacts/qa/erp-v155/${{ env.CANDIDATE_SHA }}
+          if-no-files-found: error
+          retention-days: 30
+      - name: Final truth gate
+        if: always()
+        run: |
+          echo "aggregate=${{ steps.aggregate.outcome }}"
+          echo "regression=${{ needs.regression-pack.outputs.verdict }}"
+          test '${{ steps.aggregate.outcome }}' = 'success'
+          test '${{ needs.regression-pack.outputs.verdict }}' = 'PASS'

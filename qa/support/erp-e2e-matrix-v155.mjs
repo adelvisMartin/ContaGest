@@ -1,7 +1,7 @@
 import { MODULE_VISUAL_CATALOG } from './module-visual-catalog.mjs';
 
 export const ERP_E2E_STATES_V155=Object.freeze([
-  'baseline','loading','empty','error','offline','role-denied','boundary'
+  'baseline','loading','empty','error','offline','stale','role-denied','boundary'
 ]);
 export const ERP_E2E_ROLES_V155=Object.freeze(['admin','operator','read-only']);
 export const ERP_E2E_VIEWPORTS_V155=Object.freeze([
@@ -54,60 +54,30 @@ function defaultFlows(route){
   }
   return['primary-workflow'];
 }
-function flowsForRoute(route){
-  return ERP_E2E_CRITICAL_FLOWS_V155[route.route]||defaultFlows(route);
-}
+function flowsForRoute(route){return ERP_E2E_CRITICAL_FLOWS_V155[route.route]||defaultFlows(route);}
 
 export const ERP_E2E_ROUTES_V155=Object.freeze(MODULE_VISUAL_CATALOG.map(({route,family,priority,label})=>({
   route,family,priority,label,criticalFlows:Object.freeze([...flowsForRoute({route,family,priority,label})])
 })));
 
-export function caseIdentityV155(item){
-  return [item.route,item.state,item.role,item.viewport,item.criticalFlow].join('|');
-}
+export function caseIdentityV155(item){return[item.route,item.state,item.role,item.viewport,item.criticalFlow].join('|');}
 
 export function buildErpE2EMatrixV155(){
-  return ERP_E2E_ROUTES_V155.flatMap((route)=>
-    route.criticalFlows.flatMap((criticalFlow)=>
-      ERP_E2E_STATES_V155.flatMap((state)=>
-        ERP_E2E_ROLES_V155.flatMap((role)=>
-          ERP_E2E_VIEWPORTS_V155.map((viewport)=>({
-            route:route.route,
-            family:route.family,
-            priority:route.priority,
-            criticalFlow,
-            state,
-            role,
-            viewport:viewport.name,
-            width:viewport.width,
-            height:viewport.height,
-            orientation:viewport.orientation
-          }))
-        )
-      )
-    )
-  );
+  return ERP_E2E_ROUTES_V155.flatMap((route)=>route.criticalFlows.flatMap((criticalFlow)=>ERP_E2E_STATES_V155.flatMap((state)=>ERP_E2E_ROLES_V155.flatMap((role)=>ERP_E2E_VIEWPORTS_V155.map((viewport)=>({
+    route:route.route,family:route.family,priority:route.priority,criticalFlow,state,role,viewport:viewport.name,width:viewport.width,height:viewport.height,orientation:viewport.orientation
+  }))))));
 }
 
 export function validateEvidenceMatrixV155(cases){
-  const expected=buildErpE2EMatrixV155();
-  const expectedByKey=new Map(expected.map((item)=>[caseIdentityV155(item),item]));
-  const observed=new Set();const errors=[];
-  if(!Array.isArray(cases)){return{valid:false,errors:['CASES_NOT_ARRAY'],expectedTotal:expected.length,actualTotal:0};}
-  for(const item of cases){
-    const key=caseIdentityV155(item);
-    const canonical=expectedByKey.get(key);
-    if(!canonical){errors.push(`UNKNOWN_CASE:${key}`);continue;}
-    if(observed.has(key)){errors.push(`DUPLICATE_CASE:${key}`);continue;}
-    observed.add(key);
-    if(item.width!==canonical.width||item.height!==canonical.height||item.orientation!==canonical.orientation)errors.push(`VIEWPORT_GEOMETRY_MISMATCH:${key}`);
-  }
+  const expected=buildErpE2EMatrixV155();const expectedByKey=new Map(expected.map((item)=>[caseIdentityV155(item),item]));const observed=new Set();const errors=[];
+  if(!Array.isArray(cases))return{valid:false,errors:['CASES_NOT_ARRAY'],expectedTotal:expected.length,actualTotal:0};
+  for(const item of cases){const key=caseIdentityV155(item);const canonical=expectedByKey.get(key);if(!canonical){errors.push(`UNKNOWN_CASE:${key}`);continue;}if(observed.has(key)){errors.push(`DUPLICATE_CASE:${key}`);continue;}observed.add(key);if(item.width!==canonical.width||item.height!==canonical.height||item.orientation!==canonical.orientation)errors.push(`VIEWPORT_GEOMETRY_MISMATCH:${key}`);}
   for(const key of expectedByKey.keys())if(!observed.has(key))errors.push(`MISSING_CASE:${key}`);
   return{valid:errors.length===0,errors,expectedTotal:expected.length,actualTotal:cases.length};
 }
 
 export const ERP_E2E_REQUIRED_ASSERTIONS_V155=Object.freeze([
-  'route-rendered',
+  'route-rendered-or-controlled-rbac-denial',
   'no-uncaught-error',
   'no-document-horizontal-overflow',
   'no-hidden-mutation',
@@ -115,6 +85,7 @@ export const ERP_E2E_REQUIRED_ASSERTIONS_V155=Object.freeze([
   'tenant-boundary-enforced-where-applicable',
   'critical-action-observable',
   'offline-state-explicit',
+  'stale-state-not-presented-as-live',
   'loading-state-terminates',
   'empty-state-actionable',
   'error-state-recoverable',
