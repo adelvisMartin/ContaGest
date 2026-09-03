@@ -2,6 +2,7 @@ import { defineConfig, devices } from '@playwright/test';
 
 const remoteBaseURL = String(process.env.QA_BASE_URL || '').trim();
 const serverlessChromium = String(process.env.CG_PLAYWRIGHT_CHROMIUM_EXECUTABLE || '').trim();
+const campaignSha = String(process.env.CANDIDATE_SHA || '').trim();
 let serverlessChromiumArgs=[];
 try { serverlessChromiumArgs=JSON.parse(process.env.CG_PLAYWRIGHT_CHROMIUM_ARGS || '[]'); }
 catch { serverlessChromiumArgs=[]; }
@@ -12,6 +13,10 @@ const chromiumLaunchOptions=serverlessChromium?{
 
 export default defineConfig({
   testDir: './qa',
+  testIgnore: campaignSha ? [] : [
+    '**/erp-system-campaign-v155.spec.mjs',
+    '**/erp-system-reliability-v155.spec.mjs'
+  ],
   timeout: 45_000,
   expect: { timeout: 8_000 },
   fullyParallel: false,
