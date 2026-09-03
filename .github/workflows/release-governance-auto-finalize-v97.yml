@@ -1,0 +1,87 @@
+name: Release Governance Auto Finalize #97
+
+on:
+  workflow_dispatch:
+  workflow_run:
+    workflows: ['Actions Recovery #134']
+    types: [completed]
+  schedule:
+    - cron: '23 5 * * 1'
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: release-governance-auto-finalize-v97
+  cancel-in-progress: true
+
+jobs:
+  protect-main:
+    name: Aplicar protección real y cerrar #97 sólo con verificación live
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      GH_TOKEN: ${{ secrets.CONTAGEST_GOVERNANCE_TOKEN }}
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Exigir token administrativo dedicado
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -z "${GH_TOKEN:-}" ]; then
+            echo 'BLOCKED: falta el secret CONTAGEST_GOVERNANCE_TOKEN con permiso Administration:write sobre este repositorio.'
+            exit 3
+          fi
+          gh auth status
+
+      - name: Contrato de automatización #97
+        run: node --test tests/release_governance_auto_finalize_issue_97.test.mjs
+
+      - name: Aplicar perfil correcto según recuperación de Actions
+        id: apply
+        shell: bash
+        run: |
+          set -euo pipefail
+          STATE="$(gh issue view 134 --repo "$GITHUB_REPOSITORY" --json state --jq .state)"
+          echo "issue134=$STATE"
+          mkdir -p artifacts/qa/release-governance-auto-v97
+          if [ "$STATE" = "CLOSED" ]; then
+            echo 'profile=full' >> "$GITHUB_OUTPUT"
+            node scripts/github-main-protection-v97.mjs apply --full --issue-134-recovered
+            node scripts/github-main-protection-v97.mjs verify --full
+            printf '{"issue":97,"profile":"full","issue134":"closed","candidateSha":"%s","verdict":"PASS"}\n' "$GITHUB_SHA" > artifacts/qa/release-governance-auto-v97/summary.json
+          else
+            echo 'profile=structural' >> "$GITHUB_OUTPUT"
+            node scripts/github-main-protection-v97.mjs apply
+            node scripts/github-main-protection-v97.mjs verify
+            printf '{"issue":97,"profile":"structural","issue134":"open","candidateSha":"%s","verdict":"BLOCKED_FULL_PROFILE"}\n' "$GITHUB_SHA" > artifacts/qa/release-governance-auto-v97/summary.json
+          fi
+
+      - name: Cerrar #97 sólo con perfil full verificado
+        if: steps.apply.outputs.profile == 'full'
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh issue close 97 --repo "$GITHUB_REPOSITORY" --reason completed --comment "Branch Protection de main verificada live con perfil full sobre ${GITHUB_SHA}: PR obligatorio, admins protegidos, force-push/delete bloqueados, conversaciones resueltas y ContaGest CI / validate requerido. #134 ya estaba recuperado al promover el required check."
+
+      - name: Conservar evidencia de governance
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-governance-v97-${{ github.sha }}
+          path: |
+            artifacts/qa/release-governance-v97
+            artifacts/qa/release-governance-auto-v97
+          if-no-files-found: warn
+          retention-days: 30
