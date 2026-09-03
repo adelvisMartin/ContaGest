@@ -92,7 +92,7 @@ async function existingKeys(type:ImportType,tenantId:string,keys:string[]){
   if(!unique.length)return new Map<string,string>();
   let rows:Array<{id:string;key:string}>=[];
   if(type==='clients')rows=(await prisma.client.findMany({where:{tenantId,rif:{in:unique}},select:{id:true,rif:true}})).map((r)=>({id:r.id,key:r.rif}));
-  else if(type==='suppliers')rows=(await prisma.supplier.findMany({where:{tenantId,rif:{in:unique}},select:{id:true,rif:true}})).map((r)=>({id:r.id,key:r.sku}));
+  else if(type==='suppliers')rows=(await prisma.supplier.findMany({where:{tenantId,rif:{in:unique}},select:{id:true,rif:true}})).map((r)=>({id:r.id,key:r.rif}));
   else if(type==='inventory')rows=(await prisma.product.findMany({where:{tenantId,sku:{in:unique}},select:{id:true,sku:true}})).map((r)=>({id:r.id,key:r.sku}));
   else if(type==='accounts')rows=(await prisma.chartAccount.findMany({where:{tenantId,code:{in:unique}},select:{id:true,code:true}})).map((r)=>({id:r.id,key:r.code}));
   else rows=(await prisma.employee.findMany({where:{tenantId,idNumber:{in:unique}},select:{id:true,idNumber:true}})).map((r)=>({id:r.id,key:r.idNumber}));
