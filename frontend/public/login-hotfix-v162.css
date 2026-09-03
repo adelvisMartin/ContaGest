@@ -1,0 +1,17 @@
+/* ContaGest login hotfix v16.2 — scoped only to the standalone auth route. */
+body[data-active-route="login"] .login-shell{grid-template-columns:minmax(0,1fr) minmax(420px,.9fr);min-height:100dvh}
+body[data-active-route="login"] .login-card{width:min(calc(100% - 32px),520px);max-width:520px;margin-block:24px;padding:clamp(20px,3vw,30px)}
+body[data-active-route="login"] .login-form{display:grid;gap:12px}
+body[data-active-route="login"] .login-form-status{min-height:0;margin:0;padding:0;border-radius:8px;overflow-wrap:anywhere;line-height:1.4}
+body[data-active-route="login"] .login-form-status:not(:empty){padding:9px 10px;border:1px solid var(--cg-v-border);background:var(--cg-v-surface-2)}
+body[data-active-route="login"] .login-form-status[data-tone="error"]{border-color:color-mix(in srgb,var(--cg-v-danger) 35%,var(--cg-v-border));background:var(--cg-v-danger-soft);color:var(--cg-v-danger)}
+body[data-active-route="login"] .login-form-status[data-tone="loading"]{color:var(--cg-v-text-muted)}
+body[data-active-route="login"] .login-captcha{margin-top:0;padding:12px}
+body[data-active-route="login"] .login-captcha.is-error{border-color:color-mix(in srgb,var(--cg-v-danger) 35%,var(--cg-v-border));background:var(--cg-v-danger-soft)}
+body[data-active-route="login"] .login-captcha.is-error [data-captcha-question]{color:var(--cg-v-danger);font-family:var(--cg-v-font-sans);font-size:12px}
+body[data-active-route="login"] .login-captcha-refresh{min-width:40px;min-height:40px}
+body[data-active-route="login"] .login-submit[disabled]{cursor:not-allowed;opacity:.58}
+body[data-active-route="login"] .login-privacy{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:10px}
+@media(max-width:1023px){body[data-active-route="login"] .login-shell{display:block;padding:clamp(12px,3vw,20px)}body[data-active-route="login"] .login-panel{display:none}body[data-active-route="login"] .login-card{width:min(100%,560px);margin:0 auto;padding:clamp(18px,4vw,26px)}}
+@media(max-width:600px){body[data-active-route="login"] .login-shell{padding:10px}body[data-active-route="login"] .login-card{width:100%;border-radius:14px;padding:18px 16px;box-shadow:none}body[data-active-route="login"] .login-copy h2{font-size:clamp(20px,7vw,26px)!important;line-height:1.12}body[data-active-route="login"] .login-fields-grid,body[data-active-route="login"] .login-captcha-body{grid-template-columns:minmax(0,1fr)}body[data-active-route="login"] .login-native-field input,body[data-active-route="login"] .login-captcha-answer input{min-height:46px;font-size:16px!important}body[data-active-route="login"] .login-captcha footer{display:grid;grid-template-columns:minmax(0,1fr);gap:4px}body[data-active-route="login"] .login-submit{width:100%;min-height:48px}body[data-active-route="login"] .login-privacy{grid-template-columns:auto minmax(0,1fr)}body[data-active-route="login"] .login-privacy .cgx-btn,body[data-active-route="login"] .login-privacy .btn{grid-column:1/-1;width:100%;min-height:44px}}
+@media(max-width:380px){body[data-active-route="login"] .login-card{padding-inline:14px}body[data-active-route="login"] .login-captcha{padding:10px}}
