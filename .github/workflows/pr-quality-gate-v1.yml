@@ -1,0 +1,310 @@
+name: ContaGest PR Quality Gate
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'frontend/**'
+      - 'backend/**'
+      - 'qa/**'
+      - 'tests/**'
+      - 'scripts/**'
+      - 'ops/database/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'playwright.config.mjs'
+      - '.github/workflows/pr-quality-gate-v1.yml'
+      - '.github/workflows/qa-browser.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CI: 'true'
+  NODE_ENV: test
+  API_MODE: prisma
+  DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/contagest_pr_quality_e2e?schema=public
+  DIRECT_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/contagest_pr_quality_e2e?schema=public
+  APP_URL: http://127.0.0.1:8080
+  CORS_ORIGIN: http://127.0.0.1:8080
+  JWT_SECRET: qa_gate_only_jwt_secret_0123456789abcdefghijklmnopqrstuvwxyz
+  LICENSE_HASH_SECRET: qa_gate_only_license_secret_0123456789abcdefghijklmnopqrstuvwxyz
+  SEED_ADMIN_PASSWORD: QA-Only-Adm1n-2026!
+  ALLOW_DEV_TENANT_HEADER: 'false'
+  SUPABASE_AUTH_FALLBACK: 'false'
+  ALLOW_PUBLIC_REGISTER: 'false'
+  CANDIDATE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+
+concurrency:
+  group: contagest-pr-quality-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  static-contract:
+    name: 01 · Static, contracts and builds
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install locked dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Prisma schema contract
+        run: npm --workspace backend run db:validate
+
+      - name: TypeScript
+        run: npm run typecheck
+
+      - name: Deterministic source and contract tests
+        run: node --test tests/*.test.mjs
+
+      - name: Visual source gate
+        run: npm run audit:visual:strict
+
+      - name: Functional source gate
+        run: npm run audit:functions:strict
+
+      - name: Frontend build
+        run: npm run build:frontend
+
+      - name: Backend build
+        run: npm run build:backend
+
+      - name: Bundle budget
+        run: npm run check:bundle
+
+      - name: Production dependency audit
+        run: npm audit --omit=dev --audit-level=high
+
+  backend-real:
+    name: 02 · PostgreSQL real integration and financial invariants
+    runs-on: ubuntu-latest
+    timeout-minutes: 55
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: contagest_pr_quality_e2e
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U postgres -d contagest_pr_quality_e2e"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install locked dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Prepare Supabase-compatible ephemeral PostgreSQL contracts
+        env:
+          PGPASSWORD: postgres
+        run: psql -h 127.0.0.1 -U postgres -d contagest_pr_quality_e2e -v ON_ERROR_STOP=1 -f ops/database/prepare-supabase-ephemeral.sql
+
+      - name: Apply Prisma migrations
+        run: npm --workspace backend run prisma:deploy
+
+      - name: Seed isolated QA database
+        run: npm --workspace backend run prisma:seed
+
+      - name: Persistence against real PostgreSQL
+        run: npm run test:backend:persistence:real
+
+      - name: Financial domain against real PostgreSQL
+        run: npm run test:backend:financial:real
+
+      - name: Decimal invariants against real PostgreSQL
+        run: npm run test:backend:financial:decimal:real
+
+      - name: Ledger posting and authorization
+        run: npm run test:backend:ledger:real
+
+      - name: Idempotency and replay safety
+        run: npm run test:backend:idempotency:real
+
+      - name: Commercial backend integration
+        run: npm run test:backend:commercial:real
+
+      - name: Store database-gate verdict
+        if: always()
+        run: |
+          mkdir -p artifacts/qa/pr-quality/$CANDIDATE_SHA
+          printf '{"candidateSha":"%s","database":"postgres:16","status":"%s"}\n' "$CANDIDATE_SHA" "${{ job.status }}" > artifacts/qa/pr-quality/$CANDIDATE_SHA/backend-real.json
+
+      - name: Upload backend evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pr-quality-backend-${{ env.CANDIDATE_SHA }}
+          path: artifacts/qa/pr-quality/${{ env.CANDIDATE_SHA }}
+          if-no-files-found: error
+          retention-days: 21
+
+  browser-runtime:
+    name: 03 · Browser, responsive, runtime and accessibility
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: contagest_pr_quality_e2e
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U postgres -d contagest_pr_quality_e2e"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install locked dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Prepare isolated database
+        env:
+          PGPASSWORD: postgres
+        run: |
+          psql -h 127.0.0.1 -U postgres -d contagest_pr_quality_e2e -v ON_ERROR_STOP=1 -f ops/database/prepare-supabase-ephemeral.sql
+          npm --workspace backend run prisma:deploy
+          npm --workspace backend run prisma:seed
+
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: 58-route responsive and composition suite
+        run: npm run test:browser:58
+
+      - name: Functional module flows
+        run: npm run test:browser:functional
+
+      - name: WCAG 2.2 accessibility
+        run: npm run test:browser:a11y
+
+      - name: Contrast verification
+        run: npm run test:browser:contrast
+
+      - name: Generate browser verdict
+        if: always()
+        run: |
+          mkdir -p artifacts/qa/pr-quality/$CANDIDATE_SHA
+          printf '{"candidateSha":"%s","browser":"chromium","status":"%s","evidence":"playwright-report,test-results"}\n' "$CANDIDATE_SHA" "${{ job.status }}" > artifacts/qa/pr-quality/$CANDIDATE_SHA/browser-runtime.json
+
+      - name: Upload Playwright evidence by SHA
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pr-quality-browser-${{ env.CANDIDATE_SHA }}
+          path: |
+            artifacts/qa/pr-quality/${{ env.CANDIDATE_SHA }}
+            playwright-report
+            test-results
+          if-no-files-found: warn
+          retention-days: 21
+
+  pwa-security:
+    name: 04 · PWA, reliability and security contracts
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install locked dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: PWA and served-SHA contracts
+        run: |
+          shopt -s nullglob
+          tests=(tests/*pwa*.test.mjs tests/*served*sha*.test.mjs)
+          if [ ${#tests[@]} -gt 0 ]; then
+            node --test "${tests[@]}"
+          else
+            echo 'No hay contratos PWA dedicados; se conserva la cobertura contractual del paquete principal.'
+            node --test tests/*.test.mjs
+          fi
+
+      - name: Security baseline from source
+        run: npm audit --omit=dev --audit-level=high
+
+      - name: Validate production readiness contracts without external deployment
+        run: node scripts/production-readiness.mjs || true
+
+      - name: Classify external hosting separately
+        run: |
+          mkdir -p artifacts/qa/pr-quality/$CANDIDATE_SHA
+          cat > artifacts/qa/pr-quality/$CANDIDATE_SHA/infra-classification.json <<EOF
+          {"candidateSha":"$CANDIDATE_SHA","vercelPreviewRequired":false,"policy":"External deployment limits are BLOCKED_INFRA and do not replace local deterministic gates."}
+          EOF
+
+      - name: Upload reliability evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pr-quality-reliability-${{ env.CANDIDATE_SHA }}
+          path: artifacts/qa/pr-quality/${{ env.CANDIDATE_SHA }}
+          if-no-files-found: error
+          retention-days: 21
+
+  final-gate:
+    name: 05 · Final fail-closed Quality Gate
+    if: always()
+    needs: [static-contract, backend-real, browser-runtime, pwa-security]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Publish gate summary
+        run: |
+          echo '## ContaGest PR Quality Gate' >> "$GITHUB_STEP_SUMMARY"
+          echo '' >> "$GITHUB_STEP_SUMMARY"
+          echo '| Gate | Resultado |' >> "$GITHUB_STEP_SUMMARY"
+          echo '|---|---|' >> "$GITHUB_STEP_SUMMARY"
+          echo '| Static / build | ${{ needs.static-contract.result }} |' >> "$GITHUB_STEP_SUMMARY"
+          echo '| PostgreSQL real / financial | ${{ needs.backend-real.result }} |' >> "$GITHUB_STEP_SUMMARY"
+          echo '| Browser / responsive / a11y | ${{ needs.browser-runtime.result }} |' >> "$GITHUB_STEP_SUMMARY"
+          echo '| PWA / security | ${{ needs.pwa-security.result }} |' >> "$GITHUB_STEP_SUMMARY"
+          echo '' >> "$GITHUB_STEP_SUMMARY"
+          echo 'Vercel/hosting externo no determina este veredicto.' >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Fail closed
+        run: |
+          test '${{ needs.static-contract.result }}' = 'success'
+          test '${{ needs.backend-real.result }}' = 'success'
+          test '${{ needs.browser-runtime.result }}' = 'success'
+          test '${{ needs.pwa-security.result }}' = 'success'

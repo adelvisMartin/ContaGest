@@ -8,10 +8,38 @@ on:
 permissions:
   contents: read
 
+env:
+  NODE_ENV: test
+  API_MODE: prisma
+  DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/contagest_browser_e2e?schema=public
+  DIRECT_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/contagest_browser_e2e?schema=public
+  APP_URL: http://127.0.0.1:8080
+  CORS_ORIGIN: http://127.0.0.1:8080
+  JWT_SECRET: browser_qa_only_jwt_secret_0123456789abcdefghijklmnopqrstuvwxyz
+  LICENSE_HASH_SECRET: browser_qa_only_license_secret_0123456789abcdefghijklmnopqrstuvwxyz
+  SEED_ADMIN_PASSWORD: Browser-QA-Only-2026!
+  ALLOW_DEV_TENANT_HEADER: 'false'
+  SUPABASE_AUTH_FALLBACK: 'false'
+  ALLOW_PUBLIC_REGISTER: 'false'
+
 jobs:
   playwright:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 90
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: contagest_browser_e2e
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U postgres -d contagest_browser_e2e"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=20
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -20,9 +48,18 @@ jobs:
         uses: actions/setup-node@v7
         with:
           node-version: 22
+          cache: npm
 
       - name: Install dependencies
         run: npm ci --no-audit --no-fund
+
+      - name: Prepare isolated PostgreSQL
+        env:
+          PGPASSWORD: postgres
+        run: |
+          psql -h 127.0.0.1 -U postgres -d contagest_browser_e2e -v ON_ERROR_STOP=1 -f ops/database/prepare-supabase-ephemeral.sql
+          npm --workspace backend run prisma:deploy
+          npm --workspace backend run prisma:seed
 
       - name: Install Chromium and WebKit
         run: npx playwright install --with-deps chromium webkit
@@ -34,7 +71,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: contagest-browser-qa
+          name: contagest-browser-qa-${{ github.event.pull_request.head.sha || github.sha }}
           path: |
             test-results
             playwright-report
