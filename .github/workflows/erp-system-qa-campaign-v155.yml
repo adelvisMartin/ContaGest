@@ -40,7 +40,7 @@ jobs:
           cache: npm
       - run: npm ci
       - name: Five-dimensional matrix contract
-        run: node --test tests/erp_e2e_campaign_v3_issue_155.test.mjs
+        run: node --test tests/erp_e2e_campaign_issue_155.test.mjs tests/erp_e2e_campaign_v3_issue_155.test.mjs
       - name: Evidence template must start NOT_EXECUTED
         run: |
           CANDIDATE_SHA="$CANDIDATE_SHA" node scripts/erp-e2e-evidence-v155.mjs init
@@ -107,10 +107,10 @@ jobs:
           retention-days: 14
 
   regression-pack:
-    name: Existing 58-route functional/a11y regression pack
+    name: Existing 58-route functional/a11y/reliability pack
     if: github.event_name == 'workflow_dispatch' || startsWith(github.head_ref, 'test/erp-155-')
     runs-on: ubuntu-latest
-    timeout-minutes: 150
+    timeout-minutes: 180
     outputs:
       verdict: ${{ steps.classify.outputs.verdict }}
     steps:
@@ -130,6 +130,10 @@ jobs:
         id: functional
         continue-on-error: true
         run: npm run test:browser:functional
+      - name: Multi-session refresh restart tenant and PWA reliability
+        id: reliability
+        continue-on-error: true
+        run: npx playwright test qa/erp-system-reliability-v155.spec.mjs --project=chromium --workers=1
       - name: WCAG 2.2 and contrast
         id: a11y
         continue-on-error: true
@@ -145,13 +149,14 @@ jobs:
           mkdir -p "artifacts/qa/erp-v155-regression/$CANDIDATE_SHA"
           ROUTES='${{ steps.routes.outcome }}'
           FUNCTIONAL='${{ steps.functional.outcome }}'
+          RELIABILITY='${{ steps.reliability.outcome }}'
           A11Y='${{ steps.a11y.outcome }}'
           SOURCE='${{ steps.source.outcome }}'
           VERDICT=PASS
-          for VALUE in "$ROUTES" "$FUNCTIONAL" "$A11Y" "$SOURCE"; do
+          for VALUE in "$ROUTES" "$FUNCTIONAL" "$RELIABILITY" "$A11Y" "$SOURCE"; do
             if [ "$VALUE" != "success" ]; then VERDICT=FAIL; fi
           done
-          printf '{"candidateSha":"%s","verdict":"%s","routes":"%s","functional":"%s","a11y":"%s","source":"%s"}\n' "$CANDIDATE_SHA" "$VERDICT" "$ROUTES" "$FUNCTIONAL" "$A11Y" "$SOURCE" > "artifacts/qa/erp-v155-regression/$CANDIDATE_SHA/summary.json"
+          printf '{"candidateSha":"%s","verdict":"%s","routes":"%s","functional":"%s","reliability":"%s","a11y":"%s","source":"%s"}\n' "$CANDIDATE_SHA" "$VERDICT" "$ROUTES" "$FUNCTIONAL" "$RELIABILITY" "$A11Y" "$SOURCE" > "artifacts/qa/erp-v155-regression/$CANDIDATE_SHA/summary.json"
           echo "verdict=$VERDICT" >> "$GITHUB_OUTPUT"
       - name: Upload regression evidence
         if: always()
@@ -178,10 +183,10 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - name: Download all browser shards
+      - name: Download all QA campaign artifacts
         uses: actions/download-artifact@v4
         with:
-          pattern: erp155-*-*
+          pattern: erp155-*
           path: artifacts/qa/erp-v155-shards/${{ env.CANDIDATE_SHA }}
           merge-multiple: false
       - name: Aggregate five-dimensional matrix and defect candidates
