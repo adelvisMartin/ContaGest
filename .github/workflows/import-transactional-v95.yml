@@ -32,18 +32,18 @@ jobs:
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: contagest_import_v95
+          POSTGRES_DB: contagest_import_v95_e2e
         ports: ['5432:5432']
         options: >-
-          --health-cmd "pg_isready -U postgres -d contagest_import_v95"
+          --health-cmd "pg_isready -U postgres -d contagest_import_v95_e2e"
           --health-interval 5s
           --health-timeout 5s
           --health-retries 12
     env:
       NODE_ENV: test
       API_MODE: prisma
-      DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/contagest_import_v95?schema=public
-      DIRECT_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/contagest_import_v95?schema=public
+      DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/contagest_import_v95_e2e?schema=public
+      DIRECT_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/contagest_import_v95_e2e?schema=public
       APP_URL: http://127.0.0.1:8080
       CORS_ORIGIN: http://127.0.0.1:8080
       JWT_SECRET: import_v95_only_jwt_secret_0123456789abcdefghijklmnopqrstuvwxyz
@@ -62,7 +62,7 @@ jobs:
         run: npm ci --no-audit --no-fund
       - name: Prepare PostgreSQL contracts
         env: { PGPASSWORD: postgres }
-        run: psql -h 127.0.0.1 -U postgres -d contagest_import_v95 -v ON_ERROR_STOP=1 -f ops/database/prepare-supabase-ephemeral.sql
+        run: psql -h 127.0.0.1 -U postgres -d contagest_import_v95_e2e -v ON_ERROR_STOP=1 -f ops/database/prepare-supabase-ephemeral.sql
       - name: Migrate
         run: npm --workspace backend run prisma:deploy
       - name: Seed
