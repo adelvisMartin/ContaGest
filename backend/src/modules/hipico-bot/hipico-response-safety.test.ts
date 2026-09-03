@@ -64,7 +64,8 @@ test('handoff timeout releases ownership but does not invent a monetary confirma
 
 test('response idempotency key is stable for source message + decision policy',()=>{
   const decision=decideConversation(message);
-  assert.equal(responseIdempotencyKey(decision),responseIdempotencyKey({...decision,responseText:'other'}));
+  const sameIdentity={sourceMessageId:decision.sourceMessageId,policyVersion:decision.policyVersion};
+  assert.equal(responseIdempotencyKey(decision),responseIdempotencyKey(sameIdentity));
   assert.match(responseIdempotencyKey(decision),/^resp_[a-f0-9]{32}$/);
 });
 

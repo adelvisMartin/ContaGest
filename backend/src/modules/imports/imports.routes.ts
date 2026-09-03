@@ -92,7 +92,7 @@ async function existingKeys(type:ImportType,tenantId:string,keys:string[]){
   if(!unique.length)return new Map<string,string>();
   let rows:Array<{id:string;key:string}>=[];
   if(type==='clients')rows=(await prisma.client.findMany({where:{tenantId,rif:{in:unique}},select:{id:true,rif:true}})).map((r)=>({id:r.id,key:r.rif}));
-  else if(type==='suppliers')rows=(await prisma.supplier.findMany({where:{tenantId,rif:{in:unique}},select:{id:true,rif:true}})).map((r)=>({id:r.id,key:r.rif}));
+  else if(type==='suppliers')rows=(await prisma.supplier.findMany({where:{tenantId,rif:{in:unique}},select:{id:true,rif:true}})).map((r)=>({id:r.id,key:r.sku}));
   else if(type==='inventory')rows=(await prisma.product.findMany({where:{tenantId,sku:{in:unique}},select:{id:true,sku:true}})).map((r)=>({id:r.id,key:r.sku}));
   else if(type==='accounts')rows=(await prisma.chartAccount.findMany({where:{tenantId,code:{in:unique}},select:{id:true,code:true}})).map((r)=>({id:r.id,key:r.code}));
   else rows=(await prisma.employee.findMany({where:{tenantId,idNumber:{in:unique}},select:{id:true,idNumber:true}})).map((r)=>({id:r.id,key:r.idNumber}));
@@ -115,7 +115,10 @@ async function stageRows(type:ImportType,tenantId:string,rawRows:Array<Record<st
     const normalized=result.data;const key=keyFor(type,normalized);const errors:Array<{field:string;code:string;message:string}>=[];
     if(seen.has(key))errors.push(issue('key','IMPORT_DUPLICATE_IN_FILE',`La clave ${key} aparece más de una vez en el archivo.`));
     seen.add(key);
-    if(type==='accounts'&&normalized.parentCode&&!dbAccountCodes.has(normalized.parentCode)&&!plannedAccountCodes.has(normalized.parentCode))errors.push(issue('parentCode','IMPORT_PARENT_NOT_FOUND',`La cuenta padre ${normalized.parentCode} no existe ni está incluida en el batch.`));
+    if(type==='accounts'){
+      const account=normalized as z.infer<typeof accountRow>;
+      if(account.parentCode&&!dbAccountCodes.has(account.parentCode)&&!plannedAccountCodes.has(account.parentCode))errors.push(issue('parentCode','IMPORT_PARENT_NOT_FOUND',`La cuenta padre ${account.parentCode} no existe ni está incluida en el batch.`));
+    }
     const duplicate=existing.has(key);
     let action:RowAction='create';
     if(duplicate){
