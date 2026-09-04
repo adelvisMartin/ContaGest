@@ -66,11 +66,16 @@ jobs:
       - name: E2E primer acceso, rechazo y reaceptación
         run: npx playwright test qa/legal-first-access.spec.mjs --project=chromium --workers=1
 
-      - name: Cerrar #29 sólo después de todos los PASS
+      - name: Finalizar #29 idempotentemente sólo después de todos los PASS
         shell: bash
         run: |
           set -euo pipefail
-          gh issue close 29 --repo "$GITHUB_REPOSITORY" --reason completed --comment "Gate legal de producción verificado sobre ${GITHUB_SHA}: identidad del proveedor completa, atestación profesional aprobada/versionada, evidencia SHA-256 vinculada, approvals obligatorios en PASS y E2E de primer acceso/rechazo/reaceptación verde. Este cierre registra evidencia técnica de la revisión profesional; no sustituye asesoría jurídica."
+          STATE="$(gh issue view 29 --repo "$GITHUB_REPOSITORY" --json state --jq .state)"
+          if [ "$STATE" = "OPEN" ]; then
+            gh issue close 29 --repo "$GITHUB_REPOSITORY" --reason completed --comment "Gate legal de producción verificado sobre ${GITHUB_SHA}: identidad del proveedor completa, atestación profesional aprobada/versionada, evidencia SHA-256 vinculada, approvals obligatorios en PASS y E2E de primer acceso/rechazo/reaceptación verde. Este cierre registra evidencia técnica de la revisión profesional; no sustituye asesoría jurídica."
+          else
+            echo '#29 ya estaba cerrado; la revalidación del candidate SHA terminó en PASS.'
+          fi
 
       - name: Conservar evidencia legal
         if: always()
