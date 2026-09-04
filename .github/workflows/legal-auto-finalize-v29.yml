@@ -7,6 +7,7 @@ on:
     paths:
       - 'backend/src/shared/legal/**'
       - 'docs/legal/**'
+      - 'qa/legal-first-access.spec.mjs'
       - 'scripts/legal-review-evidence-v29.mjs'
       - 'scripts/legal-production-gate.mjs'
       - '.github/workflows/legal-auto-finalize-v29.yml'
@@ -23,9 +24,9 @@ concurrency:
 
 jobs:
   legal-gate:
-    name: Evidencia profesional + production legal gate
+    name: Evidencia profesional + E2E + production legal gate
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 30
     env:
       LEGAL_PROVIDER_NAME: ${{ vars.LEGAL_PROVIDER_NAME }}
       LEGAL_PROVIDER_RIF: ${{ vars.LEGAL_PROVIDER_RIF }}
@@ -45,6 +46,10 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 22
+          cache: npm
+
+      - name: Instalar dependencias bloqueadas
+        run: npm ci --no-audit --no-fund
 
       - name: Contrato de auto-finalización legal
         run: node --test tests/legal_auto_finalize_issue_29.test.mjs
@@ -55,11 +60,22 @@ jobs:
       - name: Production Legal Gate
         run: node scripts/legal-production-gate.mjs
 
-      - name: Cerrar #29 sólo después de ambos PASS
+      - name: Instalar Chromium para E2E legal
+        run: npx playwright install --with-deps chromium
+
+      - name: E2E primer acceso, rechazo y reaceptación
+        run: npx playwright test qa/legal-first-access.spec.mjs --project=chromium --workers=1
+
+      - name: Finalizar #29 idempotentemente sólo después de todos los PASS
         shell: bash
         run: |
           set -euo pipefail
-          gh issue close 29 --repo "$GITHUB_REPOSITORY" --reason completed --comment "Gate legal de producción verificado sobre ${GITHUB_SHA}: identidad del proveedor completa, atestación profesional aprobada/versionada, evidencia SHA-256 vinculada y todos los approvals obligatorios en PASS. Este cierre registra evidencia técnica de la revisión profesional; no sustituye asesoría jurídica."
+          STATE="$(gh issue view 29 --repo "$GITHUB_REPOSITORY" --json state --jq .state)"
+          if [ "$STATE" = "OPEN" ]; then
+            gh issue close 29 --repo "$GITHUB_REPOSITORY" --reason completed --comment "Gate legal de producción verificado sobre ${GITHUB_SHA}: identidad del proveedor completa, atestación profesional aprobada/versionada, evidencia SHA-256 vinculada, approvals obligatorios en PASS y E2E de primer acceso/rechazo/reaceptación verde. Este cierre registra evidencia técnica de la revisión profesional; no sustituye asesoría jurídica."
+          else
+            echo '#29 ya estaba cerrado; la revalidación del candidate SHA terminó en PASS.'
+          fi
 
       - name: Conservar evidencia legal
         if: always()
@@ -69,5 +85,7 @@ jobs:
           path: |
             artifacts/release/legal-v29
             artifacts/qa/legal-production-gate.json
+            playwright-report
+            test-results
           if-no-files-found: warn
           retention-days: 90
