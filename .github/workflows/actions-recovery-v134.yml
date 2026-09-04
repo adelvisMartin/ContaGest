@@ -1,0 +1,64 @@
+name: Actions Recovery #134
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '17 */6 * * *'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/actions-recovery-v134.yml'
+      - 'scripts/actions-recovery-orchestrator-v134.mjs'
+      - 'tests/actions_recovery_issue_134.test.mjs'
+
+permissions:
+  contents: read
+  actions: write
+  issues: write
+
+concurrency:
+  group: actions-recovery-v134
+  cancel-in-progress: true
+
+jobs:
+  recover:
+    name: Probar runner + CI + PostgreSQL y cerrar #134 sólo con PASS real
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    env:
+      GH_TOKEN: ${{ github.token }}
+      ACTIONS_RECOVERY_TIMEOUT_MS: '1800000'
+      ACTIONS_RECOVERY_POLL_MS: '10000'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Probar que un runner real ejecutó steps
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${RUNNER_NAME:-}"
+          echo "RUNNER_RECOVERY_EXECUTED=true"
+          echo "runner=${RUNNER_NAME}"
+          node --version
+          gh --version
+
+      - name: Contrato del orquestador
+        run: node --test tests/actions_recovery_issue_134.test.mjs
+
+      - name: Ejecutar recuperación fail-closed
+        run: node scripts/actions-recovery-orchestrator-v134.mjs --close-issue
+
+      - name: Conservar evidencia por SHA
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: actions-recovery-v134-${{ github.sha }}
+          path: artifacts/qa/actions-recovery-v134
+          if-no-files-found: warn
+          retention-days: 30
