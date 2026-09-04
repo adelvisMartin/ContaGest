@@ -5,6 +5,7 @@ import fs from 'node:fs';
 const workflow = fs.readFileSync('.github/workflows/legal-auto-finalize-v29.yml', 'utf8');
 const evidence = fs.readFileSync('scripts/legal-review-evidence-v29.mjs', 'utf8');
 const productionGate = fs.readFileSync('scripts/legal-production-gate.mjs', 'utf8');
+const legalE2E = fs.readFileSync('qa/legal-first-access.spec.mjs', 'utf8');
 
 test('#29 receives provider identity and professional evidence only from repository configuration/attestation', () => {
   for (const key of [
@@ -23,11 +24,20 @@ test('#29 requires approved professional attestation and all mandatory approvals
   assert.match(productionGate, /runtime\.evidence\.matches-attestation/);
 });
 
-test('#29 closes only after evidence and production gates execute without failure', () => {
+test('#29 has explicit E2E for first access, rejection and version reacceptance', () => {
+  assert.match(legalE2E, /must explicitly accept current legal documents/);
+  assert.match(legalE2E, /rejecting required legal documents logs out/);
+  assert.match(legalE2E, /forces reacceptance of the new version/);
+  assert.match(workflow, /qa\/legal-first-access\.spec\.mjs/);
+  assert.match(workflow, /playwright install --with-deps chromium/);
+});
+
+test('#29 closes only after professional evidence, production gate and legal E2E all pass', () => {
   const evidenceIndex = workflow.indexOf('node scripts/legal-review-evidence-v29.mjs');
   const productionIndex = workflow.indexOf('node scripts/legal-production-gate.mjs');
+  const e2eIndex = workflow.indexOf('npx playwright test qa/legal-first-access.spec.mjs');
   const closeIndex = workflow.indexOf('gh issue close 29');
-  assert.ok(evidenceIndex >= 0 && productionIndex > evidenceIndex && closeIndex > productionIndex);
+  assert.ok(evidenceIndex >= 0 && productionIndex > evidenceIndex && e2eIndex > productionIndex && closeIndex > e2eIndex);
   assert.doesNotMatch(workflow, /continue-on-error:\s*true/);
   assert.doesNotMatch(workflow, /\|\|\s*true/);
 });
