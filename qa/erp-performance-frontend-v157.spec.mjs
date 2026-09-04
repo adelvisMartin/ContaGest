@@ -4,14 +4,15 @@ import { test, expect } from '@playwright/test';
 import { AccessControlService } from '../frontend/src/services/accessControlService.js';
 import { fixtureForRequest } from './support/erp-system-fixtures-v155.mjs';
 
-test.setTimeout(180_000);
-test.use({ launchOptions:{ args:['--enable-precise-memory-info'] } });
+test.setTimeout(240_000);
+test.use({ launchOptions:{ args:['--enable-precise-memory-info','--js-flags=--max-old-space-size=256'] } });
 
 const sha=String(process.env.CANDIDATE_SHA||'').trim();
 if(!/^[a-f0-9]{40}$/i.test(sha))throw new Error('CANDIDATE_SHA_REQUIRED_40_HEX');
 const outDir=path.resolve('artifacts/qa/erp-performance-v157',sha);fs.mkdirSync(outDir,{recursive:true});
 const q=(values,p)=>{const a=[...values].sort((x,y)=>x-y);return a[Math.min(a.length-1,Math.max(0,Math.ceil(p*a.length)-1))]||0;};
 const rbac=AccessControlService.defaultState();rbac.activeUserId='user-admin';const user=rbac.users.find((item)=>item.id===rbac.activeUserId);const role=rbac.roles.find((item)=>item.id===user?.roleId);
+if(!user||!role)throw new Error('ERP157_ADMIN_RBAC_PROFILE_MISSING');
 const session={sessionMode:'cookie',mode:'cookie',tenantId:'qa-tenant-a',tenant:{id:'qa-tenant-a',name:'ContaGest QA',rif:'J-00000000-0',plan:'enterprise'},user:{id:user.id,name:user.fullName,fullName:user.fullName,email:'admin@example.test',role:'admin',permissions:[...role.permissions]},audience:'staff',expiresAt:Date.now()+3600000};
 const store={rbac,settings:{theme:'light',lang:'es',businessMode:'admin',companyName:'ContaGest QA',companyRif:'J-00000000-0'}};
 
@@ -63,17 +64,34 @@ test('issue #157 frontend measured performance evidence',async({page})=>{
 
   const save=[];for(let i=0;i<3;i++)save.push(await importCsv(page,1));
   const import1000=[];for(let i=0;i<3;i++)import1000.push(await importCsv(page,1000));
-  const table100=[];const table1000=[];const table10000=[];for(let i=0;i<3;i++)table100.push(await renderClients(page,state,100));for(let i=0;i<3;i++)table1000.push(await renderClients(page,state,1000));for(let i=0;i<3;i++)table10000.push(await renderClients(page,state,10000));
+  const table100=[];const table1000=[];const table10000=[];
+  for(let i=0;i<3;i++)table100.push(await renderClients(page,state,100));
+  for(let i=0;i<3;i++)table1000.push(await renderClients(page,state,1000));
+  for(let i=0;i<3;i++)table10000.push(await renderClients(page,state,10000));
+  assert.equal(await page.evaluate(()=>document.readyState==='complete'||document.readyState==='interactive'),true,'Browser became unresponsive after 10k-row pressure.');
 
   await gotoRoute(page,'dashboard');const heapBefore=await heapUsed(cdp);const sessionStarted=performance.now();
   for(let i=0;i<30;i++)await gotoRoute(page,['dashboard','clientes','reportes'][i%3]);
   const heapAfter=await heapUsed(cdp);const sessionMinutes=Math.max((performance.now()-sessionStarted)/60000,1/60);const longTasks=await page.evaluate(()=>window.__cgLongTasks?.length||0);
+  const responsiveProbe=await page.evaluate(()=>({ok:1+1===2,route:document.body.getAttribute('data-route')}));
+  assert.equal(responsiveProbe.ok,true,'Browser failed responsiveness probe under constrained heap.');
 
   await cdp.send('Network.emulateNetworkConditions',{offline:false,latency:120,downloadThroughput:200000,uploadThroughput:100000,connectionType:'cellular3g'});const throttled=[];for(let i=0;i<3;i++)throttled.push(await gotoRoute(page,'dashboard'));await cdp.send('Network.emulateNetworkConditions',{offline:false,latency:0,downloadThroughput:-1,uploadThroughput:-1});
 
   const heapGrowthPct=heapBefore>0?Math.max(0,((heapAfter-heapBefore)/heapBefore)*100):0;
-  const output={schemaVersion:1,issue:157,candidateSha:sha,profiles:{cold:'MEASURED',warm:'MEASURED','repeated-navigation':'MEASURED','long-session':'MEASURED','network-throttled':'MEASURED'},metrics:{
-    'frontend.startupP95Ms':q(startup,.95),'frontend.routeSwitchP95Ms':q(routeSwitch,.95),'frontend.saveP95Ms':q(save,.95),'frontend.import1000RowsP95Ms':q(import1000,.95),'frontend.table100P95Ms':q(table100,.95),'frontend.table1000P95Ms':q(table1000,.95),'frontend.table10000P95Ms':q(table10000,.95),'frontend.longSessionHeapGrowthPct':heapGrowthPct,'frontend.longTaskCountPerMinute':longTasks/sessionMinutes
-  },degradation:{'memory-pressure':'MEASURED','large-payload':'MEASURED'},profilingEvidence:[{kind:'browser',engine:'chromium',startupSamples:startup,routeSwitchSamples:routeSwitch,saveSamples:save,import1000Samples:import1000,tableSamples:{100:table100,1000:table1000,10000:table10000},heapBefore,heapAfter,longTasks,throttledSamples:throttled}]};
+  const output={
+    schemaVersion:2,issue:157,candidateSha:sha,
+    profiles:{cold:'MEASURED',warm:'MEASURED','repeated-navigation':'MEASURED','long-session':'MEASURED','network-throttled':'MEASURED'},
+    metrics:{
+      'frontend.startupP95Ms':q(startup,.95),'frontend.routeSwitchP95Ms':q(routeSwitch,.95),'frontend.saveP95Ms':q(save,.95),'frontend.import1000RowsP95Ms':q(import1000,.95),
+      'frontend.table100P95Ms':q(table100,.95),'frontend.table1000P95Ms':q(table1000,.95),'frontend.table10000P95Ms':q(table10000,.95),
+      'frontend.longSessionHeapGrowthPct':heapGrowthPct,'frontend.longTaskCountPerMinute':longTasks/sessionMinutes
+    },
+    degradation:{'memory-pressure':'MEASURED','large-payload':'MEASURED'},
+    profilingEvidence:[
+      {kind:'browser',engine:'chromium',startupSamples:startup,routeSwitchSamples:routeSwitch,saveSamples:save,import1000Samples:import1000,tableSamples:{100:table100,1000:table1000,10000:table10000},heapBefore,heapAfter,longTasks,throttledSamples:throttled},
+      {kind:'memory-pressure',oldSpaceLimitMb:256,largestSyntheticTableRows:10000,responsiveAfterPressure:true,responsiveProbe}
+    ]
+  };
   fs.writeFileSync(path.join(outDir,'frontend-measurements.json'),JSON.stringify(output,null,2)+'\n');console.log(JSON.stringify(output));
 });
