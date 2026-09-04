@@ -28,11 +28,12 @@ test('application validates backend cookie session before mounting protected rou
   assert.match(app,/updateViaCache:'none'/);
 });
 
-test('login is a scoped enterprise product surface inside the existing visual owner graph',()=>{
+test('login v16.2 is the active enterprise auth surface and keeps credentials out of source',()=>{
   const page=read('frontend','src','pages','LoginPage.js');
   const adapters=read('frontend','src','styles','module-adapters.css');
   const runtime=read('frontend','src','styles','erp-runtime.css');
-  assert.match(page,/login-shell-v161/);
+  const hotfix=read('frontend','public','login-hotfix-v162.css');
+  assert.match(page,/login-shell-v162/);
   assert.match(page,/sessionStorage\.getItem\('cg_post_login_route'\)/);
   assert.match(page,/AccessControlService\.canAccessRoute/);
   assert.doesNotMatch(page,/Equipo interno|admin@erp\.local/);
@@ -42,6 +43,10 @@ test('login is a scoped enterprise product surface inside the existing visual ow
   assert.match(adapters,/login-license-details summary>span/);
   assert.match(adapters,/--cg-v-/);
   assert.doesNotMatch(adapters,/linear-gradient|radial-gradient/);
+  assert.match(hotfix,/login-shell-v162/);
+  assert.match(hotfix,/login-captcha\.is-error/);
+  assert.match(hotfix,/login-panel/);
+  assert.doesNotMatch(hotfix,/linear-gradient|radial-gradient/);
   assert.doesNotMatch(runtime,/auth-shell\.css/);
   assert.match(runtime,/@import '\.\/module-adapters\.css'/);
   assert.match(runtime,/@import '\.\/contagest-visual-system-v12\.css'/);
@@ -51,6 +56,7 @@ test('shared shell and every mobile module control use the 44px touch contract',
   const layout=read('frontend','src','components','layout.js');
   const shell=read('frontend','src','styles','shell-contract.css');
   const primitives=read('frontend','src','styles','runtime-primitives-v13.css');
+  const hotfix=read('frontend','public','login-hotfix-v162.css');
   assert.match(layout,/return `<button type="button" class="menu-link hf-menu-item/);
   assert.match(layout,/<button type="button" class="hf-sidebar-account"/);
   assert.match(layout,/<button id="btnUserMenu" type="button"/);
@@ -58,8 +64,9 @@ test('shared shell and every mobile module control use the 44px touch contract',
   assert.match(shell,/#btnCommandPalette\.hf-command-trigger[\s\S]*var\(--cg-v-control-touch\)/);
   assert.match(shell,/#btnOpenSidebar,[\s\S]*#btnTema,[\s\S]*#btnUserMenu[\s\S]*var\(--cg-v-control-touch\)/);
   assert.match(shell,/#pages :where\(button,summary,input:not/);
-  assert.match(shell,/login-shell-v161 :where\(button,summary,input:not/);
-  assert.match(shell,/login-captcha-refresh[\s\S]*min-width:var\(--cg-v-control-touch\)!important/);
+  assert.match(hotfix,/min-height:44px/);
+  assert.match(hotfix,/min-height:46px/);
+  assert.match(hotfix,/min-height:48px/);
   assert.match(primitives,/@media \(max-width:760px\)[\s\S]*MuiButton-root[\s\S]*--cg-v-control-touch/);
   assert.match(primitives,/html\.dark[\s\S]*cgx-btn-primary[\s\S]*color:var\(--cg-v-bg\) !important/);
 });
@@ -102,9 +109,19 @@ test('PR browser gate covers every module at three phone widths, real navigation
   assert.match(actions,/valid-submit-no-effect/);
 });
 
+test('Vercel serverless artifact bundles the aliased XLSX runtime instead of crashing every API import',()=>{
+  const stage=read('frontend','scripts','stage-backend.mjs');
+  assert.doesNotMatch(stage,/packages:\s*['"]external['"]/);
+  assert.match(stage,/external:\s*EXTERNAL_RUNTIME_PACKAGES/);
+  const declaration=stage.match(/const EXTERNAL_RUNTIME_PACKAGES\s*=\s*\[([\s\S]*?)\];/)?.[1]||'';
+  assert.ok(declaration.length>0,'external runtime package declaration missing');
+  assert.doesNotMatch(declaration,/['"]exceljs['"]/);
+  assert.match(stage,/exceljs quedó externalizado/);
+});
+
 test('service worker cannot serve stale javascript or css ahead of the deployed network bundle',()=>{
   const sw=read('frontend','public','sw.js');
-  assert.match(sw,/contagest-ve-v11-16-1/);
+  assert.match(sw,/contagest-ve-v11-16-2/);
   assert.match(sw,/request\.destination === 'script' \|\| request\.destination === 'style'/);
   assert.match(sw,/event\.respondWith\(networkFirst\(request\)\)/);
   assert.match(sw,/fetch\(request, \{ cache:'no-store' \}\)/);
