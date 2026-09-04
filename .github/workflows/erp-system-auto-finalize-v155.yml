@@ -1,0 +1,54 @@
+name: ERP #155 Auto Finalize
+
+on:
+  workflow_dispatch:
+  workflow_run:
+    workflows: ['Actions Recovery #134']
+    types: [completed]
+  schedule:
+    - cron: '43 4 * * 0'
+
+permissions:
+  contents: read
+  actions: write
+  issues: write
+
+concurrency:
+  group: erp155-auto-finalize
+  cancel-in-progress: true
+
+jobs:
+  finalize:
+    name: Ejecutar campaña completa y cerrar #155 sólo con PASS
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    env:
+      GH_TOKEN: ${{ github.token }}
+      ERP155_TIMEOUT_MS: '18000000'
+      ERP155_POLL_MS: '15000'
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Validar contrato del auto-finalizador
+        run: node --test tests/erp155_auto_finalize_issue_155.test.mjs
+
+      - name: Despachar y esperar campaña ERP completa
+        run: node scripts/erp-system-auto-finalize-v155.mjs --close-issue
+
+      - name: Conservar evidencia del orquestador
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: erp155-auto-finalize-${{ github.sha }}
+          path: artifacts/qa/erp155-auto-finalize
+          if-no-files-found: warn
+          retention-days: 30
