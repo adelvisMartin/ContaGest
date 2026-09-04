@@ -102,6 +102,12 @@ jobs:
         run: npx playwright test qa/erp-performance-frontend-v157.spec.mjs --project=chromium --workers=1
       - name: Ensamblar evidencia ligada al SHA
         run: node scripts/erp-performance-assemble-v157.mjs
+      - name: Clasificar métricas y preparar candidatos de defectos
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          node scripts/erp-performance-gate-v157.mjs status
+          node scripts/erp-performance-defect-harvest-v157.mjs --create
       - name: Gate de budgets y completitud
         run: node scripts/erp-performance-gate-v157.mjs check
       - name: Exigir #155 cerrado y auto-finalizar #157
