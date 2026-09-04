@@ -1,0 +1,73 @@
+name: Legal Auto Finalize #29
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'backend/src/shared/legal/**'
+      - 'docs/legal/**'
+      - 'scripts/legal-review-evidence-v29.mjs'
+      - 'scripts/legal-production-gate.mjs'
+      - '.github/workflows/legal-auto-finalize-v29.yml'
+  schedule:
+    - cron: '11 6 * * 2'
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: legal-auto-finalize-v29
+  cancel-in-progress: true
+
+jobs:
+  legal-gate:
+    name: Evidencia profesional + production legal gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      LEGAL_PROVIDER_NAME: ${{ vars.LEGAL_PROVIDER_NAME }}
+      LEGAL_PROVIDER_RIF: ${{ vars.LEGAL_PROVIDER_RIF }}
+      LEGAL_PROVIDER_ADDRESS: ${{ vars.LEGAL_PROVIDER_ADDRESS }}
+      LEGAL_CONTACT_EMAIL: ${{ vars.LEGAL_CONTACT_EMAIL }}
+      LEGAL_SUPPORT_EMAIL: ${{ vars.LEGAL_SUPPORT_EMAIL }}
+      LEGAL_REVIEW_APPROVED_VERSION: ${{ vars.LEGAL_REVIEW_APPROVED_VERSION }}
+      LEGAL_REVIEW_EVIDENCE_SHA256: ${{ vars.LEGAL_REVIEW_EVIDENCE_SHA256 }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Contrato de auto-finalización legal
+        run: node --test tests/legal_auto_finalize_issue_29.test.mjs
+
+      - name: Evidencia profesional ligada al candidate SHA
+        run: node scripts/legal-review-evidence-v29.mjs
+
+      - name: Production Legal Gate
+        run: node scripts/legal-production-gate.mjs
+
+      - name: Cerrar #29 sólo después de ambos PASS
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh issue close 29 --repo "$GITHUB_REPOSITORY" --reason completed --comment "Gate legal de producción verificado sobre ${GITHUB_SHA}: identidad del proveedor completa, atestación profesional aprobada/versionada, evidencia SHA-256 vinculada y todos los approvals obligatorios en PASS. Este cierre registra evidencia técnica de la revisión profesional; no sustituye asesoría jurídica."
+
+      - name: Conservar evidencia legal
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: legal-v29-${{ github.sha }}
+          path: |
+            artifacts/release/legal-v29
+            artifacts/qa/legal-production-gate.json
+          if-no-files-found: warn
+          retention-days: 90
