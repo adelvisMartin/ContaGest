@@ -28,7 +28,7 @@ function hardenRuntimeUrl(rawUrl: string) {
   const role = baseRoleName(rawUrl);
 
   if (isProduction) {
-    if (!role) throw new Error('[database-security] DATABASE_RUNTIME_URL no contiene un usuario PostgreSQL válido.');
+    if (!role) throw new Error('[database-security] La URL runtime no contiene un usuario PostgreSQL válido.');
     if (forbiddenRuntimeRoles.has(role)) {
       throw new Error(`[database-security] El backend no puede ejecutarse en producción con el rol privilegiado "${role}". Usa ${expectedRuntimeRole}.`);
     }
@@ -41,7 +41,7 @@ function hardenRuntimeUrl(rawUrl: string) {
     const isSupavisor = parsed.hostname.endsWith('.pooler.supabase.com');
     const isDedicatedPooler = parsed.hostname.startsWith('db.') && parsed.hostname.endsWith('.supabase.co') && parsed.port === '6543';
     if (!isSupavisor && !isDedicatedPooler) {
-      throw new Error('[database-security] En serverless producción DATABASE_RUNTIME_URL debe usar Supavisor/PgBouncer, no conexión PostgreSQL directa.');
+      throw new Error('[database-security] En serverless producción la URL runtime debe usar Supavisor/PgBouncer, no conexión PostgreSQL directa.');
     }
     if (isSupavisor && parsed.port !== '6543') {
       throw new Error('[database-security] En Vercel usa Supavisor transaction mode por el puerto 6543.');
@@ -65,18 +65,26 @@ const legacyDatabaseUrl = process.env.DATABASE_URL
   || process.env.DIRECT_URL
   || process.env.POSTGRES_URL_NON_POOLING;
 
-if (isProduction && !explicitRuntimeUrl) {
-  throw new Error('[database-security] DATABASE_RUNTIME_URL es obligatorio en producción. No se permite fallback automático a credenciales owner/migración.');
+// DATABASE_RUNTIME_URL remains the canonical production variable. For existing
+// deployments we also accept a legacy DB variable only when it passes the exact
+// same fail-closed role and pooler validation below. This is compatibility, not a
+// fallback to owner/migration credentials: postgres/service-role/wrong-role/direct
+// connections still fail before Prisma is constructed.
+const runtimeCandidate = explicitRuntimeUrl || String(legacyDatabaseUrl || '').trim();
+if (isProduction && !runtimeCandidate) {
+  throw new Error('[database-security] Falta una URL PostgreSQL runtime. Configure DATABASE_RUNTIME_URL con el rol dedicado de ejecución.');
 }
 
-const databaseUrl = explicitRuntimeUrl
-  ? hardenRuntimeUrl(explicitRuntimeUrl)
-  : legacyDatabaseUrl;
+const databaseUrl = runtimeCandidate
+  ? hardenRuntimeUrl(runtimeCandidate)
+  : undefined;
 
 if (!databaseUrl) throw new Error('[database] No hay una URL PostgreSQL configurada.');
 
 // Prisma reads DATABASE_URL from schema.prisma during client initialization.
-// In production this value is always rewritten from the dedicated runtime URL.
+// In production this value is always rewritten from a URL that passed the runtime
+// role + pooler guard above, whether it came from the canonical variable or a
+// backwards-compatible deployment variable.
 if (process.env.DATABASE_URL !== databaseUrl) process.env.DATABASE_URL = databaseUrl;
 
 const globalForPrisma = globalThis as unknown as { prisma?: PrismaClient };
