@@ -127,12 +127,17 @@ function extractResponseText(data: any) {
   return content.map((item: any) => item?.text || item?.output_text || '').filter(Boolean).join('\n').trim();
 }
 
+function openAiTimeoutMs() {
+  const parsed = Number(process.env.OPENAI_REQUEST_TIMEOUT_MS);
+  return Number.isFinite(parsed) && parsed >= 100 && parsed <= 60_000 ? Math.round(parsed) : 18_000;
+}
+
 async function askOpenAi(message: string, history: Array<{ role: 'user' | 'assistant'; content: string }>, snapshot: OperationalSnapshot) {
   const key = String(process.env.OPENAI_API_KEY || '').trim();
   if (!key) return null;
 
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 18000);
+  const timer = setTimeout(() => controller.abort(), openAiTimeoutMs());
   try {
     const response = await fetch('https://api.openai.com/v1/responses', {
       method: 'POST',
@@ -211,7 +216,7 @@ router.get('/status', requirePermission('reports.view'), asyncHandler(async (req
   });
 }));
 
-router.post('/chat', requirePermission('reports.view'), asyncHandler(async (req, res) => {
+router.post('/chat', requirePermission('reports.view'), asyncHandler(async(req,res)=>{
   const body = chatSchema.parse(req.body || {});
   const ctx = (req as any).context;
   const history = body.history || [];

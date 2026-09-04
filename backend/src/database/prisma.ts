@@ -80,9 +80,45 @@ if (!databaseUrl) throw new Error('[database] No hay una URL PostgreSQL configur
 if (process.env.DATABASE_URL !== databaseUrl) process.env.DATABASE_URL = databaseUrl;
 
 const globalForPrisma = globalThis as unknown as { prisma?: PrismaClient };
+const queryTelemetryEnabled = !isProduction && String(process.env.PRISMA_QUERY_TELEMETRY || '').toLowerCase() === 'true';
 
-export const prisma = globalForPrisma.prisma ?? new PrismaClient({
-  log: ['warn', 'error']
-});
+type PrismaQueryTelemetrySample = {
+  query: string;
+  durationMs: number;
+  target: string | null;
+};
+const queryTelemetry: PrismaQueryTelemetrySample[] = [];
+const MAX_QUERY_TELEMETRY_SAMPLES = 20_000;
+
+const prismaLog = queryTelemetryEnabled
+  ? [{ emit:'event' as const, level:'query' as const }, { emit:'stdout' as const, level:'warn' as const }, { emit:'stdout' as const, level:'error' as const }]
+  : ['warn' as const, 'error' as const];
+
+export const prisma = globalForPrisma.prisma ?? new PrismaClient({ log: prismaLog as any });
+
+if (queryTelemetryEnabled) {
+  (prisma as any).$on('query', (event: { query?: string; duration?: number; target?: string }) => {
+    queryTelemetry.push({
+      query: String(event?.query || '').replace(/\s+/g, ' ').trim().slice(0, 4000),
+      durationMs: Number(event?.duration || 0),
+      target: event?.target ? String(event.target).slice(0, 160) : null
+    });
+    if (queryTelemetry.length > MAX_QUERY_TELEMETRY_SAMPLES) {
+      queryTelemetry.splice(0, queryTelemetry.length - MAX_QUERY_TELEMETRY_SAMPLES);
+    }
+  });
+}
+
+export function resetPrismaQueryTelemetry() {
+  queryTelemetry.splice(0);
+}
+
+export function prismaQueryTelemetrySnapshot() {
+  return queryTelemetry.map((sample) => ({ ...sample }));
+}
+
+export function prismaQueryTelemetryEnabled() {
+  return queryTelemetryEnabled;
+}
 
 if (process.env.NODE_ENV !== 'production') globalForPrisma.prisma = prisma;
