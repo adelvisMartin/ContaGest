@@ -1,0 +1,122 @@
+name: ERP Performance & Capacity #157
+
+on:
+  workflow_dispatch:
+    inputs:
+      expected_peak_users:
+        description: 'Pico concurrente esperado total para ContaGest; no inventar este valor.'
+        required: false
+        type: string
+  workflow_run:
+    workflows: ['ERP #155 Auto Finalize']
+    types: [completed]
+  schedule:
+    - cron: '17 5 * * 1'
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: erp-performance-capacity-v157
+  cancel-in-progress: true
+
+env:
+  CI: 'true'
+  NODE_ENV: test
+  API_MODE: prisma
+  DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/contagest_performance_v157_e2e?schema=public
+  DIRECT_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/contagest_performance_v157_e2e?schema=public
+  APP_URL: http://127.0.0.1:8080
+  CORS_ORIGIN: http://127.0.0.1:8080
+  JWT_SECRET: qa157_only_jwt_secret_0123456789abcdefghijklmnopqrstuvwxyz
+  LICENSE_HASH_SECRET: qa157_only_license_secret_0123456789abcdefghijklmnopqrstuvwxyz
+  SEED_ADMIN_PASSWORD: QA-Perf-Only-Adm1n-2026!
+  ALLOW_DEV_TENANT_HEADER: 'false'
+  SUPABASE_AUTH_FALLBACK: 'false'
+  ALLOW_PUBLIC_REGISTER: 'false'
+  PRISMA_QUERY_TELEMETRY: 'true'
+  CANDIDATE_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
+  ERP157_EXPECTED_PEAK_USERS: ${{ inputs.expected_peak_users || vars.ERP157_EXPECTED_PEAK_USERS }}
+
+jobs:
+  capacity:
+    name: Medición real PostgreSQL + Chromium + cierre fail-closed
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: contagest_performance_v157_e2e
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U postgres -d contagest_performance_v157_e2e"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=20
+    steps:
+      - name: Checkout candidate SHA
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.CANDIDATE_SHA }}
+      - name: Confirmar runner real y SHA
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${RUNNER_NAME:-}"
+          test "$(git rev-parse HEAD)" = "$CANDIDATE_SHA"
+      - name: Validar pico esperado declarado
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "${ERP157_EXPECTED_PEAK_USERS:-}" =~ ^[0-9]+$ ]]
+          [ "$ERP157_EXPECTED_PEAK_USERS" -ge 1 ]
+          [ "$ERP157_EXPECTED_PEAK_USERS" -le 250 ]
+      - name: Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Instalar dependencias bloqueadas
+        run: npm ci --no-audit --no-fund
+      - name: Preparar PostgreSQL efímero compatible con Supabase
+        env:
+          PGPASSWORD: postgres
+        run: psql -h 127.0.0.1 -U postgres -d contagest_performance_v157_e2e -v ON_ERROR_STOP=1 -f ops/database/prepare-supabase-ephemeral.sql
+      - name: Aplicar migraciones y seed QA
+        run: |
+          npm --workspace backend run prisma:deploy
+          npm --workspace backend run prisma:seed
+      - name: Contratos estáticos #157
+        run: node --test tests/erp_performance_issue_157.test.mjs tests/erp_performance_execution_issue_157.test.mjs
+      - name: Medir API, PostgreSQL, concurrencia y procesos pesados
+        run: npm --workspace backend exec -- tsx ../qa/erp-performance-backend-v157.ts
+      - name: Instalar Chromium
+        run: npx playwright install --with-deps chromium
+      - name: Medir frontend, tablas grandes, memoria y red degradada
+        run: npx playwright test qa/erp-performance-frontend-v157.spec.mjs --project=chromium --workers=1
+      - name: Ensamblar evidencia ligada al SHA
+        run: node scripts/erp-performance-assemble-v157.mjs
+      - name: Gate de budgets y completitud
+        run: node scripts/erp-performance-gate-v157.mjs check
+      - name: Exigir #155 cerrado y auto-finalizar #157
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          GITHUB_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: node scripts/erp-performance-finalize-v157.mjs
+      - name: Conservar evidencia #157
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: erp-performance-v157-${{ env.CANDIDATE_SHA }}
+          path: |
+            artifacts/qa/erp-performance-v157/${{ env.CANDIDATE_SHA }}
+            playwright-report
+            test-results
+          if-no-files-found: warn
+          retention-days: 90
