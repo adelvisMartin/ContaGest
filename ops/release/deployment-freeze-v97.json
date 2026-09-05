@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "issue": 97,
+  "state": "FROZEN",
+  "reason": "Accumulate ContaGest + Control Hipico improvements and QA before a single controlled release candidate deployment.",
+  "gitDeployments": "disabled-all-branches",
+  "productionDeploy": "manual-release-only-after-freeze-lift",
+  "releaseCandidatePattern": "release/candidate-*",
+  "liftRequirements": [
+    "#221 CAPTCHA/login candidate integrated",
+    "#155 QA candidate evidence reviewed",
+    "#157 capacity evidence reviewed or explicitly BLOCKED by external runner infrastructure",
+    "#134 classified honestly; NOT_EXECUTED is never PASS",
+    "#97 main governance verified or exception documented",
+    "#29 legal production gate remains fail-closed until real provider/professional evidence exists",
+    "#119/#120 Hípico evidence does not enable SOURCE production write",
+    "#154 remains NO_GO unless independently revalidated with current official evidence"
+  ],
+  "unfreezeRule": "A dedicated reviewed PR must explicitly change state to RELEASE_CANDIDATE and re-enable only the intended deployment path."
+}
