@@ -54,3 +54,12 @@ test('evidence recorder v3 cannot collapse critical-flow or turn PII into valid 
 test('browser campaign writes synthetic evidence and the aggregator fails closed on missing shards',()=>{
   const browser=fs.readFileSync(new URL('../qa/erp-system-campaign-v155.spec.mjs',import.meta.url),'utf8');const aggregate=fs.readFileSync(new URL('../scripts/erp-system-qa-aggregate-v155.mjs',import.meta.url),'utf8');assert.match(browser,/SYNTHETIC_TEST_ONLY/);assert.match(browser,/QA_ROLE/);assert.match(browser,/QA_VIEWPORT/);assert.match(browser,/CANDIDATE_SHA_REQUIRED_40_HEX/);assert.match(browser,/offline/);assert.match(browser,/role-denied/);assert.match(browser,/ZOOM_125_HORIZONTAL_OVERFLOW/);assert.match(browser,/AccessControlService/);assert.match(aggregate,/SHARD_RESULT_MISSING/);assert.match(aggregate,/NOT_EXECUTED/);assert.match(aggregate,/defect-candidates\.json/);assert.match(aggregate,/knownIssue:item\.route==='login'\?'#221':null/);
 });
+
+test('full campaign can run on a frozen release candidate and includes the CAPTCHA bootstrap regression',()=>{
+  const workflow=fs.readFileSync(new URL('../.github/workflows/erp-system-qa-campaign-v155.yml',import.meta.url),'utf8');
+  assert.match(workflow,/startsWith\(github\.head_ref, 'release\/candidate-'\)/);
+  assert.match(workflow,/Auth\/CAPTCHA bootstrap regression/);
+  assert.match(workflow,/auth\.captcha-bootstrap\.test\.ts/);
+  assert.match(workflow,/AUTH='\$\{\{ steps\.auth\.outcome \}\}'/);
+  assert.match(workflow,/\"auth\":\"%s\"/);
+});
