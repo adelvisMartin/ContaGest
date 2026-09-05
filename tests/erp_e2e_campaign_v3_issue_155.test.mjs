@@ -73,7 +73,7 @@ test('every real P0/P1 finding must be linked to an existing issue or atomically
   assert.match(harvester,/\['P0','P1'\]/);
   assert.match(harvester,/linked-existing/);
   assert.match(harvester,/deduplicated-existing/);
-  assert.match(harvester,/gh',\['issue','create'/);
+  assert.match(harvester,/runGh\(\['issue','create'/);
   assert.match(harvester,/SYNTHETIC_TEST_ONLY/);
   assert.match(harvester,/QA155-FINGERPRINT/);
 });
