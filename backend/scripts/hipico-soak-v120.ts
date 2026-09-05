@@ -132,9 +132,13 @@ const summaryInput:SoakSummaryInput={
 };
 const evaluation=evaluateSoak(summaryInput,policy);
 const drillEvidenceFull=drillEvidencePath?path.resolve(drillEvidencePath):null;
+const drillEvidenceArtifact=path.join(outDir,'drill-evidence-input.json');
+if(drillEvidenceFull&&fs.existsSync(drillEvidenceFull)){
+  if(path.resolve(drillEvidenceFull)!==path.resolve(drillEvidenceArtifact))fs.copyFileSync(drillEvidenceFull,drillEvidenceArtifact);
+}
 const evidenceIntegrity={
   samplesSha256:fs.existsSync(samplesFile)?sha256File(samplesFile):null,
-  drillEvidenceSha256:drillEvidenceFull&&fs.existsSync(drillEvidenceFull)?sha256File(drillEvidenceFull):null
+  drillEvidenceSha256:fs.existsSync(drillEvidenceArtifact)?sha256File(drillEvidenceArtifact):null
 };
 const final={
   schemaVersion:3,product:'control-hipico',candidateSha,
@@ -142,7 +146,7 @@ const final={
   startedAt:new Date(start).toISOString(),completedAt:new Date().toISOString(),
   durationRequestedMinutes:durationMinutes,sampleSeconds,
   healthUrlConfigured:Boolean(healthUrl),spoolPathConfigured:Boolean(spoolPath),
-  drillEvidenceConfigured:Boolean(drillEvidencePath),
+  drillEvidenceConfigured:Boolean(drillEvidencePath),drillEvidenceCopied:fs.existsSync(drillEvidenceArtifact),
   replayScenario:scenario.id,decisions,summaryInput,evaluation,evidenceIntegrity,policyVersion:policy.version
 };
 fs.writeFileSync(path.join(outDir,'summary.json'),`${JSON.stringify(final,null,2)}\n`);
