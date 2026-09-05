@@ -7,6 +7,11 @@ import test from 'node:test';
 const login=fs.readFileSync('frontend/src/pages/LoginPage.js','utf8');
 const html=fs.readFileSync('frontend/index.html','utf8');
 const css=fs.readFileSync('frontend/public/login-hotfix-v162.css','utf8');
+const stageBackend=fs.readFileSync('frontend/scripts/stage-backend.mjs','utf8');
+
+function readPackage(path){
+  return JSON.parse(fs.readFileSync(path,'utf8'));
+}
 
 function responseRecorder(){
   const headers=new Map();
@@ -72,6 +77,14 @@ test('root and frontend serverless placeholders stay byte-identical',()=>{
     fs.readFileSync('frontend/api/index.js','utf8'),
     'The two unstaged deployment entrypoints must fail closed identically.'
   );
+});
+
+test('workspace and serverless bundle are pinned to Node 24.20.0',()=>{
+  for(const path of ['package.json','frontend/package.json','backend/package.json']){
+    assert.equal(readPackage(path).engines?.node,'24.20.0',`${path} must pin Node 24.20.0`);
+  }
+  assert.match(stageBackend,/target:\s*['"]node24['"]/);
+  assert.doesNotMatch(stageBackend,/target:\s*['"]node22['"]/);
 });
 
 test('responsive hotfix is loaded and covers critical mobile widths',()=>{
