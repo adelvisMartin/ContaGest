@@ -1,11 +1,33 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import { pathToFileURL } from 'node:url';
+import { resolve } from 'node:path';
 import test from 'node:test';
 
 const login=fs.readFileSync('frontend/src/pages/LoginPage.js','utf8');
-const apiFallback=fs.readFileSync('api/index.js','utf8');
 const html=fs.readFileSync('frontend/index.html','utf8');
 const css=fs.readFileSync('frontend/public/login-hotfix-v162.css','utf8');
+
+function responseRecorder(){
+  const headers=new Map();
+  return{
+    statusCode:200,
+    body:'',
+    headers,
+    setHeader(name,value){headers.set(String(name).toLowerCase(),String(value));},
+    end(body=''){this.body=String(body);}
+  };
+}
+
+async function executeFallback(path){
+  const url=pathToFileURL(resolve(path));
+  url.searchParams.set('issue221',`${Date.now()}-${Math.random()}`);
+  const module=await import(url.href);
+  assert.equal(typeof module.default,'function',`${path} must export a handler`);
+  const res=responseRecorder();
+  await module.default({},res);
+  return res;
+}
 
 test('login is fail-closed until captcha is ready',()=>{
   assert.match(login,/data-captcha-ready="false"/);
@@ -14,6 +36,7 @@ test('login is fail-closed until captcha is ready',()=>{
   assert.match(login,/\[data-captcha-token\]/);
   assert.match(login,/submit\?\.setAttribute\(['"]disabled['"],['"]disabled['"]\)/);
   assert.match(login,/if\(form\.dataset\.captchaReady===['"]true['"]\)submit\?\.removeAttribute\(['"]disabled['"]\)/);
+  assert.match(login,/Captcha no disponible/i);
 });
 
 test('captcha infrastructure errors are converted to user-safe copy',()=>{
@@ -22,11 +45,33 @@ test('captcha infrastructure errors are converted to user-safe copy',()=>{
   assert.doesNotMatch(login,/iad1::/);
 });
 
-test('unstaged api placeholder returns structured 503 instead of throwing on import',()=>{
-  assert.doesNotMatch(apiFallback,/throw new Error/);
-  assert.match(apiFallback,/statusCode=503/);
-  assert.match(apiFallback,/BACKEND_NOT_STAGED/);
-  assert.match(apiFallback,/Cache-Control/);
+for(const path of ['api/index.js','frontend/api/index.js']){
+  test(`${path} is importable and returns a controlled 503 when backend staging is missing`,async()=>{
+    const source=fs.readFileSync(path,'utf8');
+    assert.doesNotMatch(source,/throw new Error/);
+
+    const res=await executeFallback(path);
+    assert.equal(res.statusCode,503);
+    assert.equal(res.headers.get('content-type'),'application/json; charset=utf-8');
+    assert.equal(res.headers.get('cache-control'),'no-store, max-age=0');
+    assert.equal(res.headers.get('retry-after'),'60');
+
+    const payload=JSON.parse(res.body);
+    assert.deepEqual(payload,{
+      ok:false,
+      error:'BACKEND_NOT_STAGED',
+      message:'El backend de ContaGest no está disponible en este despliegue. Intenta nuevamente en unos minutos.'
+    });
+    assert.doesNotMatch(res.body,/FUNCTION_INVOCATION_FAILED|Error:|\/home\/|[A-Z]:\\/i);
+  });
+}
+
+test('root and frontend serverless placeholders stay byte-identical',()=>{
+  assert.equal(
+    fs.readFileSync('api/index.js','utf8'),
+    fs.readFileSync('frontend/api/index.js','utf8'),
+    'The two unstaged deployment entrypoints must fail closed identically.'
+  );
 });
 
 test('responsive hotfix is loaded and covers critical mobile widths',()=>{
