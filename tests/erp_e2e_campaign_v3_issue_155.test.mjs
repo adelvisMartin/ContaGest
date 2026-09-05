@@ -63,3 +63,17 @@ test('full campaign can run on a frozen release candidate and includes the CAPTC
   assert.match(workflow,/AUTH='\$\{\{ steps\.auth\.outcome \}\}'/);
   assert.match(workflow,/\"auth\":\"%s\"/);
 });
+
+test('every real P0/P1 finding must be linked to an existing issue or atomically harvested',()=>{
+  const workflow=fs.readFileSync(new URL('../.github/workflows/erp-system-qa-campaign-v155.yml',import.meta.url),'utf8');
+  const harvester=fs.readFileSync(new URL('../scripts/erp-system-qa-harvest-v155.mjs',import.meta.url),'utf8');
+  assert.match(workflow,/issues:\s*write/);
+  assert.match(workflow,/erp-system-qa-harvest-v155\.mjs/);
+  assert.match(workflow,/steps\.harvest\.outcome/);
+  assert.match(harvester,/\['P0','P1'\]/);
+  assert.match(harvester,/linked-existing/);
+  assert.match(harvester,/deduplicated-existing/);
+  assert.match(harvester,/gh',\['issue','create'/);
+  assert.match(harvester,/SYNTHETIC_TEST_ONLY/);
+  assert.match(harvester,/QA155-FINGERPRINT/);
+});
