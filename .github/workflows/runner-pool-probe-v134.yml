@@ -1,0 +1,57 @@
+name: Hosted Runner Pool Probe #134
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: hosted-runner-pool-probe-v134
+  cancel-in-progress: false
+
+jobs:
+  probe:
+    name: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-22.04, ubuntu-24.04, windows-2022]
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 8
+    steps:
+      - name: Confirmar que GitHub asignó runner
+        shell: bash
+        if: runner.os != 'Windows'
+        run: |
+          set -euo pipefail
+          test -n "${RUNNER_NAME:-}"
+          echo "RUNNER_POOL_PROBE_EXECUTED=true"
+          echo "runner_os=${RUNNER_OS}"
+          echo "runner_name=${RUNNER_NAME}"
+      - name: Confirmar que GitHub asignó runner Windows
+        shell: pwsh
+        if: runner.os == 'Windows'
+        run: |
+          if (-not $env:RUNNER_NAME) { throw 'RUNNER_NAME ausente' }
+          Write-Output 'RUNNER_POOL_PROBE_EXECUTED=true'
+          Write-Output "runner_os=$env:RUNNER_OS"
+          Write-Output "runner_name=$env:RUNNER_NAME"
+      - uses: actions/checkout@v4
+      - name: Ejecutar comando trivial verificable
+        shell: bash
+        if: runner.os != 'Windows'
+        run: |
+          set -euo pipefail
+          git rev-parse HEAD
+          node --version || true
+      - name: Ejecutar comando trivial verificable Windows
+        shell: pwsh
+        if: runner.os == 'Windows'
+        run: |
+          git rev-parse HEAD
+          node --version
+
+# Este probe es diagnóstico únicamente. No cierra #134, no reintenta CI y no
+# transforma ausencia de runner/steps en PASS. La clasificación final se hace
+# leyendo los jobs por API: runner sin asignar + steps ausentes = BLOCKED_INFRA.
