@@ -56,36 +56,32 @@ function hardenRuntimeUrl(rawUrl: string) {
   return parsed.toString();
 }
 
-const explicitRuntimeUrl = String(process.env.DATABASE_RUNTIME_URL || '').trim();
-const legacyDatabaseUrl = process.env.DATABASE_URL
-  || process.env.POSTGRES_PRISMA_URL
-  || process.env.POSTGRES_URL
-  || process.env.SUPABASE_DB_URL
-  || process.env.DIRECT_DATABASE_URL
-  || process.env.DIRECT_URL
-  || process.env.POSTGRES_URL_NON_POOLING;
+function resolveRuntimeDatabaseUrl() {
+  const explicitRuntimeUrl = String(process.env.DATABASE_RUNTIME_URL || '').trim();
+  const legacyDatabaseUrl = process.env.DATABASE_URL
+    || process.env.POSTGRES_PRISMA_URL
+    || process.env.POSTGRES_URL
+    || process.env.SUPABASE_DB_URL
+    || process.env.DIRECT_DATABASE_URL
+    || process.env.DIRECT_URL
+    || process.env.POSTGRES_URL_NON_POOLING;
 
-// DATABASE_RUNTIME_URL remains the canonical production variable. For existing
-// deployments we also accept a legacy DB variable only when it passes the exact
-// same fail-closed role and pooler validation below. This is compatibility, not a
-// fallback to owner/migration credentials: postgres/service-role/wrong-role/direct
-// connections still fail before Prisma is constructed.
-const runtimeCandidate = explicitRuntimeUrl || String(legacyDatabaseUrl || '').trim();
-if (isProduction && !runtimeCandidate) {
-  throw new Error('[database-security] Falta una URL PostgreSQL runtime. Configure DATABASE_RUNTIME_URL con el rol dedicado de ejecución.');
+  // DATABASE_RUNTIME_URL remains the canonical production variable. Existing
+  // deployments may use a legacy DB variable only when it passes the exact same
+  // fail-closed role and pooler validation. Privileged/migration credentials are
+  // never accepted as a runtime fallback.
+  const runtimeCandidate = explicitRuntimeUrl || String(legacyDatabaseUrl || '').trim();
+  if (isProduction && !runtimeCandidate) {
+    throw new Error('[database-security] Falta una URL PostgreSQL runtime. Configure DATABASE_RUNTIME_URL con el rol dedicado de ejecución.');
+  }
+
+  const databaseUrl = runtimeCandidate
+    ? hardenRuntimeUrl(runtimeCandidate)
+    : undefined;
+
+  if (!databaseUrl) throw new Error('[database] No hay una URL PostgreSQL configurada.');
+  return databaseUrl;
 }
-
-const databaseUrl = runtimeCandidate
-  ? hardenRuntimeUrl(runtimeCandidate)
-  : undefined;
-
-if (!databaseUrl) throw new Error('[database] No hay una URL PostgreSQL configurada.');
-
-// Prisma reads DATABASE_URL from schema.prisma during client initialization.
-// In production this value is always rewritten from a URL that passed the runtime
-// role + pooler guard above, whether it came from the canonical variable or a
-// backwards-compatible deployment variable.
-if (process.env.DATABASE_URL !== databaseUrl) process.env.DATABASE_URL = databaseUrl;
 
 const globalForPrisma = globalThis as unknown as { prisma?: PrismaClient };
 const queryTelemetryEnabled = !isProduction && String(process.env.PRISMA_QUERY_TELEMETRY || '').toLowerCase() === 'true';
@@ -102,20 +98,50 @@ const prismaLog = queryTelemetryEnabled
   ? [{ emit:'event' as const, level:'query' as const }, { emit:'stdout' as const, level:'warn' as const }, { emit:'stdout' as const, level:'error' as const }]
   : ['warn' as const, 'error' as const];
 
-export const prisma = globalForPrisma.prisma ?? new PrismaClient({ log: prismaLog as any });
+function createPrismaClient() {
+  // Important for serverless boot: validating/constructing Prisma is deferred until
+  // a DB-backed route actually touches the client. Public stateless routes such as
+  // /api/v1/auth/captcha and liveness can therefore start even if the DB runtime
+  // configuration is temporarily unavailable. DB-backed routes remain fail-closed.
+  const databaseUrl = resolveRuntimeDatabaseUrl();
 
-if (queryTelemetryEnabled) {
-  (prisma as any).$on('query', (event: { query?: string; duration?: number; target?: string }) => {
-    queryTelemetry.push({
-      query: String(event?.query || '').replace(/\s+/g, ' ').trim().slice(0, 4000),
-      durationMs: Number(event?.duration || 0),
-      target: event?.target ? String(event.target).slice(0, 160) : null
+  // Prisma reads DATABASE_URL from schema.prisma during client initialization.
+  // This value is written only after the runtime role + pooler guard succeeds.
+  if (process.env.DATABASE_URL !== databaseUrl) process.env.DATABASE_URL = databaseUrl;
+
+  const client = new PrismaClient({ log: prismaLog as any });
+  if (queryTelemetryEnabled) {
+    (client as any).$on('query', (event: { query?: string; duration?: number; target?: string }) => {
+      queryTelemetry.push({
+        query: String(event?.query || '').replace(/\s+/g, ' ').trim().slice(0, 4000),
+        durationMs: Number(event?.duration || 0),
+        target: event?.target ? String(event.target).slice(0, 160) : null
+      });
+      if (queryTelemetry.length > MAX_QUERY_TELEMETRY_SAMPLES) {
+        queryTelemetry.splice(0, queryTelemetry.length - MAX_QUERY_TELEMETRY_SAMPLES);
+      }
     });
-    if (queryTelemetry.length > MAX_QUERY_TELEMETRY_SAMPLES) {
-      queryTelemetry.splice(0, queryTelemetry.length - MAX_QUERY_TELEMETRY_SAMPLES);
-    }
-  });
+  }
+  return client;
 }
+
+function getPrismaClient() {
+  if (globalForPrisma.prisma) return globalForPrisma.prisma;
+  const client = createPrismaClient();
+  if (process.env.NODE_ENV !== 'production') globalForPrisma.prisma = client;
+  return client;
+}
+
+// Keep the existing `prisma.model...` API across the codebase while making client
+// construction lazy. Function members are bound to the concrete Prisma instance so
+// `$transaction`, `$queryRaw`, `$connect`, etc. keep their required `this` context.
+export const prisma = new Proxy({} as PrismaClient, {
+  get(_target, property) {
+    const client = getPrismaClient();
+    const value = Reflect.get(client as object, property, client);
+    return typeof value === 'function' ? value.bind(client) : value;
+  }
+});
 
 export function resetPrismaQueryTelemetry() {
   queryTelemetry.splice(0);
@@ -128,5 +154,3 @@ export function prismaQueryTelemetrySnapshot() {
 export function prismaQueryTelemetryEnabled() {
   return queryTelemetryEnabled;
 }
-
-if (process.env.NODE_ENV !== 'production') globalForPrisma.prisma = prisma;
