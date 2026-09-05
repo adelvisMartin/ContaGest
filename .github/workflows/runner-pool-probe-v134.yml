@@ -44,7 +44,7 @@ jobs:
         run: |
           set -euo pipefail
           git rev-parse HEAD
-          node --version || true
+          node --version
       - name: Ejecutar comando trivial verificable Windows
         shell: pwsh
         if: runner.os == 'Windows'
