@@ -127,6 +127,10 @@ jobs:
         run: npm --workspace backend exec -- tsx --test src/modules/auth/auth.captcha-bootstrap.test.ts
       - name: Install Chromium and WebKit
         run: npx playwright install --with-deps chromium webkit
+      - name: CAPTCHA browser recovery and responsive regression #221
+        id: captcha_browser
+        continue-on-error: true
+        run: npx playwright test qa/login-captcha-v221.spec.mjs --project=chromium --workers=1 --reporter=list
       - name: 58-route visual/composition/navigation suite
         id: routes
         continue-on-error: true
@@ -153,16 +157,17 @@ jobs:
         run: |
           mkdir -p "artifacts/qa/erp-v155-regression/$CANDIDATE_SHA"
           AUTH='${{ steps.auth.outcome }}'
+          CAPTCHA_BROWSER='${{ steps.captcha_browser.outcome }}'
           ROUTES='${{ steps.routes.outcome }}'
           FUNCTIONAL='${{ steps.functional.outcome }}'
           RELIABILITY='${{ steps.reliability.outcome }}'
           A11Y='${{ steps.a11y.outcome }}'
           SOURCE='${{ steps.source.outcome }}'
           VERDICT=PASS
-          for VALUE in "$AUTH" "$ROUTES" "$FUNCTIONAL" "$RELIABILITY" "$A11Y" "$SOURCE"; do
+          for VALUE in "$AUTH" "$CAPTCHA_BROWSER" "$ROUTES" "$FUNCTIONAL" "$RELIABILITY" "$A11Y" "$SOURCE"; do
             if [ "$VALUE" != "success" ]; then VERDICT=FAIL; fi
           done
-          printf '{"candidateSha":"%s","verdict":"%s","auth":"%s","routes":"%s","functional":"%s","reliability":"%s","a11y":"%s","source":"%s"}\n' "$CANDIDATE_SHA" "$VERDICT" "$AUTH" "$ROUTES" "$FUNCTIONAL" "$RELIABILITY" "$A11Y" "$SOURCE" > "artifacts/qa/erp-v155-regression/$CANDIDATE_SHA/summary.json"
+          printf '{"candidateSha":"%s","verdict":"%s","auth":"%s","captchaBrowser":"%s","routes":"%s","functional":"%s","reliability":"%s","a11y":"%s","source":"%s"}\n' "$CANDIDATE_SHA" "$VERDICT" "$AUTH" "$CAPTCHA_BROWSER" "$ROUTES" "$FUNCTIONAL" "$RELIABILITY" "$A11Y" "$SOURCE" > "artifacts/qa/erp-v155-regression/$CANDIDATE_SHA/summary.json"
           echo "verdict=$VERDICT" >> "$GITHUB_OUTPUT"
       - name: Upload regression evidence
         if: always()
