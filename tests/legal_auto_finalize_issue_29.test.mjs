@@ -16,6 +16,26 @@ test('#29 receives provider identity and professional evidence only from reposit
   assert.doesNotMatch(workflow, /example\.com|placeholder|changeme/i);
 });
 
+test('#29 can validate an exact candidate without closing the issue by default',()=>{
+  assert.match(workflow,/candidate_sha:/);
+  assert.match(workflow,/finalize_issue:/);
+  assert.match(workflow,/default: false/);
+  assert.match(workflow,/CANDIDATE_SHA: \$\{\{ inputs\.candidate_sha \|\| github\.sha \}\}/);
+  assert.match(workflow,/git rev-parse HEAD/);
+  assert.match(workflow,/inputs\.finalize_issue == true/);
+  assert.match(workflow,/validationOnly/);
+});
+
+test('#29 performs a redacted configuration preflight before dependency/browser cost',()=>{
+  const preflight=workflow.indexOf('Preflight de identidad y evidencia sin imprimir valores');
+  const install=workflow.indexOf('npm ci --no-audit --no-fund');
+  const browser=workflow.indexOf('playwright install --with-deps chromium');
+  assert.ok(preflight>=0&&install>preflight&&browser>install);
+  assert.match(workflow,/BLOCKED_LEGAL_CONFIGURATION/);
+  assert.match(workflow,/\^\[0-9a-fA-F\]\{64\}\$/);
+  assert.doesNotMatch(workflow,/echo\s+"\$LEGAL_PROVIDER_/);
+});
+
 test('#29 requires approved professional attestation and all mandatory approvals', () => {
   assert.match(evidence, /attestation\?\.status !== 'approved'/);
   assert.match(evidence, /professionalReview/);

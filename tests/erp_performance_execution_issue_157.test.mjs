@@ -16,6 +16,17 @@ test('#157 requires a declared expected peak instead of inventing concurrency',(
   assert.doesNotMatch(workflow,/ERP157_EXPECTED_PEAK_USERS:\s*['"]?\d+/);
 });
 
+test('#157 can measure an exact frozen candidate without closing the issue by default',()=>{
+  assert.match(workflow,/candidate_sha:/);
+  assert.match(workflow,/finalize_issue:/);
+  assert.match(workflow,/default: false/);
+  assert.match(workflow,/CANDIDATE_SHA: \$\{\{ inputs\.candidate_sha \|\| github\.event\.workflow_run\.head_sha \|\| github\.sha \}\}/);
+  assert.match(workflow,/\^\[0-9a-fA-F\]\{40\}\$/);
+  assert.match(workflow,/git rev-parse HEAD/);
+  assert.match(workflow,/inputs\.finalize_issue == true/);
+  assert.match(workflow,/measurementOnly/);
+});
+
 test('#157 measures real PostgreSQL/API plus 1x and 3x multi-profile load',()=>{
   assert.match(workflow,/postgres:16-alpine/);
   assert.match(workflow,/contagest_performance_v157_e2e/);
