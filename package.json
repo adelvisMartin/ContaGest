@@ -3,7 +3,7 @@
   "version": "11.14.0",
   "private": true,
   "type": "module",
-  "engines": {"node": "22.x"},
+  "engines": {"node": "24.20.0"},
   "workspaces": ["frontend","backend"],
   "scripts": {
     "dev:frontend": "npm --workspace frontend run dev",
