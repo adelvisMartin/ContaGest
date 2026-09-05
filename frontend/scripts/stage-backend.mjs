@@ -51,7 +51,7 @@ const result = await build({
   bundle: true,
   platform: 'node',
   format: 'esm',
-  target: 'node24',
+  target: 'node22',
   external: EXTERNAL_RUNTIME_PACKAGES,
   sourcemap: false,
   legalComments: 'none',
