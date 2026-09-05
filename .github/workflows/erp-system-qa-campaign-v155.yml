@@ -17,6 +17,7 @@ on:
 
 permissions:
   contents: read
+  issues: write
 
 env:
   CANDIDATE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
@@ -176,7 +177,7 @@ jobs:
           retention-days: 14
 
   aggregate:
-    name: Aggregate evidence and fail closed
+    name: Aggregate evidence, harvest P0/P1 and fail closed
     if: always() && (github.event_name == 'workflow_dispatch' || startsWith(github.head_ref, 'test/erp-155-') || startsWith(github.head_ref, 'release/candidate-'))
     needs: [contract, browser-matrix, regression-pack]
     runs-on: ubuntu-latest
@@ -198,6 +199,12 @@ jobs:
         id: aggregate
         continue-on-error: true
         run: CANDIDATE_SHA="$CANDIDATE_SHA" node scripts/erp-system-qa-aggregate-v155.mjs
+      - name: Create or link every P0/P1 finding atomically
+        id: harvest
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: CANDIDATE_SHA="$CANDIDATE_SHA" node scripts/erp-system-qa-harvest-v155.mjs
       - name: Upload final QA campaign report
         if: always()
         uses: actions/upload-artifact@v4
@@ -210,6 +217,8 @@ jobs:
         if: always()
         run: |
           echo "aggregate=${{ steps.aggregate.outcome }}"
+          echo "harvest=${{ steps.harvest.outcome }}"
           echo "regression=${{ needs.regression-pack.outputs.verdict }}"
+          test '${{ steps.harvest.outcome }}' = 'success'
           test '${{ steps.aggregate.outcome }}' = 'success'
           test '${{ needs.regression-pack.outputs.verdict }}' = 'PASS'
