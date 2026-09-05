@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "engines": {
-    "node": "22.x"
+    "node": "24.20.0"
   },
   "description": "Frontend ContaGest-VE Enterprise con UI MUI compacta, RBAC, licencias, PWA y verticales especializadas.",
   "scripts": {
