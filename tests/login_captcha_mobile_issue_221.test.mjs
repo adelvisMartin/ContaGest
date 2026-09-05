@@ -79,12 +79,12 @@ test('root and frontend serverless placeholders stay byte-identical',()=>{
   );
 });
 
-test('workspace and serverless bundle are pinned to Node 24.20.0',()=>{
+test('workspace and serverless bundle preserve the canonical ContaGest Node 22 runtime',()=>{
   for(const path of ['package.json','frontend/package.json','backend/package.json']){
-    assert.equal(readPackage(path).engines?.node,'24.20.0',`${path} must pin Node 24.20.0`);
+    assert.equal(readPackage(path).engines?.node,'22.x',`${path} must preserve the project Node 22 runtime`);
   }
-  assert.match(stageBackend,/target:\s*['"]node24['"]/);
-  assert.doesNotMatch(stageBackend,/target:\s*['"]node22['"]/);
+  assert.match(stageBackend,/target:\s*['"]node22['"]/);
+  assert.doesNotMatch(stageBackend,/target:\s*['"]node24['"]/);
 });
 
 test('responsive hotfix is loaded and covers critical mobile widths',()=>{
