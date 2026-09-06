@@ -3,10 +3,19 @@ name: ERP Performance & Capacity #157
 on:
   workflow_dispatch:
     inputs:
+      candidate_sha:
+        description: 'SHA exacto de 40 hex a medir. Vacío = SHA actual del workflow.'
+        required: false
+        type: string
       expected_peak_users:
         description: 'Pico concurrente esperado total para ContaGest; no inventar este valor.'
         required: false
         type: string
+      finalize_issue:
+        description: 'Cerrar #157 sólo si todo pasa y #155 ya está cerrado.'
+        required: false
+        default: false
+        type: boolean
   workflow_run:
     workflows: ['ERP #155 Auto Finalize']
     types: [completed]
@@ -18,7 +27,7 @@ permissions:
   issues: write
 
 concurrency:
-  group: erp-performance-capacity-v157
+  group: erp-performance-capacity-v157-${{ inputs.candidate_sha || github.event.workflow_run.head_sha || github.sha }}
   cancel-in-progress: true
 
 env:
@@ -36,7 +45,7 @@ env:
   SUPABASE_AUTH_FALLBACK: 'false'
   ALLOW_PUBLIC_REGISTER: 'false'
   PRISMA_QUERY_TELEMETRY: 'true'
-  CANDIDATE_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
+  CANDIDATE_SHA: ${{ inputs.candidate_sha || github.event.workflow_run.head_sha || github.sha }}
   ERP157_EXPECTED_PEAK_USERS: ${{ inputs.expected_peak_users || vars.ERP157_EXPECTED_PEAK_USERS }}
 
 jobs:
@@ -60,6 +69,12 @@ jobs:
           --health-timeout=5s
           --health-retries=20
     steps:
+      - name: Validar candidate SHA antes de checkout
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$CANDIDATE_SHA" =~ ^[0-9a-fA-F]{40}$ ]]
+          echo "candidate=$CANDIDATE_SHA"
       - name: Checkout candidate SHA
         uses: actions/checkout@v4
         with:
@@ -110,11 +125,19 @@ jobs:
           node scripts/erp-performance-defect-harvest-v157.mjs --create
       - name: Gate de budgets y completitud
         run: node scripts/erp-performance-gate-v157.mjs check
-      - name: Exigir #155 cerrado y auto-finalizar #157
+      - name: Finalizar #157 sólo cuando la ejecución lo autoriza
+        if: github.event_name != 'workflow_dispatch' || inputs.finalize_issue == true
         env:
           GITHUB_TOKEN: ${{ github.token }}
           GITHUB_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: node scripts/erp-performance-finalize-v157.mjs
+      - name: Registrar medición manual sin cierre
+        if: github.event_name == 'workflow_dispatch' && inputs.finalize_issue != true
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "artifacts/qa/erp-performance-v157/$CANDIDATE_SHA"
+          printf '{"candidateSha":"%s","measurementOnly":true,"issueFinalizationRequested":false}\n' "$CANDIDATE_SHA" > "artifacts/qa/erp-performance-v157/$CANDIDATE_SHA/manual-run-policy.json"
       - name: Conservar evidencia #157
         if: always()
         uses: actions/upload-artifact@v4
