@@ -72,3 +72,29 @@ test('unknown status is rejected by record command',()=>{
   assert.equal(record.status,2);
   assert.match(record.stderr,/Status inválido/);
 });
+
+test('release readiness requires operator, distinct hashed SOURCE/LAB sessions and evidence for every PASS row',()=>{
+  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'hipico-v119-identity-'));
+  const file=path.join(dir,'physical.json');
+  const sha='e'.repeat(40),sourceHash='1'.repeat(64),labHash='2'.repeat(64);
+  assert.equal(run(['init',`--file=${file}`,'--force','--operator=QA Operador'],sha).status,0);
+  for(const [id,mode,device] of [['browser','pwa-browser','Desktop'],['pwa','pwa-standalone','Android PWA'],['apk','android-apk','Android APK']]){
+    assert.equal(run(['add-env',`--file=${file}`,`--id=${id}`,`--mode=${mode}`,`--device=${device}`,`--source-session-hash=${sourceHash}`,`--lab-session-hash=${labHash}`],sha).status,0);
+  }
+  const result=JSON.parse(run(['status',`--file=${file}`],sha).stdout);
+  assert.equal(result.operatorPresent,true);
+  assert.equal(result.sessionTopologySafe,true);
+  assert.equal(result.evidenceComplete,false);
+  assert.equal(result.releasePhysicalGate,'NOT_READY');
+});
+
+test('same hashed identity for SOURCE and LAB is never considered safe',()=>{
+  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'hipico-v119-same-session-'));
+  const file=path.join(dir,'physical.json');
+  const sha='f'.repeat(40),same='3'.repeat(64);
+  run(['init',`--file=${file}`,'--force','--operator=QA'],sha);
+  for(const [id,mode] of [['browser','pwa-browser'],['pwa','pwa-standalone'],['apk','android-apk']])run(['add-env',`--file=${file}`,`--id=${id}`,`--mode=${mode}`,'--device=Device',`--source-session-hash=${same}`,`--lab-session-hash=${same}`],sha);
+  const result=JSON.parse(run(['status',`--file=${file}`],sha).stdout);
+  assert.equal(result.sessionTopologySafe,false);
+  assert.equal(result.releasePhysicalGate,'NOT_READY');
+});

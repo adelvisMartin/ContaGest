@@ -1,3 +1,4 @@
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
@@ -15,9 +16,11 @@ const sampleSeconds=Math.max(1,Number(arg('sample-seconds',String(policy.sampleS
 const healthUrl=arg('health-url','');
 const spoolPath=arg('spool-path','');
 const drillEvidencePath=arg('drill-evidence','');
+const operatorId=arg('operator-id','').trim();
 const candidateSha=String(process.env.GITHUB_SHA||process.env.GIT_SHA||process.env.VERCEL_GIT_COMMIT_SHA||arg('sha','UNBOUND')).trim();
 const sourceReadOnly=(arg('source-read-only','NOT_EXECUTED')) as EvidenceStatus;
 const labOnlyWriteDestination=(arg('lab-only-write','NOT_EXECUTED')) as EvidenceStatus;
+const sessionFallbackSafe=(arg('session-fallback-safe','NOT_EXECUTED')) as EvidenceStatus;
 const artifactKey=/^[a-f0-9]{40}$/i.test(candidateSha)?candidateSha:'UNBOUND';
 const outDir=path.join(root,'artifacts','qa','hipico-v120',artifactKey);fs.mkdirSync(outDir,{recursive:true});
 const samplesFile=path.join(outDir,'samples.jsonl');
@@ -26,6 +29,7 @@ const eventLoop=monitorEventLoopDelay({resolution:20});eventLoop.enable();
 const cpuStart=process.cpuUsage();const memoryStart=process.memoryUsage();const start=Date.now();
 let healthChecks=0,healthFailures=0,spoolChecks=0,spoolAvailableChecks=0,decisions=0,lostDecisions=0,duplicateResponses=0,contextLeaks=0,maxBacklogAgeSeconds=0,maxSpoolBytes=0;
 
+function sha256File(file:string){return crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex');}
 function loadDrills():Record<string,SoakDrillEvidence>{
   const fallback=Object.fromEntries(policy.requiredDrills.map((id:string)=>[
     id,
@@ -48,7 +52,7 @@ const drills=loadDrills();
 type FileStats={files:number;bytes:number;oldestMtimeMs:number|null};
 function recursiveFileStats(target:string):FileStats{
   if(!target||!fs.existsSync(target))return{files:0,bytes:0,oldestMtimeMs:null};
-  const stack=[target];let files=0,bytes=0,oldestMtimeMs:number|null=null;
+  const stack=[target];let files=0,bytes=0,oldestMtimeMs:null|number=null;
   while(stack.length){
     const current=stack.pop()!;
     for(const entry of fs.readdirSync(current,{withFileTypes:true})){
@@ -124,17 +128,31 @@ const summaryInput:SoakSummaryInput={
   unexpectedDuplicateResponses:duplicateResponses,lostDecisions,contextLeaks,
   healthConfigured:Boolean(healthUrl),spoolConfigured:Boolean(spoolPath),
   healthChecks,healthFailures,spoolChecks,spoolAvailableChecks,
-  sourceReadOnly,labOnlyWriteDestination,drills
+  operatorPresent:Boolean(operatorId),sourceReadOnly,labOnlyWriteDestination,sessionFallbackSafe,drills
 };
 const evaluation=evaluateSoak(summaryInput,policy);
+const drillEvidenceFull=drillEvidencePath?path.resolve(drillEvidencePath):null;
+const drillEvidenceArtifact=path.join(outDir,'drill-evidence-input.json');
+if(drillEvidenceFull&&fs.existsSync(drillEvidenceFull)){
+  if(path.resolve(drillEvidenceFull)!==path.resolve(drillEvidenceArtifact))fs.copyFileSync(drillEvidenceFull,drillEvidenceArtifact);
+}
+const evidenceIntegrity={
+  samplesSha256:fs.existsSync(samplesFile)?sha256File(samplesFile):null,
+  drillEvidenceSha256:fs.existsSync(drillEvidenceArtifact)?sha256File(drillEvidenceArtifact):null
+};
 const final={
-  schemaVersion:2,product:'control-hipico',candidateSha,
+  schemaVersion:3,product:'control-hipico',candidateSha,
+  operatorId:operatorId||null,
   startedAt:new Date(start).toISOString(),completedAt:new Date().toISOString(),
   durationRequestedMinutes:durationMinutes,sampleSeconds,
   healthUrlConfigured:Boolean(healthUrl),spoolPathConfigured:Boolean(spoolPath),
-  drillEvidenceConfigured:Boolean(drillEvidencePath),
-  replayScenario:scenario.id,decisions,summaryInput,evaluation,policyVersion:policy.version
+  drillEvidenceConfigured:Boolean(drillEvidencePath),drillEvidenceCopied:fs.existsSync(drillEvidenceArtifact),
+  replayScenario:scenario.id,decisions,summaryInput,evaluation,evidenceIntegrity,policyVersion:policy.version
 };
 fs.writeFileSync(path.join(outDir,'summary.json'),`${JSON.stringify(final,null,2)}\n`);
+fs.writeFileSync(path.join(outDir,'SHA256SUMS.txt'),[
+  evidenceIntegrity.samplesSha256?`${evidenceIntegrity.samplesSha256}  samples.jsonl`:null,
+  evidenceIntegrity.drillEvidenceSha256?`${evidenceIntegrity.drillEvidenceSha256}  drill-evidence-input.json`:null
+].filter(Boolean).join('\n')+'\n');
 console.log(JSON.stringify(final,null,2));
 if(evaluation.status==='FAIL')process.exitCode=1;else if(evaluation.status!=='PASS')process.exitCode=3;
