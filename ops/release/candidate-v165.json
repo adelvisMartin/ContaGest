@@ -1,0 +1,41 @@
+{
+  "schemaVersion": 2,
+  "candidate": "v16.5-staging",
+  "branch": "release/candidate-v165-staging",
+  "baseMainSha": "209e51c1c2b5d673c3ce506cd8ec2405c1f45ccc",
+  "candidateShaSource": "git rev-parse HEAD",
+  "status": "STAGING_NOT_VERIFIED",
+  "vercelDeployment": "FROZEN",
+  "mainSynchronization": "MERGED_AS_SECOND_PARENT_IN_CANDIDATE",
+  "integrations": [
+    {"issue":221,"scope":"CAPTCHA stateless boot + lazy Prisma + controlled serverless fallback + browser recovery/regression","pr":238,"state":"MERGED_MAIN"},
+    {"issue":155,"scope":"full QA campaign + atomic P0/P1 issue harvesting + CAPTCHA browser regression","pr":239,"state":"INTEGRATED_CANDIDATE"},
+    {"issue":157,"scope":"exact candidate SHA performance measurement without invented peak or implicit close","pr":240,"state":"MERGED_MAIN"},
+    {"issue":134,"scope":"manual multi-pool hosted runner diagnosis","pr":241,"state":"MERGED_MAIN"},
+    {"issue":97,"scope":"deployment freeze + release governance","pr":242,"state":"CLOSED_SUPERSEDED_BY_CANDIDATE"},
+    {"issue":29,"scope":"candidate-bound legal preflight without fabricated evidence","pr":243,"state":"CLOSED_SUPERSEDED_BY_CANDIDATE"},
+    {"issue":119,"scope":"physical QA evidence identity/session hardening","pr":244,"state":"CLOSED_SUPERSEDED_BY_CANDIDATE"},
+    {"issue":120,"scope":"soak operator/session/evidence hardening + drill input materialized in artifact","pr":245,"state":"CLOSED_SUPERSEDED_BY_CANDIDATE"}
+  ],
+  "qualityPolicy": {
+    "mergeableIsNotReady": true,
+    "requiredChecksMustExecute": true,
+    "requiredChecksMustPass": true,
+    "runnerIdZeroOrNoSteps": "BLOCKED_INFRA_NOT_EXECUTED",
+    "blockedDoesNotAuthorizeMerge": true,
+    "falseGreenForbidden": true,
+    "productionReadinessMaskedFailureForbidden": true
+  },
+  "hardGates": {
+    "sourceWhatsApp": "READ_ONLY",
+    "labWriteDestination": "ONLY_ALLOWED_QA_WRITE_DESTINATION",
+    "whatsappProductionCompliance154": "NO_GO",
+    "promotion121": "FAIL_CLOSED",
+    "legal29": "REQUIRES_REAL_PROVIDER_AND_PROFESSIONAL_EVIDENCE",
+    "physical119": "REQUIRES_REAL_DEVICE_SESSION_EVIDENCE",
+    "soak120": "REQUIRES_AT_LEAST_24H_REAL_RUN",
+    "performance157": "REQUIRES_REAL_RUN_AND_DECLARED_BUSINESS_PEAK",
+    "actions134": "BLOCKED_UNTIL_RUNNER_EXECUTES_REAL_STEPS"
+  },
+  "releaseRule": "Do not merge or deploy this staging candidate until every applicable automated gate has actually executed on the final SHA and passed, and every required external/manual gate has real evidence. BLOCKED, SKIPPED and NOT_EXECUTED never equal PASS. Lift deployment freeze only in a dedicated reviewed release action."
+}

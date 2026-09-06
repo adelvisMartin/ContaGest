@@ -4,12 +4,9 @@
   "outputDirectory": "frontend/dist",
   "framework": "vite",
   "git": {
-    "deploymentEnabled": {
-      "*": false,
-      "main": true
-    }
+    "deploymentEnabled": false
   },
-  "ignoreCommand": "[ \"$VERCEL_GIT_COMMIT_REF\" != \"main\" ]",
+  "ignoreCommand": "exit 0",
   "functions": {
     "api/index.js": { "maxDuration": 30 },
     "api/health.ts": { "maxDuration": 30 },

@@ -2,6 +2,16 @@ name: Legal Auto Finalize #29
 
 on:
   workflow_dispatch:
+    inputs:
+      candidate_sha:
+        description: 'SHA exacto de 40 hex a validar antes del release. Vacío = SHA actual.'
+        required: false
+        type: string
+      finalize_issue:
+        description: 'Permitir cierre de #29 si todos los gates pasan.'
+        required: false
+        default: false
+        type: boolean
   push:
     branches: [main]
     paths:
@@ -19,8 +29,11 @@ permissions:
   issues: write
 
 concurrency:
-  group: legal-auto-finalize-v29
+  group: legal-auto-finalize-v29-${{ inputs.candidate_sha || github.sha }}
   cancel-in-progress: true
+
+env:
+  CANDIDATE_SHA: ${{ inputs.candidate_sha || github.sha }}
 
 jobs:
   legal-gate:
@@ -37,51 +50,77 @@ jobs:
       LEGAL_REVIEW_EVIDENCE_SHA256: ${{ vars.LEGAL_REVIEW_EVIDENCE_SHA256 }}
       GH_TOKEN: ${{ github.token }}
     steps:
-      - name: Checkout main
+      - name: Validar candidate SHA antes de checkout
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$CANDIDATE_SHA" =~ ^[0-9a-fA-F]{40}$ ]]
+      - name: Checkout candidate exacto
         uses: actions/checkout@v4
         with:
-          ref: main
-
+          ref: ${{ env.CANDIDATE_SHA }}
+      - name: Confirmar candidate exacto
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$CANDIDATE_SHA"
+      - name: Preflight de identidad y evidencia sin imprimir valores
+        shell: bash
+        run: |
+          set -euo pipefail
+          required=(
+            LEGAL_PROVIDER_NAME LEGAL_PROVIDER_RIF LEGAL_PROVIDER_ADDRESS
+            LEGAL_CONTACT_EMAIL LEGAL_SUPPORT_EMAIL
+            LEGAL_REVIEW_APPROVED_VERSION LEGAL_REVIEW_EVIDENCE_SHA256
+          )
+          for key in "${required[@]}"; do
+            if [ -z "${!key:-}" ]; then
+              echo "BLOCKED_LEGAL_CONFIGURATION: falta $key"
+              exit 3
+            fi
+          done
+          [[ "$LEGAL_REVIEW_EVIDENCE_SHA256" =~ ^[0-9a-fA-F]{64}$ ]]
+          echo 'LEGAL_CONFIGURATION_PRESENT=true'
       - name: Node 22
         uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
-
       - name: Instalar dependencias bloqueadas
         run: npm ci --no-audit --no-fund
-
       - name: Contrato de auto-finalización legal
         run: node --test tests/legal_auto_finalize_issue_29.test.mjs
-
       - name: Evidencia profesional ligada al candidate SHA
         run: node scripts/legal-review-evidence-v29.mjs
-
       - name: Production Legal Gate
         run: node scripts/legal-production-gate.mjs
-
       - name: Instalar Chromium para E2E legal
         run: npx playwright install --with-deps chromium
-
       - name: E2E primer acceso, rechazo y reaceptación
         run: npx playwright test qa/legal-first-access.spec.mjs --project=chromium --workers=1
-
       - name: Finalizar #29 idempotentemente sólo después de todos los PASS
+        if: github.event_name != 'workflow_dispatch' || inputs.finalize_issue == true
         shell: bash
         run: |
           set -euo pipefail
           STATE="$(gh issue view 29 --repo "$GITHUB_REPOSITORY" --json state --jq .state)"
           if [ "$STATE" = "OPEN" ]; then
-            gh issue close 29 --repo "$GITHUB_REPOSITORY" --reason completed --comment "Gate legal de producción verificado sobre ${GITHUB_SHA}: identidad del proveedor completa, atestación profesional aprobada/versionada, evidencia SHA-256 vinculada, approvals obligatorios en PASS y E2E de primer acceso/rechazo/reaceptación verde. Este cierre registra evidencia técnica de la revisión profesional; no sustituye asesoría jurídica."
+            gh issue close 29 --repo "$GITHUB_REPOSITORY" --reason completed --comment "Gate legal de producción verificado sobre ${CANDIDATE_SHA}: identidad del proveedor completa, atestación profesional aprobada/versionada, evidencia SHA-256 vinculada, approvals obligatorios en PASS y E2E de primer acceso/rechazo/reaceptación verde. Este cierre registra evidencia técnica de la revisión profesional; no sustituye asesoría jurídica."
           else
             echo '#29 ya estaba cerrado; la revalidación del candidate SHA terminó en PASS.'
           fi
-
+      - name: Registrar preflight manual sin cierre
+        if: github.event_name == 'workflow_dispatch' && inputs.finalize_issue != true
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/release/legal-v29
+          printf '{"candidateSha":"%s","validationOnly":true,"issueFinalizationRequested":false}\n' "$CANDIDATE_SHA" > artifacts/release/legal-v29/manual-run-policy.json
       - name: Conservar evidencia legal
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: legal-v29-${{ github.sha }}
+          name: legal-v29-${{ env.CANDIDATE_SHA }}
           path: |
             artifacts/release/legal-v29
             artifacts/qa/legal-production-gate.json
