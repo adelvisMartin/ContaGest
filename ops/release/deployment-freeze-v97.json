@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "issue": 97,
   "state": "FROZEN",
   "reason": "Accumulate ContaGest + Control Hipico improvements and QA before a single controlled release candidate deployment.",
@@ -7,14 +7,16 @@
   "productionDeploy": "manual-release-only-after-freeze-lift",
   "releaseCandidatePattern": "release/candidate-*",
   "liftRequirements": [
-    "#221 CAPTCHA/login candidate integrated",
-    "#155 QA candidate evidence reviewed",
-    "#157 capacity evidence reviewed or explicitly BLOCKED by external runner infrastructure",
-    "#134 classified honestly; NOT_EXECUTED is never PASS",
-    "#97 main governance verified or exception documented",
-    "#29 legal production gate remains fail-closed until real provider/professional evidence exists",
-    "#119/#120 Hípico evidence does not enable SOURCE production write",
-    "#154 remains NO_GO unless independently revalidated with current official evidence"
+    "#134 recovered: GitHub Actions assigns a real runner and Checkout executes",
+    "all applicable candidate automated checks execute on the final SHA and PASS; BLOCKED/SKIPPED/NOT_EXECUTED do not authorize release",
+    "#221 CAPTCHA/login source + browser regressions PASS on the final candidate SHA",
+    "#155 full QA campaign PASS and every P0/P1 finding is linked/resolved",
+    "#157 capacity/performance measurement PASS with a declared real expected peak; no invented concurrency target",
+    "#97 live main governance/protection is verified, not merely represented in repository files",
+    "#29 legal production gate has real provider identity and professional review evidence before production release where required",
+    "#119 Physical QA PASS on real PWA browser, installed PWA and APK/device scenarios with SOURCE/LAB separation",
+    "#120 soak release gate PASS after at least 24 real hours with health, spool and drill evidence",
+    "#121 remains fail-closed and #154 remains NO_GO for production WhatsApp writes unless independently revalidated with current official evidence"
   ],
-  "unfreezeRule": "A dedicated reviewed PR must explicitly change state to RELEASE_CANDIDATE and re-enable only the intended deployment path."
+  "unfreezeRule": "A dedicated reviewed PR may change state to RELEASE_CANDIDATE only after every applicable lift requirement has verifiable evidence bound to the final candidate SHA. That PR may re-enable only the intended single deployment path."
 }
