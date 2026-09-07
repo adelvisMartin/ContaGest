@@ -86,7 +86,7 @@ export function createApp(options: { readinessCheck?: ReadinessCheck } = {}) {
   // High-cost routes receive an additional resource-consumption ceiling. The
   // general mutation limiter remains active below for state-changing requests.
   app.use(
-    ['/api/v1/ai', '/api/v1/exports', '/api/v1/imports', '/api/v1/reports'],
+    ['/api/v1/ai', '/api/v1/exports', '/api/v1/imports', '/api/v1/reports', '/api/v1/payables'],
     expensiveOperationRateLimit
   );
   app.use('/api/v1', mutationRateLimit, requestContext, apiRoutes);

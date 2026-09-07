@@ -1,4 +1,5 @@
-import { PageHeader, Field, Select, Button, Badge, MetricGrid, ErpButton, ErpDataTable, ErpRow, ErpSection } from '../components/ui/index.js';
+import { PageHeader, Field, Select, Button, Badge, MetricGrid, ErpButton, ErpDataTable, ErpSection } from '../components/ui/index.js';
+import { PayablesPanel } from '../components/payables/PayablesPanel.js';
 import { bs, shortDate } from '../core/formatters.js';
 import { escapeHtml, mountSubmit, qsa, uid, today } from '../utils/dom.js';
 import { RuntimePolicy } from '../services/runtimePolicy.js';
@@ -51,10 +52,11 @@ export const PurchasesPage = {
       {label:'IVA crédito',value:bs(iva),iconName:'fa-receipt',tone:'brand'},
       {label:'Facturas',value:String(purchases.length),hint:`${purchases.filter((item)=>item.status==='Anulada').length} anuladas`,iconName:'fa-file-invoice',tone:'neutral'},
       {label:'Total vigente',value:bs(subtotal+iva),iconName:'fa-sack-dollar',tone:'success'}
-    ])}${ErpSection({title:'Registrar compra',description:'Proveedor, referencia y montos que alimentan compras y contabilidad.',content:form})}${ErpSection({title:'Compras registradas',description:'Estado, sincronización y acciones de reverso o borrador.',content:table})}</section>`;
+    ])}${PayablesPanel.render(state)}${ErpSection({title:'Registrar compra',description:'Proveedor, referencia y montos que alimentan compras y contabilidad.',content:form})}${ErpSection({title:'Compras registradas',description:'Estado, sincronización y acciones de reverso o borrador.',content:table})}</section>`;
   },
 
   mount(state, { Store, Toast, SupabaseSyncService }) {
+    PayablesPanel.mount(state,{Store,Toast,SupabaseSyncService});
     document.getElementById('btnSyncPurchases')?.addEventListener('click', () => SupabaseSyncService.pullPurchases({ Store, Toast, force:true, silent:false }));
     mountSubmit('#purchaseForm', async (data, form) => {
       const submit = form.querySelector('button[type="submit"], [data-mui-button-fallback]');

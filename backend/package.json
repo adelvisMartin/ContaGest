@@ -20,7 +20,7 @@
     "soak:hipico": "tsx scripts/hipico-soak-v120.ts",
     "soak:hipico:smoke": "tsx scripts/hipico-soak-v120.ts --duration-minutes=0.1 --sample-seconds=1",
     "test:observability": "tsx --test ../qa/observability-v98.test.ts",
-    "test": "tsx --test src/modules/auth/*.test.ts src/modules/hipico-bot/*.test.ts src/shared/services/*.test.ts && npm run test:observability",
+    "test": "tsx --test src/modules/auth/*.test.ts src/modules/hipico-bot/*.test.ts src/modules/payables/*.test.ts src/shared/services/*.test.ts && npm run test:observability",
     "prisma:sync-schema": "node scripts/sync-employee-prisma-schema.mjs",
     "prisma:generate": "npm run prisma:sync-schema && prisma generate",
     "prisma:migrate": "npm run prisma:sync-schema && prisma migrate dev",
