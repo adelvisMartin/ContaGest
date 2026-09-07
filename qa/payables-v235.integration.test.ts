@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import test from 'node:test';
+import test, { after } from 'node:test';
 import { randomUUID } from 'node:crypto';
 import { prisma } from '../backend/src/database/prisma.js';
 import { getPayableDocument, ingestPayableDocument } from '../backend/src/modules/payables/payables.service.js';
@@ -8,11 +8,12 @@ const pdf=(text:string,salt='')=>Buffer.from(`%PDF-1.4\n1 0 obj<</Type /Page>>en
 const tenantData=(label:string)=>({rif:`QA-${label}-${randomUUID().slice(0,8)}`,name:`QA ${label}`});
 
 async function createTenant(label:string){return prisma.tenant.create({data:tenantData(label)});}
+after(async()=>{await prisma.$disconnect();});
 
 test('v235 DB acceptance: tenant isolation, exact dedupe, PO/receipt match and review-only state',async(t)=>{
   const tenantA=await createTenant('A');
   const tenantB=await createTenant('B');
-  t.after(async()=>{await prisma.tenant.deleteMany({where:{id:{in:[tenantA.id,tenantB.id]}}});await prisma.$disconnect();});
+  t.after(async()=>{await prisma.tenant.deleteMany({where:{id:{in:[tenantA.id,tenantB.id]}}});});
 
   const supplier=await prisma.supplier.create({data:{tenantId:tenantA.id,rif:'J-44444444-4',name:'Proveedor QA'}});
   await prisma.moduleRecord.createMany({data:[
@@ -49,7 +50,7 @@ test('v235 DB acceptance: tenant isolation, exact dedupe, PO/receipt match and r
 
 test('v235 unknown supplier is suggested only and never autocreated',async(t)=>{
   const tenant=await createTenant('UNKNOWN');
-  t.after(async()=>{await prisma.tenant.deleteMany({where:{id:tenant.id}});await prisma.$disconnect();});
+  t.after(async()=>{await prisma.tenant.deleteMany({where:{id:tenant.id}});});
   const before=await prisma.supplier.count({where:{tenantId:tenant.id}});
   const result=await ingestPayableDocument({tenantId:tenant.id,fileName:'unknown.pdf',mimeType:'application/pdf',bytes:pdf('RIF J-99999999-9 FACTURA NEW-1 FECHA 07/09/2026 TOTAL 10')});
   const after=await prisma.supplier.count({where:{tenantId:tenant.id}});
