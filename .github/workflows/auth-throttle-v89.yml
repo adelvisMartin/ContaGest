@@ -8,8 +8,10 @@ on:
       - 'backend/src/shared/middleware/security.ts'
       - 'backend/.env.example'
       - 'backend/prisma/**'
+      - 'backend/scripts/prisma-deploy-safe.mjs'
       - 'qa/auth-throttle-issue-89.test.ts'
       - 'qa/auth-throttle-hardening-issue-89.test.ts'
+      - 'tests/ci_ephemeral_database_contract.test.mjs'
       - 'docs/AUTH_THROTTLE_ISSUE_89.md'
       - 'docs/AUTH_SECURITY_BENCHMARK_V1117.md'
       - '.github/workflows/auth-throttle-v89.yml'
@@ -37,20 +39,21 @@ jobs:
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: contagest_auth_v89
+          POSTGRES_DB: contagest_auth_v89_e2e
         ports:
           - 5432:5432
         options: >-
-          --health-cmd "pg_isready -U postgres -d contagest_auth_v89"
+          --health-cmd "pg_isready -U postgres -d contagest_auth_v89_e2e"
           --health-interval 5s
           --health-timeout 5s
           --health-retries 12
 
     env:
       NODE_ENV: test
+      CI: 'true'
       API_MODE: prisma
-      DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/contagest_auth_v89?schema=public
-      DIRECT_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/contagest_auth_v89?schema=public
+      DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/contagest_auth_v89_e2e?schema=public
+      DIRECT_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/contagest_auth_v89_e2e?schema=public
       JWT_SECRET: qa89_only_jwt_secret_0123456789abcdefghijklmnopqrstuvwxyz_ABCDEF
       LICENSE_HASH_SECRET: qa89_only_license_secret_0123456789abcdefghijklmnopqrstuvwxyz_XYZ
       SUPABASE_AUTH_FALLBACK: 'false'
@@ -82,7 +85,7 @@ jobs:
         shell: bash
         run: |
           set -o pipefail
-          psql -h 127.0.0.1 -U postgres -d contagest_auth_v89 \
+          psql -h 127.0.0.1 -U postgres -d contagest_auth_v89_e2e \
             -v ON_ERROR_STOP=1 \
             -f ops/database/prepare-supabase-ephemeral.sql 2>&1 | tee prerequisitos-v89.log
 

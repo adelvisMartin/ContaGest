@@ -7,11 +7,13 @@ on:
       - 'backend/src/modules/banking/**'
       - 'backend/src/modules/schemas.ts'
       - 'backend/prisma/**'
+      - 'backend/scripts/prisma-deploy-safe.mjs'
       - 'frontend/src/pages/BankingPage.js'
       - 'frontend/src/services/enterpriseOperationsService.js'
       - 'qa/banking-auditable-v93.test.ts'
       - 'qa/financial-idempotency-v92.test.ts'
       - 'qa/support/real-backend-harness.ts'
+      - 'tests/ci_ephemeral_database_contract.test.mjs'
       - 'docs/ADR_BANKING_AUDITABLE_BALANCE_V93.md'
       - '.github/workflows/banking-auditable-v93.yml'
   workflow_dispatch:
@@ -35,20 +37,21 @@ jobs:
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: contagest_banking_v93
+          POSTGRES_DB: contagest_banking_v93_e2e
         ports:
           - 5432:5432
         options: >-
-          --health-cmd "pg_isready -U postgres -d contagest_banking_v93"
+          --health-cmd "pg_isready -U postgres -d contagest_banking_v93_e2e"
           --health-interval 5s
           --health-timeout 5s
           --health-retries 12
 
     env:
       NODE_ENV: test
+      CI: 'true'
       API_MODE: prisma
-      DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/contagest_banking_v93?schema=public
-      DIRECT_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/contagest_banking_v93?schema=public
+      DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/contagest_banking_v93_e2e?schema=public
+      DIRECT_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/contagest_banking_v93_e2e?schema=public
       APP_URL: http://127.0.0.1:8080
       CORS_ORIGIN: http://127.0.0.1:8080
       JWT_SECRET: banking_v93_only_jwt_secret_0123456789abcdefghijklmnopqrstuvwxyz_ABCDEF
@@ -80,7 +83,7 @@ jobs:
         shell: bash
         run: |
           set -o pipefail
-          psql -h 127.0.0.1 -U postgres -d contagest_banking_v93 -v ON_ERROR_STOP=1 -f ops/database/prepare-supabase-ephemeral.sql 2>&1 | tee prerequisitos-v93.log
+          psql -h 127.0.0.1 -U postgres -d contagest_banking_v93_e2e -v ON_ERROR_STOP=1 -f ops/database/prepare-supabase-ephemeral.sql 2>&1 | tee prerequisitos-v93.log
 
       - name: Apply canonical migrations
         shell: bash

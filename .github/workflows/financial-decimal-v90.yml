@@ -15,11 +15,13 @@ on:
       - 'backend/src/modules/currency/**'
       - 'backend/src/modules/schemas.ts'
       - 'backend/prisma/**'
+      - 'backend/scripts/prisma-deploy-safe.mjs'
       - 'qa/financial-decimal-v90.test.ts'
       - 'qa/financial-decimal-real-v90.test.ts'
       - 'qa/support/real-backend-harness.ts'
       - 'qa/postmerge-financial-domain-v17.test.ts'
       - 'tests/financial_decimal_issue_90.test.mjs'
+      - 'tests/ci_ephemeral_database_contract.test.mjs'
       - 'docs/ADR_FINANCIAL_DECIMAL_V90.md'
       - 'ops/database/prepare-supabase-ephemeral.sql'
       - 'package.json'
@@ -46,20 +48,21 @@ jobs:
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: contagest_financial_v90
+          POSTGRES_DB: contagest_financial_v90_e2e
         ports:
           - 5432:5432
         options: >-
-          --health-cmd "pg_isready -U postgres -d contagest_financial_v90"
+          --health-cmd "pg_isready -U postgres -d contagest_financial_v90_e2e"
           --health-interval 5s
           --health-timeout 5s
           --health-retries 12
 
     env:
       NODE_ENV: test
+      CI: 'true'
       API_MODE: prisma
-      DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/contagest_financial_v90?schema=public
-      DIRECT_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/contagest_financial_v90?schema=public
+      DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/contagest_financial_v90_e2e?schema=public
+      DIRECT_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/contagest_financial_v90_e2e?schema=public
       APP_URL: http://127.0.0.1:8080
       CORS_ORIGIN: http://127.0.0.1:8080
       JWT_SECRET: financial_v90_only_jwt_secret_0123456789abcdefghijklmnopqrstuvwxyz_ABCDEF
@@ -91,7 +94,7 @@ jobs:
         shell: bash
         run: |
           set -o pipefail
-          psql -h 127.0.0.1 -U postgres -d contagest_financial_v90 \
+          psql -h 127.0.0.1 -U postgres -d contagest_financial_v90_e2e \
             -v ON_ERROR_STOP=1 \
             -f ops/database/prepare-supabase-ephemeral.sql 2>&1 | tee prerequisitos-v90.log
 
@@ -141,7 +144,7 @@ jobs:
           set -o pipefail
           {
             echo '=== Tipos financieros ==='
-            psql -h 127.0.0.1 -U postgres -d contagest_financial_v90 -v ON_ERROR_STOP=1 -Atc "SELECT table_name || chr(9) || column_name || chr(9) || data_type || chr(9) || numeric_precision || chr(9) || numeric_scale FROM information_schema.columns WHERE table_schema='public' AND ((table_name='SalesInvoice' AND column_name IN ('subtotal','iva','total','exchangeRate')) OR (table_name='SalesInvoiceLine' AND column_name IN ('quantity','unitPrice','total','taxRate')) OR (table_name='PurchaseInvoice' AND column_name IN ('subtotal','iva','total')) OR (table_name='PurchaseInvoiceLine' AND column_name IN ('quantity','unitCost','total','taxRate')) OR (table_name='LedgerLine' AND column_name IN ('debit','credit','exchangeRate')) OR (table_name='BankAccount' AND column_name='balance') OR (table_name='BankMovement' AND column_name IN ('debit','credit')) OR (table_name='Employee' AND column_name='salary') OR (table_name='PayrollPeriod' AND column_name IN ('totalGross','totalDeductions','totalNet')) OR (table_name='PayrollReceipt' AND column_name IN ('gross','deductions','net')) OR (table_name='TaxPeriod' AND column_name IN ('ivaDebit','ivaCredit','igtfPaid')) OR (table_name='HrParameter' AND column_name='value') OR (table_name='Product' AND column_name IN ('cost','price','stock','reserved','minStock','taxRate'))) ORDER BY table_name,column_name;"
+            psql -h 127.0.0.1 -U postgres -d contagest_financial_v90_e2e -v ON_ERROR_STOP=1 -Atc "SELECT table_name || chr(9) || column_name || chr(9) || data_type || chr(9) || numeric_precision || chr(9) || numeric_scale FROM information_schema.columns WHERE table_schema='public' AND ((table_name='SalesInvoice' AND column_name IN ('subtotal','iva','total','exchangeRate')) OR (table_name='SalesInvoiceLine' AND column_name IN ('quantity','unitPrice','total','taxRate')) OR (table_name='PurchaseInvoice' AND column_name IN ('subtotal','iva','total')) OR (table_name='PurchaseInvoiceLine' AND column_name IN ('quantity','unitCost','total','taxRate')) OR (table_name='LedgerLine' AND column_name IN ('debit','credit','exchangeRate')) OR (table_name='BankAccount' AND column_name='balance') OR (table_name='BankMovement' AND column_name IN ('debit','credit')) OR (table_name='Employee' AND column_name='salary') OR (table_name='PayrollPeriod' AND column_name IN ('totalGross','totalDeductions','totalNet')) OR (table_name='PayrollReceipt' AND column_name IN ('gross','deductions','net')) OR (table_name='TaxPeriod' AND column_name IN ('ivaDebit','ivaCredit','igtfPaid')) OR (table_name='HrParameter' AND column_name='value') OR (table_name='Product' AND column_name IN ('cost','price','stock','reserved','minStock','taxRate'))) ORDER BY table_name,column_name;"
           } > financial-schema-v90.log 2>&1
 
       - name: Conservar evidencia #90

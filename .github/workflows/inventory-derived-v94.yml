@@ -8,12 +8,14 @@ on:
       - 'backend/src/modules/schemas.ts'
       - 'backend/src/modules/index.ts'
       - 'backend/prisma/**'
+      - 'backend/scripts/prisma-deploy-safe.mjs'
       - 'frontend/src/pages/InventoryPage.js'
       - 'frontend/src/pages/KardexPage.js'
       - 'frontend/src/core/businessRules.js'
       - 'frontend/src/services/inventoryService.js'
       - 'frontend/src/services/supabaseSyncService.js'
       - 'qa/inventory-derived-v94.test.ts'
+      - 'tests/ci_ephemeral_database_contract.test.mjs'
       - '.github/workflows/inventory-derived-v94.yml'
   workflow_dispatch:
 
@@ -35,18 +37,19 @@ jobs:
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: contagest_inventory_v94
+          POSTGRES_DB: contagest_inventory_v94_e2e
         ports: ['5432:5432']
         options: >-
-          --health-cmd "pg_isready -U postgres -d contagest_inventory_v94"
+          --health-cmd "pg_isready -U postgres -d contagest_inventory_v94_e2e"
           --health-interval 5s
           --health-timeout 5s
           --health-retries 12
     env:
       NODE_ENV: test
+      CI: 'true'
       API_MODE: prisma
-      DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/contagest_inventory_v94?schema=public
-      DIRECT_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/contagest_inventory_v94?schema=public
+      DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/contagest_inventory_v94_e2e?schema=public
+      DIRECT_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/contagest_inventory_v94_e2e?schema=public
       APP_URL: http://127.0.0.1:8080
       CORS_ORIGIN: http://127.0.0.1:8080
       JWT_SECRET: inventory_v94_only_jwt_secret_0123456789abcdefghijklmnopqrstuvwxyz
@@ -65,7 +68,7 @@ jobs:
         run: npm ci --no-audit --no-fund
       - name: Prepare PostgreSQL contracts
         env: { PGPASSWORD: postgres }
-        run: psql -h 127.0.0.1 -U postgres -d contagest_inventory_v94 -v ON_ERROR_STOP=1 -f ops/database/prepare-supabase-ephemeral.sql
+        run: psql -h 127.0.0.1 -U postgres -d contagest_inventory_v94_e2e -v ON_ERROR_STOP=1 -f ops/database/prepare-supabase-ephemeral.sql
       - name: Migrate
         run: npm --workspace backend run prisma:deploy
       - name: Seed
