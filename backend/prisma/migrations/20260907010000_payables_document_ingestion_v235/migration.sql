@@ -44,12 +44,25 @@ CREATE TABLE IF NOT EXISTS "PayableParserRun" (
   "createdAt" timestamptz NOT NULL DEFAULT now()
 );
 
+ALTER TABLE "PurchaseInvoice" ADD COLUMN IF NOT EXISTS "sourceDocumentId" text;
+ALTER TABLE "PurchaseInvoice" ADD COLUMN IF NOT EXISTS "currency" text NOT NULL DEFAULT 'VES';
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'PurchaseInvoice_sourceDocumentId_fkey') THEN
+    ALTER TABLE "PurchaseInvoice"
+      ADD CONSTRAINT "PurchaseInvoice_sourceDocumentId_fkey"
+      FOREIGN KEY ("sourceDocumentId") REFERENCES "PayableDocument"("id") ON DELETE SET NULL;
+  END IF;
+END $$;
+
 CREATE INDEX IF NOT EXISTS "PayableDocument_tenant_state_idx"
   ON "PayableDocument" ("tenantId", "state", "uploadedAt" DESC);
 CREATE INDEX IF NOT EXISTS "PayableDocument_tenant_supplier_reference_idx"
   ON "PayableDocument" ("tenantId", "supplierId", "supplierReference");
 CREATE INDEX IF NOT EXISTS "PayableParserRun_tenant_document_idx"
   ON "PayableParserRun" ("tenantId", "documentId", "createdAt" DESC);
+CREATE UNIQUE INDEX IF NOT EXISTS "PurchaseInvoice_tenant_source_document_key"
+  ON "PurchaseInvoice" ("tenantId", "sourceDocumentId") WHERE "sourceDocumentId" IS NOT NULL;
 
 ALTER TABLE "PayableDocument" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "PayableDocument" FORCE ROW LEVEL SECURITY;
@@ -69,3 +82,5 @@ COMMENT ON COLUMN "PayableDocument"."originalContent" IS
   'Immutable original evidence. Application code never updates this column after ingestion.';
 COMMENT ON COLUMN "PayableDocument"."parserResult" IS
   'First parser output retained immutably; reprocessing is appended to PayableParserRun.';
+COMMENT ON COLUMN "PurchaseInvoice"."sourceDocumentId" IS
+  'Traceability link to immutable AP source evidence; never used as an auto-post signal.';
