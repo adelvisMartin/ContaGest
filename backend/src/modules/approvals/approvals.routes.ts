@@ -1,6 +1,5 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import { prisma } from '../../database/prisma.js';
 import { asyncHandler, HttpError, ok } from '../../shared/http.js';
 import { requirePermission, requireTenant } from '../../shared/middleware/context.js';
 import { validateBody } from '../../shared/middleware/validate.js';
@@ -8,9 +7,10 @@ import { decimalSchema } from '../../shared/financial/zod.js';
 import { writeAudit } from '../../shared/services/audit.service.js';
 import {
   APPROVAL_CAPABILITIES, approvalReport, breakGlassApproval, cancelApprovalRequest, createApprovalPolicy,
-  createApprovalRequest, createDelegation, decideApprovalRequest, listApprovalInbox, listApprovalPolicies,
-  listMyApprovalRequests, reviseApprovalRequest, serializeApprovalAmount
+  createApprovalRequest, createDelegation, decideApprovalRequest, getActiveApprovalPolicy, listApprovalInbox, listApprovalPolicies,
+  listMyApprovalRequests, reviseApprovalRequest, serializeApprovalAmount, approvalPolicyApplies
 } from './approvals.service.js';
+import { buildApprovalExecutionContext } from './approval-execution-gate.js';
 
 const router=Router();router.use(requireTenant);
 const capability=z.enum(APPROVAL_CAPABILITIES);
@@ -22,9 +22,15 @@ const reviseSchema=z.object({payload:z.record(z.string(),z.unknown()),amount:dec
 const decisionSchema=z.object({reasonCode:z.string().trim().min(2).max(64).optional(),comment:z.string().trim().max(1000).optional()}).strict();
 const breakGlassSchema=z.object({reasonCode:z.string().trim().min(3).max(64),comment:z.string().trim().min(10).max(1000)}).strict();
 const delegationSchema=z.object({delegateId:z.string().uuid(),capability:z.union([capability,z.literal('*')]).default('*'),startsAt:z.coerce.date(),endsAt:z.coerce.date(),reason:z.string().trim().min(5).max(500)}).strict();
+const contextSchema=z.object({method:z.enum(['POST','PATCH']),path:z.string().trim().startsWith('/').max(300),body:z.record(z.string(),z.unknown()).default({})}).strict();
 const serialize=(row:any)=>({...row,thresholdAmount:row.thresholdAmount===undefined?undefined:serializeApprovalAmount(row.thresholdAmount),amount:row.amount===undefined?undefined:serializeApprovalAmount(row.amount)});
 
 router.get('/capabilities',asyncHandler(async(_req,res)=>ok(res,{capabilities:APPROVAL_CAPABILITIES})));
+router.post('/execution-context',validateBody(contextSchema),asyncHandler(async(req,res)=>{
+  const tenantId=context(req).tenantId;const execution=await buildApprovalExecutionContext({tenantId,...req.body});
+  if(!execution)throw new HttpError(422,'La operación no está registrada como capability maker-checker.',{code:'APPROVAL_EXECUTION_NOT_MAPPED'});
+  const policy=await getActiveApprovalPolicy(tenantId,execution.capability);ok(res,{...execution,required:approvalPolicyApplies(policy,execution.amount,execution.currency),policy:policy?serialize(policy):null,header:'x-approval-request-id'});
+}));
 router.get('/policies',requirePermission('admin.manage'),asyncHandler(async(req,res)=>ok(res,(await listApprovalPolicies(context(req).tenantId)).map(serialize))));
 router.post('/policies/:capability/versions',requirePermission('admin.manage'),validateBody(policySchema),asyncHandler(async(req,res)=>{
   const ctx=context(req);const capabilityValue=capability.parse(req.params.capability);const created=await createApprovalPolicy({tenantId:ctx.tenantId,capability:capabilityValue,...req.body,createdBy:actor(req)});
