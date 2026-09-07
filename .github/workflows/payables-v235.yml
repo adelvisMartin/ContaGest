@@ -6,11 +6,13 @@ on:
     paths:
       - 'backend/src/modules/payables/**'
       - 'backend/src/modules/index.ts'
+      - 'backend/src/app.ts'
       - 'backend/prisma/migrations/20260907010000_payables_document_ingestion_v235/**'
       - 'frontend/src/components/payables/**'
       - 'frontend/src/services/payablesService.js'
       - 'frontend/src/pages/PurchasesPage.js'
       - 'qa/payables-v235*'
+      - 'docs/payables-v235.md'
       - '.github/workflows/payables-v235.yml'
   workflow_dispatch:
 
@@ -20,7 +22,7 @@ permissions:
 jobs:
   acceptance:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 25
     services:
       postgres:
         image: postgres:17
@@ -65,10 +67,17 @@ jobs:
           npm --workspace backend exec -- tsx --test ../qa/payables-v235-accuracy.test.ts 2>&1 | tee artifacts/qa/payables-v235-accuracy.txt
       - name: Tenant, dedupe and 2-way/3-way DB acceptance
         run: npm --workspace backend exec -- tsx --test ../qa/payables-v235.integration.test.ts
+      - name: Install Chromium for UI acceptance
+        run: npx playwright install --with-deps chromium
+      - name: Human review browser flow
+        run: npx playwright test qa/payables-v235.spec.mjs --project=chromium --workers=1
       - name: Upload QA evidence
         if: always()
         uses: actions/upload-artifact@v6
         with:
           name: payables-v235-${{ github.sha }}
-          path: artifacts/qa/payables-v235-accuracy.txt
+          path: |
+            artifacts/qa/payables-v235-accuracy.txt
+            playwright-report
+            test-results
           if-no-files-found: warn
