@@ -1,0 +1,74 @@
+name: Cuentas por pagar v235
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'backend/src/modules/payables/**'
+      - 'backend/src/modules/index.ts'
+      - 'backend/prisma/migrations/20260907010000_payables_document_ingestion_v235/**'
+      - 'frontend/src/components/payables/**'
+      - 'frontend/src/services/payablesService.js'
+      - 'frontend/src/pages/PurchasesPage.js'
+      - 'qa/payables-v235*'
+      - '.github/workflows/payables-v235.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  acceptance:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: payables-ci-only
+          POSTGRES_DB: contagest_payables
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d contagest_payables"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      NODE_ENV: test
+      DATABASE_URL: postgresql://postgres:payables-ci-only@127.0.0.1:5432/contagest_payables?schema=public
+      DIRECT_DATABASE_URL: postgresql://postgres:payables-ci-only@127.0.0.1:5432/contagest_payables?schema=public
+      JWT_SECRET: payables-ci-only-secret-more-than-thirty-two-characters
+      LICENSE_HASH_SECRET: payables-ci-license-secret-more-than-thirty-two-characters
+      CORS_ORIGIN: http://localhost:4173
+      PAYABLE_RETENTION_DAYS: '3650'
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install locked dependencies
+        run: npm ci --no-audit --no-fund
+      - name: Prepare Supabase contracts in ephemeral PostgreSQL
+        env:
+          PGPASSWORD: payables-ci-only
+        run: psql -h 127.0.0.1 -U postgres -d contagest_payables -f ops/database/prepare-supabase-ephemeral.sql
+      - name: Apply forward migrations
+        run: npm --workspace backend run prisma:deploy
+      - name: Parser, confidence and upload-security tests
+        run: npm --workspace backend exec -- tsx --test src/modules/payables/*.test.ts
+      - name: Per-field accuracy evidence
+        run: |
+          mkdir -p artifacts/qa
+          npm --workspace backend exec -- tsx --test ../qa/payables-v235-accuracy.test.ts 2>&1 | tee artifacts/qa/payables-v235-accuracy.txt
+      - name: Tenant, dedupe and 2-way/3-way DB acceptance
+        run: npm --workspace backend exec -- tsx --test ../qa/payables-v235.integration.test.ts
+      - name: Upload QA evidence
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: payables-v235-${{ github.sha }}
+          path: artifacts/qa/payables-v235-accuracy.txt
+          if-no-files-found: warn
