@@ -13,6 +13,7 @@ import salesRoutes from './sales/sales.routes.js';
 import purchasesRoutes from './purchases/purchases.routes.js';
 import payablesRoutes from './payables/payables.routes.js';
 import approvalsRoutes from './approvals/approvals.routes.js';
+import { approvalExecutionGate } from './approvals/approval-execution-gate.js';
 import accountingRoutes from './accounting/accounting.routes.js';
 import reportsRoutes from './reports/reports.routes.js';
 import moduleRoutes from './modules/modules.routes.js';
@@ -52,6 +53,9 @@ const router = Router();
 router.use('/legal', legalRoutes);
 router.use(requireCurrentLegalAcceptance);
 router.use(enforceCommercialSubscription);
+// Cross-cutting maker-checker enforcement lives before business routers so a
+// configured policy cannot be bypassed by calling a domain endpoint directly.
+router.use(approvalExecutionGate);
 router.use('/tenants', tenantRoutes);
 router.use('/clients', createCrudRouter({ model:'client' as any, entity:'client', permission:'clients.manage', schema:clientSchema, searchFields:['name','rif'] }));
 router.use('/suppliers', createCrudRouter({ model:'supplier' as any, entity:'supplier', permission:'purchases.manage', schema:supplierSchema, searchFields:['name','rif'] }));
