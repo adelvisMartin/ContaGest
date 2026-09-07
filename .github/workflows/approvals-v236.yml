@@ -1,0 +1,67 @@
+name: Aprobaciones y SoD v236
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'backend/src/modules/approvals/**'
+      - 'backend/src/modules/index.ts'
+      - 'backend/prisma/migrations/20260907101500_approval_sod_v236/**'
+      - 'frontend/src/pages/ApprovalsPage.js'
+      - 'frontend/src/pages/BusinessRulesPage.js'
+      - 'frontend/src/services/approvalsService.js'
+      - 'qa/approvals-v236.integration.test.ts'
+      - 'tests/approval_sod_issue_236.test.mjs'
+      - '.github/workflows/approvals-v236.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  acceptance:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: approvals-ci-only
+          POSTGRES_DB: contagest_approvals
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d contagest_approvals"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      NODE_ENV: test
+      DATABASE_URL: postgresql://postgres:approvals-ci-only@127.0.0.1:5432/contagest_approvals?schema=public
+      DIRECT_DATABASE_URL: postgresql://postgres:approvals-ci-only@127.0.0.1:5432/contagest_approvals?schema=public
+      JWT_SECRET: approvals-ci-only-secret-more-than-thirty-two-characters
+      LICENSE_HASH_SECRET: approvals-ci-license-secret-more-than-thirty-two-characters
+      CORS_ORIGIN: http://localhost:4173
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install locked dependencies
+        run: npm ci --no-audit --no-fund
+      - name: Prepare Supabase contracts in ephemeral PostgreSQL
+        env:
+          PGPASSWORD: approvals-ci-only
+        run: psql -h 127.0.0.1 -U postgres -d contagest_approvals -f ops/database/prepare-supabase-ephemeral.sql
+      - name: Apply migrations from zero
+        run: npm --workspace backend run prisma:deploy
+      - name: TypeScript
+        run: npm --workspace backend run typecheck
+      - name: Source regression contract
+        run: node --test tests/approval_sod_issue_236.test.mjs
+      - name: PostgreSQL maker-checker acceptance
+        run: npm --workspace backend exec -- tsx --test ../qa/approvals-v236.integration.test.ts
+      - name: Build regression
+        run: npm run build
