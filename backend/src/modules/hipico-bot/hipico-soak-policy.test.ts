@@ -20,8 +20,8 @@ const base={
   eventLoopP95Ms:10,maxBacklogAgeSeconds:5,maxSpoolBytes:1024,
   unexpectedDuplicateResponses:0,lostDecisions:0,contextLeaks:0,
   healthConfigured:true,spoolConfigured:true,healthChecks:100,healthFailures:0,
-  spoolChecks:100,spoolAvailableChecks:100,
-  sourceReadOnly:'PASS' as const,labOnlyWriteDestination:'PASS' as const,
+  spoolChecks:100,spoolAvailableChecks:100,operatorPresent:true,
+  sourceReadOnly:'PASS' as const,labOnlyWriteDestination:'PASS' as const,sessionFallbackSafe:'PASS' as const,
   drills:{'bridge-restart':drill('bridge-restart'),'backend-restart':drill('backend-restart'),'lab-reconnect':drill('lab-reconnect'),'source-session-reconnect-readonly':drill('source-session-reconnect-readonly')}
 };
 
@@ -30,9 +30,11 @@ test('short run is smoke only, never release PASS',()=>assert.equal(evaluateSoak
 test('missing drill blocks release',()=>assert.equal(evaluateSoak({...base,drills:{...base.drills,'bridge-restart':{status:'NOT_EXECUTED' as const}}},policy).status,'BLOCKED'));
 test('PASS drill without timestamp/evidence blocks release',()=>{const result=evaluateSoak({...base,drills:{...base.drills,'bridge-restart':{status:'PASS' as const,at:null,evidence:[]}}},policy);assert.equal(result.status,'BLOCKED');assert.ok(result.blocked.includes('DRILL_bridge-restart_EVIDENCE_MISSING'));});
 test('SOURCE invariant not verified blocks release',()=>assert.equal(evaluateSoak({...base,sourceReadOnly:'NOT_EXECUTED'},policy).status,'BLOCKED'));
+test('operator identity and session fallback are mandatory for release',()=>{const operator=evaluateSoak({...base,operatorPresent:false},policy);assert.equal(operator.status,'BLOCKED');assert.ok(operator.blocked.includes('OPERATOR_NOT_IDENTIFIED'));const session=evaluateSoak({...base,sessionFallbackSafe:'NOT_EXECUTED'},policy);assert.equal(session.status,'BLOCKED');assert.ok(session.blocked.includes('SESSION_FALLBACK_SAFE_NOT_EXECUTED'));});
 test('health endpoint and spool observation are mandatory',()=>{assert.equal(evaluateSoak({...base,healthConfigured:false,healthChecks:0},policy).status,'BLOCKED');assert.equal(evaluateSoak({...base,spoolConfigured:false,spoolChecks:0,spoolAvailableChecks:0},policy).status,'BLOCKED');});
 test('insufficient health or spool sampling blocks release',()=>{const health=evaluateSoak({...base,healthChecks:50},policy);assert.equal(health.status,'BLOCKED');assert.ok(health.blocked.includes('HEALTH_COVERAGE_INCOMPLETE'));const spool=evaluateSoak({...base,spoolAvailableChecks:50},policy);assert.equal(spool.status,'BLOCKED');assert.ok(spool.blocked.includes('SPOOL_COVERAGE_INCOMPLETE'));});
 test('memory or spool growth threshold fails',()=>{assert.equal(evaluateSoak({...base,rssEndMb:1000},policy).status,'FAIL');const spool=evaluateSoak({...base,maxSpoolBytes:policy.thresholds.maxSpoolBytes+1},policy);assert.equal(spool.status,'FAIL');assert.ok(spool.violations.includes('SPOOL_BYTES'));});
 test('lost or duplicate decisions fail',()=>{assert.equal(evaluateSoak({...base,lostDecisions:1},policy).status,'FAIL');assert.equal(evaluateSoak({...base,unexpectedDuplicateResponses:1},policy).status,'FAIL');});
 test('unbound SHA blocks evidence',()=>assert.equal(evaluateSoak({...base,candidateSha:'UNBOUND'},policy).status,'BLOCKED'));
 test('runner measures nested spool-v2 and computes backlog from queued plus failed',()=>{const script=fs.readFileSync('scripts/hipico-soak-v120.ts','utf8');assert.match(script,/recursiveFileStats/);assert.match(script,/path\.join\(target,'queued'\)/);assert.match(script,/path\.join\(target,'failed'\)/);assert.match(script,/queued\.files\+failed\.files/);assert.match(script,/spoolAvailableChecks/);});
+test('runner binds operator/session invariants and preserves hashed evidence inputs inside the artifact',()=>{const script=fs.readFileSync('scripts/hipico-soak-v120.ts','utf8');assert.match(script,/operator-id/);assert.match(script,/session-fallback-safe/);assert.match(script,/samplesSha256/);assert.match(script,/drillEvidenceSha256/);assert.match(script,/drillEvidenceArtifact/);assert.match(script,/copyFileSync/);assert.match(script,/drill-evidence-input\.json/);assert.match(script,/drillEvidenceCopied/);assert.match(script,/schemaVersion:3/);});

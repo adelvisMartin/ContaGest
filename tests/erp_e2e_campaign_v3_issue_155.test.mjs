@@ -54,3 +54,37 @@ test('evidence recorder v3 cannot collapse critical-flow or turn PII into valid 
 test('browser campaign writes synthetic evidence and the aggregator fails closed on missing shards',()=>{
   const browser=fs.readFileSync(new URL('../qa/erp-system-campaign-v155.spec.mjs',import.meta.url),'utf8');const aggregate=fs.readFileSync(new URL('../scripts/erp-system-qa-aggregate-v155.mjs',import.meta.url),'utf8');assert.match(browser,/SYNTHETIC_TEST_ONLY/);assert.match(browser,/QA_ROLE/);assert.match(browser,/QA_VIEWPORT/);assert.match(browser,/CANDIDATE_SHA_REQUIRED_40_HEX/);assert.match(browser,/offline/);assert.match(browser,/role-denied/);assert.match(browser,/ZOOM_125_HORIZONTAL_OVERFLOW/);assert.match(browser,/AccessControlService/);assert.match(aggregate,/SHARD_RESULT_MISSING/);assert.match(aggregate,/NOT_EXECUTED/);assert.match(aggregate,/defect-candidates\.json/);assert.match(aggregate,/knownIssue:item\.route==='login'\?'#221':null/);
 });
+
+test('full campaign can run on a frozen release candidate and includes CAPTCHA source plus browser regressions',()=>{
+  const workflow=fs.readFileSync(new URL('../.github/workflows/erp-system-qa-campaign-v155.yml',import.meta.url),'utf8');
+  const captchaBrowser=fs.readFileSync(new URL('../qa/login-captcha-v221.spec.mjs',import.meta.url),'utf8');
+  assert.match(workflow,/startsWith\(github\.head_ref, 'release\/candidate-'\)/);
+  assert.match(workflow,/Auth\/CAPTCHA bootstrap regression/);
+  assert.match(workflow,/auth\.captcha-bootstrap\.test\.ts/);
+  assert.match(workflow,/CAPTCHA browser recovery and responsive regression #221/);
+  assert.match(workflow,/qa\/login-captcha-v221\.spec\.mjs/);
+  assert.match(workflow,/CAPTCHA_BROWSER='\$\{\{ steps\.captcha_browser\.outcome \}\}'/);
+  assert.match(workflow,/\"captchaBrowser\":\"%s\"/);
+  assert.match(workflow,/AUTH='\$\{\{ steps\.auth\.outcome \}\}'/);
+  assert.match(workflow,/\"auth\":\"%s\"/);
+  assert.match(captchaBrowser,/delayed CAPTCHA keeps answer and submit disabled/);
+  assert.match(captchaBrowser,/manual refresh recovers without page reload/);
+  assert.match(captchaBrowser,/submit is blocked when the signed CAPTCHA token is missing/);
+  for(const size of ['360,640','390,844','430,932','768,1024','1366,768'])assert.match(captchaBrowser,new RegExp(`\\[${size.replace(',','\\s*,\\s*')}\\]`));
+  assert.match(captchaBrowser,/\[1\.25,1\.5,2\]/);
+  assert.match(captchaBrowser,/orientation resize/);
+});
+
+test('every real P0/P1 finding must be linked to an existing issue or atomically harvested',()=>{
+  const workflow=fs.readFileSync(new URL('../.github/workflows/erp-system-qa-campaign-v155.yml',import.meta.url),'utf8');
+  const harvester=fs.readFileSync(new URL('../scripts/erp-system-qa-harvest-v155.mjs',import.meta.url),'utf8');
+  assert.match(workflow,/issues:\s*write/);
+  assert.match(workflow,/erp-system-qa-harvest-v155\.mjs/);
+  assert.match(workflow,/steps\.harvest\.outcome/);
+  assert.match(harvester,/\['P0','P1'\]/);
+  assert.match(harvester,/linked-existing/);
+  assert.match(harvester,/deduplicated-existing/);
+  assert.match(harvester,/runGh\(\['issue','create'/);
+  assert.match(harvester,/SYNTHETIC_TEST_ONLY/);
+  assert.match(harvester,/QA155-FINGERPRINT/);
+});

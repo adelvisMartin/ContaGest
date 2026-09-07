@@ -6,21 +6,23 @@ const workflow = await readFile(new URL('../.github/workflows/pr-quality-gate-v1
 
 test('Quality Gate usa PostgreSQL efímero y no una base productiva', () => {
   assert.match(workflow, /image:\s*postgres:16-alpine/);
-  assert.match(workflow, /contagest_qa/);
+  assert.match(workflow, /contagest_qa|contagest_pr_quality_e2e/);
   assert.match(workflow, /prisma:deploy/);
   assert.match(workflow, /prisma:seed/);
   assert.doesNotMatch(workflow, /supabase\.co/i);
 });
 
-test('Quality Gate cubre build, financieros, browser, responsive y accesibilidad', () => {
+test('Quality Gate cubre build, unit/contract, financieros, browser, responsive y accesibilidad', () => {
   for (const command of [
     'npm run typecheck',
+    'npm test',
     'npm run build:frontend',
     'npm run build:backend',
     'test:backend:persistence:real',
     'test:backend:financial:real',
     'test:backend:ledger:real',
     'test:backend:idempotency:real',
+    'qa/login-captcha-v221.spec.mjs',
     'test:browser:58',
     'test:browser:functional',
     'test:browser:a11y',
@@ -36,6 +38,14 @@ test('Quality Gate conserva evidencia por SHA y falla cerrado', () => {
   assert.match(workflow, /needs\.backend-real\.result/);
   assert.match(workflow, /needs\.browser-runtime\.result/);
   assert.match(workflow, /needs\.pwa-security\.result/);
+});
+
+test('production readiness no puede convertirse en false-green', () => {
+  assert.match(workflow, /run:\s*node scripts\/production-readiness\.mjs/);
+  assert.doesNotMatch(workflow, /production-readiness\.mjs\s*\|\|\s*true/);
+  assert.doesNotMatch(workflow, /continue-on-error:\s*true/);
+  assert.match(workflow, /production-readiness\.json/);
+  assert.match(workflow, /production-readiness\.md/);
 });
 
 test('Vercel no se usa como sustituto de QA determinista', () => {

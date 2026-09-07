@@ -17,6 +17,7 @@ on:
 
 permissions:
   contents: read
+  issues: write
 
 env:
   CANDIDATE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
@@ -29,7 +30,7 @@ concurrency:
 jobs:
   contract:
     name: Contract and broken-fixture gate
-    if: github.event_name == 'workflow_dispatch' || startsWith(github.head_ref, 'test/erp-155-')
+    if: github.event_name == 'workflow_dispatch' || startsWith(github.head_ref, 'test/erp-155-') || startsWith(github.head_ref, 'release/candidate-')
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -56,7 +57,7 @@ jobs:
 
   browser-matrix:
     name: ${{ matrix.role }} / ${{ matrix.viewport }}
-    if: github.event_name == 'workflow_dispatch' || startsWith(github.head_ref, 'test/erp-155-')
+    if: github.event_name == 'workflow_dispatch' || startsWith(github.head_ref, 'test/erp-155-') || startsWith(github.head_ref, 'release/candidate-')
     runs-on: ubuntu-latest
     timeout-minutes: 120
     strategy:
@@ -108,7 +109,7 @@ jobs:
 
   regression-pack:
     name: Existing 58-route functional/a11y/reliability pack
-    if: github.event_name == 'workflow_dispatch' || startsWith(github.head_ref, 'test/erp-155-')
+    if: github.event_name == 'workflow_dispatch' || startsWith(github.head_ref, 'test/erp-155-') || startsWith(github.head_ref, 'release/candidate-')
     runs-on: ubuntu-latest
     timeout-minutes: 180
     outputs:
@@ -120,8 +121,16 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      - name: Auth/CAPTCHA bootstrap regression
+        id: auth
+        continue-on-error: true
+        run: npm --workspace backend exec -- tsx --test src/modules/auth/auth.captcha-bootstrap.test.ts
       - name: Install Chromium and WebKit
         run: npx playwright install --with-deps chromium webkit
+      - name: CAPTCHA browser recovery and responsive regression #221
+        id: captcha_browser
+        continue-on-error: true
+        run: npx playwright test qa/login-captcha-v221.spec.mjs --project=chromium --workers=1 --reporter=list
       - name: 58-route visual/composition/navigation suite
         id: routes
         continue-on-error: true
@@ -147,16 +156,18 @@ jobs:
         if: always()
         run: |
           mkdir -p "artifacts/qa/erp-v155-regression/$CANDIDATE_SHA"
+          AUTH='${{ steps.auth.outcome }}'
+          CAPTCHA_BROWSER='${{ steps.captcha_browser.outcome }}'
           ROUTES='${{ steps.routes.outcome }}'
           FUNCTIONAL='${{ steps.functional.outcome }}'
           RELIABILITY='${{ steps.reliability.outcome }}'
           A11Y='${{ steps.a11y.outcome }}'
           SOURCE='${{ steps.source.outcome }}'
           VERDICT=PASS
-          for VALUE in "$ROUTES" "$FUNCTIONAL" "$RELIABILITY" "$A11Y" "$SOURCE"; do
+          for VALUE in "$AUTH" "$CAPTCHA_BROWSER" "$ROUTES" "$FUNCTIONAL" "$RELIABILITY" "$A11Y" "$SOURCE"; do
             if [ "$VALUE" != "success" ]; then VERDICT=FAIL; fi
           done
-          printf '{"candidateSha":"%s","verdict":"%s","routes":"%s","functional":"%s","reliability":"%s","a11y":"%s","source":"%s"}\n' "$CANDIDATE_SHA" "$VERDICT" "$ROUTES" "$FUNCTIONAL" "$RELIABILITY" "$A11Y" "$SOURCE" > "artifacts/qa/erp-v155-regression/$CANDIDATE_SHA/summary.json"
+          printf '{"candidateSha":"%s","verdict":"%s","auth":"%s","captchaBrowser":"%s","routes":"%s","functional":"%s","reliability":"%s","a11y":"%s","source":"%s"}\n' "$CANDIDATE_SHA" "$VERDICT" "$AUTH" "$CAPTCHA_BROWSER" "$ROUTES" "$FUNCTIONAL" "$RELIABILITY" "$A11Y" "$SOURCE" > "artifacts/qa/erp-v155-regression/$CANDIDATE_SHA/summary.json"
           echo "verdict=$VERDICT" >> "$GITHUB_OUTPUT"
       - name: Upload regression evidence
         if: always()
@@ -171,8 +182,8 @@ jobs:
           retention-days: 14
 
   aggregate:
-    name: Aggregate evidence and fail closed
-    if: always() && (github.event_name == 'workflow_dispatch' || startsWith(github.head_ref, 'test/erp-155-'))
+    name: Aggregate evidence, harvest P0/P1 and fail closed
+    if: always() && (github.event_name == 'workflow_dispatch' || startsWith(github.head_ref, 'test/erp-155-') || startsWith(github.head_ref, 'release/candidate-'))
     needs: [contract, browser-matrix, regression-pack]
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -193,6 +204,12 @@ jobs:
         id: aggregate
         continue-on-error: true
         run: CANDIDATE_SHA="$CANDIDATE_SHA" node scripts/erp-system-qa-aggregate-v155.mjs
+      - name: Create or link every P0/P1 finding atomically
+        id: harvest
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: CANDIDATE_SHA="$CANDIDATE_SHA" node scripts/erp-system-qa-harvest-v155.mjs
       - name: Upload final QA campaign report
         if: always()
         uses: actions/upload-artifact@v4
@@ -205,6 +222,8 @@ jobs:
         if: always()
         run: |
           echo "aggregate=${{ steps.aggregate.outcome }}"
+          echo "harvest=${{ steps.harvest.outcome }}"
           echo "regression=${{ needs.regression-pack.outputs.verdict }}"
+          test '${{ steps.harvest.outcome }}' = 'success'
           test '${{ steps.aggregate.outcome }}' = 'success'
           test '${{ needs.regression-pack.outputs.verdict }}' = 'PASS'

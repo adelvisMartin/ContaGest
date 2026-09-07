@@ -39,6 +39,7 @@ function parseEvidenceList(raw){
 function validateEvidencePath(rel){
   return typeof rel==='string'&&rel.length>0&&!rel.includes('..')&&!path.isAbsolute(rel);
 }
+function validSessionHash(value){return /^[a-f0-9]{64}$/i.test(String(value||''));}
 function validate(result){
   const errors=[];const allowed=new Set(catalog.allowedStatuses);
   if(result.schemaVersion!==2)errors.push('schemaVersion 2 requerida; reinicializa la evidencia física.');
@@ -63,13 +64,20 @@ function validate(result){
 }
 function summary(result){
   const counts={PASS:0,FAIL:0,BLOCKED:0,NOT_EXECUTED:0};
-  for(const env of result.environments||[])for(const row of Object.values(env.scenarios||{}))counts[row.status]=(counts[row.status]||0)+1;
+  let passRowsWithEvidence=0;
+  for(const env of result.environments||[])for(const row of Object.values(env.scenarios||{})){
+    counts[row.status]=(counts[row.status]||0)+1;
+    if(row.status==='PASS'&&Array.isArray(row.evidence)&&row.evidence.length>0)passRowsWithEvidence+=1;
+  }
   const modeCoverage=Object.fromEntries(catalog.requiredModes.map((mode)=>[mode,(result.environments||[]).filter((env)=>env.mode===mode).length]));
   const sourceSafe=result.invariants?.sourceReadOnly==='PASS'&&result.invariants?.labOnlyWriteDestination==='PASS'&&result.invariants?.sessionFallbackSafe==='PASS';
   const requiredModesCovered=catalog.requiredModes.every((mode)=>modeCoverage[mode]>0);
   const expectedCases=(result.environments||[]).length*catalog.scenarios.length;
-  const complete=expectedCases>0&&counts.PASS===expectedCases&&counts.FAIL===0&&counts.BLOCKED===0&&counts.NOT_EXECUTED===0&&sourceSafe&&requiredModesCovered;
-  return{counts,totalCases:expectedCases,environments:(result.environments||[]).length,modeCoverage,requiredModesCovered,sourceSafe,releasePhysicalGate:complete?'PASS':'NOT_READY'};
+  const operatorPresent=Boolean(String(result.operator||'').trim());
+  const sessionTopologySafe=(result.environments||[]).length>0&&(result.environments||[]).every((env)=>validSessionHash(env.sourceSessionIdHash)&&validSessionHash(env.labSessionIdHash)&&String(env.sourceSessionIdHash).toLowerCase()!==String(env.labSessionIdHash).toLowerCase());
+  const evidenceComplete=expectedCases>0&&counts.PASS===expectedCases&&passRowsWithEvidence===expectedCases;
+  const complete=expectedCases>0&&counts.PASS===expectedCases&&counts.FAIL===0&&counts.BLOCKED===0&&counts.NOT_EXECUTED===0&&sourceSafe&&requiredModesCovered&&operatorPresent&&sessionTopologySafe&&evidenceComplete;
+  return{counts,totalCases:expectedCases,environments:(result.environments||[]).length,modeCoverage,requiredModesCovered,sourceSafe,operatorPresent,sessionTopologySafe,evidenceComplete,passRowsWithEvidence,releasePhysicalGate:complete?'PASS':'NOT_READY'};
 }
 function writeManifest(result,target){const dir=path.dirname(target);fs.mkdirSync(dir,{recursive:true});fs.writeFileSync(target,`${JSON.stringify(result,null,2)}\n`);}
 
@@ -78,7 +86,8 @@ if(command==='init'){
   if(!/^[a-f0-9]{40}$/i.test(sha)){console.error('No existe candidate SHA verificable. Usa GIT_SHA/GITHUB_SHA o ejecuta dentro de git.');process.exit(2);}
   const target=fileArg||path.join(artifactDir(sha),'physical-qa.json');
   if(fs.existsSync(target)&&!args.includes('--force')){console.error(`Ya existe ${target}. Usa --force sólo si conscientemente reinicias la evidencia.`);process.exit(2);}
-  writeManifest(template(sha),target);console.log(target);process.exit(0);
+  const initial=template(sha);if(value('operator'))initial.operator=value('operator');
+  writeManifest(initial,target);console.log(target);process.exit(0);
 }
 
 const target=fileArg||(/^[a-f0-9]{40}$/i.test(sha)?path.join(artifactDir(sha),'physical-qa.json'):null);
@@ -86,6 +95,11 @@ if(!target||!fs.existsSync(target)){console.error('No existe evidence file. Ejec
 let result=JSON.parse(fs.readFileSync(target,'utf8'));
 if(result.schemaVersion!==2){console.error('Evidence schema v1 no demuestra device×mode. Reinicializa #119 con schema v2.');process.exit(2);}
 
+if(command==='operator'){
+  const operator=value('name');
+  if(!operator||operator.trim().length<2){console.error('Uso: operator --name=<tester/responsable>');process.exit(2);}
+  result.operator=operator.trim();writeManifest(result,target);console.log(JSON.stringify({operatorConfigured:true}));process.exit(0);
+}
 if(command==='add-env'){
   const id=value('id');const mode=value('mode');const device=value('device');
   if(!id||!mode||!device){console.error('Uso: add-env --id=<id> --mode=<pwa-browser|pwa-standalone|android-apk> --device=<modelo>');process.exit(2);}
@@ -123,4 +137,4 @@ if(command==='check'){
   if(report.releasePhysicalGate!=='PASS')process.exit(3);
   process.exit(0);
 }
-console.error(`Comando desconocido: ${command}. Usa init|add-env|record|invariant|status|check.`);process.exit(2);
+console.error(`Comando desconocido: ${command}. Usa init|operator|add-env|record|invariant|status|check.`);process.exit(2);

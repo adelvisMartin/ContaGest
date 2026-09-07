@@ -44,7 +44,7 @@ jobs:
   static-contract:
     name: 01 · Static, contracts and builds
     runs-on: ubuntu-latest
-    timeout-minutes: 35
+    timeout-minutes: 60
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -64,8 +64,8 @@ jobs:
       - name: TypeScript
         run: npm run typecheck
 
-      - name: Deterministic source and contract tests
-        run: node --test tests/*.test.mjs
+      - name: Full deterministic unit and contract suite
+        run: npm test
 
       - name: Visual source gate
         run: npm run audit:visual:strict
@@ -202,6 +202,9 @@ jobs:
       - name: Install Chromium
         run: npx playwright install --with-deps chromium
 
+      - name: CAPTCHA browser recovery and responsive regression
+        run: npx playwright test qa/login-captcha-v221.spec.mjs --project=chromium --workers=1 --reporter=list
+
       - name: 58-route responsive and composition suite
         run: npm run test:browser:58
 
@@ -235,7 +238,7 @@ jobs:
   pwa-security:
     name: 04 · PWA, reliability and security contracts
     runs-on: ubuntu-latest
-    timeout-minutes: 40
+    timeout-minutes: 90
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -264,7 +267,7 @@ jobs:
         run: npm audit --omit=dev --audit-level=high
 
       - name: Validate production readiness contracts without external deployment
-        run: node scripts/production-readiness.mjs || true
+        run: node scripts/production-readiness.mjs
 
       - name: Classify external hosting separately
         run: |
@@ -278,7 +281,10 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: pr-quality-reliability-${{ env.CANDIDATE_SHA }}
-          path: artifacts/qa/pr-quality/${{ env.CANDIDATE_SHA }}
+          path: |
+            artifacts/qa/pr-quality/${{ env.CANDIDATE_SHA }}
+            artifacts/qa/production-readiness.json
+            artifacts/qa/production-readiness.md
           if-no-files-found: error
           retention-days: 21
 
