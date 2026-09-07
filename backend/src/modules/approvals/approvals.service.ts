@@ -207,7 +207,7 @@ export async function guardApprovalTx(tx:Prisma.TransactionClient,input:{tenantI
   if(request.capability!==input.capability)throw new HttpError(409,'La aprobación pertenece a otra capability.',{code:'APPROVAL_CAPABILITY_MISMATCH'});
   if(request.status!=='approved')throw new HttpError(409,'La solicitud aún no está aprobada.',{code:'APPROVAL_NOT_APPROVED',status:request.status});
   const hash=approvalPayloadHash(input.payload);if(hash!==request.payloadHash)throw new HttpError(409,'El payload cambió después de la aprobación; solicita una nueva revisión.',{code:'APPROVAL_PAYLOAD_CHANGED',approvedHash:request.payloadHash,currentHash:hash});
-  if(input.amount!==undefined&&input.amount!==null&&request.amount!==null&&money(input.amount).neq(request.amount))throw new HttpError(409,'El monto ejecutado difiere del monto aprobado.',{code:'APPROVAL_AMOUNT_CHANGED'});
+  if(input.amount!==undefined&&input.amount!==null&&request.amount!==null&&!money(input.amount).eq(request.amount))throw new HttpError(409,'El monto ejecutado difiere del monto aprobado.',{code:'APPROVAL_AMOUNT_CHANGED'});
   if(input.currency&&request.currency&&input.currency!==request.currency)throw new HttpError(409,'La moneda ejecutada difiere de la aprobada.',{code:'APPROVAL_CURRENCY_CHANGED'});
   return request;
 }
@@ -220,7 +220,7 @@ export async function consumeApprovalTx(tx:Prisma.TransactionClient,request:Appr
 
 export async function claimApproval(input:{tenantId:string;approvalRequestId?:string|null;capability:string;payload:unknown;amount?:DecimalInput|null;currency?:string|null}){
   return prisma.$transaction(async(tx)=>{
-    const request=await guardApprovalTx(tx,input as any);if(!request)return null;
+    const request=await guardApprovalTx(tx,input);if(!request)return null;
     const changed=await tx.$executeRaw(Prisma.sql`UPDATE "ApprovalRequest" SET "status"='executing',"updatedAt"=now() WHERE "id"=${request.id} AND "status"='approved'`);
     if(Number(changed)!==1)throw new HttpError(409,'La aprobación ya está siendo ejecutada.',{code:'APPROVAL_EXECUTION_IN_PROGRESS'});return request;
   });
