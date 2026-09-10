@@ -12,10 +12,18 @@ const releasePolicy = JSON.parse(fs.readFileSync(path.join(repo, 'products/hipic
 const expectedVersion = releasePolicy.version;
 const checkOnly = process.argv.includes('--check-only');
 const required = [
-  'index.html', 'manifest.webmanifest', 'sw.js', 'runtime-config.js', 'build-info.json',
-  'assets/js/app.js', 'assets/js/store.js', 'assets/js/supabase.js', 'assets/js/whatsapp.js',
-  'assets/css/styles.css', 'assets/css/tokens.css', 'assets/css/themes.css', 'assets/css/components.css', 'assets/css/operations-pro.css',
-  'icons/icon-192.png', 'icons/icon-512.png'
+  'index.html', 'recovery.html', 'manifest.webmanifest', 'sw.js', 'runtime-config.js', 'build-info.json',
+  'logo-control-hipico.png',
+  'icons/icon-192.png', 'icons/icon-512.png', 'icons/icon-192-maskable.png', 'icons/icon-512-maskable.png',
+  'assets/css/styles.css', 'assets/css/ui-system.css',
+  'assets/js/app.js', 'assets/js/store.js', 'assets/js/supabase.js', 'assets/js/local-auth.js',
+  'assets/js/password-recovery.js', 'assets/js/user-access.js',
+  'assets/js/whatsapp.js', 'assets/js/whatsapp/normalization.js', 'assets/js/whatsapp/parser.js', 'assets/js/whatsapp/ui-transcript.js'
+];
+const forbiddenLegacy = [
+  'assets/css/tokens.css', 'assets/css/themes.css', 'assets/css/components.css',
+  'assets/css/operations-pro.css', 'assets/css/precision-hipica.css', 'assets/css/recovery.css',
+  'assets/css/ui-system-v2.css', 'icon.svg'
 ];
 
 function assertInside(candidate, parent, label) {
@@ -48,13 +56,22 @@ function verifyRuntime(root, label) {
     assertInside(file, root, `${label}/${relative}`);
     if (!fs.existsSync(file)) throw new Error(`${label}: falta ${relative}`);
   }
+  for (const relative of forbiddenLegacy) {
+    if (fs.existsSync(path.resolve(root, relative))) throw new Error(`${label}: permanece asset legacy ${relative}`);
+  }
+
   const buildInfo = JSON.parse(fs.readFileSync(path.join(root, 'build-info.json'), 'utf8'));
   if (buildInfo.version !== expectedVersion) {
     throw new Error(`${label}: versión ${buildInfo.version || 'desconocida'}; se esperaba ${expectedVersion}`);
   }
+
   const index = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
   if (/<link[^>]*>\s*>/i.test(index)) throw new Error(`${label}: HTML contiene un cierre de link duplicado.`);
   if (!index.includes('./assets/js/app.js')) throw new Error(`${label}: app.js no está enlazado de forma portable.`);
+  if (!index.includes('./assets/css/ui-system.css')) throw new Error(`${label}: ui-system.css no está enlazado.`);
+  if (index.includes('ui-system-v2.css') || index.includes('tokens.css') || index.includes('themes.css')) {
+    throw new Error(`${label}: index todavía carga una autoridad visual legacy.`);
+  }
   return filesUnder(root);
 }
 
