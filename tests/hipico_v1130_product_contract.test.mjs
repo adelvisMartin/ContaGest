@@ -31,11 +31,16 @@ test('Hipico migration contains no ERP Fitness tables',()=>{
   assert.doesNotMatch(sql,/Fitness/i);
 });
 
-test('bot retains monetary review gates and atomic provider dedupe',()=>{
+test('bot retains canonical monetary review gates and atomic provider dedupe',()=>{
   const service=read('backend/src/modules/hipico-bot/hipico-bot.service.ts');
-  assert.match(service,/MONETARY_REVIEW_GATE/);
+  const classifier=read('backend/src/modules/hipico-bot/hipico-operational-classifier.ts');
+  assert.match(service,/classify as classifyOperational/);
+  assert.match(service,/classifyIncoming\(message\)/);
+  assert.match(classifier,/MONETARY_REVIEW_GATE/);
+  assert.match(classifier,/autoEligible:false/);
   assert.match(service,/ON CONFLICT \("providerMessageId"\) DO NOTHING RETURNING/);
   assert.match(service,/mode==='automatic'&&persistent&&outboxStatus==='ready_auto'/);
+  assert.match(service,/SAFE_AUTOMATIC\.has\(result\.intent\)/);
   assert.match(service,/AbortSignal\.timeout\(10_000\)/);
 });
 
