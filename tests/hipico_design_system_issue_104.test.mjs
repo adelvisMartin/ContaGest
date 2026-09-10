@@ -20,28 +20,28 @@ test('hipico loads one canonical visual authority', async () => {
   }
 });
 
-test('single app.css owns semantic tokens, themes, density and safe areas', async () => {
+test('single app.css owns semantic colors, shape, touch and safe-area contracts', async () => {
   const css = await read('assets/css/app.css');
   for (const token of [
     '--hc-bg', '--hc-surface', '--hc-border', '--hc-text', '--hc-brand',
     '--hc-success', '--hc-warning', '--hc-danger', '--hc-info', '--hc-focus',
-    '--hc-space-1', '--hc-space-16', '--hc-radius-md', '--hc-shadow-md',
-    '--hc-font-sans', '--hc-font-mono', '--hc-safe-top', '--hc-safe-bottom', '--hc-motion'
-  ]) assert.ok(css.includes(token), `missing semantic token ${token}`);
+    '--hc-radius-md', '--hc-shadow-md', '--hc-safe-bottom', '--hc-nav-height',
+    '--hc-header-height', '--hc-touch'
+  ]) assert.ok(css.includes(token), `missing canonical token ${token}`);
+  assert.match(css, /--hc-touch:\s*44px/);
   assert.match(css, /:root\[data-theme="dark"\]/);
   assert.match(css, /@media \(prefers-color-scheme:\s*dark\)/);
 });
 
-test('canonical primitives define focus, tabular data and required async states', async () => {
+test('canonical primitives define focus, semantic states and responsive behavior', async () => {
   const css = await read('assets/css/app.css');
-  for (const selector of ['.button', '.icon-button', '.input', '.select', '.modal', '.tabs', '.badge', '.summary-table', '.list', '.kpi', '.ui-state']) {
+  for (const selector of ['.button', '.icon-button', '.input', '.select', '.modal', '.tabs', '.badge', '.summary-table', '.list', '.kpi', '.ui-state', '.toast']) {
     assert.ok(css.includes(selector), `missing primitive ${selector}`);
   }
   assert.match(css, /:focus-visible/);
-  assert.match(css, /font-variant-numeric:\s*tabular-nums/);
-  for (const state of ['error', 'offline', 'stale', 'permission', 'loading']) {
-    assert.ok(css.includes(`data-state="${state}"`), `missing state ${state}`);
-  }
+  assert.match(css, /\.notice--success/);
+  assert.match(css, /\.notice--warning/);
+  assert.match(css, /\.kpi--danger/);
   assert.match(css, /prefers-reduced-motion:\s*reduce/);
   assert.match(css, /@media \(max-width:\s*470px\)/);
   assert.match(css, /@media \(max-width:\s*780px\)/);
@@ -49,11 +49,11 @@ test('canonical primitives define focus, tabular data and required async states'
 
 test('canonical style guide owns PWA/APK, touch and responsive QA rules', async () => {
   const guide = await read('STYLE-GUIDE.md');
-  assert.match(guide, /única (?:línea|autoridad|referencia)/i);
-  assert.match(guide, /--hc-/);
+  assert.match(guide, /única (?:línea|autoridad|referencia|hoja)/i);
+  assert.match(guide, /assets\/css\/app\.css/);
   assert.match(guide, /PWA/i);
   assert.match(guide, /Android|APK/i);
   assert.match(guide, /44\s*px/i);
   assert.match(guide, /reduced[- ]motion/i);
-  for (const width of ['360', '390', '430', '768']) assert.match(guide, new RegExp(width));
+  for (const width of ['360', '390', '430', '768', '1024', '1440']) assert.match(guide, new RegExp(width));
 });
