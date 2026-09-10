@@ -6,7 +6,7 @@ function normalizeDeploymentMode(value) {
     const mode = String(value || "production").trim().toLowerCase();
     return ["lab", "pilot", "production"].includes(mode) ? mode : "production";
 }
-export const APP_VERSION = "1.13.0-rc2";
+export const APP_VERSION = "1.13.0-rc3";
 export const CLOUD_CONFIG = Object.freeze({
     supabaseUrl: normalizeUrl(runtime.supabaseUrl),
     publishableKey: String(runtime.publishableKey || "").trim(),
