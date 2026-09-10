@@ -12,13 +12,18 @@ const backendDir=path.basename(process.cwd())==='backend'?process.cwd():path.joi
 const root=path.resolve(backendDir,'..');
 const policy=JSON.parse(fs.readFileSync(path.join(root,'products/hipico-control/soak-policy-v120.json'),'utf8'));
 const arg=(name:string,fallback:string)=>process.argv.find((value)=>value.startsWith(`--${name}=`))?.slice(name.length+3)||fallback;
+const resolveUserPath=(value:string)=>value?(path.isAbsolute(value)?path.normalize(value):path.resolve(root,value)):'';
 const durationMinutes=Math.max(0.05,Number(arg('duration-minutes','1440')));
 const sampleSeconds=Math.max(1,Number(arg('sample-seconds',String(policy.sampleSeconds||30))));
 const healthUrl=arg('health-url','').trim();
-const spoolPath=arg('spool-path','').trim();
-const drillEvidencePath=arg('drill-evidence','').trim();
-const safetyEvidencePath=arg('safety-evidence','').trim();
-const physicalEvidencePath=arg('physical-evidence','').trim();
+const spoolPathArg=arg('spool-path','').trim();
+const drillEvidenceArg=arg('drill-evidence','').trim();
+const safetyEvidenceArg=arg('safety-evidence','').trim();
+const physicalEvidenceArg=arg('physical-evidence','').trim();
+const spoolPath=resolveUserPath(spoolPathArg);
+const drillEvidencePath=resolveUserPath(drillEvidenceArg);
+const safetyEvidencePath=resolveUserPath(safetyEvidenceArg);
+const physicalEvidencePath=resolveUserPath(physicalEvidenceArg);
 const operatorId=arg('operator-id','').trim();
 const releaseRequested=durationMinutes>=Number(policy.releaseMinimumHours||24)*60;
 
@@ -27,7 +32,12 @@ const repoHead=gitHead();
 const explicitSha=arg('sha','').trim();
 const candidateSha=String(explicitSha||process.env.GITHUB_SHA||process.env.GIT_SHA||process.env.VERCEL_GIT_COMMIT_SHA||repoHead||'UNBOUND').trim().toLowerCase();
 const artifactKey=/^[a-f0-9]{40}$/i.test(candidateSha)?candidateSha:'UNBOUND';
-const outDir=path.join(root,'artifacts','qa','hipico-v120',artifactKey);
+const requestedAttemptId=arg('attempt-id','').trim();
+const generatedAttemptId=`${new Date().toISOString().replace(/[-:.TZ]/g,'').slice(0,17)}-${process.pid}`;
+const attemptId=requestedAttemptId||generatedAttemptId;
+if(!/^[A-Za-z0-9][A-Za-z0-9._-]{1,79}$/.test(attemptId))throw new Error('ATTEMPT_ID_INVALID');
+const candidateDir=path.join(root,'artifacts','qa','hipico-v120',artifactKey);
+const outDir=path.join(candidateDir,attemptId);
 const samplesFile=path.join(outDir,'samples.jsonl');
 const summaryFile=path.join(outDir,'summary.json');
 const checksumsFile=path.join(outDir,'SHA256SUMS.txt');
@@ -81,7 +91,12 @@ function timestampWithinRun(value:string|null,startMs:number,endMs:number){
   if(!value)return false;const at=Date.parse(value);if(!Number.isFinite(at))return false;
   return at>=startMs-300_000&&at<=endMs+300_000;
 }
-function copyInput(full:string,name:string){const dest=path.join(outDir,name);if(path.resolve(full)!==path.resolve(dest))fs.copyFileSync(full,dest);return dest;}
+function timestampNearRunEnd(value:string|null,startMs:number,endMs:number){
+  if(!value)return false;const at=Date.parse(value);if(!Number.isFinite(at))return false;
+  const finalWindowStart=Math.max(startMs,endMs-15*60_000);
+  return at>=finalWindowStart&&at<=endMs+300_000;
+}
+function copyInput(full:string,name:string){const dest=path.join(outDir,name);if(path.resolve(full)!==path.resolve(dest))fs.copyFileSync(full,dest,fs.constants.COPYFILE_EXCL);return dest;}
 function copyMaterials(rows:MaterialFile[],folder:string){
   const targetDir=path.join(outDir,folder);fs.mkdirSync(targetDir,{recursive:true});
   const copied:Array<{label:string;reference:string;artifact:string;sha256:string}>=[];
@@ -95,6 +110,10 @@ function copyMaterials(rows:MaterialFile[],folder:string){
   });
   return copied;
 }
+function preflightEvidenceManifest(filePath:string,label:string){
+  const {parsed}=readJsonInput(filePath,label);
+  if(String(parsed.candidateSha||'').toLowerCase()!==candidateSha)throw new Error(`${label}_SHA_MISMATCH`);
+}
 
 function releasePreflight(){
   if(!releaseRequested)return;
@@ -103,10 +122,12 @@ function releasePreflight(){
   if(!operatorId)throw new Error('OPERATOR_ID_REQUIRED_FOR_RELEASE');
   if(!healthUrl)throw new Error('HEALTH_URL_REQUIRED_FOR_RELEASE');
   try{const parsed=new URL(healthUrl);if(!['http:','https:'].includes(parsed.protocol))throw new Error('protocol');}catch{throw new Error('HEALTH_URL_INVALID');}
-  if(!spoolPath)throw new Error('SPOOL_PATH_REQUIRED_FOR_RELEASE');
-  if(!physicalEvidencePath)throw new Error('PHYSICAL_EVIDENCE_REQUIRED_FOR_RELEASE');
-  if(!safetyEvidencePath)throw new Error('SAFETY_EVIDENCE_REQUIRED_FOR_RELEASE');
-  if(!drillEvidencePath)throw new Error('DRILL_EVIDENCE_REQUIRED_FOR_RELEASE');
+  if(!spoolPathArg)throw new Error('SPOOL_PATH_REQUIRED_FOR_RELEASE');
+  if(!physicalEvidenceArg)throw new Error('PHYSICAL_EVIDENCE_REQUIRED_FOR_RELEASE');
+  if(!safetyEvidenceArg)throw new Error('SAFETY_EVIDENCE_REQUIRED_FOR_RELEASE');
+  if(!drillEvidenceArg)throw new Error('DRILL_EVIDENCE_REQUIRED_FOR_RELEASE');
+  preflightEvidenceManifest(safetyEvidencePath,'SAFETY_EVIDENCE');
+  preflightEvidenceManifest(drillEvidencePath,'DRILL_EVIDENCE');
 }
 releasePreflight();
 
@@ -116,6 +137,8 @@ function loadPhysicalEvidence(){
   if(String(parsed.candidateSha||'').toLowerCase()!==candidateSha)throw new Error('PHYSICAL_EVIDENCE_SHA_MISMATCH');
   if(parsed.schemaVersion!==2||parsed.product!=='control-hipico')throw new Error('PHYSICAL_EVIDENCE_SCHEMA_INVALID');
   if(parsed.summary?.releasePhysicalGate!=='PASS'||parsed.summary?.materialEvidenceComplete!==true||!parsed.completedAt)throw new Error('PHYSICAL_QA_119_NOT_PASS');
+  const physicalCompletedAt=Date.parse(parsed.completedAt);
+  if(!Number.isFinite(physicalCompletedAt)||physicalCompletedAt>Date.now()+300_000)throw new Error('PHYSICAL_EVIDENCE_COMPLETED_AT_INVALID');
   if(!Array.isArray(parsed.evidenceFiles)||parsed.evidenceFiles.length===0)throw new Error('PHYSICAL_EVIDENCE_FILES_MISSING');
   const material:MaterialFile[]=[];
   for(const [index,row] of parsed.evidenceFiles.entries()){
@@ -126,8 +149,8 @@ function loadPhysicalEvidence(){
 }
 const physical=loadPhysicalEvidence();
 
-for(const file of [samplesFile,summaryFile,checksumsFile])if(fs.existsSync(file))throw new Error(`SOAK_ARTIFACT_ALREADY_EXISTS:${file}`);
-fs.mkdirSync(outDir,{recursive:true});
+fs.mkdirSync(candidateDir,{recursive:true});
+try{fs.mkdirSync(outDir,{recursive:false});}catch(error:any){if(error?.code==='EEXIST')throw new Error(`SOAK_ATTEMPT_ALREADY_EXISTS:${attemptId}`);throw error;}
 fs.writeFileSync(samplesFile,'',{flag:'wx'});
 
 const eventLoop=monitorEventLoopDelay({resolution:20});eventLoop.enable();
@@ -195,7 +218,7 @@ function loadRunSafetyEvidence(){
     invariants[key]={status:row.status as EvidenceStatus,at:typeof row.at==='string'&&row.at.trim()?row.at:null,evidence:refs.map((entry)=>entry.path)};
     refs.forEach((entry)=>material.push(resolveMaterial(full,entry.path,`safety/${key}`,entry.sha256)));
   }
-  const complete=safetyInvariantKeys.every((key)=>{const row=invariants[key];return row.status==='PASS'&&timestampWithinRun(row.at,start,runEndedAt)&&row.evidence.length>0;});
+  const complete=safetyInvariantKeys.every((key)=>{const row=invariants[key];return row.status==='PASS'&&timestampNearRunEnd(row.at,start,runEndedAt)&&row.evidence.length>0;});
   return{invariants,complete,full,material};
 }
 function loadDrills(){
@@ -218,7 +241,7 @@ const rawLines=fs.readFileSync(samplesFile,'utf8').trim().split('\n').filter(Boo
 const summaryInput:SoakSummaryInput={
   candidateSha,durationMs,samples:rawLines.length,rssStartMb:memoryStart.rss/1048576,rssEndMb:memoryEnd.rss/1048576,heapStartMb:memoryStart.heapUsed/1048576,heapEndMb:memoryEnd.heapUsed/1048576,
   eventLoopP95Ms,maxBacklogAgeSeconds,maxSpoolBytes,unexpectedDuplicateResponses:duplicateResponses,lostDecisions,contextLeaks,
-  healthConfigured:Boolean(healthUrl),spoolConfigured:Boolean(spoolPath),healthChecks,healthFailures,spoolChecks,spoolAvailableChecks,operatorPresent:Boolean(operatorId),
+  healthConfigured:Boolean(healthUrl),spoolConfigured:Boolean(spoolPathArg),healthChecks,healthFailures,spoolChecks,spoolAvailableChecks,operatorPresent:Boolean(operatorId),
   physicalEvidenceComplete:physical.complete,sourceReadOnly,labOnlyWriteDestination,sessionFallbackSafe,invariantEvidenceComplete:safety.complete,drillMaterialEvidenceComplete:drillBundle.complete,drills:drillBundle.drills
 };
 const evaluation=evaluateSoak(summaryInput,policy);
@@ -237,13 +260,13 @@ const evidenceIntegrity={
   physicalVerifiedFiles:physical.material.length,safetyMaterial,drillMaterial
 };
 const final={
-  schemaVersion:5,product:'control-hipico',candidateSha,repoHead:/^[a-f0-9]{40}$/i.test(repoHead)?repoHead:null,operatorId:operatorId||null,
+  schemaVersion:5,product:'control-hipico',candidateSha,attemptId,repoHead:/^[a-f0-9]{40}$/i.test(repoHead)?repoHead:null,operatorId:operatorId||null,
   startedAt:new Date(start).toISOString(),completedAt:new Date(runEndedAt).toISOString(),durationRequestedMinutes:durationMinutes,sampleSeconds,
-  healthUrlConfigured:Boolean(healthUrl),spoolPathConfigured:Boolean(spoolPath),physicalEvidenceConfigured:Boolean(physicalEvidencePath),physicalEvidenceVerified:physical.complete,
-  drillEvidenceConfigured:Boolean(drillEvidencePath),drillEvidenceCopied:Boolean(drillEvidenceArtifact),safetyEvidenceConfigured:Boolean(safetyEvidencePath),safetyEvidenceCopied:Boolean(safetyEvidenceArtifact),
+  healthUrlConfigured:Boolean(healthUrl),spoolPathConfigured:Boolean(spoolPathArg),physicalEvidenceConfigured:Boolean(physicalEvidenceArg),physicalEvidenceVerified:physical.complete,
+  drillEvidenceConfigured:Boolean(drillEvidenceArg),drillEvidenceCopied:Boolean(drillEvidenceArtifact),safetyEvidenceConfigured:Boolean(safetyEvidenceArg),safetyEvidenceCopied:Boolean(safetyEvidenceArtifact),
   replayScenario:scenario.id,decisions,summaryInput,evaluation,evidenceIntegrity,policyVersion:policy.version
 };
-fs.writeFileSync(summaryFile,`${JSON.stringify(final,null,2)}\n`);
+fs.writeFileSync(summaryFile,`${JSON.stringify(final,null,2)}\n`,{flag:'wx'});
 const checksumRows=[
   `${evidenceIntegrity.samplesSha256}  samples.jsonl`,
   evidenceIntegrity.physicalEvidenceSha256?`${evidenceIntegrity.physicalEvidenceSha256}  physical-evidence-v119.json`:null,
@@ -251,6 +274,6 @@ const checksumRows=[
   evidenceIntegrity.drillEvidenceSha256?`${evidenceIntegrity.drillEvidenceSha256}  drill-evidence-input.json`:null,
   ...safetyMaterial.map((row)=>`${row.sha256}  ${row.artifact}`),...drillMaterial.map((row)=>`${row.sha256}  ${row.artifact}`)
 ].filter((row):row is string=>Boolean(row));
-fs.writeFileSync(checksumsFile,`${checksumRows.join('\n')}\n`);
+fs.writeFileSync(checksumsFile,`${checksumRows.join('\n')}\n`,{flag:'wx'});
 console.log(JSON.stringify(final,null,2));
 if(evaluation.status==='FAIL')process.exitCode=1;else if(evaluation.status!=='PASS')process.exitCode=3;
