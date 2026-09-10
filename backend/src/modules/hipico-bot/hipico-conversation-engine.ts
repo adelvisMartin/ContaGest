@@ -1,7 +1,7 @@
 import crypto from 'node:crypto';
 import { classify, type IntentResult } from './hipico-operational-classifier.js';
 
-export const CONVERSATION_POLICY_VERSION = 'hipico-conversation-v1';
+export const CONVERSATION_POLICY_VERSION = 'hipico-conversation-v2';
 export const DEFAULT_PARSER_VERSION = 'hipico-operational-classifier-v1';
 
 export type ConversationStage =
@@ -23,6 +23,7 @@ export type ConversationDecisionType =
 export type ConversationMessage = {
   sourceMessageId: string;
   participantId: string;
+  participantLabel?: string | null;
   text: string;
   timestamp: string;
   raceId?: string | null;
@@ -133,6 +134,64 @@ function contextRace(result: IntentResult, message: ConversationMessage) {
   return raceNumber == null ? message.raceId || null : String(raceNumber);
 }
 
+function ordinalRace(value: unknown) {
+  const n = Number(value);
+  if (!Number.isInteger(n) || n <= 0) return '';
+  if (n === 1 || n === 3 || n === 13) return `${n}ra`;
+  if (n === 2) return `${n}da`;
+  if ([10, 11, 12].includes(n)) return `${n}ma`;
+  return `${n}ta`;
+}
+
+function amount(value: unknown) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return '';
+  return new Intl.NumberFormat('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n);
+}
+
+function operationalReviewText(result: IntentResult, message: ConversationMessage) {
+  const entities = result.entities || {};
+  if (result.intent === 'race_open') {
+    const track = String(entities.racetrack || '').trim();
+    const race = ordinalRace(entities.raceNumber);
+    if (entities.raceContextComplete && track && race) {
+      return `🔓 Carrera detectada: ${track}, ${race} Carrera. Contexto listo para validar como carrera activa; no se modificaron saldos.`;
+    }
+    return '🔓 Se detectó una apertura de carrera, pero falta hipódromo o número. Indica ambos datos antes de continuar.';
+  }
+  if (result.intent === 'race_close') {
+    const race = ordinalRace(entities.raceNumber);
+    return `🔒 Cierre detectado${race ? `: ${race} Carrera` : ''}. Las jugadas posteriores quedan retenidas hasta validar la siguiente apertura.`;
+  }
+  if (result.intent === 'race_result') {
+    const board = Array.isArray(entities.board) ? entities.board.filter(Boolean).join('.') : '';
+    const race = ordinalRace(entities.raceNumber);
+    return `🏁 Llegada detectada${race ? ` · ${race} Carrera` : ''}${board ? `: ${board}..` : '.'} Se validará contra la carrera activa antes de aplicar la pizarra.`;
+  }
+  if (['offer_player', 'offer_receiver'].includes(result.intent)) {
+    const role = result.intent === 'offer_player' ? 'JUEGA' : 'CONSIGUE';
+    const who = String(message.participantLabel || '').trim();
+    const play = String(entities.play || '').trim();
+    const horse = String(entities.horse || '').trim();
+    const money = amount(entities.amount);
+    const detail = [who, play, horse ? `(${horse})` : '', money ? `con ${money}` : ''].filter(Boolean).join(' ');
+    return `🏇 Oferta detectada · ${role}${detail ? ` ${detail}` : ''}. Pendiente de contraparte y validación; no se modificó saldo.`;
+  }
+  if (result.intent === 'balance_snapshot') {
+    return '💰 Lista de disponibles detectada para conciliación. Se conserva como referencia y no reemplaza los saldos persistidos.';
+  }
+  if (result.intent === 'settlement_snapshot') {
+    return '📋 Liquidación detectada. Se comparará con jugadas, pizarra y saldos antes de cualquier confirmación.';
+  }
+  if (result.intent === 'plan_snapshot') {
+    return '📋 Plano detectado. Se conserva para cruzar Juega/Consigue y detectar faltantes sin registrar movimientos automáticamente.';
+  }
+  if (result.intent === 'day_close') {
+    return '🌙 Cierre de jornada detectado. El resumen diario queda pendiente de conciliación antes de cerrar la jornada en el sistema.';
+  }
+  return 'Mensaje recibido y clasificado para revisión. No se aplicó ningún cambio de estado ni saldo.';
+}
+
 function monetaryRequiresClarification(result: IntentResult) {
   if (result.risk !== 'monetary') return false;
   if (['balance_snapshot', 'settlement_snapshot', 'plan_snapshot', 'pending_confirmation'].includes(result.intent)) return false;
@@ -174,6 +233,7 @@ export function decideConversation(
     ...message,
     sourceMessageId,
     participantId,
+    participantLabel: String(message.participantLabel || '').trim() || null,
     text: String(message.text || '').trim(),
     timestamp: String(message.timestamp || '')
   };
@@ -182,7 +242,7 @@ export function decideConversation(
   const humanOwned = asSet(context.humanOwnedParticipantIds).has(canonicalParticipant(participantId));
   const duplicate = seen.has(sourceMessageId);
   const outOfOrder = isOutOfOrder(normalizedMessage, context);
-  const monetaryOrStateful = result.risk === 'monetary' || ['race_close', 'day_close', 'race_result'].includes(result.intent);
+  const monetaryOrStateful = result.risk === 'monetary' || ['race_open', 'race_close', 'day_close', 'race_result'].includes(result.intent);
   const audit = { duplicate, outOfOrder, humanOwned, monetaryOrStateful };
 
   if (duplicate) {
@@ -210,12 +270,20 @@ export function decideConversation(
     return response(normalizedMessage, result, 'NEEDS_CLARIFICATION', 'LOW_CONFIDENCE_STATEFUL_MESSAGE', 'NEEDS_CLARIFICATION', 'No puedo determinar la intención con suficiente seguridad. Aclara la operación; no se registró nada.', audit);
   }
 
+  if (result.intent === 'race_open' && result.entities?.raceContextComplete !== true) {
+    return response(normalizedMessage, result, 'NEEDS_CLARIFICATION', 'RACE_OPEN_CONTEXT_INCOMPLETE', 'NEEDS_CLARIFICATION', operationalReviewText(result, normalizedMessage), audit);
+  }
+
   if (monetaryRequiresClarification(result)) {
     return response(normalizedMessage, result, 'NEEDS_CLARIFICATION', 'MISSING_OR_AMBIGUOUS_MONETARY_FIELDS', 'NEEDS_CLARIFICATION', clarificationFor(result), audit);
   }
 
-  if (['race_close', 'day_close', 'race_result', 'balance_snapshot', 'plan_snapshot', 'settlement_snapshot', 'pending_confirmation'].includes(result.intent)) {
-    return response(normalizedMessage, result, 'HELD_FOR_REVIEW', 'STATEFUL_INTENT_REQUIRES_AUTHORITATIVE_REVIEW', 'ACK_RECEIVED', 'Mensaje recibido y clasificado para revisión. No se aplicó ningún cambio de estado ni saldo.', audit);
+  if (['offer_player', 'offer_receiver'].includes(result.intent)) {
+    return response(normalizedMessage, result, 'HELD_FOR_REVIEW', 'OFFER_REQUIRES_COUNTERPARTY_OR_REVIEW', 'ACK_RECEIVED', operationalReviewText(result, normalizedMessage), audit);
+  }
+
+  if (['race_open', 'race_close', 'day_close', 'race_result', 'balance_snapshot', 'plan_snapshot', 'settlement_snapshot', 'pending_confirmation'].includes(result.intent)) {
+    return response(normalizedMessage, result, 'HELD_FOR_REVIEW', 'STATEFUL_INTENT_REQUIRES_AUTHORITATIVE_REVIEW', 'ACK_RECEIVED', operationalReviewText(result, normalizedMessage), audit);
   }
 
   if (['empty'].includes(result.intent)) {
@@ -226,7 +294,7 @@ export function decideConversation(
     return response(normalizedMessage, result, 'ACK_RECEIVED', 'SAFE_INFORMATIONAL_INTENT', 'ACK_RECEIVED', result.suggestion || 'Mensaje recibido.', audit);
   }
 
-  return response(normalizedMessage, result, 'HELD_FOR_REVIEW', 'REVIEW_REQUIRED_BY_CLASSIFIER', 'ACK_RECEIVED', 'Mensaje recibido para revisión. No se ejecutó ninguna operación.', audit);
+  return response(normalizedMessage, result, 'HELD_FOR_REVIEW', 'REVIEW_REQUIRED_BY_CLASSIFIER', 'ACK_RECEIVED', operationalReviewText(result, normalizedMessage), audit);
 }
 
 export function nextConversationContext(context: ConversationContext, message: ConversationMessage, decision: ConversationDecision): ConversationContext {
@@ -240,4 +308,4 @@ export function nextConversationContext(context: ConversationContext, message: C
   return { ...context, seenSourceMessageIds: seen, lastTimestampByParticipant };
 }
 
-export const __test__ = { deterministicCorrelationId, monetaryRequiresClarification, canonicalParticipant };
+export const __test__ = { deterministicCorrelationId, monetaryRequiresClarification, canonicalParticipant, operationalReviewText, ordinalRace };
