@@ -13,8 +13,13 @@ const root=path.resolve(backendDir,'..');
 const policy=JSON.parse(fs.readFileSync(path.join(root,'products/hipico-control/soak-policy-v120.json'),'utf8'));
 const arg=(name:string,fallback:string)=>process.argv.find((value)=>value.startsWith(`--${name}=`))?.slice(name.length+3)||fallback;
 const resolveUserPath=(value:string)=>value?(path.isAbsolute(value)?path.normalize(value):path.resolve(root,value)):'';
-const durationMinutes=Math.max(0.05,Number(arg('duration-minutes','1440')));
-const sampleSeconds=Math.max(1,Number(arg('sample-seconds',String(policy.sampleSeconds||30))));
+function positiveNumber(name:string,fallback:string,minimum:number){
+  const raw=arg(name,fallback);const parsed=Number(raw);
+  if(!Number.isFinite(parsed)||parsed<minimum)throw new Error(`${name.toUpperCase().replace(/-/g,'_')}_INVALID:${raw}`);
+  return parsed;
+}
+const durationMinutes=positiveNumber('duration-minutes','1440',0.05);
+const sampleSeconds=positiveNumber('sample-seconds',String(policy.sampleSeconds||30),1);
 const healthUrl=arg('health-url','').trim();
 const spoolPathArg=arg('spool-path','').trim();
 const drillEvidenceArg=arg('drill-evidence','').trim();
@@ -44,11 +49,13 @@ const checksumsFile=path.join(outDir,'SHA256SUMS.txt');
 const scenario=labScenarioById('pre-close-load');if(!scenario)throw new Error('Falta scenario pre-close-load de #151.');
 
 type MaterialFile={label:string;reference:string;full:string;sha256:string};
+type JsonInput={full:string;parsed:any;sha256:string};
 type SafetyInvariantKey='sourceReadOnly'|'labOnlyWriteDestination'|'sessionFallbackSafe';
 type SafetyInvariantEvidence={status:EvidenceStatus;at:string|null;evidence:string[]};
 const safetyInvariantKeys:SafetyInvariantKey[]=['sourceReadOnly','labOnlyWriteDestination','sessionFallbackSafe'];
 
-function sha256File(file:string){return crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex');}
+function sha256Bytes(bytes:Buffer|string){return crypto.createHash('sha256').update(bytes).digest('hex');}
+function sha256File(file:string){return sha256Bytes(fs.readFileSync(file));}
 function isRelativeEvidencePath(value:unknown):value is string{
   if(typeof value!=='string'||!value.trim()||value.includes('\0')||path.isAbsolute(value))return false;
   return !value.split(/[\\/]+/).includes('..');
@@ -61,10 +68,11 @@ function requireRegularInput(filePath:string,label:string){
   if(stat.isSymbolicLink()||!stat.isFile())throw new Error(`${label}_NOT_REGULAR_FILE:${full}`);
   return fs.realpathSync(full);
 }
-function readJsonInput(filePath:string,label:string){
-  const full=requireRegularInput(filePath,label);
-  try{return{full,parsed:JSON.parse(fs.readFileSync(full,'utf8'))};}catch(error){throw new Error(`${label}_INVALID_JSON:${error instanceof Error?error.message:String(error)}`);}
+function readJsonInput(filePath:string,label:string):JsonInput{
+  const full=requireRegularInput(filePath,label);const bytes=fs.readFileSync(full);
+  try{return{full,parsed:JSON.parse(bytes.toString('utf8')),sha256:sha256Bytes(bytes)};}catch(error){throw new Error(`${label}_INVALID_JSON:${error instanceof Error?error.message:String(error)}`);}
 }
+function assertUnchanged(input:JsonInput,label:string){if(sha256File(input.full)!==input.sha256)throw new Error(`${label}_MANIFEST_CHANGED_DURING_RUN`);}
 function resolveMaterial(manifestFull:string,reference:string,label:string,expectedSha256=''):MaterialFile{
   if(!isRelativeEvidencePath(reference))throw new Error(`${label}_INVALID_PATH:${String(reference)}`);
   const base=fs.realpathSync(path.dirname(manifestFull));
@@ -96,7 +104,12 @@ function timestampNearRunEnd(value:string|null,startMs:number,endMs:number){
   const finalWindowStart=Math.max(startMs,endMs-15*60_000);
   return at>=finalWindowStart&&at<=endMs+300_000;
 }
-function copyInput(full:string,name:string){const dest=path.join(outDir,name);if(path.resolve(full)!==path.resolve(dest))fs.copyFileSync(full,dest,fs.constants.COPYFILE_EXCL);return dest;}
+function copyInput(input:JsonInput,name:string,label:string){
+  assertUnchanged(input,label);const dest=path.join(outDir,name);
+  fs.copyFileSync(input.full,dest,fs.constants.COPYFILE_EXCL);
+  const copiedSha=sha256File(dest);if(copiedSha!==input.sha256)throw new Error(`${label}_COPY_SHA256_MISMATCH`);
+  return dest;
+}
 function copyMaterials(rows:MaterialFile[],folder:string){
   const targetDir=path.join(outDir,folder);fs.mkdirSync(targetDir,{recursive:true});
   const copied:Array<{label:string;reference:string;artifact:string;sha256:string}>=[];
@@ -111,8 +124,21 @@ function copyMaterials(rows:MaterialFile[],folder:string){
   return copied;
 }
 function preflightEvidenceManifest(filePath:string,label:string){
-  const {parsed}=readJsonInput(filePath,label);
-  if(String(parsed.candidateSha||'').toLowerCase()!==candidateSha)throw new Error(`${label}_SHA_MISMATCH`);
+  const input=readJsonInput(filePath,label);
+  if(String(input.parsed?.candidateSha||'').toLowerCase()!==candidateSha)throw new Error(`${label}_SHA_MISMATCH`);
+  return input;
+}
+function assertSpoolTopology(target:string){
+  const full=path.resolve(target);
+  if(!fs.existsSync(full))throw new Error('SPOOL_PATH_NOT_FOUND');
+  const rootStat=fs.lstatSync(full);if(rootStat.isSymbolicLink()||!rootStat.isDirectory())throw new Error('SPOOL_PATH_NOT_DIRECTORY');
+  for(const name of ['queued','failed']){const child=path.join(full,name);if(!fs.existsSync(child))throw new Error(`SPOOL_${name.toUpperCase()}_MISSING`);const stat=fs.lstatSync(child);if(stat.isSymbolicLink()||!stat.isDirectory())throw new Error(`SPOOL_${name.toUpperCase()}_INVALID`);}
+}
+async function assertHealthReachable(){
+  try{
+    const response=await fetch(healthUrl,{headers:process.env.HIPICO_BRIDGE_TOKEN?{'x-hipico-bridge-token':process.env.HIPICO_BRIDGE_TOKEN}:{},signal:AbortSignal.timeout(5000),cache:'no-store'});
+    if(!response.ok)throw new Error(`HTTP_${response.status}`);
+  }catch(error){throw new Error(`HEALTH_PREFLIGHT_FAILED:${error instanceof Error?error.message:String(error)}`);}
 }
 
 function releasePreflight(){
@@ -126,14 +152,16 @@ function releasePreflight(){
   if(!physicalEvidenceArg)throw new Error('PHYSICAL_EVIDENCE_REQUIRED_FOR_RELEASE');
   if(!safetyEvidenceArg)throw new Error('SAFETY_EVIDENCE_REQUIRED_FOR_RELEASE');
   if(!drillEvidenceArg)throw new Error('DRILL_EVIDENCE_REQUIRED_FOR_RELEASE');
+  assertSpoolTopology(spoolPath);
   preflightEvidenceManifest(safetyEvidencePath,'SAFETY_EVIDENCE');
   preflightEvidenceManifest(drillEvidencePath,'DRILL_EVIDENCE');
 }
 releasePreflight();
+if(releaseRequested)await assertHealthReachable();
 
 function loadPhysicalEvidence(){
-  if(!physicalEvidencePath)return{complete:false,full:null as string|null,sha256:null as string|null,material:[] as MaterialFile[]};
-  const {full,parsed}=readJsonInput(physicalEvidencePath,'PHYSICAL_EVIDENCE');
+  if(!physicalEvidencePath)return{complete:false,input:null as JsonInput|null,material:[] as MaterialFile[]};
+  const input=readJsonInput(physicalEvidencePath,'PHYSICAL_EVIDENCE');const parsed=input.parsed;
   if(String(parsed.candidateSha||'').toLowerCase()!==candidateSha)throw new Error('PHYSICAL_EVIDENCE_SHA_MISMATCH');
   if(parsed.schemaVersion!==2||parsed.product!=='control-hipico')throw new Error('PHYSICAL_EVIDENCE_SCHEMA_INVALID');
   if(parsed.summary?.releasePhysicalGate!=='PASS'||parsed.summary?.materialEvidenceComplete!==true||!parsed.completedAt)throw new Error('PHYSICAL_QA_119_NOT_PASS');
@@ -143,9 +171,9 @@ function loadPhysicalEvidence(){
   const material:MaterialFile[]=[];
   for(const [index,row] of parsed.evidenceFiles.entries()){
     if(!row||typeof row.path!=='string'||typeof row.sha256!=='string')throw new Error(`PHYSICAL_EVIDENCE_ENTRY_INVALID:${index}`);
-    material.push(resolveMaterial(full,row.path,`physical/${row.invariant||row.environment||index}`,row.sha256));
+    material.push(resolveMaterial(input.full,row.path,`physical/${row.invariant||row.environment||index}`,row.sha256));
   }
-  return{complete:true,full,sha256:sha256File(full),material};
+  return{complete:true,input,material};
 }
 const physical=loadPhysicalEvidence();
 
@@ -176,7 +204,7 @@ function spoolStats(target:string){
   spoolChecks+=1;
   if(!target||!fs.existsSync(target))return{available:false,files:0,bytes:0,activeFiles:0,queuedFiles:0,failedFiles:0,oldestAgeSeconds:0};
   const queuedDir=path.join(target,'queued');const failedDir=path.join(target,'failed');
-  const available=fs.existsSync(queuedDir)&&fs.existsSync(failedDir)&&fs.statSync(queuedDir).isDirectory()&&fs.statSync(failedDir).isDirectory();
+  const available=fs.existsSync(queuedDir)&&fs.existsSync(failedDir)&&!fs.lstatSync(queuedDir).isSymbolicLink()&&!fs.lstatSync(failedDir).isSymbolicLink()&&fs.lstatSync(queuedDir).isDirectory()&&fs.lstatSync(failedDir).isDirectory();
   if(available)spoolAvailableChecks+=1;
   const total=recursiveFileStats(target);const queued=recursiveFileStats(queuedDir);const failed=recursiveFileStats(failedDir);
   const oldestCandidates=[queued.oldestMtimeMs,failed.oldestMtimeMs].filter((value):value is number=>value!==null);const oldestActive=oldestCandidates.length?Math.min(...oldestCandidates):null;
@@ -209,31 +237,31 @@ function loadRunSafetyEvidence(){
     labOnlyWriteDestination:{status:arg('lab-only-write','NOT_EXECUTED') as EvidenceStatus,at:null,evidence:[]},
     sessionFallbackSafe:{status:arg('session-fallback-safe','NOT_EXECUTED') as EvidenceStatus,at:null,evidence:[]}
   };
-  if(!safetyEvidencePath)return{invariants:fallback,complete:false,full:null as string|null,material:[] as MaterialFile[]};
-  const {full,parsed}=readJsonInput(safetyEvidencePath,'SAFETY_EVIDENCE');
+  if(!safetyEvidencePath)return{invariants:fallback,complete:false,input:null as JsonInput|null,material:[] as MaterialFile[]};
+  const input=readJsonInput(safetyEvidencePath,'SAFETY_EVIDENCE');const parsed=input.parsed;
   if(String(parsed.candidateSha||'').toLowerCase()!==candidateSha)throw new Error('SAFETY_EVIDENCE_SHA_MISMATCH');
   const invariants={...fallback};const material:MaterialFile[]=[];
   for(const key of safetyInvariantKeys){
     const row=parsed.invariants?.[key]||{status:'NOT_EXECUTED'};const refs=evidenceReferences(row.evidence);
     invariants[key]={status:row.status as EvidenceStatus,at:typeof row.at==='string'&&row.at.trim()?row.at:null,evidence:refs.map((entry)=>entry.path)};
-    refs.forEach((entry)=>material.push(resolveMaterial(full,entry.path,`safety/${key}`,entry.sha256)));
+    refs.forEach((entry)=>material.push(resolveMaterial(input.full,entry.path,`safety/${key}`,entry.sha256)));
   }
   const complete=safetyInvariantKeys.every((key)=>{const row=invariants[key];return row.status==='PASS'&&timestampNearRunEnd(row.at,start,runEndedAt)&&row.evidence.length>0;});
-  return{invariants,complete,full,material};
+  return{invariants,complete,input,material};
 }
 function loadDrills(){
   const fallback=Object.fromEntries(policy.requiredDrills.map((id:string)=>[id,{status:arg(`drill-${id}`,'NOT_EXECUTED') as EvidenceStatus,at:null,evidence:[]}])) as Record<string,SoakDrillEvidence>;
-  if(!drillEvidencePath)return{drills:fallback,complete:false,full:null as string|null,material:[] as MaterialFile[]};
-  const {full,parsed}=readJsonInput(drillEvidencePath,'DRILL_EVIDENCE');
+  if(!drillEvidencePath)return{drills:fallback,complete:false,input:null as JsonInput|null,material:[] as MaterialFile[]};
+  const input=readJsonInput(drillEvidencePath,'DRILL_EVIDENCE');const parsed=input.parsed;
   if(String(parsed.candidateSha||'').toLowerCase()!==candidateSha)throw new Error('DRILL_EVIDENCE_SHA_MISMATCH');
   const drills:Record<string,SoakDrillEvidence>={};const material:MaterialFile[]=[];
   for(const id of policy.requiredDrills){
     const row=parsed.drills?.[id]||{status:'NOT_EXECUTED'};const refs=evidenceReferences(row.evidence);
     drills[id]={status:row.status as EvidenceStatus,at:typeof row.at==='string'&&row.at.trim()?row.at:null,evidence:refs.map((entry)=>entry.path)};
-    refs.forEach((entry)=>material.push(resolveMaterial(full,entry.path,`drill/${id}`,entry.sha256)));
+    refs.forEach((entry)=>material.push(resolveMaterial(input.full,entry.path,`drill/${id}`,entry.sha256)));
   }
   const complete=policy.requiredDrills.every((id:string)=>{const row=drills[id];return row?.status==='PASS'&&timestampWithinRun(row.at||null,start,runEndedAt)&&Array.isArray(row.evidence)&&row.evidence.length>0;});
-  return{drills,complete,full,material};
+  return{drills,complete,input,material};
 }
 const safety=loadRunSafetyEvidence();const drillBundle=loadDrills();
 const sourceReadOnly=safety.invariants.sourceReadOnly.status;const labOnlyWriteDestination=safety.invariants.labOnlyWriteDestination.status;const sessionFallbackSafe=safety.invariants.sessionFallbackSafe.status;
@@ -246,10 +274,11 @@ const summaryInput:SoakSummaryInput={
 };
 const evaluation=evaluateSoak(summaryInput,policy);
 
+if(physical.input)assertUnchanged(physical.input,'PHYSICAL_EVIDENCE');
 for(const row of physical.material)if(sha256File(row.full)!==row.sha256)throw new Error(`PHYSICAL_EVIDENCE_CHANGED_DURING_RUN:${row.reference}`);
-const physicalEvidenceArtifact=physical.full?copyInput(physical.full,'physical-evidence-v119.json'):null;
-const safetyEvidenceArtifact=safety.full?copyInput(safety.full,'safety-evidence-input.json'):null;
-const drillEvidenceArtifact=drillBundle.full?copyInput(drillBundle.full,'drill-evidence-input.json'):null;
+const physicalEvidenceArtifact=physical.input?copyInput(physical.input,'physical-evidence-v119.json','PHYSICAL_EVIDENCE'):null;
+const safetyEvidenceArtifact=safety.input?copyInput(safety.input,'safety-evidence-input.json','SAFETY_EVIDENCE'):null;
+const drillEvidenceArtifact=drillBundle.input?copyInput(drillBundle.input,'drill-evidence-input.json','DRILL_EVIDENCE'):null;
 const safetyMaterial=copyMaterials(safety.material,'safety-material');
 const drillMaterial=copyMaterials(drillBundle.material,'drill-material');
 const evidenceIntegrity={
