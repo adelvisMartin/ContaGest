@@ -1,5 +1,5 @@
 {
-  "version": 4,
+  "version": 5,
   "product": "control-hipico",
   "releaseMinimumHours": 24,
   "recommendedHours": 48,
@@ -26,6 +26,8 @@
   ],
   "allowedDrillStatuses": ["PASS", "FAIL", "BLOCKED", "NOT_EXECUTED"],
   "drillEvidenceRequired": true,
+  "drillMaterialEvidenceRequiredForRelease": true,
+  "physicalEvidenceRequiredForRelease": true,
   "healthEndpointRequiredForRelease": true,
   "spoolPathRequiredForRelease": true,
   "operatorIdRequiredForRelease": true,
@@ -33,5 +35,5 @@
   "invariantEvidenceRequiredForRelease": true,
   "sourceInvariant": "SOURCE remains read-only for the entire run; all generated replay/response traffic is LAB/local only.",
   "sessionInvariant": "Reconnect/restart must never promote SOURCE into a write destination or silently swap SOURCE/LAB sessions.",
-  "releaseRule": "Duration >=24h, identified QA operator, SHA-bound evidence for SOURCE read-only/LAB-only/session fallback invariants, health coverage >=90%, valid spool-v2 structure observed >=90%, all required drills PASS with evidence, no threshold violation and exact candidate SHA are required for release PASS. Short runs are SMOKE_ONLY."
+  "releaseRule": "Duration >=24h, exact candidate SHA, completed #119 Physical QA evidence with verified file hashes, identified QA operator, run-bound material evidence for SOURCE read-only/LAB-only/session fallback, health coverage >=90%, valid spool-v2 structure observed >=90%, all required restart/reconnect drills PASS with run-bound material evidence, and no threshold violation are required for release PASS. Short runs are SMOKE_ONLY."
 }
