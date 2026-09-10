@@ -1,7 +1,7 @@
 const DEFAULT_TRACKS = [
   'DEL MAR', 'SARATOGA', 'WOODBINE', 'INDIANAPOLIS', 'INDIANÁPOLIS',
   'CHARLES TOWN', 'CHARLESTOWN', 'GULFSTREAM PARK', 'GULFSTREAM',
-  'PARX RACING', 'PARX', 'BELMONT', 'CHURCHILL DOWNS', 'COLONIAL DOWNS',
+  'PARX RACING', 'PARX', 'BELMONT', 'CHURCHILL DOWNS', 'CHURCHILL DOWN', 'COLONIAL DOWNS', 'COLONIAL DOWN',
   'LAUREL PARK', 'SANTA ANITA', 'AQUEDUCT', 'KEENELAND', 'PIMLICO',
   'MONMOUTH PARK', 'ELLIS PARK', 'HORSESHOE INDIANAPOLIS', 'LA RINCONADA',
   'VALENCIA'
@@ -70,6 +70,8 @@ export function findTrack(text, catalog = []) {
   if (normalized === 'CHARLESTOWN') return 'Charles Town';
   if (normalized === 'PARX') return 'Parx Racing';
   if (normalized === 'GULFSTREAM') return 'Gulfstream Park';
+  if (normalized === 'CHURCHILL DOWN') return 'Churchill Downs';
+  if (normalized === 'COLONIAL DOWN') return 'Colonial Downs';
   return found.toLowerCase().replace(/(^|\s)\S/g, (letter) => letter.toUpperCase());
 }
 
