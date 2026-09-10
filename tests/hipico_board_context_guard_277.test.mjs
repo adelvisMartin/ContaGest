@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { parseWhatsAppChat } from '../frontend/public/hipico-control/assets/js/whatsapp.js';
 import { resolveBoardTarget } from '../frontend/public/hipico-control/assets/js/race-context-guard.js';
 
@@ -64,4 +65,13 @@ test('opening from a previous closed segment is never inherited by a later board
   ].join('\n'));
   const result=resolveBoardTarget(analysis,workspace());
   assert.equal(result.status,'AMBIGUOUS');
+});
+
+test('board guard uses app-styled accessible confirmation instead of native browser prompts',()=>{
+  const source = readFileSync(new URL('../frontend/public/hipico-control/assets/js/race-context-guard.js', import.meta.url), 'utf8');
+  assert.doesNotMatch(source,/window\.(?:alert|confirm)\s*\(/);
+  assert.match(source,/role=\"dialog\"/);
+  assert.match(source,/aria-modal=\"true\"/);
+  assert.match(source,/Confirmar carrera y aplicar/);
+  assert.match(source,/Control Hípico no liquida dinero por una llegada ambigua/);
 });
