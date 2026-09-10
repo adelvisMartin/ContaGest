@@ -35,6 +35,7 @@ export type SoakSummaryInput={
   sourceReadOnly:EvidenceStatus;
   labOnlyWriteDestination:EvidenceStatus;
   sessionFallbackSafe:EvidenceStatus;
+  invariantEvidenceComplete:boolean;
   drills:Record<string,SoakDrillEvidence>;
 };
 export type SoakEvaluation={
@@ -56,6 +57,7 @@ export type SoakPolicy={
   drillEvidenceRequired:boolean;
   healthEndpointRequiredForRelease:boolean;
   spoolPathRequiredForRelease:boolean;
+  invariantEvidenceRequiredForRelease:boolean;
   thresholds:SoakThresholds;
 };
 
@@ -74,6 +76,7 @@ export function evaluateSoak(input:SoakSummaryInput,policy:SoakPolicy):SoakEvalu
   if(input.sourceReadOnly!=='PASS')blocked.push(`SOURCE_READ_ONLY_${input.sourceReadOnly}`);
   if(input.labOnlyWriteDestination!=='PASS')blocked.push(`LAB_ONLY_WRITE_${input.labOnlyWriteDestination}`);
   if(input.sessionFallbackSafe!=='PASS')blocked.push(`SESSION_FALLBACK_SAFE_${input.sessionFallbackSafe}`);
+  if(policy.invariantEvidenceRequiredForRelease&&!input.invariantEvidenceComplete)blocked.push('SAFETY_INVARIANT_EVIDENCE_INCOMPLETE');
   if(policy.healthEndpointRequiredForRelease&&!input.healthConfigured)blocked.push('HEALTH_ENDPOINT_NOT_CONFIGURED');
   if(policy.spoolPathRequiredForRelease&&!input.spoolConfigured)blocked.push('SPOOL_PATH_NOT_CONFIGURED');
   if(input.healthConfigured&&healthCoverageRatio<policy.minimumHealthCoverageRatio)blocked.push('HEALTH_COVERAGE_INCOMPLETE');
