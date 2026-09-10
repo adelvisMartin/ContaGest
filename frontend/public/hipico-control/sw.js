@@ -1,5 +1,5 @@
 const CACHE_VERSION = 'hipico-control-v1.13.0-rc3';
-const SHELL_CACHE = `${CACHE_VERSION}-shell-r5-operational-center`;
+const SHELL_CACHE = `${CACHE_VERSION}-shell-r6-race-context`;
 const APP_SHELL = [
   './', './index.html', './recovery.html', './manifest.webmanifest',
   './icons/icon-192.png', './icons/icon-512.png', './icons/icon-192-maskable.png', './icons/icon-512-maskable.png',
@@ -8,7 +8,7 @@ const APP_SHELL = [
   './assets/js/seed.js', './assets/js/store.js', './assets/js/store-v2.js', './assets/js/offline-status.js', './assets/js/reports.js',
   './assets/js/sync.js', './assets/js/supabase.js', './assets/js/local-auth.js', './assets/js/ui.js', './assets/js/workspace.js',
   './assets/js/whatsapp.js', './assets/js/whatsapp/normalization.js', './assets/js/whatsapp/parser.js', './assets/js/whatsapp/ui-transcript.js',
-  './assets/js/operational-ledger.js', './assets/js/operational-copy-center.js',
+  './assets/js/operational-ledger.js', './assets/js/operational-copy-center.js', './assets/js/race-context-guard.js',
   './assets/js/backup.js', './assets/js/backup-v2.js', './assets/js/backup-secure-ui.js', './assets/js/recovery.js',
   './assets/js/password-recovery.js', './assets/js/user-access.js', './assets/js/help-center.js', './assets/js/resilience.js', './assets/js/agent-router-pro.js',
   './assets/js/race-state-machine.js'
