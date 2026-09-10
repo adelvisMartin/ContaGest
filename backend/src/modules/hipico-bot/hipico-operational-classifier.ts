@@ -19,6 +19,8 @@ export type OperationalEntities={
   participant?:string;
   counterparty?:string;
   raceNumber?:number|null;
+  racetrack?:string;
+  raceContextComplete?:boolean;
   board?:string[];
   balances?:OperationalBalance[];
   offers?:OperationalOffer[];
@@ -51,6 +53,7 @@ const canonical=(value:string)=>plain(value)
   .toUpperCase();
 
 const raceClose=/\b(?:CIERRA|CIERRE|CERRAR|CERRAMOS|CIERREN|CERRADA|CERRADO|NO\s+MAS\s+JUGADAS?|NO\s+VA\s+MAS|CARRERA\s+CERRADA|CERRADO\s+CERRADO|FIN\s+DE\s+CARRERA)\b/;
+const raceOpen=/\b(?:APERTURO|APERTURA|APERTURADA|APERTURAMOS|ABRIO|ABRIMOS|ABIERTA)\b[\s\S]{0,140}\bCARRERA\b|\bCARRERA\b[\s\S]{0,140}\b(?:APERTURO|APERTURADA|ABIERTA)\b/;
 const dayClose=/\b(?:ESTO\s+ES\s+TODO\s+POR\s+EL\s+DIA\s+DE\s+HOY|LOS\s+ESPERAMOS\s+MANANA|CIERRE\s+DE\s+JORNADA|CERRAMOS\s+LA\s+JORNADA)\b/;
 const resultWord=/\b(?:LLEGADA|PIZARRA|RESULTADO|GANO|PRIMERO|SEGUNDO|TERCERO)\b/;
 const balanceSnapshot=/\bTERCIO\s+DISPONIBLE\b/;
@@ -170,10 +173,50 @@ function parseBoard(text:string){
 
 function parseRaceNumber(text:string){
   const c=canonical(text);
-  const explicit=c.match(/\bCARRERA\s+(\d{1,3})\b/);
+  const ordinal=c.match(/\b(\d{1,3})\s*(?:RA|DA|TA|MA)?\s+CARRERA\b/);
+  if(ordinal)return Number(ordinal[1]);
+  const explicit=c.match(/\bCARRERA\s*(?:NRO\.?|NO\.?|NUMERO|#)?\s*(\d{1,3})\b/);
   if(explicit)return Number(explicit[1]);
   const short=c.match(/\b(?:CIERRA|CIERRE|CERRAR|CERRAMOS|CIERREN|NO\s+VA\s+MAS)\s+(?:LA\s+)?(\d{1,3})\b/);
   return short?Number(short[1]):null;
+}
+
+function normalizedRacetrack(raw:string){
+  const cleaned=plain(raw).replace(/^[\s,:;\-]+|[\s,:;\-]+$/g,'').replace(/\s+/g,' ').trim();
+  if(!cleaned||/^(?:LA\s+)?CARRERA$/i.test(cleaned))return '';
+  const aliases=new Map<string,string>([
+    ['CHURCHILL DOWN','Churchill Downs'],
+    ['CHURCHILL DOWNS','Churchill Downs'],
+    ['COLONIAL DOWN','Colonial Downs'],
+    ['COLONIAL DOWNS','Colonial Downs'],
+    ['GULFSTREAM','Gulfstream Park'],
+    ['GULFSTREAM PARK','Gulfstream Park'],
+    ['CHARLESTOWN','Charles Town'],
+    ['CHARLES TOWN','Charles Town'],
+    ['PARX','Parx Racing'],
+    ['PARX RACING','Parx Racing'],
+    ['INDIANAPOLIS','Horseshoe Indianapolis'],
+    ['HORSESHOE INDIANAPOLIS','Horseshoe Indianapolis'],
+    ['LA RINCONADA','La Rinconada'],
+    ['VALENCIA','Valencia']
+  ]);
+  const key=canonical(cleaned);
+  return aliases.get(key)||cleaned.toLowerCase().replace(/(^|\s)\S/g,(letter)=>letter.toUpperCase());
+}
+
+function parseRaceOpening(text:string){
+  const source=plain(text).replace(/\s+/g,' ').trim();
+  if(!raceOpen.test(canonical(source)))return null;
+  const raceNumber=parseRaceNumber(source);
+  let prefix=source;
+  const ordinal=source.match(/\b\d{1,3}\s*(?:ra|da|ta|ma)?\s+carrera\b/i);
+  const explicit=source.match(/\bcarrera\s*(?:nro\.?|no\.?|numero|#)?\s*\d{1,3}\b/i);
+  const marker=ordinal||explicit;
+  if(marker?.index!==undefined)prefix=source.slice(0,marker.index);
+  let trackCandidate=prefix.replace(/^.*?\b(?:se\s+)?(?:aperturo|apertura|aperturada|aperturamos|abrio|abrimos|abierta)\b\s*/i,'').trim();
+  trackCandidate=trackCandidate.replace(/^(?:la\s+)?carrera(?:\s+de)?\s*/i,'').replace(/[\s,:;\-]+$/g,'').trim();
+  const racetrack=normalizedRacetrack(trackCandidate);
+  return{raceNumber,racetrack,raceContextComplete:Boolean(raceNumber&&racetrack)};
 }
 
 function parseBalances(text:string){
@@ -209,7 +252,7 @@ const operational=(intent:string,risk:'review'|'monetary',confidence:number,sugg
 
 export const OPERATIONAL_INTENTS=new Set([
   'offer_player','offer_receiver','offer_confirmation','pending_confirmation','cancel_or_correction',
-  'race_close','day_close','race_result','balance_snapshot','plan_snapshot','settlement_snapshot',
+  'race_open','race_close','day_close','race_result','balance_snapshot','plan_snapshot','settlement_snapshot',
   'polla_or_parley','betting_or_balance'
 ]);
 
@@ -221,13 +264,15 @@ export function classify(text:string):IntentResult {
   const hasJuega=/\bJUEGA\b/.test(c);
   const hasConsigue=/\bCONSIGUE\b/.test(c);
   const settlementRows=parseSettlementRows(body);
+  const opening=parseRaceOpening(body);
 
   if(dayClose.test(c))return operational('day_close','review',.995,'Cierre de jornada detectado. Queda registrado para revision; no se cambia automaticamente el estado de la jornada.','DAY_CLOSE_REVIEW_GATE');
   if(raceClose.test(c))return operational('race_close','review',.995,'Cierre de carrera detectado. Se validara la carrera activa antes de aceptar cualquier cambio de estado.','CLOSE_REVIEW_GATE',{raceNumber:parseRaceNumber(body)});
+  if(opening)return operational('race_open','review',opening.raceContextComplete?.995:.86,opening.raceContextComplete?'Apertura de carrera detectada con hipodromo y numero. Puede proponerse como carrera activa sin tocar saldos ni liquidaciones.':'Apertura de carrera detectada, pero faltan hipodromo o numero. Requiere completar contexto antes de cambiar la carrera activa.','RACE_OPEN_REVIEW_GATE',{raceNumber:opening.raceNumber,racetrack:opening.racetrack,raceContextComplete:opening.raceContextComplete});
   if(balanceSnapshot.test(c))return operational('balance_snapshot','monetary',.995,'Snapshot de disponibles detectado. Se conserva para conciliacion y revision; no modifica saldos automaticamente.','BALANCE_SNAPSHOT_REVIEW_GATE',{balances:parseBalances(body)});
   if(settlementWord.test(c)||settlementRows.length>0||(planWord.test(c)&&hasJuega&&hasConsigue))return operational('settlement_snapshot','monetary',.99,'Liquidacion o cuadre detectado. Requiere conciliacion completa antes de afectar saldos o premios.','SETTLEMENT_REVIEW_GATE',{board,offers:parseOffers(body),settlementRows});
   if(planWord.test(c)&&hasJuega)return operational('plan_snapshot','monetary',.985,'Plano de tercios detectado. Se registra para comparar ofertas y confirmaciones; no ejecuta jugadas.','PLAN_REVIEW_GATE',{board,offers:parseOffers(body)});
-  if(resultWord.test(c)&&board.length)return operational('race_result','review',.99,'Llegada o pizarra detectada. Se validara contra la carrera activa antes de aplicar resultados.','RESULT_REVIEW_GATE',{board});
+  if(resultWord.test(c)&&board.length)return operational('race_result','review',.99,'Llegada o pizarra detectada. Se validara contra la carrera activa antes de aplicar resultados.','RESULT_REVIEW_GATE',{board,raceNumber:parseRaceNumber(body)});
   if(pendingConfirmation.test(c))return operational('pending_confirmation','monetary',.985,'Confirmacion pendiente detectada. La jugada permanece sin efecto hasta quedar vinculada y validada.','PENDING_CONFIRMATION_GATE',{confirmation:c});
   if(cancelOrCorrection.test(c))return operational('cancel_or_correction','monetary',.985,'Anulacion o correccion detectada. Debe vincularse a la jugada original antes de cualquier cambio.','CORRECTION_REVIEW_GATE');
   if(exactConfirmation.test(c))return operational('offer_confirmation','monetary',.98,'Confirmacion corta detectada. Debe enlazarse con la oferta correcta antes de confirmar la operacion.','CONFIRMATION_REVIEW_GATE',{confirmation:c});
