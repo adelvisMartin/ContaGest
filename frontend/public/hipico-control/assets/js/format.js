@@ -58,8 +58,15 @@ export function generateArrivalWhatsappText(workspace, race) {
   return [...raceHeader(workspace, race), "", `🏁 Llegada: ${board.join(".")}..`].join("\n");
 }
 export function generateBalancesWhatsappText(workspace, rows) {
+  const profile = groupProfile(workspace);
+  const activeRaceId = workspace?.config?.activeRaceByGroup?.[profile.id] || workspace?.activeRaceId;
+  const activeRace = (workspace?.races || []).find((race) => race.id === activeRaceId && (!race.groupId || race.groupId === profile.id));
+  const rate = Number(activeRace?.exchangeRate || profile.exchangeRate || workspace?.config?.exchangeRate || 1);
   const visibleRows = rows.filter(({ participant }) => participant.active !== false).sort((a, b) => String(a.participant.code).localeCompare(String(b.participant.code), "es"));
-  return [`🏇🏻*TERCIO  /  DISPONIBLE*🏇`, ...visibleRows.map(({ participant, available, balance }) => `${String(participant.code).toUpperCase()}\t${balanceNumber(available ?? balance)}`)].join("\n");
+  return [`🏇🏻*TERCIO  /  DISPONIBLE*🏇`, ...visibleRows.map(({ participant, available, balance }) => {
+    const derivedAvailable = Number(balance || 0) + Number(participant.avalBs || 0) + Number(participant.avalUsd || 0) * rate;
+    return `${String(participant.code).toUpperCase()}\t${balanceNumber(available ?? derivedAvailable)}`;
+  })].join("\n");
 }
 export function generateParticipantStatementText(workspace, statement) {
   const profile = groupProfile(workspace, { groupId: statement.groupId || statement.participant?.groupId });
