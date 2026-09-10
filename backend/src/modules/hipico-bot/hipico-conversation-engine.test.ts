@@ -84,16 +84,56 @@ test('unsupported media without text escalates', () => {
   assert.equal(result.responseIntent, 'ESCALATED');
 });
 
-test('state-changing classifier intent is only acknowledged for review', () => {
+test('race result gets an operational pilot acknowledgement without applying state', () => {
   const result = decideConversation(
     at('m8'),
     {},
-    classifier({ intent: 'race_result', risk: 'review', confidence: 0.99, entities: { board: ['2', '4', '7'] } })
+    classifier({ intent: 'race_result', risk: 'review', confidence: 0.99, entities: { raceNumber: 7, board: ['2', '4', '7'] } })
   );
   assert.equal(result.decision, 'HELD_FOR_REVIEW');
   assert.equal(result.effectsAllowed, false);
   assert.equal(result.transportAction, 'NONE');
-  assert.match(result.responseText || '', /no se aplicó/i);
+  assert.match(result.responseText || '', /Llegada detectada/i);
+  assert.match(result.responseText || '', /2\.4\.7\.\./);
+  assert.match(result.responseText || '', /validará contra la carrera activa/i);
+});
+
+test('explicit race opening is stateful, precise and still fail-closed', () => {
+  const result = decideConversation(
+    { ...at('open-1'), raceId: null, text: 'Se aperturó Churchill Down, 1ra Carrera' },
+    {},
+    classifier({ intent: 'race_open', risk: 'review', confidence: 0.995, entities: { racetrack: 'Churchill Downs', raceNumber: 1, raceContextComplete: true } })
+  );
+  assert.equal(result.decision, 'HELD_FOR_REVIEW');
+  assert.equal(result.audit.monetaryOrStateful, true);
+  assert.equal(result.effectsAllowed, false);
+  assert.match(result.responseText || '', /Churchill Downs, 1ra Carrera/i);
+  assert.match(result.responseText || '', /no se modificaron saldos/i);
+});
+
+test('ambiguous race opening asks for track and race number', () => {
+  const result = decideConversation(
+    { ...at('open-2'), raceId: null, text: 'Se aperturó la carrera' },
+    {},
+    classifier({ intent: 'race_open', risk: 'review', confidence: 0.86, entities: { racetrack: '', raceNumber: null, raceContextComplete: false } })
+  );
+  assert.equal(result.decision, 'NEEDS_CLARIFICATION');
+  assert.equal(result.decisionReason, 'RACE_OPEN_CONTEXT_INCOMPLETE');
+  assert.match(result.responseText || '', /hipódromo o número/i);
+  assert.equal(result.effectsAllowed, false);
+});
+
+test('complete offer echoes exact operational fields but never changes balance', () => {
+  const result = decideConversation(
+    { ...at('offer-1', 'p-zedan', 'Juego 3n del 1 con 30000'), participantLabel: 'Zedan' },
+    {},
+    classifier({ intent: 'offer_player', risk: 'monetary', confidence: 0.99, entities: { role: 'player', play: '3N', horse: '1', amount: 30000 } })
+  );
+  assert.equal(result.decision, 'HELD_FOR_REVIEW');
+  assert.equal(result.decisionReason, 'OFFER_REQUIRES_COUNTERPARTY_OR_REVIEW');
+  assert.match(result.responseText || '', /JUEGA Zedan 3N \(1\) con 30\.000,00/i);
+  assert.match(result.responseText || '', /Pendiente de contraparte/i);
+  assert.equal(result.effectsAllowed, false);
 });
 
 test('low-confidence stateful content is clarified instead of guessed', () => {
