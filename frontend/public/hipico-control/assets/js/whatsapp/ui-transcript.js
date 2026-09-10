@@ -28,8 +28,7 @@ export function looksLikeWhatsAppUiTranscript(input){
   const lines=String(input||'').replace(/\r/g,'').split('\n').map(clean).filter(Boolean);
   const standaloneTimes=lines.filter((line)=>TIME_RE.test(line)).length;
   const phones=lines.filter((line)=>PHONE_RE.test(line)).length;
-  const uiMarkers=lines.filter((line)=>FORWARDED_RE.test(line)||STICKER_RE.test(line)||FILE_META_RE.test(line)).length;
-  return standaloneTimes>=2&&phones>=1&&uiMarkers>=1;
+  return standaloneTimes>=2&&phones>=1;
 }
 
 export function parseWhatsAppUiTranscript(input){
