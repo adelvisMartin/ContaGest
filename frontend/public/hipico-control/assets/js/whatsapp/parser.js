@@ -17,6 +17,7 @@ const OFFER_START_RE = /^(JUEGO|JUEGA|CONSIGO|CONSIGUE)\b/;
 const CONFIRMATION_RE = /^(?:J|JUGANDO|SF|S\s*\/\s*F|SE FUE|OK|CONFIRMADO)$/;
 const PENDING_RE = /(?:DEBE CONFIRMAR|POR CONFIRMAR|FALTA CONFIRMAR|ESPERANDO CONFIRMACION|ESPERANDO CONFIRMACIÓN)/;
 const AMOUNT_ONLY_RE = /^\s*\d+(?:[.,]\d+)?\s*(?:k|mil|mm?|mill[oó]n(?:es)?|bs\.?)?\s*$/i;
+const RACE_OPEN_RE = /(?:\b(?:SE\s+)?(?:APERTURO|APERTURA|APERTURADA|APERTURAMOS|ABRIO|ABIERTA|ABRIMOS)\b[\s\S]{0,100}\bCARRERA\b|\bCARRERA\b[\s\S]{0,100}\b(?:ABIERTA|APERTURADA|APERTURO)\b)/;
 
 function offerKey(offer) {
   return [offer.segmentId, offer.role, offer.senderKey, offer.play, offer.horse, offer.amount, compact(offer.track)].join('|');
@@ -118,6 +119,24 @@ function parseReplyStructure(message, catalog) {
   };
 }
 
+function extractRaceNumber(text) {
+  const source = compact(text);
+  const ordinal = source.match(/\b(\d{1,2})\s*(?:RA|DA|TA|MA)?\s+CARRERA\b/);
+  if (ordinal) return Number(ordinal[1]);
+  const explicit = source.match(/\bCARRERA\s*(?:NRO\.?|NO\.?|NUMERO|#)?\s*(\d{1,2})\b/);
+  return explicit ? Number(explicit[1]) : null;
+}
+
+function extractRaceContext(text, catalog = []) {
+  const track = findTrack(text, catalog);
+  const raceNumber = extractRaceNumber(text);
+  return {
+    track,
+    raceNumber,
+    actionable: Boolean(track && Number.isInteger(raceNumber) && raceNumber > 0)
+  };
+}
+
 function classifyMessage(message) {
   const text = compact(message.text);
   if (/NO MAS JUGAD|CARRERA CERRADA|CERRADO CERRADO/.test(text)) return 'closure';
@@ -125,6 +144,7 @@ function classifyMessage(message) {
   if (CONFIRMATION_RE.test(text)) return 'confirmation';
   if (/\bLLEGADA\b/.test(text)) return 'arrival';
   if (/\bPIZARRA\s*:/.test(text) && /\d/.test(text)) return 'board';
+  if (RACE_OPEN_RE.test(text)) return 'race-open';
   if (/\bTERCIOS\b/.test(text) && /\bJUEGA\b/.test(text)) return 'official-plan';
   if (OFFER_START_RE.test(text)) return 'offer';
   return 'other';
@@ -211,7 +231,7 @@ export function parseWhatsAppChat(input, options = {}) {
     const base = { ...message, segmentId };
     const reply = parseReplyStructure(base, catalog);
     const type = reply ? 'reply' : classifyMessage(base);
-    const result = { ...base, type, reply, board: extractBoard(base.text) };
+    const result = { ...base, type, reply, board: extractBoard(base.text), raceContext: extractRaceContext(base.text, catalog) };
     if (type === 'closure') segmentId += 1;
     return result;
   });
@@ -243,6 +263,7 @@ export function parseWhatsAppChat(input, options = {}) {
     ...typed.filter((message) => message.type === 'pending-confirmation'),
     ...replies.filter((reply) => reply.status === 'pending')
   ];
+  const raceOpenings = typed.filter((message) => message.type === 'race-open');
   const segments = Math.max(1, segmentId - (typed.at(-1)?.type === 'closure' ? 1 : 0));
 
   return {
@@ -256,6 +277,7 @@ export function parseWhatsAppChat(input, options = {}) {
     pendingConfirmations,
     closures: typed.filter((message) => message.type === 'closure'),
     boards: typed.filter((message) => ['arrival', 'board'].includes(message.type) && message.board.length),
+    raceOpenings,
     officialPlans: typed.filter((message) => message.type === 'official-plan'),
     segments,
     stats: {
@@ -267,6 +289,7 @@ export function parseWhatsAppChat(input, options = {}) {
       replies: replies.length,
       pending: pendingConfirmations.length,
       closures: typed.filter((message) => message.type === 'closure').length,
+      openings: raceOpenings.length,
       segments
     }
   };
@@ -327,4 +350,4 @@ export function createWhatsAppParser(defaultOptions = {}) {
   });
 }
 
-export const __test__ = Object.freeze({ classifyMessage, extractBoard, compatible, sameOfferSignature });
+export const __test__ = Object.freeze({ classifyMessage, extractBoard, extractRaceNumber, extractRaceContext, compatible, sameOfferSignature });
