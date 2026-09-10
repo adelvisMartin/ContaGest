@@ -9,6 +9,7 @@ export function number(value) { return new Intl.NumberFormat("es-VE", { minimumF
 export function balanceNumber(value) { const amount = Number(value || 0); return `${amount < 0 ? "-" : ""}${number(Math.abs(amount))}`; }
 export function shortDate(value) { const date = new Date(`${value}T12:00:00`); return new Intl.DateTimeFormat("es-VE", { day: "2-digit", month: "short", year: "numeric" }).format(date); }
 function whatsappDate(value) { const date = new Date(`${value}T12:00:00`); const weekday = new Intl.DateTimeFormat("es-VE", { weekday: "short" }).format(date).replace(".", "").toLowerCase(); const day = String(date.getDate()).padStart(2, "0"); const month = new Intl.DateTimeFormat("es-VE", { month: "short" }).format(date).replace(".", "").toLowerCase(); return `${weekday}, ${day} de ${month} del ${date.getFullYear()}`; }
+function registeredDate(value) { return new Intl.DateTimeFormat("es-VE", { day: "numeric", month: "numeric", year: "numeric" }).format(new Date(value || Date.now())); }
 function ordinalRace(value) { const n = Number(value || 1); if (n === 1 || n === 3 || n === 13) return `${n}ra`; if (n === 2) return `${n}da`; return `${n}ta`.replace("10ta", "10ma").replace("11ta", "11ma").replace("12ta", "12ma"); }
 function proper(value) { return String(value ?? "").trim().toLowerCase().replace(/(^|\s)\S/g, (letter) => letter.toUpperCase()); }
 function groupProfile(workspace, race = null) {
@@ -43,18 +44,59 @@ export function generateWhatsappText(workspace, race) {
   for (const bet of race.bets ?? []) { if (bet.status === "cancelled") continue; const category = betCategory(bet); if (!categories.has(category)) categories.set(category, []); categories.get(category).push(bet); }
   const sections = []; for (const [category, bets] of categories.entries()) { sections.push(`*${category}*`); sections.push(bets.map((bet) => betLine(bet, participantMap, profile.currency)).join("\n\n")); }
   const summary = calculateRaceSummary(race, participantMap).map((item) => `${item.name.toLowerCase()}  ${money(item.amount, profile.currency, true)}`).join("\n");
-  return [...raceHeader(workspace, race), "", ...sections, "", "------------------------------", summary || "Sin movimientos liquidados", " ------------------------------", profile.footerMessage].filter((line) => line !== undefined).join("\n").replace(/\n{4,}/g, "\n\n\n");
+  return [...raceHeader(workspace, race), "", ...sections, "", "------------------------------", summary || "Sin movimientos liquidados", "------------------------------", profile.footerMessage].filter((line) => line !== undefined).join("\n").replace(/\n{4,}/g, "\n\n\n");
 }
 export function generateBetReceiptText(workspace, race, bet) {
   const profile = groupProfile(workspace, race);
   const participantMap = new Map(workspace.participants.filter((participant) => !participant.groupId || participant.groupId === profile.id).map((participant) => [participant.id, participant]));
-  const validBets = (race.bets || []).filter((item) => item.status !== "cancelled"); const status = bet.status === "settled" ? "LIQUIDADA" : "REGISTRADA · PENDIENTE DE PIZARRA";
-  return [...raceHeader(workspace, race), "", `*APUESTA ${status}*`, "", betLine(bet, participantMap, profile.currency), "", `Jugada #${validBets.findIndex((item) => item.id === bet.id) + 1} de ${validBets.length}`, `Registrada: ${new Date(bet.createdAt || Date.now()).toLocaleString("es-VE")}`, "", "*TILDE SU JUGADA Y SE REVISARÁ*"].join("\n");
+  const validBets = (race.bets || []).filter((item) => item.status !== "cancelled");
+  return [...raceHeader(workspace, race), "", betLine(bet, participantMap, profile.currency), "", `Jugada #${validBets.findIndex((item) => item.id === bet.id) + 1} de ${validBets.length}`, `Registrada: ${registeredDate(bet.createdAt)}`, "", "*TILDE SU JUGADA Y SE REVISARÁ*"].join("\n");
+}
+export function generateArrivalWhatsappText(workspace, race) {
+  const board = (race?.board || []).map(String).map((item) => item.trim()).filter(Boolean);
+  if (!race || !board.length) throw new Error("Debe existir una pizarra antes de generar la llegada.");
+  return [...raceHeader(workspace, race), "", `🏁 Llegada: ${board.join(".")}..`].join("\n");
 }
 export function generateBalancesWhatsappText(workspace, rows) {
-  const profile = groupProfile(workspace);
-  const visibleRows = rows.filter(({ participant, balance }) => participant.active !== false && Math.abs(Number(balance || 0)) >= 0.005).sort((a, b) => String(a.participant.code).localeCompare(String(b.participant.code), "es"));
-  return [`🏇${profile.companyName}🏇`, `*TERCIO*\t*DISPONIBLE*`, ...visibleRows.map(({ participant, balance }) => `${String(participant.code).toUpperCase()}\t${balanceNumber(balance)}`)].join("\n");
+  const visibleRows = rows.filter(({ participant }) => participant.active !== false).sort((a, b) => String(a.participant.code).localeCompare(String(b.participant.code), "es"));
+  return [`🏇🏻*TERCIO  /  DISPONIBLE*🏇`, ...visibleRows.map(({ participant, balance }) => `${String(participant.code).toUpperCase()}\t${balanceNumber(balance)}`)].join("\n");
+}
+export function generateParticipantStatementText(workspace, statement) {
+  const profile = groupProfile(workspace, { groupId: statement.groupId || statement.participant?.groupId });
+  const participant = statement.participant || {};
+  const date = statement.date || new Date().toISOString().slice(0, 10);
+  const dailyRows = Array.isArray(statement.dailyRows) ? statement.dailyRows : [];
+  const tracks = Array.isArray(statement.tracks) ? statement.tracks : [];
+  const aval = Number(statement.aval || 0);
+  const pozo = Number(statement.pozo || 0);
+  const week = Number(statement.weekTotal || 0);
+  const available = Number(statement.available ?? week + aval + pozo);
+  const dayTotal = Number(statement.dayTotal || 0);
+  const lines = [
+    `Buenas noches tercio, a continuación, su saldo del día ${whatsappDate(date)}`,
+    "",
+    profile.companyName,
+    "----------------------------",
+    `Cuentas ${String(participant.code || participant.name || "TERCIO").toUpperCase()}`,
+    "----------------------------",
+    ...dailyRows.map((row) => `${String(row.date || "")} \\ ${money(row.amount, profile.currency, true)}`),
+    "----------------------------",
+    "TOTAL GENERAL",
+    `• AVAL: ${money(aval, profile.currency, true)}`,
+    `• POZO: ${money(pozo, profile.currency, true)}`,
+    `• SEMANA: ${money(week, profile.currency, true)}`,
+    `• DISPONIBLE: ${money(available, profile.currency, true)}`,
+    "----------------------------",
+    "Día por hip.",
+    ""
+  ];
+  for (const track of tracks) {
+    lines.push(String(track.racetrack || "Hipódromo"));
+    for (const race of track.races || []) lines.push(`${ordinalRace(race.number)} \\ ${money(race.amount, profile.currency, true)}`);
+    lines.push(`Total \\ ${money(track.total, profile.currency, true)}`, "");
+  }
+  lines.push("----------------------------", `Tercios \\ ${money(dayTotal, profile.currency, true)}`, "----------------------------", "Total del día", money(dayTotal, profile.currency, true), "", "Por favor confirmar a la brevedad posible.");
+  return lines.join("\n").replace(/\n{3,}/g, "\n\n");
 }
 export function generateDailySummaryText(workspace, day, stats) {
   const profile = groupProfile(workspace, { groupId: day.groupId });
