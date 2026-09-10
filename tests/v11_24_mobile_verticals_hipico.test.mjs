@@ -9,8 +9,8 @@ const runtime=read('frontend/src/styles/erp-runtime.css');
 const mobileCss=read('frontend/src/styles/vertical-mobile-contract.css');
 const gym=read('frontend/src/pages/GymManagementPage.js');
 const hipicoHtml=read('frontend/public/hipico-control/index.html');
-const hipicoApp=read('frontend/public/hipico-control/assets/js/app-shell.js');
-const hipicoFinalization=read('frontend/public/hipico-control/assets/js/race-finalization.js');
+const hipicoStore=read('frontend/public/hipico-control/assets/js/store-v2.js');
+const hipicoStateMachine=read('frontend/public/hipico-control/assets/js/race-state-machine.js');
 const hipicoSw=read('frontend/public/hipico-control/sw.js');
 const bridge=read('frontend/api/hipico/group-bridge-ingest.js');
 
@@ -25,7 +25,7 @@ test('canonical mobile mark contains the ContaGest C and accounting bars',()=>{
   assert.ok((logo.match(/<rect /g)||[]).length>=4);
 });
 
-test('universal CSS runtime owns the vertical mobile contract',()=>{
+test('universal CSS runtime owns the ERP vertical mobile contract',()=>{
   assert.match(runtime,/vertical-mobile-contract\.css/);
   assert.match(mobileCss,/body\[data-route="veterinaria"\] \.MuiDialogContent-root/);
   assert.match(mobileCss,/\.cg-gym-v1124-tabs/);
@@ -53,28 +53,35 @@ test('Control Hipico PWA mirrors race-first operating flow instead of generic ER
   assert.match(hipicoHtml,/Finalizar carrera revisada/);
 });
 
-test('Control Hipico upgrades local model without deleting prior stores',()=>{
-  assert.match(hipicoApp,/DB_VERSION=2/);
-  for(const store of ['groups','races','operations','participants','outbox','snapshots','settings'])assert.match(hipicoApp,new RegExp(`'${store}'`));
-  assert.match(hipicoApp,/idempotencyKey/);
-  assert.match(hipicoApp,/parseWhatsAppChat/);
-  assert.match(hipicoApp,/routeOperationalEvents/);
-  assert.match(hipicoApp,/La liquidación sigue requiriendo revisión/);
+test('Control Hipico current local model keeps IndexedDB migration, outbox idempotency and snapshots',()=>{
+  assert.match(hipicoStore,/export const DB_VERSION = 2/);
+  for(const store of ['workspaces','settings','outbox','snapshots','syncMeta'])assert.match(hipicoStore,new RegExp(`"${store}"`));
+  assert.match(hipicoStore,/idempotencyKey/);
+  assert.match(hipicoStore,/initializeStorage/);
+  assert.match(hipicoStore,/createSnapshot/);
+  assert.match(hipicoStore,/restoreSnapshot/);
+  assert.match(hipicoStore,/HIPICO_STORAGE_QUOTA_EXCEEDED/);
 });
 
-test('reviewed race finalization snapshots before releasing next race and never auto-mutates balances',()=>{
-  assert.match(hipicoFinalization,/before_reviewed_finalization/);
-  assert.match(hipicoFinalization,/operator_reviewed_no_auto_balance_mutation/);
-  assert.match(hipicoFinalization,/objectStore\('snapshots'\)\.put/);
-  assert.match(hipicoFinalization,/action:'settle_reviewed'/);
+test('race state machine requires ordered reviewed transitions and journals evidence without rewriting history',()=>{
+  for(const state of ['OPEN','CLOSED','RESULT_RECEIVED','SETTLEMENT_READY','SETTLED','BALANCED','PUBLISHED','ARCHIVED'])assert.match(hipicoStateMachine,new RegExp(`${state}: '${state}'`));
+  assert.match(hipicoStateMachine,/INVALID_TRANSITION/);
+  assert.match(hipicoStateMachine,/EVENT_IDENTITY_REQUIRED/);
+  assert.match(hipicoStateMachine,/EVIDENCE_ONLY_EVENTS/);
+  assert.match(hipicoStateMachine,/they never mutate the authoritative status/);
 });
 
-test('PWA 1.3.1 caches the offline operational shell but keeps sensitive routes network-only',()=>{
-  assert.match(hipicoSw,/VERSION='1\.3\.1'/);
-  assert.match(hipicoSw,/race-finalization\.js/);
-  assert.match(hipicoSw,/offline-icons\.css/);
-  assert.match(hipicoSw,/api\|auth\|session\|license\|webhook/);
-  assert.match(hipicoSw,/if\(isSensitive\(url\)\)\{event\.respondWith\(fetch\(request,\{cache:'no-store'\}\)\)/);
+test('PWA 1.13.0-rc2 caches only canonical offline shell and keeps sensitive routes network-only',()=>{
+  assert.match(hipicoSw,/CACHE_VERSION = 'hipico-control-v1\.13\.0-rc2'/);
+  assert.match(hipicoSw,/shell-r4-zero-legacy/);
+  assert.match(hipicoSw,/assets\/css\/app\.css/);
+  assert.match(hipicoSw,/race-state-machine\.js/);
+  assert.match(hipicoSw,/password-recovery\.js/);
+  assert.match(hipicoSw,/user-access\.js/);
+  assert.match(hipicoSw,/help-center\.js/);
+  assert.doesNotMatch(hipicoSw,/offline-icons\.css|styles\.css|ui-system\.css/);
+  assert.match(hipicoSw,/api\|auth/);
+  assert.match(hipicoSw,/cache:\s*'no-store'/);
 });
 
 test('WhatsApp bot suggestions are shadow-only and prohibit monetary auto-apply',()=>{

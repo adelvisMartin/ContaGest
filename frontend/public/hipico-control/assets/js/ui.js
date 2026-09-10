@@ -74,7 +74,7 @@ export function toast(message, type = 'success', options = {}) {
   item.setAttribute('role', normalizedType === 'error' ? 'alert' : 'status');
   item.setAttribute('aria-live', normalizedType === 'error' ? 'assertive' : 'polite');
   const iconName = normalizedType === 'success' ? 'check' : normalizedType === 'error' || normalizedType === 'warning' ? 'alert' : 'info';
-  item.innerHTML = `<span class="toast__icon">${icon(iconName)}</span><span class="toast__copy"><strong>${escapeHtml(options.title || TOAST_LABELS[normalizedType])}</strong><span>${escapeHtml(message)}</span></span><button type="button" class="toast__close" aria-label="Cerrar notificación">${icon('close')}</button>`;
+  item.innerHTML = `<span class="toast__icon">${icon(iconName)}</span><span class="toast__copy"><strong>${escapeHtml(options.title || TOAST_LABELS[normalizedType])}</strong><span>${escapeHtml(message)}</span></span><button type="button" class="toast__close" data-action="dismiss-toast" aria-label="Cerrar notificación">${icon('close')}</button>`;
   const dismiss = () => { item.classList.remove('is-visible'); window.setTimeout(() => item.remove(), 180); };
   item.querySelector('.toast__close')?.addEventListener('click', dismiss);
   region.appendChild(item);

@@ -3,7 +3,7 @@ import fs from 'node:fs/promises';
 import test from 'node:test';
 
 const recoveryPath = 'frontend/public/hipico-control/assets/js/password-recovery.js';
-const canonicalCssPath = 'frontend/public/hipico-control/assets/css/ui-system.css';
+const canonicalCssPath = 'frontend/public/hipico-control/assets/css/app.css';
 const indexPath = 'frontend/public/hipico-control/index.html';
 
 test('#267 exposes password recovery from the auth screen without enabling public signup', async () => {
@@ -15,7 +15,7 @@ test('#267 exposes password recovery from the auth screen without enabling publi
   assert.match(index, /password-recovery\.js/);
   assert.match(recovery, /¿Olvidaste tu contraseña\?/);
   assert.match(recovery, /recover-password/);
-  assert.match(runtime, /"allowSignup":\s*false/);
+  assert.match(runtime, /"allowSignup"\s*:\s*false/);
 });
 
 test('#267 requests Supabase recovery with publishable credentials and an explicit app redirect', async () => {
@@ -47,9 +47,10 @@ test('#267 validates password/confirmation and avoids account enumeration copy',
 
 test('#267 recovery presentation uses the canonical UI and remains mobile-safe', async () => {
   const css = await fs.readFile(canonicalCssPath, 'utf8');
-  assert.match(css, /\.auth-card--recovery/);
-  assert.match(css, /width:min\(100%,520px\)/);
-  assert.match(css, /grid-template-columns:1fr/);
-  assert.match(css, /@media \(max-width:780px\)/);
+  assert.match(css, /\.auth-card--recovery\s*\{/);
+  assert.match(css, /width:\s*min\(100%,\s*520px\)/);
+  assert.match(css, /grid-template-columns:\s*1fr/);
+  assert.match(css, /@media \(max-width:\s*780px\)/);
   await assert.rejects(fs.access('frontend/public/hipico-control/assets/css/password-recovery.css'));
+  await assert.rejects(fs.access('frontend/public/hipico-control/assets/css/ui-system.css'));
 });
