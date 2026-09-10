@@ -25,6 +25,11 @@ test('board with explicit matching track and race resolves MATCH',()=>{
   assert.deepEqual(result.board.board,['1','2','8','7']);
 });
 
+test('known singular/plural track alias resolves exactly without fuzzy substring matching',()=>{
+  const analysis=parse('[5:00 p. m., 10/09/2026] Operador: Churchill Downs, 1ra Carrera\nPizarra: 1.2.8.7');
+  assert.equal(resolveBoardTarget(analysis,workspace('Churchill Down',1)).status,'MATCH');
+});
+
 test('arrival inherits nearest explicit race opening in same segment',()=>{
   const analysis=parse([
     '[4:59 p. m., 10/09/2026] Operador: Se aperturó Churchill Downs, 1ra Carrera',
