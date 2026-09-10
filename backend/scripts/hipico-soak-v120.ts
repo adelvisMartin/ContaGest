@@ -16,11 +16,9 @@ const sampleSeconds=Math.max(1,Number(arg('sample-seconds',String(policy.sampleS
 const healthUrl=arg('health-url','');
 const spoolPath=arg('spool-path','');
 const drillEvidencePath=arg('drill-evidence','');
+const safetyEvidencePath=arg('safety-evidence','');
 const operatorId=arg('operator-id','').trim();
-const candidateSha=String(process.env.GITHUB_SHA||process.env.GIT_SHA||process.env.VERCEL_GIT_COMMIT_SHA||arg('sha','UNBOUND')).trim();
-const sourceReadOnly=(arg('source-read-only','NOT_EXECUTED')) as EvidenceStatus;
-const labOnlyWriteDestination=(arg('lab-only-write','NOT_EXECUTED')) as EvidenceStatus;
-const sessionFallbackSafe=(arg('session-fallback-safe','NOT_EXECUTED')) as EvidenceStatus;
+const candidateSha=String(process.env.GITHUB_SHA||process.env.GIT_SHA||process.env.VERCEL_GIT_COMMIT_SHA||arg('sha','UNBOUND')).trim().toLowerCase();
 const artifactKey=/^[a-f0-9]{40}$/i.test(candidateSha)?candidateSha:'UNBOUND';
 const outDir=path.join(root,'artifacts','qa','hipico-v120',artifactKey);fs.mkdirSync(outDir,{recursive:true});
 const samplesFile=path.join(outDir,'samples.jsonl');
@@ -39,7 +37,7 @@ function loadDrills():Record<string,SoakDrillEvidence>{
   const full=path.resolve(drillEvidencePath);
   if(!fs.existsSync(full))throw new Error(`DRILL_EVIDENCE_NOT_FOUND:${full}`);
   const parsed=JSON.parse(fs.readFileSync(full,'utf8'));
-  if(parsed.candidateSha!==candidateSha)throw new Error('DRILL_EVIDENCE_SHA_MISMATCH');
+  if(String(parsed.candidateSha||'').toLowerCase()!==candidateSha)throw new Error('DRILL_EVIDENCE_SHA_MISMATCH');
   const drills:Record<string,SoakDrillEvidence>={};
   for(const id of policy.requiredDrills){
     const row=parsed.drills?.[id]||{status:'NOT_EXECUTED'};
@@ -48,6 +46,40 @@ function loadDrills():Record<string,SoakDrillEvidence>{
   return drills;
 }
 const drills=loadDrills();
+
+type SafetyInvariantKey='sourceReadOnly'|'labOnlyWriteDestination'|'sessionFallbackSafe';
+type SafetyInvariantEvidence={status:EvidenceStatus;at:string|null;evidence:string[]};
+const safetyInvariantKeys:SafetyInvariantKey[]=['sourceReadOnly','labOnlyWriteDestination','sessionFallbackSafe'];
+function loadSafetyEvidence(){
+  const fallback:Record<SafetyInvariantKey,SafetyInvariantEvidence>={
+    sourceReadOnly:{status:arg('source-read-only','NOT_EXECUTED') as EvidenceStatus,at:null,evidence:[]},
+    labOnlyWriteDestination:{status:arg('lab-only-write','NOT_EXECUTED') as EvidenceStatus,at:null,evidence:[]},
+    sessionFallbackSafe:{status:arg('session-fallback-safe','NOT_EXECUTED') as EvidenceStatus,at:null,evidence:[]}
+  };
+  if(!safetyEvidencePath)return{invariants:fallback,complete:false,full:null as string|null};
+  const full=path.resolve(safetyEvidencePath);
+  if(!fs.existsSync(full))throw new Error(`SAFETY_EVIDENCE_NOT_FOUND:${full}`);
+  const parsed=JSON.parse(fs.readFileSync(full,'utf8'));
+  if(String(parsed.candidateSha||'').toLowerCase()!==candidateSha)throw new Error('SAFETY_EVIDENCE_SHA_MISMATCH');
+  const invariants={...fallback};
+  for(const key of safetyInvariantKeys){
+    const row=parsed.invariants?.[key]||{status:'NOT_EXECUTED'};
+    invariants[key]={
+      status:row.status as EvidenceStatus,
+      at:typeof row.at==='string'&&row.at.trim()?row.at:null,
+      evidence:Array.isArray(row.evidence)?row.evidence.filter((item:unknown)=>typeof item==='string'&&item.trim().length>0):[]
+    };
+  }
+  const complete=safetyInvariantKeys.every((key)=>{
+    const row=invariants[key];
+    return row.status==='PASS'&&Boolean(row.at)&&row.evidence.length>0;
+  });
+  return{invariants,complete,full};
+}
+const safety=loadSafetyEvidence();
+const sourceReadOnly=safety.invariants.sourceReadOnly.status;
+const labOnlyWriteDestination=safety.invariants.labOnlyWriteDestination.status;
+const sessionFallbackSafe=safety.invariants.sessionFallbackSafe.status;
 
 type FileStats={files:number;bytes:number;oldestMtimeMs:number|null};
 function recursiveFileStats(target:string):FileStats{
@@ -128,7 +160,8 @@ const summaryInput:SoakSummaryInput={
   unexpectedDuplicateResponses:duplicateResponses,lostDecisions,contextLeaks,
   healthConfigured:Boolean(healthUrl),spoolConfigured:Boolean(spoolPath),
   healthChecks,healthFailures,spoolChecks,spoolAvailableChecks,
-  operatorPresent:Boolean(operatorId),sourceReadOnly,labOnlyWriteDestination,sessionFallbackSafe,drills
+  operatorPresent:Boolean(operatorId),sourceReadOnly,labOnlyWriteDestination,sessionFallbackSafe,
+  invariantEvidenceComplete:safety.complete,drills
 };
 const evaluation=evaluateSoak(summaryInput,policy);
 const drillEvidenceFull=drillEvidencePath?path.resolve(drillEvidencePath):null;
@@ -136,23 +169,30 @@ const drillEvidenceArtifact=path.join(outDir,'drill-evidence-input.json');
 if(drillEvidenceFull&&fs.existsSync(drillEvidenceFull)){
   if(path.resolve(drillEvidenceFull)!==path.resolve(drillEvidenceArtifact))fs.copyFileSync(drillEvidenceFull,drillEvidenceArtifact);
 }
+const safetyEvidenceArtifact=path.join(outDir,'safety-evidence-input.json');
+if(safety.full&&fs.existsSync(safety.full)){
+  if(path.resolve(safety.full)!==path.resolve(safetyEvidenceArtifact))fs.copyFileSync(safety.full,safetyEvidenceArtifact);
+}
 const evidenceIntegrity={
   samplesSha256:fs.existsSync(samplesFile)?sha256File(samplesFile):null,
-  drillEvidenceSha256:fs.existsSync(drillEvidenceArtifact)?sha256File(drillEvidenceArtifact):null
+  drillEvidenceSha256:fs.existsSync(drillEvidenceArtifact)?sha256File(drillEvidenceArtifact):null,
+  safetyEvidenceSha256:fs.existsSync(safetyEvidenceArtifact)?sha256File(safetyEvidenceArtifact):null
 };
 const final={
-  schemaVersion:3,product:'control-hipico',candidateSha,
+  schemaVersion:4,product:'control-hipico',candidateSha,
   operatorId:operatorId||null,
   startedAt:new Date(start).toISOString(),completedAt:new Date().toISOString(),
   durationRequestedMinutes:durationMinutes,sampleSeconds,
   healthUrlConfigured:Boolean(healthUrl),spoolPathConfigured:Boolean(spoolPath),
   drillEvidenceConfigured:Boolean(drillEvidencePath),drillEvidenceCopied:fs.existsSync(drillEvidenceArtifact),
+  safetyEvidenceConfigured:Boolean(safetyEvidencePath),safetyEvidenceCopied:fs.existsSync(safetyEvidenceArtifact),
   replayScenario:scenario.id,decisions,summaryInput,evaluation,evidenceIntegrity,policyVersion:policy.version
 };
 fs.writeFileSync(path.join(outDir,'summary.json'),`${JSON.stringify(final,null,2)}\n`);
 fs.writeFileSync(path.join(outDir,'SHA256SUMS.txt'),[
   evidenceIntegrity.samplesSha256?`${evidenceIntegrity.samplesSha256}  samples.jsonl`:null,
-  evidenceIntegrity.drillEvidenceSha256?`${evidenceIntegrity.drillEvidenceSha256}  drill-evidence-input.json`:null
+  evidenceIntegrity.drillEvidenceSha256?`${evidenceIntegrity.drillEvidenceSha256}  drill-evidence-input.json`:null,
+  evidenceIntegrity.safetyEvidenceSha256?`${evidenceIntegrity.safetyEvidenceSha256}  safety-evidence-input.json`:null
 ].filter(Boolean).join('\n')+'\n');
 console.log(JSON.stringify(final,null,2));
 if(evaluation.status==='FAIL')process.exitCode=1;else if(evaluation.status!=='PASS')process.exitCode=3;
