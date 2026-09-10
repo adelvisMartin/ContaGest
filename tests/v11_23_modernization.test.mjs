@@ -10,8 +10,8 @@ const legalEnhancer = read('frontend/src/services/legalAcceptanceEnhancer.js');
 const runtimeCss = read('frontend/src/styles/erp-runtime.css');
 const veterinary = read('frontend/src/pages/VeterinaryClinicPageV1123.jsx');
 const hipicoIndex = read('frontend/public/hipico-control/index.html');
-const hipicoCss = read('frontend/public/hipico-control/assets/css/precision-hipica.css');
-const hipicoApp = read('frontend/public/hipico-control/assets/js/app-shell.js');
+const hipicoCss = read('frontend/public/hipico-control/assets/css/app.css');
+const hipicoStore = read('frontend/public/hipico-control/assets/js/store-v2.js');
 const hipicoManifest = read('frontend/public/hipico-control/manifest.webmanifest');
 const hipicoSw = read('frontend/public/hipico-control/sw.js');
 const forbiddenLegacyBrand = ['Triple','Crown'].join(' ');
@@ -53,27 +53,29 @@ test('Control Hipico preserves the documented operational modules', () => {
   }
 });
 
-test('Precision Hipica is mobile-first with semantic tokens and three themes', () => {
-  for (const token of ['--ch-bg','--ch-surface','--ch-border','--ch-text','--ch-primary','--ch-accent','--ch-success','--ch-warning','--ch-danger','--ch-focus']) {
+test('Control Hipico canonical UI is mobile-first with semantic tokens and light/dark/system themes', () => {
+  for (const token of ['--hc-bg','--hc-surface','--hc-border','--hc-text','--hc-brand','--hc-success','--hc-warning','--hc-danger','--hc-focus','--hc-touch']) {
     assert.match(hipicoCss, new RegExp(token));
   }
-  assert.match(hipicoCss, /html\[data-theme="dark"\]/);
-  assert.match(hipicoCss, /prefers-color-scheme:dark/);
-  assert.match(hipicoCss, /@media\(min-width:1024px\)/);
-  assert.match(hipicoCss, /min-height:44px/);
+  assert.match(hipicoCss, /:root\[data-theme="dark"\]/);
+  assert.match(hipicoCss, /prefers-color-scheme:\s*dark/);
+  assert.match(hipicoCss, /@media \(max-width:\s*780px\)/);
+  assert.match(hipicoCss, /--hc-touch:\s*44px/);
 });
 
-test('Control Hipico local-first shell uses IndexedDB outbox and existing WhatsApp analyzers', () => {
-  assert.match(hipicoApp, /indexedDB\.open/);
-  assert.match(hipicoApp, /createObjectStore\('outbox'/);
-  assert.match(hipicoApp, /idempotencyKey/);
-  assert.match(hipicoApp, /parseWhatsAppChat/);
-  assert.match(hipicoApp, /analyzeOperationalFeed/);
+test('Control Hipico local-first storage uses IndexedDB outbox, snapshots and idempotency', () => {
+  assert.match(hipicoStore, /indexedDB\.open/);
+  assert.match(hipicoStore, /createObjectStore\("outbox"/);
+  assert.match(hipicoStore, /idempotencyKey/);
+  assert.match(hipicoStore, /initializeStorage/);
+  assert.match(hipicoStore, /createSnapshot/);
+  assert.match(hipicoStore, /HIPICO_STORAGE_QUOTA_EXCEEDED/);
 });
 
 test('Control Hipico service worker is versioned and refuses sensitive caching', () => {
-  assert.match(hipicoSw, /control-hipico-shell-v/);
-  assert.match(hipicoSw, /control-hipico-runtime-v/);
-  assert.match(hipicoSw, /api\|auth\|session\|license\|webhook/);
-  assert.match(hipicoSw, /if\(isSensitive\(url\)\)\{event\.respondWith\(fetch\(request,\{cache:'no-store'\}\)\)/);
+  assert.match(hipicoSw, /CACHE_VERSION = 'hipico-control-v1\.13\.0-rc2'/);
+  assert.match(hipicoSw, /shell-r4-zero-legacy/);
+  assert.match(hipicoSw, /isSensitive\(url\) \|\| isRuntimeMetadata\(url\)/);
+  assert.match(hipicoSw, /cache:\s*'no-store'/);
+  assert.doesNotMatch(hipicoSw, /precision-hipica\.css|styles\.css|ui-system\.css|offline-icons\.css/);
 });
