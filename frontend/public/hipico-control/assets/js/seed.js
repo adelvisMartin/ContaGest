@@ -10,13 +10,16 @@ export const DEFAULT_RACETRACKS = [
     "Remington Park", "Sam Houston", "Santa Anita", "Saratoga", "Tampa Bay Downs",
     "Thistledown", "Turf Paradise", "Valencia", "Will Rogers Downs", "Woodbine"
 ];
+
+const DEFAULT_FOOTER = "*PLANO REFERENCIAL*\n*_La guía es el chat_*\n(se gana y se cobra con el chat)\n*USTED ES SU PROPIO CORREDOR*\n*RECLAMOS AL PRIVADO*\n*NO DIGA:* ❌MALO❌; CASA FALTA...\n*TILDE SU JUGADA Y SE REVISARÁ*";
+
 export function createBlankWorkspace() {
     const today = new Date().toISOString().slice(0, 10);
     return {
-        schemaVersion: 8,
+        schemaVersion: 10,
         version: 1,
         config: {
-            clubName: "CLUB HIPICO TRIPLE CROWN",
+            clubName: "CONTROL HÍPICO",
             currency: "Bs.",
             commission: 0.05,
             exchangeRate: 160,
@@ -25,13 +28,25 @@ export function createBlankWorkspace() {
             recentRacetracks: ["Colonial Downs", "Parx Racing", "Will Rogers Downs", "Turf Paradise"],
             racetrackCatalog: [...DEFAULT_RACETRACKS],
             compactMode: true,
-            footerMessage: "*PLANO REFERENCIAL*\n*_La guía es el chat_*\n(se gana y se cobra con el chat)\n*USTED ES SU PROPIO CORREDOR*\n*RECLAMOS AL PRIVADO*\n*NO DIGA:* ❌MALO❌; CASA FALTA...\n*TILDE SU JUGADA Y SE REVISARÁ*",
+            footerMessage: DEFAULT_FOOTER,
             theme: "system",
             activeGroupId: "group-1",
             activeWhatsappGroupId: "group-1",
             activeRaceByGroup: { "group-1": null },
             groups: [
-                { id: "group-1", name: "Triple Crown", companyName: "CLUB HIPICO TRIPLE CROWN", color: "#7ea596", currency: "Bs.", exchangeRate: 160, commission: 0.05, showConversion: true, autoRate: true, clientLabel: "Participantes", footerMessage: "*PLANO REFERENCIAL*\n*_La guía es el chat_*\n(se gana y se cobra con el chat)\n*USTED ES SU PROPIO CORREDOR*\n*RECLAMOS AL PRIVADO*\n*NO DIGA:* ❌MALO❌; CASA FALTA...\n*TILDE SU JUGADA Y SE REVISARÁ*" }
+                {
+                    id: "group-1",
+                    name: "Grupo principal",
+                    companyName: "CONTROL HÍPICO",
+                    color: "#721522",
+                    currency: "Bs.",
+                    exchangeRate: 160,
+                    commission: 0.05,
+                    showConversion: true,
+                    autoRate: true,
+                    clientLabel: "Participantes",
+                    footerMessage: DEFAULT_FOOTER
+                }
             ]
         },
         participants: [],

@@ -3,21 +3,28 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-  <meta name="theme-color" content="#75101d">
+  <meta name="theme-color" content="#721522">
   <title>Recuperación · Control Hípico</title>
-  <link rel="stylesheet" href="./assets/css/recovery.css">
+  <link rel="icon" type="image/png" sizes="192x192" href="./icons/icon-192.png">
+  <link rel="apple-touch-icon" href="./icons/icon-192.png">
+  <link rel="stylesheet" href="./assets/css/styles.css">
+  <link rel="stylesheet" href="./assets/css/ui-system.css">
 </head>
 <body>
-  <main class="recovery-card">
-    <div class="recovery-mark">HC</div>
-    <h1>Recuperación segura</h1>
-    <p>Esta pantalla restablece únicamente los datos locales de Control Hípico si el módulo principal no logra iniciar.</p>
-    <div id="status" class="recovery-status" aria-live="polite">Lista para recuperar Control Hípico.</div>
-    <div class="recovery-actions">
-      <button id="reset" class="primary" type="button">Restablecer almacenamiento y abrir</button>
-      <a href="./index.html?retry=1">Abrir sin restablecer datos</a>
-    </div>
-    <small>Control Hípico · Recuperación aislada del producto</small>
+  <main class="auth-screen">
+    <section class="auth-card auth-card--recovery">
+      <div class="auth-panel auth-panel--recovery">
+        <img class="brand-logo brand-logo--access" src="./icons/icon-192.png" alt="Control Hípico">
+        <h2>Recuperación segura</h2>
+        <p>Restablece únicamente el almacenamiento local si Control Hípico no logra iniciar. Tu cuenta y los datos guardados en la nube no se eliminan.</p>
+        <div id="status" class="ui-state" aria-live="polite">Lista para recuperar Control Hípico.</div>
+        <div class="capture-actions section-gap">
+          <button id="reset" class="button button--primary" type="button">Restablecer almacenamiento y abrir</button>
+          <a class="button button--ghost" href="./index.html?retry=1">Abrir sin restablecer datos</a>
+        </div>
+        <small class="muted section-gap-small">Control Hípico · Recuperación aislada del producto</small>
+      </div>
+    </section>
   </main>
   <script src="./assets/js/recovery.js"></script>
 </body>

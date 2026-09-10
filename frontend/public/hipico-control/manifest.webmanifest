@@ -6,8 +6,8 @@
   "start_url": "./?view=dashboard",
   "scope": "./",
   "display": "standalone",
-  "background_color": "#f5f5f3",
-  "theme_color": "#75101d",
+  "background_color": "#f7f7f6",
+  "theme_color": "#721522",
   "orientation": "portrait-primary",
   "icons": [
     {
@@ -40,34 +40,19 @@
       "name": "Captura rápida",
       "short_name": "Capturar",
       "url": "./?view=race&tab=capture",
-      "icons": [
-        {
-          "src": "./icons/icon-192.png",
-          "sizes": "192x192"
-        }
-      ]
+      "icons": [{ "src": "./icons/icon-192.png", "sizes": "192x192" }]
     },
     {
       "name": "Apuestas adelantadas",
       "short_name": "Adelantadas",
       "url": "./?view=advanced",
-      "icons": [
-        {
-          "src": "./icons/icon-192.png",
-          "sizes": "192x192"
-        }
-      ]
+      "icons": [{ "src": "./icons/icon-192.png", "sizes": "192x192" }]
     },
     {
       "name": "Cierre y saldos",
       "short_name": "Saldos",
       "url": "./?view=reports",
-      "icons": [
-        {
-          "src": "./icons/icon-192.png",
-          "sizes": "192x192"
-        }
-      ]
+      "icons": [{ "src": "./icons/icon-192.png", "sizes": "192x192" }]
     }
   ]
 }
