@@ -16,6 +16,16 @@ const TRACK_ALIASES = new Map([
   ['INDIANAPOLIS', 'HORSESHOE INDIANAPOLIS']
 ]);
 
+function escapeHtml(value) {
+  return String(value ?? '').replace(/[&<>"']/g, (character) => ({
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#39;'
+  })[character]);
+}
+
 function normalizedTrack(value) {
   const raw = compact(String(value || ''));
   return TRACK_ALIASES.get(raw) || raw;
@@ -91,6 +101,99 @@ async function analyzeVisibleChat(workspace) {
   return parseWhatsAppChat(text, { racetrackCatalog: workspace?.config?.racetrackCatalog || [] });
 }
 
+function boardContextDialog({ title, message, activeRace, board, confirmLabel = '' }) {
+  return new Promise((resolve) => {
+    document.querySelector('[data-board-context-dialog]')?.remove();
+
+    const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const backdrop = document.createElement('div');
+    backdrop.className = 'modal-backdrop';
+    backdrop.dataset.boardContextDialog = 'true';
+
+    const boardText = Array.isArray(board) && board.length ? board.join('.') : 'Sin pizarra';
+    const raceText = activeRace ? `${activeRace.racetrack} · ${activeRace.number}ª carrera` : 'Sin carrera activa';
+    const confirmAction = confirmLabel
+      ? `<button type="button" class="button" data-board-context-confirm>${escapeHtml(confirmLabel)}</button>`
+      : '';
+
+    backdrop.innerHTML = `
+      <section class="modal" role="dialog" aria-modal="true" aria-labelledby="board-context-title" aria-describedby="board-context-description" tabindex="-1">
+        <div class="modal__handle" aria-hidden="true"></div>
+        <div class="modal__head">
+          <div>
+            <h3 id="board-context-title">${escapeHtml(title)}</h3>
+            <small>Validación de carrera antes de aplicar resultado</small>
+          </div>
+          <button type="button" class="button icon-button button--ghost" data-board-context-cancel aria-label="Cerrar">×</button>
+        </div>
+        <div class="modal__body">
+          <div class="ui-state" data-tone="warning">
+            <strong class="ui-state__title">Revisión obligatoria</strong>
+            <span id="board-context-description">${escapeHtml(message)}</span>
+          </div>
+          <div class="form-grid two">
+            <div class="field"><label>Carrera activa</label><div class="input" aria-readonly="true">${escapeHtml(raceText)}</div></div>
+            <div class="field"><label>Pizarra detectada</label><div class="input" aria-readonly="true">${escapeHtml(boardText)}</div></div>
+          </div>
+          <p class="help-text">Control Hípico no liquida dinero por una llegada ambigua. Confirma manualmente solo si verificaste que la pizarra pertenece exactamente a la carrera activa.</p>
+          <div class="modal__actions">
+            <button type="button" class="button button--ghost" data-board-context-cancel>${confirmLabel ? 'Cancelar' : 'Cerrar'}</button>
+            ${confirmAction}
+          </div>
+        </div>
+      </section>`;
+
+    document.body.appendChild(backdrop);
+    const dialog = backdrop.querySelector('[role="dialog"]');
+    const focusable = () => [...dialog.querySelectorAll('button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])')];
+    let settled = false;
+
+    const finish = (approved) => {
+      if (settled) return;
+      settled = true;
+      backdrop.removeEventListener('click', onClick);
+      dialog.removeEventListener('keydown', onKeyDown);
+      backdrop.remove();
+      if (previousFocus?.isConnected) requestAnimationFrame(() => previousFocus.focus());
+      resolve(Boolean(approved));
+    };
+
+    const onClick = (event) => {
+      const target = event.target instanceof Element ? event.target : null;
+      if (!target) return;
+      if (target.closest('[data-board-context-confirm]')) return finish(true);
+      if (target.closest('[data-board-context-cancel]') || target === backdrop) return finish(false);
+    };
+
+    const onKeyDown = (event) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        return finish(false);
+      }
+      if (event.key !== 'Tab') return;
+      const nodes = focusable();
+      if (!nodes.length) {
+        event.preventDefault();
+        dialog.focus();
+        return;
+      }
+      const first = nodes[0];
+      const last = nodes[nodes.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+
+    backdrop.addEventListener('click', onClick);
+    dialog.addEventListener('keydown', onKeyDown);
+    requestAnimationFrame(() => (focusable()[0] || dialog).focus());
+  });
+}
+
 async function guardBoardApplication(button) {
   if (manualBypassTarget === button) {
     manualBypassTarget = null;
@@ -106,13 +209,22 @@ async function guardBoardApplication(button) {
   if (decision.status === 'MATCH') return true;
   if (decision.status === 'MISMATCH') {
     notify(`Pizarra bloqueada: ${decision.reason}`);
-    window.alert(`Pizarra bloqueada.\n\n${decision.reason}\n\nAbre la carrera correcta y vuelve a aplicar.`);
+    await boardContextDialog({
+      title: 'Pizarra bloqueada',
+      message: `${decision.reason} Abre la carrera correcta y vuelve a aplicar.`,
+      activeRace: decision.activeRace,
+      board: decision.board?.board
+    });
     return false;
   }
   if (decision.status === 'AMBIGUOUS') {
-    const active = decision.activeRace;
-    const board = decision.board?.board?.join('.') || '';
-    const approved = window.confirm(`La llegada ${board} no trae contexto suficiente para verificar la carrera.\n\nCarrera activa: ${active.racetrack} ${active.number}ª.\n\n¿Confirmas manualmente que esta pizarra pertenece a esa carrera?`);
+    const approved = await boardContextDialog({
+      title: 'Confirmar pizarra manualmente',
+      message: decision.reason,
+      activeRace: decision.activeRace,
+      board: decision.board?.board,
+      confirmLabel: 'Confirmar carrera y aplicar'
+    });
     if (approved) {
       manualBypassTarget = button;
       queueMicrotask(() => button.click());
