@@ -12,6 +12,8 @@ import commercialAccessRoutes from './commercial-access/commercial-access.routes
 import salesRoutes from './sales/sales.routes.js';
 import purchasesRoutes from './purchases/purchases.routes.js';
 import payablesRoutes from './payables/payables.routes.js';
+import approvalsRoutes from './approvals/approvals.routes.js';
+import { approvalExecutionGate } from './approvals/approval-execution-gate.js';
 import accountingRoutes from './accounting/accounting.routes.js';
 import reportsRoutes from './reports/reports.routes.js';
 import moduleRoutes from './modules/modules.routes.js';
@@ -48,10 +50,12 @@ import veterinaryCrudRoutes from './verticals/veterinary-crud.routes.js';
 import mediaRoutes from './media/media.routes.js';
 
 const router = Router();
-// Legal status/acceptance must remain reachable before the legal and commercial gates.
 router.use('/legal', legalRoutes);
 router.use(requireCurrentLegalAcceptance);
 router.use(enforceCommercialSubscription);
+// Cross-cutting maker-checker enforcement lives before business routers so a
+// configured policy cannot be bypassed by calling a domain endpoint directly.
+router.use(approvalExecutionGate);
 router.use('/tenants', tenantRoutes);
 router.use('/clients', createCrudRouter({ model:'client' as any, entity:'client', permission:'clients.manage', schema:clientSchema, searchFields:['name','rif'] }));
 router.use('/suppliers', createCrudRouter({ model:'supplier' as any, entity:'supplier', permission:'purchases.manage', schema:supplierSchema, searchFields:['name','rif'] }));
@@ -62,6 +66,7 @@ router.use('/tax-periods', createCrudRouter({ model:'taxPeriod' as any, entity:'
 router.use('/sales', salesRoutes);
 router.use('/purchases', purchasesRoutes);
 router.use('/payables', payablesRoutes);
+router.use('/approvals', approvalsRoutes);
 router.use('/accounting', accountingRoutes);
 router.use('/reports', reportsRoutes);
 router.use('/modules', moduleRoutes);
@@ -84,8 +89,6 @@ router.use('/demos', demosRoutes);
 router.use('/pretesting', pretestingRoutes);
 router.use('/licenses', licenseRoutes);
 router.use('/license-devices', licenseDeviceRoutes);
-// Governance routes must run before the historical commercial router so restricted
-// status mutations and paid-payment reactivation cannot bypass the case workflow.
 router.use('/commercial', serviceRestrictionRoutes);
 router.use('/commercial', commercialRoutes);
 router.use('/commercial-access', commercialAccessRoutes);

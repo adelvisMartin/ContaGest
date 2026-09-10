@@ -1,6 +1,7 @@
 import { PageHeader, Badge, ErpGrid, ErpSection, ErpStack } from '../components/ui/index.js';
 import { escapeHtml } from '../utils/dom.js';
 import { ORDER_RULES, INVENTORY_RULES, ACCOUNTING_RULES, PAYROLL_RULES, PAYMENT_RULES } from '../core/businessRules.js';
+import { ApprovalsPage } from './ApprovalsPage.js';
 
 const safe = (value) => escapeHtml(String(value ?? ''));
 
@@ -33,6 +34,9 @@ export const BusinessRulesPage = {
       eyebrowKey:'businessRulesEyebrow',
       titleKey:'businessRulesTitle',
       descKey:'businessRulesDesc'
-    })}${ErpGrid(cards, { columns:'two' })}</section>`;
+    })}${ErpGrid(cards, { columns:'two' })}<div class="cg-u-mt-lg">${ApprovalsPage.render()}</div></section>`;
+  },
+  mount(state, context) {
+    ApprovalsPage.mount(state, context);
   }
 };
