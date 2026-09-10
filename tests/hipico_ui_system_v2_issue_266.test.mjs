@@ -10,13 +10,16 @@ const guidePath = `${root}/STYLE-GUIDE.md`;
 const swPath = `${root}/sw.js`;
 const removedCss = ['styles.css','ui-system.css','tokens.css','themes.css','components.css','operations-pro.css','precision-hipica.css','offline-icons.css','recovery.css','ui-system-v2.css'];
 
-test('Control Hípico loads exactly one canonical stylesheet', async () => {
-  const index = await fs.readFile(indexPath, 'utf8');
-  const links = [...index.matchAll(/<link\s+rel="stylesheet"\s+href="([^"]+)"/g)].map((match) => match[1]);
-  assert.deepEqual(links, ['./assets/css/app.css']);
+test('Control Hípico loads exactly one canonical stylesheet on app and recovery surfaces', async () => {
+  const [index, recovery] = await Promise.all([fs.readFile(indexPath, 'utf8'), fs.readFile(recoveryPath, 'utf8')]);
+  const stylesheetLinks = (html) => [...html.matchAll(/<link\s+rel="stylesheet"\s+href="([^"]+)"/g)].map((match) => match[1]);
+  assert.deepEqual(stylesheetLinks(index), ['./assets/css/app.css']);
+  assert.deepEqual(stylesheetLinks(recovery), ['./assets/css/app.css']);
+  assert.match(recovery, /data-action="reset-local-storage"/);
   await fs.access(cssPath);
   for (const file of removedCss) {
-    assert.equal(index.includes(file), false, `${file} must not be loaded`);
+    assert.equal(index.includes(file), false, `${file} must not be loaded by index`);
+    assert.equal(recovery.includes(file), false, `${file} must not be loaded by recovery`);
     await assert.rejects(fs.access(`${root}/assets/css/${file}`));
   }
 });
@@ -26,6 +29,7 @@ test('canonical UI is neutral-first, restrained and free of historical override 
   assert.match(css, /--hc-brand:\s*#721522/);
   assert.match(css, /--hc-radius-sm:\s*8px/);
   assert.match(css, /--hc-radius-lg:\s*12px/);
+  assert.match(css, /--hc-touch:\s*44px/);
   assert.match(css, /\.badge\s*\{[^}]*min-height:\s*22px/s);
   assert.match(css, /\.toast\s*\{[\s\S]*?background:\s*var\(--hc-surface\)/);
   assert.match(css, /\.modal\s*\{[\s\S]*?border-radius:\s*var\(--hc-radius-xl\)/);
@@ -73,6 +77,7 @@ test('accessibility/mobile and component contracts are canonical', async () => {
   assert.match(ui, /button\(label/);
   assert.match(ui, /dialog\(title/);
   assert.match(ui, /focusableNodes/);
+  assert.match(ui, /data-action="dismiss-toast"/);
   assert.match(help, /Manual de uso/);
   assert.match(help, /Nunca abre ventanas por sí sola/);
   assert.match(guide, /Dialog/);
