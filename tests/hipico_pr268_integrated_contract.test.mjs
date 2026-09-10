@@ -61,7 +61,7 @@ test('PR268 database scope enforces shared workspace and server-side read-only r
     read('backend/prisma/migrations/20260910050500_hipico_user_access_roles/migration.sql'),
     read('backend/prisma/migrations/20260910054500_hipico_shared_workspace_roles/migration.sql'),
     read('backend/prisma/migrations/20260910060000_hipico_recent_shadow_scope/migration.sql'),
-    read('backend/prisma/migrations/20260910061500_hipico_least_privilege_table_grants/migration.sql')
+    read('backend/prisma/migrations/20260910062500_hipico_least_privilege_tables/migration.sql')
   ]);
   assert.match(baseAccess, /CREATE TABLE IF NOT EXISTS public\.hipico_users/);
   assert.match(shared, /workspace_owner_id/);
