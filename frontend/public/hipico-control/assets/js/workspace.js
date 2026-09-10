@@ -5,25 +5,32 @@ export const todayIso = () => isoNow().slice(0, 10);
 
 const DEFAULT_FOOTER = "*PLANO REFERENCIAL*\n*_La guía es el chat_*\n(se gana y se cobra con el chat)\n*USTED ES SU PROPIO CORREDOR*\n*RECLAMOS AL PRIVADO*\n*NO DIGA:* ❌MALO❌; CASA FALTA...\n*TILDE SU JUGADA Y SE REVISARÁ*";
 const GROUP_DEFAULTS = [
-  { id: "group-1", name: "Triple Crown", companyName: "CLUB HIPICO TRIPLE CROWN", color: "#7ea596", currency: "Bs.", exchangeRate: 160, footerMessage: DEFAULT_FOOTER }
+  { id: "group-1", name: "Grupo principal", companyName: "CONTROL HÍPICO", color: "#721522", currency: "Bs.", exchangeRate: 160, footerMessage: DEFAULT_FOOTER }
 ];
 
 function cleanColor(value, fallback) {
   const color = String(value || "").trim();
   return /^#[0-9a-f]{6}$/i.test(color) ? color : fallback;
 }
+function migrateLegacyBrand(value, fallback) {
+  const text = String(value || "").trim();
+  if (!text) return fallback;
+  if (/^(?:club\s+hipico\s+)?triple\s+crown$/i.test(text)) return fallback;
+  return text;
+}
 function normalizeGroup(group, index, config) {
   const base = GROUP_DEFAULTS[index] || {
     id: `group-${index + 1}`,
     name: `Grupo ${index + 1}`,
     companyName: `GRUPO HÍPICO ${index + 1}`,
-    color: ["#7ea596", "#7f86c7", "#c28b6e", "#5e8fb7"][index % 4],
+    color: ["#721522", "#526f86", "#8d7545", "#35705a"][index % 4],
     currency: "Bs.", exchangeRate: 160, footerMessage: DEFAULT_FOOTER
   };
+  const candidateCompany = group?.companyName || group?.clubName || (index === 0 ? config.clubName : base.companyName);
   return {
     id: String(group?.id || base.id),
-    name: String(group?.name || base.name).trim(),
-    companyName: String(group?.companyName || group?.clubName || (index === 0 ? config.clubName : base.companyName) || base.companyName).trim(),
+    name: migrateLegacyBrand(group?.name, base.name),
+    companyName: migrateLegacyBrand(candidateCompany, base.companyName),
     color: cleanColor(group?.color, base.color),
     currency: ["Bs.", "USD"].includes(group?.currency) ? group.currency : (index === 0 && ["Bs.", "USD"].includes(config.currency) ? config.currency : base.currency),
     exchangeRate: Number(group?.exchangeRate || (index === 0 ? config.exchangeRate : base.exchangeRate) || 160),
@@ -67,7 +74,7 @@ export function normalizeWorkspaceShape(value) {
   const workspace = structuredClone(value || createBlankWorkspace());
   workspace.schemaVersion = 10;
   workspace.config ||= {};
-  workspace.config.clubName ||= "CLUB HIPICO TRIPLE CROWN";
+  workspace.config.clubName = migrateLegacyBrand(workspace.config.clubName, "CONTROL HÍPICO");
   workspace.config.currency ||= "Bs.";
   workspace.config.commission = Number(workspace.config.commission ?? 0.05);
   workspace.config.exchangeRate = Number(workspace.config.exchangeRate || 160);
