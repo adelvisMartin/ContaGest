@@ -4,9 +4,9 @@
   "buildCommand": "npm run build",
   "outputDirectory": "dist",
   "git": {
-    "deploymentEnabled": false
+    "deploymentEnabled": true
   },
-  "ignoreCommand": "exit 0",
+  "ignoreCommand": "exit 1",
   "functions": {
     "api/index.js": { "maxDuration": 30 },
     "api/status.ts": { "maxDuration": 30 },
