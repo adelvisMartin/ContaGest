@@ -7,14 +7,24 @@ import { activeGroupId, activeRace as readActiveRace } from './operational-ledge
 
 let manualBypassTarget = null;
 
+const TRACK_ALIASES = new Map([
+  ['CHURCHILL DOWN', 'CHURCHILL DOWNS'],
+  ['COLONIAL DOWN', 'COLONIAL DOWNS'],
+  ['GULFSTREAM', 'GULFSTREAM PARK'],
+  ['PARX', 'PARX RACING'],
+  ['CHARLESTOWN', 'CHARLES TOWN'],
+  ['INDIANAPOLIS', 'HORSESHOE INDIANAPOLIS']
+]);
+
 function normalizedTrack(value) {
-  return compact(String(value || '')).replace(/\b(DOWN)\b/g, 'DOWNS');
+  const raw = compact(String(value || ''));
+  return TRACK_ALIASES.get(raw) || raw;
 }
 
 function sameTrack(left, right) {
   const a = normalizedTrack(left);
   const b = normalizedTrack(right);
-  return Boolean(a && b && (a === b || a.includes(b) || b.includes(a)));
+  return Boolean(a && b && a === b);
 }
 
 function messageIndex(analysis, messageId) {
