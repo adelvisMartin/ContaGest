@@ -1,0 +1,38 @@
+{
+  "schemaVersion": 2,
+  "parserVersion": "whatsapp-ingestion-v2",
+  "sanitized": true,
+  "source": "real-whatsapp-ui-copy-2026-09-10-sanitized",
+  "safety": {
+    "sourceReadOnly": true,
+    "mediaNeverCreatesBets": true,
+    "monetaryTextRequiresOperationalClassifier": true
+  },
+  "cases": [
+    {
+      "id": "ui-forwarded-pdf-with-metadata",
+      "input": "Hoy\nCanal Hípico\n+00 000 000 0000\nReenviado\nTDN10092026.pdf\n8 páginas•PDF•3 MB\n8:59 p.m.",
+      "expected": {"sourceFormat":"whatsapp-ui-copy","documents":1,"offers":0,"forwarded":true,"embeddedDate":"2026-09-10"}
+    },
+    {
+      "id": "ui-sticker-is-non-operational",
+      "input": "Hoy\nCanal Hípico\n+00 000 000 0000\nSticker sin etiquetas\n8:55 p.m.\nCanal Hípico\n+00 000 000 0000\nSticker sin etiquetas\n8:56 p.m.",
+      "expected": {"sourceFormat":"whatsapp-ui-copy","stickers":2,"offers":0}
+    },
+    {
+      "id": "ui-orphan-time-is-noise",
+      "input": "Hoy\nCanal Hípico\n+00 000 000 0000\n8:47 p.m.\n8:47 p.m.",
+      "expected": {"noise":2,"offers":0}
+    },
+    {
+      "id": "ui-truncated-final-document",
+      "input": "Hoy\nCanal Hípico\n+00 000 000 0000\nReenviado\nCBY10092026.pdf\n7 páginas•PDF•2 MB\nCanal Hípico\n+00 000 000 0000\nSticker sin etiquetas\n9:00 p.m.",
+      "expected": {"documents":1,"documentTimeMayBeEmpty":true,"offers":0}
+    },
+    {
+      "id": "ui-player-receiver-pair",
+      "input": "Hoy\nJugador Uno\n+58 400 000 0001\nJuego 2n del 5 con 30k\n8:01 p.m.\nRecibe Dos\n+58 400 000 0002\nConsigo 2n del 5 con 30k\n8:02 p.m.",
+      "expected": {"offers":2,"matches":1,"play":"2N","horse":"5","amount":30000}
+    }
+  ]
+}
