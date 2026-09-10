@@ -59,7 +59,7 @@ export function generateArrivalWhatsappText(workspace, race) {
 }
 export function generateBalancesWhatsappText(workspace, rows) {
   const visibleRows = rows.filter(({ participant }) => participant.active !== false).sort((a, b) => String(a.participant.code).localeCompare(String(b.participant.code), "es"));
-  return [`🏇🏻*TERCIO  /  DISPONIBLE*🏇`, ...visibleRows.map(({ participant, balance }) => `${String(participant.code).toUpperCase()}\t${balanceNumber(balance)}`)].join("\n");
+  return [`🏇🏻*TERCIO  /  DISPONIBLE*🏇`, ...visibleRows.map(({ participant, available, balance }) => `${String(participant.code).toUpperCase()}\t${balanceNumber(available ?? balance)}`)].join("\n");
 }
 export function generateParticipantStatementText(workspace, statement) {
   const profile = groupProfile(workspace, { groupId: statement.groupId || statement.participant?.groupId });
