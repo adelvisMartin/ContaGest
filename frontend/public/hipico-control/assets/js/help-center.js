@@ -75,7 +75,7 @@ function setContextualEnabled(enabled) {
 }
 
 function topicById(id) { return TOPICS.find((topic) => topic.id === id) || TOPICS[0]; }
-function topicButton(topic) { return `<button type="button" data-help-topic="${topic.id}" class="${topic.id === currentTopic ? 'is-active' : ''}">${escapeHtml(topic.title)}</button>`; }
+function topicButton(topic) { return `<button type="button" data-action="help-topic" data-help-topic="${topic.id}" class="${topic.id === currentTopic ? 'is-active' : ''}">${escapeHtml(topic.title)}</button>`; }
 
 function renderTopic(id) {
   currentTopic = topicById(id).id;
@@ -98,7 +98,7 @@ function openHelp(topicId = '') {
   overlay.className = 'hc-help-backdrop';
   overlay.dataset.helpBackdrop = 'true';
   overlay.innerHTML = `<section class="hc-help-panel" role="dialog" aria-modal="true" aria-labelledby="hc-help-title" tabindex="-1">
-    <header class="hc-help-head"><div><h2 id="hc-help-title">Manual de uso</h2><p>Ayuda bajo demanda · no interrumpe la operación</p></div><button type="button" class="button icon-button button--ghost" data-help-close aria-label="Cerrar ayuda">${icon('close')}</button></header>
+    <header class="hc-help-head"><div><h2 id="hc-help-title">Manual de uso</h2><p>Ayuda bajo demanda · no interrumpe la operación</p></div><button type="button" class="button icon-button button--ghost" data-action="close-help" data-help-close aria-label="Cerrar ayuda">${icon('close')}</button></header>
     <div class="hc-help-search"><input class="input" type="search" data-help-search placeholder="Buscar: captura, WhatsApp, saldos, usuarios…" aria-label="Buscar en el manual"><label class="switch-row section-gap-small"><input type="checkbox" data-help-contextual ${contextualEnabled() ? 'checked' : ''}><span><b>Ayuda contextual sutil</b><small>Añade descripciones al pasar por controles clave. Nunca abre ventanas por sí sola.</small></span></label></div>
     <div class="hc-help-body"><nav class="hc-help-nav" aria-label="Temas del manual" data-help-nav>${TOPICS.map(topicButton).join('')}</nav><article class="hc-help-content" data-help-content>${topicById(currentTopic).body}</article></div>
   </section>`;
@@ -148,6 +148,7 @@ function mountTrigger() {
   const button = document.createElement('button');
   button.type = 'button';
   button.className = 'hc-help-trigger';
+  button.dataset.action = 'open-help';
   button.dataset.helpTrigger = 'true';
   button.setAttribute('aria-label', 'Abrir manual de uso');
   button.innerHTML = `${icon('help')}<span>Ayuda</span>`;
