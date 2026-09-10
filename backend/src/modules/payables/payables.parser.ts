@@ -77,7 +77,7 @@ export class SafeLocalParser implements PayableDocumentParser {
     const rawDate = capture(text, [/(?:FECHA|DATE)[\s:#-]*(\d{1,2}[\/-]\d{1,2}[\/-]\d{4})/i]);
     const subtotal = decimal(capture(text, [/(?:SUBTOTAL|BASE IMPONIBLE)[\s:$Bs.VESUSD]*([\d.,-]+)/i]));
     const tax = decimal(capture(text, [/(?:IVA|IMPUESTO)[^\d]{0,20}([\d.,-]+)/i]));
-    const total = decimal(capture(text, [/(?:TOTAL(?:\s+A\s+PAGAR)?)[\s:$Bs.VESUSD]*([\d.,-]+)/i]));
+    const total = decimal(capture(text, [/\bTOTAL(?:\s+A\s+PAGAR)?[\s:$Bs.VESUSD]*([\d.,-]+)/i]));
     const po = capture(text, [/(?:PO|ORDEN DE COMPRA|PURCHASE ORDER)[\s:#-]*([A-Z0-9-]{2,40})/i]);
     const receipt = capture(text, [/(?:RECEPCI[ÓO]N|RECEIPT|GRN)[\s:#-]*([A-Z0-9-]{2,40})/i]);
     const currencyRaw = capture(text, [/(?:MONEDA|CURRENCY)[\s:#-]*(VES|USD|EUR)/i])
