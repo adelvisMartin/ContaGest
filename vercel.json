@@ -6,6 +6,7 @@
   "git": {
     "deploymentEnabled": true
   },
+  "ignoreCommand": "exit 1",
   "functions": {
     "api/index.js": { "maxDuration": 30 },
     "api/health.ts": { "maxDuration": 30 },
