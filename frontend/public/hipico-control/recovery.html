@@ -7,8 +7,7 @@
   <title>Recuperación · Control Hípico</title>
   <link rel="icon" type="image/png" sizes="192x192" href="./icons/icon-192.png">
   <link rel="apple-touch-icon" href="./icons/icon-192.png">
-  <link rel="stylesheet" href="./assets/css/styles.css">
-  <link rel="stylesheet" href="./assets/css/ui-system.css">
+  <link rel="stylesheet" href="./assets/css/app.css">
 </head>
 <body>
   <main class="auth-screen">
@@ -19,7 +18,7 @@
         <p>Restablece únicamente el almacenamiento local si Control Hípico no logra iniciar. Tu cuenta y los datos guardados en la nube no se eliminan.</p>
         <div id="status" class="ui-state" aria-live="polite">Lista para recuperar Control Hípico.</div>
         <div class="capture-actions section-gap">
-          <button id="reset" class="button button--primary" type="button">Restablecer almacenamiento y abrir</button>
+          <button id="reset" class="button button--primary" type="button" data-action="reset-local-storage">Restablecer almacenamiento y abrir</button>
           <a class="button button--ghost" href="./index.html?retry=1">Abrir sin restablecer datos</a>
         </div>
         <small class="muted section-gap-small">Control Hípico · Recuperación aislada del producto</small>
