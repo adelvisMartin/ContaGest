@@ -122,7 +122,7 @@ export function senderCode(sender, phone = '') {
   return slug || `chat${Date.now().toString().slice(-6)}`;
 }
 
-export function generateClosureText(companyName = 'CLUB HIPICO TRIPLE CROWN', scope = 'AMERICANAS') {
+export function generateClosureText(companyName = 'CONTROL HÍPICO', scope = 'AMERICANAS') {
   return [
     `🇺🇸🏇🏻 ${scope.toUpperCase()} 🇺🇸🏇🏻`,
     '🔓🇨 🇪 🇷 🇷 🇦 🇩 🇴🔒',
