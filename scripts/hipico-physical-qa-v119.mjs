@@ -40,7 +40,37 @@ function parseEvidenceList(raw){
   return raw.split(',').map((item)=>item.trim()).filter(Boolean);
 }
 function validateEvidencePath(rel){
-  return typeof rel==='string'&&rel.length>0&&!rel.includes('..')&&!path.isAbsolute(rel);
+  if(typeof rel!=='string'||!rel.trim()||rel.includes('\0')||path.isAbsolute(rel))return false;
+  return !rel.split(/[\\/]+/).includes('..');
+}
+function pathInside(base,target){
+  const relative=path.relative(base,target);
+  return relative!==''&&relative!=='..'&&!relative.startsWith(`..${path.sep}`)&&!path.isAbsolute(relative);
+}
+function inspectEvidenceFile(dir,rel,label){
+  if(!validateEvidencePath(rel))return{error:`${label}: evidence path inválido ${rel}`};
+  const base=path.resolve(dir);const full=path.resolve(base,rel);
+  if(!pathInside(base,full)||!fs.existsSync(full))return{error:`${label}: evidence faltante ${rel}`};
+  let stat;
+  try{stat=fs.lstatSync(full);}catch{return{error:`${label}: evidence inaccesible ${rel}`};}
+  if(stat.isSymbolicLink())return{error:`${label}: evidence symlink no permitido ${rel}`};
+  if(!stat.isFile())return{error:`${label}: evidence debe ser archivo regular ${rel}`};
+  let realBase,realFull;
+  try{realBase=fs.realpathSync(base);realFull=fs.realpathSync(full);}catch{return{error:`${label}: evidence no resoluble ${rel}`};}
+  if(!pathInside(realBase,realFull))return{error:`${label}: evidence escapa del artifact ${rel}`};
+  return{file:{path:rel,sha256:sha256File(realFull)}};
+}
+function collectEvidenceFiles(result,dir){
+  const evidenceFiles=[];const errors=[];
+  for(const env of result.environments||[])for(const [id,row] of Object.entries(env.scenarios||{}))for(const rel of row.evidence||[]){
+    const inspected=inspectEvidenceFile(dir,rel,`${env.id}/${id}`);
+    if(inspected.error)errors.push(inspected.error);else evidenceFiles.push({environment:env.id,scenario:id,...inspected.file});
+  }
+  for(const key of invariantKeys)for(const rel of result.invariantEvidence?.[key]||[]){
+    const inspected=inspectEvidenceFile(dir,rel,`invariant/${key}`);
+    if(inspected.error)errors.push(inspected.error);else evidenceFiles.push({invariant:key,...inspected.file});
+  }
+  return{evidenceFiles,errors};
 }
 function validSessionHash(value){return /^[a-f0-9]{64}$/i.test(String(value||''));}
 function validate(result){
@@ -87,11 +117,6 @@ function summary(result){
   return{counts,totalCases:expectedCases,environments:(result.environments||[]).length,modeCoverage,requiredModesCovered,sourceSafe,invariantEvidenceComplete,operatorPresent,sessionTopologySafe,evidenceComplete,passRowsWithEvidence,releasePhysicalGate:complete?'PASS':'NOT_READY'};
 }
 function writeManifest(result,target){const dir=path.dirname(target);fs.mkdirSync(dir,{recursive:true});fs.writeFileSync(target,`${JSON.stringify(result,null,2)}\n`);}
-function verifyEvidenceFile(dir,rel,label){
-  const full=path.resolve(dir,rel);
-  if(!full.startsWith(path.resolve(dir)+path.sep)||!fs.existsSync(full)){console.error(`${label}: evidence faltante ${rel}`);process.exit(1);}
-  return{path:rel,sha256:sha256File(full)};
-}
 
 const sha=gitSha();
 if(command==='init'){
@@ -140,17 +165,21 @@ if(command==='invariant'){
 }
 
 const errors=validate(result);if(errors.length){console.error(errors.join('\n'));process.exit(1);}
-const report=summary(result);
+let report=summary(result);
+const material=collectEvidenceFiles(result,path.dirname(target));
+const materialEvidenceComplete=report.evidenceComplete&&report.invariantEvidenceComplete&&material.errors.length===0;
+report={...report,materialEvidenceComplete,materialEvidenceErrors:material.errors};
+if(report.releasePhysicalGate==='PASS'&&!materialEvidenceComplete)report.releasePhysicalGate='NOT_READY';
 if(command==='status'){console.log(JSON.stringify(report,null,2));process.exit(0);}
 if(command==='check'){
   if(!/^[a-f0-9]{40}$/i.test(sha)){console.error('CANDIDATE_SHA_UNBOUND: check requiere HEAD/GIT_SHA verificable.');process.exit(1);}
   if(String(result.candidateSha).toLowerCase()!==sha){console.error(`CANDIDATE_SHA_MISMATCH: evidence=${result.candidateSha} current=${sha}`);process.exit(1);}
-  const dir=path.dirname(target);const evidenceFiles=[];
-  for(const env of result.environments){for(const [id,row] of Object.entries(env.scenarios)){for(const rel of row.evidence||[]){const verified=verifyEvidenceFile(dir,rel,`${env.id}/${id}`);evidenceFiles.push({environment:env.id,scenario:id,...verified});}}}
-  for(const key of invariantKeys){for(const rel of result.invariantEvidence?.[key]||[]){const verified=verifyEvidenceFile(dir,rel,`invariant/${key}`);evidenceFiles.push({invariant:key,...verified});}}
-  const final={...result,completedAt:result.completedAt||new Date().toISOString(),summary:report,evidenceFiles};
-  const manifest=path.join(dir,'manifest.json');writeManifest(final,manifest);
-  fs.writeFileSync(path.join(dir,'SHA256SUMS.txt'),evidenceFiles.map((item)=>`${item.sha256}  ${item.path}`).join('\n')+(evidenceFiles.length?'\n':''));
+  if(material.errors.length){console.error(material.errors.join('\n'));process.exit(1);}
+  const checkedAt=new Date().toISOString();
+  const completedAt=report.releasePhysicalGate==='PASS'?(result.completedAt||checkedAt):null;
+  const final={...result,checkedAt,completedAt,summary:report,evidenceFiles:material.evidenceFiles};
+  const manifest=path.join(path.dirname(target),'manifest.json');writeManifest(final,manifest);
+  fs.writeFileSync(path.join(path.dirname(target),'SHA256SUMS.txt'),material.evidenceFiles.map((item)=>`${item.sha256}  ${item.path}`).join('\n')+(material.evidenceFiles.length?'\n':''));
   console.log(JSON.stringify(report,null,2));
   if(report.releasePhysicalGate!=='PASS')process.exit(3);
   process.exit(0);
