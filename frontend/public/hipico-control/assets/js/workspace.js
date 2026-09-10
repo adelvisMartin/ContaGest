@@ -7,30 +7,29 @@ const DEFAULT_FOOTER = "*PLANO REFERENCIAL*\n*_La guía es el chat_*\n(se gana y
 const GROUP_DEFAULTS = [
   { id: "group-1", name: "Grupo principal", companyName: "CONTROL HÍPICO", color: "#721522", currency: "Bs.", exchangeRate: 160, footerMessage: DEFAULT_FOOTER }
 ];
+const GROUP_COLORS = ["#721522", "#526f86", "#8d7545", "#35705a"];
 
 function cleanColor(value, fallback) {
   const color = String(value || "").trim();
   return /^#[0-9a-f]{6}$/i.test(color) ? color : fallback;
 }
-function migrateLegacyBrand(value, fallback) {
-  const text = String(value || "").trim();
-  if (!text) return fallback;
-  if (/^(?:club\s+hipico\s+)?triple\s+crown$/i.test(text)) return fallback;
-  return text;
+function cleanLabel(value, fallback) {
+  const text = String(value || "").replace(/\s+/g, " ").trim();
+  return text || fallback;
 }
 function normalizeGroup(group, index, config) {
   const base = GROUP_DEFAULTS[index] || {
     id: `group-${index + 1}`,
     name: `Grupo ${index + 1}`,
     companyName: `GRUPO HÍPICO ${index + 1}`,
-    color: ["#721522", "#526f86", "#8d7545", "#35705a"][index % 4],
+    color: GROUP_COLORS[index % GROUP_COLORS.length],
     currency: "Bs.", exchangeRate: 160, footerMessage: DEFAULT_FOOTER
   };
   const candidateCompany = group?.companyName || group?.clubName || (index === 0 ? config.clubName : base.companyName);
   return {
     id: String(group?.id || base.id),
-    name: migrateLegacyBrand(group?.name, base.name),
-    companyName: migrateLegacyBrand(candidateCompany, base.companyName),
+    name: cleanLabel(group?.name, base.name),
+    companyName: cleanLabel(candidateCompany, base.companyName),
     color: cleanColor(group?.color, base.color),
     currency: ["Bs.", "USD"].includes(group?.currency) ? group.currency : (index === 0 && ["Bs.", "USD"].includes(config.currency) ? config.currency : base.currency),
     exchangeRate: Number(group?.exchangeRate || (index === 0 ? config.exchangeRate : base.exchangeRate) || 160),
@@ -74,7 +73,7 @@ export function normalizeWorkspaceShape(value) {
   const workspace = structuredClone(value || createBlankWorkspace());
   workspace.schemaVersion = 10;
   workspace.config ||= {};
-  workspace.config.clubName = migrateLegacyBrand(workspace.config.clubName, "CONTROL HÍPICO");
+  workspace.config.clubName = cleanLabel(workspace.config.clubName, "CONTROL HÍPICO");
   workspace.config.currency ||= "Bs.";
   workspace.config.commission = Number(workspace.config.commission ?? 0.05);
   workspace.config.exchangeRate = Number(workspace.config.exchangeRate || 160);
