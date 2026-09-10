@@ -31,11 +31,16 @@ test('Hipico migration contains no ERP Fitness tables',()=>{
   assert.doesNotMatch(sql,/Fitness/i);
 });
 
-test('bot retains monetary review gates and atomic provider dedupe',()=>{
+test('bot retains canonical monetary review gates and atomic provider dedupe',()=>{
   const service=read('backend/src/modules/hipico-bot/hipico-bot.service.ts');
-  assert.match(service,/MONETARY_REVIEW_GATE/);
+  const classifier=read('backend/src/modules/hipico-bot/hipico-operational-classifier.ts');
+  assert.match(service,/classify as classifyOperational/);
+  assert.match(service,/classifyIncoming\(message\)/);
+  assert.match(classifier,/MONETARY_REVIEW_GATE/);
+  assert.match(classifier,/autoEligible:false/);
   assert.match(service,/ON CONFLICT \("providerMessageId"\) DO NOTHING RETURNING/);
   assert.match(service,/mode==='automatic'&&persistent&&outboxStatus==='ready_auto'/);
+  assert.match(service,/SAFE_AUTOMATIC\.has\(result\.intent\)/);
   assert.match(service,/AbortSignal\.timeout\(10_000\)/);
 });
 
@@ -49,11 +54,15 @@ test('webhook raw body is captured before browser CSRF while operator route has 
   assert.match(app,/authRateLimit, hipicoOperatorRoutes/);
 });
 
-test('android wrapper synchronizes only the Hipico web product',()=>{
+test('android wrapper synchronizes only the canonical Hipico web product',()=>{
   const sync=read('android/hipico-control-v1130/scripts/sync-web.mjs');
+  const pkg=read('android/hipico-control-v1130/package.json');
   assert.match(sync,/frontend\/public\/hipico-control/);
-  assert.match(sync,/restore-hipico-runtime\.mjs/);
+  assert.match(sync,/assets\/css\/ui-system\.css/);
+  assert.match(sync,/assets\/js\/user-access\.js/);
+  assert.match(sync,/assets\/js\/password-recovery\.js/);
   assert.doesNotMatch(sync,/frontend\/src/);
+  assert.match(pkg,/npm run android:branding/);
 });
 
 test('legacy Control Hipico URL redirects to its independent PWA',()=>{
