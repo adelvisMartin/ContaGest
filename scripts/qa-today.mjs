@@ -26,7 +26,12 @@ function run(label,file,fileArgs,options={}){
   if(options.echo!==false){console.log(`\n[${label}] exit=${record.exitCode}`);if(record.stdout)console.log(record.stdout);if(record.stderr)console.error(record.stderr);}
   return record;
 }
-function exists(rel){return fs.existsSync(path.join(root,rel));}
+function abs(rel){return path.join(root,rel);}
+function exists(rel){return fs.existsSync(abs(rel));}
+function writeJsonIfMissing(rel,value){
+  const file=abs(rel);if(fs.existsSync(file))return;
+  fs.mkdirSync(path.dirname(file),{recursive:true});fs.writeFileSync(file,`${JSON.stringify(value,null,2)}\n`,{flag:'wx'});
+}
 function prepareErp(){
   if(!exists(`artifacts/qa/erp-v155/${sha}/evidence.json`))run('ERP #155 init','scripts/erp-e2e-evidence-v155.mjs',['init',`--sha=${sha}`]);
   if(!exists(`artifacts/qa/erp-performance-v157/${sha}/measurements.json`))run('ERP #157 init','scripts/erp-performance-gate-v157.mjs',['init',`--sha=${sha}`]);
@@ -34,6 +39,9 @@ function prepareErp(){
 }
 function prepareHipico(){
   if(!exists(`artifacts/qa/hipico-v119/${sha}/physical-qa.json`))run('Hípico #119 init','scripts/hipico-physical-qa-v119.mjs',['init']);
+  const inputDir=`artifacts/qa/hipico-v120-inputs/${sha}`;
+  writeJsonIfMissing(`${inputDir}/safety-evidence.json`,{candidateSha:sha,invariants:{sourceReadOnly:{status:'NOT_EXECUTED',at:null,evidence:[]},labOnlyWriteDestination:{status:'NOT_EXECUTED',at:null,evidence:[]},sessionFallbackSafe:{status:'NOT_EXECUTED',at:null,evidence:[]}}});
+  writeJsonIfMissing(`${inputDir}/drill-evidence.json`,{candidateSha:sha,drills:{'bridge-restart':{status:'NOT_EXECUTED',at:null,evidence:[]},'backend-restart':{status:'NOT_EXECUTED',at:null,evidence:[]},'lab-reconnect':{status:'NOT_EXECUTED',at:null,evidence:[]},'source-session-reconnect-readonly':{status:'NOT_EXECUTED',at:null,evidence:[]}}});
 }
 function statusErp(){
   if(exists(`artifacts/qa/erp-v155/${sha}/evidence.json`))run('ERP #155 status','scripts/erp-e2e-evidence-v155.mjs',['status',`--sha=${sha}`]);
@@ -43,16 +51,27 @@ function statusErp(){
   if(exists(`artifacts/qa/erp-mobile-v182/${sha}/evidence.json`))run('ERP #182 status','scripts/erp-mobile-production-gate-v182.mjs',['status',`--sha=${sha}`]);
   else records.push({label:'ERP #182 status',exitCode:3,truthState:'NOT_EXECUTED'});
 }
+function soakAttempts(){
+  const candidate=`artifacts/qa/hipico-v120/${sha}`;const base=abs(candidate);const attempts=[];
+  const legacy=path.join(base,'summary.json');if(fs.existsSync(legacy))attempts.push({file:`${candidate}/summary.json`,legacy:true});
+  if(fs.existsSync(base))for(const entry of fs.readdirSync(base,{withFileTypes:true})){
+    if(!entry.isDirectory())continue;const summary=path.join(base,entry.name,'summary.json');
+    if(fs.existsSync(summary))attempts.push({file:`${candidate}/${entry.name}/summary.json`,legacy:false});
+  }
+  return attempts.map((item)=>{
+    try{const body=JSON.parse(fs.readFileSync(abs(item.file),'utf8'));const completedAt=Date.parse(body?.completedAt||'')||fs.statSync(abs(item.file)).mtimeMs;return{...item,attemptId:body?.attemptId||path.basename(path.dirname(item.file)),status:body?.evaluation?.status||'NOT_EXECUTED',completedAt};}
+    catch{return{...item,attemptId:path.basename(path.dirname(item.file)),status:'INVALID_EVIDENCE',completedAt:fs.statSync(abs(item.file)).mtimeMs};}
+  }).sort((a,b)=>b.completedAt-a.completedAt);
+}
 function statusHipico(){
   if(exists(`artifacts/qa/hipico-v119/${sha}/physical-qa.json`))run('Hípico #119 status','scripts/hipico-physical-qa-v119.mjs',['status']);
   else records.push({label:'Hípico #119 status',exitCode:3,truthState:'NOT_EXECUTED'});
-  const soak=`artifacts/qa/hipico-v120/${sha}/summary.json`;
-  if(exists(soak)){
-    const body=JSON.parse(fs.readFileSync(path.join(root,soak),'utf8'));
-    records.push({label:'Hípico #120 soak',exitCode:body?.evaluation?.status==='PASS'?0:3,truthState:body?.evaluation?.status||'NOT_EXECUTED',summaryFile:soak});
-  }else records.push({label:'Hípico #120 soak',exitCode:3,truthState:'NOT_EXECUTED'});
+  const attempts=soakAttempts();
+  if(attempts.length){const latest=attempts[0];records.push({label:'Hípico #120 soak',exitCode:latest.status==='PASS'?0:3,truthState:latest.status,summaryFile:latest.file,attemptId:latest.attemptId,attempts:attempts.length,releasePassAttempts:attempts.filter((item)=>item.status==='PASS').length});}
+  else records.push({label:'Hípico #120 soak',exitCode:3,truthState:'NOT_EXECUTED',attempts:0});
 }
 function instructions(){
+  const inputDir=`artifacts/qa/hipico-v120-inputs/${sha}`;
   const lines=[
     `candidateSha=${sha}`,
     '',
@@ -64,14 +83,18 @@ function instructions(){
     '',
     'CONTROL HÍPICO QA HOY',
     `1) npm run qa:today:prepare -- --scope=hipico --sha=${sha}`,
-    '2) npm run qa:hipico',
-    '3) npm run qa:hipico:visual',
-    '4) Completa artifacts/qa/hipico-v119/<SHA>/physical-qa.json durante las pruebas físicas SOURCE(read-only)/LAB(write-only).',
-    '5) node scripts/hipico-physical-qa-v119.mjs check',
-    `6) Soak mínimo 24h: GIT_SHA=${sha} npm --workspace backend run soak:hipico -- --sha=${sha} --source-read-only=PASS --lab-only-write=PASS`,
+    '2) npm run test:hipico && npm run qa:hipico && npm run qa:hipico:visual',
+    `3) Completa artifacts/qa/hipico-v119/${sha}/physical-qa.json con operador, device×mode, SOURCE(read-only), LAB(write-only), sesiones separadas y archivos reales de evidencia.`,
+    '4) node scripts/hipico-physical-qa-v119.mjs check',
+    `5) Durante #120 actualiza ${inputDir}/drill-evidence.json con los cuatro restart/reconnect reales y sus archivos de evidencia.`,
+    `6) En los últimos 15 minutos actualiza ${inputDir}/safety-evidence.json con la verificación final de SOURCE read-only, LAB-only y session fallback safe.`,
+    `7) Soak mínimo 24h: GIT_SHA=${sha} npm --workspace backend run soak:hipico -- --sha=${sha} --duration-minutes=1440 --operator-id=<qa-user> --health-url=<bridge-health-url> --spool-path=<spool-v2-dir> --physical-evidence=artifacts/qa/hipico-v119/${sha}/manifest.json --safety-evidence=${inputDir}/safety-evidence.json --drill-evidence=${inputDir}/drill-evidence.json`,
+    `8) npm run qa:today:status -- --scope=hipico --sha=${sha}`,
     '',
     'SEGURIDAD',
     '- SOURCE no se usa como destino de escritura durante #119/#120.',
+    '- Los PASS requieren evidencia material; flags declarativos no promueven release.',
+    '- Cada soak crea un attempt inmutable; no mezcla muestras de ejecuciones anteriores.',
     '- #154 permanece NO_GO para automatización productiva de apuestas con dinero real.',
     '- Un NOT_EXECUTED/BLOCKED nunca se reporta como PASS.'
   ];

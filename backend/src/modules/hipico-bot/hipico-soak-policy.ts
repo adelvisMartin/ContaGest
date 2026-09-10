@@ -32,9 +32,12 @@ export type SoakSummaryInput={
   spoolChecks:number;
   spoolAvailableChecks:number;
   operatorPresent:boolean;
+  physicalEvidenceComplete:boolean;
   sourceReadOnly:EvidenceStatus;
   labOnlyWriteDestination:EvidenceStatus;
   sessionFallbackSafe:EvidenceStatus;
+  invariantEvidenceComplete:boolean;
+  drillMaterialEvidenceComplete:boolean;
   drills:Record<string,SoakDrillEvidence>;
 };
 export type SoakEvaluation={
@@ -54,8 +57,11 @@ export type SoakPolicy={
   minimumHealthCoverageRatio:number;
   minimumSpoolCoverageRatio:number;
   drillEvidenceRequired:boolean;
+  drillMaterialEvidenceRequiredForRelease:boolean;
+  physicalEvidenceRequiredForRelease:boolean;
   healthEndpointRequiredForRelease:boolean;
   spoolPathRequiredForRelease:boolean;
+  invariantEvidenceRequiredForRelease:boolean;
   thresholds:SoakThresholds;
 };
 
@@ -71,9 +77,12 @@ export function evaluateSoak(input:SoakSummaryInput,policy:SoakPolicy):SoakEvalu
 
   if(!/^[a-f0-9]{40}$/i.test(input.candidateSha))blocked.push('CANDIDATE_SHA_UNBOUND');
   if(!input.operatorPresent)blocked.push('OPERATOR_NOT_IDENTIFIED');
+  if(policy.physicalEvidenceRequiredForRelease&&!input.physicalEvidenceComplete)blocked.push('PHYSICAL_QA_119_EVIDENCE_INCOMPLETE');
   if(input.sourceReadOnly!=='PASS')blocked.push(`SOURCE_READ_ONLY_${input.sourceReadOnly}`);
   if(input.labOnlyWriteDestination!=='PASS')blocked.push(`LAB_ONLY_WRITE_${input.labOnlyWriteDestination}`);
   if(input.sessionFallbackSafe!=='PASS')blocked.push(`SESSION_FALLBACK_SAFE_${input.sessionFallbackSafe}`);
+  if(policy.invariantEvidenceRequiredForRelease&&!input.invariantEvidenceComplete)blocked.push('SAFETY_INVARIANT_EVIDENCE_INCOMPLETE');
+  if(policy.drillMaterialEvidenceRequiredForRelease&&!input.drillMaterialEvidenceComplete)blocked.push('DRILL_MATERIAL_EVIDENCE_INCOMPLETE');
   if(policy.healthEndpointRequiredForRelease&&!input.healthConfigured)blocked.push('HEALTH_ENDPOINT_NOT_CONFIGURED');
   if(policy.spoolPathRequiredForRelease&&!input.spoolConfigured)blocked.push('SPOOL_PATH_NOT_CONFIGURED');
   if(input.healthConfigured&&healthCoverageRatio<policy.minimumHealthCoverageRatio)blocked.push('HEALTH_COVERAGE_INCOMPLETE');
