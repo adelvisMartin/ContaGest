@@ -45,6 +45,8 @@ test('serverless persistence readiness requires HTTPS/loopback URL, strong servi
   assert.equal(hipicoPersistenceConfig(persistenceEnv({HIPICO_SUPABASE_URL:'http://project.supabase.co'})).ready,false);
   assert.equal(hipicoPersistenceConfig(persistenceEnv({HIPICO_SUPABASE_URL:'http://127.0.0.1:54321'})).urlValid,true);
   assert.equal(hipicoPersistenceConfig(persistenceEnv({HIPICO_SUPABASE_URL:'https://user:pass@project.supabase.co'})).urlValid,false);
+  assert.equal(hipicoPersistenceConfig(persistenceEnv({HIPICO_SUPABASE_URL:'https://project.supabase.co?apikey=leak'})).urlValid,false);
+  assert.equal(hipicoPersistenceConfig(persistenceEnv({HIPICO_SUPABASE_URL:'https://project.supabase.co#fragment'})).urlValid,false);
   assert.equal(hipicoPersistenceConfig(persistenceEnv({HIPICO_SUPABASE_SERVICE_ROLE_KEY:'CHANGE_ME_'+'x'.repeat(40)})).serviceRoleStrong,false);
   assert.equal(hipicoPersistenceConfig(persistenceEnv({HIPICO_OWNER_ID:'owner-not-uuid'})).ownerIdValid,false);
 });
@@ -54,6 +56,9 @@ test('Supabase helper rejects malformed persistence configuration before any net
     await assert.rejects(()=>supabase('hipico_messages?limit=1'),/Weak server configuration: HIPICO_SUPABASE_SERVICE_ROLE_KEY/);
   });
   await withProcessEnv(persistenceEnv({HIPICO_SUPABASE_URL:'ftp://project.supabase.co'}),async()=>{
+    await assert.rejects(()=>supabase('hipico_messages?limit=1'),/Invalid server configuration: HIPICO_SUPABASE_URL/);
+  });
+  await withProcessEnv(persistenceEnv({HIPICO_SUPABASE_URL:'https://project.supabase.co?apikey=leak'}),async()=>{
     await assert.rejects(()=>supabase('hipico_messages?limit=1'),/Invalid server configuration: HIPICO_SUPABASE_URL/);
   });
   await withProcessEnv(persistenceEnv({HIPICO_OWNER_ID:'not-a-uuid'}),async()=>{
