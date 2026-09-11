@@ -18,12 +18,8 @@ function assertEphemeralAdminUrl(value) {
   if (!value) fail('HIPICO_E2E_ADMIN_URL is required.');
   const url = new URL(value);
   const host = url.hostname.toLowerCase();
-  if (!['127.0.0.1', 'localhost', '::1'].includes(host)) {
-    fail(`Refusing non-local PostgreSQL host: ${host}`);
-  }
-  if (!['/postgres', '/template1'].includes(url.pathname)) {
-    fail('Admin URL must point to postgres or template1, never an application database.');
-  }
+  if (!['127.0.0.1', 'localhost', '::1'].includes(host)) fail(`Refusing non-local PostgreSQL host: ${host}`);
+  if (!['/postgres', '/template1'].includes(url.pathname)) fail('Admin URL must point to postgres or template1, never an application database.');
   return url;
 }
 
@@ -38,8 +34,12 @@ function quoteIdentifier(value) {
 
 async function writeGithubEnv(name, value) {
   const file = process.env.GITHUB_ENV;
-  if (!file) return;
-  await fs.appendFile(file, `${name}=${value}\n`, 'utf8');
+  if (file) await fs.appendFile(file, `${name}=${value}\n`, 'utf8');
+}
+
+async function writeState(state) {
+  await fs.mkdir(path.dirname(stateFile), { recursive: true });
+  await fs.writeFile(stateFile, `${JSON.stringify(state, null, 2)}\n`, 'utf8');
 }
 
 async function createDatabase() {
@@ -48,6 +48,17 @@ async function createDatabase() {
   const attempt = safeRunToken(process.env.GITHUB_RUN_ATTEMPT || '1');
   const random = crypto.randomBytes(4).toString('hex');
   const databaseName = `hipico_e2e_${run}_${attempt}_${random}`.slice(0, 63);
+  quoteIdentifier(databaseName);
+  const state = {
+    databaseName,
+    host: parsed.hostname,
+    port: parsed.port || '5432',
+    status: 'planned',
+    createdAt: null,
+    runId: process.env.GITHUB_RUN_ID || process.env.HIPICO_E2E_RUN_ID || 'local'
+  };
+  await writeState(state);
+
   const client = new Client({ connectionString: adminUrl });
   await client.connect();
   try {
@@ -55,17 +66,12 @@ async function createDatabase() {
   } finally {
     await client.end();
   }
+  state.status = 'created';
+  state.createdAt = new Date().toISOString();
+  await writeState(state);
 
   const databaseUrl = new URL(parsed.toString());
   databaseUrl.pathname = `/${databaseName}`;
-  await fs.mkdir(path.dirname(stateFile), { recursive: true });
-  await fs.writeFile(stateFile, JSON.stringify({
-    databaseName,
-    host: parsed.hostname,
-    port: parsed.port || '5432',
-    createdAt: new Date().toISOString(),
-    runId: process.env.GITHUB_RUN_ID || process.env.HIPICO_E2E_RUN_ID || 'local'
-  }, null, 2));
   await writeGithubEnv('HIPICO_E2E_DATABASE_NAME', databaseName);
   await writeGithubEnv('HIPICO_E2E_DATABASE_URL', databaseUrl.toString());
   await writeGithubEnv('DATABASE_URL', databaseUrl.toString());
@@ -81,7 +87,8 @@ async function dropDatabase() {
       const saved = JSON.parse(await fs.readFile(stateFile, 'utf8'));
       databaseName = String(saved.databaseName || '').trim();
     } catch {
-      fail('HIPICO_E2E_DATABASE_NAME/state file missing; refusing blind cleanup.');
+      console.log('[hipico-v290] no ephemeral database state exists; nothing to clean');
+      return;
     }
   }
   quoteIdentifier(databaseName);
@@ -93,6 +100,10 @@ async function dropDatabase() {
   } finally {
     await client.end();
   }
+  try {
+    const saved = JSON.parse(await fs.readFile(stateFile, 'utf8'));
+    await writeState({ ...saved, status: 'dropped', droppedAt: new Date().toISOString() });
+  } catch {}
   console.log(`[hipico-v290] dropped isolated database ${databaseName} from ${parsed.hostname}`);
 }
 
