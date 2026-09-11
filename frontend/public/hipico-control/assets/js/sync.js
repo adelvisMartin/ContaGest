@@ -20,16 +20,23 @@ function recordTime(value) {
     const time = Date.parse(value?.updatedAt || value?.createdAt || value?.closedAt || value?.date || 0);
     return Number.isFinite(time) ? time : 0;
 }
+function scopedRecordKey(row) {
+    const id = String(row?.id || "").trim();
+    if (!id) return "";
+    const groupId = String(row?.groupId || "").trim();
+    return groupId ? `${groupId}\u0000${id}` : id;
+}
 function mergeById(localRows = [], remoteRows = [], nestedMerge = null) {
     const result = new Map();
     for (const row of [...remoteRows, ...localRows]) {
-        if (!row?.id) continue;
-        const existing = result.get(row.id);
-        if (!existing) { result.set(row.id, structuredClone(row)); continue; }
+        const key = scopedRecordKey(row);
+        if (!key) continue;
+        const existing = result.get(key);
+        if (!existing) { result.set(key, structuredClone(row)); continue; }
         const preferred = recordTime(row) >= recordTime(existing) ? row : existing;
         const secondary = preferred === row ? existing : row;
         const merged = { ...structuredClone(secondary), ...structuredClone(preferred) };
-        result.set(row.id, nestedMerge ? nestedMerge(merged, existing, row) : merged);
+        result.set(key, nestedMerge ? nestedMerge(merged, existing, row) : merged);
     }
     return [...result.values()];
 }
@@ -115,3 +122,5 @@ export function shouldMergeCloud(localWorkspace, cloudRow) {
     const remoteVersion = Number(cloudRow.version || cloudRow.state.version || 0);
     return remoteVersion > lastSyncedVersion;
 }
+
+export const __test__ = { scopedRecordKey };
