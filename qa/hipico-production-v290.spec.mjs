@@ -38,6 +38,16 @@ async function seedWorkspace(page) {
 }
 
 async function openDashboard(page) {
+  await page.addInitScript(() => {
+    globalThis.__hipicoLongTasks = [];
+    if (globalThis.PerformanceObserver?.supportedEntryTypes?.includes('longtask')) {
+      const observer = new PerformanceObserver((list) => {
+        for (const entry of list.getEntries()) globalThis.__hipicoLongTasks.push({ startTime: entry.startTime, duration: entry.duration });
+      });
+      observer.observe({ type: 'longtask', buffered: true });
+      globalThis.__hipicoLongTaskObserver = observer;
+    }
+  });
   await seedWorkspace(page);
   const errors = [];
   page.on('pageerror', (error) => errors.push(error.message));
@@ -83,8 +93,52 @@ async function contrastFailures(page) {
   });
 }
 
+async function indexedDbProfile(page, volume) {
+  return page.evaluate(async (count) => {
+    const databaseName = `hipico-perf-v290-${count}-${crypto.randomUUID()}`;
+    const request = indexedDB.open(databaseName, 1);
+    const db = await new Promise((resolve, reject) => {
+      request.onupgradeneeded = () => request.result.createObjectStore('items', { keyPath: 'id' });
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+    const transactionDone = (transaction) => new Promise((resolve, reject) => {
+      transaction.oncomplete = () => resolve();
+      transaction.onerror = () => reject(transaction.error);
+      transaction.onabort = () => reject(transaction.error || new Error('IDB_ABORT'));
+    });
+    const startWrite = performance.now();
+    const write = db.transaction('items', 'readwrite');
+    const store = write.objectStore('items');
+    for (let index = 1; index <= count; index += 1) store.put({ id: index, text: `event-${index}-${'x'.repeat(128)}`, amount: index * 10 });
+    await transactionDone(write);
+    const writeMs = performance.now() - startWrite;
+
+    const startRead = performance.now();
+    const read = db.transaction('items', 'readonly');
+    const reader = read.objectStore('items');
+    const requests = [];
+    for (let index = Math.max(1, count - 49); index <= count; index += 1) {
+      requests.push(new Promise((resolve, reject) => {
+        const item = reader.get(index);
+        item.onsuccess = () => resolve(item.result);
+        item.onerror = () => reject(item.error);
+      }));
+    }
+    const recent = await Promise.all(requests);
+    await transactionDone(read);
+    const read50Ms = performance.now() - startRead;
+    db.close();
+    await new Promise((resolve) => {
+      const deletion = indexedDB.deleteDatabase(databaseName);
+      deletion.onsuccess = deletion.onerror = deletion.onblocked = () => resolve();
+    });
+    return { volume: count, writeMs, read50Ms, recordsRead: recent.filter(Boolean).length };
+  }, volume);
+}
+
 for (const width of [360, 390, 430]) {
-  test(`mobile ${width}px: responsive focus and contrast release gate`, async ({ page }) => {
+  test(`mobile ${width}px: responsive focus target-size and contrast release gate`, async ({ page }) => {
     await page.setViewportSize({ width, height: 844 });
     const errors = await openDashboard(page);
     expect(errors).toEqual([]);
@@ -99,6 +153,38 @@ for (const width of [360, 390, 430]) {
     await page.screenshot({ path: join(ARTIFACT_ROOT, `dashboard-${width}-${test.info().project.name}.png`), fullPage: true });
   });
 }
+
+test('landscape and reduced visual viewport remain scrollable without global clipping', async ({ page }) => {
+  for (const viewport of [{ width: 844, height: 390, label: 'landscape' }, { width: 390, height: 500, label: 'keyboard-like' }]) {
+    await page.setViewportSize({ width: viewport.width, height: viewport.height });
+    const errors = await openDashboard(page);
+    expect(errors).toEqual([]);
+    const geometry = await page.evaluate(() => ({
+      horizontalOverflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+      scrollHeight: document.documentElement.scrollHeight,
+      clientHeight: document.documentElement.clientHeight,
+      overflowY: getComputedStyle(document.documentElement).overflowY
+    }));
+    expect(geometry.horizontalOverflow, `${viewport.label}: horizontal overflow`).toBeLessThanOrEqual(1);
+    expect(geometry.scrollHeight, `${viewport.label}: page should remain vertically navigable`).toBeGreaterThan(geometry.clientHeight);
+    expect(geometry.overflowY).not.toBe('hidden');
+  }
+});
+
+test('keyboard opens and closes a real dialog and restores focus', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await openDashboard(page);
+  const trigger = page.getByRole('button', { name: /Nueva carrera/i }).first();
+  await trigger.focus();
+  await expect(trigger).toBeFocused();
+  await page.keyboard.press('Enter');
+  const dialog = page.getByRole('dialog');
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByRole('heading', { name: /Nueva carrera/i })).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(dialog).toBeHidden();
+  await expect(trigger).toBeFocused();
+});
 
 test('prefers-reduced-motion removes operational animation/transition duration', async ({ page }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' });
@@ -138,16 +224,57 @@ test('runtime metadata mismatch is explicit and fail-visible instead of silent',
   expect(await page.locator('html').getAttribute('data-hipico-version-mismatch')).toBe('true');
 });
 
-test('PWA boot performance is measured and written as SHA-bound evidence', async ({ page }) => {
+test('browser performance records boot interaction render long tasks memory and IndexedDB 100 500 2000', async ({ page }) => {
   const errors = await openDashboard(page);
   expect(errors).toEqual([]);
+
+  await page.evaluate(() => { globalThis.__hipicoInteractionStartedAt = performance.now(); });
+  await page.locator('button[data-view="race"]').first().click();
+  await expect(page.locator('#app')).toContainText(/Carrera/i);
+  const interactionRenderMs = await page.evaluate(() => new Promise((resolve) => {
+    requestAnimationFrame(() => requestAnimationFrame(() => resolve(performance.now() - globalThis.__hipicoInteractionStartedAt)));
+  }));
+
+  const indexedDb = [];
+  for (const volume of [100, 500, 2000]) indexedDb.push(await indexedDbProfile(page, volume));
+
   const metrics = await page.evaluate(() => {
     const nav = performance.getEntriesByType('navigation')[0];
     const paint = performance.getEntriesByType('paint').map((entry) => ({ name: entry.name, startTime: entry.startTime }));
-    return { url: location.pathname, navigation: nav ? { domContentLoadedMs: nav.domContentLoadedEventEnd, loadMs: nav.loadEventEnd, transferSize: nav.transferSize, encodedBodySize: nav.encodedBodySize, decodedBodySize: nav.decodedBodySize } : null, paint, measuredAt: new Date().toISOString() };
+    const longTasks = Array.isArray(globalThis.__hipicoLongTasks) ? globalThis.__hipicoLongTasks : [];
+    const memory = performance.memory ? {
+      usedJSHeapSize: performance.memory.usedJSHeapSize,
+      totalJSHeapSize: performance.memory.totalJSHeapSize,
+      jsHeapSizeLimit: performance.memory.jsHeapSizeLimit
+    } : null;
+    return {
+      url: location.pathname,
+      navigation: nav ? {
+        domContentLoadedMs: nav.domContentLoadedEventEnd,
+        loadMs: nav.loadEventEnd,
+        transferSize: nav.transferSize,
+        encodedBodySize: nav.encodedBodySize,
+        decodedBodySize: nav.decodedBodySize
+      } : null,
+      paint,
+      longTasks: { supported: Boolean(globalThis.PerformanceObserver?.supportedEntryTypes?.includes('longtask')), count: longTasks.length, totalDurationMs: longTasks.reduce((sum, item) => sum + item.duration, 0), entries: longTasks.slice(0, 100) },
+      memory,
+      domNodes: document.getElementsByTagName('*').length,
+      measuredAt: new Date().toISOString()
+    };
   });
   expect(metrics.navigation).not.toBeNull();
   expect(metrics.navigation.domContentLoadedMs).toBeGreaterThan(0);
+  expect(Number(interactionRenderMs)).toBeGreaterThanOrEqual(0);
+  expect(indexedDb.map((item) => item.recordsRead)).toEqual([50, 50, 50]);
   mkdirSync(ARTIFACT_ROOT, { recursive: true });
-  writeFileSync(join(ARTIFACT_ROOT, `browser-performance-${test.info().project.name}.json`), `${JSON.stringify({ sha: SHA, project: test.info().project.name, ...metrics }, null, 2)}\n`, 'utf8');
+  writeFileSync(join(ARTIFACT_ROOT, `browser-performance-${test.info().project.name}.json`), `${JSON.stringify({
+    schema: 'hipico-browser-performance.v290',
+    sha: SHA,
+    project: test.info().project.name,
+    hostContext: 'CI browser measurement; physical i5 6th gen / 16 GB target remains separate hardware evidence when available.',
+    interactionRenderMs: Number(Number(interactionRenderMs).toFixed(3)),
+    indexedDb: indexedDb.map((item) => ({ ...item, writeMs: Number(item.writeMs.toFixed(3)), read50Ms: Number(item.read50Ms.toFixed(3)) })),
+    ...metrics
+  }, null, 2)}\n`, 'utf8');
 });
