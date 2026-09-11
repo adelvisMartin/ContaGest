@@ -11,6 +11,10 @@ const runtimeSource=await readFile(new URL('../frontend/api/hipico/meta-runtime.
 const strong='s'.repeat(40);
 const runtimeEnv={HIPICO_META_VERIFY_TOKEN:'v'.repeat(40),HIPICO_META_APP_SECRET:'a'.repeat(40),HIPICO_META_PHONE_NUMBER_ID:'1234567890'};
 
+function statusEnvelope(phoneNumberId='1234567890'){
+  return{entry:[{changes:[{value:{metadata:{phone_number_id:phoneNumberId},statuses:[{id:'wamid-status-1',status:'delivered'}]}}]}]};
+}
+
 test('Meta webhook replay signature binds sender instant type body and quoted context',()=>{
   const base={senderId:'584121234567',timestamp:'2026-09-11T06:00:00.000Z',type:'text',text:'30k',quotedExternalMessageId:'origin-1'};
   const sameInstant={...base,timestamp:'2026-09-11T01:00:00-05:00'};
@@ -32,12 +36,14 @@ test('Meta serverless runtime requires strong non-placeholder secrets and a nume
   assert.match(runtimeSource,/PUBLIC_PLACEHOLDER_PATTERN/);
 });
 
-test('Meta webhook verifies the raw signature before parsing or persisting content',()=>{
+test('Meta webhook verifies raw signature and signed envelope identity before extraction or persistence',()=>{
   const configCheck=source.indexOf('metaWebhookConfig()');
   const signatureCheck=source.indexOf('verifyMetaSignature(raw');
   const jsonParse=source.indexOf("JSON.parse(raw.toString('utf8'))");
+  const envelopeIdentity=source.indexOf('rawMetaEnvelopeIdentityError(payload,runtime.phoneNumberId)');
+  const extraction=source.indexOf('extractMetaMessages(payload)');
   const persistence=source.indexOf("await supabase('hipico_messages");
-  assert.ok(configCheck>=0&&signatureCheck>configCheck&&jsonParse>signatureCheck&&persistence>jsonParse);
+  assert.ok(configCheck>=0&&signatureCheck>configCheck&&jsonParse>signatureCheck&&envelopeIdentity>jsonParse&&extraction>envelopeIdentity&&persistence>extraction);
   assert.match(source,/bodyParser:\s*false/);
 });
 
@@ -89,10 +95,14 @@ test('Meta webhook rejects incomplete or foreign phone identity before persisten
   assert.match(source,/status\(200\).*webhook_phone_number_mismatch/s);
 });
 
-test('signed status-only callbacks are acknowledged without persistence after runtime and signature checks',()=>{
+test('signed status-only callbacks are bound to raw Meta phone identity before persistence bypass',()=>{
+  assert.equal(__test__.rawMetaEnvelopeIdentityError(statusEnvelope(),'1234567890'),null);
+  assert.equal(__test__.rawMetaEnvelopeIdentityError(statusEnvelope('9999999999'),'1234567890'),'META_PHONE_NUMBER_MISMATCH');
+  assert.equal(__test__.rawMetaEnvelopeIdentityError({entry:[{changes:[{value:{statuses:[{id:'s1'}]}}]}]},'1234567890'),'META_PHONE_NUMBER_MISMATCH');
+  const envelope=source.indexOf('rawMetaEnvelopeIdentityError(payload,runtime.phoneNumberId)');
   const empty=source.indexOf('if(messages.length===0)');
   const owner=source.indexOf("const ownerId = String(process.env.HIPICO_OWNER_ID");
-  assert.ok(empty>=0&&owner>empty);
+  assert.ok(envelope>=0&&empty>envelope&&owner>empty);
 });
 
 test('oversized and malformed requests are rejected without being treated as retryable server faults',()=>{
@@ -109,6 +119,14 @@ test('duplicate Meta message id is compared with first persisted source instead 
   assert.match(source,/status\(200\).*replay_mismatch/s);
   assert.match(source,/acknowledged:true,accepted:false,retryable:false/);
   assert.match(source,/resolution=ignore-duplicates,return=representation/);
+});
+
+test('serverless adapter capture remains evidence-only and non-authoritative',()=>{
+  const capture=__test__.adapterCaptureDecision('Juega 1N al 3 con 30k');
+  assert.equal(capture.domainAuthority,'backend_canonical_only');
+  assert.equal(capture.adapterHintAuthoritative,false);
+  assert.match(source,/adapter_hint_authoritative:\s*false/);
+  assert.match(source,/domainAuthority:'backend_canonical_only'/);
 });
 
 test('webhook logs only normalized error message and never raw signed payload',()=>{
