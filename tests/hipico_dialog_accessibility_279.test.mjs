@@ -37,6 +37,15 @@ test('dialog guard makes the background inert, labels it and restores prior shel
   assert.match(guard, /hipico-dialog-title-/);
 });
 
+test('calendar receives an accessible title and named previous/next controls',()=>{
+  assert.match(guard,/header strong/);
+  assert.match(guard,/data-action=\"calendar-prev\"/);
+  assert.match(guard,/data-action=\"calendar-next\"/);
+  assert.match(guard,/Mes anterior/);
+  assert.match(guard,/Mes siguiente/);
+  assert.match(guard,/labelCalendarControls\(dialog\)/);
+});
+
 test('dialog accessibility is loaded before overlay-producing modules and available offline', () => {
   const guardIndex = index.indexOf('dialog-accessibility.js');
   const appIndex = index.indexOf('assets/js/app.js');
