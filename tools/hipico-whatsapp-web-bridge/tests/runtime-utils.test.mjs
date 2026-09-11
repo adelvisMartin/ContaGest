@@ -35,6 +35,37 @@ test('WhatsApp Spanish preamble parses sender/date', () => {
   assert.ok(/^2026-08-(09|10)T/.test(parsed.timestamp));
 });
 
+test('WhatsApp preamble rejects impossible calendar and clock values without normalizing them', () => {
+  const fallback = new Date('2026-09-11T00:00:00.000Z');
+  const invalid = [
+    '[8:11 p. m., 31/2/2026] Persona:',
+    '[8:11 p. m., 9/13/2026] Persona:',
+    '[8:61 p. m., 9/8/2026] Persona:',
+    '[13:11 p. m., 9/8/2026] Persona:',
+    '[25:11, 9/8/2026] Persona:',
+    '[8:11 xx, 9/8/2026] Persona:'
+  ];
+  for (const value of invalid) {
+    const parsed = parseWhatsAppPre(value, fallback);
+    assert.equal(parsed.parsed, false, value);
+    assert.equal(parsed.timestamp, fallback.toISOString(), value);
+    assert.equal(parsed.senderLabel, 'Persona', value);
+  }
+});
+
+test('WhatsApp preamble accepts exact 12h and 24h boundaries', () => {
+  assert.equal(parseWhatsAppPre('[12:00 a. m., 9/8/2026] Persona:').parsed, true);
+  assert.equal(parseWhatsAppPre('[12:00 p. m., 9/8/2026] Persona:').parsed, true);
+  assert.equal(parseWhatsAppPre('[00:00, 9/8/2026] Persona:').parsed, true);
+  assert.equal(parseWhatsAppPre('[23:59, 9/8/2026] Persona:').parsed, true);
+});
+
+test('invalid fallback clock never makes parser throw', () => {
+  const parsed = parseWhatsAppPre('not a WhatsApp preamble', new Date('invalid'));
+  assert.equal(parsed.parsed, false);
+  assert.equal(parsed.timestamp, '1970-01-01T00:00:00.000Z');
+});
+
 test('known operational examples classify', () => {
   assert.equal(classifyLocal('Juega 20 al caballo 3').intent, 'offer_player');
   assert.equal(classifyLocal('Consigue 15 al 5').intent, 'offer_receiver');
