@@ -55,7 +55,7 @@ jobs:
       - name: Parser, operational messages, API, UI and multigroup contracts
         run: |
           node --test tests/hipico-operations.test.mjs
-          node --test tests/hipico_operational_messages_277.test.mjs tests/hipico_operational_copy_center_277.test.mjs tests/hipico_board_context_guard_277.test.mjs tests/hipico_multigroup_runtime_277.test.mjs tests/hipico_serverless_api_277.test.mjs tests/hipico_ui_release_contract_277.test.mjs tests/hipico_multigroup_hardening_279.test.mjs tests/hipico_race_context_279.test.mjs tests/hipico_chat_import_guard_279.test.mjs
+          node --test tests/hipico_operational_messages_277.test.mjs tests/hipico_operational_copy_center_277.test.mjs tests/hipico_board_context_guard_277.test.mjs tests/hipico_multigroup_runtime_277.test.mjs tests/hipico_serverless_api_277.test.mjs tests/hipico_ui_release_contract_277.test.mjs tests/hipico_multigroup_hardening_279.test.mjs tests/hipico_race_context_279.test.mjs tests/hipico_chat_import_guard_279.test.mjs tests/hipico_operational_access_guard_279.test.mjs
       - name: PWA and serverless operational syntax checks
         run: |
           node --check frontend/public/hipico-control/assets/js/app.js
@@ -65,6 +65,8 @@ jobs:
           node --check frontend/public/hipico-control/assets/js/agent-router.js
           node --check frontend/public/hipico-control/assets/js/operational-ledger.js
           node --check frontend/public/hipico-control/assets/js/operational-copy-center.js
+          node --check frontend/public/hipico-control/assets/js/operational-access-policy.js
+          node --check frontend/public/hipico-control/assets/js/operational-access-guard.js
           node --check frontend/public/hipico-control/assets/js/race-context-guard.js
           node --check frontend/public/hipico-control/assets/js/notice-bridge.js
           node --check frontend/public/hipico-control/assets/js/store-v2.js
