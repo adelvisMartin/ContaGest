@@ -59,12 +59,12 @@ test('mutated provider-message replay is rejected but acknowledged to avoid Meta
   assert.match(source,/Meta retries webhook deliveries on non-2xx responses/);
 });
 
-test('foreign phone-number events are rejected as non-retryable before persistence',()=>{
+test('foreign phone-number events are rejected before persistence and transport-acknowledged without retries',()=>{
   const identity=source.indexOf("identityError==='WEBHOOK_PHONE_NUMBER_NOT_CONFIGURED'");
   const mismatch=source.indexOf("error:'webhook_phone_number_mismatch'");
   const processing=source.indexOf('processMessagesBounded(messages)');
   assert.ok(identity>=0&&mismatch>identity&&processing>mismatch);
-  assert.match(source,/status\(400\).*retryable:false/s);
+  assert.match(source,/if\(identityError\)[\s\S]*?status\(200\)\.json\(\{[\s\S]*?acknowledged:true[\s\S]*?accepted:false[\s\S]*?retryable:false[\s\S]*?error:'webhook_phone_number_mismatch'/);
 });
 
 test('signed status-only callbacks may bypass PostgreSQL but not invalid runtime identity',()=>{
