@@ -264,9 +264,7 @@ router.post('/domain/events', async (req, res) => {
   }
   const policy = canonicalMutationPolicy(input);
 
-  if ((EXPLICIT_OPERATOR_EVENTS.has(input.eventType) || STATE_ADVANCING_EVENTS.has(input.eventType))
-    && !input.confirmedOperatorAction
-    && String(input.confirmationReason || '').trim()) {
+  if (!input.confirmedOperatorAction && String(input.confirmationReason || '').trim()) {
     return res.status(400).json({ ok: false, error: 'HIPICO_CONFIRMATION_FLAG_REQUIRED' });
   }
   if (input.confirmedOperatorAction && String(input.confirmationReason || '').trim().length < 5) {
@@ -291,7 +289,9 @@ router.post('/domain/events', async (req, res) => {
         schemaVersion: 1,
         timestamp: input.timestamp,
         originalEventId: input.originalEventId || null,
-        requiresReview: policy.requiresReview
+        requiresReview: policy.requiresReview,
+        operatorConfirmed: input.confirmedOperatorAction,
+        confirmationReason: input.confirmationReason || null
       }
     });
 
