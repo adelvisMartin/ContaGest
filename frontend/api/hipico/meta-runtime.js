@@ -1,10 +1,7 @@
 import { strongSecretConfigured } from './_shared.js';
 
-const PUBLIC_PLACEHOLDER_PATTERN=/(?:REEMPLAZA|REPLACE|CHANGE[_-]?ME|CHANGEME|PLACEHOLDER|YOUR[_-]?(?:SECRET|TOKEN|KEY)|TU[_-]?(?:SECRETO|TOKEN|CLAVE)|EXAMPLE[_-]?(?:SECRET|TOKEN|KEY))/i;
-
 export function strongMetaSecretConfigured(value){
-  const secret=String(value||'').trim();
-  return strongSecretConfigured(secret)&&!PUBLIC_PLACEHOLDER_PATTERN.test(secret);
+  return strongSecretConfigured(value);
 }
 
 export function isMetaPhoneNumberId(value){
@@ -36,5 +33,3 @@ export function metaWebhookConfig(source=process.env){
     ready:verifyTokenStrong&&appSecretStrong&&phoneNumberIdValid
   };
 }
-
-export const __test__={PUBLIC_PLACEHOLDER_PATTERN};
