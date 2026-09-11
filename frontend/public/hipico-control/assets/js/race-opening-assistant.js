@@ -63,7 +63,7 @@ async function mount(){
   host.innerHTML=cardMarkup(state.opening,race);
   const card=host.firstElementChild;
   const importCard=parseForm.closest('.chat-import-card');
-  importCard?.insertAdjacentElement('afterend',card);
+  if(card&&importCard)importCard.insertAdjacentElement('afterend',card);
 }
 
 function scheduleMount(){
@@ -120,7 +120,9 @@ if(typeof document!=='undefined'){
     }
   });
 
-  const observer=new MutationObserver(()=>{if(state.opening)scheduleMount();});
+  const observer=new MutationObserver(()=>{
+    if(state.opening&&!document.querySelector(`[${CARD_ATTR}]`))scheduleMount();
+  });
   observer.observe(document.documentElement,{childList:true,subtree:true});
 }
 
