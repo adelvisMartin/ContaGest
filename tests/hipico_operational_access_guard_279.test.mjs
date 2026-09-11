@@ -26,13 +26,18 @@ test('authorized local and supported cloud roles can use the manual copy center'
   }
 });
 
-test('guard clears stale cloud authorization on a new login and closes sensitive dialogs on auth loss', () => {
+test('guard clears stale cloud authorization and purges sensitive center state on auth loss', () => {
   assert.match(guardSource, /removeAttribute\('data-access-role'\)/);
   assert.match(guardSource, /querySelector\('\.access-blocker'\)/);
   assert.match(guardSource, /querySelector\('#app \.shell'\)/);
   assert.match(guardSource, /querySelector\('dialog\[open\]'\)\?\.close/);
   assert.match(guardSource, /dataset\.opsAuthorized/);
   assert.match(guardSource, /toggleAttribute\('inert'/);
+  assert.match(guardSource, /resetOperationalCopyCenter/);
+  assert.match(guardSource, /revokeCenter\(\)/);
+  assert.match(centerSource, /export function resetOperationalCopyCenter\(\)/);
+  assert.match(centerSource, /state = \{ workspace: null, participantId: '' \}/);
+  assert.match(centerSource, /root\.remove\(\)/);
 });
 
 test('sensitive operational module is lazy loaded only after authorization and has no self boot', () => {
