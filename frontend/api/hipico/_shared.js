@@ -45,6 +45,14 @@ export function isMetaPhoneNumberId(value) {
   return /^\d{5,30}$/.test(String(value || '').trim());
 }
 
+export function metaTimestampIso(value) {
+  if (value === undefined || value === null || String(value).trim() === '') return null;
+  const seconds = Number(value);
+  if (!Number.isFinite(seconds) || seconds < 0) return null;
+  const date = new Date(seconds * 1000);
+  return Number.isFinite(date.getTime()) ? date.toISOString() : null;
+}
+
 function normalizedE164(value) {
   const raw = String(value || '').trim();
   return isE164(raw) ? raw.replace(/^\+/, '') : null;
@@ -158,7 +166,7 @@ export function extractMetaMessages(payload) {
           externalMessageId: String(message?.id || ''),
           senderId: String(message?.from || ''),
           senderLabel: contactNames.get(String(message?.from || '')) || '',
-          timestamp: message?.timestamp ? new Date(Number(message.timestamp) * 1000).toISOString() : new Date().toISOString(),
+          timestamp: metaTimestampIso(message?.timestamp),
           type: String(message?.type || 'unknown'),
           text: String(text || '').slice(0, 4000),
           quotedExternalMessageId: message?.context?.id ? String(message.context.id) : null,
