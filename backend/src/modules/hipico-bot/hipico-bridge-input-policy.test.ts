@@ -13,6 +13,10 @@ test('bridge sender normalization preserves a stable sender identity without tra
   assert.equal(normalizeBridgeSender('participant-7@lid'),'participant-7');
 });
 
+test('bridge sender normalization rejects control characters',()=>{
+  assert.equal(normalizeBridgeSender('participant\u0007@c.us'),null);
+});
+
 test('live rate limiting uses server time and never the message timestamp',()=>{
   assert.equal(liveRateLimitClock(false,()=>123456),123456);
   assert.equal(liveRateLimitClock(true,()=>123456),null);

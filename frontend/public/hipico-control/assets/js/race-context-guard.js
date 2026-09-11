@@ -2,7 +2,6 @@ import { createBlankWorkspace } from './seed.js';
 import { flushWorkspaceWrites, loadLocalWorkspace } from './store.js';
 import { compact } from './whatsapp/normalization.js';
 import { parseWhatsAppChat } from './whatsapp.js';
-import { compareMatchToActiveRace } from './whatsapp/race-context.js';
 import { normalizeWorkspaceShape } from './workspace.js';
 import { activeGroupId, activeRace as readActiveRace } from './operational-ledger.js';
 
@@ -86,38 +85,6 @@ export function resolveBoardTarget(analysis, workspace) {
   return { status: 'MATCH', board, activeRace, context: inherited, reason: 'Hipódromo y carrera coinciden con la carrera activa.' };
 }
 
-export function resolveImportTarget(analysis, workspace) {
-  const groupId = activeGroupId(workspace);
-  const activeRace = readActiveRace(workspace, groupId);
-  const imported = new Set(workspace?.chatImports || []);
-  const matches = (analysis?.matches || []).filter((match) => !imported.has(match.id));
-  if (!activeRace) return { status: 'NO_ACTIVE_RACE', activeRace: null, matches, decisions: [], reason: 'No hay una carrera activa.' };
-  if (!matches.length) return { status: 'NO_MATCH', activeRace, matches: [], decisions: [], reason: 'No hay parejas nuevas para importar.' };
-
-  const decisions = matches.map((match) => ({ match, decision: compareMatchToActiveRace(match, activeRace) }));
-  const mismatch = decisions.find(({ decision }) => decision.status === 'MISMATCH');
-  if (mismatch) {
-    return {
-      status: 'MISMATCH',
-      activeRace,
-      matches,
-      decisions,
-      reason: mismatch.decision.reason
-    };
-  }
-  const ambiguous = decisions.filter(({ decision }) => decision.status !== 'MATCH');
-  if (ambiguous.length) {
-    return {
-      status: 'AMBIGUOUS',
-      activeRace,
-      matches,
-      decisions,
-      reason: `${ambiguous.length} pareja(s) no tienen hipódromo y número de carrera verificables. Confirma manualmente que pertenecen exactamente a la carrera activa.`
-    };
-  }
-  return { status: 'MATCH', activeRace, matches, decisions, reason: 'Todas las parejas coinciden con la carrera activa.' };
-}
-
 async function currentWorkspace() {
   await flushWorkspaceWrites().catch(() => {});
   return normalizeWorkspaceShape(await loadLocalWorkspace(createBlankWorkspace));
@@ -134,16 +101,7 @@ async function analyzeVisibleChat(workspace) {
   return parseWhatsAppChat(text, { racetrackCatalog: workspace?.config?.racetrackCatalog || [] });
 }
 
-function raceContextDialog({
-  title,
-  subtitle = 'Validación de carrera antes de continuar',
-  message,
-  activeRace,
-  contextLabel = 'Pizarra detectada',
-  contextValue = 'Sin pizarra',
-  helpText = '',
-  confirmLabel = ''
-}) {
+function boardContextDialog({ title, message, activeRace, board, confirmLabel = '' }) {
   return new Promise((resolve) => {
     document.querySelector('[data-board-context-dialog]')?.remove();
 
@@ -152,6 +110,7 @@ function raceContextDialog({
     backdrop.className = 'modal-backdrop';
     backdrop.dataset.boardContextDialog = 'true';
 
+    const boardText = Array.isArray(board) && board.length ? board.join('.') : 'Sin pizarra';
     const raceText = activeRace ? `${activeRace.racetrack} · ${activeRace.number}ª carrera` : 'Sin carrera activa';
     const confirmAction = confirmLabel
       ? `<button type="button" class="button" data-board-context-confirm>${escapeHtml(confirmLabel)}</button>`
@@ -163,7 +122,7 @@ function raceContextDialog({
         <div class="modal__head">
           <div>
             <h3 id="board-context-title">${escapeHtml(title)}</h3>
-            <small>${escapeHtml(subtitle)}</small>
+            <small>Validación de carrera antes de aplicar resultado</small>
           </div>
           <button type="button" class="button icon-button button--ghost" data-board-context-cancel aria-label="Cerrar">×</button>
         </div>
@@ -174,9 +133,9 @@ function raceContextDialog({
           </div>
           <div class="form-grid two">
             <div class="field"><label>Carrera activa</label><div class="input" aria-readonly="true">${escapeHtml(raceText)}</div></div>
-            <div class="field"><label>${escapeHtml(contextLabel)}</label><div class="input" aria-readonly="true">${escapeHtml(contextValue)}</div></div>
+            <div class="field"><label>Pizarra detectada</label><div class="input" aria-readonly="true">${escapeHtml(boardText)}</div></div>
           </div>
-          <p class="help-text">${escapeHtml(helpText)}</p>
+          <p class="help-text">Control Hípico no liquida dinero por una llegada ambigua. Confirma manualmente solo si verificaste que la pizarra pertenece exactamente a la carrera activa.</p>
           <div class="modal__actions">
             <button type="button" class="button button--ghost" data-board-context-cancel>${confirmLabel ? 'Cancelar' : 'Cerrar'}</button>
             ${confirmAction}
@@ -250,70 +209,21 @@ async function guardBoardApplication(button) {
   if (decision.status === 'MATCH') return true;
   if (decision.status === 'MISMATCH') {
     notify(`Pizarra bloqueada: ${decision.reason}`);
-    await raceContextDialog({
+    await boardContextDialog({
       title: 'Pizarra bloqueada',
-      subtitle: 'Validación de carrera antes de aplicar resultado',
       message: `${decision.reason} Abre la carrera correcta y vuelve a aplicar.`,
       activeRace: decision.activeRace,
-      contextLabel: 'Pizarra detectada',
-      contextValue: decision.board?.board?.join('.') || 'Sin pizarra',
-      helpText: 'Control Hípico no liquida dinero por una llegada ambigua. Confirma manualmente solo si verificaste que la pizarra pertenece exactamente a la carrera activa.'
+      board: decision.board?.board
     });
     return false;
   }
   if (decision.status === 'AMBIGUOUS') {
-    const approved = await raceContextDialog({
+    const approved = await boardContextDialog({
       title: 'Confirmar pizarra manualmente',
-      subtitle: 'Validación de carrera antes de aplicar resultado',
       message: decision.reason,
       activeRace: decision.activeRace,
-      contextLabel: 'Pizarra detectada',
-      contextValue: decision.board?.board?.join('.') || 'Sin pizarra',
-      helpText: 'Control Hípico no liquida dinero por una llegada ambigua. Confirma manualmente solo si verificaste que la pizarra pertenece exactamente a la carrera activa.',
+      board: decision.board?.board,
       confirmLabel: 'Confirmar carrera y aplicar'
-    });
-    if (approved) {
-      manualBypassTarget = button;
-      queueMicrotask(() => button.click());
-    }
-    return false;
-  }
-  notify(decision.reason);
-  return false;
-}
-
-async function guardMatchImport(button) {
-  const workspace = await currentWorkspace();
-  const analysis = await analyzeVisibleChat(workspace);
-  if (!analysis) {
-    notify('No se pudo validar la importación porque el bloque de WhatsApp ya no está visible. Vuelve a analizar el chat.');
-    return false;
-  }
-  const decision = resolveImportTarget(analysis, workspace);
-  if (decision.status === 'MATCH') return true;
-  if (decision.status === 'MISMATCH') {
-    notify(`Importación bloqueada: ${decision.reason}`);
-    await raceContextDialog({
-      title: 'Importación bloqueada',
-      subtitle: 'Validación de carrera antes de registrar apuestas',
-      message: `${decision.reason} Abre la carrera correcta y vuelve a importar.`,
-      activeRace: decision.activeRace,
-      contextLabel: 'Parejas detectadas',
-      contextValue: `${decision.matches.length} pareja(s)`,
-      helpText: 'Control Hípico nunca importa una pareja que declare otra carrera. Cambia a la carrera correcta y repite la operación.'
-    });
-    return false;
-  }
-  if (decision.status === 'AMBIGUOUS') {
-    const approved = await raceContextDialog({
-      title: 'Confirmar importación manualmente',
-      subtitle: 'Validación de carrera antes de registrar apuestas',
-      message: decision.reason,
-      activeRace: decision.activeRace,
-      contextLabel: 'Parejas sin contexto completo',
-      contextValue: `${decision.decisions.filter(({ decision: item }) => item.status !== 'MATCH').length} pareja(s)`,
-      helpText: 'La confirmación no sustituye la validación individual de jugada, caballo, monto y participantes. Las parejas marcadas para revisión siguen requiriendo Validar en la pantalla.',
-      confirmLabel: 'Confirmar carrera e importar'
     });
     if (approved) {
       manualBypassTarget = button;
@@ -327,10 +237,7 @@ async function guardMatchImport(button) {
 
 if (typeof document !== 'undefined') {
   document.addEventListener('click', (event) => {
-    const target = event.target instanceof Element ? event.target : null;
-    const boardButton = target?.closest('[data-action="apply-chat-board"]') || null;
-    const importButton = target?.closest('[data-action="import-chat-matches"]') || null;
-    const button = boardButton || importButton;
+    const button = event.target instanceof Element ? event.target.closest('[data-action="apply-chat-board"]') : null;
     if (!button) return;
     if (manualBypassTarget === button) {
       manualBypassTarget = null;
@@ -338,13 +245,12 @@ if (typeof document !== 'undefined') {
     }
     event.preventDefault();
     event.stopImmediatePropagation();
-    const guard = boardButton ? guardBoardApplication : guardMatchImport;
-    guard(button).then((allowed) => {
+    guardBoardApplication(button).then((allowed) => {
       if (!allowed) return;
       manualBypassTarget = button;
       button.click();
     }).catch((error) => {
-      notify(error?.message || 'No se pudo validar el contexto de la carrera.');
+      notify(error?.message || 'No se pudo validar el contexto de la pizarra.');
     });
   }, true);
 }

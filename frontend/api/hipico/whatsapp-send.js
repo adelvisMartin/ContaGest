@@ -1,4 +1,4 @@
-import { bearerTokenValid, env, fetchWithTimeout, isE164, supabase } from './_shared.js';
+import { bearerTokenValid, env, fetchWithTimeout, isE164, metaDestinationAllowed, metaOutboundPolicy, supabase } from './_shared.js';
 
 const MAX_ATTEMPTS = 6;
 const BATCH_SIZE = 10;
@@ -46,6 +46,11 @@ export default async function handler(req, res) {
   const expected = env('HIPICO_INTERNAL_API_TOKEN');
   if (!bearerTokenValid(req.headers.authorization, expected)) return res.status(401).json({ ok: false, error: 'unauthorized' });
 
+  const outbound = metaOutboundPolicy();
+  if (!outbound.enabled) {
+    return res.status(409).json({ ok: false, error: 'outbound_disabled', reasons: outbound.reasons });
+  }
+
   try {
     const ownerId = env('HIPICO_OWNER_ID');
     const now = new Date().toISOString();
@@ -72,11 +77,11 @@ export default async function handler(req, res) {
       const attempts = Number(row.attempts || 0) + 1;
       const text = String(row?.payload?.text || '').trim();
       const destination = String(row.destination || '').trim();
-      if (!text || text.length > 4000 || !isE164(destination)) {
+      if (!text || text.length > 4000 || !isE164(destination) || !metaDestinationAllowed(destination)) {
         await updateRow(row.id, {
           status: 'failed',
           attempts,
-          last_error: !text ? 'EMPTY_MESSAGE' : text.length > 4000 ? 'MESSAGE_TOO_LARGE' : 'INVALID_DESTINATION'
+          last_error: !text ? 'EMPTY_MESSAGE' : text.length > 4000 ? 'MESSAGE_TOO_LARGE' : !isE164(destination) ? 'INVALID_DESTINATION' : 'DESTINATION_NOT_ALLOWLISTED'
         });
         failed += 1;
         continue;

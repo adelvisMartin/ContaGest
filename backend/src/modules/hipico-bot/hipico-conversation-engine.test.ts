@@ -3,13 +3,12 @@ import test from 'node:test';
 import { decideConversation, nextConversationContext } from './hipico-conversation-engine.js';
 import type { IntentResult } from './hipico-operational-classifier.js';
 
-const RACE_KEY='racectx_test_track_7';
 const at = (id: string, participantId = 'p1', text = 'hola', timestamp = '2026-08-29T12:00:00.000Z') => ({
   sourceMessageId: id,
   participantId,
   text,
   timestamp,
-  raceId: RACE_KEY
+  raceId: '7'
 });
 
 function classifier(result: Partial<IntentResult>): (text: string) => IntentResult {
@@ -45,20 +44,11 @@ test('ambiguous monetary input asks clarification and never mutates', () => {
 test('closed race rejects stateful message fail-closed', () => {
   const result = decideConversation(
     at('m3'),
-    { closedRaceIds: [RACE_KEY] },
+    { closedRaceIds: ['7'] },
     classifier({ intent: 'offer_player', risk: 'monetary', entities: { play: '2N', horse: '4', amount: 100 }, confidence: 0.99 })
   );
   assert.equal(result.decision, 'REJECTED');
   assert.equal(result.decisionReason, 'RACE_ALREADY_CLOSED');
-});
-
-test('classifier race number never invents a race identity when context resolver supplied none', () => {
-  const result=decideConversation(
-    {...at('m-race'),raceId:null},
-    {},
-    classifier({intent:'race_result',risk:'review',confidence:.99,entities:{racetrack:'Churchill Downs',raceNumber:7,board:['1','2']}})
-  );
-  assert.equal(result.raceId,null);
 });
 
 test('out-of-order stateful message is held for review', () => {

@@ -2,6 +2,7 @@ import crypto from 'node:crypto';
 import { prisma } from '../../database/prisma.js';
 import { classify as classifyOperational } from './hipico-operational-classifier.js';
 import type { IntentResult as OperationalIntentResult } from './hipico-operational-classifier.js';
+import { assertCloudOutboundAllowed, cloudOutboundPolicy } from './hipico-outbound-policy.js';
 
 export type BotPromotion='shadow'|'approved'|'automatic';
 export type IntentResult=OperationalIntentResult;
@@ -15,7 +16,8 @@ let dbStatus:{value:boolean;until:number}|null=null;
 
 export function promotion():BotPromotion {
   const value=String(process.env.HIPICO_BOT_PROMOTION||'shadow').toLowerCase();
-  return value==='automatic'||value==='approved'?value:'shadow';
+  if(value==='automatic')return cloudOutboundPolicy().enabled?'automatic':'approved';
+  return value==='approved'?'approved':'shadow';
 }
 
 export function classify(text:string):IntentResult { return classifyOperational(text); }
@@ -103,31 +105,46 @@ export const HipicoBotStore={
   async events(limit=50){const bounded=clampLimit(limit);if(await dbReady())return prisma.$queryRaw`SELECT * FROM public."HipicoWebhookEvent" ORDER BY "receivedAt" DESC LIMIT ${bounded}`;return memoryEvents.slice(0,bounded);},
   async outbox(limit=50){const bounded=clampLimit(limit);if(await dbReady())return prisma.$queryRaw`SELECT * FROM public."HipicoBotOutbox" ORDER BY "createdAt" DESC LIMIT ${bounded}`;return memoryOutbox.slice(0,bounded);},
   async getOutbox(idValue:string){if(await dbReady()){const rows=await prisma.$queryRaw<any[]>`SELECT * FROM public."HipicoBotOutbox" WHERE "id"=${idValue} LIMIT 1`;return rows[0]||null;}return memoryOutbox.find((item)=>item.id===idValue)||null;},
+  async claimForSend(idValue:string,expectedStatus:'pending_approval'|'ready_auto'){
+    if(await dbReady()){
+      const rows=await prisma.$queryRaw<any[]>`UPDATE public."HipicoBotOutbox" SET "status"='sending',"updatedAt"=CURRENT_TIMESTAMP WHERE "id"=${idValue} AND "status"=${expectedStatus} RETURNING *`;
+      return rows[0]||null;
+    }
+    const row=memoryOutbox.find((item)=>item.id===idValue&&item.status===expectedStatus);
+    if(!row)return null;
+    Object.assign(row,{status:'sending',updatedAt:new Date().toISOString()});
+    return row;
+  },
   async markSent(idValue:string,providerMessageId:string,approvedBy='automatic'){
-    if(await dbReady()){await prisma.$executeRaw`UPDATE public."HipicoBotOutbox" SET "status"='sent',"providerMessageId"=${providerMessageId},"approvedBy"=${approvedBy},"approvedAt"=COALESCE("approvedAt",CURRENT_TIMESTAMP),"sentAt"=CURRENT_TIMESTAMP,"updatedAt"=CURRENT_TIMESTAMP WHERE "id"=${idValue}`;return;}
-    const row=memoryOutbox.find((item)=>item.id===idValue);if(row)Object.assign(row,{status:'sent',providerMessageId,approvedBy,sentAt:new Date().toISOString()});
+    if(await dbReady()){await prisma.$executeRaw`UPDATE public."HipicoBotOutbox" SET "status"='sent',"providerMessageId"=${providerMessageId},"approvedBy"=${approvedBy},"approvedAt"=COALESCE("approvedAt",CURRENT_TIMESTAMP),"sentAt"=CURRENT_TIMESTAMP,"updatedAt"=CURRENT_TIMESTAMP WHERE "id"=${idValue} AND "status"='sending'`;return;}
+    const row=memoryOutbox.find((item)=>item.id===idValue&&item.status==='sending');if(row)Object.assign(row,{status:'sent',providerMessageId,approvedBy,sentAt:new Date().toISOString()});
   },
   async markFailed(idValue:string,error:string){
     const safeError=String(error||'unknown').slice(0,1000);
-    if(await dbReady()){await prisma.$executeRaw`UPDATE public."HipicoBotOutbox" SET "status"='failed',"error"=${safeError},"updatedAt"=CURRENT_TIMESTAMP WHERE "id"=${idValue}`;return;}
-    const row=memoryOutbox.find((item)=>item.id===idValue);if(row)Object.assign(row,{status:'failed',error:safeError});
+    if(await dbReady()){await prisma.$executeRaw`UPDATE public."HipicoBotOutbox" SET "status"='failed',"error"=${safeError},"updatedAt"=CURRENT_TIMESTAMP WHERE "id"=${idValue} AND "status"='sending'`;return;}
+    const row=memoryOutbox.find((item)=>item.id===idValue&&item.status==='sending');if(row)Object.assign(row,{status:'failed',error:safeError});
   }
 };
 
 export async function sendCloudText(recipient:string,message:string){
+  assertCloudOutboundAllowed(recipient);
   const token=String(process.env.WHATSAPP_CLOUD_TOKEN||'');
   const phoneId=String(process.env.WHATSAPP_PHONE_NUMBER_ID||'');
   const version=String(process.env.WHATSAPP_GRAPH_API_VERSION||process.env.WHATSAPP_GRAPH_VERSION||'v23.0');
   if(!token||!phoneId)throw new Error('Faltan WHATSAPP_CLOUD_TOKEN o WHATSAPP_PHONE_NUMBER_ID');
   if(!/^\d{7,18}$/.test(recipient))throw new Error('Destinatario WhatsApp inválido.');
+  const text=String(message||'').trim();
+  if(!text||text.length>4000)throw Object.assign(new Error('Mensaje WhatsApp vacío o demasiado largo.'),{code:'HIPICO_CLOUD_MESSAGE_INVALID'});
   const response=await fetch(`https://graph.facebook.com/${encodeURIComponent(version)}/${encodeURIComponent(phoneId)}/messages`,{
     method:'POST',headers:{authorization:`Bearer ${token}`,'content-type':'application/json'},
-    body:JSON.stringify({messaging_product:'whatsapp',recipient_type:'individual',to:recipient,type:'text',text:{preview_url:false,body:String(message).slice(0,4000)}}),
+    body:JSON.stringify({messaging_product:'whatsapp',recipient_type:'individual',to:recipient,type:'text',text:{preview_url:false,body:text}}),
     signal:AbortSignal.timeout(10_000)
   });
   const data=await response.json().catch(()=>({}));
-  if(!response.ok)throw new Error(`Meta Graph HTTP ${response.status}: ${data?.error?.message||'error al enviar'}`);
-  return{providerMessageId:String(data?.messages?.[0]?.id||''),raw:data};
+  if(!response.ok)throw new Error(`Meta Graph HTTP ${response.status}`);
+  const providerMessageId=String(data?.messages?.[0]?.id||'');
+  if(!providerMessageId)throw Object.assign(new Error('Meta no devolvió identificador de mensaje.'),{code:'HIPICO_META_MESSAGE_ID_MISSING'});
+  return{providerMessageId,raw:data};
 }
 
 export async function processIncoming(message:any){
@@ -140,6 +157,8 @@ export async function processIncoming(message:any){
   const outboxStatus=mode==='shadow'?'shadow':mode==='approved'?'pending_approval':(persistent&&result.autoEligible&&SAFE_AUTOMATIC.has(result.intent)?'ready_auto':'pending_approval');
   const outbox=await HipicoBotStore.queue({eventId:event.id,recipient:message.sender,targetType:'individual',message:result.suggestion,intent:result.intent,risk:result.risk,status:outboxStatus});
   if(mode==='automatic'&&persistent&&outboxStatus==='ready_auto'){
+    const claimed=await HipicoBotStore.claimForSend(outbox.id,'ready_auto');
+    if(!claimed)return{duplicate:false,event,outbox:{...outbox,status:'reconciliation_required'}};
     try{const sent=await sendCloudText(message.sender,result.suggestion);await HipicoBotStore.markSent(outbox.id,sent.providerMessageId,'automatic');return{duplicate:false,event,outbox:{...outbox,status:'sent'}};}
     catch(error:any){await HipicoBotStore.markFailed(outbox.id,error?.message||String(error));return{duplicate:false,event,outbox:{...outbox,status:'failed',error:error?.message||String(error)}};}
   }

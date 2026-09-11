@@ -1,10 +1,8 @@
 import { compact, normalizePhone, plain } from './whatsapp/normalization.js';
 import { createWhatsAppParser as createLegacyWhatsAppParser, matchChatOffers, parseWhatsAppChat as parseLegacyWhatsAppChat } from './whatsapp/parser.js';
-import { enrichOperationalRaceContext } from './whatsapp/race-context.js';
 import { looksLikeWhatsAppUiTranscript, parseWhatsAppUiTranscript } from './whatsapp/ui-transcript.js';
 
 export { normalizeChatPlay } from './whatsapp/normalization.js';
-export { compareMatchToActiveRace } from './whatsapp/race-context.js';
 export { matchChatOffers };
 
 function syntheticClock(index){
@@ -92,12 +90,12 @@ function enrichUiAnalysis(input,options){
   analysis.attachments=attachments;
   analysis.sourceFormat=ui.sourceFormat;
   analysis.stats={...analysis.stats,messages:merged.length,documents:documents.length,stickers:stickers.length,ignored:attachments.length+noise.length};
-  return enrichOperationalRaceContext(analysis);
+  return analysis;
 }
 
 export function parseWhatsAppChat(input,options={}){
   if(looksLikeWhatsAppUiTranscript(input))return enrichUiAnalysis(input,options);
-  return {...enrichOperationalRaceContext(parseLegacyWhatsAppChat(input,options)),sourceFormat:'whatsapp-export'};
+  return {...parseLegacyWhatsAppChat(input,options),sourceFormat:'whatsapp-export'};
 }
 
 export function createWhatsAppParser(defaultOptions={}){
@@ -105,7 +103,7 @@ export function createWhatsAppParser(defaultOptions={}){
   return Object.freeze({
     parse(input,options={}){
       if(looksLikeWhatsAppUiTranscript(input))return enrichUiAnalysis(input,{...defaultOptions,...options});
-      return {...enrichOperationalRaceContext(legacy.parse(input,options)),sourceFormat:'whatsapp-export'};
+      return {...legacy.parse(input,options),sourceFormat:'whatsapp-export'};
     }
   });
 }
