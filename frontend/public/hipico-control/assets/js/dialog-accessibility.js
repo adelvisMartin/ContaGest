@@ -7,6 +7,7 @@ const FOCUSABLE_SELECTOR = [
   'textarea:not([disabled])',
   '[tabindex]:not([tabindex="-1"])'
 ].join(',');
+const FIELD_CONTROL_SELECTOR = ':scope > input:not([type="hidden"]), :scope > select, :scope > textarea, :scope > button';
 const ACTION_LABELS = Object.freeze({
   'calendar-prev': 'Mes anterior',
   'calendar-next': 'Mes siguiente',
@@ -46,6 +47,18 @@ function ensureActionLabels(root = document) {
     for (const element of root.querySelectorAll(`[data-action="${action}"]`)) {
       if (element instanceof HTMLElement && !hasAccessibleName(element)) element.setAttribute('aria-label', label);
     }
+  }
+}
+
+function ensureFieldLabels(root = document) {
+  if (!root?.querySelectorAll) return;
+  for (const label of root.querySelectorAll('.field > label')) {
+    if (!(label instanceof HTMLLabelElement) || label.htmlFor || label.querySelector('input,select,textarea,button')) continue;
+    const field = label.parentElement;
+    const control = field?.querySelector(FIELD_CONTROL_SELECTOR);
+    if (!(control instanceof HTMLElement)) continue;
+    if (!control.id) control.id = `hipico-field-${crypto.randomUUID()}`;
+    label.htmlFor = control.id;
   }
 }
 
@@ -141,6 +154,7 @@ function trapTab(event) {
 
 function scan() {
   ensureActionLabels(document);
+  ensureFieldLabels(document);
   const dialog = document.querySelector(DIALOG_SELECTOR);
   if (dialog instanceof HTMLElement) {
     if (dialog !== activeDialog) {
@@ -177,4 +191,4 @@ if (typeof document !== 'undefined') {
   else start();
 }
 
-export const __test__ = { focusable, hasAccessibleName, ensureActionLabels, labelDialog, closeActiveDialog, trapTab, DIALOG_SELECTOR, FOCUSABLE_SELECTOR, ACTION_LABELS };
+export const __test__ = { focusable, hasAccessibleName, ensureActionLabels, ensureFieldLabels, labelDialog, closeActiveDialog, trapTab, DIALOG_SELECTOR, FOCUSABLE_SELECTOR, FIELD_CONTROL_SELECTOR, ACTION_LABELS };
