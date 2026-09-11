@@ -40,11 +40,26 @@ test('backend distinguishes replay identity conflicts from retryable persistence
   assert.doesNotMatch(canonical, /ON CONFLICT \(owner_id,channel_key,external_message_id\)[\s\S]{0,120}DO UPDATE SET/);
 });
 
+test('all normal-WhatsApp bridge boundaries share strict modern or legacy group JID semantics', () => {
+  const localIdentity = read('tools/hipico-whatsapp-bridge/src/group-identity.mjs');
+  const hostedIdentity = read('tools/hipico-whatsapp-web-bridge/src/group-identity.mjs');
+  const serverlessIdentity = read('frontend/api/hipico/bridge-identity.js');
+  const backendIdentity = read('backend/src/modules/hipico-bot/hipico-bridge-input-policy.ts');
+  for (const source of [localIdentity, hostedIdentity, serverlessIdentity, backendIdentity]) {
+    assert.match(source, /\\d\{5,\}-\\d\+/);
+    assert.match(source, /\\d\{10,\}/);
+  }
+  assert.doesNotMatch(serverlessIdentity, /\^\\d\{5,\}\(\?:-\\d\+\)\?@g/);
+  assert.doesNotMatch(localIdentity, /\^\\d\{5,\}\(\?:-\\d\+\)\?@g/);
+});
+
 test('desktop bridge requires pinned SOURCE/LAB and can never send to SOURCE', () => {
   const bridge = read('tools/hipico-whatsapp-bridge/src/index.mjs');
+  const identity = read('tools/hipico-whatsapp-bridge/src/group-identity.mjs');
   assert.match(bridge, /const ALLOW_SEND = boolEnv\('HIPICO_ALLOW_SEND', false\)/);
   assert.match(bridge, /requires pinned HIPICO_SOURCE_GROUP_ID and HIPICO_LAB_GROUP_ID/);
-  assert.match(bridge, /\^\\d\{5,\}\(\?:-\\d\+\)\?@g\\\.us\$/);
+  assert.match(bridge, /import \{ isGroupId \} from '\.\/group-identity\.mjs'/);
+  assert.match(identity, /GROUP_ID_RE/);
   assert.match(bridge, /SOURCE_GROUP_ID_ENV === LAB_GROUP_ID_ENV/);
   assert.match(bridge, /SOURCE_CHANNEL_KEY === LAB_CHANNEL_KEY/);
   assert.match(bridge, /if \(ALLOW_SEND && labText\) await client\.sendMessage\(lab\.id, labText\)/);
@@ -53,6 +68,7 @@ test('desktop bridge requires pinned SOURCE/LAB and can never send to SOURCE', (
   assert.doesNotMatch(bridge, /client\.getChats\(\)/);
   assert.match(bridge, /setInterval\([\s\S]*5000/);
   assert.match(bridge, /LocalAuth/);
+  assert.match(bridge, /WhatsApp normal > Dispositivos vinculados/);
 });
 
 test('local bridge spool is private, create-once and rejects conflicting replay content', () => {
