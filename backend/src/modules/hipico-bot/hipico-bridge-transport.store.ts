@@ -26,6 +26,7 @@ type PersistedTransportSource={
   sender:string|null;
   messageType:string|null;
   body:string|null;
+  payload:Record<string,unknown>|null;
 };
 
 type PersistedGroupShadowSource={
@@ -73,8 +74,9 @@ function assertGroupShadowReplayAtTransportBoundary(existing:PersistedGroupShado
  * its local spool for retry.
  *
  * Provider message ids are immutable source identities. A duplicate id is
- * accepted only when the stable transport fields match the first persisted
- * event exactly. A replay with altered sender/body/type/channel fails closed.
+ * accepted only when the stable transport fields and source metadata match the
+ * first persisted event exactly. A replay with altered sender/body/type/time/
+ * quote/media/channel semantics fails closed.
  */
 export async function persistBridgeTransportEvent(input:TransportInput){
   assertBridgeGroupIdentity(input.payload);
@@ -102,7 +104,8 @@ export async function persistBridgeTransportEvent(input:TransportInput){
       "phoneNumberId" AS "phoneNumberId",
       "sender",
       "messageType" AS "messageType",
-      "body"
+      "body",
+      "payload"
     FROM public."HipicoWebhookEvent"
     WHERE "providerMessageId"=${input.providerMessageId}
     LIMIT 1
