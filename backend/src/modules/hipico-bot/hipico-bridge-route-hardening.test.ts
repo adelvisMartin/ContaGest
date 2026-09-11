@@ -12,18 +12,22 @@ const identityEnv={
   HIPICO_LAB_CHANNEL_KEY:'control-hipico-lab'
 };
 
-test('bridge route pins source and lab channels and requires shadow mode for every inbound event',()=>{
+test('bridge route validates exact SOURCE/LAB identity before sender classification or persistence',()=>{
   const validator=routes.slice(routes.indexOf('function validatePinnedChannel'),routes.indexOf('router.use'));
   assert.match(validator,/if\(!input\.shadowMode\)/);
-  assert.match(validator,/input\.channelKey!==OFFICIAL_SOURCE_CHANNEL_KEY/);
-  assert.match(validator,/input\.labChannelKey!==DEFAULT_LAB_CHANNEL_KEY/);
-  assert.match(validator,/input\.channelKey!==DEFAULT_LAB_CHANNEL_KEY/);
+  assert.match(validator,/validateBridgeGroupIdentity\(input\)/);
+  assert.match(validator,/HIPICO_BRIDGE_GROUP_IDENTITY_NOT_CONFIGURED/);
+  const identityCheck=routes.indexOf('const channelError=validatePinnedChannel(input)');
+  const senderNormalization=routes.indexOf('const sender=normalizeBridgeSender(input.senderId)');
+  const classification=routes.indexOf('classifyUntrustedConversation');
+  assert.ok(identityCheck>=0&&senderNormalization>identityCheck&&classification>senderNormalization);
 });
 
 test('transport persistence requires pinned modern or legacy SOURCE/LAB IDs before any write',()=>{
   assert.equal(transportTest.bridgeGroupIdentityReady(identityEnv),true);
   assert.equal(transportTest.normalizeGroupId('120363111111111111@g.us'),'120363111111111111@g.us');
   assert.equal(transportTest.normalizeGroupId('120363222222222222-2222222222@g.us'),'120363222222222222-2222222222@g.us');
+  assert.equal(transportTest.normalizeGroupId('12345@g.us'),'');
   assert.equal(transportTest.normalizeGroupId('invalid'), '');
   assert.equal(transportTest.assertBridgeGroupIdentity({
     groupId:identityEnv.HIPICO_SOURCE_GROUP_ID,
@@ -61,6 +65,13 @@ test('transport readiness fails closed when IDs are missing, malformed or equal'
   assert.throws(()=>transportTest.assertBridgeGroupIdentity({
     groupId:identityEnv.HIPICO_SOURCE_GROUP_ID,channelRole:'source',channelKey:identityEnv.HIPICO_OFFICIAL_SOURCE_CHANNEL_KEY,labChannelKey:identityEnv.HIPICO_LAB_CHANNEL_KEY
   },{...identityEnv,HIPICO_SOURCE_GROUP_ID:''}),(error:any)=>error?.code==='HIPICO_BRIDGE_GROUP_IDENTITY_NOT_CONFIGURED');
+});
+
+test('bridge failure logs redact group labels, channel keys and raw provider ids',()=>{
+  assert.doesNotMatch(routes,/persistent shadow ingestion failed'\s*,\s*\{[^}]*groupName/);
+  assert.doesNotMatch(routes,/persistent shadow ingestion failed'\s*,\s*\{[^}]*channelKey/);
+  assert.match(routes,/persistent shadow ingestion failed'\s*,\s*\{messageRef:shadowTag\(input\.externalMessageId\)/);
+  assert.match(routes,/replay identity mismatch'\s*,\s*\{messageRef:shadowTag\(input\.externalMessageId\)/);
 });
 
 test('operator handoff returns the persisted CAS version and conflicts require reload',()=>{
