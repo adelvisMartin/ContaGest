@@ -37,6 +37,11 @@ function sameTrack(left, right) {
   return Boolean(a && b && a === b);
 }
 
+function validRaceNumber(value) {
+  const number = Number(value);
+  return Number.isInteger(number) && number > 0 ? number : null;
+}
+
 function messageIndex(analysis, messageId) {
   return (analysis?.messages || []).findIndex((message) => message.id === messageId);
 }
@@ -85,6 +90,50 @@ export function resolveBoardTarget(analysis, workspace) {
   return { status: 'MATCH', board, activeRace, context: inherited, reason: 'Hipódromo y carrera coinciden con la carrera activa.' };
 }
 
+export function resolveMatchTarget(analysis, workspace) {
+  const groupId = activeGroupId(workspace);
+  const activeRace = readActiveRace(workspace, groupId);
+  const matches = Array.isArray(analysis?.matches) ? analysis.matches : [];
+  if (!activeRace) return { status: 'NO_ACTIVE_RACE', matches, activeRace: null, reason: 'No hay una carrera activa.' };
+  if (!matches.length) return { status: 'NO_MATCHES', matches, activeRace, reason: 'No hay parejas detectadas para importar.' };
+
+  const mismatch = matches.find((match) => {
+    const raceNumber = validRaceNumber(match.raceNumber);
+    const trackMismatch = Boolean(match.track) && !sameTrack(match.track, activeRace.racetrack);
+    const numberMismatch = Boolean(raceNumber) && raceNumber !== Number(activeRace.number);
+    return trackMismatch || numberMismatch;
+  });
+  if (mismatch) {
+    const raceLabel = mismatch.raceNumber ? ` ${mismatch.raceNumber}` : '';
+    const trackLabel = mismatch.track || 'hipódromo sin identificar';
+    return {
+      status: 'MISMATCH',
+      matches,
+      activeRace,
+      mismatch,
+      reason: `Una pareja pertenece a ${trackLabel}${raceLabel} y la carrera activa es ${activeRace.racetrack} ${activeRace.number}.`
+    };
+  }
+
+  const incomplete = matches.filter((match) => !match.track || !validRaceNumber(match.raceNumber));
+  if (incomplete.length) {
+    return {
+      status: 'AMBIGUOUS',
+      matches,
+      activeRace,
+      incomplete,
+      reason: `${incomplete.length} pareja(s) no tienen hipódromo y número de carrera confirmados por el chat.`
+    };
+  }
+
+  return {
+    status: 'MATCH',
+    matches,
+    activeRace,
+    reason: 'Todas las parejas tienen hipódromo y carrera coincidentes con la carrera activa.'
+  };
+}
+
 async function currentWorkspace() {
   await flushWorkspaceWrites().catch(() => {});
   return normalizeWorkspaceShape(await loadLocalWorkspace(createBlankWorkspace));
@@ -101,43 +150,50 @@ async function analyzeVisibleChat(workspace) {
   return parseWhatsAppChat(text, { racetrackCatalog: workspace?.config?.racetrackCatalog || [] });
 }
 
-function boardContextDialog({ title, message, activeRace, board, confirmLabel = '' }) {
+function raceContextDialog({
+  title,
+  message,
+  activeRace,
+  evidenceLabel,
+  evidenceText,
+  helpText,
+  confirmLabel = ''
+}) {
   return new Promise((resolve) => {
-    document.querySelector('[data-board-context-dialog]')?.remove();
+    document.querySelector('[data-race-context-dialog]')?.remove();
 
     const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     const backdrop = document.createElement('div');
     backdrop.className = 'modal-backdrop';
-    backdrop.dataset.boardContextDialog = 'true';
+    backdrop.dataset.raceContextDialog = 'true';
 
-    const boardText = Array.isArray(board) && board.length ? board.join('.') : 'Sin pizarra';
     const raceText = activeRace ? `${activeRace.racetrack} · ${activeRace.number}ª carrera` : 'Sin carrera activa';
     const confirmAction = confirmLabel
-      ? `<button type="button" class="button" data-board-context-confirm>${escapeHtml(confirmLabel)}</button>`
+      ? `<button type="button" class="button" data-race-context-confirm>${escapeHtml(confirmLabel)}</button>`
       : '';
 
     backdrop.innerHTML = `
-      <section class="modal" role="dialog" aria-modal="true" aria-labelledby="board-context-title" aria-describedby="board-context-description" tabindex="-1">
+      <section class="modal" role="dialog" aria-modal="true" aria-labelledby="race-context-title" aria-describedby="race-context-description" tabindex="-1">
         <div class="modal__handle" aria-hidden="true"></div>
         <div class="modal__head">
           <div>
-            <h3 id="board-context-title">${escapeHtml(title)}</h3>
-            <small>Validación de carrera antes de aplicar resultado</small>
+            <h3 id="race-context-title">${escapeHtml(title)}</h3>
+            <small>Validación de carrera antes de modificar el registro operativo</small>
           </div>
-          <button type="button" class="button icon-button button--ghost" data-board-context-cancel aria-label="Cerrar">×</button>
+          <button type="button" class="button icon-button button--ghost" data-race-context-cancel aria-label="Cerrar">×</button>
         </div>
         <div class="modal__body">
           <div class="ui-state" data-tone="warning">
             <strong class="ui-state__title">Revisión obligatoria</strong>
-            <span id="board-context-description">${escapeHtml(message)}</span>
+            <span id="race-context-description">${escapeHtml(message)}</span>
           </div>
           <div class="form-grid two">
             <div class="field"><label>Carrera activa</label><div class="input" aria-readonly="true">${escapeHtml(raceText)}</div></div>
-            <div class="field"><label>Pizarra detectada</label><div class="input" aria-readonly="true">${escapeHtml(boardText)}</div></div>
+            <div class="field"><label>${escapeHtml(evidenceLabel)}</label><div class="input" aria-readonly="true">${escapeHtml(evidenceText)}</div></div>
           </div>
-          <p class="help-text">Control Hípico no liquida dinero por una llegada ambigua. Confirma manualmente solo si verificaste que la pizarra pertenece exactamente a la carrera activa.</p>
+          <p class="help-text">${escapeHtml(helpText)}</p>
           <div class="modal__actions">
-            <button type="button" class="button button--ghost" data-board-context-cancel>${confirmLabel ? 'Cancelar' : 'Cerrar'}</button>
+            <button type="button" class="button button--ghost" data-race-context-cancel>${confirmLabel ? 'Cancelar' : 'Cerrar'}</button>
             ${confirmAction}
           </div>
         </div>
@@ -161,8 +217,8 @@ function boardContextDialog({ title, message, activeRace, board, confirmLabel = 
     const onClick = (event) => {
       const target = event.target instanceof Element ? event.target : null;
       if (!target) return;
-      if (target.closest('[data-board-context-confirm]')) return finish(true);
-      if (target.closest('[data-board-context-cancel]') || target === backdrop) return finish(false);
+      if (target.closest('[data-race-context-confirm]')) return finish(true);
+      if (target.closest('[data-race-context-cancel]') || target === backdrop) return finish(false);
     };
 
     const onKeyDown = (event) => {
@@ -195,10 +251,6 @@ function boardContextDialog({ title, message, activeRace, board, confirmLabel = 
 }
 
 async function guardBoardApplication(button) {
-  if (manualBypassTarget === button) {
-    manualBypassTarget = null;
-    return true;
-  }
   const workspace = await currentWorkspace();
   const analysis = await analyzeVisibleChat(workspace);
   if (!analysis) {
@@ -209,21 +261,66 @@ async function guardBoardApplication(button) {
   if (decision.status === 'MATCH') return true;
   if (decision.status === 'MISMATCH') {
     notify(`Pizarra bloqueada: ${decision.reason}`);
-    await boardContextDialog({
+    await raceContextDialog({
       title: 'Pizarra bloqueada',
       message: `${decision.reason} Abre la carrera correcta y vuelve a aplicar.`,
       activeRace: decision.activeRace,
-      board: decision.board?.board
+      evidenceLabel: 'Pizarra detectada',
+      evidenceText: decision.board?.board?.join('.') || 'Sin pizarra',
+      helpText: 'Control Hípico no liquida dinero por una llegada ambigua o atribuida a otra carrera.'
     });
     return false;
   }
   if (decision.status === 'AMBIGUOUS') {
-    const approved = await boardContextDialog({
+    const approved = await raceContextDialog({
       title: 'Confirmar pizarra manualmente',
       message: decision.reason,
       activeRace: decision.activeRace,
-      board: decision.board?.board,
+      evidenceLabel: 'Pizarra detectada',
+      evidenceText: decision.board?.board?.join('.') || 'Sin pizarra',
+      helpText: 'Control Hípico no liquida dinero por una llegada ambigua. Confirma manualmente solo si verificaste que la pizarra pertenece exactamente a la carrera activa.',
       confirmLabel: 'Confirmar carrera y aplicar'
+    });
+    if (approved) {
+      manualBypassTarget = button;
+      queueMicrotask(() => button.click());
+    }
+    return false;
+  }
+  notify(decision.reason);
+  return false;
+}
+
+async function guardMatchImport(button) {
+  const workspace = await currentWorkspace();
+  const analysis = await analyzeVisibleChat(workspace);
+  if (!analysis) {
+    notify('No se pudo validar la carrera de las parejas porque el bloque de WhatsApp ya no está visible. Vuelve a analizar el chat.');
+    return false;
+  }
+  const decision = resolveMatchTarget(analysis, workspace);
+  if (decision.status === 'MATCH') return true;
+  if (decision.status === 'MISMATCH') {
+    notify(`Importación bloqueada: ${decision.reason}`);
+    await raceContextDialog({
+      title: 'Importación bloqueada',
+      message: `${decision.reason} Abre la carrera correcta y vuelve a importar.`,
+      activeRace: decision.activeRace,
+      evidenceLabel: 'Parejas detectadas',
+      evidenceText: `${decision.matches.length} pareja(s)`,
+      helpText: 'Una pareja con contexto conocido de otra carrera nunca se importa mediante una confirmación manual.'
+    });
+    return false;
+  }
+  if (decision.status === 'AMBIGUOUS') {
+    const approved = await raceContextDialog({
+      title: 'Confirmar carrera de las parejas',
+      message: decision.reason,
+      activeRace: decision.activeRace,
+      evidenceLabel: 'Parejas detectadas',
+      evidenceText: `${decision.matches.length} pareja(s) · ${decision.incomplete.length} sin contexto completo`,
+      helpText: 'Confirma sólo si verificaste en el chat que las parejas pertenecen exactamente a la carrera activa. Esto no liquida saldos.',
+      confirmLabel: 'Confirmar carrera e importar'
     });
     if (approved) {
       manualBypassTarget = button;
@@ -237,7 +334,9 @@ async function guardBoardApplication(button) {
 
 if (typeof document !== 'undefined') {
   document.addEventListener('click', (event) => {
-    const button = event.target instanceof Element ? event.target.closest('[data-action="apply-chat-board"]') : null;
+    const button = event.target instanceof Element
+      ? event.target.closest('[data-action="apply-chat-board"], [data-action="import-chat-matches"]')
+      : null;
     if (!button) return;
     if (manualBypassTarget === button) {
       manualBypassTarget = null;
@@ -245,14 +344,16 @@ if (typeof document !== 'undefined') {
     }
     event.preventDefault();
     event.stopImmediatePropagation();
-    guardBoardApplication(button).then((allowed) => {
+    const action = button.getAttribute('data-action');
+    const guard = action === 'import-chat-matches' ? guardMatchImport : guardBoardApplication;
+    guard(button).then((allowed) => {
       if (!allowed) return;
       manualBypassTarget = button;
       button.click();
     }).catch((error) => {
-      notify(error?.message || 'No se pudo validar el contexto de la pizarra.');
+      notify(error?.message || 'No se pudo validar el contexto de la carrera.');
     });
   }, true);
 }
 
-export const __test__ = { normalizedTrack, sameTrack, nearestOpeningContext };
+export const __test__ = { normalizedTrack, sameTrack, validRaceNumber, nearestOpeningContext };
