@@ -6,6 +6,7 @@ import { operatorTokenValid } from './hipico-operator-security.js';
 import { cloudDestinationAllowed, cloudOutboundPolicy } from './hipico-outbound-policy.js';
 import { createHorseRaceProvider, HorseRaceProviderError } from './hipico-race-provider.js';
 import { buildShadowProjection } from './hipico-shadow-projection.js';
+import { webhookSecurityReady } from './hipico-webhook-security.js';
 
 const router=Router();
 const idSchema=z.string().min(3).max(120).regex(/^[A-Za-z0-9_-]+$/);
@@ -27,7 +28,7 @@ router.get('/status',async(_req,res)=>res.json({ok:true,data:{
   dbReady:await HipicoBotStore.dbReady(),
   cloudConfigured:Boolean(process.env.WHATSAPP_CLOUD_TOKEN&&process.env.WHATSAPP_PHONE_NUMBER_ID),
   cloudOutboundPolicy:cloudOutboundPolicy(),
-  webhookConfigured:Boolean(process.env.WHATSAPP_VERIFY_TOKEN&&process.env.WHATSAPP_APP_SECRET),
+  webhookConfigured:webhookSecurityReady(),
   targetSupport:['individual'],
   groupAutomation:'bridge-required',
   groupQaMode:'shadow-only',
