@@ -127,8 +127,8 @@ export function assessConversationInput(input:{text:string;mediaKind?:string|nul
   const knownMedia=KNOWN_MEDIA_KINDS.has(media);
   const mediaRequiresReview=media!=='none';
   const unsupportedMedia=!knownMedia||mediaRequiresReview;
-  if(!knownMedia)flags.push('UNSUPPORTED_MEDIA_REQUIRES_REVIEW');
-  else if(mediaRequiresReview)flags.push(media==='document'?'DOCUMENT_REQUIRES_REVIEW':'NON_TEXT_MEDIA_REQUIRES_REVIEW');
+  if(!knownMedia||(!sanitizedText&&mediaRequiresReview))flags.push('UNSUPPORTED_MEDIA_REQUIRES_REVIEW');
+  if(knownMedia&&mediaRequiresReview)flags.push(media==='document'?'DOCUMENT_REQUIRES_REVIEW':'NON_TEXT_MEDIA_REQUIRES_REVIEW');
   const blocked=flags.includes('QUOTE_DEPTH_EXCEEDED');
   const forceReview=blocked||unsupportedMedia||flags.some((flag)=>['PRIVILEGE_CLAIM_IN_TEXT','PROMPT_OR_SOCIAL_INJECTION','CROSS_PARTICIPANT_DATA_REQUEST'].includes(flag));
   return{
