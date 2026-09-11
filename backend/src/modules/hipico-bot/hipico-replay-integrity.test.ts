@@ -83,47 +83,37 @@ test('canonical replay rejects changed sender, text or quoted context', () => {
   }
 });
 
-test('group shadow replay signature binds recipient message intent and risk', () => {
+test('group shadow replay signature still describes exact projection equality', () => {
   const persisted = groupShadowReplaySignature({ recipient: 'lab-group', message: 'Revisar jugada', intent: 'offer_player', risk: 'monetary' });
   const replay = groupShadowReplaySignature({ recipient: 'lab-group', message: 'Revisar jugada', intent: 'offer_player', risk: 'monetary' });
   assert.equal(replay, persisted);
   assert.doesNotThrow(() => assertReplayMatch('group-shadow', persisted, replay));
 });
 
-test('group shadow outbox rejects a duplicate event with mutated projection', () => {
+test('group shadow outbox tolerates derived classifier drift while preserving the first projection', () => {
   const existing = {
     id: 'hbo-1',
-    recipient: 'lab-group',
-    message: 'Revisar jugada',
-    intent: 'offer_player',
-    risk: 'monetary'
+    recipient: 'lab-group'
   };
   const base = {
     eventId: 'event-1',
     recipient: 'lab-group',
     result: { suggestion: 'Revisar jugada', intent: 'offer_player', risk: 'monetary' }
   } as any;
-  assert.doesNotThrow(() => bridgeStoreTest.assertGroupShadowReplay(existing, base));
-  for (const mutated of [
-    { ...base, recipient: 'source-group' },
-    { ...base, result: { ...base.result, suggestion: 'Mensaje alterado' } },
+  assert.doesNotThrow(() => bridgeStoreTest.assertGroupShadowDestination(existing, base));
+  for (const derivedDrift of [
+    { ...base, result: { ...base.result, suggestion: 'Mensaje alterado por nueva versión' } },
     { ...base, result: { ...base.result, intent: 'race_result' } },
     { ...base, result: { ...base.result, risk: 'review' } }
   ]) {
-    assert.throws(
-      () => bridgeStoreTest.assertGroupShadowReplay(existing, mutated),
-      (error: any) => error?.code === 'HIPICO_GROUP_SHADOW_OUTBOX_REPLAY_MISMATCH'
-    );
+    assert.doesNotThrow(() => bridgeStoreTest.assertGroupShadowDestination(existing, derivedDrift));
   }
 });
 
-test('group shadow replay mismatch is mapped to the transport quarantine code at the route boundary', () => {
+test('group shadow destination remains fail-closed on a duplicate event', () => {
   const existing = {
     id: 'hbo-1',
-    recipient: 'lab-group',
-    message: 'Revisar jugada',
-    intent: 'offer_player',
-    risk: 'monetary'
+    recipient: 'lab-group'
   };
   const mutated = {
     eventId: 'event-1',
@@ -131,7 +121,7 @@ test('group shadow replay mismatch is mapped to the transport quarantine code at
     result: { suggestion: 'Revisar jugada', intent: 'offer_player', risk: 'monetary' }
   } as any;
   assert.throws(
-    () => bridgeStoreTest.assertGroupShadowReplayAtTransportBoundary(existing, mutated),
+    () => bridgeStoreTest.assertGroupShadowDestination(existing, mutated),
     (error: any) => error?.code === 'HIPICO_TRANSPORT_REPLAY_MISMATCH'
   );
 });
