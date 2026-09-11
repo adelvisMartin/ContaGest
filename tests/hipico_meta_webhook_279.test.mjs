@@ -2,17 +2,13 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { __test__ } from '../frontend/api/hipico/whatsapp-webhook.js';
+import { extractMetaMessages, metaTimestamp } from '../frontend/api/hipico/_shared.js';
 
 const source=await readFile(new URL('../frontend/api/hipico/whatsapp-webhook.js',import.meta.url),'utf8');
+const shared=await readFile(new URL('../frontend/api/hipico/_shared.js',import.meta.url),'utf8');
 
 test('Meta webhook replay signature binds sender instant type body and quoted context',()=>{
-  const base={
-    senderId:'584121234567',
-    timestamp:'2026-09-11T06:00:00.000Z',
-    type:'text',
-    text:'30k',
-    quotedExternalMessageId:'origin-1'
-  };
+  const base={senderId:'584121234567',timestamp:'2026-09-11T06:00:00.000Z',type:'text',text:'30k',quotedExternalMessageId:'origin-1'};
   const sameInstant={...base,timestamp:'2026-09-11T01:00:00-05:00'};
   assert.equal(__test__.messageReplaySignature(base),__test__.messageReplaySignature(sameInstant));
   assert.notEqual(__test__.messageReplaySignature(base),__test__.messageReplaySignature({...base,text:'300k'}));
@@ -35,14 +31,33 @@ test('Meta webhook verifies the raw signature before parsing or persisting conte
   assert.match(source,/bodyParser:\s*false/);
 });
 
+test('Meta timestamp parser never throws and invalid signed timestamps fail identity validation',()=>{
+  assert.equal(metaTimestamp('1789106400'),'2026-09-11T06:00:00.000Z');
+  assert.equal(metaTimestamp('not-a-number'),null);
+  assert.equal(metaTimestamp('1e999'),null);
+  assert.equal(metaTimestamp('-1'),null);
+  assert.equal(metaTimestamp(null),null);
+  const payload={entry:[{changes:[{value:{metadata:{phone_number_id:'1234567890'},messages:[{id:'wamid-1',from:'584121234567',timestamp:'not-a-number',type:'text',text:{body:'hola'}}]}}]}]};
+  const [message]=extractMetaMessages(payload);
+  assert.equal(message.timestamp,null);
+  assert.equal(__test__.validMetaMessageIdentity(message),false);
+  assert.match(shared,/timestamp:\s*metaTimestamp\(message\?\.timestamp\)/);
+});
+
+test('Meta extraction bounds externally supplied identity and display fields before persistence',()=>{
+  const long='x'.repeat(5000);
+  const payload={entry:[{changes:[{value:{metadata:{phone_number_id:long},contacts:[{wa_id:'584121234567',profile:{name:long}}],messages:[{id:long,from:'584121234567',timestamp:'1789106400',type:long,text:{body:long},context:{id:long}}]}}]}]};
+  const [message]=extractMetaMessages(payload);
+  assert.equal(message.channelKey.length,220);
+  assert.equal(message.externalMessageId.length,320);
+  assert.equal(message.senderLabel.length,220);
+  assert.equal(message.type.length,80);
+  assert.equal(message.text.length,4000);
+  assert.equal(message.quotedExternalMessageId.length,320);
+});
+
 test('Meta webhook rejects incomplete message identity before any persistence',()=>{
-  const valid={
-    externalMessageId:'wamid-meta-1',
-    channelKey:'1234567890',
-    senderId:'584121234567',
-    timestamp:'2026-09-11T06:00:00.000Z',
-    raw:{timestamp:'1789106400'}
-  };
+  const valid={externalMessageId:'wamid-meta-1',channelKey:'1234567890',senderId:'584121234567',timestamp:'2026-09-11T06:00:00.000Z',raw:{timestamp:'1789106400'}};
   assert.equal(__test__.validMetaMessageIdentity(valid),true);
   assert.equal(__test__.validMetaMessageIdentity({...valid,externalMessageId:''}),false);
   assert.equal(__test__.validMetaMessageIdentity({...valid,channelKey:'meta'}),false);
