@@ -67,10 +67,13 @@ function outboundError(res:any,error:any){
   if(code==='HIPICO_CLOUD_DELIVERY_AMBIGUOUS'){
     return res.status(202).json({ok:false,retryable:false,error:'reconciliation_required',code});
   }
-  if(code.startsWith('HIPICO_CLOUD_')||code==='HIPICO_DESTINATION_NOT_ALLOWLISTED'){
-    return res.status(409).json({ok:false,error:'Envío cloud bloqueado por la política de producción.',code});
+  if(code==='HIPICO_CLOUD_SEND_DISABLED'||code==='HIPICO_DESTINATION_NOT_ALLOWLISTED'){
+    return res.status(409).json({ok:false,retryable:false,error:'Envío cloud bloqueado por la política de producción.',code});
   }
-  return res.status(502).json({ok:false,error:'No se pudo enviar el mensaje.'});
+  if(code==='HIPICO_CLOUD_MESSAGE_INVALID'){
+    return res.status(400).json({ok:false,retryable:false,error:'Mensaje cloud inválido.',code});
+  }
+  return res.status(502).json({ok:false,retryable:true,error:'No se pudo enviar el mensaje.',code:code||undefined});
 }
 
 function outboundPreflight(to:string){
