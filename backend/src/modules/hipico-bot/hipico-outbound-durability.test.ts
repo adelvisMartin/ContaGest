@@ -36,11 +36,23 @@ test('policy and destination allowlist are checked before atomic send claim',()=
   assert.match(routes,/outbound_disabled/);
 });
 
-test('sent and failed transitions verify exactly one durable row was affected',()=>{
+test('sent, failed and reconciliation transitions verify one durable row',()=>{
   assert.match(service,/const affected=await prisma\.\$executeRaw/);
   assert.match(service,/return affected===1/);
+  assert.match(service,/async markReconciliationRequired/);
+  assert.match(service,/"status"='reconciliation_required'/);
   assert.match(routes,/reconciliation_required/);
   assert.match(service,/status:persisted\?'sent':'reconciliation_required'/);
+});
+
+test('transport failures with unknown Meta acceptance are quarantined and never reported retryable',()=>{
+  assert.match(service,/HIPICO_CLOUD_DELIVERY_AMBIGUOUS/);
+  assert.match(service,/requiere conciliación manual/);
+  assert.match(service,/markReconciliationRequired/);
+  assert.match(routes,/persistSendFailure/);
+  assert.match(routes,/state\.ambiguous/);
+  assert.match(routes,/retryable:false,error:'reconciliation_required'/);
+  assert.match(routes,/item\.status==='sending'\|\|item\.status==='reconciliation_required'/);
 });
 
 test('Meta recipients are constrained to E.164 maximum 15 digits end-to-end',()=>{
