@@ -5,6 +5,7 @@ import { effectiveBridgeMediaKind } from './hipico-bridge-input-policy.js';
 import { persistHipicoDomainEvent } from './hipico-domain-event.store.js';
 import { readHipicoDomainAggregate } from './hipico-domain-query.store.js';
 import { operatorTokenConfigured, operatorTokenValid } from './hipico-operator-security.js';
+import { operationalRaceContextKey } from './hipico-race-context-key.js';
 import type { HipicoDomainEventType } from './hipico-domain-state.js';
 
 export const HIPICO_CANONICAL_API_VERSION = 'v1';
@@ -20,6 +21,7 @@ const RACE_ONLY_EVENTS = new Set<HipicoDomainEventType>([
   'SETTLEMENT_READY', 'SETTLEMENT_RECORDED', 'BALANCE_CONFIRMED', 'RACE_PUBLISHED', 'RACE_ARCHIVED'
 ]);
 const DAY_ONLY_EVENTS = new Set<HipicoDomainEventType>(['DAY_OPENED', 'DAY_CLOSING', 'DAY_CLOSED', 'DAY_ARCHIVED']);
+const RACE_CONTEXT_ANCHOR_EVENTS = new Set<HipicoDomainEventType>(['PLAN_RECORDED', 'RACE_OPENED', 'RACE_CLOSED']);
 
 const aggregateKindSchema = z.enum(['race', 'day']);
 const mediaKindSchema = z.enum(['none', 'image', 'video', 'audio', 'document', 'unknown']);
@@ -63,7 +65,7 @@ const domainEventSchema = z.object({
 
 type DomainEventBody = z.infer<typeof domainEventSchema>;
 type CanonicalPolicyInput = Pick<DomainEventBody, 'eventType' | 'confirmedOperatorAction' | 'confirmationReason'>
-  & Partial<Pick<DomainEventBody, 'aggregateKind' | 'normalizedPayload' | 'originalEventId'>>;
+  & Partial<Pick<DomainEventBody, 'aggregateKind' | 'aggregateKey' | 'normalizedPayload' | 'originalEventId'>>;
 
 export function configuredCanonicalOwnerId(env: NodeJS.ProcessEnv = process.env) {
   const value = String(env.HIPICO_OWNER_ID || '').trim();
@@ -90,10 +92,25 @@ function finiteNumber(value: unknown) {
   return typeof value === 'number' && Number.isFinite(value);
 }
 
+export function canonicalRaceContextKey(input: Pick<CanonicalPolicyInput, 'eventType' | 'normalizedPayload'>) {
+  if (!RACE_CONTEXT_ANCHOR_EVENTS.has(input.eventType)) return null;
+  const payload = payloadRecord(input.normalizedPayload);
+  const raceNumber = payload?.raceNumber;
+  const racetrack = payload?.racetrack;
+  if (payload?.raceContextComplete !== true || !Number.isInteger(raceNumber) || !nonEmptyText(racetrack, 120)) return null;
+  return operationalRaceContextKey({ raceNumber: Number(raceNumber), racetrack: String(racetrack) });
+}
+
 export function canonicalScopeIssue(input: CanonicalPolicyInput) {
   if (input.aggregateKind) {
     if (RACE_ONLY_EVENTS.has(input.eventType) && input.aggregateKind !== 'race') return 'HIPICO_EVENT_AGGREGATE_KIND_MISMATCH';
     if (DAY_ONLY_EVENTS.has(input.eventType) && input.aggregateKind !== 'day') return 'HIPICO_EVENT_AGGREGATE_KIND_MISMATCH';
+  }
+  if (input.aggregateKind === 'race' && RACE_CONTEXT_ANCHOR_EVENTS.has(input.eventType)) {
+    const expectedAggregateKey = canonicalRaceContextKey(input);
+    if (expectedAggregateKey && input.aggregateKey && String(input.aggregateKey).trim() !== expectedAggregateKey) {
+      return 'HIPICO_RACE_AGGREGATE_KEY_MISMATCH';
+    }
   }
   if (EXPLICIT_OPERATOR_EVENTS.has(input.eventType) && !String(input.originalEventId || '').trim()) {
     return 'HIPICO_ORIGINAL_EVENT_REQUIRED';
@@ -103,7 +120,7 @@ export function canonicalScopeIssue(input: CanonicalPolicyInput) {
 
 export function canonicalEvidenceIssue(input: CanonicalPolicyInput) {
   const payload = payloadRecord(input.normalizedPayload);
-  if (input.eventType === 'RACE_OPENED' || input.eventType === 'RACE_CLOSED') {
+  if (RACE_CONTEXT_ANCHOR_EVENTS.has(input.eventType)) {
     const raceNumber = payload?.raceNumber;
     const racetrack = payload?.racetrack;
     const complete = payload?.raceContextComplete;
@@ -194,6 +211,7 @@ router.post('/preview', (req, res) => {
     classification: result,
     appsec: safePublicAbuseMetadata(assessment),
     effectiveMediaKind,
+    raceContextKey: operationalRaceContextKey(result.entities),
     effectsAllowed: false,
     sourceWrite: false,
     monetaryWrite: false
@@ -235,7 +253,15 @@ router.post('/domain/events', async (req, res) => {
   if (!ownerId) return res.status(503).json({ ok: false, error: 'HIPICO_OWNER_NOT_CONFIGURED' });
   const input = parsed.data;
   const scopeIssue = canonicalScopeIssue(input);
-  if (scopeIssue) return res.status(400).json({ ok: false, retryable: false, error: scopeIssue });
+  if (scopeIssue) {
+    const expectedAggregateKey = scopeIssue === 'HIPICO_RACE_AGGREGATE_KEY_MISMATCH' ? canonicalRaceContextKey(input) : null;
+    return res.status(400).json({
+      ok: false,
+      retryable: false,
+      error: scopeIssue,
+      ...(expectedAggregateKey ? { expectedAggregateKey } : {})
+    });
+  }
   const policy = canonicalMutationPolicy(input);
 
   if ((EXPLICIT_OPERATOR_EVENTS.has(input.eventType) || STATE_ADVANCING_EVENTS.has(input.eventType))
@@ -302,6 +328,7 @@ export const __test__ = {
   EXPLICIT_OPERATOR_EVENTS,
   RACE_ONLY_EVENTS,
   DAY_ONLY_EVENTS,
+  RACE_CONTEXT_ANCHOR_EVENTS,
   previewSchema,
   domainReadSchema,
   domainEventSchema
