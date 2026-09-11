@@ -8,9 +8,17 @@ function configuredSecret(name:'WHATSAPP_VERIFY_TOKEN'|'WHATSAPP_APP_SECRET',env
   return String(env[name]||'').trim();
 }
 
+function configuredPhoneNumberId(env:RuntimeEnv=process.env){
+  return String(env.WHATSAPP_PHONE_NUMBER_ID||'').trim();
+}
+
 export function metaWebhookSecretsConfigured(env:RuntimeEnv=process.env){
   return configuredSecret('WHATSAPP_VERIFY_TOKEN',env).length>=MIN_META_SECRET_LENGTH
     && configuredSecret('WHATSAPP_APP_SECRET',env).length>=MIN_META_SECRET_LENGTH;
+}
+
+export function metaWebhookRuntimeConfigured(env:RuntimeEnv=process.env){
+  return metaWebhookSecretsConfigured(env)&&configuredPhoneNumberId(env).length>0;
 }
 
 function safeEqual(left:string,right:string){
@@ -31,3 +39,5 @@ export function metaSignatureValid(raw:Buffer|undefined,signature:string|undefin
   const expected=`sha256=${crypto.createHmac('sha256',secret).update(raw).digest('hex')}`;
   return safeEqual(signature,expected);
 }
+
+export const __test__={configuredPhoneNumberId,safeEqual};
