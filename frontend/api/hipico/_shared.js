@@ -2,6 +2,7 @@ import crypto from 'node:crypto';
 
 const DEFAULT_FETCH_TIMEOUT_MS = 10000;
 const MAX_FETCH_TIMEOUT_MS = 60000;
+const MAX_RETRY_AFTER_MS = 24 * 60 * 60 * 1000;
 const SHA40 = /^[a-f0-9]{40}$/i;
 export const MIN_HIPICO_INTERNAL_SECRET_LENGTH = 32;
 export const PUBLIC_SECRET_PLACEHOLDER_PATTERN = /(?:REEMPLAZA|REPLACE|CHANGE[_-]?ME|CHANGEME|PLACEHOLDER|YOUR[_-]?(?:SECRET|TOKEN|KEY)|TU[_-]?(?:SECRETO|TOKEN|CLAVE)|EXAMPLE[_-]?(?:SECRET|TOKEN|KEY))/i;
@@ -99,6 +100,21 @@ export function safeTimeoutMs(value, fallback = DEFAULT_FETCH_TIMEOUT_MS) {
   const number = Number(value);
   if (!Number.isFinite(number) || number <= 0) return safeFallback;
   return Math.min(Math.floor(number), MAX_FETCH_TIMEOUT_MS);
+}
+
+export function retryAfterMs(value, nowMs = Date.now(), maxMs = MAX_RETRY_AFTER_MS) {
+  const capValue = Number(maxMs);
+  const cap = Number.isFinite(capValue) && capValue > 0 ? Math.floor(capValue) : MAX_RETRY_AFTER_MS;
+  const raw = String(value ?? '').trim();
+  if (!raw) return 0;
+  if (/^\d+(?:\.\d+)?$/.test(raw)) {
+    const milliseconds = Math.ceil(Number(raw) * 1000);
+    return Number.isFinite(milliseconds) && milliseconds > 0 ? Math.min(milliseconds, cap) : 0;
+  }
+  const parsed = Date.parse(raw);
+  const now = Number(nowMs);
+  if (!Number.isFinite(parsed) || !Number.isFinite(now)) return 0;
+  return Math.min(Math.max(0, parsed - now), cap);
 }
 
 export async function fetchWithTimeout(url, init = {}, timeoutMs = DEFAULT_FETCH_TIMEOUT_MS) {
