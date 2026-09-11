@@ -1,6 +1,30 @@
 import { adapterCaptureDecision, env, safeEqual, serverSecret, sha256, supabase } from './_shared.js';
 import { HIPICO_CHANNEL_KEY_PATTERN, configuredChannelIdentity, validateBridgeRoleIdentity } from './bridge-identity.js';
 
+const MAX_BRIDGE_BODY_BYTES = 24 * 1024;
+const ALLOWED_BRIDGE_BODY_KEYS = new Set([
+  'bridgeVersion',
+  'externalMessageId',
+  'groupId',
+  'groupName',
+  'channelKey',
+  'labChannelKey',
+  'channelRole',
+  'shadowMode',
+  'senderId',
+  'senderLabel',
+  'fromMe',
+  'timestamp',
+  'type',
+  'mediaKind',
+  'text',
+  'hasMedia',
+  'quotedExternalMessageId',
+  'rawMeta'
+]);
+const BRIDGE_MESSAGE_TYPES = new Set(['chat', 'media']);
+const BRIDGE_MEDIA_KINDS = new Set(['none', 'image', 'video', 'audio', 'document']);
+
 function shadowSuggestion(classification, body) {
   const sender = String(body?.senderLabel || 'remitente').trim() || 'remitente';
   const suggestions = {
@@ -18,6 +42,19 @@ function shadowSuggestion(classification, body) {
 
 function validOptionalBoolean(body, key) {
   return body[key] === undefined || typeof body[key] === 'boolean';
+}
+
+function bridgeBodyBytes(body) {
+  try {
+    return Buffer.byteLength(JSON.stringify(body), 'utf8');
+  } catch {
+    return Number.POSITIVE_INFINITY;
+  }
+}
+
+function normalizedMediaKind(body) {
+  if (body?.mediaKind !== undefined) return String(body.mediaKind).trim().toLowerCase();
+  return body?.hasMedia === true ? 'unknown' : 'none';
 }
 
 const ISO_TIMESTAMP_WITH_ZONE = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.(\d{1,9}))?(Z|[+-]\d{2}:\d{2})$/;
@@ -52,6 +89,9 @@ function normalizedChannelRole(body) {
 
 export function validateGroupBridgeBody(body, source = process.env) {
   if (!body || typeof body !== 'object' || Array.isArray(body)) return 'invalid_body';
+  if (bridgeBodyBytes(body) > MAX_BRIDGE_BODY_BYTES) return 'payload_too_large';
+  if (Object.keys(body).some((key) => !ALLOWED_BRIDGE_BODY_KEYS.has(key))) return 'unknown_field';
+
   const groupId = String(body.groupId || '').trim();
   const externalMessageId = String(body.externalMessageId || '').trim();
   const role = normalizedChannelRole(body);
@@ -59,8 +99,14 @@ export function validateGroupBridgeBody(body, source = process.env) {
   if (!['source', 'lab'].includes(role)) return 'invalid_channel_role';
   if (body.groupName !== undefined && (typeof body.groupName !== 'string' || body.groupName.length > 220)) return 'invalid_group_name';
   if (body.channelKey !== undefined && (typeof body.channelKey !== 'string' || !HIPICO_CHANNEL_KEY_PATTERN.test(body.channelKey.trim()))) return 'invalid_channel_key';
+  if (body.labChannelKey !== undefined) {
+    if (typeof body.labChannelKey !== 'string' || !HIPICO_CHANNEL_KEY_PATTERN.test(body.labChannelKey.trim())) return 'invalid_lab_channel_key';
+    if (body.labChannelKey.trim() !== configuredChannelIdentity('lab', source).channelKey) return 'lab_channel_not_authorized';
+  }
   if (body.bridgeVersion !== undefined && (typeof body.bridgeVersion !== 'string' || body.bridgeVersion.length > 80)) return 'invalid_bridge_version';
-  if (body.type !== undefined && (typeof body.type !== 'string' || body.type.length > 80)) return 'invalid_message_type';
+  if (body.type !== undefined && (typeof body.type !== 'string' || !BRIDGE_MESSAGE_TYPES.has(body.type.trim().toLowerCase()))) return 'invalid_message_type';
+  if (body.mediaKind !== undefined && (typeof body.mediaKind !== 'string' || !BRIDGE_MEDIA_KINDS.has(body.mediaKind.trim().toLowerCase()))) return 'invalid_media_kind';
+  if (body.rawMeta !== undefined && (typeof body.rawMeta !== 'string' || body.rawMeta.length > 500)) return 'invalid_raw_meta';
   if (body.text !== undefined && typeof body.text !== 'string') return 'invalid_text';
   if (String(body.text || '').length > 4000) return 'text_too_large';
   if (typeof body.senderId !== 'string' || !body.senderId.trim() || body.senderId.length > 220) return 'invalid_sender';
@@ -69,6 +115,10 @@ export function validateGroupBridgeBody(body, source = process.env) {
   if (body.quotedExternalMessageId !== undefined && body.quotedExternalMessageId !== null && (typeof body.quotedExternalMessageId !== 'string' || body.quotedExternalMessageId.length > 320)) return 'invalid_quoted_message_id';
   if (!normalizedTimestamp(body.timestamp)) return 'invalid_timestamp';
   if (body.shadowMode !== true) return role === 'source' ? 'source_requires_shadow_mode' : 'lab_requires_shadow_mode';
+  if (body.mediaKind !== undefined && body.hasMedia === false && normalizedMediaKind(body) !== 'none') return 'invalid_media_consistency';
+  if (body.mediaKind !== undefined && body.hasMedia === true && normalizedMediaKind(body) === 'none') return 'invalid_media_consistency';
+  if (body.type !== undefined && body.hasMedia === true && body.type.trim().toLowerCase() !== 'media') return 'invalid_media_consistency';
+  if (body.type !== undefined && body.hasMedia === false && body.type.trim().toLowerCase() === 'media') return 'invalid_media_consistency';
 
   const identityError = validateBridgeRoleIdentity(role, groupId, body.channelKey, source);
   if (identityError) return identityError;
@@ -83,7 +133,8 @@ function sourceReplaySignature(body) {
     String(body.text || ''),
     body.quotedExternalMessageId == null ? null : String(body.quotedExternalMessageId),
     body.fromMe === true,
-    body.hasMedia === true
+    body.hasMedia === true,
+    normalizedMediaKind(body)
   ]));
 }
 
@@ -96,7 +147,8 @@ function persistedReplaySignature(row) {
     String(row?.raw_text || ''),
     row?.quoted_external_message_id == null ? null : String(row.quoted_external_message_id),
     row?.normalized?.from_me === true,
-    row?.normalized?.has_media === true
+    row?.normalized?.has_media === true,
+    String(row?.normalized?.media_kind || (row?.normalized?.has_media === true ? 'unknown' : 'none'))
   ]));
 }
 
@@ -251,6 +303,7 @@ export default async function handler(req, res) {
           shadow_mode: true,
           from_me: body.fromMe === true,
           has_media: body.hasMedia === true,
+          media_kind: normalizedMediaKind(body),
           domain_authority: capture.domainAuthority,
           adapter_hint_authoritative: false
         },
@@ -301,4 +354,14 @@ export default async function handler(req, res) {
   }
 }
 
-export const __test__ = { normalizedTimestamp, normalizedChannelRole, sourceReplaySignature, persistedReplaySignature, configuredChannelIdentity, assertPersistedChannel, adapterCaptureDecision };
+export const __test__ = {
+  normalizedTimestamp,
+  normalizedChannelRole,
+  normalizedMediaKind,
+  bridgeBodyBytes,
+  sourceReplaySignature,
+  persistedReplaySignature,
+  configuredChannelIdentity,
+  assertPersistedChannel,
+  adapterCaptureDecision
+};
