@@ -40,7 +40,7 @@ concurrency:
 jobs:
   operations-regression:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -50,12 +50,13 @@ jobs:
           cache-dependency-path: |
             package-lock.json
             tools/hipico-whatsapp-web-bridge/package-lock.json
-      - name: Parser, operational messages and ledger replay
+      - name: Parser, operational messages and multigroup replay
         run: |
           node --test tests/hipico-operations.test.mjs
-          node --test tests/hipico_operational_messages_277.test.mjs tests/hipico_operational_copy_center_277.test.mjs tests/hipico_board_context_guard_277.test.mjs
+          node --test tests/hipico_operational_messages_277.test.mjs tests/hipico_operational_copy_center_277.test.mjs tests/hipico_board_context_guard_277.test.mjs tests/hipico_multigroup_hardening_279.test.mjs
       - name: PWA operational syntax checks
         run: |
+          node --check frontend/public/hipico-control/assets/js/app.js
           node --check frontend/public/hipico-control/assets/js/whatsapp.js
           node --check frontend/public/hipico-control/assets/js/operations.js
           node --check frontend/public/hipico-control/assets/js/agent-router.js
@@ -66,8 +67,8 @@ jobs:
           node --check tools/hipico-whatsapp-bridge/src/index.mjs
       - name: Install root lock for Hípico backend contracts
         run: npm ci --no-audit --no-fund
-      - name: Backend operational classifier and conversation safety
-        run: npm --workspace backend exec -- tsx --test src/modules/hipico-bot/hipico-operational-classifier.test.ts src/modules/hipico-bot/hipico-conversation-engine.test.ts
+      - name: Backend Hípico security and conversation contracts
+        run: npm --workspace backend run test:hipico
       - name: Install hosted bridge lockfile
         working-directory: tools/hipico-whatsapp-web-bridge
         run: npm ci --no-audit --no-fund
