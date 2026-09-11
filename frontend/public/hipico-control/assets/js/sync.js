@@ -1,3 +1,5 @@
+import { assertWorkspaceInputSafety } from "./workspace-input-safety.js";
+
 export const SYNC_CONFLICT_POLICY = Object.freeze({
     participants: "latest-record-by-id",
     days: "latest-record-by-id",
@@ -70,8 +72,16 @@ export function markWorkspaceStale(workspace, reason = "offline") {
     return copy;
 }
 export function mergeWorkspaces(localWorkspace, remoteWorkspace) {
-    if (!remoteWorkspace) return markWorkspaceStale(localWorkspace, "remote-unavailable");
-    if (!localWorkspace) return markWorkspaceSynced(remoteWorkspace, { version: remoteWorkspace.version });
+    if (!remoteWorkspace) {
+        assertWorkspaceInputSafety(localWorkspace);
+        return markWorkspaceStale(localWorkspace, "remote-unavailable");
+    }
+    if (!localWorkspace) {
+        assertWorkspaceInputSafety(remoteWorkspace);
+        return markWorkspaceSynced(remoteWorkspace, { version: remoteWorkspace.version });
+    }
+    assertWorkspaceInputSafety(localWorkspace);
+    assertWorkspaceInputSafety(remoteWorkspace);
     const localNewer = recordTime(localWorkspace) >= recordTime(remoteWorkspace);
     const newest = localNewer ? localWorkspace : remoteWorkspace;
     const older = localNewer ? remoteWorkspace : localWorkspace;
@@ -96,6 +106,7 @@ export function mergeWorkspaces(localWorkspace, remoteWorkspace) {
     };
     const raceIds = new Set(merged.races.map((race) => race.id));
     if (!raceIds.has(merged.activeRaceId)) merged.activeRaceId = newest.activeRaceId || merged.races.at(-1)?.id || null;
+    assertWorkspaceInputSafety(merged);
     return merged;
 }
 export function shouldMergeCloud(localWorkspace, cloudRow) {
