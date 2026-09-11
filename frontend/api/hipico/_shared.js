@@ -3,11 +3,23 @@ import crypto from 'node:crypto';
 const DEFAULT_FETCH_TIMEOUT_MS = 10000;
 const MAX_FETCH_TIMEOUT_MS = 60000;
 const SHA40 = /^[a-f0-9]{40}$/i;
+export const MIN_HIPICO_INTERNAL_SECRET_LENGTH = 32;
 
 export function env(name, required = true) {
   const value = process.env[name];
   if (required && !value) throw new Error(`Missing server configuration: ${name}`);
   return value || '';
+}
+
+export function strongSecretConfigured(value, minLength = MIN_HIPICO_INTERNAL_SECRET_LENGTH) {
+  const minimum = Number.isInteger(minLength) && minLength > 0 ? minLength : MIN_HIPICO_INTERNAL_SECRET_LENGTH;
+  return Buffer.byteLength(String(value || '').trim(), 'utf8') >= minimum;
+}
+
+export function serverSecret(name, minLength = MIN_HIPICO_INTERNAL_SECRET_LENGTH) {
+  const value = String(env(name) || '').trim();
+  if (!strongSecretConfigured(value, minLength)) throw new Error(`Weak server configuration: ${name}`);
+  return value;
 }
 
 export function safeEqual(left, right) {
