@@ -14,6 +14,8 @@ const NON_TEXT_MEDIA=new Set(['audio','document','image','sticker','video']);
 const E164_DIGITS=/^[1-9]\d{6,14}$/;
 const MAX_INBOUND_TEXT=4000;
 const MAX_MESSAGE_TYPE=80;
+const MAX_PROVIDER_MESSAGE_ID=320;
+const MAX_PHONE_NUMBER_ID=120;
 
 const clampLimit=(value:number, fallback=50)=>Math.min(100,Math.max(1,Number.isFinite(value)?Math.trunc(value):fallback));
 const id=(prefix:string)=>`${prefix}_${crypto.randomUUID()}`;
@@ -59,14 +61,20 @@ export function extractMessages(payload:any){
   const rows:any[]=[];
   for(const entry of payload?.entry||[])for(const change of entry?.changes||[]){
     const value=change?.value||{};
-    const phoneNumberId=String(value?.metadata?.phone_number_id||'').slice(0,120);
+    const phoneNumberId=String(value?.metadata?.phone_number_id||'').trim();
     for(const message of value?.messages||[]){
+      const providerMessageId=String(message.id||'').trim();
+      const sender=String(message.from||'').trim();
       const messageType=String(message.type||'unknown').trim().toLowerCase().slice(0,MAX_MESSAGE_TYPE)||'unknown';
       const body=String(message?.text?.body||message?.button?.text||message?.interactive?.button_reply?.title||message?.document?.caption||message?.document?.filename||message?.image?.caption||message?.video?.caption||'').slice(0,MAX_INBOUND_TEXT);
-      rows.push({providerMessageId:String(message.id||'').slice(0,320),phoneNumberId,sender:String(message.from||''),messageType,body,payload:message});
+      rows.push({providerMessageId,phoneNumberId,sender,messageType,body,payload:message});
     }
   }
-  return rows.filter((row)=>row.providerMessageId&&E164_DIGITS.test(row.sender));
+  return rows.filter((row)=>
+    row.providerMessageId.length>0&&row.providerMessageId.length<=MAX_PROVIDER_MESSAGE_ID&&
+    row.phoneNumberId.length>0&&row.phoneNumberId.length<=MAX_PHONE_NUMBER_ID&&
+    E164_DIGITS.test(row.sender)
+  );
 }
 
 async function dbReady(force=false){
