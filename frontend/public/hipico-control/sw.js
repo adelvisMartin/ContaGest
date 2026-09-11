@@ -1,5 +1,5 @@
 const CACHE_VERSION = 'hipico-control-v1.13.0-rc3';
-const SHELL_CACHE = `${CACHE_VERSION}-shell-r18-multigroup-format-279`;
+const SHELL_CACHE = `${CACHE_VERSION}-shell-r19-date-identity-297`;
 const APP_SHELL = [
   './', './index.html', './recovery.html', './manifest.webmanifest',
   './icons/icon-192.png', './icons/icon-512.png', './icons/icon-192-maskable.png', './icons/icon-512-maskable.png',
@@ -25,8 +25,6 @@ function isAllowedStatic(url) { return APP_SHELL_URLS.has(url.toString()); }
 
 self.addEventListener('install', (event) => {
   event.waitUntil((async () => {
-    // A new cache name makes shell upgrades atomic: an active older worker
-    // cannot observe a partially refreshed cache while this worker installs.
     const cache = await caches.open(SHELL_CACHE);
     await cache.addAll([...APP_SHELL_URLS]);
     await self.skipWaiting();
