@@ -2,7 +2,7 @@ import crypto from 'node:crypto';
 import { prisma } from '../../database/prisma.js';
 import { classify as classifyOperational } from './hipico-operational-classifier.js';
 import type { IntentResult as OperationalIntentResult } from './hipico-operational-classifier.js';
-import { assertCloudOutboundAllowed, assertCloudTransportConfigured, cloudOutboundPolicy } from './hipico-outbound-policy.js';
+import { assertCloudOutboundAllowed, assertCloudTransportConfigured, cloudOutboundPolicy, cloudTransportConfiguration } from './hipico-outbound-policy.js';
 import { metaSignatureValid } from './hipico-meta-security.js';
 import { operatorTokenValid as canonicalOperatorTokenValid } from './hipico-operator-security.js';
 
@@ -20,7 +20,9 @@ let dbStatus:{value:boolean;until:number}|null=null;
 
 export function promotion():BotPromotion {
   const value=String(process.env.HIPICO_BOT_PROMOTION||'shadow').toLowerCase();
-  if(value==='automatic')return cloudOutboundPolicy().enabled?'automatic':'approved';
+  if(value==='automatic'){
+    return cloudOutboundPolicy().enabled&&cloudTransportConfiguration().configured?'automatic':'approved';
+  }
   return value==='approved'?'approved':'shadow';
 }
 
