@@ -32,8 +32,8 @@ function normalizedTimestamp(value) {
 
 function configuredChannelIdentity(role, source = process.env) {
   const sourceRole=role==='lab'?'lab':'source';
-  const groupId=String(sourceRole==='source'?source.HIPICO_SOURCE_GROUP_ID:source.HIPICO_LAB_GROUP_ID || '').trim();
-  const configuredKey=String(sourceRole==='source'?source.HIPICO_SOURCE_CHANNEL_KEY:source.HIPICO_LAB_CHANNEL_KEY || '').trim();
+  const groupId=String((sourceRole==='source'?source.HIPICO_SOURCE_GROUP_ID:source.HIPICO_LAB_GROUP_ID)||'').trim();
+  const configuredKey=String((sourceRole==='source'?source.HIPICO_SOURCE_CHANNEL_KEY:source.HIPICO_LAB_CHANNEL_KEY)||'').trim();
   const fallback=sourceRole==='source'?DEFAULT_SOURCE_CHANNEL_KEY:DEFAULT_LAB_CHANNEL_KEY;
   const channelKey=configuredKey||fallback;
   return { role:sourceRole, groupId, channelKey };
