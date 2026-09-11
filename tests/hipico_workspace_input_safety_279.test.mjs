@@ -49,6 +49,49 @@ test('hostile local or backup identifiers are rejected by canonical normalizatio
   );
 });
 
+test('duplicate group ids fail closed before UI or sync can alias tenants', () => {
+  const imported = workspace({
+    config: {
+      groups: [{ id: 'group-1', name: 'A' }, { id: 'group-1', name: 'B' }],
+      activeGroupId: 'group-1', activeWhatsappGroupId: 'group-1', activeRaceByGroup: {}, captureGroupIds: ['group-1']
+    }
+  });
+  assert.throws(
+    () => normalizeWorkspaceShape(imported),
+    (error) => error?.code === 'HIPICO_WORKSPACE_DUPLICATE_GROUP'
+  );
+});
+
+test('known-looking but nonexistent group references fail closed', () => {
+  const imported = workspace({
+    participants: [{ id: 'participant-1', groupId: 'group-ghost', name: 'Fantasma' }]
+  });
+  assert.throws(
+    () => normalizeWorkspaceShape(imported),
+    (error) => error?.code === 'HIPICO_WORKSPACE_UNKNOWN_GROUP'
+  );
+});
+
+test('a bet cannot be attached to a race owned by another group', () => {
+  const config = {
+    groups: [{ id: 'group-1', name: 'Grupo 1' }, { id: 'group-2', name: 'Grupo 2' }],
+    activeGroupId: 'group-1', activeWhatsappGroupId: 'group-1', activeRaceByGroup: {}, captureGroupIds: ['group-1']
+  };
+  const imported = workspace({
+    config,
+    days: [{ id: 'day-1', groupId: 'group-1', date: '2026-09-11', status: 'open' }],
+    races: [{
+      id: 'race-1', groupId: 'group-1', dayId: 'day-1', date: '2026-09-11', number: 1,
+      status: 'open', board: [], boardPositions: [1,2,3,4,5,6], retired: [],
+      bets: [{ id: 'bet-1', groupId: 'group-2', playerId: 'participant-1', status: 'pending' }]
+    }]
+  });
+  assert.throws(
+    () => normalizeWorkspaceShape(imported),
+    (error) => error?.code === 'HIPICO_WORKSPACE_CROSS_GROUP_BET'
+  );
+});
+
 test('same record id in different groups cannot collapse during cloud merge', () => {
   const local = workspace({
     config: {
