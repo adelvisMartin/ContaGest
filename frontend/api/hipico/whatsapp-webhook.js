@@ -57,6 +57,17 @@ async function assertDuplicateMetaReplay(ownerId,message){
   }
 }
 
+function acknowledgeRejected(res,error,extra={}){
+  return res.status(200).json({
+    ok:false,
+    acknowledged:true,
+    accepted:false,
+    retryable:false,
+    error,
+    ...extra
+  });
+}
+
 export default async function handler(req, res) {
   res.setHeader('Cache-Control','no-store, max-age=0');
   if (req.method === 'GET') {
@@ -103,7 +114,10 @@ export default async function handler(req, res) {
     const messages = extractMetaMessages(payload);
     const inboundIdentity={HIPICO_META_PHONE_NUMBER_ID:phoneNumberId};
     if(messages.some((message)=>!validMetaMessageIdentity(message,inboundIdentity))){
-      return res.status(400).json({ok:false,retryable:false,error:'invalid_message_identity'});
+      // The request is signed and durably received, but its identity is
+      // permanently invalid for this endpoint. Acknowledge transport receipt so
+      // Meta does not redeliver the same rejected event indefinitely.
+      return acknowledgeRejected(res,'invalid_message_identity',{rejected:messages.length});
     }
     let accepted = 0;
     let duplicates = 0;
@@ -140,10 +154,12 @@ export default async function handler(req, res) {
     }
     return res.status(200).json({ ok: true, accepted, duplicates });
   } catch (error) {
-    if(error?.code==='HIPICO_META_REPLAY_MISMATCH')return res.status(409).json({ok:false,retryable:false,error:'replay_mismatch'});
+    if(error?.code==='HIPICO_META_REPLAY_MISMATCH'){
+      return acknowledgeRejected(res,'replay_mismatch',{rejected:1});
+    }
     console.error('hipico whatsapp webhook',{message:error?.message||String(error)});
     return res.status(500).json({ ok: false, retryable:true, error: 'webhook_processing_failed' });
   }
 }
 
-export const __test__={normalizedTimestamp,validMetaMessageIdentity,messageReplaySignature,persistedReplaySignature};
+export const __test__={normalizedTimestamp,validMetaMessageIdentity,messageReplaySignature,persistedReplaySignature,acknowledgeRejected};
