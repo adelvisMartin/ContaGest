@@ -11,12 +11,56 @@ type PersistInput={
 };
 
 type AggregateRow={status:string;stateVersion:bigint|number};
-type EventRow={id:string;eventType:string;disposition:string;previousState:string;nextState:string;reason:string};
+type EventRow={
+  id:string;eventType:string;disposition:string;previousState:string;nextState:string;reason:string;
+  sourceMessageId:string|null;rawMessage:string|null;normalizedPayload:unknown;actorRef:string|null;source:string;
+  parserVersion:string|null;schemaVersion:number;originalEventId:string|null;eventTimestamp:Date|string;
+};
 
 function validTimestamp(value?:string){
   const date=value?new Date(value):new Date();
   if(!Number.isFinite(date.getTime()))throw new Error('HIPICO_INVALID_EVENT_TIMESTAMP');
   return date;
+}
+
+function nullableText(value:unknown){
+  const text=String(value??'').trim();
+  return text||null;
+}
+
+function stableJson(value:unknown):string{
+  if(value===null||value===undefined)return 'null';
+  if(Array.isArray(value))return `[${value.map(stableJson).join(',')}]`;
+  if(typeof value==='object'){
+    const row=value as Record<string,unknown>;
+    return `{${Object.keys(row).sort().map((key)=>`${JSON.stringify(key)}:${stableJson(row[key])}`).join(',')}}`;
+  }
+  return JSON.stringify(value);
+}
+
+function instant(value:unknown){
+  const parsed=new Date(value as any).getTime();
+  return Number.isFinite(parsed)?parsed:null;
+}
+
+function assertDomainReplay(existing:EventRow,event:HipicoDomainEventInput){
+  const expectedReview=event.type==='AMBIGUOUS'||event.type==='UNKNOWN'||Boolean(event.requiresReview);
+  const persistedReview=existing.reason==='AMBIGUOUS_OR_UNKNOWN';
+  const same=existing.eventType===event.type
+    && existing.sourceMessageId===nullableText(event.sourceMessageId)
+    && existing.rawMessage===nullableText(event.rawMessage)
+    && stableJson(existing.normalizedPayload)===stableJson(event.normalizedPayload)
+    && existing.actorRef===nullableText(event.actorRef)
+    && existing.source===String(event.source||'system')
+    && existing.parserVersion===nullableText(event.parserVersion)
+    && Number(existing.schemaVersion)===Number(event.schemaVersion||1)
+    && existing.originalEventId===nullableText(event.originalEventId)
+    && persistedReview===expectedReview
+    && (!event.eventId||existing.id===String(event.eventId))
+    && (!event.timestamp||instant(existing.eventTimestamp)===instant(event.timestamp));
+  if(!same){
+    throw Object.assign(new Error('Domain replay changed immutable evidence for the same source message.'),{code:'HIPICO_DOMAIN_REPLAY_MISMATCH'});
+  }
 }
 
 export async function persistHipicoDomainEvent(input:PersistInput){
@@ -45,7 +89,10 @@ export async function persistHipicoDomainEvent(input:PersistInput){
     // aggregate before this query serializes concurrent retries and prevents a
     // classifier/version change from turning the same message into two events.
     const prior=await tx.$queryRaw<Array<EventRow>>`
-      SELECT id,event_type AS "eventType",disposition,previous_state AS "previousState",next_state AS "nextState",reason
+      SELECT id,event_type AS "eventType",disposition,previous_state AS "previousState",next_state AS "nextState",reason,
+        source_message_id AS "sourceMessageId",raw_message AS "rawMessage",normalized_payload AS "normalizedPayload",
+        actor_ref AS "actorRef",source,parser_version AS "parserVersion",schema_version AS "schemaVersion",
+        original_event_id AS "originalEventId",event_timestamp AS "eventTimestamp"
       FROM public.hipico_domain_events
       WHERE owner_id=${ownerId}::uuid AND group_key=${groupKey}
         AND aggregate_kind=${input.aggregateKind} AND aggregate_key=${aggregateKey}
@@ -55,9 +102,7 @@ export async function persistHipicoDomainEvent(input:PersistInput){
     `;
     if(prior.length>1)throw new Error('HIPICO_DOMAIN_SOURCE_IDENTITY_CORRUPT');
     if(prior[0]){
-      if(prior[0].eventType!==input.event.type){
-        throw Object.assign(new Error('Domain replay changed event type for the same source message.'),{code:'HIPICO_DOMAIN_REPLAY_MISMATCH'});
-      }
+      assertDomainReplay(prior[0],input.event);
       const {eventType:_eventType,...existing}=prior[0];
       return{...existing,duplicate:true,stateChanged:false};
     }
@@ -131,3 +176,5 @@ export async function persistHipicoDomainEvent(input:PersistInput){
     };
   });
 }
+
+export const __test__={assertDomainReplay,stableJson};
