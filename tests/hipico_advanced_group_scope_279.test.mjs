@@ -74,6 +74,7 @@ test('same race in two groups loads only rows from the active group', () => {
   assert.deepEqual(g1.bets.map((bet) => bet.id), ['bet-a1']);
   assert.equal(g1.bets[0].groupId, 'g1');
   assert.equal(ws.audit[0].payload.rejectedCrossGroupCount, 1);
+  assert.equal(ws.audit[0].payload.groupScopeGuarded,true);
 });
 
 test('legacy lookup hitting another group creates the correct scoped race and moves only intended rows', () => {
@@ -140,6 +141,23 @@ test('a closed day with the same date is never reused for a newly scoped race',(
   const newDay=ws.days.find((day)=>day.id===target.dayId);
   assert.equal(newDay.status,'open');
   assert.equal(ws.days.find((day)=>day.id==='d1-closed').status,'closed');
+});
+
+test('successful guard is one-shot and later race close never stages historical advanced bets',()=>{
+  const ws=baseWorkspace();
+  const target=race('race-g1','g1');
+  const a1=advanced('a1','g1',{loadedRaceId:target.id});
+  target.bets.push(loadedBet(a1));
+  ws.races.push(target); ws.advancedBets.push(a1); ws.audit.unshift(audit(target.id));
+  const first=enforceAdvancedLoadGroupScope(ws);
+  assert.equal(first.changed,true);
+  assert.equal(ws.audit[0].payload.groupScopeGuarded,true);
+  target.status='closed';
+  const second=enforceAdvancedLoadGroupScope(ws);
+  assert.deepEqual(second,{changed:false,blocked:false,notice:''});
+  assert.equal(a1.status,'loaded');
+  assert.equal(a1.loadedRaceId,target.id);
+  assert.deepEqual(target.bets.map((bet)=>bet.id),['bet-a1']);
 });
 
 test('ensureDay reuses only an open group-scoped day',()=>{
