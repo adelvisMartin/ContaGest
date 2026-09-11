@@ -3,7 +3,6 @@ import crypto from 'node:crypto';
 const DEFAULT_FETCH_TIMEOUT_MS = 10000;
 const MAX_FETCH_TIMEOUT_MS = 60000;
 const SHA40 = /^[a-f0-9]{40}$/i;
-const PUBLIC_SECRET_PLACEHOLDER_PATTERN = /(?:REEMPLAZA|REPLACE|CHANGE[_-]?ME|CHANGEME|PLACEHOLDER|YOUR[_-]?(?:SECRET|TOKEN|KEY)|TU[_-]?(?:SECRETO|TOKEN|CLAVE)|EXAMPLE[_-]?(?:SECRET|TOKEN|KEY))/i;
 export const MIN_HIPICO_INTERNAL_SECRET_LENGTH = 32;
 
 export function env(name, required = true) {
@@ -14,10 +13,7 @@ export function env(name, required = true) {
 
 export function strongSecretConfigured(value, minLength = MIN_HIPICO_INTERNAL_SECRET_LENGTH) {
   const minimum = Number.isInteger(minLength) && minLength > 0 ? minLength : MIN_HIPICO_INTERNAL_SECRET_LENGTH;
-  const secret = String(value || '').trim();
-  if (Buffer.byteLength(secret, 'utf8') < minimum) return false;
-  if (PUBLIC_SECRET_PLACEHOLDER_PATTERN.test(secret)) return false;
-  return true;
+  return Buffer.byteLength(String(value || '').trim(), 'utf8') >= minimum;
 }
 
 export function serverSecret(name, minLength = MIN_HIPICO_INTERNAL_SECRET_LENGTH) {
@@ -39,18 +35,6 @@ export function bearerTokenValid(header, expected) {
 
 export function isE164(value) {
   return /^\+?[1-9]\d{6,14}$/.test(String(value || '').trim());
-}
-
-export function isMetaPhoneNumberId(value) {
-  return /^\d{5,30}$/.test(String(value || '').trim());
-}
-
-export function metaTimestampIso(value) {
-  if (value === undefined || value === null || String(value).trim() === '') return null;
-  const seconds = Number(value);
-  if (!Number.isFinite(seconds) || seconds < 0) return null;
-  const date = new Date(seconds * 1000);
-  return Number.isFinite(date.getTime()) ? date.toISOString() : null;
 }
 
 function normalizedE164(value) {
@@ -152,13 +136,23 @@ export async function supabase(path, init = {}) {
   return text ? JSON.parse(text) : null;
 }
 
+export function metaTimestamp(value) {
+  if (value === undefined || value === null || String(value).trim() === '') return null;
+  const seconds = Number(value);
+  if (!Number.isFinite(seconds) || seconds < 0) return null;
+  const milliseconds = seconds * 1000;
+  if (!Number.isFinite(milliseconds)) return null;
+  const date = new Date(milliseconds);
+  return Number.isFinite(date.getTime()) ? date.toISOString() : null;
+}
+
 export function extractMetaMessages(payload) {
   const rows = [];
   for (const entry of payload?.entry || []) {
     for (const change of entry?.changes || []) {
       const value = change?.value || {};
       const channelKey = String(value?.metadata?.phone_number_id || 'meta');
-      const contactNames = new Map((value?.contacts || []).map((c) => [String(c.wa_id || ''), c?.profile?.name || '']));
+      const contactNames = new Map((value?.contacts || []).map((c) => [String(c.wa_id || ''), String(c?.profile?.name || '')]));
       for (const message of value?.messages || []) {
         const text = message?.text?.body || message?.button?.text || message?.interactive?.button_reply?.title || message?.interactive?.list_reply?.title || '';
         rows.push({
@@ -166,9 +160,9 @@ export function extractMetaMessages(payload) {
           externalMessageId: String(message?.id || ''),
           senderId: String(message?.from || ''),
           senderLabel: contactNames.get(String(message?.from || '')) || '',
-          timestamp: metaTimestampIso(message?.timestamp),
-          type: String(message?.type || 'unknown'),
-          text: String(text || '').slice(0, 4000),
+          timestamp: metaTimestamp(message?.timestamp),
+          type: String(message?.type || 'unknown').trim().toLowerCase() || 'unknown',
+          text: String(text || ''),
           quotedExternalMessageId: message?.context?.id ? String(message.context.id) : null,
           raw: message
         });

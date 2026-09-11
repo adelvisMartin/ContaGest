@@ -2,8 +2,18 @@
   const status = document.getElementById('status');
   const reset = document.getElementById('reset');
   const openApp = () => location.replace('./index.html?recovered=' + Date.now());
+  const confirmReset = () => window.confirm(
+    'Esta acción eliminará los datos locales de Control Hípico en este dispositivo, incluidos workspace, respaldos internos/snapshots, outbox pendiente y acceso offline. Los datos ya sincronizados en la nube no se eliminan.\n\n¿Deseas continuar?'
+  );
+
   if (!status || !reset) return;
   reset.addEventListener('click', () => {
+    if (!confirmReset()) {
+      status.textContent = 'Recuperación cancelada. No se eliminó ningún dato local.';
+      reset.disabled = false;
+      return;
+    }
+
     reset.disabled = true;
     status.textContent = 'Preparando recuperación…';
     try {

@@ -105,16 +105,9 @@ function eventGroupId(message) {
 
 async function buildEvent(message, target, channelRole) {
   const groupId = eventGroupId(message);
-  const externalMessageId = String(message?.id?._serialized || '').trim();
-  if (!externalMessageId) {
-    const error = new Error('WhatsApp provider message id is required for durable idempotency.');
-    error.code = 'HIPICO_PROVIDER_MESSAGE_ID_REQUIRED';
-    error.retryable = false;
-    throw error;
-  }
   return {
     bridgeVersion: BRIDGE_VERSION,
-    externalMessageId,
+    externalMessageId: message?.id?._serialized || sha256(`${groupId}|${message.timestamp}|${message.body}`),
     groupId,
     groupName: target.name,
     channelKey: channelRole === 'source' ? SOURCE_CHANNEL_KEY : LAB_CHANNEL_KEY,
@@ -141,20 +134,13 @@ function replaySignature(event) {
   return sha256(JSON.stringify([
     String(event?.groupId || ''),
     String(event?.externalMessageId || ''),
-    String(event?.channelKey || ''),
-    String(event?.labChannelKey || ''),
     String(event?.channelRole || ''),
-    Boolean(event?.shadowMode),
-    Boolean(event?.historySync),
     String(event?.senderId || ''),
     String(event?.timestamp || ''),
     String(event?.type || ''),
     String(event?.text || ''),
     event?.quotedExternalMessageId == null ? null : String(event.quotedExternalMessageId),
-    Boolean(event?.fromMe),
-    Boolean(event?.hasMedia),
-    String(event?.mediaKind || 'none'),
-    String(event?.mediaName || '')
+    Boolean(event?.fromMe)
   ]));
 }
 
@@ -274,7 +260,7 @@ let lab = null;
 let flushing = false;
 
 client.on('qr', (qr) => {
-  console.log('\nEscanea este QR desde WhatsApp normal > Dispositivos vinculados:\n');
+  console.log('\nEscanea este QR desde WhatsApp/WhatsApp Business > Dispositivos vinculados:\n');
   qrcode.generate(qr, { small: true });
 });
 client.on('authenticated', () => console.log('WhatsApp vinculado.'));

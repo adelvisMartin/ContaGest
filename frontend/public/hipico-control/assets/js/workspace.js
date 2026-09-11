@@ -8,6 +8,7 @@ const GROUP_DEFAULTS = [
   { id: "group-1", name: "Grupo principal", companyName: "CONTROL HÍPICO", color: "#721522", currency: "Bs.", exchangeRate: 160, commission: 0.05, footerMessage: DEFAULT_FOOTER }
 ];
 const GROUP_COLORS = ["#721522", "#526f86", "#8d7545", "#35705a"];
+const CHAT_IMPORT_SCOPE_PREFIX = "@hipico-group:";
 
 function cleanColor(value, fallback) {
   const color = String(value || "").trim();
@@ -70,6 +71,89 @@ function ensureGroups(config) {
 function tagGroup(items, fallbackId) {
   for (const item of items || []) item.groupId ||= fallbackId;
 }
+
+export function scopedChatImportKey(groupId, matchId) {
+  const group = String(groupId || "").trim();
+  const match = String(matchId || "").trim();
+  if (!group || !match) return "";
+  return `${CHAT_IMPORT_SCOPE_PREFIX}${encodeURIComponent(group)}::${match}`;
+}
+
+export function parseChatImportKey(value) {
+  const raw = String(value || "").trim();
+  if (!raw.startsWith(CHAT_IMPORT_SCOPE_PREFIX)) return { scoped: false, groupId: null, matchId: raw };
+  const body = raw.slice(CHAT_IMPORT_SCOPE_PREFIX.length);
+  const separator = body.indexOf("::");
+  if (separator <= 0) return { scoped: false, groupId: null, matchId: raw };
+  try {
+    const groupId = decodeURIComponent(body.slice(0, separator));
+    const matchId = body.slice(separator + 2);
+    if (!groupId || !matchId) return { scoped: false, groupId: null, matchId: raw };
+    return { scoped: true, groupId, matchId };
+  } catch {
+    return { scoped: false, groupId: null, matchId: raw };
+  }
+}
+
+export class ScopedChatImports extends Array {
+  static get [Symbol.species]() { return Array; }
+
+  constructor(entries = [], config = {}) {
+    super();
+    Object.defineProperty(this, "_config", { value: config, enumerable: false, configurable: false, writable: false });
+    const unique = new Set();
+    for (const entry of Array.isArray(entries) ? entries : []) {
+      const raw = String(entry || "").trim();
+      if (!raw || unique.has(raw)) continue;
+      unique.add(raw);
+      Array.prototype.push.call(this, raw);
+    }
+  }
+
+  currentGroupId() {
+    return String(this._config?.activeGroupId || this._config?.activeWhatsappGroupId || this._config?.groups?.[0]?.id || "group-1");
+  }
+
+  *[Symbol.iterator]() {
+    const groupId = this.currentGroupId();
+    for (let index = 0; index < this.length; index += 1) {
+      const parsed = parseChatImportKey(this[index]);
+      if (!parsed.matchId) continue;
+      if (!parsed.scoped || parsed.groupId === groupId) yield parsed.matchId;
+    }
+  }
+
+  includes(value) {
+    const candidate = String(value || "").trim();
+    if (!candidate) return false;
+    const parsed = parseChatImportKey(candidate);
+    if (parsed.scoped) return Array.prototype.includes.call(this, candidate);
+    for (const matchId of this) if (matchId === candidate) return true;
+    return false;
+  }
+
+  push(...values) {
+    const groupId = this.currentGroupId();
+    for (const value of values) {
+      const candidate = String(value || "").trim();
+      if (!candidate) continue;
+      const parsed = parseChatImportKey(candidate);
+      if (parsed.scoped) {
+        if (!Array.prototype.includes.call(this, candidate)) Array.prototype.push.call(this, candidate);
+        continue;
+      }
+      const hasLegacyGlobal = Array.prototype.some.call(this, (entry) => {
+        const existing = parseChatImportKey(entry);
+        return !existing.scoped && existing.matchId === candidate;
+      });
+      if (hasLegacyGlobal) continue;
+      const key = scopedChatImportKey(groupId, candidate);
+      if (key && !Array.prototype.includes.call(this, key)) Array.prototype.push.call(this, key);
+    }
+    return this.length;
+  }
+}
+
 export function rateForDate(date, source) {
   const groupId = source?.config?.activeGroupId || source?.config?.activeWhatsappGroupId || "group-1";
   const groups = source?.config?.groups || [];
@@ -150,7 +234,7 @@ export function normalizeWorkspaceShape(value) {
   workspace.weekClosures = Array.isArray(workspace.weekClosures) ? workspace.weekClosures : [];
   workspace.pollas = Array.isArray(workspace.pollas) ? workspace.pollas : [];
   workspace.audit = Array.isArray(workspace.audit) ? workspace.audit : [];
-  workspace.chatImports = Array.isArray(workspace.chatImports) ? workspace.chatImports : [];
+  workspace.chatImports = new ScopedChatImports(Array.isArray(workspace.chatImports) ? workspace.chatImports : [], workspace.config);
   workspace.syncQueue = Array.isArray(workspace.syncQueue) ? workspace.syncQueue : [];
   for (const list of [workspace.advancedBets, workspace.movements, workspace.exchangeRates, workspace.weekClosures, workspace.pollas, workspace.audit]) tagGroup(list, defaultGroupId);
   for (const rate of workspace.exchangeRates) {

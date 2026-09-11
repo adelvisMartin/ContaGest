@@ -7,19 +7,18 @@ const FOCUSABLE_SELECTOR = [
   'textarea:not([disabled])',
   '[tabindex]:not([tabindex="-1"])'
 ].join(',');
-const GLOBAL_CONTROL_LABELS = [
-  ['[data-action="focus-fast"].icon-button', 'Captura rápida'],
-  ['[data-action="prev-race"]', 'Carrera anterior'],
-  ['[data-action="next-race"]', 'Carrera siguiente'],
-  ['.race-arrow--add[data-action="new-race"]', 'Nueva carrera']
-];
+const FIELD_CONTROL_SELECTOR = ':scope > input:not([type="hidden"]), :scope > select, :scope > textarea, :scope > button';
+const ACTION_LABELS = Object.freeze({
+  'calendar-prev': 'Mes anterior',
+  'calendar-next': 'Mes siguiente',
+  'focus-fast': 'Captura rápida'
+});
 
 let activeDialog = null;
 let returnFocus = null;
 let shellWasInert = false;
 let shellPreviousAriaHidden = null;
 let backgroundGuardActive = false;
-let titleSequence = 0;
 
 function visible(element) {
   if (!(element instanceof HTMLElement)) return false;
@@ -33,29 +32,41 @@ function focusable(dialog) {
   return [...dialog.querySelectorAll(FOCUSABLE_SELECTOR)].filter(visible);
 }
 
-function labelGlobalControls(root = document) {
+function hasAccessibleName(element) {
+  if (!(element instanceof HTMLElement)) return false;
+  return Boolean(
+    element.getAttribute('aria-label')?.trim()
+    || element.getAttribute('aria-labelledby')?.trim()
+    || element.textContent?.trim()
+  );
+}
+
+function ensureActionLabels(root = document) {
   if (!root?.querySelectorAll) return;
-  for (const [selector, label] of GLOBAL_CONTROL_LABELS) {
-    for (const control of root.querySelectorAll(selector)) {
-      if (control instanceof HTMLElement && !control.hasAttribute('aria-label')) control.setAttribute('aria-label', label);
+  for (const [action, label] of Object.entries(ACTION_LABELS)) {
+    for (const element of root.querySelectorAll(`[data-action="${action}"]`)) {
+      if (element instanceof HTMLElement && !hasAccessibleName(element)) element.setAttribute('aria-label', label);
     }
   }
 }
 
-function labelCalendarControls(dialog) {
-  const previous = dialog.querySelector('[data-action="calendar-prev"]');
-  const next = dialog.querySelector('[data-action="calendar-next"]');
-  if (previous instanceof HTMLElement && !previous.hasAttribute('aria-label')) previous.setAttribute('aria-label', 'Mes anterior');
-  if (next instanceof HTMLElement && !next.hasAttribute('aria-label')) next.setAttribute('aria-label', 'Mes siguiente');
+function ensureFieldLabels(root = document) {
+  if (!root?.querySelectorAll) return;
+  for (const label of root.querySelectorAll('.field > label')) {
+    if (!(label instanceof HTMLLabelElement) || label.htmlFor || label.querySelector('input,select,textarea,button')) continue;
+    const field = label.parentElement;
+    const control = field?.querySelector(FIELD_CONTROL_SELECTOR);
+    if (!(control instanceof HTMLElement)) continue;
+    if (!control.id) control.id = `hipico-field-${crypto.randomUUID()}`;
+    label.htmlFor = control.id;
+  }
 }
 
 function labelDialog(dialog) {
-  if (!(dialog instanceof HTMLElement)) return;
-  labelCalendarControls(dialog);
-  if (dialog.hasAttribute('aria-label') || dialog.hasAttribute('aria-labelledby')) return;
-  const heading = dialog.querySelector('h1,h2,h3,h4,[data-dialog-title],.calendar-card__title,header strong');
+  if (!(dialog instanceof HTMLElement) || dialog.hasAttribute('aria-label') || dialog.hasAttribute('aria-labelledby')) return;
+  const heading = dialog.querySelector('h1,h2,h3,h4,[data-dialog-title],header strong');
   if (!(heading instanceof HTMLElement)) return;
-  if (!heading.id) heading.id = `hipico-dialog-title-${++titleSequence}`;
+  if (!heading.id) heading.id = `hipico-dialog-title-${crypto.randomUUID()}`;
   dialog.setAttribute('aria-labelledby', heading.id);
 }
 
@@ -83,9 +94,7 @@ function setBackgroundInert(enabled) {
 
 function activate(dialog) {
   if (!(dialog instanceof HTMLElement) || dialog === activeDialog) return;
-  // Preserve the element that launched the first overlay even if app rendering
-  // replaces the dialog node while the overlay remains logically open.
-  if (!returnFocus && document.activeElement instanceof HTMLElement) returnFocus = document.activeElement;
+  if (!activeDialog) returnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
   activeDialog = dialog;
   labelDialog(dialog);
   setBackgroundInert(true);
@@ -144,12 +153,15 @@ function trapTab(event) {
 }
 
 function scan() {
-  labelGlobalControls(document);
+  ensureActionLabels(document);
+  ensureFieldLabels(document);
   const dialog = document.querySelector(DIALOG_SELECTOR);
   if (dialog instanceof HTMLElement) {
     if (dialog !== activeDialog) {
       if (activeDialog && !activeDialog.isConnected) activeDialog = null;
       activate(dialog);
+    } else {
+      labelDialog(dialog);
     }
     return;
   }
@@ -179,4 +191,4 @@ if (typeof document !== 'undefined') {
   else start();
 }
 
-export const __test__ = { focusable, labelGlobalControls, labelDialog, labelCalendarControls, closeActiveDialog, trapTab, DIALOG_SELECTOR, FOCUSABLE_SELECTOR, GLOBAL_CONTROL_LABELS };
+export const __test__ = { focusable, hasAccessibleName, ensureActionLabels, ensureFieldLabels, labelDialog, closeActiveDialog, trapTab, DIALOG_SELECTOR, FOCUSABLE_SELECTOR, FIELD_CONTROL_SELECTOR, ACTION_LABELS };

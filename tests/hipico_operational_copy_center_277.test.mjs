@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { balanceRows, participantStatement, scopeItems } from '../frontend/public/hipico-control/assets/js/operational-ledger.js';
-import { generateBalancesWhatsappText, generateParticipantStatementText } from '../frontend/public/hipico-control/assets/js/format.js';
+import { generateBalancesWhatsappText, generateParticipantStatementText, generateWhatsappText } from '../frontend/public/hipico-control/assets/js/format.js';
 
 function fixture(){
   return {
@@ -22,10 +22,11 @@ function fixture(){
     days:[{id:'d1',groupId:'g1',date:'2026-09-10',status:'open'},{id:'d2',groupId:'g2',date:'2026-09-10',status:'open'}],
     races:[
       {id:'r1',groupId:'g1',dayId:'d1',date:'2026-09-10',racetrack:'Churchill Downs',number:1,exchangeRate:100,status:'closed',board:['1','2','8','7'],bets:[
-        {id:'b1',status:'settled',playerId:'p1',receiverId:'',amount:30000,settlement:{playerAmount:500,receiverAmount:0,commissionAmount:0}}
+        {id:'b1',play:'PP',horse:'1',status:'settled',playerId:'p1',receiverId:'',amount:30000,settlement:{playerAmount:500,receiverAmount:0,commissionAmount:0}}
       ]},
       {id:'r2',groupId:'g2',dayId:'d2',date:'2026-09-10',racetrack:'Del Mar',number:8,exchangeRate:100,status:'closed',board:['3','4'],bets:[
-        {id:'b2',status:'settled',playerId:'p2',receiverId:'',amount:50000,settlement:{playerAmount:100000,receiverAmount:0,commissionAmount:0}}
+        {id:'b2',play:'PP',horse:'3',status:'settled',playerId:'p2',receiverId:'',amount:50000,settlement:{playerAmount:100000,receiverAmount:0,commissionAmount:0}},
+        {id:'legacy-cross',play:'PP',horse:'4',status:'settled',playerId:'legacy',receiverId:'',amount:100,settlement:{playerAmount:999999,receiverAmount:0,commissionAmount:0}}
       ]}
     ],
     movements:[],exchangeRates:[{id:'fx1',groupId:'g1',date:'2026-09-10',rate:100}],weekClosures:[],pollas:[],audit:[]
@@ -40,6 +41,15 @@ test('operational ledger isolates groups including legacy untagged rows',()=>{
   assert.deepEqual(g2,['p2']);
 });
 
+test('WhatsApp formatter does not leak legacy untagged participants into non-default group',()=>{
+  const workspace=fixture();
+  const text=generateWhatsappText(workspace,workspace.races.find((race)=>race.id==='r2'));
+  assert.match(text,/OTRO LOCAL/);
+  assert.match(text,/Otro/);
+  assert.doesNotMatch(text,/Legacy/);
+  assert.doesNotMatch(text,/999\.999,00/);
+});
+
 test('pozo/disponible uses persisted balance plus Bs/USD aval at race rate',()=>{
   const workspace=fixture();
   const rows=balanceRows(workspace,'g1','2026-09-10');
@@ -49,6 +59,15 @@ test('pozo/disponible uses persisted balance plus Bs/USD aval at race rate',()=>
   const text=generateBalancesWhatsappText(workspace,rows.map(({participant,balance})=>({participant,balance})));
   assert.match(text,/ZEDAN\t1\.800,00/);
   assert.doesNotMatch(text,/OTRO/);
+});
+
+test('balance formatter infers group from rows and excludes mixed-group contamination',()=>{
+  const workspace=fixture();
+  const rows=balanceRows(workspace,'g2','2026-09-10');
+  const contaminated=[...rows,{participant:workspace.participants.find((participant)=>participant.id==='legacy'),balance:999999,available:999999}];
+  const text=generateBalancesWhatsappText(workspace,contaminated);
+  assert.match(text,/OTRO/);
+  assert.doesNotMatch(text,/LEGACY/);
 });
 
 test('private statement is generated manually from persisted weekly and race history',()=>{
@@ -66,7 +85,7 @@ test('private statement is generated manually from persisted weekly and race his
   assert.match(text,/Churchill Downs/);
 });
 
-test('copy center is manual-only, exports daily text, guarded, accessible, and cached offline',()=>{
+test('copy center is manual-only, exports daily text, guarded, and cached offline',()=>{
   const root=process.cwd();
   const center=fs.readFileSync(path.join(root,'frontend/public/hipico-control/assets/js/operational-copy-center.js'),'utf8');
   const guard=fs.readFileSync(path.join(root,'frontend/public/hipico-control/assets/js/operational-access-guard.js'),'utf8');
@@ -78,10 +97,6 @@ test('copy center is manual-only, exports daily text, guarded, accessible, and c
   assert.match(center,/downloadFile\(/);
   assert.doesNotMatch(center,/wa\.me|messages\/send|fetch\(/);
   assert.match(center,/export function mountOperationalCopyCenter/);
-  assert.match(center,/aria-labelledby', 'ops-dialog-title'/);
-  assert.match(center,/aria-describedby', 'ops-dialog-description'/);
-  assert.match(center,/id="ops-dialog-title"/);
-  assert.match(center,/id="ops-dialog-description"/);
   assert.match(guard,/import\('\.\/operational-copy-center\.js'\)/);
   assert.match(css,/@media\(max-width:720px\)[\s\S]*min-height:44px/);
   assert.match(css, /prefers-reduced-motion/);

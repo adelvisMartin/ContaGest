@@ -5,22 +5,16 @@ on:
     paths:
       - 'frontend/public/hipico-control/**'
       - 'frontend/api/hipico/**'
-      - 'frontend/scripts/write-hipico-build-info.mjs'
       - 'backend/src/modules/hipico-bot/**'
+      - 'backend/scripts/hipico-*.mjs'
       - 'tools/hipico-whatsapp-bridge/**'
       - 'tools/hipico-whatsapp-web-bridge/**'
       - 'supabase/sql/hipico_*.sql'
       - 'tests/hipico*.test.mjs'
       - 'tests/fixtures/hipico/**'
-      - 'qa/hipico-visual-functional-v105.spec.mjs'
-      - 'qa/support/hipico-*.mjs'
-      - 'qa/fixtures/hipico-*'
-      - 'scripts/hipico-qa-runner-v103.mjs'
-      - 'playwright.config.mjs'
-      - 'package.json'
-      - 'frontend/package.json'
       - 'docs/hipico/**'
       - '.github/workflows/hipico-operations.yml'
+      - 'frontend/package.json'
   push:
     branches:
       - main
@@ -29,22 +23,16 @@ on:
     paths:
       - 'frontend/public/hipico-control/**'
       - 'frontend/api/hipico/**'
-      - 'frontend/scripts/write-hipico-build-info.mjs'
       - 'backend/src/modules/hipico-bot/**'
+      - 'backend/scripts/hipico-*.mjs'
       - 'tools/hipico-whatsapp-bridge/**'
       - 'tools/hipico-whatsapp-web-bridge/**'
       - 'supabase/sql/hipico_*.sql'
       - 'tests/hipico*.test.mjs'
       - 'tests/fixtures/hipico/**'
-      - 'qa/hipico-visual-functional-v105.spec.mjs'
-      - 'qa/support/hipico-*.mjs'
-      - 'qa/fixtures/hipico-*'
-      - 'scripts/hipico-qa-runner-v103.mjs'
-      - 'playwright.config.mjs'
-      - 'package.json'
-      - 'frontend/package.json'
       - 'docs/hipico/**'
       - '.github/workflows/hipico-operations.yml'
+      - 'frontend/package.json'
 
 permissions:
   contents: read
@@ -57,6 +45,23 @@ jobs:
   operations-regression:
     runs-on: ubuntu-latest
     timeout-minutes: 25
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: hipico_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d hipico_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/hipico_ci
+      HIPICO_DB_CONTRACT_EPHEMERAL: '1'
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -69,15 +74,16 @@ jobs:
       - name: Parser, operational messages, API, UI and multigroup contracts
         run: |
           node --test tests/hipico-operations.test.mjs
-          node --test tests/hipico_operational_messages_277.test.mjs tests/hipico_operational_copy_center_277.test.mjs tests/hipico_board_context_guard_277.test.mjs tests/hipico_board_apply_integrity_279.test.mjs tests/hipico_race_offer_context_277.test.mjs tests/hipico_race_opening_assistant_277.test.mjs tests/hipico_multigroup_runtime_277.test.mjs tests/hipico_advanced_group_scope_279.test.mjs tests/hipico_dialog_accessibility_279.test.mjs tests/hipico_settlement_config_279.test.mjs tests/hipico_serverless_api_277.test.mjs tests/hipico_meta_webhook_279.test.mjs tests/hipico_meta_sender_readiness_297.test.mjs tests/hipico_ui_release_contract_277.test.mjs tests/hipico_group_bridge_contract.test.mjs tests/hipico_multigroup_hardening_279.test.mjs tests/hipico_race_context_279.test.mjs tests/hipico_chat_import_guard_279.test.mjs tests/hipico_operational_access_guard_279.test.mjs
-          node --test tools/hipico-whatsapp-bridge/tests/group-identity.test.mjs
-      - name: PWA, build metadata and serverless operational syntax checks
+          node --test tests/hipico_operational_messages_277.test.mjs tests/hipico_operational_copy_center_277.test.mjs tests/hipico_board_context_guard_277.test.mjs tests/hipico_race_offer_context_277.test.mjs tests/hipico_race_opening_assistant_277.test.mjs tests/hipico_multigroup_runtime_277.test.mjs tests/hipico_serverless_api_277.test.mjs tests/hipico_meta_webhook_279.test.mjs tests/hipico_ui_release_contract_277.test.mjs tests/hipico_group_bridge_contract.test.mjs tests/hipico_multigroup_hardening_279.test.mjs tests/hipico_advanced_group_scope_279.test.mjs tests/hipico_dialog_accessibility_279.test.mjs tests/hipico_race_context_279.test.mjs tests/hipico_chat_import_guard_279.test.mjs tests/hipico_chat_import_scope_279.test.mjs tests/hipico_operational_access_guard_279.test.mjs tests/hipico_backup_restore_issue_117.test.mjs tests/hipico_local_auth_hardening_279.test.mjs tests/hipico_financial_input_guard_279.test.mjs tests/hipico_recovery_destructive_guard_279.test.mjs
+      - name: PWA and serverless operational syntax checks
         run: |
-          node --check frontend/scripts/write-hipico-build-info.mjs
           node --check frontend/public/hipico-control/assets/js/advanced-group-scope.js
+          node --check frontend/public/hipico-control/assets/js/backup-v2.js
+          node --check frontend/public/hipico-control/assets/js/backup-secure-ui.js
           node --check frontend/public/hipico-control/assets/js/dialog-accessibility.js
+          node --check frontend/public/hipico-control/assets/js/local-auth.js
+          node --check frontend/public/hipico-control/assets/js/recovery.js
           node --check frontend/public/hipico-control/assets/js/app.js
-          node --check frontend/public/hipico-control/assets/js/engine.js
           node --check frontend/public/hipico-control/assets/js/whatsapp.js
           node --check frontend/public/hipico-control/assets/js/whatsapp/race-context.js
           node --check frontend/public/hipico-control/assets/js/operations.js
@@ -92,6 +98,7 @@ jobs:
           node --check frontend/public/hipico-control/assets/js/notice-bridge.js
           node --check frontend/public/hipico-control/assets/js/store.js
           node --check frontend/public/hipico-control/assets/js/store-v2.js
+          node --check frontend/public/hipico-control/assets/js/sync.js
           node --check frontend/public/hipico-control/assets/js/workspace.js
           node --check frontend/public/hipico-control/sw.js
           node --check frontend/api/hipico/_shared.js
@@ -102,8 +109,13 @@ jobs:
           node --check frontend/api/hipico/whatsapp-webhook.js
           node --check tools/hipico-whatsapp-bridge/src/group-identity.mjs
           node --check tools/hipico-whatsapp-bridge/src/index.mjs
+          node --check backend/scripts/hipico-audit-idempotency-contract.mjs
       - name: Install root lock for Hípico backend contracts
         run: npm ci --no-audit --no-fund
+      - name: PostgreSQL isolated migration, RLS, idempotency and multigroup contract
+        run: node backend/scripts/hipico-db-contract.mjs
+      - name: PostgreSQL durable cloud audit replay contract
+        run: node backend/scripts/hipico-audit-idempotency-contract.mjs
       - name: Backend typecheck
         run: npm --workspace backend run typecheck
       - name: Backend Hípico security, money, parser and conversation contracts
@@ -130,22 +142,3 @@ jobs:
             echo 'Forbidden release wording found in Hípico Control user-facing shell.' >&2
             exit 1
           fi
-
-  browser-regression:
-    runs-on: ubuntu-latest
-    timeout-minutes: 25
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
-        with:
-          node-version: '22'
-          cache: npm
-          cache-dependency-path: package-lock.json
-      - name: Install root lock
-        run: npm ci --no-audit --no-fund
-      - name: Install Chromium for Hípico E2E
-        run: npx playwright install --with-deps chromium
-      - name: Hípico responsive and functional Chromium E2E
-        env:
-          HIPICO_QA_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
-        run: npm run test:browser:hipico

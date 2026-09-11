@@ -1,5 +1,5 @@
 import { APP_VERSION } from './config.js';
-import { deliverJsonBackup, exportEncryptedCurrentWorkspace, restorePortableBackup } from './backup.js';
+import { MAX_PORTABLE_BACKUP_CHARS, deliverJsonBackup, exportEncryptedCurrentWorkspace, restorePortableBackup } from './backup.js';
 
 function filename() { return `hipico-control-secure-${new Date().toISOString().slice(0,10)}.json`; }
 function strongPassphrase(promptText) {
@@ -11,6 +11,11 @@ function strongPassphrase(promptText) {
 function notify(message) {
   const node = document.createElement('div'); node.className = 'offline-banner'; node.setAttribute('role','status'); node.textContent = message;
   (document.querySelector('.content') || document.body).prepend(node); setTimeout(()=>node.remove(),7000);
+}
+function assertImportSize(size) {
+  if (Number(size || 0) > MAX_PORTABLE_BACKUP_CHARS) {
+    throw Object.assign(new Error('El respaldo excede el tamaño máximo permitido.'), { code:'HIPICO_BACKUP_TOO_LARGE' });
+  }
 }
 
 async function secureExport(event) {
@@ -28,8 +33,15 @@ async function secureExport(event) {
 }
 
 async function readImportForm(form) {
-  const data = new FormData(form); const file = data.get('file'); const pasted = String(data.get('jsonText') || '').trim();
-  return file && Number(file.size || 0) > 0 ? file.text() : pasted;
+  const data = new FormData(form); const file = data.get('file'); const pasted = String(data.get('jsonText') || '');
+  if (file && Number(file.size || 0) > 0) {
+    assertImportSize(file.size);
+    const text = await file.text();
+    assertImportSize(text.length);
+    return text;
+  }
+  assertImportSize(pasted.length);
+  return pasted.trim();
 }
 
 async function secureRestore(event) {

@@ -102,9 +102,10 @@ function matchOffers(offers:Offer[]){
  * Read-only projection of recent group events. It mirrors the RC1 matching
  * contract without writing bets, balances, races or results.
  *
- * A race_close freezes the current segment. Offers received while closed are
- * flagged as late and excluded from matching. A new plan_snapshot opens a new
- * segment for the following race.
+ * A race_close freezes the current segment. A reviewed/structured race_open or
+ * a new plan_snapshot starts the following segment when the prior race was
+ * closed. Offers received while closed remain late and are excluded from
+ * matching. This projection never authorizes state or monetary effects.
  */
 export function buildShadowProjection(rows:EventRow[]=[]){
   const ordered=[...rows].sort((a,b)=>dateValue(a.receivedAt)-dateValue(b.receivedAt));
@@ -112,6 +113,7 @@ export function buildShadowProjection(rows:EventRow[]=[]){
   let closed=false;
   const offers:Offer[]=[];
   const lateOffers:Offer[]=[];
+  const openings:any[]=[];
   const closures:any[]=[];
   const results:any[]=[];
   const confirmations:any[]=[];
@@ -122,6 +124,19 @@ export function buildShadowProjection(rows:EventRow[]=[]){
   for(const row of ordered){
     const intent=String(row.intent||'');
     const entities=eventEntities(row);
+
+    if(intent==='race_open'){
+      if(closed){segmentId+=1;closed=false;}
+      openings.push({
+        eventId:row.id,
+        segmentId,
+        raceNumber:entities?.raceNumber??null,
+        racetrack:entities?.racetrack??null,
+        raceContextComplete:Boolean(entities?.raceContextComplete),
+        receivedAt:row.receivedAt
+      });
+      continue;
+    }
 
     if(intent==='plan_snapshot'){
       if(closed){segmentId+=1;closed=false;}
@@ -182,6 +197,7 @@ export function buildShadowProjection(rows:EventRow[]=[]){
       matches:matched.matches.length,
       unmatched:matched.unmatched.length,
       lateOffers:lateOffers.length,
+      openings:openings.length,
       closures:closures.length,
       results:results.length,
       confirmations:confirmations.length,
@@ -192,6 +208,7 @@ export function buildShadowProjection(rows:EventRow[]=[]){
     matches:matched.matches,
     unmatched:matched.unmatched,
     lateOffers,
+    openings,
     closures,
     results,
     confirmations,

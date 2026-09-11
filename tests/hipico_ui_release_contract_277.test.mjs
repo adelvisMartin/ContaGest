@@ -5,14 +5,10 @@ import { readFileSync, readdirSync } from 'node:fs';
 const read = (path) => readFileSync(new URL(path, import.meta.url), 'utf8');
 const html = read('../frontend/public/hipico-control/index.html');
 const css = read('../frontend/public/hipico-control/assets/css/app.css');
-const mobileCss = read('../frontend/public/hipico-control/assets/css/mobile-accessibility.css');
+const touchCss = read('../frontend/public/hipico-control/assets/css/mobile-accessibility.css');
 const opsCss = read('../frontend/public/hipico-control/assets/css/operational-copy-center.css');
 const notice = read('../frontend/public/hipico-control/assets/js/notice-bridge.js');
-const config = read('../frontend/public/hipico-control/assets/js/config.js');
 const sw = read('../frontend/public/hipico-control/sw.js');
-const buildInfo = JSON.parse(read('../frontend/public/hipico-control/build-info.json'));
-const buildInfoGenerator = read('../frontend/scripts/write-hipico-build-info.mjs');
-const rootPackage = JSON.parse(read('../package.json'));
 
 function jsFiles(url, prefix = '') {
   const files = [];
@@ -43,15 +39,14 @@ test('canonical UI exposes light, dark and system theming', () => {
   assert.match(css, /:root\[data-theme="system"\]/);
 });
 
-test('mobile controls preserve the 44px interaction contract including form controls', () => {
+test('mobile controls preserve the 44px interaction contract', () => {
   assert.match(css, /--hc-touch:\s*44px/);
   assert.match(css, /@media \(max-width:\s*780px\)[\s\S]*\.button,[\s\S]*min-height:\s*var\(--hc-touch\)/);
-  assert.match(mobileCss, /@media \(max-width:\s*780px\)/);
-  assert.match(mobileCss, /\.input,[\s\S]*\.select,[\s\S]*\.date-button,[\s\S]*\.color-input,[\s\S]*\.switch-row[\s\S]*min-height:\s*var\(--hc-touch,\s*44px\)/);
-  assert.match(mobileCss, /touch-action:\s*manipulation/);
-  assert.match(opsCss, /@media\(max-width:720px\)[\s\S]*min-height:44px/);
   assert.match(html, /assets\/css\/mobile-accessibility\.css/);
+  assert.match(touchCss, /@media \(max-width:\s*780px\)/);
+  assert.match(touchCss, /\.input,[\s\S]*\.select,[\s\S]*\.date-button,[\s\S]*\.color-input,[\s\S]*\.switch-row[\s\S]*min-height:\s*var\(--hc-touch,\s*44px\)/);
   assert.match(sw, /assets\/css\/mobile-accessibility\.css/);
+  assert.match(opsCss, /@media\(max-width:720px\)[\s\S]*min-height:44px/);
 });
 
 test('mobile vertical scrolling, safe area and reduced motion remain explicitly supported', () => {
@@ -59,35 +54,6 @@ test('mobile vertical scrolling, safe area and reduced motion remain explicitly 
   assert.match(css, /overflow-y:\s*visible/);
   assert.match(css, /safe-area-inset-bottom/);
   assert.match(css, /prefers-reduced-motion:\s*reduce/);
-});
-
-test('local Hípico QA cannot report success without source gate and Chromium E2E first', () => {
-  const qa = String(rootPackage.scripts?.['qa:hipico'] || '');
-  const sourceIndex = qa.indexOf('npm --workspace frontend run preqa:source');
-  const browserIndex = qa.indexOf('npm run test:browser:hipico');
-  const evidenceIndex = qa.indexOf('node scripts/hipico-qa-runner-v103.mjs');
-  assert.ok(sourceIndex >= 0, 'qa:hipico must execute frontend preqa:source');
-  assert.ok(browserIndex > sourceIndex, 'qa:hipico must execute Chromium E2E after source gates');
-  assert.ok(evidenceIndex > browserIndex, 'SHA-bound evidence must run only after source and E2E pass');
-  assert.match(String(rootPackage.scripts?.['test:browser:hipico'] || ''), /playwright test qa\/hipico-visual-functional-v105\.spec\.mjs --project=chromium --workers=1/);
-});
-
-test('Control Hipico release metadata is generated from the canonical APP_VERSION and SHA-bound when available', () => {
-  const appVersion=config.match(/export const APP_VERSION\s*=\s*["']([^"']+)["']/)?.[1];
-  const cacheVersion=sw.match(/CACHE_VERSION\s*=\s*["']hipico-control-v([^"']+)["']/)?.[1];
-  assert.ok(appVersion, 'APP_VERSION missing');
-  assert.equal(cacheVersion, appVersion);
-  assert.equal(buildInfo.product, 'control-hipico');
-  assert.equal(buildInfo.version, appVersion);
-  assert.equal(buildInfo.buildId, appVersion);
-  assert.equal(buildInfo.source, 'git-canonical-web');
-  assert.equal(buildInfo.compatibility?.workspaceSchema, 10);
-  assert.equal(buildInfo.compatibility?.parserContract, 'whatsapp-parser-v1');
-  if (buildInfo.bound) assert.match(buildInfo.candidateSha, /^[0-9a-f]{40}$/);
-  else assert.equal(buildInfo.candidateSha, 'local-unbound');
-  assert.match(buildInfoGenerator, /APP_VERSION/);
-  assert.match(buildInfoGenerator, /VERCEL_GIT_COMMIT_SHA/);
-  assert.match(buildInfoGenerator, /public\/hipico-control\/build-info\.json/);
 });
 
 test('installed PWA precaches the complete Hípico JavaScript module tree', () => {

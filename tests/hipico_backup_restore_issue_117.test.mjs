@@ -3,6 +3,7 @@ import fs from 'node:fs/promises';
 import test from 'node:test';
 import {
   BACKUP_SCHEMA_VERSION,
+  MAX_PORTABLE_BACKUP_CHARS,
   createBackupObject,
   decryptBackupText,
   encryptBackupText,
@@ -10,7 +11,8 @@ import {
   reconcileRestoredWorkspace,
   serializeWorkspaceBackup,
   sha256Sync,
-  validateBackupObject
+  validateBackupObject,
+  validateEncryptedBackupEnvelope
 } from '../frontend/public/hipico-control/assets/js/backup-v2.js';
 
 test('sha256 implementation matches known vector', () => {
@@ -58,6 +60,50 @@ test('AES-GCM portable backup decrypts with correct passphrase and rejects wrong
   assert.equal(parsed.workspace.participants[0].id, 'p1');
 });
 
+test('encrypted backup rejects attacker-controlled KDF work before derivation', () => {
+  const envelope = {
+    _encryptedBackup: {
+      schemaVersion: 1,
+      algorithm: 'AES-GCM-256',
+      kdf: 'PBKDF2-SHA256',
+      iterations: 999_999_999,
+      salt: 'AAAAAAAAAAAAAAAAAAAAAA==',
+      iv: 'AAAAAAAAAAAAAAAA',
+      ciphertext: 'AAAAAAAAAAAAAAAAAAAAAA=='
+    }
+  };
+  assert.throws(
+    () => validateEncryptedBackupEnvelope(envelope),
+    (error) => error?.code === 'HIPICO_BACKUP_KDF_UNSUPPORTED'
+  );
+});
+
+test('encrypted backup envelope enforces exact salt and IV sizes and valid base64', () => {
+  const valid = {
+    _encryptedBackup: {
+      schemaVersion: 1,
+      algorithm: 'AES-GCM-256',
+      kdf: 'PBKDF2-SHA256',
+      iterations: 250000,
+      salt: 'AAAAAAAAAAAAAAAAAAAAAA==',
+      iv: 'AAAAAAAAAAAAAAAA',
+      ciphertext: 'AAAAAAAAAAAAAAAAAAAAAA=='
+    }
+  };
+  assert.doesNotThrow(() => validateEncryptedBackupEnvelope(valid));
+  assert.throws(() => validateEncryptedBackupEnvelope({ _encryptedBackup: { ...valid._encryptedBackup, salt: 'AAAA' } }), (error) => error?.code === 'HIPICO_BACKUP_ENCRYPTION_INVALID');
+  assert.throws(() => validateEncryptedBackupEnvelope({ _encryptedBackup: { ...valid._encryptedBackup, iv: 'AAAA' } }), (error) => error?.code === 'HIPICO_BACKUP_ENCRYPTION_INVALID');
+  assert.throws(() => validateEncryptedBackupEnvelope({ _encryptedBackup: { ...valid._encryptedBackup, ciphertext: '***=' } }), (error) => error?.code === 'HIPICO_BACKUP_ENCRYPTION_INVALID');
+});
+
+test('portable backup rejects oversized input before JSON parsing or crypto', async () => {
+  const oversized = 'x'.repeat(MAX_PORTABLE_BACKUP_CHARS + 1);
+  await assert.rejects(
+    () => parsePortableBackup(oversized, { passphrase: 'correct horse battery staple' }),
+    (error) => error?.code === 'HIPICO_BACKUP_TOO_LARGE'
+  );
+});
+
 test('weak backup password is refused', async () => {
   await assert.rejects(() => encryptBackupText('{}', 'short'), /12 caracteres/i);
 });
@@ -81,9 +127,25 @@ test('secure UI intercepts legacy export/import paths instead of leaking plainte
   assert.match(source, /antes.*reemplaz/i);
 });
 
-test('service worker preserves release version and precaches secure backup modules', async () => {
+test('secure UI rejects oversized files before reading their contents', async () => {
+  const source = await fs.readFile('frontend/public/hipico-control/assets/js/backup-secure-ui.js', 'utf8');
+  const facade = await fs.readFile('frontend/public/hipico-control/assets/js/backup.js', 'utf8');
+  const guard = source.indexOf('assertImportSize(file.size)');
+  const read = source.indexOf('await file.text()');
+  assert.ok(guard >= 0 && read > guard, 'file size must be checked before File.text() allocates the payload');
+  assert.match(source, /MAX_PORTABLE_BACKUP_CHARS/);
+  assert.match(source, /assertImportSize\(pasted\.length\)/);
+  assert.match(facade, /MAX_PORTABLE_BACKUP_CHARS/);
+});
+
+test('service worker uses a separately revisioned atomic shell and precaches hardened modules', async () => {
   const source = await fs.readFile('frontend/public/hipico-control/sw.js', 'utf8');
-  assert.match(source, /CACHE_VERSION = 'hipico-control-v1\.13\.0-rc2'/);
+  assert.match(source, /const CACHE_VERSION = 'hipico-control-v\d+\.\d+\.\d+(?:-rc\d+)?'/);
+  assert.match(source, /const SHELL_CACHE = `\$\{CACHE_VERSION\}-shell-r\d+-[a-z0-9-]+`/);
   assert.match(source, /backup-v2\.js/);
   assert.match(source, /backup-secure-ui\.js/);
+  assert.match(source, /local-auth\.js/);
+  assert.match(source, /financial-config-guard\.js/);
+  assert.match(source, /dialog-accessibility\.js/);
+  assert.match(source, /key !== SHELL_CACHE/);
 });
