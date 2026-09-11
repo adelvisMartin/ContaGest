@@ -44,9 +44,10 @@ test('mobile controls preserve the 44px interaction contract', () => {
   assert.match(opsCss, /@media\(max-width:720px\)[\s\S]*min-height:44px/);
 });
 
-test('mobile vertical scrolling and reduced motion remain explicitly supported', () => {
+test('mobile vertical scrolling, safe area and reduced motion remain explicitly supported', () => {
   assert.match(css, /touch-action:\s*pan-y pinch-zoom/);
   assert.match(css, /overflow-y:\s*visible/);
+  assert.match(css, /safe-area-inset-bottom/);
   assert.match(css, /prefers-reduced-motion:\s*reduce/);
 });
 
@@ -54,6 +55,8 @@ test('installed PWA precaches the complete Hípico JavaScript module tree', () =
   const root = new URL('../frontend/public/hipico-control/assets/js/', import.meta.url);
   const missing = jsFiles(root).filter((file) => !sw.includes(`'./assets/js/${file}'`) && !sw.includes(`"./assets/js/${file}"`));
   assert.deepEqual(missing, [], `JavaScript modules missing from APP_SHELL: ${missing.join(', ')}`);
-  assert.match(sw, /shell-r8-complete-offline/);
+  assert.match(sw, /shell-r\d+-[a-z0-9-]+/i);
   assert.match(sw, /new cache name makes shell upgrades atomic/i);
+  assert.match(sw, /isSensitive\(url\).*cache:\s*'no-store'/s);
+  assert.match(sw, /isRuntimeMetadata\(url\).*cache:\s*'no-store'/s);
 });
