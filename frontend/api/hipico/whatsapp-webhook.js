@@ -1,4 +1,4 @@
-import { env, extractMetaMessages, isE164, readRawBody, sha256, supabase, verifyMetaSignature, classifyText } from './_shared.js';
+import { env, extractMetaMessages, isE164, readRawBody, safeEqual, sha256, supabase, verifyMetaSignature, classifyText } from './_shared.js';
 
 export const config = { api: { bodyParser: false } };
 
@@ -63,7 +63,7 @@ export default async function handler(req, res) {
     const mode = req.query?.['hub.mode'];
     const token = req.query?.['hub.verify_token'];
     const challenge = req.query?.['hub.challenge'];
-    if (mode === 'subscribe' && token && token === verifyToken) return res.status(200).send(String(challenge || ''));
+    if (mode === 'subscribe' && safeEqual(token, verifyToken)) return res.status(200).send(String(challenge || ''));
     return res.status(403).json({ ok: false, error: 'verification_failed' });
   }
   if (req.method !== 'POST') return res.status(405).json({ ok: false, error: 'method_not_allowed' });
