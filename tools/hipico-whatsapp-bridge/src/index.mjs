@@ -3,6 +3,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import qrcode from 'qrcode-terminal';
 import pkg from 'whatsapp-web.js';
+import { isGroupId } from './group-identity.mjs';
 
 const { Client, LocalAuth } = pkg;
 const BRIDGE_VERSION = '0.3.2-shadow-only';
@@ -10,7 +11,6 @@ const DATA_DIR = path.resolve(process.cwd(), 'data');
 const SPOOL_DIR = path.join(DATA_DIR, 'spool');
 const REJECTED_DIR = path.join(DATA_DIR, 'rejected');
 const CHANNEL_KEY_RE = /^[A-Za-z0-9_-]{3,120}$/;
-const GROUP_ID_RE = /^(?:\d{5,}-\d+|\d{10,})@g\.us$/i;
 
 function required(name) {
   const value = process.env[name];
@@ -29,10 +29,6 @@ function isSafeHttpsEndpoint(value) {
     const url = new URL(value);
     return url.protocol === 'https:' && !url.username && !url.password && !url.search && !url.hash;
   } catch { return false; }
-}
-
-function isGroupId(value) {
-  return GROUP_ID_RE.test(String(value || '').trim());
 }
 
 const INGEST_URL = required('HIPICO_INGEST_URL');
