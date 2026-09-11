@@ -31,7 +31,7 @@ function isSafeHttpsEndpoint(value) {
 }
 
 function isGroupId(value) {
-  return /^\d{5,}-\d+@g\.us$/i.test(String(value || '').trim());
+  return /^\d{5,}(?:-\d+)?@g\.us$/i.test(String(value || '').trim());
 }
 
 const INGEST_URL = required('HIPICO_INGEST_URL');
