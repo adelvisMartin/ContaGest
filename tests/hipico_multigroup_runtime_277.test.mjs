@@ -1,11 +1,18 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { scopeItems } from '../frontend/public/hipico-control/assets/js/operational-ledger.js';
-import { repairWorkspaceGroupScope } from '../frontend/public/hipico-control/assets/js/store-v2.js';
+import { repairWorkspaceGroupScope, __test__ as storeTest } from '../frontend/public/hipico-control/assets/js/store-v2.js';
 
 function baseWorkspace() {
   return {
-    config: { activeGroupId: 'g2', activeWhatsappGroupId: 'g2', activeRaceByGroup: { g1: 'r1', g2: null }, groups: [{ id: 'g1' }, { id: 'g2' }] },
+    config: {
+      activeGroupId: 'g2', activeWhatsappGroupId: 'g2', activeRaceByGroup: { g1: 'r1', g2: null },
+      commission: 0.05, exchangeRate: 160, currency: 'Bs.',
+      groups: [
+        { id: 'g1', commission: 0.05, exchangeRate: 160, currency: 'Bs.' },
+        { id: 'g2', commission: 0.08, exchangeRate: 200, currency: 'Bs.' }
+      ]
+    },
     participants: [
       { id: 'p1', groupId: 'g1', previousWeekBalance: 100, openingBalance: 100 },
       { id: 'p2', groupId: 'g2', previousWeekBalance: 200, openingBalance: 200 }
@@ -99,4 +106,57 @@ test('week close restores other groups if legacy UI touched their previous-week 
 
   assert.equal(workspace.participants.find((participant) => participant.id === 'p1').previousWeekBalance, 100);
   assert.equal(workspace.participants.find((participant) => participant.id === 'p2').previousWeekBalance, 275);
+});
+
+test('active group financial settings become the legacy compatibility authority before persistence', () => {
+  const previous = baseWorkspace();
+  const workspace = structuredClone(previous);
+  workspace.config.commission = 0.05;
+  workspace.config.exchangeRate = 160;
+
+  repairWorkspaceGroupScope(workspace, previous);
+
+  assert.equal(workspace.config.commission, 0.08);
+  assert.equal(workspace.config.exchangeRate, 200);
+});
+
+test('invalid financial settings fail closed to the last valid group values', () => {
+  const previous = baseWorkspace();
+  const workspace = structuredClone(previous);
+  workspace.config.groups.find((group) => group.id === 'g2').commission = 3;
+  workspace.config.groups.find((group) => group.id === 'g2').exchangeRate = 0;
+
+  repairWorkspaceGroupScope(workspace, previous);
+
+  const group = workspace.config.groups.find((item) => item.id === 'g2');
+  assert.equal(group.commission, 0.08);
+  assert.equal(group.exchangeRate, 200);
+  assert.equal(workspace.config.commission, 0.08);
+  assert.equal(workspace.config.exchangeRate, 200);
+});
+
+test('newest open day wins deterministically when legacy state contains multiple open days', () => {
+  const workspace = baseWorkspace();
+  workspace.days.push({ id: 'd2-new', groupId: 'g2', date: '2026-09-11', status: 'open' });
+
+  repairWorkspaceGroupScope(workspace, structuredClone(workspace));
+
+  const groupDays = workspace.days.filter((day) => day.groupId === 'g2');
+  assert.equal(groupDays.find((day) => day.status === 'open').id, 'd2-new');
+});
+
+test('offline outbox idempotency accepts semantic replay and rejects key reuse with different content', () => {
+  const original = {
+    id: 'evt-1', idempotencyKey: 'idem-1', groupId: 'g2', action: 'bet_created', entityId: 'bet-1',
+    payload: { amount: 100, nested: { horse: '3', play: '1P' } }, createdAt: '2026-09-11T10:00:00Z', attempts: 0
+  };
+  const replay = {
+    ...original,
+    id: 'different-local-row-id', createdAt: '2026-09-11T10:05:00Z', attempts: 3,
+    payload: { nested: { play: '1P', horse: '3' }, amount: 100 }
+  };
+  const mismatch = { ...replay, payload: { nested: { play: '1P', horse: '3' }, amount: 200 } };
+
+  assert.equal(storeTest.sameOutboxIntent(original, replay), true);
+  assert.equal(storeTest.sameOutboxIntent(original, mismatch), false);
 });
