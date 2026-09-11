@@ -44,6 +44,14 @@ export class ParticipantRateLimiter {
     private maxBuckets=DEFAULT_RATE_BUCKET_LIMIT
   ){}
 
+  private trimToMax(){
+    if(this.buckets.size<=this.maxBuckets)return;
+    const oldest=[...this.buckets.entries()]
+      .map(([key,bucket])=>({key,at:bucket.events.at(-1)?.at??0}))
+      .sort((left,right)=>left.at-right.at);
+    for(const row of oldest.slice(0,this.buckets.size-this.maxBuckets))this.buckets.delete(row.key);
+  }
+
   private sweep(at:number){
     const now=safeClock(at);
     if(now-this.lastSweepAt<RATE_SWEEP_INTERVAL_MS&&this.buckets.size<=this.maxBuckets)return;
@@ -52,12 +60,7 @@ export class ParticipantRateLimiter {
       bucket.events=bucket.events.filter((event)=>event.at>cutoff);
       if(!bucket.events.length)this.buckets.delete(key);
     }
-    if(this.buckets.size>this.maxBuckets){
-      const oldest=[...this.buckets.entries()]
-        .map(([key,bucket])=>({key,at:bucket.events.at(-1)?.at??0}))
-        .sort((left,right)=>left.at-right.at);
-      for(const row of oldest.slice(0,this.buckets.size-this.maxBuckets))this.buckets.delete(row.key);
-    }
+    this.trimToMax();
     this.lastSweepAt=now;
   }
 
@@ -73,16 +76,19 @@ export class ParticipantRateLimiter {
     if(count>=this.maxPerMinute){
       const retryAfterMs=Math.max(1,(bucket.events[0]?.at||now)+RATE_WINDOW_MS-now);
       this.buckets.set(key,bucket);
+      this.trimToMax();
       return{allowed:false,reason:'PARTICIPANT_RATE_LIMIT',count,identicalCount,retryAfterMs};
     }
     if(identicalCount>=this.maxIdentical){
       const first=bucket.events.find((event)=>event.digest===digest)?.at||now;
       const retryAfterMs=Math.max(1,first+RATE_WINDOW_MS-now);
       this.buckets.set(key,bucket);
+      this.trimToMax();
       return{allowed:false,reason:'REPETITION_RATE_LIMIT',count,identicalCount,retryAfterMs};
     }
     bucket.events.push({at:now,digest});
     this.buckets.set(key,bucket);
+    this.trimToMax();
     return{allowed:true,reason:null,count:count+1,identicalCount:identicalCount+1,retryAfterMs:0};
   }
 
