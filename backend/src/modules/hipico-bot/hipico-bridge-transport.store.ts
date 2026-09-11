@@ -1,6 +1,7 @@
 import crypto from 'node:crypto';
 import { prisma } from '../../database/prisma.js';
 import type { IntentResult } from './hipico-operational-classifier.js';
+import { assertReplayMatch, transportReplaySignature } from './hipico-replay-integrity.js';
 
 type TransportInput={
   providerMessageId:string;
@@ -18,13 +19,31 @@ type GroupOutboxInput={
   result:IntentResult;
 };
 
+type PersistedTransportSource={
+  id:string;
+  phoneNumberId:string|null;
+  sender:string|null;
+  messageType:string|null;
+  body:string|null;
+};
+
 const id=(prefix:string)=>`${prefix}_${crypto.randomUUID()}`;
+
+function assertTransportReplay(existing:PersistedTransportSource,input:TransportInput){
+  const persisted=transportReplaySignature(existing);
+  const replay=transportReplaySignature(input);
+  assertReplayMatch('transport',persisted,replay);
+}
 
 /**
  * The real WhatsApp group gate must never acknowledge an event using a
  * serverless in-memory fallback. If PostgreSQL is unavailable these functions
  * throw; the HTTP route returns 503 and the desktop Bridge keeps the event in
  * its local spool for retry.
+ *
+ * Provider message ids are immutable source identities. A duplicate id is
+ * accepted only when the stable transport fields match the first persisted
+ * event exactly. A replay with altered sender/body/type/channel fails closed.
  */
 export async function persistBridgeTransportEvent(input:TransportInput){
   const candidateId=id('hwe');
@@ -45,12 +64,19 @@ export async function persistBridgeTransportEvent(input:TransportInput){
     return{id:inserted[0].id,inserted:true};
   }
 
-  const existing=await prisma.$queryRaw<Array<{id:string}>>`
-    SELECT "id" FROM public."HipicoWebhookEvent"
+  const existing=await prisma.$queryRaw<PersistedTransportSource[]>`
+    SELECT
+      "id",
+      "phoneNumberId" AS "phoneNumberId",
+      "sender",
+      "messageType" AS "messageType",
+      "body"
+    FROM public."HipicoWebhookEvent"
     WHERE "providerMessageId"=${input.providerMessageId}
     LIMIT 1
   `;
   if(!existing[0]?.id)throw new Error('HIPICO_TRANSPORT_DEDUPE_ROW_MISSING');
+  assertTransportReplay(existing[0],input);
   return{id:existing[0].id,inserted:false};
 }
 
@@ -90,3 +116,5 @@ export async function bridgePersistenceReady(){
   `;
   return Boolean(rows[0]?.eventTable&&rows[0]?.outboxTable);
 }
+
+export const __test__={assertTransportReplay};
