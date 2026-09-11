@@ -22,6 +22,7 @@ const RACE_ONLY_EVENTS = new Set<HipicoDomainEventType>([
 ]);
 const DAY_ONLY_EVENTS = new Set<HipicoDomainEventType>(['DAY_OPENED', 'DAY_CLOSING', 'DAY_CLOSED', 'DAY_ARCHIVED']);
 const RACE_CONTEXT_ANCHOR_EVENTS = new Set<HipicoDomainEventType>(['PLAN_RECORDED', 'RACE_OPENED', 'RACE_CLOSED']);
+const RACE_CONTEXT_BOUND_EVENTS = new Set<HipicoDomainEventType>(RACE_ONLY_EVENTS);
 
 const aggregateKindSchema = z.enum(['race', 'day']);
 const mediaKindSchema = z.enum(['none', 'image', 'video', 'audio', 'document', 'unknown']);
@@ -92,12 +93,32 @@ function finiteNumber(value: unknown) {
   return typeof value === 'number' && Number.isFinite(value);
 }
 
+function normalizedIdentity(value: unknown) {
+  return String(value ?? '').trim().normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase();
+}
+
+function hasUniqueTextValues(values: unknown[]) {
+  const normalized = values.map(normalizedIdentity);
+  return normalized.every(Boolean) && new Set(normalized).size === normalized.length;
+}
+
+function hasUniqueParticipants(rows: unknown[]) {
+  const participants = rows.map((row) => normalizedIdentity(payloadRecord(row)?.participant));
+  return participants.every(Boolean) && new Set(participants).size === participants.length;
+}
+
 export function canonicalRaceContextKey(input: Pick<CanonicalPolicyInput, 'eventType' | 'normalizedPayload'>) {
-  if (!RACE_CONTEXT_ANCHOR_EVENTS.has(input.eventType)) return null;
+  if (!RACE_CONTEXT_BOUND_EVENTS.has(input.eventType)) return null;
   const payload = payloadRecord(input.normalizedPayload);
   const raceNumber = payload?.raceNumber;
   const racetrack = payload?.racetrack;
-  if (payload?.raceContextComplete !== true || !Number.isInteger(raceNumber) || !nonEmptyText(racetrack, 120)) return null;
+  if (
+    payload?.raceContextComplete !== true
+    || !Number.isInteger(raceNumber)
+    || Number(raceNumber) < 1
+    || Number(raceNumber) > 999
+    || !nonEmptyText(racetrack, 120)
+  ) return null;
   return operationalRaceContextKey({ raceNumber: Number(raceNumber), racetrack: String(racetrack) });
 }
 
@@ -106,9 +127,10 @@ export function canonicalScopeIssue(input: CanonicalPolicyInput) {
     if (RACE_ONLY_EVENTS.has(input.eventType) && input.aggregateKind !== 'race') return 'HIPICO_EVENT_AGGREGATE_KIND_MISMATCH';
     if (DAY_ONLY_EVENTS.has(input.eventType) && input.aggregateKind !== 'day') return 'HIPICO_EVENT_AGGREGATE_KIND_MISMATCH';
   }
-  if (input.aggregateKind === 'race' && RACE_CONTEXT_ANCHOR_EVENTS.has(input.eventType)) {
+  if (input.aggregateKind === 'race' && RACE_CONTEXT_BOUND_EVENTS.has(input.eventType)) {
     const expectedAggregateKey = canonicalRaceContextKey(input);
-    if (expectedAggregateKey && input.aggregateKey && String(input.aggregateKey).trim() !== expectedAggregateKey) {
+    if (!expectedAggregateKey) return 'HIPICO_RACE_CONTEXT_INCOMPLETE';
+    if (input.aggregateKey && String(input.aggregateKey).trim() !== expectedAggregateKey) {
       return 'HIPICO_RACE_AGGREGATE_KEY_MISMATCH';
     }
   }
@@ -120,30 +142,29 @@ export function canonicalScopeIssue(input: CanonicalPolicyInput) {
 
 export function canonicalEvidenceIssue(input: CanonicalPolicyInput) {
   const payload = payloadRecord(input.normalizedPayload);
-  if (RACE_CONTEXT_ANCHOR_EVENTS.has(input.eventType)) {
-    const raceNumber = payload?.raceNumber;
-    const racetrack = payload?.racetrack;
-    const complete = payload?.raceContextComplete;
-    if (!Number.isInteger(raceNumber) || Number(raceNumber) < 1 || Number(raceNumber) > 999 || !nonEmptyText(racetrack, 120) || complete !== true) {
-      return 'HIPICO_RACE_CONTEXT_INCOMPLETE';
-    }
+  if (RACE_CONTEXT_BOUND_EVENTS.has(input.eventType) && !canonicalRaceContextKey(input)) {
+    return 'HIPICO_RACE_CONTEXT_INCOMPLETE';
   }
   if (input.eventType === 'RESULT_RECORDED') {
     const board = payload?.board;
-    if (!Array.isArray(board) || board.length < 1 || board.length > 20 || board.some((entry) => !nonEmptyText(entry, 80))) {
-      return 'HIPICO_RESULT_BOARD_REQUIRED';
-    }
+    if (
+      !Array.isArray(board)
+      || board.length < 1
+      || board.length > 20
+      || board.some((entry) => !nonEmptyText(entry, 80))
+      || !hasUniqueTextValues(board)
+    ) return 'HIPICO_RESULT_BOARD_REQUIRED';
   }
   if (input.eventType === 'SETTLEMENT_RECORDED') {
     const rows = payload?.settlementRows;
-    if (!Array.isArray(rows) || rows.length < 1 || rows.length > 500 || rows.some((row) => {
+    if (!Array.isArray(rows) || rows.length < 1 || rows.length > 500 || !hasUniqueParticipants(rows) || rows.some((row) => {
       const item = payloadRecord(row);
       return !item || !nonEmptyText(item.participant, 220) || !finiteNumber(item.amount);
     })) return 'HIPICO_SETTLEMENT_ROWS_REQUIRED';
   }
   if (input.eventType === 'BALANCE_CONFIRMED') {
     const balances = payload?.balances;
-    if (!Array.isArray(balances) || balances.length < 1 || balances.length > 500 || balances.some((row) => {
+    if (!Array.isArray(balances) || balances.length < 1 || balances.length > 500 || !hasUniqueParticipants(balances) || balances.some((row) => {
       const item = payloadRecord(row);
       return !item || !nonEmptyText(item.participant, 220) || !finiteNumber(item.available);
     })) return 'HIPICO_BALANCES_REQUIRED';
@@ -334,7 +355,10 @@ export const __test__ = {
   RACE_ONLY_EVENTS,
   DAY_ONLY_EVENTS,
   RACE_CONTEXT_ANCHOR_EVENTS,
+  RACE_CONTEXT_BOUND_EVENTS,
   previewSchema,
   domainReadSchema,
-  domainEventSchema
+  domainEventSchema,
+  hasUniqueTextValues,
+  hasUniqueParticipants
 };
