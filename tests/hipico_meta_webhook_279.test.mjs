@@ -31,9 +31,11 @@ test('Meta webhook verifies the raw signature before parsing or persisting conte
   assert.match(source,/bodyParser:\s*false/);
 });
 
-test('Meta webhook requires strong server-side verification and app secrets',()=>{
+test('Meta webhook requires strong server-side secrets and constant-time verification token comparison',()=>{
   assert.match(source,/serverSecret\('HIPICO_META_VERIFY_TOKEN'\)/);
   assert.match(source,/serverSecret\('HIPICO_META_APP_SECRET'\)/);
+  assert.match(source,/safeEqual\(token, verifyToken\)/);
+  assert.doesNotMatch(source,/token\s*===\s*verifyToken/);
   assert.doesNotMatch(source,/verifyToken=env\('HIPICO_META_VERIFY_TOKEN'\)/);
   assert.doesNotMatch(source,/appSecret=env\('HIPICO_META_APP_SECRET'\)/);
   const strong='x'.repeat(32);
