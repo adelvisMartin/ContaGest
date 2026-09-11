@@ -58,8 +58,6 @@ export default function handler(req, res) {
       groupsDistinct: identity.groupsDistinct,
       channelKeysValid: identity.channelKeysValid,
       channelKeysDistinct: identity.channelKeysDistinct,
-      sourceChannelKey: identity.sourceChannelKey,
-      labChannelKey: identity.labChannelKey,
       missingConfigurationCount: linkedDeviceMissing.length
     },
     metaCloud: {
