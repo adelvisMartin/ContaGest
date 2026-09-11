@@ -12,7 +12,7 @@ export function discoverHipicoRootContracts(root=REPO_ROOT){
   return readdirSync(testsDir,{withFileTypes:true})
     .filter((entry)=>entry.isFile()&&/^hipico.*\.test\.mjs$/i.test(entry.name))
     .map((entry)=>join('tests',entry.name))
-    .sort((left,right)=>left.localeCompare(right));
+    .sort();
 }
 
 function concurrency(){
