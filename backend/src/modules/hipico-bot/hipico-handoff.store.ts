@@ -91,7 +91,7 @@ export async function saveHandoff(state: HandoffState, audit?: { eventType: stri
 export async function persistResponsePlan(plan: SafeResponsePlan) {
   const responseHash = plan.text ? crypto.createHash('sha256').update(plan.text).digest('hex') : null;
   const evidence = plan.evidence || {};
-  const rows = await prisma.$queryRaw<Array<{ id: string }>>`
+  const inserted = await prisma.$queryRaw<Array<{ id: string }>>`
     INSERT INTO public."HipicoResponseReceipt"
       ("id","idempotencyKey","sourceMessageId","decisionVersion","correlationId","intent","responseHash",
        "receiptId","transactionId","stateId","confirmationVerified","status")
@@ -99,15 +99,23 @@ export async function persistResponsePlan(plan: SafeResponsePlan) {
       (${uuid()},${plan.responseIdempotencyKey},${plan.sourceMessageId},${plan.decisionVersion},${plan.correlationId},${plan.intent},${responseHash},
        ${evidence.receiptId || null},${evidence.transactionId || null},${evidence.stateId || null},${plan.confirmationVerified},
        ${plan.canSend ? 'planned' : 'held'})
-    ON CONFLICT ("idempotencyKey") DO UPDATE SET
-      "intent"=EXCLUDED."intent",
-      "responseHash"=EXCLUDED."responseHash",
-      "receiptId"=COALESCE(public."HipicoResponseReceipt"."receiptId",EXCLUDED."receiptId"),
-      "transactionId"=COALESCE(public."HipicoResponseReceipt"."transactionId",EXCLUDED."transactionId"),
-      "stateId"=COALESCE(public."HipicoResponseReceipt"."stateId",EXCLUDED."stateId"),
-      "confirmationVerified"=public."HipicoResponseReceipt"."confirmationVerified" OR EXCLUDED."confirmationVerified",
-      "updatedAt"=CURRENT_TIMESTAMP
+    ON CONFLICT ("idempotencyKey") DO NOTHING
     RETURNING "id"
   `;
-  return { id: rows[0]?.id || null, idempotencyKey: plan.responseIdempotencyKey };
+  if(inserted[0]?.id)return{id:inserted[0].id,idempotencyKey:plan.responseIdempotencyKey,duplicate:false};
+
+  const existing=await prisma.$queryRaw<Array<{
+    id:string;sourceMessageId:string;decisionVersion:string;correlationId:string;
+  }>>`
+    SELECT "id","sourceMessageId","decisionVersion","correlationId"
+    FROM public."HipicoResponseReceipt"
+    WHERE "idempotencyKey"=${plan.responseIdempotencyKey}
+    LIMIT 2
+  `;
+  if(existing.length!==1)throw Object.assign(new Error('Response receipt idempotency row missing or ambiguous.'),{code:'HIPICO_RESPONSE_RECEIPT_ROW_INVALID'});
+  const row=existing[0];
+  if(row.sourceMessageId!==plan.sourceMessageId||row.decisionVersion!==plan.decisionVersion||row.correlationId!==plan.correlationId){
+    throw Object.assign(new Error('Response receipt idempotency key was reused by another decision identity.'),{code:'HIPICO_RESPONSE_RECEIPT_IDEMPOTENCY_MISMATCH'});
+  }
+  return{id:row.id,idempotencyKey:plan.responseIdempotencyKey,duplicate:true};
 }
