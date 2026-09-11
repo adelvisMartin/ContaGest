@@ -151,19 +151,19 @@ export function extractMetaMessages(payload) {
   for (const entry of payload?.entry || []) {
     for (const change of entry?.changes || []) {
       const value = change?.value || {};
-      const channelKey = String(value?.metadata?.phone_number_id || 'meta').slice(0, 220);
-      const contactNames = new Map((value?.contacts || []).map((c) => [String(c.wa_id || ''), String(c?.profile?.name || '').slice(0, 220)]));
+      const channelKey = String(value?.metadata?.phone_number_id || 'meta');
+      const contactNames = new Map((value?.contacts || []).map((c) => [String(c.wa_id || ''), String(c?.profile?.name || '')]));
       for (const message of value?.messages || []) {
         const text = message?.text?.body || message?.button?.text || message?.interactive?.button_reply?.title || message?.interactive?.list_reply?.title || '';
         rows.push({
           channelKey,
-          externalMessageId: String(message?.id || '').slice(0, 320),
-          senderId: String(message?.from || '').slice(0, 220),
+          externalMessageId: String(message?.id || ''),
+          senderId: String(message?.from || ''),
           senderLabel: contactNames.get(String(message?.from || '')) || '',
           timestamp: metaTimestamp(message?.timestamp),
-          type: String(message?.type || 'unknown').trim().toLowerCase().slice(0, 80) || 'unknown',
-          text: String(text || '').slice(0, 4000),
-          quotedExternalMessageId: message?.context?.id ? String(message.context.id).slice(0, 320) : null,
+          type: String(message?.type || 'unknown').trim().toLowerCase() || 'unknown',
+          text: String(text || ''),
+          quotedExternalMessageId: message?.context?.id ? String(message.context.id) : null,
           raw: message
         });
       }
