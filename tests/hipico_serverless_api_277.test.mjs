@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { bearerTokenValid, isE164, metaDestinationAllowed, metaOutboundPolicy, safeEqual, safeTimeoutMs } from '../frontend/api/hipico/_shared.js';
 import { __test__ as ingestTest, validateGroupBridgeBody } from '../frontend/api/hipico/group-bridge-ingest.js';
+import { __test__ as statusTest } from '../frontend/api/hipico/status.js';
 
 const read = (path) => readFileSync(new URL(path, import.meta.url), 'utf8');
 const shared = read('../frontend/api/hipico/_shared.js');
@@ -157,8 +158,17 @@ test('status endpoint separates linked-device readiness from gated optional Meta
   assert.match(status, /sourceSendPossible:\s*false/);
   assert.match(status, /optionalForLinkedDeviceBridge:\s*true/);
   assert.match(status, /groupsDistinct/);
+  assert.match(status, /channelKeysValid/);
+  assert.match(status, /channelKeysDistinct/);
   assert.match(status, /metaOutboundPolicy/);
   assert.match(status, /runtimeShaBound/);
+  assert.doesNotMatch(status, /sourceChannelKey:\s*identity\.sourceChannelKey/);
+  assert.doesNotMatch(status, /labChannelKey:\s*identity\.labChannelKey/);
+  const ready=statusTest.bridgeIdentityStatus({HIPICO_SOURCE_GROUP_ID:'s',HIPICO_LAB_GROUP_ID:'l'});
+  assert.equal(ready.groupsDistinct,true);
+  assert.equal(ready.channelKeysDistinct,true);
+  const collided=statusTest.bridgeIdentityStatus({HIPICO_SOURCE_GROUP_ID:'s',HIPICO_LAB_GROUP_ID:'l',HIPICO_SOURCE_CHANNEL_KEY:'same-key',HIPICO_LAB_CHANNEL_KEY:'same-key'});
+  assert.equal(collided.channelKeysDistinct,false);
 });
 
 test('legacy linked-device fallback cannot be configured to send to the source group', () => {
