@@ -206,7 +206,7 @@ test('agent source group remains shadow-only and persists evaluation without led
   const before = await prisma.$queryRaw<Array<{ count: bigint }>>`SELECT COUNT(*)::bigint AS count FROM public.hipico_ledger_entries WHERE owner_id=${OWNER_ID}::uuid`;
   const state = await store.get(OWNER_ID, GROUP_A, SOURCE_GROUP_ID);
   assert.equal(state.mode, 'SHADOW');
-  const candidate: AgentCandidate = { intent: 'status_non_monetary', confidence: 0.99, risk: 'safe', tool: 'queryRaceStatus', args: {}, source: 'deterministic' };
+  const candidate: AgentCandidate = { intent: 'status_non_monetary', confidence: 0.99, risk: 'safe', tool: 'queryRaceStatus', arguments: {}, source: 'deterministic', modelVersion: null };
   const evaluation = await store.recordEvaluation({ ownerId: OWNER_ID, groupKey: GROUP_A, groupId: SOURCE_GROUP_ID, text: 'estatus de la carrera', candidate, canAct: false, evidence: { source: 'e2e' } });
   assert.ok(evaluation.id);
   const rows = await store.evaluations(OWNER_ID, GROUP_A, SOURCE_GROUP_ID, 10);
