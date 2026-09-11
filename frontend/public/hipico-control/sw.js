@@ -25,6 +25,7 @@ function isAllowedStatic(url) { return APP_SHELL_URLS.has(url.toString()); }
 
 self.addEventListener('install', (event) => {
   event.waitUntil((async () => {
+    // A new cache name makes shell upgrades atomic: an active older worker cannot observe a partially refreshed cache while this worker installs.
     const cache = await caches.open(SHELL_CACHE);
     await cache.addAll([...APP_SHELL_URLS]);
     await self.skipWaiting();
