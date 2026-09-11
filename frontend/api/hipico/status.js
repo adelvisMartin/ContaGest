@@ -1,4 +1,4 @@
-import { metaOutboundPolicy, strongSecretConfigured } from './_shared.js';
+import { hipicoPersistenceConfig, metaOutboundPolicy, strongSecretConfigured } from './_shared.js';
 import { bridgeIdentityStatus } from './bridge-identity.js';
 import { metaSenderConfig, metaWebhookConfig } from './meta-runtime.js';
 
@@ -19,10 +19,11 @@ export default function handler(req, res) {
   const linkedDeviceMissing = missing(linkedDeviceRequired);
   const metaMissing = missing(metaRequired);
   const webhookMissing = missing(webhookRequired);
+  const persistence = hipicoPersistenceConfig();
   const identity = bridgeIdentityStatus();
   const bridgeTokenStrong = strongSecretConfigured(process.env.HIPICO_GROUP_BRIDGE_TOKEN);
   const internalApiTokenStrong = strongSecretConfigured(process.env.HIPICO_INTERNAL_API_TOKEN);
-  const persistenceReady = persistenceMissing.length === 0;
+  const persistenceReady = persistence.ready;
   const linkedDeviceReady = persistenceReady
     && linkedDeviceMissing.length === 0
     && bridgeTokenStrong
@@ -37,7 +38,13 @@ export default function handler(req, res) {
     ok: true,
     service: 'hipico-control-operations',
     mode: linkedDeviceReady ? 'linked_device_shadow_ready' : persistenceReady ? 'manual_and_persistence_ready' : 'offline_and_manual_ready',
-    persistence: { ready: persistenceReady, missingConfigurationCount: persistenceMissing.length },
+    persistence: {
+      ready: persistenceReady,
+      urlValid: persistence.urlValid,
+      serviceRoleStrong: persistence.serviceRoleStrong,
+      ownerIdValid: persistence.ownerIdValid,
+      missingConfigurationCount: persistenceMissing.length
+    },
     linkedDeviceBridge: {
       ready: linkedDeviceReady,
       shadowOnly: true,
@@ -69,4 +76,4 @@ export default function handler(req, res) {
   });
 }
 
-export const __test__ = { bridgeIdentityStatus, metaSenderConfig, metaWebhookConfig };
+export const __test__ = { bridgeIdentityStatus, hipicoPersistenceConfig, metaSenderConfig, metaWebhookConfig };
