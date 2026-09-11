@@ -17,9 +17,14 @@ test('bridge route validates exact SOURCE/LAB identity before sender classificat
   assert.match(validator,/if\(!input\.shadowMode\)/);
   assert.match(validator,/validateBridgeGroupIdentity\(input\)/);
   assert.match(validator,/HIPICO_BRIDGE_GROUP_IDENTITY_NOT_CONFIGURED/);
-  const identityCheck=routes.indexOf('const channelError=validatePinnedChannel(input)');
-  const senderNormalization=routes.indexOf('const sender=normalizeBridgeSender(input.senderId)');
-  const persistence=routes.indexOf('persistBridgeTransportEvent');
+
+  const eventRouteStart=routes.indexOf("router.post('/bridge/events'");
+  const eventRouteEnd=routes.indexOf('export default router',eventRouteStart);
+  assert.ok(eventRouteStart>=0&&eventRouteEnd>eventRouteStart,'bridge events route must be present');
+  const eventRoute=routes.slice(eventRouteStart,eventRouteEnd);
+  const identityCheck=eventRoute.indexOf('const channelError=validatePinnedChannel(input)');
+  const senderNormalization=eventRoute.indexOf('const sender=normalizeBridgeSender(input.senderId)');
+  const persistence=eventRoute.indexOf('persistBridgeTransportEvent({');
   assert.ok(identityCheck>=0&&senderNormalization>identityCheck&&persistence>senderNormalization);
 });
 
