@@ -1,5 +1,5 @@
 const CACHE_VERSION = 'hipico-control-v1.13.0-rc3';
-const SHELL_CACHE = `${CACHE_VERSION}-shell-r9-guarded-ops`;
+const SHELL_CACHE = `${CACHE_VERSION}-shell-r10-race-context`;
 const APP_SHELL = [
   './', './index.html', './recovery.html', './manifest.webmanifest',
   './icons/icon-192.png', './icons/icon-512.png', './icons/icon-192-maskable.png', './icons/icon-512-maskable.png',
@@ -14,7 +14,7 @@ const APP_SHELL = [
   './assets/js/resilience.js', './assets/js/seed.js', './assets/js/store-v2.js', './assets/js/store.js',
   './assets/js/supabase.js', './assets/js/sync.js', './assets/js/ui.js', './assets/js/user-access.js',
   './assets/js/whatsapp.js', './assets/js/workspace.js', './assets/js/whatsapp/normalization.js', './assets/js/whatsapp/parser.js',
-  './assets/js/whatsapp/ui-transcript.js'
+  './assets/js/whatsapp/race-context.js', './assets/js/whatsapp/ui-transcript.js'
 ];
 
 function scoped(path) { return new URL(path, self.registration.scope).toString(); }
