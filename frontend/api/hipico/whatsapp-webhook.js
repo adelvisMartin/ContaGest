@@ -1,10 +1,24 @@
-import { env, extractMetaMessages, readRawBody, sha256, supabase, verifyMetaSignature, classifyText } from './_shared.js';
+import { env, extractMetaMessages, isE164, readRawBody, sha256, supabase, verifyMetaSignature, classifyText } from './_shared.js';
 
 export const config = { api: { bodyParser: false } };
 
 function normalizedTimestamp(value) {
   const parsed=Date.parse(String(value||''));
   return Number.isFinite(parsed)?new Date(parsed).toISOString():null;
+}
+
+function validMetaMessageIdentity(message){
+  const externalMessageId=String(message?.externalMessageId||'').trim();
+  const channelKey=String(message?.channelKey||'').trim();
+  const senderId=String(message?.senderId||'').trim();
+  const sourceTimestamp=message?.raw?.timestamp;
+  return Boolean(
+    externalMessageId && externalMessageId.length<=320 &&
+    channelKey && channelKey!=='meta' && channelKey.length<=220 &&
+    isE164(senderId) &&
+    sourceTimestamp!==undefined && sourceTimestamp!==null && String(sourceTimestamp).trim() &&
+    normalizedTimestamp(message?.timestamp)
+  );
 }
 
 function messageReplaySignature(message){
@@ -75,6 +89,9 @@ export default async function handler(req, res) {
   try {
     const ownerId = env('HIPICO_OWNER_ID');
     const messages = extractMetaMessages(payload);
+    if(messages.some((message)=>!validMetaMessageIdentity(message))){
+      return res.status(400).json({ok:false,retryable:false,error:'invalid_message_identity'});
+    }
     let accepted = 0;
     let duplicates = 0;
     for (const message of messages) {
@@ -116,4 +133,4 @@ export default async function handler(req, res) {
   }
 }
 
-export const __test__={normalizedTimestamp,messageReplaySignature,persistedReplaySignature};
+export const __test__={normalizedTimestamp,validMetaMessageIdentity,messageReplaySignature,persistedReplaySignature};

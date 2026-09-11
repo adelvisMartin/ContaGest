@@ -28,6 +28,26 @@ test('Meta webhook verifies the raw signature before parsing or persisting conte
   assert.match(source,/bodyParser:\s*false/);
 });
 
+test('Meta webhook rejects incomplete message identity before any persistence',()=>{
+  const valid={
+    externalMessageId:'wamid-meta-1',
+    channelKey:'1234567890',
+    senderId:'584121234567',
+    timestamp:'2026-09-11T06:00:00.000Z',
+    raw:{timestamp:'1789106400'}
+  };
+  assert.equal(__test__.validMetaMessageIdentity(valid),true);
+  assert.equal(__test__.validMetaMessageIdentity({...valid,externalMessageId:''}),false);
+  assert.equal(__test__.validMetaMessageIdentity({...valid,channelKey:'meta'}),false);
+  assert.equal(__test__.validMetaMessageIdentity({...valid,senderId:'0412-1234567'}),false);
+  assert.equal(__test__.validMetaMessageIdentity({...valid,raw:{}}),false);
+  assert.equal(__test__.validMetaMessageIdentity({...valid,timestamp:'not-a-date'}),false);
+  const identityCheck=source.indexOf('messages.some((message)=>!validMetaMessageIdentity(message))');
+  const persistence=source.indexOf("await supabase('hipico_messages");
+  assert.ok(identityCheck>=0&&persistence>identityCheck);
+  assert.match(source,/status\(400\).*invalid_message_identity/);
+});
+
 test('oversized and malformed requests are rejected without being treated as retryable server faults',()=>{
   assert.match(source,/request_body_too_large/);
   assert.match(source,/status\(413\)/);
