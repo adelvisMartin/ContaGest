@@ -6,7 +6,7 @@ on:
       - 'frontend/public/hipico-control/**'
       - 'frontend/api/hipico/**'
       - 'backend/src/modules/hipico-bot/**'
-      - 'backend/scripts/hipico-db-contract.mjs'
+      - 'backend/scripts/hipico-*.mjs'
       - 'tools/hipico-whatsapp-bridge/**'
       - 'tools/hipico-whatsapp-web-bridge/**'
       - 'supabase/sql/hipico_*.sql'
@@ -24,7 +24,7 @@ on:
       - 'frontend/public/hipico-control/**'
       - 'frontend/api/hipico/**'
       - 'backend/src/modules/hipico-bot/**'
-      - 'backend/scripts/hipico-db-contract.mjs'
+      - 'backend/scripts/hipico-*.mjs'
       - 'tools/hipico-whatsapp-bridge/**'
       - 'tools/hipico-whatsapp-web-bridge/**'
       - 'supabase/sql/hipico_*.sql'
@@ -109,10 +109,13 @@ jobs:
           node --check frontend/api/hipico/whatsapp-webhook.js
           node --check tools/hipico-whatsapp-bridge/src/group-identity.mjs
           node --check tools/hipico-whatsapp-bridge/src/index.mjs
+          node --check backend/scripts/hipico-audit-idempotency-contract.mjs
       - name: Install root lock for Hípico backend contracts
         run: npm ci --no-audit --no-fund
       - name: PostgreSQL isolated migration, RLS, idempotency and multigroup contract
         run: node backend/scripts/hipico-db-contract.mjs
+      - name: PostgreSQL durable cloud audit replay contract
+        run: node backend/scripts/hipico-audit-idempotency-contract.mjs
       - name: Backend typecheck
         run: npm --workspace backend run typecheck
       - name: Backend Hípico security, money, parser and conversation contracts
