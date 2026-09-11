@@ -20,6 +20,13 @@ test('Meta webhook replay signature binds sender instant type body and quoted co
   assert.notEqual(__test__.messageReplaySignature(base),__test__.messageReplaySignature({...base,quotedExternalMessageId:'origin-2'}));
 });
 
+test('Meta webhook requires strong secrets and timing-safe verification token comparison',()=>{
+  assert.match(source,/serverSecret\('HIPICO_META_VERIFY_TOKEN'\)/);
+  assert.match(source,/safeEqual\(token, verifyToken\)/);
+  assert.match(source,/serverSecret\('HIPICO_META_APP_SECRET'\)/);
+  assert.doesNotMatch(source,/token\s*===\s*verifyToken/);
+});
+
 test('Meta webhook verifies the raw signature before parsing or persisting content',()=>{
   const signatureCheck=source.indexOf('verifyMetaSignature(raw');
   const jsonParse=source.indexOf("JSON.parse(raw.toString('utf8'))");
