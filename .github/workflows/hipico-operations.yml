@@ -74,7 +74,7 @@ jobs:
       - name: Parser, operational messages, API, UI and multigroup contracts
         run: |
           node --test tests/hipico-operations.test.mjs
-          node --test tests/hipico_operational_messages_277.test.mjs tests/hipico_operational_copy_center_277.test.mjs tests/hipico_board_context_guard_277.test.mjs tests/hipico_race_offer_context_277.test.mjs tests/hipico_race_opening_assistant_277.test.mjs tests/hipico_multigroup_runtime_277.test.mjs tests/hipico_serverless_api_277.test.mjs tests/hipico_meta_webhook_279.test.mjs tests/hipico_meta_sender_readiness_297.test.mjs tests/hipico_ui_release_contract_277.test.mjs tests/hipico_group_bridge_contract.test.mjs tests/hipico_multigroup_hardening_279.test.mjs tests/hipico_advanced_group_scope_279.test.mjs tests/hipico_dialog_accessibility_279.test.mjs tests/hipico_race_context_279.test.mjs tests/hipico_chat_import_guard_279.test.mjs tests/hipico_chat_import_scope_279.test.mjs tests/hipico_operational_access_guard_279.test.mjs tests/hipico_backup_restore_issue_117.test.mjs tests/hipico_local_auth_hardening_279.test.mjs tests/hipico_financial_input_guard_279.test.mjs tests/hipico_recovery_destructive_guard_279.test.mjs
+          node --test tests/hipico_operational_messages_277.test.mjs tests/hipico_operational_copy_center_277.test.mjs tests/hipico_board_context_guard_277.test.mjs tests/hipico_race_offer_context_277.test.mjs tests/hipico_race_opening_assistant_277.test.mjs tests/hipico_multigroup_runtime_277.test.mjs tests/hipico_serverless_api_277.test.mjs tests/hipico_meta_webhook_279.test.mjs tests/hipico_meta_sender_readiness_297.test.mjs tests/hipico_format_integrity_297.test.mjs tests/hipico_ui_release_contract_277.test.mjs tests/hipico_group_bridge_contract.test.mjs tests/hipico_multigroup_hardening_279.test.mjs tests/hipico_advanced_group_scope_279.test.mjs tests/hipico_dialog_accessibility_279.test.mjs tests/hipico_race_context_279.test.mjs tests/hipico_chat_import_guard_279.test.mjs tests/hipico_chat_import_scope_279.test.mjs tests/hipico_operational_access_guard_279.test.mjs tests/hipico_backup_restore_issue_117.test.mjs tests/hipico_local_auth_hardening_279.test.mjs tests/hipico_financial_input_guard_279.test.mjs tests/hipico_recovery_destructive_guard_279.test.mjs
       - name: PWA and serverless operational syntax checks
         run: |
           node --check frontend/public/hipico-control/assets/js/advanced-group-scope.js
@@ -84,6 +84,7 @@ jobs:
           node --check frontend/public/hipico-control/assets/js/local-auth.js
           node --check frontend/public/hipico-control/assets/js/recovery.js
           node --check frontend/public/hipico-control/assets/js/app.js
+          node --check frontend/public/hipico-control/assets/js/format.js
           node --check frontend/public/hipico-control/assets/js/whatsapp.js
           node --check frontend/public/hipico-control/assets/js/whatsapp/race-context.js
           node --check frontend/public/hipico-control/assets/js/operations.js
