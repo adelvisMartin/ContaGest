@@ -1,6 +1,6 @@
 const DEFAULT_TIMEOUT_MS = 5_000;
 const DEFAULT_CACHE_TTL_MS = 30_000;
-const MAX_RESPONSE_BYTES = 1_000_000;
+export const MAX_RACE_PROVIDER_RESPONSE_BYTES = 1_000_000;
 export const MAX_RACE_PROVIDER_CACHE_ENTRIES = 128;
 
 export type HorseRaceProviderName = 'disabled' | 'sportradar-uof';
@@ -66,6 +66,43 @@ function normalizeStageId(value: string) {
     throw new HorseRaceProviderError('El identificador de etapa hípica no es válido.', 'INVALID_STAGE_ID', false);
   }
   return id;
+}
+
+function responseTooLarge() {
+  return new HorseRaceProviderError('La respuesta del proveedor hípico excede el tamaño permitido.', 'UPSTREAM_RESPONSE_TOO_LARGE', false);
+}
+
+async function readBoundedText(response: Response) {
+  const declaredLength = Number(response.headers.get('content-length'));
+  if (Number.isFinite(declaredLength) && declaredLength > MAX_RACE_PROVIDER_RESPONSE_BYTES) throw responseTooLarge();
+
+  const reader = response.body?.getReader?.();
+  if (!reader) {
+    const text = await response.text();
+    if (Buffer.byteLength(text, 'utf8') > MAX_RACE_PROVIDER_RESPONSE_BYTES) throw responseTooLarge();
+    return text;
+  }
+
+  const decoder = new TextDecoder();
+  let bytes = 0;
+  let text = '';
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (!value) continue;
+      bytes += value.byteLength;
+      if (bytes > MAX_RACE_PROVIDER_RESPONSE_BYTES) {
+        await reader.cancel('response-too-large').catch(() => {});
+        throw responseTooLarge();
+      }
+      text += decoder.decode(value, { stream: true });
+    }
+    text += decoder.decode();
+    return text;
+  } finally {
+    reader.releaseLock?.();
+  }
 }
 
 export function raceProviderStatus(env: RuntimeEnv = process.env): HorseRaceProviderStatus {
@@ -163,10 +200,7 @@ export function createHorseRaceProvider(options: { env?: RuntimeEnv; fetchImpl?:
       if (!response.ok) {
         throw new HorseRaceProviderError(`El proveedor hípico respondió HTTP ${response.status}.`, 'UPSTREAM_ERROR', response.status >= 500 || response.status === 429);
       }
-      const xml = await response.text();
-      if (Buffer.byteLength(xml, 'utf8') > MAX_RESPONSE_BYTES) {
-        throw new HorseRaceProviderError('La respuesta del proveedor hípico excede el tamaño permitido.', 'UPSTREAM_RESPONSE_TOO_LARGE', false);
-      }
+      const xml = await readBoundedText(response);
       const fetchedAt=now();
       const value: HorseRaceStageSummary = {
         provider: 'sportradar-uof',
