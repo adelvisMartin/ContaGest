@@ -1,0 +1,88 @@
+name: Control Hipico Command Center v289
+
+on:
+  pull_request:
+    paths:
+      - 'backend/src/modules/hipico/**'
+      - 'backend/src/app.ts'
+      - 'frontend/public/hipico-control/**'
+      - 'frontend/api/hipico/**'
+      - 'android/hipico-control-v1130/**'
+      - 'docs/hipico/**'
+      - 'scripts/hipico-cli.mjs'
+      - 'tests/hipico_command_center_issue_289.test.mjs'
+      - 'qa/hipico-command-center-v289.spec.mjs'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/hipico-command-center-v289.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: hipico-command-center-v289-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  command-center:
+    name: Contract, typecheck, build, Chromium and Android parity
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - name: Checkout exact candidate
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Verify exact SHA
+        run: |
+          git rev-parse HEAD
+          test "$(git rev-parse HEAD)" = "${GITHUB_SHA}"
+
+      - name: Set up Node 22
+        uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install locked repository dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Command Center architecture contract
+        run: npm run test:hipico:command-center
+
+      - name: Backend typecheck
+        run: npm run typecheck
+
+      - name: Production build
+        run: npm run build
+
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Command Center browser states and responsive gate
+        env:
+          HIPICO_QA_SHA: ${{ github.sha }}
+        run: npm run test:browser:hipico:command-center
+
+      - name: Install locked Android wrapper dependencies
+        working-directory: android/hipico-control-v1130
+        run: npm ci --no-audit --no-fund
+
+      - name: Verify canonical PWA Android parity
+        working-directory: android/hipico-control-v1130
+        run: |
+          npm run sync:web
+          npm run verify:web
+
+      - name: Upload Command Center evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: hipico-command-center-v289-${{ github.sha }}
+          path: |
+            artifacts/qa/hipico-v289/
+            playwright-report/
+          if-no-files-found: warn
+          retention-days: 30
