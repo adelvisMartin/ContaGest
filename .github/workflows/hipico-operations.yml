@@ -80,6 +80,7 @@ jobs:
           node --check frontend/api/hipico/group-bridge-ingest.js
           node --check frontend/api/hipico/whatsapp-send.js
           node --check frontend/api/hipico/whatsapp-webhook.js
+          node --check tools/hipico-whatsapp-bridge/src/group-identity.mjs
           node --check tools/hipico-whatsapp-bridge/src/index.mjs
       - name: Install root lock for Hípico backend contracts
         run: npm ci --no-audit --no-fund
