@@ -5,29 +5,34 @@ import { __test__ } from './hipico-webhook.routes.js';
 
 const source=readFileSync(new URL('./hipico-webhook.routes.ts',import.meta.url),'utf8');
 
-test('Cloud webhook is bound to the configured WhatsApp phone number id',()=>{
+test('Cloud webhook is bound to a valid configured WhatsApp phone number id',()=>{
   const env={WHATSAPP_PHONE_NUMBER_ID:'1234567890'};
   assert.equal(__test__.configuredPhoneNumberId(env),'1234567890');
   assert.equal(__test__.webhookIdentityError([{phoneNumberId:'1234567890'}],env),null);
   assert.equal(__test__.webhookIdentityError([{phoneNumberId:'9999999999'}],env),'WEBHOOK_PHONE_NUMBER_MISMATCH');
   assert.equal(__test__.webhookIdentityError([{phoneNumberId:''}],env),'WEBHOOK_PHONE_NUMBER_MISMATCH');
   assert.equal(__test__.webhookIdentityError([{phoneNumberId:'1234567890'}],{}),'WEBHOOK_PHONE_NUMBER_NOT_CONFIGURED');
+  assert.equal(__test__.configuredPhoneNumberId({WHATSAPP_PHONE_NUMBER_ID:'phone-id'}),'');
+  assert.equal(__test__.webhookIdentityError([{phoneNumberId:'phone-id'}],{WHATSAPP_PHONE_NUMBER_ID:'phone-id'}),'WEBHOOK_PHONE_NUMBER_NOT_CONFIGURED');
 });
 
-test('Cloud webhook uses canonical strong Meta security and never legacy service auth helpers',()=>{
-  assert.match(source,/import \{ metaSignatureValid, metaVerifyTokenValid, metaWebhookSecretsConfigured \} from '\.\/hipico-meta-security\.js'/);
+test('Cloud webhook uses canonical strong Meta runtime security and never legacy service auth helpers',()=>{
+  assert.match(source,/import \{ metaSignatureValid, metaVerifyTokenValid, metaWebhookRuntimeConfigured \} from '\.\/hipico-meta-security\.js'/);
+  assert.match(source,/hipicoNumericProviderIdConfigured/);
   assert.doesNotMatch(source,/import \{[^}]*signatureValid[^}]*\} from '\.\/hipico-bot\.service\.js'/);
   assert.doesNotMatch(source,/import \{[^}]*operatorTokenValid[^}]*\} from '\.\/hipico-bot\.service\.js'/);
-  assert.match(source,/metaWebhookSecretsConfigured\(\)/);
+  assert.match(source,/metaWebhookRuntimeConfigured\(\)/);
   assert.match(source,/metaVerifyTokenValid\(token\)/);
+  assert.doesNotMatch(source,/metaWebhookSecretsConfigured\(\)/);
 });
 
-test('Cloud webhook verifies signature before identity and processing',()=>{
+test('Cloud webhook verifies runtime readiness and signature before identity and processing',()=>{
+  const runtime=source.indexOf('if(!metaWebhookRuntimeConfigured())');
   const signature=source.indexOf('metaSignatureValid(raw');
   const extraction=source.indexOf('extractMessages(req.body)');
   const identity=source.indexOf('webhookIdentityError(messages)');
   const processing=source.indexOf('processMessagesBounded(messages)');
-  assert.ok(signature>=0&&extraction>signature&&identity>extraction&&processing>identity);
+  assert.ok(runtime>=0&&signature>runtime&&extraction>signature&&identity>extraction&&processing>identity);
 });
 
 test('Cloud webhook never silently truncates a valid signed batch',()=>{
@@ -50,4 +55,12 @@ test('foreign phone-number events are rejected as non-retryable before persisten
   const processing=source.indexOf('processMessagesBounded(messages)');
   assert.ok(identity>=0&&mismatch>identity&&processing>mismatch);
   assert.match(source,/status\(400\).*retryable:false/s);
+});
+
+test('signed status-only callbacks may bypass PostgreSQL but not invalid runtime identity',()=>{
+  const empty=source.indexOf('if(messages.length===0)');
+  const db=source.indexOf('HipicoBotStore.dbReady(true)');
+  const runtime=source.indexOf('if(!metaWebhookRuntimeConfigured())');
+  assert.ok(runtime>=0&&empty>runtime&&db>empty);
+  assert.match(source,/received:0,processed:0,failed:0/);
 });
