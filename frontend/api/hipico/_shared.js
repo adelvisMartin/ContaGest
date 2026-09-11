@@ -34,6 +34,8 @@ export function bearerTokenValid(header, expected) {
 }
 
 export function isE164(value) {
+  // E.164 allows at most 15 digits. WhatsApp accepts the same digits with or
+  // without a leading plus depending on the API field, so normalize later.
   return /^\+?[1-9]\d{6,14}$/.test(String(value || '').trim());
 }
 
@@ -43,7 +45,10 @@ function normalizedE164(value) {
 }
 
 function metaAllowedDestinations(source = process.env) {
-  return new Set(String(source.HIPICO_META_ALLOWED_DESTINATIONS || '').split(',').map(normalizedE164).filter(Boolean));
+  return new Set(String(source.HIPICO_META_ALLOWED_DESTINATIONS || '')
+    .split(',')
+    .map(normalizedE164)
+    .filter(Boolean));
 }
 
 export function metaOutboundPolicy(source = process.env) {
@@ -88,7 +93,9 @@ export function sha256(value) {
 
 export function safeTimeoutMs(value, fallback = DEFAULT_FETCH_TIMEOUT_MS) {
   const fallbackValue = Number(fallback);
-  const safeFallback = Number.isFinite(fallbackValue) && fallbackValue > 0 ? Math.min(Math.floor(fallbackValue), MAX_FETCH_TIMEOUT_MS) : DEFAULT_FETCH_TIMEOUT_MS;
+  const safeFallback = Number.isFinite(fallbackValue) && fallbackValue > 0
+    ? Math.min(Math.floor(fallbackValue), MAX_FETCH_TIMEOUT_MS)
+    : DEFAULT_FETCH_TIMEOUT_MS;
   const number = Number(value);
   if (!Number.isFinite(number) || number <= 0) return safeFallback;
   return Math.min(Math.floor(number), MAX_FETCH_TIMEOUT_MS);
@@ -103,14 +110,26 @@ export async function fetchWithTimeout(url, init = {}, timeoutMs = DEFAULT_FETCH
     if (callerSignal.aborted) controller.abort();
     else callerSignal.addEventListener('abort', abort, { once: true });
   }
-  try { return await fetch(url, { ...init, signal: controller.signal }); }
-  finally { clearTimeout(timer); callerSignal?.removeEventListener?.('abort', abort); }
+  try {
+    return await fetch(url, { ...init, signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
+    callerSignal?.removeEventListener?.('abort', abort);
+  }
 }
 
 export async function supabase(path, init = {}) {
   const base = env('HIPICO_SUPABASE_URL').replace(/\/$/, '');
   const serviceKey = env('HIPICO_SUPABASE_SERVICE_ROLE_KEY');
-  const response = await fetchWithTimeout(`${base}/rest/v1/${path}`, { ...init, headers: { apikey: serviceKey, Authorization: `Bearer ${serviceKey}`, 'Content-Type': 'application/json', ...(init.headers || {}) } }, safeTimeoutMs(process.env.HIPICO_SUPABASE_TIMEOUT_MS));
+  const response = await fetchWithTimeout(`${base}/rest/v1/${path}`, {
+    ...init,
+    headers: {
+      apikey: serviceKey,
+      Authorization: `Bearer ${serviceKey}`,
+      'Content-Type': 'application/json',
+      ...(init.headers || {})
+    }
+  }, safeTimeoutMs(process.env.HIPICO_SUPABASE_TIMEOUT_MS));
   const text = await response.text();
   if (!response.ok) {
     const requestId = response.headers.get('x-request-id') || response.headers.get('sb-request-id') || '';
@@ -128,7 +147,17 @@ export function extractMetaMessages(payload) {
       const contactNames = new Map((value?.contacts || []).map((c) => [String(c.wa_id || ''), c?.profile?.name || '']));
       for (const message of value?.messages || []) {
         const text = message?.text?.body || message?.button?.text || message?.interactive?.button_reply?.title || message?.interactive?.list_reply?.title || '';
-        rows.push({ channelKey, externalMessageId: String(message?.id || ''), senderId: String(message?.from || ''), senderLabel: contactNames.get(String(message?.from || '')) || '', timestamp: message?.timestamp ? new Date(Number(message.timestamp) * 1000).toISOString() : new Date().toISOString(), type: String(message?.type || 'unknown'), text: String(text || '').slice(0, 4000), quotedExternalMessageId: message?.context?.id ? String(message.context.id) : null, raw: message });
+        rows.push({
+          channelKey,
+          externalMessageId: String(message?.id || ''),
+          senderId: String(message?.from || ''),
+          senderLabel: contactNames.get(String(message?.from || '')) || '',
+          timestamp: message?.timestamp ? new Date(Number(message.timestamp) * 1000).toISOString() : new Date().toISOString(),
+          type: String(message?.type || 'unknown'),
+          text: String(text || '').slice(0, 4000),
+          quotedExternalMessageId: message?.context?.id ? String(message.context.id) : null,
+          raw: message
+        });
       }
     }
   }
