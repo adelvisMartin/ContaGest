@@ -145,6 +145,31 @@ test('legacy lookup hitting another group creates the correct scoped race and mo
   assert.equal(ws.audit[0].entityId, target.id);
 });
 
+test('new scoped race never reuses a closed day from the intended group', () => {
+  const ws = baseWorkspace();
+  ws.days.find((day) => day.id === 'd1').status = 'closed';
+  const wrong = race('race-g2', 'g2');
+  const a1 = advanced('a1', 'g1', { loadedRaceId: wrong.id });
+  wrong.bets.push(loadedBet(a1));
+  ws.races.push(wrong);
+  ws.advancedBets.push(a1);
+  ws.audit.unshift(audit(wrong.id));
+
+  let sequence = 0;
+  enforceAdvancedLoadGroupScope(ws, {
+    createId: (prefix) => `${prefix}-new-${++sequence}`,
+    now: () => '2026-09-11T17:06:00Z'
+  });
+
+  const target = ws.races.find((row) => row.groupId === 'g1');
+  assert.ok(target);
+  assert.notEqual(target.dayId, 'd1');
+  const targetDay = ws.days.find((day) => day.id === target.dayId);
+  assert.equal(targetDay?.groupId, 'g1');
+  assert.equal(targetDay?.status, 'open');
+  assert.equal(targetDay?.date, '2026-09-11');
+});
+
 test('closed race in the intended group fails closed and restores staged advanced rows', () => {
   const ws = baseWorkspace();
   const wrong = race('race-g2', 'g2');
