@@ -1,12 +1,16 @@
-import { bearerTokenValid, env, fetchWithTimeout, isE164, metaDestinationAllowed, metaOutboundPolicy, serverSecret, supabase } from './_shared.js';
+import { bearerTokenValid, env, fetchWithTimeout, isE164, metaDestinationAllowed, metaOutboundPolicy, retryAfterMs, serverSecret, supabase } from './_shared.js';
 import { metaSenderConfig } from './meta-runtime.js';
 
 const MAX_ATTEMPTS = 6;
 const BATCH_SIZE = 10;
 
-function nextRetryIso(attempts) {
+function nextRetryIso(attempts, retryAfterHeader = '', nowMs = Date.now()) {
   const retryMinutes = Math.min(60, Math.max(1, 2 ** Math.min(attempts, 5)));
-  return new Date(Date.now() + retryMinutes * 60000).toISOString();
+  const localWaitMs = retryMinutes * 60000;
+  const parsedNow = Number(nowMs);
+  const safeNow = Number.isFinite(parsedNow) ? parsedNow : Date.now();
+  const providerWaitMs = retryAfterMs(retryAfterHeader, safeNow);
+  return new Date(safeNow + Math.max(localWaitMs, providerWaitMs)).toISOString();
 }
 
 async function claimRow(row) {
@@ -135,7 +139,7 @@ export default async function handler(req, res) {
         await updateRow(row.id, {
           status: retryable && !exhausted ? 'retry' : 'failed',
           attempts,
-          next_attempt_at: retryable && !exhausted ? nextRetryIso(attempts) : row.next_attempt_at,
+          next_attempt_at: retryable && !exhausted ? nextRetryIso(attempts, response.headers.get('retry-after')) : row.next_attempt_at,
           last_error: `META_HTTP_${response.status}`
         });
         if (retryable && !exhausted) retried += 1;
@@ -171,4 +175,4 @@ export default async function handler(req, res) {
   }
 }
 
-export const __test__={safeGraphVersion,metaSenderConfig};
+export const __test__={safeGraphVersion,metaSenderConfig,nextRetryIso};
