@@ -4,6 +4,7 @@ const DEFAULT_FETCH_TIMEOUT_MS = 10000;
 const MAX_FETCH_TIMEOUT_MS = 60000;
 const SHA40 = /^[a-f0-9]{40}$/i;
 export const MIN_HIPICO_INTERNAL_SECRET_LENGTH = 32;
+export const PUBLIC_SECRET_PLACEHOLDER_PATTERN = /(?:REEMPLAZA|REPLACE|CHANGE[_-]?ME|CHANGEME|PLACEHOLDER|YOUR[_-]?(?:SECRET|TOKEN|KEY)|TU[_-]?(?:SECRETO|TOKEN|CLAVE)|EXAMPLE[_-]?(?:SECRET|TOKEN|KEY))/i;
 
 export function env(name, required = true) {
   const value = process.env[name];
@@ -13,7 +14,8 @@ export function env(name, required = true) {
 
 export function strongSecretConfigured(value, minLength = MIN_HIPICO_INTERNAL_SECRET_LENGTH) {
   const minimum = Number.isInteger(minLength) && minLength > 0 ? minLength : MIN_HIPICO_INTERNAL_SECRET_LENGTH;
-  return Buffer.byteLength(String(value || '').trim(), 'utf8') >= minimum;
+  const secret=String(value || '').trim();
+  return Buffer.byteLength(secret, 'utf8') >= minimum && !PUBLIC_SECRET_PLACEHOLDER_PATTERN.test(secret);
 }
 
 export function serverSecret(name, minLength = MIN_HIPICO_INTERNAL_SECRET_LENGTH) {
