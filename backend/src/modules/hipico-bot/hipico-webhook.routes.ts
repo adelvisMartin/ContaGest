@@ -66,7 +66,9 @@ router.post('/webhook',async(req,res)=>{
     return res.status(503).json({ok:false,retryable:true,error:'webhook_not_configured'});
   }
   if(identityError){
-    return res.status(400).json({ok:false,retryable:false,error:'webhook_phone_number_mismatch'});
+    // A signed callback for a different configured phone identity is permanently
+    // rejected, but transport-acknowledged so Meta does not retry it forever.
+    return res.status(200).json({ok:false,acknowledged:true,accepted:false,retryable:false,error:'webhook_phone_number_mismatch',received:messages.length});
   }
   if(messages.length===0){
     return res.status(200).json({ok:true,received:0,processed:0,failed:0,mismatched:0});
