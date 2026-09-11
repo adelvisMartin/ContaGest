@@ -23,19 +23,26 @@ function validTimestamp(value?:string){
   return date;
 }
 
-function nullableText(value:unknown){
-  const text=String(value??'').trim();
+function persistedText(value:unknown){
+  const text=String(value??'');
   return text||null;
+}
+
+function stableJsonValue(value:unknown):string{
+  if(value===null)return 'null';
+  if(Array.isArray(value))return `[${value.map(stableJsonValue).join(',')}]`;
+  if(typeof value==='object'){
+    const row=value as Record<string,unknown>;
+    return `{${Object.keys(row).sort().map((key)=>`${JSON.stringify(key)}:${stableJsonValue(row[key])}`).join(',')}}`;
+  }
+  return JSON.stringify(value);
 }
 
 function stableJson(value:unknown):string{
   if(value===null||value===undefined)return 'null';
-  if(Array.isArray(value))return `[${value.map(stableJson).join(',')}]`;
-  if(typeof value==='object'){
-    const row=value as Record<string,unknown>;
-    return `{${Object.keys(row).sort().map((key)=>`${JSON.stringify(key)}:${stableJson(row[key])}`).join(',')}}`;
-  }
-  return JSON.stringify(value);
+  const serialized=JSON.stringify(value);
+  if(serialized===undefined)return 'null';
+  return stableJsonValue(JSON.parse(serialized));
 }
 
 function instant(value:unknown){
@@ -47,14 +54,14 @@ function assertDomainReplay(existing:EventRow,event:HipicoDomainEventInput){
   const expectedReview=event.type==='AMBIGUOUS'||event.type==='UNKNOWN'||Boolean(event.requiresReview);
   const persistedReview=existing.reason==='AMBIGUOUS_OR_UNKNOWN';
   const same=existing.eventType===event.type
-    && existing.sourceMessageId===nullableText(event.sourceMessageId)
-    && existing.rawMessage===nullableText(event.rawMessage)
+    && existing.sourceMessageId===persistedText(event.sourceMessageId)
+    && existing.rawMessage===persistedText(event.rawMessage)
     && stableJson(existing.normalizedPayload)===stableJson(event.normalizedPayload)
-    && existing.actorRef===nullableText(event.actorRef)
+    && existing.actorRef===persistedText(event.actorRef)
     && existing.source===String(event.source||'system')
-    && existing.parserVersion===nullableText(event.parserVersion)
+    && existing.parserVersion===persistedText(event.parserVersion)
     && Number(existing.schemaVersion)===Number(event.schemaVersion||1)
-    && existing.originalEventId===nullableText(event.originalEventId)
+    && existing.originalEventId===persistedText(event.originalEventId)
     && persistedReview===expectedReview
     && (!event.eventId||existing.id===String(event.eventId))
     && (!event.timestamp||instant(existing.eventTimestamp)===instant(event.timestamp));
