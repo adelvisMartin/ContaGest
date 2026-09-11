@@ -34,8 +34,14 @@ test('normalization accepts modern and legacy groups but rejects user and malfor
   assert.equal(normalizeGroupId(legacySourceId.toUpperCase()), legacySourceId);
   assert.equal(normalizeGroupId(modernSourceId.toUpperCase()), modernSourceId);
   assert.equal(normalizeGroupId('584121234567@s.whatsapp.net'), '');
-  assert.equal(normalizeGroupId('1234@g.us'), '');
+  assert.equal(normalizeGroupId('12345@g.us'), '');
+  assert.equal(normalizeGroupId('1234-5678@g.us'), '');
   assert.equal(normalizeGroupId('not-a-group'), '');
+});
+
+test('undersized pseudo group IDs are not extracted from DOM attributes', () => {
+  assert.deepEqual(extractGroupIds('row_12345@g.us_tail'), []);
+  assert.deepEqual(extractGroupIds('row_1234-5678@g.us_tail'), []);
 });
 
 test('destination guard requires exact ID plus exact normalized title', () => {
