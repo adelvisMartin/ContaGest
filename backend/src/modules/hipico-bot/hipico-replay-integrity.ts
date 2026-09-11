@@ -1,10 +1,25 @@
 import crypto from 'node:crypto';
 
+type TransportReplayMetadata = {
+  sentAt?: unknown;
+  groupId?: unknown;
+  channelKey?: unknown;
+  labChannelKey?: unknown;
+  channelRole?: unknown;
+  historySync?: unknown;
+  fromMe?: unknown;
+  hasMedia?: unknown;
+  mediaKind?: unknown;
+  mediaName?: unknown;
+  quotedExternalMessageId?: unknown;
+};
+
 type TransportReplaySource = {
   phoneNumberId?: string | null;
   sender?: string | null;
   messageType?: string | null;
   body?: string | null;
+  payload?: TransportReplayMetadata | null;
 };
 
 type CanonicalReplaySource = {
@@ -37,10 +52,14 @@ function nullableText(value: unknown) {
   return normalized || null;
 }
 
-function timestamp(value: Date | string | null | undefined) {
+function timestamp(value: Date | string | null | undefined | unknown) {
   if (!value) return null;
-  const date = value instanceof Date ? value : new Date(value);
+  const date = value instanceof Date ? value : new Date(String(value));
   return Number.isFinite(date.getTime()) ? date.toISOString() : null;
+}
+
+function booleanValue(value: unknown) {
+  return value === true;
 }
 
 function digest(parts: readonly unknown[]) {
@@ -48,11 +67,23 @@ function digest(parts: readonly unknown[]) {
 }
 
 export function transportReplaySignature(source: TransportReplaySource) {
+  const payload=source.payload&&typeof source.payload==='object'?source.payload:{};
   return digest([
     nullableText(source.phoneNumberId),
     nullableText(source.sender),
     text(source.messageType) || 'unknown',
-    bodyText(source.body)
+    bodyText(source.body),
+    timestamp(payload.sentAt),
+    nullableText(payload.groupId),
+    nullableText(payload.channelKey),
+    nullableText(payload.labChannelKey),
+    text(payload.channelRole),
+    booleanValue(payload.historySync),
+    booleanValue(payload.fromMe),
+    booleanValue(payload.hasMedia),
+    text(payload.mediaKind) || 'none',
+    nullableText(payload.mediaName),
+    nullableText(payload.quotedExternalMessageId)
   ]);
 }
 
@@ -86,4 +117,4 @@ export function assertReplayMatch(kind: ReplayKind, expectedSignature: string, a
   }
 }
 
-export const __test__ = { text, bodyText, nullableText, timestamp };
+export const __test__ = { text, bodyText, nullableText, timestamp, booleanValue };
