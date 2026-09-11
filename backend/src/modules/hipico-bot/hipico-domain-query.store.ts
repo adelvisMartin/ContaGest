@@ -32,6 +32,8 @@ type DomainEventReadRow={
   parserVersion:string|null;
   schemaVersion:number;
   eventTimestamp:Date;
+  operatorConfirmed:boolean;
+  confirmationReason:string|null;
 };
 
 export function normalizeDomainReadLimit(value:unknown){
@@ -76,7 +78,9 @@ export async function readHipicoDomainAggregate(input:DomainReadInput){
            source,
            parser_version AS "parserVersion",
            schema_version AS "schemaVersion",
-           event_timestamp AS "eventTimestamp"
+           event_timestamp AS "eventTimestamp",
+           operator_confirmed AS "operatorConfirmed",
+           confirmation_reason AS "confirmationReason"
     FROM public.hipico_domain_events
     WHERE owner_id=${ownerId}::uuid
       AND group_key=${groupKey}
