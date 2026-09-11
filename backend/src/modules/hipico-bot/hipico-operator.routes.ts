@@ -9,6 +9,7 @@ import { buildShadowProjection } from './hipico-shadow-projection.js';
 
 const router=Router();
 const idSchema=z.string().min(3).max(120).regex(/^[A-Za-z0-9_-]+$/);
+const e164Schema=z.string().regex(/^\+?[1-9]\d{6,14}$/);
 const limit=(value:unknown)=>Math.min(100,Math.max(1,Number(value)||50));
 const raceProvider=createHorseRaceProvider();
 
@@ -69,7 +70,7 @@ function outboundError(res:any,error:any){
 }
 
 router.post('/test-message',async(req,res)=>{
-  const parsed=z.object({to:z.string().regex(/^\+?\d{7,18}$/),message:z.string().trim().min(1).max(4000)}).safeParse(req.body);
+  const parsed=z.object({to:e164Schema,message:z.string().trim().min(1).max(4000)}).safeParse(req.body);
   if(!parsed.success)return res.status(400).json({ok:false,error:'Destino o mensaje invalido.'});
   try{
     const sent=await sendCloudText(parsed.data.to.replace(/^\+/,''),parsed.data.message);
