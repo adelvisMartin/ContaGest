@@ -3,7 +3,9 @@ import crypto from 'node:crypto';
 export const MIN_OPERATOR_TOKEN_LENGTH = 32;
 
 export function configuredOperatorToken(env: NodeJS.ProcessEnv = process.env) {
-  return String(env.HIPICO_OPERATOR_CONTROL_TOKEN || '').trim();
+  const primary = String(env.HIPICO_OPERATOR_CONTROL_TOKEN || '').trim();
+  if (primary) return primary;
+  return String(env.HIPICO_BOT_OPERATOR_TOKEN || '').trim();
 }
 
 export function operatorTokenConfigured(env: NodeJS.ProcessEnv = process.env) {
