@@ -5,9 +5,10 @@ import qrcode from 'qrcode-terminal';
 import pkg from 'whatsapp-web.js';
 
 const { Client, LocalAuth } = pkg;
-const BRIDGE_VERSION = '0.3.0-shadow-only';
+const BRIDGE_VERSION = '0.3.1-shadow-only';
 const DATA_DIR = path.resolve(process.cwd(), 'data');
 const SPOOL_DIR = path.join(DATA_DIR, 'spool');
+const REJECTED_DIR = path.join(DATA_DIR, 'rejected');
 
 function required(name) {
   const value = process.env[name];
@@ -55,7 +56,10 @@ if (SOURCE_GROUP_ID_ENV && LAB_GROUP_ID_ENV && SOURCE_GROUP_ID_ENV === LAB_GROUP
   throw new Error('SOURCE and LAB group IDs must be different.');
 }
 
-await fs.mkdir(SPOOL_DIR, { recursive: true });
+await Promise.all([
+  fs.mkdir(SPOOL_DIR, { recursive: true }),
+  fs.mkdir(REJECTED_DIR, { recursive: true })
+]);
 
 function sha256(value) {
   return crypto.createHash('sha256').update(String(value ?? '')).digest('hex');
@@ -153,6 +157,11 @@ async function spool(event) {
   return file;
 }
 
+function safeJson(text) {
+  try { return text ? JSON.parse(text) : {}; }
+  catch { return {}; }
+}
+
 async function postEvent(event) {
   const response = await fetch(INGEST_URL, {
     method: 'POST',
@@ -161,8 +170,33 @@ async function postEvent(event) {
     signal: AbortSignal.timeout(15000)
   });
   const text = await response.text();
-  if (!response.ok) throw new Error(`Backend ${response.status}`);
-  return text ? JSON.parse(text) : {};
+  const payload = safeJson(text);
+  if (!response.ok) {
+    const error = new Error(`Backend ${response.status}`);
+    error.status = response.status;
+    error.retryable = payload?.retryable === false ? false : response.status >= 500 || response.status === 408 || response.status === 429;
+    error.code = String(payload?.error || `HTTP_${response.status}`).slice(0, 120);
+    throw error;
+  }
+  return payload;
+}
+
+async function quarantine(file, reason = {}) {
+  const base = path.basename(file).replace(/[^a-zA-Z0-9._-]/g, '_');
+  const destination = path.join(REJECTED_DIR, `${Date.now()}-${base}`);
+  await fs.rename(file, destination).catch(async (error) => {
+    if (error?.code !== 'EXDEV') throw error;
+    await fs.copyFile(file, destination);
+    await fs.unlink(file);
+  });
+  const metadata = {
+    rejectedAt: new Date().toISOString(),
+    status: Number.isInteger(reason?.status) ? reason.status : null,
+    code: String(reason?.code || reason?.message || 'INVALID_LOCAL_SPOOL').slice(0, 120),
+    retryable: false
+  };
+  await fs.writeFile(`${destination}.meta.json`, JSON.stringify(metadata, null, 2), 'utf8');
+  return destination;
 }
 
 function labTextFor(result, source) {
@@ -173,9 +207,11 @@ function labTextFor(result, source) {
 
 async function deliverSpoolFile(client, source, lab, file) {
   let event;
-  try { event = JSON.parse(await fs.readFile(file, 'utf8')); }
-  catch {
-    await fs.unlink(file).catch(() => {});
+  try {
+    event = JSON.parse(await fs.readFile(file, 'utf8'));
+  } catch (error) {
+    const rejected = await quarantine(file, { code: 'INVALID_LOCAL_SPOOL', retryable: false }).catch(() => null);
+    console.error(`[REJECTED] spool local inválido${rejected ? ` -> ${path.basename(rejected)}` : ''}`);
     return;
   }
 
@@ -188,7 +224,12 @@ async function deliverSpoolFile(client, source, lab, file) {
     await fs.unlink(file);
     console.log(`[OK] ${event.channelRole}:${event.externalMessageId} -> ${result.classification || 'received'}${result.duplicate ? ' (duplicate)' : ''}`);
   } catch (error) {
-    console.error(`[PENDING] ${event.channelRole}:${event.externalMessageId}: ${error.message}`);
+    if (error?.retryable === false) {
+      const rejected = await quarantine(file, error).catch(() => null);
+      console.error(`[REJECTED] ${event.channelRole}:${event.externalMessageId}: status=${error?.status || 'n/a'} code=${error?.code || 'PERMANENT_REJECTION'}${rejected ? ` -> ${path.basename(rejected)}` : ''}`);
+      return;
+    }
+    console.error(`[PENDING] ${event.channelRole}:${event.externalMessageId}: ${error?.message || 'retryable bridge failure'}`);
   }
 }
 
@@ -252,7 +293,7 @@ client.on('message_create', async (message) => {
     if (!INCLUDE_OWN_MESSAGES && message.fromMe) return;
 
     const event = await buildEvent(message, target, channelRole);
-    const file = await spool(event);
+    const file = await spool(event); // persist locally before any network call
     await deliverSpoolFile(client, source, lab, file);
   } catch (error) {
     console.error('No se pudo procesar el mensaje:', error);

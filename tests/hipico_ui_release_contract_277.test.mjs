@@ -1,12 +1,22 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 
 const read = (path) => readFileSync(new URL(path, import.meta.url), 'utf8');
 const html = read('../frontend/public/hipico-control/index.html');
 const css = read('../frontend/public/hipico-control/assets/css/app.css');
 const opsCss = read('../frontend/public/hipico-control/assets/css/operational-copy-center.css');
 const notice = read('../frontend/public/hipico-control/assets/js/notice-bridge.js');
+const sw = read('../frontend/public/hipico-control/sw.js');
+
+function jsFiles(url, prefix = '') {
+  const files = [];
+  for (const entry of readdirSync(url, { withFileTypes: true })) {
+    if (entry.isDirectory()) files.push(...jsFiles(new URL(`${entry.name}/`, url), `${prefix}${entry.name}/`));
+    else if (entry.isFile() && entry.name.endsWith('.js')) files.push(`${prefix}${entry.name}`);
+  }
+  return files.sort();
+}
 
 test('release shell mounts canonical logo and notice bridge', () => {
   assert.match(html, /logo-control-hipico\.png/);
@@ -38,4 +48,12 @@ test('mobile vertical scrolling and reduced motion remain explicitly supported',
   assert.match(css, /touch-action:\s*pan-y pinch-zoom/);
   assert.match(css, /overflow-y:\s*visible/);
   assert.match(css, /prefers-reduced-motion:\s*reduce/);
+});
+
+test('installed PWA precaches the complete Hípico JavaScript module tree', () => {
+  const root = new URL('../frontend/public/hipico-control/assets/js/', import.meta.url);
+  const missing = jsFiles(root).filter((file) => !sw.includes(`'./assets/js/${file}'`) && !sw.includes(`"./assets/js/${file}"`));
+  assert.deepEqual(missing, [], `JavaScript modules missing from APP_SHELL: ${missing.join(', ')}`);
+  assert.match(sw, /shell-r8-complete-offline/);
+  assert.match(sw, /new cache name makes shell upgrades atomic/i);
 });

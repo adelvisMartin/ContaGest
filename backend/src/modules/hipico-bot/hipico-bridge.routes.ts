@@ -21,6 +21,8 @@ const bridgeEventSchema=z.object({bridgeVersion:z.string().min(1).max(80),extern
 const handoffCommandSchema=z.object({groupKey:z.string().trim().min(3).max(120),participantId:z.string().trim().min(1).max(220),raceId:z.string().trim().max(120).nullable().default(null),command:z.enum(['pause','resume','escalate','resolve','reject']),operatorId:z.string().trim().min(1).max(220),reason:z.string().trim().max(500).optional(),ttlMs:z.number().int().min(0).max(24*60*60*1000).optional()});
 
 const shadowTag=(value:string)=>`[SHADOW:${crypto.createHash('sha256').update(value).digest('hex').slice(0,10)}]`;
+const REPLAY_MISMATCH_CODES=new Set(['HIPICO_TRANSPORT_REPLAY_MISMATCH','HIPICO_CANONICAL_REPLAY_MISMATCH']);
+function replayMismatchCode(error:unknown){const value=error as any;const code=String(value?.code||value?.message||'');return REPLAY_MISMATCH_CODES.has(code)?code:null;}
 function buildLabSimulation(input:z.infer<typeof bridgeEventSchema>,result:IntentResult,canonical:any,responseText:string|null){
   if(input.channelRole!=='source'||input.historySync)return null;
   const entities=result.entities||{};const details:string[]=[];
@@ -41,15 +43,15 @@ router.get('/bridge/health',async(req,res)=>{
 });
 router.post('/bridge/handoff',async(req,res)=>{
   if(!operatorTokenValid(req.header('x-hipico-operator-token')||undefined))return res.status(401).json({ok:false,error:'Control de operador no autenticado.'});
-  const parsed=handoffCommandSchema.safeParse(req.body);if(!parsed.success)return res.status(400).json({ok:false,error:'Comando de handoff inválido.'});
+  const parsed=handoffCommandSchema.safeParse(req.body);if(!parsed.success)return res.status(400).json({ok:false,retryable:false,error:'Comando de handoff inválido.'});
   try{const input=parsed.data;const current=await loadHandoff(input.groupKey,input.participantId,input.raceId);const next=applyOperatorCommand(current,input.command,{authenticatedOperator:true,operatorId:input.operatorId,reason:input.reason,ttlMs:input.ttlMs});await saveHandoff(next,{eventType:`operator_${input.command}`,actorId:input.operatorId,payload:{reason:input.reason||null,ttlMs:input.ttlMs||null}});return res.json({ok:true,handoff:next});}catch(error:any){console.error('[hipico-handoff] operator command failed',{error:error?.message||String(error)});return res.status(503).json({ok:false,retryable:true,error:'No se pudo persistir el takeover del operador.'});}
 });
 router.post('/bridge/events',async(req,res)=>{
   if(!bridgeTokenValid(req.header('x-hipico-bridge-token')||undefined))return res.status(401).json({ok:false,error:'Token del Bridge Hipico invalido.'});
-  const parsed=bridgeEventSchema.safeParse(req.body);if(!parsed.success)return res.status(400).json({ok:false,error:'Evento del Bridge invalido.'});const input=parsed.data;
-  if(input.channelRole==='source'){if(input.channelKey!==OFFICIAL_SOURCE_CHANNEL_KEY||input.labChannelKey!==DEFAULT_LAB_CHANNEL_KEY)return res.status(400).json({ok:false,error:'Canales source/lab no autorizados para este Bridge.'});if(!input.shadowMode)return res.status(400).json({ok:false,error:'El grupo oficial solo admite ingestión shadow.'});}
+  const parsed=bridgeEventSchema.safeParse(req.body);if(!parsed.success)return res.status(400).json({ok:false,retryable:false,error:'Evento del Bridge invalido.'});const input=parsed.data;
+  if(input.channelRole==='source'){if(input.channelKey!==OFFICIAL_SOURCE_CHANNEL_KEY||input.labChannelKey!==DEFAULT_LAB_CHANNEL_KEY)return res.status(400).json({ok:false,retryable:false,error:'Canales source/lab no autorizados para este Bridge.'});if(!input.shadowMode)return res.status(400).json({ok:false,retryable:false,error:'El grupo oficial solo admite ingestión shadow.'});}
   const sender=normalizeBridgeSender(input.senderId);
-  if(!sender)return res.status(400).json({ok:false,error:'Identidad de remitente inválida para el Bridge.'});
+  if(!sender)return res.status(400).json({ok:false,retryable:false,error:'Identidad de remitente inválida para el Bridge.'});
   const providerMessageId=`waweb:${input.externalMessageId}`;
   const{assessment,result}=classifyUntrustedConversation({text:input.text,mediaKind:input.mediaKind,quoteDepth:input.quoteDepth,participantId:sender});
   const liveClock=liveRateLimitClock(input.historySync);
@@ -68,6 +70,13 @@ router.post('/bridge/events',async(req,res)=>{
     else if(!rate.allowed)responsePlan={...responsePlan,intent:'NONE',text:null,canSend:false,confirmationVerified:false,evidence:null,handoffRequired:false,reason:rate.reason||'RATE_LIMIT'};
     const responseReceipt=safetyReady.ready&&!input.historySync?await persistResponsePlan(responsePlan):null;
     return res.status(event.inserted?202:200).json({ok:true,duplicate:!event.inserted,mode:'shadow',historySync:input.historySync,classification:result.intent,actions:[] as never[],conversationalAppSec:abuse,conversationDecision,responsePlan,responseReceipt,labSimulation:buildLabSimulation(input,result,canonical,responsePlan.text),data:{eventId:event.id,outboxId:outbox.id,canonical,raceContextKey,intent:result.intent,risk:result.risk,entities:result.entities||null,autoEligible:false}});
-  }catch(error:any){console.error('[hipico-bridge] persistent shadow ingestion failed',{providerMessageId,groupName:input.groupName,channelKey:input.channelKey||null,channelRole:input.channelRole,historySync:input.historySync,error:error?.message||String(error)});return res.status(503).json({ok:false,retryable:true,error:'Persistencia shadow de Control Hipico no disponible. El Bridge debe reintentar.'});}
+  }catch(error:any){
+    const mismatch=replayMismatchCode(error);
+    if(mismatch){console.warn('[hipico-bridge] replay identity mismatch',{providerMessageId,channelRole:input.channelRole,code:mismatch});return res.status(409).json({ok:false,retryable:false,error:'REPLAY_IDENTITY_MISMATCH'});}
+    console.error('[hipico-bridge] persistent shadow ingestion failed',{providerMessageId,groupName:input.groupName,channelKey:input.channelKey||null,channelRole:input.channelRole,historySync:input.historySync,error:error?.message||String(error)});
+    return res.status(503).json({ok:false,retryable:true,error:'Persistencia shadow de Control Hipico no disponible. El Bridge debe reintentar.'});
+  }
 });
 export default router;
+
+export const __test__={replayMismatchCode};

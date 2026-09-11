@@ -30,6 +30,12 @@ function sameKnownRaceNumber(left, right) {
   return !a || !b || a === b;
 }
 
+function sameKnownTrack(left, right) {
+  const a = compact(left);
+  const b = compact(right);
+  return !a || !b || a === b;
+}
+
 function sameActionableRace(left, right) {
   if (!left?.actionable || !right?.actionable) return false;
   return compact(left.track) === compact(right.track) && validRaceNumber(left.raceNumber) === validRaceNumber(right.raceNumber);
@@ -82,15 +88,20 @@ function parseOffer(message, catalog, textOverride = null, metadata = {}) {
 
   const explicitTrack = findTrack(raw, catalog);
   const inheritedTrack = String(metadata.track || message?.raceContext?.track || '').trim();
-  const track = explicitTrack || inheritedTrack;
   const explicitRaceNumber = validRaceNumber(extractRaceNumber(raw));
   const inheritedRaceNumber = validRaceNumber(metadata.raceNumber ?? message?.raceContext?.raceNumber);
-  const raceNumber = explicitRaceNumber || inheritedRaceNumber;
+  const trackConflict = Boolean(explicitTrack && inheritedTrack && !sameKnownTrack(explicitTrack, inheritedTrack));
+  const track = explicitTrack || inheritedTrack;
+  // Never copy a race number from one known track to another. If the message
+  // explicitly changes track without naming the race, the context is incomplete
+  // and must be reviewed rather than manufacturing a plausible race identity.
+  const raceNumber = explicitRaceNumber || (trackConflict ? null : inheritedRaceNumber);
   const sourcePlays = pairOnly ? ['PP'] : plays.map((match) => match[0]);
   if (!sourcePlays.length) return [];
 
   const reviewReasons = [];
   if (pairOnly) reviewReasons.push('notación x ambigua');
+  if (trackConflict && !explicitRaceNumber) reviewReasons.push('hipódromo explícito contradice la carrera activa; falta número de carrera');
   const warnings = [];
   if (!track) warnings.push('hipódromo no escrito; se usa la carrera activa');
   if (track && !raceNumber) warnings.push('número de carrera no confirmado; se valida contra la carrera activa');
@@ -424,6 +435,7 @@ export const __test__ = Object.freeze({
   compatible,
   sameOfferSignature,
   sameKnownRaceNumber,
+  sameKnownTrack,
   sameActionableRace,
   validRaceNumber
 });

@@ -45,12 +45,11 @@ export function validateGroupBridgeBody(body, source = process.env) {
   if (body.type !== undefined && (typeof body.type !== 'string' || body.type.length > 80)) return 'invalid_message_type';
   if (body.text !== undefined && typeof body.text !== 'string') return 'invalid_text';
   if (String(body.text || '').length > 4000) return 'text_too_large';
-  if (body.senderId !== undefined && typeof body.senderId !== 'string') return 'invalid_sender';
-  if (body.senderLabel !== undefined && typeof body.senderLabel !== 'string') return 'invalid_sender';
-  if (String(body.senderId || '').length > 220 || String(body.senderLabel || '').length > 220) return 'sender_too_large';
+  if (typeof body.senderId !== 'string' || !body.senderId.trim() || body.senderId.length > 220) return 'invalid_sender';
+  if (body.senderLabel !== undefined && (typeof body.senderLabel !== 'string' || body.senderLabel.length > 220)) return 'invalid_sender_label';
   if (!validOptionalBoolean(body, 'shadowMode') || !validOptionalBoolean(body, 'fromMe') || !validOptionalBoolean(body, 'hasMedia')) return 'invalid_boolean_field';
   if (body.quotedExternalMessageId !== undefined && body.quotedExternalMessageId !== null && (typeof body.quotedExternalMessageId !== 'string' || body.quotedExternalMessageId.length > 320)) return 'invalid_quoted_message_id';
-  if (normalizedTimestamp(body.timestamp) === undefined) return 'invalid_timestamp';
+  if (!normalizedTimestamp(body.timestamp)) return 'invalid_timestamp';
   if (role === 'source' && body.shadowMode !== true) return 'source_requires_shadow_mode';
   const pinnedSource = String(source.HIPICO_SOURCE_GROUP_ID || '').trim();
   const pinnedLab = String(source.HIPICO_LAB_GROUP_ID || '').trim();
@@ -152,7 +151,7 @@ async function recordShadowPrediction({ ownerId, channel, body, messageRow, clas
 
 export default async function handler(req, res) {
   res.setHeader('Cache-Control', 'no-store, max-age=0');
-  if (req.method !== 'POST') return res.status(405).json({ ok: false, error: 'method_not_allowed' });
+  if (req.method !== 'POST') return res.status(405).json({ ok: false, retryable: false, error: 'method_not_allowed' });
 
   let configuredToken;
   try {
@@ -160,16 +159,16 @@ export default async function handler(req, res) {
   } catch {
     return res.status(503).json({ ok: false, retryable: true, error: 'bridge_not_configured' });
   }
-  if (!safeEqual(req.headers['x-hipico-bridge-token'], configuredToken)) return res.status(401).json({ ok: false, error: 'unauthorized' });
+  if (!safeEqual(req.headers['x-hipico-bridge-token'], configuredToken)) return res.status(401).json({ ok: false, retryable: false, error: 'unauthorized' });
 
   let body;
   try {
     body = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
   } catch {
-    return res.status(400).json({ ok: false, error: 'invalid_json' });
+    return res.status(400).json({ ok: false, retryable: false, error: 'invalid_json' });
   }
   const bodyError = validateGroupBridgeBody(body);
-  if (bodyError) return res.status(400).json({ ok: false, error: bodyError });
+  if (bodyError) return res.status(400).json({ ok: false, retryable: false, error: bodyError });
 
   const groupId = String(body.groupId).trim();
   const externalMessageId = String(body.externalMessageId).trim();
@@ -195,7 +194,7 @@ export default async function handler(req, res) {
         channel_key: channel.group_key,
         external_message_id: externalMessageId,
         fingerprint,
-        sender_id: String(body.senderId || ''),
+        sender_id: String(body.senderId).trim(),
         sender_label: String(body.senderLabel || ''),
         sender_role: body.fromMe === true ? 'operator' : 'unknown',
         quoted_external_message_id: body.quotedExternalMessageId || null,
