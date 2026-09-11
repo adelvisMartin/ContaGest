@@ -41,6 +41,10 @@ export function isE164(value) {
   return /^\+?[1-9]\d{6,14}$/.test(String(value || '').trim());
 }
 
+export function isMetaPhoneNumberId(value) {
+  return /^\d{5,30}$/.test(String(value || '').trim());
+}
+
 function normalizedE164(value) {
   const raw = String(value || '').trim();
   return isE164(raw) ? raw.replace(/^\+/, '') : null;
