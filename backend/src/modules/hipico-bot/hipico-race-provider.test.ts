@@ -90,29 +90,36 @@ test('race enrichment cache remains bounded under many distinct stage ids', asyn
 });
 
 test('declared oversized upstream response is rejected before body consumption', async () => {
-  let pulled = false;
-  const body = new ReadableStream({
-    pull(controller) {
-      pulled = true;
-      controller.enqueue(new TextEncoder().encode('<ok/>'));
-      controller.close();
+  let readerRequested = false;
+  let textCalled = false;
+  const response = {
+    ok: true,
+    status: 200,
+    headers: new Headers({
+      'content-type': 'application/xml',
+      'content-length': String(MAX_RACE_PROVIDER_RESPONSE_BYTES + 1)
+    }),
+    body: {
+      getReader() {
+        readerRequested = true;
+        throw new Error('oversized response body must not be read');
+      }
+    },
+    async text() {
+      textCalled = true;
+      throw new Error('oversized response text must not be read');
     }
-  });
+  } as unknown as Response;
   const provider = createHorseRaceProvider({
     env: configuredEnv,
-    fetchImpl: async () => new Response(body, {
-      status: 200,
-      headers: {
-        'content-type': 'application/xml',
-        'content-length': String(MAX_RACE_PROVIDER_RESPONSE_BYTES + 1)
-      }
-    })
+    fetchImpl: async () => response
   });
   await assert.rejects(
     provider.getStageSummary('697758'),
     (error: unknown) => error instanceof HorseRaceProviderError && error.code === 'UPSTREAM_RESPONSE_TOO_LARGE' && error.retryable === false
   );
-  assert.equal(pulled, false);
+  assert.equal(readerRequested, false);
+  assert.equal(textCalled, false);
 });
 
 test('streaming upstream response is cancelled as soon as byte limit is crossed', async () => {
