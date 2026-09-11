@@ -24,7 +24,7 @@ function matchesAdvancedBet(bet, advanced) {
 
 function findLatestAdvancedLoadEvent(workspace) {
   const audit = Array.isArray(workspace?.audit) ? workspace.audit : [];
-  return audit.find((event) => event?.action === 'advanced_loaded') || null;
+  return audit.find((event) => event?.action === 'advanced_loaded' && event?.payload?.groupScopeGuarded !== true) || null;
 }
 
 function defaultCreateId(prefix) {
@@ -179,7 +179,9 @@ export function enforceAdvancedLoadGroupScope(workspace, options = {}) {
     ...(event.payload || {}),
     groupId: intendedGroupId,
     loadedCount: intended.length,
-    rejectedCrossGroupCount: accidental.length
+    rejectedCrossGroupCount: accidental.length,
+    groupScopeGuarded: true,
+    groupScopeGuardVersion: 1
   };
 
   workspace.config ||= {};
