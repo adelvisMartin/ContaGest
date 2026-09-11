@@ -129,13 +129,11 @@ jobs:
           node --check tools/hipico-whatsapp-bridge/src/group-identity.mjs
           node --check tools/hipico-whatsapp-bridge/src/index.mjs
           node --check backend/scripts/hipico-audit-idempotency-contract.mjs
-          node --check backend/scripts/hipico-v16-confirmation-audit-contract.mjs
+          node --check backend/scripts/hipico-db-contract.mjs
       - name: Install root lock for Hípico backend contracts
         run: npm ci --no-audit --no-fund
-      - name: PostgreSQL isolated migration, RLS, idempotency and multigroup contract
+      - name: PostgreSQL isolated migration, RLS, idempotency, multigroup and operator-confirmation contract
         run: node backend/scripts/hipico-db-contract.mjs
-      - name: PostgreSQL operator-confirmation audit contract
-        run: node backend/scripts/hipico-v16-confirmation-audit-contract.mjs
       - name: PostgreSQL durable cloud audit replay contract
         run: node backend/scripts/hipico-audit-idempotency-contract.mjs
       - name: Backend typecheck
