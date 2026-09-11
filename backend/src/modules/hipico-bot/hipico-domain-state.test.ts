@@ -29,6 +29,26 @@ test('backend race reducer applies valid ordered lifecycle',()=>{
   assert.equal(state.stateVersion,8);
 });
 
+test('explicit approved race opening maps to RACE_OPENED but review-gated evidence cannot advance state',()=>{
+  assert.equal(mapOperationalIntentToDomainEvent('race_open'),'RACE_OPENED');
+
+  const reviewOnly=reduceHipicoDomainEvent(
+    initialHipicoState('race'),
+    event('RACE_OPENED','open-review',{requiresReview:true})
+  );
+  assert.equal(reviewOnly.disposition,'review');
+  assert.equal(reviewOnly.state.status,'PREPARING');
+  assert.equal(reviewOnly.state.stateVersion,0);
+
+  const approved=reduceHipicoDomainEvent(
+    initialHipicoState('race'),
+    event('RACE_OPENED','open-approved',{requiresReview:false})
+  );
+  assert.equal(approved.disposition,'applied');
+  assert.equal(approved.state.status,'OPEN');
+  assert.equal(approved.state.stateVersion,1);
+});
+
 test('duplicate source message is side-effect free',()=>{
   let state=initialHipicoState('race');
   state=reduceHipicoDomainEvent(state,event('PLAN_RECORDED','same')).state;
@@ -54,6 +74,7 @@ test('day close cannot skip OPEN/CLOSING',()=>{
 
 test('classifier intents map explicitly and unknown stays reviewable',()=>{
   assert.equal(mapOperationalIntentToDomainEvent('plan_snapshot'),'PLAN_RECORDED');
+  assert.equal(mapOperationalIntentToDomainEvent('race_open'),'RACE_OPENED');
   assert.equal(mapOperationalIntentToDomainEvent('race_result'),'RESULT_RECORDED');
   assert.equal(mapOperationalIntentToDomainEvent('something-new'),'UNKNOWN');
 });
