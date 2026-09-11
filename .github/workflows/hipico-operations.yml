@@ -63,6 +63,7 @@ jobs:
           node --check frontend/public/hipico-control/assets/js/whatsapp/race-context.js
           node --check frontend/public/hipico-control/assets/js/operations.js
           node --check frontend/public/hipico-control/assets/js/agent-router.js
+          node --check frontend/public/hipico-control/assets/js/financial-config-guard.js
           node --check frontend/public/hipico-control/assets/js/operational-ledger.js
           node --check frontend/public/hipico-control/assets/js/operational-copy-center.js
           node --check frontend/public/hipico-control/assets/js/operational-access-policy.js
@@ -70,6 +71,7 @@ jobs:
           node --check frontend/public/hipico-control/assets/js/race-context-guard.js
           node --check frontend/public/hipico-control/assets/js/notice-bridge.js
           node --check frontend/public/hipico-control/assets/js/store-v2.js
+          node --check frontend/public/hipico-control/assets/js/workspace.js
           node --check frontend/public/hipico-control/sw.js
           node --check frontend/api/hipico/_shared.js
           node --check frontend/api/hipico/status.js
