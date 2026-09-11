@@ -54,9 +54,26 @@ test('domain replay accepts only immutable evidence-equivalent payload',()=>{
   }
 });
 
-test('domain replay canonicalizes JSON object key order but preserves array order',()=>{
+test('domain replay canonicalizes the same JSON semantics used by persistence',()=>{
   assert.equal(domainTest.stableJson({b:2,a:{y:2,x:1}}),domainTest.stableJson({a:{x:1,y:2},b:2}));
+  assert.equal(domainTest.stableJson({a:1,ignored:undefined}),domainTest.stableJson({a:1}));
+  assert.equal(domainTest.stableJson([1,undefined,3]),domainTest.stableJson([1,null,3]));
+  assert.equal(domainTest.stableJson({value:Number.NaN}),domainTest.stableJson({value:null}));
   assert.notEqual(domainTest.stableJson({board:[5,2,1]}),domainTest.stableJson({board:[5,1,2]}));
+});
+
+test('domain replay preserves exact persisted evidence text instead of trimming it',()=>{
+  const existing={
+    id:'event-space',eventType:'BET_RECORDED',disposition:'evidence_only',previousState:'OPEN',nextState:'OPEN',reason:'APPEND_ONLY_EVIDENCE',
+    sourceMessageId:' msg-1 ',rawMessage:'  juega 30k  ',normalizedPayload:null,actorRef:' operator-1 ',source:'whatsapp',
+    parserVersion:' v1 ',schemaVersion:1,originalEventId:null,eventTimestamp:'2026-09-11T17:00:00.000Z'
+  };
+  const event={
+    type:'BET_RECORDED' as const,sourceMessageKey:'source-space',sourceMessageId:' msg-1 ',rawMessage:'  juega 30k  ',
+    normalizedPayload:null,actorRef:' operator-1 ',source:'whatsapp',parserVersion:' v1 ',schemaVersion:1
+  };
+  assert.doesNotThrow(()=>domainTest.assertDomainReplay(existing,event));
+  assert.throws(()=>domainTest.assertDomainReplay(existing,{...event,rawMessage:'juega 30k'}),(error:any)=>error?.code==='HIPICO_DOMAIN_REPLAY_MISMATCH');
 });
 
 test('domain reversal lookup cannot cross aggregate boundaries',()=>{
