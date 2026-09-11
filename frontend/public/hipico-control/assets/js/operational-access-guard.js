@@ -5,6 +5,7 @@ const ROOT_ID = 'hipico-operational-copy-center';
 let scheduled = false;
 let generation = 0;
 let centerModulePromise = null;
+let centerModule = null;
 
 function closeSensitiveSurface(root) {
   root?.querySelector('dialog[open]')?.close?.();
@@ -14,10 +15,12 @@ async function ensureCenterLoaded() {
   if (!centerModulePromise) {
     centerModulePromise = import('./operational-copy-center.js').catch((error) => {
       centerModulePromise = null;
+      centerModule = null;
       throw error;
     });
   }
   const module = await centerModulePromise;
+  centerModule = module;
   return module.mountOperationalCopyCenter?.() || document.getElementById(ROOT_ID);
 }
 
@@ -27,6 +30,11 @@ function applyAuthorization(root, authorized) {
   root.dataset.opsAuthorized = authorized ? 'true' : 'false';
   root.toggleAttribute('inert', !authorized);
   root.setAttribute('aria-hidden', authorized ? 'false' : 'true');
+}
+
+function revokeCenter(root = document.getElementById(ROOT_ID)) {
+  applyAuthorization(root, false);
+  centerModule?.resetOperationalCopyCenter?.();
 }
 
 async function syncAuthorization() {
@@ -41,7 +49,7 @@ async function syncAuthorization() {
   const authorized = canUseOperationalCenter({ mode, hasShell, cloudRole, blocked });
   let root = document.getElementById(ROOT_ID);
   if (!authorized) {
-    applyAuthorization(root, false);
+    revokeCenter(root);
     return;
   }
 
@@ -53,7 +61,7 @@ async function syncAuthorization() {
     return;
   }
   if (currentGeneration !== generation) {
-    applyAuthorization(root, false);
+    revokeCenter(root);
     return;
   }
   applyAuthorization(root, true);
@@ -68,12 +76,13 @@ function scheduleSync() {
   });
 }
 
-// A new sign-in must never inherit an authorization role from the previous cloud identity.
+// A new sign-in must never inherit an authorization role or sensitive DOM/state
+// from the previous cloud identity.
 document.addEventListener('submit', (event) => {
   const form = event.target instanceof HTMLFormElement ? event.target : null;
   if (form?.id !== 'auth-form') return;
   document.documentElement.removeAttribute('data-access-role');
-  applyAuthorization(document.getElementById(ROOT_ID), false);
+  revokeCenter();
   scheduleSync();
 }, true);
 
@@ -89,4 +98,4 @@ window.addEventListener('pageshow', scheduleSync);
 window.addEventListener('load', scheduleSync, { once: true });
 scheduleSync();
 
-export const __test__ = Object.freeze({ closeSensitiveSurface, applyAuthorization });
+export const __test__ = Object.freeze({ closeSensitiveSurface, applyAuthorization, revokeCenter });
