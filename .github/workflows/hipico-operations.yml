@@ -12,6 +12,13 @@ on:
       - 'supabase/sql/hipico_*.sql'
       - 'tests/hipico*.test.mjs'
       - 'tests/fixtures/hipico/**'
+      - 'qa/hipico-visual-functional-v105.spec.mjs'
+      - 'qa/support/hipico-*.mjs'
+      - 'qa/fixtures/hipico-*'
+      - 'scripts/hipico-qa-runner-v103.mjs'
+      - 'playwright.config.mjs'
+      - 'package.json'
+      - 'package-lock.json'
       - 'docs/hipico/**'
       - '.github/workflows/hipico-operations.yml'
       - 'frontend/package.json'
@@ -30,6 +37,13 @@ on:
       - 'supabase/sql/hipico_*.sql'
       - 'tests/hipico*.test.mjs'
       - 'tests/fixtures/hipico/**'
+      - 'qa/hipico-visual-functional-v105.spec.mjs'
+      - 'qa/support/hipico-*.mjs'
+      - 'qa/fixtures/hipico-*'
+      - 'scripts/hipico-qa-runner-v103.mjs'
+      - 'playwright.config.mjs'
+      - 'package.json'
+      - 'package-lock.json'
       - 'docs/hipico/**'
       - '.github/workflows/hipico-operations.yml'
       - 'frontend/package.json'
@@ -144,3 +158,20 @@ jobs:
             echo 'Forbidden release wording found in Hípico Control user-facing shell.' >&2
             exit 1
           fi
+
+  browser-regression:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - name: Install workspace dependencies
+        run: npm ci --no-audit --no-fund
+      - name: Install Chromium runtime
+        run: npx playwright install --with-deps chromium
+      - name: Control Hípico responsive, offline and interaction E2E
+        run: npm run test:browser:hipico
