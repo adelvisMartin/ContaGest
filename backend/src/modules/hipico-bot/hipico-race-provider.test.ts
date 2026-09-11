@@ -20,9 +20,13 @@ test('external race provider is disabled and non-authoritative by default', () =
   assert.equal(status.reason, 'RACE_PROVIDER_DISABLED');
 });
 
-test('sportradar provider only becomes configured with explicit HTTPS base URL and token', () => {
+test('sportradar provider only becomes configured with explicit vendor HTTPS origin and token', () => {
   assert.equal(raceProviderStatus({ HIPICO_RACE_PROVIDER: 'sportradar-uof' }).configured, false);
-  assert.equal(raceProviderStatus({ ...configuredEnv, HIPICO_RACE_PROVIDER_BASE_URL: 'http://example.test' }).configured, false);
+  assert.equal(raceProviderStatus({ ...configuredEnv, HIPICO_RACE_PROVIDER_BASE_URL: 'http://global.stgapi.betradar.com' }).configured, false);
+  assert.equal(raceProviderStatus({ ...configuredEnv, HIPICO_RACE_PROVIDER_BASE_URL: 'https://example.test' }).configured, false);
+  assert.equal(raceProviderStatus({ ...configuredEnv, HIPICO_RACE_PROVIDER_BASE_URL: 'https://betradar.com.example.test' }).configured, false);
+  assert.equal(raceProviderStatus({ ...configuredEnv, HIPICO_RACE_PROVIDER_BASE_URL: 'https://global.stgapi.betradar.com:444' }).configured, false);
+  assert.equal(raceProviderStatus({ ...configuredEnv, HIPICO_RACE_PROVIDER_BASE_URL: 'https://user:pass@global.stgapi.betradar.com' }).configured, false);
   const status = raceProviderStatus(configuredEnv);
   assert.equal(status.configured, true);
   assert.equal(status.reason, null);
@@ -54,7 +58,7 @@ test('stage summary uses authenticated UOF REST enrichment and caches successful
       calls += 1;
       observedUrl = String(input);
       observedToken = new Headers(init?.headers).get('x-access-token') || '';
-      return new Response('<sport_event_status status="closed"/>', { status: 200, headers: { 'content-type': 'application/xml' } });
+      return new Response('<sport_event_status status="closed"/>', { status: 200, headers: { 'content-type': 'application/xml; charset=utf-8' } });
     }
   });
 
@@ -67,10 +71,32 @@ test('stage summary uses authenticated UOF REST enrichment and caches successful
   assert.equal(second.cached, true);
   assert.equal(first.provider, 'sportradar-uof');
   assert.equal(first.stageId, '697758');
+  assert.equal(first.contentType, 'application/xml');
   assert.match(first.xml, /sport_event_status/);
 
   clock += 30_001;
   await provider.getStageSummary('697758');
+  assert.equal(calls, 2);
+});
+
+test('race provider rejects non-XML or doctype responses and never caches them', async () => {
+  let calls = 0;
+  const provider = createHorseRaceProvider({
+    env: configuredEnv,
+    fetchImpl: async () => {
+      calls += 1;
+      if (calls === 1) return new Response('<html>proxy error</html>', { status: 200, headers: { 'content-type': 'text/html' } });
+      return new Response('<!DOCTYPE foo><sport_event_status/>', { status: 200, headers: { 'content-type': 'application/xml' } });
+    }
+  });
+  await assert.rejects(
+    provider.getStageSummary('697758'),
+    (error: unknown) => error instanceof HorseRaceProviderError && error.code === 'UPSTREAM_INVALID_CONTENT' && error.retryable === false
+  );
+  await assert.rejects(
+    provider.getStageSummary('697758'),
+    (error: unknown) => error instanceof HorseRaceProviderError && error.code === 'UPSTREAM_INVALID_CONTENT' && error.retryable === false
+  );
   assert.equal(calls, 2);
 });
 
