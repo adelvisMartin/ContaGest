@@ -13,8 +13,8 @@ test('Retry-After numeric seconds are parsed and bounded',()=>{
 });
 
 test('Retry-After HTTP-date uses the same deterministic instant and ignores past dates',()=>{
-  assert.equal(retryAfterMs('Thu, 11 Sep 2026 12:05:00 GMT',NOW),5*60*1000);
-  assert.equal(retryAfterMs('Thu, 11 Sep 2026 11:59:00 GMT',NOW),0);
+  assert.equal(retryAfterMs('Fri, 11 Sep 2026 12:05:00 GMT',NOW),5*60*1000);
+  assert.equal(retryAfterMs('Fri, 11 Sep 2026 11:59:00 GMT',NOW),0);
 });
 
 test('Meta sender never retries earlier than its local exponential backoff',()=>{
