@@ -26,6 +26,10 @@ type PersistedTransportSource={
   sender:string|null;
   messageType:string|null;
   body:string|null;
+  intent:string|null;
+  risk:string|null;
+  confidence:number|string|null;
+  suggestion:string|null;
   payload:Record<string,unknown>|null;
 };
 
@@ -40,6 +44,26 @@ function assertTransportReplay(existing:PersistedTransportSource,input:Transport
   const persisted=transportReplaySignature(existing);
   const replay=transportReplaySignature(input);
   assertReplayMatch('transport',persisted,replay);
+}
+
+function persistedTransportProjection(existing:PersistedTransportSource):IntentResult{
+  const rawRisk=String(existing.risk||'review');
+  const risk:IntentResult['risk']=rawRisk==='safe'||rawRisk==='monetary'?rawRisk:'review';
+  const numericConfidence=Number(existing.confidence);
+  const confidence=Number.isFinite(numericConfidence)?Math.max(0,Math.min(1,numericConfidence)):0;
+  const operational=existing.payload?.operational;
+  const entities=operational&&typeof operational==='object'&&!Array.isArray(operational)
+    ? operational as IntentResult['entities']
+    : undefined;
+  return{
+    intent:String(existing.intent||'conversation'),
+    risk,
+    confidence,
+    suggestion:String(existing.suggestion||''),
+    autoEligible:false,
+    reason:'PERSISTED_FIRST_CLASSIFICATION',
+    ...(entities?{entities}:{})
+  };
 }
 
 function assertGroupShadowDestination(existing:PersistedGroupShadowSource,input:GroupOutboxInput){
@@ -77,7 +101,7 @@ export async function persistBridgeTransportEvent(input:TransportInput){
   `;
 
   if(inserted[0]?.id){
-    return{id:inserted[0].id,inserted:true};
+    return{id:inserted[0].id,inserted:true,projection:input.result};
   }
 
   const existing=await prisma.$queryRaw<PersistedTransportSource[]>`
@@ -87,6 +111,10 @@ export async function persistBridgeTransportEvent(input:TransportInput){
       "sender",
       "messageType" AS "messageType",
       "body",
+      "intent",
+      "risk",
+      "confidence",
+      "suggestion",
       "payload"
     FROM public."HipicoWebhookEvent"
     WHERE "providerMessageId"=${input.providerMessageId}
@@ -94,7 +122,7 @@ export async function persistBridgeTransportEvent(input:TransportInput){
   `;
   if(!existing[0]?.id)throw new Error('HIPICO_TRANSPORT_DEDUPE_ROW_MISSING');
   assertTransportReplay(existing[0],input);
-  return{id:existing[0].id,inserted:false};
+  return{id:existing[0].id,inserted:false,projection:persistedTransportProjection(existing[0])};
 }
 
 /**
@@ -144,4 +172,4 @@ export async function bridgePersistenceReady(){
   return Boolean(rows[0]?.eventTable&&rows[0]?.outboxTable);
 }
 
-export const __test__={assertTransportReplay,assertGroupShadowDestination,assertBridgeGroupIdentity,bridgeGroupIdentityReady,normalizeGroupId:normalizeBridgeGroupId};
+export const __test__={assertTransportReplay,persistedTransportProjection,assertGroupShadowDestination,assertBridgeGroupIdentity,bridgeGroupIdentityReady,normalizeGroupId:normalizeBridgeGroupId};
