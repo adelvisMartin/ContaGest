@@ -2,12 +2,17 @@ import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
+import { extractMessages } from './hipico-bot.service.js';
 import { MIN_WEBHOOK_SECRET_LENGTH, webhookSecurityReady, webhookSignatureValid, webhookVerifyTokenValid } from './hipico-webhook-security.js';
 
 const routes=readFileSync(new URL('./hipico-webhook.routes.ts',import.meta.url),'utf8');
 const service=readFileSync(new URL('./hipico-bot.service.ts',import.meta.url),'utf8');
 const strong='s'.repeat(MIN_WEBHOOK_SECRET_LENGTH);
 const env={WHATSAPP_VERIFY_TOKEN:'v'.repeat(MIN_WEBHOOK_SECRET_LENGTH),WHATSAPP_APP_SECRET:strong};
+
+function metaPayload({messageId='wamid-1',phoneNumberId='123456789',sender='584121234567'}={}){
+  return{entry:[{changes:[{value:{metadata:{phone_number_id:phoneNumberId},messages:[{id:messageId,from:sender,type:'text',text:{body:'hola'}}]}}]}]};
+}
 
 test('webhook security rejects weak or missing secrets and compares verify tokens safely',()=>{
   assert.equal(webhookSecurityReady(env),true);
@@ -54,8 +59,22 @@ test('backend webhook processes the complete signed batch with bounded concurren
   assert.match(routes,/String\(message\.body\|\|''\)\.slice\(0,4000\)/);
   assert.match(service,/MAX_INBOUND_TEXT=4000/);
   assert.match(service,/String\(message\?\.text\?\.body[\s\S]*\.slice\(0,MAX_INBOUND_TEXT\)/);
-  assert.match(service,/String\(message\.id\|\|''\)\.slice\(0,320\)/);
+  assert.doesNotMatch(service,/String\(message\.id\|\|''\)\.slice\(0,320\)/);
   assert.doesNotMatch(routes,/extractMessages\(req\.body\)\.slice\(0,100\)/);
+});
+
+test('Meta message identity is preserved exactly and malformed identities are rejected, never truncated',()=>{
+  const valid=extractMessages(metaPayload({messageId:'wamid-exact',phoneNumberId:'123456789'}));
+  assert.equal(valid.length,1);
+  assert.equal(valid[0].providerMessageId,'wamid-exact');
+  assert.equal(valid[0].phoneNumberId,'123456789');
+
+  const prefix='x'.repeat(320);
+  assert.equal(extractMessages(metaPayload({messageId:`${prefix}a`})).length,0);
+  assert.equal(extractMessages(metaPayload({messageId:`${prefix}b`})).length,0);
+  assert.equal(extractMessages(metaPayload({phoneNumberId:'p'.repeat(121)})).length,0);
+  assert.equal(extractMessages(metaPayload({phoneNumberId:''})).length,0);
+  assert.equal(extractMessages(metaPayload({sender:'0412-1234567'})).length,0);
 });
 
 test('backend webhook does not acknowledge a partially failed batch',()=>{
