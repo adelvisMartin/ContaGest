@@ -7,7 +7,8 @@ import { performance } from 'node:perf_hooks';
 import PDFDocument from 'pdfkit';
 import pg from 'pg';
 import { createPdfJsDocumentExtractor, documentExtractorCapability } from '../src/modules/hipico/document-extractor.js';
-import { normalizeSportradarStage } from '../src/modules/hipico/sportradar-provider.adapter.js';
+import { createHorseRaceProvider } from '../src/modules/hipico-bot/hipico-race-provider.js';
+import { createSportradarRacingProvider, normalizeSportradarStage } from '../src/modules/hipico/sportradar-provider.adapter.js';
 
 const { Client } = pg;
 const databaseUrl = String(process.env.HIPICO_E2E_DATABASE_URL || '').trim();
@@ -28,9 +29,7 @@ async function pdfBuffer(volume: number) {
   const chunks: Buffer[] = [];
   doc.on('data', (chunk) => chunks.push(Buffer.from(chunk)));
   doc.fontSize(12).text(`PROGRAMA DE CARRERAS PERF ${volume}`);
-  for (let index = 1; index <= volume; index += 1) {
-    doc.fontSize(8).text(`Carrera ${Math.ceil(index / 12)} · Ejemplar ${index} · número ${index} · estado declarado`);
-  }
+  for (let index = 1; index <= volume; index += 1) doc.fontSize(8).text(`Carrera ${Math.ceil(index / 12)} · Ejemplar ${index} · número ${index} · estado declarado`);
   doc.end();
   await once(doc, 'end');
   return Buffer.concat(chunks);
@@ -50,13 +49,34 @@ function providerFixture(volume: number) {
 
 function memorySnapshot() {
   const value = process.memoryUsage();
-  return {
-    rssBytes: value.rss,
-    heapTotalBytes: value.heapTotal,
-    heapUsedBytes: value.heapUsed,
-    externalBytes: value.external,
-    arrayBuffersBytes: value.arrayBuffers
-  };
+  return { rssBytes: value.rss, heapTotalBytes: value.heapTotal, heapUsedBytes: value.heapUsed, externalBytes: value.external, arrayBuffersBytes: value.arrayBuffers };
+}
+
+async function providerRequestProfile(volume: number) {
+  const fixture = providerFixture(volume);
+  let fetchCalls = 0;
+  const upstream = createHorseRaceProvider({
+    env: {
+      HIPICO_RACE_PROVIDER: 'sportradar-uof',
+      HIPICO_RACE_PROVIDER_BASE_URL: 'https://api.sportradar.com',
+      HIPICO_SPORTRADAR_UOF_TOKEN: 'qa-performance-token',
+      HIPICO_RACE_PROVIDER_TIMEOUT_MS: '5000',
+      HIPICO_RACE_PROVIDER_CACHE_TTL_MS: '30000'
+    },
+    fetchImpl: async () => {
+      fetchCalls += 1;
+      return new Response(fixture.xml, { status: 200, headers: { 'content-type': 'application/xml' } });
+    },
+    now: () => Date.parse(fixture.fetchedAt)
+  });
+  const provider = createSportradarRacingProvider(upstream);
+  const start = performance.now();
+  const race = await provider.getRace(fixture.stageId);
+  const requestPathMs = performance.now() - start;
+  assert.equal(fetchCalls, 1);
+  assert.equal(race.data.runners.length, volume);
+  assert.equal(race.provenance.financialAuthority, false);
+  return { requestPathMs, fetchCalls, runners: race.data.runners.length };
 }
 
 requireIsolatedDatabase();
@@ -112,6 +132,7 @@ try {
     const providerNormalizeMs = performance.now() - providerStart;
     assert.equal(providerNormalized.data.runners.length, volume);
     assert.equal(providerNormalized.provenance.financialAuthority, false);
+    const providerRequest = await providerRequestProfile(volume);
 
     const pdf = await pdfBuffer(volume);
     const pdfStart = performance.now();
@@ -124,27 +145,20 @@ try {
     profiles.push({
       volume,
       postgres: {
-        insertMs: Number(insertMs.toFixed(3)),
-        countMs: Number(countMs.toFixed(3)),
-        recent50Ms: Number(recent50Ms.toFixed(3)),
-        plannerExecutionMs: plan?.['Execution Time'] ?? null,
-        plannerPlanningMs: plan?.['Planning Time'] ?? null,
-        plan: plan?.Plan ?? null
+        insertMs: Number(insertMs.toFixed(3)), countMs: Number(countMs.toFixed(3)), recent50Ms: Number(recent50Ms.toFixed(3)),
+        plannerExecutionMs: plan?.['Execution Time'] ?? null, plannerPlanningMs: plan?.['Planning Time'] ?? null, plan: plan?.Plan ?? null
       },
       providerAdapter: {
         normalizationMs: Number(providerNormalizeMs.toFixed(3)),
+        requestPathMs: Number(providerRequest.requestPathMs.toFixed(3)),
         normalizedRunners: providerNormalized.data.runners.length,
-        transportLatency: { status: 'NOT_EXECUTED', reason: 'EXTERNAL_PROVIDER_CREDENTIALS_NOT_REQUIRED_FOR_PR_GATE' }
+        injectedFetchCalls: providerRequest.fetchCalls,
+        upstreamTransport: { status: 'NOT_EXECUTED', reason: 'EXTERNAL_PROVIDER_NETWORK_AND_CREDENTIALS_ARE_NOT_REQUIRED_FOR_PR_GATE' },
+        financialAuthority: false
       },
-      pdf: {
-        bytes: pdf.byteLength,
-        nativeParseMs: Number(pdfNativeParseMs.toFixed(3)),
-        pages: extracted.pageCount || null,
-        parserVersion: extracted.parserVersion
-      },
+      pdf: { bytes: pdf.byteLength, nativeParseMs: Number(pdfNativeParseMs.toFixed(3)), pages: extracted.pageCount || null, parserVersion: extracted.parserVersion },
       processMemory: {
-        before: memoryBefore,
-        after: memoryAfter,
+        before: memoryBefore, after: memoryAfter,
         rssDeltaBytes: memoryAfter.rssBytes - memoryBefore.rssBytes,
         heapUsedDeltaBytes: memoryAfter.heapUsedBytes - memoryBefore.heapUsedBytes
       }
@@ -152,24 +166,15 @@ try {
   }
 
   const host = {
-    platform: process.platform,
-    arch: process.arch,
-    node: process.version,
-    cpuCount: os.cpus().length,
-    cpuModel: os.cpus()[0]?.model || 'unknown',
-    totalMemoryBytes: os.totalmem(),
+    platform: process.platform, arch: process.arch, node: process.version,
+    cpuCount: os.cpus().length, cpuModel: os.cpus()[0]?.model || 'unknown', totalMemoryBytes: os.totalmem(),
     targetProfile: 'Intel Core i5 6th generation / 16 GB RAM',
     equivalence: 'CI measurement only; physical target-device benchmark remains separate evidence when hardware is available.'
   };
   await fs.mkdir(path.dirname(artifact), { recursive: true });
   await fs.writeFile(artifact, `${JSON.stringify({
-    schema: 'hipico-performance.v290',
-    sha: SHA,
-    database: 'isolated-ephemeral',
-    pdfRuntime: capability.parserVersion,
-    measuredAt: new Date().toISOString(),
-    host,
-    profiles
+    schema: 'hipico-performance.v290', sha: SHA, database: 'isolated-ephemeral', pdfRuntime: capability.parserVersion,
+    measuredAt: new Date().toISOString(), host, profiles
   }, null, 2)}\n`, 'utf8');
   console.log(`[hipico-v290] performance profiles measured: ${volumes.join('/')} operations`);
 } finally {
