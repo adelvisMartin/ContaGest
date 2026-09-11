@@ -27,9 +27,18 @@ function focusable(dialog) {
   return [...dialog.querySelectorAll(FOCUSABLE_SELECTOR)].filter(visible);
 }
 
+function labelCalendarControls(dialog) {
+  const previous = dialog.querySelector('[data-action="calendar-prev"]');
+  const next = dialog.querySelector('[data-action="calendar-next"]');
+  if (previous instanceof HTMLElement && !previous.hasAttribute('aria-label')) previous.setAttribute('aria-label', 'Mes anterior');
+  if (next instanceof HTMLElement && !next.hasAttribute('aria-label')) next.setAttribute('aria-label', 'Mes siguiente');
+}
+
 function labelDialog(dialog) {
-  if (!(dialog instanceof HTMLElement) || dialog.hasAttribute('aria-label') || dialog.hasAttribute('aria-labelledby')) return;
-  const heading = dialog.querySelector('h1,h2,h3,h4,[data-dialog-title]');
+  if (!(dialog instanceof HTMLElement)) return;
+  labelCalendarControls(dialog);
+  if (dialog.hasAttribute('aria-label') || dialog.hasAttribute('aria-labelledby')) return;
+  const heading = dialog.querySelector('h1,h2,h3,h4,[data-dialog-title],.calendar-card__title,header strong');
   if (!(heading instanceof HTMLElement)) return;
   if (!heading.id) heading.id = `hipico-dialog-title-${++titleSequence}`;
   dialog.setAttribute('aria-labelledby', heading.id);
@@ -154,4 +163,4 @@ if (typeof document !== 'undefined') {
   else start();
 }
 
-export const __test__ = { focusable, labelDialog, closeActiveDialog, trapTab, DIALOG_SELECTOR, FOCUSABLE_SELECTOR };
+export const __test__ = { focusable, labelDialog, labelCalendarControls, closeActiveDialog, trapTab, DIALOG_SELECTOR, FOCUSABLE_SELECTOR };
