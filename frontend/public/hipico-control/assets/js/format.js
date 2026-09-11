@@ -9,7 +9,7 @@ export function number(value) { return new Intl.NumberFormat("es-VE", { minimumF
 export function balanceNumber(value) { const amount = Number(value || 0); return `${amount < 0 ? "-" : ""}${number(Math.abs(amount))}`; }
 export function shortDate(value) { const date = new Date(`${value}T12:00:00`); return new Intl.DateTimeFormat("es-VE", { day: "2-digit", month: "short", year: "numeric" }).format(date); }
 function whatsappDate(value) { const date = new Date(`${value}T12:00:00`); const weekday = new Intl.DateTimeFormat("es-VE", { weekday: "short" }).format(date).replace(".", "").toLowerCase(); const day = String(date.getDate()).padStart(2, "0"); const month = new Intl.DateTimeFormat("es-VE", { month: "short" }).format(date).replace(".", "").toLowerCase(); return `${weekday}, ${day} de ${month} del ${date.getFullYear()}`; }
-function registeredDate(value) { return new Intl.DateTimeFormat("es-VE", { day: "numeric", month: "numeric", year: "numeric" }).format(new Date(value || Date.now())); }
+function registeredDate(value) { const date = new Date(value || ""); return Number.isFinite(date.getTime()) ? new Intl.DateTimeFormat("es-VE", { day: "numeric", month: "numeric", year: "numeric" }).format(date) : "sin fecha"; }
 function ordinalRace(value) { const n = Number(value || 1); if (n === 1 || n === 3 || n === 13) return `${n}ra`; if (n === 2) return `${n}da`; return `${n}ta`.replace("10ta", "10ma").replace("11ta", "11ma").replace("12ta", "12ma"); }
 function proper(value) { return String(value ?? "").trim().toLowerCase().replace(/(^|\s)\S/g, (letter) => letter.toUpperCase()); }
 function groupProfile(workspace, race = null) {
