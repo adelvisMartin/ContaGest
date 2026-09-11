@@ -22,11 +22,19 @@ test('dialog guard provides initial focus, Escape close, tab trap and focus rest
   assert.match(guard, /target\?\.isConnected/);
 });
 
-test('dialog guard makes the background inert and supplies an accessible label', () => {
+test('dialog guard makes the background inert, labels it and restores prior shell accessibility state', () => {
   assert.match(guard, /shell\.inert = true/);
-  assert.match(guard, /shell\.setAttribute\('aria-hidden', 'true'\)/);
+  assert.match(guard, /shellPreviousAriaHidden = shell\.getAttribute\('aria-hidden'\)/);
+  assert.match(guard, /shellPreviousAriaHidden == null/);
+  assert.match(guard, /shell\.setAttribute\('aria-hidden', shellPreviousAriaHidden\)/);
   assert.match(guard, /aria-labelledby/);
   assert.match(guard, /crypto\.randomUUID\(\)/);
+});
+
+test('dialog replacement clears stale active reference before activating the next overlay', () => {
+  assert.match(guard, /const nextDialog = document\.querySelector\(DIALOG_SELECTOR\);\s*activeDialog = null;/s);
+  assert.match(guard, /if \(nextDialog instanceof HTMLElement\) \{\s*activate\(nextDialog\);/s);
+  assert.match(guard, /current === last \|\| !activeDialog\.contains\(current\)/);
 });
 
 test('dialog accessibility is loaded before the main app and available offline', () => {
