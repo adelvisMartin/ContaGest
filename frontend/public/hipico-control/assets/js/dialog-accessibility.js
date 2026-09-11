@@ -7,6 +7,11 @@ const FOCUSABLE_SELECTOR = [
   'textarea:not([disabled])',
   '[tabindex]:not([tabindex="-1"])'
 ].join(',');
+const ACTION_LABELS = Object.freeze({
+  'calendar-prev': 'Mes anterior',
+  'calendar-next': 'Mes siguiente',
+  'focus-fast': 'Captura rápida'
+});
 
 let activeDialog = null;
 let returnFocus = null;
@@ -26,9 +31,27 @@ function focusable(dialog) {
   return [...dialog.querySelectorAll(FOCUSABLE_SELECTOR)].filter(visible);
 }
 
+function hasAccessibleName(element) {
+  if (!(element instanceof HTMLElement)) return false;
+  return Boolean(
+    element.getAttribute('aria-label')?.trim()
+    || element.getAttribute('aria-labelledby')?.trim()
+    || element.textContent?.trim()
+  );
+}
+
+function ensureActionLabels(root = document) {
+  if (!root?.querySelectorAll) return;
+  for (const [action, label] of Object.entries(ACTION_LABELS)) {
+    for (const element of root.querySelectorAll(`[data-action="${action}"]`)) {
+      if (element instanceof HTMLElement && !hasAccessibleName(element)) element.setAttribute('aria-label', label);
+    }
+  }
+}
+
 function labelDialog(dialog) {
   if (!(dialog instanceof HTMLElement) || dialog.hasAttribute('aria-label') || dialog.hasAttribute('aria-labelledby')) return;
-  const heading = dialog.querySelector('h1,h2,h3,h4,[data-dialog-title]');
+  const heading = dialog.querySelector('h1,h2,h3,h4,[data-dialog-title],header strong');
   if (!(heading instanceof HTMLElement)) return;
   if (!heading.id) heading.id = `hipico-dialog-title-${crypto.randomUUID()}`;
   dialog.setAttribute('aria-labelledby', heading.id);
@@ -117,11 +140,14 @@ function trapTab(event) {
 }
 
 function scan() {
+  ensureActionLabels(document);
   const dialog = document.querySelector(DIALOG_SELECTOR);
   if (dialog instanceof HTMLElement) {
     if (dialog !== activeDialog) {
       if (activeDialog && !activeDialog.isConnected) activeDialog = null;
       activate(dialog);
+    } else {
+      labelDialog(dialog);
     }
     return;
   }
@@ -151,4 +177,4 @@ if (typeof document !== 'undefined') {
   else start();
 }
 
-export const __test__ = { focusable, labelDialog, closeActiveDialog, trapTab, DIALOG_SELECTOR, FOCUSABLE_SELECTOR };
+export const __test__ = { focusable, hasAccessibleName, ensureActionLabels, labelDialog, closeActiveDialog, trapTab, DIALOG_SELECTOR, FOCUSABLE_SELECTOR, ACTION_LABELS };
