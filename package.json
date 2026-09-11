@@ -13,7 +13,7 @@
     "build": "npm run build:frontend && npm run build:backend",
     "typecheck": "npm --workspace backend run typecheck",
     "lint": "npm run typecheck && node --test tests/*.test.mjs",
-    "hipico": "node scripts/hipico-cli.mjs",
+    "hipico": "node tools/hipico-cli/hipico.mjs",
     "test:hipico": "npm --workspace backend run test:hipico && node --test tests/hipico_real_operativa_shadow_contract.test.mjs tests/hipico_v13_security_contract.test.mjs",
     "test:hipico:command-center": "node --test tests/hipico_command_center_issue_289.test.mjs",
     "test:hipico:runner": "node --test tests/hipico_qa_runner_issue_103.test.mjs",
