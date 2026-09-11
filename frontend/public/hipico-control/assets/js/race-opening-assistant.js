@@ -18,7 +18,8 @@ function sameTrack(left,right){
 }
 
 function latestActionableOpening(analysis){
-  return [...(analysis?.raceOpenings||[])].reverse().find((message)=>message?.raceContext?.actionable===true)||null;
+  const latest=(analysis?.raceOpenings||[]).at(-1)||null;
+  return latest?.raceContext?.actionable===true?latest:null;
 }
 
 async function currentRace(){
