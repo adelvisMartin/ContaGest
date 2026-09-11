@@ -2,6 +2,7 @@
 // keep the same module contract while IndexedDB migrations evolve independently.
 import * as storageV2 from "./store-v2.js";
 import { enforceAdvancedLoadGroupScope } from "./advanced-group-scope.js";
+import { assertWorkspaceInputSafety } from "./workspace-input-safety.js";
 export * from "./store-v2.js";
 
 function notifyGuard(result) {
@@ -11,10 +12,31 @@ function notifyGuard(result) {
   }));
 }
 
+function validateWorkspace(workspace) {
+  if (workspace) assertWorkspaceInputSafety(workspace);
+  return workspace;
+}
+
 function hardenWorkspaceWrites(workspace) {
+  validateWorkspace(workspace);
   const result = enforceAdvancedLoadGroupScope(workspace);
+  validateWorkspace(workspace);
   notifyGuard(result);
   return workspace;
+}
+
+// Explicit read exports win over export* so persisted/imported/cloud-restored data
+// is rejected before the application can render unsafe structural values.
+export async function initializeStorage(fallbackFactory) {
+  return validateWorkspace(await storageV2.initializeStorage(fallbackFactory));
+}
+
+export async function loadLocalWorkspace(fallbackFactory) {
+  return validateWorkspace(await storageV2.loadLocalWorkspace(fallbackFactory));
+}
+
+export async function restoreSnapshot(snapshotId) {
+  return validateWorkspace(await storageV2.restoreSnapshot(snapshotId));
 }
 
 // Explicit exports win over export* so all application writes pass through the
