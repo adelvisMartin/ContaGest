@@ -86,3 +86,23 @@ test('bridge decision transition keeps the version returned by persistence',()=>
   assert.match(routes,/handoffState=await saveHandoff\(next/);
   assert.match(routes,/HANDOFF_CONFLICT_RETRY/);
 });
+
+test('duplicate backend retries reuse the first persisted projection for outbox and LAB mirror',()=>{
+  assert.match(routes,/const shadowProjection=event\.projection/);
+  assert.match(routes,/ensureGroupShadowOutbox\(\{eventId:event\.id,recipient:input\.groupId,result:shadowProjection\}\)/);
+  assert.match(routes,/buildLabSimulation\(input,shadowProjection,canonical,event\.inserted\?responsePlan\.text:null\)/);
+  assert.doesNotMatch(routes,/buildLabSimulation\(input,result,canonical,responsePlan\.text\)/);
+});
+
+test('persisted transport projection is bounded and never auto-eligible',()=>{
+  const projection=transportTest.persistedTransportProjection({
+    id:'evt-1',phoneNumberId:'group:120363111111111111@g.us',sender:'584121234567',messageType:'chat',body:'30k',
+    intent:'offer_player',risk:'monetary',confidence:'1.5',suggestion:'Primera sugerencia',payload:{operational:{raceNumber:4,play:'1N'}}
+  });
+  assert.equal(projection.intent,'offer_player');
+  assert.equal(projection.risk,'monetary');
+  assert.equal(projection.confidence,1);
+  assert.equal(projection.autoEligible,false);
+  assert.equal(projection.reason,'PERSISTED_FIRST_CLASSIFICATION');
+  assert.deepEqual(projection.entities,{raceNumber:4,play:'1N'});
+});
