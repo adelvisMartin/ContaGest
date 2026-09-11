@@ -11,12 +11,27 @@ type PersistInput={
 };
 
 type AggregateRow={status:string;stateVersion:bigint|number};
-type EventRow={id:string;eventType:string;disposition:string;previousState:string;nextState:string;reason:string};
+type EventRow={
+  id:string;eventType:string;disposition:string;previousState:string;nextState:string;reason:string;
+  sourceMessageId:string|null;rawMessage:string|null;actorRef:string|null;source:string|null;originalEventId:string|null;
+};
 
 function validTimestamp(value?:string){
   const date=value?new Date(value):new Date();
   if(!Number.isFinite(date.getTime()))throw new Error('HIPICO_INVALID_EVENT_TIMESTAMP');
   return date;
+}
+function sameNullable(left:unknown,right:unknown){return String(left??'')===String(right??'');}
+function assertDomainReplay(existing:EventRow,event:HipicoDomainEventInput){
+  const same=existing.eventType===event.type
+    && sameNullable(existing.sourceMessageId,event.sourceMessageId)
+    && sameNullable(existing.rawMessage,event.rawMessage)
+    && sameNullable(existing.actorRef,event.actorRef)
+    && sameNullable(existing.source,event.source||'system')
+    && sameNullable(existing.originalEventId,event.originalEventId);
+  if(!same){
+    throw Object.assign(new Error('Domain replay changed immutable source facts for the same source message.'),{code:'HIPICO_DOMAIN_REPLAY_MISMATCH'});
+  }
 }
 
 export async function persistHipicoDomainEvent(input:PersistInput){
@@ -41,11 +56,10 @@ export async function persistHipicoDomainEvent(input:PersistInput){
     `;
     if(rows.length!==1)throw new Error('HIPICO_DOMAIN_AGGREGATE_NOT_FOUND');
 
-    // Source-message identity is immutable inside one aggregate. Locking the
-    // aggregate before this query serializes concurrent retries and prevents a
-    // classifier/version change from turning the same message into two events.
     const prior=await tx.$queryRaw<Array<EventRow>>`
-      SELECT id,event_type AS "eventType",disposition,previous_state AS "previousState",next_state AS "nextState",reason
+      SELECT id,event_type AS "eventType",disposition,previous_state AS "previousState",next_state AS "nextState",reason,
+             source_message_id AS "sourceMessageId",raw_message AS "rawMessage",actor_ref AS "actorRef",source,
+             original_event_id AS "originalEventId"
       FROM public.hipico_domain_events
       WHERE owner_id=${ownerId}::uuid AND group_key=${groupKey}
         AND aggregate_kind=${input.aggregateKind} AND aggregate_key=${aggregateKey}
@@ -55,10 +69,8 @@ export async function persistHipicoDomainEvent(input:PersistInput){
     `;
     if(prior.length>1)throw new Error('HIPICO_DOMAIN_SOURCE_IDENTITY_CORRUPT');
     if(prior[0]){
-      if(prior[0].eventType!==input.event.type){
-        throw Object.assign(new Error('Domain replay changed event type for the same source message.'),{code:'HIPICO_DOMAIN_REPLAY_MISMATCH'});
-      }
-      const {eventType:_eventType,...existing}=prior[0];
+      assertDomainReplay(prior[0],input.event);
+      const {eventType:_eventType,sourceMessageId:_sourceMessageId,rawMessage:_rawMessage,actorRef:_actorRef,source:_source,originalEventId:_originalEventId,...existing}=prior[0];
       return{...existing,duplicate:true,stateChanged:false};
     }
 
@@ -131,3 +143,5 @@ export async function persistHipicoDomainEvent(input:PersistInput){
     };
   });
 }
+
+export const __test__={assertDomainReplay};
