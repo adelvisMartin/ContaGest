@@ -16,6 +16,7 @@ const SCRIPTISH=/\b(?:javascript|data|vbscript)\s*:/gi;
 const PRIVILEGE_CLAIM=/\b(?:admin|administrator|operador|operator|root|system)\b[\s:,-]*(?:pausa|pause|resume|reanuda|confirma|confirm|ignora|ignore|registra|acepta|accept)/i;
 const INJECTION=/\b(?:ignora|ignore|olvida|forget|revela|reveal|muestra|show)\b.{0,80}\b(?:reglas|rules|instrucciones|instructions|prompt|system|secret|token|contexto|context)\b/i;
 const CROSS_PARTICIPANT=/\b(?:saldo|balance|historial|history|apuesta|bet)\b.{0,60}\b(?:de|of)\s+(?:otro|another|tester-|participante\s+\w+)/i;
+const KNOWN_MEDIA_KINDS=new Set(['none','image','video','audio','document','unknown']);
 
 export type ConversationAbuseAssessment={
   sanitizedText:string;
@@ -122,14 +123,17 @@ export function assessConversationInput(input:{text:string;mediaKind?:string|nul
   if(INJECTION.test(sanitizedText))flags.push('PROMPT_OR_SOCIAL_INJECTION');
   if(CROSS_PARTICIPANT.test(sanitizedText))flags.push('CROSS_PARTICIPANT_DATA_REQUEST');
   if(Number(input.quoteDepth||0)>MAX_QUOTE_DEPTH)flags.push('QUOTE_DEPTH_EXCEEDED');
-  const media=String(input.mediaKind||'none');
-  const unsupportedMedia=!['none','image','video','audio','document','unknown'].includes(media)||(!sanitizedText&&media!=='none');
-  if(unsupportedMedia)flags.push('UNSUPPORTED_MEDIA_REQUIRES_REVIEW');
+  const media=String(input.mediaKind||'none').trim().toLowerCase();
+  const knownMedia=KNOWN_MEDIA_KINDS.has(media);
+  const mediaRequiresReview=media!=='none';
+  const unsupportedMedia=!knownMedia||mediaRequiresReview;
+  if(!knownMedia)flags.push('UNSUPPORTED_MEDIA_REQUIRES_REVIEW');
+  else if(mediaRequiresReview)flags.push(media==='document'?'DOCUMENT_REQUIRES_REVIEW':'NON_TEXT_MEDIA_REQUIRES_REVIEW');
   const blocked=flags.includes('QUOTE_DEPTH_EXCEEDED');
   const forceReview=blocked||unsupportedMedia||flags.some((flag)=>['PRIVILEGE_CLAIM_IN_TEXT','PROMPT_OR_SOCIAL_INJECTION','CROSS_PARTICIPANT_DATA_REQUEST'].includes(flag));
   return{
     sanitizedText,
-    digest:crypto.createHash('sha256').update(sanitizedText).digest('hex'),
+    digest:crypto.createHash('sha256').update(`${media}|${sanitizedText}`).digest('hex'),
     flags,
     blocked,
     forceReview,
@@ -140,6 +144,24 @@ export function assessConversationInput(input:{text:string;mediaKind?:string|nul
 
 export function classifyUntrustedConversation(input:{text:string;mediaKind?:string|null;quoteDepth?:number;participantId?:string|null}):{assessment:ConversationAbuseAssessment;result:IntentResult}{
   const assessment=assessConversationInput(input);
+  const media=String(input.mediaKind||'none').trim().toLowerCase();
+  if(media!=='none'){
+    const document=media==='document';
+    return{
+      assessment,
+      result:{
+        intent:document?'document_reference':'media_message',
+        risk:'review',
+        confidence:.995,
+        suggestion:document
+          ?'Documento recibido. Se conserva como referencia y no se interpreta como jugada, apertura, llegada ni saldo hasta contar con contenido textual verificable y revisión del operador.'
+          :'Adjunto recibido. Se conserva para revisión y no se aplica como operación del dominio automáticamente.',
+        autoEligible:false,
+        reason:document?'DOCUMENT_REVIEW_GATE':'NON_TEXT_MEDIA_REVIEW_GATE',
+        entities:{}
+      }
+    };
+  }
   if(assessment.forceReview){
     return{
       assessment,
