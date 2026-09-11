@@ -44,20 +44,26 @@ test('Meta timestamp parser never throws and invalid signed timestamps fail iden
   assert.match(shared,/timestamp:\s*metaTimestamp\(message\?\.timestamp\)/);
 });
 
-test('Meta extraction bounds externally supplied identity and display fields before persistence',()=>{
+test('Meta extraction preserves external identities and boundary validation rejects oversized fields',()=>{
   const long='x'.repeat(5000);
   const payload={entry:[{changes:[{value:{metadata:{phone_number_id:long},contacts:[{wa_id:'584121234567',profile:{name:long}}],messages:[{id:long,from:'584121234567',timestamp:'1789106400',type:long,text:{body:long},context:{id:long}}]}}]}]};
   const [message]=extractMetaMessages(payload);
-  assert.equal(message.channelKey.length,220);
-  assert.equal(message.externalMessageId.length,320);
-  assert.equal(message.senderLabel.length,220);
-  assert.equal(message.type.length,80);
-  assert.equal(message.text.length,4000);
-  assert.equal(message.quotedExternalMessageId.length,320);
+  assert.equal(message.channelKey,long);
+  assert.equal(message.externalMessageId,long);
+  assert.equal(message.senderLabel,long);
+  assert.equal(message.type,long);
+  assert.equal(message.text,long);
+  assert.equal(message.quotedExternalMessageId,long);
+  assert.equal(__test__.validMetaMessageIdentity(message),false);
+  const base={externalMessageId:'wamid-meta-1',channelKey:'1234567890',senderId:'584121234567',senderLabel:'Participante',timestamp:'2026-09-11T06:00:00.000Z',type:'text',text:'hola',quotedExternalMessageId:null,raw:{timestamp:'1789106400'}};
+  assert.equal(__test__.validMetaMessageIdentity({...base,senderLabel:'x'.repeat(221)}),false);
+  assert.equal(__test__.validMetaMessageIdentity({...base,type:'x'.repeat(81)}),false);
+  assert.equal(__test__.validMetaMessageIdentity({...base,text:'x'.repeat(4001)}),false);
+  assert.equal(__test__.validMetaMessageIdentity({...base,quotedExternalMessageId:'x'.repeat(321)}),false);
 });
 
 test('Meta webhook rejects incomplete message identity before any persistence',()=>{
-  const valid={externalMessageId:'wamid-meta-1',channelKey:'1234567890',senderId:'584121234567',timestamp:'2026-09-11T06:00:00.000Z',raw:{timestamp:'1789106400'}};
+  const valid={externalMessageId:'wamid-meta-1',channelKey:'1234567890',senderId:'584121234567',senderLabel:'',timestamp:'2026-09-11T06:00:00.000Z',type:'text',text:'hola',quotedExternalMessageId:null,raw:{timestamp:'1789106400'}};
   assert.equal(__test__.validMetaMessageIdentity(valid),true);
   assert.equal(__test__.validMetaMessageIdentity({...valid,externalMessageId:''}),false);
   assert.equal(__test__.validMetaMessageIdentity({...valid,channelKey:'meta'}),false);
