@@ -1,6 +1,7 @@
 import crypto from 'node:crypto';
 
 const DEFAULT_FETCH_TIMEOUT_MS = 10000;
+const SHA40 = /^[a-f0-9]{40}$/i;
 
 export function env(name, required = true) {
   const value = process.env[name];
@@ -21,6 +22,36 @@ export function bearerTokenValid(header, expected) {
 
 export function isE164(value) {
   return /^\+?[1-9]\d{6,17}$/.test(String(value || '').trim());
+}
+
+function normalizedE164(value) {
+  const raw = String(value || '').trim();
+  return isE164(raw) ? raw.replace(/^\+/, '') : null;
+}
+
+function metaAllowedDestinations(source = process.env) {
+  return new Set(String(source.HIPICO_META_ALLOWED_DESTINATIONS || '')
+    .split(',')
+    .map(normalizedE164)
+    .filter(Boolean));
+}
+
+export function metaOutboundPolicy(source = process.env) {
+  const runtimeSha = String(source.VERCEL_GIT_COMMIT_SHA || source.GIT_SHA || '').trim();
+  const approvedSha = String(source.HIPICO_META_SEND_CANDIDATE_SHA || '').trim();
+  const destinations = metaAllowedDestinations(source);
+  const reasons = [];
+  if (String(source.HIPICO_META_SEND_ENABLED || '').toLowerCase() !== 'true') reasons.push('SEND_SWITCH_DISABLED');
+  if (String(source.HIPICO_WHATSAPP_COMPLIANCE_DECISION || '').toUpperCase() !== 'GO') reasons.push('WHATSAPP_COMPLIANCE_NOT_GO');
+  if (!String(source.HIPICO_META_SEND_APPROVED_BY || '').trim()) reasons.push('EXPLICIT_APPROVAL_MISSING');
+  if (!SHA40.test(runtimeSha) || !SHA40.test(approvedSha) || runtimeSha.toLowerCase() !== approvedSha.toLowerCase()) reasons.push('CANDIDATE_SHA_NOT_BOUND');
+  if (!destinations.size) reasons.push('DESTINATION_ALLOWLIST_EMPTY');
+  return { enabled: reasons.length === 0, reasons, allowedDestinationCount: destinations.size, runtimeShaBound: !reasons.includes('CANDIDATE_SHA_NOT_BOUND') };
+}
+
+export function metaDestinationAllowed(value, source = process.env) {
+  const normalized = normalizedE164(value);
+  return Boolean(normalized && metaAllowedDestinations(source).has(normalized));
 }
 
 export async function readRawBody(req, maxBytes = 1024 * 1024) {

@@ -1,6 +1,7 @@
 import crypto from 'node:crypto';
 import { prisma } from '../../database/prisma.js';
 import { OPERATIONAL_INTENTS, type IntentResult } from './hipico-operational-classifier.js';
+import { operationalRaceContextKey } from './hipico-race-context-key.js';
 
 type CanonicalChannel={id:string;ownerId:string;groupKey:string;label:string};
 type CanonicalPersistInput={
@@ -124,6 +125,7 @@ function eventType(intent:string){
     offer_receiver:'counteroffer',
     offer_confirmation:'confirmation',
     pending_confirmation:'confirmation',
+    race_open:'race_open',
     race_close:'race_close',
     day_close:'day_close',
     race_result:'result',
@@ -138,8 +140,7 @@ function eventType(intent:string){
 }
 
 function raceKey(result:IntentResult){
-  const number=Number(result.entities?.raceNumber);
-  return Number.isFinite(number)&&number>0?`race:${Math.trunc(number)}`:null;
+  return operationalRaceContextKey(result.entities);
 }
 
 function amountOf(result:IntentResult){
