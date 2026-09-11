@@ -105,7 +105,7 @@ test('permanent or corrupt bridge events are quarantined instead of retried fore
   assert.doesNotMatch(bridge, /catch \{\s*await fs\.unlink\(file\)/);
 });
 
-test('bridge dependencies and example config are exact, shadow-only and pinned', () => {
+test('bridge dependencies and example config are exact, shadow-only, pinned and fail closed by default', () => {
   const pkg = JSON.parse(read('tools/hipico-whatsapp-bridge/package.json'));
   assert.equal(pkg.dependencies['whatsapp-web.js'], '1.34.7');
   assert.equal(pkg.dependencies['qrcode-terminal'], '0.12.0');
@@ -119,6 +119,9 @@ test('bridge dependencies and example config are exact, shadow-only and pinned',
   assert.match(env, /HIPICO_SOURCE_CHANNEL_KEY=club-hipico-triple-crown-official/);
   assert.match(env, /HIPICO_LAB_CHANNEL_KEY=control-hipico-lab/);
   assert.match(env, /HIPICO_ALLOW_SEND=false/);
+  assert.match(env, /DELIBERADAMENTE INVÁLIDO/);
+  const exampleToken=env.match(/^HIPICO_GROUP_BRIDGE_TOKEN=(.+)$/m)?.[1]?.trim()||'';
+  assert.ok(exampleToken.length>0&&exampleToken.length<32,'example token must be intentionally rejected by startup length policy');
   assert.doesNotMatch(env, /HIPICO_GROUP_NAME=/);
 
   const gitignore = read('.gitignore');
