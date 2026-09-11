@@ -46,6 +46,19 @@ test('calendar receives an accessible title and named previous/next controls',()
   assert.match(guard,/labelCalendarControls\(dialog\)/);
 });
 
+test('global icon-only controls receive stable accessible names after every rerender',()=>{
+  assert.match(guard,/GLOBAL_CONTROL_LABELS/);
+  assert.match(guard,/data-action=\"focus-fast\"/);
+  assert.match(guard,/Captura rápida/);
+  assert.match(guard,/data-action=\"prev-race\"/);
+  assert.match(guard,/Carrera anterior/);
+  assert.match(guard,/data-action=\"next-race\"/);
+  assert.match(guard,/Carrera siguiente/);
+  assert.match(guard,/race-arrow--add\[data-action=\"new-race\"\]/);
+  assert.match(guard,/Nueva carrera/);
+  assert.match(guard,/function scan\(\) \{\s*labelGlobalControls\(document\);/s);
+});
+
 test('dialog accessibility is loaded before overlay-producing modules and available offline', () => {
   const guardIndex = index.indexOf('dialog-accessibility.js');
   const appIndex = index.indexOf('assets/js/app.js');
