@@ -1,5 +1,5 @@
 export const HIPICO_CHANNEL_KEY_PATTERN = /^[A-Za-z0-9_-]{3,120}$/;
-export const HIPICO_GROUP_ID_PATTERN = /^\d{5,}(?:-\d+)?@g\.us$/i;
+export const HIPICO_GROUP_ID_PATTERN = /^(?:\d{5,}-\d+|\d{10,})@g\.us$/i;
 export const DEFAULT_SOURCE_CHANNEL_KEY = 'club-hipico-triple-crown-official';
 export const DEFAULT_LAB_CHANNEL_KEY = 'control-hipico-lab';
 
