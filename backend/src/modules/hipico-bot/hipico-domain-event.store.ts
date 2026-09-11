@@ -74,6 +74,29 @@ function assertDomainReplay(existing:EventRow,event:HipicoDomainEventInput){
   }
 }
 
+export async function hipicoDomainPersistenceReadiness(){
+  try{
+    const rows=await prisma.$queryRaw<Array<{aggregates:string|null;events:string|null;confirmationColumns:number}>>`
+      SELECT
+        to_regclass('public.hipico_domain_aggregates')::text AS "aggregates",
+        to_regclass('public.hipico_domain_events')::text AS "events",
+        (
+          SELECT COUNT(*)::int
+          FROM information_schema.columns
+          WHERE table_schema='public'
+            AND table_name='hipico_domain_events'
+            AND column_name IN ('operator_confirmed','confirmation_reason')
+        ) AS "confirmationColumns"
+    `;
+    const row=rows[0];
+    const tablesReady=Boolean(row?.aggregates&&row?.events);
+    const confirmationAuditReady=Number(row?.confirmationColumns||0)===2;
+    return{ready:tablesReady&&confirmationAuditReady,tablesReady,confirmationAuditReady};
+  }catch{
+    return{ready:false,tablesReady:false,confirmationAuditReady:false};
+  }
+}
+
 export async function persistHipicoDomainEvent(input:PersistInput){
   const ownerId=String(input.ownerId||'').trim();
   const groupKey=String(input.groupKey||'').trim();
