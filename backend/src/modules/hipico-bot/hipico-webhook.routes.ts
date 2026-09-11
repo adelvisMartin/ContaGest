@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { extractMessages, HipicoBotStore, processIncoming } from './hipico-bot.service.js';
-import { metaSignatureValid, metaVerifyTokenValid, metaWebhookSecretsConfigured } from './hipico-meta-security.js';
+import { metaSignatureValid, metaVerifyTokenValid, metaWebhookRuntimeConfigured } from './hipico-meta-security.js';
+import { hipicoNumericProviderIdConfigured } from './hipico-secret-security.js';
 
 const router=Router();
 const WEBHOOK_PROCESSING_CONCURRENCY=10;
@@ -9,7 +10,8 @@ type ExtractedMessage={phoneNumberId?:string};
 type RuntimeEnv=Record<string,string|undefined>;
 
 function configuredPhoneNumberId(env:RuntimeEnv=process.env){
-  return String(env.WHATSAPP_PHONE_NUMBER_ID||'').trim();
+  const value=String(env.WHATSAPP_PHONE_NUMBER_ID||'').trim();
+  return hipicoNumericProviderIdConfigured(value)?value:'';
 }
 
 function webhookIdentityError(messages:ExtractedMessage[],env:RuntimeEnv=process.env){
@@ -40,7 +42,7 @@ router.use((_req,res,next)=>{
 });
 
 router.get('/webhook',(req,res)=>{
-  if(!metaWebhookSecretsConfigured())return res.status(503).json({ok:false,error:'webhook_not_configured'});
+  if(!metaWebhookRuntimeConfigured())return res.status(503).json({ok:false,error:'webhook_not_configured'});
   const mode=String(req.query['hub.mode']||'');
   const token=String(req.query['hub.verify_token']||'');
   const challenge=String(req.query['hub.challenge']||'');
@@ -49,7 +51,7 @@ router.get('/webhook',(req,res)=>{
 });
 
 router.post('/webhook',async(req,res)=>{
-  if(!metaWebhookSecretsConfigured())return res.status(503).json({ok:false,retryable:true,error:'webhook_not_configured'});
+  if(!metaWebhookRuntimeConfigured())return res.status(503).json({ok:false,retryable:true,error:'webhook_not_configured'});
   const raw=(req as any).rawBody as Buffer|undefined;
   if(!metaSignatureValid(raw,req.header('x-hub-signature-256')||undefined)){
     return res.status(401).json({ok:false,retryable:false,error:'Firma de webhook inválida.'});
