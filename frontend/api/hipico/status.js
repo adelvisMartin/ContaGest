@@ -1,23 +1,8 @@
-import { isMetaPhoneNumberId, metaOutboundPolicy, strongSecretConfigured } from './_shared.js';
+import { metaOutboundPolicy, strongSecretConfigured } from './_shared.js';
 import { bridgeIdentityStatus } from './bridge-identity.js';
 
-function missing(keys, source=process.env) {
-  return keys.filter((key) => !String(source[key] || '').trim());
-}
-
-function secretReadiness(source=process.env){
-  return{
-    bridgeTokenStrong:strongSecretConfigured(source.HIPICO_GROUP_BRIDGE_TOKEN),
-    internalApiTokenStrong:strongSecretConfigured(source.HIPICO_INTERNAL_API_TOKEN),
-    metaVerifyTokenStrong:strongSecretConfigured(source.HIPICO_META_VERIFY_TOKEN),
-    metaAppSecretStrong:strongSecretConfigured(source.HIPICO_META_APP_SECRET)
-  };
-}
-
-function metaIdentityReadiness(source=process.env){
-  return{
-    phoneNumberIdValid:isMetaPhoneNumberId(source.HIPICO_META_PHONE_NUMBER_ID)
-  };
+function missing(keys) {
+  return keys.filter((key) => !String(process.env[key] || '').trim());
 }
 
 export default function handler(req, res) {
@@ -27,31 +12,25 @@ export default function handler(req, res) {
   const persistenceRequired = ['HIPICO_SUPABASE_URL', 'HIPICO_SUPABASE_SERVICE_ROLE_KEY', 'HIPICO_OWNER_ID'];
   const linkedDeviceRequired = ['HIPICO_GROUP_BRIDGE_TOKEN', 'HIPICO_SOURCE_GROUP_ID', 'HIPICO_LAB_GROUP_ID'];
   const metaRequired = ['HIPICO_META_ACCESS_TOKEN', 'HIPICO_META_PHONE_NUMBER_ID', 'HIPICO_INTERNAL_API_TOKEN'];
-  const webhookRequired = ['HIPICO_META_VERIFY_TOKEN', 'HIPICO_META_APP_SECRET', 'HIPICO_META_PHONE_NUMBER_ID'];
+  const webhookRequired = ['HIPICO_META_VERIFY_TOKEN', 'HIPICO_META_APP_SECRET'];
 
   const persistenceMissing = missing(persistenceRequired);
   const linkedDeviceMissing = missing(linkedDeviceRequired);
   const metaMissing = missing(metaRequired);
   const webhookMissing = missing(webhookRequired);
-  const identity=bridgeIdentityStatus();
-  const secrets=secretReadiness();
-  const metaIdentity=metaIdentityReadiness();
+  const identity = bridgeIdentityStatus();
+  const bridgeTokenStrong = strongSecretConfigured(process.env.HIPICO_GROUP_BRIDGE_TOKEN);
+  const internalApiTokenStrong = strongSecretConfigured(process.env.HIPICO_INTERNAL_API_TOKEN);
+  const webhookSecretsStrong = strongSecretConfigured(process.env.HIPICO_META_VERIFY_TOKEN)
+    && strongSecretConfigured(process.env.HIPICO_META_APP_SECRET);
   const persistenceReady = persistenceMissing.length === 0;
   const linkedDeviceReady = persistenceReady
     && linkedDeviceMissing.length === 0
-    && secrets.bridgeTokenStrong
+    && bridgeTokenStrong
     && identity.ready;
   const outbound = metaOutboundPolicy();
-  const metaDirectReady = persistenceReady
-    && metaMissing.length === 0
-    && secrets.internalApiTokenStrong
-    && metaIdentity.phoneNumberIdValid
-    && outbound.enabled;
-  const metaWebhookReady = persistenceReady
-    && webhookMissing.length === 0
-    && secrets.metaVerifyTokenStrong
-    && secrets.metaAppSecretStrong
-    && metaIdentity.phoneNumberIdValid;
+  const metaDirectReady = persistenceReady && metaMissing.length === 0 && internalApiTokenStrong && outbound.enabled;
+  const metaWebhookReady = persistenceReady && webhookMissing.length === 0 && webhookSecretsStrong;
 
   return res.status(200).json({
     ok: true,
@@ -62,7 +41,7 @@ export default function handler(req, res) {
       ready: linkedDeviceReady,
       shadowOnly: true,
       sourceSendPossible: false,
-      tokenConfigured: secrets.bridgeTokenStrong,
+      tokenConfigured: bridgeTokenStrong,
       pinnedGroupsConfigured: identity.pinnedGroupsConfigured,
       groupIdsValid: identity.groupIdsValid,
       groupsDistinct: identity.groupsDistinct,
@@ -73,7 +52,8 @@ export default function handler(req, res) {
     metaCloud: {
       directIndividualSendReady: metaDirectReady,
       webhookReady: metaWebhookReady,
-      phoneNumberIdValid: metaIdentity.phoneNumberIdValid,
+      internalApiTokenStrong,
+      webhookSecretsStrong,
       optionalForLinkedDeviceBridge: true,
       outboundPolicy: {
         enabled: outbound.enabled,
@@ -86,4 +66,4 @@ export default function handler(req, res) {
   });
 }
 
-export const __test__={bridgeIdentityStatus,secretReadiness,metaIdentityReadiness};
+export const __test__ = { bridgeIdentityStatus };

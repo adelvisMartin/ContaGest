@@ -1,4 +1,4 @@
-import { bearerTokenValid, env, fetchWithTimeout, isE164, isMetaPhoneNumberId, metaDestinationAllowed, metaOutboundPolicy, serverSecret, supabase } from './_shared.js';
+import { bearerTokenValid, env, fetchWithTimeout, isE164, metaDestinationAllowed, metaOutboundPolicy, serverSecret, supabase } from './_shared.js';
 
 const MAX_ATTEMPTS = 6;
 const BATCH_SIZE = 10;
@@ -43,16 +43,6 @@ function safeGraphVersion() {
   return /^v\d+\.\d+$/.test(configured) ? configured : 'v23.0';
 }
 
-function metaSenderConfig(source=process.env){
-  const accessToken=String(source.HIPICO_META_ACCESS_TOKEN||'').trim();
-  const phoneNumberId=String(source.HIPICO_META_PHONE_NUMBER_ID||'').trim();
-  return{
-    accessToken,
-    phoneNumberId,
-    ready:Boolean(accessToken)&&isMetaPhoneNumberId(phoneNumberId)
-  };
-}
-
 export default async function handler(req, res) {
   res.setHeader('Cache-Control', 'no-store, max-age=0');
   if (req.method !== 'POST') return res.status(405).json({ ok: false, retryable: false, error: 'method_not_allowed' });
@@ -70,12 +60,6 @@ export default async function handler(req, res) {
     return res.status(409).json({ ok: false, retryable: false, error: 'outbound_disabled', reasons: outbound.reasons });
   }
 
-  const senderConfig=metaSenderConfig();
-  if(!senderConfig.ready){
-    return res.status(503).json({ok:false,retryable:true,error:'sender_not_configured'});
-  }
-  const {accessToken,phoneNumberId}=senderConfig;
-
   try {
     const ownerId = env('HIPICO_OWNER_ID');
     const now = new Date().toISOString();
@@ -84,6 +68,8 @@ export default async function handler(req, res) {
     }) || [];
     if (!rows.length) return res.status(200).json({ ok: true, processed: 0, sent: 0, failed: 0, retried: 0, reconciliationRequired: 0, skippedClaims: 0 });
 
+    const accessToken = env('HIPICO_META_ACCESS_TOKEN');
+    const phoneNumberId = env('HIPICO_META_PHONE_NUMBER_ID');
     const graphVersion = safeGraphVersion();
     let sent = 0;
     let failed = 0;
@@ -125,6 +111,9 @@ export default async function handler(req, res) {
           })
         }, Number(process.env.HIPICO_META_SEND_TIMEOUT_MS || 12000));
       } catch (error) {
+        // A transport timeout can happen after Meta accepted the message. Keep
+        // the durable claim in `sending`: the queue selector never reclaims that
+        // state, so an operator must reconcile it before any later resend.
         await updateRow(row.id, {
           status: 'sending',
           attempts,
@@ -154,6 +143,9 @@ export default async function handler(req, res) {
 
       const providerMessageId = data?.messages?.[0]?.id || null;
       if (!providerMessageId) {
+        // HTTP success means Meta may have accepted the message even if the
+        // expected receipt is absent. Preserve `sending` and require manual
+        // reconciliation instead of converting it into a retryable failure.
         await updateRow(row.id, {
           status: 'sending',
           attempts,
@@ -163,6 +155,9 @@ export default async function handler(req, res) {
         continue;
       }
 
+      // Once Meta confirms acceptance, this row is never eligible for automatic resend.
+      // If this persistence update fails the row remains `sending`, which intentionally
+      // requires operator reconciliation instead of risking a duplicate message.
       await updateRow(row.id, {
         status: 'sent',
         attempts,
@@ -179,5 +174,3 @@ export default async function handler(req, res) {
     return res.status(503).json({ ok: false, retryable: true, error: 'send_unavailable' });
   }
 }
-
-export const __test__={safeGraphVersion,metaSenderConfig};

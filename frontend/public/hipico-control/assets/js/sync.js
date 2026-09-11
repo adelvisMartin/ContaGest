@@ -1,3 +1,5 @@
+import { assertWorkspaceInputSafety } from "./workspace-input-safety.js";
+
 export const SYNC_CONFLICT_POLICY = Object.freeze({
     participants: "latest-record-by-id",
     days: "latest-record-by-id",
@@ -8,6 +10,7 @@ export const SYNC_CONFLICT_POLICY = Object.freeze({
     weekClosures: "latest-record-by-id",
     pollas: "latest-record-by-id",
     audit: "append-merge-by-id",
+    chatImports: "append-union-preserve-scoped-idempotency",
     syncQueue: "idempotent-merge-by-id",
     moneyAuthority: "server-ledger-only",
     staleAuthority: "never-live"
@@ -29,6 +32,13 @@ function mergeById(localRows = [], remoteRows = [], nestedMerge = null) {
         result.set(row.id, nestedMerge ? nestedMerge(merged, existing, row) : merged);
     }
     return [...result.values()];
+}
+function rawChatImports(value) {
+    if (!Array.isArray(value)) return [];
+    return structuredClone(value).map((entry) => String(entry || "").trim()).filter(Boolean);
+}
+export function mergeChatImports(localRows = [], remoteRows = []) {
+    return [...new Set([...rawChatImports(remoteRows), ...rawChatImports(localRows)])];
 }
 function mergeRace(base, first, second) {
     return {
@@ -62,8 +72,16 @@ export function markWorkspaceStale(workspace, reason = "offline") {
     return copy;
 }
 export function mergeWorkspaces(localWorkspace, remoteWorkspace) {
-    if (!remoteWorkspace) return markWorkspaceStale(localWorkspace, "remote-unavailable");
-    if (!localWorkspace) return markWorkspaceSynced(remoteWorkspace, { version: remoteWorkspace.version });
+    if (!remoteWorkspace) {
+        assertWorkspaceInputSafety(localWorkspace);
+        return markWorkspaceStale(localWorkspace, "remote-unavailable");
+    }
+    if (!localWorkspace) {
+        assertWorkspaceInputSafety(remoteWorkspace);
+        return markWorkspaceSynced(remoteWorkspace, { version: remoteWorkspace.version });
+    }
+    assertWorkspaceInputSafety(localWorkspace);
+    assertWorkspaceInputSafety(remoteWorkspace);
     const localNewer = recordTime(localWorkspace) >= recordTime(remoteWorkspace);
     const newest = localNewer ? localWorkspace : remoteWorkspace;
     const older = localNewer ? remoteWorkspace : localWorkspace;
@@ -80,6 +98,7 @@ export function mergeWorkspaces(localWorkspace, remoteWorkspace) {
         weekClosures: mergeById(localWorkspace.weekClosures, remoteWorkspace.weekClosures),
         pollas: mergeById(localWorkspace.pollas, remoteWorkspace.pollas),
         audit: mergeById(localWorkspace.audit, remoteWorkspace.audit).sort((a, b) => recordTime(b) - recordTime(a)).slice(0, 1500),
+        chatImports: mergeChatImports(localWorkspace.chatImports, remoteWorkspace.chatImports),
         syncQueue: mergeById(localWorkspace.syncQueue, remoteWorkspace.syncQueue),
         syncMeta: { ...(older.syncMeta || {}), ...(newest.syncMeta || {}), stale: true, syncState: "merge-pending-confirmation" },
         version: Math.max(Number(localWorkspace.version || 0), Number(remoteWorkspace.version || 0)) + 1,
@@ -87,6 +106,7 @@ export function mergeWorkspaces(localWorkspace, remoteWorkspace) {
     };
     const raceIds = new Set(merged.races.map((race) => race.id));
     if (!raceIds.has(merged.activeRaceId)) merged.activeRaceId = newest.activeRaceId || merged.races.at(-1)?.id || null;
+    assertWorkspaceInputSafety(merged);
     return merged;
 }
 export function shouldMergeCloud(localWorkspace, cloudRow) {

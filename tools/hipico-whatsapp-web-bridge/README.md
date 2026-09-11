@@ -1,4 +1,4 @@
-# Control Hípico · WhatsApp Web Bridge v1.4.1
+# Control Hípico · WhatsApp Web Bridge v1.4.2
 
 Bridge de Control Hípico para observación y clasificación del grupo oficial mediante WhatsApp Web. El objetivo del corte actual es operar de forma persistente y auditable sin convertir el grupo fuente en un destino de envío ni aplicar efectos monetarios automáticos.
 
@@ -25,8 +25,10 @@ Control hípico lab (opcional durante QA)
 - Producción exige backend HTTPS, token de 32+ caracteres, journal shadow y pinning de grupos.
 - Los IDs reales de grupos y el token no se versionan.
 - Si backend falla, el evento queda en spool para reintento; no se marca como entregado antes de persistir.
+- Documentos/PDF, imágenes, audio y video son evidencia para revisión: nombre de archivo, caption o texto visible del adjunto no puede abrir/cerrar carreras, registrar llegadas ni modificar saldos por sí solo.
+- OCR/extracción automática de PDF no se habilita hasta disponer de una fuente y contrato verificables, fixtures y revisión explícita del operador.
 
-## Binding de grupos v1.4.1
+## Binding de grupos v1.4.2
 
 Los nombres visibles sirven solamente para descubrir chats. Antes de habilitar cualquier automatización LAB se deben capturar los IDs estables `@g.us` de fuente y laboratorio.
 
@@ -57,9 +59,9 @@ Doble clic en `INICIAR-CONTROL-HIPICO-WHATSAPP.cmd` o:
 
 El launcher:
 
-1. instala una copia runtime bajo `%LOCALAPPDATA%\ControlHipicoBridge\runtime-v1.4.1`;
+1. instala una copia runtime bajo `%LOCALAPPDATA%\ControlHipicoBridge\runtime-v1.4.2`;
 2. preserva perfil y colas bajo `data/`;
-3. exige Node 22;
+3. exige Node 22, que es la versión declarada por este paquete;
 4. ejecuta `npm ci`, sintaxis y tests del Bridge;
 5. prueba Chrome/Edge;
 6. valida backend/token/persistencia;
@@ -75,12 +77,32 @@ Primero ejecuta el binding. Después, únicamente dentro de una ventana QA:
 
 Al terminar vuelve al modo normal sin flags. El kill switch es mantener ambos valores en `false`.
 
+## Comandos de operación y soporte
+
+Desde PowerShell, CMD o una terminal ubicada en `tools/hipico-whatsapp-web-bridge`:
+
+```text
+npm ci --no-audit --no-fund
+npm run qa
+npm run production:check
+npm run capture:groups
+npm start
+npm run healthcheck
+npm run diagnostic:status
+npm run spool:replay
+npm run report
+npm run support:bundle
+```
+
+`production:check` debe ejecutarse antes de operación sostenida. `spool:replay` reintenta trabajo persistido y no debe usarse para fabricar eventos nuevos ni saltar idempotencia. `support:bundle` y los reportes deben permanecer sin tokens ni texto completo de chats salvo una habilitación de diagnóstico explícita.
+
 ## Persistencia
 
 Datos sensibles/mutables viven fuera del código:
 
 - `chrome-profile/`: sesión vinculada;
-- `spool-events/`: eventos aún no entregados;
+- `spool-v2/`: journal durable actual con estados y reintentos;
+- `spool-events/`: compatibilidad de eventos pendientes antiguos;
 - `spool-lab-mirror/`: mirrors LAB pendientes;
 - `seen-source-message-ids.json`: deduplicación fuente;
 - `seen-lab-test-message-ids.json`: deduplicación LAB QA;
@@ -111,7 +133,7 @@ El perfil de Windows no se copia ciegamente a un servidor. Cada host debe tener 
 - spool/dead letters;
 - readiness y razones de degradación.
 
-Comandos:
+Comandos mínimos:
 
 ```bash
 npm run healthcheck
@@ -139,4 +161,4 @@ El Bridge es independiente del wrapper Android. La PWA canónica de Control Híp
 
 WhatsApp Web automatizado no es la API oficial de grupos. Cambios del DOM, cierre de sesión o políticas del proveedor pueden requerir revinculación/adaptación. Por eso el sistema conserva spool, health, kill switch y operación shadow antes de cualquier promoción.
 
-La promoción a acciones reales nunca se decide por “el bot parece funcionar”: requiere corpus medido, revisión humana, pruebas negativas y gates separados por tipo de operación.
+La promoción a acciones reales nunca se decide por “el bot parece funcionar”: requiere corpus medido, revisión humana, pruebas negativas y gates separados por tipo de operación. Si la política/canal autorizado no permite una acción, el sistema permanece en `SHADOW`, `ASSISTED` o envío manual en vez de intentar evadir restricciones del proveedor.

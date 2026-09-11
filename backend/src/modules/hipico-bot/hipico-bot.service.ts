@@ -2,9 +2,9 @@ import crypto from 'node:crypto';
 import { prisma } from '../../database/prisma.js';
 import { classify as classifyOperational } from './hipico-operational-classifier.js';
 import type { IntentResult as OperationalIntentResult } from './hipico-operational-classifier.js';
-import { assertCloudOutboundAllowed, assertCloudTransportConfigured, cloudOutboundPolicy, cloudTransportConfiguration } from './hipico-outbound-policy.js';
-import { metaSignatureValid } from './hipico-meta-security.js';
+import { assertCloudOutboundAllowed, cloudOutboundPolicy } from './hipico-outbound-policy.js';
 import { operatorTokenValid as canonicalOperatorTokenValid } from './hipico-operator-security.js';
+import { webhookSignatureValid } from './hipico-webhook-security.js';
 
 export type BotPromotion='shadow'|'approved'|'automatic';
 export type IntentResult=OperationalIntentResult;
@@ -12,6 +12,10 @@ export type IntentResult=OperationalIntentResult;
 const SAFE_AUTOMATIC=new Set(['greeting','help','status_non_monetary']);
 const NON_TEXT_MEDIA=new Set(['audio','document','image','sticker','video']);
 const E164_DIGITS=/^[1-9]\d{6,14}$/;
+const MAX_INBOUND_TEXT=4000;
+const MAX_MESSAGE_TYPE=80;
+const MAX_PROVIDER_MESSAGE_ID=320;
+const MAX_PHONE_NUMBER_ID=120;
 
 const clampLimit=(value:number, fallback=50)=>Math.min(100,Math.max(1,Number.isFinite(value)?Math.trunc(value):fallback));
 const id=(prefix:string)=>`${prefix}_${crypto.randomUUID()}`;
@@ -20,9 +24,7 @@ let dbStatus:{value:boolean;until:number}|null=null;
 
 export function promotion():BotPromotion {
   const value=String(process.env.HIPICO_BOT_PROMOTION||'shadow').toLowerCase();
-  if(value==='automatic'){
-    return cloudOutboundPolicy().enabled&&cloudTransportConfiguration().configured?'automatic':'approved';
-  }
+  if(value==='automatic')return cloudOutboundPolicy().enabled?'automatic':'approved';
   return value==='approved'?'approved':'shadow';
 }
 
@@ -45,13 +47,10 @@ export function classifyIncoming(message:any):IntentResult {
   return classifyOperational(message?.body||'');
 }
 
-/**
- * Backward-compatible wrappers. They intentionally delegate to the canonical
- * strong policies so no future route can accidentally revive the pre-hardening
- * length-only authentication behavior by importing this service.
- */
+// Compatibility exports keep old imports working, but security policy lives in
+// the canonical modules so there is no weaker secondary implementation.
 export function signatureValid(raw:Buffer|undefined,signature:string|undefined){
-  return metaSignatureValid(raw,signature);
+  return webhookSignatureValid(raw,signature);
 }
 
 export function operatorTokenValid(value:string|undefined){
@@ -62,14 +61,20 @@ export function extractMessages(payload:any){
   const rows:any[]=[];
   for(const entry of payload?.entry||[])for(const change of entry?.changes||[]){
     const value=change?.value||{};
-    const phoneNumberId=String(value?.metadata?.phone_number_id||'');
+    const phoneNumberId=String(value?.metadata?.phone_number_id||'').trim();
     for(const message of value?.messages||[]){
-      const messageType=String(message.type||'unknown');
-      const body=String(message?.text?.body||message?.button?.text||message?.interactive?.button_reply?.title||message?.document?.caption||message?.document?.filename||message?.image?.caption||message?.video?.caption||'');
-      rows.push({providerMessageId:String(message.id||''),phoneNumberId,sender:String(message.from||''),messageType,body,payload:message});
+      const providerMessageId=String(message.id||'').trim();
+      const sender=String(message.from||'').trim();
+      const messageType=String(message.type||'unknown').trim().toLowerCase().slice(0,MAX_MESSAGE_TYPE)||'unknown';
+      const body=String(message?.text?.body||message?.button?.text||message?.interactive?.button_reply?.title||message?.document?.caption||message?.document?.filename||message?.image?.caption||message?.video?.caption||'').slice(0,MAX_INBOUND_TEXT);
+      rows.push({providerMessageId,phoneNumberId,sender,messageType,body,payload:message});
     }
   }
-  return rows.filter((row)=>row.providerMessageId&&E164_DIGITS.test(row.sender));
+  return rows.filter((row)=>
+    row.providerMessageId.length>0&&row.providerMessageId.length<=MAX_PROVIDER_MESSAGE_ID&&
+    row.phoneNumberId.length>0&&row.phoneNumberId.length<=MAX_PHONE_NUMBER_ID&&
+    E164_DIGITS.test(row.sender)
+  );
 }
 
 async function dbReady(force=false){
@@ -180,13 +185,16 @@ export const HipicoBotStore={
 
 export async function sendCloudText(recipient:string,message:string){
   assertCloudOutboundAllowed(recipient);
-  const {token,phoneId,version}=assertCloudTransportConfigured();
+  const token=String(process.env.WHATSAPP_CLOUD_TOKEN||'');
+  const phoneId=String(process.env.WHATSAPP_PHONE_NUMBER_ID||'');
+  const version=String(process.env.WHATSAPP_GRAPH_API_VERSION||process.env.WHATSAPP_GRAPH_VERSION||'v23.0');
+  if(!token||!phoneId)throw new Error('Faltan WHATSAPP_CLOUD_TOKEN o WHATSAPP_PHONE_NUMBER_ID');
   if(!E164_DIGITS.test(recipient))throw new Error('Destinatario WhatsApp inválido.');
   const text=String(message||'').trim();
   if(!text||text.length>4000)throw Object.assign(new Error('Mensaje WhatsApp vacío o demasiado largo.'),{code:'HIPICO_CLOUD_MESSAGE_INVALID'});
   let response:Response;
   try{
-    response=await fetch(`https://graph.facebook.com/${version}/${phoneId}/messages`,{
+    response=await fetch(`https://graph.facebook.com/${encodeURIComponent(version)}/${encodeURIComponent(phoneId)}/messages`,{
       method:'POST',headers:{authorization:`Bearer ${token}`,'content-type':'application/json'},
       body:JSON.stringify({messaging_product:'whatsapp',recipient_type:'individual',to:recipient,type:'text',text:{preview_url:false,body:text}}),
       signal:AbortSignal.timeout(10_000)

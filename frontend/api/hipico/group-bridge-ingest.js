@@ -62,29 +62,24 @@ function sourceReplaySignature(body) {
     normalizedTimestamp(body.timestamp),
     String(body.type || 'text'),
     String(body.text || ''),
-    body.quotedExternalMessageId == null ? null : String(body.quotedExternalMessageId),
-    Boolean(body.fromMe),
-    Boolean(body.hasMedia)
+    body.quotedExternalMessageId == null ? null : String(body.quotedExternalMessageId)
   ]));
 }
 
 function persistedReplaySignature(row) {
   const sentAt = normalizedTimestamp(row?.sent_at);
-  const normalized = row?.normalized && typeof row.normalized === 'object' ? row.normalized : {};
   return sha256(JSON.stringify([
     String(row?.sender_id || '').trim(),
     sentAt,
     String(row?.message_type || 'text'),
     String(row?.raw_text || ''),
-    row?.quoted_external_message_id == null ? null : String(row.quoted_external_message_id),
-    Boolean(normalized.from_me),
-    Boolean(normalized.has_media)
+    row?.quoted_external_message_id == null ? null : String(row.quoted_external_message_id)
   ]));
 }
 
 async function assertDuplicateReplay(ownerId, channelKey, externalMessageId, body) {
   const rows = await supabase(
-    `hipico_messages?select=id,sender_id,sent_at,message_type,raw_text,quoted_external_message_id,normalized&owner_id=eq.${encodeURIComponent(ownerId)}&channel_key=eq.${encodeURIComponent(channelKey)}&external_message_id=eq.${encodeURIComponent(externalMessageId)}&limit=1`,
+    `hipico_messages?select=id,sender_id,sent_at,message_type,raw_text,quoted_external_message_id&owner_id=eq.${encodeURIComponent(ownerId)}&channel_key=eq.${encodeURIComponent(channelKey)}&external_message_id=eq.${encodeURIComponent(externalMessageId)}&limit=1`,
     { headers: { Prefer: 'return=representation' } }
   );
   const existing = Array.isArray(rows) ? rows[0] : null;
@@ -94,31 +89,31 @@ async function assertDuplicateReplay(ownerId, channelKey, externalMessageId, bod
   }
 }
 
-function assertPersistedChannel(channel,identity,groupId){
-  if(!channel?.id)throw Object.assign(new Error('HIPICO_SERVERLESS_CHANNEL_NOT_FOUND'),{code:'HIPICO_SERVERLESS_CHANNEL_NOT_FOUND'});
-  if(String(channel.status||'')!=='active')throw Object.assign(new Error('HIPICO_SERVERLESS_CHANNEL_DISABLED'),{code:'HIPICO_SERVERLESS_CHANNEL_DISABLED'});
-  if(String(channel.channel_type||'')!=='web_bridge')throw Object.assign(new Error('HIPICO_SERVERLESS_CHANNEL_TYPE_MISMATCH'),{code:'HIPICO_SERVERLESS_CHANNEL_TYPE_MISMATCH'});
-  const config=channel.config&&typeof channel.config==='object'?channel.config:{};
-  if(config.channel_role&&String(config.channel_role)!==identity.role)throw Object.assign(new Error('HIPICO_SERVERLESS_CHANNEL_ROLE_MISMATCH'),{code:'HIPICO_SERVERLESS_CHANNEL_ROLE_MISMATCH'});
-  if(config.group_id_hash&&String(config.group_id_hash)!==sha256(groupId))throw Object.assign(new Error('HIPICO_SERVERLESS_CHANNEL_GROUP_MISMATCH'),{code:'HIPICO_SERVERLESS_CHANNEL_GROUP_MISMATCH'});
+function assertPersistedChannel(channel, identity, groupId) {
+  if (!channel?.id) throw Object.assign(new Error('HIPICO_SERVERLESS_CHANNEL_NOT_FOUND'), { code: 'HIPICO_SERVERLESS_CHANNEL_NOT_FOUND' });
+  if (String(channel.status || '') !== 'active') throw Object.assign(new Error('HIPICO_SERVERLESS_CHANNEL_DISABLED'), { code: 'HIPICO_SERVERLESS_CHANNEL_DISABLED' });
+  if (String(channel.channel_type || '') !== 'web_bridge') throw Object.assign(new Error('HIPICO_SERVERLESS_CHANNEL_TYPE_MISMATCH'), { code: 'HIPICO_SERVERLESS_CHANNEL_TYPE_MISMATCH' });
+  const config = channel.config && typeof channel.config === 'object' ? channel.config : {};
+  if (config.channel_role && String(config.channel_role) !== identity.role) throw Object.assign(new Error('HIPICO_SERVERLESS_CHANNEL_ROLE_MISMATCH'), { code: 'HIPICO_SERVERLESS_CHANNEL_ROLE_MISMATCH' });
+  if (config.group_id_hash && String(config.group_id_hash) !== sha256(groupId)) throw Object.assign(new Error('HIPICO_SERVERLESS_CHANNEL_GROUP_MISMATCH'), { code: 'HIPICO_SERVERLESS_CHANNEL_GROUP_MISMATCH' });
   return channel;
 }
 
-async function readChannel(ownerId,groupKey){
-  const rows=await supabase(`hipico_bot_channels?select=id,owner_id,group_key,label,channel_type,status,config&owner_id=eq.${encodeURIComponent(ownerId)}&group_key=eq.${encodeURIComponent(groupKey)}&limit=2`,{
-    headers:{Prefer:'return=representation'}
+async function readChannel(ownerId, groupKey) {
+  const rows = await supabase(`hipico_bot_channels?select=id,owner_id,group_key,label,channel_type,status,config&owner_id=eq.${encodeURIComponent(ownerId)}&group_key=eq.${encodeURIComponent(groupKey)}&limit=2`, {
+    headers: { Prefer: 'return=representation' }
   });
-  if(Array.isArray(rows)&&rows.length>1)throw Object.assign(new Error('HIPICO_SERVERLESS_CHANNEL_AMBIGUOUS'),{code:'HIPICO_SERVERLESS_CHANNEL_AMBIGUOUS'});
-  return Array.isArray(rows)?rows[0]||null:null;
+  if (Array.isArray(rows) && rows.length > 1) throw Object.assign(new Error('HIPICO_SERVERLESS_CHANNEL_AMBIGUOUS'), { code: 'HIPICO_SERVERLESS_CHANNEL_AMBIGUOUS' });
+  return Array.isArray(rows) ? rows[0] || null : null;
 }
 
 async function ensureChannel(ownerId, body) {
-  const groupId = String(body.groupId).trim().toLowerCase();
+  const groupId = String(body.groupId).trim();
   const groupName = String(body.groupName || 'Grupo WhatsApp').trim().slice(0, 220);
   const role = normalizedChannelRole(body);
-  const identity=configuredChannelIdentity(role);
-  const existing=await readChannel(ownerId,identity.channelKey);
-  if(existing)return assertPersistedChannel(existing,identity,groupId);
+  const identity = configuredChannelIdentity(role);
+  const existing = await readChannel(ownerId, identity.channelKey);
+  if (existing) return assertPersistedChannel(existing, identity, groupId);
 
   const payload = [{
     owner_id: ownerId,
@@ -140,8 +135,8 @@ async function ensureChannel(ownerId, body) {
     headers: { Prefer: 'resolution=ignore-duplicates,return=minimal' },
     body: JSON.stringify(payload)
   });
-  const persisted=await readChannel(ownerId,identity.channelKey);
-  return assertPersistedChannel(persisted,identity,groupId);
+  const persisted = await readChannel(ownerId, identity.channelKey);
+  return assertPersistedChannel(persisted, identity, groupId);
 }
 
 async function recordShadowPrediction({ ownerId, channel, body, messageRow, classification, confidence, suggestion }) {
@@ -192,7 +187,7 @@ export default async function handler(req, res) {
   const bodyError = validateGroupBridgeBody(body);
   if (bodyError) return res.status(400).json({ ok: false, retryable: false, error: bodyError });
 
-  const groupId = String(body.groupId).trim().toLowerCase();
+  const groupId = String(body.groupId).trim();
   const externalMessageId = String(body.externalMessageId).trim();
   const text = String(body.text || '');
   const sentAt = normalizedTimestamp(body.timestamp);

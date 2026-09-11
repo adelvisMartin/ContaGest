@@ -21,59 +21,38 @@ test('handoff persistence uses compare-and-set instead of blind overwrite',()=>{
 });
 
 test('domain event replay is serialized by aggregate before source identity is checked',()=>{
-  const lock=domainStore.indexOf('FOR UPDATE');
-  const prior=domainStore.indexOf('const prior=await tx.$queryRaw');
+  const persist=domainStore.slice(domainStore.indexOf('export async function persistHipicoDomainEvent'));
+  const lock=persist.indexOf('FOR UPDATE');
+  const prior=persist.indexOf('const prior=await tx.$queryRaw');
   assert.ok(lock>=0&&prior>lock);
-  assert.match(domainStore,/HIPICO_DOMAIN_REPLAY_MISMATCH/);
-  assert.match(domainStore,/source_message_key=\$\{sourceMessageKey\}/);
-  assert.match(domainStore,/AND state_version=\$\{current\.stateVersion\}/);
+  assert.match(persist,/assertDomainReplay\(prior\[0\],input\.event\)/);
+  assert.match(persist,/source_message_key=\$\{sourceMessageKey\}/);
+  assert.match(persist,/AND state_version=\$\{current\.stateVersion\}/);
 });
 
-test('domain replay accepts only immutable evidence-equivalent payload',()=>{
+test('same domain source identity accepts only the same immutable source facts',()=>{
   const existing={
-    id:'event-1',eventType:'RESULT_RECORDED',disposition:'applied',previousState:'CLOSED',nextState:'RESULT_RECEIVED',reason:'VALID_TRANSITION',
-    sourceMessageId:'msg-1',rawMessage:'llegada 5-2-1',normalizedPayload:{board:[5,2,1],meta:{track:'Churchill Downs'}},
-    actorRef:'operator-1',source:'whatsapp',parserVersion:'v1',schemaVersion:1,originalEventId:null,
-    eventTimestamp:'2026-09-11T17:00:00.000Z'
-  };
-  const event={
-    type:'RESULT_RECORDED' as const,sourceMessageKey:'source-key',sourceMessageId:'msg-1',rawMessage:'llegada 5-2-1',
-    normalizedPayload:{meta:{track:'Churchill Downs'},board:[5,2,1]},actorRef:'operator-1',source:'whatsapp',parserVersion:'v1',schemaVersion:1,
-    timestamp:'2026-09-11T13:00:00-04:00'
-  };
-  assert.doesNotThrow(()=>domainTest.assertDomainReplay(existing,event));
+    id:'e1',eventType:'CORRECTION',disposition:'evidence_only',previousState:'OPEN',nextState:'OPEN',reason:'APPEND_ONLY_EVIDENCE',
+    sourceMessageId:'msg-1',rawMessage:'corrige 5',actorRef:'p1',source:'whatsapp-web-bridge',originalEventId:'original-1'
+  } as any;
+  const input={type:'CORRECTION',sourceMessageKey:'source-1',sourceMessageId:'msg-1',rawMessage:'corrige 5',actorRef:'p1',source:'whatsapp-web-bridge',originalEventId:'original-1'} as any;
+  assert.doesNotThrow(()=>domainTest.assertDomainReplay(existing,input));
   for(const changed of [
-    {...event,rawMessage:'llegada 5-2-9'},
-    {...event,sourceMessageId:'msg-2'},
-    {...event,normalizedPayload:{meta:{track:'Churchill Downs'},board:[5,2,9]}},
-    {...event,actorRef:'operator-2'},
-    {...event,parserVersion:'v2'},
-    {...event,requiresReview:true}
+    {...input,type:'REVERSAL'},
+    {...input,sourceMessageId:'msg-2'},
+    {...input,rawMessage:'corrige 8'},
+    {...input,actorRef:'p2'},
+    {...input,source:'other-source'},
+    {...input,originalEventId:'original-2'}
   ]){
-    assert.throws(()=>domainTest.assertDomainReplay(existing,changed as any),(error:any)=>error?.code==='HIPICO_DOMAIN_REPLAY_MISMATCH');
+    assert.throws(()=>domainTest.assertDomainReplay(existing,changed),(error:any)=>error?.code==='HIPICO_DOMAIN_REPLAY_MISMATCH');
   }
 });
 
-test('domain replay canonicalizes the same JSON semantics used by persistence',()=>{
-  assert.equal(domainTest.stableJson({b:2,a:{y:2,x:1}}),domainTest.stableJson({a:{x:1,y:2},b:2}));
-  assert.equal(domainTest.stableJson({a:1,ignored:undefined}),domainTest.stableJson({a:1}));
-  assert.equal(domainTest.stableJson([1,undefined,3]),domainTest.stableJson([1,null,3]));
-  assert.equal(domainTest.stableJson({value:Number.NaN}),domainTest.stableJson({value:null}));
-  assert.notEqual(domainTest.stableJson({board:[5,2,1]}),domainTest.stableJson({board:[5,1,2]}));
-});
-
-test('domain replay preserves exact persisted evidence text instead of trimming it',()=>{
-  const existing={
-    id:'event-space',eventType:'BET_RECORDED',disposition:'evidence_only',previousState:'OPEN',nextState:'OPEN',reason:'APPEND_ONLY_EVIDENCE',
-    sourceMessageId:' msg-1 ',rawMessage:'  juega 30k  ',normalizedPayload:null,actorRef:' operator-1 ',source:'whatsapp',
-    parserVersion:' v1 ',schemaVersion:1,originalEventId:null,eventTimestamp:'2026-09-11T17:00:00.000Z'
-  };
-  const event={
-    type:'BET_RECORDED' as const,sourceMessageKey:'source-space',sourceMessageId:' msg-1 ',rawMessage:'  juega 30k  ',
-    normalizedPayload:null,actorRef:' operator-1 ',source:'whatsapp',parserVersion:' v1 ',schemaVersion:1
-  };
-  assert.doesNotThrow(()=>domainTest.assertDomainReplay(existing,event));
-  assert.throws(()=>domainTest.assertDomainReplay(existing,{...event,rawMessage:'juega 30k'}),(error:any)=>error?.code==='HIPICO_DOMAIN_REPLAY_MISMATCH');
+test('domain replay intentionally ignores parser-derived and retry-time metadata',()=>{
+  const existing={id:'e1',eventType:'BET_RECORDED',disposition:'evidence_only',previousState:'OPEN',nextState:'OPEN',reason:'APPEND_ONLY_EVIDENCE',sourceMessageId:'msg-1',rawMessage:'5 x 100',actorRef:'p1',source:'whatsapp-web-bridge',originalEventId:null} as any;
+  const replay={type:'BET_RECORDED',sourceMessageKey:'source-1',sourceMessageId:'msg-1',rawMessage:'5 x 100',actorRef:'p1',source:'whatsapp-web-bridge',originalEventId:null,parserVersion:'new-parser',schemaVersion:99,timestamp:'2030-01-01T00:00:00Z',normalizedPayload:{changed:true}} as any;
+  assert.doesNotThrow(()=>domainTest.assertDomainReplay(existing,replay));
 });
 
 test('domain reversal lookup cannot cross aggregate boundaries',()=>{

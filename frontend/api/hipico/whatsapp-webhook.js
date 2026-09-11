@@ -1,4 +1,4 @@
-import { env, extractMetaMessages, isE164, isMetaPhoneNumberId, readRawBody, safeEqual, serverSecret, sha256, supabase, verifyMetaSignature, classifyText } from './_shared.js';
+import { extractMetaMessages, isE164, readRawBody, safeEqual, serverSecret, sha256, supabase, verifyMetaSignature, classifyText } from './_shared.js';
 
 export const config = { api: { bodyParser: false } };
 
@@ -7,18 +7,23 @@ function normalizedTimestamp(value) {
   return Number.isFinite(parsed)?new Date(parsed).toISOString():null;
 }
 
-function validMetaMessageIdentity(message, source = process.env){
+function validMetaMessageIdentity(message){
   const externalMessageId=String(message?.externalMessageId||'').trim();
   const channelKey=String(message?.channelKey||'').trim();
   const senderId=String(message?.senderId||'').trim();
-  const expectedChannelKey=String(source?.HIPICO_META_PHONE_NUMBER_ID||'').trim();
+  const senderLabel=String(message?.senderLabel||'');
+  const messageType=String(message?.type||'');
+  const text=String(message?.text||'');
+  const quoted=message?.quotedExternalMessageId==null?null:String(message.quotedExternalMessageId);
   const sourceTimestamp=message?.raw?.timestamp;
   return Boolean(
-    isMetaPhoneNumberId(expectedChannelKey) &&
     externalMessageId && externalMessageId.length<=320 &&
     channelKey && channelKey!=='meta' && channelKey.length<=220 &&
-    channelKey===expectedChannelKey &&
     isE164(senderId) &&
+    senderLabel.length<=220 &&
+    messageType && messageType.length<=80 &&
+    text.length<=4000 &&
+    (quoted===null||quoted.length<=320) &&
     sourceTimestamp!==undefined && sourceTimestamp!==null && String(sourceTimestamp).trim() &&
     normalizedTimestamp(message?.timestamp)
   );
@@ -66,7 +71,7 @@ export default async function handler(req, res) {
     const mode = req.query?.['hub.mode'];
     const token = req.query?.['hub.verify_token'];
     const challenge = req.query?.['hub.challenge'];
-    if (mode === 'subscribe' && token && safeEqual(token, verifyToken)) return res.status(200).send(String(challenge || ''));
+    if (mode === 'subscribe' && safeEqual(token, verifyToken)) return res.status(200).send(String(challenge || ''));
     return res.status(403).json({ ok: false, error: 'verification_failed' });
   }
   if (req.method !== 'POST') return res.status(405).json({ ok: false, error: 'method_not_allowed' });
@@ -89,20 +94,11 @@ export default async function handler(req, res) {
   try{payload=JSON.parse(raw.toString('utf8'));}
   catch{return res.status(400).json({ok:false,retryable:false,error:'invalid_json'});}
 
-  let ownerId;
-  let phoneNumberId;
-  try{
-    ownerId=env('HIPICO_OWNER_ID');
-    phoneNumberId=env('HIPICO_META_PHONE_NUMBER_ID');
-    if(!isMetaPhoneNumberId(phoneNumberId))throw new Error('invalid_meta_phone_number_id');
-  }catch{
-    return res.status(503).json({ok:false,retryable:true,error:'webhook_not_configured'});
-  }
-
   try {
+    const ownerId = String(process.env.HIPICO_OWNER_ID || '').trim();
+    if (!ownerId) return res.status(503).json({ok:false,retryable:true,error:'webhook_not_configured'});
     const messages = extractMetaMessages(payload);
-    const inboundIdentity={HIPICO_META_PHONE_NUMBER_ID:phoneNumberId};
-    if(messages.some((message)=>!validMetaMessageIdentity(message,inboundIdentity))){
+    if(messages.some((message)=>!validMetaMessageIdentity(message))){
       return res.status(400).json({ok:false,retryable:false,error:'invalid_message_identity'});
     }
     let accepted = 0;

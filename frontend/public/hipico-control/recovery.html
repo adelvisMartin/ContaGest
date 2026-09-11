@@ -15,11 +15,12 @@
       <div class="auth-panel auth-panel--recovery">
         <img class="brand-logo brand-logo--access" src="./icons/icon-192.png" alt="Control Hípico">
         <h2>Recuperación segura</h2>
-        <p>Restablece únicamente el almacenamiento local si Control Hípico no logra iniciar. Tu cuenta y los datos guardados en la nube no se eliminan.</p>
+        <p>Usa esta opción sólo si Control Hípico no logra iniciar. El restablecimiento elimina el workspace, copias locales, cola pendiente y acceso offline guardados en este dispositivo. Los datos ya sincronizados en la nube no se eliminan.</p>
+        <div class="notice notice--warning" role="note"><strong>Importante:</strong> los cambios locales que todavía no se hayan sincronizado no podrán recuperarse después de confirmar.</div>
         <div id="status" class="ui-state" aria-live="polite">Lista para recuperar Control Hípico.</div>
         <div class="capture-actions section-gap">
-          <button id="reset" class="button button--primary" type="button" data-action="reset-local-storage">Restablecer almacenamiento y abrir</button>
-          <a class="button button--ghost" href="./index.html?retry=1">Abrir sin restablecer datos</a>
+          <button id="reset" class="button button--danger" type="button" data-action="reset-local-storage">Borrar datos locales y abrir</button>
+          <a class="button button--ghost" href="./index.html?retry=1">Abrir sin borrar datos</a>
         </div>
         <small class="muted section-gap-small">Control Hípico · Recuperación aislada del producto</small>
       </div>

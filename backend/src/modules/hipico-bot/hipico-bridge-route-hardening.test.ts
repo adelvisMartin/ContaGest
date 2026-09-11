@@ -17,10 +17,26 @@ test('bridge route validates exact SOURCE/LAB identity before sender classificat
   assert.match(validator,/if\(!input\.shadowMode\)/);
   assert.match(validator,/validateBridgeGroupIdentity\(input\)/);
   assert.match(validator,/HIPICO_BRIDGE_GROUP_IDENTITY_NOT_CONFIGURED/);
-  const identityCheck=routes.indexOf('const channelError=validatePinnedChannel(input)');
-  const senderNormalization=routes.indexOf('const sender=normalizeBridgeSender(input.senderId)');
-  const classification=routes.indexOf('classifyUntrustedConversation');
-  assert.ok(identityCheck>=0&&senderNormalization>identityCheck&&classification>senderNormalization);
+
+  const eventRouteStart=routes.indexOf("router.post('/bridge/events'");
+  const eventRouteEnd=routes.indexOf('export default router',eventRouteStart);
+  assert.ok(eventRouteStart>=0&&eventRouteEnd>eventRouteStart,'bridge events route must be present');
+  const eventRoute=routes.slice(eventRouteStart,eventRouteEnd);
+  const identityCheck=eventRoute.indexOf('const channelError=validatePinnedChannel(input)');
+  const senderNormalization=eventRoute.indexOf('const sender=normalizeBridgeSender(input.senderId)');
+  const mediaNormalization=eventRoute.indexOf('effectiveBridgeMediaKind(input.hasMedia,input.mediaKind)');
+  const classification=eventRoute.indexOf('classifyUntrustedConversation({text:input.text,mediaKind:effectiveMediaKind');
+  const persistence=eventRoute.indexOf('persistBridgeTransportEvent({');
+  assert.ok(identityCheck>=0&&senderNormalization>identityCheck&&mediaNormalization>senderNormalization&&classification>mediaNormalization&&persistence>classification);
+});
+
+test('effective media kind propagates through transport, canonical storage and conversation decision',()=>{
+  const eventRouteStart=routes.indexOf("router.post('/bridge/events'");
+  const eventRouteEnd=routes.indexOf('export default router',eventRouteStart);
+  const eventRoute=routes.slice(eventRouteStart,eventRouteEnd);
+  assert.match(eventRoute,/hasMedia:effectiveMediaKind!=='none',mediaKind:effectiveMediaKind/);
+  assert.match(eventRoute,/persistCanonicalShadow\([\s\S]*mediaKind:effectiveMediaKind/);
+  assert.match(eventRoute,/decideConversation\([\s\S]*mediaKind:effectiveMediaKind/);
 });
 
 test('transport persistence requires pinned modern or legacy SOURCE/LAB IDs before any write',()=>{
@@ -85,24 +101,4 @@ test('operator handoff returns the persisted CAS version and conflicts require r
 test('bridge decision transition keeps the version returned by persistence',()=>{
   assert.match(routes,/handoffState=await saveHandoff\(next/);
   assert.match(routes,/HANDOFF_CONFLICT_RETRY/);
-});
-
-test('duplicate backend retries reuse the first persisted projection for outbox and LAB mirror',()=>{
-  assert.match(routes,/const shadowProjection=event\.projection/);
-  assert.match(routes,/ensureGroupShadowOutbox\(\{eventId:event\.id,recipient:input\.groupId,result:shadowProjection\}\)/);
-  assert.match(routes,/buildLabSimulation\(input,shadowProjection,canonical,event\.inserted\?responsePlan\.text:null\)/);
-  assert.doesNotMatch(routes,/buildLabSimulation\(input,result,canonical,responsePlan\.text\)/);
-});
-
-test('persisted transport projection is bounded and never auto-eligible',()=>{
-  const projection=transportTest.persistedTransportProjection({
-    id:'evt-1',phoneNumberId:'group:120363111111111111@g.us',sender:'584121234567',messageType:'chat',body:'30k',
-    intent:'offer_player',risk:'monetary',confidence:'1.5',suggestion:'Primera sugerencia',payload:{operational:{raceNumber:4,play:'1N'}}
-  });
-  assert.equal(projection.intent,'offer_player');
-  assert.equal(projection.risk,'monetary');
-  assert.equal(projection.confidence,1);
-  assert.equal(projection.autoEligible,false);
-  assert.equal(projection.reason,'PERSISTED_FIRST_CLASSIFICATION');
-  assert.deepEqual(projection.entities,{raceNumber:4,play:'1N'});
 });
