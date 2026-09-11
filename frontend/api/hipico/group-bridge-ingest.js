@@ -62,24 +62,29 @@ function sourceReplaySignature(body) {
     normalizedTimestamp(body.timestamp),
     String(body.type || 'text'),
     String(body.text || ''),
-    body.quotedExternalMessageId == null ? null : String(body.quotedExternalMessageId)
+    body.quotedExternalMessageId == null ? null : String(body.quotedExternalMessageId),
+    Boolean(body.fromMe),
+    Boolean(body.hasMedia)
   ]));
 }
 
 function persistedReplaySignature(row) {
   const sentAt = normalizedTimestamp(row?.sent_at);
+  const normalized = row?.normalized && typeof row.normalized === 'object' ? row.normalized : {};
   return sha256(JSON.stringify([
     String(row?.sender_id || '').trim(),
     sentAt,
     String(row?.message_type || 'text'),
     String(row?.raw_text || ''),
-    row?.quoted_external_message_id == null ? null : String(row.quoted_external_message_id)
+    row?.quoted_external_message_id == null ? null : String(row.quoted_external_message_id),
+    Boolean(normalized.from_me),
+    Boolean(normalized.has_media)
   ]));
 }
 
 async function assertDuplicateReplay(ownerId, channelKey, externalMessageId, body) {
   const rows = await supabase(
-    `hipico_messages?select=id,sender_id,sent_at,message_type,raw_text,quoted_external_message_id&owner_id=eq.${encodeURIComponent(ownerId)}&channel_key=eq.${encodeURIComponent(channelKey)}&external_message_id=eq.${encodeURIComponent(externalMessageId)}&limit=1`,
+    `hipico_messages?select=id,sender_id,sent_at,message_type,raw_text,quoted_external_message_id,normalized&owner_id=eq.${encodeURIComponent(ownerId)}&channel_key=eq.${encodeURIComponent(channelKey)}&external_message_id=eq.${encodeURIComponent(externalMessageId)}&limit=1`,
     { headers: { Prefer: 'return=representation' } }
   );
   const existing = Array.isArray(rows) ? rows[0] : null;
