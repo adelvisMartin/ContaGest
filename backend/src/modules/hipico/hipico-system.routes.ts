@@ -37,10 +37,15 @@ export function createHipicoSystemRouter() {
     try {
       const status = await buildHipicoSystemStatus();
       const readiness = hipicoReadinessFromStatus(status);
-      return res.status(readiness.ready ? 200 : 503).json({
-        ok: readiness.ready,
-        data: readiness
-      });
+      if (!readiness.ready) {
+        return res.status(503).json(hipicoError({
+          code: 'HIPICO_SYSTEM_NOT_READY',
+          message: 'Control Hípico no está listo para atender tráfico.',
+          requestId: requestId(req),
+          retryable: true
+        }));
+      }
+      return res.status(200).json({ ok: true, data: readiness });
     } catch {
       return res.status(503).json(hipicoError({
         code: 'HIPICO_SYSTEM_NOT_READY',
