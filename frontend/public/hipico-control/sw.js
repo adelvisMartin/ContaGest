@@ -1,9 +1,9 @@
 const CACHE_VERSION = 'hipico-control-v1.13.0-rc3';
-const SHELL_CACHE = `${CACHE_VERSION}-shell-r12-race-opening`;
+const SHELL_CACHE = `${CACHE_VERSION}-shell-r13-mobile-a11y`;
 const APP_SHELL = [
   './', './index.html', './recovery.html', './manifest.webmanifest',
   './icons/icon-192.png', './icons/icon-512.png', './icons/icon-192-maskable.png', './icons/icon-512-maskable.png',
-  './logo-control-hipico.png', './assets/css/app.css', './assets/css/operational-copy-center.css', './assets/css/operational-access-guard.css',
+  './logo-control-hipico.png', './assets/css/app.css', './assets/css/mobile-accessibility.css', './assets/css/operational-copy-center.css', './assets/css/operational-access-guard.css',
   './assets/js/agent-router-pro.js', './assets/js/agent-router.js', './assets/js/app-shell.js', './assets/js/app.js',
   './assets/js/backup-secure-ui.js', './assets/js/backup-v2.js', './assets/js/backup.js', './assets/js/compat.js',
   './assets/js/config.js', './assets/js/engine.js', './assets/js/financial-config-guard.js', './assets/js/format.js', './assets/js/help-center.js',
