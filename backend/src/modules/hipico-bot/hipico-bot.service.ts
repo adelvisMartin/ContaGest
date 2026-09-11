@@ -5,6 +5,7 @@ import type { IntentResult as OperationalIntentResult } from './hipico-operation
 import { assertCloudOutboundAllowed, assertCloudTransportConfigured, cloudOutboundPolicy, cloudTransportConfiguration } from './hipico-outbound-policy.js';
 import { metaSignatureValid } from './hipico-meta-security.js';
 import { operatorTokenValid as canonicalOperatorTokenValid } from './hipico-operator-security.js';
+import { replayMismatchError, sameWebhookReplay } from './hipico-webhook-replay.js';
 
 export type BotPromotion='shadow'|'approved'|'automatic';
 export type IntentResult=OperationalIntentResult;
@@ -91,6 +92,9 @@ function sameOutboxIntent(existing:any,row:any){
 
 export const HipicoBotStore={
   dbReady,
+  // Existence lookup is retained for diagnostics only. Dedupe must go through
+  // saveEvent(), which also verifies that an existing provider id has exactly
+  // the same immutable webhook source semantics.
   async hasEvent(providerMessageId:string){
     if(await dbReady()){
       const rows=await prisma.$queryRaw<Array<{id:string}>>`SELECT "id" FROM public."HipicoWebhookEvent" WHERE "providerMessageId"=${providerMessageId} LIMIT 1`;
@@ -102,9 +106,18 @@ export const HipicoBotStore={
     const record={id:id('hwe'),...row,receivedAt:new Date().toISOString()};
     if(await dbReady()){
       const inserted=await prisma.$queryRaw<Array<{id:string}>>`INSERT INTO public."HipicoWebhookEvent" ("id","providerMessageId","phoneNumberId","sender","messageType","body","intent","risk","status","confidence","suggestion","payload","receivedAt","processedAt") VALUES (${record.id},${record.providerMessageId},${record.phoneNumberId||null},${record.sender||null},${record.messageType||'unknown'},${record.body||null},${record.intent||'unknown'},${record.risk||'review'},${record.status||'received'},${Number(record.confidence||0)},${record.suggestion||null},${JSON.stringify(record.payload||{})}::jsonb,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP) ON CONFLICT ("providerMessageId") DO NOTHING RETURNING "id"`;
-      return {...record,inserted:Boolean(inserted[0])};
+      if(inserted[0])return{...record,inserted:true};
+      const existingRows=await prisma.$queryRaw<any[]>`SELECT "id","providerMessageId","phoneNumberId","sender","messageType","body","payload" FROM public."HipicoWebhookEvent" WHERE "providerMessageId"=${record.providerMessageId} LIMIT 1`;
+      const existing=existingRows[0]||null;
+      if(!existing)throw Object.assign(new Error('Existing webhook event could not be loaded after provider id conflict.'),{code:'HIPICO_WEBHOOK_REPLAY_LOOKUP_FAILED'});
+      if(!sameWebhookReplay(existing,record))throw replayMismatchError();
+      return{...record,id:existing.id,inserted:false};
     }
-    if(memoryEvents.some((event)=>event.providerMessageId===record.providerMessageId))return{...record,inserted:false};
+    const existing=memoryEvents.find((event)=>event.providerMessageId===record.providerMessageId);
+    if(existing){
+      if(!sameWebhookReplay(existing,record))throw replayMismatchError();
+      return{...record,id:existing.id,inserted:false};
+    }
     memoryEvents.unshift(record);memoryEvents.splice(250);return{...record,inserted:true};
   },
   async queue(row:any){
@@ -211,7 +224,6 @@ export async function sendCloudText(recipient:string,message:string){
 }
 
 export async function processIncoming(message:any){
-  if(await HipicoBotStore.hasEvent(message.providerMessageId))return{duplicate:true};
   const result=classifyIncoming(message);
   const event=await HipicoBotStore.saveEvent({...message,...result,status:'classified'});
   if(event.inserted===false)return{duplicate:true};
