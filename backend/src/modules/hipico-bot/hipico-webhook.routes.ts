@@ -3,6 +3,7 @@ import { extractMessages, HipicoBotStore, processIncoming } from './hipico-bot.s
 import { webhookSecurityReady, webhookSignatureValid, webhookVerifyTokenValid } from './hipico-webhook-security.js';
 
 const router=Router();
+const WEBHOOK_BATCH_CONCURRENCY=25;
 
 router.use((_req,res,next)=>{
   res.setHeader('Cache-Control','no-store, max-age=0');
@@ -31,13 +32,21 @@ router.post('/webhook',async(req,res)=>{
     return res.status(503).json({ok:false,retryable:true,error:'Persistencia Hípico no disponible.'});
   }
 
-  const messages=extractMessages(req.body).slice(0,100);
-  const processed=await Promise.allSettled(messages.map(processIncoming));
-  const failed=processed.filter((item)=>item.status==='rejected').length;
-  if(failed){
-    return res.status(503).json({ok:false,retryable:true,received:messages.length,processed:processed.length-failed,failed,error:'Uno o más mensajes no se pudieron persistir.'});
+  const messages=extractMessages(req.body).map((message)=>({...message,body:String(message.body||'').slice(0,4000)}));
+  let processedCount=0;
+  let failed=0;
+  for(let offset=0;offset<messages.length;offset+=WEBHOOK_BATCH_CONCURRENCY){
+    const batch=messages.slice(offset,offset+WEBHOOK_BATCH_CONCURRENCY);
+    const settled=await Promise.allSettled(batch.map(processIncoming));
+    failed+=settled.filter((item)=>item.status==='rejected').length;
+    processedCount+=settled.filter((item)=>item.status==='fulfilled').length;
   }
-  return res.status(200).json({ok:true,received:messages.length,processed:processed.length,failed:0});
+  if(failed){
+    return res.status(503).json({ok:false,retryable:true,received:messages.length,processed:processedCount,failed,error:'Uno o más mensajes no se pudieron persistir.'});
+  }
+  return res.status(200).json({ok:true,received:messages.length,processed:processedCount,failed:0});
 });
 
 export default router;
+
+export const __test__={WEBHOOK_BATCH_CONCURRENCY};
