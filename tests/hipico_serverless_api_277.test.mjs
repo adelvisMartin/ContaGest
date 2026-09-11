@@ -192,7 +192,8 @@ test('status endpoint separates linked-device readiness from gated optional Meta
 
 test('legacy linked-device fallback cannot be configured to send to the source group', () => {
   assert.match(legacyBridge, /Legacy Hípico bridge is shadow-only/);
-  assert.match(legacyBridge, /HIPICO_ALLOW_SEND requires pinned SOURCE and LAB group IDs/);
+  assert.match(legacyBridge, /Legacy Hípico bridge requires pinned HIPICO_SOURCE_GROUP_ID and HIPICO_LAB_GROUP_ID/);
+  assert.match(legacyBridge, /SOURCE_GROUP_ID_ENV === LAB_GROUP_ID_ENV/);
   assert.match(legacyBridge, /await client\.sendMessage\(lab\.id, labText\)/);
   assert.doesNotMatch(legacyBridge, /client\.sendMessage\(source\.id/);
   assert.match(legacyBridge, /shadowMode:\s*true/);
