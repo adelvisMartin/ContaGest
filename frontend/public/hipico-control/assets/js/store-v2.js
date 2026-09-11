@@ -27,9 +27,6 @@ function ensureOutboxIndexes(store) {
 function firstGroupId(workspace) {
   return String(workspace?.config?.groups?.[0]?.id || workspace?.config?.whatsappGroups?.[0]?.id || "group-1");
 }
-function groupsOf(workspace) {
-  return workspace?.config?.groups || workspace?.config?.whatsappGroups || [];
-}
 function currentGroupId(workspace, event = null) {
   return String(event?.groupId || workspace?.config?.activeGroupId || workspace?.config?.activeWhatsappGroupId || firstGroupId(workspace));
 }
@@ -80,6 +77,7 @@ function repairAdvancedLoad(workspace, event) {
     };
     workspace.races.push(target);
   }
+  target.bets ||= [];
 
   const moved = [];
   wrongRace.bets = (wrongRace.bets || []).filter((bet) => {
@@ -89,7 +87,7 @@ function repairAdvancedLoad(workspace, event) {
     return false;
   });
   for (const bet of moved) {
-    if (!(target.bets || []).some((existing) => matchingLoadedBet(existing, bet))) target.bets.push(bet);
+    if (!target.bets.some((existing) => matchingLoadedBet(existing, bet))) target.bets.push(bet);
   }
   for (const row of advanced) row.loadedRaceId = target.id;
   event.entityId = target.id;
@@ -125,13 +123,15 @@ function tagUnscoped(workspace) {
 
 /**
  * Repairs known legacy multigroup writes before the same in-memory workspace is cloned
- * and persisted. This is intentionally at the storage boundary so old UI paths cannot
- * leak one group's financial state into another while the monolith is being decomposed.
+ * and persisted. Historical audit events are never replayed as repair commands when no
+ * previous snapshot exists; migration-only loads only tag legacy records deterministically.
  */
 export function repairWorkspaceGroupScope(workspace, previous = lastWorkspaceSnapshot) {
   if (!workspace || typeof workspace !== "object") return workspace;
   const previousAuditIds = new Set((previous?.audit || []).map((event) => String(event.id)));
-  const newEvents = (workspace.audit || []).filter((event) => !previousAuditIds.has(String(event.id))).slice().reverse();
+  const newEvents = previous
+    ? (workspace.audit || []).filter((event) => !previousAuditIds.has(String(event.id))).slice().reverse()
+    : [];
   for (const event of newEvents) {
     if (event.action === "advanced_loaded") repairAdvancedLoad(workspace, event);
     else if (event.action === "day_closed") repairDayClose(workspace, event);
