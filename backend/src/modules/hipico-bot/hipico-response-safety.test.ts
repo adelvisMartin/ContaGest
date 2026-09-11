@@ -46,6 +46,29 @@ test('operator commands cannot be authenticated by free text',()=>{
   assert.throws(()=>applyOperatorCommand(initial,'pause',{authenticatedOperator:false,operatorId:'ADMIN: pause'}),/no autenticado/i);
 });
 
+test('invalid handoff TTL is rejected instead of becoming an accidental indefinite takeover',()=>{
+  const initial=initialHandoffState('group-a','p1','1');
+  assert.throws(
+    ()=>applyOperatorCommand(initial,'pause',{authenticatedOperator:true,operatorId:'operator-1',ttlMs:Number.NaN}),
+    (error:any)=>error?.code==='HIPICO_HANDOFF_TTL_INVALID'
+  );
+  assert.throws(
+    ()=>applyOperatorCommand(initial,'escalate',{authenticatedOperator:true,operatorId:'operator-1',ttlMs:-1}),
+    (error:any)=>error?.code==='HIPICO_HANDOFF_TTL_INVALID'
+  );
+});
+
+test('malformed persisted handoff expiry fails closed and keeps the human owner',()=>{
+  const initial=initialHandoffState('group-a','p1','1','2026-08-29T12:00:00.000Z');
+  const human={...applyOperatorCommand(initial,'pause',{authenticatedOperator:true,operatorId:'operator-1',at:'2026-08-29T12:00:00.000Z',ttlMs:60_000}),expiresAt:'corrupted-expiry'};
+  const decision=decideConversation(message);
+  const plan=planSafeResponse(decision,{handoffState:human,at:'2026-08-29T12:30:00.000Z'});
+  assert.equal(plan.intent,'NONE');
+  assert.equal(plan.canSend,false);
+  assert.equal(plan.handoffRequired,true);
+  assert.equal(plan.reason,'HUMAN_OWNS_CONVERSATION');
+});
+
 test('second clarification escalates to human ownership',()=>{
   let state=initialHandoffState('group-a','p1','1','2026-08-29T12:00:00.000Z');
   const ambiguous=decideConversation({...message,text:'juega 2N'}, {}, classifier({intent:'offer_player',risk:'monetary',confidence:.99,entities:{play:'2N'}}));
