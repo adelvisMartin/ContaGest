@@ -8,6 +8,10 @@ const source=readFileSync(new URL('./hipico-webhook.routes.ts',import.meta.url),
 const strong='x'.repeat(40);
 const env={WHATSAPP_VERIFY_TOKEN:strong,WHATSAPP_APP_SECRET:strong,WHATSAPP_PHONE_NUMBER_ID:'1234567890'};
 
+function statusEnvelope(phoneNumberId='1234567890'){
+  return{entry:[{changes:[{value:{metadata:{phone_number_id:phoneNumberId},statuses:[{id:'wamid-status-1',status:'delivered'}]}}]}]};
+}
+
 test('Cloud webhook runtime readiness includes a valid configured phone number id',()=>{
   assert.equal(webhookSecurityReady(env),true);
   assert.equal(webhookPhoneNumberId(env),'1234567890');
@@ -24,15 +28,16 @@ test('Cloud webhook uses the canonical security module and immutable replay guar
   assert.doesNotMatch(source,/import \{[^}]*signatureValid[^}]*\} from '\.\/hipico-bot\.service\.js'/);
 });
 
-test('Cloud webhook verifies runtime readiness and raw signature before identity and processing',()=>{
+test('Cloud webhook verifies runtime readiness, signature and signed envelope identity before extraction or persistence',()=>{
   const post=source.slice(source.indexOf("router.post('/webhook'"),source.indexOf('export default router'));
   const readiness=post.indexOf('webhookSecurityReady()');
   const signature=post.indexOf('webhookSignatureValid(raw');
+  const envelopeIdentity=post.indexOf('rawEnvelopeIdentityError(req.body)');
   const extraction=post.indexOf('extractMessages(req.body)');
-  const identity=post.indexOf('webhookIdentityError(messages)');
+  const messageIdentity=post.indexOf('webhookIdentityError(messages)');
   const persistence=post.indexOf('HipicoBotStore.dbReady(true)');
   const processing=post.indexOf('processMessagesBounded(messages)');
-  assert.ok(readiness>=0&&signature>readiness&&extraction>signature&&identity>extraction&&persistence>identity&&processing>persistence);
+  assert.ok(readiness>=0&&signature>readiness&&envelopeIdentity>signature&&extraction>envelopeIdentity&&messageIdentity>extraction&&persistence>messageIdentity&&processing>persistence);
 });
 
 test('Cloud webhook never silently truncates a valid signed batch',()=>{
@@ -55,17 +60,21 @@ test('mutated provider-message replay is rejected but acknowledged to avoid Meta
 });
 
 test('foreign or malformed message identity is rejected before durable processing without redelivery loops',()=>{
+  const envelope=source.indexOf('rawEnvelopeIdentityError(req.body)');
   const invalid=source.indexOf('messages.length!==expectedRawMessages');
-  const mismatch=source.indexOf("error:'webhook_phone_number_mismatch'");
+  const messageIdentity=source.indexOf('const identityError=webhookIdentityError(messages)');
   const persistence=source.indexOf('HipicoBotStore.dbReady(true)');
-  assert.ok(invalid>=0&&mismatch>invalid&&persistence>mismatch);
+  assert.ok(envelope>=0&&invalid>envelope&&messageIdentity>invalid&&persistence>messageIdentity);
   assert.match(source,/error:'invalid_message_identity'/);
   assert.match(source,/status\(200\).*accepted:false/s);
 });
 
-test('signed status-only callbacks may bypass PostgreSQL but not invalid runtime identity',()=>{
-  const identity=source.indexOf('const identityError=webhookIdentityError(messages)');
+test('signed status-only callbacks are bound to raw envelope phone identity before PostgreSQL bypass',()=>{
+  assert.equal(__test__.rawEnvelopeIdentityError(statusEnvelope(),env),null);
+  assert.equal(__test__.rawEnvelopeIdentityError(statusEnvelope('9999999999'),env),'WEBHOOK_PHONE_NUMBER_MISMATCH');
+  assert.equal(__test__.rawEnvelopeIdentityError({entry:[{changes:[{value:{statuses:[{id:'s1'}]}}]}]},env),'WEBHOOK_PHONE_NUMBER_MISMATCH');
+  const envelope=source.indexOf('const envelopeIdentityError=rawEnvelopeIdentityError(req.body)');
   const empty=source.indexOf('if(messages.length===0)');
   const db=source.indexOf('HipicoBotStore.dbReady(true)');
-  assert.ok(identity>=0&&empty>identity&&db>empty);
+  assert.ok(envelope>=0&&empty>envelope&&db>empty);
 });
