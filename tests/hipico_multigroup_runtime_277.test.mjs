@@ -35,6 +35,18 @@ test('persistence boundary tags legacy groupless records only to first group', (
   assert.equal(workspace.movements[0].groupId, 'g1');
 });
 
+test('initial migration never replays historical audit records as fresh repair commands', () => {
+  const workspace = baseWorkspace();
+  workspace.days.push({ id: 'historical-new-day', date: '2026-09-11', status: 'open', closure: null });
+  workspace.movements.push({ id: 'legacy-movement', amount: 10 });
+  workspace.audit.unshift({ id: 'historical-close', groupId: 'g2', action: 'day_closed', entityType: 'day', entityId: 'd2' });
+
+  repairWorkspaceGroupScope(workspace, null);
+
+  assert.equal(workspace.days.find((day) => day.id === 'historical-new-day').groupId, 'g1');
+  assert.equal(workspace.movements[0].groupId, 'g1');
+});
+
 test('advanced load is repaired into the active group when legacy UI selected a same-race record from another group', () => {
   const previous = baseWorkspace();
   const workspace = structuredClone(previous);
