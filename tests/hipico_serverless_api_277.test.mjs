@@ -108,7 +108,7 @@ test('group bridge fails closed to configured owner and source shadow mode', () 
   assert.doesNotMatch(ingest, /response\.actions\.push/);
 });
 
-test('outbound Meta sender requires explicit production policy, durable state transitions and never auto-reclaims sending rows', () => {
+test('outbound Meta sender requires explicit production policy, durable state transitions and never auto-reclaims ambiguous rows', () => {
   assert.match(sender, /metaOutboundPolicy/);
   assert.match(sender, /metaDestinationAllowed/);
   assert.match(sender, /outbound_disabled/);
@@ -120,8 +120,9 @@ test('outbound Meta sender requires explicit production policy, durable state tr
   assert.doesNotMatch(sender, /status=in\.\(queued,retry,sending\)/);
   assert.match(sender, /return=representation/);
   assert.match(sender, /HIPICO_OUTBOX_STATE_TRANSITION_NOT_PERSISTED/);
-  assert.match(sender, /AMBIGUOUS_TRANSPORT_FAILURE/);
-  assert.match(sender, /META_SUCCESS_WITHOUT_MESSAGE_ID/);
+  assert.match(sender, /RECONCILIATION_REQUIRED:AMBIGUOUS_TRANSPORT_FAILURE/);
+  assert.match(sender, /RECONCILIATION_REQUIRED:META_SUCCESS_WITHOUT_MESSAGE_ID/);
+  assert.match(sender, /reconciliationRequired/);
   assert.match(sender, /bearerTokenValid/);
   assert.match(sender, /isE164/);
 });
