@@ -15,6 +15,15 @@ type CanonicalReplaySource = {
   quotedExternalMessageId?: string | null;
 };
 
+type GroupShadowReplaySource = {
+  recipient?: string | null;
+  message?: string | null;
+  intent?: string | null;
+  risk?: string | null;
+};
+
+type ReplayKind = 'transport' | 'canonical' | 'group-shadow';
+
 function text(value: unknown) {
   return String(value ?? '').trim();
 }
@@ -57,9 +66,22 @@ export function canonicalReplaySignature(source: CanonicalReplaySource) {
   ]);
 }
 
-export function assertReplayMatch(kind: 'transport' | 'canonical', expectedSignature: string, actualSignature: string) {
+export function groupShadowReplaySignature(source: GroupShadowReplaySource) {
+  return digest([
+    nullableText(source.recipient),
+    bodyText(source.message),
+    text(source.intent),
+    text(source.risk)
+  ]);
+}
+
+export function assertReplayMatch(kind: ReplayKind, expectedSignature: string, actualSignature: string) {
   if (!expectedSignature || !actualSignature || expectedSignature !== actualSignature) {
-    const code = kind === 'transport' ? 'HIPICO_TRANSPORT_REPLAY_MISMATCH' : 'HIPICO_CANONICAL_REPLAY_MISMATCH';
+    const code = kind === 'transport'
+      ? 'HIPICO_TRANSPORT_REPLAY_MISMATCH'
+      : kind === 'canonical'
+        ? 'HIPICO_CANONICAL_REPLAY_MISMATCH'
+        : 'HIPICO_GROUP_SHADOW_OUTBOX_REPLAY_MISMATCH';
     throw Object.assign(new Error(`${kind} replay does not match the first persisted source event.`), { code });
   }
 }
