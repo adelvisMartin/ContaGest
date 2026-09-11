@@ -1,4 +1,4 @@
-import { metaOutboundPolicy } from './_shared.js';
+import { metaOutboundPolicy, strongSecretConfigured } from './_shared.js';
 import { bridgeIdentityStatus } from './bridge-identity.js';
 
 function missing(keys) {
@@ -19,13 +19,18 @@ export default function handler(req, res) {
   const metaMissing = missing(metaRequired);
   const webhookMissing = missing(webhookRequired);
   const identity = bridgeIdentityStatus();
+  const bridgeTokenStrong = strongSecretConfigured(process.env.HIPICO_GROUP_BRIDGE_TOKEN);
+  const internalApiTokenStrong = strongSecretConfigured(process.env.HIPICO_INTERNAL_API_TOKEN);
+  const webhookSecretsStrong = strongSecretConfigured(process.env.HIPICO_META_VERIFY_TOKEN)
+    && strongSecretConfigured(process.env.HIPICO_META_APP_SECRET);
   const persistenceReady = persistenceMissing.length === 0;
   const linkedDeviceReady = persistenceReady
     && linkedDeviceMissing.length === 0
+    && bridgeTokenStrong
     && identity.ready;
   const outbound = metaOutboundPolicy();
-  const metaDirectReady = persistenceReady && metaMissing.length === 0 && outbound.enabled;
-  const metaWebhookReady = persistenceReady && webhookMissing.length === 0;
+  const metaDirectReady = persistenceReady && metaMissing.length === 0 && internalApiTokenStrong && outbound.enabled;
+  const metaWebhookReady = persistenceReady && webhookMissing.length === 0 && webhookSecretsStrong;
 
   return res.status(200).json({
     ok: true,
@@ -36,7 +41,7 @@ export default function handler(req, res) {
       ready: linkedDeviceReady,
       shadowOnly: true,
       sourceSendPossible: false,
-      tokenConfigured: Boolean(String(process.env.HIPICO_GROUP_BRIDGE_TOKEN || '').trim()),
+      tokenConfigured: bridgeTokenStrong,
       pinnedGroupsConfigured: identity.pinnedGroupsConfigured,
       groupIdsValid: identity.groupIdsValid,
       groupsDistinct: identity.groupsDistinct,
@@ -47,6 +52,8 @@ export default function handler(req, res) {
     metaCloud: {
       directIndividualSendReady: metaDirectReady,
       webhookReady: metaWebhookReady,
+      internalApiTokenStrong,
+      webhookSecretsStrong,
       optionalForLinkedDeviceBridge: true,
       outboundPolicy: {
         enabled: outbound.enabled,
