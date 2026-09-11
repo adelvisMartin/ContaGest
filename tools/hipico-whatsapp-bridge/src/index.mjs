@@ -10,6 +10,7 @@ const DATA_DIR = path.resolve(process.cwd(), 'data');
 const SPOOL_DIR = path.join(DATA_DIR, 'spool');
 const REJECTED_DIR = path.join(DATA_DIR, 'rejected');
 const CHANNEL_KEY_RE = /^[A-Za-z0-9_-]{3,120}$/;
+const GROUP_ID_RE = /^(?:\d{5,}-\d+|\d{10,})@g\.us$/i;
 
 function required(name) {
   const value = process.env[name];
@@ -31,7 +32,7 @@ function isSafeHttpsEndpoint(value) {
 }
 
 function isGroupId(value) {
-  return /^\d{5,}(?:-\d+)?@g\.us$/i.test(String(value || '').trim());
+  return GROUP_ID_RE.test(String(value || '').trim());
 }
 
 const INGEST_URL = required('HIPICO_INGEST_URL');
