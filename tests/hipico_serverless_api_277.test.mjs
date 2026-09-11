@@ -8,6 +8,7 @@ import { __test__ as statusTest } from '../frontend/api/hipico/status.js';
 
 const read = (path) => readFileSync(new URL(path, import.meta.url), 'utf8');
 const shared = read('../frontend/api/hipico/_shared.js');
+const bridgeIdentity = read('../frontend/api/hipico/bridge-identity.js');
 const ingest = read('../frontend/api/hipico/group-bridge-ingest.js');
 const sender = read('../frontend/api/hipico/whatsapp-send.js');
 const status = read('../frontend/api/hipico/status.js');
@@ -173,12 +174,13 @@ test('serverless duplicate identity binds sender, timestamp, body, type, quote a
   assert.match(ingest, /retryable:\s*false/);
 });
 
-test('group bridge fails closed to configured owner and source shadow mode', () => {
+test('group bridge fails closed to configured owner and centralized SOURCE/LAB policy', () => {
   assert.match(ingest, /env\('HIPICO_OWNER_ID'\)/);
   assert.doesNotMatch(ingest, /hipico_workspaces\?select=owner_id&order=updated_at\.desc&limit=1/);
   assert.match(ingest, /source_requires_shadow_mode/);
-  assert.match(ingest, /source_group_not_authorized/);
-  assert.match(ingest, /lab_group_not_authorized/);
+  assert.match(ingest, /validateBridgeRoleIdentity/);
+  assert.match(bridgeIdentity, /source_group_not_authorized/);
+  assert.match(bridgeIdentity, /lab_group_not_authorized/);
   assert.match(ingest, /actions:\s*\[\]/);
   assert.match(ingest, /monetaryAutoApply:\s*false/);
   assert.doesNotMatch(ingest, /response\.actions\.push/);
