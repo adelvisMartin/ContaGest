@@ -7,8 +7,9 @@ export function money(value, currency = "Bs.", signed = false) {
 }
 export function number(value) { return new Intl.NumberFormat("es-VE", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Number(value || 0)); }
 export function balanceNumber(value) { const amount = Number(value || 0); return `${amount < 0 ? "-" : ""}${number(Math.abs(amount))}`; }
-export function shortDate(value) { const date = new Date(`${value}T12:00:00`); return new Intl.DateTimeFormat("es-VE", { day: "2-digit", month: "short", year: "numeric" }).format(date); }
-function whatsappDate(value) { const date = new Date(`${value}T12:00:00`); const weekday = new Intl.DateTimeFormat("es-VE", { weekday: "short" }).format(date).replace(".", "").toLowerCase(); const day = String(date.getDate()).padStart(2, "0"); const month = new Intl.DateTimeFormat("es-VE", { month: "short" }).format(date).replace(".", "").toLowerCase(); return `${weekday}, ${day} de ${month} del ${date.getFullYear()}`; }
+function dateOnly(value) { const raw = String(value || "").trim(); if (!/^\d{4}-\d{2}-\d{2}$/.test(raw)) return null; const date = new Date(`${raw}T12:00:00`); return Number.isFinite(date.getTime()) ? date : null; }
+export function shortDate(value) { const date = dateOnly(value); return date ? new Intl.DateTimeFormat("es-VE", { day: "2-digit", month: "short", year: "numeric" }).format(date) : "Sin fecha"; }
+function whatsappDate(value) { const date = dateOnly(value); if (!date) return "fecha no disponible"; const weekday = new Intl.DateTimeFormat("es-VE", { weekday: "short" }).format(date).replace(".", "").toLowerCase(); const day = String(date.getDate()).padStart(2, "0"); const month = new Intl.DateTimeFormat("es-VE", { month: "short" }).format(date).replace(".", "").toLowerCase(); return `${weekday}, ${day} de ${month} del ${date.getFullYear()}`; }
 function registeredDate(value) { const date = new Date(value || ""); return Number.isFinite(date.getTime()) ? new Intl.DateTimeFormat("es-VE", { day: "numeric", month: "numeric", year: "numeric" }).format(date) : "sin fecha"; }
 function ordinalRace(value) { const n = Number(value || 1); if (n === 1 || n === 3 || n === 13) return `${n}ra`; if (n === 2) return `${n}da`; return `${n}ta`.replace("10ta", "10ma").replace("11ta", "11ma").replace("12ta", "12ma"); }
 function proper(value) { return String(value ?? "").trim().toLowerCase().replace(/(^|\s)\S/g, (letter) => letter.toUpperCase()); }
@@ -71,7 +72,7 @@ export function generateBalancesWhatsappText(workspace, rows) {
 export function generateParticipantStatementText(workspace, statement) {
   const profile = groupProfile(workspace, { groupId: statement.groupId || statement.participant?.groupId });
   const participant = statement.participant || {};
-  const date = statement.date || new Date().toISOString().slice(0, 10);
+  const date = statement.date || "";
   const dailyRows = Array.isArray(statement.dailyRows) ? statement.dailyRows : [];
   const tracks = Array.isArray(statement.tracks) ? statement.tracks : [];
   const aval = Number(statement.aval || 0);
@@ -110,3 +111,5 @@ export function generateDailySummaryText(workspace, day, stats) {
   return [`🏇${profile.companyName}🏇`, `*CIERRE DIARIO · ${shortDate(day.date)}*`, `Carreras: ${stats.races}`, `Apuestas: ${stats.bets}`, `Monto registrado: ${money(stats.volume, profile.currency)}`, `Liquidadas: ${stats.settled}`, `Pendientes: ${stats.pending}`, `Anuladas: ${stats.cancelled}`, `Comisión: ${money(stats.commission, profile.currency)}`, `Diferencia de control: ${money(stats.controlDifference, profile.currency, true)}`, `Estado: ${day.status === "closed" ? "CERRADA" : "ABIERTA"}`].join("\n");
 }
 export function csvEscape(value) { const text = String(value ?? ""); return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text; }
+
+export const __test__={dateOnly,whatsappDate,registeredDate};
