@@ -25,7 +25,8 @@ const migrations = [
   'supabase/sql/hipico_v12_operations.sql',
   'supabase/sql/hipico_v12_group_bridge.sql',
   'supabase/sql/hipico_v12_shadow_validation.sql',
-  'supabase/sql/hipico_v13_workspace_sync_security.sql'
+  'supabase/sql/hipico_v13_workspace_sync_security.sql',
+  'supabase/sql/hipico_v14_canonical_domain.sql'
 ];
 const labBootstrap = 'supabase/sql/hipico_v13_lab_channel_bootstrap.sql';
 
@@ -64,7 +65,9 @@ async function assertSchemaContract(ownerId) {
     'hipico_shadow_evaluations',
     'hipico_workspaces',
     'hipico_profiles',
-    'hipico_audit_events'
+    'hipico_audit_events',
+    'hipico_domain_aggregates',
+    'hipico_domain_events'
   ];
 
   const tableRows = await client.query(
@@ -97,6 +100,18 @@ async function assertSchemaContract(ownerId) {
   assert.equal(labRows.rows[0].owner_id, ownerId);
   assert.equal(labRows.rows[0].channel_type, 'web_bridge');
   assert.equal(labRows.rows[0].status, 'active');
+
+  const directMutationPrivileges = await client.query(`
+    select
+      has_table_privilege('authenticated','public.hipico_domain_aggregates','INSERT') as aggregate_insert,
+      has_table_privilege('authenticated','public.hipico_domain_aggregates','UPDATE') as aggregate_update,
+      has_table_privilege('authenticated','public.hipico_domain_events','INSERT') as event_insert,
+      has_table_privilege('authenticated','public.hipico_domain_events','DELETE') as event_delete
+  `);
+  assert.equal(directMutationPrivileges.rows[0].aggregate_insert, false);
+  assert.equal(directMutationPrivileges.rows[0].aggregate_update, false);
+  assert.equal(directMutationPrivileges.rows[0].event_insert, false);
+  assert.equal(directMutationPrivileges.rows[0].event_delete, false);
 }
 
 async function assertIdempotencyAndIsolation(ownerId) {
@@ -163,6 +178,95 @@ async function assertIdempotencyAndIsolation(ownerId) {
   }
 }
 
+async function assertCanonicalDomainContract(ownerId) {
+  await client.query('begin');
+  try {
+    await client.query(`
+      insert into public.hipico_domain_aggregates(owner_id,group_key,aggregate_kind,aggregate_key,status,state_version)
+      values
+        ($1::uuid,'group-a','race','race-1','OPEN',1),
+        ($1::uuid,'group-b','race','race-1','PREPARING',0)
+    `,[ownerId]);
+
+    await client.query(`
+      insert into public.hipico_domain_events(
+        id,owner_id,group_key,aggregate_kind,aggregate_key,source_message_id,source_message_key,event_type,
+        disposition,previous_state,next_state,reason,source,schema_version,event_timestamp
+      ) values (
+        'event-a-1',$1::uuid,'group-a','race','race-1','provider-msg-1','source-msg-1','RACE_OPENED',
+        'applied','PREPARING','OPEN','VALID_TRANSITION','canonical_operator_api',1,now()
+      )
+    `,[ownerId]);
+
+    // The same upstream identity may legitimately exist in another group; group
+    // scope is part of the idempotency boundary.
+    await client.query(`
+      insert into public.hipico_domain_events(
+        id,owner_id,group_key,aggregate_kind,aggregate_key,source_message_id,source_message_key,event_type,
+        disposition,previous_state,next_state,reason,source,schema_version,event_timestamp
+      ) values (
+        'event-b-1',$1::uuid,'group-b','race','race-1','provider-msg-1','source-msg-1','RACE_OPENED',
+        'review','PREPARING','PREPARING','AMBIGUOUS_OR_UNKNOWN','canonical_operator_api',1,now()
+      )
+    `,[ownerId]);
+
+    const isolated = await client.query(`
+      select group_key,count(*)::int as event_count
+      from public.hipico_domain_events
+      where owner_id=$1::uuid and aggregate_key='race-1'
+      group by group_key order by group_key
+    `,[ownerId]);
+    assert.deepEqual(isolated.rows,[
+      {group_key:'group-a',event_count:1},
+      {group_key:'group-b',event_count:1}
+    ]);
+
+    await client.query('savepoint duplicate_domain_source');
+    try {
+      await client.query(`
+        insert into public.hipico_domain_events(
+          id,owner_id,group_key,aggregate_kind,aggregate_key,source_message_key,event_type,
+          disposition,previous_state,next_state,reason,source,schema_version,event_timestamp
+        ) values (
+          'event-a-duplicate',$1::uuid,'group-a','race','race-1','source-msg-1','RACE_OPENED',
+          'review','OPEN','OPEN','SAME_STATE_EVIDENCE','canonical_operator_api',1,now()
+        )
+      `,[ownerId]);
+      assert.fail('canonical source identity must be unique inside one aggregate');
+    } catch (error) {
+      assert.equal(error.code,'23505');
+      await client.query('rollback to savepoint duplicate_domain_source');
+    }
+
+    await client.query('savepoint orphan_domain_event');
+    try {
+      await client.query(`
+        insert into public.hipico_domain_events(
+          id,owner_id,group_key,aggregate_kind,aggregate_key,source_message_key,event_type,
+          disposition,previous_state,next_state,reason,source,schema_version,event_timestamp
+        ) values (
+          'orphan-event',$1::uuid,'group-a','race','missing-race','source-orphan','UNKNOWN',
+          'review','PREPARING','PREPARING','AMBIGUOUS_OR_UNKNOWN','canonical_operator_api',1,now()
+        )
+      `,[ownerId]);
+      assert.fail('canonical event must reference an existing scoped aggregate');
+    } catch (error) {
+      assert.equal(error.code,'23503');
+      await client.query('rollback to savepoint orphan_domain_event');
+    }
+
+    const constraints = await client.query(`
+      select conname,pg_get_constraintdef(oid) as definition
+      from pg_constraint
+      where conrelid='public.hipico_domain_events'::regclass
+    `);
+    assert.ok(constraints.rows.some((row)=>row.conname==='hipico_domain_events_source_identity_unique'));
+    assert.ok(constraints.rows.some((row)=>row.conname==='hipico_domain_events_aggregate_fk'));
+  } finally {
+    await client.query('rollback');
+  }
+}
+
 async function cleanup() {
   if (!connected) return;
   await client.query('drop schema if exists public cascade; create schema public').catch(() => {});
@@ -191,6 +295,7 @@ try {
 
   await assertSchemaContract(ownerId);
   await assertIdempotencyAndIsolation(ownerId);
+  await assertCanonicalDomainContract(ownerId);
   console.log('HIPICO_DB_CONTRACT_PASS');
 } finally {
   await cleanup();
