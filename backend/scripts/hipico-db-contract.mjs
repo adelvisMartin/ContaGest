@@ -27,7 +27,8 @@ const migrations = [
   'supabase/sql/hipico_v12_shadow_validation.sql',
   'supabase/sql/hipico_v13_workspace_sync_security.sql',
   'supabase/sql/hipico_v14_canonical_domain.sql',
-  'supabase/sql/hipico_v15_domain_integrity_alignment.sql'
+  'supabase/sql/hipico_v15_domain_integrity_alignment.sql',
+  'supabase/sql/hipico_v16_operator_confirmation_audit.sql'
 ];
 const labBootstrap = 'supabase/sql/hipico_v13_lab_channel_bootstrap.sql';
 
@@ -91,6 +92,28 @@ async function assertSchemaContract(ownerId) {
   `);
   assert.equal(channelConstraint.rowCount, 1);
   assert.match(channelConstraint.rows[0].definition, /web_bridge/);
+
+  const confirmationColumns = await client.query(`
+    select column_name,data_type,is_nullable
+    from information_schema.columns
+    where table_schema='public' and table_name='hipico_domain_events'
+      and column_name in ('operator_confirmed','confirmation_reason')
+    order by column_name
+  `);
+  assert.equal(confirmationColumns.rowCount, 2);
+  const operatorConfirmedColumn = confirmationColumns.rows.find((row) => row.column_name === 'operator_confirmed');
+  assert.equal(operatorConfirmedColumn?.data_type, 'boolean');
+  assert.equal(operatorConfirmedColumn?.is_nullable, 'NO');
+
+  const confirmationConstraint = await client.query(`
+    select pg_get_constraintdef(oid) as definition
+    from pg_constraint
+    where conrelid='public.hipico_domain_events'::regclass
+      and conname='hipico_domain_events_confirmation_audit_check'
+  `);
+  assert.equal(confirmationConstraint.rowCount, 1);
+  assert.match(confirmationConstraint.rows[0].definition, /operator_confirmed/);
+  assert.match(confirmationConstraint.rows[0].definition, /confirmation_reason/);
 
   const labRows = await client.query(`
     select owner_id::text as owner_id, group_key, channel_type, status
@@ -192,10 +215,12 @@ async function assertCanonicalDomainContract(ownerId) {
     await client.query(`
       insert into public.hipico_domain_events(
         id,owner_id,group_key,aggregate_kind,aggregate_key,source_message_id,source_message_key,event_type,
-        disposition,previous_state,next_state,reason,source,schema_version,event_timestamp
+        disposition,previous_state,next_state,reason,source,schema_version,event_timestamp,
+        operator_confirmed,confirmation_reason
       ) values (
         'event-a-1',$1::uuid,'group-a','race','race-1','provider-msg-1','source-msg-1','RACE_OPENED',
-        'applied','PREPARING','OPEN','VALID_TRANSITION','canonical_operator_api',1,now()
+        'applied','PREPARING','OPEN','VALID_TRANSITION','canonical_operator_api',1,now(),
+        true,'operator verified opening'
       )
     `,[ownerId]);
 
@@ -219,6 +244,42 @@ async function assertCanonicalDomainContract(ownerId) {
       {group_key:'group-a',event_count:1},
       {group_key:'group-b',event_count:1}
     ]);
+
+    await client.query('savepoint missing_confirmation_reason');
+    try {
+      await client.query(`
+        insert into public.hipico_domain_events(
+          id,owner_id,group_key,aggregate_kind,aggregate_key,source_message_key,event_type,
+          disposition,previous_state,next_state,reason,source,schema_version,event_timestamp,
+          operator_confirmed,confirmation_reason
+        ) values (
+          'event-confirmation-missing',$1::uuid,'group-a','race','race-1','source-confirmation-missing','RACE_CLOSED',
+          'applied','OPEN','CLOSED','VALID_TRANSITION','canonical_operator_api',1,now(),true,null
+        )
+      `,[ownerId]);
+      assert.fail('confirmed domain event without audit reason must be rejected');
+    } catch (error) {
+      assert.equal(error.code,'23514');
+      await client.query('rollback to savepoint missing_confirmation_reason');
+    }
+
+    await client.query('savepoint orphan_confirmation_reason');
+    try {
+      await client.query(`
+        insert into public.hipico_domain_events(
+          id,owner_id,group_key,aggregate_kind,aggregate_key,source_message_key,event_type,
+          disposition,previous_state,next_state,reason,source,schema_version,event_timestamp,
+          operator_confirmed,confirmation_reason
+        ) values (
+          'event-confirmation-orphan',$1::uuid,'group-a','race','race-1','source-confirmation-orphan','BET_RECORDED',
+          'evidence_only','OPEN','OPEN','APPEND_ONLY_EVIDENCE','canonical_operator_api',1,now(),false,'orphan reason'
+        )
+      `,[ownerId]);
+      assert.fail('unconfirmed domain event cannot carry an operator confirmation reason');
+    } catch (error) {
+      assert.equal(error.code,'23514');
+      await client.query('rollback to savepoint orphan_confirmation_reason');
+    }
 
     await client.query('savepoint duplicate_domain_source');
     try {
@@ -279,6 +340,7 @@ async function assertCanonicalDomainContract(ownerId) {
     `);
     assert.ok(constraints.rows.some((row)=>row.conname==='hipico_domain_events_source_identity_unique'));
     assert.ok(constraints.rows.some((row)=>row.conname==='hipico_domain_events_aggregate_fk'));
+    assert.ok(constraints.rows.some((row)=>row.conname==='hipico_domain_events_confirmation_audit_check'));
 
     const identityIndex = await client.query(`
       select indexname,indexdef from pg_indexes
@@ -323,7 +385,7 @@ try {
   `, [ownerId]);
   await apply(labBootstrap);
 
-  // A second pass proves that the additive SQL chain is replay-safe on the same isolated DB.
+  // A second pass proves that the complete additive SQL chain is replay-safe on the same isolated DB.
   for (const migration of migrations) await apply(migration);
   await apply(labBootstrap);
 
