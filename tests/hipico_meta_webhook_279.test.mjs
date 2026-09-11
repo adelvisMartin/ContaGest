@@ -4,6 +4,7 @@ import { readFile } from 'node:fs/promises';
 import { __test__ } from '../frontend/api/hipico/whatsapp-webhook.js';
 
 const source=await readFile(new URL('../frontend/api/hipico/whatsapp-webhook.js',import.meta.url),'utf8');
+const statusSource=await readFile(new URL('../frontend/api/hipico/status.js',import.meta.url),'utf8');
 const metaSource={HIPICO_META_PHONE_NUMBER_ID:'1234567890'};
 
 test('Meta webhook replay signature binds sender instant type body and quoted context',()=>{
@@ -53,9 +54,11 @@ test('Meta webhook rejects incomplete or foreign phone-number identity before pe
   assert.match(source,/status\(400\).*invalid_message_identity/);
 });
 
-test('missing inbound Meta phone configuration fails closed as unavailable',()=>{
+test('missing inbound Meta phone configuration fails closed and readiness reports the same dependency',()=>{
   assert.match(source,/phoneNumberId=env\('HIPICO_META_PHONE_NUMBER_ID'\)/);
   assert.match(source,/status\(503\).*webhook_not_configured/);
+  assert.match(statusSource,/const webhookRequired = \['HIPICO_META_VERIFY_TOKEN', 'HIPICO_META_APP_SECRET', 'HIPICO_META_PHONE_NUMBER_ID'\]/);
+  assert.match(statusSource,/const metaWebhookReady = persistenceReady && webhookMissing\.length === 0/);
 });
 
 test('oversized and malformed requests are rejected without being treated as retryable server faults',()=>{
