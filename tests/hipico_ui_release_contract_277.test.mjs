@@ -8,7 +8,10 @@ const css = read('../frontend/public/hipico-control/assets/css/app.css');
 const mobileCss = read('../frontend/public/hipico-control/assets/css/mobile-accessibility.css');
 const opsCss = read('../frontend/public/hipico-control/assets/css/operational-copy-center.css');
 const notice = read('../frontend/public/hipico-control/assets/js/notice-bridge.js');
+const config = read('../frontend/public/hipico-control/assets/js/config.js');
 const sw = read('../frontend/public/hipico-control/sw.js');
+const buildInfo = JSON.parse(read('../frontend/public/hipico-control/build-info.json'));
+const buildInfoGenerator = read('../frontend/scripts/write-hipico-build-info.mjs');
 
 function jsFiles(url, prefix = '') {
   const files = [];
@@ -55,6 +58,24 @@ test('mobile vertical scrolling, safe area and reduced motion remain explicitly 
   assert.match(css, /overflow-y:\s*visible/);
   assert.match(css, /safe-area-inset-bottom/);
   assert.match(css, /prefers-reduced-motion:\s*reduce/);
+});
+
+test('Control Hipico release metadata is generated from the canonical APP_VERSION and SHA-bound when available', () => {
+  const appVersion=config.match(/export const APP_VERSION\s*=\s*["']([^"']+)["']/)?.[1];
+  const cacheVersion=sw.match(/CACHE_VERSION\s*=\s*["']hipico-control-v([^"']+)["']/)?.[1];
+  assert.ok(appVersion, 'APP_VERSION missing');
+  assert.equal(cacheVersion, appVersion);
+  assert.equal(buildInfo.product, 'control-hipico');
+  assert.equal(buildInfo.version, appVersion);
+  assert.equal(buildInfo.buildId, appVersion);
+  assert.equal(buildInfo.source, 'git-canonical-web');
+  assert.equal(buildInfo.compatibility?.workspaceSchema, 10);
+  assert.equal(buildInfo.compatibility?.parserContract, 'whatsapp-parser-v1');
+  if (buildInfo.bound) assert.match(buildInfo.candidateSha, /^[0-9a-f]{40}$/);
+  else assert.equal(buildInfo.candidateSha, 'local-unbound');
+  assert.match(buildInfoGenerator, /APP_VERSION/);
+  assert.match(buildInfoGenerator, /VERCEL_GIT_COMMIT_SHA/);
+  assert.match(buildInfoGenerator, /public\/hipico-control\/build-info\.json/);
 });
 
 test('installed PWA precaches the complete Hípico JavaScript module tree', () => {
