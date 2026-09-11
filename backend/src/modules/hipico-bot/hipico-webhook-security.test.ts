@@ -36,8 +36,16 @@ test('backend webhook verifies configuration/signature and persistence before pr
   assert.match(routes,/status\(503\).*retryable:true/);
 });
 
+test('backend webhook processes the complete signed batch with bounded concurrency and bounded text',()=>{
+  assert.match(routes,/WEBHOOK_BATCH_CONCURRENCY=25/);
+  assert.match(routes,/for\(let offset=0;offset<messages\.length;offset\+=WEBHOOK_BATCH_CONCURRENCY\)/);
+  assert.match(routes,/messages\.slice\(offset,offset\+WEBHOOK_BATCH_CONCURRENCY\)/);
+  assert.match(routes,/Promise\.allSettled\(batch\.map\(processIncoming\)\)/);
+  assert.match(routes,/String\(message\.body\|\|''\)\.slice\(0,4000\)/);
+  assert.doesNotMatch(routes,/extractMessages\(req\.body\)\.slice\(0,100\)/);
+});
+
 test('backend webhook does not acknowledge a partially failed batch',()=>{
-  assert.match(routes,/Promise\.allSettled\(messages\.map\(processIncoming\)\)/);
   assert.match(routes,/if\(failed\)[\s\S]*status\(503\)/);
-  assert.match(routes,/status\(200\)\.json\(\{ok:true,received:messages\.length,processed:processed\.length,failed:0\}\)/);
+  assert.match(routes,/status\(200\)\.json\(\{ok:true,received:messages\.length,processed:processedCount,failed:0\}\)/);
 });
