@@ -11,6 +11,11 @@ function sameTrack(left,right){
   return Boolean(a&&b&&a===b);
 }
 
+function validRaceNumber(value){
+  const number=Number(value);
+  return Number.isInteger(number)&&number>0?number:null;
+}
+
 function messageIndex(messages,id){
   return messages.findIndex((message)=>message.id===id);
 }
@@ -35,16 +40,24 @@ function appendReason(target,reason){
 
 function contextualizeOffer(analysis,offer){
   const message=(analysis?.messages||[]).find((item)=>item.id===offer.messageId);
-  const direct=message?.raceContext||{};
+  const messageContext=message?.raceContext||{};
   const opening=nearestOpening(analysis,offer)||{};
-  const directTrack=String(direct.track||offer.track||'').trim();
-  const directRace=Number.isInteger(Number(direct.raceNumber))&&Number(direct.raceNumber)>0?Number(direct.raceNumber):null;
+
+  // parseOffer already distinguishes text written in the offer from context inherited
+  // from an opening. Preserve that decision here: an inherited message context must
+  // never overwrite an explicit different track written by the participant.
+  const offerTrack=String(offer.track||'').trim();
+  const messageTrack=messageContext?.inherited?'':String(messageContext.track||'').trim();
+  const directTrack=offerTrack||messageTrack;
+  const directRace=validRaceNumber(offer.raceNumber) || (messageContext?.inherited?null:validRaceNumber(messageContext.raceNumber));
   const openingTrack=String(opening.track||'').trim();
-  const openingRace=Number.isInteger(Number(opening.raceNumber))&&Number(opening.raceNumber)>0?Number(opening.raceNumber):null;
+  const openingRace=validRaceNumber(opening.raceNumber);
   const trackConflict=Boolean(directTrack&&openingTrack&&!sameTrack(directTrack,openingTrack));
   const raceConflict=Boolean(directRace&&openingRace&&directRace!==openingRace);
   const track=directTrack||openingTrack||'';
-  const raceNumber=directRace||openingRace||null;
+  // If the offer explicitly names a different track without a race ordinal, do
+  // not manufacture the active opening's race number for that different track.
+  const raceNumber=directRace || (trackConflict?null:openingRace) || null;
   offer.track=track;
   offer.raceNumber=raceNumber;
   offer.raceContext={track,raceNumber,source:directTrack||directRace?'message':openingTrack||openingRace?'opening':'none',complete:Boolean(track&&raceNumber),conflict:trackConflict||raceConflict};
@@ -112,4 +125,4 @@ export function compareMatchToActiveRace(match,activeRace){
   return{status:'MATCH',reason:'La pareja coincide con la carrera activa.'};
 }
 
-export const __test__={canonicalTrack,sameTrack,nearestOpening,sameRaceContext};
+export const __test__={canonicalTrack,sameTrack,validRaceNumber,nearestOpening,sameRaceContext};
