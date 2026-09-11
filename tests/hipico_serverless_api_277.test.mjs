@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { bearerTokenValid, isE164, metaDestinationAllowed, metaOutboundPolicy, safeEqual, safeTimeoutMs } from '../frontend/api/hipico/_shared.js';
+import { bearerTokenValid, isE164, metaDestinationAllowed, metaOutboundPolicy, safeEqual, safeTimeoutMs, strongSecretConfigured } from '../frontend/api/hipico/_shared.js';
 import { __test__ as ingestTest, validateGroupBridgeBody } from '../frontend/api/hipico/group-bridge-ingest.js';
 import { __test__ as statusTest } from '../frontend/api/hipico/status.js';
 
@@ -22,6 +22,14 @@ test('serverless auth helpers compare secrets safely and validate real E.164 bou
   assert.equal(isE164('0412-1234567'), false);
   assert.equal(isE164(`+${'1'.repeat(15)}`), true);
   assert.equal(isE164(`+${'1'.repeat(16)}`), false);
+});
+
+test('serverless internal bridge secrets require at least 32 bytes', () => {
+  assert.equal(strongSecretConfigured('x'.repeat(31)), false);
+  assert.equal(strongSecretConfigured('x'.repeat(32)), true);
+  assert.equal(strongSecretConfigured('  ' + 'x'.repeat(32) + '  '), true);
+  assert.match(ingest, /serverSecret\('HIPICO_GROUP_BRIDGE_TOKEN'\)/);
+  assert.doesNotMatch(ingest, /configuredToken\s*=\s*env\('HIPICO_GROUP_BRIDGE_TOKEN'\)/);
 });
 
 test('serverless timeouts fail to bounded defaults instead of accepting NaN, zero or unbounded values', () => {
