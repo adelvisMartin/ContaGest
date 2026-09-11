@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createHorseRaceProvider, HorseRaceProviderError, MAX_RACE_PROVIDER_CACHE_ENTRIES, raceProviderStatus } from './hipico-race-provider.js';
+import { createHorseRaceProvider, HorseRaceProviderError, MAX_RACE_PROVIDER_CACHE_ENTRIES, MAX_RACE_PROVIDER_RESPONSE_BYTES, raceProviderStatus } from './hipico-race-provider.js';
 
 const configuredEnv = {
   HIPICO_RACE_PROVIDER: 'sportradar-uof',
@@ -87,6 +87,58 @@ test('race enrichment cache remains bounded under many distinct stage ids', asyn
   assert.equal(calls,MAX_RACE_PROVIDER_CACHE_ENTRIES+2);
   await provider.getStageSummary('700001');
   assert.equal(calls,MAX_RACE_PROVIDER_CACHE_ENTRIES+3);
+});
+
+test('declared oversized upstream response is rejected before body consumption', async () => {
+  let pulled = false;
+  const body = new ReadableStream({
+    pull(controller) {
+      pulled = true;
+      controller.enqueue(new TextEncoder().encode('<ok/>'));
+      controller.close();
+    }
+  });
+  const provider = createHorseRaceProvider({
+    env: configuredEnv,
+    fetchImpl: async () => new Response(body, {
+      status: 200,
+      headers: {
+        'content-type': 'application/xml',
+        'content-length': String(MAX_RACE_PROVIDER_RESPONSE_BYTES + 1)
+      }
+    })
+  });
+  await assert.rejects(
+    provider.getStageSummary('697758'),
+    (error: unknown) => error instanceof HorseRaceProviderError && error.code === 'UPSTREAM_RESPONSE_TOO_LARGE' && error.retryable === false
+  );
+  assert.equal(pulled, false);
+});
+
+test('streaming upstream response is cancelled as soon as byte limit is crossed', async () => {
+  let cancelled = false;
+  let emitted = 0;
+  const chunk = new Uint8Array(260_000);
+  const body = new ReadableStream({
+    pull(controller) {
+      emitted += 1;
+      controller.enqueue(chunk);
+      if (emitted > 10) controller.close();
+    },
+    cancel() {
+      cancelled = true;
+    }
+  });
+  const provider = createHorseRaceProvider({
+    env: configuredEnv,
+    fetchImpl: async () => new Response(body, { status: 200, headers: { 'content-type': 'application/xml' } })
+  });
+  await assert.rejects(
+    provider.getStageSummary('697758'),
+    (error: unknown) => error instanceof HorseRaceProviderError && error.code === 'UPSTREAM_RESPONSE_TOO_LARGE' && error.retryable === false
+  );
+  assert.equal(cancelled, true);
+  assert.ok(emitted <= 5);
 });
 
 test('upstream server errors remain retryable and never become financial decisions', async () => {
