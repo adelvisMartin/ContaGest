@@ -1,10 +1,14 @@
 const DEFAULT_TIMEOUT_MS = 5_000;
 const DEFAULT_CACHE_TTL_MS = 30_000;
+const DEFAULT_FAILURE_THRESHOLD = 3;
+const DEFAULT_BACKOFF_MS = 15_000;
 export const MAX_RACE_PROVIDER_RESPONSE_BYTES = 1_000_000;
 export const MAX_RACE_PROVIDER_CACHE_ENTRIES = 128;
+export const MAX_RACE_PROVIDER_BACKOFF_MS = 300_000;
 const RACE_PROVIDER_VENDOR_DOMAINS = ['sportradar.com', 'betradar.com'] as const;
 
 export type HorseRaceProviderName = 'disabled' | 'sportradar-uof';
+export type HorseRaceProviderCircuitState = 'closed' | 'open' | 'half_open';
 
 export type HorseRaceProviderStatus = {
   provider: HorseRaceProviderName;
@@ -14,6 +18,12 @@ export type HorseRaceProviderStatus = {
   reason: string | null;
   timeoutMs: number;
   cacheTtlMs: number;
+};
+
+export type HorseRaceProviderRuntimeStatus = HorseRaceProviderStatus & {
+  circuitState: HorseRaceProviderCircuitState;
+  retryAfterMs: number;
+  consecutiveFailures: number;
 };
 
 export type HorseRaceStageSummary = {
@@ -32,7 +42,7 @@ type CacheEntry = { expiresAt: number; value: HorseRaceStageSummary };
 export class HorseRaceProviderError extends Error {
   constructor(
     message: string,
-    public readonly code: 'NOT_CONFIGURED' | 'INVALID_STAGE_ID' | 'UPSTREAM_TIMEOUT' | 'UPSTREAM_ERROR' | 'UPSTREAM_RESPONSE_TOO_LARGE' | 'UPSTREAM_INVALID_CONTENT',
+    public readonly code: 'NOT_CONFIGURED' | 'INVALID_STAGE_ID' | 'CIRCUIT_OPEN' | 'UPSTREAM_TIMEOUT' | 'UPSTREAM_ERROR' | 'UPSTREAM_RESPONSE_TOO_LARGE' | 'UPSTREAM_INVALID_CONTENT',
     public readonly retryable: boolean
   ) {
     super(message);
@@ -79,6 +89,12 @@ function normalizeStageId(value: string) {
 
 function responseTooLarge() {
   return new HorseRaceProviderError('La respuesta del proveedor hípico excede el tamaño permitido.', 'UPSTREAM_RESPONSE_TOO_LARGE', false);
+}
+
+function circuitOpen(retryAfterMs: number) {
+  const error = new HorseRaceProviderError('El proveedor hípico está temporalmente aislado por fallos consecutivos.', 'CIRCUIT_OPEN', true);
+  Object.defineProperty(error, 'retryAfterMs', { value: Math.max(0, Math.ceil(retryAfterMs)), enumerable: true });
+  return error;
 }
 
 function assertXmlResponse(response: Response, text: string) {
@@ -158,9 +174,28 @@ export function createHorseRaceProvider(options: { env?: RuntimeEnv; fetchImpl?:
   const fetchImpl = options.fetchImpl || fetch;
   const now = options.now || Date.now;
   const cache = new Map<string, CacheEntry>();
+  const failureThreshold = integerEnv(env.HIPICO_RACE_PROVIDER_FAILURE_THRESHOLD, DEFAULT_FAILURE_THRESHOLD, 1, 10);
+  const baseBackoffMs = integerEnv(env.HIPICO_RACE_PROVIDER_BACKOFF_MS, DEFAULT_BACKOFF_MS, 1_000, MAX_RACE_PROVIDER_BACKOFF_MS);
+  let consecutiveRetryableFailures = 0;
+  let openUntil = 0;
+  let backoffLevel = 0;
+  let halfOpenProbeInFlight = false;
 
-  function status() {
-    return raceProviderStatus(env);
+  function circuitState(at: number): HorseRaceProviderCircuitState {
+    if (!openUntil) return 'closed';
+    return openUntil > at ? 'open' : 'half_open';
+  }
+
+  function status(): HorseRaceProviderRuntimeStatus {
+    const base = raceProviderStatus(env);
+    const at = now();
+    const state = circuitState(at);
+    return {
+      ...base,
+      circuitState: state,
+      retryAfterMs: state === 'open' ? Math.max(0, openUntil - at) : 0,
+      consecutiveFailures: consecutiveRetryableFailures
+    };
   }
 
   function pruneCache(at: number) {
@@ -192,6 +227,32 @@ export function createHorseRaceProvider(options: { env?: RuntimeEnv; fetchImpl?:
     pruneCache(now());
   }
 
+  function nextBackoffMs() {
+    const exponent = Math.min(backoffLevel, 8);
+    return Math.min(baseBackoffMs * (2 ** exponent), MAX_RACE_PROVIDER_BACKOFF_MS);
+  }
+
+  function openCircuit(at: number) {
+    openUntil = at + nextBackoffMs();
+    backoffLevel = Math.min(backoffLevel + 1, 16);
+    consecutiveRetryableFailures = 0;
+  }
+
+  function recordFailure(at: number, halfOpenProbe: boolean) {
+    if (halfOpenProbe) {
+      openCircuit(at);
+      return;
+    }
+    consecutiveRetryableFailures += 1;
+    if (consecutiveRetryableFailures >= failureThreshold) openCircuit(at);
+  }
+
+  function recordSuccess() {
+    consecutiveRetryableFailures = 0;
+    openUntil = 0;
+    backoffLevel = 0;
+  }
+
   async function getStageSummary(stageIdValue: string): Promise<HorseRaceStageSummary> {
     const currentStatus = status();
     if (!currentStatus.configured || currentStatus.provider !== 'sportradar-uof') {
@@ -199,8 +260,14 @@ export function createHorseRaceProvider(options: { env?: RuntimeEnv; fetchImpl?:
     }
 
     const stageId = normalizeStageId(stageIdValue);
-    const cached = readCached(stageId, now());
+    const at = now();
+    const cached = readCached(stageId, at);
     if (cached) return cached;
+
+    if (openUntil > at) throw circuitOpen(openUntil - at);
+    const halfOpenProbe = Boolean(openUntil && openUntil <= at);
+    if (halfOpenProbe && halfOpenProbeInFlight) throw circuitOpen(0);
+    if (halfOpenProbe) halfOpenProbeInFlight = true;
 
     const baseUrl = normalizeBaseUrl(env.HIPICO_RACE_PROVIDER_BASE_URL);
     const token = String(env.HIPICO_SPORTRADAR_UOF_TOKEN || '').trim();
@@ -234,15 +301,21 @@ export function createHorseRaceProvider(options: { env?: RuntimeEnv; fetchImpl?:
         cached: false
       };
       remember(stageId, value, fetchedAt + currentStatus.cacheTtlMs);
+      recordSuccess();
       return value;
     } catch (error: any) {
-      if (error instanceof HorseRaceProviderError) throw error;
-      if (error?.name === 'AbortError') {
-        throw new HorseRaceProviderError('El proveedor hípico excedió el tiempo máximo de respuesta.', 'UPSTREAM_TIMEOUT', true);
+      let normalizedError: HorseRaceProviderError;
+      if (error instanceof HorseRaceProviderError) normalizedError = error;
+      else if (error?.name === 'AbortError') {
+        normalizedError = new HorseRaceProviderError('El proveedor hípico excedió el tiempo máximo de respuesta.', 'UPSTREAM_TIMEOUT', true);
+      } else {
+        normalizedError = new HorseRaceProviderError('No se pudo consultar el proveedor hípico externo.', 'UPSTREAM_ERROR', true);
       }
-      throw new HorseRaceProviderError('No se pudo consultar el proveedor hípico externo.', 'UPSTREAM_ERROR', true);
+      if (halfOpenProbe || normalizedError.retryable) recordFailure(now(), halfOpenProbe);
+      throw normalizedError;
     } finally {
       clearTimeout(timeout);
+      if (halfOpenProbe) halfOpenProbeInFlight = false;
     }
   }
 
