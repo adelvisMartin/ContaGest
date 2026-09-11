@@ -27,8 +27,21 @@ test('dialog guard makes the background inert, labels it and restores prior shel
   assert.match(guard, /shellPreviousAriaHidden = shell\.getAttribute\('aria-hidden'\)/);
   assert.match(guard, /shellPreviousAriaHidden == null/);
   assert.match(guard, /shell\.setAttribute\('aria-hidden', shellPreviousAriaHidden\)/);
+  assert.match(guard, /h1,h2,h3,h4,\[data-dialog-title\],header strong/);
   assert.match(guard, /aria-labelledby/);
   assert.match(guard, /crypto\.randomUUID\(\)/);
+});
+
+test('dynamic icon-only actions receive stable accessible names without overwriting visible labels', () => {
+  assert.match(app, /data-action="calendar-prev"/);
+  assert.match(app, /data-action="calendar-next"/);
+  assert.match(app, /class="button icon-button button--primary" data-action="focus-fast">/);
+  assert.match(guard, /'calendar-prev': 'Mes anterior'/);
+  assert.match(guard, /'calendar-next': 'Mes siguiente'/);
+  assert.match(guard, /'focus-fast': 'Captura rápida'/);
+  assert.match(guard, /!hasAccessibleName\(element\)/);
+  assert.match(guard, /element\.setAttribute\('aria-label', label\)/);
+  assert.match(guard, /ensureActionLabels\(document\)/);
 });
 
 test('dialog replacement clears stale active reference before activating the next overlay', () => {
