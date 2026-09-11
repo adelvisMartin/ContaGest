@@ -22,7 +22,7 @@ test('canonical backend mounts Command Center below /api/v1/hipico and keeps bot
   assert.match(service, /sourceSendPossible:\s*false/);
 });
 
-test('canonical read APIs expose groups messages events and trace behind operator auth', async () => {
+test('canonical read APIs expose groups messages event history SSE and trace behind operator auth', async () => {
   const [app, route] = await Promise.all([
     read('backend/src/app.ts'),
     read('backend/src/modules/hipico/operator-read.routes.ts')
@@ -31,9 +31,11 @@ test('canonical read APIs expose groups messages events and trace behind operato
   assert.match(app, /app\.use\('\/api\/v1\/hipico', authRateLimit, hipicoOperatorReadRoutes\)/);
   assert.match(route, /operatorTokenValid/);
   assert.match(route, /Cache-Control.*no-store/);
-  for (const endpoint of ["'/groups'", "'/messages'", "'/events/stream'", "'/trace/:correlationId'"]) {
+  for (const endpoint of ["'/groups'", "'/messages'", "'/events'", "'/events/stream'", "'/trace/:correlationId'"]) {
     assert.ok(route.includes(endpoint), `missing canonical local endpoint ${endpoint}`);
   }
+  assert.match(route, /text\/event-stream/);
+  assert.match(route, /X-Accel-Buffering/);
   assert.match(route, /owner_id=\$\{owner\}::uuid/);
   assert.match(route, /group_key=\$\{group\}|channel_key=\$\{group\}/);
 });
@@ -106,9 +108,11 @@ test('one canonical local CLI powers npm and Windows launchers and refuses insec
   assert.match(cli, /HIPICO_OPERATOR_CONTROL_TOKEN/);
   assert.match(cli, /HIPICO_GROUP_BRIDGE_TOKEN/);
   assert.doesNotMatch(cli, /--token/);
-  for (const command of ['version','status','readiness','command-center','groups','meetings','races','documents','providers','messages tail','events tail','trace','bridge-health','doctor']) {
+  for (const command of ['version','status','readiness','command-center','groups','meetings','races','documents','providers','messages tail','events tail','events stream','trace','bridge-health','doctor']) {
     assert.ok(cli.includes(command), `missing CLI command ${command}`);
   }
+  assert.match(cli, /\/api\/v1\/hipico\/events\?limit=/);
+  assert.match(cli, /\/api\/v1\/hipico\/events\/stream/);
 });
 
 test('design-system document defines observable states and WCAG/mobile contracts', async () => {
