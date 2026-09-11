@@ -1,5 +1,6 @@
 import { metaOutboundPolicy, strongSecretConfigured } from './_shared.js';
 import { bridgeIdentityStatus } from './bridge-identity.js';
+import { metaSenderConfig, metaWebhookConfig } from './meta-runtime.js';
 
 function missing(keys) {
   return keys.filter((key) => !String(process.env[key] || '').trim());
@@ -12,7 +13,7 @@ export default function handler(req, res) {
   const persistenceRequired = ['HIPICO_SUPABASE_URL', 'HIPICO_SUPABASE_SERVICE_ROLE_KEY', 'HIPICO_OWNER_ID'];
   const linkedDeviceRequired = ['HIPICO_GROUP_BRIDGE_TOKEN', 'HIPICO_SOURCE_GROUP_ID', 'HIPICO_LAB_GROUP_ID'];
   const metaRequired = ['HIPICO_META_ACCESS_TOKEN', 'HIPICO_META_PHONE_NUMBER_ID', 'HIPICO_INTERNAL_API_TOKEN'];
-  const webhookRequired = ['HIPICO_META_VERIFY_TOKEN', 'HIPICO_META_APP_SECRET'];
+  const webhookRequired = ['HIPICO_META_VERIFY_TOKEN', 'HIPICO_META_APP_SECRET', 'HIPICO_META_PHONE_NUMBER_ID'];
 
   const persistenceMissing = missing(persistenceRequired);
   const linkedDeviceMissing = missing(linkedDeviceRequired);
@@ -21,16 +22,16 @@ export default function handler(req, res) {
   const identity = bridgeIdentityStatus();
   const bridgeTokenStrong = strongSecretConfigured(process.env.HIPICO_GROUP_BRIDGE_TOKEN);
   const internalApiTokenStrong = strongSecretConfigured(process.env.HIPICO_INTERNAL_API_TOKEN);
-  const webhookSecretsStrong = strongSecretConfigured(process.env.HIPICO_META_VERIFY_TOKEN)
-    && strongSecretConfigured(process.env.HIPICO_META_APP_SECRET);
   const persistenceReady = persistenceMissing.length === 0;
   const linkedDeviceReady = persistenceReady
     && linkedDeviceMissing.length === 0
     && bridgeTokenStrong
     && identity.ready;
   const outbound = metaOutboundPolicy();
-  const metaDirectReady = persistenceReady && metaMissing.length === 0 && internalApiTokenStrong && outbound.enabled;
-  const metaWebhookReady = persistenceReady && webhookMissing.length === 0 && webhookSecretsStrong;
+  const sender = metaSenderConfig();
+  const webhook = metaWebhookConfig();
+  const metaDirectReady = persistenceReady && metaMissing.length === 0 && internalApiTokenStrong && sender.ready && outbound.enabled;
+  const metaWebhookReady = persistenceReady && webhookMissing.length === 0 && webhook.ready;
 
   return res.status(200).json({
     ok: true,
@@ -53,7 +54,9 @@ export default function handler(req, res) {
       directIndividualSendReady: metaDirectReady,
       webhookReady: metaWebhookReady,
       internalApiTokenStrong,
-      webhookSecretsStrong,
+      accessTokenStrong: sender.accessTokenStrong,
+      phoneNumberIdValid: sender.phoneNumberIdValid && webhook.phoneNumberIdValid,
+      webhookSecretsStrong: webhook.verifyTokenStrong && webhook.appSecretStrong,
       optionalForLinkedDeviceBridge: true,
       outboundPolicy: {
         enabled: outbound.enabled,
@@ -66,4 +69,4 @@ export default function handler(req, res) {
   });
 }
 
-export const __test__ = { bridgeIdentityStatus };
+export const __test__ = { bridgeIdentityStatus, metaSenderConfig, metaWebhookConfig };
