@@ -1,4 +1,4 @@
-import { bearerTokenValid, env, fetchWithTimeout, isE164, isMetaPhoneNumberId, metaDestinationAllowed, metaOutboundPolicy, serverSecret, supabase } from './_shared.js';
+import { bearerTokenValid, env, fetchWithTimeout, isE164, isMetaPhoneNumberId, metaDestinationAllowed, metaOutboundPolicy, serverSecret, strongSecretConfigured, supabase } from './_shared.js';
 
 const MAX_ATTEMPTS = 6;
 const BATCH_SIZE = 10;
@@ -46,10 +46,14 @@ function safeGraphVersion() {
 function metaSenderConfig(source=process.env){
   const accessToken=String(source.HIPICO_META_ACCESS_TOKEN||'').trim();
   const phoneNumberId=String(source.HIPICO_META_PHONE_NUMBER_ID||'').trim();
+  const accessTokenStrong=strongSecretConfigured(accessToken);
+  const phoneNumberIdValid=isMetaPhoneNumberId(phoneNumberId);
   return{
     accessToken,
     phoneNumberId,
-    ready:Boolean(accessToken)&&isMetaPhoneNumberId(phoneNumberId)
+    accessTokenStrong,
+    phoneNumberIdValid,
+    ready:accessTokenStrong&&phoneNumberIdValid
   };
 }
 
