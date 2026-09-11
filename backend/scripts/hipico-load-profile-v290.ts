@@ -1,14 +1,19 @@
 import assert from 'node:assert/strict';
+import { once } from 'node:events';
 import fs from 'node:fs/promises';
+import os from 'node:os';
 import path from 'node:path';
 import { performance } from 'node:perf_hooks';
+import PDFDocument from 'pdfkit';
 import pg from 'pg';
+import { createPdfJsDocumentExtractor, documentExtractorCapability } from '../src/modules/hipico/document-extractor.js';
+import { normalizeSportradarStage } from '../src/modules/hipico/sportradar-provider.adapter.js';
 
 const { Client } = pg;
 const databaseUrl = String(process.env.HIPICO_E2E_DATABASE_URL || '').trim();
 const OWNER_ID = process.env.HIPICO_E2E_OWNER_ID || '11111111-1111-4111-8111-111111111111';
 const SHA = process.env.GITHUB_SHA || process.env.HIPICO_QA_SHA || 'local';
-const artifact = path.resolve(process.env.HIPICO_PERF_ARTIFACT || '../artifacts/qa/hipico-v290/postgres-performance.json');
+const artifact = path.resolve(process.env.HIPICO_PERF_ARTIFACT || '../artifacts/qa/hipico-v290/production-performance.json');
 const volumes = [100, 500, 2000];
 
 function requireIsolatedDatabase() {
@@ -18,10 +23,51 @@ function requireIsolatedDatabase() {
   assert.match(url.pathname.replace(/^\//, ''), /^hipico_e2e_[a-z0-9_]{8,63}$/, 'performance profile requires run-isolated database');
 }
 
+async function pdfBuffer(volume: number) {
+  const doc = new PDFDocument({ autoFirstPage: true, compress: true, margin: 36, info: { Title: `Control Hipico perf ${volume}` } });
+  const chunks: Buffer[] = [];
+  doc.on('data', (chunk) => chunks.push(Buffer.from(chunk)));
+  doc.fontSize(12).text(`PROGRAMA DE CARRERAS PERF ${volume}`);
+  for (let index = 1; index <= volume; index += 1) {
+    doc.fontSize(8).text(`Carrera ${Math.ceil(index / 12)} · Ejemplar ${index} · número ${index} · estado declarado`);
+  }
+  doc.end();
+  await once(doc, 'end');
+  return Buffer.concat(chunks);
+}
+
+function providerFixture(volume: number) {
+  const competitors = Array.from({ length: volume }, (_, index) => `<competitor id="sr:competitor:${index + 1}" name="RUNNER ${index + 1}" number="${index + 1}"/>`).join('');
+  return {
+    provider: 'sportradar-uof' as const,
+    stageId: String(700000 + volume),
+    fetchedAt: '2026-09-11T20:00:01.000Z',
+    contentType: 'application/xml',
+    xml: `<?xml version="1.0"?><stage_summary generated_at="2026-09-11T20:00:00.000Z"><sport_event id="sr:stage:${700000 + volume}" scheduled="2026-09-11T20:05:00.000Z" name="Perf ${volume}"><competitors>${competitors}</competitors></sport_event><sport_event_status status="open"/></stage_summary>`,
+    cached: false
+  };
+}
+
+function memorySnapshot() {
+  const value = process.memoryUsage();
+  return {
+    rssBytes: value.rss,
+    heapTotalBytes: value.heapTotal,
+    heapUsedBytes: value.heapUsed,
+    externalBytes: value.external,
+    arrayBuffersBytes: value.arrayBuffers
+  };
+}
+
 requireIsolatedDatabase();
+const capability = documentExtractorCapability(process.env);
+assert.equal(capability.nativeText, true, `native PDF runtime unavailable: ${capability.reason || 'unknown'}`);
+const extractor = createPdfJsDocumentExtractor(process.env);
+assert.ok(extractor, 'native PDF extractor must be configured in production performance gate');
+
 const client = new Client({ connectionString: databaseUrl });
 await client.connect();
-const evidence: any[] = [];
+const profiles: any[] = [];
 try {
   for (const volume of volumes) {
     const groupKey = `perf-${volume}`;
@@ -33,6 +79,8 @@ try {
       [OWNER_ID, groupKey, `Performance ${volume}`]
     );
     const channelId = channelRows.rows[0].id;
+    const memoryBefore = memorySnapshot();
+
     const insertStart = performance.now();
     await client.query(
       `INSERT INTO public.hipico_messages(
@@ -45,19 +93,85 @@ try {
       [OWNER_ID, channelId, groupKey, volume]
     );
     const insertMs = performance.now() - insertStart;
+
     const countStart = performance.now();
     const countRows = await client.query(`SELECT count(*)::int AS count FROM public.hipico_messages WHERE owner_id=$1::uuid AND channel_key=$2`, [OWNER_ID, groupKey]);
     const countMs = performance.now() - countStart;
     assert.equal(countRows.rows[0].count, volume);
+
     const recentStart = performance.now();
     const recentRows = await client.query(`SELECT external_message_id,received_at FROM public.hipico_messages WHERE owner_id=$1::uuid AND channel_key=$2 ORDER BY received_at DESC LIMIT 50`, [OWNER_ID, groupKey]);
-    const recentMs = performance.now() - recentStart;
+    const recent50Ms = performance.now() - recentStart;
     assert.equal(recentRows.rows.length, Math.min(50, volume));
+
     const planRows = await client.query(`EXPLAIN (ANALYZE,BUFFERS,FORMAT JSON) SELECT external_message_id,received_at FROM public.hipico_messages WHERE owner_id=$1::uuid AND channel_key=$2 ORDER BY received_at DESC LIMIT 50`, [OWNER_ID, groupKey]);
     const plan = planRows.rows[0]['QUERY PLAN']?.[0];
-    evidence.push({ volume, insertMs: Number(insertMs.toFixed(3)), countMs: Number(countMs.toFixed(3)), recent50Ms: Number(recentMs.toFixed(3)), plannerExecutionMs: plan?.['Execution Time'] ?? null, plannerPlanningMs: plan?.['Planning Time'] ?? null, plan: plan?.Plan ?? null });
+
+    const providerStart = performance.now();
+    const providerNormalized = normalizeSportradarStage(providerFixture(volume));
+    const providerNormalizeMs = performance.now() - providerStart;
+    assert.equal(providerNormalized.data.runners.length, volume);
+    assert.equal(providerNormalized.provenance.financialAuthority, false);
+
+    const pdf = await pdfBuffer(volume);
+    const pdfStart = performance.now();
+    const extracted = await extractor.extract(pdf, new AbortController().signal);
+    const pdfNativeParseMs = performance.now() - pdfStart;
+    assert.equal(extracted.method, 'native_text');
+    assert.ok(extracted.text.includes(`PERF ${volume}`));
+
+    const memoryAfter = memorySnapshot();
+    profiles.push({
+      volume,
+      postgres: {
+        insertMs: Number(insertMs.toFixed(3)),
+        countMs: Number(countMs.toFixed(3)),
+        recent50Ms: Number(recent50Ms.toFixed(3)),
+        plannerExecutionMs: plan?.['Execution Time'] ?? null,
+        plannerPlanningMs: plan?.['Planning Time'] ?? null,
+        plan: plan?.Plan ?? null
+      },
+      providerAdapter: {
+        normalizationMs: Number(providerNormalizeMs.toFixed(3)),
+        normalizedRunners: providerNormalized.data.runners.length,
+        transportLatency: { status: 'NOT_EXECUTED', reason: 'EXTERNAL_PROVIDER_CREDENTIALS_NOT_REQUIRED_FOR_PR_GATE' }
+      },
+      pdf: {
+        bytes: pdf.byteLength,
+        nativeParseMs: Number(pdfNativeParseMs.toFixed(3)),
+        pages: extracted.pageCount || null,
+        parserVersion: extracted.parserVersion
+      },
+      processMemory: {
+        before: memoryBefore,
+        after: memoryAfter,
+        rssDeltaBytes: memoryAfter.rssBytes - memoryBefore.rssBytes,
+        heapUsedDeltaBytes: memoryAfter.heapUsedBytes - memoryBefore.heapUsedBytes
+      }
+    });
   }
+
+  const host = {
+    platform: process.platform,
+    arch: process.arch,
+    node: process.version,
+    cpuCount: os.cpus().length,
+    cpuModel: os.cpus()[0]?.model || 'unknown',
+    totalMemoryBytes: os.totalmem(),
+    targetProfile: 'Intel Core i5 6th generation / 16 GB RAM',
+    equivalence: 'CI measurement only; physical target-device benchmark remains separate evidence when hardware is available.'
+  };
   await fs.mkdir(path.dirname(artifact), { recursive: true });
-  await fs.writeFile(artifact, `${JSON.stringify({ schema: 'hipico-performance.v290', sha: SHA, database: 'isolated-ephemeral', measuredAt: new Date().toISOString(), profiles: evidence }, null, 2)}\n`, 'utf8');
-  console.log(`[hipico-v290] PostgreSQL load profiles measured: ${volumes.join('/')}`);
-} finally { await client.end(); }
+  await fs.writeFile(artifact, `${JSON.stringify({
+    schema: 'hipico-performance.v290',
+    sha: SHA,
+    database: 'isolated-ephemeral',
+    pdfRuntime: capability.parserVersion,
+    measuredAt: new Date().toISOString(),
+    host,
+    profiles
+  }, null, 2)}\n`, 'utf8');
+  console.log(`[hipico-v290] performance profiles measured: ${volumes.join('/')} operations`);
+} finally {
+  await client.end();
+}
