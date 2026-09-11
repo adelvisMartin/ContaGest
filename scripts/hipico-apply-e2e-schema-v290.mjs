@@ -33,6 +33,7 @@ const client = new Client({ connectionString: databaseUrl });
 await client.connect();
 try {
   await client.query('BEGIN');
+  await client.query('CREATE EXTENSION IF NOT EXISTS pgcrypto');
   await client.query(`DO $$ BEGIN CREATE ROLE anon NOLOGIN; EXCEPTION WHEN duplicate_object THEN NULL; END $$`);
   await client.query(`DO $$ BEGIN CREATE ROLE authenticated NOLOGIN; EXCEPTION WHEN duplicate_object THEN NULL; END $$`);
   await client.query('CREATE SCHEMA IF NOT EXISTS auth');
