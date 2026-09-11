@@ -2,14 +2,14 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { parseWhatsAppChat } from '../frontend/public/hipico-control/assets/js/whatsapp.js';
-import { resolveBoardTarget, resolveMatchTarget } from '../frontend/public/hipico-control/assets/js/race-context-guard.js';
+import { resolveBoardTarget, resolveImportTarget } from '../frontend/public/hipico-control/assets/js/race-context-guard.js';
 
 function workspace(track='Churchill Downs',number=1){
   return {
     config:{activeGroupId:'g1',activeWhatsappGroupId:'g1',activeRaceByGroup:{g1:'r1'},groups:[{id:'g1',companyName:'CONTROL HÍPICO',currency:'Bs.',exchangeRate:100}],racetrackCatalog:['Churchill Downs','Colonial Downs','Del Mar']},
     days:[{id:'d1',groupId:'g1',date:'2026-09-10',status:'open'}],
     races:[{id:'r1',groupId:'g1',dayId:'d1',date:'2026-09-10',racetrack:track,number,status:'locked',board:['','','','','',''],bets:[]}],
-    participants:[],movements:[],exchangeRates:[]
+    participants:[],movements:[],exchangeRates:[],chatImports:[]
   };
 }
 
@@ -112,8 +112,8 @@ test('an ambiguous opening ends inherited race context instead of silently assig
 
 test('exactly bound whatsapp matches are eligible only for the same active race',()=>{
   const analysis=parse(pairedChat(1));
-  assert.equal(resolveMatchTarget(analysis,workspace('Churchill Downs',1)).status,'MATCH');
-  const mismatch=resolveMatchTarget(analysis,workspace('Churchill Downs',2));
+  assert.equal(resolveImportTarget(analysis,workspace('Churchill Downs',1)).status,'MATCH');
+  const mismatch=resolveImportTarget(analysis,workspace('Churchill Downs',2));
   assert.equal(mismatch.status,'MISMATCH');
   assert.match(mismatch.reason,/Churchill Downs 1/);
   assert.match(mismatch.reason,/Churchill Downs 2/);
@@ -121,7 +121,7 @@ test('exactly bound whatsapp matches are eligible only for the same active race'
 
 test('match target blocks another track even when the race number is the same',()=>{
   const analysis=parse(pairedChat(1));
-  const mismatch=resolveMatchTarget(analysis,workspace('Colonial Downs',1));
+  const mismatch=resolveImportTarget(analysis,workspace('Colonial Downs',1));
   assert.equal(mismatch.status,'MISMATCH');
 });
 
@@ -131,7 +131,7 @@ test('contextless matched offers require explicit operator confirmation before i
     '[5:01 p. m., 10/09/2026] Jugador B: Consigo 1n del 5 con 100k'
   ].join('\n'));
   assert.equal(analysis.matches.length,1);
-  assert.equal(resolveMatchTarget(analysis,workspace()).status,'AMBIGUOUS');
+  assert.equal(resolveImportTarget(analysis,workspace()).status,'AMBIGUOUS');
 });
 
 test('race guards use app-styled accessible confirmation instead of native browser prompts',()=>{
