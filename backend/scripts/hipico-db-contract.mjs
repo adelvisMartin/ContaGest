@@ -26,7 +26,8 @@ const migrations = [
   'supabase/sql/hipico_v12_group_bridge.sql',
   'supabase/sql/hipico_v12_shadow_validation.sql',
   'supabase/sql/hipico_v13_workspace_sync_security.sql',
-  'supabase/sql/hipico_v14_canonical_domain.sql'
+  'supabase/sql/hipico_v14_canonical_domain.sql',
+  'supabase/sql/hipico_v15_domain_integrity_alignment.sql'
 ];
 const labBootstrap = 'supabase/sql/hipico_v13_lab_channel_bootstrap.sql';
 
@@ -198,8 +199,6 @@ async function assertCanonicalDomainContract(ownerId) {
       )
     `,[ownerId]);
 
-    // The same upstream identity may legitimately exist in another group; group
-    // scope is part of the idempotency boundary.
     await client.query(`
       insert into public.hipico_domain_events(
         id,owner_id,group_key,aggregate_kind,aggregate_key,source_message_id,source_message_key,event_type,
@@ -228,11 +227,11 @@ async function assertCanonicalDomainContract(ownerId) {
           id,owner_id,group_key,aggregate_kind,aggregate_key,source_message_key,event_type,
           disposition,previous_state,next_state,reason,source,schema_version,event_timestamp
         ) values (
-          'event-a-duplicate',$1::uuid,'group-a','race','race-1','source-msg-1','RACE_OPENED',
+          'event-a-duplicate',$1::uuid,'group-a','race','race-1','source-msg-1','RESULT_RECORDED',
           'review','OPEN','OPEN','SAME_STATE_EVIDENCE','canonical_operator_api',1,now()
         )
       `,[ownerId]);
-      assert.fail('canonical source identity must be unique inside one aggregate');
+      assert.fail('same source identity with another parser event type must still be rejected');
     } catch (error) {
       assert.equal(error.code,'23505');
       await client.query('rollback to savepoint duplicate_domain_source');
@@ -255,6 +254,24 @@ async function assertCanonicalDomainContract(ownerId) {
       await client.query('rollback to savepoint orphan_domain_event');
     }
 
+    await client.query('savepoint mutate_domain_event');
+    try {
+      await client.query(`update public.hipico_domain_events set reason='tampered' where id='event-a-1'`);
+      assert.fail('canonical domain events must be append-only');
+    } catch (error) {
+      assert.match(String(error.message || error),/HIPICO_DOMAIN_EVENTS_APPEND_ONLY/);
+      await client.query('rollback to savepoint mutate_domain_event');
+    }
+
+    await client.query('savepoint delete_domain_event');
+    try {
+      await client.query(`delete from public.hipico_domain_events where id='event-a-1'`);
+      assert.fail('canonical domain events must not be physically deleted');
+    } catch (error) {
+      assert.match(String(error.message || error),/HIPICO_DOMAIN_EVENTS_APPEND_ONLY/);
+      await client.query('rollback to savepoint delete_domain_event');
+    }
+
     const constraints = await client.query(`
       select conname,pg_get_constraintdef(oid) as definition
       from pg_constraint
@@ -262,6 +279,23 @@ async function assertCanonicalDomainContract(ownerId) {
     `);
     assert.ok(constraints.rows.some((row)=>row.conname==='hipico_domain_events_source_identity_unique'));
     assert.ok(constraints.rows.some((row)=>row.conname==='hipico_domain_events_aggregate_fk'));
+
+    const identityIndex = await client.query(`
+      select indexname,indexdef from pg_indexes
+      where schemaname='public' and tablename='hipico_domain_events'
+        and indexname='hipico_domain_events_source_identity_v297'
+    `);
+    assert.equal(identityIndex.rowCount,1);
+    assert.match(identityIndex.rows[0].indexdef,/UNIQUE INDEX/i);
+
+    const immutableTrigger = await client.query(`
+      select tgname
+      from pg_trigger
+      where tgrelid='public.hipico_domain_events'::regclass
+        and tgname='hipico_domain_events_immutable'
+        and not tgisinternal
+    `);
+    assert.equal(immutableTrigger.rowCount,1);
   } finally {
     await client.query('rollback');
   }
