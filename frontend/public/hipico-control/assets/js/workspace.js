@@ -1,4 +1,5 @@
 import { DEFAULT_RACETRACKS, createBlankWorkspace } from "./seed.js";
+import { assertWorkspaceInputSafety } from "./workspace-input-safety.js";
 export const createId = (prefix) => `${prefix}-${crypto.randomUUID()}`;
 export const isoNow = () => new Date().toISOString();
 export const todayIso = () => isoNow().slice(0, 10);
@@ -253,5 +254,6 @@ export function normalizeWorkspaceShape(value) {
     }
   }
   workspace.activeRaceId = workspace.config.activeRaceByGroup[workspace.config.activeGroupId] || null;
+  assertWorkspaceInputSafety(workspace);
   return workspace;
 }
