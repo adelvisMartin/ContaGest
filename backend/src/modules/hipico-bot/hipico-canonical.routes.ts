@@ -15,6 +15,11 @@ const STATE_ADVANCING_EVENTS = new Set<HipicoDomainEventType>([
   'DAY_OPENED', 'DAY_CLOSING', 'DAY_CLOSED', 'DAY_ARCHIVED'
 ]);
 const EXPLICIT_OPERATOR_EVENTS = new Set<HipicoDomainEventType>(['CORRECTION', 'REVERSAL']);
+const RACE_ONLY_EVENTS = new Set<HipicoDomainEventType>([
+  'PLAN_RECORDED', 'RACE_OPENED', 'BET_RECORDED', 'RACE_CLOSED', 'RESULT_RECORDED',
+  'SETTLEMENT_READY', 'SETTLEMENT_RECORDED', 'BALANCE_CONFIRMED', 'RACE_PUBLISHED', 'RACE_ARCHIVED'
+]);
+const DAY_ONLY_EVENTS = new Set<HipicoDomainEventType>(['DAY_OPENED', 'DAY_CLOSING', 'DAY_CLOSED', 'DAY_ARCHIVED']);
 
 const aggregateKindSchema = z.enum(['race', 'day']);
 const mediaKindSchema = z.enum(['none', 'image', 'video', 'audio', 'document', 'unknown']);
@@ -57,6 +62,8 @@ const domainEventSchema = z.object({
 }).strict();
 
 type DomainEventBody = z.infer<typeof domainEventSchema>;
+type CanonicalPolicyInput = Pick<DomainEventBody, 'eventType' | 'confirmedOperatorAction' | 'confirmationReason'>
+  & Partial<Pick<DomainEventBody, 'aggregateKind' | 'normalizedPayload' | 'originalEventId'>>;
 
 export function configuredCanonicalOwnerId(env: NodeJS.ProcessEnv = process.env) {
   const value = String(env.HIPICO_OWNER_ID || '').trim();
@@ -70,10 +77,69 @@ export function canonicalRequiresReview(input: Pick<DomainEventBody, 'eventType'
   return !(input.confirmedOperatorAction && String(input.confirmationReason || '').trim().length >= 5);
 }
 
-export function canonicalMutationPolicy(input: Pick<DomainEventBody, 'eventType' | 'confirmedOperatorAction' | 'confirmationReason'>) {
-  const requiresReview = canonicalRequiresReview(input);
+function payloadRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : null;
+}
+
+function nonEmptyText(value: unknown, max = 220) {
+  const text = String(value ?? '').trim();
+  return text.length > 0 && text.length <= max;
+}
+
+function finiteNumber(value: unknown) {
+  return typeof value === 'number' && Number.isFinite(value);
+}
+
+export function canonicalScopeIssue(input: CanonicalPolicyInput) {
+  if (input.aggregateKind) {
+    if (RACE_ONLY_EVENTS.has(input.eventType) && input.aggregateKind !== 'race') return 'HIPICO_EVENT_AGGREGATE_KIND_MISMATCH';
+    if (DAY_ONLY_EVENTS.has(input.eventType) && input.aggregateKind !== 'day') return 'HIPICO_EVENT_AGGREGATE_KIND_MISMATCH';
+  }
+  if (EXPLICIT_OPERATOR_EVENTS.has(input.eventType) && !String(input.originalEventId || '').trim()) {
+    return 'HIPICO_ORIGINAL_EVENT_REQUIRED';
+  }
+  return null;
+}
+
+export function canonicalEvidenceIssue(input: CanonicalPolicyInput) {
+  const payload = payloadRecord(input.normalizedPayload);
+  if (input.eventType === 'RACE_OPENED' || input.eventType === 'RACE_CLOSED') {
+    const raceNumber = payload?.raceNumber;
+    const racetrack = payload?.racetrack;
+    const complete = payload?.raceContextComplete;
+    if (!Number.isInteger(raceNumber) || Number(raceNumber) < 1 || Number(raceNumber) > 999 || !nonEmptyText(racetrack, 120) || complete !== true) {
+      return 'HIPICO_RACE_CONTEXT_INCOMPLETE';
+    }
+  }
+  if (input.eventType === 'RESULT_RECORDED') {
+    const board = payload?.board;
+    if (!Array.isArray(board) || board.length < 1 || board.length > 20 || board.some((entry) => !nonEmptyText(entry, 80))) {
+      return 'HIPICO_RESULT_BOARD_REQUIRED';
+    }
+  }
+  if (input.eventType === 'SETTLEMENT_RECORDED') {
+    const rows = payload?.settlementRows;
+    if (!Array.isArray(rows) || rows.length < 1 || rows.length > 500 || rows.some((row) => {
+      const item = payloadRecord(row);
+      return !item || !nonEmptyText(item.participant, 220) || !finiteNumber(item.amount);
+    })) return 'HIPICO_SETTLEMENT_ROWS_REQUIRED';
+  }
+  if (input.eventType === 'BALANCE_CONFIRMED') {
+    const balances = payload?.balances;
+    if (!Array.isArray(balances) || balances.length < 1 || balances.length > 500 || balances.some((row) => {
+      const item = payloadRecord(row);
+      return !item || !nonEmptyText(item.participant, 220) || !finiteNumber(item.available);
+    })) return 'HIPICO_BALANCES_REQUIRED';
+  }
+  return null;
+}
+
+export function canonicalMutationPolicy(input: CanonicalPolicyInput) {
+  const evidenceIssue = canonicalEvidenceIssue(input);
+  const requiresReview = canonicalRequiresReview(input) || Boolean(evidenceIssue);
   return {
     requiresReview,
+    evidenceIssue,
     sourceWrite: false as const,
     monetaryWrite: false as const,
     stateWriteEligible: STATE_ADVANCING_EVENTS.has(input.eventType) && !requiresReview,
@@ -168,6 +234,8 @@ router.post('/domain/events', async (req, res) => {
   const ownerId = configuredCanonicalOwnerId();
   if (!ownerId) return res.status(503).json({ ok: false, error: 'HIPICO_OWNER_NOT_CONFIGURED' });
   const input = parsed.data;
+  const scopeIssue = canonicalScopeIssue(input);
+  if (scopeIssue) return res.status(400).json({ ok: false, retryable: false, error: scopeIssue });
   const policy = canonicalMutationPolicy(input);
 
   if ((EXPLICIT_OPERATOR_EVENTS.has(input.eventType) || STATE_ADVANCING_EVENTS.has(input.eventType))
@@ -205,6 +273,7 @@ router.post('/domain/events', async (req, res) => {
       ok: true,
       data: persisted,
       policy,
+      quarantined: policy.requiresReview,
       groupKey: input.groupKey,
       sourceWrite: false,
       monetaryWrite: false
@@ -231,6 +300,8 @@ export default router;
 export const __test__ = {
   STATE_ADVANCING_EVENTS,
   EXPLICIT_OPERATOR_EVENTS,
+  RACE_ONLY_EVENTS,
+  DAY_ONLY_EVENTS,
   previewSchema,
   domainReadSchema,
   domainEventSchema
