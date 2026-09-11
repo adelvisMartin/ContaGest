@@ -12,6 +12,7 @@ const policy = json('products/hipico-control/release-policy.json');
 const buildInfo = json('frontend/public/hipico-control/build-info.json');
 const androidPackage = json('android/hipico-control-v1130/package.json');
 const bridgePackage = json('tools/hipico-whatsapp-web-bridge/package.json');
+const rootPackage = json('package.json');
 const domain = read('backend/src/modules/hipico/hipico-domain.ts');
 const index = read('frontend/public/hipico-control/index.html');
 const serviceWorker = read('frontend/public/hipico-control/sw.js');
@@ -23,6 +24,9 @@ const guarded = [
   'backend/scripts/hipico-restart-recovery-v290.ts',
   'backend/scripts/hipico-load-profile-v290.ts',
   'tests/hipico_command_center_issue_289.test.mjs',
+  'tests/hipico_production_security_issue_290.test.mjs',
+  'scripts/hipico-release-report-v290.mjs',
+  'scripts/hipico-verify-evidence-v290.mjs',
   workflowPath
 ];
 
@@ -34,6 +38,8 @@ assert(bridgeProtocolVersion === policy.bridgeProtocolVersion, `bridge protocol 
 assert(bridgePackage.version === policy.bridgePackageVersion, `bridge package ${bridgePackage.version} != release policy ${policy.bridgePackageVersion}`);
 assert(buildInfo.version === policy.version, `build-info ${buildInfo.version} != release policy ${policy.version}`);
 assert(androidPackage.version === policy.version, `Android wrapper ${androidPackage.version} != release policy ${policy.version}`);
+assert(rootPackage.scripts?.hipico === 'node tools/hipico-cli/hipico.mjs', 'root hipico script must delegate to the single canonical CLI');
+assert(!fs.existsSync(path.join(root, 'scripts/hipico-cli.mjs')), 'duplicate scripts/hipico-cli.mjs must not exist');
 assert(index.includes('./assets/js/theme-bootstrap.js'), 'theme bootstrap missing from PWA shell');
 assert(index.includes('./assets/js/command-center-shell.js'), 'Command Center shell missing from PWA');
 assert(index.includes('./assets/js/version-guard.js'), 'version guard missing from PWA');
@@ -59,8 +65,14 @@ for (const relative of guarded) {
 const workflow = read(workflowPath);
 assert(/matrix:\s*[\s\S]*browser:\s*\[chromium, firefox, webkit\]/.test(workflow), 'scheduled browser matrix must keep Chromium/Firefox/WebKit');
 assert(/postgres:16-alpine/.test(workflow), 'real PostgreSQL 16 service is required');
+assert(/poppler-utils tesseract-ocr tesseract-ocr-eng/.test(workflow), 'PDF native/OCR system runtimes must be installed explicitly');
 assert(/if:\s*always\(\)[\s\S]*hipico-ephemeral-db-v290\.mjs drop/.test(workflow), 'ephemeral PostgreSQL cleanup must run always');
 assert(/production-e2e-v290\.ts/.test(workflow), 'production PostgreSQL E2E must target the final filename');
+assert(/security-regression:/.test(workflow), 'explicit security regression gate is required');
+assert(/final-release-gate:/.test(workflow), 'fail-closed final release gate is required');
+assert(/hipico-verify-evidence-v290\.mjs/.test(workflow), 'final gate must verify SHA-bound artifacts');
+assert(/hipico-release-report-v290\.mjs/.test(workflow), 'final gate must emit release report/readiness');
+assert(/actions\/download-artifact@v7/.test(workflow), 'final gate must consume upstream artifacts');
 
 const evidenceDir = path.join(root, 'artifacts/qa/hipico-v290');
 fs.mkdirSync(evidenceDir, { recursive: true });
