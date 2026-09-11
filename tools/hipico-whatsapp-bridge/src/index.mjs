@@ -3,6 +3,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import qrcode from 'qrcode-terminal';
 import pkg from 'whatsapp-web.js';
+import { isGroupId } from './group-identity.mjs';
 
 const { Client, LocalAuth } = pkg;
 const BRIDGE_VERSION = '0.3.2-shadow-only';
@@ -28,10 +29,6 @@ function isSafeHttpsEndpoint(value) {
     const url = new URL(value);
     return url.protocol === 'https:' && !url.username && !url.password && !url.search && !url.hash;
   } catch { return false; }
-}
-
-function isGroupId(value) {
-  return /^\d{5,}(?:-\d+)?@g\.us$/i.test(String(value || '').trim());
 }
 
 const INGEST_URL = required('HIPICO_INGEST_URL');
@@ -263,7 +260,7 @@ let lab = null;
 let flushing = false;
 
 client.on('qr', (qr) => {
-  console.log('\nEscanea este QR desde WhatsApp/WhatsApp Business > Dispositivos vinculados:\n');
+  console.log('\nEscanea este QR desde WhatsApp normal > Dispositivos vinculados:\n');
   qrcode.generate(qr, { small: true });
 });
 client.on('authenticated', () => console.log('WhatsApp vinculado.'));
