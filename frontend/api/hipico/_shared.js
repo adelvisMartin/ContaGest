@@ -1,33 +1,71 @@
 import crypto from 'node:crypto';
 
+const DEFAULT_FETCH_TIMEOUT_MS = 10000;
+
 export function env(name, required = true) {
   const value = process.env[name];
   if (required && !value) throw new Error(`Missing server configuration: ${name}`);
   return value || '';
 }
 
-export async function readRawBody(req) {
+export function safeEqual(left, right) {
+  const a = Buffer.from(String(left || ''));
+  const b = Buffer.from(String(right || ''));
+  return a.length === b.length && a.length > 0 && crypto.timingSafeEqual(a, b);
+}
+
+export function bearerTokenValid(header, expected) {
+  const value = String(header || '');
+  return value.startsWith('Bearer ') && safeEqual(value.slice(7), expected);
+}
+
+export function isE164(value) {
+  return /^\+?[1-9]\d{6,17}$/.test(String(value || '').trim());
+}
+
+export async function readRawBody(req, maxBytes = 1024 * 1024) {
   const chunks = [];
-  for await (const chunk of req) chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+  let size = 0;
+  for await (const chunk of req) {
+    const value = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+    size += value.length;
+    if (size > maxBytes) throw new Error('request_body_too_large');
+    chunks.push(value);
+  }
   return Buffer.concat(chunks);
 }
 
 export function verifyMetaSignature(rawBody, header, appSecret) {
   if (!header || !appSecret || !String(header).startsWith('sha256=')) return false;
   const expected = `sha256=${crypto.createHmac('sha256', appSecret).update(rawBody).digest('hex')}`;
-  const left = Buffer.from(String(header));
-  const right = Buffer.from(expected);
-  return left.length === right.length && crypto.timingSafeEqual(left, right);
+  return safeEqual(header, expected);
 }
 
 export function sha256(value) {
   return crypto.createHash('sha256').update(String(value ?? '')).digest('hex');
 }
 
+export async function fetchWithTimeout(url, init = {}, timeoutMs = DEFAULT_FETCH_TIMEOUT_MS) {
+  const controller = new AbortController();
+  const callerSignal = init.signal;
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  const abort = () => controller.abort();
+  if (callerSignal) {
+    if (callerSignal.aborted) controller.abort();
+    else callerSignal.addEventListener('abort', abort, { once: true });
+  }
+  try {
+    return await fetch(url, { ...init, signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
+    callerSignal?.removeEventListener?.('abort', abort);
+  }
+}
+
 export async function supabase(path, init = {}) {
   const base = env('HIPICO_SUPABASE_URL').replace(/\/$/, '');
   const serviceKey = env('HIPICO_SUPABASE_SERVICE_ROLE_KEY');
-  const response = await fetch(`${base}/rest/v1/${path}`, {
+  const response = await fetchWithTimeout(`${base}/rest/v1/${path}`, {
     ...init,
     headers: {
       apikey: serviceKey,
@@ -35,9 +73,12 @@ export async function supabase(path, init = {}) {
       'Content-Type': 'application/json',
       ...(init.headers || {})
     }
-  });
+  }, Number(process.env.HIPICO_SUPABASE_TIMEOUT_MS || DEFAULT_FETCH_TIMEOUT_MS));
   const text = await response.text();
-  if (!response.ok) throw new Error(`Supabase ${response.status}: ${text.slice(0, 500)}`);
+  if (!response.ok) {
+    const requestId = response.headers.get('x-request-id') || response.headers.get('sb-request-id') || '';
+    throw new Error(`Supabase ${response.status}${requestId ? ` request=${requestId}` : ''}`);
+  }
   return text ? JSON.parse(text) : null;
 }
 
@@ -57,7 +98,7 @@ export function extractMetaMessages(payload) {
           senderLabel: contactNames.get(String(message?.from || '')) || '',
           timestamp: message?.timestamp ? new Date(Number(message.timestamp) * 1000).toISOString() : new Date().toISOString(),
           type: String(message?.type || 'unknown'),
-          text: String(text || ''),
+          text: String(text || '').slice(0, 4000),
           quotedExternalMessageId: message?.context?.id ? String(message.context.id) : null,
           raw: message
         });

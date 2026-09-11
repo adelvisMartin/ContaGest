@@ -1,12 +1,15 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import { HipicoBotStore, operatorTokenValid, promotion, sendCloudText } from './hipico-bot.service.js';
+import { HipicoBotStore, promotion, sendCloudText } from './hipico-bot.service.js';
 import { classify } from './hipico-operational-classifier.js';
+import { operatorTokenValid } from './hipico-operator-security.js';
+import { createHorseRaceProvider, HorseRaceProviderError } from './hipico-race-provider.js';
 import { buildShadowProjection } from './hipico-shadow-projection.js';
 
 const router=Router();
 const idSchema=z.string().min(3).max(120).regex(/^[A-Za-z0-9_-]+$/);
 const limit=(value:unknown)=>Math.min(100,Math.max(1,Number(value)||50));
+const raceProvider=createHorseRaceProvider();
 
 router.use((req,res,next)=>{
   res.setHeader('Cache-Control','no-store, max-age=0');
@@ -23,8 +26,23 @@ router.get('/status',async(_req,res)=>res.json({ok:true,data:{
   webhookConfigured:Boolean(process.env.WHATSAPP_VERIFY_TOKEN&&process.env.WHATSAPP_APP_SECRET),
   targetSupport:['individual'],
   groupAutomation:'bridge-required',
-  groupQaMode:'shadow-only'
+  groupQaMode:'shadow-only',
+  raceProvider:raceProvider.status()
 }}));
+
+router.get('/race-provider/status',(_req,res)=>res.json({ok:true,data:raceProvider.status()}));
+router.get('/race-provider/stages/:stageId',async(req,res)=>{
+  try{
+    const result=await raceProvider.getStageSummary(String(req.params.stageId||''));
+    return res.json({ok:true,data:{...result,enrichmentOnly:true,financialAuthority:false}});
+  }catch(error:any){
+    if(error instanceof HorseRaceProviderError){
+      const status=error.code==='INVALID_STAGE_ID'?400:error.code==='NOT_CONFIGURED'?503:error.code==='UPSTREAM_TIMEOUT'?504:502;
+      return res.status(status).json({ok:false,retryable:error.retryable,error:error.message,code:error.code,enrichmentOnly:true,financialAuthority:false});
+    }
+    return res.status(502).json({ok:false,retryable:true,error:'No se pudo consultar el proveedor hípico externo.',enrichmentOnly:true,financialAuthority:false});
+  }
+});
 
 router.get('/events',async(req,res)=>res.json({ok:true,data:await HipicoBotStore.events(limit(req.query.limit))}));
 router.get('/outbox',async(req,res)=>res.json({ok:true,data:await HipicoBotStore.outbox(limit(req.query.limit))}));
