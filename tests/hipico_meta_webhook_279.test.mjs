@@ -10,6 +10,7 @@ const source=await readFile(new URL('../frontend/api/hipico/whatsapp-webhook.js'
 const senderSource=await readFile(new URL('../frontend/api/hipico/whatsapp-send.js',import.meta.url),'utf8');
 const statusSource=await readFile(new URL('../frontend/api/hipico/status.js',import.meta.url),'utf8');
 const metaSource={HIPICO_META_PHONE_NUMBER_ID:'1234567890'};
+const strongMetaToken='x'.repeat(48);
 
 test('Meta webhook replay signature binds sender instant type body and quoted context',()=>{
   const base={
@@ -45,11 +46,13 @@ test('Meta webhook requires strong non-placeholder server secrets and constant-t
   const ready=statusTest.secretReadiness({
     HIPICO_GROUP_BRIDGE_TOKEN:strong,
     HIPICO_INTERNAL_API_TOKEN:strong,
+    HIPICO_META_ACCESS_TOKEN:strong,
     HIPICO_META_VERIFY_TOKEN:strong,
     HIPICO_META_APP_SECRET:strong
   });
-  assert.deepEqual(ready,{bridgeTokenStrong:true,internalApiTokenStrong:true,metaVerifyTokenStrong:true,metaAppSecretStrong:true});
+  assert.deepEqual(ready,{bridgeTokenStrong:true,internalApiTokenStrong:true,metaAccessTokenStrong:true,metaVerifyTokenStrong:true,metaAppSecretStrong:true});
   assert.equal(statusTest.secretReadiness({HIPICO_META_VERIFY_TOKEN:'short'}).metaVerifyTokenStrong,false);
+  assert.equal(statusTest.secretReadiness({HIPICO_META_ACCESS_TOKEN:'CHANGE_ME_WITH_A_SECRET_THAT_IS_LONG_ENOUGH_123456'}).metaAccessTokenStrong,false);
   assert.equal(strongSecretConfigured('REEMPLAZA_CON_SECRETO_ALEATORIO_32_CHARS_MINIMO'),false);
   assert.equal(strongSecretConfigured('CHANGE_ME_WITH_A_SECRET_THAT_IS_LONG_ENOUGH_123456'),false);
 });
@@ -61,14 +64,16 @@ test('Meta phone-number id uses the same numeric contract in webhook sender and 
   assert.equal(isMetaPhoneNumberId('123/456'),false);
   assert.deepEqual(statusTest.metaIdentityReadiness({HIPICO_META_PHONE_NUMBER_ID:'1234567890'}),{phoneNumberIdValid:true});
   assert.deepEqual(statusTest.metaIdentityReadiness({HIPICO_META_PHONE_NUMBER_ID:'phone-id'}),{phoneNumberIdValid:false});
-  assert.equal(senderTest.metaSenderConfig({HIPICO_META_ACCESS_TOKEN:'access-token',HIPICO_META_PHONE_NUMBER_ID:'1234567890'}).ready,true);
-  assert.equal(senderTest.metaSenderConfig({HIPICO_META_ACCESS_TOKEN:'access-token',HIPICO_META_PHONE_NUMBER_ID:'phone-id'}).ready,false);
+  assert.equal(senderTest.metaSenderConfig({HIPICO_META_ACCESS_TOKEN:strongMetaToken,HIPICO_META_PHONE_NUMBER_ID:'1234567890'}).ready,true);
+  assert.equal(senderTest.metaSenderConfig({HIPICO_META_ACCESS_TOKEN:strongMetaToken,HIPICO_META_PHONE_NUMBER_ID:'phone-id'}).ready,false);
+  assert.equal(senderTest.metaSenderConfig({HIPICO_META_ACCESS_TOKEN:'access-token',HIPICO_META_PHONE_NUMBER_ID:'1234567890'}).ready,false);
   assert.equal(senderTest.metaSenderConfig({HIPICO_META_PHONE_NUMBER_ID:'1234567890'}).ready,false);
   assert.match(statusSource,/phoneNumberIdValid/);
   assert.match(statusSource,/metaIdentity\.phoneNumberIdValid/);
+  assert.match(statusSource,/metaAccessTokenStrong/);
 });
 
-test('malformed Meta provider timestamps fail closed as invalid identity instead of throwing a retryable server error',()=>{
+test('malformed Meta provider timestamps fail closed and are transport-acknowledged without retry storms',()=>{
   assert.equal(metaTimestampIso('1789106400'),'2026-09-11T06:00:00.000Z');
   assert.equal(metaTimestampIso('not-a-number'),null);
   assert.equal(metaTimestampIso('-1'),null);
@@ -81,16 +86,19 @@ test('malformed Meta provider timestamps fail closed as invalid identity instead
   assert.equal(messages[0].timestamp,null);
   assert.equal(__test__.validMetaMessageIdentity(messages[0],metaSource),false);
   assert.match(source,/messages\.some\(\(message\)=>!validMetaMessageIdentity\(message,inboundIdentity\)\)/);
-  assert.match(source,/status\(400\).*invalid_message_identity/);
+  assert.match(source,/acknowledgeRejected\(res,'invalid_message_identity'/);
+  assert.match(source,/acknowledged:true/);
+  assert.match(source,/accepted:false/);
 });
 
-test('Meta sender validates configuration before querying or claiming outbox rows',()=>{
+test('Meta sender validates strong configuration before querying or claiming outbox rows',()=>{
   const configCheck=senderSource.indexOf('const senderConfig=metaSenderConfig()');
   const configFailure=senderSource.indexOf("error:'sender_not_configured'",configCheck);
   const queueQuery=senderSource.indexOf('hipico_outbox?owner_id=eq.',configCheck);
   const claim=senderSource.indexOf('const row = await claimRow(candidate)',configCheck);
   assert.ok(configCheck>=0&&configFailure>configCheck&&queueQuery>configFailure&&claim>queueQuery);
   assert.match(senderSource,/isMetaPhoneNumberId/);
+  assert.match(senderSource,/strongSecretConfigured\(accessToken\)/);
 });
 
 test('Meta webhook rejects incomplete foreign or malformed phone-number identity before persistence',()=>{
@@ -116,7 +124,7 @@ test('Meta webhook rejects incomplete foreign or malformed phone-number identity
   assert.match(source,/HIPICO_META_PHONE_NUMBER_ID/);
   assert.match(source,/isMetaPhoneNumberId\(phoneNumberId\)/);
   assert.match(source,/channelKey===expectedChannelKey/);
-  assert.match(source,/status\(400\).*invalid_message_identity/);
+  assert.match(source,/acknowledgeRejected\(res,'invalid_message_identity'/);
 });
 
 test('missing weak or malformed inbound Meta configuration fails closed and readiness reports the same dependency',()=>{
@@ -135,11 +143,11 @@ test('oversized and malformed requests are rejected without being treated as ret
   assert.match(source,/retryable:false/);
 });
 
-test('duplicate Meta message id is compared with first persisted source instead of silently rewritten',()=>{
+test('duplicate Meta message id is compared with first persisted source and permanent mismatch is acknowledged without rewrite',()=>{
   assert.match(source,/assertDuplicateMetaReplay/);
   assert.match(source,/persistedReplaySignature\(existing\)!==messageReplaySignature\(message\)/);
   assert.match(source,/HIPICO_META_REPLAY_MISMATCH/);
-  assert.match(source,/status\(409\).*replay_mismatch/);
+  assert.match(source,/acknowledgeRejected\(res,'replay_mismatch'/);
   assert.match(source,/resolution=ignore-duplicates,return=representation/);
 });
 
