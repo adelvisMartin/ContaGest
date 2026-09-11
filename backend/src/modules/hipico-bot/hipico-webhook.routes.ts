@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { extractMessages, processIncoming, signatureValid } from './hipico-bot.service.js';
+import { extractMessages, HipicoBotStore, processIncoming, signatureValid } from './hipico-bot.service.js';
 
 const router=Router();
 const WEBHOOK_PROCESSING_CONCURRENCY=10;
@@ -60,6 +60,13 @@ router.post('/webhook',async(req,res)=>{
   }
   if(identityError){
     return res.status(400).json({ok:false,retryable:false,error:'webhook_phone_number_mismatch'});
+  }
+
+  // Production webhook acknowledgements require durable PostgreSQL evidence.
+  // The in-memory store remains useful for local/manual development paths, but
+  // must never cause Meta to stop retrying a real inbound message batch.
+  if(!await HipicoBotStore.dbReady(true)){
+    return res.status(503).json({ok:false,retryable:true,error:'webhook_persistence_unavailable'});
   }
 
   const result=await processMessagesBounded(messages);
