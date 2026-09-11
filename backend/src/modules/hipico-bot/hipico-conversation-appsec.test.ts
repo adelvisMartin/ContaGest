@@ -56,6 +56,24 @@ test('generic flood limit triggers without throwing or affecting another partici
   assert.equal(limiter.check('b','4',3).allowed,true);
 });
 
+test('rate limiter evicts stale actor buckets and caps one-shot actor cardinality',()=>{
+  const limiter=new ParticipantRateLimiter(99,99,3);
+  limiter.check('a','1',1);
+  limiter.check('b','2',2);
+  limiter.check('c','3',3);
+  limiter.check('d','4',40_000);
+  assert.equal(limiter.size(),3);
+  limiter.check('fresh','5',100_000);
+  assert.equal(limiter.size(),1);
+});
+
+test('invalid caller clock falls back safely instead of poisoning rate buckets',()=>{
+  const limiter=new ParticipantRateLimiter(2,99);
+  const first=limiter.check('a','1',Number.NaN);
+  assert.equal(first.allowed,true);
+  assert.equal(limiter.size(),1);
+});
+
 test('unsupported media without text requires review',()=>{
   const {assessment,result}=classifyUntrustedConversation({text:'',mediaKind:'audio'});
   assert.equal(assessment.unsupportedMedia,true);

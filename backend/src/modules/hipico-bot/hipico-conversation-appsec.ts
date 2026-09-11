@@ -5,6 +5,9 @@ export const MAX_ANALYSIS_TEXT = 2400;
 export const MAX_QUOTE_DEPTH = 3;
 export const MAX_MESSAGES_PER_MINUTE = 30;
 export const MAX_IDENTICAL_PER_MINUTE = 5;
+export const DEFAULT_RATE_BUCKET_LIMIT = 5_000;
+const RATE_WINDOW_MS = 60_000;
+const RATE_SWEEP_INTERVAL_MS = 30_000;
 
 const ZERO_WIDTH_AND_BIDI=/[\u200B-\u200F\u202A-\u202E\u2060-\u2069\uFEFF]/g;
 const HTML_TAG=/<\/?[a-z][^>]*>/gi;
@@ -25,35 +28,72 @@ export type ConversationAbuseAssessment={
 };
 
 export type RateCheck={allowed:boolean;reason:string|null;count:number;identicalCount:number;retryAfterMs:number};
-
 type RateBucket={events:Array<{at:number;digest:string}>};
+
+function safeClock(value:number){
+  return Number.isFinite(value) ? value : Date.now();
+}
 
 export class ParticipantRateLimiter {
   private buckets=new Map<string,RateBucket>();
-  constructor(private maxPerMinute=MAX_MESSAGES_PER_MINUTE,private maxIdentical=MAX_IDENTICAL_PER_MINUTE){}
+  private lastSweepAt=0;
+
+  constructor(
+    private maxPerMinute=MAX_MESSAGES_PER_MINUTE,
+    private maxIdentical=MAX_IDENTICAL_PER_MINUTE,
+    private maxBuckets=DEFAULT_RATE_BUCKET_LIMIT
+  ){}
+
+  private trimToMax(){
+    if(this.buckets.size<=this.maxBuckets)return;
+    const oldest=[...this.buckets.entries()]
+      .map(([key,bucket])=>({key,at:bucket.events.at(-1)?.at??0}))
+      .sort((left,right)=>left.at-right.at);
+    for(const row of oldest.slice(0,this.buckets.size-this.maxBuckets))this.buckets.delete(row.key);
+  }
+
+  private sweep(at:number){
+    const now=safeClock(at);
+    if(now-this.lastSweepAt<RATE_SWEEP_INTERVAL_MS&&this.buckets.size<=this.maxBuckets)return;
+    const cutoff=now-RATE_WINDOW_MS;
+    for(const[key,bucket]of this.buckets){
+      bucket.events=bucket.events.filter((event)=>event.at>cutoff);
+      if(!bucket.events.length)this.buckets.delete(key);
+    }
+    this.trimToMax();
+    this.lastSweepAt=now;
+  }
+
   check(actorKey:string,digest:string,at=Date.now()):RateCheck{
-    const key=String(actorKey||'unknown').trim().toLowerCase();
-    const cutoff=at-60_000;
+    const now=safeClock(at);
+    this.sweep(now);
+    const key=String(actorKey||'unknown').trim().toLowerCase().slice(0,512);
+    const cutoff=now-RATE_WINDOW_MS;
     const bucket=this.buckets.get(key)||{events:[]};
     bucket.events=bucket.events.filter((event)=>event.at>cutoff);
     const count=bucket.events.length;
     const identicalCount=bucket.events.filter((event)=>event.digest===digest).length;
     if(count>=this.maxPerMinute){
-      const retryAfterMs=Math.max(1,(bucket.events[0]?.at||at)+60_000-at);
+      const retryAfterMs=Math.max(1,(bucket.events[0]?.at||now)+RATE_WINDOW_MS-now);
       this.buckets.set(key,bucket);
+      this.trimToMax();
       return{allowed:false,reason:'PARTICIPANT_RATE_LIMIT',count,identicalCount,retryAfterMs};
     }
     if(identicalCount>=this.maxIdentical){
-      const first=bucket.events.find((event)=>event.digest===digest)?.at||at;
-      const retryAfterMs=Math.max(1,first+60_000-at);
+      const first=bucket.events.find((event)=>event.digest===digest)?.at||now;
+      const retryAfterMs=Math.max(1,first+RATE_WINDOW_MS-now);
       this.buckets.set(key,bucket);
+      this.trimToMax();
       return{allowed:false,reason:'REPETITION_RATE_LIMIT',count,identicalCount,retryAfterMs};
     }
-    bucket.events.push({at,digest});
+    bucket.events.push({at:now,digest});
     this.buckets.set(key,bucket);
+    this.trimToMax();
     return{allowed:true,reason:null,count:count+1,identicalCount:identicalCount+1,retryAfterMs:0};
   }
-  reset(){this.buckets.clear();}
+
+  reset(){this.buckets.clear();this.lastSweepAt=0;}
+  size(){return this.buckets.size;}
 }
 
 export const bridgeParticipantRateLimiter=new ParticipantRateLimiter();

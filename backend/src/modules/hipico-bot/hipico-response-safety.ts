@@ -1,7 +1,7 @@
 import crypto from 'node:crypto';
 import type { ConversationDecision } from './hipico-conversation-engine.js';
 
-export const RESPONSE_POLICY_VERSION = 'hipico-response-v1';
+export const RESPONSE_POLICY_VERSION = 'hipico-response-v2';
 export const MAX_CLARIFICATIONS = 2;
 
 export type SafeResponseIntent =
@@ -20,6 +20,8 @@ export type PersistenceEvidence = {
   transactionId?: string | null;
   stateId?: string | null;
   persisted?: boolean;
+  sourceMessageId?: string | null;
+  correlationId?: string | null;
 };
 
 export type HandoffState = {
@@ -57,6 +59,12 @@ function iso(value: Date | string | number = new Date()) {
   return date.toISOString();
 }
 
+function parsedExpiry(value: string | null) {
+  if (!value) return null;
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) ? parsed : Number.NaN;
+}
+
 export function conversationKey(groupKey: string, participantId: string, raceId?: string | null) {
   const group = String(groupKey || '').trim().toLowerCase();
   const participant = String(participantId || '').trim().toLowerCase();
@@ -87,7 +95,11 @@ export function initialHandoffState(groupKey: string, participantId: string, rac
 function activeHuman(state: HandoffState, at: Date | string | number) {
   if (state.ownership !== 'human') return false;
   if (!state.expiresAt) return true;
-  return Date.parse(state.expiresAt) > new Date(at).getTime();
+  const expiry = parsedExpiry(state.expiresAt);
+  if (!Number.isFinite(expiry)) return true;
+  const now = new Date(at).getTime();
+  if (!Number.isFinite(now)) return true;
+  return expiry > now;
 }
 
 export function applyOperatorCommand(
@@ -101,7 +113,11 @@ export function applyOperatorCommand(
   const at = options.at ?? new Date();
   const operatorId = String(options.operatorId).trim();
   if (command === 'pause' || command === 'escalate') {
-    const ttl = Math.max(0, Number(options.ttlMs ?? 30 * 60 * 1000));
+    const rawTtl = Number(options.ttlMs ?? 30 * 60 * 1000);
+    if (!Number.isFinite(rawTtl) || rawTtl < 0) {
+      throw Object.assign(new Error('TTL de handoff inválido.'), { code: 'HIPICO_HANDOFF_TTL_INVALID' });
+    }
+    const ttl = rawTtl;
     return {
       ...state,
       ownership: 'human',
@@ -133,12 +149,15 @@ export function applyOperatorCommand(
 }
 
 export function recoverExpiredHandoff(state: HandoffState, at: Date | string | number = new Date()) {
-  if (state.ownership !== 'human' || !state.expiresAt || Date.parse(state.expiresAt) > new Date(at).getTime()) return state;
+  if (state.ownership !== 'human' || !state.expiresAt) return state;
+  const expiry = parsedExpiry(state.expiresAt);
+  const now = new Date(at).getTime();
+  if (!Number.isFinite(expiry) || !Number.isFinite(now) || expiry > now) return state;
   return {
     ...state,
     ownership: 'bot' as const,
     humanOwnerId: null,
-    reason: 'handoff-timeout-released-non-monetary-only',
+    reason: 'handoff-timeout-released',
     expiresAt: null,
     updatedAt: iso(at)
   };
@@ -160,9 +179,12 @@ export function updateHandoffAfterDecision(state: HandoffState, decision: Conver
   };
 }
 
-function verifiedEvidence(evidence?: PersistenceEvidence | null) {
+function verifiedEvidence(evidence: PersistenceEvidence | null | undefined, decision: ConversationDecision) {
   if (!evidence?.persisted) return false;
-  return Boolean(String(evidence.receiptId || evidence.transactionId || evidence.stateId || '').trim());
+  if (!String(evidence.receiptId || evidence.transactionId || evidence.stateId || '').trim()) return false;
+  if (String(evidence.sourceMessageId || '') !== decision.sourceMessageId) return false;
+  if (String(evidence.correlationId || '') !== decision.correlationId) return false;
+  return true;
 }
 
 export function planSafeResponse(
@@ -214,7 +236,7 @@ export function planSafeResponse(
   }
 
   const evidence = options.evidence || null;
-  if (verifiedEvidence(evidence)) {
+  if (verifiedEvidence(evidence, decision)) {
     const evidenceId = evidence?.receiptId || evidence?.transactionId || evidence?.stateId;
     return { ...base, intent: 'CONFIRMED', text: `Operación confirmada. Referencia: ${String(evidenceId).slice(0, 120)}.`, canSend: true, confirmationVerified: true, evidence, handoffRequired: false, reason: 'PERSISTED_EVIDENCE_VERIFIED' };
   }
@@ -227,6 +249,6 @@ export function planSafeResponse(
     confirmationVerified: false,
     evidence: null,
     handoffRequired: decision.decision === 'ESCALATED',
-    reason: decision.decisionReason
+    reason: evidence?.persisted ? 'PERSISTENCE_EVIDENCE_NOT_BOUND_TO_DECISION' : decision.decisionReason
   };
 }
