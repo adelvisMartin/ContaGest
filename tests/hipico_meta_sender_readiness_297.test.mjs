@@ -29,10 +29,13 @@ test('Meta Cloud webhook readiness shares the same phone identity boundary',()=>
 });
 
 test('sender validates Meta runtime before reading or claiming any outbox row',()=>{
-  const config=sendSource.indexOf('const senderConfig=metaSenderConfig()');
-  const ready=sendSource.indexOf('if(!senderConfig.ready)');
-  const query=sendSource.indexOf('const rows = await supabase(`hipico_outbox?');
-  const claim=sendSource.indexOf('const row = await claimRow(candidate)');
+  const handlerStart=sendSource.indexOf('export default async function handler');
+  assert.ok(handlerStart>=0,'sender handler must exist');
+  const handlerSource=sendSource.slice(handlerStart);
+  const config=handlerSource.indexOf('const senderConfig=metaSenderConfig()');
+  const ready=handlerSource.indexOf('if(!senderConfig.ready)');
+  const query=handlerSource.indexOf('const rows = await supabase(`hipico_outbox?');
+  const claim=handlerSource.indexOf('const row = await claimRow(candidate)');
   assert.ok(config>=0&&ready>config&&query>ready&&claim>query);
 });
 
