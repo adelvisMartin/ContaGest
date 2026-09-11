@@ -1,7 +1,7 @@
 import crypto from 'node:crypto';
 import type { ConversationDecision } from './hipico-conversation-engine.js';
 
-export const RESPONSE_POLICY_VERSION = 'hipico-response-v1';
+export const RESPONSE_POLICY_VERSION = 'hipico-response-v2';
 export const MAX_CLARIFICATIONS = 2;
 
 export type SafeResponseIntent =
@@ -20,6 +20,8 @@ export type PersistenceEvidence = {
   transactionId?: string | null;
   stateId?: string | null;
   persisted?: boolean;
+  sourceMessageId?: string | null;
+  correlationId?: string | null;
 };
 
 export type HandoffState = {
@@ -138,7 +140,7 @@ export function recoverExpiredHandoff(state: HandoffState, at: Date | string | n
     ...state,
     ownership: 'bot' as const,
     humanOwnerId: null,
-    reason: 'handoff-timeout-released-non-monetary-only',
+    reason: 'handoff-timeout-released',
     expiresAt: null,
     updatedAt: iso(at)
   };
@@ -160,9 +162,12 @@ export function updateHandoffAfterDecision(state: HandoffState, decision: Conver
   };
 }
 
-function verifiedEvidence(evidence?: PersistenceEvidence | null) {
+function verifiedEvidence(evidence: PersistenceEvidence | null | undefined, decision: ConversationDecision) {
   if (!evidence?.persisted) return false;
-  return Boolean(String(evidence.receiptId || evidence.transactionId || evidence.stateId || '').trim());
+  if (!String(evidence.receiptId || evidence.transactionId || evidence.stateId || '').trim()) return false;
+  if (String(evidence.sourceMessageId || '') !== decision.sourceMessageId) return false;
+  if (String(evidence.correlationId || '') !== decision.correlationId) return false;
+  return true;
 }
 
 export function planSafeResponse(
@@ -214,7 +219,7 @@ export function planSafeResponse(
   }
 
   const evidence = options.evidence || null;
-  if (verifiedEvidence(evidence)) {
+  if (verifiedEvidence(evidence, decision)) {
     const evidenceId = evidence?.receiptId || evidence?.transactionId || evidence?.stateId;
     return { ...base, intent: 'CONFIRMED', text: `Operación confirmada. Referencia: ${String(evidenceId).slice(0, 120)}.`, canSend: true, confirmationVerified: true, evidence, handoffRequired: false, reason: 'PERSISTED_EVIDENCE_VERIFIED' };
   }
@@ -227,6 +232,6 @@ export function planSafeResponse(
     confirmationVerified: false,
     evidence: null,
     handoffRequired: decision.decision === 'ESCALATED',
-    reason: decision.decisionReason
+    reason: evidence?.persisted ? 'PERSISTENCE_EVIDENCE_NOT_BOUND_TO_DECISION' : decision.decisionReason
   };
 }
