@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { isMetaPhoneNumberId, strongSecretConfigured } from '../frontend/api/hipico/_shared.js';
+import { extractMetaMessages, isMetaPhoneNumberId, metaTimestampIso, strongSecretConfigured } from '../frontend/api/hipico/_shared.js';
 import { __test__ } from '../frontend/api/hipico/whatsapp-webhook.js';
 import { __test__ as senderTest } from '../frontend/api/hipico/whatsapp-send.js';
 import { __test__ as statusTest } from '../frontend/api/hipico/status.js';
@@ -66,6 +66,22 @@ test('Meta phone-number id uses the same numeric contract in webhook sender and 
   assert.equal(senderTest.metaSenderConfig({HIPICO_META_PHONE_NUMBER_ID:'1234567890'}).ready,false);
   assert.match(statusSource,/phoneNumberIdValid/);
   assert.match(statusSource,/metaIdentity\.phoneNumberIdValid/);
+});
+
+test('malformed Meta provider timestamps fail closed as invalid identity instead of throwing a retryable server error',()=>{
+  assert.equal(metaTimestampIso('1789106400'),'2026-09-11T06:00:00.000Z');
+  assert.equal(metaTimestampIso('not-a-number'),null);
+  assert.equal(metaTimestampIso('-1'),null);
+  assert.equal(metaTimestampIso(''),null);
+  const payload={entry:[{changes:[{value:{metadata:{phone_number_id:'1234567890'},messages:[{
+    id:'wamid-bad-time',from:'584121234567',timestamp:'not-a-number',type:'text',text:{body:'hola'}
+  }]}}]}]};
+  const messages=extractMetaMessages(payload);
+  assert.equal(messages.length,1);
+  assert.equal(messages[0].timestamp,null);
+  assert.equal(__test__.validMetaMessageIdentity(messages[0],metaSource),false);
+  assert.match(source,/messages\.some\(\(message\)=>!validMetaMessageIdentity\(message,inboundIdentity\)\)/);
+  assert.match(source,/status\(400\).*invalid_message_identity/);
 });
 
 test('Meta sender validates configuration before querying or claiming outbox rows',()=>{
