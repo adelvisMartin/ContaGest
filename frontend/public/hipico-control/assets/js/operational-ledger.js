@@ -91,28 +91,19 @@ export function participantAval(workspace, participant, date) {
   return roundMoney(Number(participant.avalBs || 0) + Number(participant.avalUsd || 0) * rateAt(workspace, date, groupId));
 }
 
-function availableFromBalance(workspace, participant, date, balance) {
-  if (!participant) return 0;
-  return roundMoney(Number(balance || 0) + participantAval(workspace, participant, date));
-}
-
 export function participantAvailableAt(workspace, participant, date = new Date().toISOString().slice(0, 10)) {
   if (!participant) return 0;
-  const balance = participantBalanceAt(workspace, participant.id, date);
-  return availableFromBalance(workspace, participant, date, balance);
+  return roundMoney(participantBalanceAt(workspace, participant.id, date) + participantAval(workspace, participant, date));
 }
 
 export function balanceRows(workspace, groupId = activeGroupId(workspace), date = new Date().toISOString().slice(0, 10)) {
   return scopeItems(workspace, workspace?.participants, groupId)
     .filter((participant) => participant.active !== false)
-    .map((participant) => {
-      const balance = participantBalanceAt(workspace, participant.id, date);
-      return {
-        participant,
-        balance,
-        available: availableFromBalance(workspace, participant, date, balance)
-      };
-    });
+    .map((participant) => ({
+      participant,
+      balance: participantBalanceAt(workspace, participant.id, date),
+      available: participantAvailableAt(workspace, participant, date)
+    }));
 }
 
 function isoMonday(date) {
@@ -168,20 +159,17 @@ export function participantStatement(workspace, participantId, date = new Date()
     .filter((movement) => String(movement.date || '') <= date && ['pozo', 'pool'].includes(String(movement.type || '').toLowerCase()))
     .reduce((sum, movement) => sum + participantMovementDelta(workspace, movement, participantId, groupId), 0);
   const weekTotal = roundMoney(dailyRows.reduce((sum, row) => sum + Number(row.amount || 0), 0));
-  const dayTotal = Number(dailyRows.find((row) => row.date === date)?.amount || 0);
-  const aval = participantAval(workspace, participant, date);
-  const balance = participantBalanceAt(workspace, participantId, date);
   return {
     groupId,
     participant,
     date,
     dailyRows,
     tracks: [...byTrack.values()],
-    aval,
+    aval: participantAval(workspace, participant, date),
     pozo: roundMoney(pozo),
     weekTotal,
-    available: roundMoney(balance + aval),
-    dayTotal
+    available: participantAvailableAt(workspace, participant, date),
+    dayTotal: participantDayDelta(workspace, participantId, date)
   };
 }
 
@@ -206,4 +194,4 @@ export function dailyStats(workspace, day = activeDay(workspace), groupId = acti
   };
 }
 
-export const __test__ = { firstGroupId, isoMonday, dateRange, toBaseCurrency, availableFromBalance };
+export const __test__ = { firstGroupId, isoMonday, dateRange, toBaseCurrency };

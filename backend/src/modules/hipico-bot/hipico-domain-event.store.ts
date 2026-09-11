@@ -11,7 +11,7 @@ type PersistInput={
 };
 
 type AggregateRow={status:string;stateVersion:bigint|number};
-type EventRow={id:string;disposition:string;previousState:string;nextState:string;reason:string};
+type EventRow={id:string;eventType:string;disposition:string;previousState:string;nextState:string;reason:string};
 
 function validTimestamp(value?:string){
   const date=value?new Date(value):new Date();
@@ -27,16 +27,6 @@ export async function persistHipicoDomainEvent(input:PersistInput){
   if(!ownerId||!groupKey||!aggregateKey||!sourceMessageKey)throw new Error('HIPICO_DOMAIN_EVENT_SCOPE_REQUIRED');
 
   return prisma.$transaction(async(tx)=>{
-    const duplicate=await tx.$queryRaw<Array<EventRow>>`
-      SELECT id, disposition, previous_state AS "previousState", next_state AS "nextState", reason
-      FROM public.hipico_domain_events
-      WHERE owner_id=${ownerId}::uuid AND group_key=${groupKey}
-        AND aggregate_kind=${input.aggregateKind} AND aggregate_key=${aggregateKey}
-        AND source_message_key=${sourceMessageKey} AND event_type=${input.event.type}
-      LIMIT 1
-    `;
-    if(duplicate[0])return{...duplicate[0],duplicate:true,stateChanged:false};
-
     await tx.$executeRaw`
       INSERT INTO public.hipico_domain_aggregates(owner_id,group_key,aggregate_kind,aggregate_key,status,state_version)
       VALUES (${ownerId}::uuid,${groupKey},${input.aggregateKind},${aggregateKey},'PREPARING',0)
@@ -51,6 +41,27 @@ export async function persistHipicoDomainEvent(input:PersistInput){
     `;
     if(rows.length!==1)throw new Error('HIPICO_DOMAIN_AGGREGATE_NOT_FOUND');
 
+    // Source-message identity is immutable inside one aggregate. Locking the
+    // aggregate before this query serializes concurrent retries and prevents a
+    // classifier/version change from turning the same message into two events.
+    const prior=await tx.$queryRaw<Array<EventRow>>`
+      SELECT id,event_type AS "eventType",disposition,previous_state AS "previousState",next_state AS "nextState",reason
+      FROM public.hipico_domain_events
+      WHERE owner_id=${ownerId}::uuid AND group_key=${groupKey}
+        AND aggregate_kind=${input.aggregateKind} AND aggregate_key=${aggregateKey}
+        AND source_message_key=${sourceMessageKey}
+      ORDER BY event_timestamp ASC,id ASC
+      LIMIT 2
+    `;
+    if(prior.length>1)throw new Error('HIPICO_DOMAIN_SOURCE_IDENTITY_CORRUPT');
+    if(prior[0]){
+      if(prior[0].eventType!==input.event.type){
+        throw Object.assign(new Error('Domain replay changed event type for the same source message.'),{code:'HIPICO_DOMAIN_REPLAY_MISMATCH'});
+      }
+      const {eventType:_eventType,...existing}=prior[0];
+      return{...existing,duplicate:true,stateChanged:false};
+    }
+
     const row=rows[0];
     const current={
       ...initialHipicoState(input.aggregateKind),
@@ -64,6 +75,7 @@ export async function persistHipicoDomainEvent(input:PersistInput){
       const originals=await tx.$queryRaw<Array<{id:string}>>`
         SELECT id FROM public.hipico_domain_events
         WHERE id=${originalId} AND owner_id=${ownerId}::uuid AND group_key=${groupKey}
+          AND aggregate_kind=${input.aggregateKind} AND aggregate_key=${aggregateKey}
         LIMIT 1
       `;
       if(!originals[0])throw new Error('HIPICO_ORIGINAL_EVENT_NOT_FOUND');
@@ -71,6 +83,8 @@ export async function persistHipicoDomainEvent(input:PersistInput){
         const reversals=await tx.$queryRaw<Array<{id:string}>>`
           SELECT id FROM public.hipico_domain_events
           WHERE original_event_id=${originalId} AND event_type='REVERSAL'
+            AND owner_id=${ownerId}::uuid AND group_key=${groupKey}
+            AND aggregate_kind=${input.aggregateKind} AND aggregate_key=${aggregateKey}
           LIMIT 1
         `;
         if(reversals[0])throw new Error('HIPICO_EVENT_ALREADY_REVERSED');
@@ -96,12 +110,14 @@ export async function persistHipicoDomainEvent(input:PersistInput){
     `;
 
     if(reduction.disposition==='applied'){
-      await tx.$executeRaw`
+      const affected=await tx.$executeRaw`
         UPDATE public.hipico_domain_aggregates
         SET status=${reduction.nextState}, state_version=state_version+1, updated_at=now()
         WHERE owner_id=${ownerId}::uuid AND group_key=${groupKey}
           AND aggregate_kind=${input.aggregateKind} AND aggregate_key=${aggregateKey}
+          AND state_version=${current.stateVersion}
       `;
+      if(affected!==1)throw new Error('HIPICO_DOMAIN_STATE_CONFLICT');
     }
 
     return{

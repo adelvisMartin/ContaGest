@@ -35,6 +35,8 @@ export type HandoffState = {
   humanOwnerId: string | null;
   expiresAt: string | null;
   updatedAt: string;
+  /** Optimistic-concurrency token loaded from persistence. Zero means not persisted yet. */
+  version?: number;
 };
 
 export type SafeResponsePlan = {
@@ -88,7 +90,8 @@ export function initialHandoffState(groupKey: string, participantId: string, rac
     reason: null,
     humanOwnerId: null,
     expiresAt: null,
-    updatedAt: iso(at)
+    updatedAt: iso(at),
+    version: 0
   };
 }
 

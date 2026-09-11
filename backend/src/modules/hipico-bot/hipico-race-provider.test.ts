@@ -75,18 +75,18 @@ test('stage summary uses authenticated UOF REST enrichment and caches successful
 });
 
 test('race enrichment cache remains bounded under many distinct stage ids', async () => {
-  let calls=0;
-  const provider=createHorseRaceProvider({
-    env:configuredEnv,
-    now:()=>Date.parse('2026-09-10T23:00:00Z'),
-    fetchImpl:async()=>{calls+=1;return new Response('<ok/>',{status:200,headers:{'content-type':'application/xml'}});}
+  let calls = 0;
+  const provider = createHorseRaceProvider({
+    env: configuredEnv,
+    now: () => Date.parse('2026-09-10T23:00:00Z'),
+    fetchImpl: async () => { calls += 1; return new Response('<ok/>', { status: 200, headers: { 'content-type': 'application/xml' } }); }
   });
-  for(let index=1;index<=MAX_RACE_PROVIDER_CACHE_ENTRIES+2;index+=1){
-    await provider.getStageSummary(String(700000+index));
+  for (let index = 1; index <= MAX_RACE_PROVIDER_CACHE_ENTRIES + 2; index += 1) {
+    await provider.getStageSummary(String(700000 + index));
   }
-  assert.equal(calls,MAX_RACE_PROVIDER_CACHE_ENTRIES+2);
+  assert.equal(calls, MAX_RACE_PROVIDER_CACHE_ENTRIES + 2);
   await provider.getStageSummary('700001');
-  assert.equal(calls,MAX_RACE_PROVIDER_CACHE_ENTRIES+3);
+  assert.equal(calls, MAX_RACE_PROVIDER_CACHE_ENTRIES + 3);
 });
 
 test('declared oversized upstream response is rejected before body consumption', async () => {

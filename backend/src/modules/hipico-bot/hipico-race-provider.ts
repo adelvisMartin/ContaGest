@@ -144,29 +144,32 @@ export function createHorseRaceProvider(options: { env?: RuntimeEnv; fetchImpl?:
     return raceProviderStatus(env);
   }
 
-  function pruneCache(at:number){
-    for(const[key,entry]of cache){
-      if(entry.expiresAt<=at)cache.delete(key);
+  function pruneCache(at: number) {
+    for (const [key, entry] of cache) {
+      if (entry.expiresAt <= at) cache.delete(key);
     }
-    while(cache.size>MAX_RACE_PROVIDER_CACHE_ENTRIES){
-      const oldest=cache.keys().next().value as string|undefined;
-      if(!oldest)break;
+    while (cache.size > MAX_RACE_PROVIDER_CACHE_ENTRIES) {
+      const oldest = cache.keys().next().value as string | undefined;
+      if (!oldest) break;
       cache.delete(oldest);
     }
   }
 
-  function readCached(stageId:string,at:number){
-    const entry=cache.get(stageId);
-    if(!entry)return null;
-    if(entry.expiresAt<=at){cache.delete(stageId);return null;}
+  function readCached(stageId: string, at: number) {
+    const entry = cache.get(stageId);
+    if (!entry) return null;
+    if (entry.expiresAt <= at) {
+      cache.delete(stageId);
+      return null;
+    }
     cache.delete(stageId);
-    cache.set(stageId,entry);
-    return{...entry.value,cached:true} satisfies HorseRaceStageSummary;
+    cache.set(stageId, entry);
+    return { ...entry.value, cached: true } satisfies HorseRaceStageSummary;
   }
 
-  function remember(stageId:string,value:HorseRaceStageSummary,expiresAt:number){
+  function remember(stageId: string, value: HorseRaceStageSummary, expiresAt: number) {
     cache.delete(stageId);
-    cache.set(stageId,{expiresAt,value});
+    cache.set(stageId, { expiresAt, value });
     pruneCache(now());
   }
 
@@ -177,7 +180,7 @@ export function createHorseRaceProvider(options: { env?: RuntimeEnv; fetchImpl?:
     }
 
     const stageId = normalizeStageId(stageIdValue);
-    const cached = readCached(stageId,now());
+    const cached = readCached(stageId, now());
     if (cached) return cached;
 
     const baseUrl = normalizeBaseUrl(env.HIPICO_RACE_PROVIDER_BASE_URL);
@@ -201,7 +204,7 @@ export function createHorseRaceProvider(options: { env?: RuntimeEnv; fetchImpl?:
         throw new HorseRaceProviderError(`El proveedor hípico respondió HTTP ${response.status}.`, 'UPSTREAM_ERROR', response.status >= 500 || response.status === 429);
       }
       const xml = await readBoundedText(response);
-      const fetchedAt=now();
+      const fetchedAt = now();
       const value: HorseRaceStageSummary = {
         provider: 'sportradar-uof',
         stageId,
@@ -210,7 +213,7 @@ export function createHorseRaceProvider(options: { env?: RuntimeEnv; fetchImpl?:
         xml,
         cached: false
       };
-      remember(stageId,value,fetchedAt+currentStatus.cacheTtlMs);
+      remember(stageId, value, fetchedAt + currentStatus.cacheTtlMs);
       return value;
     } catch (error: any) {
       if (error instanceof HorseRaceProviderError) throw error;

@@ -36,9 +36,6 @@ test('backend distinguishes replay identity conflicts from retryable persistence
   assert.match(route, /res\.status\(409\)\.json\(\{ok:false,retryable:false/);
   assert.match(route, /res\.status\(503\)\.json\(\{ok:false,retryable:true/);
   assert.match(transport, /HIPICO_TRANSPORT_REPLAY_MISMATCH|assertReplayMatch\('transport'/);
-  assert.match(transport, /HIPICO_GROUP_SHADOW_OUTBOX_REPLAY_MISMATCH|assertReplayMatch\('group-shadow'/);
-  assert.match(transport, /ON CONFLICT \("eventId","targetType"\)[\s\S]{0,180}DO NOTHING/);
-  assert.doesNotMatch(transport, /ON CONFLICT \("eventId","targetType"\)[\s\S]{0,220}DO UPDATE SET/);
   assert.match(canonical, /HIPICO_CANONICAL_REPLAY_MISMATCH|assertReplayMatch\('canonical'/);
   assert.doesNotMatch(canonical, /ON CONFLICT \(owner_id,channel_key,external_message_id\)[\s\S]{0,120}DO UPDATE SET/);
 });

@@ -1,5 +1,5 @@
 const CACHE_VERSION = 'hipico-control-v1.13.0-rc3';
-const SHELL_CACHE = `${CACHE_VERSION}-shell-r9-hardening-sync`;
+const SHELL_CACHE = `${CACHE_VERSION}-shell-r10-race-context`;
 const APP_SHELL = [
   './', './index.html', './recovery.html', './manifest.webmanifest',
   './icons/icon-192.png', './icons/icon-512.png', './icons/icon-192-maskable.png', './icons/icon-512-maskable.png',
@@ -7,14 +7,14 @@ const APP_SHELL = [
   './assets/js/agent-router-pro.js', './assets/js/agent-router.js', './assets/js/app-shell.js', './assets/js/app.js',
   './assets/js/backup-secure-ui.js', './assets/js/backup-v2.js', './assets/js/backup.js', './assets/js/compat.js',
   './assets/js/config.js', './assets/js/engine.js', './assets/js/format.js', './assets/js/help-center.js',
-  './assets/js/local-auth.js', './assets/js/notice-bridge.js', './assets/js/offline-status.js', './assets/js/operational-copy-center.js',
-  './assets/js/operational-access-policy.js', './assets/js/operational-access-guard.js',
-  './assets/js/operational-ledger.js', './assets/js/operations.js', './assets/js/password-recovery.js', './assets/js/presentation-access.js',
-  './assets/js/race-context-guard.js', './assets/js/race-finalization.js', './assets/js/race-state-machine.js', './assets/js/rc1-recovery.js',
-  './assets/js/recovery.js', './assets/js/reports.js', './assets/js/resilience.js', './assets/js/seed.js',
-  './assets/js/store-v2.js', './assets/js/store.js', './assets/js/supabase.js', './assets/js/sync.js',
-  './assets/js/ui.js', './assets/js/user-access.js', './assets/js/whatsapp.js', './assets/js/workspace.js',
-  './assets/js/whatsapp/normalization.js', './assets/js/whatsapp/parser.js', './assets/js/whatsapp/race-context.js', './assets/js/whatsapp/ui-transcript.js'
+  './assets/js/local-auth.js', './assets/js/notice-bridge.js', './assets/js/offline-status.js', './assets/js/operational-access-guard.js',
+  './assets/js/operational-access-policy.js', './assets/js/operational-copy-center.js', './assets/js/operational-ledger.js', './assets/js/operations.js',
+  './assets/js/password-recovery.js', './assets/js/presentation-access.js', './assets/js/race-context-guard.js', './assets/js/race-finalization.js',
+  './assets/js/race-state-machine.js', './assets/js/rc1-recovery.js', './assets/js/recovery.js', './assets/js/reports.js',
+  './assets/js/resilience.js', './assets/js/seed.js', './assets/js/store-v2.js', './assets/js/store.js',
+  './assets/js/supabase.js', './assets/js/sync.js', './assets/js/ui.js', './assets/js/user-access.js',
+  './assets/js/whatsapp.js', './assets/js/workspace.js', './assets/js/whatsapp/normalization.js', './assets/js/whatsapp/parser.js',
+  './assets/js/whatsapp/race-context.js', './assets/js/whatsapp/ui-transcript.js'
 ];
 
 function scoped(path) { return new URL(path, self.registration.scope).toString(); }

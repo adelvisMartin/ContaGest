@@ -1,5 +1,5 @@
 const SHA40=/^[a-f0-9]{40}$/i;
-const E164=/^\+?[1-9]\d{6,17}$/;
+const E164=/^\+?[1-9]\d{6,14}$/;
 
 function recipient(value:string){
   const raw=String(value||'').trim();
