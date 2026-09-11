@@ -2,6 +2,7 @@ import crypto from 'node:crypto';
 import { prisma } from '../../database/prisma.js';
 import { OPERATIONAL_INTENTS, type IntentResult } from './hipico-operational-classifier.js';
 import { operationalRaceContextKey } from './hipico-race-context-key.js';
+import { assertReplayMatch, canonicalReplaySignature } from './hipico-replay-integrity.js';
 
 type CanonicalChannel={id:string;ownerId:string;groupKey:string;label:string};
 type CanonicalPersistInput={
@@ -24,6 +25,15 @@ type CanonicalPersistInput={
   rawMeta:string;
   transportEventId:string;
   result:IntentResult;
+};
+
+type PersistedCanonicalSource={
+  id:string;
+  sender:string|null;
+  sentAt:Date|string|null;
+  messageType:string|null;
+  body:string|null;
+  quotedExternalMessageId:string|null;
 };
 
 const sha256=(value:string)=>crypto.createHash('sha256').update(value).digest('hex');
@@ -148,6 +158,111 @@ function amountOf(result:IntentResult){
   return Number.isFinite(value)?value:null;
 }
 
+function canonicalInputSignature(input:CanonicalPersistInput){
+  return canonicalReplaySignature({
+    sender:input.sender,
+    sentAt:input.sentAt,
+    messageType:input.messageType||'text',
+    body:input.body,
+    quotedExternalMessageId:input.quotedExternalMessageId
+  });
+}
+
+function assertCanonicalReplay(existing:PersistedCanonicalSource,input:CanonicalPersistInput){
+  const persisted=canonicalReplaySignature(existing);
+  assertReplayMatch('canonical',persisted,canonicalInputSignature(input));
+}
+
+async function readCanonicalSource(ownerId:string,groupKey:string,providerMessageId:string){
+  const rows=await prisma.$queryRaw<PersistedCanonicalSource[]>`
+    SELECT
+      id::text AS "id",
+      sender_id AS "sender",
+      sent_at AS "sentAt",
+      message_type AS "messageType",
+      raw_text AS "body",
+      quoted_external_message_id AS "quotedExternalMessageId"
+    FROM public.hipico_messages
+    WHERE owner_id=${ownerId}::uuid
+      AND channel_key=${groupKey}
+      AND external_message_id=${providerMessageId}
+    LIMIT 1
+  `;
+  return rows[0]||null;
+}
+
+async function immutableCanonicalMessage(
+  channel:CanonicalChannel,
+  input:CanonicalPersistInput,
+  fingerprint:string,
+  normalized:Record<string,unknown>,
+  metadata:Record<string,unknown>,
+  sentAt:Date|null
+){
+  const messageRows=await prisma.$queryRaw<Array<{id:string}>>`
+    INSERT INTO public.hipico_messages
+      (owner_id,channel_id,channel_key,external_message_id,fingerprint,sender_id,sender_label,sender_role,
+       quoted_external_message_id,sent_at,message_type,raw_text,classification,confidence,processing_status,
+       normalized,metadata)
+    VALUES
+      (${channel.ownerId}::uuid,${channel.id}::uuid,${channel.groupKey},${input.providerMessageId},${fingerprint},
+       ${input.sender||null},${input.senderLabel||null},'unknown',${input.quotedExternalMessageId||null},${sentAt},
+       ${input.messageType||'text'},${input.body||''},${input.result.intent},${Number(input.result.confidence||0)},
+       'processed',${JSON.stringify(normalized)}::jsonb,${JSON.stringify(metadata)}::jsonb)
+    ON CONFLICT (owner_id,channel_key,external_message_id) WHERE external_message_id IS NOT NULL
+    DO NOTHING
+    RETURNING id::text AS "id"
+  `;
+  if(messageRows[0]?.id)return{messageId:messageRows[0].id,inserted:true};
+
+  const existing=await readCanonicalSource(channel.ownerId,channel.groupKey,input.providerMessageId);
+  if(!existing?.id)throw new Error('HIPICO_CANONICAL_DEDUPE_ROW_MISSING');
+  assertCanonicalReplay(existing,input);
+  return{messageId:existing.id,inserted:false};
+}
+
+async function immutableOperationEvent(
+  channel:CanonicalChannel,
+  input:CanonicalPersistInput,
+  messageId:string,
+  normalized:Record<string,unknown>
+){
+  const opType=eventType(input.result.intent);
+  const eventKey=`shadow:${input.providerMessageId}`;
+  const opPayload={
+    shadow:true,
+    source:'whatsapp-web-bridge',
+    channelRole:input.channelRole,
+    historySync:Boolean(input.historySync),
+    intent:input.result.intent,
+    risk:input.result.risk,
+    reason:input.result.reason,
+    entities:normalized,
+    suggestion:input.result.suggestion,
+    autoEligible:false
+  };
+  const inserted=await prisma.$queryRaw<Array<{id:string}>>`
+    INSERT INTO public.hipico_operation_events
+      (owner_id,group_key,source_message_id,event_key,event_type,event_state,race_key,participant_code,
+       product_type,amount,currency,confidence,payload)
+    VALUES
+      (${channel.ownerId}::uuid,${channel.groupKey},${messageId}::uuid,${eventKey},${opType},'pending',
+       ${raceKey(input.result)},${input.sender||null},${input.result.entities?.play||null},${amountOf(input.result)},
+       ${null},${Number(input.result.confidence||0)},${JSON.stringify(opPayload)}::jsonb)
+    ON CONFLICT (owner_id,event_key) DO NOTHING
+    RETURNING id::text AS "id"
+  `;
+  if(inserted[0]?.id)return inserted[0].id;
+  const existing=await prisma.$queryRaw<Array<{id:string}>>`
+    SELECT id::text AS "id"
+    FROM public.hipico_operation_events
+    WHERE owner_id=${channel.ownerId}::uuid AND event_key=${eventKey}
+    LIMIT 1
+  `;
+  if(!existing[0]?.id)throw new Error('HIPICO_OPERATION_EVENT_DEDUPE_ROW_MISSING');
+  return existing[0].id;
+}
+
 export async function persistCanonicalShadow(input:CanonicalPersistInput){
   const channel=await resolveChannel(input);
   const normalized=input.result.entities||{};
@@ -169,72 +284,16 @@ export async function persistCanonicalShadow(input:CanonicalPersistInput){
   };
   const sentAt=input.sentAt?new Date(input.sentAt):null;
 
-  const messageRows=await prisma.$queryRaw<Array<{id:string}>>`
-    INSERT INTO public.hipico_messages
-      (owner_id,channel_id,channel_key,external_message_id,fingerprint,sender_id,sender_label,sender_role,
-       quoted_external_message_id,sent_at,message_type,raw_text,classification,confidence,processing_status,
-       normalized,metadata)
-    VALUES
-      (${channel.ownerId}::uuid,${channel.id}::uuid,${channel.groupKey},${input.providerMessageId},${fingerprint},
-       ${input.sender||null},${input.senderLabel||null},'unknown',${input.quotedExternalMessageId||null},${sentAt},
-       ${input.messageType||'text'},${input.body||''},${input.result.intent},${Number(input.result.confidence||0)},
-       'processed',${JSON.stringify(normalized)}::jsonb,${JSON.stringify(metadata)}::jsonb)
-    ON CONFLICT (owner_id,channel_key,external_message_id) WHERE external_message_id IS NOT NULL
-    DO UPDATE SET
-      sender_id=EXCLUDED.sender_id,
-      sender_label=EXCLUDED.sender_label,
-      quoted_external_message_id=EXCLUDED.quoted_external_message_id,
-      sent_at=EXCLUDED.sent_at,
-      message_type=EXCLUDED.message_type,
-      raw_text=EXCLUDED.raw_text,
-      classification=EXCLUDED.classification,
-      confidence=EXCLUDED.confidence,
-      processing_status='processed',
-      normalized=EXCLUDED.normalized,
-      metadata=EXCLUDED.metadata
-    RETURNING id::text AS "id"
-  `;
-  const messageId=messageRows[0]?.id;
-  if(!messageId)throw new Error('HIPICO_CANONICAL_MESSAGE_NOT_PERSISTED');
+  // The source message is an immutable audit fact. Replays may fill a previous
+  // partial write, but can never rewrite the first persisted sender/body/time.
+  const message=await immutableCanonicalMessage(channel,input,fingerprint,normalized,metadata,sentAt);
+  const messageId=message.messageId;
 
   let operationEventId:string|null=null;
   if(OPERATIONAL_INTENTS.has(input.result.intent)){
-    const opType=eventType(input.result.intent);
-    const eventKey=`shadow:${input.providerMessageId}`;
-    const opPayload={
-      shadow:true,
-      source:'whatsapp-web-bridge',
-      channelRole:input.channelRole,
-      historySync:Boolean(input.historySync),
-      intent:input.result.intent,
-      risk:input.result.risk,
-      reason:input.result.reason,
-      entities:normalized,
-      suggestion:input.result.suggestion,
-      autoEligible:false
-    };
-    const opRows=await prisma.$queryRaw<Array<{id:string}>>`
-      INSERT INTO public.hipico_operation_events
-        (owner_id,group_key,source_message_id,event_key,event_type,event_state,race_key,participant_code,
-         product_type,amount,currency,confidence,payload)
-      VALUES
-        (${channel.ownerId}::uuid,${channel.groupKey},${messageId}::uuid,${eventKey},${opType},'pending',
-         ${raceKey(input.result)},${input.sender||null},${input.result.entities?.play||null},${amountOf(input.result)},
-         ${null},${Number(input.result.confidence||0)},${JSON.stringify(opPayload)}::jsonb)
-      ON CONFLICT (owner_id,event_key)
-      DO UPDATE SET
-        source_message_id=EXCLUDED.source_message_id,
-        event_type=EXCLUDED.event_type,
-        event_state='pending',
-        race_key=EXCLUDED.race_key,
-        participant_code=EXCLUDED.participant_code,
-        product_type=EXCLUDED.product_type,
-        amount=EXCLUDED.amount,
-        confidence=EXCLUDED.confidence,
-        payload=EXCLUDED.payload
-      RETURNING id::text AS "id"
-    `;
-    operationEventId=opRows[0]?.id||null;
+    // The first operational interpretation remains immutable too. Shadow
+    // evaluations below may be refreshed independently for model comparison.
+    operationEventId=await immutableOperationEvent(channel,input,messageId,normalized);
   }
 
   const labGroupKey=String(input.labChannelKey||channel.groupKey).trim();
@@ -282,6 +341,9 @@ export async function persistCanonicalShadow(input:CanonicalPersistInput){
     labGroupKey,
     messageId,
     operationEventId,
-    shadowEvaluationId:shadowRows[0]?.id||null
+    shadowEvaluationId:shadowRows[0]?.id||null,
+    sourceInserted:message.inserted
   };
 }
+
+export const __test__={canonicalInputSignature,assertCanonicalReplay};

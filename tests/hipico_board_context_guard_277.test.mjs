@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { parseWhatsAppChat } from '../frontend/public/hipico-control/assets/js/whatsapp.js';
-import { resolveBoardTarget } from '../frontend/public/hipico-control/assets/js/race-context-guard.js';
+import { resolveBoardTarget, resolveMatchTarget } from '../frontend/public/hipico-control/assets/js/race-context-guard.js';
 
 function workspace(track='Churchill Downs',number=1){
   return {
@@ -15,6 +15,14 @@ function workspace(track='Churchill Downs',number=1){
 
 function parse(lines){
   return parseWhatsAppChat(lines,{racetrackCatalog:['Churchill Downs','Colonial Downs','Del Mar']});
+}
+
+function pairedChat(raceNumber=1){
+  return [
+    `[4:59 p. m., 10/09/2026] Operador: Se aperturó Churchill Downs, ${raceNumber}ra Carrera`,
+    '[5:00 p. m., 10/09/2026] Jugador A: Juego 1n del 5 con 100k',
+    '[5:01 p. m., 10/09/2026] Jugador B: Consigo 1n del 5 con 100k'
+  ].join('\n');
 }
 
 test('board with explicit matching track and race resolves MATCH',()=>{
@@ -67,11 +75,73 @@ test('opening from a previous closed segment is never inherited by a later board
   assert.equal(result.status,'AMBIGUOUS');
 });
 
-test('board guard uses app-styled accessible confirmation instead of native browser prompts',()=>{
+test('offers inherit exact track and race number from an actionable opening',()=>{
+  const analysis=parse(pairedChat(1));
+  assert.equal(analysis.offers.length,2);
+  assert.deepEqual(analysis.offers.map((offer)=>[offer.track,offer.raceNumber]),[
+    ['Churchill Downs',1],
+    ['Churchill Downs',1]
+  ]);
+  assert.equal(analysis.matches.length,1);
+  assert.equal(analysis.matches[0].track,'Churchill Downs');
+  assert.equal(analysis.matches[0].raceNumber,1);
+});
+
+test('a new explicit race opening separates otherwise identical offers without requiring a closure message',()=>{
+  const analysis=parse([
+    '[4:59 p. m., 10/09/2026] Operador: Se aperturó Churchill Downs, 1ra Carrera',
+    '[5:00 p. m., 10/09/2026] Jugador A: Juego 1n del 5 con 100k',
+    '[5:02 p. m., 10/09/2026] Operador: Se aperturó Churchill Downs, 2da Carrera',
+    '[5:03 p. m., 10/09/2026] Jugador B: Consigo 1n del 5 con 100k'
+  ].join('\n'));
+  assert.equal(analysis.matches.length,0);
+  assert.deepEqual(analysis.activeOffers.map((offer)=>offer.raceNumber),[1,2]);
+  assert.notEqual(analysis.activeOffers[0].segmentId,analysis.activeOffers[1].segmentId);
+});
+
+test('an ambiguous opening ends inherited race context instead of silently assigning later offers to the previous race',()=>{
+  const analysis=parse([
+    '[4:59 p. m., 10/09/2026] Operador: Se aperturó Churchill Downs, 1ra Carrera',
+    '[5:02 p. m., 10/09/2026] Operador: Se aperturó la carrera',
+    '[5:03 p. m., 10/09/2026] Jugador A: Juego 1n del 5 con 100k'
+  ].join('\n'));
+  assert.equal(analysis.offers.length,1);
+  assert.equal(analysis.offers[0].raceNumber,null);
+  assert.equal(analysis.offers[0].track,'');
+});
+
+test('exactly bound whatsapp matches are eligible only for the same active race',()=>{
+  const analysis=parse(pairedChat(1));
+  assert.equal(resolveMatchTarget(analysis,workspace('Churchill Downs',1)).status,'MATCH');
+  const mismatch=resolveMatchTarget(analysis,workspace('Churchill Downs',2));
+  assert.equal(mismatch.status,'MISMATCH');
+  assert.match(mismatch.reason,/Churchill Downs 1/);
+  assert.match(mismatch.reason,/Churchill Downs 2/);
+});
+
+test('match target blocks another track even when the race number is the same',()=>{
+  const analysis=parse(pairedChat(1));
+  const mismatch=resolveMatchTarget(analysis,workspace('Colonial Downs',1));
+  assert.equal(mismatch.status,'MISMATCH');
+});
+
+test('contextless matched offers require explicit operator confirmation before import',()=>{
+  const analysis=parse([
+    '[5:00 p. m., 10/09/2026] Jugador A: Juego 1n del 5 con 100k',
+    '[5:01 p. m., 10/09/2026] Jugador B: Consigo 1n del 5 con 100k'
+  ].join('\n'));
+  assert.equal(analysis.matches.length,1);
+  assert.equal(resolveMatchTarget(analysis,workspace()).status,'AMBIGUOUS');
+});
+
+test('race guards use app-styled accessible confirmation instead of native browser prompts',()=>{
   const source = readFileSync(new URL('../frontend/public/hipico-control/assets/js/race-context-guard.js', import.meta.url), 'utf8');
   assert.doesNotMatch(source,/window\.(?:alert|confirm)\s*\(/);
   assert.match(source,/role=\"dialog\"/);
   assert.match(source,/aria-modal=\"true\"/);
   assert.match(source,/Confirmar carrera y aplicar/);
+  assert.match(source,/Confirmar carrera e importar/);
+  assert.match(source,/data-action=\"apply-chat-board\"/);
+  assert.match(source,/data-action=\"import-chat-matches\"/);
   assert.match(source,/Control Hípico no liquida dinero por una llegada ambigua/);
 });

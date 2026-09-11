@@ -1,7 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { bearerTokenValid, isE164, metaDestinationAllowed, metaOutboundPolicy, safeEqual } from '../frontend/api/hipico/_shared.js';
+import { bearerTokenValid, isE164, metaDestinationAllowed, metaOutboundPolicy, safeEqual, safeTimeoutMs } from '../frontend/api/hipico/_shared.js';
+import { __test__ as ingestTest, validateGroupBridgeBody } from '../frontend/api/hipico/group-bridge-ingest.js';
 
 const read = (path) => readFileSync(new URL(path, import.meta.url), 'utf8');
 const shared = read('../frontend/api/hipico/_shared.js');
@@ -10,7 +11,7 @@ const sender = read('../frontend/api/hipico/whatsapp-send.js');
 const status = read('../frontend/api/hipico/status.js');
 const legacyBridge = read('../tools/hipico-whatsapp-bridge/src/index.mjs');
 
-test('serverless auth helpers compare secrets safely and validate destinations', () => {
+test('serverless auth helpers compare secrets safely and validate real E.164 bounds', () => {
   assert.equal(safeEqual('abc', 'abc'), true);
   assert.equal(safeEqual('abc', 'abd'), false);
   assert.equal(safeEqual('', ''), false);
@@ -18,6 +19,17 @@ test('serverless auth helpers compare secrets safely and validate destinations',
   assert.equal(bearerTokenValid('Basic 123456', '123456'), false);
   assert.equal(isE164('+584121234567'), true);
   assert.equal(isE164('0412-1234567'), false);
+  assert.equal(isE164(`+${'1'.repeat(15)}`), true);
+  assert.equal(isE164(`+${'1'.repeat(16)}`), false);
+});
+
+test('serverless timeouts fail to bounded defaults instead of accepting NaN, zero or unbounded values', () => {
+  assert.equal(safeTimeoutMs(undefined), 10000);
+  assert.equal(safeTimeoutMs(Number.NaN), 10000);
+  assert.equal(safeTimeoutMs(0), 10000);
+  assert.equal(safeTimeoutMs(-1), 10000);
+  assert.equal(safeTimeoutMs(2500), 2500);
+  assert.equal(safeTimeoutMs(9999999), 60000);
 });
 
 test('serverless outbound stays disabled unless compliance, approval, SHA and allowlist all match', () => {
@@ -39,8 +51,50 @@ test('serverless outbound stays disabled unless compliance, approval, SHA and al
 
 test('Supabase helper uses bounded fetch and does not echo upstream bodies into thrown errors', () => {
   assert.match(shared, /fetchWithTimeout/);
+  assert.match(shared, /safeTimeoutMs/);
   assert.match(shared, /HIPICO_SUPABASE_TIMEOUT_MS/);
   assert.doesNotMatch(shared, /text\.slice\(0,\s*500\)/);
+});
+
+test('group bridge validates types, timestamps, quoted ids and pinned source before persistence', () => {
+  const base = {
+    groupId: 'source-gid',
+    externalMessageId: 'wamid-1',
+    groupName: 'Grupo fuente',
+    channelRole: 'source',
+    shadowMode: true,
+    senderId: '584121234567',
+    senderLabel: 'Participante',
+    fromMe: false,
+    hasMedia: false,
+    timestamp: '2026-09-11T06:00:00.000Z',
+    type: 'chat',
+    text: 'Juego 1N del 5 con 100k',
+    quotedExternalMessageId: 'wamid-origin'
+  };
+  const env = { HIPICO_SOURCE_GROUP_ID: 'source-gid', HIPICO_LAB_GROUP_ID: 'lab-gid' };
+  assert.equal(validateGroupBridgeBody(base, env), null);
+  assert.equal(validateGroupBridgeBody({ ...base, fromMe: 'false' }, env), 'invalid_boolean_field');
+  assert.equal(validateGroupBridgeBody({ ...base, timestamp: 'not-a-date' }, env), 'invalid_timestamp');
+  assert.equal(validateGroupBridgeBody({ ...base, quotedExternalMessageId: 'x'.repeat(321) }, env), 'invalid_quoted_message_id');
+  assert.equal(validateGroupBridgeBody({ ...base, groupId: 'other' }, env), 'source_group_not_authorized');
+  assert.equal(validateGroupBridgeBody({ ...base, shadowMode: false }, env), 'source_requires_shadow_mode');
+});
+
+test('legacy serverless duplicate identity binds sender, timestamp, body, type and quote context', () => {
+  const base = {
+    senderId: '584121234567',
+    timestamp: '2026-09-11T01:00:00-05:00',
+    type: 'chat',
+    text: '30k',
+    quotedExternalMessageId: 'source-1'
+  };
+  const sameInstant = { ...base, timestamp: '2026-09-11T06:00:00.000Z' };
+  assert.equal(ingestTest.sourceReplaySignature(base), ingestTest.sourceReplaySignature(sameInstant));
+  assert.notEqual(ingestTest.sourceReplaySignature(base), ingestTest.sourceReplaySignature({ ...base, text: '300k' }));
+  assert.notEqual(ingestTest.sourceReplaySignature(base), ingestTest.sourceReplaySignature({ ...base, quotedExternalMessageId: 'source-2' }));
+  assert.match(ingest, /replay_mismatch/);
+  assert.match(ingest, /retryable:\s*false/);
 });
 
 test('group bridge fails closed to configured owner and source shadow mode', () => {
