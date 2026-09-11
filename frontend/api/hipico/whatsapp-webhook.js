@@ -11,11 +11,19 @@ function validMetaMessageIdentity(message){
   const externalMessageId=String(message?.externalMessageId||'').trim();
   const channelKey=String(message?.channelKey||'').trim();
   const senderId=String(message?.senderId||'').trim();
+  const senderLabel=String(message?.senderLabel||'');
+  const messageType=String(message?.type||'');
+  const text=String(message?.text||'');
+  const quoted=message?.quotedExternalMessageId==null?null:String(message.quotedExternalMessageId);
   const sourceTimestamp=message?.raw?.timestamp;
   return Boolean(
     externalMessageId && externalMessageId.length<=320 &&
     channelKey && channelKey!=='meta' && channelKey.length<=220 &&
     isE164(senderId) &&
+    senderLabel.length<=220 &&
+    messageType && messageType.length<=80 &&
+    text.length<=4000 &&
+    (quoted===null||quoted.length<=320) &&
     sourceTimestamp!==undefined && sourceTimestamp!==null && String(sourceTimestamp).trim() &&
     normalizedTimestamp(message?.timestamp)
   );
