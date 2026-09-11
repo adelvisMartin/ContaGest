@@ -33,7 +33,10 @@ test('response receipt keeps the first persisted decision immutable on replay',(
   assert.match(persist,/ON CONFLICT \("idempotencyKey"\) DO NOTHING/);
   assert.doesNotMatch(persist,/"intent"=EXCLUDED\."intent"/);
   assert.doesNotMatch(persist,/"responseHash"=EXCLUDED\."responseHash"/);
-  assert.match(persist,/HIPICO_RESPONSE_RECEIPT_IDEMPOTENCY_MISMATCH/);
+  assert.match(persist,/assertResponseReceiptReplay\(row,plan\)/,
+    'duplicate persistence must delegate immutable evidence comparison to the canonical replay guard');
+  assert.match(store,/HIPICO_RESPONSE_RECEIPT_IDEMPOTENCY_MISMATCH/,
+    'canonical replay guard must retain the explicit mismatch error code');
 });
 
 test('response receipt exact replay accepts the same persisted response evidence',()=>{
