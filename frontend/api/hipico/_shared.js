@@ -3,6 +3,7 @@ import crypto from 'node:crypto';
 const DEFAULT_FETCH_TIMEOUT_MS = 10000;
 const MAX_FETCH_TIMEOUT_MS = 60000;
 const SHA40 = /^[a-f0-9]{40}$/i;
+const PUBLIC_SECRET_PLACEHOLDER_PATTERN = /(?:REEMPLAZA|REPLACE|CHANGE[_-]?ME|CHANGEME|PLACEHOLDER|YOUR[_-]?(?:SECRET|TOKEN|KEY)|TU[_-]?(?:SECRETO|TOKEN|CLAVE)|EXAMPLE[_-]?(?:SECRET|TOKEN|KEY))/i;
 export const MIN_HIPICO_INTERNAL_SECRET_LENGTH = 32;
 
 export function env(name, required = true) {
@@ -13,7 +14,10 @@ export function env(name, required = true) {
 
 export function strongSecretConfigured(value, minLength = MIN_HIPICO_INTERNAL_SECRET_LENGTH) {
   const minimum = Number.isInteger(minLength) && minLength > 0 ? minLength : MIN_HIPICO_INTERNAL_SECRET_LENGTH;
-  return Buffer.byteLength(String(value || '').trim(), 'utf8') >= minimum;
+  const secret = String(value || '').trim();
+  if (Buffer.byteLength(secret, 'utf8') < minimum) return false;
+  if (PUBLIC_SECRET_PLACEHOLDER_PATTERN.test(secret)) return false;
+  return true;
 }
 
 export function serverSecret(name, minLength = MIN_HIPICO_INTERNAL_SECRET_LENGTH) {
@@ -34,8 +38,6 @@ export function bearerTokenValid(header, expected) {
 }
 
 export function isE164(value) {
-  // E.164 allows at most 15 digits. WhatsApp accepts the same digits with or
-  // without a leading plus depending on the API field, so normalize later.
   return /^\+?[1-9]\d{6,14}$/.test(String(value || '').trim());
 }
 
