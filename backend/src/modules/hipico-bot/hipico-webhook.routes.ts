@@ -1,5 +1,6 @@
 import { Router } from 'express';
-import { extractMessages, HipicoBotStore, processIncoming, signatureValid } from './hipico-bot.service.js';
+import { extractMessages, HipicoBotStore, processIncoming } from './hipico-bot.service.js';
+import { metaSignatureValid, metaVerifyTokenValid, metaWebhookSecretsConfigured } from './hipico-meta-security.js';
 
 const router=Router();
 const WEBHOOK_PROCESSING_CONCURRENCY=10;
@@ -39,17 +40,18 @@ router.use((_req,res,next)=>{
 });
 
 router.get('/webhook',(req,res)=>{
+  if(!metaWebhookSecretsConfigured())return res.status(503).json({ok:false,error:'webhook_not_configured'});
   const mode=String(req.query['hub.mode']||'');
   const token=String(req.query['hub.verify_token']||'');
   const challenge=String(req.query['hub.challenge']||'');
-  const expected=String(process.env.WHATSAPP_VERIFY_TOKEN||'');
-  if(mode==='subscribe'&&expected&&token===expected)return res.status(200).send(challenge);
+  if(mode==='subscribe'&&metaVerifyTokenValid(token))return res.status(200).send(challenge);
   return res.sendStatus(403);
 });
 
 router.post('/webhook',async(req,res)=>{
+  if(!metaWebhookSecretsConfigured())return res.status(503).json({ok:false,retryable:true,error:'webhook_not_configured'});
   const raw=(req as any).rawBody as Buffer|undefined;
-  if(!signatureValid(raw,req.header('x-hub-signature-256')||undefined)){
+  if(!metaSignatureValid(raw,req.header('x-hub-signature-256')||undefined)){
     return res.status(401).json({ok:false,retryable:false,error:'Firma de webhook inválida.'});
   }
 
