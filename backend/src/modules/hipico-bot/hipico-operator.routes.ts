@@ -64,6 +64,9 @@ router.post('/classify',(req,res)=>{
 
 function outboundError(res:any,error:any){
   const code=String(error?.code||'');
+  if(code==='HIPICO_CLOUD_DELIVERY_AMBIGUOUS'){
+    return res.status(202).json({ok:false,retryable:false,error:'reconciliation_required',code});
+  }
   if(code.startsWith('HIPICO_CLOUD_')||code==='HIPICO_DESTINATION_NOT_ALLOWLISTED'){
     return res.status(409).json({ok:false,error:'Envío cloud bloqueado por la política de producción.',code});
   }
@@ -75,6 +78,14 @@ function outboundPreflight(to:string){
   if(!policy.enabled)return{ok:false as const,error:'outbound_disabled',reasons:policy.reasons};
   if(!cloudDestinationAllowed(to))return{ok:false as const,error:'destination_not_allowlisted',reasons:['DESTINATION_NOT_ALLOWLISTED']};
   return{ok:true as const};
+}
+
+async function persistSendFailure(id:string,error:any){
+  const ambiguous=error?.code==='HIPICO_CLOUD_DELIVERY_AMBIGUOUS';
+  const persisted=ambiguous
+    ?await HipicoBotStore.markReconciliationRequired(id,error?.message||String(error))
+    :await HipicoBotStore.markFailed(id,error?.message||String(error));
+  return{ambiguous,persisted};
 }
 
 router.post('/test-message',async(req,res)=>{
@@ -95,7 +106,7 @@ router.post('/test-message',async(req,res)=>{
     },'operator-test',parsed.data.requestId);
     const item=queued.row;
     if(item.status==='sent')return res.json({ok:true,duplicate:true,data:{id:item.id,status:'sent',providerMessageId:item.providerMessageId||null}});
-    if(item.status==='sending')return res.status(409).json({ok:false,error:'reconciliation_required',id:item.id});
+    if(item.status==='sending'||item.status==='reconciliation_required')return res.status(409).json({ok:false,retryable:false,error:'reconciliation_required',id:item.id});
     if(item.status==='failed')return res.status(409).json({ok:false,error:'previous_attempt_failed_use_new_request_id_after_review',id:item.id});
     if(item.status!=='pending_approval')return res.status(409).json({ok:false,error:'outbox_state_not_sendable',id:item.id,status:item.status});
     const claimed=await HipicoBotStore.claimForSend(item.id,'pending_approval');
@@ -106,8 +117,9 @@ router.post('/test-message',async(req,res)=>{
       if(!persisted)return res.status(202).json({ok:false,retryable:false,error:'reconciliation_required',id:claimed.id,providerMessageId:sent.providerMessageId});
       return res.json({ok:true,duplicate:false,data:{id:claimed.id,status:'sent',providerMessageId:sent.providerMessageId}});
     }catch(error:any){
-      const persisted=await HipicoBotStore.markFailed(claimed.id,error?.message||String(error));
-      if(!persisted)return res.status(503).json({ok:false,retryable:false,error:'reconciliation_required',id:claimed.id});
+      const state=await persistSendFailure(claimed.id,error);
+      if(!state.persisted)return res.status(503).json({ok:false,retryable:false,error:'reconciliation_required',id:claimed.id});
+      if(state.ambiguous)return res.status(202).json({ok:false,retryable:false,error:'reconciliation_required',id:claimed.id,code:error.code});
       return outboundError(res,error);
     }
   }catch(error:any){
@@ -124,7 +136,7 @@ router.post('/approve/:id',async(req,res)=>{
   const item=await HipicoBotStore.getOutbox(parsedId.data);
   if(!item)return res.status(404).json({ok:false,error:'Salida no encontrada.'});
   if(item.status==='sent')return res.json({ok:true,data:item});
-  if(item.status==='sending')return res.status(409).json({ok:false,error:'La salida ya está en envío o conciliación; no se reenviará automáticamente.'});
+  if(item.status==='sending'||item.status==='reconciliation_required')return res.status(409).json({ok:false,retryable:false,error:'La salida ya está en envío o conciliación; no se reenviará automáticamente.'});
   if(item.status!=='pending_approval')return res.status(409).json({ok:false,error:'La salida no está pendiente de aprobación y no puede enviarse.'});
   if(item.targetType!=='individual')return res.status(409).json({ok:false,error:'Este adaptador solo envia destinatarios individuales. El grupo requiere un bridge soportado.'});
   const preflight=outboundPreflight(String(item.recipient||''));
@@ -137,8 +149,9 @@ router.post('/approve/:id',async(req,res)=>{
     if(!persisted)return res.status(202).json({ok:false,retryable:false,error:'reconciliation_required',id:claimed.id,providerMessageId:sent.providerMessageId});
     return res.json({ok:true,data:{...claimed,status:'sent',providerMessageId:sent.providerMessageId}});
   }catch(error:any){
-    const persisted=await HipicoBotStore.markFailed(claimed.id,error?.message||String(error));
-    if(!persisted)return res.status(503).json({ok:false,retryable:false,error:'reconciliation_required',id:claimed.id});
+    const state=await persistSendFailure(claimed.id,error);
+    if(!state.persisted)return res.status(503).json({ok:false,retryable:false,error:'reconciliation_required',id:claimed.id});
+    if(state.ambiguous)return res.status(202).json({ok:false,retryable:false,error:'reconciliation_required',id:claimed.id,code:error.code});
     return outboundError(res,error);
   }
 });
