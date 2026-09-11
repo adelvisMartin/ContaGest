@@ -12,19 +12,23 @@ test('legacy groupless records belong only to the first group', () => {
   assert.deepEqual(scopeItems(workspace, rows, 'g2').map((row) => row.id), ['two']);
 });
 
-test('runtime groupItems follows the same first-group fallback contract', () => {
-  assert.match(appSource, /function groupItems\(items, groupId = activeGroupId\(\)\) \{ const fallbackGroupId = groupList\(\)\[0\]\?\.id \|\| "group-1"; return \(items \|\| \[\]\)\.filter\(\(item\) => String\(item\?\.groupId \|\| fallbackGroupId\) === String\(groupId\)\); \}/);
+test('runtime groupItems delegates to the canonical first-group fallback ledger', () => {
+  assert.match(appSource, /import \{ scopeItems as scopeLedgerItems \} from "\.\/operational-ledger\.js";/);
+  assert.match(appSource, /function groupItems\(items, groupId = activeGroupId\(\)\) \{ return scopeLedgerItems\(workspace, items, groupId\); \}/);
+  assert.doesNotMatch(appSource, /function groupItems[\s\S]{0,220}!item\.groupId\s*\|\|\s*item\.groupId\s*===\s*groupId/);
 });
 
 test('advanced loading is scoped to active group and emits fully tagged records', () => {
-  assert.match(appSource, /const bets = groupItems\(workspace\.advancedBets\)\.filter\(\(b\) => b\.status === "staged"/);
-  assert.match(appSource, /let race = groupItems\(workspace\.races\)\.find\(\(r\) => r\.date === date/);
-  assert.match(appSource, /const day = groupItems\(workspace\.days\)\.find\(\(d\) => d\.date === date\) \|\| \{ id: uid\("day"\), groupId: activeGroupId\(\), date, status: "open", closure: null \}/);
-  assert.match(appSource, /id: uid\("bet"\), groupId: activeGroupId\(\), play: b\.play/);
+  assert.match(appSource, /function loadAdvancedGroup\(key\) \{[\s\S]*?const groupId = activeGroupId\(\);/);
+  assert.match(appSource, /groupItems\(workspace\.advancedBets, groupId\)\.filter\(\(b\) => b\.status === "staged"/);
+  assert.match(appSource, /groupItems\(workspace\.races, groupId\)\.find\(\(r\) => r\.date === date/);
+  assert.match(appSource, /groupItems\(workspace\.days, groupId\)\.find\(\(d\) => d\.date === date && d\.status === "open"\)/);
+  assert.match(appSource, /const loaded = bets\.map\(\(b\) => \(\{ id: uid\("bet"\), groupId,/);
 });
 
 test('daily and weekly close never create or update records in another group', () => {
-  assert.match(appSource, /workspace\.days\.push\(\{ id: uid\("day"\), groupId: activeGroupId\(\), date: today\(\), status: "open", closure: null \}\)/);
+  assert.match(appSource, /function closeDay\(\)[\s\S]*?const groupId = activeGroupId\(\);/);
+  assert.match(appSource, /workspace\.days\.push\(\{ id: uid\("day"\), groupId, date: today\(\), status: "open", closure: null/);
   assert.match(appSource, /groupItems\(workspace\.participants\)\.forEach\(\(p\) => p\.previousWeekBalance = balanceAt\(p\.id\)\)/);
   assert.doesNotMatch(appSource, /workspace\.participants\.forEach\(\(p\) => p\.previousWeekBalance = balanceAt\(p\.id\)\)/);
 });
