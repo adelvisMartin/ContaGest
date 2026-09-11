@@ -8,6 +8,19 @@ function normalizedTimestamp(value) {
   return Number.isFinite(parsed)?new Date(parsed).toISOString():null;
 }
 
+function rawMetaEnvelopeIdentityError(payload,expectedPhoneNumberId){
+  const expected=String(expectedPhoneNumberId||'').trim();
+  if(!isMetaPhoneNumberId(expected))return 'META_PHONE_NUMBER_NOT_CONFIGURED';
+  for(const entry of payload?.entry||[])for(const change of entry?.changes||[]){
+    const value=change?.value||{};
+    const hasMessages=Array.isArray(value.messages)&&value.messages.length>0;
+    const hasStatuses=Array.isArray(value.statuses)&&value.statuses.length>0;
+    if(!hasMessages&&!hasStatuses)continue;
+    if(String(value?.metadata?.phone_number_id||'').trim()!==expected)return 'META_PHONE_NUMBER_MISMATCH';
+  }
+  return null;
+}
+
 function validMetaMessageIdentity(message){
   const externalMessageId=String(message?.externalMessageId||'').trim();
   const channelKey=String(message?.channelKey||'').trim();
@@ -93,6 +106,11 @@ export default async function handler(req, res) {
   try{payload=JSON.parse(raw.toString('utf8'));}
   catch{return res.status(400).json({ok:false,retryable:false,error:'invalid_json'});}
 
+  const envelopeIdentityError=rawMetaEnvelopeIdentityError(payload,runtime.phoneNumberId);
+  if(envelopeIdentityError){
+    return res.status(200).json({ok:false,acknowledged:true,accepted:false,retryable:false,error:'webhook_phone_number_mismatch'});
+  }
+
   const messages = extractMetaMessages(payload);
   if(messages.some((message)=>!validMetaMessageIdentity(message))){
     return res.status(200).json({ok:false,acknowledged:true,accepted:false,retryable:false,error:'invalid_message_identity',received:messages.length});
@@ -158,4 +176,4 @@ export default async function handler(req, res) {
   }
 }
 
-export const __test__={normalizedTimestamp,validMetaMessageIdentity,messageReplaySignature,persistedReplaySignature,metaWebhookConfig,adapterCaptureDecision};
+export const __test__={normalizedTimestamp,rawMetaEnvelopeIdentityError,validMetaMessageIdentity,messageReplaySignature,persistedReplaySignature,metaWebhookConfig,adapterCaptureDecision};
