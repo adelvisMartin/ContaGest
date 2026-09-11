@@ -12,6 +12,7 @@ const config = read('../frontend/public/hipico-control/assets/js/config.js');
 const sw = read('../frontend/public/hipico-control/sw.js');
 const buildInfo = JSON.parse(read('../frontend/public/hipico-control/build-info.json'));
 const buildInfoGenerator = read('../frontend/scripts/write-hipico-build-info.mjs');
+const rootPackage = JSON.parse(read('../package.json'));
 
 function jsFiles(url, prefix = '') {
   const files = [];
@@ -58,6 +59,17 @@ test('mobile vertical scrolling, safe area and reduced motion remain explicitly 
   assert.match(css, /overflow-y:\s*visible/);
   assert.match(css, /safe-area-inset-bottom/);
   assert.match(css, /prefers-reduced-motion:\s*reduce/);
+});
+
+test('local Hípico QA cannot report success without source gate and Chromium E2E first', () => {
+  const qa = String(rootPackage.scripts?.['qa:hipico'] || '');
+  const sourceIndex = qa.indexOf('npm --workspace frontend run preqa:source');
+  const browserIndex = qa.indexOf('npm run test:browser:hipico');
+  const evidenceIndex = qa.indexOf('node scripts/hipico-qa-runner-v103.mjs');
+  assert.ok(sourceIndex >= 0, 'qa:hipico must execute frontend preqa:source');
+  assert.ok(browserIndex > sourceIndex, 'qa:hipico must execute Chromium E2E after source gates');
+  assert.ok(evidenceIndex > browserIndex, 'SHA-bound evidence must run only after source and E2E pass');
+  assert.match(String(rootPackage.scripts?.['test:browser:hipico'] || ''), /playwright test qa\/hipico-visual-functional-v105\.spec\.mjs --project=chromium --workers=1/);
 });
 
 test('Control Hipico release metadata is generated from the canonical APP_VERSION and SHA-bound when available', () => {
