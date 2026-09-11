@@ -190,6 +190,18 @@ async function exportDailyStatements() {
   downloadFile(`${sanitizeFilename(profile.companyName)}-estados-${day.date}.txt`, content, 'text/plain;charset=utf-8');
 }
 
+export function resetOperationalCopyCenter() {
+  state = { workspace: null, participantId: '' };
+  if (typeof document === 'undefined') return;
+  const root = document.getElementById(ROOT_ID);
+  if (!root) return;
+  root.dataset.opsAuthorized = 'false';
+  root.setAttribute('inert', '');
+  root.setAttribute('aria-hidden', 'true');
+  root.querySelectorAll('[data-ops-dialog]').forEach((node) => node.remove());
+  root.remove();
+}
+
 export function mountOperationalCopyCenter() {
   if (typeof document === 'undefined') return null;
   const existing = document.getElementById(ROOT_ID);
