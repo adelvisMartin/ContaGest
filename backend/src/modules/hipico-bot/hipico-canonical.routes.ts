@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { classifyUntrustedConversation, safePublicAbuseMetadata } from './hipico-conversation-appsec.js';
 import { effectiveBridgeMediaKind } from './hipico-bridge-input-policy.js';
 import { persistHipicoDomainEvent } from './hipico-domain-event.store.js';
+import { readHipicoDomainAggregate } from './hipico-domain-query.store.js';
 import { operatorTokenConfigured, operatorTokenValid } from './hipico-operator-security.js';
 import type { HipicoDomainEventType } from './hipico-domain-state.js';
 
@@ -15,6 +16,7 @@ const STATE_ADVANCING_EVENTS = new Set<HipicoDomainEventType>([
 ]);
 const EXPLICIT_OPERATOR_EVENTS = new Set<HipicoDomainEventType>(['CORRECTION', 'REVERSAL']);
 
+const aggregateKindSchema = z.enum(['race', 'day']);
 const mediaKindSchema = z.enum(['none', 'image', 'video', 'audio', 'document', 'unknown']);
 const eventTypeSchema = z.enum([
   'PLAN_RECORDED', 'RACE_OPENED', 'BET_RECORDED', 'RACE_CLOSED', 'RESULT_RECORDED',
@@ -32,9 +34,14 @@ const previewSchema = z.object({
   participantId: z.string().trim().min(1).max(220).default('operator-preview')
 }).strict();
 
+const domainReadSchema = z.object({
+  groupKey: z.string().trim().min(1).max(120),
+  limit: z.coerce.number().int().min(1).max(200).default(50)
+}).strict();
+
 const domainEventSchema = z.object({
   groupKey: z.string().trim().min(1).max(120),
-  aggregateKind: z.enum(['race', 'day']),
+  aggregateKind: aggregateKindSchema,
   aggregateKey: z.string().trim().min(1).max(180),
   sourceMessageKey: z.string().trim().min(1).max(320),
   sourceMessageId: z.string().trim().max(320).nullable().optional(),
@@ -99,6 +106,7 @@ router.get('/status', (_req, res) => {
     ownerConfigured: ownerReady,
     sourceWrite: false,
     monetaryWrite: false,
+    resources: ['preview', 'domain/events', 'domain/:aggregateKind/:aggregateKey'],
     adapters: { legacyIntegrationPrefix: '/api/v1/hipico-bot' }
   });
 });
@@ -124,6 +132,34 @@ router.post('/preview', (req, res) => {
     sourceWrite: false,
     monetaryWrite: false
   });
+});
+
+router.get('/domain/:aggregateKind/:aggregateKey', async (req, res) => {
+  const kind = aggregateKindSchema.safeParse(req.params.aggregateKind);
+  const aggregateKey = z.string().trim().min(1).max(180).safeParse(req.params.aggregateKey);
+  const query = domainReadSchema.safeParse(req.query);
+  if (!kind.success || !aggregateKey.success || !query.success) {
+    return res.status(400).json({ ok: false, error: 'HIPICO_CANONICAL_READ_INVALID' });
+  }
+  const ownerId = configuredCanonicalOwnerId();
+  if (!ownerId) return res.status(503).json({ ok: false, error: 'HIPICO_OWNER_NOT_CONFIGURED' });
+  try {
+    const data = await readHipicoDomainAggregate({
+      ownerId,
+      groupKey: query.data.groupKey,
+      aggregateKind: kind.data,
+      aggregateKey: aggregateKey.data,
+      limit: query.data.limit
+    });
+    if (!data) return res.status(404).json({ ok: false, error: 'HIPICO_DOMAIN_AGGREGATE_NOT_FOUND' });
+    return res.json({ ok: true, data, sourceWrite: false, monetaryWrite: false });
+  } catch (error: any) {
+    console.error('[hipico-canonical] domain read failed', {
+      error: error?.message || String(error),
+      aggregateKind: kind.data
+    });
+    return res.status(503).json({ ok: false, retryable: true, error: 'HIPICO_CANONICAL_READ_UNAVAILABLE' });
+  }
 });
 
 router.post('/domain/events', async (req, res) => {
@@ -196,5 +232,6 @@ export const __test__ = {
   STATE_ADVANCING_EVENTS,
   EXPLICIT_OPERATOR_EVENTS,
   previewSchema,
+  domainReadSchema,
   domainEventSchema
 };
