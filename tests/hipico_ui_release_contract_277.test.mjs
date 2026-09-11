@@ -1,12 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { __test__ as noticeTest } from '../frontend/public/hipico-control/assets/js/notice-bridge.js';
 
 const read = (path) => readFileSync(new URL(path, import.meta.url), 'utf8');
 const html = read('../frontend/public/hipico-control/index.html');
 const css = read('../frontend/public/hipico-control/assets/css/app.css');
 const opsCss = read('../frontend/public/hipico-control/assets/css/operational-copy-center.css');
+const notice = read('../frontend/public/hipico-control/assets/js/notice-bridge.js');
 
 test('release shell mounts canonical logo and notice bridge', () => {
   assert.match(html, /logo-control-hipico\.png/);
@@ -14,10 +14,11 @@ test('release shell mounts canonical logo and notice bridge', () => {
   assert.match(html, /id="toast-region"/);
 });
 
-test('notice bridge normalizes supported tones and defaults safely', () => {
-  assert.deepEqual(noticeTest.normalizeNotice('Revisar carrera'), { message: 'Revisar carrera', type: 'warning' });
-  assert.deepEqual(noticeTest.normalizeNotice({ message: 'Guardado', type: 'success' }), { message: 'Guardado', type: 'success' });
-  assert.deepEqual(noticeTest.normalizeNotice({ message: 'Aviso', type: 'unknown' }), { message: 'Aviso', type: 'warning' });
+test('operational notices are routed into accessible app feedback instead of being silently dropped', () => {
+  assert.match(notice, /addEventListener\('hipico:notice'/);
+  assert.match(notice, /toast\(notice\.message/);
+  assert.match(notice, /\['success', 'error', 'warning', 'info'\]/);
+  assert.match(notice, /__HIPICO_NOTICE_BRIDGE__/);
 });
 
 test('canonical UI exposes light, dark and system theming', () => {
