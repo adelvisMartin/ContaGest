@@ -1,4 +1,4 @@
-import { env, extractMetaMessages, isE164, readRawBody, sha256, supabase, verifyMetaSignature, classifyText } from './_shared.js';
+import { env, extractMetaMessages, isE164, readRawBody, serverSecret, sha256, supabase, verifyMetaSignature, classifyText } from './_shared.js';
 
 export const config = { api: { bodyParser: false } };
 
@@ -61,7 +61,7 @@ export default async function handler(req, res) {
   res.setHeader('Cache-Control','no-store, max-age=0');
   if (req.method === 'GET') {
     let verifyToken;
-    try{verifyToken=env('HIPICO_META_VERIFY_TOKEN');}
+    try{verifyToken=serverSecret('HIPICO_META_VERIFY_TOKEN');}
     catch{return res.status(503).json({ok:false,error:'webhook_not_configured'});}
     const mode = req.query?.['hub.mode'];
     const token = req.query?.['hub.verify_token'];
@@ -79,7 +79,7 @@ export default async function handler(req, res) {
   }
 
   let appSecret;
-  try{appSecret=env('HIPICO_META_APP_SECRET');}
+  try{appSecret=serverSecret('HIPICO_META_APP_SECRET');}
   catch{return res.status(503).json({ok:false,retryable:true,error:'webhook_not_configured'});}
   if (!verifyMetaSignature(raw, req.headers['x-hub-signature-256'], appSecret)) {
     return res.status(401).json({ ok: false, retryable:false, error: 'invalid_signature' });
