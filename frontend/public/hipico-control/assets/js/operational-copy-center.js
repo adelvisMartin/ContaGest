@@ -124,9 +124,11 @@ function renderDialog(root) {
   const dialog = document.createElement('dialog');
   dialog.className = 'ops-dialog';
   dialog.dataset.opsDialog = 'true';
+  dialog.setAttribute('aria-labelledby', 'ops-dialog-title');
+  dialog.setAttribute('aria-describedby', 'ops-dialog-description');
   dialog.innerHTML = `<div class="ops-dialog__shell">
     <header class="ops-dialog__head">
-      <div><span class="ops-kicker">Centro operativo</span><h2>Textos de WhatsApp</h2><p>${escapeHtml(group.companyName)} · ${race ? `${escapeHtml(race.racetrack)} ${raceOrdinal(race.number)}` : 'sin carrera activa'}</p></div>
+      <div><span class="ops-kicker">Centro operativo</span><h2 id="ops-dialog-title">Textos de WhatsApp</h2><p id="ops-dialog-description">${escapeHtml(group.companyName)} · ${race ? `${escapeHtml(race.racetrack)} ${raceOrdinal(race.number)}` : 'sin carrera activa'}</p></div>
       <button type="button" class="ops-icon" data-ops-close aria-label="Cerrar centro operativo">×</button>
     </header>
     <div class="ops-dialog__toolbar">
