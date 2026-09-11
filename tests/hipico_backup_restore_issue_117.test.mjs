@@ -127,6 +127,17 @@ test('secure UI intercepts legacy export/import paths instead of leaking plainte
   assert.match(source, /antes.*reemplaz/i);
 });
 
+test('secure UI rejects oversized files before reading their contents', async () => {
+  const source = await fs.readFile('frontend/public/hipico-control/assets/js/backup-secure-ui.js', 'utf8');
+  const facade = await fs.readFile('frontend/public/hipico-control/assets/js/backup.js', 'utf8');
+  const guard = source.indexOf('assertImportSize(file.size)');
+  const read = source.indexOf('await file.text()');
+  assert.ok(guard >= 0 && read > guard, 'file size must be checked before File.text() allocates the payload');
+  assert.match(source, /MAX_PORTABLE_BACKUP_CHARS/);
+  assert.match(source, /assertImportSize\(pasted\.length\)/);
+  assert.match(facade, /MAX_PORTABLE_BACKUP_CHARS/);
+});
+
 test('service worker preserves explicit release versioning and precaches secure backup modules', async () => {
   const source = await fs.readFile('frontend/public/hipico-control/sw.js', 'utf8');
   assert.match(source, /const CACHE_VERSION = 'hipico-control-v\d+\.\d+\.\d+(?:-rc\d+)?-shell-r\d+(?:-[a-z0-9-]+)?'/);
