@@ -5,6 +5,7 @@ import { readFileSync, readdirSync } from 'node:fs';
 const read = (path) => readFileSync(new URL(path, import.meta.url), 'utf8');
 const html = read('../frontend/public/hipico-control/index.html');
 const css = read('../frontend/public/hipico-control/assets/css/app.css');
+const touchCss = read('../frontend/public/hipico-control/assets/css/mobile-accessibility.css');
 const opsCss = read('../frontend/public/hipico-control/assets/css/operational-copy-center.css');
 const notice = read('../frontend/public/hipico-control/assets/js/notice-bridge.js');
 const sw = read('../frontend/public/hipico-control/sw.js');
@@ -41,6 +42,10 @@ test('canonical UI exposes light, dark and system theming', () => {
 test('mobile controls preserve the 44px interaction contract', () => {
   assert.match(css, /--hc-touch:\s*44px/);
   assert.match(css, /@media \(max-width:\s*780px\)[\s\S]*\.button,[\s\S]*min-height:\s*var\(--hc-touch\)/);
+  assert.match(html, /assets\/css\/mobile-accessibility\.css/);
+  assert.match(touchCss, /@media \(max-width:\s*780px\)/);
+  assert.match(touchCss, /\.input,[\s\S]*\.select,[\s\S]*\.date-button,[\s\S]*\.color-input,[\s\S]*\.switch-row[\s\S]*min-height:\s*var\(--hc-touch,\s*44px\)/);
+  assert.match(sw, /assets\/css\/mobile-accessibility\.css/);
   assert.match(opsCss, /@media\(max-width:720px\)[\s\S]*min-height:44px/);
 });
 
