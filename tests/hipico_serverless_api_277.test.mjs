@@ -82,6 +82,25 @@ test('group bridge validates types, timestamps, quoted ids and pinned source bef
   assert.equal(validateGroupBridgeBody({ ...base, shadowMode: false }, env), 'source_requires_shadow_mode');
 });
 
+test('omitted group bridge role is canonical source across validation, persistence and lab shadow flow', () => {
+  const body = {
+    groupId: 'source-gid',
+    externalMessageId: 'wamid-default-source',
+    shadowMode: true,
+    senderId: '584121234567',
+    timestamp: '2026-09-11T06:00:00.000Z',
+    type: 'chat',
+    text: 'Juego 1N del 5 con 100k'
+  };
+  const env = { HIPICO_SOURCE_GROUP_ID: 'source-gid', HIPICO_LAB_GROUP_ID: 'lab-gid' };
+  assert.equal(validateGroupBridgeBody(body, env), null);
+  assert.equal(ingestTest.normalizedChannelRole(body), 'source');
+  assert.equal(ingestTest.normalizedChannelRole({ ...body, channelRole: 'lab' }), 'lab');
+  assert.match(ingest, /channel_role:\s*channelRole/);
+  assert.match(ingest, /labSimulation:\s*!duplicate\s*&&\s*channelRole === 'source'/);
+  assert.doesNotMatch(ingest, /body\.channelRole === 'source'/);
+});
+
 test('serverless bridge identity is mandatory and client channel aliases cannot split the canonical source', () => {
   const base = {
     groupId: 'source-gid', externalMessageId: 'wamid-1', groupName: 'Grupo fuente', channelRole: 'source', shadowMode: true,
