@@ -4,7 +4,9 @@ import {
   generateArrivalWhatsappText,
   generateBalancesWhatsappText,
   generateBetReceiptText,
-  generateParticipantStatementText
+  generateDailySummaryText,
+  generateParticipantStatementText,
+  shortDate
 } from '../frontend/public/hipico-control/assets/js/format.js';
 import { parseWhatsAppChat } from '../frontend/public/hipico-control/assets/js/whatsapp.js';
 
@@ -76,6 +78,23 @@ test('receipt remains renderable when a legacy bet has no valid createdAt timest
   const text=generateBetReceiptText(workspace,legacyRace,legacyBet);
   assert.match(text,/Registrada: sin fecha/);
   assert.match(text,/Jugada #9 de 9/);
+});
+
+test('visible operational dates fail soft instead of throwing or inventing today',()=>{
+  assert.equal(shortDate('fecha-corrupta'),'Sin fecha');
+  assert.equal(shortDate(''),'Sin fecha');
+  const corruptRace={...race,date:'fecha-corrupta'};
+  assert.doesNotThrow(()=>generateBetReceiptText(workspace,corruptRace,bet));
+  assert.match(generateBetReceiptText(workspace,corruptRace,bet),/fecha no disponible/);
+
+  const statement=generateParticipantStatementText(workspace,{
+    groupId:'group-1',participant:workspace.participants[0],date:'fecha-corrupta',dailyRows:[],tracks:[],weekTotal:0,dayTotal:0
+  });
+  assert.match(statement,/saldo del día fecha no disponible/);
+
+  const summary=generateDailySummaryText(workspace,{groupId:'group-1',date:'fecha-corrupta',status:'open'},
+    {races:0,bets:0,volume:0,settled:0,pending:0,cancelled:0,commission:0,controlDifference:0});
+  assert.match(summary,/CIERRE DIARIO · Sin fecha/);
 });
 
 test('arrival message is generated from the current official board', () => {
