@@ -184,3 +184,14 @@ export function classifyText(text) {
   if (/^(J|JUGANDO|SF|S\s*\/\s*F|SE FUE|DEBE CONFIRMAR|\d+(?:[.,]\d+)?\s*(K|MIL)?)$/.test(value)) return ['reply_review', 0.65];
   return ['other', 0.20];
 }
+
+export function adapterCaptureDecision(text) {
+  const [hintClassification, hintConfidence] = classifyText(text);
+  return {
+    storedClassification: 'unclassified',
+    storedConfidence: 0,
+    processingStatus: 'review',
+    domainAuthority: 'backend_canonical_only',
+    adapterHint: { classification: hintClassification, confidence: hintConfidence }
+  };
+}
