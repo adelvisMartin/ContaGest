@@ -46,10 +46,11 @@ test('stage lookup rejects non-numeric identifiers before any upstream request',
   assert.equal(calls, 0);
 });
 
-test('stage summary uses authenticated UOF REST enrichment and caches successful response', async () => {
+test('stage summary uses authenticated UOF REST enrichment, forbids redirects and caches successful response', async () => {
   let calls = 0;
   let observedUrl = '';
   let observedToken = '';
+  let observedRedirect = '';
   let clock = Date.parse('2026-09-10T23:00:00Z');
   const provider = createHorseRaceProvider({
     env: configuredEnv,
@@ -58,6 +59,7 @@ test('stage summary uses authenticated UOF REST enrichment and caches successful
       calls += 1;
       observedUrl = String(input);
       observedToken = new Headers(init?.headers).get('x-access-token') || '';
+      observedRedirect = String(init?.redirect || '');
       return new Response('<sport_event_status status="closed"/>', { status: 200, headers: { 'content-type': 'application/xml; charset=utf-8' } });
     }
   });
@@ -67,6 +69,7 @@ test('stage summary uses authenticated UOF REST enrichment and caches successful
   assert.equal(calls, 1);
   assert.equal(observedUrl, 'https://global.stgapi.betradar.com/v1/sports/en/sport_events/sr:stage:697758/summary.xml');
   assert.equal(observedToken, configuredEnv.HIPICO_SPORTRADAR_UOF_TOKEN);
+  assert.equal(observedRedirect, 'error');
   assert.equal(first.cached, false);
   assert.equal(second.cached, true);
   assert.equal(first.provider, 'sportradar-uof');
