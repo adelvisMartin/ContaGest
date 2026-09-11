@@ -8,8 +8,9 @@ function configured(name:'WHATSAPP_VERIFY_TOKEN'|'WHATSAPP_APP_SECRET',env:Runti
   return String(env[name]||'').trim();
 }
 
-function configuredPhoneNumberId(env:RuntimeEnv=process.env){
-  return String(env.WHATSAPP_PHONE_NUMBER_ID||'').trim();
+export function webhookPhoneNumberId(env:RuntimeEnv=process.env){
+  const value=String(env.WHATSAPP_PHONE_NUMBER_ID||'').trim();
+  return hipicoNumericProviderIdConfigured(value)?value:'';
 }
 
 function safeEqual(left:string,right:string){
@@ -24,7 +25,7 @@ export function webhookSecretsReady(env:RuntimeEnv=process.env){
 }
 
 export function webhookSecurityReady(env:RuntimeEnv=process.env){
-  return webhookSecretsReady(env)&&hipicoNumericProviderIdConfigured(configuredPhoneNumberId(env));
+  return webhookSecretsReady(env)&&Boolean(webhookPhoneNumberId(env));
 }
 
 export function webhookVerifyTokenValid(value:unknown,env:RuntimeEnv=process.env){
@@ -41,4 +42,4 @@ export function webhookSignatureValid(raw:Buffer|undefined,signature:unknown,env
   return safeEqual(supplied,expected);
 }
 
-export const __test__={configured,configuredPhoneNumberId,safeEqual};
+export const __test__={configured,safeEqual};
