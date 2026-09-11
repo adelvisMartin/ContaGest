@@ -49,13 +49,14 @@ test('partial processing failure is retryable instead of being acknowledged with
   assert.match(source,/Dedupe makes the successful subset safe/);
 });
 
-test('mutated provider-message replay is a 409 non-retryable integrity violation',()=>{
+test('mutated provider-message replay is rejected but acknowledged to avoid Meta retry storms',()=>{
   assert.equal(__test__.WEBHOOK_REPLAY_MISMATCH,'HIPICO_WEBHOOK_REPLAY_MISMATCH');
   assert.match(source,/item\.reason as any\)\?\.code===WEBHOOK_REPLAY_MISMATCH/);
   const transient=source.indexOf('if(result.failed>0)');
   const mismatch=source.indexOf('if(result.mismatched>0)');
   assert.ok(transient>=0&&mismatch>transient,'transient failures must keep 503 priority over replay mismatch');
-  assert.match(source,/if\(result\.mismatched>0\)[\s\S]*?status\(409\)\.json\(\{[\s\S]*?retryable:false[\s\S]*?error:'webhook_replay_mismatch'/);
+  assert.match(source,/if\(result\.mismatched>0\)[\s\S]*?status\(200\)\.json\(\{[\s\S]*?acknowledged:true[\s\S]*?accepted:false[\s\S]*?retryable:false[\s\S]*?error:'webhook_replay_mismatch'/);
+  assert.match(source,/Meta retries webhook deliveries on non-2xx responses/);
 });
 
 test('foreign phone-number events are rejected as non-retryable before persistence',()=>{
