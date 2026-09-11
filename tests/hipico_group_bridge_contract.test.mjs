@@ -22,19 +22,43 @@ test('group ingestion is authenticated, deduplicated and shadow-only', () => {
   assert.match(security, /timingSafeEqual/);
   assert.match(route, /x-hipico-bridge-token/);
   assert.match(route, /waweb:\$\{input\.externalMessageId\}/);
-  assert.match(route, /targetType: 'group_bridge'/);
-  assert.match(route, /status: 'shadow'/);
-  assert.match(route, /actions: \[\]/);
+  assert.match(route, /targetType:'group_bridge'|targetType: 'group_bridge'/);
+  assert.match(route, /status:'shadow'|status: 'shadow'/);
+  assert.match(route, /actions:\s*\[\]/);
   assert.doesNotMatch(route, /sendCloudText/);
+});
+
+test('backend distinguishes replay identity conflicts from retryable persistence failures', () => {
+  const route = read('backend/src/modules/hipico-bot/hipico-bridge.routes.ts');
+  const transport = read('backend/src/modules/hipico-bot/hipico-bridge-transport.store.ts');
+  const canonical = read('backend/src/modules/hipico-bot/hipico-canonical-shadow.store.ts');
+  assert.match(route, /REPLAY_IDENTITY_MISMATCH/);
+  assert.match(route, /res\.status\(409\)\.json\(\{ok:false,retryable:false/);
+  assert.match(route, /res\.status\(503\)\.json\(\{ok:false,retryable:true/);
+  assert.match(transport, /HIPICO_TRANSPORT_REPLAY_MISMATCH|assertReplayMatch\('transport'/);
+  assert.match(canonical, /HIPICO_CANONICAL_REPLAY_MISMATCH|assertReplayMatch\('canonical'/);
+  assert.doesNotMatch(canonical, /ON CONFLICT \(owner_id,channel_key,external_message_id\)[\s\S]{0,120}DO UPDATE SET/);
 });
 
 test('desktop bridge persists before network and has an independent send kill switch', () => {
   const bridge = read('tools/hipico-whatsapp-bridge/src/index.mjs');
   assert.match(bridge, /const ALLOW_SEND = boolEnv\('HIPICO_ALLOW_SEND', false\)/);
   assert.match(bridge, /const file = await spool\(event\); \/\/ persist locally before any network call/);
-  assert.match(bridge, /if \(ALLOW_SEND\)/);
+  assert.match(bridge, /if \(ALLOW_SEND && labText\) await client\.sendMessage\(lab\.id, labText\)/);
+  assert.doesNotMatch(bridge, /client\.sendMessage\(source\.id/);
   assert.match(bridge, /setInterval\([\s\S]*5000/);
   assert.match(bridge, /LocalAuth/);
+});
+
+test('permanent or corrupt bridge events are quarantined instead of retried forever or deleted', () => {
+  const bridge = read('tools/hipico-whatsapp-bridge/src/index.mjs');
+  assert.match(bridge, /const REJECTED_DIR = path\.join\(DATA_DIR, 'rejected'\)/);
+  assert.match(bridge, /payload\?\.retryable === false \? false/);
+  assert.match(bridge, /error\?\.retryable === false/);
+  assert.match(bridge, /await quarantine\(file, error\)/);
+  assert.match(bridge, /INVALID_LOCAL_SPOOL/);
+  assert.match(bridge, /\.meta\.json/);
+  assert.doesNotMatch(bridge, /catch \{\s*await fs\.unlink\(file\)/);
 });
 
 test('bridge dependencies are exact and lab config points to production ingest', () => {
