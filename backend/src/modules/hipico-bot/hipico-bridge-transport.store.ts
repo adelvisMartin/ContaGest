@@ -1,7 +1,7 @@
 import crypto from 'node:crypto';
 import { prisma } from '../../database/prisma.js';
 import type { IntentResult } from './hipico-operational-classifier.js';
-import { assertReplayMatch, transportReplaySignature } from './hipico-replay-integrity.js';
+import { assertReplayMatch, groupShadowReplaySignature, transportReplaySignature } from './hipico-replay-integrity.js';
 
 type TransportInput={
   providerMessageId:string;
@@ -27,12 +27,42 @@ type PersistedTransportSource={
   body:string|null;
 };
 
+type PersistedGroupShadowSource={
+  id:string;
+  recipient:string|null;
+  message:string|null;
+  intent:string|null;
+  risk:string|null;
+};
+
 const id=(prefix:string)=>`${prefix}_${crypto.randomUUID()}`;
 
 function assertTransportReplay(existing:PersistedTransportSource,input:TransportInput){
   const persisted=transportReplaySignature(existing);
   const replay=transportReplaySignature(input);
   assertReplayMatch('transport',persisted,replay);
+}
+
+function assertGroupShadowReplay(existing:PersistedGroupShadowSource,input:GroupOutboxInput){
+  const persisted=groupShadowReplaySignature(existing);
+  const replay=groupShadowReplaySignature({
+    recipient:input.recipient,
+    message:input.result.suggestion,
+    intent:input.result.intent,
+    risk:input.result.risk
+  });
+  assertReplayMatch('group-shadow',persisted,replay);
+}
+
+function assertGroupShadowReplayAtTransportBoundary(existing:PersistedGroupShadowSource,input:GroupOutboxInput){
+  try{
+    assertGroupShadowReplay(existing,input);
+  }catch(error:any){
+    if(error?.code==='HIPICO_GROUP_SHADOW_OUTBOX_REPLAY_MISMATCH'){
+      error.code='HIPICO_TRANSPORT_REPLAY_MISMATCH';
+    }
+    throw error;
+  }
 }
 
 /**
@@ -83,11 +113,13 @@ export async function persistBridgeTransportEvent(input:TransportInput){
 /**
  * Compatibility shadow outbox used by the existing operator/audit views.
  * A partial unique index guarantees one group_bridge outbox row per event,
- * including retries after a partial failure.
+ * including retries after a partial failure. The first row is immutable source
+ * evidence: an idempotent replay may reuse it, but changed recipient/message/
+ * intent/risk is rejected instead of silently rewriting history.
  */
 export async function ensureGroupShadowOutbox(input:GroupOutboxInput){
   const candidateId=id('hbo');
-  const rows=await prisma.$queryRaw<Array<{id:string}>>`
+  const inserted=await prisma.$queryRaw<Array<{id:string}>>`
     INSERT INTO public."HipicoBotOutbox"
       ("id","eventId","recipient","targetType","message","intent","risk","status","createdAt","updatedAt")
     VALUES
@@ -95,17 +127,20 @@ export async function ensureGroupShadowOutbox(input:GroupOutboxInput){
        ${input.result.intent},${input.result.risk},'shadow',CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)
     ON CONFLICT ("eventId","targetType")
       WHERE "eventId" IS NOT NULL AND "targetType"='group_bridge'
-    DO UPDATE SET
-      "recipient"=EXCLUDED."recipient",
-      "message"=EXCLUDED."message",
-      "intent"=EXCLUDED."intent",
-      "risk"=EXCLUDED."risk",
-      "status"='shadow',
-      "updatedAt"=CURRENT_TIMESTAMP
+    DO NOTHING
     RETURNING "id"
   `;
-  if(!rows[0]?.id)throw new Error('HIPICO_GROUP_SHADOW_OUTBOX_NOT_PERSISTED');
-  return{id:rows[0].id};
+  if(inserted[0]?.id)return{id:inserted[0].id};
+
+  const existing=await prisma.$queryRaw<PersistedGroupShadowSource[]>`
+    SELECT "id","recipient","message","intent","risk"
+    FROM public."HipicoBotOutbox"
+    WHERE "eventId"=${input.eventId} AND "targetType"='group_bridge'
+    LIMIT 1
+  `;
+  if(!existing[0]?.id)throw new Error('HIPICO_GROUP_SHADOW_OUTBOX_DEDUPE_ROW_MISSING');
+  assertGroupShadowReplayAtTransportBoundary(existing[0],input);
+  return{id:existing[0].id};
 }
 
 export async function bridgePersistenceReady(){
@@ -117,4 +152,4 @@ export async function bridgePersistenceReady(){
   return Boolean(rows[0]?.eventTable&&rows[0]?.outboxTable);
 }
 
-export const __test__={assertTransportReplay};
+export const __test__={assertTransportReplay,assertGroupShadowReplay,assertGroupShadowReplayAtTransportBoundary};
