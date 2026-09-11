@@ -18,13 +18,13 @@ async function syncAuthorization() {
   const cloudRole = document.documentElement.dataset.accessRole || '';
   let mode = null;
   try { mode = await getAppMode(); } catch { mode = null; }
-  if (currentGeneration !== generation) return;
+  if (currentGeneration !== generation || !root) return;
 
   const authorized = canUseOperationalCenter({ mode, hasShell, cloudRole, blocked });
-  if (!root) return;
-  root.dataset.opsAuthorized = authorized ? 'true' : 'false';
-  root.setAttribute('aria-hidden', authorized ? 'false' : 'true');
   if (!authorized) closeSensitiveSurface(root);
+  root.dataset.opsAuthorized = authorized ? 'true' : 'false';
+  root.toggleAttribute('inert', !authorized);
+  root.setAttribute('aria-hidden', authorized ? 'false' : 'true');
 }
 
 function scheduleSync() {
@@ -36,7 +36,7 @@ function scheduleSync() {
   });
 }
 
-// Prevent a previous cloud role from being reused during a new sign-in attempt.
+// A new sign-in must never inherit an authorization role from the previous cloud identity.
 document.addEventListener('submit', (event) => {
   const form = event.target instanceof HTMLFormElement ? event.target : null;
   if (form?.id !== 'auth-form') return;
@@ -44,14 +44,16 @@ document.addEventListener('submit', (event) => {
   scheduleSync();
 }, true);
 
-const bodyObserver = new MutationObserver(scheduleSync);
-bodyObserver.observe(document.body, { childList: true, subtree: true });
+const appRoot = document.getElementById('app');
+if (appRoot) new MutationObserver(scheduleSync).observe(appRoot, { childList: true });
+// access-blocker and operational root are direct body children; observing only this level avoids
+// waking the guard for every table row/card mutation on low-spec operator PCs.
+new MutationObserver(scheduleSync).observe(document.body, { childList: true });
+new MutationObserver(scheduleSync).observe(document.documentElement, {
+  attributes: true,
+  attributeFilter: ['data-access-role']
+});
 
-const accessObserver = new MutationObserver(scheduleSync);
-accessObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['data-access-role'] });
-
-window.addEventListener('online', scheduleSync);
-window.addEventListener('offline', scheduleSync);
 window.addEventListener('pageshow', scheduleSync);
 window.addEventListener('load', scheduleSync, { once: true });
 scheduleSync();
