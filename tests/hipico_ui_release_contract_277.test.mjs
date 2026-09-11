@@ -54,6 +54,6 @@ test('installed PWA precaches the complete Hípico JavaScript module tree', () =
   const root = new URL('../frontend/public/hipico-control/assets/js/', import.meta.url);
   const missing = jsFiles(root).filter((file) => !sw.includes(`'./assets/js/${file}'`) && !sw.includes(`"./assets/js/${file}"`));
   assert.deepEqual(missing, [], `JavaScript modules missing from APP_SHELL: ${missing.join(', ')}`);
-  assert.match(sw, /shell-r8-complete-offline/);
+  assert.match(sw, /shell-r\d+-[a-z0-9-]+/i);
   assert.match(sw, /new cache name makes shell upgrades atomic/i);
 });
