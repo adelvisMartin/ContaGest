@@ -7,14 +7,32 @@
   .select,
   .date-button,
   .color-input,
-  .switch-row {
+  .switch-row,
+  .button,
+  .nav-button,
+  .brand-button,
+  .mobile-brand,
+  .mobile-nav button,
+  [role="button"] {
     min-height: var(--hc-touch, 44px);
+  }
+
+  .icon-button {
+    min-width: var(--hc-touch, 44px);
+    width: var(--hc-touch, 44px);
+    height: var(--hc-touch, 44px);
   }
 
   .input,
   .select,
   .date-button,
-  .color-input {
+  .color-input,
+  .button,
+  .nav-button,
+  .brand-button,
+  .mobile-brand,
+  .mobile-nav button,
+  [role="button"] {
     touch-action: manipulation;
   }
 }
