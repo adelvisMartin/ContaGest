@@ -1,23 +1,8 @@
 import { metaOutboundPolicy, strongSecretConfigured } from './_shared.js';
-
-const CHANNEL_KEY_PATTERN=/^[A-Za-z0-9_-]{3,120}$/;
-const DEFAULT_SOURCE_CHANNEL_KEY='club-hipico-triple-crown-official';
-const DEFAULT_LAB_CHANNEL_KEY='control-hipico-lab';
+import { bridgeIdentityStatus } from './bridge-identity.js';
 
 function missing(keys) {
   return keys.filter((key) => !String(process.env[key] || '').trim());
-}
-
-function bridgeIdentityStatus(source=process.env){
-  const sourceGroupId=String(source.HIPICO_SOURCE_GROUP_ID||'').trim();
-  const labGroupId=String(source.HIPICO_LAB_GROUP_ID||'').trim();
-  const sourceChannelKey=String(source.HIPICO_SOURCE_CHANNEL_KEY||DEFAULT_SOURCE_CHANNEL_KEY).trim();
-  const labChannelKey=String(source.HIPICO_LAB_CHANNEL_KEY||DEFAULT_LAB_CHANNEL_KEY).trim();
-  const pinnedGroupsConfigured=Boolean(sourceGroupId&&labGroupId);
-  const groupsDistinct=Boolean(pinnedGroupsConfigured&&sourceGroupId!==labGroupId);
-  const channelKeysValid=CHANNEL_KEY_PATTERN.test(sourceChannelKey)&&CHANNEL_KEY_PATTERN.test(labChannelKey);
-  const channelKeysDistinct=Boolean(channelKeysValid&&sourceChannelKey!==labChannelKey);
-  return{sourceGroupId,labGroupId,sourceChannelKey,labChannelKey,pinnedGroupsConfigured,groupsDistinct,channelKeysValid,channelKeysDistinct};
 }
 
 function secretReadiness(source=process.env){
@@ -48,9 +33,7 @@ export default function handler(req, res) {
   const linkedDeviceReady = persistenceReady
     && linkedDeviceMissing.length === 0
     && secrets.bridgeTokenStrong
-    && identity.groupsDistinct
-    && identity.channelKeysValid
-    && identity.channelKeysDistinct;
+    && identity.ready;
   const outbound = metaOutboundPolicy();
   const metaDirectReady = persistenceReady && metaMissing.length === 0 && secrets.internalApiTokenStrong && outbound.enabled;
   const metaWebhookReady = persistenceReady
@@ -69,6 +52,7 @@ export default function handler(req, res) {
       sourceSendPossible: false,
       tokenConfigured: secrets.bridgeTokenStrong,
       pinnedGroupsConfigured: identity.pinnedGroupsConfigured,
+      groupIdsValid: identity.groupIdsValid,
       groupsDistinct: identity.groupsDistinct,
       channelKeysValid: identity.channelKeysValid,
       channelKeysDistinct: identity.channelKeysDistinct,
