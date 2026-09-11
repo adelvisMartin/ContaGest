@@ -213,6 +213,7 @@ export function createHorseRaceProvider(options: { env?: RuntimeEnv; fetchImpl?:
     try {
       const response = await fetchImpl(url, {
         method: 'GET',
+        redirect: 'error',
         headers: {
           accept: 'application/xml,text/xml;q=0.9',
           'x-access-token': token
