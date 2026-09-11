@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import {createBridgeSpoolRuntime,BRIDGE_SPOOL_KINDS} from '../src/spool-runtime.mjs';
+import {createBridgeSpoolRuntime,BRIDGE_SPOOL_KINDS,__test__} from '../src/spool-runtime.mjs';
 
 async function fixture(options={}){
   const dir=await fs.mkdtemp(path.join(os.tmpdir(),'hipico-runtime-spool-'));
@@ -26,6 +26,21 @@ test('same backend event key is idempotent and sent records are not requeued',as
   assert.equal(result.delivered,1);assert.equal(calls,1);
   const after=await f.runtime.queueBackendEvent(event);
   assert.equal(after.duplicate,true);assert.equal(after.record.state,'sent');
+  await fs.rm(f.dir,{recursive:true,force:true});
+});
+
+test('same spool identity rejects different payload content fail-closed',async()=>{
+  const f=await fixture();await f.runtime.initialize();
+  await f.runtime.queueBackendEvent({channelKey:'source',externalMessageId:'mismatch-1',text:'10 a ganador',meta:{b:2,a:1}});
+  const same=await f.runtime.queueBackendEvent({externalMessageId:'mismatch-1',channelKey:'source',meta:{a:1,b:2},text:'10 a ganador'});
+  assert.equal(same.duplicate,true);
+  await assert.rejects(
+    ()=>f.runtime.queueBackendEvent({channelKey:'source',externalMessageId:'mismatch-1',text:'100 a ganador',meta:{a:1,b:2}}),
+    (error)=>error?.code==='SPOOL_REPLAY_MISMATCH'&&error?.retryable===false
+  );
+  const found=await f.runtime.findRecord(same.record.recordId);
+  assert.equal(found.record.payload.text,'10 a ganador');
+  assert.equal(__test__.payloadFingerprint({b:2,a:1}),__test__.payloadFingerprint({a:1,b:2}));
   await fs.rm(f.dir,{recursive:true,force:true});
 });
 
