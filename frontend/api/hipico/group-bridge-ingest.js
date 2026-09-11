@@ -1,8 +1,5 @@
 import { env, safeEqual, serverSecret, sha256, supabase, classifyText } from './_shared.js';
-
-const CHANNEL_KEY_PATTERN=/^[A-Za-z0-9_-]{3,120}$/;
-const DEFAULT_SOURCE_CHANNEL_KEY='club-hipico-triple-crown-official';
-const DEFAULT_LAB_CHANNEL_KEY='control-hipico-lab';
+import { HIPICO_CHANNEL_KEY_PATTERN, configuredChannelIdentity, validateBridgeRoleIdentity } from './bridge-identity.js';
 
 function shadowSuggestion(classification, body) {
   const sender = String(body?.senderLabel || 'remitente').trim() || 'remitente';
@@ -34,15 +31,6 @@ function normalizedChannelRole(body) {
   return String(body?.channelRole || 'source');
 }
 
-function configuredChannelIdentity(role, source = process.env) {
-  const sourceRole=role==='lab'?'lab':'source';
-  const groupId=String((sourceRole==='source'?source.HIPICO_SOURCE_GROUP_ID:source.HIPICO_LAB_GROUP_ID)||'').trim();
-  const configuredKey=String((sourceRole==='source'?source.HIPICO_SOURCE_CHANNEL_KEY:source.HIPICO_LAB_CHANNEL_KEY)||'').trim();
-  const fallback=sourceRole==='source'?DEFAULT_SOURCE_CHANNEL_KEY:DEFAULT_LAB_CHANNEL_KEY;
-  const channelKey=configuredKey||fallback;
-  return { role:sourceRole, groupId, channelKey };
-}
-
 export function validateGroupBridgeBody(body, source = process.env) {
   if (!body || typeof body !== 'object' || Array.isArray(body)) return 'invalid_body';
   const groupId = String(body.groupId || '').trim();
@@ -51,7 +39,7 @@ export function validateGroupBridgeBody(body, source = process.env) {
   if (!groupId || groupId.length > 220 || !externalMessageId || externalMessageId.length > 320) return 'invalid_identifiers';
   if (!['source', 'lab'].includes(role)) return 'invalid_channel_role';
   if (body.groupName !== undefined && (typeof body.groupName !== 'string' || body.groupName.length > 220)) return 'invalid_group_name';
-  if (body.channelKey !== undefined && (typeof body.channelKey !== 'string' || !CHANNEL_KEY_PATTERN.test(body.channelKey.trim()))) return 'invalid_channel_key';
+  if (body.channelKey !== undefined && (typeof body.channelKey !== 'string' || !HIPICO_CHANNEL_KEY_PATTERN.test(body.channelKey.trim()))) return 'invalid_channel_key';
   if (body.bridgeVersion !== undefined && (typeof body.bridgeVersion !== 'string' || body.bridgeVersion.length > 80)) return 'invalid_bridge_version';
   if (body.type !== undefined && (typeof body.type !== 'string' || body.type.length > 80)) return 'invalid_message_type';
   if (body.text !== undefined && typeof body.text !== 'string') return 'invalid_text';
@@ -63,13 +51,8 @@ export function validateGroupBridgeBody(body, source = process.env) {
   if (!normalizedTimestamp(body.timestamp)) return 'invalid_timestamp';
   if (body.shadowMode !== true) return role === 'source' ? 'source_requires_shadow_mode' : 'lab_requires_shadow_mode';
 
-  const identity=configuredChannelIdentity(role,source);
-  if (!identity.groupId) return role === 'source' ? 'source_group_not_configured' : 'lab_group_not_configured';
-  if (!CHANNEL_KEY_PATTERN.test(identity.channelKey)) return role === 'source' ? 'source_channel_not_configured' : 'lab_channel_not_configured';
-  if (groupId !== identity.groupId) return role === 'source' ? 'source_group_not_authorized' : 'lab_group_not_authorized';
-  if (body.channelKey !== undefined && String(body.channelKey).trim() !== identity.channelKey) {
-    return role === 'source' ? 'source_channel_not_authorized' : 'lab_channel_not_authorized';
-  }
+  const identityError = validateBridgeRoleIdentity(role, groupId, body.channelKey, source);
+  if (identityError) return identityError;
   return null;
 }
 
@@ -125,7 +108,7 @@ async function readChannel(ownerId,groupKey){
 }
 
 async function ensureChannel(ownerId, body) {
-  const groupId = String(body.groupId).trim();
+  const groupId = String(body.groupId).trim().toLowerCase();
   const groupName = String(body.groupName || 'Grupo WhatsApp').trim().slice(0, 220);
   const role = normalizedChannelRole(body);
   const identity=configuredChannelIdentity(role);
@@ -204,7 +187,7 @@ export default async function handler(req, res) {
   const bodyError = validateGroupBridgeBody(body);
   if (bodyError) return res.status(400).json({ ok: false, retryable: false, error: bodyError });
 
-  const groupId = String(body.groupId).trim();
+  const groupId = String(body.groupId).trim().toLowerCase();
   const externalMessageId = String(body.externalMessageId).trim();
   const text = String(body.text || '');
   const sentAt = normalizedTimestamp(body.timestamp);
