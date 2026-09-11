@@ -1,4 +1,4 @@
-import { env, extractMetaMessages, isE164, readRawBody, safeEqual, serverSecret, sha256, supabase, verifyMetaSignature, classifyText } from './_shared.js';
+import { env, extractMetaMessages, isE164, isMetaPhoneNumberId, readRawBody, safeEqual, serverSecret, sha256, supabase, verifyMetaSignature, classifyText } from './_shared.js';
 
 export const config = { api: { bodyParser: false } };
 
@@ -14,7 +14,7 @@ function validMetaMessageIdentity(message, source = process.env){
   const expectedChannelKey=String(source?.HIPICO_META_PHONE_NUMBER_ID||'').trim();
   const sourceTimestamp=message?.raw?.timestamp;
   return Boolean(
-    expectedChannelKey &&
+    isMetaPhoneNumberId(expectedChannelKey) &&
     externalMessageId && externalMessageId.length<=320 &&
     channelKey && channelKey!=='meta' && channelKey.length<=220 &&
     channelKey===expectedChannelKey &&
@@ -94,6 +94,7 @@ export default async function handler(req, res) {
   try{
     ownerId=env('HIPICO_OWNER_ID');
     phoneNumberId=env('HIPICO_META_PHONE_NUMBER_ID');
+    if(!isMetaPhoneNumberId(phoneNumberId))throw new Error('invalid_meta_phone_number_id');
   }catch{
     return res.status(503).json({ok:false,retryable:true,error:'webhook_not_configured'});
   }
