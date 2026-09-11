@@ -8,6 +8,7 @@ const shared = read('../frontend/api/hipico/_shared.js');
 const ingest = read('../frontend/api/hipico/group-bridge-ingest.js');
 const sender = read('../frontend/api/hipico/whatsapp-send.js');
 const status = read('../frontend/api/hipico/status.js');
+const legacyBridge = read('../tools/hipico-whatsapp-bridge/src/index.mjs');
 
 test('serverless auth helpers compare secrets safely and validate destinations', () => {
   assert.equal(safeEqual('abc', 'abc'), true);
@@ -53,4 +54,12 @@ test('status endpoint separates linked-device readiness from optional Meta Cloud
   assert.match(status, /sourceSendPossible:\s*false/);
   assert.match(status, /optionalForLinkedDeviceBridge:\s*true/);
   assert.match(status, /groupsDistinct/);
+});
+
+test('legacy linked-device fallback cannot be configured to send to the source group', () => {
+  assert.match(legacyBridge, /Legacy Hípico bridge is shadow-only/);
+  assert.match(legacyBridge, /HIPICO_ALLOW_SEND requires pinned SOURCE and LAB group IDs/);
+  assert.match(legacyBridge, /await client\.sendMessage\(lab\.id, labText\)/);
+  assert.doesNotMatch(legacyBridge, /client\.sendMessage\(source\.id/);
+  assert.match(legacyBridge, /shadowMode:\s*true/);
 });
