@@ -29,8 +29,9 @@ function findLatestAdvancedLoadEvent(workspace) {
 
 function ensureDay(workspace, groupId, date, createId, now) {
   workspace.days ||= [];
-  let day = workspace.days.find((row) => rowGroupId(workspace, row) === groupId && String(row.date || '') === String(date || '') && row.status === 'open')
-    || workspace.days.find((row) => rowGroupId(workspace, row) === groupId && String(row.date || '') === String(date || ''));
+  let day = workspace.days.find((row) => rowGroupId(workspace, row) === groupId
+    && String(row.date || '') === String(date || '')
+    && row.status === 'open');
   if (day) {
     day.groupId ||= groupId;
     return day;
@@ -188,4 +189,4 @@ export function enforceAdvancedLoadGroupScope(workspace, options = {}) {
   };
 }
 
-export const __test__ = { firstGroupId, rowGroupId, sameRaceKey, matchesAdvancedBet, findLatestAdvancedLoadEvent };
+export const __test__ = { firstGroupId, rowGroupId, sameRaceKey, matchesAdvancedBet, findLatestAdvancedLoadEvent, ensureDay };
