@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { assertCloudOutboundAllowed, cloudDestinationAllowed, cloudOutboundPolicy } from './hipico-outbound-policy.js';
+import { assertCloudOutboundAllowed, cloudDestinationAllowed, cloudOutboundPolicy, __test__ } from './hipico-outbound-policy.js';
 
 const SHA='a'.repeat(40);
 const enabledEnv={
@@ -28,6 +28,12 @@ test('cloud outbound requires explicit GO, approval, exact candidate SHA and des
   assert.equal(policy.runtimeShaBound,true);
   assert.equal(cloudDestinationAllowed('+584121234567',enabledEnv),true);
   assert.equal(cloudDestinationAllowed('+584121234568',enabledEnv),false);
+});
+
+test('E164 destination normalization rejects more than 15 digits',()=>{
+  assert.equal(__test__.recipient('+123456789012345'), '123456789012345');
+  assert.equal(__test__.recipient('+1234567890123456'), null);
+  assert.equal(__test__.recipient('123456789012345678'), null);
 });
 
 test('stale approval cannot authorize another deployed SHA',()=>{
