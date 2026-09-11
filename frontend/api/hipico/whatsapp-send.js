@@ -1,4 +1,4 @@
-import { bearerTokenValid, env, fetchWithTimeout, isE164, metaDestinationAllowed, metaOutboundPolicy, supabase } from './_shared.js';
+import { bearerTokenValid, env, fetchWithTimeout, isE164, metaDestinationAllowed, metaOutboundPolicy, serverSecret, supabase } from './_shared.js';
 
 const MAX_ATTEMPTS = 6;
 const BATCH_SIZE = 10;
@@ -49,7 +49,7 @@ export default async function handler(req, res) {
 
   let expected;
   try {
-    expected = env('HIPICO_INTERNAL_API_TOKEN');
+    expected = serverSecret('HIPICO_INTERNAL_API_TOKEN');
   } catch {
     return res.status(503).json({ ok: false, retryable: true, error: 'sender_not_configured' });
   }
