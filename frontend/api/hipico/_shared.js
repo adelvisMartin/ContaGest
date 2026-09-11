@@ -163,16 +163,3 @@ export function extractMetaMessages(payload) {
   }
   return rows;
 }
-
-export function classifyText(text) {
-  const value = String(text || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().replace(/\s+/g, ' ').trim();
-  if (/NO MAS JUGAD|CARRERA CERRADA|CERRADO CERRADO/.test(value)) return ['race_close', 0.99];
-  if (/ESTO ES TODO POR EL DIA DE HOY|CIERRE DE JORNADA/.test(value)) return ['day_close', 0.99];
-  if (/\bLLEGADA\b|\bPIZARRA\s*:/.test(value)) return ['result', 0.97];
-  if (/\bTERCIOS\b/.test(value) && /\bJUEGA\b/.test(value) && /\bCONSIGUE\b/.test(value) && /BS\.?\s*[+-]/.test(value)) return ['settlement_snapshot', 0.99];
-  if (/\bTERCIO\s+DISPONIBLE\b/.test(value)) return ['balance_snapshot', 0.99];
-  if (/\bTERCIOS\b/.test(value) && /\bJUEGA\b/.test(value)) return ['plan_snapshot', 0.98];
-  if (/^(JUEGO|JUEGA|CONSIGO|CONSIGUE)\b/.test(value)) return ['offer', 0.90];
-  if (/^(J|JUGANDO|SF|S\s*\/\s*F|SE FUE|DEBE CONFIRMAR|\d+(?:[.,]\d+)?\s*(K|MIL)?)$/.test(value)) return ['reply_review', 0.65];
-  return ['other', 0.20];
-}

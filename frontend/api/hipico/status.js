@@ -1,16 +1,16 @@
 import { metaOutboundPolicy, strongSecretConfigured } from './_shared.js';
 import { bridgeIdentityStatus } from './bridge-identity.js';
 
-function missing(keys) {
-  return keys.filter((key) => !String(process.env[key] || '').trim());
+function missing(keys, source = process.env) {
+  return keys.filter((key) => !String(source[key] || '').trim());
 }
 
-function secretReadiness(source=process.env){
-  return{
-    bridgeTokenStrong:strongSecretConfigured(source.HIPICO_GROUP_BRIDGE_TOKEN),
-    internalApiTokenStrong:strongSecretConfigured(source.HIPICO_INTERNAL_API_TOKEN),
-    metaVerifyTokenStrong:strongSecretConfigured(source.HIPICO_META_VERIFY_TOKEN),
-    metaAppSecretStrong:strongSecretConfigured(source.HIPICO_META_APP_SECRET)
+function secretReadiness(source = process.env) {
+  return {
+    bridgeTokenStrong: strongSecretConfigured(source.HIPICO_GROUP_BRIDGE_TOKEN),
+    internalApiTokenStrong: strongSecretConfigured(source.HIPICO_INTERNAL_API_TOKEN),
+    webhookVerifyTokenStrong: strongSecretConfigured(source.WHATSAPP_VERIFY_TOKEN),
+    webhookAppSecretStrong: strongSecretConfigured(source.WHATSAPP_APP_SECRET)
   };
 }
 
@@ -20,26 +20,28 @@ export default function handler(req, res) {
 
   const persistenceRequired = ['HIPICO_SUPABASE_URL', 'HIPICO_SUPABASE_SERVICE_ROLE_KEY', 'HIPICO_OWNER_ID'];
   const linkedDeviceRequired = ['HIPICO_GROUP_BRIDGE_TOKEN', 'HIPICO_SOURCE_GROUP_ID', 'HIPICO_LAB_GROUP_ID'];
-  const metaRequired = ['HIPICO_META_ACCESS_TOKEN', 'HIPICO_META_PHONE_NUMBER_ID', 'HIPICO_INTERNAL_API_TOKEN'];
-  const webhookRequired = ['HIPICO_META_VERIFY_TOKEN', 'HIPICO_META_APP_SECRET', 'HIPICO_META_PHONE_NUMBER_ID'];
+  const metaDirectRequired = ['HIPICO_META_ACCESS_TOKEN', 'HIPICO_META_PHONE_NUMBER_ID', 'HIPICO_INTERNAL_API_TOKEN'];
+  const canonicalWebhookRequired = ['WHATSAPP_VERIFY_TOKEN', 'WHATSAPP_APP_SECRET', 'WHATSAPP_PHONE_NUMBER_ID'];
 
   const persistenceMissing = missing(persistenceRequired);
   const linkedDeviceMissing = missing(linkedDeviceRequired);
-  const metaMissing = missing(metaRequired);
-  const webhookMissing = missing(webhookRequired);
-  const identity=bridgeIdentityStatus();
-  const secrets=secretReadiness();
+  const metaDirectMissing = missing(metaDirectRequired);
+  const webhookMissing = missing(canonicalWebhookRequired);
+  const identity = bridgeIdentityStatus();
+  const secrets = secretReadiness();
   const persistenceReady = persistenceMissing.length === 0;
   const linkedDeviceReady = persistenceReady
     && linkedDeviceMissing.length === 0
     && secrets.bridgeTokenStrong
     && identity.ready;
   const outbound = metaOutboundPolicy();
-  const metaDirectReady = persistenceReady && metaMissing.length === 0 && secrets.internalApiTokenStrong && outbound.enabled;
-  const metaWebhookReady = persistenceReady
-    && webhookMissing.length === 0
-    && secrets.metaVerifyTokenStrong
-    && secrets.metaAppSecretStrong;
+  const metaDirectReady = persistenceReady
+    && metaDirectMissing.length === 0
+    && secrets.internalApiTokenStrong
+    && outbound.enabled;
+  const metaWebhookReady = webhookMissing.length === 0
+    && secrets.webhookVerifyTokenStrong
+    && secrets.webhookAppSecretStrong;
 
   return res.status(200).json({
     ok: true,
@@ -61,6 +63,7 @@ export default function handler(req, res) {
     metaCloud: {
       directIndividualSendReady: metaDirectReady,
       webhookReady: metaWebhookReady,
+      webhookAuthority: 'canonical_backend',
       optionalForLinkedDeviceBridge: true,
       outboundPolicy: {
         enabled: outbound.enabled,
@@ -68,9 +71,9 @@ export default function handler(req, res) {
         allowedDestinationCount: outbound.allowedDestinationCount,
         runtimeShaBound: outbound.runtimeShaBound
       },
-      missingConfigurationCount: new Set([...metaMissing, ...webhookMissing]).size
+      missingConfigurationCount: new Set([...metaDirectMissing, ...webhookMissing]).size
     }
   });
 }
 
-export const __test__={bridgeIdentityStatus,secretReadiness};
+export const __test__ = { bridgeIdentityStatus, secretReadiness, missing };
