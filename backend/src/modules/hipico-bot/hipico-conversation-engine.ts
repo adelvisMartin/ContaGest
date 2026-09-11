@@ -1,7 +1,7 @@
 import crypto from 'node:crypto';
 import { classify, type IntentResult } from './hipico-operational-classifier.js';
 
-export const CONVERSATION_POLICY_VERSION = 'hipico-conversation-v2';
+export const CONVERSATION_POLICY_VERSION = 'hipico-conversation-v3';
 export const DEFAULT_PARSER_VERSION = 'hipico-operational-classifier-v1';
 
 export type ConversationStage =
@@ -26,6 +26,7 @@ export type ConversationMessage = {
   participantLabel?: string | null;
   text: string;
   timestamp: string;
+  /** Stable canonical/operational race context key. Never a bare race number. */
   raceId?: string | null;
   quotedSourceMessageId?: string | null;
   mediaKind?: string | null;
@@ -121,17 +122,12 @@ function response(
     correlationId: deterministicCorrelationId(message),
     sourceMessageId: message.sourceMessageId,
     participantId: message.participantId,
-    raceId: message.raceId || contextRace(result, message) || null,
+    raceId: message.raceId || null,
     classifierIntent: result.intent,
     effectsAllowed: false,
     transportAction: 'NONE',
     audit
   };
-}
-
-function contextRace(result: IntentResult, message: ConversationMessage) {
-  const raceNumber = result.entities?.raceNumber;
-  return raceNumber == null ? message.raceId || null : String(raceNumber);
 }
 
 function ordinalRace(value: unknown) {
@@ -235,7 +231,8 @@ export function decideConversation(
     participantId,
     participantLabel: String(message.participantLabel || '').trim() || null,
     text: String(message.text || '').trim(),
-    timestamp: String(message.timestamp || '')
+    timestamp: String(message.timestamp || ''),
+    raceId: String(message.raceId || '').trim() || null
   };
   const result = classifier(normalizedMessage.text);
   const seen = asSet(context.seenSourceMessageIds);
@@ -261,8 +258,8 @@ export function decideConversation(
     return response(normalizedMessage, result, 'HELD_FOR_REVIEW', 'OUT_OF_ORDER_STATEFUL_MESSAGE', 'ESCALATED', 'Mensaje recibido fuera de orden. Queda retenido para revisión; no se registró ninguna operación.', audit);
   }
 
-  const raceId = normalizedMessage.raceId || contextRace(result, normalizedMessage);
-  if (raceId && asSet(context.closedRaceIds).has(String(raceId)) && monetaryOrStateful) {
+  const raceId = normalizedMessage.raceId;
+  if (raceId && asSet(context.closedRaceIds).has(raceId) && monetaryOrStateful) {
     return response(normalizedMessage, result, 'REJECTED', 'RACE_ALREADY_CLOSED', 'REJECTED', 'La carrera indicada ya está cerrada. No se registró ninguna operación.', audit);
   }
 
