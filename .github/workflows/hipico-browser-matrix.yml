@@ -1,0 +1,61 @@
+name: Hípico Browser Matrix
+
+on:
+  schedule:
+    - cron: '37 6 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: hipico-browser-matrix-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  cross-browser:
+    name: Hípico visual-functional / ${{ matrix.project }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - project: chromium
+            browser: chromium
+          - project: firefox
+            browser: firefox
+          - project: webkit-safari
+            browser: webkit
+    steps:
+      - name: Checkout candidate SHA
+        uses: actions/checkout@v7
+
+      - name: Node 22
+        uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install from lockfile
+        run: npm ci --no-audit --no-fund
+
+      - name: Install browser runtime
+        run: npx playwright install --with-deps ${{ matrix.browser }}
+
+      - name: Run Hípico visual-functional matrix
+        env:
+          HIPICO_QA_SHA: ${{ github.sha }}
+        run: npx playwright test qa/hipico-visual-functional-v105.spec.mjs --project=${{ matrix.project }} --workers=1
+
+      - name: Upload browser evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: hipico-${{ matrix.project }}-${{ github.sha }}
+          path: |
+            artifacts/qa/hipico-v105/${{ github.sha }}
+            test-results
+            playwright-report
+          if-no-files-found: warn
+          retention-days: 14
