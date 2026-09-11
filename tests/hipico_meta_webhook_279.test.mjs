@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { __test__ } from '../frontend/api/hipico/whatsapp-webhook.js';
 import { extractMetaMessages, metaTimestamp } from '../frontend/api/hipico/_shared.js';
+import { metaWebhookConfig } from '../frontend/api/hipico/meta-runtime.js';
 
 const source=await readFile(new URL('../frontend/api/hipico/whatsapp-webhook.js',import.meta.url),'utf8');
 const shared=await readFile(new URL('../frontend/api/hipico/_shared.js',import.meta.url),'utf8');
@@ -16,11 +17,18 @@ test('Meta webhook replay signature binds sender instant type body and quoted co
   assert.notEqual(__test__.messageReplaySignature(base),__test__.messageReplaySignature({...base,quotedExternalMessageId:'origin-2'}));
 });
 
-test('Meta webhook requires strong secrets and timing-safe verification token comparison',()=>{
-  assert.match(source,/serverSecret\('HIPICO_META_VERIFY_TOKEN'\)/);
-  assert.match(source,/safeEqual\(token, verifyToken\)/);
-  assert.match(source,/serverSecret\('HIPICO_META_APP_SECRET'\)/);
-  assert.doesNotMatch(source,/token\s*===\s*verifyToken/);
+test('Meta webhook requires strong secrets, numeric phone id and timing-safe verification token comparison',()=>{
+  const ready=metaWebhookConfig({
+    HIPICO_META_VERIFY_TOKEN:'v'.repeat(40),
+    HIPICO_META_APP_SECRET:'s'.repeat(40),
+    HIPICO_META_PHONE_NUMBER_ID:'1234567890'
+  });
+  assert.equal(ready.ready,true);
+  assert.equal(metaWebhookConfig({HIPICO_META_VERIFY_TOKEN:'short',HIPICO_META_APP_SECRET:'s'.repeat(40),HIPICO_META_PHONE_NUMBER_ID:'1234567890'}).ready,false);
+  assert.equal(metaWebhookConfig({HIPICO_META_VERIFY_TOKEN:'v'.repeat(40),HIPICO_META_APP_SECRET:'s'.repeat(40),HIPICO_META_PHONE_NUMBER_ID:'not-numeric'}).ready,false);
+  assert.match(source,/metaWebhookConfig\(\)/);
+  assert.match(source,/safeEqual\(token, runtime\.verifyToken\)/);
+  assert.doesNotMatch(source,/token\s*===\s*runtime\.verifyToken/);
 });
 
 test('Meta webhook verifies the raw signature before parsing or persisting content',()=>{
@@ -62,7 +70,7 @@ test('Meta extraction preserves external identities and boundary validation reje
   assert.equal(__test__.validMetaMessageIdentity({...base,quotedExternalMessageId:'x'.repeat(321)}),false);
 });
 
-test('Meta webhook rejects incomplete message identity before any persistence',()=>{
+test('Meta webhook rejects incomplete or foreign message identity before persistence and transport-acks permanent rejects',()=>{
   const valid={externalMessageId:'wamid-meta-1',channelKey:'1234567890',senderId:'584121234567',senderLabel:'',timestamp:'2026-09-11T06:00:00.000Z',type:'text',text:'hola',quotedExternalMessageId:null,raw:{timestamp:'1789106400'}};
   assert.equal(__test__.validMetaMessageIdentity(valid),true);
   assert.equal(__test__.validMetaMessageIdentity({...valid,externalMessageId:''}),false);
@@ -70,10 +78,12 @@ test('Meta webhook rejects incomplete message identity before any persistence',(
   assert.equal(__test__.validMetaMessageIdentity({...valid,senderId:'0412-1234567'}),false);
   assert.equal(__test__.validMetaMessageIdentity({...valid,raw:{}}),false);
   assert.equal(__test__.validMetaMessageIdentity({...valid,timestamp:'not-a-date'}),false);
+  assert.equal(__test__.rawMetaEnvelopeIdentityError({entry:[{changes:[{value:{metadata:{phone_number_id:'9999999999'},messages:[{}]}}]}]},'1234567890'),'META_PHONE_NUMBER_MISMATCH');
   const identityCheck=source.indexOf('messages.some((message)=>!validMetaMessageIdentity(message))');
   const persistence=source.indexOf("await supabase('hipico_messages");
   assert.ok(identityCheck>=0&&persistence>identityCheck);
-  assert.match(source,/status\(400\).*invalid_message_identity/);
+  assert.match(source,/status\(200\).*acknowledged:true.*accepted:false.*invalid_message_identity/s);
+  assert.match(source,/status\(200\).*acknowledged:true.*accepted:false.*webhook_phone_number_mismatch/s);
 });
 
 test('oversized and malformed requests are rejected without being treated as retryable server faults',()=>{
@@ -87,8 +97,12 @@ test('duplicate Meta message id is compared with first persisted source instead 
   assert.match(source,/assertDuplicateMetaReplay/);
   assert.match(source,/persistedReplaySignature\(existing\)!==messageReplaySignature\(message\)/);
   assert.match(source,/HIPICO_META_REPLAY_MISMATCH/);
-  assert.match(source,/status\(409\).*replay_mismatch/);
+  assert.match(source,/status\(200\).*acknowledged:true.*accepted:false.*replay_mismatch/s);
   assert.match(source,/resolution=ignore-duplicates,return=representation/);
+});
+
+test('transient webhook processing failures remain retryable with HTTP 503',()=>{
+  assert.match(source,/status\(503\).*retryable:true.*webhook_processing_failed/s);
 });
 
 test('webhook logs only normalized error message and never raw signed payload',()=>{
