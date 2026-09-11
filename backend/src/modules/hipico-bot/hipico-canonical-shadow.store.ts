@@ -101,20 +101,28 @@ async function ensureOfficialSourceChannel(groupName:string, sourceKey:string, l
     auto_send:false,
     mirror_lab_channel_key:labKey
   };
-  const rows=await prisma.$queryRaw<Array<{id:string;ownerId:string;groupKey:string;label:string}>>`
+  const inserted=await prisma.$queryRaw<Array<{id:string;ownerId:string;groupKey:string;label:string}>>`
     INSERT INTO public.hipico_bot_channels (owner_id,group_key,label,channel_type,status,config)
     VALUES (${lab.ownerId}::uuid,${sourceKey},${String(groupName||'CLUB HIPICO TRIPLE CROWN').slice(0,220)},'web_bridge','active',${JSON.stringify(config)}::jsonb)
-    ON CONFLICT (owner_id,group_key)
-    DO UPDATE SET
-      label=EXCLUDED.label,
-      channel_type='web_bridge',
-      status='active',
-      config=EXCLUDED.config,
-      updated_at=now()
+    ON CONFLICT (owner_id,group_key) DO NOTHING
     RETURNING id::text AS "id",owner_id::text AS "ownerId",group_key AS "groupKey",label
   `;
-  if(rows.length!==1)throw new Error('HIPICO_SOURCE_CHANNEL_PROVISION_FAILED');
-  return rows[0];
+  if(inserted.length===1)return inserted[0];
+
+  // A disabled/incompatible channel is an administrative decision. Ingest must
+  // never turn it active again implicitly. The only benign conflict is a
+  // concurrent request that created the same active web_bridge first.
+  const existing=await prisma.$queryRaw<Array<{id:string;ownerId:string;groupKey:string;label:string;status:string;channelType:string}>>`
+    SELECT id::text AS "id",owner_id::text AS "ownerId",group_key AS "groupKey",label,status,channel_type AS "channelType"
+    FROM public.hipico_bot_channels
+    WHERE owner_id=${lab.ownerId}::uuid AND group_key=${sourceKey}
+    LIMIT 2
+  `;
+  if(existing.length!==1)throw new Error('HIPICO_SOURCE_CHANNEL_PROVISION_FAILED');
+  if(existing[0].status!=='active'||existing[0].channelType!=='web_bridge'){
+    throw new Error('HIPICO_SOURCE_CHANNEL_DISABLED_OR_INCOMPATIBLE');
+  }
+  return existing[0];
 }
 
 async function resolveChannel(input:Pick<CanonicalPersistInput,'groupName'|'channelKey'|'labChannelKey'|'channelRole'>):Promise<CanonicalChannel>{
