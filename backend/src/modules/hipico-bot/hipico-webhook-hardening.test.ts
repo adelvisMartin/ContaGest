@@ -14,8 +14,16 @@ test('Cloud webhook is bound to the configured WhatsApp phone number id',()=>{
   assert.equal(__test__.webhookIdentityError([{phoneNumberId:'1234567890'}],{}),'WEBHOOK_PHONE_NUMBER_NOT_CONFIGURED');
 });
 
+test('Cloud webhook uses canonical strong Meta security and never legacy service auth helpers',()=>{
+  assert.match(source,/import \{ metaSignatureValid, metaVerifyTokenValid, metaWebhookSecretsConfigured \} from '\.\/hipico-meta-security\.js'/);
+  assert.doesNotMatch(source,/import \{[^}]*signatureValid[^}]*\} from '\.\/hipico-bot\.service\.js'/);
+  assert.doesNotMatch(source,/import \{[^}]*operatorTokenValid[^}]*\} from '\.\/hipico-bot\.service\.js'/);
+  assert.match(source,/metaWebhookSecretsConfigured\(\)/);
+  assert.match(source,/metaVerifyTokenValid\(token\)/);
+});
+
 test('Cloud webhook verifies signature before identity and processing',()=>{
-  const signature=source.indexOf('signatureValid(raw');
+  const signature=source.indexOf('metaSignatureValid(raw');
   const extraction=source.indexOf('extractMessages(req.body)');
   const identity=source.indexOf('webhookIdentityError(messages)');
   const processing=source.indexOf('processMessagesBounded(messages)');
