@@ -10,7 +10,7 @@ type LedgerInput={
 
 type ExistingEntry={
   id:string;amountMinor:string;participantCode:string;currency:string;entryType:string;originalEntryId:string|null;
-  raceKey:string|null;settlementOfKey:string|null;sourceEventId:string|null;sourceMessageKey:string|null;
+  raceKey:string|null;settlementOfKey:string|null;sourceEventId:string|null;sourceMessageKey:string|null;reason?:string|null;
 };
 
 function required(value:unknown,code:string){const text=String(value||'').trim();if(!text)throw new Error(code);return text;}
@@ -21,7 +21,7 @@ function exactMinor(value:bigint|string|undefined){
 function nullable(value:unknown){const text=String(value||'').trim();return text||null;}
 function idempotencyLockKey(ownerId:string,groupKey:string,idempotencyKey:string){return JSON.stringify([ownerId,groupKey,idempotencyKey]);}
 
-function assertIdempotentReplay(existing:ExistingEntry,input:{participantCode:string;currency:string;entryType:LedgerEntryType;amountMinor:bigint|null;raceKey:string|null;settlementOfKey:string|null;sourceEventId:string|null;sourceMessageKey:string|null;originalEntryId:string|null}){
+function assertIdempotentReplay(existing:ExistingEntry,input:{participantCode:string;currency:string;entryType:LedgerEntryType;amountMinor:bigint|null;raceKey:string|null;settlementOfKey:string|null;sourceEventId:string|null;sourceMessageKey:string|null;originalEntryId:string|null;reason:string|null}){
   const same=existing.participantCode===input.participantCode
     && existing.currency===input.currency
     && existing.entryType===input.entryType
@@ -30,8 +30,9 @@ function assertIdempotentReplay(existing:ExistingEntry,input:{participantCode:st
     && existing.settlementOfKey===input.settlementOfKey
     && existing.sourceEventId===input.sourceEventId
     && existing.sourceMessageKey===input.sourceMessageKey
+    && nullable(existing.reason)===input.reason
     && (input.entryType==='reversal'||BigInt(existing.amountMinor)===input.amountMinor);
-  if(!same)throw Object.assign(new Error('Ledger idempotency key was reused with different financial content.'),{code:'HIPICO_LEDGER_IDEMPOTENCY_MISMATCH'});
+  if(!same)throw Object.assign(new Error('Ledger idempotency key was reused with different financial content or audit provenance.'),{code:'HIPICO_LEDGER_IDEMPOTENCY_MISMATCH'});
 }
 
 export async function appendHipicoLedgerEntry(input:LedgerInput){
@@ -46,6 +47,8 @@ export async function appendHipicoLedgerEntry(input:LedgerInput){
   const settlementOfKey=nullable(input.settlementOfKey);
   const sourceEventId=nullable(input.sourceEventId);
   const sourceMessageKey=nullable(input.sourceMessageKey);
+  const reason=nullable(input.reason);
+  if((input.entryType==='adjustment'||input.entryType==='reversal')&&!reason)throw new Error('HIPICO_LEDGER_REASON_REQUIRED');
   if(input.entryType==='reversal'&&!originalEntryId)throw new Error('HIPICO_LEDGER_REVERSAL_ORIGINAL_REQUIRED');
   if(input.entryType==='settlement'&&!settlementOfKey)throw new Error('HIPICO_LEDGER_SETTLEMENT_KEY_REQUIRED');
   const requestedAmount=input.entryType==='reversal'?null:exactMinor(input.amountMinor);
@@ -57,13 +60,14 @@ export async function appendHipicoLedgerEntry(input:LedgerInput){
     const duplicate=await tx.$queryRaw<ExistingEntry[]>`
       SELECT id, amount_minor::text AS "amountMinor", participant_code AS "participantCode", currency,
              entry_type AS "entryType", original_entry_id AS "originalEntryId", race_key AS "raceKey",
-             settlement_of_key AS "settlementOfKey", source_event_id AS "sourceEventId", source_message_key AS "sourceMessageKey"
+             settlement_of_key AS "settlementOfKey", source_event_id AS "sourceEventId", source_message_key AS "sourceMessageKey",
+             reason
       FROM public.hipico_money_ledger_entries
       WHERE owner_id=${ownerId}::uuid AND group_key=${groupKey} AND idempotency_key=${idempotencyKey}
       LIMIT 1
     `;
     if(duplicate[0]){
-      assertIdempotentReplay(duplicate[0],{participantCode,currency,entryType:input.entryType,amountMinor:requestedAmount,raceKey,settlementOfKey,sourceEventId,sourceMessageKey,originalEntryId});
+      assertIdempotentReplay(duplicate[0],{participantCode,currency,entryType:input.entryType,amountMinor:requestedAmount,raceKey,settlementOfKey,sourceEventId,sourceMessageKey,originalEntryId,reason});
       return{entryId:duplicate[0].id,amountMinor:duplicate[0].amountMinor,duplicate:true};
     }
 
@@ -72,7 +76,7 @@ export async function appendHipicoLedgerEntry(input:LedgerInput){
       const originals=await tx.$queryRaw<Array<ExistingEntry>>`
         SELECT id,amount_minor::text AS "amountMinor",participant_code AS "participantCode",currency,
                entry_type AS "entryType",original_entry_id AS "originalEntryId",race_key AS "raceKey",
-               settlement_of_key AS "settlementOfKey",source_event_id AS "sourceEventId",source_message_key AS "sourceMessageKey"
+               settlement_of_key AS "settlementOfKey",source_event_id AS "sourceEventId",source_message_key AS "sourceMessageKey",reason
         FROM public.hipico_money_ledger_entries
         WHERE id=${originalEntryId} AND owner_id=${ownerId}::uuid AND group_key=${groupKey}
         LIMIT 1
@@ -99,7 +103,7 @@ export async function appendHipicoLedgerEntry(input:LedgerInput){
       ) VALUES (
         ${id},${ownerId}::uuid,${groupKey},${participantCode},${currency},${input.entryType},${amountMinor.toString()}::numeric,
         ${raceKey},${settlementOfKey},${sourceEventId},${sourceMessageKey},
-        ${idempotencyKey},${originalEntryId},${input.reason||null},${metadata}::jsonb
+        ${idempotencyKey},${originalEntryId},${reason},${metadata}::jsonb
       )
     `;
     await tx.$executeRaw`
