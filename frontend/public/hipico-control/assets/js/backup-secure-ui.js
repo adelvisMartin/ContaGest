@@ -58,7 +58,7 @@ async function secureRestore(event) {
       const legacy = globalThis.confirm?.('Este es un respaldo legacy sin hash criptográfico. ¿Deseas migrarlo bajo validación estructural?');
       if (!legacy) return true;
     }
-    if (!globalThis.confirm?.('Se creará una copia local previa y luego se reemplazará el workspace actual. ¿Continuar?')) return true;
+    if (!globalThis.confirm?.('Antes de reemplazar el workspace actual, se creará una copia local previa. ¿Continuar?')) return true;
     const result = await restorePortableBackup(raw, { passphrase, confirmReplace: true });
     notify(result.legacy ? 'Respaldo legacy migrado. Se recomienda crear de inmediato uno cifrado v2.' : 'Restore validado y reconciliado. Recargando…');
     setTimeout(()=>globalThis.location?.reload?.(),700);
