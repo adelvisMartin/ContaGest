@@ -4,6 +4,7 @@ import { z } from 'zod';
 import type { IntentResult } from './hipico-operational-classifier.js';
 import { decideConversation } from './hipico-conversation-engine.js';
 import { bridgeParticipantRateLimiter, classifyUntrustedConversation, safePublicAbuseMetadata } from './hipico-conversation-appsec.js';
+import { historySyncRateCheck, liveRateLimitClock, normalizeBridgeSender } from './hipico-bridge-input-policy.js';
 import { applyOperatorCommand, planSafeResponse, updateHandoffAfterDecision } from './hipico-response-safety.js';
 import { loadHandoff, persistResponsePlan, responseSafetyReadiness, saveHandoff } from './hipico-handoff.store.js';
 import { canonicalShadowReadiness, persistCanonicalShadow } from './hipico-canonical-shadow.store.js';
@@ -35,7 +36,7 @@ router.use((_req,res,next)=>{res.setHeader('Cache-Control','no-store, max-age=0'
 router.get('/bridge/health',async(req,res)=>{
   if(!bridgeTokenValid(req.header('x-hipico-bridge-token')||undefined))return res.status(401).json({ok:false,ready:false,error:'Token del Bridge Hipico invalido.'});
   const base={mode:'shadow',sourceSendPossible:false,sourceChannelKey:OFFICIAL_SOURCE_CHANNEL_KEY,labChannelKey:DEFAULT_LAB_CHANNEL_KEY,buildCommit:String(process.env.VERCEL_GIT_COMMIT_SHA||process.env.GIT_SHA||'unknown')};
-  try{const[transportReady,canonical,responseSafety]=await Promise.all([bridgePersistenceReady(),canonicalShadowReadiness(),responseSafetyReadiness()]);const reasons:string[]=[];if(!bridgeTokenConfigured())reasons.push('BRIDGE_TOKEN_NOT_CONFIGURED');if(!transportReady)reasons.push('TRANSPORT_SCHEMA_NOT_READY');if(!canonical.schemaReady)reasons.push('CANONICAL_SCHEMA_NOT_READY');if(canonical.labChannelCount!==1)reasons.push('LAB_CHANNEL_NOT_UNIQUE');const ready=reasons.length===0;return res.status(ready?200:503).json({ok:ready,ready,...base,reasons,persistence:{transportReady,canonicalSchemaReady:canonical.schemaReady,labChannelCount:canonical.labChannelCount,responseSafetyReady:responseSafety.ready},operatorControlConfigured:operatorTokenConfigured(),conversationalAppSec:{enabled:true,maxMessagesPerMinute:30,maxIdenticalPerMinute:5}});}catch(error:any){console.error('[hipico-bridge] readiness check failed',{error:error?.message||String(error)});return res.status(503).json({ok:false,ready:false,...base,retryable:true,reasons:['PERSISTENCE_CHECK_FAILED']});}
+  try{const[transportReady,canonical,responseSafety]=await Promise.all([bridgePersistenceReady(),canonicalShadowReadiness(),responseSafetyReadiness()]);const reasons:string[]=[];if(!bridgeTokenConfigured())reasons.push('BRIDGE_TOKEN_NOT_CONFIGURED');if(!transportReady)reasons.push('TRANSPORT_SCHEMA_NOT_READY');if(!canonical.schemaReady)reasons.push('CANONICAL_SCHEMA_NOT_READY');if(canonical.labChannelCount!==1)reasons.push('LAB_CHANNEL_NOT_UNIQUE');const ready=reasons.length===0;return res.status(ready?200:503).json({ok:ready,ready,...base,reasons,persistence:{transportReady,canonicalSchemaReady:canonical.schemaReady,labChannelCount:canonical.labChannelCount,responseSafetyReady:responseSafety.ready},operatorControlConfigured:operatorTokenConfigured(),conversationalAppSec:{enabled:true,maxMessagesPerMinute:30,maxIdenticalPerMinute:5,clock:'server',historyReplayThrottle:'separate'}});}catch(error:any){console.error('[hipico-bridge] readiness check failed',{error:error?.message||String(error)});return res.status(503).json({ok:false,ready:false,...base,retryable:true,reasons:['PERSISTENCE_CHECK_FAILED']});}
 });
 router.post('/bridge/handoff',async(req,res)=>{
   if(!operatorTokenValid(req.header('x-hipico-operator-token')||undefined))return res.status(401).json({ok:false,error:'Control de operador no autenticado.'});
@@ -46,9 +47,12 @@ router.post('/bridge/events',async(req,res)=>{
   if(!bridgeTokenValid(req.header('x-hipico-bridge-token')||undefined))return res.status(401).json({ok:false,error:'Token del Bridge Hipico invalido.'});
   const parsed=bridgeEventSchema.safeParse(req.body);if(!parsed.success)return res.status(400).json({ok:false,error:'Evento del Bridge invalido.'});const input=parsed.data;
   if(input.channelRole==='source'){if(input.channelKey!==OFFICIAL_SOURCE_CHANNEL_KEY||input.labChannelKey!==DEFAULT_LAB_CHANNEL_KEY)return res.status(400).json({ok:false,error:'Canales source/lab no autorizados para este Bridge.'});if(!input.shadowMode)return res.status(400).json({ok:false,error:'El grupo oficial solo admite ingestión shadow.'});}
-  const providerMessageId=`waweb:${input.externalMessageId}`;const sender=input.senderId.replace(/@.*$/,'').slice(0,220);
+  const sender=normalizeBridgeSender(input.senderId);
+  if(!sender)return res.status(400).json({ok:false,error:'Identidad de remitente inválida para el Bridge.'});
+  const providerMessageId=`waweb:${input.externalMessageId}`;
   const{assessment,result}=classifyUntrustedConversation({text:input.text,mediaKind:input.mediaKind,quoteDepth:input.quoteDepth,participantId:sender});
-  const rate=bridgeParticipantRateLimiter.check(`${input.channelKey||input.groupId}:${sender}`,assessment.digest,Date.parse(input.timestamp));
+  const liveClock=liveRateLimitClock(input.historySync);
+  const rate=liveClock===null?historySyncRateCheck():bridgeParticipantRateLimiter.check(`${input.channelKey||input.groupId}:${sender}`,assessment.digest,liveClock);
   const raceId=result.entities?.raceNumber==null?null:String(result.entities.raceNumber);
   const abuse=safePublicAbuseMetadata(assessment,rate);
   const transportPayload={source:'whatsapp-web-bridge',targetType:'group_bridge',status:'shadow',bridgeVersion:input.bridgeVersion,historySync:input.historySync,groupId:input.groupId,groupName:input.groupName,channelKey:input.channelKey||null,labChannelKey:input.labChannelKey||null,channelRole:input.channelRole,bridgeShadowMode:input.shadowMode,senderRaw:input.senderId,senderLabel:input.senderLabel,fromMe:input.fromMe,sentAt:input.timestamp,rawMeta:input.rawMeta,hasMedia:input.hasMedia,mediaKind:input.mediaKind,mediaName:input.mediaName||null,quotedExternalMessageId:input.quotedExternalMessageId,operational:result.entities||null,conversationalAppSec:abuse};
