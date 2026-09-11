@@ -96,8 +96,6 @@ test('serverless bridge identity is mandatory and client channel aliases cannot 
 
 test('persisted serverless channels cannot be reactivated or repurposed by incoming traffic', () => {
   const identity={role:'source',groupId:'source-gid',channelKey:'club-hipico-triple-crown-official'};
-  const active={id:'c1',status:'active',channel_type:'web_bridge',config:{channel_role:'source',group_id_hash:''}};
-  active.config.group_id_hash = ingestTest.configuredChannelIdentity ? undefined : undefined;
   const valid={id:'c1',status:'active',channel_type:'web_bridge',config:{channel_role:'source'}};
   assert.equal(ingestTest.assertPersistedChannel(valid,identity,'source-gid').id,'c1');
   assert.throws(()=>ingestTest.assertPersistedChannel({...valid,status:'blocked'},identity,'source-gid'),(error)=>error?.code==='HIPICO_SERVERLESS_CHANNEL_DISABLED');
