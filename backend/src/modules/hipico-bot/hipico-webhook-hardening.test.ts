@@ -49,6 +49,15 @@ test('partial processing failure is retryable instead of being acknowledged with
   assert.match(source,/Dedupe makes the successful subset safe/);
 });
 
+test('mutated provider-message replay is a 409 non-retryable integrity violation',()=>{
+  assert.equal(__test__.WEBHOOK_REPLAY_MISMATCH,'HIPICO_WEBHOOK_REPLAY_MISMATCH');
+  assert.match(source,/item\.reason as any\)\?\.code===WEBHOOK_REPLAY_MISMATCH/);
+  const transient=source.indexOf('if(result.failed>0)');
+  const mismatch=source.indexOf('if(result.mismatched>0)');
+  assert.ok(transient>=0&&mismatch>transient,'transient failures must keep 503 priority over replay mismatch');
+  assert.match(source,/if\(result\.mismatched>0\)[\s\S]*?status\(409\)\.json\(\{[\s\S]*?retryable:false[\s\S]*?error:'webhook_replay_mismatch'/);
+});
+
 test('foreign phone-number events are rejected as non-retryable before persistence',()=>{
   const identity=source.indexOf("identityError==='WEBHOOK_PHONE_NUMBER_NOT_CONFIGURED'");
   const mismatch=source.indexOf("error:'webhook_phone_number_mismatch'");
@@ -62,5 +71,5 @@ test('signed status-only callbacks may bypass PostgreSQL but not invalid runtime
   const db=source.indexOf('HipicoBotStore.dbReady(true)');
   const runtime=source.indexOf('if(!metaWebhookRuntimeConfigured())');
   assert.ok(runtime>=0&&empty>runtime&&db>empty);
-  assert.match(source,/received:0,processed:0,failed:0/);
+  assert.match(source,/received:0,processed:0,failed:0,mismatched:0/);
 });
