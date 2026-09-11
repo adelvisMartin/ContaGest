@@ -46,39 +46,55 @@ jobs:
         uses: actions/checkout@v7
         with:
           fetch-depth: 0
+
       - name: Set up Node 22
         uses: actions/setup-node@v7
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
+
       - name: Record candidate SHA
         run: |
           mkdir -p artifacts/qa/hipico-v290
           printf '%s\n' "${GITHUB_SHA}" > artifacts/qa/hipico-v290/candidate-sha.txt
           git rev-parse HEAD
           test "$(git rev-parse HEAD)" = "${GITHUB_SHA}"
+
       - name: Install locked repository dependencies
         run: npm ci --no-audit --no-fund
+
       - name: Fail-closed release contract and anti-bypass guard
         env:
           HIPICO_RELEASE_SHA: ${{ github.sha }}
           HIPICO_QA_SHA: ${{ github.sha }}
         run: node scripts/hipico-release-guard-v290.mjs
+
       - name: Typecheck and static tests
         run: npm run lint
-      - name: Hípico unit API domain and Command Center contract tests
+
+      - name: Hipico unit API domain and Command Center contract tests
         run: |
           npm run test:hipico
           npm run test:hipico:command-center
+
       - name: Frontend and backend production build
         run: npm run build
+
       - name: Production dependency audit
         run: npm audit --omit=dev --audit-level=high
+
       - name: Bridge locked install and QA
         working-directory: tools/hipico-whatsapp-web-bridge
         run: |
           npm ci --no-audit --no-fund
           npm run qa
+
+      - name: Record static gate completion
+        if: success()
+        run: |
+          mkdir -p artifacts/qa/hipico-v290
+          node -e "require('node:fs').writeFileSync('artifacts/qa/hipico-v290/static-gate.json', JSON.stringify({schema:'hipico-static.v290',sha:process.env.GITHUB_SHA,status:'PASS',completedAt:new Date().toISOString()},null,2)+'\n')"
+
       - name: Upload static release evidence
         if: always()
         uses: actions/upload-artifact@v7
@@ -89,10 +105,10 @@ jobs:
           retention-days: 30
 
   postgres-e2e:
-    name: Real isolated PostgreSQL E2E and recovery
+    name: Real isolated PostgreSQL E2E PDF OCR and recovery
     if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 35
     services:
       postgres:
         image: postgres:16-alpine
@@ -116,31 +132,61 @@ jobs:
         uses: actions/checkout@v7
         with:
           fetch-depth: 0
+
       - name: Set up Node 22
         uses: actions/setup-node@v7
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
+
       - name: Install locked repository dependencies
         run: npm ci --no-audit --no-fund
+
+      - name: Install pinned PDF extraction runtimes
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends poppler-utils tesseract-ocr tesseract-ocr-eng
+          command -v pdftotext
+          command -v pdfinfo
+          command -v pdftoppm
+          command -v tesseract
+          pdftotext -v 2>&1 | head -n 1
+          pdfinfo -v 2>&1 | head -n 1
+          pdftoppm -v 2>&1 | head -n 1
+          tesseract --version | head -n 1
+
       - name: Create isolated per-run database
         run: node scripts/hipico-ephemeral-db-v290.mjs create
+
       - name: Apply Prisma migrations to isolated database
         run: npm --workspace backend run prisma:deploy
-      - name: Apply canonical Hípico additive schema
+
+      - name: Apply canonical Hipico additive schema
         run: node scripts/hipico-apply-e2e-schema-v290.mjs
-      - name: TestChannel PDF lifecycle multi-group agent and Command Center PostgreSQL E2E
+
+      - name: TestChannel PDF native scanned corrupt duplicate lifecycle multigroup agent and Command Center E2E
         env:
           HIPICO_QA_SHA: ${{ github.sha }}
         run: npm --workspace backend exec -- tsx --test src/modules/hipico/production-e2e-v290.ts
+
       - name: Persist state before simulated process death
         run: npm --workspace backend exec -- tsx scripts/hipico-restart-recovery-v290.ts prepare
+
       - name: Recover in a fresh process reject replay and continue
         run: npm --workspace backend exec -- tsx scripts/hipico-restart-recovery-v290.ts verify
+
       - name: Measure PostgreSQL profiles at 100 500 and 2000 messages
         env:
           HIPICO_QA_SHA: ${{ github.sha }}
         run: npm --workspace backend exec -- tsx scripts/hipico-load-profile-v290.ts
+
+      - name: Record PostgreSQL gate completion
+        if: success()
+        run: |
+          mkdir -p artifacts/qa/hipico-v290
+          node -e "require('node:fs').writeFileSync('artifacts/qa/hipico-v290/postgres-gate.json', JSON.stringify({schema:'hipico-postgres.v290',sha:process.env.GITHUB_SHA,status:'PASS',database:'isolated-ephemeral',pdfRuntime:'poppler+tesseract',completedAt:new Date().toISOString()},null,2)+'\n')"
+
       - name: Upload PostgreSQL E2E evidence
         if: always()
         uses: actions/upload-artifact@v7
@@ -149,6 +195,7 @@ jobs:
           path: artifacts/qa/hipico-v290/
           if-no-files-found: warn
           retention-days: 30
+
       - name: Drop isolated database even after a failed gate
         if: always()
         run: node scripts/hipico-ephemeral-db-v290.mjs drop
@@ -163,19 +210,30 @@ jobs:
         uses: actions/checkout@v7
         with:
           fetch-depth: 0
+
       - name: Set up Node 22
         uses: actions/setup-node@v7
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
+
       - name: Install locked repository dependencies
         run: npm ci --no-audit --no-fund
+
       - name: Install Chromium runtime
         run: npx playwright install --with-deps chromium
+
       - name: Run production PWA gate in Chromium
         env:
           HIPICO_QA_SHA: ${{ github.sha }}
         run: npx playwright test --config=playwright.hipico-v290.config.mjs --project=chromium
+
+      - name: Record Chromium gate completion
+        if: success()
+        run: |
+          mkdir -p artifacts/qa/hipico-v290
+          node -e "require('node:fs').writeFileSync('artifacts/qa/hipico-v290/chromium-gate.json', JSON.stringify({schema:'hipico-browser.v290',sha:process.env.GITHUB_SHA,project:'chromium',status:'PASS',completedAt:new Date().toISOString()},null,2)+'\n')"
+
       - name: Upload Chromium evidence
         if: always()
         uses: actions/upload-artifact@v7
@@ -201,19 +259,30 @@ jobs:
         uses: actions/checkout@v7
         with:
           fetch-depth: 0
+
       - name: Set up Node 22
         uses: actions/setup-node@v7
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
+
       - name: Install locked repository dependencies
         run: npm ci --no-audit --no-fund
+
       - name: Install selected browser runtime
         run: npx playwright install --with-deps ${{ matrix.browser }}
+
       - name: Run selected browser release suite
         env:
           HIPICO_QA_SHA: ${{ github.sha }}
         run: npx playwright test --config=playwright.hipico-v290.config.mjs --project=${{ matrix.browser }}
+
+      - name: Record browser matrix completion
+        if: success()
+        run: |
+          mkdir -p artifacts/qa/hipico-v290
+          node -e "require('node:fs').writeFileSync('artifacts/qa/hipico-v290/browser-${{ matrix.browser }}.json', JSON.stringify({schema:'hipico-browser.v290',sha:process.env.GITHUB_SHA,project:'${{ matrix.browser }}',status:'PASS',completedAt:new Date().toISOString()},null,2)+'\n')"
+
       - name: Upload browser evidence
         if: always()
         uses: actions/upload-artifact@v7
@@ -235,47 +304,57 @@ jobs:
         uses: actions/checkout@v7
         with:
           fetch-depth: 0
+
       - name: Set up Node 22
         uses: actions/setup-node@v7
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
           cache-dependency-path: android/hipico-control-v1130/package-lock.json
+
       - name: Verify release contract before Android build
         env:
           HIPICO_RELEASE_SHA: ${{ github.sha }}
           HIPICO_QA_SHA: ${{ github.sha }}
         run: node scripts/hipico-release-guard-v290.mjs
+
       - name: Set up JDK 21
         uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: '21'
           cache: gradle
+
       - name: Set up Android SDK
         uses: android-actions/setup-android@v4
+
       - name: Install pinned Android SDK components
         shell: bash
         run: |
           yes | sdkmanager --licenses >/dev/null
           sdkmanager 'platform-tools' 'platforms;android-35' 'build-tools;35.0.0'
+
       - name: Install locked Android wrapper dependencies
         working-directory: android/hipico-control-v1130
         run: npm ci --no-audit --no-fund
+
       - name: Generate and verify Android web assets from canonical PWA
         working-directory: android/hipico-control-v1130
         run: |
           npm run sync:web
           npm run verify:web
+
       - name: Build and package QA APK
         working-directory: android/hipico-control-v1130
         env:
           HIPICO_RELEASE_SHA: ${{ github.sha }}
         run: npm run android:qa
+
       - name: Bind APK evidence to exact SHA
         env:
           HIPICO_RELEASE_SHA: ${{ github.sha }}
         run: node scripts/hipico-release-v118.mjs --require-apk
+
       - name: Upload Android artifacts
         if: always()
         uses: actions/upload-artifact@v7
