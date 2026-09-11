@@ -36,7 +36,7 @@ test('weekly close updates previousWeekBalance only inside the active group',()=
 
 test('daily and advanced creation persist groupId and avoid cross-group lookup',()=>{
   assert.match(appSource,/workspace\.days\.push\(\{ id: uid\("day"\), groupId, date: today\(\), status: "open"/);
-  assert.match(appSource,/const groupId = activeGroupId\(\); const \[date, racetrack, num\] = key\.split\("\\\|"\)/);
+  assert.ok(appSource.includes('const groupId = activeGroupId(); const [date, racetrack, num] = key.split("|");'));
   assert.match(appSource,/groupItems\(workspace\.advancedBets, groupId\)/);
   assert.match(appSource,/groupItems\(workspace\.races, groupId\)/);
   assert.match(appSource,/groupItems\(workspace\.days, groupId\)/);
