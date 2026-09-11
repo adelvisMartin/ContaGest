@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { __test__ } from '../frontend/api/hipico/whatsapp-webhook.js';
+import { __test__ as statusTest } from '../frontend/api/hipico/status.js';
 
 const source=await readFile(new URL('../frontend/api/hipico/whatsapp-webhook.js',import.meta.url),'utf8');
 const statusSource=await readFile(new URL('../frontend/api/hipico/status.js',import.meta.url),'utf8');
@@ -30,6 +31,22 @@ test('Meta webhook verifies the raw signature before parsing or persisting conte
   assert.match(source,/bodyParser:\s*false/);
 });
 
+test('Meta webhook requires strong server-side verification and app secrets',()=>{
+  assert.match(source,/serverSecret\('HIPICO_META_VERIFY_TOKEN'\)/);
+  assert.match(source,/serverSecret\('HIPICO_META_APP_SECRET'\)/);
+  assert.doesNotMatch(source,/verifyToken=env\('HIPICO_META_VERIFY_TOKEN'\)/);
+  assert.doesNotMatch(source,/appSecret=env\('HIPICO_META_APP_SECRET'\)/);
+  const strong='x'.repeat(32);
+  const ready=statusTest.secretReadiness({
+    HIPICO_GROUP_BRIDGE_TOKEN:strong,
+    HIPICO_INTERNAL_API_TOKEN:strong,
+    HIPICO_META_VERIFY_TOKEN:strong,
+    HIPICO_META_APP_SECRET:strong
+  });
+  assert.deepEqual(ready,{bridgeTokenStrong:true,internalApiTokenStrong:true,metaVerifyTokenStrong:true,metaAppSecretStrong:true});
+  assert.equal(statusTest.secretReadiness({HIPICO_META_VERIFY_TOKEN:'short'}).metaVerifyTokenStrong,false);
+});
+
 test('Meta webhook rejects incomplete or foreign phone-number identity before persistence',()=>{
   const valid={
     externalMessageId:'wamid-meta-1',
@@ -54,11 +71,13 @@ test('Meta webhook rejects incomplete or foreign phone-number identity before pe
   assert.match(source,/status\(400\).*invalid_message_identity/);
 });
 
-test('missing inbound Meta phone configuration fails closed and readiness reports the same dependency',()=>{
+test('missing or weak inbound Meta configuration fails closed and readiness reports the same dependency',()=>{
   assert.match(source,/phoneNumberId=env\('HIPICO_META_PHONE_NUMBER_ID'\)/);
   assert.match(source,/status\(503\).*webhook_not_configured/);
   assert.match(statusSource,/const webhookRequired = \['HIPICO_META_VERIFY_TOKEN', 'HIPICO_META_APP_SECRET', 'HIPICO_META_PHONE_NUMBER_ID'\]/);
-  assert.match(statusSource,/const metaWebhookReady = persistenceReady && webhookMissing\.length === 0/);
+  assert.match(statusSource,/secrets\.metaVerifyTokenStrong/);
+  assert.match(statusSource,/secrets\.metaAppSecretStrong/);
+  assert.match(statusSource,/const metaWebhookReady = persistenceReady[\s\S]*webhookMissing\.length === 0[\s\S]*secrets\.metaVerifyTokenStrong[\s\S]*secrets\.metaAppSecretStrong/);
 });
 
 test('oversized and malformed requests are rejected without being treated as retryable server faults',()=>{
