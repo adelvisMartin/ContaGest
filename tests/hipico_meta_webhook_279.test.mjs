@@ -4,6 +4,7 @@ import { readFile } from 'node:fs/promises';
 import { __test__ } from '../frontend/api/hipico/whatsapp-webhook.js';
 
 const source=await readFile(new URL('../frontend/api/hipico/whatsapp-webhook.js',import.meta.url),'utf8');
+const metaSource={HIPICO_META_PHONE_NUMBER_ID:'1234567890'};
 
 test('Meta webhook replay signature binds sender instant type body and quoted context',()=>{
   const base={
@@ -28,7 +29,7 @@ test('Meta webhook verifies the raw signature before parsing or persisting conte
   assert.match(source,/bodyParser:\s*false/);
 });
 
-test('Meta webhook rejects incomplete message identity before any persistence',()=>{
+test('Meta webhook rejects incomplete or foreign phone-number identity before persistence',()=>{
   const valid={
     externalMessageId:'wamid-meta-1',
     channelKey:'1234567890',
@@ -36,16 +37,25 @@ test('Meta webhook rejects incomplete message identity before any persistence',(
     timestamp:'2026-09-11T06:00:00.000Z',
     raw:{timestamp:'1789106400'}
   };
-  assert.equal(__test__.validMetaMessageIdentity(valid),true);
-  assert.equal(__test__.validMetaMessageIdentity({...valid,externalMessageId:''}),false);
-  assert.equal(__test__.validMetaMessageIdentity({...valid,channelKey:'meta'}),false);
-  assert.equal(__test__.validMetaMessageIdentity({...valid,senderId:'0412-1234567'}),false);
-  assert.equal(__test__.validMetaMessageIdentity({...valid,raw:{}}),false);
-  assert.equal(__test__.validMetaMessageIdentity({...valid,timestamp:'not-a-date'}),false);
-  const identityCheck=source.indexOf('messages.some((message)=>!validMetaMessageIdentity(message))');
+  assert.equal(__test__.validMetaMessageIdentity(valid,metaSource),true);
+  assert.equal(__test__.validMetaMessageIdentity({...valid,externalMessageId:''},metaSource),false);
+  assert.equal(__test__.validMetaMessageIdentity({...valid,channelKey:'meta'},metaSource),false);
+  assert.equal(__test__.validMetaMessageIdentity({...valid,channelKey:'9999999999'},metaSource),false);
+  assert.equal(__test__.validMetaMessageIdentity({...valid,senderId:'0412-1234567'},metaSource),false);
+  assert.equal(__test__.validMetaMessageIdentity({...valid,raw:{}},metaSource),false);
+  assert.equal(__test__.validMetaMessageIdentity({...valid,timestamp:'not-a-date'},metaSource),false);
+  assert.equal(__test__.validMetaMessageIdentity(valid,{}),false);
+  const identityCheck=source.indexOf('messages.some((message)=>!validMetaMessageIdentity(message,inboundIdentity))');
   const persistence=source.indexOf("await supabase('hipico_messages");
   assert.ok(identityCheck>=0&&persistence>identityCheck);
+  assert.match(source,/HIPICO_META_PHONE_NUMBER_ID/);
+  assert.match(source,/channelKey===expectedChannelKey/);
   assert.match(source,/status\(400\).*invalid_message_identity/);
+});
+
+test('missing inbound Meta phone configuration fails closed as unavailable',()=>{
+  assert.match(source,/phoneNumberId=env\('HIPICO_META_PHONE_NUMBER_ID'\)/);
+  assert.match(source,/status\(503\).*webhook_not_configured/);
 });
 
 test('oversized and malformed requests are rejected without being treated as retryable server faults',()=>{
