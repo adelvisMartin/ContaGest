@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mergeWorkspaces } from '../frontend/public/hipico-control/assets/js/sync.js';
+import { normalizeWorkspaceShape } from '../frontend/public/hipico-control/assets/js/workspace.js';
 import { assertWorkspaceInputSafety, __test__ } from '../frontend/public/hipico-control/assets/js/workspace-input-safety.js';
 
 function workspace(overrides = {}) {
@@ -34,6 +35,44 @@ test('hostile remote identifiers are rejected before cloud merge', () => {
     () => mergeWorkspaces(workspace(), remote),
     (error) => error?.code === 'HIPICO_WORKSPACE_UNSAFE_IDENTIFIER'
   );
+});
+
+test('hostile local or backup identifiers are rejected by canonical normalization before render', () => {
+  const imported = workspace();
+  imported.config.groups[0].id = 'group-1\" onpointerenter=alert(1)';
+  imported.config.activeGroupId = imported.config.groups[0].id;
+  imported.config.activeWhatsappGroupId = imported.config.groups[0].id;
+  imported.config.captureGroupIds = [imported.config.groups[0].id];
+  assert.throws(
+    () => normalizeWorkspaceShape(imported),
+    (error) => error?.code === 'HIPICO_WORKSPACE_UNSAFE_IDENTIFIER'
+  );
+});
+
+test('same record id in different groups cannot collapse during cloud merge', () => {
+  const local = workspace({
+    config: {
+      groups: [{ id: 'group-1', name: 'Grupo 1' }, { id: 'group-2', name: 'Grupo 2' }],
+      activeGroupId: 'group-1', activeWhatsappGroupId: 'group-1', activeRaceByGroup: {}, captureGroupIds: ['group-1']
+    },
+    participants: [{ id: 'participant-same', groupId: 'group-1', name: 'Local G1', updatedAt: '2026-09-11T20:03:00.000Z' }]
+  });
+  const remote = workspace({
+    config: structuredClone(local.config),
+    participants: [{ id: 'participant-same', groupId: 'group-2', name: 'Remote G2', updatedAt: '2026-09-11T20:04:00.000Z' }]
+  });
+  const merged = mergeWorkspaces(local, remote);
+  assert.equal(merged.participants.length, 2);
+  assert.equal(merged.participants.find((row) => row.groupId === 'group-1')?.name, 'Local G1');
+  assert.equal(merged.participants.find((row) => row.groupId === 'group-2')?.name, 'Remote G2');
+});
+
+test('same record id in the same group still resolves by freshness', () => {
+  const local = workspace({ participants: [{ id: 'participant-same', groupId: 'group-1', name: 'Older', updatedAt: '2026-09-11T20:01:00.000Z' }] });
+  const remote = workspace({ participants: [{ id: 'participant-same', groupId: 'group-1', name: 'Newer', updatedAt: '2026-09-11T20:05:00.000Z' }] });
+  const merged = mergeWorkspaces(local, remote);
+  assert.equal(merged.participants.length, 1);
+  assert.equal(merged.participants[0].name, 'Newer');
 });
 
 test('hostile stored board tokens are rejected before render or merge', () => {
