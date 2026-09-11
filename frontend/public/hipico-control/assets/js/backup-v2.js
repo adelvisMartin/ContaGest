@@ -1,7 +1,13 @@
 import { LOCAL_SCHEMA_VERSION, createSnapshot, saveLocalWorkspace } from './store.js';
 
 export const BACKUP_SCHEMA_VERSION = 2;
+export const MAX_PORTABLE_BACKUP_CHARS = 32 * 1024 * 1024;
+const MAX_ENCRYPTED_PLAINTEXT_BYTES = 20 * 1024 * 1024;
+const MAX_ENCRYPTED_CIPHERTEXT_BYTES = MAX_ENCRYPTED_PLAINTEXT_BYTES + 32;
+const ENCRYPTED_BACKUP_SCHEMA_VERSION = 1;
 const KDF_ITERATIONS = 250000;
+const ENCRYPTION_SALT_BYTES = 16;
+const ENCRYPTION_IV_BYTES = 12;
 const SECRET_KEY = /token|secret|cookie|authorization|session|qr|service.?role|private.?key|password|signed.?url/i;
 
 function stable(value) {
@@ -81,26 +87,68 @@ export function validateBackupObject(parsed, { maxLocalSchemaVersion = LOCAL_SCH
   return { legacy: false, workspace: sanitizedWorkspace, manifest, warnings: [] };
 }
 
+function backupError(message, code) { return Object.assign(new Error(message), { code }); }
+function boundedBackupText(value) {
+  const text = String(value ?? '');
+  if (text.length > MAX_PORTABLE_BACKUP_CHARS) throw backupError('El respaldo excede el tamaño máximo permitido.', 'HIPICO_BACKUP_TOO_LARGE');
+  return text;
+}
+function parseBackupJson(text) {
+  try { return JSON.parse(text); }
+  catch (error) { throw Object.assign(new Error('El respaldo no contiene JSON válido.'), { code:'HIPICO_BACKUP_INVALID_JSON', cause:error }); }
+}
 function bytesToBase64(bytes) { let binary=''; for (const byte of bytes) binary += String.fromCharCode(byte); return btoa(binary); }
-function base64ToBytes(value) { const binary=atob(value); return Uint8Array.from(binary, (char)=>char.charCodeAt(0)); }
+function base64ToBytes(value, { field='campo', expectedBytes=null, maxBytes=MAX_ENCRYPTED_CIPHERTEXT_BYTES } = {}) {
+  const text=String(value||'').trim();
+  const maxEncodedLength=Math.ceil(maxBytes/3)*4;
+  if(!text || text.length>maxEncodedLength || text.length%4!==0 || !/^[A-Za-z0-9+/]+={0,2}$/.test(text)) {
+    throw backupError(`El ${field} del respaldo cifrado no es válido.`, 'HIPICO_BACKUP_ENCRYPTION_INVALID');
+  }
+  let bytes;
+  try { const binary=atob(text); bytes=Uint8Array.from(binary,(char)=>char.charCodeAt(0)); }
+  catch (error) { throw Object.assign(backupError(`El ${field} del respaldo cifrado no es válido.`, 'HIPICO_BACKUP_ENCRYPTION_INVALID'),{cause:error}); }
+  if((expectedBytes!==null && bytes.byteLength!==expectedBytes) || bytes.byteLength>maxBytes) {
+    throw backupError(`El ${field} del respaldo cifrado no tiene el tamaño permitido.`, 'HIPICO_BACKUP_ENCRYPTION_INVALID');
+  }
+  return bytes;
+}
+export function validateEncryptedBackupEnvelope(parsed) {
+  const meta=parsed?._encryptedBackup;
+  if(!meta || Number(meta.schemaVersion)!==ENCRYPTED_BACKUP_SCHEMA_VERSION || meta.algorithm!=='AES-GCM-256' || meta.kdf!=='PBKDF2-SHA256') {
+    throw backupError('Formato de respaldo cifrado no soportado.','HIPICO_BACKUP_ENCRYPTION_UNSUPPORTED');
+  }
+  if(!Number.isInteger(Number(meta.iterations)) || Number(meta.iterations)!==KDF_ITERATIONS) {
+    throw backupError('Parámetros de derivación del respaldo cifrado no soportados.','HIPICO_BACKUP_KDF_UNSUPPORTED');
+  }
+  const salt=base64ToBytes(meta.salt,{field:'salt',expectedBytes:ENCRYPTION_SALT_BYTES,maxBytes:ENCRYPTION_SALT_BYTES});
+  const iv=base64ToBytes(meta.iv,{field:'IV',expectedBytes:ENCRYPTION_IV_BYTES,maxBytes:ENCRYPTION_IV_BYTES});
+  const cipher=base64ToBytes(meta.ciphertext,{field:'ciphertext',maxBytes:MAX_ENCRYPTED_CIPHERTEXT_BYTES});
+  return { meta, salt, iv, cipher };
+}
 async function deriveKey(passphrase, salt, iterations = KDF_ITERATIONS) {
   const material = await crypto.subtle.importKey('raw', new TextEncoder().encode(passphrase), 'PBKDF2', false, ['deriveKey']);
   return crypto.subtle.deriveKey({ name:'PBKDF2', salt, iterations, hash:'SHA-256' }, material, { name:'AES-GCM', length:256 }, false, ['encrypt','decrypt']);
 }
 export async function encryptBackupText(plainText, passphrase) {
   if (String(passphrase || '').length < 12) throw Object.assign(new Error('La contraseña del respaldo debe tener al menos 12 caracteres.'), { code:'HIPICO_BACKUP_PASSPHRASE_WEAK' });
-  const salt=crypto.getRandomValues(new Uint8Array(16)), iv=crypto.getRandomValues(new Uint8Array(12)); const key=await deriveKey(passphrase,salt); const cipher=await crypto.subtle.encrypt({name:'AES-GCM',iv},key,new TextEncoder().encode(plainText));
-  return JSON.stringify({ _encryptedBackup:{ schemaVersion:1, algorithm:'AES-GCM-256', kdf:'PBKDF2-SHA256', iterations:KDF_ITERATIONS, salt:bytesToBase64(salt), iv:bytesToBase64(iv), ciphertext:bytesToBase64(new Uint8Array(cipher)) } }, null, 2);
+  const plainBytes=new TextEncoder().encode(String(plainText??''));
+  if(plainBytes.byteLength>MAX_ENCRYPTED_PLAINTEXT_BYTES) throw backupError('El respaldo excede el tamaño máximo permitido para cifrado.','HIPICO_BACKUP_TOO_LARGE');
+  const salt=crypto.getRandomValues(new Uint8Array(ENCRYPTION_SALT_BYTES)), iv=crypto.getRandomValues(new Uint8Array(ENCRYPTION_IV_BYTES)); const key=await deriveKey(passphrase,salt); const cipher=await crypto.subtle.encrypt({name:'AES-GCM',iv},key,plainBytes);
+  return boundedBackupText(JSON.stringify({ _encryptedBackup:{ schemaVersion:ENCRYPTED_BACKUP_SCHEMA_VERSION, algorithm:'AES-GCM-256', kdf:'PBKDF2-SHA256', iterations:KDF_ITERATIONS, salt:bytesToBase64(salt), iv:bytesToBase64(iv), ciphertext:bytesToBase64(new Uint8Array(cipher)) } }, null, 2));
 }
-export async function decryptBackupText(encryptedText, passphrase) {
-  const parsed=JSON.parse(encryptedText); const meta=parsed?._encryptedBackup; if(!meta || meta.algorithm!=='AES-GCM-256' || meta.kdf!=='PBKDF2-SHA256') throw Object.assign(new Error('Formato de respaldo cifrado no soportado.'),{code:'HIPICO_BACKUP_ENCRYPTION_UNSUPPORTED'});
-  const salt=base64ToBytes(meta.salt), iv=base64ToBytes(meta.iv), cipher=base64ToBytes(meta.ciphertext); const key=await deriveKey(passphrase,salt,Number(meta.iterations||KDF_ITERATIONS));
-  try { const plain=await crypto.subtle.decrypt({name:'AES-GCM',iv},key,cipher); return new TextDecoder().decode(plain); } catch (error) { throw Object.assign(new Error('Contraseña incorrecta o respaldo cifrado alterado.'),{code:'HIPICO_BACKUP_DECRYPT_FAILED',cause:error}); }
+export async function decryptBackupText(encryptedText, passphrase, parsedEnvelope = null) {
+  const text=boundedBackupText(encryptedText);
+  if(String(passphrase||'').length<12) throw backupError('La contraseña del respaldo debe tener al menos 12 caracteres.','HIPICO_BACKUP_PASSPHRASE_WEAK');
+  const parsed=parsedEnvelope||parseBackupJson(text);
+  const {salt,iv,cipher}=validateEncryptedBackupEnvelope(parsed);
+  const key=await deriveKey(passphrase,salt,KDF_ITERATIONS);
+  try { const plain=await crypto.subtle.decrypt({name:'AES-GCM',iv},key,cipher); return boundedBackupText(new TextDecoder().decode(plain)); } catch (error) { throw Object.assign(new Error('Contraseña incorrecta o respaldo cifrado alterado.'),{code:'HIPICO_BACKUP_DECRYPT_FAILED',cause:error}); }
 }
 export async function parsePortableBackup(text, { passphrase } = {}) {
-  const initial=JSON.parse(String(text||''));
-  const plain=initial?._encryptedBackup ? await decryptBackupText(text,passphrase) : text;
-  return validateBackupObject(JSON.parse(plain));
+  const bounded=boundedBackupText(text);
+  const initial=parseBackupJson(bounded);
+  const plain=initial?._encryptedBackup ? await decryptBackupText(bounded,passphrase,initial) : bounded;
+  return validateBackupObject(parseBackupJson(plain));
 }
 
 export function reconcileRestoredWorkspace(workspace) {
