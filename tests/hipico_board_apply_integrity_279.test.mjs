@@ -12,7 +12,7 @@ function functionSlice(name,nextName){
 }
 
 test('applying a WhatsApp board only records board evidence and audit',()=>{
-  const apply=functionSlice('applyLatestChatBoard','parseAdvancedLines');
+  const apply=functionSlice('applyLatestChatBoard','ensureGroupParticipant');
   assert.match(apply,/mutate\("board_from_whatsapp"/);
   assert.match(apply,/race\.board\s*=\s*Array\.from/);
   assert.match(apply,/race\.boardPositions\s*=\s*\[1, 2, 3, 4, 5, 6\]/);
