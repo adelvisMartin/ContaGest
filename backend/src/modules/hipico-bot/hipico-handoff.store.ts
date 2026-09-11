@@ -4,6 +4,39 @@ import { initialHandoffState, type HandoffState, type SafeResponsePlan } from '.
 
 function uuid() { return crypto.randomUUID(); }
 
+type ExistingResponseReceipt={
+  id:string;
+  sourceMessageId:string;
+  decisionVersion:string;
+  correlationId:string;
+  intent:string;
+  responseHash:string|null;
+  receiptId:string|null;
+  transactionId:string|null;
+  stateId:string|null;
+  confirmationVerified:boolean;
+  status:string;
+};
+
+function sameNullable(left:unknown,right:unknown){return String(left??'')===String(right??'');}
+function assertResponseReceiptReplay(row:ExistingResponseReceipt,plan:SafeResponsePlan,responseHash:string|null){
+  const evidence=plan.evidence||{};
+  const expectedStatus=plan.canSend?'planned':'held';
+  const same=row.sourceMessageId===plan.sourceMessageId
+    && row.decisionVersion===plan.decisionVersion
+    && row.correlationId===plan.correlationId
+    && row.intent===plan.intent
+    && sameNullable(row.responseHash,responseHash)
+    && sameNullable(row.receiptId,evidence.receiptId)
+    && sameNullable(row.transactionId,evidence.transactionId)
+    && sameNullable(row.stateId,evidence.stateId)
+    && Boolean(row.confirmationVerified)===Boolean(plan.confirmationVerified)
+    && row.status===expectedStatus;
+  if(!same){
+    throw Object.assign(new Error('Response receipt idempotency key was reused with different decision content.'),{code:'HIPICO_RESPONSE_RECEIPT_IDEMPOTENCY_MISMATCH'});
+  }
+}
+
 export async function responseSafetyReadiness() {
   const rows = await prisma.$queryRaw<Array<{ handoff: string | null; audit: string | null; receipts: string | null }>>`
     SELECT
@@ -104,18 +137,17 @@ export async function persistResponsePlan(plan: SafeResponsePlan) {
   `;
   if(inserted[0]?.id)return{id:inserted[0].id,idempotencyKey:plan.responseIdempotencyKey,duplicate:false};
 
-  const existing=await prisma.$queryRaw<Array<{
-    id:string;sourceMessageId:string;decisionVersion:string;correlationId:string;
-  }>>`
-    SELECT "id","sourceMessageId","decisionVersion","correlationId"
+  const existing=await prisma.$queryRaw<ExistingResponseReceipt[]>`
+    SELECT "id","sourceMessageId","decisionVersion","correlationId","intent","responseHash",
+           "receiptId","transactionId","stateId","confirmationVerified","status"
     FROM public."HipicoResponseReceipt"
     WHERE "idempotencyKey"=${plan.responseIdempotencyKey}
     LIMIT 2
   `;
   if(existing.length!==1)throw Object.assign(new Error('Response receipt idempotency row missing or ambiguous.'),{code:'HIPICO_RESPONSE_RECEIPT_ROW_INVALID'});
   const row=existing[0];
-  if(row.sourceMessageId!==plan.sourceMessageId||row.decisionVersion!==plan.decisionVersion||row.correlationId!==plan.correlationId){
-    throw Object.assign(new Error('Response receipt idempotency key was reused by another decision identity.'),{code:'HIPICO_RESPONSE_RECEIPT_IDEMPOTENCY_MISMATCH'});
-  }
+  assertResponseReceiptReplay(row,plan,responseHash);
   return{id:row.id,idempotencyKey:plan.responseIdempotencyKey,duplicate:true};
 }
+
+export const __test__={assertResponseReceiptReplay};
