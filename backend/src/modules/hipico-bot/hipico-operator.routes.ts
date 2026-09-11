@@ -3,12 +3,13 @@ import { z } from 'zod';
 import { HipicoBotStore, promotion, sendCloudText } from './hipico-bot.service.js';
 import { classify } from './hipico-operational-classifier.js';
 import { operatorTokenValid } from './hipico-operator-security.js';
-import { cloudOutboundPolicy } from './hipico-outbound-policy.js';
+import { cloudDestinationAllowed, cloudOutboundPolicy } from './hipico-outbound-policy.js';
 import { createHorseRaceProvider, HorseRaceProviderError } from './hipico-race-provider.js';
 import { buildShadowProjection } from './hipico-shadow-projection.js';
 
 const router=Router();
 const idSchema=z.string().min(3).max(120).regex(/^[A-Za-z0-9_-]+$/);
+const requestIdSchema=z.string().trim().min(8).max(120).regex(/^[A-Za-z0-9._:-]+$/);
 const e164Schema=z.string().regex(/^\+?[1-9]\d{6,14}$/);
 const limit=(value:unknown)=>Math.min(100,Math.max(1,Number(value)||50));
 const raceProvider=createHorseRaceProvider();
@@ -69,34 +70,75 @@ function outboundError(res:any,error:any){
   return res.status(502).json({ok:false,error:'No se pudo enviar el mensaje.'});
 }
 
+function outboundPreflight(to:string){
+  const policy=cloudOutboundPolicy();
+  if(!policy.enabled)return{ok:false as const,error:'outbound_disabled',reasons:policy.reasons};
+  if(!cloudDestinationAllowed(to))return{ok:false as const,error:'destination_not_allowlisted',reasons:['DESTINATION_NOT_ALLOWLISTED']};
+  return{ok:true as const};
+}
+
 router.post('/test-message',async(req,res)=>{
-  const parsed=z.object({to:e164Schema,message:z.string().trim().min(1).max(4000)}).safeParse(req.body);
-  if(!parsed.success)return res.status(400).json({ok:false,error:'Destino o mensaje invalido.'});
+  const parsed=z.object({requestId:requestIdSchema,to:e164Schema,message:z.string().trim().min(1).max(4000)}).safeParse(req.body);
+  if(!parsed.success)return res.status(400).json({ok:false,error:'requestId, destino o mensaje invalido.'});
+  const preflight=outboundPreflight(parsed.data.to);
+  if(!preflight.ok)return res.status(409).json({ok:false,error:preflight.error,reasons:preflight.reasons});
+  if(!await HipicoBotStore.dbReady(true))return res.status(503).json({ok:false,retryable:true,error:'outbox_persistence_unavailable'});
   try{
-    const sent=await sendCloudText(parsed.data.to.replace(/^\+/,''),parsed.data.message);
-    return res.json({ok:true,data:sent});
+    const queued=await HipicoBotStore.queueIdempotent({
+      eventId:null,
+      recipient:parsed.data.to.replace(/^\+/,''),
+      targetType:'individual',
+      message:parsed.data.message,
+      intent:'operator_test_message',
+      risk:'review',
+      status:'pending_approval'
+    },'operator-test',parsed.data.requestId);
+    const item=queued.row;
+    if(item.status==='sent')return res.json({ok:true,duplicate:true,data:{id:item.id,status:'sent',providerMessageId:item.providerMessageId||null}});
+    if(item.status==='sending')return res.status(409).json({ok:false,error:'reconciliation_required',id:item.id});
+    if(item.status==='failed')return res.status(409).json({ok:false,error:'previous_attempt_failed_use_new_request_id_after_review',id:item.id});
+    if(item.status!=='pending_approval')return res.status(409).json({ok:false,error:'outbox_state_not_sendable',id:item.id,status:item.status});
+    const claimed=await HipicoBotStore.claimForSend(item.id,'pending_approval');
+    if(!claimed)return res.status(409).json({ok:false,error:'outbox_claim_lost',id:item.id});
+    try{
+      const sent=await sendCloudText(String(claimed.recipient),String(claimed.message));
+      const persisted=await HipicoBotStore.markSent(claimed.id,sent.providerMessageId,'operator-test');
+      if(!persisted)return res.status(202).json({ok:false,retryable:false,error:'reconciliation_required',id:claimed.id,providerMessageId:sent.providerMessageId});
+      return res.json({ok:true,duplicate:false,data:{id:claimed.id,status:'sent',providerMessageId:sent.providerMessageId}});
+    }catch(error:any){
+      const persisted=await HipicoBotStore.markFailed(claimed.id,error?.message||String(error));
+      if(!persisted)return res.status(503).json({ok:false,retryable:false,error:'reconciliation_required',id:claimed.id});
+      return outboundError(res,error);
+    }
   }catch(error:any){
-    return outboundError(res,error);
+    if(error?.code==='HIPICO_OUTBOX_IDEMPOTENCY_MISMATCH')return res.status(409).json({ok:false,retryable:false,error:'request_id_reused_with_different_content'});
+    if(String(error?.code||'').startsWith('HIPICO_OUTBOX_'))return res.status(503).json({ok:false,retryable:true,error:'outbox_persistence_unavailable'});
+    return res.status(503).json({ok:false,retryable:true,error:'test_message_unavailable'});
   }
 });
 
 router.post('/approve/:id',async(req,res)=>{
   const parsedId=idSchema.safeParse(req.params.id);
   if(!parsedId.success)return res.status(400).json({ok:false,error:'ID de salida invalido.'});
+  if(!await HipicoBotStore.dbReady(true))return res.status(503).json({ok:false,retryable:true,error:'outbox_persistence_unavailable'});
   const item=await HipicoBotStore.getOutbox(parsedId.data);
   if(!item)return res.status(404).json({ok:false,error:'Salida no encontrada.'});
   if(item.status==='sent')return res.json({ok:true,data:item});
   if(item.status==='sending')return res.status(409).json({ok:false,error:'La salida ya está en envío o conciliación; no se reenviará automáticamente.'});
   if(item.status!=='pending_approval')return res.status(409).json({ok:false,error:'La salida no está pendiente de aprobación y no puede enviarse.'});
   if(item.targetType!=='individual')return res.status(409).json({ok:false,error:'Este adaptador solo envia destinatarios individuales. El grupo requiere un bridge soportado.'});
+  const preflight=outboundPreflight(String(item.recipient||''));
+  if(!preflight.ok)return res.status(409).json({ok:false,error:preflight.error,reasons:preflight.reasons});
   const claimed=await HipicoBotStore.claimForSend(item.id,'pending_approval');
   if(!claimed)return res.status(409).json({ok:false,error:'La salida cambió de estado antes del envío; requiere conciliación.'});
   try{
     const sent=await sendCloudText(String(claimed.recipient).replace(/^\+/,''),String(claimed.message));
-    await HipicoBotStore.markSent(claimed.id,sent.providerMessageId,'operator');
+    const persisted=await HipicoBotStore.markSent(claimed.id,sent.providerMessageId,'operator');
+    if(!persisted)return res.status(202).json({ok:false,retryable:false,error:'reconciliation_required',id:claimed.id,providerMessageId:sent.providerMessageId});
     return res.json({ok:true,data:{...claimed,status:'sent',providerMessageId:sent.providerMessageId}});
   }catch(error:any){
-    await HipicoBotStore.markFailed(claimed.id,error?.message||String(error));
+    const persisted=await HipicoBotStore.markFailed(claimed.id,error?.message||String(error));
+    if(!persisted)return res.status(503).json({ok:false,retryable:false,error:'reconciliation_required',id:claimed.id});
     return outboundError(res,error);
   }
 });
