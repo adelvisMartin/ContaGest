@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { bearerTokenValid, isE164, metaDestinationAllowed, metaOutboundPolicy, safeEqual, safeTimeoutMs } from '../frontend/api/hipico/_shared.js';
+import { bearerTokenValid, isE164, metaDestinationAllowed, metaOutboundPolicy, safeEqual, safeTimeoutMs, strongSecretConfigured } from '../frontend/api/hipico/_shared.js';
 import { isWhatsAppGroupId, validateBridgeRoleIdentity } from '../frontend/api/hipico/bridge-identity.js';
 import { __test__ as ingestTest, validateGroupBridgeBody } from '../frontend/api/hipico/group-bridge-ingest.js';
 import { __test__ as statusTest } from '../frontend/api/hipico/status.js';
@@ -18,16 +18,21 @@ const sourceGroupId = '120363111111111111@g.us';
 const labGroupId = '120363222222222222-2222222222@g.us';
 const bridgeEnv = { HIPICO_SOURCE_GROUP_ID: sourceGroupId, HIPICO_LAB_GROUP_ID: labGroupId };
 
-test('serverless auth helpers compare secrets safely and validate real E.164 bounds', () => {
+test('serverless auth helpers compare secrets safely, enforce internal secret strength and validate E.164 bounds', () => {
   assert.equal(safeEqual('abc', 'abc'), true);
   assert.equal(safeEqual('abc', 'abd'), false);
   assert.equal(safeEqual('', ''), false);
+  assert.equal(strongSecretConfigured('x'.repeat(31)), false);
+  assert.equal(strongSecretConfigured('x'.repeat(32)), true);
+  assert.equal(strongSecretConfigured('x'.repeat(64)), true);
   assert.equal(bearerTokenValid('Bearer 123456', '123456'), true);
   assert.equal(bearerTokenValid('Basic 123456', '123456'), false);
   assert.equal(isE164('+584121234567'), true);
   assert.equal(isE164('0412-1234567'), false);
   assert.equal(isE164(`+${'1'.repeat(15)}`), true);
   assert.equal(isE164(`+${'1'.repeat(16)}`), false);
+  assert.match(shared, /MIN_HIPICO_INTERNAL_SECRET_LENGTH\s*=\s*32/);
+  assert.match(shared, /Weak server configuration/);
 });
 
 test('serverless timeouts fail to bounded defaults instead of accepting NaN, zero or unbounded values', () => {
@@ -95,6 +100,7 @@ test('group bridge validates types, timestamps, quoted ids and pinned source bef
   assert.equal(validateGroupBridgeBody({ ...base, quotedExternalMessageId: 'x'.repeat(321) }, bridgeEnv), 'invalid_quoted_message_id');
   assert.equal(validateGroupBridgeBody({ ...base, groupId: labGroupId }, bridgeEnv), 'source_group_not_authorized');
   assert.equal(validateGroupBridgeBody({ ...base, shadowMode: false }, bridgeEnv), 'source_requires_shadow_mode');
+  assert.match(ingest, /serverSecret\('HIPICO_GROUP_BRIDGE_TOKEN'\)/);
 });
 
 test('omitted group bridge role is canonical source across validation, persistence and lab shadow flow', () => {
@@ -166,7 +172,8 @@ test('group bridge fails closed to configured owner and source shadow mode', () 
   assert.doesNotMatch(ingest, /response\.actions\.push/);
 });
 
-test('outbound Meta sender requires explicit production policy, durable state transitions and never auto-reclaims ambiguous rows', () => {
+test('outbound Meta sender requires strong auth, explicit production policy, durable transitions and no ambiguous reclaim', () => {
+  assert.match(sender, /serverSecret\('HIPICO_INTERNAL_API_TOKEN'\)/);
   assert.match(sender, /metaOutboundPolicy/);
   assert.match(sender, /metaDestinationAllowed/);
   assert.match(sender, /outbound_disabled/);
@@ -185,10 +192,13 @@ test('outbound Meta sender requires explicit production policy, durable state tr
   assert.match(sender, /isE164/);
 });
 
-test('status endpoint separates linked-device readiness from gated optional Meta Cloud readiness', () => {
+test('status endpoint separates linked-device readiness from gated optional Meta Cloud readiness without exposing identity or secrets', () => {
   assert.match(status, /linkedDeviceBridge/);
   assert.match(status, /shadowOnly:\s*true/);
   assert.match(status, /sourceSendPossible:\s*false/);
+  assert.match(status, /bridgeTokenStrong/);
+  assert.match(status, /internalApiTokenStrong/);
+  assert.match(status, /webhookSecretsStrong/);
   assert.match(status, /optionalForLinkedDeviceBridge:\s*true/);
   assert.match(status, /groupIdsValid/);
   assert.match(status, /groupsDistinct/);
