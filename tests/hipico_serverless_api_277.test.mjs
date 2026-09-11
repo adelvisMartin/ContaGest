@@ -81,6 +81,32 @@ test('group bridge validates types, timestamps, quoted ids and pinned source bef
   assert.equal(validateGroupBridgeBody({ ...base, shadowMode: false }, env), 'source_requires_shadow_mode');
 });
 
+test('serverless bridge identity is mandatory and client channel aliases cannot split the canonical source', () => {
+  const base = {
+    groupId: 'source-gid', externalMessageId: 'wamid-1', groupName: 'Grupo fuente', channelRole: 'source', shadowMode: true,
+    senderId: '584121234567', timestamp: '2026-09-11T06:00:00.000Z', type: 'chat', text: 'hola'
+  };
+  assert.equal(validateGroupBridgeBody(base, {}), 'source_group_not_configured');
+  assert.equal(validateGroupBridgeBody({ ...base, channelKey: 'otro-canal' }, { HIPICO_SOURCE_GROUP_ID: 'source-gid' }), 'source_channel_not_authorized');
+  assert.equal(validateGroupBridgeBody({ ...base, channelRole: 'lab', groupId: 'lab-gid' }, { HIPICO_SOURCE_GROUP_ID: 'source-gid' }), 'lab_group_not_configured');
+  assert.deepEqual(ingestTest.configuredChannelIdentity('source', { HIPICO_SOURCE_GROUP_ID: 'source-gid' }), {
+    role: 'source', groupId: 'source-gid', channelKey: 'club-hipico-triple-crown-official'
+  });
+});
+
+test('persisted serverless channels cannot be reactivated or repurposed by incoming traffic', () => {
+  const identity={role:'source',groupId:'source-gid',channelKey:'club-hipico-triple-crown-official'};
+  const active={id:'c1',status:'active',channel_type:'web_bridge',config:{channel_role:'source',group_id_hash:''}};
+  active.config.group_id_hash = ingestTest.configuredChannelIdentity ? undefined : undefined;
+  const valid={id:'c1',status:'active',channel_type:'web_bridge',config:{channel_role:'source'}};
+  assert.equal(ingestTest.assertPersistedChannel(valid,identity,'source-gid').id,'c1');
+  assert.throws(()=>ingestTest.assertPersistedChannel({...valid,status:'blocked'},identity,'source-gid'),(error)=>error?.code==='HIPICO_SERVERLESS_CHANNEL_DISABLED');
+  assert.throws(()=>ingestTest.assertPersistedChannel({...valid,channel_type:'manual_export'},identity,'source-gid'),(error)=>error?.code==='HIPICO_SERVERLESS_CHANNEL_TYPE_MISMATCH');
+  assert.throws(()=>ingestTest.assertPersistedChannel({...valid,config:{channel_role:'lab'}},identity,'source-gid'),(error)=>error?.code==='HIPICO_SERVERLESS_CHANNEL_ROLE_MISMATCH');
+  assert.doesNotMatch(ingest, /resolution=merge-duplicates/);
+  assert.match(ingest, /resolution=ignore-duplicates/);
+});
+
 test('legacy serverless duplicate identity binds sender, timestamp, body, type and quote context', () => {
   const base = {
     senderId: '584121234567',
