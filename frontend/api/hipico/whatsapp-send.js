@@ -1,4 +1,5 @@
 import { bearerTokenValid, env, fetchWithTimeout, isE164, metaDestinationAllowed, metaOutboundPolicy, serverSecret, supabase } from './_shared.js';
+import { metaSenderConfig } from './meta-runtime.js';
 
 const MAX_ATTEMPTS = 6;
 const BATCH_SIZE = 10;
@@ -60,6 +61,12 @@ export default async function handler(req, res) {
     return res.status(409).json({ ok: false, retryable: false, error: 'outbound_disabled', reasons: outbound.reasons });
   }
 
+  const senderConfig=metaSenderConfig();
+  if(!senderConfig.ready){
+    return res.status(503).json({ok:false,retryable:true,error:'sender_not_configured'});
+  }
+  const {accessToken,phoneNumberId}=senderConfig;
+
   try {
     const ownerId = env('HIPICO_OWNER_ID');
     const now = new Date().toISOString();
@@ -68,8 +75,6 @@ export default async function handler(req, res) {
     }) || [];
     if (!rows.length) return res.status(200).json({ ok: true, processed: 0, sent: 0, failed: 0, retried: 0, reconciliationRequired: 0, skippedClaims: 0 });
 
-    const accessToken = env('HIPICO_META_ACCESS_TOKEN');
-    const phoneNumberId = env('HIPICO_META_PHONE_NUMBER_ID');
     const graphVersion = safeGraphVersion();
     let sent = 0;
     let failed = 0;
@@ -111,9 +116,6 @@ export default async function handler(req, res) {
           })
         }, Number(process.env.HIPICO_META_SEND_TIMEOUT_MS || 12000));
       } catch (error) {
-        // A transport timeout can happen after Meta accepted the message. Keep
-        // the durable claim in `sending`: the queue selector never reclaims that
-        // state, so an operator must reconcile it before any later resend.
         await updateRow(row.id, {
           status: 'sending',
           attempts,
@@ -143,9 +145,6 @@ export default async function handler(req, res) {
 
       const providerMessageId = data?.messages?.[0]?.id || null;
       if (!providerMessageId) {
-        // HTTP success means Meta may have accepted the message even if the
-        // expected receipt is absent. Preserve `sending` and require manual
-        // reconciliation instead of converting it into a retryable failure.
         await updateRow(row.id, {
           status: 'sending',
           attempts,
@@ -155,9 +154,6 @@ export default async function handler(req, res) {
         continue;
       }
 
-      // Once Meta confirms acceptance, this row is never eligible for automatic resend.
-      // If this persistence update fails the row remains `sending`, which intentionally
-      // requires operator reconciliation instead of risking a duplicate message.
       await updateRow(row.id, {
         status: 'sent',
         attempts,
@@ -174,3 +170,5 @@ export default async function handler(req, res) {
     return res.status(503).json({ ok: false, retryable: true, error: 'send_unavailable' });
   }
 }
+
+export const __test__={safeGraphVersion,metaSenderConfig};
