@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { classifyUntrustedConversation, safePublicAbuseMetadata } from './hipico-conversation-appsec.js';
 import { effectiveBridgeMediaKind } from './hipico-bridge-input-policy.js';
-import { persistHipicoDomainEvent } from './hipico-domain-event.store.js';
+import { hipicoDomainPersistenceReadiness, persistHipicoDomainEvent } from './hipico-domain-event.store.js';
 import { readHipicoDomainAggregate } from './hipico-domain-query.store.js';
 import { operatorTokenConfigured, operatorTokenValid } from './hipico-operator-security.js';
 import { operationalRaceContextKey } from './hipico-race-context-key.js';
@@ -179,14 +179,19 @@ router.use((_req, res, next) => {
 });
 router.use(requireOperator);
 
-router.get('/status', (_req, res) => {
+router.get('/status', async (_req, res) => {
   const ownerReady = Boolean(configuredCanonicalOwnerId());
-  return res.status(ownerReady ? 200 : 503).json({
-    ok: ownerReady,
+  const persistence = ownerReady
+    ? await hipicoDomainPersistenceReadiness()
+    : { ready: false, tablesReady: false, confirmationAuditReady: false };
+  const ready = ownerReady && persistence.ready;
+  return res.status(ready ? 200 : 503).json({
+    ok: ready,
     api: 'hipico-canonical',
     version: HIPICO_CANONICAL_API_VERSION,
     mode: 'operator-confirmed-domain',
     ownerConfigured: ownerReady,
+    persistence,
     sourceWrite: false,
     monetaryWrite: false,
     resources: ['preview', 'domain/events', 'domain/:aggregateKind/:aggregateKey'],
