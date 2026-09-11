@@ -69,7 +69,10 @@ async function expectHealthyLayout(page, viewport, contextLabel) {
 
 for (const viewport of HIPICO_VIEWPORTS) {
   test.describe(`Control Hípico ${viewport.id}`, () => {
-    test.use({ viewport: { width: viewport.width, height: viewport.height } });
+    test.use({
+      viewport: { width: viewport.width, height: viewport.height },
+      hasTouch: viewport.touch
+    });
     for (const view of HIPICO_VIEWS) {
       test(`${view.id} · normal · sin overflow/solapamiento`, async ({ page }) => {
         const consoleErrors = await openView(page, view.id, 'normal');
@@ -83,7 +86,7 @@ for (const viewport of HIPICO_VIEWPORTS) {
 }
 
 test.describe('Estados representativos por vista', () => {
-  test.use({ viewport: { width: 390, height: 844 } });
+  test.use({ viewport: { width: 390, height: 844 }, hasTouch: true });
 
   for (const view of HIPICO_VIEWS) {
     test(`${view.id} · empty`, async ({ page }) => {
