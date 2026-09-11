@@ -40,14 +40,31 @@ test('backend distinguishes replay identity conflicts from retryable persistence
   assert.doesNotMatch(canonical, /ON CONFLICT \(owner_id,channel_key,external_message_id\)[\s\S]{0,120}DO UPDATE SET/);
 });
 
-test('desktop bridge persists before network and has an independent send kill switch', () => {
+test('desktop bridge requires pinned SOURCE/LAB and can never send to SOURCE', () => {
   const bridge = read('tools/hipico-whatsapp-bridge/src/index.mjs');
   assert.match(bridge, /const ALLOW_SEND = boolEnv\('HIPICO_ALLOW_SEND', false\)/);
-  assert.match(bridge, /const file = await spool\(event\); \/\/ persist locally before any network call/);
+  assert.match(bridge, /requires pinned HIPICO_SOURCE_GROUP_ID and HIPICO_LAB_GROUP_ID/);
+  assert.match(bridge, /\^\\d\{5,\}\(\?:-\\d\+\)\?@g\\\.us\$/);
+  assert.match(bridge, /SOURCE_GROUP_ID_ENV === LAB_GROUP_ID_ENV/);
+  assert.match(bridge, /SOURCE_CHANNEL_KEY === LAB_CHANNEL_KEY/);
   assert.match(bridge, /if \(ALLOW_SEND && labText\) await client\.sendMessage\(lab\.id, labText\)/);
   assert.doesNotMatch(bridge, /client\.sendMessage\(source\.id/);
+  assert.match(bridge, /getChatById\(id\)/);
+  assert.doesNotMatch(bridge, /client\.getChats\(\)/);
   assert.match(bridge, /setInterval\([\s\S]*5000/);
   assert.match(bridge, /LocalAuth/);
+});
+
+test('local bridge spool is private, create-once and rejects conflicting replay content', () => {
+  const bridge = read('tools/hipico-whatsapp-bridge/src/index.mjs');
+  assert.match(bridge, /mode:\s*0o700/);
+  assert.match(bridge, /fs\.chmod\(dir, 0o700\)/);
+  assert.match(bridge, /flag:\s*'wx'/);
+  assert.match(bridge, /mode:\s*0o600/);
+  assert.match(bridge, /replaySignature\(existing\) === replaySignature\(event\)/);
+  assert.match(bridge, /HIPICO_LOCAL_SPOOL_REPLAY_MISMATCH/);
+  assert.match(bridge, /safeRef\(/);
+  assert.doesNotMatch(bridge, /console\.log\(`Fuente: \$\{source\.name\} :: \$\{source\.id\}`\)/);
 });
 
 test('permanent or corrupt bridge events are quarantined instead of retried forever or deleted', () => {
@@ -61,7 +78,7 @@ test('permanent or corrupt bridge events are quarantined instead of retried fore
   assert.doesNotMatch(bridge, /catch \{\s*await fs\.unlink\(file\)/);
 });
 
-test('bridge dependencies are exact and lab config points to production ingest', () => {
+test('bridge dependencies and example config are exact, shadow-only and pinned', () => {
   const pkg = JSON.parse(read('tools/hipico-whatsapp-bridge/package.json'));
   assert.equal(pkg.dependencies['whatsapp-web.js'], '1.34.7');
   assert.equal(pkg.dependencies['qrcode-terminal'], '0.12.0');
@@ -69,8 +86,13 @@ test('bridge dependencies are exact and lab config points to production ingest',
 
   const env = read('tools/hipico-whatsapp-bridge/.env.example');
   assert.match(env, /HIPICO_INGEST_URL=https:\/\/conta-gest-frontend\.vercel\.app\/api\/v1\/hipico-bot\/bridge\/events/);
-  assert.match(env, /HIPICO_GROUP_NAME=Control hípico lab/);
+  assert.match(env, /HIPICO_SHADOW_MODE=true/);
+  assert.match(env, /HIPICO_SOURCE_GROUP_ID=120363000000000000@g\.us/);
+  assert.match(env, /HIPICO_LAB_GROUP_ID=120363111111111111@g\.us/);
+  assert.match(env, /HIPICO_SOURCE_CHANNEL_KEY=club-hipico-triple-crown-official/);
+  assert.match(env, /HIPICO_LAB_CHANNEL_KEY=control-hipico-lab/);
   assert.match(env, /HIPICO_ALLOW_SEND=false/);
+  assert.doesNotMatch(env, /HIPICO_GROUP_NAME=/);
 
   const gitignore = read('.gitignore');
   assert.match(gitignore, /tools\/hipico-whatsapp-bridge\/data\//);
