@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
+import { isGroupId as isFallbackGroupId } from '../tools/hipico-whatsapp-bridge/src/group-identity.mjs';
 
 const root = process.cwd();
 const read = (p) => fs.readFileSync(path.join(root, p), 'utf8');
@@ -40,11 +41,20 @@ test('backend distinguishes replay identity conflicts from retryable persistence
   assert.doesNotMatch(canonical, /ON CONFLICT \(owner_id,channel_key,external_message_id\)[\s\S]{0,120}DO UPDATE SET/);
 });
 
+test('fallback group identity accepts only supported modern and legacy WhatsApp group JIDs', () => {
+  assert.equal(isFallbackGroupId('120363111111111111@g.us'), true);
+  assert.equal(isFallbackGroupId('120363111111111111-1111111111@g.us'), true);
+  assert.equal(isFallbackGroupId('12345-67890@g.us'), true);
+  assert.equal(isFallbackGroupId('12345@g.us'), false);
+  assert.equal(isFallbackGroupId('123456789@g.us'), false);
+  assert.equal(isFallbackGroupId('584121234567@s.whatsapp.net'), false);
+});
+
 test('desktop bridge requires pinned SOURCE/LAB and can never send to SOURCE', () => {
   const bridge = read('tools/hipico-whatsapp-bridge/src/index.mjs');
   assert.match(bridge, /const ALLOW_SEND = boolEnv\('HIPICO_ALLOW_SEND', false\)/);
   assert.match(bridge, /requires pinned HIPICO_SOURCE_GROUP_ID and HIPICO_LAB_GROUP_ID/);
-  assert.match(bridge, /\^\\d\{5,\}\(\?:-\\d\+\)\?@g\\\.us\$/);
+  assert.match(bridge, /from '\.\/group-identity\.mjs'/);
   assert.match(bridge, /SOURCE_GROUP_ID_ENV === LAB_GROUP_ID_ENV/);
   assert.match(bridge, /SOURCE_CHANNEL_KEY === LAB_CHANNEL_KEY/);
   assert.match(bridge, /if \(ALLOW_SEND && labText\) await client\.sendMessage\(lab\.id, labText\)/);
