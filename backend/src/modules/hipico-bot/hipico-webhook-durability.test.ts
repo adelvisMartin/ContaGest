@@ -13,6 +13,13 @@ test('real Meta webhook refuses in-memory fallback when PostgreSQL is unavailabl
   assert.match(routes,/retryable:true/);
 });
 
+test('empty signed webhook batches are acknowledged without requiring PostgreSQL',()=>{
+  const emptyAck=routes.indexOf('if(messages.length===0)');
+  const readiness=routes.indexOf('HipicoBotStore.dbReady(true)');
+  assert.ok(emptyAck>=0&&readiness>emptyAck,'empty status-only batches should be acknowledged before persistence readiness');
+  assert.match(routes,/received:0,processed:0,failed:0/);
+});
+
 test('partial webhook processing failure remains retryable and is never acknowledged with 2xx',()=>{
   assert.match(routes,/if\(result\.failed>0\)/);
   assert.match(routes,/error:'webhook_processing_failed'/);
