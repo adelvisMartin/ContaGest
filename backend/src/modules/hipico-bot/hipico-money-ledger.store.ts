@@ -19,6 +19,7 @@ function exactMinor(value:bigint|string|undefined){
   const text=String(value).trim();if(!/^-?\d+$/.test(text))throw new Error('HIPICO_LEDGER_AMOUNT_MINOR_INVALID');return BigInt(text);
 }
 function nullable(value:unknown){const text=String(value||'').trim();return text||null;}
+function idempotencyLockKey(ownerId:string,groupKey:string,idempotencyKey:string){return JSON.stringify([ownerId,groupKey,idempotencyKey]);}
 
 function assertIdempotentReplay(existing:ExistingEntry,input:{participantCode:string;currency:string;entryType:LedgerEntryType;amountMinor:bigint|null;raceKey:string|null;settlementOfKey:string|null;sourceEventId:string|null;sourceMessageKey:string|null;originalEntryId:string|null}){
   const same=existing.participantCode===input.participantCode
@@ -50,6 +51,9 @@ export async function appendHipicoLedgerEntry(input:LedgerInput){
   const requestedAmount=input.entryType==='reversal'?null:exactMinor(input.amountMinor);
 
   return prisma.$transaction(async(tx)=>{
+    const lockKey=idempotencyLockKey(ownerId,groupKey,idempotencyKey);
+    await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtextextended(${lockKey},0))`;
+
     const duplicate=await tx.$queryRaw<ExistingEntry[]>`
       SELECT id, amount_minor::text AS "amountMinor", participant_code AS "participantCode", currency,
              entry_type AS "entryType", original_entry_id AS "originalEntryId", race_key AS "raceKey",
@@ -131,4 +135,4 @@ export async function reconcileHipicoLedger(ownerId:string,groupKey:string){
   `;
 }
 
-export const __test__={assertIdempotentReplay};
+export const __test__={assertIdempotentReplay,idempotencyLockKey};

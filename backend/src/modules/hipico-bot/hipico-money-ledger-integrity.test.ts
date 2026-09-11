@@ -1,7 +1,9 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { readFileSync } from 'node:fs';
 import { __test__, appendHipicoLedgerEntry } from './hipico-money-ledger.store.js';
 
+const source=readFileSync(new URL('./hipico-money-ledger.store.ts',import.meta.url),'utf8');
 const existing={
   id:'entry-1',amountMinor:'10000',participantCode:'zedan',currency:'VES',entryType:'bet',originalEntryId:null,
   raceKey:'racectx-1',settlementOfKey:null,sourceEventId:'event-1',sourceMessageKey:'message-1'
@@ -22,6 +24,14 @@ test('financial idempotency accepts only the exact same ledger command',()=>{
   ]){
     assert.throws(()=>__test__.assertIdempotentReplay(existing,changed as any),(error:any)=>error?.code==='HIPICO_LEDGER_IDEMPOTENCY_MISMATCH');
   }
+});
+
+test('same financial idempotency key is serialized before duplicate lookup',()=>{
+  assert.equal(__test__.idempotencyLockKey('owner','group','request'),'["owner","group","request"]');
+  const lock=source.indexOf('pg_advisory_xact_lock(hashtextextended');
+  const duplicate=source.indexOf('const duplicate=await tx.$queryRaw<ExistingEntry[]>');
+  assert.ok(lock>=0&&duplicate>lock);
+  assert.match(source,/idempotencyLockKey\(ownerId,groupKey,idempotencyKey\)/);
 });
 
 test('non-reversal ledger entries never silently default a missing amount to zero',async()=>{
