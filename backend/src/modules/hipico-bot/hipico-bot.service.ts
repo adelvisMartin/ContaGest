@@ -2,7 +2,9 @@ import crypto from 'node:crypto';
 import { prisma } from '../../database/prisma.js';
 import { classify as classifyOperational } from './hipico-operational-classifier.js';
 import type { IntentResult as OperationalIntentResult } from './hipico-operational-classifier.js';
-import { assertCloudOutboundAllowed, cloudOutboundPolicy } from './hipico-outbound-policy.js';
+import { assertCloudOutboundAllowed, assertCloudTransportConfigured, cloudOutboundPolicy } from './hipico-outbound-policy.js';
+import { metaSignatureValid } from './hipico-meta-security.js';
+import { operatorTokenValid as canonicalOperatorTokenValid } from './hipico-operator-security.js';
 
 export type BotPromotion='shadow'|'approved'|'automatic';
 export type IntentResult=OperationalIntentResult;
@@ -41,17 +43,17 @@ export function classifyIncoming(message:any):IntentResult {
   return classifyOperational(message?.body||'');
 }
 
+/**
+ * Backward-compatible wrappers. They intentionally delegate to the canonical
+ * strong policies so no future route can accidentally revive the pre-hardening
+ * length-only authentication behavior by importing this service.
+ */
 export function signatureValid(raw:Buffer|undefined,signature:string|undefined){
-  const secret=String(process.env.WHATSAPP_APP_SECRET||'');
-  if(!secret||!raw||!signature?.startsWith('sha256='))return false;
-  const expected=`sha256=${crypto.createHmac('sha256',secret).update(raw).digest('hex')}`;
-  try{return crypto.timingSafeEqual(Buffer.from(expected),Buffer.from(signature));}catch{return false;}
+  return metaSignatureValid(raw,signature);
 }
 
 export function operatorTokenValid(value:string|undefined){
-  const expected=String(process.env.HIPICO_BOT_OPERATOR_TOKEN||'');
-  if(!expected||!value)return false;
-  try{return crypto.timingSafeEqual(Buffer.from(expected),Buffer.from(value));}catch{return false;}
+  return canonicalOperatorTokenValid(value);
 }
 
 export function extractMessages(payload:any){
@@ -176,16 +178,13 @@ export const HipicoBotStore={
 
 export async function sendCloudText(recipient:string,message:string){
   assertCloudOutboundAllowed(recipient);
-  const token=String(process.env.WHATSAPP_CLOUD_TOKEN||'');
-  const phoneId=String(process.env.WHATSAPP_PHONE_NUMBER_ID||'');
-  const version=String(process.env.WHATSAPP_GRAPH_API_VERSION||process.env.WHATSAPP_GRAPH_VERSION||'v23.0');
-  if(!token||!phoneId)throw new Error('Faltan WHATSAPP_CLOUD_TOKEN o WHATSAPP_PHONE_NUMBER_ID');
+  const {token,phoneId,version}=assertCloudTransportConfigured();
   if(!E164_DIGITS.test(recipient))throw new Error('Destinatario WhatsApp inválido.');
   const text=String(message||'').trim();
   if(!text||text.length>4000)throw Object.assign(new Error('Mensaje WhatsApp vacío o demasiado largo.'),{code:'HIPICO_CLOUD_MESSAGE_INVALID'});
   let response:Response;
   try{
-    response=await fetch(`https://graph.facebook.com/${encodeURIComponent(version)}/${encodeURIComponent(phoneId)}/messages`,{
+    response=await fetch(`https://graph.facebook.com/${version}/${phoneId}/messages`,{
       method:'POST',headers:{authorization:`Bearer ${token}`,'content-type':'application/json'},
       body:JSON.stringify({messaging_product:'whatsapp',recipient_type:'individual',to:recipient,type:'text',text:{preview_url:false,body:text}}),
       signal:AbortSignal.timeout(10_000)
