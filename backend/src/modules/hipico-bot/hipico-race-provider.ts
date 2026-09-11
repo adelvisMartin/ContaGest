@@ -1,6 +1,7 @@
 const DEFAULT_TIMEOUT_MS = 5_000;
 const DEFAULT_CACHE_TTL_MS = 30_000;
 const MAX_RESPONSE_BYTES = 1_000_000;
+export const MAX_RACE_PROVIDER_CACHE_ENTRIES = 128;
 
 export type HorseRaceProviderName = 'disabled' | 'sportradar-uof';
 
@@ -106,6 +107,32 @@ export function createHorseRaceProvider(options: { env?: RuntimeEnv; fetchImpl?:
     return raceProviderStatus(env);
   }
 
+  function pruneCache(at:number){
+    for(const[key,entry]of cache){
+      if(entry.expiresAt<=at)cache.delete(key);
+    }
+    while(cache.size>MAX_RACE_PROVIDER_CACHE_ENTRIES){
+      const oldest=cache.keys().next().value as string|undefined;
+      if(!oldest)break;
+      cache.delete(oldest);
+    }
+  }
+
+  function readCached(stageId:string,at:number){
+    const entry=cache.get(stageId);
+    if(!entry)return null;
+    if(entry.expiresAt<=at){cache.delete(stageId);return null;}
+    cache.delete(stageId);
+    cache.set(stageId,entry);
+    return{...entry.value,cached:true} satisfies HorseRaceStageSummary;
+  }
+
+  function remember(stageId:string,value:HorseRaceStageSummary,expiresAt:number){
+    cache.delete(stageId);
+    cache.set(stageId,{expiresAt,value});
+    pruneCache(now());
+  }
+
   async function getStageSummary(stageIdValue: string): Promise<HorseRaceStageSummary> {
     const currentStatus = status();
     if (!currentStatus.configured || currentStatus.provider !== 'sportradar-uof') {
@@ -113,8 +140,8 @@ export function createHorseRaceProvider(options: { env?: RuntimeEnv; fetchImpl?:
     }
 
     const stageId = normalizeStageId(stageIdValue);
-    const cached = cache.get(stageId);
-    if (cached && cached.expiresAt > now()) return { ...cached.value, cached: true };
+    const cached = readCached(stageId,now());
+    if (cached) return cached;
 
     const baseUrl = normalizeBaseUrl(env.HIPICO_RACE_PROVIDER_BASE_URL);
     const token = String(env.HIPICO_SPORTRADAR_UOF_TOKEN || '').trim();
@@ -140,15 +167,16 @@ export function createHorseRaceProvider(options: { env?: RuntimeEnv; fetchImpl?:
       if (Buffer.byteLength(xml, 'utf8') > MAX_RESPONSE_BYTES) {
         throw new HorseRaceProviderError('La respuesta del proveedor hípico excede el tamaño permitido.', 'UPSTREAM_RESPONSE_TOO_LARGE', false);
       }
+      const fetchedAt=now();
       const value: HorseRaceStageSummary = {
         provider: 'sportradar-uof',
         stageId,
-        fetchedAt: new Date(now()).toISOString(),
+        fetchedAt: new Date(fetchedAt).toISOString(),
         contentType: response.headers.get('content-type') || 'application/xml',
         xml,
         cached: false
       };
-      cache.set(stageId, { expiresAt: now() + currentStatus.cacheTtlMs, value });
+      remember(stageId,value,fetchedAt+currentStatus.cacheTtlMs);
       return value;
     } catch (error: any) {
       if (error instanceof HorseRaceProviderError) throw error;
