@@ -1,4 +1,4 @@
-import { metaOutboundPolicy } from './_shared.js';
+import { metaOutboundPolicy, strongSecretConfigured } from './_shared.js';
 
 const CHANNEL_KEY_PATTERN=/^[A-Za-z0-9_-]{3,120}$/;
 const DEFAULT_SOURCE_CHANNEL_KEY='club-hipico-triple-crown-official';
@@ -20,6 +20,15 @@ function bridgeIdentityStatus(source=process.env){
   return{sourceGroupId,labGroupId,sourceChannelKey,labChannelKey,pinnedGroupsConfigured,groupsDistinct,channelKeysValid,channelKeysDistinct};
 }
 
+function secretReadiness(source=process.env){
+  return{
+    bridgeTokenStrong:strongSecretConfigured(source.HIPICO_GROUP_BRIDGE_TOKEN),
+    internalApiTokenStrong:strongSecretConfigured(source.HIPICO_INTERNAL_API_TOKEN),
+    metaVerifyTokenStrong:strongSecretConfigured(source.HIPICO_META_VERIFY_TOKEN),
+    metaAppSecretStrong:strongSecretConfigured(source.HIPICO_META_APP_SECRET)
+  };
+}
+
 export default function handler(req, res) {
   res.setHeader('Cache-Control', 'no-store, max-age=0');
   if (req.method !== 'GET') return res.status(405).json({ ok: false, error: 'method_not_allowed' });
@@ -34,15 +43,20 @@ export default function handler(req, res) {
   const metaMissing = missing(metaRequired);
   const webhookMissing = missing(webhookRequired);
   const identity=bridgeIdentityStatus();
+  const secrets=secretReadiness();
   const persistenceReady = persistenceMissing.length === 0;
   const linkedDeviceReady = persistenceReady
     && linkedDeviceMissing.length === 0
+    && secrets.bridgeTokenStrong
     && identity.groupsDistinct
     && identity.channelKeysValid
     && identity.channelKeysDistinct;
   const outbound = metaOutboundPolicy();
-  const metaDirectReady = persistenceReady && metaMissing.length === 0 && outbound.enabled;
-  const metaWebhookReady = persistenceReady && webhookMissing.length === 0;
+  const metaDirectReady = persistenceReady && metaMissing.length === 0 && secrets.internalApiTokenStrong && outbound.enabled;
+  const metaWebhookReady = persistenceReady
+    && webhookMissing.length === 0
+    && secrets.metaVerifyTokenStrong
+    && secrets.metaAppSecretStrong;
 
   return res.status(200).json({
     ok: true,
@@ -53,7 +67,7 @@ export default function handler(req, res) {
       ready: linkedDeviceReady,
       shadowOnly: true,
       sourceSendPossible: false,
-      tokenConfigured: Boolean(String(process.env.HIPICO_GROUP_BRIDGE_TOKEN||'').trim()),
+      tokenConfigured: secrets.bridgeTokenStrong,
       pinnedGroupsConfigured: identity.pinnedGroupsConfigured,
       groupsDistinct: identity.groupsDistinct,
       channelKeysValid: identity.channelKeysValid,
@@ -75,4 +89,4 @@ export default function handler(req, res) {
   });
 }
 
-export const __test__={bridgeIdentityStatus};
+export const __test__={bridgeIdentityStatus,secretReadiness};
