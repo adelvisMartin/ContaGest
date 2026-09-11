@@ -138,9 +138,14 @@ test('secure UI rejects oversized files before reading their contents', async ()
   assert.match(facade, /MAX_PORTABLE_BACKUP_CHARS/);
 });
 
-test('service worker preserves explicit release versioning and precaches secure backup modules', async () => {
+test('service worker uses a separately revisioned atomic shell and precaches hardened modules', async () => {
   const source = await fs.readFile('frontend/public/hipico-control/sw.js', 'utf8');
-  assert.match(source, /const CACHE_VERSION = 'hipico-control-v\d+\.\d+\.\d+(?:-rc\d+)?-shell-r\d+(?:-[a-z0-9-]+)?'/);
+  assert.match(source, /const CACHE_VERSION = 'hipico-control-v\d+\.\d+\.\d+(?:-rc\d+)?'/);
+  assert.match(source, /const SHELL_CACHE = `\$\{CACHE_VERSION\}-shell-r\d+-[a-z0-9-]+`/);
   assert.match(source, /backup-v2\.js/);
   assert.match(source, /backup-secure-ui\.js/);
+  assert.match(source, /local-auth\.js/);
+  assert.match(source, /financial-config-guard\.js/);
+  assert.match(source, /dialog-accessibility\.js/);
+  assert.match(source, /key !== SHELL_CACHE/);
 });
