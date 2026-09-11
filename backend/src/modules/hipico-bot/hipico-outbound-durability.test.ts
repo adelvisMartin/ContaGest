@@ -28,12 +28,34 @@ test('operator test sends are idempotent and never reuse request id with differe
   assert.match(routes,/previous_attempt_failed_use_new_request_id_after_review/);
 });
 
-test('policy and destination allowlist are checked before atomic send claim',()=>{
+test('policy destination and transport configuration are checked before atomic send claim',()=>{
   const preflight=indexOfRequired(routes,'const preflight=outboundPreflight');
+  const transport=indexOfRequired(routes,'const transport=cloudTransportConfiguration()');
   const claim=indexOfRequired(routes,"HipicoBotStore.claimForSend(item.id,'pending_approval')");
   assert.ok(preflight<claim);
+  assert.ok(transport<claim);
   assert.match(routes,/cloudDestinationAllowed/);
+  assert.match(routes,/cloud_transport_not_configured/);
   assert.match(routes,/outbound_disabled/);
+});
+
+test('operator status uses the same transport readiness contract instead of raw env presence',()=>{
+  assert.match(routes,/cloudConfigured:transport\.configured/);
+  assert.match(routes,/cloudTransportReasons:transport\.reasons/);
+  assert.doesNotMatch(routes,/cloudConfigured:Boolean\(process\.env\.WHATSAPP_CLOUD_TOKEN/);
+});
+
+test('legacy service authentication exports delegate to canonical hardened modules',()=>{
+  assert.match(service,/import \{ metaSignatureValid \} from '\.\/hipico-meta-security\.js'/);
+  assert.match(service,/operatorTokenValid as canonicalOperatorTokenValid/);
+  assert.match(service,/return metaSignatureValid\(raw,signature\)/);
+  assert.match(service,/return canonicalOperatorTokenValid\(value\)/);
+  assert.doesNotMatch(service,/const secret=String\(process\.env\.WHATSAPP_APP_SECRET/);
+  assert.doesNotMatch(service,/const expected=String\(process\.env\.HIPICO_BOT_OPERATOR_TOKEN/);
+});
+
+test('automatic mode degrades to approved unless both outbound policy and transport are ready',()=>{
+  assert.match(service,/cloudOutboundPolicy\(\)\.enabled&&cloudTransportConfiguration\(\)\.configured\?'automatic':'approved'/);
 });
 
 test('sent, failed and reconciliation transitions verify one durable row',()=>{
