@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { assertReplayMatch, canonicalReplaySignature, transportReplaySignature } from './hipico-replay-integrity.js';
+import { assertReplayMatch, canonicalReplaySignature, groupShadowReplaySignature, transportReplaySignature } from './hipico-replay-integrity.js';
+import { __test__ as bridgeStoreTest } from './hipico-bridge-transport.store.js';
 
 test('transport replay signature is stable for equivalent nullable transport fields', () => {
   const first = transportReplaySignature({ phoneNumberId: 'group:g1', sender: '584121234567', messageType: 'chat', body: 'Juego 1N del 5 con 100k' });
@@ -42,5 +43,39 @@ test('canonical replay rejects changed sender, text or quoted context', () => {
   ];
   for (const candidate of changed) {
     assert.throws(() => assertReplayMatch('canonical', persisted, candidate), (error: any) => error?.code === 'HIPICO_CANONICAL_REPLAY_MISMATCH');
+  }
+});
+
+test('group shadow replay signature binds recipient message intent and risk', () => {
+  const persisted = groupShadowReplaySignature({ recipient: 'lab-group', message: 'Revisar jugada', intent: 'offer_player', risk: 'monetary' });
+  const replay = groupShadowReplaySignature({ recipient: 'lab-group', message: 'Revisar jugada', intent: 'offer_player', risk: 'monetary' });
+  assert.equal(replay, persisted);
+  assert.doesNotThrow(() => assertReplayMatch('group-shadow', persisted, replay));
+});
+
+test('group shadow outbox rejects a duplicate event with mutated projection', () => {
+  const existing = {
+    id: 'hbo-1',
+    recipient: 'lab-group',
+    message: 'Revisar jugada',
+    intent: 'offer_player',
+    risk: 'monetary'
+  };
+  const base = {
+    eventId: 'event-1',
+    recipient: 'lab-group',
+    result: { suggestion: 'Revisar jugada', intent: 'offer_player', risk: 'monetary' }
+  } as any;
+  assert.doesNotThrow(() => bridgeStoreTest.assertGroupShadowReplay(existing, base));
+  for (const mutated of [
+    { ...base, recipient: 'source-group' },
+    { ...base, result: { ...base.result, suggestion: 'Mensaje alterado' } },
+    { ...base, result: { ...base.result, intent: 'race_result' } },
+    { ...base, result: { ...base.result, risk: 'review' } }
+  ]) {
+    assert.throws(
+      () => bridgeStoreTest.assertGroupShadowReplay(existing, mutated),
+      (error: any) => error?.code === 'HIPICO_GROUP_SHADOW_OUTBOX_REPLAY_MISMATCH'
+    );
   }
 });
