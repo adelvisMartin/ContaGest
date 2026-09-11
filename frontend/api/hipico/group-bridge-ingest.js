@@ -1,4 +1,4 @@
-import { env, safeEqual, sha256, supabase, classifyText } from './_shared.js';
+import { env, safeEqual, serverSecret, sha256, supabase, classifyText } from './_shared.js';
 import { HIPICO_CHANNEL_KEY_PATTERN, configuredChannelIdentity, validateBridgeRoleIdentity } from './bridge-identity.js';
 
 function shadowSuggestion(classification, body) {
@@ -172,7 +172,7 @@ export default async function handler(req, res) {
 
   let configuredToken;
   try {
-    configuredToken = env('HIPICO_GROUP_BRIDGE_TOKEN');
+    configuredToken = serverSecret('HIPICO_GROUP_BRIDGE_TOKEN');
   } catch {
     return res.status(503).json({ ok: false, retryable: true, error: 'bridge_not_configured' });
   }
