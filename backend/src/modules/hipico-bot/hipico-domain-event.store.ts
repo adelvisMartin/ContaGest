@@ -13,7 +13,8 @@ type PersistInput={
 type AggregateRow={status:string;stateVersion:bigint|number};
 type EventRow={
   id:string;eventType:string;disposition:string;previousState:string;nextState:string;reason:string;
-  sourceMessageId:string|null;rawMessage:string|null;actorRef:string|null;source:string|null;originalEventId:string|null;
+  sourceMessageId:string|null;rawMessage:string|null;normalizedPayload:unknown;actorRef:string|null;source:string|null;
+  parserVersion:string|null;schemaVersion:number;eventTimestamp:Date|string;originalEventId:string|null;
 };
 
 function validTimestamp(value?:string){
@@ -21,13 +22,41 @@ function validTimestamp(value?:string){
   if(!Number.isFinite(date.getTime()))throw new Error('HIPICO_INVALID_EVENT_TIMESTAMP');
   return date;
 }
+function normalizedInstant(value:unknown){
+  const date=value instanceof Date?value:new Date(String(value||''));
+  return Number.isFinite(date.getTime())?date.toISOString():null;
+}
+function canonicalJson(value:unknown):string{
+  if(value===undefined||value===null)return'null';
+  if(Array.isArray(value))return`[${value.map((item)=>canonicalJson(item)).join(',')}]`;
+  if(typeof value==='object'){
+    const record=value as Record<string,unknown>;
+    return `{${Object.keys(record).filter((key)=>record[key]!==undefined).sort().map((key)=>`${JSON.stringify(key)}:${canonicalJson(record[key])}`).join(',')}}`;
+  }
+  return JSON.stringify(value)??'null';
+}
 function sameNullable(left:unknown,right:unknown){return String(left??'')===String(right??'');}
+function incomingRequiresReview(event:HipicoDomainEventInput){
+  return Boolean(event.requiresReview||event.type==='AMBIGUOUS'||event.type==='UNKNOWN');
+}
+function persistedRequiresReview(existing:Pick<EventRow,'disposition'|'reason'>){
+  return existing.disposition==='review'&&existing.reason==='AMBIGUOUS_OR_UNKNOWN';
+}
 function assertDomainReplay(existing:EventRow,event:HipicoDomainEventInput){
+  const timestampMatches=event.timestamp===undefined
+    || normalizedInstant(existing.eventTimestamp)===normalizedInstant(event.timestamp);
+  const eventIdMatches=!event.eventId||existing.id===String(event.eventId);
   const same=existing.eventType===event.type
+    && eventIdMatches
     && sameNullable(existing.sourceMessageId,event.sourceMessageId)
     && sameNullable(existing.rawMessage,event.rawMessage)
+    && canonicalJson(existing.normalizedPayload)===canonicalJson(event.normalizedPayload)
     && sameNullable(existing.actorRef,event.actorRef)
     && sameNullable(existing.source,event.source||'system')
+    && sameNullable(existing.parserVersion,event.parserVersion)
+    && Number(existing.schemaVersion||1)===Number(event.schemaVersion||1)
+    && timestampMatches
+    && persistedRequiresReview(existing)===incomingRequiresReview(event)
     && sameNullable(existing.originalEventId,event.originalEventId);
   if(!same){
     throw Object.assign(new Error('Domain replay changed immutable source facts for the same source message.'),{code:'HIPICO_DOMAIN_REPLAY_MISMATCH'});
@@ -58,8 +87,9 @@ export async function persistHipicoDomainEvent(input:PersistInput){
 
     const prior=await tx.$queryRaw<Array<EventRow>>`
       SELECT id,event_type AS "eventType",disposition,previous_state AS "previousState",next_state AS "nextState",reason,
-             source_message_id AS "sourceMessageId",raw_message AS "rawMessage",actor_ref AS "actorRef",source,
-             original_event_id AS "originalEventId"
+             source_message_id AS "sourceMessageId",raw_message AS "rawMessage",normalized_payload AS "normalizedPayload",
+             actor_ref AS "actorRef",source,parser_version AS "parserVersion",schema_version AS "schemaVersion",
+             event_timestamp AS "eventTimestamp",original_event_id AS "originalEventId"
       FROM public.hipico_domain_events
       WHERE owner_id=${ownerId}::uuid AND group_key=${groupKey}
         AND aggregate_kind=${input.aggregateKind} AND aggregate_key=${aggregateKey}
@@ -70,7 +100,11 @@ export async function persistHipicoDomainEvent(input:PersistInput){
     if(prior.length>1)throw new Error('HIPICO_DOMAIN_SOURCE_IDENTITY_CORRUPT');
     if(prior[0]){
       assertDomainReplay(prior[0],input.event);
-      const {eventType:_eventType,sourceMessageId:_sourceMessageId,rawMessage:_rawMessage,actorRef:_actorRef,source:_source,originalEventId:_originalEventId,...existing}=prior[0];
+      const {
+        eventType:_eventType,sourceMessageId:_sourceMessageId,rawMessage:_rawMessage,normalizedPayload:_normalizedPayload,
+        actorRef:_actorRef,source:_source,parserVersion:_parserVersion,schemaVersion:_schemaVersion,
+        eventTimestamp:_eventTimestamp,originalEventId:_originalEventId,...existing
+      }=prior[0];
       return{...existing,duplicate:true,stateChanged:false};
     }
 
@@ -144,4 +178,4 @@ export async function persistHipicoDomainEvent(input:PersistInput){
   });
 }
 
-export const __test__={assertDomainReplay};
+export const __test__={assertDomainReplay,canonicalJson,normalizedInstant,incomingRequiresReview,persistedRequiresReview};
