@@ -1,7 +1,7 @@
 import { createBlankWorkspace } from './seed.js';
 import { generateArrivalWhatsappText, generateBalancesWhatsappText, generateDailySummaryText, generateParticipantStatementText, generateWhatsappText } from './format.js';
 import { generateClosureText } from './whatsapp.js';
-import { downloadFile, flushWorkspaceWrites, getAppMode, loadLocalWorkspace } from './store.js';
+import { downloadFile, flushWorkspaceWrites, loadLocalWorkspace } from './store.js';
 import { normalizeWorkspaceShape } from './workspace.js';
 import { activeDay, activeGroupId, activeRace, balanceRows, dailyStats, groupProfile, participantStatement, scopeItems } from './operational-ledger.js';
 
@@ -160,15 +160,16 @@ function renderDialog(root) {
 
 async function openCenter() {
   const root = document.getElementById(ROOT_ID);
-  if (!root) return;
+  if (!root || root.dataset.opsAuthorized !== 'true') return;
   state.workspace = await readWorkspace();
   renderDialog(root);
 }
 
 async function refreshCenter() {
-  state.workspace = await readWorkspace();
   const root = document.getElementById(ROOT_ID);
-  if (root) renderDialog(root);
+  if (!root || root.dataset.opsAuthorized !== 'true') return;
+  state.workspace = await readWorkspace();
+  renderDialog(root);
 }
 
 function sanitizeFilename(value) {
@@ -176,6 +177,8 @@ function sanitizeFilename(value) {
 }
 
 async function exportDailyStatements() {
+  const root = document.getElementById(ROOT_ID);
+  if (!root || root.dataset.opsAuthorized !== 'true') throw new Error('Centro operativo no autorizado.');
   const workspace = state.workspace || await readWorkspace();
   const groupId = activeGroupId(workspace);
   const day = activeDay(workspace, groupId);
@@ -187,14 +190,20 @@ async function exportDailyStatements() {
   downloadFile(`${sanitizeFilename(profile.companyName)}-estados-${day.date}.txt`, content, 'text/plain;charset=utf-8');
 }
 
-function mount() {
-  if (document.getElementById(ROOT_ID)) return;
+export function mountOperationalCopyCenter() {
+  if (typeof document === 'undefined') return null;
+  const existing = document.getElementById(ROOT_ID);
+  if (existing) return existing;
   const root = document.createElement('div');
   root.id = ROOT_ID;
   root.className = 'ops-root';
+  root.dataset.opsAuthorized = 'false';
+  root.setAttribute('inert', '');
+  root.setAttribute('aria-hidden', 'true');
   root.innerHTML = `<button type="button" class="ops-launcher" data-ops-open aria-label="Abrir textos operativos de WhatsApp"><span aria-hidden="true">✦</span><span>Mensajes</span></button>`;
   document.body.append(root);
   root.addEventListener('click', async (event) => {
+    if (root.dataset.opsAuthorized !== 'true') return;
     const target = event.target instanceof Element ? event.target : null;
     if (!target) return;
     const copy = target.closest('[data-ops-copy]');
@@ -215,23 +224,13 @@ function mount() {
     }
   });
   root.addEventListener('change', async (event) => {
+    if (root.dataset.opsAuthorized !== 'true') return;
     const select = event.target instanceof Element ? event.target.closest('[data-ops-participant]') : null;
     if (!select) return;
     state.participantId = select.value;
     renderDialog(root);
   });
-}
-
-async function mountWhenAuthorized() {
-  try { if (await getAppMode()) mount(); } catch { /* El centro no bloquea el arranque principal. */ }
-}
-
-if (typeof document !== 'undefined') {
-  window.addEventListener('load', mountWhenAuthorized, { once: true });
-  document.addEventListener('submit', (event) => {
-    const form = event.target instanceof HTMLFormElement ? event.target : null;
-    if (form?.id === 'auth-form') setTimeout(mountWhenAuthorized, 900);
-  }, true);
+  return root;
 }
 
 export const __test__ = { raceOrdinal, raceOpenText, raceCloseText, sanitizeFilename, buildTexts };
