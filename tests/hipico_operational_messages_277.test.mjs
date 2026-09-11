@@ -80,10 +80,13 @@ test('receipt remains renderable when a legacy bet has no valid createdAt timest
   assert.match(text,/Jugada #9 de 9/);
 });
 
-test('visible operational dates fail soft instead of throwing or inventing today',()=>{
+test('visible operational dates fail soft instead of throwing, normalizing impossible dates, or inventing today',()=>{
   assert.equal(shortDate('fecha-corrupta'),'Sin fecha');
   assert.equal(shortDate(''),'Sin fecha');
-  const corruptRace={...race,date:'fecha-corrupta'};
+  assert.equal(shortDate('2026-02-31'),'Sin fecha');
+  assert.equal(shortDate('2026-13-01'),'Sin fecha');
+  assert.notEqual(shortDate('2028-02-29'),'Sin fecha');
+  const corruptRace={...race,date:'2026-02-31'};
   assert.doesNotThrow(()=>generateBetReceiptText(workspace,corruptRace,bet));
   assert.match(generateBetReceiptText(workspace,corruptRace,bet),/fecha no disponible/);
 
