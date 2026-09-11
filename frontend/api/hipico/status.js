@@ -9,6 +9,7 @@ function secretReadiness(source=process.env){
   return{
     bridgeTokenStrong:strongSecretConfigured(source.HIPICO_GROUP_BRIDGE_TOKEN),
     internalApiTokenStrong:strongSecretConfigured(source.HIPICO_INTERNAL_API_TOKEN),
+    metaAccessTokenStrong:strongSecretConfigured(source.HIPICO_META_ACCESS_TOKEN),
     metaVerifyTokenStrong:strongSecretConfigured(source.HIPICO_META_VERIFY_TOKEN),
     metaAppSecretStrong:strongSecretConfigured(source.HIPICO_META_APP_SECRET)
   };
@@ -45,6 +46,7 @@ export default function handler(req, res) {
   const metaDirectReady = persistenceReady
     && metaMissing.length === 0
     && secrets.internalApiTokenStrong
+    && secrets.metaAccessTokenStrong
     && metaIdentity.phoneNumberIdValid
     && outbound.enabled;
   const metaWebhookReady = persistenceReady
@@ -73,6 +75,7 @@ export default function handler(req, res) {
     metaCloud: {
       directIndividualSendReady: metaDirectReady,
       webhookReady: metaWebhookReady,
+      accessTokenStrong: secrets.metaAccessTokenStrong,
       phoneNumberIdValid: metaIdentity.phoneNumberIdValid,
       optionalForLinkedDeviceBridge: true,
       outboundPolicy: {
