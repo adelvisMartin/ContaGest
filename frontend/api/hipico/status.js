@@ -22,7 +22,8 @@ export default function handler(req, res) {
   const identity = bridgeIdentityStatus();
   const bridgeTokenStrong = strongSecretConfigured(process.env.HIPICO_GROUP_BRIDGE_TOKEN);
   const internalApiTokenStrong = strongSecretConfigured(process.env.HIPICO_INTERNAL_API_TOKEN);
-  const persistenceReady = persistenceMissing.length === 0;
+  const persistenceServiceKeyStrong = strongSecretConfigured(process.env.HIPICO_SUPABASE_SERVICE_ROLE_KEY);
+  const persistenceReady = persistenceMissing.length === 0 && persistenceServiceKeyStrong;
   const linkedDeviceReady = persistenceReady
     && linkedDeviceMissing.length === 0
     && bridgeTokenStrong
@@ -37,7 +38,11 @@ export default function handler(req, res) {
     ok: true,
     service: 'hipico-control-operations',
     mode: linkedDeviceReady ? 'linked_device_shadow_ready' : persistenceReady ? 'manual_and_persistence_ready' : 'offline_and_manual_ready',
-    persistence: { ready: persistenceReady, missingConfigurationCount: persistenceMissing.length },
+    persistence: {
+      ready: persistenceReady,
+      serviceRoleKeyStrong: persistenceServiceKeyStrong,
+      missingConfigurationCount: persistenceMissing.length
+    },
     linkedDeviceBridge: {
       ready: linkedDeviceReady,
       shadowOnly: true,
