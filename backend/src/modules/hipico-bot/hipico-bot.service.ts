@@ -2,20 +2,28 @@ import crypto from 'node:crypto';
 import { prisma } from '../../database/prisma.js';
 import { classify as classifyOperational } from './hipico-operational-classifier.js';
 import type { IntentResult as OperationalIntentResult } from './hipico-operational-classifier.js';
+import { assertCloudOutboundAllowed, assertCloudTransportConfigured, cloudOutboundPolicy, cloudTransportConfiguration } from './hipico-outbound-policy.js';
+import { metaSignatureValid } from './hipico-meta-security.js';
+import { operatorTokenValid as canonicalOperatorTokenValid } from './hipico-operator-security.js';
 
 export type BotPromotion='shadow'|'approved'|'automatic';
 export type IntentResult=OperationalIntentResult;
 
 const SAFE_AUTOMATIC=new Set(['greeting','help','status_non_monetary']);
 const NON_TEXT_MEDIA=new Set(['audio','document','image','sticker','video']);
+const E164_DIGITS=/^[1-9]\d{6,14}$/;
 
 const clampLimit=(value:number, fallback=50)=>Math.min(100,Math.max(1,Number.isFinite(value)?Math.trunc(value):fallback));
 const id=(prefix:string)=>`${prefix}_${crypto.randomUUID()}`;
+const stableId=(prefix:string,value:string)=>`${prefix}_${crypto.createHash('sha256').update(value).digest('hex').slice(0,40)}`;
 let dbStatus:{value:boolean;until:number}|null=null;
 
 export function promotion():BotPromotion {
   const value=String(process.env.HIPICO_BOT_PROMOTION||'shadow').toLowerCase();
-  return value==='automatic'||value==='approved'?value:'shadow';
+  if(value==='automatic'){
+    return cloudOutboundPolicy().enabled&&cloudTransportConfiguration().configured?'automatic':'approved';
+  }
+  return value==='approved'?'approved':'shadow';
 }
 
 export function classify(text:string):IntentResult { return classifyOperational(text); }
@@ -37,17 +45,17 @@ export function classifyIncoming(message:any):IntentResult {
   return classifyOperational(message?.body||'');
 }
 
+/**
+ * Backward-compatible wrappers. They intentionally delegate to the canonical
+ * strong policies so no future route can accidentally revive the pre-hardening
+ * length-only authentication behavior by importing this service.
+ */
 export function signatureValid(raw:Buffer|undefined,signature:string|undefined){
-  const secret=String(process.env.WHATSAPP_APP_SECRET||'');
-  if(!secret||!raw||!signature?.startsWith('sha256='))return false;
-  const expected=`sha256=${crypto.createHmac('sha256',secret).update(raw).digest('hex')}`;
-  try{return crypto.timingSafeEqual(Buffer.from(expected),Buffer.from(signature));}catch{return false;}
+  return metaSignatureValid(raw,signature);
 }
 
 export function operatorTokenValid(value:string|undefined){
-  const expected=String(process.env.HIPICO_BOT_OPERATOR_TOKEN||'');
-  if(!expected||!value)return false;
-  try{return crypto.timingSafeEqual(Buffer.from(expected),Buffer.from(value));}catch{return false;}
+  return canonicalOperatorTokenValid(value);
 }
 
 export function extractMessages(payload:any){
@@ -61,7 +69,7 @@ export function extractMessages(payload:any){
       rows.push({providerMessageId:String(message.id||''),phoneNumberId,sender:String(message.from||''),messageType,body,payload:message});
     }
   }
-  return rows.filter((row)=>row.providerMessageId&&/^\d{7,18}$/.test(row.sender));
+  return rows.filter((row)=>row.providerMessageId&&E164_DIGITS.test(row.sender));
 }
 
 async function dbReady(force=false){
@@ -73,6 +81,13 @@ async function dbReady(force=false){
 
 const memoryEvents:any[]=[];
 const memoryOutbox:any[]=[];
+
+function sameOutboxIntent(existing:any,row:any){
+  return String(existing?.recipient||'')===String(row?.recipient||'')
+    && String(existing?.targetType||'individual')===String(row?.targetType||'individual')
+    && String(existing?.message||'')===String(row?.message||'')
+    && String(existing?.intent||'unknown')===String(row?.intent||'unknown');
+}
 
 export const HipicoBotStore={
   dbReady,
@@ -100,34 +115,99 @@ export const HipicoBotStore={
     }
     memoryOutbox.unshift(record);memoryOutbox.splice(250);return record;
   },
+  async queueIdempotent(row:any,scope:string,requestId:string){
+    if(!await dbReady(true))throw Object.assign(new Error('Persistent Hípico outbox is required for outbound sends.'),{code:'HIPICO_OUTBOX_PERSISTENCE_REQUIRED'});
+    const key=String(requestId||'').trim();
+    if(!key)throw Object.assign(new Error('Outbound requestId is required.'),{code:'HIPICO_OUTBOX_REQUEST_ID_REQUIRED'});
+    const record={id:stableId('hbo',`${scope}|${key}`),...row};
+    const inserted=await prisma.$queryRaw<Array<{id:string}>>`
+      INSERT INTO public."HipicoBotOutbox" ("id","eventId","recipient","targetType","message","intent","risk","status","createdAt","updatedAt")
+      VALUES (${record.id},${record.eventId||null},${record.recipient},${record.targetType||'individual'},${record.message},${record.intent||'unknown'},${record.risk||'review'},${record.status||'pending_approval'},CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)
+      ON CONFLICT ("id") DO NOTHING
+      RETURNING "id"`;
+    const rows=await prisma.$queryRaw<any[]>`SELECT * FROM public."HipicoBotOutbox" WHERE "id"=${record.id} LIMIT 1`;
+    const existing=rows[0]||null;
+    if(!existing)throw Object.assign(new Error('Idempotent outbox row was not persisted.'),{code:'HIPICO_OUTBOX_IDEMPOTENCY_ROW_MISSING'});
+    if(!sameOutboxIntent(existing,record))throw Object.assign(new Error('requestId was reused with different outbound content.'),{code:'HIPICO_OUTBOX_IDEMPOTENCY_MISMATCH'});
+    return{row:existing,inserted:Boolean(inserted[0])};
+  },
   async events(limit=50){const bounded=clampLimit(limit);if(await dbReady())return prisma.$queryRaw`SELECT * FROM public."HipicoWebhookEvent" ORDER BY "receivedAt" DESC LIMIT ${bounded}`;return memoryEvents.slice(0,bounded);},
   async outbox(limit=50){const bounded=clampLimit(limit);if(await dbReady())return prisma.$queryRaw`SELECT * FROM public."HipicoBotOutbox" ORDER BY "createdAt" DESC LIMIT ${bounded}`;return memoryOutbox.slice(0,bounded);},
   async getOutbox(idValue:string){if(await dbReady()){const rows=await prisma.$queryRaw<any[]>`SELECT * FROM public."HipicoBotOutbox" WHERE "id"=${idValue} LIMIT 1`;return rows[0]||null;}return memoryOutbox.find((item)=>item.id===idValue)||null;},
+  async claimForSend(idValue:string,expectedStatus:'pending_approval'|'ready_auto'){
+    if(await dbReady()){
+      const rows=await prisma.$queryRaw<any[]>`UPDATE public."HipicoBotOutbox" SET "status"='sending',"updatedAt"=CURRENT_TIMESTAMP WHERE "id"=${idValue} AND "status"=${expectedStatus} RETURNING *`;
+      return rows[0]||null;
+    }
+    const row=memoryOutbox.find((item)=>item.id===idValue&&item.status===expectedStatus);
+    if(!row)return null;
+    Object.assign(row,{status:'sending',updatedAt:new Date().toISOString()});
+    return row;
+  },
   async markSent(idValue:string,providerMessageId:string,approvedBy='automatic'){
-    if(await dbReady()){await prisma.$executeRaw`UPDATE public."HipicoBotOutbox" SET "status"='sent',"providerMessageId"=${providerMessageId},"approvedBy"=${approvedBy},"approvedAt"=COALESCE("approvedAt",CURRENT_TIMESTAMP),"sentAt"=CURRENT_TIMESTAMP,"updatedAt"=CURRENT_TIMESTAMP WHERE "id"=${idValue}`;return;}
-    const row=memoryOutbox.find((item)=>item.id===idValue);if(row)Object.assign(row,{status:'sent',providerMessageId,approvedBy,sentAt:new Date().toISOString()});
+    if(await dbReady()){
+      const affected=await prisma.$executeRaw`UPDATE public."HipicoBotOutbox" SET "status"='sent',"providerMessageId"=${providerMessageId},"approvedBy"=${approvedBy},"approvedAt"=COALESCE("approvedAt",CURRENT_TIMESTAMP),"sentAt"=CURRENT_TIMESTAMP,"updatedAt"=CURRENT_TIMESTAMP WHERE "id"=${idValue} AND "status"='sending'`;
+      return affected===1;
+    }
+    const row=memoryOutbox.find((item)=>item.id===idValue&&item.status==='sending');
+    if(!row)return false;
+    Object.assign(row,{status:'sent',providerMessageId,approvedBy,sentAt:new Date().toISOString()});
+    return true;
   },
   async markFailed(idValue:string,error:string){
     const safeError=String(error||'unknown').slice(0,1000);
-    if(await dbReady()){await prisma.$executeRaw`UPDATE public."HipicoBotOutbox" SET "status"='failed',"error"=${safeError},"updatedAt"=CURRENT_TIMESTAMP WHERE "id"=${idValue}`;return;}
-    const row=memoryOutbox.find((item)=>item.id===idValue);if(row)Object.assign(row,{status:'failed',error:safeError});
+    if(await dbReady()){
+      const affected=await prisma.$executeRaw`UPDATE public."HipicoBotOutbox" SET "status"='failed',"error"=${safeError},"updatedAt"=CURRENT_TIMESTAMP WHERE "id"=${idValue} AND "status"='sending'`;
+      return affected===1;
+    }
+    const row=memoryOutbox.find((item)=>item.id===idValue&&item.status==='sending');
+    if(!row)return false;
+    Object.assign(row,{status:'failed',error:safeError});
+    return true;
+  },
+  async markReconciliationRequired(idValue:string,error:string){
+    const safeError=String(error||'ambiguous_delivery').slice(0,1000);
+    if(await dbReady()){
+      const affected=await prisma.$executeRaw`UPDATE public."HipicoBotOutbox" SET "status"='reconciliation_required',"error"=${safeError},"updatedAt"=CURRENT_TIMESTAMP WHERE "id"=${idValue} AND "status"='sending'`;
+      return affected===1;
+    }
+    const row=memoryOutbox.find((item)=>item.id===idValue&&item.status==='sending');
+    if(!row)return false;
+    Object.assign(row,{status:'reconciliation_required',error:safeError,updatedAt:new Date().toISOString()});
+    return true;
   }
 };
 
 export async function sendCloudText(recipient:string,message:string){
-  const token=String(process.env.WHATSAPP_CLOUD_TOKEN||'');
-  const phoneId=String(process.env.WHATSAPP_PHONE_NUMBER_ID||'');
-  const version=String(process.env.WHATSAPP_GRAPH_API_VERSION||process.env.WHATSAPP_GRAPH_VERSION||'v23.0');
-  if(!token||!phoneId)throw new Error('Faltan WHATSAPP_CLOUD_TOKEN o WHATSAPP_PHONE_NUMBER_ID');
-  if(!/^\d{7,18}$/.test(recipient))throw new Error('Destinatario WhatsApp inválido.');
-  const response=await fetch(`https://graph.facebook.com/${encodeURIComponent(version)}/${encodeURIComponent(phoneId)}/messages`,{
-    method:'POST',headers:{authorization:`Bearer ${token}`,'content-type':'application/json'},
-    body:JSON.stringify({messaging_product:'whatsapp',recipient_type:'individual',to:recipient,type:'text',text:{preview_url:false,body:String(message).slice(0,4000)}}),
-    signal:AbortSignal.timeout(10_000)
-  });
+  assertCloudOutboundAllowed(recipient);
+  const {token,phoneId,version}=assertCloudTransportConfigured();
+  if(!E164_DIGITS.test(recipient))throw new Error('Destinatario WhatsApp inválido.');
+  const text=String(message||'').trim();
+  if(!text||text.length>4000)throw Object.assign(new Error('Mensaje WhatsApp vacío o demasiado largo.'),{code:'HIPICO_CLOUD_MESSAGE_INVALID'});
+  let response:Response;
+  try{
+    response=await fetch(`https://graph.facebook.com/${version}/${phoneId}/messages`,{
+      method:'POST',headers:{authorization:`Bearer ${token}`,'content-type':'application/json'},
+      body:JSON.stringify({messaging_product:'whatsapp',recipient_type:'individual',to:recipient,type:'text',text:{preview_url:false,body:text}}),
+      signal:AbortSignal.timeout(10_000)
+    });
+  }catch(error:any){
+    throw Object.assign(new Error('No se pudo determinar si Meta aceptó el mensaje; requiere conciliación manual.'),{
+      code:'HIPICO_CLOUD_DELIVERY_AMBIGUOUS',
+      transportError:String(error?.name||'network_error').slice(0,120)
+    });
+  }
   const data=await response.json().catch(()=>({}));
-  if(!response.ok)throw new Error(`Meta Graph HTTP ${response.status}: ${data?.error?.message||'error al enviar'}`);
-  return{providerMessageId:String(data?.messages?.[0]?.id||''),raw:data};
+  if(!response.ok)throw Object.assign(new Error(`Meta Graph HTTP ${response.status}`),{code:'HIPICO_CLOUD_HTTP_ERROR',status:response.status});
+  const providerMessageId=String(data?.messages?.[0]?.id||'');
+  if(!providerMessageId){
+    throw Object.assign(new Error('Meta respondió éxito sin identificador de mensaje; requiere conciliación manual.'),{
+      code:'HIPICO_CLOUD_DELIVERY_AMBIGUOUS',
+      responseStatus:response.status,
+      receiptReason:'MESSAGE_ID_MISSING'
+    });
+  }
+  return{providerMessageId,raw:data};
 }
 
 export async function processIncoming(message:any){
@@ -140,8 +220,19 @@ export async function processIncoming(message:any){
   const outboxStatus=mode==='shadow'?'shadow':mode==='approved'?'pending_approval':(persistent&&result.autoEligible&&SAFE_AUTOMATIC.has(result.intent)?'ready_auto':'pending_approval');
   const outbox=await HipicoBotStore.queue({eventId:event.id,recipient:message.sender,targetType:'individual',message:result.suggestion,intent:result.intent,risk:result.risk,status:outboxStatus});
   if(mode==='automatic'&&persistent&&outboxStatus==='ready_auto'){
-    try{const sent=await sendCloudText(message.sender,result.suggestion);await HipicoBotStore.markSent(outbox.id,sent.providerMessageId,'automatic');return{duplicate:false,event,outbox:{...outbox,status:'sent'}};}
-    catch(error:any){await HipicoBotStore.markFailed(outbox.id,error?.message||String(error));return{duplicate:false,event,outbox:{...outbox,status:'failed',error:error?.message||String(error)}};}
+    const claimed=await HipicoBotStore.claimForSend(outbox.id,'ready_auto');
+    if(!claimed)return{duplicate:false,event,outbox:{...outbox,status:'reconciliation_required'}};
+    try{
+      const sent=await sendCloudText(message.sender,result.suggestion);
+      const persisted=await HipicoBotStore.markSent(outbox.id,sent.providerMessageId,'automatic');
+      return{duplicate:false,event,outbox:{...outbox,status:persisted?'sent':'reconciliation_required',providerMessageId:sent.providerMessageId}};
+    }catch(error:any){
+      const ambiguous=error?.code==='HIPICO_CLOUD_DELIVERY_AMBIGUOUS';
+      const persisted=ambiguous
+        ?await HipicoBotStore.markReconciliationRequired(outbox.id,error?.message||String(error))
+        :await HipicoBotStore.markFailed(outbox.id,error?.message||String(error));
+      return{duplicate:false,event,outbox:{...outbox,status:persisted?(ambiguous?'reconciliation_required':'failed'):'reconciliation_required',error:error?.message||String(error)}};
+    }
   }
   return{duplicate:false,event,outbox};
 }

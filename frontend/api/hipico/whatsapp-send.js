@@ -1,50 +1,183 @@
-import { env, supabase } from './_shared.js';
+import { bearerTokenValid, env, fetchWithTimeout, isE164, isMetaPhoneNumberId, metaDestinationAllowed, metaOutboundPolicy, serverSecret, supabase } from './_shared.js';
+
+const MAX_ATTEMPTS = 6;
+const BATCH_SIZE = 10;
+
+function nextRetryIso(attempts) {
+  const retryMinutes = Math.min(60, Math.max(1, 2 ** Math.min(attempts, 5)));
+  return new Date(Date.now() + retryMinutes * 60000).toISOString();
+}
+
+async function claimRow(row) {
+  const ownerId = env('HIPICO_OWNER_ID');
+  const expectedStatus = String(row.status || 'queued');
+  const expectedNext = String(row.next_attempt_at || '');
+  const filters = [
+    `id=eq.${encodeURIComponent(row.id)}`,
+    `owner_id=eq.${encodeURIComponent(ownerId)}`,
+    `status=eq.${encodeURIComponent(expectedStatus)}`
+  ];
+  if (expectedNext) filters.push(`next_attempt_at=eq.${encodeURIComponent(expectedNext)}`);
+  const claimed = await supabase(`hipico_outbox?${filters.join('&')}`, {
+    method: 'PATCH',
+    headers: { Prefer: 'return=representation' },
+    body: JSON.stringify({ status: 'sending', last_error: null })
+  });
+  return Array.isArray(claimed) ? claimed[0] || null : null;
+}
+
+async function updateRow(id, patch) {
+  const ownerId = env('HIPICO_OWNER_ID');
+  const rows = await supabase(`hipico_outbox?id=eq.${encodeURIComponent(id)}&owner_id=eq.${encodeURIComponent(ownerId)}&status=eq.sending`, {
+    method: 'PATCH',
+    headers: { Prefer: 'return=representation' },
+    body: JSON.stringify(patch)
+  });
+  const updated = Array.isArray(rows) ? rows[0] || null : null;
+  if (!updated?.id) throw new Error('HIPICO_OUTBOX_STATE_TRANSITION_NOT_PERSISTED');
+  return updated;
+}
+
+function safeGraphVersion() {
+  const configured = String(process.env.HIPICO_META_GRAPH_VERSION || 'v23.0').trim();
+  return /^v\d+\.\d+$/.test(configured) ? configured : 'v23.0';
+}
+
+function metaSenderConfig(source=process.env){
+  const accessToken=String(source.HIPICO_META_ACCESS_TOKEN||'').trim();
+  const phoneNumberId=String(source.HIPICO_META_PHONE_NUMBER_ID||'').trim();
+  return{
+    accessToken,
+    phoneNumberId,
+    ready:Boolean(accessToken)&&isMetaPhoneNumberId(phoneNumberId)
+  };
+}
 
 export default async function handler(req, res) {
-  if (req.method !== 'POST') return res.status(405).json({ ok: false, error: 'method_not_allowed' });
-  const expected = env('HIPICO_INTERNAL_API_TOKEN');
-  if (req.headers.authorization !== `Bearer ${expected}`) return res.status(401).json({ ok: false, error: 'unauthorized' });
+  res.setHeader('Cache-Control', 'no-store, max-age=0');
+  if (req.method !== 'POST') return res.status(405).json({ ok: false, retryable: false, error: 'method_not_allowed' });
+
+  let expected;
+  try {
+    expected = serverSecret('HIPICO_INTERNAL_API_TOKEN');
+  } catch {
+    return res.status(503).json({ ok: false, retryable: true, error: 'sender_not_configured' });
+  }
+  if (!bearerTokenValid(req.headers.authorization, expected)) return res.status(401).json({ ok: false, retryable: false, error: 'unauthorized' });
+
+  const outbound = metaOutboundPolicy();
+  if (!outbound.enabled) {
+    return res.status(409).json({ ok: false, retryable: false, error: 'outbound_disabled', reasons: outbound.reasons });
+  }
+
+  const senderConfig=metaSenderConfig();
+  if(!senderConfig.ready){
+    return res.status(503).json({ok:false,retryable:true,error:'sender_not_configured'});
+  }
+  const {accessToken,phoneNumberId}=senderConfig;
 
   try {
     const ownerId = env('HIPICO_OWNER_ID');
-    const rows = await supabase(`hipico_outbox?owner_id=eq.${encodeURIComponent(ownerId)}&status=in.(queued,retry)&next_attempt_at=lte.${encodeURIComponent(new Date().toISOString())}&order=created_at.asc&limit=10`, {
+    const now = new Date().toISOString();
+    const rows = await supabase(`hipico_outbox?owner_id=eq.${encodeURIComponent(ownerId)}&status=in.(queued,retry)&next_attempt_at=lte.${encodeURIComponent(now)}&order=created_at.asc&limit=${BATCH_SIZE}`, {
       headers: { Prefer: 'return=representation' }
     }) || [];
-    if (!rows.length) return res.status(200).json({ ok: true, processed: 0 });
+    if (!rows.length) return res.status(200).json({ ok: true, processed: 0, sent: 0, failed: 0, retried: 0, reconciliationRequired: 0, skippedClaims: 0 });
 
-    const accessToken = env('HIPICO_META_ACCESS_TOKEN');
-    const phoneNumberId = env('HIPICO_META_PHONE_NUMBER_ID');
+    const graphVersion = safeGraphVersion();
     let sent = 0;
-    for (const row of rows) {
+    let failed = 0;
+    let retried = 0;
+    let reconciliationRequired = 0;
+    let skippedClaims = 0;
+
+    for (const candidate of rows) {
+      const row = await claimRow(candidate);
+      if (!row) {
+        skippedClaims += 1;
+        continue;
+      }
+
+      const attempts = Number(row.attempts || 0) + 1;
       const text = String(row?.payload?.text || '').trim();
-      if (!text) continue;
+      const destination = String(row.destination || '').trim();
+      if (!text || text.length > 4000 || !isE164(destination) || !metaDestinationAllowed(destination)) {
+        await updateRow(row.id, {
+          status: 'failed',
+          attempts,
+          last_error: !text ? 'EMPTY_MESSAGE' : text.length > 4000 ? 'MESSAGE_TOO_LARGE' : !isE164(destination) ? 'INVALID_DESTINATION' : 'DESTINATION_NOT_ALLOWLISTED'
+        });
+        failed += 1;
+        continue;
+      }
+
+      let response;
       try {
-        const response = await fetch(`https://graph.facebook.com/v23.0/${phoneNumberId}/messages`, {
+        response = await fetchWithTimeout(`https://graph.facebook.com/${graphVersion}/${encodeURIComponent(phoneNumberId)}/messages`, {
           method: 'POST',
           headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
-          body: JSON.stringify({ messaging_product: 'whatsapp', recipient_type: 'individual', to: row.destination, type: 'text', text: { preview_url: false, body: text } })
-        });
-        const data = await response.json();
-        if (!response.ok) throw new Error(JSON.stringify(data).slice(0, 500));
-        await supabase(`hipico_outbox?id=eq.${row.id}`, {
-          method: 'PATCH',
-          headers: { Prefer: 'return=minimal' },
-          body: JSON.stringify({ status: 'sent', attempts: Number(row.attempts || 0) + 1, external_message_id: data?.messages?.[0]?.id || null, sent_at: new Date().toISOString(), last_error: null })
-        });
-        sent += 1;
+          body: JSON.stringify({
+            messaging_product: 'whatsapp',
+            recipient_type: 'individual',
+            to: destination.replace(/^\+/, ''),
+            type: 'text',
+            text: { preview_url: false, body: text }
+          })
+        }, Number(process.env.HIPICO_META_SEND_TIMEOUT_MS || 12000));
       } catch (error) {
-        const attempts = Number(row.attempts || 0) + 1;
-        const retryMinutes = Math.min(60, Math.max(1, 2 ** Math.min(attempts, 5)));
-        await supabase(`hipico_outbox?id=eq.${row.id}`, {
-          method: 'PATCH',
-          headers: { Prefer: 'return=minimal' },
-          body: JSON.stringify({ status: attempts >= 6 ? 'failed' : 'retry', attempts, next_attempt_at: new Date(Date.now() + retryMinutes * 60000).toISOString(), last_error: String(error.message || error).slice(0, 1000) })
+        await updateRow(row.id, {
+          status: 'sending',
+          attempts,
+          last_error: `RECONCILIATION_REQUIRED:AMBIGUOUS_TRANSPORT_FAILURE:${String(error?.name || 'network_error').slice(0, 120)}`
         });
+        reconciliationRequired += 1;
+        continue;
       }
+
+      const raw = await response.text();
+      let data = {};
+      try { data = raw ? JSON.parse(raw) : {}; } catch { data = {}; }
+
+      if (!response.ok) {
+        const retryable = response.status === 408 || response.status === 429 || response.status >= 500;
+        const exhausted = attempts >= MAX_ATTEMPTS;
+        await updateRow(row.id, {
+          status: retryable && !exhausted ? 'retry' : 'failed',
+          attempts,
+          next_attempt_at: retryable && !exhausted ? nextRetryIso(attempts) : row.next_attempt_at,
+          last_error: `META_HTTP_${response.status}`
+        });
+        if (retryable && !exhausted) retried += 1;
+        else failed += 1;
+        continue;
+      }
+
+      const providerMessageId = data?.messages?.[0]?.id || null;
+      if (!providerMessageId) {
+        await updateRow(row.id, {
+          status: 'sending',
+          attempts,
+          last_error: 'RECONCILIATION_REQUIRED:META_SUCCESS_WITHOUT_MESSAGE_ID'
+        });
+        reconciliationRequired += 1;
+        continue;
+      }
+
+      await updateRow(row.id, {
+        status: 'sent',
+        attempts,
+        external_message_id: providerMessageId,
+        sent_at: new Date().toISOString(),
+        last_error: null
+      });
+      sent += 1;
     }
-    return res.status(200).json({ ok: true, processed: rows.length, sent });
+
+    return res.status(200).json({ ok: true, processed: rows.length, sent, failed, retried, reconciliationRequired, skippedClaims });
   } catch (error) {
-    console.error('hipico whatsapp send', error);
-    return res.status(500).json({ ok: false, error: 'send_failed' });
+    console.error('hipico whatsapp send', { message: error?.message || String(error) });
+    return res.status(503).json({ ok: false, retryable: true, error: 'send_unavailable' });
   }
 }
+
+export const __test__={safeGraphVersion,metaSenderConfig};

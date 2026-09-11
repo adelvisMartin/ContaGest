@@ -7,6 +7,9 @@ const corpus:[string,string][]=[
   ['Juego 1N del 4 con 25','offer_player'],
   ['Consigue 1/2 del 5 con 15','offer_receiver'],
   ['Consigo show del 2 con 10','offer_receiver'],
+  ['Se aperturó Churchill Down, 1ra Carrera','race_open'],
+  ['Carrera abierta Colonial Downs, 10ma Carrera','race_open'],
+  ['Se aperturó la carrera','race_open'],
   ['Cierra carrera 4','race_close'],
   ['Cerrar carrera 4','race_close'],
   ['Cierren la 4','race_close'],
@@ -59,7 +62,7 @@ test('operational intents are never auto eligible',()=>{
   }
 });
 
-test('structured shadow analyzer extracts offer, close, result and balance evidence',()=>{
+test('structured shadow analyzer extracts offer, opening, close, result and balance evidence',()=>{
   const player=classify('Juega PP del 3 con 20');
   assert.deepEqual(
     {role:player.entities?.role,play:player.entities?.play,horse:player.entities?.horse,amount:player.entities?.amount},
@@ -72,11 +75,28 @@ test('structured shadow analyzer extracts offer, close, result and balance evide
     {role:'receiver',play:'1/2',horse:'5',amount:15}
   );
 
+  const opening=classify('Se aperturó Churchill Down, 1ra Carrera');
+  assert.deepEqual(
+    {intent:opening.intent,raceNumber:opening.entities?.raceNumber,racetrack:opening.entities?.racetrack,raceContextComplete:opening.entities?.raceContextComplete},
+    {intent:'race_open',raceNumber:1,racetrack:'Churchill Downs',raceContextComplete:true}
+  );
+
+  const ambiguousOpening=classify('Se aperturó la carrera');
+  assert.equal(ambiguousOpening.intent,'race_open');
+  assert.equal(ambiguousOpening.entities?.raceNumber,null);
+  assert.equal(ambiguousOpening.entities?.racetrack,'');
+  assert.equal(ambiguousOpening.entities?.raceContextComplete,false);
+  assert.equal(ambiguousOpening.autoEligible,false);
+
   const close=classify('Cierra carrera 4');
   assert.equal(close.entities?.raceNumber,4);
 
   const board=classify('Llegada 2.1.6.4');
   assert.deepEqual(board.entities?.board,['2','1','6','4']);
+
+  const boardWithRace=classify('Churchill Downs, 1ra Carrera. Pizarra: 1.2.8.7');
+  assert.equal(boardWithRace.entities?.raceNumber,1);
+  assert.deepEqual(boardWithRace.entities?.board,['1','2','8','7']);
 
   const balances=classify('TERCIO DISPONIBLE\nAdel 100\nLuis -50');
   assert.deepEqual(balances.entities?.balances,[

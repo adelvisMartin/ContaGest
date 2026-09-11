@@ -1,11 +1,18 @@
 import path from 'node:path';
 import { normalize, splitGroupMatches } from './runtime-utils.mjs';
+import { normalizeGroupId } from './group-identity.mjs';
 
-export const VERSION = '1.4.1';
+// The linked-device bridge persists WhatsApp content locally. Keep every file
+// it creates private by default on POSIX; Windows safely ignores POSIX modes.
+try { process.umask(0o077); } catch {}
+
+export const VERSION = '1.4.2';
 export const RUNTIME_MODES = Object.freeze({
   PRODUCTION: 'production',
   SHADOW_LOCAL: 'shadow-local'
 });
+const CHANNEL_KEY_RE=/^[A-Za-z0-9_-]{3,120}$/;
+const PUBLIC_SECRET_PLACEHOLDER_PATTERN=/(?:REEMPLAZA|REPLACE|CHANGE[_-]?ME|CHANGEME|PLACEHOLDER|YOUR[_-]?(?:SECRET|TOKEN|KEY)|TU[_-]?(?:SECRETO|TOKEN|CLAVE)|EXAMPLE[_-]?(?:SECRET|TOKEN|KEY))/i;
 
 export function repairUtf8Mojibake(value) {
   const raw = String(value ?? '').trim();
@@ -41,7 +48,12 @@ function defaultDataDir(env, cwd) {
 }
 
 export function isWhatsAppGroupId(value) {
-  return /^\d{5,}-\d+@g\.us$/i.test(String(value || '').trim());
+  return Boolean(normalizeGroupId(value));
+}
+
+export function strongBridgeTokenConfigured(value) {
+  const token=String(value||'').trim();
+  return Buffer.byteLength(token,'utf8')>=32&&!PUBLIC_SECRET_PLACEHOLDER_PATTERN.test(token);
 }
 
 export function loadRuntimeConfig(env = process.env, cwd = process.cwd()) {
@@ -66,10 +78,10 @@ export function loadRuntimeConfig(env = process.env, cwd = process.cwd()) {
     healthUrl,
     token: envText(env, 'HIPICO_GROUP_BRIDGE_TOKEN', ''),
     sourceMatches,
-    sourceGroupId: envText(env, 'HIPICO_SOURCE_GROUP_ID', ''),
+    sourceGroupId: envText(env, 'HIPICO_SOURCE_GROUP_ID', '').toLowerCase(),
     sourceChannelKey: envText(env, 'HIPICO_SOURCE_CHANNEL_KEY', 'club-hipico-triple-crown-official'),
     labGroupName: envText(env, 'HIPICO_LAB_GROUP_NAME', 'Control hípico lab'),
-    labGroupId: envText(env, 'HIPICO_LAB_GROUP_ID', ''),
+    labGroupId: envText(env, 'HIPICO_LAB_GROUP_ID', '').toLowerCase(),
     labChannelKey: envText(env, 'HIPICO_LAB_CHANNEL_KEY', 'control-hipico-lab'),
     labSendEnabled: boolEnv(env, 'HIPICO_LAB_SEND_ENABLED', false),
     requirePinnedGroupIds: boolEnv(env, 'HIPICO_REQUIRE_PINNED_GROUP_IDS', true),
@@ -88,9 +100,11 @@ export function loadRuntimeConfig(env = process.env, cwd = process.cwd()) {
   });
 }
 
-function isHttps(value) {
-  try { return new URL(value).protocol === 'https:'; }
-  catch { return false; }
+function isSafeHttps(value) {
+  try {
+    const url=new URL(value);
+    return url.protocol==='https:'&&!url.username&&!url.password&&!url.search&&!url.hash;
+  } catch { return false; }
 }
 
 export function validateRuntimeConfig(config) {
@@ -105,17 +119,22 @@ export function validateRuntimeConfig(config) {
   if (config.sourceGroupId && config.labGroupId && config.sourceGroupId === config.labGroupId) {
     errors.push('El ID del grupo fuente y el ID del LAB deben ser distintos.');
   }
+  if (!CHANNEL_KEY_RE.test(config.sourceChannelKey)) errors.push('HIPICO_SOURCE_CHANNEL_KEY no es válido.');
+  if (!CHANNEL_KEY_RE.test(config.labChannelKey)) errors.push('HIPICO_LAB_CHANNEL_KEY no es válido.');
+  if (config.sourceChannelKey === config.labChannelKey) errors.push('SOURCE y LAB deben usar channel keys distintos.');
   if ((config.labSendEnabled || config.labTestInputEnabled) && config.requirePinnedGroupIds) {
     if (!isWhatsAppGroupId(config.sourceGroupId)) errors.push('Para habilitar LAB se exige HIPICO_SOURCE_GROUP_ID pinneado.');
     if (!isWhatsAppGroupId(config.labGroupId)) errors.push('Para habilitar LAB se exige HIPICO_LAB_GROUP_ID pinneado.');
   }
   if (config.runtimeMode === RUNTIME_MODES.PRODUCTION) {
     if (!config.backendSyncEnabled) errors.push('Producción exige HIPICO_BACKEND_SYNC_ENABLED=true.');
-    if (!isHttps(config.ingestUrl)) errors.push('Producción exige HIPICO_INGEST_URL HTTPS.');
-    if (!isHttps(config.healthUrl)) errors.push('Producción exige HIPICO_BRIDGE_HEALTH_URL HTTPS.');
-    if (config.token.length < 32) errors.push('Producción exige HIPICO_GROUP_BRIDGE_TOKEN de al menos 32 caracteres.');
+    if (!isSafeHttps(config.ingestUrl)) errors.push('Producción exige HIPICO_INGEST_URL HTTPS sin credenciales, query ni fragment.');
+    if (!isSafeHttps(config.healthUrl)) errors.push('Producción exige HIPICO_BRIDGE_HEALTH_URL HTTPS sin credenciales, query ni fragment.');
+    if (!strongBridgeTokenConfigured(config.token)) errors.push('Producción exige HIPICO_GROUP_BRIDGE_TOKEN secreto, no-placeholder y de al menos 32 bytes.');
     if (!config.trainingJournalEnabled) errors.push('Producción exige journal shadow para auditoría y evaluación.');
     if (!config.requirePinnedGroupIds) errors.push('Producción exige HIPICO_REQUIRE_PINNED_GROUP_IDS=true.');
+    if (!isWhatsAppGroupId(config.sourceGroupId)) errors.push('Producción exige HIPICO_SOURCE_GROUP_ID pinneado.');
+    if (!isWhatsAppGroupId(config.labGroupId)) errors.push('Producción exige HIPICO_LAB_GROUP_ID pinneado.');
   }
   return errors;
 }

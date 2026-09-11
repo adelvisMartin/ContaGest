@@ -11,12 +11,63 @@ type PersistInput={
 };
 
 type AggregateRow={status:string;stateVersion:bigint|number};
-type EventRow={id:string;disposition:string;previousState:string;nextState:string;reason:string};
+type EventRow={
+  id:string;eventType:string;disposition:string;previousState:string;nextState:string;reason:string;
+  sourceMessageId:string|null;rawMessage:string|null;normalizedPayload:unknown;actorRef:string|null;source:string;
+  parserVersion:string|null;schemaVersion:number;originalEventId:string|null;eventTimestamp:Date|string;
+};
 
 function validTimestamp(value?:string){
   const date=value?new Date(value):new Date();
   if(!Number.isFinite(date.getTime()))throw new Error('HIPICO_INVALID_EVENT_TIMESTAMP');
   return date;
+}
+
+function persistedText(value:unknown){
+  const text=String(value??'');
+  return text||null;
+}
+
+function stableJsonValue(value:unknown):string{
+  if(value===null)return 'null';
+  if(Array.isArray(value))return `[${value.map(stableJsonValue).join(',')}]`;
+  if(typeof value==='object'){
+    const row=value as Record<string,unknown>;
+    return `{${Object.keys(row).sort().map((key)=>`${JSON.stringify(key)}:${stableJsonValue(row[key])}`).join(',')}}`;
+  }
+  return JSON.stringify(value);
+}
+
+function stableJson(value:unknown):string{
+  if(value===null||value===undefined)return 'null';
+  const serialized=JSON.stringify(value);
+  if(serialized===undefined)return 'null';
+  return stableJsonValue(JSON.parse(serialized));
+}
+
+function instant(value:unknown){
+  const parsed=new Date(value as any).getTime();
+  return Number.isFinite(parsed)?parsed:null;
+}
+
+function assertDomainReplay(existing:EventRow,event:HipicoDomainEventInput){
+  const expectedReview=event.type==='AMBIGUOUS'||event.type==='UNKNOWN'||Boolean(event.requiresReview);
+  const persistedReview=existing.reason==='AMBIGUOUS_OR_UNKNOWN';
+  const same=existing.eventType===event.type
+    && existing.sourceMessageId===persistedText(event.sourceMessageId)
+    && existing.rawMessage===persistedText(event.rawMessage)
+    && stableJson(existing.normalizedPayload)===stableJson(event.normalizedPayload)
+    && existing.actorRef===persistedText(event.actorRef)
+    && existing.source===String(event.source||'system')
+    && existing.parserVersion===persistedText(event.parserVersion)
+    && Number(existing.schemaVersion)===Number(event.schemaVersion||1)
+    && existing.originalEventId===persistedText(event.originalEventId)
+    && persistedReview===expectedReview
+    && (!event.eventId||existing.id===String(event.eventId))
+    && (!event.timestamp||instant(existing.eventTimestamp)===instant(event.timestamp));
+  if(!same){
+    throw Object.assign(new Error('Domain replay changed immutable evidence for the same source message.'),{code:'HIPICO_DOMAIN_REPLAY_MISMATCH'});
+  }
 }
 
 export async function persistHipicoDomainEvent(input:PersistInput){
@@ -27,16 +78,6 @@ export async function persistHipicoDomainEvent(input:PersistInput){
   if(!ownerId||!groupKey||!aggregateKey||!sourceMessageKey)throw new Error('HIPICO_DOMAIN_EVENT_SCOPE_REQUIRED');
 
   return prisma.$transaction(async(tx)=>{
-    const duplicate=await tx.$queryRaw<Array<EventRow>>`
-      SELECT id, disposition, previous_state AS "previousState", next_state AS "nextState", reason
-      FROM public.hipico_domain_events
-      WHERE owner_id=${ownerId}::uuid AND group_key=${groupKey}
-        AND aggregate_kind=${input.aggregateKind} AND aggregate_key=${aggregateKey}
-        AND source_message_key=${sourceMessageKey} AND event_type=${input.event.type}
-      LIMIT 1
-    `;
-    if(duplicate[0])return{...duplicate[0],duplicate:true,stateChanged:false};
-
     await tx.$executeRaw`
       INSERT INTO public.hipico_domain_aggregates(owner_id,group_key,aggregate_kind,aggregate_key,status,state_version)
       VALUES (${ownerId}::uuid,${groupKey},${input.aggregateKind},${aggregateKey},'PREPARING',0)
@@ -51,6 +92,28 @@ export async function persistHipicoDomainEvent(input:PersistInput){
     `;
     if(rows.length!==1)throw new Error('HIPICO_DOMAIN_AGGREGATE_NOT_FOUND');
 
+    // Source-message identity is immutable inside one aggregate. Locking the
+    // aggregate before this query serializes concurrent retries and prevents a
+    // classifier/version change from turning the same message into two events.
+    const prior=await tx.$queryRaw<Array<EventRow>>`
+      SELECT id,event_type AS "eventType",disposition,previous_state AS "previousState",next_state AS "nextState",reason,
+        source_message_id AS "sourceMessageId",raw_message AS "rawMessage",normalized_payload AS "normalizedPayload",
+        actor_ref AS "actorRef",source,parser_version AS "parserVersion",schema_version AS "schemaVersion",
+        original_event_id AS "originalEventId",event_timestamp AS "eventTimestamp"
+      FROM public.hipico_domain_events
+      WHERE owner_id=${ownerId}::uuid AND group_key=${groupKey}
+        AND aggregate_kind=${input.aggregateKind} AND aggregate_key=${aggregateKey}
+        AND source_message_key=${sourceMessageKey}
+      ORDER BY event_timestamp ASC,id ASC
+      LIMIT 2
+    `;
+    if(prior.length>1)throw new Error('HIPICO_DOMAIN_SOURCE_IDENTITY_CORRUPT');
+    if(prior[0]){
+      assertDomainReplay(prior[0],input.event);
+      const {eventType:_eventType,...existing}=prior[0];
+      return{...existing,duplicate:true,stateChanged:false};
+    }
+
     const row=rows[0];
     const current={
       ...initialHipicoState(input.aggregateKind),
@@ -64,6 +127,7 @@ export async function persistHipicoDomainEvent(input:PersistInput){
       const originals=await tx.$queryRaw<Array<{id:string}>>`
         SELECT id FROM public.hipico_domain_events
         WHERE id=${originalId} AND owner_id=${ownerId}::uuid AND group_key=${groupKey}
+          AND aggregate_kind=${input.aggregateKind} AND aggregate_key=${aggregateKey}
         LIMIT 1
       `;
       if(!originals[0])throw new Error('HIPICO_ORIGINAL_EVENT_NOT_FOUND');
@@ -71,6 +135,8 @@ export async function persistHipicoDomainEvent(input:PersistInput){
         const reversals=await tx.$queryRaw<Array<{id:string}>>`
           SELECT id FROM public.hipico_domain_events
           WHERE original_event_id=${originalId} AND event_type='REVERSAL'
+            AND owner_id=${ownerId}::uuid AND group_key=${groupKey}
+            AND aggregate_kind=${input.aggregateKind} AND aggregate_key=${aggregateKey}
           LIMIT 1
         `;
         if(reversals[0])throw new Error('HIPICO_EVENT_ALREADY_REVERSED');
@@ -96,12 +162,14 @@ export async function persistHipicoDomainEvent(input:PersistInput){
     `;
 
     if(reduction.disposition==='applied'){
-      await tx.$executeRaw`
+      const affected=await tx.$executeRaw`
         UPDATE public.hipico_domain_aggregates
         SET status=${reduction.nextState}, state_version=state_version+1, updated_at=now()
         WHERE owner_id=${ownerId}::uuid AND group_key=${groupKey}
           AND aggregate_kind=${input.aggregateKind} AND aggregate_key=${aggregateKey}
+          AND state_version=${current.stateVersion}
       `;
+      if(affected!==1)throw new Error('HIPICO_DOMAIN_STATE_CONFLICT');
     }
 
     return{
@@ -115,3 +183,5 @@ export async function persistHipicoDomainEvent(input:PersistInput){
     };
   });
 }
+
+export const __test__={assertDomainReplay,stableJson};

@@ -17,9 +17,59 @@ const OFFER_START_RE = /^(JUEGO|JUEGA|CONSIGO|CONSIGUE)\b/;
 const CONFIRMATION_RE = /^(?:J|JUGANDO|SF|S\s*\/\s*F|SE FUE|OK|CONFIRMADO)$/;
 const PENDING_RE = /(?:DEBE CONFIRMAR|POR CONFIRMAR|FALTA CONFIRMAR|ESPERANDO CONFIRMACION|ESPERANDO CONFIRMACIÓN)/;
 const AMOUNT_ONLY_RE = /^\s*\d+(?:[.,]\d+)?\s*(?:k|mil|mm?|mill[oó]n(?:es)?|bs\.?)?\s*$/i;
+const RACE_OPEN_RE = /(?:\b(?:SE\s+)?(?:APERTURO|APERTURA|APERTURADA|APERTURAMOS|ABRIO|ABIERTA|ABRIMOS)\b[\s\S]{0,100}\bCARRERA\b|\bCARRERA\b[\s\S]{0,100}\b(?:ABIERTA|APERTURADA|APERTURO)\b)/;
+
+function validRaceNumber(value) {
+  const number = Number(value);
+  return Number.isInteger(number) && number > 0 ? number : null;
+}
+
+function sameKnownRaceNumber(left, right) {
+  const a = validRaceNumber(left?.raceNumber);
+  const b = validRaceNumber(right?.raceNumber);
+  return !a || !b || a === b;
+}
+
+function sameKnownTrack(left, right) {
+  const a = compact(left);
+  const b = compact(right);
+  return !a || !b || a === b;
+}
+
+function sameActionableRace(left, right) {
+  if (!left?.actionable || !right?.actionable) return false;
+  return compact(left.track) === compact(right.track) && validRaceNumber(left.raceNumber) === validRaceNumber(right.raceNumber);
+}
 
 function offerKey(offer) {
-  return [offer.segmentId, offer.role, offer.senderKey, offer.play, offer.horse, offer.amount, compact(offer.track)].join('|');
+  return [
+    offer.segmentId,
+    offer.role,
+    offer.senderKey,
+    offer.play,
+    offer.horse,
+    offer.amount,
+    compact(offer.track),
+    validRaceNumber(offer.raceNumber) || ''
+  ].join('|');
+}
+
+function extractRaceNumber(text) {
+  const source = compact(text);
+  const ordinal = source.match(/\b(\d{1,2})\s*(?:RA|DA|TA|MA)?\s+CARRERA\b/);
+  if (ordinal) return Number(ordinal[1]);
+  const explicit = source.match(/\bCARRERA\s*(?:NRO\.?|NO\.?|NUMERO|#)?\s*(\d{1,2})\b/);
+  return explicit ? Number(explicit[1]) : null;
+}
+
+function extractRaceContext(text, catalog = []) {
+  const track = findTrack(text, catalog);
+  const raceNumber = extractRaceNumber(text);
+  return {
+    track,
+    raceNumber,
+    actionable: Boolean(track && Number.isInteger(raceNumber) && raceNumber > 0)
+  };
 }
 
 function parseOffer(message, catalog, textOverride = null, metadata = {}) {
@@ -35,11 +85,27 @@ function parseOffer(message, catalog, textOverride = null, metadata = {}) {
   const pairOnly = !plays.length ? detectPairOnly(beforeAmount) : '';
   const horse = pairOnly || extractHorse(beforeAmount, plays);
   if (!horse) return [];
-  const track = findTrack(raw, catalog);
+
+  const explicitTrack = findTrack(raw, catalog);
+  const inheritedTrack = String(metadata.track || message?.raceContext?.track || '').trim();
+  const explicitRaceNumber = validRaceNumber(extractRaceNumber(raw));
+  const inheritedRaceNumber = validRaceNumber(metadata.raceNumber ?? message?.raceContext?.raceNumber);
+  const trackConflict = Boolean(explicitTrack && inheritedTrack && !sameKnownTrack(explicitTrack, inheritedTrack));
+  const track = explicitTrack || inheritedTrack;
+  // Never copy a race number from one known track to another. If the message
+  // explicitly changes track without naming the race, the context is incomplete
+  // and must be reviewed rather than manufacturing a plausible race identity.
+  const raceNumber = explicitRaceNumber || (trackConflict ? null : inheritedRaceNumber);
   const sourcePlays = pairOnly ? ['PP'] : plays.map((match) => match[0]);
   if (!sourcePlays.length) return [];
+
   const reviewReasons = [];
   if (pairOnly) reviewReasons.push('notación x ambigua');
+  if (trackConflict && !explicitRaceNumber) reviewReasons.push('hipódromo explícito contradice la carrera activa; falta número de carrera');
+  const warnings = [];
+  if (!track) warnings.push('hipódromo no escrito; se usa la carrera activa');
+  if (track && !raceNumber) warnings.push('número de carrera no confirmado; se valida contra la carrera activa');
+
   return sourcePlays.map((rawPlay, index) => ({
     id: `${message.id}-O${index + 1}`,
     messageId: message.id,
@@ -51,17 +117,17 @@ function parseOffer(message, catalog, textOverride = null, metadata = {}) {
     rawPlay: pairOnly ? pairOnly.replace('*', 'x') : rawPlay,
     horse,
     amount: amountInfo.amount,
-    track,
-    raceNumber: null,
     timestamp: message.timestamp,
     segmentId: message.segmentId || 1,
     original: raw,
-    warnings: track ? [] : ['hipódromo no escrito; se usa la carrera activa'],
+    warnings,
     reviewReasons,
     requiresApproval: reviewReasons.length > 0,
     needsReview: reviewReasons.length > 0,
     duplicate: false,
-    ...metadata
+    ...metadata,
+    track,
+    raceNumber
   }));
 }
 
@@ -104,6 +170,7 @@ function parseReplyStructure(message, catalog) {
     phone: message.phone,
     timestamp: message.timestamp,
     segmentId: message.segmentId || 1,
+    raceContext: message.raceContext || null,
     quotedText: first,
     responseText,
     responseAmount,
@@ -125,6 +192,7 @@ function classifyMessage(message) {
   if (CONFIRMATION_RE.test(text)) return 'confirmation';
   if (/\bLLEGADA\b/.test(text)) return 'arrival';
   if (/\bPIZARRA\s*:/.test(text) && /\d/.test(text)) return 'board';
+  if (RACE_OPEN_RE.test(text)) return 'race-open';
   if (/\bTERCIOS\b/.test(text) && /\bJUEGA\b/.test(text)) return 'official-plan';
   if (OFFER_START_RE.test(text)) return 'offer';
   return 'other';
@@ -142,7 +210,7 @@ function extractBoard(text) {
 function sameOfferSignature(left, right) {
   if (!left || !right) return false;
   const sameTrack = !left.track || !right.track || compact(left.track) === compact(right.track);
-  return left.play === right.play && left.horse === right.horse && left.amount === right.amount && sameTrack && left.segmentId === right.segmentId;
+  return left.play === right.play && left.horse === right.horse && left.amount === right.amount && sameTrack && sameKnownRaceNumber(left, right) && left.segmentId === right.segmentId;
 }
 
 function linkReplies(replies, offers) {
@@ -162,7 +230,8 @@ function linkReplies(replies, offers) {
       play: linked.play,
       horse: linked.horse,
       amount: linked.amount,
-      track: linked.track
+      track: linked.track,
+      raceNumber: linked.raceNumber
     };
   }
 }
@@ -207,14 +276,38 @@ export function parseWhatsAppChat(input, options = {}) {
 
   const catalog = options.racetrackCatalog || [];
   let segmentId = 1;
-  const typed = messages.map((message) => {
-    const base = { ...message, segmentId };
+  let activeRaceContext = null;
+  const typed = [];
+
+  for (const message of messages) {
+    const preliminaryType = classifyMessage(message);
+    const explicitContext = extractRaceContext(message.text, catalog);
+
+    if (preliminaryType === 'race-open') {
+      if (explicitContext.actionable) {
+        if (activeRaceContext?.actionable && !sameActionableRace(activeRaceContext, explicitContext)) segmentId += 1;
+        activeRaceContext = explicitContext;
+      } else {
+        if (activeRaceContext?.actionable) segmentId += 1;
+        activeRaceContext = null;
+      }
+    }
+
+    const raceContext = explicitContext.actionable
+      ? explicitContext
+      : activeRaceContext?.actionable
+        ? { ...activeRaceContext, inherited: true }
+        : explicitContext;
+    const base = { ...message, segmentId, raceContext };
     const reply = parseReplyStructure(base, catalog);
-    const type = reply ? 'reply' : classifyMessage(base);
-    const result = { ...base, type, reply, board: extractBoard(base.text) };
-    if (type === 'closure') segmentId += 1;
-    return result;
-  });
+    const type = reply ? 'reply' : preliminaryType;
+    typed.push({ ...base, type, reply, board: extractBoard(base.text) });
+
+    if (type === 'closure') {
+      segmentId += 1;
+      activeRaceContext = null;
+    }
+  }
 
   const offers = typed.flatMap((message) => message.type === 'offer' ? parseOffer(message, catalog) : []);
   const seen = new Map();
@@ -243,7 +336,8 @@ export function parseWhatsAppChat(input, options = {}) {
     ...typed.filter((message) => message.type === 'pending-confirmation'),
     ...replies.filter((reply) => reply.status === 'pending')
   ];
-  const segments = Math.max(1, segmentId - (typed.at(-1)?.type === 'closure' ? 1 : 0));
+  const raceOpenings = typed.filter((message) => message.type === 'race-open');
+  const segments = Math.max(1, typed.reduce((max, message) => Math.max(max, Number(message.segmentId) || 1), 1));
 
   return {
     messages: typed,
@@ -256,6 +350,7 @@ export function parseWhatsAppChat(input, options = {}) {
     pendingConfirmations,
     closures: typed.filter((message) => message.type === 'closure'),
     boards: typed.filter((message) => ['arrival', 'board'].includes(message.type) && message.board.length),
+    raceOpenings,
     officialPlans: typed.filter((message) => message.type === 'official-plan'),
     segments,
     stats: {
@@ -267,6 +362,7 @@ export function parseWhatsAppChat(input, options = {}) {
       replies: replies.length,
       pending: pendingConfirmations.length,
       closures: typed.filter((message) => message.type === 'closure').length,
+      openings: raceOpenings.length,
       segments
     }
   };
@@ -274,7 +370,7 @@ export function parseWhatsAppChat(input, options = {}) {
 
 function compatible(left, right) {
   const sameTrack = !left.track || !right.track || compact(left.track) === compact(right.track);
-  return left.play === right.play && left.horse === right.horse && sameTrack && left.senderKey !== right.senderKey && left.segmentId === right.segmentId;
+  return left.play === right.play && left.horse === right.horse && sameTrack && sameKnownRaceNumber(left, right) && left.senderKey !== right.senderKey && left.segmentId === right.segmentId;
 }
 
 export function matchChatOffers(offers = []) {
@@ -285,13 +381,17 @@ export function matchChatOffers(offers = []) {
     for (const receiver of receivers) {
       if (player.remaining <= 0 || receiver.remaining <= 0 || !compatible(player.offer, receiver.offer)) continue;
       const amount = Math.min(player.remaining, receiver.remaining);
+      const playerRaceNumber = validRaceNumber(player.offer.raceNumber);
+      const receiverRaceNumber = validRaceNumber(receiver.offer.raceNumber);
       const reviewReasons = [...new Set([...(player.offer.reviewReasons || []), ...(receiver.offer.reviewReasons || [])])];
+      if (Boolean(playerRaceNumber) !== Boolean(receiverRaceNumber)) reviewReasons.push('contexto de carrera incompleto');
       matches.push({
         id: `MATCH-${player.offer.id}-${receiver.offer.id}-${matches.length + 1}`,
         play: player.offer.play,
         horse: player.offer.horse,
         amount,
         track: player.offer.track || receiver.offer.track,
+        raceNumber: playerRaceNumber || receiverRaceNumber,
         segmentId: player.offer.segmentId,
         player: player.offer.sender,
         playerKey: player.offer.senderKey,
@@ -327,4 +427,15 @@ export function createWhatsAppParser(defaultOptions = {}) {
   });
 }
 
-export const __test__ = Object.freeze({ classifyMessage, extractBoard, compatible, sameOfferSignature });
+export const __test__ = Object.freeze({
+  classifyMessage,
+  extractBoard,
+  extractRaceNumber,
+  extractRaceContext,
+  compatible,
+  sameOfferSignature,
+  sameKnownRaceNumber,
+  sameKnownTrack,
+  sameActionableRace,
+  validRaceNumber
+});

@@ -1,6 +1,8 @@
 import crypto from 'node:crypto';
 import { prisma } from '../../database/prisma.js';
 import type { IntentResult } from './hipico-operational-classifier.js';
+import { assertReplayMatch, transportReplaySignature } from './hipico-replay-integrity.js';
+import { assertBridgeGroupIdentity, bridgeGroupIdentityReady, normalizeBridgeGroupId } from './hipico-bridge-input-policy.js';
 
 type TransportInput={
   providerMessageId:string;
@@ -18,15 +20,72 @@ type GroupOutboxInput={
   result:IntentResult;
 };
 
+type PersistedTransportSource={
+  id:string;
+  phoneNumberId:string|null;
+  sender:string|null;
+  messageType:string|null;
+  body:string|null;
+  intent:string|null;
+  risk:string|null;
+  confidence:number|string|null;
+  suggestion:string|null;
+  payload:Record<string,unknown>|null;
+};
+
+type PersistedGroupShadowSource={
+  id:string;
+  recipient:string|null;
+};
+
 const id=(prefix:string)=>`${prefix}_${crypto.randomUUID()}`;
+
+function assertTransportReplay(existing:PersistedTransportSource,input:TransportInput){
+  const persisted=transportReplaySignature(existing);
+  const replay=transportReplaySignature(input);
+  assertReplayMatch('transport',persisted,replay);
+}
+
+function persistedTransportProjection(existing:PersistedTransportSource):IntentResult{
+  const rawRisk=String(existing.risk||'review');
+  const risk:IntentResult['risk']=rawRisk==='safe'||rawRisk==='monetary'?rawRisk:'review';
+  const numericConfidence=Number(existing.confidence);
+  const confidence=Number.isFinite(numericConfidence)?Math.max(0,Math.min(1,numericConfidence)):0;
+  const operational=existing.payload?.operational;
+  const entities=operational&&typeof operational==='object'&&!Array.isArray(operational)
+    ? operational as IntentResult['entities']
+    : undefined;
+  return{
+    intent:String(existing.intent||'conversation'),
+    risk,
+    confidence,
+    suggestion:String(existing.suggestion||''),
+    autoEligible:false,
+    reason:'PERSISTED_FIRST_CLASSIFICATION',
+    ...(entities?{entities}:{})
+  };
+}
+
+function assertGroupShadowDestination(existing:PersistedGroupShadowSource,input:GroupOutboxInput){
+  if(String(existing.recipient||'')===String(input.recipient||''))return;
+  const error:any=new Error('HIPICO_TRANSPORT_REPLAY_MISMATCH');
+  error.code='HIPICO_TRANSPORT_REPLAY_MISMATCH';
+  throw error;
+}
 
 /**
  * The real WhatsApp group gate must never acknowledge an event using a
  * serverless in-memory fallback. If PostgreSQL is unavailable these functions
  * throw; the HTTP route returns 503 and the desktop Bridge keeps the event in
  * its local spool for retry.
+ *
+ * Provider message ids are immutable source identities. A duplicate id is
+ * accepted only when the stable transport fields and source metadata match the
+ * first persisted event exactly. A replay with altered sender/body/type/time/
+ * quote/media/channel semantics fails closed.
  */
 export async function persistBridgeTransportEvent(input:TransportInput){
+  assertBridgeGroupIdentity(input.payload);
   const candidateId=id('hwe');
   const inserted=await prisma.$queryRaw<Array<{id:string}>>`
     INSERT INTO public."HipicoWebhookEvent"
@@ -42,26 +101,44 @@ export async function persistBridgeTransportEvent(input:TransportInput){
   `;
 
   if(inserted[0]?.id){
-    return{id:inserted[0].id,inserted:true};
+    return{id:inserted[0].id,inserted:true,projection:input.result};
   }
 
-  const existing=await prisma.$queryRaw<Array<{id:string}>>`
-    SELECT "id" FROM public."HipicoWebhookEvent"
+  const existing=await prisma.$queryRaw<PersistedTransportSource[]>`
+    SELECT
+      "id",
+      "phoneNumberId" AS "phoneNumberId",
+      "sender",
+      "messageType" AS "messageType",
+      "body",
+      "intent",
+      "risk",
+      "confidence",
+      "suggestion",
+      "payload"
+    FROM public."HipicoWebhookEvent"
     WHERE "providerMessageId"=${input.providerMessageId}
     LIMIT 1
   `;
   if(!existing[0]?.id)throw new Error('HIPICO_TRANSPORT_DEDUPE_ROW_MISSING');
-  return{id:existing[0].id,inserted:false};
+  assertTransportReplay(existing[0],input);
+  return{id:existing[0].id,inserted:false,projection:persistedTransportProjection(existing[0])};
 }
 
 /**
  * Compatibility shadow outbox used by the existing operator/audit views.
  * A partial unique index guarantees one group_bridge outbox row per event,
  * including retries after a partial failure.
+ *
+ * The first persisted projection remains immutable. On a later idempotent
+ * source replay we intentionally reuse it even if a newer classifier version
+ * would now produce different suggestion/intent/risk. Derived-model drift is
+ * not source-identity drift and must never quarantine an otherwise valid
+ * WhatsApp retry. The destination itself remains fail-closed.
  */
 export async function ensureGroupShadowOutbox(input:GroupOutboxInput){
   const candidateId=id('hbo');
-  const rows=await prisma.$queryRaw<Array<{id:string}>>`
+  const inserted=await prisma.$queryRaw<Array<{id:string}>>`
     INSERT INTO public."HipicoBotOutbox"
       ("id","eventId","recipient","targetType","message","intent","risk","status","createdAt","updatedAt")
     VALUES
@@ -69,20 +146,24 @@ export async function ensureGroupShadowOutbox(input:GroupOutboxInput){
        ${input.result.intent},${input.result.risk},'shadow',CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)
     ON CONFLICT ("eventId","targetType")
       WHERE "eventId" IS NOT NULL AND "targetType"='group_bridge'
-    DO UPDATE SET
-      "recipient"=EXCLUDED."recipient",
-      "message"=EXCLUDED."message",
-      "intent"=EXCLUDED."intent",
-      "risk"=EXCLUDED."risk",
-      "status"='shadow',
-      "updatedAt"=CURRENT_TIMESTAMP
+    DO NOTHING
     RETURNING "id"
   `;
-  if(!rows[0]?.id)throw new Error('HIPICO_GROUP_SHADOW_OUTBOX_NOT_PERSISTED');
-  return{id:rows[0].id};
+  if(inserted[0]?.id)return{id:inserted[0].id};
+
+  const existing=await prisma.$queryRaw<PersistedGroupShadowSource[]>`
+    SELECT "id","recipient"
+    FROM public."HipicoBotOutbox"
+    WHERE "eventId"=${input.eventId} AND "targetType"='group_bridge'
+    LIMIT 1
+  `;
+  if(!existing[0]?.id)throw new Error('HIPICO_GROUP_SHADOW_OUTBOX_DEDUPE_ROW_MISSING');
+  assertGroupShadowDestination(existing[0],input);
+  return{id:existing[0].id};
 }
 
 export async function bridgePersistenceReady(){
+  if(!bridgeGroupIdentityReady())return false;
   const rows=await prisma.$queryRaw<Array<{eventTable:string|null;outboxTable:string|null}>>`
     SELECT
       to_regclass('public."HipicoWebhookEvent"')::text AS "eventTable",
@@ -90,3 +171,5 @@ export async function bridgePersistenceReady(){
   `;
   return Boolean(rows[0]?.eventTable&&rows[0]?.outboxTable);
 }
+
+export const __test__={assertTransportReplay,persistedTransportProjection,assertGroupShadowDestination,assertBridgeGroupIdentity,bridgeGroupIdentityReady,normalizeGroupId:normalizeBridgeGroupId};

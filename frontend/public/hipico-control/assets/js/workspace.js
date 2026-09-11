@@ -5,7 +5,7 @@ export const todayIso = () => isoNow().slice(0, 10);
 
 const DEFAULT_FOOTER = "*PLANO REFERENCIAL*\n*_La guía es el chat_*\n(se gana y se cobra con el chat)\n*USTED ES SU PROPIO CORREDOR*\n*RECLAMOS AL PRIVADO*\n*NO DIGA:* ❌MALO❌; CASA FALTA...\n*TILDE SU JUGADA Y SE REVISARÁ*";
 const GROUP_DEFAULTS = [
-  { id: "group-1", name: "Grupo principal", companyName: "CONTROL HÍPICO", color: "#721522", currency: "Bs.", exchangeRate: 160, footerMessage: DEFAULT_FOOTER }
+  { id: "group-1", name: "Grupo principal", companyName: "CONTROL HÍPICO", color: "#721522", currency: "Bs.", exchangeRate: 160, commission: 0.05, footerMessage: DEFAULT_FOOTER }
 ];
 const GROUP_COLORS = ["#721522", "#526f86", "#8d7545", "#35705a"];
 
@@ -17,23 +17,33 @@ function cleanLabel(value, fallback) {
   const text = String(value || "").replace(/\s+/g, " ").trim();
   return text || fallback;
 }
+function cleanCommission(value, fallback = 0.05) {
+  const number = Number(value);
+  return Number.isFinite(number) && number >= 0 && number <= 1 ? number : fallback;
+}
+function cleanExchangeRate(value, fallback = 160) {
+  const number = Number(value);
+  return Number.isFinite(number) && number > 0 ? number : fallback;
+}
 function normalizeGroup(group, index, config) {
   const base = GROUP_DEFAULTS[index] || {
     id: `group-${index + 1}`,
     name: `Grupo ${index + 1}`,
     companyName: `GRUPO HÍPICO ${index + 1}`,
     color: GROUP_COLORS[index % GROUP_COLORS.length],
-    currency: "Bs.", exchangeRate: 160, footerMessage: DEFAULT_FOOTER
+    currency: "Bs.", exchangeRate: 160, commission: 0.05, footerMessage: DEFAULT_FOOTER
   };
   const candidateCompany = group?.companyName || group?.clubName || (index === 0 ? config.clubName : base.companyName);
+  const fallbackRate = index === 0 ? cleanExchangeRate(config.exchangeRate, base.exchangeRate) : base.exchangeRate;
+  const fallbackCommission = index === 0 ? cleanCommission(config.commission, base.commission ?? 0.05) : (base.commission ?? 0.05);
   return {
     id: String(group?.id || base.id),
     name: cleanLabel(group?.name, base.name),
     companyName: cleanLabel(candidateCompany, base.companyName),
     color: cleanColor(group?.color, base.color),
     currency: ["Bs.", "USD"].includes(group?.currency) ? group.currency : (index === 0 && ["Bs.", "USD"].includes(config.currency) ? config.currency : base.currency),
-    exchangeRate: Number(group?.exchangeRate || (index === 0 ? config.exchangeRate : base.exchangeRate) || 160),
-    commission: Number(group?.commission ?? config.commission ?? 0.05),
+    exchangeRate: cleanExchangeRate(group?.exchangeRate, fallbackRate),
+    commission: cleanCommission(group?.commission, fallbackCommission),
     showConversion: group?.showConversion !== false,
     autoRate: group?.autoRate === true,
     footerMessage: String(group?.footerMessage || (index === 0 ? config.footerMessage : base.footerMessage) || base.footerMessage),
@@ -62,12 +72,14 @@ function tagGroup(items, fallbackId) {
 }
 export function rateForDate(date, source) {
   const groupId = source?.config?.activeGroupId || source?.config?.activeWhatsappGroupId || "group-1";
-  const group = source?.config?.groups?.find((item) => item.id === groupId);
+  const groups = source?.config?.groups || [];
+  const defaultGroupId = groups[0]?.id || "group-1";
+  const group = groups.find((item) => item.id === groupId);
   const rates = [...(source?.exchangeRates || [])]
-    .filter((rate) => !rate.groupId || rate.groupId === groupId)
+    .filter((rate) => String(rate.groupId || defaultGroupId) === String(groupId))
     .sort((a, b) => String(a.date).localeCompare(String(b.date)));
   const match = rates.filter((rate) => rate.date <= date).at(-1);
-  return Number(match?.rate || group?.exchangeRate || source?.config?.exchangeRate || 1);
+  return cleanExchangeRate(match?.rate, cleanExchangeRate(group?.exchangeRate, cleanExchangeRate(source?.config?.exchangeRate, 1)));
 }
 export function normalizeWorkspaceShape(value) {
   const workspace = structuredClone(value || createBlankWorkspace());
@@ -75,8 +87,8 @@ export function normalizeWorkspaceShape(value) {
   workspace.config ||= {};
   workspace.config.clubName = cleanLabel(workspace.config.clubName, "CONTROL HÍPICO");
   workspace.config.currency ||= "Bs.";
-  workspace.config.commission = Number(workspace.config.commission ?? 0.05);
-  workspace.config.exchangeRate = Number(workspace.config.exchangeRate || 160);
+  workspace.config.commission = cleanCommission(workspace.config.commission, 0.05);
+  workspace.config.exchangeRate = cleanExchangeRate(workspace.config.exchangeRate, 160);
   workspace.config.footerMessage ||= DEFAULT_FOOTER;
   workspace.config.quickPlays = Array.isArray(workspace.config.quickPlays) && workspace.config.quickPlays.length
     ? workspace.config.quickPlays.map(String) : ["1/2", "1P", "2/2", "2/3", "PP", "PK"];
@@ -89,6 +101,11 @@ export function normalizeWorkspaceShape(value) {
   workspace.config.compactMode = workspace.config.compactMode !== false;
   ensureGroups(workspace.config);
   const defaultGroupId = workspace.config.groups[0].id;
+  const activeGroup = workspace.config.groups.find((group) => group.id === workspace.config.activeGroupId) || workspace.config.groups[0];
+  workspace.config.commission = activeGroup.commission;
+  workspace.config.exchangeRate = activeGroup.exchangeRate;
+  workspace.config.currency = activeGroup.currency;
+  workspace.config.footerMessage = activeGroup.footerMessage;
   workspace.deviceId ||= crypto.randomUUID();
   workspace.version = Math.max(1, Number(workspace.version || 1));
   workspace.syncMeta = {
@@ -124,7 +141,8 @@ export function normalizeWorkspaceShape(value) {
       bet.messageStatusByGroup ||= Object.fromEntries(workspace.config.groups.map((group) => [group.id, bet.messageStatus]));
     });
     const group = workspace.config.groups.find((item) => item.id === race.groupId);
-    race.exchangeRate = Number(race.exchangeRate || group?.exchangeRate || 160);
+    race.exchangeRate = cleanExchangeRate(race.exchangeRate, cleanExchangeRate(group?.exchangeRate, 160));
+    race.commission = cleanCommission(race.commission, cleanCommission(group?.commission, 0.05));
   });
   workspace.advancedBets = Array.isArray(workspace.advancedBets) ? workspace.advancedBets : [];
   workspace.movements = Array.isArray(workspace.movements) ? workspace.movements : [];
@@ -135,9 +153,13 @@ export function normalizeWorkspaceShape(value) {
   workspace.chatImports = Array.isArray(workspace.chatImports) ? workspace.chatImports : [];
   workspace.syncQueue = Array.isArray(workspace.syncQueue) ? workspace.syncQueue : [];
   for (const list of [workspace.advancedBets, workspace.movements, workspace.exchangeRates, workspace.weekClosures, workspace.pollas, workspace.audit]) tagGroup(list, defaultGroupId);
+  for (const rate of workspace.exchangeRates) {
+    const group = workspace.config.groups.find((item) => item.id === rate.groupId);
+    rate.rate = cleanExchangeRate(rate.rate, cleanExchangeRate(group?.exchangeRate, 1));
+  }
   for (const group of workspace.config.groups) {
     if (!workspace.exchangeRates.some((rate) => rate.groupId === group.id)) {
-      workspace.exchangeRates.push({ id: createId("rate"), groupId: group.id, date: todayIso(), rate: Number(group.exchangeRate || 160) });
+      workspace.exchangeRates.push({ id: createId("rate"), groupId: group.id, date: todayIso(), rate: cleanExchangeRate(group.exchangeRate, 160) });
     }
   }
   for (const group of workspace.config.groups) {

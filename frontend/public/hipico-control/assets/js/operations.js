@@ -71,6 +71,15 @@ function typeFor(message) {
   if (balances.length >= 2) return { type: "balance_snapshot", balances };
   if (DAY_CLOSE_RE.test(c)) return { type: "day_close" };
   if (CLOSE_RE.test(c)) return { type: "race_close" };
+  if (message?.type === "race-open") {
+    const context = message.raceContext || {};
+    return {
+      type: "race_open",
+      racetrack: context.track || "",
+      raceNumber: Number.isInteger(context.raceNumber) ? context.raceNumber : null,
+      actionable: context.actionable === true
+    };
+  }
   const settlement = parseSettlement(text);
   if (settlement.length && /\bTERCIOS\b/.test(c)) return { type: "settlement_snapshot", settlement, fingerprint: planFingerprint(text) };
   if (/\bTERCIOS\b/.test(c) && /\bJUEGA\b/.test(c)) return { type: "plan_snapshot", fingerprint: planFingerprint(text) };
@@ -90,7 +99,7 @@ export function analyzeOperationalFeed(analysis, options = {}) {
   for (const message of analysis.messages || []) {
     const typed = typeFor(message);
     const messageEvents = [];
-    if (Array.isArray(message.board) && message.board.length) messageEvents.push({ type: "result", board: message.board });
+    if (Array.isArray(message.board) && message.board.length) messageEvents.push({ type: "result", board: message.board, raceNumber: message.raceContext?.raceNumber ?? null, racetrack: message.raceContext?.track || "" });
     if (typed.type !== "other" || !messageEvents.length) messageEvents.push(typed);
     for (const candidate of messageEvents) {
       let status = "accepted";
@@ -99,11 +108,12 @@ export function analyzeOperationalFeed(analysis, options = {}) {
         else seenPlans.add(candidate.fingerprint);
       }
       if (candidate.type === "result" && candidate.board?.length) {
-        const boardKey = candidate.board.join(".");
+        const boardKey = `${candidate.racetrack || ""}|${candidate.raceNumber || ""}|${candidate.board.join(".")}`;
         if (seenResults.has(boardKey)) status = "duplicate";
         else seenResults.add(boardKey);
       }
       if (candidate.type === "race_close") closed = true;
+      if (candidate.type === "race_open") closed = false;
       if (candidate.type === "offer" && closed) { status = "late_or_next_block"; lateOffers += 1; }
       events.push({
         id: `OPS-${message.id}-${candidate.type}`,
@@ -122,7 +132,9 @@ export function analyzeOperationalFeed(analysis, options = {}) {
     Number((analysis.matches || []).filter((match) => match.requiresApproval).length || 0);
   const balances = events.filter((event) => event.type === "balance_snapshot" && event.status !== "duplicate").at(-1)?.balances || [];
   const settlement = events.filter((event) => event.type === "settlement_snapshot" && event.status !== "duplicate").at(-1)?.settlement || [];
-  const board = events.filter((event) => event.type === "result" && event.status !== "duplicate").at(-1)?.board || [];
+  const resultEvent = events.filter((event) => event.type === "result" && event.status !== "duplicate").at(-1) || null;
+  const openingEvent = events.filter((event) => event.type === "race_open" && event.status !== "duplicate").at(-1) || null;
+  const board = resultEvent?.board || [];
   return {
     events,
     stats: {
@@ -132,14 +144,18 @@ export function analyzeOperationalFeed(analysis, options = {}) {
       lateOffers,
       balanceRows: balances.length,
       settlementRows: settlement.length,
-      results: board.length ? 1 : 0
+      results: board.length ? 1 : 0,
+      openings: events.filter((event) => event.type === "race_open").length
     },
     lastBalanceSnapshot: balances,
     lastSettlementSnapshot: settlement,
     lastBoard: board,
+    lastResultContext: resultEvent ? { racetrack: resultEvent.racetrack || "", raceNumber: resultEvent.raceNumber ?? null } : null,
+    lastRaceOpening: openingEvent ? { racetrack: openingEvent.racetrack || "", raceNumber: openingEvent.raceNumber ?? null, actionable: openingEvent.actionable === true } : null,
     raceState: events.some((event) => event.type === "day_close") ? "JORNADA CERRADA"
       : events.some((event) => event.type === "settlement_snapshot") ? "LIQUIDACIÓN RECIBIDA"
       : events.some((event) => event.type === "result") ? "RESULTADO RECIBIDO"
+      : openingEvent ? (openingEvent.actionable ? "CARRERA DETECTADA" : "APERTURA POR REVISAR")
       : events.some((event) => event.type === "race_close") ? "CARRERA CERRADA"
       : "RECEPCIÓN"
   };
@@ -147,6 +163,7 @@ export function analyzeOperationalFeed(analysis, options = {}) {
 
 export function operationLabel(type) {
   const labels = {
+    race_open: "Apertura de carrera",
     race_close: "Cierre de carrera",
     day_close: "Cierre de jornada",
     plan_snapshot: "Plano publicado",

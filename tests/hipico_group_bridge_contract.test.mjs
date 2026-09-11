@@ -22,22 +22,90 @@ test('group ingestion is authenticated, deduplicated and shadow-only', () => {
   assert.match(security, /timingSafeEqual/);
   assert.match(route, /x-hipico-bridge-token/);
   assert.match(route, /waweb:\$\{input\.externalMessageId\}/);
-  assert.match(route, /targetType: 'group_bridge'/);
-  assert.match(route, /status: 'shadow'/);
-  assert.match(route, /actions: \[\]/);
+  assert.match(route, /targetType:'group_bridge'|targetType: 'group_bridge'/);
+  assert.match(route, /status:'shadow'|status: 'shadow'/);
+  assert.match(route, /actions:\s*\[\]/);
   assert.doesNotMatch(route, /sendCloudText/);
 });
 
-test('desktop bridge persists before network and has an independent send kill switch', () => {
-  const bridge = read('tools/hipico-whatsapp-bridge/src/index.mjs');
-  assert.match(bridge, /const ALLOW_SEND = boolEnv\('HIPICO_ALLOW_SEND', false\)/);
-  assert.match(bridge, /const file = await spool\(event\); \/\/ persist locally before any network call/);
-  assert.match(bridge, /if \(ALLOW_SEND\)/);
-  assert.match(bridge, /setInterval\([\s\S]*5000/);
-  assert.match(bridge, /LocalAuth/);
+test('backend distinguishes replay identity conflicts from retryable persistence failures', () => {
+  const route = read('backend/src/modules/hipico-bot/hipico-bridge.routes.ts');
+  const transport = read('backend/src/modules/hipico-bot/hipico-bridge-transport.store.ts');
+  const canonical = read('backend/src/modules/hipico-bot/hipico-canonical-shadow.store.ts');
+  assert.match(route, /REPLAY_IDENTITY_MISMATCH/);
+  assert.match(route, /res\.status\(409\)\.json\(\{ok:false,retryable:false/);
+  assert.match(route, /res\.status\(503\)\.json\(\{ok:false,retryable:true/);
+  assert.match(transport, /HIPICO_TRANSPORT_REPLAY_MISMATCH|assertReplayMatch\('transport'/);
+  assert.match(canonical, /HIPICO_CANONICAL_REPLAY_MISMATCH|assertReplayMatch\('canonical'/);
+  assert.doesNotMatch(canonical, /ON CONFLICT \(owner_id,channel_key,external_message_id\)[\s\S]{0,120}DO UPDATE SET/);
 });
 
-test('bridge dependencies are exact and lab config points to production ingest', () => {
+test('all normal-WhatsApp bridge boundaries share strict modern or legacy group JID semantics', () => {
+  const localIdentity = read('tools/hipico-whatsapp-bridge/src/group-identity.mjs');
+  const hostedIdentity = read('tools/hipico-whatsapp-web-bridge/src/group-identity.mjs');
+  const serverlessIdentity = read('frontend/api/hipico/bridge-identity.js');
+  const backendIdentity = read('backend/src/modules/hipico-bot/hipico-bridge-input-policy.ts');
+  for (const source of [localIdentity, hostedIdentity, serverlessIdentity, backendIdentity]) {
+    assert.match(source, /\\d\{5,\}-\\d\+/);
+    assert.match(source, /\\d\{10,\}/);
+  }
+  assert.doesNotMatch(serverlessIdentity, /\^\\d\{5,\}\(\?:-\\d\+\)\?@g/);
+  assert.doesNotMatch(localIdentity, /\^\\d\{5,\}\(\?:-\\d\+\)\?@g/);
+});
+
+test('desktop bridge requires pinned SOURCE/LAB and can never send to SOURCE', () => {
+  const bridge = read('tools/hipico-whatsapp-bridge/src/index.mjs');
+  const identity = read('tools/hipico-whatsapp-bridge/src/group-identity.mjs');
+  assert.match(bridge, /const ALLOW_SEND = boolEnv\('HIPICO_ALLOW_SEND', false\)/);
+  assert.match(bridge, /requires pinned HIPICO_SOURCE_GROUP_ID and HIPICO_LAB_GROUP_ID/);
+  assert.match(bridge, /import \{ isGroupId \} from '\.\/group-identity\.mjs'/);
+  assert.match(identity, /GROUP_ID_RE/);
+  assert.match(bridge, /SOURCE_GROUP_ID_ENV === LAB_GROUP_ID_ENV/);
+  assert.match(bridge, /SOURCE_CHANNEL_KEY === LAB_CHANNEL_KEY/);
+  assert.match(bridge, /if \(ALLOW_SEND && labText\) await client\.sendMessage\(lab\.id, labText\)/);
+  assert.doesNotMatch(bridge, /client\.sendMessage\(source\.id/);
+  assert.match(bridge, /getChatById\(id\)/);
+  assert.doesNotMatch(bridge, /client\.getChats\(\)/);
+  assert.match(bridge, /setInterval\([\s\S]*5000/);
+  assert.match(bridge, /LocalAuth/);
+  assert.match(bridge, /WhatsApp normal > Dispositivos vinculados/);
+});
+
+test('local bridge requires a real WhatsApp provider id instead of inventing collision-prone identities', () => {
+  const bridge = read('tools/hipico-whatsapp-bridge/src/index.mjs');
+  assert.match(bridge, /externalMessageId\s*=\s*String\(message\?\.id\?\._serialized \|\| ''\)\.trim\(\)/);
+  assert.match(bridge, /HIPICO_PROVIDER_MESSAGE_ID_REQUIRED/);
+  assert.match(bridge, /provider message id is required for durable idempotency/i);
+  assert.doesNotMatch(bridge, /externalMessageId:\s*message\?\.id\?\._serialized\s*\|\|\s*sha256/);
+});
+
+test('local bridge spool is private, create-once and binds behavior-changing replay semantics', () => {
+  const bridge = read('tools/hipico-whatsapp-bridge/src/index.mjs');
+  assert.match(bridge, /mode:\s*0o700/);
+  assert.match(bridge, /fs\.chmod\(dir, 0o700\)/);
+  assert.match(bridge, /flag:\s*'wx'/);
+  assert.match(bridge, /mode:\s*0o600/);
+  assert.match(bridge, /replaySignature\(existing\) === replaySignature\(event\)/);
+  assert.match(bridge, /HIPICO_LOCAL_SPOOL_REPLAY_MISMATCH/);
+  for (const field of ['channelKey','labChannelKey','channelRole','shadowMode','historySync','fromMe','hasMedia','mediaKind','mediaName','quotedExternalMessageId']) {
+    assert.match(bridge, new RegExp(`event\\?\\.${field}`), `${field} must be part of local replay evidence`);
+  }
+  assert.match(bridge, /safeRef\(/);
+  assert.doesNotMatch(bridge, /console\.log\(`Fuente: \$\{source\.name\} :: \$\{source\.id\}`\)/);
+});
+
+test('permanent or corrupt bridge events are quarantined instead of retried forever or deleted', () => {
+  const bridge = read('tools/hipico-whatsapp-bridge/src/index.mjs');
+  assert.match(bridge, /const REJECTED_DIR = path\.join\(DATA_DIR, 'rejected'\)/);
+  assert.match(bridge, /payload\?\.retryable === false \? false/);
+  assert.match(bridge, /error\?\.retryable === false/);
+  assert.match(bridge, /await quarantine\(file, error\)/);
+  assert.match(bridge, /INVALID_LOCAL_SPOOL/);
+  assert.match(bridge, /\.meta\.json/);
+  assert.doesNotMatch(bridge, /catch \{\s*await fs\.unlink\(file\)/);
+});
+
+test('bridge dependencies and example config are exact, shadow-only, pinned and fail closed by default', () => {
   const pkg = JSON.parse(read('tools/hipico-whatsapp-bridge/package.json'));
   assert.equal(pkg.dependencies['whatsapp-web.js'], '1.34.7');
   assert.equal(pkg.dependencies['qrcode-terminal'], '0.12.0');
@@ -45,8 +113,16 @@ test('bridge dependencies are exact and lab config points to production ingest',
 
   const env = read('tools/hipico-whatsapp-bridge/.env.example');
   assert.match(env, /HIPICO_INGEST_URL=https:\/\/conta-gest-frontend\.vercel\.app\/api\/v1\/hipico-bot\/bridge\/events/);
-  assert.match(env, /HIPICO_GROUP_NAME=Control hípico lab/);
+  assert.match(env, /HIPICO_SHADOW_MODE=true/);
+  assert.match(env, /HIPICO_SOURCE_GROUP_ID=120363000000000000@g\.us/);
+  assert.match(env, /HIPICO_LAB_GROUP_ID=120363111111111111@g\.us/);
+  assert.match(env, /HIPICO_SOURCE_CHANNEL_KEY=club-hipico-triple-crown-official/);
+  assert.match(env, /HIPICO_LAB_CHANNEL_KEY=control-hipico-lab/);
   assert.match(env, /HIPICO_ALLOW_SEND=false/);
+  assert.match(env, /DELIBERADAMENTE INVÁLIDO/);
+  const exampleToken=env.match(/^HIPICO_GROUP_BRIDGE_TOKEN=(.+)$/m)?.[1]?.trim()||'';
+  assert.ok(exampleToken.length>0&&exampleToken.length<32,'example token must be intentionally rejected by startup length policy');
+  assert.doesNotMatch(env, /HIPICO_GROUP_NAME=/);
 
   const gitignore = read('.gitignore');
   assert.match(gitignore, /tools\/hipico-whatsapp-bridge\/data\//);

@@ -18,10 +18,10 @@ export async function loadHandoff(groupKey: string, participantId: string, raceI
   const initial = initialHandoffState(groupKey, participantId, raceId);
   const rows = await prisma.$queryRaw<Array<{
     conversationKey: string; groupKey: string; participantId: string; raceId: string | null; ownership: 'bot'|'human';
-    clarificationCount: number; reason: string | null; humanOwnerId: string | null; expiresAt: Date | null; updatedAt: Date;
+    clarificationCount: number; reason: string | null; humanOwnerId: string | null; expiresAt: Date | null; updatedAt: Date; version: number;
   }>>`
     SELECT "conversationKey", "groupKey", "participantId", "raceId", "ownership", "clarificationCount",
-           "reason", "humanOwnerId", "expiresAt", "updatedAt"
+           "reason", "humanOwnerId", "expiresAt", "updatedAt", "version"
     FROM public."HipicoConversationHandoff"
     WHERE "conversationKey"=${initial.conversationKey}
     LIMIT 1
@@ -38,27 +38,43 @@ export async function loadHandoff(groupKey: string, participantId: string, raceI
     reason: row.reason,
     humanOwnerId: row.humanOwnerId,
     expiresAt: row.expiresAt?.toISOString() || null,
-    updatedAt: row.updatedAt.toISOString()
+    updatedAt: row.updatedAt.toISOString(),
+    version: Number(row.version || 0)
   } satisfies HandoffState;
 }
 
 export async function saveHandoff(state: HandoffState, audit?: { eventType: string; actorId?: string | null; sourceMessageId?: string | null; correlationId?: string | null; payload?: unknown }) {
-  await prisma.$transaction(async (tx) => {
-    await tx.$executeRaw`
-      INSERT INTO public."HipicoConversationHandoff"
-        ("conversationKey","groupKey","participantId","raceId","ownership","clarificationCount","reason","humanOwnerId","expiresAt","version","updatedAt")
-      VALUES
-        (${state.conversationKey},${state.groupKey},${state.participantId},${state.raceId},${state.ownership},${state.clarificationCount},
-         ${state.reason},${state.humanOwnerId},${state.expiresAt ? new Date(state.expiresAt) : null},1,${new Date(state.updatedAt)})
-      ON CONFLICT ("conversationKey") DO UPDATE SET
-        "ownership"=EXCLUDED."ownership",
-        "clarificationCount"=EXCLUDED."clarificationCount",
-        "reason"=EXCLUDED."reason",
-        "humanOwnerId"=EXCLUDED."humanOwnerId",
-        "expiresAt"=EXCLUDED."expiresAt",
-        "version"=public."HipicoConversationHandoff"."version"+1,
-        "updatedAt"=EXCLUDED."updatedAt"
-    `;
+  const expectedVersion=Math.max(0,Math.trunc(Number(state.version||0)));
+  return prisma.$transaction(async (tx) => {
+    let rows:Array<{version:number}>;
+    if(expectedVersion===0){
+      rows=await tx.$queryRaw<Array<{version:number}>>`
+        INSERT INTO public."HipicoConversationHandoff"
+          ("conversationKey","groupKey","participantId","raceId","ownership","clarificationCount","reason","humanOwnerId","expiresAt","version","updatedAt")
+        VALUES
+          (${state.conversationKey},${state.groupKey},${state.participantId},${state.raceId},${state.ownership},${state.clarificationCount},
+           ${state.reason},${state.humanOwnerId},${state.expiresAt ? new Date(state.expiresAt) : null},1,${new Date(state.updatedAt)})
+        ON CONFLICT ("conversationKey") DO NOTHING
+        RETURNING "version"
+      `;
+    }else{
+      rows=await tx.$queryRaw<Array<{version:number}>>`
+        UPDATE public."HipicoConversationHandoff"
+        SET "ownership"=${state.ownership},
+            "clarificationCount"=${state.clarificationCount},
+            "reason"=${state.reason},
+            "humanOwnerId"=${state.humanOwnerId},
+            "expiresAt"=${state.expiresAt ? new Date(state.expiresAt) : null},
+            "version"="version"+1,
+            "updatedAt"=${new Date(state.updatedAt)}
+        WHERE "conversationKey"=${state.conversationKey}
+          AND "version"=${expectedVersion}
+        RETURNING "version"
+      `;
+    }
+    if(!rows[0]?.version){
+      throw Object.assign(new Error('Handoff state changed concurrently; reload before writing.'),{code:'HIPICO_HANDOFF_CONFLICT'});
+    }
     if (audit) {
       await tx.$executeRaw`
         INSERT INTO public."HipicoHandoffAudit"
@@ -68,30 +84,86 @@ export async function saveHandoff(state: HandoffState, audit?: { eventType: stri
            ${audit.correlationId || null},${JSON.stringify(audit.payload || {})}::jsonb)
       `;
     }
+    return {...state,version:Number(rows[0].version)} satisfies HandoffState;
   });
-  return state;
+}
+
+type PersistedResponseReceipt={
+  id:string;
+  sourceMessageId:string;
+  decisionVersion:string;
+  correlationId:string;
+  intent:string;
+  responseHash:string|null;
+  receiptId:string|null;
+  transactionId:string|null;
+  stateId:string|null;
+  confirmationVerified:boolean;
+  status:string;
+};
+
+function responseHash(text:string|null){
+  return text ? crypto.createHash('sha256').update(text).digest('hex') : null;
+}
+
+function responseReceiptEvidence(plan:SafeResponsePlan){
+  const evidence=plan.evidence||{};
+  return{
+    sourceMessageId:plan.sourceMessageId,
+    decisionVersion:plan.decisionVersion,
+    correlationId:plan.correlationId,
+    intent:plan.intent,
+    responseHash:responseHash(plan.text),
+    receiptId:evidence.receiptId||null,
+    transactionId:evidence.transactionId||null,
+    stateId:evidence.stateId||null,
+    confirmationVerified:Boolean(plan.confirmationVerified),
+    status:plan.canSend?'planned':'held'
+  };
+}
+
+function assertResponseReceiptReplay(existing:PersistedResponseReceipt,plan:SafeResponsePlan){
+  const expected=responseReceiptEvidence(plan);
+  const same=existing.sourceMessageId===expected.sourceMessageId
+    && existing.decisionVersion===expected.decisionVersion
+    && existing.correlationId===expected.correlationId
+    && existing.intent===expected.intent
+    && existing.responseHash===expected.responseHash
+    && existing.receiptId===expected.receiptId
+    && existing.transactionId===expected.transactionId
+    && existing.stateId===expected.stateId
+    && Boolean(existing.confirmationVerified)===expected.confirmationVerified
+    && existing.status===expected.status;
+  if(!same){
+    throw Object.assign(new Error('Response receipt idempotency key was reused with different response evidence.'),{code:'HIPICO_RESPONSE_RECEIPT_IDEMPOTENCY_MISMATCH'});
+  }
 }
 
 export async function persistResponsePlan(plan: SafeResponsePlan) {
-  const responseHash = plan.text ? crypto.createHash('sha256').update(plan.text).digest('hex') : null;
-  const evidence = plan.evidence || {};
-  const rows = await prisma.$queryRaw<Array<{ id: string }>>`
+  const expected=responseReceiptEvidence(plan);
+  const inserted = await prisma.$queryRaw<Array<{ id: string }>>`
     INSERT INTO public."HipicoResponseReceipt"
       ("id","idempotencyKey","sourceMessageId","decisionVersion","correlationId","intent","responseHash",
        "receiptId","transactionId","stateId","confirmationVerified","status")
     VALUES
-      (${uuid()},${plan.responseIdempotencyKey},${plan.sourceMessageId},${plan.decisionVersion},${plan.correlationId},${plan.intent},${responseHash},
-       ${evidence.receiptId || null},${evidence.transactionId || null},${evidence.stateId || null},${plan.confirmationVerified},
-       ${plan.canSend ? 'planned' : 'held'})
-    ON CONFLICT ("idempotencyKey") DO UPDATE SET
-      "intent"=EXCLUDED."intent",
-      "responseHash"=EXCLUDED."responseHash",
-      "receiptId"=COALESCE(public."HipicoResponseReceipt"."receiptId",EXCLUDED."receiptId"),
-      "transactionId"=COALESCE(public."HipicoResponseReceipt"."transactionId",EXCLUDED."transactionId"),
-      "stateId"=COALESCE(public."HipicoResponseReceipt"."stateId",EXCLUDED."stateId"),
-      "confirmationVerified"=public."HipicoResponseReceipt"."confirmationVerified" OR EXCLUDED."confirmationVerified",
-      "updatedAt"=CURRENT_TIMESTAMP
+      (${uuid()},${plan.responseIdempotencyKey},${expected.sourceMessageId},${expected.decisionVersion},${expected.correlationId},${expected.intent},${expected.responseHash},
+       ${expected.receiptId},${expected.transactionId},${expected.stateId},${expected.confirmationVerified},${expected.status})
+    ON CONFLICT ("idempotencyKey") DO NOTHING
     RETURNING "id"
   `;
-  return { id: rows[0]?.id || null, idempotencyKey: plan.responseIdempotencyKey };
+  if(inserted[0]?.id)return{id:inserted[0].id,idempotencyKey:plan.responseIdempotencyKey,duplicate:false};
+
+  const existing=await prisma.$queryRaw<PersistedResponseReceipt[]>`
+    SELECT "id","sourceMessageId","decisionVersion","correlationId","intent","responseHash",
+           "receiptId","transactionId","stateId","confirmationVerified","status"
+    FROM public."HipicoResponseReceipt"
+    WHERE "idempotencyKey"=${plan.responseIdempotencyKey}
+    LIMIT 2
+  `;
+  if(existing.length!==1)throw Object.assign(new Error('Response receipt idempotency row missing or ambiguous.'),{code:'HIPICO_RESPONSE_RECEIPT_ROW_INVALID'});
+  const row=existing[0];
+  assertResponseReceiptReplay(row,plan);
+  return{id:row.id,idempotencyKey:plan.responseIdempotencyKey,duplicate:true};
 }
+
+export const __test__={responseReceiptEvidence,assertResponseReceiptReplay};

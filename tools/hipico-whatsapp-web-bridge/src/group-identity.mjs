@@ -1,14 +1,16 @@
 import { normalize } from './runtime-utils.mjs';
 
-// WhatsApp DOM attributes commonly wrap group JIDs with separators such as
-// `false_<jid>_ABC123`. Word-boundaries are not valid here because `_` is a
-// JavaScript word character, so a valid `@g.us_` suffix would be missed.
-// Guard the numeric start and JID suffix explicitly instead.
-const GROUP_ID_RE = /(?<!\d)\d{5,}-\d+@g\.us(?![a-z0-9.])/gi;
+// WhatsApp group JIDs are observed in both modern numeric form
+// `120363...@g.us` and legacy `12345-67890@g.us` form. DOM attributes may wrap
+// either form with separators such as `false_<jid>_ABC123`. Word-boundaries are
+// not valid because `_` is a JavaScript word character, so guard the numeric
+// start and JID suffix explicitly instead.
+const GROUP_ID_RE = /(?<!\d)(?:\d{5,}-\d+|\d{10,})@g\.us(?![a-z0-9.])/gi;
+const EXACT_GROUP_ID_RE = /^(?:\d{5,}-\d+|\d{10,})@g\.us$/;
 
 export function normalizeGroupId(value) {
   const raw = String(value || '').trim().toLowerCase();
-  return /^\d{5,}-\d+@g\.us$/.test(raw) ? raw : '';
+  return EXACT_GROUP_ID_RE.test(raw) ? raw : '';
 }
 
 export function extractGroupIds(...values) {

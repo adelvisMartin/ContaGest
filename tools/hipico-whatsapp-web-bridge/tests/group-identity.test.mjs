@@ -8,65 +8,80 @@ import {
   selectUniqueGroupId
 } from '../src/group-identity.mjs';
 
-const sourceId = '120363111111111111-1111111111@g.us';
-const labId = '120363222222222222-2222222222@g.us';
+const legacySourceId = '120363111111111111-1111111111@g.us';
+const legacyLabId = '120363222222222222-2222222222@g.us';
+const modernSourceId = '120363333333333333@g.us';
+const modernLabId = '120363444444444444@g.us';
 
-test('extracts stable @g.us IDs from WhatsApp DOM-like attributes', () => {
+test('extracts modern and legacy stable @g.us IDs from WhatsApp DOM-like attributes', () => {
   const ids = extractGroupIds(
-    `false_${sourceId}_ABC123`,
-    `true_${labId}_XYZ999`,
-    `duplicate_${sourceId}`
+    `false_${legacySourceId}_ABC123`,
+    `true_${modernLabId}_XYZ999`,
+    `duplicate_${legacySourceId}`,
+    `modern_${modernSourceId}`
   );
-  assert.deepEqual(ids.sort(), [labId, sourceId].sort());
+  assert.deepEqual(ids.sort(), [legacySourceId, modernLabId, modernSourceId].sort());
 });
 
-test('DOM separators do not become part of the group JID', () => {
-  assert.deepEqual(extractGroupIds(`row_${sourceId}_tail`), [sourceId]);
-  assert.deepEqual(extractGroupIds(`prefix:${labId};suffix`), [labId]);
-  assert.deepEqual(extractGroupIds(`bad_${sourceId}x_tail`), []);
+test('DOM separators do not become part of either group JID format', () => {
+  assert.deepEqual(extractGroupIds(`row_${legacySourceId}_tail`), [legacySourceId]);
+  assert.deepEqual(extractGroupIds(`prefix:${modernLabId};suffix`), [modernLabId]);
+  assert.deepEqual(extractGroupIds(`bad_${legacySourceId}x_tail`), []);
+  assert.deepEqual(extractGroupIds(`bad_${modernSourceId}.evil_tail`), []);
 });
 
-test('normalization rejects user and malformed JIDs', () => {
-  assert.equal(normalizeGroupId(sourceId.toUpperCase()), sourceId);
+test('normalization accepts modern and legacy groups but rejects user and malformed JIDs', () => {
+  assert.equal(normalizeGroupId(legacySourceId.toUpperCase()), legacySourceId);
+  assert.equal(normalizeGroupId(modernSourceId.toUpperCase()), modernSourceId);
   assert.equal(normalizeGroupId('584121234567@s.whatsapp.net'), '');
+  assert.equal(normalizeGroupId('12345@g.us'), '');
+  assert.equal(normalizeGroupId('1234-5678@g.us'), '');
   assert.equal(normalizeGroupId('not-a-group'), '');
+});
+
+test('undersized pseudo group IDs are not extracted from DOM attributes', () => {
+  assert.deepEqual(extractGroupIds('row_12345@g.us_tail'), []);
+  assert.deepEqual(extractGroupIds('row_1234-5678@g.us_tail'), []);
 });
 
 test('destination guard requires exact ID plus exact normalized title', () => {
   assert.equal(assertPinnedGroupIdentity({
     role: 'lab',
-    expectedId: labId,
+    expectedId: modernLabId,
     expectedTitle: 'Control hípico lab',
-    actualId: labId,
+    actualId: modernLabId,
     actualTitle: 'Control hípico lab',
-    sourceId
+    sourceId: modernSourceId
   }), true);
 
   assert.throws(() => assertPinnedGroupIdentity({
-    role: 'lab', expectedId: labId, expectedTitle: 'Control hípico lab', actualId: sourceId,
-    actualTitle: 'Control hípico lab', sourceId
+    role: 'lab', expectedId: modernLabId, expectedTitle: 'Control hípico lab', actualId: modernSourceId,
+    actualTitle: 'Control hípico lab', sourceId: modernSourceId
   }), /LAB_ID_MISMATCH/);
 
   assert.throws(() => assertPinnedGroupIdentity({
-    role: 'lab', expectedId: sourceId, expectedTitle: 'Control hípico lab', actualId: sourceId,
-    actualTitle: 'Control hípico lab', sourceId
+    role: 'lab', expectedId: modernSourceId, expectedTitle: 'Control hípico lab', actualId: modernSourceId,
+    actualTitle: 'Control hípico lab', sourceId: modernSourceId
   }), /LAB_POINTS_TO_SOURCE/);
 
   assert.throws(() => assertPinnedGroupIdentity({
-    role: 'lab', expectedId: labId, expectedTitle: 'Control hípico lab', actualId: labId,
-    actualTitle: 'Grupo parecido', sourceId
+    role: 'lab', expectedId: modernLabId, expectedTitle: 'Control hípico lab', actualId: modernLabId,
+    actualTitle: 'Grupo parecido', sourceId: modernSourceId
   }), /LAB_TITLE_MISMATCH/);
 });
 
 test('ambiguous discovery never guesses a group ID', () => {
-  assert.equal(selectUniqueGroupId([sourceId]), sourceId);
-  assert.equal(selectUniqueGroupId([sourceId, labId]), '');
-  assert.equal(selectUniqueGroupId([sourceId, labId], labId), labId);
-  assert.equal(selectUniqueGroupId([sourceId], labId), '');
+  assert.equal(selectUniqueGroupId([legacySourceId]), legacySourceId);
+  assert.equal(selectUniqueGroupId([legacySourceId, modernLabId]), '');
+  assert.equal(selectUniqueGroupId([legacySourceId, modernLabId], modernLabId), modernLabId);
+  assert.equal(selectUniqueGroupId([legacySourceId], modernLabId), '');
 });
 
-test('logs can redact group IDs', () => {
-  const redacted = redactGroupId(sourceId);
-  assert.match(redacted, /^120363…1111@g\.us$/);
-  assert.equal(redacted.includes(sourceId), false);
+test('logs redact modern and legacy group IDs', () => {
+  const legacyRedacted = redactGroupId(legacySourceId);
+  const modernRedacted = redactGroupId(modernSourceId);
+  assert.match(legacyRedacted, /^120363…1111@g\.us$/);
+  assert.match(modernRedacted, /^120363…3333@g\.us$/);
+  assert.equal(legacyRedacted.includes(legacySourceId), false);
+  assert.equal(modernRedacted.includes(modernSourceId), false);
 });
