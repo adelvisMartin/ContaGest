@@ -1,11 +1,4 @@
-import crypto from 'node:crypto';
-import { env, sha256, supabase, classifyText } from './_shared.js';
-
-function safeEqual(left, right) {
-  const a = Buffer.from(String(left || ''));
-  const b = Buffer.from(String(right || ''));
-  return a.length === b.length && a.length > 0 && crypto.timingSafeEqual(a, b);
-}
+import { env, safeEqual, sha256, supabase, classifyText } from './_shared.js';
 
 function slug(value) {
   return String(value || 'grupo')
@@ -18,7 +11,7 @@ function shadowSuggestion(classification, body) {
   const suggestions = {
     offer: `Oferta detectada de ${sender}. Verificar participante, carrera, jugada, caballo y monto antes de emparejar o confirmar.`,
     reply_review: `Respuesta corta/citada detectada de ${sender}. Correlacionar con el mensaje origen y validar quién toma el monto.`,
-    race_close: 'Cierre de recepción detectado. Confirmar hipódromo y carrera activa antes de publicar plano o bloquear nuevas jugadas.',
+    race_close: 'Cierre de recepción detectado. Confirmar hipódromo y carrera activa antes de bloquear nuevas jugadas.',
     day_close: 'Cierre de jornada detectado. Revisar carreras pendientes, snapshots y disponibles antes de publicar el cierre final.',
     result: 'Llegada/pizarra detectada. Confirmar carrera e hipódromo antes de aplicarla al motor de liquidación.',
     plan_snapshot: 'Plano detectado. Comparar huella, parejas y montos contra la carrera activa antes de aceptarlo.',
@@ -28,17 +21,31 @@ function shadowSuggestion(classification, body) {
   return suggestions[classification] || '';
 }
 
-async function resolveOwnerId() {
-  const rows = await supabase('hipico_workspaces?select=owner_id&order=updated_at.desc&limit=1');
-  const ownerId = rows?.[0]?.owner_id;
-  if (!ownerId) throw new Error('No Hípico workspace owner found');
-  return ownerId;
+function validateBody(body) {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) return 'invalid_body';
+  const groupId = String(body.groupId || '').trim();
+  const externalMessageId = String(body.externalMessageId || '').trim();
+  const role = String(body.channelRole || 'source');
+  if (!groupId || groupId.length > 220 || !externalMessageId || externalMessageId.length > 320) return 'invalid_identifiers';
+  if (!['source', 'lab'].includes(role)) return 'invalid_channel_role';
+  if (String(body.text || '').length > 4000) return 'text_too_large';
+  if (String(body.senderId || '').length > 220 || String(body.senderLabel || '').length > 220) return 'sender_too_large';
+  if (role === 'source' && body.shadowMode !== true) return 'source_requires_shadow_mode';
+  const pinnedSource = env('HIPICO_SOURCE_GROUP_ID', false);
+  const pinnedLab = env('HIPICO_LAB_GROUP_ID', false);
+  if (role === 'source' && pinnedSource && groupId !== pinnedSource) return 'source_group_not_authorized';
+  if (role === 'lab' && pinnedLab && groupId !== pinnedLab) return 'lab_group_not_authorized';
+  return null;
 }
 
 async function ensureChannel(ownerId, body) {
-  const groupId = String(body.groupId || '').trim();
-  const groupName = String(body.groupName || 'Grupo WhatsApp').trim();
-  const groupKey = `web-${slug(groupName)}-${sha256(groupId).slice(0, 10)}`;
+  const groupId = String(body.groupId).trim();
+  const groupName = String(body.groupName || 'Grupo WhatsApp').trim().slice(0, 220);
+  const role = String(body.channelRole || 'source');
+  const explicitChannelKey = String(body.channelKey || '').trim();
+  const groupKey = explicitChannelKey && /^[A-Za-z0-9_-]{3,120}$/.test(explicitChannelKey)
+    ? explicitChannelKey
+    : `web-${slug(groupName)}-${sha256(groupId).slice(0, 10)}`;
   const payload = [{
     owner_id: ownerId,
     group_key: groupKey,
@@ -49,8 +56,8 @@ async function ensureChannel(ownerId, body) {
       source: 'whatsapp_web_linked_device',
       group_id_hash: sha256(groupId),
       auto_send: false,
-      bridge_version: String(body.bridgeVersion || ''),
-      channel_role: String(body.channelRole || 'source'),
+      bridge_version: String(body.bridgeVersion || '').slice(0, 80),
+      channel_role: role,
       shadow_mode: Boolean(body.shadowMode)
     }
   }];
@@ -64,7 +71,6 @@ async function ensureChannel(ownerId, body) {
 
 async function recordShadowPrediction({ ownerId, channel, body, messageRow, classification, confidence, suggestion }) {
   if (!body.shadowMode || body.channelRole !== 'source' || !messageRow?.id) return;
-  const sourceExternalMessageId = String(body.externalMessageId || '');
   await supabase('hipico_shadow_evaluations?on_conflict=owner_id,source_group_key,source_external_message_id,prediction_type', {
     method: 'POST',
     headers: { Prefer: 'resolution=ignore-duplicates,return=minimal' },
@@ -72,7 +78,7 @@ async function recordShadowPrediction({ ownerId, channel, body, messageRow, clas
       owner_id: ownerId,
       source_group_key: channel.group_key,
       source_message_id: messageRow.id,
-      source_external_message_id: sourceExternalMessageId,
+      source_external_message_id: String(body.externalMessageId || ''),
       scenario_key: String(body.quotedExternalMessageId || body.externalMessageId || ''),
       prediction_type: classification,
       predicted_payload: {
@@ -91,28 +97,29 @@ async function recordShadowPrediction({ ownerId, channel, body, messageRow, clas
 }
 
 export default async function handler(req, res) {
-  if (req.method !== 'POST') return res.status(405).json({ error: 'method_not_allowed' });
+  res.setHeader('Cache-Control', 'no-store, max-age=0');
+  if (req.method !== 'POST') return res.status(405).json({ ok: false, error: 'method_not_allowed' });
 
   const configuredToken = env('HIPICO_GROUP_BRIDGE_TOKEN');
-  const suppliedToken = req.headers['x-hipico-bridge-token'];
-  if (!safeEqual(suppliedToken, configuredToken)) return res.status(401).json({ error: 'unauthorized' });
+  if (!safeEqual(req.headers['x-hipico-bridge-token'], configuredToken)) return res.status(401).json({ ok: false, error: 'unauthorized' });
 
   let body;
   try {
     body = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
   } catch {
-    return res.status(400).json({ error: 'invalid_json' });
+    return res.status(400).json({ ok: false, error: 'invalid_json' });
   }
+  const bodyError = validateBody(body);
+  if (bodyError) return res.status(400).json({ ok: false, error: bodyError });
 
-  const groupId = String(body?.groupId || '').trim();
-  const externalMessageId = String(body?.externalMessageId || '').trim();
-  const text = String(body?.text || '');
-  if (!groupId || !externalMessageId) return res.status(400).json({ error: 'missing_group_or_message_id' });
+  const groupId = String(body.groupId).trim();
+  const externalMessageId = String(body.externalMessageId).trim();
+  const text = String(body.text || '');
 
   try {
-    const ownerId = await resolveOwnerId();
+    const ownerId = env('HIPICO_OWNER_ID');
     const channel = await ensureChannel(ownerId, body);
-    if (!channel?.id) throw new Error('Channel could not be resolved');
+    if (!channel?.id) throw new Error('channel_resolution_failed');
 
     const [classification, confidence] = classifyText(text);
     const suggestion = shadowSuggestion(classification, body);
@@ -133,7 +140,7 @@ export default async function handler(req, res) {
         sender_role: body.fromMe ? 'operator' : 'unknown',
         quoted_external_message_id: body.quotedExternalMessageId || null,
         sent_at: body.timestamp || null,
-        message_type: String(body.type || 'text'),
+        message_type: String(body.type || 'text').slice(0, 80),
         raw_text: text,
         classification,
         confidence,
@@ -147,7 +154,7 @@ export default async function handler(req, res) {
           has_media: Boolean(body.hasMedia)
         },
         metadata: {
-          bridge_version: String(body.bridgeVersion || ''),
+          bridge_version: String(body.bridgeVersion || '').slice(0, 80),
           received_by: 'group-bridge-ingest',
           proposed_reply: suggestion || null
         }
@@ -155,38 +162,29 @@ export default async function handler(req, res) {
     });
 
     const duplicate = !Array.isArray(rows) || rows.length === 0;
-    if (!duplicate) {
-      await recordShadowPrediction({ ownerId, channel, body, messageRow: rows[0], classification, confidence, suggestion });
-    }
+    if (!duplicate) await recordShadowPrediction({ ownerId, channel, body, messageRow: rows[0], classification, confidence, suggestion });
 
-    const response = {
+    const diagnostic = /^\/hipico_status\s*$/i.test(text.trim())
+      ? `Hípico Control conectado ✅\nCanal: ${String(body.groupName || 'WhatsApp')}\nRecepción: activa\nModo: sombra`
+      : null;
+
+    return res.status(duplicate ? 200 : 202).json({
+      ok: true,
       accepted: true,
       duplicate,
       classification,
       confidence,
       channelKey: channel.group_key,
-      automationMode: body.shadowMode ? 'shadow' : 'manual_guarded',
-      actions: []
-    };
-
-    // In shadow mode source-group suggestions are routed by the linked-device bridge
-    // to the laboratory group. No monetary action is ever applied here.
-    if (!duplicate && body.shadowMode && body.channelRole === 'source' && suggestion) {
-      response.actions.push({ type: 'reply', text: `🧭 ${suggestion}` });
-    }
-
-    // Harmless end-to-end diagnostic. It proves message -> backend -> authorized
-    // bridge response without changing bets, races or balances.
-    if (!duplicate && /^\/hipico_status\s*$/i.test(text.trim())) {
-      response.actions.push({
-        type: 'reply',
-        text: `Hípico Control conectado ✅\nCanal: ${String(body.groupName || 'WhatsApp')}\nRecepción: activa\nModo: ${body.shadowMode ? 'sombra' : 'manual protegido'}`
-      });
-    }
-
-    return res.status(200).json(response);
+      automationMode: 'shadow',
+      actions: [],
+      labSimulation: !duplicate && body.channelRole === 'source' ? {
+        text: diagnostic || (suggestion ? `🧭 ${suggestion}` : null),
+        sourceExternalMessageId: externalMessageId,
+        monetaryAutoApply: false
+      } : null
+    });
   } catch (error) {
-    console.error('hipico group bridge ingest failed', error);
-    return res.status(500).json({ error: 'ingest_failed' });
+    console.error('hipico group bridge ingest failed', { message: error?.message || String(error) });
+    return res.status(503).json({ ok: false, retryable: true, error: 'ingest_unavailable' });
   }
 }
