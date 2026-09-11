@@ -18,10 +18,10 @@ export async function loadHandoff(groupKey: string, participantId: string, raceI
   const initial = initialHandoffState(groupKey, participantId, raceId);
   const rows = await prisma.$queryRaw<Array<{
     conversationKey: string; groupKey: string; participantId: string; raceId: string | null; ownership: 'bot'|'human';
-    clarificationCount: number; reason: string | null; humanOwnerId: string | null; expiresAt: Date | null; updatedAt: Date;
+    clarificationCount: number; reason: string | null; humanOwnerId: string | null; expiresAt: Date | null; updatedAt: Date; version: number;
   }>>`
     SELECT "conversationKey", "groupKey", "participantId", "raceId", "ownership", "clarificationCount",
-           "reason", "humanOwnerId", "expiresAt", "updatedAt"
+           "reason", "humanOwnerId", "expiresAt", "updatedAt", "version"
     FROM public."HipicoConversationHandoff"
     WHERE "conversationKey"=${initial.conversationKey}
     LIMIT 1
@@ -38,27 +38,43 @@ export async function loadHandoff(groupKey: string, participantId: string, raceI
     reason: row.reason,
     humanOwnerId: row.humanOwnerId,
     expiresAt: row.expiresAt?.toISOString() || null,
-    updatedAt: row.updatedAt.toISOString()
+    updatedAt: row.updatedAt.toISOString(),
+    version: Number(row.version || 0)
   } satisfies HandoffState;
 }
 
 export async function saveHandoff(state: HandoffState, audit?: { eventType: string; actorId?: string | null; sourceMessageId?: string | null; correlationId?: string | null; payload?: unknown }) {
-  await prisma.$transaction(async (tx) => {
-    await tx.$executeRaw`
-      INSERT INTO public."HipicoConversationHandoff"
-        ("conversationKey","groupKey","participantId","raceId","ownership","clarificationCount","reason","humanOwnerId","expiresAt","version","updatedAt")
-      VALUES
-        (${state.conversationKey},${state.groupKey},${state.participantId},${state.raceId},${state.ownership},${state.clarificationCount},
-         ${state.reason},${state.humanOwnerId},${state.expiresAt ? new Date(state.expiresAt) : null},1,${new Date(state.updatedAt)})
-      ON CONFLICT ("conversationKey") DO UPDATE SET
-        "ownership"=EXCLUDED."ownership",
-        "clarificationCount"=EXCLUDED."clarificationCount",
-        "reason"=EXCLUDED."reason",
-        "humanOwnerId"=EXCLUDED."humanOwnerId",
-        "expiresAt"=EXCLUDED."expiresAt",
-        "version"=public."HipicoConversationHandoff"."version"+1,
-        "updatedAt"=EXCLUDED."updatedAt"
-    `;
+  const expectedVersion=Math.max(0,Math.trunc(Number(state.version||0)));
+  return prisma.$transaction(async (tx) => {
+    let rows:Array<{version:number}>;
+    if(expectedVersion===0){
+      rows=await tx.$queryRaw<Array<{version:number}>>`
+        INSERT INTO public."HipicoConversationHandoff"
+          ("conversationKey","groupKey","participantId","raceId","ownership","clarificationCount","reason","humanOwnerId","expiresAt","version","updatedAt")
+        VALUES
+          (${state.conversationKey},${state.groupKey},${state.participantId},${state.raceId},${state.ownership},${state.clarificationCount},
+           ${state.reason},${state.humanOwnerId},${state.expiresAt ? new Date(state.expiresAt) : null},1,${new Date(state.updatedAt)})
+        ON CONFLICT ("conversationKey") DO NOTHING
+        RETURNING "version"
+      `;
+    }else{
+      rows=await tx.$queryRaw<Array<{version:number}>>`
+        UPDATE public."HipicoConversationHandoff"
+        SET "ownership"=${state.ownership},
+            "clarificationCount"=${state.clarificationCount},
+            "reason"=${state.reason},
+            "humanOwnerId"=${state.humanOwnerId},
+            "expiresAt"=${state.expiresAt ? new Date(state.expiresAt) : null},
+            "version"="version"+1,
+            "updatedAt"=${new Date(state.updatedAt)}
+        WHERE "conversationKey"=${state.conversationKey}
+          AND "version"=${expectedVersion}
+        RETURNING "version"
+      `;
+    }
+    if(!rows[0]?.version){
+      throw Object.assign(new Error('Handoff state changed concurrently; reload before writing.'),{code:'HIPICO_HANDOFF_CONFLICT'});
+    }
     if (audit) {
       await tx.$executeRaw`
         INSERT INTO public."HipicoHandoffAudit"
@@ -68,8 +84,8 @@ export async function saveHandoff(state: HandoffState, audit?: { eventType: stri
            ${audit.correlationId || null},${JSON.stringify(audit.payload || {})}::jsonb)
       `;
     }
+    return {...state,version:Number(rows[0].version)} satisfies HandoffState;
   });
-  return state;
 }
 
 export async function persistResponsePlan(plan: SafeResponsePlan) {
