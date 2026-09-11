@@ -95,11 +95,13 @@ router.post('/webhook',async(req,res)=>{
     });
   }
   if(result.mismatched>0){
-    // Reusing an immutable Meta provider id with different source content is an
-    // integrity violation, not a transient delivery failure. Retrying the same
-    // altered event cannot make it valid and must never overwrite the original.
-    return res.status(409).json({
+    // Meta retries webhook deliveries on non-2xx responses. A replay mismatch is
+    // permanent, so acknowledge transport receipt with 200 while reporting that
+    // the altered event was rejected and never overwriting the original record.
+    return res.status(200).json({
       ok:false,
+      acknowledged:true,
+      accepted:false,
       retryable:false,
       error:'webhook_replay_mismatch',
       received:messages.length,
