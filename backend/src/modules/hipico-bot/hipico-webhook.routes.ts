@@ -19,6 +19,20 @@ function rawMessageCount(payload:any){
   return count;
 }
 
+function rawEnvelopeIdentityError(payload:any,env:RuntimeEnv=process.env){
+  const expected=webhookPhoneNumberId(env);
+  if(!expected)return 'WEBHOOK_PHONE_NUMBER_NOT_CONFIGURED';
+  for(const entry of payload?.entry||[])for(const change of entry?.changes||[]){
+    const value=change?.value||{};
+    const hasMessages=Array.isArray(value.messages)&&value.messages.length>0;
+    const hasStatuses=Array.isArray(value.statuses)&&value.statuses.length>0;
+    if(!hasMessages&&!hasStatuses)continue;
+    const actual=String(value?.metadata?.phone_number_id||'').trim();
+    if(actual!==expected)return 'WEBHOOK_PHONE_NUMBER_MISMATCH';
+  }
+  return null;
+}
+
 function webhookIdentityError(messages:ExtractedMessage[],env:RuntimeEnv=process.env){
   const expected=webhookPhoneNumberId(env);
   if(!expected)return 'WEBHOOK_PHONE_NUMBER_NOT_CONFIGURED';
@@ -72,6 +86,14 @@ router.post('/webhook',async(req,res)=>{
     return res.status(401).json({ok:false,retryable:false,error:'Firma de webhook inválida.'});
   }
 
+  const envelopeIdentityError=rawEnvelopeIdentityError(req.body);
+  if(envelopeIdentityError==='WEBHOOK_PHONE_NUMBER_NOT_CONFIGURED'){
+    return res.status(503).json({ok:false,retryable:true,error:'webhook_not_configured'});
+  }
+  if(envelopeIdentityError){
+    return res.status(200).json({ok:false,acknowledged:true,accepted:false,retryable:false,error:'webhook_phone_number_mismatch',received:0});
+  }
+
   const expectedRawMessages=rawMessageCount(req.body);
   const messages=extractMessages(req.body).map((message)=>({...message,body:String(message.body||'').slice(0,4000)}));
   if(messages.length!==expectedRawMessages){
@@ -106,4 +128,4 @@ router.post('/webhook',async(req,res)=>{
 
 export default router;
 
-export const __test__={rawMessageCount,webhookIdentityError,processMessagesBounded,WEBHOOK_BATCH_CONCURRENCY,WEBHOOK_REPLAY_MISMATCH};
+export const __test__={rawMessageCount,rawEnvelopeIdentityError,webhookIdentityError,processMessagesBounded,WEBHOOK_BATCH_CONCURRENCY,WEBHOOK_REPLAY_MISMATCH};
