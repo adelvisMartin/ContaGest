@@ -44,6 +44,16 @@ test('dynamic icon-only actions receive stable accessible names without overwrit
   assert.match(guard, /ensureActionLabels\(document\)/);
 });
 
+test('dynamic form labels are associated with visible field controls after every render', () => {
+  assert.match(app, /<div class="field"><label>Hipódromo<\/label><select/);
+  assert.match(guard, /FIELD_CONTROL_SELECTOR\s*=\s*':scope > input:not\(\[type="hidden"\]\), :scope > select, :scope > textarea, :scope > button'/);
+  assert.match(guard, /root\.querySelectorAll\('\.field > label'\)/);
+  assert.match(guard, /label\.htmlFor \|\| label\.querySelector\('input,select,textarea,button'\)/);
+  assert.match(guard, /control\.id = `hipico-field-\$\{crypto\.randomUUID\(\)\}`/);
+  assert.match(guard, /label\.htmlFor = control\.id/);
+  assert.match(guard, /ensureFieldLabels\(document\)/);
+});
+
 test('dialog replacement clears stale active reference before activating the next overlay', () => {
   assert.match(guard, /const nextDialog = document\.querySelector\(DIALOG_SELECTOR\);\s*activeDialog = null;/s);
   assert.match(guard, /if \(nextDialog instanceof HTMLElement\) \{\s*activate\(nextDialog\);/s);
