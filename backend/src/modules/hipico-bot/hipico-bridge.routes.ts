@@ -80,8 +80,9 @@ router.post('/bridge/events',async(req,res)=>{
   const transportPayload={source:'whatsapp-web-bridge',targetType:'group_bridge',status:'shadow',bridgeVersion:input.bridgeVersion,historySync:input.historySync,groupId:input.groupId,groupName:input.groupName,channelKey:input.channelKey||null,labChannelKey:input.labChannelKey||null,channelRole:input.channelRole,bridgeShadowMode:input.shadowMode,senderRaw:input.senderId,senderLabel:input.senderLabel,fromMe:input.fromMe,sentAt:input.timestamp,rawMeta:input.rawMeta,hasMedia:input.hasMedia,mediaKind:input.mediaKind,mediaName:input.mediaName||null,quotedExternalMessageId:input.quotedExternalMessageId,operational:result.entities||null,raceContextKey,conversationalAppSec:abuse};
   try{
     const event=await persistBridgeTransportEvent({providerMessageId,phoneNumberId:`group:${input.groupId}`,sender,messageType:input.type,body:input.text,result,payload:transportPayload});
+    const shadowProjection=event.projection;
     const canonical=await persistCanonicalShadow({groupName:input.groupName,channelKey:input.channelKey,labChannelKey:input.labChannelKey,channelRole:input.channelRole,providerMessageId,sender,senderLabel:input.senderLabel,fromMe:input.fromMe,sentAt:input.timestamp,messageType:input.type,mediaKind:input.mediaKind,mediaName:input.mediaName,historySync:input.historySync,body:input.text,quotedExternalMessageId:input.quotedExternalMessageId,bridgeVersion:input.bridgeVersion,rawMeta:input.rawMeta,transportEventId:event.id,result});
-    const outbox=await ensureGroupShadowOutbox({eventId:event.id,recipient:input.groupId,result});const safetyReady=await responseSafetyReadiness();const groupKey=String(canonical?.groupKey||input.channelKey||input.groupId);let handoffState=safetyReady.ready&&!input.historySync?await loadHandoff(groupKey,sender,raceContextKey):null;
+    const outbox=await ensureGroupShadowOutbox({eventId:event.id,recipient:input.groupId,result:shadowProjection});const safetyReady=await responseSafetyReadiness();const groupKey=String(canonical?.groupKey||input.channelKey||input.groupId);let handoffState=safetyReady.ready&&!input.historySync?await loadHandoff(groupKey,sender,raceContextKey):null;
     const conversationDecision=decideConversation({sourceMessageId:input.externalMessageId,participantId:sender,participantLabel:input.senderLabel,text:assessment.sanitizedText,timestamp:input.timestamp,raceId:raceContextKey,quotedSourceMessageId:input.quotedExternalMessageId,mediaKind:input.mediaKind},{seenSourceMessageIds:event.inserted?[]:[input.externalMessageId],humanOwnedParticipantIds:handoffState?.ownership==='human'?[sender]:[]},()=>result);
     if(handoffState&&!input.historySync){
       const next=updateHandoffAfterDecision(handoffState,conversationDecision,new Date());
@@ -93,7 +94,8 @@ router.post('/bridge/events',async(req,res)=>{
     if(input.historySync)responsePlan={...responsePlan,intent:'NONE',text:null,canSend:false,confirmationVerified:false,evidence:null,handoffRequired:false,reason:'HISTORY_SYNC_NO_RESPONSE'};
     else if(!rate.allowed)responsePlan={...responsePlan,intent:'NONE',text:null,canSend:false,confirmationVerified:false,evidence:null,handoffRequired:false,reason:rate.reason||'RATE_LIMIT'};
     const responseReceipt=safetyReady.ready&&!input.historySync&&event.inserted?await persistResponsePlan(responsePlan):null;
-    return res.status(event.inserted?202:200).json({ok:true,duplicate:!event.inserted,mode:'shadow',historySync:input.historySync,classification:result.intent,actions:[] as never[],conversationalAppSec:abuse,conversationDecision,responsePlan,responseReceipt,labSimulation:buildLabSimulation(input,result,canonical,responsePlan.text),data:{eventId:event.id,outboxId:outbox.id,canonical,raceContextKey,intent:result.intent,risk:result.risk,entities:result.entities||null,autoEligible:false}});
+    const labSimulation=buildLabSimulation(input,shadowProjection,canonical,event.inserted?responsePlan.text:null);
+    return res.status(event.inserted?202:200).json({ok:true,duplicate:!event.inserted,mode:'shadow',historySync:input.historySync,classification:result.intent,actions:[] as never[],conversationalAppSec:abuse,conversationDecision,responsePlan,responseReceipt,labSimulation,data:{eventId:event.id,outboxId:outbox.id,canonical,raceContextKey,intent:result.intent,risk:result.risk,entities:result.entities||null,autoEligible:false}});
   }catch(error:any){
     const mismatch=replayMismatchCode(error);
     if(mismatch){console.warn('[hipico-bridge] replay identity mismatch',{messageRef:shadowTag(input.externalMessageId),channelRole:input.channelRole,code:mismatch});return res.status(409).json({ok:false,retryable:false,error:'REPLAY_IDENTITY_MISMATCH'});}
@@ -104,4 +106,4 @@ router.post('/bridge/events',async(req,res)=>{
 });
 export default router;
 
-export const __test__={replayMismatchCode,validatePinnedChannel};
+export const __test__={replayMismatchCode,validatePinnedChannel,buildLabSimulation};
