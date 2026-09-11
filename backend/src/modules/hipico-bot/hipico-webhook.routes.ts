@@ -63,6 +63,9 @@ router.post('/webhook',async(req,res)=>{
   if(identityError){
     return res.status(400).json({ok:false,retryable:false,error:'webhook_phone_number_mismatch'});
   }
+  if(messages.length===0){
+    return res.status(200).json({ok:true,received:0,processed:0,failed:0});
+  }
 
   // Production webhook acknowledgements require durable PostgreSQL evidence.
   // The in-memory store remains useful for local/manual development paths, but
