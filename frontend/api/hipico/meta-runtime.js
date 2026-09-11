@@ -1,4 +1,6 @@
-import { strongSecretConfigured } from './_shared.js';
+import { PUBLIC_SECRET_PLACEHOLDER_PATTERN, strongSecretConfigured } from './_shared.js';
+
+export const PUBLIC_PLACEHOLDER_PATTERN=PUBLIC_SECRET_PLACEHOLDER_PATTERN;
 
 export function strongMetaSecretConfigured(value){
   return strongSecretConfigured(value);
