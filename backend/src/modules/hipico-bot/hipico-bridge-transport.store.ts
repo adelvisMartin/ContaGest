@@ -54,6 +54,17 @@ function assertGroupShadowReplay(existing:PersistedGroupShadowSource,input:Group
   assertReplayMatch('group-shadow',persisted,replay);
 }
 
+function assertGroupShadowReplayAtTransportBoundary(existing:PersistedGroupShadowSource,input:GroupOutboxInput){
+  try{
+    assertGroupShadowReplay(existing,input);
+  }catch(error:any){
+    if(error?.code==='HIPICO_GROUP_SHADOW_OUTBOX_REPLAY_MISMATCH'){
+      error.code='HIPICO_TRANSPORT_REPLAY_MISMATCH';
+    }
+    throw error;
+  }
+}
+
 /**
  * The real WhatsApp group gate must never acknowledge an event using a
  * serverless in-memory fallback. If PostgreSQL is unavailable these functions
@@ -128,7 +139,7 @@ export async function ensureGroupShadowOutbox(input:GroupOutboxInput){
     LIMIT 1
   `;
   if(!existing[0]?.id)throw new Error('HIPICO_GROUP_SHADOW_OUTBOX_DEDUPE_ROW_MISSING');
-  assertGroupShadowReplay(existing[0],input);
+  assertGroupShadowReplayAtTransportBoundary(existing[0],input);
   return{id:existing[0].id};
 }
 
@@ -141,4 +152,4 @@ export async function bridgePersistenceReady(){
   return Boolean(rows[0]?.eventTable&&rows[0]?.outboxTable);
 }
 
-export const __test__={assertTransportReplay,assertGroupShadowReplay};
+export const __test__={assertTransportReplay,assertGroupShadowReplay,assertGroupShadowReplayAtTransportBoundary};
