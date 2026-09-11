@@ -73,6 +73,8 @@ test('Supabase helper uses bounded fetch and does not echo upstream bodies into 
 test('canonical serverless bridge identity accepts modern and legacy WhatsApp group JIDs only',()=>{
   assert.equal(isWhatsAppGroupId(SOURCE_JID),true);
   assert.equal(isWhatsAppGroupId(LAB_JID),true);
+  assert.equal(isWhatsAppGroupId('12345@g.us'),false);
+  assert.equal(isWhatsAppGroupId('1234-5678@g.us'),false);
   assert.equal(isWhatsAppGroupId('source-gid'),false);
   assert.equal(isWhatsAppGroupId('584121234567@c.us'),false);
 });
@@ -147,18 +149,26 @@ test('persisted serverless channels cannot be reactivated or repurposed by incom
   assert.match(ingest, /resolution=ignore-duplicates/);
 });
 
-test('legacy serverless duplicate identity binds sender, timestamp, body, type and quote context', () => {
+test('serverless duplicate identity binds sender, timestamp, body, type, quote and semantic transport flags', () => {
   const base = {
     senderId: '584121234567',
     timestamp: '2026-09-11T01:00:00-05:00',
     type: 'chat',
     text: '30k',
-    quotedExternalMessageId: 'source-1'
+    quotedExternalMessageId: 'source-1',
+    fromMe: false,
+    hasMedia: false
   };
   const sameInstant = { ...base, timestamp: '2026-09-11T06:00:00.000Z' };
   assert.equal(ingestTest.sourceReplaySignature(base), ingestTest.sourceReplaySignature(sameInstant));
   assert.notEqual(ingestTest.sourceReplaySignature(base), ingestTest.sourceReplaySignature({ ...base, text: '300k' }));
   assert.notEqual(ingestTest.sourceReplaySignature(base), ingestTest.sourceReplaySignature({ ...base, quotedExternalMessageId: 'source-2' }));
+  assert.notEqual(ingestTest.sourceReplaySignature(base), ingestTest.sourceReplaySignature({ ...base, fromMe: true }));
+  assert.notEqual(ingestTest.sourceReplaySignature(base), ingestTest.sourceReplaySignature({ ...base, hasMedia: true }));
+  const persisted={sender_id:base.senderId,sent_at:'2026-09-11T06:00:00.000Z',message_type:base.type,raw_text:base.text,quoted_external_message_id:base.quotedExternalMessageId,normalized:{from_me:false,has_media:false}};
+  assert.equal(ingestTest.persistedReplaySignature(persisted),ingestTest.sourceReplaySignature(base));
+  assert.notEqual(ingestTest.persistedReplaySignature({...persisted,normalized:{from_me:true,has_media:false}}),ingestTest.sourceReplaySignature(base));
+  assert.match(ingest, /select=id,sender_id,sent_at,message_type,raw_text,quoted_external_message_id,normalized/);
   assert.match(ingest, /replay_mismatch/);
   assert.match(ingest, /retryable:\s*false/);
 });
