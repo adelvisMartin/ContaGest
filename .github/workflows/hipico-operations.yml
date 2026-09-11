@@ -6,6 +6,7 @@ on:
       - 'frontend/public/hipico-control/**'
       - 'frontend/api/hipico/**'
       - 'backend/src/modules/hipico-bot/**'
+      - 'backend/scripts/hipico-db-contract.mjs'
       - 'tools/hipico-whatsapp-bridge/**'
       - 'tools/hipico-whatsapp-web-bridge/**'
       - 'supabase/sql/hipico_*.sql'
@@ -23,6 +24,7 @@ on:
       - 'frontend/public/hipico-control/**'
       - 'frontend/api/hipico/**'
       - 'backend/src/modules/hipico-bot/**'
+      - 'backend/scripts/hipico-db-contract.mjs'
       - 'tools/hipico-whatsapp-bridge/**'
       - 'tools/hipico-whatsapp-web-bridge/**'
       - 'supabase/sql/hipico_*.sql'
@@ -43,6 +45,23 @@ jobs:
   operations-regression:
     runs-on: ubuntu-latest
     timeout-minutes: 25
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: hipico_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d hipico_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/hipico_ci
+      HIPICO_DB_CONTRACT_EPHEMERAL: '1'
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -87,6 +106,8 @@ jobs:
           node --check tools/hipico-whatsapp-bridge/src/index.mjs
       - name: Install root lock for Hípico backend contracts
         run: npm ci --no-audit --no-fund
+      - name: PostgreSQL isolated migration, RLS, idempotency and multigroup contract
+        run: node backend/scripts/hipico-db-contract.mjs
       - name: Backend typecheck
         run: npm --workspace backend run typecheck
       - name: Backend Hípico security, money, parser and conversation contracts
