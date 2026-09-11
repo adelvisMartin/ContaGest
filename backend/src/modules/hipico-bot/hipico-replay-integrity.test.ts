@@ -79,3 +79,22 @@ test('group shadow outbox rejects a duplicate event with mutated projection', ()
     );
   }
 });
+
+test('group shadow replay mismatch is mapped to the transport quarantine code at the route boundary', () => {
+  const existing = {
+    id: 'hbo-1',
+    recipient: 'lab-group',
+    message: 'Revisar jugada',
+    intent: 'offer_player',
+    risk: 'monetary'
+  };
+  const mutated = {
+    eventId: 'event-1',
+    recipient: 'source-group',
+    result: { suggestion: 'Revisar jugada', intent: 'offer_player', risk: 'monetary' }
+  } as any;
+  assert.throws(
+    () => bridgeStoreTest.assertGroupShadowReplayAtTransportBoundary(existing, mutated),
+    (error: any) => error?.code === 'HIPICO_TRANSPORT_REPLAY_MISMATCH'
+  );
+});
