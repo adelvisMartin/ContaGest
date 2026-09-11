@@ -120,7 +120,7 @@ export async function fetchWithTimeout(url, init = {}, timeoutMs = DEFAULT_FETCH
 
 export async function supabase(path, init = {}) {
   const base = env('HIPICO_SUPABASE_URL').replace(/\/$/, '');
-  const serviceKey = env('HIPICO_SUPABASE_SERVICE_ROLE_KEY');
+  const serviceKey = serverSecret('HIPICO_SUPABASE_SERVICE_ROLE_KEY');
   const response = await fetchWithTimeout(`${base}/rest/v1/${path}`, {
     ...init,
     headers: {
