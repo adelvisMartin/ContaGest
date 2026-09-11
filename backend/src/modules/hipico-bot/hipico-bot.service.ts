@@ -160,6 +160,17 @@ export const HipicoBotStore={
     if(!row)return false;
     Object.assign(row,{status:'failed',error:safeError});
     return true;
+  },
+  async markReconciliationRequired(idValue:string,error:string){
+    const safeError=String(error||'ambiguous_delivery').slice(0,1000);
+    if(await dbReady()){
+      const affected=await prisma.$executeRaw`UPDATE public."HipicoBotOutbox" SET "status"='reconciliation_required',"error"=${safeError},"updatedAt"=CURRENT_TIMESTAMP WHERE "id"=${idValue} AND "status"='sending'`;
+      return affected===1;
+    }
+    const row=memoryOutbox.find((item)=>item.id===idValue&&item.status==='sending');
+    if(!row)return false;
+    Object.assign(row,{status:'reconciliation_required',error:safeError,updatedAt:new Date().toISOString()});
+    return true;
   }
 };
 
@@ -172,13 +183,21 @@ export async function sendCloudText(recipient:string,message:string){
   if(!E164_DIGITS.test(recipient))throw new Error('Destinatario WhatsApp inválido.');
   const text=String(message||'').trim();
   if(!text||text.length>4000)throw Object.assign(new Error('Mensaje WhatsApp vacío o demasiado largo.'),{code:'HIPICO_CLOUD_MESSAGE_INVALID'});
-  const response=await fetch(`https://graph.facebook.com/${encodeURIComponent(version)}/${encodeURIComponent(phoneId)}/messages`,{
-    method:'POST',headers:{authorization:`Bearer ${token}`,'content-type':'application/json'},
-    body:JSON.stringify({messaging_product:'whatsapp',recipient_type:'individual',to:recipient,type:'text',text:{preview_url:false,body:text}}),
-    signal:AbortSignal.timeout(10_000)
-  });
+  let response:Response;
+  try{
+    response=await fetch(`https://graph.facebook.com/${encodeURIComponent(version)}/${encodeURIComponent(phoneId)}/messages`,{
+      method:'POST',headers:{authorization:`Bearer ${token}`,'content-type':'application/json'},
+      body:JSON.stringify({messaging_product:'whatsapp',recipient_type:'individual',to:recipient,type:'text',text:{preview_url:false,body:text}}),
+      signal:AbortSignal.timeout(10_000)
+    });
+  }catch(error:any){
+    throw Object.assign(new Error('No se pudo determinar si Meta aceptó el mensaje; requiere conciliación manual.'),{
+      code:'HIPICO_CLOUD_DELIVERY_AMBIGUOUS',
+      transportError:String(error?.name||'network_error').slice(0,120)
+    });
+  }
   const data=await response.json().catch(()=>({}));
-  if(!response.ok)throw new Error(`Meta Graph HTTP ${response.status}`);
+  if(!response.ok)throw Object.assign(new Error(`Meta Graph HTTP ${response.status}`),{code:'HIPICO_CLOUD_HTTP_ERROR',status:response.status});
   const providerMessageId=String(data?.messages?.[0]?.id||'');
   if(!providerMessageId)throw Object.assign(new Error('Meta no devolvió identificador de mensaje.'),{code:'HIPICO_META_MESSAGE_ID_MISSING'});
   return{providerMessageId,raw:data};
@@ -201,8 +220,11 @@ export async function processIncoming(message:any){
       const persisted=await HipicoBotStore.markSent(outbox.id,sent.providerMessageId,'automatic');
       return{duplicate:false,event,outbox:{...outbox,status:persisted?'sent':'reconciliation_required',providerMessageId:sent.providerMessageId}};
     }catch(error:any){
-      const persisted=await HipicoBotStore.markFailed(outbox.id,error?.message||String(error));
-      return{duplicate:false,event,outbox:{...outbox,status:persisted?'failed':'reconciliation_required',error:error?.message||String(error)}};
+      const ambiguous=error?.code==='HIPICO_CLOUD_DELIVERY_AMBIGUOUS';
+      const persisted=ambiguous
+        ?await HipicoBotStore.markReconciliationRequired(outbox.id,error?.message||String(error))
+        :await HipicoBotStore.markFailed(outbox.id,error?.message||String(error));
+      return{duplicate:false,event,outbox:{...outbox,status:persisted?(ambiguous?'reconciliation_required':'failed'):'reconciliation_required',error:error?.message||String(error)}};
     }
   }
   return{duplicate:false,event,outbox};
