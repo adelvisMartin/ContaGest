@@ -63,6 +63,8 @@ jobs:
           node --check frontend/public/hipico-control/assets/js/operational-copy-center.js
           node --check frontend/public/hipico-control/assets/js/race-context-guard.js
           node --check frontend/public/hipico-control/assets/js/notice-bridge.js
+          node --check frontend/public/hipico-control/assets/js/store-v2.js
+          node --check frontend/public/hipico-control/sw.js
           node --check frontend/api/hipico/_shared.js
           node --check frontend/api/hipico/status.js
           node --check frontend/api/hipico/group-bridge-ingest.js
