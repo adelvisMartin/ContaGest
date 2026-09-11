@@ -22,7 +22,7 @@ const required = [
   'logo-control-hipico.png',
   'icons/icon-192.png', 'icons/icon-512.png', 'icons/icon-192-maskable.png', 'icons/icon-512-maskable.png',
   ...canonicalCss.map((file) => `assets/css/${file}`),
-  'assets/js/app.js', 'assets/js/command-center.js', 'assets/js/command-center-shell.js', 'assets/js/theme-bootstrap.js',
+  'assets/js/app.js', 'assets/js/command-center.js', 'assets/js/command-center-shell.js', 'assets/js/theme-bootstrap.js', 'assets/js/version-guard.js',
   'assets/js/store.js', 'assets/js/supabase.js', 'assets/js/local-auth.js', 'assets/js/ui.js',
   'assets/js/password-recovery.js', 'assets/js/user-access.js', 'assets/js/help-center.js',
   'assets/js/whatsapp.js', 'assets/js/whatsapp/normalization.js', 'assets/js/whatsapp/parser.js', 'assets/js/whatsapp/ui-transcript.js'
@@ -68,6 +68,7 @@ function verifyRuntime(root, label) {
   if (!index.includes('./assets/js/app.js')) throw new Error(`${label}: app.js no está enlazado de forma portable.`);
   if (!index.includes('./assets/js/command-center-shell.js')) throw new Error(`${label}: Command Center no está enlazado.`);
   if (!index.includes('./assets/js/theme-bootstrap.js')) throw new Error(`${label}: theme bootstrap no está enlazado antes del runtime.`);
+  if (!index.includes('./assets/js/version-guard.js')) throw new Error(`${label}: version guard no está enlazado.`);
   if (!index.includes('./assets/css/app.css')) throw new Error(`${label}: app.css no está enlazado.`);
   if (!index.includes('./assets/js/help-center.js')) throw new Error(`${label}: help-center.js no está enlazado.`);
   if (/styles\.css|ui-system|tokens\.css|themes\.css|operations-pro|precision-hipica|recovery\.css/i.test(index)) throw new Error(`${label}: index todavía carga una autoridad visual retirada.`);
