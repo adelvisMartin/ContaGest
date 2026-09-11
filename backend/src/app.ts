@@ -3,6 +3,7 @@ import helmet from 'helmet';
 import { env, isProd } from './config/env.js';
 import apiRoutes from './modules/index.js';
 import authRoutes from './modules/auth/auth.routes.js';
+import hipicoDocumentRoutes from './modules/hipico/document.routes.js';
 import hipicoSystemRoutes from './modules/hipico/hipico-system.routes.js';
 import hipicoWebhookRoutes from './modules/hipico-bot/hipico-webhook.routes.js';
 import hipicoBridgeRoutes from './modules/hipico-bot/hipico-bridge.routes.js';
@@ -44,15 +45,9 @@ export function createApp(options: { readinessCheck?: ReadinessCheck } = {}) {
   app.use(securityResponseHeaders);
   app.use(corsPolicy);
 
-  // Platform probes must remain independent from business authentication and
-  // mutation gates. Readiness performs its own bounded/cached DB check.
   registerHealthRoutes(app, { readinessCheck: options.readinessCheck });
-
   app.use(globalRateLimit);
 
-  // CSP telemetry has no mutation side effect and therefore intentionally sits before
-  // the cookie-session CSRF middleware. It accepts only the reporting content types
-  // and has its own small body/traffic limits.
   app.post(
     '/api/v1/security/csp-report',
     cspReportRateLimit,
@@ -69,25 +64,17 @@ export function createApp(options: { readinessCheck?: ReadinessCheck } = {}) {
     }
   }));
 
-  // Canonical product API. This surface is intentionally independent from the
-  // compatibility/integration routes below and exposes no credentials.
   app.use('/api/v1/hipico/system', authRateLimit, hipicoSystemRoutes);
+  app.use('/api/v1/hipico/documents', authRateLimit, expensiveOperationRateLimit, hipicoDocumentRoutes);
 
-  // Control Hípico integration/compatibility boundary. Meta webhooks authenticate
-  // with x-hub-signature-256. The normal WhatsApp group laboratory uses a separate
-  // persistent WhatsApp Web Bridge, authenticated with HIPICO_BRIDGE_TOKEN and
-  // forced to shadow-only ingestion. Operator mutations keep their own token.
   app.use('/api/v1/hipico-bot', hipicoWebhookRoutes);
   app.use('/api/v1/hipico-bot', authRateLimit, hipicoBridgeRoutes);
   app.use('/api/v1/hipico-bot', authRateLimit, hipicoOperatorRoutes);
 
   app.use(csrfProtection);
-
   app.use(enforceProductionSecrets);
   app.use('/api/v1/auth', authRateLimit, authRoutes);
 
-  // High-cost routes receive an additional resource-consumption ceiling. The
-  // general mutation limiter remains active below for state-changing requests.
   app.use(
     ['/api/v1/ai', '/api/v1/exports', '/api/v1/imports', '/api/v1/reports', '/api/v1/payables'],
     expensiveOperationRateLimit

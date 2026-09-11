@@ -1,6 +1,7 @@
 import { deploymentMetadata } from '../../shared/observability/logger.js';
 import { runReadinessCheck, type ReadinessResult } from '../../shared/observability/health.js';
 import { raceProviderStatus, type HorseRaceProviderStatus } from '../hipico-bot/hipico-race-provider.js';
+import { documentExtractorCapability } from './document-extractor.js';
 import {
   HIPICO_API_VERSION,
   HIPICO_BRIDGE_PROTOCOL_VERSION,
@@ -17,6 +18,7 @@ type Dependencies = {
   source?: RuntimeEnv;
   readinessCheck?: () => Promise<ReadinessResult>;
   providerStatus?: (source: RuntimeEnv) => HorseRaceProviderStatus;
+  documentCapability?: (source: RuntimeEnv) => ReturnType<typeof documentExtractorCapability>;
   now?: () => Date;
 };
 
@@ -46,6 +48,7 @@ export async function buildHipicoSystemStatus(options: Dependencies = {}): Promi
   const source = options.source || process.env;
   const readiness = await (options.readinessCheck || runReadinessCheck)();
   const provider = (options.providerStatus || raceProviderStatus)(source);
+  const documentCapability = (options.documentCapability || documentExtractorCapability)(source);
   const sourceGroupId = text(source, 'HIPICO_SOURCE_GROUP_ID');
   const labGroupId = text(source, 'HIPICO_LAB_GROUP_ID');
   const groupsPinned = whatsappGroupId(sourceGroupId)
@@ -56,6 +59,9 @@ export async function buildHipicoSystemStatus(options: Dependencies = {}): Promi
   const backendReady = readiness.configuration === 'ok';
   const databaseReady = readiness.database === 'ok';
   const coreReady = backendReady && databaseReady;
+  const ocrRequested = text(source, 'HIPICO_DOCUMENT_OCR_ENABLED').toLowerCase() === 'true';
+  const documentReady = documentCapability.configured && documentCapability.nativeText;
+  const documentDegraded = documentReady && ocrRequested && !documentCapability.ocr;
 
   return hipicoSystemStatusSchema.parse({
     ok: coreReady,
@@ -80,7 +86,10 @@ export async function buildHipicoSystemStatus(options: Dependencies = {}): Promi
         ...componentState(provider.configured ? 'ready' : 'not_configured', provider.reason),
         financialAuthority: false
       },
-      documentEngine: componentState('not_configured', 'DOCUMENT_ENGINE_NOT_INSTALLED'),
+      documentEngine: componentState(
+        documentDegraded ? 'degraded' : documentReady ? 'ready' : 'not_configured',
+        documentDegraded ? (documentCapability.reason || 'DOCUMENT_OCR_NOT_READY') : documentReady ? null : (documentCapability.reason || 'DOCUMENT_ENGINE_NOT_INSTALLED')
+      ),
       agent: componentState('not_configured', 'AGENT_ENGINE_NOT_INSTALLED')
     }
   });
