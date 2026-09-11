@@ -47,22 +47,7 @@ async function resetDatabase() {
   `);
 }
 
-try {
-  await client.connect();
-  connected = true;
-  await resetDatabase();
-  for (const migration of migrations) await apply(migration);
-  // Reapply the hardening migration to prove it is safe on an already-migrated DB.
-  await apply('supabase/sql/hipico_v13_audit_idempotency.sql');
-
-  const ownerId = crypto.randomUUID();
-  const workspace = await client.query(
-    `insert into public.hipico_workspaces(owner_id,name,state) values($1::uuid,'Audit CI','{}'::jsonb) returning id::text as id`,
-    [ownerId]
-  );
-  const workspaceId = workspace.rows[0].id;
-  await client.query(`select set_config('request.jwt.claim.sub', $1, false)`, [ownerId]);
-
+async function assertRpcReplay(ownerId, workspaceId) {
   const payload = {
     id: 'audit-contract-stable-1', groupId: 'group-a', action: 'bet_created',
     entityType: 'bet', entityId: 'bet-1', amount: 30
@@ -89,14 +74,70 @@ try {
       `select public.hipico_append_audit($1::uuid,$2,$3,$4,$5::jsonb)`,
       [workspaceId, 'bet_created', 'bet', 'bet-1', JSON.stringify({ ...payload, amount: 31 })]
     );
-    assert.fail('same audit event id with changed payload must fail closed');
+    assert.fail('same RPC audit event id with changed payload must fail closed');
   } catch (error) {
     assert.equal(error.code, '23505');
     assert.match(String(error.message || ''), /HIPICO_AUDIT_REPLAY_MISMATCH/);
     await client.query('rollback to savepoint replay_mismatch');
   }
   await client.query('rollback');
+}
 
+async function assertDirectTableReplay(ownerId, workspaceId) {
+  const payload = {
+    id: 'audit-direct-stable-1', groupId: 'group-a', action: 'manual_review',
+    entityType: 'message', entityId: 'msg-1', status: 'reviewed'
+  };
+  const insertSql = `
+    insert into public.hipico_audit_events(owner_id,workspace_id,action,entity_type,entity_id,payload)
+    values($1::uuid,$2::uuid,$3,$4,$5,$6::jsonb)
+  `;
+  const args = [ownerId, workspaceId, 'manual_review', 'message', 'msg-1', JSON.stringify(payload)];
+  const first = await client.query(insertSql, args);
+  assert.equal(first.rowCount, 1);
+  const replay = await client.query(insertSql, args);
+  assert.equal(replay.rowCount, 0, 'exact direct-table replay must be suppressed by the table trigger');
+
+  const count = await client.query(
+    `select count(*)::int as count from public.hipico_audit_events where owner_id=$1::uuid and idempotency_key=$2`,
+    [ownerId, payload.id]
+  );
+  assert.equal(count.rows[0].count, 1);
+
+  await client.query('begin');
+  await client.query('savepoint direct_replay_mismatch');
+  try {
+    await client.query(insertSql, [
+      ownerId, workspaceId, 'manual_review', 'message', 'msg-1',
+      JSON.stringify({ ...payload, status: 'rejected' })
+    ]);
+    assert.fail('same direct audit event id with changed payload must fail closed');
+  } catch (error) {
+    assert.equal(error.code, '23505');
+    assert.match(String(error.message || ''), /HIPICO_AUDIT_REPLAY_MISMATCH/);
+    await client.query('rollback to savepoint direct_replay_mismatch');
+  }
+  await client.query('rollback');
+}
+
+try {
+  await client.connect();
+  connected = true;
+  await resetDatabase();
+  for (const migration of migrations) await apply(migration);
+  // Reapply the hardening migration to prove it is safe on an already-migrated DB.
+  await apply('supabase/sql/hipico_v13_audit_idempotency.sql');
+
+  const ownerId = crypto.randomUUID();
+  const workspace = await client.query(
+    `insert into public.hipico_workspaces(owner_id,name,state) values($1::uuid,'Audit CI','{}'::jsonb) returning id::text as id`,
+    [ownerId]
+  );
+  const workspaceId = workspace.rows[0].id;
+  await client.query(`select set_config('request.jwt.claim.sub', $1, false)`, [ownerId]);
+
+  await assertRpcReplay(ownerId, workspaceId);
+  await assertDirectTableReplay(ownerId, workspaceId);
   console.log('HIPICO_AUDIT_IDEMPOTENCY_CONTRACT_PASS');
 } finally {
   if (connected) {
