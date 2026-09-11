@@ -1,7 +1,7 @@
 import crypto from 'node:crypto';
 import { prisma } from '../../database/prisma.js';
 import type { IntentResult } from './hipico-operational-classifier.js';
-import { assertReplayMatch, groupShadowReplaySignature, transportReplaySignature } from './hipico-replay-integrity.js';
+import { assertReplayMatch, transportReplaySignature } from './hipico-replay-integrity.js';
 import { assertBridgeGroupIdentity, bridgeGroupIdentityReady, normalizeBridgeGroupId } from './hipico-bridge-input-policy.js';
 
 type TransportInput={
@@ -32,9 +32,6 @@ type PersistedTransportSource={
 type PersistedGroupShadowSource={
   id:string;
   recipient:string|null;
-  message:string|null;
-  intent:string|null;
-  risk:string|null;
 };
 
 const id=(prefix:string)=>`${prefix}_${crypto.randomUUID()}`;
@@ -45,26 +42,11 @@ function assertTransportReplay(existing:PersistedTransportSource,input:Transport
   assertReplayMatch('transport',persisted,replay);
 }
 
-function assertGroupShadowReplay(existing:PersistedGroupShadowSource,input:GroupOutboxInput){
-  const persisted=groupShadowReplaySignature(existing);
-  const replay=groupShadowReplaySignature({
-    recipient:input.recipient,
-    message:input.result.suggestion,
-    intent:input.result.intent,
-    risk:input.result.risk
-  });
-  assertReplayMatch('group-shadow',persisted,replay);
-}
-
-function assertGroupShadowReplayAtTransportBoundary(existing:PersistedGroupShadowSource,input:GroupOutboxInput){
-  try{
-    assertGroupShadowReplay(existing,input);
-  }catch(error:any){
-    if(error?.code==='HIPICO_GROUP_SHADOW_OUTBOX_REPLAY_MISMATCH'){
-      error.code='HIPICO_TRANSPORT_REPLAY_MISMATCH';
-    }
-    throw error;
-  }
+function assertGroupShadowDestination(existing:PersistedGroupShadowSource,input:GroupOutboxInput){
+  if(String(existing.recipient||'')===String(input.recipient||''))return;
+  const error:any=new Error('HIPICO_TRANSPORT_REPLAY_MISMATCH');
+  error.code='HIPICO_TRANSPORT_REPLAY_MISMATCH';
+  throw error;
 }
 
 /**
@@ -118,9 +100,13 @@ export async function persistBridgeTransportEvent(input:TransportInput){
 /**
  * Compatibility shadow outbox used by the existing operator/audit views.
  * A partial unique index guarantees one group_bridge outbox row per event,
- * including retries after a partial failure. The first row is immutable source
- * evidence: an idempotent replay may reuse it, but changed recipient/message/
- * intent/risk is rejected instead of silently rewriting history.
+ * including retries after a partial failure.
+ *
+ * The first persisted projection remains immutable. On a later idempotent
+ * source replay we intentionally reuse it even if a newer classifier version
+ * would now produce different suggestion/intent/risk. Derived-model drift is
+ * not source-identity drift and must never quarantine an otherwise valid
+ * WhatsApp retry. The destination itself remains fail-closed.
  */
 export async function ensureGroupShadowOutbox(input:GroupOutboxInput){
   const candidateId=id('hbo');
@@ -138,13 +124,13 @@ export async function ensureGroupShadowOutbox(input:GroupOutboxInput){
   if(inserted[0]?.id)return{id:inserted[0].id};
 
   const existing=await prisma.$queryRaw<PersistedGroupShadowSource[]>`
-    SELECT "id","recipient","message","intent","risk"
+    SELECT "id","recipient"
     FROM public."HipicoBotOutbox"
     WHERE "eventId"=${input.eventId} AND "targetType"='group_bridge'
     LIMIT 1
   `;
   if(!existing[0]?.id)throw new Error('HIPICO_GROUP_SHADOW_OUTBOX_DEDUPE_ROW_MISSING');
-  assertGroupShadowReplayAtTransportBoundary(existing[0],input);
+  assertGroupShadowDestination(existing[0],input);
   return{id:existing[0].id};
 }
 
@@ -158,4 +144,4 @@ export async function bridgePersistenceReady(){
   return Boolean(rows[0]?.eventTable&&rows[0]?.outboxTable);
 }
 
-export const __test__={assertTransportReplay,assertGroupShadowReplay,assertGroupShadowReplayAtTransportBoundary,assertBridgeGroupIdentity,bridgeGroupIdentityReady,normalizeGroupId:normalizeBridgeGroupId};
+export const __test__={assertTransportReplay,assertGroupShadowDestination,assertBridgeGroupIdentity,bridgeGroupIdentityReady,normalizeGroupId:normalizeBridgeGroupId};
