@@ -66,7 +66,7 @@ test('private statement is generated manually from persisted weekly and race his
   assert.match(text,/Churchill Downs/);
 });
 
-test('copy center is manual-only, exports daily text, guarded, and cached offline',()=>{
+test('copy center is manual-only, exports daily text, guarded, accessible, and cached offline',()=>{
   const root=process.cwd();
   const center=fs.readFileSync(path.join(root,'frontend/public/hipico-control/assets/js/operational-copy-center.js'),'utf8');
   const guard=fs.readFileSync(path.join(root,'frontend/public/hipico-control/assets/js/operational-access-guard.js'),'utf8');
@@ -78,6 +78,10 @@ test('copy center is manual-only, exports daily text, guarded, and cached offlin
   assert.match(center,/downloadFile\(/);
   assert.doesNotMatch(center,/wa\.me|messages\/send|fetch\(/);
   assert.match(center,/export function mountOperationalCopyCenter/);
+  assert.match(center,/aria-labelledby', 'ops-dialog-title'/);
+  assert.match(center,/aria-describedby', 'ops-dialog-description'/);
+  assert.match(center,/id="ops-dialog-title"/);
+  assert.match(center,/id="ops-dialog-description"/);
   assert.match(guard,/import\('\.\/operational-copy-center\.js'\)/);
   assert.match(css,/@media\(max-width:720px\)[\s\S]*min-height:44px/);
   assert.match(css, /prefers-reduced-motion/);
