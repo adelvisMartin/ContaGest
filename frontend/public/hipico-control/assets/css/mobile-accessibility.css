@@ -1,0 +1,20 @@
+/* Mobile accessibility invariants for Control Hípico.
+ * Keeps compact desktop density while touch devices preserve the 44px
+ * critical-control contract required by the production operation flow.
+ */
+@media (max-width: 780px) {
+  .input,
+  .select,
+  .date-button,
+  .color-input,
+  .switch-row {
+    min-height: var(--hc-touch, 44px);
+  }
+
+  .input,
+  .select,
+  .date-button,
+  .color-input {
+    touch-action: manipulation;
+  }
+}
