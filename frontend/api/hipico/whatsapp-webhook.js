@@ -7,14 +7,17 @@ function normalizedTimestamp(value) {
   return Number.isFinite(parsed)?new Date(parsed).toISOString():null;
 }
 
-function validMetaMessageIdentity(message){
+function validMetaMessageIdentity(message, source = process.env){
   const externalMessageId=String(message?.externalMessageId||'').trim();
   const channelKey=String(message?.channelKey||'').trim();
   const senderId=String(message?.senderId||'').trim();
+  const expectedChannelKey=String(source?.HIPICO_META_PHONE_NUMBER_ID||'').trim();
   const sourceTimestamp=message?.raw?.timestamp;
   return Boolean(
+    expectedChannelKey &&
     externalMessageId && externalMessageId.length<=320 &&
     channelKey && channelKey!=='meta' && channelKey.length<=220 &&
+    channelKey===expectedChannelKey &&
     isE164(senderId) &&
     sourceTimestamp!==undefined && sourceTimestamp!==null && String(sourceTimestamp).trim() &&
     normalizedTimestamp(message?.timestamp)
@@ -86,10 +89,19 @@ export default async function handler(req, res) {
   try{payload=JSON.parse(raw.toString('utf8'));}
   catch{return res.status(400).json({ok:false,retryable:false,error:'invalid_json'});}
 
+  let ownerId;
+  let phoneNumberId;
+  try{
+    ownerId=env('HIPICO_OWNER_ID');
+    phoneNumberId=env('HIPICO_META_PHONE_NUMBER_ID');
+  }catch{
+    return res.status(503).json({ok:false,retryable:true,error:'webhook_not_configured'});
+  }
+
   try {
-    const ownerId = env('HIPICO_OWNER_ID');
     const messages = extractMetaMessages(payload);
-    if(messages.some((message)=>!validMetaMessageIdentity(message))){
+    const inboundIdentity={HIPICO_META_PHONE_NUMBER_ID:phoneNumberId};
+    if(messages.some((message)=>!validMetaMessageIdentity(message,inboundIdentity))){
       return res.status(400).json({ok:false,retryable:false,error:'invalid_message_identity'});
     }
     let accepted = 0;
