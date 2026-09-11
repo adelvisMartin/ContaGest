@@ -1,7 +1,7 @@
 import fs from 'node:fs';
-import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-const configPath=path.resolve(new URL('../public/hipico-control/assets/js/config.js',import.meta.url).pathname);
+const configPath=fileURLToPath(new URL('../public/hipico-control/assets/js/config.js',import.meta.url));
 const configSource=fs.readFileSync(configPath,'utf8');
 const versionMatch=configSource.match(/export const APP_VERSION\s*=\s*["']([^"']+)["']/);
 if(!versionMatch?.[1])throw new Error('HIPICO_APP_VERSION_NOT_FOUND');
@@ -33,6 +33,6 @@ const payload={
   }
 };
 
-const out=path.resolve(new URL('../public/hipico-control/build-info.json',import.meta.url).pathname);
+const out=fileURLToPath(new URL('../public/hipico-control/build-info.json',import.meta.url));
 fs.writeFileSync(out,`${JSON.stringify(payload,null,2)}\n`,'utf8');
 console.log(`[hipico-build-info] ${payload.version} sha=${payload.candidateSha} channel=${payload.channel}`);
