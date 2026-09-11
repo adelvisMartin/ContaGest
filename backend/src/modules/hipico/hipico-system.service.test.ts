@@ -31,39 +31,21 @@ void test('system status does not expose secrets and reports unavailable integra
   assert.equal(status.components.channel.state, 'ready');
   assert.equal(status.components.providers.financialAuthority, false);
   assert.equal(status.components.documentEngine.state, 'not_configured');
-  assert.equal(status.components.agent.state, 'not_configured');
+  assert.equal(status.components.agent.state, 'ready');
   assert.equal(JSON.stringify(status).includes('do-not-expose'), false);
   assert.equal(hipicoReadinessFromStatus(status).ready, true);
 });
 
 void test('document engine reports ready for native parsing and degraded only when requested OCR is missing', async () => {
-  const common = {
-    readinessCheck: async () => ({ ready: true, configuration: 'ok' as const, database: 'ok' as const }),
-    providerStatus: providerDisabled
-  };
-  const native = await buildHipicoSystemStatus({
-    ...common,
-    source: {},
-    documentCapability: () => ({ configured: true, nativeText: true, ocr: false, parserVersion: 'fixture', reason: null })
-  });
+  const common = {readinessCheck: async () => ({ ready: true, configuration: 'ok' as const, database: 'ok' as const }),providerStatus: providerDisabled};
+  const native = await buildHipicoSystemStatus({...common,source: {},documentCapability: () => ({ configured: true, nativeText: true, ocr: false, parserVersion: 'fixture', reason: null })});
   assert.equal(native.components.documentEngine.state, 'ready');
-
-  const requestedOcr = await buildHipicoSystemStatus({
-    ...common,
-    source: { HIPICO_DOCUMENT_OCR_ENABLED: 'true' },
-    documentCapability: () => ({ configured: true, nativeText: true, ocr: false, parserVersion: 'fixture', reason: 'OCR_DEPENDENCY_NOT_INSTALLED' })
-  });
+  const requestedOcr = await buildHipicoSystemStatus({...common,source: { HIPICO_DOCUMENT_OCR_ENABLED: 'true' },documentCapability: () => ({ configured: true, nativeText: true, ocr: false, parserVersion: 'fixture', reason: 'OCR_DEPENDENCY_NOT_INSTALLED' })});
   assert.equal(requestedOcr.components.documentEngine.state, 'degraded');
 });
 
 void test('database failure makes canonical readiness fail closed', async () => {
-  const status = await buildHipicoSystemStatus({
-    source: {},
-    readinessCheck: async () => ({ ready: false, configuration: 'ok', database: 'failed' }),
-    providerStatus: providerDisabled,
-    documentCapability: () => ({ configured: false, nativeText: false, ocr: false, parserVersion: null, reason: 'PDFJS_NOT_INSTALLED' })
-  });
-
+  const status = await buildHipicoSystemStatus({source: {},readinessCheck: async () => ({ ready: false, configuration: 'ok', database: 'failed' }),providerStatus: providerDisabled,documentCapability: () => ({ configured: false, nativeText: false, ocr: false, parserVersion: null, reason: 'PDFJS_NOT_INSTALLED' })});
   assert.equal(status.ok, false);
   assert.equal(status.components.database.state, 'unavailable');
   assert.equal(hipicoReadinessFromStatus(status).ready, false);

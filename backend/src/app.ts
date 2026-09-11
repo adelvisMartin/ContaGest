@@ -3,6 +3,7 @@ import helmet from 'helmet';
 import { env, isProd } from './config/env.js';
 import apiRoutes from './modules/index.js';
 import authRoutes from './modules/auth/auth.routes.js';
+import hipicoAgentRoutes from './modules/hipico/agent.routes.js';
 import hipicoDocumentRoutes from './modules/hipico/document.routes.js';
 import hipicoProviderRoutes from './modules/hipico/provider.routes.js';
 import hipicoRaceRoutes from './modules/hipico/race.routes.js';
@@ -70,6 +71,7 @@ export function createApp(options: { readinessCheck?: ReadinessCheck } = {}) {
   app.use('/api/v1/hipico/documents', authRateLimit, expensiveOperationRateLimit, hipicoDocumentRoutes);
   app.use('/api/v1/hipico', authRateLimit, hipicoProviderRoutes);
   app.use('/api/v1/hipico', authRateLimit, hipicoRaceRoutes);
+  app.use('/api/v1/hipico', authRateLimit, hipicoAgentRoutes);
 
   app.use('/api/v1/hipico-bot', hipicoWebhookRoutes);
   app.use('/api/v1/hipico-bot', authRateLimit, hipicoBridgeRoutes);
