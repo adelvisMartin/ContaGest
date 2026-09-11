@@ -3,6 +3,7 @@ import helmet from 'helmet';
 import { env, isProd } from './config/env.js';
 import apiRoutes from './modules/index.js';
 import authRoutes from './modules/auth/auth.routes.js';
+import hipicoSystemRoutes from './modules/hipico/hipico-system.routes.js';
 import hipicoWebhookRoutes from './modules/hipico-bot/hipico-webhook.routes.js';
 import hipicoBridgeRoutes from './modules/hipico-bot/hipico-bridge.routes.js';
 import hipicoOperatorRoutes from './modules/hipico-bot/hipico-operator.routes.js';
@@ -68,12 +69,14 @@ export function createApp(options: { readinessCheck?: ReadinessCheck } = {}) {
     }
   }));
 
-  // Control Hípico is an independent product that temporarily shares this API
-  // process. Meta webhooks authenticate with x-hub-signature-256. The normal
-  // WhatsApp group laboratory uses a separate persistent WhatsApp Web Bridge,
-  // authenticated with HIPICO_BRIDGE_TOKEN and forced to shadow-only ingestion.
-  // Operator mutations keep their own HIPICO_BOT_OPERATOR_TOKEN. All three
-  // routes sit before browser-cookie CSRF because none uses browser sessions.
+  // Canonical product API. This surface is intentionally independent from the
+  // compatibility/integration routes below and exposes no credentials.
+  app.use('/api/v1/hipico/system', authRateLimit, hipicoSystemRoutes);
+
+  // Control Hípico integration/compatibility boundary. Meta webhooks authenticate
+  // with x-hub-signature-256. The normal WhatsApp group laboratory uses a separate
+  // persistent WhatsApp Web Bridge, authenticated with HIPICO_BRIDGE_TOKEN and
+  // forced to shadow-only ingestion. Operator mutations keep their own token.
   app.use('/api/v1/hipico-bot', hipicoWebhookRoutes);
   app.use('/api/v1/hipico-bot', authRateLimit, hipicoBridgeRoutes);
   app.use('/api/v1/hipico-bot', authRateLimit, hipicoOperatorRoutes);
