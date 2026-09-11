@@ -1,44 +1,31 @@
-import crypto from 'node:crypto';
-import { hipicoNumericProviderIdConfigured, hipicoRuntimeSecretConfigured, MIN_HIPICO_RUNTIME_SECRET_BYTES } from './hipico-secret-security.js';
+import { hipicoNumericProviderIdConfigured } from './hipico-secret-security.js';
+import { MIN_WEBHOOK_SECRET_LENGTH, webhookSecretsReady, webhookSecurityReady, webhookSignatureValid, webhookVerifyTokenValid, __test__ as webhookSecurityTest } from './hipico-webhook-security.js';
 
-export const MIN_META_SECRET_LENGTH=MIN_HIPICO_RUNTIME_SECRET_BYTES;
-
+export const MIN_META_SECRET_LENGTH=MIN_WEBHOOK_SECRET_LENGTH;
 type RuntimeEnv=NodeJS.ProcessEnv|Record<string,string|undefined>;
-
-function configuredSecret(name:'WHATSAPP_VERIFY_TOKEN'|'WHATSAPP_APP_SECRET',env:RuntimeEnv=process.env){
-  return String(env[name]||'').trim();
-}
 
 function configuredPhoneNumberId(env:RuntimeEnv=process.env){
   return String(env.WHATSAPP_PHONE_NUMBER_ID||'').trim();
 }
 
 export function metaWebhookSecretsConfigured(env:RuntimeEnv=process.env){
-  return hipicoRuntimeSecretConfigured(configuredSecret('WHATSAPP_VERIFY_TOKEN',env),MIN_META_SECRET_LENGTH)
-    && hipicoRuntimeSecretConfigured(configuredSecret('WHATSAPP_APP_SECRET',env),MIN_META_SECRET_LENGTH);
+  return webhookSecretsReady(env as Record<string,string|undefined>);
 }
 
 export function metaWebhookRuntimeConfigured(env:RuntimeEnv=process.env){
-  return metaWebhookSecretsConfigured(env)&&hipicoNumericProviderIdConfigured(configuredPhoneNumberId(env));
-}
-
-function safeEqual(left:string,right:string){
-  const a=Buffer.from(left);
-  const b=Buffer.from(right);
-  return a.length===b.length&&a.length>0&&crypto.timingSafeEqual(a,b);
+  return webhookSecurityReady(env as Record<string,string|undefined>);
 }
 
 export function metaVerifyTokenValid(value:unknown,env:RuntimeEnv=process.env){
-  const expected=configuredSecret('WHATSAPP_VERIFY_TOKEN',env);
-  if(!hipicoRuntimeSecretConfigured(expected,MIN_META_SECRET_LENGTH))return false;
-  return safeEqual(String(value||''),expected);
+  return webhookVerifyTokenValid(value,env as Record<string,string|undefined>);
 }
 
 export function metaSignatureValid(raw:Buffer|undefined,signature:string|undefined,env:RuntimeEnv=process.env){
-  const secret=configuredSecret('WHATSAPP_APP_SECRET',env);
-  if(!hipicoRuntimeSecretConfigured(secret,MIN_META_SECRET_LENGTH)||!raw||!signature?.startsWith('sha256='))return false;
-  const expected=`sha256=${crypto.createHmac('sha256',secret).update(raw).digest('hex')}`;
-  return safeEqual(signature,expected);
+  return webhookSignatureValid(raw,signature,env as Record<string,string|undefined>);
 }
 
-export const __test__={configuredPhoneNumberId,safeEqual};
+export const __test__={
+  configuredPhoneNumberId,
+  safeEqual:webhookSecurityTest.safeEqual,
+  phoneNumberIdConfigured:(env:RuntimeEnv=process.env)=>hipicoNumericProviderIdConfigured(configuredPhoneNumberId(env))
+};
