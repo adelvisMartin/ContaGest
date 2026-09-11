@@ -2,16 +2,21 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { readFileSync } from 'node:fs';
 import {
+  canonicalEvidenceIssue,
   canonicalMutationPolicy,
   canonicalRequiresReview,
+  canonicalScopeIssue,
   configuredCanonicalOwnerId,
   __test__
 } from './hipico-canonical.routes.js';
 import { normalizeDomainReadLimit } from './hipico-domain-query.store.js';
 
 const OWNER='11111111-1111-4111-8111-111111111111';
+const validRaceContext={raceNumber:1,racetrack:'Churchill Downs',raceContextComplete:true};
 const base={
   eventType:'RACE_OPENED' as const,
+  aggregateKind:'race' as const,
+  normalizedPayload:validRaceContext,
   confirmedOperatorAction:false,
   confirmationReason:null
 };
@@ -32,9 +37,52 @@ test('state-advancing events remain review-only until explicit operator confirma
   assert.equal(canonicalRequiresReview({...base,confirmedOperatorAction:true,confirmationReason:'ok'}),true);
   assert.equal(canonicalRequiresReview({...base,confirmedOperatorAction:true,confirmationReason:'validated race opening'}),false);
   const policy=canonicalMutationPolicy({...base,confirmedOperatorAction:true,confirmationReason:'validated race opening'});
+  assert.equal(policy.requiresReview,false);
+  assert.equal(policy.evidenceIssue,null);
   assert.equal(policy.stateWriteEligible,true);
   assert.equal(policy.sourceWrite,false);
   assert.equal(policy.monetaryWrite,false);
+});
+
+test('operator confirmation cannot override incomplete race context evidence',()=>{
+  for(const normalizedPayload of [
+    undefined,
+    {raceNumber:1,racetrack:'Churchill Downs'},
+    {raceNumber:0,racetrack:'Churchill Downs',raceContextComplete:true},
+    {raceNumber:1,racetrack:'',raceContextComplete:true}
+  ]){
+    const policy=canonicalMutationPolicy({
+      eventType:'RACE_OPENED',aggregateKind:'race',normalizedPayload,
+      confirmedOperatorAction:true,confirmationReason:'operator confirmed race opening'
+    });
+    assert.equal(policy.evidenceIssue,'HIPICO_RACE_CONTEXT_INCOMPLETE');
+    assert.equal(policy.requiresReview,true);
+    assert.equal(policy.stateWriteEligible,false);
+  }
+});
+
+test('result settlement and balance state transitions require their structured evidence',()=>{
+  const confirmed={confirmedOperatorAction:true,confirmationReason:'operator verified structured evidence'};
+  assert.equal(canonicalMutationPolicy({eventType:'RESULT_RECORDED',aggregateKind:'race',normalizedPayload:{},...confirmed}).evidenceIssue,'HIPICO_RESULT_BOARD_REQUIRED');
+  assert.equal(canonicalMutationPolicy({eventType:'RESULT_RECORDED',aggregateKind:'race',normalizedPayload:{board:['7','3','1']},...confirmed}).stateWriteEligible,true);
+
+  assert.equal(canonicalMutationPolicy({eventType:'SETTLEMENT_RECORDED',aggregateKind:'race',normalizedPayload:{settlementRows:[]},...confirmed}).evidenceIssue,'HIPICO_SETTLEMENT_ROWS_REQUIRED');
+  assert.equal(canonicalMutationPolicy({eventType:'SETTLEMENT_RECORDED',aggregateKind:'race',normalizedPayload:{settlementRows:[{participant:'P1',amount:-120}]},...confirmed}).evidenceIssue,null);
+
+  assert.equal(canonicalMutationPolicy({eventType:'BALANCE_CONFIRMED',aggregateKind:'race',normalizedPayload:{balances:[{participant:'P1',available:'100'}]},...confirmed}).evidenceIssue,'HIPICO_BALANCES_REQUIRED');
+  assert.equal(canonicalMutationPolicy({eventType:'BALANCE_CONFIRMED',aggregateKind:'race',normalizedPayload:{balances:[{participant:'P1',available:100}]},...confirmed}).evidenceIssue,null);
+});
+
+test('canonical aggregate kind and correction identity are fail-closed before persistence',()=>{
+  assert.equal(canonicalScopeIssue({eventType:'RACE_OPENED',aggregateKind:'day',confirmedOperatorAction:true,confirmationReason:'verified'}),'HIPICO_EVENT_AGGREGATE_KIND_MISMATCH');
+  assert.equal(canonicalScopeIssue({eventType:'DAY_CLOSED',aggregateKind:'race',confirmedOperatorAction:true,confirmationReason:'verified'}),'HIPICO_EVENT_AGGREGATE_KIND_MISMATCH');
+  assert.equal(canonicalScopeIssue({eventType:'CORRECTION',aggregateKind:'race',confirmedOperatorAction:true,confirmationReason:'verified'}),'HIPICO_ORIGINAL_EVENT_REQUIRED');
+  assert.equal(canonicalScopeIssue({eventType:'REVERSAL',aggregateKind:'race',originalEventId:'evt-1',confirmedOperatorAction:true,confirmationReason:'verified'}),null);
+});
+
+test('evidence validator rejects malformed boards and accepts bounded valid race context',()=>{
+  assert.equal(canonicalEvidenceIssue({eventType:'RESULT_RECORDED',normalizedPayload:{board:['']} ,confirmedOperatorAction:true,confirmationReason:'verified'}),'HIPICO_RESULT_BOARD_REQUIRED');
+  assert.equal(canonicalEvidenceIssue({...base,confirmedOperatorAction:true,confirmationReason:'validated race opening'}),null);
 });
 
 test('ambiguous and unknown events cannot be promoted by operator confirmation',()=>{

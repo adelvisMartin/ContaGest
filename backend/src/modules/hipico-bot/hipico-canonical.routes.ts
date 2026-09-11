@@ -2,9 +2,10 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { classifyUntrustedConversation, safePublicAbuseMetadata } from './hipico-conversation-appsec.js';
 import { effectiveBridgeMediaKind } from './hipico-bridge-input-policy.js';
-import { persistHipicoDomainEvent } from './hipico-domain-event.store.js';
+import { hipicoDomainPersistenceReadiness, persistHipicoDomainEvent } from './hipico-domain-event.store.js';
 import { readHipicoDomainAggregate } from './hipico-domain-query.store.js';
 import { operatorTokenConfigured, operatorTokenValid } from './hipico-operator-security.js';
+import { operationalRaceContextKey } from './hipico-race-context-key.js';
 import type { HipicoDomainEventType } from './hipico-domain-state.js';
 
 export const HIPICO_CANONICAL_API_VERSION = 'v1';
@@ -15,6 +16,12 @@ const STATE_ADVANCING_EVENTS = new Set<HipicoDomainEventType>([
   'DAY_OPENED', 'DAY_CLOSING', 'DAY_CLOSED', 'DAY_ARCHIVED'
 ]);
 const EXPLICIT_OPERATOR_EVENTS = new Set<HipicoDomainEventType>(['CORRECTION', 'REVERSAL']);
+const RACE_ONLY_EVENTS = new Set<HipicoDomainEventType>([
+  'PLAN_RECORDED', 'RACE_OPENED', 'BET_RECORDED', 'RACE_CLOSED', 'RESULT_RECORDED',
+  'SETTLEMENT_READY', 'SETTLEMENT_RECORDED', 'BALANCE_CONFIRMED', 'RACE_PUBLISHED', 'RACE_ARCHIVED'
+]);
+const DAY_ONLY_EVENTS = new Set<HipicoDomainEventType>(['DAY_OPENED', 'DAY_CLOSING', 'DAY_CLOSED', 'DAY_ARCHIVED']);
+const RACE_CONTEXT_ANCHOR_EVENTS = new Set<HipicoDomainEventType>(['PLAN_RECORDED', 'RACE_OPENED', 'RACE_CLOSED']);
 
 const aggregateKindSchema = z.enum(['race', 'day']);
 const mediaKindSchema = z.enum(['none', 'image', 'video', 'audio', 'document', 'unknown']);
@@ -57,6 +64,8 @@ const domainEventSchema = z.object({
 }).strict();
 
 type DomainEventBody = z.infer<typeof domainEventSchema>;
+type CanonicalPolicyInput = Pick<DomainEventBody, 'eventType' | 'confirmedOperatorAction' | 'confirmationReason'>
+  & Partial<Pick<DomainEventBody, 'aggregateKind' | 'aggregateKey' | 'normalizedPayload' | 'originalEventId'>>;
 
 export function configuredCanonicalOwnerId(env: NodeJS.ProcessEnv = process.env) {
   const value = String(env.HIPICO_OWNER_ID || '').trim();
@@ -70,10 +79,84 @@ export function canonicalRequiresReview(input: Pick<DomainEventBody, 'eventType'
   return !(input.confirmedOperatorAction && String(input.confirmationReason || '').trim().length >= 5);
 }
 
-export function canonicalMutationPolicy(input: Pick<DomainEventBody, 'eventType' | 'confirmedOperatorAction' | 'confirmationReason'>) {
-  const requiresReview = canonicalRequiresReview(input);
+function payloadRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : null;
+}
+
+function nonEmptyText(value: unknown, max = 220) {
+  const text = String(value ?? '').trim();
+  return text.length > 0 && text.length <= max;
+}
+
+function finiteNumber(value: unknown) {
+  return typeof value === 'number' && Number.isFinite(value);
+}
+
+export function canonicalRaceContextKey(input: Pick<CanonicalPolicyInput, 'eventType' | 'normalizedPayload'>) {
+  if (!RACE_CONTEXT_ANCHOR_EVENTS.has(input.eventType)) return null;
+  const payload = payloadRecord(input.normalizedPayload);
+  const raceNumber = payload?.raceNumber;
+  const racetrack = payload?.racetrack;
+  if (payload?.raceContextComplete !== true || !Number.isInteger(raceNumber) || !nonEmptyText(racetrack, 120)) return null;
+  return operationalRaceContextKey({ raceNumber: Number(raceNumber), racetrack: String(racetrack) });
+}
+
+export function canonicalScopeIssue(input: CanonicalPolicyInput) {
+  if (input.aggregateKind) {
+    if (RACE_ONLY_EVENTS.has(input.eventType) && input.aggregateKind !== 'race') return 'HIPICO_EVENT_AGGREGATE_KIND_MISMATCH';
+    if (DAY_ONLY_EVENTS.has(input.eventType) && input.aggregateKind !== 'day') return 'HIPICO_EVENT_AGGREGATE_KIND_MISMATCH';
+  }
+  if (input.aggregateKind === 'race' && RACE_CONTEXT_ANCHOR_EVENTS.has(input.eventType)) {
+    const expectedAggregateKey = canonicalRaceContextKey(input);
+    if (expectedAggregateKey && input.aggregateKey && String(input.aggregateKey).trim() !== expectedAggregateKey) {
+      return 'HIPICO_RACE_AGGREGATE_KEY_MISMATCH';
+    }
+  }
+  if (EXPLICIT_OPERATOR_EVENTS.has(input.eventType) && !String(input.originalEventId || '').trim()) {
+    return 'HIPICO_ORIGINAL_EVENT_REQUIRED';
+  }
+  return null;
+}
+
+export function canonicalEvidenceIssue(input: CanonicalPolicyInput) {
+  const payload = payloadRecord(input.normalizedPayload);
+  if (RACE_CONTEXT_ANCHOR_EVENTS.has(input.eventType)) {
+    const raceNumber = payload?.raceNumber;
+    const racetrack = payload?.racetrack;
+    const complete = payload?.raceContextComplete;
+    if (!Number.isInteger(raceNumber) || Number(raceNumber) < 1 || Number(raceNumber) > 999 || !nonEmptyText(racetrack, 120) || complete !== true) {
+      return 'HIPICO_RACE_CONTEXT_INCOMPLETE';
+    }
+  }
+  if (input.eventType === 'RESULT_RECORDED') {
+    const board = payload?.board;
+    if (!Array.isArray(board) || board.length < 1 || board.length > 20 || board.some((entry) => !nonEmptyText(entry, 80))) {
+      return 'HIPICO_RESULT_BOARD_REQUIRED';
+    }
+  }
+  if (input.eventType === 'SETTLEMENT_RECORDED') {
+    const rows = payload?.settlementRows;
+    if (!Array.isArray(rows) || rows.length < 1 || rows.length > 500 || rows.some((row) => {
+      const item = payloadRecord(row);
+      return !item || !nonEmptyText(item.participant, 220) || !finiteNumber(item.amount);
+    })) return 'HIPICO_SETTLEMENT_ROWS_REQUIRED';
+  }
+  if (input.eventType === 'BALANCE_CONFIRMED') {
+    const balances = payload?.balances;
+    if (!Array.isArray(balances) || balances.length < 1 || balances.length > 500 || balances.some((row) => {
+      const item = payloadRecord(row);
+      return !item || !nonEmptyText(item.participant, 220) || !finiteNumber(item.available);
+    })) return 'HIPICO_BALANCES_REQUIRED';
+  }
+  return null;
+}
+
+export function canonicalMutationPolicy(input: CanonicalPolicyInput) {
+  const evidenceIssue = canonicalEvidenceIssue(input);
+  const requiresReview = canonicalRequiresReview(input) || Boolean(evidenceIssue);
   return {
     requiresReview,
+    evidenceIssue,
     sourceWrite: false as const,
     monetaryWrite: false as const,
     stateWriteEligible: STATE_ADVANCING_EVENTS.has(input.eventType) && !requiresReview,
@@ -96,14 +179,19 @@ router.use((_req, res, next) => {
 });
 router.use(requireOperator);
 
-router.get('/status', (_req, res) => {
+router.get('/status', async (_req, res) => {
   const ownerReady = Boolean(configuredCanonicalOwnerId());
-  return res.status(ownerReady ? 200 : 503).json({
-    ok: ownerReady,
+  const persistence = ownerReady
+    ? await hipicoDomainPersistenceReadiness()
+    : { ready: false, tablesReady: false, confirmationAuditReady: false };
+  const ready = ownerReady && persistence.ready;
+  return res.status(ready ? 200 : 503).json({
+    ok: ready,
     api: 'hipico-canonical',
     version: HIPICO_CANONICAL_API_VERSION,
     mode: 'operator-confirmed-domain',
     ownerConfigured: ownerReady,
+    persistence,
     sourceWrite: false,
     monetaryWrite: false,
     resources: ['preview', 'domain/events', 'domain/:aggregateKind/:aggregateKey'],
@@ -128,6 +216,7 @@ router.post('/preview', (req, res) => {
     classification: result,
     appsec: safePublicAbuseMetadata(assessment),
     effectiveMediaKind,
+    raceContextKey: operationalRaceContextKey(result.entities),
     effectsAllowed: false,
     sourceWrite: false,
     monetaryWrite: false
@@ -168,11 +257,19 @@ router.post('/domain/events', async (req, res) => {
   const ownerId = configuredCanonicalOwnerId();
   if (!ownerId) return res.status(503).json({ ok: false, error: 'HIPICO_OWNER_NOT_CONFIGURED' });
   const input = parsed.data;
+  const scopeIssue = canonicalScopeIssue(input);
+  if (scopeIssue) {
+    const expectedAggregateKey = scopeIssue === 'HIPICO_RACE_AGGREGATE_KEY_MISMATCH' ? canonicalRaceContextKey(input) : null;
+    return res.status(400).json({
+      ok: false,
+      retryable: false,
+      error: scopeIssue,
+      ...(expectedAggregateKey ? { expectedAggregateKey } : {})
+    });
+  }
   const policy = canonicalMutationPolicy(input);
 
-  if ((EXPLICIT_OPERATOR_EVENTS.has(input.eventType) || STATE_ADVANCING_EVENTS.has(input.eventType))
-    && !input.confirmedOperatorAction
-    && String(input.confirmationReason || '').trim()) {
+  if (!input.confirmedOperatorAction && String(input.confirmationReason || '').trim()) {
     return res.status(400).json({ ok: false, error: 'HIPICO_CONFIRMATION_FLAG_REQUIRED' });
   }
   if (input.confirmedOperatorAction && String(input.confirmationReason || '').trim().length < 5) {
@@ -197,7 +294,9 @@ router.post('/domain/events', async (req, res) => {
         schemaVersion: 1,
         timestamp: input.timestamp,
         originalEventId: input.originalEventId || null,
-        requiresReview: policy.requiresReview
+        requiresReview: policy.requiresReview,
+        operatorConfirmed: input.confirmedOperatorAction,
+        confirmationReason: input.confirmationReason || null
       }
     });
 
@@ -205,6 +304,7 @@ router.post('/domain/events', async (req, res) => {
       ok: true,
       data: persisted,
       policy,
+      quarantined: policy.requiresReview,
       groupKey: input.groupKey,
       sourceWrite: false,
       monetaryWrite: false
@@ -231,6 +331,9 @@ export default router;
 export const __test__ = {
   STATE_ADVANCING_EVENTS,
   EXPLICIT_OPERATOR_EVENTS,
+  RACE_ONLY_EVENTS,
+  DAY_ONLY_EVENTS,
+  RACE_CONTEXT_ANCHOR_EVENTS,
   previewSchema,
   domainReadSchema,
   domainEventSchema

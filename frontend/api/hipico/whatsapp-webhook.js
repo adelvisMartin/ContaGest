@@ -1,4 +1,4 @@
-import { extractMetaMessages, isE164, readRawBody, safeEqual, sha256, supabase, verifyMetaSignature, classifyText } from './_shared.js';
+import { adapterCaptureDecision, extractMetaMessages, isE164, readRawBody, safeEqual, sha256, supabase, verifyMetaSignature } from './_shared.js';
 import { isMetaPhoneNumberId, metaWebhookConfig } from './meta-runtime.js';
 
 export const config = { api: { bodyParser: false } };
@@ -79,6 +79,7 @@ async function assertDuplicateMetaReplay(ownerId,message){
 export default async function handler(req, res) {
   res.setHeader('Cache-Control','no-store, max-age=0');
   const runtime=metaWebhookConfig();
+
   if (req.method === 'GET') {
     if(!runtime.ready)return res.status(503).json({ok:false,error:'webhook_not_configured'});
     const mode = req.query?.['hub.mode'];
@@ -127,7 +128,7 @@ export default async function handler(req, res) {
     let accepted = 0;
     let duplicates = 0;
     for (const message of messages) {
-      const [classification, confidence] = classifyText(message.text);
+      const capture=adapterCaptureDecision(message.text);
       const fingerprint = sha256(message.externalMessageId || `${message.channelKey}|${messageReplaySignature(message)}`);
       const body = [{
         owner_id: ownerId,
@@ -140,11 +141,19 @@ export default async function handler(req, res) {
         sent_at: message.timestamp,
         message_type: message.type,
         raw_text: message.text,
-        classification,
-        confidence,
-        processing_status: classification === 'other' ? 'ignored' : classification === 'reply_review' ? 'review' : 'pending',
-        normalized: { source: 'meta_cloud_api' },
-        metadata: { raw_type: message.type, source_replay_signature: messageReplaySignature(message) }
+        classification: capture.storedClassification,
+        confidence: capture.storedConfidence,
+        processing_status: capture.processingStatus,
+        normalized: {
+          source: 'meta_cloud_api',
+          domain_authority: capture.domainAuthority,
+          adapter_hint_authoritative: false
+        },
+        metadata: {
+          raw_type: message.type,
+          source_replay_signature: messageReplaySignature(message),
+          adapter_hint: capture.adapterHint
+        }
       }];
       const rows=await supabase('hipico_messages?on_conflict=owner_id,channel_key,fingerprint', {
         method: 'POST',
@@ -157,7 +166,7 @@ export default async function handler(req, res) {
         duplicates+=1;
       }else accepted += 1;
     }
-    return res.status(200).json({ ok: true, accepted, duplicates });
+    return res.status(200).json({ ok: true, accepted, duplicates, domainAuthority:'backend_canonical_only' });
   } catch (error) {
     if(error?.code==='HIPICO_META_REPLAY_MISMATCH'){
       return res.status(200).json({ok:false,acknowledged:true,accepted:false,retryable:false,error:'replay_mismatch'});
@@ -167,4 +176,4 @@ export default async function handler(req, res) {
   }
 }
 
-export const __test__={normalizedTimestamp,rawMetaEnvelopeIdentityError,validMetaMessageIdentity,messageReplaySignature,persistedReplaySignature,metaWebhookConfig};
+export const __test__={normalizedTimestamp,rawMetaEnvelopeIdentityError,validMetaMessageIdentity,messageReplaySignature,persistedReplaySignature,metaWebhookConfig,adapterCaptureDecision};

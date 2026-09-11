@@ -27,6 +27,8 @@ export type HipicoDomainEventInput={
   timestamp?:string;
   originalEventId?:string|null;
   requiresReview?:boolean;
+  operatorConfirmed?:boolean;
+  confirmationReason?:string|null;
 };
 
 export type HipicoReducerState={

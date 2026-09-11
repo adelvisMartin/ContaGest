@@ -116,9 +116,6 @@ export default async function handler(req, res) {
           })
         }, Number(process.env.HIPICO_META_SEND_TIMEOUT_MS || 12000));
       } catch (error) {
-        // A transport timeout can happen after Meta accepted the message. Keep
-        // the durable claim in `sending`: the queue selector never reclaims that
-        // state, so an operator must reconcile it before any later resend.
         await updateRow(row.id, {
           status: 'sending',
           attempts,
@@ -148,9 +145,6 @@ export default async function handler(req, res) {
 
       const providerMessageId = data?.messages?.[0]?.id || null;
       if (!providerMessageId) {
-        // HTTP success means Meta may have accepted the message even if the
-        // expected receipt is absent. Preserve `sending` and require manual
-        // reconciliation instead of converting it into a retryable failure.
         await updateRow(row.id, {
           status: 'sending',
           attempts,
@@ -160,9 +154,6 @@ export default async function handler(req, res) {
         continue;
       }
 
-      // Once Meta confirms acceptance, this row is never eligible for automatic resend.
-      // If this persistence update fails the row remains `sending`, which intentionally
-      // requires operator reconciliation instead of risking a duplicate message.
       await updateRow(row.id, {
         status: 'sent',
         attempts,

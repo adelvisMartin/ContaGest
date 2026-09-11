@@ -22,16 +22,16 @@ export default function handler(req, res) {
   const identity = bridgeIdentityStatus();
   const bridgeTokenStrong = strongSecretConfigured(process.env.HIPICO_GROUP_BRIDGE_TOKEN);
   const internalApiTokenStrong = strongSecretConfigured(process.env.HIPICO_INTERNAL_API_TOKEN);
-  const senderRuntime = metaSenderConfig();
-  const webhookRuntime = metaWebhookConfig();
   const persistenceReady = persistenceMissing.length === 0;
   const linkedDeviceReady = persistenceReady
     && linkedDeviceMissing.length === 0
     && bridgeTokenStrong
     && identity.ready;
   const outbound = metaOutboundPolicy();
-  const metaDirectReady = persistenceReady && metaMissing.length === 0 && internalApiTokenStrong && senderRuntime.ready && outbound.enabled;
-  const metaWebhookReady = persistenceReady && webhookMissing.length === 0 && webhookRuntime.ready;
+  const sender = metaSenderConfig();
+  const webhook = metaWebhookConfig();
+  const metaDirectReady = persistenceReady && metaMissing.length === 0 && internalApiTokenStrong && sender.ready && outbound.enabled;
+  const metaWebhookReady = persistenceReady && webhookMissing.length === 0 && webhook.ready;
 
   return res.status(200).json({
     ok: true,
@@ -54,9 +54,9 @@ export default function handler(req, res) {
       directIndividualSendReady: metaDirectReady,
       webhookReady: metaWebhookReady,
       internalApiTokenStrong,
-      accessTokenStrong: senderRuntime.accessTokenStrong,
-      phoneNumberIdValid: senderRuntime.phoneNumberIdValid && webhookRuntime.phoneNumberIdValid,
-      webhookSecretsStrong: webhookRuntime.verifyTokenStrong && webhookRuntime.appSecretStrong,
+      accessTokenStrong: sender.accessTokenStrong,
+      phoneNumberIdValid: sender.phoneNumberIdValid && webhook.phoneNumberIdValid,
+      webhookSecretsStrong: webhook.verifyTokenStrong && webhook.appSecretStrong,
       optionalForLinkedDeviceBridge: true,
       outboundPolicy: {
         enabled: outbound.enabled,
