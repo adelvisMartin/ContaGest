@@ -17,10 +17,16 @@ test('bridge route validates exact SOURCE/LAB identity before sender classificat
   assert.match(validator,/if\(!input\.shadowMode\)/);
   assert.match(validator,/validateBridgeGroupIdentity\(input\)/);
   assert.match(validator,/HIPICO_BRIDGE_GROUP_IDENTITY_NOT_CONFIGURED/);
-  const identityCheck=routes.indexOf('const channelError=validatePinnedChannel(input)');
-  const senderNormalization=routes.indexOf('const sender=normalizeBridgeSender(input.senderId)');
-  const classification=routes.indexOf('classifyUntrustedConversation');
-  assert.ok(identityCheck>=0&&senderNormalization>identityCheck&&classification>senderNormalization);
+
+  const eventHandlerStart=routes.indexOf("router.post('/bridge/events'");
+  assert.ok(eventHandlerStart>=0,'bridge event handler must exist');
+  const eventHandler=routes.slice(eventHandlerStart);
+  const identityCheck=eventHandler.indexOf('const channelError=validatePinnedChannel(input)');
+  const senderNormalization=eventHandler.indexOf('const sender=normalizeBridgeSender(input.senderId)');
+  const classification=eventHandler.indexOf('const{assessment,result}=classifyUntrustedConversation');
+  const persistence=eventHandler.indexOf('await persistBridgeTransportEvent');
+  assert.ok(identityCheck>=0&&senderNormalization>identityCheck&&classification>senderNormalization&&persistence>classification,
+    'identity -> canonical sender -> untrusted classification -> persistence ordering must remain fail-closed');
 });
 
 test('transport persistence requires pinned modern or legacy SOURCE/LAB IDs before any write',()=>{
