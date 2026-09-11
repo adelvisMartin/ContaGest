@@ -28,11 +28,14 @@ async function claimRow(row) {
 
 async function updateRow(id, patch) {
   const ownerId = env('HIPICO_OWNER_ID');
-  return supabase(`hipico_outbox?id=eq.${encodeURIComponent(id)}&owner_id=eq.${encodeURIComponent(ownerId)}&status=eq.sending`, {
+  const rows = await supabase(`hipico_outbox?id=eq.${encodeURIComponent(id)}&owner_id=eq.${encodeURIComponent(ownerId)}&status=eq.sending`, {
     method: 'PATCH',
-    headers: { Prefer: 'return=minimal' },
+    headers: { Prefer: 'return=representation' },
     body: JSON.stringify(patch)
   });
+  const updated = Array.isArray(rows) ? rows[0] || null : null;
+  if (!updated?.id) throw new Error('HIPICO_OUTBOX_STATE_TRANSITION_NOT_PERSISTED');
+  return updated;
 }
 
 function safeGraphVersion() {
@@ -42,13 +45,19 @@ function safeGraphVersion() {
 
 export default async function handler(req, res) {
   res.setHeader('Cache-Control', 'no-store, max-age=0');
-  if (req.method !== 'POST') return res.status(405).json({ ok: false, error: 'method_not_allowed' });
-  const expected = env('HIPICO_INTERNAL_API_TOKEN');
-  if (!bearerTokenValid(req.headers.authorization, expected)) return res.status(401).json({ ok: false, error: 'unauthorized' });
+  if (req.method !== 'POST') return res.status(405).json({ ok: false, retryable: false, error: 'method_not_allowed' });
+
+  let expected;
+  try {
+    expected = env('HIPICO_INTERNAL_API_TOKEN');
+  } catch {
+    return res.status(503).json({ ok: false, retryable: true, error: 'sender_not_configured' });
+  }
+  if (!bearerTokenValid(req.headers.authorization, expected)) return res.status(401).json({ ok: false, retryable: false, error: 'unauthorized' });
 
   const outbound = metaOutboundPolicy();
   if (!outbound.enabled) {
-    return res.status(409).json({ ok: false, error: 'outbound_disabled', reasons: outbound.reasons });
+    return res.status(409).json({ ok: false, retryable: false, error: 'outbound_disabled', reasons: outbound.reasons });
   }
 
   try {
