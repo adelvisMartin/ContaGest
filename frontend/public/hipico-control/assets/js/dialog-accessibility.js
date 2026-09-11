@@ -11,6 +11,8 @@ const FOCUSABLE_SELECTOR = [
 let activeDialog = null;
 let returnFocus = null;
 let shellWasInert = false;
+let shellPreviousAriaHidden = null;
+let backgroundGuardActive = false;
 
 function visible(element) {
   if (!(element instanceof HTMLElement)) return false;
@@ -36,14 +38,22 @@ function setBackgroundInert(enabled) {
   const shell = document.querySelector('.shell');
   if (!(shell instanceof HTMLElement)) return;
   if (enabled) {
-    shellWasInert = shell.inert;
+    if (!backgroundGuardActive) {
+      shellWasInert = shell.inert;
+      shellPreviousAriaHidden = shell.getAttribute('aria-hidden');
+      backgroundGuardActive = true;
+    }
     shell.inert = true;
     shell.setAttribute('aria-hidden', 'true');
-  } else {
-    shell.inert = shellWasInert;
-    shell.removeAttribute('aria-hidden');
-    shellWasInert = false;
+    return;
   }
+  if (!backgroundGuardActive) return;
+  shell.inert = shellWasInert;
+  if (shellPreviousAriaHidden == null) shell.removeAttribute('aria-hidden');
+  else shell.setAttribute('aria-hidden', shellPreviousAriaHidden);
+  shellWasInert = false;
+  shellPreviousAriaHidden = null;
+  backgroundGuardActive = false;
 }
 
 function activate(dialog) {
@@ -64,9 +74,10 @@ function activate(dialog) {
 
 function deactivateIfNeeded() {
   if (activeDialog?.isConnected) return;
-  activeDialog = document.querySelector(DIALOG_SELECTOR);
-  if (activeDialog instanceof HTMLElement) {
-    activate(activeDialog);
+  const nextDialog = document.querySelector(DIALOG_SELECTOR);
+  activeDialog = null;
+  if (nextDialog instanceof HTMLElement) {
+    activate(nextDialog);
     return;
   }
   setBackgroundInert(false);
@@ -99,7 +110,7 @@ function trapTab(event) {
   if (event.shiftKey && (current === first || !activeDialog.contains(current))) {
     event.preventDefault();
     last.focus();
-  } else if (!event.shiftKey && current === last) {
+  } else if (!event.shiftKey && (current === last || !activeDialog.contains(current))) {
     event.preventDefault();
     first.focus();
   }
@@ -107,8 +118,14 @@ function trapTab(event) {
 
 function scan() {
   const dialog = document.querySelector(DIALOG_SELECTOR);
-  if (dialog instanceof HTMLElement) activate(dialog);
-  else deactivateIfNeeded();
+  if (dialog instanceof HTMLElement) {
+    if (dialog !== activeDialog) {
+      if (activeDialog && !activeDialog.isConnected) activeDialog = null;
+      activate(dialog);
+    }
+    return;
+  }
+  deactivateIfNeeded();
 }
 
 if (typeof document !== 'undefined') {
