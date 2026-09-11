@@ -7,12 +7,17 @@ import type { IntentResult } from './hipico-operational-classifier.js';
 const message={sourceMessageId:'m-152',participantId:'p1',text:'hola',timestamp:'2026-08-29T12:00:00.000Z',raceId:'1'};
 const classifier=(result:Partial<IntentResult>)=>()=>({intent:'greeting',risk:'safe',confidence:1,suggestion:'Hola.',autoEligible:false,reason:'TEST',...result} as IntentResult);
 
-test('CONFIRMED is impossible without persisted receipt/transaction/state evidence',()=>{
+test('CONFIRMED is impossible without decision-bound persisted evidence',()=>{
   const decision=decideConversation(message,{},classifier({intent:'offer_player',risk:'monetary',confidence:.99,entities:{play:'2N',horse:'4',amount:100}}));
   const withoutEvidence=planSafeResponse(decision);
   assert.notEqual(withoutEvidence.intent,'CONFIRMED');
   assert.equal(withoutEvidence.confirmationVerified,false);
-  const withEvidence=planSafeResponse(decision,{evidence:{persisted:true,receiptId:'receipt-123'}});
+  const unbound=planSafeResponse(decision,{evidence:{persisted:true,receiptId:'receipt-123'}});
+  assert.notEqual(unbound.intent,'CONFIRMED');
+  assert.equal(unbound.reason,'PERSISTENCE_EVIDENCE_NOT_BOUND_TO_DECISION');
+  const wrongSource=planSafeResponse(decision,{evidence:{persisted:true,receiptId:'receipt-123',sourceMessageId:'other',correlationId:decision.correlationId}});
+  assert.notEqual(wrongSource.intent,'CONFIRMED');
+  const withEvidence=planSafeResponse(decision,{evidence:{persisted:true,receiptId:'receipt-123',sourceMessageId:decision.sourceMessageId,correlationId:decision.correlationId}});
   assert.equal(withEvidence.intent,'CONFIRMED');
   assert.equal(withEvidence.confirmationVerified,true);
   assert.match(withEvidence.text||'',/receipt-123/);
@@ -20,7 +25,7 @@ test('CONFIRMED is impossible without persisted receipt/transaction/state eviden
 
 test('DB/backend degradation never emits false confirmation',()=>{
   const decision=decideConversation(message);
-  const plan=planSafeResponse(decision,{systemHealthy:false,evidence:{persisted:true,receiptId:'should-not-win'}});
+  const plan=planSafeResponse(decision,{systemHealthy:false,evidence:{persisted:true,receiptId:'should-not-win',sourceMessageId:decision.sourceMessageId,correlationId:decision.correlationId}});
   assert.equal(plan.intent,'SYSTEM_DEGRADED');
   assert.equal(plan.confirmationVerified,false);
   assert.match(plan.text||'',/no se confirmó/i);
