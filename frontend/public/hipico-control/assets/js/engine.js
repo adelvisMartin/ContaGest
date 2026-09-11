@@ -233,6 +233,13 @@ export function factorForCode(code, play) {
     };
     return (_a = factors[code]) !== null && _a !== void 0 ? _a : 0;
 }
+export function settlementCommission(race, fallback = 0.05) {
+    const raceValue = Number(race === null || race === void 0 ? void 0 : race.commission);
+    if (Number.isFinite(raceValue) && raceValue >= 0 && raceValue <= 1)
+        return raceValue;
+    const fallbackValue = Number(fallback);
+    return Number.isFinite(fallbackValue) && fallbackValue >= 0 && fallbackValue <= 1 ? fallbackValue : 0.05;
+}
 export function settleBet(bet, race, commission = 0.05) {
     var _a, _b;
     const amount = parseAmount(bet.amount);
@@ -240,10 +247,11 @@ export function settleBet(bet, race, commission = 0.05) {
         throw new Error("El monto debe ser mayor que cero.");
     if (!((_a = race.board) !== null && _a !== void 0 ? _a : []).some(Boolean))
         throw new Error("Debe registrar la pizarra antes de liquidar.");
+    const effectiveCommission = settlementCommission(race, commission);
     const code = winnerCode(bet, race);
     const factor = factorForCode(code, bet.play);
-    const playerCommission = code < 5 && bet.receiverId ? 1 - commission : 1;
-    const receiverMultipliers = [1, 1 - commission, 1.025, 0.975];
+    const playerCommission = code < 5 && bet.receiverId ? 1 - effectiveCommission : 1;
+    const receiverMultipliers = [1, 1 - effectiveCommission, 1.025, 0.975];
     const receiverGroup = Math.max(1, Math.ceil(code / 3));
     const playerAmount = roundMoney(amount * playerCommission * factor);
     const receiverAmount = bet.receiverId ? roundMoney(-amount * ((_b = receiverMultipliers[receiverGroup - 1]) !== null && _b !== void 0 ? _b : 1) * factor) : 0;
