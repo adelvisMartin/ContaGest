@@ -46,7 +46,7 @@ jobs:
       - name: Run Hípico visual-functional matrix
         env:
           HIPICO_QA_SHA: ${{ github.sha }}
-        run: npx playwright test qa/hipico-visual-functional-v105.spec.mjs --project=${{ matrix.project }} --workers=1
+        run: npx playwright test --config=playwright.hipico-matrix.config.mjs --project=${{ matrix.project }} --workers=1
 
       - name: Upload browser evidence
         if: always()
