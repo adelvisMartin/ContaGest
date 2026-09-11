@@ -46,20 +46,32 @@ function betLine(bet, participantMap, currency) {
 function participantMapForGroup(workspace, groupId) {
   return new Map((workspace.participants || []).filter((participant) => participantBelongsToGroup(workspace, participant, groupId)).map((participant) => [participant.id, participant]));
 }
+function betReferencesAreScoped(bet, participantMap) {
+  const playerId = String(bet?.playerId || '').trim();
+  const receiverId = String(bet?.receiverId || '').trim();
+  return Boolean(playerId && participantMap.has(playerId) && (!receiverId || participantMap.has(receiverId)));
+}
+function scopedRaceBets(race, participantMap) {
+  return (race?.bets || []).filter((bet) => bet?.status !== "cancelled" && betReferencesAreScoped(bet, participantMap));
+}
 export function generateWhatsappText(workspace, race) {
   const profile = groupProfile(workspace, race);
   const participantMap = participantMapForGroup(workspace, profile.id);
+  const validBets = scopedRaceBets(race, participantMap);
   const categories = new Map();
-  for (const bet of race.bets ?? []) { if (bet.status === "cancelled") continue; const category = betCategory(bet); if (!categories.has(category)) categories.set(category, []); categories.get(category).push(bet); }
+  for (const bet of validBets) { const category = betCategory(bet); if (!categories.has(category)) categories.set(category, []); categories.get(category).push(bet); }
   const sections = []; for (const [category, bets] of categories.entries()) { sections.push(`*${category}*`); sections.push(bets.map((bet) => betLine(bet, participantMap, profile.currency)).join("\n\n")); }
-  const summary = calculateRaceSummary(race, participantMap).map((item) => `${item.name.toLowerCase()}  ${money(item.amount, profile.currency, true)}`).join("\n");
+  const summary = calculateRaceSummary({ ...race, bets: validBets }, participantMap).map((item) => `${item.name.toLowerCase()}  ${money(item.amount, profile.currency, true)}`).join("\n");
   return [...raceHeader(workspace, race), "", ...sections, "", "------------------------------", summary || "Sin movimientos liquidados", "------------------------------", profile.footerMessage].filter((line) => line !== undefined).join("\n").replace(/\n{4,}/g, "\n\n\n");
 }
 export function generateBetReceiptText(workspace, race, bet) {
   const profile = groupProfile(workspace, race);
   const participantMap = participantMapForGroup(workspace, profile.id);
-  const validBets = (race.bets || []).filter((item) => item.status !== "cancelled");
-  return [...raceHeader(workspace, race), "", betLine(bet, participantMap, profile.currency), "", `Jugada #${validBets.findIndex((item) => item.id === bet.id) + 1} de ${validBets.length}`, `Registrada: ${registeredDate(bet.createdAt)}`, "", "*TILDE SU JUGADA Y SE REVISARÁ*"].join("\n");
+  if (!betReferencesAreScoped(bet, participantMap)) throw new Error("La jugada referencia participantes fuera del grupo de la carrera.");
+  const validBets = scopedRaceBets(race, participantMap);
+  const position = validBets.findIndex((item) => item.id === bet.id);
+  if (position < 0) throw new Error("La jugada no pertenece a la carrera activa o está anulada.");
+  return [...raceHeader(workspace, race), "", betLine(bet, participantMap, profile.currency), "", `Jugada #${position + 1} de ${validBets.length}`, `Registrada: ${registeredDate(bet.createdAt)}`, "", "*TILDE SU JUGADA Y SE REVISARÁ*"].join("\n");
 }
 export function generateArrivalWhatsappText(workspace, race) {
   const board = (race?.board || []).map(String).map((item) => item.trim()).filter(Boolean);
@@ -121,4 +133,4 @@ export function generateDailySummaryText(workspace, day, stats) {
 }
 export function csvEscape(value) { const text = String(value ?? ""); return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text; }
 
-export const __test__ = { defaultGroupId, participantBelongsToGroup, participantMapForGroup };
+export const __test__ = { defaultGroupId, participantBelongsToGroup, participantMapForGroup, betReferencesAreScoped, scopedRaceBets };
