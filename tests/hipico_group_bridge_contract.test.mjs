@@ -71,7 +71,15 @@ test('desktop bridge requires pinned SOURCE/LAB and can never send to SOURCE', (
   assert.match(bridge, /WhatsApp normal > Dispositivos vinculados/);
 });
 
-test('local bridge spool is private, create-once and rejects conflicting replay content', () => {
+test('local bridge requires a real WhatsApp provider id instead of inventing collision-prone identities', () => {
+  const bridge = read('tools/hipico-whatsapp-bridge/src/index.mjs');
+  assert.match(bridge, /externalMessageId\s*=\s*String\(message\?\.id\?\._serialized \|\| ''\)\.trim\(\)/);
+  assert.match(bridge, /HIPICO_PROVIDER_MESSAGE_ID_REQUIRED/);
+  assert.match(bridge, /provider message id is required for durable idempotency/i);
+  assert.doesNotMatch(bridge, /externalMessageId:\s*message\?\.id\?\._serialized\s*\|\|\s*sha256/);
+});
+
+test('local bridge spool is private, create-once and binds behavior-changing replay semantics', () => {
   const bridge = read('tools/hipico-whatsapp-bridge/src/index.mjs');
   assert.match(bridge, /mode:\s*0o700/);
   assert.match(bridge, /fs\.chmod\(dir, 0o700\)/);
@@ -79,6 +87,9 @@ test('local bridge spool is private, create-once and rejects conflicting replay 
   assert.match(bridge, /mode:\s*0o600/);
   assert.match(bridge, /replaySignature\(existing\) === replaySignature\(event\)/);
   assert.match(bridge, /HIPICO_LOCAL_SPOOL_REPLAY_MISMATCH/);
+  for (const field of ['channelKey','labChannelKey','channelRole','shadowMode','historySync','fromMe','hasMedia','mediaKind','mediaName','quotedExternalMessageId']) {
+    assert.match(bridge, new RegExp(`event\\?\\.${field}`), `${field} must be part of local replay evidence`);
+  }
   assert.match(bridge, /safeRef\(/);
   assert.doesNotMatch(bridge, /console\.log\(`Fuente: \$\{source\.name\} :: \$\{source\.id\}`\)/);
 });
