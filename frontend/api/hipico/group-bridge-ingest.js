@@ -1,4 +1,4 @@
-import { env, safeEqual, serverSecret, sha256, supabase, classifyText } from './_shared.js';
+import { adapterCaptureDecision, env, safeEqual, serverSecret, sha256, supabase } from './_shared.js';
 import { HIPICO_CHANNEL_KEY_PATTERN, configuredChannelIdentity, validateBridgeRoleIdentity } from './bridge-identity.js';
 
 function shadowSuggestion(classification, body) {
@@ -150,7 +150,7 @@ async function recordShadowPrediction({ ownerId, channel, body, messageRow, clas
       source_message_id: messageRow.id,
       source_external_message_id: String(body.externalMessageId || ''),
       scenario_key: String(body.quotedExternalMessageId || body.externalMessageId || ''),
-      prediction_type: classification,
+      prediction_type: `adapter_hint:${classification}`,
       predicted_payload: {
         classification,
         confidence,
@@ -158,6 +158,7 @@ async function recordShadowPrediction({ ownerId, channel, body, messageRow, clas
         sender_id_hash: sha256(String(body.senderId || '')),
         quoted_external_message_id: body.quotedExternalMessageId || null,
         automation_state: 'shadow_only',
+        domain_authority: 'backend_canonical_only',
         proposed_reply: suggestion || null,
         monetary_auto_apply: false
       },
@@ -196,11 +197,10 @@ export default async function handler(req, res) {
   try {
     const ownerId = env('HIPICO_OWNER_ID');
     const channel = await ensureChannel(ownerId, body);
-
-    const [classification, confidence] = classifyText(text);
-    const suggestion = shadowSuggestion(classification, body);
+    const capture = adapterCaptureDecision(text);
+    const { classification: hintClassification, confidence: hintConfidence } = capture.adapterHint;
+    const suggestion = shadowSuggestion(hintClassification, body);
     const fingerprint = sha256(`${groupId}|${externalMessageId}`);
-    const processingStatus = classification === 'other' ? 'ignored' : classification === 'reply_review' ? 'review' : 'processed';
 
     const rows = await supabase('hipico_messages?on_conflict=owner_id,channel_key,fingerprint', {
       method: 'POST',
@@ -218,21 +218,24 @@ export default async function handler(req, res) {
         sent_at: sentAt,
         message_type: String(body.type || 'text'),
         raw_text: text,
-        classification,
-        confidence,
-        processing_status: processingStatus,
+        classification: capture.storedClassification,
+        confidence: capture.storedConfidence,
+        processing_status: capture.processingStatus,
         normalized: {
           source: 'web_bridge',
           group_name: String(body.groupName || ''),
           channel_role: channelRole,
           shadow_mode: true,
           from_me: body.fromMe === true,
-          has_media: body.hasMedia === true
+          has_media: body.hasMedia === true,
+          domain_authority: capture.domainAuthority,
+          adapter_hint_authoritative: false
         },
         metadata: {
           bridge_version: String(body.bridgeVersion || ''),
           received_by: 'group-bridge-ingest',
           source_replay_signature: sourceReplaySignature(body),
+          adapter_hint: capture.adapterHint,
           proposed_reply: suggestion || null
         }
       }])
@@ -240,7 +243,7 @@ export default async function handler(req, res) {
 
     const duplicate = !Array.isArray(rows) || rows.length === 0;
     if (duplicate) await assertDuplicateReplay(ownerId, channel.group_key, externalMessageId, body);
-    else await recordShadowPrediction({ ownerId, channel, body, messageRow: rows[0], classification, confidence, suggestion });
+    else await recordShadowPrediction({ ownerId, channel, body, messageRow: rows[0], classification: hintClassification, confidence: hintConfidence, suggestion });
 
     const diagnostic = /^\/hipico_status\s*$/i.test(text.trim())
       ? `Hípico Control conectado ✅\nCanal: ${String(body.groupName || 'WhatsApp')}\nRecepción: activa\nModo: sombra`
@@ -250,8 +253,10 @@ export default async function handler(req, res) {
       ok: true,
       accepted: true,
       duplicate,
-      classification,
-      confidence,
+      classification: capture.storedClassification,
+      confidence: capture.storedConfidence,
+      adapterHint: capture.adapterHint,
+      domainAuthority: capture.domainAuthority,
       channelKey: channel.group_key,
       automationMode: 'shadow',
       actions: [],
@@ -273,4 +278,4 @@ export default async function handler(req, res) {
   }
 }
 
-export const __test__ = { normalizedTimestamp, normalizedChannelRole, sourceReplaySignature, persistedReplaySignature, configuredChannelIdentity, assertPersistedChannel };
+export const __test__ = { normalizedTimestamp, normalizedChannelRole, sourceReplaySignature, persistedReplaySignature, configuredChannelIdentity, assertPersistedChannel, adapterCaptureDecision };
