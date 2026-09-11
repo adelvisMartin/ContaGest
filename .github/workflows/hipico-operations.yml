@@ -75,6 +75,7 @@ jobs:
           node --check frontend/public/hipico-control/assets/js/workspace.js
           node --check frontend/public/hipico-control/sw.js
           node --check frontend/api/hipico/_shared.js
+          node --check frontend/api/hipico/bridge-identity.js
           node --check frontend/api/hipico/status.js
           node --check frontend/api/hipico/group-bridge-ingest.js
           node --check frontend/api/hipico/whatsapp-send.js
