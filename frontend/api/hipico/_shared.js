@@ -36,7 +36,7 @@ function validPersistenceUrl(value) {
   try {
     const parsed=new URL(raw);
     const loopback=['localhost','127.0.0.1','::1'].includes(parsed.hostname);
-    if (parsed.username || parsed.password || parsed.hash) return false;
+    if (parsed.username || parsed.password || parsed.hash || parsed.search) return false;
     return parsed.protocol === 'https:' || (parsed.protocol === 'http:' && loopback);
   } catch {
     return false;
