@@ -1,6 +1,7 @@
 import crypto from 'node:crypto';
 
 const DEFAULT_FETCH_TIMEOUT_MS = 10000;
+const MAX_FETCH_TIMEOUT_MS = 60000;
 const SHA40 = /^[a-f0-9]{40}$/i;
 
 export function env(name, required = true) {
@@ -21,7 +22,9 @@ export function bearerTokenValid(header, expected) {
 }
 
 export function isE164(value) {
-  return /^\+?[1-9]\d{6,17}$/.test(String(value || '').trim());
+  // E.164 allows at most 15 digits. WhatsApp accepts the same digits with or
+  // without a leading plus depending on the API field, so normalize later.
+  return /^\+?[1-9]\d{6,14}$/.test(String(value || '').trim());
 }
 
 function normalizedE164(value) {
@@ -76,10 +79,20 @@ export function sha256(value) {
   return crypto.createHash('sha256').update(String(value ?? '')).digest('hex');
 }
 
+export function safeTimeoutMs(value, fallback = DEFAULT_FETCH_TIMEOUT_MS) {
+  const fallbackValue = Number(fallback);
+  const safeFallback = Number.isFinite(fallbackValue) && fallbackValue > 0
+    ? Math.min(Math.floor(fallbackValue), MAX_FETCH_TIMEOUT_MS)
+    : DEFAULT_FETCH_TIMEOUT_MS;
+  const number = Number(value);
+  if (!Number.isFinite(number) || number <= 0) return safeFallback;
+  return Math.min(Math.floor(number), MAX_FETCH_TIMEOUT_MS);
+}
+
 export async function fetchWithTimeout(url, init = {}, timeoutMs = DEFAULT_FETCH_TIMEOUT_MS) {
   const controller = new AbortController();
   const callerSignal = init.signal;
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  const timer = setTimeout(() => controller.abort(), safeTimeoutMs(timeoutMs));
   const abort = () => controller.abort();
   if (callerSignal) {
     if (callerSignal.aborted) controller.abort();
@@ -104,7 +117,7 @@ export async function supabase(path, init = {}) {
       'Content-Type': 'application/json',
       ...(init.headers || {})
     }
-  }, Number(process.env.HIPICO_SUPABASE_TIMEOUT_MS || DEFAULT_FETCH_TIMEOUT_MS));
+  }, safeTimeoutMs(process.env.HIPICO_SUPABASE_TIMEOUT_MS));
   const text = await response.text();
   if (!response.ok) {
     const requestId = response.headers.get('x-request-id') || response.headers.get('sb-request-id') || '';
