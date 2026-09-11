@@ -75,6 +75,33 @@ test('same record id in the same group still resolves by freshness', () => {
   assert.equal(merged.participants[0].name, 'Newer');
 });
 
+test('2000 deterministic multigroup merge iterations preserve tenant isolation and freshness', () => {
+  for (let index = 0; index < 2000; index += 1) {
+    const sharedId = `participant-${index % 37}`;
+    const groups = [{ id: 'group-1', name: 'Grupo 1' }, { id: 'group-2', name: 'Grupo 2' }];
+    const config = { groups, activeGroupId: 'group-1', activeWhatsappGroupId: 'group-1', activeRaceByGroup: {}, captureGroupIds: ['group-1'] };
+    const local = workspace({
+      config: structuredClone(config),
+      participants: [
+        { id: sharedId, groupId: 'group-1', name: `G1-${index}`, updatedAt: '2026-09-11T20:01:00.000Z' },
+        { id: `${sharedId}-same`, groupId: 'group-1', name: 'Older', updatedAt: '2026-09-11T20:01:00.000Z' }
+      ]
+    });
+    const remote = workspace({
+      config: structuredClone(config),
+      participants: [
+        { id: sharedId, groupId: 'group-2', name: `G2-${index}`, updatedAt: '2026-09-11T20:02:00.000Z' },
+        { id: `${sharedId}-same`, groupId: 'group-1', name: 'Newer', updatedAt: '2026-09-11T20:03:00.000Z' }
+      ]
+    });
+    const merged = mergeWorkspaces(local, remote);
+    assert.equal(merged.participants.length, 3);
+    assert.equal(merged.participants.find((row) => row.id === sharedId && row.groupId === 'group-1')?.name, `G1-${index}`);
+    assert.equal(merged.participants.find((row) => row.id === sharedId && row.groupId === 'group-2')?.name, `G2-${index}`);
+    assert.equal(merged.participants.find((row) => row.id === `${sharedId}-same` && row.groupId === 'group-1')?.name, 'Newer');
+  }
+});
+
 test('hostile stored board tokens are rejected before render or merge', () => {
   const remote = workspace({
     races: [{
