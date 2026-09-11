@@ -8,6 +8,7 @@ const WEBHOOK_BATCH_CONCURRENCY=25;
 const WEBHOOK_REPLAY_MISMATCH='HIPICO_WEBHOOK_REPLAY_MISMATCH';
 
 type ExtractedMessage={phoneNumberId?:string;providerMessageId?:string};
+type RuntimeEnv=Record<string,string|undefined>;
 
 function rawMessageCount(payload:any){
   let count=0;
@@ -18,8 +19,8 @@ function rawMessageCount(payload:any){
   return count;
 }
 
-function webhookIdentityError(messages:ExtractedMessage[]){
-  const expected=webhookPhoneNumberId();
+function webhookIdentityError(messages:ExtractedMessage[],env:RuntimeEnv=process.env){
+  const expected=webhookPhoneNumberId(env);
   if(!expected)return 'WEBHOOK_PHONE_NUMBER_NOT_CONFIGURED';
   return messages.some((message)=>String(message?.phoneNumberId||'').trim()!==expected)
     ?'WEBHOOK_PHONE_NUMBER_MISMATCH'
@@ -89,8 +90,6 @@ router.post('/webhook',async(req,res)=>{
     return res.status(200).json({ok:true,received:0,processed:0,failed:0,mismatched:0});
   }
 
-  // Never acknowledge real inbound messages from volatile in-memory fallback.
-  // A non-2xx response causes a retry; provider IDs make successful replays safe.
   if(!await HipicoBotStore.dbReady(true)){
     return res.status(503).json({ok:false,retryable:true,error:'Persistencia Hípico no disponible.'});
   }
