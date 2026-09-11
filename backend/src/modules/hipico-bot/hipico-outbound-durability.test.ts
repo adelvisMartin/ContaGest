@@ -55,6 +55,15 @@ test('transport failures with unknown Meta acceptance are quarantined and never 
   assert.match(routes,/item\.status==='sending'\|\|item\.status==='reconciliation_required'/);
 });
 
+test('Meta 2xx without a provider message id is also ambiguous and not a confirmed failure',()=>{
+  const successCheck=indexOfRequired(service,'if(!response.ok)');
+  const missingReceipt=indexOfRequired(service,"receiptReason:'MESSAGE_ID_MISSING'");
+  assert.ok(missingReceipt>successCheck,'missing receipt handling must run only after a successful HTTP response');
+  assert.match(service,/Meta respondió éxito sin identificador de mensaje; requiere conciliación manual/);
+  assert.match(service,/code:'HIPICO_CLOUD_DELIVERY_AMBIGUOUS'/);
+  assert.doesNotMatch(service,/HIPICO_META_MESSAGE_ID_MISSING/);
+});
+
 test('Meta recipients are constrained to E.164 maximum 15 digits end-to-end',()=>{
   assert.match(service,/E164_DIGITS=\/\^\[1-9\]\\d\{6,14\}\$\//);
   assert.match(routes,/e164Schema=z\.string\(\)\.regex\(\/\^\\\+\?\[1-9\]\\d\{6,14\}\$\/\)/);
