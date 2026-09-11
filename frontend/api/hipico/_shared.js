@@ -34,8 +34,6 @@ export function bearerTokenValid(header, expected) {
 }
 
 export function isE164(value) {
-  // E.164 allows at most 15 digits. WhatsApp accepts the same digits with or
-  // without a leading plus depending on the API field, so normalize later.
   return /^\+?[1-9]\d{6,14}$/.test(String(value || '').trim());
 }
 
@@ -138,24 +136,34 @@ export async function supabase(path, init = {}) {
   return text ? JSON.parse(text) : null;
 }
 
+export function metaTimestamp(value) {
+  if (value === undefined || value === null || String(value).trim() === '') return null;
+  const seconds = Number(value);
+  if (!Number.isFinite(seconds) || seconds < 0) return null;
+  const milliseconds = seconds * 1000;
+  if (!Number.isFinite(milliseconds)) return null;
+  const date = new Date(milliseconds);
+  return Number.isFinite(date.getTime()) ? date.toISOString() : null;
+}
+
 export function extractMetaMessages(payload) {
   const rows = [];
   for (const entry of payload?.entry || []) {
     for (const change of entry?.changes || []) {
       const value = change?.value || {};
-      const channelKey = String(value?.metadata?.phone_number_id || 'meta');
-      const contactNames = new Map((value?.contacts || []).map((c) => [String(c.wa_id || ''), c?.profile?.name || '']));
+      const channelKey = String(value?.metadata?.phone_number_id || 'meta').slice(0, 220);
+      const contactNames = new Map((value?.contacts || []).map((c) => [String(c.wa_id || ''), String(c?.profile?.name || '').slice(0, 220)]));
       for (const message of value?.messages || []) {
         const text = message?.text?.body || message?.button?.text || message?.interactive?.button_reply?.title || message?.interactive?.list_reply?.title || '';
         rows.push({
           channelKey,
-          externalMessageId: String(message?.id || ''),
-          senderId: String(message?.from || ''),
+          externalMessageId: String(message?.id || '').slice(0, 320),
+          senderId: String(message?.from || '').slice(0, 220),
           senderLabel: contactNames.get(String(message?.from || '')) || '',
-          timestamp: message?.timestamp ? new Date(Number(message.timestamp) * 1000).toISOString() : new Date().toISOString(),
-          type: String(message?.type || 'unknown'),
+          timestamp: metaTimestamp(message?.timestamp),
+          type: String(message?.type || 'unknown').trim().toLowerCase().slice(0, 80) || 'unknown',
           text: String(text || '').slice(0, 4000),
-          quotedExternalMessageId: message?.context?.id ? String(message.context.id) : null,
+          quotedExternalMessageId: message?.context?.id ? String(message.context.id).slice(0, 320) : null,
           raw: message
         });
       }
