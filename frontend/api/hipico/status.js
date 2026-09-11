@@ -1,3 +1,5 @@
+import { metaOutboundPolicy } from './_shared.js';
+
 function missing(keys) {
   return keys.filter((key) => !String(process.env[key] || '').trim());
 }
@@ -20,7 +22,8 @@ export default function handler(req, res) {
   const groupsDistinct = Boolean(sourceGroupId && labGroupId && sourceGroupId !== labGroupId);
   const persistenceReady = persistenceMissing.length === 0;
   const linkedDeviceReady = persistenceReady && linkedDeviceMissing.length === 0 && groupsDistinct;
-  const metaDirectReady = persistenceReady && metaMissing.length === 0;
+  const outbound = metaOutboundPolicy();
+  const metaDirectReady = persistenceReady && metaMissing.length === 0 && outbound.enabled;
   const metaWebhookReady = persistenceReady && webhookMissing.length === 0;
 
   return res.status(200).json({
@@ -39,6 +42,12 @@ export default function handler(req, res) {
       directIndividualSendReady: metaDirectReady,
       webhookReady: metaWebhookReady,
       optionalForLinkedDeviceBridge: true,
+      outboundPolicy: {
+        enabled: outbound.enabled,
+        reasons: outbound.reasons,
+        allowedDestinationCount: outbound.allowedDestinationCount,
+        runtimeShaBound: outbound.runtimeShaBound
+      },
       missingConfigurationCount: new Set([...metaMissing, ...webhookMissing]).size
     }
   });
