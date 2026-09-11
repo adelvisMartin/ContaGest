@@ -35,7 +35,55 @@ type PersistedGroupShadowSource={
   risk:string|null;
 };
 
+type RuntimeEnv=Record<string,string|undefined>;
+const GROUP_ID_RE=/^\d{5,}(?:-\d+)?@g\.us$/i;
+const CHANNEL_KEY_RE=/^[A-Za-z0-9_-]{3,120}$/;
+const DEFAULT_SOURCE_CHANNEL_KEY='club-hipico-triple-crown-official';
+const DEFAULT_LAB_CHANNEL_KEY='control-hipico-lab';
 const id=(prefix:string)=>`${prefix}_${crypto.randomUUID()}`;
+
+function normalizeGroupId(value:unknown){
+  const groupId=String(value||'').trim().toLowerCase();
+  return GROUP_ID_RE.test(groupId)?groupId:'';
+}
+
+function bridgeIdentityConfig(env:RuntimeEnv=process.env){
+  const sourceGroupId=normalizeGroupId(env.HIPICO_SOURCE_GROUP_ID);
+  const labGroupId=normalizeGroupId(env.HIPICO_LAB_GROUP_ID);
+  const sourceChannelKey=String(env.HIPICO_OFFICIAL_SOURCE_CHANNEL_KEY||env.HIPICO_SOURCE_CHANNEL_KEY||DEFAULT_SOURCE_CHANNEL_KEY).trim();
+  const labChannelKey=String(env.HIPICO_LAB_CHANNEL_KEY||DEFAULT_LAB_CHANNEL_KEY).trim();
+  const ready=Boolean(
+    sourceGroupId&&labGroupId&&sourceGroupId!==labGroupId&&
+    CHANNEL_KEY_RE.test(sourceChannelKey)&&CHANNEL_KEY_RE.test(labChannelKey)&&sourceChannelKey!==labChannelKey
+  );
+  return{ready,sourceGroupId,labGroupId,sourceChannelKey,labChannelKey};
+}
+
+export function bridgeGroupIdentityReady(env:RuntimeEnv=process.env){
+  return bridgeIdentityConfig(env).ready;
+}
+
+export function assertBridgeGroupIdentity(payload:Record<string,unknown>,env:RuntimeEnv=process.env){
+  const config=bridgeIdentityConfig(env);
+  if(!config.ready){
+    throw Object.assign(new Error('HIPICO_BRIDGE_GROUP_IDENTITY_NOT_CONFIGURED'),{code:'HIPICO_BRIDGE_GROUP_IDENTITY_NOT_CONFIGURED'});
+  }
+  const groupId=normalizeGroupId(payload.groupId);
+  const role=String(payload.channelRole||'');
+  const channelKey=String(payload.channelKey||'').trim();
+  const labChannelKey=String(payload.labChannelKey||'').trim();
+  const valid=role==='source'
+    ? groupId===config.sourceGroupId&&channelKey===config.sourceChannelKey&&labChannelKey===config.labChannelKey
+    : role==='lab'
+      ? groupId===config.labGroupId&&channelKey===config.labChannelKey&&(!labChannelKey||labChannelKey===config.labChannelKey)
+      : false;
+  if(!valid){
+    // Reuse the existing non-retryable route classification so an unauthorized
+    // group can never be retried forever or persisted under a canonical channel.
+    throw Object.assign(new Error('HIPICO_TRANSPORT_REPLAY_MISMATCH'),{code:'HIPICO_TRANSPORT_REPLAY_MISMATCH'});
+  }
+  return true;
+}
 
 function assertTransportReplay(existing:PersistedTransportSource,input:TransportInput){
   const persisted=transportReplaySignature(existing);
@@ -76,6 +124,7 @@ function assertGroupShadowReplayAtTransportBoundary(existing:PersistedGroupShado
  * event exactly. A replay with altered sender/body/type/channel fails closed.
  */
 export async function persistBridgeTransportEvent(input:TransportInput){
+  assertBridgeGroupIdentity(input.payload);
   const candidateId=id('hwe');
   const inserted=await prisma.$queryRaw<Array<{id:string}>>`
     INSERT INTO public."HipicoWebhookEvent"
@@ -144,6 +193,7 @@ export async function ensureGroupShadowOutbox(input:GroupOutboxInput){
 }
 
 export async function bridgePersistenceReady(){
+  if(!bridgeGroupIdentityReady())return false;
   const rows=await prisma.$queryRaw<Array<{eventTable:string|null;outboxTable:string|null}>>`
     SELECT
       to_regclass('public."HipicoWebhookEvent"')::text AS "eventTable",
@@ -152,4 +202,4 @@ export async function bridgePersistenceReady(){
   return Boolean(rows[0]?.eventTable&&rows[0]?.outboxTable);
 }
 
-export const __test__={assertTransportReplay,assertGroupShadowReplay,assertGroupShadowReplayAtTransportBoundary};
+export const __test__={assertTransportReplay,assertGroupShadowReplay,assertGroupShadowReplayAtTransportBoundary,assertBridgeGroupIdentity,bridgeGroupIdentityReady,normalizeGroupId};

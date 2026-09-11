@@ -1,5 +1,6 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import crypto from 'node:crypto';
 import {
   SPOOL_STATES,
   atomicWriteJson,
@@ -21,6 +22,16 @@ const KIND_VALUES=new Set(Object.values(BRIDGE_SPOOL_KINDS));
 
 function safePart(value){return String(value??'').replace(/[^a-zA-Z0-9._-]+/g,'_').slice(0,120)||'unknown';}
 function iso(value=Date.now()){return new Date(value).toISOString();}
+function canonicalPayload(value){
+  if(value===null)return'null';
+  if(Array.isArray(value))return`[${value.map((item)=>canonicalPayload(item)).join(',')}]`;
+  if(typeof value==='object'){
+    return`{${Object.keys(value).sort().filter((key)=>value[key]!==undefined).map((key)=>`${JSON.stringify(key)}:${canonicalPayload(value[key])}`).join(',')}}`;
+  }
+  const serialized=JSON.stringify(value);
+  return serialized===undefined?'null':serialized;
+}
+function payloadFingerprint(payload){return crypto.createHash('sha256').update(canonicalPayload(payload)).digest('hex');}
 
 export function createBridgeSpoolRuntime({
   rootDir,
@@ -68,7 +79,15 @@ export function createBridgeSpoolRuntime({
     if(!KIND_VALUES.has(kind))throw new Error('SPOOL_KIND_INVALID');
     const candidate=createSpoolRecord({kind,key,payload,parserVersion,createdAt:iso(now()),maxAttempts});
     const existing=await findRecord(candidate.recordId);
-    if(existing)return{record:existing.record,file:existing.file,duplicate:true};
+    if(existing){
+      if(payloadFingerprint(existing.record.payload)!==payloadFingerprint(payload)){
+        const error=new Error('Spool identity was reused with different payload content.');
+        error.code='SPOOL_REPLAY_MISMATCH';
+        error.retryable=false;
+        throw error;
+      }
+      return{record:existing.record,file:existing.file,duplicate:true};
+    }
     const written=await persist(candidate);
     return{...written,duplicate:false};
   }
@@ -275,3 +294,5 @@ export function createBridgeSpoolRuntime({
     snapshot,replayPlan,requestReplay,findRecord
   });
 }
+
+export const __test__={canonicalPayload,payloadFingerprint};

@@ -66,7 +66,7 @@ export default async function handler(req, res) {
     const rows = await supabase(`hipico_outbox?owner_id=eq.${encodeURIComponent(ownerId)}&status=in.(queued,retry)&next_attempt_at=lte.${encodeURIComponent(now)}&order=created_at.asc&limit=${BATCH_SIZE}`, {
       headers: { Prefer: 'return=representation' }
     }) || [];
-    if (!rows.length) return res.status(200).json({ ok: true, processed: 0, sent: 0, failed: 0, retried: 0, skippedClaims: 0 });
+    if (!rows.length) return res.status(200).json({ ok: true, processed: 0, sent: 0, failed: 0, retried: 0, reconciliationRequired: 0, skippedClaims: 0 });
 
     const accessToken = env('HIPICO_META_ACCESS_TOKEN');
     const phoneNumberId = env('HIPICO_META_PHONE_NUMBER_ID');
@@ -74,6 +74,7 @@ export default async function handler(req, res) {
     let sent = 0;
     let failed = 0;
     let retried = 0;
+    let reconciliationRequired = 0;
     let skippedClaims = 0;
 
     for (const candidate of rows) {
@@ -110,14 +111,15 @@ export default async function handler(req, res) {
           })
         }, Number(process.env.HIPICO_META_SEND_TIMEOUT_MS || 12000));
       } catch (error) {
-        // A transport timeout can happen after Meta accepted the message. Never auto-retry
-        // an ambiguous delivery because that can duplicate a financial communication.
+        // A transport timeout can happen after Meta accepted the message. Keep
+        // the durable claim in `sending`: the queue selector never reclaims that
+        // state, so an operator must reconcile it before any later resend.
         await updateRow(row.id, {
-          status: 'failed',
+          status: 'sending',
           attempts,
-          last_error: `AMBIGUOUS_TRANSPORT_FAILURE:${String(error?.name || 'network_error').slice(0, 120)}`
+          last_error: `RECONCILIATION_REQUIRED:AMBIGUOUS_TRANSPORT_FAILURE:${String(error?.name || 'network_error').slice(0, 120)}`
         });
-        failed += 1;
+        reconciliationRequired += 1;
         continue;
       }
 
@@ -141,8 +143,15 @@ export default async function handler(req, res) {
 
       const providerMessageId = data?.messages?.[0]?.id || null;
       if (!providerMessageId) {
-        await updateRow(row.id, { status: 'failed', attempts, last_error: 'META_SUCCESS_WITHOUT_MESSAGE_ID' });
-        failed += 1;
+        // HTTP success means Meta may have accepted the message even if the
+        // expected receipt is absent. Preserve `sending` and require manual
+        // reconciliation instead of converting it into a retryable failure.
+        await updateRow(row.id, {
+          status: 'sending',
+          attempts,
+          last_error: 'RECONCILIATION_REQUIRED:META_SUCCESS_WITHOUT_MESSAGE_ID'
+        });
+        reconciliationRequired += 1;
         continue;
       }
 
@@ -159,7 +168,7 @@ export default async function handler(req, res) {
       sent += 1;
     }
 
-    return res.status(200).json({ ok: true, processed: rows.length, sent, failed, retried, skippedClaims });
+    return res.status(200).json({ ok: true, processed: rows.length, sent, failed, retried, reconciliationRequired, skippedClaims });
   } catch (error) {
     console.error('hipico whatsapp send', { message: error?.message || String(error) });
     return res.status(503).json({ ok: false, retryable: true, error: 'send_unavailable' });

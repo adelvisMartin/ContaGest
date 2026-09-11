@@ -1,10 +1,8 @@
 import { env, safeEqual, sha256, supabase, classifyText } from './_shared.js';
 
-function slug(value) {
-  return String(value || 'grupo')
-    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
-    .toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 60) || 'grupo';
-}
+const CHANNEL_KEY_PATTERN=/^[A-Za-z0-9_-]{3,120}$/;
+const DEFAULT_SOURCE_CHANNEL_KEY='club-hipico-triple-crown-official';
+const DEFAULT_LAB_CHANNEL_KEY='control-hipico-lab';
 
 function shadowSuggestion(classification, body) {
   const sender = String(body?.senderLabel || 'remitente').trim() || 'remitente';
@@ -32,15 +30,28 @@ function normalizedTimestamp(value) {
   return Number.isFinite(parsed) ? new Date(parsed).toISOString() : undefined;
 }
 
+function normalizedChannelRole(body) {
+  return String(body?.channelRole || 'source');
+}
+
+function configuredChannelIdentity(role, source = process.env) {
+  const sourceRole=role==='lab'?'lab':'source';
+  const groupId=String((sourceRole==='source'?source.HIPICO_SOURCE_GROUP_ID:source.HIPICO_LAB_GROUP_ID)||'').trim();
+  const configuredKey=String((sourceRole==='source'?source.HIPICO_SOURCE_CHANNEL_KEY:source.HIPICO_LAB_CHANNEL_KEY)||'').trim();
+  const fallback=sourceRole==='source'?DEFAULT_SOURCE_CHANNEL_KEY:DEFAULT_LAB_CHANNEL_KEY;
+  const channelKey=configuredKey||fallback;
+  return { role:sourceRole, groupId, channelKey };
+}
+
 export function validateGroupBridgeBody(body, source = process.env) {
   if (!body || typeof body !== 'object' || Array.isArray(body)) return 'invalid_body';
   const groupId = String(body.groupId || '').trim();
   const externalMessageId = String(body.externalMessageId || '').trim();
-  const role = String(body.channelRole || 'source');
+  const role = normalizedChannelRole(body);
   if (!groupId || groupId.length > 220 || !externalMessageId || externalMessageId.length > 320) return 'invalid_identifiers';
   if (!['source', 'lab'].includes(role)) return 'invalid_channel_role';
   if (body.groupName !== undefined && (typeof body.groupName !== 'string' || body.groupName.length > 220)) return 'invalid_group_name';
-  if (body.channelKey !== undefined && (typeof body.channelKey !== 'string' || !/^[A-Za-z0-9_-]{3,120}$/.test(body.channelKey.trim()))) return 'invalid_channel_key';
+  if (body.channelKey !== undefined && (typeof body.channelKey !== 'string' || !CHANNEL_KEY_PATTERN.test(body.channelKey.trim()))) return 'invalid_channel_key';
   if (body.bridgeVersion !== undefined && (typeof body.bridgeVersion !== 'string' || body.bridgeVersion.length > 80)) return 'invalid_bridge_version';
   if (body.type !== undefined && (typeof body.type !== 'string' || body.type.length > 80)) return 'invalid_message_type';
   if (body.text !== undefined && typeof body.text !== 'string') return 'invalid_text';
@@ -50,11 +61,15 @@ export function validateGroupBridgeBody(body, source = process.env) {
   if (!validOptionalBoolean(body, 'shadowMode') || !validOptionalBoolean(body, 'fromMe') || !validOptionalBoolean(body, 'hasMedia')) return 'invalid_boolean_field';
   if (body.quotedExternalMessageId !== undefined && body.quotedExternalMessageId !== null && (typeof body.quotedExternalMessageId !== 'string' || body.quotedExternalMessageId.length > 320)) return 'invalid_quoted_message_id';
   if (!normalizedTimestamp(body.timestamp)) return 'invalid_timestamp';
-  if (role === 'source' && body.shadowMode !== true) return 'source_requires_shadow_mode';
-  const pinnedSource = String(source.HIPICO_SOURCE_GROUP_ID || '').trim();
-  const pinnedLab = String(source.HIPICO_LAB_GROUP_ID || '').trim();
-  if (role === 'source' && pinnedSource && groupId !== pinnedSource) return 'source_group_not_authorized';
-  if (role === 'lab' && pinnedLab && groupId !== pinnedLab) return 'lab_group_not_authorized';
+  if (body.shadowMode !== true) return role === 'source' ? 'source_requires_shadow_mode' : 'lab_requires_shadow_mode';
+
+  const identity=configuredChannelIdentity(role,source);
+  if (!identity.groupId) return role === 'source' ? 'source_group_not_configured' : 'lab_group_not_configured';
+  if (!CHANNEL_KEY_PATTERN.test(identity.channelKey)) return role === 'source' ? 'source_channel_not_configured' : 'lab_channel_not_configured';
+  if (groupId !== identity.groupId) return role === 'source' ? 'source_group_not_authorized' : 'lab_group_not_authorized';
+  if (body.channelKey !== undefined && String(body.channelKey).trim() !== identity.channelKey) {
+    return role === 'source' ? 'source_channel_not_authorized' : 'lab_channel_not_authorized';
+  }
   return null;
 }
 
@@ -91,17 +106,35 @@ async function assertDuplicateReplay(ownerId, channelKey, externalMessageId, bod
   }
 }
 
+function assertPersistedChannel(channel,identity,groupId){
+  if(!channel?.id)throw Object.assign(new Error('HIPICO_SERVERLESS_CHANNEL_NOT_FOUND'),{code:'HIPICO_SERVERLESS_CHANNEL_NOT_FOUND'});
+  if(String(channel.status||'')!=='active')throw Object.assign(new Error('HIPICO_SERVERLESS_CHANNEL_DISABLED'),{code:'HIPICO_SERVERLESS_CHANNEL_DISABLED'});
+  if(String(channel.channel_type||'')!=='web_bridge')throw Object.assign(new Error('HIPICO_SERVERLESS_CHANNEL_TYPE_MISMATCH'),{code:'HIPICO_SERVERLESS_CHANNEL_TYPE_MISMATCH'});
+  const config=channel.config&&typeof channel.config==='object'?channel.config:{};
+  if(config.channel_role&&String(config.channel_role)!==identity.role)throw Object.assign(new Error('HIPICO_SERVERLESS_CHANNEL_ROLE_MISMATCH'),{code:'HIPICO_SERVERLESS_CHANNEL_ROLE_MISMATCH'});
+  if(config.group_id_hash&&String(config.group_id_hash)!==sha256(groupId))throw Object.assign(new Error('HIPICO_SERVERLESS_CHANNEL_GROUP_MISMATCH'),{code:'HIPICO_SERVERLESS_CHANNEL_GROUP_MISMATCH'});
+  return channel;
+}
+
+async function readChannel(ownerId,groupKey){
+  const rows=await supabase(`hipico_bot_channels?select=id,owner_id,group_key,label,channel_type,status,config&owner_id=eq.${encodeURIComponent(ownerId)}&group_key=eq.${encodeURIComponent(groupKey)}&limit=2`,{
+    headers:{Prefer:'return=representation'}
+  });
+  if(Array.isArray(rows)&&rows.length>1)throw Object.assign(new Error('HIPICO_SERVERLESS_CHANNEL_AMBIGUOUS'),{code:'HIPICO_SERVERLESS_CHANNEL_AMBIGUOUS'});
+  return Array.isArray(rows)?rows[0]||null:null;
+}
+
 async function ensureChannel(ownerId, body) {
   const groupId = String(body.groupId).trim();
   const groupName = String(body.groupName || 'Grupo WhatsApp').trim().slice(0, 220);
-  const role = String(body.channelRole || 'source');
-  const explicitChannelKey = String(body.channelKey || '').trim();
-  const groupKey = explicitChannelKey && /^[A-Za-z0-9_-]{3,120}$/.test(explicitChannelKey)
-    ? explicitChannelKey
-    : `web-${slug(groupName)}-${sha256(groupId).slice(0, 10)}`;
+  const role = normalizedChannelRole(body);
+  const identity=configuredChannelIdentity(role);
+  const existing=await readChannel(ownerId,identity.channelKey);
+  if(existing)return assertPersistedChannel(existing,identity,groupId);
+
   const payload = [{
     owner_id: ownerId,
-    group_key: groupKey,
+    group_key: identity.channelKey,
     label: groupName,
     channel_type: 'web_bridge',
     status: 'active',
@@ -111,19 +144,20 @@ async function ensureChannel(ownerId, body) {
       auto_send: false,
       bridge_version: String(body.bridgeVersion || '').slice(0, 80),
       channel_role: role,
-      shadow_mode: body.shadowMode === true
+      shadow_mode: true
     }
   }];
-  const rows = await supabase('hipico_bot_channels?on_conflict=owner_id,group_key', {
+  await supabase('hipico_bot_channels?on_conflict=owner_id,group_key', {
     method: 'POST',
-    headers: { Prefer: 'resolution=merge-duplicates,return=representation' },
+    headers: { Prefer: 'resolution=ignore-duplicates,return=minimal' },
     body: JSON.stringify(payload)
   });
-  return rows?.[0] || null;
+  const persisted=await readChannel(ownerId,identity.channelKey);
+  return assertPersistedChannel(persisted,identity,groupId);
 }
 
 async function recordShadowPrediction({ ownerId, channel, body, messageRow, classification, confidence, suggestion }) {
-  if (!body.shadowMode || body.channelRole !== 'source' || !messageRow?.id) return;
+  if (!body.shadowMode || normalizedChannelRole(body) !== 'source' || !messageRow?.id) return;
   await supabase('hipico_shadow_evaluations?on_conflict=owner_id,source_group_key,source_external_message_id,prediction_type', {
     method: 'POST',
     headers: { Prefer: 'resolution=ignore-duplicates,return=minimal' },
@@ -174,11 +208,11 @@ export default async function handler(req, res) {
   const externalMessageId = String(body.externalMessageId).trim();
   const text = String(body.text || '');
   const sentAt = normalizedTimestamp(body.timestamp);
+  const channelRole = normalizedChannelRole(body);
 
   try {
     const ownerId = env('HIPICO_OWNER_ID');
     const channel = await ensureChannel(ownerId, body);
-    if (!channel?.id) throw new Error('channel_resolution_failed');
 
     const [classification, confidence] = classifyText(text);
     const suggestion = shadowSuggestion(classification, body);
@@ -207,8 +241,8 @@ export default async function handler(req, res) {
         normalized: {
           source: 'web_bridge',
           group_name: String(body.groupName || ''),
-          channel_role: String(body.channelRole || 'source'),
-          shadow_mode: body.shadowMode === true,
+          channel_role: channelRole,
+          shadow_mode: true,
           from_me: body.fromMe === true,
           has_media: body.hasMedia === true
         },
@@ -238,7 +272,7 @@ export default async function handler(req, res) {
       channelKey: channel.group_key,
       automationMode: 'shadow',
       actions: [],
-      labSimulation: !duplicate && body.channelRole === 'source' ? {
+      labSimulation: !duplicate && channelRole === 'source' ? {
         text: diagnostic || (suggestion ? `🧭 ${suggestion}` : null),
         sourceExternalMessageId: externalMessageId,
         monetaryAutoApply: false
@@ -248,9 +282,12 @@ export default async function handler(req, res) {
     if (error?.code === 'HIPICO_SERVERLESS_REPLAY_MISMATCH' || error?.message === 'HIPICO_SERVERLESS_REPLAY_MISMATCH') {
       return res.status(409).json({ ok: false, retryable: false, error: 'replay_mismatch' });
     }
+    if (String(error?.code || '').startsWith('HIPICO_SERVERLESS_CHANNEL_')) {
+      return res.status(409).json({ ok: false, retryable: false, error: 'channel_not_authorized' });
+    }
     console.error('hipico group bridge ingest failed', { message: error?.message || String(error) });
     return res.status(503).json({ ok: false, retryable: true, error: 'ingest_unavailable' });
   }
 }
 
-export const __test__ = { normalizedTimestamp, sourceReplaySignature, persistedReplaySignature };
+export const __test__ = { normalizedTimestamp, normalizedChannelRole, sourceReplaySignature, persistedReplaySignature, configuredChannelIdentity, assertPersistedChannel };

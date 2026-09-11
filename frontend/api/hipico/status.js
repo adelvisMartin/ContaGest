@@ -1,7 +1,23 @@
 import { metaOutboundPolicy } from './_shared.js';
 
+const CHANNEL_KEY_PATTERN=/^[A-Za-z0-9_-]{3,120}$/;
+const DEFAULT_SOURCE_CHANNEL_KEY='club-hipico-triple-crown-official';
+const DEFAULT_LAB_CHANNEL_KEY='control-hipico-lab';
+
 function missing(keys) {
   return keys.filter((key) => !String(process.env[key] || '').trim());
+}
+
+function bridgeIdentityStatus(source=process.env){
+  const sourceGroupId=String(source.HIPICO_SOURCE_GROUP_ID||'').trim();
+  const labGroupId=String(source.HIPICO_LAB_GROUP_ID||'').trim();
+  const sourceChannelKey=String(source.HIPICO_SOURCE_CHANNEL_KEY||DEFAULT_SOURCE_CHANNEL_KEY).trim();
+  const labChannelKey=String(source.HIPICO_LAB_CHANNEL_KEY||DEFAULT_LAB_CHANNEL_KEY).trim();
+  const pinnedGroupsConfigured=Boolean(sourceGroupId&&labGroupId);
+  const groupsDistinct=Boolean(pinnedGroupsConfigured&&sourceGroupId!==labGroupId);
+  const channelKeysValid=CHANNEL_KEY_PATTERN.test(sourceChannelKey)&&CHANNEL_KEY_PATTERN.test(labChannelKey);
+  const channelKeysDistinct=Boolean(channelKeysValid&&sourceChannelKey!==labChannelKey);
+  return{sourceGroupId,labGroupId,sourceChannelKey,labChannelKey,pinnedGroupsConfigured,groupsDistinct,channelKeysValid,channelKeysDistinct};
 }
 
 export default function handler(req, res) {
@@ -17,11 +33,13 @@ export default function handler(req, res) {
   const linkedDeviceMissing = missing(linkedDeviceRequired);
   const metaMissing = missing(metaRequired);
   const webhookMissing = missing(webhookRequired);
-  const sourceGroupId = String(process.env.HIPICO_SOURCE_GROUP_ID || '').trim();
-  const labGroupId = String(process.env.HIPICO_LAB_GROUP_ID || '').trim();
-  const groupsDistinct = Boolean(sourceGroupId && labGroupId && sourceGroupId !== labGroupId);
+  const identity=bridgeIdentityStatus();
   const persistenceReady = persistenceMissing.length === 0;
-  const linkedDeviceReady = persistenceReady && linkedDeviceMissing.length === 0 && groupsDistinct;
+  const linkedDeviceReady = persistenceReady
+    && linkedDeviceMissing.length === 0
+    && identity.groupsDistinct
+    && identity.channelKeysValid
+    && identity.channelKeysDistinct;
   const outbound = metaOutboundPolicy();
   const metaDirectReady = persistenceReady && metaMissing.length === 0 && outbound.enabled;
   const metaWebhookReady = persistenceReady && webhookMissing.length === 0;
@@ -35,8 +53,12 @@ export default function handler(req, res) {
       ready: linkedDeviceReady,
       shadowOnly: true,
       sourceSendPossible: false,
-      pinnedGroupsConfigured: linkedDeviceMissing.length === 0,
-      groupsDistinct
+      tokenConfigured: Boolean(String(process.env.HIPICO_GROUP_BRIDGE_TOKEN||'').trim()),
+      pinnedGroupsConfigured: identity.pinnedGroupsConfigured,
+      groupsDistinct: identity.groupsDistinct,
+      channelKeysValid: identity.channelKeysValid,
+      channelKeysDistinct: identity.channelKeysDistinct,
+      missingConfigurationCount: linkedDeviceMissing.length
     },
     metaCloud: {
       directIndividualSendReady: metaDirectReady,
@@ -52,3 +74,5 @@ export default function handler(req, res) {
     }
   });
 }
+
+export const __test__={bridgeIdentityStatus};

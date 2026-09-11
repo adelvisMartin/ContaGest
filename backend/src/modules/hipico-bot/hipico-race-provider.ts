@@ -2,6 +2,7 @@ const DEFAULT_TIMEOUT_MS = 5_000;
 const DEFAULT_CACHE_TTL_MS = 30_000;
 export const MAX_RACE_PROVIDER_RESPONSE_BYTES = 1_000_000;
 export const MAX_RACE_PROVIDER_CACHE_ENTRIES = 128;
+const RACE_PROVIDER_VENDOR_DOMAINS = ['sportradar.com', 'betradar.com'] as const;
 
 export type HorseRaceProviderName = 'disabled' | 'sportradar-uof';
 
@@ -31,7 +32,7 @@ type CacheEntry = { expiresAt: number; value: HorseRaceStageSummary };
 export class HorseRaceProviderError extends Error {
   constructor(
     message: string,
-    public readonly code: 'NOT_CONFIGURED' | 'INVALID_STAGE_ID' | 'UPSTREAM_TIMEOUT' | 'UPSTREAM_ERROR' | 'UPSTREAM_RESPONSE_TOO_LARGE',
+    public readonly code: 'NOT_CONFIGURED' | 'INVALID_STAGE_ID' | 'UPSTREAM_TIMEOUT' | 'UPSTREAM_ERROR' | 'UPSTREAM_RESPONSE_TOO_LARGE' | 'UPSTREAM_INVALID_CONTENT',
     public readonly retryable: boolean
   ) {
     super(message);
@@ -48,13 +49,21 @@ function normalizeProvider(value: string | undefined): HorseRaceProviderName {
   return String(value || 'disabled').trim().toLowerCase() === 'sportradar-uof' ? 'sportradar-uof' : 'disabled';
 }
 
+function allowedVendorHostname(hostname: string) {
+  const value = String(hostname || '').trim().toLowerCase().replace(/\.$/, '');
+  return RACE_PROVIDER_VENDOR_DOMAINS.some((domain) => value === domain || value.endsWith(`.${domain}`));
+}
+
 function normalizeBaseUrl(value: string | undefined) {
   const text = String(value || '').trim().replace(/\/$/, '');
   if (!text) return '';
   try {
     const url = new URL(text);
-    if (url.protocol !== 'https:') return '';
-    return url.toString().replace(/\/$/, '');
+    if (url.protocol !== 'https:' || (url.port && url.port !== '443')) return '';
+    if (url.username || url.password || url.search || url.hash) return '';
+    if (!allowedVendorHostname(url.hostname)) return '';
+    if (url.pathname && url.pathname !== '/') return '';
+    return `${url.protocol}//${url.host}`;
   } catch {
     return '';
   }
@@ -70,6 +79,16 @@ function normalizeStageId(value: string) {
 
 function responseTooLarge() {
   return new HorseRaceProviderError('La respuesta del proveedor hípico excede el tamaño permitido.', 'UPSTREAM_RESPONSE_TOO_LARGE', false);
+}
+
+function assertXmlResponse(response: Response, text: string) {
+  const contentType = String(response.headers.get('content-type') || '').toLowerCase().split(';', 1)[0].trim();
+  const xmlType = contentType === 'application/xml' || contentType === 'text/xml' || contentType.endsWith('+xml');
+  const trimmed = String(text || '').trim();
+  if (!xmlType || !trimmed.startsWith('<') || /<!DOCTYPE\b/i.test(trimmed)) {
+    throw new HorseRaceProviderError('El proveedor hípico devolvió contenido no válido para enrichment XML.', 'UPSTREAM_INVALID_CONTENT', false);
+  }
+  return contentType;
 }
 
 async function readBoundedText(response: Response) {
@@ -204,12 +223,13 @@ export function createHorseRaceProvider(options: { env?: RuntimeEnv; fetchImpl?:
         throw new HorseRaceProviderError(`El proveedor hípico respondió HTTP ${response.status}.`, 'UPSTREAM_ERROR', response.status >= 500 || response.status === 429);
       }
       const xml = await readBoundedText(response);
+      const contentType = assertXmlResponse(response, xml);
       const fetchedAt = now();
       const value: HorseRaceStageSummary = {
         provider: 'sportradar-uof',
         stageId,
         fetchedAt: new Date(fetchedAt).toISOString(),
-        contentType: response.headers.get('content-type') || 'application/xml',
+        contentType,
         xml,
         cached: false
       };

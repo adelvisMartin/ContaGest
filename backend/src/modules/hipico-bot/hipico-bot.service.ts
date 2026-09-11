@@ -199,7 +199,13 @@ export async function sendCloudText(recipient:string,message:string){
   const data=await response.json().catch(()=>({}));
   if(!response.ok)throw Object.assign(new Error(`Meta Graph HTTP ${response.status}`),{code:'HIPICO_CLOUD_HTTP_ERROR',status:response.status});
   const providerMessageId=String(data?.messages?.[0]?.id||'');
-  if(!providerMessageId)throw Object.assign(new Error('Meta no devolvió identificador de mensaje.'),{code:'HIPICO_META_MESSAGE_ID_MISSING'});
+  if(!providerMessageId){
+    throw Object.assign(new Error('Meta respondió éxito sin identificador de mensaje; requiere conciliación manual.'),{
+      code:'HIPICO_CLOUD_DELIVERY_AMBIGUOUS',
+      responseStatus:response.status,
+      receiptReason:'MESSAGE_ID_MISSING'
+    });
+  }
   return{providerMessageId,raw:data};
 }
 

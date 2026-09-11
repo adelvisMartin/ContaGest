@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { historySyncRateCheck, liveRateLimitClock, normalizeBridgeSender } from './hipico-bridge-input-policy.js';
+import { HISTORY_MAX_IDENTICAL_PER_MINUTE, historySyncRateCheck, historySyncRateLimiter, liveRateLimitClock, normalizeBridgeSender } from './hipico-bridge-input-policy.js';
 
 test('bridge sender normalization rejects empty canonical identities',()=>{
   assert.equal(normalizeBridgeSender(''),null);
@@ -22,6 +22,16 @@ test('live rate limiting uses server time and never the message timestamp',()=>{
   assert.equal(liveRateLimitClock(true,()=>123456),null);
 });
 
-test('history replay is explicitly exempt from live participant throttling',()=>{
-  assert.deepEqual(historySyncRateCheck(),{allowed:true,reason:null,count:0,identicalCount:0,retryAfterMs:0});
+test('history replay has a separate larger server-side throttle but is never unlimited',()=>{
+  historySyncRateLimiter.reset();
+  const actor='source:p1';
+  const digest='same';
+  for(let index=0;index<HISTORY_MAX_IDENTICAL_PER_MINUTE;index+=1){
+    assert.equal(historySyncRateCheck(actor,digest,1000+index).allowed,true);
+  }
+  const blocked=historySyncRateCheck(actor,digest,2000);
+  assert.equal(blocked.allowed,false);
+  assert.equal(blocked.reason,'REPETITION_RATE_LIMIT');
+  assert.equal(historySyncRateCheck('source:p2',digest,2000).allowed,true);
+  historySyncRateLimiter.reset();
 });

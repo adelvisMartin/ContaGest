@@ -43,9 +43,9 @@ function contextualizeOffer(analysis,offer){
   const messageContext=message?.raceContext||{};
   const opening=nearestOpening(analysis,offer)||{};
 
-  // parseOffer already distinguishes text written in the offer from context inherited
-  // from an opening. Preserve that decision here: an inherited message context must
-  // never overwrite an explicit different track written by the participant.
+  // parseOffer distinguishes text written in the offer from context inherited
+  // from an opening. An inherited context must never overwrite an explicit
+  // different track written by the participant.
   const offerTrack=String(offer.track||'').trim();
   const messageTrack=messageContext?.inherited?'':String(messageContext.track||'').trim();
   const directTrack=offerTrack||messageTrack;
@@ -55,8 +55,8 @@ function contextualizeOffer(analysis,offer){
   const trackConflict=Boolean(directTrack&&openingTrack&&!sameTrack(directTrack,openingTrack));
   const raceConflict=Boolean(directRace&&openingRace&&directRace!==openingRace);
   const track=directTrack||openingTrack||'';
-  // If the offer explicitly names a different track without a race ordinal, do
-  // not manufacture the active opening's race number for that different track.
+  // If an offer names a different track without a race ordinal, never invent
+  // the current opening's race number for that different track.
   const raceNumber=directRace || (trackConflict?null:openingRace) || null;
   offer.track=track;
   offer.raceNumber=raceNumber;

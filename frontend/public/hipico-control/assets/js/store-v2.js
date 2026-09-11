@@ -7,6 +7,7 @@ const LEGACY_SESSION_KEY = "hipico-control-cloud-session";
 const LEGACY_MODE_KEY = "hipico-control-mode";
 const SNAPSHOT_LIMIT = 30;
 const QUOTA_PRESSURE_RATIO = 0.9;
+const OUTBOX_VOLATILE_FIELDS = new Set(["id", "idempotencyKey", "createdAt", "updatedAt", "attempts", "status", "lastError", "nextAttemptAt"]);
 let databasePromise = null;
 let pendingWorkspace = null;
 let pendingWriteOptions = null;
@@ -29,6 +30,66 @@ function firstGroupId(workspace) {
 }
 function currentGroupId(workspace, event = null) {
   return String(event?.groupId || workspace?.config?.activeGroupId || workspace?.config?.activeWhatsappGroupId || firstGroupId(workspace));
+}
+function validCommission(value) {
+  const number = Number(value);
+  return Number.isFinite(number) && number >= 0 && number <= 1 ? number : null;
+}
+function validExchangeRate(value) {
+  const number = Number(value);
+  return Number.isFinite(number) && number > 0 ? number : null;
+}
+function groupById(workspace, groupId) {
+  return (workspace?.config?.groups || workspace?.config?.whatsappGroups || []).find((group) => String(group?.id || "") === String(groupId || "")) || null;
+}
+function syncLegacyFinancialConfig(workspace, previous = null) {
+  if (!workspace || typeof workspace !== "object") return workspace;
+  workspace.config ||= {};
+  const groupId = currentGroupId(workspace);
+  const group = groupById(workspace, groupId);
+  if (!group) return workspace;
+  const previousGroup = groupById(previous, groupId);
+  const fallbackCommission = validCommission(previousGroup?.commission) ?? validCommission(workspace.config.commission) ?? 0.05;
+  const fallbackRate = validExchangeRate(previousGroup?.exchangeRate) ?? validExchangeRate(workspace.config.exchangeRate) ?? 1;
+  group.commission = validCommission(group.commission) ?? fallbackCommission;
+  group.exchangeRate = validExchangeRate(group.exchangeRate) ?? fallbackRate;
+  workspace.config.commission = group.commission;
+  workspace.config.exchangeRate = group.exchangeRate;
+  if (group.currency) workspace.config.currency = group.currency;
+  if (group.footerMessage != null) workspace.config.footerMessage = String(group.footerMessage);
+
+  for (const race of workspace.races || []) {
+    const raceGroup = groupById(workspace, race.groupId || firstGroupId(workspace));
+    const raceCommission = validCommission(race.commission);
+    race.commission = raceCommission ?? validCommission(raceGroup?.commission) ?? 0.05;
+    race.exchangeRate = validExchangeRate(race.exchangeRate) ?? validExchangeRate(raceGroup?.exchangeRate) ?? 1;
+  }
+  return workspace;
+}
+function daySortValue(day) {
+  const timestamp = Date.parse(`${String(day?.date || "1970-01-01")}T12:00:00Z`);
+  return Number.isFinite(timestamp) ? timestamp : 0;
+}
+function preferNewestOpenDay(workspace) {
+  const days = Array.isArray(workspace?.days) ? workspace.days : [];
+  const fallback = firstGroupId(workspace);
+  const groups = [...new Set(days.map((day) => String(day?.groupId || fallback)))];
+  for (const groupId of groups) {
+    const indices = [];
+    const rows = [];
+    days.forEach((day, index) => {
+      if (String(day?.groupId || fallback) === groupId) { indices.push(index); rows.push(day); }
+    });
+    const sorted = [...rows].sort((left, right) => {
+      const leftOpen = left?.status === "open";
+      const rightOpen = right?.status === "open";
+      if (leftOpen !== rightOpen) return leftOpen ? -1 : 1;
+      const difference = daySortValue(left) - daySortValue(right);
+      return leftOpen ? -difference : difference;
+    });
+    indices.forEach((index, offset) => { days[index] = sorted[offset]; });
+  }
+  return workspace;
 }
 function matchingLoadedBet(bet, advanced) {
   return String(bet?.play || "") === String(advanced?.play || "")
@@ -138,6 +199,8 @@ export function repairWorkspaceGroupScope(workspace, previous = lastWorkspaceSna
     else if (event.action === "week_closed") repairWeekClose(workspace, previous, event);
   }
   tagUnscoped(workspace);
+  preferNewestOpenDay(workspace);
+  syncLegacyFinancialConfig(workspace, previous);
   return workspace;
 }
 
@@ -215,12 +278,30 @@ export async function bindCloudIdentity(userId) {
 export async function loadCloudSession() { const session = await getSetting("cloudSession", null); if (session?.user?.id) await bindCloudIdentity(session.user.id); return session; }
 export async function saveCloudSession(session) { if (session?.user?.id) await bindCloudIdentity(session.user.id); return setSetting("cloudSession", session); }
 export async function clearPrivateSessionState() { await flushWorkspaceWrites(); await setSetting("cloudSession", null); await clearStore("outbox"); await putRecord("syncMeta", { key: "sessionCleared", clearedAt: nowIso() }); }
+function canonicalize(value) {
+  if (Array.isArray(value)) return value.map(canonicalize);
+  if (!value || typeof value !== "object") return value;
+  return Object.fromEntries(Object.keys(value).sort().filter((key) => value[key] !== undefined).map((key) => [key, canonicalize(value[key])]));
+}
 function outboxIdempotencyKey(event) { return String(event?.idempotencyKey || event?.id || event?.sourceMessageId || event?.externalMessageId || "").trim(); }
+function outboxIntent(event) {
+  const source = event && typeof event === "object" ? event : {};
+  return canonicalize(Object.fromEntries(Object.entries(source).filter(([key]) => !OUTBOX_VOLATILE_FIELDS.has(key))));
+}
+function sameOutboxIntent(existing, candidate) {
+  return JSON.stringify(outboxIntent(existing)) === JSON.stringify(outboxIntent(candidate));
+}
+function assertSameOutboxIntent(existing, candidate) {
+  if (sameOutboxIntent(existing, candidate)) return existing;
+  const error = new Error("La clave de idempotencia offline ya fue usada por otra operación.");
+  error.code = "HIPICO_OUTBOX_IDEMPOTENCY_MISMATCH";
+  throw error;
+}
 export async function enqueueOutbox(event) {
   const idempotencyKey = outboxIdempotencyKey(event); if (!idempotencyKey) { const error = new Error("La operación offline necesita una clave estable de idempotencia."); error.code = "HIPICO_OUTBOX_IDEMPOTENCY_KEY_REQUIRED"; throw error; }
-  const db = await openDatabase(); const lookup = db.transaction("outbox", "readonly"); const existing = await requestResult(lookup.objectStore("outbox").index("idempotencyKey").get(idempotencyKey)); await transactionDone(lookup); if (existing) return existing;
   const value = { ...structuredClone(event), id: event.id || `outbox-${crypto.randomUUID()}`, idempotencyKey, createdAt: event.createdAt || nowIso(), attempts: Number(event.attempts || 0) };
-  try { await putRecord("outbox", value); return value; } catch (error) { if (error?.name === "ConstraintError") { const retry = db.transaction("outbox", "readonly"); const duplicate = await requestResult(retry.objectStore("outbox").index("idempotencyKey").get(idempotencyKey)); await transactionDone(retry); if (duplicate) return duplicate; } throw error; }
+  const db = await openDatabase(); const lookup = db.transaction("outbox", "readonly"); const existing = await requestResult(lookup.objectStore("outbox").index("idempotencyKey").get(idempotencyKey)); await transactionDone(lookup); if (existing) return assertSameOutboxIntent(existing, value);
+  try { await putRecord("outbox", value); return value; } catch (error) { if (error?.name === "ConstraintError") { const retry = db.transaction("outbox", "readonly"); const duplicate = await requestResult(retry.objectStore("outbox").index("idempotencyKey").get(idempotencyKey)); await transactionDone(retry); if (duplicate) return assertSameOutboxIntent(duplicate, value); } throw error; }
 }
 export async function listOutbox() { return (await getAllRecords("outbox")).sort((a, b) => String(a.createdAt).localeCompare(String(b.createdAt))); }
 export async function removeOutbox(id) { await deleteRecord("outbox", id); }
@@ -230,4 +311,4 @@ export async function storageDiagnostics() { const [estimate, persisted, outbox,
 export async function getWorkspaceSyncStatus({ staleAfterMs = 5 * 60 * 1000, now = Date.now() } = {}) { const record = await getRecord("workspaces", WORKSPACE_ID); const lastSyncedAt = record?.workspace?.syncMeta?.lastSyncedAt || null; const stamp = Date.parse(String(lastSyncedAt || "")); return { lastSyncedAt, stale: !Number.isFinite(stamp) || now - stamp > staleAfterMs, offline: globalThis.navigator?.onLine === false, schemaVersion: LOCAL_SCHEMA_VERSION }; }
 export function downloadBlob(filename, blob) { const url = URL.createObjectURL(blob); const link = document.createElement("a"); link.href = url; link.download = filename; link.rel = "noopener"; document.body.appendChild(link); link.click(); link.remove(); setTimeout(() => URL.revokeObjectURL(url), 1000); }
 export function downloadFile(filename, content, type = "application/json") { downloadBlob(filename, new Blob([content], { type })); }
-export const __test__ = { isQuotaError, outboxIdempotencyKey, ensureOutboxIndexes, matchingLoadedBet, firstGroupId };
+export const __test__ = { isQuotaError, outboxIdempotencyKey, outboxIntent, sameOutboxIntent, ensureOutboxIndexes, matchingLoadedBet, firstGroupId, syncLegacyFinancialConfig, preferNewestOpenDay };
