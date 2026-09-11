@@ -92,43 +92,60 @@ export function sha256(value) {
 }
 
 export function safeTimeoutMs(value, fallback = DEFAULT_FETCH_TIMEOUT_MS) {
+  const fallbackValue = Number(fallback);
+  const safeFallback = Number.isFinite(fallbackValue) && fallbackValue > 0
+    ? Math.min(Math.floor(fallbackValue), MAX_FETCH_TIMEOUT_MS)
+    : DEFAULT_FETCH_TIMEOUT_MS;
   const number = Number(value);
-  if (!Number.isFinite(number) || number <= 0) return fallback;
-  return Math.min(MAX_FETCH_TIMEOUT_MS, Math.max(100, Math.trunc(number)));
+  if (!Number.isFinite(number) || number <= 0) return safeFallback;
+  return Math.min(Math.floor(number), MAX_FETCH_TIMEOUT_MS);
 }
 
-export async function fetchWithTimeout(url, options = {}, timeoutMs = DEFAULT_FETCH_TIMEOUT_MS) {
-  const bounded = safeTimeoutMs(timeoutMs);
-  return fetch(url, { ...options, signal: AbortSignal.timeout(bounded) });
+export async function fetchWithTimeout(url, init = {}, timeoutMs = DEFAULT_FETCH_TIMEOUT_MS) {
+  const controller = new AbortController();
+  const callerSignal = init.signal;
+  const timer = setTimeout(() => controller.abort(), safeTimeoutMs(timeoutMs));
+  const abort = () => controller.abort();
+  if (callerSignal) {
+    if (callerSignal.aborted) controller.abort();
+    else callerSignal.addEventListener('abort', abort, { once: true });
+  }
+  try {
+    return await fetch(url, { ...init, signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
+    callerSignal?.removeEventListener?.('abort', abort);
+  }
 }
 
-export async function supabase(path, options = {}) {
+export async function supabase(path, init = {}) {
   const base = env('HIPICO_SUPABASE_URL').replace(/\/$/, '');
-  const key = serverSecret('HIPICO_SUPABASE_SERVICE_ROLE_KEY');
+  const serviceKey = env('HIPICO_SUPABASE_SERVICE_ROLE_KEY');
   const response = await fetchWithTimeout(`${base}/rest/v1/${path}`, {
-    ...options,
+    ...init,
     headers: {
-      apikey: key,
-      authorization: `Bearer ${key}`,
-      'content-type': 'application/json',
-      ...(options.headers || {})
+      apikey: serviceKey,
+      Authorization: `Bearer ${serviceKey}`,
+      'Content-Type': 'application/json',
+      ...(init.headers || {})
     }
-  }, Number(process.env.HIPICO_SUPABASE_TIMEOUT_MS || DEFAULT_FETCH_TIMEOUT_MS));
-  if (!response.ok) throw Object.assign(new Error(`Supabase HTTP ${response.status}`), { status: response.status });
-  if (response.status === 204) return null;
+  }, safeTimeoutMs(process.env.HIPICO_SUPABASE_TIMEOUT_MS));
   const text = await response.text();
+  if (!response.ok) {
+    const requestId = response.headers.get('x-request-id') || response.headers.get('sb-request-id') || '';
+    throw new Error(`Supabase ${response.status}${requestId ? ` request=${requestId}` : ''}`);
+  }
   return text ? JSON.parse(text) : null;
 }
 
 export function metaTimestamp(value) {
-  const raw = String(value ?? '').trim();
-  if (!/^\d{1,12}$/.test(raw)) return null;
-  const seconds = Number(raw);
-  if (!Number.isFinite(seconds) || seconds <= 0) return null;
+  if (value === undefined || value === null || String(value).trim() === '') return null;
+  const seconds = Number(value);
+  if (!Number.isFinite(seconds) || seconds < 0) return null;
   const milliseconds = seconds * 1000;
+  if (!Number.isFinite(milliseconds)) return null;
   const date = new Date(milliseconds);
-  if (!Number.isFinite(date.getTime())) return null;
-  return date.toISOString();
+  return Number.isFinite(date.getTime()) ? date.toISOString() : null;
 }
 
 export function extractMetaMessages(payload) {
@@ -136,10 +153,10 @@ export function extractMetaMessages(payload) {
   for (const entry of payload?.entry || []) {
     for (const change of entry?.changes || []) {
       const value = change?.value || {};
-      const channelKey = String(value?.metadata?.phone_number_id || 'meta').trim() || 'meta';
-      const contactNames = new Map((value?.contacts || []).map((contact) => [String(contact?.wa_id || ''), String(contact?.profile?.name || '')]));
+      const channelKey = String(value?.metadata?.phone_number_id || 'meta');
+      const contactNames = new Map((value?.contacts || []).map((c) => [String(c.wa_id || ''), String(c?.profile?.name || '')]));
       for (const message of value?.messages || []) {
-        const text = message?.text?.body || message?.button?.text || message?.interactive?.button_reply?.title || message?.interactive?.list_reply?.title || message?.document?.caption || message?.document?.filename || message?.image?.caption || message?.video?.caption || '';
+        const text = message?.text?.body || message?.button?.text || message?.interactive?.button_reply?.title || message?.interactive?.list_reply?.title || '';
         rows.push({
           channelKey,
           externalMessageId: String(message?.id || ''),
