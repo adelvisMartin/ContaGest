@@ -7,6 +7,12 @@ const FOCUSABLE_SELECTOR = [
   'textarea:not([disabled])',
   '[tabindex]:not([tabindex="-1"])'
 ].join(',');
+const GLOBAL_CONTROL_LABELS = [
+  ['[data-action="focus-fast"].icon-button', 'Captura rápida'],
+  ['[data-action="prev-race"]', 'Carrera anterior'],
+  ['[data-action="next-race"]', 'Carrera siguiente'],
+  ['.race-arrow--add[data-action="new-race"]', 'Nueva carrera']
+];
 
 let activeDialog = null;
 let returnFocus = null;
@@ -25,6 +31,15 @@ function visible(element) {
 function focusable(dialog) {
   if (!(dialog instanceof HTMLElement)) return [];
   return [...dialog.querySelectorAll(FOCUSABLE_SELECTOR)].filter(visible);
+}
+
+function labelGlobalControls(root = document) {
+  if (!root?.querySelectorAll) return;
+  for (const [selector, label] of GLOBAL_CONTROL_LABELS) {
+    for (const control of root.querySelectorAll(selector)) {
+      if (control instanceof HTMLElement && !control.hasAttribute('aria-label')) control.setAttribute('aria-label', label);
+    }
+  }
 }
 
 function labelCalendarControls(dialog) {
@@ -129,6 +144,7 @@ function trapTab(event) {
 }
 
 function scan() {
+  labelGlobalControls(document);
   const dialog = document.querySelector(DIALOG_SELECTOR);
   if (dialog instanceof HTMLElement) {
     if (dialog !== activeDialog) {
@@ -163,4 +179,4 @@ if (typeof document !== 'undefined') {
   else start();
 }
 
-export const __test__ = { focusable, labelDialog, labelCalendarControls, closeActiveDialog, trapTab, DIALOG_SELECTOR, FOCUSABLE_SELECTOR };
+export const __test__ = { focusable, labelGlobalControls, labelDialog, labelCalendarControls, closeActiveDialog, trapTab, DIALOG_SELECTOR, FOCUSABLE_SELECTOR, GLOBAL_CONTROL_LABELS };
