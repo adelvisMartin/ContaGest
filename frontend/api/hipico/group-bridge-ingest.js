@@ -20,9 +20,28 @@ function validOptionalBoolean(body, key) {
   return body[key] === undefined || typeof body[key] === 'boolean';
 }
 
+const ISO_TIMESTAMP_WITH_ZONE = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.(\d{1,9}))?(Z|[+-]\d{2}:\d{2})$/;
+
 function normalizedTimestamp(value) {
   if (value === undefined || value === null || value === '') return null;
   if (typeof value !== 'string' || value.length > 64) return undefined;
+  const match = value.match(ISO_TIMESTAMP_WITH_ZONE);
+  if (!match) return undefined;
+  const [, yearRaw, monthRaw, dayRaw, hourRaw, minuteRaw, secondRaw, , zone] = match;
+  const year = Number(yearRaw);
+  const month = Number(monthRaw);
+  const day = Number(dayRaw);
+  const hour = Number(hourRaw);
+  const minute = Number(minuteRaw);
+  const second = Number(secondRaw);
+  if (month < 1 || month > 12 || hour > 23 || minute > 59 || second > 59) return undefined;
+  const daysInMonth = new Date(Date.UTC(year, month, 0)).getUTCDate();
+  if (day < 1 || day > daysInMonth) return undefined;
+  if (zone !== 'Z') {
+    const offsetHour = Number(zone.slice(1, 3));
+    const offsetMinute = Number(zone.slice(4, 6));
+    if (offsetHour > 14 || offsetMinute > 59 || (offsetHour === 14 && offsetMinute !== 0)) return undefined;
+  }
   const parsed = Date.parse(value);
   return Number.isFinite(parsed) ? new Date(parsed).toISOString() : undefined;
 }
