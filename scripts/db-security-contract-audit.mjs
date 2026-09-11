@@ -14,7 +14,11 @@ const workflow = read('.github/workflows/db-security-operations.yml');
 const monitor = read('backend/scripts/security-db-monitor.mjs');
 const runbook = read('docs/DATABASE_SECURITY_RECOVERY_RUNBOOK.md');
 
-requireText(runtime, /DATABASE_RUNTIME_URL es obligatorio en producción/, 'runtime-db-not-fail-closed');
+requireText(
+  runtime,
+  /if\s*\(\s*isProduction\s*&&\s*!runtimeCandidate\s*\)\s*\{[\s\S]{0,400}?throw new Error\(['"][^'"]*DATABASE_RUNTIME_URL[^'"]*['"]\)/,
+  'runtime-db-not-fail-closed'
+);
 requireText(runtime, /forbiddenRuntimeRoles/, 'runtime-db-forbidden-role-gate-missing');
 requireText(runtime, /expectedRuntimeRole/, 'runtime-db-expected-role-gate-missing');
 forbidText(runtime, /rejectUnauthorized\s*:\s*false/, 'runtime-db-tls-verification-disabled');

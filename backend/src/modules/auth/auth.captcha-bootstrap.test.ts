@@ -13,6 +13,9 @@ const dbEnvKeys = [
   'POSTGRES_URL_NON_POOLING'
 ] as const;
 
+const testJwtSecret = `test-captcha-jwt-${'x'.repeat(32)}`;
+const testLicenseHashSecret = `test-license-hash-${'x'.repeat(32)}`;
+
 test('GET /captcha boots without weakening the DB runtime guard', async (t) => {
   const originalEnv = new Map<string, string | undefined>();
   for (const key of [...dbEnvKeys, 'NODE_ENV', 'VERCEL_ENV', 'JWT_SECRET', 'LICENSE_HASH_SECRET']) {
@@ -21,8 +24,8 @@ test('GET /captcha boots without weakening the DB runtime guard', async (t) => {
 
   process.env.NODE_ENV = 'production';
   process.env.VERCEL_ENV = 'production';
-  process.env.JWT_SECRET = 'test-captcha-jwt-secret-32-characters-minimum';
-  process.env.LICENSE_HASH_SECRET = 'test-license-hash-secret-32-characters-minimum';
+  process.env.JWT_SECRET = testJwtSecret;
+  process.env.LICENSE_HASH_SECRET = testLicenseHashSecret;
   for (const key of dbEnvKeys) process.env[key] = '';
 
   t.after(() => {

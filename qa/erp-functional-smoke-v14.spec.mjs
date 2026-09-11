@@ -67,7 +67,11 @@ test('psychology creates an appointment, uses human labels and updates the weekl
   await expect(patientSelect.locator('option',{hasText:'Ana Torres'})).toHaveCount(1);
   await expect(patientSelect).not.toContainText('c95cf55e-3d19-4e18-a0b5-023f0a6cea82');
   await patientSelect.selectOption(patients[0].id);
-  await page.locator('#psychAppointmentForm input[name="date"]').fill('2026-08-24');
+  const agendaDate=await page.evaluate(()=>{
+    const date=new Date();
+    return `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,'0')}-${String(date.getDate()).padStart(2,'0')}`;
+  });
+  await page.locator('#psychAppointmentForm input[name="date"]').fill(agendaDate);
   await page.locator('#psychAppointmentForm input[name="time"]').fill('10:30');
   await page.locator('#psychAppointmentForm input[name="durationMinutes"]').fill('50');
   await page.locator('#psychAppointmentForm input[name="reason"]').fill('Seguimiento QA');

@@ -8,7 +8,7 @@ export function parseHipicoMoney(value:string|number|bigint):HipicoMoney{
   if(typeof value==='bigint')return{minor:value*100n,scale:2};
   const raw=stripMoney(String(value));
   if(!raw)throw new Error('HIPICO_MONEY_EMPTY');
-  if(/[eE]/.test(raw))throw new Error('HIPICO_MONEY_EXPONENT_NOT_ALLOWED');
+  if(/^[+-]?(?:\d+(?:[.,]\d+)?)[eE][+-]?\d+$/.test(raw))throw new Error('HIPICO_MONEY_EXPONENT_NOT_ALLOWED');
   const sign=raw.startsWith('-')?-1n:1n;
   const unsigned=raw.replace(/^[+-]/,'');
   if(!/^\d[\d.,]*$/.test(unsigned))throw new Error('HIPICO_MONEY_INVALID');

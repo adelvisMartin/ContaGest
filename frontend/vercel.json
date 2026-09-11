@@ -1,12 +1,12 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": "vite",
-  "buildCommand": "npm run build",
+  "buildCommand": "npm run build:identity && npm run preqa:source && npm run stage:backend && vite build",
   "outputDirectory": "dist",
   "git": {
-    "deploymentEnabled": false
+    "deploymentEnabled": true
   },
-  "ignoreCommand": "exit 0",
+  "ignoreCommand": "exit 1",
   "functions": {
     "api/index.js": { "maxDuration": 30 },
     "api/status.ts": { "maxDuration": 30 },
