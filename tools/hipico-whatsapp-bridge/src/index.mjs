@@ -5,10 +5,11 @@ import qrcode from 'qrcode-terminal';
 import pkg from 'whatsapp-web.js';
 
 const { Client, LocalAuth } = pkg;
-const BRIDGE_VERSION = '0.3.1-shadow-only';
+const BRIDGE_VERSION = '0.3.2-shadow-only';
 const DATA_DIR = path.resolve(process.cwd(), 'data');
 const SPOOL_DIR = path.join(DATA_DIR, 'spool');
 const REJECTED_DIR = path.join(DATA_DIR, 'rejected');
+const CHANNEL_KEY_RE = /^[A-Za-z0-9_-]{3,120}$/;
 
 function required(name) {
   const value = process.env[name];
@@ -22,8 +23,11 @@ function boolEnv(name, fallback = false) {
   return String(value).toLowerCase() === 'true';
 }
 
-function isHttps(value) {
-  try { return new URL(value).protocol === 'https:'; } catch { return false; }
+function isSafeHttpsEndpoint(value) {
+  try {
+    const url = new URL(value);
+    return url.protocol === 'https:' && !url.username && !url.password && !url.search && !url.hash;
+  } catch { return false; }
 }
 
 function isGroupId(value) {
@@ -32,8 +36,8 @@ function isGroupId(value) {
 
 const INGEST_URL = required('HIPICO_INGEST_URL');
 const BRIDGE_TOKEN = required('HIPICO_GROUP_BRIDGE_TOKEN');
-const SOURCE_GROUP_ID_ENV = String(process.env.HIPICO_SOURCE_GROUP_ID || process.env.HIPICO_GROUP_ID || '').trim();
-const SOURCE_GROUP_NAME_ENV = String(process.env.HIPICO_SOURCE_GROUP_NAME || process.env.HIPICO_GROUP_NAME || '').trim();
+const SOURCE_GROUP_ID_ENV = String(process.env.HIPICO_SOURCE_GROUP_ID || '').trim();
+const SOURCE_GROUP_NAME_ENV = String(process.env.HIPICO_SOURCE_GROUP_NAME || '').trim();
 const LAB_GROUP_ID_ENV = String(process.env.HIPICO_LAB_GROUP_ID || '').trim();
 const LAB_GROUP_NAME_ENV = String(process.env.HIPICO_LAB_GROUP_NAME || '').trim();
 const SOURCE_CHANNEL_KEY = String(process.env.HIPICO_SOURCE_CHANNEL_KEY || 'club-hipico-triple-crown-official').trim();
@@ -43,62 +47,40 @@ const INCLUDE_OWN_MESSAGES = boolEnv('HIPICO_INCLUDE_OWN_MESSAGES', true);
 const ALLOW_SEND = boolEnv('HIPICO_ALLOW_SEND', false);
 const PUPPETEER_NO_SANDBOX = boolEnv('HIPICO_PUPPETEER_NO_SANDBOX', false);
 
-// This legacy client is intentionally restricted to SOURCE -> LAB shadow operation.
-// The hosted Playwright bridge is the production-preferred runtime. Never allow this
-// fallback to become a direct source-group sender by configuration accident.
 if (!SHADOW_MODE) throw new Error('Legacy Hípico bridge is shadow-only. HIPICO_SHADOW_MODE must be true.');
-if (!isHttps(INGEST_URL)) throw new Error('HIPICO_INGEST_URL must use HTTPS.');
+if (!isSafeHttpsEndpoint(INGEST_URL)) throw new Error('HIPICO_INGEST_URL must be a credential-free HTTPS endpoint without query or fragment.');
 if (BRIDGE_TOKEN.length < 32) throw new Error('HIPICO_GROUP_BRIDGE_TOKEN must contain at least 32 characters.');
-if (ALLOW_SEND && (!isGroupId(SOURCE_GROUP_ID_ENV) || !isGroupId(LAB_GROUP_ID_ENV))) {
-  throw new Error('HIPICO_ALLOW_SEND requires pinned SOURCE and LAB group IDs.');
+if (!isGroupId(SOURCE_GROUP_ID_ENV) || !isGroupId(LAB_GROUP_ID_ENV)) {
+  throw new Error('Legacy Hípico bridge requires pinned HIPICO_SOURCE_GROUP_ID and HIPICO_LAB_GROUP_ID.');
 }
-if (SOURCE_GROUP_ID_ENV && LAB_GROUP_ID_ENV && SOURCE_GROUP_ID_ENV === LAB_GROUP_ID_ENV) {
-  throw new Error('SOURCE and LAB group IDs must be different.');
+if (SOURCE_GROUP_ID_ENV === LAB_GROUP_ID_ENV) throw new Error('SOURCE and LAB group IDs must be different.');
+if (!CHANNEL_KEY_RE.test(SOURCE_CHANNEL_KEY) || !CHANNEL_KEY_RE.test(LAB_CHANNEL_KEY) || SOURCE_CHANNEL_KEY === LAB_CHANNEL_KEY) {
+  throw new Error('SOURCE and LAB channel keys must be valid and different.');
 }
 
 await Promise.all([
-  fs.mkdir(SPOOL_DIR, { recursive: true }),
-  fs.mkdir(REJECTED_DIR, { recursive: true })
+  fs.mkdir(DATA_DIR, { recursive: true, mode: 0o700 }),
+  fs.mkdir(SPOOL_DIR, { recursive: true, mode: 0o700 }),
+  fs.mkdir(REJECTED_DIR, { recursive: true, mode: 0o700 })
 ]);
+await Promise.all([DATA_DIR, SPOOL_DIR, REJECTED_DIR].map((dir) => fs.chmod(dir, 0o700).catch(() => {})));
 
 function sha256(value) {
   return crypto.createHash('sha256').update(String(value ?? '')).digest('hex');
 }
 
-function targetFile(role) {
-  return path.join(DATA_DIR, `target-group-${role}.json`);
+function safeRef(value) {
+  return sha256(value).slice(0, 12);
 }
 
-async function loadSavedTarget(role) {
-  try { return JSON.parse(await fs.readFile(targetFile(role), 'utf8')); }
-  catch { return null; }
-}
-
-async function saveTarget(role, target) {
-  await fs.writeFile(targetFile(role), JSON.stringify(target, null, 2), 'utf8');
-}
-
-async function resolveTargetGroup(client, role, idEnv, nameEnv) {
-  if (idEnv) return { id: idEnv, name: nameEnv || `Grupo ${role}` };
-  const saved = await loadSavedTarget(role);
-  if (saved?.id && (!nameEnv || saved.name === nameEnv)) return saved;
-
-  const chats = await client.getChats();
-  const groups = chats.filter((chat) => chat.isGroup).map((chat) => ({ id: chat.id._serialized, name: chat.name }));
-  console.log(`\nGrupos visibles para resolver ${role}:`);
-  for (const group of groups) console.log(`- ${group.name} :: ${group.id}`);
-
-  if (!nameEnv) {
-    console.log(`\nDefine el nombre exacto para ${role} y reinicia el bridge.`);
+async function resolvePinnedGroup(client, role, id, configuredName) {
+  try {
+    const chat = await client.getChatById(id);
+    if (!chat?.isGroup || chat.id?._serialized !== id) return null;
+    return { id, name: configuredName || chat.name || `Grupo ${role}` };
+  } catch {
     return null;
   }
-  const exact = groups.filter((group) => group.name === nameEnv);
-  if (exact.length !== 1) {
-    console.log(`\nNo se pudo resolver un único grupo ${role} llamado "${nameEnv}". Coincidencias: ${exact.length}`);
-    return null;
-  }
-  await saveTarget(role, exact[0]);
-  return exact[0];
 }
 
 async function quotedMessageId(message) {
@@ -151,10 +133,41 @@ async function buildEvent(message, target, channelRole) {
   };
 }
 
+function replaySignature(event) {
+  return sha256(JSON.stringify([
+    String(event?.groupId || ''),
+    String(event?.externalMessageId || ''),
+    String(event?.channelRole || ''),
+    String(event?.senderId || ''),
+    String(event?.timestamp || ''),
+    String(event?.type || ''),
+    String(event?.text || ''),
+    event?.quotedExternalMessageId == null ? null : String(event.quotedExternalMessageId),
+    Boolean(event?.fromMe)
+  ]));
+}
+
 async function spool(event) {
   const file = path.join(SPOOL_DIR, `${sha256(`${event.groupId}|${event.externalMessageId}`)}.json`);
-  await fs.writeFile(file, JSON.stringify(event), 'utf8');
-  return file;
+  const serialized = JSON.stringify(event);
+  try {
+    await fs.writeFile(file, serialized, { encoding: 'utf8', flag: 'wx', mode: 0o600 });
+    return file;
+  } catch (error) {
+    if (error?.code !== 'EEXIST') throw error;
+    let existing;
+    try { existing = JSON.parse(await fs.readFile(file, 'utf8')); }
+    catch {
+      await quarantine(file, { code: 'INVALID_EXISTING_LOCAL_SPOOL', retryable: false });
+      await fs.writeFile(file, serialized, { encoding: 'utf8', flag: 'wx', mode: 0o600 });
+      return file;
+    }
+    if (replaySignature(existing) === replaySignature(event)) return file;
+    const mismatch = new Error('Local spool message ID was reused with different content.');
+    mismatch.code = 'HIPICO_LOCAL_SPOOL_REPLAY_MISMATCH';
+    mismatch.retryable = false;
+    throw mismatch;
+  }
 }
 
 function safeJson(text) {
@@ -189,13 +202,14 @@ async function quarantine(file, reason = {}) {
     await fs.copyFile(file, destination);
     await fs.unlink(file);
   });
+  await fs.chmod(destination, 0o600).catch(() => {});
   const metadata = {
     rejectedAt: new Date().toISOString(),
     status: Number.isInteger(reason?.status) ? reason.status : null,
     code: String(reason?.code || reason?.message || 'INVALID_LOCAL_SPOOL').slice(0, 120),
     retryable: false
   };
-  await fs.writeFile(`${destination}.meta.json`, JSON.stringify(metadata, null, 2), 'utf8');
+  await fs.writeFile(`${destination}.meta.json`, JSON.stringify(metadata, null, 2), { encoding: 'utf8', mode: 0o600 });
   return destination;
 }
 
@@ -209,27 +223,27 @@ async function deliverSpoolFile(client, source, lab, file) {
   let event;
   try {
     event = JSON.parse(await fs.readFile(file, 'utf8'));
-  } catch (error) {
+  } catch {
     const rejected = await quarantine(file, { code: 'INVALID_LOCAL_SPOOL', retryable: false }).catch(() => null);
     console.error(`[REJECTED] spool local inválido${rejected ? ` -> ${path.basename(rejected)}` : ''}`);
     return;
   }
 
+  const ref = safeRef(`${event.groupId}|${event.externalMessageId}`);
   try {
     const result = await postEvent(event);
     const labText = event.channelRole === 'source' ? labTextFor(result, source) : '';
     if (labText && !ALLOW_SEND) console.log('[BLOCKED] LAB simulation retained because HIPICO_ALLOW_SEND=false');
     if (ALLOW_SEND && labText) await client.sendMessage(lab.id, labText);
-    // No code path in this fallback sends any message to `source.id`.
     await fs.unlink(file);
-    console.log(`[OK] ${event.channelRole}:${event.externalMessageId} -> ${result.classification || 'received'}${result.duplicate ? ' (duplicate)' : ''}`);
+    console.log(`[OK] ${event.channelRole}:${ref} -> ${result.classification || 'received'}${result.duplicate ? ' (duplicate)' : ''}`);
   } catch (error) {
     if (error?.retryable === false) {
       const rejected = await quarantine(file, error).catch(() => null);
-      console.error(`[REJECTED] ${event.channelRole}:${event.externalMessageId}: status=${error?.status || 'n/a'} code=${error?.code || 'PERMANENT_REJECTION'}${rejected ? ` -> ${path.basename(rejected)}` : ''}`);
+      console.error(`[REJECTED] ${event.channelRole}:${ref}: status=${error?.status || 'n/a'} code=${error?.code || 'PERMANENT_REJECTION'}${rejected ? ` -> ${path.basename(rejected)}` : ''}`);
       return;
     }
-    console.error(`[PENDING] ${event.channelRole}:${event.externalMessageId}: ${error?.message || 'retryable bridge failure'}`);
+    console.error(`[PENDING] ${event.channelRole}:${ref}: ${error?.message || 'retryable bridge failure'}`);
   }
 }
 
@@ -253,14 +267,19 @@ client.on('qr', (qr) => {
   qrcode.generate(qr, { small: true });
 });
 client.on('authenticated', () => console.log('WhatsApp vinculado.'));
-client.on('auth_failure', (message) => console.error('Fallo de autenticación:', message));
-client.on('disconnected', (reason) => console.error('WhatsApp desconectado:', reason));
+client.on('auth_failure', () => console.error('Fallo de autenticación de WhatsApp.'));
+client.on('disconnected', () => console.error('WhatsApp desconectado.'));
 
 client.on('ready', async () => {
   console.log('WhatsApp Web listo · bridge fallback SHADOW-ONLY.');
-  source = await resolveTargetGroup(client, 'source', SOURCE_GROUP_ID_ENV, SOURCE_GROUP_NAME_ENV);
-  lab = await resolveTargetGroup(client, 'lab', LAB_GROUP_ID_ENV, LAB_GROUP_NAME_ENV);
-  if (!source || !lab) return;
+  source = await resolvePinnedGroup(client, 'source', SOURCE_GROUP_ID_ENV, SOURCE_GROUP_NAME_ENV);
+  lab = await resolvePinnedGroup(client, 'lab', LAB_GROUP_ID_ENV, LAB_GROUP_NAME_ENV);
+  if (!source || !lab) {
+    console.error('No se pudieron verificar los grupos SOURCE/LAB pinneados.');
+    source = null;
+    lab = null;
+    return;
+  }
   if (lab.id === source.id) {
     console.error('SOURCE y LAB deben ser grupos distintos.');
     source = null;
@@ -268,10 +287,8 @@ client.on('ready', async () => {
     return;
   }
 
-  console.log(`Fuente: ${source.name} :: ${source.id}`);
-  console.log(`Laboratorio: ${lab.name} :: ${lab.id}`);
-  console.log('Fuente: SOLO LECTURA');
-  console.log(`Envío al LAB: ${ALLOW_SEND ? 'HABILITADO' : 'BLOQUEADO'}`);
+  console.log(`SOURCE verificado: ${safeRef(source.id)} · SOLO LECTURA`);
+  console.log(`LAB verificado: ${safeRef(lab.id)} · envío ${ALLOW_SEND ? 'HABILITADO' : 'BLOQUEADO'}`);
 
   await flushSpool(client, source, lab);
   setInterval(() => {
@@ -293,10 +310,11 @@ client.on('message_create', async (message) => {
     if (!INCLUDE_OWN_MESSAGES && message.fromMe) return;
 
     const event = await buildEvent(message, target, channelRole);
-    const file = await spool(event); // persist locally before any network call
+    const file = await spool(event);
     await deliverSpoolFile(client, source, lab, file);
   } catch (error) {
-    console.error('No se pudo procesar el mensaje:', error);
+    const ref = safeRef(message?.id?._serialized || `${message?.timestamp || ''}|${message?.from || ''}`);
+    console.error(`No se pudo procesar el mensaje ${ref}: ${error?.code || error?.message || 'bridge_error'}`);
   }
 });
 
