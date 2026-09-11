@@ -28,6 +28,52 @@ create unique index if not exists hipico_audit_owner_idempotency_unique
   on public.hipico_audit_events(owner_id, idempotency_key)
   where idempotency_key is not null;
 
+create or replace function public.hipico_audit_idempotency_guard()
+returns trigger
+language plpgsql
+security invoker
+set search_path = public, pg_temp
+as $$
+declare
+  v_key text := coalesce(
+    nullif(trim(new.idempotency_key), ''),
+    nullif(trim(coalesce(new.payload ->> 'id', '')), '')
+  );
+  v_existing public.hipico_audit_events;
+begin
+  new.idempotency_key := v_key;
+  if v_key is null then
+    return new;
+  end if;
+
+  select * into v_existing
+  from public.hipico_audit_events
+  where owner_id = new.owner_id and idempotency_key = v_key
+  limit 1;
+
+  if not found then
+    return new;
+  end if;
+
+  if v_existing.workspace_id is distinct from new.workspace_id
+     or v_existing.action is distinct from new.action
+     or v_existing.entity_type is distinct from new.entity_type
+     or v_existing.entity_id is distinct from new.entity_id
+     or v_existing.payload is distinct from new.payload then
+    raise exception 'HIPICO_AUDIT_REPLAY_MISMATCH' using errcode = '23505';
+  end if;
+
+  -- Exact retry: suppress the duplicate row. This covers both the canonical RPC
+  -- and the explicit LAB-only direct-table fallback without requiring client drift.
+  return null;
+end;
+$$;
+
+drop trigger if exists hipico_audit_idempotency_guard on public.hipico_audit_events;
+create trigger hipico_audit_idempotency_guard
+before insert on public.hipico_audit_events
+for each row execute function public.hipico_audit_idempotency_guard();
+
 create or replace function public.hipico_append_audit(
   p_workspace_id uuid,
   p_action text,
@@ -60,15 +106,6 @@ begin
     raise exception 'HIPICO_WORKSPACE_FORBIDDEN' using errcode = '42501';
   end if;
 
-  if v_key is null then
-    insert into public.hipico_audit_events(
-      owner_id, workspace_id, action, entity_type, entity_id, payload, idempotency_key
-    ) values (
-      v_uid, p_workspace_id, v_action, v_entity_type, v_entity_id, v_payload, null
-    ) returning id into v_id;
-    return v_id;
-  end if;
-
   insert into public.hipico_audit_events(
     owner_id, workspace_id, action, entity_type, entity_id, payload, idempotency_key
   ) values (
@@ -81,6 +118,10 @@ begin
 
   if v_id is not null then
     return v_id;
+  end if;
+
+  if v_key is null then
+    raise exception 'HIPICO_AUDIT_INSERT_SUPPRESSED' using errcode = '40001';
   end if;
 
   select * into v_existing
@@ -111,3 +152,5 @@ comment on index public.hipico_audit_owner_idempotency_unique
   is 'Deduplicates durable Control Hípico audit delivery by owner + stable local event id.';
 comment on function public.hipico_append_audit(uuid, text, text, text, jsonb)
   is 'Owner-scoped idempotent audit append. Same event id + same payload returns the original row; mismatched replay fails closed.';
+comment on function public.hipico_audit_idempotency_guard()
+  is 'Table-boundary guard shared by RPC and LAB fallback; suppresses exact retries and rejects conflicting event-id reuse.';
