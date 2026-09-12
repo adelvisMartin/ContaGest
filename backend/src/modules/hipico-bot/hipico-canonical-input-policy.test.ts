@@ -17,10 +17,30 @@ test('canonical payload accepts bounded JSON evidence and rejects resource ampli
   assert.equal(canonicalPayloadIssue({value:Number.NaN}),'HIPICO_NORMALIZED_PAYLOAD_INVALID');
 });
 
-test('canonical timestamp allows historical evidence but rejects future clock drift beyond five minutes',()=>{
+test('canonical timestamp requires explicit ISO-8601 timezone and valid calendar fields',()=>{
   const now=Date.parse('2026-09-12T00:00:00.000Z');
   assert.equal(canonicalTimestampIssue('2025-01-01T00:00:00.000Z',now),null);
+  assert.equal(canonicalTimestampIssue('2024-02-29T23:59:59.123456Z',now),null);
+  assert.equal(canonicalTimestampIssue('2025-01-01T01:30:00+01:30',now),null);
+  for(const invalid of [
+    '2026-09-11',
+    '2026-09-11T06:00:00',
+    '2026-09-11 06:00:00Z',
+    '09/11/2026 06:00:00',
+    '2026-02-29T06:00:00Z',
+    '2026-02-31T06:00:00Z',
+    '2026-13-01T06:00:00Z',
+    '2026-09-11T24:00:00Z',
+    '2026-09-11T06:60:00Z',
+    '2026-09-11T06:00:60Z',
+    '2026-09-11T06:00:00+14:30',
+    '2026-09-11T06:00:00+15:00',
+    'not-a-date'
+  ]) assert.equal(canonicalTimestampIssue(invalid,now),'HIPICO_EVENT_TIMESTAMP_INVALID',invalid);
+});
+
+test('canonical timestamp allows historical evidence but rejects future clock drift beyond five minutes',()=>{
+  const now=Date.parse('2026-09-12T00:00:00.000Z');
   assert.equal(canonicalTimestampIssue(new Date(now+MAX_CANONICAL_FUTURE_SKEW_MS).toISOString(),now),null);
   assert.equal(canonicalTimestampIssue(new Date(now+MAX_CANONICAL_FUTURE_SKEW_MS+1).toISOString(),now),'HIPICO_EVENT_TIMESTAMP_IN_FUTURE');
-  assert.equal(canonicalTimestampIssue('not-a-date',now),'HIPICO_EVENT_TIMESTAMP_INVALID');
 });
