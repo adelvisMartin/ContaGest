@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
-import { assertCloudOutboundAllowed, assertCloudTransportConfigured, cloudDestinationAllowed, cloudOutboundPolicy, cloudTransportConfiguration, __test__ } from './hipico-outbound-policy.js';
+import { assertCloudOutboundAllowed, assertCloudTransportConfigured, cloudDestinationAllowed, cloudOutboundPolicy, cloudSendTimeoutMs, cloudTransportConfiguration, __test__ } from './hipico-outbound-policy.js';
 
 const SHA='a'.repeat(40);
 const enabledEnv={
@@ -44,15 +44,19 @@ test('cloud exact-SHA gate recognizes native Vercel/GitHub and documented generi
   assert.equal(cloudOutboundPolicy({...base,GITHUB_SHA:'b'.repeat(40)}).enabled,false);
 });
 
-test('Meta Cloud transport requires strong token numeric phone id and bounded Graph version syntax',()=>{
+test('Meta Cloud transport requires strong token numeric phone id bounded Graph version and bounded timeout',()=>{
   const valid=cloudTransportConfiguration(transportEnv);
   assert.equal(valid.configured,true);
   assert.deepEqual(valid.reasons,[]);
   assert.equal(valid.phoneId,'1234567890');
   assert.equal(valid.version,'v23.0');
+  assert.equal(valid.timeoutMs,12000);
   assert.deepEqual(assertCloudTransportConfigured(transportEnv),{
-    token:'x'.repeat(64),phoneId:'1234567890',version:'v23.0'
+    token:'x'.repeat(64),phoneId:'1234567890',version:'v23.0',timeoutMs:12000
   });
+  assert.equal(cloudSendTimeoutMs({...transportEnv,HIPICO_CLOUD_SEND_TIMEOUT_MS:'2500'}),2500);
+  assert.equal(cloudSendTimeoutMs({...transportEnv,HIPICO_CLOUD_SEND_TIMEOUT_MS:'0'}),12000);
+  assert.equal(cloudSendTimeoutMs({...transportEnv,HIPICO_CLOUD_SEND_TIMEOUT_MS:'999999'}),60000);
 
   const cases=[
     [{...transportEnv,WHATSAPP_CLOUD_TOKEN:'short'},'CLOUD_TOKEN_NOT_CONFIGURED'],
