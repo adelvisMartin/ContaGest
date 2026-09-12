@@ -70,7 +70,11 @@ jobs:
           mkdir -p "$evidence"
           npm --workspace frontend run preview >"$evidence/preview.log" 2>&1 &
           preview_pid=$!
-          cleanup() { kill "$preview_pid" 2>/dev/null || true; }
+          cleanup() {
+            if kill "$preview_pid" 2>/dev/null; then
+              :
+            fi
+          }
           trap cleanup EXIT
 
           curl --fail --silent --show-error --retry 40 --retry-connrefused --retry-delay 0 --max-time 90 \
