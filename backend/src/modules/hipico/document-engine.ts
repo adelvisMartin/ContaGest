@@ -114,10 +114,19 @@ export type DocumentStoreInput = {
 };
 
 export interface DocumentStore {
-  put(input:DocumentStoreInput):Promise<{id:string;duplicate:boolean}>;
+  put(input:DocumentStoreInput):Promise<{id:string;duplicate:boolean;status:string}>;
+  claimExtraction(id:string,ownerId:string,groupKey:string,allowProcessed?:boolean):Promise<boolean>;
+  markExtractionFailed(id:string,ownerId:string,groupKey:string,errorCode:string):Promise<void>;
   updateExtraction(id:string,ownerId:string,groupKey:string,input:{classification:DocumentClassification;confidence:number;parserVersion:string;status:'extracted'|'review';extraction:Record<string,unknown>}):Promise<void>;
   getRaw(ownerId:string,groupKey:string,id:string):Promise<Buffer|null>;
   getAuthority(ownerId:string,groupKey:string,id:string):Promise<DocumentAuthority>;
+}
+
+function safeExtractionError(error:any){
+  if(error?.name==='AbortError')return codedError('HIPICO_DOCUMENT_EXTRACTION_TIMEOUT');
+  const code=String(error?.code||'').trim();
+  if(/^[A-Z0-9_:-]{3,120}$/.test(code))return error;
+  return codedError('HIPICO_DOCUMENT_EXTRACTION_FAILED');
 }
 
 export class DocumentIngestionService {
@@ -140,8 +149,15 @@ export class DocumentIngestionService {
       });
       return {...classified,structured,reconciliation,extractionStatus:'extracted' as const};
     } catch (error:any) {
-      if (error?.name === 'AbortError') throw codedError('HIPICO_DOCUMENT_EXTRACTION_TIMEOUT');
-      throw error;
+      const normalized=safeExtractionError(error);
+      try{
+        await this.store.markExtractionFailed(input.id,input.ownerId,input.groupKey,String(normalized.code||'HIPICO_DOCUMENT_EXTRACTION_FAILED'));
+      }catch(auditError){
+        const failure=codedError('HIPICO_DOCUMENT_FAILURE_AUDIT_FAILED');
+        (failure as any).cause=auditError;
+        throw failure;
+      }
+      throw normalized;
     } finally {clearTimeout(timer);}
   }
 
@@ -149,14 +165,22 @@ export class DocumentIngestionService {
     const provenance=validateDocumentProvenance(input.provenance);
     const envelope=validatePdfEnvelope(input.pdf,input.filename,input.mimeType??'application/pdf');
     const base=await this.store.put({ownerId:input.ownerId,groupKey:input.groupKey,envelope,pdf:input.pdf,provenance,classification:'UNKNOWN',confidence:0,parserVersion:null,extraction:{status:'not_extracted'},supersedesId:input.supersedesId});
-    if(base.duplicate)return {...base,envelope,classification:'UNKNOWN' as const,extractionStatus:'duplicate' as const};
-    if(!this.extractor?.capability().configured)return {...base,envelope,classification:'UNKNOWN' as const,extractionStatus:'not_configured' as const};
-    return {...base,envelope,...await this.extractAndPersist({id:base.id,ownerId:input.ownerId,groupKey:input.groupKey,pdf:input.pdf,envelope,authority:provenance.authority})};
+    if(!this.extractor?.capability().configured)return {...base,envelope,classification:'UNKNOWN' as const,extractionStatus:base.duplicate?'duplicate' as const:'not_configured' as const};
+    const claimed=await this.store.claimExtraction(base.id,input.ownerId,input.groupKey,false);
+    if(!claimed){
+      if(!base.duplicate)throw codedError('HIPICO_DOCUMENT_EXTRACTION_CLAIM_FAILED');
+      const pending=base.status==='uploaded'||base.status==='failed';
+      return {...base,envelope,classification:'UNKNOWN' as const,extractionStatus:pending?'processing' as const:'duplicate' as const};
+    }
+    const authority=base.duplicate?await this.store.getAuthority(input.ownerId,input.groupKey,base.id):provenance.authority;
+    return {...base,envelope,...await this.extractAndPersist({id:base.id,ownerId:input.ownerId,groupKey:input.groupKey,pdf:input.pdf,envelope,authority})};
   }
 
   async reprocessExisting(input:{id:string;ownerId:string;groupKey:string;filename?:string}){
+    if (!this.extractor?.capability().configured) throw codedError('HIPICO_DOCUMENT_EXTRACTOR_NOT_CONFIGURED');
     const pdf=await this.store.getRaw(input.ownerId,input.groupKey,input.id);if(!pdf)throw codedError('HIPICO_DOCUMENT_NOT_FOUND');
     const envelope=validatePdfEnvelope(pdf,input.filename??'document.pdf');const authority=await this.store.getAuthority(input.ownerId,input.groupKey,input.id);
+    const claimed=await this.store.claimExtraction(input.id,input.ownerId,input.groupKey,true);if(!claimed)throw codedError('HIPICO_DOCUMENT_EXTRACTION_IN_PROGRESS');
     const extracted=await this.extractAndPersist({id:input.id,ownerId:input.ownerId,groupKey:input.groupKey,pdf,envelope,authority});
     return {id:input.id,envelope,...extracted};
   }
