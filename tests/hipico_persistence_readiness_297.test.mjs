@@ -5,6 +5,7 @@ import statusHandler from '../frontend/api/hipico/status.js';
 
 const VALID_OWNER='550e8400-e29b-41d4-a716-446655440000';
 const STRONG_KEY='s'.repeat(48);
+const INTERNAL_TOKEN='i'.repeat(48);
 
 function persistenceEnv(overrides={}){
   return{
@@ -31,6 +32,18 @@ function withProcessEnv(values,run){
     restore();
     return result;
   }catch(error){restore();throw error;}
+}
+
+function invokeStatus(headers={}){
+  let statusCode=0;
+  let payload;
+  const res={
+    setHeader(){},
+    status(code){statusCode=code;return this;},
+    json(value){payload=value;return value;}
+  };
+  statusHandler({method:'GET',headers},res);
+  return{statusCode,payload};
 }
 
 test('serverless persistence readiness requires HTTPS/loopback URL, strong service key and UUID owner',()=>{
@@ -66,26 +79,44 @@ test('Supabase helper rejects malformed persistence configuration before any net
   });
 });
 
-test('status endpoint cannot report persistence ready for present-but-invalid credentials',()=>{
+test('public status cannot report persistence ready for invalid credentials and redacts deployment diagnostics',()=>{
   withProcessEnv({
     ...persistenceEnv({HIPICO_OWNER_ID:'invalid-owner'}),
+    HIPICO_INTERNAL_API_TOKEN:INTERNAL_TOKEN,
     HIPICO_GROUP_BRIDGE_TOKEN:'b'.repeat(48),
     HIPICO_SOURCE_GROUP_ID:'120363000000000001@g.us',
     HIPICO_LAB_GROUP_ID:'120363000000000002@g.us'
   },()=>{
-    let statusCode=0;
-    let payload;
-    const res={
-      setHeader(){},
-      status(code){statusCode=code;return this;},
-      json(value){payload=value;return value;}
-    };
-    statusHandler({method:'GET'},res);
+    const {statusCode,payload}=invokeStatus();
     assert.equal(statusCode,200);
     assert.equal(payload.persistence.ready,false);
-    assert.equal(payload.persistence.ownerIdValid,false);
     assert.equal(payload.linkedDeviceBridge.ready,false);
     assert.equal(payload.mode,'offline_and_manual_ready');
-    assert.equal(Object.hasOwn(payload.persistence,'ownerId'),false);
+    for(const key of ['ownerId','ownerIdValid','urlValid','serviceRoleStrong','missingConfigurationCount']){
+      assert.equal(Object.hasOwn(payload.persistence,key),false,key);
+    }
+    assert.equal(Object.hasOwn(payload.linkedDeviceBridge,'tokenConfigured'),false);
+    assert.equal(Object.hasOwn(payload.metaCloud,'internalApiTokenStrong'),false);
+    assert.equal(Object.hasOwn(payload.metaCloud.outboundPolicy,'reasons'),false);
+  });
+});
+
+test('strong internal diagnostics token reveals readiness detail without exposing credential values',()=>{
+  withProcessEnv({
+    ...persistenceEnv({HIPICO_OWNER_ID:'invalid-owner'}),
+    HIPICO_INTERNAL_API_TOKEN:INTERNAL_TOKEN,
+    HIPICO_GROUP_BRIDGE_TOKEN:'b'.repeat(48),
+    HIPICO_SOURCE_GROUP_ID:'120363000000000001@g.us',
+    HIPICO_LAB_GROUP_ID:'120363000000000002@g.us'
+  },()=>{
+    const {statusCode,payload}=invokeStatus({'x-hipico-internal-token':INTERNAL_TOKEN});
+    assert.equal(statusCode,200);
+    assert.equal(payload.persistence.ownerIdValid,false);
+    assert.equal(typeof payload.persistence.missingConfigurationCount,'number');
+    assert.equal(typeof payload.linkedDeviceBridge.tokenConfigured,'boolean');
+    assert.ok(Array.isArray(payload.metaCloud.outboundPolicy.reasons));
+    const serialized=JSON.stringify(payload);
+    assert.equal(serialized.includes(INTERNAL_TOKEN),false);
+    assert.equal(serialized.includes(STRONG_KEY),false);
   });
 });
