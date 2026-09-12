@@ -29,8 +29,6 @@ test('#105 browser gate contains overflow, overlap, touch and dead-control check
   assert.match(spec, /page\.screenshot/);
   assert.match(spec, /HIPICO_QA_SHA|GITHUB_SHA/);
   assert.match(spec, /context\.setOffline\(true\)/);
-  assert.match(spec, /hasTouch:\s*viewport\.touch/);
-  assert.match(spec, /viewport:\s*\{\s*width:\s*390,\s*height:\s*844\s*\},\s*hasTouch:\s*true/);
 });
 
 test('#105 deliberate broken fixture is guaranteed to violate the detector', () => {

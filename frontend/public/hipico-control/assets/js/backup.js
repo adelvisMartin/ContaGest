@@ -1,13 +1,6 @@
-import { backupFilename } from './backup-v2.js';
-export { backupFilename } from './backup-v2.js';
+import { backupFilename, serializeWorkspaceBackup } from './backup-v2.js';
+export { backupFilename, serializeWorkspaceBackup } from './backup-v2.js';
 export { BACKUP_SCHEMA_VERSION, MAX_PORTABLE_BACKUP_CHARS, createBackupObject, validateBackupObject, encryptBackupText, decryptBackupText, parsePortableBackup, reconcileRestoredWorkspace, exportEncryptedCurrentWorkspace, restorePortableBackup, sha256Sync, stripBackupSecrets } from './backup-v2.js';
-
-export function serializeWorkspaceBackup() {
-  throw Object.assign(
-    new Error('El respaldo portátil debe estar cifrado.'),
-    { code: 'HIPICO_PLAINTEXT_BACKUP_DISABLED' }
-  );
-}
 
 function currentPlatform() {
   try { return globalThis.Capacitor?.getPlatform?.() || 'web'; }

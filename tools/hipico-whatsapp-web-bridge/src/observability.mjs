@@ -4,41 +4,10 @@ import crypto from 'node:crypto';
 
 const SECRET_KEYS = /token|secret|cookie|authorization|qr|session|password|signed.?url|service.?role|api.?key/i;
 const PHONE = /\+?\d[\d\s().-]{7,}\d/g;
-const JID = /(?:\d{5,}(?:-\d+)?@g\.us|\d{5,}@s\.whatsapp\.net)/gi;
+const JID = /\d{5,}-\d+@g\.us/gi;
 const BEARER = /Bearer\s+[A-Za-z0-9._~+/=-]+/gi;
 const SIGNED_URL = /https?:\/\/\S+[?&](?:token|signature|sig|key|expires)=[^\s&]+\S*/gi;
 const DEFAULT_ALLOWLIST = ['health.json', 'retry-state.json', 'dom-diagnostic.json'];
-const DIRECT_IDENTITY_KEYS = new Set([
-  'activesourcetitle', 'sourcematches', 'sourcegroupid', 'sourcegroupkey', 'sourcegroupname',
-  'labgroupid', 'labgroupkey', 'labgroupname', 'groupid', 'groupkey', 'groupname',
-  'channelid', 'channelkey', 'channelname', 'senderid', 'senderlabel', 'participantid', 'participantcode'
-]);
-const CONTENT_KEYS = new Set([
-  'text', 'rawtext', 'rawmessage', 'rawmeta', 'quotedtext', 'messagetext', 'caption', 'chatdraft', 'plaintext', 'textbody'
-]);
-
-function normalizedDiagnosticKey(key) {
-  return String(key || '').replace(/[^a-z0-9]/gi, '').toLowerCase();
-}
-
-function identityKey(key) {
-  const normalized = normalizedDiagnosticKey(key);
-  if (DIRECT_IDENTITY_KEYS.has(normalized)) return true;
-  return /(?:group|channel|sender|participant).*(?:id|key|name|label|title|matches)$/.test(normalized);
-}
-
-function contentKey(key) {
-  return CONTENT_KEYS.has(normalizedDiagnosticKey(key));
-}
-
-function identityTag(value) {
-  if (value === undefined || value === null || value === '') return value;
-  let serialized;
-  try { serialized = typeof value === 'string' ? value : JSON.stringify(value); }
-  catch { serialized = String(value); }
-  const digest = crypto.createHash('sha256').update(`hipico-support-identity-v2\0${serialized}`).digest('hex').slice(0, 12);
-  return `[IDENTITY:${digest}]`;
-}
 
 export function correlationId(prefix = 'hipico') {
   return `${prefix}-${crypto.randomUUID()}`;
@@ -46,8 +15,6 @@ export function correlationId(prefix = 'hipico') {
 
 export function redactDiagnostic(value, key = '') {
   if (SECRET_KEYS.test(key)) return '[REDACTED]';
-  if (contentKey(key)) return value == null ? value : '[CONTENT_REDACTED]';
-  if (identityKey(key)) return identityTag(value);
   if (Array.isArray(value)) return value.map((item) => redactDiagnostic(item));
   if (value && typeof value === 'object') {
     return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, redactDiagnostic(v, k)]));
@@ -56,7 +23,7 @@ export function redactDiagnostic(value, key = '') {
     return value
       .replace(BEARER, 'Bearer [REDACTED]')
       .replace(SIGNED_URL, '[SIGNED_URL_REDACTED]')
-      .replace(JID, '[WHATSAPP_ID]')
+      .replace(JID, '[GROUP_ID]')
       .replace(PHONE, '[PHONE]');
   }
   return value;
@@ -257,7 +224,7 @@ export async function buildSupportBundle({
     component: 'hipico-whatsapp-web-bridge',
     version,
     sha,
-    redactionPolicy: 'central-v2-pseudonymous-identities',
+    redactionPolicy: 'central-v1',
     allowlist: [...DEFAULT_ALLOWLIST, 'bridge-tail.log'],
     files
   };
@@ -265,5 +232,3 @@ export async function buildSupportBundle({
   await fs.writeFile(path.join(outDir, 'manifest.json'), text, { encoding: 'utf8', flag: 'wx' });
   return { ...manifest, manifestSha256: sha256Text(text) };
 }
-
-export const __test__ = { normalizedDiagnosticKey, identityKey, contentKey, identityTag };

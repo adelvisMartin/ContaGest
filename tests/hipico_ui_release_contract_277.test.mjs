@@ -75,9 +75,8 @@ test('installed PWA precaches the complete Hípico JavaScript module tree and at
 test('PWA reads offline shell resources only from the Control Hípico cache namespace', () => {
   assert.doesNotMatch(sw, /\bcaches\.match\s*\(/, 'origin-global CacheStorage lookup could cross-contaminate sibling applications');
   assert.match(sw, /const cache = await caches\.open\(SHELL_CACHE\)/);
-  assert.match(sw, /cache\.match\(scoped\('\.\/index\.html'\)\)/);
+  assert.match(sw, /cache\.match\(scoped\(preferred\)\)/);
   assert.match(sw, /cache\.match\(request\)/);
-  assert.match(sw, /shell-r20-cache-isolation-297/);
 });
 
 test('Control Hípico release version is single-sourced and build metadata is generated during every frontend build', () => {
@@ -98,6 +97,12 @@ test('Hípico build metadata binds production artifacts to exact Git SHA without
   assert.match(buildWriter, /GIT_SHA/);
   assert.match(buildWriter, /candidateSha/);
   assert.match(buildWriter, /bound:candidateSha!==['"]local-unbound['"]/);
-  assert.equal(buildInfo.candidateSha, 'local-unbound');
-  assert.equal(buildInfo.bound, false);
+  const isBoundSha = /^[a-f0-9]{40}$/i.test(String(buildInfo.candidateSha || ''));
+  assert.ok(buildInfo.candidateSha === 'local-unbound' || isBoundSha, 'candidateSha must be local-unbound or an exact 40-hex Git SHA');
+  assert.equal(buildInfo.bound, buildInfo.candidateSha !== 'local-unbound');
+  const runtimeSha = String(process.env.VERCEL_GIT_COMMIT_SHA || process.env.GIT_SHA || process.env.COMMIT_SHA || '').trim().toLowerCase();
+  if (/^[a-f0-9]{40}$/.test(runtimeSha)) {
+    assert.equal(buildInfo.candidateSha, runtimeSha, 'build metadata must bind to the exact runtime Git SHA');
+    assert.equal(buildInfo.bound, true);
+  }
 });

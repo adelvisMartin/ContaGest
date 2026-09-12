@@ -47,10 +47,7 @@ export type HipicoReduction={
 };
 
 const RACE_TRANSITIONS:Record<HipicoRaceState,ReadonlySet<HipicoRaceState>>={
-  // A close without a previously accepted opening/plan is not a valid lifecycle.
-  // This prevents a late or cross-race close message from creating a CLOSED race
-  // that was never opened in the canonical aggregate.
-  PREPARING:new Set<HipicoRaceState>(['OPEN']),
+  PREPARING:new Set<HipicoRaceState>(['OPEN','CLOSED']),
   OPEN:new Set<HipicoRaceState>(['CLOSED']),
   CLOSED:new Set<HipicoRaceState>(['RESULT_RECEIVED']),
   RESULT_RECEIVED:new Set<HipicoRaceState>(['SETTLEMENT_READY']),

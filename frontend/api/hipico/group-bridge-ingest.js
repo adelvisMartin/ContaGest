@@ -1,47 +1,6 @@
 import { adapterCaptureDecision, env, safeEqual, serverSecret, sha256, supabase } from './_shared.js';
 import { HIPICO_CHANNEL_KEY_PATTERN, configuredChannelIdentity, validateBridgeRoleIdentity } from './bridge-identity.js';
 
-const MAX_BRIDGE_BODY_BYTES = 24 * 1024;
-const ALLOWED_BRIDGE_BODY_KEYS = new Set([
-  'bridgeVersion',
-  'externalMessageId',
-  'groupId',
-  'groupName',
-  'channelKey',
-  'labChannelKey',
-  'channelRole',
-  'shadowMode',
-  'senderId',
-  'senderLabel',
-  'fromMe',
-  'timestamp',
-  'type',
-  'mediaKind',
-  'text',
-  'hasMedia',
-  'quotedExternalMessageId',
-  'rawMeta'
-]);
-const REQUIRED_BRIDGE_BODY_KEYS = new Set([
-  'bridgeVersion',
-  'externalMessageId',
-  'groupId',
-  'groupName',
-  'channelKey',
-  'labChannelKey',
-  'channelRole',
-  'shadowMode',
-  'senderId',
-  'fromMe',
-  'timestamp',
-  'type',
-  'mediaKind',
-  'text',
-  'hasMedia'
-]);
-const BRIDGE_MESSAGE_TYPES = new Set(['chat', 'media']);
-const BRIDGE_MEDIA_KINDS = new Set(['none', 'image', 'video', 'audio', 'document']);
-
 function shadowSuggestion(classification, body) {
   const sender = String(body?.senderLabel || 'remitente').trim() || 'remitente';
   const suggestions = {
@@ -57,87 +16,40 @@ function shadowSuggestion(classification, body) {
   return suggestions[classification] || '';
 }
 
-function bridgeBodyBytes(body) {
-  try {
-    return Buffer.byteLength(JSON.stringify(body), 'utf8');
-  } catch {
-    return Number.POSITIVE_INFINITY;
-  }
+function validOptionalBoolean(body, key) {
+  return body[key] === undefined || typeof body[key] === 'boolean';
 }
-
-function normalizedMediaKind(body) {
-  if (body?.mediaKind !== undefined) return String(body.mediaKind).trim().toLowerCase();
-  return body?.hasMedia === true ? 'unknown' : 'none';
-}
-
-const ISO_TIMESTAMP_WITH_ZONE = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.(\d{1,9}))?(Z|[+-]\d{2}:\d{2})$/;
 
 function normalizedTimestamp(value) {
   if (value === undefined || value === null || value === '') return null;
   if (typeof value !== 'string' || value.length > 64) return undefined;
-  const match = value.match(ISO_TIMESTAMP_WITH_ZONE);
-  if (!match) return undefined;
-  const [, yearRaw, monthRaw, dayRaw, hourRaw, minuteRaw, secondRaw, , zone] = match;
-  const year = Number(yearRaw);
-  const month = Number(monthRaw);
-  const day = Number(dayRaw);
-  const hour = Number(hourRaw);
-  const minute = Number(minuteRaw);
-  const second = Number(secondRaw);
-  if (month < 1 || month > 12 || hour > 23 || minute > 59 || second > 59) return undefined;
-  const daysInMonth = new Date(Date.UTC(year, month, 0)).getUTCDate();
-  if (day < 1 || day > daysInMonth) return undefined;
-  if (zone !== 'Z') {
-    const offsetHour = Number(zone.slice(1, 3));
-    const offsetMinute = Number(zone.slice(4, 6));
-    if (offsetHour > 14 || offsetMinute > 59 || (offsetHour === 14 && offsetMinute !== 0)) return undefined;
-  }
   const parsed = Date.parse(value);
   return Number.isFinite(parsed) ? new Date(parsed).toISOString() : undefined;
 }
 
 function normalizedChannelRole(body) {
-  return String(body?.channelRole || '').trim().toLowerCase();
-}
-
-function missingRequiredBridgeField(body) {
-  for (const key of REQUIRED_BRIDGE_BODY_KEYS) {
-    if (!Object.prototype.hasOwnProperty.call(body, key)) return key;
-  }
-  return null;
+  return String(body?.channelRole || 'source');
 }
 
 export function validateGroupBridgeBody(body, source = process.env) {
   if (!body || typeof body !== 'object' || Array.isArray(body)) return 'invalid_body';
-  if (bridgeBodyBytes(body) > MAX_BRIDGE_BODY_BYTES) return 'payload_too_large';
-  if (Object.keys(body).some((key) => !ALLOWED_BRIDGE_BODY_KEYS.has(key))) return 'unknown_field';
-  if (missingRequiredBridgeField(body)) return 'missing_required_field';
-
   const groupId = String(body.groupId || '').trim();
   const externalMessageId = String(body.externalMessageId || '').trim();
   const role = normalizedChannelRole(body);
   if (!groupId || groupId.length > 220 || !externalMessageId || externalMessageId.length > 320) return 'invalid_identifiers';
   if (!['source', 'lab'].includes(role)) return 'invalid_channel_role';
-  if (typeof body.groupName !== 'string' || !body.groupName.trim() || body.groupName.length > 220) return 'invalid_group_name';
-  if (typeof body.channelKey !== 'string' || !HIPICO_CHANNEL_KEY_PATTERN.test(body.channelKey.trim())) return 'invalid_channel_key';
-  if (typeof body.labChannelKey !== 'string' || !HIPICO_CHANNEL_KEY_PATTERN.test(body.labChannelKey.trim())) return 'invalid_lab_channel_key';
-  if (body.labChannelKey.trim() !== configuredChannelIdentity('lab', source).channelKey) return 'lab_channel_not_authorized';
-  if (typeof body.bridgeVersion !== 'string' || !body.bridgeVersion.trim() || body.bridgeVersion.length > 80) return 'invalid_bridge_version';
-  if (typeof body.type !== 'string' || !BRIDGE_MESSAGE_TYPES.has(body.type.trim().toLowerCase())) return 'invalid_message_type';
-  if (typeof body.mediaKind !== 'string' || !BRIDGE_MEDIA_KINDS.has(body.mediaKind.trim().toLowerCase())) return 'invalid_media_kind';
-  if (body.rawMeta !== undefined && (typeof body.rawMeta !== 'string' || body.rawMeta.length > 500)) return 'invalid_raw_meta';
-  if (typeof body.text !== 'string') return 'invalid_text';
-  if (body.text.length > 4000) return 'text_too_large';
+  if (body.groupName !== undefined && (typeof body.groupName !== 'string' || body.groupName.length > 220)) return 'invalid_group_name';
+  if (body.channelKey !== undefined && (typeof body.channelKey !== 'string' || !HIPICO_CHANNEL_KEY_PATTERN.test(body.channelKey.trim()))) return 'invalid_channel_key';
+  if (body.bridgeVersion !== undefined && (typeof body.bridgeVersion !== 'string' || body.bridgeVersion.length > 80)) return 'invalid_bridge_version';
+  if (body.type !== undefined && (typeof body.type !== 'string' || body.type.length > 80)) return 'invalid_message_type';
+  if (body.text !== undefined && typeof body.text !== 'string') return 'invalid_text';
+  if (String(body.text || '').length > 4000) return 'text_too_large';
   if (typeof body.senderId !== 'string' || !body.senderId.trim() || body.senderId.length > 220) return 'invalid_sender';
   if (body.senderLabel !== undefined && (typeof body.senderLabel !== 'string' || body.senderLabel.length > 220)) return 'invalid_sender_label';
-  if (typeof body.shadowMode !== 'boolean' || typeof body.fromMe !== 'boolean' || typeof body.hasMedia !== 'boolean') return 'invalid_boolean_field';
+  if (!validOptionalBoolean(body, 'shadowMode') || !validOptionalBoolean(body, 'fromMe') || !validOptionalBoolean(body, 'hasMedia')) return 'invalid_boolean_field';
   if (body.quotedExternalMessageId !== undefined && body.quotedExternalMessageId !== null && (typeof body.quotedExternalMessageId !== 'string' || body.quotedExternalMessageId.length > 320)) return 'invalid_quoted_message_id';
   if (!normalizedTimestamp(body.timestamp)) return 'invalid_timestamp';
   if (body.shadowMode !== true) return role === 'source' ? 'source_requires_shadow_mode' : 'lab_requires_shadow_mode';
-  if (body.hasMedia === false && normalizedMediaKind(body) !== 'none') return 'invalid_media_consistency';
-  if (body.hasMedia === true && normalizedMediaKind(body) === 'none') return 'invalid_media_consistency';
-  if (body.hasMedia === true && body.type.trim().toLowerCase() !== 'media') return 'invalid_media_consistency';
-  if (body.hasMedia === false && body.type.trim().toLowerCase() === 'media') return 'invalid_media_consistency';
 
   const identityError = validateBridgeRoleIdentity(role, groupId, body.channelKey, source);
   if (identityError) return identityError;
@@ -148,12 +60,11 @@ function sourceReplaySignature(body) {
   return sha256(JSON.stringify([
     String(body.senderId || '').trim(),
     normalizedTimestamp(body.timestamp),
-    String(body.type || ''),
+    String(body.type || 'text'),
     String(body.text || ''),
     body.quotedExternalMessageId == null ? null : String(body.quotedExternalMessageId),
     body.fromMe === true,
-    body.hasMedia === true,
-    normalizedMediaKind(body)
+    body.hasMedia === true
   ]));
 }
 
@@ -162,12 +73,11 @@ function persistedReplaySignature(row) {
   return sha256(JSON.stringify([
     String(row?.sender_id || '').trim(),
     sentAt,
-    String(row?.message_type || ''),
+    String(row?.message_type || 'text'),
     String(row?.raw_text || ''),
     row?.quoted_external_message_id == null ? null : String(row.quoted_external_message_id),
     row?.normalized?.from_me === true,
-    row?.normalized?.has_media === true,
-    String(row?.normalized?.media_kind || (row?.normalized?.has_media === true ? 'unknown' : 'none'))
+    row?.normalized?.has_media === true
   ]));
 }
 
@@ -203,7 +113,7 @@ async function readChannel(ownerId, groupKey) {
 
 async function ensureChannel(ownerId, body) {
   const groupId = String(body.groupId).trim();
-  const groupName = String(body.groupName).trim().slice(0, 220);
+  const groupName = String(body.groupName || 'Grupo WhatsApp').trim().slice(0, 220);
   const role = normalizedChannelRole(body);
   const identity = configuredChannelIdentity(role);
   const existing = await readChannel(ownerId, identity.channelKey);
@@ -219,7 +129,7 @@ async function ensureChannel(ownerId, body) {
       source: 'whatsapp_web_linked_device',
       group_id_hash: sha256(groupId),
       auto_send: false,
-      bridge_version: String(body.bridgeVersion).slice(0, 80),
+      bridge_version: String(body.bridgeVersion || '').slice(0, 80),
       channel_role: role,
       shadow_mode: true
     }
@@ -284,7 +194,7 @@ export default async function handler(req, res) {
 
   const groupId = String(body.groupId).trim();
   const externalMessageId = String(body.externalMessageId).trim();
-  const text = body.text;
+  const text = String(body.text || '');
   const sentAt = normalizedTimestamp(body.timestamp);
   const channelRole = normalizedChannelRole(body);
 
@@ -310,24 +220,23 @@ export default async function handler(req, res) {
         sender_role: body.fromMe === true ? 'operator' : 'unknown',
         quoted_external_message_id: body.quotedExternalMessageId || null,
         sent_at: sentAt,
-        message_type: body.type.trim().toLowerCase(),
+        message_type: String(body.type || 'text'),
         raw_text: text,
         classification: capture.storedClassification,
         confidence: capture.storedConfidence,
         processing_status: capture.processingStatus,
         normalized: {
           source: 'web_bridge',
-          group_name: body.groupName,
+          group_name: String(body.groupName || ''),
           channel_role: channelRole,
           shadow_mode: true,
-          from_me: body.fromMe,
-          has_media: body.hasMedia,
-          media_kind: normalizedMediaKind(body),
+          from_me: body.fromMe === true,
+          has_media: body.hasMedia === true,
           domain_authority: capture.domainAuthority,
           adapter_hint_authoritative: false
         },
         metadata: {
-          bridge_version: body.bridgeVersion,
+          bridge_version: String(body.bridgeVersion || ''),
           received_by: 'group-bridge-ingest',
           source_replay_signature: sourceReplaySignature(body),
           adapter_hint: capture.adapterHint,
@@ -341,7 +250,7 @@ export default async function handler(req, res) {
     else await recordShadowPrediction({ ownerId, channel, body, messageRow: rows[0], classification: hintClassification, confidence: hintConfidence, suggestion });
 
     const diagnostic = /^\/hipico_status\s*$/i.test(text.trim())
-      ? `Hípico Control conectado ✅\nCanal: ${body.groupName}\nRecepción: activa\nModo: sombra`
+      ? `Hípico Control conectado ✅\nCanal: ${String(body.groupName || 'WhatsApp')}\nRecepción: activa\nModo: sombra`
       : null;
 
     return res.status(duplicate ? 200 : 202).json({
@@ -373,15 +282,4 @@ export default async function handler(req, res) {
   }
 }
 
-export const __test__ = {
-  normalizedTimestamp,
-  normalizedChannelRole,
-  normalizedMediaKind,
-  bridgeBodyBytes,
-  missingRequiredBridgeField,
-  sourceReplaySignature,
-  persistedReplaySignature,
-  configuredChannelIdentity,
-  assertPersistedChannel,
-  adapterCaptureDecision
-};
+export const __test__ = { normalizedTimestamp, normalizedChannelRole, sourceReplaySignature, persistedReplaySignature, configuredChannelIdentity, assertPersistedChannel, adapterCaptureDecision };

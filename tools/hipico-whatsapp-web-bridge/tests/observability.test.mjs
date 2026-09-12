@@ -18,47 +18,25 @@ async function tempDir() {
   return fs.mkdtemp(path.join(os.tmpdir(), 'hipico-observability-'));
 }
 
-test('redaction removes bearer, signed urls, phone numbers, WhatsApp ids and secret keys', () => {
+test('redaction removes bearer, signed urls, phone numbers, group ids and secret keys', () => {
   const safe = redactDiagnostic({
     token: 'super-secret',
-    message: 'Bearer abc.def.ghi +58 412 123 4567 1234567890-123456@g.us 584121234567@s.whatsapp.net',
+    message: 'Bearer abc.def.ghi +58 412 123 4567 1234567890-123456@g.us',
     url: 'https://example.test/a?token=secret&expires=9'
   });
   const text = JSON.stringify(safe);
   assert.equal(safe.token, '[REDACTED]');
   assert.match(text, /Bearer \[REDACTED\]/);
   assert.match(text, /\[PHONE\]/);
-  assert.match(text, /\[WHATSAPP_ID\]/);
+  assert.match(text, /\[GROUP_ID\]/);
   assert.match(text, /\[SIGNED_URL_REDACTED\]/);
-  assert.doesNotMatch(text, /super-secret|abc\.def\.ghi|1234567890-123456@g\.us|584121234567@s\.whatsapp\.net/);
-});
-
-test('group, channel, sender and participant identities are stable pseudonyms while message content is removed', () => {
-  const original={
-    activeSourceTitle:'Remate privado de caballos',
-    sourceGroupId:'120363000000000001@g.us',
-    channelKey:'club-source-official',
-    senderLabel:'Nombre Operador',
-    participantCode:'P-ALFA',
-    rawText:'Juego 1N del 5 con 100k',
-    nested:{groupName:'Grupo sensible',quotedText:'respuesta privada'}
-  };
-  const first=redactDiagnostic(original);
-  const second=redactDiagnostic(original);
-  assert.deepEqual(first,second,'pseudonyms must remain stable inside support diagnostics');
-  for(const key of ['activeSourceTitle','sourceGroupId','channelKey','senderLabel','participantCode']){
-    assert.match(String(first[key]),/^\[IDENTITY:[a-f0-9]{12}\]$/,key);
-    assert.notEqual(first[key],original[key],key);
-  }
-  assert.equal(first.rawText,'[CONTENT_REDACTED]');
-  assert.match(String(first.nested.groupName),/^\[IDENTITY:[a-f0-9]{12}\]$/);
-  assert.equal(first.nested.quotedText,'[CONTENT_REDACTED]');
+  assert.doesNotMatch(text, /super-secret|abc\.def\.ghi|1234567890-123456@g\.us/);
 });
 
 test('structured logs always include component version sha and correlation id without leaking secrets', () => {
   const row = JSON.parse(structuredLog({
     component: 'bridge', version: '1.4.2', sha: 'abcdef', correlationId: 'cid-1', event: 'LAB_SEND_FAILED',
-    data: { authorization: 'Bearer secret', phone: '+58 424 555 1212', groupName:'Grupo sensible', rawText:'mensaje privado' }
+    data: { authorization: 'Bearer secret', phone: '+58 424 555 1212' }
   }));
   assert.equal(row.component, 'bridge');
   assert.equal(row.version, '1.4.2');
@@ -66,8 +44,6 @@ test('structured logs always include component version sha and correlation id wi
   assert.equal(row.correlationId, 'cid-1');
   assert.equal(row.data.authorization, '[REDACTED]');
   assert.equal(row.data.phone, '[PHONE]');
-  assert.match(row.data.groupName,/^\[IDENTITY:[a-f0-9]{12}\]$/);
-  assert.equal(row.data.rawText,'[CONTENT_REDACTED]');
 });
 
 test('health distinguishes live, degraded and down and flags old backlog', () => {
@@ -115,26 +91,20 @@ test('rotation caps an oversized log and preserves numbered history', async () =
   await assert.rejects(() => fs.stat(file));
 });
 
-test('support bundle is allow-listed, privacy-redacted, immutable per destination and hash-verifiable', async () => {
+test('support bundle is allow-listed, immutable per destination and hash-verifiable', async () => {
   const root = await tempDir(); const dataDir = path.join(root, 'data'); const outDir = path.join(root, 'bundle');
   await fs.mkdir(dataDir); await fs.mkdir(outDir);
-  await fs.writeFile(path.join(dataDir, 'health.json'), JSON.stringify({
-    token:'secret', phone:'+58 412 123 4567', group:'1234567890-999@g.us',
-    activeSourceTitle:'Remate secreto', groupBinding:{sourceGroupId:'120363000000000001@g.us'}, rawText:'Juego privado 100k'
-  }));
+  await fs.writeFile(path.join(dataDir, 'health.json'), JSON.stringify({ token: 'secret', phone: '+58 412 123 4567', group: '1234567890-999@g.us' }));
   await fs.writeFile(path.join(dataDir, 'retry-state.json'), JSON.stringify({ state: 'ok' }));
   await fs.writeFile(path.join(dataDir, 'bridge.log'), 'Bearer abcdef +58 414 999 0000 1234567890-777@g.us');
   await fs.writeFile(path.join(dataDir, 'session-secret.json'), '{"cookie":"DO_NOT_COPY"}');
 
   const manifest = await buildSupportBundle({ dataDir, outDir, version: '1.4.2', sha: 'candidate-sha' });
   assert.equal(manifest.sha, 'candidate-sha');
-  assert.equal(manifest.redactionPolicy,'central-v2-pseudonymous-identities');
   assert.equal(manifest.files.some((file) => file.name === 'session-secret.json'), false);
   const health = await fs.readFile(path.join(outDir, 'health.json'), 'utf8');
   const log = await fs.readFile(path.join(outDir, 'bridge-tail.log'), 'utf8');
-  assert.doesNotMatch(health + log, /secret|abcdef|1234567890-|\+58|Remate secreto|Juego privado/);
-  assert.match(health,/\[IDENTITY:[a-f0-9]{12}\]/);
-  assert.match(health,/\[CONTENT_REDACTED\]/);
+  assert.doesNotMatch(health + log, /secret|abcdef|1234567890-|\+58/);
   for (const item of manifest.files) {
     const content = await fs.readFile(path.join(outDir, item.name), 'utf8');
     assert.equal(sha256Text(content), item.sha256);

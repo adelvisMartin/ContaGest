@@ -77,30 +77,65 @@ function assertGroup(group, path) {
   assertSafeGroupColor(group.color, `${path}.color`);
 }
 
+function canonicalGroups(config) {
+  const groups = Array.isArray(config?.groups) ? config.groups : [];
+  if (groups.length) return groups;
+  return Array.isArray(config?.whatsappGroups) ? config.whatsappGroups : [];
+}
+
+function configuredGroupIds(config) {
+  const groups = Array.isArray(config?.groups) ? config.groups : [];
+  const legacyGroups = Array.isArray(config?.whatsappGroups) ? config.whatsappGroups : [];
+  groups.forEach((group, index) => assertGroup(group, `config.groups[${index}]`));
+  legacyGroups.forEach((group, index) => assertGroup(group, `config.whatsappGroups[${index}]`));
+
+  const ids = new Set();
+  const canonical = canonicalGroups(config);
+  for (let index = 0; index < canonical.length; index += 1) {
+    const groupId = String(canonical[index]?.id || '').trim();
+    const collection = groups.length ? 'config.groups' : 'config.whatsappGroups';
+    assertSafeId(groupId, `${collection}[${index}].id`);
+    if (!groupId) throw safetyError(`Grupo sin identificador en ${collection}[${index}].`, 'HIPICO_WORKSPACE_GROUP_ID_REQUIRED', `${collection}[${index}].id`);
+    if (ids.has(groupId)) throw safetyError(`Identificador de grupo duplicado: ${groupId}.`, 'HIPICO_WORKSPACE_DUPLICATE_GROUP', `${collection}[${index}].id`);
+    ids.add(groupId);
+  }
+  return ids;
+}
+
+function assertKnownGroup(value, path, groupIds) {
+  if (value == null || value === '') return;
+  const groupId = String(value);
+  assertSafeId(groupId, path);
+  if (!groupIds.has(groupId)) {
+    throw safetyError(`Referencia a grupo inexistente en ${path}.`, 'HIPICO_WORKSPACE_UNKNOWN_GROUP', path);
+  }
+}
+
 export function assertWorkspaceInputSafety(workspace) {
   if (!workspace || typeof workspace !== 'object') {
     throw safetyError('Workspace Hípico inválido.', 'HIPICO_WORKSPACE_INVALID', 'workspace');
   }
   const config = workspace.config || {};
-  const groups = Array.isArray(config.groups) ? config.groups : [];
-  const legacyGroups = Array.isArray(config.whatsappGroups) ? config.whatsappGroups : [];
-  groups.forEach((group, index) => assertGroup(group, `config.groups[${index}]`));
-  legacyGroups.forEach((group, index) => assertGroup(group, `config.whatsappGroups[${index}]`));
-  assertSafeId(config.activeGroupId, 'config.activeGroupId');
-  assertSafeId(config.activeWhatsappGroupId, 'config.activeWhatsappGroupId');
+  const groupIds = configuredGroupIds(config);
+  assertKnownGroup(config.activeGroupId, 'config.activeGroupId', groupIds);
+  assertKnownGroup(config.activeWhatsappGroupId, 'config.activeWhatsappGroupId', groupIds);
   assertSafeId(workspace.activeRaceId, 'activeRaceId');
   for (const [groupId, raceId] of Object.entries(config.activeRaceByGroup || {})) {
-    assertSafeId(groupId, 'config.activeRaceByGroup.<groupId>');
+    assertKnownGroup(groupId, 'config.activeRaceByGroup.<groupId>', groupIds);
     assertSafeId(raceId, `config.activeRaceByGroup.${groupId}`);
   }
-  for (const [index, groupId] of (config.captureGroupIds || []).entries()) assertSafeId(groupId, `config.captureGroupIds[${index}]`);
+  for (const [index, groupId] of (config.captureGroupIds || []).entries()) assertKnownGroup(groupId, `config.captureGroupIds[${index}]`, groupIds);
 
   const participants = workspace.participants || [];
-  participants.forEach((row, index) => assertRowIds(row, `participants[${index}]`, ['id', 'groupId']));
+  participants.forEach((row, index) => {
+    assertRowIds(row, `participants[${index}]`, ['id', 'groupId']);
+    assertKnownGroup(row?.groupId, `participants[${index}].groupId`, groupIds);
+  });
 
   const days = workspace.days || [];
   days.forEach((row, index) => {
     assertRowIds(row, `days[${index}]`, ['id', 'groupId']);
+    assertKnownGroup(row?.groupId, `days[${index}].groupId`, groupIds);
     assertEnum(row?.status, DAY_STATUSES, `days[${index}].status`);
   });
   assertCollectionDates(days, 'days');
@@ -108,6 +143,7 @@ export function assertWorkspaceInputSafety(workspace) {
   const races = workspace.races || [];
   races.forEach((race, raceIndex) => {
     assertRowIds(race, `races[${raceIndex}]`, ['id', 'groupId', 'dayId']);
+    assertKnownGroup(race?.groupId, `races[${raceIndex}].groupId`, groupIds);
     assertRaceNumber(race?.number, `races[${raceIndex}].number`);
     assertEnum(race?.status, RACE_STATUSES, `races[${raceIndex}].status`);
     (race?.board || []).forEach((token, index) => assertSafeBoardToken(token, `races[${raceIndex}].board[${index}]`));
@@ -120,6 +156,10 @@ export function assertWorkspaceInputSafety(workspace) {
     }
     (race?.bets || []).forEach((bet, betIndex) => {
       assertRowIds(bet, `races[${raceIndex}].bets[${betIndex}]`, ['id', 'groupId', 'playerId', 'receiverId']);
+      assertKnownGroup(bet?.groupId, `races[${raceIndex}].bets[${betIndex}].groupId`, groupIds);
+      if (bet?.groupId && race?.groupId && String(bet.groupId) !== String(race.groupId)) {
+        throw safetyError(`Apuesta fuera del grupo de su carrera en races[${raceIndex}].bets[${betIndex}].`, 'HIPICO_WORKSPACE_CROSS_GROUP_BET', `races[${raceIndex}].bets[${betIndex}].groupId`);
+      }
       assertEnum(bet?.status, BET_STATUSES, `races[${raceIndex}].bets[${betIndex}].status`);
     });
   });
@@ -128,22 +168,30 @@ export function assertWorkspaceInputSafety(workspace) {
   const advanced = workspace.advancedBets || [];
   advanced.forEach((row, index) => {
     assertRowIds(row, `advancedBets[${index}]`, ['id', 'groupId', 'playerId', 'receiverId', 'loadedRaceId']);
+    assertKnownGroup(row?.groupId, `advancedBets[${index}].groupId`, groupIds);
     assertRaceNumber(row?.raceNumber, `advancedBets[${index}].raceNumber`);
     assertEnum(row?.status, ADVANCED_STATUSES, `advancedBets[${index}].status`);
   });
   assertCollectionDates(advanced, 'advancedBets');
 
   const movements = workspace.movements || [];
-  movements.forEach((row, index) => assertRowIds(row, `movements[${index}]`, ['id', 'groupId', 'dayId', 'participantId', 'counterpartyId']));
+  movements.forEach((row, index) => {
+    assertRowIds(row, `movements[${index}]`, ['id', 'groupId', 'dayId', 'participantId', 'counterpartyId']);
+    assertKnownGroup(row?.groupId, `movements[${index}].groupId`, groupIds);
+  });
   assertCollectionDates(movements, 'movements');
 
   const rates = workspace.exchangeRates || [];
-  rates.forEach((row, index) => assertRowIds(row, `exchangeRates[${index}]`, ['id', 'groupId']));
+  rates.forEach((row, index) => {
+    assertRowIds(row, `exchangeRates[${index}]`, ['id', 'groupId']);
+    assertKnownGroup(row?.groupId, `exchangeRates[${index}].groupId`, groupIds);
+  });
   assertCollectionDates(rates, 'exchangeRates');
 
   const weeks = workspace.weekClosures || [];
   weeks.forEach((row, index) => {
     assertRowIds(row, `weekClosures[${index}]`, ['id', 'groupId']);
+    assertKnownGroup(row?.groupId, `weekClosures[${index}].groupId`, groupIds);
     (row?.balances || []).forEach((balance, balanceIndex) => assertRowIds(balance, `weekClosures[${index}].balances[${balanceIndex}]`, ['participantId']));
   });
   assertCollectionDates(weeks, 'weekClosures', ['date', 'from', 'to']);
@@ -151,13 +199,20 @@ export function assertWorkspaceInputSafety(workspace) {
   const pollas = workspace.pollas || [];
   pollas.forEach((row, index) => {
     assertRowIds(row, `pollas[${index}]`, ['id', 'groupId']);
+    assertKnownGroup(row?.groupId, `pollas[${index}].groupId`, groupIds);
     assertEnum(row?.status, POLLA_STATUSES, `pollas[${index}].status`);
     (row?.entries || []).forEach((entry, entryIndex) => assertRowIds(entry, `pollas[${index}].entries[${entryIndex}]`, ['id', 'participantId']));
   });
   assertCollectionDates(pollas, 'pollas');
 
-  (workspace.audit || []).forEach((row, index) => assertRowIds(row, `audit[${index}]`, ['id', 'groupId']));
-  (workspace.syncQueue || []).forEach((row, index) => assertRowIds(row, `syncQueue[${index}]`, ['id', 'groupId']));
+  (workspace.audit || []).forEach((row, index) => {
+    assertRowIds(row, `audit[${index}]`, ['id', 'groupId']);
+    assertKnownGroup(row?.groupId, `audit[${index}].groupId`, groupIds);
+  });
+  (workspace.syncQueue || []).forEach((row, index) => {
+    assertRowIds(row, `syncQueue[${index}]`, ['id', 'groupId']);
+    assertKnownGroup(row?.groupId, `syncQueue[${index}].groupId`, groupIds);
+  });
   return workspace;
 }
 
@@ -202,4 +257,4 @@ if (typeof document !== 'undefined') {
   }, true);
 }
 
-export const __test__ = { validIsoDate, assertSafeId, assertSafeDate, assertRaceNumber, assertSafeGroupColor, rejectBoardSubmit };
+export const __test__ = { validIsoDate, assertSafeId, assertSafeDate, assertRaceNumber, assertSafeGroupColor, configuredGroupIds, assertKnownGroup, rejectBoardSubmit };

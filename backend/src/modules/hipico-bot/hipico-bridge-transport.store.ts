@@ -66,12 +66,6 @@ function assertGroupShadowReplayAtTransportBoundary(existing:PersistedGroupShado
   }
 }
 
-function assertGroupShadowDestination(existing:Pick<PersistedGroupShadowSource,'recipient'>,input:Pick<GroupOutboxInput,'recipient'>){
-  if(String(existing.recipient||'')!==String(input.recipient||'')){
-    throw Object.assign(new Error('Group shadow destination changed for the same event.'),{code:'HIPICO_TRANSPORT_REPLAY_MISMATCH'});
-  }
-}
-
 /**
  * The real WhatsApp group gate must never acknowledge an event using a
  * serverless in-memory fallback. If PostgreSQL is unavailable these functions
@@ -161,4 +155,4 @@ export async function bridgePersistenceReady(){
   return Boolean(rows[0]?.eventTable&&rows[0]?.outboxTable);
 }
 
-export const __test__={assertTransportReplay,assertGroupShadowReplay,assertGroupShadowReplayAtTransportBoundary,assertGroupShadowDestination,assertBridgeGroupIdentity,bridgeGroupIdentityReady,normalizeGroupId:normalizeBridgeGroupId};
+export const __test__={assertTransportReplay,assertGroupShadowReplay,assertGroupShadowReplayAtTransportBoundary,assertBridgeGroupIdentity,bridgeGroupIdentityReady,normalizeGroupId:normalizeBridgeGroupId};

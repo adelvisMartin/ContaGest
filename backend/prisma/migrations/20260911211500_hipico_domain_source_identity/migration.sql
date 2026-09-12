@@ -63,7 +63,6 @@ END $$;
 CREATE OR REPLACE FUNCTION public.hipico_domain_events_immutable_guard()
 RETURNS trigger
 LANGUAGE plpgsql
-SET search_path = public, pg_temp
 AS $$
 BEGIN
   RAISE EXCEPTION 'HIPICO_DOMAIN_EVENTS_APPEND_ONLY';

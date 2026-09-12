@@ -4,7 +4,6 @@ import { classify as classifyOperational } from './hipico-operational-classifier
 import type { IntentResult as OperationalIntentResult } from './hipico-operational-classifier.js';
 import { assertCloudOutboundAllowed, cloudOutboundPolicy } from './hipico-outbound-policy.js';
 import { operatorTokenValid as canonicalOperatorTokenValid } from './hipico-operator-security.js';
-import { replayMismatchError, sameWebhookReplay } from './hipico-webhook-replay.js';
 import { webhookSignatureValid } from './hipico-webhook-security.js';
 
 export type BotPromotion='shadow'|'approved'|'automatic';
@@ -66,16 +65,14 @@ export function extractMessages(payload:any){
     for(const message of value?.messages||[]){
       const providerMessageId=String(message.id||'').trim();
       const sender=String(message.from||'').trim();
-      const messageType=String(message.type||'unknown').trim().toLowerCase()||'unknown';
-      const body=String(message?.text?.body||message?.button?.text||message?.interactive?.button_reply?.title||message?.document?.caption||message?.document?.filename||message?.image?.caption||message?.video?.caption||'');
+      const messageType=String(message.type||'unknown').trim().toLowerCase().slice(0,MAX_MESSAGE_TYPE)||'unknown';
+      const body=String(message?.text?.body||message?.button?.text||message?.interactive?.button_reply?.title||message?.document?.caption||message?.document?.filename||message?.image?.caption||message?.video?.caption||'').slice(0,MAX_INBOUND_TEXT);
       rows.push({providerMessageId,phoneNumberId,sender,messageType,body,payload:message});
     }
   }
   return rows.filter((row)=>
     row.providerMessageId.length>0&&row.providerMessageId.length<=MAX_PROVIDER_MESSAGE_ID&&
     row.phoneNumberId.length>0&&row.phoneNumberId.length<=MAX_PHONE_NUMBER_ID&&
-    row.messageType.length>0&&row.messageType.length<=MAX_MESSAGE_TYPE&&
-    row.body.length<=MAX_INBOUND_TEXT&&
     E164_DIGITS.test(row.sender)
   );
 }
@@ -110,21 +107,9 @@ export const HipicoBotStore={
     const record={id:id('hwe'),...row,receivedAt:new Date().toISOString()};
     if(await dbReady()){
       const inserted=await prisma.$queryRaw<Array<{id:string}>>`INSERT INTO public."HipicoWebhookEvent" ("id","providerMessageId","phoneNumberId","sender","messageType","body","intent","risk","status","confidence","suggestion","payload","receivedAt","processedAt") VALUES (${record.id},${record.providerMessageId},${record.phoneNumberId||null},${record.sender||null},${record.messageType||'unknown'},${record.body||null},${record.intent||'unknown'},${record.risk||'review'},${record.status||'received'},${Number(record.confidence||0)},${record.suggestion||null},${JSON.stringify(record.payload||{})}::jsonb,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP) ON CONFLICT ("providerMessageId") DO NOTHING RETURNING "id"`;
-      if(inserted[0]?.id)return{...record,id:inserted[0].id,inserted:true};
-      const rows=await prisma.$queryRaw<any[]>`
-        SELECT "id","providerMessageId","phoneNumberId","sender","messageType","body","payload"
-        FROM public."HipicoWebhookEvent"
-        WHERE "providerMessageId"=${record.providerMessageId}
-        LIMIT 2`;
-      if(rows.length!==1)throw Object.assign(new Error('Webhook dedupe row missing or ambiguous.'),{code:'HIPICO_WEBHOOK_DEDUPE_ROW_INVALID'});
-      if(!sameWebhookReplay(rows[0],record))throw replayMismatchError();
-      return{...record,id:rows[0].id,inserted:false};
+      return {...record,inserted:Boolean(inserted[0])};
     }
-    const existing=memoryEvents.find((event)=>event.providerMessageId===record.providerMessageId);
-    if(existing){
-      if(!sameWebhookReplay(existing,record))throw replayMismatchError();
-      return{...record,id:existing.id,inserted:false};
-    }
+    if(memoryEvents.some((event)=>event.providerMessageId===record.providerMessageId))return{...record,inserted:false};
     memoryEvents.unshift(record);memoryEvents.splice(250);return{...record,inserted:true};
   },
   async queue(row:any){
@@ -234,6 +219,7 @@ export async function sendCloudText(recipient:string,message:string){
 }
 
 export async function processIncoming(message:any){
+  if(await HipicoBotStore.hasEvent(message.providerMessageId))return{duplicate:true};
   const result=classifyIncoming(message);
   const event=await HipicoBotStore.saveEvent({...message,...result,status:'classified'});
   if(event.inserted===false)return{duplicate:true};

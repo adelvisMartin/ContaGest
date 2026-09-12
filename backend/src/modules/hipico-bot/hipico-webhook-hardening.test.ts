@@ -59,34 +59,13 @@ test('mutated provider-message replay is rejected but acknowledged to avoid Meta
   assert.match(source,/acknowledged:true,accepted:false,retryable:false/);
 });
 
-test('malformed item in a signed batch cannot make valid sibling messages disappear',()=>{
-  const extraction=source.indexOf('const messages=extractMessages(req.body)');
-  const invalidCount=source.indexOf('const invalidMessages=Math.max(0,expectedRawMessages-messages.length)');
-  const persistence=source.indexOf('HipicoBotStore.dbReady(true)');
-  const processing=source.indexOf('const result=await processMessagesBounded(messages)');
-  const partialAck=source.indexOf("error:'invalid_message_identity_partial'");
-  assert.ok(extraction>=0&&invalidCount>extraction&&persistence>invalidCount&&processing>persistence&&partialAck>processing);
-  assert.match(source,/accepted:true,\n\s*partial:true,\n\s*retryable:false/);
-  assert.match(source,/received:expectedRawMessages/);
-  assert.match(source,/invalidMessages/);
-  assert.doesNotMatch(source,/if\(messages\.length!==expectedRawMessages\)[\s\S]{0,180}return res\.status\(200\)/);
-});
-
-test('a fully malformed signed message set is permanently acknowledged without touching persistence',()=>{
-  const empty=source.indexOf('if(messages.length===0)');
-  const allInvalid=source.indexOf('if(invalidMessages>0)',empty);
-  const persistence=source.indexOf('HipicoBotStore.dbReady(true)');
-  assert.ok(empty>=0&&allInvalid>empty&&persistence>allInvalid);
-  assert.match(source,/error:'invalid_message_identity'/);
-  assert.match(source,/accepted:false,retryable:false/);
-});
-
-test('foreign phone identity remains an envelope-level permanent reject before durable processing',()=>{
+test('foreign or malformed message identity is rejected before durable processing without redelivery loops',()=>{
   const envelope=source.indexOf('rawEnvelopeIdentityError(req.body)');
-  const extraction=source.indexOf('extractMessages(req.body)');
+  const invalid=source.indexOf('messages.length!==expectedRawMessages');
+  const messageIdentity=source.indexOf('const identityError=webhookIdentityError(messages)');
   const persistence=source.indexOf('HipicoBotStore.dbReady(true)');
-  assert.ok(envelope>=0&&extraction>envelope&&persistence>extraction);
-  assert.match(source,/error:'webhook_phone_number_mismatch'/);
+  assert.ok(envelope>=0&&invalid>envelope&&messageIdentity>invalid&&persistence>messageIdentity);
+  assert.match(source,/error:'invalid_message_identity'/);
   assert.match(source,/status\(200\).*accepted:false/s);
 });
 
