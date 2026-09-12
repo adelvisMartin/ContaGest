@@ -4,7 +4,10 @@ import test from 'node:test';
 
 const root = 'frontend/public/hipico-control';
 const read = (path) => fs.readFile(path, 'utf8');
-const removedCss = ['styles.css','ui-system.css','tokens.css','themes.css','components.css','operations-pro.css','precision-hipica.css','offline-icons.css','recovery.css','ui-system-v2.css'];
+const removedCss = [
+  'styles.css','ui-system.css','tokens.css','themes.css','components.css','operations-pro.css','precision-hipica.css',
+  'offline-icons.css','recovery.css','ui-system-v2.css','mobile-accessibility.css','operational-copy-center.css','operational-access-guard.css'
+];
 
 test('PR268 exposes exactly one visual authority and official identity', async () => {
   const [index, recovery, manifest, css] = await Promise.all([
@@ -18,7 +21,7 @@ test('PR268 exposes exactly one visual authority and official identity', async (
   assert.match(manifest, /"theme_color"\s*:\s*"#721522"/);
   assert.match(css, /--hc-brand:\s*#721522/);
   assert.doesNotMatch(css, /radial-gradient\(/i);
-  assert.doesNotMatch(css, /font-weight:\s*(?:800|850|900)\b/);
+  assert.doesNotMatch(css, /font-weight:\s*(?:550|650|750|800|850|900)\b/);
   for (const file of removedCss) await assert.rejects(fs.access(`${root}/assets/css/${file}`));
   await assert.rejects(fs.access(`${root}/icon.svg`));
 });
@@ -108,6 +111,6 @@ test('service worker cache matches the zero-legacy integrated runtime', async ()
   const sw = await read(`${root}/sw.js`);
   assert.match(sw, /assets\/css\/app\.css/);
   assert.match(sw, /help-center\.js/);
-  assert.match(sw, /shell-r4-zero-legacy/);
+  assert.match(sw, /shell-r23-ui-system-v2-266/);
   for (const file of removedCss) assert.equal(sw.includes(`assets/css/${file}`), false, `${file} must not be cached`);
 });

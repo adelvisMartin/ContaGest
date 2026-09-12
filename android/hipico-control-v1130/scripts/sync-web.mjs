@@ -23,7 +23,9 @@ const required = [
 const forbiddenLegacy = [
   'assets/css/styles.css', 'assets/css/ui-system.css', 'assets/css/tokens.css', 'assets/css/themes.css',
   'assets/css/components.css', 'assets/css/operations-pro.css', 'assets/css/precision-hipica.css',
-  'assets/css/offline-icons.css', 'assets/css/recovery.css', 'assets/css/ui-system-v2.css', 'icon.svg'
+  'assets/css/offline-icons.css', 'assets/css/recovery.css', 'assets/css/ui-system-v2.css',
+  'assets/css/mobile-accessibility.css', 'assets/css/operational-copy-center.css', 'assets/css/operational-access-guard.css',
+  'icon.svg'
 ];
 
 function assertInside(candidate, parent, label) {
@@ -59,7 +61,7 @@ function verifyRuntime(root, label) {
   if (!index.includes('./assets/js/app.js')) throw new Error(`${label}: app.js no está enlazado de forma portable.`);
   if (!index.includes('./assets/css/app.css')) throw new Error(`${label}: app.css no está enlazado.`);
   if (!index.includes('./assets/js/help-center.js')) throw new Error(`${label}: help-center.js no está enlazado.`);
-  if (/styles\.css|ui-system|tokens\.css|themes\.css|operations-pro|precision-hipica|recovery\.css/i.test(index)) throw new Error(`${label}: index todavía carga una autoridad visual retirada.`);
+  if (/styles\.css|ui-system|tokens\.css|themes\.css|operations-pro|precision-hipica|mobile-accessibility|operational-copy-center\.css|operational-access-guard\.css|recovery\.css/i.test(index)) throw new Error(`${label}: index todavía carga una autoridad visual retirada.`);
   return filesUnder(root);
 }
 function verifyParity(sourceFiles, targetFiles) {
