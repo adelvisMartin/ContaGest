@@ -133,6 +133,7 @@ jobs:
           node --check frontend/public/hipico-control/assets/js/race-opening-assistant.js
           node --check frontend/public/hipico-control/assets/js/notice-bridge.js
           node --check frontend/public/hipico-control/assets/js/theme-bootstrap.js
+          node --check frontend/public/hipico-control/assets/js/version-guard.js
           node --check frontend/public/hipico-control/assets/js/store.js
           node --check frontend/public/hipico-control/assets/js/store-v2.js
           node --check frontend/public/hipico-control/assets/js/sync.js
