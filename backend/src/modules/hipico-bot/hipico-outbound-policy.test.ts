@@ -36,6 +36,14 @@ test('cloud outbound requires explicit GO, approval, exact candidate SHA and des
   assert.equal(cloudDestinationAllowed('+584121234568',enabledEnv),false);
 });
 
+test('cloud exact-SHA gate recognizes native Vercel/GitHub and documented generic commit SHA sources',()=>{
+  const base={...enabledEnv,VERCEL_GIT_COMMIT_SHA:undefined};
+  assert.equal(cloudOutboundPolicy({...base,GITHUB_SHA:SHA}).enabled,true);
+  assert.equal(cloudOutboundPolicy({...base,GIT_COMMIT_SHA:SHA}).enabled,true);
+  assert.equal(cloudOutboundPolicy({...base,GIT_SHA:SHA}).enabled,true);
+  assert.equal(cloudOutboundPolicy({...base,GITHUB_SHA:'b'.repeat(40)}).enabled,false);
+});
+
 test('Meta Cloud transport requires strong token numeric phone id and bounded Graph version syntax',()=>{
   const valid=cloudTransportConfiguration(transportEnv);
   assert.equal(valid.configured,true);
