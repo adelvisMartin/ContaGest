@@ -112,14 +112,16 @@ export default async function handler(req, res) {
   }
 
   const messages = extractMetaMessages(payload);
-  if(messages.some((message)=>!validMetaMessageIdentity(message))){
-    return res.status(200).json({ok:false,acknowledged:true,accepted:false,retryable:false,error:'invalid_message_identity',received:messages.length});
+  const validMessages=messages.filter((message)=>validMetaMessageIdentity(message));
+  const invalidMessages=messages.length-validMessages.length;
+  if(validMessages.some((message)=>String(message.channelKey)!==runtime.phoneNumberId)){
+    return res.status(200).json({ok:false,acknowledged:true,accepted:false,retryable:false,error:'webhook_phone_number_mismatch',received:messages.length,validMessages:validMessages.length,invalidMessages});
   }
-  if(messages.some((message)=>String(message.channelKey)!==runtime.phoneNumberId)){
-    return res.status(200).json({ok:false,acknowledged:true,accepted:false,retryable:false,error:'webhook_phone_number_mismatch',received:messages.length});
-  }
-  if(messages.length===0){
-    return res.status(200).json({ok:true,accepted:0,duplicates:0});
+  if(validMessages.length===0){
+    if(invalidMessages>0){
+      return res.status(200).json({ok:false,acknowledged:true,accepted:false,retryable:false,error:'invalid_message_identity',received:messages.length,invalidMessages});
+    }
+    return res.status(200).json({ok:true,accepted:0,duplicates:0,invalidMessages:0});
   }
 
   try {
@@ -127,7 +129,7 @@ export default async function handler(req, res) {
     if (!ownerId) return res.status(503).json({ok:false,retryable:true,error:'webhook_not_configured'});
     let accepted = 0;
     let duplicates = 0;
-    for (const message of messages) {
+    for (const message of validMessages) {
       const capture=adapterCaptureDecision(message.text);
       const fingerprint = sha256(message.externalMessageId || `${message.channelKey}|${messageReplaySignature(message)}`);
       const body = [{
@@ -166,13 +168,28 @@ export default async function handler(req, res) {
         duplicates+=1;
       }else accepted += 1;
     }
-    return res.status(200).json({ ok: true, accepted, duplicates, domainAuthority:'backend_canonical_only' });
+    if(invalidMessages>0){
+      return res.status(200).json({
+        ok:false,
+        acknowledged:true,
+        accepted:true,
+        partial:true,
+        retryable:false,
+        error:'invalid_message_identity_partial',
+        received:messages.length,
+        acceptedMessages:accepted,
+        duplicates,
+        invalidMessages,
+        domainAuthority:'backend_canonical_only'
+      });
+    }
+    return res.status(200).json({ ok: true, accepted, duplicates, invalidMessages:0, domainAuthority:'backend_canonical_only' });
   } catch (error) {
     if(error?.code==='HIPICO_META_REPLAY_MISMATCH'){
-      return res.status(200).json({ok:false,acknowledged:true,accepted:false,retryable:false,error:'replay_mismatch'});
+      return res.status(200).json({ok:false,acknowledged:true,accepted:false,retryable:false,error:'replay_mismatch',invalidMessages});
     }
     console.error('hipico whatsapp webhook',{message:error?.message||String(error)});
-    return res.status(503).json({ ok: false, retryable:true, error: 'webhook_processing_failed' });
+    return res.status(503).json({ ok: false, retryable:true, error: 'webhook_processing_failed', invalidMessages });
   }
 }
 
