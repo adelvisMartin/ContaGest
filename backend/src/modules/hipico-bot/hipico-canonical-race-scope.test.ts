@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { readFileSync } from 'node:fs';
-import { canonicalMutationPolicy, canonicalRaceContextKey, canonicalScopeIssue } from './hipico-canonical.routes.js';
+import { canonicalMutationPolicy, canonicalRaceContextKey, canonicalScopeIssue, __test__ } from './hipico-canonical.routes.js';
 
 const source=readFileSync(new URL('./hipico-canonical.routes.ts',import.meta.url),'utf8');
 const context={raceNumber:4,racetrack:'Churchill Downs',raceContextComplete:true};
@@ -50,14 +50,36 @@ test('a plan cannot open race state without complete race context evidence',()=>
   assert.equal(complete.stateWriteEligible,true);
 });
 
-test('non-anchor race evidence stays scoped by the already-established aggregate lifecycle',()=>{
-  assert.equal(canonicalScopeIssue({
-    eventType:'RESULT_RECORDED',aggregateKind:'race',aggregateKey:'racectx_existing',normalizedPayload:{board:['7','3','1']},...confirmed
-  }),null);
-  const result=canonicalMutationPolicy({
+test('every race lifecycle event is bound to the same deterministic race identity',()=>{
+  const expected=canonicalRaceContextKey({eventType:'RACE_OPENED',normalizedPayload:context});
+  assert.ok(expected);
+  for(const eventType of __test__.RACE_CONTEXT_BOUND_EVENTS){
+    const payload={...context,
+      ...(eventType==='RESULT_RECORDED'?{board:['7','3','1']}:{}),
+      ...(eventType==='SETTLEMENT_RECORDED'?{settlementRows:[{participant:'P1',amount:-120}]}:{}),
+      ...(eventType==='BALANCE_CONFIRMED'?{balances:[{participant:'P1',available:100}]}:{})
+    };
+    assert.equal(canonicalRaceContextKey({eventType,normalizedPayload:payload}),expected,eventType);
+    assert.equal(canonicalScopeIssue({eventType,aggregateKind:'race',aggregateKey:expected,normalizedPayload:payload,...confirmed}),null,eventType);
+    assert.equal(canonicalScopeIssue({eventType,aggregateKind:'race',aggregateKey:'racectx_000000000000000000000000',normalizedPayload:payload,...confirmed}),'HIPICO_RACE_AGGREGATE_KEY_MISMATCH',eventType);
+    assert.equal(canonicalScopeIssue({eventType,aggregateKind:'race',aggregateKey:expected,normalizedPayload:undefined,...confirmed}),'HIPICO_RACE_CONTEXT_INCOMPLETE',eventType);
+  }
+});
+
+test('result cannot advance state unless both race identity and board evidence are present',()=>{
+  const expected=canonicalRaceContextKey({eventType:'RESULT_RECORDED',normalizedPayload:context});
+  assert.ok(expected);
+  const incomplete=canonicalMutationPolicy({
     eventType:'RESULT_RECORDED',aggregateKind:'race',normalizedPayload:{board:['7','3','1']},...confirmed
   });
-  assert.equal(result.stateWriteEligible,true);
+  assert.equal(incomplete.evidenceIssue,'HIPICO_RACE_CONTEXT_INCOMPLETE');
+  assert.equal(incomplete.stateWriteEligible,false);
+
+  const complete=canonicalMutationPolicy({
+    eventType:'RESULT_RECORDED',aggregateKind:'race',normalizedPayload:{...context,board:['7','3','1']},...confirmed
+  });
+  assert.equal(complete.evidenceIssue,null);
+  assert.equal(complete.stateWriteEligible,true);
 });
 
 test('canonical API surfaces the deterministic key in preview and mismatch responses',()=>{
