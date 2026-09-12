@@ -1,4 +1,4 @@
-import { compact } from './normalization.js';
+import { compact, parseDateKey } from './normalization.js';
 
 function canonicalTrack(value){
   return compact(String(value||''))
@@ -20,6 +20,11 @@ function messageIndex(messages,id){
   return messages.findIndex((message)=>message.id===id);
 }
 
+function trustedMessageRaceDate(message){
+  if(!message||message.dateProvenance==='synthetic')return'';
+  return parseDateKey(message.date)||'';
+}
+
 function nearestOpening(analysis,offer){
   const messages=analysis?.messages||[];
   const offerIndex=messageIndex(messages,offer.messageId);
@@ -29,7 +34,8 @@ function nearestOpening(analysis,offer){
     .filter((opening)=>opening.raceContext?.actionable)
     .filter((opening)=>messageIndex(messages,opening.id)<=offerIndex)
     .sort((left,right)=>messageIndex(messages,right.id)-messageIndex(messages,left.id));
-  return candidates[0]?.raceContext||null;
+  const candidate=candidates[0];
+  return candidate?.raceContext?{...candidate.raceContext,raceDate:trustedMessageRaceDate(candidate)}:null;
 }
 
 function appendReason(target,reason){
@@ -50,24 +56,39 @@ function contextualizeOffer(analysis,offer){
   const messageTrack=messageContext?.inherited?'':String(messageContext.track||'').trim();
   const directTrack=offerTrack||messageTrack;
   const directRace=validRaceNumber(offer.raceNumber) || (messageContext?.inherited?null:validRaceNumber(messageContext.raceNumber));
+  const directDate=trustedMessageRaceDate(message);
   const openingTrack=String(opening.track||'').trim();
   const openingRace=validRaceNumber(opening.raceNumber);
+  const openingDate=String(opening.raceDate||'').trim();
   const trackConflict=Boolean(directTrack&&openingTrack&&!sameTrack(directTrack,openingTrack));
   const raceConflict=Boolean(directRace&&openingRace&&directRace!==openingRace);
+  const dateConflict=Boolean(directDate&&openingDate&&directDate!==openingDate);
   const track=directTrack||openingTrack||'';
   // If an offer names a different track without a race ordinal, never invent
   // the current opening's race number for that different track.
   const raceNumber=directRace || (trackConflict?null:openingRace) || null;
+  const raceDate=directDate||openingDate||'';
   offer.track=track;
   offer.raceNumber=raceNumber;
-  offer.raceContext={track,raceNumber,source:directTrack||directRace?'message':openingTrack||openingRace?'opening':'none',complete:Boolean(track&&raceNumber),conflict:trackConflict||raceConflict};
-  if(trackConflict||raceConflict)appendReason(offer,'contexto de carrera contradictorio');
+  offer.raceDate=raceDate;
+  offer.raceContext={
+    track,raceNumber,raceDate,
+    source:directTrack||directRace?'message':openingTrack||openingRace?'opening':'none',
+    complete:Boolean(track&&raceNumber),
+    dateComplete:Boolean(raceDate),
+    conflict:trackConflict||raceConflict||dateConflict
+  };
+  if(trackConflict||raceConflict||dateConflict)appendReason(offer,'contexto de carrera contradictorio');
   else if(!track||!raceNumber)appendReason(offer,'contexto de carrera incompleto');
+  else if(!raceDate)appendReason(offer,'fecha de carrera no verificable');
   return offer;
 }
 
 function sameRaceContext(left,right){
-  return Boolean(left?.complete&&right?.complete&&sameTrack(left.track,right.track)&&Number(left.raceNumber)===Number(right.raceNumber));
+  if(!(left?.complete&&right?.complete&&sameTrack(left.track,right.track)&&Number(left.raceNumber)===Number(right.raceNumber)))return false;
+  const leftDate=String(left.raceDate||'');
+  const rightDate=String(right.raceDate||'');
+  return !leftDate||!rightDate||leftDate===rightDate;
 }
 
 export function enrichOperationalRaceContext(analysis){
@@ -93,14 +114,18 @@ export function enrichOperationalRaceContext(analysis){
     const complete=playerContext?.complete?playerContext:receiverContext?.complete?receiverContext:null;
     match.track=complete?.track||player?.track||receiver?.track||match.track||'';
     match.raceNumber=complete?.raceNumber||player?.raceNumber||receiver?.raceNumber||null;
+    match.raceDate=complete?.raceDate||player?.raceDate||receiver?.raceDate||'';
     match.raceContext={
       track:match.track,
       raceNumber:match.raceNumber,
+      raceDate:match.raceDate,
       complete:Boolean(match.track&&match.raceNumber),
+      dateComplete:Boolean(match.raceDate),
       source:playerContext?.complete&&receiverContext?.complete?'both':complete?'single-offer':'none'
     };
     match.reviewReasons=[...new Set([...(match.reviewReasons||[]),...(player?.reviewReasons||[]),...(receiver?.reviewReasons||[])])];
     if(!match.raceContext.complete&&!match.reviewReasons.includes('contexto de carrera incompleto'))match.reviewReasons.push('contexto de carrera incompleto');
+    if(match.raceContext.complete&&!match.raceContext.dateComplete&&!match.reviewReasons.includes('fecha de carrera no verificable'))match.reviewReasons.push('fecha de carrera no verificable');
     match.requiresApproval=match.reviewReasons.length>0;
     match.needsReview=match.requiresApproval;
     accepted.push(match);
@@ -122,7 +147,11 @@ export function compareMatchToActiveRace(match,activeRace){
   const trackOk=sameTrack(match.raceContext.track,activeRace.racetrack);
   const raceOk=Number(match.raceContext.raceNumber)===Number(activeRace.number);
   if(!trackOk||!raceOk)return{status:'MISMATCH',reason:`La pareja corresponde a ${match.raceContext.track} ${match.raceContext.raceNumber} y la carrera activa es ${activeRace.racetrack} ${activeRace.number}.`};
-  return{status:'MATCH',reason:'La pareja coincide con la carrera activa.'};
+  const matchDate=String(match.raceContext.raceDate||'').trim();
+  const activeDate=String(activeRace.date||'').trim();
+  if(!matchDate||!activeDate)return{status:'AMBIGUOUS',reason:'La pareja no tiene una fecha de carrera verificable contra la carrera activa.'};
+  if(matchDate!==activeDate)return{status:'MISMATCH',reason:`La pareja corresponde al ${matchDate} y la carrera activa corresponde al ${activeDate}.`};
+  return{status:'MATCH',reason:'La pareja coincide con fecha, hipódromo y carrera activa.'};
 }
 
-export const __test__={canonicalTrack,sameTrack,validRaceNumber,nearestOpening,sameRaceContext};
+export const __test__={canonicalTrack,sameTrack,validRaceNumber,trustedMessageRaceDate,nearestOpening,sameRaceContext};

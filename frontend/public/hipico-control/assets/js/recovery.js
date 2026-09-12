@@ -22,7 +22,7 @@
       }
     } catch (_) {}
     try {
-      const request = indexedDB.deleteDatabase('hipico-control');
+      const request = indexedDB.deleteDatabase("hipico-control");
       let done = false;
       const finish = (message) => {
         if (done) return;
