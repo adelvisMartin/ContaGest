@@ -47,7 +47,11 @@
         setTimeout(openApp, 350);
       };
       request.onerror = () => failClosed('No se pudo restablecer el almacenamiento local. Reintenta la recuperación.');
-      request.onblocked = () => failClosed('La eliminación está bloqueada porque otra pestaña o ventana mantiene Control Hípico abierto. Ciérrala y reintenta.');
+      request.onblocked = () => {
+        if (settled) return;
+        reset.disabled = true;
+        status.textContent = 'La eliminación está bloqueada porque otra pestaña o ventana mantiene Control Hípico abierto. Ciérrala; la recuperación continuará automáticamente cuando se libere el almacenamiento.';
+      };
     } catch (_) {
       reset.disabled = false;
       status.textContent = 'No se pudo iniciar el restablecimiento local. Reintenta la recuperación.';
