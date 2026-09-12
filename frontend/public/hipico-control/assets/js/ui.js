@@ -66,6 +66,7 @@ export function statusBadge(status) {
 const TOAST_LABELS = Object.freeze({ success: 'Listo', error: 'No se pudo completar', warning: 'Atención', info: 'Información' });
 
 export function toast(message, type = 'success', options = {}) {
+  if (typeof document === 'undefined' || typeof window === 'undefined') return null;
   const region = document.querySelector('#toast-region');
   if (!region) return null;
   const normalizedType = ['success', 'error', 'warning', 'info'].includes(type) ? type : 'info';
@@ -92,7 +93,7 @@ function focusableNodes(dialog) {
 function activateDialog(dialog) {
   if (!dialog || dialog === activeDialog) return;
   activeDialog = dialog;
-  returnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+  returnFocus = typeof HTMLElement !== 'undefined' && document.activeElement instanceof HTMLElement ? document.activeElement : null;
   const nodes = focusableNodes(dialog);
   requestAnimationFrame(() => (nodes[0] || dialog).focus?.());
 }
@@ -102,9 +103,10 @@ function deactivateDialog() {
   returnFocus = null;
   requestAnimationFrame(() => target?.isConnected && target.focus());
 }
-function enhanceDialogs(root = document) {
+function enhanceDialogs(root = typeof document !== 'undefined' ? document : null) {
+  if (!root) return;
   root.querySelectorAll?.('[data-modal-dialog], [role="dialog"][aria-modal="true"]').forEach((dialog) => {
-    if (!(dialog instanceof HTMLElement)) return;
+    if (typeof HTMLElement === 'undefined' || !(dialog instanceof HTMLElement)) return;
     if (!dialog.hasAttribute('tabindex')) dialog.tabIndex = -1;
     if (!dialog.dataset.uiDialogEnhanced) {
       dialog.dataset.uiDialogEnhanced = 'true';
@@ -121,11 +123,16 @@ function enhanceDialogs(root = document) {
   });
   if (activeDialog && !activeDialog.isConnected) deactivateDialog();
 }
-const dialogObserver = new MutationObserver(() => enhanceDialogs());
-if (document.documentElement) dialogObserver.observe(document.documentElement, { childList: true, subtree: true });
-window.addEventListener('DOMContentLoaded', () => enhanceDialogs());
-document.addEventListener('keydown', (event) => {
-  if (event.key !== 'Escape' || !activeDialog) return;
-  const close = activeDialog.querySelector('[data-action="close-modal"], [data-help-close]');
-  if (close instanceof HTMLElement) { event.preventDefault(); close.click(); }
-});
+
+if (typeof document !== 'undefined' && typeof window !== 'undefined') {
+  if (typeof MutationObserver !== 'undefined' && document.documentElement) {
+    const dialogObserver = new MutationObserver(() => enhanceDialogs());
+    dialogObserver.observe(document.documentElement, { childList: true, subtree: true });
+  }
+  window.addEventListener('DOMContentLoaded', () => enhanceDialogs());
+  document.addEventListener('keydown', (event) => {
+    if (event.key !== 'Escape' || !activeDialog) return;
+    const close = activeDialog.querySelector('[data-action="close-modal"], [data-help-close]');
+    if (typeof HTMLElement !== 'undefined' && close instanceof HTMLElement) { event.preventDefault(); close.click(); }
+  });
+}
