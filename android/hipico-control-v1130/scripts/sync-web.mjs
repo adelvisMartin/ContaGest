@@ -71,7 +71,7 @@ function verifyRuntime(root, label) {
   return filesUnder(root);
 }
 function verifyParity(sourceFiles, targetFiles) {
-  if (JSON.stringify(sourceFiles) !== JSON.stringify(targetFiles)) throw new Error('La lista de archivos Android no coincide con la PWA canónica. Ejecuta npm run sync:web en un wrapper limpio.');
+  if (JSON.stringify(sourceFiles) !== JSON.stringify(targetFiles)) throw new Error('La lista de archivos Android no coincide con la PWA canónica. Ejecuta npm run sync:web.');
   for (const relative of sourceFiles) {
     const sourceHash = sha256(path.join(source, relative));
     const targetHash = sha256(path.join(target, relative));
@@ -83,7 +83,7 @@ if (!fs.existsSync(source)) throw new Error(`No existe la PWA canónica: ${sourc
 const sourceFiles = verifyRuntime(source, 'PWA');
 if (!checkOnly) {
   assertInside(target, wrapper, 'www');
-  fs.mkdirSync(target, { recursive: true });
+  fs.rmSync(target, { recursive: true, force: true });
   fs.cpSync(source, target, { recursive: true, force: true });
 }
 if (!fs.existsSync(target)) throw new Error('No existe www. Ejecuta npm run sync:web antes de verificar.');
