@@ -2,7 +2,7 @@ import crypto from 'node:crypto';
 import { prisma } from '../../database/prisma.js';
 import { classify as classifyOperational } from './hipico-operational-classifier.js';
 import type { IntentResult as OperationalIntentResult } from './hipico-operational-classifier.js';
-import { assertCloudOutboundAllowed, assertCloudTransportConfigured, cloudOutboundPolicy, cloudTransportConfiguration } from './hipico-outbound-policy.js';
+import { assertCloudOutboundAllowed, assertCloudTransportConfigured, cloudHttpDeliveryAmbiguous, cloudOutboundPolicy, cloudTransportConfiguration } from './hipico-outbound-policy.js';
 import { operatorTokenValid as canonicalOperatorTokenValid } from './hipico-operator-security.js';
 import { replayMismatchError, sameWebhookReplay } from './hipico-webhook-replay.js';
 import { webhookSignatureValid } from './hipico-webhook-security.js';
@@ -220,7 +220,14 @@ export async function sendCloudText(recipient:string,message:string){
     });
   }
   const data=await response.json().catch(()=>({}));
-  if(!response.ok)throw Object.assign(new Error(`Meta Graph HTTP ${response.status}`),{code:'HIPICO_CLOUD_HTTP_ERROR',status:response.status});
+  if(!response.ok){
+    if(cloudHttpDeliveryAmbiguous(response.status)){
+      throw Object.assign(new Error(`Meta Graph HTTP ${response.status}; entrega ambigua, requiere conciliación manual.`),{
+        code:'HIPICO_CLOUD_DELIVERY_AMBIGUOUS',responseStatus:response.status,receiptReason:'AMBIGUOUS_HTTP_STATUS'
+      });
+    }
+    throw Object.assign(new Error(`Meta Graph HTTP ${response.status}`),{code:'HIPICO_CLOUD_HTTP_ERROR',status:response.status});
+  }
   const providerMessageId=String(data?.messages?.[0]?.id||'');
   if(!providerMessageId){
     throw Object.assign(new Error('Meta respondió éxito sin identificador de mensaje; requiere conciliación manual.'),{
