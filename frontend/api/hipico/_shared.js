@@ -16,7 +16,7 @@ export function env(name, required = true) {
 
 export function strongSecretConfigured(value, minLength = MIN_HIPICO_INTERNAL_SECRET_LENGTH) {
   const minimum = Number.isInteger(minLength) && minLength > 0 ? minLength : MIN_HIPICO_INTERNAL_SECRET_LENGTH;
-  const secret=String(value || '').trim();
+  const secret = String(value || '').trim();
   return Buffer.byteLength(secret, 'utf8') >= minimum && !PUBLIC_SECRET_PLACEHOLDER_PATTERN.test(secret);
 }
 
@@ -31,11 +31,11 @@ export function isUuid(value) {
 }
 
 function validPersistenceUrl(value) {
-  const raw=String(value || '').trim();
+  const raw = String(value || '').trim();
   if (!raw) return false;
   try {
-    const parsed=new URL(raw);
-    const loopback=['localhost','127.0.0.1','::1'].includes(parsed.hostname);
+    const parsed = new URL(raw);
+    const loopback = ['localhost', '127.0.0.1', '::1'].includes(parsed.hostname);
     if (parsed.username || parsed.password || parsed.hash || parsed.search) return false;
     return parsed.protocol === 'https:' || (parsed.protocol === 'http:' && loopback);
   } catch {
@@ -44,19 +44,12 @@ function validPersistenceUrl(value) {
 }
 
 export function hipicoPersistenceConfig(source = process.env) {
-  const url=String(source.HIPICO_SUPABASE_URL || '').trim().replace(/\/$/, '');
-  const ownerId=String(source.HIPICO_OWNER_ID || '').trim();
-  const urlValid=validPersistenceUrl(url);
-  const serviceRoleStrong=strongSecretConfigured(source.HIPICO_SUPABASE_SERVICE_ROLE_KEY);
-  const ownerIdValid=isUuid(ownerId);
-  return {
-    url,
-    ownerId,
-    urlValid,
-    serviceRoleStrong,
-    ownerIdValid,
-    ready:urlValid && serviceRoleStrong && ownerIdValid
-  };
+  const url = String(source.HIPICO_SUPABASE_URL || '').trim().replace(/\/$/, '');
+  const ownerId = String(source.HIPICO_OWNER_ID || '').trim();
+  const urlValid = validPersistenceUrl(url);
+  const serviceRoleStrong = strongSecretConfigured(source.HIPICO_SUPABASE_SERVICE_ROLE_KEY);
+  const ownerIdValid = isUuid(ownerId);
+  return { url, ownerId, urlValid, serviceRoleStrong, ownerIdValid, ready: urlValid && serviceRoleStrong && ownerIdValid };
 }
 
 export function safeEqual(left, right) {
@@ -80,10 +73,7 @@ function normalizedE164(value) {
 }
 
 function metaAllowedDestinations(source = process.env) {
-  return new Set(String(source.HIPICO_META_ALLOWED_DESTINATIONS || '')
-    .split(',')
-    .map(normalizedE164)
-    .filter(Boolean));
+  return new Set(String(source.HIPICO_META_ALLOWED_DESTINATIONS || '').split(',').map(normalizedE164).filter(Boolean));
 }
 
 export function metaOutboundPolicy(source = process.env) {
@@ -128,9 +118,7 @@ export function sha256(value) {
 
 export function safeTimeoutMs(value, fallback = DEFAULT_FETCH_TIMEOUT_MS) {
   const fallbackValue = Number(fallback);
-  const safeFallback = Number.isFinite(fallbackValue) && fallbackValue > 0
-    ? Math.min(Math.floor(fallbackValue), MAX_FETCH_TIMEOUT_MS)
-    : DEFAULT_FETCH_TIMEOUT_MS;
+  const safeFallback = Number.isFinite(fallbackValue) && fallbackValue > 0 ? Math.min(Math.floor(fallbackValue), MAX_FETCH_TIMEOUT_MS) : DEFAULT_FETCH_TIMEOUT_MS;
   const number = Number(value);
   if (!Number.isFinite(number) || number <= 0) return safeFallback;
   return Math.min(Math.floor(number), MAX_FETCH_TIMEOUT_MS);
@@ -169,7 +157,7 @@ export async function fetchWithTimeout(url, init = {}, timeoutMs = DEFAULT_FETCH
 }
 
 export async function supabase(path, init = {}) {
-  const runtime=hipicoPersistenceConfig();
+  const runtime = hipicoPersistenceConfig();
   if (!runtime.urlValid) throw new Error('Invalid server configuration: HIPICO_SUPABASE_URL');
   if (!runtime.serviceRoleStrong) throw new Error('Weak server configuration: HIPICO_SUPABASE_SERVICE_ROLE_KEY');
   if (!runtime.ownerIdValid) throw new Error('Invalid server configuration: HIPICO_OWNER_ID');
@@ -177,12 +165,7 @@ export async function supabase(path, init = {}) {
   const serviceKey = serverSecret('HIPICO_SUPABASE_SERVICE_ROLE_KEY');
   const response = await fetchWithTimeout(`${base}/rest/v1/${path}`, {
     ...init,
-    headers: {
-      apikey: serviceKey,
-      Authorization: `Bearer ${serviceKey}`,
-      'Content-Type': 'application/json',
-      ...(init.headers || {})
-    }
+    headers: { apikey: serviceKey, Authorization: `Bearer ${serviceKey}`, 'Content-Type': 'application/json', ...(init.headers || {}) }
   }, safeTimeoutMs(process.env.HIPICO_SUPABASE_TIMEOUT_MS));
   const text = await response.text();
   if (!response.ok) {
@@ -211,43 +194,9 @@ export function extractMetaMessages(payload) {
       const contactNames = new Map((value?.contacts || []).map((c) => [String(c.wa_id || ''), String(c?.profile?.name || '')]));
       for (const message of value?.messages || []) {
         const text = message?.text?.body || message?.button?.text || message?.interactive?.button_reply?.title || message?.interactive?.list_reply?.title || '';
-        rows.push({
-          channelKey,
-          externalMessageId: String(message?.id || ''),
-          senderId: String(message?.from || ''),
-          senderLabel: contactNames.get(String(message?.from || '')) || '',
-          timestamp: metaTimestamp(message?.timestamp),
-          type: String(message?.type || 'unknown').trim().toLowerCase() || 'unknown',
-          text: String(text || ''),
-          quotedExternalMessageId: message?.context?.id ? String(message.context.id) : null,
-          raw: message
-        });
+        rows.push({ channelKey, externalMessageId: String(message?.id || ''), senderId: String(message?.from || ''), senderLabel: contactNames.get(String(message?.from || '')) || '', timestamp: metaTimestamp(message?.timestamp), type: String(message?.type || 'unknown').trim().toLowerCase() || 'unknown', text: String(text || ''), quotedExternalMessageId: message?.context?.id ? String(message.context.id) : null, raw: message });
       }
     }
   }
   return rows;
-}
-
-export function classifyText(text) {
-  const value = String(text || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().replace(/\s+/g, ' ').trim();
-  if (/NO MAS JUGAD|CARRERA CERRADA|CERRADO CERRADO/.test(value)) return ['race_close', 0.99];
-  if (/ESTO ES TODO POR EL DIA DE HOY|CIERRE DE JORNADA/.test(value)) return ['day_close', 0.99];
-  if (/\bLLEGADA\b|\bPIZARRA\s*:/.test(value)) return ['result', 0.97];
-  if (/\bTERCIOS\b/.test(value) && /\bJUEGA\b/.test(value) && /\bCONSIGUE\b/.test(value) && /BS\.?\s*[+-]/.test(value)) return ['settlement_snapshot', 0.99];
-  if (/\bTERCIO\s+DISPONIBLE\b/.test(value)) return ['balance_snapshot', 0.99];
-  if (/\bTERCIOS\b/.test(value) && /\bJUEGA\b/.test(value)) return ['plan_snapshot', 0.98];
-  if (/^(JUEGO|JUEGA|CONSIGO|CONSIGUE)\b/.test(value)) return ['offer', 0.90];
-  if (/^(J|JUGANDO|SF|S\s*\/\s*F|SE FUE|DEBE CONFIRMAR|\d+(?:[.,]\d+)?\s*(K|MIL)?)$/.test(value)) return ['reply_review', 0.65];
-  return ['other', 0.20];
-}
-
-export function adapterCaptureDecision(text) {
-  const [hintClassification, hintConfidence] = classifyText(text);
-  return {
-    storedClassification: 'unclassified',
-    storedConfidence: 0,
-    processingStatus: 'review',
-    domainAuthority: 'backend_canonical_only',
-    adapterHint: { classification: hintClassification, confidence: hintConfidence }
-  };
 }
