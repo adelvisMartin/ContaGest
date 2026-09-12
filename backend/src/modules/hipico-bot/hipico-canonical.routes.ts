@@ -41,7 +41,7 @@ const previewSchema = z.object({
   mediaKind: mediaKindSchema.default('none'),
   quoteDepth: z.number().int().min(0).max(20).default(0),
   participantId: z.string().trim().min(1).max(220).default('operator-preview'),
-  raceDate: z.string().trim().length(10).optional()
+  raceDate: z.string().trim().regex(/^\d{4}-\d{2}-\d{2}$/).optional()
 }).strict();
 
 const domainReadSchema = z.object({
