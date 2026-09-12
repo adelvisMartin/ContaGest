@@ -14,8 +14,13 @@ test('CSV entrecomillado admite comas sin romper columnas',()=>{
   assert.equal(result.lines[0].memo,'Pago, cliente uno');
 });
 
-test('CSV formula injection falla seguro',()=>{
+test('CSV formula injection falla seguro en campos conocidos',()=>{
   assert.throws(()=>parse('estado.csv','date,amount,reference,memo\n2026-09-01,100.00,=HYPERLINK("x"),Pago\n'),(error:any)=>error?.details?.code==='BANK_STATEMENT_FORMULA_CELL'||error?.code==='BANK_STATEMENT_FORMULA_CELL'||/potencialmente ejecutable/i.test(error?.message));
+  assert.throws(()=>parse('estado.csv','date,amount,reference,memo\n2026-09-01,100.00,REF-1,-1+2\n'),(error:any)=>error?.details?.code==='BANK_STATEMENT_FORMULA_CELL'||/potencialmente ejecutable/i.test(error?.message));
+});
+
+test('CSV formula injection falla seguro también en columnas raw no mapeadas',()=>{
+  assert.throws(()=>parse('estado.csv','date,amount,reference,extra\n2026-09-01,100.00,REF-1,@SUM(A1:A2)\n'),(error:any)=>error?.details?.code==='BANK_STATEMENT_FORMULA_CELL'||/potencialmente ejecutable/i.test(error?.message));
 });
 
 test('CSV corrupto con comillas abiertas falla seguro',()=>{
