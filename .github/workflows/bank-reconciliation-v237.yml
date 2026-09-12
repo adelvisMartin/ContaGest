@@ -12,6 +12,7 @@ on:
       - 'backend/prisma/migrations/20260912150600_bank_reconciliation_pending_status/**'
       - 'backend/prisma/migrations/20260912150700_bank_statement_immutability/**'
       - 'backend/prisma/migrations/20260912150800_bank_reconciliation_hardening/**'
+      - 'backend/prisma/migrations/20260912150900_bank_reconciliation_model_versioning/**'
       - 'frontend/src/pages/BankingPage.js'
       - 'frontend/src/services/bankReconciliationService.js'
       - 'qa/bank-reconciliation-v237*'
@@ -74,6 +75,8 @@ jobs:
         run: npm --workspace backend exec -- tsx --test ../qa/bank-reconciliation-v237.integration.test.ts
       - name: PostgreSQL retry target-race dedupe and RLS hardening
         run: npm --workspace backend exec -- tsx --test ../qa/bank-reconciliation-v237.hardening.integration.test.ts
+      - name: PostgreSQL recurring models versioning and suggestion acceptance
+        run: npm --workspace backend exec -- tsx --test ../qa/bank-reconciliation-v237.models.integration.test.ts
       - name: PostgreSQL fee write-off approval and reversal acceptance
         run: npm --workspace backend exec -- tsx --test ../qa/bank-reconciliation-v237.writeoff.integration.test.ts
       - name: Install Chromium for PR UI gate
