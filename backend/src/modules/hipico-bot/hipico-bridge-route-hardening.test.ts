@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs';
 import { __test__ as transportTest } from './hipico-bridge-transport.store.js';
 
 const routes=readFileSync(new URL('./hipico-bridge.routes.ts',import.meta.url),'utf8');
+const transportStore=readFileSync(new URL('./hipico-bridge-transport.store.ts',import.meta.url),'utf8');
 
 const identityEnv={
   HIPICO_SOURCE_GROUP_ID:'120363111111111111@g.us',
@@ -37,6 +38,15 @@ test('effective media kind propagates through transport, canonical storage and c
   assert.match(eventRoute,/hasMedia:effectiveMediaKind!=='none',mediaKind:effectiveMediaKind/);
   assert.match(eventRoute,/persistCanonicalShadow\([\s\S]*mediaKind:effectiveMediaKind/);
   assert.match(eventRoute,/decideConversation\([\s\S]*mediaKind:effectiveMediaKind/);
+});
+
+test('transport duplicate replay reloads persisted payload metadata before comparing identity',()=>{
+  const duplicateSelectStart=transportStore.indexOf('const existing=await prisma.$queryRaw<PersistedTransportSource[]>');
+  const duplicateSelectEnd=transportStore.indexOf('if(!existing[0]?.id)',duplicateSelectStart);
+  assert.ok(duplicateSelectStart>=0&&duplicateSelectEnd>duplicateSelectStart,'transport duplicate select must be present');
+  const duplicateSelect=transportStore.slice(duplicateSelectStart,duplicateSelectEnd);
+  assert.match(duplicateSelect,/"payload"/,'duplicate replay must reload payload metadata used by transportReplaySignature');
+  assert.match(transportStore,/type PersistedTransportSource=\{[\s\S]*payload:/,'persisted replay type must retain payload metadata');
 });
 
 test('transport persistence requires pinned modern or legacy SOURCE/LAB IDs before any write',()=>{
