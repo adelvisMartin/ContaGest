@@ -49,7 +49,7 @@ export const corsPolicy = cors({
     return callback(new HttpError(403, `Origen CORS no permitido: ${origin}`));
   },
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'x-request-id', 'x-admin-register-key', 'x-csrf-token', 'Idempotency-Key'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'x-request-id', 'x-admin-register-key', 'x-csrf-token', 'Idempotency-Key', 'x-hipico-operator-token'],
   exposedHeaders: ['x-request-id', 'Idempotency-Replayed'],
   maxAge: 600
 });
