@@ -3,8 +3,7 @@ import { bridgeIdentityStatus } from './bridge-identity.js';
 import { proxyCanonicalRequest } from './canonical-backend.js';
 
 const MAX_BACKEND_JSON_BYTES = 256 * 1024;
-const OUTBOX_SAMPLE_LIMIT = 100;
-const SHADOW_SAMPLE_LIMIT = 100;
+const GROUP_KEY_RE = /^[A-Za-z0-9._:-]{1,120}$/;
 
 export function commandCenterReadModelEnabled(source = process.env) {
   return String(source.HIPICO_COMMAND_CENTER_ENABLED || '').trim().toLowerCase() === 'true';
@@ -29,6 +28,11 @@ function bridgeReadiness(source = process.env) {
   };
 }
 
+function validatedGroupKey(value) {
+  const key = String(Array.isArray(value) ? value[0] : value || '').trim();
+  return GROUP_KEY_RE.test(key) ? key : '';
+}
+
 async function readBoundedJson(response) {
   const declared = Number(response.headers?.get?.('content-length'));
   if (Number.isFinite(declared) && declared > MAX_BACKEND_JSON_BYTES) throw new Error('HIPICO_COMMAND_CENTER_RESPONSE_TOO_LARGE');
@@ -37,22 +41,31 @@ async function readBoundedJson(response) {
   return JSON.parse(bytes.toString('utf8'));
 }
 
-async function backendJson(path, operatorToken, source = process.env) {
+async function backendJson(path, operatorToken, groupKey, source = process.env) {
   try {
     const response = await proxyCanonicalRequest({
       path,
       method: 'GET',
-      headers: { 'x-hipico-operator-token': operatorToken, accept: 'application/json' },
+      headers: {
+        'x-hipico-operator-token': operatorToken,
+        'x-hipico-group-key': groupKey,
+        accept: 'application/json'
+      },
       source
     });
-    if (!response.ok) return { ok: false, httpStatus: response.status, data: null };
     const payload = await readBoundedJson(response);
-    return { ok: payload?.ok !== false, httpStatus: response.status, data: payload?.data ?? null };
-  } catch {
-    return { ok: false, httpStatus: null, data: null };
+    if (!response.ok || payload?.ok !== true) {
+      return { ok: false, httpStatus: response.status, data: null, error: String(payload?.code || payload?.error || `HTTP_${response.status}`).slice(0, 120) };
+    }
+    return { ok: true, httpStatus: response.status, data: payload?.data ?? null, error: '' };
+  } catch (error) {
+    return { ok: false, httpStatus: null, data: null, error: String(error?.message || 'HIPICO_COMMAND_CENTER_BACKEND_UNAVAILABLE').slice(0, 120) };
   }
 }
 
+// Kept as a pure compatibility projection for existing offline/unit fixtures.
+// Production requests below no longer reconstruct backend truth from multiple
+// hipico-bot endpoints; the canonical backend read model is authoritative.
 function outboxProjection(result) {
   const rows = result?.ok && Array.isArray(result.data) ? result.data : [];
   const statuses = Object.create(null);
@@ -132,14 +145,28 @@ export default async function handler(req, res) {
   }
   const token = configuredOperatorToken();
   if (!token) return res.status(503).json({ ok: false, retryable: false, error: 'operator_read_model_not_configured' });
+  const groupKey = validatedGroupKey(req.query?.groupKey);
+  if (!groupKey) return res.status(400).json({ ok: false, retryable: false, error: 'group_key_invalid' });
 
-  const [backendStatus, outbox, shadow] = await Promise.all([
-    backendJson('/api/v1/hipico-bot/status', token),
-    backendJson(`/api/v1/hipico-bot/outbox?limit=${OUTBOX_SAMPLE_LIMIT}`, token),
-    backendJson(`/api/v1/hipico-bot/shadow-projection?limit=${SHADOW_SAMPLE_LIMIT}`, token)
-  ]);
-  const data = projectCommandCenter({ backendStatus, outbox, shadow, bridge: bridgeReadiness() });
-  return res.status(200).json({ ok: true, data });
+  const result = await backendJson('/api/v1/hipico/command-center', token, groupKey);
+  if (!result.ok || !result.data) {
+    return res.status(result.httpStatus && result.httpStatus >= 400 ? result.httpStatus : 502).json({
+      ok: false,
+      retryable: true,
+      error: result.error || 'command_center_backend_unavailable'
+    });
+  }
+  return res.status(200).json({ ok: true, data: result.data });
 }
 
-export const __test__ = { commandCenterReadModelEnabled, configuredOperatorToken, bridgeReadiness, outboxProjection, shadowProjection, providerProjection, readBoundedJson, backendJson };
+export const __test__ = {
+  commandCenterReadModelEnabled,
+  configuredOperatorToken,
+  bridgeReadiness,
+  validatedGroupKey,
+  outboxProjection,
+  shadowProjection,
+  providerProjection,
+  readBoundedJson,
+  backendJson
+};
