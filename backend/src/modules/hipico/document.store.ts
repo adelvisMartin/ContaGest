@@ -1,6 +1,7 @@
 import crypto from 'node:crypto';
 import { prisma } from '../../database/prisma.js';
 import type { DocumentAuthority, DocumentClassification, DocumentStore, DocumentStoreInput } from './document-engine.js';
+import { documentStatusApprovable } from './document-policy.js';
 
 const ID_RE=/^[0-9a-f-]{36}$/i;const GROUP_KEY_RE=/^[A-Za-z0-9._:-]{3,120}$/;
 function assertScope(ownerId:string,groupKey:string){if(!ID_RE.test(ownerId))throw Object.assign(new Error('HIPICO_DOCUMENT_OWNER_INVALID'),{code:'HIPICO_DOCUMENT_OWNER_INVALID'});if(!GROUP_KEY_RE.test(groupKey))throw Object.assign(new Error('HIPICO_DOCUMENT_GROUP_INVALID'),{code:'HIPICO_DOCUMENT_GROUP_INVALID'});}
@@ -70,11 +71,14 @@ export class PostgresDocumentStore implements DocumentStore {
   async sources(ownerId:string,groupKey:string,id:string){assertScope(ownerId,groupKey);return prisma.$queryRaw`SELECT source_channel AS "sourceChannel",source_message_id AS "sourceMessageId",sender,received_at AS "receivedAt",authority FROM public.hipico_document_sources WHERE document_id=${id}::uuid AND owner_id=${ownerId}::uuid AND group_key=${groupKey} ORDER BY received_at ASC,id ASC`;}
   async events(ownerId:string,groupKey:string,id:string){assertScope(ownerId,groupKey);return prisma.$queryRaw`SELECT id::text,event_type AS "eventType",classification,confidence,parser_version AS "parserVersion",status,extraction,actor_id AS "actorId",created_at AS "createdAt" FROM public.hipico_document_events WHERE document_id=${id}::uuid AND owner_id=${ownerId}::uuid AND group_key=${groupKey} ORDER BY created_at ASC,id ASC`;}
   async approve(ownerId:string,groupKey:string,id:string,classification:DocumentClassification,operatorId:string){
-    assertScope(ownerId,groupKey);return prisma.$transaction(async(tx)=>{
+    assertScope(ownerId,groupKey);const actor=String(operatorId||'').trim();if(!actor||actor.length>220)throw Object.assign(new Error('HIPICO_DOCUMENT_OPERATOR_INVALID'),{code:'HIPICO_DOCUMENT_OPERATOR_INVALID'});
+    return prisma.$transaction(async(tx)=>{
       const rows=await tx.$queryRaw<Array<{authority:DocumentAuthority;status:string;confidence:number;parserVersion:string|null;extraction:Record<string,unknown>}>>`SELECT authority,status,confidence,parser_version AS "parserVersion",extraction FROM public.hipico_documents WHERE id=${id}::uuid AND owner_id=${ownerId}::uuid AND group_key=${groupKey} LIMIT 1 FOR UPDATE`;
-      if(!rows[0])throw Object.assign(new Error('HIPICO_DOCUMENT_NOT_FOUND'),{code:'HIPICO_DOCUMENT_NOT_FOUND'});if(classification==='OFFICIAL_RESULT'&&rows[0].authority!=='official')throw Object.assign(new Error('HIPICO_DOCUMENT_OFFICIAL_AUTHORITY_REQUIRED'),{code:'HIPICO_DOCUMENT_OFFICIAL_AUTHORITY_REQUIRED'});
-      await tx.$executeRaw`UPDATE public.hipico_documents SET classification=${classification},status='approved',approved_at=now(),approved_by=${operatorId},updated_at=now() WHERE id=${id}::uuid AND owner_id=${ownerId}::uuid AND group_key=${groupKey}`;
-      await tx.$executeRaw`INSERT INTO public.hipico_document_events(id,document_id,owner_id,group_key,event_type,classification,confidence,parser_version,status,extraction,actor_id) VALUES(${crypto.randomUUID()}::uuid,${id}::uuid,${ownerId}::uuid,${groupKey},'APPROVED',${classification},${Number(rows[0].confidence||0)},${rows[0].parserVersion},'approved',${JSON.stringify(rows[0].extraction||{})}::jsonb,${operatorId})`;
+      if(!rows[0])throw Object.assign(new Error('HIPICO_DOCUMENT_NOT_FOUND'),{code:'HIPICO_DOCUMENT_NOT_FOUND'});
+      if(!documentStatusApprovable(rows[0].status))throw Object.assign(new Error('HIPICO_DOCUMENT_STATUS_NOT_APPROVABLE'),{code:'HIPICO_DOCUMENT_STATUS_NOT_APPROVABLE'});
+      if(classification==='OFFICIAL_RESULT'&&rows[0].authority!=='official')throw Object.assign(new Error('HIPICO_DOCUMENT_OFFICIAL_AUTHORITY_REQUIRED'),{code:'HIPICO_DOCUMENT_OFFICIAL_AUTHORITY_REQUIRED'});
+      await tx.$executeRaw`UPDATE public.hipico_documents SET classification=${classification},status='approved',approved_at=now(),approved_by=${actor},updated_at=now() WHERE id=${id}::uuid AND owner_id=${ownerId}::uuid AND group_key=${groupKey}`;
+      await tx.$executeRaw`INSERT INTO public.hipico_document_events(id,document_id,owner_id,group_key,event_type,classification,confidence,parser_version,status,extraction,actor_id) VALUES(${crypto.randomUUID()}::uuid,${id}::uuid,${ownerId}::uuid,${groupKey},'APPROVED',${classification},${Number(rows[0].confidence||0)},${rows[0].parserVersion},'approved',${JSON.stringify(rows[0].extraction||{})}::jsonb,${actor})`;
       return{ok:true};
     });
   }
