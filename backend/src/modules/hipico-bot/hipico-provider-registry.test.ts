@@ -147,6 +147,41 @@ test('expired fallback is never served after its bounded stale window', async ()
   );
 });
 
+test('stale fallback expiration is evaluated when a failed request completes, not when it starts', async () => {
+  let clock = Date.parse('2026-09-12T15:00:00.000Z');
+  let calls = 0;
+  const registry = createHipicoProviderRegistry({
+    env: { HIPICO_RACE_PROVIDER: 'sportradar-uof', HIPICO_RACE_PROVIDER_STALE_TTL_MS: '1000' },
+    now: () => clock,
+    createDefaultTransport: () => ({
+      status: () => baseStatus,
+      getStageSummary: async () => {
+        calls += 1;
+        if (calls === 1) {
+          return {
+            provider: 'sportradar-uof' as const,
+            stageId: '697758',
+            fetchedAt: new Date(clock).toISOString(),
+            contentType: 'application/xml',
+            xml: '<sport_event_status status="closed"/>',
+            cached: false
+          };
+        }
+        clock += 200;
+        throw new HorseRaceProviderError('fixture slow failure', 'UPSTREAM_ERROR', true);
+      }
+    })
+  });
+
+  await registry.getLiveStage('697758');
+  clock += 900;
+  await assert.rejects(
+    registry.getLiveStage('697758'),
+    (error: unknown) => error instanceof HorseRaceProviderError && error.code === 'UPSTREAM_ERROR'
+  );
+  assert.equal(calls,2);
+});
+
 test('canonical provider API is mounted under /api/v1/hipico and legacy operator path cannot expose transport XML', () => {
   const app = fs.readFileSync('src/app.ts', 'utf8');
   const routes = fs.readFileSync('src/modules/hipico-bot/hipico-provider.routes.ts', 'utf8');
