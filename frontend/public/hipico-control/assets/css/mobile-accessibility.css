@@ -1,8 +1,9 @@
 /* Mobile accessibility invariants for Control Hípico.
  * Kept separate from visual styling so compact desktop density can remain intact
- * while touch devices preserve the 44px critical-control contract from #277.
+ * while touch-oriented/mobile layouts preserve the 44px critical-control contract
+ * from #277, including landscape phones up to 844px wide.
  */
-@media (max-width: 780px) {
+@media (max-width: 900px), (pointer: coarse) {
   .input,
   .select,
   .date-button,
@@ -34,5 +35,17 @@
   .mobile-nav button,
   [role="button"] {
     touch-action: manipulation;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html:focus-within { scroll-behavior: auto; }
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
   }
 }
