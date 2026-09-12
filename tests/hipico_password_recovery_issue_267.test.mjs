@@ -37,6 +37,19 @@ test('#267 consumes recovery token in memory, clears URL and updates auth user o
   assert.doesNotMatch(source, /hipico_profiles|auth\.users|encrypted_password/);
 });
 
+test('#267 forces a fresh sign-in by clearing the cached cloud session before changing the credential', async () => {
+  const [recovery, supabase] = await Promise.all([
+    fs.readFile(recoveryPath, 'utf8'),
+    fs.readFile('frontend/public/hipico-control/assets/js/supabase.js', 'utf8')
+  ]);
+  assert.match(recovery, /import \{ signOut \} from '\.\/supabase\.js';/);
+  const signOutIndex = recovery.indexOf('await signOut();');
+  const passwordUpdateIndex = recovery.indexOf('/auth/v1/user');
+  assert.ok(signOutIndex >= 0, 'recovery must clear the regular PWA session');
+  assert.ok(passwordUpdateIndex > signOutIndex, 'regular session must be cleared before password update');
+  assert.match(supabase, /export async function signOut\(\)[\s\S]*?await persistSession\(null\);/);
+});
+
 test('#267 validates password/confirmation and avoids account enumeration copy', async () => {
   const source = await fs.readFile(recoveryPath, 'utf8');
   assert.match(source, /nextPassword\.length < 10/);
