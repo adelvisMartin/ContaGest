@@ -1,5 +1,5 @@
 import { bearerTokenValid, env, fetchWithTimeout, isE164, metaDestinationAllowed, metaOutboundPolicy, retryAfterMs, serverSecret, supabase } from './_shared.js';
-import { metaSenderConfig } from './meta-runtime.js';
+import { DEFAULT_META_GRAPH_VERSION, metaGraphVersionConfig, metaSenderConfig } from './meta-runtime.js';
 
 const MAX_ATTEMPTS = 6;
 const BATCH_SIZE = 10;
@@ -41,7 +41,7 @@ async function claimRow(row) {
 
 async function quarantineExpiredSendingClaims(nowIso = new Date().toISOString()) {
   const ownerId = env('HIPICO_OWNER_ID');
-    const staleItems = await supabase(
+  const staleItems = await supabase(
     `hipico_outbox?owner_id=eq.${encodeURIComponent(ownerId)}&status=eq.sending&next_attempt_at=lte.${encodeURIComponent(nowIso)}&order=next_attempt_at.asc&limit=${STALE_CLAIM_SCAN_LIMIT}`,
     { headers: { Prefer: 'return=representation' } }
   ) || [];
@@ -77,9 +77,9 @@ async function updateRow(id, patch) {
   return updated;
 }
 
-function safeGraphVersion() {
-  const configured = String(process.env.HIPICO_META_GRAPH_VERSION || 'v23.0').trim();
-  return /^v\d+\.\d+$/.test(configured) ? configured : 'v23.0';
+function safeGraphVersion(source = process.env) {
+  const config = metaGraphVersionConfig(source);
+  return config.graphVersionValid ? config.graphVersion : DEFAULT_META_GRAPH_VERSION;
 }
 
 export default async function handler(req, res) {
@@ -104,6 +104,7 @@ export default async function handler(req, res) {
     return res.status(503).json({ok:false,retryable:true,error:'sender_not_configured'});
   }
   const {accessToken,phoneNumberId}=senderConfig;
+  const graphVersion=senderConfig.graphVersion;
 
   try {
     const ownerId = env('HIPICO_OWNER_ID');
@@ -114,7 +115,6 @@ export default async function handler(req, res) {
     }) || [];
     if (!rows.length) return res.status(200).json({ ok: true, processed: 0, sent: 0, failed: 0, retried: 0, reconciliationRequired: 0, staleSendingQuarantined, skippedClaims: 0 });
 
-    const graphVersion = safeGraphVersion();
     let sent = 0;
     let failed = 0;
     let retried = 0;
