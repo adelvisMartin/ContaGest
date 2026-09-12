@@ -26,8 +26,13 @@ test('identity switch archives old primary state and clears private pending muta
 });
 
 test('service worker caches only explicit static allow-list and never caches API/runtime metadata', async () => {
-  const sw = await read('frontend/public/hipico-control/sw.js');
-  assert.match(sw, /CACHE_VERSION = 'hipico-control-v1\.13\.0-rc2'/);
+  const [sw, buildInfoRaw] = await Promise.all([
+    read('frontend/public/hipico-control/sw.js'),
+    read('frontend/public/hipico-control/build-info.json')
+  ]);
+  const buildInfo = JSON.parse(buildInfoRaw);
+  const escapedVersion = buildInfo.version.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  assert.match(sw, new RegExp(`CACHE_VERSION = ['\"]hipico-control-v${escapedVersion}['\"]`));
   assert.match(sw, /APP_SHELL_URLS/);
   assert.match(sw, /isAllowedStatic/);
   assert.match(sw, /isSensitive\(url\) \|\| isRuntimeMetadata\(url\)/);
