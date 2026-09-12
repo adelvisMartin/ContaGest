@@ -10,6 +10,7 @@ on:
       - 'backend/src/modules/approvals/**'
       - 'backend/prisma/migrations/20260912150500_bank_reconciliation_v237/**'
       - 'backend/prisma/migrations/20260912150600_bank_reconciliation_pending_status/**'
+      - 'backend/prisma/migrations/20260912150700_bank_statement_immutability/**'
       - 'frontend/src/pages/BankingPage.js'
       - 'frontend/src/services/bankReconciliationService.js'
       - 'qa/bank-reconciliation-v237*'
