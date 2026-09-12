@@ -4,6 +4,7 @@ import fs from 'node:fs';
 
 const workflow=fs.readFileSync('.github/workflows/erp-performance-capacity-v157.yml','utf8');
 const backend=fs.readFileSync('qa/erp-performance-backend-v157.ts','utf8');
+const calibration=fs.readFileSync('qa/erp-performance-calibration-v157.ts','utf8');
 const frontend=fs.readFileSync('qa/erp-performance-frontend-v157.spec.mjs','utf8');
 const assembler=fs.readFileSync('scripts/erp-performance-assemble-v157.mjs','utf8');
 const gate=fs.readFileSync('scripts/erp-performance-gate-v157.mjs','utf8');
@@ -16,11 +17,26 @@ test('#157 requires a declared expected peak instead of inventing concurrency',(
   assert.doesNotMatch(workflow,/ERP157_EXPECTED_PEAK_USERS:\s*['"]?\d+/);
 });
 
+test('#157 calibration can measure a release candidate without inventing or certifying peak capacity',()=>{
+  assert.match(workflow,/pull_request:/);
+  assert.match(workflow,/calibration_only:/);
+  assert.match(workflow,/calibration:/);
+  assert.match(workflow,/erp-performance-calibration-v157\.ts/);
+  assert.match(workflow,/github\.event_name != 'pull_request'/);
+  assert.doesNotMatch(calibration,/process\.env\.ERP157_EXPECTED_PEAK_USERS/);
+  assert.match(calibration,/truthState:\s*'MEASURED_PROVISIONAL'/);
+  assert.match(calibration,/capacityCertified:\s*false/);
+  assert.match(calibration,/expectedPeakConcurrentUsers:\s*null/);
+  assert.match(calibration,/'1x': 'NOT_EXECUTED'/);
+  assert.match(calibration,/\/exports\/xlsx/);
+  assert.match(calibration,/crossTenantLeakCount/);
+});
+
 test('#157 can measure an exact frozen candidate without closing the issue by default',()=>{
   assert.match(workflow,/candidate_sha:/);
   assert.match(workflow,/finalize_issue:/);
   assert.match(workflow,/default: false/);
-  assert.match(workflow,/CANDIDATE_SHA: \$\{\{ inputs\.candidate_sha \|\| github\.event\.workflow_run\.head_sha \|\| github\.sha \}\}/);
+  assert.match(workflow,/CANDIDATE_SHA: \$\{\{ inputs\.candidate_sha \|\| github\.event\.pull_request\.head\.sha \|\| github\.event\.workflow_run\.head_sha \|\| github\.sha \}\}/);
   assert.match(workflow,/\^\[0-9a-fA-F\]\{40\}\$/);
   assert.match(workflow,/git rev-parse HEAD/);
   assert.match(workflow,/inputs\.finalize_issue == true/);
@@ -72,10 +88,11 @@ test('#157 gate cannot pass missing metrics and the workflow cannot fake green',
   assert.doesNotMatch(workflow,/npm.*\|\|\s*true/);
 });
 
-test('#157 closes only after measured gate passes and #155 is already closed',()=>{
+test('#157 closes only after measured capacity gate passes and #155 is already closed',()=>{
+  const capacityIndex=workflow.indexOf('\n  capacity:');
   const gateIndex=workflow.indexOf('erp-performance-gate-v157.mjs check');
   const finalizerIndex=workflow.indexOf('erp-performance-finalize-v157.mjs');
-  assert.ok(gateIndex>=0&&finalizerIndex>gateIndex);
+  assert.ok(capacityIndex>=0&&gateIndex>capacityIndex&&finalizerIndex>gateIndex);
   assert.match(finalizer,/issues\/155/);
   assert.match(finalizer,/dependency\.state!==['"]closed['"]/);
   assert.match(finalizer,/PERFORMANCE_VERDICT_NOT_CLOSABLE/);
