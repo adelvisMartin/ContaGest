@@ -1,10 +1,12 @@
 import { lookup } from 'node:dns/promises';
 import { isIP } from 'node:net';
+import { hipicoRuntimeSecretConfigured } from './hipico-secret-security.js';
 
 const DEFAULT_TIMEOUT_MS = 5_000;
 const DEFAULT_CACHE_TTL_MS = 30_000;
 const DEFAULT_FAILURE_THRESHOLD = 3;
 const DEFAULT_BACKOFF_MS = 15_000;
+const MIN_RACE_PROVIDER_TOKEN_BYTES = 16;
 export const MAX_RACE_PROVIDER_RESPONSE_BYTES = 1_000_000;
 export const MAX_RACE_PROVIDER_CACHE_ENTRIES = 128;
 export const MAX_RACE_PROVIDER_BACKOFF_MS = 300_000;
@@ -259,7 +261,7 @@ export function raceProviderStatus(env: RuntimeEnv = process.env): HorseRaceProv
   }
   const baseUrl = normalizeBaseUrl(env.HIPICO_RACE_PROVIDER_BASE_URL);
   const token = String(env.HIPICO_SPORTRADAR_UOF_TOKEN || '').trim();
-  const configured = Boolean(baseUrl && token);
+  const configured = Boolean(baseUrl && hipicoRuntimeSecretConfigured(token, MIN_RACE_PROVIDER_TOKEN_BYTES));
   return { provider, configured, enrichmentOnly: true, financialAuthority: false, reason: configured ? null : 'RACE_PROVIDER_CONFIG_INCOMPLETE', timeoutMs, cacheTtlMs };
 }
 
