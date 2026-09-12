@@ -31,18 +31,25 @@ test('browser runtime cannot obtain operator or bridge credentials', async () =>
   }
 });
 
-test('PDF production extractor never invokes a shell and uses bounded isolated temporary files', async () => {
-  const extractor = await read('backend/src/modules/hipico/document-extractor.ts');
+test('PDF production extractor never invokes a shell and enforces actual parser page limits', async () => {
+  const [extractor,engine] = await Promise.all([
+    read('backend/src/modules/hipico/document-extractor.ts'),
+    read('backend/src/modules/hipico/document-engine.ts')
+  ]);
   assert.match(extractor, /execFile/);
   assert.match(extractor, /mkdtemp/);
   assert.match(extractor, /mode:\s*0o600/);
   assert.match(extractor, /MAX_TOOL_OUTPUT/);
   assert.match(extractor, /TOOL_TIMEOUT_MS/);
   assert.match(extractor, /OCR_MAX_PAGES/);
+  assert.match(extractor, /pages > MAX_PDF_PAGES/);
+  assert.match(engine, /decodePdfNameEscapes/);
+  assert.match(engine, /JavaScript/);
+  assert.match(engine, /SubmitForm/);
   assert.doesNotMatch(extractor, /execSync|\bexec\s*\(|shell:\s*true/);
 });
 
-test('provider SSRF boundary is HTTPS allowlist-only with no redirects or arbitrary path input', async () => {
+test('provider SSRF boundary includes HTTPS allowlist redirects byte limits DNS and private-network rejection', async () => {
   const provider = await read('backend/src/modules/hipico-bot/hipico-race-provider.ts');
   assert.match(provider, /RACE_PROVIDER_VENDOR_DOMAINS/);
   assert.match(provider, /url\.protocol !== 'https:'/);
@@ -50,6 +57,45 @@ test('provider SSRF boundary is HTTPS allowlist-only with no redirects or arbitr
   assert.match(provider, /redirect:\s*'error'/);
   assert.match(provider, /\^\\d\{1,18\}\$/);
   assert.match(provider, /MAX_RACE_PROVIDER_RESPONSE_BYTES/);
+  assert.match(provider, /lookup\(hostname, \{ all: true, verbatim: true \}\)/);
+  assert.match(provider, /providerAddressForbidden/);
+  assert.match(provider, /UPSTREAM_ADDRESS_FORBIDDEN/);
+  assert.match(provider, /169\.254|0xfe80|0xfc00/);
+});
+
+test('normalized provider evidence is scoped, RLS protected and permanently non-financial', async () => {
+  const [sql,store,routes] = await Promise.all([
+    read('supabase/sql/hipico_v17_provider_evidence.sql'),
+    read('backend/src/modules/hipico/provider-evidence.store.ts'),
+    read('backend/src/modules/hipico/provider.routes.ts')
+  ]);
+  assert.match(sql,/create table if not exists public\.hipico_provider_evidence/i);
+  assert.match(sql,/financial_authority=false/i);
+  assert.match(sql,/enable row level security/i);
+  assert.match(sql,/owner_id=\(select auth\.uid\(\)\)/i);
+  assert.match(sql,/revoke all on public\.hipico_provider_evidence from authenticated/i);
+  assert.match(store,/owner_id,group_key,provider_id/);
+  assert.match(store,/payloadHash/);
+  assert.doesNotMatch(store,/xml\s*:/i);
+  assert.match(routes,/groupKey\(req\)/);
+  assert.match(routes,/fetchAndRecordProviderData/);
+  assert.match(routes,/\/provider-evidence/);
+});
+
+test('race audit persists observed provisional verified official stages and query ambiguity fails closed', async () => {
+  const [lifecycle,store,migration,routes]=await Promise.all([
+    read('backend/src/modules/hipico/race-lifecycle.ts'),
+    read('backend/src/modules/hipico/race.store.ts'),
+    read('supabase/sql/hipico_v18_race_result_stages.sql'),
+    read('backend/src/modules/hipico/race.routes.ts')
+  ]);
+  for(const value of ['RECORD_OBSERVED_ARRIVAL','RECORD_PROVISIONAL_RESULT','MARK_VERIFIED_RESULT','MARK_OFFICIAL_RESULT'])assert.ok(lifecycle.includes(value));
+  assert.match(store,/from_result_stage AS "fromResultStage"/);
+  assert.match(store,/to_result_stage AS "toResultStage"/);
+  assert.match(migration,/from_result_stage/);
+  assert.match(migration,/MARK_VERIFIED_RESULT/);
+  assert.match(routes,/RACE_QUERY_AMBIGUOUS/);
+  assert.match(routes,/RACE_QUERY_CONTEXT_REQUIRED/);
 });
 
 test('production PostgreSQL E2E explicitly covers replay group isolation document hostility and agent ledger boundary', async () => {
