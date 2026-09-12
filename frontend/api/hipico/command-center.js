@@ -6,6 +6,10 @@ const MAX_BACKEND_JSON_BYTES = 256 * 1024;
 const OUTBOX_SAMPLE_LIMIT = 100;
 const SHADOW_SAMPLE_LIMIT = 100;
 
+export function commandCenterReadModelEnabled(source = process.env) {
+  return String(source.HIPICO_COMMAND_CENTER_ENABLED || '').trim().toLowerCase() === 'true';
+}
+
 function configuredOperatorToken(source = process.env) {
   const primary = String(source.HIPICO_OPERATOR_CONTROL_TOKEN || '').trim();
   if (strongSecretConfigured(primary)) return primary;
@@ -123,6 +127,9 @@ export function projectCommandCenter({ backendStatus, outbox, shadow, bridge, sa
 export default async function handler(req, res) {
   res.setHeader('Cache-Control', 'no-store, max-age=0');
   if (req.method !== 'GET') return res.status(405).json({ ok: false, error: 'method_not_allowed' });
+  if (!commandCenterReadModelEnabled()) {
+    return res.status(503).json({ ok: false, retryable: false, error: 'command_center_read_model_disabled' });
+  }
   const token = configuredOperatorToken();
   if (!token) return res.status(503).json({ ok: false, retryable: false, error: 'operator_read_model_not_configured' });
 
@@ -135,4 +142,4 @@ export default async function handler(req, res) {
   return res.status(200).json({ ok: true, data });
 }
 
-export const __test__ = { configuredOperatorToken, bridgeReadiness, outboxProjection, shadowProjection, providerProjection, readBoundedJson, backendJson };
+export const __test__ = { commandCenterReadModelEnabled, configuredOperatorToken, bridgeReadiness, outboxProjection, shadowProjection, providerProjection, readBoundedJson, backendJson };
