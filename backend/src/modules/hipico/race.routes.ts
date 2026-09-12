@@ -1,13 +1,14 @@
 import { Router, type Request, type Response } from 'express';
 import { z } from 'zod';
 import { hipicoError } from './hipico-domain.js';
+import { OPERATOR_EVIDENCE_AUTHORITIES } from './race-evidence-policy.js';
 import { classifyRaceQueryIntent, RACE_COMMANDS, RACE_LIFECYCLE_STATES, type RaceCommandInput, type RaceQueryIntent } from './race-lifecycle.js';
 import { RaceLifecycleStore } from './race.store.js';
 import { operatorTokenValid } from '../hipico-bot/hipico-operator-security.js';
 
 const router=Router(),store=new RaceLifecycleStore();
 const uuid=z.string().uuid(),group=z.string().trim().min(3).max(120).regex(/^[A-Za-z0-9._:-]+$/),keySchema=z.string().regex(/^[A-Za-z0-9._:-]{8,120}$/);
-const evidenceSchema=z.object({source:z.string().trim().min(1).max(160),authority:z.enum(['official','trusted','operator','group_evidence','unknown']),confidence:z.number().min(0).max(1),reference:z.string().max(320).nullable().optional()});
+const evidenceSchema=z.object({source:z.string().trim().min(1).max(160),authority:z.enum(OPERATOR_EVIDENCE_AUTHORITIES),confidence:z.number().min(0).max(1),reference:z.string().max(320).nullable().optional()});
 const commandSchema=z.object({command:z.enum(RACE_COMMANDS),expectedState:z.enum(RACE_LIFECYCLE_STATES),requestId:keySchema,idempotencyKey:keySchema.optional(),actorId:z.string().min(1).max(220),correlationId:keySchema,evidence:z.array(evidenceSchema).max(20).default([]),payload:z.record(z.string(),z.unknown()).default({})});
 const meetingSchema=z.object({name:z.string().trim().min(1).max(220),meetingDate:z.string().datetime({offset:true}).nullable().optional(),venue:z.string().trim().max(220).nullable().optional(),externalRef:z.string().trim().max(220).nullable().optional()});
 const raceSchema=z.object({number:z.number().int().min(1).max(99),name:z.string().trim().min(1).max(220),scheduledAt:z.string().datetime({offset:true}).nullable().optional(),externalRef:z.string().trim().max(220).nullable().optional()});
