@@ -7,6 +7,7 @@ import hipicoWebhookRoutes from './modules/hipico-bot/hipico-webhook.routes.js';
 import hipicoBridgeRoutes from './modules/hipico-bot/hipico-bridge.routes.js';
 import hipicoOperatorRoutes from './modules/hipico-bot/hipico-operator.routes.js';
 import hipicoCanonicalRoutes from './modules/hipico-bot/hipico-canonical.routes.js';
+import hipicoProviderRoutes from './modules/hipico-bot/hipico-provider.routes.js';
 import { requestContext } from './shared/middleware/context.js';
 import { errorHandler, notFound } from './shared/middleware/error.js';
 import {
@@ -73,11 +74,13 @@ export function createApp(options: { readinessCheck?: ReadinessCheck } = {}) {
   // process. /api/v1/hipico is the canonical domain facade; /hipico-bot remains
   // the compatibility/integration surface for Meta, WhatsApp Web Bridge and
   // operator adapters. None of these token-authenticated routes uses browser
-  // cookies, so they live before browser-session CSRF. Mutating canonical calls
-  // still receive the general mutation limiter in addition to auth throttling.
+  // cookies, so they live before browser-session CSRF. Read-only provider routes
+  // share canonical auth/rate limits; state-changing canonical calls additionally
+  // receive the mutation limiter.
   app.use('/api/v1/hipico-bot', hipicoWebhookRoutes);
   app.use('/api/v1/hipico-bot', authRateLimit, hipicoBridgeRoutes);
   app.use('/api/v1/hipico-bot', authRateLimit, hipicoOperatorRoutes);
+  app.use('/api/v1/hipico', authRateLimit, hipicoProviderRoutes);
   app.use('/api/v1/hipico', authRateLimit, mutationRateLimit, hipicoCanonicalRoutes);
 
   app.use(csrfProtection);
