@@ -121,7 +121,7 @@ export default async function handler(req, res) {
         }, Number(process.env.HIPICO_META_SEND_TIMEOUT_MS || 12000));
       } catch (error) {
         await updateRow(row.id, {
-          status: 'sending',
+          status: 'reconciliation_required',
           attempts,
           last_error: `RECONCILIATION_REQUIRED:AMBIGUOUS_TRANSPORT_FAILURE:${String(error?.name || 'network_error').slice(0, 120)}`
         });
@@ -150,7 +150,7 @@ export default async function handler(req, res) {
       const providerMessageId = data?.messages?.[0]?.id || null;
       if (!providerMessageId) {
         await updateRow(row.id, {
-          status: 'sending',
+          status: 'reconciliation_required',
           attempts,
           last_error: 'RECONCILIATION_REQUIRED:META_SUCCESS_WITHOUT_MESSAGE_ID'
         });
