@@ -3,6 +3,13 @@ import helmet from 'helmet';
 import { env, isProd } from './config/env.js';
 import apiRoutes from './modules/index.js';
 import authRoutes from './modules/auth/auth.routes.js';
+import hipicoAgentRoutes from './modules/hipico/agent.routes.js';
+import hipicoCommandCenterRoutes from './modules/hipico/command-center.routes.js';
+import hipicoDocumentRoutes from './modules/hipico/document.routes.js';
+import hipicoOperatorReadRoutes from './modules/hipico/operator-read.routes.js';
+import hipicoProviderRoutes from './modules/hipico/provider.routes.js';
+import hipicoRaceRoutes from './modules/hipico/race.routes.js';
+import hipicoSystemRoutes from './modules/hipico/hipico-system.routes.js';
 import hipicoWebhookRoutes from './modules/hipico-bot/hipico-webhook.routes.js';
 import hipicoBridgeRoutes from './modules/hipico-bot/hipico-bridge.routes.js';
 import hipicoOperatorRoutes from './modules/hipico-bot/hipico-operator.routes.js';
@@ -69,16 +76,22 @@ export function createApp(options: { readinessCheck?: ReadinessCheck } = {}) {
     }
   }));
 
-  // Control Hípico is an independent product that temporarily shares this API
-  // process. /api/v1/hipico is the canonical domain facade; /hipico-bot remains
-  // the compatibility/integration surface for Meta, WhatsApp Web Bridge and
-  // operator adapters. None of these token-authenticated routes uses browser
-  // cookies, so they live before browser-session CSRF. Mutating canonical calls
-  // still receive the general mutation limiter in addition to auth throttling.
+  // Control Hípico is the product API. Feature-specific routes are mounted
+  // before the compatibility canonical facade so each bounded context keeps
+  // its own validation and authorization contract. /hipico-bot remains only
+  // the integration/compatibility edge for WhatsApp/Bridge/operator adapters.
+  app.use('/api/v1/hipico/system', authRateLimit, mutationRateLimit, hipicoSystemRoutes);
+  app.use('/api/v1/hipico/documents', authRateLimit, expensiveOperationRateLimit, mutationRateLimit, hipicoDocumentRoutes);
+  app.use('/api/v1/hipico', authRateLimit, mutationRateLimit, hipicoProviderRoutes);
+  app.use('/api/v1/hipico', authRateLimit, mutationRateLimit, hipicoRaceRoutes);
+  app.use('/api/v1/hipico', authRateLimit, mutationRateLimit, hipicoAgentRoutes);
+  app.use('/api/v1/hipico', authRateLimit, mutationRateLimit, hipicoCanonicalRoutes);
+  app.use('/api/v1/hipico', authRateLimit, hipicoCommandCenterRoutes);
+  app.use('/api/v1/hipico', authRateLimit, hipicoOperatorReadRoutes);
+
   app.use('/api/v1/hipico-bot', hipicoWebhookRoutes);
   app.use('/api/v1/hipico-bot', authRateLimit, hipicoBridgeRoutes);
   app.use('/api/v1/hipico-bot', authRateLimit, hipicoOperatorRoutes);
-  app.use('/api/v1/hipico', authRateLimit, mutationRateLimit, hipicoCanonicalRoutes);
 
   app.use(csrfProtection);
 
