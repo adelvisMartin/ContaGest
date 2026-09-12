@@ -36,6 +36,13 @@ test('interrupted automatic sends fail closed into reconciliation instead of bli
   assert.match(service,/HIPICO_WEBHOOK_RECONCILIATION_PERSISTENCE_REQUIRED/);
 });
 
+test('persistent webhook never acknowledges a non-durable automatic claim or delivery receipt',()=>{
+  assert.match(service,/if\(!claimed\)[\s\S]*options\.requirePersistent[\s\S]*HIPICO_WEBHOOK_CLAIM_PERSISTENCE_REQUIRED/);
+  assert.match(service,/markSent\(outbox\.id,sent\.providerMessageId,'automatic'\)[\s\S]*HIPICO_WEBHOOK_RECEIPT_PERSISTENCE_REQUIRED/);
+  assert.match(service,/markReconciliationRequired\(outbox\.id,error\?\.message\|\|String\(error\)\)[\s\S]*HIPICO_WEBHOOK_OUTBOX_STATE_PERSISTENCE_REQUIRED/);
+  assert.match(service,/markFailed\(outbox\.id,error\?\.message\|\|String\(error\)\)[\s\S]*HIPICO_WEBHOOK_OUTBOX_STATE_PERSISTENCE_REQUIRED/);
+});
+
 test('empty signed webhook batches are acknowledged without requiring PostgreSQL',()=>{
   const emptyAck=routes.indexOf('if(messages.length===0)');
   const readiness=routes.indexOf('HipicoBotStore.dbReady(true)');
