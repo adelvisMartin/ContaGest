@@ -1,9 +1,11 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import test from 'node:test';
 
 const backendPackage = JSON.parse(readFileSync(new URL('../backend/package.json', import.meta.url), 'utf8'));
 const packageLock = JSON.parse(readFileSync(new URL('../package-lock.json', import.meta.url), 'utf8'));
+const toolchainWorkflowUrl = new URL('../.github/workflows/toolchain-deps-v26.yml', import.meta.url);
+const temporaryRepairWorkflowUrl = new URL('../.github/workflows/temp-typecheck-repair.yml', import.meta.url);
 
 const maintainedExcelJsAlias = 'npm:@excel.js/exceljs@0.15.0';
 const bannedTransitiveVersions = new Map([
@@ -76,4 +78,12 @@ test('issue #26 no reintroduce @types/bcryptjs obsoleto', () => {
     false,
     '@types/bcryptjs no debe volver al manifiesto del backend',
   );
+});
+
+test('issue #26 retira el workflow temporal de reparación y conserva sólo el gate permanente', () => {
+  assert.equal(existsSync(temporaryRepairWorkflowUrl), false, 'el workflow temporal one-shot no debe sobrevivir al cierre de #26');
+  const workflow = readFileSync(toolchainWorkflowUrl, 'utf8');
+  assert.doesNotMatch(workflow, /repair-typecheck|repair-typecheck-once|fix\/toolchain-lock-v26-finalize/);
+  assert.match(workflow, /dependency-lock:/);
+  assert.match(workflow, /ExcelJS compatibility smoke/);
 });

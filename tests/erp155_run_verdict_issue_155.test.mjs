@@ -13,6 +13,11 @@ test('#155 classifies a failure before runner/steps as BLOCKED instead of produc
   assert.equal(classifyWorkflowOutcome(run, jobs, candidateSha), 'BLOCKED');
 });
 
+test('#155 keeps workflow startup/configuration failures with no jobs as FAIL', () => {
+  const run = { status:'completed', conclusion:'failure', head_sha:candidateSha };
+  assert.equal(classifyWorkflowOutcome(run, [], candidateSha), 'FAIL');
+});
+
 test('#155 keeps an actually executed failing test as FAIL', () => {
   const run = { status:'completed', conclusion:'failure', head_sha:candidateSha };
   const jobs = [{ runner_id:42, steps:[{ name:'Run tests', conclusion:'failure' }] }];
