@@ -50,6 +50,10 @@ function enrichUiAnalysis(input,options){
     message.dateLabel=original.dateLabel;
     message.sourceFormat=ui.sourceFormat;
     message.forwarded=original.forwarded;
+    // uiTranscriptAsExport manufactures dates only to reuse parser ordering.
+    // They are not calendar evidence and must never auto-bind a real race day.
+    message.dateProvenance='synthetic';
+    message.date='';
   });
 
   for(const offer of analysis.offers||[]){
