@@ -27,8 +27,18 @@ if (!executedRequiredPass) blockers.push({ code: 'REQUIRED_GATE_NOT_GREEN', gate
 if (event !== 'schedule') blockers.push({ code: 'P0_ISSUE_290_OPEN_UNTIL_MERGE', readinessCap: 60 });
 
 const readiness = event === 'schedule'
-  ? { score: executedRequiredPass ? 100 : 0, cap: executedRequiredPass ? null : 'REQUIRED_GATE_NOT_GREEN', state: executedRequiredPass ? 'SCHEDULED_MATRIX_VERIFIED' : 'BLOCKED' }
-  : { score: executedRequiredPass ? 60 : 50, cap: 'P0_OPEN_MAX_60', state: executedRequiredPass ? 'READY_FOR_REVIEW_NOT_DONE' : 'BLOCKED' };
+  ? {
+      score: null,
+      cap: 'NOT_A_PRODUCT_RELEASE_RUN',
+      state: executedRequiredPass ? 'SCHEDULED_MATRIX_VERIFIED_ONLY' : 'SCHEDULED_MATRIX_BLOCKED',
+      note: 'A scheduled browser matrix is compatibility evidence only; it cannot establish product release readiness.'
+    }
+  : {
+      score: executedRequiredPass ? 60 : 50,
+      cap: 'P0_OPEN_MAX_60',
+      state: executedRequiredPass ? 'READY_FOR_REVIEW_NOT_DONE' : 'BLOCKED',
+      note: 'Issue #290 remains P0 until final evidence is reviewed and the ticket is explicitly closed.'
+    };
 
 const report = {
   schema: 'hipico-release-report.v290',
@@ -40,6 +50,7 @@ const report = {
   statuses,
   executedRequiredPass,
   readiness,
+  blockers,
   foda: {
     fortalezas: [
       'PostgreSQL real efímero por ejecución y cleanup fail-safe.',
@@ -74,12 +85,13 @@ const report = {
 const root = path.resolve('artifacts/qa/hipico-v290');
 await fs.mkdir(root, { recursive: true });
 await fs.writeFile(path.join(root, 'release-report.json'), `${JSON.stringify(report, null, 2)}\n`, 'utf8');
-const markdown = `# Control Hípico — Release report #290\n\n- SHA: \`${sha}\`\n- Evento: \`${event}\`\n- Required executed pass: **${executedRequiredPass ? 'YES' : 'NO'}**\n- Readiness: **${readiness.score}/100** (${readiness.cap || 'sin cap'})\n- Estado: **${readiness.state}**\n\n## Gates\n${required.map((name) => `- ${name}: **${statuses[name]}**`).join('\n')}\n\n## FODA\n### Fortalezas\n${report.foda.fortalezas.map((item) => `- ${item}`).join('\n')}\n\n### Oportunidades\n${report.foda.oportunidades.map((item) => `- ${item}`).join('\n')}\n\n### Debilidades\n${report.foda.debilidades.map((item) => `- ${item}`).join('\n')}\n\n### Amenazas\n${report.foda.amenazas.map((item) => `- ${item}`).join('\n')}\n\n## Riesgos / follow-up\n${report.risks.map((item) => `- ${item.id}: ${item.state} — ${item.mitigation}`).join('\n')}\n${report.followUps.map((item) => `- ${item}`).join('\n')}\n`;
+const scoreLabel = readiness.score == null ? 'N/A' : `${readiness.score}/100`;
+const markdown = `# Control Hípico — Release report #290\n\n- SHA: \`${sha}\`\n- Evento: \`${event}\`\n- Required executed pass: **${executedRequiredPass ? 'YES' : 'NO'}**\n- Readiness: **${scoreLabel}** (${readiness.cap})\n- Estado: **${readiness.state}**\n- Nota: ${readiness.note}\n\n## Gates\n${required.map((name) => `- ${name}: **${statuses[name]}**`).join('\n')}\n\n## FODA\n### Fortalezas\n${report.foda.fortalezas.map((item) => `- ${item}`).join('\n')}\n\n### Oportunidades\n${report.foda.oportunidades.map((item) => `- ${item}`).join('\n')}\n\n### Debilidades\n${report.foda.debilidades.map((item) => `- ${item}`).join('\n')}\n\n### Amenazas\n${report.foda.amenazas.map((item) => `- ${item}`).join('\n')}\n\n## Riesgos / follow-up\n${report.risks.map((item) => `- ${item.id}: ${item.state} — ${item.mitigation}`).join('\n')}\n${report.followUps.map((item) => `- ${item}`).join('\n')}\n`;
 await fs.writeFile(path.join(root, 'release-report.md'), markdown, 'utf8');
 
 if (!executedRequiredPass) {
   console.error(`[hipico-v290] release report BLOCKED: ${missing.join(', ')}`);
   process.exitCode = 1;
 } else {
-  console.log(`[hipico-v290] release report written for ${sha}; readiness=${readiness.score}/100 (${readiness.state})`);
+  console.log(`[hipico-v290] release report written for ${sha}; state=${readiness.state}; readiness=${scoreLabel}`);
 }
