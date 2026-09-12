@@ -19,15 +19,19 @@ function allowlist(env:RuntimeEnv){
     .filter((value):value is string=>Boolean(value)));
 }
 
+function runtimeSha(env:RuntimeEnv){
+  return String(env.VERCEL_GIT_COMMIT_SHA||env.GITHUB_SHA||env.GIT_COMMIT_SHA||env.GIT_SHA||'').trim();
+}
+
 export function cloudOutboundPolicy(env:RuntimeEnv=process.env){
-  const runtimeSha=String(env.VERCEL_GIT_COMMIT_SHA||env.GIT_SHA||'').trim();
+  const deployedSha=runtimeSha(env);
   const approvedSha=String(env.HIPICO_CLOUD_SEND_CANDIDATE_SHA||'').trim();
   const allowed=allowlist(env);
   const reasons:string[]=[];
   if(String(env.HIPICO_CLOUD_SEND_ENABLED||'').toLowerCase()!=='true')reasons.push('SEND_SWITCH_DISABLED');
   if(String(env.HIPICO_WHATSAPP_COMPLIANCE_DECISION||'').toUpperCase()!=='GO')reasons.push('WHATSAPP_COMPLIANCE_NOT_GO');
   if(!String(env.HIPICO_CLOUD_SEND_APPROVED_BY||'').trim())reasons.push('EXPLICIT_APPROVAL_MISSING');
-  if(!SHA40.test(runtimeSha)||!SHA40.test(approvedSha)||runtimeSha.toLowerCase()!==approvedSha.toLowerCase())reasons.push('CANDIDATE_SHA_NOT_BOUND');
+  if(!SHA40.test(deployedSha)||!SHA40.test(approvedSha)||deployedSha.toLowerCase()!==approvedSha.toLowerCase())reasons.push('CANDIDATE_SHA_NOT_BOUND');
   if(!allowed.size)reasons.push('DESTINATION_ALLOWLIST_EMPTY');
   return{enabled:reasons.length===0,reasons,allowedDestinationCount:allowed.size,runtimeShaBound:reasons.includes('CANDIDATE_SHA_NOT_BOUND')===false};
 }
@@ -63,4 +67,4 @@ export function assertCloudOutboundAllowed(value:string,env:RuntimeEnv=process.e
   return true;
 }
 
-export const __test__={recipient,GRAPH_VERSION};
+export const __test__={recipient,GRAPH_VERSION,runtimeSha};
