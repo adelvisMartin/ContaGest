@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { classifyUntrustedConversation, safePublicAbuseMetadata } from './hipico-conversation-appsec.js';
 import { effectiveBridgeMediaKind } from './hipico-bridge-input-policy.js';
+import { canonicalPayloadIssue, canonicalTimestampIssue } from './hipico-canonical-input-policy.js';
 import { hipicoDomainPersistenceReadiness, persistHipicoDomainEvent } from './hipico-domain-event.store.js';
 import { readHipicoDomainAggregate } from './hipico-domain-query.store.js';
 import { operatorActorRef, operatorTokenConfigured, operatorTokenValid } from './hipico-operator-security.js';
@@ -274,12 +275,16 @@ router.get('/domain/:aggregateKind/:aggregateKey', async (req, res) => {
 
 router.post('/domain/events', async (req, res) => {
   const parsed = domainEventSchema.safeParse(req.body);
-  if (!parsed.success) return res.status(400).json({ ok: false, error: 'HIPICO_CANONICAL_EVENT_INVALID' });
+  if (!parsed.success) return res.status(400).json({ ok: false, retryable: false, error: 'HIPICO_CANONICAL_EVENT_INVALID' });
   const ownerId = configuredCanonicalOwnerId();
   if (!ownerId) return res.status(503).json({ ok: false, error: 'HIPICO_OWNER_NOT_CONFIGURED' });
   const actorRef = operatorActorRef();
   if (!actorRef) return res.status(503).json({ ok: false, error: 'HIPICO_OPERATOR_ACTOR_NOT_CONFIGURED' });
   const input = parsed.data;
+  const payloadIssue = canonicalPayloadIssue(input.normalizedPayload);
+  if (payloadIssue) return res.status(400).json({ ok: false, retryable: false, error: payloadIssue });
+  const timestampIssue = canonicalTimestampIssue(input.timestamp);
+  if (timestampIssue) return res.status(400).json({ ok: false, retryable: false, error: timestampIssue });
   const scopeIssue = canonicalScopeIssue(input);
   if (scopeIssue) {
     const expectedAggregateKey = scopeIssue === 'HIPICO_RACE_AGGREGATE_KEY_MISMATCH' ? canonicalRaceContextKey(input) : null;
@@ -293,10 +298,10 @@ router.post('/domain/events', async (req, res) => {
   const policy = canonicalMutationPolicy(input);
 
   if (!input.confirmedOperatorAction && String(input.confirmationReason || '').trim()) {
-    return res.status(400).json({ ok: false, error: 'HIPICO_CONFIRMATION_FLAG_REQUIRED' });
+    return res.status(400).json({ ok: false, retryable: false, error: 'HIPICO_CONFIRMATION_FLAG_REQUIRED' });
   }
   if (input.confirmedOperatorAction && String(input.confirmationReason || '').trim().length < 5) {
-    return res.status(400).json({ ok: false, error: 'HIPICO_CONFIRMATION_REASON_REQUIRED' });
+    return res.status(400).json({ ok: false, retryable: false, error: 'HIPICO_CONFIRMATION_REASON_REQUIRED' });
   }
 
   try {
