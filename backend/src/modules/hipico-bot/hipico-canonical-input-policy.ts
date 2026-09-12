@@ -4,6 +4,8 @@ export const MAX_CANONICAL_PAYLOAD_NODES=5000;
 export const MAX_CANONICAL_COLLECTION_ITEMS=1000;
 export const MAX_CANONICAL_FUTURE_SKEW_MS=5*60*1000;
 
+const ISO_TIMESTAMP_WITH_ZONE=/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.(\d{1,9}))?(Z|[+-]\d{2}:\d{2})$/;
+
 export function canonicalPayloadIssue(value:unknown){
   if(value===undefined)return null;
   let encoded:string|undefined;
@@ -44,7 +46,26 @@ export function canonicalPayloadIssue(value:unknown){
 }
 
 export function canonicalTimestampIssue(value:string,nowMs=Date.now()){
-  const parsed=Date.parse(String(value||''));
+  const raw=String(value||'');
+  if(raw.length>64)return'HIPICO_EVENT_TIMESTAMP_INVALID';
+  const match=raw.match(ISO_TIMESTAMP_WITH_ZONE);
+  if(!match)return'HIPICO_EVENT_TIMESTAMP_INVALID';
+  const [,yearRaw,monthRaw,dayRaw,hourRaw,minuteRaw,secondRaw,,zone]=match;
+  const year=Number(yearRaw);
+  const month=Number(monthRaw);
+  const day=Number(dayRaw);
+  const hour=Number(hourRaw);
+  const minute=Number(minuteRaw);
+  const second=Number(secondRaw);
+  if(month<1||month>12||hour>23||minute>59||second>59)return'HIPICO_EVENT_TIMESTAMP_INVALID';
+  const daysInMonth=new Date(Date.UTC(year,month,0)).getUTCDate();
+  if(day<1||day>daysInMonth)return'HIPICO_EVENT_TIMESTAMP_INVALID';
+  if(zone!=='Z'){
+    const offsetHour=Number(zone.slice(1,3));
+    const offsetMinute=Number(zone.slice(4,6));
+    if(offsetHour>14||offsetMinute>59||(offsetHour===14&&offsetMinute!==0))return'HIPICO_EVENT_TIMESTAMP_INVALID';
+  }
+  const parsed=Date.parse(raw);
   if(!Number.isFinite(parsed))return'HIPICO_EVENT_TIMESTAMP_INVALID';
   if(parsed>nowMs+MAX_CANONICAL_FUTURE_SKEW_MS)return'HIPICO_EVENT_TIMESTAMP_IN_FUTURE';
   return null;
