@@ -9,7 +9,9 @@ const base={
   text:'Juego 1N del 5 con 100k',
   quotedExternalMessageId:'origin-1',
   fromMe:false,
-  hasMedia:false
+  hasMedia:false,
+  historySync:false,
+  mediaKind:'none'
 };
 
 test('serverless bridge accepts only explicit ISO-8601 timestamps with timezone and valid calendar fields',()=>{
@@ -19,18 +21,9 @@ test('serverless bridge accepts only explicit ISO-8601 timestamps with timezone 
   assert.equal(__test__.normalizedTimestamp('2026-09-11T11:30:00+05:30'),'2026-09-11T06:00:00.000Z');
 
   for(const invalid of [
-    '2026-09-11',
-    '2026-09-11T06:00:00',
-    '2026-09-11 06:00:00Z',
-    '09/11/2026 06:00:00',
-    '2026-02-29T06:00:00Z',
-    '2026-02-31T06:00:00Z',
-    '2026-13-01T06:00:00Z',
-    '2026-09-11T24:00:00Z',
-    '2026-09-11T06:60:00Z',
-    '2026-09-11T06:00:60Z',
-    '2026-09-11T06:00:00+14:30',
-    '2026-09-11T06:00:00+15:00'
+    '2026-09-11','2026-09-11T06:00:00','2026-09-11 06:00:00Z','09/11/2026 06:00:00',
+    '2026-02-29T06:00:00Z','2026-02-31T06:00:00Z','2026-13-01T06:00:00Z','2026-09-11T24:00:00Z',
+    '2026-09-11T06:60:00Z','2026-09-11T06:00:60Z','2026-09-11T06:00:00+14:30','2026-09-11T06:00:00+15:00'
   ]) assert.equal(__test__.normalizedTimestamp(invalid),undefined,invalid);
 });
 
@@ -38,21 +31,24 @@ test('serverless bridge replay signature binds sender, instant, body, quote and 
   const sameInstant={...base,timestamp:'2026-09-11T01:00:00-05:00'};
   assert.equal(__test__.sourceReplaySignature(base),__test__.sourceReplaySignature(sameInstant));
   assert.notEqual(__test__.sourceReplaySignature(base),__test__.sourceReplaySignature({...base,fromMe:true}));
-  assert.notEqual(__test__.sourceReplaySignature(base),__test__.sourceReplaySignature({...base,hasMedia:true}));
+  assert.notEqual(__test__.sourceReplaySignature(base),__test__.sourceReplaySignature({...base,hasMedia:true,mediaKind:'unknown'}));
+  assert.notEqual(__test__.sourceReplaySignature(base),__test__.sourceReplaySignature({...base,historySync:true}));
   assert.notEqual(__test__.sourceReplaySignature(base),__test__.sourceReplaySignature({...base,text:'Juego 1N del 5 con 300k'}));
   assert.notEqual(__test__.sourceReplaySignature(base),__test__.sourceReplaySignature({...base,quotedExternalMessageId:'origin-2'}));
 });
 
-test('persisted bridge replay signature uses the same transport flags stored in normalized evidence',()=>{
-  const persisted={
-    sender_id:base.senderId,
-    sent_at:base.timestamp,
-    message_type:base.type,
-    raw_text:base.text,
-    quoted_external_message_id:base.quotedExternalMessageId,
-    normalized:{from_me:false,has_media:false}
+test('canonical transport event keeps immutable flags while pinning configured channel identity',()=>{
+  const source={
+    HIPICO_SOURCE_GROUP_ID:'120363111111111111@g.us',
+    HIPICO_LAB_GROUP_ID:'120363222222222222@g.us'
   };
-  assert.equal(__test__.persistedReplaySignature(persisted),__test__.sourceReplaySignature(base));
-  assert.notEqual(__test__.persistedReplaySignature({...persisted,normalized:{from_me:true,has_media:false}}),__test__.sourceReplaySignature(base));
-  assert.notEqual(__test__.persistedReplaySignature({...persisted,normalized:{from_me:false,has_media:true}}),__test__.sourceReplaySignature(base));
+  const event=__test__.canonicalBridgeEvent({...base,groupId:source.HIPICO_SOURCE_GROUP_ID,externalMessageId:'wamid-1',shadowMode:true},source);
+  assert.equal(event.groupId,source.HIPICO_SOURCE_GROUP_ID);
+  assert.equal(event.channelRole,'source');
+  assert.equal(event.shadowMode,true);
+  assert.equal(event.historySync,false);
+  assert.equal(event.fromMe,false);
+  assert.equal(event.hasMedia,false);
+  assert.equal(event.mediaKind,'none');
+  assert.match(event.rawMeta,/^serverless-compat:[a-f0-9]{24}$/);
 });
