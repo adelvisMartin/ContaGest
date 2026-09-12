@@ -68,12 +68,13 @@ function verifyRuntime(root, label) {
   if (typeof buildInfo.bound !== 'boolean' || typeof buildInfo.candidateSha !== 'string') throw new Error(`${label}: build-info no declara vínculo de SHA.`);
   if (buildInfo.bound && !/^[a-f0-9]{40}$/i.test(buildInfo.candidateSha)) throw new Error(`${label}: build-info declara SHA ligado inválido.`);
   const index = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
+  const store = fs.readFileSync(path.join(root, 'assets/js/store.js'), 'utf8');
   if (/<link[^>]*>\s*>/i.test(index)) throw new Error(`${label}: HTML contiene un cierre de link duplicado.`);
   if (!index.includes('./assets/js/app.js')) throw new Error(`${label}: app.js no está enlazado de forma portable.`);
   if (!index.includes('./assets/js/command-center-shell.js')) throw new Error(`${label}: Command Center no está enlazado.`);
   if (!index.includes('./assets/js/theme-bootstrap.js')) throw new Error(`${label}: theme bootstrap no está enlazado antes del runtime.`);
   if (!index.includes('./assets/js/version-guard.js')) throw new Error(`${label}: version guard no está enlazado.`);
-  if (!index.includes('./assets/js/workspace-input-safety.js')) throw new Error(`${label}: workspace input safety no está enlazado.`);
+  if (!store.includes('./workspace-input-safety.js')) throw new Error(`${label}: store.js no aplica workspace input safety.`);
   if (!index.includes('./assets/css/app.css')) throw new Error(`${label}: app.css no está enlazado.`);
   if (!index.includes('./assets/js/help-center.js')) throw new Error(`${label}: help-center.js no está enlazado.`);
   if (/styles\.css|ui-system|tokens\.css|themes\.css|operations-pro|precision-hipica|recovery\.css/i.test(index)) throw new Error(`${label}: index todavía carga una autoridad visual retirada.`);
