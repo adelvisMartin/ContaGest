@@ -3,6 +3,8 @@ import { metaSenderConfig } from './meta-runtime.js';
 
 const MAX_ATTEMPTS = 6;
 const BATCH_SIZE = 10;
+const SEND_LEASE_MS = 2 * 60 * 1000;
+const STALE_CLAIM_SCAN_LIMIT = 50;
 
 function nextRetryIso(attempts, retryAfterHeader = '', nowMs = Date.now()) {
   const retryMinutes = Math.min(60, Math.max(1, 2 ** Math.min(attempts, 5)));
@@ -11,6 +13,12 @@ function nextRetryIso(attempts, retryAfterHeader = '', nowMs = Date.now()) {
   const safeNow = Number.isFinite(parsedNow) ? parsedNow : Date.now();
   const providerWaitMs = retryAfterMs(retryAfterHeader, safeNow);
   return new Date(safeNow + Math.max(localWaitMs, providerWaitMs)).toISOString();
+}
+
+function sendLeaseExpiryIso(nowMs = Date.now()) {
+  const parsed = Number(nowMs);
+  const safeNow = Number.isFinite(parsed) ? parsed : Date.now();
+  return new Date(safeNow + SEND_LEASE_MS).toISOString();
 }
 
 async function claimRow(row) {
@@ -26,9 +34,35 @@ async function claimRow(row) {
   const claimed = await supabase(`hipico_outbox?${filters.join('&')}`, {
     method: 'PATCH',
     headers: { Prefer: 'return=representation' },
-    body: JSON.stringify({ status: 'sending', last_error: null })
+    body: JSON.stringify({ status: 'sending', next_attempt_at: sendLeaseExpiryIso(), last_error: null })
   });
   return Array.isArray(claimed) ? claimed[0] || null : null;
+}
+
+async function quarantineExpiredSendingClaims(nowIso = new Date().toISOString()) {
+  const ownerId = env('HIPICO_OWNER_ID');
+  const stale = await supabase(
+    `hipico_outbox?owner_id=eq.${encodeURIComponent(ownerId)}&status=eq.sending&next_attempt_at=lte.${encodeURIComponent(nowIso)}&order=next_attempt_at.asc&limit=${STALE_CLAIM_SCAN_LIMIT}`,
+    { headers: { Prefer: 'return=representation' } }
+  ) || [];
+  let quarantined = 0;
+  for (const row of stale) {
+    const expectedNext = String(row.next_attempt_at || '');
+    if (!row?.id || !expectedNext) continue;
+    const updated = await supabase(
+      `hipico_outbox?id=eq.${encodeURIComponent(row.id)}&owner_id=eq.${encodeURIComponent(ownerId)}&status=eq.sending&next_attempt_at=eq.${encodeURIComponent(expectedNext)}`,
+      {
+        method: 'PATCH',
+        headers: { Prefer: 'return=representation' },
+        body: JSON.stringify({
+          status: 'reconciliation_required',
+          last_error: 'RECONCILIATION_REQUIRED:STALE_SENDING_LEASE'
+        })
+      }
+    );
+    if (Array.isArray(updated) && updated[0]?.id) quarantined += 1;
+  }
+  return quarantined;
 }
 
 async function updateRow(id, patch) {
@@ -74,10 +108,11 @@ export default async function handler(req, res) {
   try {
     const ownerId = env('HIPICO_OWNER_ID');
     const now = new Date().toISOString();
+    const staleSendingQuarantined = await quarantineExpiredSendingClaims(now);
     const rows = await supabase(`hipico_outbox?owner_id=eq.${encodeURIComponent(ownerId)}&status=in.(queued,retry)&next_attempt_at=lte.${encodeURIComponent(now)}&order=created_at.asc&limit=${BATCH_SIZE}`, {
       headers: { Prefer: 'return=representation' }
     }) || [];
-    if (!rows.length) return res.status(200).json({ ok: true, processed: 0, sent: 0, failed: 0, retried: 0, reconciliationRequired: 0, skippedClaims: 0 });
+    if (!rows.length) return res.status(200).json({ ok: true, processed: 0, sent: 0, failed: 0, retried: 0, reconciliationRequired: 0, staleSendingQuarantined, skippedClaims: 0 });
 
     const graphVersion = safeGraphVersion();
     let sent = 0;
@@ -168,11 +203,11 @@ export default async function handler(req, res) {
       sent += 1;
     }
 
-    return res.status(200).json({ ok: true, processed: rows.length, sent, failed, retried, reconciliationRequired, skippedClaims });
+    return res.status(200).json({ ok: true, processed: rows.length, sent, failed, retried, reconciliationRequired, staleSendingQuarantined, skippedClaims });
   } catch (error) {
     console.error('hipico whatsapp send', { message: error?.message || String(error) });
     return res.status(503).json({ ok: false, retryable: true, error: 'send_unavailable' });
   }
 }
 
-export const __test__={safeGraphVersion,metaSenderConfig,nextRetryIso};
+export const __test__={safeGraphVersion,metaSenderConfig,nextRetryIso,sendLeaseExpiryIso,quarantineExpiredSendingClaims,SEND_LEASE_MS,STALE_CLAIM_SCAN_LIMIT};
