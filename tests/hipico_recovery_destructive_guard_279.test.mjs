@@ -6,7 +6,7 @@ import vm from 'node:vm';
 const script = await readFile(new URL('../frontend/public/hipico-control/assets/js/recovery.js', import.meta.url), 'utf8');
 const html = await readFile(new URL('../frontend/public/hipico-control/recovery.html', import.meta.url), 'utf8');
 
-function executeRecovery(confirmResult) {
+function executeRecovery(confirmResult, { throwDelete = false } = {}) {
   let clickHandler = null;
   const removedKeys = [];
   const deletedDatabases = [];
@@ -32,6 +32,7 @@ function executeRecovery(confirmResult) {
     indexedDB: {
       deleteDatabase(name) {
         deletedDatabases.push(name);
+        if (throwDelete) throw new Error('delete unavailable');
         return deleteRequest;
       }
     },
@@ -95,4 +96,12 @@ test('IndexedDB deletion error keeps all remaining local data and offers an acti
   assert.deepEqual(result.removedKeys, []);
   assert.deepEqual(result.replacements, []);
   assert.equal(result.timers.some(({ delay }) => delay <= 500), false, 'failed deletion must not navigate into a possibly unrecovered app');
+});
+
+test('synchronous IndexedDB failure also stays on recovery and preserves localStorage', () => {
+  const result = executeRecovery(true, { throwDelete: true });
+  assert.equal(result.reset.disabled, false);
+  assert.match(result.status.textContent, /no se pudo|reintenta/i);
+  assert.deepEqual(result.removedKeys, []);
+  assert.deepEqual(result.replacements, []);
 });
