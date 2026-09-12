@@ -9,6 +9,7 @@ import pg from 'pg';
 import { createPdfJsDocumentExtractor, documentExtractorCapability } from '../src/modules/hipico/document-extractor.js';
 import { createHorseRaceProvider } from '../src/modules/hipico-bot/hipico-race-provider.js';
 import { createSportradarRacingProvider, normalizeSportradarStage } from '../src/modules/hipico/sportradar-provider.adapter.js';
+import { ProviderEvidenceStore } from '../src/modules/hipico/provider-evidence.store.js';
 
 const { Client } = pg;
 const databaseUrl = String(process.env.HIPICO_E2E_DATABASE_URL || '').trim();
@@ -88,6 +89,7 @@ assert.ok(extractor, 'native PDF extractor must be configured in production perf
 
 const client = new Client({ connectionString: databaseUrl });
 await client.connect();
+const evidenceStore = new ProviderEvidenceStore();
 const profiles: any[] = [];
 try {
   for (const volume of volumes) {
@@ -128,12 +130,22 @@ try {
     const planRows = await client.query(`EXPLAIN (ANALYZE,BUFFERS,FORMAT JSON) SELECT external_message_id,received_at FROM public.hipico_messages WHERE owner_id=$1::uuid AND channel_key=$2 ORDER BY received_at DESC LIMIT 50`, [OWNER_ID, groupKey]);
     const plan = planRows.rows[0]['QUERY PLAN']?.[0];
 
+    const fixture=providerFixture(volume);
     const providerStart = performance.now();
-    const providerNormalized = normalizeSportradarStage(providerFixture(volume));
+    const providerNormalized = normalizeSportradarStage(fixture);
     const providerNormalizeMs = performance.now() - providerStart;
     assert.equal(providerNormalized.data.runners.length, volume);
     assert.equal(providerNormalized.provenance.financialAuthority, false);
     const providerRequest = await providerRequestProfile(volume);
+    const firstEvidence=await evidenceStore.record({ownerId:OWNER_ID,groupKey,capability:'getRace',externalId:fixture.stageId,record:providerNormalized});
+    const duplicateEvidence=await evidenceStore.record({ownerId:OWNER_ID,groupKey,capability:'getRace',externalId:fixture.stageId,record:providerNormalized});
+    assert.equal(firstEvidence.id,duplicateEvidence.id,'exact provider observation must be idempotent');
+    assert.equal(firstEvidence.financialAuthority,false);
+    assert.match(firstEvidence.payloadHash,/^[a-f0-9]{64}$/);
+    const scopedEvidence=await evidenceStore.recent(OWNER_ID,groupKey,20);
+    assert.ok(scopedEvidence.some((row:any)=>row.id===firstEvidence.id));
+    assert.ok(scopedEvidence.every((row:any)=>row.financialAuthority===false));
+    assert.ok(scopedEvidence.every((row:any)=>!JSON.stringify(row.normalized).includes('<stage_summary')),'raw provider XML must never be persisted');
 
     const pdf = await pdfBuffer(volume);
     const pdfStart = performance.now();
@@ -154,6 +166,8 @@ try {
         requestPathMs: Number(providerRequest.requestPathMs.toFixed(3)),
         normalizedRunners: providerNormalized.data.runners.length,
         injectedFetchCalls: providerRequest.fetchCalls,
+        evidenceId:firstEvidence.id,
+        evidencePayloadHash:firstEvidence.payloadHash,
         upstreamTransport: { status: 'NOT_EXECUTED', reason: 'EXTERNAL_PROVIDER_NETWORK_AND_CREDENTIALS_ARE_NOT_REQUIRED_FOR_PR_GATE' },
         financialAuthority: false
       },
@@ -165,6 +179,11 @@ try {
       }
     });
   }
+
+  const isolationA=await evidenceStore.recent(OWNER_ID,'perf-100',200);
+  const isolationB=await evidenceStore.recent(OWNER_ID,'perf-500',200);
+  assert.ok(isolationA.length>=1&&isolationB.length>=1);
+  assert.equal(isolationA.some((left:any)=>isolationB.some((right:any)=>right.id===left.id)),false,'provider evidence crossed group scope');
 
   const host = {
     platform: process.platform, arch: process.arch, node: process.version,
