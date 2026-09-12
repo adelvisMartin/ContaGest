@@ -2,7 +2,7 @@ import crypto from 'node:crypto';
 import { prisma } from '../../database/prisma.js';
 import { classify as classifyOperational } from './hipico-operational-classifier.js';
 import type { IntentResult as OperationalIntentResult } from './hipico-operational-classifier.js';
-import { assertCloudOutboundAllowed, cloudOutboundPolicy } from './hipico-outbound-policy.js';
+import { assertCloudOutboundAllowed, assertCloudTransportConfigured, cloudOutboundPolicy, cloudTransportConfiguration } from './hipico-outbound-policy.js';
 import { operatorTokenValid as canonicalOperatorTokenValid } from './hipico-operator-security.js';
 import { replayMismatchError, sameWebhookReplay } from './hipico-webhook-replay.js';
 import { webhookSignatureValid } from './hipico-webhook-security.js';
@@ -25,7 +25,9 @@ let dbStatus:{value:boolean;until:number}|null=null;
 
 export function promotion():BotPromotion {
   const value=String(process.env.HIPICO_BOT_PROMOTION||'shadow').toLowerCase();
-  if(value==='automatic')return cloudOutboundPolicy().enabled?'automatic':'approved';
+  if(value==='automatic'){
+    return cloudOutboundPolicy().enabled&&cloudTransportConfiguration().configured?'automatic':'approved';
+  }
   return value==='approved'?'approved':'shadow';
 }
 
@@ -200,10 +202,7 @@ export const HipicoBotStore={
 
 export async function sendCloudText(recipient:string,message:string){
   assertCloudOutboundAllowed(recipient);
-  const token=String(process.env.WHATSAPP_CLOUD_TOKEN||'');
-  const phoneId=String(process.env.WHATSAPP_PHONE_NUMBER_ID||'');
-  const version=String(process.env.WHATSAPP_GRAPH_API_VERSION||process.env.WHATSAPP_GRAPH_VERSION||'v23.0');
-  if(!token||!phoneId)throw new Error('Faltan WHATSAPP_CLOUD_TOKEN o WHATSAPP_PHONE_NUMBER_ID');
+  const {token,phoneId,version}=assertCloudTransportConfigured();
   if(!E164_DIGITS.test(recipient))throw new Error('Destinatario WhatsApp inválido.');
   const text=String(message||'').trim();
   if(!text||text.length>4000)throw Object.assign(new Error('Mensaje WhatsApp vacío o demasiado largo.'),{code:'HIPICO_CLOUD_MESSAGE_INVALID'});
