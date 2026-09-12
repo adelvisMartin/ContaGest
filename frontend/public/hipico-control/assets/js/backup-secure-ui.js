@@ -8,6 +8,14 @@ function strongPassphrase(promptText) {
   if (value.length < 12) throw new Error('La contraseña debe tener al menos 12 caracteres.');
   return value;
 }
+function newBackupPassphrase() {
+  const passphrase = strongPassphrase('Crea una contraseña para cifrar el respaldo (mínimo 12 caracteres). No podremos recuperarla si la pierdes.');
+  if (!passphrase) return null;
+  const confirmation = globalThis.prompt?.('Repite exactamente la contraseña del respaldo para confirmar.') ?? '';
+  if (!confirmation) return null;
+  if (confirmation !== passphrase) throw new Error('Las contraseñas del respaldo no coinciden. No se generó ningún archivo.');
+  return passphrase;
+}
 function notify(message) {
   const node = document.createElement('div'); node.className = 'offline-banner'; node.setAttribute('role','status'); node.textContent = message;
   (document.querySelector('.content') || document.body).prepend(node); setTimeout(()=>node.remove(),7000);
@@ -23,7 +31,7 @@ async function secureExport(event) {
   if (!target) return false;
   event.preventDefault(); event.stopImmediatePropagation();
   try {
-    const passphrase = strongPassphrase('Crea una contraseña para cifrar el respaldo (mínimo 12 caracteres). No podremos recuperarla si la pierdes.');
+    const passphrase = newBackupPassphrase();
     if (!passphrase) return true;
     const encrypted = await exportEncryptedCurrentWorkspace({ passphrase, productVersion: APP_VERSION });
     const result = await deliverJsonBackup(filename(), encrypted);
