@@ -1,6 +1,6 @@
 import crypto from 'node:crypto';
 import { prisma } from '../../database/prisma.js';
-import { evaluateRaceCommand, normalizeRaceCommandInput, type RaceCommandInput, type RaceLifecycleState } from './race-lifecycle.js';
+import { evaluateRaceCommand, normalizeRaceCommandInput, type RaceCommandInput, type RaceLifecycleState, type RaceResultStage } from './race-lifecycle.js';
 
 const UUID_RE=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const GROUP_RE=/^[A-Za-z0-9._:-]{3,120}$/;
@@ -47,27 +47,44 @@ export class RaceLifecycleStore {
     scope(ownerId,groupKey);const rows=await prisma.$queryRaw<any[]>`SELECT id,meeting_id AS "meetingId",race_number AS "number",name,scheduled_at AS "scheduledAt",external_ref AS "externalRef",state,result_stage AS "resultStage",state_version AS "stateVersion",result_data AS "resultData",created_at AS "createdAt",updated_at AS "updatedAt" FROM public.hipico_races WHERE id=${id}::uuid AND owner_id=${ownerId}::uuid AND group_key=${groupKey} LIMIT 1`;return rows[0]||null;
   }
   async history(ownerId:string,groupKey:string,raceId:string){
-    scope(ownerId,groupKey);return prisma.$queryRaw<any[]>`SELECT id,request_id AS "requestId",command,actor_id AS "actorId",actor_type AS "actorType",correlation_id AS "correlationId",from_state AS "fromState",to_state AS "toState",disposition,reason,evidence,payload,created_at AS "createdAt" FROM public.hipico_race_events WHERE owner_id=${ownerId}::uuid AND group_key=${groupKey} AND race_id=${raceId}::uuid ORDER BY created_at ASC,id ASC`;
+    scope(ownerId,groupKey);return prisma.$queryRaw<any[]>`SELECT id,request_id AS "requestId",command,actor_id AS "actorId",actor_type AS "actorType",correlation_id AS "correlationId",from_state AS "fromState",to_state AS "toState",from_result_stage AS "fromResultStage",to_result_stage AS "toResultStage",disposition,reason,evidence,payload,created_at AS "createdAt" FROM public.hipico_race_events WHERE owner_id=${ownerId}::uuid AND group_key=${groupKey} AND race_id=${raceId}::uuid ORDER BY created_at ASC,id ASC`;
   }
   async command(ownerId:string,groupKey:string,raceId:string,raw:RaceCommandInput){
     scope(ownerId,groupKey);const input=normalizeRaceCommandInput(raw);const inputSignature=signature(input);
     return prisma.$transaction(async(tx)=>{
-      const previous=await tx.$queryRaw<Array<{inputSignature:string;toState:RaceLifecycleState;disposition:string;reason:string}>>`
-        SELECT input_signature AS "inputSignature",to_state AS "toState",disposition,reason FROM public.hipico_race_events
+      const previous=await tx.$queryRaw<Array<{inputSignature:string;fromState:RaceLifecycleState;toState:RaceLifecycleState;fromResultStage:RaceResultStage|null;toResultStage:RaceResultStage|null;disposition:string;reason:string}>>`
+        SELECT input_signature AS "inputSignature",from_state AS "fromState",to_state AS "toState",from_result_stage AS "fromResultStage",to_result_stage AS "toResultStage",disposition,reason
+        FROM public.hipico_race_events
         WHERE owner_id=${ownerId}::uuid AND group_key=${groupKey} AND race_id=${raceId}::uuid AND request_id=${input.requestId} LIMIT 1`;
       if(previous[0]){
         if(previous[0].inputSignature!==inputSignature)throw Object.assign(new Error('RACE_COMMAND_IDEMPOTENCY_MISMATCH'),{code:'RACE_COMMAND_IDEMPOTENCY_MISMATCH'});
-        return{duplicate:true,transition:{allowed:previous[0].disposition==='applied',from:input.expectedState,to:previous[0].toState,reason:previous[0].reason,resultStage:'none' as const}};
+        const replay=previous[0];
+        return{duplicate:true,transition:{
+          allowed:replay.disposition==='applied',from:replay.fromState,to:replay.toState,reason:replay.reason,
+          resultStage:replay.toResultStage||replay.fromResultStage||'none'
+        }};
       }
-      const races=await tx.$queryRaw<Array<{state:RaceLifecycleState;stateVersion:number;resultStage:string}>>`
+      const races=await tx.$queryRaw<Array<{state:RaceLifecycleState;stateVersion:number;resultStage:RaceResultStage}>>`
         SELECT state,state_version AS "stateVersion",result_stage AS "resultStage" FROM public.hipico_races
         WHERE id=${raceId}::uuid AND owner_id=${ownerId}::uuid AND group_key=${groupKey} LIMIT 1 FOR UPDATE`;
       if(!races[0])throw Object.assign(new Error('HIPICO_RACE_NOT_FOUND'),{code:'HIPICO_RACE_NOT_FOUND'});
-      const current=races[0];const transition=evaluateRaceCommand(current.state,input);const eventId=crypto.randomUUID();
-      await tx.$executeRaw`INSERT INTO public.hipico_race_events(id,owner_id,group_key,race_id,request_id,input_signature,command,actor_id,actor_type,correlation_id,from_state,to_state,disposition,reason,evidence,payload)
-        VALUES(${eventId}::uuid,${ownerId}::uuid,${groupKey},${raceId}::uuid,${input.requestId},${inputSignature},${input.command},${input.actorId},${input.actorType},${input.correlationId},${transition.from},${transition.to},${transition.allowed?'applied':'rejected'},${transition.reason},${JSON.stringify(input.evidence||[])}::jsonb,${JSON.stringify(input.payload||{})}::jsonb)`;
+      const current=races[0];
+      let suspendedFrom:RaceLifecycleState|null=null;
+      if(current.state==='SUSPENDED'&&input.command==='RESUME'){
+        const suspension=await tx.$queryRaw<Array<{fromState:RaceLifecycleState}>>`
+          SELECT from_state AS "fromState" FROM public.hipico_race_events
+          WHERE owner_id=${ownerId}::uuid AND group_key=${groupKey} AND race_id=${raceId}::uuid
+            AND command='SUSPEND' AND disposition='applied' AND to_state='SUSPENDED'
+          ORDER BY created_at DESC,id DESC LIMIT 1`;
+        suspendedFrom=suspension[0]?.fromState||null;
+      }
+      const transition=evaluateRaceCommand(current.state,input,current.resultStage,suspendedFrom);const eventId=crypto.randomUUID();
+      await tx.$executeRaw`INSERT INTO public.hipico_race_events(id,owner_id,group_key,race_id,request_id,input_signature,command,actor_id,actor_type,correlation_id,from_state,to_state,from_result_stage,to_result_stage,disposition,reason,evidence,payload)
+        VALUES(${eventId}::uuid,${ownerId}::uuid,${groupKey},${raceId}::uuid,${input.requestId},${inputSignature},${input.command},${input.actorId},${input.actorType},${input.correlationId},${transition.from},${transition.to},${current.resultStage},${transition.resultStage},${transition.allowed?'applied':'rejected'},${transition.reason},${JSON.stringify(input.evidence||[])}::jsonb,${JSON.stringify(input.payload||{})}::jsonb)`;
       if(transition.allowed){
-        const resultPayload=input.command==='RECORD_PROVISIONAL_RESULT'||input.command==='MARK_OFFICIAL_RESULT'?JSON.stringify(input.payload||{}):null;
+        const resultCommands=new Set(['RECORD_OBSERVED_ARRIVAL','RECORD_PROVISIONAL_RESULT','MARK_VERIFIED_RESULT','MARK_OFFICIAL_RESULT']);
+        const payload=input.payload||{};
+        const resultPayload=resultCommands.has(input.command)&&Object.keys(payload).length?JSON.stringify(payload):null;
         const affected=await tx.$executeRaw`UPDATE public.hipico_races SET state=${transition.to},result_stage=${transition.resultStage},state_version=state_version+1,result_data=CASE WHEN ${resultPayload}::text IS NULL THEN result_data ELSE ${resultPayload}::jsonb END,updated_at=now() WHERE id=${raceId}::uuid AND owner_id=${ownerId}::uuid AND group_key=${groupKey} AND state_version=${current.stateVersion}`;
         if(affected!==1)throw Object.assign(new Error('RACE_STATE_CONFLICT'),{code:'RACE_STATE_CONFLICT'});
       }

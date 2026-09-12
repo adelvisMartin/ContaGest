@@ -39,10 +39,16 @@ test('sender validates Meta runtime before reading or claiming any outbox row',(
   assert.ok(config>=0&&ready>config&&query>ready&&claim>query);
 });
 
-test('status endpoint consumes canonical Meta sender and webhook readiness instead of raw presence only',()=>{
-  assert.match(statusSource,/metaSenderConfig, metaWebhookConfig/);
-  assert.match(statusSource,/sender\.ready/);
-  assert.match(statusSource,/webhook\.ready/);
+test('status separates legacy Meta sender readiness from canonical backend webhook readiness',()=>{
+  assert.match(statusSource,/import \{ isMetaPhoneNumberId, metaSenderConfig \} from '\.\/meta-runtime\.js'/);
+  assert.doesNotMatch(statusSource,/metaWebhookConfig/);
+  assert.match(statusSource,/WHATSAPP_VERIFY_TOKEN/);
+  assert.match(statusSource,/WHATSAPP_APP_SECRET/);
+  assert.match(statusSource,/WHATSAPP_PHONE_NUMBER_ID/);
+  assert.match(statusSource,/const sender = metaSenderConfig\(\)/);
+  assert.match(statusSource,/const metaWebhookReady = webhookMissing\.length === 0/);
+  assert.match(statusSource,/webhookAuthority: 'canonical_backend'/);
   assert.match(statusSource,/accessTokenStrong: sender\.accessTokenStrong/);
-  assert.match(statusSource,/phoneNumberIdValid: sender\.phoneNumberIdValid && webhook\.phoneNumberIdValid/);
+  assert.match(statusSource,/phoneNumberIdValid: sender\.phoneNumberIdValid/);
+  assert.match(statusSource,/webhookPhoneNumberIdValid: secrets\.webhookPhoneNumberIdValid/);
 });

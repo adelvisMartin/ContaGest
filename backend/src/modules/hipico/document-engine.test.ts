@@ -23,6 +23,9 @@ const nativeExtractor:PdfTextExtractor={
 
 void test('hostile PDF active content fails closed before persistence',()=>{
   assert.throws(()=>validatePdfEnvelope(pdf('/OpenAction 7 0 R'),'bad.pdf'),(error:any)=>error?.code==='PDF_ACTIVE_CONTENT_REJECTED');
+  assert.throws(()=>validatePdfEnvelope(pdf('/Java#53cript 7 0 R'),'escaped-js.pdf'),(error:any)=>error?.code==='PDF_ACTIVE_CONTENT_REJECTED');
+  assert.throws(()=>validatePdfEnvelope(pdf('/Open#41ction 7 0 R'),'escaped-action.pdf'),(error:any)=>error?.code==='PDF_ACTIVE_CONTENT_REJECTED');
+  assert.throws(()=>validatePdfEnvelope(pdf('/AA << /S /URI >>'),'additional-action.pdf'),(error:any)=>error?.code==='PDF_ACTIVE_CONTENT_REJECTED');
 });
 
 void test('malformed PDF structure fails closed before persistence',()=>{
