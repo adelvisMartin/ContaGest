@@ -83,13 +83,20 @@ CBY10092026.pdf
 
 const copiedOffers=`Hoy
 Jugador Uno
-+58 400 000 0001
-Juego 2n del 5 con 30k
++00 000 000 0001
+Juega 2n del 5 con 30k
 8:01 p.m.
 Recibe Dos
-+58 400 000 0002
-Consigo 2n del 5 con 30k
++00 000 000 0002
+Consigue 2n del 5 con 30k
 8:02 p.m.`;
+
+const truncatedDocument=`Hoy
+Canal Hípico
++00 000 000 0000
+Reenviado
+CBY10092026.pdf
+7 páginas•PDF•2 MB`;
 
 test('copied WhatsApp UI corpus classifies media/noise without monetary false positives',()=>{
   const analysis=parseWhatsAppChat(copiedMedia);
@@ -106,7 +113,17 @@ test('copied WhatsApp UI corpus classifies media/noise without monetary false po
   assert.ok(analysis.documents.every((item)=>item.forwarded===true));
 });
 
-test('copied WhatsApp UI text reaches deterministic offer matcher',()=>{
+test('short truncated WhatsApp UI document is auto-detected and retained without timestamp',()=>{
+  const analysis=parseWhatsAppChat(truncatedDocument);
+  assert.equal(analysis.sourceFormat,'whatsapp-ui-copy');
+  assert.equal(analysis.documents.length,1);
+  assert.equal(analysis.documents[0].media.fileName,'CBY10092026.pdf');
+  assert.equal(analysis.documents[0].time,'');
+  assert.equal(analysis.offers.length,0);
+  assert.equal(analysis.matches.length,0);
+});
+
+test('copied WhatsApp UI Juega + Consigue text reaches deterministic offer matcher',()=>{
   const analysis=parseWhatsAppChat(copiedOffers);
   assert.equal(analysis.sourceFormat,'whatsapp-ui-copy');
   assert.equal(analysis.offers.length,2);
@@ -118,21 +135,23 @@ test('copied WhatsApp UI text reaches deterministic offer matcher',()=>{
   assert.equal(analysis.matches[0].receiver,'Recibe Dos');
 });
 
-test('classic WhatsApp export remains backward compatible',()=>{
-  const analysis=parseWhatsAppChat('[8:01 p. m., 10/09/2026] Jugador Uno: Juego 2n del 5 con 30k');
+test('classic WhatsApp export remains backward compatible and is not misdetected as UI copy',()=>{
+  const analysis=parseWhatsAppChat('[8:01 p. m., 10/09/2026] Jugador Uno: Juega 2n del 5 con 30k');
   assert.equal(analysis.sourceFormat,'whatsapp-export');
   assert.equal(analysis.offers.length,1);
   assert.equal(analysis.offers[0].play,'2N');
   assert.equal(analysis.offers[0].amount,30000);
 });
 
-test('backend delegates text to operational classifier and blocks media from auto-send',()=>{
+test('backend delegates text to operational classifier, blocks every non-text media type, and queues only individual replies',()=>{
   const service=fs.readFileSync(path.join(process.cwd(),'backend/src/modules/hipico-bot/hipico-bot.service.ts'),'utf8');
   assert.match(service,/classify as classifyOperational/);
-  assert.match(service,/NON_TEXT_MEDIA/);
+  assert.match(service,/return classifyOperational\(message\?\.body\|\|''\)/);
+  assert.match(service,/const NON_TEXT_MEDIA=new Set\(\['audio','document','image','sticker','video'\]\)/);
   assert.match(service,/document_reference/);
   assert.match(service,/NON_TEXT_MEDIA_REVIEW_GATE/);
   assert.match(service,/autoEligible:false/);
   assert.match(service,/SAFE_AUTOMATIC\.has\(result\.intent\)/);
   assert.match(service,/const result=classifyIncoming\(message\)/);
+  assert.match(service,/targetType:'individual'/);
 });
