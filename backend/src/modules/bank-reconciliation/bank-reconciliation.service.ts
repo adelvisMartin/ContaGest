@@ -42,6 +42,14 @@ type Candidate = {
   reasons:string[];
   blockedReason:string|null;
 };
+type ReconciliationModelRow={
+  id:string;tenantId:string;name:string;version:number;active:boolean;memoPattern:string;accountCode:string;
+  accountName:string;reasonCode:string;autoApply:boolean;minConfidence:Prisma.Decimal;createdBy:string|null;createdAt:Date;
+};
+type ModelSuggestion={
+  modelId:string;name:string;version:number;accountCode:string;accountName:string;reasonCode:string;
+  confidence:number;reasons:string[];autoApplyEligible:boolean;requiresConfirmation:true;
+};
 type ReconciliationAllocationInput={targetType:TargetType;targetId:string;amount:string};
 
 type DbClient = Prisma.TransactionClient|typeof prisma;
@@ -212,6 +220,33 @@ async function targetCandidates(tenantId:string,line:StatementLineRow) {
   return rows;
 }
 
+async function recurringModelSuggestions(tenantId:string,line:StatementLineRow):Promise<ModelSuggestion[]> {
+  const models=await prisma.$queryRaw<ReconciliationModelRow[]>(Prisma.sql`
+    SELECT * FROM "BankReconciliationModel"
+    WHERE "tenantId"=${tenantId} AND "active"=true
+    ORDER BY "name","version" DESC
+  `);
+  const haystack=normalize([line.memo,line.reference,line.counterparty].filter(Boolean).join(' '));
+  if(!haystack) return [];
+  const seenNames=new Set<string>();
+  const suggestions:ModelSuggestion[]=[];
+  for(const model of models){
+    if(seenNames.has(model.name)) continue;
+    seenNames.add(model.name);
+    const pattern=normalize(model.memoPattern);
+    if(!pattern||!haystack.includes(pattern)) continue;
+    const confidence=1;
+    const min=Number(model.minConfidence);
+    if(confidence<min) continue;
+    suggestions.push({
+      modelId:model.id,name:model.name,version:model.version,accountCode:model.accountCode,accountName:model.accountName,
+      reasonCode:model.reasonCode,confidence,reasons:['reconciliation_model_memo_match'],
+      autoApplyEligible:Boolean(model.autoApply)&&confidence>=min,requiresConfirmation:true
+    });
+  }
+  return suggestions;
+}
+
 function scoreCandidate(line:StatementLineRow,target:CandidateTarget,remaining:Prisma.Decimal):{confidence:number;reasons:string[];blockedReason:string|null} {
   if(target.currency!==line.currency) return {confidence:0,reasons:['currency_mismatch'],blockedReason:'FX_REQUIRES_EXPLICIT_POSTING'};
   if(target.direction!=='any'&&target.direction!==lineDirection(line)) return {confidence:0,reasons:['direction_mismatch'],blockedReason:'DIRECTION_MISMATCH'};
@@ -230,7 +265,9 @@ function scoreCandidate(line:StatementLineRow,target:CandidateTarget,remaining:P
 }
 
 export async function getMatchingCandidates(tenantId:string,lineId:string) {
-  const line=await getLine(tenantId,lineId); const targets=await targetCandidates(tenantId,line); const candidates:Candidate[]=[];
+  const line=await getLine(tenantId,lineId);
+  const [targets,modelSuggestions]=await Promise.all([targetCandidates(tenantId,line),recurringModelSuggestions(tenantId,line)]);
+  const candidates:Candidate[]=[];
   for(const target of targets){
     const used=await activeAllocatedForTarget(prisma,tenantId,target.targetType,target.targetId); const remaining=target.amount.minus(used);
     if(!remaining.isPositive()) continue;
@@ -240,15 +277,18 @@ export async function getMatchingCandidates(tenantId:string,lineId:string) {
   }
   candidates.sort((a,b)=>b.confidence-a.confidence || a.label.localeCompare(b.label));
   const actionable=candidates.filter((item)=>!item.blockedReason);
-  const top=actionable[0]?.confidence||0; const tied=actionable.filter((item)=>item.confidence===top&&top>=0.70).length>1;
-  const nextStatus:ReconciliationStatus=tied?'conflict':actionable.length?'suggested':'unmatched';
+  const top=actionable[0]?.confidence||0;
+  const tied=actionable.filter((item)=>item.confidence===top&&top>=0.70).length>1;
+  const modelConflict=modelSuggestions.length>0&&actionable.some((item)=>item.confidence>=0.70);
+  const nextStatus:ReconciliationStatus=tied||modelConflict?'conflict':actionable.length||modelSuggestions.length?'suggested':'unmatched';
   if(!['partial','reconciled'].includes(line.status)&&line.status!==nextStatus){
     await prisma.$transaction(async(tx)=>{
       await tx.$executeRaw(Prisma.sql`UPDATE "BankStatementLine" SET "status"=${nextStatus} WHERE "tenantId"=${tenantId} AND "id"=${line.id}`);
-      await tx.$executeRaw(Prisma.sql`INSERT INTO "BankReconciliationEvent" ("id","tenantId","statementLineId","type","payload") VALUES (${randomUUID()},${tenantId},${line.id},'candidates.generated',${safeJson({count:candidates.length,topConfidence:top,status:nextStatus})}::jsonb)`);
+      await tx.$executeRaw(Prisma.sql`INSERT INTO "BankReconciliationEvent" ("id","tenantId","statementLineId","type","payload") VALUES (${randomUUID()},${tenantId},${line.id},'candidates.generated',${safeJson({count:candidates.length,modelCount:modelSuggestions.length,topConfidence:top,status:nextStatus})}::jsonb)`);
     });
   }
-  return {line:{...line,amount:exact(line.amount)},status:nextStatus,autoThreshold:BANK_RECONCILIATION_AUTO_THRESHOLD,requiresReview:top<Number(BANK_RECONCILIATION_AUTO_THRESHOLD)||tied,candidates};
+  const requiresReview=modelSuggestions.length>0||top<Number(BANK_RECONCILIATION_AUTO_THRESHOLD)||tied||modelConflict;
+  return {line:{...line,amount:exact(line.amount)},status:nextStatus,autoThreshold:BANK_RECONCILIATION_AUTO_THRESHOLD,requiresReview,candidates,modelSuggestions};
 }
 
 async function resolveTarget(tx:Prisma.TransactionClient,tenantId:string,line:StatementLineRow,type:TargetType,id:string) {
@@ -303,7 +343,7 @@ export async function listReconciliationModels(tenantId:string) {
   return prisma.$queryRaw<Array<any>>(Prisma.sql`SELECT * FROM "BankReconciliationModel" WHERE "tenantId"=${tenantId} ORDER BY "active" DESC,"name","version" DESC`);
 }
 
-export async function createReconciliationModel(input:{tenantId:string;userId?:string;name:string;memoPattern:string;accountCode:string;accountName:string;reasonCode:string;autoApply?:boolean;minConfidence?:string}) {
+export async function createReconciliationModel(input:{tenantId:string;userId?:string;name:string;memoPattern:string;accountCode:string;accountName?:string;reasonCode:string;autoApply?:boolean;minConfidence?:string}) {
   const account=await prisma.chartAccount.findFirst({where:{tenantId:input.tenantId,code:input.accountCode,active:true,allowPosting:true},select:{code:true,name:true}});
   if(!account) throw new HttpError(422,'La cuenta contable del modelo no existe o no permite posting.');
   const rows=await prisma.$queryRaw<Array<{version:number}>>(Prisma.sql`SELECT COALESCE(MAX("version"),0)+1 AS version FROM "BankReconciliationModel" WHERE "tenantId"=${input.tenantId} AND "name"=${input.name}`);
