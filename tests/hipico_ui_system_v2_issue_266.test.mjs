@@ -6,9 +6,20 @@ const root = 'frontend/public/hipico-control';
 const indexPath = `${root}/index.html`;
 const recoveryPath = `${root}/recovery.html`;
 const cssPath = `${root}/assets/css/app.css`;
+const foundationPath = `${root}/assets/css/_foundation.css`;
 const guidePath = `${root}/STYLE-GUIDE.md`;
 const swPath = `${root}/sw.js`;
-const removedCss = ['styles.css','ui-system.css','tokens.css','themes.css','components.css','operations-pro.css','precision-hipica.css','offline-icons.css','recovery.css','ui-system-v2.css'];
+const removedCss = [
+  'styles.css','ui-system.css','tokens.css','themes.css','components.css',
+  'operations-pro.css','precision-hipica.css','offline-icons.css','recovery.css','ui-system-v2.css',
+  'mobile-accessibility.css','operational-copy-center.css','operational-access-guard.css'
+];
+
+async function canonicalCss() {
+  const [entry, foundation] = await Promise.all([fs.readFile(cssPath, 'utf8'), fs.readFile(foundationPath, 'utf8')]);
+  assert.match(entry, /^@import url\("\.\/_foundation\.css"\);/);
+  return `${foundation}\n${entry}`;
+}
 
 test('Control Hípico loads exactly one canonical stylesheet on app and recovery surfaces', async () => {
   const [index, recovery] = await Promise.all([fs.readFile(indexPath, 'utf8'), fs.readFile(recoveryPath, 'utf8')]);
@@ -17,6 +28,7 @@ test('Control Hípico loads exactly one canonical stylesheet on app and recovery
   assert.deepEqual(stylesheetLinks(recovery), ['./assets/css/app.css']);
   assert.match(recovery, /data-action="reset-local-storage"/);
   await fs.access(cssPath);
+  await fs.access(foundationPath);
   for (const file of removedCss) {
     assert.equal(index.includes(file), false, `${file} must not be loaded by index`);
     assert.equal(recovery.includes(file), false, `${file} must not be loaded by recovery`);
@@ -25,7 +37,7 @@ test('Control Hípico loads exactly one canonical stylesheet on app and recovery
 });
 
 test('canonical UI is neutral-first, restrained and free of historical override layers', async () => {
-  const css = await fs.readFile(cssPath, 'utf8');
+  const css = await canonicalCss();
   assert.match(css, /--hc-brand:\s*#721522/);
   assert.match(css, /--hc-radius-sm:\s*8px/);
   assert.match(css, /--hc-radius-lg:\s*12px/);
@@ -55,25 +67,28 @@ test('official horse/jockey image assets are the only PWA brand entry points', a
   await assert.rejects(fs.access(`${root}/icon.svg`));
 });
 
-test('service worker caches only canonical CSS plus integrated modules', async () => {
+test('service worker precaches the canonical CSS entrypoint and its internal foundation only', async () => {
   const sw = await fs.readFile(swPath, 'utf8');
   assert.match(sw, /assets\/css\/app\.css/);
+  assert.match(sw, /assets\/css\/_foundation\.css/);
   assert.match(sw, /password-recovery\.js/);
   assert.match(sw, /user-access\.js/);
   assert.match(sw, /help-center\.js/);
   assert.match(sw, /whatsapp\/ui-transcript\.js/);
-  assert.match(sw, /shell-r4-zero-legacy/);
+  assert.match(sw, /shell-r\d+-[a-z0-9-]+/i);
   for (const file of removedCss) assert.equal(sw.includes(`assets/css/${file}`), false, `${file} must not be cached`);
 });
 
 test('accessibility/mobile and component contracts are canonical', async () => {
   const [css, guide, ui, help] = await Promise.all([
-    fs.readFile(cssPath, 'utf8'), fs.readFile(guidePath, 'utf8'), fs.readFile(`${root}/assets/js/ui.js`, 'utf8'), fs.readFile(`${root}/assets/js/help-center.js`, 'utf8')
+    canonicalCss(), fs.readFile(guidePath, 'utf8'), fs.readFile(`${root}/assets/js/ui.js`, 'utf8'), fs.readFile(`${root}/assets/js/help-center.js`, 'utf8')
   ]);
   assert.match(css, /@media \(max-width: 780px\)/);
-  assert.match(css, /@media \(prefers-reduced-motion: reduce\)/);
+  assert.match(css, /@media \(max-width: 900px\), \(pointer: coarse\)/);
+  assert.match(css, /@media\s*\(prefers-reduced-motion:\s*reduce\)/);
   assert.match(css, /:focus-visible/);
   assert.match(css, /touch-action:\s*pan-y pinch-zoom/);
+  assert.match(css, /min-height:\s*var\(--hc-touch,\s*44px\)/);
   assert.match(ui, /button\(label/);
   assert.match(ui, /dialog\(title/);
   assert.match(ui, /focusableNodes/);
