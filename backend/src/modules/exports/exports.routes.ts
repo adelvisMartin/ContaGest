@@ -1,9 +1,8 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import crypto from 'node:crypto';
-import ExcelJS from 'exceljs';
 import PDFDocument from 'pdfkit';
-import { asyncHandler } from '../../shared/http.js';
+import { asyncHandler, HttpError } from '../../shared/http.js';
 import { validateBody } from '../../shared/middleware/validate.js';
 import { requireTenant } from '../../shared/middleware/context.js';
 
@@ -35,6 +34,20 @@ router.post('/txt', validateBody(exportSchema), asyncHandler(async (req, res) =>
 }));
 
 router.post('/xlsx', validateBody(xlsxSchema), asyncHandler(async (req, res) => {
+  // Keep the XLSX engine out of the global serverless bootstrap. A packaging or
+  // CJS/ESM failure in this optional heavy dependency must not take down stateless
+  // routes such as /api/v1/auth/captcha or platform health checks.
+  let ExcelJS: (typeof import('exceljs'))['default'];
+  try {
+    ExcelJS = (await import('exceljs')).default;
+  } catch {
+    throw new HttpError(
+      503,
+      'El generador XLSX no está disponible temporalmente. Intenta nuevamente en unos minutos.',
+      { code:'XLSX_RUNTIME_UNAVAILABLE' }
+    );
+  }
+
   const workbook = new ExcelJS.Workbook();
   workbook.creator = 'ContaGest-VE';
   workbook.created = new Date();

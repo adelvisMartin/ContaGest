@@ -119,6 +119,14 @@ test('Vercel serverless artifact bundles the aliased XLSX runtime instead of cra
   assert.match(stage,/exceljs quedó externalizado/);
 });
 
+test('XLSX runtime is lazy so optional export dependencies cannot break auth bootstrap',()=>{
+  const exportsRoute=read('backend','src','modules','exports','exports.routes.ts');
+  assert.doesNotMatch(exportsRoute,/^import\s+ExcelJS\s+from\s+['"]exceljs['"];?/m);
+  assert.match(exportsRoute,/await\s+import\(['"]exceljs['"]\)/);
+  assert.match(exportsRoute,/XLSX_RUNTIME_UNAVAILABLE/);
+  assert.match(exportsRoute,/new\s+ExcelJS\.Workbook\(\)/);
+});
+
 test('service worker cannot serve stale javascript or css ahead of the deployed network bundle',()=>{
   const sw=read('frontend','public','sw.js');
   assert.match(sw,/contagest-ve-v11-16-2/);
