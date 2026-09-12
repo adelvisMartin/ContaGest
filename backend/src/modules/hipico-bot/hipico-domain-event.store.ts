@@ -1,5 +1,6 @@
 import crypto from 'node:crypto';
 import { prisma } from '../../database/prisma.js';
+import { canonicalPayloadIssue, canonicalTimestampIssue } from './hipico-canonical-input-policy.js';
 import { initialHipicoState, reduceHipicoDomainEvent, type HipicoAggregateKind, type HipicoDomainEventInput, type HipicoState } from './hipico-domain-state.js';
 
 type PersistInput={
@@ -17,10 +18,59 @@ type EventRow={
   parserVersion:string|null;schemaVersion:number;eventTimestamp:Date|string;originalEventId:string|null;
   operatorConfirmed:boolean;confirmationReason:string|null;
 };
+type PersistenceReadinessRow={
+  aggregates:string|null;
+  events:string|null;
+  confirmationColumns:number;
+  sourceIdentityConstraint:boolean;
+  sourceIdentityIndex:boolean;
+  aggregateFkReady:boolean;
+  confirmationConstraintReady:boolean;
+  immutableTriggerReady:boolean;
+  aggregateRls:boolean;
+  eventRls:boolean;
+  authenticatedRoleReady:boolean;
+  browserWritesRevoked:boolean;
+};
 
-function validTimestamp(value?:string){
-  const date=value?new Date(value):new Date();
-  if(!Number.isFinite(date.getTime()))throw new Error('HIPICO_INVALID_EVENT_TIMESTAMP');
+const UUID_PATTERN=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function boundedOptionalText(value:unknown,max:number){
+  return value===undefined||value===null||String(value).length<=max;
+}
+
+function persistenceInputIssue(input:PersistInput){
+  const ownerId=String(input.ownerId||'').trim();
+  const groupKey=String(input.groupKey||'').trim();
+  const aggregateKey=String(input.aggregateKey||'').trim();
+  const sourceMessageKey=String(input.event?.sourceMessageKey||'').trim();
+  if(!UUID_PATTERN.test(ownerId))return'HIPICO_DOMAIN_OWNER_INVALID';
+  if(!['race','day'].includes(String(input.aggregateKind||'')))return'HIPICO_DOMAIN_AGGREGATE_KIND_INVALID';
+  if(!groupKey||groupKey.length>120||!aggregateKey||aggregateKey.length>180||!sourceMessageKey||sourceMessageKey.length>320){
+    return'HIPICO_DOMAIN_EVENT_SCOPE_REQUIRED';
+  }
+  if(!boundedOptionalText(input.event.sourceMessageId,320))return'HIPICO_DOMAIN_SOURCE_MESSAGE_ID_INVALID';
+  if(!boundedOptionalText(input.event.rawMessage,4000))return'HIPICO_DOMAIN_RAW_MESSAGE_TOO_LARGE';
+  if(!boundedOptionalText(input.event.actorRef,220))return'HIPICO_DOMAIN_ACTOR_REF_INVALID';
+  if(!boundedOptionalText(input.event.source,120))return'HIPICO_DOMAIN_SOURCE_INVALID';
+  if(!boundedOptionalText(input.event.parserVersion,120))return'HIPICO_DOMAIN_PARSER_VERSION_INVALID';
+  if(!boundedOptionalText(input.event.eventId,180)||!boundedOptionalText(input.event.originalEventId,180))return'HIPICO_DOMAIN_EVENT_ID_INVALID';
+  const schemaVersion=Number(input.event.schemaVersion??1);
+  if(!Number.isInteger(schemaVersion)||schemaVersion<1||schemaVersion>1000)return'HIPICO_DOMAIN_SCHEMA_VERSION_INVALID';
+  const payloadIssue=canonicalPayloadIssue(input.event.normalizedPayload);
+  if(payloadIssue)return payloadIssue;
+  if(typeof input.event.timestamp!=='string'||!input.event.timestamp.trim())return'HIPICO_EVENT_TIMESTAMP_REQUIRED';
+  const timestampIssue=canonicalTimestampIssue(input.event.timestamp);
+  if(timestampIssue)return timestampIssue;
+  return null;
+}
+
+function validTimestamp(value:unknown){
+  if(typeof value!=='string'||!value.trim())throw new Error('HIPICO_EVENT_TIMESTAMP_REQUIRED');
+  const issue=canonicalTimestampIssue(value);
+  if(issue)throw new Error(issue);
+  const date=new Date(value);
+  if(!Number.isFinite(date.getTime()))throw new Error('HIPICO_EVENT_TIMESTAMP_INVALID');
   return date;
 }
 function normalizedInstant(value:unknown){
@@ -51,19 +101,29 @@ function persistedRequiresReview(existing:Pick<EventRow,'disposition'|'reason'>)
   return existing.disposition==='review'&&existing.reason==='AMBIGUOUS_OR_UNKNOWN';
 }
 function assertDomainReplay(existing:EventRow,event:HipicoDomainEventInput){
-  const timestampMatches=event.timestamp===undefined
-    || normalizedInstant(existing.eventTimestamp)===normalizedInstant(event.timestamp);
+  const existingPayloadIssue=existing.normalizedPayload===undefined||existing.normalizedPayload===null
+    ? null : canonicalPayloadIssue(existing.normalizedPayload);
+  if(existingPayloadIssue)throw new Error('HIPICO_DOMAIN_PERSISTED_PAYLOAD_UNSAFE');
+  const incomingPayloadIssue=event.normalizedPayload===undefined||event.normalizedPayload===null
+    ? null : canonicalPayloadIssue(event.normalizedPayload);
+  if(incomingPayloadIssue)throw new Error(incomingPayloadIssue);
+  const existingTimestamp=normalizedInstant(existing.eventTimestamp);
+  const incomingTimestamp=existingTimestamp&&typeof event.timestamp==='string'&&event.timestamp.trim()
+    ? event.timestamp : null;
+  const timestampIssue=incomingTimestamp?canonicalTimestampIssue(incomingTimestamp):null;
+  if(timestampIssue)throw new Error(timestampIssue);
+  const timestampMatches=!existingTimestamp||!incomingTimestamp||existingTimestamp===normalizedInstant(incomingTimestamp);
   const eventIdMatches=!event.eventId||existing.id===String(event.eventId);
   const confirmation=confirmationAudit(event);
   const same=existing.eventType===event.type
     && eventIdMatches
     && sameNullable(existing.sourceMessageId,event.sourceMessageId)
     && sameNullable(existing.rawMessage,event.rawMessage)
-    && canonicalJson(existing.normalizedPayload)===canonicalJson(event.normalizedPayload)
+    && (existing.normalizedPayload===undefined||existing.normalizedPayload===null||canonicalJson(existing.normalizedPayload)===canonicalJson(event.normalizedPayload))
     && sameNullable(existing.actorRef,event.actorRef)
     && sameNullable(existing.source,event.source||'system')
-    && sameNullable(existing.parserVersion,event.parserVersion)
-    && Number(existing.schemaVersion||1)===Number(event.schemaVersion||1)
+    && (existing.parserVersion===undefined||sameNullable(existing.parserVersion,event.parserVersion))
+    && (existing.schemaVersion===undefined||Number(existing.schemaVersion||1)===Number(event.schemaVersion||1))
     && timestampMatches
     && persistedRequiresReview(existing)===incomingRequiresReview(event)
     && Boolean(existing.operatorConfirmed)===confirmation.operatorConfirmed
@@ -74,9 +134,24 @@ function assertDomainReplay(existing:EventRow,event:HipicoDomainEventInput){
   }
 }
 
+function unavailablePersistenceReadiness(){
+  return{
+    ready:false,
+    tablesReady:false,
+    confirmationAuditReady:false,
+    sourceIdentityReady:false,
+    aggregateFkReady:false,
+    confirmationConstraintReady:false,
+    immutableTriggerReady:false,
+    rlsReady:false,
+    authenticatedRoleReady:false,
+    browserWritesRevoked:false
+  };
+}
+
 export async function hipicoDomainPersistenceReadiness(){
   try{
-    const rows=await prisma.$queryRaw<Array<{aggregates:string|null;events:string|null;confirmationColumns:number}>>`
+    const rows=await prisma.$queryRaw<Array<PersistenceReadinessRow>>`
       SELECT
         to_regclass('public.hipico_domain_aggregates')::text AS "aggregates",
         to_regclass('public.hipico_domain_events')::text AS "events",
@@ -86,23 +161,98 @@ export async function hipicoDomainPersistenceReadiness(){
           WHERE table_schema='public'
             AND table_name='hipico_domain_events'
             AND column_name IN ('operator_confirmed','confirmation_reason')
-        ) AS "confirmationColumns"
+        ) AS "confirmationColumns",
+        EXISTS (
+          SELECT 1
+          FROM pg_constraint
+          WHERE conrelid=to_regclass('public.hipico_domain_events')
+            AND conname='hipico_domain_events_source_identity_unique'
+            AND contype='u'
+        ) AS "sourceIdentityConstraint",
+        (to_regclass('public.hipico_domain_events_source_identity_v297') IS NOT NULL) AS "sourceIdentityIndex",
+        EXISTS (
+          SELECT 1
+          FROM pg_constraint
+          WHERE conrelid=to_regclass('public.hipico_domain_events')
+            AND conname='hipico_domain_events_aggregate_fk'
+            AND contype='f'
+        ) AS "aggregateFkReady",
+        EXISTS (
+          SELECT 1
+          FROM pg_constraint
+          WHERE conrelid=to_regclass('public.hipico_domain_events')
+            AND conname='hipico_domain_events_confirmation_audit_check'
+            AND contype='c'
+        ) AS "confirmationConstraintReady",
+        EXISTS (
+          SELECT 1
+          FROM pg_trigger
+          WHERE tgrelid=to_regclass('public.hipico_domain_events')
+            AND tgname='hipico_domain_events_immutable'
+            AND NOT tgisinternal
+            AND tgenabled <> 'D'
+        ) AS "immutableTriggerReady",
+        COALESCE((
+          SELECT relrowsecurity
+          FROM pg_class
+          WHERE oid=to_regclass('public.hipico_domain_aggregates')
+        ),false) AS "aggregateRls",
+        COALESCE((
+          SELECT relrowsecurity
+          FROM pg_class
+          WHERE oid=to_regclass('public.hipico_domain_events')
+        ),false) AS "eventRls",
+        EXISTS (SELECT 1 FROM pg_roles WHERE rolname='authenticated') AS "authenticatedRoleReady",
+        CASE
+          WHEN EXISTS (SELECT 1 FROM pg_roles WHERE rolname='authenticated')
+            AND to_regclass('public.hipico_domain_aggregates') IS NOT NULL
+            AND to_regclass('public.hipico_domain_events') IS NOT NULL
+          THEN NOT (
+            has_table_privilege('authenticated','public.hipico_domain_aggregates','INSERT')
+            OR has_table_privilege('authenticated','public.hipico_domain_aggregates','UPDATE')
+            OR has_table_privilege('authenticated','public.hipico_domain_aggregates','DELETE')
+            OR has_table_privilege('authenticated','public.hipico_domain_events','INSERT')
+            OR has_table_privilege('authenticated','public.hipico_domain_events','UPDATE')
+            OR has_table_privilege('authenticated','public.hipico_domain_events','DELETE')
+          )
+          ELSE false
+        END AS "browserWritesRevoked"
     `;
     const row=rows[0];
     const tablesReady=Boolean(row?.aggregates&&row?.events);
     const confirmationAuditReady=Number(row?.confirmationColumns||0)===2;
-    return{ready:tablesReady&&confirmationAuditReady,tablesReady,confirmationAuditReady};
+    const sourceIdentityReady=Boolean(row?.sourceIdentityConstraint||row?.sourceIdentityIndex);
+    const aggregateFkReady=Boolean(row?.aggregateFkReady);
+    const confirmationConstraintReady=Boolean(row?.confirmationConstraintReady);
+    const immutableTriggerReady=Boolean(row?.immutableTriggerReady);
+    const rlsReady=Boolean(row?.aggregateRls&&row?.eventRls);
+    const authenticatedRoleReady=Boolean(row?.authenticatedRoleReady);
+    const browserWritesRevoked=Boolean(row?.browserWritesRevoked);
+    const ready=tablesReady
+      &&confirmationAuditReady
+      &&sourceIdentityReady
+      &&aggregateFkReady
+      &&confirmationConstraintReady
+      &&immutableTriggerReady
+      &&rlsReady
+      &&authenticatedRoleReady
+      &&browserWritesRevoked;
+    return{
+      ready,tablesReady,confirmationAuditReady,sourceIdentityReady,aggregateFkReady,
+      confirmationConstraintReady,immutableTriggerReady,rlsReady,authenticatedRoleReady,browserWritesRevoked
+    };
   }catch{
-    return{ready:false,tablesReady:false,confirmationAuditReady:false};
+    return unavailablePersistenceReadiness();
   }
 }
 
 export async function persistHipicoDomainEvent(input:PersistInput){
-  const ownerId=String(input.ownerId||'').trim();
-  const groupKey=String(input.groupKey||'').trim();
-  const aggregateKey=String(input.aggregateKey||'').trim();
-  const sourceMessageKey=String(input.event.sourceMessageKey||'').trim();
-  if(!ownerId||!groupKey||!aggregateKey||!sourceMessageKey)throw new Error('HIPICO_DOMAIN_EVENT_SCOPE_REQUIRED');
+  const issue=persistenceInputIssue(input);
+  if(issue)throw new Error(issue);
+  const ownerId=String(input.ownerId).trim();
+  const groupKey=String(input.groupKey).trim();
+  const aggregateKey=String(input.aggregateKey).trim();
+  const sourceMessageKey=String(input.event.sourceMessageKey).trim();
   const confirmation=confirmationAudit(input.event);
 
   return prisma.$transaction(async(tx)=>{
@@ -215,4 +365,7 @@ export async function persistHipicoDomainEvent(input:PersistInput){
   });
 }
 
-export const __test__={assertDomainReplay,canonicalJson,normalizedInstant,confirmationAudit,incomingRequiresReview,persistedRequiresReview};
+export const __test__={
+  assertDomainReplay,canonicalJson,normalizedInstant,confirmationAudit,incomingRequiresReview,
+  persistedRequiresReview,unavailablePersistenceReadiness,persistenceInputIssue,validTimestamp
+};

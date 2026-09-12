@@ -14,6 +14,15 @@ test('backend race reducer rejects result before open/close',()=>{
   assert.equal(result.state.stateVersion,0);
 });
 
+test('backend race reducer rejects close before any accepted opening evidence',()=>{
+  const start=initialHipicoState('race');
+  const close=reduceHipicoDomainEvent(start,event('RACE_CLOSED','m-close-before-open'));
+  assert.equal(close.disposition,'rejected');
+  assert.equal(close.reason,'OUT_OF_ORDER_OR_INVALID_TRANSITION');
+  assert.equal(close.state.status,'PREPARING');
+  assert.equal(close.state.stateVersion,0);
+});
+
 test('backend race reducer applies valid ordered lifecycle',()=>{
   let state=initialHipicoState('race');
   for(const [type,key] of [

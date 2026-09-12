@@ -79,7 +79,7 @@ test('Meta extraction preserves external identities and boundary validation reje
   assert.equal(__test__.validMetaMessageIdentity({...base,channelKey:'meta'}),false);
 });
 
-test('Meta webhook rejects incomplete or foreign phone identity before persistence and transport-acknowledges it',()=>{
+test('Meta webhook partitions malformed message identities instead of dropping valid signed siblings',()=>{
   const valid={externalMessageId:'wamid-meta-1',channelKey:'1234567890',senderId:'584121234567',senderLabel:'',timestamp:'2026-09-11T06:00:00.000Z',type:'text',text:'hola',quotedExternalMessageId:null,raw:{timestamp:'1789106400'}};
   assert.equal(__test__.validMetaMessageIdentity(valid),true);
   assert.equal(__test__.validMetaMessageIdentity({...valid,externalMessageId:''}),false);
@@ -87,12 +87,21 @@ test('Meta webhook rejects incomplete or foreign phone identity before persisten
   assert.equal(__test__.validMetaMessageIdentity({...valid,senderId:'0412-1234567'}),false);
   assert.equal(__test__.validMetaMessageIdentity({...valid,raw:{}}),false);
   assert.equal(__test__.validMetaMessageIdentity({...valid,timestamp:'not-a-date'}),false);
-  const identityCheck=source.indexOf('messages.some((message)=>!validMetaMessageIdentity(message))');
-  const phoneBinding=source.indexOf('String(message.channelKey)!==runtime.phoneNumberId');
+  const partition=source.indexOf('const validMessages=messages.filter((message)=>validMetaMessageIdentity(message))');
+  const invalidCount=source.indexOf('const invalidMessages=messages.length-validMessages.length');
+  const phoneBinding=source.indexOf('validMessages.some((message)=>String(message.channelKey)!==runtime.phoneNumberId)');
   const persistence=source.indexOf("await supabase('hipico_messages");
-  assert.ok(identityCheck>=0&&phoneBinding>identityCheck&&persistence>phoneBinding);
-  assert.match(source,/status\(200\).*accepted:false.*invalid_message_identity/s);
-  assert.match(source,/status\(200\).*webhook_phone_number_mismatch/s);
+  const partialAck=source.indexOf("error:'invalid_message_identity_partial'");
+  assert.ok(partition>=0&&invalidCount>partition&&phoneBinding>invalidCount&&persistence>phoneBinding&&partialAck>persistence);
+  assert.match(source,/accepted:true,\n\s*partial:true,\n\s*retryable:false/);
+  assert.match(source,/for \(const message of validMessages\)/);
+  assert.doesNotMatch(source,/messages\.some\(\(message\)=>!validMetaMessageIdentity\(message\)\)/);
+});
+
+test('fully malformed or foreign phone identity is permanently transport-acknowledged',()=>{
+  assert.match(source,/error:'invalid_message_identity'/);
+  assert.match(source,/error:'webhook_phone_number_mismatch'/);
+  assert.match(source,/status\(200\).*accepted:false/s);
 });
 
 test('signed status-only callbacks are bound to raw Meta phone identity before persistence bypass',()=>{
@@ -100,7 +109,7 @@ test('signed status-only callbacks are bound to raw Meta phone identity before p
   assert.equal(__test__.rawMetaEnvelopeIdentityError(statusEnvelope('9999999999'),'1234567890'),'META_PHONE_NUMBER_MISMATCH');
   assert.equal(__test__.rawMetaEnvelopeIdentityError({entry:[{changes:[{value:{statuses:[{id:'s1'}]}}]}]},'1234567890'),'META_PHONE_NUMBER_MISMATCH');
   const envelope=source.indexOf('rawMetaEnvelopeIdentityError(payload,runtime.phoneNumberId)');
-  const empty=source.indexOf('if(messages.length===0)');
+  const empty=source.indexOf('if(validMessages.length===0)');
   const owner=source.indexOf("const ownerId = String(process.env.HIPICO_OWNER_ID");
   assert.ok(envelope>=0&&empty>envelope&&owner>empty);
 });

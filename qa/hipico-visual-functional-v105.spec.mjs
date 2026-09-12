@@ -69,7 +69,10 @@ async function expectHealthyLayout(page, viewport, contextLabel) {
 
 for (const viewport of HIPICO_VIEWPORTS) {
   test.describe(`Control Hípico ${viewport.id}`, () => {
-    test.use({ viewport: { width: viewport.width, height: viewport.height } });
+    test.use({
+      viewport: { width: viewport.width, height: viewport.height },
+      hasTouch: viewport.touch
+    });
     for (const view of HIPICO_VIEWS) {
       test(`${view.id} · normal · sin overflow/solapamiento`, async ({ page }) => {
         const consoleErrors = await openView(page, view.id, 'normal');
@@ -83,7 +86,7 @@ for (const viewport of HIPICO_VIEWPORTS) {
 }
 
 test.describe('Estados representativos por vista', () => {
-  test.use({ viewport: { width: 390, height: 844 } });
+  test.use({ viewport: { width: 390, height: 844 }, hasTouch: true });
 
   for (const view of HIPICO_VIEWS) {
     test(`${view.id} · empty`, async ({ page }) => {
@@ -104,6 +107,39 @@ test.describe('Estados representativos por vista', () => {
       await context.setOffline(false);
     });
   }
+
+  test('loading real permanece visible mientras el módulo principal aún no está disponible', async ({ page }) => {
+    let releaseModule;
+    const moduleGate = new Promise((resolve) => { releaseModule = resolve; });
+    await page.route('**/hipico-control/assets/js/app.js', async (route) => {
+      await moduleGate;
+      await route.continue();
+    });
+    const navigation = page.goto('/hipico-control/');
+    await expect(page.locator('[data-boot-status]')).toBeVisible();
+    await expect(page.locator('[data-boot-status]')).toContainText(/Preparando la jornada/i);
+    await expect(page.locator('#app')).toHaveClass(/app-loading/);
+    await expectHealthyLayout(page, { touch: true }, 'boot/mobile-390/loading');
+    await captureEvidence(page, 'boot', 'mobile-390', 'loading');
+    releaseModule();
+    await navigation;
+    await expect(page.locator('#app')).not.toHaveClass(/app-loading/);
+  });
+
+  test('fallo real de boot expone reintento y recuperación segura sin pantalla bloqueada', async ({ page }) => {
+    await page.route('**/hipico-control/assets/js/app.js', (route) => route.abort('failed'));
+    await page.goto('/hipico-control/');
+    await page.evaluate(() => globalThis.__HIPICO_BOOT_FAIL__?.(new Error('QA_BOOT_FAILURE')));
+    await expect(page.getByRole('heading', { name: 'No se pudo iniciar Control Hípico' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Reintentar' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Abrir recuperación segura' })).toBeVisible();
+    await expect(page.locator('#app')).toContainText('QA_BOOT_FAILURE');
+    await expectHealthyLayout(page, { touch: true }, 'boot/mobile-390/error');
+    await captureEvidence(page, 'boot', 'mobile-390', 'error');
+    await page.getByRole('button', { name: 'Abrir recuperación segura' }).click();
+    await expect(page).toHaveURL(/\/hipico-control\/recovery\.html/);
+    await expect(page.locator('body')).toContainText(/recuper/i);
+  });
 
   test('permission/auth denial is explicit and non-destructive', async ({ page }) => {
     await resetQaStorage(page);

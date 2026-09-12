@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs';
 import {
   canonicalEvidenceIssue,
   canonicalMutationPolicy,
+  canonicalRaceContextKey,
   canonicalRequiresReview,
   canonicalScopeIssue,
   configuredCanonicalOwnerId,
@@ -12,7 +13,8 @@ import {
 import { normalizeDomainReadLimit } from './hipico-domain-query.store.js';
 
 const OWNER='11111111-1111-4111-8111-111111111111';
-const validRaceContext={raceNumber:1,racetrack:'Churchill Downs',raceContextComplete:true};
+const validRaceContext={raceDate:'2026-09-11',raceNumber:1,racetrack:'Churchill Downs',raceContextComplete:true};
+const racePayload=(extra:Record<string,unknown>={})=>({...validRaceContext,...extra});
 const base={
   eventType:'RACE_OPENED' as const,
   aggregateKind:'race' as const,
@@ -44,12 +46,15 @@ test('state-advancing events remain review-only until explicit operator confirma
   assert.equal(policy.monetaryWrite,false);
 });
 
-test('operator confirmation cannot override incomplete race context evidence',()=>{
+test('operator confirmation cannot override incomplete or invalid dated race context evidence',()=>{
   for(const normalizedPayload of [
     undefined,
     {raceNumber:1,racetrack:'Churchill Downs'},
-    {raceNumber:0,racetrack:'Churchill Downs',raceContextComplete:true},
-    {raceNumber:1,racetrack:'',raceContextComplete:true}
+    {raceNumber:1,racetrack:'Churchill Downs',raceContextComplete:true},
+    {raceDate:'2026-09-11',raceNumber:0,racetrack:'Churchill Downs',raceContextComplete:true},
+    {raceDate:'2026-09-11',raceNumber:1000,racetrack:'Churchill Downs',raceContextComplete:true},
+    {raceDate:'2026-09-11',raceNumber:1,racetrack:'',raceContextComplete:true},
+    {raceDate:'2026-02-31',raceNumber:1,racetrack:'Churchill Downs',raceContextComplete:true}
   ]){
     const policy=canonicalMutationPolicy({
       eventType:'RACE_OPENED',aggregateKind:'race',normalizedPayload,
@@ -61,16 +66,46 @@ test('operator confirmation cannot override incomplete race context evidence',()
   }
 });
 
-test('result settlement and balance state transitions require their structured evidence',()=>{
+test('every race event is bound to deterministic date track and race identity before persistence',()=>{
+  for(const eventType of __test__.RACE_CONTEXT_BOUND_EVENTS){
+    const aggregateKey=canonicalRaceContextKey({eventType,normalizedPayload:validRaceContext});
+    assert.ok(aggregateKey,eventType);
+    assert.equal(canonicalScopeIssue({
+      eventType,aggregateKind:'race',aggregateKey,normalizedPayload:validRaceContext,
+      confirmedOperatorAction:true,confirmationReason:'verified race identity'
+    }),null,eventType);
+    assert.equal(canonicalScopeIssue({
+      eventType,aggregateKind:'race',aggregateKey:'wrong-race',normalizedPayload:validRaceContext,
+      confirmedOperatorAction:true,confirmationReason:'verified race identity'
+    }),'HIPICO_RACE_AGGREGATE_KEY_MISMATCH',eventType);
+    assert.equal(canonicalScopeIssue({
+      eventType,aggregateKind:'race',aggregateKey,
+      confirmedOperatorAction:true,confirmationReason:'verified race identity'
+    }),'HIPICO_RACE_CONTEXT_INCOMPLETE',eventType);
+  }
+});
+
+test('same track and race number on a different date derives a distinct aggregate key',()=>{
+  const first=canonicalRaceContextKey({eventType:'RACE_OPENED',normalizedPayload:validRaceContext});
+  const second=canonicalRaceContextKey({eventType:'RACE_OPENED',normalizedPayload:{...validRaceContext,raceDate:'2026-09-12'}});
+  assert.ok(first&&second);
+  assert.notEqual(first,second);
+});
+
+test('result settlement and balance state transitions require scoped, unique structured evidence',()=>{
   const confirmed={confirmedOperatorAction:true,confirmationReason:'operator verified structured evidence'};
-  assert.equal(canonicalMutationPolicy({eventType:'RESULT_RECORDED',aggregateKind:'race',normalizedPayload:{},...confirmed}).evidenceIssue,'HIPICO_RESULT_BOARD_REQUIRED');
-  assert.equal(canonicalMutationPolicy({eventType:'RESULT_RECORDED',aggregateKind:'race',normalizedPayload:{board:['7','3','1']},...confirmed}).stateWriteEligible,true);
+  assert.equal(canonicalMutationPolicy({eventType:'RESULT_RECORDED',aggregateKind:'race',normalizedPayload:{},...confirmed}).evidenceIssue,'HIPICO_RACE_CONTEXT_INCOMPLETE');
+  assert.equal(canonicalMutationPolicy({eventType:'RESULT_RECORDED',aggregateKind:'race',normalizedPayload:racePayload(),...confirmed}).evidenceIssue,'HIPICO_RESULT_BOARD_REQUIRED');
+  assert.equal(canonicalMutationPolicy({eventType:'RESULT_RECORDED',aggregateKind:'race',normalizedPayload:racePayload({board:['7','3','1']}),...confirmed}).stateWriteEligible,true);
+  assert.equal(canonicalMutationPolicy({eventType:'RESULT_RECORDED',aggregateKind:'race',normalizedPayload:racePayload({board:['7','3','7']}),...confirmed}).evidenceIssue,'HIPICO_RESULT_BOARD_REQUIRED');
 
-  assert.equal(canonicalMutationPolicy({eventType:'SETTLEMENT_RECORDED',aggregateKind:'race',normalizedPayload:{settlementRows:[]},...confirmed}).evidenceIssue,'HIPICO_SETTLEMENT_ROWS_REQUIRED');
-  assert.equal(canonicalMutationPolicy({eventType:'SETTLEMENT_RECORDED',aggregateKind:'race',normalizedPayload:{settlementRows:[{participant:'P1',amount:-120}]},...confirmed}).evidenceIssue,null);
+  assert.equal(canonicalMutationPolicy({eventType:'SETTLEMENT_RECORDED',aggregateKind:'race',normalizedPayload:racePayload({settlementRows:[]}),...confirmed}).evidenceIssue,'HIPICO_SETTLEMENT_ROWS_REQUIRED');
+  assert.equal(canonicalMutationPolicy({eventType:'SETTLEMENT_RECORDED',aggregateKind:'race',normalizedPayload:racePayload({settlementRows:[{participant:'P1',amount:-120}]}),...confirmed}).evidenceIssue,null);
+  assert.equal(canonicalMutationPolicy({eventType:'SETTLEMENT_RECORDED',aggregateKind:'race',normalizedPayload:racePayload({settlementRows:[{participant:'P1',amount:-120},{participant:' p1 ',amount:120}]}),...confirmed}).evidenceIssue,'HIPICO_SETTLEMENT_ROWS_REQUIRED');
 
-  assert.equal(canonicalMutationPolicy({eventType:'BALANCE_CONFIRMED',aggregateKind:'race',normalizedPayload:{balances:[{participant:'P1',available:'100'}]},...confirmed}).evidenceIssue,'HIPICO_BALANCES_REQUIRED');
-  assert.equal(canonicalMutationPolicy({eventType:'BALANCE_CONFIRMED',aggregateKind:'race',normalizedPayload:{balances:[{participant:'P1',available:100}]},...confirmed}).evidenceIssue,null);
+  assert.equal(canonicalMutationPolicy({eventType:'BALANCE_CONFIRMED',aggregateKind:'race',normalizedPayload:racePayload({balances:[{participant:'P1',available:'100'}]}),...confirmed}).evidenceIssue,'HIPICO_BALANCES_REQUIRED');
+  assert.equal(canonicalMutationPolicy({eventType:'BALANCE_CONFIRMED',aggregateKind:'race',normalizedPayload:racePayload({balances:[{participant:'P1',available:100}]}),...confirmed}).evidenceIssue,null);
+  assert.equal(canonicalMutationPolicy({eventType:'BALANCE_CONFIRMED',aggregateKind:'race',normalizedPayload:racePayload({balances:[{participant:'P1',available:100},{participant:'p1',available:50}]}),...confirmed}).evidenceIssue,'HIPICO_BALANCES_REQUIRED');
 });
 
 test('canonical aggregate kind and correction identity are fail-closed before persistence',()=>{
@@ -80,8 +115,8 @@ test('canonical aggregate kind and correction identity are fail-closed before pe
   assert.equal(canonicalScopeIssue({eventType:'REVERSAL',aggregateKind:'race',originalEventId:'evt-1',confirmedOperatorAction:true,confirmationReason:'verified'}),null);
 });
 
-test('evidence validator rejects malformed boards and accepts bounded valid race context',()=>{
-  assert.equal(canonicalEvidenceIssue({eventType:'RESULT_RECORDED',normalizedPayload:{board:['']} ,confirmedOperatorAction:true,confirmationReason:'verified'}),'HIPICO_RESULT_BOARD_REQUIRED');
+test('evidence validator rejects malformed boards and accepts bounded valid dated race context',()=>{
+  assert.equal(canonicalEvidenceIssue({eventType:'RESULT_RECORDED',normalizedPayload:racePayload({board:['']}),confirmedOperatorAction:true,confirmationReason:'verified'}),'HIPICO_RESULT_BOARD_REQUIRED');
   assert.equal(canonicalEvidenceIssue({...base,confirmedOperatorAction:true,confirmationReason:'validated race opening'}),null);
 });
 
@@ -95,8 +130,14 @@ test('ambiguous and unknown events cannot be promoted by operator confirmation',
   }
 });
 
-test('bet evidence can be recorded without ever becoming a monetary mutation',()=>{
-  const policy=canonicalMutationPolicy({eventType:'BET_RECORDED',confirmedOperatorAction:false,confirmationReason:null});
+test('bet evidence requires dated race identity and can never become a monetary mutation',()=>{
+  const incomplete=canonicalMutationPolicy({eventType:'BET_RECORDED',confirmedOperatorAction:false,confirmationReason:null});
+  assert.equal(incomplete.requiresReview,true);
+  assert.equal(incomplete.evidenceIssue,'HIPICO_RACE_CONTEXT_INCOMPLETE');
+  const policy=canonicalMutationPolicy({
+    eventType:'BET_RECORDED',normalizedPayload:validRaceContext,
+    confirmedOperatorAction:false,confirmationReason:null
+  });
   assert.equal(policy.requiresReview,false);
   assert.equal(policy.evidenceOnly,true);
   assert.equal(policy.stateWriteEligible,false);
@@ -113,6 +154,8 @@ test('corrections and reversals require an explicit audited operator action',()=
 
 test('canonical schemas require group scope, bound read limits and reject unexpected fields',()=>{
   assert.equal(__test__.previewSchema.safeParse({text:'hola'}).success,false);
+  assert.equal(__test__.previewSchema.safeParse({groupKey:'g1',text:'hola',raceDate:'2026-09-11'}).success,true);
+  assert.equal(__test__.previewSchema.safeParse({groupKey:'g1',text:'hola',raceDate:'2026/09/11'}).success,false);
   assert.equal(__test__.domainReadSchema.safeParse({groupKey:'g1',limit:'25'}).success,true);
   assert.equal(__test__.domainReadSchema.safeParse({groupKey:'g1',limit:'201'}).success,false);
   assert.equal(__test__.domainReadSchema.safeParse({groupKey:'g1',ownerId:OWNER}).success,false);
