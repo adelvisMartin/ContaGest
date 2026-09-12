@@ -59,17 +59,26 @@ export class RaceLifecycleStore {
       if(previous[0]){
         if(previous[0].inputSignature!==inputSignature)throw Object.assign(new Error('RACE_COMMAND_IDEMPOTENCY_MISMATCH'),{code:'RACE_COMMAND_IDEMPOTENCY_MISMATCH'});
         const replay=previous[0];
-        const fallback=evaluateRaceCommand(replay.fromState,input,replay.fromResultStage||undefined);
         return{duplicate:true,transition:{
           allowed:replay.disposition==='applied',from:replay.fromState,to:replay.toState,reason:replay.reason,
-          resultStage:replay.toResultStage||fallback.resultStage
+          resultStage:replay.toResultStage||replay.fromResultStage||'none'
         }};
       }
       const races=await tx.$queryRaw<Array<{state:RaceLifecycleState;stateVersion:number;resultStage:RaceResultStage}>>`
         SELECT state,state_version AS "stateVersion",result_stage AS "resultStage" FROM public.hipico_races
         WHERE id=${raceId}::uuid AND owner_id=${ownerId}::uuid AND group_key=${groupKey} LIMIT 1 FOR UPDATE`;
       if(!races[0])throw Object.assign(new Error('HIPICO_RACE_NOT_FOUND'),{code:'HIPICO_RACE_NOT_FOUND'});
-      const current=races[0];const transition=evaluateRaceCommand(current.state,input,current.resultStage);const eventId=crypto.randomUUID();
+      const current=races[0];
+      let suspendedFrom:RaceLifecycleState|null=null;
+      if(current.state==='SUSPENDED'&&input.command==='RESUME'){
+        const suspension=await tx.$queryRaw<Array<{fromState:RaceLifecycleState}>>`
+          SELECT from_state AS "fromState" FROM public.hipico_race_events
+          WHERE owner_id=${ownerId}::uuid AND group_key=${groupKey} AND race_id=${raceId}::uuid
+            AND command='SUSPEND' AND disposition='applied' AND to_state='SUSPENDED'
+          ORDER BY created_at DESC,id DESC LIMIT 1`;
+        suspendedFrom=suspension[0]?.fromState||null;
+      }
+      const transition=evaluateRaceCommand(current.state,input,current.resultStage,suspendedFrom);const eventId=crypto.randomUUID();
       await tx.$executeRaw`INSERT INTO public.hipico_race_events(id,owner_id,group_key,race_id,request_id,input_signature,command,actor_id,actor_type,correlation_id,from_state,to_state,from_result_stage,to_result_stage,disposition,reason,evidence,payload)
         VALUES(${eventId}::uuid,${ownerId}::uuid,${groupKey},${raceId}::uuid,${input.requestId},${inputSignature},${input.command},${input.actorId},${input.actorType},${input.correlationId},${transition.from},${transition.to},${current.resultStage},${transition.resultStage},${transition.allowed?'applied':'rejected'},${transition.reason},${JSON.stringify(input.evidence||[])}::jsonb,${JSON.stringify(input.payload||{})}::jsonb)`;
       if(transition.allowed){
