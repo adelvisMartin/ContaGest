@@ -44,6 +44,8 @@ Las primitivas son equivalentes conceptualmente a shadcn/Radix sin introducir Re
 
 Verificar al menos 360, 390/393, 430, 768, 1024 y 1440 px. La barra móvil fija no cubre contenido. Ningún chip/tab impide `pan-y`. Tablas operativas se convierten en listas/cards cuando sea necesario.
 
+En móvil y en dispositivos de puntero grueso, todo control crítico interactivo mantiene un objetivo táctil mínimo de **44 px × 44 px**, incluidos botones sólo-icono, navegación y controles de formulario. La densidad compacta de escritorio no puede reducir ese contrato táctil.
+
 ## Accesibilidad
 
 - foco visible;
@@ -51,6 +53,7 @@ Verificar al menos 360, 390/393, 430, 768, 1024 y 1440 px. La barra móvil fija 
 - estado nunca comunicado sólo por color;
 - controles sólo-icono con `aria-label`;
 - dialogs con `role=dialog`, `aria-modal`, foco inicial, trap y retorno de foco;
+- objetivos táctiles críticos de 44 px × 44 px en móvil/coarse pointer;
 - reduced motion;
 - mensajes de error indican el siguiente paso.
 
