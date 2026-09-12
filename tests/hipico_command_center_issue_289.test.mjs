@@ -20,6 +20,8 @@ test('canonical backend mounts Command Center below /api/v1/hipico and keeps bot
     assert.match(service, new RegExp(capability));
   }
   assert.match(service, /sourceSendPossible:\s*false/);
+  assert.match(service, /WHERE owner_id=\$\{scope\.ownerId\}::uuid AND group_key=\$\{scope\.groupKey\}/);
+  assert.match(service, /AND channel_key=\$\{scope\.groupKey\}/);
 });
 
 test('canonical read APIs expose groups messages event history SSE and trace behind operator auth', async () => {
