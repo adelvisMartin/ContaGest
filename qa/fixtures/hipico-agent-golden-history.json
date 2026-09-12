@@ -1,0 +1,12 @@
+{
+  "schema": "hipico-agent-golden-history.v1",
+  "entries": [
+    {
+      "version": "2.0.0",
+      "caseCount": 24,
+      "corpusSha256": "92065532c557ccb25a0171f582fb565f815d54705fe0669d0db6a70ee4250dc9",
+      "expectedDeterministicMatchRate": 1,
+      "notes": "Baseline de regresión #288; no implica readiness de producción ni sustituye revisión humana."
+    }
+  ]
+}
