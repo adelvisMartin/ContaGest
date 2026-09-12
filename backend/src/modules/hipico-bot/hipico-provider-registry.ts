@@ -219,7 +219,8 @@ export function createHipicoProviderRegistry(options: RegistryOptions = {}) {
     const startedAt = now();
     pruneLastGood(startedAt);
     try {
-      const value = canonicalSnapshot(await adapter.getLiveStage(stageId));
+      const adapterValue = await adapter.getLiveStage(stageId);
+      const value = canonicalSnapshot({ ...adapterValue, provider: selectedProvider, stageId });
       const completedAt = now();
       lastGood.delete(key);
       lastGood.set(key, { expiresAt: completedAt + staleTtlMs, value });
