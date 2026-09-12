@@ -15,7 +15,11 @@ test('hostile participant/message strings are escaped as text', () => {
   ]) {
     const escaped = escapeHtml(payload);
     assert.doesNotMatch(escaped, /<script|<img|<svg|<a\s/i);
-    assert.match(escaped, /&lt;/);
+    assert.notEqual(escaped, payload);
+    if (payload.includes('<')) assert.match(escaped, /&lt;/);
+    if (payload.includes('>')) assert.match(escaped, /&gt;/);
+    if (payload.includes('"')) assert.match(escaped, /&quot;/);
+    if (payload.includes("'")) assert.match(escaped, /&#39;/);
   }
 });
 
@@ -28,10 +32,11 @@ test('PWA deployment enforces CSP and API no-store without unsafe-eval', async (
   assert.doesNotMatch(vercel, /unsafe-eval/);
 });
 
-test('service worker sends sensitive same-origin paths network-only no-store', async () => {
+test('service worker sends sensitive same-origin paths and exact-SHA metadata network-only no-store', async () => {
   const sw = await read('frontend/public/hipico-control/sw.js');
   assert.match(sw, /function isSensitive/);
-  assert.match(sw, /\(isSensitive\(url\)\)/);
+  assert.match(sw, /function isRuntimeMetadata/);
+  assert.match(sw, /isSensitive\(url\)\s*\|\|\s*isRuntimeMetadata\(url\)/);
   assert.match(sw, /fetch\(request, \{ cache: 'no-store' \}\)/);
   assert.match(sw, /request\.method !== 'GET'/);
 });
