@@ -10,7 +10,7 @@ test('#305 release guide tracks the actual PWA/Android and Bridge candidate vers
   assert.equal(wrapper.version, '1.13.0-rc3');
   assert.match(guide, /Control Hípico v1\.13\.0 RC3/);
   assert.match(guide, /\*\*Versión app:\*\* `1\.13\.0-rc3`/);
-  assert.match(guide, new RegExp(`\\*\\*Bridge WhatsApp Web:\\*\\* \\`${bridge.version.replaceAll('.', '\\.') }\\``));
+  assert.ok(guide.includes(`**Bridge WhatsApp Web:** \`${bridge.version}\``));
   assert.match(guide, /Hipico-Control-v1\.13\.0-rc3-debug\.apk/);
   assert.doesNotMatch(guide, /1\.13\.0-rc2|Bridge WhatsApp Web v1\.4\.1/);
 });
