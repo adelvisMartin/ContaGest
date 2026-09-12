@@ -23,13 +23,6 @@ function stable(value:unknown):string{
 }
 
 function payloadHash(data:unknown){return crypto.createHash('sha256').update(stable(data)).digest('hex');}
-function confidenceFor(officiality:string){
-  if(officiality==='official')return 1;
-  if(officiality==='verified')return .95;
-  if(officiality==='provisional')return .75;
-  if(officiality==='observed')return .6;
-  return null;
-}
 
 export class ProviderEvidenceStore{
   async record<T>(input:{ownerId:string;groupKey:string;capability:RacingProviderCapability;externalId?:string|null;record:RacingData<T>}){
@@ -45,7 +38,7 @@ export class ProviderEvidenceStore{
     const hash=payloadHash(input.record.data);
     const normalized=JSON.stringify(input.record.data);
     const provenanceJson=JSON.stringify(provenance);
-    const confidence=confidenceFor(provenance.officiality);
+    const confidence:null=null;
     const rows=await prisma.$queryRaw<any[]>`
       INSERT INTO public.hipico_provider_evidence(
         owner_id,group_key,provider_id,capability,external_id,source,source_provider,source_timestamp,fetched_at,
