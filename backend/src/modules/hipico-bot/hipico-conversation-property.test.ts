@@ -18,15 +18,15 @@ function randomText(random: () => number, max = 180) {
   return output;
 }
 
-test('property: same input/context is deterministic and never grants effects', () => {
+test('property: 2000 seeded input/context cases are deterministic and never grant effects', () => {
   const random = seeded(1502026);
-  for (let index = 0; index < 300; index += 1) {
+  for (let index = 0; index < 2000; index += 1) {
     const message = {
       sourceMessageId: `property-${index}`,
-      participantId: `p-${Math.floor(random() * 7)}`,
+      participantId: `p-${Math.floor(random() * 23)}`,
       text: randomText(random),
       timestamp: new Date(Date.parse('2026-08-29T12:00:00.000Z') + index * 1000).toISOString(),
-      raceId: String(1 + (index % 12))
+      raceId: String(1 + (index % 18))
     };
     const context = { closedRaceIds: index % 17 === 0 ? [message.raceId] : [] };
     const first = decideConversation(message, context);
