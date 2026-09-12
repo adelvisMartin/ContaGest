@@ -76,15 +76,24 @@ test('confirmed recovery commits localStorage cleanup only after IndexedDB delet
   assert.equal(result.timers.some(({ delay }) => delay <= 500), true);
 });
 
-test('blocked IndexedDB deletion fails closed without partially deleting localStorage', () => {
+test('blocked IndexedDB deletion remains pending and completes cleanup after the blocker closes', () => {
   const result = executeRecovery(true);
   assert.equal(typeof result.deleteRequest.onblocked, 'function');
   result.deleteRequest.onblocked();
-  assert.equal(result.reset.disabled, false);
+  assert.equal(result.reset.disabled, true, 'blocked deletion is still pending and must not start a duplicate request');
   assert.match(result.status.textContent, /cierra otras pestañas|bloquead|ocupado/i);
   assert.deepEqual(result.removedKeys, []);
   assert.deepEqual(result.replacements, []);
-  assert.equal(result.timers.some(({ delay }) => delay <= 500), false, 'blocked deletion must not schedule automatic app navigation');
+  assert.equal(result.timers.some(({ delay }) => delay <= 500), false, 'blocked deletion must not navigate before success');
+
+  result.deleteRequest.onsuccess();
+  assert.deepEqual(result.removedKeys, [
+    'hipico-control-workspace-v1',
+    'hipico-control-cloud-session',
+    'hipico-control-mode'
+  ], 'pending deletion must finish the local cleanup when success eventually fires');
+  assert.match(result.status.textContent, /restablecido/i);
+  assert.equal(result.timers.some(({ delay }) => delay <= 500), true);
 });
 
 test('IndexedDB deletion error keeps all remaining local data and offers an actionable retry', () => {
