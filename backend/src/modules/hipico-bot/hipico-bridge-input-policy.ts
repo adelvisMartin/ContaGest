@@ -5,6 +5,7 @@ const GROUP_ID_RE=/^(?:\d{5,}-\d+|\d{10,})@g\.us$/i;
 const CHANNEL_KEY_RE=/^[A-Za-z0-9_-]{3,120}$/;
 const DEFAULT_SOURCE_CHANNEL_KEY='club-hipico-triple-crown-official';
 const DEFAULT_LAB_CHANNEL_KEY='control-hipico-lab';
+const MEDIA_KINDS=new Set(['none','image','video','audio','document','unknown']);
 export const HISTORY_MAX_MESSAGES_PER_MINUTE=300;
 export const HISTORY_MAX_IDENTICAL_PER_MINUTE=25;
 export const historySyncRateLimiter=new ParticipantRateLimiter(HISTORY_MAX_MESSAGES_PER_MINUTE,HISTORY_MAX_IDENTICAL_PER_MINUTE);
@@ -62,6 +63,19 @@ export function normalizeBridgeSender(senderId:string){
   if(!canonical)return null;
   if(/[\u0000-\u001F\u007F]/.test(canonical))return null;
   return canonical;
+}
+
+/**
+ * Treat any positive attachment signal as media. Older Bridge builds may know
+ * that a message has media before they can identify the concrete MIME family;
+ * that uncertainty must quarantine the caption instead of letting it fall
+ * through the text-only parser.
+ */
+export function effectiveBridgeMediaKind(hasMedia:unknown,mediaKind:unknown){
+  const normalized=String(mediaKind||'none').trim().toLowerCase();
+  const known=MEDIA_KINDS.has(normalized)?normalized:'unknown';
+  if(Boolean(hasMedia)&&known==='none')return'unknown';
+  return known;
 }
 
 export function liveRateLimitClock(historySync:boolean,now:()=>number=Date.now){

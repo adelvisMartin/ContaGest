@@ -4,6 +4,7 @@ const DEFAULT_FETCH_TIMEOUT_MS = 10000;
 const MAX_FETCH_TIMEOUT_MS = 60000;
 const SHA40 = /^[a-f0-9]{40}$/i;
 export const MIN_HIPICO_INTERNAL_SECRET_LENGTH = 32;
+export const PUBLIC_SECRET_PLACEHOLDER_PATTERN = /(?:REEMPLAZA|REPLACE|CHANGE[_-]?ME|CHANGEME|PLACEHOLDER|YOUR[_-]?(?:SECRET|TOKEN|KEY)|TU[_-]?(?:SECRETO|TOKEN|CLAVE)|EXAMPLE[_-]?(?:SECRET|TOKEN|KEY))/i;
 
 export function env(name, required = true) {
   const value = process.env[name];
@@ -13,7 +14,8 @@ export function env(name, required = true) {
 
 export function strongSecretConfigured(value, minLength = MIN_HIPICO_INTERNAL_SECRET_LENGTH) {
   const minimum = Number.isInteger(minLength) && minLength > 0 ? minLength : MIN_HIPICO_INTERNAL_SECRET_LENGTH;
-  return Buffer.byteLength(String(value || '').trim(), 'utf8') >= minimum;
+  const secret = String(value || '').trim();
+  return Buffer.byteLength(secret, 'utf8') >= minimum && !PUBLIC_SECRET_PLACEHOLDER_PATTERN.test(secret);
 }
 
 export function serverSecret(name, minLength = MIN_HIPICO_INTERNAL_SECRET_LENGTH) {
@@ -34,8 +36,6 @@ export function bearerTokenValid(header, expected) {
 }
 
 export function isE164(value) {
-  // E.164 allows at most 15 digits. WhatsApp accepts the same digits with or
-  // without a leading plus depending on the API field, so normalize later.
   return /^\+?[1-9]\d{6,14}$/.test(String(value || '').trim());
 }
 
@@ -45,10 +45,7 @@ function normalizedE164(value) {
 }
 
 function metaAllowedDestinations(source = process.env) {
-  return new Set(String(source.HIPICO_META_ALLOWED_DESTINATIONS || '')
-    .split(',')
-    .map(normalizedE164)
-    .filter(Boolean));
+  return new Set(String(source.HIPICO_META_ALLOWED_DESTINATIONS || '').split(',').map(normalizedE164).filter(Boolean));
 }
 
 export function metaOutboundPolicy(source = process.env) {
@@ -93,9 +90,7 @@ export function sha256(value) {
 
 export function safeTimeoutMs(value, fallback = DEFAULT_FETCH_TIMEOUT_MS) {
   const fallbackValue = Number(fallback);
-  const safeFallback = Number.isFinite(fallbackValue) && fallbackValue > 0
-    ? Math.min(Math.floor(fallbackValue), MAX_FETCH_TIMEOUT_MS)
-    : DEFAULT_FETCH_TIMEOUT_MS;
+  const safeFallback = Number.isFinite(fallbackValue) && fallbackValue > 0 ? Math.min(Math.floor(fallbackValue), MAX_FETCH_TIMEOUT_MS) : DEFAULT_FETCH_TIMEOUT_MS;
   const number = Number(value);
   if (!Number.isFinite(number) || number <= 0) return safeFallback;
   return Math.min(Math.floor(number), MAX_FETCH_TIMEOUT_MS);
@@ -120,15 +115,10 @@ export async function fetchWithTimeout(url, init = {}, timeoutMs = DEFAULT_FETCH
 
 export async function supabase(path, init = {}) {
   const base = env('HIPICO_SUPABASE_URL').replace(/\/$/, '');
-  const serviceKey = env('HIPICO_SUPABASE_SERVICE_ROLE_KEY');
+  const serviceKey = serverSecret('HIPICO_SUPABASE_SERVICE_ROLE_KEY');
   const response = await fetchWithTimeout(`${base}/rest/v1/${path}`, {
     ...init,
-    headers: {
-      apikey: serviceKey,
-      Authorization: `Bearer ${serviceKey}`,
-      'Content-Type': 'application/json',
-      ...(init.headers || {})
-    }
+    headers: { apikey: serviceKey, Authorization: `Bearer ${serviceKey}`, 'Content-Type': 'application/json', ...(init.headers || {}) }
   }, safeTimeoutMs(process.env.HIPICO_SUPABASE_TIMEOUT_MS));
   const text = await response.text();
   if (!response.ok) {
@@ -138,26 +128,27 @@ export async function supabase(path, init = {}) {
   return text ? JSON.parse(text) : null;
 }
 
+export function metaTimestamp(value) {
+  if (value === undefined || value === null || String(value).trim() === '') return null;
+  const raw = String(value).trim();
+  if (!/^\d{1,12}$/.test(raw)) return null;
+  const seconds = Number(raw);
+  if (!Number.isFinite(seconds) || seconds <= 0) return null;
+  const date = new Date(seconds * 1000);
+  return Number.isFinite(date.getTime()) ? date.toISOString() : null;
+}
+
 export function extractMetaMessages(payload) {
   const rows = [];
   for (const entry of payload?.entry || []) {
     for (const change of entry?.changes || []) {
       const value = change?.value || {};
-      const channelKey = String(value?.metadata?.phone_number_id || 'meta');
-      const contactNames = new Map((value?.contacts || []).map((c) => [String(c.wa_id || ''), c?.profile?.name || '']));
+      const channelKey = String(value?.metadata?.phone_number_id || 'meta').trim() || 'meta';
+      const contactNames = new Map((value?.contacts || []).map((contact) => [String(contact?.wa_id || ''), String(contact?.profile?.name || '')]));
       for (const message of value?.messages || []) {
-        const text = message?.text?.body || message?.button?.text || message?.interactive?.button_reply?.title || message?.interactive?.list_reply?.title || '';
-        rows.push({
-          channelKey,
-          externalMessageId: String(message?.id || ''),
-          senderId: String(message?.from || ''),
-          senderLabel: contactNames.get(String(message?.from || '')) || '',
-          timestamp: message?.timestamp ? new Date(Number(message.timestamp) * 1000).toISOString() : new Date().toISOString(),
-          type: String(message?.type || 'unknown'),
-          text: String(text || '').slice(0, 4000),
-          quotedExternalMessageId: message?.context?.id ? String(message.context.id) : null,
-          raw: message
-        });
+        const timestamp = metaTimestamp(message?.timestamp);
+        const text = message?.text?.body || message?.button?.text || message?.interactive?.button_reply?.title || message?.interactive?.list_reply?.title || message?.document?.caption || message?.document?.filename || message?.image?.caption || message?.video?.caption || '';
+        rows.push({ channelKey, externalMessageId: String(message?.id || ''), senderId: String(message?.from || ''), senderLabel: contactNames.get(String(message?.from || '')) || '', timestamp, type: String(message?.type || 'unknown').trim().toLowerCase() || 'unknown', text: String(text || '').slice(0, 4000), quotedExternalMessageId: message?.context?.id ? String(message.context.id) : null, raw: message });
       }
     }
   }

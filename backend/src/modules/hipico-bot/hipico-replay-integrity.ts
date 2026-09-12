@@ -2,10 +2,15 @@ import crypto from 'node:crypto';
 
 type TransportReplayMetadata = {
   sentAt?: unknown;
+  groupId?: unknown;
+  channelKey?: unknown;
+  labChannelKey?: unknown;
   channelRole?: unknown;
+  historySync?: unknown;
   fromMe?: unknown;
   hasMedia?: unknown;
   mediaKind?: unknown;
+  mediaName?: unknown;
   quotedExternalMessageId?: unknown;
 };
 
@@ -69,10 +74,15 @@ export function transportReplaySignature(source: TransportReplaySource) {
     text(source.messageType) || 'unknown',
     bodyText(source.body),
     timestamp(payload.sentAt),
+    nullableText(payload.groupId),
+    nullableText(payload.channelKey),
+    nullableText(payload.labChannelKey),
     text(payload.channelRole),
+    booleanValue(payload.historySync),
     booleanValue(payload.fromMe),
     booleanValue(payload.hasMedia),
     text(payload.mediaKind) || 'none',
+    nullableText(payload.mediaName),
     nullableText(payload.quotedExternalMessageId)
   ]);
 }

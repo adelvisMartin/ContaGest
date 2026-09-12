@@ -17,10 +17,26 @@ test('bridge route validates exact SOURCE/LAB identity before sender classificat
   assert.match(validator,/if\(!input\.shadowMode\)/);
   assert.match(validator,/validateBridgeGroupIdentity\(input\)/);
   assert.match(validator,/HIPICO_BRIDGE_GROUP_IDENTITY_NOT_CONFIGURED/);
-  const identityCheck=routes.indexOf('const channelError=validatePinnedChannel(input)');
-  const senderNormalization=routes.indexOf('const sender=normalizeBridgeSender(input.senderId)');
-  const classification=routes.indexOf('classifyUntrustedConversation');
-  assert.ok(identityCheck>=0&&senderNormalization>identityCheck&&classification>senderNormalization);
+
+  const eventRouteStart=routes.indexOf("router.post('/bridge/events'");
+  const eventRouteEnd=routes.indexOf('export default router',eventRouteStart);
+  assert.ok(eventRouteStart>=0&&eventRouteEnd>eventRouteStart,'bridge events route must be present');
+  const eventRoute=routes.slice(eventRouteStart,eventRouteEnd);
+  const identityCheck=eventRoute.indexOf('const channelError=validatePinnedChannel(input)');
+  const senderNormalization=eventRoute.indexOf('const sender=normalizeBridgeSender(input.senderId)');
+  const mediaNormalization=eventRoute.indexOf('effectiveBridgeMediaKind(input.hasMedia,input.mediaKind)');
+  const classification=eventRoute.indexOf('classifyUntrustedConversation({text:input.text,mediaKind:effectiveMediaKind');
+  const persistence=eventRoute.indexOf('persistBridgeTransportEvent({');
+  assert.ok(identityCheck>=0&&senderNormalization>identityCheck&&mediaNormalization>senderNormalization&&classification>mediaNormalization&&persistence>classification);
+});
+
+test('effective media kind propagates through transport, canonical storage and conversation decision',()=>{
+  const eventRouteStart=routes.indexOf("router.post('/bridge/events'");
+  const eventRouteEnd=routes.indexOf('export default router',eventRouteStart);
+  const eventRoute=routes.slice(eventRouteStart,eventRouteEnd);
+  assert.match(eventRoute,/hasMedia:effectiveMediaKind!=='none',mediaKind:effectiveMediaKind/);
+  assert.match(eventRoute,/persistCanonicalShadow\([\s\S]*mediaKind:effectiveMediaKind/);
+  assert.match(eventRoute,/decideConversation\([\s\S]*mediaKind:effectiveMediaKind/);
 });
 
 test('transport persistence requires pinned modern or legacy SOURCE/LAB IDs before any write',()=>{

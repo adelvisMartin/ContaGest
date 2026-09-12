@@ -78,5 +78,31 @@ test('unsupported media without text requires review',()=>{
   const {assessment,result}=classifyUntrustedConversation({text:'',mediaKind:'audio'});
   assert.equal(assessment.unsupportedMedia,true);
   assert.equal(assessment.forceReview,true);
+  assert.equal(result.intent,'media_message');
   assert.equal(result.risk,'review');
+  assert.equal(result.autoEligible,false);
+});
+
+test('PDF filename or caption cannot impersonate a race-opening signal',()=>{
+  const {assessment,result}=classifyUntrustedConversation({
+    text:'Churchill Downs 1ra carrera abierta.pdf',
+    mediaKind:'document'
+  });
+  assert.equal(assessment.forceReview,true);
+  assert.ok(assessment.flags.includes('DOCUMENT_REQUIRES_REVIEW'));
+  assert.equal(result.intent,'document_reference');
+  assert.equal(result.reason,'DOCUMENT_REVIEW_GATE');
+  assert.equal(result.risk,'review');
+  assert.equal(result.autoEligible,false);
+});
+
+test('media caption cannot impersonate a race result while plain text remains classifiable',()=>{
+  const attachment=classifyUntrustedConversation({text:'llegada 1.2.8.7',mediaKind:'image'});
+  assert.equal(attachment.assessment.forceReview,true);
+  assert.equal(attachment.result.intent,'media_message');
+  assert.equal(attachment.result.autoEligible,false);
+
+  const textOnly=classifyUntrustedConversation({text:'llegada 1.2.8.7',mediaKind:'none'});
+  assert.notEqual(textOnly.result.intent,'media_message');
+  assert.notEqual(textOnly.result.intent,'document_reference');
 });

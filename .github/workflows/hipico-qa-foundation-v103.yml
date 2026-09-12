@@ -16,6 +16,7 @@ on:
       - 'qa/support/hipico-layout-detector-v105.mjs'
       - 'qa/fixtures/hipico-v105-broken-overflow.html'
       - 'scripts/hipico-qa-runner-v103.mjs'
+      - 'scripts/hipico-exact-sha-gate.mjs'
       - 'docs/hipico/QA-RUNNER.md'
       - 'docs/hipico/QA-VISUAL-FUNCTIONAL-MATRIX.md'
       - 'docs/hipico/CONTROL_HIPICO_V1130_RELEASE_AND_QA.md'
@@ -26,6 +27,9 @@ on:
 
 permissions:
   contents: read
+
+env:
+  HIPICO_CANDIDATE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
 
 concurrency:
   group: hipico-qa-v103-${{ github.event.pull_request.number || github.ref }}
@@ -38,11 +42,16 @@ jobs:
     timeout-minutes: 35
     env:
       HIPICO_QA_ANDROID: skip
+      HIPICO_CANDIDATE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
     steps:
       - name: Checkout exact candidate
         uses: actions/checkout@v7
         with:
+          ref: ${{ env.HIPICO_CANDIDATE_SHA }}
           fetch-depth: 0
+
+      - name: Gate exact candidate and clean tree
+        run: node scripts/hipico-exact-sha-gate.mjs
 
       - name: Configure Node 22
         uses: actions/setup-node@v7
@@ -65,7 +74,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: hipico-qa-v103-${{ github.sha }}
+          name: hipico-qa-v103-${{ env.HIPICO_CANDIDATE_SHA }}
           path: artifacts/qa/hipico-v103/
           if-no-files-found: error
           retention-days: 30
@@ -74,11 +83,17 @@ jobs:
     name: Visual/function matrix #105
     runs-on: ubuntu-latest
     timeout-minutes: 35
+    env:
+      HIPICO_CANDIDATE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
     steps:
       - name: Checkout exact candidate
         uses: actions/checkout@v7
         with:
+          ref: ${{ env.HIPICO_CANDIDATE_SHA }}
           fetch-depth: 0
+
+      - name: Gate exact candidate and clean tree
+        run: node scripts/hipico-exact-sha-gate.mjs
 
       - name: Configure Node 22
         uses: actions/setup-node@v7
@@ -93,15 +108,18 @@ jobs:
 
       - name: Execute matrix contract + real browser render
         env:
-          HIPICO_QA_SHA: ${{ github.sha }}
+          HIPICO_QA_SHA: ${{ env.HIPICO_CANDIDATE_SHA }}
         run: npm run qa:hipico:visual
 
       - name: Preserve view-by-view screenshots
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: hipico-visual-v105-${{ github.sha }}
-          path: artifacts/qa/hipico-v105/
+          name: hipico-visual-v105-${{ env.HIPICO_CANDIDATE_SHA }}
+          path: |
+            artifacts/qa/hipico-v105/${{ env.HIPICO_CANDIDATE_SHA }}
+            test-results
+            playwright-report
           if-no-files-found: warn
           retention-days: 30
 
@@ -109,9 +127,16 @@ jobs:
     name: Android wrapper parity contract
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    env:
+      HIPICO_CANDIDATE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
     steps:
       - name: Checkout exact candidate
         uses: actions/checkout@v7
+        with:
+          ref: ${{ env.HIPICO_CANDIDATE_SHA }}
+
+      - name: Gate exact candidate and clean tree
+        run: node scripts/hipico-exact-sha-gate.mjs
 
       - name: Configure Node 22
         uses: actions/setup-node@v7

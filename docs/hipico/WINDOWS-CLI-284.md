@@ -21,6 +21,6 @@ From PowerShell 7+:
 
 `HIPICO_API_BASE_URL` defaults to `http://127.0.0.1:3030`. Use an HTTPS origin for remote operation. `HIPICO_GROUP_BRIDGE_TOKEN` is read only when a Bridge endpoint requires it and is never printed by the CLI.
 
-Commands currently mapped: `status`, `doctor`, `health`, `version`, `bridge status`, `channel status`, `groups`, `races`, `documents`, `providers`, `messages tail`, `events tail`, `trace <correlationId>`. Commands whose canonical API lands in later tickets correctly return the backend 404/error until that feature exists; the CLI does not fabricate local data.
+Commands currently mapped: `status`, `doctor`, `health`, `version`, `bridge status`, `channel status`, `groups`, `races`, `documents`, `providers`, `messages tail`, `events tail`, `trace <correlationId>`. The CLI never fabricates local data when an API is unavailable.
 
 Install/update remains a separate operational step using the repository lockfile and `npm ci`.

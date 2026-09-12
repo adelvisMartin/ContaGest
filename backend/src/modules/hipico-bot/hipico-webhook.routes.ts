@@ -1,37 +1,68 @@
 import { Router } from 'express';
 import { extractMessages, HipicoBotStore, processIncoming } from './hipico-bot.service.js';
-import { metaSignatureValid, metaVerifyTokenValid, metaWebhookSecretsConfigured } from './hipico-meta-security.js';
+import { webhookPhoneNumberId, webhookSecurityReady, webhookSignatureValid, webhookVerifyTokenValid } from './hipico-webhook-security.js';
+import { assertPersistedWebhookReplay } from './hipico-webhook-replay.js';
 
 const router=Router();
-const WEBHOOK_PROCESSING_CONCURRENCY=10;
+const WEBHOOK_BATCH_CONCURRENCY=25;
+const WEBHOOK_REPLAY_MISMATCH='HIPICO_WEBHOOK_REPLAY_MISMATCH';
 
-type ExtractedMessage={phoneNumberId?:string};
+type ExtractedMessage={phoneNumberId?:string;providerMessageId?:string};
 type RuntimeEnv=Record<string,string|undefined>;
 
-function configuredPhoneNumberId(env:RuntimeEnv=process.env){
-  return String(env.WHATSAPP_PHONE_NUMBER_ID||'').trim();
+function rawMessageCount(payload:any){
+  let count=0;
+  for(const entry of payload?.entry||[])for(const change of entry?.changes||[]){
+    const messages=change?.value?.messages;
+    if(Array.isArray(messages))count+=messages.length;
+  }
+  return count;
+}
+
+function rawEnvelopeIdentityError(payload:any,env:RuntimeEnv=process.env){
+  const expected=webhookPhoneNumberId(env);
+  if(!expected)return 'WEBHOOK_PHONE_NUMBER_NOT_CONFIGURED';
+  for(const entry of payload?.entry||[])for(const change of entry?.changes||[]){
+    const value=change?.value||{};
+    const hasMessages=Array.isArray(value.messages)&&value.messages.length>0;
+    const hasStatuses=Array.isArray(value.statuses)&&value.statuses.length>0;
+    if(!hasMessages&&!hasStatuses)continue;
+    const actual=String(value?.metadata?.phone_number_id||'').trim();
+    if(actual!==expected)return 'WEBHOOK_PHONE_NUMBER_MISMATCH';
+  }
+  return null;
 }
 
 function webhookIdentityError(messages:ExtractedMessage[],env:RuntimeEnv=process.env){
-  const expected=configuredPhoneNumberId(env);
+  const expected=webhookPhoneNumberId(env);
   if(!expected)return 'WEBHOOK_PHONE_NUMBER_NOT_CONFIGURED';
   return messages.some((message)=>String(message?.phoneNumberId||'').trim()!==expected)
     ?'WEBHOOK_PHONE_NUMBER_MISMATCH'
     :null;
 }
 
+async function processMessageWithReplayGuard(message:any){
+  const alreadyPersisted=await assertPersistedWebhookReplay(message);
+  if(alreadyPersisted)return{duplicate:true};
+  const result=await processIncoming(message);
+  if(result?.duplicate)await assertPersistedWebhookReplay(message);
+  return result;
+}
+
 async function processMessagesBounded(messages:any[]){
   let processed=0;
   let failed=0;
-  for(let offset=0;offset<messages.length;offset+=WEBHOOK_PROCESSING_CONCURRENCY){
-    const batch=messages.slice(offset,offset+WEBHOOK_PROCESSING_CONCURRENCY);
-    const settled=await Promise.allSettled(batch.map(processIncoming));
+  let mismatched=0;
+  for(let offset=0;offset<messages.length;offset+=WEBHOOK_BATCH_CONCURRENCY){
+    const batch=messages.slice(offset,offset+WEBHOOK_BATCH_CONCURRENCY);
+    const settled=await Promise.allSettled(batch.map(processMessageWithReplayGuard));
     for(const item of settled){
       if(item.status==='fulfilled')processed+=1;
+      else if((item.reason as any)?.code===WEBHOOK_REPLAY_MISMATCH)mismatched+=1;
       else failed+=1;
     }
   }
-  return{processed,failed};
+  return{processed,failed,mismatched};
 }
 
 router.use((_req,res,next)=>{
@@ -40,57 +71,61 @@ router.use((_req,res,next)=>{
 });
 
 router.get('/webhook',(req,res)=>{
-  if(!metaWebhookSecretsConfigured())return res.status(503).json({ok:false,error:'webhook_not_configured'});
   const mode=String(req.query['hub.mode']||'');
   const token=String(req.query['hub.verify_token']||'');
   const challenge=String(req.query['hub.challenge']||'');
-  if(mode==='subscribe'&&metaVerifyTokenValid(token))return res.status(200).send(challenge);
+  if(!webhookSecurityReady())return res.status(503).json({ok:false,error:'Webhook Hípico no configurado de forma segura.'});
+  if(mode==='subscribe'&&webhookVerifyTokenValid(token))return res.status(200).send(challenge);
   return res.sendStatus(403);
 });
 
 router.post('/webhook',async(req,res)=>{
-  if(!metaWebhookSecretsConfigured())return res.status(503).json({ok:false,retryable:true,error:'webhook_not_configured'});
+  if(!webhookSecurityReady())return res.status(503).json({ok:false,retryable:true,error:'Webhook Hípico no configurado de forma segura.'});
   const raw=(req as any).rawBody as Buffer|undefined;
-  if(!metaSignatureValid(raw,req.header('x-hub-signature-256')||undefined)){
+  if(!webhookSignatureValid(raw,req.header('x-hub-signature-256')||undefined)){
     return res.status(401).json({ok:false,retryable:false,error:'Firma de webhook inválida.'});
   }
 
-  const messages=extractMessages(req.body);
+  const envelopeIdentityError=rawEnvelopeIdentityError(req.body);
+  if(envelopeIdentityError==='WEBHOOK_PHONE_NUMBER_NOT_CONFIGURED'){
+    return res.status(503).json({ok:false,retryable:true,error:'webhook_not_configured'});
+  }
+  if(envelopeIdentityError){
+    return res.status(200).json({ok:false,acknowledged:true,accepted:false,retryable:false,error:'webhook_phone_number_mismatch',received:0});
+  }
+
+  const expectedRawMessages=rawMessageCount(req.body);
+  const messages=extractMessages(req.body).map((message)=>({...message,body:String(message.body||'').slice(0,4000)}));
+  if(messages.length!==expectedRawMessages){
+    return res.status(200).json({ok:false,acknowledged:true,accepted:false,retryable:false,error:'invalid_message_identity',received:expectedRawMessages,acceptedMessages:messages.length});
+  }
+
   const identityError=webhookIdentityError(messages);
   if(identityError==='WEBHOOK_PHONE_NUMBER_NOT_CONFIGURED'){
     return res.status(503).json({ok:false,retryable:true,error:'webhook_not_configured'});
   }
   if(identityError){
-    return res.status(400).json({ok:false,retryable:false,error:'webhook_phone_number_mismatch'});
-  }
-  if(messages.length===0){
-    return res.status(200).json({ok:true,received:0,processed:0,failed:0});
+    return res.status(200).json({ok:false,acknowledged:true,accepted:false,retryable:false,error:'webhook_phone_number_mismatch',received:messages.length});
   }
 
-  // Production webhook acknowledgements require durable PostgreSQL evidence.
-  // The in-memory store remains useful for local/manual development paths, but
-  // must never cause Meta to stop retrying a real inbound message batch.
+  if(messages.length===0){
+    return res.status(200).json({ok:true,received:0,processed:0,failed:0,mismatched:0});
+  }
+
   if(!await HipicoBotStore.dbReady(true)){
-    return res.status(503).json({ok:false,retryable:true,error:'webhook_persistence_unavailable'});
+    return res.status(503).json({ok:false,retryable:true,error:'Persistencia Hípico no disponible.'});
   }
 
   const result=await processMessagesBounded(messages);
   if(result.failed>0){
-    // A 2xx here would acknowledge messages that were not durably processed and
-    // Meta would stop retrying them. Dedupe makes the successful subset safe to
-    // see again when Meta retries the same signed webhook batch.
-    return res.status(503).json({
-      ok:false,
-      retryable:true,
-      error:'webhook_processing_failed',
-      received:messages.length,
-      processed:result.processed,
-      failed:result.failed
-    });
+    return res.status(503).json({ok:false,retryable:true,received:messages.length,processed:result.processed,failed:result.failed,mismatched:result.mismatched,error:'Uno o más mensajes no se pudieron persistir.'});
   }
-  return res.status(200).json({ok:true,received:messages.length,processed:result.processed,failed:0});
+  if(result.mismatched>0){
+    return res.status(200).json({ok:false,acknowledged:true,accepted:false,retryable:false,error:'webhook_replay_mismatch',received:messages.length,processed:result.processed,failed:0,mismatched:result.mismatched});
+  }
+  return res.status(200).json({ok:true,received:messages.length,processed:result.processed,failed:0,mismatched:0});
 });
 
 export default router;
 
-export const __test__={configuredPhoneNumberId,webhookIdentityError,WEBHOOK_PROCESSING_CONCURRENCY};
+export const __test__={rawMessageCount,rawEnvelopeIdentityError,webhookIdentityError,processMessagesBounded,WEBHOOK_BATCH_CONCURRENCY,WEBHOOK_REPLAY_MISMATCH};

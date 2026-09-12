@@ -1,5 +1,10 @@
 import path from 'node:path';
 import { normalize, splitGroupMatches } from './runtime-utils.mjs';
+import { normalizeGroupId } from './group-identity.mjs';
+
+// The linked-device bridge persists WhatsApp content locally. Keep every file
+// it creates private by default on POSIX; Windows safely ignores POSIX modes.
+try { process.umask(0o077); } catch {}
 
 export const VERSION = '1.4.2';
 export const RUNTIME_MODES = Object.freeze({
@@ -7,6 +12,7 @@ export const RUNTIME_MODES = Object.freeze({
   SHADOW_LOCAL: 'shadow-local'
 });
 const CHANNEL_KEY_RE=/^[A-Za-z0-9_-]{3,120}$/;
+const PUBLIC_SECRET_PLACEHOLDER_PATTERN=/(?:REEMPLAZA|REPLACE|CHANGE[_-]?ME|CHANGEME|PLACEHOLDER|YOUR[_-]?(?:SECRET|TOKEN|KEY)|TU[_-]?(?:SECRETO|TOKEN|CLAVE)|EXAMPLE[_-]?(?:SECRET|TOKEN|KEY))/i;
 
 export function repairUtf8Mojibake(value) {
   const raw = String(value ?? '').trim();
@@ -42,7 +48,12 @@ function defaultDataDir(env, cwd) {
 }
 
 export function isWhatsAppGroupId(value) {
-  return /^\d{5,}(?:-\d+)?@g\.us$/i.test(String(value || '').trim());
+  return Boolean(normalizeGroupId(value));
+}
+
+export function strongBridgeTokenConfigured(value) {
+  const token=String(value||'').trim();
+  return Buffer.byteLength(token,'utf8')>=32&&!PUBLIC_SECRET_PLACEHOLDER_PATTERN.test(token);
 }
 
 export function loadRuntimeConfig(env = process.env, cwd = process.cwd()) {
@@ -119,7 +130,7 @@ export function validateRuntimeConfig(config) {
     if (!config.backendSyncEnabled) errors.push('Producción exige HIPICO_BACKEND_SYNC_ENABLED=true.');
     if (!isSafeHttps(config.ingestUrl)) errors.push('Producción exige HIPICO_INGEST_URL HTTPS sin credenciales, query ni fragment.');
     if (!isSafeHttps(config.healthUrl)) errors.push('Producción exige HIPICO_BRIDGE_HEALTH_URL HTTPS sin credenciales, query ni fragment.');
-    if (config.token.length < 32) errors.push('Producción exige HIPICO_GROUP_BRIDGE_TOKEN de al menos 32 caracteres.');
+    if (!strongBridgeTokenConfigured(config.token)) errors.push('Producción exige HIPICO_GROUP_BRIDGE_TOKEN secreto, no-placeholder y de al menos 32 bytes.');
     if (!config.trainingJournalEnabled) errors.push('Producción exige journal shadow para auditoría y evaluación.');
     if (!config.requirePinnedGroupIds) errors.push('Producción exige HIPICO_REQUIRE_PINNED_GROUP_IDS=true.');
     if (!isWhatsAppGroupId(config.sourceGroupId)) errors.push('Producción exige HIPICO_SOURCE_GROUP_ID pinneado.');
