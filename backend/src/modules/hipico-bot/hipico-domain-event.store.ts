@@ -1,5 +1,6 @@
 import crypto from 'node:crypto';
 import { prisma } from '../../database/prisma.js';
+import { canonicalPayloadIssue, canonicalTimestampIssue } from './hipico-canonical-input-policy.js';
 import { initialHipicoState, reduceHipicoDomainEvent, type HipicoAggregateKind, type HipicoDomainEventInput, type HipicoState } from './hipico-domain-state.js';
 
 type PersistInput={
@@ -31,6 +32,39 @@ type PersistenceReadinessRow={
   authenticatedRoleReady:boolean;
   browserWritesRevoked:boolean;
 };
+
+const UUID_PATTERN=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function boundedOptionalText(value:unknown,max:number){
+  return value===undefined||value===null||String(value).length<=max;
+}
+
+function persistenceInputIssue(input:PersistInput){
+  const ownerId=String(input.ownerId||'').trim();
+  const groupKey=String(input.groupKey||'').trim();
+  const aggregateKey=String(input.aggregateKey||'').trim();
+  const sourceMessageKey=String(input.event?.sourceMessageKey||'').trim();
+  if(!UUID_PATTERN.test(ownerId))return'HIPICO_DOMAIN_OWNER_INVALID';
+  if(!['race','day'].includes(String(input.aggregateKind||'')))return'HIPICO_DOMAIN_AGGREGATE_KIND_INVALID';
+  if(!groupKey||groupKey.length>120||!aggregateKey||aggregateKey.length>180||!sourceMessageKey||sourceMessageKey.length>320){
+    return'HIPICO_DOMAIN_EVENT_SCOPE_REQUIRED';
+  }
+  if(!boundedOptionalText(input.event.sourceMessageId,320))return'HIPICO_DOMAIN_SOURCE_MESSAGE_ID_INVALID';
+  if(!boundedOptionalText(input.event.rawMessage,4000))return'HIPICO_DOMAIN_RAW_MESSAGE_TOO_LARGE';
+  if(!boundedOptionalText(input.event.actorRef,220))return'HIPICO_DOMAIN_ACTOR_REF_INVALID';
+  if(!boundedOptionalText(input.event.source,120))return'HIPICO_DOMAIN_SOURCE_INVALID';
+  if(!boundedOptionalText(input.event.parserVersion,120))return'HIPICO_DOMAIN_PARSER_VERSION_INVALID';
+  if(!boundedOptionalText(input.event.eventId,180)||!boundedOptionalText(input.event.originalEventId,180))return'HIPICO_DOMAIN_EVENT_ID_INVALID';
+  const schemaVersion=Number(input.event.schemaVersion??1);
+  if(!Number.isInteger(schemaVersion)||schemaVersion<1||schemaVersion>1000)return'HIPICO_DOMAIN_SCHEMA_VERSION_INVALID';
+  const payloadIssue=canonicalPayloadIssue(input.event.normalizedPayload);
+  if(payloadIssue)return payloadIssue;
+  if(input.event.timestamp){
+    const timestampIssue=canonicalTimestampIssue(input.event.timestamp);
+    if(timestampIssue)return timestampIssue;
+  }
+  return null;
+}
 
 function validTimestamp(value?:string){
   const date=value?new Date(value):new Date();
@@ -65,6 +99,10 @@ function persistedRequiresReview(existing:Pick<EventRow,'disposition'|'reason'>)
   return existing.disposition==='review'&&existing.reason==='AMBIGUOUS_OR_UNKNOWN';
 }
 function assertDomainReplay(existing:EventRow,event:HipicoDomainEventInput){
+  const existingPayloadIssue=canonicalPayloadIssue(existing.normalizedPayload);
+  if(existingPayloadIssue)throw new Error('HIPICO_DOMAIN_PERSISTED_PAYLOAD_UNSAFE');
+  const incomingPayloadIssue=canonicalPayloadIssue(event.normalizedPayload);
+  if(incomingPayloadIssue)throw new Error(incomingPayloadIssue);
   const timestampMatches=event.timestamp===undefined
     || normalizedInstant(existing.eventTimestamp)===normalizedInstant(event.timestamp);
   const eventIdMatches=!event.eventId||existing.id===String(event.eventId);
@@ -201,11 +239,12 @@ export async function hipicoDomainPersistenceReadiness(){
 }
 
 export async function persistHipicoDomainEvent(input:PersistInput){
-  const ownerId=String(input.ownerId||'').trim();
-  const groupKey=String(input.groupKey||'').trim();
-  const aggregateKey=String(input.aggregateKey||'').trim();
-  const sourceMessageKey=String(input.event.sourceMessageKey||'').trim();
-  if(!ownerId||!groupKey||!aggregateKey||!sourceMessageKey)throw new Error('HIPICO_DOMAIN_EVENT_SCOPE_REQUIRED');
+  const issue=persistenceInputIssue(input);
+  if(issue)throw new Error(issue);
+  const ownerId=String(input.ownerId).trim();
+  const groupKey=String(input.groupKey).trim();
+  const aggregateKey=String(input.aggregateKey).trim();
+  const sourceMessageKey=String(input.event.sourceMessageKey).trim();
   const confirmation=confirmationAudit(input.event);
 
   return prisma.$transaction(async(tx)=>{
@@ -318,4 +357,7 @@ export async function persistHipicoDomainEvent(input:PersistInput){
   });
 }
 
-export const __test__={assertDomainReplay,canonicalJson,normalizedInstant,confirmationAudit,incomingRequiresReview,persistedRequiresReview,unavailablePersistenceReadiness};
+export const __test__={
+  assertDomainReplay,canonicalJson,normalizedInstant,confirmationAudit,incomingRequiresReview,
+  persistedRequiresReview,unavailablePersistenceReadiness,persistenceInputIssue
+};
