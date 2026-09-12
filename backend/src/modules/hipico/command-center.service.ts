@@ -28,19 +28,29 @@ async function optional<T>(fn: () => Promise<T>, fallback: T) {
   catch { return fallback; }
 }
 
-function firstCurrentRace(races: any[]) {
-  const priority = ['OPEN', 'CLOSING', 'RUNNING', 'CLOSED', 'PROVISIONAL_RESULT'];
+function currentRaceSelection(races: any[]) {
+  const priority = ['RUNNING', 'CLOSING', 'OPEN', 'PROVISIONAL_RESULT', 'CLOSED'];
   for (const state of priority) {
-    const found = races.find((race) => race.state === state);
-    if (found) return found;
+    const candidates = races.filter((race) => race.state === state);
+    if (candidates.length === 1) return { race: candidates[0], ambiguous: false, state, count: 1 };
+    if (candidates.length > 1) return { race: null, ambiguous: true, state, count: candidates.length };
   }
-  return null;
+  return { race: null, ambiguous: false, state: null, count: 0 };
 }
 
-function nextRace(races: any[]) {
-  return [...races]
+function nextRaceSelection(races: any[]) {
+  const candidates = [...races]
     .filter((race) => ['DISCOVERED', 'ANNOUNCED', 'POSTPONED'].includes(race.state))
-    .sort((a, b) => Date.parse(a.scheduledAt || '9999-12-31') - Date.parse(b.scheduledAt || '9999-12-31'))[0] || null;
+    .sort((a, b) => Date.parse(a.scheduledAt || '9999-12-31') - Date.parse(b.scheduledAt || '9999-12-31') || Number(a.number || 0) - Number(b.number || 0));
+  if (!candidates.length) return { race: null, ambiguous: false, count: 0 };
+  if (candidates.length > 1) {
+    const first = candidates[0];
+    const second = candidates[1];
+    const sameTime = String(first.scheduledAt || '') === String(second.scheduledAt || '');
+    const differentMeeting = String(first.meetingId || '') !== String(second.meetingId || '');
+    if (sameTime && differentMeeting) return { race: null, ambiguous: true, count: candidates.length };
+  }
+  return { race: candidates[0], ambiguous: false, count: candidates.length };
 }
 
 function stateMap(rows: StateCountRow[]) {
@@ -107,11 +117,13 @@ export async function buildHipicoCommandCenter(scope: CommandCenterScope) {
     `, [])
   ]);
 
-  const currentRace = firstCurrentRace(races);
-  const upcomingRace = nextRace(races);
+  const currentSelection = currentRaceSelection(races);
+  const nextSelection = nextRaceSelection(races);
+  const currentRace = currentSelection.race;
+  const upcomingRace = nextSelection.race;
   const activeMeeting = currentRace
     ? meetings.find((meeting: any) => meeting.id === currentRace.meetingId) || null
-    : meetings[0] || null;
+    : meetings.length === 1 ? meetings[0] : null;
   const queue = stateMap(queueRows);
   const documentStates = stateMap(documentRows);
   const queuePending = (queue.queued || 0) + (queue.sending || 0) + (queue.retry || 0);
@@ -157,7 +169,10 @@ export async function buildHipicoCommandCenter(scope: CommandCenterScope) {
   if (conflicts > 0) alerts.push({ severity: 'warning', code: 'OPERATION_CONFLICTS', message: `${conflicts} conflicto(s) requieren revisión.` });
   if ((documentStates.review || 0) > 0) alerts.push({ severity: 'warning', code: 'DOCUMENT_REVIEW_PENDING', message: `${documentStates.review} documento(s) requieren revisión.` });
   if ((documentStates.failed || 0) > 0) alerts.push({ severity: 'critical', code: 'DOCUMENT_FAILED', message: `${documentStates.failed} documento(s) fallaron al procesarse.` });
-  if (!currentRace) alerts.push({ severity: 'info', code: 'NO_ACTIVE_RACE', message: 'No hay una carrera operativa activa en este grupo.' });
+  if (currentSelection.ambiguous) alerts.push({ severity: 'critical', code: 'AMBIGUOUS_ACTIVE_RACE', message: `${currentSelection.count} carreras comparten el estado operativo ${currentSelection.state}; selecciona contexto antes de actuar.` });
+  else if (!currentRace) alerts.push({ severity: 'info', code: 'NO_ACTIVE_RACE', message: 'No hay una carrera operativa activa inequívoca en este grupo.' });
+  if (nextSelection.ambiguous) alerts.push({ severity: 'warning', code: 'AMBIGUOUS_NEXT_RACE', message: 'La próxima carrera es ambigua entre reuniones con la misma hora programada.' });
+  if (!activeMeeting && meetings.length > 1) alerts.push({ severity: 'warning', code: 'AMBIGUOUS_ACTIVE_MEETING', message: 'Hay varias reuniones y ninguna puede determinarse como activa sin contexto de carrera.' });
 
   return {
     generatedAt: now.toISOString(),
@@ -187,6 +202,8 @@ export async function buildHipicoCommandCenter(scope: CommandCenterScope) {
       activeMeeting,
       currentRace,
       nextRace: upcomingRace,
+      currentRaceContext: { ambiguous: currentSelection.ambiguous, candidateCount: currentSelection.count, state: currentSelection.state },
+      nextRaceContext: { ambiguous: nextSelection.ambiguous, candidateCount: nextSelection.count },
       meetings: meetings.slice(0, 10),
       raceCount: races.length
     },
