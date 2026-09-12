@@ -48,17 +48,17 @@ test('bot retains canonical monetary review gates and atomic provider dedupe',()
   assert.match(service,/AbortSignal\.timeout\(10_000\)/);
 });
 
-test('webhook raw body is captured before browser CSRF while signature validation stays in the webhook route',()=>{
+test('webhook raw body is captured before browser CSRF while integration adapters share one auth throttle',()=>{
   const app=read('backend/src/app.ts');
   const webhook=read('backend/src/modules/hipico-bot/hipico-webhook.routes.ts');
   const webhookMount=app.indexOf("app.use('/api/v1/hipico-bot', hipicoWebhookRoutes)");
+  const adapterMount=app.indexOf("app.use('/api/v1/hipico-bot', authRateLimit, hipicoBridgeRoutes, hipicoOperatorRoutes)");
   const csrf=app.indexOf('app.use(csrfProtection)');
-  assert.ok(webhookMount>0 && csrf>webhookMount);
+  assert.ok(webhookMount>0 && adapterMount>webhookMount && csrf>adapterMount);
   assert.match(app,/rawBody = Buffer\.from\(buffer\)/);
   assert.match(webhook,/req\.header\('x-hub-signature-256'\)/);
   assert.match(webhook,/webhookSignatureValid\(raw/);
-  assert.match(app,/hipicoOperatorRoutes/);
-  assert.match(app,/authRateLimit, hipicoOperatorRoutes/);
+  assert.equal((app.match(/app\.use\('\/api\/v1\/hipico-bot', authRateLimit/g)||[]).length,1,'Bridge and operator adapters must share one auth limiter chain');
 });
 
 test('android wrapper synchronizes only the canonical Hipico web product',()=>{
