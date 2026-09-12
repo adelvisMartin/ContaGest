@@ -121,11 +121,17 @@ function enhanceDialogs(root = document) {
   });
   if (activeDialog && !activeDialog.isConnected) deactivateDialog();
 }
-const dialogObserver = new MutationObserver(() => enhanceDialogs());
-if (document.documentElement) dialogObserver.observe(document.documentElement, { childList: true, subtree: true });
-window.addEventListener('DOMContentLoaded', () => enhanceDialogs());
-document.addEventListener('keydown', (event) => {
-  if (event.key !== 'Escape' || !activeDialog) return;
-  const close = activeDialog.querySelector('[data-action="close-modal"], [data-help-close]');
-  if (close instanceof HTMLElement) { event.preventDefault(); close.click(); }
-});
+
+const hasDom = typeof document !== 'undefined' && typeof window !== 'undefined';
+const dialogObserver = hasDom && typeof MutationObserver !== 'undefined'
+  ? new MutationObserver(() => enhanceDialogs())
+  : null;
+if (dialogObserver && document.documentElement) dialogObserver.observe(document.documentElement, { childList: true, subtree: true });
+if (hasDom) {
+  window.addEventListener('DOMContentLoaded', () => enhanceDialogs());
+  document.addEventListener('keydown', (event) => {
+    if (event.key !== 'Escape' || !activeDialog) return;
+    const close = activeDialog.querySelector('[data-action="close-modal"], [data-help-close]');
+    if (close instanceof HTMLElement) { event.preventDefault(); close.click(); }
+  });
+}
