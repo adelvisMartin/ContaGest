@@ -54,5 +54,5 @@ test('status fails persistence readiness closed for weak or placeholder service-
   assert.equal(strong.statusCode,200);
   assert.equal(strong.body?.persistence?.ready,true);
   assert.equal(strong.body?.persistence?.serviceRoleKeyStrong,true);
-  assert.match(statusSource,/persistenceMissing\.length === 0 && persistenceServiceKeyStrong/);
+  assert.match(statusSource,/persistenceMissing\.length === 0 && secrets\.persistenceServiceKeyStrong/);
 });
