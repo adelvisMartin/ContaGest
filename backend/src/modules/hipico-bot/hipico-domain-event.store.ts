@@ -59,16 +59,18 @@ function persistenceInputIssue(input:PersistInput){
   if(!Number.isInteger(schemaVersion)||schemaVersion<1||schemaVersion>1000)return'HIPICO_DOMAIN_SCHEMA_VERSION_INVALID';
   const payloadIssue=canonicalPayloadIssue(input.event.normalizedPayload);
   if(payloadIssue)return payloadIssue;
-  if(input.event.timestamp){
-    const timestampIssue=canonicalTimestampIssue(input.event.timestamp);
-    if(timestampIssue)return timestampIssue;
-  }
+  if(typeof input.event.timestamp!=='string'||!input.event.timestamp.trim())return'HIPICO_EVENT_TIMESTAMP_REQUIRED';
+  const timestampIssue=canonicalTimestampIssue(input.event.timestamp);
+  if(timestampIssue)return timestampIssue;
   return null;
 }
 
-function validTimestamp(value?:string){
-  const date=value?new Date(value):new Date();
-  if(!Number.isFinite(date.getTime()))throw new Error('HIPICO_INVALID_EVENT_TIMESTAMP');
+function validTimestamp(value:unknown){
+  if(typeof value!=='string'||!value.trim())throw new Error('HIPICO_EVENT_TIMESTAMP_REQUIRED');
+  const issue=canonicalTimestampIssue(value);
+  if(issue)throw new Error(issue);
+  const date=new Date(value);
+  if(!Number.isFinite(date.getTime()))throw new Error('HIPICO_EVENT_TIMESTAMP_INVALID');
   return date;
 }
 function normalizedInstant(value:unknown){
@@ -103,8 +105,10 @@ function assertDomainReplay(existing:EventRow,event:HipicoDomainEventInput){
   if(existingPayloadIssue)throw new Error('HIPICO_DOMAIN_PERSISTED_PAYLOAD_UNSAFE');
   const incomingPayloadIssue=canonicalPayloadIssue(event.normalizedPayload);
   if(incomingPayloadIssue)throw new Error(incomingPayloadIssue);
-  const timestampMatches=event.timestamp===undefined
-    || normalizedInstant(existing.eventTimestamp)===normalizedInstant(event.timestamp);
+  if(typeof event.timestamp!=='string'||!event.timestamp.trim())throw new Error('HIPICO_EVENT_TIMESTAMP_REQUIRED');
+  const timestampIssue=canonicalTimestampIssue(event.timestamp);
+  if(timestampIssue)throw new Error(timestampIssue);
+  const timestampMatches=normalizedInstant(existing.eventTimestamp)===normalizedInstant(event.timestamp);
   const eventIdMatches=!event.eventId||existing.id===String(event.eventId);
   const confirmation=confirmationAudit(event);
   const same=existing.eventType===event.type
@@ -359,5 +363,5 @@ export async function persistHipicoDomainEvent(input:PersistInput){
 
 export const __test__={
   assertDomainReplay,canonicalJson,normalizedInstant,confirmationAudit,incomingRequiresReview,
-  persistedRequiresReview,unavailablePersistenceReadiness,persistenceInputIssue
+  persistedRequiresReview,unavailablePersistenceReadiness,persistenceInputIssue,validTimestamp
 };
