@@ -24,13 +24,13 @@ test('group bridge uses operational classifier, persistent stores and stays shad
   assert.doesNotMatch(transport,/memoryEvents|memoryOutbox/);
 });
 
-test('official source creates only a lab simulation and never an outbound action',()=>{
+test('official source creates only a lab simulation for live events and never an outbound action',()=>{
   const route=read('backend/src/modules/hipico-bot/hipico-bridge.routes.ts');
-  assert.match(route,/channelRole:\s*z\.enum\(\['source',\s*'lab'\]\)/);
-  assert.match(route,/if \(input\.channelRole !== 'source'\) return null/);
-  assert.match(route,/labSimulation:\s*buildLabSimulation/);
+  assert.match(route,/channelRole:z\.enum\(\['source','lab'\]\)/);
+  assert.match(route,/if\(input\.channelRole!==['"]source['"]\|\|input\.historySync\)return null/);
+  assert.match(route,/labSimulation:buildLabSimulation/);
   assert.match(route,/SOLO LABORATORIO/);
-  assert.match(route,/actions:\s*\[\]/);
+  assert.match(route,/actions:\[\]/);
   assert.doesNotMatch(route,/sendCloudText|sendMessage/);
 });
 
@@ -96,9 +96,10 @@ test('operator exposes read-only shadow projection using RC1-compatible matching
   assert.doesNotMatch(projection,/INSERT|UPDATE|DELETE|sendCloudText|sendMessage/);
 });
 
-test('Bridge v1.4 observes official source and has a fail-closed LAB-only send path',()=>{
+test('Bridge package version follows release policy and keeps a fail-closed LAB-only send path',()=>{
   const pkg=JSON.parse(read('tools/hipico-whatsapp-web-bridge/package.json'));
-  assert.equal(pkg.version,'1.4.0');
+  const policy=JSON.parse(read('products/hipico-control/release-policy.json'));
+  assert.equal(pkg.version,policy.bridgePackageVersion);
   assert.equal(pkg.dependencies['playwright-core'],'1.62.1');
   assert.equal(pkg.dependencies['whatsapp-web.js'],undefined);
   const runtime=read('tools/hipico-whatsapp-web-bridge/src/index.mjs');
@@ -137,22 +138,24 @@ test('Bridge environment names source and lab separately and lab send defaults o
 test('Bridge production readiness is authenticated, persistent and source-send closed',()=>{
   const route=read('backend/src/modules/hipico-bot/hipico-bridge.routes.ts');
   const security=read('backend/src/modules/hipico-bot/hipico-bridge-security.ts');
+  const secretSecurity=read('backend/src/modules/hipico-bot/hipico-secret-security.ts');
   const canonical=read('backend/src/modules/hipico-bot/hipico-canonical-shadow.store.ts');
   const preflight=read('tools/hipico-whatsapp-web-bridge/src/preflight.mjs');
   assert.match(route,/\/bridge\/health/);
   assert.match(route,/bridgePersistenceReady/);
   assert.match(route,/canonicalShadowReadiness/);
   assert.match(route,/sourceSendPossible:false/);
-  assert.match(security,/MIN_BRIDGE_TOKEN_LENGTH=32/);
+  assert.match(security,/MIN_BRIDGE_TOKEN_LENGTH=MIN_HIPICO_RUNTIME_SECRET_BYTES/);
+  assert.match(secretSecurity,/MIN_HIPICO_RUNTIME_SECRET_BYTES=32/);
   assert.match(canonical,/LAB_CHANNEL_NOT_UNIQUE|labChannelCount/);
   assert.match(preflight,/body\?\.ready !== true/);
   assert.match(preflight,/body\?\.sourceSendPossible !== false/);
 });
 
-test('backend exposes a dedicated executable Hipico test gate',()=>{
+test('backend exposes a dedicated executable Hipico test gate and the general suite includes Hipico tests',()=>{
   const pkg=JSON.parse(read('backend/package.json'));
   assert.match(pkg.scripts['test:hipico'],/src\/modules\/hipico-bot\/\*\.test\.ts/);
-  assert.match(pkg.scripts.test,/npm run test:hipico/);
+  assert.match(pkg.scripts.test,/src\/modules\/hipico-bot\/\*\.test\.ts|npm run test:hipico/);
 });
 
 test('Hipico bot migrations stay product-scoped and add idempotent group audit indexes',()=>{
