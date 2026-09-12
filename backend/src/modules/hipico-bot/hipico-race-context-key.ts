@@ -1,4 +1,5 @@
 import crypto from 'node:crypto';
+import { gregorianDaysInMonth } from './hipico-canonical-input-policy.js';
 
 type RaceContextEntities={
   racetrack?:unknown;
@@ -24,9 +25,8 @@ function normalizedRaceDate(value:unknown){
   const year=Number(match[1]);
   const month=Number(match[2]);
   const day=Number(match[3]);
-  if(year<1||year>9999||month<1||month>12)return undefined;
-  const daysInMonth=new Date(Date.UTC(year,month,0)).getUTCDate();
-  if(day<1||day>daysInMonth)return undefined;
+  const daysInMonth=gregorianDaysInMonth(year,month);
+  if(!daysInMonth||day<1||day>daysInMonth)return undefined;
   return raw;
 }
 
