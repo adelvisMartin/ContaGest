@@ -1,3 +1,6 @@
+import { lookup } from 'node:dns/promises';
+import { isIP } from 'node:net';
+
 const DEFAULT_TIMEOUT_MS = 5_000;
 const DEFAULT_CACHE_TTL_MS = 30_000;
 export const MAX_RACE_PROVIDER_RESPONSE_BYTES = 1_000_000;
@@ -27,12 +30,23 @@ export type HorseRaceStageSummary = {
 
 type RuntimeEnv = Record<string, string | undefined>;
 type FetchLike = typeof fetch;
+type ResolveLike = (hostname: string) => Promise<Array<{ address: string; family: number }>>;
 type CacheEntry = { expiresAt: number; value: HorseRaceStageSummary };
+
+type HorseRaceProviderErrorCode =
+  | 'NOT_CONFIGURED'
+  | 'INVALID_STAGE_ID'
+  | 'UPSTREAM_TIMEOUT'
+  | 'UPSTREAM_ERROR'
+  | 'UPSTREAM_DNS_ERROR'
+  | 'UPSTREAM_ADDRESS_FORBIDDEN'
+  | 'UPSTREAM_RESPONSE_TOO_LARGE'
+  | 'UPSTREAM_INVALID_CONTENT';
 
 export class HorseRaceProviderError extends Error {
   constructor(
     message: string,
-    public readonly code: 'NOT_CONFIGURED' | 'INVALID_STAGE_ID' | 'UPSTREAM_TIMEOUT' | 'UPSTREAM_ERROR' | 'UPSTREAM_RESPONSE_TOO_LARGE' | 'UPSTREAM_INVALID_CONTENT',
+    public readonly code: HorseRaceProviderErrorCode,
     public readonly retryable: boolean
   ) {
     super(message);
@@ -75,6 +89,103 @@ function normalizeStageId(value: string) {
     throw new HorseRaceProviderError('El identificador de etapa hípica no es válido.', 'INVALID_STAGE_ID', false);
   }
   return id;
+}
+
+function parseIpv4(value: string) {
+  const parts = value.split('.');
+  if (parts.length !== 4) return null;
+  const octets = parts.map((part) => Number(part));
+  if (octets.some((octet, index) => !/^\d{1,3}$/.test(parts[index]) || !Number.isInteger(octet) || octet < 0 || octet > 255)) return null;
+  return octets;
+}
+
+function forbiddenIpv4(value: string) {
+  const octets = parseIpv4(value);
+  if (!octets) return true;
+  const [a, b, c] = octets;
+  if (a === 0 || a === 10 || a === 127) return true;
+  if (a === 100 && b >= 64 && b <= 127) return true;
+  if (a === 169 && b === 254) return true;
+  if (a === 172 && b >= 16 && b <= 31) return true;
+  if (a === 192 && b === 0 && c === 0) return true;
+  if (a === 192 && b === 0 && c === 2) return true;
+  if (a === 192 && b === 168) return true;
+  if (a === 198 && (b === 18 || b === 19)) return true;
+  if (a === 198 && b === 51 && c === 100) return true;
+  if (a === 203 && b === 0 && c === 113) return true;
+  if (a >= 224) return true;
+  return false;
+}
+
+function expandIpv6(value: string) {
+  let text = value.toLowerCase().split('%', 1)[0];
+  const dotted = text.match(/(?:^|:)(\d{1,3}(?:\.\d{1,3}){3})$/)?.[1] || null;
+  if (dotted) {
+    const octets = parseIpv4(dotted);
+    if (!octets) return null;
+    const high = ((octets[0] << 8) | octets[1]).toString(16);
+    const low = ((octets[2] << 8) | octets[3]).toString(16);
+    text = `${text.slice(0, text.length - dotted.length)}${high}:${low}`;
+  }
+  if ((text.match(/::/g) || []).length > 1) return null;
+  const [leftText, rightText = ''] = text.split('::');
+  const left = leftText ? leftText.split(':') : [];
+  const right = rightText ? rightText.split(':') : [];
+  const fill = text.includes('::') ? 8 - left.length - right.length : 0;
+  if (fill < 0 || (!text.includes('::') && left.length !== 8)) return null;
+  const parts = [...left, ...Array(fill).fill('0'), ...right];
+  if (parts.length !== 8) return null;
+  const numbers = parts.map((part) => Number.parseInt(part || '0', 16));
+  if (parts.some((part) => !/^[0-9a-f]{1,4}$/.test(part || '0')) || numbers.some((part) => !Number.isInteger(part) || part < 0 || part > 0xffff)) return null;
+  return numbers;
+}
+
+function forbiddenIpv6(value: string) {
+  const parts = expandIpv6(value);
+  if (!parts) return true;
+  if (parts.every((part) => part === 0)) return true;
+  if (parts.slice(0, 7).every((part) => part === 0) && parts[7] === 1) return true;
+  if ((parts[0] & 0xfe00) === 0xfc00) return true;
+  if ((parts[0] & 0xffc0) === 0xfe80) return true;
+  if ((parts[0] & 0xff00) === 0xff00) return true;
+  if (parts[0] === 0x2001 && parts[1] === 0x0db8) return true;
+  if (parts.slice(0, 5).every((part) => part === 0) && parts[5] === 0xffff) {
+    const mapped = `${parts[6] >> 8}.${parts[6] & 0xff}.${parts[7] >> 8}.${parts[7] & 0xff}`;
+    return forbiddenIpv4(mapped);
+  }
+  return false;
+}
+
+export function providerAddressForbidden(address: string) {
+  const family = isIP(String(address || '').split('%', 1)[0]);
+  if (family === 4) return forbiddenIpv4(address);
+  if (family === 6) return forbiddenIpv6(address);
+  return true;
+}
+
+async function resolvePublicProviderDestination(hostname: string, resolveImpl: ResolveLike, timeoutMs: number) {
+  let timer: NodeJS.Timeout | null = null;
+  try {
+    const addresses = await Promise.race([
+      resolveImpl(hostname),
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new HorseRaceProviderError('La resolución DNS del proveedor excedió el tiempo máximo.', 'UPSTREAM_TIMEOUT', true)), timeoutMs);
+      })
+    ]);
+    if (!Array.isArray(addresses) || addresses.length === 0) {
+      throw new HorseRaceProviderError('El proveedor hípico no resolvió a una dirección utilizable.', 'UPSTREAM_DNS_ERROR', true);
+    }
+    for (const entry of addresses) {
+      if (!entry || !isIP(entry.address) || providerAddressForbidden(entry.address)) {
+        throw new HorseRaceProviderError('El proveedor hípico resolvió a una dirección de red no permitida.', 'UPSTREAM_ADDRESS_FORBIDDEN', false);
+      }
+    }
+  } catch (error: any) {
+    if (error instanceof HorseRaceProviderError) throw error;
+    throw new HorseRaceProviderError('No se pudo resolver de forma segura el proveedor hípico.', 'UPSTREAM_DNS_ERROR', true);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
 }
 
 function responseTooLarge() {
@@ -153,9 +264,10 @@ export function raceProviderStatus(env: RuntimeEnv = process.env): HorseRaceProv
   };
 }
 
-export function createHorseRaceProvider(options: { env?: RuntimeEnv; fetchImpl?: FetchLike; now?: () => number } = {}) {
+export function createHorseRaceProvider(options: { env?: RuntimeEnv; fetchImpl?: FetchLike; resolveImpl?: ResolveLike; now?: () => number } = {}) {
   const env = options.env || process.env;
   const fetchImpl = options.fetchImpl || fetch;
+  const resolveImpl: ResolveLike = options.resolveImpl || (async (hostname) => lookup(hostname, { all: true, verbatim: true }));
   const now = options.now || Date.now;
   const cache = new Map<string, CacheEntry>();
 
@@ -206,6 +318,8 @@ export function createHorseRaceProvider(options: { env?: RuntimeEnv; fetchImpl?:
     const token = String(env.HIPICO_SPORTRADAR_UOF_TOKEN || '').trim();
     const language = String(env.HIPICO_RACE_PROVIDER_LANGUAGE || 'en').trim().toLowerCase();
     const safeLanguage = /^[a-z]{2}$/.test(language) ? language : 'en';
+    const base = new URL(baseUrl);
+    await resolvePublicProviderDestination(base.hostname, resolveImpl, currentStatus.timeoutMs);
     const url = `${baseUrl}/v1/sports/${safeLanguage}/sport_events/sr:stage:${stageId}/summary.xml`;
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), currentStatus.timeoutMs);
