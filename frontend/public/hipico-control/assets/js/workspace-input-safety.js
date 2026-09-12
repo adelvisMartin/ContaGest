@@ -1,5 +1,6 @@
 export const SAFE_INTERNAL_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/;
 export const SAFE_BOARD_TOKEN = /^[A-Za-z0-9][A-Za-z0-9*._/+:-]{0,23}$/;
+export const SAFE_GROUP_COLOR = /^#[0-9A-Fa-f]{6}$/;
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 const RACE_STATUSES = new Set(['open', 'locked', 'settled', 'closed']);
 const BET_STATUSES = new Set(['pending', 'settled', 'cancelled']);
@@ -15,6 +16,13 @@ function assertSafeId(value, path) {
   if (value == null || value === '') return;
   if (!SAFE_INTERNAL_ID.test(String(value))) {
     throw safetyError(`Identificador interno inválido en ${path}.`, 'HIPICO_WORKSPACE_UNSAFE_IDENTIFIER', path);
+  }
+}
+
+export function assertSafeGroupColor(value, path = 'config.groups.color') {
+  if (value == null || value === '') return;
+  if (!SAFE_GROUP_COLOR.test(String(value))) {
+    throw safetyError(`Color de grupo inválido en ${path}.`, 'HIPICO_WORKSPACE_UNSAFE_GROUP_COLOR', path);
   }
 }
 
@@ -63,6 +71,12 @@ function assertCollectionDates(rows, collection, keys = ['date']) {
   }
 }
 
+function assertGroup(group, path) {
+  if (!group || typeof group !== 'object') return;
+  assertSafeId(group.id, `${path}.id`);
+  assertSafeGroupColor(group.color, `${path}.color`);
+}
+
 export function assertWorkspaceInputSafety(workspace) {
   if (!workspace || typeof workspace !== 'object') {
     throw safetyError('Workspace Hípico inválido.', 'HIPICO_WORKSPACE_INVALID', 'workspace');
@@ -70,7 +84,8 @@ export function assertWorkspaceInputSafety(workspace) {
   const config = workspace.config || {};
   const groups = Array.isArray(config.groups) ? config.groups : [];
   const legacyGroups = Array.isArray(config.whatsappGroups) ? config.whatsappGroups : [];
-  [...groups, ...legacyGroups].forEach((group, index) => assertSafeId(group?.id, `config.groups[${index}].id`));
+  groups.forEach((group, index) => assertGroup(group, `config.groups[${index}]`));
+  legacyGroups.forEach((group, index) => assertGroup(group, `config.whatsappGroups[${index}]`));
   assertSafeId(config.activeGroupId, 'config.activeGroupId');
   assertSafeId(config.activeWhatsappGroupId, 'config.activeWhatsappGroupId');
   assertSafeId(workspace.activeRaceId, 'activeRaceId');
@@ -187,4 +202,4 @@ if (typeof document !== 'undefined') {
   }, true);
 }
 
-export const __test__ = { validIsoDate, assertSafeId, assertSafeDate, assertRaceNumber, rejectBoardSubmit };
+export const __test__ = { validIsoDate, assertSafeId, assertSafeDate, assertRaceNumber, assertSafeGroupColor, rejectBoardSubmit };
