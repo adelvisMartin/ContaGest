@@ -13,11 +13,12 @@ test('Control Hipico remains outside the ERP module catalog',()=>{
   assert.match(adr,/productos independientes/i);
 });
 
-test('recovered runtime is hash-pinned and path traversal protected',()=>{
-  const manifest=JSON.parse(read('products/hipico-control/runtime/v1.13.0-rc1/manifest.json'));
+test('archived recovery runtime is hash-pinned and path traversal protected',()=>{
+  const manifest=JSON.parse(read('products/hipico-control/runtime/v1.13.0-rc2/manifest.json'));
   assert.equal(manifest.product,'control-hipico');
-  assert.equal(manifest.version,'1.13.0-parity.1');
-  assert.match(manifest.sha256,/^[a-f0-9]{64}$/);
+  assert.equal(manifest.version,'1.13.0-rc2');
+  assert.ok(Array.isArray(manifest.baselineArtifacts) && manifest.baselineArtifacts.length>=1);
+  for(const artifact of manifest.baselineArtifacts) assert.match(String(artifact.sha256||''),/^[a-f0-9]{64}$/);
   const restore=read('scripts/restore-hipico-runtime.mjs');
   assert.match(restore,/expectedSha256/);
   assert.match(restore,/Path traversal bloqueado/);
@@ -44,12 +45,18 @@ test('bot retains canonical monetary review gates and atomic provider dedupe',()
   assert.match(service,/AbortSignal\.timeout\(10_000\)/);
 });
 
-test('webhook raw body is captured before browser CSRF while operator route has auth rate limit',()=>{
+test('webhook raw body is captured before browser CSRF while signature verification stays in the webhook boundary',()=>{
   const app=read('backend/src/app.ts');
+  const webhook=read('backend/src/modules/hipico-bot/hipico-webhook.routes.ts');
+  const security=read('backend/src/modules/hipico-bot/hipico-webhook-security.ts');
   const webhookMount=app.indexOf("app.use('/api/v1/hipico-bot', hipicoWebhookRoutes)");
   const csrf=app.indexOf('app.use(csrfProtection)');
   assert.ok(webhookMount>0 && csrf>webhookMount);
-  assert.match(app,/x-hub-signature-256/);
+  assert.match(app,/rawBody\s*=\s*Buffer\.from\(buffer\)/);
+  assert.match(webhook,/x-hub-signature-256/i);
+  assert.match(webhook,/webhookSignatureValid/);
+  assert.match(security,/createHmac\('sha256'/);
+  assert.match(security,/timingSafeEqual/);
   assert.match(app,/hipicoOperatorRoutes/);
   assert.match(app,/authRateLimit, hipicoOperatorRoutes/);
 });
