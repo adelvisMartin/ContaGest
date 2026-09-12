@@ -13,16 +13,20 @@ test('Control Hipico remains outside the ERP module catalog',()=>{
   assert.match(adr,/productos independientes/i);
 });
 
-test('recovered runtime archive is hash-pinned and restore path traversal is protected',()=>{
+test('historical runtime baselines stay hash-pinned and Android sync blocks target path traversal',()=>{
   const manifest=JSON.parse(read('products/hipico-control/runtime/v1.13.0-rc2/manifest.json'));
   assert.equal(manifest.product,'control-hipico');
   assert.equal(manifest.version,'1.13.0-rc2');
   assert.ok(Array.isArray(manifest.baselineArtifacts)&&manifest.baselineArtifacts.length>=2);
   for(const artifact of manifest.baselineArtifacts)assert.match(artifact.sha256,/^[a-f0-9]{64}$/);
-  const restore=read('scripts/restore-hipico-runtime.mjs');
-  assert.match(restore,/expectedSha256/);
-  assert.match(restore,/Path traversal bloqueado/);
-  assert.match(restore,/destinationPath\.startsWith\(destinationRoot\)/);
+  assert.match(manifest.binaryPolicy,/verifica por hash/i);
+
+  const sync=read('android/hipico-control-v1130/scripts/sync-web.mjs');
+  assert.match(sync,/function assertInside/);
+  assert.match(sync,/path\.relative\(parent, candidate\)/);
+  assert.match(sync,/relative\.startsWith\(['"]\.\.['"]\)/);
+  assert.match(sync,/path\.isAbsolute\(relative\)/);
+  assert.match(sync,/assertInside\(target, wrapper, ['"]www['"]\)/);
 });
 
 test('Hipico migration contains no ERP Fitness tables',()=>{
