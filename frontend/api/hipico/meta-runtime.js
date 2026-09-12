@@ -1,6 +1,8 @@
 import { PUBLIC_SECRET_PLACEHOLDER_PATTERN, strongSecretConfigured } from './_shared.js';
 
 export const PUBLIC_PLACEHOLDER_PATTERN=PUBLIC_SECRET_PLACEHOLDER_PATTERN;
+export const DEFAULT_META_GRAPH_VERSION='v23.0';
+const META_GRAPH_VERSION=/^v\d{1,3}\.\d{1,3}$/;
 
 export function strongMetaSecretConfigured(value){
   return strongSecretConfigured(value);
@@ -10,12 +12,32 @@ export function isMetaPhoneNumberId(value){
   return /^\d{5,30}$/.test(String(value||'').trim());
 }
 
+export function metaGraphVersionConfig(source=process.env){
+  const configured=String(source.HIPICO_META_GRAPH_VERSION||'').trim();
+  if(!configured){
+    return{graphVersion:DEFAULT_META_GRAPH_VERSION,graphVersionValid:true,graphVersionDefaulted:true};
+  }
+  return{
+    graphVersion:configured,
+    graphVersionValid:META_GRAPH_VERSION.test(configured),
+    graphVersionDefaulted:false
+  };
+}
+
 export function metaSenderConfig(source=process.env){
   const accessToken=String(source.HIPICO_META_ACCESS_TOKEN||'').trim();
   const phoneNumberId=String(source.HIPICO_META_PHONE_NUMBER_ID||'').trim();
   const accessTokenStrong=strongMetaSecretConfigured(accessToken);
   const phoneNumberIdValid=isMetaPhoneNumberId(phoneNumberId);
-  return{accessToken,phoneNumberId,accessTokenStrong,phoneNumberIdValid,ready:accessTokenStrong&&phoneNumberIdValid};
+  const graph=metaGraphVersionConfig(source);
+  return{
+    accessToken,
+    phoneNumberId,
+    accessTokenStrong,
+    phoneNumberIdValid,
+    ...graph,
+    ready:accessTokenStrong&&phoneNumberIdValid&&graph.graphVersionValid
+  };
 }
 
 export function metaWebhookConfig(source=process.env){
