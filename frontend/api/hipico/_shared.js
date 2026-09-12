@@ -96,7 +96,7 @@ function metaAllowedDestinations(source = process.env) {
 }
 
 export function metaOutboundPolicy(source = process.env) {
-  const runtimeSha = String(source.VERCEL_GIT_COMMIT_SHA || source.GIT_SHA || '').trim();
+  const runtimeSha = runtimeValue(source, 'VERCEL_GIT_COMMIT_SHA', 'GITHUB_SHA', 'GIT_COMMIT_SHA', 'GIT_SHA');
   const approvedSha = runtimeValue(source, 'HIPICO_CLOUD_SEND_CANDIDATE_SHA', 'HIPICO_META_SEND_CANDIDATE_SHA');
   const destinations = metaAllowedDestinations(source);
   const reasons = [];
