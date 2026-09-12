@@ -266,16 +266,22 @@ export async function processIncoming(message:any,options:{requirePersistent?:bo
   }
   if(mode==='automatic'&&persistent&&outboxStatus==='ready_auto'&&String(outbox?.status||outboxStatus)==='ready_auto'){
     const claimed=await HipicoBotStore.claimForSend(outbox.id,'ready_auto');
-    if(!claimed)return{duplicate:false,event,outbox:{...outbox,status:'reconciliation_required'}};
+    if(!claimed){
+      if(options.requirePersistent)throw Object.assign(new Error('Automatic webhook outbox claim was not persisted.'),{code:'HIPICO_WEBHOOK_CLAIM_PERSISTENCE_REQUIRED'});
+      return{duplicate:false,event,outbox:{...outbox,status:'reconciliation_required'}};
+    }
     try{
       const sent=await sendCloudText(message.sender,result.suggestion);
       const persisted=await HipicoBotStore.markSent(outbox.id,sent.providerMessageId,'automatic');
+      if(options.requirePersistent&&!persisted)throw Object.assign(new Error('Automatic webhook delivery receipt was not persisted.'),{code:'HIPICO_WEBHOOK_RECEIPT_PERSISTENCE_REQUIRED'});
       return{duplicate:false,event,outbox:{...outbox,status:persisted?'sent':'reconciliation_required',providerMessageId:sent.providerMessageId}};
     }catch(error:any){
+      if(error?.code==='HIPICO_WEBHOOK_RECEIPT_PERSISTENCE_REQUIRED')throw error;
       const ambiguous=error?.code==='HIPICO_CLOUD_DELIVERY_AMBIGUOUS';
       const persisted=ambiguous
         ?await HipicoBotStore.markReconciliationRequired(outbox.id,error?.message||String(error))
         :await HipicoBotStore.markFailed(outbox.id,error?.message||String(error));
+      if(options.requirePersistent&&!persisted)throw Object.assign(new Error('Automatic webhook outbox terminal state was not persisted.'),{code:'HIPICO_WEBHOOK_OUTBOX_STATE_PERSISTENCE_REQUIRED'});
       return{duplicate:false,event,outbox:{...outbox,status:persisted?(ambiguous?'reconciliation_required':'failed'):'reconciliation_required',error:error?.message||String(error)}};
     }
   }
