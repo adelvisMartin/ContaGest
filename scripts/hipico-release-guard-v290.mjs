@@ -7,6 +7,7 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const read = (relative) => fs.readFileSync(path.join(root, relative), 'utf8');
 const json = (relative) => JSON.parse(read(relative));
 const assert = (condition, message) => { if (!condition) throw new Error(`HIPICO_V290_RELEASE_BLOCKED: ${message}`); };
+const SHA40 = /^[0-9a-f]{40}$/i;
 
 const policy = json('products/hipico-control/release-policy.json');
 const buildInfo = json('frontend/public/hipico-control/build-info.json');
@@ -28,9 +29,19 @@ const guarded = [
   'scripts/hipico-apply-e2e-schema-v290.mjs',
   'scripts/hipico-release-report-v290.mjs',
   'scripts/hipico-verify-evidence-v290.mjs',
+  'scripts/hipico-secret-scan-v290.mjs',
   workflowPath
 ];
 
+const gitHead = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8', windowsHide: true }).trim().toLowerCase();
+const candidateSha = String(process.env.HIPICO_CANDIDATE_SHA || process.env.HIPICO_QA_SHA || process.env.HIPICO_RELEASE_SHA || process.env.GITHUB_SHA || gitHead).trim().toLowerCase();
+assert(SHA40.test(candidateSha), `candidate SHA is invalid: ${candidateSha || 'missing'}`);
+assert(candidateSha === gitHead, `checked out HEAD ${gitHead} != candidate ${candidateSha}`);
+execFileSync(process.execPath, ['scripts/hipico-secret-scan-v290.mjs'], {
+  cwd: root,
+  stdio: 'inherit',
+  env: { ...process.env, HIPICO_CANDIDATE_SHA: candidateSha }
+});
 execFileSync(process.execPath, ['scripts/hipico-release-v118.mjs'], { cwd: root, stdio: 'inherit', env: process.env });
 const apiVersion = domain.match(/HIPICO_API_VERSION\s*=\s*['"]([^'"]+)['"]/)?.[1];
 const bridgeProtocolVersion = domain.match(/HIPICO_BRIDGE_PROTOCOL_VERSION\s*=\s*['"]([^'"]+)['"]/)?.[1];
@@ -71,6 +82,8 @@ assert(e2eSchema.includes('Message RLS owner isolation failed'), 'PostgreSQL E2E
 assert(e2eSchema.includes('hipico_ledger_entries') && e2eSchema.includes('hipico_outbox'), 'PostgreSQL E2E must verify ledger/outbox direct-write denial');
 
 const workflow = read(workflowPath);
+assert(workflow.includes("HIPICO_CANDIDATE_SHA: ${{ github.event.pull_request.merge_commit_sha || github.sha }}"), 'workflow must derive the release candidate from pull_request.merge_commit_sha');
+assert((workflow.match(/ref:\s*\$\{\{ env\.HIPICO_CANDIDATE_SHA \}\}/g) || []).length >= 6, 'all release jobs must checkout HIPICO_CANDIDATE_SHA');
 assert(/matrix:\s*[\s\S]*browser:\s*\[chromium, firefox, webkit\]/.test(workflow), 'scheduled browser matrix must keep Chromium/Firefox/WebKit');
 assert(/postgres:16-alpine/.test(workflow), 'real PostgreSQL 16 service is required');
 assert(/poppler-utils tesseract-ocr tesseract-ocr-eng/.test(workflow), 'PDF native/OCR system runtimes must be installed explicitly');
@@ -84,10 +97,9 @@ assert(/actions\/download-artifact@v7/.test(workflow), 'final gate must consume 
 
 const evidenceDir = path.join(root, 'artifacts/qa/hipico-v290');
 fs.mkdirSync(evidenceDir, { recursive: true });
-const sha = String(process.env.GITHUB_SHA || process.env.HIPICO_QA_SHA || execFileSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8' }).trim());
 fs.writeFileSync(path.join(evidenceDir, 'release-contract.json'), `${JSON.stringify({
-  schema: 'hipico-release-contract.v290', sha, checkedAt: new Date().toISOString(), status: 'PASS',
+  schema: 'hipico-release-contract.v290', sha: candidateSha, headSha: gitHead, checkedAt: new Date().toISOString(), status: 'PASS',
   releaseVersion: policy.version, versionCode: policy.versionCode, apiVersion, bridgeProtocolVersion,
-  bridgePackageVersion: bridgePackage.version, guardedFiles: guarded
+  bridgePackageVersion: bridgePackage.version, guardedFiles: guarded, secretScan: 'PASS'
 }, null, 2)}\n`);
-console.log(`HIPICO_V290_RELEASE_CONTRACT PASS sha=${sha} release=${policy.version}`);
+console.log(`HIPICO_V290_RELEASE_CONTRACT PASS sha=${candidateSha} release=${policy.version}`);
