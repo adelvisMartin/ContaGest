@@ -1,5 +1,5 @@
 const CACHE_VERSION = 'hipico-control-v1.13.0-rc3';
-const SHELL_CACHE = `${CACHE_VERSION}-shell-r19-date-identity-297`;
+const SHELL_CACHE = `${CACHE_VERSION}-shell-r20-cache-isolation-297`;
 const APP_SHELL = [
   './', './index.html', './recovery.html', './manifest.webmanifest',
   './icons/icon-192.png', './icons/icon-512.png', './icons/icon-192-maskable.png', './icons/icon-512-maskable.png',
@@ -47,16 +47,20 @@ self.addEventListener('fetch', (event) => {
   if (request.mode === 'navigate') {
     event.respondWith((async () => {
       try { return await fetch(request, { cache: 'no-store' }); }
-      catch (_) { return (await caches.match(scoped('./index.html'))) || (await caches.match(scoped('./recovery.html'))) || Response.error(); }
+      catch (_) {
+        const cache = await caches.open(SHELL_CACHE);
+        return (await cache.match(scoped('./index.html'))) || (await cache.match(scoped('./recovery.html'))) || Response.error();
+      }
     })());
     return;
   }
   if (!isAllowedStatic(url)) { event.respondWith(fetch(request, { cache: 'no-store' })); return; }
   event.respondWith((async () => {
-    const cached = await caches.match(request);
+    const cache = await caches.open(SHELL_CACHE);
+    const cached = await cache.match(request);
     if (cached) return cached;
     const response = await fetch(request, { cache: 'no-store' });
-    if (response.ok) { const cache = await caches.open(SHELL_CACHE); await cache.put(request, response.clone()); }
+    if (response.ok) await cache.put(request, response.clone());
     return response;
   })());
 });
