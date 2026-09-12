@@ -11,6 +11,7 @@ on:
       - 'backend/src/shared/middleware/security.ts'
       - 'backend/src/modules/hipico-bot/**'
       - 'products/hipico-control/**'
+      - 'ops/roadmap/hipico-preqa-305-diagnosis.json'
       - 'tools/hipico-whatsapp-bridge/**'
       - 'tools/hipico-whatsapp-web-bridge/**'
       - 'android/hipico-control-v1130/**'
