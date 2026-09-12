@@ -7,6 +7,7 @@ on:
       - 'frontend/public/hipico-control/**'
       - 'frontend/api/hipico/**'
       - 'frontend/vercel.json'
+      - 'backend/.env.example'
       - 'backend/src/app.ts'
       - 'backend/src/shared/middleware/security.ts'
       - 'backend/src/modules/hipico-bot/**'
