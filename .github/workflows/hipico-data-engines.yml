@@ -6,7 +6,7 @@ on:
     paths:
       - 'backend/src/app.ts'
       - 'backend/src/modules/hipico/**'
-      - 'backend/src/modules/hipico-bot/hipico-race-provider.ts'
+      - 'backend/src/modules/hipico-bot/hipico-race-provider*.ts'
       - 'backend/package.json'
       - 'supabase/sql/hipico_v14_documents.sql'
       - 'supabase/sql/hipico_v15_race_lifecycle.sql'
@@ -106,7 +106,11 @@ jobs:
           mkdir -p "$evidence"
           PORT=3030 NODE_ENV=development node backend/dist/src/server.js >"$evidence/backend.log" 2>&1 &
           pid=$!
-          cleanup() { kill "$pid" 2>/dev/null || true; }
+          cleanup() {
+            if kill -0 "$pid" 2>/dev/null; then
+              kill "$pid"
+            fi
+          }
           trap cleanup EXIT
           curl --fail --silent --show-error --retry 30 --retry-connrefused --retry-delay 1 --max-time 60 http://127.0.0.1:3030/health/live >"$evidence/health-live.json"
           for route in documents providers races; do
@@ -121,12 +125,18 @@ jobs:
         env:
           PGPASSWORD: postgres
         run: |
-          set -euo pipefail
+          set -uo pipefail
+          cleanup_rc=0
           if [ -n "${HIPICO_E2E_DATABASE_URL:-}" ]; then
             db="${HIPICO_E2E_DATABASE_URL##*/}"
-            psql -h 127.0.0.1 -p 5432 -U postgres -d postgres -v ON_ERROR_STOP=1 -c "select pg_terminate_backend(pid) from pg_stat_activity where datname='${db}' and pid <> pg_backend_pid();" || true
-            dropdb -h 127.0.0.1 -p 5432 -U postgres --if-exists "$db"
+            if ! psql -h 127.0.0.1 -p 5432 -U postgres -d postgres -v ON_ERROR_STOP=1 -c "select pg_terminate_backend(pid) from pg_stat_activity where datname='${db}' and pid <> pg_backend_pid();"; then
+              cleanup_rc=1
+            fi
+            if ! dropdb -h 127.0.0.1 -p 5432 -U postgres --if-exists "$db"; then
+              cleanup_rc=1
+            fi
           fi
+          exit "$cleanup_rc"
 
       - name: Preserve SHA-bound evidence
         if: always()
