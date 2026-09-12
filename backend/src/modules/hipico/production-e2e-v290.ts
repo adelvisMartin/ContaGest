@@ -1,6 +1,11 @@
 import assert from 'node:assert/strict';
+import { execFile } from 'node:child_process';
 import { once } from 'node:events';
+import fs from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
 import { test, after } from 'node:test';
+import { promisify } from 'node:util';
 import PDFDocument from 'pdfkit';
 import { prisma } from '../../database/prisma.js';
 import { TestChannelAdapter, type NormalizedChannelMessage } from './messaging-channel.js';
@@ -13,6 +18,7 @@ import { AutomationStore } from './automation.store.js';
 import { buildHipicoCommandCenter } from './command-center.service.js';
 import type { AgentCandidate } from './agent-policy.js';
 
+const execFileAsync = promisify(execFile);
 const OWNER_ID = process.env.HIPICO_E2E_OWNER_ID || '11111111-1111-4111-8111-111111111111';
 const GROUP_A = 'e2e-group-a';
 const GROUP_B = 'e2e-group-b';
@@ -39,7 +45,29 @@ async function pdfBuffer(configure: (doc: PDFKit.PDFDocument) => void) {
   return Buffer.concat(chunks);
 }
 
-const PIXEL_PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M/wHwAF/gL+3q2pWQAAAABJRU5ErkJggg==', 'base64');
+async function scannedPdfBuffer(text: string) {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'hipico-e2e-scan-'));
+  const sourcePath = path.join(directory, 'source.pdf');
+  const imagePrefix = path.join(directory, 'scan');
+  try {
+    const source = await pdfBuffer((doc) => {
+      doc.fontSize(30).text(text, 72, 150, { width: 460, align: 'center' });
+    });
+    await fs.writeFile(sourcePath, source, { mode: 0o600 });
+    await execFileAsync('pdftoppm', ['-f', '1', '-singlefile', '-png', '-r', '200', sourcePath, imagePrefix], {
+      timeout: 20_000,
+      maxBuffer: 8 * 1024 * 1024,
+      windowsHide: true,
+      env: { ...process.env, LC_ALL: 'C', LANG: 'C' }
+    });
+    const image = await fs.readFile(`${imagePrefix}.png`);
+    return pdfBuffer((doc) => {
+      doc.image(image, 36, 72, { fit: [doc.page.width - 72, doc.page.height - 144], align: 'center', valign: 'center' });
+    });
+  } finally {
+    await fs.rm(directory, { recursive: true, force: true });
+  }
+}
 
 function botMessage(message: NormalizedChannelMessage) {
   return { providerMessageId: message.externalMessageId, phoneNumberId: 'test-channel', sender: message.senderId, messageType: message.type, body: message.text, payload: { groupId: message.groupId, historySync: message.historySync, channel: message.channel } };
@@ -109,9 +137,9 @@ test('document persistence deduplicates exact bytes and links immutable revision
   assert.equal(rows.find((row: any) => row.id === revision.id)?.supersedesId, first.id);
 });
 
-test('native PDF extraction uses real PDF.js and does not grant official authority from wording', async () => {
+test('native PDF extraction uses real Poppler and does not grant official authority from wording', async () => {
   const capability = documentExtractorCapability(process.env);
-  assert.equal(capability.nativeText, true, `native PDF dependency missing: ${capability.reason || 'unknown'}`);
+  assert.equal(capability.nativeText, true, `native PDF runtime missing: ${capability.reason || 'unknown'}`);
   const extractor = createPdfJsDocumentExtractor(process.env);
   assert.ok(extractor);
   const pdf = await pdfBuffer((doc) => doc.fontSize(20).text('RESULTADO OFICIAL CARRERA 4 LLEGADA 3 1 5'));
@@ -125,16 +153,18 @@ test('native PDF extraction uses real PDF.js and does not grant official authori
   assert.equal(stored?.extraction?.claimedOfficial, true);
 });
 
-test('scanned PDF follows real OCR fallback when OCR capability is enabled', async () => {
+test('scanned PDF uses real rasterization plus OCR and recovers semantic text', async () => {
   const env = { ...process.env, HIPICO_DOCUMENT_OCR_ENABLED: 'true', HIPICO_DOCUMENT_OCR_LANGUAGE: process.env.HIPICO_DOCUMENT_OCR_LANGUAGE || 'eng' };
   const capability = documentExtractorCapability(env);
   assert.equal(capability.ocr, true, `OCR dependencies missing: ${capability.reason || 'OCR_NOT_READY'}`);
   const extractor = createPdfJsDocumentExtractor(env);
   assert.ok(extractor);
-  const scanned = await pdfBuffer((doc) => { doc.image(PIXEL_PNG, 72, 72, { width: 320, height: 180 }); });
+  const scanned = await scannedPdfBuffer('RESULTADO OFICIAL CARRERA 4');
   const extracted = await extractor.extract(scanned, new AbortController().signal);
   assert.equal(extracted.method, 'ocr');
   assert.equal(extracted.pageCount, 1);
+  assert.match(extracted.text.toUpperCase(), /RESULTADO/);
+  assert.match(extracted.text.toUpperCase(), /CARRERA/);
 });
 
 function command(command: any, expectedState: any, requestId: string, payload: Record<string, unknown> = {}, evidence: any[] = []) {
@@ -193,16 +223,47 @@ test('agent source group remains shadow-only and persists evaluation without led
   assert.equal(Number(afterRows[0]?.count || 0), Number(before[0]?.count || 0));
 });
 
-test('Command Center aggregates persisted race document channel queue and agent state without mutation', async () => {
+test('Command Center is read-only and isolates channels plus bridge freshness per group', async () => {
   process.env.HIPICO_SOURCE_GROUP_ID = SOURCE_GROUP_ID;
+  const channelRows = await prisma.$queryRaw<Array<{ id: string; groupKey: string }>>`
+    INSERT INTO public.hipico_bot_channels(owner_id,group_key,label,channel_type,status,config)
+    VALUES
+      (${OWNER_ID}::uuid,${GROUP_A},'E2E A','web_bridge','active','{"mode":"shadow_only"}'::jsonb),
+      (${OWNER_ID}::uuid,${GROUP_B},'E2E B','web_bridge','active','{"mode":"shadow_only"}'::jsonb)
+    ON CONFLICT(owner_id,group_key) DO UPDATE SET status='active',updated_at=now()
+    RETURNING id::text AS id,group_key AS "groupKey"`;
+  const channelA = channelRows.find((row) => row.groupKey === GROUP_A);
+  const channelB = channelRows.find((row) => row.groupKey === GROUP_B);
+  assert.ok(channelA && channelB);
+  const bridgeAId = `cc-a-${Date.now()}`;
+  const bridgeBId = `cc-b-${Date.now()}`;
+  await prisma.$executeRaw`
+    INSERT INTO public.hipico_messages(
+      owner_id,channel_id,channel_key,external_message_id,fingerprint,sender_id,sender_label,sender_role,
+      sent_at,message_type,raw_text,classification,confidence,processing_status,normalized,metadata,created_at,received_at)
+    VALUES
+      (${OWNER_ID}::uuid,${channelA!.id}::uuid,${GROUP_A},${bridgeAId},md5(${bridgeAId}),'bridge-a','Bridge A','system',now()-interval '10 minutes','text','bridge a','status_non_monetary',1,'processed','{}'::jsonb,'{"source":"whatsapp-web-bridge"}'::jsonb,now()-interval '10 minutes',now()-interval '10 minutes'),
+      (${OWNER_ID}::uuid,${channelB!.id}::uuid,${GROUP_B},${bridgeBId},md5(${bridgeBId}),'bridge-b','Bridge B','system',now(),'text','bridge b','status_non_monetary',1,'processed','{}'::jsonb,'{"source":"whatsapp-web-bridge"}'::jsonb,now(),now())`;
+  const expectedA = await prisma.$queryRaw<Array<{ createdAt: Date }>>`
+    SELECT created_at AS "createdAt" FROM public.hipico_messages
+    WHERE owner_id=${OWNER_ID}::uuid AND channel_key=${GROUP_A} AND external_message_id=${bridgeAId} LIMIT 1`;
   const beforeLedger = await prisma.$queryRaw<Array<{ count: bigint }>>`SELECT COUNT(*)::bigint AS count FROM public.hipico_ledger_entries WHERE owner_id=${OWNER_ID}::uuid`;
-  const data = await buildHipicoCommandCenter({ ownerId: OWNER_ID, groupKey: GROUP_A, groupId: SOURCE_GROUP_ID });
-  assert.equal(data.scope.groupKey, GROUP_A);
-  assert.ok(data.system.components.database);
-  assert.ok(data.operation.raceCount >= 1);
-  assert.ok(Array.isArray(data.documents.recent));
-  assert.equal(data.bridge.sourceSendPossible, false);
-  assert.equal(data.agent.mode, 'SHADOW');
+  const [dataA, dataB] = await Promise.all([
+    buildHipicoCommandCenter({ ownerId: OWNER_ID, groupKey: GROUP_A, groupId: SOURCE_GROUP_ID }),
+    buildHipicoCommandCenter({ ownerId: OWNER_ID, groupKey: GROUP_B, groupId: SOURCE_GROUP_ID })
+  ]);
+  assert.equal(dataA.scope.groupKey, GROUP_A);
+  assert.ok(dataA.system.components.database);
+  assert.ok(dataA.operation.raceCount >= 1);
+  assert.ok(Array.isArray(dataA.documents.recent));
+  assert.equal(dataA.bridge.sourceSendPossible, false);
+  assert.equal(dataA.agent.mode, 'SHADOW');
+  assert.ok(dataA.channels.every((channel: any) => channel.groupKey === GROUP_A));
+  assert.ok(dataB.channels.every((channel: any) => channel.groupKey === GROUP_B));
+  assert.equal(dataA.channels.some((channel: any) => channel.groupKey === GROUP_B), false);
+  assert.equal(dataB.channels.some((channel: any) => channel.groupKey === GROUP_A), false);
+  assert.equal(dataA.bridge.lastEventAt, expectedA[0]?.createdAt.toISOString());
+  assert.notEqual(dataA.bridge.lastEventAt, dataB.bridge.lastEventAt);
   const afterLedger = await prisma.$queryRaw<Array<{ count: bigint }>>`SELECT COUNT(*)::bigint AS count FROM public.hipico_ledger_entries WHERE owner_id=${OWNER_ID}::uuid`;
   assert.equal(Number(afterLedger[0]?.count || 0), Number(beforeLedger[0]?.count || 0));
 });
