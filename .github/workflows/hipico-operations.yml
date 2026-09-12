@@ -147,8 +147,11 @@ jobs:
           node --check tools/hipico-whatsapp-bridge/src/index.mjs
           node --check backend/scripts/hipico-audit-idempotency-contract.mjs
           node --check backend/scripts/hipico-db-contract.mjs
+          node --check backend/scripts/hipico-outbox-reconciliation-contract.mjs
       - name: PostgreSQL isolated migration, RLS, idempotency, multigroup and operator-confirmation contract
         run: node backend/scripts/hipico-db-contract.mjs
+      - name: PostgreSQL ambiguous-delivery reconciliation status contract
+        run: node backend/scripts/hipico-outbox-reconciliation-contract.mjs
       - name: PostgreSQL durable cloud audit replay contract
         run: node backend/scripts/hipico-audit-idempotency-contract.mjs
       - name: Backend typecheck
