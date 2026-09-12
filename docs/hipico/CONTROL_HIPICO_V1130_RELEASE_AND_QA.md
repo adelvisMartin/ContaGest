@@ -95,6 +95,19 @@ PROBAR-HIPICO-LAB.cmd
 
 Antes de escribir/Enter y después del envío el runtime vuelve a validar el nombre y el ID real del LAB. Si cambia el destino, limpia el borrador y falla cerrado.
 
+## Persistencia de adapters serverless
+
+Las funciones bajo `frontend/api/hipico/*` no deben reutilizar implícitamente las credenciales generales del ERP. Su persistencia y autenticación interna se configuran explícitamente:
+
+```text
+HIPICO_OWNER_ID=<uuid-owner-autorizado>
+HIPICO_SUPABASE_URL=<https-supabase-runtime>
+HIPICO_SUPABASE_SERVICE_ROLE_KEY=<secreto-servidor>
+HIPICO_INTERNAL_API_TOKEN=<secreto-aleatorio-32+-bytes>
+```
+
+Si cualquiera de esas fronteras obligatorias falta o es débil, las operaciones que la necesitan fallan cerradas. Estas variables nunca deben aparecer en PWA, APK, logs o artefactos de QA.
+
 ## Proveedor hípico externo opcional · enrichment solamente
 
 El backend dispone de un registry de proveedores para enriquecer estado de carreras sin convertir el feed externo en autoridad financiera. El proveedor es **opcional** y por defecto permanece deshabilitado/fail-closed. Un fallo, timeout, circuito abierto o dato stale nunca autoriza apuestas, resultados, saldos ni liquidaciones.
@@ -134,9 +147,13 @@ No configurar estas variables es un estado soportado: el provider informa `NOT_C
 
 El transporte Cloud es adicional y actualmente sólo soporta destinatarios individuales. No habilita envío al grupo SOURCE. Para cualquier envío exige simultáneamente configuración de transporte, aprobación explícita, binding al SHA candidato y allowlist de destinos.
 
-Configuración de transporte:
+Backend y serverless comparten **un solo contrato canónico** para esta integración. Instalaciones nuevas usan únicamente los nombres siguientes; `HIPICO_META_*` queda soportado en serverless como fallback de compatibilidad para despliegues antiguos y nunca tiene precedencia sobre una variable canónica presente.
+
+Configuración de transporte/webhook:
 
 ```text
+WHATSAPP_VERIFY_TOKEN=<secreto-servidor>
+WHATSAPP_APP_SECRET=<secreto-servidor>
 WHATSAPP_CLOUD_TOKEN=<secreto-servidor>
 WHATSAPP_PHONE_NUMBER_ID=<id-numérico>
 WHATSAPP_GRAPH_API_VERSION=v23.0   # o versión explícita válida
@@ -150,6 +167,7 @@ HIPICO_WHATSAPP_COMPLIANCE_DECISION=GO
 HIPICO_CLOUD_SEND_APPROVED_BY=<responsable>
 HIPICO_CLOUD_SEND_CANDIDATE_SHA=<sha-40-exacto-del-runtime>
 HIPICO_CLOUD_ALLOWED_DESTINATIONS=<e164-allowlist-separada-por-comas>
+HIPICO_CLOUD_SEND_TIMEOUT_MS=12000
 ```
 
 Si falta cualquiera de estas condiciones, el sender queda deshabilitado. Si la persistencia del outbox no está lista, no se reclama ni envía el mensaje. Un timeout/red incierto o una respuesta exitosa sin `message id` pasa a conciliación y **no se reenvía automáticamente**.
