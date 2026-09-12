@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { DocumentIngestionService, authorizeDocumentClassification, validatePdfEnvelope, type DocumentStore, type DocumentStoreInput, type PdfTextExtractor } from './document-engine.js';
+import { DocumentIngestionService, authorizeDocumentClassification, strictDocumentMetadata, validatePdfEnvelope, type DocumentStore, type DocumentStoreInput, type PdfTextExtractor } from './document-engine.js';
 import { parseHorseRacingDocument } from './document-parser.js';
 
 const pdf=(body='')=>Buffer.from(`%PDF-1.4\n1 0 obj << /Type /Page >>\n${body}\nendobj\n%%EOF\n`,'latin1');
@@ -20,6 +20,13 @@ void test('PDF security validates MIME magic structure size filename and escaped
   assert.throws(()=>validatePdfEnvelope(pdf('/Open#41ction 7 0 R'),'escaped-action.pdf'),(e:any)=>e?.code==='PDF_ACTIVE_CONTENT_REJECTED');
   assert.throws(()=>validatePdfEnvelope(pdf(),'../programa.pdf'),(e:any)=>e?.code==='PDF_FILENAME_INVALID');
   const oversized=Buffer.alloc(10*1024*1024+1,0x20);oversized.write('%PDF-1.4',0,'latin1');assert.throws(()=>validatePdfEnvelope(oversized,'large.pdf'),(e:any)=>e?.code==='PDF_TOO_LARGE');
+});
+void test('document metadata limits reject rather than truncate replay/source identities',()=>{
+  assert.equal(strictDocumentMetadata('official-feed','sourceChannel',120),'official-feed');
+  assert.equal(strictDocumentMetadata('  message-1  ','sourceMessageId',320),'message-1');
+  assert.throws(()=>strictDocumentMetadata('x'.repeat(121),'sourceChannel',120),(e:any)=>e?.code==='DOCUMENT_SOURCE_CHANNEL_INVALID');
+  assert.throws(()=>strictDocumentMetadata('m'.repeat(321),'sourceMessageId',320),(e:any)=>e?.code==='DOCUMENT_SOURCE_MESSAGE_ID_INVALID');
+  assert.throws(()=>strictDocumentMetadata('s'.repeat(221),'sender',220),(e:any)=>e?.code==='DOCUMENT_SENDER_INVALID');
 });
 void test('official wording never grants official or financial authority by itself',()=>{
   assert.deepEqual(authorizeDocumentClassification({classification:'OFFICIAL_RESULT',confidence:.98},'group_evidence'),{classification:'RESULT',confidence:.9,claimedOfficial:true});
