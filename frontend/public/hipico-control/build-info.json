@@ -3,7 +3,7 @@
   "product": "control-hipico",
   "version": "1.13.0-rc3",
   "channel": "pilot",
-  "revision": "source",
+  "revision": "qa-production-hardening-290",
   "buildId": "1.13.0-rc3",
   "candidateSha": "local-unbound",
   "bound": false,
