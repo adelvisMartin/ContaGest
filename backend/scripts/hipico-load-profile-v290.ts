@@ -63,6 +63,7 @@ async function providerRequestProfile(volume: number) {
       HIPICO_RACE_PROVIDER_TIMEOUT_MS: '5000',
       HIPICO_RACE_PROVIDER_CACHE_TTL_MS: '30000'
     },
+    resolveImpl: async () => [{ address: '8.8.8.8', family: 4 }],
     fetchImpl: async () => {
       fetchCalls += 1;
       return new Response(fixture.xml, { status: 200, headers: { 'content-type': 'application/xml' } });
