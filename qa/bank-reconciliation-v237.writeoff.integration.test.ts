@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test, { after } from 'node:test';
 import { randomUUID } from 'node:crypto';
 import { prisma } from '../backend/src/database/prisma.js';
+import { add, serializeDecimal } from '../backend/src/shared/financial/decimal.js';
 import { createApprovalPolicy, createApprovalRequest, decideApprovalRequest } from '../backend/src/modules/approvals/approvals.service.js';
 import {
   createReconciliationModel,
@@ -51,8 +52,8 @@ test('v237 fee model is versioned and write-off is ledger-backed, maker-checker 
   const result=await createWriteoff({tenantId:tenant.id,userId:maker.id,lineId:line.id,idempotencyKey:`wo-${suffix}`,amount:'5.25',writeoffAccountCode:'6.1.99.001',bankLedgerAccountCode:'1.1.01.001',reason:payload.reason,fiscalPeriod:'2026-09',approvalRequestId:request.id});
   assert.equal(result.reconciliation.status,'confirmed'); assert.ok(result.reconciliation.ledgerEntryId);
   const ledger=await prisma.ledgerEntry.findFirstOrThrow({where:{id:result.reconciliation.ledgerEntryId,tenantId:tenant.id},include:{lines:true}}); assert.equal(ledger.posted,true); assert.equal(ledger.source,'banking'); assert.equal(ledger.lines.length,2);
-  assert.equal(ledger.lines.reduce((sum,item)=>sum.plus(item.debit),new (ledger.lines[0].debit.constructor as any)(0)).toFixed(2),'5.25');
-  assert.equal(ledger.lines.reduce((sum,item)=>sum.plus(item.credit),new (ledger.lines[0].credit.constructor as any)(0)).toFixed(2),'5.25');
+  assert.equal(serializeDecimal(add(...ledger.lines.map((item)=>item.debit)),2),'5.25');
+  assert.equal(serializeDecimal(add(...ledger.lines.map((item)=>item.credit)),2),'5.25');
   const after=(await prisma.bankAccount.findUniqueOrThrow({where:{id:bank.id}})).balance.toFixed(2); assert.equal(after,before,'write-off must not mutate bank balance directly');
 
   const replay=await createWriteoff({tenantId:tenant.id,userId:maker.id,lineId:line.id,idempotencyKey:`wo-${suffix}`,amount:'5.25',writeoffAccountCode:'6.1.99.001',bankLedgerAccountCode:'1.1.01.001',reason:payload.reason,fiscalPeriod:'2026-09',approvalRequestId:request.id}); assert.equal(replay.replayed,true); assert.equal(replay.reconciliation.id,result.reconciliation.id);
