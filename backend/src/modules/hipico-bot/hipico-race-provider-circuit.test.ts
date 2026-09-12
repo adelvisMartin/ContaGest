@@ -13,6 +13,8 @@ const configuredEnv = {
   HIPICO_RACE_PROVIDER_BACKOFF_MS: '1000'
 };
 
+const publicResolve = async () => [{ address: '8.8.8.8', family: 4 }];
+
 function isProviderError(code: HorseRaceProviderError['code']) {
   return (error: unknown) => error instanceof HorseRaceProviderError && error.code === code;
 }
@@ -22,6 +24,7 @@ test('race provider opens the circuit after consecutive retryable failures witho
   let clock = Date.parse('2026-09-11T18:00:00Z');
   const provider = createHorseRaceProvider({
     env: configuredEnv,
+    resolveImpl: publicResolve,
     now: () => clock,
     fetchImpl: async () => {
       calls += 1;
@@ -51,6 +54,7 @@ test('successful half-open probe closes the circuit and restores enrichment requ
   let clock = Date.parse('2026-09-11T18:00:00Z');
   const provider = createHorseRaceProvider({
     env: configuredEnv,
+    resolveImpl: publicResolve,
     now: () => clock,
     fetchImpl: async () => {
       calls += 1;
@@ -85,6 +89,7 @@ test('failed half-open probe reopens the circuit with exponential backoff', asyn
       ...configuredEnv,
       HIPICO_RACE_PROVIDER_FAILURE_THRESHOLD: '1'
     },
+    resolveImpl: publicResolve,
     now: () => clock,
     fetchImpl: async () => {
       calls += 1;
@@ -111,6 +116,7 @@ test('non-retryable malformed payload does not trip the closed circuit by itself
   let calls = 0;
   const provider = createHorseRaceProvider({
     env: configuredEnv,
+    resolveImpl: publicResolve,
     fetchImpl: async () => {
       calls += 1;
       return new Response('<html>proxy error</html>', {
