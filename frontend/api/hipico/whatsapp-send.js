@@ -1,4 +1,4 @@
-import { bearerTokenValid, env, fetchWithTimeout, isE164, metaDestinationAllowed, metaOutboundPolicy, retryAfterMs, runtimeValue, serverSecret, supabase } from './_shared.js';
+import { bearerTokenValid, env, fetchWithTimeout, isE164, metaDestinationAllowed, metaOutboundPolicy, retryAfterMs, runtimeValue, safeTimeoutMs, serverSecret, supabase } from './_shared.js';
 import { DEFAULT_META_GRAPH_VERSION, metaGraphVersionConfig, metaSenderConfig } from './meta-runtime.js';
 
 const MAX_ATTEMPTS = 6;
@@ -11,7 +11,7 @@ function nextRetryIso(attempts, retryAfterHeader = '', nowMs = Date.now()) {
   const localWaitMs = retryMinutes * 60000;
   const parsedNow = Number(nowMs);
   const safeNow = Number.isFinite(parsedNow) ? parsedNow : Date.now();
-  const providerWaitMs = retryAfterMs(retryAfterHeader, safeNow);
+  const providerWaitMs = retryAfterMs(response.headers);
   return new Date(safeNow + Math.max(localWaitMs, providerWaitMs)).toISOString();
 }
 
@@ -83,7 +83,7 @@ function safeGraphVersion(source = process.env) {
 }
 
 function sendTimeoutMs(source = process.env) {
-  return Number(runtimeValue(source, 'HIPICO_CLOUD_SEND_TIMEOUT_MS', 'HIPICO_META_SEND_TIMEOUT_MS') || 12000);
+  return safeTimeoutMs(runtimeValue(source, 'HIPICO_CLOUD_SEND_TIMEOUT_MS', 'HIPICO_META_SEND_TIMEOUT_MS'), 12000);
 }
 
 export default async function handler(req, res) {
