@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 import {
   createHipicoProviderRegistry,
   type HipicoRaceDataAdapter,
@@ -144,4 +145,19 @@ test('expired fallback is never served after its bounded stale window', async ()
     registry.getLiveStage('697758'),
     (error: unknown) => error instanceof HorseRaceProviderError && error.code === 'UPSTREAM_ERROR'
   );
+});
+
+test('canonical provider API is mounted under /api/v1/hipico and legacy operator path cannot expose transport XML', () => {
+  const app = fs.readFileSync('src/app.ts', 'utf8');
+  const routes = fs.readFileSync('src/modules/hipico-bot/hipico-provider.routes.ts', 'utf8');
+  const operator = fs.readFileSync('src/modules/hipico-bot/hipico-operator.routes.ts', 'utf8');
+  assert.match(app, /hipicoProviderRoutes/);
+  assert.match(app, /app\.use\('\/api\/v1\/hipico', authRateLimit, hipicoProviderRoutes\)/);
+  assert.match(routes, /router\.get\('\/providers'/);
+  assert.match(routes, /router\.get\('\/providers\/status'/);
+  assert.match(routes, /router\.get\('\/live\/stages\/:stageId'/);
+  assert.match(routes, /hipicoProviderRegistry/);
+  assert.doesNotMatch(routes, /hipico-race-provider\.js/);
+  assert.doesNotMatch(operator, /createHorseRaceProvider/);
+  assert.doesNotMatch(operator, /\.xml\b/);
 });
