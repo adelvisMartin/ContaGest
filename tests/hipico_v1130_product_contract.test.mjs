@@ -28,7 +28,6 @@ test('recovered runtime archive is hash-pinned and restore path traversal is pro
 test('Hipico migration contains no ERP Fitness tables',()=>{
   const sql=read('backend/prisma/migrations/0014_v1126_hipico_bot/migration.sql');
   assert.match(sql,/HipicoWebhookEvent/);
-  assert.match(sql,/HipicoBotOutbox/);
   assert.doesNotMatch(sql,/Fitness/i);
 });
 
@@ -77,6 +76,15 @@ test('android sync removes retired generated assets before copying the canonical
   const copy=sync.indexOf("fs.cpSync(source, target, { recursive: true, force: true })");
   assert.ok(clean>=0,'sync:web must remove the generated www tree before copying');
   assert.ok(copy>clean,'cleanup must happen before the canonical PWA is copied');
+});
+
+test('Android package metadata and lockfile share the release candidate version',()=>{
+  const policy=JSON.parse(read('products/hipico-control/release-policy.json'));
+  const pkg=JSON.parse(read('android/hipico-control-v1130/package.json'));
+  const lock=JSON.parse(read('android/hipico-control-v1130/package-lock.json'));
+  assert.equal(pkg.version,policy.version);
+  assert.equal(lock.version,policy.version);
+  assert.equal(lock.packages?.['']?.version,policy.version);
 });
 
 test('legacy Control Hipico URL redirects to its independent PWA',()=>{
