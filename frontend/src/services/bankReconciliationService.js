@@ -1,7 +1,7 @@
 import { BackendApi } from './backendApi.js';
 
 const query=(params={})=>{const qs=new URLSearchParams();Object.entries(params).forEach(([key,value])=>{if(value!==undefined&&value!==null&&String(value)!==''&&String(value)!=='all')qs.set(key,String(value));});const value=qs.toString();return value?`?${value}`:'';};
-const idem=()=>globalThis.crypto?.randomUUID?.()?`cg-reconcile-${globalThis.crypto.randomUUID()}`:`cg-reconcile-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+const idem=()=>{const id=globalThis.crypto?.randomUUID?.();return id?`cg-reconcile-${id}`:`cg-reconcile-${Date.now()}-${Math.random().toString(16).slice(2)}`;};
 
 export const BankReconciliationService={
   imports(filters={}){return BackendApi.get(`/bank-reconciliation/imports${query(filters)}`);},
