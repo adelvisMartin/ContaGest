@@ -7,6 +7,9 @@ import hipicoWebhookRoutes from './modules/hipico-bot/hipico-webhook.routes.js';
 import hipicoBridgeRoutes from './modules/hipico-bot/hipico-bridge.routes.js';
 import hipicoOperatorRoutes from './modules/hipico-bot/hipico-operator.routes.js';
 import hipicoCanonicalRoutes from './modules/hipico-bot/hipico-canonical.routes.js';
+import hipicoSystemRoutes from './modules/hipico/hipico-system.routes.js';
+import hipicoCommandCenterRoutes from './modules/hipico/command-center.routes.js';
+import hipicoOperatorReadRoutes from './modules/hipico/operator-read.routes.js';
 import { requestContext } from './shared/middleware/context.js';
 import { errorHandler, notFound } from './shared/middleware/error.js';
 import {
@@ -72,12 +75,15 @@ export function createApp(options: { readinessCheck?: ReadinessCheck } = {}) {
   // Control Hípico is an independent product that temporarily shares this API
   // process. /api/v1/hipico is the canonical domain facade; /hipico-bot remains
   // the compatibility/integration surface for Meta, WhatsApp Web Bridge and
-  // operator adapters. None of these token-authenticated routes uses browser
-  // cookies, so they live before browser-session CSRF. Mutating canonical calls
-  // still receive the general mutation limiter in addition to auth throttling.
+  // operator adapters. Token-authenticated read models stay outside browser CSRF
+  // but always use auth throttling and no-store responses. Canonical mutations
+  // additionally pass through the mutation limiter.
   app.use('/api/v1/hipico-bot', hipicoWebhookRoutes);
   app.use('/api/v1/hipico-bot', authRateLimit, hipicoBridgeRoutes);
   app.use('/api/v1/hipico-bot', authRateLimit, hipicoOperatorRoutes);
+  app.use('/api/v1/hipico', authRateLimit, hipicoSystemRoutes);
+  app.use('/api/v1/hipico', authRateLimit, hipicoCommandCenterRoutes);
+  app.use('/api/v1/hipico', authRateLimit, hipicoOperatorReadRoutes);
   app.use('/api/v1/hipico', authRateLimit, mutationRateLimit, hipicoCanonicalRoutes);
 
   app.use(csrfProtection);
