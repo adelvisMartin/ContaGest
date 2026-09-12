@@ -71,6 +71,14 @@ test('android wrapper synchronizes only the canonical Hipico web product',()=>{
   assert.match(pkg,/npm run android:branding/);
 });
 
+test('android sync removes retired generated assets before copying the canonical PWA',()=>{
+  const sync=read('android/hipico-control-v1130/scripts/sync-web.mjs');
+  const clean=sync.indexOf("fs.rmSync(target, { recursive: true, force: true })");
+  const copy=sync.indexOf("fs.cpSync(source, target, { recursive: true, force: true })");
+  assert.ok(clean>=0,'sync:web must remove the generated www tree before copying');
+  assert.ok(copy>clean,'cleanup must happen before the canonical PWA is copied');
+});
+
 test('legacy Control Hipico URL redirects to its independent PWA',()=>{
   const vercel=JSON.parse(read('vercel.json'));
   assert.ok(vercel.routes.some((r)=>r.src==='/control-hipico'&&r.status===308&&r.headers?.Location==='/hipico-control/'));
