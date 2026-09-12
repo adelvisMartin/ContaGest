@@ -59,33 +59,40 @@ test('cancelling recovery leaves localStorage and IndexedDB untouched', () => {
   assert.equal(result.reset.disabled, false);
 });
 
-test('confirmed recovery reaches destructive storage cleanup only after confirmation', () => {
+test('confirmed recovery commits localStorage cleanup only after IndexedDB deletion succeeds', () => {
   const result = executeRecovery(true);
+  assert.deepEqual(result.deletedDatabases, ['hipico-control']);
+  assert.deepEqual(result.removedKeys, [], 'localStorage must remain intact while IndexedDB deletion is unresolved');
+  assert.equal(result.reset.disabled, true);
+  assert.equal(typeof result.deleteRequest.onsuccess, 'function');
+  result.deleteRequest.onsuccess();
   assert.deepEqual(result.removedKeys, [
     'hipico-control-workspace-v1',
     'hipico-control-cloud-session',
     'hipico-control-mode'
   ]);
-  assert.deepEqual(result.deletedDatabases, ['hipico-control']);
-  assert.equal(result.reset.disabled, true);
+  assert.match(result.status.textContent, /restablecido/i);
+  assert.equal(result.timers.some(({ delay }) => delay <= 500), true);
 });
 
-test('blocked IndexedDB deletion fails closed instead of pretending recovery succeeded', () => {
+test('blocked IndexedDB deletion fails closed without partially deleting localStorage', () => {
   const result = executeRecovery(true);
   assert.equal(typeof result.deleteRequest.onblocked, 'function');
   result.deleteRequest.onblocked();
   assert.equal(result.reset.disabled, false);
   assert.match(result.status.textContent, /cierra otras pestañas|bloquead|ocupado/i);
+  assert.deepEqual(result.removedKeys, []);
   assert.deepEqual(result.replacements, []);
   assert.equal(result.timers.some(({ delay }) => delay <= 500), false, 'blocked deletion must not schedule automatic app navigation');
 });
 
-test('IndexedDB deletion error keeps the user on recovery with an actionable retry', () => {
+test('IndexedDB deletion error keeps all remaining local data and offers an actionable retry', () => {
   const result = executeRecovery(true);
   assert.equal(typeof result.deleteRequest.onerror, 'function');
   result.deleteRequest.onerror();
   assert.equal(result.reset.disabled, false);
   assert.match(result.status.textContent, /no se pudo|reintenta/i);
+  assert.deepEqual(result.removedKeys, []);
   assert.deepEqual(result.replacements, []);
   assert.equal(result.timers.some(({ delay }) => delay <= 500), false, 'failed deletion must not navigate into a possibly unrecovered app');
 });
