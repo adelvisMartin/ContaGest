@@ -13,11 +13,12 @@ test('Control Hipico remains outside the ERP module catalog',()=>{
   assert.match(adr,/productos independientes/i);
 });
 
-test('recovered runtime is hash-pinned and path traversal protected',()=>{
-  const manifest=JSON.parse(read('products/hipico-control/runtime/v1.13.0-rc1/manifest.json'));
+test('recovered runtime archive is hash-pinned and restore path traversal is protected',()=>{
+  const manifest=JSON.parse(read('products/hipico-control/runtime/v1.13.0-rc2/manifest.json'));
   assert.equal(manifest.product,'control-hipico');
-  assert.equal(manifest.version,'1.13.0-parity.1');
-  assert.match(manifest.sha256,/^[a-f0-9]{64}$/);
+  assert.equal(manifest.version,'1.13.0-rc2');
+  assert.ok(Array.isArray(manifest.baselineArtifacts)&&manifest.baselineArtifacts.length>=2);
+  for(const artifact of manifest.baselineArtifacts)assert.match(artifact.sha256,/^[a-f0-9]{64}$/);
   const restore=read('scripts/restore-hipico-runtime.mjs');
   assert.match(restore,/expectedSha256/);
   assert.match(restore,/Path traversal bloqueado/);
@@ -44,12 +45,15 @@ test('bot retains canonical monetary review gates and atomic provider dedupe',()
   assert.match(service,/AbortSignal\.timeout\(10_000\)/);
 });
 
-test('webhook raw body is captured before browser CSRF while operator route has auth rate limit',()=>{
+test('webhook raw body is captured before browser CSRF while signature validation stays in the webhook route',()=>{
   const app=read('backend/src/app.ts');
+  const webhook=read('backend/src/modules/hipico-bot/hipico-webhook.routes.ts');
   const webhookMount=app.indexOf("app.use('/api/v1/hipico-bot', hipicoWebhookRoutes)");
   const csrf=app.indexOf('app.use(csrfProtection)');
   assert.ok(webhookMount>0 && csrf>webhookMount);
-  assert.match(app,/x-hub-signature-256/);
+  assert.match(app,/rawBody = Buffer\.from\(buffer\)/);
+  assert.match(webhook,/req\.header\('x-hub-signature-256'\)/);
+  assert.match(webhook,/webhookSignatureValid\(raw/);
   assert.match(app,/hipicoOperatorRoutes/);
   assert.match(app,/authRateLimit, hipicoOperatorRoutes/);
 });
@@ -58,7 +62,8 @@ test('android wrapper synchronizes only the canonical Hipico web product',()=>{
   const sync=read('android/hipico-control-v1130/scripts/sync-web.mjs');
   const pkg=read('android/hipico-control-v1130/package.json');
   assert.match(sync,/frontend\/public\/hipico-control/);
-  assert.match(sync,/assets\/css\/app\.css/);
+  assert.match(sync,/assets\/css/);
+  assert.match(sync,/canonicalCss/);
   assert.match(sync,/assets\/js\/user-access\.js/);
   assert.match(sync,/assets\/js\/password-recovery\.js/);
   assert.match(sync,/assets\/js\/help-center\.js/);
