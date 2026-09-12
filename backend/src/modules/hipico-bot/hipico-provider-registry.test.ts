@@ -187,7 +187,7 @@ test('canonical provider API is mounted under /api/v1/hipico and legacy operator
   const routes = fs.readFileSync('src/modules/hipico-bot/hipico-provider.routes.ts', 'utf8');
   const operator = fs.readFileSync('src/modules/hipico-bot/hipico-operator.routes.ts', 'utf8');
   assert.match(app, /hipicoProviderRoutes/);
-  assert.match(app, /app\.use\('\/api\/v1\/hipico', authRateLimit, hipicoProviderRoutes\)/);
+  assert.match(app, /app\.use\('\/api\/v1\/hipico', authRateLimit, hipicoProviderRoutes, mutationRateLimit, hipicoCanonicalRoutes\)/);
   assert.match(routes, /router\.get\('\/providers'/);
   assert.match(routes, /router\.get\('\/providers\/status'/);
   assert.match(routes, /router\.get\('\/live\/stages\/:stageId'/);
