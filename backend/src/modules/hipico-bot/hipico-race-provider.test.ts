@@ -10,6 +10,7 @@ const configuredEnv = {
   HIPICO_RACE_PROVIDER_CACHE_TTL_MS: '30000',
   HIPICO_RACE_PROVIDER_LANGUAGE: 'en'
 };
+const publicResolve = async () => [{ address: '8.8.8.8', family: 4 }];
 
 test('external race provider is disabled and non-authoritative by default', () => {
   const status = raceProviderStatus({});
@@ -37,6 +38,7 @@ test('stage lookup rejects non-numeric identifiers before any upstream request',
   let calls = 0;
   const provider = createHorseRaceProvider({
     env: configuredEnv,
+    resolveImpl: publicResolve,
     fetchImpl: async () => { calls += 1; return new Response('<ok/>'); }
   });
   await assert.rejects(
@@ -54,6 +56,7 @@ test('stage summary uses authenticated UOF REST enrichment, forbids redirects an
   let clock = Date.parse('2026-09-10T23:00:00Z');
   const provider = createHorseRaceProvider({
     env: configuredEnv,
+    resolveImpl: publicResolve,
     now: () => clock,
     fetchImpl: async (input, init) => {
       calls += 1;
@@ -86,6 +89,7 @@ test('race provider rejects non-XML or doctype responses and never caches them',
   let calls = 0;
   const provider = createHorseRaceProvider({
     env: configuredEnv,
+    resolveImpl: publicResolve,
     fetchImpl: async () => {
       calls += 1;
       if (calls === 1) return new Response('<html>proxy error</html>', { status: 200, headers: { 'content-type': 'text/html' } });
@@ -107,6 +111,7 @@ test('race enrichment cache remains bounded under many distinct stage ids', asyn
   let calls = 0;
   const provider = createHorseRaceProvider({
     env: configuredEnv,
+    resolveImpl: publicResolve,
     now: () => Date.parse('2026-09-10T23:00:00Z'),
     fetchImpl: async () => { calls += 1; return new Response('<ok/>', { status: 200, headers: { 'content-type': 'application/xml' } }); }
   });
@@ -141,6 +146,7 @@ test('declared oversized upstream response is rejected before body consumption',
   } as unknown as Response;
   const provider = createHorseRaceProvider({
     env: configuredEnv,
+    resolveImpl: publicResolve,
     fetchImpl: async () => response
   });
   await assert.rejects(
@@ -167,6 +173,7 @@ test('streaming upstream response is cancelled as soon as byte limit is crossed'
   });
   const provider = createHorseRaceProvider({
     env: configuredEnv,
+    resolveImpl: publicResolve,
     fetchImpl: async () => new Response(body, { status: 200, headers: { 'content-type': 'application/xml' } })
   });
   await assert.rejects(
@@ -180,6 +187,7 @@ test('streaming upstream response is cancelled as soon as byte limit is crossed'
 test('upstream server errors remain retryable and never become financial decisions', async () => {
   const provider = createHorseRaceProvider({
     env: configuredEnv,
+    resolveImpl: publicResolve,
     fetchImpl: async () => new Response('unavailable', { status: 503 })
   });
   await assert.rejects(
