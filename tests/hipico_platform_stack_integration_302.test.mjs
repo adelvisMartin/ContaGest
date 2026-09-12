@@ -10,10 +10,10 @@ const webhook = read('../frontend/api/hipico/whatsapp-webhook.js');
 const identity = read('../frontend/api/hipico/bridge-identity.js');
 const canonicalBackend = read('../frontend/api/hipico/canonical-backend.js');
 
-void test('Platform 2.0 canonical modules are mounted and legacy canonical router is not a second brain', () => {
+void test('Platform 2.0 modules and hardened event safety facade share one canonical backend authority', () => {
   for (const route of ['/api/v1/hipico/system', '/api/v1/hipico/documents', '/api/v1/hipico']) assert.ok(app.includes(route));
-  for (const symbol of ['hipicoSystemRoutes', 'hipicoDocumentRoutes', 'hipicoProviderRoutes', 'hipicoRaceRoutes', 'hipicoAgentRoutes']) assert.ok(app.includes(symbol));
-  assert.doesNotMatch(app, /hipicoCanonicalRoutes/);
+  for (const symbol of ['hipicoSystemRoutes', 'hipicoDocumentRoutes', 'hipicoProviderRoutes', 'hipicoRaceRoutes', 'hipicoAgentRoutes', 'hipicoCanonicalRoutes']) assert.ok(app.includes(symbol));
+  assert.match(app, /app\.use\('\/api\/v1\/hipico', authRateLimit, mutationRateLimit, hipicoCanonicalRoutes\)/);
 });
 
 void test('serverless ingress remains transport-only and canonical backend is explicit in production', () => {
