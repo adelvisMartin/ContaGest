@@ -1,9 +1,13 @@
 {
+  "schemaVersion": 2,
+  "product": "control-hipico",
   "version": "1.13.0-rc3",
   "channel": "pilot",
   "revision": "qa-production-hardening-290",
   "buildId": "1.13.0-rc3",
-  "builtAt": "2026-09-11T20:31:12.000Z",
+  "candidateSha": "local-unbound",
+  "bound": false,
+  "generatedAt": null,
   "baseline": "Hipico-Control-v1.13.0-RC1.apk#sha256-b477dbe224596b4e",
   "source": "git-canonical-web",
   "compatibility": {
