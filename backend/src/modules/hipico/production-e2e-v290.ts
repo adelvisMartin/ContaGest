@@ -185,6 +185,41 @@ test('race lifecycle persists DISCOVERED -> OPEN -> CLOSED -> PROVISIONAL_RESULT
   assert.equal(persisted?.resultStage, 'official');
 });
 
+test('PostgreSQL lifecycle persists SUSPEND and RESUME restores the exact prior state from audit history', async () => {
+  const store = new RaceLifecycleStore();
+  const meeting = await store.createMeeting({ ownerId: OWNER_ID, groupKey: GROUP_A, name: 'Meeting Suspend Resume E2E', meetingDate: new Date().toISOString() });
+  const race = await store.createRace({ ownerId: OWNER_ID, groupKey: GROUP_A, meetingId: meeting.id, number: 9, name: 'Carrera Suspend Resume E2E' });
+
+  const opened = await store.command(OWNER_ID, GROUP_A, race.id, command('OPEN', 'DISCOVERED', 'req-sr-open-290'));
+  assert.equal(opened.transition.to, 'OPEN');
+
+  const suspended = await store.command(OWNER_ID, GROUP_A, race.id, command('SUSPEND', 'OPEN', 'req-sr-suspend-290'));
+  assert.equal(suspended.transition.from, 'OPEN');
+  assert.equal(suspended.transition.to, 'SUSPENDED');
+  const persistedSuspended = await store.getRace(OWNER_ID, GROUP_A, race.id);
+  assert.equal(persistedSuspended?.state, 'SUSPENDED');
+  assert.equal(persistedSuspended?.stateVersion, 2);
+
+  const resumed = await store.command(OWNER_ID, GROUP_A, race.id, command('RESUME', 'SUSPENDED', 'req-sr-resume-290'));
+  assert.equal(resumed.transition.from, 'SUSPENDED');
+  assert.equal(resumed.transition.to, 'OPEN');
+  const persistedResumed = await store.getRace(OWNER_ID, GROUP_A, race.id);
+  assert.equal(persistedResumed?.state, 'OPEN');
+  assert.equal(persistedResumed?.stateVersion, 3);
+
+  const history = await store.history(OWNER_ID, GROUP_A, race.id);
+  const suspendEvent = history.find((event: any) => event.requestId === 'req-sr-suspend-290');
+  const resumeEvent = history.find((event: any) => event.requestId === 'req-sr-resume-290');
+  assert.deepEqual(
+    { command: suspendEvent?.command, fromState: suspendEvent?.fromState, toState: suspendEvent?.toState, disposition: suspendEvent?.disposition },
+    { command: 'SUSPEND', fromState: 'OPEN', toState: 'SUSPENDED', disposition: 'applied' }
+  );
+  assert.deepEqual(
+    { command: resumeEvent?.command, fromState: resumeEvent?.fromState, toState: resumeEvent?.toState, disposition: resumeEvent?.disposition },
+    { command: 'RESUME', fromState: 'SUSPENDED', toState: 'OPEN', disposition: 'applied' }
+  );
+});
+
 test('multi-group A/B concurrent writes have zero cross-group reads', async () => {
   const store = new RaceLifecycleStore();
   const [meetingA, meetingB] = await Promise.all([

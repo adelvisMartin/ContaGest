@@ -35,7 +35,9 @@ concurrency:
 
 env:
   NODE_VERSION: '22'
-  HIPICO_CANDIDATE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+  HIPICO_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+  HIPICO_BASE_SHA: ${{ github.event.pull_request.base.sha || github.sha }}
+  HIPICO_CANDIDATE_SHA: ${{ github.event.pull_request.merge_commit_sha || github.sha }}
   HIPICO_E2E_OWNER_ID: '11111111-1111-4111-8111-111111111111'
   HIPICO_SOURCE_GROUP_ID: '120363099999999999@g.us'
 
@@ -46,7 +48,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
-      - name: Checkout exact candidate SHA
+      - name: Checkout exact merge candidate SHA
         uses: actions/checkout@v7
         with:
           ref: ${{ env.HIPICO_CANDIDATE_SHA }}
@@ -63,9 +65,11 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
 
-      - name: Record candidate SHA
+      - name: Record head base and exact merge candidate SHA
         run: |
           mkdir -p artifacts/qa/hipico-v290
+          printf '%s\n' "${HIPICO_HEAD_SHA}" > artifacts/qa/hipico-v290/head-sha.txt
+          printf '%s\n' "${HIPICO_BASE_SHA}" > artifacts/qa/hipico-v290/base-sha.txt
           printf '%s\n' "${HIPICO_CANDIDATE_SHA}" > artifacts/qa/hipico-v290/candidate-sha.txt
           test "$(git rev-parse HEAD)" = "${HIPICO_CANDIDATE_SHA}"
           test -z "$(git status --porcelain=v1)"
@@ -103,7 +107,7 @@ jobs:
         if: success()
         run: |
           mkdir -p artifacts/qa/hipico-v290
-          node -e "require('node:fs').writeFileSync('artifacts/qa/hipico-v290/static-gate.json', JSON.stringify({schema:'hipico-static.v290',sha:process.env.HIPICO_CANDIDATE_SHA,status:'PASS',completedAt:new Date().toISOString()},null,2)+'\n')"
+          node -e "require('node:fs').writeFileSync('artifacts/qa/hipico-v290/static-gate.json', JSON.stringify({schema:'hipico-static.v290',sha:process.env.HIPICO_CANDIDATE_SHA,headSha:process.env.HIPICO_HEAD_SHA,baseSha:process.env.HIPICO_BASE_SHA,status:'PASS',completedAt:new Date().toISOString()},null,2)+'\n')"
 
       - name: Upload static release evidence
         if: always()
@@ -138,7 +142,7 @@ jobs:
       HIPICO_DOCUMENT_OCR_ENABLED: 'true'
       HIPICO_DOCUMENT_OCR_LANGUAGE: 'eng'
     steps:
-      - name: Checkout exact candidate SHA
+      - name: Checkout exact merge candidate SHA
         uses: actions/checkout@v7
         with:
           ref: ${{ env.HIPICO_CANDIDATE_SHA }}
@@ -222,7 +226,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - name: Checkout exact candidate SHA
+      - name: Checkout exact merge candidate SHA
         uses: actions/checkout@v7
         with:
           ref: ${{ env.HIPICO_CANDIDATE_SHA }}
@@ -273,7 +277,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - name: Checkout exact candidate SHA
+      - name: Checkout exact merge candidate SHA
         uses: actions/checkout@v7
         with:
           ref: ${{ env.HIPICO_CANDIDATE_SHA }}
@@ -327,7 +331,7 @@ jobs:
       matrix:
         browser: [chromium, firefox, webkit]
     steps:
-      - name: Checkout exact candidate SHA
+      - name: Checkout exact merge candidate SHA
         uses: actions/checkout@v7
         with:
           ref: ${{ env.HIPICO_CANDIDATE_SHA }}
@@ -378,7 +382,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 40
     steps:
-      - name: Checkout exact candidate SHA
+      - name: Checkout exact merge candidate SHA
         uses: actions/checkout@v7
         with:
           ref: ${{ env.HIPICO_CANDIDATE_SHA }}
@@ -464,7 +468,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - name: Checkout exact candidate SHA
+      - name: Checkout exact merge candidate SHA
         uses: actions/checkout@v7
         with:
           ref: ${{ env.HIPICO_CANDIDATE_SHA }}
@@ -506,7 +510,7 @@ jobs:
         if: success()
         run: |
           mkdir -p artifacts/qa/hipico-v290
-          node -e "require('node:fs').writeFileSync('artifacts/qa/hipico-v290/final-gate.json', JSON.stringify({schema:'hipico-final.v290',sha:process.env.HIPICO_CANDIDATE_SHA,status:'PASS',completedAt:new Date().toISOString()},null,2)+'\n')"
+          node -e "require('node:fs').writeFileSync('artifacts/qa/hipico-v290/final-gate.json', JSON.stringify({schema:'hipico-final.v290',sha:process.env.HIPICO_CANDIDATE_SHA,headSha:process.env.HIPICO_HEAD_SHA,baseSha:process.env.HIPICO_BASE_SHA,status:'PASS',completedAt:new Date().toISOString()},null,2)+'\n')"
 
       - name: Upload final release report
         if: always()

@@ -213,15 +213,36 @@ test('installed PWA shell survives offline reload and exposes stale/offline trus
   await context.setOffline(false);
 });
 
-test('runtime metadata mismatch is explicit and fail-visible instead of silent', async ({ page }) => {
+test('runtime metadata mismatch recovers cleanly and DOM mutations cannot resurrect the banner', async ({ page }) => {
+  let serveStaleMetadata = true;
   await page.route('**/hipico-control/build-info.json*', async (route) => {
-    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ version: '0.0.0-stale', channel: 'pilot' }) });
+    if (serveStaleMetadata) {
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ version: '0.0.0-stale', channel: 'pilot' }) });
+      return;
+    }
+    await route.continue();
   });
+
   await openDashboard(page);
   const banner = page.locator('#hipico-version-mismatch');
   await expect(banner).toBeVisible();
   await expect(banner).toContainText(/Actualización requerida/i);
-  expect(await page.locator('html').getAttribute('data-hipico-version-mismatch')).toBe('true');
+  await expect(page.locator('html')).toHaveAttribute('data-hipico-version-mismatch', 'true');
+
+  serveStaleMetadata = false;
+  await page.evaluate(() => window.dispatchEvent(new Event('online')));
+  await expect(banner).toHaveCount(0);
+  await expect(page.locator('html')).not.toHaveAttribute('data-hipico-version-mismatch', /.+/);
+
+  await page.evaluate(() => {
+    const mutation = document.createElement('div');
+    mutation.id = 'hipico-version-recovery-dom-mutation';
+    mutation.textContent = 'post-recovery mutation';
+    document.querySelector('#app')?.append(mutation);
+  });
+  await expect(page.locator('#hipico-version-recovery-dom-mutation')).toBeVisible();
+  await expect(page.locator('#hipico-version-mismatch')).toHaveCount(0);
+  await expect(page.locator('html')).not.toHaveAttribute('data-hipico-version-mismatch', /.+/);
 });
 
 test('browser performance records boot interaction render long tasks memory and IndexedDB 100 500 2000', async ({ page }) => {
