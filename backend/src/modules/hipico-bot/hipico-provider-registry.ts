@@ -216,17 +216,20 @@ export function createHipicoProviderRegistry(options: RegistryOptions = {}) {
       throw new HorseRaceProviderError('El proveedor hípico externo no está configurado.', 'NOT_CONFIGURED', false);
     }
     const key = `${selectedProvider}:${stageId}`;
-    const at = now();
-    pruneLastGood(at);
+    const startedAt = now();
+    pruneLastGood(startedAt);
     try {
       const value = canonicalSnapshot(await adapter.getLiveStage(stageId));
+      const completedAt = now();
       lastGood.delete(key);
-      lastGood.set(key, { expiresAt: at + staleTtlMs, value });
-      pruneLastGood(at);
+      lastGood.set(key, { expiresAt: completedAt + staleTtlMs, value });
+      pruneLastGood(completedAt);
       return value;
     } catch (error: any) {
+      const failedAt = now();
+      pruneLastGood(failedAt);
       const cached = lastGood.get(key);
-      if (cached && cached.expiresAt > at && (error?.retryable === true || error?.code === 'CIRCUIT_OPEN')) {
+      if (cached && cached.expiresAt > failedAt && (error?.retryable === true || error?.code === 'CIRCUIT_OPEN')) {
         return canonicalSnapshot({ ...cached.value, cached: true, stale: true, fallback: 'stale-cache' });
       }
       throw error;
