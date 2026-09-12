@@ -1,7 +1,7 @@
 {
   "name": "hipico-control-android-wrapper",
   "private": true,
-  "version": "1.13.0-rc2",
+  "version": "1.13.0-rc3",
   "type": "module",
   "scripts": {
     "sync:web": "node scripts/sync-web.mjs",
