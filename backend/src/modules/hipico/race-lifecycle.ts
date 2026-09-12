@@ -47,8 +47,10 @@ const DIRECT:Record<RaceLifecycleState,Partial<Record<RaceCommand,RaceLifecycleS
   ARCHIVED:{},
   POSTPONED:{RESUME:'ANNOUNCED',CANCEL:'CANCELLED'},
   CANCELLED:{ARCHIVE:'ARCHIVED'},
-  SUSPENDED:{RESUME:'ANNOUNCED',CANCEL:'CANCELLED'}
+  SUSPENDED:{CANCEL:'CANCELLED'}
 };
+
+const SUSPEND_RESUME_TARGETS = new Set<RaceLifecycleState>(['DISCOVERED','ANNOUNCED','OPEN','CLOSING','CLOSED','RUNNING','PROVISIONAL_RESULT']);
 
 function strongEvidence(evidence:RaceEvidence[]){
   return evidence.filter((item)=>
@@ -79,9 +81,18 @@ function targetResultStage(current:RaceResultStage,input:RaceCommandInput,target
   return current;
 }
 
-export function evaluateRaceCommand(current:RaceLifecycleState,input:RaceCommandInput,currentResultStage:RaceResultStage=stageForState(current)):RaceTransition{
+export function evaluateRaceCommand(
+  current:RaceLifecycleState,
+  input:RaceCommandInput,
+  currentResultStage:RaceResultStage=stageForState(current),
+  suspendedFrom:RaceLifecycleState|null=null
+):RaceTransition{
   if(input.expectedState!==current)return{allowed:false,from:current,to:current,reason:'EXPECTED_STATE_MISMATCH',resultStage:currentResultStage};
-  const target=DIRECT[current]?.[input.command];
+  let target:DIRECT_TARGET= DIRECT[current]?.[input.command];
+  if(current==='SUSPENDED'&&input.command==='RESUME'){
+    if(!suspendedFrom||!SUSPEND_RESUME_TARGETS.has(suspendedFrom))return{allowed:false,from:current,to:current,reason:'RESUME_CONTEXT_REQUIRED',resultStage:currentResultStage};
+    target=suspendedFrom;
+  }
   if(!target)return{allowed:false,from:current,to:current,reason:'INVALID_TRANSITION',resultStage:currentResultStage};
   const evidence=input.evidence||[];
   if(input.command==='OPEN'&&input.actorType!=='operator'&&independentEvidenceCount(evidence)<2){
@@ -95,6 +106,8 @@ export function evaluateRaceCommand(current:RaceLifecycleState,input:RaceCommand
   }
   return{allowed:true,from:current,to:target,reason:'VALID_TRANSITION',resultStage:targetResultStage(currentResultStage,input,target)};
 }
+
+type DIRECT_TARGET=RaceLifecycleState|undefined;
 
 export function normalizeRaceCommandInput(input:RaceCommandInput):RaceCommandInput{
   const requestId=String(input.requestId||'').trim();const actorId=String(input.actorId||'').trim();const correlationId=String(input.correlationId||'').trim();
