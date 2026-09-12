@@ -40,7 +40,8 @@ const previewSchema = z.object({
   hasMedia: z.boolean().default(false),
   mediaKind: mediaKindSchema.default('none'),
   quoteDepth: z.number().int().min(0).max(20).default(0),
-  participantId: z.string().trim().min(1).max(220).default('operator-preview')
+  participantId: z.string().trim().min(1).max(220).default('operator-preview'),
+  raceDate: z.string().trim().length(10).optional()
 }).strict();
 
 const domainReadSchema = z.object({
@@ -113,14 +114,20 @@ export function canonicalRaceContextKey(input: Pick<CanonicalPolicyInput, 'event
   const payload = payloadRecord(input.normalizedPayload);
   const raceNumber = payload?.raceNumber;
   const racetrack = payload?.racetrack;
+  const raceDate = payload?.raceDate;
   if (
     payload?.raceContextComplete !== true
     || !Number.isInteger(raceNumber)
     || Number(raceNumber) < 1
     || Number(raceNumber) > 999
     || !nonEmptyText(racetrack, 120)
+    || !nonEmptyText(raceDate, 10)
   ) return null;
-  return operationalRaceContextKey({ raceNumber: Number(raceNumber), racetrack: String(racetrack) });
+  return operationalRaceContextKey({
+    raceNumber: Number(raceNumber),
+    racetrack: String(racetrack),
+    raceDate: String(raceDate)
+  });
 }
 
 export function canonicalScopeIssue(input: CanonicalPolicyInput) {
@@ -232,13 +239,19 @@ router.post('/preview', (req, res) => {
     quoteDepth: input.quoteDepth,
     participantId: input.participantId
   });
+  const legacyRaceContextKey = operationalRaceContextKey(result.entities);
+  const datedRaceContextKey = input.raceDate && result.entities
+    ? operationalRaceContextKey({ ...result.entities, raceDate: input.raceDate })
+    : null;
   return res.json({
     ok: true,
     groupKey: input.groupKey,
     classification: result,
     appsec: safePublicAbuseMetadata(assessment),
     effectiveMediaKind,
-    raceContextKey: operationalRaceContextKey(result.entities),
+    raceContextKey: datedRaceContextKey || legacyRaceContextKey,
+    canonicalRaceContextKey: datedRaceContextKey,
+    raceDateRequired: Boolean(legacyRaceContextKey && !datedRaceContextKey),
     effectsAllowed: false,
     sourceWrite: false,
     monetaryWrite: false
