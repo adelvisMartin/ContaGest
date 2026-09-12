@@ -4,6 +4,7 @@ import {
   HISTORY_MAX_IDENTICAL_PER_MINUTE,
   assertBridgeGroupIdentity,
   bridgeGroupIdentityReady,
+  effectiveBridgeMediaKind,
   historySyncRateCheck,
   historySyncRateLimiter,
   liveRateLimitClock,
@@ -61,6 +62,15 @@ test('backend bridge identity is role-bound and fails closed on substitutions or
   assert.throws(()=>assertBridgeGroupIdentity({
     groupId:labGroupId,channelRole:'source',channelKey:'club-hipico-triple-crown-official',labChannelKey:'control-hipico-lab'
   },env),(error:any)=>error?.code==='HIPICO_TRANSPORT_REPLAY_MISMATCH');
+});
+
+test('any positive media signal quarantines text even when kind is missing or inconsistent',()=>{
+  assert.equal(effectiveBridgeMediaKind(true,'none'),'unknown');
+  assert.equal(effectiveBridgeMediaKind(true,''),'unknown');
+  assert.equal(effectiveBridgeMediaKind(false,'document'),'document');
+  assert.equal(effectiveBridgeMediaKind(false,'image'),'image');
+  assert.equal(effectiveBridgeMediaKind(false,'none'),'none');
+  assert.equal(effectiveBridgeMediaKind(true,'unexpected-mime'),'unknown');
 });
 
 test('live rate limiting uses server time and never the message timestamp',()=>{

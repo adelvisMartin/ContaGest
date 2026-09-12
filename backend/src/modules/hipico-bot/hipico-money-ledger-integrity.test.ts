@@ -6,21 +6,22 @@ import { __test__, appendHipicoLedgerEntry } from './hipico-money-ledger.store.j
 const source=readFileSync(new URL('./hipico-money-ledger.store.ts',import.meta.url),'utf8');
 const existing={
   id:'entry-1',amountMinor:'10000',participantCode:'zedan',currency:'VES',entryType:'bet',originalEntryId:null,
-  raceKey:'racectx-1',settlementOfKey:null,sourceEventId:'event-1',sourceMessageKey:'message-1'
+  raceKey:'racectx-1',settlementOfKey:null,sourceEventId:'event-1',sourceMessageKey:'message-1',reason:null
 };
 const command={
   participantCode:'zedan',currency:'VES',entryType:'bet' as const,amountMinor:10000n,originalEntryId:null,
-  raceKey:'racectx-1',settlementOfKey:null,sourceEventId:'event-1',sourceMessageKey:'message-1'
+  raceKey:'racectx-1',settlementOfKey:null,sourceEventId:'event-1',sourceMessageKey:'message-1',reason:null
 };
 
-test('financial idempotency accepts only the exact same ledger command',()=>{
+test('financial idempotency accepts only the exact same ledger command and audit provenance',()=>{
   assert.doesNotThrow(()=>__test__.assertIdempotentReplay(existing,command));
   for(const changed of [
     {...command,amountMinor:90000n},
     {...command,participantCode:'otro'},
     {...command,currency:'USD'},
     {...command,raceKey:'racectx-2'},
-    {...command,sourceMessageKey:'message-2'}
+    {...command,sourceMessageKey:'message-2'},
+    {...command,reason:'different provenance'}
   ]){
     assert.throws(()=>__test__.assertIdempotentReplay(existing,changed as any),(error:any)=>error?.code==='HIPICO_LEDGER_IDEMPOTENCY_MISMATCH');
   }
@@ -45,5 +46,19 @@ test('ledger currency is a canonical three-letter code before persistence',async
   await assert.rejects(
     appendHipicoLedgerEntry({ownerId:'00000000-0000-0000-0000-000000000001',groupKey:'g1',participantCode:'zedan',currency:'bolivares',entryType:'bet',amountMinor:'100',idempotencyKey:'k2'}),
     /HIPICO_LEDGER_CURRENCY_INVALID/
+  );
+});
+
+test('manual adjustments require a human-readable audit reason before touching the database',async()=>{
+  await assert.rejects(
+    appendHipicoLedgerEntry({ownerId:'00000000-0000-0000-0000-000000000001',groupKey:'g1',participantCode:'zedan',currency:'VES',entryType:'adjustment',amountMinor:'100',idempotencyKey:'adjust-1'}),
+    /HIPICO_LEDGER_REASON_REQUIRED/
+  );
+});
+
+test('reversals require both provenance and a reason before touching the database',async()=>{
+  await assert.rejects(
+    appendHipicoLedgerEntry({ownerId:'00000000-0000-0000-0000-000000000001',groupKey:'g1',participantCode:'zedan',currency:'VES',entryType:'reversal',originalEntryId:'entry-1',idempotencyKey:'reverse-1'}),
+    /HIPICO_LEDGER_REASON_REQUIRED/
   );
 });

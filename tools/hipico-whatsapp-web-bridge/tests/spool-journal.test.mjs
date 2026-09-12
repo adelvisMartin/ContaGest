@@ -3,15 +3,21 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import {createSpoolRecord,atomicWriteJson,loadSpoolFile,registerFailure,planReplay,validateSpoolRecord,quarantineFile,transitionSpool} from '../src/spool-journal.mjs';
+import {createSpoolRecord,atomicWriteJson,loadSpoolFile,registerFailure,planReplay,validateSpoolRecord,quarantineFile,transitionSpool,__test__} from '../src/spool-journal.mjs';
 
-test('atomic write produces one valid record without temp residue',async()=>{
-  const dir=await fs.mkdtemp(path.join(os.tmpdir(),'hipico-spool-'));const file=path.join(dir,'event.json');
+test('atomic write produces one valid private record without temp residue',async()=>{
+  const dir=await fs.mkdtemp(path.join(os.tmpdir(),'hipico-spool-'));const file=path.join(dir,'nested','event.json');
   const record=createSpoolRecord({kind:'lab-mirror',key:'m1',payload:{text:'shadow'},parserVersion:'v1'});
   await atomicWriteJson(file,record);
   const loaded=await loadSpoolFile(file,{parserVersion:'v1'});
   assert.equal(loaded.validation.valid,true);assert.equal(loaded.record.key,'m1');
-  assert.deepEqual((await fs.readdir(dir)).filter((name)=>name.endsWith('.tmp')),[]);
+  assert.deepEqual((await fs.readdir(path.dirname(file))).filter((name)=>name.endsWith('.tmp')),[]);
+  if(process.platform!=='win32'){
+    const dirMode=(await fs.stat(path.dirname(file))).mode&0o777;
+    const fileMode=(await fs.stat(file)).mode&0o777;
+    assert.equal(dirMode,__test__.PRIVATE_DIR_MODE);
+    assert.equal(fileMode,__test__.PRIVATE_FILE_MODE);
+  }
   await fs.rm(dir,{recursive:true,force:true});
 });
 
@@ -39,11 +45,16 @@ test('replay requires exact pinned destination and shows count before execution'
   assert.deepEqual({dryRun:plan.dryRun,count:plan.count,destination:plan.destination},{dryRun:true,count:1,destination:'lab-pinned'});
 });
 
-test('corrupt file can be isolated without blocking other spool records',async()=>{
+test('corrupt file can be isolated in a private quarantine without blocking other spool records',async()=>{
   const dir=await fs.mkdtemp(path.join(os.tmpdir(),'hipico-spool-corrupt-'));const quarantine=path.join(dir,'quarantine');const bad=path.join(dir,'bad.json');
   await fs.writeFile(bad,'{not-json','utf8');const loaded=await loadSpoolFile(bad);
   assert.equal(loaded.validation.valid,false);assert.ok(loaded.validation.errors.includes('CORRUPT_JSON'));
   const moved=await quarantineFile(bad,quarantine,'CORRUPT_JSON');
   assert.equal(path.dirname(moved),quarantine);assert.ok((await fs.readdir(quarantine)).length>=2);
+  if(process.platform!=='win32'){
+    assert.equal((await fs.stat(quarantine)).mode&0o777,__test__.PRIVATE_DIR_MODE);
+    assert.equal((await fs.stat(moved)).mode&0o777,__test__.PRIVATE_FILE_MODE);
+    assert.equal((await fs.stat(`${moved}.reason.json`)).mode&0o777,__test__.PRIVATE_FILE_MODE);
+  }
   await fs.rm(dir,{recursive:true,force:true});
 });

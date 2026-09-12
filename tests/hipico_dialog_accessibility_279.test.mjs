@@ -1,11 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readFile } from 'node:fs/promises';
 
-const guard = readFileSync(new URL('../frontend/public/hipico-control/assets/js/dialog-accessibility.js', import.meta.url), 'utf8');
-const index = readFileSync(new URL('../frontend/public/hipico-control/index.html', import.meta.url), 'utf8');
-const app = readFileSync(new URL('../frontend/public/hipico-control/assets/js/app.js', import.meta.url), 'utf8');
-const sw = readFileSync(new URL('../frontend/public/hipico-control/sw.js', import.meta.url), 'utf8');
+const guard = await readFile(new URL('../frontend/public/hipico-control/assets/js/dialog-accessibility.js', import.meta.url), 'utf8');
+const index = await readFile(new URL('../frontend/public/hipico-control/index.html', import.meta.url), 'utf8');
+const app = await readFile(new URL('../frontend/public/hipico-control/assets/js/app.js', import.meta.url), 'utf8');
+const sw = await readFile(new URL('../frontend/public/hipico-control/sw.js', import.meta.url), 'utf8');
 
 test('all application modal surfaces expose modal dialog semantics', () => {
   assert.match(app, /class="modal modern-modal" role="dialog" aria-modal="true"/);
@@ -22,47 +22,47 @@ test('dialog guard provides initial focus, Escape close, tab trap and focus rest
   assert.match(guard, /target\?\.isConnected/);
 });
 
-test('dialog replacement preserves the original launcher instead of replacing return focus',()=>{
-  assert.match(guard,/if \(!returnFocus && document\.activeElement instanceof HTMLElement\) returnFocus = document\.activeElement/);
-  assert.doesNotMatch(guard,/if \(!activeDialog\) returnFocus = document\.activeElement/);
-  assert.match(guard,/if \(activeDialog && !activeDialog\.isConnected\) activeDialog = null/);
-});
-
 test('dialog guard makes the background inert, labels it and restores prior shell accessibility state', () => {
   assert.match(guard, /shell\.inert = true/);
   assert.match(guard, /shellPreviousAriaHidden = shell\.getAttribute\('aria-hidden'\)/);
   assert.match(guard, /shellPreviousAriaHidden == null/);
   assert.match(guard, /shell\.setAttribute\('aria-hidden', shellPreviousAriaHidden\)/);
+  assert.match(guard, /h1,h2,h3,h4,\[data-dialog-title\],header strong/);
   assert.match(guard, /aria-labelledby/);
-  assert.match(guard, /hipico-dialog-title-/);
+  assert.match(guard, /crypto\.randomUUID\(\)/);
 });
 
-test('calendar receives an accessible title and named previous/next controls',()=>{
-  assert.match(guard,/header strong/);
-  assert.match(guard,/data-action=\"calendar-prev\"/);
-  assert.match(guard,/data-action=\"calendar-next\"/);
-  assert.match(guard,/Mes anterior/);
-  assert.match(guard,/Mes siguiente/);
-  assert.match(guard,/labelCalendarControls\(dialog\)/);
+test('dynamic icon-only actions receive stable accessible names without overwriting visible labels', () => {
+  assert.match(app, /data-action="calendar-prev"/);
+  assert.match(app, /data-action="calendar-next"/);
+  assert.match(app, /class="button icon-button button--primary" data-action="focus-fast">/);
+  assert.match(guard, /'calendar-prev': 'Mes anterior'/);
+  assert.match(guard, /'calendar-next': 'Mes siguiente'/);
+  assert.match(guard, /'focus-fast': 'Captura rápida'/);
+  assert.match(guard, /!hasAccessibleName\(element\)/);
+  assert.match(guard, /element\.setAttribute\('aria-label', label\)/);
+  assert.match(guard, /ensureActionLabels\(document\)/);
 });
 
-test('global icon-only controls receive stable accessible names after every rerender',()=>{
-  assert.match(guard,/GLOBAL_CONTROL_LABELS/);
-  assert.match(guard,/data-action=\"focus-fast\"/);
-  assert.match(guard,/Captura rápida/);
-  assert.match(guard,/data-action=\"prev-race\"/);
-  assert.match(guard,/Carrera anterior/);
-  assert.match(guard,/data-action=\"next-race\"/);
-  assert.match(guard,/Carrera siguiente/);
-  assert.match(guard,/race-arrow--add\[data-action=\"new-race\"\]/);
-  assert.match(guard,/Nueva carrera/);
-  assert.match(guard,/function scan\(\) \{\s*labelGlobalControls\(document\);/s);
+test('dynamic form labels are associated with visible field controls after every render', () => {
+  assert.match(app, /<div class="field"><label>Hipódromo<\/label><select/);
+  assert.match(guard, /FIELD_CONTROL_SELECTOR\s*=\s*':scope > input:not\(\[type="hidden"\]\), :scope > select, :scope > textarea, :scope > button'/);
+  assert.match(guard, /root\.querySelectorAll\('\.field > label'\)/);
+  assert.match(guard, /label\.htmlFor \|\| label\.querySelector\('input,select,textarea,button'\)/);
+  assert.match(guard, /control\.id = `hipico-field-\$\{crypto\.randomUUID\(\)\}`/);
+  assert.match(guard, /label\.htmlFor = control\.id/);
+  assert.match(guard, /ensureFieldLabels\(document\)/);
 });
 
-test('dialog accessibility is loaded before overlay-producing modules and available offline', () => {
+test('dialog replacement clears stale active reference before activating the next overlay', () => {
+  assert.match(guard, /const nextDialog = document\.querySelector\(DIALOG_SELECTOR\);\s*activeDialog = null;/s);
+  assert.match(guard, /if \(nextDialog instanceof HTMLElement\) \{\s*activate\(nextDialog\);/s);
+  assert.match(guard, /current === last \|\| !activeDialog\.contains\(current\)/);
+});
+
+test('dialog accessibility is loaded before the main app and available offline', () => {
   const guardIndex = index.indexOf('dialog-accessibility.js');
   const appIndex = index.indexOf('assets/js/app.js');
-  const raceGuardIndex=index.indexOf('race-context-guard.js');
-  assert.ok(guardIndex >= 0 && raceGuardIndex > guardIndex && appIndex > guardIndex);
+  assert.ok(guardIndex >= 0 && appIndex > guardIndex);
   assert.match(sw, /dialog-accessibility\.js/);
 });

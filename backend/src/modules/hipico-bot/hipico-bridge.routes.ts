@@ -4,7 +4,7 @@ import { z } from 'zod';
 import type { IntentResult } from './hipico-operational-classifier.js';
 import { decideConversation } from './hipico-conversation-engine.js';
 import { bridgeParticipantRateLimiter, classifyUntrustedConversation, safePublicAbuseMetadata } from './hipico-conversation-appsec.js';
-import { historySyncRateCheck, liveRateLimitClock, normalizeBridgeSender, validateBridgeGroupIdentity } from './hipico-bridge-input-policy.js';
+import { effectiveBridgeMediaKind, historySyncRateCheck, liveRateLimitClock, normalizeBridgeSender, validateBridgeGroupIdentity } from './hipico-bridge-input-policy.js';
 import { operationalRaceContextKey } from './hipico-race-context-key.js';
 import { applyOperatorCommand, planSafeResponse, updateHandoffAfterDecision } from './hipico-response-safety.js';
 import { loadHandoff, persistResponsePlan, responseSafetyReadiness, saveHandoff } from './hipico-handoff.store.js';
@@ -30,7 +30,8 @@ function buildLabSimulation(input:z.infer<typeof bridgeEventSchema>,result:Inten
   if(entities.play)details.push(`Jugada: ${entities.play}`);if(entities.horse)details.push(`Caballo: ${entities.horse}`);
   if(entities.amount!=null&&Number.isFinite(Number(entities.amount)))details.push(`Monto: ${Number(entities.amount)}`);
   if(entities.raceNumber!=null&&Number.isFinite(Number(entities.raceNumber)))details.push(`Carrera: ${Number(entities.raceNumber)}`);
-  const visible=input.text.trim()||`[${input.mediaKind||'media'} sin texto extraíble]`;
+  const effectiveMediaKind=effectiveBridgeMediaKind(input.hasMedia,input.mediaKind);
+  const visible=input.text.trim()||`[${effectiveMediaKind||'media'} sin texto extraíble]`;
   const proposal=responseText||result.suggestion||'Sin respuesta automática propuesta.';
   return{mirrorTag:shadowTag(input.externalMessageId),sourceExternalMessageId:input.externalMessageId,sourceGroupKey:canonical?.groupKey||input.channelKey||null,labGroupKey:input.labChannelKey||null,text:[shadowTag(input.externalMessageId),'🧪 CONTROL HÍPICO · SIMULACIÓN SHADOW',`Fuente: ${input.groupName}`,`Remitente: ${input.senderLabel||'participante'}`,`Mensaje: ${visible.slice(0,1200)}`,`Lectura: ${result.intent} · riesgo ${result.risk} · confianza ${(Number(result.confidence||0)*100).toFixed(1)}%`,...details,`Propuesta del bot: ${proposal}`,'⚠️ SOLO LABORATORIO: no registró jugada, cierre, resultado, saldo ni liquidación real.'].join('\n').slice(0,3900)};
 }
@@ -71,18 +72,19 @@ router.post('/bridge/events',async(req,res)=>{
   const sender=normalizeBridgeSender(input.senderId);
   if(!sender)return res.status(400).json({ok:false,retryable:false,error:'Identidad de remitente inválida para el Bridge.'});
   const providerMessageId=`waweb:${input.externalMessageId}`;
-  const{assessment,result}=classifyUntrustedConversation({text:input.text,mediaKind:input.mediaKind,quoteDepth:input.quoteDepth,participantId:sender});
+  const effectiveMediaKind=effectiveBridgeMediaKind(input.hasMedia,input.mediaKind);
+  const{assessment,result}=classifyUntrustedConversation({text:input.text,mediaKind:effectiveMediaKind,quoteDepth:input.quoteDepth,participantId:sender});
   const actorKey=`${input.channelKey||input.groupId}:${sender}`;
   const liveClock=liveRateLimitClock(input.historySync);
   const rate=liveClock===null?historySyncRateCheck(actorKey,assessment.digest):bridgeParticipantRateLimiter.check(actorKey,assessment.digest,liveClock);
   const raceContextKey=operationalRaceContextKey(result.entities);
   const abuse=safePublicAbuseMetadata(assessment,rate);
-  const transportPayload={source:'whatsapp-web-bridge',targetType:'group_bridge',status:'shadow',bridgeVersion:input.bridgeVersion,historySync:input.historySync,groupId:input.groupId,groupName:input.groupName,channelKey:input.channelKey||null,labChannelKey:input.labChannelKey||null,channelRole:input.channelRole,bridgeShadowMode:input.shadowMode,senderRaw:input.senderId,senderLabel:input.senderLabel,fromMe:input.fromMe,sentAt:input.timestamp,rawMeta:input.rawMeta,hasMedia:input.hasMedia,mediaKind:input.mediaKind,mediaName:input.mediaName||null,quotedExternalMessageId:input.quotedExternalMessageId,operational:result.entities||null,raceContextKey,conversationalAppSec:abuse};
+  const transportPayload={source:'whatsapp-web-bridge',targetType:'group_bridge',status:'shadow',bridgeVersion:input.bridgeVersion,historySync:input.historySync,groupId:input.groupId,groupName:input.groupName,channelKey:input.channelKey||null,labChannelKey:input.labChannelKey||null,channelRole:input.channelRole,bridgeShadowMode:input.shadowMode,senderRaw:input.senderId,senderLabel:input.senderLabel,fromMe:input.fromMe,sentAt:input.timestamp,rawMeta:input.rawMeta,hasMedia:effectiveMediaKind!=='none',mediaKind:effectiveMediaKind,mediaName:input.mediaName||null,quotedExternalMessageId:input.quotedExternalMessageId,operational:result.entities||null,raceContextKey,conversationalAppSec:abuse};
   try{
     const event=await persistBridgeTransportEvent({providerMessageId,phoneNumberId:`group:${input.groupId}`,sender,messageType:input.type,body:input.text,result,payload:transportPayload});
-    const canonical=await persistCanonicalShadow({groupName:input.groupName,channelKey:input.channelKey,labChannelKey:input.labChannelKey,channelRole:input.channelRole,providerMessageId,sender,senderLabel:input.senderLabel,fromMe:input.fromMe,sentAt:input.timestamp,messageType:input.type,mediaKind:input.mediaKind,mediaName:input.mediaName,historySync:input.historySync,body:input.text,quotedExternalMessageId:input.quotedExternalMessageId,bridgeVersion:input.bridgeVersion,rawMeta:input.rawMeta,transportEventId:event.id,result});
+    const canonical=await persistCanonicalShadow({groupName:input.groupName,channelKey:input.channelKey,labChannelKey:input.labChannelKey,channelRole:input.channelRole,providerMessageId,sender,senderLabel:input.senderLabel,fromMe:input.fromMe,sentAt:input.timestamp,messageType:input.type,mediaKind:effectiveMediaKind,mediaName:input.mediaName,historySync:input.historySync,body:input.text,quotedExternalMessageId:input.quotedExternalMessageId,bridgeVersion:input.bridgeVersion,rawMeta:input.rawMeta,transportEventId:event.id,result});
     const outbox=await ensureGroupShadowOutbox({eventId:event.id,recipient:input.groupId,result});const safetyReady=await responseSafetyReadiness();const groupKey=String(canonical?.groupKey||input.channelKey||input.groupId);let handoffState=safetyReady.ready&&!input.historySync?await loadHandoff(groupKey,sender,raceContextKey):null;
-    const conversationDecision=decideConversation({sourceMessageId:input.externalMessageId,participantId:sender,participantLabel:input.senderLabel,text:assessment.sanitizedText,timestamp:input.timestamp,raceId:raceContextKey,quotedSourceMessageId:input.quotedExternalMessageId,mediaKind:input.mediaKind},{seenSourceMessageIds:event.inserted?[]:[input.externalMessageId],humanOwnedParticipantIds:handoffState?.ownership==='human'?[sender]:[]},()=>result);
+    const conversationDecision=decideConversation({sourceMessageId:input.externalMessageId,participantId:sender,participantLabel:input.senderLabel,text:assessment.sanitizedText,timestamp:input.timestamp,raceId:raceContextKey,quotedSourceMessageId:input.quotedExternalMessageId,mediaKind:effectiveMediaKind},{seenSourceMessageIds:event.inserted?[]:[input.externalMessageId],humanOwnedParticipantIds:handoffState?.ownership==='human'?[sender]:[]},()=>result);
     if(handoffState&&!input.historySync){
       const next=updateHandoffAfterDecision(handoffState,conversationDecision,new Date());
       if(JSON.stringify(next)!==JSON.stringify(handoffState)){

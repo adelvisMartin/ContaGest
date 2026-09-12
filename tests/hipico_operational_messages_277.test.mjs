@@ -69,6 +69,15 @@ test('receipt follows real WhatsApp format without redundant status or time', ()
   assert.doesNotMatch(text, /5:00|17:00|p\.\s*m\./i);
 });
 
+test('receipt remains renderable when a legacy bet has no valid createdAt timestamp', () => {
+  const legacyBet={...bet,id:'bet-legacy',createdAt:'fecha-corrupta'};
+  const legacyRace={...race,bets:[...race.bets,legacyBet]};
+  assert.doesNotThrow(()=>generateBetReceiptText(workspace,legacyRace,legacyBet));
+  const text=generateBetReceiptText(workspace,legacyRace,legacyBet);
+  assert.match(text,/Registrada: sin fecha/);
+  assert.match(text,/Jugada #9 de 9/);
+});
+
 test('arrival message is generated from the current official board', () => {
   const text = generateArrivalWhatsappText(workspace, race);
   assert.match(text, /Colonial Downs, 10ma Carrera/);

@@ -10,10 +10,15 @@ const transportBase={
   body:'Juego 1N del 5 con 100k',
   payload:{
     sentAt:'2026-09-11T01:00:00-05:00',
+    groupId:'120363111111111111@g.us',
+    channelKey:'club-hipico-triple-crown-official',
+    labChannelKey:'control-hipico-lab',
     channelRole:'source',
+    historySync:false,
     fromMe:false,
     hasMedia:false,
     mediaKind:'none',
+    mediaName:null,
     quotedExternalMessageId:'wamid-source-1'
   }
 };
@@ -28,14 +33,19 @@ test('transport replay signature is stable for equivalent source metadata and ti
   assert.doesNotThrow(() => assertReplayMatch('transport', first, replay));
 });
 
-test('transport replay rejects altered body or immutable transport metadata', () => {
+test('transport replay rejects altered body or immutable transport semantics', () => {
   const persisted = transportReplaySignature(transportBase);
   const forged=[
     transportReplaySignature({...transportBase,body:'Juego 1N del 5 con 900k'}),
     transportReplaySignature({...transportBase,payload:{...transportBase.payload,sentAt:'2026-09-11T06:00:01.000Z'}}),
+    transportReplaySignature({...transportBase,payload:{...transportBase.payload,groupId:'120363222222222222@g.us'}}),
+    transportReplaySignature({...transportBase,payload:{...transportBase.payload,channelKey:'otro-source'}}),
+    transportReplaySignature({...transportBase,payload:{...transportBase.payload,labChannelKey:'otro-lab'}}),
     transportReplaySignature({...transportBase,payload:{...transportBase.payload,channelRole:'lab'}}),
+    transportReplaySignature({...transportBase,payload:{...transportBase.payload,historySync:true}}),
     transportReplaySignature({...transportBase,payload:{...transportBase.payload,fromMe:true}}),
-    transportReplaySignature({...transportBase,payload:{...transportBase.payload,hasMedia:true,mediaKind:'image'}}),
+    transportReplaySignature({...transportBase,payload:{...transportBase.payload,hasMedia:true,mediaKind:'image',mediaName:'pizarra.jpg'}}),
+    transportReplaySignature({...transportBase,payload:{...transportBase.payload,mediaName:'otro-archivo.pdf'}}),
     transportReplaySignature({...transportBase,payload:{...transportBase.payload,quotedExternalMessageId:'wamid-source-2'}})
   ];
   for(const candidate of forged){
@@ -47,10 +57,17 @@ test('transport store compares the persisted JSON payload before accepting a dup
   const existing={id:'evt-1',...transportBase,payload:{...transportBase.payload}} as any;
   const input={providerMessageId:'waweb:1',...transportBase,result:{intent:'offer_player',risk:'monetary',confidence:.9,suggestion:'revisar'}} as any;
   assert.doesNotThrow(()=>bridgeStoreTest.assertTransportReplay(existing,input));
-  assert.throws(
-    ()=>bridgeStoreTest.assertTransportReplay(existing,{...input,payload:{...input.payload,fromMe:true}}),
-    (error:any)=>error?.code==='HIPICO_TRANSPORT_REPLAY_MISMATCH'
-  );
+  for(const payload of [
+    {...input.payload,historySync:true},
+    {...input.payload,channelKey:'otro-source'},
+    {...input.payload,mediaName:'evidencia.pdf'},
+    {...input.payload,fromMe:true}
+  ]){
+    assert.throws(
+      ()=>bridgeStoreTest.assertTransportReplay(existing,{...input,payload}),
+      (error:any)=>error?.code==='HIPICO_TRANSPORT_REPLAY_MISMATCH'
+    );
+  }
 });
 
 test('canonical replay binds sender timestamp type body and quoted source id', () => {
@@ -83,47 +100,37 @@ test('canonical replay rejects changed sender, text or quoted context', () => {
   }
 });
 
-test('group shadow replay signature binds recipient message intent and risk', () => {
+test('group shadow replay signature still describes exact projection equality', () => {
   const persisted = groupShadowReplaySignature({ recipient: 'lab-group', message: 'Revisar jugada', intent: 'offer_player', risk: 'monetary' });
   const replay = groupShadowReplaySignature({ recipient: 'lab-group', message: 'Revisar jugada', intent: 'offer_player', risk: 'monetary' });
   assert.equal(replay, persisted);
   assert.doesNotThrow(() => assertReplayMatch('group-shadow', persisted, replay));
 });
 
-test('group shadow outbox rejects a duplicate event with mutated projection', () => {
+test('group shadow outbox tolerates derived classifier drift while preserving the first projection', () => {
   const existing = {
     id: 'hbo-1',
-    recipient: 'lab-group',
-    message: 'Revisar jugada',
-    intent: 'offer_player',
-    risk: 'monetary'
+    recipient: 'lab-group'
   };
   const base = {
     eventId: 'event-1',
     recipient: 'lab-group',
     result: { suggestion: 'Revisar jugada', intent: 'offer_player', risk: 'monetary' }
   } as any;
-  assert.doesNotThrow(() => bridgeStoreTest.assertGroupShadowReplay(existing, base));
-  for (const mutated of [
-    { ...base, recipient: 'source-group' },
-    { ...base, result: { ...base.result, suggestion: 'Mensaje alterado' } },
+  assert.doesNotThrow(() => bridgeStoreTest.assertGroupShadowDestination(existing, base));
+  for (const derivedDrift of [
+    { ...base, result: { ...base.result, suggestion: 'Mensaje alterado por nueva versión' } },
     { ...base, result: { ...base.result, intent: 'race_result' } },
     { ...base, result: { ...base.result, risk: 'review' } }
   ]) {
-    assert.throws(
-      () => bridgeStoreTest.assertGroupShadowReplay(existing, mutated),
-      (error: any) => error?.code === 'HIPICO_GROUP_SHADOW_OUTBOX_REPLAY_MISMATCH'
-    );
+    assert.doesNotThrow(() => bridgeStoreTest.assertGroupShadowDestination(existing, derivedDrift));
   }
 });
 
-test('group shadow replay mismatch is mapped to the transport quarantine code at the route boundary', () => {
+test('group shadow destination remains fail-closed on a duplicate event', () => {
   const existing = {
     id: 'hbo-1',
-    recipient: 'lab-group',
-    message: 'Revisar jugada',
-    intent: 'offer_player',
-    risk: 'monetary'
+    recipient: 'lab-group'
   };
   const mutated = {
     eventId: 'event-1',
@@ -131,7 +138,7 @@ test('group shadow replay mismatch is mapped to the transport quarantine code at
     result: { suggestion: 'Revisar jugada', intent: 'offer_player', risk: 'monetary' }
   } as any;
   assert.throws(
-    () => bridgeStoreTest.assertGroupShadowReplayAtTransportBoundary(existing, mutated),
+    () => bridgeStoreTest.assertGroupShadowDestination(existing, mutated),
     (error: any) => error?.code === 'HIPICO_TRANSPORT_REPLAY_MISMATCH'
   );
 });
