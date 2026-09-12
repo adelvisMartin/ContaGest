@@ -1,8 +1,15 @@
 export const AUTOMATION_STATES=['DISABLED','SHADOW','ASSISTED','AUTOMATIC_LOW_RISK','AUTOMATIC'] as const;
 export type AutomationState=typeof AUTOMATION_STATES[number];
 
-export const AGENT_TOOLS=['queryRaceStatus','queryNextRace','queryLastResult','querySchedule','queryScratches','proposeRaceCommand'] as const;
+export const AGENT_TOOLS=[
+  'queryRaceStatus','queryNextRace','queryLastResult','querySchedule','queryScratches','queryRunners','queryOdds',
+  'queryScheduledTime','queryOfficiality','queryMeetingStatus','proposeRaceCommand'
+] as const;
 export type AgentTool=typeof AGENT_TOOLS[number];
+export const AUTO_EXECUTABLE_AGENT_TOOLS=[
+  'queryRaceStatus','queryNextRace','queryLastResult','querySchedule','queryScratches','queryRunners','queryOdds',
+  'queryScheduledTime','queryOfficiality','queryMeetingStatus'
+] as const satisfies readonly AgentTool[];
 
 export type AutomationMetrics={
   reviewed:number;
@@ -22,7 +29,9 @@ function rates(metrics:AutomationMetrics){
 export function canPromoteAutomation(current:AutomationState,target:AutomationState,metrics:AutomationMetrics,ownerApproved=false):PromotionDecision{
   const calculated=rates(metrics);
   const order:AutomationState[]=['DISABLED','SHADOW','ASSISTED','AUTOMATIC_LOW_RISK','AUTOMATIC'];
-  if(order.indexOf(target)<=order.indexOf(current))return{allowed:true,reason:'DOWNGRADE_OR_SAME_STATE',metrics:calculated};
+  const currentIndex=order.indexOf(current),targetIndex=order.indexOf(target);
+  if(targetIndex<=currentIndex)return{allowed:true,reason:'DOWNGRADE_OR_SAME_STATE',metrics:calculated};
+  if(targetIndex!==currentIndex+1)return{allowed:false,reason:'INVALID_PROMOTION_PATH',metrics:calculated};
   if(current==='DISABLED'&&target==='SHADOW')return{allowed:true,reason:'SHADOW_SAFE_DEFAULT',metrics:calculated};
   if(target==='ASSISTED'){
     const allowed=metrics.reviewed>=200&&calculated.accuracy>=.98&&metrics.highRiskFalsePositive===0&&metrics.unauthorizedAction===0;
@@ -54,6 +63,7 @@ export interface StructuredCandidateGenerator { id:string; generate(input:{text:
 
 function boundedString(value:unknown,max:number){return String(value??'').trim().slice(0,max);}
 function isAgentTool(value:unknown):value is AgentTool{return (AGENT_TOOLS as readonly unknown[]).includes(value);}
+function isAutoExecutableTool(value:AgentTool|null){return value!==null&&(AUTO_EXECUTABLE_AGENT_TOOLS as readonly AgentTool[]).includes(value);}
 
 export function validateModelCandidate(value:unknown):AgentCandidate{
   const row=(value&&typeof value==='object'?value:{}) as Record<string,unknown>;
@@ -66,9 +76,8 @@ export function validateModelCandidate(value:unknown):AgentCandidate{
 }
 
 export function agentCanAct(mode:AutomationState,candidate:AgentCandidate){
-  if(mode==='DISABLED'||mode==='SHADOW')return false;
-  if(mode==='ASSISTED')return false;
-  if(candidate.risk!=='safe')return false;
+  if(mode==='DISABLED'||mode==='SHADOW'||mode==='ASSISTED')return false;
+  if(candidate.risk!=='safe'||!isAutoExecutableTool(candidate.tool))return false;
   return mode==='AUTOMATIC_LOW_RISK'||mode==='AUTOMATIC';
 }
 
@@ -77,7 +86,7 @@ export function safeToolRequest(candidate:AgentCandidate){
   const args=JSON.parse(JSON.stringify(candidate.arguments||{}));
   const encoded=JSON.stringify(args);
   if(encoded.length>4000)throw new Error('AGENT_TOOL_ARGUMENTS_TOO_LARGE');
-  if(/(?:sql|shell|command|child_process|exec|spawn|password|token|secret)/i.test(encoded))throw new Error('AGENT_TOOL_ARGUMENTS_REJECTED');
+  if(/(?:sql|shell|command|child_process|exec|spawn|password|token|secret|__proto__|prototype|constructor)/i.test(encoded))throw new Error('AGENT_TOOL_ARGUMENTS_REJECTED');
   return{tool:candidate.tool,arguments:args};
 }
 
