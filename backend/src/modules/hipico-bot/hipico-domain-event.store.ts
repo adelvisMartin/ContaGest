@@ -101,25 +101,29 @@ function persistedRequiresReview(existing:Pick<EventRow,'disposition'|'reason'>)
   return existing.disposition==='review'&&existing.reason==='AMBIGUOUS_OR_UNKNOWN';
 }
 function assertDomainReplay(existing:EventRow,event:HipicoDomainEventInput){
-  const existingPayloadIssue=canonicalPayloadIssue(existing.normalizedPayload);
+  const existingPayloadIssue=existing.normalizedPayload===undefined||existing.normalizedPayload===null
+    ? null : canonicalPayloadIssue(existing.normalizedPayload);
   if(existingPayloadIssue)throw new Error('HIPICO_DOMAIN_PERSISTED_PAYLOAD_UNSAFE');
-  const incomingPayloadIssue=canonicalPayloadIssue(event.normalizedPayload);
+  const incomingPayloadIssue=event.normalizedPayload===undefined||event.normalizedPayload===null
+    ? null : canonicalPayloadIssue(event.normalizedPayload);
   if(incomingPayloadIssue)throw new Error(incomingPayloadIssue);
-  if(typeof event.timestamp!=='string'||!event.timestamp.trim())throw new Error('HIPICO_EVENT_TIMESTAMP_REQUIRED');
-  const timestampIssue=canonicalTimestampIssue(event.timestamp);
+  const existingTimestamp=normalizedInstant(existing.eventTimestamp);
+  const incomingTimestamp=existingTimestamp&&typeof event.timestamp==='string'&&event.timestamp.trim()
+    ? event.timestamp : null;
+  const timestampIssue=incomingTimestamp?canonicalTimestampIssue(incomingTimestamp):null;
   if(timestampIssue)throw new Error(timestampIssue);
-  const timestampMatches=normalizedInstant(existing.eventTimestamp)===normalizedInstant(event.timestamp);
+  const timestampMatches=!existingTimestamp||!incomingTimestamp||existingTimestamp===normalizedInstant(incomingTimestamp);
   const eventIdMatches=!event.eventId||existing.id===String(event.eventId);
   const confirmation=confirmationAudit(event);
   const same=existing.eventType===event.type
     && eventIdMatches
     && sameNullable(existing.sourceMessageId,event.sourceMessageId)
     && sameNullable(existing.rawMessage,event.rawMessage)
-    && canonicalJson(existing.normalizedPayload)===canonicalJson(event.normalizedPayload)
+    && (existing.normalizedPayload===undefined||existing.normalizedPayload===null||canonicalJson(existing.normalizedPayload)===canonicalJson(event.normalizedPayload))
     && sameNullable(existing.actorRef,event.actorRef)
     && sameNullable(existing.source,event.source||'system')
-    && sameNullable(existing.parserVersion,event.parserVersion)
-    && Number(existing.schemaVersion||1)===Number(event.schemaVersion||1)
+    && (existing.parserVersion===undefined||sameNullable(existing.parserVersion,event.parserVersion))
+    && (existing.schemaVersion===undefined||Number(existing.schemaVersion||1)===Number(event.schemaVersion||1))
     && timestampMatches
     && persistedRequiresReview(existing)===incomingRequiresReview(event)
     && Boolean(existing.operatorConfirmed)===confirmation.operatorConfirmed

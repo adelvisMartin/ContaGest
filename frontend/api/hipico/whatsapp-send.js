@@ -41,12 +41,12 @@ async function claimRow(row) {
 
 async function quarantineExpiredSendingClaims(nowIso = new Date().toISOString()) {
   const ownerId = env('HIPICO_OWNER_ID');
-  const stale = await supabase(
+    const staleItems = await supabase(
     `hipico_outbox?owner_id=eq.${encodeURIComponent(ownerId)}&status=eq.sending&next_attempt_at=lte.${encodeURIComponent(nowIso)}&order=next_attempt_at.asc&limit=${STALE_CLAIM_SCAN_LIMIT}`,
     { headers: { Prefer: 'return=representation' } }
   ) || [];
   let quarantined = 0;
-  for (const row of stale) {
+  for (const row of staleItems) {
     const expectedNext = String(row.next_attempt_at || '');
     if (!row?.id || !expectedNext) continue;
     const updated = await supabase(
@@ -67,12 +67,12 @@ async function quarantineExpiredSendingClaims(nowIso = new Date().toISOString())
 
 async function updateRow(id, patch) {
   const ownerId = env('HIPICO_OWNER_ID');
-  const rows = await supabase(`hipico_outbox?id=eq.${encodeURIComponent(id)}&owner_id=eq.${encodeURIComponent(ownerId)}&status=eq.sending`, {
+  const updatedRows = await supabase(`hipico_outbox?id=eq.${encodeURIComponent(id)}&owner_id=eq.${encodeURIComponent(ownerId)}&status=eq.sending`, {
     method: 'PATCH',
     headers: { Prefer: 'return=representation' },
     body: JSON.stringify(patch)
   });
-  const updated = Array.isArray(rows) ? rows[0] || null : null;
+  const updated = Array.isArray(updatedRows) ? updatedRows[0] || null : null;
   if (!updated?.id) throw new Error('HIPICO_OUTBOX_STATE_TRANSITION_NOT_PERSISTED');
   return updated;
 }
