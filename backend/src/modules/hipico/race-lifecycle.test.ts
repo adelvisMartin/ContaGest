@@ -57,11 +57,24 @@ void test('expected-state mismatch fails closed without downgrading result autho
   assert.equal(result.allowed,false);assert.equal(result.reason,'EXPECTED_STATE_MISMATCH');assert.equal(result.resultStage,'verified');
 });
 
-void test('postponed, suspended and cancelled alternate paths are explicit',()=>{
+void test('postponed and cancelled alternate paths are explicit',()=>{
   assert.equal(evaluateRaceCommand('ANNOUNCED',command('ANNOUNCED',{command:'POSTPONE'})).to,'POSTPONED');
   assert.equal(evaluateRaceCommand('POSTPONED',command('POSTPONED',{command:'RESUME'})).to,'ANNOUNCED');
   assert.equal(evaluateRaceCommand('OPEN',command('OPEN',{command:'SUSPEND'})).to,'SUSPENDED');
   assert.equal(evaluateRaceCommand('SUSPENDED',command('SUSPENDED',{command:'CANCEL'})).to,'CANCELLED');
+});
+
+void test('suspended resume fails closed without persisted context and restores the prior lifecycle state when supplied',()=>{
+  const noContext=evaluateRaceCommand('SUSPENDED',command('SUSPENDED',{command:'RESUME'}),'none');
+  assert.equal(noContext.allowed,false);assert.equal(noContext.reason,'RESUME_CONTEXT_REQUIRED');assert.equal(noContext.to,'SUSPENDED');
+  const fromOpen=evaluateRaceCommand('SUSPENDED',command('SUSPENDED',{command:'RESUME'}),'none','OPEN');
+  assert.equal(fromOpen.allowed,true);assert.equal(fromOpen.to,'OPEN');assert.equal(fromOpen.resultStage,'none');
+  const fromRunning=evaluateRaceCommand('SUSPENDED',command('SUSPENDED',{command:'RESUME'}),'observed','RUNNING');
+  assert.equal(fromRunning.allowed,true);assert.equal(fromRunning.to,'RUNNING');assert.equal(fromRunning.resultStage,'observed');
+  const fromProvisional=evaluateRaceCommand('SUSPENDED',command('SUSPENDED',{command:'RESUME'}),'verified','PROVISIONAL_RESULT');
+  assert.equal(fromProvisional.allowed,true);assert.equal(fromProvisional.to,'PROVISIONAL_RESULT');assert.equal(fromProvisional.resultStage,'verified');
+  const unsafe=evaluateRaceCommand('SUSPENDED',command('SUSPENDED',{command:'RESUME'}),'official','OFFICIAL_RESULT');
+  assert.equal(unsafe.allowed,false);assert.equal(unsafe.reason,'RESUME_CONTEXT_REQUIRED');
 });
 
 void test('natural query intents cover live operational questions and unknown context is not guessed',()=>{
