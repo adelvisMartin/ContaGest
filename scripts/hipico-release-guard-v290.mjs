@@ -25,6 +25,7 @@ const guarded = [
   'backend/scripts/hipico-load-profile-v290.ts',
   'tests/hipico_command_center_issue_289.test.mjs',
   'tests/hipico_production_security_issue_290.test.mjs',
+  'scripts/hipico-apply-e2e-schema-v290.mjs',
   'scripts/hipico-release-report-v290.mjs',
   'scripts/hipico-verify-evidence-v290.mjs',
   workflowPath
@@ -61,6 +62,13 @@ for (const relative of guarded) {
   const source = read(relative);
   for (const rule of forbidden) assert(!rule.pattern.test(source), `${relative} contains forbidden ${rule.label}`);
 }
+
+const e2eSchema = read('scripts/hipico-apply-e2e-schema-v290.mjs');
+assert(e2eSchema.includes('hipico_v13_workspace_sync_security.sql'), 'real workspace/RLS security migration must run in PostgreSQL E2E');
+assert(e2eSchema.includes("SET LOCAL ROLE"), 'PostgreSQL E2E must execute least-privilege role checks');
+assert(e2eSchema.includes('Workspace RLS owner isolation failed'), 'PostgreSQL E2E must verify owner-scoped workspace isolation');
+assert(e2eSchema.includes('Message RLS owner isolation failed'), 'PostgreSQL E2E must verify owner-scoped message isolation');
+assert(e2eSchema.includes('hipico_ledger_entries') && e2eSchema.includes('hipico_outbox'), 'PostgreSQL E2E must verify ledger/outbox direct-write denial');
 
 const workflow = read(workflowPath);
 assert(/matrix:\s*[\s\S]*browser:\s*\[chromium, firefox, webkit\]/.test(workflow), 'scheduled browser matrix must keep Chromium/Firefox/WebKit');
