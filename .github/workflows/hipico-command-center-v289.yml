@@ -2,7 +2,6 @@ name: Hípico Command Center v289
 
 on:
   pull_request:
-    branches: [main]
     paths:
       - 'backend/src/modules/hipico/**'
       - 'backend/src/modules/hipico-bot/**'
@@ -22,13 +21,14 @@ concurrency:
   group: hipico-command-center-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 env:
-  HIPICO_CANDIDATE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+  HIPICO_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+  HIPICO_CANDIDATE_SHA: ${{ github.event.pull_request.merge_commit_sha || github.event.pull_request.head.sha || github.sha }}
 jobs:
   command-center:
     runs-on: ubuntu-latest
     timeout-minutes: 35
     steps:
-      - name: Checkout exact candidate SHA
+      - name: Checkout exact merge candidate SHA
         uses: actions/checkout@v7
         with:
           ref: ${{ env.HIPICO_CANDIDATE_SHA }}
@@ -37,6 +37,11 @@ jobs:
         env:
           HIPICO_QA_SHA: ${{ env.HIPICO_CANDIDATE_SHA }}
         run: node scripts/hipico-exact-sha-gate.mjs
+      - name: Record stacked candidate identity
+        run: |
+          echo "PR head: ${HIPICO_HEAD_SHA}"
+          echo "Merge candidate: ${HIPICO_CANDIDATE_SHA}"
+          test "$(git rev-parse HEAD)" = "${HIPICO_CANDIDATE_SHA}"
       - name: Node 22
         uses: actions/setup-node@v7
         with:
@@ -65,6 +70,7 @@ jobs:
         run: |
           mkdir -p "artifacts/qa/hipico-v289/${HIPICO_CANDIDATE_SHA}"
           printf '%s\n' "${HIPICO_CANDIDATE_SHA}" > "artifacts/qa/hipico-v289/${HIPICO_CANDIDATE_SHA}/candidate-sha.txt"
+          printf '%s\n' "${HIPICO_HEAD_SHA}" > "artifacts/qa/hipico-v289/${HIPICO_CANDIDATE_SHA}/head-sha.txt"
           git status --porcelain=v1 > "artifacts/qa/hipico-v289/${HIPICO_CANDIDATE_SHA}/git-status.txt"
       - name: Upload Command Center evidence
         if: always()
