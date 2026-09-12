@@ -109,22 +109,27 @@ test('PR browser gate covers every module at three phone widths, real navigation
   assert.match(actions,/valid-submit-no-effect/);
 });
 
-test('Vercel serverless artifact bundles the aliased XLSX runtime instead of crashing every API import',()=>{
+test('Vercel serverless artifact rejects the retired XLSX runtime dependency chain',()=>{
   const stage=read('frontend','scripts','stage-backend.mjs');
   assert.doesNotMatch(stage,/packages:\s*['"]external['"]/);
   assert.match(stage,/external:\s*EXTERNAL_RUNTIME_PACKAGES/);
   const declaration=stage.match(/const EXTERNAL_RUNTIME_PACKAGES\s*=\s*\[([\s\S]*?)\];/)?.[1]||'';
   assert.ok(declaration.length>0,'external runtime package declaration missing');
   assert.doesNotMatch(declaration,/['"]exceljs['"]/);
-  assert.match(stage,/exceljs quedó externalizado/);
+  assert.match(stage,/forbiddenXlsxRuntime/);
+  assert.match(stage,/@excel\\\.js\\\/jszip|@excel\.js\/jszip/);
+  assert.match(stage,/es-pako/);
 });
 
-test('XLSX runtime is lazy so optional export dependencies cannot break auth bootstrap',()=>{
+test('XLSX runtime is internal so export dependencies cannot break auth bootstrap',()=>{
   const exportsRoute=read('backend','src','modules','exports','exports.routes.ts');
-  assert.doesNotMatch(exportsRoute,/^import\s+ExcelJS\s+from\s+['"]exceljs['"];?/m);
-  assert.match(exportsRoute,/await\s+import\(['"]exceljs['"]\)/);
-  assert.match(exportsRoute,/XLSX_RUNTIME_UNAVAILABLE/);
-  assert.match(exportsRoute,/new\s+ExcelJS\.Workbook\(\)/);
+  const writer=read('backend','src','modules','exports','xlsx-writer.ts');
+  assert.doesNotMatch(exportsRoute,/exceljs/i);
+  assert.match(exportsRoute,/buildXlsxWorkbook/);
+  assert.match(exportsRoute,/XLSX_EXPORT_LIMIT_EXCEEDED/);
+  assert.match(writer,/deflateRawSync/);
+  assert.match(writer,/t="inlineStr"/);
+  assert.match(writer,/maxTotalCells/);
 });
 
 test('service worker cannot serve stale javascript or css ahead of the deployed network bundle',()=>{

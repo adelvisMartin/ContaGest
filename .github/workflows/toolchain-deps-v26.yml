@@ -8,6 +8,7 @@ on:
       - package-lock.json
       - package.json
       - backend/package.json
+      - backend/src/modules/exports/**
       - tests/toolchain_dependency_cleanup_issue_26.test.mjs
       - .github/workflows/toolchain-deps-v26.yml
   pull_request:
@@ -16,6 +17,7 @@ on:
       - package-lock.json
       - package.json
       - backend/package.json
+      - backend/src/modules/exports/**
       - tests/toolchain_dependency_cleanup_issue_26.test.mjs
       - .github/workflows/toolchain-deps-v26.yml
   workflow_dispatch:
@@ -70,19 +72,6 @@ jobs:
           fi
           node --test tests/toolchain_dependency_cleanup_issue_26.test.mjs
 
-      - name: ExcelJS compatibility smoke
+      - name: Internal XLSX compatibility smoke
         working-directory: backend
-        run: |
-          node --input-type=module <<'NODE'
-          import ExcelJS from 'exceljs';
-          const workbook = new ExcelJS.Workbook();
-          const sheet = workbook.addWorksheet('QA');
-          sheet.addRow(['ContaGest', 26]);
-          const buffer = await workbook.xlsx.writeBuffer();
-          if (!buffer || buffer.length === 0) throw new Error('ExcelJS no generó XLSX');
-          const roundTrip = new ExcelJS.Workbook();
-          await roundTrip.xlsx.load(buffer);
-          if (roundTrip.getWorksheet('QA')?.getCell('A1').value !== 'ContaGest') {
-            throw new Error('ExcelJS no preservó el contenido en round-trip');
-          }
-          NODE
+        run: npm exec -- tsx --test src/modules/exports/xlsx-writer.test.ts
