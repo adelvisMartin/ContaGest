@@ -11,7 +11,7 @@ function nextRetryIso(attempts, retryAfterHeader = '', nowMs = Date.now()) {
   const localWaitMs = retryMinutes * 60000;
   const parsedNow = Number(nowMs);
   const safeNow = Number.isFinite(parsedNow) ? parsedNow : Date.now();
-  const providerWaitMs = retryAfterMs(response.headers);
+  const providerWaitMs = retryAfterMs(retryAfterHeader, safeNow);
   return new Date(safeNow + Math.max(localWaitMs, providerWaitMs)).toISOString();
 }
 
