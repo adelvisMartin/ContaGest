@@ -21,6 +21,14 @@ function sendLeaseExpiryIso(nowMs = Date.now()) {
   return new Date(safeNow + SEND_LEASE_MS).toISOString();
 }
 
+function providerHttpDisposition(status, attempts) {
+  const code = Number(status);
+  const attemptCount = Math.max(0, Number(attempts) || 0);
+  if (code === 408 || code >= 500) return 'reconciliation_required';
+  if (code === 429 && attemptCount < MAX_ATTEMPTS) return 'retry';
+  return 'failed';
+}
+
 async function claimRow(row) {
   const ownerId = env('HIPICO_OWNER_ID');
   const expectedStatus = String(row.status || 'queued');
@@ -173,15 +181,17 @@ export default async function handler(req, res) {
       try { data = raw ? JSON.parse(raw) : {}; } catch { data = {}; }
 
       if (!response.ok) {
-        const retryable = response.status === 408 || response.status === 429 || response.status >= 500;
-        const exhausted = attempts >= MAX_ATTEMPTS;
+        const disposition = providerHttpDisposition(response.status, attempts);
         await updateRow(row.id, {
-          status: retryable && !exhausted ? 'retry' : 'failed',
+          status: disposition,
           attempts,
-          next_attempt_at: retryable && !exhausted ? nextRetryIso(attempts, response.headers.get('retry-after')) : row.next_attempt_at,
-          last_error: `META_HTTP_${response.status}`
+          next_attempt_at: disposition === 'retry' ? nextRetryIso(attempts, response.headers.get('retry-after')) : row.next_attempt_at,
+          last_error: disposition === 'reconciliation_required'
+            ? `RECONCILIATION_REQUIRED:META_HTTP_${response.status}`
+            : `META_HTTP_${response.status}`
         });
-        if (retryable && !exhausted) retried += 1;
+        if (disposition === 'retry') retried += 1;
+        else if (disposition === 'reconciliation_required') reconciliationRequired += 1;
         else failed += 1;
         continue;
       }
@@ -214,4 +224,4 @@ export default async function handler(req, res) {
   }
 }
 
-export const __test__={safeGraphVersion,metaSenderConfig,nextRetryIso,sendLeaseExpiryIso,sendTimeoutMs,quarantineExpiredSendingClaims,SEND_LEASE_MS,STALE_CLAIM_SCAN_LIMIT};
+export const __test__={safeGraphVersion,metaSenderConfig,nextRetryIso,sendLeaseExpiryIso,sendTimeoutMs,providerHttpDisposition,quarantineExpiredSendingClaims,SEND_LEASE_MS,STALE_CLAIM_SCAN_LIMIT};
