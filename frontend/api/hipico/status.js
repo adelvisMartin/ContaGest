@@ -85,6 +85,8 @@ export default function handler(req, res) {
         internalApiTokenStrong,
         accessTokenStrong: sender.accessTokenStrong,
         phoneNumberIdValid: sender.phoneNumberIdValid && webhook.phoneNumberIdValid,
+        graphVersionValid: sender.graphVersionValid,
+        graphVersionDefaulted: sender.graphVersionDefaulted,
         webhookSecretsStrong: webhook.verifyTokenStrong && webhook.appSecretStrong,
         missingConfigurationCount: new Set([...metaMissing, ...webhookMissing]).size
       } : {})
