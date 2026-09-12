@@ -26,13 +26,14 @@ export function createApp(options:{readinessCheck?:ReadinessCheck}={}){
 
   // Integration adapters stay under hipico-bot. Canonical document/provider/race
   // routes share /api/v1/hipico and retain their own operator/scope validation.
+  // Provider/race/domain share one transport throttle chain so a request is not
+  // counted multiple times while traversing sibling routers. mutationRateLimit
+  // already skips GET/HEAD/OPTIONS in security.ts.
   app.use('/api/v1/hipico-bot',hipicoWebhookRoutes);
   app.use('/api/v1/hipico-bot',authRateLimit,hipicoBridgeRoutes);
   app.use('/api/v1/hipico-bot',authRateLimit,hipicoOperatorRoutes);
   app.use('/api/v1/hipico/documents',authRateLimit,mutationRateLimit,hipicoDocumentRoutes);
-  app.use('/api/v1/hipico',authRateLimit,mutationRateLimit,hipicoProviderRoutes);
-  app.use('/api/v1/hipico',authRateLimit,mutationRateLimit,hipicoRaceRoutes);
-  app.use('/api/v1/hipico',authRateLimit,mutationRateLimit,hipicoCanonicalRoutes);
+  app.use('/api/v1/hipico',authRateLimit,mutationRateLimit,hipicoProviderRoutes,hipicoRaceRoutes,hipicoCanonicalRoutes);
 
   app.use(csrfProtection);app.use(enforceProductionSecrets);app.use('/api/v1/auth',authRateLimit,authRoutes);
   app.use(['/api/v1/ai','/api/v1/exports','/api/v1/imports','/api/v1/reports','/api/v1/payables'],expensiveOperationRateLimit);
