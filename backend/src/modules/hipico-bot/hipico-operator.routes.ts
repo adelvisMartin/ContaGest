@@ -68,6 +68,9 @@ function outboundError(res:any,error:any){
   if(code==='HIPICO_CLOUD_DELIVERY_AMBIGUOUS'){
     return res.status(202).json({ok:false,retryable:false,error:'reconciliation_required',code});
   }
+  if(code==='HIPICO_CLOUD_TRANSPORT_NOT_CONFIGURED'){
+    return res.status(503).json({ok:false,retryable:true,error:'sender_not_configured',code});
+  }
   if(code==='HIPICO_CLOUD_SEND_DISABLED'||code==='HIPICO_DESTINATION_NOT_ALLOWLISTED'){
     return res.status(409).json({ok:false,retryable:false,error:'Envío cloud bloqueado por la política de producción.',code});
   }
@@ -79,8 +82,10 @@ function outboundError(res:any,error:any){
 
 function outboundPreflight(to:string){
   const policy=cloudOutboundPolicy();
-  if(!policy.enabled)return{ok:false as const,error:'outbound_disabled',reasons:policy.reasons};
-  if(!cloudDestinationAllowed(to))return{ok:false as const,error:'destination_not_allowlisted',reasons:['DESTINATION_NOT_ALLOWLISTED']};
+  if(!policy.enabled)return{ok:false as const,status:409,retryable:false,error:'outbound_disabled',reasons:policy.reasons};
+  const transport=cloudTransportConfiguration();
+  if(!transport.configured)return{ok:false as const,status:503,retryable:true,error:'sender_not_configured',reasons:transport.reasons};
+  if(!cloudDestinationAllowed(to))return{ok:false as const,status:409,retryable:false,error:'destination_not_allowlisted',reasons:['DESTINATION_NOT_ALLOWLISTED']};
   return{ok:true as const};
 }
 
@@ -96,7 +101,7 @@ router.post('/test-message',async(req,res)=>{
   const parsed=z.object({requestId:requestIdSchema,to:e164Schema,message:z.string().trim().min(1).max(4000)}).safeParse(req.body);
   if(!parsed.success)return res.status(400).json({ok:false,error:'requestId, destino o mensaje invalido.'});
   const preflight=outboundPreflight(parsed.data.to);
-  if(!preflight.ok)return res.status(409).json({ok:false,error:preflight.error,reasons:preflight.reasons});
+  if(!preflight.ok)return res.status(preflight.status).json({ok:false,retryable:preflight.retryable,error:preflight.error,reasons:preflight.reasons});
   if(!await HipicoBotStore.dbReady(true))return res.status(503).json({ok:false,retryable:true,error:'outbox_persistence_unavailable'});
   try{
     const queued=await HipicoBotStore.queueIdempotent({
@@ -144,7 +149,7 @@ router.post('/approve/:id',async(req,res)=>{
   if(item.status!=='pending_approval')return res.status(409).json({ok:false,error:'La salida no está pendiente de aprobación y no puede enviarse.'});
   if(item.targetType!=='individual')return res.status(409).json({ok:false,error:'Este adaptador solo envia destinatarios individuales. El grupo requiere un bridge soportado.'});
   const preflight=outboundPreflight(String(item.recipient||''));
-  if(!preflight.ok)return res.status(409).json({ok:false,error:preflight.error,reasons:preflight.reasons});
+  if(!preflight.ok)return res.status(preflight.status).json({ok:false,retryable:preflight.retryable,error:preflight.error,reasons:preflight.reasons});
   const claimed=await HipicoBotStore.claimForSend(item.id,'pending_approval');
   if(!claimed)return res.status(409).json({ok:false,error:'La salida cambió de estado antes del envío; requiere conciliación.'});
   try{
