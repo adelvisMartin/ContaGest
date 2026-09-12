@@ -42,7 +42,7 @@ test('#267 validates password/confirmation and avoids account enumeration copy',
   assert.match(source, /nextPassword\.length < 10/);
   assert.match(source, /password !== confirm/);
   assert.match(source, /Si el correo pertenece a una cuenta válida/);
-  assert.match(source, /autocomplete=\\"new-password\\"/);
+  assert.match(source, /autocomplete="new-password"/);
 });
 
 test('#267 recovery presentation uses the canonical UI and remains mobile-safe', async () => {
