@@ -6,6 +6,17 @@ export const MAX_CANONICAL_FUTURE_SKEW_MS=5*60*1000;
 
 const ISO_TIMESTAMP_WITH_ZONE=/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.(\d{1,9}))?(Z|[+-]\d{2}:\d{2})$/;
 
+export function gregorianDaysInMonth(yearValue:unknown,monthValue:unknown){
+  const year=Number(yearValue);
+  const month=Number(monthValue);
+  if(!Number.isInteger(year)||year<1||year>9999||!Number.isInteger(month)||month<1||month>12)return 0;
+  if(month===2){
+    const leap=year%4===0&&(year%100!==0||year%400===0);
+    return leap?29:28;
+  }
+  return [4,6,9,11].includes(month)?30:31;
+}
+
 export function canonicalPayloadIssue(value:unknown){
   if(value===undefined)return null;
   let encoded:string|undefined;
@@ -57,8 +68,8 @@ export function canonicalTimestampIssue(value:string,nowMs=Date.now()){
   const hour=Number(hourRaw);
   const minute=Number(minuteRaw);
   const second=Number(secondRaw);
-  if(month<1||month>12||hour>23||minute>59||second>59)return'HIPICO_EVENT_TIMESTAMP_INVALID';
-  const daysInMonth=new Date(Date.UTC(year,month,0)).getUTCDate();
+  const daysInMonth=gregorianDaysInMonth(year,month);
+  if(!daysInMonth||hour>23||minute>59||second>59)return'HIPICO_EVENT_TIMESTAMP_INVALID';
   if(day<1||day>daysInMonth)return'HIPICO_EVENT_TIMESTAMP_INVALID';
   if(zone!=='Z'){
     const offsetHour=Number(zone.slice(1,3));
