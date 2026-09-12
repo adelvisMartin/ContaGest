@@ -2,7 +2,8 @@ import { randomUUID } from 'node:crypto';
 import { Prisma } from '@prisma/client';
 import { prisma } from '../../database/prisma.js';
 import { HttpError } from '../../shared/http.js';
-import { add, compare, money, serializeDecimal, subtract, ZERO } from '../../shared/financial/decimal.js';
+import { add, money, serializeDecimal, subtract, ZERO } from '../../shared/financial/decimal.js';
+import { canonicalRequestHash, normalizeIdempotencyKey } from '../../shared/services/financial-idempotency.service.js';
 import { createLedgerEntry, postLedgerEntry, reverseLedgerEntry } from '../accounting/accounting.service.js';
 import { claimApproval, finishApprovalClaim, releaseApprovalClaim } from '../approvals/approvals.service.js';
 import { parseBankStatement, statementLineHash, statementSourceHash } from './statement-parser.js';
@@ -19,10 +20,14 @@ type StatementLineRow = {
 type ReconciliationRow = {
   id:string; tenantId:string; accountId:string; statementLineId:string; kind:string; status:string;
   confidence:Prisma.Decimal|null; reasons:unknown; matchedAmount:Prisma.Decimal; writeoffAccountCode:string|null;
-  writeoffReason:string|null; ledgerEntryId:string|null; idempotencyKey:string|null; createdBy:string|null;
+  writeoffReason:string|null; ledgerEntryId:string|null; idempotencyKey:string|null; requestHash:string|null; createdBy:string|null;
   createdAt:Date; reversedBy:string|null; reversedAt:Date|null; reversalLedgerEntryId:string|null;
 };
-
+type CandidateDirection = 'in'|'out'|'any';
+type CandidateTarget = {
+  targetType:TargetType; targetId:string; label:string; amount:Prisma.Decimal; currency:string; date:Date;
+  reference:string|null; partner:string|null; memo:string|null; direction:CandidateDirection;
+};
 type Candidate = {
   targetType:TargetType;
   targetId:string;
@@ -37,14 +42,37 @@ type Candidate = {
   reasons:string[];
   blockedReason:string|null;
 };
+type ReconciliationAllocationInput={targetType:TargetType;targetId:string;amount:string};
 
+type DbClient = Prisma.TransactionClient|typeof prisma;
 const normalize = (value:unknown) => String(value ?? '').normalize('NFKD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/\s+/g,' ').trim();
 const absoluteMoney = (value:Prisma.Decimal|string|number) => money(value).abs();
 const exact = (value:Prisma.Decimal|string|number) => serializeDecimal(value,2);
 const dateDistanceDays = (left:Date,right:Date) => Math.abs(left.getTime()-right.getTime())/86_400_000;
 const safeJson = (value:unknown) => JSON.stringify(value ?? null);
+const lineDirection=(line:StatementLineRow):'in'|'out'=>money(line.amount).isPositive()?'in':'out';
+const oppositeDirection=(direction:'in'|'out'):'in'|'out'=>direction==='in'?'out':'in';
+const canonicalTargetType=(type:TargetType)=>type==='transfer'?'bank_movement':type;
 
-async function getLine(tenantId:string,lineId:string,tx:Prisma.TransactionClient|typeof prisma=prisma) {
+function requireIdempotencyKey(value:string) {
+  const key=normalizeIdempotencyKey(value);
+  if(!key) throw new HttpError(428,'Idempotency-Key es obligatorio para conciliación financiera.',{code:'IDEMPOTENCY_KEY_REQUIRED'});
+  return key;
+}
+
+function assertIdempotencyIntent(row:ReconciliationRow,requestHash:string) {
+  if(row.requestHash!==requestHash) {
+    throw new HttpError(409,'Idempotency-Key ya fue utilizada con un request diferente.',{code:'IDEMPOTENCY_KEY_REUSED',scope:'bank-reconciliation'});
+  }
+}
+
+function reconciliationIntentHash(input:{lineId:string;allocations:ReconciliationAllocationInput[];confidence?:number;reasons?:string[]}) {
+  const allocations=input.allocations.map((item)=>({targetType:item.targetType,targetId:item.targetId,amount:exact(money(item.amount))}))
+    .sort((a,b)=>`${canonicalTargetType(a.targetType)}:${a.targetId}:${a.amount}`.localeCompare(`${canonicalTargetType(b.targetType)}:${b.targetId}:${b.amount}`));
+  return canonicalRequestHash({operation:'reconcile',lineId:input.lineId,allocations,confidence:input.confidence??null,reasons:[...(input.reasons||['manual_review'])].sort()});
+}
+
+async function getLine(tenantId:string,lineId:string,tx:DbClient=prisma) {
   const rows = await tx.$queryRaw<StatementLineRow[]>(Prisma.sql`
     SELECT * FROM "BankStatementLine" WHERE "tenantId"=${tenantId} AND "id"=${lineId} LIMIT 1
   `);
@@ -60,7 +88,14 @@ async function lockLine(tx:Prisma.TransactionClient,tenantId:string,lineId:strin
   return rows[0];
 }
 
-async function activeAllocatedForLine(tx:Prisma.TransactionClient|typeof prisma,tenantId:string,lineId:string) {
+async function lockAllocationTargets(tx:Prisma.TransactionClient,tenantId:string,allocations:ReconciliationAllocationInput[]) {
+  const keys=[...new Set(allocations.map((item)=>`${canonicalTargetType(item.targetType)}:${item.targetId}`))].sort();
+  for(const key of keys) {
+    await tx.$queryRaw(Prisma.sql`SELECT pg_advisory_xact_lock(hashtextextended(${`${tenantId}:${key}`},0))`);
+  }
+}
+
+async function activeAllocatedForLine(tx:DbClient,tenantId:string,lineId:string) {
   const rows=await tx.$queryRaw<Array<{total:Prisma.Decimal|null}>>(Prisma.sql`
     SELECT COALESCE(SUM(r."matchedAmount"),0)::numeric(18,2) AS total
     FROM "BankReconciliation" r
@@ -69,12 +104,15 @@ async function activeAllocatedForLine(tx:Prisma.TransactionClient|typeof prisma,
   return money(rows[0]?.total ?? ZERO);
 }
 
-async function activeAllocatedForTarget(tenantId:string,targetType:TargetType,targetId:string) {
-  const rows=await prisma.$queryRaw<Array<{total:Prisma.Decimal|null}>>(Prisma.sql`
+async function activeAllocatedForTarget(tx:DbClient,tenantId:string,targetType:TargetType,targetId:string) {
+  const targetFilter=canonicalTargetType(targetType)==='bank_movement'
+    ? Prisma.sql`a."targetType" IN ('bank_movement','transfer')`
+    : Prisma.sql`a."targetType"=${targetType}`;
+  const rows=await tx.$queryRaw<Array<{total:Prisma.Decimal|null}>>(Prisma.sql`
     SELECT COALESCE(SUM(a."amount"),0)::numeric(18,2) AS total
     FROM "BankReconciliationAllocation" a
     JOIN "BankReconciliation" r ON r."id"=a."reconciliationId" AND r."tenantId"=a."tenantId"
-    WHERE a."tenantId"=${tenantId} AND a."targetType"=${targetType} AND a."targetId"=${targetId} AND r."status"='confirmed'
+    WHERE a."tenantId"=${tenantId} AND ${targetFilter} AND a."targetId"=${targetId} AND r."status"='confirmed'
   `);
   return money(rows[0]?.total ?? ZERO);
 }
@@ -99,15 +137,18 @@ export async function importBankStatement(input:{tenantId:string;userId?:string;
   if(parsed.currency!==account.currency) throw new HttpError(409,'La moneda del extracto no coincide con la cuenta bancaria.',{code:'BANK_STATEMENT_ACCOUNT_CURRENCY_MISMATCH',accountCurrency:account.currency,statementCurrency:parsed.currency});
   const sourceHash=statementSourceHash(input.bytes);
   return prisma.$transaction(async(tx)=>{
-    const duplicate=await tx.$queryRaw<Array<{id:string}>>(Prisma.sql`
-      SELECT "id" FROM "BankStatementImport" WHERE "tenantId"=${input.tenantId} AND "accountId"=${input.accountId} AND "sourceHash"=${sourceHash} LIMIT 1
-    `);
-    if(duplicate[0]) return {duplicate:true,importId:duplicate[0].id,inserted:0,deduplicated:parsed.lines.length,parserVersion:parsed.parserVersion};
     const importId=randomUUID();
-    await tx.$executeRaw(Prisma.sql`
+    const insertedImport=await tx.$queryRaw<Array<{id:string}>>(Prisma.sql`
       INSERT INTO "BankStatementImport" ("id","tenantId","accountId","fileName","format","parserName","parserVersion","sourceHash","rawContent","openingBalance","closingBalance","currency","status","sourceMetadata","uploadedBy")
       VALUES (${importId},${input.tenantId},${input.accountId},${input.fileName},${parsed.format},${parsed.parserName},${parsed.parserVersion},${sourceHash},${input.bytes},${parsed.openingBalance?money(parsed.openingBalance):null},${parsed.closingBalance?money(parsed.closingBalance):null},${parsed.currency},'imported',${safeJson(input.sourceMetadata||{})}::jsonb,${input.userId||null})
+      ON CONFLICT ("tenantId","accountId","sourceHash") DO NOTHING
+      RETURNING "id"
     `);
+    if(!insertedImport.length){
+      const existing=await tx.$queryRaw<Array<{id:string}>>(Prisma.sql`SELECT "id" FROM "BankStatementImport" WHERE "tenantId"=${input.tenantId} AND "accountId"=${input.accountId} AND "sourceHash"=${sourceHash} LIMIT 1`);
+      if(!existing[0]) throw new HttpError(409,'No fue posible reconstruir el import idempotente.',{code:'BANK_STATEMENT_IMPORT_STATE_UNAVAILABLE'});
+      return {duplicate:true,importId:existing[0].id,inserted:0,deduplicated:parsed.lines.length,parserVersion:parsed.parserVersion};
+    }
     let inserted=0;
     for(const line of parsed.lines){
       const id=randomUUID(); const lineHash=statementLineHash(line);
@@ -115,7 +156,7 @@ export async function importBankStatement(input:{tenantId:string;userId?:string;
       const changed=await tx.$executeRaw(Prisma.sql`
         INSERT INTO "BankStatementLine" ("id","tenantId","importId","accountId","bankLineId","lineHash","bookedAt","valueDate","amount","currency","reference","memo","counterparty","raw","normalized","status")
         VALUES (${id},${input.tenantId},${importId},${input.accountId},${line.bankLineId},${lineHash},${line.bookedAt},${line.valueDate},${money(line.amount)},${line.currency},${line.reference},${line.memo},${line.counterparty},${safeJson(line.raw)}::jsonb,${safeJson(normalized)}::jsonb,'unmatched')
-        ON CONFLICT ("tenantId","accountId","lineHash") DO NOTHING
+        ON CONFLICT DO NOTHING
       `);
       inserted+=Number(changed);
     }
@@ -158,16 +199,22 @@ async function targetCandidates(tenantId:string,line:StatementLineRow) {
     prisma.purchaseInvoice.findMany({where:{tenantId,issueDate:{gte:from,lte:to},status:{not:'cancelled'}},include:{supplier:true},take:100,orderBy:{issueDate:'desc'}}),
     prisma.ledgerEntry.findMany({where:{tenantId,date:{gte:from,lte:to},posted:true,reversalOfId:null},include:{lines:true},take:100,orderBy:{date:'desc'}})
   ]);
-  const rows:Array<{targetType:TargetType;targetId:string;label:string;amount:Prisma.Decimal;currency:string;date:Date;reference:string|null;partner:string|null;memo:string|null}>=[];
-  for(const row of movements){const amount=money(row.credit).gt(0)?money(row.credit):money(row.debit);rows.push({targetType:row.accountId===line.accountId?'bank_movement':'transfer',targetId:row.id,label:`${row.description} · ${row.account.bankName}`,amount,currency:row.account.currency,date:row.date,reference:row.reference,partner:null,memo:row.description});}
-  for(const row of sales) rows.push({targetType:'sales_invoice',targetId:row.id,label:`CxC ${row.number}${row.client?.name?` · ${row.client.name}`:''}`,amount:money(row.total),currency:row.currency||'VES',date:row.issueDate,reference:row.number,partner:row.client?.name||null,memo:row.notes||null});
-  for(const row of purchases) rows.push({targetType:'purchase_invoice',targetId:row.id,label:`CxP ${row.number}${row.supplier?.name?` · ${row.supplier.name}`:''}`,amount:money(row.total),currency:'VES',date:row.issueDate,reference:row.number,partner:row.supplier?.name||null,memo:null});
-  for(const row of ledger){const debit=add(...row.lines.map((item)=>item.debit));rows.push({targetType:'ledger_entry',targetId:row.id,label:`Asiento · ${row.description}`,amount:money(debit),currency:row.lines[0]?.currency||'VES',date:row.date,reference:row.sourceId||null,partner:null,memo:row.description});}
+  const rows:CandidateTarget[]=[];
+  for(const row of movements){
+    const amount=money(row.credit).gt(0)?money(row.credit):money(row.debit);
+    const movementDirection:'in'|'out'=money(row.credit).gt(0)?'in':'out';
+    const sameAccount=row.accountId===line.accountId;
+    rows.push({targetType:sameAccount?'bank_movement':'transfer',targetId:row.id,label:`${row.description} · ${row.account.bankName}`,amount,currency:row.account.currency,date:row.date,reference:row.reference,partner:null,memo:row.description,direction:sameAccount?movementDirection:oppositeDirection(movementDirection)});
+  }
+  for(const row of sales) rows.push({targetType:'sales_invoice',targetId:row.id,label:`CxC ${row.number}${row.client?.name?` · ${row.client.name}`:''}`,amount:money(row.total),currency:row.currency||'VES',date:row.issueDate,reference:row.number,partner:row.client?.name||null,memo:row.notes||null,direction:'in'});
+  for(const row of purchases) rows.push({targetType:'purchase_invoice',targetId:row.id,label:`CxP ${row.number}${row.supplier?.name?` · ${row.supplier.name}`:''}`,amount:money(row.total),currency:'VES',date:row.issueDate,reference:row.number,partner:row.supplier?.name||null,memo:null,direction:'out'});
+  for(const row of ledger){const debit=add(...row.lines.map((item)=>item.debit));rows.push({targetType:'ledger_entry',targetId:row.id,label:`Asiento · ${row.description}`,amount:money(debit),currency:row.lines[0]?.currency||'VES',date:row.date,reference:row.sourceId||null,partner:null,memo:row.description,direction:'any'});}
   return rows;
 }
 
-function scoreCandidate(line:StatementLineRow,target:{amount:Prisma.Decimal;currency:string;date:Date;reference:string|null;partner:string|null;memo:string|null},remaining:Prisma.Decimal):{confidence:number;reasons:string[];blockedReason:string|null} {
+function scoreCandidate(line:StatementLineRow,target:CandidateTarget,remaining:Prisma.Decimal):{confidence:number;reasons:string[];blockedReason:string|null} {
   if(target.currency!==line.currency) return {confidence:0,reasons:['currency_mismatch'],blockedReason:'FX_REQUIRES_EXPLICIT_POSTING'};
+  if(target.direction!=='any'&&target.direction!==lineDirection(line)) return {confidence:0,reasons:['direction_mismatch'],blockedReason:'DIRECTION_MISMATCH'};
   const reasons:string[]=[]; let score=0;
   const ref=normalize(line.reference),targetRef=normalize(target.reference);
   if(ref&&targetRef&&ref===targetRef){score+=0.55;reasons.push('exact_reference');}
@@ -185,50 +232,64 @@ function scoreCandidate(line:StatementLineRow,target:{amount:Prisma.Decimal;curr
 export async function getMatchingCandidates(tenantId:string,lineId:string) {
   const line=await getLine(tenantId,lineId); const targets=await targetCandidates(tenantId,line); const candidates:Candidate[]=[];
   for(const target of targets){
-    const used=await activeAllocatedForTarget(tenantId,target.targetType,target.targetId); const remaining=target.amount.minus(used);
+    const used=await activeAllocatedForTarget(prisma,tenantId,target.targetType,target.targetId); const remaining=target.amount.minus(used);
     if(!remaining.isPositive()) continue;
     const scored=scoreCandidate(line,target,remaining);
-    if(scored.confidence<0.05&& !scored.blockedReason) continue;
+    if(scored.confidence<0.05&&!scored.blockedReason) continue;
     candidates.push({targetType:target.targetType,targetId:target.targetId,label:target.label,amount:exact(target.amount),remaining:exact(remaining),currency:target.currency,date:target.date.toISOString(),reference:target.reference,partner:target.partner,confidence:scored.confidence,reasons:scored.reasons,blockedReason:scored.blockedReason});
   }
   candidates.sort((a,b)=>b.confidence-a.confidence || a.label.localeCompare(b.label));
   const actionable=candidates.filter((item)=>!item.blockedReason);
   const top=actionable[0]?.confidence||0; const tied=actionable.filter((item)=>item.confidence===top&&top>=0.70).length>1;
   const nextStatus:ReconciliationStatus=tied?'conflict':actionable.length?'suggested':'unmatched';
-  if(!['partial','reconciled'].includes(line.status)) await prisma.$executeRaw(Prisma.sql`UPDATE "BankStatementLine" SET "status"=${nextStatus} WHERE "tenantId"=${tenantId} AND "id"=${line.id}`);
-  await prisma.$executeRaw(Prisma.sql`INSERT INTO "BankReconciliationEvent" ("id","tenantId","statementLineId","type","payload") VALUES (${randomUUID()},${tenantId},${line.id},'candidates.generated',${safeJson({count:candidates.length,topConfidence:top,status:nextStatus})}::jsonb)`);
+  if(!['partial','reconciled'].includes(line.status)&&line.status!==nextStatus){
+    await prisma.$transaction(async(tx)=>{
+      await tx.$executeRaw(Prisma.sql`UPDATE "BankStatementLine" SET "status"=${nextStatus} WHERE "tenantId"=${tenantId} AND "id"=${line.id}`);
+      await tx.$executeRaw(Prisma.sql`INSERT INTO "BankReconciliationEvent" ("id","tenantId","statementLineId","type","payload") VALUES (${randomUUID()},${tenantId},${line.id},'candidates.generated',${safeJson({count:candidates.length,topConfidence:top,status:nextStatus})}::jsonb)`);
+    });
+  }
   return {line:{...line,amount:exact(line.amount)},status:nextStatus,autoThreshold:BANK_RECONCILIATION_AUTO_THRESHOLD,requiresReview:top<Number(BANK_RECONCILIATION_AUTO_THRESHOLD)||tied,candidates};
 }
 
-async function resolveTarget(tx:Prisma.TransactionClient,tenantId:string,type:TargetType,id:string) {
+async function resolveTarget(tx:Prisma.TransactionClient,tenantId:string,line:StatementLineRow,type:TargetType,id:string) {
   if(type==='bank_movement'||type==='transfer'){
     const row=await tx.bankMovement.findFirst({where:{id,tenantId},include:{account:true}}); if(!row) throw new HttpError(404,'Movimiento candidato no encontrado.');
-    const amount=money(row.credit).gt(0)?money(row.credit):money(row.debit); return {amount,currency:row.account.currency};
+    const sameAccount=row.accountId===line.accountId;
+    if(type==='bank_movement'&&!sameAccount) throw new HttpError(409,'El candidato pertenece a otra cuenta; usa tipo transfer.',{code:'BANK_RECONCILIATION_TARGET_TYPE_MISMATCH'});
+    if(type==='transfer'&&sameAccount) throw new HttpError(409,'Una transferencia debe apuntar a otra cuenta del tenant.',{code:'BANK_RECONCILIATION_TARGET_TYPE_MISMATCH'});
+    const amount=money(row.credit).gt(0)?money(row.credit):money(row.debit);
+    const movementDirection:'in'|'out'=money(row.credit).gt(0)?'in':'out';
+    const direction=sameAccount?movementDirection:oppositeDirection(movementDirection);
+    return {amount,currency:row.account.currency,direction};
   }
-  if(type==='sales_invoice') {const row=await tx.salesInvoice.findFirst({where:{id,tenantId}});if(!row)throw new HttpError(404,'CxC candidata no encontrada.');return {amount:money(row.total),currency:row.currency||'VES'};}
-  if(type==='purchase_invoice') {const row=await tx.purchaseInvoice.findFirst({where:{id,tenantId}});if(!row)throw new HttpError(404,'CxP candidata no encontrada.');return {amount:money(row.total),currency:'VES'};}
-  const row=await tx.ledgerEntry.findFirst({where:{id,tenantId,posted:true},include:{lines:true}});if(!row)throw new HttpError(404,'Asiento candidato no encontrado.');return {amount:add(...row.lines.map((item)=>item.debit)),currency:row.lines[0]?.currency||'VES'};
+  if(type==='sales_invoice') {const row=await tx.salesInvoice.findFirst({where:{id,tenantId}});if(!row)throw new HttpError(404,'CxC candidata no encontrada.');return {amount:money(row.total),currency:row.currency||'VES',direction:'in' as const};}
+  if(type==='purchase_invoice') {const row=await tx.purchaseInvoice.findFirst({where:{id,tenantId}});if(!row)throw new HttpError(404,'CxP candidata no encontrada.');return {amount:money(row.total),currency:'VES',direction:'out' as const};}
+  const row=await tx.ledgerEntry.findFirst({where:{id,tenantId,posted:true},include:{lines:true}});if(!row)throw new HttpError(404,'Asiento candidato no encontrado.');return {amount:add(...row.lines.map((item)=>item.debit)),currency:row.lines[0]?.currency||'VES',direction:'any' as const};
 }
 
-export async function reconcileStatementLine(input:{tenantId:string;userId?:string;lineId:string;idempotencyKey:string;allocations:Array<{targetType:TargetType;targetId:string;amount:string}>;confidence?:number;reasons?:string[]}) {
-  if(!input.idempotencyKey?.trim()) throw new HttpError(428,'Idempotency-Key es obligatorio para conciliar.',{code:'IDEMPOTENCY_KEY_REQUIRED'});
+export async function reconcileStatementLine(input:{tenantId:string;userId?:string;lineId:string;idempotencyKey:string;allocations:ReconciliationAllocationInput[];confidence?:number;reasons?:string[]}) {
+  const idempotencyKey=requireIdempotencyKey(input.idempotencyKey);
   if(!input.allocations.length||input.allocations.length>50) throw new HttpError(422,'Indica entre 1 y 50 asignaciones.');
+  const requestHash=reconciliationIntentHash(input);
   return prisma.$transaction(async(tx)=>{
-    const replay=await tx.$queryRaw<ReconciliationRow[]>(Prisma.sql`SELECT * FROM "BankReconciliation" WHERE "tenantId"=${input.tenantId} AND "idempotencyKey"=${input.idempotencyKey} LIMIT 1`);
-    if(replay[0]) return {replayed:true,reconciliation:replay[0],line:await getLine(input.tenantId,input.lineId,tx)};
+    const replay=await tx.$queryRaw<ReconciliationRow[]>(Prisma.sql`SELECT * FROM "BankReconciliation" WHERE "tenantId"=${input.tenantId} AND "idempotencyKey"=${idempotencyKey} LIMIT 1 FOR UPDATE`);
+    if(replay[0]) {assertIdempotencyIntent(replay[0],requestHash);return {replayed:true,reconciliation:replay[0],line:await getLine(input.tenantId,replay[0].statementLineId,tx)};}
     const line=await lockLine(tx,input.tenantId,input.lineId); const already=await activeAllocatedForLine(tx,input.tenantId,line.id); const lineRemaining=absoluteMoney(line.amount).minus(already);
     if(!lineRemaining.isPositive()) throw new HttpError(409,'La línea ya está conciliada completamente.',{code:'BANK_RECONCILIATION_ALREADY_COMPLETE'});
+    await lockAllocationTargets(tx,input.tenantId,input.allocations);
     let total=money(0);
     for(const allocation of input.allocations){
       const amount=money(allocation.amount); if(!amount.isPositive()) throw new HttpError(422,'Cada asignación debe ser mayor que cero.');
-      const target=await resolveTarget(tx,input.tenantId,allocation.targetType,allocation.targetId); if(target.currency!==line.currency) throw new HttpError(409,'No se permite conciliación FX implícita.',{code:'BANK_RECONCILIATION_FX_EXPLICIT_REQUIRED'});
-      const usedRows=await tx.$queryRaw<Array<{total:Prisma.Decimal|null}>>(Prisma.sql`SELECT COALESCE(SUM(a."amount"),0)::numeric(18,2) AS total FROM "BankReconciliationAllocation" a JOIN "BankReconciliation" r ON r."id"=a."reconciliationId" AND r."tenantId"=a."tenantId" WHERE a."tenantId"=${input.tenantId} AND a."targetType"=${allocation.targetType} AND a."targetId"=${allocation.targetId} AND r."status"='confirmed'`);
-      const targetRemaining=money(target.amount).minus(money(usedRows[0]?.total??ZERO)); if(amount.gt(targetRemaining)) throw new HttpError(409,'La asignación excede el saldo pendiente del candidato.',{code:'BANK_RECONCILIATION_TARGET_OVERALLOCATED',targetId:allocation.targetId,remaining:exact(targetRemaining)});
+      const target=await resolveTarget(tx,input.tenantId,line,allocation.targetType,allocation.targetId);
+      if(target.currency!==line.currency) throw new HttpError(409,'No se permite conciliación FX implícita.',{code:'BANK_RECONCILIATION_FX_EXPLICIT_REQUIRED'});
+      if(target.direction!=='any'&&target.direction!==lineDirection(line)) throw new HttpError(409,'La dirección del candidato no corresponde con la línea bancaria.',{code:'BANK_RECONCILIATION_DIRECTION_MISMATCH'});
+      const used=await activeAllocatedForTarget(tx,input.tenantId,allocation.targetType,allocation.targetId);
+      const targetRemaining=money(target.amount).minus(used); if(amount.gt(targetRemaining)) throw new HttpError(409,'La asignación excede el saldo pendiente del candidato.',{code:'BANK_RECONCILIATION_TARGET_OVERALLOCATED',targetId:allocation.targetId,remaining:exact(targetRemaining)});
       total=total.plus(amount);
     }
     if(total.gt(lineRemaining)) throw new HttpError(409,'La suma de asignaciones excede la línea del extracto.',{code:'BANK_RECONCILIATION_LINE_OVERALLOCATED',remaining:exact(lineRemaining)});
     const id=randomUUID(); const kind=total.eq(lineRemaining)&&already.isZero()?'match':'partial';
-    await tx.$executeRaw(Prisma.sql`INSERT INTO "BankReconciliation" ("id","tenantId","accountId","statementLineId","kind","status","confidence","reasons","matchedAmount","idempotencyKey","createdBy") VALUES (${id},${input.tenantId},${line.accountId},${line.id},${kind},'confirmed',${input.confidence??null},${safeJson(input.reasons||['manual_review'])}::jsonb,${total},${input.idempotencyKey},${input.userId||null})`);
+    await tx.$executeRaw(Prisma.sql`INSERT INTO "BankReconciliation" ("id","tenantId","accountId","statementLineId","kind","status","confidence","reasons","matchedAmount","idempotencyKey","requestHash","createdBy") VALUES (${id},${input.tenantId},${line.accountId},${line.id},${kind},'confirmed',${input.confidence??null},${safeJson(input.reasons||['manual_review'])}::jsonb,${total},${idempotencyKey},${requestHash},${input.userId||null})`);
     for(const allocation of input.allocations) await tx.$executeRaw(Prisma.sql`INSERT INTO "BankReconciliationAllocation" ("id","tenantId","reconciliationId","targetType","targetId","amount") VALUES (${randomUUID()},${input.tenantId},${id},${allocation.targetType},${allocation.targetId},${money(allocation.amount)})`);
     const state=await recalcLineStatus(tx,input.tenantId,line);
     await tx.$executeRaw(Prisma.sql`INSERT INTO "BankReconciliationEvent" ("id","tenantId","statementLineId","reconciliationId","type","payload","actorId") VALUES (${randomUUID()},${input.tenantId},${line.id},${id},'reconciliation.confirmed',${safeJson({kind,allocations:input.allocations,state})}::jsonb,${input.userId||null})`);
@@ -243,26 +304,31 @@ export async function listReconciliationModels(tenantId:string) {
 }
 
 export async function createReconciliationModel(input:{tenantId:string;userId?:string;name:string;memoPattern:string;accountCode:string;accountName:string;reasonCode:string;autoApply?:boolean;minConfidence?:string}) {
-  const account=await prisma.chartAccount.findFirst({where:{tenantId:input.tenantId,code:input.accountCode,active:true,allowPosting:true},select:{code:true}});
+  const account=await prisma.chartAccount.findFirst({where:{tenantId:input.tenantId,code:input.accountCode,active:true,allowPosting:true},select:{code:true,name:true}});
   if(!account) throw new HttpError(422,'La cuenta contable del modelo no existe o no permite posting.');
   const rows=await prisma.$queryRaw<Array<{version:number}>>(Prisma.sql`SELECT COALESCE(MAX("version"),0)+1 AS version FROM "BankReconciliationModel" WHERE "tenantId"=${input.tenantId} AND "name"=${input.name}`);
   const version=Number(rows[0]?.version||1); const min=Number(input.minConfidence??BANK_RECONCILIATION_AUTO_THRESHOLD);
   if(!Number.isFinite(min)||min<0||min>1) throw new HttpError(422,'minConfidence debe estar entre 0 y 1.');
   const id=randomUUID();
-  const created=await prisma.$queryRaw<Array<any>>(Prisma.sql`INSERT INTO "BankReconciliationModel" ("id","tenantId","name","version","active","memoPattern","accountCode","accountName","reasonCode","autoApply","minConfidence","createdBy") VALUES (${id},${input.tenantId},${input.name},${version},true,${input.memoPattern},${input.accountCode},${input.accountName},${input.reasonCode},${Boolean(input.autoApply)},${min},${input.userId||null}) RETURNING *`);
+  const created=await prisma.$queryRaw<Array<any>>(Prisma.sql`INSERT INTO "BankReconciliationModel" ("id","tenantId","name","version","active","memoPattern","accountCode","accountName","reasonCode","autoApply","minConfidence","createdBy") VALUES (${id},${input.tenantId},${input.name},${version},true,${input.memoPattern},${account.code},${account.name},${input.reasonCode},${Boolean(input.autoApply)},${min},${input.userId||null}) RETURNING *`);
   return created[0];
 }
 
 export async function createWriteoff(input:{tenantId:string;userId:string;lineId:string;idempotencyKey:string;amount:string;writeoffAccountCode:string;bankLedgerAccountCode:string;reason:string;fiscalPeriod:string;approvalRequestId?:string|null}) {
-  if(!input.idempotencyKey?.trim()) throw new HttpError(428,'Idempotency-Key es obligatorio para write-off.',{code:'IDEMPOTENCY_KEY_REQUIRED'});
-  const existing=await prisma.$queryRaw<ReconciliationRow[]>(Prisma.sql`SELECT * FROM "BankReconciliation" WHERE "tenantId"=${input.tenantId} AND "idempotencyKey"=${input.idempotencyKey} LIMIT 1`);
-  if(existing[0]?.status==='confirmed') return {replayed:true,reconciliation:existing[0]};
+  const idempotencyKey=requireIdempotencyKey(input.idempotencyKey);
   const line=await getLine(input.tenantId,input.lineId); const amount=money(input.amount);
   if(!amount.isPositive()) throw new HttpError(422,'El write-off debe ser mayor que cero.');
   const accounts=await prisma.chartAccount.findMany({where:{tenantId:input.tenantId,code:{in:[input.writeoffAccountCode,input.bankLedgerAccountCode]},active:true,allowPosting:true},select:{code:true,name:true}});
   const writeoff=accounts.find((item)=>item.code===input.writeoffAccountCode), bankGl=accounts.find((item)=>item.code===input.bankLedgerAccountCode);
   if(!writeoff||!bankGl) throw new HttpError(422,'Ambas cuentas contables deben existir, estar activas y permitir posting.');
   const approvalPayload={lineId:line.id,accountId:line.accountId,amount:exact(amount),currency:line.currency,writeoffAccountCode:writeoff.code,bankLedgerAccountCode:bankGl.code,reason:input.reason,fiscalPeriod:input.fiscalPeriod};
+  const requestHash=canonicalRequestHash({operation:'writeoff',...approvalPayload,approvalRequestId:input.approvalRequestId||null});
+  const existing=await prisma.$queryRaw<ReconciliationRow[]>(Prisma.sql`SELECT * FROM "BankReconciliation" WHERE "tenantId"=${input.tenantId} AND "idempotencyKey"=${idempotencyKey} LIMIT 1`);
+  if(existing[0]) assertIdempotencyIntent(existing[0],requestHash);
+  if(existing[0]?.status==='confirmed') {
+    if(input.approvalRequestId) await finishApprovalClaim({id:input.approvalRequestId} as any,'BankReconciliation',existing[0].id);
+    return {replayed:true,reconciliation:existing[0]};
+  }
   let claim:any=null; let reconciliation=existing[0]||null; let ledgerPosted=false;
   if(reconciliation){
     const metadata=Array.isArray(reconciliation.reasons)?reconciliation.reasons:[];
@@ -274,7 +340,7 @@ export async function createWriteoff(input:{tenantId:string;userId:string;lineId
       reconciliation=await prisma.$transaction(async(tx)=>{
         const locked=await lockLine(tx,input.tenantId,line.id); const allocated=await activeAllocatedForLine(tx,input.tenantId,line.id); const remaining=absoluteMoney(locked.amount).minus(allocated);
         if(amount.gt(remaining)) throw new HttpError(409,'El write-off excede el saldo pendiente de la línea.',{code:'BANK_RECONCILIATION_LINE_OVERALLOCATED',remaining:exact(remaining)});
-        const id=randomUUID(); const rows=await tx.$queryRaw<ReconciliationRow[]>(Prisma.sql`INSERT INTO "BankReconciliation" ("id","tenantId","accountId","statementLineId","kind","status","confidence","reasons","matchedAmount","writeoffAccountCode","writeoffReason","idempotencyKey","createdBy") VALUES (${id},${input.tenantId},${locked.accountId},${locked.id},'writeoff','pending',1,${safeJson(['writeoff_manual',{approvalRequestId:String(input.approvalRequestId||'')}])}::jsonb,${amount},${writeoff.code},${input.reason},${input.idempotencyKey},${input.userId}) RETURNING *`);
+        const id=randomUUID(); const rows=await tx.$queryRaw<ReconciliationRow[]>(Prisma.sql`INSERT INTO "BankReconciliation" ("id","tenantId","accountId","statementLineId","kind","status","confidence","reasons","matchedAmount","writeoffAccountCode","writeoffReason","idempotencyKey","requestHash","createdBy") VALUES (${id},${input.tenantId},${locked.accountId},${locked.id},'writeoff','pending',1,${safeJson(['writeoff_manual',{approvalRequestId:String(input.approvalRequestId||'')}])}::jsonb,${amount},${writeoff.code},${input.reason},${idempotencyKey},${requestHash},${input.userId}) RETURNING *`);
         return rows[0];
       });
     } catch(error){await releaseApprovalClaim(claim);throw error;}
