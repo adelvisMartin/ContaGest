@@ -5,13 +5,14 @@ import { DOCUMENT_CLASSIFICATIONS, DocumentIngestionService } from './document-e
 import { createPdfJsDocumentExtractor, documentExtractorCapability } from './document-extractor.js';
 import { OPERATOR_DOCUMENT_AUTHORITIES } from './document-policy.js';
 import { PostgresDocumentStore } from './document.store.js';
-import { operatorTokenValid } from '../hipico-bot/hipico-operator-security.js';
+import { operatorActorRef, operatorTokenValid } from '../hipico-bot/hipico-operator-security.js';
 
 const router=Router();const store=new PostgresDocumentStore();const service=new DocumentIngestionService(store,createPdfJsDocumentExtractor());
 const groupSchema=z.string().trim().min(3).max(120).regex(/^[A-Za-z0-9._:-]+$/);const uuidSchema=z.string().uuid();const classificationSchema=z.enum(DOCUMENT_CLASSIFICATIONS);const authoritySchema=z.enum(OPERATOR_DOCUMENT_AUTHORITIES);
 function requestId(req:Request){return String((req as any).requestId||'').trim()||null;}
 function ownerId(){const value=String(process.env.HIPICO_OWNER_ID||'').trim();if(!uuidSchema.safeParse(value).success)throw Object.assign(new Error('HIPICO_OWNER_NOT_CONFIGURED'),{code:'HIPICO_OWNER_NOT_CONFIGURED'});return value;}
 function groupKey(req:Request){const parsed=groupSchema.safeParse(req.header('x-hipico-group-key')||req.query.groupKey);if(!parsed.success)throw Object.assign(new Error('HIPICO_DOCUMENT_GROUP_INVALID'),{code:'HIPICO_DOCUMENT_GROUP_INVALID'});return parsed.data;}
+function actorRef(){const value=operatorActorRef();if(!value)throw Object.assign(new Error('HIPICO_OPERATOR_ACTOR_NOT_CONFIGURED'),{code:'HIPICO_OPERATOR_ACTOR_NOT_CONFIGURED'});return value;}
 function header(req:Request,name:string,max=320){const value=String(req.header(name)||'').trim();if(!value)return null;if(value.length>max)throw Object.assign(new Error('HIPICO_DOCUMENT_HEADER_TOO_LONG'),{code:'HIPICO_DOCUMENT_HEADER_TOO_LONG'});return value;}
 function requestedAuthority(req:Request){const raw=String(req.header('x-hipico-document-authority')||'operator').trim();const parsed=authoritySchema.safeParse(raw);if(!parsed.success)throw Object.assign(new Error('HIPICO_DOCUMENT_AUTHORITY_INVALID'),{code:'HIPICO_DOCUMENT_AUTHORITY_INVALID'});return parsed.data;}
 function statusFor(code:string){
@@ -19,7 +20,7 @@ function statusFor(code:string){
   if(code==='PDF_TOO_LARGE'||code==='PDF_PAGE_LIMIT_EXCEEDED'||code==='entity.too.large')return 413;
   if(code.includes('REPLAY_MISMATCH')||code==='HIPICO_DOCUMENT_EXTRACTION_IN_PROGRESS'||code==='HIPICO_DOCUMENT_EXTRACTION_CLAIM_FAILED'||code==='HIPICO_DOCUMENT_STATUS_NOT_APPROVABLE')return 409;
   if(code==='HIPICO_DOCUMENT_EXTRACTION_TIMEOUT'||code==='HIPICO_DOCUMENT_TOOL_TIMEOUT')return 504;
-  if(code==='HIPICO_DOCUMENT_EXTRACTOR_NOT_CONFIGURED'||code==='HIPICO_DOCUMENT_OCR_NOT_CONFIGURED'||code==='HIPICO_DOCUMENT_FAILURE_AUDIT_FAILED')return 503;
+  if(code==='HIPICO_DOCUMENT_EXTRACTOR_NOT_CONFIGURED'||code==='HIPICO_DOCUMENT_OCR_NOT_CONFIGURED'||code==='HIPICO_DOCUMENT_FAILURE_AUDIT_FAILED'||code==='HIPICO_OPERATOR_ACTOR_NOT_CONFIGURED')return 503;
   if(code==='HIPICO_DOCUMENT_EXTRACTION_FAILED')return 502;
   if(code==='HIPICO_OWNER_NOT_CONFIGURED')return 503;
   if(code==='HIPICO_DOCUMENT_OFFICIAL_AUTHORITY_REQUIRED')return 403;
@@ -38,6 +39,6 @@ router.get('/',async(req,res)=>{try{return res.json({ok:true,data:await store.li
 router.get('/:id',async(req,res)=>{try{const id=uuidSchema.parse(req.params.id),group=groupKey(req),owner=ownerId();const document=await store.get(owner,group,id);if(!document)throw Object.assign(new Error('HIPICO_DOCUMENT_NOT_FOUND'),{code:'HIPICO_DOCUMENT_NOT_FOUND'});const [sources,events]=await Promise.all([store.sources(owner,group,id),store.events(owner,group,id)]);return res.json({ok:true,data:{...document,sources,events}});}catch(error){return sendError(req,res,error);}});
 router.get('/:id/extraction',async(req,res)=>{try{const id=uuidSchema.parse(req.params.id);const document=await store.get(ownerId(),groupKey(req),id);if(!document)throw Object.assign(new Error('HIPICO_DOCUMENT_NOT_FOUND'),{code:'HIPICO_DOCUMENT_NOT_FOUND'});return res.json({ok:true,data:{id:document.id,status:document.status,classification:document.classification,confidence:document.confidence,parserVersion:document.parserVersion,extraction:document.extraction}});}catch(error){return sendError(req,res,error);}});
 router.post('/:id/reprocess',async(req,res)=>{try{return res.json({ok:true,data:await service.reprocessExisting({id:uuidSchema.parse(req.params.id),ownerId:ownerId(),groupKey:groupKey(req)})});}catch(error){return sendError(req,res,error);}});
-router.post('/:id/approve',async(req,res)=>{try{const parsed=z.object({classification:classificationSchema,operatorId:z.string().trim().min(1).max(220)}).parse(req.body||{});await store.approve(ownerId(),groupKey(req),uuidSchema.parse(req.params.id),parsed.classification,parsed.operatorId);return res.json({ok:true,data:{id:req.params.id,classification:parsed.classification,status:'approved',financialAuthority:false,settlementApplied:false}});}catch(error){return sendError(req,res,error);}});
+router.post('/:id/approve',async(req,res)=>{try{const parsed=z.object({classification:classificationSchema}).strict().parse(req.body||{}),actor=actorRef();await store.approve(ownerId(),groupKey(req),uuidSchema.parse(req.params.id),parsed.classification,actor);return res.json({ok:true,data:{id:req.params.id,classification:parsed.classification,status:'approved',financialAuthority:false,settlementApplied:false}});}catch(error){return sendError(req,res,error);}});
 router.use((error:any,req:Request,res:Response,_next:any)=>sendError(req,res,error));
 export default router;
