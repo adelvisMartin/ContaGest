@@ -35,7 +35,7 @@ const MOCK = {
 async function mount(page, state) {
   await page.goto('/hipico-control/recovery.html');
   await page.evaluate(async ({ state }) => {
-    document.head.insertAdjacentHTML('beforeend', '<link rel="stylesheet" href="/hipico-control/assets/css/app.css">');
+    document.head.insertAdjacentHTML('beforeend', '<link rel="stylesheet" href="/hipico-control/assets/css/app.css"><link rel="stylesheet" href="/hipico-control/assets/css/mobile-accessibility.css">');
     const { renderCommandCenter } = await import('/hipico-control/assets/js/command-center.js');
     document.body.innerHTML = `<main class="content">${renderCommandCenter(state)}</main>`;
   }, { state });
@@ -47,7 +47,7 @@ async function noHorizontalOverflow(page) {
 }
 
 for (const width of [360, 390, 430]) {
-  test(`Command Center success is usable at ${width}px`, async ({ page }) => {
+  test(`Command Center success is usable at ${width}px with 44px critical action`, async ({ page }) => {
     await page.setViewportSize({ width, height: 844 });
     await mount(page, { status: 'success', data: MOCK, error: '', updatedAt: '2026-09-11T20:00:00.000Z', stale: false });
     await expect(page.getByRole('heading', { name: 'Command Center' })).toBeVisible();
@@ -55,12 +55,14 @@ for (const width of [360, 390, 430]) {
     await expect(page.getByText('Carrera actual')).toBeVisible();
     await noHorizontalOverflow(page);
     const refresh = page.getByRole('button', { name: 'Actualizar' });
+    const box = await refresh.boundingBox();
+    expect(box?.height || 0).toBeGreaterThanOrEqual(44);
     await refresh.focus();
     await expect(refresh).toBeFocused();
   });
 }
 
-test('loading, error, empty and disabled/offline states remain explicit', async ({ page }) => {
+test('loading error empty and disabled/offline states remain explicit', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await mount(page, { status: 'loading', data: null, error: '', updatedAt: null, stale: false });
   await expect(page.getByText('Cargando')).toBeVisible();
@@ -95,6 +97,18 @@ test('Light Dark and System render without horizontal clipping and reduced motio
   }
   const reduced = await page.evaluate(() => matchMedia('(prefers-reduced-motion: reduce)').media);
   expect(reduced).toContain('prefers-reduced-motion');
+});
+
+test('landscape and keyboard-sized viewport keep the Command Center navigable', async ({ page }) => {
+  for (const viewport of [{ width: 844, height: 390 }, { width: 390, height: 500 }]) {
+    await page.setViewportSize(viewport);
+    await mount(page, { status: 'success', data: MOCK, error: '', updatedAt: '2026-09-11T20:00:00.000Z', stale: false });
+    await expect(page.getByRole('heading', { name: 'Command Center' })).toBeVisible();
+    await noHorizontalOverflow(page);
+    const geometry = await page.evaluate(() => ({ scrollHeight: document.documentElement.scrollHeight, clientHeight: document.documentElement.clientHeight, overflowY: getComputedStyle(document.documentElement).overflowY }));
+    expect(geometry.scrollHeight).toBeGreaterThan(geometry.clientHeight);
+    expect(geometry.overflowY).not.toBe('hidden');
+  }
 });
 
 test('200 percent zoom keeps Command Center vertically navigable', async ({ page }) => {

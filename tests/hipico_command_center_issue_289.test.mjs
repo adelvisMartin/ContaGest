@@ -12,6 +12,7 @@ test('canonical backend mounts Command Center below /api/v1/hipico and keeps bot
   ]);
   assert.match(app, /hipicoCommandCenterRoutes/);
   assert.match(app, /app\.use\('\/api\/v1\/hipico', authRateLimit, hipicoCommandCenterRoutes\)/);
+  assert.match(app, /app\.use\('\/api\/v1\/hipico-bot', hipicoWebhookRoutes\)/);
   assert.match(route, /router\.get\('\/command-center'/);
   assert.match(route, /operatorTokenValid/);
   assert.match(route, /Cache-Control.*no-store/);
@@ -19,6 +20,24 @@ test('canonical backend mounts Command Center below /api/v1/hipico and keeps bot
     assert.match(service, new RegExp(capability));
   }
   assert.match(service, /sourceSendPossible:\s*false/);
+});
+
+test('canonical read APIs expose groups messages event history SSE and trace behind operator auth', async () => {
+  const [app, route] = await Promise.all([
+    read('backend/src/app.ts'),
+    read('backend/src/modules/hipico/operator-read.routes.ts')
+  ]);
+  assert.match(app, /hipicoOperatorReadRoutes/);
+  assert.match(app, /app\.use\('\/api\/v1\/hipico', authRateLimit, hipicoOperatorReadRoutes\)/);
+  assert.match(route, /operatorTokenValid/);
+  assert.match(route, /Cache-Control.*no-store/);
+  for (const endpoint of ["'/groups'", "'/messages'", "'/events'", "'/events/stream'", "'/trace/:correlationId'"]) {
+    assert.ok(route.includes(endpoint), `missing canonical local endpoint ${endpoint}`);
+  }
+  assert.match(route, /text\/event-stream/);
+  assert.match(route, /X-Accel-Buffering/);
+  assert.match(route, /owner_id=\$\{owner\}::uuid/);
+  assert.match(route, /group_key=\$\{group\}|channel_key=\$\{group\}/);
 });
 
 test('PWA BFF authenticates owner and never exposes operator secret to browser runtime', async () => {
@@ -74,16 +93,26 @@ test('Android parity gate has an explicit finite CSS authority and includes new 
   assert.match(sync, /sha256/);
 });
 
-test('local CLI is read-safe by default and refuses insecure remote HTTP', async () => {
-  const cli = await read('scripts/hipico-cli.mjs');
+test('one canonical local CLI powers npm and Windows launchers and refuses insecure remote HTTP', async () => {
+  const [cli, pkg, cmd, powershell] = await Promise.all([
+    read('tools/hipico-cli/hipico.mjs'),
+    read('package.json'),
+    read('HIPICO.cmd'),
+    read('HIPICO.ps1')
+  ]);
+  assert.match(pkg, /"hipico":\s*"node tools\/hipico-cli\/hipico\.mjs"/);
+  assert.match(cmd, /tools\\hipico-cli\\hipico\.mjs/i);
+  assert.match(powershell, /tools[\\/]hipico-cli[\\/]hipico\.mjs/i);
   assert.match(cli, /HIPICO_CLI_REMOTE_HTTP_FORBIDDEN/);
   assert.match(cli, /http:\/\/127\.0\.0\.1:3030/);
   assert.match(cli, /HIPICO_OPERATOR_CONTROL_TOKEN/);
   assert.match(cli, /HIPICO_GROUP_BRIDGE_TOKEN/);
   assert.doesNotMatch(cli, /--token/);
-  for (const command of ['version','status','readiness','command-center','providers','meetings','races','documents','bridge-health','doctor']) {
-    assert.match(cli, new RegExp(command.replace('-', '\\-')));
+  for (const command of ['version','status','readiness','command-center','groups','meetings','races','documents','providers','messages tail','events tail','events stream','trace','bridge-health','doctor']) {
+    assert.ok(cli.includes(command), `missing CLI command ${command}`);
   }
+  assert.match(cli, /\/api\/v1\/hipico\/events\?limit=/);
+  assert.match(cli, /\/api\/v1\/hipico\/events\/stream/);
 });
 
 test('design-system document defines observable states and WCAG/mobile contracts', async () => {

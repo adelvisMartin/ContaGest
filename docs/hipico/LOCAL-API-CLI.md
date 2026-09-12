@@ -4,6 +4,8 @@
 
 La API de dominio es `/api/v1/hipico/*`. Los endpoints `/api/v1/hipico-bot/*` se mantienen como adapters de integración/compatibilidad para WhatsApp, Bridge y transporte; no son el dominio canónico de carreras, documentos, providers o agentes.
 
+Existe **una sola CLI canónica**: `tools/hipico-cli/hipico.mjs`. `HIPICO.cmd`, `HIPICO.ps1` y `npm run hipico -- ...` delegan a ese mismo archivo. No debe aparecer una segunda implementación paralela.
+
 En desarrollo local el CLI usa por defecto `http://127.0.0.1:3030`. HTTP remoto está prohibido por el CLI; una URL no local debe usar HTTPS explícito.
 
 ## Variables locales
@@ -28,16 +30,37 @@ Desde la raíz del repositorio:
 npm run hipico -- version --json
 npm run hipico -- status --json
 npm run hipico -- readiness --json
-npm run hipico -- doctor --json
+npm run hipico -- doctor --group group-1 --json
 npm run hipico -- command-center --group group-1 --json
+npm run hipico -- groups --json
 npm run hipico -- meetings --group group-1 --json
 npm run hipico -- races --group group-1 --json
 npm run hipico -- documents --group group-1 --json
-npm run hipico -- providers --group group-1 --json
+npm run hipico -- providers --json
+npm run hipico -- messages tail --group group-1 --limit 50 --json
+npm run hipico -- events tail --group group-1 --limit 50 --json
+npm run hipico -- events stream --group group-1
+npm run hipico -- trace corr-123 --group group-1 --json
 npm run hipico -- bridge-health --json
 ```
 
-`doctor` sólo realiza lecturas. No abre/cierra carreras, no publica resultados y no toca ledger/saldos.
+`doctor`, `tail`, `trace` y Command Center son lecturas. No abren/cierran carreras, no publican resultados y no tocan ledger/saldos. `events stream` usa Server-Sent Events y por eso no admite `--json`; para una lectura JSON puntual se usa `events tail`.
+
+## Contrato de error
+
+Las APIs canónicas y el BFF del Command Center devuelven, cuando falla una petición:
+
+```json
+{
+  "ok": false,
+  "code": "HIPICO_...",
+  "message": "Descripción segura",
+  "requestId": "... o null",
+  "retryable": false
+}
+```
+
+Los secretos, tokens y payloads privados nunca forman parte del error.
 
 ## Endpoints canónicos
 
@@ -59,6 +82,18 @@ Son lecturas `no-store` para versionado/readiness.
 Agrega backend/DB/Bridge/canales/providers/agente/meeting/carrera actual/próxima/documentos/cola/conflictos/alertas. No contiene secretos ni bytes PDF.
 
 La PWA **no** recibe el token operador. Usa `GET /api/hipico/command-center` (BFF serverless): valida la sesión Supabase del dueño y el servidor añade las credenciales internas al delegar al backend canónico.
+
+### Observación local y trazabilidad
+
+Todos requieren token operador; `messages`, `events`, `events/stream` y `trace` requieren además `x-hipico-group-key`.
+
+- `GET /api/v1/hipico/groups` — canales/grupos observables del owner.
+- `GET /api/v1/hipico/messages?limit=50&before=<ISO>` — historial paginado de mensajes normalizados.
+- `GET /api/v1/hipico/events?limit=50&before=<ISO>` — historial JSON de eventos operativos.
+- `GET /api/v1/hipico/events/stream?since=<ISO>` — SSE real, `text/event-stream`, heartbeat y ventana acotada con reconexión.
+- `GET /api/v1/hipico/trace/:correlationId` — correlaciona race events, mensajes y eventos operativos sin búsquedas cross-group.
+
+El stream no sustituye PostgreSQL como fuente de verdad y no modifica estado. El cliente debe reconectar al recibir `event: end`.
 
 ### Meetings y carreras
 
@@ -83,7 +118,7 @@ Los comandos requieren `requestId`, `expectedState`, actor, `correlationId` y ev
 - `POST /api/v1/hipico/documents/:id/reprocess`
 - `POST /api/v1/hipico/documents/:id/approve`
 
-Raw PDF permanece server-side. El engine rechaza PDF vacío/corrupto, contenido activo hostil, exceso de tamaño/páginas y controla autoridad de `OFFICIAL_RESULT`.
+Raw PDF permanece server-side. El engine rechaza PDF vacío/corrupto, contenido activo hostil, exceso de tamaño/páginas y controla autoridad de `OFFICIAL_RESULT`. La extracción de producción usa texto nativo primero y OCR sólo cuando el documento realmente lo requiere.
 
 ### Providers/live
 
@@ -97,7 +132,7 @@ Raw PDF permanece server-side. El engine rechaza PDF vacío/corrupto, contenido 
 - `GET /api/v1/hipico/live/:providerId/races/:externalId/scratches`
 - `GET /api/v1/hipico/live/:providerId/races/:externalId/result`
 
-Providers son fuentes informativas; `financialAuthority=false`.
+Providers son fuentes informativas; `financialAuthority=false`. El adapter actual sólo declara como disponibles las capacidades que realmente soporta.
 
 ### Agente/Shadow
 
@@ -131,8 +166,9 @@ La captura oficial es SOURCE read-only → LAB shadow mientras no exista promoci
 ## Seguridad local
 
 - Backend/CLI no deben imprimir tokens.
-- El CLI impide HTTP no local.
-- Command Center/BFF usa `Cache-Control: no-store`.
+- El CLI impide HTTP remoto no cifrado.
+- Command Center/BFF y lecturas operativas usan `Cache-Control: no-store`.
 - Service Worker no cachea `/api`, `/auth`, RPC, webhook ni metadata runtime.
 - Los endpoints de operador fallan cerrados si el token es débil/ausente.
-- Los IDs de grupo se validan antes de construir URLs o queries.
+- Los IDs de grupo/correlación se validan antes de construir URLs o queries.
+- Las consultas de traza están limitadas por owner + group y no aceptan SQL, paths ni URLs del usuario.
