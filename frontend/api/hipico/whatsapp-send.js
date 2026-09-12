@@ -1,4 +1,4 @@
-import { bearerTokenValid, env, fetchWithTimeout, isE164, metaDestinationAllowed, metaOutboundPolicy, retryAfterMs, serverSecret, supabase } from './_shared.js';
+import { bearerTokenValid, env, fetchWithTimeout, isE164, metaDestinationAllowed, metaOutboundPolicy, retryAfterMs, runtimeValue, serverSecret, supabase } from './_shared.js';
 import { DEFAULT_META_GRAPH_VERSION, metaGraphVersionConfig, metaSenderConfig } from './meta-runtime.js';
 
 const MAX_ATTEMPTS = 6;
@@ -82,6 +82,10 @@ function safeGraphVersion(source = process.env) {
   return config.graphVersionValid ? config.graphVersion : DEFAULT_META_GRAPH_VERSION;
 }
 
+function sendTimeoutMs(source = process.env) {
+  return Number(runtimeValue(source, 'HIPICO_CLOUD_SEND_TIMEOUT_MS', 'HIPICO_META_SEND_TIMEOUT_MS') || 12000);
+}
+
 export default async function handler(req, res) {
   res.setHeader('Cache-Control', 'no-store, max-age=0');
   if (req.method !== 'POST') return res.status(405).json({ ok: false, retryable: false, error: 'method_not_allowed' });
@@ -153,7 +157,7 @@ export default async function handler(req, res) {
             type: 'text',
             text: { preview_url: false, body: text }
           })
-        }, Number(process.env.HIPICO_META_SEND_TIMEOUT_MS || 12000));
+        }, sendTimeoutMs());
       } catch (error) {
         await updateRow(row.id, {
           status: 'reconciliation_required',
@@ -210,4 +214,4 @@ export default async function handler(req, res) {
   }
 }
 
-export const __test__={safeGraphVersion,metaSenderConfig,nextRetryIso,sendLeaseExpiryIso,quarantineExpiredSendingClaims,SEND_LEASE_MS,STALE_CLAIM_SCAN_LIMIT};
+export const __test__={safeGraphVersion,metaSenderConfig,nextRetryIso,sendLeaseExpiryIso,sendTimeoutMs,quarantineExpiredSendingClaims,SEND_LEASE_MS,STALE_CLAIM_SCAN_LIMIT};
