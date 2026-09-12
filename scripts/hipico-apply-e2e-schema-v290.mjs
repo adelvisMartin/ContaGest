@@ -9,6 +9,7 @@ const migrations = [
   'supabase/sql/hipico_v12_operations.sql',
   'supabase/sql/hipico_v12_group_bridge.sql',
   'supabase/sql/hipico_v12_shadow_validation.sql',
+  'supabase/sql/hipico_v13_workspace_sync_security.sql',
   'supabase/sql/hipico_v13_lab_channel_bootstrap.sql',
   'supabase/sql/hipico_v14_documents.sql',
   'supabase/sql/hipico_v15_race_lifecycle.sql',
@@ -35,12 +36,24 @@ try {
   await client.query(`DO $$ BEGIN CREATE ROLE anon NOLOGIN; EXCEPTION WHEN duplicate_object THEN NULL; END $$`);
   await client.query(`DO $$ BEGIN CREATE ROLE authenticated NOLOGIN; EXCEPTION WHEN duplicate_object THEN NULL; END $$`);
   await client.query('CREATE SCHEMA IF NOT EXISTS auth');
-  await client.query(`CREATE OR REPLACE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql STABLE AS $$ SELECT NULL::uuid $$`);
+  await client.query(`CREATE OR REPLACE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql STABLE AS $$
+    SELECT NULLIF(current_setting('request.jwt.claim.sub', true), '')::uuid
+  $$`);
+  await client.query(`CREATE OR REPLACE FUNCTION auth.jwt() RETURNS jsonb LANGUAGE sql STABLE AS $$
+    SELECT COALESCE(NULLIF(current_setting('request.jwt.claims', true), '')::jsonb, '{}'::jsonb)
+  $$`);
   await client.query(`CREATE TABLE IF NOT EXISTS public.hipico_workspaces (
-    id uuid PRIMARY KEY DEFAULT gen_random_uuid(), owner_id uuid NOT NULL,
-    state jsonb NOT NULL DEFAULT '{}'::jsonb, created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now()
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    owner_id uuid NOT NULL UNIQUE,
+    name text NOT NULL DEFAULT 'Control Hípico',
+    state jsonb NOT NULL DEFAULT '{}'::jsonb CHECK (jsonb_typeof(state) = 'object'),
+    version bigint NOT NULL DEFAULT 1 CHECK (version > 0),
+    created_at timestamptz NOT NULL DEFAULT now(),
+    updated_at timestamptz NOT NULL DEFAULT now()
   )`);
-  await client.query(`INSERT INTO public.hipico_workspaces(owner_id,state) SELECT $1::uuid,'{}'::jsonb WHERE NOT EXISTS (SELECT 1 FROM public.hipico_workspaces WHERE owner_id=$1::uuid)`, [ownerId]);
+  await client.query(`INSERT INTO public.hipico_workspaces(owner_id,name,state,version)
+    VALUES($1::uuid,'Control Hípico E2E','{}'::jsonb,1)
+    ON CONFLICT(owner_id) DO NOTHING`, [ownerId]);
   await client.query('COMMIT');
 
   for (const relative of migrations) {
@@ -49,6 +62,7 @@ try {
     await client.query(sql);
   }
   const required = [
+    'hipico_workspaces','hipico_profiles','hipico_audit_events',
     'hipico_bot_channels','hipico_messages','hipico_operation_events','hipico_shadow_evaluations',
     'hipico_documents','hipico_document_sources','hipico_meetings','hipico_races','hipico_race_events',
     'hipico_group_automation','hipico_agent_evaluations','hipico_provider_evidence'
@@ -57,7 +71,22 @@ try {
   const found = new Set(rows.rows.map((row) => row.tablename));
   const missing = required.filter((name) => !found.has(name));
   if (missing.length) throw new Error(`E2E schema incomplete: ${missing.join(', ')}`);
-  console.log(`[hipico-v290] schema ready (${required.length} required tables)`);
+
+  const protectedTables = [
+    'hipico_workspaces','hipico_profiles','hipico_audit_events','hipico_bot_channels','hipico_messages',
+    'hipico_operation_events','hipico_outbox','hipico_ledger_entries','hipico_reconciliations'
+  ];
+  const rlsRows = await client.query(`
+    SELECT relname, relrowsecurity
+    FROM pg_class
+    JOIN pg_namespace ON pg_namespace.oid=pg_class.relnamespace
+    WHERE pg_namespace.nspname='public' AND relname = ANY($1::text[])
+  `, [protectedTables]);
+  const rlsState = new Map(rlsRows.rows.map((row) => [row.relname, row.relrowsecurity]));
+  const rlsMissing = protectedTables.filter((name) => rlsState.get(name) !== true);
+  if (rlsMissing.length) throw new Error(`RLS is not enabled for: ${rlsMissing.join(', ')}`);
+
+  console.log(`[hipico-v290] schema ready (${required.length} required tables, workspace/RBAC migration applied)`);
 } catch (error) {
   try { await client.query('ROLLBACK'); } catch {}
   throw error;
