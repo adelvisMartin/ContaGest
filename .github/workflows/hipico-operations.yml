@@ -31,6 +31,7 @@ on:
       - main
       - 'feature/hipico-*'
       - 'feat/hipico-*'
+      - 'fix/hipico-*'
     paths:
       - 'frontend/public/hipico-control/**'
       - 'frontend/api/hipico/**'
@@ -131,6 +132,7 @@ jobs:
           node --check frontend/public/hipico-control/assets/js/race-context-guard.js
           node --check frontend/public/hipico-control/assets/js/race-opening-assistant.js
           node --check frontend/public/hipico-control/assets/js/notice-bridge.js
+          node --check frontend/public/hipico-control/assets/js/theme-bootstrap.js
           node --check frontend/public/hipico-control/assets/js/store.js
           node --check frontend/public/hipico-control/assets/js/store-v2.js
           node --check frontend/public/hipico-control/assets/js/sync.js
@@ -138,6 +140,7 @@ jobs:
           node --check frontend/public/hipico-control/sw.js
           node --check frontend/api/hipico/_shared.js
           node --check frontend/api/hipico/bridge-identity.js
+          node --check frontend/api/hipico/canonical-backend.js
           node --check frontend/api/hipico/meta-runtime.js
           node --check frontend/api/hipico/status.js
           node --check frontend/api/hipico/group-bridge-ingest.js
