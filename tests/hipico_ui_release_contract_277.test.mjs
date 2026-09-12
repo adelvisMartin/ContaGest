@@ -72,6 +72,14 @@ test('installed PWA precaches the complete Hípico JavaScript module tree and at
   assert.match(sw, /isRuntimeMetadata\(url\).*cache:\s*'no-store'/s);
 });
 
+test('PWA reads offline shell resources only from the Control Hípico cache namespace', () => {
+  assert.doesNotMatch(sw, /\bcaches\.match\s*\(/, 'origin-global CacheStorage lookup could cross-contaminate sibling applications');
+  assert.match(sw, /const cache = await caches\.open\(SHELL_CACHE\)/);
+  assert.match(sw, /cache\.match\(scoped\('\.\/index\.html'\)\)/);
+  assert.match(sw, /cache\.match\(request\)/);
+  assert.match(sw, /shell-r20-cache-isolation-297/);
+});
+
 test('Control Hípico release version is single-sourced and build metadata is generated during every frontend build', () => {
   const appVersion = config.match(/export const APP_VERSION\s*=\s*["']([^"']+)["']/)?.[1];
   const cacheVersion = sw.match(/const CACHE_VERSION\s*=\s*['"]hipico-control-v([^'"]+)['"]/)?.[1];
