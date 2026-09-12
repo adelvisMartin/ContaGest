@@ -24,6 +24,7 @@ const requiredKeys = [
   'WHATSAPP_CLOUD_TOKEN',
   'WHATSAPP_PHONE_NUMBER_ID',
   'WHATSAPP_GRAPH_API_VERSION',
+  'WHATSAPP_GRAPH_VERSION',
   'HIPICO_CLOUD_SEND_ENABLED',
   'HIPICO_WHATSAPP_COMPLIANCE_DECISION',
   'HIPICO_CLOUD_SEND_APPROVED_BY',
@@ -67,11 +68,11 @@ test('#305 example remains fail-closed and never ships Hípico secrets or real g
   ]) assert.equal(envValue(secretOrIdentity), '', `${secretOrIdentity} must stay empty in the committed example`);
 });
 
-test('#305 example uses the canonical operator/Graph names while retaining documented compatibility aliases only', () => {
-  assert.match(example, /HIPICO_OPERATOR_CONTROL_TOKEN/);
-  assert.match(example, /HIPICO_BOT_OPERATOR_TOKEN=.*compat/i);
+test('#305 example uses canonical operator/Graph names and labels legacy aliases as compatibility only', () => {
   assert.equal(envValue('WHATSAPP_GRAPH_API_VERSION'), 'v23.0');
-  assert.match(example, /WHATSAPP_GRAPH_VERSION=.*compat/i);
+  assert.equal(envValue('WHATSAPP_GRAPH_VERSION'), 'v23.0');
+  assert.match(example, /compat[^\n]*HIPICO_BOT_OPERATOR_TOKEN|HIPICO_BOT_OPERATOR_TOKEN[^\n]*compat/i);
+  assert.match(example, /compat[^\n]*WHATSAPP_GRAPH_VERSION|WHATSAPP_GRAPH_VERSION[^\n]*compat/i);
   assert.match(example, /SOURCE.*read-only/i);
   assert.match(example, /Cloud.*individual/i);
   assert.match(example, /enrichment/i);
