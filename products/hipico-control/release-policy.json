@@ -1,7 +1,7 @@
 {
   "product": "control-hipico",
-  "version": "1.13.0-rc2",
-  "versionCode": 1130002,
+  "version": "1.13.0-rc3",
+  "versionCode": 1130003,
   "channel": "pilot",
   "workspaceSchema": 10,
   "parserContract": "whatsapp-parser-v1",
