@@ -28,6 +28,9 @@ test('Control Hípico reduces browser permissions and cross-origin leakage witho
   assert.equal(header('Referrer-Policy'),'no-referrer');
   assert.equal(header('Permissions-Policy'),'camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=()');
   assert.equal(header('Cross-Origin-Resource-Policy'),'same-origin');
-  const global=vercel.headers.find((entry)=>entry.source==='/(.*)');
-  assert.ok(global?.headers?.some((item)=>item.key==='Content-Security-Policy-Report-Only'));
+  const globalPolicy=vercel.headers.find((entry)=>
+    entry!==hipico && entry?.headers?.some((item)=>item.key==='Content-Security-Policy-Report-Only')
+  );
+  assert.ok(globalPolicy,'ContaGest must retain its report-only CSP outside the Hípico scoped policy');
+  assert.match(globalPolicy.source,/^\//);
 });
