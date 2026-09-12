@@ -108,9 +108,9 @@ export const HipicoBotStore={
     }
     return memoryEvents.some((event)=>event.providerMessageId===providerMessageId);
   },
-  async saveEvent(row:any){
+  async saveEvent(row:any,options:{requirePersistent?:boolean}={}){
     const record={id:id('hwe'),...row,receivedAt:new Date().toISOString()};
-    if(await dbReady()){
+    if(await dbReady(Boolean(options.requirePersistent))){
       const inserted=await prisma.$queryRaw<Array<{id:string}>>`INSERT INTO public."HipicoWebhookEvent" ("id","providerMessageId","phoneNumberId","sender","messageType","body","intent","risk","status","confidence","suggestion","payload","receivedAt","processedAt") VALUES (${record.id},${record.providerMessageId},${record.phoneNumberId||null},${record.sender||null},${record.messageType||'unknown'},${record.body||null},${record.intent||'unknown'},${record.risk||'review'},${record.status||'received'},${Number(record.confidence||0)},${record.suggestion||null},${JSON.stringify(record.payload||{})}::jsonb,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP) ON CONFLICT ("providerMessageId") DO NOTHING RETURNING "id"`;
       if(inserted[0]?.id)return{...record,id:inserted[0].id,inserted:true};
       const rows=await prisma.$queryRaw<any[]>`
@@ -122,6 +122,7 @@ export const HipicoBotStore={
       if(!sameWebhookReplay(rows[0],record))throw replayMismatchError();
       return{...record,id:rows[0].id,inserted:false};
     }
+    if(options.requirePersistent)throw Object.assign(new Error('Persistent Hípico event storage is required for webhook ingestion.'),{code:'HIPICO_WEBHOOK_PERSISTENCE_REQUIRED'});
     const existing=memoryEvents.find((event)=>event.providerMessageId===record.providerMessageId);
     if(existing){
       if(!sameWebhookReplay(existing,record))throw replayMismatchError();
@@ -239,15 +240,31 @@ export async function sendCloudText(recipient:string,message:string){
   return{providerMessageId,raw:data};
 }
 
-export async function processIncoming(message:any){
+export async function processIncoming(message:any,options:{requirePersistent?:boolean}={}){
   const result=classifyIncoming(message);
-  const event=await HipicoBotStore.saveEvent({...message,...result,status:'classified'});
-  if(event.inserted===false)return{duplicate:true};
+  const event=await HipicoBotStore.saveEvent({...message,...result,status:'classified'},options);
+  if(event.inserted===false&&!options.requirePersistent)return{duplicate:true};
   const mode=promotion();
-  const persistent=await HipicoBotStore.dbReady();
+  const persistent=options.requirePersistent?true:await HipicoBotStore.dbReady();
   const outboxStatus=mode==='shadow'?'shadow':mode==='approved'?'pending_approval':(persistent&&result.autoEligible&&SAFE_AUTOMATIC.has(result.intent)?'ready_auto':'pending_approval');
-  const outbox=await HipicoBotStore.queue({eventId:event.id,recipient:message.sender,targetType:'individual',message:result.suggestion,intent:result.intent,risk:result.risk,status:outboxStatus});
-  if(mode==='automatic'&&persistent&&outboxStatus==='ready_auto'){
+  const outboxInput={eventId:event.id,recipient:message.sender,targetType:'individual',message:result.suggestion,intent:result.intent,risk:result.risk,status:outboxStatus};
+  let outbox:any;
+  if(options.requirePersistent){
+    const queued=await HipicoBotStore.queueIdempotent(outboxInput,'meta-webhook',String(message.providerMessageId||''));
+    outbox=queued.row;
+    if(event.inserted===false&&queued.inserted===false){
+      const persistedStatus=String(outbox?.status||'');
+      if(persistedStatus==='sending'){
+        const reconciled=await HipicoBotStore.markReconciliationRequired(outbox.id,'INTERRUPTED_AUTOMATIC_SEND_REQUIRES_RECONCILIATION');
+        if(!reconciled)throw Object.assign(new Error('Interrupted webhook send could not be persisted for reconciliation.'),{code:'HIPICO_WEBHOOK_RECONCILIATION_PERSISTENCE_REQUIRED'});
+        return{duplicate:false,event,outbox:{...outbox,status:'reconciliation_required',error:'INTERRUPTED_AUTOMATIC_SEND_REQUIRES_RECONCILIATION'}};
+      }
+      if(!(mode==='automatic'&&outboxStatus==='ready_auto'&&persistedStatus==='ready_auto'))return{duplicate:true,event,outbox};
+    }
+  }else{
+    outbox=await HipicoBotStore.queue(outboxInput);
+  }
+  if(mode==='automatic'&&persistent&&outboxStatus==='ready_auto'&&String(outbox?.status||outboxStatus)==='ready_auto'){
     const claimed=await HipicoBotStore.claimForSend(outbox.id,'ready_auto');
     if(!claimed)return{duplicate:false,event,outbox:{...outbox,status:'reconciliation_required'}};
     try{
