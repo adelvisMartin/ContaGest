@@ -1,5 +1,5 @@
 const CACHE_VERSION = 'hipico-control-v1.13.0-rc3';
-const SHELL_CACHE = `${CACHE_VERSION}-shell-r20-cache-isolation-297`;
+const SHELL_CACHE = `${CACHE_VERSION}-shell-r21-recovery-routing-297`;
 const APP_SHELL = [
   './', './index.html', './recovery.html', './manifest.webmanifest',
   './icons/icon-192.png', './icons/icon-512.png', './icons/icon-192-maskable.png', './icons/icon-512-maskable.png',
@@ -22,6 +22,9 @@ const APP_SHELL_URLS = new Set(APP_SHELL.map(scoped));
 function isSensitive(url) { return /\/(?:api|auth)(?:\/|$)|session|token|license|webhook|rpc|rest\/v1/i.test(url.pathname); }
 function isRuntimeMetadata(url) { return url.pathname.endsWith('/runtime-config.js') || url.pathname.endsWith('/build-info.json'); }
 function isAllowedStatic(url) { return APP_SHELL_URLS.has(url.toString()); }
+function offlineNavigationShell(url) {
+  return url.pathname.endsWith('/recovery.html') ? './recovery.html' : './index.html';
+}
 
 self.addEventListener('install', (event) => {
   event.waitUntil((async () => {
@@ -49,7 +52,8 @@ self.addEventListener('fetch', (event) => {
       try { return await fetch(request, { cache: 'no-store' }); }
       catch (_) {
         const cache = await caches.open(SHELL_CACHE);
-        return (await cache.match(scoped('./index.html'))) || (await cache.match(scoped('./recovery.html'))) || Response.error();
+        const preferred = offlineNavigationShell(url);
+        return (await cache.match(scoped(preferred))) || (await cache.match(scoped('./recovery.html'))) || Response.error();
       }
     })());
     return;
