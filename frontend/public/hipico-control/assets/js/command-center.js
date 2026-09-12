@@ -3,7 +3,7 @@ import { loadLocalWorkspace } from './store.js';
 import { normalizeWorkspaceShape } from './workspace.js';
 
 const ENDPOINT = '/api/hipico/command-center';
-let remoteState = { status: 'idle', data: null, error: '', updatedAt: null };
+let remoteState = { status: 'idle', data: null, error: '', updatedAt: null, groupKey: '' };
 let refreshPromise = null;
 let mountScheduled = false;
 
@@ -26,6 +26,7 @@ export function operationalWorkspaceContext(source) {
   const groups = workspace?.config?.groups || workspace?.config?.whatsappGroups || [];
   const groupId = String(workspace?.config?.activeGroupId || workspace?.config?.activeWhatsappGroupId || groups[0]?.id || '');
   const group = groups.find((item) => String(item?.id || '') === groupId) || groups[0] || null;
+  const groupKey = String(group?.channelKey || group?.groupKey || group?.key || group?.id || groupId || '').trim();
   const days = groupRows(workspace, groupId, 'days').sort((a, b) => String(a?.date || '').localeCompare(String(b?.date || '')));
   const meeting = [...days].reverse().find((day) => String(day?.status || '').toLowerCase() === 'open') || days.at(-1) || null;
   const races = groupRows(workspace, groupId, 'races')
@@ -41,6 +42,7 @@ export function operationalWorkspaceContext(source) {
     : races.find((race) => !['closed', 'settled', 'cancelled'].includes(String(race?.status || '').toLowerCase())) || null;
   return {
     group,
+    groupKey,
     meeting,
     currentRace,
     nextRace,
@@ -53,16 +55,17 @@ function humanState(value) {
   const state = String(value || 'unknown').toLowerCase();
   const labels = {
     ready: 'Operativo', known: 'Disponible', degraded: 'Degradado', unavailable: 'No disponible', not_ready: 'No listo',
-    disabled: 'Deshabilitado', unknown: 'No verificado', not_exposed: 'No expuesto', offline: 'Sin conexión'
+    disabled: 'Deshabilitado', unknown: 'No verificado', not_exposed: 'No expuesto', offline: 'Sin conexión',
+    not_configured: 'No configurado', active: 'Activo', inactive: 'Inactivo', blocked: 'Bloqueado'
   };
   return labels[state] || state.replaceAll('_', ' ');
 }
 
 function stateTone(value) {
   const state = String(value || '').toLowerCase();
-  if (['ready', 'known'].includes(state)) return 'success';
-  if (['degraded', 'not_ready', 'offline', 'not_exposed'].includes(state)) return 'warning';
-  if (['unavailable'].includes(state)) return 'danger';
+  if (['ready', 'known', 'active'].includes(state)) return 'success';
+  if (['degraded', 'not_ready', 'offline', 'not_exposed', 'not_configured', 'inactive'].includes(state)) return 'warning';
+  if (['unavailable', 'blocked'].includes(state)) return 'danger';
   return 'info';
 }
 
@@ -79,7 +82,7 @@ function raceLabel(race) {
 }
 
 export function renderCommandCenterModel({ local, remote, online = true, error = '' } = {}) {
-  const localState = local || { group: null, meeting: null, currentRace: null, nextRace: null, localQueue: 0, localConflicts: 0 };
+  const localState = local || { group: null, groupKey: '', meeting: null, currentRace: null, nextRace: null, localQueue: 0, localConflicts: 0 };
   const remoteKnown = Boolean(remote && typeof remote === 'object');
   const fallbackState = online ? 'unknown' : 'offline';
   const system = remoteKnown ? remote.system : { state: fallbackState };
@@ -95,6 +98,9 @@ export function renderCommandCenterModel({ local, remote, online = true, error =
   const conflicts = Number(localState.localConflicts || 0) + reconciliation;
   const alerts = remoteKnown && Array.isArray(remote.alerts) ? remote.alerts : (error ? ['REMOTE_STATUS_UNAVAILABLE'] : []);
   const sampled = remote?.sampledAt ? new Date(remote.sampledAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'sin muestra remota';
+  const documentDetail = remoteKnown && Number.isFinite(Number(documents.total))
+    ? `${Number(documents.total)} documento(s) visibles`
+    : documents.reason || 'Capacidad no informada';
 
   return `<section class="card section-gap" data-command-center aria-labelledby="command-center-title">
     <div class="card__head"><div><h3 id="command-center-title">Centro de operaciones</h3><small>Estados reales del dispositivo y del backend · ${escapeHtml(sampled)}</small></div><span class="badge badge--${online ? 'success' : 'warning'}">${online ? 'EN LÍNEA' : 'SIN CONEXIÓN'}</span></div>
@@ -106,13 +112,13 @@ export function renderCommandCenterModel({ local, remote, online = true, error =
         ${statusTile('Base de datos', database.state, database.ready === true ? 'PostgreSQL listo' : 'Persistencia no confirmada')}
         ${statusTile('Proveedor', providers.state, providers.provider || 'Sin proveedor')}
         ${statusTile('Agente', agent.state, agent.mode || 'Sin modo')}
-        ${statusTile('Documentos', documents.state, documents.reason || 'Capacidad no informada')}
+        ${statusTile('Documentos', documents.state, documentDetail)}
         ${statusTile('Cola', queueTotal > 0 ? 'degraded' : 'ready', `${queueTotal} pendiente(s) visibles`)}
         ${statusTile('Conflictos', conflicts > 0 ? 'degraded' : 'ready', `${conflicts} conflicto(s) / conciliación`)}
         ${statusTile('Alertas', alerts.length > 0 ? 'degraded' : remoteKnown ? 'ready' : fallbackState, alerts.length ? `${alerts.length}: ${alerts.join(', ')}` : 'Sin alertas reportadas')}
       </div>
       <div class="responsive-records section-gap-small" aria-label="Contexto operativo activo">
-        <article><strong>Grupo activo</strong><span>${escapeHtml(localState.group?.name || 'Sin grupo')}</span><small>${escapeHtml(localState.group?.companyName || 'Contexto local')}</small></article>
+        <article><strong>Grupo activo</strong><span>${escapeHtml(localState.group?.name || 'Sin grupo')}</span><small>${escapeHtml(localState.group?.companyName || localState.groupKey || 'Contexto local')}</small></article>
         <article><strong>Jornada / meeting</strong><span>${escapeHtml(localState.meeting?.date || 'Sin jornada')}</span><small>${escapeHtml(localState.meeting?.status || 'No disponible')}</small></article>
         <article><strong>Carrera actual</strong><span>${escapeHtml(raceLabel(localState.currentRace))}</span><small>${escapeHtml(localState.currentRace?.status || 'No seleccionada')}</small></article>
         <article><strong>Próxima carrera</strong><span>${escapeHtml(raceLabel(localState.nextRace))}</span><small>${escapeHtml(localState.nextRace?.status || 'No identificada')}</small></article>
@@ -130,18 +136,23 @@ async function readLocalContext() {
   }
 }
 
-async function readRemoteState() {
+async function readRemoteState(groupKey) {
+  const normalizedGroupKey = String(groupKey || '').trim();
   if (typeof navigator !== 'undefined' && navigator.onLine === false) {
-    remoteState = { status: 'offline', data: null, error: 'offline', updatedAt: new Date().toISOString() };
+    remoteState = { status: 'offline', data: null, error: 'offline', updatedAt: new Date().toISOString(), groupKey: normalizedGroupKey };
+    return remoteState;
+  }
+  if (!normalizedGroupKey) {
+    remoteState = { status: 'error', data: null, error: 'group_scope_unavailable', updatedAt: new Date().toISOString(), groupKey: '' };
     return remoteState;
   }
   try {
-    const response = await fetch(ENDPOINT, { cache: 'no-store', headers: { accept: 'application/json' } });
+    const response = await fetch(`${ENDPOINT}?groupKey=${encodeURIComponent(normalizedGroupKey)}`, { cache: 'no-store', headers: { accept: 'application/json' } });
     const payload = await response.json();
     if (!response.ok || payload?.ok !== true || !payload?.data) throw new Error(String(payload?.error || `HTTP_${response.status}`));
-    remoteState = { status: 'ready', data: payload.data, error: '', updatedAt: new Date().toISOString() };
+    remoteState = { status: 'ready', data: payload.data, error: '', updatedAt: new Date().toISOString(), groupKey: normalizedGroupKey };
   } catch {
-    remoteState = { status: 'error', data: null, error: 'remote_status_unavailable', updatedAt: new Date().toISOString() };
+    remoteState = { status: 'error', data: null, error: 'remote_status_unavailable', updatedAt: new Date().toISOString(), groupKey: normalizedGroupKey };
   }
   return remoteState;
 }
@@ -150,7 +161,9 @@ async function hydrate() {
   const hero = document.querySelector('.content > .group-hero');
   if (!hero || document.querySelector('[data-command-center]')) return;
   const local = await readLocalContext();
-  if (!remoteState.updatedAt || Date.now() - Date.parse(remoteState.updatedAt) > 15_000) await readRemoteState();
+  const stale = !remoteState.updatedAt || Date.now() - Date.parse(remoteState.updatedAt) > 15_000;
+  const scopeChanged = remoteState.groupKey !== local.groupKey;
+  if (stale || scopeChanged) await readRemoteState(local.groupKey);
   if (!hero.isConnected || document.querySelector('[data-command-center]')) return;
   hero.insertAdjacentHTML('afterend', renderCommandCenterModel({ local, remote: remoteState.data, online: navigator.onLine !== false, error: remoteState.error }));
 }
