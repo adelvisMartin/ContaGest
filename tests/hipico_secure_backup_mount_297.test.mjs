@@ -20,6 +20,14 @@ test('encrypted backup interceptor is mounted before the legacy application hand
   assert.match(secureUi,/exportEncryptedCurrentWorkspace/);
 });
 
+test('new encrypted backup requires matching passphrase confirmation before any file is generated',()=>{
+  assert.match(secureUi,/function newBackupPassphrase\(\)/);
+  assert.match(secureUi,/Repite exactamente la contraseña del respaldo para confirmar/);
+  assert.match(secureUi,/confirmation !== passphrase/);
+  assert.match(secureUi,/Las contraseñas del respaldo no coinciden/);
+  assert.match(secureUi,/const passphrase = newBackupPassphrase\(\)/);
+});
+
 test('plaintext portable export fails closed even if UI interception regresses',()=>{
   assert.throws(
     ()=>serializeWorkspaceBackup({config:{groups:[]}}),
