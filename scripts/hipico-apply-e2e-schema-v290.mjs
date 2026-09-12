@@ -5,6 +5,9 @@ import pg from 'pg';
 const { Client } = pg;
 const databaseUrl = String(process.env.HIPICO_E2E_DATABASE_URL || '').trim();
 const ownerId = String(process.env.HIPICO_E2E_OWNER_ID || '11111111-1111-4111-8111-111111111111').trim();
+const otherOwnerId = '22222222-2222-4222-8222-222222222222';
+const qaSha = String(process.env.GITHUB_SHA || process.env.HIPICO_QA_SHA || process.env.HIPICO_CANDIDATE_SHA || 'local').trim();
+const rbacArtifact = path.resolve('artifacts/qa/hipico-v290/postgres-rbac.json');
 const migrations = [
   'supabase/sql/hipico_v12_operations.sql',
   'supabase/sql/hipico_v12_group_bridge.sql',
@@ -25,6 +28,38 @@ function assertSafe(urlText) {
   const db = url.pathname.replace(/^\//, '');
   if (!/^hipico_e2e_[a-z0-9_]{8,63}$/.test(db)) throw new Error(`Refusing database without hipico_e2e_ run isolation prefix: ${db}`);
   return { url, db };
+}
+
+async function withRole(client, role, subject, fn) {
+  await client.query('BEGIN');
+  try {
+    await client.query(`SET LOCAL ROLE ${role}`);
+    if (subject) {
+      await client.query(`SELECT set_config('request.jwt.claim.sub',$1,true)`, [subject]);
+      await client.query(`SELECT set_config('request.jwt.claims',$1,true)`, [JSON.stringify({ sub: subject, role })]);
+    }
+    const result = await fn();
+    await client.query('ROLLBACK');
+    return result;
+  } catch (error) {
+    try { await client.query('ROLLBACK'); } catch {}
+    throw error;
+  }
+}
+
+async function expectPermissionDenied(client, role, subject, sql) {
+  await client.query('BEGIN');
+  try {
+    await client.query(`SET LOCAL ROLE ${role}`);
+    if (subject) await client.query(`SELECT set_config('request.jwt.claim.sub',$1,true)`, [subject]);
+    await client.query(sql);
+  } catch (error) {
+    try { await client.query('ROLLBACK'); } catch {}
+    if (error?.code !== '42501') throw error;
+    return;
+  }
+  await client.query('ROLLBACK');
+  throw new Error(`RBAC statement unexpectedly succeeded for ${role}: ${sql.slice(0, 80)}`);
 }
 
 assertSafe(databaseUrl);
@@ -61,6 +96,7 @@ try {
     console.log(`[hipico-v290] applying ${relative}`);
     await client.query(sql);
   }
+
   const required = [
     'hipico_workspaces','hipico_profiles','hipico_audit_events',
     'hipico_bot_channels','hipico_messages','hipico_operation_events','hipico_shadow_evaluations',
@@ -86,7 +122,44 @@ try {
   const rlsMissing = protectedTables.filter((name) => rlsState.get(name) !== true);
   if (rlsMissing.length) throw new Error(`RLS is not enabled for: ${rlsMissing.join(', ')}`);
 
-  console.log(`[hipico-v290] schema ready (${required.length} required tables, workspace/RBAC migration applied)`);
+  await client.query(`INSERT INTO public.hipico_workspaces(owner_id,name,state,version)
+    VALUES($1::uuid,'Foreign E2E owner','{}'::jsonb,1) ON CONFLICT(owner_id) DO NOTHING`, [otherOwnerId]);
+  const ownChannel = await client.query(`INSERT INTO public.hipico_bot_channels(owner_id,group_key,label,channel_type,status,config)
+    VALUES($1::uuid,'rbac-own','RBAC own','web_bridge','active','{}'::jsonb)
+    ON CONFLICT(owner_id,group_key) DO UPDATE SET label=excluded.label RETURNING id`, [ownerId]);
+  const otherChannel = await client.query(`INSERT INTO public.hipico_bot_channels(owner_id,group_key,label,channel_type,status,config)
+    VALUES($1::uuid,'rbac-other','RBAC other','web_bridge','active','{}'::jsonb)
+    ON CONFLICT(owner_id,group_key) DO UPDATE SET label=excluded.label RETURNING id`, [otherOwnerId]);
+  await client.query(`INSERT INTO public.hipico_messages(
+    owner_id,channel_id,channel_key,external_message_id,fingerprint,sender_role,raw_text,classification,confidence,processing_status,normalized,metadata)
+    VALUES
+      ($1::uuid,$2::uuid,'rbac-own','rbac-own-message','rbac-own-fingerprint','system','own','status_non_monetary',1,'processed','{}'::jsonb,'{}'::jsonb),
+      ($3::uuid,$4::uuid,'rbac-other','rbac-other-message','rbac-other-fingerprint','system','other','status_non_monetary',1,'processed','{}'::jsonb,'{}'::jsonb)
+    ON CONFLICT(owner_id,channel_key,fingerprint) DO NOTHING`, [ownerId, ownChannel.rows[0].id, otherOwnerId, otherChannel.rows[0].id]);
+
+  const visibleWorkspaces = await withRole(client, 'authenticated', ownerId, () => client.query(`SELECT owner_id::text AS owner_id FROM public.hipico_workspaces ORDER BY owner_id`));
+  if (visibleWorkspaces.rows.length !== 1 || visibleWorkspaces.rows[0].owner_id !== ownerId) throw new Error('Workspace RLS owner isolation failed');
+  const visibleMessages = await withRole(client, 'authenticated', ownerId, () => client.query(`SELECT owner_id::text AS owner_id,channel_key FROM public.hipico_messages WHERE channel_key IN ('rbac-own','rbac-other') ORDER BY channel_key`));
+  if (visibleMessages.rows.length !== 1 || visibleMessages.rows[0].owner_id !== ownerId || visibleMessages.rows[0].channel_key !== 'rbac-own') throw new Error('Message RLS owner isolation failed');
+
+  await expectPermissionDenied(client, 'authenticated', ownerId, `INSERT INTO public.hipico_ledger_entries(owner_id,group_key,participant_code,product_type,reference_type,reference_id,entry_type,amount,currency) VALUES('${ownerId}'::uuid,'rbac-own','P1','TEST','e2e','forbidden-ledger','bet',1,'VES')`);
+  await expectPermissionDenied(client, 'authenticated', ownerId, `INSERT INTO public.hipico_outbox(owner_id,group_key,destination,idempotency_key,payload) VALUES('${ownerId}'::uuid,'rbac-own','test','forbidden-outbox','{}'::jsonb)`);
+  await expectPermissionDenied(client, 'anon', null, `SELECT owner_id FROM public.hipico_workspaces LIMIT 1`);
+
+  await fs.mkdir(path.dirname(rbacArtifact), { recursive: true });
+  await fs.writeFile(rbacArtifact, `${JSON.stringify({
+    schema: 'hipico-rbac.v290', sha: qaSha, status: 'PASS', database: 'isolated-ephemeral', checkedAt: new Date().toISOString(),
+    assertions: {
+      workspaceOwnerIsolation: true,
+      messageOwnerIsolation: true,
+      authenticatedLedgerWriteDenied: true,
+      authenticatedOutboxWriteDenied: true,
+      anonWorkspaceReadDenied: true,
+      rlsTables: protectedTables
+    }
+  }, null, 2)}\n`, 'utf8');
+
+  console.log(`[hipico-v290] schema ready (${required.length} required tables, workspace/RLS/RBAC executed)`);
 } catch (error) {
   try { await client.query('ROLLBACK'); } catch {}
   throw error;
