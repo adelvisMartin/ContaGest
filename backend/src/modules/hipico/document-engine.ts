@@ -43,6 +43,17 @@ const ACTIVE_PDF_TOKENS = [
 
 function codedError(code:string){return Object.assign(new Error(code),{code});}
 function decodePdfNameEscapes(source:string){return source.replace(/#([0-9a-fA-F]{2})/g,(_match,hex)=>String.fromCharCode(Number.parseInt(hex,16)));}
+const DOCUMENT_METADATA_ERROR = {
+  sourceChannel:'DOCUMENT_SOURCE_CHANNEL_INVALID',
+  sourceMessageId:'DOCUMENT_SOURCE_MESSAGE_ID_INVALID',
+  sender:'DOCUMENT_SENDER_INVALID'
+} as const;
+export function strictDocumentMetadata(value:unknown,field:keyof typeof DOCUMENT_METADATA_ERROR,max:number){
+  const text=String(value??'').trim();
+  if(!text)return null;
+  if(text.length>max)throw codedError(DOCUMENT_METADATA_ERROR[field]);
+  return text;
+}
 
 export function safeDocumentFilename(value: unknown) {
   const raw=String(value||'document.pdf').trim();
@@ -54,12 +65,10 @@ export function safeDocumentFilename(value: unknown) {
 export function validateDocumentProvenance(provenance: DocumentProvenance) {
   const receivedAt = new Date(provenance.receivedAt);
   if (!Number.isFinite(receivedAt.getTime())) throw codedError('DOCUMENT_RECEIVED_AT_INVALID');
-  const sourceChannel = String(provenance.sourceChannel || '').trim();
-  if (!sourceChannel || sourceChannel.length > 120) throw codedError('DOCUMENT_SOURCE_CHANNEL_INVALID');
-  const sourceMessageId = provenance.sourceMessageId == null ? null : String(provenance.sourceMessageId).trim();
-  if (sourceMessageId && sourceMessageId.length > 320) throw codedError('DOCUMENT_SOURCE_MESSAGE_ID_INVALID');
-  const sender = provenance.sender == null ? null : String(provenance.sender).trim();
-  if (sender && sender.length > 220) throw codedError('DOCUMENT_SENDER_INVALID');
+  const sourceChannel = strictDocumentMetadata(provenance.sourceChannel,'sourceChannel',120);
+  if (!sourceChannel) throw codedError('DOCUMENT_SOURCE_CHANNEL_INVALID');
+  const sourceMessageId = provenance.sourceMessageId == null ? null : strictDocumentMetadata(provenance.sourceMessageId,'sourceMessageId',320);
+  const sender = provenance.sender == null ? null : strictDocumentMetadata(provenance.sender,'sender',220);
   return {sourceChannel,sourceMessageId,sender,receivedAt:receivedAt.toISOString(),authority:provenance.authority} satisfies DocumentProvenance;
 }
 
