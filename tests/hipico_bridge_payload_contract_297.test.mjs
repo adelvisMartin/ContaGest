@@ -62,6 +62,35 @@ test('required bridge identity fields cannot be present but empty or ambiguously
   assert.equal(validateGroupBridgeBody({...payload,hasMedia:0},source),'invalid_boolean_field');
 });
 
+test('bridge timestamp is explicit zoned ISO-8601 and rejects impossible or ambiguous calendar input',()=>{
+  const invalid=[
+    '',
+    '2026-09-11 06:00:00',
+    '2026-09-11T06:00:00',
+    '2026-02-29T06:00:00Z',
+    '2026-02-31T06:00:00Z',
+    '2026-13-01T06:00:00Z',
+    '2026-09-11T24:00:00Z',
+    '2026-09-11T06:60:00Z',
+    '2026-09-11T06:00:60Z',
+    '2026-09-11T06:00:00+14:30',
+    '2026-09-11T06:00:00+15:00'
+  ];
+  for(const timestamp of invalid){
+    assert.equal(validateGroupBridgeBody({...payload,timestamp},source),'invalid_timestamp',timestamp);
+  }
+  assert.equal(validateGroupBridgeBody({...payload,timestamp:'2028-02-29T06:00:00Z'},source),null);
+  assert.equal(validateGroupBridgeBody({...payload,timestamp:'2026-09-11T01:00:00-05:00'},source),null);
+});
+
+test('equivalent zoned instants produce the same immutable replay identity',()=>{
+  const utc={...payload,timestamp:'2026-09-11T06:00:00Z'};
+  const offset={...payload,timestamp:'2026-09-11T01:00:00-05:00'};
+  assert.equal(__test__.normalizedTimestamp(utc.timestamp),'2026-09-11T06:00:00.000Z');
+  assert.equal(__test__.normalizedTimestamp(offset.timestamp),'2026-09-11T06:00:00.000Z');
+  assert.equal(__test__.sourceReplaySignature(utc),__test__.sourceReplaySignature(offset));
+});
+
 test('bridge media flags, type and media kind must agree',()=>{
   assert.equal(validateGroupBridgeBody({...payload,type:'media',hasMedia:true,mediaKind:'document'},source),null);
   assert.equal(validateGroupBridgeBody({...payload,type:'chat',hasMedia:true,mediaKind:'document'},source),'invalid_media_consistency');
