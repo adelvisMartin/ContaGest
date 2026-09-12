@@ -18,8 +18,9 @@ export type PromotionDecision = {
   requestedMode: HipicoMode;
   effectiveMode: HipicoMode;
   allowed: boolean;
-  sourceWrite: boolean;
-  monetaryWrite: boolean;
+  sourceWrite: false;
+  authorizedOutboundWrite: boolean;
+  monetaryWrite: false;
   reasons: string[];
   auditId: string;
 };
@@ -41,7 +42,16 @@ export function evaluatePromotion(requestedMode: HipicoMode, evidence: Promotion
   if (!SHA40.test(evidence.candidateSha || '')) reasons.push('CANDIDATE_SHA_NOT_BOUND');
 
   if (requestedMode === 'shadow') {
-    return { requestedMode, effectiveMode: 'shadow', allowed: true, sourceWrite: false, monetaryWrite: false, reasons, auditId: promotionAuditId(evidence, requestedMode) };
+    return {
+      requestedMode,
+      effectiveMode: 'shadow',
+      allowed: true,
+      sourceWrite: false,
+      authorizedOutboundWrite: false,
+      monetaryWrite: false,
+      reasons,
+      auditId: promotionAuditId(evidence, requestedMode)
+    };
   }
 
   if (!allPass(evidence)) reasons.push('P0_P1_EVIDENCE_NOT_GREEN');
@@ -57,7 +67,10 @@ export function evaluatePromotion(requestedMode: HipicoMode, evidence: Promotion
     requestedMode,
     effectiveMode,
     allowed,
-    sourceWrite: allowed && requestedMode === 'production',
+    // SOURCE is a permanent read-only evidence channel. Promotion can only
+    // unlock separately validated outbound destinations; never writes to SOURCE.
+    sourceWrite: false,
+    authorizedOutboundWrite: allowed && requestedMode === 'production',
     monetaryWrite: false,
     reasons,
     auditId: promotionAuditId(evidence, requestedMode)
@@ -70,5 +83,9 @@ export function resolveConfiguredMode(env: NodeJS.ProcessEnv = process.env): Hip
 }
 
 export function productionCapabilityEnabled(decision: PromotionDecision) {
-  return decision.allowed && decision.effectiveMode === 'production' && decision.sourceWrite && !decision.monetaryWrite;
+  return decision.allowed
+    && decision.effectiveMode === 'production'
+    && decision.sourceWrite === false
+    && decision.authorizedOutboundWrite
+    && decision.monetaryWrite === false;
 }

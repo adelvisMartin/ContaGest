@@ -260,7 +260,7 @@ let lab = null;
 let flushing = false;
 
 client.on('qr', (qr) => {
-  console.log('\nEscanea este QR desde WhatsApp normal > Dispositivos vinculados:\n');
+  console.log('\nEscanea este QR desde WhatsApp/WhatsApp Business > Dispositivos vinculados:\n');
   qrcode.generate(qr, { small: true });
 });
 client.on('authenticated', () => console.log('WhatsApp vinculado.'));

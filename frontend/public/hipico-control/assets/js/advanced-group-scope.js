@@ -24,13 +24,7 @@ function matchesAdvancedBet(bet, advanced) {
 
 function findLatestAdvancedLoadEvent(workspace) {
   const audit = Array.isArray(workspace?.audit) ? workspace.audit : [];
-  return audit.find((event) => event?.action === 'advanced_loaded' && event?.payload?.groupScopeGuarded !== true) || null;
-}
-
-function defaultCreateId(prefix) {
-  const randomUUID = globalThis.crypto?.randomUUID?.bind(globalThis.crypto);
-  if (!randomUUID) throw new Error('HIPICO_SECURE_UUID_UNAVAILABLE');
-  return `${prefix}-${randomUUID()}`;
+  return audit.find((event) => event?.action === 'advanced_loaded') || null;
 }
 
 function ensureDay(workspace, groupId, date, createId, now) {
@@ -110,7 +104,7 @@ function blockClosedTarget(workspace, event, sourceRace, affected, target) {
 
 /**
  * Repairs the legacy app.js advanced-load mutation before it is cloned/persisted.
- * The legacy handler searches date/track/race without groupId. This boundary
+ * The legacy handler searches by date/track/race without groupId. This boundary
  * makes that write fail-closed across groups while keeping the public UI contract.
  */
 export function enforceAdvancedLoadGroupScope(workspace, options = {}) {
@@ -118,7 +112,7 @@ export function enforceAdvancedLoadGroupScope(workspace, options = {}) {
   const event = findLatestAdvancedLoadEvent(workspace);
   if (!event) return { changed: false, blocked: false, notice: '' };
 
-  const createId = options.createId || defaultCreateId;
+  const createId = options.createId || ((prefix) => `${prefix}-${crypto.randomUUID()}`);
   const now = options.now || (() => new Date().toISOString());
   const intendedGroupId = String(event.groupId || workspace?.config?.activeGroupId || workspace?.config?.activeWhatsappGroupId || firstGroupId(workspace));
   const races = Array.isArray(workspace.races) ? workspace.races : [];
@@ -179,9 +173,7 @@ export function enforceAdvancedLoadGroupScope(workspace, options = {}) {
     ...(event.payload || {}),
     groupId: intendedGroupId,
     loadedCount: intended.length,
-    rejectedCrossGroupCount: accidental.length,
-    groupScopeGuarded: true,
-    groupScopeGuardVersion: 1
+    rejectedCrossGroupCount: accidental.length
   };
 
   workspace.config ||= {};
@@ -197,4 +189,4 @@ export function enforceAdvancedLoadGroupScope(workspace, options = {}) {
   };
 }
 
-export const __test__ = { firstGroupId, rowGroupId, sameRaceKey, matchesAdvancedBet, findLatestAdvancedLoadEvent, ensureDay, defaultCreateId };
+export const __test__ = { firstGroupId, rowGroupId, sameRaceKey, matchesAdvancedBet, findLatestAdvancedLoadEvent, ensureDay };

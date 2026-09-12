@@ -2,6 +2,9 @@ import { getSetting, setSetting } from './store.js';
 
 const ENROLLMENT_KEY = 'localAdminEnrollmentV2';
 const PBKDF2_ITERATIONS = 310000;
+const ENROLLMENT_ALGORITHM = 'PBKDF2-SHA256';
+const SHA256_HEX = /^[0-9a-f]{64}$/i;
+const SALT_HEX = /^[0-9a-f]{32}$/i;
 
 function bytesToHex(buffer) {
   return Array.from(new Uint8Array(buffer), (byte) => byte.toString(16).padStart(2, '0')).join('');
@@ -20,6 +23,15 @@ function constantTimeEqual(left, right) {
   const length = Math.max(a.length, b.length);
   for (let index = 0; index < length; index += 1) diff |= (a[index] || 0) ^ (b[index] || 0);
   return diff === 0;
+}
+
+function validEnrollmentRecord(record) {
+  if (!record || record.version !== 2) return false;
+  if (record.algorithm != null && record.algorithm !== ENROLLMENT_ALGORITHM) return false;
+  if (record.iterations != null && Number(record.iterations) !== PBKDF2_ITERATIONS) return false;
+  return SHA256_HEX.test(String(record.emailHash || ''))
+    && SALT_HEX.test(String(record.salt || ''))
+    && SHA256_HEX.test(String(record.verifier || ''));
 }
 
 function requireCrypto() {
@@ -47,7 +59,7 @@ async function deriveVerifier(password, salt, iterations = PBKDF2_ITERATIONS) {
 
 export async function hasLocalAdminEnrollment() {
   const record = await getSetting(ENROLLMENT_KEY, null);
-  return Boolean(record?.version === 2 && record?.emailHash && record?.salt && record?.verifier);
+  return validEnrollmentRecord(record);
 }
 
 export async function enrollLocalAdmin(email, password) {
@@ -59,7 +71,7 @@ export async function enrollLocalAdmin(email, password) {
   const verifier = await deriveVerifier(password, salt);
   const record = {
     version: 2,
-    algorithm: 'PBKDF2-SHA256',
+    algorithm: ENROLLMENT_ALGORITHM,
     iterations: PBKDF2_ITERATIONS,
     emailHash: await sha256Text(normalizedEmail),
     salt: bytesToHex(salt),
@@ -76,11 +88,11 @@ export async function clearLocalAdminEnrollment() {
 
 export async function verifyLocalAdmin(email, password) {
   const record = await getSetting(ENROLLMENT_KEY, null);
-  if (!record?.emailHash || !record?.salt || !record?.verifier) return false;
+  if (!validEnrollmentRecord(record)) return false;
   const normalizedEmail = String(email || '').trim().toLowerCase();
   if (!constantTimeEqual(hexToBytes(await sha256Text(normalizedEmail)), hexToBytes(record.emailHash))) return false;
-  const verifier = await deriveVerifier(password, hexToBytes(record.salt), Number(record.iterations || PBKDF2_ITERATIONS));
+  const verifier = await deriveVerifier(password, hexToBytes(record.salt), PBKDF2_ITERATIONS);
   return constantTimeEqual(verifier, hexToBytes(record.verifier));
 }
 
-export const __test__ = { bytesToHex, hexToBytes, constantTimeEqual, deriveVerifier, PBKDF2_ITERATIONS };
+export const __test__ = { bytesToHex, hexToBytes, constantTimeEqual, deriveVerifier, validEnrollmentRecord, PBKDF2_ITERATIONS, ENROLLMENT_ALGORITHM };

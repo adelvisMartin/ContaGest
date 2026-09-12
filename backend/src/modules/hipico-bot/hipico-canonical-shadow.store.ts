@@ -79,6 +79,20 @@ export function groupKeyFromName(value:string){
     .slice(0,120);
 }
 
+function canonicalChannelBindingError(input:Pick<CanonicalPersistInput,'groupName'|'channelKey'|'labChannelKey'|'channelRole'>){
+  const groupKey=String(input.channelKey||groupKeyFromName(input.groupName)).trim();
+  const labKey=String(input.labChannelKey||DEFAULT_LAB_CHANNEL_KEY).trim();
+  if(!groupKey)return'HIPICO_CANONICAL_GROUP_KEY_EMPTY';
+  if(input.channelRole==='source'){
+    if(groupKey!==OFFICIAL_SOURCE_CHANNEL_KEY)return'HIPICO_CANONICAL_SOURCE_CHANNEL_NOT_ALLOWED';
+    if(labKey!==DEFAULT_LAB_CHANNEL_KEY)return'HIPICO_CANONICAL_LAB_REFERENCE_NOT_ALLOWED';
+    return null;
+  }
+  if(groupKey!==DEFAULT_LAB_CHANNEL_KEY)return'HIPICO_CANONICAL_LAB_CHANNEL_NOT_ALLOWED';
+  if(input.labChannelKey&&labKey!==DEFAULT_LAB_CHANNEL_KEY)return'HIPICO_CANONICAL_LAB_REFERENCE_NOT_ALLOWED';
+  return null;
+}
+
 async function findActiveWebBridge(groupKey:string):Promise<CanonicalChannel[]>{
   return prisma.$queryRaw<Array<{id:string;ownerId:string;groupKey:string;label:string}>>`
     SELECT id::text AS "id", owner_id::text AS "ownerId", group_key AS "groupKey", label
@@ -126,6 +140,8 @@ async function ensureOfficialSourceChannel(groupName:string, sourceKey:string, l
 }
 
 async function resolveChannel(input:Pick<CanonicalPersistInput,'groupName'|'channelKey'|'labChannelKey'|'channelRole'>):Promise<CanonicalChannel>{
+  const bindingError=canonicalChannelBindingError(input);
+  if(bindingError)throw new Error(bindingError);
   const groupKey=String(input.channelKey||groupKeyFromName(input.groupName)).trim();
   if(!groupKey)throw new Error('HIPICO_CANONICAL_GROUP_KEY_EMPTY');
   const rows=await findActiveWebBridge(groupKey);
@@ -354,4 +370,4 @@ export async function persistCanonicalShadow(input:CanonicalPersistInput){
   };
 }
 
-export const __test__={canonicalInputSignature,assertCanonicalReplay};
+export const __test__={canonicalInputSignature,assertCanonicalReplay,canonicalChannelBindingError};

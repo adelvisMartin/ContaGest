@@ -214,6 +214,18 @@ function clarificationFor(result: IntentResult) {
   return 'El mensaje tiene contenido monetario ambiguo. Indica jugada, selección, monto y carrera cuando corresponda. No se registró nada.';
 }
 
+function mediaReviewResult(mediaKind: string): IntentResult {
+  return {
+    intent: mediaKind === 'document' ? 'document_reference' : 'media_message',
+    risk: 'review',
+    confidence: 1,
+    suggestion: 'El adjunto requiere revisión de un operador y no puede producir efectos de dominio.',
+    autoEligible: false,
+    reason: mediaKind === 'document' ? 'DOCUMENT_REVIEW_GATE' : 'NON_TEXT_MEDIA_REVIEW_GATE',
+    entities: {}
+  };
+}
+
 export function decideConversation(
   message: ConversationMessage,
   context: ConversationContext = {},
@@ -232,9 +244,13 @@ export function decideConversation(
     participantLabel: String(message.participantLabel || '').trim() || null,
     text: String(message.text || '').trim(),
     timestamp: String(message.timestamp || ''),
-    raceId: String(message.raceId || '').trim() || null
+    raceId: String(message.raceId || '').trim() || null,
+    mediaKind: String(message.mediaKind || 'none').trim().toLowerCase() || 'none'
   };
-  const result = classifier(normalizedMessage.text);
+  const hasMedia = normalizedMessage.mediaKind !== 'none';
+  // Attachments are evidence, never authoritative domain input. In particular,
+  // captions and filenames must not be parsed as race openings/results/bets.
+  const result = hasMedia ? mediaReviewResult(normalizedMessage.mediaKind || 'unknown') : classifier(normalizedMessage.text);
   const seen = asSet(context.seenSourceMessageIds);
   const humanOwned = asSet(context.humanOwnedParticipantIds).has(canonicalParticipant(participantId));
   const duplicate = seen.has(sourceMessageId);
@@ -250,8 +266,16 @@ export function decideConversation(
     return response(normalizedMessage, result, 'NO_RESPONSE', 'HUMAN_OWNS_CONVERSATION', 'NONE', null, audit);
   }
 
-  if (normalizedMessage.mediaKind && normalizedMessage.mediaKind !== 'none' && !normalizedMessage.text) {
-    return response(normalizedMessage, result, 'ESCALATED', 'UNSUPPORTED_MEDIA_WITHOUT_TEXT', 'ESCALATED', 'El contenido requiere revisión de un operador.', audit);
+  if (hasMedia) {
+    return response(
+      normalizedMessage,
+      result,
+      'ESCALATED',
+      'MEDIA_REQUIRES_OPERATOR_REVIEW',
+      'ESCALATED',
+      'El adjunto y cualquier texto asociado requieren revisión de un operador. No se aplicó ninguna operación.',
+      audit
+    );
   }
 
   if (outOfOrder && monetaryOrStateful) {
@@ -305,4 +329,4 @@ export function nextConversationContext(context: ConversationContext, message: C
   return { ...context, seenSourceMessageIds: seen, lastTimestampByParticipant };
 }
 
-export const __test__ = { deterministicCorrelationId, monetaryRequiresClarification, canonicalParticipant, operationalReviewText, ordinalRace };
+export const __test__ = { deterministicCorrelationId, monetaryRequiresClarification, canonicalParticipant, operationalReviewText, ordinalRace, mediaReviewResult };

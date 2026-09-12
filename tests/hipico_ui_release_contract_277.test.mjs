@@ -5,10 +5,14 @@ import { readFileSync, readdirSync } from 'node:fs';
 const read = (path) => readFileSync(new URL(path, import.meta.url), 'utf8');
 const html = read('../frontend/public/hipico-control/index.html');
 const css = read('../frontend/public/hipico-control/assets/css/app.css');
-const mobileCss = read('../frontend/public/hipico-control/assets/css/mobile-accessibility.css');
+const touchCss = read('../frontend/public/hipico-control/assets/css/mobile-accessibility.css');
 const opsCss = read('../frontend/public/hipico-control/assets/css/operational-copy-center.css');
 const notice = read('../frontend/public/hipico-control/assets/js/notice-bridge.js');
 const sw = read('../frontend/public/hipico-control/sw.js');
+const config = read('../frontend/public/hipico-control/assets/js/config.js');
+const buildInfo = JSON.parse(read('../frontend/public/hipico-control/build-info.json'));
+const frontendPackage = JSON.parse(read('../frontend/package.json'));
+const buildWriter = read('../frontend/scripts/write-hipico-build-info.mjs');
 
 function jsFiles(url, prefix = '') {
   const files = [];
@@ -39,15 +43,14 @@ test('canonical UI exposes light, dark and system theming', () => {
   assert.match(css, /:root\[data-theme="system"\]/);
 });
 
-test('mobile controls preserve the 44px interaction contract including form controls', () => {
+test('mobile controls preserve the 44px interaction contract', () => {
   assert.match(css, /--hc-touch:\s*44px/);
   assert.match(css, /@media \(max-width:\s*780px\)[\s\S]*\.button,[\s\S]*min-height:\s*var\(--hc-touch\)/);
-  assert.match(mobileCss, /@media \(max-width:\s*780px\)/);
-  assert.match(mobileCss, /\.input,[\s\S]*\.select,[\s\S]*\.date-button,[\s\S]*\.color-input,[\s\S]*\.switch-row[\s\S]*min-height:\s*var\(--hc-touch,\s*44px\)/);
-  assert.match(mobileCss, /touch-action:\s*manipulation/);
-  assert.match(opsCss, /@media\(max-width:720px\)[\s\S]*min-height:44px/);
   assert.match(html, /assets\/css\/mobile-accessibility\.css/);
+  assert.match(touchCss, /@media \(max-width:\s*780px\)/);
+  assert.match(touchCss, /\.input,[\s\S]*\.select,[\s\S]*\.date-button,[\s\S]*\.color-input,[\s\S]*\.switch-row[\s\S]*min-height:\s*var\(--hc-touch,\s*44px\)/);
   assert.match(sw, /assets\/css\/mobile-accessibility\.css/);
+  assert.match(opsCss, /@media\(max-width:720px\)[\s\S]*min-height:44px/);
 });
 
 test('mobile vertical scrolling, safe area and reduced motion remain explicitly supported', () => {
@@ -57,12 +60,42 @@ test('mobile vertical scrolling, safe area and reduced motion remain explicitly 
   assert.match(css, /prefers-reduced-motion:\s*reduce/);
 });
 
-test('installed PWA precaches the complete Hípico JavaScript module tree', () => {
+test('installed PWA precaches the complete Hípico JavaScript module tree and atomically retires old shells', () => {
   const root = new URL('../frontend/public/hipico-control/assets/js/', import.meta.url);
   const missing = jsFiles(root).filter((file) => !sw.includes(`'./assets/js/${file}'`) && !sw.includes(`"./assets/js/${file}"`));
   assert.deepEqual(missing, [], `JavaScript modules missing from APP_SHELL: ${missing.join(', ')}`);
-  assert.match(sw, /shell-r\d+-[a-z0-9-]+/i);
-  assert.match(sw, /new cache name makes shell upgrades atomic/i);
+  assert.match(sw, /const SHELL_CACHE\s*=\s*`\$\{CACHE_VERSION\}-shell-r\d+-[a-z0-9-]+`/i);
+  assert.match(sw, /cache\.addAll\(\[\.\.\.APP_SHELL_URLS\]\)/);
+  assert.match(sw, /key\.startsWith\('hipico-control-'\)\s*&&\s*key\s*!==\s*SHELL_CACHE/);
+  assert.match(sw, /caches\.delete\(key\)/);
   assert.match(sw, /isSensitive\(url\).*cache:\s*'no-store'/s);
   assert.match(sw, /isRuntimeMetadata\(url\).*cache:\s*'no-store'/s);
+});
+
+test('Control Hípico release version is single-sourced and build metadata is generated during every frontend build', () => {
+  const appVersion = config.match(/export const APP_VERSION\s*=\s*["']([^"']+)["']/)?.[1];
+  const cacheVersion = sw.match(/const CACHE_VERSION\s*=\s*['"]hipico-control-v([^'"]+)['"]/)?.[1];
+  assert.ok(appVersion, 'APP_VERSION must exist');
+  assert.equal(cacheVersion, appVersion);
+  assert.equal(buildInfo.version, appVersion);
+  assert.equal(buildInfo.buildId, appVersion);
+  assert.match(frontendPackage.scripts['build:identity'], /write-build-info\.mjs\s*&&\s*node scripts\/write-hipico-build-info\.mjs/);
+  assert.match(frontendPackage.scripts['preqa:source'], /node --check frontend\/scripts\/write-hipico-build-info\.mjs/);
+});
+
+test('Hípico build metadata binds production artifacts to exact Git SHA without Windows pathname assumptions', () => {
+  assert.match(buildWriter, /fileURLToPath/);
+  assert.doesNotMatch(buildWriter, /new URL\([^\n]+\)\.pathname/);
+  assert.match(buildWriter, /VERCEL_GIT_COMMIT_SHA/);
+  assert.match(buildWriter, /GIT_SHA/);
+  assert.match(buildWriter, /candidateSha/);
+  assert.match(buildWriter, /bound:candidateSha!==['"]local-unbound['"]/);
+  const isBoundSha = /^[a-f0-9]{40}$/i.test(String(buildInfo.candidateSha || ''));
+  assert.ok(buildInfo.candidateSha === 'local-unbound' || isBoundSha, 'candidateSha must be local-unbound or an exact 40-hex Git SHA');
+  assert.equal(buildInfo.bound, buildInfo.candidateSha !== 'local-unbound');
+  const runtimeSha = String(process.env.VERCEL_GIT_COMMIT_SHA || process.env.GIT_SHA || process.env.COMMIT_SHA || '').trim().toLowerCase();
+  if (/^[a-f0-9]{40}$/.test(runtimeSha)) {
+    assert.equal(buildInfo.candidateSha, runtimeSha, 'build metadata must bind to the exact runtime Git SHA');
+    assert.equal(buildInfo.bound, true);
+  }
 });

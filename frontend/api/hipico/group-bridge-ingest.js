@@ -41,29 +41,7 @@ function canonicalBridgeEvent(body, source = process.env) {
   const role = normalizedChannelRole(body);
   const identity = configuredChannelIdentity(role, source);
   const lab = configuredChannelIdentity('lab', source);
-  return {
-    bridgeVersion: String(body.bridgeVersion || 'serverless-compat-adapter').slice(0, 80),
-    externalMessageId: String(body.externalMessageId).trim(),
-    groupId: identity.groupId,
-    groupName: String(body.groupName || 'Grupo WhatsApp').trim().slice(0, 220) || 'Grupo WhatsApp',
-    channelKey: identity.channelKey,
-    labChannelKey: lab.channelKey,
-    channelRole: role,
-    shadowMode: true,
-    historySync: Boolean(body.historySync),
-    senderId: String(body.senderId).trim(),
-    senderLabel: String(body.senderLabel || '').slice(0, 220),
-    fromMe: Boolean(body.fromMe),
-    timestamp: normalizedTimestamp(body.timestamp),
-    type: String(body.type || 'chat').slice(0, 80),
-    mediaKind: mediaKind(body),
-    mediaName: String(body.mediaName || '').slice(0, 240),
-    text: String(body.text || '').slice(0, 4000),
-    hasMedia: Boolean(body.hasMedia),
-    quotedExternalMessageId: body.quotedExternalMessageId == null ? null : String(body.quotedExternalMessageId),
-    quoteDepth: Number.isInteger(body.quoteDepth) ? body.quoteDepth : 0,
-    rawMeta: `serverless-compat:${sourceReplaySignature(body).slice(0, 24)}`
-  };
+  return { bridgeVersion: String(body.bridgeVersion || 'serverless-compat-adapter').slice(0, 80), externalMessageId: String(body.externalMessageId).trim(), groupId: identity.groupId, groupName: String(body.groupName || 'Grupo WhatsApp').trim().slice(0, 220) || 'Grupo WhatsApp', channelKey: identity.channelKey, labChannelKey: lab.channelKey, channelRole: role, shadowMode: true, historySync: Boolean(body.historySync), senderId: String(body.senderId).trim(), senderLabel: String(body.senderLabel || '').slice(0, 220), fromMe: Boolean(body.fromMe), timestamp: normalizedTimestamp(body.timestamp), type: String(body.type || 'chat').slice(0, 80), mediaKind: mediaKind(body), mediaName: String(body.mediaName || '').slice(0, 240), text: String(body.text || '').slice(0, 4000), hasMedia: Boolean(body.hasMedia), quotedExternalMessageId: body.quotedExternalMessageId == null ? null : String(body.quotedExternalMessageId), quoteDepth: Number.isInteger(body.quoteDepth) ? body.quoteDepth : 0, rawMeta: `serverless-compat:${sourceReplaySignature(body).slice(0, 24)}` };
 }
 
 export default async function handler(req, res) {

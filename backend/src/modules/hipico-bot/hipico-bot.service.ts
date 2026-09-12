@@ -3,6 +3,8 @@ import { prisma } from '../../database/prisma.js';
 import { classify as classifyOperational } from './hipico-operational-classifier.js';
 import type { IntentResult as OperationalIntentResult } from './hipico-operational-classifier.js';
 import { assertCloudOutboundAllowed, cloudOutboundPolicy } from './hipico-outbound-policy.js';
+import { operatorTokenValid as canonicalOperatorTokenValid } from './hipico-operator-security.js';
+import { webhookSignatureValid } from './hipico-webhook-security.js';
 
 export type BotPromotion='shadow'|'approved'|'automatic';
 export type IntentResult=OperationalIntentResult;
@@ -10,6 +12,10 @@ export type IntentResult=OperationalIntentResult;
 const SAFE_AUTOMATIC=new Set(['greeting','help','status_non_monetary']);
 const NON_TEXT_MEDIA=new Set(['audio','document','image','sticker','video']);
 const E164_DIGITS=/^[1-9]\d{6,14}$/;
+const MAX_INBOUND_TEXT=4000;
+const MAX_MESSAGE_TYPE=80;
+const MAX_PROVIDER_MESSAGE_ID=320;
+const MAX_PHONE_NUMBER_ID=120;
 
 const clampLimit=(value:number, fallback=50)=>Math.min(100,Math.max(1,Number.isFinite(value)?Math.trunc(value):fallback));
 const id=(prefix:string)=>`${prefix}_${crypto.randomUUID()}`;
@@ -41,31 +47,34 @@ export function classifyIncoming(message:any):IntentResult {
   return classifyOperational(message?.body||'');
 }
 
+// Compatibility exports keep old imports working, but security policy lives in
+// the canonical modules so there is no weaker secondary implementation.
 export function signatureValid(raw:Buffer|undefined,signature:string|undefined){
-  const secret=String(process.env.WHATSAPP_APP_SECRET||'');
-  if(!secret||!raw||!signature?.startsWith('sha256='))return false;
-  const expected=`sha256=${crypto.createHmac('sha256',secret).update(raw).digest('hex')}`;
-  try{return crypto.timingSafeEqual(Buffer.from(expected),Buffer.from(signature));}catch{return false;}
+  return webhookSignatureValid(raw,signature);
 }
 
 export function operatorTokenValid(value:string|undefined){
-  const expected=String(process.env.HIPICO_BOT_OPERATOR_TOKEN||'');
-  if(!expected||!value)return false;
-  try{return crypto.timingSafeEqual(Buffer.from(expected),Buffer.from(value));}catch{return false;}
+  return canonicalOperatorTokenValid(value);
 }
 
 export function extractMessages(payload:any){
   const rows:any[]=[];
   for(const entry of payload?.entry||[])for(const change of entry?.changes||[]){
     const value=change?.value||{};
-    const phoneNumberId=String(value?.metadata?.phone_number_id||'');
+    const phoneNumberId=String(value?.metadata?.phone_number_id||'').trim();
     for(const message of value?.messages||[]){
-      const messageType=String(message.type||'unknown');
-      const body=String(message?.text?.body||message?.button?.text||message?.interactive?.button_reply?.title||message?.document?.caption||message?.document?.filename||message?.image?.caption||message?.video?.caption||'');
-      rows.push({providerMessageId:String(message.id||''),phoneNumberId,sender:String(message.from||''),messageType,body,payload:message});
+      const providerMessageId=String(message.id||'').trim();
+      const sender=String(message.from||'').trim();
+      const messageType=String(message.type||'unknown').trim().toLowerCase().slice(0,MAX_MESSAGE_TYPE)||'unknown';
+      const body=String(message?.text?.body||message?.button?.text||message?.interactive?.button_reply?.title||message?.document?.caption||message?.document?.filename||message?.image?.caption||message?.video?.caption||'').slice(0,MAX_INBOUND_TEXT);
+      rows.push({providerMessageId,phoneNumberId,sender,messageType,body,payload:message});
     }
   }
-  return rows.filter((row)=>row.providerMessageId&&E164_DIGITS.test(row.sender));
+  return rows.filter((row)=>
+    row.providerMessageId.length>0&&row.providerMessageId.length<=MAX_PROVIDER_MESSAGE_ID&&
+    row.phoneNumberId.length>0&&row.phoneNumberId.length<=MAX_PHONE_NUMBER_ID&&
+    E164_DIGITS.test(row.sender)
+  );
 }
 
 async function dbReady(force=false){

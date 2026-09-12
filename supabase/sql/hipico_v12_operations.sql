@@ -140,7 +140,15 @@ create policy hipico_reconciliations_select_own on public.hipico_reconciliations
 create policy hipico_reconciliations_insert_own on public.hipico_reconciliations for insert to authenticated with check (owner_id = (select auth.uid()));
 create policy hipico_reconciliations_update_own on public.hipico_reconciliations for update to authenticated using (owner_id = (select auth.uid())) with check (owner_id = (select auth.uid()));
 
-insert into public.hipico_bot_channels(owner_id, group_key, label, channel_type, status, config)
-select owner_id, 'triple-cown', 'CLUB HIPICO TRIPLE COWN', 'manual_export', 'active', jsonb_build_object('mode','offline_first','auto_send',false)
-from public.hipico_workspaces order by updated_at desc limit 1
-on conflict(owner_id, group_key) do nothing;
+-- Legacy installs already have hipico_workspaces at this point; fresh isolated Hípico
+-- installs may not. Keep the optional legacy seed without making the migration
+-- depend on a table that is created later by hipico_v13_workspace_sync_security.sql.
+do $$
+begin
+  if to_regclass('public.hipico_workspaces') is not null then
+    insert into public.hipico_bot_channels(owner_id, group_key, label, channel_type, status, config)
+    select owner_id, 'triple-cown', 'CLUB HIPICO TRIPLE COWN', 'manual_export', 'active', jsonb_build_object('mode','offline_first','auto_send',false)
+    from public.hipico_workspaces order by updated_at desc limit 1
+    on conflict(owner_id, group_key) do nothing;
+  end if;
+end $$;

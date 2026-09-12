@@ -1,0 +1,99 @@
+name: Hípico Production Build Runtime
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'frontend/public/hipico-control/**'
+      - 'frontend/api/hipico/**'
+      - 'frontend/scripts/write-hipico-build-info.mjs'
+      - 'frontend/package.json'
+      - 'backend/src/modules/hipico-bot/**'
+      - 'tests/hipico*.test.mjs'
+      - 'qa/hipico-visual-functional-v105.spec.mjs'
+      - 'qa/support/hipico-*.mjs'
+      - 'scripts/hipico-*.mjs'
+      - 'tools/hipico-whatsapp-web-bridge/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/hipico-build-runtime.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  HIPICO_CANDIDATE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+
+concurrency:
+  group: hipico-production-build-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  production-build-runtime:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      HIPICO_CANDIDATE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+      GIT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+    steps:
+      - name: Checkout exact candidate
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ env.HIPICO_CANDIDATE_SHA }}
+          fetch-depth: 0
+
+      - name: Exact candidate SHA and clean-tree gate
+        run: node scripts/hipico-exact-sha-gate.mjs
+
+      - name: Node 22
+        uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Install workspace from lockfile
+        run: npm ci --no-audit --no-fund
+
+      - name: Install Chromium used by build pre-QA
+        run: npx playwright install --with-deps chromium
+
+      - name: Build exact production frontend
+        run: npm --workspace frontend run build
+
+      - name: Verify production build and runtime preview
+        shell: bash
+        run: |
+          set -euo pipefail
+          evidence="artifacts/qa/hipico-runtime/${HIPICO_CANDIDATE_SHA}"
+          mkdir -p "$evidence"
+          npm --workspace frontend run preview >"$evidence/preview.log" 2>&1 &
+          preview_pid=$!
+          cleanup() { kill "$preview_pid" 2>/dev/null || true; }
+          trap cleanup EXIT
+
+          curl --fail --silent --show-error --retry 40 --retry-connrefused --retry-delay 0 --max-time 90 \
+            http://127.0.0.1:8080/hipico-control/ >"$evidence/index.html"
+          curl --fail --silent --show-error --retry 5 --retry-connrefused --retry-delay 0 --max-time 30 \
+            http://127.0.0.1:8080/hipico-control/build-info.json >"$evidence/build-info.json"
+
+          grep -q 'Control Hípico' "$evidence/index.html"
+          node --input-type=module - "$evidence/build-info.json" "$HIPICO_CANDIDATE_SHA" <<'NODE'
+          import fs from 'node:fs';
+          const [file, expected] = process.argv.slice(2);
+          const info = JSON.parse(fs.readFileSync(file, 'utf8'));
+          if (info.product !== 'control-hipico') throw new Error('HIPICO_RUNTIME_PRODUCT_MISMATCH');
+          if (info.candidateSha !== expected.toLowerCase()) throw new Error(`HIPICO_RUNTIME_SHA_MISMATCH expected=${expected} actual=${info.candidateSha}`);
+          if (info.bound !== true) throw new Error('HIPICO_RUNTIME_BUILD_NOT_SHA_BOUND');
+          console.log(`[hipico-runtime] PASS sha=${info.candidateSha} version=${info.version}`);
+          NODE
+
+      - name: Upload SHA-bound production runtime evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: hipico-production-runtime-${{ env.HIPICO_CANDIDATE_SHA }}
+          path: artifacts/qa/hipico-runtime/${{ env.HIPICO_CANDIDATE_SHA }}/
+          if-no-files-found: warn
+          retention-days: 30
