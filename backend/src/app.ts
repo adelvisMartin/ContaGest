@@ -6,6 +6,7 @@ import authRoutes from './modules/auth/auth.routes.js';
 import hipicoAgentRoutes from './modules/hipico/agent.routes.js';
 import hipicoCommandCenterRoutes from './modules/hipico/command-center.routes.js';
 import hipicoDocumentRoutes from './modules/hipico/document.routes.js';
+import hipicoOperatorReadRoutes from './modules/hipico/operator-read.routes.js';
 import hipicoProviderRoutes from './modules/hipico/provider.routes.js';
 import hipicoRaceRoutes from './modules/hipico/race.routes.js';
 import hipicoSystemRoutes from './modules/hipico/hipico-system.routes.js';
@@ -71,6 +72,7 @@ export function createApp(options: { readinessCheck?: ReadinessCheck } = {}) {
   app.use('/api/v1/hipico/system', authRateLimit, hipicoSystemRoutes);
   app.use('/api/v1/hipico/documents', authRateLimit, expensiveOperationRateLimit, hipicoDocumentRoutes);
   app.use('/api/v1/hipico', authRateLimit, hipicoCommandCenterRoutes);
+  app.use('/api/v1/hipico', authRateLimit, hipicoOperatorReadRoutes);
   app.use('/api/v1/hipico', authRateLimit, hipicoProviderRoutes);
   app.use('/api/v1/hipico', authRateLimit, hipicoRaceRoutes);
   app.use('/api/v1/hipico', authRateLimit, hipicoAgentRoutes);

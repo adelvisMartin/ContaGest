@@ -5,7 +5,7 @@ const inflight = new Map();
 let scheduled = false;
 
 function activeGroupKey() {
-  return String(document.querySelector('.group-pill.is-active')?.dataset?.id || document.querySelector('.group-metric-card.is-active')?.dataset?.id || '').trim();
+  return String(document.querySelector('.group-pill.is-active')?.dataset?.groupKey || document.querySelector('.group-pill.is-active')?.dataset?.id || document.querySelector('.group-metric-card.is-active')?.dataset?.groupKey || document.querySelector('.group-metric-card.is-active')?.dataset?.id || '').trim();
 }
 
 function dashboardAnchor() {
@@ -18,6 +18,10 @@ function stateFor(groupKey) {
   return states.get(groupKey);
 }
 
+function renderKey(groupKey, state) {
+  return [groupKey, state.status, state.updatedAt || '', state.stale ? 'stale' : 'fresh', state.error || ''].join('|');
+}
+
 function render(groupKey) {
   const anchor = dashboardAnchor();
   if (!anchor || !groupKey) return;
@@ -27,7 +31,11 @@ function render(groupKey) {
     mount.dataset.commandCenterMount = 'true';
     anchor.insertAdjacentElement('afterend', mount);
   }
-  mount.innerHTML = renderCommandCenter(stateFor(groupKey));
+  const state = stateFor(groupKey);
+  const key = renderKey(groupKey, state);
+  if (mount.dataset.renderKey === key) return;
+  mount.dataset.renderKey = key;
+  mount.innerHTML = renderCommandCenter(state);
 }
 
 async function load(groupKey, force = false) {
@@ -66,7 +74,13 @@ function schedule() {
   queueMicrotask(synchronize);
 }
 
-new MutationObserver(schedule).observe(document.documentElement, { childList: true, subtree: true, attributes: true, attributeFilter: ['class'] });
+new MutationObserver((mutations) => {
+  const relevant = mutations.some((mutation) => {
+    const target = mutation.target;
+    return !(target instanceof Element && target.closest('[data-command-center-mount]'));
+  });
+  if (relevant) schedule();
+}).observe(document.documentElement, { childList: true, subtree: true, attributes: true, attributeFilter: ['class'] });
 
 document.addEventListener('click', (event) => {
   const button = event.target?.closest?.('[data-action="refresh-command-center"]');
