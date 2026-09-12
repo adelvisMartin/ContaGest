@@ -3,7 +3,7 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { promisify } from 'node:util';
-import type { PdfTextExtractor, ExtractionResult } from './document-engine.js';
+import { MAX_PDF_PAGES, type PdfTextExtractor, type ExtractionResult } from './document-engine.js';
 
 const execFileAsync = promisify(execFile);
 const MIN_NATIVE_TEXT_CHARS = 32;
@@ -73,6 +73,9 @@ async function pageCount(pdfPath: string, signal: AbortSignal) {
   const pages = Number(String(stdout).match(/^Pages:\s+(\d+)\s*$/mi)?.[1] || 0);
   if (!Number.isInteger(pages) || pages < 1) {
     throw Object.assign(new Error('HIPICO_DOCUMENT_PAGE_COUNT_FAILED'), { code: 'HIPICO_DOCUMENT_PAGE_COUNT_FAILED' });
+  }
+  if (pages > MAX_PDF_PAGES) {
+    throw Object.assign(new Error('PDF_PAGE_LIMIT_EXCEEDED'), { code: 'PDF_PAGE_LIMIT_EXCEEDED' });
   }
   return pages;
 }
