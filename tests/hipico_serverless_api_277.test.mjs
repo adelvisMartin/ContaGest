@@ -116,7 +116,9 @@ test('group bridge validates strict transport schema before persistence', () => 
 
 test('group bridge requires explicit role and canonical channel identities', () => {
   const body = bridgeEnvelope({ externalMessageId: 'wamid-explicit-source' });
-  assert.equal(validateGroupBridgeBody({ ...body, channelRole: undefined }, bridgeEnv), 'missing_required_field');
+  const { channelRole: _omitted, ...withoutChannelRole } = body;
+  assert.equal(validateGroupBridgeBody(withoutChannelRole, bridgeEnv), 'missing_required_field');
+  assert.equal(validateGroupBridgeBody({ ...body, channelRole: undefined }, bridgeEnv), 'invalid_channel_role');
   assert.equal(ingestTest.normalizedChannelRole(body), 'source');
   assert.equal(ingestTest.normalizedChannelRole({ ...body, channelRole: 'lab' }), 'lab');
   assert.equal(validateGroupBridgeBody({ ...body, channelKey: 'otro-canal' }, bridgeEnv), 'source_channel_not_authorized');
