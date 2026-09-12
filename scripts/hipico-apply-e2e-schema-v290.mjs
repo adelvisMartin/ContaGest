@@ -18,7 +18,8 @@ const migrations = [
   'supabase/sql/hipico_v14_canonical_domain.sql',
   'supabase/sql/hipico_v15_domain_integrity_alignment.sql',
   'supabase/sql/hipico_v16_operator_confirmation_audit.sql',
-  'supabase/sql/hipico_v17_outbox_reconciliation_status.sql'
+  'supabase/sql/hipico_v17_outbox_reconciliation_status.sql',
+  'supabase/sql/hipico_v18_documents.sql'
 ];
 
 function assertSafe(urlText) {
@@ -99,7 +100,8 @@ try {
     'hipico_workspaces','hipico_profiles','hipico_audit_events',
     'hipico_bot_channels','hipico_messages','hipico_operation_events','hipico_shadow_evaluations',
     'hipico_outbox','hipico_ledger_entries','hipico_reconciliations',
-    'hipico_domain_aggregates','hipico_domain_events'
+    'hipico_domain_aggregates','hipico_domain_events',
+    'hipico_documents','hipico_document_sources'
   ];
   const rows = await client.query(`SELECT tablename FROM pg_tables WHERE schemaname='public' AND tablename = ANY($1::text[])`, [required]);
   const found = new Set(rows.rows.map((row) => row.tablename));
@@ -140,7 +142,10 @@ try {
   await expectPermissionDenied(client, 'authenticated', ownerId, `INSERT INTO public.hipico_ledger_entries(owner_id,group_key,participant_code,product_type,reference_type,reference_id,entry_type,amount,currency) VALUES('${ownerId}'::uuid,'rbac-own','P1','TEST','e2e','forbidden-ledger','bet',1,'VES')`);
   await expectPermissionDenied(client, 'authenticated', ownerId, `INSERT INTO public.hipico_outbox(owner_id,group_key,destination,idempotency_key,payload) VALUES('${ownerId}'::uuid,'rbac-own','test','forbidden-outbox','{}'::jsonb)`);
   await expectPermissionDenied(client, 'authenticated', ownerId, `INSERT INTO public.hipico_domain_aggregates(owner_id,group_key,aggregate_kind,aggregate_key,status) VALUES('${ownerId}'::uuid,'rbac-own','race','forbidden-race','OPEN')`);
+  await expectPermissionDenied(client, 'authenticated', ownerId, `SELECT raw_pdf FROM public.hipico_documents LIMIT 1`);
+  await expectPermissionDenied(client, 'authenticated', ownerId, `INSERT INTO public.hipico_documents(owner_id,group_key,sha256,size_bytes,page_count_estimate,filename,mime,raw_pdf) VALUES('${ownerId}'::uuid,'rbac-own',repeat('a',64),1,1,'x.pdf','application/pdf',decode('00','hex'))`);
   await expectPermissionDenied(client, 'anon', null, `SELECT owner_id FROM public.hipico_workspaces LIMIT 1`);
+  await expectPermissionDenied(client, 'anon', null, `SELECT id FROM public.hipico_documents LIMIT 1`);
 
   await fs.mkdir(path.dirname(rbacArtifact), { recursive: true });
   await fs.writeFile(rbacArtifact, `${JSON.stringify({
@@ -152,12 +157,15 @@ try {
       authenticatedLedgerWriteDenied: true,
       authenticatedOutboxWriteDenied: true,
       authenticatedCanonicalDomainWriteDenied: true,
+      authenticatedRawDocumentReadDenied: true,
+      authenticatedDocumentWriteDenied: true,
       anonWorkspaceReadDenied: true,
+      anonDocumentReadDenied: true,
       rlsTables: protectedTables
     }
   }, null, 2)}\n`, 'utf8');
 
-  console.log(`[hipico-v290] schema ready (${required.length} required tables, workspace/RLS/RBAC executed)`);
+  console.log(`[hipico-v290] schema ready (${required.length} required tables, workspace/RLS/RBAC/document evidence executed)`);
 } catch (error) {
   try { await client.query('ROLLBACK'); } catch {}
   throw error;
