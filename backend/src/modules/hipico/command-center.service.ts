@@ -59,7 +59,7 @@ export async function buildHipicoCommandCenter(scope: CommandCenterScope) {
       SELECT group_key AS "groupKey", label, channel_type AS "channelType", status,
              config->>'mode' AS mode, config->>'purpose' AS purpose, updated_at AS "updatedAt"
       FROM public.hipico_bot_channels
-      WHERE owner_id=${scope.ownerId}::uuid
+      WHERE owner_id=${scope.ownerId}::uuid AND group_key=${scope.groupKey}
       ORDER BY updated_at DESC
       LIMIT 50
     `, []),
@@ -100,6 +100,7 @@ export async function buildHipicoCommandCenter(scope: CommandCenterScope) {
       SELECT created_at AS "createdAt"
       FROM public.hipico_messages
       WHERE owner_id=${scope.ownerId}::uuid
+        AND channel_key=${scope.groupKey}
         AND metadata->>'source' IN ('official_web_playwright','whatsapp-web-bridge')
       ORDER BY created_at DESC
       LIMIT 1
