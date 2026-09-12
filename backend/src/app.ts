@@ -8,6 +8,7 @@ import hipicoDocumentRoutes from './modules/hipico/document.routes.js';
 import hipicoProviderRoutes from './modules/hipico/provider.routes.js';
 import hipicoRaceRoutes from './modules/hipico/race.routes.js';
 import hipicoSystemRoutes from './modules/hipico/hipico-system.routes.js';
+import hipicoCanonicalRoutes from './modules/hipico-bot/hipico-canonical.routes.js';
 import hipicoWebhookRoutes from './modules/hipico-bot/hipico-webhook.routes.js';
 import hipicoBridgeRoutes from './modules/hipico-bot/hipico-bridge.routes.js';
 import hipicoOperatorRoutes from './modules/hipico-bot/hipico-operator.routes.js';
@@ -32,13 +33,15 @@ export function createApp(options: { readinessCheck?: ReadinessCheck } = {}) {
   app.post('/api/v1/security/csp-report', cspReportRateLimit, express.json({ limit: '32kb', type: ['application/csp-report', 'application/reports+json', 'application/json'] }), collectCspReport);
   app.use(express.json({ limit: env.JSON_BODY_LIMIT, verify: (req, _res, buffer) => { if (String((req as Request).originalUrl || req.url || '').startsWith('/api/v1/hipico-bot/webhook')) (req as any).rawBody = Buffer.from(buffer); } }));
 
-  // Canonical Hípico domain: the only application/domain brain. Compatibility
-  // adapters under /hipico-bot remain transport boundaries and delegate here.
+  // Canonical Hípico backend. Platform 2.0 modules and the hardened domain-event
+  // safety facade live under the same /api/v1/hipico authority. Serverless and
+  // linked-device integrations remain transport adapters under /hipico-bot.
   app.use('/api/v1/hipico/system', authRateLimit, mutationRateLimit, hipicoSystemRoutes);
   app.use('/api/v1/hipico/documents', authRateLimit, expensiveOperationRateLimit, mutationRateLimit, hipicoDocumentRoutes);
   app.use('/api/v1/hipico', authRateLimit, mutationRateLimit, hipicoProviderRoutes);
   app.use('/api/v1/hipico', authRateLimit, mutationRateLimit, hipicoRaceRoutes);
   app.use('/api/v1/hipico', authRateLimit, mutationRateLimit, hipicoAgentRoutes);
+  app.use('/api/v1/hipico', authRateLimit, mutationRateLimit, hipicoCanonicalRoutes);
 
   // Compatibility/integration adapters. Raw Meta body must be preserved above for HMAC.
   app.use('/api/v1/hipico-bot', hipicoWebhookRoutes);
