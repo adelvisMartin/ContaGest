@@ -32,14 +32,37 @@ test('storage boundary rejects malformed scope before opening a database transac
   assert.equal(__test__.persistenceInputIssue({...base,event:{...base.event,sourceMessageKey:'x'.repeat(321)}}),'HIPICO_DOMAIN_EVENT_SCOPE_REQUIRED');
 });
 
-test('storage boundary independently rejects payload amplification and future timestamps',()=>{
+test('storage boundary independently rejects payload amplification, missing timestamps and future timestamps',()=>{
   assert.equal(
     __test__.persistenceInputIssue({...base,event:{...base.event,normalizedPayload:{blob:'x'.repeat(140*1024)}}}),
     'HIPICO_NORMALIZED_PAYLOAD_TOO_LARGE'
   );
+  const {timestamp:_timestamp,...withoutTimestamp}=base.event;
+  assert.equal(
+    __test__.persistenceInputIssue({...base,event:withoutTimestamp}),
+    'HIPICO_EVENT_TIMESTAMP_REQUIRED'
+  );
+  assert.equal(
+    __test__.persistenceInputIssue({...base,event:{...base.event,timestamp:''}}),
+    'HIPICO_EVENT_TIMESTAMP_REQUIRED'
+  );
+  assert.equal(
+    __test__.persistenceInputIssue({...base,event:{...base.event,timestamp:'2026-09-11 20:00:00'}}),
+    'HIPICO_EVENT_TIMESTAMP_INVALID'
+  );
   assert.equal(
     __test__.persistenceInputIssue({...base,event:{...base.event,timestamp:new Date(Date.now()+10*60*1000).toISOString()}}),
     'HIPICO_EVENT_TIMESTAMP_IN_FUTURE'
+  );
+});
+
+test('validTimestamp cannot silently replace missing source time with the current clock',()=>{
+  assert.throws(()=>__test__.validTimestamp(undefined),/HIPICO_EVENT_TIMESTAMP_REQUIRED/);
+  assert.throws(()=>__test__.validTimestamp(''),/HIPICO_EVENT_TIMESTAMP_REQUIRED/);
+  assert.throws(()=>__test__.validTimestamp('31\/02\/2026 10:00'),/HIPICO_EVENT_TIMESTAMP_INVALID/);
+  assert.equal(
+    __test__.validTimestamp('2026-09-11T20:00:00-04:00').toISOString(),
+    '2026-09-12T00:00:00.000Z'
   );
 });
 
