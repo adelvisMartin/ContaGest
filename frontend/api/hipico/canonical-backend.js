@@ -2,6 +2,14 @@ import { fetchWithTimeout, safeTimeoutMs } from './_shared.js';
 
 const ALLOWED_PREFIXES = ['/api/v1/hipico', '/api/v1/hipico-bot'];
 const ALLOWED_METHODS = new Set(['GET', 'POST', 'PUT', 'PATCH', 'DELETE']);
+const ALLOWED_FORWARD_HEADERS = new Set([
+  'content-type',
+  'x-hub-signature-256',
+  'x-hipico-bridge-token',
+  'x-hipico-operator-token',
+  'x-hipico-group-key',
+  'authorization'
+]);
 
 function normalizeOrigin(value) {
   const raw = String(value || '').trim().replace(/\/$/, '');
@@ -55,7 +63,7 @@ export async function proxyCanonicalRequest({ path, method = 'GET', headers = {}
   const outboundHeaders = {};
   for (const [key, value] of Object.entries(headers || {})) {
     const normalized = String(key || '').trim().toLowerCase();
-    if (!['content-type', 'x-hub-signature-256', 'x-hipico-bridge-token', 'x-hipico-operator-token', 'authorization'].includes(normalized)) continue;
+    if (!ALLOWED_FORWARD_HEADERS.has(normalized)) continue;
     const text = String(value ?? '').trim();
     if (text && text.length <= 8192) outboundHeaders[normalized] = text;
   }
@@ -77,4 +85,4 @@ export async function relayCanonicalResponse(res, upstream) {
   return res.status(status).send(data);
 }
 
-export const __test__ = { normalizeOrigin, ALLOWED_PREFIXES, ALLOWED_METHODS };
+export const __test__ = { normalizeOrigin, ALLOWED_PREFIXES, ALLOWED_METHODS, ALLOWED_FORWARD_HEADERS };
