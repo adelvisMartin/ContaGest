@@ -3,7 +3,8 @@ import test from 'node:test';
 import {
   MAX_CANONICAL_FUTURE_SKEW_MS,
   canonicalPayloadIssue,
-  canonicalTimestampIssue
+  canonicalTimestampIssue,
+  gregorianDaysInMonth
 } from './hipico-canonical-input-policy.js';
 
 test('canonical payload accepts bounded JSON evidence and rejects resource amplification',()=>{
@@ -17,12 +18,24 @@ test('canonical payload accepts bounded JSON evidence and rejects resource ampli
   assert.equal(canonicalPayloadIssue({value:Number.NaN}),'HIPICO_NORMALIZED_PAYLOAD_INVALID');
 });
 
+test('Gregorian calendar helper is deterministic even for years where Date.UTC has legacy 1900 coercion',()=>{
+  assert.equal(gregorianDaysInMonth(2024,2),29);
+  assert.equal(gregorianDaysInMonth(2025,2),28);
+  assert.equal(gregorianDaysInMonth(2000,2),29);
+  assert.equal(gregorianDaysInMonth(1900,2),28);
+  assert.equal(gregorianDaysInMonth(96,2),29);
+  assert.equal(gregorianDaysInMonth(99,2),28);
+  assert.equal(gregorianDaysInMonth(0,2),0);
+  assert.equal(gregorianDaysInMonth(2026,13),0);
+});
+
 test('canonical timestamp requires explicit ISO-8601 timezone and valid calendar fields',()=>{
   const now=Date.parse('2026-09-12T00:00:00.000Z');
   assert.equal(canonicalTimestampIssue('2025-01-01T00:00:00.000Z',now),null);
   assert.equal(canonicalTimestampIssue('2024-02-29T23:59:59.123456Z',now),null);
   assert.equal(canonicalTimestampIssue('2025-01-01T01:30:00+01:30',now),null);
   for(const invalid of [
+    '0000-01-01T00:00:00Z',
     '2026-09-11',
     '2026-09-11T06:00:00',
     '2026-09-11 06:00:00Z',
