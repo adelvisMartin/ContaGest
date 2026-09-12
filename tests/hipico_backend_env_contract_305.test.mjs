@@ -20,6 +20,9 @@ const requiredKeys = [
   'HIPICO_SOURCE_CHANNEL_KEY',
   'HIPICO_LAB_CHANNEL_KEY',
   'HIPICO_BOT_PROMOTION',
+  'HIPICO_SUPABASE_URL',
+  'HIPICO_SUPABASE_SERVICE_ROLE_KEY',
+  'HIPICO_INTERNAL_API_TOKEN',
   'WHATSAPP_VERIFY_TOKEN',
   'WHATSAPP_APP_SECRET',
   'WHATSAPP_CLOUD_TOKEN',
@@ -31,6 +34,7 @@ const requiredKeys = [
   'HIPICO_CLOUD_SEND_APPROVED_BY',
   'HIPICO_CLOUD_SEND_CANDIDATE_SHA',
   'HIPICO_CLOUD_ALLOWED_DESTINATIONS',
+  'HIPICO_CLOUD_SEND_TIMEOUT_MS',
   'HIPICO_RACE_PROVIDER',
   'HIPICO_RACE_PROVIDER_BASE_URL',
   'HIPICO_SPORTRADAR_UOF_TOKEN',
@@ -57,6 +61,9 @@ test('#305 example remains fail-closed and never ships Hípico secrets or real g
     'HIPICO_GROUP_BRIDGE_TOKEN',
     'HIPICO_SOURCE_GROUP_ID',
     'HIPICO_LAB_GROUP_ID',
+    'HIPICO_SUPABASE_URL',
+    'HIPICO_SUPABASE_SERVICE_ROLE_KEY',
+    'HIPICO_INTERNAL_API_TOKEN',
     'WHATSAPP_VERIFY_TOKEN',
     'WHATSAPP_APP_SECRET',
     'WHATSAPP_CLOUD_TOKEN',
@@ -73,10 +80,12 @@ test('#305 example remains fail-closed and never ships Hípico secrets or real g
 test('#305 example uses canonical names and labels legacy aliases as compatibility only', () => {
   assert.equal(envValue('WHATSAPP_GRAPH_API_VERSION'), 'v23.0');
   assert.equal(envValue('WHATSAPP_GRAPH_VERSION'), 'v23.0');
+  assert.equal(envValue('HIPICO_CLOUD_SEND_TIMEOUT_MS'), '12000');
   assert.equal(envValue('HIPICO_RACE_PROVIDER_LANGUAGE'), 'en');
   assert.match(example, /compat[^\n]*HIPICO_BOT_OPERATOR_TOKEN|HIPICO_BOT_OPERATOR_TOKEN[^\n]*compat/i);
   assert.match(example, /compat[^\n]*WHATSAPP_GRAPH_VERSION|WHATSAPP_GRAPH_VERSION[^\n]*compat/i);
   assert.match(example, /compat[^\n]*HIPICO_SOURCE_CHANNEL_KEY|HIPICO_SOURCE_CHANNEL_KEY[^\n]*compat/i);
+  assert.match(example, /HIPICO_META_[A-Z_]+[^\n]*compat|compat[^\n]*HIPICO_META_[A-Z_]+/i);
   assert.match(example, /SOURCE.*read-only/i);
   assert.match(example, /Cloud.*individual/i);
   assert.match(example, /enrichment/i);
