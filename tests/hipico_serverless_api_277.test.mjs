@@ -16,7 +16,31 @@ const legacyBridge = read('../tools/hipico-whatsapp-bridge/src/index.mjs');
 
 const sourceGroupId = '120363111111111111@g.us';
 const labGroupId = '120363222222222222-2222222222@g.us';
+const sourceChannelKey = 'club-hipico-triple-crown-official';
+const labChannelKey = 'control-hipico-lab';
 const bridgeEnv = { HIPICO_SOURCE_GROUP_ID: sourceGroupId, HIPICO_LAB_GROUP_ID: labGroupId };
+function bridgeEnvelope(overrides = {}) {
+  return {
+    bridgeVersion: '1.4.2',
+    groupId: sourceGroupId,
+    externalMessageId: 'wamid-1',
+    groupName: 'Grupo fuente',
+    channelKey: sourceChannelKey,
+    labChannelKey,
+    channelRole: 'source',
+    shadowMode: true,
+    senderId: '584121234567',
+    senderLabel: 'Participante',
+    fromMe: false,
+    hasMedia: false,
+    mediaKind: 'none',
+    timestamp: '2026-09-11T06:00:00.000Z',
+    type: 'chat',
+    text: 'Juego 1N del 5 con 100k',
+    quotedExternalMessageId: 'wamid-origin',
+    ...overrides
+  };
+}
 
 test('serverless auth helpers compare secrets safely, enforce internal secret strength and validate E.164 bounds', () => {
   assert.equal(safeEqual('abc', 'abc'), true);
@@ -78,64 +102,38 @@ test('serverless bridge identity accepts modern and legacy group JIDs and reject
   assert.equal(validateBridgeRoleIdentity('source', sourceGroupId, undefined, { ...bridgeEnv, HIPICO_LAB_GROUP_ID: 'bad-id' }), 'lab_group_invalid');
 });
 
-test('group bridge validates types, timestamps, quoted ids and pinned source before persistence', () => {
-  const base = {
-    groupId: sourceGroupId,
-    externalMessageId: 'wamid-1',
-    groupName: 'Grupo fuente',
-    channelRole: 'source',
-    shadowMode: true,
-    senderId: '584121234567',
-    senderLabel: 'Participante',
-    fromMe: false,
-    hasMedia: false,
-    timestamp: '2026-09-11T06:00:00.000Z',
-    type: 'chat',
-    text: 'Juego 1N del 5 con 100k',
-    quotedExternalMessageId: 'wamid-origin'
-  };
+test('group bridge validates strict transport schema before persistence', () => {
+  const base = bridgeEnvelope();
   assert.equal(validateGroupBridgeBody(base, bridgeEnv), null);
   assert.equal(validateGroupBridgeBody({ ...base, fromMe: 'false' }, bridgeEnv), 'invalid_boolean_field');
   assert.equal(validateGroupBridgeBody({ ...base, timestamp: 'not-a-date' }, bridgeEnv), 'invalid_timestamp');
   assert.equal(validateGroupBridgeBody({ ...base, quotedExternalMessageId: 'x'.repeat(321) }, bridgeEnv), 'invalid_quoted_message_id');
   assert.equal(validateGroupBridgeBody({ ...base, groupId: labGroupId }, bridgeEnv), 'source_group_not_authorized');
   assert.equal(validateGroupBridgeBody({ ...base, shadowMode: false }, bridgeEnv), 'source_requires_shadow_mode');
+  assert.equal(validateGroupBridgeBody({ ...base, hasMedia: true, mediaKind: 'none' }, bridgeEnv), 'invalid_media_consistency');
   assert.match(ingest, /serverSecret\('HIPICO_GROUP_BRIDGE_TOKEN'\)/);
 });
 
-test('omitted group bridge role is canonical source across validation, persistence and lab shadow flow', () => {
-  const body = {
-    groupId: sourceGroupId,
-    externalMessageId: 'wamid-default-source',
-    shadowMode: true,
-    senderId: '584121234567',
-    timestamp: '2026-09-11T06:00:00.000Z',
-    type: 'chat',
-    text: 'Juego 1N del 5 con 100k'
-  };
-  assert.equal(validateGroupBridgeBody(body, bridgeEnv), null);
+test('group bridge requires explicit role and canonical channel identities', () => {
+  const body = bridgeEnvelope({ externalMessageId: 'wamid-explicit-source' });
+  assert.equal(validateGroupBridgeBody({ ...body, channelRole: undefined }, bridgeEnv), 'missing_required_field');
   assert.equal(ingestTest.normalizedChannelRole(body), 'source');
   assert.equal(ingestTest.normalizedChannelRole({ ...body, channelRole: 'lab' }), 'lab');
-  assert.match(ingest, /channel_role:\s*channelRole/);
-  assert.match(ingest, /labSimulation:\s*!duplicate\s*&&\s*channelRole === 'source'/);
-  assert.doesNotMatch(ingest, /body\.channelRole === 'source'/);
+  assert.equal(validateGroupBridgeBody({ ...body, channelKey: 'otro-canal' }, bridgeEnv), 'source_channel_not_authorized');
 });
 
 test('serverless bridge identity is mandatory and client channel aliases cannot split the canonical source', () => {
-  const base = {
-    groupId: sourceGroupId, externalMessageId: 'wamid-1', groupName: 'Grupo fuente', channelRole: 'source', shadowMode: true,
-    senderId: '584121234567', timestamp: '2026-09-11T06:00:00.000Z', type: 'chat', text: 'hola'
-  };
+  const base = bridgeEnvelope({ text: 'hola' });
   assert.equal(validateGroupBridgeBody(base, {}), 'source_group_not_configured');
   assert.equal(validateGroupBridgeBody({ ...base, channelKey: 'otro-canal' }, bridgeEnv), 'source_channel_not_authorized');
-  assert.equal(validateGroupBridgeBody({ ...base, channelRole: 'lab', groupId: labGroupId }, { HIPICO_SOURCE_GROUP_ID: sourceGroupId }), 'lab_group_not_configured');
+  assert.equal(validateGroupBridgeBody({ ...base, channelRole: 'lab', groupId: labGroupId, channelKey: labChannelKey }, { HIPICO_SOURCE_GROUP_ID: sourceGroupId }), 'lab_group_not_configured');
   assert.deepEqual(ingestTest.configuredChannelIdentity('source', bridgeEnv), {
-    role: 'source', groupId: sourceGroupId, channelKey: 'club-hipico-triple-crown-official'
+    role: 'source', groupId: sourceGroupId, channelKey: sourceChannelKey
   });
 });
 
 test('persisted serverless channels cannot be reactivated or repurposed by incoming traffic', () => {
-  const identity = { role: 'source', groupId: sourceGroupId, channelKey: 'club-hipico-triple-crown-official' };
+  const identity = { role: 'source', groupId: sourceGroupId, channelKey: sourceChannelKey };
   const valid = { id: 'c1', status: 'active', channel_type: 'web_bridge', config: { channel_role: 'source' } };
   assert.equal(ingestTest.assertPersistedChannel(valid, identity, sourceGroupId).id, 'c1');
   assert.throws(() => ingestTest.assertPersistedChannel({ ...valid, status: 'blocked' }, identity, sourceGroupId), (error) => error?.code === 'HIPICO_SERVERLESS_CHANNEL_DISABLED');
