@@ -68,9 +68,17 @@ test('serverless timeouts fail to bounded defaults instead of accepting NaN, zer
   assert.equal(safeTimeoutMs(9999999), 60000);
 });
 
-test('serverless outbound stays disabled unless compliance, approval, SHA and allowlist all match', () => {
+test('serverless outbound uses the backend canonical Cloud gate, preserves legacy aliases and lets canonical values win', () => {
   const sha = 'a'.repeat(40);
-  const enabled = {
+  const canonical = {
+    HIPICO_CLOUD_SEND_ENABLED: 'true',
+    HIPICO_WHATSAPP_COMPLIANCE_DECISION: 'GO',
+    HIPICO_CLOUD_SEND_APPROVED_BY: 'release-owner',
+    HIPICO_CLOUD_SEND_CANDIDATE_SHA: sha,
+    VERCEL_GIT_COMMIT_SHA: sha,
+    HIPICO_CLOUD_ALLOWED_DESTINATIONS: '+584121234567'
+  };
+  const legacy = {
     HIPICO_META_SEND_ENABLED: 'true',
     HIPICO_WHATSAPP_COMPLIANCE_DECISION: 'GO',
     HIPICO_META_SEND_APPROVED_BY: 'release-owner',
@@ -79,10 +87,45 @@ test('serverless outbound stays disabled unless compliance, approval, SHA and al
     HIPICO_META_ALLOWED_DESTINATIONS: '+584121234567'
   };
   assert.equal(metaOutboundPolicy({}).enabled, false);
-  assert.equal(metaOutboundPolicy(enabled).enabled, true);
-  assert.equal(metaDestinationAllowed('+584121234567', enabled), true);
-  assert.equal(metaDestinationAllowed('+584121234568', enabled), false);
-  assert.equal(metaOutboundPolicy({ ...enabled, VERCEL_GIT_COMMIT_SHA: 'b'.repeat(40) }).enabled, false);
+  assert.equal(metaOutboundPolicy(canonical).enabled, true);
+  assert.equal(metaDestinationAllowed('+584121234567', canonical), true);
+  assert.equal(metaDestinationAllowed('+584121234568', canonical), false);
+  assert.equal(metaOutboundPolicy({ ...canonical, VERCEL_GIT_COMMIT_SHA: 'b'.repeat(40) }).enabled, false);
+  assert.equal(metaOutboundPolicy(legacy).enabled, true);
+  assert.equal(metaDestinationAllowed('+584121234567', legacy), true);
+  assert.equal(metaOutboundPolicy({ ...legacy, HIPICO_CLOUD_SEND_ENABLED: 'false' }).enabled, false);
+});
+
+test('serverless Meta transport uses canonical backend names with legacy aliases only as fallback', () => {
+  const strong = 'x'.repeat(64);
+  const canonical = {
+    WHATSAPP_CLOUD_TOKEN: strong,
+    WHATSAPP_PHONE_NUMBER_ID: '1234567890',
+    WHATSAPP_GRAPH_API_VERSION: 'v23.0',
+    WHATSAPP_VERIFY_TOKEN: 'v'.repeat(64),
+    WHATSAPP_APP_SECRET: 's'.repeat(64)
+  };
+  const legacy = {
+    HIPICO_META_ACCESS_TOKEN: strong,
+    HIPICO_META_PHONE_NUMBER_ID: '1234567890',
+    HIPICO_META_GRAPH_VERSION: 'v23.0',
+    HIPICO_META_VERIFY_TOKEN: 'v'.repeat(64),
+    HIPICO_META_APP_SECRET: 's'.repeat(64)
+  };
+  assert.equal(statusTest.metaSenderConfig(canonical).ready, true);
+  assert.equal(statusTest.metaWebhookConfig(canonical).ready, true);
+  assert.equal(statusTest.metaSenderConfig(legacy).ready, true);
+  assert.equal(statusTest.metaWebhookConfig(legacy).ready, true);
+  const conflict = {
+    ...legacy,
+    WHATSAPP_CLOUD_TOKEN: 'short',
+    WHATSAPP_PHONE_NUMBER_ID: 'bad-id',
+    WHATSAPP_GRAPH_API_VERSION: '23',
+    WHATSAPP_VERIFY_TOKEN: 'short',
+    WHATSAPP_APP_SECRET: 'short'
+  };
+  assert.equal(statusTest.metaSenderConfig(conflict).ready, false);
+  assert.equal(statusTest.metaWebhookConfig(conflict).ready, false);
 });
 
 test('Supabase helper uses bounded fetch and does not echo upstream bodies into thrown errors', () => {
