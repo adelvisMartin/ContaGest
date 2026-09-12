@@ -4,7 +4,7 @@ import { HipicoBotStore, promotion, sendCloudText } from './hipico-bot.service.j
 import { classify } from './hipico-operational-classifier.js';
 import { operatorTokenValid } from './hipico-operator-security.js';
 import { cloudDestinationAllowed, cloudOutboundPolicy, cloudTransportConfiguration } from './hipico-outbound-policy.js';
-import { createHorseRaceProvider, HorseRaceProviderError } from './hipico-race-provider.js';
+import { hipicoProviderHttpStatus, hipicoProviderPublicError, hipicoProviderRegistry } from './hipico-provider-registry.js';
 import { buildShadowProjection } from './hipico-shadow-projection.js';
 import { webhookSecurityReady } from './hipico-webhook-security.js';
 
@@ -13,7 +13,7 @@ const idSchema=z.string().min(3).max(120).regex(/^[A-Za-z0-9_-]+$/);
 const requestIdSchema=z.string().trim().min(8).max(120).regex(/^[A-Za-z0-9._:-]+$/);
 const e164Schema=z.string().regex(/^\+?[1-9]\d{6,14}$/);
 const limit=(value:unknown)=>Math.min(100,Math.max(1,Number(value)||50));
-const raceProvider=createHorseRaceProvider();
+const raceProvider=hipicoProviderRegistry();
 
 router.use((req,res,next)=>{
   res.setHeader('Cache-Control','no-store, max-age=0');
@@ -38,14 +38,10 @@ router.get('/status',async(_req,res)=>res.json({ok:true,data:{
 router.get('/race-provider/status',(_req,res)=>res.json({ok:true,data:raceProvider.status()}));
 router.get('/race-provider/stages/:stageId',async(req,res)=>{
   try{
-    const result=await raceProvider.getStageSummary(String(req.params.stageId||''));
-    return res.json({ok:true,data:{...result,enrichmentOnly:true,financialAuthority:false}});
+    const result=await raceProvider.getLiveStage(String(req.params.stageId||''));
+    return res.json({ok:true,data:result});
   }catch(error:any){
-    if(error instanceof HorseRaceProviderError){
-      const status=error.code==='INVALID_STAGE_ID'?400:error.code==='NOT_CONFIGURED'?503:error.code==='UPSTREAM_TIMEOUT'?504:502;
-      return res.status(status).json({ok:false,retryable:error.retryable,error:error.message,code:error.code,enrichmentOnly:true,financialAuthority:false});
-    }
-    return res.status(502).json({ok:false,retryable:true,error:'No se pudo consultar el proveedor hípico externo.',enrichmentOnly:true,financialAuthority:false});
+    return res.status(hipicoProviderHttpStatus(error)).json({ok:false,...hipicoProviderPublicError(error)});
   }
 });
 
