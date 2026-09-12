@@ -8,6 +8,9 @@ const frontendConfig=JSON.parse(readFileSync(new URL('../frontend/vercel.json',i
 function scoped(config){
   return config.headers?.find((entry)=>entry.source==='/hipico-control/(.*)')||null;
 }
+function scopedPath(config,source){
+  return config.headers?.find((entry)=>entry.source===source)||null;
+}
 function header(entry,name){
   return entry?.headers?.find((item)=>String(item.key).toLowerCase()===name.toLowerCase())?.value||'';
 }
@@ -29,6 +32,16 @@ test('the Vercel frontend project enforces the same Control Hipico security boun
   assert.match(csp,/frame-src 'none'/);
   assert.doesNotMatch(csp,/script-src[^;]*'unsafe-inline'/);
   assert.equal(header(deployed,'Referrer-Policy'),'no-referrer');
+});
+
+test('exact-SHA runtime metadata is explicitly no-store in both Vercel entry configs',()=>{
+  for(const config of [rootConfig,frontendConfig]){
+    for(const source of ['/hipico-control/build-info.json','/hipico-control/runtime-config.js']){
+      const entry=scopedPath(config,source);
+      assert.ok(entry,`missing runtime metadata cache policy for ${source}`);
+      assert.match(header(entry,'Cache-Control'),/(?:^|,)\s*no-store(?:,|$)/i);
+    }
+  }
 });
 
 test('legacy Control Hipico URLs redirect consistently in the frontend Vercel project before SPA fallback',()=>{
