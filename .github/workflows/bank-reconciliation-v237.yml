@@ -1,0 +1,129 @@
+name: Conciliación bancaria v237
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'backend/src/modules/bank-reconciliation/**'
+      - 'backend/src/modules/index.ts'
+      - 'backend/src/modules/accounting/**'
+      - 'backend/src/modules/approvals/**'
+      - 'backend/prisma/migrations/20260912150500_bank_reconciliation_v237/**'
+      - 'backend/prisma/migrations/20260912150600_bank_reconciliation_pending_status/**'
+      - 'frontend/src/pages/BankingPage.js'
+      - 'frontend/src/services/bankReconciliationService.js'
+      - 'qa/bank-reconciliation-v237*'
+      - 'docs/bank-reconciliation-v237.md'
+      - 'playwright.config.mjs'
+      - '.github/workflows/bank-reconciliation-v237.yml'
+  schedule:
+    - cron: '17 5 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  acceptance:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: reconciliation-ci-only
+          POSTGRES_DB: contagest_reconciliation
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d contagest_reconciliation"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      NODE_ENV: test
+      DATABASE_URL: postgresql://postgres:reconciliation-ci-only@127.0.0.1:5432/contagest_reconciliation?schema=public
+      DIRECT_DATABASE_URL: postgresql://postgres:reconciliation-ci-only@127.0.0.1:5432/contagest_reconciliation?schema=public
+      JWT_SECRET: reconciliation-ci-only-secret-more-than-thirty-two-characters
+      LICENSE_HASH_SECRET: reconciliation-ci-license-secret-more-than-thirty-two-characters
+      CORS_ORIGIN: http://127.0.0.1:8080
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install locked dependencies
+        run: npm ci --no-audit --no-fund
+      - name: Prepare Supabase contracts in isolated PostgreSQL
+        env:
+          PGPASSWORD: reconciliation-ci-only
+        run: psql -h 127.0.0.1 -U postgres -d contagest_reconciliation -f ops/database/prepare-supabase-ephemeral.sql
+      - name: Apply forward migrations
+        run: npm --workspace backend run prisma:deploy
+      - name: Lint and type contracts
+        run: npm run lint
+      - name: Build frontend and backend
+        run: npm run build
+      - name: Parser and upload-threat regressions
+        run: npm --workspace backend exec -- tsx --test src/modules/bank-reconciliation/statement-parser.test.ts
+      - name: PostgreSQL matching concurrency tenant and rounding acceptance
+        run: npm --workspace backend exec -- tsx --test ../qa/bank-reconciliation-v237.integration.test.ts
+      - name: PostgreSQL fee write-off approval and reversal acceptance
+        run: npm --workspace backend exec -- tsx --test ../qa/bank-reconciliation-v237.writeoff.integration.test.ts
+      - name: Install Chromium for PR UI gate
+        run: npx playwright install --with-deps chromium
+      - name: Chromium reconciliation workspace acceptance
+        run: npx playwright test qa/bank-reconciliation-v237.spec.mjs --project=chromium --workers=1
+      - name: Capture SHA-scoped evidence
+        if: always()
+        run: |
+          mkdir -p artifacts/qa
+          printf 'ticket=#237\nsha=%s\nworkflow=%s\nrun_id=%s\n' "$GITHUB_SHA" "$GITHUB_WORKFLOW" "$GITHUB_RUN_ID" > artifacts/qa/bank-reconciliation-v237-sha.txt
+      - name: Upload v237 evidence
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: bank-reconciliation-v237-${{ github.sha }}
+          path: |
+            artifacts/qa/bank-reconciliation-v237-sha.txt
+            playwright-report
+            test-results
+          if-no-files-found: warn
+
+  browser-matrix:
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - project: chromium
+            browser: chromium
+          - project: firefox
+            browser: firefox
+          - project: webkit-safari
+            browser: webkit
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install locked dependencies
+        run: npm ci --no-audit --no-fund
+      - name: Install ${{ matrix.browser }}
+        run: npx playwright install --with-deps ${{ matrix.browser }}
+      - name: Run v237 on ${{ matrix.project }}
+        run: npx playwright test qa/bank-reconciliation-v237.spec.mjs --project=${{ matrix.project }} --workers=1
+      - name: Upload browser evidence
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: bank-reconciliation-v237-${{ matrix.project }}-${{ github.sha }}
+          path: |
+            playwright-report
+            test-results
+          if-no-files-found: warn
