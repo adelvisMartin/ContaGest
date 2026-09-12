@@ -202,7 +202,7 @@ export const HipicoBotStore={
 
 export async function sendCloudText(recipient:string,message:string){
   assertCloudOutboundAllowed(recipient);
-  const {token,phoneId,version}=assertCloudTransportConfigured();
+  const {token,phoneId,version,timeoutMs}=assertCloudTransportConfigured();
   if(!E164_DIGITS.test(recipient))throw new Error('Destinatario WhatsApp inválido.');
   const text=String(message||'').trim();
   if(!text||text.length>4000)throw Object.assign(new Error('Mensaje WhatsApp vacío o demasiado largo.'),{code:'HIPICO_CLOUD_MESSAGE_INVALID'});
@@ -211,7 +211,7 @@ export async function sendCloudText(recipient:string,message:string){
     response=await fetch(`https://graph.facebook.com/${encodeURIComponent(version)}/${encodeURIComponent(phoneId)}/messages`,{
       method:'POST',headers:{authorization:`Bearer ${token}`,'content-type':'application/json'},
       body:JSON.stringify({messaging_product:'whatsapp',recipient_type:'individual',to:recipient,type:'text',text:{preview_url:false,body:text}}),
-      signal:AbortSignal.timeout(10_000)
+      signal:AbortSignal.timeout(timeoutMs)
     });
   }catch(error:any){
     throw Object.assign(new Error('No se pudo determinar si Meta aceptó el mensaje; requiere conciliación manual.'),{
