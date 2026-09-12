@@ -27,6 +27,7 @@ function workspace() {
 test('workspace Command Center context is derived from the active group/meeting/current race without invented data', () => {
   const context = operationalWorkspaceContext(workspace());
   assert.equal(context.group.id, 'g-a');
+  assert.equal(context.groupKey, 'g-a');
   assert.equal(context.meeting.id, 'day-1');
   assert.equal(context.currentRace.id, 'race-2');
   assert.equal(context.nextRace.id, 'race-3');
@@ -82,7 +83,7 @@ test('Command Center remote read-model is fail-closed unless explicitly enabled'
   assert.equal(__test__.commandCenterReadModelEnabled({ HIPICO_COMMAND_CENTER_ENABLED: ' TRUE ' }), true);
 });
 
-test('PWA mounts Command Center module and service worker keeps it available offline', async () => {
+test('PWA mounts Command Center and server BFF delegates only to the canonical read model', async () => {
   const [html, sw, endpoint] = await Promise.all([
     read('frontend/public/hipico-control/index.html'),
     read('frontend/public/hipico-control/sw.js'),
@@ -94,8 +95,9 @@ test('PWA mounts Command Center module and service worker keeps it available off
   assert.match(endpoint, /HIPICO_OPERATOR_CONTROL_TOKEN/);
   assert.match(endpoint, /HIPICO_BOT_OPERATOR_TOKEN/);
   assert.match(endpoint, /x-hipico-operator-token/);
-  assert.match(endpoint, /\/api\/v1\/hipico-bot\/status/);
-  assert.match(endpoint, /\/api\/v1\/hipico-bot\/outbox\?limit=/);
+  assert.match(endpoint, /x-hipico-group-key/);
+  assert.match(endpoint, /\/api\/v1\/hipico\/command-center/);
+  assert.doesNotMatch(endpoint, /\/api\/v1\/hipico-bot\/outbox|\/api\/v1\/hipico-bot\/shadow-projection/);
   assert.doesNotMatch(endpoint, /recipient\s*:/);
   assert.doesNotMatch(endpoint, /message\s*:/);
 });
