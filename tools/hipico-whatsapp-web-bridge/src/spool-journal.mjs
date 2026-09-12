@@ -4,6 +4,13 @@ import crypto from 'node:crypto';
 
 export const SPOOL_SCHEMA_VERSION=2;
 export const SPOOL_STATES=Object.freeze(['queued','sent','failed','quarantined','replayed','expired']);
+const PRIVATE_DIR_MODE=0o700;
+const PRIVATE_FILE_MODE=0o600;
+
+async function ensurePrivateDir(dir){
+  await fs.mkdir(dir,{recursive:true,mode:PRIVATE_DIR_MODE});
+  await fs.chmod(dir,PRIVATE_DIR_MODE).catch(()=>{});
+}
 
 export function createSpoolRecord({kind,key,payload,parserVersion='unknown',createdAt=new Date().toISOString(),maxAttempts=8}){
   if(!kind||!key)throw new Error('SPOOL_KIND_KEY_REQUIRED');
@@ -16,15 +23,16 @@ export function createSpoolRecord({kind,key,payload,parserVersion='unknown',crea
 }
 
 export async function atomicWriteJson(file,value){
-  await fs.mkdir(path.dirname(file),{recursive:true});
+  await ensurePrivateDir(path.dirname(file));
   const tmp=`${file}.${process.pid}.${crypto.randomUUID()}.tmp`;
   let handle;
   try{
-    handle=await fs.open(tmp,'wx');
+    handle=await fs.open(tmp,'wx',PRIVATE_FILE_MODE);
     await handle.writeFile(JSON.stringify(value,null,2),'utf8');
     await handle.sync();
     await handle.close();handle=null;
     await fs.rename(tmp,file);
+    await fs.chmod(file,PRIVATE_FILE_MODE).catch(()=>{});
     try{
       const dirHandle=await fs.open(path.dirname(file),'r');
       try{await dirHandle.sync();}finally{await dirHandle.close();}
@@ -79,9 +87,9 @@ export async function loadSpoolFile(file,options={}){
 }
 
 export async function quarantineFile(file,quarantineDir,reason){
-  await fs.mkdir(quarantineDir,{recursive:true});
+  await ensurePrivateDir(quarantineDir);
   const target=path.join(quarantineDir,path.basename(file));
-  try{await fs.rename(file,target);}catch(error){if(error?.code!=='ENOENT')throw error;}
+  try{await fs.rename(file,target);await fs.chmod(target,PRIVATE_FILE_MODE).catch(()=>{});}catch(error){if(error?.code!=='ENOENT')throw error;}
   await atomicWriteJson(`${target}.reason.json`,{reason,quarantinedAt:new Date().toISOString()});
   return target;
 }
@@ -100,3 +108,5 @@ export function planReplay(records,{destination,expectedDestination,from,to,dryR
   }
   return{dryRun:Boolean(dryRun),destination,count:eligible.length,eligible,skipped};
 }
+
+export const __test__={ensurePrivateDir,PRIVATE_DIR_MODE,PRIVATE_FILE_MODE};

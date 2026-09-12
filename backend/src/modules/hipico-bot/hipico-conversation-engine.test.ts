@@ -91,7 +91,37 @@ test('human-owned participant is silent to prevent double response', () => {
 test('unsupported media without text escalates', () => {
   const result = decideConversation({ ...at('m7'), text: '', mediaKind: 'audio' });
   assert.equal(result.decision, 'ESCALATED');
+  assert.equal(result.decisionReason, 'MEDIA_REQUIRES_OPERATOR_REVIEW');
   assert.equal(result.responseIntent, 'ESCALATED');
+  assert.equal(result.classifierIntent, 'media_message');
+  assert.equal(result.effectsAllowed, false);
+});
+
+test('media caption cannot impersonate a result or invoke the text classifier', () => {
+  let classifierCalls=0;
+  const result=decideConversation(
+    {...at('media-caption','p1','Llegada 1.2.8.7'),mediaKind:'image'},
+    {},
+    () => {
+      classifierCalls+=1;
+      return {intent:'race_result',risk:'review',confidence:.999,suggestion:'',autoEligible:false,reason:'SHOULD_NOT_RUN',entities:{board:['1','2','8','7']}};
+    }
+  );
+  assert.equal(classifierCalls,0);
+  assert.equal(result.decision,'ESCALATED');
+  assert.equal(result.decisionReason,'MEDIA_REQUIRES_OPERATOR_REVIEW');
+  assert.equal(result.classifierIntent,'media_message');
+  assert.equal(result.audit.monetaryOrStateful,false);
+  assert.equal(result.effectsAllowed,false);
+  assert.equal(result.transportAction,'NONE');
+});
+
+test('PDF filename/caption remains document evidence instead of a race opening', () => {
+  const result=decideConversation({...at('pdf-caption','p1','Churchill Downs 5ta carrera abierta.pdf'),raceId:null,mediaKind:'document'});
+  assert.equal(result.decision,'ESCALATED');
+  assert.equal(result.classifierIntent,'document_reference');
+  assert.equal(result.decisionReason,'MEDIA_REQUIRES_OPERATOR_REVIEW');
+  assert.equal(result.effectsAllowed,false);
 });
 
 test('race result gets an operational pilot acknowledgement without applying state', () => {

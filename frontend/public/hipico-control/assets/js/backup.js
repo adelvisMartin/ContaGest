@@ -1,6 +1,6 @@
 import { backupFilename, serializeWorkspaceBackup } from './backup-v2.js';
 export { backupFilename, serializeWorkspaceBackup } from './backup-v2.js';
-export { BACKUP_SCHEMA_VERSION, createBackupObject, validateBackupObject, encryptBackupText, decryptBackupText, parsePortableBackup, reconcileRestoredWorkspace, exportEncryptedCurrentWorkspace, restorePortableBackup, sha256Sync, stripBackupSecrets } from './backup-v2.js';
+export { BACKUP_SCHEMA_VERSION, MAX_PORTABLE_BACKUP_CHARS, createBackupObject, validateBackupObject, encryptBackupText, decryptBackupText, parsePortableBackup, reconcileRestoredWorkspace, exportEncryptedCurrentWorkspace, restorePortableBackup, sha256Sync, stripBackupSecrets } from './backup-v2.js';
 
 function currentPlatform() {
   try { return globalThis.Capacitor?.getPlatform?.() || 'web'; }

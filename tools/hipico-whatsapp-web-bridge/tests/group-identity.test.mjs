@@ -30,18 +30,20 @@ test('DOM separators do not become part of either group JID format', () => {
   assert.deepEqual(extractGroupIds(`bad_${modernSourceId}.evil_tail`), []);
 });
 
-test('normalization accepts modern and legacy groups but rejects user and malformed JIDs', () => {
+test('normalization accepts modern and legacy groups but rejects user, short modern and malformed JIDs', () => {
   assert.equal(normalizeGroupId(legacySourceId.toUpperCase()), legacySourceId);
   assert.equal(normalizeGroupId(modernSourceId.toUpperCase()), modernSourceId);
   assert.equal(normalizeGroupId('584121234567@s.whatsapp.net'), '');
+  assert.equal(normalizeGroupId('1234@g.us'), '');
   assert.equal(normalizeGroupId('12345@g.us'), '');
-  assert.equal(normalizeGroupId('1234-5678@g.us'), '');
+  assert.equal(normalizeGroupId('12345-67890@g.us'), '12345-67890@g.us');
   assert.equal(normalizeGroupId('not-a-group'), '');
 });
 
-test('undersized pseudo group IDs are not extracted from DOM attributes', () => {
+test('short modern-looking IDs are not extracted from wrapped DOM values', () => {
   assert.deepEqual(extractGroupIds('row_12345@g.us_tail'), []);
-  assert.deepEqual(extractGroupIds('row_1234-5678@g.us_tail'), []);
+  assert.deepEqual(extractGroupIds('row_123456789@g.us_tail'), []);
+  assert.deepEqual(extractGroupIds('row_1234567890@g.us_tail'), ['1234567890@g.us']);
 });
 
 test('destination guard requires exact ID plus exact normalized title', () => {

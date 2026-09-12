@@ -46,6 +46,25 @@ test('offer after close is flagged late and excluded until a new plan opens a se
   assert.equal(projection.matches[0].play,'1N');
 });
 
+test('explicit race opening starts the next shadow segment without authorizing money',()=>{
+  const projection=buildShadowProjection([
+    event('c1','Sistema','race_close',{raceNumber:4},'2026-08-17T12:00:00Z','Cierra carrera 4'),
+    event('open5','Sistema','race_open',{raceNumber:5,racetrack:'Churchill Downs',raceContextComplete:true},'2026-08-17T12:00:01Z','Churchill Downs 5ta carrera abierta'),
+    event('e1','Adel','offer_player',{offers:[{play:'PP',horse:'3',amount:20}]},'2026-08-17T12:00:02Z'),
+    event('e2','Luis','offer_receiver',{offers:[{play:'PP',horse:'3',amount:20}]},'2026-08-17T12:00:03Z')
+  ]);
+
+  assert.equal(projection.segments,2);
+  assert.equal(projection.closed,false);
+  assert.equal(projection.openings.length,1);
+  assert.deepEqual(
+    {segmentId:projection.openings[0].segmentId,raceNumber:projection.openings[0].raceNumber,racetrack:projection.openings[0].racetrack},
+    {segmentId:2,raceNumber:5,racetrack:'Churchill Downs'}
+  );
+  assert.equal(projection.matches.length,1);
+  assert.equal(projection.matches[0].segmentId,2);
+});
+
 test('projection records confirmations, result, settlement and balances without mutation',()=>{
   const projection=buildShadowProjection([
     event('confirm','Luis','offer_confirmation',{confirmation:'J'},'2026-08-17T12:00:00Z','J'),

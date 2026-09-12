@@ -27,6 +27,8 @@ export type HipicoDomainEventInput={
   timestamp?:string;
   originalEventId?:string|null;
   requiresReview?:boolean;
+  operatorConfirmed?:boolean;
+  confirmationReason?:string|null;
 };
 
 export type HipicoReducerState={
@@ -118,7 +120,7 @@ export function reduceHipicoDomainEvent(current:HipicoReducerState,event:HipicoD
 
 export function mapOperationalIntentToDomainEvent(intent:string):HipicoDomainEventType{
   const map:Record<string,HipicoDomainEventType>={
-    plan_snapshot:'PLAN_RECORDED',race_close:'RACE_CLOSED',race_result:'RESULT_RECORDED',
+    plan_snapshot:'PLAN_RECORDED',race_open:'RACE_OPENED',race_close:'RACE_CLOSED',race_result:'RESULT_RECORDED',
     settlement_snapshot:'SETTLEMENT_RECORDED',balance_snapshot:'BALANCE_CONFIRMED',day_close:'DAY_CLOSED'
   };
   return map[String(intent||'')]||'UNKNOWN';
