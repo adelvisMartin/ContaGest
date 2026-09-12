@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import { promotion, sendCloudText } from './hipico-bot.service.js';
+import { cloudTransportConfiguration } from './hipico-outbound-policy.js';
 
 const ENV_KEYS=[
   'HIPICO_BOT_PROMOTION',
@@ -10,6 +11,7 @@ const ENV_KEYS=[
   'HIPICO_CLOUD_SEND_APPROVED_BY',
   'HIPICO_CLOUD_SEND_CANDIDATE_SHA',
   'HIPICO_CLOUD_ALLOWED_DESTINATIONS',
+  'HIPICO_CLOUD_SEND_TIMEOUT_MS',
   'VERCEL_GIT_COMMIT_SHA',
   'GIT_SHA',
   'WHATSAPP_CLOUD_TOKEN',
@@ -31,7 +33,7 @@ function restoreEnv(snapshot:Record<string,string|undefined>){
     else process.env[key]=value;
   }
 }
-function configureOutbound({token='x'.repeat(64),phoneId='1234567890',version='v23.0'}={}){
+function configureOutbound({token='x'.repeat(64),phoneId='1234567890',version='v23.0',timeoutMs='12000'}={}){
   Object.assign(process.env,{
     HIPICO_BOT_PROMOTION:'automatic',
     HIPICO_CLOUD_SEND_ENABLED:'true',
@@ -39,6 +41,7 @@ function configureOutbound({token='x'.repeat(64),phoneId='1234567890',version='v
     HIPICO_CLOUD_SEND_APPROVED_BY:'release-owner',
     HIPICO_CLOUD_SEND_CANDIDATE_SHA:SHA,
     HIPICO_CLOUD_ALLOWED_DESTINATIONS:`+${allowedRecipient}`,
+    HIPICO_CLOUD_SEND_TIMEOUT_MS:timeoutMs,
     VERCEL_GIT_COMMIT_SHA:SHA,
     WHATSAPP_CLOUD_TOKEN:token,
     WHATSAPP_PHONE_NUMBER_ID:phoneId,
@@ -66,6 +69,22 @@ test('automatic promotion is available only when policy and strong transport rea
     configureOutbound();
     assert.equal(promotion(),'automatic');
   }finally{restoreEnv(before);}
+});
+
+test('backend Cloud timeout uses the canonical bounded send timeout contract',()=>{
+  const strongEnv={
+    WHATSAPP_CLOUD_TOKEN:'x'.repeat(64),
+    WHATSAPP_PHONE_NUMBER_ID:'1234567890',
+    WHATSAPP_GRAPH_API_VERSION:'v23.0'
+  };
+  assert.equal(cloudTransportConfiguration({...strongEnv,HIPICO_CLOUD_SEND_TIMEOUT_MS:'12000'}).timeoutMs,12000);
+  assert.equal(cloudTransportConfiguration({...strongEnv,HIPICO_CLOUD_SEND_TIMEOUT_MS:'0'}).timeoutMs,12000);
+  assert.equal(cloudTransportConfiguration({...strongEnv,HIPICO_CLOUD_SEND_TIMEOUT_MS:'not-a-number'}).timeoutMs,12000);
+  assert.equal(cloudTransportConfiguration({...strongEnv,HIPICO_CLOUD_SEND_TIMEOUT_MS:'999999'}).timeoutMs,60000);
+  assert.equal(cloudTransportConfiguration({...strongEnv,HIPICO_CLOUD_SEND_TIMEOUT_MS:'500'}).timeoutMs,1000);
+  const service=readFileSync(new URL('./hipico-bot.service.ts',import.meta.url),'utf8');
+  assert.match(service,/AbortSignal\.timeout\(timeoutMs\)/);
+  assert.doesNotMatch(service,/AbortSignal\.timeout\(10_000\)/);
 });
 
 test('sendCloudText rejects weak transport before attempting any network request',async()=>{
