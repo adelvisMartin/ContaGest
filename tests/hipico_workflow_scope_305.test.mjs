@@ -9,6 +9,8 @@ const requiredTriggerPaths = [
   'backend/src/app.ts',
   'backend/src/shared/middleware/security.ts',
   'backend/src/modules/hipico-bot/**',
+  'backend/prisma/migrations/*hipico*/**',
+  'supabase/sql/hipico*.sql',
   'frontend/public/hipico-control/**',
   'frontend/api/hipico/**',
   'frontend/vercel.json',
@@ -17,7 +19,7 @@ const requiredTriggerPaths = [
   'vercel.json'
 ];
 
-test('Hípico QA workflow cannot be skipped by changes to canonical integration, security, configuration, release, diagnosis or deployment contracts', () => {
+test('Hípico QA workflow cannot be skipped by canonical code, security, configuration, migration, release, diagnosis or deployment changes', () => {
   for (const path of requiredTriggerPaths) {
     const escaped = path.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\\\*\\\*/g, '\\*\\\*');
     assert.match(workflow, new RegExp(`- ['"]?${escaped}['"]?`), `missing protected trigger path: ${path}`);
