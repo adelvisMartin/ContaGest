@@ -17,6 +17,26 @@ function stylesheetLinks(html) {
   return [...html.matchAll(/<link\s+rel="stylesheet"\s+href="([^"]+)"/g)].map((match) => match[1]);
 }
 
+function relativeLuminance(hex) {
+  const channels = [1,3,5].map((offset) => Number.parseInt(hex.slice(offset, offset + 2), 16) / 255)
+    .map((value) => value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4);
+  return 0.2126 * channels[0] + 0.7152 * channels[1] + 0.0722 * channels[2];
+}
+
+function contrastRatio(foreground, background) {
+  const a = relativeLuminance(foreground), b = relativeLuminance(background);
+  return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
+}
+
+function themeBlock(css, selector) {
+  const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return css.match(new RegExp(`${escaped}\\s*\\{([\\s\\S]*?)\\}`, 'm'))?.[1] || '';
+}
+
+function colorToken(block, token) {
+  return block.match(new RegExp(`--${token}:\\s*(#[0-9a-fA-F]{6})`))?.[1]?.toLowerCase() || null;
+}
+
 test('Control Hípico exposes exactly one canonical stylesheet on app and recovery surfaces', async () => {
   const [index, recovery] = await Promise.all([fs.readFile(indexPath, 'utf8'), fs.readFile(recoveryPath, 'utf8')]);
   assert.deepEqual(stylesheetLinks(index), ['./assets/css/app.css']);
@@ -43,6 +63,21 @@ test('canonical UI is neutral-first, restrained and uses the v2 typography hiera
   assert.doesNotMatch(css, /font-weight:\s*(?:550|650|750|800|850|900)\b/);
   assert.doesNotMatch(css, /radial-gradient\(/i);
   assert.doesNotMatch(css, /background\s*:\s*linear-gradient\(/i);
+});
+
+test('primary action foreground remains WCAG-readable in explicit and system dark themes', async () => {
+  const css = await fs.readFile(cssPath, 'utf8');
+  const explicit = themeBlock(css, ':root[data-theme="dark"]');
+  const system = themeBlock(css, ':root[data-theme="system"]');
+  const explicitBrand = colorToken(explicit, 'hc-brand');
+  const explicitForeground = colorToken(explicit, 'hc-brand-foreground');
+  const systemBrand = colorToken(system, 'hc-brand');
+  const systemForeground = colorToken(system, 'hc-brand-foreground');
+  assert.ok(explicitBrand && explicitForeground, 'explicit dark theme needs brand + foreground tokens');
+  assert.ok(systemBrand && systemForeground, 'system dark theme needs brand + foreground tokens');
+  assert.ok(contrastRatio(explicitForeground, explicitBrand) >= 4.5, `dark primary contrast=${contrastRatio(explicitForeground, explicitBrand).toFixed(2)}`);
+  assert.ok(contrastRatio(systemForeground, systemBrand) >= 4.5, `system dark primary contrast=${contrastRatio(systemForeground, systemBrand).toFixed(2)}`);
+  assert.match(css, /\.button--primary\s*\{[^}]*color:\s*var\(--hc-brand-foreground\)/s);
 });
 
 test('badges, alerts, modals and toasts use restrained semantic styling', async () => {
