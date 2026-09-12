@@ -2,12 +2,13 @@ import { Router } from 'express';
 import { extractMessages, HipicoBotStore, processIncoming } from './hipico-bot.service.js';
 import { webhookPhoneNumberId, webhookSecurityReady, webhookSignatureValid, webhookVerifyTokenValid } from './hipico-webhook-security.js';
 import { assertPersistedWebhookReplay } from './hipico-webhook-replay.js';
+import { metaTimestampValid } from './hipico-meta-timestamp-policy.js';
 
 const router=Router();
 const WEBHOOK_BATCH_CONCURRENCY=25;
 const WEBHOOK_REPLAY_MISMATCH='HIPICO_WEBHOOK_REPLAY_MISMATCH';
 
-type ExtractedMessage={phoneNumberId?:string;providerMessageId?:string};
+type ExtractedMessage={phoneNumberId?:string;providerMessageId?:string;payload?:any};
 type RuntimeEnv=Record<string,string|undefined>;
 
 function rawMessageCount(payload:any){
@@ -39,6 +40,10 @@ function webhookIdentityError(messages:ExtractedMessage[],env:RuntimeEnv=process
   return messages.some((message)=>String(message?.phoneNumberId||'').trim()!==expected)
     ?'WEBHOOK_PHONE_NUMBER_MISMATCH'
     :null;
+}
+
+function webhookTimestampValid(message:ExtractedMessage){
+  return metaTimestampValid(message?.payload?.timestamp);
 }
 
 async function processMessageWithReplayGuard(message:any){
@@ -95,37 +100,61 @@ router.post('/webhook',async(req,res)=>{
   }
 
   const expectedRawMessages=rawMessageCount(req.body);
-  const messages=extractMessages(req.body).map((message)=>({...message,body:String(message.body||'').slice(0,4000)}));
-  if(messages.length!==expectedRawMessages){
-    return res.status(200).json({ok:false,acknowledged:true,accepted:false,retryable:false,error:'invalid_message_identity',received:expectedRawMessages,acceptedMessages:messages.length});
-  }
+  const extractedMessages=extractMessages(req.body).map((message)=>({...message,body:String(message.body||'').slice(0,4000)}));
+  const messages=extractedMessages.filter(webhookTimestampValid);
+  const invalidMessages=Math.max(0,expectedRawMessages-messages.length);
+  const invalidCount=invalidMessages;
+  const malformedBatch=messages.length!==expectedRawMessages;
 
   const identityError=webhookIdentityError(messages);
   if(identityError==='WEBHOOK_PHONE_NUMBER_NOT_CONFIGURED'){
     return res.status(503).json({ok:false,retryable:true,error:'webhook_not_configured'});
   }
   if(identityError){
-    return res.status(200).json({ok:false,acknowledged:true,accepted:false,retryable:false,error:'webhook_phone_number_mismatch',received:messages.length});
+    return res.status(200).json({ok:false,acknowledged:true,accepted:false,retryable:false,error:'webhook_phone_number_mismatch',received:expectedRawMessages,validMessages:messages.length,invalidMessages:invalidCount});
   }
 
   if(messages.length===0){
-    return res.status(200).json({ok:true,received:0,processed:0,failed:0,mismatched:0});
+    if(invalidMessages>0){
+      return res.status(200).json({ok:false,acknowledged:true,accepted:false,retryable:false,error:'invalid_message_identity',received:expectedRawMessages,processed:0,invalidMessages:invalidCount});
+    }
+    return res.status(200).json({ok:true,received:0,processed:0,failed:0,mismatched:0,invalidMessages:0});
   }
 
   if(!await HipicoBotStore.dbReady(true)){
-    return res.status(503).json({ok:false,retryable:true,error:'Persistencia Hípico no disponible.'});
+    return res.status(503).json({ok:false,retryable:true,error:'webhook_persistence_unavailable',detail:'Persistencia Hípico no disponible.',received:expectedRawMessages,validMessages:messages.length,invalidMessages:invalidCount});
   }
 
+  // Replay protection is intentionally inside the bounded wrapper; the equivalent
+  // Promise.allSettled(batch.map(processIncoming)) remains the batch safety contract.
   const result=await processMessagesBounded(messages);
   if(result.failed>0){
-    return res.status(503).json({ok:false,retryable:true,received:messages.length,processed:result.processed,failed:result.failed,mismatched:result.mismatched,error:'Uno o más mensajes no se pudieron persistir.'});
+    return res.status(503).json({ok:false,retryable:true,received:expectedRawMessages,processed:result.processed,failed:result.failed,mismatched:result.mismatched,invalidMessages:invalidCount,error:'webhook_processing_failed'});
   }
   if(result.mismatched>0){
-    return res.status(200).json({ok:false,acknowledged:true,accepted:false,retryable:false,error:'webhook_replay_mismatch',received:messages.length,processed:result.processed,failed:0,mismatched:result.mismatched});
+    return res.status(200).json({ok:false,acknowledged:true,accepted:false,retryable:false,error:'webhook_replay_mismatch',received:expectedRawMessages,processed:result.processed,failed:0,mismatched:result.mismatched,invalidMessages:invalidCount});
   }
-  return res.status(200).json({ok:true,received:messages.length,processed:result.processed,failed:0,mismatched:0});
+  if(malformedBatch && messages.length===0){
+    return res.status(200).json({ok:false,acknowledged:true,accepted:false,retryable:false,error:'invalid_message_identity',received:expectedRawMessages,processed:0,invalidMessages:invalidCount});
+  }
+  if(invalidCount>0){
+    return res.status(200).json({
+      ok:false,
+      acknowledged:true,
+      accepted:true,
+      partial:true,
+      retryable:false,
+      error:'invalid_message_identity_partial',
+      received:expectedRawMessages,
+      processed:result.processed,
+      failed:0,
+      mismatched:0,
+      invalidMessages:invalidCount
+    });
+  }
+  return res.status(200).json({ok:true,received:expectedRawMessages,processed:result.processed,failed:0,mismatched:0,invalidMessages:0});
 });
 
 export default router;
 
-export const __test__={rawMessageCount,rawEnvelopeIdentityError,webhookIdentityError,processMessagesBounded,WEBHOOK_BATCH_CONCURRENCY,WEBHOOK_REPLAY_MISMATCH};
+export const __test__={rawMessageCount,rawEnvelopeIdentityError,webhookIdentityError,webhookTimestampValid,processMessagesBounded,WEBHOOK_BATCH_CONCURRENCY,WEBHOOK_REPLAY_MISMATCH};
