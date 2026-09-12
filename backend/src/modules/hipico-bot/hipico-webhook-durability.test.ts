@@ -25,8 +25,15 @@ test('durable webhook processing cannot fall back to memory after the readiness 
 test('webhook retry repairs a partial event-without-outbox write idempotently',()=>{
   assert.match(service,/HipicoBotStore\.queueIdempotent\([^;]+meta-webhook[^;]+providerMessageId/s);
   assert.match(service,/event\.inserted===false&&queued\.inserted===false/,'a fully persisted replay must stop without sending twice');
+  assert.match(routes,/const alreadyPersisted=await assertPersistedWebhookReplay\(message\);[\s\S]*processIncoming\(message,\{requirePersistent:true\}\)/);
   const duplicateShortCircuit=service.indexOf("if(event.inserted===false)return{duplicate:true}");
   assert.equal(duplicateShortCircuit,-1,'durable replay must not short-circuit before reconstructing a missing outbox');
+});
+
+test('interrupted automatic sends fail closed into reconciliation instead of blind resend',()=>{
+  assert.match(service,/persistedStatus==='sending'/);
+  assert.match(service,/INTERRUPTED_AUTOMATIC_SEND_REQUIRES_RECONCILIATION/);
+  assert.match(service,/HIPICO_WEBHOOK_RECONCILIATION_PERSISTENCE_REQUIRED/);
 });
 
 test('empty signed webhook batches are acknowledged without requiring PostgreSQL',()=>{
@@ -40,5 +47,5 @@ test('partial webhook processing failure remains retryable and is never acknowle
   assert.match(routes,/if\(result\.failed>0\)/);
   assert.match(routes,/error:'webhook_processing_failed'/);
   assert.match(routes,/return res\.status\(503\)/);
-  assert.match(routes,/Promise\.allSettled\(batch\.map\(\(message\)=>processIncoming\(message,\{requirePersistent:true\}\)\)\)/);
+  assert.match(routes,/Promise\.allSettled\(batch\.map\(processMessageWithReplayGuard\)\)/);
 });
