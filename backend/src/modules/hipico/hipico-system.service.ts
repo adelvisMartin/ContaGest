@@ -24,6 +24,22 @@ function text(source: RuntimeEnv, name: string) {
   return String(source[name] || '').trim();
 }
 
+function boundedReleaseValue(value: unknown, fallback: string, max = 64) {
+  const normalized = String(value || '')
+    .trim()
+    .replace(/[^A-Za-z0-9._+-]/g, '')
+    .slice(0, max);
+  return normalized || fallback;
+}
+
+function candidateSha(source: RuntimeEnv) {
+  const explicit = text(source, 'GIT_COMMIT_SHA')
+    || text(source, 'VERCEL_GIT_COMMIT_SHA')
+    || text(source, 'GITHUB_SHA')
+    || text(source, 'COMMIT_SHA');
+  return boundedReleaseValue(explicit, deploymentMetadata.commitSha || 'unknown');
+}
+
 function strongSecret(value: string) {
   const secret = String(value || '').trim();
   return Buffer.byteLength(secret, 'utf8') >= 32
@@ -36,11 +52,15 @@ function whatsappGroupId(value: string) {
 
 export function buildHipicoVersion(source: RuntimeEnv = process.env): HipicoVersion {
   const configuredProtocol = text(source, 'HIPICO_BRIDGE_PROTOCOL_VERSION');
+  const configuredProductVersion = text(source, 'HIPICO_PRODUCT_VERSION');
   return hipicoVersionSchema.parse({
-    productVersion: deploymentMetadata.version || 'unknown',
-    buildSha: deploymentMetadata.commitSha || 'unknown',
+    // HIPICO_PRODUCT_VERSION is the product identity. The deployment package
+    // version remains a compatibility fallback until all environments publish
+    // the explicit Hípico release version.
+    productVersion: boundedReleaseValue(configuredProductVersion, deploymentMetadata.version || 'unknown'),
+    buildSha: candidateSha(source),
     apiVersion: HIPICO_API_VERSION,
-    bridgeProtocolVersion: configuredProtocol || HIPICO_BRIDGE_PROTOCOL_VERSION
+    bridgeProtocolVersion: boundedReleaseValue(configuredProtocol, HIPICO_BRIDGE_PROTOCOL_VERSION, 32)
   });
 }
 
