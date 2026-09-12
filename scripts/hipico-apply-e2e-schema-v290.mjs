@@ -12,7 +12,8 @@ const migrations = [
   'supabase/sql/hipico_v13_lab_channel_bootstrap.sql',
   'supabase/sql/hipico_v14_documents.sql',
   'supabase/sql/hipico_v15_race_lifecycle.sql',
-  'supabase/sql/hipico_v16_agent_shadow.sql'
+  'supabase/sql/hipico_v16_agent_shadow.sql',
+  'supabase/sql/hipico_v17_provider_evidence.sql'
 ];
 
 function assertSafe(urlText) {
@@ -46,7 +47,11 @@ try {
     console.log(`[hipico-v290] applying ${relative}`);
     await client.query(sql);
   }
-  const required = ['hipico_bot_channels','hipico_messages','hipico_operation_events','hipico_shadow_evaluations','hipico_documents','hipico_document_sources','hipico_meetings','hipico_races','hipico_race_events','hipico_group_automation','hipico_agent_evaluations'];
+  const required = [
+    'hipico_bot_channels','hipico_messages','hipico_operation_events','hipico_shadow_evaluations',
+    'hipico_documents','hipico_document_sources','hipico_meetings','hipico_races','hipico_race_events',
+    'hipico_group_automation','hipico_agent_evaluations','hipico_provider_evidence'
+  ];
   const rows = await client.query(`SELECT tablename FROM pg_tables WHERE schemaname='public' AND tablename = ANY($1::text[])`, [required]);
   const found = new Set(rows.rows.map((row) => row.tablename));
   const missing = required.filter((name) => !found.has(name));
