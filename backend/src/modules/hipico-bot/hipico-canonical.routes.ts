@@ -4,7 +4,7 @@ import { classifyUntrustedConversation, safePublicAbuseMetadata } from './hipico
 import { effectiveBridgeMediaKind } from './hipico-bridge-input-policy.js';
 import { hipicoDomainPersistenceReadiness, persistHipicoDomainEvent } from './hipico-domain-event.store.js';
 import { readHipicoDomainAggregate } from './hipico-domain-query.store.js';
-import { operatorTokenConfigured, operatorTokenValid } from './hipico-operator-security.js';
+import { operatorActorRef, operatorTokenConfigured, operatorTokenValid } from './hipico-operator-security.js';
 import { operationalRaceContextKey } from './hipico-race-context-key.js';
 import type { HipicoDomainEventType } from './hipico-domain-state.js';
 
@@ -59,7 +59,7 @@ const domainEventSchema = z.object({
   normalizedPayload: z.unknown().optional(),
   originalEventId: z.string().trim().max(180).nullable().optional(),
   parserVersion: z.string().trim().max(120).nullable().optional(),
-  operatorId: z.string().trim().min(1).max(220),
+  operatorId: z.string().trim().min(1).max(220).optional(),
   confirmedOperatorAction: z.boolean().default(false),
   confirmationReason: z.string().trim().max(500).nullable().optional()
 }).strict();
@@ -277,6 +277,8 @@ router.post('/domain/events', async (req, res) => {
   if (!parsed.success) return res.status(400).json({ ok: false, error: 'HIPICO_CANONICAL_EVENT_INVALID' });
   const ownerId = configuredCanonicalOwnerId();
   if (!ownerId) return res.status(503).json({ ok: false, error: 'HIPICO_OWNER_NOT_CONFIGURED' });
+  const actorRef = operatorActorRef();
+  if (!actorRef) return res.status(503).json({ ok: false, error: 'HIPICO_OPERATOR_ACTOR_NOT_CONFIGURED' });
   const input = parsed.data;
   const scopeIssue = canonicalScopeIssue(input);
   if (scopeIssue) {
@@ -309,7 +311,7 @@ router.post('/domain/events', async (req, res) => {
         sourceMessageId: input.sourceMessageId || null,
         rawMessage: input.rawMessage || null,
         normalizedPayload: input.normalizedPayload,
-        actorRef: input.operatorId,
+        actorRef,
         source: 'canonical_operator_api',
         parserVersion: input.parserVersion || null,
         schemaVersion: 1,
