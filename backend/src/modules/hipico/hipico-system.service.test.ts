@@ -21,7 +21,6 @@ void test('canonical system status reports only executed/injected capability and
       enrichmentOnly: true,
       financialAuthority: false,
       cacheTtlMs: 30_000,
-      cacheEntries: 0,
       timeoutMs: 5_000,
       reason: null
     }),
@@ -52,7 +51,6 @@ void test('canonical system status fails closed for unavailable database and mis
       enrichmentOnly: true,
       financialAuthority: false,
       cacheTtlMs: 30_000,
-      cacheEntries: 0,
       timeoutMs: 5_000,
       reason: 'HIPICO_RACE_PROVIDER_DISABLED'
     }),
@@ -75,7 +73,7 @@ void test('requested OCR without OCR runtime is explicit degraded state, never a
     readinessCheck: async () => ({ ready: true, configuration: 'ok', database: 'ok' }),
     providerStatus: () => ({
       provider: 'disabled', configured: false, enrichmentOnly: true, financialAuthority: false,
-      cacheTtlMs: 30_000, cacheEntries: 0, timeoutMs: 5_000, reason: 'HIPICO_RACE_PROVIDER_DISABLED'
+      cacheTtlMs: 30_000, timeoutMs: 5_000, reason: 'HIPICO_RACE_PROVIDER_DISABLED'
     }),
     documentCapability: () => ({ configured: true, nativeText: true, ocr: false, parserVersion: 'fixture', reason: 'OCR_RUNTIME_NOT_INSTALLED' })
   });
