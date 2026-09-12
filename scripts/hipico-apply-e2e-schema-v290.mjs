@@ -13,7 +13,8 @@ const migrations = [
   'supabase/sql/hipico_v14_documents.sql',
   'supabase/sql/hipico_v15_race_lifecycle.sql',
   'supabase/sql/hipico_v16_agent_shadow.sql',
-  'supabase/sql/hipico_v17_provider_evidence.sql'
+  'supabase/sql/hipico_v17_provider_evidence.sql',
+  'supabase/sql/hipico_v18_race_result_stages.sql'
 ];
 
 function assertSafe(urlText) {
