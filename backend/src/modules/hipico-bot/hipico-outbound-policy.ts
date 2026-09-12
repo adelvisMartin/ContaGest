@@ -32,6 +32,11 @@ export function cloudSendTimeoutMs(env:RuntimeEnv=process.env){
   return Math.min(MAX_CLOUD_SEND_TIMEOUT_MS,Math.max(MIN_CLOUD_SEND_TIMEOUT_MS,Math.trunc(parsed)));
 }
 
+export function cloudHttpDeliveryAmbiguous(status:unknown){
+  const value=Number(status);
+  return value===408||value>=500;
+}
+
 export function cloudOutboundPolicy(env:RuntimeEnv=process.env){
   const deployedSha=runtimeSha(env);
   const approvedSha=String(env.HIPICO_CLOUD_SEND_CANDIDATE_SHA||'').trim();
