@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import { assertCloudOutboundAllowed, assertCloudTransportConfigured, cloudDestinationAllowed, cloudOutboundPolicy, cloudTransportConfiguration, __test__ } from './hipico-outbound-policy.js';
 
@@ -58,6 +59,12 @@ test('Meta Cloud transport requires strong token numeric phone id and bounded Gr
     assert.ok(config.reasons.includes(reason));
     assert.throws(()=>assertCloudTransportConfigured(env),(error:any)=>error?.code==='HIPICO_CLOUD_TRANSPORT_NOT_CONFIGURED');
   }
+});
+
+test('operator status uses the same strong Meta Cloud transport readiness as the sender',()=>{
+  const routes=readFileSync(new URL('./hipico-operator.routes.ts',import.meta.url),'utf8');
+  assert.match(routes,/cloudTransportConfiguration\(\)\.configured/);
+  assert.doesNotMatch(routes,/cloudConfigured:\s*Boolean\(process\.env\.WHATSAPP_CLOUD_TOKEN/);
 });
 
 test('default Graph version remains a known valid version when the variable is absent',()=>{
