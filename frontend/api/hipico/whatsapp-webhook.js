@@ -1,10 +1,25 @@
-import { extractMetaMessages, isE164, readRawBody, safeEqual, serverSecret, sha256, supabase, verifyMetaSignature, classifyText } from './_shared.js';
+import { adapterCaptureDecision, extractMetaMessages, isE164, readRawBody, safeEqual, sha256, supabase, verifyMetaSignature } from './_shared.js';
+import { isMetaPhoneNumberId, metaWebhookConfig } from './meta-runtime.js';
+import { metaTimestampValid } from './meta-timestamp-policy.js';
 
 export const config = { api: { bodyParser: false } };
 
 function normalizedTimestamp(value) {
   const parsed=Date.parse(String(value||''));
   return Number.isFinite(parsed)?new Date(parsed).toISOString():null;
+}
+
+function rawMetaEnvelopeIdentityError(payload,expectedPhoneNumberId){
+  const expected=String(expectedPhoneNumberId||'').trim();
+  if(!isMetaPhoneNumberId(expected))return 'META_PHONE_NUMBER_NOT_CONFIGURED';
+  for(const entry of payload?.entry||[])for(const change of entry?.changes||[]){
+    const value=change?.value||{};
+    const hasMessages=Array.isArray(value.messages)&&value.messages.length>0;
+    const hasStatuses=Array.isArray(value.statuses)&&value.statuses.length>0;
+    if(!hasMessages&&!hasStatuses)continue;
+    if(String(value?.metadata?.phone_number_id||'').trim()!==expected)return 'META_PHONE_NUMBER_MISMATCH';
+  }
+  return null;
 }
 
 function validMetaMessageIdentity(message){
@@ -18,13 +33,13 @@ function validMetaMessageIdentity(message){
   const sourceTimestamp=message?.raw?.timestamp;
   return Boolean(
     externalMessageId && externalMessageId.length<=320 &&
-    channelKey && channelKey!=='meta' && channelKey.length<=220 &&
+    isMetaPhoneNumberId(channelKey) &&
     isE164(senderId) &&
     senderLabel.length<=220 &&
     messageType && messageType.length<=80 &&
     text.length<=4000 &&
     (quoted===null||quoted.length<=320) &&
-    sourceTimestamp!==undefined && sourceTimestamp!==null && String(sourceTimestamp).trim() &&
+    metaTimestampValid(sourceTimestamp) &&
     normalizedTimestamp(message?.timestamp)
   );
 }
@@ -62,19 +77,58 @@ async function assertDuplicateMetaReplay(ownerId,message){
   }
 }
 
+async function persistMetaMessage(ownerId,message){
+  const capture=adapterCaptureDecision(message.text);
+  const fingerprint = sha256(message.externalMessageId || `${message.channelKey}|${messageReplaySignature(message)}`);
+  const body = [{
+    owner_id: ownerId,
+    channel_key: message.channelKey,
+    external_message_id: message.externalMessageId || null,
+    fingerprint,
+    sender_id: message.senderId || null,
+    sender_label: message.senderLabel || null,
+    quoted_external_message_id: message.quotedExternalMessageId,
+    sent_at: message.timestamp,
+    message_type: message.type,
+    raw_text: message.text,
+    classification: capture.storedClassification,
+    confidence: capture.storedConfidence,
+    processing_status: capture.processingStatus,
+    normalized: {
+      source: 'meta_cloud_api',
+      domain_authority: capture.domainAuthority,
+      adapter_hint_authoritative: false
+    },
+    metadata: {
+      raw_type: message.type,
+      source_replay_signature: messageReplaySignature(message),
+      adapter_hint: capture.adapterHint
+    }
+  }];
+  const rows=await supabase('hipico_messages?on_conflict=owner_id,channel_key,fingerprint', {
+    method: 'POST',
+    headers: { Prefer: 'resolution=ignore-duplicates,return=representation' },
+    body: JSON.stringify(body)
+  });
+  const duplicate=!Array.isArray(rows)||rows.length===0;
+  if(duplicate&&message.externalMessageId)await assertDuplicateMetaReplay(ownerId,message);
+  return duplicate?'duplicate':'accepted';
+}
+
 export default async function handler(req, res) {
   res.setHeader('Cache-Control','no-store, max-age=0');
+  const runtime=metaWebhookConfig();
+
   if (req.method === 'GET') {
-    let verifyToken;
-    try{verifyToken=serverSecret('HIPICO_META_VERIFY_TOKEN');}
-    catch{return res.status(503).json({ok:false,error:'webhook_not_configured'});}
+    if(!runtime.ready)return res.status(503).json({ok:false,error:'webhook_not_configured'});
     const mode = req.query?.['hub.mode'];
     const token = req.query?.['hub.verify_token'];
     const challenge = req.query?.['hub.challenge'];
-    if (mode === 'subscribe' && safeEqual(token, verifyToken)) return res.status(200).send(String(challenge || ''));
+    if (mode === 'subscribe' && safeEqual(token, runtime.verifyToken)) return res.status(200).send(String(challenge || ''));
     return res.status(403).json({ ok: false, error: 'verification_failed' });
   }
   if (req.method !== 'POST') return res.status(405).json({ ok: false, error: 'method_not_allowed' });
+  if(!runtime.ready)return res.status(503).json({ok:false,retryable:true,error:'webhook_not_configured'});
 
   let raw;
   try{raw=await readRawBody(req);}
@@ -83,10 +137,7 @@ export default async function handler(req, res) {
     return res.status(400).json({ok:false,retryable:false,error:'request_body_invalid'});
   }
 
-  let appSecret;
-  try{appSecret=serverSecret('HIPICO_META_APP_SECRET');}
-  catch{return res.status(503).json({ok:false,retryable:true,error:'webhook_not_configured'});}
-  if (!verifyMetaSignature(raw, req.headers['x-hub-signature-256'], appSecret)) {
+  if (!verifyMetaSignature(raw, req.headers['x-hub-signature-256'], runtime.appSecret)) {
     return res.status(401).json({ ok: false, retryable:false, error: 'invalid_signature' });
   }
 
@@ -94,52 +145,80 @@ export default async function handler(req, res) {
   try{payload=JSON.parse(raw.toString('utf8'));}
   catch{return res.status(400).json({ok:false,retryable:false,error:'invalid_json'});}
 
+  const envelopeIdentityError=rawMetaEnvelopeIdentityError(payload,runtime.phoneNumberId);
+  if(envelopeIdentityError){
+    return res.status(200).json({ok:false,acknowledged:true,accepted:false,retryable:false,error:'webhook_phone_number_mismatch'});
+  }
+
+  const messages = extractMetaMessages(payload);
+  const validMessages=messages.filter((message)=>validMetaMessageIdentity(message));
+  const invalidMessages=messages.length-validMessages.length;
+  if(validMessages.some((message)=>String(message.channelKey)!==runtime.phoneNumberId)){
+    return res.status(200).json({ok:false,acknowledged:true,accepted:false,retryable:false,error:'webhook_phone_number_mismatch',received:messages.length,validMessages:validMessages.length,invalidMessages});
+  }
+  if(validMessages.length===0){
+    if(invalidMessages>0){
+      return res.status(200).json({ok:false,acknowledged:true,accepted:false,retryable:false,error:'invalid_message_identity',received:messages.length,invalidMessages});
+    }
+    return res.status(200).json({ok:true,accepted:0,duplicates:0,mismatched:0,invalidMessages:0});
+  }
+
   try {
     const ownerId = String(process.env.HIPICO_OWNER_ID || '').trim();
     if (!ownerId) return res.status(503).json({ok:false,retryable:true,error:'webhook_not_configured'});
-    const messages = extractMetaMessages(payload);
-    if(messages.some((message)=>!validMetaMessageIdentity(message))){
-      return res.status(400).json({ok:false,retryable:false,error:'invalid_message_identity'});
-    }
     let accepted = 0;
     let duplicates = 0;
-    for (const message of messages) {
-      const [classification, confidence] = classifyText(message.text);
-      const fingerprint = sha256(message.externalMessageId || `${message.channelKey}|${messageReplaySignature(message)}`);
-      const body = [{
-        owner_id: ownerId,
-        channel_key: message.channelKey,
-        external_message_id: message.externalMessageId || null,
-        fingerprint,
-        sender_id: message.senderId || null,
-        sender_label: message.senderLabel || null,
-        quoted_external_message_id: message.quotedExternalMessageId,
-        sent_at: message.timestamp,
-        message_type: message.type,
-        raw_text: message.text,
-        classification,
-        confidence,
-        processing_status: classification === 'other' ? 'ignored' : classification === 'reply_review' ? 'review' : 'pending',
-        normalized: { source: 'meta_cloud_api' },
-        metadata: { raw_type: message.type, source_replay_signature: messageReplaySignature(message) }
-      }];
-      const rows=await supabase('hipico_messages?on_conflict=owner_id,channel_key,fingerprint', {
-        method: 'POST',
-        headers: { Prefer: 'resolution=ignore-duplicates,return=representation' },
-        body: JSON.stringify(body)
-      });
-      const duplicate=!Array.isArray(rows)||rows.length===0;
-      if(duplicate){
-        if(message.externalMessageId)await assertDuplicateMetaReplay(ownerId,message);
-        duplicates+=1;
-      }else accepted += 1;
+    let mismatched = 0;
+    for (const message of validMessages) {
+      try{
+        const outcome=await persistMetaMessage(ownerId,message);
+        if(outcome==='duplicate')duplicates+=1;
+        else accepted+=1;
+      }catch(error){
+        if(error?.code==='HIPICO_META_REPLAY_MISMATCH'){
+          mismatched+=1;
+          continue;
+        }
+        throw error;
+      }
     }
-    return res.status(200).json({ ok: true, accepted, duplicates });
+    if(mismatched>0){
+      return res.status(200).json({
+        ok:false,
+        acknowledged:true,
+        accepted:accepted>0||duplicates>0,
+        partial:true,
+        retryable:false,
+        error:'replay_mismatch',
+        received:messages.length,
+        acceptedMessages:accepted,
+        duplicates,
+        mismatched,
+        invalidMessages,
+        domainAuthority:'backend_canonical_only'
+      });
+    }
+    if(invalidMessages>0){
+      return res.status(200).json({
+        ok:false,
+        acknowledged:true,
+        accepted:true,
+        partial:true,
+        retryable:false,
+        error:'invalid_message_identity_partial',
+        received:messages.length,
+        acceptedMessages:accepted,
+        duplicates,
+        mismatched:0,
+        invalidMessages,
+        domainAuthority:'backend_canonical_only'
+      });
+    }
+    return res.status(200).json({ ok: true, accepted, duplicates, mismatched:0, invalidMessages:0, domainAuthority:'backend_canonical_only' });
   } catch (error) {
-    if(error?.code==='HIPICO_META_REPLAY_MISMATCH')return res.status(409).json({ok:false,retryable:false,error:'replay_mismatch'});
     console.error('hipico whatsapp webhook',{message:error?.message||String(error)});
-    return res.status(500).json({ ok: false, retryable:true, error: 'webhook_processing_failed' });
+    return res.status(503).json({ ok: false, retryable:true, error: 'webhook_processing_failed', invalidMessages });
   }
 }
 
-export const __test__={normalizedTimestamp,validMetaMessageIdentity,messageReplaySignature,persistedReplaySignature};
+export const __test__={normalizedTimestamp,rawMetaEnvelopeIdentityError,validMetaMessageIdentity,messageReplaySignature,persistedReplaySignature,persistMetaMessage,metaWebhookConfig,adapterCaptureDecision,metaTimestampValid};

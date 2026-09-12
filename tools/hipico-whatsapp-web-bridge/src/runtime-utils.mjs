@@ -57,19 +57,26 @@ export function computeBackoffMs(attempts, {
   return raw + Math.floor(Math.random() * (delta * 2 + 1)) - delta;
 }
 
-function normalizeMeridiem(value) {
-  return String(value || '')
+function normalizedMeridiem(value) {
+  const normalized = String(value || '')
     .toLowerCase()
-    .replace(/\s/g, '')
-    .replace(/a\.?m\.?/g, 'am')
-    .replace(/p\.?m\.?/g, 'pm');
+    .replace(/[.\s]/g, '');
+  if (!normalized) return '';
+  if (normalized === 'am' || normalized === 'pm') return normalized;
+  return null;
+}
+
+function safeFallbackTimestamp(fallbackNow) {
+  const date = fallbackNow instanceof Date ? fallbackNow : new Date(fallbackNow);
+  return Number.isFinite(date.getTime()) ? date.toISOString() : '1970-01-01T00:00:00.000Z';
 }
 
 export function parseWhatsAppPre(pre, fallbackNow = new Date()) {
+  const fallbackTimestamp = safeFallbackTimestamp(fallbackNow);
   const raw = String(pre || '').trim();
   const bracket = raw.match(/^\[([^\]]+)\]\s*(.*?):\s*$/);
   if (!bracket) {
-    return { timestamp: fallbackNow.toISOString(), senderLabel: '', parsed: false };
+    return { timestamp: fallbackTimestamp, senderLabel: '', parsed: false };
   }
 
   const stamp = bracket[1].trim();
@@ -79,31 +86,53 @@ export function parseWhatsAppPre(pre, fallbackNow = new Date()) {
   let timePart = '';
 
   for (const part of parts) {
-    if (/\d{1,2}[\/-]\d{1,2}[\/-]\d{2,4}/.test(part)) datePart = part;
-    else if (/\d{1,2}:\d{2}/.test(part)) timePart = part;
+    if (/^\d{1,2}[\/-]\d{1,2}[\/-]\d{2,4}$/.test(part)) datePart = part;
+    else if (/^\d{1,2}:\d{2}(?:\s*[^\d]*)?$/.test(part)) timePart = part;
   }
 
   if (!datePart || !timePart) {
-    return { timestamp: fallbackNow.toISOString(), senderLabel, parsed: false };
+    return { timestamp: fallbackTimestamp, senderLabel, parsed: false };
   }
 
-  const dm = datePart.match(/(\d{1,2})[\/-](\d{1,2})[\/-](\d{2,4})/);
-  const tm = timePart.match(/(\d{1,2}):(\d{2})\s*(.*)$/);
-  if (!dm || !tm) return { timestamp: fallbackNow.toISOString(), senderLabel, parsed: false };
+  const dm = datePart.match(/^(\d{1,2})[\/-](\d{1,2})[\/-](\d{2,4})$/);
+  const tm = timePart.match(/^(\d{1,2}):(\d{2})\s*(.*?)$/);
+  if (!dm || !tm) return { timestamp: fallbackTimestamp, senderLabel, parsed: false };
 
   const day = Number(dm[1]);
   const month = Number(dm[2]);
   let year = Number(dm[3]);
   if (year < 100) year += 2000;
-  let hour = Number(tm[1]);
+  const rawHour = Number(tm[1]);
   const minute = Number(tm[2]);
-  const meridiem = normalizeMeridiem(tm[3]);
+  const meridiem = normalizedMeridiem(tm[3]);
 
-  if (meridiem.includes('pm') && hour < 12) hour += 12;
-  if (meridiem.includes('am') && hour === 12) hour = 0;
+  if (!Number.isInteger(day) || day < 1 || day > 31
+    || !Number.isInteger(month) || month < 1 || month > 12
+    || !Number.isInteger(year) || year < 1 || year > 9999
+    || !Number.isInteger(minute) || minute < 0 || minute > 59
+    || meridiem === null) {
+    return { timestamp: fallbackTimestamp, senderLabel, parsed: false };
+  }
+
+  let hour = rawHour;
+  if (meridiem) {
+    if (!Number.isInteger(rawHour) || rawHour < 1 || rawHour > 12) {
+      return { timestamp: fallbackTimestamp, senderLabel, parsed: false };
+    }
+    if (meridiem === 'pm' && hour < 12) hour += 12;
+    if (meridiem === 'am' && hour === 12) hour = 0;
+  } else if (!Number.isInteger(rawHour) || rawHour < 0 || rawHour > 23) {
+    return { timestamp: fallbackTimestamp, senderLabel, parsed: false };
+  }
 
   const date = new Date(year, month - 1, day, hour, minute, 0, 0);
-  if (Number.isNaN(date.getTime())) return { timestamp: fallbackNow.toISOString(), senderLabel, parsed: false };
+  const exact = Number.isFinite(date.getTime())
+    && date.getFullYear() === year
+    && date.getMonth() === month - 1
+    && date.getDate() === day
+    && date.getHours() === hour
+    && date.getMinutes() === minute;
+  if (!exact) return { timestamp: fallbackTimestamp, senderLabel, parsed: false };
   return { timestamp: date.toISOString(), senderLabel, parsed: true };
 }
 

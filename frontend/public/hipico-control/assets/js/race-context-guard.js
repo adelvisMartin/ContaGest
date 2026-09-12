@@ -1,6 +1,6 @@
 import { createBlankWorkspace } from './seed.js';
 import { flushWorkspaceWrites, loadLocalWorkspace } from './store.js';
-import { compact } from './whatsapp/normalization.js';
+import { compact, parseDateKey } from './whatsapp/normalization.js';
 import { parseWhatsAppChat } from './whatsapp.js';
 import { normalizeWorkspaceShape } from './workspace.js';
 import { activeGroupId, activeRace as readActiveRace } from './operational-ledger.js';
@@ -38,6 +38,17 @@ function validRaceNumber(value) {
   return Number.isInteger(number) && number > 0 ? number : null;
 }
 
+function activeRaceDate(activeRace) {
+  const value = String(activeRace?.date || '').trim();
+  return /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : '';
+}
+
+function trustedMessageRaceDate(analysis, message) {
+  if (!message || message.dateProvenance === 'synthetic') return '';
+  if (analysis?.sourceFormat && analysis.sourceFormat !== 'whatsapp-export') return '';
+  return parseDateKey(message.date) || '';
+}
+
 function messageIndex(analysis, messageId) {
   return (analysis?.messages || []).findIndex((message) => message.id === messageId);
 }
@@ -49,7 +60,12 @@ function nearestOpeningContext(analysis, board) {
     .filter((opening) => opening.segmentId === board.segmentId && opening.raceContext?.actionable)
     .filter((opening) => messageIndex(analysis, opening.id) <= boardIndex)
     .sort((left, right) => messageIndex(analysis, right.id) - messageIndex(analysis, left.id));
-  return candidates[0]?.raceContext || null;
+  const opening = candidates[0];
+  return opening?.raceContext ? { ...opening.raceContext, raceDate: trustedMessageRaceDate(analysis, opening) } : null;
+}
+
+function matchRaceDate(match) {
+  return String(match?.raceDate || match?.raceContext?.raceDate || '').trim();
 }
 
 export function resolveBoardTarget(analysis, workspace) {
@@ -59,7 +75,9 @@ export function resolveBoardTarget(analysis, workspace) {
   if (!activeRace) return { status: 'NO_ACTIVE_RACE', board, activeRace: null, context: null, reason: 'No hay una carrera activa.' };
   if (!board?.board?.length) return { status: 'NO_BOARD', board: null, activeRace, context: null, reason: 'No hay una llegada o pizarra detectada.' };
 
-  const direct = board.raceContext?.actionable ? board.raceContext : null;
+  const direct = board.raceContext?.actionable
+    ? { ...board.raceContext, raceDate: trustedMessageRaceDate(analysis, board) }
+    : null;
   const inherited = direct || nearestOpeningContext(analysis, board);
   if (!inherited?.actionable) {
     return {
@@ -83,7 +101,28 @@ export function resolveBoardTarget(analysis, workspace) {
     };
   }
 
-  return { status: 'MATCH', board, activeRace, context: inherited, reason: 'Hipódromo y carrera coinciden con la carrera activa.' };
+  const evidenceDate = String(inherited.raceDate || trustedMessageRaceDate(analysis, board)).trim();
+  const activeDate = activeRaceDate(activeRace);
+  if (!evidenceDate || !activeDate) {
+    return {
+      status: 'AMBIGUOUS',
+      board,
+      activeRace,
+      context: inherited,
+      reason: 'La llegada coincide en hipódromo y número, pero no tiene una fecha verificable contra la carrera activa.'
+    };
+  }
+  if (evidenceDate !== activeDate) {
+    return {
+      status: 'MISMATCH',
+      board,
+      activeRace,
+      context: inherited,
+      reason: `La llegada corresponde al ${evidenceDate} y la carrera activa corresponde al ${activeDate}.`
+    };
+  }
+
+  return { status: 'MATCH', board, activeRace, context: inherited, reason: 'Fecha, hipódromo y carrera coinciden con la carrera activa.' };
 }
 
 export function resolveMatchTarget(analysis, workspace) {
@@ -93,32 +132,36 @@ export function resolveMatchTarget(analysis, workspace) {
   if (!activeRace) return { status: 'NO_ACTIVE_RACE', matches, activeRace: null, reason: 'No hay una carrera activa.' };
   if (!matches.length) return { status: 'NO_MATCHES', matches, activeRace, reason: 'No hay parejas detectadas para importar.' };
 
+  const activeDate = activeRaceDate(activeRace);
   const mismatch = matches.find((match) => {
     const raceNumber = validRaceNumber(match.raceNumber);
+    const raceDate = matchRaceDate(match);
     const trackMismatch = Boolean(match.track) && !sameTrack(match.track, activeRace.racetrack);
     const numberMismatch = Boolean(raceNumber) && raceNumber !== Number(activeRace.number);
-    return trackMismatch || numberMismatch;
+    const dateMismatch = Boolean(raceDate && activeDate) && raceDate !== activeDate;
+    return trackMismatch || numberMismatch || dateMismatch;
   });
   if (mismatch) {
     const raceLabel = mismatch.raceNumber ? ` ${mismatch.raceNumber}` : '';
     const trackLabel = mismatch.track || 'hipódromo sin identificar';
+    const dateLabel = matchRaceDate(mismatch) ? ` · ${matchRaceDate(mismatch)}` : '';
     return {
       status: 'MISMATCH',
       matches,
       activeRace,
       mismatch,
-      reason: `Una pareja pertenece a ${trackLabel}${raceLabel} y la carrera activa es ${activeRace.racetrack} ${activeRace.number}.`
+      reason: `Una pareja pertenece a ${trackLabel}${raceLabel}${dateLabel} y la carrera activa es ${activeRace.racetrack} ${activeRace.number}${activeDate ? ` · ${activeDate}` : ''}.`
     };
   }
 
-  const incomplete = matches.filter((match) => !match.track || !validRaceNumber(match.raceNumber));
+  const incomplete = matches.filter((match) => !match.track || !validRaceNumber(match.raceNumber) || !matchRaceDate(match) || !activeDate);
   if (incomplete.length) {
     return {
       status: 'AMBIGUOUS',
       matches,
       activeRace,
       incomplete,
-      reason: `${incomplete.length} pareja(s) no tienen hipódromo y número de carrera confirmados por el chat.`
+      reason: `${incomplete.length} pareja(s) no tienen fecha, hipódromo y número de carrera verificables contra la carrera activa.`
     };
   }
 
@@ -126,7 +169,7 @@ export function resolveMatchTarget(analysis, workspace) {
     status: 'MATCH',
     matches,
     activeRace,
-    reason: 'Todas las parejas tienen hipódromo y carrera coincidentes con la carrera activa.'
+    reason: 'Todas las parejas tienen fecha, hipódromo y carrera coincidentes con la carrera activa.'
   };
 }
 
@@ -160,7 +203,7 @@ function raceContextDialog({ title, message, activeRace, evidenceLabel, evidence
     const backdrop = document.createElement('div');
     backdrop.className = 'modal-backdrop';
     backdrop.dataset.raceContextDialog = 'true';
-    const raceText = activeRace ? `${activeRace.racetrack} · ${activeRace.number}ª carrera` : 'Sin carrera activa';
+    const raceText = activeRace ? `${activeRace.racetrack} · ${activeRace.number}ª carrera · ${activeRace.date || 'sin fecha'}` : 'Sin carrera activa';
     const confirmAction = confirmLabel
       ? `<button type="button" class="button" data-race-context-confirm>${escapeHtml(confirmLabel)}</button>`
       : '';
@@ -243,7 +286,7 @@ async function guardBoardApplication(button) {
     const approved = await raceContextDialog({
       title: 'Confirmar pizarra manualmente', message: decision.reason, activeRace: decision.activeRace,
       evidenceLabel: 'Pizarra detectada', evidenceText: decision.board?.board?.join('.') || 'Sin pizarra',
-      helpText: 'Control Hípico no liquida dinero por una llegada ambigua. Confirma manualmente solo si verificaste que la pizarra pertenece exactamente a la carrera activa.',
+      helpText: 'Control Hípico no liquida dinero por una llegada ambigua. Confirma manualmente solo si verificaste fecha, hipódromo y carrera activa.',
       confirmLabel: 'Confirmar carrera y aplicar'
     });
     if (approved) { manualBypassTarget = button; queueMicrotask(() => button.click()); }
@@ -267,7 +310,7 @@ async function guardMatchImport(button) {
     await raceContextDialog({
       title: 'Importación bloqueada', message: `${decision.reason} Abre la carrera correcta y vuelve a importar.`, activeRace: decision.activeRace,
       evidenceLabel: 'Parejas detectadas', evidenceText: `${decision.matches.length} pareja(s)`,
-      helpText: 'Una pareja con contexto conocido de otra carrera nunca se importa mediante una confirmación manual.'
+      helpText: 'Una pareja con contexto conocido de otra fecha o carrera nunca se importa mediante una confirmación manual.'
     });
     return false;
   }
@@ -275,7 +318,7 @@ async function guardMatchImport(button) {
     const approved = await raceContextDialog({
       title: 'Confirmar carrera de las parejas', message: decision.reason, activeRace: decision.activeRace,
       evidenceLabel: 'Parejas detectadas', evidenceText: `${decision.matches.length} pareja(s) · ${decision.incomplete.length} sin contexto completo`,
-      helpText: 'Confirma sólo si verificaste en el chat que las parejas pertenecen exactamente a la carrera activa. Esto no liquida saldos.',
+      helpText: 'Confirma sólo si verificaste en el chat fecha, hipódromo y carrera exactos. Esto no liquida saldos.',
       confirmLabel: 'Confirmar carrera e importar'
     });
     if (approved) { manualBypassTarget = button; queueMicrotask(() => button.click()); }
@@ -304,4 +347,4 @@ if (typeof document !== 'undefined') {
   }, true);
 }
 
-export const __test__ = { normalizedTrack, sameTrack, validRaceNumber, nearestOpeningContext };
+export const __test__ = { normalizedTrack, sameTrack, validRaceNumber, activeRaceDate, trustedMessageRaceDate, nearestOpeningContext, matchRaceDate };

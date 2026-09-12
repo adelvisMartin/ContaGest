@@ -1,11 +1,24 @@
-import { bearerTokenValid, env, fetchWithTimeout, isE164, metaDestinationAllowed, metaOutboundPolicy, serverSecret, supabase } from './_shared.js';
+import { bearerTokenValid, env, fetchWithTimeout, isE164, metaDestinationAllowed, metaOutboundPolicy, retryAfterMs, serverSecret, supabase } from './_shared.js';
+import { metaSenderConfig } from './meta-runtime.js';
 
 const MAX_ATTEMPTS = 6;
 const BATCH_SIZE = 10;
+const SEND_LEASE_MS = 2 * 60 * 1000;
+const STALE_CLAIM_SCAN_LIMIT = 50;
 
-function nextRetryIso(attempts) {
+function nextRetryIso(attempts, retryAfterHeader = '', nowMs = Date.now()) {
   const retryMinutes = Math.min(60, Math.max(1, 2 ** Math.min(attempts, 5)));
-  return new Date(Date.now() + retryMinutes * 60000).toISOString();
+  const localWaitMs = retryMinutes * 60000;
+  const parsedNow = Number(nowMs);
+  const safeNow = Number.isFinite(parsedNow) ? parsedNow : Date.now();
+  const providerWaitMs = retryAfterMs(retryAfterHeader, safeNow);
+  return new Date(safeNow + Math.max(localWaitMs, providerWaitMs)).toISOString();
+}
+
+function sendLeaseExpiryIso(nowMs = Date.now()) {
+  const parsed = Number(nowMs);
+  const safeNow = Number.isFinite(parsed) ? parsed : Date.now();
+  return new Date(safeNow + SEND_LEASE_MS).toISOString();
 }
 
 async function claimRow(row) {
@@ -21,19 +34,45 @@ async function claimRow(row) {
   const claimed = await supabase(`hipico_outbox?${filters.join('&')}`, {
     method: 'PATCH',
     headers: { Prefer: 'return=representation' },
-    body: JSON.stringify({ status: 'sending', last_error: null })
+    body: JSON.stringify({ status: 'sending', next_attempt_at: sendLeaseExpiryIso(), last_error: null })
   });
   return Array.isArray(claimed) ? claimed[0] || null : null;
 }
 
+async function quarantineExpiredSendingClaims(nowIso = new Date().toISOString()) {
+  const ownerId = env('HIPICO_OWNER_ID');
+    const staleItems = await supabase(
+    `hipico_outbox?owner_id=eq.${encodeURIComponent(ownerId)}&status=eq.sending&next_attempt_at=lte.${encodeURIComponent(nowIso)}&order=next_attempt_at.asc&limit=${STALE_CLAIM_SCAN_LIMIT}`,
+    { headers: { Prefer: 'return=representation' } }
+  ) || [];
+  let quarantined = 0;
+  for (const row of staleItems) {
+    const expectedNext = String(row.next_attempt_at || '');
+    if (!row?.id || !expectedNext) continue;
+    const updated = await supabase(
+      `hipico_outbox?id=eq.${encodeURIComponent(row.id)}&owner_id=eq.${encodeURIComponent(ownerId)}&status=eq.sending&next_attempt_at=eq.${encodeURIComponent(expectedNext)}`,
+      {
+        method: 'PATCH',
+        headers: { Prefer: 'return=representation' },
+        body: JSON.stringify({
+          status: 'reconciliation_required',
+          last_error: 'RECONCILIATION_REQUIRED:STALE_SENDING_LEASE'
+        })
+      }
+    );
+    if (Array.isArray(updated) && updated[0]?.id) quarantined += 1;
+  }
+  return quarantined;
+}
+
 async function updateRow(id, patch) {
   const ownerId = env('HIPICO_OWNER_ID');
-  const rows = await supabase(`hipico_outbox?id=eq.${encodeURIComponent(id)}&owner_id=eq.${encodeURIComponent(ownerId)}&status=eq.sending`, {
+  const updatedRows = await supabase(`hipico_outbox?id=eq.${encodeURIComponent(id)}&owner_id=eq.${encodeURIComponent(ownerId)}&status=eq.sending`, {
     method: 'PATCH',
     headers: { Prefer: 'return=representation' },
     body: JSON.stringify(patch)
   });
-  const updated = Array.isArray(rows) ? rows[0] || null : null;
+  const updated = Array.isArray(updatedRows) ? updatedRows[0] || null : null;
   if (!updated?.id) throw new Error('HIPICO_OUTBOX_STATE_TRANSITION_NOT_PERSISTED');
   return updated;
 }
@@ -60,16 +99,21 @@ export default async function handler(req, res) {
     return res.status(409).json({ ok: false, retryable: false, error: 'outbound_disabled', reasons: outbound.reasons });
   }
 
+  const senderConfig=metaSenderConfig();
+  if(!senderConfig.ready){
+    return res.status(503).json({ok:false,retryable:true,error:'sender_not_configured'});
+  }
+  const {accessToken,phoneNumberId}=senderConfig;
+
   try {
     const ownerId = env('HIPICO_OWNER_ID');
     const now = new Date().toISOString();
+    const staleSendingQuarantined = await quarantineExpiredSendingClaims(now);
     const rows = await supabase(`hipico_outbox?owner_id=eq.${encodeURIComponent(ownerId)}&status=in.(queued,retry)&next_attempt_at=lte.${encodeURIComponent(now)}&order=created_at.asc&limit=${BATCH_SIZE}`, {
       headers: { Prefer: 'return=representation' }
     }) || [];
-    if (!rows.length) return res.status(200).json({ ok: true, processed: 0, sent: 0, failed: 0, retried: 0, reconciliationRequired: 0, skippedClaims: 0 });
+    if (!rows.length) return res.status(200).json({ ok: true, processed: 0, sent: 0, failed: 0, retried: 0, reconciliationRequired: 0, staleSendingQuarantined, skippedClaims: 0 });
 
-    const accessToken = env('HIPICO_META_ACCESS_TOKEN');
-    const phoneNumberId = env('HIPICO_META_PHONE_NUMBER_ID');
     const graphVersion = safeGraphVersion();
     let sent = 0;
     let failed = 0;
@@ -111,11 +155,8 @@ export default async function handler(req, res) {
           })
         }, Number(process.env.HIPICO_META_SEND_TIMEOUT_MS || 12000));
       } catch (error) {
-        // A transport timeout can happen after Meta accepted the message. Keep
-        // the durable claim in `sending`: the queue selector never reclaims that
-        // state, so an operator must reconcile it before any later resend.
         await updateRow(row.id, {
-          status: 'sending',
+          status: 'reconciliation_required',
           attempts,
           last_error: `RECONCILIATION_REQUIRED:AMBIGUOUS_TRANSPORT_FAILURE:${String(error?.name || 'network_error').slice(0, 120)}`
         });
@@ -133,7 +174,7 @@ export default async function handler(req, res) {
         await updateRow(row.id, {
           status: retryable && !exhausted ? 'retry' : 'failed',
           attempts,
-          next_attempt_at: retryable && !exhausted ? nextRetryIso(attempts) : row.next_attempt_at,
+          next_attempt_at: retryable && !exhausted ? nextRetryIso(attempts, response.headers.get('retry-after')) : row.next_attempt_at,
           last_error: `META_HTTP_${response.status}`
         });
         if (retryable && !exhausted) retried += 1;
@@ -143,11 +184,8 @@ export default async function handler(req, res) {
 
       const providerMessageId = data?.messages?.[0]?.id || null;
       if (!providerMessageId) {
-        // HTTP success means Meta may have accepted the message even if the
-        // expected receipt is absent. Preserve `sending` and require manual
-        // reconciliation instead of converting it into a retryable failure.
         await updateRow(row.id, {
-          status: 'sending',
+          status: 'reconciliation_required',
           attempts,
           last_error: 'RECONCILIATION_REQUIRED:META_SUCCESS_WITHOUT_MESSAGE_ID'
         });
@@ -155,9 +193,6 @@ export default async function handler(req, res) {
         continue;
       }
 
-      // Once Meta confirms acceptance, this row is never eligible for automatic resend.
-      // If this persistence update fails the row remains `sending`, which intentionally
-      // requires operator reconciliation instead of risking a duplicate message.
       await updateRow(row.id, {
         status: 'sent',
         attempts,
@@ -168,9 +203,11 @@ export default async function handler(req, res) {
       sent += 1;
     }
 
-    return res.status(200).json({ ok: true, processed: rows.length, sent, failed, retried, reconciliationRequired, skippedClaims });
+    return res.status(200).json({ ok: true, processed: rows.length, sent, failed, retried, reconciliationRequired, staleSendingQuarantined, skippedClaims });
   } catch (error) {
     console.error('hipico whatsapp send', { message: error?.message || String(error) });
     return res.status(503).json({ ok: false, retryable: true, error: 'send_unavailable' });
   }
 }
+
+export const __test__={safeGraphVersion,metaSenderConfig,nextRetryIso,sendLeaseExpiryIso,quarantineExpiredSendingClaims,SEND_LEASE_MS,STALE_CLAIM_SCAN_LIMIT};

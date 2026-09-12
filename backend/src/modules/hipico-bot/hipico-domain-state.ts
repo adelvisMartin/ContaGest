@@ -27,6 +27,8 @@ export type HipicoDomainEventInput={
   timestamp?:string;
   originalEventId?:string|null;
   requiresReview?:boolean;
+  operatorConfirmed?:boolean;
+  confirmationReason?:string|null;
 };
 
 export type HipicoReducerState={
@@ -45,7 +47,10 @@ export type HipicoReduction={
 };
 
 const RACE_TRANSITIONS:Record<HipicoRaceState,ReadonlySet<HipicoRaceState>>={
-  PREPARING:new Set<HipicoRaceState>(['OPEN','CLOSED']),
+  // A close without a previously accepted opening/plan is not a valid lifecycle.
+  // This prevents a late or cross-race close message from creating a CLOSED race
+  // that was never opened in the canonical aggregate.
+  PREPARING:new Set<HipicoRaceState>(['OPEN']),
   OPEN:new Set<HipicoRaceState>(['CLOSED']),
   CLOSED:new Set<HipicoRaceState>(['RESULT_RECEIVED']),
   RESULT_RECEIVED:new Set<HipicoRaceState>(['SETTLEMENT_READY']),

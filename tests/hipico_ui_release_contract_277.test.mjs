@@ -9,6 +9,10 @@ const touchCss = read('../frontend/public/hipico-control/assets/css/mobile-acces
 const opsCss = read('../frontend/public/hipico-control/assets/css/operational-copy-center.css');
 const notice = read('../frontend/public/hipico-control/assets/js/notice-bridge.js');
 const sw = read('../frontend/public/hipico-control/sw.js');
+const config = read('../frontend/public/hipico-control/assets/js/config.js');
+const buildInfo = JSON.parse(read('../frontend/public/hipico-control/build-info.json'));
+const frontendPackage = JSON.parse(read('../frontend/package.json'));
+const buildWriter = read('../frontend/scripts/write-hipico-build-info.mjs');
 
 function jsFiles(url, prefix = '') {
   const files = [];
@@ -56,12 +60,44 @@ test('mobile vertical scrolling, safe area and reduced motion remain explicitly 
   assert.match(css, /prefers-reduced-motion:\s*reduce/);
 });
 
-test('installed PWA precaches the complete Hípico JavaScript module tree', () => {
+test('installed PWA precaches the complete Hípico JavaScript module tree and atomically retires old shells', () => {
   const root = new URL('../frontend/public/hipico-control/assets/js/', import.meta.url);
   const missing = jsFiles(root).filter((file) => !sw.includes(`'./assets/js/${file}'`) && !sw.includes(`"./assets/js/${file}"`));
   assert.deepEqual(missing, [], `JavaScript modules missing from APP_SHELL: ${missing.join(', ')}`);
-  assert.match(sw, /shell-r\d+-[a-z0-9-]+/i);
-  assert.match(sw, /new cache name makes shell upgrades atomic/i);
+  assert.match(sw, /const SHELL_CACHE\s*=\s*`\$\{CACHE_VERSION\}-shell-r\d+-[a-z0-9-]+`/i);
+  assert.match(sw, /cache\.addAll\(\[\.\.\.APP_SHELL_URLS\]\)/);
+  assert.match(sw, /key\.startsWith\('hipico-control-'\)\s*&&\s*key\s*!==\s*SHELL_CACHE/);
+  assert.match(sw, /caches\.delete\(key\)/);
   assert.match(sw, /isSensitive\(url\).*cache:\s*'no-store'/s);
   assert.match(sw, /isRuntimeMetadata\(url\).*cache:\s*'no-store'/s);
+});
+
+test('PWA reads offline shell resources only from the Control Hípico cache namespace', () => {
+  assert.doesNotMatch(sw, /\bcaches\.match\s*\(/, 'origin-global CacheStorage lookup could cross-contaminate sibling applications');
+  assert.match(sw, /const cache = await caches\.open\(SHELL_CACHE\)/);
+  assert.match(sw, /cache\.match\(scoped\('\.\/index\.html'\)\)/);
+  assert.match(sw, /cache\.match\(request\)/);
+  assert.match(sw, /shell-r20-cache-isolation-297/);
+});
+
+test('Control Hípico release version is single-sourced and build metadata is generated during every frontend build', () => {
+  const appVersion = config.match(/export const APP_VERSION\s*=\s*["']([^"']+)["']/)?.[1];
+  const cacheVersion = sw.match(/const CACHE_VERSION\s*=\s*['"]hipico-control-v([^'"]+)['"]/)?.[1];
+  assert.ok(appVersion, 'APP_VERSION must exist');
+  assert.equal(cacheVersion, appVersion);
+  assert.equal(buildInfo.version, appVersion);
+  assert.equal(buildInfo.buildId, appVersion);
+  assert.match(frontendPackage.scripts['build:identity'], /write-build-info\.mjs\s*&&\s*node scripts\/write-hipico-build-info\.mjs/);
+  assert.match(frontendPackage.scripts['preqa:source'], /node --check frontend\/scripts\/write-hipico-build-info\.mjs/);
+});
+
+test('Hípico build metadata binds production artifacts to exact Git SHA without Windows pathname assumptions', () => {
+  assert.match(buildWriter, /fileURLToPath/);
+  assert.doesNotMatch(buildWriter, /new URL\([^\n]+\)\.pathname/);
+  assert.match(buildWriter, /VERCEL_GIT_COMMIT_SHA/);
+  assert.match(buildWriter, /GIT_SHA/);
+  assert.match(buildWriter, /candidateSha/);
+  assert.match(buildWriter, /bound:candidateSha!==['"]local-unbound['"]/);
+  assert.equal(buildInfo.candidateSha, 'local-unbound');
+  assert.equal(buildInfo.bound, false);
 });

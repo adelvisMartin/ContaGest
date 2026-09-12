@@ -10,6 +10,7 @@ import {
   registerFailure,
   validateSpoolRecord
 } from './spool-journal.mjs';
+import { normalizeReplayArgs } from './replay-policy.mjs';
 
 export const BRIDGE_SPOOL_KINDS=Object.freeze({
   BACKEND_EVENT:'backend-event',
@@ -32,6 +33,11 @@ function canonicalPayload(value){
   return serialized===undefined?'null':serialized;
 }
 function payloadFingerprint(payload){return crypto.createHash('sha256').update(canonicalPayload(payload)).digest('hex');}
+function boundedLimit(value,code='SPOOL_LIMIT_INVALID'){
+  const parsed=Number(value);
+  if(!Number.isInteger(parsed)||parsed<1||parsed>1000)throw new Error(code);
+  return parsed;
+}
 
 export function createBridgeSpoolRuntime({
   rootDir,
@@ -125,6 +131,7 @@ export function createBridgeSpoolRuntime({
     return rows;
   }
   async function due(kind,{limit=100}={}){
+    const safeLimit=boundedLimit(limit);
     const rows=[];
     const terminalIds=new Set();
     for(const terminalState of ['sent','replayed','expired']){
@@ -149,7 +156,7 @@ export function createBridgeSpoolRuntime({
         }
         if(state==='failed'&&Number(record.nextAttemptAt||0)>now())continue;
         rows.push({file:item.file,record});
-        if(rows.length>=limit)return rows;
+        if(rows.length>=safeLimit)return rows;
       }
     }
     return rows;
@@ -166,8 +173,9 @@ export function createBridgeSpoolRuntime({
   }
   async function flushKind(kind,deliver,{limit=100,canContinue=()=>true}={}){
     if(!KIND_VALUES.has(kind))throw new Error('SPOOL_KIND_INVALID');
+    const safeLimit=boundedLimit(limit);
     const result={kind,attempted:0,delivered:0,failed:0,quarantined:0,expired:0};
-    const candidates=await due(kind,{limit});
+    const candidates=await due(kind,{limit:safeLimit});
     for(const item of candidates){
       if(!canContinue())break;
       result.attempted+=1;
@@ -246,8 +254,13 @@ export function createBridgeSpoolRuntime({
   async function replayPlan({kind,destination,expectedDestination,from=null,to=null,limit=100}={}){
     if(!KIND_VALUES.has(kind))throw new Error('SPOOL_KIND_INVALID');
     if(!destination||destination!==expectedDestination)throw new Error('REPLAY_DESTINATION_MISMATCH');
-    const start=from?new Date(from).getTime():-Infinity;
-    const end=to?new Date(to).getTime():Infinity;
+    const scope=normalizeReplayArgs({
+      ...(from?{from}:{ }),
+      ...(to?{to}:{ }),
+      limit
+    });
+    const start=scope.from?Date.parse(scope.from):-Infinity;
+    const end=scope.to?Date.parse(scope.to):Infinity;
     const eligible=[];const skipped=[];
     for(const state of [...REPLAYABLE_STATES]){
       for(const {record} of await listState(state)){
@@ -255,24 +268,37 @@ export function createBridgeSpoolRuntime({
         const created=new Date(record.createdAt||0).getTime();
         if(created<start||created>end){skipped.push({recordId:record.recordId,reason:'OUTSIDE_RANGE'});continue;}
         eligible.push({recordId:record.recordId,key:record.key,state:record.state,destination});
-        if(eligible.length>=limit)break;
+        if(eligible.length>=scope.limit)break;
       }
-      if(eligible.length>=limit)break;
+      if(eligible.length>=scope.limit)break;
     }
     return{dryRun:true,kind,destination,count:eligible.length,eligible,skipped};
   }
   async function requestReplay({kind,destination,expectedDestination,recordIds,expectedCount}={}){
+    if(!KIND_VALUES.has(kind))throw new Error('SPOOL_KIND_INVALID');
+    if(!destination||destination!==expectedDestination)throw new Error('REPLAY_DESTINATION_MISMATCH');
     if(!Array.isArray(recordIds))throw new Error('REPLAY_RECORD_IDS_REQUIRED');
-    if(Number(expectedCount)!==recordIds.length)throw new Error('REPLAY_COUNT_MISMATCH');
-    const plan=await replayPlan({kind,destination,expectedDestination,limit:Math.max(1,recordIds.length+1000)});
-    const planned=new Map(plan.eligible.map((row)=>[row.recordId,row]));
-    for(const id of recordIds){if(!planned.has(id))throw new Error(`REPLAY_RECORD_NOT_ELIGIBLE:${id}`);}
-    const moved=[];
-    for(const id of recordIds){
+    if(recordIds.length>1000)throw new Error('REPLAY_LIMIT_INVALID');
+    const normalizedIds=recordIds.map((id)=>String(id||'').trim());
+    if(normalizedIds.some((id)=>!id||id.length>128))throw new Error('REPLAY_RECORD_ID_INVALID');
+    if(new Set(normalizedIds).size!==normalizedIds.length)throw new Error('REPLAY_RECORD_IDS_DUPLICATED');
+    if(Number(expectedCount)!==normalizedIds.length)throw new Error('REPLAY_COUNT_MISMATCH');
+
+    const prepared=[];
+    for(const id of normalizedIds){
       const found=await findRecord(id);
-      if(!found||!REPLAYABLE_STATES.has(found.record.state))throw new Error(`REPLAY_RECORD_NOT_ELIGIBLE:${id}`);
+      if(!found||!REPLAYABLE_STATES.has(found.record.state)||found.record.kind!==kind){
+        throw new Error(`REPLAY_RECORD_NOT_ELIGIBLE:${id}`);
+      }
+      prepared.push(found);
+    }
+
+    const moved=[];
+    for(const found of prepared){
+      const id=found.record.recordId;
       const next={...found.record,state:'queued',updatedAt:iso(now()),attempts:0,nextAttemptAt:0,lastError:null,replayRequestedAt:iso(now()),replayCount:Number(found.record.replayCount||0)+1,replayDestination:destination};
-      await persist(next,{fromFile:found.file});moved.push(id);
+      await persist(next,{fromFile:found.file});
+      moved.push(id);
     }
     await logger(`SPOOL_REPLAY_REQUEST kind=${kind} count=${moved.length} destination=${destination}`);
     return{queued:moved.length,recordIds:moved};
@@ -295,4 +321,4 @@ export function createBridgeSpoolRuntime({
   });
 }
 
-export const __test__={canonicalPayload,payloadFingerprint};
+export const __test__={canonicalPayload,payloadFingerprint,boundedLimit};

@@ -1,5 +1,5 @@
 const CACHE_VERSION = 'hipico-control-v1.13.0-rc3';
-const SHELL_CACHE = `${CACHE_VERSION}-shell-r18-multigroup-format-279`;
+const SHELL_CACHE = `${CACHE_VERSION}-shell-r21-recovery-routing-297`;
 const APP_SHELL = [
   './', './index.html', './recovery.html', './manifest.webmanifest',
   './icons/icon-192.png', './icons/icon-512.png', './icons/icon-192-maskable.png', './icons/icon-512-maskable.png',
@@ -22,11 +22,12 @@ const APP_SHELL_URLS = new Set(APP_SHELL.map(scoped));
 function isSensitive(url) { return /\/(?:api|auth)(?:\/|$)|session|token|license|webhook|rpc|rest\/v1/i.test(url.pathname); }
 function isRuntimeMetadata(url) { return url.pathname.endsWith('/runtime-config.js') || url.pathname.endsWith('/build-info.json'); }
 function isAllowedStatic(url) { return APP_SHELL_URLS.has(url.toString()); }
+function offlineNavigationShell(url) {
+  return url.pathname.endsWith('/recovery.html') ? './recovery.html' : './index.html';
+}
 
 self.addEventListener('install', (event) => {
   event.waitUntil((async () => {
-    // A new cache name makes shell upgrades atomic: an active older worker
-    // cannot observe a partially refreshed cache while this worker installs.
     const cache = await caches.open(SHELL_CACHE);
     await cache.addAll([...APP_SHELL_URLS]);
     await self.skipWaiting();
@@ -49,16 +50,21 @@ self.addEventListener('fetch', (event) => {
   if (request.mode === 'navigate') {
     event.respondWith((async () => {
       try { return await fetch(request, { cache: 'no-store' }); }
-      catch (_) { return (await caches.match(scoped('./index.html'))) || (await caches.match(scoped('./recovery.html'))) || Response.error(); }
+      catch (_) {
+        const cache = await caches.open(SHELL_CACHE);
+        const preferred = offlineNavigationShell(url);
+        return (await cache.match(scoped(preferred))) || (await cache.match(scoped('./recovery.html'))) || Response.error();
+      }
     })());
     return;
   }
   if (!isAllowedStatic(url)) { event.respondWith(fetch(request, { cache: 'no-store' })); return; }
   event.respondWith((async () => {
-    const cached = await caches.match(request);
+    const cache = await caches.open(SHELL_CACHE);
+    const cached = await cache.match(request);
     if (cached) return cached;
     const response = await fetch(request, { cache: 'no-store' });
-    if (response.ok) { const cache = await caches.open(SHELL_CACHE); await cache.put(request, response.clone()); }
+    if (response.ok) await cache.put(request, response.clone());
     return response;
   })());
 });
