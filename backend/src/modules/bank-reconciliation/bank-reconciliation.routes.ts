@@ -32,7 +32,7 @@ const reconcileSchema=z.object({
   reasons:z.array(z.string().trim().min(1).max(80)).max(20).optional()
 }).strict();
 const modelSchema=z.object({
-  name:z.string().trim().min(2).max(160),memoPattern:z.string().trim().min(2).max(240),accountCode:z.string().trim().min(1).max(80),accountName:z.string().trim().min(2).max(160),reasonCode:z.string().trim().min(2).max(64),autoApply:z.boolean().default(false),minConfidence:z.string().regex(/^(?:0(?:\.\d{1,4})?|1(?:\.0{1,4})?)$/).default('0.9500')
+  name:z.string().trim().min(2).max(160),memoPattern:z.string().trim().min(2).max(240),accountCode:z.string().trim().min(1).max(80),accountName:z.string().trim().min(2).max(160).optional(),reasonCode:z.string().trim().min(2).max(64),autoApply:z.boolean().default(false),minConfidence:z.string().regex(/^(?:0(?:\.\d{1,4})?|1(?:\.0{1,4})?)$/).default('0.9500')
 }).strict();
 const writeoffSchema=z.object({
   amount:decimalSchema('money',{positive:true}),writeoffAccountCode:z.string().trim().min(1).max(80),bankLedgerAccountCode:z.string().trim().min(1).max(80),reason:z.string().trim().min(5).max(500),fiscalPeriod:z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/),approvalRequestId:z.string().uuid().nullable().optional()
