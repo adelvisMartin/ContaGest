@@ -1,5 +1,6 @@
 import { adapterCaptureDecision, extractMetaMessages, isE164, readRawBody, safeEqual, sha256, supabase, verifyMetaSignature } from './_shared.js';
 import { isMetaPhoneNumberId, metaWebhookConfig } from './meta-runtime.js';
+import { metaTimestampValid } from './meta-timestamp-policy.js';
 
 export const config = { api: { bodyParser: false } };
 
@@ -38,7 +39,7 @@ function validMetaMessageIdentity(message){
     messageType && messageType.length<=80 &&
     text.length<=4000 &&
     (quoted===null||quoted.length<=320) &&
-    sourceTimestamp!==undefined && sourceTimestamp!==null && String(sourceTimestamp).trim() &&
+    metaTimestampValid(sourceTimestamp) &&
     normalizedTimestamp(message?.timestamp)
   );
 }
@@ -220,4 +221,4 @@ export default async function handler(req, res) {
   }
 }
 
-export const __test__={normalizedTimestamp,rawMetaEnvelopeIdentityError,validMetaMessageIdentity,messageReplaySignature,persistedReplaySignature,persistMetaMessage,metaWebhookConfig,adapterCaptureDecision};
+export const __test__={normalizedTimestamp,rawMetaEnvelopeIdentityError,validMetaMessageIdentity,messageReplaySignature,persistedReplaySignature,persistMetaMessage,metaWebhookConfig,adapterCaptureDecision,metaTimestampValid};
