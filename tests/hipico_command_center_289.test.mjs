@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 import { operationalWorkspaceContext, renderCommandCenterModel } from '../frontend/public/hipico-control/assets/js/command-center.js';
-import { projectCommandCenter } from '../frontend/api/hipico/command-center.js';
+import { projectCommandCenter, __test__ } from '../frontend/api/hipico/command-center.js';
 
 const read = (path) => readFile(new URL(`../${path}`, import.meta.url), 'utf8');
 
@@ -74,6 +74,14 @@ test('Command Center rendering exposes explicit unknown/offline states instead o
   assert.match(html, /Parx Racing/);
 });
 
+test('Command Center remote read-model is fail-closed unless explicitly enabled', () => {
+  assert.equal(typeof __test__.commandCenterReadModelEnabled, 'function');
+  assert.equal(__test__.commandCenterReadModelEnabled({}), false);
+  assert.equal(__test__.commandCenterReadModelEnabled({ HIPICO_COMMAND_CENTER_ENABLED: 'false' }), false);
+  assert.equal(__test__.commandCenterReadModelEnabled({ HIPICO_COMMAND_CENTER_ENABLED: 'true' }), true);
+  assert.equal(__test__.commandCenterReadModelEnabled({ HIPICO_COMMAND_CENTER_ENABLED: ' TRUE ' }), true);
+});
+
 test('PWA mounts Command Center module and service worker keeps it available offline', async () => {
   const [html, sw, endpoint] = await Promise.all([
     read('frontend/public/hipico-control/index.html'),
@@ -82,6 +90,7 @@ test('PWA mounts Command Center module and service worker keeps it available off
   ]);
   assert.match(html, /assets\/js\/command-center\.js/);
   assert.match(sw, /assets\/js\/command-center\.js/);
+  assert.match(endpoint, /HIPICO_COMMAND_CENTER_ENABLED/);
   assert.match(endpoint, /HIPICO_OPERATOR_CONTROL_TOKEN/);
   assert.match(endpoint, /HIPICO_BOT_OPERATOR_TOKEN/);
   assert.match(endpoint, /x-hipico-operator-token/);
