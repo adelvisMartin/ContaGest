@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { HttpError } from '../../shared/http.js';
 import { money, serializeDecimal } from '../../shared/financial/decimal.js';
 
-export const BANK_STATEMENT_PARSER_VERSION = 'contagest-bank-statement/1.1.0';
+export const BANK_STATEMENT_PARSER_VERSION = 'contagest-bank-statement/1.2.0';
 export const MAX_STATEMENT_BYTES = 5 * 1024 * 1024;
 export type StatementFormat = 'csv' | 'ofx' | 'qfx' | 'camt';
 export type NormalizedStatementLine = {
@@ -28,9 +28,10 @@ export type ParsedStatement = {
 
 const sha = (value: string | Buffer) => createHash('sha256').update(value).digest('hex');
 const clean = (value: unknown, max = 1000) => String(value ?? '').replace(/\u0000/g, '').trim().slice(0, max);
+const isSafeNegativeNumber = (value:string) => /^-\d+(?:[.,]\d+)?$/.test(value);
 const safeText = (value: unknown, field: string, max = 1000) => {
   const text = clean(value, max);
-  if (/^[=+@\t\r]/.test(text)) {
+  if (/^[=+@\t\r]/.test(text) || (text.startsWith('-') && !isSafeNegativeNumber(text))) {
     throw new HttpError(422, `Celda potencialmente ejecutable en ${field}.`, { code: 'BANK_STATEMENT_FORMULA_CELL', field });
   }
   return text || null;
@@ -95,6 +96,8 @@ function parseCsv(text: string, defaultCurrency: string): ParsedStatement {
   const indexes = Object.fromEntries(Object.entries(aliases).map(([name,names]) => [name, findHeader(headers, names)]));
   if (indexes.date < 0 || indexes.amount < 0) throw new HttpError(422, 'CSV requiere columnas de fecha y monto.', { code: 'BANK_STATEMENT_CSV_HEADERS' });
   const lines = rows.slice(1).map((columns, rowIndex) => {
+    const structuralIndexes = new Set([indexes.date,indexes.valueDate,indexes.amount].filter((index:number)=>index>=0));
+    columns.forEach((value,index)=>{if(!structuralIndexes.has(index)) safeText(value,`cell:${rowIndex}:${index}`,4000);});
     const raw = Object.fromEntries(headers.map((header,index) => [header, columns[index] ?? '']));
     return {
       bankLineId: indexes.id >= 0 ? safeText(columns[indexes.id], `id:${rowIndex}`, 240) : null,
