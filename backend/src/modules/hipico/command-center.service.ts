@@ -82,7 +82,6 @@ export async function buildHipicoCommandCenter(scope: CommandCenterScope) {
   if (reconciliationRequired > 0) alerts.push('RECONCILIATION_REQUIRED');
   if (Number(documents.review || 0) > 0) alerts.push('DOCUMENT_REVIEW_PENDING');
   if (Number(documents.failed || 0) > 0) alerts.push('DOCUMENT_FAILED');
-  if (provider.circuitState === 'open') alerts.push('PROVIDER_CIRCUIT_OPEN');
   if ((Number(races.open || 0) + Number(races.closed || 0) + Number(races.result_received || 0)) > 1) alerts.push('RACE_CONTEXT_REQUIRES_REVIEW');
 
   return {
@@ -108,13 +107,14 @@ export async function buildHipicoCommandCenter(scope: CommandCenterScope) {
     },
     database: { state: system.components.database.state, ready: system.components.database.state === 'ready' },
     providers: {
-      state: provider.configured ? (provider.circuitState === 'open' ? 'degraded' : 'ready') : 'disabled',
+      state: provider.configured ? 'ready' : 'disabled',
       provider: provider.provider,
       configured: provider.configured,
       enrichmentOnly: true,
       financialAuthority: false,
-      circuitState: provider.circuitState,
-      retryAfterMs: provider.retryAfterMs
+      circuitState: 'not_exposed',
+      retryAfterMs: null,
+      reason: provider.reason
     },
     agent: {
       state: shadowTotal > 0 ? 'known' : 'unknown',
