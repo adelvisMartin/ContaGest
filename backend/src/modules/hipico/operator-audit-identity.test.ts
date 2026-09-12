@@ -17,16 +17,16 @@ test('operator actor reference is stable pseudonymous identity and never contain
 });
 
 test('document approval derives actor server-side and rejects client-supplied operatorId fields', () => {
-  assert.match(documentRoutes, /operatorActorRef/);
+  assert.match(documentRoutes, /operatorActorRef\(\)/);
   assert.match(documentRoutes, /z\.object\(\{classification:classificationSchema\}\)\.strict\(\)/);
   assert.doesNotMatch(documentRoutes, /operatorId:z\./);
-  assert.match(documentRoutes, /store\.approve\([^\n]+actorRef/);
+  assert.match(documentRoutes, /store\.approve\([^\n]+,actor\)/);
 });
 
 test('race command derives actor server-side and strict input cannot spoof actorId or actorType', () => {
-  assert.match(raceRoutes, /operatorActorRef/);
+  assert.match(raceRoutes, /operatorActorRef\(\)/);
   assert.match(raceRoutes, /const commandSchema=z\.object\([\s\S]*?\)\.strict\(\)/);
   assert.doesNotMatch(raceRoutes, /actorId:z\./);
   assert.doesNotMatch(raceRoutes, /actorType:z\./);
-  assert.match(raceRoutes, /actorId:actorRef,actorType:'operator'/);
+  assert.match(raceRoutes, /actorId:actor,actorType:'operator'/);
 });
