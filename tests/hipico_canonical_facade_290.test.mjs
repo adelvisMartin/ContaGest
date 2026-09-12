@@ -36,14 +36,18 @@ test('Control Hipico exposes an independent canonical /api/v1/hipico facade whil
 });
 
 test('PWA command center BFF delegates to the canonical backend without exposing operator credentials', async () => {
-  const [bff, runtime, client] = await Promise.all([
+  const [bff, proxy, runtime, client] = await Promise.all([
     read('frontend/api/hipico/command-center.js'),
+    read('frontend/api/hipico/canonical-backend.js'),
     read('frontend/public/hipico-control/runtime-config.js'),
     read('frontend/public/hipico-control/assets/js/command-center.js')
   ]);
   assert.match(bff, /\/api\/v1\/hipico\/command-center/);
+  assert.match(bff, /x-hipico-group-key/);
   assert.doesNotMatch(bff, /\/api\/v1\/hipico-bot\/outbox|\/api\/v1\/hipico-bot\/shadow-projection/);
+  assert.match(proxy, /x-hipico-group-key/);
   assert.doesNotMatch(runtime, /HIPICO_OPERATOR_CONTROL_TOKEN|HIPICO_BOT_OPERATOR_TOKEN|HIPICO_GROUP_BRIDGE_TOKEN/);
   assert.doesNotMatch(client, /HIPICO_OPERATOR_CONTROL_TOKEN|HIPICO_BOT_OPERATOR_TOKEN|HIPICO_GROUP_BRIDGE_TOKEN/);
   assert.match(client, /cache:\s*'no-store'/);
+  assert.match(client, /groupKey/);
 });
