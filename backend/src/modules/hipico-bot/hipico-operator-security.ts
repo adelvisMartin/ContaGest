@@ -12,10 +12,24 @@ export function operatorTokenConfigured(env: NodeJS.ProcessEnv = process.env) {
   return configuredOperatorToken(env).length >= MIN_OPERATOR_TOKEN_LENGTH;
 }
 
+function safeTokenEqual(expected:string,value:string|undefined){
+  if(expected.length<MIN_OPERATOR_TOKEN_LENGTH||!value)return false;
+  const provided=String(value);
+  if(Buffer.byteLength(expected)!==Buffer.byteLength(provided))return false;
+  return crypto.timingSafeEqual(Buffer.from(expected),Buffer.from(provided));
+}
+
 export function operatorTokenValid(value: string | undefined, env: NodeJS.ProcessEnv = process.env) {
-  const expected = configuredOperatorToken(env);
-  if (expected.length < MIN_OPERATOR_TOKEN_LENGTH || !value) return false;
-  const provided = String(value);
-  if (Buffer.byteLength(expected) !== Buffer.byteLength(provided)) return false;
-  return crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(provided));
+  return safeTokenEqual(configuredOperatorToken(env),value);
+}
+
+export function configuredOwnerApprovalToken(env:NodeJS.ProcessEnv=process.env){
+  return String(env.HIPICO_OWNER_APPROVAL_TOKEN||'').trim();
+}
+
+export function ownerApprovalTokenValid(value:string|undefined,env:NodeJS.ProcessEnv=process.env){
+  const expected=configuredOwnerApprovalToken(env);
+  const operator=configuredOperatorToken(env);
+  if(expected.length<MIN_OPERATOR_TOKEN_LENGTH||expected===operator)return false;
+  return safeTokenEqual(expected,value);
 }
