@@ -112,7 +112,8 @@ test('Bridge package version follows release policy and keeps a fail-closed LAB-
   assert.match(runtime,/LAB_GROUP_NAME/);
   assert.match(runtime,/LAB_SEND_ENABLED/);
   assert.match(runtime,/Destino lab no autorizado/);
-  assert.match(runtime,/Guard de destino LAB falló/);
+  assert.match(runtime,/async function sendMirrorToLab\(mirror\)[\s\S]*openGroup\(LAB_GROUP_NAME, true\)[\s\S]*assertCurrentLabIdentity\(\)[\s\S]*sendTextInCurrentLab/s);
+  assert.match(runtime,/async function sendTextInCurrentLab\(textValue, tag\)[\s\S]*assertCurrentLabIdentity\(\)[\s\S]*keyboard\.insertText[\s\S]*assertCurrentLabIdentity\(\)[\s\S]*keyboard\.press\('Enter'\)[\s\S]*assertCurrentLabIdentity\(\)/s);
   assert.match(runtime,/Envío al grupo fuente: IMPOSIBLE POR DISEÑO/);
   assert.match(runtime,/seen-source-message-ids\.json/);
   assert.match(runtime,/spool-events/);
@@ -120,6 +121,7 @@ test('Bridge package version follows release policy and keeps a fail-closed LAB-
   assert.match(runtime,/openViaSearch/);
   assert.match(runtime,/mediaKind/);
   assert.doesNotMatch(runtime,/HIPICO_ALLOW_SEND/);
+  assert.doesNotMatch(runtime,/sendTextInCurrentSource|sendMirrorToSource/);
   const old=read('tools/hipico-whatsapp-bridge/README.md');
   assert.match(old,/DEPRECADO/);
 });
