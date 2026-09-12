@@ -44,7 +44,10 @@ test('#105 deliberate broken fixture is guaranteed to violate the detector', () 
 test('#105 PWA and Android wrapper share the same canonical runtime source', () => {
   const sync = read('android/hipico-control-v1130/scripts/sync-web.mjs');
   assert.match(sync, /frontend\/public\/hipico-control/);
-  assert.match(sync, /fs\.cpSync\(source, target, \{ recursive: true \}\)/);
+  const clean = sync.indexOf("fs.rmSync(target, { recursive: true, force: true })");
+  const copy = sync.indexOf("fs.cpSync(source, target, { recursive: true, force: true })");
+  assert.ok(clean >= 0, 'Android sync must remove the generated www tree before copying');
+  assert.ok(copy > clean, 'Android sync must copy only after cleaning the generated target');
   assert.match(sync, /verifyParity\(sourceFiles, targetFiles\)/);
   assert.match(sync, /sha256/);
   const androidPackage = JSON.parse(read('android/hipico-control-v1130/package.json'));
