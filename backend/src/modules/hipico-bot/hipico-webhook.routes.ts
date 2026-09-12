@@ -48,9 +48,8 @@ function webhookTimestampValid(message:ExtractedMessage){
 
 async function processMessageWithReplayGuard(message:any){
   const alreadyPersisted=await assertPersistedWebhookReplay(message);
-  if(alreadyPersisted)return{duplicate:true};
-  const result=await processIncoming(message);
-  if(result?.duplicate)await assertPersistedWebhookReplay(message);
+  const result=await processIncoming(message,{requirePersistent:true});
+  if(result?.duplicate&&!alreadyPersisted)await assertPersistedWebhookReplay(message);
   return result;
 }
 
@@ -125,8 +124,6 @@ router.post('/webhook',async(req,res)=>{
     return res.status(503).json({ok:false,retryable:true,error:'webhook_persistence_unavailable',detail:'Persistencia Hípico no disponible.',received:expectedRawMessages,validMessages:messages.length,invalidMessages:invalidCount});
   }
 
-  // Replay protection is intentionally inside the bounded wrapper; the equivalent
-  // Promise.allSettled(batch.map(processIncoming)) remains the batch safety contract.
   const result=await processMessagesBounded(messages);
   if(result.failed>0){
     return res.status(503).json({ok:false,retryable:true,received:expectedRawMessages,processed:result.processed,failed:result.failed,mismatched:result.mismatched,invalidMessages:invalidCount,error:'webhook_processing_failed'});
