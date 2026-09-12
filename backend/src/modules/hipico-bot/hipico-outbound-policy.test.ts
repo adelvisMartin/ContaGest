@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
-import { assertCloudOutboundAllowed, assertCloudTransportConfigured, cloudDestinationAllowed, cloudOutboundPolicy, cloudSendTimeoutMs, cloudTransportConfiguration, __test__ } from './hipico-outbound-policy.js';
+import { assertCloudOutboundAllowed, assertCloudTransportConfigured, cloudDestinationAllowed, cloudHttpDeliveryAmbiguous, cloudOutboundPolicy, cloudSendTimeoutMs, cloudTransportConfiguration, __test__ } from './hipico-outbound-policy.js';
 
 const SHA='a'.repeat(40);
 const enabledEnv={
@@ -71,6 +71,15 @@ test('Meta Cloud transport requires strong token numeric phone id bounded Graph 
     assert.ok(config.reasons.includes(reason));
     assert.throws(()=>assertCloudTransportConfigured(env),(error:any)=>error?.code==='HIPICO_CLOUD_TRANSPORT_NOT_CONFIGURED');
   }
+});
+
+test('backend classifies timeout/server failures as ambiguous delivery instead of safe resend candidates',()=>{
+  assert.equal(cloudHttpDeliveryAmbiguous(408),true);
+  assert.equal(cloudHttpDeliveryAmbiguous(500),true);
+  assert.equal(cloudHttpDeliveryAmbiguous(502),true);
+  assert.equal(cloudHttpDeliveryAmbiguous(599),true);
+  assert.equal(cloudHttpDeliveryAmbiguous(429),false);
+  assert.equal(cloudHttpDeliveryAmbiguous(400),false);
 });
 
 test('operator status uses the same strong Meta Cloud transport readiness as the sender',()=>{
