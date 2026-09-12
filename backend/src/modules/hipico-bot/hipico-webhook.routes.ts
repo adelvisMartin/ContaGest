@@ -96,34 +96,50 @@ router.post('/webhook',async(req,res)=>{
 
   const expectedRawMessages=rawMessageCount(req.body);
   const messages=extractMessages(req.body).map((message)=>({...message,body:String(message.body||'').slice(0,4000)}));
-  if(messages.length!==expectedRawMessages){
-    return res.status(200).json({ok:false,acknowledged:true,accepted:false,retryable:false,error:'invalid_message_identity',received:expectedRawMessages,acceptedMessages:messages.length});
-  }
+  const invalidMessages=Math.max(0,expectedRawMessages-messages.length);
 
   const identityError=webhookIdentityError(messages);
   if(identityError==='WEBHOOK_PHONE_NUMBER_NOT_CONFIGURED'){
     return res.status(503).json({ok:false,retryable:true,error:'webhook_not_configured'});
   }
   if(identityError){
-    return res.status(200).json({ok:false,acknowledged:true,accepted:false,retryable:false,error:'webhook_phone_number_mismatch',received:messages.length});
+    return res.status(200).json({ok:false,acknowledged:true,accepted:false,retryable:false,error:'webhook_phone_number_mismatch',received:expectedRawMessages,validMessages:messages.length,invalidMessages});
   }
 
   if(messages.length===0){
-    return res.status(200).json({ok:true,received:0,processed:0,failed:0,mismatched:0});
+    if(invalidMessages>0){
+      return res.status(200).json({ok:false,acknowledged:true,accepted:false,retryable:false,error:'invalid_message_identity',received:expectedRawMessages,processed:0,invalidMessages});
+    }
+    return res.status(200).json({ok:true,received:0,processed:0,failed:0,mismatched:0,invalidMessages:0});
   }
 
   if(!await HipicoBotStore.dbReady(true)){
-    return res.status(503).json({ok:false,retryable:true,error:'Persistencia Hípico no disponible.'});
+    return res.status(503).json({ok:false,retryable:true,error:'Persistencia Hípico no disponible.',received:expectedRawMessages,validMessages:messages.length,invalidMessages});
   }
 
   const result=await processMessagesBounded(messages);
   if(result.failed>0){
-    return res.status(503).json({ok:false,retryable:true,received:messages.length,processed:result.processed,failed:result.failed,mismatched:result.mismatched,error:'Uno o más mensajes no se pudieron persistir.'});
+    return res.status(503).json({ok:false,retryable:true,received:expectedRawMessages,processed:result.processed,failed:result.failed,mismatched:result.mismatched,invalidMessages,error:'Uno o más mensajes válidos no se pudieron persistir.'});
   }
   if(result.mismatched>0){
-    return res.status(200).json({ok:false,acknowledged:true,accepted:false,retryable:false,error:'webhook_replay_mismatch',received:messages.length,processed:result.processed,failed:0,mismatched:result.mismatched});
+    return res.status(200).json({ok:false,acknowledged:true,accepted:false,retryable:false,error:'webhook_replay_mismatch',received:expectedRawMessages,processed:result.processed,failed:0,mismatched:result.mismatched,invalidMessages});
   }
-  return res.status(200).json({ok:true,received:messages.length,processed:result.processed,failed:0,mismatched:0});
+  if(invalidMessages>0){
+    return res.status(200).json({
+      ok:false,
+      acknowledged:true,
+      accepted:true,
+      partial:true,
+      retryable:false,
+      error:'invalid_message_identity_partial',
+      received:expectedRawMessages,
+      processed:result.processed,
+      failed:0,
+      mismatched:0,
+      invalidMessages
+    });
+  }
+  return res.status(200).json({ok:true,received:expectedRawMessages,processed:result.processed,failed:0,mismatched:0,invalidMessages:0});
 });
 
 export default router;
