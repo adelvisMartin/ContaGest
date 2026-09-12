@@ -10,6 +10,9 @@ function executeRecovery(confirmResult) {
   let clickHandler = null;
   const removedKeys = [];
   const deletedDatabases = [];
+  const replacements = [];
+  const timers = [];
+  const deleteRequest = {};
   const status = { textContent: '' };
   const reset = {
     disabled: false,
@@ -24,20 +27,21 @@ function executeRecovery(confirmResult) {
       }
     },
     window: { confirm: () => confirmResult },
-    location: { replace() {} },
+    location: { replace(value) { replacements.push(value); } },
     localStorage: { removeItem(key) { removedKeys.push(key); } },
     indexedDB: {
       deleteDatabase(name) {
         deletedDatabases.push(name);
-        return {};
+        return deleteRequest;
       }
     },
-    setTimeout() {}
+    setTimeout(callback, delay) { timers.push({ callback, delay }); return timers.length; },
+    clearTimeout() {}
   };
   vm.runInNewContext(script, context, { filename: 'recovery.js' });
   assert.equal(typeof clickHandler, 'function');
   clickHandler();
-  return { removedKeys, deletedDatabases, status, reset };
+  return { removedKeys, deletedDatabases, replacements, timers, deleteRequest, status, reset };
 }
 
 test('recovery copy clearly warns about local data loss before the destructive action', () => {
@@ -64,4 +68,24 @@ test('confirmed recovery reaches destructive storage cleanup only after confirma
   ]);
   assert.deepEqual(result.deletedDatabases, ['hipico-control']);
   assert.equal(result.reset.disabled, true);
+});
+
+test('blocked IndexedDB deletion fails closed instead of pretending recovery succeeded', () => {
+  const result = executeRecovery(true);
+  assert.equal(typeof result.deleteRequest.onblocked, 'function');
+  result.deleteRequest.onblocked();
+  assert.equal(result.reset.disabled, false);
+  assert.match(result.status.textContent, /cierra otras pestañas|bloquead|ocupado/i);
+  assert.deepEqual(result.replacements, []);
+  assert.equal(result.timers.some(({ delay }) => delay <= 500), false, 'blocked deletion must not schedule automatic app navigation');
+});
+
+test('IndexedDB deletion error keeps the user on recovery with an actionable retry', () => {
+  const result = executeRecovery(true);
+  assert.equal(typeof result.deleteRequest.onerror, 'function');
+  result.deleteRequest.onerror();
+  assert.equal(result.reset.disabled, false);
+  assert.match(result.status.textContent, /no se pudo|reintenta/i);
+  assert.deepEqual(result.replacements, []);
+  assert.equal(result.timers.some(({ delay }) => delay <= 500), false, 'failed deletion must not navigate into a possibly unrecovered app');
 });
