@@ -1,3 +1,4 @@
+import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { test, expect } from '@playwright/test';
@@ -16,7 +17,12 @@ if(!user||!role)throw new Error('ERP157_ADMIN_RBAC_PROFILE_MISSING');
 const session={sessionMode:'cookie',mode:'cookie',tenantId:'qa-tenant-a',tenant:{id:'qa-tenant-a',name:'ContaGest QA',rif:'J-00000000-0',plan:'enterprise'},user:{id:user.id,name:user.fullName,fullName:user.fullName,email:'admin@example.test',role:'admin',permissions:[...role.permissions]},audience:'staff',expiresAt:Date.now()+3600000};
 const store={rbac,settings:{theme:'light',lang:'es',businessMode:'admin',companyName:'ContaGest QA',companyRif:'J-00000000-0'}};
 
-async function heapUsed(cdp){const metrics=await cdp.send('Performance.getMetrics');return Number(metrics.metrics.find((item)=>item.name==='JSHeapUsedSize')?.value||0);}
+async function heapUsed(cdp){
+  const metrics=await cdp.send('Performance.getMetrics');
+  const raw=metrics.metrics.find((item)=>item.name==='JSHeapUsedSize')?.value;
+  if(typeof raw!=='number'||!Number.isFinite(raw)||raw<=0)throw new Error('ERP157_BROWSER_HEAP_METRIC_MISSING');
+  return raw;
+}
 function clientRows(count){return Array.from({length:count},(_,i)=>({id:`perf-client-${i}`,name:`Synthetic Client ${i}`,rif:`J-PERF-${String(i).padStart(6,'0')}`,email:`perf${i}@example.test`,phone:'04120000000',status:'active',active:true,updatedAt:'2026-09-03T00:00:00.000Z'}));}
 
 async function install(page,state){
@@ -78,9 +84,9 @@ test('issue #157 frontend measured performance evidence',async({page})=>{
 
   await cdp.send('Network.emulateNetworkConditions',{offline:false,latency:120,downloadThroughput:200000,uploadThroughput:100000,connectionType:'cellular3g'});const throttled=[];for(let i=0;i<3;i++)throttled.push(await gotoRoute(page,'dashboard'));await cdp.send('Network.emulateNetworkConditions',{offline:false,latency:0,downloadThroughput:-1,uploadThroughput:-1});
 
-  const heapGrowthPct=heapBefore>0?Math.max(0,((heapAfter-heapBefore)/heapBefore)*100):0;
+  const heapGrowthPct=Math.max(0,((heapAfter-heapBefore)/heapBefore)*100);
   const output={
-    schemaVersion:2,issue:157,candidateSha:sha,
+    schemaVersion:2,issue:157,candidateSha:sha,fixtureProvenance:'SYNTHETIC_TEST_ONLY',
     profiles:{cold:'MEASURED',warm:'MEASURED','repeated-navigation':'MEASURED','long-session':'MEASURED','network-throttled':'MEASURED'},
     metrics:{
       'frontend.startupP95Ms':q(startup,.95),'frontend.routeSwitchP95Ms':q(routeSwitch,.95),'frontend.saveP95Ms':q(save,.95),'frontend.import1000RowsP95Ms':q(import1000,.95),
