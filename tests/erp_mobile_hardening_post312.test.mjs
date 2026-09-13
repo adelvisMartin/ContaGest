@@ -5,6 +5,7 @@ import { ErpUi } from '../frontend/src/components/ui/erp.js';
 
 const css = readFileSync(new URL('../frontend/src/styles/erp-runtime.css', import.meta.url), 'utf8');
 const app = readFileSync(new URL('../frontend/src/app.js', import.meta.url), 'utf8');
+const mobileNavigationSpec = readFileSync(new URL('../qa/mobile-navigation-v163.spec.mjs', import.meta.url), 'utf8');
 
 test('ERP data-table primitive emits the canonical responsive wrapper aliases', () => {
   const html = ErpUi.table({
@@ -37,4 +38,12 @@ test('mobile drawer open state wins over collapsed hiding and survives same-rout
   assert.match(css.slice(collapsedIndex, openIndex), /visibility:hidden;[\s\S]*pointer-events:none;/);
   assert.match(css.slice(openIndex), /visibility:visible;[\s\S]*pointer-events:auto;/);
   assert.match(app, /preserveMobileOpen=mobile\(\)&&document\.body\.classList\.contains\('cg-menu-open'\)&&renderedRoute===currentRoute/);
+});
+
+test('mobile navigation E2E fails fast per route instead of burning the whole preview timeout', () => {
+  assert.match(mobileNavigationSpec, /test\.setTimeout\(180_000\)/);
+  assert.match(mobileNavigationSpec, /await button\.click\(\{timeout:12_000\}\)/);
+  assert.match(mobileNavigationSpec, /expect\(failures,[\s\S]*\)\.toEqual\(\[\]\)/);
+  assert.doesNotMatch(mobileNavigationSpec, /force\s*:\s*true/);
+  assert.doesNotMatch(mobileNavigationSpec, /waitForTimeout\s*\(/);
 });
