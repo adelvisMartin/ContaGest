@@ -1,0 +1,108 @@
+name: Hípico Command Center v289
+
+on:
+  pull_request:
+    paths:
+      - 'backend/src/modules/hipico/**'
+      - 'backend/src/modules/hipico-bot/**'
+      - 'frontend/api/hipico/**'
+      - 'frontend/public/hipico-control/**'
+      - 'android/hipico-control-v1130/**'
+      - 'docs/hipico/**'
+      - 'tests/hipico*.test.mjs'
+      - 'qa/hipico-command-center-v289.spec.mjs'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/hipico-command-center-v289.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: hipico-command-center-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  HIPICO_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+  HIPICO_CANDIDATE_SHA: ${{ github.event.pull_request.merge_commit_sha || github.event.pull_request.head.sha || github.sha }}
+
+jobs:
+  command-center:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - name: Checkout exact merge candidate SHA
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ env.HIPICO_CANDIDATE_SHA }}
+          fetch-depth: 0
+
+      - name: Exact candidate SHA and clean-tree gate
+        env:
+          HIPICO_QA_SHA: ${{ env.HIPICO_CANDIDATE_SHA }}
+        run: node scripts/hipico-exact-sha-gate.mjs
+
+      - name: Record candidate identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "PR head: ${HIPICO_HEAD_SHA}"
+          echo "Merge candidate: ${HIPICO_CANDIDATE_SHA}"
+          test "$(git rev-parse HEAD)" = "${HIPICO_CANDIDATE_SHA}"
+
+      - name: Configure Node 22
+        uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Install locked dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Command Center source and PWA contracts
+        run: node --test tests/hipico_command_center_289_contract.test.mjs
+
+      - name: Integrated Hípico regression contracts
+        run: node --test tests/hipico_platform_stack_integration_302.test.mjs tests/hipico_canonical_api_283.test.mjs tests/hipico_canonical_backend_adapter_284.test.mjs tests/hipico_messaging_cli_284.test.mjs tests/hipico_persistence_readiness_299.test.mjs tests/hipico_serverless_api_277.test.mjs tests/hipico_meta_webhook_279.test.mjs
+
+      - name: Backend typecheck and Hípico tests
+        run: |
+          npm --workspace backend run typecheck
+          npm --workspace backend run test:hipico
+
+      - name: Verify Android and PWA source parity
+        run: node android/hipico-control-v1130/scripts/sync-web.mjs --check-only
+
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Browser responsive accessibility theme and offline gate
+        env:
+          HIPICO_QA_SHA: ${{ env.HIPICO_CANDIDATE_SHA }}
+        run: npm run test:browser:hipico:command-center
+
+      - name: Preserve SHA-bound evidence
+        if: always()
+        shell: bash
+        run: |
+          set -uo pipefail
+          evidence="artifacts/qa/hipico-v289/${HIPICO_CANDIDATE_SHA}"
+          mkdir -p "$evidence"
+          printf '%s\n' "${HIPICO_CANDIDATE_SHA}" > "$evidence/candidate-sha.txt"
+          printf '%s\n' "${HIPICO_HEAD_SHA}" > "$evidence/head-sha.txt"
+          git status --porcelain=v1 > "$evidence/git-status.txt"
+          git diff --check > "$evidence/diff-check.txt" || true
+
+      - name: Upload Command Center evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: hipico-command-center-${{ env.HIPICO_CANDIDATE_SHA }}
+          path: |
+            artifacts/qa/hipico-v289/${{ env.HIPICO_CANDIDATE_SHA }}
+            test-results
+            playwright-report
+          if-no-files-found: warn
+          retention-days: 30
