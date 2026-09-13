@@ -114,12 +114,13 @@ void test('browser and exact-SHA gates are wired without creating a parallel sty
   const pkg = JSON.parse(read('package.json'));
   const workflow = read('.github/workflows/hipico-command-center-v289.yml');
   const browser = read('qa/hipico-command-center-v289.spec.mjs');
-  assert.equal(pkg.scripts['test:browser:hipico:command-center'], 'playwright test qa/hipico-command-center-v289.spec.mjs');
+  assert.equal(pkg.scripts['test:browser:hipico:command-center'], 'playwright test qa/hipico-command-center-v289.spec.mjs --project=chromium');
   assert.match(workflow, /HIPICO_CANDIDATE_SHA/);
   assert.match(workflow, /hipico-exact-sha-gate\.mjs/);
   assert.match(workflow, /test:browser:hipico:command-center/);
   assert.match(workflow, /actions\/upload-artifact@v7/);
-  for (const width of ['360', '390', '430', '768', '1440']) assert.ok(browser.includes(width), `browser matrix missing ${width}`);
+  assert.match(workflow, /sync-web\.mjs --check-only/);
+  for (const width of ['360', '390', '393', '430', '768', '1024', '1440']) assert.ok(browser.includes(width), `browser matrix missing ${width}`);
   assert.match(browser, /200 percent zoom/i);
   assert.match(browser, /prefers-reduced-motion/);
 
