@@ -25,15 +25,18 @@ test('AUTOMATIC promotion cannot trust an ownerApproved boolean supplied by the 
   assert.match(routes, /HIPICO_AUTOMATION_OWNER_APPROVAL_UNAUTHORIZED/);
 });
 
-test('automation mode mutation has a bounded canonical idempotency contract', () => {
+test('automation mode mutation has bounded idempotency plus optimistic-state contract', () => {
   const modeSchemaSource = routes.slice(routes.indexOf('const modeSchema'), routes.indexOf('const evaluateSchema'));
   assert.match(routes, /const keySchema\s*=\s*z\.string\(\)\.regex\(\/\^\[A-Za-z0-9\._:-\]\{8,120\}\$\//);
+  assert.match(modeSchemaSource, /expectedMode:\s*z\.enum\(AUTOMATION_STATES\)/);
   assert.match(modeSchemaSource, /requestId:\s*keySchema/);
   assert.match(modeSchemaSource, /idempotencyKey:\s*keySchema\.optional\(\)/);
   assert.match(routes, /req\.header\('idempotency-key'\)/);
   assert.match(routes, /HIPICO_AUTOMATION_IDEMPOTENCY_KEY_INVALID/);
   assert.match(routes, /HIPICO_AUTOMATION_IDEMPOTENCY_MISMATCH/);
+  assert.match(routes, /HIPICO_AUTOMATION_STATE_CONFLICT/);
   assert.match(routes, /const idempotencyKey\s*=\s*headerKey\s*\|\|\s*body\.idempotencyKey\s*\|\|\s*body\.requestId/);
+  assert.match(routes, /expectedMode:\s*body\.expectedMode/);
   assert.match(routes, /requestId:\s*body\.requestId/);
   assert.match(routes, /idempotencyKey/);
 });
@@ -50,7 +53,9 @@ test('automation mode transition is replay-safe and append-only audited', () => 
   assert.match(store, /hipico_automation_transitions/);
   assert.match(store, /idempotency_key/);
   assert.match(store, /request_id/);
+  assert.match(store, /expected_mode/);
   assert.match(store, /HIPICO_AUTOMATION_IDEMPOTENCY_MISMATCH/);
+  assert.match(store, /HIPICO_AUTOMATION_STATE_CONFLICT/);
   assert.match(store, /duplicate:\s*true/);
   assert.match(store, /duplicate:\s*false/);
   assert.match(store, /previous_mode/);
