@@ -1,4 +1,4 @@
-const CACHE_VERSION = 'hipico-control-v1.13.0-rc3';
+const CACHE_VERSION = 'hipico-control-v1.13.0-rc2';
 const SHELL_CACHE = `${CACHE_VERSION}-shell-r23-production-gates`;
 const APP_SHELL = [
   './', './index.html', './recovery.html', './manifest.webmanifest', './icons/icon-192.png', './icons/icon-512.png', './icons/icon-192-maskable.png', './icons/icon-512-maskable.png', './logo-control-hipico.png',
