@@ -5,6 +5,7 @@ import {
   AUTOMATION_STATES,
   canPromoteAutomation,
   sanitizeAgentEvidence,
+  sourceAutomationModeAllowed,
   type AgentCandidate,
   type AutomationMetrics,
   type AutomationState
@@ -94,6 +95,9 @@ export class AutomationStore {
   }) {
     assertScope(input.ownerId, input.groupKey, input.groupId);
     if (!(AUTOMATION_STATES as readonly string[]).includes(input.target)) throw new Error('HIPICO_AUTOMATION_STATE_INVALID');
+    if (!sourceAutomationModeAllowed(input.groupId, input.target, process.env.HIPICO_SOURCE_GROUP_ID)) {
+      throw Object.assign(new Error('HIPICO_SOURCE_AUTOMATION_SHADOW_ONLY'), { code: 'HIPICO_SOURCE_AUTOMATION_SHADOW_ONLY' });
+    }
     if (!String(input.actorRef || '').startsWith('operator-token:')) throw new Error('HIPICO_OPERATOR_ACTOR_NOT_CONFIGURED');
     await this.get(input.ownerId, input.groupKey, input.groupId);
 
