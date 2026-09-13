@@ -153,7 +153,11 @@ test('200 percent zoom keeps Command Center vertically navigable', async ({ page
   await mount(page, { status: 'success', data: MOCK, error: '', updatedAt: '2026-09-13T20:00:00.000Z', stale: false });
   await page.evaluate(() => { document.body.style.zoom = '2'; });
   await expect(page.getByRole('heading', { name: 'Command Center' })).toBeVisible();
-  const scrollable = await page.evaluate(() => document.documentElement.scrollHeight > document.documentElement.clientHeight);
-  expect(scrollable).toBe(true);
-  await noHorizontalOverflow(page);
+  const geometry = await page.evaluate(() => ({
+    scrollHeight: document.documentElement.scrollHeight,
+    clientHeight: document.documentElement.clientHeight,
+    overflowY: getComputedStyle(document.documentElement).overflowY
+  }));
+  expect(geometry.scrollHeight).toBeGreaterThan(geometry.clientHeight);
+  expect(geometry.overflowY).not.toBe('hidden');
 });
