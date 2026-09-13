@@ -42,6 +42,8 @@ const evidence=JSON.parse(fs.readFileSync(file,'utf8'));
 if(evidence.schemaVersion!==2)throw new Error('PERFORMANCE_EVIDENCE_SCHEMA_V2_REQUIRED_REINITIALIZE');
 if(evidence.candidateSha!==sha)throw new Error('PERFORMANCE_SHA_MISMATCH');
 
+const metricNumber=(raw)=>typeof raw === 'number' && Number.isFinite(raw) ? raw : null;
+
 const required={
   'frontend.startupP95Ms':policy.frontend.startupP95Ms,
   'frontend.routeSwitchP95Ms':policy.frontend.routeSwitchP95Ms,
@@ -65,15 +67,16 @@ const required={
 };
 const checks=[];
 for(const [key,budget] of Object.entries(required)){
-  const value=Number(evidence.metrics?.[key]);
-  checks.push({key,value:Number.isFinite(value)?value:null,budget,pass:Number.isFinite(value)&&value<=budget,direction:'max'});
+  const value=metricNumber(evidence.metrics?.[key]);
+  checks.push({key,value,budget,pass:value!==null&&value<=budget,direction:'max'});
 }
-const throughput=Number(evidence.metrics?.['backend.throughputRps']);
-checks.push({key:'backend.throughputRps',value:Number.isFinite(throughput)?throughput:null,budget:policy.backend.throughputRpsMin,pass:Number.isFinite(throughput)&&throughput>=policy.backend.throughputRpsMin,direction:'min'});
+const throughput=metricNumber(evidence.metrics?.['backend.throughputRps']);
+checks.push({key:'backend.throughputRps',value:throughput,budget:policy.backend.throughputRpsMin,pass:throughput!==null&&throughput>=policy.backend.throughputRpsMin,direction:'min'});
 
 const profilesComplete=policy.profiles.every((p)=>evidence.profiles?.[p]==='MEASURED');
 const workloadProfilesComplete=policy.workloadModel.profiles.every((p)=>evidence.workload?.profileCoverage?.[p]==='MEASURED');
-const expectedPeak=Number(evidence.workload?.expectedPeakConcurrentUsers);
+const expectedPeakRaw=evidence.workload?.expectedPeakConcurrentUsers;
+const expectedPeak=typeof expectedPeakRaw==='number'&&Number.isFinite(expectedPeakRaw)?expectedPeakRaw:null;
 const expectedPeakDeclared=Number.isInteger(expectedPeak)&&expectedPeak>0;
 const loadFactorsComplete=policy.workloadModel.requiredLoadFactors.every((factor)=>evidence.workload?.loadFactors?.[`${factor}x`]==='MEASURED');
 const heavyProcessesComplete=policy.heavyProcesses.required.every((name)=>
