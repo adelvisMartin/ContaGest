@@ -129,6 +129,17 @@ export class AutomationStore {
     return readMetrics(prisma, ownerId, groupKey, groupId);
   }
 
+  async read(ownerId: string, groupKey: string, groupId: string) {
+    assertScope(ownerId, groupKey, groupId);
+    const rows = await prisma.$queryRaw<any[]>`
+      SELECT mode, updated_at AS "updatedAt", updated_by AS "updatedBy"
+      FROM public.hipico_group_automation
+      WHERE owner_id = ${ownerId}::uuid AND group_key = ${groupKey} AND group_id = ${groupId}
+      LIMIT 1`;
+    if (rows[0]) return { ...rows[0], persisted: true };
+    return { mode: defaultMode(groupId), updatedAt: null, updatedBy: null, persisted: false };
+  }
+
   async get(ownerId: string, groupKey: string, groupId: string) {
     assertScope(ownerId, groupKey, groupId);
     const mode = defaultMode(groupId);
