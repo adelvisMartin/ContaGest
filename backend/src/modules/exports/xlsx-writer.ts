@@ -6,6 +6,7 @@ export const XLSX_LIMITS = Object.freeze({
   maxColumns: 128,
   maxTotalCells: 500_000,
   maxCellChars: 32_767,
+  maxTotalTextChars: 8_000_000,
 });
 
 export type XlsxCellValue = unknown;
@@ -41,6 +42,14 @@ function textValue(value: unknown): string {
     catch { return String(value).slice(0, XLSX_LIMITS.maxCellChars); }
   }
   return String(value).slice(0, XLSX_LIMITS.maxCellChars);
+}
+
+function addTextBudget(current: number, value: unknown): number {
+  const next = current + textValue(value).length;
+  if (next > XLSX_LIMITS.maxTotalTextChars) {
+    throw new XlsxLimitError(`XLSX text limit exceeded: ${next} > ${XLSX_LIMITS.maxTotalTextChars}`);
+  }
+  return next;
 }
 
 function headersFromRows(rows: Record<string, unknown>[]): string[] {
@@ -195,7 +204,9 @@ export function buildXlsxWorkbook(input: XlsxWorkbookInput): Uint8Array {
   if (sheets.length > XLSX_LIMITS.maxSheets) {
     throw new XlsxLimitError(`XLSX sheet limit exceeded: ${sheets.length} > ${XLSX_LIMITS.maxSheets}`);
   }
+  const title = textValue(input.title || 'ContaGest-VE Export');
   let totalCells = 0;
+  let totalTextChars = 0;
   const usedNames = new Set<string>();
   const prepared = sheets.map((sheet, index) => {
     const rows = Array.isArray(sheet.rows) ? sheet.rows : [];
@@ -207,9 +218,13 @@ export function buildXlsxWorkbook(input: XlsxWorkbookInput): Uint8Array {
     if (totalCells > XLSX_LIMITS.maxTotalCells) {
       throw new XlsxLimitError(`XLSX total cell limit exceeded: ${totalCells} > ${XLSX_LIMITS.maxTotalCells}`);
     }
+    totalTextChars = addTextBudget(totalTextChars, title);
+    for (const header of headers) totalTextChars = addTextBudget(totalTextChars, header);
+    for (const row of rows) {
+      for (const header of headers) totalTextChars = addTextBudget(totalTextChars, row[header] ?? '');
+    }
     return { name: safeSheetName(sheet.name || `Datos ${index + 1}`, usedNames), rows, headers };
   });
-  const title = textValue(input.title || 'ContaGest-VE Export');
   const entries: ZipEntry[] = [
     { name: '[Content_Types].xml', data: contentTypesXml(prepared.length) },
     { name: '_rels/.rels', data: rootRelationshipsXml() },
