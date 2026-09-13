@@ -73,3 +73,14 @@ test('internal XLSX writer fails closed when resource limits are exceeded', () =
   const tooWide = Object.fromEntries(Array.from({ length: XLSX_LIMITS.maxColumns + 1 }, (_, index) => [`c${index}`, index]));
   assert.throws(() => buildXlsxWorkbook({ sheets: [{ name: 'Wide', rows: [tooWide] }] }), XlsxLimitError);
 });
+
+test('internal XLSX writer caps aggregate text before XML/ZIP amplification', () => {
+  assert.ok(XLSX_LIMITS.maxTotalTextChars > XLSX_LIMITS.maxCellChars, 'aggregate budget must allow normal multi-cell exports');
+  const fullCell = 'x'.repeat(XLSX_LIMITS.maxCellChars);
+  const rowCount = Math.floor(XLSX_LIMITS.maxTotalTextChars / XLSX_LIMITS.maxCellChars) + 2;
+  const rows = Array.from({ length: rowCount }, () => ({ payload: fullCell }));
+  assert.throws(
+    () => buildXlsxWorkbook({ title: 'Text budget regression', sheets: [{ name: 'Bounded', rows }] }),
+    (error: unknown) => error instanceof XlsxLimitError && /text/i.test(error.message),
+  );
+});
