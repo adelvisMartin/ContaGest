@@ -60,7 +60,8 @@ void test('PWA shell caches the complete Command Center runtime without caching 
   for (const asset of ['theme-bootstrap.js', 'command-center.js', 'command-center-shell.js']) {
     assert.ok(sw.includes(`./assets/js/${asset}`), `service worker must cache ${asset}`);
   }
-  assert.match(sw, /\/(?:api\|auth)/);
+  assert.match(sw, /function isSensitive/);
+  assert.ok(sw.includes('(?:api|auth)'), 'service worker must classify API/auth requests as sensitive');
   assert.match(sw, /cache: 'no-store'/);
 });
 
