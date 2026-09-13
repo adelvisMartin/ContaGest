@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { classifyRaceQueryIntent, evaluateRaceCommand, type RaceCommandInput, type RaceLifecycleState } from './race-lifecycle.js';
+import { classifyRaceQueryIntent, evaluateRaceCommand, resultStageForRaceState, type RaceCommandInput, type RaceLifecycleState } from './race-lifecycle.js';
 
 const command=(state:RaceLifecycleState,patch:Partial<RaceCommandInput>={}):RaceCommandInput=>({
   command:'ANNOUNCE',expectedState:state,requestId:'request-0001',actorId:'operator-1',actorType:'operator',correlationId:'trace-000001',evidence:[],payload:{},...patch
@@ -21,6 +21,14 @@ void test('canonical happy path separates close, running, provisional and offici
   assert.equal(state,'OFFICIAL_RESULT');assert.equal(official.resultStage,'official');
   apply(command(state,{command:'ARCHIVE',expectedState:state}));
   assert.equal(state,'ARCHIVED');
+});
+
+void test('result stage mapping is stable for persisted/replayed lifecycle states',()=>{
+  assert.equal(resultStageForRaceState('DISCOVERED'),'none');
+  assert.equal(resultStageForRaceState('CLOSED'),'none');
+  assert.equal(resultStageForRaceState('PROVISIONAL_RESULT'),'provisional');
+  assert.equal(resultStageForRaceState('OFFICIAL_RESULT'),'official');
+  assert.equal(resultStageForRaceState('ARCHIVED'),'official');
 });
 
 void test('CLOSED never implies settlement or official result',()=>{
