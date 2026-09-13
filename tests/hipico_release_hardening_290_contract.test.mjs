@@ -11,7 +11,8 @@ test('v290 release hardening scripts exist and use exact candidate SHA semantics
     'scripts/hipico-secret-scan-v290.mjs',
     'scripts/hipico-release-guard-v290.mjs',
     'scripts/hipico-verify-evidence-v290.mjs',
-    'scripts/hipico-release-report-v290.mjs'
+    'scripts/hipico-release-report-v290.mjs',
+    'scripts/hipico-ci-verdict-v290.mjs'
   ]) assert.equal(exists(file), true, `${file} missing`);
 
   const secretScan = read('scripts/hipico-secret-scan-v290.mjs');
@@ -69,12 +70,13 @@ test('evidence verifier and release report use only PASS/FAIL/BLOCKED/NOT_EXECUT
   assert.match(report, /BLOCKED_INFRASTRUCTURE/);
 });
 
-test('root scripts expose the guarded release path and never bypass the exact-SHA guard', () => {
+test('root scripts expose guarded release and runner-aware verdict paths', () => {
   const pkg = JSON.parse(read('package.json'));
   assert.equal(pkg.scripts?.hipico, 'node tools/hipico-cli/hipico.mjs');
   assert.equal(pkg.scripts?.['release:hipico:v290'], 'node scripts/hipico-release-guard-v290.mjs');
   assert.equal(pkg.scripts?.['verify:hipico:evidence:v290'], 'node scripts/hipico-verify-evidence-v290.mjs');
   assert.equal(pkg.scripts?.['report:hipico:v290'], 'node scripts/hipico-release-report-v290.mjs');
+  assert.equal(pkg.scripts?.['ci:hipico:verdict:v290'], 'node scripts/hipico-ci-verdict-v290.mjs');
 });
 
 test('production gate workflow reuses current v12-v21, browser matrix and Android contracts on exact head SHA', () => {
