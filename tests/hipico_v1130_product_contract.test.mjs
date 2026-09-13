@@ -45,7 +45,8 @@ test('bot retains canonical monetary review gates and atomic provider dedupe',()
   assert.match(service,/ON CONFLICT \("providerMessageId"\) DO NOTHING RETURNING/);
   assert.match(service,/mode==='automatic'&&persistent&&outboxStatus==='ready_auto'/);
   assert.match(service,/SAFE_AUTOMATIC\.has\(result\.intent\)/);
-  assert.match(service,/AbortSignal\.timeout\(10_000\)/);
+  assert.match(service,/const \{token,phoneId,version,timeoutMs\}=assertCloudTransportConfigured\(\)/);
+  assert.match(service,/AbortSignal\.timeout\(timeoutMs\)/);
 });
 
 test('webhook raw body is captured before browser CSRF while integration adapters share one auth throttle',()=>{
