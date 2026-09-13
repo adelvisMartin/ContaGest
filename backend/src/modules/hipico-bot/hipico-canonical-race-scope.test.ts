@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { readFileSync } from 'node:fs';
-import { canonicalMutationPolicy, canonicalRaceContextKey, canonicalScopeIssue, __test__ } from './hipico-canonical.routes.js';
+import { canonicalMutationPolicy, canonicalPreviewRaceContext, canonicalRaceContextKey, canonicalScopeIssue, __test__ } from './hipico-canonical.routes.js';
 
 const source=readFileSync(new URL('./hipico-canonical.routes.ts',import.meta.url),'utf8');
 const context={raceDate:'2026-09-11',raceNumber:4,racetrack:'Churchill Downs',raceContextComplete:true};
@@ -115,10 +115,21 @@ test('result cannot advance state unless date race identity and board evidence a
   assert.equal(complete.stateWriteEligible,true);
 });
 
-test('canonical API preview exposes date-aware key readiness without hiding legacy shadow identity',()=>{
-  assert.match(source,/legacyRaceContextKey = operationalRaceContextKey\(result\.entities\)/);
-  assert.match(source,/canonicalRaceContextKey:\s*datedRaceContextKey/);
-  assert.match(source,/raceDateRequired:\s*Boolean\(legacyRaceContextKey && !datedRaceContextKey\)/);
+test('canonical API preview exposes date-aware key readiness without hiding legacy classification evidence',()=>{
+  const entities={raceNumber:4,racetrack:'Churchill Downs'};
+  const missingDate=canonicalPreviewRaceContext(entities);
+  assert.equal(missingDate.raceContextKey,null);
+  assert.equal(missingDate.canonicalRaceContextKey,null);
+  assert.equal(missingDate.raceDateRequired,true);
+
+  const dated=canonicalPreviewRaceContext(entities,'2026-09-11');
+  assert.match(String(dated.raceContextKey),/^racectx_[a-f0-9]{24}$/);
+  assert.equal(dated.canonicalRaceContextKey,dated.raceContextKey);
+  assert.equal(dated.raceDateRequired,false);
+
+  assert.match(source,/const raceContext = canonicalPreviewRaceContext\(result\.entities, input\.raceDate\)/);
+  assert.match(source,/classification:\s*result/);
+  assert.match(source,/\.\.\.raceContext/);
   assert.match(source,/HIPICO_RACE_AGGREGATE_KEY_MISMATCH/);
   assert.match(source,/expectedAggregateKey/);
 });
