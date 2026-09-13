@@ -52,3 +52,15 @@ void test('prompt and tool injection language is forced to human review before n
     assert.ok(parsed.confidence >= .99);
   }
 });
+
+void test('ambiguous lifecycle phrases and attachment-only references require human review', () => {
+  const ambiguous = deterministicAgentParser.parse('ya está abierta');
+  assert.equal(ambiguous.intent, 'unknown');
+  assert.equal(ambiguous.risk, 'review');
+  assert.equal(ambiguous.tool, null);
+
+  const documentOnly = deterministicAgentParser.parse('[documento PDF adjunto sin texto]');
+  assert.equal(documentOnly.intent, 'document_reference');
+  assert.equal(documentOnly.risk, 'review');
+  assert.equal(documentOnly.tool, null);
+});
