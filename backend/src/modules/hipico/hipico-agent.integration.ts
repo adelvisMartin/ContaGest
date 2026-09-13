@@ -45,13 +45,7 @@ before(async () => {
 
 after(async () => {
   try { await prisma.$disconnect(); } catch {}
-  if (admin) {
-    try {
-      await admin.query('drop table if exists public.hipico_automation_transition_events, public.hipico_agent_evaluations, public.hipico_group_automation cascade');
-    } finally {
-      await admin.end();
-    }
-  }
+  if (admin) await admin.end();
 });
 
 void test('SOURCE defaults to SHADOW while unrelated groups default DISABLED', async () => {
