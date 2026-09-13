@@ -20,9 +20,22 @@ test('AUTOMATIC promotion cannot trust an ownerApproved boolean supplied by the 
   assert.match(routes, /automationOwnerApprovalTokenConfigured/);
   assert.match(routes, /automationOwnerApprovalTokenValid/);
   assert.match(routes, /x-hipico-owner-approval-token/);
-  assert.match(routes, /target\s*===\s*'AUTOMATIC'/);
+  assert.match(routes, /target\s*!==\s*'AUTOMATIC'|target\s*===\s*'AUTOMATIC'/);
   assert.match(routes, /HIPICO_AUTOMATION_OWNER_APPROVAL_NOT_CONFIGURED/);
   assert.match(routes, /HIPICO_AUTOMATION_OWNER_APPROVAL_UNAUTHORIZED/);
+});
+
+test('automation mode mutation has a bounded canonical idempotency contract', () => {
+  const modeSchemaSource = routes.slice(routes.indexOf('const modeSchema'), routes.indexOf('const evaluateSchema'));
+  assert.match(routes, /const keySchema\s*=\s*z\.string\(\)\.regex\(\/\^\[A-Za-z0-9\._:-\]\{8,120\}\$\//);
+  assert.match(modeSchemaSource, /requestId:\s*keySchema/);
+  assert.match(modeSchemaSource, /idempotencyKey:\s*keySchema\.optional\(\)/);
+  assert.match(routes, /req\.header\('idempotency-key'\)/);
+  assert.match(routes, /HIPICO_AUTOMATION_IDEMPOTENCY_KEY_INVALID/);
+  assert.match(routes, /HIPICO_AUTOMATION_IDEMPOTENCY_MISMATCH/);
+  assert.match(routes, /const idempotencyKey\s*=\s*headerKey\s*\|\|\s*body\.idempotencyKey\s*\|\|\s*body\.requestId/);
+  assert.match(routes, /requestId:\s*body\.requestId/);
+  assert.match(routes, /idempotencyKey/);
 });
 
 test('automation persistence serializes promotion/review and makes review immutable', () => {
@@ -31,6 +44,21 @@ test('automation persistence serializes promotion/review and makes review immuta
   assert.match(store, /HIPICO_AGENT_EVALUATION_ALREADY_REVIEWED/);
   assert.match(store, /updated_by\s*=\s*\$\{input\.actorRef\}/);
   assert.match(store, /reviewed_by\s*=\s*\$\{input\.actorRef\}/);
+});
+
+test('automation mode transition is replay-safe and append-only audited', () => {
+  assert.match(store, /hipico_automation_transitions/);
+  assert.match(store, /idempotency_key/);
+  assert.match(store, /request_id/);
+  assert.match(store, /HIPICO_AUTOMATION_IDEMPOTENCY_MISMATCH/);
+  assert.match(store, /duplicate:\s*true/);
+  assert.match(store, /duplicate:\s*false/);
+  assert.match(store, /previous_mode/);
+  assert.match(store, /target_mode/);
+  assert.match(store, /decision_reason/);
+  assert.match(store, /metrics/);
+  assert.match(store, /owner_approved/);
+  assert.match(store, /actor_ref/);
 });
 
 test('agent routes share the canonical Hípico limiter chain rather than creating an independent prefix', () => {
