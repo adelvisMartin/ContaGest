@@ -89,8 +89,8 @@ test('Hípico data workflow executes full schema, restart recovery and focused d
   assert.match(workflow, /HIPICO_E2E_ADMIN_URL:/);
   assert.match(workflow, /node scripts\/hipico-ephemeral-db-v290\.mjs create/);
   assert.match(workflow, /node scripts\/hipico-apply-e2e-schema-v290\.mjs/);
-  assert.match(workflow, /tsx backend\/scripts\/hipico-restart-recovery-v290\.ts prepare/);
-  assert.match(workflow, /tsx backend\/scripts\/hipico-restart-recovery-v290\.ts verify/);
+  assert.match(workflow, /npm --workspace backend exec -- tsx scripts\/hipico-restart-recovery-v290\.ts prepare/);
+  assert.match(workflow, /npm --workspace backend exec -- tsx scripts\/hipico-restart-recovery-v290\.ts verify/);
   assert.match(workflow, /npm --workspace backend run test:hipico:data/);
   assert.match(workflow, /if: always\(\)/);
   assert.match(workflow, /node scripts\/hipico-ephemeral-db-v290\.mjs drop/);
