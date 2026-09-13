@@ -71,9 +71,11 @@ test('#157 proves controlled pool saturation instead of labeling ordinary concur
 });
 
 test('#157 measures browser startup/navigation/import/large tables/memory/network',()=>{
+  assert.match(frontend,/import assert from 'node:assert\/strict'/);
   assert.match(frontend,/importCsv\(page,1000\)/);
   assert.match(frontend,/renderClients\(page,state,10000\)/);
   assert.match(frontend,/JSHeapUsedSize/);
+  assert.match(frontend,/ERP157_BROWSER_HEAP_METRIC_MISSING/);
   assert.match(frontend,/Network\.emulateNetworkConditions/);
   assert.match(frontend,/longTaskCountPerMinute/);
   assert.match(frontend,/max-old-space-size=256/);
