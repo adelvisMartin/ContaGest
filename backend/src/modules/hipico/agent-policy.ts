@@ -127,14 +127,20 @@ export function validateModelCandidate(value: unknown): AgentCandidate {
   };
 }
 
+export const AUTO_EXECUTABLE_TOOLS = ['queryRaceStatus', 'queryNextRace', 'queryLastResult', 'querySchedule', 'queryScratches'] as const;
+export const MIN_AUTO_CONFIDENCE = .95;
+const AUTO_EXECUTABLE_TOOL_SET = new Set<AgentTool>(AUTO_EXECUTABLE_TOOLS);
+
 export function agentCanAct(mode: AutomationState, candidate: AgentCandidate) {
   if (mode === 'DISABLED' || mode === 'SHADOW' || mode === 'ASSISTED') return false;
   if (candidate.risk !== 'safe') return false;
+  if (!candidate.tool || !AUTO_EXECUTABLE_TOOL_SET.has(candidate.tool)) return false;
+  if (!Number.isFinite(candidate.confidence) || candidate.confidence < MIN_AUTO_CONFIDENCE) return false;
   return mode === 'AUTOMATIC_LOW_RISK' || mode === 'AUTOMATIC';
 }
 
 const DANGEROUS_KEY = /(?:^|[_-])(sql|shell|command|child[_-]?process|exec|spawn|password|token|secret|credential|cookie|authorization|prototype|constructor|__proto__)(?:$|[_-])/i;
-const QUERY_TOOLS = new Set<AgentTool>(['queryRaceStatus', 'queryNextRace', 'queryLastResult', 'querySchedule', 'queryScratches']);
+const QUERY_TOOLS = new Set<AgentTool>(AUTO_EXECUTABLE_TOOLS);
 const PROPOSABLE_INTENTS = new Set(['race_open', 'race_close', 'race_result', 'result', 'day_close']);
 const ALLOWED_KEYS: Record<AgentTool, ReadonlySet<string>> = {
   queryRaceStatus: new Set(['text', 'raceId']),
