@@ -1,6 +1,5 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import express from 'express';
 
 const dbEnvKeys = [
   'DATABASE_RUNTIME_URL',
@@ -16,7 +15,7 @@ const dbEnvKeys = [
 const testJwtSecret = `test-captcha-jwt-${'x'.repeat(32)}`;
 const testLicenseHashSecret = `test-license-hash-${'x'.repeat(32)}`;
 
-test('GET /captcha boots without weakening the DB runtime guard', async (t) => {
+test('GET /api/v1/auth/captcha boots the full app without weakening the DB runtime guard', async (t) => {
   const originalEnv = new Map<string, string | undefined>();
   for (const key of [...dbEnvKeys, 'NODE_ENV', 'VERCEL_ENV', 'JWT_SECRET', 'LICENSE_HASH_SECRET']) {
     originalEnv.set(key, process.env[key]);
@@ -35,11 +34,11 @@ test('GET /captcha boots without weakening the DB runtime guard', async (t) => {
     }
   });
 
-  const { default: authRoutes } = await import('./auth.routes.js');
-  const app = express();
-  app.use(express.json());
-  app.use('/auth', authRoutes);
-
+  // Import the same full application graph used by the serverless entrypoint. This
+  // intentionally catches unrelated top-level dependencies that could otherwise
+  // crash the Lambda before the stateless CAPTCHA handler is reached.
+  const { createApp } = await import('../../app.js');
+  const app = createApp();
   const server = app.listen(0, '127.0.0.1');
   t.after(() => server.close());
   await new Promise<void>((resolve, reject) => {
@@ -50,7 +49,7 @@ test('GET /captcha boots without weakening the DB runtime guard', async (t) => {
   const address = server.address();
   assert.ok(address && typeof address === 'object');
 
-  const response = await fetch(`http://127.0.0.1:${address.port}/auth/captcha`);
+  const response = await fetch(`http://127.0.0.1:${address.port}/api/v1/auth/captcha`);
   assert.equal(response.status, 200);
 
   const body = await response.json() as any;
