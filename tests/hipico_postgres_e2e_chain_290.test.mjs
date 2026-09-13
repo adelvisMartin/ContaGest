@@ -74,11 +74,23 @@ test('ephemeral DB lifecycle refuses non-local and non-ephemeral database target
   assert.match(lifecycle, /DROP DATABASE IF EXISTS/);
 });
 
-test('Hípico data workflow executes full schema evidence before focused data integration and always cleans up', () => {
+test('restart recovery persists state in one process and verifies/replays it in a fresh process', () => {
+  assert.equal(exists('backend/scripts/hipico-restart-recovery-v290.ts'), true, 'restart recovery script missing');
+  const restart = read('backend/scripts/hipico-restart-recovery-v290.ts');
+  assert.match(restart, /phase === 'prepare'/);
+  assert.match(restart, /phase === 'verify'/);
+  assert.match(restart, /replay\.duplicate, true/);
+  assert.match(restart, /stateVersion, 2/);
+  assert.match(restart, /restart recovery refuses non-local PostgreSQL/);
+});
+
+test('Hípico data workflow executes full schema, restart recovery and focused data integration, then always cleans up', () => {
   const workflow = read('.github/workflows/hipico-data-engines.yml');
   assert.match(workflow, /HIPICO_E2E_ADMIN_URL:/);
   assert.match(workflow, /node scripts\/hipico-ephemeral-db-v290\.mjs create/);
   assert.match(workflow, /node scripts\/hipico-apply-e2e-schema-v290\.mjs/);
+  assert.match(workflow, /tsx backend\/scripts\/hipico-restart-recovery-v290\.ts prepare/);
+  assert.match(workflow, /tsx backend\/scripts\/hipico-restart-recovery-v290\.ts verify/);
   assert.match(workflow, /npm --workspace backend run test:hipico:data/);
   assert.match(workflow, /if: always\(\)/);
   assert.match(workflow, /node scripts\/hipico-ephemeral-db-v290\.mjs drop/);
