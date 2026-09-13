@@ -6,6 +6,7 @@ on:
       - 'backend/src/app.ts'
       - 'backend/src/modules/hipico/**'
       - 'backend/src/modules/hipico-bot/hipico-race-provider*.ts'
+      - 'backend/scripts/hipico-restart-recovery-v290.ts'
       - 'backend/package.json'
       - 'package.json'
       - 'supabase/sql/hipico_v*.sql'
@@ -78,6 +79,12 @@ jobs:
 
       - name: Rebuild current Hípico v12-v21 schema with RLS/RBAC evidence
         run: node scripts/hipico-apply-e2e-schema-v290.mjs
+
+      - name: Prepare restart recovery state in process A
+        run: npm --workspace backend exec -- tsx scripts/hipico-restart-recovery-v290.ts prepare
+
+      - name: Verify restart recovery and replay in process B
+        run: npm --workspace backend exec -- tsx scripts/hipico-restart-recovery-v290.ts verify
 
       - name: Typecheck canonical Hípico modules
         run: npm --workspace backend run typecheck
