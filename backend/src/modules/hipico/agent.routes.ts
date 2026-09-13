@@ -18,8 +18,11 @@ const engine = createDefaultHipicoAgentEngine();
 const uuid = z.string().uuid();
 const group = z.string().trim().min(3).max(120).regex(/^[A-Za-z0-9._:-]+$/);
 const groupId = z.string().trim().min(3).max(220).regex(/^[A-Za-z0-9@._:-]+$/);
+const keySchema = z.string().regex(/^[A-Za-z0-9._:-]{8,120}$/);
 const modeSchema = z.object({
-  target: z.enum(AUTOMATION_STATES)
+  target: z.enum(AUTOMATION_STATES),
+  requestId: keySchema,
+  idempotencyKey: keySchema.optional()
 }).strict();
 const evaluateSchema = z.object({
   text: z.string().trim().min(1).max(4000),
@@ -37,52 +40,67 @@ function requestId(req: Request) {
   return String((req as any).requestId || '').trim() || null;
 }
 
+function codedError(code: string) {
+  return Object.assign(new Error(code), { code });
+}
+
 function ownerId() {
   const value = String(process.env.HIPICO_OWNER_ID || '').trim();
-  if (!uuid.safeParse(value).success) {
-    throw Object.assign(new Error('HIPICO_OWNER_NOT_CONFIGURED'), { code: 'HIPICO_OWNER_NOT_CONFIGURED' });
-  }
+  if (!uuid.safeParse(value).success) throw codedError('HIPICO_OWNER_NOT_CONFIGURED');
   return value;
 }
 
 function groupKey(req: Request) {
   const parsed = group.safeParse(req.header('x-hipico-group-key') || req.query.groupKey);
-  if (!parsed.success) throw Object.assign(new Error('HIPICO_GROUP_INVALID'), { code: 'HIPICO_GROUP_INVALID' });
+  if (!parsed.success) throw codedError('HIPICO_GROUP_INVALID');
   return parsed.data;
 }
 
 function parsedGroupId(req: Request) {
   const parsed = groupId.safeParse(req.params.groupId);
-  if (!parsed.success) throw Object.assign(new Error('HIPICO_AUTOMATION_GROUP_ID_INVALID'), { code: 'HIPICO_AUTOMATION_GROUP_ID_INVALID' });
+  if (!parsed.success) throw codedError('HIPICO_AUTOMATION_GROUP_ID_INVALID');
   return parsed.data;
 }
 
 function actorRef() {
   const actor = operatorActorRef();
-  if (!actor) throw Object.assign(new Error('HIPICO_OPERATOR_ACTOR_NOT_CONFIGURED'), { code: 'HIPICO_OPERATOR_ACTOR_NOT_CONFIGURED' });
+  if (!actor) throw codedError('HIPICO_OPERATOR_ACTOR_NOT_CONFIGURED');
   return actor;
 }
 
 function trustedOwnerApproval(req: Request, target: string) {
   if (target !== 'AUTOMATIC') return false;
   if (!automationOwnerApprovalTokenConfigured()) {
-    throw Object.assign(new Error('HIPICO_AUTOMATION_OWNER_APPROVAL_NOT_CONFIGURED'), {
-      code: 'HIPICO_AUTOMATION_OWNER_APPROVAL_NOT_CONFIGURED'
-    });
+    throw codedError('HIPICO_AUTOMATION_OWNER_APPROVAL_NOT_CONFIGURED');
   }
   if (!automationOwnerApprovalTokenValid(req.header('x-hipico-owner-approval-token') || undefined)) {
-    throw Object.assign(new Error('HIPICO_AUTOMATION_OWNER_APPROVAL_UNAUTHORIZED'), {
-      code: 'HIPICO_AUTOMATION_OWNER_APPROVAL_UNAUTHORIZED'
-    });
+    throw codedError('HIPICO_AUTOMATION_OWNER_APPROVAL_UNAUTHORIZED');
   }
   return true;
+}
+
+function modeIdempotency(req: Request, body: z.infer<typeof modeSchema>) {
+  const headerKey = String(req.header('idempotency-key') || '').trim();
+  if (headerKey && !keySchema.safeParse(headerKey).success) {
+    throw codedError('HIPICO_AUTOMATION_IDEMPOTENCY_KEY_INVALID');
+  }
+  if (headerKey && body.idempotencyKey && headerKey !== body.idempotencyKey) {
+    throw codedError('HIPICO_AUTOMATION_IDEMPOTENCY_MISMATCH');
+  }
+  const idempotencyKey = headerKey || body.idempotencyKey || body.requestId;
+  return { requestId: body.requestId, idempotencyKey };
 }
 
 function status(code: string) {
   if (code.includes('NOT_FOUND')) return 404;
   if (code === 'HIPICO_AUTOMATION_OWNER_APPROVAL_UNAUTHORIZED') return 403;
-  if (code === 'HIPICO_AGENT_EVALUATION_ALREADY_REVIEWED') return 409;
-  if (code.includes('METRICS_INSUFFICIENT') || code === 'OWNER_APPROVAL_REQUIRED' || code === 'INVALID_PROMOTION_PATH') return 409;
+  if (
+    code === 'HIPICO_AGENT_EVALUATION_ALREADY_REVIEWED'
+    || code === 'HIPICO_AUTOMATION_IDEMPOTENCY_MISMATCH'
+    || code.includes('METRICS_INSUFFICIENT')
+    || code === 'OWNER_APPROVAL_REQUIRED'
+    || code === 'INVALID_PROMOTION_PATH'
+  ) return 409;
   if (
     code === 'HIPICO_OWNER_NOT_CONFIGURED'
     || code === 'HIPICO_OPERATOR_ACTOR_NOT_CONFIGURED'
@@ -151,16 +169,24 @@ router.get('/groups/:groupId/automation', async (req, res) => {
 
 router.post('/groups/:groupId/automation', async (req, res) => {
   try {
-    const body = modeSchema.parse(req.body);
+    const parsed = modeSchema.safeParse(req.body);
+    if (!parsed.success) throw codedError('HIPICO_AUTOMATION_MODE_REQUEST_INVALID');
+    const body = parsed.data;
+    const keys = modeIdempotency(req, body);
     const data = await store.setMode({
       ownerId: ownerId(),
       groupKey: groupKey(req),
       groupId: parsedGroupId(req),
       target: body.target,
       actorRef: actorRef(),
-      ownerApproved: trustedOwnerApproval(req, body.target)
+      ownerApproved: trustedOwnerApproval(req, body.target),
+      requestId: body.requestId,
+      idempotencyKey: keys.idempotencyKey
     });
-    return res.json({ ok: true, data });
+    return res.status(data.duplicate ? 200 : 202).json({
+      ok: true,
+      data: { ...data, requestId: body.requestId, idempotencyKey: keys.idempotencyKey }
+    });
   } catch (error) {
     return sendError(req, res, error);
   }
