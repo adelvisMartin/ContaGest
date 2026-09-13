@@ -139,6 +139,11 @@ export function generateDailySummaryText(workspace, day, stats) {
   const profile = groupProfile(workspace, { groupId: day.groupId || defaultGroupId(workspace) });
   return [`🏇${profile.companyName}🏇`, `*CIERRE DIARIO · ${shortDate(day.date)}*`, `Carreras: ${stats.races}`, `Apuestas: ${stats.bets}`, `Monto registrado: ${money(stats.volume, profile.currency)}`, `Liquidadas: ${stats.settled}`, `Pendientes: ${stats.pending}`, `Anuladas: ${stats.cancelled}`, `Comisión: ${money(stats.commission, profile.currency)}`, `Diferencia de control: ${money(stats.controlDifference, profile.currency, true)}`, `Estado: ${day.status === "closed" ? "CERRADA" : "ABIERTA"}`].join("\n");
 }
-export function csvEscape(value) { const text = String(value ?? ""); return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text; }
+export function csvEscape(value) {
+  const text = String(value ?? "");
+  const formulaLike = typeof value === "string" && (/^[=+\-@\t\r]/.test(text) || /^\s+[=+\-@]/.test(text));
+  const safe = formulaLike ? `'${text}` : text;
+  return /[",\n\r]/.test(safe) ? `"${safe.replace(/"/g, '""')}"` : safe;
+}
 
 export const __test__ = { dateOnly, whatsappDate, registeredDate, groupProfile, defaultGroupId, participantBelongsToGroup, participantMapForGroup, betReferencesAreScoped, scopedRaceBets };

@@ -3,8 +3,8 @@ import { z } from 'zod';
 import { HipicoBotStore, promotion, sendCloudText } from './hipico-bot.service.js';
 import { classify } from './hipico-operational-classifier.js';
 import { operatorTokenValid } from './hipico-operator-security.js';
-import { cloudDestinationAllowed, cloudOutboundPolicy } from './hipico-outbound-policy.js';
-import { createHorseRaceProvider, HorseRaceProviderError } from './hipico-race-provider.js';
+import { cloudDestinationAllowed, cloudOutboundPolicy, cloudTransportConfiguration } from './hipico-outbound-policy.js';
+import { hipicoProviderHttpStatus, hipicoProviderPublicError, hipicoProviderRegistry } from './hipico-provider-registry.js';
 import { buildShadowProjection } from './hipico-shadow-projection.js';
 import { webhookSecurityReady } from './hipico-webhook-security.js';
 
@@ -13,7 +13,7 @@ const idSchema=z.string().min(3).max(120).regex(/^[A-Za-z0-9_-]+$/);
 const requestIdSchema=z.string().trim().min(8).max(120).regex(/^[A-Za-z0-9._:-]+$/);
 const e164Schema=z.string().regex(/^\+?[1-9]\d{6,14}$/);
 const limit=(value:unknown)=>Math.min(100,Math.max(1,Number(value)||50));
-const raceProvider=createHorseRaceProvider();
+const raceProvider=hipicoProviderRegistry();
 
 router.use((req,res,next)=>{
   res.setHeader('Cache-Control','no-store, max-age=0');
@@ -26,7 +26,7 @@ router.use((req,res,next)=>{
 router.get('/status',async(_req,res)=>res.json({ok:true,data:{
   promotion:promotion(),
   dbReady:await HipicoBotStore.dbReady(),
-  cloudConfigured:Boolean(process.env.WHATSAPP_CLOUD_TOKEN&&process.env.WHATSAPP_PHONE_NUMBER_ID),
+  cloudConfigured:cloudTransportConfiguration().configured,
   cloudOutboundPolicy:cloudOutboundPolicy(),
   webhookConfigured:webhookSecurityReady(),
   targetSupport:['individual'],
@@ -38,14 +38,10 @@ router.get('/status',async(_req,res)=>res.json({ok:true,data:{
 router.get('/race-provider/status',(_req,res)=>res.json({ok:true,data:raceProvider.status()}));
 router.get('/race-provider/stages/:stageId',async(req,res)=>{
   try{
-    const result=await raceProvider.getStageSummary(String(req.params.stageId||''));
-    return res.json({ok:true,data:{...result,enrichmentOnly:true,financialAuthority:false}});
+    const result=await raceProvider.getLiveStage(String(req.params.stageId||''));
+    return res.json({ok:true,data:result});
   }catch(error:any){
-    if(error instanceof HorseRaceProviderError){
-      const status=error.code==='INVALID_STAGE_ID'?400:error.code==='NOT_CONFIGURED'?503:error.code==='UPSTREAM_TIMEOUT'?504:502;
-      return res.status(status).json({ok:false,retryable:error.retryable,error:error.message,code:error.code,enrichmentOnly:true,financialAuthority:false});
-    }
-    return res.status(502).json({ok:false,retryable:true,error:'No se pudo consultar el proveedor hípico externo.',enrichmentOnly:true,financialAuthority:false});
+    return res.status(hipicoProviderHttpStatus(error)).json({ok:false,...hipicoProviderPublicError(error)});
   }
 });
 
@@ -63,24 +59,37 @@ router.post('/classify',(req,res)=>{
   return res.json({ok:true,data:classify(parsed.data.text)});
 });
 
-function outboundError(res:any,error:any){
+function outboundErrorContract(error:any){
   const code=String(error?.code||'');
   if(code==='HIPICO_CLOUD_DELIVERY_AMBIGUOUS'){
-    return res.status(202).json({ok:false,retryable:false,error:'reconciliation_required',code});
+    return{status:202,body:{ok:false,retryable:false,error:'reconciliation_required',code}};
+  }
+  if(code==='HIPICO_CLOUD_TRANSPORT_NOT_CONFIGURED'){
+    return{status:503,body:{ok:false,retryable:true,error:'sender_not_configured',code}};
   }
   if(code==='HIPICO_CLOUD_SEND_DISABLED'||code==='HIPICO_DESTINATION_NOT_ALLOWLISTED'){
-    return res.status(409).json({ok:false,retryable:false,error:'Envío cloud bloqueado por la política de producción.',code});
+    return{status:409,body:{ok:false,retryable:false,error:'Envío cloud bloqueado por la política de producción.',code}};
   }
   if(code==='HIPICO_CLOUD_MESSAGE_INVALID'){
-    return res.status(400).json({ok:false,retryable:false,error:'Mensaje cloud inválido.',code});
+    return{status:400,body:{ok:false,retryable:false,error:'Mensaje cloud inválido.',code}};
   }
-  return res.status(502).json({ok:false,retryable:true,error:'No se pudo enviar el mensaje.',code:code||undefined});
+  if(code==='HIPICO_CLOUD_HTTP_ERROR'){
+    return{status:502,body:{ok:false,retryable:false,error:'provider_http_rejection_review_required',code}};
+  }
+  return{status:502,body:{ok:false,retryable:false,error:'send_failed_review_required',code:code||undefined}};
+}
+
+function outboundError(res:any,error:any){
+  const result=outboundErrorContract(error);
+  return res.status(result.status).json(result.body);
 }
 
 function outboundPreflight(to:string){
   const policy=cloudOutboundPolicy();
-  if(!policy.enabled)return{ok:false as const,error:'outbound_disabled',reasons:policy.reasons};
-  if(!cloudDestinationAllowed(to))return{ok:false as const,error:'destination_not_allowlisted',reasons:['DESTINATION_NOT_ALLOWLISTED']};
+  if(!policy.enabled)return{ok:false as const,status:409,retryable:false,error:'outbound_disabled',reasons:policy.reasons};
+  const transport=cloudTransportConfiguration();
+  if(!transport.configured)return{ok:false as const,status:503,retryable:true,error:'sender_not_configured',reasons:transport.reasons};
+  if(!cloudDestinationAllowed(to))return{ok:false as const,status:409,retryable:false,error:'destination_not_allowlisted',reasons:['DESTINATION_NOT_ALLOWLISTED']};
   return{ok:true as const};
 }
 
@@ -96,7 +105,7 @@ router.post('/test-message',async(req,res)=>{
   const parsed=z.object({requestId:requestIdSchema,to:e164Schema,message:z.string().trim().min(1).max(4000)}).safeParse(req.body);
   if(!parsed.success)return res.status(400).json({ok:false,error:'requestId, destino o mensaje invalido.'});
   const preflight=outboundPreflight(parsed.data.to);
-  if(!preflight.ok)return res.status(409).json({ok:false,error:preflight.error,reasons:preflight.reasons});
+  if(!preflight.ok)return res.status(preflight.status).json({ok:false,retryable:preflight.retryable,error:preflight.error,reasons:preflight.reasons});
   if(!await HipicoBotStore.dbReady(true))return res.status(503).json({ok:false,retryable:true,error:'outbox_persistence_unavailable'});
   try{
     const queued=await HipicoBotStore.queueIdempotent({
@@ -111,10 +120,10 @@ router.post('/test-message',async(req,res)=>{
     const item=queued.row;
     if(item.status==='sent')return res.json({ok:true,duplicate:true,data:{id:item.id,status:'sent',providerMessageId:item.providerMessageId||null}});
     if(item.status==='sending'||item.status==='reconciliation_required')return res.status(409).json({ok:false,retryable:false,error:'reconciliation_required',id:item.id});
-    if(item.status==='failed')return res.status(409).json({ok:false,error:'previous_attempt_failed_use_new_request_id_after_review',id:item.id});
-    if(item.status!=='pending_approval')return res.status(409).json({ok:false,error:'outbox_state_not_sendable',id:item.id,status:item.status});
+    if(item.status==='failed')return res.status(409).json({ok:false,retryable:false,error:'previous_attempt_failed_use_new_request_id_after_review',id:item.id});
+    if(item.status!=='pending_approval')return res.status(409).json({ok:false,retryable:false,error:'outbox_state_not_sendable',id:item.id,status:item.status});
     const claimed=await HipicoBotStore.claimForSend(item.id,'pending_approval');
-    if(!claimed)return res.status(409).json({ok:false,error:'outbox_claim_lost',id:item.id});
+    if(!claimed)return res.status(409).json({ok:false,retryable:false,error:'outbox_claim_lost',id:item.id});
     try{
       const sent=await sendCloudText(String(claimed.recipient),String(claimed.message));
       const persisted=await HipicoBotStore.markSent(claimed.id,sent.providerMessageId,'operator-test');
@@ -141,12 +150,12 @@ router.post('/approve/:id',async(req,res)=>{
   if(!item)return res.status(404).json({ok:false,error:'Salida no encontrada.'});
   if(item.status==='sent')return res.json({ok:true,data:item});
   if(item.status==='sending'||item.status==='reconciliation_required')return res.status(409).json({ok:false,retryable:false,error:'La salida ya está en envío o conciliación; no se reenviará automáticamente.'});
-  if(item.status!=='pending_approval')return res.status(409).json({ok:false,error:'La salida no está pendiente de aprobación y no puede enviarse.'});
-  if(item.targetType!=='individual')return res.status(409).json({ok:false,error:'Este adaptador solo envia destinatarios individuales. El grupo requiere un bridge soportado.'});
+  if(item.status!=='pending_approval')return res.status(409).json({ok:false,retryable:false,error:'La salida no está pendiente de aprobación y no puede enviarse.'});
+  if(item.targetType!=='individual')return res.status(409).json({ok:false,retryable:false,error:'Este adaptador solo envia destinatarios individuales. El grupo requiere un bridge soportado.'});
   const preflight=outboundPreflight(String(item.recipient||''));
-  if(!preflight.ok)return res.status(409).json({ok:false,error:preflight.error,reasons:preflight.reasons});
+  if(!preflight.ok)return res.status(preflight.status).json({ok:false,retryable:preflight.retryable,error:preflight.error,reasons:preflight.reasons});
   const claimed=await HipicoBotStore.claimForSend(item.id,'pending_approval');
-  if(!claimed)return res.status(409).json({ok:false,error:'La salida cambió de estado antes del envío; requiere conciliación.'});
+  if(!claimed)return res.status(409).json({ok:false,retryable:false,error:'La salida cambió de estado antes del envío; requiere conciliación.'});
   try{
     const sent=await sendCloudText(String(claimed.recipient).replace(/^\+/,''),String(claimed.message));
     const persisted=await HipicoBotStore.markSent(claimed.id,sent.providerMessageId,'operator');
@@ -161,3 +170,4 @@ router.post('/approve/:id',async(req,res)=>{
 });
 
 export default router;
+export const __test__={outboundErrorContract,outboundPreflight};

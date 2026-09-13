@@ -88,6 +88,14 @@ test('human-owned participant is silent to prevent double response', () => {
   assert.equal(result.decisionReason, 'HUMAN_OWNS_CONVERSATION');
 });
 
+test('human ownership is canonicalized on both message and context sides', () => {
+  const result = decideConversation(at('m6-context-case', 'p-one'), { humanOwnedParticipantIds: ['  P-ONE  '] });
+  assert.equal(result.decision, 'NO_RESPONSE');
+  assert.equal(result.decisionReason, 'HUMAN_OWNS_CONVERSATION');
+  assert.equal(result.transportAction, 'NONE');
+  assert.equal(result.effectsAllowed, false);
+});
+
 test('unsupported media without text escalates', () => {
   const result = decideConversation({ ...at('m7'), text: '', mediaKind: 'audio' });
   assert.equal(result.decision, 'ESCALATED');

@@ -12,6 +12,7 @@ const configuredEnv = {
   HIPICO_RACE_PROVIDER_FAILURE_THRESHOLD: '2',
   HIPICO_RACE_PROVIDER_BACKOFF_MS: '1000'
 };
+
 const publicResolve = async () => [{ address: '8.8.8.8', family: 4 }];
 
 function isProviderError(code: HorseRaceProviderError['code']) {

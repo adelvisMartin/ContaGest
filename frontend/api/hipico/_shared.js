@@ -14,6 +14,15 @@ export function env(name, required = true) {
   return value || '';
 }
 
+export function runtimeValue(source, canonicalName, ...compatibilityAliases) {
+  const names = [canonicalName, ...compatibilityAliases];
+  for (const name of names) {
+    const value = String(source?.[name] ?? '').trim();
+    if (value) return value;
+  }
+  return '';
+}
+
 export function strongSecretConfigured(value, minLength = MIN_HIPICO_INTERNAL_SECRET_LENGTH) {
   const minimum = Number.isInteger(minLength) && minLength > 0 ? minLength : MIN_HIPICO_INTERNAL_SECRET_LENGTH;
   const secret=String(value || '').trim();
@@ -80,20 +89,20 @@ function normalizedE164(value) {
 }
 
 function metaAllowedDestinations(source = process.env) {
-  return new Set(String(source.HIPICO_META_ALLOWED_DESTINATIONS || '')
+  return new Set(runtimeValue(source, 'HIPICO_CLOUD_ALLOWED_DESTINATIONS', 'HIPICO_META_ALLOWED_DESTINATIONS')
     .split(',')
     .map(normalizedE164)
     .filter(Boolean));
 }
 
 export function metaOutboundPolicy(source = process.env) {
-  const runtimeSha = String(source.VERCEL_GIT_COMMIT_SHA || source.GIT_SHA || '').trim();
-  const approvedSha = String(source.HIPICO_META_SEND_CANDIDATE_SHA || '').trim();
+  const runtimeSha = runtimeValue(source, 'VERCEL_GIT_COMMIT_SHA', 'GITHUB_SHA', 'GIT_COMMIT_SHA', 'GIT_SHA');
+  const approvedSha = runtimeValue(source, 'HIPICO_CLOUD_SEND_CANDIDATE_SHA', 'HIPICO_META_SEND_CANDIDATE_SHA');
   const destinations = metaAllowedDestinations(source);
   const reasons = [];
-  if (String(source.HIPICO_META_SEND_ENABLED || '').toLowerCase() !== 'true') reasons.push('SEND_SWITCH_DISABLED');
+  if (runtimeValue(source, 'HIPICO_CLOUD_SEND_ENABLED', 'HIPICO_META_SEND_ENABLED').toLowerCase() !== 'true') reasons.push('SEND_SWITCH_DISABLED');
   if (String(source.HIPICO_WHATSAPP_COMPLIANCE_DECISION || '').toUpperCase() !== 'GO') reasons.push('WHATSAPP_COMPLIANCE_NOT_GO');
-  if (!String(source.HIPICO_META_SEND_APPROVED_BY || '').trim()) reasons.push('EXPLICIT_APPROVAL_MISSING');
+  if (!runtimeValue(source, 'HIPICO_CLOUD_SEND_APPROVED_BY', 'HIPICO_META_SEND_APPROVED_BY')) reasons.push('EXPLICIT_APPROVAL_MISSING');
   if (!SHA40.test(runtimeSha) || !SHA40.test(approvedSha) || runtimeSha.toLowerCase() !== approvedSha.toLowerCase()) reasons.push('CANDIDATE_SHA_NOT_BOUND');
   if (!destinations.size) reasons.push('DESTINATION_ALLOWLIST_EMPTY');
   return { enabled: reasons.length === 0, reasons, allowedDestinationCount: destinations.size, runtimeShaBound: !reasons.includes('CANDIDATE_SHA_NOT_BOUND') };

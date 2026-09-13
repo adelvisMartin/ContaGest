@@ -2,13 +2,16 @@
 
 Esta guía define la única línea visual permitida para la PWA y el wrapper Android. El manual de marca completo vive en `docs/brand/CONTROL_HIPICO_BRAND_MANUAL.md`.
 
-## Autoridades únicas
+## Autoridades canónicas
 
-- `assets/css/app.css`: **única hoja CSS global**. Incluye tokens, light/dark/system, layout, responsive, formularios, navegación, cards, tablas, dialogs, toasts, WhatsApp, acceso y Help Center.
+- `assets/css/app.css`: **autoridad global** de tokens, temas, layout, formularios, navegación, cards, tablas, dialogs, toasts, WhatsApp, acceso y Help Center.
+- `assets/css/mobile-accessibility.css`: capa transversal de accesibilidad táctil y `reduced-motion`; no redefine marca ni tokens.
+- `assets/css/operational-copy-center.css`: capa acotada al Copy Center operacional mediante clases `ops-*`.
+- `assets/css/operational-access-guard.css`: guard visual fail-closed del Copy Center; sólo controla la visibilidad autorizada de `.ops-root`.
 - `assets/js/ui.js`: **única biblioteca de primitivas visuales/comportamiento**. Ofrece Button, Card, Badge, Field, State, Dialog, iconos, toast y gestión accesible de foco.
 - `assets/js/help-center.js`: manual de uso y ayuda contextual opt-in.
 
-No se permite crear `styles.css`, `ui-system*.css`, `theme-vN.css`, `components-vN.css`, `fixes.css`, `overrides.css`, `legacy.css` ni otra hoja global paralela.
+Las cuatro hojas CSS anteriores forman el set canónico explícito. No se permite crear `styles.css`, `ui-system*.css`, `theme-vN.css`, `components-vN.css`, `fixes.css`, `overrides.css`, `legacy.css` ni otra hoja global paralela. Las capas auxiliares deben permanecer acotadas a su responsabilidad y consumir los tokens de `app.css`.
 
 ## Identidad
 
@@ -42,7 +45,7 @@ Las primitivas son equivalentes conceptualmente a shadcn/Radix sin introducir Re
 
 ## Responsive
 
-Verificar al menos 360, 390/393, 430, 768, 1024 y 1440 px. La barra móvil fija no cubre contenido. Ningún chip/tab impide `pan-y`. Tablas operativas se convierten en listas/cards cuando sea necesario.
+Verificar al menos 360, 390/393, 430, 768, 1024 y 1440 px. La barra móvil fija no cubre contenido. Ningún chip/tab impide `pan-y`. Tablas operativas se convierten en listas/cards cuando sea necesario. Los controles táctiles críticos conservan un mínimo de **44 px**; la capa `mobile-accessibility.css` amplía esa garantía hasta 900 px y también cuando el dispositivo reporta `pointer: coarse`.
 
 ## Accesibilidad
 

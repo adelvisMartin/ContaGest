@@ -26,6 +26,7 @@ type PersistedTransportSource={
   sender:string|null;
   messageType:string|null;
   body:string|null;
+  payload:Record<string,unknown>|null;
 };
 
 type PersistedGroupShadowSource={
@@ -108,7 +109,8 @@ export async function persistBridgeTransportEvent(input:TransportInput){
       "phoneNumberId" AS "phoneNumberId",
       "sender",
       "messageType" AS "messageType",
-      "body"
+      "body",
+      "payload"
     FROM public."HipicoWebhookEvent"
     WHERE "providerMessageId"=${input.providerMessageId}
     LIMIT 1
