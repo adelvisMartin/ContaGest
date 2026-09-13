@@ -1,0 +1,52 @@
+name: Hípico Architecture Docs
+
+on:
+  pull_request:
+    paths:
+      - 'docs/hipico/architecture/**'
+      - 'tools/archify/**'
+      - 'scripts/install-hipico-archify.mjs'
+      - 'scripts/hipico-archify-doctor.mjs'
+      - '.github/workflows/hipico-architecture-docs.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  ARCHIFY_UPDATE_CHECK_DISABLED: '1'
+  HIPICO_CANDIDATE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+
+jobs:
+  archify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout exact candidate
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ env.HIPICO_CANDIDATE_SHA }}
+          fetch-depth: 0
+
+      - name: Exact candidate SHA gate
+        run: node scripts/hipico-exact-sha-gate.mjs
+
+      - name: Node 22
+        uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+
+      - name: Install exact Archify release commit
+        run: node scripts/install-hipico-archify.mjs
+
+      - name: Validate and render all Control Hípico diagrams
+        run: node scripts/hipico-archify-doctor.mjs
+
+      - name: Upload SHA-bound diagrams
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: hipico-archify-${{ env.HIPICO_CANDIDATE_SHA }}
+          path: docs/hipico/architecture/generated/
+          if-no-files-found: error
+          retention-days: 30

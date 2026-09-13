@@ -8,6 +8,7 @@ import hipicoDocumentRoutes from './modules/hipico/document.routes.js';
 import hipicoProviderRoutes from './modules/hipico/provider.routes.js';
 import hipicoRaceRoutes from './modules/hipico/race.routes.js';
 import hipicoWebhookRoutes from './modules/hipico-bot/hipico-webhook.routes.js';
+import hipicoBridgeDocumentRoutes from './modules/hipico-bot/hipico-bridge-document.routes.js';
 import hipicoBridgeRoutes from './modules/hipico-bot/hipico-bridge.routes.js';
 import hipicoOperatorRoutes from './modules/hipico-bot/hipico-operator.routes.js';
 import hipicoCanonicalRoutes from './modules/hipico-bot/hipico-canonical.routes.js';
@@ -79,6 +80,7 @@ export function createApp(options: { readinessCheck?: ReadinessCheck } = {}) {
   app.use(
     '/api/v1/hipico-bot',
     authRateLimit,
+    hipicoBridgeDocumentRoutes,
     hipicoBridgeRoutes,
     hipicoOperatorRoutes,
     hipicoLegacyProviderRoutes

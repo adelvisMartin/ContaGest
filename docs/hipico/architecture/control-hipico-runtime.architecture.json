@@ -1,0 +1,53 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Control Hípico Runtime Architecture",
+    "quality_profile": "standard",
+    "views": [
+      {"id":"source-path","label":"WhatsApp SOURCE path","focus":["whatsapp","bridge","api","domain","postgres"],"note":"Read-only SOURCE ingestion terminates in durable canonical evidence."},
+      {"id":"documents","label":"Automatic PDF path","focus":["whatsapp","bridge","pdfspool","api","documents","anydoc","ocr","postgres"],"note":"PDF bytes are durably spooled before backend ingestion; AnyDoc stays local-first."},
+      {"id":"automation","label":"Agent and operator boundary","focus":["operator","agents","domain","postgres"],"note":"Agents remain shadow/recommendation only; operator and canonical state remain authoritative."}
+    ]
+  },
+  "components": [
+    {"id":"whatsapp","type":"external","label":"WhatsApp SOURCE","sublabel":"real group · read-only","pos":[30,180],"size":[130,56],"tag":"untrusted input"},
+    {"id":"bridge","type":"backend","label":"Web Bridge","sublabel":"Playwright · linked device","pos":[205,180],"size":[135,58],"tag":"pinned group ID"},
+    {"id":"pdfspool","type":"messagebus","label":"PDF Spool","sublabel":"bounded · durable","pos":[205,300],"size":[135,54],"tag":"max 50 default"},
+    {"id":"api","type":"security","label":"Canonical API","sublabel":"/api/v1/hipico/*","pos":[390,180],"size":[135,58],"tag":"auth + rate limits"},
+    {"id":"documents","type":"backend","label":"Document Engine","sublabel":"provenance + parser","pos":[575,80],"size":[140,58],"tag":"financialAuthority=false"},
+    {"id":"domain","type":"backend","label":"Hípico Domain","sublabel":"race + conversation","pos":[575,180],"size":[140,58],"tag":"canonical"},
+    {"id":"providers","type":"cloud","label":"Provider Registry","sublabel":"capability-driven","pos":[575,280],"size":[140,58],"tag":"external evidence"},
+    {"id":"anydoc","type":"backend","label":"AnyDoc 0.2.4","sublabel":"local native extraction","pos":[770,45],"size":[140,54],"tag":"exact pin"},
+    {"id":"ocr","type":"backend","label":"Local OCR","sublabel":"Poppler + Tesseract","pos":[770,120],"size":[140,54],"tag":"fallback"},
+    {"id":"postgres","type":"database","label":"PostgreSQL","sublabel":"events + evidence + audit","pos":[770,220],"size":[140,58],"tag":"durable"},
+    {"id":"agents","type":"backend","label":"Shadow Agents","sublabel":"classify + propose","pos":[575,390],"size":[140,54],"tag":"no settlement"},
+    {"id":"operator","type":"frontend","label":"Operator PWA","sublabel":"review + handoff","pos":[770,390],"size":[140,54],"tag":"human authority"}
+  ],
+  "boundaries": [
+    {"kind":"security-group","label":"Linked-device boundary","wraps":["bridge","pdfspool"]},
+    {"kind":"region","label":"Canonical backend","wraps":["api","documents","domain","providers","anydoc","ocr","postgres","agents"]}
+  ],
+  "connections": [
+    {"id":"wa-events","from":"whatsapp","to":"bridge","label":"messages + media","variant":"security"},
+    {"id":"bridge-events","from":"bridge","to":"api","label":"shadow events","variant":"emphasis"},
+    {"id":"bridge-pdf","from":"bridge","to":"pdfspool","label":"PDF bytes","variant":"dashed"},
+    {"id":"spool-api","from":"pdfspool","to":"api","label":"authenticated PDF","variant":"emphasis"},
+    {"id":"api-docs","from":"api","to":"documents","label":"document ingest"},
+    {"id":"api-domain","from":"api","to":"domain","label":"canonical commands"},
+    {"id":"api-provider","from":"api","to":"providers","label":"provider reads","variant":"dashed"},
+    {"id":"docs-anydoc","from":"documents","to":"anydoc","label":"native text","variant":"emphasis"},
+    {"id":"docs-ocr","from":"documents","to":"ocr","label":"needs OCR","variant":"dashed"},
+    {"id":"docs-db","from":"documents","to":"postgres","label":"provenance + extraction"},
+    {"id":"domain-db","from":"domain","to":"postgres","label":"race/events/audit"},
+    {"id":"providers-db","from":"providers","to":"postgres","label":"provider evidence","variant":"dashed"},
+    {"id":"domain-agents","from":"domain","to":"agents","label":"shadow context","variant":"dashed"},
+    {"id":"agents-operator","from":"agents","to":"operator","label":"proposal / handoff","variant":"security"},
+    {"id":"operator-api","from":"operator","to":"api","label":"authenticated action","variant":"emphasis"}
+  ],
+  "cards": [
+    {"dot":"rose","title":"Hard boundaries","items":["SOURCE group is never an outbound target","PDF/provider/agent evidence has financialAuthority=false","Automatic state changes require canonical authenticated paths"]},
+    {"dot":"emerald","title":"Durability","items":["Message and document retries are idempotent","PDFs enter bounded local spool before backend delivery","PostgreSQL stores provenance and append-only audit evidence"]},
+    {"dot":"cyan","title":"Extraction","items":["AnyDoc 0.2.4 is exact-pinned and local-first","Poppler/Tesseract remains local OCR fallback","Hosted Firecrawl OCR is explicit opt-in only"]}
+  ]
+}

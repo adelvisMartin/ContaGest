@@ -21,6 +21,23 @@ export const DOMAIN_RISK_CATALOG = Object.freeze([
     gates:['from-zero-db','upgrade-fixture','constraints','rls','backup-restore-plan']
   },
   {
+    id:'control-hipico', severity:'critical',
+    patterns:[
+      /backend\/src\/modules\/hipico(?:-bot)?\//,
+      /frontend\/api\/hipico\//,
+      /frontend\/public\/hipico-control\//,
+      /tools\/hipico-whatsapp-(?:web-)?bridge\//,
+      /supabase\/sql\/hipico_/,
+      /tests\/hipico/i,
+      /qa\/.*hipico/i,
+      /scripts\/hipico-/,
+      /docs\/hipico\//
+    ],
+    agents:['Hípico Orchestrator','WhatsApp Reliability','Document Intelligence','Backend/API','DBRE','AppSec','SRE/Release','QA','Human Operator'],
+    skills:['contagest-hipico-safe-automation','contagest-appsec-review','contagest-systematic-debugging','contagest-release-evidence','contagest-secure-verification'],
+    gates:['typecheck','unit','api','db-integration','multi-group-isolation','source-read-only','bridge-replay','document-security','document-provenance','provider-failure','race-idempotency','2000-isolation','build','deployment-sha','physical-119','soak-120','rollback']
+  },
+  {
     id:'frontend-shell-design', severity:'high',
     patterns:[/frontend\/index\.html/,/frontend\/src\/components\/(layout|ui|toast|modal)/,/frontend\/src\/styles\//,/frontend\/src\/app\.js/,/qa\/.*visual/],
     agents:['Frontend/PWA','ERP UX','Design Systems/A11y','QA'],
