@@ -1,0 +1,62 @@
+{
+  "schema_version": 2,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "Control Hípico Safe Promotion Workflow",
+    "quality_profile": "standard",
+    "views": [
+      {"id":"code-gates","label":"Code gates","focus":["candidate","static","contracts","campaign","build"],"note":"Every artifact and test must bind to the same candidate SHA."},
+      {"id":"physical-gates","label":"Physical and soak","focus":["physical","soak","approval"],"note":"Real linked-device lifecycle QA precedes the 24h+ soak and production approval."},
+      {"id":"rollback","label":"Production safety","focus":["deploy","observe","rollback"],"note":"Promotion is reversible and monitoring never bypasses failed gates."}
+    ]
+  },
+  "lanes": [
+    {"id":"dev","label":"Engineering"},
+    {"id":"ci","label":"Automated QA"},
+    {"id":"physical","label":"Physical QA", "variant":"exception"},
+    {"id":"prod","label":"Production & Operations"}
+  ],
+  "phases": [
+    {"id":"candidate-phase","label":"Candidate","fromCol":0,"toCol":1},
+    {"id":"verification-phase","label":"Verification","fromCol":2,"toCol":4,"variant":"emphasis"},
+    {"id":"promotion-phase","label":"Promote / observe","fromCol":5,"toCol":7,"variant":"dashed"}
+  ],
+  "groups": [
+    {"id":"automated","label":"Same-SHA automated evidence","lane":"ci","fromCol":1,"toCol":4,"variant":"emphasis"},
+    {"id":"real-world","label":"Real device and duration evidence","lane":"physical","fromCol":3,"toCol":5,"variant":"security"},
+    {"id":"operations","label":"Reversible production","lane":"prod","fromCol":5,"toCol":7,"variant":"dashed"}
+  ],
+  "mainPath":["candidate","static","contracts","campaign","build","physical","soak","approval","deploy","observe"],
+  "nodes": [
+    {"id":"candidate","lane":"dev","col":0,"type":"backend","label":"Candidate SHA","sublabel":"clean tree + exact ref","width":138},
+    {"id":"static","lane":"ci","col":1,"type":"security","label":"Static Gates","sublabel":"typecheck + security","width":138},
+    {"id":"contracts","lane":"ci","col":2,"type":"backend","label":"Contracts / E2E","sublabel":"API + PostgreSQL + PDF","width":138},
+    {"id":"campaign","lane":"ci","col":3,"type":"backend","label":"2000 Scenarios","sublabel":"deterministic isolation","width":138},
+    {"id":"build","lane":"ci","col":4,"type":"cloud","label":"Runtime Build","sublabel":"frontend + backend evidence","width":138},
+    {"id":"blocked","lane":"ci","col":5,"type":"security","label":"Blocked Infra","sublabel":"runner/logs unavailable","tag":"never PASS","width":138},
+    {"id":"physical","lane":"physical","col":3,"type":"frontend","label":"#119 Physical QA","sublabel":"PWA/APK/WhatsApp lifecycle","width":138},
+    {"id":"soak","lane":"physical","col":4,"type":"messagebus","label":"#120 Soak","sublabel":"24–72h real traffic","width":138},
+    {"id":"approval","lane":"physical","col":5,"type":"security","label":"GO Approval","sublabel":"all same-SHA gates green","width":138},
+    {"id":"deploy","lane":"prod","col":5,"type":"cloud","label":"Promote","sublabel":"candidate-bound release","width":138},
+    {"id":"observe","lane":"prod","col":6,"type":"backend","label":"Observe","sublabel":"health + spool + audit","width":138},
+    {"id":"rollback","lane":"prod","col":7,"type":"security","label":"Rollback","sublabel":"reversible promotion","width":138}
+  ],
+  "edges": [
+    {"id":"candidate-static","from":"candidate","to":"static","variant":"emphasis"},
+    {"id":"static-contracts","from":"static","to":"contracts"},
+    {"id":"contracts-campaign","from":"contracts","to":"campaign"},
+    {"id":"campaign-build","from":"campaign","to":"build","variant":"emphasis"},
+    {"id":"build-physical","from":"build","to":"physical","label":"exact SHA","variant":"security"},
+    {"id":"physical-soak","from":"physical","to":"soak","variant":"emphasis"},
+    {"id":"soak-approval","from":"soak","to":"approval","variant":"security"},
+    {"id":"approval-deploy","from":"approval","to":"deploy","variant":"emphasis"},
+    {"id":"deploy-observe","from":"deploy","to":"observe"},
+    {"id":"observe-rollback","from":"observe","to":"rollback","label":"regression","variant":"security","role":"branch"},
+    {"id":"static-blocked","from":"static","to":"blocked","label":"runner missing","variant":"dashed","role":"error"},
+    {"id":"contracts-blocked","from":"contracts","to":"blocked","label":"no executable evidence","variant":"dashed","role":"error"}
+  ],
+  "cards": [
+    {"dot":"rose","title":"No false green","items":["A job that never receives a runner is BLOCKED_INFRASTRUCTURE, not PASS","Old-SHA evidence is never transferred to a new candidate","Physical and soak evidence cannot be synthesized"]},
+    {"dot":"emerald","title":"Promotion contract","items":["Candidate SHA, build artifacts and evidence must match","SOURCE remains read-only through every stage","Rollback remains available after promotion"]}
+  ]
+}
