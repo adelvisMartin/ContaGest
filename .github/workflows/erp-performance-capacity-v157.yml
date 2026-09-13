@@ -11,6 +11,7 @@ on:
       - 'qa/erp-performance-*.spec.mjs'
       - 'scripts/erp-performance-*.mjs'
       - 'tests/erp_performance*_issue_157.test.mjs'
+      - 'tests/erp157*_issue_157.test.mjs'
       - 'products/erp/performance-policy-v157.json'
       - '.github/workflows/erp-performance-capacity-v157.yml'
   workflow_dispatch:
@@ -62,6 +63,7 @@ env:
   SUPABASE_AUTH_FALLBACK: 'false'
   ALLOW_PUBLIC_REGISTER: 'false'
   PRISMA_QUERY_TELEMETRY: 'true'
+  ERP157_FIXTURE_POLICY: 'SYNTHETIC_TEST_ONLY'
   CANDIDATE_SHA: ${{ inputs.candidate_sha || github.event.pull_request.head.sha || github.event.workflow_run.head_sha || github.sha }}
   ERP157_EXPECTED_PEAK_USERS: ${{ inputs.expected_peak_users || vars.ERP157_EXPECTED_PEAK_USERS }}
 
@@ -117,7 +119,7 @@ jobs:
           npm --workspace backend run prisma:deploy
           npm --workspace backend run prisma:seed
       - name: Contratos estáticos #157
-        run: node --test tests/erp_performance_issue_157.test.mjs tests/erp_performance_execution_issue_157.test.mjs
+        run: node --test tests/erp_performance_issue_157.test.mjs tests/erp_performance_execution_issue_157.test.mjs tests/erp157_finalizer_truth_issue_157.test.mjs tests/erp157_fixture_provenance_issue_157.test.mjs
       - name: Medir baseline API PostgreSQL aislamiento y XLSX sin inventar pico
         run: npm --workspace backend exec -- tsx ../qa/erp-performance-calibration-v157.ts
       - name: Instalar Chromium
@@ -195,7 +197,7 @@ jobs:
           npm --workspace backend run prisma:deploy
           npm --workspace backend run prisma:seed
       - name: Contratos estáticos #157
-        run: node --test tests/erp_performance_issue_157.test.mjs tests/erp_performance_execution_issue_157.test.mjs
+        run: node --test tests/erp_performance_issue_157.test.mjs tests/erp_performance_execution_issue_157.test.mjs tests/erp157_finalizer_truth_issue_157.test.mjs tests/erp157_fixture_provenance_issue_157.test.mjs
       - name: Medir API PostgreSQL concurrencia y procesos pesados
         run: npm --workspace backend exec -- tsx ../qa/erp-performance-backend-v157.ts
       - name: Instalar Chromium
