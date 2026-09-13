@@ -5,6 +5,12 @@ import path from 'node:path';
 
 const root=process.cwd();
 const read=(p)=>fs.readFileSync(path.join(root,p),'utf8');
+function mountBlock(app,prefix,requiredToken){
+  const escaped=prefix.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
+  return [...app.matchAll(new RegExp(`app\\.use\\(\\s*['\"]${escaped}['\"]\\s*,([\\s\\S]*?)\\);`,'g'))]
+    .map((match)=>({body:match[1],index:match.index??-1}))
+    .find((entry)=>entry.body.includes(requiredToken));
+}
 
 test('Control Hipico remains outside the ERP module catalog',()=>{
   const catalog=read('frontend/src/data/moduleCatalog.js');
@@ -53,13 +59,17 @@ test('webhook raw body is captured before browser CSRF while integration adapter
   const app=read('backend/src/app.ts');
   const webhook=read('backend/src/modules/hipico-bot/hipico-webhook.routes.ts');
   const webhookMount=app.indexOf("app.use('/api/v1/hipico-bot', hipicoWebhookRoutes)");
-  const adapterMount=app.indexOf("app.use('/api/v1/hipico-bot', authRateLimit, hipicoBridgeRoutes, hipicoOperatorRoutes)");
+  const adapterMount=mountBlock(app,'/api/v1/hipico-bot','hipicoBridgeRoutes');
   const csrf=app.indexOf('app.use(csrfProtection)');
-  assert.ok(webhookMount>0 && adapterMount>webhookMount && csrf>adapterMount);
+  assert.ok(webhookMount>0 && adapterMount && adapterMount.index>webhookMount && csrf>adapterMount.index);
+  assert.match(adapterMount.body,/authRateLimit/);
+  assert.match(adapterMount.body,/hipicoOperatorRoutes/);
   assert.match(app,/rawBody = Buffer\.from\(buffer\)/);
   assert.match(webhook,/req\.header\('x-hub-signature-256'\)/);
   assert.match(webhook,/webhookSignatureValid\(raw/);
-  assert.equal((app.match(/app\.use\('\/api\/v1\/hipico-bot', authRateLimit/g)||[]).length,1,'Bridge and operator adapters must share one auth limiter chain');
+  const authenticatedAdapters=[...app.matchAll(/app\.use\(\s*['"]\/api\/v1\/hipico-bot['"]\s*,([\s\S]*?)\);/g)]
+    .filter((match)=>match[1].includes('authRateLimit'));
+  assert.equal(authenticatedAdapters.length,1,'Bridge and operator adapters must share one auth limiter chain');
 });
 
 test('android wrapper synchronizes only the canonical Hipico web product',()=>{
