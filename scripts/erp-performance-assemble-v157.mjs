@@ -10,6 +10,11 @@ const backend=read('backend-measurements.json');
 const frontend=read('frontend-measurements.json');
 if(backend.candidateSha!==sha||frontend.candidateSha!==sha)throw new Error('PERFORMANCE_COMPONENT_SHA_MISMATCH');
 
+const expectedFixtureProvenance='SYNTHETIC_TEST_ONLY';
+const provenanceVerified=process.env.ERP157_FIXTURE_PROVENANCE===expectedFixtureProvenance
+  && frontend.fixtureProvenance===expectedFixtureProvenance;
+if(!provenanceVerified)throw new Error('PERFORMANCE_FIXTURE_PROVENANCE_REQUIRED');
+
 const measured=(value)=>value==='MEASURED';
 const degradationKeys=['slow-db','pool-saturation','external-timeout','memory-pressure','large-payload','multi-user-concurrency'];
 const degradation=Object.fromEntries(degradationKeys.map((key)=>[
@@ -26,7 +31,7 @@ const evidence={
     runtime:backend.environment?.runtime||'NOT_EXECUTED',
     device:`${backend.environment?.device||'unknown'} + chromium`,
     network:`${backend.environment?.network||'unknown'} + CDP throttled profile`,
-    sanitizedFixtures:true
+    sanitizedFixtures:provenanceVerified
   },
   workload:{
     expectedPeakConcurrentUsers:backend.expectedPeakConcurrentUsers,

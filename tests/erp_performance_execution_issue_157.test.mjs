@@ -71,9 +71,11 @@ test('#157 proves controlled pool saturation instead of labeling ordinary concur
 });
 
 test('#157 measures browser startup/navigation/import/large tables/memory/network',()=>{
+  assert.match(frontend,/import assert from 'node:assert\/strict'/);
   assert.match(frontend,/importCsv\(page,1000\)/);
   assert.match(frontend,/renderClients\(page,state,10000\)/);
   assert.match(frontend,/JSHeapUsedSize/);
+  assert.match(frontend,/ERP157_BROWSER_HEAP_METRIC_MISSING/);
   assert.match(frontend,/Network\.emulateNetworkConditions/);
   assert.match(frontend,/longTaskCountPerMinute/);
   assert.match(frontend,/max-old-space-size=256/);
@@ -90,18 +92,35 @@ test('#157 executes heavy success/error contracts and controlled degradation',()
   assert.match(backend,/multi-user-concurrency/);
 });
 
-test('#157 gate cannot pass missing metrics and the workflow cannot fake green',()=>{
+test('#157 gate cannot coerce null or string evidence into numeric PASS values',()=>{
+  assert.match(gate,/typeof raw === 'number' && Number\.isFinite\(raw\)/);
+  assert.match(gate,/metricNumber\(evidence\.metrics\?\.\[key\]\)/);
+  assert.match(gate,/metricNumber\(evidence\.metrics\?\.\['backend\.throughputRps'\]\)/);
   assert.match(gate,/checks\.some\(\(c\)=>c\.value===null\)/);
-  assert.match(assembler,/sanitizedFixtures:true/);
+});
+
+test('#157 capacity artifacts prove synthetic fixture provenance before sanitizedFixtures can be true',()=>{
+  assert.match(workflow,/ERP157_FIXTURE_PROVENANCE:\s*'SYNTHETIC_TEST_ONLY'/);
+  assert.match(calibration,/fixtureProvenance:\s*process\.env\.ERP157_FIXTURE_PROVENANCE/);
+  assert.match(frontend,/fixtureProvenance:\s*'SYNTHETIC_TEST_ONLY'/);
+  assert.match(assembler,/PERFORMANCE_FIXTURE_PROVENANCE_REQUIRED/);
+  assert.match(assembler,/process\.env\.ERP157_FIXTURE_PROVENANCE===expectedFixtureProvenance/);
+  assert.match(assembler,/frontend\.fixtureProvenance===expectedFixtureProvenance/);
+  assert.match(assembler,/sanitizedFixtures:provenanceVerified/);
+});
+
+test('#157 gate cannot pass missing metrics and the workflow cannot fake green',()=>{
   assert.doesNotMatch(workflow,/continue-on-error:\s*true/);
   assert.doesNotMatch(workflow,/npm.*\|\|\s*true/);
 });
 
-test('#157 closes only after measured capacity gate passes and #155 is already closed',()=>{
+test('#157 closes only after final PASS capacity gate and #155 is already closed',()=>{
   const capacityIndex=workflow.indexOf('\n  capacity:');
   const gateIndex=workflow.indexOf('erp-performance-gate-v157.mjs check');
   const finalizerIndex=workflow.indexOf('erp-performance-finalize-v157.mjs');
   assert.ok(capacityIndex>=0&&gateIndex>capacityIndex&&finalizerIndex>gateIndex);
+  assert.match(finalizer,/summary\.verdict!==['"]PASS['"]/);
+  assert.doesNotMatch(finalizer,/\['PASS','MEASURED_PROVISIONAL'\]\.includes/);
   assert.match(finalizer,/issues\/155/);
   assert.match(finalizer,/dependency\.state!==['"]closed['"]/);
   assert.match(finalizer,/PERFORMANCE_VERDICT_NOT_CLOSABLE/);

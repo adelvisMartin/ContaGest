@@ -98,6 +98,7 @@ try {
     schemaVersion: 1,
     issue: 157,
     candidateSha: sha,
+    fixtureProvenance: process.env.ERP157_FIXTURE_PROVENANCE || 'UNVERIFIED',
     truthState: 'MEASURED_PROVISIONAL',
     mode: 'CALIBRATION_ONLY',
     capacityCertified: false,
