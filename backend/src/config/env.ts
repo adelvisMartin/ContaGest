@@ -53,9 +53,11 @@ function normalizeOrigin(value?: string) {
   }
 }
 
-function isSecureSecret(value?: string) {
+export function isSecureSecret(value?: string) {
   const secret = String(value || '').trim();
-  return secret.length >= 32 && !secret.includes('dev_secret');
+  if (secret.length < 32) return false;
+  if (secret === DEVELOPMENT_JWT_SECRET || secret === DEVELOPMENT_LICENSE_SECRET) return false;
+  return !/(?:dev[_-](?:secret|license)|change[_-]?me)/i.test(secret);
 }
 
 function deriveSecret(seed: string, purpose: string) {
