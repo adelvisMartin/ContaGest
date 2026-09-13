@@ -70,7 +70,7 @@ test('#157 proves controlled pool saturation instead of labeling ordinary concur
   assert.match(backend,/Pool did not recover/);
 });
 
-test('#157 measures browser startup/navigation/import/large tables/memory/network',()=>{
+test('#157 measures browser startup/navigation/import/large tables/memory/network without fixed sleeps',()=>{
   assert.match(frontend,/import assert from 'node:assert\/strict'/);
   assert.match(frontend,/importCsv\(page,1000\)/);
   assert.match(frontend,/renderClients\(page,state,10000\)/);
@@ -80,6 +80,11 @@ test('#157 measures browser startup/navigation/import/large tables/memory/networ
   assert.match(frontend,/longTaskCountPerMinute/);
   assert.match(frontend,/max-old-space-size=256/);
   assert.match(frontend,/responsiveAfterPressure:true/);
+  assert.match(frontend,/async function navigateInApp/);
+  assert.match(frontend,/for\(let i=0;i<30;i\+\+\)await navigateInApp/);
+  assert.match(frontend,/ERP157_PERCENTILE_SAMPLES_REQUIRED/);
+  assert.match(frontend,/ERP157_PERCENTILE_SAMPLES_INVALID/);
+  assert.doesNotMatch(frontend,/waitForTimeout\(/);
 });
 
 test('#157 executes heavy success/error contracts and controlled degradation',()=>{
