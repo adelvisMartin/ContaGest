@@ -23,6 +23,7 @@ const required = [
   'icons/icon-192.png', 'icons/icon-512.png', 'icons/icon-192-maskable.png', 'icons/icon-512-maskable.png',
   ...canonicalCss.map((file) => `assets/css/${file}`),
   'assets/js/app.js', 'assets/js/store.js', 'assets/js/supabase.js', 'assets/js/local-auth.js', 'assets/js/ui.js',
+  'assets/js/theme-bootstrap.js', 'assets/js/command-center.js', 'assets/js/command-center-shell.js',
   'assets/js/password-recovery.js', 'assets/js/user-access.js', 'assets/js/help-center.js',
   'assets/js/whatsapp.js', 'assets/js/whatsapp/normalization.js', 'assets/js/whatsapp/parser.js', 'assets/js/whatsapp/ui-transcript.js'
 ];
@@ -65,6 +66,9 @@ function verifyRuntime(root, label) {
   const index = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
   if (/<link[^>]*>\s*>/i.test(index)) throw new Error(`${label}: HTML contiene un cierre de link duplicado.`);
   if (!index.includes('./assets/js/app.js')) throw new Error(`${label}: app.js no está enlazado de forma portable.`);
+  if (!index.includes('./assets/js/theme-bootstrap.js')) throw new Error(`${label}: theme-bootstrap.js no está enlazado.`);
+  if (!index.includes('./assets/js/command-center-shell.js')) throw new Error(`${label}: command-center-shell.js no está enlazado.`);
+  if (index.indexOf('./assets/js/theme-bootstrap.js') > index.indexOf('./assets/css/app.css')) throw new Error(`${label}: el tema se inicializa después del CSS.`);
   for (const cssFile of canonicalCss) if (!index.includes(`./assets/css/${cssFile}`)) throw new Error(`${label}: falta capa CSS canónica ${cssFile}.`);
   if (!index.includes('./assets/js/help-center.js')) throw new Error(`${label}: help-center.js no está enlazado.`);
   if (/styles\.css|ui-system|tokens\.css|themes\.css|operations-pro|precision-hipica|recovery\.css/i.test(index)) throw new Error(`${label}: index todavía carga una autoridad visual retirada.`);
