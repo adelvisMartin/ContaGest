@@ -61,6 +61,10 @@ const requiredFiles = [
   'backend/src/modules/hipico/document.routes.ts',
   'backend/src/modules/hipico/provider.routes.ts',
   'backend/src/modules/hipico/race.routes.ts',
+  'backend/src/modules/hipico-bot/hipico-test-channel.ts',
+  'backend/src/modules/hipico-bot/production-e2e-v290.ts',
+  'backend/scripts/hipico-restart-recovery-v290.ts',
+  'backend/scripts/hipico-load-profile-v290.ts',
   'frontend/api/hipico/command-center.js',
   'frontend/api/hipico/canonical-backend.js',
   'frontend/public/hipico-control/assets/js/command-center.js',
@@ -68,9 +72,11 @@ const requiredFiles = [
   'frontend/public/hipico-control/sw.js',
   'scripts/hipico-apply-e2e-schema-v290.mjs',
   'scripts/hipico-ephemeral-db-v290.mjs',
-  'backend/scripts/hipico-restart-recovery-v290.ts',
+  'scripts/hipico-verify-evidence-v290.mjs',
+  'scripts/hipico-release-report-v290.mjs',
   'supabase/sql/hipico_v21_race_data_conflicts.sql',
   '.github/workflows/hipico-data-engines.yml',
+  '.github/workflows/hipico-production-gates-v290.yml',
   '.github/workflows/hipico-browser-matrix.yml',
   '.github/workflows/hipico-android-rc.yml'
 ];
@@ -142,11 +148,35 @@ assert(schema.includes('SET LOCAL ROLE'), 'PostgreSQL E2E must execute least-pri
 assert(schema.includes('authenticatedAgentAutomationWriteDenied'), 'PostgreSQL E2E must deny browser agent writes');
 assert(schema.includes('authenticatedProviderEvidenceWriteDenied'), 'PostgreSQL E2E must deny browser provider writes');
 
+const testChannel = read('backend/src/modules/hipico-bot/hipico-test-channel.ts');
+assert(testChannel.includes('TEST_CHANNEL_NOT_CONNECTED'), 'TestChannel must fail closed while disconnected');
+assert(testChannel.includes('TEST_CHANNEL_IDENTITY_MISMATCH'), 'TestChannel must reject wrong channel identity');
+const productionE2E = read('backend/src/modules/hipico-bot/production-e2e-v290.ts');
+assert(productionE2E.includes('HipicoBotStore.dbReady(true)'), 'production E2E must require persistent bot DB');
+assert(productionE2E.includes('result?.duplicate, true'), 'production E2E must prove replay does not duplicate effects');
+const loadProfile = read('backend/scripts/hipico-load-profile-v290.ts');
+assert(loadProfile.includes('[100, 500, 2000]'), 'production profile must measure 100/500/2000');
+assert(loadProfile.includes('financialAuthority: false'), 'provider performance evidence must retain zero financial authority');
+assert(loadProfile.includes("acceptance: 'NOT_EXECUTED'"), 'physical target acceptance must remain separate from CI timing');
+
 const dataWorkflow = read('.github/workflows/hipico-data-engines.yml');
-assert(dataWorkflow.includes('hipico-apply-e2e-schema-v290.mjs'), 'data workflow must rebuild full schema');
-assert(dataWorkflow.includes('hipico-restart-recovery-v290.ts prepare'), 'data workflow must prepare restart evidence');
-assert(dataWorkflow.includes('hipico-restart-recovery-v290.ts verify'), 'data workflow must verify restart evidence in a fresh process');
+for (const required of [
+  'npm --workspace backend run prisma:deploy',
+  'hipico-apply-e2e-schema-v290.mjs',
+  'production-e2e-v290.ts',
+  'hipico-restart-recovery-v290.ts prepare',
+  'hipico-restart-recovery-v290.ts verify',
+  'hipico-load-profile-v290.ts'
+]) assert(dataWorkflow.includes(required), `data workflow missing ${required}`);
 assert(dataWorkflow.includes('if: always()'), 'data workflow must retain cleanup/evidence on failure');
+
+const productionWorkflow = read('.github/workflows/hipico-production-gates-v290.yml');
+assert(productionWorkflow.includes('github.event.pull_request.head.sha || github.sha'), 'production workflow must bind PR evidence to exact head SHA');
+assert(productionWorkflow.includes('hipico-apply-e2e-schema-v290.mjs'), 'production workflow must rebuild current schema');
+assert(productionWorkflow.includes('production-e2e-v290.ts'), 'production workflow must run TestChannel E2E');
+assert(productionWorkflow.includes('hipico-load-profile-v290.ts'), 'production workflow must run 100/500/2000 profile');
+assert(productionWorkflow.includes('verify:hipico:evidence:v290'), 'production workflow must verify collected evidence');
+assert(productionWorkflow.includes('report:hipico:v290'), 'production workflow must write release report');
 
 const browserWorkflow = read('.github/workflows/hipico-browser-matrix.yml');
 for (const browser of ['chromium', 'firefox', 'webkit']) {
@@ -176,10 +206,12 @@ for (const relative of [
   'backend/src/modules/hipico/agent-route-security.test.ts',
   'backend/src/modules/hipico/command-center.service.test.ts',
   'backend/src/modules/hipico/hipico-data.integration.ts',
+  'backend/src/modules/hipico-bot/production-e2e-v290.ts',
   'qa/hipico-visual-functional-v105.spec.mjs',
   'tests/hipico_postgres_e2e_chain_290.test.mjs',
   'tests/hipico_release_hardening_290_contract.test.mjs',
-  '.github/workflows/hipico-data-engines.yml'
+  '.github/workflows/hipico-data-engines.yml',
+  '.github/workflows/hipico-production-gates-v290.yml'
 ]) {
   const source = read(relative);
   for (const rule of bypassRules) {
@@ -200,6 +232,8 @@ fs.writeFileSync(path.join(artifactDir, 'release-guard.json'), `${JSON.stringify
     financialAuthority: false,
     directEffectsApplied: false,
     currentPostgresChain: 'v12-v21',
+    testChannelReplay: true,
+    loadProfileVolumes: [100, 500, 2000],
     clientSecretsAbsent: true,
     exactSha: true
   }
