@@ -30,6 +30,12 @@ test('canonical outbox store: claim uses PostgreSQL row locking and only queued/
   assert.match(source,/status='sending'/i);
 });
 
+test('canonical outbox store: generic worker cannot claim approval-required rows',()=>{
+  assert.match(source,/allowApprovalRequired/);
+  assert.match(source,/payload\s*->>\s*'approvalRequired'/i);
+  assert.match(source,/COALESCE\([^\n]+approvalRequired[^\n]+false\)/i);
+});
+
 test('canonical outbox store: production authority never writes legacy HipicoBotOutbox',()=>{
   assert.doesNotMatch(source,/HipicoBotOutbox/);
   assert.match(source,/public\.hipico_outbox/);
@@ -37,6 +43,6 @@ test('canonical outbox store: production authority never writes legacy HipicoBot
 });
 
 test('canonical outbox store: reconciliation is excluded from automatic claim states',()=>{
-  const claimFragment=source.slice(source.indexOf('FOR UPDATE SKIP LOCKED')-2500,source.indexOf('FOR UPDATE SKIP LOCKED')+200);
+  const claimFragment=source.slice(source.indexOf('FOR UPDATE SKIP LOCKED')-3000,source.indexOf('FOR UPDATE SKIP LOCKED')+200);
   assert.doesNotMatch(claimFragment,/reconciliation_required/);
 });
