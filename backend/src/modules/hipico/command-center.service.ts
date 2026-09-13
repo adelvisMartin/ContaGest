@@ -8,9 +8,9 @@ import { AutomationStore } from './automation.store.js';
 export type CommandCenterScope = {
   ownerId: string;
   groupKey: string;
-  groupId?: string | null;
 };
 
+type AgentScope = CommandCenterScope & { groupId: string };
 type CountRow = { count: bigint | number };
 type StateCountRow = { state: string; count: bigint | number };
 type ReadState = 'ready' | 'unavailable';
@@ -26,9 +26,10 @@ type CommandCenterDependencies = {
   channels: (scope: CommandCenterScope) => Promise<any[]>;
   queueStates: (scope: CommandCenterScope) => Promise<StateCountRow[]>;
   documentStates: (scope: CommandCenterScope) => Promise<StateCountRow[]>;
-  conflicts: (scope: CommandCenterScope) => Promise<{ reconciliations: number; rejectedTransitions: number; agentConflicts: number }>;
+  agentGroupIds: (scope: CommandCenterScope) => Promise<string[]>;
+  conflicts: (scope: CommandCenterScope, groupId: string | null) => Promise<{ reconciliations: number; rejectedTransitions: number; agentConflicts: number }>;
   lastBridgeEvent: (scope: CommandCenterScope) => Promise<Date | string | null>;
-  agentState: (scope: CommandCenterScope & { groupId: string }) => Promise<{ mode: string; metrics: any }>;
+  agentState: (scope: AgentScope) => Promise<{ mode: string; metrics: any }>;
 };
 
 const raceStore = new RaceLifecycleStore();
@@ -91,7 +92,16 @@ const defaultDependencies: CommandCenterDependencies = {
     FROM public.hipico_documents
     WHERE owner_id = ${scope.ownerId}::uuid AND group_key = ${scope.groupKey}
     GROUP BY status`,
-  conflicts: async (scope) => {
+  agentGroupIds: async (scope) => {
+    const rows = await prisma.$queryRaw<Array<{ groupId: string }>>`
+      SELECT group_id AS "groupId"
+      FROM public.hipico_group_automation
+      WHERE owner_id = ${scope.ownerId}::uuid AND group_key = ${scope.groupKey}
+      ORDER BY updated_at DESC, group_id ASC
+      LIMIT 2`;
+    return rows.map((row) => String(row.groupId || '').trim()).filter(Boolean);
+  },
+  conflicts: async (scope, groupId) => {
     const [reconciliations, rejectedTransitions, agentConflicts] = await Promise.all([
       prisma.$queryRaw<CountRow[]>`
         SELECT COUNT(*)::bigint AS count
@@ -103,12 +113,12 @@ const defaultDependencies: CommandCenterDependencies = {
         FROM public.hipico_race_events
         WHERE owner_id = ${scope.ownerId}::uuid AND group_key = ${scope.groupKey}
           AND disposition = 'rejected'`,
-      scope.groupId
+      groupId
         ? prisma.$queryRaw<CountRow[]>`
             SELECT COUNT(*)::bigint AS count
             FROM public.hipico_agent_evaluations
             WHERE owner_id = ${scope.ownerId}::uuid AND group_key = ${scope.groupKey}
-              AND group_id = ${scope.groupId} AND actual_intent IS NOT NULL AND conflict = true`
+              AND group_id = ${groupId} AND actual_intent IS NOT NULL AND conflict = true`
         : Promise.resolve([{ count: 0 }])
     ]);
     return {
@@ -143,6 +153,10 @@ export async function buildHipicoCommandCenter(
   const deps = { ...defaultDependencies, ...overrides };
   const now = deps.now();
   const system = await deps.systemStatus();
+  const agentIdentityRead = await read(() => deps.agentGroupIds(scope), [] as string[]);
+  const resolvedAgentGroupId = agentIdentityRead.state === 'ready' && agentIdentityRead.data.length === 1
+    ? agentIdentityRead.data[0]
+    : null;
 
   const [meetingsRead, racesRead, documentsRead, providersRead, channelsRead, queueRead, documentStatesRead, conflictsRead, bridgeRead] = await Promise.all([
     read(() => deps.meetings(scope), [] as any[]),
@@ -152,7 +166,7 @@ export async function buildHipicoCommandCenter(
     read(() => deps.channels(scope), [] as any[]),
     read(() => deps.queueStates(scope), [] as StateCountRow[]),
     read(() => deps.documentStates(scope), [] as StateCountRow[]),
-    read(() => deps.conflicts(scope), { reconciliations: 0, rejectedTransitions: 0, agentConflicts: 0 }),
+    read(() => deps.conflicts(scope, resolvedAgentGroupId), { reconciliations: 0, rejectedTransitions: 0, agentConflicts: 0 }),
     read(() => deps.lastBridgeEvent(scope), null as Date | string | null)
   ]);
 
@@ -176,14 +190,15 @@ export async function buildHipicoCommandCenter(
     ? conflictsRead.data.reconciliations + conflictsRead.data.rejectedTransitions + conflictsRead.data.agentConflicts
     : null;
 
-  let agent: any = {
-    state: 'not_configured',
-    reason: 'GROUP_ID_NOT_SELECTED',
-    mode: null,
-    metrics: null
-  };
-  if (scope.groupId) {
-    const agentRead = await read(() => deps.agentState({ ...scope, groupId: scope.groupId! }), null as any);
+  let agent: any;
+  if (agentIdentityRead.state === 'unavailable') {
+    agent = { state: 'unavailable', reason: 'AGENT_IDENTITY_READ_FAILED', mode: null, metrics: null };
+  } else if (agentIdentityRead.data.length === 0) {
+    agent = { state: 'not_configured', reason: 'GROUP_ID_NOT_CONFIGURED', mode: null, metrics: null };
+  } else if (agentIdentityRead.data.length > 1) {
+    agent = { state: 'unavailable', reason: 'GROUP_ID_AMBIGUOUS', mode: null, metrics: null };
+  } else {
+    const agentRead = await read(() => deps.agentState({ ...scope, groupId: resolvedAgentGroupId! }), null as any);
     agent = agentRead.state === 'ready'
       ? { state: 'ready', reason: null, mode: agentRead.data.mode, metrics: agentRead.data.metrics }
       : { state: 'unavailable', reason: 'AGENT_READ_FAILED', mode: null, metrics: null };
@@ -223,6 +238,12 @@ export async function buildHipicoCommandCenter(
     if (result.state === 'unavailable') alerts.push({ severity: 'warning', code: `${code}_READ_UNAVAILABLE`, message });
   }
 
+  if (agentIdentityRead.state === 'unavailable') {
+    alerts.push({ severity: 'warning', code: 'AGENT_IDENTITY_READ_UNAVAILABLE', message: 'No se pudo resolver de forma segura la identidad del grupo para el agente.' });
+  } else if (agentIdentityRead.data.length > 1) {
+    alerts.push({ severity: 'warning', code: 'AGENT_GROUP_ID_AMBIGUOUS', message: 'El grupo tiene más de una identidad de automatización; se requiere revisión manual.' });
+  }
+
   if (bridgeRead.state === 'unavailable') alerts.push({ severity: 'warning', code: 'BRIDGE_READ_UNAVAILABLE', message: 'No se pudo determinar la actividad reciente del Bridge.' });
   else if (bridgeConfigured && bridgeAgeMs == null) alerts.push({ severity: 'warning', code: 'BRIDGE_NO_EVENTS', message: 'Bridge configurado sin eventos persistidos todavía.' });
   else if (bridgeAgeMs != null && bridgeAgeMs > 2 * 60 * 1000) alerts.push({ severity: 'warning', code: 'BRIDGE_STALE', message: 'El último evento del Bridge supera dos minutos.' });
@@ -236,7 +257,7 @@ export async function buildHipicoCommandCenter(
 
   return {
     generatedAt: now.toISOString(),
-    scope: { groupKey: scope.groupKey, groupId: scope.groupId || null },
+    scope: { groupKey: scope.groupKey },
     version: system.version,
     system: { ok: system.ok, components: system.components },
     bridge: {
