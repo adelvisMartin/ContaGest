@@ -1,10 +1,10 @@
 {
   "schemaVersion": 2,
   "product": "control-hipico",
-  "version": "1.13.0-rc3",
+  "version": "1.13.0-rc2",
   "channel": "pilot",
   "revision": "source",
-  "buildId": "1.13.0-rc3",
+  "buildId": "1.13.0-rc2",
   "candidateSha": "local-unbound",
   "bound": false,
   "generatedAt": null,
