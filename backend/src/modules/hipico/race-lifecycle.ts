@@ -61,24 +61,24 @@ function officialEvidence(evidence:RaceEvidence[]){
   return evidence.some((item)=>item.authority==='official'&&Number(item.confidence)>=0.9&&String(item.source||'').trim());
 }
 
-function resultStageFor(state:RaceLifecycleState):RaceTransition['resultStage']{
+export function resultStageForRaceState(state:RaceLifecycleState):RaceTransition['resultStage']{
   if(state==='PROVISIONAL_RESULT')return 'provisional';
   if(state==='OFFICIAL_RESULT'||state==='ARCHIVED')return 'official';
   return 'none';
 }
 
 export function evaluateRaceCommand(current:RaceLifecycleState,input:RaceCommandInput):RaceTransition{
-  if(input.expectedState!==current)return{allowed:false,from:current,to:current,reason:'EXPECTED_STATE_MISMATCH',resultStage:resultStageFor(current)};
+  if(input.expectedState!==current)return{allowed:false,from:current,to:current,reason:'EXPECTED_STATE_MISMATCH',resultStage:resultStageForRaceState(current)};
   const target=DIRECT[current]?.[input.command];
-  if(!target)return{allowed:false,from:current,to:current,reason:'INVALID_TRANSITION',resultStage:resultStageFor(current)};
+  if(!target)return{allowed:false,from:current,to:current,reason:'INVALID_TRANSITION',resultStage:resultStageForRaceState(current)};
   const evidence=input.evidence||[];
   if(input.command==='OPEN'&&input.actorType!=='operator'&&independentEvidenceCount(evidence)<2){
-    return{allowed:false,from:current,to:current,reason:'OPEN_REQUIRES_CORROBORATED_EVIDENCE',resultStage:resultStageFor(current)};
+    return{allowed:false,from:current,to:current,reason:'OPEN_REQUIRES_CORROBORATED_EVIDENCE',resultStage:resultStageForRaceState(current)};
   }
   if(input.command==='MARK_OFFICIAL_RESULT'&&!officialEvidence(evidence)){
     return{allowed:false,from:current,to:current,reason:'OFFICIAL_RESULT_REQUIRES_OFFICIAL_EVIDENCE',resultStage:'provisional'};
   }
-  return{allowed:true,from:current,to:target,reason:'VALID_TRANSITION',resultStage:resultStageFor(target)};
+  return{allowed:true,from:current,to:target,reason:'VALID_TRANSITION',resultStage:resultStageForRaceState(target)};
 }
 
 export function normalizeRaceCommandInput(input:RaceCommandInput):RaceCommandInput{
