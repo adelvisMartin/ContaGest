@@ -41,7 +41,7 @@ export const AuthService={
     const expiresAt=captchaExpiryMillis(captcha?.expiresAt);
     if(!Number.isFinite(expiresAt)||expiresAt<=Date.now())throw new Error('La verificación recibida ya expiró. Genera un nuevo reto.');
     if(typeof window!=='undefined'&&captcha?.token){
-      window.dispatchEvent(new CustomEvent('cg:captcha-challenge',{detail:{token:String(captcha.token),expiresAt}}));
+      window.dispatchEvent(new CustomEvent('cg:captcha-challenge',{detail:{expiresAt}}));
     }
     return captcha;
   },
