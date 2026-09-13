@@ -10,6 +10,8 @@ test('#221 rejects stale CAPTCHA metadata before the login page can enable it',(
   assert.match(auth,/captchaExpiryMillis/);
   assert.match(auth,/expiresAt<=Date\.now\(\)/);
   assert.match(auth,/cg:captcha-challenge/);
+  assert.match(auth,/detail:\{expiresAt\}/);
+  assert.doesNotMatch(auth,/detail:\{token:/,'global CAPTCHA event must not broadcast the signed token');
 });
 
 test('#221 login enhancer invalidates expired tokens and guards submit in capture phase',()=>{
