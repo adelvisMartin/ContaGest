@@ -1,4 +1,5 @@
 import crypto from 'node:crypto';
+import type { Prisma } from '@prisma/client';
 import { prisma } from '../../database/prisma.js';
 import {
   AUTOMATION_STATES,
@@ -14,7 +15,7 @@ const GROUP_ID_RE = /^[A-Za-z0-9@._:-]{3,220}$/;
 const FORBIDDEN_EVIDENCE_KEY = /(?:token|secret|password|credential|authorization|cookie|api[_-]?key)/i;
 const MAX_EVIDENCE_BYTES = 16 * 1024;
 
-type DbClient = typeof prisma | any;
+type DbClient = typeof prisma | Prisma.TransactionClient;
 
 function assertScope(ownerId: string, groupKey: string, groupId: string) {
   if (!UUID_RE.test(ownerId)) throw new Error('HIPICO_OWNER_INVALID');
