@@ -18,6 +18,10 @@ function git(args) {
   }).trim();
 }
 
+function gitMaybe(args) {
+  try { return git(args); } catch { return ''; }
+}
+
 function expectedCandidateSha() {
   const value = String(
     process.env.HIPICO_CANDIDATE_SHA
@@ -28,6 +32,19 @@ function expectedCandidateSha() {
   ).trim();
   if (!SHA40.test(value)) throw new Error('HIPICO_SECRET_SCAN_SHA_REQUIRED');
   return value.toLowerCase();
+}
+
+function resolveBaseSha(candidate) {
+  const explicit = String(process.env.HIPICO_BASE_SHA || '').trim().toLowerCase();
+  if (SHA40.test(explicit) && explicit !== candidate) return explicit;
+  const baseRef = String(process.env.GITHUB_BASE_REF || '').trim();
+  if (!baseRef) return '';
+  const candidates = [`origin/${baseRef}`, baseRef];
+  for (const ref of candidates) {
+    const base = gitMaybe(['merge-base', candidate, ref]).toLowerCase();
+    if (SHA40.test(base) && base !== candidate) return base;
+  }
+  return '';
 }
 
 function changedFiles(base, candidate) {
@@ -94,7 +111,7 @@ function scanRemoteCredentialUrl(source, file, findings) {
 const candidate = expectedCandidateSha();
 const head = git(['rev-parse', 'HEAD']).toLowerCase();
 if (head !== candidate) throw new Error(`HIPICO_SECRET_SCAN_SHA_MISMATCH:${head}:${candidate}`);
-const base = String(process.env.HIPICO_BASE_SHA || '').trim().toLowerCase();
+const base = resolveBaseSha(candidate);
 const files = changedFiles(base, candidate);
 const findings = [];
 let scannedFiles = 0;
