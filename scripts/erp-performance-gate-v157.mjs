@@ -42,7 +42,10 @@ const evidence=JSON.parse(fs.readFileSync(file,'utf8'));
 if(evidence.schemaVersion!==2)throw new Error('PERFORMANCE_EVIDENCE_SCHEMA_V2_REQUIRED_REINITIALIZE');
 if(evidence.candidateSha!==sha)throw new Error('PERFORMANCE_SHA_MISMATCH');
 
-const metricNumber=(raw)=>typeof raw === 'number' && Number.isFinite(raw) ? raw : null;
+// Performance observations in this policy are durations, counts, rates,
+// percentages, heap growth, saturation or throughput. Negative values are not
+// physically meaningful evidence and must never satisfy a max-budget check.
+const metricNumber=(raw)=>typeof raw === 'number' && Number.isFinite(raw) && raw >= 0 ? raw : null;
 
 const required={
   'frontend.startupP95Ms':policy.frontend.startupP95Ms,
