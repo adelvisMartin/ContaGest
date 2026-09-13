@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { DocumentIngestionService, authorizeDocumentClassification, strictDocumentMetadata, validatePdfEnvelope, type DocumentStore, type DocumentStoreInput, type PdfTextExtractor } from './document-engine.js';
+import { DocumentIngestionService, authorizeDocumentClassification, classifyDocumentText, strictDocumentMetadata, validatePdfEnvelope, type DocumentStore, type DocumentStoreInput, type PdfTextExtractor } from './document-engine.js';
 import { parseHorseRacingDocument } from './document-parser.js';
 
 const pdf=(body='')=>Buffer.from(`%PDF-1.4\n1 0 obj << /Type /Page >>\n${body}\nendobj\n%%EOF\n`,'latin1');
@@ -33,6 +33,12 @@ void test('document metadata limits reject rather than truncate replay/source id
 void test('official wording never grants official or financial authority by itself',()=>{
   assert.deepEqual(authorizeDocumentClassification({classification:'OFFICIAL_RESULT',confidence:.98},'group_evidence'),{classification:'RESULT',confidence:.9,claimedOfficial:true});
   assert.equal(authorizeDocumentClassification({classification:'OFFICIAL_RESULT',confidence:.98},'official').classification,'OFFICIAL_RESULT');
+});
+void test('race program identity outranks embedded scratches while pure scratches stay specific',()=>{
+  const mixed=classifyDocumentText('PROGRAMA OFICIAL DE CARRERAS\nHIPODROMO: La Rinconada\nCARRERA 1\nRETIRADOS: 4 CABALLO DEMO');
+  assert.deepEqual(mixed,{classification:'RACE_PROGRAM',confidence:.94});
+  const scratches=classifyDocumentText('AVISO\nRETIRADOS: 4 CABALLO DEMO, 7 OTRO');
+  assert.deepEqual(scratches,{classification:'SCRATCHES',confidence:.95});
 });
 void test('native text extraction parses only present horse-racing fields without OCR',async()=>{
   const store=new MemoryStore(),service=new DocumentIngestionService(store,nativeExtractor);const result=await service.ingest({ownerId:'00000000-0000-4000-8000-000000000001',groupKey:'group-a',pdf:pdf(),filename:'programa.pdf',provenance:{sourceChannel:'operator',receivedAt:'2026-09-11T19:00:00.000Z',authority:'operator'}});
