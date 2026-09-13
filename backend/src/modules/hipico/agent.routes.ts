@@ -18,8 +18,7 @@ const group = z.string().trim().min(3).max(120).regex(/^[A-Za-z0-9._:-]+$/);
 const groupId = z.string().trim().min(3).max(220).regex(/^[A-Za-z0-9@._:-]+$/);
 const idempotency = z.string().trim().min(8).max(120).regex(/^[A-Za-z0-9._:-]+$/);
 const modeSchema = z.object({
-  target: z.enum(AUTOMATION_STATES),
-  ownerApproved: z.boolean().default(false)
+  target: z.enum(AUTOMATION_STATES)
 }).strict();
 const evaluateSchema = z.object({
   text: z.string().trim().min(1).max(4000),
@@ -69,6 +68,10 @@ function actorRef() {
   const actor = operatorActorRef();
   if (!actor) throw Object.assign(new Error('HIPICO_OPERATOR_ACTOR_NOT_CONFIGURED'), { code: 'HIPICO_OPERATOR_ACTOR_NOT_CONFIGURED' });
   return actor;
+}
+
+function automaticOwnerApprovalConfigured() {
+  return String(process.env.HIPICO_AUTOMATIC_OWNER_APPROVED || '').trim().toLowerCase() === 'true';
 }
 
 function status(code: string) {
@@ -143,7 +146,7 @@ router.post('/groups/:groupId/automation', async (req, res) => {
       groupId: parsedGroupId(req),
       target: body.target,
       actorRef: actorRef(),
-      ownerApproved: body.ownerApproved,
+      ownerApproved: automaticOwnerApprovalConfigured(),
       idempotencyKey: idempotencyKey(req)
     });
     return res.json({ ok: true, data });
