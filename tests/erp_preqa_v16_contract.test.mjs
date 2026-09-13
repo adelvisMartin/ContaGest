@@ -82,6 +82,7 @@ test('Chart of Accounts creates tenant data through backend and enforces permiss
   assert.match(pageSource,/ChartAccountsService\.create/);
   assert.doesNotMatch(pageSource,/uid\('acc'\)/);
   assert.match(client,/BackendApi\.post\('\/chart-accounts'/);
+  assert.doesNotMatch(client,/x-tenant-id/i);
   assert.match(backend,/requirePermission\('accounting\.view'\)/);
   assert.match(backend,/requirePermission\('accounting\.post'\)/);
   assert.match(backend,/tenantId/);
@@ -143,10 +144,12 @@ test('previous v16 financial safety fixes remain in place',()=>{
   assert.doesNotMatch(qr,/server-side-hash-pendiente/);
 });
 
-test('production secret guard runs before every business router while health and CSP reporting stay independent',()=>{
+test('production secret guard runs before parsing and every business router while health and CSP reporting stay independent',()=>{
   const app=read('backend','src','app.ts');
   const guard=app.indexOf('app.use(enforceProductionSecrets)');
   assert.ok(guard>0,'production secret guard must be mounted');
+  const businessJson=app.indexOf('app.use(express.json({');
+  assert.ok(businessJson>guard,'production secret guard must reject a misconfigured deployment before parsing business JSON bodies');
   for(const marker of [
     "app.use('/api/v1/hipico/system'",
     "app.use('/api/v1/hipico-bot'",
