@@ -6,7 +6,7 @@ const UUID_RE=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a
 const GROUP_RE=/^[A-Za-z0-9._:-]{3,120}$/;
 function scope(ownerId:string,groupKey:string){if(!UUID_RE.test(ownerId))throw Object.assign(new Error('HIPICO_OWNER_INVALID'),{code:'HIPICO_OWNER_INVALID'});if(!GROUP_RE.test(groupKey))throw Object.assign(new Error('HIPICO_GROUP_INVALID'),{code:'HIPICO_GROUP_INVALID'});}
 function stable(value:unknown):string{if(value===null||value===undefined)return'null';if(Array.isArray(value))return`[${value.map(stable).join(',')}]`;if(typeof value==='object'){const row=value as Record<string,unknown>;return`{${Object.keys(row).sort().map((key)=>`${JSON.stringify(key)}:${stable(row[key])}`).join(',')}}`;}return JSON.stringify(value);}
-function signature(input:RaceCommandInput){const {requestId:_requestId,idempotencyKey:_idempotencyKey,...semantic}=input;return crypto.createHash('sha256').update(stable(semantic)).digest('hex');}
+function signature(input:RaceCommandInput){const {requestId:_requestId,idempotencyKey:_idempotencyKey,correlationId:_correlationId,...semantic}=input;return crypto.createHash('sha256').update(stable(semantic)).digest('hex');}
 
 export class RaceLifecycleStore {
   async createMeeting(input:{ownerId:string;groupKey:string;name:string;meetingDate?:string|null;venue?:string|null;externalRef?:string|null}){
