@@ -36,6 +36,19 @@ test('interrupted automatic sends fail closed into reconciliation instead of bli
   assert.match(service,/HIPICO_WEBHOOK_RECONCILIATION_PERSISTENCE_REQUIRED/);
 });
 
+test('fresh sending lease stays in flight and retryable instead of premature reconciliation',()=>{
+  assert.match(service,/const WEBHOOK_SEND_LEASE_MS=2\*60\*1000/,'backend webhook must reuse the canonical two-minute send lease');
+  assert.match(service,/markStaleSendingReconciliation/,'sending replay must use an atomic stale-only transition');
+  assert.match(service,/HIPICO_WEBHOOK_SEND_IN_FLIGHT/,'a fresh sending lease must stay retryable instead of being quarantined');
+  assert.doesNotMatch(service,/persistedStatus==='sending'\)\{\s*const reconciled=await HipicoBotStore\.markReconciliationRequired/,'sending replay must never quarantine immediately');
+});
+
+test('stale sending lease is quarantined atomically using updatedAt cutoff',()=>{
+  assert.match(service,/async markStaleSendingReconciliation\(idValue:string,staleBefore:Date,error:string\)/);
+  assert.match(service,/"status"='sending' AND "updatedAt"<=\$\{staleBefore\}/,'stale quarantine must be guarded by the persisted sending timestamp');
+  assert.match(service,/new Date\(Date\.now\(\)-WEBHOOK_SEND_LEASE_MS\)/,'stale cutoff must derive from the canonical lease');
+});
+
 test('persistent webhook never acknowledges a non-durable automatic claim or delivery receipt',()=>{
   assert.match(service,/if\(!claimed\)[\s\S]*options\.requirePersistent[\s\S]*HIPICO_WEBHOOK_CLAIM_PERSISTENCE_REQUIRED/);
   assert.match(service,/markSent\(outbox\.id,sent\.providerMessageId,'automatic'\)[\s\S]*HIPICO_WEBHOOK_RECEIPT_PERSISTENCE_REQUIRED/);

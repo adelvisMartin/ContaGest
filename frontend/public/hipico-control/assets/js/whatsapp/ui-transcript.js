@@ -5,6 +5,7 @@ const FORWARDED_RE=/^reenviado$/i;
 const STICKER_RE=/^sticker(?:\s+sin etiquetas)?$/i;
 const FILE_RE=/^(.+?)\.([a-z0-9]{2,8})$/i;
 const FILE_META_RE=/^(\d+)\s+p[aá]ginas?\s*[•·]\s*([a-z0-9]+)\s*[•·]\s*([\d.,]+)\s*(kb|mb|gb)$/i;
+const CLASSIC_EXPORT_RE=/^\[\d{1,2}:\d{2}[^\]]*,\s*\d{1,2}\/\d{1,2}\/\d{2,4}\]\s+[^:]+:/i;
 
 const clean=(value)=>String(value||'').trim();
 const phoneDigits=(value)=>clean(value).replace(/\D/g,'');
@@ -20,9 +21,11 @@ function documentInfo(filename){
 
 export function looksLikeWhatsAppUiTranscript(input){
   const lines=String(input||'').replace(/\r/g,'').split('\n').map(clean).filter(Boolean);
+  if(lines.some((line)=>CLASSIC_EXPORT_RE.test(line)))return false;
   const standaloneTimes=lines.filter((line)=>TIME_RE.test(line)).length;
   const phones=lines.filter((line)=>PHONE_RE.test(line)).length;
-  return standaloneTimes>=2&&phones>=1;
+  const uiStructure=lines.filter((line)=>DAY_RE.test(line)||FORWARDED_RE.test(line)||STICKER_RE.test(line)||FILE_META_RE.test(line)||Boolean(documentInfo(line))).length;
+  return phones>=1&&(standaloneTimes>=1||uiStructure>=1);
 }
 
 export function parseWhatsAppUiTranscript(input){
@@ -60,4 +63,4 @@ export function parseWhatsAppUiTranscript(input){
   return {sourceFormat:'whatsapp-ui-copy',messages};
 }
 
-export const __test__=Object.freeze({TIME_RE,PHONE_RE,DAY_RE,FILE_META_RE,documentInfo});
+export const __test__=Object.freeze({TIME_RE,PHONE_RE,DAY_RE,FILE_META_RE,CLASSIC_EXPORT_RE,documentInfo});
