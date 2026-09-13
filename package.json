@@ -21,6 +21,7 @@
     "test:hipico:command-center": "node --test tests/hipico_command_center_289.test.mjs tests/hipico_canonical_facade_290.test.mjs",
     "test:hipico:production-contract": "node --test tests/hipico_production_pipeline_290.test.mjs tests/hipico_version_guard_290.test.mjs",
     "release:hipico:v290": "node scripts/hipico-release-guard-v290.mjs",
+    "hipico": "node tools/hipico-cli/hipico.mjs",
     "test:browser:hipico": "node scripts/hipico-browser-qa.mjs",
     "qa:hipico": "node scripts/hipico-exact-sha-gate.mjs && npm --workspace frontend run preqa:source && npm run test:browser:hipico && node scripts/hipico-qa-runner-v103.mjs",
     "qa:hipico:visual": "npm run test:hipico:visual-contract && npm run test:browser:hipico",
