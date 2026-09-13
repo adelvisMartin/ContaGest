@@ -71,7 +71,7 @@ ALTER TABLE public.hipico_outbox
     'queued','sending','accepted','sent','delivered','read','retry','cancelled','failed','reconciliation_required'
   )),
   ADD CONSTRAINT hipico_outbox_attempts_check CHECK (attempts>=0),
-  ADD CONSTRAINT hipico_outbox_max_attempts_check CHECK (max_attempts BETWEEN 1 AND 20 AND attempts<=max_attempts),
+  ADD CONSTRAINT hipico_outbox_max_attempts_check CHECK (max_attempts BETWEEN 1 AND 20),
   ADD CONSTRAINT hipico_outbox_payload_digest_check CHECK (payload_digest ~ '^[a-f0-9]{64}$'),
   ADD CONSTRAINT hipico_outbox_lease_check CHECK (
     (status='sending' AND lease_token IS NOT NULL AND leased_at IS NOT NULL AND leased_until IS NOT NULL)
