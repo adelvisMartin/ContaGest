@@ -27,6 +27,11 @@ test('automatic PDF ingestion can be explicitly disabled without weakening the e
   assert.deepEqual(validateRuntimeConfig(config),[]);
 });
 
+test('automatic PDF ingestion refuses visible-history replay',()=>{
+  const config=loadRuntimeConfig({...productionEnv,HIPICO_SOURCE_BASELINE_IGNORE_HISTORY:'false'},'C:/tmp');
+  assert.match(validateRuntimeConfig(config).join(' '),/auto-ingesta PDF exige HIPICO_SOURCE_BASELINE_IGNORE_HISTORY=true/i);
+});
+
 test('production PDF ingress rejects non-HTTPS, credentials, query and fragments',()=>{
   for(const url of ['http://example.test/api/v1/hipico-bot/bridge/documents','https://user:pass@example.test/api/v1/hipico-bot/bridge/documents','https://example.test/api/v1/hipico-bot/bridge/documents?token=x','https://example.test/api/v1/hipico-bot/bridge/documents#x']){
     const config=loadRuntimeConfig({...productionEnv,HIPICO_DOCUMENT_INGEST_URL:url},'C:/tmp');
