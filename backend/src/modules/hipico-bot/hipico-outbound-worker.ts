@@ -9,7 +9,7 @@ import {
 import { classifyOutboundFailure, retryDelayMs } from './hipico-outbox-policy.js';
 
 type WorkerDeps={
-  claim:(input:{ownerId:string;id?:string|null})=>Promise<any>;
+  claim:(input:{ownerId:string;id?:string|null;allowApprovalRequired?:boolean})=>Promise<any>;
   send:(destination:string,message:string)=>Promise<{providerMessageId:string}>;
   accepted:(input:any)=>Promise<any>;
   retry:(input:any)=>Promise<any>;
@@ -32,28 +32,22 @@ function messageText(row:any){
   return String(payload.text||'').trim();
 }
 
-export async function dispatchCanonicalOutbound(input:{ownerId:string;id?:string|null;jitterUnit?:number},deps:WorkerDeps=defaultDeps){
-  const claimed=await deps.claim({ownerId:input.ownerId,id:input.id||null});
+export async function dispatchCanonicalOutbound(input:{ownerId:string;id?:string|null;jitterUnit?:number;allowApprovalRequired?:boolean},deps:WorkerDeps=defaultDeps){
+  const claimed=await deps.claim({ownerId:input.ownerId,id:input.id||null,allowApprovalRequired:input.allowApprovalRequired===true});
   if(!claimed)return{status:'not_claimed' as const,row:null};
   const leaseToken=String(claimed.lease_token||claimed.leaseToken||'');
   const id=String(claimed.id||'');
   const destination=String(claimed.destination||'').replace(/^\+/,'');
   const message=messageText(claimed);
   if(!leaseToken||!id||!destination||!message){
-    const failed=await deps.failed({
-      ownerId:input.ownerId,id,leaseToken,error:'Canonical outbound row is incomplete.',errorCode:'HIPICO_OUTBOX_ROW_INVALID'
-    });
+    const failed=await deps.failed({ownerId:input.ownerId,id,leaseToken,error:'Canonical outbound row is incomplete.',errorCode:'HIPICO_OUTBOX_ROW_INVALID'});
     if(!failed)throw Object.assign(new Error('Could not persist invalid outbox terminal state.'),{code:'HIPICO_OUTBOX_STATE_PERSISTENCE_REQUIRED'});
     return{status:'failed' as const,row:failed};
   }
   try{
     const sent=await deps.send(destination,message);
     const accepted=await deps.accepted({ownerId:input.ownerId,id,leaseToken,providerMessageId:sent.providerMessageId});
-    if(!accepted){
-      throw Object.assign(new Error('Provider accepted message but canonical acceptance receipt was not persisted.'),{
-        code:'HIPICO_OUTBOX_ACCEPTANCE_PERSISTENCE_REQUIRED',providerMessageId:sent.providerMessageId
-      });
-    }
+    if(!accepted)throw Object.assign(new Error('Provider accepted message but canonical acceptance receipt was not persisted.'),{code:'HIPICO_OUTBOX_ACCEPTANCE_PERSISTENCE_REQUIRED',providerMessageId:sent.providerMessageId});
     return{status:'accepted' as const,row:accepted,providerMessageId:sent.providerMessageId};
   }catch(error:any){
     if(error?.code==='HIPICO_OUTBOX_ACCEPTANCE_PERSISTENCE_REQUIRED')throw error;
