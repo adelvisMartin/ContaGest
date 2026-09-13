@@ -12,6 +12,8 @@ const GROUP_KEY_A = 'agent-e2e-a';
 const GROUP_KEY_B = 'agent-e2e-b';
 const GROUP_ID_A = 'group-a@g.us';
 const GROUP_ID_B = 'group-b@g.us';
+const READ_ONLY_KEY = 'agent-read-only';
+const READ_ONLY_ID = 'group-read-only@g.us';
 const databaseUrl = String(process.env.HIPICO_E2E_DATABASE_URL || '').trim();
 let admin: pg.Client;
 
@@ -55,6 +57,17 @@ void test('SOURCE defaults to SHADOW while unrelated groups default DISABLED', a
   const unrelated = await store.get(OWNER, GROUP_KEY_B, GROUP_ID_B);
   assert.equal(source.mode, 'SHADOW');
   assert.equal(unrelated.mode, 'DISABLED');
+});
+
+void test('read-only automation lookup returns policy defaults without creating a persistent group identity', async () => {
+  const store = new AutomationStore();
+  const beforeRows = await admin.query('select count(*)::int as count from public.hipico_group_automation where owner_id=$1::uuid and group_key=$2 and group_id=$3', [OWNER, READ_ONLY_KEY, READ_ONLY_ID]);
+  assert.equal(beforeRows.rows[0].count, 0);
+  const view = await store.read(OWNER, READ_ONLY_KEY, READ_ONLY_ID);
+  assert.equal(view.mode, 'DISABLED');
+  assert.equal(view.persisted, false);
+  const afterRows = await admin.query('select count(*)::int as count from public.hipico_group_automation where owner_id=$1::uuid and group_key=$2 and group_id=$3', [OWNER, READ_ONLY_KEY, READ_ONLY_ID]);
+  assert.equal(afterRows.rows[0].count, 0);
 });
 
 void test('SOURCE cannot be promoted above SHADOW even through the operator transition API', async () => {
