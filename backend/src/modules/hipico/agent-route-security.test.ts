@@ -14,6 +14,17 @@ test('automation routes derive audit identity from authenticated operator token 
   assert.match(routes, /actorRef:\s*actorRef\(\)/);
 });
 
+test('AUTOMATIC promotion cannot trust an ownerApproved boolean supplied by the request body', () => {
+  const modeSchemaSource = routes.slice(routes.indexOf('const modeSchema'), routes.indexOf('const evaluateSchema'));
+  assert.doesNotMatch(modeSchemaSource, /ownerApproved/);
+  assert.match(routes, /automationOwnerApprovalTokenConfigured/);
+  assert.match(routes, /automationOwnerApprovalTokenValid/);
+  assert.match(routes, /x-hipico-owner-approval-token/);
+  assert.match(routes, /target\s*===\s*'AUTOMATIC'/);
+  assert.match(routes, /HIPICO_AUTOMATION_OWNER_APPROVAL_NOT_CONFIGURED/);
+  assert.match(routes, /HIPICO_AUTOMATION_OWNER_APPROVAL_UNAUTHORIZED/);
+});
+
 test('automation persistence serializes promotion/review and makes review immutable', () => {
   assert.match(store, /pg_advisory_xact_lock/);
   assert.match(store, /FOR UPDATE/);
