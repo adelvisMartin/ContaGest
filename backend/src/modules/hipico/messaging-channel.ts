@@ -52,11 +52,12 @@ function messageIdentity(message: HipicoNormalizedMessage) {
  * Deterministic channel used by unit/E2E tests. It deliberately contains no
  * classifier, persistence, race-state transition or automatic-send behavior.
  * History replay is delivered with `historySync=true` and deduplicated by the
- * canonical channel/group/external-message identity before a handler runs.
+ * canonical channel/group/external-message identity before the one canonical
+ * application receiver runs.
  */
 export class TestChannelAdapter implements MessagingChannel {
   private state: MessagingChannelState = 'disconnected';
-  private readonly handlers = new Set<(message: NormalizedChannelMessage) => Promise<void> | void>();
+  private receiver: ((message: NormalizedChannelMessage) => Promise<void> | void) | null = null;
   private readonly seen = new Set<string>();
   private sendSequence = 0;
   readonly sent: Array<{ groupId: string; text: string; externalMessageId: string }> = [];
@@ -84,8 +85,14 @@ export class TestChannelAdapter implements MessagingChannel {
   }
 
   receive(handler: (message: NormalizedChannelMessage) => Promise<void> | void) {
-    this.handlers.add(handler);
-    return () => this.handlers.delete(handler);
+    if (this.receiver) throw new Error('TEST_CHANNEL_RECEIVER_ALREADY_REGISTERED');
+    this.receiver = handler;
+    let active = true;
+    return () => {
+      if (!active) return;
+      active = false;
+      if (this.receiver === handler) this.receiver = null;
+    };
   }
 
   private assertConnected() {
@@ -98,8 +105,14 @@ export class TestChannelAdapter implements MessagingChannel {
     }
   }
 
+  private canonicalReceiver() {
+    if (!this.receiver) throw new Error('TEST_CHANNEL_RECEIVER_NOT_REGISTERED');
+    return this.receiver;
+  }
+
   async inject(input: unknown): Promise<MessagingInjectResult> {
     this.assertConnected();
+    const receiver = this.canonicalReceiver();
     const message = hipicoNormalizedMessageSchema.parse(input);
     if (message.channel !== this.channel) throw new Error('TEST_CHANNEL_IDENTITY_MISMATCH');
     this.assertGroupAllowed(message.groupId);
@@ -107,11 +120,13 @@ export class TestChannelAdapter implements MessagingChannel {
     const key = messageIdentity(message);
     if (this.seen.has(key)) return { accepted: true, duplicate: true, messageKey: key };
 
-    // Reserve before dispatch so a re-entrant duplicate cannot execute a domain
-    // handler twice. A failing handler releases the reservation for an explicit retry.
+    // Reserve before dispatch so a re-entrant duplicate cannot execute the
+    // canonical domain receiver twice. A failing receiver releases the
+    // reservation for one explicit retry; only one receiver can be registered,
+    // so a retry cannot repeat an earlier subscriber's partial side effect.
     this.seen.add(key);
     try {
-      for (const handler of this.handlers) await handler(message);
+      await receiver(message);
       return { accepted: true, duplicate: false, messageKey: key };
     } catch (error) {
       this.seen.delete(key);
