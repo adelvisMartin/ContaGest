@@ -41,8 +41,10 @@ function runCommandGate(label,command,args,{env={}}={}){
   return result;
 }
 
-execute('npm',['install','--include=dev','--ignore-scripts','--no-audit','--no-fund']);
-
+// Vercel's top-level install is deliberately `npm ci` (see vercel.json).
+// Re-running a generic `npm install` here would mutate the locked dependency
+// graph immediately before QA. Reuse that deterministic workspace install and
+// add only the exact serverless Chromium runtime required by this preview gate.
 if(isPostMerge58x5){
   // These gates are intentionally non-short-circuiting. A missing DB secret or a
   // diagnostic failure must not hide browser evidence for the other 58x5 gates.
