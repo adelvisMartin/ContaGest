@@ -7,6 +7,9 @@ Esta guía define la única línea visual permitida para la PWA y el wrapper And
 - `assets/css/app.css`: **única hoja CSS global**. Es la materialización vigente de UI System v2 e incluye tokens, light/dark/system, layout, responsive, formularios, navegación, cards, tablas, dialogs, toasts, WhatsApp, acceso, centro operativo y Help Center.
 - `assets/js/ui.js`: **única biblioteca de primitivas visuales/comportamiento**. Ofrece Button, Card, Badge, Field, State, Dialog, iconos, toast y gestión accesible de foco.
 - `assets/js/help-center.js`: manual de uso y ayuda contextual opt-in.
+- `assets/js/theme-bootstrap.js`: bootstrap visual previo al CSS. Sólo persiste `system`, `light` o `dark`; el workspace sigue siendo la autoridad funcional del tema.
+- `assets/js/command-center.js`: renderer fail-closed del read model operativo; no aplica efectos ni autoridad financiera.
+- `assets/js/command-center-shell.js`: adaptador UI que consume únicamente la clave local validada del grupo activo y nunca publica JID ni identidad SOURCE.
 
 La deuda histórica no se resuelve agregando otra capa al final del cascade. No se permite crear `styles.css`, `ui-system*.css`, `theme-vN.css`, `components-vN.css`, `operations-pro.css`, `mobile-accessibility.css`, `operational-copy-center.css`, `fixes.css`, `overrides.css`, `legacy.css` ni otra hoja global paralela. Las excepciones de dominio deben integrarse en `app.css`, reutilizar tokens y quedar cubiertas por contratos.
 
@@ -28,6 +31,8 @@ Assets oficiales: `logo-control-hipico.png`, `icons/icon-192.png`, `icon-512.png
 8. Focus visible y soporte de `prefers-reduced-motion`.
 9. Radius estándar de cards/controles: **8–12 px**. El pill completo se reserva para badges/chips y elementos geométricos no interactivos.
 10. Ningún CSS de dominio puede redefinir tokens globales o convertirse en una autoridad visual posterior.
+11. Un fallo de lectura nunca se presenta como cero, vacío sano o éxito.
+12. SOURCE y LAB se distinguen por texto y estado, nunca sólo por color.
 
 ## Escala tipográfica
 
@@ -64,6 +69,7 @@ Las primitivas son equivalentes conceptualmente a shadcn/Radix sin introducir Re
 - KPI: jerarquía contenida, valores completos y semántica de color sólo para excepciones reales.
 - Alert/notice: superficie neutral por defecto; significado mediante borde/icono/texto antes que relleno saturado.
 - Centro operativo: usa los mismos tokens, radios, tipografía, foco y contratos touch de la aplicación; no mantiene una mini-guía visual separada.
+- Contenido operativo largo: `details/summary` nativo cuando aporta expansión accesible por teclado sin ocultar la evidencia.
 
 ## Modales y toasts
 
@@ -71,19 +77,35 @@ Los modales mantienen header/body/footer con espaciado estable. En desktop se li
 
 Los toasts se ubican de forma estable en un borde del viewport, permanecen fuera de la navegación móvil y no bloquean interacción. El icono es secundario al mensaje; éxito/error/advertencia/información cambian el acento semántico, no la superficie completa.
 
+## Command Center — contrato #289
+
+El Command Center es un **read model observable**, no una consola con autoridad implícita. Consume el BFF autenticado `/api/hipico/command-center`; el browser no recibe el token de operador del backend.
+
+Estados de UI: `loading`, `empty`, `error`, `success`, `offline`, `stale`, `unavailable`, `not_configured` y `degraded`. Una lectura fallida se muestra como **No disponible**, nunca como cero. Backend, PostgreSQL, Bridge, Canal, Providers y Agente comunican estado mediante texto + badge. El botón de reintento conserva un target táctil mínimo de 44 px.
+
+`SOURCE · SOLO LECTURA` significa observación/ingesta sin autosend productivo. `LAB · QA / SIMULACIÓN` es el único destino controlado de pruebas y no concede autoridad financiera. El shell sólo usa la clave local `[A-Za-z0-9._:-]{3,120}`; JID, `groupId` SOURCE, tokens y secretos no se publican en DOM ni storage visual.
+
+## Tema `system` / `light` / `dark`
+
+`theme-bootstrap.js` ejecuta antes de `app.css` para reducir el flash visual y sólo persiste el enum `system`, `light` o `dark`. Una vez cargado el workspace, `workspace.config.theme` conserva la autoridad. El objetivo de contraste es **WCAG AA** en light y dark; `system` respeta `prefers-color-scheme`.
+
 ## Responsive
 
 Verificar al menos **360, 390/393, 430, 768, 1024 y 1440 px**. La barra móvil fija no cubre contenido. Ningún chip/tab impide `pan-y`. Tablas operativas se convierten en listas/cards cuando sea necesario. En dispositivos coarse/telefonía landscape, los controles críticos preservan un target mínimo de **44 px**.
 
+El Command Center debe envolver texto y evitar anchos mínimos que fuercen scroll horizontal global. A **200% de zoom** deben conservarse navegación, foco, lectura de estados y acción de reintento. Safe areas, landscape, teclado virtual y scroll vertical natural forman parte del contrato móvil.
+
 ## Accesibilidad
 
-- foco visible;
-- contraste legible light/dark;
+- foco visible y retorno de foco;
+- contraste legible light/dark con objetivo WCAG AA;
 - estado nunca comunicado sólo por color;
 - controles sólo-icono con `aria-label`;
 - dialogs con `role=dialog`, `aria-modal`, foco inicial, trap y retorno de foco;
-- reduced motion, incluido scroll no animado;
-- mensajes de error indican el siguiente paso.
+- `prefers-reduced-motion` / reduced motion, incluido scroll no animado;
+- mensajes de error indican el siguiente paso;
+- navegación completa por teclado; Enter/Espacio operan botones y `details/summary`;
+- regiones dinámicas usan `aria-live`, `role=status` o `aria-busy` según corresponda.
 
 ## Contraseñas
 
@@ -93,12 +115,16 @@ Control Hípico **nunca almacena ni muestra una contraseña**. Supabase Auth con
 
 El Help Center nunca se abre automáticamente. La ayuda contextual puede añadir `title`/descripciones a controles clave, pero no muestra popups por sí sola.
 
-## WhatsApp
+## WhatsApp / SOURCE / LAB
 
-Durante QA: **SOURCE es sólo lectura** y **LAB es el único destino de escritura/simulación**. Ningún cambio visual o de ayuda puede relajar esta regla.
+Durante QA: **SOURCE es sólo lectura** y **LAB es el único destino de escritura/simulación**. Ningún cambio visual, ayuda, agente o tema puede relajar esta regla.
+
+## Evidencia y gates
+
+Un cambio visual no se considera validado sólo por inspección. Para el SHA final se requieren, cuando el runner lo permita, evidencia de teclado/foco, 200% zoom, light/dark/system, reduced motion, 360/390/430/768/1024/1440 px, estados loading/empty/error/offline/stale/unavailable/retry, contraste WCAG AA, PWA offline/reconexión y paridad Android/PWA. Si un runner o navegador no ejecuta, el estado es `BLOCKED`/`NOT VERIFIED`, nunca PASS.
 
 ## Regla de mantenimiento
 
 Antes de añadir una regla, usar los tokens/componente existentes y ubicarla dentro del propietario canónico correspondiente en `app.css`. Un color dinámico de grupo puede entrar como dato de dominio después de validarse; ningún otro hex arbitrario debe introducirse desde JS/HTML. Toda excepción se documenta y se cubre con prueba.
 
-Los contratos `tests/hipico_ui_system_v2_issue_266.test.mjs`, `tests/hipico_ui_release_contract_277.test.mjs` y `tests/hipico_mobile_touch_targets_297.test.mjs` protegen esta arquitectura. Si una nueva funcionalidad necesita CSS, se amplía la capa canónica; **no se crea un stylesheet posterior para “ganar” el cascade**.
+Los contratos `tests/hipico_ui_system_v2_issue_266.test.mjs`, `tests/hipico_ui_release_contract_277.test.mjs`, `tests/hipico_mobile_touch_targets_297.test.mjs` y `tests/hipico_command_center_289_contract.test.mjs` protegen esta arquitectura. Si una nueva funcionalidad necesita CSS, se amplía la capa canónica; **no se crea un stylesheet posterior para “ganar” el cascade**.
