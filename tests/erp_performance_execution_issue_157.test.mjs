@@ -32,6 +32,13 @@ test('#157 calibration can measure a release candidate without inventing or cert
   assert.match(calibration,/crossTenantLeakCount/);
 });
 
+test('#157 provisional DB metrics cannot silently report zero when telemetry is missing',()=>{
+  assert.match(calibration,/assert\.ok\(querySamples\.length\s*>\s*0/);
+  assert.match(calibration,/assert\.ok\(dbDurations\.length\s*>\s*0/);
+  assert.match(calibration,/Prisma query telemetry produced no samples/);
+  assert.match(calibration,/Prisma query telemetry produced no finite durations/);
+});
+
 test('#157 can measure an exact frozen candidate without closing the issue by default',()=>{
   assert.match(workflow,/candidate_sha:/);
   assert.match(workflow,/finalize_issue:/);
