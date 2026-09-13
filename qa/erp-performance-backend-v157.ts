@@ -144,7 +144,9 @@ try{
   await proveControlledPoolSaturation();
 
   const querySamples=prismaQueryTelemetrySnapshot().filter((item)=>!/(pg_stat_activity|current_setting\('max_connections'\))/i.test(item.query));
+  assert.ok(querySamples.length > 0,'Prisma query telemetry produced no samples; refusing to certify a synthetic DB p95.');
   const dbDurations=querySamples.map((item)=>item.durationMs).filter(Number.isFinite);
+  assert.ok(dbDurations.length > 0,'Prisma query telemetry produced no finite durations; refusing to certify a synthetic DB p95.');
   const slowQueries=querySamples.filter((item)=>item.durationMs>500);
 
   let nPlusOneFindings=0;

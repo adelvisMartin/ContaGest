@@ -29,8 +29,22 @@ function normalizeSession(payload){
     mode:payload.sessionMode||'cookie'
   });
 }
+function captchaExpiryMillis(value){
+  const numeric=Number(value);
+  if(Number.isFinite(numeric)&&numeric>0)return numeric;
+  return new Date(value).getTime();
+}
 export const AuthService={
-  getSession(){return AuthSession.get();},isAuthenticated(){return AuthSession.isAuthenticated();},isDemoEnabled(){return demoModeEnabled();},captcha(){return BackendApi.request('/auth/captcha',{noAuth:true});},
+  getSession(){return AuthSession.get();},isAuthenticated(){return AuthSession.isAuthenticated();},isDemoEnabled(){return demoModeEnabled();},
+  async captcha(){
+    const captcha=await BackendApi.request('/auth/captcha',{noAuth:true});
+    const expiresAt=captchaExpiryMillis(captcha?.expiresAt);
+    if(!Number.isFinite(expiresAt)||expiresAt<=Date.now())throw new Error('La verificación recibida ya expiró. Genera un nuevo reto.');
+    if(typeof window!=='undefined'&&captcha?.token){
+      window.dispatchEvent(new CustomEvent('cg:captcha-challenge',{detail:{expiresAt}}));
+    }
+    return captcha;
+  },
   async login({email,password,tenantRif='00000000',captchaToken='',captchaAnswer='',licenseKey='',deviceId='',deviceLabel='',accessMode,mode='api'}){
     if(mode==='demo'){
       if(!demoModeEnabled())throw new Error('El modo demo local está deshabilitado en esta compilación.');

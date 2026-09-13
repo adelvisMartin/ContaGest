@@ -1,5 +1,7 @@
 const PWA_AUDIENCE_KEY = 'contagest_pwa_audience';
 let observer;
+let captchaExpiryTimer=0;
+let captchaListenerInstalled=false;
 
 function portalContext() {
   const path = String(window.location.pathname || '/').replace(/\/+$/, '') || '/';
@@ -12,12 +14,77 @@ function portalContext() {
   return { clientOnly:explicitClient || installedClient };
 }
 
+function clearCaptchaExpiryTimer(){
+  if(captchaExpiryTimer){window.clearTimeout(captchaExpiryTimer);captchaExpiryTimer=0;}
+}
+
+function setCaptchaReady(form,ready){
+  if(!form)return;
+  form.dataset.captchaReady=ready?'true':'false';
+  const submit=form.querySelector('#btnLoginSubmit,[type="submit"]');
+  const answer=form.querySelector('[name="captchaAnswer"]');
+  if(ready){answer?.removeAttribute('disabled');submit?.removeAttribute('disabled');submit?.setAttribute('aria-disabled','false');}
+  else{answer?.setAttribute('disabled','disabled');submit?.setAttribute('disabled','disabled');submit?.setAttribute('aria-disabled','true');}
+}
+
+function invalidateCaptcha(form,message='La verificación expiró. Genera un nuevo reto.'){
+  if(!form)return;
+  clearCaptchaExpiryTimer();
+  const token=form.querySelector('[data-captcha-token]');
+  const answer=form.querySelector('[name="captchaAnswer"]');
+  const expiry=form.querySelector('[data-captcha-expiry]');
+  const box=form.querySelector('[data-captcha-box]');
+  const status=form.querySelector('[data-login-status]');
+  if(token)token.value='';
+  if(answer)answer.value='';
+  delete form.dataset.captchaExpiresAt;
+  if(expiry)expiry.textContent='Reto expirado';
+  box?.classList.add('is-error');
+  setCaptchaReady(form,false);
+  if(status){status.textContent=message;status.dataset.tone='error';}
+}
+
+function captchaUsable(form){
+  if(!form||form.dataset.captchaReady!=='true')return false;
+  const token=String(form.querySelector('[data-captcha-token]')?.value||'');
+  const expiresAt=Number(form.dataset.captchaExpiresAt||0);
+  return Boolean(token)&&Number.isFinite(expiresAt)&&expiresAt>Date.now();
+}
+
+function applyCaptchaChallenge(event){
+  const form=document.getElementById('loginForm');
+  const expiresAt=Number(event?.detail?.expiresAt||0);
+  if(!form||!Number.isFinite(expiresAt)||expiresAt<=Date.now()){
+    if(form)invalidateCaptcha(form);
+    return;
+  }
+  form.dataset.captchaExpiresAt=String(expiresAt);
+  clearCaptchaExpiryTimer();
+  captchaExpiryTimer=window.setTimeout(()=>{
+    if(!form.isConnected)return;
+    if(Number(form.dataset.captchaExpiresAt||0)!==expiresAt)return;
+    invalidateCaptcha(form);
+  },Math.min(Math.max(expiresAt-Date.now(),0),2_147_483_647));
+}
+
 function applyPortalMode() {
   const form = document.getElementById('loginForm');
   if (!form || form.dataset.accessEnhanced === 'true') return;
   form.dataset.accessEnhanced = 'true';
   document.querySelector('.login-tech-note')?.remove();
   document.querySelectorAll('.login-access-switch,.login-access-help,.login-client-badge').forEach((node)=>node.remove());
+
+  // Login is fail-closed before any asynchronous CAPTCHA request can complete.
+  if(!captchaUsable(form))setCaptchaReady(form,false);
+  form.addEventListener('submit',(event)=>{
+    if(captchaUsable(form))return;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    const expiresAt=Number(form.dataset.captchaExpiresAt||0);
+    invalidateCaptcha(form,expiresAt>0&&expiresAt<=Date.now()
+      ?'La verificación expiró. Genera un nuevo reto.'
+      :'Completa una verificación humana válida antes de iniciar sesión.');
+  },true);
 
   const { clientOnly } = portalContext();
   const licenseDetails = form.querySelector('.login-license-details');
@@ -69,6 +136,10 @@ function applyPortalMode() {
 
 export function installLoginEnhancer() {
   if (typeof document === 'undefined') return;
+  if(!captchaListenerInstalled){
+    window.addEventListener('cg:captcha-challenge',applyCaptchaChallenge);
+    captchaListenerInstalled=true;
+  }
   const start = () => {
     applyPortalMode();
     if (!observer) {
