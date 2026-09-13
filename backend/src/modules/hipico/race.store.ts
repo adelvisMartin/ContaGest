@@ -1,6 +1,6 @@
 import crypto from 'node:crypto';
 import { prisma } from '../../database/prisma.js';
-import { evaluateRaceCommand, normalizeRaceCommandInput, type RaceCommandInput, type RaceLifecycleState } from './race-lifecycle.js';
+import { evaluateRaceCommand, normalizeRaceCommandInput, resultStageForRaceState, type RaceCommandInput, type RaceLifecycleState } from './race-lifecycle.js';
 
 const UUID_RE=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const GROUP_RE=/^[A-Za-z0-9._:-]{3,120}$/;
@@ -57,7 +57,7 @@ export class RaceLifecycleStore {
         WHERE owner_id=${ownerId}::uuid AND group_key=${groupKey} AND race_id=${raceId}::uuid AND request_id=${input.requestId} LIMIT 1`;
       if(previous[0]){
         if(previous[0].inputSignature!==inputSignature)throw Object.assign(new Error('RACE_COMMAND_IDEMPOTENCY_MISMATCH'),{code:'RACE_COMMAND_IDEMPOTENCY_MISMATCH'});
-        return{duplicate:true,transition:{allowed:previous[0].disposition==='applied',from:input.expectedState,to:previous[0].toState,reason:previous[0].reason,resultStage:'none' as const}};
+        return{duplicate:true,transition:{allowed:previous[0].disposition==='applied',from:input.expectedState,to:previous[0].toState,reason:previous[0].reason,resultStage:resultStageForRaceState(previous[0].toState)}};
       }
       const races=await tx.$queryRaw<Array<{state:RaceLifecycleState;stateVersion:number;resultStage:string}>>`
         SELECT state,state_version AS "stateVersion",result_stage AS "resultStage" FROM public.hipico_races
