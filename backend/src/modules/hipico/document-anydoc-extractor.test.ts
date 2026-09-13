@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import path from 'node:path';
 import type { PdfTextExtractor } from './document-engine.js';
 
 async function loadSubject(){
@@ -9,6 +10,15 @@ async function loadSubject(){
 const pinnedProbe=()=>({available:true,version:'0.2.4'});
 const hostedKey='fc-test-key-0123456789abcdef0123456789abcdef';
 const pdf=Buffer.from('%PDF-1.4\n1 0 obj<<>>endobj\n%%EOF\n');
+
+test('AnyDoc resolves explicit binary first, then the repo-local pinned toolchain',async()=>{
+  const subject=await loadSubject();assert.ok(subject);
+  assert.equal(subject.resolveAnyDocBin({HIPICO_ANYDOC_BIN:'/opt/hipico/anydoc'},'/repo',()=>false),'/opt/hipico/anydoc');
+  const expected=path.resolve('/repo','.tools','hipico-anydoc','node_modules','.bin',process.platform==='win32'?'anydoc.cmd':'anydoc');
+  assert.equal(subject.resolveAnyDocBin({},'/repo',(candidate:string)=>candidate===expected),expected);
+  const backendExpected=path.resolve('/repo/backend','..','.tools','hipico-anydoc','node_modules','.bin',process.platform==='win32'?'anydoc.cmd':'anydoc');
+  assert.equal(subject.resolveAnyDocBin({},'/repo/backend',(candidate:string)=>candidate===backendExpected),backendExpected);
+});
 
 test('AnyDoc extractor exists and stays local by default',async()=>{
   const subject=await loadSubject();
