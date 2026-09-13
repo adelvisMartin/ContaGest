@@ -17,6 +17,7 @@ const MAX_INBOUND_TEXT=4000;
 const MAX_MESSAGE_TYPE=80;
 const MAX_PROVIDER_MESSAGE_ID=320;
 const MAX_PHONE_NUMBER_ID=120;
+const WEBHOOK_SEND_LEASE_MS=2*60*1000;
 
 const clampLimit=(value:number, fallback=50)=>Math.min(100,Math.max(1,Number.isFinite(value)?Math.trunc(value):fallback));
 const id=(prefix:string)=>`${prefix}_${crypto.randomUUID()}`;
@@ -188,6 +189,12 @@ export const HipicoBotStore={
     Object.assign(row,{status:'failed',error:safeError});
     return true;
   },
+  async markStaleSendingReconciliation(idValue:string,staleBefore:Date,error:string){
+    const safeError=String(error||'stale_sending_lease').slice(0,1000);
+    if(!await dbReady(true))throw Object.assign(new Error('Persistent Hípico outbox is required to reconcile a stale sending lease.'),{code:'HIPICO_WEBHOOK_RECONCILIATION_PERSISTENCE_REQUIRED'});
+    const affected=await prisma.$executeRaw`UPDATE public."HipicoBotOutbox" SET "status"='reconciliation_required',"error"=${safeError},"updatedAt"=CURRENT_TIMESTAMP WHERE "id"=${idValue} AND "status"='sending' AND "updatedAt"<=${staleBefore}`;
+    return affected===1;
+  },
   async markReconciliationRequired(idValue:string,error:string){
     const safeError=String(error||'ambiguous_delivery').slice(0,1000);
     if(await dbReady()){
@@ -255,9 +262,10 @@ export async function processIncoming(message:any,options:{requirePersistent?:bo
     if(event.inserted===false&&queued.inserted===false){
       const persistedStatus=String(outbox?.status||'');
       if(persistedStatus==='sending'){
-        const reconciled=await HipicoBotStore.markReconciliationRequired(outbox.id,'INTERRUPTED_AUTOMATIC_SEND_REQUIRES_RECONCILIATION');
-        if(!reconciled)throw Object.assign(new Error('Interrupted webhook send could not be persisted for reconciliation.'),{code:'HIPICO_WEBHOOK_RECONCILIATION_PERSISTENCE_REQUIRED'});
-        return{duplicate:false,event,outbox:{...outbox,status:'reconciliation_required',error:'INTERRUPTED_AUTOMATIC_SEND_REQUIRES_RECONCILIATION'}};
+        const staleBefore=new Date(Date.now()-WEBHOOK_SEND_LEASE_MS);
+        const reconciled=await HipicoBotStore.markStaleSendingReconciliation(outbox.id,staleBefore,'INTERRUPTED_AUTOMATIC_SEND_REQUIRES_RECONCILIATION');
+        if(reconciled)return{duplicate:false,event,outbox:{...outbox,status:'reconciliation_required',error:'INTERRUPTED_AUTOMATIC_SEND_REQUIRES_RECONCILIATION'}};
+        throw Object.assign(new Error('Automatic webhook send is still in flight; retry after the send lease expires.'),{code:'HIPICO_WEBHOOK_SEND_IN_FLIGHT'});
       }
       if(!(mode==='automatic'&&outboxStatus==='ready_auto'&&persistedStatus==='ready_auto'))return{duplicate:true,event,outbox};
     }

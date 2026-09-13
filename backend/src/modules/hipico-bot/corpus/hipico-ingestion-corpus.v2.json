@@ -26,12 +26,12 @@
     },
     {
       "id": "ui-truncated-final-document",
-      "input": "Hoy\nCanal Hípico\n+00 000 000 0000\nReenviado\nCBY10092026.pdf\n7 páginas•PDF•2 MB\nCanal Hípico\n+00 000 000 0000\nSticker sin etiquetas\n9:00 p.m.",
-      "expected": {"documents":1,"documentTimeMayBeEmpty":true,"offers":0}
+      "input": "Hoy\nCanal Hípico\n+00 000 000 0000\nReenviado\nCBY10092026.pdf\n7 páginas•PDF•2 MB",
+      "expected": {"sourceFormat":"whatsapp-ui-copy","documents":1,"documentTimeMayBeEmpty":true,"offers":0}
     },
     {
       "id": "ui-player-receiver-pair",
-      "input": "Hoy\nJugador Uno\n+58 400 000 0001\nJuego 2n del 5 con 30k\n8:01 p.m.\nRecibe Dos\n+58 400 000 0002\nConsigo 2n del 5 con 30k\n8:02 p.m.",
+      "input": "Hoy\nJugador Uno\n+00 000 000 0001\nJuega 2n del 5 con 30k\n8:01 p.m.\nRecibe Dos\n+00 000 000 0002\nConsigue 2n del 5 con 30k\n8:02 p.m.",
       "expected": {"offers":2,"matches":1,"play":"2N","horse":"5","amount":30000}
     }
   ]

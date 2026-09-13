@@ -1,4 +1,5 @@
 import { CLOUD_CONFIG } from './config.js';
+import { signOut } from './supabase.js';
 import { toast } from './ui.js';
 
 let recoveryAccessToken = '';
@@ -72,6 +73,12 @@ export async function updateRecoveredPassword(password) {
   if (nextPassword.length < 10) throw new Error('La nueva contraseña debe tener al menos 10 caracteres.');
   if (!recoveryAccessToken) throw new Error('El enlace de recuperación no es válido o ya venció.');
   const token = recoveryAccessToken;
+
+  // Password recovery is a reauthentication boundary. Clear any regular PWA
+  // session before changing the credential so a still-valid cached JWT cannot
+  // silently reopen Control Hípico after the reset.
+  await signOut();
+
   const response = await fetch(`${CLOUD_CONFIG.supabaseUrl}/auth/v1/user`, {
     method: 'PUT', headers: authHeaders(token), cache: 'no-store', body: JSON.stringify({ password: nextPassword })
   });
