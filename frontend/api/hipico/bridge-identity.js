@@ -1,6 +1,6 @@
 export const HIPICO_CHANNEL_KEY_PATTERN = /^[A-Za-z0-9_-]{3,120}$/;
 export const HIPICO_GROUP_ID_PATTERN = /^(?:\d{5,}-\d+|\d{10,})@g\.us$/i;
-export const DEFAULT_SOURCE_CHANNEL_KEY = 'club-hipico-triple-crown-official';
+export const DEFAULT_SOURCE_CHANNEL_KEY = 'control-hipico-source-official';
 export const DEFAULT_LAB_CHANNEL_KEY = 'control-hipico-lab';
 
 export function isWhatsAppGroupId(value) {
@@ -21,30 +21,13 @@ export function bridgeIdentityStatus(source = process.env) {
   const labChannelKeyValid = HIPICO_CHANNEL_KEY_PATTERN.test(labChannelKey);
   const channelKeysValid = Boolean(sourceChannelKeyValid && labChannelKeyValid);
   const channelKeysDistinct = Boolean(channelKeysValid && sourceChannelKey !== labChannelKey);
-  return {
-    sourceGroupId,
-    labGroupId,
-    sourceChannelKey,
-    labChannelKey,
-    pinnedGroupsConfigured,
-    sourceGroupIdValid,
-    labGroupIdValid,
-    groupIdsValid,
-    groupsDistinct,
-    sourceChannelKeyValid,
-    labChannelKeyValid,
-    channelKeysValid,
-    channelKeysDistinct,
-    ready: Boolean(pinnedGroupsConfigured && groupIdsValid && groupsDistinct && channelKeysValid && channelKeysDistinct)
-  };
+  return { sourceGroupId, labGroupId, sourceChannelKey, labChannelKey, pinnedGroupsConfigured, sourceGroupIdValid, labGroupIdValid, groupIdsValid, groupsDistinct, sourceChannelKeyValid, labChannelKeyValid, channelKeysValid, channelKeysDistinct, ready: Boolean(pinnedGroupsConfigured && groupIdsValid && groupsDistinct && channelKeysValid && channelKeysDistinct) };
 }
 
 export function configuredChannelIdentity(role, source = process.env) {
   const normalizedRole = role === 'lab' ? 'lab' : 'source';
   const identity = bridgeIdentityStatus(source);
-  return normalizedRole === 'source'
-    ? { role: 'source', groupId: identity.sourceGroupId, channelKey: identity.sourceChannelKey }
-    : { role: 'lab', groupId: identity.labGroupId, channelKey: identity.labChannelKey };
+  return normalizedRole === 'source' ? { role: 'source', groupId: identity.sourceGroupId, channelKey: identity.sourceChannelKey } : { role: 'lab', groupId: identity.labGroupId, channelKey: identity.labChannelKey };
 }
 
 export function validateBridgeRoleIdentity(role, groupId, channelKey, source = process.env) {
@@ -61,13 +44,10 @@ export function validateBridgeRoleIdentity(role, groupId, channelKey, source = p
   if (!identity.sourceChannelKeyValid) return 'source_channel_not_configured';
   if (!identity.labChannelKeyValid) return 'lab_channel_not_configured';
   if (!identity.channelKeysDistinct) return 'bridge_channels_not_distinct';
-
   const expected = configuredChannelIdentity(normalizedRole, source);
   const actualGroupId = String(groupId || '').trim();
   if (!isWhatsAppGroupId(actualGroupId)) return 'invalid_group_id';
   if (actualGroupId !== expected.groupId) return normalizedRole === 'source' ? 'source_group_not_authorized' : 'lab_group_not_authorized';
-  if (channelKey !== undefined && String(channelKey).trim() !== expected.channelKey) {
-    return normalizedRole === 'source' ? 'source_channel_not_authorized' : 'lab_channel_not_authorized';
-  }
+  if (channelKey !== undefined && String(channelKey).trim() !== expected.channelKey) return normalizedRole === 'source' ? 'source_channel_not_authorized' : 'lab_channel_not_authorized';
   return null;
 }
