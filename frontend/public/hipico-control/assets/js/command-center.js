@@ -61,6 +61,21 @@ function humanState(value) {
   return labels[state] || state.replaceAll('_', ' ');
 }
 
+function humanAlert(value) {
+  const code = String(value || '').toUpperCase();
+  const labels = {
+    BACKEND_NOT_READY: 'Backend no listo', DATABASE_NOT_READY: 'Base de datos no lista', BRIDGE_NOT_READY: 'Bridge no listo',
+    CHANNEL_READ_UNAVAILABLE: 'Lectura del canal no disponible', CHANNEL_NOT_REGISTERED: 'Canal no registrado',
+    OUTBOX_READ_UNAVAILABLE: 'Lectura de cola no disponible', OUTBOX_FAILED: 'Hay envíos fallidos', OUTBOX_PENDING: 'Hay envíos pendientes',
+    SHADOW_READ_UNAVAILABLE: 'Lectura del agente no disponible', DOCUMENT_READ_UNAVAILABLE: 'Lectura de documentos no disponible',
+    DOCUMENT_REVIEW_PENDING: 'Hay documentos por revisar', DOCUMENT_FAILED: 'Hay documentos fallidos',
+    RECONCILIATION_READ_UNAVAILABLE: 'Lectura de conciliación no disponible', RECONCILIATION_REQUIRED: 'Conciliación requerida',
+    RACE_READ_UNAVAILABLE: 'Lectura de carreras no disponible', RACE_CONTEXT_REQUIRES_REVIEW: 'Contexto de carreras requiere revisión',
+    REMOTE_STATUS_UNAVAILABLE: 'Estado remoto no disponible'
+  };
+  return labels[code] || String(value || 'Alerta operativa');
+}
+
 function stateTone(value) {
   const state = String(value || '').toLowerCase();
   if (['ready', 'known', 'active'].includes(state)) return 'success';
@@ -91,16 +106,36 @@ export function renderCommandCenterModel({ local, remote, online = true, error =
   const database = remoteKnown ? remote.database : { state: fallbackState };
   const providers = remoteKnown ? remote.providers : { state: fallbackState, provider: 'unknown' };
   const agent = remoteKnown ? remote.agent : { state: fallbackState, mode: 'unknown' };
-  const documents = remoteKnown ? remote.documents : { state: fallbackState };
-  const remoteQueue = remoteKnown && remote.queue?.available ? Number(remote.queue.total || 0) : null;
+  const documents = remoteKnown ? remote.documents : { state: fallbackState, available: false };
+  const queueAvailable = Boolean(remoteKnown && remote.queue?.available === true);
+  const conflictAvailable = Boolean(remoteKnown && remote.conflicts?.available === true);
+  const raceReadAvailable = Boolean(remoteKnown && remote.races?.available === true);
+  const remoteQueue = queueAvailable && Number.isFinite(Number(remote.queue?.total)) ? Number(remote.queue.total) : null;
   const queueTotal = Number(localState.localQueue || 0) + (remoteQueue ?? 0);
-  const reconciliation = remoteKnown ? Number(remote.conflicts?.reconciliationRequired || 0) : 0;
-  const conflicts = Number(localState.localConflicts || 0) + reconciliation;
+  const reconciliation = conflictAvailable && Number.isFinite(Number(remote.conflicts?.reconciliationRequired))
+    ? Number(remote.conflicts.reconciliationRequired)
+    : null;
+  const conflicts = Number(localState.localConflicts || 0) + (reconciliation ?? 0);
+  const queueState = remoteKnown ? (queueAvailable ? (queueTotal > 0 ? 'degraded' : 'ready') : 'unavailable') : fallbackState;
+  const conflictState = remoteKnown ? (conflictAvailable ? (conflicts > 0 ? 'degraded' : 'ready') : 'unavailable') : fallbackState;
+  const raceReadState = remoteKnown ? (raceReadAvailable ? String(remote.races?.state || 'ready') : 'unavailable') : fallbackState;
   const alerts = remoteKnown && Array.isArray(remote.alerts) ? remote.alerts : (error ? ['REMOTE_STATUS_UNAVAILABLE'] : []);
   const sampled = remote?.sampledAt ? new Date(remote.sampledAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'sin muestra remota';
-  const documentDetail = remoteKnown && Number.isFinite(Number(documents.total))
-    ? `${Number(documents.total)} documento(s) visibles`
-    : documents.reason || 'Capacidad no informada';
+  const documentDetail = remoteKnown && documents.available === false
+    ? 'Lectura remota no disponible'
+    : remoteKnown && Number.isFinite(Number(documents.total))
+      ? `${Number(documents.total)} documento(s) visibles`
+      : documents.reason || 'Capacidad no informada';
+  const queueDetail = remoteKnown && !queueAvailable
+    ? `Lectura remota no disponible · ${Number(localState.localQueue || 0)} local(es)`
+    : `${queueTotal} pendiente(s) visibles`;
+  const conflictDetail = remoteKnown && !conflictAvailable
+    ? `Lectura remota no disponible · ${Number(localState.localConflicts || 0)} local(es)`
+    : `${conflicts} conflicto(s) / conciliación`;
+  const raceReadDetail = remoteKnown && !raceReadAvailable
+    ? 'Lectura remota no disponible'
+    : `${Number(remote?.races?.total || 0)} carrera(s) persistida(s)`;
+  const alertDetail = alerts.length ? `${alerts.length}: ${alerts.map(humanAlert).join(' · ')}` : 'Sin alertas reportadas';
 
   return `<section class="card section-gap" data-command-center aria-labelledby="command-center-title">
     <div class="card__head"><div><h3 id="command-center-title">Centro de operaciones</h3><small>Estados reales del dispositivo y del backend · ${escapeHtml(sampled)}</small></div><span class="badge badge--${online ? 'success' : 'warning'}">${online ? 'EN LÍNEA' : 'SIN CONEXIÓN'}</span></div>
@@ -108,14 +143,15 @@ export function renderCommandCenterModel({ local, remote, online = true, error =
       <div class="grid grid--kpi">
         ${statusTile('Sistema', system.state, system.backendReachable === true ? 'Backend alcanzable' : online ? 'Backend sin confirmar' : 'Red no disponible')}
         ${statusTile('Bridge', bridge.state, bridge.ready === true ? 'SOURCE/LAB verificados' : 'Requiere verificación')}
-        ${statusTile('Canal', channel.state, channel.qaMode || channel.groupAutomation || 'Sin estado remoto')}
+        ${statusTile('Canal', channel.state, channel.available === false ? 'Lectura remota no disponible' : channel.qaMode || channel.groupAutomation || 'Sin estado remoto')}
         ${statusTile('Base de datos', database.state, database.ready === true ? 'PostgreSQL listo' : 'Persistencia no confirmada')}
         ${statusTile('Proveedor', providers.state, providers.provider || 'Sin proveedor')}
         ${statusTile('Agente', agent.state, agent.mode || 'Sin modo')}
         ${statusTile('Documentos', documents.state, documentDetail)}
-        ${statusTile('Cola', queueTotal > 0 ? 'degraded' : 'ready', `${queueTotal} pendiente(s) visibles`)}
-        ${statusTile('Conflictos', conflicts > 0 ? 'degraded' : 'ready', `${conflicts} conflicto(s) / conciliación`)}
-        ${statusTile('Alertas', alerts.length > 0 ? 'degraded' : remoteKnown ? 'ready' : fallbackState, alerts.length ? `${alerts.length}: ${alerts.join(', ')}` : 'Sin alertas reportadas')}
+        ${statusTile('Cola', queueState, queueDetail)}
+        ${statusTile('Conflictos', conflictState, conflictDetail)}
+        ${statusTile('Carreras backend', raceReadState, raceReadDetail)}
+        ${statusTile('Alertas', alerts.length > 0 ? 'degraded' : remoteKnown ? 'ready' : fallbackState, alertDetail)}
       </div>
       <div class="responsive-records section-gap-small" aria-label="Contexto operativo activo">
         <article><strong>Grupo activo</strong><span>${escapeHtml(localState.group?.name || 'Sin grupo')}</span><small>${escapeHtml(localState.group?.companyName || localState.groupKey || 'Contexto local')}</small></article>
