@@ -100,9 +100,11 @@ test('#157 gate cannot coerce null or string evidence into numeric PASS values',
 });
 
 test('#157 capacity artifacts prove synthetic fixture provenance before sanitizedFixtures can be true',()=>{
-  for(const source of [backend,calibration,frontend])assert.match(source,/fixtureProvenance:\s*'SYNTHETIC_TEST_ONLY'/);
+  assert.match(workflow,/ERP157_FIXTURE_PROVENANCE:\s*'SYNTHETIC_TEST_ONLY'/);
+  assert.match(calibration,/fixtureProvenance:\s*process\.env\.ERP157_FIXTURE_PROVENANCE/);
+  assert.match(frontend,/fixtureProvenance:\s*'SYNTHETIC_TEST_ONLY'/);
   assert.match(assembler,/PERFORMANCE_FIXTURE_PROVENANCE_REQUIRED/);
-  assert.match(assembler,/backend\.fixtureProvenance===expectedFixtureProvenance/);
+  assert.match(assembler,/process\.env\.ERP157_FIXTURE_PROVENANCE===expectedFixtureProvenance/);
   assert.match(assembler,/frontend\.fixtureProvenance===expectedFixtureProvenance/);
   assert.match(assembler,/sanitizedFixtures:provenanceVerified/);
 });
