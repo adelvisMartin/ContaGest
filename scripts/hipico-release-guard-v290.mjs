@@ -16,6 +16,7 @@ const bridgePackage = json('tools/hipico-whatsapp-web-bridge/package.json');
 const rootPackage = json('package.json');
 const domain = read('backend/src/modules/hipico/hipico-domain.ts');
 const app = read('backend/src/app.ts');
+const documentRoutes = read('backend/src/modules/hipico/document.routes.ts');
 const commandBff = read('frontend/api/hipico/command-center.js');
 const commandClient = read('frontend/public/hipico-control/assets/js/command-center.js');
 const index = read('frontend/public/hipico-control/index.html');
@@ -28,9 +29,27 @@ const requiredFiles = [
   'backend/src/modules/hipico/command-center.service.ts',
   'backend/src/modules/hipico/command-center.routes.ts',
   'backend/src/modules/hipico/operator-read.routes.ts',
+  'backend/src/modules/hipico/document.routes.ts',
+  'backend/src/modules/hipico/provider.routes.ts',
+  'backend/src/modules/hipico/provider-registry.ts',
+  'backend/src/modules/hipico/racing-provider.ts',
+  'backend/src/modules/hipico/sportradar-provider.adapter.ts',
+  'backend/src/modules/hipico/race.routes.ts',
+  'backend/src/modules/hipico/race.store.ts',
+  'backend/src/modules/hipico/race-lifecycle.ts',
+  'backend/src/modules/hipico/agent.routes.ts',
+  'backend/src/modules/hipico/agent-policy.ts',
+  'backend/src/modules/hipico/agent-engine.ts',
+  'backend/src/modules/hipico/automation.store.ts',
+  'backend/src/modules/hipico-bot/hipico-document-engine.ts',
+  'backend/src/modules/hipico-bot/hipico-document-extractor.ts',
+  'backend/src/modules/hipico-bot/hipico-document.store.ts',
   'backend/src/modules/hipico-bot/production-e2e-v290.ts',
   'backend/scripts/hipico-restart-recovery-v290.ts',
   'backend/scripts/hipico-load-profile-v290.ts',
+  'supabase/sql/hipico_v15_race_lifecycle.sql',
+  'supabase/sql/hipico_v16_agent_shadow.sql',
+  'supabase/sql/hipico_v18_documents.sql',
   'qa/hipico-production-v290.spec.mjs',
   'playwright.hipico-v290.config.mjs',
   'tests/hipico_canonical_facade_290.test.mjs',
@@ -71,9 +90,21 @@ for (const mount of [
   "app.use('/api/v1/hipico', authRateLimit, hipicoSystemRoutes)",
   "app.use('/api/v1/hipico', authRateLimit, hipicoCommandCenterRoutes)",
   "app.use('/api/v1/hipico', authRateLimit, hipicoOperatorReadRoutes)",
+  "app.use('/api/v1/hipico/documents', authRateLimit, expensiveOperationRateLimit, mutationRateLimit, hipicoDocumentRoutes)",
+  "app.use('/api/v1/hipico', authRateLimit, mutationRateLimit, hipicoProviderRoutes)",
+  "app.use('/api/v1/hipico', authRateLimit, mutationRateLimit, hipicoRaceRoutes)",
+  "app.use('/api/v1/hipico', authRateLimit, mutationRateLimit, hipicoAgentRoutes)",
   "app.use('/api/v1/hipico', authRateLimit, mutationRateLimit, hipicoCanonicalRoutes)",
   "app.use('/api/v1/hipico-bot', hipicoWebhookRoutes)"
 ]) assert(app.includes(mount), `required API mount missing: ${mount}`);
+
+assert(documentRoutes.includes("../hipico-bot/hipico-document-engine.js"), 'canonical document facade must delegate to hardened document engine');
+assert(documentRoutes.includes("../hipico-bot/hipico-document-extractor.js"), 'canonical document facade must delegate to hardened system-tool extractor');
+assert(documentRoutes.includes('createPdfDocumentExtractor'), 'canonical document facade must use Poppler/Tesseract extractor factory');
+for (const obsolete of ['pdfjs-dist', 'tesseract.js', '@napi-rs/canvas', 'createPdfJsDocumentExtractor']) {
+  assert(!documentRoutes.includes(obsolete), `canonical document facade must not reintroduce obsolete extractor dependency: ${obsolete}`);
+}
+
 assert(commandBff.includes('/api/v1/hipico/command-center'), 'PWA BFF must delegate to canonical command center');
 assert(commandBff.includes('x-hipico-group-key'), 'PWA BFF must forward explicit group scope');
 assert(commandBff.includes('authenticateCommandCenterViewer') && commandBff.includes('/auth/v1/user'), 'PWA BFF must validate the browser Supabase session before injecting operator authority');
@@ -105,12 +136,18 @@ for (const relative of bypassScannedFiles) {
 const e2eSchema = read('scripts/hipico-apply-e2e-schema-v290.mjs');
 const documentMigration = read('supabase/sql/hipico_v18_documents.sql');
 assert(e2eSchema.includes('hipico_v13_workspace_sync_security.sql'), 'real workspace/RLS security migration must run in PostgreSQL E2E');
+assert(e2eSchema.includes('hipico_v15_race_lifecycle.sql'), 'canonical race lifecycle schema must run in PostgreSQL E2E');
+assert(e2eSchema.includes('hipico_v16_agent_shadow.sql'), 'agent/shadow schema must run in PostgreSQL E2E');
 assert(e2eSchema.includes('hipico_v18_documents.sql'), 'immutable document schema must run in PostgreSQL E2E');
+for (const table of ['hipico_meetings', 'hipico_races', 'hipico_race_events', 'hipico_group_automation', 'hipico_agent_evaluations']) {
+  assert(e2eSchema.includes(`'${table}'`), `PostgreSQL E2E must require canonical table ${table}`);
+}
 assert(documentMigration.includes('hipico_documents_immutable_evidence') && documentMigration.includes('HIPICO_DOCUMENT_IMMUTABLE_EVIDENCE'), 'document evidence immutability trigger must be present');
 assert(documentMigration.includes('revoke all on public.hipico_documents from authenticated'), 'browser-authenticated clients must not read raw document evidence directly');
 assert(e2eSchema.includes('SET LOCAL ROLE'), 'PostgreSQL E2E must execute least-privilege role checks');
 assert(e2eSchema.includes('Workspace RLS owner isolation failed') && e2eSchema.includes('Message RLS owner isolation failed'), 'PostgreSQL E2E must verify owner isolation');
 assert(e2eSchema.includes('hipico_ledger_entries') && e2eSchema.includes('hipico_outbox'), 'PostgreSQL E2E must verify ledger/outbox direct-write denial');
+assert(e2eSchema.includes('authenticatedRaceWriteDenied') && e2eSchema.includes('authenticatedAgentAutomationWriteDenied'), 'PostgreSQL E2E must verify race/agent direct-write denial');
 
 const workflow = read(workflowPath);
 assert(workflow.includes('HIPICO_CANDIDATE_SHA: ${{ github.event.pull_request.merge_commit_sha || github.sha }}'), 'workflow must derive candidate from PR merge SHA or event SHA');
