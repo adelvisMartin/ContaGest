@@ -1,6 +1,7 @@
 const PWA_AUDIENCE_KEY = 'contagest_pwa_audience';
 let observer;
 let captchaExpiryTimer=0;
+let captchaListenerInstalled=false;
 
 function portalContext() {
   const path = String(window.location.pathname || '/').replace(/\/+$/, '') || '/';
@@ -136,9 +137,12 @@ function applyPortalMode() {
 
 export function installLoginEnhancer() {
   if (typeof document === 'undefined') return;
+  if(!captchaListenerInstalled){
+    window.addEventListener('cg:captcha-challenge',applyCaptchaChallenge);
+    captchaListenerInstalled=true;
+  }
   const start = () => {
     applyPortalMode();
-    window.addEventListener('cg:captcha-challenge',applyCaptchaChallenge);
     if (!observer) {
       observer = new MutationObserver(applyPortalMode);
       observer.observe(document.body,{childList:true,subtree:true});
