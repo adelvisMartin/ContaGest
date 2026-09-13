@@ -41,8 +41,10 @@ function runCommandGate(label,command,args,{env={}}={}){
   return result;
 }
 
-execute('npm',['install','--include=dev','--ignore-scripts','--no-audit','--no-fund']);
-
+// Vercel's top-level install is deliberately `npm ci` (see vercel.json).
+// Re-running a generic `npm install` here would mutate the locked dependency
+// graph immediately before QA. Reuse that deterministic workspace install and
+// add only the exact serverless Chromium runtime required by this preview gate.
 if(isPostMerge58x5){
   // These gates are intentionally non-short-circuiting. A missing DB secret or a
   // diagnostic failure must not hide browser evidence for the other 58x5 gates.
@@ -52,7 +54,7 @@ if(isPostMerge58x5){
   runCommandGate('REACT DOCTOR DESIGN','npm',['run','doctor:design']);
 }
 
-execute('npm',['install','--no-save','--ignore-scripts','--no-audit','--no-fund',`@sparticuz/chromium@${SERVERLESS_CHROMIUM_VERSION}`]);
+execute('npm',['install','--no-save','--package-lock=false','--ignore-scripts','--no-audit','--no-fund',`@sparticuz/chromium@${SERVERLESS_CHROMIUM_VERSION}`]);
 execute('npx',['--no-install','playwright','install','ffmpeg']);
 
 const probeSource=`import chromium from '@sparticuz/chromium';chromium.setGraphicsMode=false;const executablePath=await chromium.executablePath();const runtimeEnv={LD_LIBRARY_PATH:process.env.LD_LIBRARY_PATH||'',FONTCONFIG_PATH:process.env.FONTCONFIG_PATH||'',HOME:process.env.HOME||''};process.stdout.write('__CG_CHROMIUM__'+JSON.stringify({executablePath,args:chromium.args,runtimeEnv}));`;

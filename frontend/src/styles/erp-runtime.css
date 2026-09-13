@@ -136,6 +136,19 @@
     flex:0 0 auto;
   }
 
+  @media (max-width:1023px) {
+    body .hf-app-sidebar.hf-sidebar.is-collapsed {
+      visibility:hidden;
+      pointer-events:none;
+    }
+
+    body .hf-app-sidebar.hf-sidebar:not(.is-collapsed),
+    body.cg-menu-open .hf-app-sidebar.hf-sidebar {
+      visibility:visible;
+      pointer-events:auto;
+    }
+  }
+
   @media (max-width:767px) {
     html,
     body,
@@ -259,6 +272,22 @@
     #pages .cg-inline-form {
       min-width:0;
       max-width:100%;
+    }
+
+    #pages .cg-rbac-page .cg-rbac-role-actions .btn,
+    #pages .cg-rbac-page .cg-rbac-section-head .btn {
+      width:auto!important;
+      min-width:var(--cg-v-control-touch)!important;
+      max-width:100%;
+      height:auto!important;
+      min-height:var(--cg-v-control-touch)!important;
+      padding-inline:12px!important;
+      white-space:normal!important;
+    }
+
+    #pages .cg-rbac-page .cg-rbac-role-actions .btn {
+      width:100%!important;
+      justify-content:center;
     }
   }
 

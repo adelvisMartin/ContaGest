@@ -57,7 +57,7 @@ export const ErpUi = Object.freeze({
       const value = typeof column.render === 'function' ? column.render(row) : text(row?.[column.key]);
       return `<td${column.numeric ? ' class="cg-u-text-mono cg-u-text-right"' : ''}>${value ?? ''}</td>`;
     }).join('')}</tr>`).join('');
-    return `<div class="cg-ui-table-wrap"><table class="${cls('cg-ui-table', className)}">${caption ? `<caption class="sr-only">${text(caption)}</caption>` : ''}<thead><tr>${head}</tr></thead><tbody>${body}</tbody></table></div>`;
+    return `<div class="cg-ui-table-wrap cgx-table-wrap table-wrap cgx-table-normalized"><table class="${cls('cg-ui-table', className)}">${caption ? `<caption class="sr-only">${text(caption)}</caption>` : ''}<thead><tr>${head}</tr></thead><tbody>${body}</tbody></table></div>`;
   }
 });
 
