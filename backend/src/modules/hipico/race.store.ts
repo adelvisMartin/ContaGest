@@ -1,6 +1,6 @@
 import crypto from 'node:crypto';
 import { prisma } from '../../database/prisma.js';
-import { evaluateRaceCommand, normalizeRaceCommandInput, type RaceCommandInput, type RaceLifecycleState, type RaceResultStage } from './race-lifecycle.js';
+import { evaluateRaceCommand, normalizeRaceCommandInput, raceCommandMutatesState, type RaceCommandInput, type RaceLifecycleState, type RaceResultStage } from './race-lifecycle.js';
 
 const UUID_RE=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const GROUP_RE=/^[A-Za-z0-9._:-]{3,120}$/;
@@ -44,7 +44,7 @@ export class RaceLifecycleStore {
       const current=races[0],transition=evaluateRaceCommand(current.state,input,current.resultStage),eventId=crypto.randomUUID();
       await tx.$executeRaw`INSERT INTO public.hipico_race_events(id,owner_id,group_key,race_id,request_id,idempotency_key,input_signature,command,actor_id,actor_type,correlation_id,from_state,to_state,from_result_stage,to_result_stage,disposition,reason,evidence,payload)
         VALUES(${eventId}::uuid,${ownerId}::uuid,${groupKey},${raceId}::uuid,${input.requestId},${idempotencyKey},${inputSignature},${input.command},${input.actorId},${input.actorType},${input.correlationId},${transition.from},${transition.to},${current.resultStage},${transition.resultStage},${transition.allowed?'applied':'rejected'},${transition.reason},${JSON.stringify(input.evidence||[])}::jsonb,${JSON.stringify(input.payload||{})}::jsonb)`;
-      if(transition.allowed){
+      if(transition.allowed&&raceCommandMutatesState(input.command)){
         const resultCommands=new Set(['RECORD_OBSERVED_ARRIVAL','RECORD_PROVISIONAL_RESULT','MARK_VERIFIED_RESULT','MARK_OFFICIAL_RESULT']),payload=input.payload||{};
         const resultPayload=resultCommands.has(input.command)&&Object.keys(payload).length?JSON.stringify(payload):null;
         const affected=await tx.$executeRaw`UPDATE public.hipico_races SET state=${transition.to},result_stage=${transition.resultStage},state_version=state_version+1,result_data=CASE WHEN ${resultPayload}::text IS NULL THEN result_data ELSE ${resultPayload}::jsonb END,updated_at=now() WHERE id=${raceId}::uuid AND owner_id=${ownerId}::uuid AND group_key=${groupKey} AND state_version=${current.stateVersion}`;
