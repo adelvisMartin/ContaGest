@@ -56,6 +56,7 @@ export function projectHipicoCommandCenter(input: {
   const raceTotal = totalStates(races);
   const channel = probes.channel.value[0] || null;
   const bridgeReady = system.components.bridge.state === 'ready';
+  const readModelAvailable = Object.values(probes).every((item) => item.available);
   const alerts: string[] = [];
 
   if (system.components.backend.state !== 'ready') alerts.push('BACKEND_NOT_READY');
@@ -79,13 +80,20 @@ export function projectHipicoCommandCenter(input: {
   if (!probes.races.available) alerts.push('RACE_READ_UNAVAILABLE');
   else if ((Number(races.open || 0) + Number(races.closed || 0) + Number(races.result_received || 0)) > 1) alerts.push('RACE_CONTEXT_REQUIRES_REVIEW');
 
+  const systemState = system.components.database.state === 'unavailable'
+    ? 'unavailable'
+    : system.ok && readModelAvailable
+      ? 'ready'
+      : 'degraded';
+
   return {
     sampledAt,
     scope: { groupKey: scope.groupKey },
     version: system.version,
     system: {
-      state: system.ok ? 'ready' : system.components.database.state === 'unavailable' ? 'unavailable' : 'degraded',
+      state: systemState,
       backendReachable: system.components.backend.state === 'ready',
+      readModelAvailable,
       components: system.components
     },
     bridge: {
