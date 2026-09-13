@@ -21,6 +21,21 @@ export const DOMAIN_RISK_CATALOG = Object.freeze([
     gates:['from-zero-db','upgrade-fixture','constraints','rls','backup-restore-plan']
   },
   {
+    id:'hipico-platform', severity:'critical',
+    patterns:[
+      /backend\/src\/modules\/hipico(?:-bot)?\//,
+      /frontend\/api\/hipico\//,
+      /frontend\/public\/hipico-control\//,
+      /android\/hipico-control-[^/]+\//,
+      /(?:^|\/)hipico[^/]*\.(?:test\.)?(?:mjs|js|ts|json|sql|md)$/i,
+      /qa\/.*hipico/i,
+      /supabase\/sql\/hipico/i
+    ],
+    agents:['Hípico Domain','Backend/API','Frontend/PWA','AppSec','DBRE','QA','SRE/Release'],
+    skills:['contagest-erp-orchestrator','contagest-secure-verification','contagest-appsec-review','contagest-db-migration-safety','contagest-ui-audit','contagest-release-evidence'],
+    gates:['hipico-tests','typecheck','canonical-contracts','source-read-only','agent-safety','db-integration','migration-rls','browser-360-390-430-768-1440','offline-pwa','android-parity','exact-sha']
+  },
+  {
     id:'frontend-shell-design', severity:'high',
     patterns:[/frontend\/index\.html/,/frontend\/src\/components\/(layout|ui|toast|modal)/,/frontend\/src\/styles\//,/frontend\/src\/app\.js/,/qa\/.*visual/],
     agents:['Frontend/PWA','ERP UX','Design Systems/A11y','QA'],
