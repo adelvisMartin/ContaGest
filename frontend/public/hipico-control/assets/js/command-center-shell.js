@@ -50,13 +50,14 @@ async function refresh({ force = false } = {}) {
   if (!key) {
     state = {
       ...initialCommandCenterState(),
-      status: 'error',
-      error: 'No se pudo identificar de forma segura el grupo activo.'
+      status: 'disabled',
+      error: 'Selecciona un grupo válido para habilitar el Command Center.'
     };
+    refreshInFlight = false;
     renderHost();
     return;
   }
-  if (!force && refreshInFlight) return;
+  if (refreshInFlight) return;
 
   activeKey = key;
   const sequence = ++refreshSequence;
