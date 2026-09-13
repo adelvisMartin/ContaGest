@@ -1,6 +1,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import crypto from 'node:crypto';
+import { DOMAIN_RISK_CATALOG } from '../qa/support/domain-risk-catalog.mjs';
 
 const root = process.cwd();
 const lock = JSON.parse(await fs.readFile(path.join(root, 'agent-skills.lock.json'), 'utf8'));
@@ -19,6 +20,27 @@ for (const source of lock.sources || []) {
   for (const rel of source.vendorPaths || []) {
     const normalized = path.posix.normalize(String(rel).replaceAll('\\', '/'));
     if (normalized.startsWith('../') || normalized.includes('/../') || path.posix.isAbsolute(normalized)) errors.push(`${source.id}: unsafe path ${rel}`);
+  }
+}
+
+const localRoot=path.join(root,'.agents','skills');
+const localSkillNames=new Set();
+try{
+  for(const entry of await fs.readdir(localRoot,{withFileTypes:true})){
+    if(!entry.isDirectory())continue;
+    const file=path.join(localRoot,entry.name,'SKILL.md');
+    let content='';
+    try{content=await fs.readFile(file,'utf8');}catch(error){errors.push(`${entry.name}: missing/unreadable SKILL.md (${error.message})`);continue;}
+    const name=content.match(/^---\s*[\s\S]*?^name:\s*([^\r\n]+)[\s\S]*?^description:\s*([^\r\n]+)[\s\S]*?^---/m);
+    if(!name){errors.push(`${entry.name}: SKILL.md frontmatter must contain name and description`);continue;}
+    const declared=name[1].trim();if(declared!==entry.name)errors.push(`${entry.name}: frontmatter name mismatch (${declared})`);
+    localSkillNames.add(entry.name);
+  }
+}catch(error){errors.push(`Local skill catalog error: ${error.message}`);}
+
+for(const domain of DOMAIN_RISK_CATALOG){
+  for(const skill of domain.skills||[]){
+    if(String(skill).startsWith('contagest-')&&!localSkillNames.has(skill))errors.push(`${domain.id}: referenced local skill does not exist: ${skill}`);
   }
 }
 
@@ -41,4 +63,4 @@ if (errors.length) {
   console.error(errors.map((value) => `- ${value}`).join('\n'));
   process.exit(1);
 }
-console.log(`Validated ${ids.size} pinned agent/MCP sources`);
+console.log(`Validated ${ids.size} pinned agent/MCP sources and ${localSkillNames.size} local project skills`);
