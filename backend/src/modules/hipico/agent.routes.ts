@@ -16,6 +16,7 @@ const engine = createDefaultHipicoAgentEngine();
 const uuid = z.string().uuid();
 const group = z.string().trim().min(3).max(120).regex(/^[A-Za-z0-9._:-]+$/);
 const groupId = z.string().trim().min(3).max(220).regex(/^[A-Za-z0-9@._:-]+$/);
+const idempotency = z.string().trim().min(8).max(120).regex(/^[A-Za-z0-9._:-]+$/);
 const modeSchema = z.object({
   target: z.enum(AUTOMATION_STATES),
   ownerApproved: z.boolean().default(false)
@@ -56,6 +57,14 @@ function parsedGroupId(req: Request) {
   return parsed.data;
 }
 
+function idempotencyKey(req: Request) {
+  const parsed = idempotency.safeParse(req.header('idempotency-key'));
+  if (!parsed.success) {
+    throw Object.assign(new Error('HIPICO_AUTOMATION_IDEMPOTENCY_KEY_INVALID'), { code: 'HIPICO_AUTOMATION_IDEMPOTENCY_KEY_INVALID' });
+  }
+  return parsed.data;
+}
+
 function actorRef() {
   const actor = operatorActorRef();
   if (!actor) throw Object.assign(new Error('HIPICO_OPERATOR_ACTOR_NOT_CONFIGURED'), { code: 'HIPICO_OPERATOR_ACTOR_NOT_CONFIGURED' });
@@ -64,7 +73,7 @@ function actorRef() {
 
 function status(code: string) {
   if (code.includes('NOT_FOUND')) return 404;
-  if (code === 'HIPICO_AGENT_EVALUATION_ALREADY_REVIEWED') return 409;
+  if (code === 'HIPICO_AGENT_EVALUATION_ALREADY_REVIEWED' || code === 'HIPICO_AUTOMATION_IDEMPOTENCY_MISMATCH') return 409;
   if (code.includes('METRICS_INSUFFICIENT') || code === 'OWNER_APPROVAL_REQUIRED' || code === 'INVALID_PROMOTION_PATH') return 409;
   if (code === 'HIPICO_OWNER_NOT_CONFIGURED' || code === 'HIPICO_OPERATOR_ACTOR_NOT_CONFIGURED') return 503;
   return 400;
@@ -134,8 +143,21 @@ router.post('/groups/:groupId/automation', async (req, res) => {
       groupId: parsedGroupId(req),
       target: body.target,
       actorRef: actorRef(),
-      ownerApproved: body.ownerApproved
+      ownerApproved: body.ownerApproved,
+      idempotencyKey: idempotencyKey(req)
     });
+    if (!data.decision.allowed) {
+      throw Object.assign(new Error(data.decision.reason), { code: data.decision.reason });
+    }
+    return res.json({ ok: true, data });
+  } catch (error) {
+    return sendError(req, res, error);
+  }
+});
+
+router.get('/groups/:groupId/automation/transitions', async (req, res) => {
+  try {
+    const data = await store.transitionEvents(ownerId(), groupKey(req), parsedGroupId(req), Number(req.query.limit) || 100);
     return res.json({ ok: true, data });
   } catch (error) {
     return sendError(req, res, error);
