@@ -70,6 +70,11 @@ export function createApp(options: { readinessCheck?: ReadinessCheck } = {}) {
     }
   }));
 
+  // Every business API fails closed in commercial production when the required
+  // explicit signing/license secrets are missing. Health and CSP reporting above
+  // remain available so operators can still diagnose a misconfigured deployment.
+  app.use(enforceProductionSecrets);
+
   app.use('/api/v1/hipico/system', authRateLimit, hipicoSystemRoutes);
 
   // hipico-bot is the compatibility/integration boundary. The legacy provider
@@ -100,7 +105,6 @@ export function createApp(options: { readinessCheck?: ReadinessCheck } = {}) {
   );
 
   app.use(csrfProtection);
-  app.use(enforceProductionSecrets);
   app.use('/api/v1/auth', authRateLimit, authRoutes);
 
   app.use(
