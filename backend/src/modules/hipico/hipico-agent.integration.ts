@@ -57,6 +57,25 @@ void test('SOURCE defaults to SHADOW while unrelated groups default DISABLED', a
   assert.equal(unrelated.mode, 'DISABLED');
 });
 
+void test('SOURCE cannot be promoted above SHADOW even through the operator transition API', async () => {
+  process.env.HIPICO_SOURCE_GROUP_ID = GROUP_ID_A;
+  const store = new AutomationStore();
+  const attempt = await store.setMode({
+    ownerId: OWNER,
+    groupKey: GROUP_KEY_A,
+    groupId: GROUP_ID_A,
+    target: 'ASSISTED',
+    actorRef: 'operator-token:e2e-agent',
+    ownerApproved: true,
+    idempotencyKey: 'source-assisted-0001'
+  });
+  assert.equal(attempt.disposition, 'rejected');
+  assert.equal(attempt.decision.allowed, false);
+  assert.equal(attempt.decision.reason, 'SOURCE_SHADOW_ONLY');
+  assert.equal(attempt.current, 'SHADOW');
+  assert.equal((await store.get(OWNER, GROUP_KEY_A, GROUP_ID_A)).mode, 'SHADOW');
+});
+
 void test('automation transition replay has zero additional effects and idempotency mismatch fails closed', async () => {
   const store = new AutomationStore();
   const first = await store.setMode({ ownerId: OWNER, groupKey: GROUP_KEY_B, groupId: GROUP_ID_B, target: 'SHADOW', actorRef: 'operator-token:e2e-agent', ownerApproved: false, idempotencyKey: 'agent-shadow-0001' });
@@ -81,6 +100,7 @@ void test('rejected promotion is audited without changing mode and group scopes 
   const eventsB = await store.transitionEvents(OWNER, GROUP_KEY_B, GROUP_ID_B);
   const eventsA = await store.transitionEvents(OWNER, GROUP_KEY_A, GROUP_ID_A);
   assert.equal(eventsB.length, 2);
-  assert.equal(eventsA.length, 0);
+  assert.ok(eventsA.length >= 1);
+  assert.ok(eventsA.some((event: any) => event.disposition === 'rejected' && event.reason === 'SOURCE_SHADOW_ONLY'));
   assert.ok(eventsB.some((event: any) => event.disposition === 'rejected' && event.reason === 'SHADOW_METRICS_INSUFFICIENT'));
 });
