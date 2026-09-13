@@ -21,6 +21,14 @@ test('#221 login enhancer invalidates expired tokens and guards submit in captur
   assert.match(enhancer,/if\(!captchaUsable\(form\)\)setCaptchaReady\(form,false\)/);
 });
 
+test('#221 challenge listener exists before deferred DOMContentLoaded startup',()=>{
+  const install=enhancer.slice(enhancer.indexOf('export function installLoginEnhancer'));
+  const listenerIndex=install.indexOf("window.addEventListener('cg:captcha-challenge'");
+  const startIndex=install.indexOf('const start');
+  assert.ok(listenerIndex>=0&&listenerIndex<startIndex,'CAPTCHA metadata listener must be installed before deferred DOM setup');
+  assert.match(install,/captchaListenerInstalled=true/);
+});
+
 test('#221 browser regression covers expiry, stale server challenge and refresh recovery',()=>{
   assert.match(browser,/loaded challenge expires fail-closed/);
   assert.match(browser,/already expired challenge from the server never becomes usable/);
