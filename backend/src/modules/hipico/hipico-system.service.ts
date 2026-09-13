@@ -110,8 +110,10 @@ export async function buildHipicoSystemStatus(options: HipicoSystemDependencies 
         ),
         financialAuthority: false
       },
-      documentEngine: componentState('not_configured', 'DOCUMENT_ENGINE_NOT_INSTALLED'),
-      agent: componentState('not_configured', 'AGENT_ENGINE_NOT_INSTALLED')
+      // Installed modules remain fail-closed until their runtime/persistence
+      // probes are exercised; installation alone must never imply readiness.
+      documentEngine: componentState('degraded', 'DOCUMENT_ENGINE_INSTALLED_NOT_PROBED'),
+      agent: componentState('degraded', 'AGENT_ENGINE_INSTALLED_NOT_PROBED')
     }
   });
 }
