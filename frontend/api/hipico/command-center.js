@@ -1,4 +1,4 @@
-import { hipicoPersistenceConfig, strongSecretConfigured } from './_shared.js';
+import { fetchWithTimeout, hipicoPersistenceConfig, isUuid, safeTimeoutMs, serverSecret, strongSecretConfigured } from './_shared.js';
 import { bridgeIdentityStatus } from './bridge-identity.js';
 import { proxyCanonicalRequest } from './canonical-backend.js';
 
@@ -33,12 +33,48 @@ function validatedGroupKey(value) {
   return GROUP_KEY_RE.test(key) ? key : '';
 }
 
+export function bearerAccessToken(header) {
+  const match = String(header || '').match(/^Bearer\s+(\S{1,4096})$/);
+  return match?.[1] || '';
+}
+
+export function viewerOwnsCommandCenter(user, source = process.env) {
+  const ownerId = String(source.HIPICO_OWNER_ID || '').trim();
+  const userId = String(user?.id || '').trim();
+  return isUuid(ownerId) && isUuid(userId) && userId.toLowerCase() === ownerId.toLowerCase();
+}
+
 async function readBoundedJson(response) {
   const declared = Number(response.headers?.get?.('content-length'));
   if (Number.isFinite(declared) && declared > MAX_BACKEND_JSON_BYTES) throw new Error('HIPICO_COMMAND_CENTER_RESPONSE_TOO_LARGE');
   const bytes = Buffer.from(await response.arrayBuffer());
   if (bytes.length > MAX_BACKEND_JSON_BYTES) throw new Error('HIPICO_COMMAND_CENTER_RESPONSE_TOO_LARGE');
   return JSON.parse(bytes.toString('utf8'));
+}
+
+export async function authenticateCommandCenterViewer(authorization, source = process.env) {
+  const accessToken = bearerAccessToken(authorization);
+  if (!accessToken) return { ok: false, status: 401, error: 'command_center_auth_required' };
+  const runtime = hipicoPersistenceConfig(source);
+  if (!runtime.urlValid || !runtime.ownerIdValid || !runtime.serviceRoleStrong) {
+    return { ok: false, status: 503, error: 'command_center_auth_not_configured' };
+  }
+  try {
+    const response = await fetchWithTimeout(`${runtime.url}/auth/v1/user`, {
+      method: 'GET',
+      headers: {
+        apikey: serverSecret('HIPICO_SUPABASE_SERVICE_ROLE_KEY'),
+        Authorization: `Bearer ${accessToken}`,
+        accept: 'application/json'
+      }
+    }, safeTimeoutMs(source.HIPICO_SUPABASE_TIMEOUT_MS));
+    if (!response.ok) return { ok: false, status: 401, error: 'command_center_session_invalid' };
+    const user = await readBoundedJson(response);
+    if (!viewerOwnsCommandCenter(user, source)) return { ok: false, status: 403, error: 'command_center_owner_forbidden' };
+    return { ok: true, status: 200, userId: String(user.id) };
+  } catch {
+    return { ok: false, status: 503, error: 'command_center_auth_unavailable' };
+  }
 }
 
 async function backendJson(path, operatorToken, groupKey, source = process.env) {
@@ -143,6 +179,8 @@ export default async function handler(req, res) {
   if (!commandCenterReadModelEnabled()) {
     return res.status(503).json({ ok: false, retryable: false, error: 'command_center_read_model_disabled' });
   }
+  const viewer = await authenticateCommandCenterViewer(req.headers?.authorization);
+  if (!viewer.ok) return res.status(viewer.status).json({ ok: false, retryable: viewer.status === 503, error: viewer.error });
   const token = configuredOperatorToken();
   if (!token) return res.status(503).json({ ok: false, retryable: false, error: 'operator_read_model_not_configured' });
   const groupKey = validatedGroupKey(req.query?.groupKey);
@@ -164,6 +202,9 @@ export const __test__ = {
   configuredOperatorToken,
   bridgeReadiness,
   validatedGroupKey,
+  bearerAccessToken,
+  viewerOwnsCommandCenter,
+  authenticateCommandCenterViewer,
   outboxProjection,
   shadowProjection,
   providerProjection,
