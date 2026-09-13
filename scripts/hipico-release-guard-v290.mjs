@@ -14,9 +14,12 @@ const buildInfo = json('frontend/public/hipico-control/build-info.json');
 const androidPackage = json('android/hipico-control-v1130/package.json');
 const bridgePackage = json('tools/hipico-whatsapp-web-bridge/package.json');
 const rootPackage = json('package.json');
+const agentCorpus = json('qa/fixtures/hipico-agent-golden-v1.json');
 const domain = read('backend/src/modules/hipico/hipico-domain.ts');
 const app = read('backend/src/app.ts');
 const documentRoutes = read('backend/src/modules/hipico/document.routes.ts');
+const raceStore = read('backend/src/modules/hipico/race.store.ts');
+const cli = read('tools/hipico-cli/hipico.mjs');
 const commandBff = read('frontend/api/hipico/command-center.js');
 const commandClient = read('frontend/public/hipico-control/assets/js/command-center.js');
 const index = read('frontend/public/hipico-control/index.html');
@@ -37,9 +40,11 @@ const requiredFiles = [
   'backend/src/modules/hipico/race.routes.ts',
   'backend/src/modules/hipico/race.store.ts',
   'backend/src/modules/hipico/race-lifecycle.ts',
+  'backend/src/modules/hipico/race-lifecycle.test.ts',
   'backend/src/modules/hipico/agent.routes.ts',
   'backend/src/modules/hipico/agent-policy.ts',
   'backend/src/modules/hipico/agent-engine.ts',
+  'backend/src/modules/hipico/agent-golden.test.ts',
   'backend/src/modules/hipico/automation.store.ts',
   'backend/src/modules/hipico-bot/hipico-document-engine.ts',
   'backend/src/modules/hipico-bot/hipico-document-extractor.ts',
@@ -50,10 +55,23 @@ const requiredFiles = [
   'supabase/sql/hipico_v15_race_lifecycle.sql',
   'supabase/sql/hipico_v16_agent_shadow.sql',
   'supabase/sql/hipico_v18_documents.sql',
+  'qa/fixtures/hipico-agent-golden-v1.json',
   'qa/hipico-production-v290.spec.mjs',
   'playwright.hipico-v290.config.mjs',
+  'tools/hipico-cli/hipico.mjs',
+  'HIPICO.cmd',
+  'HIPICO.ps1',
+  'docs/hipico/ADR-CANONICAL-API-DOMAIN-283.md',
+  'docs/hipico/ADR-MESSAGING-BOUNDARY-284.md',
+  'docs/hipico/ADR-DOCUMENT-ENGINE-285.md',
+  'docs/hipico/ADR-PROVIDER-REGISTRY-286.md',
+  'docs/hipico/ADR-RACE-LIFECYCLE-287.md',
+  'docs/hipico/ADR-AGENT-SHADOW-288.md',
+  'docs/hipico/LOCAL-API-CLI.md',
+  'docs/hipico/WINDOWS-CLI-284.md',
   'tests/hipico_canonical_facade_290.test.mjs',
   'tests/hipico_command_center_289.test.mjs',
+  'tests/hipico_messaging_cli_284.test.mjs',
   'tests/hipico_production_pipeline_290.test.mjs',
   'tests/hipico_version_guard_290.test.mjs',
   'scripts/hipico-apply-e2e-schema-v290.mjs',
@@ -82,6 +100,7 @@ assert(bridgePackage.version === policy.bridgePackageVersion, `bridge package ${
 assert(buildInfo.version === policy.version, `build-info ${buildInfo.version} != release policy ${policy.version}`);
 assert(androidPackage.version === policy.version, `Android wrapper ${androidPackage.version} != release policy ${policy.version}`);
 assert(rootPackage.engines?.node === '22.x', 'root runtime contract must remain Node 22.x');
+assert(rootPackage.scripts?.hipico === 'node tools/hipico-cli/hipico.mjs', 'root hipico CLI script must target the hardened local CLI');
 assert(rootPackage.scripts?.['test:hipico:command-center']?.includes('hipico_canonical_facade_290.test.mjs'), 'canonical facade contract script missing');
 assert(rootPackage.scripts?.['test:hipico:production-contract']?.includes('hipico_production_pipeline_290.test.mjs'), 'production pipeline contract script missing');
 assert(rootPackage.scripts?.['release:hipico:v290'] === 'node scripts/hipico-release-guard-v290.mjs', 'release command must use v290 guard');
@@ -104,6 +123,17 @@ assert(documentRoutes.includes('createPdfDocumentExtractor'), 'canonical documen
 for (const obsolete of ['pdfjs-dist', 'tesseract.js', '@napi-rs/canvas', 'createPdfJsDocumentExtractor']) {
   assert(!documentRoutes.includes(obsolete), `canonical document facade must not reintroduce obsolete extractor dependency: ${obsolete}`);
 }
+
+assert(raceStore.includes('resultStageForRaceState(previous[0].toState)'), 'race idempotent replay must preserve the persisted transition result stage');
+assert(Array.isArray(agentCorpus.cases) && agentCorpus.cases.length >= 20, 'agent Shadow golden corpus must contain the production baseline cases');
+assert(String(agentCorpus.version || '').startsWith('1.'), 'agent Shadow golden corpus major version must remain v1 for this release contract');
+
+for (const endpoint of ['/api/v1/hipico/status', '/api/v1/hipico/readiness', '/api/v1/hipico/version']) {
+  assert(cli.includes(endpoint), `local CLI missing current canonical system endpoint ${endpoint}`);
+}
+assert(!cli.includes('/api/v1/hipico/system/status') && !cli.includes('/api/v1/hipico/system/readiness') && !cli.includes('/api/v1/hipico/system/version'), 'local CLI must not regress to obsolete /system endpoint paths');
+assert(cli.includes('HIPICO_CLI_REMOTE_HTTP_FORBIDDEN') && cli.includes('HIPICO_CLI_BASE_PATH_FORBIDDEN'), 'local CLI must keep remote transport and base-path validation');
+assert(!/--(?:operator|bridge)-token\b/.test(cli), 'local CLI must never accept secrets through process arguments');
 
 assert(commandBff.includes('/api/v1/hipico/command-center'), 'PWA BFF must delegate to canonical command center');
 assert(commandBff.includes('x-hipico-group-key'), 'PWA BFF must forward explicit group scope');
