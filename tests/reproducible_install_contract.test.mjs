@@ -5,6 +5,7 @@ import { readFileSync } from 'node:fs';
 const rootPackage = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
 const lock = JSON.parse(readFileSync(new URL('../package-lock.json', import.meta.url), 'utf8'));
 const vercel = JSON.parse(readFileSync(new URL('../vercel.json', import.meta.url), 'utf8'));
+const browserPreqa = readFileSync(new URL('../scripts/vercel-browser-preqa-v16.mjs', import.meta.url), 'utf8');
 
 test('Vercel installs the exact locked workspace dependency graph on the repository Node contract', () => {
   assert.equal(rootPackage.engines?.node, '22.x');
@@ -13,6 +14,13 @@ test('Vercel installs the exact locked workspace dependency graph on the reposit
   assert.equal(lock.packages?.['']?.engines?.node, '22.x');
   assert.equal(vercel.installCommand, 'npm ci --no-audit --no-fund');
   assert.doesNotMatch(vercel.installCommand, /npm\s+install(?:\s|$)/);
+});
+
+test('browser pre-QA reuses the locked Vercel install and only adds the pinned serverless Chromium runtime', () => {
+  assert.doesNotMatch(browserPreqa, /execute\('npm',\['install','--include=dev'/);
+  assert.match(browserPreqa, /SERVERLESS_CHROMIUM_VERSION='149\.0\.0'/);
+  assert.match(browserPreqa, /@sparticuz\/chromium@\$\{SERVERLESS_CHROMIUM_VERSION\}/);
+  assert.match(browserPreqa, /'--no-save'/);
 });
 
 test('Vercel auto-deploy budget is fail-closed except for production, release and explicit QA evidence branches', () => {
