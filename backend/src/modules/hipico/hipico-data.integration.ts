@@ -35,7 +35,7 @@ const fakeExtractor:PdfTextExtractor={capability:()=>({configured:true,nativeTex
 before(async()=>{
   admin=new Client({connectionString:databaseUrl});await admin.connect();
   await admin.query(`create schema if not exists auth; do $$ begin create role anon; exception when duplicate_object then null; end $$; do $$ begin create role authenticated; exception when duplicate_object then null; end $$; create or replace function auth.uid() returns uuid language sql stable as 'select null::uuid';`);
-  for(const migration of ['hipico_v14_documents.sql','hipico_v15_race_lifecycle.sql','hipico_v17_provider_evidence.sql','hipico_v18_race_result_stages.sql','hipico_v19_race_idempotency.sql','hipico_v20_document_audit.sql'])await applySql(migration);
+  for(const migration of ['hipico_v14_documents.sql','hipico_v15_race_lifecycle.sql','hipico_v17_provider_evidence.sql','hipico_v18_race_result_stages.sql','hipico_v19_race_idempotency.sql','hipico_v20_document_audit.sql','hipico_v21_race_data_conflicts.sql'])await applySql(migration);
 });
 
 after(async()=>{
@@ -89,6 +89,10 @@ test('race lifecycle is transactional, replay-safe, auditable and official resul
   const open=await store.command(OWNER,GROUP_A,race.id,raceCommand('OPEN','DISCOVERED','req-open-0001','idem-open-0001'));assert.equal(open.transition.to,'OPEN');
   const replay=await store.command(OWNER,GROUP_A,race.id,raceCommand('OPEN','DISCOVERED','req-open-0002','idem-open-0001'));assert.equal(replay.duplicate,true);assert.equal((await store.history(OWNER,GROUP_A,race.id)).length,1);
   await assert.rejects(store.command(OWNER,GROUP_A,race.id,raceCommand('ANNOUNCE','DISCOVERED','req-bad-0001','idem-open-0001')),/RACE_COMMAND_IDEMPOTENCY_MISMATCH/);
+  const beforeConflict:any=await store.getRace(OWNER,GROUP_A,race.id);
+  const conflict=await store.command(OWNER,GROUP_A,race.id,raceCommand('RECORD_DATA_CONFLICT','OPEN','req-conflict-01','idem-conflict-01',{conflictType:'RESULT',candidates:['provider:A','document:B']},[{source:'provider-result',authority:'trusted',confidence:.95},{source:'document-result',authority:'official',confidence:.99}]));assert.equal(conflict.transition.allowed,true);assert.equal(conflict.transition.reason,'DATA_CONFLICT');
+  const conflictReplay=await store.command(OWNER,GROUP_A,race.id,raceCommand('RECORD_DATA_CONFLICT','OPEN','req-conflict-02','idem-conflict-01',{conflictType:'RESULT',candidates:['provider:A','document:B']},[{source:'provider-result',authority:'trusted',confidence:.95},{source:'document-result',authority:'official',confidence:.99}]));assert.equal(conflictReplay.duplicate,true);
+  const afterConflict:any=await store.getRace(OWNER,GROUP_A,race.id);assert.equal(afterConflict.state,'OPEN');assert.equal(afterConflict.stateVersion,beforeConflict.stateVersion,'audit-only conflict must not mutate race state version');assert.equal((await store.history(OWNER,GROUP_A,race.id)).filter((event:any)=>event.command==='RECORD_DATA_CONFLICT').length,1);
   assert.equal((await store.command(OWNER,GROUP_A,race.id,raceCommand('CLOSE','OPEN','req-close-01','idem-close-01'))).transition.to,'CLOSED');
   assert.equal((await store.command(OWNER,GROUP_A,race.id,raceCommand('RECORD_PROVISIONAL_RESULT','CLOSED','req-prov-0001','idem-prov-0001',{order:[3,1,5]}))).transition.to,'PROVISIONAL_RESULT');
   const denied=await store.command(OWNER,GROUP_A,race.id,raceCommand('MARK_OFFICIAL_RESULT','PROVISIONAL_RESULT','req-off-deny1','idem-off-deny1',{order:[3,1,5]},[{source:'arrival-board',authority:'trusted',confidence:.99}]));assert.equal(denied.transition.allowed,false);assert.equal((await store.getRace(OWNER,GROUP_A,race.id))?.state,'PROVISIONAL_RESULT');
