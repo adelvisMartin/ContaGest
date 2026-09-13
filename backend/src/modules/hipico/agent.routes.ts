@@ -5,6 +5,8 @@ import { createDefaultHipicoAgentEngine } from './agent-engine.js';
 import { AutomationStore } from './automation.store.js';
 import { hipicoError } from './hipico-domain.js';
 import {
+  automationOwnerApprovalTokenConfigured,
+  automationOwnerApprovalTokenValid,
   operatorActorRef,
   operatorTokenConfigured,
   operatorTokenValid
@@ -17,8 +19,7 @@ const uuid = z.string().uuid();
 const group = z.string().trim().min(3).max(120).regex(/^[A-Za-z0-9._:-]+$/);
 const groupId = z.string().trim().min(3).max(220).regex(/^[A-Za-z0-9@._:-]+$/);
 const modeSchema = z.object({
-  target: z.enum(AUTOMATION_STATES),
-  ownerApproved: z.boolean().default(false)
+  target: z.enum(AUTOMATION_STATES)
 }).strict();
 const evaluateSchema = z.object({
   text: z.string().trim().min(1).max(4000),
@@ -62,21 +63,44 @@ function actorRef() {
   return actor;
 }
 
+function trustedOwnerApproval(req: Request, target: string) {
+  if (target !== 'AUTOMATIC') return false;
+  if (!automationOwnerApprovalTokenConfigured()) {
+    throw Object.assign(new Error('HIPICO_AUTOMATION_OWNER_APPROVAL_NOT_CONFIGURED'), {
+      code: 'HIPICO_AUTOMATION_OWNER_APPROVAL_NOT_CONFIGURED'
+    });
+  }
+  if (!automationOwnerApprovalTokenValid(req.header('x-hipico-owner-approval-token') || undefined)) {
+    throw Object.assign(new Error('HIPICO_AUTOMATION_OWNER_APPROVAL_UNAUTHORIZED'), {
+      code: 'HIPICO_AUTOMATION_OWNER_APPROVAL_UNAUTHORIZED'
+    });
+  }
+  return true;
+}
+
 function status(code: string) {
   if (code.includes('NOT_FOUND')) return 404;
+  if (code === 'HIPICO_AUTOMATION_OWNER_APPROVAL_UNAUTHORIZED') return 403;
   if (code === 'HIPICO_AGENT_EVALUATION_ALREADY_REVIEWED') return 409;
   if (code.includes('METRICS_INSUFFICIENT') || code === 'OWNER_APPROVAL_REQUIRED' || code === 'INVALID_PROMOTION_PATH') return 409;
-  if (code === 'HIPICO_OWNER_NOT_CONFIGURED' || code === 'HIPICO_OPERATOR_ACTOR_NOT_CONFIGURED') return 503;
+  if (
+    code === 'HIPICO_OWNER_NOT_CONFIGURED'
+    || code === 'HIPICO_OPERATOR_ACTOR_NOT_CONFIGURED'
+    || code === 'HIPICO_AUTOMATION_OWNER_APPROVAL_NOT_CONFIGURED'
+  ) return 503;
   return 400;
 }
 
 function sendError(req: Request, res: Response, error: any) {
   const code = String(error?.code || error?.message || 'HIPICO_AUTOMATION_ERROR').slice(0, 120);
+  const retryable = code === 'HIPICO_OWNER_NOT_CONFIGURED'
+    || code === 'HIPICO_OPERATOR_ACTOR_NOT_CONFIGURED'
+    || code === 'HIPICO_AUTOMATION_OWNER_APPROVAL_NOT_CONFIGURED';
   return res.status(status(code)).json(hipicoError({
     code,
     message: 'No se pudo aplicar la política de automatización.',
     requestId: requestId(req),
-    retryable: code === 'HIPICO_OWNER_NOT_CONFIGURED' || code === 'HIPICO_OPERATOR_ACTOR_NOT_CONFIGURED'
+    retryable
   }));
 }
 
@@ -134,7 +158,7 @@ router.post('/groups/:groupId/automation', async (req, res) => {
       groupId: parsedGroupId(req),
       target: body.target,
       actorRef: actorRef(),
-      ownerApproved: body.ownerApproved
+      ownerApproved: trustedOwnerApproval(req, body.target)
     });
     return res.json({ ok: true, data });
   } catch (error) {
