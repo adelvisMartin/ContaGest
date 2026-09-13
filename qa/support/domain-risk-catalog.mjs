@@ -32,7 +32,7 @@ export const DOMAIN_RISK_CATALOG = Object.freeze([
       /supabase\/sql\/hipico/i
     ],
     agents:['Hípico Domain','Backend/API','Frontend/PWA','AppSec','DBRE','QA','SRE/Release'],
-    skills:['contagest-erp-orchestrator','contagest-secure-verification','contagest-appsec-review','contagest-db-migration-safety','contagest-ui-audit','contagest-release-evidence'],
+    skills:['contagest-erp-orchestrator','contagest-hipico-platform','contagest-secure-verification','contagest-appsec-review','contagest-db-migration-safety','contagest-ui-audit','contagest-release-evidence'],
     gates:['hipico-tests','typecheck','canonical-contracts','source-read-only','agent-safety','db-integration','migration-rls','browser-360-390-430-768-1440','offline-pwa','android-parity','exact-sha']
   },
   {
