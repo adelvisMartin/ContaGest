@@ -61,6 +61,11 @@ jobs:
       - name: Install lockfile dependencies
         run: npm ci --no-audit --no-fund
 
+      - name: Install PostgreSQL client
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends postgresql-client
+
       - name: Create isolated ephemeral PostgreSQL database
         shell: bash
         env:
