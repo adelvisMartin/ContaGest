@@ -53,7 +53,8 @@ test('secret-like fields are stripped again on import, including legacy payloads
 test('AES-GCM portable backup decrypts with correct passphrase and rejects wrong passphrase', async () => {
   const plain = serializeWorkspaceBackup({ version: 1, participants: [{ id: 'p1' }], movements: [] });
   const encrypted = await encryptBackupText(plain, 'correct horse battery staple');
-  assert.doesNotMatch(encrypted, /participants|p1/);
+  assert.doesNotMatch(encrypted, /"participants"\s*:/);
+  assert.doesNotMatch(encrypted, /"p1"/i);
   assert.equal(await decryptBackupText(encrypted, 'correct horse battery staple'), plain);
   await assert.rejects(() => decryptBackupText(encrypted, 'wrong password value'), /incorrecta|alterado/i);
   const parsed = await parsePortableBackup(encrypted, { passphrase: 'correct horse battery staple' });

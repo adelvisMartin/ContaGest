@@ -25,6 +25,7 @@ export function canonicalBackendOrigin(source = process.env) {
     const safePort = Number.isInteger(port) && port > 0 && port <= 65535 ? port : 3030;
     return `http://127.0.0.1:${safePort}`;
   }
+
   try {
     const url = new URL(candidate);
     if (url.username || url.password || url.search || url.hash) return '';
@@ -39,16 +40,21 @@ export function canonicalBackendOrigin(source = process.env) {
 }
 
 function canonicalPathError() {
-  return Object.assign(new Error('HIPICO_CANONICAL_PATH_NOT_ALLOWED'), { code: 'HIPICO_CANONICAL_PATH_NOT_ALLOWED' });
+  return Object.assign(new Error('HIPICO_CANONICAL_PATH_NOT_ALLOWED'), {
+    code: 'HIPICO_CANONICAL_PATH_NOT_ALLOWED'
+  });
 }
 
 export function buildCanonicalUrl(path, source = process.env) {
   const origin = canonicalBackendOrigin(source);
   if (!origin) {
-    throw Object.assign(new Error('HIPICO_CANONICAL_BACKEND_NOT_CONFIGURED'), { code: 'HIPICO_CANONICAL_BACKEND_NOT_CONFIGURED' });
+    throw Object.assign(new Error('HIPICO_CANONICAL_BACKEND_NOT_CONFIGURED'), {
+      code: 'HIPICO_CANONICAL_BACKEND_NOT_CONFIGURED'
+    });
   }
   const value = String(path || '').trim();
   if (!allowedCanonicalPath(value)) throw canonicalPathError();
+
   const url = new URL(value, `${origin}/`);
   if (url.origin !== origin || !allowedCanonicalPath(url.pathname)) throw canonicalPathError();
   return url.toString();

@@ -41,7 +41,7 @@ jobs:
           cache: npm
       - run: npm ci
       - name: Five-dimensional matrix contract
-        run: node --test tests/erp_e2e_campaign_issue_155.test.mjs tests/erp_e2e_campaign_v3_issue_155.test.mjs
+        run: node --test tests/erp_e2e_campaign_issue_155.test.mjs tests/erp_e2e_campaign_v3_issue_155.test.mjs tests/erp155_cross_browser_issue_155.test.mjs
       - name: Evidence template must start NOT_EXECUTED
         run: |
           CANDIDATE_SHA="$CANDIDATE_SHA" node scripts/erp-e2e-evidence-v155.mjs init
@@ -56,7 +56,7 @@ jobs:
           retention-days: 14
 
   browser-matrix:
-    name: ${{ matrix.role }} / ${{ matrix.viewport }}
+    name: chromium / ${{ matrix.role }} / ${{ matrix.viewport }}
     if: github.event_name == 'workflow_dispatch' || startsWith(github.head_ref, 'test/erp-155-') || startsWith(github.head_ref, 'release/candidate-')
     runs-on: ubuntu-latest
     timeout-minutes: 120
@@ -95,12 +95,62 @@ jobs:
         if: always()
         run: |
           mkdir -p "artifacts/qa/erp-v155-shards/$CANDIDATE_SHA/${{ matrix.role }}__${{ matrix.viewport }}"
-          printf '%s\n' '{"playwrightOutcome":"${{ steps.campaign.outcome }}","candidateSha":"'"$CANDIDATE_SHA"'","role":"${{ matrix.role }}","viewport":"${{ matrix.viewport }}"}' > "artifacts/qa/erp-v155-shards/$CANDIDATE_SHA/${{ matrix.role }}__${{ matrix.viewport }}/job-outcome.json"
+          printf '%s\n' '{"playwrightOutcome":"${{ steps.campaign.outcome }}","candidateSha":"'"$CANDIDATE_SHA"'","browser":"chromium","role":"${{ matrix.role }}","viewport":"${{ matrix.viewport }}"}' > "artifacts/qa/erp-v155-shards/$CANDIDATE_SHA/${{ matrix.role }}__${{ matrix.viewport }}/job-outcome.json"
       - name: Upload shard evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: erp155-${{ matrix.role }}-${{ matrix.viewport }}
+          path: |
+            artifacts/qa/erp-v155-shards/${{ env.CANDIDATE_SHA }}/${{ matrix.role }}__${{ matrix.viewport }}
+            test-results
+          if-no-files-found: warn
+          retention-days: 14
+
+  cross-browser-matrix:
+    name: ${{ matrix.browser.project }} / ${{ matrix.role }} / ${{ matrix.viewport }}
+    if: github.event_name == 'workflow_dispatch' || startsWith(github.head_ref, 'test/erp-155-') || startsWith(github.head_ref, 'release/candidate-')
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      max-parallel: 6
+      matrix:
+        browser:
+          - project: firefox
+            engine: firefox
+          - project: webkit-safari
+            engine: webkit
+        role: [admin, operator, read-only]
+        viewport:
+          - phone-360
+          - phone-390
+          - phone-430
+          - tablet-768
+          - desktop-1366
+          - desktop-1920
+          - phone-360-landscape
+          - phone-390-landscape
+          - phone-430-landscape
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Install ${{ matrix.browser.engine }}
+        run: npx playwright install --with-deps ${{ matrix.browser.engine }}
+      - name: Execute full route/state/flow compatibility matrix
+        env:
+          QA_ROLE: ${{ matrix.role }}
+          QA_VIEWPORT: ${{ matrix.viewport }}
+        run: npx playwright test qa/erp-system-campaign-v155.spec.mjs --project=${{ matrix.browser.project }} --workers=1 --reporter=list
+      - name: Upload cross-browser compatibility evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: crossbrowser155-${{ matrix.browser.project }}-${{ matrix.role }}-${{ matrix.viewport }}
           path: |
             artifacts/qa/erp-v155-shards/${{ env.CANDIDATE_SHA }}/${{ matrix.role }}__${{ matrix.viewport }}
             test-results
@@ -125,12 +175,15 @@ jobs:
         id: auth
         continue-on-error: true
         run: npm --workspace backend exec -- tsx --test src/modules/auth/auth.captcha-bootstrap.test.ts
-      - name: Install Chromium and WebKit
-        run: npx playwright install --with-deps chromium webkit
+      - name: Install Chromium Firefox and WebKit
+        run: npx playwright install --with-deps chromium firefox webkit
       - name: CAPTCHA browser recovery and responsive regression #221
         id: captcha_browser
         continue-on-error: true
-        run: npx playwright test qa/login-captcha-v221.spec.mjs --project=chromium --workers=1 --reporter=list
+        run: |
+          npx playwright test qa/login-captcha-v221.spec.mjs --project=chromium --workers=1 --reporter=list
+          npx playwright test qa/login-captcha-v221.spec.mjs --project=firefox --workers=1 --reporter=list
+          npx playwright test qa/login-captcha-v221.spec.mjs --project=webkit-safari --workers=1 --reporter=list
       - name: 58-route visual/composition/navigation suite
         id: routes
         continue-on-error: true
@@ -184,7 +237,7 @@ jobs:
   aggregate:
     name: Aggregate evidence, harvest P0/P1 and fail closed
     if: always() && (github.event_name == 'workflow_dispatch' || startsWith(github.head_ref, 'test/erp-155-') || startsWith(github.head_ref, 'release/candidate-'))
-    needs: [contract, browser-matrix, regression-pack]
+    needs: [contract, browser-matrix, cross-browser-matrix, regression-pack]
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -194,7 +247,7 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - name: Download all QA campaign artifacts
+      - name: Download all canonical Chromium QA campaign artifacts
         uses: actions/download-artifact@v4
         with:
           pattern: erp155-*
@@ -224,6 +277,8 @@ jobs:
           echo "aggregate=${{ steps.aggregate.outcome }}"
           echo "harvest=${{ steps.harvest.outcome }}"
           echo "regression=${{ needs.regression-pack.outputs.verdict }}"
+          echo "crossBrowser=${{ needs.cross-browser-matrix.result }}"
           test '${{ steps.harvest.outcome }}' = 'success'
           test '${{ steps.aggregate.outcome }}' = 'success'
           test '${{ needs.regression-pack.outputs.verdict }}' = 'PASS'
+          test '${{ needs.cross-browser-matrix.result }}' = 'success'

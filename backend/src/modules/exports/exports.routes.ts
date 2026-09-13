@@ -1,11 +1,11 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import crypto from 'node:crypto';
-import ExcelJS from 'exceljs';
 import PDFDocument from 'pdfkit';
-import { asyncHandler } from '../../shared/http.js';
+import { asyncHandler, HttpError } from '../../shared/http.js';
 import { validateBody } from '../../shared/middleware/validate.js';
 import { requireTenant } from '../../shared/middleware/context.js';
+import { buildXlsxWorkbook, XlsxLimitError } from './xlsx-writer.js';
 
 const router = Router();
 router.use(requireTenant);
@@ -13,16 +13,31 @@ const exportSchema = z.object({ filename: z.string().default('contagest-export')
 const sheetSchema = z.object({ name: z.string().default('Datos'), rows: z.array(z.record(z.string(), z.unknown())).default([]) });
 const xlsxSchema = z.object({ filename: z.string().default('contagest-export'), title: z.string().default('ContaGest-VE Export'), sheets: z.array(sheetSchema).default([]) });
 const pdfSchema = z.object({ filename: z.string().default('documento-fiscal'), document: z.record(z.string(), z.unknown()).default({}) });
-const escapeCsv = (v: unknown) => `"${String(v ?? '').replaceAll('"', '""')}"`;
+
+function safeDownloadBaseName(value: unknown, fallback: string) {
+  const normalized = String(value ?? '')
+    .replace(/[\u0000-\u001F\u007F"\\/]/g, '-')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/^\.+|\.+$/g, '')
+    .slice(0, 120);
+  return normalized || fallback;
+}
+
+function spreadsheetSafeText(value: unknown) {
+  if (typeof value !== 'string') return String(value ?? '');
+  return /^[\s\u0000-\u001F]*[=+\-@]/.test(value) ? `'${value}` : value;
+}
+
+const escapeCsv = (value: unknown) => `"${spreadsheetSafeText(value).replaceAll('"', '""')}"`;
 function headersFromRows(rows: Record<string, unknown>[]) { return Array.from(new Set(rows.flatMap((r) => Object.keys(r)))); }
-function safeSheetName(name: string) { return name.replace(/[\\/?*\[\]:]/g, '').slice(0, 31) || 'Datos'; }
 
 router.post('/csv', validateBody(exportSchema), asyncHandler(async (req, res) => {
   const rows = req.body.rows as Record<string, unknown>[];
   const headers = headersFromRows(rows);
-  const csv = [headers.join(','), ...rows.map((r) => headers.map((h) => escapeCsv(r[h])).join(','))].join('\n');
+  const csv = [headers.map(escapeCsv).join(','), ...rows.map((r) => headers.map((h) => escapeCsv(r[h])).join(','))].join('\n');
   res.setHeader('content-type', 'text/csv; charset=utf-8');
-  res.setHeader('content-disposition', `attachment; filename="${req.body.filename}.csv"`);
+  res.setHeader('content-disposition', `attachment; filename="${safeDownloadBaseName(req.body.filename, 'contagest-export')}.csv"`);
   res.send(csv);
 }));
 
@@ -30,43 +45,25 @@ router.post('/txt', validateBody(exportSchema), asyncHandler(async (req, res) =>
   const rows = req.body.rows as Record<string, unknown>[];
   const txt = [req.body.title, '='.repeat(String(req.body.title).length), ...rows.map((r) => Object.entries(r).map(([k,v]) => `${k}: ${v ?? ''}`).join(' | '))].join('\n');
   res.setHeader('content-type', 'text/plain; charset=utf-8');
-  res.setHeader('content-disposition', `attachment; filename="${req.body.filename}.txt"`);
+  res.setHeader('content-disposition', `attachment; filename="${safeDownloadBaseName(req.body.filename, 'contagest-export')}.txt"`);
   res.send(txt);
 }));
 
 router.post('/xlsx', validateBody(xlsxSchema), asyncHandler(async (req, res) => {
-  const workbook = new ExcelJS.Workbook();
-  workbook.creator = 'ContaGest-VE';
-  workbook.created = new Date();
-  workbook.modified = new Date();
-  workbook.properties.date1904 = false;
-  const sheets = req.body.sheets.length ? req.body.sheets : [{ name: 'Datos', rows: [] }];
-  for (const sheetInput of sheets) {
-    const rows = sheetInput.rows as Record<string, unknown>[];
-    const headers = headersFromRows(rows);
-    const ws = workbook.addWorksheet(safeSheetName(sheetInput.name), { views: [{ state: 'frozen', ySplit: 2 }] });
-    ws.mergeCells(1, 1, 1, Math.max(headers.length, 1));
-    const titleCell = ws.getCell(1, 1);
-    titleCell.value = req.body.title;
-    titleCell.font = { bold: true, color: { argb: 'FFFFFFFF' }, size: 14 };
-    titleCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF00236F' } };
-    titleCell.alignment = { vertical: 'middle', horizontal: 'center' };
-    ws.getRow(1).height = 26;
-    ws.addRow(headers);
-    ws.getRow(2).font = { bold: true, color: { argb: 'FF0F172A' } };
-    ws.getRow(2).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE2E8F0' } };
-    rows.forEach((row) => ws.addRow(headers.map((h) => row[h] ?? '')));
-    ws.columns = headers.map((h) => ({ key: h, width: Math.min(Math.max(String(h).length + 8, 16), 42) }));
-    ws.eachRow((row) => row.eachCell((cell) => {
-      cell.border = { top: { style: 'thin', color: { argb: 'FFD6DEE9' } }, left: { style: 'thin', color: { argb: 'FFD6DEE9' } }, bottom: { style: 'thin', color: { argb: 'FFD6DEE9' } }, right: { style: 'thin', color: { argb: 'FFD6DEE9' } } };
-      cell.alignment = { vertical: 'middle', wrapText: true };
-    }));
-    ws.autoFilter = { from: { row: 2, column: 1 }, to: { row: 2, column: Math.max(headers.length, 1) } };
+  try {
+    const buffer = buildXlsxWorkbook({ title: req.body.title, sheets: req.body.sheets });
+    res.setHeader('content-type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('content-disposition', `attachment; filename="${safeDownloadBaseName(req.body.filename, 'contagest-export')}.xlsx"`);
+    res.send(Buffer.from(buffer));
+  } catch (error) {
+    if (error instanceof XlsxLimitError) {
+      throw new HttpError(413, 'La exportación XLSX excede los límites seguros permitidos.', {
+        code: error.code,
+        detail: error.message
+      });
+    }
+    throw error;
   }
-  const buffer = await workbook.xlsx.writeBuffer();
-  res.setHeader('content-type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-  res.setHeader('content-disposition', `attachment; filename="${req.body.filename}.xlsx"`);
-  res.send(Buffer.from(buffer));
 }));
 
 router.post('/fiscal-pdf', validateBody(pdfSchema), asyncHandler(async (req, res) => {
@@ -83,7 +80,7 @@ router.post('/fiscal-pdf', validateBody(pdfSchema), asyncHandler(async (req, res
   });
 
   res.setHeader('content-type', 'application/pdf');
-  res.setHeader('content-disposition', `attachment; filename="${req.body.filename}.pdf"`);
+  res.setHeader('content-disposition', `attachment; filename="${safeDownloadBaseName(req.body.filename, 'documento-fiscal')}.pdf"`);
   res.setHeader('x-contagest-document-hash', immutableHash);
   doc.pipe(res);
 
