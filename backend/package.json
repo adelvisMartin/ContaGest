@@ -15,6 +15,7 @@
     "typecheck": "tsc --noEmit",
     "test:financial-idempotency": "tsx --test src/shared/services/financial-idempotency.service.test.ts",
     "test:hipico": "tsx --test src/modules/hipico-bot/*.test.ts src/modules/hipico/*.test.ts",
+    "test:hipico:data": "tsx --test src/modules/hipico/hipico-data.integration.ts",
     "lab:hipico": "tsx scripts/hipico-lab-simulator.ts --all",
     "lab:hipico:interactive": "tsx scripts/hipico-lab-simulator.ts --interactive",
     "soak:hipico": "tsx scripts/hipico-soak-v120.ts",
