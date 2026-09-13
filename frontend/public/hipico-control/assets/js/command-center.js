@@ -100,11 +100,11 @@ function raceLabel(race) {
 
 function operationalMessage({ status, remoteKnown, online, hasGroup }) {
   if (status === 'loading') return 'Cargando estado remoto…';
+  if (status === 'error' && remoteKnown) return 'Datos remotos conservados. No se pudo actualizar el estado remoto; la muestra anterior puede estar desactualizada.';
+  if (status === 'error') return 'No se pudo actualizar el estado remoto. Los datos locales siguen disponibles.';
   if (!hasGroup) return 'Sin grupo activo configurado. Configura o selecciona un grupo para consultar el estado remoto.';
   if (!online && remoteKnown) return 'Última muestra remota conservada. Sin conexión: estos datos pueden estar desactualizados.';
   if (!online) return 'Sin conexión y sin una muestra remota previa. Los datos locales siguen disponibles.';
-  if (status === 'error' && remoteKnown) return 'Datos remotos conservados. No se pudo actualizar el estado remoto; la muestra anterior puede estar desactualizada.';
-  if (status === 'error') return 'No se pudo actualizar el estado remoto. Los datos locales siguen disponibles.';
   return '';
 }
 
