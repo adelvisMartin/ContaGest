@@ -53,9 +53,8 @@ function captchaUsable(form){
 
 function applyCaptchaChallenge(event){
   const form=document.getElementById('loginForm');
-  const token=String(event?.detail?.token||'');
   const expiresAt=Number(event?.detail?.expiresAt||0);
-  if(!form||!token||!Number.isFinite(expiresAt)||expiresAt<=Date.now()){
+  if(!form||!Number.isFinite(expiresAt)||expiresAt<=Date.now()){
     if(form)invalidateCaptcha(form);
     return;
   }
@@ -63,7 +62,7 @@ function applyCaptchaChallenge(event){
   clearCaptchaExpiryTimer();
   captchaExpiryTimer=window.setTimeout(()=>{
     if(!form.isConnected)return;
-    if(String(form.querySelector('[data-captcha-token]')?.value||'')!==token)return;
+    if(Number(form.dataset.captchaExpiresAt||0)!==expiresAt)return;
     invalidateCaptcha(form);
   },Math.min(Math.max(expiresAt-Date.now(),0),2_147_483_647));
 }
