@@ -1,0 +1,11 @@
+{
+  "name": "archify",
+  "repository": "https://github.com/tt-a1i/archify.git",
+  "tag": "v2.16.0",
+  "annotatedTagSha": "fe2c0da92389bb35e9d71a9c7ae000c1083f2c37",
+  "commit": "c826e6c3a7abad19c0f3cd1ca57207d54b1ad8de",
+  "releaseAsset": "archify.zip",
+  "releaseAssetSha256": "4c59fa6557a2385beaaef8c7219cc414573acc9f0c30a932d5053b0b20689a46",
+  "installDir": ".tools/archify-v2.16.0",
+  "updateCheckDisabled": true
+}

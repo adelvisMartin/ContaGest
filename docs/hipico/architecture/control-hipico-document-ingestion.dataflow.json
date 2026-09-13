@@ -1,0 +1,50 @@
+{
+  "schema_version": 1,
+  "diagram_type": "dataflow",
+  "meta": {
+    "title": "Control Hípico Automatic PDF Ingestion",
+    "quality_profile": "standard",
+    "views": [
+      {"id":"happy-path","label":"Live PDF path","focus":["source","bridge","spool","ingress","engine","anydoc","evidence"],"note":"A new live PDF is downloaded only after SOURCE identity checks and is durable before delivery."},
+      {"id":"fallback","label":"OCR fallback","focus":["engine","anydoc","ocr","review"],"note":"AnyDoc needs-OCR falls back to local OCR; hosted Firecrawl remains opt-in."},
+      {"id":"security","label":"Security boundary","focus":["source","identity","spool","ingress","review"],"note":"History replay, cross-group input, oversized files and financial authority are blocked."}
+    ]
+  },
+  "stages": [
+    {"label":"SOURCE"},
+    {"label":"Capture"},
+    {"label":"Durable"},
+    {"label":"Extract"},
+    {"label":"Review / Persist"}
+  ],
+  "nodes": [
+    {"id":"source","type":"external","label":"WhatsApp PDF","sublabel":"new SOURCE message","stage":0,"row":1,"tag":"untrusted"},
+    {"id":"identity","type":"security","label":"Identity Gate","sublabel":"title + pinned @g.us","stage":1,"row":0,"tag":"fail closed"},
+    {"id":"bridge","type":"backend","label":"Download Hook","sublabel":"same Playwright context","stage":1,"row":2,"tag":"<= 10 MiB"},
+    {"id":"spool","type":"messagebus","label":"Document Spool","sublabel":"PDF + metadata","stage":2,"row":1,"tag":"bounded 1–200"},
+    {"id":"ingress","type":"security","label":"Bridge PDF API","sublabel":"token + SOURCE identity","stage":2,"row":3,"tag":"group_evidence"},
+    {"id":"engine","type":"backend","label":"Document Engine","sublabel":"hash + provenance","stage":3,"row":1,"tag":"idempotent"},
+    {"id":"anydoc","type":"backend","label":"AnyDoc 0.2.4","sublabel":"native conversion","stage":3,"row":3,"tag":"local"},
+    {"id":"ocr","type":"backend","label":"Poppler/Tesseract","sublabel":"OCR fallback","stage":3,"row":5,"tag":"local"},
+    {"id":"evidence","type":"database","label":"Evidence Store","sublabel":"PostgreSQL","stage":4,"row":1,"tag":"append-only audit"},
+    {"id":"review","type":"frontend","label":"Human Review","sublabel":"operator PWA","stage":4,"row":4,"tag":"financialAuthority=false"}
+  ],
+  "flows": [
+    {"id":"source-identity","from":"source","to":"identity","label":"visible message","classification":"SOURCE candidate","variant":"security"},
+    {"id":"identity-download","from":"identity","to":"bridge","label":"authorized only","classification":"live PDF","variant":"emphasis"},
+    {"id":"download-spool","from":"bridge","to":"spool","label":"validated bytes","classification":"application/pdf","variant":"emphasis"},
+    {"id":"spool-ingress","from":"spool","to":"ingress","label":"retryable POST","classification":"authenticated provenance","variant":"security"},
+    {"id":"ingress-engine","from":"ingress","to":"engine","label":"canonical ingest","classification":"group_evidence","variant":"emphasis"},
+    {"id":"engine-anydoc","from":"engine","to":"anydoc","label":"native first","classification":"local extraction","variant":"emphasis"},
+    {"id":"anydoc-ocr","from":"anydoc","to":"ocr","label":"needs OCR","classification":"local fallback","variant":"dashed"},
+    {"id":"engine-evidence","from":"engine","to":"evidence","label":"hash + structured data","classification":"provenance","variant":"default"},
+    {"id":"ocr-engine","from":"ocr","to":"engine","label":"OCR text","classification":"derived evidence","variant":"dashed"},
+    {"id":"engine-review","from":"engine","to":"review","label":"unknown/conflict/review","classification":"human decision","variant":"security"},
+    {"id":"review-evidence","from":"review","to":"evidence","label":"approved classification","classification":"authenticated audit","variant":"default"}
+  ],
+  "cards": [
+    {"dot":"emerald","title":"No-loss path","items":["Bytes are written to private local spool before the document message is marked seen","401/403 and transient backend failures retain the PDF for retry","A full spool stops new downloads before consuming more disk"]},
+    {"dot":"rose","title":"No implicit authority","items":["Bridge cannot send document authority or owner headers","Group PDFs enter as group_evidence","Classification never grants financial or settlement authority"]},
+    {"dot":"cyan","title":"Privacy","items":["AnyDoc runs locally by default","Hosted OCR needs an explicit switch plus a valid Firecrawl key","Existing local OCR remains available when AnyDoc reports needs-OCR"]}
+  ]
+}

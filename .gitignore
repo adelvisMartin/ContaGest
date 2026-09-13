@@ -31,6 +31,9 @@ tools/hipico-whatsapp-bridge/data/
 tools/hipico-whatsapp-web-bridge/data/
 tools/hipico-whatsapp-web-bridge/deploy/**/bridge.env
 
+# Pinned external toolchains installed from committed manifests/scripts.
+.tools/
+
 # generated external agent-skill cache; source pins live in agent-skills.lock.json
 .agents/vendor/
 

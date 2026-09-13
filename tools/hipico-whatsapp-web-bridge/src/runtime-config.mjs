@@ -65,6 +65,13 @@ export function loadRuntimeConfig(env = process.env, cwd = process.cwd()) {
     'HIPICO_BRIDGE_HEALTH_URL',
     ingestUrl ? ingestUrl.replace(/\/events(?:\?.*)?$/, '/health') : ''
   );
+  const pdfAutoIngestEnabled = boolEnv(env, 'HIPICO_PDF_AUTO_INGEST_ENABLED', runtimeMode === RUNTIME_MODES.PRODUCTION && backendSyncEnabled);
+  const documentIngestUrl = envText(
+    env,
+    'HIPICO_DOCUMENT_INGEST_URL',
+    ingestUrl ? ingestUrl.replace(/\/events(?:\?.*)?$/, '/documents') : ''
+  );
+  const backendTimeoutMs=numberEnv(env, 'HIPICO_BACKEND_TIMEOUT_MS', 15000, 5000, 60000);
   const sourceMatches = splitGroupMatches(
     envText(env, 'HIPICO_SOURCE_GROUP_MATCHES', envText(env, 'HIPICO_SOURCE_GROUP_MATCH', 'CLUB HIPICO TRIPLE COWN|CLUB HIPICO TRIPLE CROWN'))
   ).map(repairUtf8Mojibake);
@@ -76,6 +83,10 @@ export function loadRuntimeConfig(env = process.env, cwd = process.cwd()) {
     backendSyncEnabled,
     ingestUrl,
     healthUrl,
+    pdfAutoIngestEnabled,
+    documentIngestUrl,
+    documentBackendTimeoutMs:numberEnv(env,'HIPICO_DOCUMENT_BACKEND_TIMEOUT_MS',backendTimeoutMs,5000,60000),
+    pdfSpoolMaxDocuments:numberEnv(env,'HIPICO_PDF_SPOOL_MAX_DOCUMENTS',50,1,200),
     token: envText(env, 'HIPICO_GROUP_BRIDGE_TOKEN', ''),
     sourceMatches,
     sourceGroupId: envText(env, 'HIPICO_SOURCE_GROUP_ID', '').toLowerCase(),
@@ -86,7 +97,7 @@ export function loadRuntimeConfig(env = process.env, cwd = process.cwd()) {
     labSendEnabled: boolEnv(env, 'HIPICO_LAB_SEND_ENABLED', false),
     requirePinnedGroupIds: boolEnv(env, 'HIPICO_REQUIRE_PINNED_GROUP_IDS', true),
     pollMs: numberEnv(env, 'HIPICO_POLL_MS', 1000, 500, 5000),
-    backendTimeoutMs: numberEnv(env, 'HIPICO_BACKEND_TIMEOUT_MS', 15000, 5000, 60000),
+    backendTimeoutMs,
     backendMaxRps: numberEnv(env, 'HIPICO_BACKEND_MAX_RPS', 4, 1, 20),
     backendMaxPerFlush: numberEnv(env, 'HIPICO_BACKEND_MAX_PER_FLUSH', 20, 1, 100),
     backoffBaseMs: numberEnv(env, 'HIPICO_BACKEND_BASE_BACKOFF_MS', 5000, 1000, 60000),
@@ -126,10 +137,14 @@ export function validateRuntimeConfig(config) {
     if (!isWhatsAppGroupId(config.sourceGroupId)) errors.push('Para habilitar LAB se exige HIPICO_SOURCE_GROUP_ID pinneado.');
     if (!isWhatsAppGroupId(config.labGroupId)) errors.push('Para habilitar LAB se exige HIPICO_LAB_GROUP_ID pinneado.');
   }
+  if (config.pdfAutoIngestEnabled && !config.backendSyncEnabled) errors.push('Auto-ingesta PDF exige HIPICO_BACKEND_SYNC_ENABLED=true.');
+  if (config.pdfAutoIngestEnabled && !config.baselineIgnoreHistory) errors.push('Auto-ingesta PDF exige HIPICO_SOURCE_BASELINE_IGNORE_HISTORY=true.');
+  if (config.pdfAutoIngestEnabled && !isSafeHttps(config.documentIngestUrl)) errors.push('HIPICO_DOCUMENT_INGEST_URL HTTPS sin credenciales, query ni fragment es obligatorio para auto-ingesta PDF.');
   if (config.runtimeMode === RUNTIME_MODES.PRODUCTION) {
     if (!config.backendSyncEnabled) errors.push('Producción exige HIPICO_BACKEND_SYNC_ENABLED=true.');
     if (!isSafeHttps(config.ingestUrl)) errors.push('Producción exige HIPICO_INGEST_URL HTTPS sin credenciales, query ni fragment.');
     if (!isSafeHttps(config.healthUrl)) errors.push('Producción exige HIPICO_BRIDGE_HEALTH_URL HTTPS sin credenciales, query ni fragment.');
+    if (config.pdfAutoIngestEnabled&&!isSafeHttps(config.documentIngestUrl)) errors.push('Producción exige HIPICO_DOCUMENT_INGEST_URL HTTPS sin credenciales, query ni fragment.');
     if (!strongBridgeTokenConfigured(config.token)) errors.push('Producción exige HIPICO_GROUP_BRIDGE_TOKEN secreto, no-placeholder y de al menos 32 bytes.');
     if (!config.trainingJournalEnabled) errors.push('Producción exige journal shadow para auditoría y evaluación.');
     if (!config.requirePinnedGroupIds) errors.push('Producción exige HIPICO_REQUIRE_PINNED_GROUP_IDS=true.');

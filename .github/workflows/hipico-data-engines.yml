@@ -8,6 +8,7 @@ on:
       - 'backend/src/modules/hipico/**'
       - 'backend/src/modules/hipico-bot/hipico-race-provider*.ts'
       - 'backend/package.json'
+      - 'scripts/install-hipico-anydoc.mjs'
       - 'supabase/sql/hipico_v14_documents.sql'
       - 'supabase/sql/hipico_v15_race_lifecycle.sql'
       - 'supabase/sql/hipico_v17_provider_evidence.sql'
@@ -66,6 +67,9 @@ jobs:
       - name: Install lockfile dependencies
         run: npm ci --no-audit --no-fund
 
+      - name: Install pinned AnyDoc 0.2.4 toolchain
+        run: node scripts/install-hipico-anydoc.mjs
+
       - name: Install bounded PDF/OCR and PostgreSQL clients
         run: |
           sudo apt-get update
@@ -85,6 +89,12 @@ jobs:
           echo "DATABASE_URL=$url" >> "$GITHUB_ENV"
           echo "HIPICO_OWNER_ID=11111111-1111-4111-8111-111111111111" >> "$GITHUB_ENV"
           echo "HIPICO_OPERATOR_CONTROL_TOKEN=ci-operator-control-token-285287-0001" >> "$GITHUB_ENV"
+
+      - name: Verify AnyDoc capability is pinned and local-first
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(.tools/hipico-anydoc/node_modules/.bin/anydoc --version)" = "0.2.4"
 
       - name: Typecheck canonical Hípico modules
         run: npm --workspace backend run typecheck

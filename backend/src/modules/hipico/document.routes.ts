@@ -3,11 +3,12 @@ import { z } from 'zod';
 import { hipicoError } from './hipico-domain.js';
 import { DOCUMENT_CLASSIFICATIONS, DocumentIngestionService } from './document-engine.js';
 import { createPdfJsDocumentExtractor, documentExtractorCapability } from './document-extractor.js';
+import { anyDocCapability, createPreferredDocumentExtractor } from './document-anydoc-extractor.js';
 import { OPERATOR_DOCUMENT_AUTHORITIES } from './document-policy.js';
 import { PostgresDocumentStore } from './document.store.js';
 import { operatorActorRef, operatorTokenValid } from '../hipico-bot/hipico-operator-security.js';
 
-const router=Router();const store=new PostgresDocumentStore();const service=new DocumentIngestionService(store,createPdfJsDocumentExtractor());
+const router=Router();const store=new PostgresDocumentStore();const fallbackExtractor=createPdfJsDocumentExtractor();const preferredExtractor=createPreferredDocumentExtractor(fallbackExtractor);const service=new DocumentIngestionService(store,preferredExtractor);
 const groupSchema=z.string().trim().min(3).max(120).regex(/^[A-Za-z0-9._:-]+$/);const uuidSchema=z.string().uuid();const classificationSchema=z.enum(DOCUMENT_CLASSIFICATIONS);const authoritySchema=z.enum(OPERATOR_DOCUMENT_AUTHORITIES);
 function requestId(req:Request){return String((req as any).requestId||'').trim()||null;}
 function ownerId(){const value=String(process.env.HIPICO_OWNER_ID||'').trim();if(!uuidSchema.safeParse(value).success)throw Object.assign(new Error('HIPICO_OWNER_NOT_CONFIGURED'),{code:'HIPICO_OWNER_NOT_CONFIGURED'});return value;}
@@ -21,7 +22,7 @@ function statusFor(code:string){
   if(code.includes('REPLAY_MISMATCH')||code==='HIPICO_DOCUMENT_EXTRACTION_IN_PROGRESS'||code==='HIPICO_DOCUMENT_EXTRACTION_CLAIM_FAILED'||code==='HIPICO_DOCUMENT_STATUS_NOT_APPROVABLE')return 409;
   if(code==='HIPICO_DOCUMENT_EXTRACTION_TIMEOUT'||code==='HIPICO_DOCUMENT_TOOL_TIMEOUT')return 504;
   if(code==='HIPICO_DOCUMENT_EXTRACTOR_NOT_CONFIGURED'||code==='HIPICO_DOCUMENT_OCR_NOT_CONFIGURED'||code==='HIPICO_DOCUMENT_FAILURE_AUDIT_FAILED'||code==='HIPICO_OPERATOR_ACTOR_NOT_CONFIGURED')return 503;
-  if(code==='HIPICO_DOCUMENT_EXTRACTION_FAILED')return 502;
+  if(code==='HIPICO_DOCUMENT_EXTRACTION_FAILED'||code==='HIPICO_DOCUMENT_ANYDOC_CONVERSION_FAILED')return 502;
   if(code==='HIPICO_OWNER_NOT_CONFIGURED')return 503;
   if(code==='HIPICO_DOCUMENT_OFFICIAL_AUTHORITY_REQUIRED')return 403;
   return 400;
@@ -29,7 +30,7 @@ function statusFor(code:string){
 function retryableDocumentError(code:string){return ['HIPICO_DOCUMENT_EXTRACTOR_NOT_CONFIGURED','HIPICO_DOCUMENT_OCR_NOT_CONFIGURED','HIPICO_DOCUMENT_EXTRACTION_TIMEOUT','HIPICO_DOCUMENT_TOOL_TIMEOUT','HIPICO_DOCUMENT_FAILURE_AUDIT_FAILED','HIPICO_DOCUMENT_EXTRACTION_FAILED','HIPICO_DOCUMENT_EXTRACTION_IN_PROGRESS','HIPICO_DOCUMENT_EXTRACTION_CLAIM_FAILED'].includes(code);}
 function sendError(req:Request,res:Response,error:any){const code=String(error?.code||error?.type||error?.message||'HIPICO_DOCUMENT_ERROR').slice(0,120);return res.status(statusFor(code)).json(hipicoError({code,message:code.startsWith('PDF_')?'Documento PDF rechazado por la política de seguridad.':'No se pudo procesar el documento hípico.',requestId:requestId(req),retryable:retryableDocumentError(code)}));}
 router.use((req,res,next)=>{res.setHeader('Cache-Control','no-store, max-age=0');if(!operatorTokenValid(req.header('x-hipico-operator-token')||undefined))return res.status(401).json(hipicoError({code:'HIPICO_OPERATOR_UNAUTHORIZED',message:'Operador no autenticado.',requestId:requestId(req)}));next();});
-router.get('/capabilities',(_req,res)=>res.json({ok:true,data:documentExtractorCapability()}));
+router.get('/capabilities',(_req,res)=>res.json({ok:true,data:{...preferredExtractor.capability(),providers:{anydoc:anyDocCapability(),poppler:documentExtractorCapability()}}}));
 router.post('/',(req,res,next)=>{const mime=String(req.header('content-type')||'').split(';',1)[0].trim().toLowerCase();if(mime!=='application/pdf')return sendError(req,res,Object.assign(new Error('PDF_MIME_INVALID'),{code:'PDF_MIME_INVALID'}));next();},express.raw({type:'application/pdf',limit:'10mb'}),async(req,res)=>{
   try{const pdf=Buffer.isBuffer(req.body)?req.body:Buffer.alloc(0);const sourceChannel=header(req,'x-hipico-source-channel',120)||'operator-upload';const authority=requestedAuthority(req);const receivedAt=header(req,'x-hipico-received-at',80)||new Date().toISOString();const supersedes=header(req,'x-hipico-supersedes-id',80);if(supersedes&&!uuidSchema.safeParse(supersedes).success)throw Object.assign(new Error('HIPICO_DOCUMENT_SUPERSEDES_INVALID'),{code:'HIPICO_DOCUMENT_SUPERSEDES_INVALID'});
     const result=await service.ingest({ownerId:ownerId(),groupKey:groupKey(req),pdf,filename:header(req,'x-hipico-filename',180)||'document.pdf',mimeType:req.header('content-type')||'',provenance:{sourceChannel,sourceMessageId:header(req,'x-hipico-source-message-id'),sender:header(req,'x-hipico-sender',220),receivedAt,authority},supersedesId:supersedes});return res.status(result.duplicate?200:201).json({ok:true,data:result});
