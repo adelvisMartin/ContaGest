@@ -50,6 +50,32 @@ test('history/live replay is deduplicated by canonical channel + group + externa
   assert.equal(channel.sent.length, 0);
 });
 
+test('ingestion fails closed until one canonical receiver is registered', async () => {
+  const channel = new TestChannelAdapter();
+  await channel.connect();
+
+  await assert.rejects(channel.inject(message()), /TEST_CHANNEL_RECEIVER_NOT_REGISTERED/);
+
+  let calls = 0;
+  channel.receive(() => { calls += 1; });
+  const accepted = await channel.inject(message());
+  assert.equal(accepted.duplicate, false);
+  assert.equal(calls, 1);
+});
+
+test('only one canonical receiver may be active so retries cannot repeat an earlier subscriber effect', () => {
+  const channel = new TestChannelAdapter();
+  const unsubscribe = channel.receive(() => undefined);
+
+  assert.throws(
+    () => channel.receive(() => undefined),
+    /TEST_CHANNEL_RECEIVER_ALREADY_REGISTERED/
+  );
+
+  unsubscribe();
+  assert.doesNotThrow(() => channel.receive(() => undefined));
+});
+
 test('failed deterministic ingestion releases its replay reservation for an explicit retry', async () => {
   const channel = new TestChannelAdapter();
   let calls = 0;
@@ -67,6 +93,7 @@ test('failed deterministic ingestion releases its replay reservation for an expl
 
 test('group allowlist and channel identity fail closed', async () => {
   const channel = new TestChannelAdapter('test', new Set(['source-group', 'lab-group']));
+  channel.receive(() => undefined);
   await channel.connect();
   await assert.rejects(channel.inject(message({ groupId: 'unknown-group' })), /TEST_CHANNEL_GROUP_NOT_ALLOWED/);
   await assert.rejects(channel.inject(message({ channel: 'whatsapp-web' })), /TEST_CHANNEL_IDENTITY_MISMATCH/);
