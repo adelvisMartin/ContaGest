@@ -12,9 +12,21 @@ const PROMPT_INJECTION = new RegExp([
   '\\b(?:authorization|bearer)\\b',
   'HIPICO_[A-Z0-9_]*(?:TOKEN|SECRET|PASSWORD|KEY)'
 ].join('|'), 'i');
+const DOCUMENT_REFERENCE = /\b(?:documento|archivo|pdf)\b[\s\S]{0,120}\b(?:adjunto|adjunta|sin\s+texto|sin\s+contenido)\b/i;
+const AMBIGUOUS_LIFECYCLE = /\b(?:ya\s+)?est[aá]\s+(?:abierta|cerrada|corriendo|suspendida)\b/i;
+const EXPLICIT_RACE_CONTEXT = /\b(?:carrera|race)\b|\b\d{1,3}\s*(?:ra|da|ta|ma)?\b/i;
 
 export function looksLikeAgentPolicyInjection(text: string) {
   return PROMPT_INJECTION.test(String(text || '').slice(0, 4000));
+}
+
+function looksLikeAttachmentOnlyReference(text: string) {
+  return DOCUMENT_REFERENCE.test(String(text || '').slice(0, 4000));
+}
+
+function looksLikeAmbiguousLifecycle(text: string) {
+  const value = String(text || '').slice(0, 4000);
+  return AMBIGUOUS_LIFECYCLE.test(value) && !EXPLICIT_RACE_CONTEXT.test(value);
 }
 
 const parser: DeterministicAgentParser = {
@@ -22,6 +34,26 @@ const parser: DeterministicAgentParser = {
     if (looksLikeAgentPolicyInjection(text)) {
       return {
         intent: 'security_review',
+        confidence: .999,
+        tool: null,
+        arguments: {},
+        risk: 'review'
+      };
+    }
+
+    if (looksLikeAttachmentOnlyReference(text)) {
+      return {
+        intent: 'document_reference',
+        confidence: .999,
+        tool: null,
+        arguments: {},
+        risk: 'review'
+      };
+    }
+
+    if (looksLikeAmbiguousLifecycle(text)) {
+      return {
+        intent: 'unknown',
         confidence: .999,
         tool: null,
         arguments: {},
