@@ -4,7 +4,7 @@ const remoteBaseURL = String(process.env.QA_BASE_URL || '').trim();
 
 export default defineConfig({
   testDir: './qa',
-  testMatch: ['hipico-production-v290.spec.mjs'],
+  testMatch: ['hipico-production-v290.spec.mjs', 'hipico-command-center-states-v290.spec.mjs'],
   timeout: 45_000,
   expect: { timeout: 8_000 },
   fullyParallel: false,
