@@ -28,7 +28,7 @@
     "prisma:migrate": "npm run prisma:sync-schema && prisma migrate dev",
     "prisma:deploy": "npm run prisma:sync-schema && prisma migrate deploy",
     "prisma:seed": "tsx prisma/seed.ts",
-    "studio": "npm run prisma:sync-schema && prisma migrate dev",
+    "studio": "npm run prisma:sync-schema && prisma studio",
     "dev:mock": "node mock-server.mjs",
     "db:auto:create": "npm run prisma:deploy && prisma db seed && npm run db:rls",
     "db:dev:create": "npm run prisma:migrate -- --name init && prisma db seed && npm run db:rls",
