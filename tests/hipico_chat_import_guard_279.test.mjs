@@ -16,11 +16,11 @@ function workspace(track = 'Churchill Downs', number = 3, imports = []) {
   };
 }
 
-function match(id, track = 'Churchill Downs', raceNumber = 3) {
-  return { id, track, raceNumber };
+function match(id, track = 'Churchill Downs', raceNumber = 3, raceDate = '2026-09-10') {
+  return { id, track, raceNumber, raceDate };
 }
 
-test('chat import is allowed only when every new pair matches active track and race number', () => {
+test('chat import is allowed only when every new pair matches active date, track and race number', () => {
   const result = resolveImportTarget({ matches: [match('m1'), match('m2')] }, workspace());
   assert.equal(result.status, 'MATCH');
   assert.equal(result.matches.length, 2);
@@ -38,14 +38,21 @@ test('same race number but different track is blocked', () => {
   assert.equal(result.status, 'MISMATCH');
 });
 
+test('same track and race but different date is blocked', () => {
+  const result = resolveImportTarget({ matches: [match('m1', 'Churchill Downs', 3, '2026-09-09')] }, workspace());
+  assert.equal(result.status, 'MISMATCH');
+  assert.match(result.reason, /2026-09-09/);
+  assert.match(result.reason, /2026-09-10/);
+});
+
 test('incomplete race context requires explicit manual confirmation path', () => {
-  const result = resolveImportTarget({ matches: [match('m1', '', null)] }, workspace());
+  const result = resolveImportTarget({ matches: [match('m1', '', null, '')] }, workspace());
   assert.equal(result.status, 'AMBIGUOUS');
-  assert.match(result.reason, /no tienen hipódromo y número de carrera/i);
+  assert.match(result.reason, /fecha, hipódromo y número de carrera/i);
 });
 
 test('already imported pairs are excluded from active-race decisions', () => {
-  const result = resolveImportTarget({ matches: [match('old', 'Colonial Downs', 99), match('new')] }, workspace('Churchill Downs', 3, ['old']));
+  const result = resolveImportTarget({ matches: [match('old', 'Colonial Downs', 99, '2026-09-09'), match('new')] }, workspace('Churchill Downs', 3, ['old']));
   assert.equal(result.status, 'MATCH');
   assert.deepEqual(result.matches.map((item) => item.id), ['new']);
 });

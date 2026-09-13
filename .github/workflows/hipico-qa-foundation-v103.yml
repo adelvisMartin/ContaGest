@@ -6,7 +6,15 @@ on:
     paths:
       - 'frontend/public/hipico-control/**'
       - 'frontend/api/hipico/**'
+      - 'frontend/vercel.json'
+      - 'backend/.env.example'
+      - 'backend/src/app.ts'
+      - 'backend/src/shared/middleware/security.ts'
       - 'backend/src/modules/hipico-bot/**'
+      - 'backend/prisma/migrations/*hipico*/**'
+      - 'supabase/sql/hipico*.sql'
+      - 'products/hipico-control/**'
+      - 'ops/roadmap/hipico-preqa-305-diagnosis.json'
       - 'tools/hipico-whatsapp-bridge/**'
       - 'tools/hipico-whatsapp-web-bridge/**'
       - 'android/hipico-control-v1130/**'
@@ -20,6 +28,7 @@ on:
       - 'docs/hipico/QA-RUNNER.md'
       - 'docs/hipico/QA-VISUAL-FUNCTIONAL-MATRIX.md'
       - 'docs/hipico/CONTROL_HIPICO_V1130_RELEASE_AND_QA.md'
+      - 'vercel.json'
       - 'package.json'
       - 'package-lock.json'
       - '.github/workflows/hipico-qa-foundation-v103.yml'
@@ -151,7 +160,9 @@ jobs:
 
       - name: Verify PWA and wrapper parity
         working-directory: android/hipico-control-v1130
-        run: npm run verify:web
+        run: |
+          npm run sync:web
+          npm run verify:web
 
       - name: Explain APK boundary
         run: |

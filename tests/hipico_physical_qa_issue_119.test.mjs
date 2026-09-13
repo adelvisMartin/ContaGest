@@ -54,8 +54,8 @@ test('record command updates exactly one environment/scenario',()=>{
 
 test('unknown status is rejected by record command',()=>{
   const dir=fs.mkdtempSync(path.join(os.tmpdir(),'hipico-v119-invalid-'));const file=path.join(dir,'physical.json');const sha='d'.repeat(40);
-  run(['init',`--file=${file}`,'--force'],sha);run(['add-env',`--file=${file}`,'--id=chrome-desktop','--mode=pwa-browser','--device=Desktop'],sha);
-  const record=run(['record',`--file=${file}`,'--env=chrome-desktop','--scenario=fresh-install','--status=GREEN'],sha);assert.equal(record.status,2);assert.match(record.stderr,/Status inválido/);
+  run(['init',`--file=${file}`,'--force'],sha);run(['add-env',`--file=${file}`,`--id=chrome-desktop`,`--mode=pwa-browser`,`--device=Desktop`],sha);
+  const record=run(['record',`--file=${file}`,`--env=chrome-desktop`,`--scenario=fresh-install`,`--status=GREEN`],sha);assert.equal(record.status,2);assert.match(record.stderr,/Status inválido/);
 });
 
 test('release readiness requires operator, distinct hashed SOURCE/LAB sessions and evidence for every PASS row',()=>{
@@ -87,7 +87,7 @@ test('release check rejects evidence from another otherwise valid candidate SHA'
 test('check hashes safety invariant evidence but does not mark an incomplete gate completed',()=>{
   const dir=fs.mkdtempSync(path.join(os.tmpdir(),'hipico-v119-hash-'));const file=path.join(dir,'physical.json');const sha='6'.repeat(40);
   run(['init',`--file=${file}`,'--force'],sha);for(const [id,mode] of [['browser','pwa-browser'],['pwa','pwa-standalone'],['apk','android-apk']])run(['add-env',`--file=${file}`,`--id=${id}`,`--mode=${mode}`,'--device=Device'],sha);
-  fs.writeFileSync(path.join(dir,'source-readonly.log'),'verified');run(['invariant',`--file=${file}`,'--name=sourceReadOnly','--status=PASS','--evidence=source-readonly.log'],sha);
+  fs.writeFileSync(path.join(dir,'source-readonly.log'),'verified');run(['invariant',`--file=${file}`,`--name=sourceReadOnly`,`--status=PASS`,`--evidence=source-readonly.log`],sha);
   const checked=run(['check',`--file=${file}`],sha);assert.equal(checked.status,3,checked.stderr);
   const manifest=JSON.parse(fs.readFileSync(path.join(dir,'manifest.json'),'utf8'));assert.equal(manifest.completedAt,null);assert.ok(manifest.checkedAt);assert.ok(manifest.evidenceFiles.some((row)=>row.invariant==='sourceReadOnly'&&row.path==='source-readonly.log'&&/^[a-f0-9]{64}$/.test(row.sha256)));
 });

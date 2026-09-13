@@ -8,12 +8,13 @@ const recoveryPath = `${root}/recovery.html`;
 const cssPath = `${root}/assets/css/app.css`;
 const guidePath = `${root}/STYLE-GUIDE.md`;
 const swPath = `${root}/sw.js`;
+const canonicalCss = ['./assets/css/app.css','./assets/css/mobile-accessibility.css','./assets/css/operational-copy-center.css','./assets/css/operational-access-guard.css'];
 const removedCss = ['styles.css','ui-system.css','tokens.css','themes.css','components.css','operations-pro.css','precision-hipica.css','offline-icons.css','recovery.css','ui-system-v2.css'];
 
-test('Control Hípico loads exactly one canonical stylesheet on app and recovery surfaces', async () => {
+test('Control Hípico loads canonical scoped styles on app while recovery stays minimal', async () => {
   const [index, recovery] = await Promise.all([fs.readFile(indexPath, 'utf8'), fs.readFile(recoveryPath, 'utf8')]);
   const stylesheetLinks = (html) => [...html.matchAll(/<link\s+rel="stylesheet"\s+href="([^"]+)"/g)].map((match) => match[1]);
-  assert.deepEqual(stylesheetLinks(index), ['./assets/css/app.css']);
+  assert.deepEqual(stylesheetLinks(index), canonicalCss);
   assert.deepEqual(stylesheetLinks(recovery), ['./assets/css/app.css']);
   assert.match(recovery, /data-action="reset-local-storage"/);
   await fs.access(cssPath);
@@ -55,25 +56,27 @@ test('official horse/jockey image assets are the only PWA brand entry points', a
   await assert.rejects(fs.access(`${root}/icon.svg`));
 });
 
-test('service worker caches only canonical CSS plus integrated modules', async () => {
+test('service worker caches the canonical CSS set plus integrated modules', async () => {
   const sw = await fs.readFile(swPath, 'utf8');
-  assert.match(sw, /assets\/css\/app\.css/);
+  for (const css of canonicalCss) assert.ok(sw.includes(css.replace('./', '')), `${css} must be cached`);
   assert.match(sw, /password-recovery\.js/);
   assert.match(sw, /user-access\.js/);
   assert.match(sw, /help-center\.js/);
   assert.match(sw, /whatsapp\/ui-transcript\.js/);
-  assert.match(sw, /shell-r4-zero-legacy/);
+  assert.match(sw, /shell-r\d+-[a-z0-9-]+/i);
   for (const file of removedCss) assert.equal(sw.includes(`assets/css/${file}`), false, `${file} must not be cached`);
 });
 
 test('accessibility/mobile and component contracts are canonical', async () => {
-  const [css, guide, ui, help] = await Promise.all([
-    fs.readFile(cssPath, 'utf8'), fs.readFile(guidePath, 'utf8'), fs.readFile(`${root}/assets/js/ui.js`, 'utf8'), fs.readFile(`${root}/assets/js/help-center.js`, 'utf8')
+  const [css, guide, ui, help, touch] = await Promise.all([
+    fs.readFile(cssPath, 'utf8'), fs.readFile(guidePath, 'utf8'), fs.readFile(`${root}/assets/js/ui.js`, 'utf8'), fs.readFile(`${root}/assets/js/help-center.js`, 'utf8'),
+    fs.readFile(`${root}/assets/css/mobile-accessibility.css`, 'utf8')
   ]);
   assert.match(css, /@media \(max-width: 780px\)/);
   assert.match(css, /@media \(prefers-reduced-motion: reduce\)/);
   assert.match(css, /:focus-visible/);
   assert.match(css, /touch-action:\s*pan-y pinch-zoom/);
+  assert.match(touch, /@media \(max-width:\s*900px\),\s*\(pointer:\s*coarse\)/);
   assert.match(ui, /button\(label/);
   assert.match(ui, /dialog\(title/);
   assert.match(ui, /focusableNodes/);

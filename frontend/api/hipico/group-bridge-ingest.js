@@ -40,7 +40,7 @@ const REQUIRED_BRIDGE_BODY_KEYS = new Set([
   'hasMedia'
 ]);
 const BRIDGE_MESSAGE_TYPES = new Set(['chat', 'media']);
-const BRIDGE_MEDIA_KINDS = new Set(['none', 'image', 'video', 'audio', 'document']);
+const BRIDGE_MEDIA_KINDS = new Set(['none', 'image', 'video', 'audio', 'document', 'unknown']);
 
 function shadowSuggestion(classification, body) {
   const sender = String(body?.senderLabel || 'remitente').trim() || 'remitente';

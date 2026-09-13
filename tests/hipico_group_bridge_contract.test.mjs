@@ -9,10 +9,12 @@ const read = (p) => fs.readFileSync(path.join(root, p), 'utf8');
 
 test('normal WhatsApp group bridge is isolated from Meta webhook and browser CSRF', () => {
   const app = read('backend/src/app.ts');
-  const bridgeMount = app.indexOf("app.use('/api/v1/hipico-bot', authRateLimit, hipicoBridgeRoutes)");
+  const webhookMount = app.indexOf("app.use('/api/v1/hipico-bot', hipicoWebhookRoutes)");
+  const adapterMount = app.indexOf("app.use('/api/v1/hipico-bot', authRateLimit, hipicoBridgeRoutes, hipicoOperatorRoutes)");
   const csrfMount = app.indexOf('app.use(csrfProtection)');
-  assert.ok(bridgeMount > 0, 'bridge route must be mounted');
-  assert.ok(csrfMount > bridgeMount, 'bridge token route must be mounted before browser CSRF');
+  assert.ok(webhookMount > 0, 'signed Meta webhook route must be mounted');
+  assert.ok(adapterMount > webhookMount, 'Bridge/operator adapters must be mounted after the signed webhook surface');
+  assert.ok(csrfMount > adapterMount, 'token-authenticated Bridge/operator adapters must be mounted before browser CSRF');
   assert.match(app, /hipico-bridge\.routes\.js/);
 });
 

@@ -21,6 +21,26 @@ test('Meta Cloud sender readiness requires strong token plus numeric phone id',(
   assert.equal(metaSenderConfig({...base,HIPICO_META_PHONE_NUMBER_ID:'phone-id'}).ready,false);
 });
 
+test('Meta sender Graph version defaults safely only when omitted and rejects explicit malformed configuration',()=>{
+  const defaulted=metaSenderConfig(base);
+  assert.equal(defaulted.graphVersion,'v23.0');
+  assert.equal(defaulted.graphVersionValid,true);
+  assert.equal(defaulted.graphVersionDefaulted,true);
+
+  const explicit=metaSenderConfig({...base,HIPICO_META_GRAPH_VERSION:'v24.1'});
+  assert.equal(explicit.ready,true);
+  assert.equal(explicit.graphVersion,'v24.1');
+  assert.equal(explicit.graphVersionValid,true);
+  assert.equal(explicit.graphVersionDefaulted,false);
+
+  for(const graphVersion of ['23.0','v23','v23.0/path','https://example.test','v123456789.1']){
+    const invalid=metaSenderConfig({...base,HIPICO_META_GRAPH_VERSION:graphVersion});
+    assert.equal(invalid.ready,false,`${graphVersion} must fail readiness`);
+    assert.equal(invalid.graphVersionValid,false);
+    assert.equal(invalid.graphVersionDefaulted,false);
+  }
+});
+
 test('Meta Cloud webhook readiness shares the same phone identity boundary',()=>{
   assert.equal(metaWebhookConfig(base).ready,true);
   assert.equal(metaWebhookConfig({...base,HIPICO_META_PHONE_NUMBER_ID:'phone-id'}).ready,false);
@@ -37,6 +57,8 @@ test('sender validates Meta runtime before reading or claiming any outbox row',(
   const query=handlerSource.indexOf('const rows = await supabase(`hipico_outbox?');
   const claim=handlerSource.indexOf('const row = await claimRow(candidate)');
   assert.ok(config>=0&&ready>config&&query>ready&&claim>query);
+  assert.match(handlerSource,/graphVersion=senderConfig\.graphVersion/);
+  assert.doesNotMatch(handlerSource,/safeGraphVersion\(\)/);
 });
 
 test('status endpoint consumes canonical Meta sender and webhook readiness instead of raw presence only',()=>{
@@ -45,4 +67,5 @@ test('status endpoint consumes canonical Meta sender and webhook readiness inste
   assert.match(statusSource,/webhook\.ready/);
   assert.match(statusSource,/accessTokenStrong: sender\.accessTokenStrong/);
   assert.match(statusSource,/phoneNumberIdValid: sender\.phoneNumberIdValid && webhook\.phoneNumberIdValid/);
+  assert.match(statusSource,/graphVersionValid: sender\.graphVersionValid/);
 });

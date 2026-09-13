@@ -1,5 +1,5 @@
-import { bearerTokenValid, env, fetchWithTimeout, isE164, metaDestinationAllowed, metaOutboundPolicy, retryAfterMs, serverSecret, supabase } from './_shared.js';
-import { metaSenderConfig } from './meta-runtime.js';
+import { bearerTokenValid, env, fetchWithTimeout, isE164, metaDestinationAllowed, metaOutboundPolicy, retryAfterMs, runtimeValue, safeTimeoutMs, serverSecret, supabase } from './_shared.js';
+import { DEFAULT_META_GRAPH_VERSION, metaGraphVersionConfig, metaSenderConfig } from './meta-runtime.js';
 
 const MAX_ATTEMPTS = 6;
 const BATCH_SIZE = 10;
@@ -19,6 +19,14 @@ function sendLeaseExpiryIso(nowMs = Date.now()) {
   const parsed = Number(nowMs);
   const safeNow = Number.isFinite(parsed) ? parsed : Date.now();
   return new Date(safeNow + SEND_LEASE_MS).toISOString();
+}
+
+function providerHttpDisposition(status, attempts) {
+  const code = Number(status);
+  const attemptCount = Math.max(0, Number(attempts) || 0);
+  if (code === 408 || code >= 500) return 'reconciliation_required';
+  if (code === 429 && attemptCount < MAX_ATTEMPTS) return 'retry';
+  return 'failed';
 }
 
 async function claimRow(row) {
@@ -41,7 +49,7 @@ async function claimRow(row) {
 
 async function quarantineExpiredSendingClaims(nowIso = new Date().toISOString()) {
   const ownerId = env('HIPICO_OWNER_ID');
-    const staleItems = await supabase(
+  const staleItems = await supabase(
     `hipico_outbox?owner_id=eq.${encodeURIComponent(ownerId)}&status=eq.sending&next_attempt_at=lte.${encodeURIComponent(nowIso)}&order=next_attempt_at.asc&limit=${STALE_CLAIM_SCAN_LIMIT}`,
     { headers: { Prefer: 'return=representation' } }
   ) || [];
@@ -77,9 +85,13 @@ async function updateRow(id, patch) {
   return updated;
 }
 
-function safeGraphVersion() {
-  const configured = String(process.env.HIPICO_META_GRAPH_VERSION || 'v23.0').trim();
-  return /^v\d+\.\d+$/.test(configured) ? configured : 'v23.0';
+function safeGraphVersion(source = process.env) {
+  const config = metaGraphVersionConfig(source);
+  return config.graphVersionValid ? config.graphVersion : DEFAULT_META_GRAPH_VERSION;
+}
+
+function sendTimeoutMs(source = process.env) {
+  return safeTimeoutMs(runtimeValue(source, 'HIPICO_CLOUD_SEND_TIMEOUT_MS', 'HIPICO_META_SEND_TIMEOUT_MS'), 12000);
 }
 
 export default async function handler(req, res) {
@@ -104,6 +116,7 @@ export default async function handler(req, res) {
     return res.status(503).json({ok:false,retryable:true,error:'sender_not_configured'});
   }
   const {accessToken,phoneNumberId}=senderConfig;
+  const graphVersion=senderConfig.graphVersion;
 
   try {
     const ownerId = env('HIPICO_OWNER_ID');
@@ -114,7 +127,6 @@ export default async function handler(req, res) {
     }) || [];
     if (!rows.length) return res.status(200).json({ ok: true, processed: 0, sent: 0, failed: 0, retried: 0, reconciliationRequired: 0, staleSendingQuarantined, skippedClaims: 0 });
 
-    const graphVersion = safeGraphVersion();
     let sent = 0;
     let failed = 0;
     let retried = 0;
@@ -153,7 +165,7 @@ export default async function handler(req, res) {
             type: 'text',
             text: { preview_url: false, body: text }
           })
-        }, Number(process.env.HIPICO_META_SEND_TIMEOUT_MS || 12000));
+        }, sendTimeoutMs());
       } catch (error) {
         await updateRow(row.id, {
           status: 'reconciliation_required',
@@ -169,15 +181,17 @@ export default async function handler(req, res) {
       try { data = raw ? JSON.parse(raw) : {}; } catch { data = {}; }
 
       if (!response.ok) {
-        const retryable = response.status === 408 || response.status === 429 || response.status >= 500;
-        const exhausted = attempts >= MAX_ATTEMPTS;
+        const disposition = providerHttpDisposition(response.status, attempts);
         await updateRow(row.id, {
-          status: retryable && !exhausted ? 'retry' : 'failed',
+          status: disposition,
           attempts,
-          next_attempt_at: retryable && !exhausted ? nextRetryIso(attempts, response.headers.get('retry-after')) : row.next_attempt_at,
-          last_error: `META_HTTP_${response.status}`
+          next_attempt_at: disposition === 'retry' ? nextRetryIso(attempts, response.headers.get('retry-after')) : row.next_attempt_at,
+          last_error: disposition === 'reconciliation_required'
+            ? `RECONCILIATION_REQUIRED:META_HTTP_${response.status}`
+            : `META_HTTP_${response.status}`
         });
-        if (retryable && !exhausted) retried += 1;
+        if (disposition === 'retry') retried += 1;
+        else if (disposition === 'reconciliation_required') reconciliationRequired += 1;
         else failed += 1;
         continue;
       }
@@ -210,4 +224,4 @@ export default async function handler(req, res) {
   }
 }
 
-export const __test__={safeGraphVersion,metaSenderConfig,nextRetryIso,sendLeaseExpiryIso,quarantineExpiredSendingClaims,SEND_LEASE_MS,STALE_CLAIM_SCAN_LIMIT};
+export const __test__={safeGraphVersion,metaSenderConfig,nextRetryIso,sendLeaseExpiryIso,sendTimeoutMs,providerHttpDisposition,quarantineExpiredSendingClaims,SEND_LEASE_MS,STALE_CLAIM_SCAN_LIMIT};

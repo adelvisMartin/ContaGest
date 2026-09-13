@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createHorseRaceProvider, HorseRaceProviderError, MAX_RACE_PROVIDER_CACHE_ENTRIES, MAX_RACE_PROVIDER_RESPONSE_BYTES, raceProviderStatus } from './hipico-race-provider.js';
+import { createHorseRaceProvider, HorseRaceProviderError, MAX_RACE_PROVIDER_CACHE_ENTRIES, MAX_RACE_PROVIDER_RESPONSE_BYTES, providerAddressForbidden, raceProviderStatus } from './hipico-race-provider.js';
 
 const configuredEnv = {
   HIPICO_RACE_PROVIDER: 'sportradar-uof',
@@ -10,6 +10,8 @@ const configuredEnv = {
   HIPICO_RACE_PROVIDER_CACHE_TTL_MS: '30000',
   HIPICO_RACE_PROVIDER_LANGUAGE: 'en'
 };
+
+const publicResolve = async () => [{ address: '8.8.8.8', family: 4 }];
 
 test('external race provider is disabled and non-authoritative by default', () => {
   const status = raceProviderStatus({});
@@ -37,6 +39,7 @@ test('stage lookup rejects non-numeric identifiers before any upstream request',
   let calls = 0;
   const provider = createHorseRaceProvider({
     env: configuredEnv,
+    resolveImpl: publicResolve,
     fetchImpl: async () => { calls += 1; return new Response('<ok/>'); }
   });
   await assert.rejects(
@@ -44,6 +47,62 @@ test('stage lookup rejects non-numeric identifiers before any upstream request',
     (error: unknown) => error instanceof HorseRaceProviderError && error.code === 'INVALID_STAGE_ID' && error.retryable === false
   );
   assert.equal(calls, 0);
+});
+
+test('DNS/IP defense rejects loopback private link-local ULA documentation and mapped private addresses before fetch', async () => {
+  const forbidden = ['127.0.0.1', '10.20.30.40', '169.254.169.254', '172.16.0.2', '192.168.1.20', '203.0.113.10', '::1', 'fc00::1', 'fe80::1', '2001:db8::1', '::ffff:10.0.0.8'];
+  for (const address of forbidden) {
+    assert.equal(providerAddressForbidden(address), true, `${address} must be rejected`);
+    let calls = 0;
+    const provider = createHorseRaceProvider({
+      env: configuredEnv,
+      resolveImpl: async () => [{ address, family: address.includes(':') ? 6 : 4 }],
+      fetchImpl: async () => { calls += 1; return new Response('<ok/>', { headers: { 'content-type': 'application/xml' } }); }
+    });
+    await assert.rejects(
+      provider.getStageSummary('697758'),
+      (error: unknown) => error instanceof HorseRaceProviderError && error.code === 'UPSTREAM_ADDRESS_FORBIDDEN' && error.retryable === false
+    );
+    assert.equal(calls, 0, `${address} reached fetch unexpectedly`);
+  }
+  assert.equal(providerAddressForbidden('8.8.8.8'), false);
+  assert.equal(providerAddressForbidden('2606:4700:4700::1111'), false);
+});
+
+test('DNS defense rejects a destination if any resolved address is private or reserved', async () => {
+  let calls = 0;
+  const provider = createHorseRaceProvider({
+    env: configuredEnv,
+    resolveImpl: async () => [
+      { address: '8.8.8.8', family: 4 },
+      { address: '127.0.0.1', family: 4 }
+    ],
+    fetchImpl: async () => { calls += 1; return new Response('<ok/>'); }
+  });
+  await assert.rejects(
+    provider.getStageSummary('697758'),
+    (error: unknown) => error instanceof HorseRaceProviderError && error.code === 'UPSTREAM_ADDRESS_FORBIDDEN' && error.retryable === false
+  );
+  assert.equal(calls, 0);
+});
+
+test('DNS failures and empty answers are fail-closed and retryable without contacting upstream', async () => {
+  for (const resolveImpl of [
+    async () => { throw new Error('fixture dns unavailable'); },
+    async () => [] as Array<{ address: string; family: number }>
+  ]) {
+    let calls = 0;
+    const provider = createHorseRaceProvider({
+      env: configuredEnv,
+      resolveImpl,
+      fetchImpl: async () => { calls += 1; return new Response('<ok/>'); }
+    });
+    await assert.rejects(
+      provider.getStageSummary('697758'),
+      (error: unknown) => error instanceof HorseRaceProviderError && error.code === 'UPSTREAM_DNS_ERROR' && error.retryable === true
+    );
+    assert.equal(calls, 0);
+  }
 });
 
 test('stage summary uses authenticated UOF REST enrichment, forbids redirects and caches successful response', async () => {
@@ -54,6 +113,7 @@ test('stage summary uses authenticated UOF REST enrichment, forbids redirects an
   let clock = Date.parse('2026-09-10T23:00:00Z');
   const provider = createHorseRaceProvider({
     env: configuredEnv,
+    resolveImpl: publicResolve,
     now: () => clock,
     fetchImpl: async (input, init) => {
       calls += 1;
@@ -86,6 +146,7 @@ test('race provider rejects non-XML or doctype responses and never caches them',
   let calls = 0;
   const provider = createHorseRaceProvider({
     env: configuredEnv,
+    resolveImpl: publicResolve,
     fetchImpl: async () => {
       calls += 1;
       if (calls === 1) return new Response('<html>proxy error</html>', { status: 200, headers: { 'content-type': 'text/html' } });
@@ -107,6 +168,7 @@ test('race enrichment cache remains bounded under many distinct stage ids', asyn
   let calls = 0;
   const provider = createHorseRaceProvider({
     env: configuredEnv,
+    resolveImpl: publicResolve,
     now: () => Date.parse('2026-09-10T23:00:00Z'),
     fetchImpl: async () => { calls += 1; return new Response('<ok/>', { status: 200, headers: { 'content-type': 'application/xml' } }); }
   });
@@ -141,6 +203,7 @@ test('declared oversized upstream response is rejected before body consumption',
   } as unknown as Response;
   const provider = createHorseRaceProvider({
     env: configuredEnv,
+    resolveImpl: publicResolve,
     fetchImpl: async () => response
   });
   await assert.rejects(
@@ -167,6 +230,7 @@ test('streaming upstream response is cancelled as soon as byte limit is crossed'
   });
   const provider = createHorseRaceProvider({
     env: configuredEnv,
+    resolveImpl: publicResolve,
     fetchImpl: async () => new Response(body, { status: 200, headers: { 'content-type': 'application/xml' } })
   });
   await assert.rejects(
@@ -180,6 +244,7 @@ test('streaming upstream response is cancelled as soon as byte limit is crossed'
 test('upstream server errors remain retryable and never become financial decisions', async () => {
   const provider = createHorseRaceProvider({
     env: configuredEnv,
+    resolveImpl: publicResolve,
     fetchImpl: async () => new Response('unavailable', { status: 503 })
   });
   await assert.rejects(

@@ -43,11 +43,11 @@ test('canonical UI exposes light, dark and system theming', () => {
   assert.match(css, /:root\[data-theme="system"\]/);
 });
 
-test('mobile controls preserve the 44px interaction contract', () => {
+test('mobile controls preserve the 44px interaction contract across viewport and coarse-pointer devices', () => {
   assert.match(css, /--hc-touch:\s*44px/);
   assert.match(css, /@media \(max-width:\s*780px\)[\s\S]*\.button,[\s\S]*min-height:\s*var\(--hc-touch\)/);
   assert.match(html, /assets\/css\/mobile-accessibility\.css/);
-  assert.match(touchCss, /@media \(max-width:\s*780px\)/);
+  assert.match(touchCss, /@media \(max-width:\s*900px\),\s*\(pointer:\s*coarse\)/);
   assert.match(touchCss, /\.input,[\s\S]*\.select,[\s\S]*\.date-button,[\s\S]*\.color-input,[\s\S]*\.switch-row[\s\S]*min-height:\s*var\(--hc-touch,\s*44px\)/);
   assert.match(sw, /assets\/css\/mobile-accessibility\.css/);
   assert.match(opsCss, /@media\(max-width:720px\)[\s\S]*min-height:44px/);
@@ -58,6 +58,7 @@ test('mobile vertical scrolling, safe area and reduced motion remain explicitly 
   assert.match(css, /overflow-y:\s*visible/);
   assert.match(css, /safe-area-inset-bottom/);
   assert.match(css, /prefers-reduced-motion:\s*reduce/);
+  assert.match(touchCss, /prefers-reduced-motion:\s*reduce/);
 });
 
 test('installed PWA precaches the complete Hípico JavaScript module tree and atomically retires old shells', () => {

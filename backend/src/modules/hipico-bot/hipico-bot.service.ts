@@ -2,7 +2,7 @@ import crypto from 'node:crypto';
 import { prisma } from '../../database/prisma.js';
 import { classify as classifyOperational } from './hipico-operational-classifier.js';
 import type { IntentResult as OperationalIntentResult } from './hipico-operational-classifier.js';
-import { assertCloudOutboundAllowed, cloudOutboundPolicy } from './hipico-outbound-policy.js';
+import { assertCloudOutboundAllowed, assertCloudTransportConfigured, cloudHttpDeliveryAmbiguous, cloudOutboundPolicy, cloudTransportConfiguration } from './hipico-outbound-policy.js';
 import { operatorTokenValid as canonicalOperatorTokenValid } from './hipico-operator-security.js';
 import { replayMismatchError, sameWebhookReplay } from './hipico-webhook-replay.js';
 import { webhookSignatureValid } from './hipico-webhook-security.js';
@@ -17,6 +17,7 @@ const MAX_INBOUND_TEXT=4000;
 const MAX_MESSAGE_TYPE=80;
 const MAX_PROVIDER_MESSAGE_ID=320;
 const MAX_PHONE_NUMBER_ID=120;
+const WEBHOOK_SEND_LEASE_MS=2*60*1000;
 
 const clampLimit=(value:number, fallback=50)=>Math.min(100,Math.max(1,Number.isFinite(value)?Math.trunc(value):fallback));
 const id=(prefix:string)=>`${prefix}_${crypto.randomUUID()}`;
@@ -25,7 +26,9 @@ let dbStatus:{value:boolean;until:number}|null=null;
 
 export function promotion():BotPromotion {
   const value=String(process.env.HIPICO_BOT_PROMOTION||'shadow').toLowerCase();
-  if(value==='automatic')return cloudOutboundPolicy().enabled?'automatic':'approved';
+  if(value==='automatic'){
+    return cloudOutboundPolicy().enabled&&cloudTransportConfiguration().configured?'automatic':'approved';
+  }
   return value==='approved'?'approved':'shadow';
 }
 
@@ -106,9 +109,9 @@ export const HipicoBotStore={
     }
     return memoryEvents.some((event)=>event.providerMessageId===providerMessageId);
   },
-  async saveEvent(row:any){
+  async saveEvent(row:any,options:{requirePersistent?:boolean}={}){
     const record={id:id('hwe'),...row,receivedAt:new Date().toISOString()};
-    if(await dbReady()){
+    if(await dbReady(Boolean(options.requirePersistent))){
       const inserted=await prisma.$queryRaw<Array<{id:string}>>`INSERT INTO public."HipicoWebhookEvent" ("id","providerMessageId","phoneNumberId","sender","messageType","body","intent","risk","status","confidence","suggestion","payload","receivedAt","processedAt") VALUES (${record.id},${record.providerMessageId},${record.phoneNumberId||null},${record.sender||null},${record.messageType||'unknown'},${record.body||null},${record.intent||'unknown'},${record.risk||'review'},${record.status||'received'},${Number(record.confidence||0)},${record.suggestion||null},${JSON.stringify(record.payload||{})}::jsonb,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP) ON CONFLICT ("providerMessageId") DO NOTHING RETURNING "id"`;
       if(inserted[0]?.id)return{...record,id:inserted[0].id,inserted:true};
       const rows=await prisma.$queryRaw<any[]>`
@@ -120,6 +123,7 @@ export const HipicoBotStore={
       if(!sameWebhookReplay(rows[0],record))throw replayMismatchError();
       return{...record,id:rows[0].id,inserted:false};
     }
+    if(options.requirePersistent)throw Object.assign(new Error('Persistent Hípico event storage is required for webhook ingestion.'),{code:'HIPICO_WEBHOOK_PERSISTENCE_REQUIRED'});
     const existing=memoryEvents.find((event)=>event.providerMessageId===record.providerMessageId);
     if(existing){
       if(!sameWebhookReplay(existing,record))throw replayMismatchError();
@@ -185,6 +189,12 @@ export const HipicoBotStore={
     Object.assign(row,{status:'failed',error:safeError});
     return true;
   },
+  async markStaleSendingReconciliation(idValue:string,staleBefore:Date,error:string){
+    const safeError=String(error||'stale_sending_lease').slice(0,1000);
+    if(!await dbReady(true))throw Object.assign(new Error('Persistent Hípico outbox is required to reconcile a stale sending lease.'),{code:'HIPICO_WEBHOOK_RECONCILIATION_PERSISTENCE_REQUIRED'});
+    const affected=await prisma.$executeRaw`UPDATE public."HipicoBotOutbox" SET "status"='reconciliation_required',"error"=${safeError},"updatedAt"=CURRENT_TIMESTAMP WHERE "id"=${idValue} AND "status"='sending' AND "updatedAt"<=${staleBefore}`;
+    return affected===1;
+  },
   async markReconciliationRequired(idValue:string,error:string){
     const safeError=String(error||'ambiguous_delivery').slice(0,1000);
     if(await dbReady()){
@@ -200,10 +210,7 @@ export const HipicoBotStore={
 
 export async function sendCloudText(recipient:string,message:string){
   assertCloudOutboundAllowed(recipient);
-  const token=String(process.env.WHATSAPP_CLOUD_TOKEN||'');
-  const phoneId=String(process.env.WHATSAPP_PHONE_NUMBER_ID||'');
-  const version=String(process.env.WHATSAPP_GRAPH_API_VERSION||process.env.WHATSAPP_GRAPH_VERSION||'v23.0');
-  if(!token||!phoneId)throw new Error('Faltan WHATSAPP_CLOUD_TOKEN o WHATSAPP_PHONE_NUMBER_ID');
+  const {token,phoneId,version,timeoutMs}=assertCloudTransportConfigured();
   if(!E164_DIGITS.test(recipient))throw new Error('Destinatario WhatsApp inválido.');
   const text=String(message||'').trim();
   if(!text||text.length>4000)throw Object.assign(new Error('Mensaje WhatsApp vacío o demasiado largo.'),{code:'HIPICO_CLOUD_MESSAGE_INVALID'});
@@ -212,7 +219,7 @@ export async function sendCloudText(recipient:string,message:string){
     response=await fetch(`https://graph.facebook.com/${encodeURIComponent(version)}/${encodeURIComponent(phoneId)}/messages`,{
       method:'POST',headers:{authorization:`Bearer ${token}`,'content-type':'application/json'},
       body:JSON.stringify({messaging_product:'whatsapp',recipient_type:'individual',to:recipient,type:'text',text:{preview_url:false,body:text}}),
-      signal:AbortSignal.timeout(10_000)
+      signal:AbortSignal.timeout(timeoutMs)
     });
   }catch(error:any){
     throw Object.assign(new Error('No se pudo determinar si Meta aceptó el mensaje; requiere conciliación manual.'),{
@@ -221,7 +228,14 @@ export async function sendCloudText(recipient:string,message:string){
     });
   }
   const data=await response.json().catch(()=>({}));
-  if(!response.ok)throw Object.assign(new Error(`Meta Graph HTTP ${response.status}`),{code:'HIPICO_CLOUD_HTTP_ERROR',status:response.status});
+  if(!response.ok){
+    if(cloudHttpDeliveryAmbiguous(response.status)){
+      throw Object.assign(new Error(`Meta Graph HTTP ${response.status}; entrega ambigua, requiere conciliación manual.`),{
+        code:'HIPICO_CLOUD_DELIVERY_AMBIGUOUS',responseStatus:response.status,receiptReason:'AMBIGUOUS_HTTP_STATUS'
+      });
+    }
+    throw Object.assign(new Error(`Meta Graph HTTP ${response.status}`),{code:'HIPICO_CLOUD_HTTP_ERROR',status:response.status});
+  }
   const providerMessageId=String(data?.messages?.[0]?.id||'');
   if(!providerMessageId){
     throw Object.assign(new Error('Meta respondió éxito sin identificador de mensaje; requiere conciliación manual.'),{
@@ -233,26 +247,49 @@ export async function sendCloudText(recipient:string,message:string){
   return{providerMessageId,raw:data};
 }
 
-export async function processIncoming(message:any){
+export async function processIncoming(message:any,options:{requirePersistent?:boolean}={}){
   const result=classifyIncoming(message);
-  const event=await HipicoBotStore.saveEvent({...message,...result,status:'classified'});
-  if(event.inserted===false)return{duplicate:true};
+  const event=await HipicoBotStore.saveEvent({...message,...result,status:'classified'},options);
+  if(event.inserted===false&&!options.requirePersistent)return{duplicate:true};
   const mode=promotion();
-  const persistent=await HipicoBotStore.dbReady();
+  const persistent=options.requirePersistent?true:await HipicoBotStore.dbReady();
   const outboxStatus=mode==='shadow'?'shadow':mode==='approved'?'pending_approval':(persistent&&result.autoEligible&&SAFE_AUTOMATIC.has(result.intent)?'ready_auto':'pending_approval');
-  const outbox=await HipicoBotStore.queue({eventId:event.id,recipient:message.sender,targetType:'individual',message:result.suggestion,intent:result.intent,risk:result.risk,status:outboxStatus});
-  if(mode==='automatic'&&persistent&&outboxStatus==='ready_auto'){
+  const outboxInput={eventId:event.id,recipient:message.sender,targetType:'individual',message:result.suggestion,intent:result.intent,risk:result.risk,status:outboxStatus};
+  let outbox:any;
+  if(options.requirePersistent){
+    const queued=await HipicoBotStore.queueIdempotent(outboxInput,'meta-webhook',String(message.providerMessageId||''));
+    outbox=queued.row;
+    if(event.inserted===false&&queued.inserted===false){
+      const persistedStatus=String(outbox?.status||'');
+      if(persistedStatus==='sending'){
+        const staleBefore=new Date(Date.now()-WEBHOOK_SEND_LEASE_MS);
+        const reconciled=await HipicoBotStore.markStaleSendingReconciliation(outbox.id,staleBefore,'INTERRUPTED_AUTOMATIC_SEND_REQUIRES_RECONCILIATION');
+        if(reconciled)return{duplicate:false,event,outbox:{...outbox,status:'reconciliation_required',error:'INTERRUPTED_AUTOMATIC_SEND_REQUIRES_RECONCILIATION'}};
+        throw Object.assign(new Error('Automatic webhook send is still in flight; retry after the send lease expires.'),{code:'HIPICO_WEBHOOK_SEND_IN_FLIGHT'});
+      }
+      if(!(mode==='automatic'&&outboxStatus==='ready_auto'&&persistedStatus==='ready_auto'))return{duplicate:true,event,outbox};
+    }
+  }else{
+    outbox=await HipicoBotStore.queue(outboxInput);
+  }
+  if(mode==='automatic'&&persistent&&outboxStatus==='ready_auto'&&String(outbox?.status||outboxStatus)==='ready_auto'){
     const claimed=await HipicoBotStore.claimForSend(outbox.id,'ready_auto');
-    if(!claimed)return{duplicate:false,event,outbox:{...outbox,status:'reconciliation_required'}};
+    if(!claimed){
+      if(options.requirePersistent)throw Object.assign(new Error('Automatic webhook outbox claim was not persisted.'),{code:'HIPICO_WEBHOOK_CLAIM_PERSISTENCE_REQUIRED'});
+      return{duplicate:false,event,outbox:{...outbox,status:'reconciliation_required'}};
+    }
     try{
       const sent=await sendCloudText(message.sender,result.suggestion);
       const persisted=await HipicoBotStore.markSent(outbox.id,sent.providerMessageId,'automatic');
+      if(options.requirePersistent&&!persisted)throw Object.assign(new Error('Automatic webhook delivery receipt was not persisted.'),{code:'HIPICO_WEBHOOK_RECEIPT_PERSISTENCE_REQUIRED'});
       return{duplicate:false,event,outbox:{...outbox,status:persisted?'sent':'reconciliation_required',providerMessageId:sent.providerMessageId}};
     }catch(error:any){
+      if(error?.code==='HIPICO_WEBHOOK_RECEIPT_PERSISTENCE_REQUIRED')throw error;
       const ambiguous=error?.code==='HIPICO_CLOUD_DELIVERY_AMBIGUOUS';
       const persisted=ambiguous
         ?await HipicoBotStore.markReconciliationRequired(outbox.id,error?.message||String(error))
         :await HipicoBotStore.markFailed(outbox.id,error?.message||String(error));
+      if(options.requirePersistent&&!persisted)throw Object.assign(new Error('Automatic webhook outbox terminal state was not persisted.'),{code:'HIPICO_WEBHOOK_OUTBOX_STATE_PERSISTENCE_REQUIRED'});
       return{duplicate:false,event,outbox:{...outbox,status:persisted?(ambiguous?'reconciliation_required':'failed'):'reconciliation_required',error:error?.message||String(error)}};
     }
   }

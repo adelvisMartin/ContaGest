@@ -17,7 +17,7 @@ test('boot failure recovery link never deletes offline data before the dedicated
 
 test('destructive recovery remains isolated behind explicit recovery-page confirmation and warning',()=>{
   assert.match(recovery,/window\.confirm/);
-  assert.match(recovery,/indexedDB\.deleteDatabase\("hipico-control"\)/);
+  assert.match(recovery,/indexedDB\.deleteDatabase\(['"]hipico-control['"]\)/);
   assert.match(recoveryHtml,/Borrar datos locales y abrir/);
   assert.match(recoveryHtml,/cambios locales que todavía no se hayan sincronizado no podrán recuperarse/i);
 });
