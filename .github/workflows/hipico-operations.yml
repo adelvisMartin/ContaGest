@@ -18,6 +18,8 @@ on:
       - 'qa/fixtures/hipico-*'
       - 'scripts/hipico-qa-runner-v103.mjs'
       - 'scripts/hipico-exact-sha-gate.mjs'
+      - 'scripts/hipico-browser-qa.mjs'
+      - 'scripts/hipico-root-contracts.mjs'
       - 'playwright.config.mjs'
       - 'package.json'
       - 'package-lock.json'
@@ -29,6 +31,7 @@ on:
       - main
       - 'feature/hipico-*'
       - 'feat/hipico-*'
+      - 'fix/hipico-*'
     paths:
       - 'frontend/public/hipico-control/**'
       - 'frontend/api/hipico/**'
@@ -45,6 +48,8 @@ on:
       - 'qa/fixtures/hipico-*'
       - 'scripts/hipico-qa-runner-v103.mjs'
       - 'scripts/hipico-exact-sha-gate.mjs'
+      - 'scripts/hipico-browser-qa.mjs'
+      - 'scripts/hipico-root-contracts.mjs'
       - 'playwright.config.mjs'
       - 'package.json'
       - 'package-lock.json'
@@ -97,13 +102,15 @@ jobs:
           cache-dependency-path: |
             package-lock.json
             tools/hipico-whatsapp-web-bridge/package-lock.json
-      - name: Parser, operational messages, API, UI and multigroup contracts
-        run: |
-          node --test tests/hipico-operations.test.mjs
-          node --test tests/hipico_exact_sha_gate_297.test.mjs tests/hipico_operational_messages_277.test.mjs tests/hipico_operational_copy_center_277.test.mjs tests/hipico_board_context_guard_277.test.mjs tests/hipico_board_apply_integrity_279.test.mjs tests/hipico_race_offer_context_277.test.mjs tests/hipico_race_opening_assistant_277.test.mjs tests/hipico_multigroup_runtime_277.test.mjs tests/hipico_serverless_api_277.test.mjs tests/hipico_meta_webhook_279.test.mjs tests/hipico_meta_sender_readiness_297.test.mjs tests/hipico_format_integrity_297.test.mjs tests/hipico_serverless_domain_authority_297.test.mjs tests/hipico_bridge_replay_flags_297.test.mjs tests/hipico_ui_release_contract_277.test.mjs tests/hipico_group_bridge_contract.test.mjs tests/hipico_multigroup_hardening_279.test.mjs tests/hipico_advanced_group_scope_279.test.mjs tests/hipico_dialog_accessibility_279.test.mjs tests/hipico_race_context_279.test.mjs tests/hipico_chat_import_guard_279.test.mjs tests/hipico_chat_import_scope_279.test.mjs tests/hipico_operational_access_guard_279.test.mjs tests/hipico_backup_restore_issue_117.test.mjs tests/hipico_local_auth_hardening_279.test.mjs tests/hipico_financial_input_guard_279.test.mjs tests/hipico_recovery_destructive_guard_279.test.mjs tests/hipico_settlement_config_279.test.mjs tests/hipico_workspace_input_safety_279.test.mjs
+      - name: Install root lock for Hípico contracts
+        run: npm ci --no-audit --no-fund
+      - name: All root Hípico regression contracts
+        run: node scripts/hipico-root-contracts.mjs
       - name: PWA and serverless operational syntax checks
         run: |
           node --check scripts/hipico-exact-sha-gate.mjs
+          node --check scripts/hipico-browser-qa.mjs
+          node --check scripts/hipico-root-contracts.mjs
           node --check frontend/scripts/write-hipico-build-info.mjs
           node --check frontend/public/hipico-control/assets/js/advanced-group-scope.js
           node --check frontend/public/hipico-control/assets/js/backup-v2.js
@@ -125,14 +132,16 @@ jobs:
           node --check frontend/public/hipico-control/assets/js/race-context-guard.js
           node --check frontend/public/hipico-control/assets/js/race-opening-assistant.js
           node --check frontend/public/hipico-control/assets/js/notice-bridge.js
+          node --check frontend/public/hipico-control/assets/js/theme-bootstrap.js
+          node --check frontend/public/hipico-control/assets/js/version-guard.js
           node --check frontend/public/hipico-control/assets/js/store.js
           node --check frontend/public/hipico-control/assets/js/store-v2.js
           node --check frontend/public/hipico-control/assets/js/sync.js
-          node --check frontend/public/hipico-control/assets/js/workspace-input-safety.js
           node --check frontend/public/hipico-control/assets/js/workspace.js
           node --check frontend/public/hipico-control/sw.js
           node --check frontend/api/hipico/_shared.js
           node --check frontend/api/hipico/bridge-identity.js
+          node --check frontend/api/hipico/canonical-backend.js
           node --check frontend/api/hipico/meta-runtime.js
           node --check frontend/api/hipico/status.js
           node --check frontend/api/hipico/group-bridge-ingest.js
@@ -142,10 +151,11 @@ jobs:
           node --check tools/hipico-whatsapp-bridge/src/index.mjs
           node --check backend/scripts/hipico-audit-idempotency-contract.mjs
           node --check backend/scripts/hipico-db-contract.mjs
-      - name: Install root lock for Hípico backend contracts
-        run: npm ci --no-audit --no-fund
+          node --check backend/scripts/hipico-outbox-reconciliation-contract.mjs
       - name: PostgreSQL isolated migration, RLS, idempotency, multigroup and operator-confirmation contract
         run: node backend/scripts/hipico-db-contract.mjs
+      - name: PostgreSQL ambiguous-delivery reconciliation status contract
+        run: node backend/scripts/hipico-outbox-reconciliation-contract.mjs
       - name: PostgreSQL durable cloud audit replay contract
         run: node backend/scripts/hipico-audit-idempotency-contract.mjs
       - name: Backend typecheck
@@ -197,3 +207,11 @@ jobs:
         run: npx playwright install --with-deps chromium
       - name: Control Hípico responsive, offline and interaction E2E
         run: npm run test:browser:hipico
+      - name: Upload exact-SHA Chromium evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: hipico-browser-${{ env.HIPICO_CANDIDATE_SHA }}
+          path: artifacts/qa/hipico-browser/${{ env.HIPICO_CANDIDATE_SHA }}/
+          if-no-files-found: ignore
+          retention-days: 14

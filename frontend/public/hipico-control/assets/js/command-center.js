@@ -1,123 +1,352 @@
-import { currentSession, refreshCloudSession } from './supabase.js';
-import { escapeHtml } from './ui.js';
+import { createBlankWorkspace } from './seed.js';
+import { loadLocalWorkspace } from './store.js';
+import { currentSession, initializeCloudSession } from './supabase.js';
+import { normalizeWorkspaceShape } from './workspace.js';
 
 const ENDPOINT = '/api/hipico/command-center';
-const REQUEST_TIMEOUT_MS = 12000;
+const REMOTE_TTL_MS = 15_000;
+let remoteState = { status: 'idle', data: null, error: '', updatedAt: null, groupKey: '' };
+let refreshPromise = null;
+let mountScheduled = false;
 
-export function initialCommandCenterState() {
-  return { status: 'idle', data: null, error: '', updatedAt: null, stale: false };
+function escapeHtml(value) {
+  return String(value ?? '').replace(/[&<>"']/g, (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[character]);
 }
 
-function stateLabel(value) {
-  const labels = {
-    ready: 'Listo', degraded: 'Degradado', unavailable: 'No disponible', not_configured: 'Sin configurar',
-    connected: 'Conectado', disconnected: 'Desconectado'
+function groupRows(workspace, groupId, key) {
+  return (Array.isArray(workspace?.[key]) ? workspace[key] : []).filter((row) => String(row?.groupId || '') === String(groupId || ''));
+}
+
+function raceOrder(left, right) {
+  const numberDelta = Number(left?.number || 0) - Number(right?.number || 0);
+  if (numberDelta) return numberDelta;
+  return String(left?.id || '').localeCompare(String(right?.id || ''));
+}
+
+export function operationalWorkspaceContext(source) {
+  const workspace = source && typeof source === 'object' ? source : {};
+  const groups = workspace?.config?.groups || workspace?.config?.whatsappGroups || [];
+  const groupId = String(workspace?.config?.activeGroupId || workspace?.config?.activeWhatsappGroupId || groups[0]?.id || '');
+  const group = groups.find((item) => String(item?.id || '') === groupId) || groups[0] || null;
+  const groupKey = String(group?.channelKey || group?.groupKey || group?.key || group?.id || groupId || '').trim();
+  const days = groupRows(workspace, groupId, 'days').sort((a, b) => String(a?.date || '').localeCompare(String(b?.date || '')));
+  const meeting = [...days].reverse().find((day) => String(day?.status || '').toLowerCase() === 'open') || days.at(-1) || null;
+  const races = groupRows(workspace, groupId, 'races')
+    .filter((race) => !meeting?.id || String(race?.dayId || '') === String(meeting.id))
+    .sort(raceOrder);
+  const configuredRaceId = String(workspace?.config?.activeRaceByGroup?.[groupId] || workspace?.activeRaceId || '');
+  const currentRace = races.find((race) => String(race?.id || '') === configuredRaceId)
+    || races.find((race) => ['open', 'active'].includes(String(race?.status || '').toLowerCase()))
+    || null;
+  const currentIndex = currentRace ? races.findIndex((race) => race === currentRace) : -1;
+  const nextRace = currentIndex >= 0
+    ? races.slice(currentIndex + 1).find((race) => !['closed', 'settled', 'cancelled'].includes(String(race?.status || '').toLowerCase())) || null
+    : races.find((race) => !['closed', 'settled', 'cancelled'].includes(String(race?.status || '').toLowerCase())) || null;
+  return {
+    group,
+    groupKey,
+    meeting,
+    currentRace,
+    nextRace,
+    localQueue: Array.isArray(workspace?.syncQueue) ? workspace.syncQueue.length : 0,
+    localConflicts: Math.max(0, Number(workspace?.syncMeta?.conflictSnapshots || 0))
   };
-  return labels[String(value || '')] || String(value || 'Desconocido');
 }
 
-function badgeClass(value) {
-  if (value === 'ready' || value === 'connected') return 'badge--success';
-  if (value === 'unavailable' || value === 'failed') return 'badge--danger';
-  if (value === 'degraded' || value === 'not_configured' || value === 'disconnected') return 'badge--warning';
-  return 'badge--info';
+function humanState(value) {
+  const state = String(value || 'unknown').toLowerCase();
+  const labels = {
+    ready: 'Operativo', known: 'Disponible', degraded: 'Degradado', unavailable: 'No disponible', not_ready: 'No listo',
+    disabled: 'Deshabilitado', unknown: 'No verificado', not_exposed: 'No expuesto', offline: 'Sin conexión',
+    not_configured: 'No configurado', active: 'Activo', inactive: 'Inactivo', blocked: 'Bloqueado'
+  };
+  return labels[state] || state.replaceAll('_', ' ');
 }
 
-function formatDate(value) {
-  if (!value) return 'Sin evidencia';
-  try { return new Date(value).toLocaleString('es-VE'); }
-  catch { return String(value); }
+function humanAlert(value) {
+  const code = String(value || '').toUpperCase();
+  const labels = {
+    BACKEND_NOT_READY: 'Backend no listo', DATABASE_NOT_READY: 'Base de datos no lista', BRIDGE_NOT_READY: 'Bridge no listo',
+    CHANNEL_READ_UNAVAILABLE: 'Lectura del canal no disponible', CHANNEL_NOT_REGISTERED: 'Canal no registrado',
+    OUTBOX_READ_UNAVAILABLE: 'Lectura de cola no disponible', OUTBOX_FAILED: 'Hay envíos fallidos', OUTBOX_PENDING: 'Hay envíos pendientes',
+    SHADOW_READ_UNAVAILABLE: 'Lectura del agente no disponible', DOCUMENT_READ_UNAVAILABLE: 'Lectura de documentos no disponible',
+    DOCUMENT_REVIEW_PENDING: 'Hay documentos por revisar', DOCUMENT_FAILED: 'Hay documentos fallidos',
+    RECONCILIATION_READ_UNAVAILABLE: 'Lectura de conciliación no disponible', RECONCILIATION_REQUIRED: 'Conciliación requerida',
+    RACE_READ_UNAVAILABLE: 'Lectura de carreras no disponible', RACE_CONTEXT_REQUIRES_REVIEW: 'Contexto de carreras requiere revisión',
+    REMOTE_STATUS_UNAVAILABLE: 'Estado remoto no disponible'
+  };
+  return labels[code] || String(value || 'Alerta operativa');
 }
 
-function query(groupKey, groupId) {
-  const search = new URLSearchParams({ groupKey });
-  if (groupId) search.set('groupId', groupId);
-  return `${ENDPOINT}?${search.toString()}`;
+function stateTone(value) {
+  const state = String(value || '').toLowerCase();
+  if (['ready', 'known', 'active'].includes(state)) return 'success';
+  if (['degraded', 'not_ready', 'offline', 'not_exposed', 'not_configured', 'inactive'].includes(state)) return 'warning';
+  if (['unavailable', 'blocked'].includes(state)) return 'danger';
+  return 'info';
 }
 
-async function authorizedFetch(url, retry = true) {
-  const session = currentSession();
-  if (!session?.access_token) throw Object.assign(new Error('Inicia sesión en nube para consultar el Command Center.'), { code: 'HIPICO_COMMAND_CENTER_SESSION_REQUIRED' });
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+function statusTile(label, state, detail) {
+  const tone = stateTone(state);
+  return `<article class="card kpi" data-command-state="${escapeHtml(state || 'unknown')}"><small>${escapeHtml(label)}</small><strong>${escapeHtml(humanState(state))}</strong><span class="badge badge--${tone}">${escapeHtml(detail || 'Sin detalle adicional')}</span></article>`;
+}
+
+function raceLabel(race) {
+  if (!race) return 'Sin carrera';
+  const track = String(race.racetrack || race.track || 'Hipódromo sin identificar');
+  const number = race.number == null ? '' : ` · ${race.number}ª`;
+  return `${track}${number}`;
+}
+
+function operationalMessage({ status, remoteKnown, online, hasGroup }) {
+  if (status === 'loading') return 'Cargando estado remoto…';
+  if (status === 'error' && remoteKnown) return 'Datos remotos conservados. No se pudo actualizar el estado remoto; la muestra anterior puede estar desactualizada.';
+  if (status === 'error') return 'No se pudo actualizar el estado remoto. Los datos locales siguen disponibles.';
+  if (!hasGroup) return 'Sin grupo activo configurado. Configura o selecciona un grupo para consultar el estado remoto.';
+  if (!online && remoteKnown) return 'Última muestra remota conservada. Sin conexión: estos datos pueden estar desactualizados.';
+  if (!online) return 'Sin conexión y sin una muestra remota previa. Los datos locales siguen disponibles.';
+  return '';
+}
+
+function connectionBadge({ status, online, remoteKnown }) {
+  if (status === 'loading') return { tone: 'info', label: 'ACTUALIZANDO' };
+  if (!online) return { tone: 'warning', label: remoteKnown ? 'SIN CONEXIÓN · DATOS CONSERVADOS' : 'SIN CONEXIÓN' };
+  if (status === 'error') return { tone: 'danger', label: remoteKnown ? 'DATOS REMOTOS OBSOLETOS' : 'ERROR REMOTO' };
+  return { tone: 'success', label: 'EN LÍNEA' };
+}
+
+export function renderCommandCenterModel({ local, remote, online = true, error = '', status = '' } = {}) {
+  const localState = local || { group: null, groupKey: '', meeting: null, currentRace: null, nextRace: null, localQueue: 0, localConflicts: 0 };
+  const remoteKnown = Boolean(remote && typeof remote === 'object');
+  const hasGroup = Boolean(localState.group && localState.groupKey);
+  const viewStatus = String(status || (!online ? 'offline' : remoteKnown ? 'ready' : 'idle'));
+  const fallbackState = online ? 'unknown' : 'offline';
+  const system = remoteKnown ? remote.system : { state: fallbackState };
+  const bridge = remoteKnown ? remote.bridge : { state: fallbackState };
+  const channel = remoteKnown ? remote.channel : { state: fallbackState };
+  const database = remoteKnown ? remote.database : { state: fallbackState };
+  const providers = remoteKnown ? remote.providers : { state: fallbackState, provider: 'unknown' };
+  const agent = remoteKnown ? remote.agent : { state: fallbackState, mode: 'unknown' };
+  const documents = remoteKnown ? remote.documents : { state: fallbackState, available: false };
+  const queueAvailable = Boolean(remoteKnown && remote.queue?.available === true);
+  const conflictAvailable = Boolean(remoteKnown && remote.conflicts?.available === true);
+  const raceReadAvailable = Boolean(remoteKnown && remote.races?.available === true);
+  const remoteQueue = queueAvailable && Number.isFinite(Number(remote.queue?.total)) ? Number(remote.queue.total) : null;
+  const queueTotal = Number(localState.localQueue || 0) + (remoteQueue ?? 0);
+  const reconciliation = conflictAvailable && Number.isFinite(Number(remote.conflicts?.reconciliationRequired))
+    ? Number(remote.conflicts.reconciliationRequired)
+    : null;
+  const conflicts = Number(localState.localConflicts || 0) + (reconciliation ?? 0);
+  const queueState = remoteKnown ? (queueAvailable ? (queueTotal > 0 ? 'degraded' : 'ready') : 'unavailable') : fallbackState;
+  const conflictState = remoteKnown ? (conflictAvailable ? (conflicts > 0 ? 'degraded' : 'ready') : 'unavailable') : fallbackState;
+  const raceReadState = remoteKnown ? (raceReadAvailable ? String(remote.races?.state || 'ready') : 'unavailable') : fallbackState;
+  const alerts = remoteKnown && Array.isArray(remote.alerts) ? remote.alerts : (error ? ['REMOTE_STATUS_UNAVAILABLE'] : []);
+  const sampled = remote?.sampledAt ? new Date(remote.sampledAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'sin muestra remota';
+  const documentDetail = remoteKnown && documents.available === false
+    ? 'Lectura remota no disponible'
+    : remoteKnown && Number.isFinite(Number(documents.total))
+      ? `${Number(documents.total)} documento(s) visibles`
+      : documents.reason || 'Capacidad no informada';
+  const queueDetail = remoteKnown && !queueAvailable
+    ? `Lectura remota no disponible · ${Number(localState.localQueue || 0)} local(es)`
+    : `${queueTotal} pendiente(s) visibles`;
+  const conflictDetail = remoteKnown && !conflictAvailable
+    ? `Lectura remota no disponible · ${Number(localState.localConflicts || 0)} local(es)`
+    : `${conflicts} conflicto(s) / conciliación`;
+  const raceReadDetail = remoteKnown && !raceReadAvailable
+    ? 'Lectura remota no disponible'
+    : `${Number(remote?.races?.total || 0)} carrera(s) persistida(s)`;
+  const alertDetail = alerts.length ? `${alerts.length}: ${alerts.map(humanAlert).join(' · ')}` : 'Sin alertas reportadas';
+  const message = operationalMessage({ status: viewStatus, remoteKnown, online, hasGroup });
+  const badge = connectionBadge({ status: viewStatus, online, remoteKnown });
+  const empty = hasGroup ? '' : ' data-command-empty';
+  const busy = viewStatus === 'loading';
+
+  return `<section class="card section-gap" data-command-center data-command-status="${escapeHtml(viewStatus)}"${empty} aria-labelledby="command-center-title" aria-busy="${busy ? 'true' : 'false'}">
+    <div class="card__head">
+      <div><h3 id="command-center-title">Centro de operaciones</h3><small>Estados reales del dispositivo y del backend · ${escapeHtml(sampled)}</small></div>
+      <div class="row-actions">
+        <button class="button button--small" type="button" data-action="refresh-command-center" aria-label="Actualizar Centro de operaciones"${busy ? ' disabled aria-disabled="true"' : ''}>Actualizar</button>
+        <span class="badge badge--${badge.tone}">${escapeHtml(badge.label)}</span>
+      </div>
+    </div>
+    <div class="card__body">
+      ${message ? `<p class="muted" data-command-message role="status" aria-live="polite">${escapeHtml(message)}</p>` : '<span class="sr-only" role="status" aria-live="polite">Estado remoto actualizado.</span>'}
+      <div class="grid grid--kpi">
+        ${statusTile('Sistema', system.state, system.backendReachable === true ? 'Backend alcanzable' : online ? 'Backend sin confirmar' : 'Red no disponible')}
+        ${statusTile('Bridge', bridge.state, bridge.ready === true ? 'SOURCE/LAB verificados' : 'Requiere verificación')}
+        ${statusTile('Canal', channel.state, channel.available === false ? 'Lectura remota no disponible' : channel.qaMode || channel.groupAutomation || 'Sin estado remoto')}
+        ${statusTile('Base de datos', database.state, database.ready === true ? 'PostgreSQL listo' : 'Persistencia no confirmada')}
+        ${statusTile('Proveedor', providers.state, providers.provider || 'Sin proveedor')}
+        ${statusTile('Agente', agent.state, agent.mode || 'Sin modo')}
+        ${statusTile('Documentos', documents.state, documentDetail)}
+        ${statusTile('Cola', queueState, queueDetail)}
+        ${statusTile('Conflictos', conflictState, conflictDetail)}
+        ${statusTile('Carreras backend', raceReadState, raceReadDetail)}
+        ${statusTile('Alertas', alerts.length > 0 ? 'degraded' : remoteKnown ? 'ready' : fallbackState, alertDetail)}
+      </div>
+      <div class="responsive-records section-gap-small" aria-label="Contexto operativo activo">
+        <article><strong>Grupo activo</strong><span>${escapeHtml(localState.group?.name || 'Sin grupo')}</span><small>${escapeHtml(localState.group?.companyName || localState.groupKey || 'Contexto local')}</small></article>
+        <article><strong>Jornada / meeting</strong><span>${escapeHtml(localState.meeting?.date || 'Sin jornada')}</span><small>${escapeHtml(localState.meeting?.status || 'No disponible')}</small></article>
+        <article><strong>Carrera actual</strong><span>${escapeHtml(raceLabel(localState.currentRace))}</span><small>${escapeHtml(localState.currentRace?.status || 'No seleccionada')}</small></article>
+        <article><strong>Próxima carrera</strong><span>${escapeHtml(raceLabel(localState.nextRace))}</span><small>${escapeHtml(localState.nextRace?.status || 'No identificada')}</small></article>
+      </div>
+    </div>
+  </section>`;
+}
+
+async function readLocalContext() {
   try {
-    const response = await fetch(url, {
+    const raw = await loadLocalWorkspace(createBlankWorkspace);
+    return operationalWorkspaceContext(normalizeWorkspaceShape(raw));
+  } catch {
+    return operationalWorkspaceContext(null);
+  }
+}
+
+async function authenticatedAccessToken() {
+  const existing = currentSession();
+  if (existing?.access_token) return String(existing.access_token);
+  try {
+    const initialized = await initializeCloudSession();
+    return String(initialized?.access_token || '');
+  } catch {
+    return '';
+  }
+}
+
+function preservedRemoteData(groupKey) {
+  return remoteState.groupKey === groupKey && remoteState.data && typeof remoteState.data === 'object' ? remoteState.data : null;
+}
+
+async function readRemoteState(groupKey) {
+  const normalizedGroupKey = String(groupKey || '').trim();
+  const previousData = preservedRemoteData(normalizedGroupKey);
+  const previousUpdatedAt = remoteState.groupKey === normalizedGroupKey ? remoteState.updatedAt : null;
+  if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+    remoteState = { status: 'offline', data: previousData, error: 'offline', updatedAt: previousUpdatedAt, groupKey: normalizedGroupKey };
+    return remoteState;
+  }
+  if (!normalizedGroupKey) {
+    remoteState = { status: 'ready', data: null, error: '', updatedAt: null, groupKey: '' };
+    return remoteState;
+  }
+  const accessToken = await authenticatedAccessToken();
+  if (!accessToken) {
+    remoteState = { status: 'error', data: previousData, error: 'auth_required', updatedAt: previousUpdatedAt, groupKey: normalizedGroupKey };
+    return remoteState;
+  }
+  try {
+    const response = await fetch(`${ENDPOINT}?groupKey=${encodeURIComponent(normalizedGroupKey)}`, {
       cache: 'no-store',
-      signal: controller.signal,
-      headers: { Authorization: `Bearer ${session.access_token}`, Accept: 'application/json' }
+      headers: { accept: 'application/json', Authorization: `Bearer ${accessToken}` }
     });
-    if (response.status === 401 && retry && session.refresh_token) {
-      const refreshed = await refreshCloudSession();
-      if (refreshed?.access_token) return authorizedFetch(url, false);
-    }
-    const body = await response.json().catch(() => null);
-    if (!response.ok || !body?.ok) {
-      const error = new Error(body?.message || body?.code || `Command Center HTTP ${response.status}`);
-      error.code = body?.code || 'HIPICO_COMMAND_CENTER_HTTP_ERROR';
-      error.status = response.status;
-      throw error;
-    }
-    return body.data;
-  } catch (error) {
-    if (error?.name === 'AbortError') throw Object.assign(new Error('El Command Center tardó demasiado en responder.'), { code: 'HIPICO_COMMAND_CENTER_TIMEOUT' });
-    throw error;
-  } finally {
-    clearTimeout(timer);
+    const payload = await response.json();
+    if (!response.ok || payload?.ok !== true || !payload?.data) throw new Error(String(payload?.error || `HTTP_${response.status}`));
+    remoteState = { status: 'ready', data: payload.data, error: '', updatedAt: new Date().toISOString(), groupKey: normalizedGroupKey };
+  } catch {
+    remoteState = { status: 'error', data: previousData, error: 'remote_status_unavailable', updatedAt: previousUpdatedAt, groupKey: normalizedGroupKey };
   }
+  return remoteState;
 }
 
-export async function refreshCommandCenter(previous, { groupKey, groupId = null } = {}) {
-  const current = previous || initialCommandCenterState();
-  if (!groupKey) return { ...current, status: 'error', error: 'El grupo activo no tiene una clave válida.', stale: Boolean(current.data) };
-  if (globalThis.navigator?.onLine === false) {
-    return { ...current, status: current.data ? 'success' : 'offline', error: current.data ? '' : 'Sin conexión y sin una lectura previa del Command Center.', stale: true };
+function upsertCommandCenter(hero, local) {
+  if (!hero?.isConnected) return;
+  const html = renderCommandCenterModel({
+    local,
+    remote: remoteState.data,
+    online: typeof navigator === 'undefined' || navigator.onLine !== false,
+    error: remoteState.error,
+    status: remoteState.status
+  });
+  const current = document.querySelector('[data-command-center]');
+  if (current) current.outerHTML = html;
+  else hero.insertAdjacentHTML('afterend', html);
+}
+
+async function hydrate({ force = false } = {}) {
+  const hero = document.querySelector('.content > .group-hero');
+  if (!hero) return;
+  if (document.querySelector('[data-command-center]') && !force) return;
+
+  const local = await readLocalContext();
+  const normalizedGroupKey = String(local.groupKey || '').trim();
+  const scopeChanged = remoteState.groupKey !== normalizedGroupKey;
+  if (scopeChanged) remoteState = { status: 'idle', data: null, error: '', updatedAt: null, groupKey: normalizedGroupKey };
+
+  if (!normalizedGroupKey) {
+    remoteState = { status: 'ready', data: null, error: '', updatedAt: null, groupKey: '' };
+    upsertCommandCenter(hero, local);
+    return;
   }
-  try {
-    const data = await authorizedFetch(query(groupKey, groupId));
-    return { status: 'success', data, error: '', updatedAt: new Date().toISOString(), stale: false };
-  } catch (error) {
-    return {
-      ...current,
-      status: 'error',
-      error: String(error?.message || 'No se pudo actualizar el Command Center.'),
-      stale: Boolean(current.data)
+
+  if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+    await readRemoteState(normalizedGroupKey);
+    upsertCommandCenter(hero, local);
+    return;
+  }
+
+  const updatedAt = remoteState.updatedAt ? Date.parse(remoteState.updatedAt) : 0;
+  const stale = !Number.isFinite(updatedAt) || Date.now() - updatedAt > REMOTE_TTL_MS;
+  if (force || scopeChanged || stale || remoteState.status === 'error' || remoteState.status === 'offline' || remoteState.status === 'idle') {
+    remoteState = {
+      ...remoteState,
+      status: 'loading',
+      error: '',
+      groupKey: normalizedGroupKey,
+      data: preservedRemoteData(normalizedGroupKey)
     };
+    upsertCommandCenter(hero, local);
+    await readRemoteState(normalizedGroupKey);
   }
+  upsertCommandCenter(hero, local);
 }
 
-function componentCard(label, component) {
-  const state = component?.state || 'not_configured';
-  const reason = component?.reason || '';
-  return `<article class="card kpi"><small>${escapeHtml(label)}</small><strong>${escapeHtml(stateLabel(state))}</strong><span class="badge ${badgeClass(state)}">${escapeHtml(state)}</span>${reason ? `<span>${escapeHtml(reason)}</span>` : ''}</article>`;
+function scheduleHydrate() {
+  if (mountScheduled || typeof document === 'undefined') return;
+  mountScheduled = true;
+  queueMicrotask(() => {
+    mountScheduled = false;
+    if (!refreshPromise) {
+      refreshPromise = hydrate().finally(() => { refreshPromise = null; });
+    }
+  });
 }
 
-function raceLine(label, race) {
-  if (!race) return `<div><span>${escapeHtml(label)}</span><strong>Sin carrera</strong></div>`;
-  return `<div><span>${escapeHtml(label)}</span><strong>${escapeHtml(`${race.number}ª · ${race.name}`)}</strong><small>${escapeHtml(race.state)}${race.scheduledAt ? ` · ${escapeHtml(formatDate(race.scheduledAt))}` : ''}</small></div>`;
+function forceRefresh() {
+  if (refreshPromise) return refreshPromise;
+  refreshPromise = hydrate({ force: true }).finally(() => { refreshPromise = null; });
+  return refreshPromise;
 }
 
-export function renderCommandCenter(state) {
-  const value = state || initialCommandCenterState();
-  if (value.status === 'idle' || value.status === 'loading') {
-    return `<section class="card section-gap" data-command-center><div class="card__head"><div><h3>Command Center</h3><small>Consultando backend canónico, Bridge, PostgreSQL, providers y agente…</small></div><span class="badge badge--info">Cargando</span></div><div class="card__body"><p class="muted">La información operativa se está verificando sin usar caché.</p></div></section>`;
-  }
-  if (!value.data) {
-    const offline = value.status === 'offline';
-    return `<section class="card section-gap" data-command-center><div class="card__head"><div><h3>Command Center</h3><small>${offline ? 'No hay conexión para verificar el estado.' : 'No se pudo obtener estado operativo.'}</small></div><span class="badge ${offline ? 'badge--warning' : 'badge--danger'}">${offline ? 'Offline' : 'Error'}</span></div><div class="card__body"><p>${escapeHtml(value.error || 'Estado no disponible.')}</p><button class="button button--primary" data-action="refresh-command-center" ${offline ? 'disabled' : ''}>Reintentar</button></div></section>`;
-  }
+if (typeof document !== 'undefined') {
+  scheduleHydrate();
+  if (typeof MutationObserver === 'function') new MutationObserver((mutations) => {
+    const externalMutation = mutations.some((mutation) => {
+      const target = mutation.target;
+      return !(target instanceof Element && target.closest('[data-command-center]'));
+    });
+    if (externalMutation) scheduleHydrate();
+  }).observe(document.documentElement, { childList: true, subtree: true });
 
-  const data = value.data;
-  const components = data.system?.components || {};
-  const providerReady = Array.isArray(data.providers) && data.providers.some((item) => item?.state === 'ready');
-  const providerComponent = { state: providerReady ? 'ready' : components.providers?.state || 'not_configured', reason: components.providers?.reason || null };
-  const bridge = { state: data.bridge?.state || components.bridge?.state || 'not_configured', reason: data.bridge?.lastEventAt ? `Último evento ${formatDate(data.bridge.lastEventAt)}` : 'Sin evento reciente' };
-  const channelReady = Array.isArray(data.channels) && data.channels.some((item) => item.status === 'active');
-  const channel = { state: channelReady ? 'ready' : components.channel?.state || 'not_configured', reason: channelReady ? `${data.channels.filter((item) => item.status === 'active').length} canal(es) activo(s)` : components.channel?.reason || null };
-  const agent = { state: data.agent?.state || components.agent?.state || 'not_configured', reason: data.agent?.mode ? `Modo ${data.agent.mode}` : data.agent?.reason || null };
-  const alerts = Array.isArray(data.alerts) ? data.alerts : [];
-  const documents = data.documents?.recent || [];
-  const meeting = data.operation?.activeMeeting || null;
-  const staleNotice = value.stale ? `<div class="offline-banner">Datos del Command Center sin confirmar · última lectura ${escapeHtml(formatDate(value.updatedAt))}</div>` : '';
+  document.addEventListener('click', (event) => {
+    const button = event.target?.closest?.('[data-action="refresh-command-center"]');
+    if (!button || button.disabled) return;
+    forceRefresh().catch(() => {});
+  });
 
-  return `${staleNotice}<section class="page-head section-gap" data-command-center><div><h2>Command Center</h2><p>Estado real del backend canónico para ${escapeHtml(data.scope?.groupKey || 'grupo activo')} · lectura no cacheada.</p></div><div class="page-actions"><span class="badge ${data.system?.ok ? 'badge--success' : 'badge--warning'}">${data.system?.ok ? 'OPERATIVO' : 'ATENCIÓN'}</span><button class="button" data-action="refresh-command-center">Actualizar</button></div></section><div class="grid grid--kpi metrics-grid">${componentCard('Backend', components.backend)}${componentCard('PostgreSQL', components.database)}${componentCard('Bridge', bridge)}${componentCard('Canal', channel)}${componentCard('Providers', providerComponent)}${componentCard('Agente', agent)}</div><div class="grid grid--two section-gap"><section class="card"><div class="card__head"><div><h3>Operación canónica</h3><small>${meeting ? escapeHtml(meeting.name) : 'Sin meeting activo'}</small></div><span class="badge">${Number(data.operation?.raceCount || 0)} carreras</span></div><div class="card__body"><div class="control-stack">${raceLine('Carrera actual', data.operation?.currentRace)}${raceLine('Próxima carrera', data.operation?.nextRace)}<div><span>Cola pendiente</span><strong>${Number(data.queue?.pending || 0)}</strong><small>${Number(data.queue?.failed || 0)} fallidas</small></div><div><span>Conflictos</span><strong>${Number(data.conflicts?.total || 0)}</strong><small>reconciliación + transiciones + agente</small></div></div></div></section><section class="card"><div class="card__head"><div><h3>Alertas operativas</h3><small>Solo evidencia observable; no modifica jugadas ni saldos.</small></div><span class="badge ${alerts.some((item) => item.severity === 'critical') ? 'badge--danger' : alerts.length ? 'badge--warning' : 'badge--success'}">${alerts.length}</span></div><div class="card__body"><div class="list">${alerts.length ? alerts.map((item) => `<div class="audit-row"><strong>${escapeHtml(item.message)}</strong><span>${escapeHtml(item.code)}</span><small>${escapeHtml(item.severity.toUpperCase())}</small></div>`).join('') : '<div class="check-list"><div class="is-good">✓ Sin alertas observables en esta lectura.</div></div>'}</div></div></section></div><section class="card section-gap"><div class="card__head"><div><h3>Documentos recientes</h3><small>Clasificación, autoridad y estado del motor PDF.</small></div><span class="badge">${documents.length}</span></div><div class="card__body"><div class="responsive-records">${documents.length ? documents.slice(0, 8).map((document) => `<article><strong>${escapeHtml(document.filename || 'Documento')}</strong><span>${escapeHtml(document.classification || 'UNKNOWN')} · ${escapeHtml(document.status || 'unknown')}</span><small>${escapeHtml(document.authority || 'unknown')} · ${escapeHtml(formatDate(document.updatedAt || document.createdAt))}</small></article>`).join('') : '<div class="empty"><strong>Sin documentos</strong><span>No hay evidencia documental persistida para este grupo.</span></div>'}</div></div></section>`;
+  globalThis.addEventListener?.('online', () => {
+    remoteState.status = 'idle';
+    remoteState.error = '';
+    remoteState.updatedAt = null;
+    document.querySelector('[data-command-center]')?.remove();
+    scheduleHydrate();
+  });
+  globalThis.addEventListener?.('offline', () => {
+    remoteState.status = 'offline';
+    remoteState.error = 'offline';
+    remoteState.updatedAt = remoteState.updatedAt || null;
+    document.querySelector('[data-command-center]')?.remove();
+    scheduleHydrate();
+  });
 }

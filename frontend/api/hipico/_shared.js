@@ -2,7 +2,9 @@ import crypto from 'node:crypto';
 
 const DEFAULT_FETCH_TIMEOUT_MS = 10000;
 const MAX_FETCH_TIMEOUT_MS = 60000;
+const MAX_RETRY_AFTER_MS = 24 * 60 * 60 * 1000;
 const SHA40 = /^[a-f0-9]{40}$/i;
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 export const MIN_HIPICO_INTERNAL_SECRET_LENGTH = 32;
 export const PUBLIC_SECRET_PLACEHOLDER_PATTERN = /(?:REEMPLAZA|REPLACE|CHANGE[_-]?ME|CHANGEME|PLACEHOLDER|YOUR[_-]?(?:SECRET|TOKEN|KEY)|TU[_-]?(?:SECRETO|TOKEN|CLAVE)|EXAMPLE[_-]?(?:SECRET|TOKEN|KEY))/i;
 
@@ -14,7 +16,7 @@ export function env(name, required = true) {
 
 export function strongSecretConfigured(value, minLength = MIN_HIPICO_INTERNAL_SECRET_LENGTH) {
   const minimum = Number.isInteger(minLength) && minLength > 0 ? minLength : MIN_HIPICO_INTERNAL_SECRET_LENGTH;
-  const secret = String(value || '').trim();
+  const secret=String(value || '').trim();
   return Buffer.byteLength(secret, 'utf8') >= minimum && !PUBLIC_SECRET_PLACEHOLDER_PATTERN.test(secret);
 }
 
@@ -22,6 +24,39 @@ export function serverSecret(name, minLength = MIN_HIPICO_INTERNAL_SECRET_LENGTH
   const value = String(env(name) || '').trim();
   if (!strongSecretConfigured(value, minLength)) throw new Error(`Weak server configuration: ${name}`);
   return value;
+}
+
+export function isUuid(value) {
+  return UUID.test(String(value || '').trim());
+}
+
+function validPersistenceUrl(value) {
+  const raw=String(value || '').trim();
+  if (!raw) return false;
+  try {
+    const parsed=new URL(raw);
+    const loopback=['localhost','127.0.0.1','::1'].includes(parsed.hostname);
+    if (parsed.username || parsed.password || parsed.hash || parsed.search) return false;
+    return parsed.protocol === 'https:' || (parsed.protocol === 'http:' && loopback);
+  } catch {
+    return false;
+  }
+}
+
+export function hipicoPersistenceConfig(source = process.env) {
+  const url=String(source.HIPICO_SUPABASE_URL || '').trim().replace(/\/$/, '');
+  const ownerId=String(source.HIPICO_OWNER_ID || '').trim();
+  const urlValid=validPersistenceUrl(url);
+  const serviceRoleStrong=strongSecretConfigured(source.HIPICO_SUPABASE_SERVICE_ROLE_KEY);
+  const ownerIdValid=isUuid(ownerId);
+  return {
+    url,
+    ownerId,
+    urlValid,
+    serviceRoleStrong,
+    ownerIdValid,
+    ready:urlValid && serviceRoleStrong && ownerIdValid
+  };
 }
 
 export function safeEqual(left, right) {
@@ -45,7 +80,10 @@ function normalizedE164(value) {
 }
 
 function metaAllowedDestinations(source = process.env) {
-  return new Set(String(source.HIPICO_META_ALLOWED_DESTINATIONS || '').split(',').map(normalizedE164).filter(Boolean));
+  return new Set(String(source.HIPICO_META_ALLOWED_DESTINATIONS || '')
+    .split(',')
+    .map(normalizedE164)
+    .filter(Boolean));
 }
 
 export function metaOutboundPolicy(source = process.env) {
@@ -90,10 +128,27 @@ export function sha256(value) {
 
 export function safeTimeoutMs(value, fallback = DEFAULT_FETCH_TIMEOUT_MS) {
   const fallbackValue = Number(fallback);
-  const safeFallback = Number.isFinite(fallbackValue) && fallbackValue > 0 ? Math.min(Math.floor(fallbackValue), MAX_FETCH_TIMEOUT_MS) : DEFAULT_FETCH_TIMEOUT_MS;
+  const safeFallback = Number.isFinite(fallbackValue) && fallbackValue > 0
+    ? Math.min(Math.floor(fallbackValue), MAX_FETCH_TIMEOUT_MS)
+    : DEFAULT_FETCH_TIMEOUT_MS;
   const number = Number(value);
   if (!Number.isFinite(number) || number <= 0) return safeFallback;
   return Math.min(Math.floor(number), MAX_FETCH_TIMEOUT_MS);
+}
+
+export function retryAfterMs(value, nowMs = Date.now(), maxMs = MAX_RETRY_AFTER_MS) {
+  const capValue = Number(maxMs);
+  const cap = Number.isFinite(capValue) && capValue > 0 ? Math.floor(capValue) : MAX_RETRY_AFTER_MS;
+  const raw = String(value ?? '').trim();
+  if (!raw) return 0;
+  if (/^\d+(?:\.\d+)?$/.test(raw)) {
+    const milliseconds = Math.ceil(Number(raw) * 1000);
+    return Number.isFinite(milliseconds) && milliseconds > 0 ? Math.min(milliseconds, cap) : 0;
+  }
+  const parsed = Date.parse(raw);
+  const now = Number(nowMs);
+  if (!Number.isFinite(parsed) || !Number.isFinite(now)) return 0;
+  return Math.min(Math.max(0, parsed - now), cap);
 }
 
 export async function fetchWithTimeout(url, init = {}, timeoutMs = DEFAULT_FETCH_TIMEOUT_MS) {
@@ -114,11 +169,20 @@ export async function fetchWithTimeout(url, init = {}, timeoutMs = DEFAULT_FETCH
 }
 
 export async function supabase(path, init = {}) {
-  const base = env('HIPICO_SUPABASE_URL').replace(/\/$/, '');
+  const runtime=hipicoPersistenceConfig();
+  if (!runtime.urlValid) throw new Error('Invalid server configuration: HIPICO_SUPABASE_URL');
+  if (!runtime.serviceRoleStrong) throw new Error('Weak server configuration: HIPICO_SUPABASE_SERVICE_ROLE_KEY');
+  if (!runtime.ownerIdValid) throw new Error('Invalid server configuration: HIPICO_OWNER_ID');
+  const base = runtime.url;
   const serviceKey = serverSecret('HIPICO_SUPABASE_SERVICE_ROLE_KEY');
   const response = await fetchWithTimeout(`${base}/rest/v1/${path}`, {
     ...init,
-    headers: { apikey: serviceKey, Authorization: `Bearer ${serviceKey}`, 'Content-Type': 'application/json', ...(init.headers || {}) }
+    headers: {
+      apikey: serviceKey,
+      Authorization: `Bearer ${serviceKey}`,
+      'Content-Type': 'application/json',
+      ...(init.headers || {})
+    }
   }, safeTimeoutMs(process.env.HIPICO_SUPABASE_TIMEOUT_MS));
   const text = await response.text();
   if (!response.ok) {
@@ -130,11 +194,11 @@ export async function supabase(path, init = {}) {
 
 export function metaTimestamp(value) {
   if (value === undefined || value === null || String(value).trim() === '') return null;
-  const raw = String(value).trim();
-  if (!/^\d{1,12}$/.test(raw)) return null;
-  const seconds = Number(raw);
-  if (!Number.isFinite(seconds) || seconds <= 0) return null;
-  const date = new Date(seconds * 1000);
+  const seconds = Number(value);
+  if (!Number.isFinite(seconds) || seconds < 0) return null;
+  const milliseconds = seconds * 1000;
+  if (!Number.isFinite(milliseconds)) return null;
+  const date = new Date(milliseconds);
   return Number.isFinite(date.getTime()) ? date.toISOString() : null;
 }
 
@@ -143,14 +207,47 @@ export function extractMetaMessages(payload) {
   for (const entry of payload?.entry || []) {
     for (const change of entry?.changes || []) {
       const value = change?.value || {};
-      const channelKey = String(value?.metadata?.phone_number_id || 'meta').trim() || 'meta';
-      const contactNames = new Map((value?.contacts || []).map((contact) => [String(contact?.wa_id || ''), String(contact?.profile?.name || '')]));
+      const channelKey = String(value?.metadata?.phone_number_id || 'meta');
+      const contactNames = new Map((value?.contacts || []).map((c) => [String(c.wa_id || ''), String(c?.profile?.name || '')]));
       for (const message of value?.messages || []) {
-        const timestamp = metaTimestamp(message?.timestamp);
-        const text = message?.text?.body || message?.button?.text || message?.interactive?.button_reply?.title || message?.interactive?.list_reply?.title || message?.document?.caption || message?.document?.filename || message?.image?.caption || message?.video?.caption || '';
-        rows.push({ channelKey, externalMessageId: String(message?.id || ''), senderId: String(message?.from || ''), senderLabel: contactNames.get(String(message?.from || '')) || '', timestamp, type: String(message?.type || 'unknown').trim().toLowerCase() || 'unknown', text: String(text || '').slice(0, 4000), quotedExternalMessageId: message?.context?.id ? String(message.context.id) : null, raw: message });
+        const text = message?.text?.body || message?.button?.text || message?.interactive?.button_reply?.title || message?.interactive?.list_reply?.title || '';
+        rows.push({
+          channelKey,
+          externalMessageId: String(message?.id || ''),
+          senderId: String(message?.from || ''),
+          senderLabel: contactNames.get(String(message?.from || '')) || '',
+          timestamp: metaTimestamp(message?.timestamp),
+          type: String(message?.type || 'unknown').trim().toLowerCase() || 'unknown',
+          text: String(text || ''),
+          quotedExternalMessageId: message?.context?.id ? String(message.context.id) : null,
+          raw: message
+        });
       }
     }
   }
   return rows;
+}
+
+export function classifyText(text) {
+  const value = String(text || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().replace(/\s+/g, ' ').trim();
+  if (/NO MAS JUGAD|CARRERA CERRADA|CERRADO CERRADO/.test(value)) return ['race_close', 0.99];
+  if (/ESTO ES TODO POR EL DIA DE HOY|CIERRE DE JORNADA/.test(value)) return ['day_close', 0.99];
+  if (/\bLLEGADA\b|\bPIZARRA\s*:/.test(value)) return ['result', 0.97];
+  if (/\bTERCIOS\b/.test(value) && /\bJUEGA\b/.test(value) && /\bCONSIGUE\b/.test(value) && /BS\.?\s*[+-]/.test(value)) return ['settlement_snapshot', 0.99];
+  if (/\bTERCIO\s+DISPONIBLE\b/.test(value)) return ['balance_snapshot', 0.99];
+  if (/\bTERCIOS\b/.test(value) && /\bJUEGA\b/.test(value)) return ['plan_snapshot', 0.98];
+  if (/^(JUEGO|JUEGA|CONSIGO|CONSIGUE)\b/.test(value)) return ['offer', 0.90];
+  if (/^(J|JUGANDO|SF|S\s*\/\s*F|SE FUE|DEBE CONFIRMAR|\d+(?:[.,]\d+)?\s*(K|MIL)?)$/.test(value)) return ['reply_review', 0.65];
+  return ['other', 0.20];
+}
+
+export function adapterCaptureDecision(text) {
+  const [hintClassification, hintConfidence] = classifyText(text);
+  return {
+    storedClassification: 'unclassified',
+    storedConfidence: 0,
+    processingStatus: 'review',
+    domainAuthority: 'backend_canonical_only',
+    adapterHint: { classification: hintClassification, confidence: hintConfidence }
+  };
 }

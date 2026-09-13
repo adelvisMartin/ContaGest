@@ -7,7 +7,10 @@ const GROUP_ID_RE = /^[A-Za-z0-9@._:-]{3,220}$/;
 function cleanBaseUrl(value) {
   const raw = String(value || process.env.HIPICO_API_BASE_URL || 'http://127.0.0.1:3030').trim().replace(/\/$/, '');
   const url = new URL(raw);
-  if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password || url.search || url.hash) throw new Error('HIPICO_CLI_INVALID_BASE_URL');
+  if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password || url.search || url.hash) {
+    throw new Error('HIPICO_CLI_INVALID_BASE_URL');
+  }
+  if (url.pathname !== '/' && url.pathname !== '') throw new Error('HIPICO_CLI_BASE_PATH_FORBIDDEN');
   const local = ['127.0.0.1', 'localhost', '::1'].includes(url.hostname.toLowerCase());
   if (url.protocol === 'http:' && !local) throw new Error('HIPICO_CLI_REMOTE_HTTP_FORBIDDEN');
   return url.origin;
@@ -58,13 +61,13 @@ function requireGroupId(groupId) {
 export function commandRequest(parsed) {
   const key = `${parsed.command} ${parsed.subcommand}`.trim();
   const mappings = new Map([
-    ['status', ['/api/v1/hipico/system/status', 'GET', 'public']],
-    ['health', ['/api/v1/hipico/system/readiness', 'GET', 'public']],
-    ['readiness', ['/api/v1/hipico/system/readiness', 'GET', 'public']],
-    ['version', ['/api/v1/hipico/system/version', 'GET', 'public']],
+    ['status', ['/api/v1/hipico/status', 'GET', 'operator']],
+    ['health', ['/api/v1/hipico/readiness', 'GET', 'operator']],
+    ['readiness', ['/api/v1/hipico/readiness', 'GET', 'operator']],
+    ['version', ['/api/v1/hipico/version', 'GET', 'operator']],
     ['bridge status', ['/api/v1/hipico-bot/bridge/health', 'GET', 'bridge']],
     ['bridge-health', ['/api/v1/hipico-bot/bridge/health', 'GET', 'bridge']],
-    ['channel status', ['/api/v1/hipico/system/status', 'GET', 'public']],
+    ['channel status', ['/api/v1/hipico/status', 'GET', 'operator']],
     ['groups', ['/api/v1/hipico/groups', 'GET', 'operator']],
     ['meetings', ['/api/v1/hipico/meetings', 'GET', 'operator-group']],
     ['races', ['/api/v1/hipico/races', 'GET', 'operator-group']],
@@ -93,8 +96,12 @@ function headersFor(kind, parsed) {
     if (Buffer.byteLength(token, 'utf8') < 32) throw new Error('HIPICO_CLI_BRIDGE_TOKEN_NOT_CONFIGURED');
     headers['x-hipico-bridge-token'] = token;
   }
-  if (kind === 'operator' || kind === 'operator-group' || kind === 'operator-group-sse') headers['x-hipico-operator-token'] = requireOperator();
-  if (kind === 'operator-group' || kind === 'operator-group-sse') headers['x-hipico-group-key'] = requireGroup(parsed.group);
+  if (kind === 'operator' || kind === 'operator-group' || kind === 'operator-group-sse') {
+    headers['x-hipico-operator-token'] = requireOperator();
+  }
+  if (kind === 'operator-group' || kind === 'operator-group-sse') {
+    headers['x-hipico-group-key'] = requireGroup(parsed.group);
+  }
   return headers;
 }
 
@@ -103,13 +110,21 @@ async function request(path, method, kind, parsed) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 10000);
   try {
-    const response = await fetch(`${base}${path}`, { method, headers: headersFor(kind, parsed), redirect: 'error', cache: 'no-store', signal: controller.signal });
+    const response = await fetch(`${base}${path}`, {
+      method,
+      headers: headersFor(kind, parsed),
+      redirect: 'error',
+      cache: 'no-store',
+      signal: controller.signal
+    });
     const text = await response.text();
     let data;
     try { data = text ? JSON.parse(text) : null; }
     catch { data = { raw: text.slice(0, 2000) }; }
     return { ok: response.ok, status: response.status, path, data };
-  } finally { clearTimeout(timer); }
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 async function streamEvents(path, parsed) {
@@ -146,10 +161,10 @@ async function doctor(parsed) {
     try { checks.push(await request(path, 'GET', kind, parsed)); }
     catch (error) { checks.push({ ok: false, status: 0, path, code: error?.message || 'HIPICO_CLI_UNAVAILABLE' }); }
   };
-  await run('/api/v1/hipico/system/version', 'public');
-  await run('/api/v1/hipico/system/status', 'public');
-  await run('/api/v1/hipico/system/readiness', 'public');
-  if (Buffer.byteLength(operatorToken(), 'utf8') >= 32 && GROUP_RE.test(parsed.group)) {
+  await run('/api/v1/hipico/version', 'operator');
+  await run('/api/v1/hipico/status', 'operator');
+  await run('/api/v1/hipico/readiness', 'operator');
+  if (GROUP_RE.test(parsed.group)) {
     const suffix = parsed.groupId && GROUP_ID_RE.test(parsed.groupId) ? `?groupId=${encodeURIComponent(parsed.groupId)}` : '';
     await run(`/api/v1/hipico/command-center${suffix}`, 'operator-group');
   }
@@ -166,7 +181,7 @@ function help() {
       'messages tail', 'events tail', 'events stream', 'trace <correlationId>'
     ],
     flags: ['--group <groupKey>', '--group-id <whatsappGroupId>', '--limit <1..200>', '--base-url <url>', '--json'],
-    security: 'Los tokens sólo se leen desde variables de entorno; nunca se aceptan por argumentos.'
+    security: 'Los tokens solo se leen desde variables de entorno; nunca se aceptan por argumentos. HTTP remoto esta prohibido.'
   };
 }
 
@@ -175,7 +190,9 @@ function print(result, json) {
   if (json) return process.stdout.write(`${JSON.stringify(result)}\n`);
   if (result.command === 'doctor') {
     process.stdout.write(`Control Hípico doctor: ${result.ok ? 'OK' : 'NO LISTO'}\n`);
-    for (const check of result.checks) process.stdout.write(`- ${check.path}: ${check.ok ? 'OK' : check.code || `HTTP ${check.status || 0}`}\n`);
+    for (const check of result.checks) {
+      process.stdout.write(`- ${check.path}: ${check.ok ? 'OK' : check.code || `HTTP ${check.status || 0}`}\n`);
+    }
     return;
   }
   process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
@@ -189,9 +206,13 @@ export async function main(argv = process.argv.slice(2)) {
   else {
     try {
       const mapped = commandRequest(parsed);
-      if (!mapped) result = { ok: false, code: 'HIPICO_CLI_UNKNOWN_COMMAND', command: [parsed.command, parsed.subcommand].filter(Boolean).join(' ') };
-      else if (mapped[2] === 'operator-group-sse') result = await streamEvents(mapped[0], parsed);
-      else result = await request(mapped[0], mapped[1], mapped[2], parsed);
+      if (!mapped) {
+        result = { ok: false, code: 'HIPICO_CLI_UNKNOWN_COMMAND', command: [parsed.command, parsed.subcommand].filter(Boolean).join(' ') };
+      } else if (mapped[2] === 'operator-group-sse') {
+        result = await streamEvents(mapped[0], parsed);
+      } else {
+        result = await request(mapped[0], mapped[1], mapped[2], parsed);
+      }
     } catch (error) {
       result = { ok: false, status: 0, code: error?.name === 'AbortError' ? 'HIPICO_CLI_TIMEOUT' : String(error?.message || 'HIPICO_CLI_UNAVAILABLE') };
     }

@@ -20,24 +20,53 @@ export function idPart(value) {
 }
 
 function parseClock(value) {
-  const match = String(value || '').match(/(\d{1,2}):(\d{2})\s*([ap])/i);
+  const match = String(value || '').match(/^(\d{1,2}):(\d{2})\s*([ap])\.?\s*m\.?$/i);
   if (!match) return { hour: 0, minute: 0 };
   let hour = Number(match[1]);
   const minute = Number(match[2]);
   const meridian = match[3].toLowerCase();
+  if (!Number.isInteger(hour) || hour < 1 || hour > 12 || !Number.isInteger(minute) || minute < 0 || minute > 59) {
+    return { hour: 0, minute: 0 };
+  }
   if (meridian === 'p' && hour < 12) hour += 12;
   if (meridian === 'a' && hour === 12) hour = 0;
   return { hour, minute };
 }
 
+function gregorianDaysInMonth(year, month) {
+  if (!Number.isInteger(year) || year < 1 || year > 9999 || !Number.isInteger(month) || month < 1 || month > 12) return 0;
+  if (month === 2) {
+    const leap = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
+    return leap ? 29 : 28;
+  }
+  return [4, 6, 9, 11].includes(month) ? 30 : 31;
+}
+
+export function parseDateKey(dateText) {
+  const match = String(dateText || '').trim().match(/^(\d{1,2})\/(\d{1,2})\/(\d{2}|\d{4})$/);
+  if (!match) return null;
+  const day = Number(match[1]);
+  const month = Number(match[2]);
+  let year = Number(match[3]);
+  if (match[3].length === 2) year += 2000;
+  const days = gregorianDaysInMonth(year, month);
+  if (!days || day < 1 || day > days) return null;
+  return `${String(year).padStart(4, '0')}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+}
+
 export function parseDateTime(dateText, timeText) {
-  const parts = String(dateText || '').split('/').map(Number);
-  if (parts.length !== 3) return null;
-  let [day, month, year] = parts;
-  if (year < 100) year += 2000;
+  const dateKey = parseDateKey(dateText);
+  const clockMatch = String(timeText || '').trim().match(/^(\d{1,2}):(\d{2})\s*([ap])\.?\s*m\.?$/i);
+  if (!dateKey || !clockMatch) return null;
+  const originalHour = Number(clockMatch[1]);
+  const originalMinute = Number(clockMatch[2]);
+  if (!Number.isInteger(originalHour) || originalHour < 1 || originalHour > 12 || !Number.isInteger(originalMinute) || originalMinute < 0 || originalMinute > 59) return null;
   const { hour, minute } = parseClock(timeText);
-  const date = new Date(year, month - 1, day, hour, minute, 0, 0);
-  return Number.isFinite(date.getTime()) ? date.toISOString() : null;
+  const [year, month, day] = dateKey.split('-').map(Number);
+  // WhatsApp exports contain a wall-clock value but no timezone. Encode that
+  // wall clock on a UTC basis so parsing is deterministic on Windows/Linux/Vercel
+  // without pretending the local machine timezone is source evidence.
+  return new Date(Date.UTC(year, month - 1, day, hour, minute, 0, 0)).toISOString();
 }
 
 function amountValue(raw, unit = '') {
@@ -114,4 +143,4 @@ export function detectPairOnly(textBeforeAmount) {
   return match ? `${match[1]}*${match[2]}` : '';
 }
 
-export const __test__ = Object.freeze({ DEFAULT_TRACKS, amountValue, parseClock });
+export const __test__ = Object.freeze({ DEFAULT_TRACKS, amountValue, parseClock, gregorianDaysInMonth });

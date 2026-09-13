@@ -1,0 +1,380 @@
+name: Control Hipico Production Gates v290
+
+on:
+  pull_request:
+    paths:
+      - 'backend/src/modules/hipico/**'
+      - 'backend/src/modules/hipico-bot/**'
+      - 'backend/scripts/hipico-*-v290.ts'
+      - 'frontend/public/hipico-control/**'
+      - 'frontend/api/hipico/**'
+      - 'tools/hipico-whatsapp-web-bridge/**'
+      - 'android/hipico-control-v1130/**'
+      - 'products/hipico-control/**'
+      - 'supabase/sql/hipico_*.sql'
+      - 'qa/hipico-production-v290.spec.mjs'
+      - 'playwright.hipico-v290.config.mjs'
+      - 'scripts/hipico-*-v290.mjs'
+      - 'tests/hipico_*289*.test.mjs'
+      - 'tests/hipico_*290*.test.mjs'
+      - '.github/workflows/hipico-production-gates-v290.yml'
+      - 'package.json'
+      - 'package-lock.json'
+  workflow_dispatch:
+  schedule:
+    - cron: '23 5 * * 2,5'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: hipico-v290-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: '22'
+  HIPICO_CANDIDATE_SHA: ${{ github.event.pull_request.merge_commit_sha || github.sha }}
+  HIPICO_QA_SHA: ${{ github.event.pull_request.merge_commit_sha || github.sha }}
+  HIPICO_RELEASE_SHA: ${{ github.event.pull_request.merge_commit_sha || github.sha }}
+  HIPICO_E2E_OWNER_ID: '11111111-1111-4111-8111-111111111111'
+  HIPICO_OWNER_ID: '11111111-1111-4111-8111-111111111111'
+
+jobs:
+  static-release:
+    if: github.event_name != 'schedule'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout exact release candidate
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ env.HIPICO_CANDIDATE_SHA }}
+          fetch-depth: 0
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - name: Verify exact SHA
+        run: test "$(git rev-parse HEAD)" = "$HIPICO_CANDIDATE_SHA"
+      - name: Install locked workspace
+        run: npm ci
+      - name: Release contract
+        run: npm run release:hipico:v290
+      - name: Typecheck and root contracts
+        run: npm run lint
+      - name: Command Center and production contracts
+        run: npm run test:hipico:command-center && npm run test:hipico:production-contract
+      - name: Build production workspaces
+        run: npm run build
+      - name: Production dependency audit
+        run: npm audit --omit=dev --audit-level=high
+      - name: Verify WhatsApp Web bridge
+        working-directory: tools/hipico-whatsapp-web-bridge
+        run: npm ci && npm run qa
+      - name: Write static evidence
+        run: |
+          mkdir -p artifacts/qa/hipico-v290
+          node -e "require('fs').writeFileSync('artifacts/qa/hipico-v290/static-gate.json', JSON.stringify({schema:'hipico-static-gate.v290',sha:process.env.HIPICO_CANDIDATE_SHA,status:'PASS',node:process.version,checkedAt:new Date().toISOString()},null,2)+'\n')"
+      - name: Upload static evidence
+        uses: actions/upload-artifact@v6
+        with:
+          name: hipico-v290-static-${{ env.HIPICO_CANDIDATE_SHA }}
+          path: artifacts/qa/hipico-v290
+          retention-days: 30
+
+  postgres-e2e:
+    if: github.event_name != 'schedule'
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      HIPICO_E2E_ADMIN_URL: postgresql://postgres:postgres@127.0.0.1:5432/postgres
+      HIPICO_DOCUMENT_OCR_ENABLED: 'true'
+      HIPICO_DOCUMENT_OCR_LANGUAGE: eng
+      HIPICO_BOT_PROMOTION: shadow
+    steps:
+      - name: Checkout exact release candidate
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ env.HIPICO_CANDIDATE_SHA }}
+          fetch-depth: 0
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - name: Verify exact SHA
+        run: test "$(git rev-parse HEAD)" = "$HIPICO_CANDIDATE_SHA"
+      - name: Install native PDF/OCR runtimes
+        run: sudo apt-get update && sudo apt-get install -y poppler-utils tesseract-ocr tesseract-ocr-eng
+      - name: Install locked workspace
+        run: npm ci
+      - name: Create isolated PostgreSQL database
+        run: node scripts/hipico-ephemeral-db-v290.mjs create
+      - name: Apply Prisma schema
+        run: npm --workspace backend run prisma:deploy
+      - name: Apply canonical Hípico schema and RBAC probes
+        run: node scripts/hipico-apply-e2e-schema-v290.mjs
+      - name: Run channel/domain/document production E2E
+        run: npm --workspace backend exec -- tsx --test src/modules/hipico-bot/production-e2e-v290.ts
+      - name: Persist state before process restart
+        run: npm --workspace backend exec -- tsx scripts/hipico-restart-recovery-v290.ts prepare
+      - name: Verify recovery in a fresh process
+        run: npm --workspace backend exec -- tsx scripts/hipico-restart-recovery-v290.ts verify
+      - name: Measure PostgreSQL/provider/PDF profiles 100 500 2000
+        run: npm --workspace backend exec -- tsx scripts/hipico-load-profile-v290.ts
+      - name: Write PostgreSQL gate evidence
+        run: |
+          mkdir -p artifacts/qa/hipico-v290
+          node -e "require('fs').writeFileSync('artifacts/qa/hipico-v290/postgres-gate.json', JSON.stringify({schema:'hipico-postgres-gate.v290',sha:process.env.HIPICO_CANDIDATE_SHA,status:'PASS',database:'isolated-ephemeral-postgresql-16',ocr:'poppler+tesseract',checkedAt:new Date().toISOString()},null,2)+'\n')"
+      - name: Upload PostgreSQL evidence
+        if: success()
+        uses: actions/upload-artifact@v6
+        with:
+          name: hipico-v290-postgres-${{ env.HIPICO_CANDIDATE_SHA }}
+          path: artifacts/qa/hipico-v290
+          retention-days: 30
+      - name: Drop isolated database
+        if: always()
+        run: node scripts/hipico-ephemeral-db-v290.mjs drop
+
+  browser-chromium:
+    if: github.event_name != 'schedule'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout exact release candidate
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ env.HIPICO_CANDIDATE_SHA }}
+          fetch-depth: 0
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - name: Verify exact SHA
+        run: test "$(git rev-parse HEAD)" = "$HIPICO_CANDIDATE_SHA"
+      - name: Install locked workspace
+        run: npm ci
+      - name: Install Chromium runtime
+        run: npx playwright install --with-deps chromium
+      - name: Run Chromium PWA responsive accessibility offline performance gate
+        run: npx playwright test --config=playwright.hipico-v290.config.mjs --project=chromium
+      - name: Write Chromium evidence
+        run: |
+          mkdir -p artifacts/qa/hipico-v290
+          node -e "require('fs').writeFileSync('artifacts/qa/hipico-v290/chromium-gate.json', JSON.stringify({schema:'hipico-browser-gate.v290',sha:process.env.HIPICO_CANDIDATE_SHA,status:'PASS',project:'chromium',checkedAt:new Date().toISOString()},null,2)+'\n')"
+      - name: Upload Chromium evidence
+        uses: actions/upload-artifact@v6
+        with:
+          name: hipico-v290-chromium-${{ env.HIPICO_CANDIDATE_SHA }}
+          path: |
+            artifacts/qa/hipico-v290
+            playwright-report/hipico-v290
+            test-results/hipico-v290
+          retention-days: 30
+
+  security-regression:
+    if: github.event_name != 'schedule'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout exact release candidate
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ env.HIPICO_CANDIDATE_SHA }}
+          fetch-depth: 0
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - name: Verify exact SHA
+        run: test "$(git rev-parse HEAD)" = "$HIPICO_CANDIDATE_SHA"
+      - name: Install locked workspace
+        run: npm ci
+      - name: Run Hípico security/unit regression suite
+        run: npm --workspace backend run test:hipico
+      - name: Run canonical and pipeline security contracts
+        run: npm run test:hipico:command-center && npm run test:hipico:production-contract
+      - name: Secret scan exact candidate
+        run: node scripts/hipico-secret-scan-v290.mjs
+      - name: Existing security audits
+        run: node scripts/hipico-security-review-v114.mjs && node scripts/hipico-backend-authority-audit-v116.mjs
+      - name: Write security evidence
+        run: |
+          mkdir -p artifacts/qa/hipico-v290
+          node -e "require('fs').writeFileSync('artifacts/qa/hipico-v290/security-gate.json', JSON.stringify({schema:'hipico-security-gate.v290',sha:process.env.HIPICO_CANDIDATE_SHA,status:'PASS',checkedAt:new Date().toISOString()},null,2)+'\n')"
+      - name: Upload security evidence
+        uses: actions/upload-artifact@v6
+        with:
+          name: hipico-v290-security-${{ env.HIPICO_CANDIDATE_SHA }}
+          path: artifacts/qa/hipico-v290
+          retention-days: 30
+
+  browser-matrix:
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    strategy:
+      fail-fast: false
+      matrix:
+        browser: [chromium, firefox, webkit]
+    steps:
+      - name: Checkout exact release candidate
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ env.HIPICO_CANDIDATE_SHA }}
+          fetch-depth: 0
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - name: Verify exact SHA
+        run: test "$(git rev-parse HEAD)" = "$HIPICO_CANDIDATE_SHA"
+      - name: Install locked workspace
+        run: npm ci
+      - name: Install matrix browser runtime
+        run: npx playwright install --with-deps ${{ matrix.browser }}
+      - name: Run production browser matrix project
+        run: npx playwright test --config=playwright.hipico-v290.config.mjs --project=${{ matrix.browser }}
+      - name: Write browser matrix evidence
+        env:
+          HIPICO_MATRIX_BROWSER: ${{ matrix.browser }}
+        run: |
+          mkdir -p artifacts/qa/hipico-v290
+          node -e "const b=process.env.HIPICO_MATRIX_BROWSER; require('fs').writeFileSync('artifacts/qa/hipico-v290/browser-'+b+'.json', JSON.stringify({schema:'hipico-browser-matrix.v290',sha:process.env.HIPICO_CANDIDATE_SHA,status:'PASS',project:b,checkedAt:new Date().toISOString()},null,2)+'\n')"
+      - name: Upload browser matrix evidence
+        uses: actions/upload-artifact@v6
+        with:
+          name: hipico-v290-matrix-${{ matrix.browser }}-${{ env.HIPICO_CANDIDATE_SHA }}
+          path: |
+            artifacts/qa/hipico-v290
+            playwright-report/hipico-v290
+            test-results/hipico-v290
+          retention-days: 30
+
+  android-debug:
+    if: github.event_name != 'schedule'
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - name: Checkout exact release candidate
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ env.HIPICO_CANDIDATE_SHA }}
+          fetch-depth: 0
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - name: Setup Java 21
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+      - name: Verify exact SHA
+        run: test "$(git rev-parse HEAD)" = "$HIPICO_CANDIDATE_SHA"
+      - name: Install root locked workspace
+        run: npm ci
+      - name: Verify release contract before Android build
+        run: npm run release:hipico:v290
+      - name: Install Android wrapper lock
+        working-directory: android/hipico-control-v1130
+        run: npm ci
+      - name: Sync and verify canonical PWA assets
+        working-directory: android/hipico-control-v1130
+        run: npm run sync:web && npm run verify:web
+      - name: Build QA APK
+        working-directory: android/hipico-control-v1130
+        run: npm run android:qa
+      - name: Validate APK release evidence
+        run: node scripts/hipico-release-v118.mjs --require-apk
+      - name: Write Android evidence
+        run: |
+          mkdir -p artifacts/qa/hipico-v290
+          node -e "require('fs').writeFileSync('artifacts/qa/hipico-v290/android-gate.json', JSON.stringify({schema:'hipico-android-gate.v290',sha:process.env.HIPICO_CANDIDATE_SHA,status:'PASS',version:'1.13.0-rc3',checkedAt:new Date().toISOString()},null,2)+'\n')"
+      - name: Upload Android evidence
+        uses: actions/upload-artifact@v6
+        with:
+          name: hipico-v290-android-${{ env.HIPICO_CANDIDATE_SHA }}
+          path: |
+            artifacts/qa/hipico-v290
+            android/hipico-control-v1130/dist
+          retention-days: 30
+
+  final-release-gate:
+    if: always()
+    needs: [static-release, postgres-e2e, browser-chromium, security-regression, browser-matrix, android-debug]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout exact release candidate
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ env.HIPICO_CANDIDATE_SHA }}
+          fetch-depth: 0
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - name: Verify exact SHA
+        run: test "$(git rev-parse HEAD)" = "$HIPICO_CANDIDATE_SHA"
+      - name: Require event-appropriate gates
+        env:
+          HIPICO_RELEASE_EVENT: ${{ github.event_name }}
+          HIPICO_GATE_STATIC: ${{ needs.static-release.result }}
+          HIPICO_GATE_POSTGRES: ${{ needs.postgres-e2e.result }}
+          HIPICO_GATE_CHROMIUM: ${{ needs.browser-chromium.result }}
+          HIPICO_GATE_SECURITY: ${{ needs.security-regression.result }}
+          HIPICO_GATE_MATRIX: ${{ needs.browser-matrix.result }}
+          HIPICO_GATE_ANDROID: ${{ needs.android-debug.result }}
+        run: |
+          node -e "const e=process.env.HIPICO_RELEASE_EVENT; const s={static:process.env.HIPICO_GATE_STATIC,postgres:process.env.HIPICO_GATE_POSTGRES,chromium:process.env.HIPICO_GATE_CHROMIUM,security:process.env.HIPICO_GATE_SECURITY,matrix:process.env.HIPICO_GATE_MATRIX,android:process.env.HIPICO_GATE_ANDROID}; const required=e==='schedule'?['matrix']:e==='workflow_dispatch'?Object.keys(s):['static','postgres','chromium','security','android']; const bad=required.filter(k=>s[k]!=='success'); if(bad.length) throw new Error('HIPICO_REQUIRED_GATES_NOT_GREEN '+bad.map(k=>k+':'+s[k]).join(','));"
+      - name: Download upstream evidence
+        uses: actions/download-artifact@v7
+        with:
+          pattern: hipico-v290-*
+          path: artifacts/upstream
+          merge-multiple: false
+      - name: Verify SHA-bound evidence
+        env:
+          HIPICO_RELEASE_EVENT: ${{ github.event_name }}
+        run: node scripts/hipico-verify-evidence-v290.mjs
+      - name: Emit release readiness report
+        env:
+          HIPICO_RELEASE_EVENT: ${{ github.event_name }}
+          HIPICO_GATE_STATIC: ${{ needs.static-release.result }}
+          HIPICO_GATE_POSTGRES: ${{ needs.postgres-e2e.result }}
+          HIPICO_GATE_CHROMIUM: ${{ needs.browser-chromium.result }}
+          HIPICO_GATE_SECURITY: ${{ needs.security-regression.result }}
+          HIPICO_GATE_MATRIX: ${{ needs.browser-matrix.result }}
+          HIPICO_GATE_ANDROID: ${{ needs.android-debug.result }}
+        run: node scripts/hipico-release-report-v290.mjs
+      - name: Upload final release evidence
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: hipico-v290-final-${{ env.HIPICO_CANDIDATE_SHA }}
+          path: artifacts/qa/hipico-v290
+          retention-days: 30

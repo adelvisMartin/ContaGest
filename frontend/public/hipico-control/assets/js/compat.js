@@ -70,17 +70,6 @@
     };
   }
 
-  const LEGACY_KEYS = [
-    "hipico-control-workspace-v1",
-    "hipico-control-cloud-session",
-    "hipico-control-mode"
-  ];
-  function clearHipicoLegacyStorage() {
-    try {
-      for (const key of LEGACY_KEYS) globalScope.localStorage?.removeItem(key);
-    } catch (_) {}
-  }
-
   function errorText(error) {
     return String(error?.message || error?.reason?.message || error?.reason || error || "Error de inicio desconocido");
   }
@@ -99,17 +88,12 @@
       if (!root || globalScope.__HIPICO_BOOT_OK__) return;
       const message = errorText(error).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
       root.className = "app-loading";
-      root.innerHTML = `<section style="width:min(92vw,460px);padding:24px;border-radius:24px;background:#fff;box-shadow:0 18px 55px rgba(36,58,49,.14);text-align:left"><div class="brand-mark" style="margin-bottom:14px">HC</div><h1 style="font-size:1.35rem;margin:0 0 8px">No se pudo iniciar Control Hípico</h1><p style="color:#5f6f68;line-height:1.5">La aplicación detectó el problema y evitó quedarse bloqueada.</p><code style="display:block;overflow-wrap:anywhere;background:#f3f6f4;padding:10px;border-radius:12px;font-size:.78rem">${message}</code><div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:16px"><button id="hipico-retry" class="button button--primary">Reintentar</button><button id="hipico-safe" class="button">Abrir recuperación segura</button></div></section>`;
+      root.innerHTML = `<section style="width:min(92vw,460px);padding:24px;border-radius:24px;background:#fff;box-shadow:0 18px 55px rgba(36,58,49,.14);text-align:left"><div class="brand-mark" style="margin-bottom:14px">HC</div><h1 style="font-size:1.35rem;margin:0 0 8px">No se pudo iniciar Control Hípico</h1><p style="color:#5f6f68;line-height:1.5">La aplicación detectó el problema y evitó quedarse bloqueada. Tus datos locales no se borrarán al abrir la recuperación.</p><code style="display:block;overflow-wrap:anywhere;background:#f3f6f4;padding:10px;border-radius:12px;font-size:.78rem">${message}</code><div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:16px"><button id="hipico-retry" class="button button--primary">Reintentar</button><button id="hipico-safe" class="button">Abrir recuperación segura</button></div></section>`;
       document.getElementById("hipico-retry")?.addEventListener("click", () => location.reload());
       document.getElementById("hipico-safe")?.addEventListener("click", () => {
-        clearHipicoLegacyStorage();
-        try {
-          const request = indexedDB.deleteDatabase("hipico-control");
-          request.onsuccess = request.onerror = request.onblocked = () => location.replace("./recovery.html");
-          setTimeout(() => location.replace("./recovery.html"), 1200);
-        } catch (_) {
-          location.replace("./recovery.html");
-        }
+        // Opening the recovery surface is non-destructive. Any reset is performed
+        // only inside recovery.html after its explicit warning and confirmation.
+        location.replace("./recovery.html");
       });
     };
     document.readyState === "loading" ? document.addEventListener("DOMContentLoaded", show, { once: true }) : show();

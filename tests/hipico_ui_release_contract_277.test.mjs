@@ -4,9 +4,9 @@ import { readFileSync, readdirSync } from 'node:fs';
 
 const read = (path) => readFileSync(new URL(path, import.meta.url), 'utf8');
 const html = read('../frontend/public/hipico-control/index.html');
-const css = read('../frontend/public/hipico-control/assets/css/app.css');
-const touchCss = read('../frontend/public/hipico-control/assets/css/mobile-accessibility.css');
-const opsCss = read('../frontend/public/hipico-control/assets/css/operational-copy-center.css');
+const cssEntry = read('../frontend/public/hipico-control/assets/css/app.css');
+const cssFoundation = read('../frontend/public/hipico-control/assets/css/_foundation.css');
+const css = `${cssFoundation}\n${cssEntry}`;
 const notice = read('../frontend/public/hipico-control/assets/js/notice-bridge.js');
 const sw = read('../frontend/public/hipico-control/sw.js');
 const config = read('../frontend/public/hipico-control/assets/js/config.js');
@@ -43,14 +43,28 @@ test('canonical UI exposes light, dark and system theming', () => {
   assert.match(css, /:root\[data-theme="system"\]/);
 });
 
+test('persisted theme bootstrap executes before CSS to avoid a first-paint theme flash', () => {
+  const bootstrap = read('../frontend/public/hipico-control/assets/js/theme-bootstrap.js');
+  const scriptIndex = html.indexOf('./assets/js/theme-bootstrap.js');
+  const cssIndex = html.indexOf('./assets/css/app.css');
+  assert.ok(scriptIndex >= 0, 'theme bootstrap must be loaded');
+  assert.ok(cssIndex >= 0, 'canonical stylesheet must be loaded');
+  assert.ok(scriptIndex < cssIndex, 'theme bootstrap must execute before CSS');
+  assert.match(bootstrap, /hipico-theme/);
+  assert.match(bootstrap, /localStorage/);
+  assert.match(bootstrap, /dataset\.theme/);
+  assert.match(bootstrap, /light/);
+  assert.match(bootstrap, /dark/);
+  assert.match(bootstrap, /system/);
+});
+
 test('mobile controls preserve the 44px interaction contract', () => {
   assert.match(css, /--hc-touch:\s*44px/);
   assert.match(css, /@media \(max-width:\s*780px\)[\s\S]*\.button,[\s\S]*min-height:\s*var\(--hc-touch\)/);
-  assert.match(html, /assets\/css\/mobile-accessibility\.css/);
-  assert.match(touchCss, /@media \(max-width:\s*780px\)/);
-  assert.match(touchCss, /\.input,[\s\S]*\.select,[\s\S]*\.date-button,[\s\S]*\.color-input,[\s\S]*\.switch-row[\s\S]*min-height:\s*var\(--hc-touch,\s*44px\)/);
-  assert.match(sw, /assets\/css\/mobile-accessibility\.css/);
-  assert.match(opsCss, /@media\(max-width:720px\)[\s\S]*min-height:44px/);
+  assert.match(cssEntry, /@media \(max-width: 900px\), \(pointer: coarse\)/);
+  assert.match(cssEntry, /\.input,[\s\S]*\.select,[\s\S]*\.date-button,[\s\S]*\.color-input,[\s\S]*\.switch-row[\s\S]*min-height:\s*var\(--hc-touch,\s*44px\)/);
+  assert.match(cssEntry, /@media\(max-width:720px\)[\s\S]*min-height:44px/);
+  assert.doesNotMatch(html, /mobile-accessibility\.css|operational-copy-center\.css|operational-access-guard\.css/);
 });
 
 test('mobile vertical scrolling, safe area and reduced motion remain explicitly supported', () => {
@@ -64,12 +78,21 @@ test('installed PWA precaches the complete Hípico JavaScript module tree and at
   const root = new URL('../frontend/public/hipico-control/assets/js/', import.meta.url);
   const missing = jsFiles(root).filter((file) => !sw.includes(`'./assets/js/${file}'`) && !sw.includes(`"./assets/js/${file}"`));
   assert.deepEqual(missing, [], `JavaScript modules missing from APP_SHELL: ${missing.join(', ')}`);
+  assert.match(sw, /assets\/css\/app\.css/);
+  assert.match(sw, /assets\/css\/_foundation\.css/);
   assert.match(sw, /const SHELL_CACHE\s*=\s*`\$\{CACHE_VERSION\}-shell-r\d+-[a-z0-9-]+`/i);
   assert.match(sw, /cache\.addAll\(\[\.\.\.APP_SHELL_URLS\]\)/);
   assert.match(sw, /key\.startsWith\('hipico-control-'\)\s*&&\s*key\s*!==\s*SHELL_CACHE/);
   assert.match(sw, /caches\.delete\(key\)/);
   assert.match(sw, /isSensitive\(url\).*cache:\s*'no-store'/s);
   assert.match(sw, /isRuntimeMetadata\(url\).*cache:\s*'no-store'/s);
+});
+
+test('PWA reads offline shell resources only from the Control Hípico cache namespace', () => {
+  assert.doesNotMatch(sw, /\bcaches\.match\s*\(/, 'origin-global CacheStorage lookup could cross-contaminate sibling applications');
+  assert.match(sw, /const cache = await caches\.open\(SHELL_CACHE\)/);
+  assert.match(sw, /cache\.match\(scoped\(preferred\)\)/);
+  assert.match(sw, /cache\.match\(request\)/);
 });
 
 test('Control Hípico release version is single-sourced and build metadata is generated during every frontend build', () => {

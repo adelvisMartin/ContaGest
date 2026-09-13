@@ -1,0 +1,142 @@
+import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
+import test from 'node:test';
+import { operationalWorkspaceContext, renderCommandCenterModel } from '../frontend/public/hipico-control/assets/js/command-center.js';
+import { projectCommandCenter, __test__ } from '../frontend/api/hipico/command-center.js';
+
+const read = (path) => readFile(new URL(`../${path}`, import.meta.url), 'utf8');
+
+function workspace() {
+  return {
+    config: {
+      groups: [{ id: 'g-a', name: 'Grupo A', active: true }],
+      activeGroupId: 'g-a',
+      activeRaceByGroup: { 'g-a': 'race-2' }
+    },
+    days: [{ id: 'day-1', groupId: 'g-a', date: '2026-09-12', status: 'open' }],
+    races: [
+      { id: 'race-1', groupId: 'g-a', dayId: 'day-1', number: 1, racetrack: 'Parx Racing', status: 'closed' },
+      { id: 'race-2', groupId: 'g-a', dayId: 'day-1', number: 2, racetrack: 'Parx Racing', status: 'open' },
+      { id: 'race-3', groupId: 'g-a', dayId: 'day-1', number: 3, racetrack: 'Parx Racing', status: 'pending' }
+    ],
+    syncQueue: [{ id: 'q1' }],
+    syncMeta: { conflictSnapshots: 2 }
+  };
+}
+
+test('workspace Command Center context is derived from the active group/meeting/current race without invented data', () => {
+  const context = operationalWorkspaceContext(workspace());
+  assert.equal(context.group.id, 'g-a');
+  assert.equal(context.groupKey, 'g-a');
+  assert.equal(context.meeting.id, 'day-1');
+  assert.equal(context.currentRace.id, 'race-2');
+  assert.equal(context.nextRace.id, 'race-3');
+  assert.equal(context.localQueue, 1);
+  assert.equal(context.localConflicts, 2);
+});
+
+test('server projection exposes only aggregate operational status and never raw outbox/message data', () => {
+  const model = projectCommandCenter({
+    backendStatus: { ok: true, data: { dbReady: true, groupAutomation: 'bridge-required', groupQaMode: 'shadow-only', targetSupport: ['individual'], promotion: { mode: 'shadow' }, raceProvider: { provider: 'disabled', configured: false, enrichmentOnly: true, financialAuthority: false, circuitState: 'closed', retryAfterMs: 0, consecutiveFailures: 0 } } },
+    outbox: { ok: true, data: [
+      { id: 'o1', status: 'pending_approval', message: 'SECRET-MESSAGE', recipient: '584121234567' },
+      { id: 'o2', status: 'reconciliation_required', message: 'OTHER-SECRET', recipient: '584121234568' }
+    ] },
+    shadow: { ok: true, data: { counts: { pending: 4, matched: 2 } } },
+    bridge: { ready: true, tokenStrong: true, identityReady: true, persistenceReady: true },
+    sampledAt: '2026-09-12T15:00:00.000Z'
+  });
+  assert.equal(model.database.state, 'ready');
+  assert.equal(model.bridge.state, 'ready');
+  assert.equal(model.agent.mode, 'shadow');
+  assert.equal(model.queue.total, 2);
+  assert.equal(model.conflicts.reconciliationRequired, 1);
+  assert.equal(model.documents.state, 'not_exposed');
+  const serialized = JSON.stringify(model);
+  assert.doesNotMatch(serialized, /SECRET-MESSAGE|OTHER-SECRET|58412123456/);
+});
+
+test('Command Center rendering exposes explicit unknown/offline states instead of decorative green KPIs', () => {
+  const local = operationalWorkspaceContext(workspace());
+  const html = renderCommandCenterModel({ local, remote: null, online: false, error: 'offline' });
+  assert.match(html, /Centro de operaciones/);
+  assert.match(html, /Sistema/);
+  assert.match(html, /Bridge/);
+  assert.match(html, /Canal/);
+  assert.match(html, /Base de datos/);
+  assert.match(html, /Proveedor/);
+  assert.match(html, /Agente/);
+  assert.match(html, /Documentos/);
+  assert.match(html, /Cola/);
+  assert.match(html, /Conflictos/);
+  assert.match(html, /Alertas/);
+  assert.match(html, /Sin conexión|No verificado/);
+  assert.match(html, /Grupo A/);
+  assert.match(html, /Parx Racing/);
+});
+
+test('Command Center never renders failed PostgreSQL reads as zero healthy items', () => {
+  const local = operationalWorkspaceContext(workspace());
+  const remote = {
+    sampledAt: '2026-09-13T17:00:00.000Z',
+    system: { state: 'ready', backendReachable: true },
+    bridge: { state: 'ready', ready: true },
+    channel: { available: false, state: 'unavailable' },
+    database: { state: 'ready', ready: true },
+    providers: { state: 'disabled', provider: 'disabled' },
+    agent: { state: 'unavailable', mode: 'shadow', evaluations: { available: false, total: null } },
+    documents: { available: false, state: 'unavailable', total: null },
+    queue: { available: false, state: 'unavailable', total: null, pending: null, failed: null },
+    conflicts: { available: false, state: 'unavailable', reconciliationRequired: null },
+    races: { available: false, state: 'unavailable', total: null },
+    alerts: ['CHANNEL_READ_UNAVAILABLE', 'OUTBOX_READ_UNAVAILABLE', 'DOCUMENT_READ_UNAVAILABLE']
+  };
+  const html = renderCommandCenterModel({ local, remote, online: true });
+  assert.match(html, /Cola[\s\S]*No disponible[\s\S]*Lectura remota no disponible/);
+  assert.match(html, /Conflictos[\s\S]*No disponible[\s\S]*Lectura remota no disponible/);
+  assert.match(html, /Documentos[\s\S]*No disponible/);
+  assert.doesNotMatch(html, /Cola[\s\S]{0,180}0 pendiente\(s\) visibles/);
+  assert.doesNotMatch(html, /Conflictos[\s\S]{0,180}0 conflicto\(s\) \/ conciliación/);
+});
+
+test('Command Center remote read-model is fail-closed unless explicitly enabled', () => {
+  assert.equal(typeof __test__.commandCenterReadModelEnabled, 'function');
+  assert.equal(__test__.commandCenterReadModelEnabled({}), false);
+  assert.equal(__test__.commandCenterReadModelEnabled({ HIPICO_COMMAND_CENTER_ENABLED: 'false' }), false);
+  assert.equal(__test__.commandCenterReadModelEnabled({ HIPICO_COMMAND_CENTER_ENABLED: 'true' }), true);
+  assert.equal(__test__.commandCenterReadModelEnabled({ HIPICO_COMMAND_CENTER_ENABLED: ' TRUE ' }), true);
+});
+
+test('Command Center BFF accepts only a bounded Bearer token belonging to the configured owner', () => {
+  const owner = '11111111-1111-4111-8111-111111111111';
+  assert.equal(__test__.bearerAccessToken(''), '');
+  assert.equal(__test__.bearerAccessToken('Basic abc'), '');
+  assert.equal(__test__.bearerAccessToken('Bearer token-with-space invalid'), '');
+  assert.equal(__test__.bearerAccessToken('Bearer abc.def.ghi'), 'abc.def.ghi');
+  assert.equal(__test__.viewerOwnsCommandCenter({ id: owner }, { HIPICO_OWNER_ID: owner }), true);
+  assert.equal(__test__.viewerOwnsCommandCenter({ id: '22222222-2222-4222-8222-222222222222' }, { HIPICO_OWNER_ID: owner }), false);
+  assert.equal(__test__.viewerOwnsCommandCenter({ id: owner }, { HIPICO_OWNER_ID: 'invalid' }), false);
+});
+
+test('PWA mounts Command Center and server BFF delegates only to the canonical authenticated read model', async () => {
+  const [html, sw, endpoint, client] = await Promise.all([
+    read('frontend/public/hipico-control/index.html'),
+    read('frontend/public/hipico-control/sw.js'),
+    read('frontend/api/hipico/command-center.js'),
+    read('frontend/public/hipico-control/assets/js/command-center.js')
+  ]);
+  assert.match(html, /assets\/js\/command-center\.js/);
+  assert.match(sw, /assets\/js\/command-center\.js/);
+  assert.match(endpoint, /HIPICO_COMMAND_CENTER_ENABLED/);
+  assert.match(endpoint, /HIPICO_OPERATOR_CONTROL_TOKEN/);
+  assert.match(endpoint, /HIPICO_BOT_OPERATOR_TOKEN/);
+  assert.match(endpoint, /authenticateCommandCenterViewer/);
+  assert.match(endpoint, /x-hipico-operator-token/);
+  assert.match(endpoint, /x-hipico-group-key/);
+  assert.match(endpoint, /\/api\/v1\/hipico\/command-center/);
+  assert.match(client, /Authorization:\s*`Bearer \$\{accessToken\}`/);
+  assert.doesNotMatch(client, /HIPICO_OPERATOR_CONTROL_TOKEN|HIPICO_BOT_OPERATOR_TOKEN|HIPICO_GROUP_BRIDGE_TOKEN/);
+  assert.doesNotMatch(endpoint, /\/api\/v1\/hipico-bot\/outbox|\/api\/v1\/hipico-bot\/shadow-projection/);
+  assert.doesNotMatch(endpoint, /recipient\s*:/);
+  assert.doesNotMatch(endpoint, /message\s*:/);
+});

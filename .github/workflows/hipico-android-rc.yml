@@ -9,14 +9,18 @@ on:
       - 'products/hipico-control/**'
       - 'scripts/hipico-release-v118.mjs'
       - 'tests/hipico_release_distribution_issue_118.test.mjs'
+      - 'tests/hipico_release_parity_290.test.mjs'
       - 'docs/hipico/RELEASE-DISTRIBUTION-118.md'
       - '.github/workflows/hipico-android-rc.yml'
 
 permissions:
   contents: read
 
+env:
+  HIPICO_CANDIDATE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+
 concurrency:
-  group: hipico-android-rc-${{ github.ref }}
+  group: hipico-android-rc-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -24,12 +28,19 @@ jobs:
     name: Build reproducible debug APK
     runs-on: ubuntu-latest
     timeout-minutes: 35
+    env:
+      HIPICO_RELEASE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+      HIPICO_CANDIDATE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
 
     steps:
       - name: Checkout exact revision
         uses: actions/checkout@v7
         with:
+          ref: ${{ env.HIPICO_CANDIDATE_SHA }}
           fetch-depth: 0
+
+      - name: Gate exact candidate and clean tree
+        run: node scripts/hipico-exact-sha-gate.mjs
 
       - name: Set up Node 22
         uses: actions/setup-node@v7
@@ -39,10 +50,8 @@ jobs:
           cache-dependency-path: android/hipico-control-v1130/package-lock.json
 
       - name: Release policy contract
-        env:
-          HIPICO_RELEASE_SHA: ${{ github.sha }}
         run: |
-          node --test tests/hipico_release_distribution_issue_118.test.mjs
+          node --test tests/hipico_release_distribution_issue_118.test.mjs tests/hipico_release_parity_290.test.mjs
           node scripts/hipico-release-v118.mjs
 
       - name: Set up JDK 21
@@ -80,13 +89,9 @@ jobs:
 
       - name: Build and package QA APK
         working-directory: android/hipico-control-v1130
-        env:
-          HIPICO_RELEASE_SHA: ${{ github.sha }}
         run: npm run android:qa
 
       - name: Verify packaged artifact and bind it to release manifest
-        env:
-          HIPICO_RELEASE_SHA: ${{ github.sha }}
         run: |
           node scripts/hipico-release-v118.mjs --require-apk
           node -e "const fs=require('fs');const p=require('./products/hipico-control/release-policy.json');const m=JSON.parse(fs.readFileSync('./android/hipico-control-v1130/artifacts/QA_APK_METADATA.json'));if(m.version!==p.version||m.versionCode!==p.versionCode||m.candidateSha!==process.env.HIPICO_RELEASE_SHA)process.exit(1);console.log(JSON.stringify(m,null,2));"
@@ -95,7 +100,7 @@ jobs:
       - name: Upload QA APK artifact
         uses: actions/upload-artifact@v7
         with:
-          name: control-hipico-debug-${{ github.sha }}
+          name: control-hipico-debug-${{ env.HIPICO_CANDIDATE_SHA }}
           path: android/hipico-control-v1130/artifacts/
           if-no-files-found: error
           retention-days: 30
@@ -104,7 +109,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: control-hipico-release-evidence-${{ github.sha }}
+          name: control-hipico-release-evidence-${{ env.HIPICO_CANDIDATE_SHA }}
           path: artifacts/qa/hipico-v118/
           if-no-files-found: warn
           retention-days: 30

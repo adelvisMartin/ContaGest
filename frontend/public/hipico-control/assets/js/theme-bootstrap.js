@@ -1,17 +1,26 @@
-(function bootstrapHipicoTheme(globalScope) {
-  'use strict';
-  const KEY = 'hipico-control-theme';
-  const ALLOWED = new Set(['system', 'light', 'dark']);
-  function normalize(value) { return ALLOWED.has(String(value || '')) ? String(value) : 'system'; }
-  let initial = 'system';
-  try { initial = normalize(globalScope.localStorage?.getItem(KEY)); } catch {}
-  document.documentElement.dataset.theme = initial;
+(() => {
+  const STORAGE_KEY = 'hipico-theme';
+  const ALLOWED_THEMES = ['light', 'dark', 'system'];
+  const root = document.documentElement;
 
-  const persist = () => {
-    const theme = normalize(document.documentElement.dataset.theme);
-    if (document.documentElement.dataset.theme !== theme) document.documentElement.dataset.theme = theme;
-    try { globalScope.localStorage?.setItem(KEY, theme); } catch {}
+  let storedTheme = 'system';
+  try {
+    const candidate = localStorage.getItem('hipico-theme');
+    if (ALLOWED_THEMES.includes(candidate)) storedTheme = candidate;
+  } catch {
+    // Storage can be unavailable in hardened/private contexts. System theme remains safe.
+  }
+
+  root.dataset.theme = storedTheme;
+
+  const persistTheme = () => {
+    const theme = String(root.dataset.theme || 'system');
+    if (!ALLOWED_THEMES.includes(theme)) return;
+    try { localStorage.setItem('hipico-theme', theme); } catch { /* best effort only */ }
   };
-  new MutationObserver(persist).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
-  globalScope.__HIPICO_THEME_STORAGE_KEY__ = KEY;
-})(typeof globalThis !== 'undefined' ? globalThis : window);
+
+  if (typeof MutationObserver === 'function') {
+    const observer = new MutationObserver(persistTheme);
+    observer.observe(root, { attributes: true, attributeFilter: ['data-theme'] });
+  }
+})();

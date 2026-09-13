@@ -7,6 +7,7 @@ const read = (path) => readFileSync(new URL(path, import.meta.url), 'utf8');
 const groupAdapter = read('../frontend/api/hipico/group-bridge-ingest.js');
 const metaAdapter = read('../frontend/api/hipico/whatsapp-webhook.js');
 const shared = read('../frontend/api/hipico/_shared.js');
+const systemRoutes = read('../backend/src/modules/hipico/hipico-system.routes.ts');
 
 void test('serverless messaging adapters delegate instead of classifying or persisting business events', () => {
   for (const source of [groupAdapter, metaAdapter]) {
@@ -18,12 +19,24 @@ void test('serverless messaging adapters delegate instead of classifying or pers
   assert.doesNotMatch(shared, /adapterCaptureDecision/);
 });
 
-void test('CLI maps stable commands and json flag', () => {
-  assert.deepEqual(parseCommand(['bridge', 'status', '--json']), { json: true, command: 'bridge', subcommand: 'status', value: '' });
-  assert.deepEqual(commandRequest(parseCommand(['status'])), ['/api/v1/hipico/system/status', 'GET']);
-  assert.deepEqual(commandRequest(parseCommand(['trace', 'corr-123'])), ['/api/v1/hipico/trace/corr-123', 'GET']);
+void test('CLI maps current canonical endpoints and keeps operator auth on system status', () => {
+  const parsed = parseCommand(['bridge', 'status', '--json', '--limit', '999']);
+  assert.equal(parsed.json, true);
+  assert.equal(parsed.command, 'bridge');
+  assert.equal(parsed.subcommand, 'status');
+  assert.equal(parsed.limit, 200);
+
+  assert.deepEqual(commandRequest(parseCommand(['status'])), ['/api/v1/hipico/status', 'GET', 'operator']);
+  assert.deepEqual(commandRequest(parseCommand(['readiness'])), ['/api/v1/hipico/readiness', 'GET', 'operator']);
+  assert.deepEqual(commandRequest(parseCommand(['version'])), ['/api/v1/hipico/version', 'GET', 'operator']);
+  assert.deepEqual(commandRequest(parseCommand(['trace', 'corr-123'])), ['/api/v1/hipico/trace/corr-123', 'GET', 'operator-group']);
+  assert.match(systemRoutes, /operatorTokenValid/);
 });
 
-void test('CLI rejects malformed trace identifiers', () => {
+void test('CLI rejects malformed trace identifiers and never accepts tokens as command-line flags', () => {
   assert.throws(() => commandRequest(parseCommand(['trace', '../../secret'])), /HIPICO_CLI_INVALID_TRACE_ID/);
+  const source = read('../tools/hipico-cli/hipico.mjs');
+  assert.doesNotMatch(source, /--(?:operator|bridge)-token/);
+  assert.match(source, /HIPICO_CLI_REMOTE_HTTP_FORBIDDEN/);
+  assert.match(source, /HIPICO_CLI_BASE_PATH_FORBIDDEN/);
 });

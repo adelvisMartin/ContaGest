@@ -1,236 +1,213 @@
 import { prisma } from '../../database/prisma.js';
+import { raceProviderStatus, type HorseRaceProviderStatus } from '../hipico-bot/hipico-race-provider.js';
 import { buildHipicoSystemStatus } from './hipico-system.service.js';
-import { createDefaultRacingProviderRegistry } from './provider-registry.js';
-import { PostgresDocumentStore } from './document.store.js';
-import { RaceLifecycleStore } from './race.store.js';
-import { AutomationStore } from './automation.store.js';
 
-export type CommandCenterScope = {
-  ownerId: string;
-  groupKey: string;
-  groupId?: string | null;
-};
+export type CommandCenterScope = { ownerId: string; groupKey: string };
+type CountRow = { state: string; count: bigint | number };
+type ScalarCount = { count: bigint | number };
+type ChannelRow = { groupKey: string; label: string; channelType: string; status: string; updatedAt: Date | string };
+type SystemStatus = Awaited<ReturnType<typeof buildHipicoSystemStatus>>;
 
-type CountRow = { count: bigint | number };
-type StateCountRow = { state: string; count: bigint | number };
+export type CommandCenterProbe<T> = { available: boolean; value: T };
 
-const raceStore = new RaceLifecycleStore();
-const documentStore = new PostgresDocumentStore();
-const automationStore = new AutomationStore();
-const providers = createDefaultRacingProviderRegistry();
+const count = (value: bigint | number | null | undefined) => Number(value || 0);
 
-function asCount(value: bigint | number | null | undefined) {
-  return Number(value || 0);
+async function probe<T>(work: () => Promise<T>, fallback: T): Promise<CommandCenterProbe<T>> {
+  try { return { available: true, value: await work() }; }
+  catch { return { available: false, value: fallback }; }
 }
 
-async function optional<T>(fn: () => Promise<T>, fallback: T) {
-  try { return await fn(); }
-  catch { return fallback; }
+function stateCounts(rows: CountRow[]): Record<string, number> {
+  return Object.fromEntries(rows.map((row) => [String(row.state || 'unknown').toLowerCase(), count(row.count)]));
 }
 
-function currentRaceSelection(races: any[]) {
-  const priority = ['RUNNING', 'CLOSING', 'OPEN', 'PROVISIONAL_RESULT', 'CLOSED'];
-  for (const state of priority) {
-    const candidates = races.filter((race) => race.state === state);
-    if (candidates.length === 1) return { race: candidates[0], ambiguous: false, state, count: 1 };
-    if (candidates.length > 1) return { race: null, ambiguous: true, state, count: candidates.length };
+function totalStates(states: Record<string, number>) {
+  return Object.values(states).reduce((sum, value) => sum + Number(value || 0), 0);
+}
+
+export function projectHipicoCommandCenter(input: {
+  scope: CommandCenterScope;
+  system: SystemStatus;
+  provider: HorseRaceProviderStatus;
+  promotion: string;
+  sampledAt: string;
+  probes: {
+    channel: CommandCenterProbe<ChannelRow[]>;
+    queue: CommandCenterProbe<CountRow[]>;
+    shadow: CommandCenterProbe<CountRow[]>;
+    documents: CommandCenterProbe<CountRow[]>;
+    reconciliation: CommandCenterProbe<ScalarCount[]>;
+    races: CommandCenterProbe<CountRow[]>;
+  };
+}) {
+  const { scope, system, provider, promotion, sampledAt, probes } = input;
+  const queue = stateCounts(probes.queue.value);
+  const shadow = stateCounts(probes.shadow.value);
+  const documents = stateCounts(probes.documents.value);
+  const races = stateCounts(probes.races.value);
+  const queueTotal = totalStates(queue);
+  const queuePending = Number(queue.queued || 0) + Number(queue.sending || 0) + Number(queue.retry || 0) + Number(queue.pending_approval || 0);
+  const queueFailed = Number(queue.failed || 0);
+  const reconciliationRequired = probes.queue.available && probes.reconciliation.available
+    ? Number(queue.reconciliation_required || 0) + count(probes.reconciliation.value[0]?.count)
+    : null;
+  const shadowTotal = totalStates(shadow);
+  const documentTotal = totalStates(documents);
+  const raceTotal = totalStates(races);
+  const channel = probes.channel.value[0] || null;
+  const bridgeReady = system.components.bridge.state === 'ready';
+  const readModelAvailable = Object.values(probes).every((item) => item.available);
+  const alerts: string[] = [];
+
+  if (system.components.backend.state !== 'ready') alerts.push('BACKEND_NOT_READY');
+  if (system.components.database.state !== 'ready') alerts.push('DATABASE_NOT_READY');
+  if (!bridgeReady) alerts.push('BRIDGE_NOT_READY');
+  if (!probes.channel.available) alerts.push('CHANNEL_READ_UNAVAILABLE');
+  else if (!channel) alerts.push('CHANNEL_NOT_REGISTERED');
+  if (!probes.queue.available) alerts.push('OUTBOX_READ_UNAVAILABLE');
+  else {
+    if (queueFailed > 0) alerts.push('OUTBOX_FAILED');
+    if (queuePending > 0) alerts.push('OUTBOX_PENDING');
   }
-  return { race: null, ambiguous: false, state: null, count: 0 };
-}
-
-function nextRaceSelection(races: any[]) {
-  const candidates = [...races]
-    .filter((race) => ['DISCOVERED', 'ANNOUNCED', 'POSTPONED'].includes(race.state))
-    .sort((a, b) => Date.parse(a.scheduledAt || '9999-12-31') - Date.parse(b.scheduledAt || '9999-12-31') || Number(a.number || 0) - Number(b.number || 0));
-  if (!candidates.length) return { race: null, ambiguous: false, count: 0 };
-  if (candidates.length > 1) {
-    const first = candidates[0];
-    const second = candidates[1];
-    const sameTime = String(first.scheduledAt || '') === String(second.scheduledAt || '');
-    const differentMeeting = String(first.meetingId || '') !== String(second.meetingId || '');
-    if (sameTime && differentMeeting) return { race: null, ambiguous: true, count: candidates.length };
+  if (!probes.shadow.available) alerts.push('SHADOW_READ_UNAVAILABLE');
+  if (!probes.documents.available) alerts.push('DOCUMENT_READ_UNAVAILABLE');
+  else {
+    if (Number(documents.review || 0) > 0) alerts.push('DOCUMENT_REVIEW_PENDING');
+    if (Number(documents.failed || 0) > 0) alerts.push('DOCUMENT_FAILED');
   }
-  return { race: candidates[0], ambiguous: false, count: candidates.length };
-}
+  if (!probes.reconciliation.available) alerts.push('RECONCILIATION_READ_UNAVAILABLE');
+  else if (reconciliationRequired !== null && reconciliationRequired > 0) alerts.push('RECONCILIATION_REQUIRED');
+  if (!probes.races.available) alerts.push('RACE_READ_UNAVAILABLE');
+  else if ((Number(races.open || 0) + Number(races.closed || 0) + Number(races.result_received || 0)) > 1) alerts.push('RACE_CONTEXT_REQUIRES_REVIEW');
 
-function stateMap(rows: StateCountRow[]) {
-  return Object.fromEntries(rows.map((row) => [row.state, asCount(row.count)]));
+  const systemState = system.components.database.state === 'unavailable'
+    ? 'unavailable'
+    : system.ok && readModelAvailable
+      ? 'ready'
+      : 'degraded';
+
+  return {
+    sampledAt,
+    scope: { groupKey: scope.groupKey },
+    version: system.version,
+    system: {
+      state: systemState,
+      backendReachable: system.components.backend.state === 'ready',
+      readModelAvailable,
+      components: system.components
+    },
+    bridge: {
+      state: bridgeReady ? 'ready' : 'not_ready',
+      ready: bridgeReady,
+      sourceSendPossible: false
+    },
+    channel: {
+      available: probes.channel.available,
+      state: !probes.channel.available ? 'unavailable' : channel ? String(channel.status || 'known') : 'unknown',
+      groupAutomation: channel?.channelType || 'unknown',
+      qaMode: promotion === 'automatic' ? 'automatic' : 'shadow-only',
+      label: channel?.label || null,
+      updatedAt: channel?.updatedAt || null
+    },
+    database: { state: system.components.database.state, ready: system.components.database.state === 'ready' },
+    providers: {
+      state: provider.configured ? 'ready' : 'disabled',
+      provider: provider.provider,
+      configured: provider.configured,
+      enrichmentOnly: true,
+      financialAuthority: false,
+      runtimeTelemetryAvailable: false,
+      circuitState: 'not_exposed',
+      retryAfterMs: null,
+      reason: provider.reason
+    },
+    agent: {
+      state: probes.shadow.available ? system.components.agent.state : 'unavailable',
+      mode: promotion,
+      shadowOnly: promotion !== 'automatic',
+      evaluations: {
+        available: probes.shadow.available,
+        total: probes.shadow.available ? shadowTotal : null,
+        pending: probes.shadow.available ? Number(shadow.pending || 0) : null,
+        matched: probes.shadow.available ? Number(shadow.matched || 0) + Number(shadow.equivalent || 0) : null,
+        unsafe: probes.shadow.available ? Number(shadow.unsafe || 0) : null
+      }
+    },
+    documents: {
+      available: probes.documents.available,
+      state: !probes.documents.available ? 'unavailable' : documentTotal > 0 ? 'known' : system.components.documentEngine.state,
+      total: probes.documents.available ? documentTotal : null,
+      states: documents
+    },
+    queue: {
+      available: probes.queue.available,
+      state: !probes.queue.available ? 'unavailable' : queueFailed > 0 || queuePending > 0 ? 'degraded' : 'ready',
+      total: probes.queue.available ? queueTotal : null,
+      pending: probes.queue.available ? queuePending : null,
+      failed: probes.queue.available ? queueFailed : null,
+      states: queue
+    },
+    conflicts: {
+      available: probes.queue.available && probes.reconciliation.available,
+      state: !(probes.queue.available && probes.reconciliation.available) ? 'unavailable' : Number(reconciliationRequired || 0) > 0 ? 'degraded' : 'ready',
+      reconciliationRequired
+    },
+    races: {
+      available: probes.races.available,
+      state: probes.races.available ? 'ready' : 'unavailable',
+      total: probes.races.available ? raceTotal : null,
+      states: races
+    },
+    alerts
+  };
 }
 
 export async function buildHipicoCommandCenter(scope: CommandCenterScope) {
-  const now = new Date();
-  const [system, meetings, races, documents, providerStatus, channels, queueRows, documentRows, conflictRows, lastBridgeRows] = await Promise.all([
+  const [system, channel, queue, shadow, documents, reconciliation, races] = await Promise.all([
     buildHipicoSystemStatus(),
-    raceStore.listMeetings(scope.ownerId, scope.groupKey, 30),
-    raceStore.listRaces(scope.ownerId, scope.groupKey, null, 200),
-    documentStore.list(scope.ownerId, scope.groupKey, 20),
-    optional(() => providers.status(), [] as any[]),
-    optional(() => prisma.$queryRaw<any[]>`
-      SELECT group_key AS "groupKey", label, channel_type AS "channelType", status,
-             config->>'mode' AS mode, config->>'purpose' AS purpose, updated_at AS "updatedAt"
+    probe(() => prisma.$queryRaw<ChannelRow[]>`
+      SELECT group_key AS "groupKey",label,channel_type AS "channelType",status,updated_at AS "updatedAt"
       FROM public.hipico_bot_channels
       WHERE owner_id=${scope.ownerId}::uuid AND group_key=${scope.groupKey}
-      ORDER BY updated_at DESC
-      LIMIT 50
+      ORDER BY updated_at DESC LIMIT 1
     `, []),
-    optional(() => prisma.$queryRaw<StateCountRow[]>`
-      SELECT status AS state, COUNT(*)::bigint AS count
+    probe(() => prisma.$queryRaw<CountRow[]>`
+      SELECT status AS state,COUNT(*)::bigint AS count
       FROM public.hipico_outbox
       WHERE owner_id=${scope.ownerId}::uuid AND group_key=${scope.groupKey}
       GROUP BY status
     `, []),
-    optional(() => prisma.$queryRaw<StateCountRow[]>`
-      SELECT status AS state, COUNT(*)::bigint AS count
+    probe(() => prisma.$queryRaw<CountRow[]>`
+      SELECT match_status AS state,COUNT(*)::bigint AS count
+      FROM public.hipico_shadow_evaluations
+      WHERE owner_id=${scope.ownerId}::uuid AND source_group_key=${scope.groupKey}
+      GROUP BY match_status
+    `, []),
+    probe(() => prisma.$queryRaw<CountRow[]>`
+      SELECT status AS state,COUNT(*)::bigint AS count
       FROM public.hipico_documents
       WHERE owner_id=${scope.ownerId}::uuid AND group_key=${scope.groupKey}
       GROUP BY status
     `, []),
-    optional(async () => {
-      const [reconciliations, rejectedTransitions, agentConflicts] = await Promise.all([
-        prisma.$queryRaw<CountRow[]>`
-          SELECT COUNT(*)::bigint AS count FROM public.hipico_reconciliations
-          WHERE owner_id=${scope.ownerId}::uuid AND group_key=${scope.groupKey} AND status IN ('difference','pending')
-        `,
-        prisma.$queryRaw<CountRow[]>`
-          SELECT COUNT(*)::bigint AS count FROM public.hipico_race_events
-          WHERE owner_id=${scope.ownerId}::uuid AND group_key=${scope.groupKey} AND disposition='rejected'
-        `,
-        scope.groupId ? prisma.$queryRaw<CountRow[]>`
-          SELECT COUNT(*)::bigint AS count FROM public.hipico_agent_evaluations
-          WHERE owner_id=${scope.ownerId}::uuid AND group_key=${scope.groupKey} AND group_id=${scope.groupId} AND conflict=true
-        ` : Promise.resolve([{ count: 0 }])
-      ]);
-      return {
-        reconciliations: asCount(reconciliations[0]?.count),
-        rejectedTransitions: asCount(rejectedTransitions[0]?.count),
-        agentConflicts: asCount(agentConflicts[0]?.count)
-      };
-    }, { reconciliations: 0, rejectedTransitions: 0, agentConflicts: 0 }),
-    optional(() => prisma.$queryRaw<Array<{ createdAt: Date | string }>>`
-      SELECT created_at AS "createdAt"
-      FROM public.hipico_messages
-      WHERE owner_id=${scope.ownerId}::uuid
-        AND channel_key=${scope.groupKey}
-        AND metadata->>'source' IN ('official_web_playwright','whatsapp-web-bridge')
-      ORDER BY created_at DESC
-      LIMIT 1
+    probe(() => prisma.$queryRaw<ScalarCount[]>`
+      SELECT COUNT(*)::bigint AS count
+      FROM public.hipico_reconciliations
+      WHERE owner_id=${scope.ownerId}::uuid AND group_key=${scope.groupKey} AND status IN ('pending','difference')
+    `, []),
+    probe(() => prisma.$queryRaw<CountRow[]>`
+      SELECT status AS state,COUNT(*)::bigint AS count
+      FROM public.hipico_domain_aggregates
+      WHERE owner_id=${scope.ownerId}::uuid AND group_key=${scope.groupKey} AND aggregate_kind='race'
+      GROUP BY status
     `, [])
   ]);
 
-  const currentSelection = currentRaceSelection(races);
-  const nextSelection = nextRaceSelection(races);
-  const currentRace = currentSelection.race;
-  const upcomingRace = nextSelection.race;
-  const activeMeeting = currentRace
-    ? meetings.find((meeting: any) => meeting.id === currentRace.meetingId) || null
-    : meetings.length === 1 ? meetings[0] : null;
-  const queue = stateMap(queueRows);
-  const documentStates = stateMap(documentRows);
-  const queuePending = (queue.queued || 0) + (queue.sending || 0) + (queue.retry || 0);
-  const queueFailed = queue.failed || 0;
-  const conflicts = conflictRows.reconciliations + conflictRows.rejectedTransitions + conflictRows.agentConflicts;
-
-  let agent: any = {
-    state: 'not_configured',
-    reason: scope.groupId ? 'AGENT_STATE_UNAVAILABLE' : 'GROUP_ID_NOT_SELECTED',
-    mode: null,
-    metrics: null
-  };
-  if (scope.groupId) {
-    agent = await optional(async () => {
-      const [config, metrics] = await Promise.all([
-        automationStore.get(scope.ownerId, scope.groupKey, scope.groupId!),
-        automationStore.metrics(scope.ownerId, scope.groupKey, scope.groupId!)
-      ]);
-      return { state: 'ready', reason: null, mode: config?.mode || 'DISABLED', metrics };
-    }, agent);
-  }
-
-  const lastBridgeAt = lastBridgeRows[0]?.createdAt ? new Date(lastBridgeRows[0].createdAt) : null;
-  const bridgeAgeMs = lastBridgeAt ? Math.max(0, now.getTime() - lastBridgeAt.getTime()) : null;
-  const bridgeConfigured = system.components.bridge.state === 'ready';
-  const bridgeRuntimeState = !bridgeConfigured
-    ? 'not_configured'
-    : bridgeAgeMs == null
-      ? 'degraded'
-      : bridgeAgeMs <= 2 * 60 * 1000
-        ? 'ready'
-        : 'degraded';
-
-  const alerts: Array<{ severity: 'info' | 'warning' | 'critical'; code: string; message: string }> = [];
-  for (const [component, value] of Object.entries(system.components)) {
-    if ((value as any).state === 'unavailable') alerts.push({ severity: 'critical', code: `COMPONENT_${component.toUpperCase()}_UNAVAILABLE`, message: `${component} no está disponible.` });
-    else if ((value as any).state === 'degraded') alerts.push({ severity: 'warning', code: `COMPONENT_${component.toUpperCase()}_DEGRADED`, message: `${component} está degradado.` });
-  }
-  if (bridgeConfigured && bridgeAgeMs == null) alerts.push({ severity: 'warning', code: 'BRIDGE_NO_EVENTS', message: 'Bridge configurado sin eventos persistidos todavía.' });
-  else if (bridgeAgeMs != null && bridgeAgeMs > 2 * 60 * 1000) alerts.push({ severity: 'warning', code: 'BRIDGE_STALE', message: 'El último evento del Bridge supera dos minutos.' });
-  if (queueFailed > 0) alerts.push({ severity: 'critical', code: 'OUTBOX_FAILED', message: `${queueFailed} elemento(s) de cola fallaron.` });
-  if (queuePending > 0) alerts.push({ severity: 'warning', code: 'OUTBOX_PENDING', message: `${queuePending} elemento(s) siguen pendientes o en reintento.` });
-  if (conflicts > 0) alerts.push({ severity: 'warning', code: 'OPERATION_CONFLICTS', message: `${conflicts} conflicto(s) requieren revisión.` });
-  if ((documentStates.review || 0) > 0) alerts.push({ severity: 'warning', code: 'DOCUMENT_REVIEW_PENDING', message: `${documentStates.review} documento(s) requieren revisión.` });
-  if ((documentStates.failed || 0) > 0) alerts.push({ severity: 'critical', code: 'DOCUMENT_FAILED', message: `${documentStates.failed} documento(s) fallaron al procesarse.` });
-  if (currentSelection.ambiguous) alerts.push({ severity: 'critical', code: 'AMBIGUOUS_ACTIVE_RACE', message: `${currentSelection.count} carreras comparten el estado operativo ${currentSelection.state}; selecciona contexto antes de actuar.` });
-  else if (!currentRace) alerts.push({ severity: 'info', code: 'NO_ACTIVE_RACE', message: 'No hay una carrera operativa activa inequívoca en este grupo.' });
-  if (nextSelection.ambiguous) alerts.push({ severity: 'warning', code: 'AMBIGUOUS_NEXT_RACE', message: 'La próxima carrera es ambigua entre reuniones con la misma hora programada.' });
-  if (!activeMeeting && meetings.length > 1) alerts.push({ severity: 'warning', code: 'AMBIGUOUS_ACTIVE_MEETING', message: 'Hay varias reuniones y ninguna puede determinarse como activa sin contexto de carrera.' });
-
-  return {
-    generatedAt: now.toISOString(),
-    scope: { groupKey: scope.groupKey, groupId: scope.groupId || null },
-    version: system.version,
-    system: {
-      ok: system.ok,
-      components: system.components
-    },
-    bridge: {
-      state: bridgeRuntimeState,
-      configuredState: system.components.bridge.state,
-      lastEventAt: lastBridgeAt?.toISOString() || null,
-      ageMs: bridgeAgeMs,
-      sourceSendPossible: false
-    },
-    channels: channels.map((channel) => ({
-      groupKey: channel.groupKey,
-      label: channel.label,
-      channelType: channel.channelType,
-      status: channel.status,
-      mode: channel.mode || null,
-      purpose: channel.purpose || null,
-      updatedAt: channel.updatedAt
-    })),
-    operation: {
-      activeMeeting,
-      currentRace,
-      nextRace: upcomingRace,
-      currentRaceContext: { ambiguous: currentSelection.ambiguous, candidateCount: currentSelection.count, state: currentSelection.state },
-      nextRaceContext: { ambiguous: nextSelection.ambiguous, candidateCount: nextSelection.count },
-      meetings: meetings.slice(0, 10),
-      raceCount: races.length
-    },
-    documents: {
-      states: documentStates,
-      recent: documents.map((document: any) => ({
-        id: document.id,
-        filename: document.filename,
-        classification: document.classification,
-        confidence: document.confidence,
-        authority: document.authority,
-        status: document.status,
-        createdAt: document.createdAt,
-        updatedAt: document.updatedAt
-      }))
-    },
-    providers: providerStatus,
-    agent,
-    queue: {
-      states: queue,
-      pending: queuePending,
-      failed: queueFailed
-    },
-    conflicts: {
-      ...conflictRows,
-      total: conflicts
-    },
-    alerts
-  };
+  return projectHipicoCommandCenter({
+    scope,
+    system,
+    provider: raceProviderStatus(process.env),
+    promotion: String(process.env.HIPICO_BOT_PROMOTION || 'shadow').trim().toLowerCase() || 'shadow',
+    sampledAt: new Date().toISOString(),
+    probes: { channel, queue, shadow, documents, reconciliation, races }
+  });
 }

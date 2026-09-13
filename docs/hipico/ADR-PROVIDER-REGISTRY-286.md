@@ -1,44 +1,28 @@
 # ADR — Racing Provider Registry (#286)
 
 ## Status
-Accepted for stacked implementation. Provider data is enrichment evidence only and never financial authority.
+Accepted and integrated. Provider observations are enrichment evidence only and never financial authority.
 
 ## Decision
-External racing feeds are behind the framework-free `RacingDataProvider` contract. The domain consumes normalized Meeting/Race/Runner/Result records plus explicit provenance; it never consumes provider XML/JSON directly.
+External racing feeds are behind the framework-free `RacingDataProvider` contract. The domain consumes normalized meeting/race/runner/result records plus explicit provenance; it never consumes provider XML/JSON as business authority.
 
-Required provider operations are `listMeetings`, `getMeeting`, `getRace`, `getEntries`, `getScratches`, and `getResult`. A provider must advertise its implemented capabilities and reject unsupported operations with `PROVIDER_CAPABILITY_UNSUPPORTED` instead of fabricating data.
+Required provider operations are `listMeetings`, `getMeeting`, `getRace`, `getEntries`, `getScratches` and `getResult`. Providers advertise capabilities and reject unsupported operations with `PROVIDER_CAPABILITY_UNSUPPORTED`; missing data is never fabricated.
 
-The current Sportradar UOF integration is wrapped as `sportradar-uof`. The licensed UOF Summary endpoint documents `sr:stage:<id>` for race results, so this adapter exposes only `getRace` and `getResult` until additional licensed coverage is demonstrated. No capability is inferred from marketing pages or undocumented endpoints.
+The Sportradar UOF adapter exposes only the capabilities actually implemented by the hardened transport. The registry/API must not infer licensed coverage from marketing pages or undocumented endpoints.
 
-## Provenance and freshness
-Every response carries `provider`, `source`, `sourceTimestamp`, `fetchedAt`, `freshness`, `officiality`, and `financialAuthority:false`. Freshness is deterministic: LIVE <=30s, FRESH <=5m, STALE <=1h, otherwise OFFLINE.
+## Provenance and authority
+Every provider response carries provider/source identity, source timestamp, fetched time, freshness and officiality metadata while preserving `financialAuthority:false`.
 
-`verified` means the authorized provider supplied the observation. It is deliberately different from `official` and from financial authority. Provider data cannot settle bets or balances by itself.
+`verified` means an authorized provider supplied the observation. It is deliberately different from `official` and from financial authority. Provider data alone cannot settle bets, balances or operator-confirmed race state.
 
 ## Conflict policy
-Different result signatures for the same race throw `DATA_CONFLICT`. The caller must preserve both evidence records and require reconciliation/operator review; last-write-wins is forbidden.
-
-Fallback priority is fixed:
-1. official API;
-2. authorized provider;
-3. official feed/document;
-4. uploaded official PDF;
-5. operator;
-6. group evidence;
-7. never an AI guess.
+Conflicting result signatures for the same race require reconciliation/operator review. Last-write-wins is forbidden for authoritative race/result evidence.
 
 ## Security
-The existing Sportradar transport keeps HTTPS-only vendor allowlisting, no credentials in URL, no redirects, bounded timeout, bounded response size and rejection of DTD/non-XML content. The registry does not expose provider tokens or raw XML through canonical endpoints.
+The transport keeps HTTPS-only vendor allowlisting, no credentials in URL, no arbitrary query/hash/base paths, bounded timeout/response size, circuit breaking/cache bounds and hostile XML/DOCTYPE rejection. Canonical provider endpoints never expose provider credentials or raw XML.
 
-## Public API
-- `GET /api/v1/hipico/providers`
-- `GET /api/v1/hipico/providers/:providerId`
-- `GET /api/v1/hipico/providers/:providerId/capabilities`
-- `GET /api/v1/hipico/providers/:providerId/health`
-- `GET /api/v1/hipico/live/:providerId/meetings`
-- `GET /api/v1/hipico/live/:providerId/races/:externalId`
-- `GET /api/v1/hipico/live/:providerId/races/:externalId/entries`
-- `GET /api/v1/hipico/live/:providerId/races/:externalId/scratches`
-- `GET /api/v1/hipico/live/:providerId/races/:externalId/result`
+## Canonical API
+Provider reads live under `/api/v1/hipico/providers*` and `/api/v1/hipico/live/*`, behind the Hípico operator boundary. `/api/v1/hipico-bot/*` remains an integration adapter namespace, not provider-domain authority.
 
-All routes require the existing Hípico operator token while this product boundary remains independent from browser-session authorization.
+## Rollback
+Disable provider registration or remove the adapter before removing shared contracts. Never replace an unavailable provider with guessed data or silently promote another source's authority.

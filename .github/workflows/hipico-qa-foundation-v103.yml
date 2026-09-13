@@ -149,9 +149,11 @@ jobs:
         working-directory: android/hipico-control-v1130
         run: npm ci --no-audit --no-fund
 
-      - name: Verify PWA and wrapper parity
+      - name: Sync canonical PWA then verify wrapper parity
         working-directory: android/hipico-control-v1130
-        run: npm run verify:web
+        run: |
+          npm run sync:web
+          npm run verify:web
 
       - name: Explain APK boundary
         run: |

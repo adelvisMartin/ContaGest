@@ -1,26 +1,41 @@
-# Control Hípico Windows CLI (#284)
+# Control Hípico — Windows CLI (#284)
 
-The CLI is intentionally a thin API client. Daily startup never runs `npm ci`.
+## CMD
 
-## Launch
-From CMD:
+Desde la raíz del repositorio:
 
 ```bat
+set HIPICO_API_BASE_URL=http://127.0.0.1:3030
+set HIPICO_OPERATOR_CONTROL_TOKEN=<token-operador>
+set HIPICO_GROUP_KEY=<group-key>
 HIPICO.cmd status
-HIPICO.cmd doctor
-HIPICO.cmd bridge status --json
+HIPICO.cmd command-center
+HIPICO.cmd events tail --limit 25
 ```
 
-From PowerShell 7+:
+Para Bridge health:
+
+```bat
+set HIPICO_GROUP_BRIDGE_TOKEN=<token-bridge>
+HIPICO.cmd bridge status
+```
+
+## PowerShell
 
 ```powershell
+$env:HIPICO_API_BASE_URL = 'http://127.0.0.1:3030'
+$env:HIPICO_OPERATOR_CONTROL_TOKEN = '<token-operador>'
+$env:HIPICO_GROUP_KEY = '<group-key>'
 .\HIPICO.ps1 status
-.\HIPICO.ps1 doctor
-.\HIPICO.ps1 trace corr-123 --json
+.\HIPICO.ps1 command-center
+.\HIPICO.ps1 events tail --limit 25
 ```
 
-`HIPICO_API_BASE_URL` defaults to `http://127.0.0.1:3030`. Use an HTTPS origin for remote operation. `HIPICO_GROUP_BRIDGE_TOKEN` is read only when a Bridge endpoint requires it and is never printed by the CLI.
+## Reglas operativas
 
-Commands currently mapped: `status`, `doctor`, `health`, `version`, `bridge status`, `channel status`, `groups`, `races`, `documents`, `providers`, `messages tail`, `events tail`, `trace <correlationId>`. The CLI never fabricates local data when an API is unavailable.
-
-Install/update remains a separate operational step using the repository lockfile and `npm ci`.
+- Los tokens no se pasan por argumentos.
+- HTTP solo está permitido para loopback; un backend remoto requiere HTTPS.
+- `status`, `readiness` y `version` pertenecen a `/api/v1/hipico/*` y requieren token de operador.
+- Las consultas de grupo añaden `x-hipico-group-key`.
+- `events stream` mantiene una conexión SSE; use `events tail --json` para una lectura puntual automatizable.
+- El código de salida es distinto de cero cuando el comando falla. Scripts operativos deben respetarlo en lugar de ocultar errores.

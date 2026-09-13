@@ -9,7 +9,6 @@ export const hipicoComponentStateSchema = z.enum([
   'unavailable',
   'not_configured'
 ]);
-
 export type HipicoComponentState = z.infer<typeof hipicoComponentStateSchema>;
 
 export const hipicoVersionSchema = z.object({
@@ -18,7 +17,6 @@ export const hipicoVersionSchema = z.object({
   apiVersion: z.literal(HIPICO_API_VERSION),
   bridgeProtocolVersion: z.string().min(1).max(32)
 });
-
 export type HipicoVersion = z.infer<typeof hipicoVersionSchema>;
 
 const componentSchema = z.object({
@@ -36,14 +34,11 @@ export const hipicoSystemStatusSchema = z.object({
     database: componentSchema,
     bridge: componentSchema,
     channel: componentSchema,
-    providers: componentSchema.extend({
-      financialAuthority: z.literal(false)
-    }),
+    providers: componentSchema.extend({ financialAuthority: z.literal(false) }),
     documentEngine: componentSchema,
     agent: componentSchema
   })
 });
-
 export type HipicoSystemStatus = z.infer<typeof hipicoSystemStatusSchema>;
 
 export const hipicoErrorEnvelopeSchema = z.object({
@@ -53,15 +48,9 @@ export const hipicoErrorEnvelopeSchema = z.object({
   requestId: z.string().max(120).nullable(),
   retryable: z.boolean()
 });
-
 export type HipicoErrorEnvelope = z.infer<typeof hipicoErrorEnvelopeSchema>;
 
-export function hipicoError(input: {
-  code: string;
-  message: string;
-  requestId?: string | null;
-  retryable?: boolean;
-}): HipicoErrorEnvelope {
+export function hipicoError(input: { code: string; message: string; requestId?: string | null; retryable?: boolean }): HipicoErrorEnvelope {
   return hipicoErrorEnvelopeSchema.parse({
     ok: false,
     code: String(input.code || 'HIPICO_ERROR').trim().slice(0, 120) || 'HIPICO_ERROR',
@@ -71,9 +60,6 @@ export function hipicoError(input: {
   });
 }
 
-export function componentState(
-  state: HipicoComponentState,
-  reason: string | null = null
-) {
+export function componentState(state: HipicoComponentState, reason: string | null = null) {
   return componentSchema.parse({ state, reason });
 }
