@@ -64,3 +64,17 @@ void test('ambiguous lifecycle phrases and attachment-only references require hu
   assert.equal(documentOnly.risk, 'review');
   assert.equal(documentOnly.tool, null);
 });
+
+void test('shadow evidence rejects secret-shaped keys recursively before persistence', async () => {
+  const storeSource = readFileSync(new URL('./automation.store.ts', import.meta.url), 'utf8');
+  assert.match(storeSource, /export function sanitizeAgentEvidence/);
+  const { sanitizeAgentEvidence } = await import('./automation.store.js');
+
+  assert.deepEqual(sanitizeAgentEvidence({ source: 'provider', meta: { official: true } }), {
+    source: 'provider',
+    meta: { official: true }
+  });
+  assert.throws(() => sanitizeAgentEvidence({ authorization: 'Bearer secret' }), /HIPICO_AGENT_EVIDENCE_FORBIDDEN_KEY/);
+  assert.throws(() => sanitizeAgentEvidence({ meta: { apiKey: 'secret' } }), /HIPICO_AGENT_EVIDENCE_FORBIDDEN_KEY/);
+  assert.throws(() => sanitizeAgentEvidence({ nested: [{ token: 'secret' }] }), /HIPICO_AGENT_EVIDENCE_FORBIDDEN_KEY/);
+});
