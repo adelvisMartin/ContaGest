@@ -14,6 +14,13 @@ test('automation routes derive audit identity from authenticated operator token 
   assert.match(routes, /actorRef:\s*actorRef\(\)/);
 });
 
+test('automatic owner approval is server-controlled and cannot be granted by the request body', () => {
+  assert.doesNotMatch(routes, /ownerApproved:\s*z\.boolean/);
+  assert.match(routes, /function automaticOwnerApprovalConfigured\(\)/);
+  assert.match(routes, /process\.env\.HIPICO_AUTOMATIC_OWNER_APPROVED/);
+  assert.match(routes, /ownerApproved:\s*automaticOwnerApprovalConfigured\(\)/);
+});
+
 test('automation persistence serializes promotion/review and makes review immutable', () => {
   assert.match(store, /pg_advisory_xact_lock/);
   assert.match(store, /FOR UPDATE/);
