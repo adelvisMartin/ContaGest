@@ -19,6 +19,7 @@
     "test:hipico:exact-sha": "node --test tests/hipico_exact_sha_gate_297.test.mjs",
     "test:hipico:visual-contract": "node --test tests/hipico_visual_matrix_issue_105.test.mjs",
     "test:browser:hipico": "node scripts/hipico-browser-qa.mjs",
+    "test:browser:hipico:command-center": "playwright test qa/hipico-command-center-v289.spec.mjs",
     "qa:hipico": "node scripts/hipico-exact-sha-gate.mjs && npm --workspace frontend run preqa:source && npm run test:browser:hipico && node scripts/hipico-qa-runner-v103.mjs",
     "qa:hipico:visual": "npm run test:hipico:visual-contract && npm run test:browser:hipico",
     "qa:today": "node scripts/qa-today.mjs instructions",
