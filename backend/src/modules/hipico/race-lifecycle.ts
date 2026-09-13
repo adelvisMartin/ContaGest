@@ -9,7 +9,7 @@ export type RaceResultStage=typeof RACE_RESULT_STAGES[number];
 
 export const RACE_COMMANDS = [
   'DISCOVER','ANNOUNCE','OPEN','BEGIN_CLOSING','CLOSE','START','RECORD_OBSERVED_ARRIVAL','RECORD_PROVISIONAL_RESULT',
-  'MARK_VERIFIED_RESULT','MARK_OFFICIAL_RESULT','ARCHIVE','POSTPONE','CANCEL','SUSPEND','RESUME'
+  'MARK_VERIFIED_RESULT','MARK_OFFICIAL_RESULT','RECORD_DATA_CONFLICT','ARCHIVE','POSTPONE','CANCEL','SUSPEND','RESUME'
 ] as const;
 export type RaceCommand=typeof RACE_COMMANDS[number];
 export type RaceActorType='operator'|'agent'|'system';
@@ -42,15 +42,28 @@ const DIRECT:Record<RaceLifecycleState,Partial<Record<RaceCommand,RaceLifecycleS
 };
 function strongEvidence(evidence:RaceEvidence[]){return evidence.filter((item)=>(item.authority==='official'||item.authority==='trusted')&&Number(item.confidence)>=0.8&&String(item.source||'').trim());}
 function independentEvidenceCount(evidence:RaceEvidence[]){return new Set(strongEvidence(evidence).map((item)=>item.source)).size;}
+function distinctEvidenceSourceCount(evidence:RaceEvidence[]){return new Set(evidence.map((item)=>String(item.source||'').trim()).filter(Boolean)).size;}
 function officialEvidence(evidence:RaceEvidence[]){return evidence.some((item)=>item.authority==='official'&&Number(item.confidence)>=0.9&&String(item.source||'').trim());}
+function validConflictPayload(payload:Record<string,unknown>|undefined){
+  const conflictType=String(payload?.conflictType||'').trim(),candidates=payload?.candidates;
+  if(!/^[A-Z0-9_:-]{2,80}$/.test(conflictType)||!Array.isArray(candidates)||candidates.length<2||candidates.length>20)return false;
+  const normalized=candidates.map((candidate)=>typeof candidate==='string'?candidate.trim():'');
+  return normalized.every((candidate)=>candidate.length>0&&candidate.length<=500)&&new Set(normalized).size>=2;
+}
 function stageForState(state:RaceLifecycleState):RaceResultStage{if(state==='PROVISIONAL_RESULT')return'provisional';if(state==='OFFICIAL_RESULT')return'official';return'none';}
 function targetResultStage(current:RaceResultStage,input:RaceCommandInput,target:RaceLifecycleState):RaceResultStage{
   if(input.command==='RECORD_OBSERVED_ARRIVAL')return'observed';if(input.command==='RECORD_PROVISIONAL_RESULT')return'provisional';if(input.command==='MARK_VERIFIED_RESULT')return'verified';if(input.command==='MARK_OFFICIAL_RESULT')return'official';if(target==='OFFICIAL_RESULT')return current==='none'?'official':current;if(target==='ARCHIVED')return current;return current;
 }
+export function raceCommandMutatesState(command:RaceCommand){return command!=='RECORD_DATA_CONFLICT';}
 export function evaluateRaceCommand(current:RaceLifecycleState,input:RaceCommandInput,currentResultStage:RaceResultStage=stageForState(current)):RaceTransition{
   if(input.expectedState!==current)return{allowed:false,from:current,to:current,reason:'EXPECTED_STATE_MISMATCH',resultStage:currentResultStage};
-  const target=DIRECT[current]?.[input.command];if(!target)return{allowed:false,from:current,to:current,reason:'INVALID_TRANSITION',resultStage:currentResultStage};
   const evidence=input.evidence||[];
+  if(input.command==='RECORD_DATA_CONFLICT'){
+    if(distinctEvidenceSourceCount(evidence)<2)return{allowed:false,from:current,to:current,reason:'DATA_CONFLICT_REQUIRES_MULTIPLE_SOURCES',resultStage:currentResultStage};
+    if(!validConflictPayload(input.payload))return{allowed:false,from:current,to:current,reason:'DATA_CONFLICT_EVIDENCE_REQUIRED',resultStage:currentResultStage};
+    return{allowed:true,from:current,to:current,reason:'DATA_CONFLICT',resultStage:currentResultStage};
+  }
+  const target=DIRECT[current]?.[input.command];if(!target)return{allowed:false,from:current,to:current,reason:'INVALID_TRANSITION',resultStage:currentResultStage};
   if(input.command==='OPEN'&&input.actorType!=='operator'&&independentEvidenceCount(evidence)<2)return{allowed:false,from:current,to:current,reason:'OPEN_REQUIRES_CORROBORATED_EVIDENCE',resultStage:currentResultStage};
   if(input.command==='MARK_VERIFIED_RESULT'&&!officialEvidence(evidence)&&independentEvidenceCount(evidence)<2)return{allowed:false,from:current,to:current,reason:'VERIFIED_RESULT_REQUIRES_CORROBORATED_EVIDENCE',resultStage:currentResultStage};
   if(input.command==='MARK_OFFICIAL_RESULT'&&!officialEvidence(evidence))return{allowed:false,from:current,to:current,reason:'OFFICIAL_RESULT_REQUIRES_OFFICIAL_EVIDENCE',resultStage:currentResultStage};
