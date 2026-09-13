@@ -1,5 +1,6 @@
 import { createBlankWorkspace } from './seed.js';
 import { loadLocalWorkspace } from './store.js';
+import { currentSession, initializeCloudSession } from './supabase.js';
 import { normalizeWorkspaceShape } from './workspace.js';
 
 const ENDPOINT = '/api/hipico/command-center';
@@ -172,6 +173,17 @@ async function readLocalContext() {
   }
 }
 
+async function authenticatedAccessToken() {
+  const existing = currentSession();
+  if (existing?.access_token) return String(existing.access_token);
+  try {
+    const initialized = await initializeCloudSession();
+    return String(initialized?.access_token || '');
+  } catch {
+    return '';
+  }
+}
+
 async function readRemoteState(groupKey) {
   const normalizedGroupKey = String(groupKey || '').trim();
   if (typeof navigator !== 'undefined' && navigator.onLine === false) {
@@ -182,8 +194,16 @@ async function readRemoteState(groupKey) {
     remoteState = { status: 'error', data: null, error: 'group_scope_unavailable', updatedAt: new Date().toISOString(), groupKey: '' };
     return remoteState;
   }
+  const accessToken = await authenticatedAccessToken();
+  if (!accessToken) {
+    remoteState = { status: 'error', data: null, error: 'auth_required', updatedAt: new Date().toISOString(), groupKey: normalizedGroupKey };
+    return remoteState;
+  }
   try {
-    const response = await fetch(`${ENDPOINT}?groupKey=${encodeURIComponent(normalizedGroupKey)}`, { cache: 'no-store', headers: { accept: 'application/json' } });
+    const response = await fetch(`${ENDPOINT}?groupKey=${encodeURIComponent(normalizedGroupKey)}`, {
+      cache: 'no-store',
+      headers: { accept: 'application/json', Authorization: `Bearer ${accessToken}` }
+    });
     const payload = await response.json();
     if (!response.ok || payload?.ok !== true || !payload?.data) throw new Error(String(payload?.error || `HTTP_${response.status}`));
     remoteState = { status: 'ready', data: payload.data, error: '', updatedAt: new Date().toISOString(), groupKey: normalizedGroupKey };
