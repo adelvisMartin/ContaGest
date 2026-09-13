@@ -20,11 +20,12 @@ test('#284 MessagingChannel boundary reuses canonical normalized messages and te
   const contract = read('backend/src/modules/hipico/messaging-channel.test.ts');
   assert.match(source, /HipicoNormalizedMessage/);
   assert.match(source, /class TestChannelAdapter implements MessagingChannel/);
-  assert.match(source, /seenMessageKeys/);
+  assert.match(source, /TEST_CHANNEL_RECEIVER_NOT_REGISTERED/);
+  assert.match(source, /TEST_CHANNEL_RECEIVER_ALREADY_REGISTERED/);
   assert.match(source, /historySync/);
   assert.match(source, /effectsAllowed:\s*false/);
   assert.doesNotMatch(source, /whatsapp-web\.js|puppeteer|document\.|querySelector/);
-  assert.match(contract, /history replay/i);
+  assert.match(contract, /history\/live replay/i);
   assert.match(contract, /deduplic/i);
 });
 
