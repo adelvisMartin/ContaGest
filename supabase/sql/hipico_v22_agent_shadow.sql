@@ -47,6 +47,20 @@ create index if not exists hipico_agent_eval_metrics_idx on public.hipico_agent_
 create index if not exists hipico_agent_eval_hash_idx on public.hipico_agent_evaluations(owner_id, group_key, group_id, message_hash);
 create index if not exists hipico_automation_transition_events_scope_idx on public.hipico_automation_transition_events(owner_id, group_key, group_id, created_at desc);
 
+create or replace function public.hipico_reject_automation_transition_mutation()
+returns trigger
+language plpgsql
+as $$
+begin
+  raise exception 'HIPICO_AUTOMATION_TRANSITION_APPEND_ONLY' using errcode = '55000';
+end;
+$$;
+
+drop trigger if exists hipico_automation_transition_events_append_only on public.hipico_automation_transition_events;
+create trigger hipico_automation_transition_events_append_only
+before update or delete on public.hipico_automation_transition_events
+for each row execute function public.hipico_reject_automation_transition_mutation();
+
 alter table public.hipico_group_automation enable row level security;
 alter table public.hipico_agent_evaluations enable row level security;
 alter table public.hipico_automation_transition_events enable row level security;
