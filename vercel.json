@@ -5,7 +5,13 @@
   "outputDirectory": "frontend/dist",
   "framework": "vite",
   "git": {
-    "deploymentEnabled": true
+    "deploymentEnabled": {
+      "**": false,
+      "main": true,
+      "release/**": true,
+      "qa/postmerge-58x5-verification": true,
+      "fix/post-312-gates-mobile-hardening": true
+    }
   },
   "ignoreCommand": "exit 1",
   "functions": {
