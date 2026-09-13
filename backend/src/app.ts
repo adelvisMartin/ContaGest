@@ -4,11 +4,14 @@ import { env, isProd } from './config/env.js';
 import apiRoutes from './modules/index.js';
 import authRoutes from './modules/auth/auth.routes.js';
 import hipicoSystemRoutes from './modules/hipico/hipico-system.routes.js';
+import hipicoDocumentRoutes from './modules/hipico/document.routes.js';
+import hipicoProviderRoutes from './modules/hipico/provider.routes.js';
+import hipicoRaceRoutes from './modules/hipico/race.routes.js';
 import hipicoWebhookRoutes from './modules/hipico-bot/hipico-webhook.routes.js';
 import hipicoBridgeRoutes from './modules/hipico-bot/hipico-bridge.routes.js';
 import hipicoOperatorRoutes from './modules/hipico-bot/hipico-operator.routes.js';
 import hipicoCanonicalRoutes from './modules/hipico-bot/hipico-canonical.routes.js';
-import hipicoProviderRoutes from './modules/hipico-bot/hipico-provider.routes.js';
+import hipicoLegacyProviderRoutes from './modules/hipico-bot/hipico-provider.routes.js';
 import { requestContext } from './shared/middleware/context.js';
 import { errorHandler, notFound } from './shared/middleware/error.js';
 import {
@@ -81,12 +84,26 @@ export function createApp(options: { readinessCheck?: ReadinessCheck } = {}) {
   // operator adapters. None of these token-authenticated routes uses browser
   // cookies, so they live before browser-session CSRF. The signed webhook remains
   // outside adapter throttling; Bridge/operator adapters share one auth throttle.
-  // The canonical chain likewise applies auth throttling once, lets provider GETs
-  // terminate before mutation throttling, and applies the mutation limiter before
-  // the stateful domain router.
   app.use('/api/v1/hipico-bot', hipicoWebhookRoutes);
-  app.use('/api/v1/hipico-bot', authRateLimit, hipicoBridgeRoutes, hipicoOperatorRoutes);
-  app.use('/api/v1/hipico', authRateLimit, hipicoProviderRoutes, mutationRateLimit, hipicoCanonicalRoutes);
+  app.use(
+    '/api/v1/hipico-bot',
+    authRateLimit,
+    hipicoBridgeRoutes,
+    hipicoOperatorRoutes,
+    hipicoLegacyProviderRoutes
+  );
+
+  // Documents have an explicit upload/list/reprocess boundary, while provider,
+  // race and legacy canonical-domain routes share one auth/mutation limiter chain.
+  app.use('/api/v1/hipico/documents', authRateLimit, mutationRateLimit, hipicoDocumentRoutes);
+  app.use(
+    '/api/v1/hipico',
+    authRateLimit,
+    mutationRateLimit,
+    hipicoProviderRoutes,
+    hipicoRaceRoutes,
+    hipicoCanonicalRoutes
+  );
 
   app.use(csrfProtection);
 
