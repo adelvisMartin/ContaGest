@@ -53,6 +53,8 @@ test('Command Center distinguishes a successful empty read from an unavailable r
     probes: probes()
   });
 
+  assert.equal(model.system.state, 'ready');
+  assert.equal(model.system.readModelAvailable, true);
   assert.equal(model.queue.available, true);
   assert.equal(model.queue.state, 'ready');
   assert.equal(model.queue.total, 0);
@@ -81,6 +83,8 @@ test('Command Center fails closed when operational PostgreSQL read models are un
     })
   });
 
+  assert.equal(model.system.state, 'degraded');
+  assert.equal(model.system.readModelAvailable, false);
   assert.equal(model.channel.available, false);
   assert.equal(model.channel.state, 'unavailable');
   assert.equal(model.queue.available, false);
