@@ -75,6 +75,30 @@ test('Command Center rendering exposes explicit unknown/offline states instead o
   assert.match(html, /Parx Racing/);
 });
 
+test('Command Center never renders failed PostgreSQL reads as zero healthy items', () => {
+  const local = operationalWorkspaceContext(workspace());
+  const remote = {
+    sampledAt: '2026-09-13T17:00:00.000Z',
+    system: { state: 'ready', backendReachable: true },
+    bridge: { state: 'ready', ready: true },
+    channel: { available: false, state: 'unavailable' },
+    database: { state: 'ready', ready: true },
+    providers: { state: 'disabled', provider: 'disabled' },
+    agent: { state: 'unavailable', mode: 'shadow', evaluations: { available: false, total: null } },
+    documents: { available: false, state: 'unavailable', total: null },
+    queue: { available: false, state: 'unavailable', total: null, pending: null, failed: null },
+    conflicts: { available: false, state: 'unavailable', reconciliationRequired: null },
+    races: { available: false, state: 'unavailable', total: null },
+    alerts: ['CHANNEL_READ_UNAVAILABLE', 'OUTBOX_READ_UNAVAILABLE', 'DOCUMENT_READ_UNAVAILABLE']
+  };
+  const html = renderCommandCenterModel({ local, remote, online: true });
+  assert.match(html, /Cola[\s\S]*No disponible[\s\S]*Lectura remota no disponible/);
+  assert.match(html, /Conflictos[\s\S]*No disponible[\s\S]*Lectura remota no disponible/);
+  assert.match(html, /Documentos[\s\S]*No disponible/);
+  assert.doesNotMatch(html, /Cola[\s\S]{0,180}0 pendiente\(s\) visibles/);
+  assert.doesNotMatch(html, /Conflictos[\s\S]{0,180}0 conflicto\(s\) \/ conciliación/);
+});
+
 test('Command Center remote read-model is fail-closed unless explicitly enabled', () => {
   assert.equal(typeof __test__.commandCenterReadModelEnabled, 'function');
   assert.equal(__test__.commandCenterReadModelEnabled({}), false);
