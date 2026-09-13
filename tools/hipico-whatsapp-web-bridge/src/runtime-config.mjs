@@ -86,6 +86,7 @@ export function loadRuntimeConfig(env = process.env, cwd = process.cwd()) {
     pdfAutoIngestEnabled,
     documentIngestUrl,
     documentBackendTimeoutMs:numberEnv(env,'HIPICO_DOCUMENT_BACKEND_TIMEOUT_MS',backendTimeoutMs,5000,60000),
+    pdfSpoolMaxDocuments:numberEnv(env,'HIPICO_PDF_SPOOL_MAX_DOCUMENTS',50,1,200),
     token: envText(env, 'HIPICO_GROUP_BRIDGE_TOKEN', ''),
     sourceMatches,
     sourceGroupId: envText(env, 'HIPICO_SOURCE_GROUP_ID', '').toLowerCase(),
