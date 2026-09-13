@@ -18,7 +18,14 @@ test('production derives safe Bridge document ingress and enables automatic PDF 
   assert.equal(config.pdfAutoIngestEnabled,true);
   assert.equal(config.documentIngestUrl,'https://example.test/api/v1/hipico-bot/bridge/documents');
   assert.equal(config.documentBackendTimeoutMs,15000);
+  assert.equal(config.pdfSpoolMaxDocuments,50);
   assert.deepEqual(validateRuntimeConfig(config),[]);
+});
+
+test('PDF spool capacity is bounded to a safe operator range',()=>{
+  assert.equal(loadRuntimeConfig({...productionEnv,HIPICO_PDF_SPOOL_MAX_DOCUMENTS:'1'},'C:/tmp').pdfSpoolMaxDocuments,1);
+  assert.equal(loadRuntimeConfig({...productionEnv,HIPICO_PDF_SPOOL_MAX_DOCUMENTS:'5000'},'C:/tmp').pdfSpoolMaxDocuments,200);
+  assert.equal(loadRuntimeConfig({...productionEnv,HIPICO_PDF_SPOOL_MAX_DOCUMENTS:'not-a-number'},'C:/tmp').pdfSpoolMaxDocuments,50);
 });
 
 test('automatic PDF ingestion can be explicitly disabled without weakening the event bridge',()=>{
