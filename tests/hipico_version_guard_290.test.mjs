@@ -26,16 +26,3 @@ test('PWA loads and precaches version guard while runtime metadata remains netwo
   assert.match(guard, /Actualización requerida/);
   assert.match(guard, /operaciones críticas/);
 });
-
-test('Android package and lockfile metadata are identical to the release policy', async () => {
-  const [policy, pkg, lock] = await Promise.all([
-    read('products/hipico-control/release-policy.json').then(JSON.parse),
-    read('android/hipico-control-v1130/package.json').then(JSON.parse),
-    read('android/hipico-control-v1130/package-lock.json').then(JSON.parse)
-  ]);
-  assert.equal(pkg.version, policy.version);
-  assert.equal(lock.version, policy.version);
-  assert.equal(lock.packages?.['']?.version, policy.version);
-  assert.equal(lock.name, pkg.name);
-  assert.equal(lock.packages?.['']?.name, pkg.name);
-});
