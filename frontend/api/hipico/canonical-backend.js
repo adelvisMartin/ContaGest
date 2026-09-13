@@ -11,6 +11,10 @@ function localhost(hostname) {
   return hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1';
 }
 
+function allowedCanonicalPath(pathname) {
+  return ALLOWED_PREFIXES.some((prefix) => String(pathname || '').startsWith(prefix));
+}
+
 export function canonicalBackendOrigin(source = process.env) {
   const explicit = String(source.HIPICO_CANONICAL_API_BASE_URL || '').trim();
   const vercelHost = String(source.VERCEL_URL || '').trim();
@@ -35,6 +39,12 @@ export function canonicalBackendOrigin(source = process.env) {
   }
 }
 
+function canonicalPathError() {
+  return Object.assign(new Error('HIPICO_CANONICAL_PATH_NOT_ALLOWED'), {
+    code: 'HIPICO_CANONICAL_PATH_NOT_ALLOWED'
+  });
+}
+
 export function buildCanonicalUrl(path, source = process.env) {
   const origin = canonicalBackendOrigin(source);
   if (!origin) {
@@ -43,17 +53,10 @@ export function buildCanonicalUrl(path, source = process.env) {
     });
   }
   const value = String(path || '').trim();
-  if (!ALLOWED_PREFIXES.some((prefix) => value.startsWith(prefix))) {
-    throw Object.assign(new Error('HIPICO_CANONICAL_PATH_NOT_ALLOWED'), {
-      code: 'HIPICO_CANONICAL_PATH_NOT_ALLOWED'
-    });
-  }
+  if (!allowedCanonicalPath(value)) throw canonicalPathError();
+
   const url = new URL(value, `${origin}/`);
-  if (url.origin !== origin) {
-    throw Object.assign(new Error('HIPICO_CANONICAL_PATH_NOT_ALLOWED'), {
-      code: 'HIPICO_CANONICAL_PATH_NOT_ALLOWED'
-    });
-  }
+  if (url.origin !== origin || !allowedCanonicalPath(url.pathname)) throw canonicalPathError();
   return url.toString();
 }
 
