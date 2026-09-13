@@ -1,4 +1,5 @@
 import fs from 'node:fs/promises';
+import { existsSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { execFile, spawnSync } from 'node:child_process';
@@ -12,13 +13,22 @@ const execFileAsync=promisify(execFile);
 type RuntimeEnv=Record<string,string|undefined>|NodeJS.ProcessEnv;
 type Runner=(command:string,args:string[],options:any)=>Promise<{stdout:string;stderr:string}>;
 type Probe=()=>{available:boolean;version:string|null};
+type Exists=(candidate:string)=>boolean;
 
 function codedError(code:string){return Object.assign(new Error(code),{code});}
-function anyDocBin(env:RuntimeEnv){return String(env.HIPICO_ANYDOC_BIN||'anydoc').trim();}
+export function resolveAnyDocBin(env:RuntimeEnv=process.env,cwd=process.cwd(),exists:Exists=existsSync){
+  const explicit=String(env.HIPICO_ANYDOC_BIN||'').trim();if(explicit)return explicit;
+  const executable=process.platform==='win32'?'anydoc.cmd':'anydoc';
+  const candidates=[
+    path.resolve(cwd,'.tools','hipico-anydoc','node_modules','.bin',executable),
+    path.resolve(cwd,'..','.tools','hipico-anydoc','node_modules','.bin',executable)
+  ];
+  return candidates.find((candidate)=>exists(candidate))||'anydoc';
+}
 function hostedOcrEnabled(env:RuntimeEnv){return String(env.HIPICO_DOCUMENT_ANYDOC_HOSTED_OCR_ENABLED||'').trim().toLowerCase()==='true'&&hipicoRuntimeSecretConfigured(env.FIRECRAWL_API_KEY);}
 
 export function probeAnyDoc(env:RuntimeEnv=process.env){
-  const bin=anyDocBin(env);
+  const bin=resolveAnyDocBin(env);
   if(!bin)return{available:false,version:null};
   try{
     const result=spawnSync(bin,['--version'],{encoding:'utf8',shell:false,timeout:2500,windowsHide:true});
@@ -41,7 +51,7 @@ function mapAnyDocError(error:any){
 }
 
 export function createAnyDocDocumentExtractor(env:RuntimeEnv=process.env,runner:Runner=defaultRunner,probe:Probe=()=>probeAnyDoc(env)):PdfTextExtractor|null{
-  const binary=anyDocBin(env);const detected=probe();
+  const binary=resolveAnyDocBin(env);const detected=probe();
   if(!binary||!detected.available||detected.version!==HIPICO_ANYDOC_VERSION)return null;
   const hosted=hostedOcrEnabled(env);
   return{
@@ -89,5 +99,5 @@ export function createPreferredDocumentExtractor(fallback:PdfTextExtractor|null,
 
 export function anyDocCapability(env:RuntimeEnv=process.env){
   const probe=probeAnyDoc(env);const hosted=hostedOcrEnabled(env);
-  return{configured:probe.available&&probe.version===HIPICO_ANYDOC_VERSION,nativeText:probe.available&&probe.version===HIPICO_ANYDOC_VERSION,ocr:probe.available&&probe.version===HIPICO_ANYDOC_VERSION&&hosted,parserVersion:probe.available?`anydoc@${probe.version}`:null,requiredVersion:HIPICO_ANYDOC_VERSION,hostedOcrEnabled:hosted};
+  return{configured:probe.available&&probe.version===HIPICO_ANYDOC_VERSION,nativeText:probe.available&&probe.version===HIPICO_ANYDOC_VERSION,ocr:probe.available&&probe.version===HIPICO_ANYDOC_VERSION&&hosted,parserVersion:probe.available?`anydoc@${probe.version}`:null,requiredVersion:HIPICO_ANYDOC_VERSION,hostedOcrEnabled:hosted,binary:resolveAnyDocBin(env)};
 }
