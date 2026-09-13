@@ -1,9 +1,18 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { MIN_OPERATOR_TOKEN_LENGTH, configuredOperatorToken, operatorTokenConfigured, operatorTokenValid } from './hipico-operator-security.js';
+import {
+  MIN_OPERATOR_TOKEN_LENGTH,
+  automationOwnerApprovalTokenConfigured,
+  automationOwnerApprovalTokenValid,
+  configuredAutomationOwnerApprovalToken,
+  configuredOperatorToken,
+  operatorTokenConfigured,
+  operatorTokenValid
+} from './hipico-operator-security.js';
 
 const strongToken = 'operator-control-token-32-bytes-minimum-1234567890';
 const legacyStrongToken = 'legacy-operator-token-32-bytes-minimum-1234567890';
+const ownerApprovalToken = 'automation-owner-approval-32-bytes-minimum-1234567890';
 
 test('operator control requires a strong configured token', () => {
   assert.equal(operatorTokenConfigured({}), false);
@@ -30,4 +39,35 @@ test('legacy operator token remains supported only when it meets the same streng
   assert.equal(operatorTokenConfigured(legacyEnv), true);
   assert.equal(operatorTokenValid(legacyStrongToken, legacyEnv), true);
   assert.equal(operatorTokenValid('wrong-token', legacyEnv), false);
+});
+
+test('AUTOMATIC owner approval uses an independent strong server secret', () => {
+  const env = {
+    HIPICO_OPERATOR_CONTROL_TOKEN: strongToken,
+    HIPICO_AUTOMATION_OWNER_APPROVAL_TOKEN: ownerApprovalToken
+  };
+  assert.equal(configuredAutomationOwnerApprovalToken(env), ownerApprovalToken);
+  assert.equal(automationOwnerApprovalTokenConfigured(env), true);
+  assert.equal(automationOwnerApprovalTokenValid(ownerApprovalToken, env), true);
+  assert.equal(automationOwnerApprovalTokenValid('wrong-owner-approval', env), false);
+});
+
+test('owner approval fails closed when weak, placeholder, missing or reused from operator control', () => {
+  assert.equal(automationOwnerApprovalTokenConfigured({}), false);
+  assert.equal(automationOwnerApprovalTokenConfigured({
+    HIPICO_OPERATOR_CONTROL_TOKEN: strongToken,
+    HIPICO_AUTOMATION_OWNER_APPROVAL_TOKEN: 'short'
+  }), false);
+  assert.equal(automationOwnerApprovalTokenConfigured({
+    HIPICO_OPERATOR_CONTROL_TOKEN: strongToken,
+    HIPICO_AUTOMATION_OWNER_APPROVAL_TOKEN: 'CHANGE_ME_CHANGE_ME_CHANGE_ME_CHANGE_ME'
+  }), false);
+  assert.equal(automationOwnerApprovalTokenConfigured({
+    HIPICO_OPERATOR_CONTROL_TOKEN: strongToken,
+    HIPICO_AUTOMATION_OWNER_APPROVAL_TOKEN: strongToken
+  }), false);
+  assert.equal(automationOwnerApprovalTokenValid(strongToken, {
+    HIPICO_OPERATOR_CONTROL_TOKEN: strongToken,
+    HIPICO_AUTOMATION_OWNER_APPROVAL_TOKEN: strongToken
+  }), false);
 });
