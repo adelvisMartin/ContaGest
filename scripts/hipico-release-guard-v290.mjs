@@ -73,8 +73,11 @@ for (const mount of [
 ]) assert(app.includes(mount), `required API mount missing: ${mount}`);
 assert(commandBff.includes('/api/v1/hipico/command-center'), 'PWA BFF must delegate to canonical command center');
 assert(commandBff.includes('x-hipico-group-key'), 'PWA BFF must forward explicit group scope');
+assert(commandBff.includes('authenticateCommandCenterViewer') && commandBff.includes('/auth/v1/user'), 'PWA BFF must validate the browser Supabase session before injecting operator authority');
+assert(commandBff.includes('viewerOwnsCommandCenter'), 'PWA BFF must bind authenticated viewer to configured Hípico owner');
 assert(!commandBff.includes('/api/v1/hipico-bot/outbox') && !commandBff.includes('/api/v1/hipico-bot/shadow-projection'), 'PWA BFF must not reconstruct canonical truth from compatibility endpoints');
 assert(commandClient.includes('groupKey='), 'browser command center must request explicit active-group scope');
+assert(commandClient.includes('Authorization: `Bearer ${accessToken}`'), 'browser command center must send authenticated session to the BFF');
 assert(!commandClient.includes('HIPICO_OPERATOR_CONTROL_TOKEN') && !commandClient.includes('HIPICO_GROUP_BRIDGE_TOKEN'), 'server/operator secrets must never enter browser bundle');
 assert(index.includes('./assets/js/theme-bootstrap.js'), 'theme bootstrap missing from PWA shell');
 assert(index.includes('./assets/js/command-center.js'), 'Command Center client missing from PWA shell');
