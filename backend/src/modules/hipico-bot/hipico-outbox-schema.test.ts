@@ -20,6 +20,8 @@ function assertContract(sql:string){
   assert.match(sql,/receipt_status/i);
   assert.match(sql,/unique[\s\S]+provider_message_id[\s\S]+receipt_status[\s\S]+receipt_timestamp/i);
   assert.match(sql,/where status\s*=\s*'sending'/i);
+  assert.match(sql,/max_attempts\s+between\s+1\s+and\s+20/i);
+  assert.doesNotMatch(sql,/attempts\s*<=\s*max_attempts/i,'historical attempts may exceed the new default max during additive migration');
   assert.doesNotMatch(sql,/"HipicoBotOutbox"/);
 }
 
