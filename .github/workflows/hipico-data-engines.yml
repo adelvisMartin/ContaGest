@@ -2,7 +2,6 @@ name: Hípico Data Engines #285-#287
 
 on:
   pull_request:
-    branches: [main]
     paths:
       - 'backend/src/app.ts'
       - 'backend/src/modules/hipico/**'
