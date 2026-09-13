@@ -14,3 +14,13 @@ test('Vercel installs the exact locked workspace dependency graph on the reposit
   assert.equal(vercel.installCommand, 'npm ci --no-audit --no-fund');
   assert.doesNotMatch(vercel.installCommand, /npm\s+install(?:\s|$)/);
 });
+
+test('Vercel auto-deploy budget is fail-closed except for production, release and explicit QA evidence branches', () => {
+  const deploymentEnabled = vercel.git?.deploymentEnabled;
+  assert.equal(typeof deploymentEnabled, 'object');
+  assert.equal(deploymentEnabled['**'], false);
+  assert.equal(deploymentEnabled.main, true);
+  assert.equal(deploymentEnabled['release/**'], true);
+  assert.equal(deploymentEnabled['qa/postmerge-58x5-verification'], true);
+  assert.equal(deploymentEnabled['fix/post-312-gates-mobile-hardening'], true);
+});
