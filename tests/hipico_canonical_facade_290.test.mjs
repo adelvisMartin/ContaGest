@@ -35,6 +35,24 @@ test('Control Hipico exposes an independent canonical /api/v1/hipico facade whil
   }
 });
 
+test('canonical facade keeps documents, providers, race lifecycle and agent/shadow modules mounted after release-hardening integration', async () => {
+  const app = await read('backend/src/app.ts');
+
+  for (const routeImport of [
+    'hipicoDocumentRoutes',
+    'hipicoProviderRoutes',
+    'hipicoRaceRoutes',
+    'hipicoAgentRoutes'
+  ]) {
+    assert.match(app, new RegExp(`import\\s+${routeImport}\\s+from`), `missing canonical import ${routeImport}`);
+  }
+
+  assert.match(app, /app\.use\('\/api\/v1\/hipico\/documents', authRateLimit, expensiveOperationRateLimit, mutationRateLimit, hipicoDocumentRoutes\)/);
+  assert.match(app, /app\.use\('\/api\/v1\/hipico', authRateLimit, mutationRateLimit, hipicoProviderRoutes\)/);
+  assert.match(app, /app\.use\('\/api\/v1\/hipico', authRateLimit, mutationRateLimit, hipicoRaceRoutes\)/);
+  assert.match(app, /app\.use\('\/api\/v1\/hipico', authRateLimit, mutationRateLimit, hipicoAgentRoutes\)/);
+});
+
 test('PWA command center BFF delegates to the canonical backend without exposing operator credentials', async () => {
   const [bff, proxy, runtime, client] = await Promise.all([
     read('frontend/api/hipico/command-center.js'),
