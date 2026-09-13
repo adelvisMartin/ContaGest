@@ -57,6 +57,8 @@ test('shared shell and every mobile module control use the 44px touch contract',
   const shell=read('frontend','src','styles','shell-contract.css');
   const primitives=read('frontend','src','styles','runtime-primitives-v13.css');
   const hotfix=read('frontend','public','login-hotfix-v162.css');
+  const mobileA11y=read('frontend','public','login-mobile-a11y-v163.css');
+  const index=read('frontend','index.html');
   assert.match(layout,/return `<button type="button" class="menu-link hf-menu-item/);
   assert.match(layout,/<button type="button" class="hf-sidebar-account"/);
   assert.match(layout,/<button id="btnUserMenu" type="button"/);
@@ -67,7 +69,9 @@ test('shared shell and every mobile module control use the 44px touch contract',
   assert.match(hotfix,/min-height:44px/);
   assert.match(hotfix,/min-height:46px/);
   assert.match(hotfix,/min-height:48px/);
-  assert.match(hotfix,/@media\(max-width:600px\)[\s\S]*login-captcha-refresh[^}]*width:44px[^}]*min-width:44px[^}]*height:44px[^}]*min-height:44px/);
+  assert.match(index,/login-hotfix-v162\.css[\s\S]*login-mobile-a11y-v163\.css/);
+  assert.match(mobileA11y,/@media \(max-width:600px\)/);
+  assert.match(mobileA11y,/login-captcha-refresh[\s\S]*width:44px;[\s\S]*min-width:44px;[\s\S]*height:44px;[\s\S]*min-height:44px;/);
   assert.match(primitives,/@media \(max-width:760px\)[\s\S]*MuiButton-root[\s\S]*--cg-v-control-touch/);
   assert.match(primitives,/html\.dark[\s\S]*cgx-btn-primary[\s\S]*color:var\(--cg-v-bg\) !important/);
 });
