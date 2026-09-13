@@ -107,20 +107,35 @@ test('Command Center remote read-model is fail-closed unless explicitly enabled'
   assert.equal(__test__.commandCenterReadModelEnabled({ HIPICO_COMMAND_CENTER_ENABLED: ' TRUE ' }), true);
 });
 
-test('PWA mounts Command Center and server BFF delegates only to the canonical read model', async () => {
-  const [html, sw, endpoint] = await Promise.all([
+test('Command Center BFF accepts only a bounded Bearer token belonging to the configured owner', () => {
+  const owner = '11111111-1111-4111-8111-111111111111';
+  assert.equal(__test__.bearerAccessToken(''), '');
+  assert.equal(__test__.bearerAccessToken('Basic abc'), '');
+  assert.equal(__test__.bearerAccessToken('Bearer token-with-space invalid'), '');
+  assert.equal(__test__.bearerAccessToken('Bearer abc.def.ghi'), 'abc.def.ghi');
+  assert.equal(__test__.viewerOwnsCommandCenter({ id: owner }, { HIPICO_OWNER_ID: owner }), true);
+  assert.equal(__test__.viewerOwnsCommandCenter({ id: '22222222-2222-4222-8222-222222222222' }, { HIPICO_OWNER_ID: owner }), false);
+  assert.equal(__test__.viewerOwnsCommandCenter({ id: owner }, { HIPICO_OWNER_ID: 'invalid' }), false);
+});
+
+test('PWA mounts Command Center and server BFF delegates only to the canonical authenticated read model', async () => {
+  const [html, sw, endpoint, client] = await Promise.all([
     read('frontend/public/hipico-control/index.html'),
     read('frontend/public/hipico-control/sw.js'),
-    read('frontend/api/hipico/command-center.js')
+    read('frontend/api/hipico/command-center.js'),
+    read('frontend/public/hipico-control/assets/js/command-center.js')
   ]);
   assert.match(html, /assets\/js\/command-center\.js/);
   assert.match(sw, /assets\/js\/command-center\.js/);
   assert.match(endpoint, /HIPICO_COMMAND_CENTER_ENABLED/);
   assert.match(endpoint, /HIPICO_OPERATOR_CONTROL_TOKEN/);
   assert.match(endpoint, /HIPICO_BOT_OPERATOR_TOKEN/);
+  assert.match(endpoint, /authenticateCommandCenterViewer/);
   assert.match(endpoint, /x-hipico-operator-token/);
   assert.match(endpoint, /x-hipico-group-key/);
   assert.match(endpoint, /\/api\/v1\/hipico\/command-center/);
+  assert.match(client, /Authorization:\s*`Bearer \$\{accessToken\}`/);
+  assert.doesNotMatch(client, /HIPICO_OPERATOR_CONTROL_TOKEN|HIPICO_BOT_OPERATOR_TOKEN|HIPICO_GROUP_BRIDGE_TOKEN/);
   assert.doesNotMatch(endpoint, /\/api\/v1\/hipico-bot\/outbox|\/api\/v1\/hipico-bot\/shadow-projection/);
   assert.doesNotMatch(endpoint, /recipient\s*:/);
   assert.doesNotMatch(endpoint, /message\s*:/);
