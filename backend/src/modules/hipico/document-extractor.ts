@@ -1,77 +1,113 @@
-import { createRequire } from 'node:module';
-import type { PdfTextExtractor, ExtractionResult } from './document-engine.js';
+import { execFile, spawnSync } from 'node:child_process';
+import fs from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
+import { promisify } from 'node:util';
+import { MAX_PDF_PAGES, type PdfTextExtractor, type ExtractionResult } from './document-engine.js';
 
-const require = createRequire(import.meta.url);
+const execFileAsync = promisify(execFile);
 const MIN_NATIVE_TEXT_CHARS = 32;
 const OCR_MAX_PAGES = 40;
+const MAX_TOOL_OUTPUT = 12 * 1024 * 1024;
+const TOOL_TIMEOUT_MS = 30_000;
 
 type RuntimeEnv = Record<string, string | undefined>;
-type DynamicImport = (specifier: string) => Promise<any>;
-const dynamicImport: DynamicImport = new Function('specifier', 'return import(specifier)') as DynamicImport;
-
-function packageAvailable(specifier: string) {
-  try { require.resolve(specifier); return true; } catch { return false; }
-}
 
 function enabled(source: RuntimeEnv, name: string) {
   return String(source[name] || '').trim().toLowerCase() === 'true';
 }
 
+function binaryAvailable(command: string, args: string[]) {
+  const result = spawnSync(command, args, { encoding: 'utf8', timeout: 2500, windowsHide: true });
+  return !result.error && (result.status === 0 || result.status === 1);
+}
+
+function firstVersionLine(command: string, args: string[]) {
+  const result = spawnSync(command, args, { encoding: 'utf8', timeout: 2500, windowsHide: true });
+  const text = `${result.stdout || ''}\n${result.stderr || ''}`.trim();
+  return text.split(/\r?\n/).find(Boolean)?.trim().slice(0, 120) || command;
+}
+
+function ocrLanguage(source: RuntimeEnv) {
+  const value = String(source.HIPICO_DOCUMENT_OCR_LANGUAGE || 'eng').trim().toLowerCase();
+  if (!/^[a-z]{3}(?:\+[a-z]{3})*$/.test(value)) {
+    throw Object.assign(new Error('HIPICO_DOCUMENT_OCR_LANGUAGE_INVALID'), { code: 'HIPICO_DOCUMENT_OCR_LANGUAGE_INVALID' });
+  }
+  return value;
+}
+
 export function documentExtractorCapability(source: RuntimeEnv = process.env) {
-  const pdfjs = packageAvailable('pdfjs-dist/legacy/build/pdf.mjs');
+  const pdftotext = binaryAvailable('pdftotext', ['-v']);
+  const pdfinfo = binaryAvailable('pdfinfo', ['-v']);
+  const nativeText = pdftotext && pdfinfo;
   const ocrRequested = enabled(source, 'HIPICO_DOCUMENT_OCR_ENABLED');
-  const tesseract = packageAvailable('tesseract.js');
-  const canvas = packageAvailable('@napi-rs/canvas');
+  const pdftoppm = binaryAvailable('pdftoppm', ['-v']);
+  const tesseract = binaryAvailable('tesseract', ['--version']);
+  const ocr = nativeText && ocrRequested && pdftoppm && tesseract;
   return {
-    configured: pdfjs,
-    nativeText: pdfjs,
-    ocr: pdfjs && ocrRequested && tesseract && canvas,
-    parserVersion: pdfjs ? 'pdfjs-dist:6.3.289' : null,
-    reason: !pdfjs
-      ? 'PDFJS_NOT_INSTALLED'
-      : ocrRequested && (!tesseract || !canvas)
-        ? 'OCR_DEPENDENCY_NOT_INSTALLED'
+    configured: nativeText,
+    nativeText,
+    ocr,
+    parserVersion: nativeText ? `${firstVersionLine('pdftotext', ['-v'])}; ${firstVersionLine('pdfinfo', ['-v'])}` : null,
+    reason: !nativeText
+      ? 'POPPLER_NOT_INSTALLED'
+      : ocrRequested && (!pdftoppm || !tesseract)
+        ? 'OCR_RUNTIME_NOT_INSTALLED'
         : null
   };
 }
 
-async function loadPdf(pdf: Buffer, signal: AbortSignal) {
-  if (signal.aborted) throw Object.assign(new Error('AbortError'), { name: 'AbortError' });
-  const pdfjs = await dynamicImport('pdfjs-dist/legacy/build/pdf.mjs');
-  const task = pdfjs.getDocument({
-    data: new Uint8Array(pdf),
-    disableFontFace: true,
-    isEvalSupported: false,
-    useSystemFonts: false,
-    stopEventLoop: true
-  });
-  const abort = () => task.destroy().catch(() => {});
-  signal.addEventListener('abort', abort, { once: true });
-  try { return await task.promise; }
-  finally { signal.removeEventListener('abort', abort); }
+function toolOptions(signal: AbortSignal) {
+  return {
+    encoding: 'utf8' as const,
+    maxBuffer: MAX_TOOL_OUTPUT,
+    timeout: TOOL_TIMEOUT_MS,
+    signal,
+    windowsHide: true,
+    env: { ...process.env, LC_ALL: 'C', LANG: 'C' }
+  };
 }
 
-async function pageNativeText(document: any, pageNumber: number) {
-  const page = await document.getPage(pageNumber);
-  const content = await page.getTextContent({ disableNormalization: false });
-  return (content.items || [])
-    .map((item: any) => typeof item?.str === 'string' ? item.str : '')
-    .filter(Boolean)
-    .join(' ')
-    .replace(/\s+/g, ' ')
-    .trim();
+async function pageCount(pdfPath: string, signal: AbortSignal) {
+  const { stdout } = await execFileAsync('pdfinfo', [pdfPath], toolOptions(signal));
+  const pages = Number(String(stdout).match(/^Pages:\s+(\d+)\s*$/mi)?.[1] || 0);
+  if (!Number.isInteger(pages) || pages < 1) {
+    throw Object.assign(new Error('HIPICO_DOCUMENT_PAGE_COUNT_FAILED'), { code: 'HIPICO_DOCUMENT_PAGE_COUNT_FAILED' });
+  }
+  if (pages > MAX_PDF_PAGES) {
+    throw Object.assign(new Error('PDF_PAGE_LIMIT_EXCEEDED'), { code: 'PDF_PAGE_LIMIT_EXCEEDED' });
+  }
+  return pages;
 }
 
-async function ocrPage(document: any, pageNumber: number, worker: any) {
-  const { createCanvas } = await dynamicImport('@napi-rs/canvas');
-  const page = await document.getPage(pageNumber);
-  const viewport = page.getViewport({ scale: 1.75 });
-  const canvas = createCanvas(Math.ceil(viewport.width), Math.ceil(viewport.height));
-  const context = canvas.getContext('2d');
-  await page.render({ canvasContext: context, viewport }).promise;
-  const png = canvas.toBuffer('image/png');
-  const result = await worker.recognize(png);
-  return String(result?.data?.text || '').trim();
+async function nativeText(pdfPath: string, signal: AbortSignal) {
+  const { stdout } = await execFileAsync('pdftotext', ['-layout', '-enc', 'UTF-8', pdfPath, '-'], toolOptions(signal));
+  return String(stdout || '').replace(/\u0000/g, '').replace(/[ \t]+/g, ' ').replace(/\n{3,}/g, '\n\n').trim();
+}
+
+async function ocrPdf(pdfPath: string, pages: number, language: string, directory: string, signal: AbortSignal) {
+  if (pages > OCR_MAX_PAGES) {
+    throw Object.assign(new Error('HIPICO_DOCUMENT_OCR_PAGE_LIMIT'), { code: 'HIPICO_DOCUMENT_OCR_PAGE_LIMIT' });
+  }
+  const output: string[] = [];
+  for (let pageNumber = 1; pageNumber <= pages; pageNumber += 1) {
+    if (signal.aborted) throw Object.assign(new Error('AbortError'), { name: 'AbortError' });
+    const prefix = path.join(directory, `page-${pageNumber}`);
+    await execFileAsync('pdftoppm', ['-f', String(pageNumber), '-singlefile', '-png', '-r', '160', pdfPath, prefix], toolOptions(signal));
+    const imagePath = `${prefix}.png`;
+    const { stdout } = await execFileAsync('tesseract', [imagePath, 'stdout', '-l', language, '--psm', '6'], toolOptions(signal));
+    output.push(String(stdout || '').replace(/\u0000/g, '').trim());
+    await fs.rm(imagePath, { force: true });
+  }
+  return output.join('\n').trim();
+}
+
+function normalizeToolError(error: any) {
+  if (error?.name === 'AbortError') return Object.assign(new Error('AbortError'), { name: 'AbortError' });
+  if (error?.killed || error?.signal === 'SIGTERM' || error?.code === 'ETIMEDOUT') {
+    return Object.assign(new Error('HIPICO_DOCUMENT_TOOL_TIMEOUT'), { code: 'HIPICO_DOCUMENT_TOOL_TIMEOUT' });
+  }
+  return error;
 }
 
 export function createPdfJsDocumentExtractor(source: RuntimeEnv = process.env): PdfTextExtractor | null {
@@ -79,45 +115,32 @@ export function createPdfJsDocumentExtractor(source: RuntimeEnv = process.env): 
   if (!capability.configured) return null;
 
   return {
-    capability: () => ({
-      configured: capability.configured,
-      nativeText: capability.nativeText,
-      ocr: capability.ocr,
-      parserVersion: capability.parserVersion
-    }),
+    capability: () => ({ configured: capability.configured, nativeText: capability.nativeText, ocr: capability.ocr, parserVersion: capability.parserVersion }),
     async extract(pdf: Buffer, signal: AbortSignal): Promise<ExtractionResult> {
-      const document = await loadPdf(pdf, signal);
+      const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'hipico-pdf-'));
+      const pdfPath = path.join(directory, 'document.pdf');
       try {
-        const native: string[] = [];
-        for (let pageNumber = 1; pageNumber <= document.numPages; pageNumber += 1) {
-          if (signal.aborted) throw Object.assign(new Error('AbortError'), { name: 'AbortError' });
-          native.push(await pageNativeText(document, pageNumber));
-        }
-        const nativeText = native.join('\n').trim();
-        if (nativeText.replace(/\s/g, '').length >= MIN_NATIVE_TEXT_CHARS) {
-          return { text: nativeText, method: 'native_text', parserVersion: capability.parserVersion || 'pdfjs-dist', pageCount: document.numPages };
+        await fs.writeFile(pdfPath, pdf, { flag: 'wx', mode: 0o600 });
+        const pages = await pageCount(pdfPath, signal);
+        const text = await nativeText(pdfPath, signal);
+        if (text.replace(/\s/g, '').length >= MIN_NATIVE_TEXT_CHARS) {
+          return { text, method: 'native_text', parserVersion: capability.parserVersion || 'poppler', pageCount: pages };
         }
         if (!capability.ocr) {
           throw Object.assign(new Error('HIPICO_DOCUMENT_OCR_NOT_CONFIGURED'), { code: 'HIPICO_DOCUMENT_OCR_NOT_CONFIGURED' });
         }
-        if (document.numPages > OCR_MAX_PAGES) {
-          throw Object.assign(new Error('HIPICO_DOCUMENT_OCR_PAGE_LIMIT'), { code: 'HIPICO_DOCUMENT_OCR_PAGE_LIMIT' });
-        }
-        const tesseract = await dynamicImport('tesseract.js');
-        const language = String(source.HIPICO_DOCUMENT_OCR_LANGUAGE || 'spa+eng').trim();
-        const worker = await tesseract.createWorker(language);
-        try {
-          const pages: string[] = [];
-          for (let pageNumber = 1; pageNumber <= document.numPages; pageNumber += 1) {
-            if (signal.aborted) throw Object.assign(new Error('AbortError'), { name: 'AbortError' });
-            pages.push(await ocrPage(document, pageNumber, worker));
-          }
-          return { text: pages.join('\n').trim(), method: 'ocr', parserVersion: `${capability.parserVersion}+tesseract.js:7`, pageCount: document.numPages };
-        } finally {
-          await worker.terminate();
-        }
+        const language = ocrLanguage(source);
+        const extracted = await ocrPdf(pdfPath, pages, language, directory, signal);
+        return {
+          text: extracted,
+          method: 'ocr',
+          parserVersion: `${capability.parserVersion || 'poppler'}; ${firstVersionLine('tesseract', ['--version'])}`,
+          pageCount: pages
+        };
+      } catch (error) {
+        throw normalizeToolError(error);
       } finally {
-        await document.destroy();
+        await fs.rm(directory, { recursive: true, force: true });
       }
     }
   };

@@ -33,9 +33,16 @@ export interface PdfTextExtractor {
 }
 
 const MAX_PDF_BYTES = 10 * 1024 * 1024;
-const MAX_PDF_PAGES = 200;
+export const MAX_PDF_PAGES = 200;
 const MAX_EXTRACTED_TEXT_CHARS = 200000;
-const ACTIVE_PDF_TOKENS = [/\/JavaScript\b/i,/\/JS\b/i,/\/EmbeddedFile\b/i,/\/Launch\b/i,/\/OpenAction\b/i,/\/RichMedia\b/i];
+const ACTIVE_PDF_TOKENS = [
+  /\/JavaScript\b/i,/\/JS\b/i,/\/EmbeddedFile\b/i,/\/Launch\b/i,/\/OpenAction\b/i,/\/RichMedia\b/i,
+  /\/AA\b/i,/\/SubmitForm\b/i,/\/ImportData\b/i,/\/GoToR\b/i
+];
+
+function decodePdfNameEscapes(source:string){
+  return source.replace(/#([0-9a-fA-F]{2})/g,(_match,hex)=>String.fromCharCode(Number.parseInt(hex,16)));
+}
 
 export function safeDocumentFilename(value: unknown) {
   const base = String(value || 'document.pdf').replace(/[\\/\u0000-\u001f\u007f]+/g,'_').trim().slice(0,180) || 'document.pdf';
@@ -69,8 +76,9 @@ export function validatePdfEnvelope(pdf: Buffer, filename?: string): PdfEnvelope
   if (!/%%EOF\s*$/m.test(tail) || !/\bobj\b[\s\S]*\bendobj\b/.test(source)) {
     throw Object.assign(new Error('PDF_STRUCTURE_INVALID'),{code:'PDF_STRUCTURE_INVALID'});
   }
-  for (const token of ACTIVE_PDF_TOKENS) if (token.test(source)) throw Object.assign(new Error('PDF_ACTIVE_CONTENT_REJECTED'),{code:'PDF_ACTIVE_CONTENT_REJECTED'});
-  const pageCountEstimate = Math.max(1,(source.match(/\/Type\s*\/Page\b/g)||[]).length);
+  const decodedNames=decodePdfNameEscapes(source);
+  for (const token of ACTIVE_PDF_TOKENS) if (token.test(decodedNames)) throw Object.assign(new Error('PDF_ACTIVE_CONTENT_REJECTED'),{code:'PDF_ACTIVE_CONTENT_REJECTED'});
+  const pageCountEstimate = Math.max(1,(decodedNames.match(/\/Type\s*\/Page\b/g)||[]).length);
   if (pageCountEstimate > MAX_PDF_PAGES) throw Object.assign(new Error('PDF_PAGE_LIMIT_EXCEEDED'),{code:'PDF_PAGE_LIMIT_EXCEEDED'});
   return { sha256: crypto.createHash('sha256').update(pdf).digest('hex'), sizeBytes: pdf.length, pageCountEstimate, filename: safeDocumentFilename(filename), mime:'application/pdf' };
 }
