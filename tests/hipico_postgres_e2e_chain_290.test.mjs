@@ -73,3 +73,14 @@ test('ephemeral DB lifecycle refuses non-local and non-ephemeral database target
   assert.match(lifecycle, /Refusing non-local PostgreSQL host/);
   assert.match(lifecycle, /DROP DATABASE IF EXISTS/);
 });
+
+test('Hípico data workflow executes full schema evidence before focused data integration and always cleans up', () => {
+  const workflow = read('.github/workflows/hipico-data-engines.yml');
+  assert.match(workflow, /HIPICO_E2E_ADMIN_URL:/);
+  assert.match(workflow, /node scripts\/hipico-ephemeral-db-v290\.mjs create/);
+  assert.match(workflow, /node scripts\/hipico-apply-e2e-schema-v290\.mjs/);
+  assert.match(workflow, /npm --workspace backend run test:hipico:data/);
+  assert.match(workflow, /if: always\(\)/);
+  assert.match(workflow, /node scripts\/hipico-ephemeral-db-v290\.mjs drop/);
+  assert.match(workflow, /artifacts\/qa\/hipico-v290\//);
+});
