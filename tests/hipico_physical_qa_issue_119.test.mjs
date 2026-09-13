@@ -7,7 +7,7 @@ import test from 'node:test';
 
 const catalog=JSON.parse(fs.readFileSync('products/hipico-control/physical-qa-v119.json','utf8'));
 const script='scripts/hipico-physical-qa-v119.mjs';
-const run=(argv,sha)=>spawnSync(process.execPath,[script,...argv],{encoding:'utf8',env:{...process.env,GIT_SHA:sha}});
+const run=(argv,sha)=>spawnSync(process.execPath,[script,...argv],{encoding:'utf8',env:{...process.env,GITHUB_SHA:'',VERCEL_GIT_COMMIT_SHA:'',GIT_SHA:sha}});
 function prepareCompleteEvidence(dir,file,sha,evidence='proof.log'){
   const sourceHash='1'.repeat(64),labHash='2'.repeat(64);
   assert.equal(run(['init',`--file=${file}`,'--force','--operator=QA'],sha).status,0);
