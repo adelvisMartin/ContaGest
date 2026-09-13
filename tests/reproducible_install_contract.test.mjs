@@ -21,6 +21,7 @@ test('browser pre-QA reuses the locked Vercel install and only adds the pinned s
   assert.match(browserPreqa, /SERVERLESS_CHROMIUM_VERSION='149\.0\.0'/);
   assert.match(browserPreqa, /@sparticuz\/chromium@\$\{SERVERLESS_CHROMIUM_VERSION\}/);
   assert.match(browserPreqa, /'--no-save'/);
+  assert.match(browserPreqa, /'--package-lock=false'/);
 });
 
 test('Vercel auto-deploy budget is fail-closed except for production, release and explicit QA evidence branches', () => {
