@@ -21,6 +21,7 @@ test('Hípico backend, frontend API, PWA, Android, QA and SQL changes route thro
     const domain = domainFor(file);
     assert.ok(domain, `missing hipico-platform routing for ${file}`);
     assert.equal(domain.severity, 'critical');
+    assert.ok(domain.skills.includes('contagest-hipico-platform'));
     assert.ok(domain.skills.includes('contagest-release-evidence'));
     assert.ok(domain.skills.includes('contagest-secure-verification'));
     assert.ok(domain.gates.includes('hipico-tests'));
