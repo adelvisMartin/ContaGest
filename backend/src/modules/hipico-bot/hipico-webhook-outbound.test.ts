@@ -43,7 +43,7 @@ test('webhook outbound: approved mode queues canonical row requiring approval',a
   assert.equal(result.dispatchRequested,false);
   assert.equal(fake.calls[0][0],'enqueue');
   assert.equal(fake.calls[0][1].payload.approvalRequired,true);
-  assert.match(fake.calls[0][1].idempotencyKey,/meta-webhook:wamid\.in\.1/);
+  assert.match(fake.calls[0][1].idempotencyKey,/^meta-webhook:[a-f0-9]{64}$/);
 });
 
 test('webhook outbound: automatic safe intent queues canonical row and requests leased dispatch',async()=>{
