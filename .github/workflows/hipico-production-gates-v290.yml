@@ -7,6 +7,7 @@ on:
       - 'backend/src/modules/hipico/**'
       - 'backend/src/modules/hipico-bot/**'
       - 'backend/scripts/hipico-*-v290.ts'
+      - 'backend/prisma/**'
       - 'frontend/public/hipico-control/**'
       - 'frontend/api/hipico/**'
       - 'tools/hipico-whatsapp-web-bridge/**'
@@ -119,7 +120,7 @@ jobs:
   postgres-e2e:
     if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
-    timeout-minutes: 40
+    timeout-minutes: 45
     services:
       postgres:
         image: postgres:16
@@ -167,8 +168,14 @@ jobs:
       - name: Create isolated PostgreSQL database
         run: node scripts/hipico-ephemeral-db-v290.mjs create
 
+      - name: Deploy Prisma schema needed by bot persistence
+        run: npm --workspace backend run prisma:deploy
+
       - name: Rebuild current v12-v21 schema and execute RLS/RBAC probes
         run: node scripts/hipico-apply-e2e-schema-v290.mjs
+
+      - name: TestChannel classification/persistence/replay E2E
+        run: npm --workspace backend exec -- tsx --test src/modules/hipico-bot/production-e2e-v290.ts
 
       - name: Persist restart state in process A
         run: npm --workspace backend exec -- tsx scripts/hipico-restart-recovery-v290.ts prepare
@@ -178,6 +185,9 @@ jobs:
 
       - name: Real PostgreSQL PDF/OCR/provider/race integration
         run: npm --workspace backend run test:hipico:data
+
+      - name: Measure 100/500/2000 isolated production profile
+        run: npm --workspace backend exec -- tsx scripts/hipico-load-profile-v290.ts
 
       - name: Write PostgreSQL gate evidence
         run: |
@@ -190,7 +200,9 @@ jobs:
             status: 'PASS',
             database: 'isolated-ephemeral-postgresql-16',
             migrations: 'v12-v21',
+            testChannelReplay: 'PASS',
             restartRecovery: 'PASS',
+            loadProfile: 'PASS',
             checkedAt: new Date().toISOString()
           }, null, 2)}\n`);
           NODE
