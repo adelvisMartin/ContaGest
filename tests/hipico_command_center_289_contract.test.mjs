@@ -42,14 +42,17 @@ void test('Command Center shell uses only the public local group key boundary an
 
 void test('Command Center renders fail-closed observable states and SOURCE/LAB safety semantics', () => {
   const commandCenter = read('frontend/public/hipico-control/assets/js/command-center.js');
+  const backend = read('backend/src/modules/hipico/command-center.service.ts');
 
   for (const state of ['idle', 'loading', 'success', 'error', 'offline']) {
     assert.ok(commandCenter.includes(`'${state}'`) || commandCenter.includes(`\"${state}\"`), `missing ${state} state`);
   }
   assert.match(commandCenter, /stale/);
   assert.match(commandCenter, /No disponible/);
-  assert.match(commandCenter, /QUEUE_READ_UNAVAILABLE/);
-  assert.match(commandCenter, /DOCUMENT_READ_UNAVAILABLE/);
+  assert.match(backend, /QUEUE_READ_UNAVAILABLE/);
+  assert.match(backend, /DOCUMENT_READ_UNAVAILABLE/);
+  assert.match(backend, /pending: queuePending/);
+  assert.match(backend, /failed: queueFailed/);
   assert.match(commandCenter, /SOURCE/);
   assert.match(commandCenter, /solo lectura/i);
   assert.match(commandCenter, /LAB/);
