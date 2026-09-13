@@ -92,8 +92,8 @@ export function classifyDocumentText(text: string): { classification: DocumentCl
   const value=String(text||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toUpperCase();
   const rules:Array<[DocumentClassification,RegExp,number]> = [
     ['OFFICIAL_RESULT',/RESULTADO\s+OFICIAL|ORDEN\s+OFICIAL|DIVIDENDOS?\s+OFICIALES?/,0.98],
-    ['SCRATCHES',/RETIRADOS?|SCRATCH(?:ES)?|NO\s+CORRE/,0.95],
     ['RACE_PROGRAM',/PROGRAMA\s+(?:OFICIAL\s+)?DE\s+CARRERAS|RACE\s+PROGRAM/,0.94],
+    ['SCRATCHES',/RETIRADOS?|SCRATCH(?:ES)?|NO\s+CORRE/,0.95],
     ['ENTRIES',/INSCRITOS?|EJEMPLARES?\s+INSCRITOS?|ENTRIES/,0.9],
     ['ARRIVAL',/LLEGADA|ORDEN\s+DE\s+LLEGADA/,0.88],
     ['RESULT',/RESULTADOS?|PIZARRA/,0.86],
