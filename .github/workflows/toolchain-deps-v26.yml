@@ -9,7 +9,10 @@ on:
       - backend/package.json
       - backend/src/modules/exports/xlsx-writer.ts
       - backend/src/modules/exports/xlsx-writer.test.ts
+      - frontend/scripts/stage-backend.mjs
+      - scripts/normalize-package-lock-v26.mjs
       - tests/toolchain_dependency_cleanup_issue_26.test.mjs
+      - tests/toolchain_lock_normalizer_issue_26.test.mjs
       - .github/workflows/toolchain-deps-v26.yml
   pull_request:
     branches: [main]
@@ -19,7 +22,10 @@ on:
       - backend/package.json
       - backend/src/modules/exports/xlsx-writer.ts
       - backend/src/modules/exports/xlsx-writer.test.ts
+      - frontend/scripts/stage-backend.mjs
+      - scripts/normalize-package-lock-v26.mjs
       - tests/toolchain_dependency_cleanup_issue_26.test.mjs
+      - tests/toolchain_lock_normalizer_issue_26.test.mjs
       - .github/workflows/toolchain-deps-v26.yml
   workflow_dispatch:
 
@@ -41,6 +47,12 @@ jobs:
           node-version: 22
           cache: npm
 
+      - name: Verify lock normalizer behavior
+        run: node --test tests/toolchain_lock_normalizer_issue_26.test.mjs
+
+      - name: Normalize retired XLSX dependency graph
+        run: node scripts/normalize-package-lock-v26.mjs
+
       - name: Regenerate lock deterministically
         run: npm install --package-lock-only --ignore-scripts --no-audit --no-fund
 
@@ -54,7 +66,9 @@ jobs:
           retention-days: 7
 
       - name: Verify lock contract
-        run: node --test tests/toolchain_dependency_cleanup_issue_26.test.mjs
+        run: |
+          node scripts/normalize-package-lock-v26.mjs --check
+          node --test tests/toolchain_dependency_cleanup_issue_26.test.mjs
 
       - name: Ensure checked-in lock is reproducible
         run: git diff --exit-code -- package-lock.json
@@ -75,3 +89,6 @@ jobs:
 
       - name: Internal XLSX writer smoke
         run: npm --workspace backend run test:xlsx
+
+      - name: Serverless bundle excludes retired XLSX runtime chain
+        run: node frontend/scripts/stage-backend.mjs
