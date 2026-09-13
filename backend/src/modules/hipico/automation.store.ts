@@ -6,16 +6,30 @@ import {
   canPromoteAutomation,
   type AgentCandidate,
   type AutomationMetrics,
-  type AutomationState
+  type AutomationState,
+  type PromotionDecision
 } from './agent-policy.js';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const GROUP_RE = /^[A-Za-z0-9._:-]{3,120}$/;
 const GROUP_ID_RE = /^[A-Za-z0-9@._:-]{3,220}$/;
+const IDEMPOTENCY_RE = /^[A-Za-z0-9._:-]{8,120}$/;
 const FORBIDDEN_EVIDENCE_KEY = /(?:token|secret|password|credential|authorization|cookie|api[_-]?key)/i;
 const MAX_EVIDENCE_BYTES = 16 * 1024;
 
 type DbClient = typeof prisma | Prisma.TransactionClient;
+
+type TransitionEventRow = {
+  id: string;
+  inputSignature: string;
+  fromMode: AutomationState;
+  toMode: AutomationState;
+  disposition: 'applied' | 'rejected' | 'noop';
+  reason: string;
+  metrics: AutomationMetrics;
+  decision: PromotionDecision;
+  createdAt: Date | string;
+};
 
 function assertScope(ownerId: string, groupKey: string, groupId: string) {
   if (!UUID_RE.test(ownerId)) throw new Error('HIPICO_OWNER_INVALID');
@@ -75,6 +89,14 @@ function normalizeEvidence(value: unknown) {
   return JSON.parse(serialized) as Record<string, unknown>;
 }
 
+function transitionSignature(input: { target: AutomationState; ownerApproved: boolean; actorRef: string }) {
+  return crypto.createHash('sha256').update(JSON.stringify({
+    target: input.target,
+    ownerApproved: Boolean(input.ownerApproved),
+    actorRef: input.actorRef
+  })).digest('hex');
+}
+
 export class AutomationStore {
   async metrics(ownerId: string, groupKey: string, groupId: string): Promise<AutomationMetrics> {
     assertScope(ownerId, groupKey, groupId);
@@ -103,14 +125,42 @@ export class AutomationStore {
     target: AutomationState;
     actorRef: string;
     ownerApproved: boolean;
+    idempotencyKey: string;
   }) {
     assertScope(input.ownerId, input.groupKey, input.groupId);
     if (!(AUTOMATION_STATES as readonly string[]).includes(input.target)) throw new Error('HIPICO_AUTOMATION_STATE_INVALID');
     if (!String(input.actorRef || '').startsWith('operator-token:')) throw new Error('HIPICO_OPERATOR_ACTOR_NOT_CONFIGURED');
+    if (!IDEMPOTENCY_RE.test(String(input.idempotencyKey || '').trim())) throw new Error('HIPICO_AUTOMATION_IDEMPOTENCY_KEY_INVALID');
     await this.get(input.ownerId, input.groupKey, input.groupId);
+    const inputSignature = transitionSignature(input);
 
     return prisma.$transaction(async (tx) => {
       await lockScope(tx, input.ownerId, input.groupKey, input.groupId);
+      const prior = await tx.$queryRaw<TransitionEventRow[]>`
+        SELECT id::text AS id, input_signature AS "inputSignature", from_mode AS "fromMode", to_mode AS "toMode",
+          disposition, reason, metrics, decision, created_at AS "createdAt"
+        FROM public.hipico_automation_transition_events
+        WHERE owner_id = ${input.ownerId}::uuid AND group_key = ${input.groupKey} AND group_id = ${input.groupId}
+          AND idempotency_key = ${input.idempotencyKey}
+        LIMIT 1`;
+      if (prior[0]) {
+        if (prior[0].inputSignature !== inputSignature) {
+          throw Object.assign(new Error('HIPICO_AUTOMATION_IDEMPOTENCY_MISMATCH'), { code: 'HIPICO_AUTOMATION_IDEMPOTENCY_MISMATCH' });
+        }
+        const event = prior[0];
+        return {
+          duplicate: true,
+          eventId: event.id,
+          previous: event.fromMode,
+          current: event.disposition === 'applied' ? event.toMode : event.fromMode,
+          target: event.toMode,
+          disposition: event.disposition,
+          decision: event.decision,
+          metrics: event.metrics,
+          createdAt: event.createdAt
+        };
+      }
+
       const rows = await tx.$queryRaw<Array<{ mode: AutomationState }>>`
         SELECT mode
         FROM public.hipico_group_automation
@@ -119,12 +169,41 @@ export class AutomationStore {
       const current = rows[0]?.mode || defaultMode(input.groupId);
       const metrics = await readMetrics(tx, input.ownerId, input.groupKey, input.groupId);
       const decision = canPromoteAutomation(current, input.target, metrics, input.ownerApproved);
-      if (!decision.allowed) throw Object.assign(new Error(decision.reason), { code: decision.reason, decision });
-      await tx.$executeRaw`
-        UPDATE public.hipico_group_automation
-        SET mode = ${input.target}, updated_by = ${input.actorRef}, updated_at = now()
-        WHERE owner_id = ${input.ownerId}::uuid AND group_key = ${input.groupKey} AND group_id = ${input.groupId}`;
-      return { previous: current, current: input.target, decision, metrics };
+      const disposition: TransitionEventRow['disposition'] = !decision.allowed
+        ? 'rejected'
+        : input.target === current
+          ? 'noop'
+          : 'applied';
+
+      if (disposition === 'applied') {
+        await tx.$executeRaw`
+          UPDATE public.hipico_group_automation
+          SET mode = ${input.target}, updated_by = ${input.actorRef}, updated_at = now()
+          WHERE owner_id = ${input.ownerId}::uuid AND group_key = ${input.groupKey} AND group_id = ${input.groupId}`;
+      }
+
+      const eventId = crypto.randomUUID();
+      const inserted = await tx.$queryRaw<Array<{ createdAt: Date | string }>>`
+        INSERT INTO public.hipico_automation_transition_events(
+          id, owner_id, group_key, group_id, idempotency_key, input_signature,
+          from_mode, to_mode, disposition, reason, actor_ref, owner_approved, metrics, decision
+        ) VALUES(
+          ${eventId}::uuid, ${input.ownerId}::uuid, ${input.groupKey}, ${input.groupId}, ${input.idempotencyKey}, ${inputSignature},
+          ${current}, ${input.target}, ${disposition}, ${decision.reason}, ${input.actorRef}, ${Boolean(input.ownerApproved)},
+          ${JSON.stringify(metrics)}::jsonb, ${JSON.stringify(decision)}::jsonb
+        ) RETURNING created_at AS "createdAt"`;
+
+      return {
+        duplicate: false,
+        eventId,
+        previous: current,
+        current: disposition === 'applied' ? input.target : current,
+        target: input.target,
+        disposition,
+        decision,
+        metrics,
+        createdAt: inserted[0]?.createdAt || null
+      };
     });
   }
 
@@ -212,6 +291,19 @@ export class AutomationStore {
       FROM public.hipico_agent_evaluations
       WHERE owner_id = ${ownerId}::uuid AND group_key = ${groupKey} AND group_id = ${groupId}
       ORDER BY created_at DESC
+      LIMIT ${bounded}`;
+  }
+
+  async transitionEvents(ownerId: string, groupKey: string, groupId: string, limit = 100) {
+    assertScope(ownerId, groupKey, groupId);
+    const bounded = Math.min(500, Math.max(1, Math.trunc(limit) || 100));
+    return prisma.$queryRaw<any[]>`
+      SELECT id, idempotency_key AS "idempotencyKey", from_mode AS "fromMode", to_mode AS "toMode",
+        disposition, reason, actor_ref AS "actorRef", owner_approved AS "ownerApproved",
+        metrics, decision, created_at AS "createdAt"
+      FROM public.hipico_automation_transition_events
+      WHERE owner_id = ${ownerId}::uuid AND group_key = ${groupKey} AND group_id = ${groupId}
+      ORDER BY created_at DESC, id DESC
       LIMIT ${bounded}`;
   }
 }
