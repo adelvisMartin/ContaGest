@@ -1,0 +1,38 @@
+name: CI Runner Probe #134
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/ci-runner-probe-v134.yml'
+      - 'scripts/ci-runner-verdict-v134.mjs'
+      - 'tests/ci_runner_verdict_issue_134.test.mjs'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-runner-probe-v134-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  probe:
+    name: GitHub-hosted runner allocation probe
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Prove runner allocation
+        run: |
+          set -euo pipefail
+          echo "runner=${RUNNER_NAME}"
+          echo "os=${RUNNER_OS}"
+          echo "arch=${RUNNER_ARCH}"
+          test -n "${RUNNER_NAME}"
+      - name: Prove exact workflow SHA context
+        env:
+          CANDIDATE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          test "${#CANDIDATE_SHA}" -eq 40
+          printf 'candidateSha=%s\n' "$CANDIDATE_SHA"

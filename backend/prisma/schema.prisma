@@ -347,6 +347,7 @@ model PurchaseInvoice {
   controlNo   String?
   issueDate   DateTime @default(now())
   fiscalPeriod String
+  currency    String   @default("VES")
   subtotal    Decimal  @default(0) @db.Decimal(18,2)
   iva         Decimal  @default(0) @db.Decimal(18,2)
   igtf        Decimal  @default(0) @db.Decimal(18,2)
@@ -893,5 +894,4 @@ model AuthLoginAttempt {
   createdAt   DateTime @default(now())
 
   @@index([tenantRif, email, ipAddress, success, createdAt])
-  @@index([createdAt])
 }

@@ -1,6 +1,18 @@
 name: ERP Performance & Capacity #157
 
 on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'backend/**'
+      - 'frontend/**'
+      - 'qa/erp-performance-*.ts'
+      - 'qa/erp-performance-*.mjs'
+      - 'qa/erp-performance-*.spec.mjs'
+      - 'scripts/erp-performance-*.mjs'
+      - 'tests/erp_performance*_issue_157.test.mjs'
+      - 'products/erp/performance-policy-v157.json'
+      - '.github/workflows/erp-performance-capacity-v157.yml'
   workflow_dispatch:
     inputs:
       candidate_sha:
@@ -11,6 +23,11 @@ on:
         description: 'Pico concurrente esperado total para ContaGest; no inventar este valor.'
         required: false
         type: string
+      calibration_only:
+        description: 'Medir baseline provisional sin certificar capacidad 1x/3x ni cerrar #157.'
+        required: false
+        default: false
+        type: boolean
       finalize_issue:
         description: 'Cerrar #157 sólo si todo pasa y #155 ya está cerrado.'
         required: false
@@ -27,7 +44,7 @@ permissions:
   issues: write
 
 concurrency:
-  group: erp-performance-capacity-v157-${{ inputs.candidate_sha || github.event.workflow_run.head_sha || github.sha }}
+  group: erp-performance-capacity-v157-${{ inputs.candidate_sha || github.event.pull_request.head.sha || github.event.workflow_run.head_sha || github.sha }}
   cancel-in-progress: true
 
 env:
@@ -45,13 +62,83 @@ env:
   SUPABASE_AUTH_FALLBACK: 'false'
   ALLOW_PUBLIC_REGISTER: 'false'
   PRISMA_QUERY_TELEMETRY: 'true'
-  CANDIDATE_SHA: ${{ inputs.candidate_sha || github.event.workflow_run.head_sha || github.sha }}
+  CANDIDATE_SHA: ${{ inputs.candidate_sha || github.event.pull_request.head.sha || github.event.workflow_run.head_sha || github.sha }}
   ERP157_EXPECTED_PEAK_USERS: ${{ inputs.expected_peak_users || vars.ERP157_EXPECTED_PEAK_USERS }}
 
 jobs:
+  calibration:
+    name: Baseline provisional PostgreSQL + API + Chromium
+    if: (github.event_name == 'pull_request' && startsWith(github.head_ref, 'release/candidate-')) || (github.event_name == 'workflow_dispatch' && inputs.calibration_only == true)
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: contagest_performance_v157_e2e
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U postgres -d contagest_performance_v157_e2e"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=20
+    steps:
+      - name: Validar candidate SHA de calibración
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$CANDIDATE_SHA" =~ ^[0-9a-fA-F]{40}$ ]]
+      - name: Checkout candidate SHA
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.CANDIDATE_SHA }}
+      - name: Confirmar runner real y SHA
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${RUNNER_NAME:-}"
+          test "$(git rev-parse HEAD)" = "$CANDIDATE_SHA"
+      - name: Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Instalar dependencias bloqueadas
+        run: npm ci --no-audit --no-fund
+      - name: Preparar PostgreSQL efímero compatible con Supabase
+        env:
+          PGPASSWORD: postgres
+        run: psql -h 127.0.0.1 -U postgres -d contagest_performance_v157_e2e -v ON_ERROR_STOP=1 -f ops/database/prepare-supabase-ephemeral.sql
+      - name: Aplicar migraciones y seed QA
+        run: |
+          npm --workspace backend run prisma:deploy
+          npm --workspace backend run prisma:seed
+      - name: Contratos estáticos #157
+        run: node --test tests/erp_performance_issue_157.test.mjs tests/erp_performance_execution_issue_157.test.mjs
+      - name: Medir baseline API PostgreSQL aislamiento y XLSX sin inventar pico
+        run: npm --workspace backend exec -- tsx ../qa/erp-performance-calibration-v157.ts
+      - name: Instalar Chromium
+        run: npx playwright install --with-deps chromium
+      - name: Medir baseline frontend tablas memoria y red degradada
+        run: npx playwright test qa/erp-performance-frontend-v157.spec.mjs --project=chromium --workers=1
+      - name: Conservar calibración provisional ligada al SHA
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: erp-performance-calibration-v157-${{ env.CANDIDATE_SHA }}
+          path: |
+            artifacts/qa/erp-performance-v157/${{ env.CANDIDATE_SHA }}
+            playwright-report
+            test-results
+          if-no-files-found: warn
+          retention-days: 30
+
   capacity:
     name: Medición real PostgreSQL + Chromium + cierre fail-closed
-    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
+    if: github.event_name != 'pull_request' && (github.event_name != 'workflow_dispatch' || inputs.calibration_only != true) && (github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success')
     runs-on: ubuntu-latest
     timeout-minutes: 180
     services:
@@ -109,11 +196,11 @@ jobs:
           npm --workspace backend run prisma:seed
       - name: Contratos estáticos #157
         run: node --test tests/erp_performance_issue_157.test.mjs tests/erp_performance_execution_issue_157.test.mjs
-      - name: Medir API, PostgreSQL, concurrencia y procesos pesados
+      - name: Medir API PostgreSQL concurrencia y procesos pesados
         run: npm --workspace backend exec -- tsx ../qa/erp-performance-backend-v157.ts
       - name: Instalar Chromium
         run: npx playwright install --with-deps chromium
-      - name: Medir frontend, tablas grandes, memoria y red degradada
+      - name: Medir frontend tablas grandes memoria y red degradada
         run: npx playwright test qa/erp-performance-frontend-v157.spec.mjs --project=chromium --workers=1
       - name: Ensamblar evidencia ligada al SHA
         run: node scripts/erp-performance-assemble-v157.mjs

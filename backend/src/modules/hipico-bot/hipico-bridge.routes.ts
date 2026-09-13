@@ -11,14 +11,14 @@ import { loadHandoff, persistResponsePlan, responseSafetyReadiness, saveHandoff 
 import { canonicalShadowReadiness, persistCanonicalShadow } from './hipico-canonical-shadow.store.js';
 import { bridgePersistenceReady, ensureGroupShadowOutbox, persistBridgeTransportEvent } from './hipico-bridge-transport.store.js';
 import { bridgeTokenConfigured, bridgeTokenValid } from './hipico-bridge-security.js';
-import { operatorTokenConfigured, operatorTokenValid } from './hipico-operator-security.js';
+import { operatorActorRef, operatorTokenConfigured, operatorTokenValid } from './hipico-operator-security.js';
 
 const router = Router();
 const OFFICIAL_SOURCE_CHANNEL_KEY=String(process.env.HIPICO_OFFICIAL_SOURCE_CHANNEL_KEY||'club-hipico-triple-crown-official').trim();
 const DEFAULT_LAB_CHANNEL_KEY=String(process.env.HIPICO_LAB_CHANNEL_KEY||'control-hipico-lab').trim();
 
 const bridgeEventSchema=z.object({bridgeVersion:z.string().min(1).max(80),externalMessageId:z.string().min(1).max(320),groupId:z.string().min(3).max(220),groupName:z.string().trim().min(1).max(220),channelKey:z.string().trim().min(3).max(120).optional(),labChannelKey:z.string().trim().min(3).max(120).optional(),channelRole:z.enum(['source','lab']),shadowMode:z.boolean(),historySync:z.boolean().default(false),senderId:z.string().min(1).max(220),senderLabel:z.string().max(220).default(''),fromMe:z.boolean().default(false),timestamp:z.string().datetime({offset:true}),type:z.string().min(1).max(80).default('chat'),mediaKind:z.enum(['none','image','video','audio','document','unknown']).default('none'),mediaName:z.string().max(240).default(''),text:z.string().max(4000).default(''),hasMedia:z.boolean().default(false),quotedExternalMessageId:z.string().max(320).nullable().default(null),quoteDepth:z.number().int().min(0).max(20).default(0),rawMeta:z.string().max(500).default('')});
-const handoffCommandSchema=z.object({groupKey:z.string().trim().min(3).max(120),participantId:z.string().trim().min(1).max(220),raceId:z.string().trim().max(120).nullable().default(null),command:z.enum(['pause','resume','escalate','resolve','reject']),operatorId:z.string().trim().min(1).max(220),reason:z.string().trim().max(500).optional(),ttlMs:z.number().int().min(0).max(24*60*60*1000).optional()});
+const handoffCommandSchema=z.object({groupKey:z.string().trim().min(3).max(120),participantId:z.string().trim().min(1).max(220),raceId:z.string().trim().max(120).nullable().default(null),command:z.enum(['pause','resume','escalate','resolve','reject']),operatorId:z.string().trim().min(1).max(220).optional(),reason:z.string().trim().max(500).optional(),ttlMs:z.number().int().min(0).max(24*60*60*1000).optional()});
 
 const shadowTag=(value:string)=>`[SHADOW:${crypto.createHash('sha256').update(value).digest('hex').slice(0,10)}]`;
 const REPLAY_MISMATCH_CODES=new Set(['HIPICO_TRANSPORT_REPLAY_MISMATCH','HIPICO_CANONICAL_REPLAY_MISMATCH']);
@@ -51,13 +51,16 @@ router.get('/bridge/health',async(req,res)=>{
   try{const[transportReady,canonical,responseSafety]=await Promise.all([bridgePersistenceReady(),canonicalShadowReadiness(),responseSafetyReadiness()]);const reasons:string[]=[];if(!bridgeTokenConfigured())reasons.push('BRIDGE_TOKEN_NOT_CONFIGURED');if(!transportReady)reasons.push('TRANSPORT_SCHEMA_NOT_READY');if(!canonical.schemaReady)reasons.push('CANONICAL_SCHEMA_NOT_READY');if(canonical.labChannelCount!==1)reasons.push('LAB_CHANNEL_NOT_UNIQUE');if(!responseSafety.ready)reasons.push('RESPONSE_SAFETY_SCHEMA_NOT_READY');const ready=reasons.length===0;return res.status(ready?200:503).json({ok:ready,ready,...base,reasons,persistence:{transportReady,canonicalSchemaReady:canonical.schemaReady,labChannelCount:canonical.labChannelCount,responseSafetyReady:responseSafety.ready},operatorControlConfigured:operatorTokenConfigured(),conversationalAppSec:{enabled:true,maxMessagesPerMinute:30,maxIdenticalPerMinute:5,clock:'server',historyReplayThrottle:'separate-bounded'}});}catch(error:any){console.error('[hipico-bridge] readiness check failed',{error:error?.message||String(error)});return res.status(503).json({ok:false,ready:false,...base,retryable:true,reasons:['PERSISTENCE_CHECK_FAILED']});}
 });
 router.post('/bridge/handoff',async(req,res)=>{
-  if(!operatorTokenValid(req.header('x-hipico-operator-token')||undefined))return res.status(401).json({ok:false,error:'Control de operador no autenticado.'});
+  const operatorToken=req.header('x-hipico-operator-token')||undefined;
+  if(!operatorTokenValid(operatorToken))return res.status(401).json({ok:false,error:'Control de operador no autenticado.'});
+  const actorRef=operatorActorRef();
+  if(!actorRef)return res.status(503).json({ok:false,retryable:true,error:'Identidad del operador no disponible.'});
   const parsed=handoffCommandSchema.safeParse(req.body);if(!parsed.success)return res.status(400).json({ok:false,retryable:false,error:'Comando de handoff inválido.'});
   try{
     const input=parsed.data;
     const current=await loadHandoff(input.groupKey,input.participantId,input.raceId);
-    const next=applyOperatorCommand(current,input.command,{authenticatedOperator:true,operatorId:input.operatorId,reason:input.reason,ttlMs:input.ttlMs});
-    const saved=await saveHandoff(next,{eventType:`operator_${input.command}`,actorId:input.operatorId,payload:{reason:input.reason||null,ttlMs:input.ttlMs||null}});
+    const next=applyOperatorCommand(current,input.command,{authenticatedOperator:true,operatorId:actorRef,reason:input.reason,ttlMs:input.ttlMs});
+    const saved=await saveHandoff(next,{eventType:`operator_${input.command}`,actorId:actorRef,payload:{reason:input.reason||null,ttlMs:input.ttlMs||null}});
     return res.json({ok:true,handoff:saved});
   }catch(error:any){
     if(error?.code==='HIPICO_HANDOFF_CONFLICT')return res.status(409).json({ok:false,retryable:true,error:'handoff_conflict_reload'});

@@ -31,6 +31,7 @@ export default defineConfig({
   },
   projects: [
     { name: 'chromium', use: { ...devices['Desktop Chrome'], ...(chromiumLaunchOptions?{launchOptions:chromiumLaunchOptions}:{}) } },
+    { name: 'firefox', use: { ...devices['Desktop Firefox'] } },
     { name: 'webkit-safari', use: { ...devices['Desktop Safari'] } },
     { name: 'webkit-iphone', use: { ...devices['iPhone 13'] } }
   ],

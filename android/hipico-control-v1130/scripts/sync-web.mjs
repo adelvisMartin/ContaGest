@@ -78,7 +78,7 @@ const sourceFiles = verifyRuntime(source, 'PWA');
 if (!checkOnly) {
   assertInside(target, wrapper, 'www');
   fs.rmSync(target, { recursive: true, force: true });
-  fs.cpSync(source, target, { recursive: true });
+  fs.cpSync(source, target, { recursive: true, force: true });
 }
 if (!fs.existsSync(target)) throw new Error('No existe www. Ejecuta npm run sync:web antes de verificar.');
 const targetFiles = verifyRuntime(target, 'Android www');

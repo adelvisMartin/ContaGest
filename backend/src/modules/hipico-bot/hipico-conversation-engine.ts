@@ -252,7 +252,7 @@ export function decideConversation(
   // captions and filenames must not be parsed as race openings/results/bets.
   const result = hasMedia ? mediaReviewResult(normalizedMessage.mediaKind || 'unknown') : classifier(normalizedMessage.text);
   const seen = asSet(context.seenSourceMessageIds);
-  const humanOwned = asSet(context.humanOwnedParticipantIds).has(canonicalParticipant(participantId));
+  const humanOwned = new Set([...asSet(context.humanOwnedParticipantIds)].map(canonicalParticipant)).has(canonicalParticipant(participantId));
   const duplicate = seen.has(sourceMessageId);
   const outOfOrder = isOutOfOrder(normalizedMessage, context);
   const monetaryOrStateful = result.risk === 'monetary' || ['race_open', 'race_close', 'day_close', 'race_result'].includes(result.intent);

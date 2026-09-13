@@ -1,9 +1,15 @@
-import { hipicoPersistenceConfig, metaOutboundPolicy, safeEqual, strongSecretConfigured } from './_shared.js';
+import { hipicoPersistenceConfig, metaOutboundPolicy, runtimeValue, safeEqual, strongSecretConfigured } from './_shared.js';
 import { bridgeIdentityStatus } from './bridge-identity.js';
 import { metaSenderConfig, metaWebhookConfig } from './meta-runtime.js';
 
-function missing(keys) {
-  return keys.filter((key) => !String(process.env[key] || '').trim());
+function missing(keys, source = process.env) {
+  return keys.filter((key) => !String(source[key] || '').trim());
+}
+
+function missingConfigured(groups, source = process.env) {
+  return groups
+    .filter(([canonical, ...aliases]) => !runtimeValue(source, canonical, ...aliases))
+    .map(([canonical]) => canonical);
 }
 
 function internalDiagnosticsAuthorized(req, source = process.env) {
@@ -19,13 +25,21 @@ export default function handler(req, res) {
 
   const persistenceRequired = ['HIPICO_SUPABASE_URL', 'HIPICO_SUPABASE_SERVICE_ROLE_KEY', 'HIPICO_OWNER_ID'];
   const linkedDeviceRequired = ['HIPICO_GROUP_BRIDGE_TOKEN', 'HIPICO_SOURCE_GROUP_ID', 'HIPICO_LAB_GROUP_ID'];
-  const metaRequired = ['HIPICO_META_ACCESS_TOKEN', 'HIPICO_META_PHONE_NUMBER_ID', 'HIPICO_INTERNAL_API_TOKEN'];
-  const webhookRequired = ['HIPICO_META_VERIFY_TOKEN', 'HIPICO_META_APP_SECRET', 'HIPICO_META_PHONE_NUMBER_ID'];
+  const metaRequired = [
+    ['WHATSAPP_CLOUD_TOKEN', 'HIPICO_META_ACCESS_TOKEN'],
+    ['WHATSAPP_PHONE_NUMBER_ID', 'HIPICO_META_PHONE_NUMBER_ID'],
+    ['HIPICO_INTERNAL_API_TOKEN']
+  ];
+  const webhookRequired = [
+    ['WHATSAPP_VERIFY_TOKEN', 'HIPICO_META_VERIFY_TOKEN'],
+    ['WHATSAPP_APP_SECRET', 'HIPICO_META_APP_SECRET'],
+    ['WHATSAPP_PHONE_NUMBER_ID', 'HIPICO_META_PHONE_NUMBER_ID']
+  ];
 
   const persistenceMissing = missing(persistenceRequired);
   const linkedDeviceMissing = missing(linkedDeviceRequired);
-  const metaMissing = missing(metaRequired);
-  const webhookMissing = missing(webhookRequired);
+  const metaMissing = missingConfigured(metaRequired);
+  const webhookMissing = missingConfigured(webhookRequired);
   const persistence = hipicoPersistenceConfig();
   const identity = bridgeIdentityStatus();
   const bridgeTokenStrong = strongSecretConfigured(process.env.HIPICO_GROUP_BRIDGE_TOKEN);
@@ -85,6 +99,8 @@ export default function handler(req, res) {
         internalApiTokenStrong,
         accessTokenStrong: sender.accessTokenStrong,
         phoneNumberIdValid: sender.phoneNumberIdValid && webhook.phoneNumberIdValid,
+        graphVersionValid: sender.graphVersionValid,
+        graphVersionDefaulted: sender.graphVersionDefaulted,
         webhookSecretsStrong: webhook.verifyTokenStrong && webhook.appSecretStrong,
         missingConfigurationCount: new Set([...metaMissing, ...webhookMissing]).size
       } : {})
@@ -97,5 +113,6 @@ export const __test__ = {
   hipicoPersistenceConfig,
   metaSenderConfig,
   metaWebhookConfig,
-  internalDiagnosticsAuthorized
+  internalDiagnosticsAuthorized,
+  missingConfigured
 };

@@ -130,6 +130,18 @@ export function canonicalRaceContextKey(input: Pick<CanonicalPolicyInput, 'event
   });
 }
 
+export function canonicalPreviewRaceContext(entities: Record<string, unknown> | null | undefined, raceDate?: string) {
+  const legacyRaceContextKey = operationalRaceContextKey(entities);
+  const datedRaceContextKey = raceDate && entities
+    ? operationalRaceContextKey({ ...entities, raceDate })
+    : null;
+  return {
+    raceContextKey: datedRaceContextKey,
+    canonicalRaceContextKey: datedRaceContextKey,
+    raceDateRequired: Boolean(legacyRaceContextKey && !datedRaceContextKey)
+  };
+}
+
 export function canonicalScopeIssue(input: CanonicalPolicyInput) {
   if (input.aggregateKind) {
     if (RACE_ONLY_EVENTS.has(input.eventType) && input.aggregateKind !== 'race') return 'HIPICO_EVENT_AGGREGATE_KIND_MISMATCH';
@@ -239,19 +251,14 @@ router.post('/preview', (req, res) => {
     quoteDepth: input.quoteDepth,
     participantId: input.participantId
   });
-  const legacyRaceContextKey = operationalRaceContextKey(result.entities);
-  const datedRaceContextKey = input.raceDate && result.entities
-    ? operationalRaceContextKey({ ...result.entities, raceDate: input.raceDate })
-    : null;
+  const raceContext = canonicalPreviewRaceContext(result.entities, input.raceDate);
   return res.json({
     ok: true,
     groupKey: input.groupKey,
     classification: result,
     appsec: safePublicAbuseMetadata(assessment),
     effectiveMediaKind,
-    raceContextKey: datedRaceContextKey || legacyRaceContextKey,
-    canonicalRaceContextKey: datedRaceContextKey,
-    raceDateRequired: Boolean(legacyRaceContextKey && !datedRaceContextKey),
+    ...raceContext,
     effectsAllowed: false,
     sourceWrite: false,
     monetaryWrite: false

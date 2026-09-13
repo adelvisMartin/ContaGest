@@ -3,10 +3,15 @@ import helmet from 'helmet';
 import { env, isProd } from './config/env.js';
 import apiRoutes from './modules/index.js';
 import authRoutes from './modules/auth/auth.routes.js';
+import hipicoSystemRoutes from './modules/hipico/hipico-system.routes.js';
+import hipicoDocumentRoutes from './modules/hipico/document.routes.js';
+import hipicoProviderRoutes from './modules/hipico/provider.routes.js';
+import hipicoRaceRoutes from './modules/hipico/race.routes.js';
 import hipicoWebhookRoutes from './modules/hipico-bot/hipico-webhook.routes.js';
 import hipicoBridgeRoutes from './modules/hipico-bot/hipico-bridge.routes.js';
 import hipicoOperatorRoutes from './modules/hipico-bot/hipico-operator.routes.js';
 import hipicoCanonicalRoutes from './modules/hipico-bot/hipico-canonical.routes.js';
+import hipicoLegacyProviderRoutes from './modules/hipico-bot/hipico-provider.routes.js';
 import { requestContext } from './shared/middleware/context.js';
 import { errorHandler, notFound } from './shared/middleware/error.js';
 import {
@@ -44,15 +49,11 @@ export function createApp(options: { readinessCheck?: ReadinessCheck } = {}) {
   app.use(securityResponseHeaders);
   app.use(corsPolicy);
 
-  // Platform probes must remain independent from business authentication and
-  // mutation gates. Readiness performs its own bounded/cached DB check.
+  // Platform probes remain independent from business authentication and mutation
+  // gates. Canonical Control Hipico system probes expose bounded state only.
   registerHealthRoutes(app, { readinessCheck: options.readinessCheck });
-
   app.use(globalRateLimit);
 
-  // CSP telemetry has no mutation side effect and therefore intentionally sits before
-  // the cookie-session CSRF middleware. It accepts only the reporting content types
-  // and has its own small body/traffic limits.
   app.post(
     '/api/v1/security/csp-report',
     cspReportRateLimit,
@@ -69,24 +70,39 @@ export function createApp(options: { readinessCheck?: ReadinessCheck } = {}) {
     }
   }));
 
-  // Control Hípico is an independent product that temporarily shares this API
-  // process. /api/v1/hipico is the canonical domain facade; /hipico-bot remains
-  // the compatibility/integration surface for Meta, WhatsApp Web Bridge and
-  // operator adapters. None of these token-authenticated routes uses browser
-  // cookies, so they live before browser-session CSRF. Mutating canonical calls
-  // still receive the general mutation limiter in addition to auth throttling.
+  app.use('/api/v1/hipico/system', authRateLimit, hipicoSystemRoutes);
+
+  // hipico-bot is the compatibility/integration boundary. The legacy provider
+  // registry stays reachable here rather than competing with the canonical #286
+  // provider API for /api/v1/hipico/providers.
   app.use('/api/v1/hipico-bot', hipicoWebhookRoutes);
-  app.use('/api/v1/hipico-bot', authRateLimit, hipicoBridgeRoutes);
-  app.use('/api/v1/hipico-bot', authRateLimit, hipicoOperatorRoutes);
-  app.use('/api/v1/hipico', authRateLimit, mutationRateLimit, hipicoCanonicalRoutes);
+  app.use(
+    '/api/v1/hipico-bot',
+    authRateLimit,
+    hipicoBridgeRoutes,
+    hipicoOperatorRoutes,
+    hipicoLegacyProviderRoutes
+  );
+
+  // Raw PDF upload/list/reprocess has its own explicit boundary and shares the
+  // same token/scope policy as the remaining canonical Hípico APIs.
+  app.use('/api/v1/hipico/documents', authRateLimit, mutationRateLimit, hipicoDocumentRoutes);
+
+  // One canonical limiter chain avoids counting a request repeatedly while it
+  // traverses sibling routers. mutationRateLimit skips GET/HEAD/OPTIONS.
+  app.use(
+    '/api/v1/hipico',
+    authRateLimit,
+    mutationRateLimit,
+    hipicoProviderRoutes,
+    hipicoRaceRoutes,
+    hipicoCanonicalRoutes
+  );
 
   app.use(csrfProtection);
-
   app.use(enforceProductionSecrets);
   app.use('/api/v1/auth', authRateLimit, authRoutes);
 
-  // High-cost routes receive an additional resource-consumption ceiling. The
-  // general mutation limiter remains active below for state-changing requests.
   app.use(
     ['/api/v1/ai', '/api/v1/exports', '/api/v1/imports', '/api/v1/reports', '/api/v1/payables'],
     expensiveOperationRateLimit

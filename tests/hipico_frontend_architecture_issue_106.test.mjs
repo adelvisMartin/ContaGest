@@ -16,15 +16,20 @@ const representativeChat = [
   '[1:16 p. m., 29/08/2026] Bladi: CONSIGO 1/2 DEL 8 15mil Parx'
 ].join('\n');
 
-test('#106 keeps the legacy whatsapp facade connected to the extracted parser service', () => {
+test('#106 keeps the legacy whatsapp facade connected to the extracted parser service while adding safe race context', () => {
   const fromFacade = parseWhatsAppChat(representativeChat);
   const fromService = parseFromService(representativeChat);
-  assert.deepEqual(fromFacade, fromService);
+  assert.equal(fromFacade.stats.messages, fromService.stats.messages);
+  assert.equal(fromFacade.stats.offers, fromService.stats.offers);
+  assert.equal(fromFacade.stats.matches, fromService.stats.matches);
   assert.equal(fromFacade.stats.messages, 2);
   assert.equal(fromFacade.stats.offers, 2);
   assert.equal(fromFacade.stats.matches, 1);
   assert.equal(fromFacade.matches[0].amount, 15_000);
   assert.equal(fromFacade.matches[0].track, 'Parx Racing');
+  assert.equal(fromFacade.sourceFormat, 'whatsapp-export');
+  assert.equal(fromFacade.matches[0].requiresApproval, true);
+  assert.match(fromFacade.matches[0].reviewReasons.join(' '), /contexto de carrera incompleto/i);
 });
 
 test('#106 parser adapter injects defaults without browser globals', () => {
@@ -36,6 +41,7 @@ test('#106 parser adapter injects defaults without browser globals', () => {
   assert.equal(result.matches.length, 1);
   assert.equal(result.matches[0].track, 'Will Rogers Downs');
   assert.equal(result.matches[0].amount, 20_000);
+  assert.equal(result.matches[0].requiresApproval, true);
 });
 
 test('#106 keeps matching and sender public contracts stable', () => {
@@ -47,11 +53,13 @@ test('#106 keeps matching and sender public contracts stable', () => {
   assert.equal(typeof matchChatOffers, 'function');
 });
 
-test('#106 parser remains pure/testable and facade remains intentionally small', async () => {
+test('#106 parser remains pure/testable and facade delegates parsing instead of duplicating core parser logic', async () => {
   const { readFile } = await import('node:fs/promises');
   const parserSource = await readFile(new URL('../frontend/public/hipico-control/assets/js/whatsapp/parser.js', import.meta.url), 'utf8');
   const facadeSource = await readFile(new URL('../frontend/public/hipico-control/assets/js/whatsapp.js', import.meta.url), 'utf8');
   assert.doesNotMatch(parserSource, /\bdocument\b|\bwindow\b|\blocalStorage\b|\bindexedDB\b/);
   assert.match(facadeSource, /from '\.\/whatsapp\/parser\.js'/);
-  assert.ok(facadeSource.split(/\r?\n/).length < 80, 'la fachada no debe volver a concentrar el parser');
+  assert.match(facadeSource, /parseLegacyWhatsAppChat/);
+  assert.match(facadeSource, /enrichOperationalRaceContext/);
+  assert.ok(facadeSource.split(/\r?\n/).length < 180, 'la fachada debe seguir acotada a adaptación/enriquecimiento');
 });

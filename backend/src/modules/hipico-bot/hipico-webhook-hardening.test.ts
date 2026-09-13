@@ -60,12 +60,13 @@ test('mutated provider-message replay is rejected but acknowledged to avoid Meta
 });
 
 test('malformed item in a signed batch cannot make valid sibling messages disappear',()=>{
-  const extraction=source.indexOf('const messages=extractMessages(req.body)');
+  const extraction=source.indexOf('const extractedMessages=extractMessages(req.body)');
+  const timestampPartition=source.indexOf('const messages=extractedMessages.filter(webhookTimestampValid)');
   const invalidCount=source.indexOf('const invalidMessages=Math.max(0,expectedRawMessages-messages.length)');
   const persistence=source.indexOf('HipicoBotStore.dbReady(true)');
   const processing=source.indexOf('const result=await processMessagesBounded(messages)');
   const partialAck=source.indexOf("error:'invalid_message_identity_partial'");
-  assert.ok(extraction>=0&&invalidCount>extraction&&persistence>invalidCount&&processing>persistence&&partialAck>processing);
+  assert.ok(extraction>=0&&timestampPartition>extraction&&invalidCount>timestampPartition&&persistence>invalidCount&&processing>persistence&&partialAck>processing);
   assert.match(source,/accepted:true,\n\s*partial:true,\n\s*retryable:false/);
   assert.match(source,/received:expectedRawMessages/);
   assert.match(source,/invalidMessages/);
