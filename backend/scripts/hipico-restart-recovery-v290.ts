@@ -1,16 +1,29 @@
 import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { prisma } from '../src/database/prisma.js';
 import { persistHipicoDomainEvent } from '../src/modules/hipico-bot/hipico-domain-event.store.js';
 import { readHipicoDomainAggregate } from '../src/modules/hipico-bot/hipico-domain-query.store.js';
 
+const SHA40 = /^[0-9a-f]{40}$/i;
 const phase = String(process.argv[2] || '').trim();
 const OWNER_ID = String(process.env.HIPICO_E2E_OWNER_ID || '11111111-1111-4111-8111-111111111111');
 const DATABASE_URL = String(process.env.HIPICO_E2E_DATABASE_URL || process.env.DATABASE_URL || '').trim();
 const artifact = path.resolve(process.env.HIPICO_RESTART_STATE_FILE || 'artifacts/qa/hipico-v290/restart-state.json');
 
+function gitHead() {
+  try {
+    return execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8', windowsHide: true }).trim();
+  } catch {
+    return '';
+  }
+}
+
+const candidateSha = String(process.env.HIPICO_CANDIDATE_SHA || process.env.GITHUB_SHA || gitHead()).trim().toLowerCase();
+
 function requireIsolatedDatabase() {
+  assert.match(candidateSha, SHA40, 'restart recovery requires exact candidate SHA');
   assert.ok(DATABASE_URL, 'HIPICO_E2E_DATABASE_URL is required');
   const url = new URL(DATABASE_URL);
   assert.ok(
@@ -79,6 +92,7 @@ try {
     await fs.mkdir(path.dirname(artifact), { recursive: true });
     await fs.writeFile(artifact, `${JSON.stringify({
       schema: 'hipico-restart.v290-current',
+      sha: candidateSha,
       ownerId: OWNER_ID,
       groupKey,
       aggregateKey,
@@ -86,9 +100,10 @@ try {
       timestamp,
       preparedAt: new Date().toISOString()
     }, null, 2)}\n`, 'utf8');
-    console.log(`[hipico-v290] restart prepare persisted ${groupKey}/${aggregateKey}`);
+    console.log(`[hipico-v290] restart prepare persisted ${groupKey}/${aggregateKey} sha=${candidateSha}`);
   } else if (phase === 'verify') {
     const state = JSON.parse(await fs.readFile(artifact, 'utf8'));
+    assert.equal(state.sha, candidateSha, 'restart evidence SHA drift');
     assert.equal(state.ownerId, OWNER_ID);
     const before = await readHipicoDomainAggregate({
       ownerId: OWNER_ID,
@@ -138,7 +153,7 @@ try {
       status: 'PASS',
       finalState: 'CLOSED'
     }, null, 2)}\n`, 'utf8');
-    console.log(`[hipico-v290] restart verify PASS ${state.groupKey}/${state.aggregateKey}`);
+    console.log(`[hipico-v290] restart verify PASS ${state.groupKey}/${state.aggregateKey} sha=${candidateSha}`);
   } else {
     throw new Error('Usage: tsx backend/scripts/hipico-restart-recovery-v290.ts prepare|verify');
   }
