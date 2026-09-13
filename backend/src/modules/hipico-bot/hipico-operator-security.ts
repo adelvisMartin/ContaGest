@@ -35,3 +35,15 @@ export function ownerApprovalTokenValid(value: string | undefined, env: NodeJS.P
   if (operator && safeTokenEqual(expected, operator)) return false;
   return safeTokenEqual(expected, value);
 }
+
+export function operatorActorRef(env: NodeJS.ProcessEnv = process.env) {
+  const token = configuredOperatorToken(env);
+  if (!hipicoRuntimeSecretConfigured(token, MIN_OPERATOR_TOKEN_LENGTH)) return null;
+  const digest = crypto
+    .createHash('sha256')
+    .update('control-hipico:operator-actor:v1\0')
+    .update(token)
+    .digest('hex')
+    .slice(0, 24);
+  return `operator-token:${digest}`;
+}

@@ -2,7 +2,9 @@ import crypto from 'node:crypto';
 
 const DEFAULT_FETCH_TIMEOUT_MS = 10000;
 const MAX_FETCH_TIMEOUT_MS = 60000;
+const MAX_RETRY_AFTER_MS = 24 * 60 * 60 * 1000;
 const SHA40 = /^[a-f0-9]{40}$/i;
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 export const MIN_HIPICO_INTERNAL_SECRET_LENGTH = 32;
 export const PUBLIC_SECRET_PLACEHOLDER_PATTERN = /(?:REEMPLAZA|REPLACE|CHANGE[_-]?ME|CHANGEME|PLACEHOLDER|YOUR[_-]?(?:SECRET|TOKEN|KEY)|TU[_-]?(?:SECRETO|TOKEN|CLAVE)|EXAMPLE[_-]?(?:SECRET|TOKEN|KEY))/i;
 
@@ -22,6 +24,32 @@ export function serverSecret(name, minLength = MIN_HIPICO_INTERNAL_SECRET_LENGTH
   const value = String(env(name) || '').trim();
   if (!strongSecretConfigured(value, minLength)) throw new Error(`Weak server configuration: ${name}`);
   return value;
+}
+
+export function isUuid(value) {
+  return UUID.test(String(value || '').trim());
+}
+
+function validPersistenceUrl(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return false;
+  try {
+    const parsed = new URL(raw);
+    const loopback = ['localhost', '127.0.0.1', '::1'].includes(parsed.hostname);
+    if (parsed.username || parsed.password || parsed.hash || parsed.search) return false;
+    return parsed.protocol === 'https:' || (parsed.protocol === 'http:' && loopback);
+  } catch {
+    return false;
+  }
+}
+
+export function hipicoPersistenceConfig(source = process.env) {
+  const url = String(source.HIPICO_SUPABASE_URL || '').trim().replace(/\/$/, '');
+  const ownerId = String(source.HIPICO_OWNER_ID || '').trim();
+  const urlValid = validPersistenceUrl(url);
+  const serviceRoleStrong = strongSecretConfigured(source.HIPICO_SUPABASE_SERVICE_ROLE_KEY);
+  const ownerIdValid = isUuid(ownerId);
+  return { url, ownerId, urlValid, serviceRoleStrong, ownerIdValid, ready: urlValid && serviceRoleStrong && ownerIdValid };
 }
 
 export function safeEqual(left, right) {
@@ -96,6 +124,21 @@ export function safeTimeoutMs(value, fallback = DEFAULT_FETCH_TIMEOUT_MS) {
   return Math.min(Math.floor(number), MAX_FETCH_TIMEOUT_MS);
 }
 
+export function retryAfterMs(value, nowMs = Date.now(), maxMs = MAX_RETRY_AFTER_MS) {
+  const capValue = Number(maxMs);
+  const cap = Number.isFinite(capValue) && capValue > 0 ? Math.floor(capValue) : MAX_RETRY_AFTER_MS;
+  const raw = String(value ?? '').trim();
+  if (!raw) return 0;
+  if (/^\d+(?:\.\d+)?$/.test(raw)) {
+    const milliseconds = Math.ceil(Number(raw) * 1000);
+    return Number.isFinite(milliseconds) && milliseconds > 0 ? Math.min(milliseconds, cap) : 0;
+  }
+  const parsed = Date.parse(raw);
+  const now = Number(nowMs);
+  if (!Number.isFinite(parsed) || !Number.isFinite(now)) return 0;
+  return Math.min(Math.max(0, parsed - now), cap);
+}
+
 export async function fetchWithTimeout(url, init = {}, timeoutMs = DEFAULT_FETCH_TIMEOUT_MS) {
   const controller = new AbortController();
   const callerSignal = init.signal;
@@ -114,7 +157,11 @@ export async function fetchWithTimeout(url, init = {}, timeoutMs = DEFAULT_FETCH
 }
 
 export async function supabase(path, init = {}) {
-  const base = env('HIPICO_SUPABASE_URL').replace(/\/$/, '');
+  const runtime = hipicoPersistenceConfig();
+  if (!runtime.urlValid) throw new Error('Invalid server configuration: HIPICO_SUPABASE_URL');
+  if (!runtime.serviceRoleStrong) throw new Error('Weak server configuration: HIPICO_SUPABASE_SERVICE_ROLE_KEY');
+  if (!runtime.ownerIdValid) throw new Error('Invalid server configuration: HIPICO_OWNER_ID');
+  const base = runtime.url;
   const serviceKey = serverSecret('HIPICO_SUPABASE_SERVICE_ROLE_KEY');
   const response = await fetchWithTimeout(`${base}/rest/v1/${path}`, {
     ...init,
@@ -148,7 +195,17 @@ export function extractMetaMessages(payload) {
       for (const message of value?.messages || []) {
         const timestamp = metaTimestamp(message?.timestamp);
         const text = message?.text?.body || message?.button?.text || message?.interactive?.button_reply?.title || message?.interactive?.list_reply?.title || message?.document?.caption || message?.document?.filename || message?.image?.caption || message?.video?.caption || '';
-        rows.push({ channelKey, externalMessageId: String(message?.id || ''), senderId: String(message?.from || ''), senderLabel: contactNames.get(String(message?.from || '')) || '', timestamp, type: String(message?.type || 'unknown').trim().toLowerCase() || 'unknown', text: String(text || '').slice(0, 4000), quotedExternalMessageId: message?.context?.id ? String(message.context.id) : null, raw: message });
+        rows.push({
+          channelKey,
+          externalMessageId: String(message?.id || ''),
+          senderId: String(message?.from || ''),
+          senderLabel: contactNames.get(String(message?.from || '')) || '',
+          timestamp,
+          type: String(message?.type || 'unknown').trim().toLowerCase() || 'unknown',
+          text: String(text || '').slice(0, 4000),
+          quotedExternalMessageId: message?.context?.id ? String(message.context.id) : null,
+          raw: message
+        });
       }
     }
   }

@@ -19,6 +19,9 @@ const APP_SHELL_URLS = new Set(APP_SHELL.map(scoped));
 function isSensitive(url) { return /\/(?:api|auth)(?:\/|$)|session|token|license|webhook|rpc|rest\/v1/i.test(url.pathname); }
 function isRuntimeMetadata(url) { return url.pathname.endsWith('/runtime-config.js') || url.pathname.endsWith('/build-info.json'); }
 function isAllowedStatic(url) { return APP_SHELL_URLS.has(url.toString()); }
+function offlineNavigationShell(url) {
+  return url.pathname.endsWith('/recovery.html') ? './recovery.html' : './index.html';
+}
 
 self.addEventListener('install', (event) => {
   event.waitUntil((async () => {
@@ -51,7 +54,9 @@ self.addEventListener('fetch', (event) => {
       try {
         return await fetch(request, { cache: 'no-store' });
       } catch (_) {
-        return (await caches.match(scoped('./index.html'))) || (await caches.match(scoped('./recovery.html'))) || Response.error();
+        const cache = await caches.open(SHELL_CACHE);
+        const preferred = offlineNavigationShell(url);
+        return (await cache.match(scoped(preferred))) || (await cache.match(scoped('./recovery.html'))) || Response.error();
       }
     })());
     return;
@@ -61,13 +66,11 @@ self.addEventListener('fetch', (event) => {
     return;
   }
   event.respondWith((async () => {
-    const cached = await caches.match(request);
+    const cache = await caches.open(SHELL_CACHE);
+    const cached = await cache.match(request);
     if (cached) return cached;
     const response = await fetch(request, { cache: 'no-store' });
-    if (response.ok) {
-      const cache = await caches.open(SHELL_CACHE);
-      await cache.put(request, response.clone());
-    }
+    if (response.ok) await cache.put(request, response.clone());
     return response;
   })());
 });

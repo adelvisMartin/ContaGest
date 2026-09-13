@@ -5,7 +5,11 @@ export const config = { api: { bodyParser: false } };
 
 function queryString(query = {}) {
   const params = new URLSearchParams();
-  for (const [key, value] of Object.entries(query || {})) for (const item of Array.isArray(value) ? value : [value]) if (item !== undefined && item !== null) params.append(key, String(item));
+  for (const [key, value] of Object.entries(query || {})) {
+    for (const item of Array.isArray(value) ? value : [value]) {
+      if (item !== undefined && item !== null) params.append(key, String(item));
+    }
+  }
   const encoded = params.toString();
   return encoded ? `?${encoded}` : '';
 }
