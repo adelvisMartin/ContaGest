@@ -33,14 +33,20 @@ void test('system status exposes no secrets and never invents integration readin
   assert.equal(status.components.channel.state, 'degraded');
   assert.equal(status.components.providers.state, 'not_configured');
   assert.equal(status.components.providers.financialAuthority, false);
-  assert.equal(status.components.documentEngine.state, 'not_configured');
-  assert.equal(status.components.agent.state, 'not_configured');
+  assert.deepEqual(status.components.documentEngine, {
+    state: 'degraded',
+    reason: 'DOCUMENT_ENGINE_INSTALLED_NOT_PROBED'
+  });
+  assert.deepEqual(status.components.agent, {
+    state: 'degraded',
+    reason: 'AGENT_ENGINE_INSTALLED_NOT_PROBED'
+  });
   assert.equal(JSON.stringify(status).includes('do-not-expose'), false);
   assert.equal(JSON.stringify(status).includes('x'.repeat(40)), false);
   assert.equal(hipicoReadinessFromStatus(status).ready, true);
 });
 
-void test('database failure makes canonical readiness fail closed', async () => {
+void test('database failure makes canonical readiness fail closed while installed engines never turn core green', async () => {
   const status = await buildHipicoSystemStatus({
     source: {},
     readinessCheck: async () => ({ ready: false, configuration: 'ok', database: 'failed' }),
@@ -51,5 +57,7 @@ void test('database failure makes canonical readiness fail closed', async () => 
   assert.equal(status.components.database.state, 'unavailable');
   assert.equal(status.components.bridge.state, 'not_configured');
   assert.equal(status.components.channel.state, 'not_configured');
+  assert.equal(status.components.documentEngine.state, 'degraded');
+  assert.equal(status.components.agent.state, 'degraded');
   assert.equal(hipicoReadinessFromStatus(status).ready, false);
 });
