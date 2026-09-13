@@ -61,6 +61,50 @@ create trigger hipico_automation_transition_events_append_only
 before update or delete on public.hipico_automation_transition_events
 for each row execute function public.hipico_reject_automation_transition_mutation();
 
+create or replace function public.hipico_guard_agent_evaluation_mutation()
+returns trigger
+language plpgsql
+as $$
+begin
+  if tg_op = 'DELETE' then
+    raise exception 'HIPICO_AGENT_EVALUATION_IMMUTABLE' using errcode = '55000';
+  end if;
+
+  if old.actual_intent is null
+     and old.reviewed_at is null
+     and old.reviewed_by is null
+     and new.actual_intent is not null
+     and new.reviewed_at is not null
+     and new.reviewed_by like 'operator-token:%'
+     and new.matched is not null
+     and new.matched = (old.predicted_intent = new.actual_intent)
+     and new.reviewed_at >= old.created_at
+     and new.id = old.id
+     and new.owner_id = old.owner_id
+     and new.group_key = old.group_key
+     and new.group_id = old.group_id
+     and new.message_hash = old.message_hash
+     and new.expected_intent is not distinct from old.expected_intent
+     and new.predicted_intent = old.predicted_intent
+     and new.confidence = old.confidence
+     and new.risk = old.risk
+     and new.tool is not distinct from old.tool
+     and new.can_act = old.can_act
+     and new.model_version is not distinct from old.model_version
+     and new.evidence = old.evidence
+     and new.created_at = old.created_at then
+    return new;
+  end if;
+
+  raise exception 'HIPICO_AGENT_EVALUATION_IMMUTABLE' using errcode = '55000';
+end;
+$$;
+
+drop trigger if exists hipico_agent_evaluations_review_once on public.hipico_agent_evaluations;
+create trigger hipico_agent_evaluations_review_once
+before update or delete on public.hipico_agent_evaluations
+for each row execute function public.hipico_guard_agent_evaluation_mutation();
+
 alter table public.hipico_group_automation enable row level security;
 alter table public.hipico_agent_evaluations enable row level security;
 alter table public.hipico_automation_transition_events enable row level security;
@@ -74,5 +118,5 @@ drop policy if exists hipico_automation_transition_events_select_own on public.h
 create policy hipico_automation_transition_events_select_own on public.hipico_automation_transition_events for select to authenticated using(owner_id = (select auth.uid()));
 
 comment on table public.hipico_group_automation is 'Per-owner/group promotion state. Upward promotion is controlled by server-side measured gates.';
-comment on table public.hipico_agent_evaluations is 'Shadow/promotion evidence only. No direct SQL, shell, admin, settlement or ledger tools are available to the agent.';
+comment on table public.hipico_agent_evaluations is 'Shadow/promotion evidence only. Exactly one controlled operator review transition is allowed; reviewed evidence is immutable.';
 comment on table public.hipico_automation_transition_events is 'Append-only idempotent audit trail for automation mode transitions, including rejected and no-op attempts.';
