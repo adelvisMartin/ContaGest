@@ -3,6 +3,7 @@ import helmet from 'helmet';
 import { env, isProd } from './config/env.js';
 import apiRoutes from './modules/index.js';
 import authRoutes from './modules/auth/auth.routes.js';
+import hipicoSystemRoutes from './modules/hipico/hipico-system.routes.js';
 import hipicoWebhookRoutes from './modules/hipico-bot/hipico-webhook.routes.js';
 import hipicoBridgeRoutes from './modules/hipico-bot/hipico-bridge.routes.js';
 import hipicoOperatorRoutes from './modules/hipico-bot/hipico-operator.routes.js';
@@ -69,6 +70,10 @@ export function createApp(options: { readinessCheck?: ReadinessCheck } = {}) {
       }
     }
   }));
+
+  // Canonical system surface. It intentionally exposes bounded readiness and
+  // version metadata only; credentials/config values never leave the process.
+  app.use('/api/v1/hipico/system', authRateLimit, hipicoSystemRoutes);
 
   // Control Hípico is an independent product that temporarily shares this API
   // process. /api/v1/hipico is the canonical domain facade; /hipico-bot remains
