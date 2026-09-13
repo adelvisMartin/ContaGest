@@ -10,8 +10,9 @@ async function atomicJson(file,value){const tmp=`${file}.${process.pid}.${Date.n
 async function atomicPdf(file,bytes){const tmp=`${file}.${process.pid}.${Date.now()}.tmp`;await fs.writeFile(tmp,bytes,{mode:0o600});await fs.rename(tmp,file);}
 function backoff(attempt,base,max){return Math.min(max,base*Math.max(1,2**Math.max(0,attempt-1)));}
 
-export function createDocumentSpool({rootDir,baseBackoffMs=5000,maxBackoffMs=15*60*1000}={}){
+export function createDocumentSpool({rootDir,baseBackoffMs=5000,maxBackoffMs=15*60*1000,maxPendingDocuments=50}={}){
   if(!rootDir)throw new Error('document spool rootDir is required');
+  const maxPending=Math.min(200,Math.max(1,Number.isFinite(Number(maxPendingDocuments))?Math.trunc(Number(maxPendingDocuments)):50));
   const pending=path.join(rootDir,'pending');const quarantine=path.join(rootDir,'quarantine');
   const init=Promise.all([fs.mkdir(pending,{recursive:true,mode:0o700}),fs.mkdir(quarantine,{recursive:true,mode:0o700})]);
   const paths=(key,dir=pending)=>({meta:path.join(dir,`${key}.json`),pdf:path.join(dir,`${key}.pdf`)});
@@ -34,6 +35,8 @@ export function createDocumentSpool({rootDir,baseBackoffMs=5000,maxBackoffMs=15*
       if(!externalMessageId||externalMessageId.length>300||!filename)throw Object.assign(new Error('HIPICO_BRIDGE_DOCUMENT_SPOOL_METADATA_INVALID'),{code:'HIPICO_BRIDGE_DOCUMENT_SPOOL_METADATA_INVALID'});
       const key=keyFor(externalMessageId),target=paths(key);
       if(await exists(target.meta))return{duplicate:true,key,pdfPath:target.pdf,metaPath:target.meta};
+      const pendingCount=(await fs.readdir(pending)).filter(name=>name.endsWith('.json')).length;
+      if(pendingCount>=maxPending)throw Object.assign(new Error('HIPICO_BRIDGE_DOCUMENT_SPOOL_FULL'),{code:'HIPICO_BRIDGE_DOCUMENT_SPOOL_FULL',retryable:true});
       const record={version:1,key,state:'pending',externalMessageId,filename,event:meta.event,attempts:0,nextAttemptAt:0,createdAt:nowIso(),updatedAt:nowIso(),lastError:null};
       await atomicPdf(target.pdf,pdf);
       try{await atomicJson(target.meta,record);}catch(error){await fs.rm(target.pdf,{force:true}).catch(()=>{});throw error;}
@@ -58,7 +61,7 @@ export function createDocumentSpool({rootDir,baseBackoffMs=5000,maxBackoffMs=15*
       return{delivered,retried,quarantined};
     },
     async snapshot(){
-      await init;const[pendingNames,quarantineNames]=await Promise.all([fs.readdir(pending),fs.readdir(quarantine)]);return{pending:pendingNames.filter(name=>name.endsWith('.json')).length,quarantined:quarantineNames.filter(name=>name.endsWith('.json')).length};
+      await init;const[pendingNames,quarantineNames]=await Promise.all([fs.readdir(pending),fs.readdir(quarantine)]);return{pending:pendingNames.filter(name=>name.endsWith('.json')).length,quarantined:quarantineNames.filter(name=>name.endsWith('.json')).length,maxPendingDocuments:maxPending};
     }
   };
 }
