@@ -9,6 +9,7 @@ on:
       - backend/package.json
       - backend/src/modules/exports/xlsx-writer.ts
       - backend/src/modules/exports/xlsx-writer.test.ts
+      - frontend/scripts/stage-backend.mjs
       - tests/toolchain_dependency_cleanup_issue_26.test.mjs
       - .github/workflows/toolchain-deps-v26.yml
   pull_request:
@@ -19,6 +20,7 @@ on:
       - backend/package.json
       - backend/src/modules/exports/xlsx-writer.ts
       - backend/src/modules/exports/xlsx-writer.test.ts
+      - frontend/scripts/stage-backend.mjs
       - tests/toolchain_dependency_cleanup_issue_26.test.mjs
       - .github/workflows/toolchain-deps-v26.yml
   workflow_dispatch:
@@ -75,3 +77,6 @@ jobs:
 
       - name: Internal XLSX writer smoke
         run: npm --workspace backend run test:xlsx
+
+      - name: Serverless staging smoke
+        run: node frontend/scripts/stage-backend.mjs
