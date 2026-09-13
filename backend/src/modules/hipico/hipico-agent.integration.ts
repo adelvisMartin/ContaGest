@@ -90,6 +90,25 @@ void test('automation transition replay has zero additional effects and idempote
   assert.equal((await store.transitionEvents(OWNER, GROUP_KEY_B, GROUP_ID_B)).length, 1);
 });
 
+void test('automation transition audit is append-only even for direct database writes', async () => {
+  const store = new AutomationStore();
+  const events = await store.transitionEvents(OWNER, GROUP_KEY_B, GROUP_ID_B);
+  const eventId = String(events[0]?.id || '');
+  assert.match(eventId, /^[0-9a-f-]{36}$/i);
+
+  await assert.rejects(
+    admin.query('update public.hipico_automation_transition_events set reason = $1 where id = $2::uuid', ['tamper-attempt', eventId]),
+    /HIPICO_AUTOMATION_TRANSITION_APPEND_ONLY/
+  );
+  await assert.rejects(
+    admin.query('delete from public.hipico_automation_transition_events where id = $1::uuid', [eventId]),
+    /HIPICO_AUTOMATION_TRANSITION_APPEND_ONLY/
+  );
+
+  const persisted = await store.transitionEvents(OWNER, GROUP_KEY_B, GROUP_ID_B);
+  assert.ok(persisted.some((event: any) => event.id === eventId));
+});
+
 void test('rejected promotion is audited without changing mode and group scopes never cross', async () => {
   const store = new AutomationStore();
   const rejected = await store.setMode({ ownerId: OWNER, groupKey: GROUP_KEY_B, groupId: GROUP_ID_B, target: 'ASSISTED', actorRef: 'operator-token:e2e-agent', ownerApproved: false, idempotencyKey: 'agent-assisted-0001' });
