@@ -74,7 +74,7 @@ test('ephemeral DB lifecycle refuses non-local and non-ephemeral database target
   assert.match(lifecycle, /DROP DATABASE IF EXISTS/);
 });
 
-test('restart recovery persists state in one process and verifies/replays it in a fresh process', () => {
+test('restart recovery persists state in one process and verifies/replays it in a fresh process with SHA-bound evidence', () => {
   assert.equal(exists('backend/scripts/hipico-restart-recovery-v290.ts'), true, 'restart recovery script missing');
   const restart = read('backend/scripts/hipico-restart-recovery-v290.ts');
   assert.match(restart, /phase === 'prepare'/);
@@ -82,6 +82,8 @@ test('restart recovery persists state in one process and verifies/replays it in 
   assert.match(restart, /replay\.duplicate, true/);
   assert.match(restart, /stateVersion, 2/);
   assert.match(restart, /restart recovery refuses non-local PostgreSQL/);
+  assert.match(restart, /candidateSha/);
+  assert.match(restart, /sha:\s*candidateSha/);
 });
 
 test('Hípico data workflow executes full schema, restart recovery and focused data integration, then always cleans up', () => {
