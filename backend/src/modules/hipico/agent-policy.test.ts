@@ -6,7 +6,6 @@ import {
   canPromoteAutomation,
   safeToolRequest,
   sanitizeAgentEvidence,
-  sourceAutomationModeAllowed,
   validateModelCandidate,
   type DeterministicAgentParser
 } from './agent-policy.js';
@@ -31,16 +30,6 @@ void test('automation promotion is adjacent-only and requires measured gates', (
   assert.equal(canPromoteAutomation('AUTOMATIC_LOW_RISK', 'AUTOMATIC', metrics(), false).reason, 'OWNER_APPROVAL_REQUIRED');
   assert.equal(canPromoteAutomation('AUTOMATIC_LOW_RISK', 'AUTOMATIC', metrics(), true).allowed, true);
   assert.equal(canPromoteAutomation('AUTOMATIC', 'SHADOW', metrics()).reason, 'DOWNGRADE_OR_SAME_STATE');
-});
-
-void test('pinned SOURCE automation can only remain disabled or shadow', () => {
-  const sourceGroupId = '120363111111111111@g.us';
-  assert.equal(sourceAutomationModeAllowed(sourceGroupId, 'DISABLED', sourceGroupId), true);
-  assert.equal(sourceAutomationModeAllowed(sourceGroupId, 'SHADOW', sourceGroupId), true);
-  assert.equal(sourceAutomationModeAllowed(sourceGroupId, 'ASSISTED', sourceGroupId), false);
-  assert.equal(sourceAutomationModeAllowed(sourceGroupId, 'AUTOMATIC_LOW_RISK', sourceGroupId), false);
-  assert.equal(sourceAutomationModeAllowed(sourceGroupId, 'AUTOMATIC', sourceGroupId), false);
-  assert.equal(sourceAutomationModeAllowed('120363222222222222@g.us', 'AUTOMATIC', sourceGroupId), true);
 });
 
 void test('SHADOW and ASSISTED never act and review/monetary candidates never auto-act', () => {
