@@ -1,6 +1,5 @@
 -- Control Hípico v18 — hostile PDF/document evidence with provenance (#285/#290)
--- Additive/replay-safe. Raw PDF identity and provenance are backend-only and
--- immutable; corrections create revisions instead of rewriting source evidence.
+-- Additive only. Raw PDF bytes remain backend-only and immutable; corrections create new revisions.
 
 create extension if not exists pgcrypto;
 
@@ -19,7 +18,7 @@ create table if not exists public.hipico_documents (
   )),
   confidence numeric(5,4) not null default 0 check (confidence between 0 and 1),
   authority text not null default 'unknown' check (authority in ('official','trusted','operator','group_evidence','unknown')),
-  parser_version text check (parser_version is null or length(parser_version) <= 120),
+  parser_version text,
   status text not null default 'uploaded' check (status in ('uploaded','extracted','review','approved','failed')),
   extraction jsonb not null default '{}'::jsonb check (jsonb_typeof(extraction) = 'object'),
   supersedes_id uuid references public.hipico_documents(id) on delete restrict,
@@ -31,8 +30,7 @@ create table if not exists public.hipico_documents (
   unique(id, owner_id, group_key),
   check (supersedes_id is null or supersedes_id <> id),
   check (classification <> 'OFFICIAL_RESULT' or authority = 'official'),
-  check ((approved_at is null and approved_by is null)
-    or (approved_at is not null and length(btrim(coalesce(approved_by,''))) between 3 and 220))
+  check ((approved_at is null and approved_by is null) or (approved_at is not null and length(btrim(coalesce(approved_by,''))) between 3 and 220))
 );
 
 create index if not exists hipico_documents_owner_group_time_idx
@@ -65,30 +63,6 @@ create unique index if not exists hipico_document_sources_message_unique
   where source_message_id is not null;
 create index if not exists hipico_document_sources_document_idx
   on public.hipico_document_sources(owner_id, group_key, document_id, received_at);
-
--- Append-only event history used by PostgresDocumentStore for extraction/review
--- provenance. It intentionally excludes raw PDF bytes.
-create table if not exists public.hipico_document_events (
-  id uuid primary key default gen_random_uuid(),
-  document_id uuid not null,
-  owner_id uuid not null,
-  group_key text not null check (length(group_key) between 3 and 120),
-  event_type text not null check (event_type in ('UPLOADED','EXTRACTION','APPROVED')),
-  classification text not null check (classification in (
-    'RACE_PROGRAM','ENTRIES','SCRATCHES','ARRIVAL','RESULT','OFFICIAL_RESULT','ANNOUNCEMENT','UNKNOWN'
-  )),
-  confidence numeric(5,4) not null check (confidence between 0 and 1),
-  parser_version text check (parser_version is null or length(parser_version) <= 120),
-  status text not null check (status in ('uploaded','extracted','review','approved','failed')),
-  extraction jsonb not null default '{}'::jsonb check (jsonb_typeof(extraction) = 'object'),
-  actor_id text check (actor_id is null or length(btrim(actor_id)) between 1 and 220),
-  created_at timestamptz not null default now(),
-  foreign key(document_id, owner_id, group_key)
-    references public.hipico_documents(id, owner_id, group_key) on delete cascade
-);
-
-create index if not exists hipico_document_events_document_time_idx
-  on public.hipico_document_events(owner_id, group_key, document_id, created_at, id);
 
 create or replace function public.hipico_documents_guard_immutable()
 returns trigger
@@ -129,33 +103,16 @@ $$;
 
 drop trigger if exists hipico_document_sources_immutable on public.hipico_document_sources;
 create trigger hipico_document_sources_immutable
-before update or delete on public.hipico_document_sources
+before update on public.hipico_document_sources
 for each row execute function public.hipico_document_sources_guard_immutable();
-
-create or replace function public.hipico_document_events_guard_immutable()
-returns trigger
-language plpgsql
-as $$
-begin
-  raise exception 'HIPICO_DOCUMENT_EVENT_IMMUTABLE';
-end;
-$$;
-
-drop trigger if exists hipico_document_events_immutable on public.hipico_document_events;
-create trigger hipico_document_events_immutable
-before update or delete on public.hipico_document_events
-for each row execute function public.hipico_document_events_guard_immutable();
 
 alter table public.hipico_documents enable row level security;
 alter table public.hipico_document_sources enable row level security;
-alter table public.hipico_document_events enable row level security;
 
 revoke all on public.hipico_documents from anon;
 revoke all on public.hipico_document_sources from anon;
-revoke all on public.hipico_document_events from anon;
 revoke all on public.hipico_documents from authenticated;
 revoke all on public.hipico_document_sources from authenticated;
-revoke all on public.hipico_document_events from authenticated;
 
 drop policy if exists hipico_documents_select_own on public.hipico_documents;
 create policy hipico_documents_select_own on public.hipico_documents
@@ -165,15 +122,6 @@ drop policy if exists hipico_document_sources_select_own on public.hipico_docume
 create policy hipico_document_sources_select_own on public.hipico_document_sources
   for select to authenticated using (owner_id = (select auth.uid()));
 
-drop policy if exists hipico_document_events_select_own on public.hipico_document_events;
-create policy hipico_document_events_select_own on public.hipico_document_events
-  for select to authenticated using (owner_id = (select auth.uid()));
-
-comment on table public.hipico_documents is
-  'Control Hípico hostile-document evidence. Raw PDF identity/provenance is immutable; corrections are new revisions via supersedes_id.';
-comment on column public.hipico_documents.raw_pdf is
-  'Hostile evidence bytes. Backend-only; never execute or return through public read models.';
-comment on column public.hipico_documents.authority is
-  'Authority comes from configured provenance, never from document wording.';
-comment on table public.hipico_document_events is
-  'Append-only derived-state audit trail for document extraction/review; contains no raw PDF bytes.';
+comment on table public.hipico_documents is 'Control Hípico hostile-document evidence. Raw PDF identity/provenance is immutable; corrections are new revisions via supersedes_id.';
+comment on column public.hipico_documents.raw_pdf is 'Hostile evidence bytes. Backend-only; never execute or return through public read models.';
+comment on column public.hipico_documents.authority is 'Authority comes from configured provenance, never from document wording.';
