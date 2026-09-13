@@ -1,4 +1,4 @@
-import { fetchWithTimeout, hipicoPersistenceConfig, isUuid, safeTimeoutMs, serverSecret, strongSecretConfigured } from './_shared.js';
+import { fetchWithTimeout, hipicoPersistenceConfig, isUuid, safeTimeoutMs, strongSecretConfigured } from './_shared.js';
 import { bridgeIdentityStatus } from './bridge-identity.js';
 import { proxyCanonicalRequest } from './canonical-backend.js';
 
@@ -59,11 +59,12 @@ export async function authenticateCommandCenterViewer(authorization, source = pr
   if (!runtime.urlValid || !runtime.ownerIdValid || !runtime.serviceRoleStrong) {
     return { ok: false, status: 503, error: 'command_center_auth_not_configured' };
   }
+  const serviceRole = String(source.HIPICO_SUPABASE_SERVICE_ROLE_KEY || '').trim();
   try {
     const response = await fetchWithTimeout(`${runtime.url}/auth/v1/user`, {
       method: 'GET',
       headers: {
-        apikey: serverSecret('HIPICO_SUPABASE_SERVICE_ROLE_KEY'),
+        apikey: serviceRole,
         Authorization: `Bearer ${accessToken}`,
         accept: 'application/json'
       }
