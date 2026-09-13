@@ -29,7 +29,7 @@ void test('automatic eligibility is confidence- and tool-bounded instead of trus
 void test('automation mode changes require an idempotency key and immutable transition ledger', () => {
   const routes = readFileSync(new URL('./agent.routes.ts', import.meta.url), 'utf8');
   const store = readFileSync(new URL('./automation.store.ts', import.meta.url), 'utf8');
-  const migration = readFileSync(new URL('../../../../supabase/sql/hipico_v16_agent_shadow.sql', import.meta.url), 'utf8');
+  const migration = readFileSync(new URL('../../../../supabase/sql/hipico_v22_agent_shadow.sql', import.meta.url), 'utf8');
 
   assert.match(routes, /idempotency-key/i);
   assert.match(routes, /idempotencyKey/);
