@@ -145,6 +145,63 @@ const ALLOWED_KEYS: Record<AgentTool, ReadonlySet<string>> = {
   proposeRaceCommand: new Set(['intent', 'entities'])
 };
 
+const MAX_AGENT_EVIDENCE_BYTES = 16 * 1024;
+const MAX_AGENT_EVIDENCE_DEPTH = 8;
+const MAX_AGENT_EVIDENCE_KEYS = 100;
+const MAX_AGENT_EVIDENCE_ARRAY = 200;
+
+function evidenceKeyForbidden(key: string) {
+  const normalized = key.replace(/[^a-z0-9]/gi, '').toLowerCase();
+  if (!normalized) return true;
+  if (['authorization', 'cookie', 'password', 'credential', 'apikey', 'prototype', 'constructor', 'proto'].includes(normalized)) return true;
+  return normalized.startsWith('secret') || normalized.endsWith('secret') || normalized.startsWith('token') || normalized.endsWith('token');
+}
+
+function sanitizeEvidenceNode(value: unknown, depth: number, seen: WeakSet<object>): unknown {
+  if (depth > MAX_AGENT_EVIDENCE_DEPTH) throw new Error('HIPICO_AGENT_EVIDENCE_TOO_DEEP');
+  if (value === null || typeof value === 'boolean' || typeof value === 'string') return value;
+  if (typeof value === 'number') {
+    if (!Number.isFinite(value)) throw new Error('HIPICO_AGENT_EVIDENCE_INVALID');
+    return value;
+  }
+  if (!value || typeof value !== 'object') throw new Error('HIPICO_AGENT_EVIDENCE_INVALID');
+  if (seen.has(value)) throw new Error('HIPICO_AGENT_EVIDENCE_INVALID');
+  seen.add(value);
+  try {
+    if (Array.isArray(value)) {
+      if (value.length > MAX_AGENT_EVIDENCE_ARRAY) throw new Error('HIPICO_AGENT_EVIDENCE_TOO_LARGE');
+      return value.map((item) => sanitizeEvidenceNode(item, depth + 1, seen));
+    }
+    const prototype = Object.getPrototypeOf(value);
+    if (prototype !== Object.prototype && prototype !== null) throw new Error('HIPICO_AGENT_EVIDENCE_INVALID');
+    const row = value as Record<string, unknown>;
+    const keys = Object.keys(row);
+    if (keys.length > MAX_AGENT_EVIDENCE_KEYS) throw new Error('HIPICO_AGENT_EVIDENCE_TOO_LARGE');
+    const clean: Record<string, unknown> = Object.create(null);
+    for (const key of keys) {
+      if (!key || key.length > 120 || evidenceKeyForbidden(key)) throw new Error('HIPICO_AGENT_EVIDENCE_FORBIDDEN_KEY');
+      clean[key] = sanitizeEvidenceNode(row[key], depth + 1, seen);
+    }
+    return clean;
+  } finally {
+    seen.delete(value);
+  }
+}
+
+export function sanitizeAgentEvidence(value: unknown): Record<string, unknown> {
+  if (value == null) return {};
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('HIPICO_AGENT_EVIDENCE_INVALID');
+  const sanitized = sanitizeEvidenceNode(value, 0, new WeakSet<object>()) as Record<string, unknown>;
+  let serialized: string;
+  try {
+    serialized = JSON.stringify(sanitized);
+  } catch {
+    throw new Error('HIPICO_AGENT_EVIDENCE_INVALID');
+  }
+  if (Buffer.byteLength(serialized, 'utf8') > MAX_AGENT_EVIDENCE_BYTES) throw new Error('HIPICO_AGENT_EVIDENCE_TOO_LARGE');
+  return JSON.parse(serialized) as Record<string, unknown>;
+}
+
 function rejected(): never {
   throw new Error('AGENT_TOOL_ARGUMENTS_REJECTED');
 }
