@@ -2,8 +2,33 @@ import { classify } from '../hipico-bot/hipico-operational-classifier.js';
 import { classifyRaceQueryIntent } from './race-lifecycle.js';
 import { HipicoAgentEngine, type DeterministicAgentParser } from './agent-policy.js';
 
+const TOOL_NAME = '(?:queryRaceStatus|queryNextRace|queryLastResult|querySchedule|queryScratches|proposeRaceCommand)';
+const PROMPT_INJECTION = new RegExp([
+  'ignora\\s+(?:todas?\\s+)?(?:tus?\\s+)?(?:reglas|instrucciones|politicas)',
+  'system\\s*:',
+  'drop\\s+table',
+  '(?:ejecuta|execute|usa|use)\\s+(?:sql|shell|cmd|powershell)',
+  `(?:llama|call|invoke|usa|use)\\s+${TOOL_NAME}`,
+  '\\b(?:authorization|bearer)\\b',
+  'HIPICO_[A-Z0-9_]*(?:TOKEN|SECRET|PASSWORD|KEY)'
+].join('|'), 'i');
+
+export function looksLikeAgentPolicyInjection(text: string) {
+  return PROMPT_INJECTION.test(String(text || '').slice(0, 4000));
+}
+
 const parser: DeterministicAgentParser = {
   parse(text: string) {
+    if (looksLikeAgentPolicyInjection(text)) {
+      return {
+        intent: 'security_review',
+        confidence: .999,
+        tool: null,
+        arguments: {},
+        risk: 'review'
+      };
+    }
+
     const query = classifyRaceQueryIntent(text);
     if (query !== 'UNKNOWN') {
       const tool = query === 'NEXT_RACE'
