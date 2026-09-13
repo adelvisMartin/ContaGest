@@ -67,6 +67,7 @@ test('shared shell and every mobile module control use the 44px touch contract',
   assert.match(hotfix,/min-height:44px/);
   assert.match(hotfix,/min-height:46px/);
   assert.match(hotfix,/min-height:48px/);
+  assert.match(hotfix,/@media\(max-width:600px\)[\s\S]*login-captcha-refresh[^}]*width:44px[^}]*min-width:44px[^}]*height:44px[^}]*min-height:44px/);
   assert.match(primitives,/@media \(max-width:760px\)[\s\S]*MuiButton-root[\s\S]*--cg-v-control-touch/);
   assert.match(primitives,/html\.dark[\s\S]*cgx-btn-primary[\s\S]*color:var\(--cg-v-bg\) !important/);
 });
@@ -109,14 +110,16 @@ test('PR browser gate covers every module at three phone widths, real navigation
   assert.match(actions,/valid-submit-no-effect/);
 });
 
-test('Vercel serverless artifact bundles the aliased XLSX runtime instead of crashing every API import',()=>{
+test('Vercel serverless artifact rejects the retired ExcelJS runtime chain',()=>{
   const stage=read('frontend','scripts','stage-backend.mjs');
   assert.doesNotMatch(stage,/packages:\s*['"]external['"]/);
   assert.match(stage,/external:\s*EXTERNAL_RUNTIME_PACKAGES/);
   const declaration=stage.match(/const EXTERNAL_RUNTIME_PACKAGES\s*=\s*\[([\s\S]*?)\];/)?.[1]||'';
   assert.ok(declaration.length>0,'external runtime package declaration missing');
   assert.doesNotMatch(declaration,/['"]exceljs['"]/);
-  assert.match(stage,/exceljs quedó externalizado/);
+  assert.match(stage,/forbiddenXlsxRuntime/);
+  assert.match(stage,/exceljs\|@excel\\\.js\\\/jszip\|es-pako/i);
+  assert.match(stage,/dependencia XLSX retirada reapareció en el artifact serverless/);
 });
 
 test('service worker cannot serve stale javascript or css ahead of the deployed network bundle',()=>{
