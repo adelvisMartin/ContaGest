@@ -7,14 +7,23 @@ import { isGroupId as isFallbackGroupId } from '../tools/hipico-whatsapp-bridge/
 const root = process.cwd();
 const read = (p) => fs.readFileSync(path.join(root, p), 'utf8');
 
+function mountBlock(app, prefix, requiredToken) {
+  const escaped = prefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return [...app.matchAll(new RegExp(`app\\.use\\(\\s*['\"]${escaped}['\"]\\s*,([\\s\\S]*?)\\);`, 'g'))]
+    .map((match) => ({ body: match[1], index: match.index ?? -1 }))
+    .find((entry) => entry.body.includes(requiredToken));
+}
+
 test('normal WhatsApp group bridge is isolated from Meta webhook and browser CSRF', () => {
   const app = read('backend/src/app.ts');
   const webhookMount = app.indexOf("app.use('/api/v1/hipico-bot', hipicoWebhookRoutes)");
-  const adapterMount = app.indexOf("app.use('/api/v1/hipico-bot', authRateLimit, hipicoBridgeRoutes, hipicoOperatorRoutes)");
+  const adapterMount = mountBlock(app, '/api/v1/hipico-bot', 'hipicoBridgeRoutes');
   const csrfMount = app.indexOf('app.use(csrfProtection)');
   assert.ok(webhookMount > 0, 'signed Meta webhook route must be mounted');
-  assert.ok(adapterMount > webhookMount, 'Bridge/operator adapters must be mounted after the signed webhook surface');
-  assert.ok(csrfMount > adapterMount, 'token-authenticated Bridge/operator adapters must be mounted before browser CSRF');
+  assert.ok(adapterMount && adapterMount.index > webhookMount, 'Bridge/operator adapters must be mounted after the signed webhook surface');
+  assert.ok(adapterMount.body.includes('authRateLimit'));
+  assert.ok(adapterMount.body.includes('hipicoOperatorRoutes'));
+  assert.ok(csrfMount > adapterMount.index, 'token-authenticated Bridge/operator adapters must be mounted before browser CSRF');
   assert.match(app, /hipico-bridge\.routes\.js/);
 });
 
