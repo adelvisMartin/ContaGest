@@ -5,7 +5,7 @@ import test from 'node:test';
 const backendPackage = JSON.parse(readFileSync(new URL('../backend/package.json', import.meta.url), 'utf8'));
 const packageLock = JSON.parse(readFileSync(new URL('../package-lock.json', import.meta.url), 'utf8'));
 
-const maintainedExcelJsAlias = 'npm:@excel.js/exceljs@0.15.0';
+const retiredXlsxPackages = new Set(['exceljs', '@excel.js/exceljs', '@excel.js/jszip', '@excel.js/archiver', '@excel.js/unzipper', 'es-pako']);
 const bannedTransitiveVersions = new Map([
   ['rimraf', '2.7.1'],
   ['lodash.isequal', '4.5.0'],
@@ -22,38 +22,30 @@ function packageNameFromLockPath(lockPath) {
   return lockPath.slice(index + marker.length);
 }
 
-function installedPackage(name) {
-  const entries = Object.entries(packageLock.packages ?? {}).filter(([lockPath]) => packageNameFromLockPath(lockPath) === name);
-  assert.equal(entries.length, 1, `package-lock debe materializar exactamente una copia de ${name}; encontrados: ${entries.map(([path]) => path).join(', ')}`);
-  return entries[0][1];
-}
-
-test('issue #26 usa el fork mantenido de ExcelJS sin cambiar el nombre público del paquete', () => {
+test('issue #26 mantiene retirado ExcelJS porque producción usa el writer XLSX interno', () => {
   assert.equal(
-    backendPackage.dependencies?.exceljs,
-    maintainedExcelJsAlias,
-    'backend debe conservar el specifier exceljs mediante alias npm al fork mantenido',
+    Object.prototype.hasOwnProperty.call(backendPackage.dependencies ?? {}, 'exceljs'),
+    false,
+    'backend no debe reinstalar el fork ExcelJS retirado del bootstrap serverless',
+  );
+  assert.equal(
+    Object.prototype.hasOwnProperty.call(packageLock.packages?.backend?.dependencies ?? {}, 'exceljs'),
+    false,
+    'package-lock no debe declarar ExcelJS como dependencia del workspace backend',
   );
 });
 
-test('issue #26 mantiene package-lock sincronizado con el alias mantenido', () => {
-  assert.equal(
-    packageLock.packages?.backend?.dependencies?.exceljs,
-    maintainedExcelJsAlias,
-    'package-lock debe declarar el mismo alias de ExcelJS que backend/package.json',
-  );
-
-  const installedExcelJs = installedPackage('exceljs');
-  assert.equal(installedExcelJs?.version, '0.15.0', 'el lock debe materializar @excel.js/exceljs 0.15.0 bajo el specifier exceljs');
-});
-
-test('issue #26 lock mantiene procedencia del fork @excel.js', () => {
-  const installedExcelJs = installedPackage('exceljs');
-  assert.match(
-    String(installedExcelJs?.resolved || ''),
-    /@excel\.js\/exceljs|exceljs-0\.15\.0/i,
-    'el lock debe resolver el alias mantenido y no el paquete legacy 4.x',
-  );
+test('issue #26 lock no materializa la cadena ExcelJS/JSZip/es-pako retirada', () => {
+  const matches = [];
+  for (const [lockPath, metadata] of Object.entries(packageLock.packages ?? {})) {
+    if (!metadata || typeof metadata !== 'object') continue;
+    const packageName = packageNameFromLockPath(lockPath);
+    const declaredName = typeof metadata.name === 'string' ? metadata.name : null;
+    if ((packageName && retiredXlsxPackages.has(packageName)) || (declaredName && retiredXlsxPackages.has(declaredName))) {
+      matches.push(`${declaredName || packageName} (${lockPath})`);
+    }
+  }
+  assert.deepEqual(matches, [], `package-lock reintrodujo la cadena XLSX retirada: ${matches.join(', ')}`);
 });
 
 test('issue #26 no contiene las versiones transitorias obsoletas objetivo en package-lock', () => {
