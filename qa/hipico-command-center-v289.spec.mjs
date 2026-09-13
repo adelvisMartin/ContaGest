@@ -55,8 +55,8 @@ async function noHorizontalOverflow(page) {
   expect(overflow.scroll, JSON.stringify(overflow)).toBeLessThanOrEqual(overflow.client + 1);
 }
 
-for (const width of [360, 390, 430, 768, 1440]) {
-  test(`Command Center success is usable at ${width}px with 44px critical action`, async ({ page }) => {
+for (const width of [360, 390, 393, 430, 768, 1024, 1440]) {
+  test(`Command Center success is usable at ${width}px with accessible critical action`, async ({ page }) => {
     await page.setViewportSize({ width, height: width < 768 ? 844 : 900 });
     await mount(page, { status: 'success', data: MOCK, error: '', updatedAt: '2026-09-13T20:00:00.000Z', stale: false });
     await expect(page.getByRole('heading', { name: 'Command Center' })).toBeVisible();
