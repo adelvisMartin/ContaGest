@@ -15,7 +15,8 @@ function stateLabel(value) {
     unavailable: 'No disponible',
     not_configured: 'Sin configurar',
     connected: 'Conectado',
-    disconnected: 'Desconectado'
+    disconnected: 'Desconectado',
+    disabled: 'Deshabilitado'
   };
   return labels[String(value || '')] || String(value || 'Desconocido');
 }
@@ -23,7 +24,7 @@ function stateLabel(value) {
 function badgeClass(value) {
   if (value === 'ready' || value === 'connected') return 'badge--success';
   if (value === 'unavailable' || value === 'failed') return 'badge--danger';
-  if (value === 'degraded' || value === 'not_configured' || value === 'disconnected') return 'badge--warning';
+  if (value === 'degraded' || value === 'not_configured' || value === 'disconnected' || value === 'disabled') return 'badge--warning';
   return 'badge--info';
 }
 
@@ -34,10 +35,18 @@ function formatDate(value) {
   return date.toLocaleString('es-VE');
 }
 
-function query(groupKey, groupId) {
-  const search = new URLSearchParams({ groupKey });
-  if (groupId) search.set('groupId', groupId);
-  return `${ENDPOINT}?${search.toString()}`;
+function query(groupKey) {
+  return `${ENDPOINT}?${new URLSearchParams({ groupKey }).toString()}`;
+}
+
+function isOperationallyEmpty(data) {
+  if (!data || typeof data !== 'object') return true;
+  const races = Number(data.operation?.raceCount || 0);
+  const meetings = Array.isArray(data.operation?.meetings) ? data.operation.meetings.length : 0;
+  const documents = Array.isArray(data.documents?.recent) ? data.documents.recent.length : 0;
+  const channels = Array.isArray(data.channels?.items) ? data.channels.items.length : 0;
+  const alerts = Array.isArray(data.alerts) ? data.alerts.filter((item) => item?.severity !== 'info').length : 0;
+  return races === 0 && meetings === 0 && documents === 0 && channels === 0 && alerts === 0;
 }
 
 async function authorizedFetch(url, retry = true) {
@@ -79,26 +88,37 @@ async function authorizedFetch(url, retry = true) {
   }
 }
 
-export async function refreshCommandCenter(previous, { groupKey, groupId = null } = {}) {
+export async function refreshCommandCenter(previous, { groupKey } = {}) {
   const current = previous || initialCommandCenterState();
   if (!groupKey) {
-    return { ...current, status: 'error', error: 'El grupo activo no tiene una clave válida.', stale: Boolean(current.data) };
+    return {
+      ...current,
+      status: 'disabled',
+      error: 'Selecciona un grupo válido para consultar el estado operativo.',
+      stale: Boolean(current.data)
+    };
   }
   if (globalThis.navigator?.onLine === false) {
     return {
       ...current,
-      status: current.data ? 'success' : 'offline',
+      status: current.data ? 'stale' : 'offline',
       error: current.data ? '' : 'Sin conexión y sin una lectura previa del Command Center.',
       stale: true
     };
   }
   try {
-    const data = await authorizedFetch(query(groupKey, groupId));
-    return { status: 'success', data, error: '', updatedAt: new Date().toISOString(), stale: false };
+    const data = await authorizedFetch(query(groupKey));
+    return {
+      status: isOperationallyEmpty(data) ? 'empty' : 'success',
+      data,
+      error: '',
+      updatedAt: new Date().toISOString(),
+      stale: false
+    };
   } catch (error) {
     return {
       ...current,
-      status: 'error',
+      status: current.data ? 'stale' : 'error',
       error: String(error?.message || 'No se pudo actualizar el Command Center.'),
       stale: Boolean(current.data)
     };
@@ -151,16 +171,24 @@ function documentRows(documents) {
   return documents.slice(0, 8).map((document) => `<details><summary><strong>${escapeHtml(document.filename || 'Documento')}</strong><span>${escapeHtml(document.classification || 'UNKNOWN')} · ${escapeHtml(document.status || 'unknown')}</span></summary><small>${escapeHtml(document.authority || 'unknown')} · ${escapeHtml(formatDate(document.updatedAt || document.createdAt))}</small></details>`).join('');
 }
 
-export function renderCommandCenter(state) {
-  const value = state || initialCommandCenterState();
-  if (value.status === 'idle' || value.status === 'loading') {
-    return `<section class="card section-gap" data-command-center aria-busy="true"><div class="card__head"><div><h3>Command Center</h3><small>Verificando backend, Bridge, PostgreSQL, providers y agente…</small></div><span class="badge badge--info">Cargando</span></div><div class="card__body"><p class="muted">La lectura operativa no usa caché.</p></div></section>`;
+function shellState(value) {
+  if (value.status === 'disabled') {
+    return `<section class="card section-gap" data-command-center role="status" aria-live="polite"><div class="card__head"><div><h3>Command Center</h3><small>Actualización pausada hasta que exista un grupo activo válido.</small></div><span class="badge badge--warning">Deshabilitado</span></div><div class="card__body"><p>${escapeHtml(value.error || 'Selecciona un grupo para continuar.')}</p><button class="button" data-action="refresh-command-center" disabled>Actualizar</button></div></section>`;
   }
-
+  if (value.status === 'idle' || value.status === 'loading') {
+    return `<section class="card section-gap" data-command-center aria-busy="true" role="status" aria-live="polite"><div class="card__head"><div><h3>Command Center</h3><small>Verificando backend, Bridge, PostgreSQL, providers y agente…</small></div><span class="badge badge--info">Cargando</span></div><div class="card__body"><p class="muted">La lectura operativa no usa caché.</p></div></section>`;
+  }
   if (!value.data) {
     const offline = value.status === 'offline';
-    return `<section class="card section-gap" data-command-center role="status"><div class="card__head"><div><h3>Command Center</h3><small>${offline ? 'No hay conexión para verificar el estado.' : 'No se pudo obtener estado operativo.'}</small></div><span class="badge ${offline ? 'badge--warning' : 'badge--danger'}">${offline ? 'Offline' : 'Error'}</span></div><div class="card__body"><p>${escapeHtml(value.error || 'Estado no disponible.')}</p><button class="button button--primary" data-action="refresh-command-center" ${offline ? 'disabled' : ''}>Reintentar</button></div></section>`;
+    return `<section class="card section-gap" data-command-center role="status" aria-live="polite"><div class="card__head"><div><h3>Command Center</h3><small>${offline ? 'No hay conexión para verificar el estado.' : 'No se pudo obtener estado operativo.'}</small></div><span class="badge ${offline ? 'badge--warning' : 'badge--danger'}">${offline ? 'Offline' : 'Error'}</span></div><div class="card__body"><p>${escapeHtml(value.error || 'Estado no disponible.')}</p><button class="button button--primary" data-action="refresh-command-center" ${offline ? 'disabled' : ''}>Reintentar</button></div></section>`;
   }
+  return '';
+}
+
+export function renderCommandCenter(state) {
+  const value = state || initialCommandCenterState();
+  const terminalShell = shellState(value);
+  if (terminalShell) return terminalShell;
 
   const data = value.data;
   const components = data.system?.components || {};
@@ -179,8 +207,12 @@ export function renderCommandCenter(state) {
   const alerts = Array.isArray(data.alerts) ? data.alerts : [];
   const documents = Array.isArray(data.documents?.recent) ? data.documents.recent : [];
   const meeting = data.operation?.activeMeeting || null;
-  const staleNotice = value.stale
-    ? `<div class="offline-banner" role="status">Datos del Command Center sin confirmar · última lectura ${escapeHtml(formatDate(value.updatedAt))}</div>`
+  const stale = value.status === 'stale' || value.stale;
+  const staleNotice = stale
+    ? `<div class="offline-banner" role="status" aria-live="polite">Datos del Command Center sin confirmar · última lectura ${escapeHtml(formatDate(value.updatedAt))}${value.error ? ` · ${escapeHtml(value.error)}` : ''}</div>`
+    : '';
+  const emptyNotice = value.status === 'empty'
+    ? '<div class="notice section-gap" role="status"><strong>Sin datos operativos</strong><p>La consulta fue válida, pero este grupo todavía no tiene carreras, documentos, canales ni alertas que mostrar.</p></div>'
     : '';
 
   const queueUnavailable = data.queue?.state === 'unavailable';
@@ -188,5 +220,5 @@ export function renderCommandCenter(state) {
   const documentUnavailable = data.documents?.state === 'unavailable';
   const critical = alerts.some((item) => item.severity === 'critical');
 
-  return `${staleNotice}<section class="page-head section-gap" data-command-center><div><h2>Command Center</h2><p>Estado observable del backend canónico para ${escapeHtml(data.scope?.groupKey || 'grupo activo')} · lectura no cacheada.</p></div><div class="page-actions"><span class="badge ${data.system?.ok && !critical ? 'badge--success' : 'badge--warning'}">${data.system?.ok && !critical ? 'OPERATIVO' : 'ATENCIÓN'}</span><button class="button" data-action="refresh-command-center">Actualizar</button></div></section><div class="grid grid--kpi metrics-grid">${componentCard('Backend', components.backend)}${componentCard('PostgreSQL', components.database)}${componentCard('Bridge', bridge)}${componentCard('Canal', channel)}${componentCard('Providers', providerComponent)}${componentCard('Agente', agent)}</div>${safetyChannels()}<div class="grid grid--two section-gap"><section class="card"><div class="card__head"><div><h3>Operación canónica</h3><small>${data.operation?.state === 'unavailable' ? 'Lectura no disponible' : meeting ? escapeHtml(meeting.name) : 'Sin meeting activo'}</small></div><span class="badge ${badgeClass(data.operation?.state)}">${data.operation?.raceCount == null ? 'N/D' : `${data.operation.raceCount} carreras`}</span></div><div class="card__body"><div class="control-stack">${raceLine('Carrera actual', data.operation?.currentRace, data.operation?.state)}${raceLine('Próxima carrera', data.operation?.nextRace, data.operation?.state)}<div><span>Cola pendiente</span><strong>${queueUnavailable ? 'No disponible' : countValue(data.queue?.pending)}</strong><small>${queueUnavailable ? 'Lectura fallida' : `${countValue(data.queue?.failed)} fallidas`}</small></div><div><span>Conflictos</span><strong>${conflictUnavailable ? 'No disponible' : countValue(data.conflicts?.total)}</strong><small>${conflictUnavailable ? 'Lectura fallida' : 'reconciliación + transiciones + agente'}</small></div></div></div></section><section class="card"><div class="card__head"><div><h3>Alertas operativas</h3><small>Evidencia observable; no modifica jugadas ni saldos. Abre cada fila para ver el código completo.</small></div><span class="badge ${critical ? 'badge--danger' : alerts.length ? 'badge--warning' : 'badge--success'}">${alerts.length}</span></div><div class="card__body"><div class="list" aria-live="polite">${alertRows(alerts)}</div></div></section></div><section class="card section-gap"><div class="card__head"><div><h3>Documentos recientes</h3><small>Clasificación, autoridad y estado del motor PDF. Las filas largas son expandibles con teclado.</small></div><span class="badge ${documentUnavailable ? 'badge--danger' : ''}">${documentUnavailable ? 'N/D' : documents.length}</span></div><div class="card__body"><div class="responsive-records">${documentUnavailable ? '<div class="empty"><strong>No disponible</strong><span>No se pudo leer la evidencia documental. Revisa las alertas operativas.</span></div>' : documents.length ? documentRows(documents) : '<div class="empty"><strong>Sin documentos</strong><span>No hay evidencia documental persistida para este grupo.</span></div>'}</div></div></section>`;
+  return `${staleNotice}${emptyNotice}<section class="page-head section-gap" data-command-center><div><h2>Command Center</h2><p>Estado observable del backend canónico para ${escapeHtml(data.scope?.groupKey || 'grupo activo')} · lectura no cacheada.</p></div><div class="page-actions"><span class="badge ${data.system?.ok && !critical ? 'badge--success' : 'badge--warning'}">${data.system?.ok && !critical ? 'OPERATIVO' : 'ATENCIÓN'}</span><button class="button" data-action="refresh-command-center" ${globalThis.navigator?.onLine === false ? 'disabled' : ''}>Actualizar</button></div></section><div class="grid grid--kpi metrics-grid">${componentCard('Backend', components.backend)}${componentCard('PostgreSQL', components.database)}${componentCard('Bridge', bridge)}${componentCard('Canal', channel)}${componentCard('Providers', providerComponent)}${componentCard('Agente', agent)}</div>${safetyChannels()}<div class="grid grid--two section-gap"><section class="card"><div class="card__head"><div><h3>Operación canónica</h3><small>${data.operation?.state === 'unavailable' ? 'Lectura no disponible' : meeting ? escapeHtml(meeting.name) : 'Sin meeting activo'}</small></div><span class="badge ${badgeClass(data.operation?.state)}">${data.operation?.raceCount == null ? 'N/D' : `${data.operation.raceCount} carreras`}</span></div><div class="card__body"><div class="control-stack">${raceLine('Carrera actual', data.operation?.currentRace, data.operation?.state)}${raceLine('Próxima carrera', data.operation?.nextRace, data.operation?.state)}<div><span>Cola pendiente</span><strong>${queueUnavailable ? 'No disponible' : countValue(data.queue?.pending)}</strong><small>${queueUnavailable ? 'Lectura fallida' : `${countValue(data.queue?.failed)} fallidas`}</small></div><div><span>Conflictos</span><strong>${conflictUnavailable ? 'No disponible' : countValue(data.conflicts?.total)}</strong><small>${conflictUnavailable ? 'Lectura fallida' : 'reconciliación + transiciones + agente'}</small></div></div></div></section><section class="card"><div class="card__head"><div><h3>Alertas operativas</h3><small>Evidencia observable; no modifica jugadas ni saldos. Abre cada fila para ver el código completo.</small></div><span class="badge ${critical ? 'badge--danger' : alerts.length ? 'badge--warning' : 'badge--success'}">${alerts.length}</span></div><div class="card__body"><div class="list" aria-live="polite">${alertRows(alerts)}</div></div></section></div><section class="card section-gap"><div class="card__head"><div><h3>Documentos recientes</h3><small>Clasificación, autoridad y estado del motor PDF. Las filas largas son expandibles con teclado.</small></div><span class="badge ${documentUnavailable ? 'badge--danger' : ''}">${documentUnavailable ? 'N/D' : documents.length}</span></div><div class="card__body"><div class="responsive-records">${documentUnavailable ? '<div class="empty"><strong>No disponible</strong><span>No se pudo leer la evidencia documental. Revisa las alertas operativas.</span></div>' : documents.length ? documentRows(documents) : '<div class="empty"><strong>Sin documentos</strong><span>No hay evidencia documental persistida para este grupo.</span></div>'}</div></div></section>`;
 }
