@@ -95,13 +95,12 @@ void test('Android parity gate requires every Command Center runtime asset and h
   assert.match(sync, /filesUnder\(root\)/);
 });
 
-void test('no parallel global stylesheet is introduced for Command Center', () => {
+void test('Command Center preserves the UI System v2 single-stylesheet authority', () => {
   const cssDirectory = path.join(pwa, 'assets/css');
   const css = fs.readdirSync(cssDirectory).filter((file) => file.endsWith('.css')).sort();
-  assert.deepEqual(css, [
-    'app.css',
-    'mobile-accessibility.css',
-    'operational-access-guard.css',
-    'operational-copy-center.css'
-  ]);
+  assert.deepEqual(css, ['app.css']);
+
+  const guide = read('frontend/public/hipico-control/STYLE-GUIDE.md');
+  assert.match(guide, /única hoja CSS global/i);
+  assert.match(guide, /no se crea un stylesheet posterior/i);
 });
