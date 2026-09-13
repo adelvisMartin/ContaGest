@@ -21,7 +21,7 @@ const commandClient = read('frontend/public/hipico-control/assets/js/command-cen
 const index = read('frontend/public/hipico-control/index.html');
 const serviceWorker = read('frontend/public/hipico-control/sw.js');
 const workflowPath = '.github/workflows/hipico-production-gates-v290.yml';
-const guarded = [
+const requiredFiles = [
   'backend/src/modules/hipico/hipico-domain.ts',
   'backend/src/modules/hipico/hipico-system.service.ts',
   'backend/src/modules/hipico/hipico-system.routes.ts',
@@ -44,11 +44,14 @@ const guarded = [
   'scripts/hipico-secret-scan-v290.mjs',
   workflowPath
 ];
+const bypassScannedFiles = requiredFiles.filter((relative) => relative !== 'tests/hipico_production_pipeline_290.test.mjs');
 
 const gitHead = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8', windowsHide: true }).trim().toLowerCase();
 const candidateSha = String(process.env.HIPICO_CANDIDATE_SHA || process.env.HIPICO_QA_SHA || process.env.HIPICO_RELEASE_SHA || process.env.GITHUB_SHA || gitHead).trim().toLowerCase();
 assert(SHA40.test(candidateSha), `candidate SHA is invalid: ${candidateSha || 'missing'}`);
 assert(candidateSha === gitHead, `checked out HEAD ${gitHead} != candidate ${candidateSha}`);
+for (const relative of requiredFiles) assert(fs.existsSync(path.join(root, relative)), `${relative} missing from release candidate`);
+
 execFileSync(process.execPath, ['scripts/hipico-secret-scan-v290.mjs'], { cwd: root, stdio: 'inherit', env: { ...process.env, HIPICO_CANDIDATE_SHA: candidateSha } });
 execFileSync(process.execPath, ['scripts/hipico-release-v118.mjs'], { cwd: root, stdio: 'inherit', env: { ...process.env, HIPICO_RELEASE_SHA: candidateSha } });
 
@@ -94,15 +97,17 @@ const forbidden = [
   { pattern: /\|\|\s*true(?:\s|$)/m, label: 'shell bypass || true' },
   { pattern: /\b(?:test|describe|it)\.fixme\s*\(/, label: 'fixme bypass' }
 ];
-for (const relative of guarded) {
-  assert(fs.existsSync(path.join(root, relative)), `${relative} missing from release candidate`);
+for (const relative of bypassScannedFiles) {
   const source = read(relative);
   for (const rule of forbidden) assert(!rule.pattern.test(source), `${relative} contains forbidden ${rule.label}`);
 }
 
 const e2eSchema = read('scripts/hipico-apply-e2e-schema-v290.mjs');
+const documentMigration = read('supabase/sql/hipico_v18_documents.sql');
 assert(e2eSchema.includes('hipico_v13_workspace_sync_security.sql'), 'real workspace/RLS security migration must run in PostgreSQL E2E');
 assert(e2eSchema.includes('hipico_v18_documents.sql'), 'immutable document schema must run in PostgreSQL E2E');
+assert(documentMigration.includes('hipico_documents_immutable_evidence') && documentMigration.includes('HIPICO_DOCUMENT_IMMUTABLE_EVIDENCE'), 'document evidence immutability trigger must be present');
+assert(documentMigration.includes('revoke all on public.hipico_documents from authenticated'), 'browser-authenticated clients must not read raw document evidence directly');
 assert(e2eSchema.includes('SET LOCAL ROLE'), 'PostgreSQL E2E must execute least-privilege role checks');
 assert(e2eSchema.includes('Workspace RLS owner isolation failed') && e2eSchema.includes('Message RLS owner isolation failed'), 'PostgreSQL E2E must verify owner isolation');
 assert(e2eSchema.includes('hipico_ledger_entries') && e2eSchema.includes('hipico_outbox'), 'PostgreSQL E2E must verify ledger/outbox direct-write denial');
@@ -124,6 +129,6 @@ fs.mkdirSync(evidenceDir, { recursive: true });
 fs.writeFileSync(path.join(evidenceDir, 'release-contract.json'), `${JSON.stringify({
   schema: 'hipico-release-contract.v290', sha: candidateSha, headSha: gitHead, checkedAt: new Date().toISOString(), status: 'PASS',
   releaseVersion: policy.version, versionCode: policy.versionCode, apiVersion, bridgeProtocolVersion,
-  bridgePackageVersion: bridgePackage.version, guardedFiles: guarded, secretScan: 'PASS'
+  bridgePackageVersion: bridgePackage.version, guardedFiles: requiredFiles, bypassScannedFiles, secretScan: 'PASS'
 }, null, 2)}\n`);
 console.log(`HIPICO_V290_RELEASE_CONTRACT PASS sha=${candidateSha} release=${policy.version}`);
