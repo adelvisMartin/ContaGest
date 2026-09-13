@@ -29,7 +29,6 @@ function hostedOcrEnabled(env:RuntimeEnv){return String(env.HIPICO_DOCUMENT_ANYD
 
 export function probeAnyDoc(env:RuntimeEnv=process.env){
   const bin=resolveAnyDocBin(env);
-  if(!bin)return{available:false,version:null};
   try{
     const result=spawnSync(bin,['--version'],{encoding:'utf8',shell:false,timeout:2500,windowsHide:true});
     if(result.error||result.status!==0)return{available:false,version:null};
@@ -44,15 +43,21 @@ async function defaultRunner(command:string,args:string[],options:any){
 }
 
 function exitCode(error:any){const raw=error?.exitCode??error?.code;const value=Number(raw);return Number.isFinite(value)?value:null;}
+function needsOcr(error:any){return exitCode(error)===3;}
 function mapAnyDocError(error:any){
   if(error?.name==='AbortError'||error?.code==='ABORT_ERR')return codedError('HIPICO_DOCUMENT_EXTRACTION_TIMEOUT');
-  if(exitCode(error)===3)return codedError('HIPICO_DOCUMENT_OCR_NOT_CONFIGURED');
+  if(needsOcr(error))return codedError('HIPICO_DOCUMENT_OCR_NOT_CONFIGURED');
   return codedError('HIPICO_DOCUMENT_ANYDOC_CONVERSION_FAILED');
+}
+function childEnv(env:RuntimeEnv,includeFirecrawl:boolean){
+  const result:{[key:string]:string|undefined}={...process.env,...env};
+  if(!includeFirecrawl){result.FIRECRAWL_API_KEY=undefined;result.FIRECRAWL_API_URL=undefined;}
+  return result;
 }
 
 export function createAnyDocDocumentExtractor(env:RuntimeEnv=process.env,runner:Runner=defaultRunner,probe:Probe=()=>probeAnyDoc(env)):PdfTextExtractor|null{
   const binary=resolveAnyDocBin(env);const detected=probe();
-  if(!binary||!detected.available||detected.version!==HIPICO_ANYDOC_VERSION)return null;
+  if(!detected.available||detected.version!==HIPICO_ANYDOC_VERSION)return null;
   const hosted=hostedOcrEnabled(env);
   return{
     capability:()=>({configured:true,nativeText:true,ocr:hosted,parserVersion:`anydoc@${HIPICO_ANYDOC_VERSION}`}),
@@ -60,20 +65,25 @@ export function createAnyDocDocumentExtractor(env:RuntimeEnv=process.env,runner:
       if(signal.aborted)throw Object.assign(new Error('Aborted'),{name:'AbortError',code:'ABORT_ERR'});
       const dir=await fs.mkdtemp(path.join(os.tmpdir(),'hipico-anydoc-'));
       const input=path.join(dir,'document.pdf');
+      const execute=async(mode:'reject'|'hosted')=>runner(binary,[input,'--format','pdf','--ocr',mode],{
+        encoding:'utf8',shell:false,windowsHide:true,timeout:7500,maxBuffer:MAX_ANYDOC_OUTPUT_BYTES,signal,
+        env:childEnv(env,mode==='hosted')
+      });
       try{
         await fs.writeFile(input,pdf,{mode:0o600});
-        const args=[input,'--format','pdf'];
-        if(hosted)args.push('--ocr','hosted');
-        let output:{stdout:string;stderr:string};
         try{
-          output=await runner(binary,args,{
-            encoding:'utf8',shell:false,windowsHide:true,timeout:7500,maxBuffer:MAX_ANYDOC_OUTPUT_BYTES,signal,
-            env:{...process.env,...env,FIRECRAWL_API_KEY:hosted?String(env.FIRECRAWL_API_KEY||''):undefined}
-          });
-        }catch(error){throw mapAnyDocError(error);}
-        const text=String(output.stdout||'').trim();
-        if(!text)throw codedError('HIPICO_DOCUMENT_ANYDOC_CONVERSION_FAILED');
-        return{text,method:hosted?'ocr' as const:'native_text' as const,parserVersion:`anydoc@${HIPICO_ANYDOC_VERSION}`};
+          const local=await execute('reject');const text=String(local.stdout||'').trim();
+          if(!text)throw codedError('HIPICO_DOCUMENT_ANYDOC_CONVERSION_FAILED');
+          return{text,method:'native_text' as const,parserVersion:`anydoc@${HIPICO_ANYDOC_VERSION}`};
+        }catch(error:any){
+          if(!needsOcr(error))throw mapAnyDocError(error);
+          if(!hosted)throw codedError('HIPICO_DOCUMENT_OCR_NOT_CONFIGURED');
+          try{
+            const remote=await execute('hosted');const text=String(remote.stdout||'').trim();
+            if(!text)throw codedError('HIPICO_DOCUMENT_ANYDOC_CONVERSION_FAILED');
+            return{text,method:'ocr' as const,parserVersion:`anydoc@${HIPICO_ANYDOC_VERSION}+firecrawl-hosted-ocr`};
+          }catch(hostedError){throw mapAnyDocError(hostedError);}
+        }
       }finally{await fs.rm(dir,{recursive:true,force:true}).catch(()=>{});}
     }
   };
