@@ -137,6 +137,7 @@ export function validateRuntimeConfig(config) {
     if (!isWhatsAppGroupId(config.labGroupId)) errors.push('Para habilitar LAB se exige HIPICO_LAB_GROUP_ID pinneado.');
   }
   if (config.pdfAutoIngestEnabled && !config.backendSyncEnabled) errors.push('Auto-ingesta PDF exige HIPICO_BACKEND_SYNC_ENABLED=true.');
+  if (config.pdfAutoIngestEnabled && !config.baselineIgnoreHistory) errors.push('Auto-ingesta PDF exige HIPICO_SOURCE_BASELINE_IGNORE_HISTORY=true.');
   if (config.pdfAutoIngestEnabled && !isSafeHttps(config.documentIngestUrl)) errors.push('HIPICO_DOCUMENT_INGEST_URL HTTPS sin credenciales, query ni fragment es obligatorio para auto-ingesta PDF.');
   if (config.runtimeMode === RUNTIME_MODES.PRODUCTION) {
     if (!config.backendSyncEnabled) errors.push('Producción exige HIPICO_BACKEND_SYNC_ENABLED=true.');
