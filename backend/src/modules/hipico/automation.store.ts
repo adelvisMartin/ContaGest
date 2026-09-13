@@ -17,6 +17,7 @@ const IDEMPOTENCY_RE = /^[A-Za-z0-9._:-]{8,120}$/;
 const FORBIDDEN_EVIDENCE_KEY = /(?:token|secret|password|credential|authorization|cookie|api[_-]?key|prototype|constructor|__proto__)/i;
 const MAX_EVIDENCE_BYTES = 16 * 1024;
 const MAX_EVIDENCE_DEPTH = 16;
+const SHADOW_INDEX = AUTOMATION_STATES.indexOf('SHADOW');
 
 type DbClient = typeof prisma | Prisma.TransactionClient;
 
@@ -38,10 +39,18 @@ function assertScope(ownerId: string, groupKey: string, groupId: string) {
   if (!GROUP_ID_RE.test(groupId)) throw new Error('HIPICO_AUTOMATION_GROUP_ID_INVALID');
 }
 
+function isPinnedSourceGroup(groupId: string) {
+  const configured = String(process.env.HIPICO_SOURCE_GROUP_ID || '').trim();
+  return Boolean(configured) && configured.toLowerCase() === String(groupId || '').trim().toLowerCase();
+}
+
 function defaultMode(groupId: string): AutomationState {
-  return String(process.env.HIPICO_SOURCE_GROUP_ID || '').trim().toLowerCase() === groupId.toLowerCase()
-    ? 'SHADOW'
-    : 'DISABLED';
+  return isPinnedSourceGroup(groupId) ? 'SHADOW' : 'DISABLED';
+}
+
+function sourceMayTarget(groupId: string, target: AutomationState) {
+  if (!isPinnedSourceGroup(groupId)) return true;
+  return AUTOMATION_STATES.indexOf(target) <= SHADOW_INDEX;
 }
 
 function scopeLockKey(ownerId: string, groupKey: string, groupId: string) {
@@ -185,7 +194,10 @@ export class AutomationStore {
         LIMIT 1 FOR UPDATE`;
       const current = rows[0]?.mode || defaultMode(input.groupId);
       const metrics = await readMetrics(tx, input.ownerId, input.groupKey, input.groupId);
-      const decision = canPromoteAutomation(current, input.target, metrics, input.ownerApproved);
+      const policyDecision = canPromoteAutomation(current, input.target, metrics, input.ownerApproved);
+      const decision: PromotionDecision = sourceMayTarget(input.groupId, input.target)
+        ? policyDecision
+        : { ...policyDecision, allowed: false, reason: 'SOURCE_SHADOW_ONLY' };
       const disposition: TransitionEventRow['disposition'] = !decision.allowed
         ? 'rejected'
         : input.target === current
