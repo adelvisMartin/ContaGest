@@ -106,4 +106,4 @@ El Service Worker puede cachear shell/assets estáticos, pero **nunca** respuest
 
 ## Evidencia y QA
 
-El gate #289 debe ejecutar sobre SHA exacto: contratos, backend typecheck/tests, Playwright Chromium, responsive 360/390/430/768/1440, landscape, teclado, focus, 44px, 200% zoom, system/light/dark, reduced motion, offline/stale, Service Worker/no-cache y Android parity. Screenshots/reportes se conservan como artifacts cuando el runner los produce. Si GitHub Actions devuelve `steps=[]` o `runner_id=0`, el estado es BLOCKED/NOT VERIFIED, nunca PASS.
+El gate #289 debe ejecutar sobre SHA exacto: contratos, backend typecheck/tests, Playwright Chromium, responsive **360/390/393/430/768/1024/1440**, landscape, teclado, focus, 44px, 200% zoom, system/light/dark, reduced motion, offline/stale, Service Worker/no-cache y Android parity. Screenshots/reportes se conservan como artifacts cuando el runner los produce. Si GitHub Actions devuelve `steps=[]` o `runner_id=0`, el estado es BLOCKED/NOT VERIFIED, nunca PASS.
