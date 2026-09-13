@@ -6,9 +6,9 @@ import { buildHipicoCommandCenter } from './command-center.service.js';
 const source = readFileSync(new URL('./command-center.service.ts', import.meta.url), 'utf8');
 const scope = {
   ownerId: '11111111-1111-4111-8111-111111111111',
-  groupKey: 'club-hipico-triple-crown-official',
-  groupId: '120363111111111111@g.us'
+  groupKey: 'club-hipico-triple-crown-official'
 };
+const GROUP_ID = '120363111111111111@g.us';
 
 function system(bridgeState: 'degraded'|'ready'|'not_configured' = 'degraded') {
   return {
@@ -37,6 +37,7 @@ function dependencies(overrides: Record<string, unknown> = {}) {
     channels: async () => [],
     queueStates: async () => [],
     documentStates: async () => [],
+    agentGroupIds: async () => [GROUP_ID],
     conflicts: async () => ({ reconciliations: 0, rejectedTransitions: 0, agentConflicts: 0 }),
     lastBridgeEvent: async () => null,
     agentState: async () => ({ mode: 'SHADOW', metrics: { reviewed: 10, matched: 10, highRiskFalsePositive: 0, unauthorizedAction: 0, conflicts: 0 } }),
@@ -77,19 +78,64 @@ void test('fresh bridge event can make runtime bridge ready without changing con
   assert.equal(result.bridge.ageMs, 30_000);
 });
 
-void test('missing selected group keeps agent disabled/not-configured instead of querying cross-group metrics', async () => {
+void test('a unique server-side group identity enables agent state without exposing JID in response scope', async () => {
+  let receivedGroupId = '';
+  const result = await buildHipicoCommandCenter(scope, dependencies({
+    agentGroupIds: async () => [GROUP_ID],
+    agentState: async (agentScope: any) => {
+      receivedGroupId = agentScope.groupId;
+      return { mode: 'SHADOW', metrics: { reviewed: 10, matched: 10 } };
+    }
+  }));
+
+  assert.equal(receivedGroupId, GROUP_ID);
+  assert.deepEqual(result.scope, { groupKey: scope.groupKey });
+  assert.equal(result.agent.state, 'ready');
+  assert.equal(result.agent.mode, 'SHADOW');
+});
+
+void test('missing server-side group identity fails closed without querying cross-group agent metrics', async () => {
   let calls = 0;
-  const result = await buildHipicoCommandCenter({ ...scope, groupId: null }, dependencies({
+  const result = await buildHipicoCommandCenter(scope, dependencies({
+    agentGroupIds: async () => [],
     agentState: async () => { calls += 1; return { mode: 'SHADOW', metrics: {} }; }
   }));
   assert.equal(calls, 0);
   assert.equal(result.agent.state, 'not_configured');
-  assert.equal(result.agent.reason, 'GROUP_ID_NOT_SELECTED');
+  assert.equal(result.agent.reason, 'GROUP_ID_NOT_CONFIGURED');
 });
 
-void test('Command Center channel read is isolated by owner and group key', () => {
+void test('ambiguous server-side group identity fails closed and never picks an arbitrary JID', async () => {
+  let calls = 0;
+  const result = await buildHipicoCommandCenter(scope, dependencies({
+    agentGroupIds: async () => [GROUP_ID, '120363222222222222@g.us'],
+    agentState: async () => { calls += 1; return { mode: 'SHADOW', metrics: {} }; }
+  }));
+  assert.equal(calls, 0);
+  assert.equal(result.agent.state, 'unavailable');
+  assert.equal(result.agent.reason, 'GROUP_ID_AMBIGUOUS');
+  assert.ok(result.alerts.some((alert) => alert.code === 'AGENT_GROUP_ID_AMBIGUOUS'));
+});
+
+void test('identity resolution read failure remains unavailable rather than not-configured', async () => {
+  let calls = 0;
+  const result = await buildHipicoCommandCenter(scope, dependencies({
+    agentGroupIds: async () => { throw new Error('database read failed'); },
+    agentState: async () => { calls += 1; return { mode: 'SHADOW', metrics: {} }; }
+  }));
+  assert.equal(calls, 0);
+  assert.equal(result.agent.state, 'unavailable');
+  assert.equal(result.agent.reason, 'AGENT_IDENTITY_READ_FAILED');
+  assert.ok(result.alerts.some((alert) => alert.code === 'AGENT_IDENTITY_READ_UNAVAILABLE'));
+});
+
+void test('Command Center channel and identity reads stay isolated by owner and group key', () => {
   assert.match(
     source,
     /FROM public\.hipico_bot_channels[\s\S]{0,220}WHERE owner_id = \$\{scope\.ownerId\}::uuid AND group_key = \$\{scope\.groupKey\}/
+  );
+  assert.match(
+    source,
+    /FROM public\.hipico_group_automation[\s\S]{0,220}WHERE owner_id = \$\{scope\.ownerId\}::uuid AND group_key = \$\{scope\.groupKey\}/
   );
 });
