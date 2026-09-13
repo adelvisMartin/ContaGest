@@ -5,6 +5,7 @@ import apiRoutes from './modules/index.js';
 import authRoutes from './modules/auth/auth.routes.js';
 import hipicoWebhookRoutes from './modules/hipico-bot/hipico-webhook.routes.js';
 import hipicoBridgeRoutes from './modules/hipico-bot/hipico-bridge.routes.js';
+import hipicoBridgeDocumentRoutes from './modules/hipico-bot/hipico-bridge-document.routes.js';
 import hipicoOperatorRoutes from './modules/hipico-bot/hipico-operator.routes.js';
 import hipicoCanonicalRoutes from './modules/hipico-bot/hipico-canonical.routes.js';
 import hipicoDocumentRoutes from './modules/hipico/document.routes.js';
@@ -30,6 +31,7 @@ export function createApp(options:{readinessCheck?:ReadinessCheck}={}){
   // counted multiple times while traversing sibling routers. mutationRateLimit
   // already skips GET/HEAD/OPTIONS in security.ts.
   app.use('/api/v1/hipico-bot',hipicoWebhookRoutes);
+  app.use('/api/v1/hipico-bot',authRateLimit,hipicoBridgeDocumentRoutes);
   app.use('/api/v1/hipico-bot',authRateLimit,hipicoBridgeRoutes);
   app.use('/api/v1/hipico-bot',authRateLimit,hipicoOperatorRoutes);
   app.use('/api/v1/hipico/documents',authRateLimit,mutationRateLimit,hipicoDocumentRoutes);
