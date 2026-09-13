@@ -142,3 +142,22 @@ test('previous v16 financial safety fixes remain in place',()=>{
   assert.doesNotMatch(dataImport,/Aplicar importación validada/);
   assert.doesNotMatch(qr,/server-side-hash-pendiente/);
 });
+
+test('production secret guard runs before every business router while health and CSP reporting stay independent',()=>{
+  const app=read('backend','src','app.ts');
+  const guard=app.indexOf('app.use(enforceProductionSecrets)');
+  assert.ok(guard>0,'production secret guard must be mounted');
+  for(const marker of [
+    "app.use('/api/v1/hipico/system'",
+    "app.use('/api/v1/hipico-bot'",
+    "app.use('/api/v1/hipico/documents'",
+    "'/api/v1/hipico',",
+    "app.use('/api/v1/auth'",
+    "app.use('/api/v1', mutationRateLimit"
+  ]){
+    const index=app.indexOf(marker);
+    assert.ok(index>guard,`${marker} must run after production secret enforcement`);
+  }
+  assert.ok(app.indexOf('registerHealthRoutes')<guard,'health probes must remain available before secret enforcement');
+  assert.ok(app.indexOf("'/api/v1/security/csp-report'")<guard,'CSP reporting must remain available before secret enforcement');
+});
