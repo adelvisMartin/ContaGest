@@ -25,15 +25,24 @@ void test('theme bootstrap runs before canonical app.css and workspace remains r
   assert.match(app, /document\.documentElement\.dataset\.theme = theme/);
 });
 
-void test('Command Center shell uses only the public local group key boundary and never exposes SOURCE identity', () => {
+void test('Command Center public boundary uses only local groupKey and never accepts or exposes SOURCE identity', () => {
   const shell = read('frontend/public/hipico-control/assets/js/command-center-shell.js');
+  const renderer = read('frontend/public/hipico-control/assets/js/command-center.js');
+  const bff = read('frontend/api/hipico/command-center.js');
+  const route = read('backend/src/modules/hipico/command-center.routes.ts');
+
   assert.match(shell, /data-action=["']select-group["']/);
   assert.match(shell, /data-id/);
   assert.match(shell, /\^\[A-Za-z0-9\._:-\]\{3,120\}\$/);
   assert.doesNotMatch(shell, /workspace\b/);
-  assert.doesNotMatch(shell, /groupId\b/);
-  assert.doesNotMatch(shell, /jid\b/i);
-  assert.doesNotMatch(shell, /@g\.us/i);
+  for (const source of [shell, renderer, bff]) {
+    assert.doesNotMatch(source, /groupId\b/);
+    assert.doesNotMatch(source, /jid\b/i);
+    assert.doesNotMatch(source, /@g\.us/i);
+  }
+  assert.doesNotMatch(route, /req\.query\.groupId/);
+  assert.doesNotMatch(route, /groupIdSchema/);
+  assert.match(bff, /x-hipico-group-key/);
 });
 
 void test('Command Center renders fail-closed observable states and SOURCE/LAB safety semantics', () => {
