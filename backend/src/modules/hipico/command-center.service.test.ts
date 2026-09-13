@@ -1,7 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { buildHipicoCommandCenter } from './command-center.service.js';
 
+const source = readFileSync(new URL('./command-center.service.ts', import.meta.url), 'utf8');
 const scope = {
   ownerId: '11111111-1111-4111-8111-111111111111',
   groupKey: 'club-hipico-triple-crown-official',
@@ -83,4 +85,11 @@ void test('missing selected group keeps agent disabled/not-configured instead of
   assert.equal(calls, 0);
   assert.equal(result.agent.state, 'not_configured');
   assert.equal(result.agent.reason, 'GROUP_ID_NOT_SELECTED');
+});
+
+void test('Command Center channel read is isolated by owner and group key', () => {
+  assert.match(
+    source,
+    /FROM public\.hipico_bot_channels[\s\S]{0,220}WHERE owner_id = \$\{scope\.ownerId\}::uuid AND group_key = \$\{scope\.groupKey\}/
+  );
 });
