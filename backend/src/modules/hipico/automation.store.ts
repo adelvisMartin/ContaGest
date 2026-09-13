@@ -14,8 +14,9 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-
 const GROUP_RE = /^[A-Za-z0-9._:-]{3,120}$/;
 const GROUP_ID_RE = /^[A-Za-z0-9@._:-]{3,220}$/;
 const IDEMPOTENCY_RE = /^[A-Za-z0-9._:-]{8,120}$/;
-const FORBIDDEN_EVIDENCE_KEY = /(?:token|secret|password|credential|authorization|cookie|api[_-]?key)/i;
+const FORBIDDEN_EVIDENCE_KEY = /(?:token|secret|password|credential|authorization|cookie|api[_-]?key|prototype|constructor|__proto__)/i;
 const MAX_EVIDENCE_BYTES = 16 * 1024;
+const MAX_EVIDENCE_DEPTH = 16;
 
 type DbClient = typeof prisma | Prisma.TransactionClient;
 
@@ -78,14 +79,30 @@ async function readMetrics(db: DbClient, ownerId: string, groupKey: string, grou
   };
 }
 
-function normalizeEvidence(value: unknown) {
+function assertEvidenceSafe(value: unknown, depth = 0): void {
+  if (depth > MAX_EVIDENCE_DEPTH) throw new Error('HIPICO_AGENT_EVIDENCE_INVALID');
+  if (Array.isArray(value)) {
+    for (const item of value) assertEvidenceSafe(item, depth + 1);
+    return;
+  }
+  if (!value || typeof value !== 'object') return;
+  for (const [key, item] of Object.entries(value as Record<string, unknown>)) {
+    if (FORBIDDEN_EVIDENCE_KEY.test(key)) throw new Error('HIPICO_AGENT_EVIDENCE_FORBIDDEN_KEY');
+    assertEvidenceSafe(item, depth + 1);
+  }
+}
+
+export function sanitizeAgentEvidence(value: unknown) {
   if (value == null) return {};
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('HIPICO_AGENT_EVIDENCE_INVALID');
-  const serialized = JSON.stringify(value);
-  if (Buffer.byteLength(serialized, 'utf8') > MAX_EVIDENCE_BYTES) throw new Error('HIPICO_AGENT_EVIDENCE_TOO_LARGE');
-  if (Object.keys(value as Record<string, unknown>).some((key) => FORBIDDEN_EVIDENCE_KEY.test(key))) {
-    throw new Error('HIPICO_AGENT_EVIDENCE_FORBIDDEN_KEY');
+  assertEvidenceSafe(value);
+  let serialized: string;
+  try {
+    serialized = JSON.stringify(value);
+  } catch {
+    throw new Error('HIPICO_AGENT_EVIDENCE_INVALID');
   }
+  if (Buffer.byteLength(serialized, 'utf8') > MAX_EVIDENCE_BYTES) throw new Error('HIPICO_AGENT_EVIDENCE_TOO_LARGE');
   return JSON.parse(serialized) as Record<string, unknown>;
 }
 
@@ -221,7 +238,7 @@ export class AutomationStore {
     await this.get(input.ownerId, input.groupKey, input.groupId);
     const id = crypto.randomUUID();
     const messageHash = crypto.createHash('sha256').update(input.text).digest('hex');
-    const evidence = normalizeEvidence(input.evidence);
+    const evidence = sanitizeAgentEvidence(input.evidence);
 
     await prisma.$transaction(async (tx) => {
       await lockScope(tx, input.ownerId, input.groupKey, input.groupId);
