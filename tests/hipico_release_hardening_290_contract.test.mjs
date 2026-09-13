@@ -76,3 +76,23 @@ test('root scripts expose the guarded release path and never bypass the exact-SH
   assert.equal(pkg.scripts?.['verify:hipico:evidence:v290'], 'node scripts/hipico-verify-evidence-v290.mjs');
   assert.equal(pkg.scripts?.['report:hipico:v290'], 'node scripts/hipico-release-report-v290.mjs');
 });
+
+test('production gate workflow reuses current v12-v21, browser matrix and Android contracts on exact head SHA', () => {
+  assert.equal(exists('.github/workflows/hipico-production-gates-v290.yml'), true, 'v290 production workflow missing');
+  const workflow = read('.github/workflows/hipico-production-gates-v290.yml');
+  assert.match(workflow, /github\.event\.pull_request\.head\.sha \|\| github\.sha/);
+  assert.match(workflow, /node scripts\/hipico-exact-sha-gate\.mjs/);
+  assert.match(workflow, /npm run release:hipico:v290/);
+  assert.match(workflow, /node scripts\/hipico-apply-e2e-schema-v290\.mjs/);
+  assert.match(workflow, /hipico-restart-recovery-v290\.ts prepare/);
+  assert.match(workflow, /hipico-restart-recovery-v290\.ts verify/);
+  assert.match(workflow, /playwright\.hipico-matrix\.config\.mjs --project=chromium/);
+  assert.match(workflow, /browser:\s*\[chromium, firefox, webkit\]/);
+  assert.match(workflow, /npm run sync:web/);
+  assert.match(workflow, /npm run verify:web/);
+  assert.match(workflow, /hipico-release-v118\.mjs --require-apk/);
+  assert.match(workflow, /npm run verify:hipico:evidence:v290/);
+  assert.match(workflow, /npm run report:hipico:v290/);
+  assert.doesNotMatch(workflow, /continue-on-error\s*:\s*true/);
+  assert.doesNotMatch(workflow, /\|\|\s*true(?:\s|$)/m);
+});
