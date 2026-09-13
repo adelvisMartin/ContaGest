@@ -10,6 +10,10 @@ import hipicoCanonicalRoutes from './modules/hipico-bot/hipico-canonical.routes.
 import hipicoSystemRoutes from './modules/hipico/hipico-system.routes.js';
 import hipicoCommandCenterRoutes from './modules/hipico/command-center.routes.js';
 import hipicoOperatorReadRoutes from './modules/hipico/operator-read.routes.js';
+import hipicoDocumentRoutes from './modules/hipico/document.routes.js';
+import hipicoProviderRoutes from './modules/hipico/provider.routes.js';
+import hipicoRaceRoutes from './modules/hipico/race.routes.js';
+import hipicoAgentRoutes from './modules/hipico/agent.routes.js';
 import { requestContext } from './shared/middleware/context.js';
 import { errorHandler, notFound } from './shared/middleware/error.js';
 import {
@@ -47,15 +51,10 @@ export function createApp(options: { readinessCheck?: ReadinessCheck } = {}) {
   app.use(securityResponseHeaders);
   app.use(corsPolicy);
 
-  // Platform probes must remain independent from business authentication and
-  // mutation gates. Readiness performs its own bounded/cached DB check.
   registerHealthRoutes(app, { readinessCheck: options.readinessCheck });
 
   app.use(globalRateLimit);
 
-  // CSP telemetry has no mutation side effect and therefore intentionally sits before
-  // the cookie-session CSRF middleware. It accepts only the reporting content types
-  // and has its own small body/traffic limits.
   app.post(
     '/api/v1/security/csp-report',
     cspReportRateLimit,
@@ -72,18 +71,19 @@ export function createApp(options: { readinessCheck?: ReadinessCheck } = {}) {
     }
   }));
 
-  // Control Hípico is an independent product that temporarily shares this API
-  // process. /api/v1/hipico is the canonical domain facade; /hipico-bot remains
-  // the compatibility/integration surface for Meta, WhatsApp Web Bridge and
-  // operator adapters. Token-authenticated read models stay outside browser CSRF
-  // but always use auth throttling and no-store responses. Canonical mutations
-  // additionally pass through the mutation limiter.
+  // /api/v1/hipico is the canonical Control Hipico facade. /hipico-bot remains
+  // an integration/compatibility adapter. Canonical PDF ingestion gets the
+  // expensive-operation ceiling because extraction/OCR is resource intensive.
   app.use('/api/v1/hipico-bot', hipicoWebhookRoutes);
   app.use('/api/v1/hipico-bot', authRateLimit, hipicoBridgeRoutes);
   app.use('/api/v1/hipico-bot', authRateLimit, hipicoOperatorRoutes);
   app.use('/api/v1/hipico', authRateLimit, hipicoSystemRoutes);
   app.use('/api/v1/hipico', authRateLimit, hipicoCommandCenterRoutes);
   app.use('/api/v1/hipico', authRateLimit, hipicoOperatorReadRoutes);
+  app.use('/api/v1/hipico/documents', authRateLimit, expensiveOperationRateLimit, mutationRateLimit, hipicoDocumentRoutes);
+  app.use('/api/v1/hipico', authRateLimit, mutationRateLimit, hipicoProviderRoutes);
+  app.use('/api/v1/hipico', authRateLimit, mutationRateLimit, hipicoRaceRoutes);
+  app.use('/api/v1/hipico', authRateLimit, mutationRateLimit, hipicoAgentRoutes);
   app.use('/api/v1/hipico', authRateLimit, mutationRateLimit, hipicoCanonicalRoutes);
 
   app.use(csrfProtection);
@@ -91,8 +91,6 @@ export function createApp(options: { readinessCheck?: ReadinessCheck } = {}) {
   app.use(enforceProductionSecrets);
   app.use('/api/v1/auth', authRateLimit, authRoutes);
 
-  // High-cost routes receive an additional resource-consumption ceiling. The
-  // general mutation limiter remains active below for state-changing requests.
   app.use(
     ['/api/v1/ai', '/api/v1/exports', '/api/v1/imports', '/api/v1/reports', '/api/v1/payables'],
     expensiveOperationRateLimit
