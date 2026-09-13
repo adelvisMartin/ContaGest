@@ -19,6 +19,13 @@ void test('agent/shadow gate validates the exact candidate with real ephemeral P
   assert.match(workflow, /hipico-exact-sha-gate\.mjs/);
 });
 
+void test('agent/shadow workflow path filter covers the actual agent route and persistence boundary', () => {
+  const workflow = readFileSync(workflowUrl, 'utf8');
+  assert.match(workflow, /backend\/src\/modules\/hipico\/agent\.routes\.ts/);
+  assert.match(workflow, /backend\/src\/modules\/hipico\/automation\.store\.ts/);
+  assert.match(workflow, /supabase\/sql\/hipico_v22_agent_shadow\.sql/);
+});
+
 void test('agent/shadow gate remains fail-closed during cleanup', () => {
   const workflow = readFileSync(workflowUrl, 'utf8');
   assert.match(workflow, /if:\s*always\(\)/);
