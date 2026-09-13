@@ -13,12 +13,27 @@ export function operatorTokenConfigured(env: NodeJS.ProcessEnv = process.env) {
   return hipicoRuntimeSecretConfigured(configuredOperatorToken(env), MIN_OPERATOR_TOKEN_LENGTH);
 }
 
-export function operatorTokenValid(value: string | undefined, env: NodeJS.ProcessEnv = process.env) {
-  const expected = configuredOperatorToken(env);
+function safeTokenEqual(expected: string, value: string | undefined) {
   if (!hipicoRuntimeSecretConfigured(expected, MIN_OPERATOR_TOKEN_LENGTH) || !value) return false;
   const provided = String(value);
-  if (Buffer.byteLength(expected) !== Buffer.byteLength(provided)) return false;
+  if (Buffer.byteLength(expected, 'utf8') !== Buffer.byteLength(provided, 'utf8')) return false;
   return crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(provided));
+}
+
+export function operatorTokenValid(value: string | undefined, env: NodeJS.ProcessEnv = process.env) {
+  return safeTokenEqual(configuredOperatorToken(env), value);
+}
+
+export function configuredOwnerApprovalToken(env: NodeJS.ProcessEnv = process.env) {
+  return String(env.HIPICO_OWNER_APPROVAL_TOKEN || '').trim();
+}
+
+export function ownerApprovalTokenValid(value: string | undefined, env: NodeJS.ProcessEnv = process.env) {
+  const expected = configuredOwnerApprovalToken(env);
+  const operator = configuredOperatorToken(env);
+  if (!hipicoRuntimeSecretConfigured(expected, MIN_OPERATOR_TOKEN_LENGTH)) return false;
+  if (operator && safeTokenEqual(expected, operator)) return false;
+  return safeTokenEqual(expected, value);
 }
 
 export function operatorActorRef(env: NodeJS.ProcessEnv = process.env) {

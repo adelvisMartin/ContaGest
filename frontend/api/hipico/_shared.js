@@ -177,11 +177,11 @@ export async function supabase(path, init = {}) {
 
 export function metaTimestamp(value) {
   if (value === undefined || value === null || String(value).trim() === '') return null;
-  const seconds = Number(value);
-  if (!Number.isFinite(seconds) || seconds < 0) return null;
-  const milliseconds = seconds * 1000;
-  if (!Number.isFinite(milliseconds)) return null;
-  const date = new Date(milliseconds);
+  const raw = String(value).trim();
+  if (!/^\d{1,12}$/.test(raw)) return null;
+  const seconds = Number(raw);
+  if (!Number.isFinite(seconds) || seconds <= 0) return null;
+  const date = new Date(seconds * 1000);
   return Number.isFinite(date.getTime()) ? date.toISOString() : null;
 }
 
@@ -190,11 +190,22 @@ export function extractMetaMessages(payload) {
   for (const entry of payload?.entry || []) {
     for (const change of entry?.changes || []) {
       const value = change?.value || {};
-      const channelKey = String(value?.metadata?.phone_number_id || 'meta');
-      const contactNames = new Map((value?.contacts || []).map((c) => [String(c.wa_id || ''), String(c?.profile?.name || '')]));
+      const channelKey = String(value?.metadata?.phone_number_id || 'meta').trim() || 'meta';
+      const contactNames = new Map((value?.contacts || []).map((contact) => [String(contact?.wa_id || ''), String(contact?.profile?.name || '')]));
       for (const message of value?.messages || []) {
-        const text = message?.text?.body || message?.button?.text || message?.interactive?.button_reply?.title || message?.interactive?.list_reply?.title || '';
-        rows.push({ channelKey, externalMessageId: String(message?.id || ''), senderId: String(message?.from || ''), senderLabel: contactNames.get(String(message?.from || '')) || '', timestamp: metaTimestamp(message?.timestamp), type: String(message?.type || 'unknown').trim().toLowerCase() || 'unknown', text: String(text || ''), quotedExternalMessageId: message?.context?.id ? String(message.context.id) : null, raw: message });
+        const timestamp = metaTimestamp(message?.timestamp);
+        const text = message?.text?.body || message?.button?.text || message?.interactive?.button_reply?.title || message?.interactive?.list_reply?.title || message?.document?.caption || message?.document?.filename || message?.image?.caption || message?.video?.caption || '';
+        rows.push({
+          channelKey,
+          externalMessageId: String(message?.id || ''),
+          senderId: String(message?.from || ''),
+          senderLabel: contactNames.get(String(message?.from || '')) || '',
+          timestamp,
+          type: String(message?.type || 'unknown').trim().toLowerCase() || 'unknown',
+          text: String(text || '').slice(0, 4000),
+          quotedExternalMessageId: message?.context?.id ? String(message.context.id) : null,
+          raw: message
+        });
       }
     }
   }
