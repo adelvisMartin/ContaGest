@@ -52,3 +52,18 @@ test('corrupt metadata never reaches delivery and is quarantined',async()=>{
     let calls=0;await spool.flush(async()=>{calls+=1;});assert.equal(calls,0);assert.equal((await spool.snapshot()).quarantined,1);
   }finally{await fs.rm(root,{recursive:true,force:true});}
 });
+
+test('document spool fails closed when the configured pending capacity is exhausted',async()=>{
+  const subject=await loadSubject();assert.ok(subject);
+  const root=await temp();try{
+    const spool=subject.createDocumentSpool({rootDir:root,maxPendingDocuments:1});
+    await spool.queue(meta,pdf);
+    await assert.rejects(
+      spool.queue({...meta,externalMessageId:'SECOND',event:{...meta.event,externalMessageId:'SECOND'}},pdf),
+      (error)=>error?.code==='HIPICO_BRIDGE_DOCUMENT_SPOOL_FULL'
+    );
+    const duplicate=await spool.queue(meta,pdf);
+    assert.equal(duplicate.duplicate,true,'an existing durable document remains idempotent at capacity');
+    assert.equal((await spool.snapshot()).pending,1);
+  }finally{await fs.rm(root,{recursive:true,force:true});}
+});
