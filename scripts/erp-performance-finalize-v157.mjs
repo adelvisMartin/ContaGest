@@ -12,7 +12,7 @@ const summaryPath=path.resolve('artifacts/qa/erp-performance-v157',sha,'summary.
 if(!fs.existsSync(summaryPath))throw new Error('PERFORMANCE_SUMMARY_REQUIRED');
 const summary=JSON.parse(fs.readFileSync(summaryPath,'utf8'));
 if(summary.candidateSha!==sha)throw new Error('PERFORMANCE_SUMMARY_SHA_MISMATCH');
-if(!['PASS','MEASURED_PROVISIONAL'].includes(summary.verdict))throw new Error(`PERFORMANCE_VERDICT_NOT_CLOSABLE:${summary.verdict}`);
+if(summary.verdict!=='PASS')throw new Error(`PERFORMANCE_VERDICT_NOT_CLOSABLE:${summary.verdict}`);
 if(!/^[a-f0-9]{64}$/i.test(String(summary.measurementHash||'')))throw new Error('PERFORMANCE_MEASUREMENT_HASH_REQUIRED');
 
 const [owner,name]=repo.split('/');
@@ -43,7 +43,7 @@ const body=[
   `Capacity QA ejecutado sobre \`${sha}\`: **${summary.verdict}**.`,
   `Evidencia SHA-256: \`${summary.measurementHash}\`.`,
   runUrl?`Run: ${runUrl}.`:'',
-  '#155 ya está cerrado y el gate #157 completó todas las dimensiones obligatorias.'
+  '#155 ya está cerrado y el gate #157 completó todas las dimensiones obligatorias con budgets ratificados.'
 ].filter(Boolean).join('\n\n');
 await api('/issues/157/comments',{method:'POST',body:JSON.stringify({body})});
 await api('/issues/157',{method:'PATCH',body:JSON.stringify({state:'closed',state_reason:'completed'})});
