@@ -52,3 +52,13 @@ test('backend delivery keeps retry semantics and bounded response parsing',async
   const fetchBusy=async()=>new Response(JSON.stringify({ok:false,error:'busy',retryable:true}),{status:503,headers:{'content-type':'application/json'}});
   await assert.rejects(subject.postBridgePdf({url:'https://example.test/api/v1/hipico-bot/bridge/documents',token:'bridge-secret',event,filename:'Programa.pdf',pdf,timeoutMs:5000,fetchImpl:fetchBusy}),(error)=>error?.retryable===true&&error?.status===503);
 });
+
+test('bridge authentication failures remain durable and retryable instead of quarantining the PDF',async()=>{
+  const subject=await loadSubject();assert.ok(subject);
+  const pdf=Buffer.from('%PDF-1.4\n1 0 obj<<>>endobj\n%%EOF\n');
+  const fetchUnauthorized=async()=>new Response(JSON.stringify({ok:false,error:'HIPICO_BRIDGE_UNAUTHORIZED'}),{status:401,headers:{'content-type':'application/json'}});
+  await assert.rejects(
+    subject.postBridgePdf({url:'https://example.test/api/v1/hipico-bot/bridge/documents',token:'old-token',event,filename:'Programa.pdf',pdf,timeoutMs:5000,fetchImpl:fetchUnauthorized}),
+    (error)=>error?.retryable===true&&error?.status===401&&error?.retryAfterMs>=60000
+  );
+});
