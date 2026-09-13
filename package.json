@@ -25,6 +25,7 @@
     "release:hipico:v290": "node scripts/hipico-release-guard-v290.mjs",
     "verify:hipico:evidence:v290": "node scripts/hipico-verify-evidence-v290.mjs",
     "report:hipico:v290": "node scripts/hipico-release-report-v290.mjs",
+    "ci:hipico:verdict:v290": "node scripts/hipico-ci-verdict-v290.mjs",
     "qa:today": "node scripts/qa-today.mjs instructions",
     "qa:today:prepare": "node scripts/qa-today.mjs prepare",
     "qa:today:status": "node scripts/qa-today.mjs status",
