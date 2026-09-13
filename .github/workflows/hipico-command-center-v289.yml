@@ -43,6 +43,9 @@ jobs:
           HIPICO_QA_SHA: ${{ env.HIPICO_CANDIDATE_SHA }}
         run: node scripts/hipico-exact-sha-gate.mjs
 
+      - name: Diff integrity gate
+        run: git diff --check
+
       - name: Record candidate identity
         shell: bash
         run: |
@@ -95,7 +98,7 @@ jobs:
           printf '%s\n' "${HIPICO_CANDIDATE_SHA}" > "$evidence/candidate-sha.txt"
           printf '%s\n' "${HIPICO_HEAD_SHA}" > "$evidence/head-sha.txt"
           git status --porcelain=v1 > "$evidence/git-status.txt"
-          git diff --check > "$evidence/diff-check.txt" || true
+          git diff --check > "$evidence/diff-check.txt" 2>&1 || true
 
       - name: Upload Command Center evidence
         if: always()
