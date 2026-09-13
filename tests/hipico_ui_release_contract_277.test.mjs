@@ -5,8 +5,6 @@ import { readFileSync, readdirSync } from 'node:fs';
 const read = (path) => readFileSync(new URL(path, import.meta.url), 'utf8');
 const html = read('../frontend/public/hipico-control/index.html');
 const css = read('../frontend/public/hipico-control/assets/css/app.css');
-const touchCss = read('../frontend/public/hipico-control/assets/css/mobile-accessibility.css');
-const opsCss = read('../frontend/public/hipico-control/assets/css/operational-copy-center.css');
 const notice = read('../frontend/public/hipico-control/assets/js/notice-bridge.js');
 const sw = read('../frontend/public/hipico-control/sw.js');
 const config = read('../frontend/public/hipico-control/assets/js/config.js');
@@ -23,10 +21,12 @@ function jsFiles(url, prefix = '') {
   return files.sort();
 }
 
-test('release shell mounts canonical logo and notice bridge', () => {
+test('release shell mounts canonical logo, notice bridge and exactly one visual authority', () => {
   assert.match(html, /logo-control-hipico\.png/);
   assert.match(html, /assets\/js\/notice-bridge\.js/);
   assert.match(html, /id="toast-region"/);
+  const stylesheets = [...html.matchAll(/<link\s+rel="stylesheet"\s+href="([^"]+)"/g)].map((match) => match[1]);
+  assert.deepEqual(stylesheets, ['./assets/css/app.css']);
 });
 
 test('operational notices are routed into accessible app feedback instead of being silently dropped', () => {
@@ -43,14 +43,13 @@ test('canonical UI exposes light, dark and system theming', () => {
   assert.match(css, /:root\[data-theme="system"\]/);
 });
 
-test('mobile controls preserve the 44px interaction contract across viewport and coarse-pointer devices', () => {
+test('mobile controls preserve the 44px interaction contract from the canonical owner', () => {
   assert.match(css, /--hc-touch:\s*44px/);
-  assert.match(css, /@media \(max-width:\s*780px\)[\s\S]*\.button,[\s\S]*min-height:\s*var\(--hc-touch\)/);
-  assert.match(html, /assets\/css\/mobile-accessibility\.css/);
-  assert.match(touchCss, /@media \(max-width:\s*900px\),\s*\(pointer:\s*coarse\)/);
-  assert.match(touchCss, /\.input,[\s\S]*\.select,[\s\S]*\.date-button,[\s\S]*\.color-input,[\s\S]*\.switch-row[\s\S]*min-height:\s*var\(--hc-touch,\s*44px\)/);
-  assert.match(sw, /assets\/css\/mobile-accessibility\.css/);
-  assert.match(opsCss, /@media\(max-width:720px\)[\s\S]*min-height:44px/);
+  assert.match(css, /@media \(max-width:\s*900px\), \(pointer:\s*coarse\)[\s\S]*\.button,[\s\S]*\.nav-button,[\s\S]*min-height:\s*var\(--hc-touch,\s*44px\)/);
+  assert.match(css, /\.input,[\s\S]*\.select,[\s\S]*\.date-button,[\s\S]*\.color-input,[\s\S]*\.switch-row,[\s\S]*min-height:\s*var\(--hc-touch,\s*44px\)/);
+  assert.match(css, /\.ops-button, \.ops-icon, \.ops-dialog select, \.ops-message summary\s*\{\s*min-height:\s*var\(--hc-touch,\s*44px\)/);
+  assert.doesNotMatch(html, /mobile-accessibility\.css|operational-copy-center\.css|operational-access-guard\.css/);
+  assert.doesNotMatch(sw, /mobile-accessibility\.css|operational-copy-center\.css|operational-access-guard\.css/);
 });
 
 test('mobile vertical scrolling, safe area and reduced motion remain explicitly supported', () => {
@@ -58,7 +57,7 @@ test('mobile vertical scrolling, safe area and reduced motion remain explicitly 
   assert.match(css, /overflow-y:\s*visible/);
   assert.match(css, /safe-area-inset-bottom/);
   assert.match(css, /prefers-reduced-motion:\s*reduce/);
-  assert.match(touchCss, /prefers-reduced-motion:\s*reduce/);
+  assert.match(css, /scroll-behavior:\s*auto\s*!important/);
 });
 
 test('installed PWA precaches the complete Hípico JavaScript module tree and atomically retires old shells', () => {
