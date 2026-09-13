@@ -15,6 +15,7 @@ type CountRow = { count: bigint | number };
 type StateCountRow = { state: string; count: bigint | number };
 type ReadState = 'ready' | 'unavailable';
 type Alert = { severity: 'info' | 'warning' | 'critical'; code: string; message: string };
+type ConflictCounts = { reconciliations: number; rejectedTransitions: number; agentConflicts: number | null };
 
 type CommandCenterDependencies = {
   now: () => Date;
@@ -27,7 +28,7 @@ type CommandCenterDependencies = {
   queueStates: (scope: CommandCenterScope) => Promise<StateCountRow[]>;
   documentStates: (scope: CommandCenterScope) => Promise<StateCountRow[]>;
   agentGroupIds: (scope: CommandCenterScope) => Promise<string[]>;
-  conflicts: (scope: CommandCenterScope, groupId: string | null) => Promise<{ reconciliations: number; rejectedTransitions: number; agentConflicts: number }>;
+  conflicts: (scope: CommandCenterScope, groupId: string | null) => Promise<ConflictCounts>;
   lastBridgeEvent: (scope: CommandCenterScope) => Promise<Date | string | null>;
   agentState: (scope: AgentScope) => Promise<{ mode: string; metrics: any }>;
 };
@@ -102,7 +103,7 @@ const defaultDependencies: CommandCenterDependencies = {
     return rows.map((row) => String(row.groupId || '').trim()).filter(Boolean);
   },
   conflicts: async (scope, groupId) => {
-    const [reconciliations, rejectedTransitions, agentConflicts] = await Promise.all([
+    const [reconciliations, rejectedTransitions, agentConflictRows] = await Promise.all([
       prisma.$queryRaw<CountRow[]>`
         SELECT COUNT(*)::bigint AS count
         FROM public.hipico_reconciliations
@@ -119,12 +120,12 @@ const defaultDependencies: CommandCenterDependencies = {
             FROM public.hipico_agent_evaluations
             WHERE owner_id = ${scope.ownerId}::uuid AND group_key = ${scope.groupKey}
               AND group_id = ${groupId} AND actual_intent IS NOT NULL AND conflict = true`
-        : Promise.resolve([{ count: 0 }])
+        : Promise.resolve(null)
     ]);
     return {
       reconciliations: asCount(reconciliations[0]?.count),
       rejectedTransitions: asCount(rejectedTransitions[0]?.count),
-      agentConflicts: asCount(agentConflicts[0]?.count)
+      agentConflicts: groupId ? asCount(agentConflictRows?.[0]?.count) : null
     };
   },
   lastBridgeEvent: async (scope) => {
@@ -166,7 +167,7 @@ export async function buildHipicoCommandCenter(
     read(() => deps.channels(scope), [] as any[]),
     read(() => deps.queueStates(scope), [] as StateCountRow[]),
     read(() => deps.documentStates(scope), [] as StateCountRow[]),
-    read(() => deps.conflicts(scope, resolvedAgentGroupId), { reconciliations: 0, rejectedTransitions: 0, agentConflicts: 0 }),
+    read(() => deps.conflicts(scope, resolvedAgentGroupId), { reconciliations: 0, rejectedTransitions: 0, agentConflicts: null } as ConflictCounts),
     read(() => deps.lastBridgeEvent(scope), null as Date | string | null)
   ]);
 
@@ -186,7 +187,7 @@ export async function buildHipicoCommandCenter(
     ? (queueStates.queued || 0) + (queueStates.sending || 0) + (queueStates.retry || 0)
     : null;
   const queueFailed = queueRead.state === 'ready' ? (queueStates.failed || 0) : null;
-  const conflictsTotal = conflictsRead.state === 'ready'
+  const conflictsTotal = conflictsRead.state === 'ready' && conflictsRead.data.agentConflicts !== null
     ? conflictsRead.data.reconciliations + conflictsRead.data.rejectedTransitions + conflictsRead.data.agentConflicts
     : null;
 
