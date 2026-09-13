@@ -2,7 +2,6 @@ import { env, fetchWithTimeout, safeEqual, safeTimeoutMs, serverSecret } from '.
 import { proxyCanonicalRequest, relayCanonicalResponse } from './canonical-backend.js';
 
 const GROUP_KEY = /^[A-Za-z0-9._:-]{3,120}$/;
-const GROUP_ID = /^[A-Za-z0-9@._:-]{3,220}$/;
 
 function bearer(req) {
   const value = String(req.headers.authorization || '').trim();
@@ -44,15 +43,10 @@ export default async function handler(req, res) {
     if (!identity.ok) return res.status(identity.status).json({ ok: false, code: identity.code });
 
     const groupKey = String(req.query?.groupKey || '').trim();
-    const groupId = String(req.query?.groupId || '').trim();
     if (!GROUP_KEY.test(groupKey)) return res.status(400).json({ ok: false, code: 'HIPICO_GROUP_INVALID' });
-    if (groupId && !GROUP_ID.test(groupId)) return res.status(400).json({ ok: false, code: 'HIPICO_GROUP_ID_INVALID' });
 
-    const search = new URLSearchParams();
-    if (groupId) search.set('groupId', groupId);
-    const suffix = search.toString() ? `?${search.toString()}` : '';
     const upstream = await proxyCanonicalRequest({
-      path: `/api/v1/hipico/command-center${suffix}`,
+      path: '/api/v1/hipico/command-center',
       headers: {
         'x-hipico-operator-token': operatorToken(),
         'x-hipico-group-key': groupKey,

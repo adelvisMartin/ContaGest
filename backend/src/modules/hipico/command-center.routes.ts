@@ -7,7 +7,6 @@ import { operatorTokenConfigured, operatorTokenValid } from '../hipico-bot/hipic
 const router = Router();
 const uuid = z.string().uuid();
 const groupKeySchema = z.string().trim().min(3).max(120).regex(/^[A-Za-z0-9._:-]+$/);
-const groupIdSchema = z.string().trim().min(3).max(220).regex(/^[A-Za-z0-9@._:-]+$/);
 
 function requestId(req: Request) {
   return String((req as any).requestId || '').trim() || null;
@@ -24,14 +23,6 @@ function ownerId() {
 function groupKey(req: Request) {
   const parsed = groupKeySchema.safeParse(req.header('x-hipico-group-key') || req.query.groupKey);
   if (!parsed.success) throw Object.assign(new Error('HIPICO_GROUP_INVALID'), { code: 'HIPICO_GROUP_INVALID' });
-  return parsed.data;
-}
-
-function groupId(req: Request) {
-  const raw = String(req.query.groupId || '').trim();
-  if (!raw) return null;
-  const parsed = groupIdSchema.safeParse(raw);
-  if (!parsed.success) throw Object.assign(new Error('HIPICO_AUTOMATION_GROUP_ID_INVALID'), { code: 'HIPICO_AUTOMATION_GROUP_ID_INVALID' });
   return parsed.data;
 }
 
@@ -70,8 +61,7 @@ router.get('/command-center', async (req, res) => {
   try {
     const data = await buildHipicoCommandCenter({
       ownerId: ownerId(),
-      groupKey: groupKey(req),
-      groupId: groupId(req)
+      groupKey: groupKey(req)
     });
     return res.status(200).json({ ok: true, data });
   } catch (error) {
