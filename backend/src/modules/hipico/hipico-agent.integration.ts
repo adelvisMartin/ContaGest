@@ -122,6 +122,50 @@ void test('automation transition audit is append-only even for direct database w
   assert.ok(persisted.some((event: any) => event.id === eventId));
 });
 
+void test('reviewed agent evidence permits one controlled review then becomes immutable', async () => {
+  const store = new AutomationStore();
+  const receipt = await store.recordEvaluation({
+    ownerId: OWNER,
+    groupKey: GROUP_KEY_B,
+    groupId: GROUP_ID_B,
+    text: '¿Cuál es la próxima carrera?',
+    expectedIntent: 'query:NEXT_RACE',
+    candidate: {
+      intent: 'query:NEXT_RACE',
+      confidence: .995,
+      tool: 'queryNextRace',
+      arguments: { text: '¿Cuál es la próxima carrera?' },
+      risk: 'safe',
+      source: 'deterministic',
+      modelVersion: 'e2e'
+    },
+    canAct: false,
+    evidence: { source: 'e2e-review' }
+  });
+
+  await store.review({
+    ownerId: OWNER,
+    groupKey: GROUP_KEY_B,
+    groupId: GROUP_ID_B,
+    id: receipt.id,
+    actualIntent: 'query:NEXT_RACE',
+    actorRef: 'operator-token:e2e-agent'
+  });
+
+  await assert.rejects(
+    admin.query('update public.hipico_agent_evaluations set actual_intent=$1 where id=$2::uuid', ['query:LAST_RESULT', receipt.id]),
+    /HIPICO_AGENT_EVALUATION_IMMUTABLE/
+  );
+  await assert.rejects(
+    admin.query('delete from public.hipico_agent_evaluations where id=$1::uuid', [receipt.id]),
+    /HIPICO_AGENT_EVALUATION_IMMUTABLE/
+  );
+  const rows = await store.evaluations(OWNER, GROUP_KEY_B, GROUP_ID_B, 50);
+  const persisted = rows.find((row: any) => row.id === receipt.id);
+  assert.equal(persisted?.actualIntent, 'query:NEXT_RACE');
+  assert.equal(persisted?.reviewedBy, 'operator-token:e2e-agent');
+});
+
 void test('rejected promotion is audited without changing mode and group scopes never cross', async () => {
   const store = new AutomationStore();
   const rejected = await store.setMode({ ownerId: OWNER, groupKey: GROUP_KEY_B, groupId: GROUP_ID_B, target: 'ASSISTED', actorRef: 'operator-token:e2e-agent', ownerApproved: false, idempotencyKey: 'agent-assisted-0001' });
