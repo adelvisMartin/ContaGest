@@ -5,6 +5,7 @@ import {
   agentCanAct,
   canPromoteAutomation,
   safeToolRequest,
+  sanitizeAgentEvidence,
   validateModelCandidate,
   type DeterministicAgentParser
 } from './agent-policy.js';
@@ -48,6 +49,25 @@ void test('model output is bounded and tools reject unknown or dangerous argumen
   assert.throws(() => safeToolRequest({ ...candidate, arguments: { text: 'ok', unexpected: true } }), /AGENT_TOOL_ARGUMENTS_REJECTED/);
   assert.throws(() => safeToolRequest({ ...candidate, arguments: { text: 'x'.repeat(1001) } }), /AGENT_TOOL_ARGUMENTS_REJECTED/);
   assert.deepEqual(safeToolRequest(candidate), { tool: 'queryNextRace', arguments: { text: 'siguiente' } });
+});
+
+void test('agent evidence recursively rejects secret-shaped keys and unsafe structures', () => {
+  assert.deepEqual(sanitizeAgentEvidence({ source: 'fixture', nested: { score: 7 }, tags: ['safe', 2, true, null] }), {
+    source: 'fixture', nested: { score: 7 }, tags: ['safe', 2, true, null]
+  });
+  assert.throws(() => sanitizeAgentEvidence({ metadata: { authorization: 'Bearer secret' } }), /HIPICO_AGENT_EVIDENCE_FORBIDDEN_KEY/);
+  assert.throws(() => sanitizeAgentEvidence({ items: [{ api_key: 'secret' }] }), /HIPICO_AGENT_EVIDENCE_FORBIDDEN_KEY/);
+  assert.throws(() => sanitizeAgentEvidence({ metadata: { constructor: 'x' } }), /HIPICO_AGENT_EVIDENCE_FORBIDDEN_KEY/);
+  assert.throws(() => sanitizeAgentEvidence({ amount: Number.POSITIVE_INFINITY }), /HIPICO_AGENT_EVIDENCE_INVALID/);
+  assert.throws(() => sanitizeAgentEvidence({ huge: 'x'.repeat(17 * 1024) }), /HIPICO_AGENT_EVIDENCE_TOO_LARGE/);
+
+  let deep: any = { value: 'ok' };
+  for (let i = 0; i < 10; i += 1) deep = { child: deep };
+  assert.throws(() => sanitizeAgentEvidence(deep), /HIPICO_AGENT_EVIDENCE_TOO_DEEP/);
+
+  const circular: any = {};
+  circular.self = circular;
+  assert.throws(() => sanitizeAgentEvidence(circular), /HIPICO_AGENT_EVIDENCE_INVALID/);
 });
 
 void test('proposeRaceCommand accepts only review-risk lifecycle candidates', () => {
