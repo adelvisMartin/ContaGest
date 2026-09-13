@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
+import { buildCanonicalUrl } from '../frontend/api/hipico/canonical-backend.js';
 import {
   cleanBaseUrl,
   commandPlan,
@@ -37,6 +38,25 @@ test('#284 serverless linked-device adapter delegates business authority to cano
   assert.match(proxy, /redirect:\s*'error'/);
   assert.match(proxy, /MAX_PROXY_RESPONSE_BYTES/);
   assert.match(proxy, /HIPICO_CANONICAL_API_BASE_URL/);
+});
+
+test('#284 canonical proxy revalidates normalized paths and rejects namespace traversal', () => {
+  const source = { HIPICO_CANONICAL_API_BASE_URL: 'https://hipico.example.test', NODE_ENV: 'production' };
+  assert.equal(
+    buildCanonicalUrl('/api/v1/hipico-bot/bridge/events', source),
+    'https://hipico.example.test/api/v1/hipico-bot/bridge/events'
+  );
+  for (const malicious of [
+    '/api/v1/hipico-bot/../../security/csp-report',
+    '/api/v1/hipico-bot/%2e%2e/%2e%2e/security/csp-report',
+    '/api/v1/hipico/../auth/login'
+  ]) {
+    assert.throws(
+      () => buildCanonicalUrl(malicious, source),
+      (error) => error?.code === 'HIPICO_CANONICAL_PATH_NOT_ALLOWED',
+      malicious
+    );
+  }
 });
 
 test('#284 CLI command mapping uses only real bounded read surfaces', () => {
