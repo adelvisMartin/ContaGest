@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { MODULE_VISUAL_ROUTES } from './support/module-visual-catalog.mjs';
 
 test.setTimeout(600_000);
 test.use({viewport:{width:390,height:844},hasTouch:true,isMobile:true});
@@ -9,6 +10,17 @@ const QA_SESSION={
   user:{id:'qa-admin',name:'QA Admin',fullName:'QA Admin',email:'qa@contagest.local',role:'admin',permissions:['*']},
   audience:'staff',expiresAt:Date.now()+8*60*60*1000
 };
+
+function boundedBatchConfig(){
+  const rawIndex=String(process.env.CG_MOBILE_NAV_BATCH_INDEX||'').trim();
+  const rawSize=String(process.env.CG_MOBILE_NAV_BATCH_SIZE||'').trim();
+  if(!rawIndex&&!rawSize)return null;
+  const index=Number(rawIndex);
+  const size=Number(rawSize);
+  if(!Number.isInteger(index)||index<0)throw new Error('CG_MOBILE_NAV_BATCH_INDEX must be a non-negative integer.');
+  if(!Number.isInteger(size)||size<1||size>12)throw new Error('CG_MOBILE_NAV_BATCH_SIZE must be an integer between 1 and 12.');
+  return{index,size};
+}
 
 async function seed(page){
   await page.addInitScript((session)=>localStorage.setItem('contagest_auth_session',JSON.stringify(session)),QA_SESSION);
@@ -27,8 +39,16 @@ test('every actual sidebar route button navigates to the requested module and cl
   await seed(page);await dashboard(page);await openSidebar(page);
   const routes=await page.locator('#mainMenu button[data-route],.hf-sidebar-footer button[data-route]').evaluateAll((nodes)=>[...new Set(nodes.map((node)=>node.dataset.route).filter(Boolean))]);
   expect(routes.length).toBeGreaterThanOrEqual(20);
+  expect(routes.length).toBeLessThanOrEqual(MODULE_VISUAL_ROUTES.length);
+  const canonicalRoutes=new Set(MODULE_VISUAL_ROUTES);
+  expect(routes.filter((route)=>!canonicalRoutes.has(route)),`Sidebar routes missing from canonical visual catalog: ${routes.filter((route)=>!canonicalRoutes.has(route)).join(', ')}`).toEqual([]);
+
+  const batch=boundedBatchConfig();
+  const selectedRoutes=batch?routes.slice(batch.index*batch.size,(batch.index+1)*batch.size):routes;
+  if(batch&&batch.index*batch.size<routes.length)expect(selectedRoutes.length).toBeGreaterThan(0);
+
   const failures=[];
-  for(const route of routes){
+  for(const route of selectedRoutes){
     try{
       await dashboard(page);await openSidebar(page);
       const button=page.locator(`#mainMenu button[data-route="${route}"],.hf-sidebar-footer button[data-route="${route}"]`).first();
@@ -42,7 +62,7 @@ test('every actual sidebar route button navigates to the requested module and cl
       await expect(page.locator('body')).not.toHaveClass(/cg-menu-open/);
     }catch(error){failures.push({route,error:String(error?.message||error),url:page.url(),bodyRoute:await page.locator('body').getAttribute('data-route').catch(()=>null),renderedRoute:await page.locator('#pages').getAttribute('data-rendered-route').catch(()=>null)});}
   }
-  console.log(`[mobile-navigation-v163] sidebar-routes=${routes.length} fallos=${failures.length}`);
+  console.log(`[mobile-navigation-v163] sidebar-routes=${routes.length} selected=${selectedRoutes.length} batch=${batch?`${batch.index}/${batch.size}`:'full'} fallos=${failures.length}`);
   expect(failures,JSON.stringify(failures,null,2)).toEqual([]);
 });
 
