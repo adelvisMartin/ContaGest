@@ -53,21 +53,26 @@ for (const file of jsonFiles) {
     const data = JSON.parse(await fs.readFile(file, 'utf8'));
     parsed.push({ file, name: path.basename(file), data });
   } catch {
-    // Non-JSON/corrupt evidence cannot establish a gate and is ignored here.
+    // Corrupt/non-JSON evidence cannot prove a gate and is ignored.
   }
 }
 
 const requiredDescriptors = [
   { id: 'secretScan', name: 'secret-scan.json', schemas: ['hipico-secret-scan.v290', 'hipico-secret-scan.v290-current'] },
   { id: 'releaseGuard', name: 'release-guard.json', schemas: ['hipico-release-guard.v290-current'] },
-  { id: 'postgres', name: 'postgres-rbac.json', schemas: ['hipico-rbac.v290', 'hipico-rbac.v290-current'] },
+  { id: 'postgresRbac', name: 'postgres-rbac.json', schemas: ['hipico-rbac.v290', 'hipico-rbac.v290-current'] },
+  { id: 'postgresGate', name: 'postgres-gate.json', schemas: ['hipico-postgres-gate.v290-current'] },
   { id: 'restart', name: 'restart-state.json', schemas: ['hipico-restart.v290', 'hipico-restart.v290-current'] },
+  { id: 'performance', name: 'postgres-performance.json', schemas: ['hipico-performance.v290', 'hipico-performance.v290-current'] },
   { id: 'releaseManifest', name: 'release-manifest.json', schemas: ['hipico-release-evidence.v1'] }
 ];
 
 const optionalDescriptors = [
   { id: 'runtimeBuild', name: 'build-info.json', schemas: [] },
-  { id: 'apkMetadata', name: 'QA_APK_METADATA.json', schemas: [] }
+  { id: 'apkMetadata', name: 'QA_APK_METADATA.json', schemas: [] },
+  { id: 'chromiumGate', name: 'chromium-gate.json', schemas: ['hipico-browser-gate.v290-current'] },
+  { id: 'securityGate', name: 'security-gate.json', schemas: ['hipico-security-gate.v290-current'] },
+  { id: 'androidGate', name: 'android-gate.json', schemas: ['hipico-android-gate.v290-current'] }
 ];
 
 function findDescriptor(descriptor) {
