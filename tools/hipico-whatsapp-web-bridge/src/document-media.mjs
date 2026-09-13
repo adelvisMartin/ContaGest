@@ -52,7 +52,12 @@ export async function postBridgePdf({url,token,event,filename,pdf,timeoutMs=1500
   assertPdfPayload(pdf);
   const response=await fetchImpl(target,{method:'POST',headers:buildBridgeDocumentHeaders(event,filename,token),body:pdf,signal:AbortSignal.timeout(timeoutMs)});
   const raw=await responseText(response);let body={};try{body=raw?JSON.parse(raw):{};}catch{}
-  if(!response.ok){const status=Number(response.status||0);const retryable=body?.retryable!==false&&(status===408||status===409||status===425||status===429||status>=500);throw coded(String(body?.error||`HIPICO_BRIDGE_DOCUMENT_HTTP_${status}`),{status,retryable,retryAfterMs:0});}
+  if(!response.ok){
+    const status=Number(response.status||0);
+    const authRetry=status===401||status===403;
+    const retryable=authRetry||(body?.retryable!==false&&(status===408||status===409||status===425||status===429||status>=500));
+    throw coded(String(body?.error||`HIPICO_BRIDGE_DOCUMENT_HTTP_${status}`),{status,retryable,retryAfterMs:authRetry?60000:0});
+  }
   return body;
 }
 
