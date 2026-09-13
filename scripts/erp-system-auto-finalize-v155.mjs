@@ -2,6 +2,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
+import { classifyWorkflowOutcome } from './erp-system-run-verdict-v155.mjs';
 
 const repo = process.env.GITHUB_REPOSITORY || 'adelvisMartin/ContaGest';
 const issueNumber = 155;
@@ -46,6 +47,11 @@ function listRuns() {
   return Array.isArray(payload?.workflow_runs) ? payload.workflow_runs : [];
 }
 
+function listJobs(runId) {
+  const payload = api(`repos/${repo}/actions/runs/${runId}/jobs?per_page=100`);
+  return Array.isArray(payload?.jobs) ? payload.jobs : [];
+}
+
 async function waitForNewRun(beforeIds, candidateSha) {
   const deadline = Date.now() + 5 * 60 * 1000;
   while (Date.now() < deadline) {
@@ -86,6 +92,8 @@ async function main() {
     runId: null,
     runUrl: null,
     conclusion: null,
+    jobsObserved: null,
+    infrastructureBlocked: false,
     verdict: 'NOT_EXECUTED',
     issueClosed: false,
   };
@@ -101,13 +109,14 @@ async function main() {
   gh(['workflow', 'run', workflowFile, '--repo', repo, '--ref', 'main']);
   const created = await waitForNewRun(beforeIds, candidateSha);
   const completed = await waitForCompletion(Number(created.id));
+  const jobs = listJobs(Number(completed.id));
 
   report.runId = Number(completed.id);
   report.runUrl = completed.html_url || null;
   report.conclusion = completed.conclusion || null;
-  report.verdict = completed.status === 'completed' && completed.conclusion === 'success' && completed.head_sha === candidateSha
-    ? 'PASS'
-    : 'FAIL';
+  report.jobsObserved = jobs.length;
+  report.verdict = classifyWorkflowOutcome(completed, jobs, candidateSha);
+  report.infrastructureBlocked = report.verdict === 'BLOCKED';
 
   if (report.verdict === 'PASS' && closeIssue) {
     gh([
