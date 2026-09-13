@@ -1,6 +1,6 @@
 # Control Hípico — Style Guide canónica
 
-Esta guía define la única línea visual permitida para la PWA y el wrapper Android. El manual de marca completo vive en `docs/brand/CONTROL_HIPICO_BRAND_MANUAL.md`.
+Esta guía define la línea visual práctica permitida para la PWA y el wrapper Android. La **especificación normativa** vive en `docs/hipico/design-system.md`; el manual de marca completo vive en `docs/brand/CONTROL_HIPICO_BRAND_MANUAL.md`. Si existe una diferencia, `docs/hipico/design-system.md` prevalece.
 
 ## Autoridades canónicas
 
@@ -61,13 +61,14 @@ Estados admitidos en UI:
 - `error`: consulta fallida con acción de reintento.
 - `offline`: sin red y sin lectura previa.
 - `stale`: existe una lectura anterior pero ya no puede confirmarse.
+- `disabled`: no existe un grupo local válido seleccionado; la actualización permanece inactiva.
 - `unavailable`: un componente o métrica no pudo leerse; se muestra `No disponible`, nunca `0`.
 - `not_configured`: la capacidad no está configurada; no equivale a fallo.
 - `degraded`: configurado pero sin evidencia suficiente para afirmar `ready`.
 
 Las tarjetas de Backend, PostgreSQL, Bridge, Canal, Providers y Agente deben comunicar estado mediante texto + badge. Para alertas o documentos con texto grande se usa expansión nativa mediante `details/summary`; no se trunca la única evidencia disponible.
 
-La identidad de grupo enviada por el shell es sólo la clave local validada `[A-Za-z0-9._:-]{3,120}`. El browser no publica ni deriva JID, `groupId` SOURCE ni secretos del backend. Si el backend no puede resolver la identidad necesaria para el agente, el estado correcto es `GROUP_ID_NOT_SELECTED` / `not_configured`.
+La identidad de grupo enviada por el shell es sólo la clave local validada `[A-Za-z0-9._:-]{3,120}`. El browser no publica ni deriva JID, `groupId` SOURCE ni secretos del backend. El backend resuelve la identidad del agente exclusivamente server-side; cero coincidencias producen `GROUP_ID_NOT_CONFIGURED`/`not_configured`, múltiples coincidencias producen `GROUP_ID_AMBIGUOUS`/`unavailable` y nunca se elige una coincidencia arbitraria.
 
 ## Tema `system` / `light` / `dark`
 
@@ -117,7 +118,7 @@ Un cambio visual no se considera validado sólo por inspección de fuente. El ga
 - light/dark/system;
 - reduced motion;
 - 360, 390/393, 430, 768, 1024 y 1440 px;
-- loading, empty, error, offline, stale, unavailable, not_configured y retry;
+- loading, empty, error, offline, stale, disabled, unavailable, not_configured y retry;
 - contraste WCAG AA;
 - PWA offline/reconexión;
 - paridad Android/PWA.
