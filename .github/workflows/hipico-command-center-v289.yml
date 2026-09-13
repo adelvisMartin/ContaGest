@@ -72,8 +72,10 @@ jobs:
           npm --workspace backend run typecheck
           npm --workspace backend run test:hipico
 
-      - name: Verify Android and PWA source parity
-        run: node android/hipico-control-v1130/scripts/sync-web.mjs --check-only
+      - name: Generate Android web bundle and verify exact PWA parity
+        run: |
+          node android/hipico-control-v1130/scripts/sync-web.mjs
+          node android/hipico-control-v1130/scripts/sync-web.mjs --check-only
 
       - name: Install Chromium
         run: npx playwright install --with-deps chromium
