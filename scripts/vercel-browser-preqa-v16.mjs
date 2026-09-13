@@ -54,7 +54,7 @@ if(isPostMerge58x5){
   runCommandGate('REACT DOCTOR DESIGN','npm',['run','doctor:design']);
 }
 
-execute('npm',['install','--no-save','--ignore-scripts','--no-audit','--no-fund',`@sparticuz/chromium@${SERVERLESS_CHROMIUM_VERSION}`]);
+execute('npm',['install','--no-save','--package-lock=false','--ignore-scripts','--no-audit','--no-fund',`@sparticuz/chromium@${SERVERLESS_CHROMIUM_VERSION}`]);
 execute('npx',['--no-install','playwright','install','ffmpeg']);
 
 const probeSource=`import chromium from '@sparticuz/chromium';chromium.setGraphicsMode=false;const executablePath=await chromium.executablePath();const runtimeEnv={LD_LIBRARY_PATH:process.env.LD_LIBRARY_PATH||'',FONTCONFIG_PATH:process.env.FONTCONFIG_PATH||'',HOME:process.env.HOME||''};process.stdout.write('__CG_CHROMIUM__'+JSON.stringify({executablePath,args:chromium.args,runtimeEnv}));`;
