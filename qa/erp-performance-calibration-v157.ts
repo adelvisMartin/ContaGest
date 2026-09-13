@@ -54,7 +54,9 @@ try {
   }
 
   const querySamples = prismaQueryTelemetrySnapshot().filter((item) => !/pg_stat_activity|current_setting\('max_connections'\)/i.test(item.query));
+  assert.ok(querySamples.length > 0, 'Prisma query telemetry produced no samples; refusing to report a synthetic DB p95.');
   const dbDurations = querySamples.map((item) => item.durationMs).filter(Number.isFinite);
+  assert.ok(dbDurations.length > 0, 'Prisma query telemetry produced no finite durations; refusing to report a synthetic DB p95.');
 
   const run = `PERF157-CAL-${Date.now().toString(36).toUpperCase()}`;
   const tenantB = await h.prisma.tenant.create({ data: { rif: `${run}-B`, name: `${run} Tenant B`, legalName: `${run} Tenant B` } });
