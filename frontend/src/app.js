@@ -44,7 +44,7 @@ function applyAuthenticatedSession(session){
   const current=Store.get();
   const licenseMode=session.license?.businessSector;
   Store.set({
-    profile:{...current.profile,name:session.user?.fullName||session.user?.name||current.profile?.name||'Usuario',email:session.user?.email||current.profile?.email||'',role:session.user?.role||current.profile?.role||'client',permissions:Array.isArray(session.user?.permissions)?session.user.permissions:(current.profile?.permissions||[]),branch:session.tenant?.name||current.profile?.branch||'Empresa',plan:session.license?.plan||session.tenant?.plan||'Enterprise'},
+    profile:{...current.profile,name:session.user?.fullName||session.user?.name||current.profile?.name||'Usuario',email:session.user?.email||current.profile?.email||'',role:session.user?.role||current.profile?.role||'client',permissions:Array.isArray(session.user?.permissions)?session.user.permissions:(current.profile?.permissions||[]),branch:session.tenant?.name||current.profile?.branch||'Empresa',plan:session.license?.plan||session.tenant?.plan||current.profile?.plan||'Enterprise'},
     activeLicense:session.license||null,
     settings:{...current.settings,companyName:session.tenant?.name||current.settings?.companyName,companyRif:session.tenant?.rif||current.settings?.companyRif,...(licenseMode?{businessMode:licenseMode}:{})}
   });
