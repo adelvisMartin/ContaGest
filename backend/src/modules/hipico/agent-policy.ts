@@ -76,6 +76,17 @@ export function canPromoteAutomation(
   return { allowed: false, reason: 'INVALID_PROMOTION_PATH', metrics: calculated };
 }
 
+export function sourceAutomationModeAllowed(
+  groupId: string,
+  target: AutomationState,
+  sourceGroupId: string | undefined
+) {
+  const source = String(sourceGroupId || '').trim().toLowerCase();
+  const group = String(groupId || '').trim().toLowerCase();
+  if (!source || !group || group !== source) return true;
+  return target === 'DISABLED' || target === 'SHADOW';
+}
+
 export type AgentCandidate = {
   intent: string;
   confidence: number;
