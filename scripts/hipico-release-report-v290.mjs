@@ -4,6 +4,7 @@ import path from 'node:path';
 
 const SHA40 = /^[0-9a-f]{40}$/i;
 const STATUSES = Object.freeze(['PASS', 'FAIL', 'BLOCKED', 'NOT_EXECUTED']);
+const MODES = Object.freeze(['code-review', 'stable']);
 const outputRoot = path.resolve('artifacts/qa/hipico-v290');
 
 function gitHead() {
@@ -23,6 +24,9 @@ const sha = String(
 if (!SHA40.test(sha)) throw new Error('HIPICO_RELEASE_REPORT_SHA_REQUIRED');
 const head = gitHead();
 if (head && head !== sha) throw new Error(`HIPICO_RELEASE_REPORT_SHA_MISMATCH:${head}:${sha}`);
+
+const mode = String(process.env.HIPICO_REPORT_MODE || 'code-review').trim().toLowerCase();
+if (!MODES.includes(mode)) throw new Error(`HIPICO_RELEASE_REPORT_MODE_INVALID:${mode}`);
 
 function strictStatus(value, fallback = 'NOT_EXECUTED') {
   const normalized = String(value || fallback).trim().toUpperCase();
@@ -68,6 +72,7 @@ function aggregate(names) {
 
 const codeReviewStatus = aggregate(requiredForCodeReview);
 const stablePromotionStatus = aggregate(requiredForStablePromotion);
+const selectedStatus = mode === 'stable' ? stablePromotionStatus : codeReviewStatus;
 const infrastructureReason = String(process.env.HIPICO_BLOCKER_REASON || '').trim();
 const blockedInfrastructure = infrastructureReason === 'BLOCKED_INFRASTRUCTURE';
 
@@ -82,10 +87,12 @@ const report = {
   sha,
   generatedAt: new Date().toISOString(),
   ticket: 290,
+  mode,
   allowedStatuses: STATUSES,
   statuses,
   codeReviewStatus,
   stablePromotionStatus,
+  selectedStatus,
   blockerClassification: blockedInfrastructure ? 'BLOCKED_INFRASTRUCTURE' : null,
   blockers,
   readiness: {
@@ -120,8 +127,8 @@ const report = {
 
 await fs.mkdir(outputRoot, { recursive: true });
 await fs.writeFile(path.join(outputRoot, 'release-report.json'), `${JSON.stringify(report, null, 2)}\n`, 'utf8');
-const markdown = `# Control Hípico — Release report #290\n\n- SHA: \`${sha}\`\n- Code review gates: **${codeReviewStatus}**\n- Stable promotion: **${stablePromotionStatus}**\n- Infra classification: **${blockedInfrastructure ? 'BLOCKED_INFRASTRUCTURE' : 'N/A'}**\n\n## Gates\n${Object.entries(statuses).map(([name, status]) => `- ${name}: **${status}**`).join('\n')}\n\n## Promotion\n${report.readiness.note}\n\n## Blockers\n${blockers.length ? blockers.map((item) => `- ${item.gate}: **${item.status}**${item.reason ? ` — ${item.reason}` : ''}`).join('\n') : '- Ninguno.'}\n`;
+const markdown = `# Control Hípico — Release report #290\n\n- SHA: \`${sha}\`\n- Modo: **${mode}**\n- Code review gates: **${codeReviewStatus}**\n- Stable promotion: **${stablePromotionStatus}**\n- Infra classification: **${blockedInfrastructure ? 'BLOCKED_INFRASTRUCTURE' : 'N/A'}**\n\n## Gates\n${Object.entries(statuses).map(([name, status]) => `- ${name}: **${status}**`).join('\n')}\n\n## Promotion\n${report.readiness.note}\n\n## Blockers\n${blockers.length ? blockers.map((item) => `- ${item.gate}: **${item.status}**${item.reason ? ` — ${item.reason}` : ''}`).join('\n') : '- Ninguno.'}\n`;
 await fs.writeFile(path.join(outputRoot, 'release-report.md'), markdown, 'utf8');
 
-console.log(`[hipico-v290] release report sha=${sha} code=${codeReviewStatus} stable=${stablePromotionStatus}`);
-if (stablePromotionStatus !== 'PASS') process.exitCode = 1;
+console.log(`[hipico-v290] release report sha=${sha} mode=${mode} selected=${selectedStatus} stable=${stablePromotionStatus}`);
+if (selectedStatus !== 'PASS') process.exitCode = 1;
