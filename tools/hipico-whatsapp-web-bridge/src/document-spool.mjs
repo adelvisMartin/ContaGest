@@ -20,8 +20,10 @@ export function createDocumentSpool({rootDir,baseBackoffMs=5000,maxBackoffMs=15*
     await init;const from=paths(key),to=paths(key,quarantine);const safeReason=String(reason||'QUARANTINED').slice(0,160);
     let record=null;try{record=JSON.parse(await fs.readFile(from.meta,'utf8'));}catch{}
     if(await exists(from.pdf))await fs.rename(from.pdf,to.pdf).catch(()=>{});
-    if(record)await atomicJson(to.meta,{...record,state:'quarantined',quarantinedAt:nowIso(),lastError:safeReason});
-    else if(await exists(from.meta))await fs.rename(from.meta,to.meta).catch(()=>{});
+    if(record){
+      await atomicJson(to.meta,{...record,state:'quarantined',quarantinedAt:nowIso(),lastError:safeReason});
+      await fs.rm(from.meta,{force:true}).catch(()=>{});
+    }else if(await exists(from.meta))await fs.rename(from.meta,to.meta).catch(()=>{});
     return true;
   }
 
