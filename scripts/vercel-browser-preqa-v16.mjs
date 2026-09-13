@@ -8,6 +8,7 @@ const pr=String(process.env.VERCEL_GIT_PULL_REQUEST_ID||'').trim();
 const gitRef=String(process.env.VERCEL_GIT_COMMIT_REF||'').trim();
 const isPostMerge58x5=gitRef==='qa/postmerge-58x5-verification';
 const SERVERLESS_CHROMIUM_VERSION='149.0.0';
+const MOBILE_NAV_BATCH_SIZE=6;
 const failures=[];
 
 if(isVercel&&(!isPreview||(!pr&&!isPostMerge58x5))){
@@ -40,8 +41,10 @@ function runCommandGate(label,command,args,{env={}}={}){
   return result;
 }
 
-execute('npm',['install','--include=dev','--ignore-scripts','--no-audit','--no-fund']);
-
+// Vercel's top-level install is deliberately `npm ci` (see vercel.json).
+// Re-running a generic `npm install` here would mutate the locked dependency
+// graph immediately before QA. Reuse that deterministic workspace install and
+// add only the exact serverless Chromium runtime required by this preview gate.
 if(isPostMerge58x5){
   // These gates are intentionally non-short-circuiting. A missing DB secret or a
   // diagnostic failure must not hide browser evidence for the other 58x5 gates.
@@ -51,7 +54,7 @@ if(isPostMerge58x5){
   runCommandGate('REACT DOCTOR DESIGN','npm',['run','doctor:design']);
 }
 
-execute('npm',['install','--no-save','--ignore-scripts','--no-audit','--no-fund',`@sparticuz/chromium@${SERVERLESS_CHROMIUM_VERSION}`]);
+execute('npm',['install','--no-save','--package-lock=false','--ignore-scripts','--no-audit','--no-fund',`@sparticuz/chromium@${SERVERLESS_CHROMIUM_VERSION}`]);
 execute('npx',['--no-install','playwright','install','ffmpeg']);
 
 const probeSource=`import chromium from '@sparticuz/chromium';chromium.setGraphicsMode=false;const executablePath=await chromium.executablePath();const runtimeEnv={LD_LIBRARY_PATH:process.env.LD_LIBRARY_PATH||'',FONTCONFIG_PATH:process.env.FONTCONFIG_PATH||'',HOME:process.env.HOME||''};process.stdout.write('__CG_CHROMIUM__'+JSON.stringify({executablePath,args:chromium.args,runtimeEnv}));`;
@@ -64,9 +67,9 @@ if(!browserConfig?.executablePath||!Array.isArray(browserConfig?.args))process.e
 if(!String(browserConfig.runtimeEnv?.LD_LIBRARY_PATH||'').includes('/tmp/al2023/lib')){console.error('[browser-preqa] Capa AL2023 no activa.');process.exit(1);}
 
 const browserEnv={...browserConfig.runtimeEnv,CI:'1',PLAYWRIGHT_HTML_OPEN:'never',CG_PLAYWRIGHT_CHROMIUM_EXECUTABLE:browserConfig.executablePath,CG_PLAYWRIGHT_CHROMIUM_ARGS:JSON.stringify(browserConfig.args)};
-function runGroup(label,args){
+function runGroup(label,args,{env={}}={}){
   console.log(`\n[browser-preqa] ===== ${label} =====`);
-  const result=execute('npx',['--no-install','playwright','test',...args,'--project=chromium','--workers=1'],{env:browserEnv,allowFailure:true});
+  const result=execute('npx',['--no-install','playwright','test',...args,'--project=chromium','--workers=1'],{env:{...browserEnv,...env},allowFailure:true});
   if(result.status!==0){failures.push({label,status:result.status||1});console.error(`[browser-preqa][FAIL] ${label}`);}else console.log(`[browser-preqa][PASS] ${label}`);
 }
 function regexEscape(value){return String(value).replace(/[.*+?^${}()|[\]\\]/g,'\\$&');}
@@ -98,7 +101,13 @@ runGroup('mobile deep 360px',['qa/mobile-deep-v162.spec.mjs','--grep','inside 36
 runGroup('mobile deep 390px',['qa/mobile-deep-v162.spec.mjs','--grep','inside 390px']);
 runGroup('mobile deep 430px',['qa/mobile-deep-v162.spec.mjs','--grep','inside 430px']);
 runGroup('mobile shell + light/dark contrast',['qa/mobile-deep-v162.spec.mjs','--grep','mobile shell controls']);
-runGroup('mobile sidebar navigation',['qa/mobile-navigation-v163.spec.mjs','--grep','every actual sidebar route button']);
+
+const mobileNavBatchCount=Math.ceil(MODULE_VISUAL_CATALOG.length/MOBILE_NAV_BATCH_SIZE);
+for(let index=0;index<mobileNavBatchCount;index+=1){
+  runGroup(`mobile sidebar navigation batch ${index+1}/${mobileNavBatchCount}`,
+    ['qa/mobile-navigation-v163.spec.mjs','--grep','every actual sidebar route button'],
+    {env:{CG_MOBILE_NAV_BATCH_INDEX:String(index),CG_MOBILE_NAV_BATCH_SIZE:String(MOBILE_NAV_BATCH_SIZE)}});
+}
 runGroup('observable safe click-smoke',['qa/module-actions-runtime-v163.spec.mjs']);
 
 if(isPostMerge58x5){
