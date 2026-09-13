@@ -4,6 +4,7 @@ import { currentSession, initializeCloudSession } from './supabase.js';
 import { normalizeWorkspaceShape } from './workspace.js';
 
 const ENDPOINT = '/api/hipico/command-center';
+const REMOTE_TTL_MS = 15_000;
 let remoteState = { status: 'idle', data: null, error: '', updatedAt: null, groupKey: '' };
 let refreshPromise = null;
 let mountScheduled = false;
@@ -97,9 +98,28 @@ function raceLabel(race) {
   return `${track}${number}`;
 }
 
-export function renderCommandCenterModel({ local, remote, online = true, error = '' } = {}) {
+function operationalMessage({ status, remoteKnown, online, hasGroup }) {
+  if (status === 'loading') return 'Cargando estado remoto…';
+  if (!hasGroup) return 'Sin grupo activo configurado. Configura o selecciona un grupo para consultar el estado remoto.';
+  if (!online && remoteKnown) return 'Última muestra remota conservada. Sin conexión: estos datos pueden estar desactualizados.';
+  if (!online) return 'Sin conexión y sin una muestra remota previa. Los datos locales siguen disponibles.';
+  if (status === 'error' && remoteKnown) return 'Datos remotos conservados. No se pudo actualizar el estado remoto; la muestra anterior puede estar desactualizada.';
+  if (status === 'error') return 'No se pudo actualizar el estado remoto. Los datos locales siguen disponibles.';
+  return '';
+}
+
+function connectionBadge({ status, online, remoteKnown }) {
+  if (status === 'loading') return { tone: 'info', label: 'ACTUALIZANDO' };
+  if (!online) return { tone: 'warning', label: remoteKnown ? 'SIN CONEXIÓN · DATOS CONSERVADOS' : 'SIN CONEXIÓN' };
+  if (status === 'error') return { tone: 'danger', label: remoteKnown ? 'DATOS REMOTOS OBSOLETOS' : 'ERROR REMOTO' };
+  return { tone: 'success', label: 'EN LÍNEA' };
+}
+
+export function renderCommandCenterModel({ local, remote, online = true, error = '', status = '' } = {}) {
   const localState = local || { group: null, groupKey: '', meeting: null, currentRace: null, nextRace: null, localQueue: 0, localConflicts: 0 };
   const remoteKnown = Boolean(remote && typeof remote === 'object');
+  const hasGroup = Boolean(localState.group && localState.groupKey);
+  const viewStatus = String(status || (!online ? 'offline' : remoteKnown ? 'ready' : 'idle'));
   const fallbackState = online ? 'unknown' : 'offline';
   const system = remoteKnown ? remote.system : { state: fallbackState };
   const bridge = remoteKnown ? remote.bridge : { state: fallbackState };
@@ -137,10 +157,21 @@ export function renderCommandCenterModel({ local, remote, online = true, error =
     ? 'Lectura remota no disponible'
     : `${Number(remote?.races?.total || 0)} carrera(s) persistida(s)`;
   const alertDetail = alerts.length ? `${alerts.length}: ${alerts.map(humanAlert).join(' · ')}` : 'Sin alertas reportadas';
+  const message = operationalMessage({ status: viewStatus, remoteKnown, online, hasGroup });
+  const badge = connectionBadge({ status: viewStatus, online, remoteKnown });
+  const empty = hasGroup ? '' : ' data-command-empty';
+  const busy = viewStatus === 'loading';
 
-  return `<section class="card section-gap" data-command-center aria-labelledby="command-center-title">
-    <div class="card__head"><div><h3 id="command-center-title">Centro de operaciones</h3><small>Estados reales del dispositivo y del backend · ${escapeHtml(sampled)}</small></div><span class="badge badge--${online ? 'success' : 'warning'}">${online ? 'EN LÍNEA' : 'SIN CONEXIÓN'}</span></div>
+  return `<section class="card section-gap" data-command-center data-command-status="${escapeHtml(viewStatus)}"${empty} aria-labelledby="command-center-title" aria-busy="${busy ? 'true' : 'false'}">
+    <div class="card__head">
+      <div><h3 id="command-center-title">Centro de operaciones</h3><small>Estados reales del dispositivo y del backend · ${escapeHtml(sampled)}</small></div>
+      <div class="row-actions">
+        <button class="button button--small" type="button" data-action="refresh-command-center" aria-label="Actualizar Centro de operaciones"${busy ? ' disabled aria-disabled="true"' : ''}>Actualizar</button>
+        <span class="badge badge--${badge.tone}">${escapeHtml(badge.label)}</span>
+      </div>
+    </div>
     <div class="card__body">
+      ${message ? `<p class="muted" data-command-message role="status" aria-live="polite">${escapeHtml(message)}</p>` : '<span class="sr-only" role="status" aria-live="polite">Estado remoto actualizado.</span>'}
       <div class="grid grid--kpi">
         ${statusTile('Sistema', system.state, system.backendReachable === true ? 'Backend alcanzable' : online ? 'Backend sin confirmar' : 'Red no disponible')}
         ${statusTile('Bridge', bridge.state, bridge.ready === true ? 'SOURCE/LAB verificados' : 'Requiere verificación')}
@@ -184,19 +215,25 @@ async function authenticatedAccessToken() {
   }
 }
 
+function preservedRemoteData(groupKey) {
+  return remoteState.groupKey === groupKey && remoteState.data && typeof remoteState.data === 'object' ? remoteState.data : null;
+}
+
 async function readRemoteState(groupKey) {
   const normalizedGroupKey = String(groupKey || '').trim();
+  const previousData = preservedRemoteData(normalizedGroupKey);
+  const previousUpdatedAt = remoteState.groupKey === normalizedGroupKey ? remoteState.updatedAt : null;
   if (typeof navigator !== 'undefined' && navigator.onLine === false) {
-    remoteState = { status: 'offline', data: null, error: 'offline', updatedAt: new Date().toISOString(), groupKey: normalizedGroupKey };
+    remoteState = { status: 'offline', data: previousData, error: 'offline', updatedAt: previousUpdatedAt, groupKey: normalizedGroupKey };
     return remoteState;
   }
   if (!normalizedGroupKey) {
-    remoteState = { status: 'error', data: null, error: 'group_scope_unavailable', updatedAt: new Date().toISOString(), groupKey: '' };
+    remoteState = { status: 'ready', data: null, error: '', updatedAt: null, groupKey: '' };
     return remoteState;
   }
   const accessToken = await authenticatedAccessToken();
   if (!accessToken) {
-    remoteState = { status: 'error', data: null, error: 'auth_required', updatedAt: new Date().toISOString(), groupKey: normalizedGroupKey };
+    remoteState = { status: 'error', data: previousData, error: 'auth_required', updatedAt: previousUpdatedAt, groupKey: normalizedGroupKey };
     return remoteState;
   }
   try {
@@ -208,20 +245,61 @@ async function readRemoteState(groupKey) {
     if (!response.ok || payload?.ok !== true || !payload?.data) throw new Error(String(payload?.error || `HTTP_${response.status}`));
     remoteState = { status: 'ready', data: payload.data, error: '', updatedAt: new Date().toISOString(), groupKey: normalizedGroupKey };
   } catch {
-    remoteState = { status: 'error', data: null, error: 'remote_status_unavailable', updatedAt: new Date().toISOString(), groupKey: normalizedGroupKey };
+    remoteState = { status: 'error', data: previousData, error: 'remote_status_unavailable', updatedAt: previousUpdatedAt, groupKey: normalizedGroupKey };
   }
   return remoteState;
 }
 
-async function hydrate() {
+function upsertCommandCenter(hero, local) {
+  if (!hero?.isConnected) return;
+  const html = renderCommandCenterModel({
+    local,
+    remote: remoteState.data,
+    online: typeof navigator === 'undefined' || navigator.onLine !== false,
+    error: remoteState.error,
+    status: remoteState.status
+  });
+  const current = document.querySelector('[data-command-center]');
+  if (current) current.outerHTML = html;
+  else hero.insertAdjacentHTML('afterend', html);
+}
+
+async function hydrate({ force = false } = {}) {
   const hero = document.querySelector('.content > .group-hero');
-  if (!hero || document.querySelector('[data-command-center]')) return;
+  if (!hero) return;
+  if (document.querySelector('[data-command-center]') && !force) return;
+
   const local = await readLocalContext();
-  const stale = !remoteState.updatedAt || Date.now() - Date.parse(remoteState.updatedAt) > 15_000;
-  const scopeChanged = remoteState.groupKey !== local.groupKey;
-  if (stale || scopeChanged) await readRemoteState(local.groupKey);
-  if (!hero.isConnected || document.querySelector('[data-command-center]')) return;
-  hero.insertAdjacentHTML('afterend', renderCommandCenterModel({ local, remote: remoteState.data, online: navigator.onLine !== false, error: remoteState.error }));
+  const normalizedGroupKey = String(local.groupKey || '').trim();
+  const scopeChanged = remoteState.groupKey !== normalizedGroupKey;
+  if (scopeChanged) remoteState = { status: 'idle', data: null, error: '', updatedAt: null, groupKey: normalizedGroupKey };
+
+  if (!normalizedGroupKey) {
+    remoteState = { status: 'ready', data: null, error: '', updatedAt: null, groupKey: '' };
+    upsertCommandCenter(hero, local);
+    return;
+  }
+
+  if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+    await readRemoteState(normalizedGroupKey);
+    upsertCommandCenter(hero, local);
+    return;
+  }
+
+  const updatedAt = remoteState.updatedAt ? Date.parse(remoteState.updatedAt) : 0;
+  const stale = !Number.isFinite(updatedAt) || Date.now() - updatedAt > REMOTE_TTL_MS;
+  if (force || scopeChanged || stale || remoteState.status === 'error' || remoteState.status === 'offline' || remoteState.status === 'idle') {
+    remoteState = {
+      ...remoteState,
+      status: 'loading',
+      error: '',
+      groupKey: normalizedGroupKey,
+      data: preservedRemoteData(normalizedGroupKey)
+    };
+    upsertCommandCenter(hero, local);
+    await readRemoteState(normalizedGroupKey);
+  }
+  upsertCommandCenter(hero, local);
 }
 
 function scheduleHydrate() {
@@ -235,9 +313,40 @@ function scheduleHydrate() {
   });
 }
 
+function forceRefresh() {
+  if (refreshPromise) return refreshPromise;
+  refreshPromise = hydrate({ force: true }).finally(() => { refreshPromise = null; });
+  return refreshPromise;
+}
+
 if (typeof document !== 'undefined') {
   scheduleHydrate();
-  if (typeof MutationObserver === 'function') new MutationObserver(scheduleHydrate).observe(document.documentElement, { childList: true, subtree: true });
-  globalThis.addEventListener?.('online', () => { remoteState.updatedAt = null; document.querySelector('[data-command-center]')?.remove(); scheduleHydrate(); });
-  globalThis.addEventListener?.('offline', () => { remoteState.updatedAt = null; document.querySelector('[data-command-center]')?.remove(); scheduleHydrate(); });
+  if (typeof MutationObserver === 'function') new MutationObserver((mutations) => {
+    const externalMutation = mutations.some((mutation) => {
+      const target = mutation.target;
+      return !(target instanceof Element && target.closest('[data-command-center]'));
+    });
+    if (externalMutation) scheduleHydrate();
+  }).observe(document.documentElement, { childList: true, subtree: true });
+
+  document.addEventListener('click', (event) => {
+    const button = event.target?.closest?.('[data-action="refresh-command-center"]');
+    if (!button || button.disabled) return;
+    forceRefresh().catch(() => {});
+  });
+
+  globalThis.addEventListener?.('online', () => {
+    remoteState.status = 'idle';
+    remoteState.error = '';
+    remoteState.updatedAt = null;
+    document.querySelector('[data-command-center]')?.remove();
+    scheduleHydrate();
+  });
+  globalThis.addEventListener?.('offline', () => {
+    remoteState.status = 'offline';
+    remoteState.error = 'offline';
+    remoteState.updatedAt = remoteState.updatedAt || null;
+    document.querySelector('[data-command-center]')?.remove();
+    scheduleHydrate();
+  });
 }
