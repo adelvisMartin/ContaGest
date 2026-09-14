@@ -5,6 +5,7 @@ const DEFAULT_BASE_URL = 'http://127.0.0.1:3030';
 const REQUEST_TIMEOUT_MS = 10_000;
 const MAX_RESPONSE_BYTES = 1024 * 1024;
 const MAX_TAIL = 100;
+const GROUP_KEY_RE = /^[A-Za-z0-9._:-]{1,120}$/;
 const SECRET_KEY = /(token|secret|authorization|cookie|password|credential|api[_-]?key)/i;
 
 function isLoopback(hostname) {
@@ -25,17 +26,33 @@ export function cleanBaseUrl(value = process.env.HIPICO_API_BASE_URL || DEFAULT_
   return url.origin;
 }
 
+function optionValue(args, name, fallback = '') {
+  const index = args.indexOf(name);
+  return index >= 0 && args[index + 1] ? String(args[index + 1]).trim() : fallback;
+}
+
 export function parseCommand(argv) {
   const args = [...argv];
   const json = args.includes('--json');
-  const filtered = args.filter((arg) => arg !== '--json');
+  const group = optionValue(args, '--group', String(process.env.HIPICO_GROUP_KEY || '').trim());
+  const filtered = args.filter((arg, index) => {
+    if (arg === '--json' || arg === '--group') return false;
+    if (index > 0 && args[index - 1] === '--group') return false;
+    return true;
+  });
   const command = filtered[0] || 'help';
-  return { json, command, subcommand: filtered[1] || '', value: filtered[2] || '' };
+  return { json, group, command, subcommand: filtered[1] || '', value: filtered[2] || '' };
 }
 
 function boundedTail(value) {
   const number = Number(value || 50);
   return Number.isInteger(number) && number >= 1 ? Math.min(MAX_TAIL, number) : 50;
+}
+
+function canonicalGroupPlan(parsed, path) {
+  const group = String(parsed.group || '').trim();
+  if (!GROUP_KEY_RE.test(group)) return { local: 'group-required', group };
+  return { path, auth: 'operator-group', group };
 }
 
 export function commandPlan(parsed) {
@@ -46,7 +63,7 @@ export function commandPlan(parsed) {
     if (!/^[A-Za-z0-9._:-]{3,120}$/.test(correlationId)) {
       return { local: 'invalid-trace', correlationId };
     }
-    return { path: `/api/v1/hipico-bot/events?limit=${MAX_TAIL}`, auth: 'operator', transform: 'trace', correlationId };
+    return canonicalGroupPlan(parsed, `/api/v1/hipico/trace/${encodeURIComponent(correlationId)}`);
   }
   const plans = new Map([
     ['status', { path: '/api/v1/hipico/system/status', auth: 'none' }],
@@ -54,9 +71,9 @@ export function commandPlan(parsed) {
     ['version', { path: '/api/v1/hipico/system/version', auth: 'none' }],
     ['bridge status', { path: '/api/v1/hipico-bot/bridge/health', auth: 'bridge' }],
     ['channel status', { path: '/api/v1/hipico/system/status', auth: 'none', transform: 'channel' }],
-    ['groups', { path: '/api/v1/hipico/system/status', auth: 'none', transform: 'groups' }],
-    ['messages tail', { path: `/api/v1/hipico-bot/events?limit=${tail}`, auth: 'operator', transform: 'messages' }],
-    ['events tail', { path: `/api/v1/hipico-bot/events?limit=${tail}`, auth: 'operator', transform: 'events' }]
+    ['groups', { path: '/api/v1/hipico/groups', auth: 'operator' }],
+    ['messages tail', canonicalGroupPlan(parsed, `/api/v1/hipico/messages?limit=${tail}`)],
+    ['events tail', canonicalGroupPlan(parsed, `/api/v1/hipico/events?limit=${tail}`)]
   ]);
   return plans.get(key) || plans.get(parsed.command) || null;
 }
@@ -83,18 +100,26 @@ export function redact(value, source = process.env, key = '') {
   return value;
 }
 
-function authHeaders(auth, source = process.env) {
+function authHeaders(auth, source = process.env, group = '') {
+  const headers = {};
   if (auth === 'bridge') {
     const token = String(source.HIPICO_GROUP_BRIDGE_TOKEN || '').trim();
     if (!token) throw Object.assign(new Error('HIPICO_CLI_BRIDGE_TOKEN_NOT_CONFIGURED'), { code: 'HIPICO_CLI_BRIDGE_TOKEN_NOT_CONFIGURED' });
-    return { 'x-hipico-bridge-token': token };
+    headers['x-hipico-bridge-token'] = token;
   }
-  if (auth === 'operator') {
+  if (auth === 'operator' || auth === 'operator-group') {
     const token = String(source.HIPICO_OPERATOR_CONTROL_TOKEN || '').trim();
     if (!token) throw Object.assign(new Error('HIPICO_CLI_OPERATOR_TOKEN_NOT_CONFIGURED'), { code: 'HIPICO_CLI_OPERATOR_TOKEN_NOT_CONFIGURED' });
-    return { 'x-hipico-operator-token': token };
+    headers['x-hipico-operator-token'] = token;
   }
-  return {};
+  if (auth === 'operator-group') {
+    const normalizedGroup = String(group || '').trim();
+    if (!GROUP_KEY_RE.test(normalizedGroup)) {
+      throw Object.assign(new Error('HIPICO_CLI_GROUP_REQUIRED'), { code: 'HIPICO_CLI_GROUP_REQUIRED' });
+    }
+    headers['x-hipico-group-key'] = normalizedGroup;
+  }
+  return headers;
 }
 
 async function readBoundedResponse(response) {
@@ -118,7 +143,7 @@ export async function requestPlan(plan, options = {}) {
       method: 'GET',
       redirect: 'error',
       signal: controller.signal,
-      headers: { Accept: 'application/json', ...authHeaders(plan.auth, source) }
+      headers: { Accept: 'application/json', ...authHeaders(plan.auth, source, plan.group) }
     });
     const data = await readBoundedResponse(response);
     return { ok: response.ok, status: response.status, path: plan.path, data: redact(data, source) };
@@ -181,7 +206,7 @@ function help() {
       'status', 'doctor', 'health', 'version', 'bridge status', 'channel status',
       'groups', 'messages tail [limit]', 'events tail [limit]', 'trace <correlationId>'
     ],
-    flags: ['--json']
+    flags: ['--group <groupKey>', '--json']
   };
 }
 
@@ -206,6 +231,7 @@ export async function main(argv = process.argv.slice(2), options = {}) {
       const plan = commandPlan(parsed);
       if (!plan) result = { ok: false, code: 'HIPICO_CLI_UNKNOWN_COMMAND', command: [parsed.command, parsed.subcommand].filter(Boolean).join(' ') };
       else if (plan.local === 'invalid-trace') result = { ok: false, code: 'HIPICO_CLI_INVALID_TRACE_ID' };
+      else if (plan.local === 'group-required') result = { ok: false, code: 'HIPICO_CLI_GROUP_REQUIRED' };
       else result = transformResult(await requestPlan(plan, options), plan);
     }
   } catch (error) {
