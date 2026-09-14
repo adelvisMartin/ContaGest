@@ -107,7 +107,7 @@ test('issue #157 frontend measured performance evidence',async({page})=>{
 
   const heapGrowthPct=Math.max(0,((heapAfter-heapBefore)/heapBefore)*100);
   const output={
-    schemaVersion:2,issue:157,candidateSha:sha,
+    schemaVersion:2,issue:157,candidateSha:sha,fixtureProvenance:'SYNTHETIC_TEST_ONLY',
     profiles:{cold:'MEASURED',warm:'MEASURED','repeated-navigation':'MEASURED','long-session':'MEASURED','network-throttled':'MEASURED'},
     metrics:{
       'frontend.startupP95Ms':q(startup,.95),'frontend.routeSwitchP95Ms':q(routeSwitch,.95),'frontend.saveP95Ms':q(save,.95),'frontend.import1000RowsP95Ms':q(import1000,.95),
