@@ -1,0 +1,41 @@
+name: Hípico Provider Live Probe
+
+on:
+  schedule:
+    - cron: '17 9 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: hipico-provider-live-probe
+  cancel-in-progress: true
+
+jobs:
+  sportradar-live-probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      HIPICO_RACE_PROVIDER: sportradar-uof
+      HIPICO_RACE_PROVIDER_BASE_URL: ${{ vars.HIPICO_RACE_PROVIDER_BASE_URL }}
+      HIPICO_SPORTRADAR_UOF_TOKEN: ${{ secrets.HIPICO_SPORTRADAR_UOF_TOKEN }}
+      HIPICO_LIVE_PROBE_STAGE_ID: ${{ vars.HIPICO_LIVE_PROBE_STAGE_ID }}
+      HIPICO_RACE_PROVIDER_TIMEOUT_MS: '5000'
+      HIPICO_RACE_PROVIDER_CACHE_TTL_MS: '30000'
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Configure Node 22
+        uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Install lockfile dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Probe authorized racing provider
+        run: npm --workspace backend run probe:hipico:provider

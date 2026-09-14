@@ -10,6 +10,11 @@ test('data-engine workflow is triggered by the shared race-provider implementati
   assert.match(workflow, /npm run test:hipico/);
 });
 
+test('data-engine workflow also gates stacked pull requests instead of only PRs targeting main', () => {
+  assert.match(workflow, /pull_request\s*:/);
+  assert.doesNotMatch(workflow, /pull_request\s*:\s*\n\s*branches\s*:\s*\[\s*main\s*\]/);
+});
+
 test('data-engine workflow keeps cleanup explicit and never masks teardown errors with shell success fallbacks', () => {
   assert.doesNotMatch(workflow, /\|\|\s*true/);
   assert.doesNotMatch(workflow, /continue-on-error\s*:\s*true/i);

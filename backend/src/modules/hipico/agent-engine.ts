@@ -15,9 +15,18 @@ const PROMPT_INJECTION = new RegExp([
 const DOCUMENT_REFERENCE = /\b(?:documento|archivo|pdf)\b[\s\S]{0,120}\b(?:adjunto|adjunta|sin\s+texto|sin\s+contenido)\b/i;
 const AMBIGUOUS_LIFECYCLE = /\b(?:ya\s+)?est[aá]\s+(?:abierta|cerrada|corriendo|suspendida)\b/i;
 const EXPLICIT_RACE_CONTEXT = /\b(?:carrera|race)\b|\b\d{1,3}\s*(?:ra|da|ta|ma)?\b/i;
+const INVISIBLE_SECURITY_CHARS = /[\u200B-\u200D\u2060\uFEFF]/g;
+
+function normalizedSecurityText(text: string) {
+  return String(text || '')
+    .slice(0, 4000)
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(INVISIBLE_SECURITY_CHARS, '');
+}
 
 export function looksLikeAgentPolicyInjection(text: string) {
-  return PROMPT_INJECTION.test(String(text || '').slice(0, 4000));
+  return PROMPT_INJECTION.test(normalizedSecurityText(text));
 }
 
 function looksLikeAttachmentOnlyReference(text: string) {

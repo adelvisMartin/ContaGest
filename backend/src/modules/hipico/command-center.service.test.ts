@@ -1,7 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { buildHipicoCommandCenter } from './command-center.service.js';
 
+const source = readFileSync(new URL('./command-center.service.ts', import.meta.url), 'utf8');
 const scope = {
   ownerId: '11111111-1111-4111-8111-111111111111',
   groupKey: 'club-hipico-triple-crown-official'
@@ -36,7 +38,11 @@ function dependencies(overrides: Record<string, unknown> = {}) {
     queueStates: async () => [],
     documentStates: async () => [],
     agentGroupIds: async () => [GROUP_ID],
-    conflicts: async () => ({ reconciliations: 0, rejectedTransitions: 0, agentConflicts: 0 }),
+    conflicts: async (_scope: any, groupId: string | null) => ({
+      reconciliations: 0,
+      rejectedTransitions: 0,
+      agentConflicts: groupId ? 0 : null
+    }),
     lastBridgeEvent: async () => null,
     agentState: async () => ({ mode: 'SHADOW', metrics: { reviewed: 10, matched: 10, highRiskFalsePositive: 0, unauthorizedAction: 0, conflicts: 0 } }),
     ...overrides
@@ -90,9 +96,11 @@ void test('a unique server-side group identity enables agent state without expos
   assert.deepEqual(result.scope, { groupKey: scope.groupKey });
   assert.equal(result.agent.state, 'ready');
   assert.equal(result.agent.mode, 'SHADOW');
+  assert.equal(result.conflicts.agentConflicts, 0);
+  assert.equal(result.conflicts.total, 0);
 });
 
-void test('missing server-side group identity fails closed without querying cross-group agent metrics', async () => {
+void test('missing server-side group identity fails closed without fabricating zero agent conflicts', async () => {
   let calls = 0;
   const result = await buildHipicoCommandCenter(scope, dependencies({
     agentGroupIds: async () => [],
@@ -101,9 +109,11 @@ void test('missing server-side group identity fails closed without querying cros
   assert.equal(calls, 0);
   assert.equal(result.agent.state, 'not_configured');
   assert.equal(result.agent.reason, 'GROUP_ID_NOT_CONFIGURED');
+  assert.equal(result.conflicts.agentConflicts, null);
+  assert.equal(result.conflicts.total, null);
 });
 
-void test('ambiguous server-side group identity fails closed and never picks an arbitrary JID', async () => {
+void test('ambiguous server-side group identity fails closed and never invents agent conflict counts', async () => {
   let calls = 0;
   const result = await buildHipicoCommandCenter(scope, dependencies({
     agentGroupIds: async () => [GROUP_ID, '120363222222222222@g.us'],
@@ -112,10 +122,12 @@ void test('ambiguous server-side group identity fails closed and never picks an 
   assert.equal(calls, 0);
   assert.equal(result.agent.state, 'unavailable');
   assert.equal(result.agent.reason, 'GROUP_ID_AMBIGUOUS');
+  assert.equal(result.conflicts.agentConflicts, null);
+  assert.equal(result.conflicts.total, null);
   assert.ok(result.alerts.some((alert) => alert.code === 'AGENT_GROUP_ID_AMBIGUOUS'));
 });
 
-void test('identity resolution read failure remains unavailable rather than not-configured', async () => {
+void test('identity resolution read failure remains unavailable and conflict totals stay unknown', async () => {
   let calls = 0;
   const result = await buildHipicoCommandCenter(scope, dependencies({
     agentGroupIds: async () => { throw new Error('database read failed'); },
@@ -124,5 +136,19 @@ void test('identity resolution read failure remains unavailable rather than not-
   assert.equal(calls, 0);
   assert.equal(result.agent.state, 'unavailable');
   assert.equal(result.agent.reason, 'AGENT_IDENTITY_READ_FAILED');
+  assert.equal(result.conflicts.agentConflicts, null);
+  assert.equal(result.conflicts.total, null);
   assert.ok(result.alerts.some((alert) => alert.code === 'AGENT_IDENTITY_READ_UNAVAILABLE'));
+});
+
+void test('Command Center channel and identity reads stay isolated by owner and group key', () => {
+  assert.match(
+    source,
+    /FROM public\.hipico_bot_channels[\s\S]{0,220}WHERE owner_id = \$\{scope\.ownerId\}::uuid AND group_key = \$\{scope\.groupKey\}/
+  );
+  assert.match(
+    source,
+    /FROM public\.hipico_group_automation[\s\S]{0,220}WHERE owner_id = \$\{scope\.ownerId\}::uuid AND group_key = \$\{scope\.groupKey\}/
+  );
+  assert.match(source, /agentConflicts:\s*groupId\s*\?/);
 });

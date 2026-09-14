@@ -114,7 +114,7 @@ router.get('/groups/:groupId/automation', async (req, res) => {
     const owner = ownerId();
     const g = groupKey(req);
     const gid = parsedGroupId(req);
-    const config = await store.get(owner, g, gid);
+    const config = await store.read(owner, g, gid);
     const metrics = await store.metrics(owner, g, gid);
     return res.json({
       ok: true,

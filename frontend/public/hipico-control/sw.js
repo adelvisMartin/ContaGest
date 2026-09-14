@@ -3,7 +3,7 @@ const SHELL_CACHE = `${CACHE_VERSION}-shell-r24-command-center-289`;
 const APP_SHELL = [
   './', './index.html', './recovery.html', './manifest.webmanifest',
   './icons/icon-192.png', './icons/icon-512.png', './icons/icon-192-maskable.png', './icons/icon-512-maskable.png',
-  './logo-control-hipico.png', './assets/css/app.css', './assets/css/mobile-accessibility.css', './assets/css/operational-copy-center.css', './assets/css/operational-access-guard.css',
+  './logo-control-hipico.png', './assets/css/app.css',
   './assets/js/advanced-group-scope.js', './assets/js/agent-router-pro.js', './assets/js/agent-router.js', './assets/js/app-shell.js', './assets/js/app.js',
   './assets/js/theme-bootstrap.js', './assets/js/command-center.js', './assets/js/command-center-shell.js',
   './assets/js/backup-secure-ui.js', './assets/js/backup-v2.js', './assets/js/backup.js', './assets/js/compat.js', './assets/js/dialog-accessibility.js',
@@ -21,9 +21,6 @@ const APP_SHELL = [
 function scoped(path) { return new URL(path, self.registration.scope).toString(); }
 const APP_SHELL_URLS = new Set(APP_SHELL.map(scoped));
 function isSensitive(url) { return /\/(?:api|auth)(?:\/|$)|session|token|license|webhook|rpc|rest\/v1/i.test(url.pathname); }
-function isLiveHipicoApi(url) {
-  return url.pathname.includes('/api/hipico/command-center') || url.pathname.includes('/api/v1/hipico/');
-}
 function isRuntimeMetadata(url) { return url.pathname.endsWith('/runtime-config.js') || url.pathname.endsWith('/build-info.json'); }
 function isAllowedStatic(url) { return APP_SHELL_URLS.has(url.toString()); }
 function offlineNavigationShell(url) {
@@ -50,10 +47,7 @@ self.addEventListener('fetch', (event) => {
   const url = new URL(request.url);
   const scope = new URL(self.registration.scope);
   if (url.origin !== scope.origin) return;
-  if (isSensitive(url) || isLiveHipicoApi(url) || isRuntimeMetadata(url)) {
-    event.respondWith(fetch(request, { cache: 'no-store' }));
-    return;
-  }
+  if (isSensitive(url) || isRuntimeMetadata(url)) { event.respondWith(fetch(request, { cache: 'no-store' })); return; }
   if (request.mode === 'navigate') {
     event.respondWith((async () => {
       try { return await fetch(request, { cache: 'no-store' }); }
