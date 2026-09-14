@@ -21,6 +21,9 @@ const APP_SHELL = [
 function scoped(path) { return new URL(path, self.registration.scope).toString(); }
 const APP_SHELL_URLS = new Set(APP_SHELL.map(scoped));
 function isSensitive(url) { return /\/(?:api|auth)(?:\/|$)|session|token|license|webhook|rpc|rest\/v1/i.test(url.pathname); }
+function isLiveHipicoApi(url) {
+  return url.pathname.includes('/api/hipico/command-center') || url.pathname.includes('/api/v1/hipico/');
+}
 function isRuntimeMetadata(url) { return url.pathname.endsWith('/runtime-config.js') || url.pathname.endsWith('/build-info.json'); }
 function isAllowedStatic(url) { return APP_SHELL_URLS.has(url.toString()); }
 function offlineNavigationShell(url) {
@@ -47,7 +50,10 @@ self.addEventListener('fetch', (event) => {
   const url = new URL(request.url);
   const scope = new URL(self.registration.scope);
   if (url.origin !== scope.origin) return;
-  if (isSensitive(url) || isRuntimeMetadata(url)) { event.respondWith(fetch(request, { cache: 'no-store' })); return; }
+  if (isSensitive(url) || isLiveHipicoApi(url) || isRuntimeMetadata(url)) {
+    event.respondWith(fetch(request, { cache: 'no-store' }));
+    return;
+  }
   if (request.mode === 'navigate') {
     event.respondWith((async () => {
       try { return await fetch(request, { cache: 'no-store' }); }
