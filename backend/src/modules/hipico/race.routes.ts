@@ -59,7 +59,7 @@ router.get('/queries/races',async(req,res)=>{
       else if(intent==='SCRATCHES')answer=Array.isArray((data as any).scratches)?{raceId:race.id,known:true,scratches:(data as any).scratches}:{raceId:race.id,known:false,reason:'SCRATCHES_REQUIRE_CANONICAL_PROVIDER_OR_DOCUMENT_EVIDENCE'};
       else answer=(data as any).odds?{raceId:race.id,known:true,odds:(data as any).odds}:{raceId:race.id,known:false,reason:'ODDS_REQUIRE_CANONICAL_PROVIDER_EVIDENCE'};
     }else answer={known:false,reason:'QUERY_INTENT_UNKNOWN'};
-    return res.json({ok:true,data:{intent,answer,scope:{ownerId:owner,groupId:g,meetingId,raceId}}});
+    return res.json({ok:true,data:{intent,answer,scope:{groupKey:g,meetingId,raceId}}});
   }catch(error){return sendError(req,res,error);}
 });
 router.use((error:any,req:Request,res:Response,_next:any)=>sendError(req,res,error));
