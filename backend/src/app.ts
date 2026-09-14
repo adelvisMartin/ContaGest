@@ -7,6 +7,8 @@ import hipicoSystemRoutes from './modules/hipico/hipico-system.routes.js';
 import hipicoDocumentRoutes from './modules/hipico/document.routes.js';
 import hipicoProviderRoutes from './modules/hipico/provider.routes.js';
 import hipicoRaceRoutes from './modules/hipico/race.routes.js';
+import hipicoAgentRoutes from './modules/hipico/agent.routes.js';
+import hipicoCommandCenterRoutes from './modules/hipico/command-center.routes.js';
 import hipicoWebhookRoutes from './modules/hipico-bot/hipico-webhook.routes.js';
 import hipicoBridgeRoutes from './modules/hipico-bot/hipico-bridge.routes.js';
 import hipicoOperatorRoutes from './modules/hipico-bot/hipico-operator.routes.js';
@@ -95,12 +97,15 @@ export function createApp(options: { readinessCheck?: ReadinessCheck } = {}) {
 
   // One canonical limiter chain avoids counting a request repeatedly while it
   // traverses sibling routers. mutationRateLimit skips GET/HEAD/OPTIONS.
+  // Individual routers still enforce their own operator/group authorization.
   app.use(
     '/api/v1/hipico',
     authRateLimit,
     mutationRateLimit,
     hipicoProviderRoutes,
     hipicoRaceRoutes,
+    hipicoAgentRoutes,
+    hipicoCommandCenterRoutes,
     hipicoCanonicalRoutes
   );
 

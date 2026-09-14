@@ -18,6 +18,7 @@
     "test:xlsx": "tsx --test src/modules/exports/xlsx-writer.test.ts",
     "test:hipico": "tsx --test src/modules/hipico-bot/*.test.ts src/modules/hipico/*.test.ts",
     "test:hipico:data": "tsx --test src/modules/hipico/hipico-data.integration.ts",
+    "test:hipico:agent": "tsx --test src/modules/hipico/hipico-agent.integration.ts",
     "probe:hipico:provider": "tsx scripts/hipico-provider-live-probe.ts",
     "lab:hipico": "tsx scripts/hipico-lab-simulator.ts --all",
     "lab:hipico:interactive": "tsx scripts/hipico-lab-simulator.ts --interactive",
