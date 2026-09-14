@@ -24,6 +24,7 @@ export function classifyJob(job = {}) {
 }
 
 export function summarizeBlocker(statuses = []) {
+  if (statuses.includes('FAIL')) return '';
   return statuses.includes('BLOCKED') ? 'BLOCKED_INFRASTRUCTURE' : '';
 }
 
