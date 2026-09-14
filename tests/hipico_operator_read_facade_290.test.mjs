@@ -20,6 +20,7 @@ test('canonical operator read facade is mounted under /api/v1/hipico with owner/
 
   assert.match(routes, /operatorTokenValid/);
   assert.match(routes, /Cache-Control['"],\s*['"]no-store/);
+  assert.match(routes, /groupKeySchema\s*=\s*z\.string\(\)\.trim\(\)\.min\(3\)\.max\(120\)/);
   assert.match(routes, /WHERE owner_id=\$\{ownerId\}::uuid/);
   assert.match(routes, /group_key=\$\{groupKey\}|channel_key=\$\{groupKey\}/);
 });
