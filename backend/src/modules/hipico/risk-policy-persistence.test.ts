@@ -4,7 +4,7 @@ import test from 'node:test';
 
 const storeSource = readFileSync(new URL('./automation.store.ts', import.meta.url), 'utf8');
 const routeSource = readFileSync(new URL('./agent.routes.ts', import.meta.url), 'utf8');
-const supabaseUrl = new URL('../../../../supabase/sql/hipico_v22_risk_policy.sql', import.meta.url);
+const supabaseUrl = new URL('../../../../supabase/sql/hipico_v23_risk_policy.sql', import.meta.url);
 const prismaUrl = new URL('../../../prisma/migrations/20260914122000_hipico_risk_policy_v6/migration.sql', import.meta.url);
 
 test('risk policy decision is persisted as first-class evaluation evidence', () => {
@@ -23,8 +23,8 @@ test('agent evaluation route derives server-only policy context and returns pers
 });
 
 test('Supabase and Prisma migrations add bounded policy columns without changing financial authority', () => {
-  assert.equal(existsSync(supabaseUrl), true, 'Supabase v22 risk policy migration must exist');
-  assert.equal(existsSync(prismaUrl), true, 'Prisma v22 risk policy migration must exist');
+  assert.equal(existsSync(supabaseUrl), true, 'Supabase v23 risk policy migration must exist');
+  assert.equal(existsSync(prismaUrl), true, 'Prisma risk policy migration must exist');
   for (const url of [supabaseUrl, prismaUrl]) {
     const sql = readFileSync(url, 'utf8');
     assert.match(sql, /hipico_agent_evaluations/i);
