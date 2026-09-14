@@ -53,8 +53,9 @@ void test('Command Center renders fail-closed observable states and SOURCE/LAB s
   }
   assert.match(commandCenter, /stale/);
   assert.match(commandCenter, /No disponible/);
-  assert.match(backend, /QUEUE_READ_UNAVAILABLE/);
-  assert.match(backend, /DOCUMENT_READ_UNAVAILABLE/);
+  assert.match(backend, /\['QUEUE',\s*queueRead/);
+  assert.match(backend, /\['DOCUMENT',\s*documentsRead/);
+  assert.match(backend, /code:\s*`\$\{code\}_READ_UNAVAILABLE`/);
   assert.match(backend, /pending: queuePending/);
   assert.match(backend, /failed: queueFailed/);
   assert.match(commandCenter, /SOURCE/);
