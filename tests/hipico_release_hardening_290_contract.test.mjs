@@ -70,6 +70,14 @@ test('evidence verifier and release report use only PASS/FAIL/BLOCKED/NOT_EXECUT
   assert.match(report, /BLOCKED_INFRASTRUCTURE/);
 });
 
+test('evidence verifier never infers PASS from binding metadata and rejects dirty release manifests', () => {
+  const verifier = read('scripts/hipico-verify-evidence-v290.mjs');
+  assert.doesNotMatch(verifier, /data\?\.bound\s*===\s*true[\s\S]{0,120}return\s+['"]PASS['"]/);
+  assert.match(verifier, /requireClean:\s*true/);
+  assert.match(verifier, /selected\.data\?\.dirty\s*!==\s*false/);
+  assert.match(verifier, /WORKTREE_DIRTY_OR_UNKNOWN/);
+});
+
 test('root scripts expose guarded release and runner-aware verdict paths', () => {
   const pkg = JSON.parse(read('package.json'));
   assert.equal(pkg.scripts?.hipico, 'node tools/hipico-cli/hipico.mjs');
