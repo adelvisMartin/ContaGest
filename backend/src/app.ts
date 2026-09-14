@@ -9,6 +9,7 @@ import hipicoProviderRoutes from './modules/hipico/provider.routes.js';
 import hipicoRaceRoutes from './modules/hipico/race.routes.js';
 import hipicoAgentRoutes from './modules/hipico/agent.routes.js';
 import hipicoCommandCenterRoutes from './modules/hipico/command-center.routes.js';
+import hipicoOperatorReadRoutes from './modules/hipico/operator-read.routes.js';
 import hipicoWebhookRoutes from './modules/hipico-bot/hipico-webhook.routes.js';
 import hipicoBridgeRoutes from './modules/hipico-bot/hipico-bridge.routes.js';
 import hipicoOperatorRoutes from './modules/hipico-bot/hipico-operator.routes.js';
@@ -104,6 +105,7 @@ export function createApp(options: { readinessCheck?: ReadinessCheck } = {}) {
     mutationRateLimit,
     hipicoAgentRoutes,
     hipicoCommandCenterRoutes,
+    hipicoOperatorReadRoutes,
     hipicoProviderRoutes,
     hipicoRaceRoutes,
     hipicoCanonicalRoutes
