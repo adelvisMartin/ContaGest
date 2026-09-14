@@ -4,6 +4,7 @@ import test from 'node:test';
 
 const backendPackage = JSON.parse(readFileSync(new URL('../backend/package.json', import.meta.url), 'utf8'));
 const packageLock = JSON.parse(readFileSync(new URL('../package-lock.json', import.meta.url), 'utf8'));
+const workflow = readFileSync(new URL('../.github/workflows/toolchain-deps-v26.yml', import.meta.url), 'utf8');
 
 const retiredXlsxPackages = new Set(['exceljs', '@excel.js/exceljs', '@excel.js/jszip', '@excel.js/archiver', '@excel.js/unzipper', 'es-pako']);
 const bannedTransitiveVersions = new Map([
@@ -46,6 +47,12 @@ test('issue #26 lock no materializa la cadena ExcelJS/JSZip/es-pako retirada', (
     }
   }
   assert.deepEqual(matches, [], `package-lock reintrodujo la cadena XLSX retirada: ${matches.join(', ')}`);
+});
+
+test('issue #221 toolchain verifica el bundle serverless después del writer XLSX interno', () => {
+  assert.match(workflow, /Internal XLSX writer smoke/);
+  assert.match(workflow, /node frontend\/scripts\/stage-backend\.mjs/);
+  assert.doesNotMatch(workflow, /import\s+ExcelJS\s+from\s+['"]exceljs['"]/);
 });
 
 test('issue #26 no contiene las versiones transitorias obsoletas objetivo en package-lock', () => {

@@ -1,0 +1,9 @@
+/* ContaGest login v16.3 — mobile accessibility geometry only. */
+@media (max-width:600px) {
+  body[data-active-route="login"] .login-captcha-refresh {
+    width:44px;
+    min-width:44px;
+    height:44px;
+    min-height:44px;
+  }
+}

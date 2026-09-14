@@ -61,6 +61,11 @@ export function createApp(options: { readinessCheck?: ReadinessCheck } = {}) {
     collectCspReport
   );
 
+  // Fail closed before spending CPU/memory parsing business payloads when a
+  // commercial production deployment lacks its explicit signing/license keys.
+  // Health and bounded CSP telemetry above remain available for diagnosis.
+  app.use(enforceProductionSecrets);
+
   app.use(express.json({
     limit: env.JSON_BODY_LIMIT,
     verify: (req, _res, buffer) => {
@@ -100,7 +105,6 @@ export function createApp(options: { readinessCheck?: ReadinessCheck } = {}) {
   );
 
   app.use(csrfProtection);
-  app.use(enforceProductionSecrets);
   app.use('/api/v1/auth', authRateLimit, authRoutes);
 
   app.use(
