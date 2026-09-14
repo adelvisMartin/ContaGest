@@ -17,9 +17,7 @@ const uuid = z.string().uuid();
 const group = z.string().trim().min(3).max(120).regex(/^[A-Za-z0-9._:-]+$/);
 const groupId = z.string().trim().min(3).max(220).regex(/^[A-Za-z0-9@._:-]+$/);
 const idempotency = z.string().trim().min(8).max(120).regex(/^[A-Za-z0-9._:-]+$/);
-const modeSchema = z.object({
-  target: z.enum(AUTOMATION_STATES)
-}).strict();
+const modeSchema = z.object({ target: z.enum(AUTOMATION_STATES) }).strict();
 const evaluateSchema = z.object({
   text: z.string().trim().min(1).max(4000),
   expectedIntent: z.string().trim().max(120).nullable().optional(),
@@ -72,6 +70,22 @@ function actorRef() {
 
 function automaticOwnerApprovalConfigured() {
   return String(process.env.HIPICO_AUTOMATIC_OWNER_APPROVED || '').trim().toLowerCase() === 'true';
+}
+
+function sourceReadOnly(gid: string) {
+  const configured = String(process.env.HIPICO_SOURCE_GROUP_ID || '').trim().toLowerCase();
+  return Boolean(configured) && configured === String(gid || '').trim().toLowerCase();
+}
+
+function serverRiskContext(gid: string) {
+  return {
+    sourceReadOnly: sourceReadOnly(gid),
+    evidenceState: 'MISSING' as const,
+    sourceAuthorized: false,
+    systemHealthy: true,
+    humanOwned: false,
+    ambiguous: false
+  };
 }
 
 function status(code: string) {
@@ -149,9 +163,7 @@ router.post('/groups/:groupId/automation', async (req, res) => {
       ownerApproved: automaticOwnerApprovalConfigured(),
       idempotencyKey: idempotencyKey(req)
     });
-    if (!data.decision.allowed) {
-      throw Object.assign(new Error(data.decision.reason), { code: data.decision.reason });
-    }
+    if (!data.decision.allowed) throw Object.assign(new Error(data.decision.reason), { code: data.decision.reason });
     return res.json({ ok: true, data });
   } catch (error) {
     return sendError(req, res, error);
@@ -183,7 +195,10 @@ router.post('/groups/:groupId/automation/evaluate', async (req, res) => {
     const g = groupKey(req);
     const gid = parsedGroupId(req);
     const config = await store.get(owner, g, gid);
-    const evaluation = await engine.evaluate(body.text, config.mode);
+    // Request evidence is retained for audit only. It must never elevate AUTO authority.
+    // Production callers that have verified provider/domain evidence use the engine API
+    // with a server-resolved risk context; this operator evaluation endpoint fails closed.
+    const evaluation = await engine.evaluate(body.text, config.mode, serverRiskContext(gid));
     const receipt = await store.recordEvaluation({
       ownerId: owner,
       groupKey: g,
@@ -192,12 +207,14 @@ router.post('/groups/:groupId/automation/evaluate', async (req, res) => {
       expectedIntent: body.expectedIntent,
       candidate: evaluation.candidate,
       canAct: evaluation.canAct,
+      riskPolicy: evaluation.riskPolicy,
       evidence: body.evidence
     });
     return res.status(202).json({
       ok: true,
       data: {
         ...evaluation,
+        riskPolicy: evaluation.riskPolicy,
         receipt,
         actions: [],
         financialAuthority: false,
@@ -230,3 +247,4 @@ router.post('/groups/:groupId/automation/evaluations/:id/review', async (req, re
 });
 
 export default router;
+export const __test__ = { sourceReadOnly, serverRiskContext };
