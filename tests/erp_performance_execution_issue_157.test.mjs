@@ -52,6 +52,13 @@ test('#157 can measure an exact frozen candidate without closing the issue by de
   assert.match(workflow,/measurementOnly/);
 });
 
+test('#157 workflow triggers include current scripts and provenance/finalizer contracts',()=>{
+  assert.match(workflow,/scripts\/erp-performance-\*\.mjs/);
+  assert.match(workflow,/tests\/erp157\*_issue_157\.test\.mjs/);
+  assert.match(workflow,/erp157_finalizer_truth_issue_157\.test\.mjs/);
+  assert.match(workflow,/erp157_fixture_provenance_issue_157\.test\.mjs/);
+});
+
 test('#157 measures real PostgreSQL/API plus 1x and 3x multi-profile load',()=>{
   assert.match(workflow,/postgres:16-alpine/);
   assert.match(workflow,/contagest_performance_v157_e2e/);
@@ -70,7 +77,7 @@ test('#157 proves controlled pool saturation instead of labeling ordinary concur
   assert.match(backend,/Pool did not recover/);
 });
 
-test('#157 measures browser startup/navigation/import/large tables/memory/network',()=>{
+test('#157 measures browser startup/navigation/import/large tables/memory/network without fixed sleeps',()=>{
   assert.match(frontend,/import assert from 'node:assert\/strict'/);
   assert.match(frontend,/importCsv\(page,1000\)/);
   assert.match(frontend,/renderClients\(page,state,10000\)/);
@@ -80,6 +87,11 @@ test('#157 measures browser startup/navigation/import/large tables/memory/networ
   assert.match(frontend,/longTaskCountPerMinute/);
   assert.match(frontend,/max-old-space-size=256/);
   assert.match(frontend,/responsiveAfterPressure:true/);
+  assert.match(frontend,/async function navigateInApp/);
+  assert.match(frontend,/for\(let i=0;i<30;i\+\+\)await navigateInApp/);
+  assert.match(frontend,/ERP157_PERCENTILE_SAMPLES_REQUIRED/);
+  assert.match(frontend,/ERP157_PERCENTILE_SAMPLES_INVALID/);
+  assert.doesNotMatch(frontend,/waitForTimeout\s*\(/);
 });
 
 test('#157 executes heavy success/error contracts and controlled degradation',()=>{
