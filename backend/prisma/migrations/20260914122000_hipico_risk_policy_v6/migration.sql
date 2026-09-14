@@ -1,4 +1,4 @@
--- Control Hípico v2.2 — deterministic response/action risk policy evidence.
+-- Control Hípico v2.3 — deterministic response/action risk policy evidence.
 -- Additive and replay-safe. Existing evaluations are intentionally backfilled as
 -- HUMAN_REQUIRED so no historical row can gain automatic authority retroactively.
 
