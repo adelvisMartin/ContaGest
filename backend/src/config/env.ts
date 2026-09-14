@@ -5,6 +5,7 @@ import { z } from 'zod';
 const DEFAULT_APP_URL = 'http://localhost:8080';
 const DEVELOPMENT_JWT_SECRET = 'dev_secret_change_me_please_32_chars';
 const DEVELOPMENT_LICENSE_SECRET = 'dev_license_secret_change_me_32_chars';
+const SECRET_PLACEHOLDER_PATTERN = /^(?:replace|change|your-|dev-|test-|example|sample|secret|demo|placeholder)/i;
 
 const envSchema = z.object({
   NODE_ENV: z.string().default('development'),
@@ -53,9 +54,11 @@ function normalizeOrigin(value?: string) {
   }
 }
 
-function isSecureSecret(value?: string) {
+export function isSecureSecret(value?: string | null) {
   const secret = String(value || '').trim();
-  return secret.length >= 32 && !secret.includes('dev_secret');
+  if (secret.length < 32 || SECRET_PLACEHOLDER_PATTERN.test(secret)) return false;
+  if (secret === DEVELOPMENT_JWT_SECRET || secret === DEVELOPMENT_LICENSE_SECRET) return false;
+  return !/(?:dev[_-](?:secret|license)|change[_-]?me)/i.test(secret);
 }
 
 function deriveSecret(seed: string, purpose: string) {
