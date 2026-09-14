@@ -54,6 +54,9 @@ export function buildHipicoVersion(source: RuntimeEnv = process.env): HipicoVers
   const configuredProtocol = text(source, 'HIPICO_BRIDGE_PROTOCOL_VERSION');
   const configuredProductVersion = text(source, 'HIPICO_PRODUCT_VERSION');
   return hipicoVersionSchema.parse({
+    // HIPICO_PRODUCT_VERSION is the product identity. The deployment package
+    // version remains a compatibility fallback until all environments publish
+    // the explicit Hípico release version.
     productVersion: boundedReleaseValue(configuredProductVersion, deploymentMetadata.version || 'unknown'),
     buildSha: candidateSha(source),
     apiVersion: HIPICO_API_VERSION,
@@ -107,7 +110,7 @@ export async function buildHipicoSystemStatus(options: HipicoSystemDependencies 
         ),
         financialAuthority: false
       },
-      // These engines are compiled/mounted in this release, but status remains
+      // These engines are compiled/mounted in this release but status remains
       // fail-closed until their persistence/runtime probes are exercised.
       documentEngine: componentState('degraded', 'DOCUMENT_ENGINE_INSTALLED_NOT_PROBED'),
       agent: componentState('degraded', 'AGENT_ENGINE_INSTALLED_NOT_PROBED')
