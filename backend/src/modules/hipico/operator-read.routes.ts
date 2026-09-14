@@ -6,7 +6,7 @@ import { hipicoError } from './hipico-domain.js';
 
 const router = Router();
 const uuid = z.string().uuid();
-const groupKeySchema = z.string().trim().min(1).max(120).regex(/^[A-Za-z0-9._:-]+$/);
+const groupKeySchema = z.string().trim().min(3).max(120).regex(/^[A-Za-z0-9._:-]+$/);
 const correlationSchema = z.string().trim().min(1).max(320).regex(/^[A-Za-z0-9._:@-]+$/);
 
 function requestId(req: Request) { return String((req as any).requestId || '').trim() || null; }
