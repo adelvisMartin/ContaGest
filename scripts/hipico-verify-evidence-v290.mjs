@@ -41,7 +41,6 @@ function evidenceSha(data) {
 function evidenceStatus(data) {
   const explicit = String(data?.status || '').trim().toUpperCase();
   if (STATUSES.includes(explicit)) return explicit;
-  if (data?.bound === true && SHA40.test(String(data?.candidateSha || ''))) return 'PASS';
   return 'NOT_EXECUTED';
 }
 
@@ -64,7 +63,7 @@ const requiredDescriptors = [
   { id: 'postgresGate', name: 'postgres-gate.json', schemas: ['hipico-postgres-gate.v290-current'] },
   { id: 'restart', name: 'restart-state.json', schemas: ['hipico-restart.v290', 'hipico-restart.v290-current'] },
   { id: 'performance', name: 'postgres-performance.json', schemas: ['hipico-performance.v290', 'hipico-performance.v290-current'] },
-  { id: 'releaseManifest', name: 'release-manifest.json', schemas: ['hipico-release-evidence.v1'] }
+  { id: 'releaseManifest', name: 'release-manifest.json', schemas: ['hipico-release-evidence.v1'], requireClean: true }
 ];
 
 const optionalDescriptors = [
@@ -89,6 +88,9 @@ function findDescriptor(descriptor) {
   }
   if (descriptor.schemas.length && !descriptor.schemas.includes(String(selected.data?.schema || ''))) {
     return { id: descriptor.id, status: 'FAIL', file: path.relative(evidenceRoot, selected.file), reason: 'SCHEMA_MISMATCH' };
+  }
+  if (descriptor.requireClean && selected.data?.dirty !== false) {
+    return { id: descriptor.id, status: 'FAIL', file: path.relative(evidenceRoot, selected.file), reason: 'WORKTREE_DIRTY_OR_UNKNOWN' };
   }
   const status = evidenceStatus(selected.data);
   return {
