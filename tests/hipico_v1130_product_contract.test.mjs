@@ -76,8 +76,11 @@ test('android wrapper synchronizes only the canonical Hipico web product',()=>{
   const sync=read('android/hipico-control-v1130/scripts/sync-web.mjs');
   const pkg=read('android/hipico-control-v1130/package.json');
   assert.match(sync,/frontend\/public\/hipico-control/);
-  assert.match(sync,/assets\/css/);
-  assert.match(sync,/canonicalCss/);
+  assert.match(sync,/['"]assets\/css\/app\.css['"]/);
+  assert.match(sync,/cssFiles\.length !== 1 \|\| cssFiles\[0\] !== 'app\.css'/);
+  assert.match(sync,/mobile-accessibility\.css/);
+  assert.match(sync,/operational-copy-center\.css/);
+  assert.match(sync,/operational-access-guard\.css/);
   assert.match(sync,/assets\/js\/user-access\.js/);
   assert.match(sync,/assets\/js\/password-recovery\.js/);
   assert.match(sync,/assets\/js\/help-center\.js/);
