@@ -16,9 +16,7 @@ function stableValue(value:unknown):unknown{
   return value;
 }
 
-export function outboundPayloadDigest(input:{
-  ownerId:string;groupKey:string;destination:string;replyType:string;payload:unknown;
-}){
+export function outboundPayloadDigest(input:{ownerId:string;groupKey:string;destination:string;replyType:string;payload:unknown;}){
   const canonical=stableValue({
     ownerId:String(input.ownerId||'').trim().toLowerCase(),
     groupKey:String(input.groupKey||'').trim(),
@@ -29,26 +27,29 @@ export function outboundPayloadDigest(input:{
   return crypto.createHash('sha256').update(JSON.stringify(canonical)).digest('hex');
 }
 
-export function retryDelayMs(attempt:number,options:{
-  baseMs?:number;maxMs?:number;jitterRatio?:number;jitterUnit?:number;
-}={}){
+export function retryDelayMs(attempt:number,options:{baseMs?:number;maxMs?:number;jitterRatio?:number;jitterUnit?:number;}={}){
   const baseMs=Math.max(1,Math.trunc(options.baseMs??1000));
   const maxMs=Math.max(baseMs,Math.trunc(options.maxMs??60_000));
   const jitterRatio=Math.min(1,Math.max(0,Number(options.jitterRatio??0.2)));
   const jitterUnit=Math.min(1,Math.max(-1,Number(options.jitterUnit??0)));
   const exponent=Math.max(0,Math.trunc(attempt)-1);
   const raw=Math.min(maxMs,baseMs*(2**Math.min(exponent,30)));
-  const jitter=raw*jitterRatio*jitterUnit;
-  return Math.max(1,Math.min(maxMs,Math.round(raw+jitter)));
+  return Math.max(1,Math.min(maxMs,Math.round(raw+(raw*jitterRatio*jitterUnit))));
 }
 
 export function classifyOutboundFailure(error:any):{action:OutboundFailureAction;reason:string}{
   const code=String(error?.code||'UNKNOWN');
-  const status=Number(error?.status??error?.responseStatus);
-  if(code==='HIPICO_CLOUD_DELIVERY_AMBIGUOUS'||status===408||(Number.isFinite(status)&&status>=500)){
+  const status=Number(error?.providerStatus??error?.status??error?.responseStatus);
+  const ambiguousCodes=new Set([
+    'HIPICO_CLOUD_DELIVERY_AMBIGUOUS',
+    'HIPICO_CLOUD_SEND_TIMEOUT',
+    'HIPICO_CLOUD_NETWORK_ERROR',
+    'HIPICO_CLOUD_UPSTREAM_RETRYABLE'
+  ]);
+  if(ambiguousCodes.has(code)||status===408||(Number.isFinite(status)&&status>=500)){
     return{action:'reconciliation_required',reason:code||`HTTP_${status}`};
   }
-  if(code==='HIPICO_CLOUD_HTTP_ERROR'&&status===429){
+  if(code==='HIPICO_CLOUD_RATE_LIMITED'||(code==='HIPICO_CLOUD_HTTP_ERROR'&&status===429)){
     return{action:'retry',reason:'HTTP_429'};
   }
   return{action:'failed',reason:code};
@@ -60,15 +61,11 @@ function time(value:unknown){
   return Number.isFinite(ms)?ms:null;
 }
 
-export function canAutoClaim(row:{
-  status:string;attempts:number;maxAttempts:number;nextAttemptAt?:unknown;cooldownUntil?:unknown;leasedUntil?:unknown;
-},now=new Date()){
+export function canAutoClaim(row:{status:string;attempts:number;maxAttempts:number;nextAttemptAt?:unknown;cooldownUntil?:unknown;leasedUntil?:unknown;},now=new Date()){
   if(row.status!=='queued'&&row.status!=='retry')return false;
   if(Number(row.attempts)>=Number(row.maxAttempts))return false;
   const nowMs=now.getTime();
-  const next=time(row.nextAttemptAt);
-  const cooldown=time(row.cooldownUntil);
-  const lease=time(row.leasedUntil);
+  const next=time(row.nextAttemptAt);const cooldown=time(row.cooldownUntil);const lease=time(row.leasedUntil);
   if(next!=null&&next>nowMs)return false;
   if(cooldown!=null&&cooldown>nowMs)return false;
   if(lease!=null&&lease>nowMs)return false;
@@ -82,8 +79,7 @@ export function monotonicReceiptStatus(current:string,incoming:'sent'|'delivered
     if((DELIVERY_RANK[current]||0)>=2)return current as CanonicalOutboxStatus;
     return'failed';
   }
-  const currentRank=DELIVERY_RANK[current]||0;
-  const incomingRank=DELIVERY_RANK[incoming]||0;
+  const currentRank=DELIVERY_RANK[current]||0;const incomingRank=DELIVERY_RANK[incoming]||0;
   return(incomingRank>currentRank?incoming:current) as CanonicalOutboxStatus;
 }
 
