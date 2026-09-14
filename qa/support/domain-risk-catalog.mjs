@@ -27,6 +27,11 @@ export const DOMAIN_RISK_CATALOG = Object.freeze([
       /frontend\/api\/hipico\//,
       /frontend\/public\/hipico-control\//,
       /android\/hipico-control-[^/]+\//,
+      /(?:^|\/)\.github\/workflows\/hipico[^/]*\.ya?ml$/i,
+      /(?:^|\/)scripts\/hipico-[^/]+\.(?:mjs|js|ts)$/i,
+      /(?:^|\/)products\/hipico-control\//,
+      /(?:^|\/)docs\/hipico\//,
+      /(?:^|\/)\.agents\/skills\/contagest-hipico-platform\//,
       /(?:^|\/)hipico[^/]*\.(?:test\.)?(?:mjs|js|ts|json|sql|md)$/i,
       /qa\/.*hipico/i,
       /supabase\/sql\/hipico/i
