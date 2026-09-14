@@ -99,16 +99,16 @@ test('bridge media flags, type and media kind must agree',()=>{
   assert.equal(validateGroupBridgeBody({...payload,type:'media',hasMedia:true,mediaKind:'sticker'},source),'invalid_media_kind');
 });
 
-test('media kind participates in immutable replay identity',()=>{
+test('media kind participates in immutable replay identity delegated to the canonical backend',()=>{
   const media={...payload,type:'media',hasMedia:true,mediaKind:'image'};
-  assert.notEqual(__test__.sourceReplaySignature(media),__test__.sourceReplaySignature({...media,mediaKind:'document'}));
-  const persisted={
-    sender_id:media.senderId,
-    sent_at:'2026-09-11T06:00:00.000Z',
-    message_type:'media',
-    raw_text:media.text,
-    quoted_external_message_id:null,
-    normalized:{from_me:false,has_media:true,media_kind:'image'}
-  };
-  assert.equal(__test__.persistedReplaySignature(persisted),__test__.sourceReplaySignature(media));
+  const document={...media,mediaKind:'document'};
+  assert.notEqual(__test__.sourceReplaySignature(media),__test__.sourceReplaySignature(document));
+
+  const mediaEvent=__test__.canonicalBridgeEvent(media,source);
+  const documentEvent=__test__.canonicalBridgeEvent(document,source);
+  assert.equal(mediaEvent.mediaKind,'image');
+  assert.equal(mediaEvent.hasMedia,true);
+  assert.equal(mediaEvent.timestamp,'2026-09-11T06:00:00.000Z');
+  assert.match(mediaEvent.rawMeta,/^serverless-compat:[a-f0-9]{24}$/);
+  assert.notEqual(mediaEvent.rawMeta,documentEvent.rawMeta);
 });

@@ -2,8 +2,7 @@ name: Toolchain dependency cleanup v26
 
 on:
   push:
-    branches:
-      - chore/issue-26-toolchain-lock-repair
+    branches: [main]
     paths:
       - package-lock.json
       - package.json
@@ -56,16 +55,16 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
-      - name: Verify lock and workflow contracts
+      - name: Verify lock contract
         run: node --test tests/toolchain_dependency_cleanup_issue_26.test.mjs
 
       - name: Ensure checked-in lock is reproducible
         run: git diff --exit-code -- package-lock.json
 
-      - name: Clean install from regenerated lock
+      - name: Clean install from checked-in lock
         run: npm ci --ignore-scripts --no-audit --no-fund
 
-      - name: Verify obsolete target versions are absent
+      - name: Verify obsolete target versions remain absent
         shell: bash
         run: |
           set -euo pipefail
@@ -76,8 +75,8 @@ jobs:
           fi
           node --test tests/toolchain_dependency_cleanup_issue_26.test.mjs
 
-      - name: Internal XLSX writer compatibility smoke
-        run: npm --workspace backend exec -- tsx --test src/modules/exports/xlsx-writer.test.ts
+      - name: Internal XLSX writer smoke
+        run: npm --workspace backend run test:xlsx
 
-      - name: Serverless bundle must exclude blocked XLSX runtime chain
+      - name: Serverless bundle excludes retired XLSX runtime chain
         run: node frontend/scripts/stage-backend.mjs

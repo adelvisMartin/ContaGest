@@ -2,7 +2,7 @@ import type { Request, Response, NextFunction } from 'express';
 import crypto, { randomUUID } from 'node:crypto';
 import cors from 'cors';
 import rateLimit from 'express-rate-limit';
-import { env, isProd, isProductionDeployment, jwtSecretReady, licenseSecretReady } from '../../config/env.js';
+import { env, isProd, isProductionDeployment, isVercelPreview, jwtSecretReady, licenseSecretReady } from '../../config/env.js';
 import { HttpError } from '../http.js';
 import { COOKIE_NAMES, readCookie } from '../auth/sessionCookies.js';
 import { recordRateLimit } from '../observability/metrics.js';
@@ -171,9 +171,15 @@ export function collectCspReport(req: Request, res: Response) {
 }
 
 export function enforceProductionSecrets(_req: Request, _res: Response, next: NextFunction) {
-  // Preview/dev may derive ephemeral secrets to keep QA inexpensive. Production commercial
-  // must use independent explicit secrets: rotating a DB/service-role credential must never
-  // silently change the license hash key and invalidate issued licenses.
+  // Preview may derive stable secrets only from credentials that are themselves private.
+  // If no private seed exists, fail closed rather than signing JWT/license artifacts with
+  // a predictable key derived from public deployment metadata or a development default.
+  if (isVercelPreview && (!jwtSecretReady || !licenseSecretReady)) {
+    return next(new HttpError(503, 'La seguridad del preview no está configurada. Se requiere una semilla privada para JWT y licencias.'));
+  }
+
+  // Production commercial must use independent explicit secrets: rotating a DB/service-role
+  // credential must never silently change the license hash key and invalidate issued licenses.
   const explicitJwtReady = explicitProductionSecretReady(process.env.JWT_SECRET);
   const explicitLicenseReady = explicitProductionSecretReady(process.env.LICENSE_HASH_SECRET);
   if (isProductionDeployment && (!jwtSecretReady || !licenseSecretReady || !explicitJwtReady || !explicitLicenseReady)) {

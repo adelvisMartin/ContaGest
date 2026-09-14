@@ -43,7 +43,7 @@ const body=[
   `Capacity QA ejecutado sobre \`${sha}\`: **${summary.verdict}**.`,
   `Evidencia SHA-256: \`${summary.measurementHash}\`.`,
   runUrl?`Run: ${runUrl}.`:'',
-  '#155 ya está cerrado y el gate #157 completó todas las dimensiones obligatorias con budgets ratificados.'
+  '#155 ya está cerrado y el gate #157 completó todas las dimensiones obligatorias.'
 ].filter(Boolean).join('\n\n');
 await api('/issues/157/comments',{method:'POST',body:JSON.stringify({body})});
 await api('/issues/157',{method:'PATCH',body:JSON.stringify({state:'closed',state_reason:'completed'})});

@@ -6,7 +6,7 @@ const backendPackage = JSON.parse(readFileSync(new URL('../backend/package.json'
 const packageLock = JSON.parse(readFileSync(new URL('../package-lock.json', import.meta.url), 'utf8'));
 const workflow = readFileSync(new URL('../.github/workflows/toolchain-deps-v26.yml', import.meta.url), 'utf8');
 
-const maintainedExcelJsAlias = 'npm:@excel.js/exceljs@0.15.0';
+const retiredXlsxPackages = new Set(['exceljs', '@excel.js/exceljs', '@excel.js/jszip', '@excel.js/archiver', '@excel.js/unzipper', 'es-pako']);
 const bannedTransitiveVersions = new Map([
   ['rimraf', '2.7.1'],
   ['lodash.isequal', '4.5.0'],
@@ -23,29 +23,36 @@ function packageNameFromLockPath(lockPath) {
   return lockPath.slice(index + marker.length);
 }
 
-function installedPackage(name) {
-  const entries = Object.entries(packageLock.packages ?? {}).filter(([lockPath]) => packageNameFromLockPath(lockPath) === name);
-  assert.equal(entries.length, 1, `package-lock debe materializar exactamente una copia de ${name}; encontrados: ${entries.map(([path]) => path).join(', ')}`);
-  return entries[0][1];
-}
-
-test('issue #26 conserva temporalmente el alias bloqueado sólo en manifiesto/lock hasta poder regenerar npm', () => {
-  assert.equal(backendPackage.dependencies?.exceljs, maintainedExcelJsAlias);
-  assert.equal(packageLock.packages?.backend?.dependencies?.exceljs, maintainedExcelJsAlias);
-  const installedExcelJs = installedPackage('exceljs');
-  assert.equal(installedExcelJs?.version, '0.15.0');
+test('issue #26 mantiene retirado ExcelJS porque producción usa el writer XLSX interno', () => {
+  assert.equal(
+    Object.prototype.hasOwnProperty.call(backendPackage.dependencies ?? {}, 'exceljs'),
+    false,
+    'backend no debe reinstalar el fork ExcelJS retirado del bootstrap serverless',
+  );
+  assert.equal(
+    Object.prototype.hasOwnProperty.call(packageLock.packages?.backend?.dependencies ?? {}, 'exceljs'),
+    false,
+    'package-lock no debe declarar ExcelJS como dependencia del workspace backend',
+  );
 });
 
-test('issue #221 impide que CI vuelva a ejecutar el runtime ExcelJS roto o un repair job one-shot', () => {
-  assert.doesNotMatch(workflow, /repair-typecheck-once|fix\/toolchain-lock-v26-finalize|Narrow account row before parentCode access/);
+test('issue #26 lock no materializa la cadena ExcelJS/JSZip/es-pako retirada', () => {
+  const matches = [];
+  for (const [lockPath, metadata] of Object.entries(packageLock.packages ?? {})) {
+    if (!metadata || typeof metadata !== 'object') continue;
+    const packageName = packageNameFromLockPath(lockPath);
+    const declaredName = typeof metadata.name === 'string' ? metadata.name : null;
+    if ((packageName && retiredXlsxPackages.has(packageName)) || (declaredName && retiredXlsxPackages.has(declaredName))) {
+      matches.push(`${declaredName || packageName} (${lockPath})`);
+    }
+  }
+  assert.deepEqual(matches, [], `package-lock reintrodujo la cadena XLSX retirada: ${matches.join(', ')}`);
+});
+
+test('issue #221 toolchain verifica el bundle serverless después del writer XLSX interno', () => {
+  assert.match(workflow, /Internal XLSX writer smoke/);
+  assert.match(workflow, /node frontend\/scripts\/stage-backend\.mjs/);
   assert.doesNotMatch(workflow, /import\s+ExcelJS\s+from\s+['"]exceljs['"]/);
-  assert.match(workflow, /xlsx-writer\.test\.ts/);
-  assert.match(workflow, /stage-backend\.mjs/);
-});
-
-test('issue #26 lock mantiene procedencia del fork @excel.js mientras el lock no pueda regenerarse', () => {
-  const installedExcelJs = installedPackage('exceljs');
-  assert.match(String(installedExcelJs?.resolved || ''), /@excel\.js\/exceljs|exceljs-0\.15\.0/i);
 });
 
 test('issue #26 no contiene las versiones transitorias obsoletas objetivo en package-lock', () => {
@@ -54,11 +61,18 @@ test('issue #26 no contiene las versiones transitorias obsoletas objetivo en pac
     const packageName = packageNameFromLockPath(lockPath);
     if (!packageName || !metadata || typeof metadata !== 'object') continue;
     const bannedVersion = bannedTransitiveVersions.get(packageName);
-    if (bannedVersion && metadata.version === bannedVersion) matches.push(`${packageName}@${metadata.version} (${lockPath})`);
+    if (bannedVersion && metadata.version === bannedVersion) {
+      matches.push(`${packageName}@${metadata.version} (${lockPath})`);
+    }
   }
+
   assert.deepEqual(matches, [], `package-lock reintrodujo dependencias obsoletas: ${matches.join(', ')}`);
 });
 
 test('issue #26 no reintroduce @types/bcryptjs obsoleto', () => {
-  assert.equal(Object.prototype.hasOwnProperty.call(backendPackage.devDependencies ?? {}, '@types/bcryptjs'), false);
+  assert.equal(
+    Object.prototype.hasOwnProperty.call(backendPackage.devDependencies ?? {}, '@types/bcryptjs'),
+    false,
+    '@types/bcryptjs no debe volver al manifiesto del backend',
+  );
 });

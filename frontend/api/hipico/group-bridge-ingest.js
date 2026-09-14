@@ -179,6 +179,7 @@ export const __test__ = {
   normalizedTimestamp,
   normalizedChannelRole,
   normalizedMediaKind,
+  missingRequiredBridgeField,
   sourceReplaySignature,
   canonicalBridgeEvent,
   configuredChannelIdentity

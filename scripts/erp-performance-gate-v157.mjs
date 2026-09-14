@@ -42,8 +42,6 @@ const evidence=JSON.parse(fs.readFileSync(file,'utf8'));
 if(evidence.schemaVersion!==2)throw new Error('PERFORMANCE_EVIDENCE_SCHEMA_V2_REQUIRED_REINITIALIZE');
 if(evidence.candidateSha!==sha)throw new Error('PERFORMANCE_SHA_MISMATCH');
 
-const metricNumber=(raw)=>typeof raw === 'number' && Number.isFinite(raw) ? raw : null;
-
 const required={
   'frontend.startupP95Ms':policy.frontend.startupP95Ms,
   'frontend.routeSwitchP95Ms':policy.frontend.routeSwitchP95Ms,
@@ -65,6 +63,7 @@ const required={
   'backend.deadlockCount':policy.backend.deadlockCountMax,
   'backend.crossTenantLeakCount':policy.backend.crossTenantLeakCountMax
 };
+const metricNumber=(raw)=>typeof raw === 'number' && Number.isFinite(raw)?raw:null;
 const checks=[];
 for(const [key,budget] of Object.entries(required)){
   const value=metricNumber(evidence.metrics?.[key]);
@@ -75,9 +74,8 @@ checks.push({key:'backend.throughputRps',value:throughput,budget:policy.backend.
 
 const profilesComplete=policy.profiles.every((p)=>evidence.profiles?.[p]==='MEASURED');
 const workloadProfilesComplete=policy.workloadModel.profiles.every((p)=>evidence.workload?.profileCoverage?.[p]==='MEASURED');
-const expectedPeakRaw=evidence.workload?.expectedPeakConcurrentUsers;
-const expectedPeak=typeof expectedPeakRaw==='number'&&Number.isFinite(expectedPeakRaw)?expectedPeakRaw:null;
-const expectedPeakDeclared=Number.isInteger(expectedPeak)&&expectedPeak>0;
+const expectedPeak=evidence.workload?.expectedPeakConcurrentUsers;
+const expectedPeakDeclared=Number.isInteger(expectedPeak)&&expectedPeak>0&&expectedPeak<=250;
 const loadFactorsComplete=policy.workloadModel.requiredLoadFactors.every((factor)=>evidence.workload?.loadFactors?.[`${factor}x`]==='MEASURED');
 const heavyProcessesComplete=policy.heavyProcesses.required.every((name)=>
   policy.heavyProcesses.requiredOutcomes.every((outcome)=>evidence.heavyProcesses?.[name]?.[outcome]==='MEASURED')
