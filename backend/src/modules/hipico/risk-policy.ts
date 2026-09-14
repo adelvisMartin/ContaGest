@@ -72,14 +72,18 @@ function evidenceRequired(candidate: AgentCandidate) {
   return Boolean(candidate.tool && AUTO_TOOLS.has(candidate.tool));
 }
 
+function automaticMode(mode: AutomationState) {
+  return mode === 'AUTOMATIC_LOW_RISK' || mode === 'AUTOMATIC';
+}
+
 export function decideRiskPolicy(input: RiskPolicyInput): RiskPolicyDecision {
   const candidate = input.candidate;
   const evidenceState: EvidenceState = input.evidenceState || (evidenceRequired(candidate) ? 'MISSING' : 'NOT_REQUIRED');
   const toolEligible = Boolean(candidate.tool && AUTO_TOOLS.has(candidate.tool));
   const toolValidated = input.toolValidated === true;
 
-  if (input.sourceReadOnly) return decision('DENY', 'SOURCE_READ_ONLY', evidenceState);
   if (input.mode === 'DISABLED') return decision('DENY', 'AUTOMATION_DISABLED', evidenceState);
+  if (input.sourceReadOnly && automaticMode(input.mode)) return decision('DENY', 'SOURCE_READ_ONLY', evidenceState);
   if (SECURITY_INTENTS.has(candidate.intent)) return decision('DENY', 'SECURITY_POLICY_VIOLATION', evidenceState);
   if (candidate.risk === 'monetary' || FINANCIAL_INTENTS.has(candidate.intent)) {
     return decision('DENY', 'FINANCIAL_AUTHORITY_DENIED', evidenceState);
@@ -108,11 +112,11 @@ export function decideRiskPolicy(input: RiskPolicyInput): RiskPolicyDecision {
     return decision('SUGGEST', input.mode === 'SHADOW' ? 'SHADOW_NO_AUTONOMOUS_SEND' : 'ASSISTED_REQUIRES_APPROVAL', evidenceState);
   }
 
-  if (input.mode === 'AUTOMATIC_LOW_RISK' || input.mode === 'AUTOMATIC') {
+  if (automaticMode(input.mode)) {
     return decision('AUTO', 'LOW_RISK_AUTOMATION_ALLOWED', evidenceState, true);
   }
 
   return decision('DENY', 'AUTOMATION_MODE_INVALID', evidenceState);
 }
 
-export const __test__ = { evidenceRequired, MIN_AUTO_CONFIDENCE, AUTO_TOOLS, FINANCIAL_INTENTS };
+export const __test__ = { evidenceRequired, automaticMode, MIN_AUTO_CONFIDENCE, AUTO_TOOLS, FINANCIAL_INTENTS };
