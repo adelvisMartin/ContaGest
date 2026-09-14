@@ -108,6 +108,13 @@ export function decideRiskPolicy(input: RiskPolicyInput): RiskPolicyDecision {
     if (input.sourceAuthorized !== true) return decision('HUMAN_REQUIRED', 'EVIDENCE_SOURCE_NOT_AUTHORIZED', evidenceState);
   }
 
+  // A model can propose an intent/tool candidate, but model output is never an
+  // authorization primitive. Even in AUTOMATIC, only deterministic candidates
+  // may cross the final AUTO boundary.
+  if (candidate.source === 'model') {
+    return decision('SUGGEST', 'MODEL_CANDIDATE_REQUIRES_REVIEW', evidenceState);
+  }
+
   if (input.mode === 'SHADOW' || input.mode === 'ASSISTED') {
     return decision('SUGGEST', input.mode === 'SHADOW' ? 'SHADOW_NO_AUTONOMOUS_SEND' : 'ASSISTED_REQUIRES_APPROVAL', evidenceState);
   }
