@@ -7,6 +7,8 @@ import hipicoSystemRoutes from './modules/hipico/hipico-system.routes.js';
 import hipicoDocumentRoutes from './modules/hipico/document.routes.js';
 import hipicoProviderRoutes from './modules/hipico/provider.routes.js';
 import hipicoRaceRoutes from './modules/hipico/race.routes.js';
+import hipicoAgentRoutes from './modules/hipico/agent.routes.js';
+import hipicoCommandCenterRoutes from './modules/hipico/command-center.routes.js';
 import hipicoWebhookRoutes from './modules/hipico-bot/hipico-webhook.routes.js';
 import hipicoBridgeRoutes from './modules/hipico-bot/hipico-bridge.routes.js';
 import hipicoOperatorRoutes from './modules/hipico-bot/hipico-operator.routes.js';
@@ -61,6 +63,11 @@ export function createApp(options: { readinessCheck?: ReadinessCheck } = {}) {
     collectCspReport
   );
 
+  // Fail closed before spending CPU/memory parsing business payloads when a
+  // commercial production deployment lacks its explicit signing/license keys.
+  // Health and bounded CSP telemetry above remain available for diagnosis.
+  app.use(enforceProductionSecrets);
+
   app.use(express.json({
     limit: env.JSON_BODY_LIMIT,
     verify: (req, _res, buffer) => {
@@ -90,17 +97,19 @@ export function createApp(options: { readinessCheck?: ReadinessCheck } = {}) {
 
   // One canonical limiter chain avoids counting a request repeatedly while it
   // traverses sibling routers. mutationRateLimit skips GET/HEAD/OPTIONS.
+  // Individual routers still enforce their own operator/group authorization.
   app.use(
     '/api/v1/hipico',
     authRateLimit,
     mutationRateLimit,
     hipicoProviderRoutes,
     hipicoRaceRoutes,
+    hipicoAgentRoutes,
+    hipicoCommandCenterRoutes,
     hipicoCanonicalRoutes
   );
 
   app.use(csrfProtection);
-  app.use(enforceProductionSecrets);
   app.use('/api/v1/auth', authRateLimit, authRoutes);
 
   app.use(

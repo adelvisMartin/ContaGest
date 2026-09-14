@@ -65,7 +65,7 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
-      - name: Verify lock contract
+      - name: Verify lock and workflow contracts
         run: |
           node scripts/normalize-package-lock-v26.mjs --check
           node --test tests/toolchain_dependency_cleanup_issue_26.test.mjs

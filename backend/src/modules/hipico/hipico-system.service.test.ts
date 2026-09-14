@@ -33,8 +33,10 @@ void test('system status exposes no secrets and never invents integration readin
   assert.equal(status.components.channel.state, 'degraded');
   assert.equal(status.components.providers.state, 'not_configured');
   assert.equal(status.components.providers.financialAuthority, false);
-  assert.equal(status.components.documentEngine.state, 'not_configured');
-  assert.equal(status.components.agent.state, 'not_configured');
+  assert.equal(status.components.documentEngine.state, 'degraded');
+  assert.equal(status.components.documentEngine.reason, 'DOCUMENT_ENGINE_INSTALLED_NOT_PROBED');
+  assert.equal(status.components.agent.state, 'degraded');
+  assert.equal(status.components.agent.reason, 'AGENT_ENGINE_INSTALLED_NOT_PROBED');
   assert.equal(JSON.stringify(status).includes('do-not-expose'), false);
   assert.equal(JSON.stringify(status).includes('x'.repeat(40)), false);
   assert.equal(hipicoReadinessFromStatus(status).ready, true);

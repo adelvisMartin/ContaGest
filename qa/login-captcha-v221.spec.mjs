@@ -149,6 +149,12 @@ test.describe('#221 CAPTCHA/login responsive regression',()=>{
       await expect(page.locator('[data-captcha-box]')).toBeVisible();
       await expect(page.locator('#btnLoginSubmit')).toBeVisible();
       await expectNoHorizontalOverflow(page,`${width}x${height}`);
+      if(width<=430){
+        const refreshBox=await ui.refresh.boundingBox();
+        expect(refreshBox,`${width}x${height}: CAPTCHA refresh target missing`).not.toBeNull();
+        expect(refreshBox.width,`${width}x${height}: CAPTCHA refresh width`).toBeGreaterThanOrEqual(44);
+        expect(refreshBox.height,`${width}x${height}: CAPTCHA refresh height`).toBeGreaterThanOrEqual(44);
+      }
     });
   }
 
