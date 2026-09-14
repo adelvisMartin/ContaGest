@@ -50,7 +50,7 @@
   },
   "dependencies": {
     "@prisma/client": "6.19.3",
-    "@supabase/supabase-js": "2.115.0",
+    "@supabase/supabase-js": "2.116.0",
     "bcryptjs": "3.0.3",
     "bwip-js": "4.11.4",
     "cors": "2.8.6",
@@ -65,13 +65,13 @@
     "pino": "10.3.1",
     "prisma": "6.19.3",
     "qrcode": "1.5.4",
-    "zod": "4.5.4"
+    "zod": "4.6.2"
   },
   "devDependencies": {
     "@types/cors": "2.8.19",
     "@types/express": "5.0.6",
     "@types/jsonwebtoken": "9.0.10",
-    "@types/node": "22.20.1",
+    "@types/node": "22.20.2",
     "@types/pdfkit": "0.17.6",
     "@types/pg": "8.23.1",
     "tsx": "4.23.13",

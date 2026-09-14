@@ -62,6 +62,6 @@
     "skills:sync": "node scripts/sync-agent-skills.mjs",
     "skills:check": "node scripts/verify-agent-skills.mjs"
   },
-  "devDependencies": {"@playwright/test": "1.62.1"},
+  "devDependencies": {"@playwright/test": "1.63.0"},
   "overrides": {"deepmerge-ts": "8.0.1","uuid": "11.1.1"}
 }
