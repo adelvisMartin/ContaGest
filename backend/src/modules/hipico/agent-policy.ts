@@ -1,3 +1,5 @@
+import { decideRiskPolicy, type RiskPolicyInput } from './risk-policy.js';
+
 export const AUTOMATION_STATES = ['DISABLED', 'SHADOW', 'ASSISTED', 'AUTOMATIC_LOW_RISK', 'AUTOMATIC'] as const;
 export type AutomationState = typeof AUTOMATION_STATES[number];
 
@@ -94,6 +96,8 @@ export interface StructuredCandidateGenerator {
   id: string;
   generate(input: { text: string; deterministic: AgentCandidate }): Promise<unknown>;
 }
+
+export type AgentRiskContext = Omit<RiskPolicyInput, 'mode' | 'candidate'>;
 
 function boundedString(value: unknown, max: number) {
   return String(value ?? '').trim().slice(0, max);
@@ -229,7 +233,7 @@ export class HipicoAgentEngine {
     private readonly generator: StructuredCandidateGenerator | null = null
   ) {}
 
-  async evaluate(text: string, mode: AutomationState) {
+  async evaluate(text: string, mode: AutomationState, riskContext: AgentRiskContext = {}) {
     const normalized = boundedString(text, 4000);
     if (!normalized) throw new Error('AGENT_MESSAGE_REQUIRED');
     const deterministicBase = this.parser.parse(normalized);
@@ -240,6 +244,13 @@ export class HipicoAgentEngine {
       candidate = { ...generated, modelVersion: generated.modelVersion || this.generator.id };
     }
     const request = safeToolRequest(candidate);
-    return { candidate, toolRequest: request, canAct: agentCanAct(mode, candidate), mode };
+    const riskPolicy = decideRiskPolicy({
+      ...riskContext,
+      mode,
+      candidate,
+      toolValidated: riskContext.toolValidated ?? Boolean(request)
+    });
+    const canAct = agentCanAct(mode, candidate) && riskPolicy.disposition === 'AUTO' && riskPolicy.autonomousSendAllowed;
+    return { candidate, toolRequest: request, canAct, mode, riskPolicy };
   }
 }
