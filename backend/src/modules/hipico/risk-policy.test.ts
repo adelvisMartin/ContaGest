@@ -95,6 +95,17 @@ test('risk policy permits AUTO only for enumerated read-only tools with fresh ev
   assert.equal(decide({ toolValidated: false }).disposition, 'HUMAN_REQUIRED');
 });
 
+test('model candidates can never grant autonomous authority even for allowlisted read-only tools', () => {
+  const policy = decide({
+    mode: 'AUTOMATIC',
+    candidate: { ...safeQuery, source: 'model', modelVersion: 'fixture-model', confidence: 1 }
+  });
+  assert.equal(policy.disposition, 'SUGGEST');
+  assert.equal(policy.autonomousSendAllowed, false);
+  assert.equal(policy.toolExecutable, false);
+  assert.equal(policy.reason, 'MODEL_CANDIDATE_REQUIRES_REVIEW');
+});
+
 test('SHADOW and ASSISTED can only suggest safe candidates, while DISABLED denies automation', () => {
   const shadow = decide({ mode: 'SHADOW' });
   assert.equal(shadow.disposition, 'SUGGEST');
