@@ -78,7 +78,7 @@ const defaultDependencies: CommandCenterDependencies = {
     SELECT group_key AS "groupKey", label, channel_type AS "channelType", status,
       config->>'mode' AS mode, config->>'purpose' AS purpose, updated_at AS "updatedAt"
     FROM public.hipico_bot_channels
-    WHERE owner_id = ${scope.ownerId}::uuid
+    WHERE owner_id = ${scope.ownerId}::uuid AND group_key = ${scope.groupKey}
     ORDER BY updated_at DESC
     LIMIT 50`,
   queueStates: (scope) => prisma.$queryRaw<StateCountRow[]>`
@@ -248,15 +248,17 @@ export async function buildHipicoCommandCenter(
     },
     channels: {
       state: channelsRead.state,
-      items: channelsRead.data.map((channel: any) => ({
-        groupKey: channel.groupKey,
-        label: channel.label,
-        channelType: channel.channelType,
-        status: channel.status,
-        mode: channel.mode || null,
-        purpose: channel.purpose || null,
-        updatedAt: channel.updatedAt
-      }))
+      items: channelsRead.data
+        .filter((channel: any) => channel.groupKey === scope.groupKey)
+        .map((channel: any) => ({
+          groupKey: channel.groupKey,
+          label: channel.label,
+          channelType: channel.channelType,
+          status: channel.status,
+          mode: channel.mode || null,
+          purpose: channel.purpose || null,
+          updatedAt: channel.updatedAt
+        }))
     },
     operation: {
       state: meetingsRead.state === 'ready' && racesRead.state === 'ready' ? 'ready' : 'unavailable',
