@@ -9,20 +9,14 @@ import {
 } from './hipico-outbox-policy.js';
 
 const canonicalPayload={
-  ownerId:'11111111-1111-4111-8111-111111111111',
-  groupKey:'club-hipico-source',
-  destination:'584121234567',
-  replyType:'operational',
-  payload:{text:'Estado de carrera disponible.'}
+  ownerId:'11111111-1111-4111-8111-111111111111',groupKey:'club-hipico-source',destination:'584121234567',replyType:'operational',payload:{text:'Estado de carrera disponible.'}
 };
 
 test('outbox policy: semantic digest is deterministic and destination-sensitive',()=>{
   const first=outboundPayloadDigest(canonicalPayload);
-  const reordered=outboundPayloadDigest({...canonicalPayload,payload:{text:'Estado de carrera disponible.'}});
-  const changed=outboundPayloadDigest({...canonicalPayload,destination:'584141112233'});
   assert.match(first,/^[a-f0-9]{64}$/);
-  assert.equal(first,reordered);
-  assert.notEqual(first,changed);
+  assert.equal(first,outboundPayloadDigest({...canonicalPayload,payload:{text:'Estado de carrera disponible.'}}));
+  assert.notEqual(first,outboundPayloadDigest({...canonicalPayload,destination:'584141112233'}));
 });
 
 test('outbox policy: retry delay grows exponentially and stays bounded',()=>{
@@ -32,25 +26,21 @@ test('outbox policy: retry delay grows exponentially and stays bounded',()=>{
   assert.equal(retryDelayMs(2,{baseMs:1000,maxMs:30_000,jitterRatio:.25,jitterUnit:1}),2500);
 });
 
-test('outbox policy: ambiguous transport outcomes always require reconciliation',()=>{
+test('outbox policy: every current ambiguous transport outcome requires reconciliation',()=>{
   for(const error of [
-    {code:'HIPICO_CLOUD_DELIVERY_AMBIGUOUS'},
-    {code:'HIPICO_CLOUD_HTTP_ERROR',status:408},
-    {code:'HIPICO_CLOUD_HTTP_ERROR',status:500},
-    {code:'HIPICO_CLOUD_HTTP_ERROR',status:503}
-  ]){
-    assert.equal(classifyOutboundFailure(error).action,'reconciliation_required');
-  }
+    {code:'HIPICO_CLOUD_SEND_TIMEOUT'},
+    {code:'HIPICO_CLOUD_NETWORK_ERROR'},
+    {code:'HIPICO_CLOUD_UPSTREAM_RETRYABLE',providerStatus:500},
+    {code:'HIPICO_CLOUD_UPSTREAM_RETRYABLE',providerStatus:503},
+    {code:'HIPICO_CLOUD_HTTP_ERROR',providerStatus:408},
+    {code:'HIPICO_CLOUD_HTTP_ERROR',providerStatus:502}
+  ]) assert.equal(classifyOutboundFailure(error).action,'reconciliation_required');
 });
 
-test('outbox policy: provider 429 can retry but deterministic policy/content errors are terminal',()=>{
-  assert.equal(classifyOutboundFailure({code:'HIPICO_CLOUD_HTTP_ERROR',status:429}).action,'retry');
-  for(const code of [
-    'HIPICO_CLOUD_MESSAGE_INVALID',
-    'HIPICO_CLOUD_SEND_DISABLED',
-    'HIPICO_DESTINATION_NOT_ALLOWLISTED',
-    'HIPICO_CLOUD_TRANSPORT_NOT_CONFIGURED'
-  ]){
+test('outbox policy: rate limiting may retry but deterministic failures are terminal',()=>{
+  assert.equal(classifyOutboundFailure({code:'HIPICO_CLOUD_RATE_LIMITED',providerStatus:429}).action,'retry');
+  assert.equal(classifyOutboundFailure({code:'HIPICO_CLOUD_HTTP_ERROR',providerStatus:429}).action,'retry');
+  for(const code of ['HIPICO_CLOUD_MESSAGE_INVALID','HIPICO_CLOUD_SEND_DISABLED','HIPICO_DESTINATION_NOT_ALLOWLISTED','HIPICO_CLOUD_TRANSPORT_NOT_CONFIGURED']){
     assert.equal(classifyOutboundFailure({code}).action,'failed');
   }
 });
