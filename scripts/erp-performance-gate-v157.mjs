@@ -63,18 +63,19 @@ const required={
   'backend.deadlockCount':policy.backend.deadlockCountMax,
   'backend.crossTenantLeakCount':policy.backend.crossTenantLeakCountMax
 };
+const metricNumber=(raw)=>typeof raw === 'number' && Number.isFinite(raw)?raw:null;
 const checks=[];
 for(const [key,budget] of Object.entries(required)){
-  const value=Number(evidence.metrics?.[key]);
-  checks.push({key,value:Number.isFinite(value)?value:null,budget,pass:Number.isFinite(value)&&value<=budget,direction:'max'});
+  const value=metricNumber(evidence.metrics?.[key]);
+  checks.push({key,value,budget,pass:value!==null&&value<=budget,direction:'max'});
 }
-const throughput=Number(evidence.metrics?.['backend.throughputRps']);
-checks.push({key:'backend.throughputRps',value:Number.isFinite(throughput)?throughput:null,budget:policy.backend.throughputRpsMin,pass:Number.isFinite(throughput)&&throughput>=policy.backend.throughputRpsMin,direction:'min'});
+const throughput=metricNumber(evidence.metrics?.['backend.throughputRps']);
+checks.push({key:'backend.throughputRps',value:throughput,budget:policy.backend.throughputRpsMin,pass:throughput!==null&&throughput>=policy.backend.throughputRpsMin,direction:'min'});
 
 const profilesComplete=policy.profiles.every((p)=>evidence.profiles?.[p]==='MEASURED');
 const workloadProfilesComplete=policy.workloadModel.profiles.every((p)=>evidence.workload?.profileCoverage?.[p]==='MEASURED');
-const expectedPeak=Number(evidence.workload?.expectedPeakConcurrentUsers);
-const expectedPeakDeclared=Number.isInteger(expectedPeak)&&expectedPeak>0;
+const expectedPeak=evidence.workload?.expectedPeakConcurrentUsers;
+const expectedPeakDeclared=Number.isInteger(expectedPeak)&&expectedPeak>0&&expectedPeak<=250;
 const loadFactorsComplete=policy.workloadModel.requiredLoadFactors.every((factor)=>evidence.workload?.loadFactors?.[`${factor}x`]==='MEASURED');
 const heavyProcessesComplete=policy.heavyProcesses.required.every((name)=>
   policy.heavyProcesses.requiredOutcomes.every((outcome)=>evidence.heavyProcesses?.[name]?.[outcome]==='MEASURED')

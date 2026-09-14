@@ -18,7 +18,12 @@ const sourceGroupId = '120363111111111111@g.us';
 const labGroupId = '120363222222222222-2222222222@g.us';
 const sourceChannelKey = 'club-hipico-triple-crown-official';
 const labChannelKey = 'control-hipico-lab';
-const bridgeEnv = { HIPICO_SOURCE_GROUP_ID: sourceGroupId, HIPICO_LAB_GROUP_ID: labGroupId };
+const bridgeEnv = {
+  HIPICO_SOURCE_GROUP_ID: sourceGroupId,
+  HIPICO_LAB_GROUP_ID: labGroupId,
+  HIPICO_SOURCE_CHANNEL_KEY: sourceChannelKey,
+  HIPICO_LAB_CHANNEL_KEY: labChannelKey
+};
 function bridgeEnvelope(overrides = {}) {
   return {
     bridgeVersion: '1.4.2',
@@ -145,7 +150,7 @@ test('serverless bridge identity accepts modern and legacy group JIDs and reject
   assert.equal(validateBridgeRoleIdentity('source', sourceGroupId, undefined, { ...bridgeEnv, HIPICO_LAB_GROUP_ID: 'bad-id' }), 'lab_group_invalid');
 });
 
-test('group bridge validates strict transport schema before persistence', () => {
+test('group bridge validates strict transport schema before canonical delegation', () => {
   const base = bridgeEnvelope();
   assert.equal(validateGroupBridgeBody(base, bridgeEnv), null);
   assert.equal(validateGroupBridgeBody({ ...base, fromMe: 'false' }, bridgeEnv), 'invalid_boolean_field');
@@ -177,42 +182,40 @@ test('serverless bridge identity is mandatory and client channel aliases cannot 
   });
 });
 
-test('persisted serverless channels cannot be reactivated or repurposed by incoming traffic', () => {
-  const identity = { role: 'source', groupId: sourceGroupId, channelKey: sourceChannelKey };
-  const valid = { id: 'c1', status: 'active', channel_type: 'web_bridge', config: { channel_role: 'source' } };
-  assert.equal(ingestTest.assertPersistedChannel(valid, identity, sourceGroupId).id, 'c1');
-  assert.throws(() => ingestTest.assertPersistedChannel({ ...valid, status: 'blocked' }, identity, sourceGroupId), (error) => error?.code === 'HIPICO_SERVERLESS_CHANNEL_DISABLED');
-  assert.throws(() => ingestTest.assertPersistedChannel({ ...valid, channel_type: 'manual_export' }, identity, sourceGroupId), (error) => error?.code === 'HIPICO_SERVERLESS_CHANNEL_TYPE_MISMATCH');
-  assert.throws(() => ingestTest.assertPersistedChannel({ ...valid, config: { channel_role: 'lab' } }, identity, sourceGroupId), (error) => error?.code === 'HIPICO_SERVERLESS_CHANNEL_ROLE_MISMATCH');
-  assert.doesNotMatch(ingest, /resolution=merge-duplicates/);
-  assert.match(ingest, /resolution=ignore-duplicates/);
+test('serverless bridge adapter owns no persisted channel lifecycle and delegates it to the canonical backend', () => {
+  const canonical = ingestTest.canonicalBridgeEvent(bridgeEnvelope(), bridgeEnv);
+  assert.equal(canonical.groupId, sourceGroupId);
+  assert.equal(canonical.channelKey, sourceChannelKey);
+  assert.equal(canonical.labChannelKey, labChannelKey);
+  assert.equal(canonical.shadowMode, true);
+  assert.match(ingest, /proxyCanonicalRequest/);
+  assert.match(ingest, /path:\s*['"]\/api\/v1\/hipico-bot\/bridge\/events['"]/);
+  assert.match(ingest, /body:\s*JSON\.stringify\(canonicalBridgeEvent\(body\)\)/);
+  assert.doesNotMatch(ingest, /assertPersistedChannel|hipico_bot_channels|resolution=merge-duplicates|resolution=ignore-duplicates/);
 });
 
-test('legacy serverless duplicate identity binds sender, timestamp, body, type and quote context', () => {
-  const base = {
-    senderId: '584121234567',
+test('serverless duplicate identity is normalized before canonical delegation', () => {
+  const base = bridgeEnvelope({
     timestamp: '2026-09-11T01:00:00-05:00',
-    type: 'chat',
     text: '30k',
     quotedExternalMessageId: 'source-1'
-  };
+  });
   const sameInstant = { ...base, timestamp: '2026-09-11T06:00:00.000Z' };
   assert.equal(ingestTest.sourceReplaySignature(base), ingestTest.sourceReplaySignature(sameInstant));
   assert.notEqual(ingestTest.sourceReplaySignature(base), ingestTest.sourceReplaySignature({ ...base, text: '300k' }));
   assert.notEqual(ingestTest.sourceReplaySignature(base), ingestTest.sourceReplaySignature({ ...base, quotedExternalMessageId: 'source-2' }));
-  assert.match(ingest, /replay_mismatch/);
-  assert.match(ingest, /retryable:\s*false/);
+  assert.equal(ingestTest.canonicalBridgeEvent(base, bridgeEnv).rawMeta, ingestTest.canonicalBridgeEvent(sameInstant, bridgeEnv).rawMeta);
+  assert.doesNotMatch(ingest, /replay_mismatch/);
 });
 
-test('group bridge fails closed to configured owner and source shadow mode', () => {
-  assert.match(ingest, /env\('HIPICO_OWNER_ID'\)/);
-  assert.doesNotMatch(ingest, /hipico_workspaces\?select=owner_id&order=updated_at\.desc&limit=1/);
+test('group bridge fails closed on source identity/shadow policy and never owns financial authority', () => {
+  assert.match(ingest, /serverSecret\('HIPICO_GROUP_BRIDGE_TOKEN'\)/);
   assert.match(ingest, /source_requires_shadow_mode/);
   assert.match(identitySource, /source_group_not_authorized/);
   assert.match(identitySource, /lab_group_not_authorized/);
-  assert.match(ingest, /actions:\s*\[\]/);
-  assert.match(ingest, /monetaryAutoApply:\s*false/);
-  assert.doesNotMatch(ingest, /response\.actions\.push/);
+  assert.match(ingest, /canonical_backend_unavailable/);
+  assert.doesNotMatch(ingest, /env\('HIPICO_OWNER_ID'\)|hipico_workspaces\?select=owner_id/);
+  assert.doesNotMatch(ingest, /actions:\s*\[|monetaryAutoApply|response\.actions\.push/);
 });
 
 test('outbound Meta sender requires strong auth, explicit production policy, durable transitions and no ambiguous reclaim', () => {

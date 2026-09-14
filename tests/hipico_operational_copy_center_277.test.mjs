@@ -85,11 +85,11 @@ test('private statement is generated manually from persisted weekly and race his
   assert.match(text,/Churchill Downs/);
 });
 
-test('copy center is manual-only, exports daily text, guarded, and cached offline',()=>{
+test('copy center is manual-only, responsive, guarded, and cached offline under app.css',()=>{
   const root=process.cwd();
   const center=fs.readFileSync(path.join(root,'frontend/public/hipico-control/assets/js/operational-copy-center.js'),'utf8');
   const guard=fs.readFileSync(path.join(root,'frontend/public/hipico-control/assets/js/operational-access-guard.js'),'utf8');
-  const css=fs.readFileSync(path.join(root,'frontend/public/hipico-control/assets/css/operational-copy-center.css'),'utf8');
+  const css=fs.readFileSync(path.join(root,'frontend/public/hipico-control/assets/css/app.css'),'utf8');
   const html=fs.readFileSync(path.join(root,'frontend/public/hipico-control/index.html'),'utf8');
   const sw=fs.readFileSync(path.join(root,'frontend/public/hipico-control/sw.js'),'utf8');
   assert.match(center,/Copiar es manual\. Este panel nunca envía mensajes por sí solo\./);
@@ -98,12 +98,14 @@ test('copy center is manual-only, exports daily text, guarded, and cached offlin
   assert.doesNotMatch(center,/wa\.me|messages\/send|fetch\(/);
   assert.match(center,/export function mountOperationalCopyCenter/);
   assert.match(guard,/import\('\.\/operational-copy-center\.js'\)/);
-  assert.match(css,/@media\(max-width:720px\)[\s\S]*min-height:44px/);
-  assert.match(css, /prefers-reduced-motion/);
-  assert.match(html,/operational-copy-center\.css/);
+  assert.match(css,/\.ops-button,[\s\S]*min-height:\s*var\(--hc-touch,\s*44px\)/);
+  assert.match(css,/prefers-reduced-motion:\s*reduce/);
+  assert.match(html,/\.\/assets\/css\/app\.css/);
+  assert.doesNotMatch(html,/operational-copy-center\.css|operational-access-guard\.css|mobile-accessibility\.css/);
   assert.match(html,/operational-access-guard\.js/);
   assert.doesNotMatch(html,/src="\.\/assets\/js\/operational-copy-center\.js"/);
   assert.match(sw,/operational-ledger\.js/);
   assert.match(sw,/operational-copy-center\.js/);
-  assert.match(sw,/operational-copy-center\.css/);
+  assert.match(sw,/assets\/css\/app\.css/);
+  assert.doesNotMatch(sw,/operational-copy-center\.css|operational-access-guard\.css|mobile-accessibility\.css/);
 });
