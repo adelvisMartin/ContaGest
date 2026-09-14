@@ -57,11 +57,14 @@ test('risk policy denies prompt/tool injection even when candidate is otherwise 
   assert.equal(policy.reason, 'SECURITY_POLICY_VIOLATION');
 });
 
-test('risk policy keeps SOURCE read-only even under an impossible automatic misconfiguration', () => {
-  const policy = decide({ mode: 'AUTOMATIC', sourceReadOnly: true });
-  assert.equal(policy.disposition, 'DENY');
-  assert.equal(policy.reason, 'SOURCE_READ_ONLY');
-  assert.equal(policy.autonomousSendAllowed, false);
+test('risk policy keeps SOURCE read-only while still permitting shadow evaluation', () => {
+  const automatic = decide({ mode: 'AUTOMATIC', sourceReadOnly: true });
+  assert.equal(automatic.disposition, 'DENY');
+  assert.equal(automatic.reason, 'SOURCE_READ_ONLY');
+  assert.equal(automatic.autonomousSendAllowed, false);
+  const shadow = decide({ mode: 'SHADOW', sourceReadOnly: true });
+  assert.equal(shadow.disposition, 'SUGGEST');
+  assert.equal(shadow.autonomousSendAllowed, false);
 });
 
 test('risk policy requires a human for human-owned, ambiguous, review or lifecycle command candidates', () => {
