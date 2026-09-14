@@ -51,6 +51,8 @@ export function createApp(options: { readinessCheck?: ReadinessCheck } = {}) {
   app.use(securityResponseHeaders);
   app.use(corsPolicy);
 
+  // Platform probes remain independent from business authentication and mutation
+  // gates. Canonical Control Hipico system probes expose bounded state only.
   registerHealthRoutes(app, { readinessCheck: options.readinessCheck });
   app.use(globalRateLimit);
 
@@ -72,6 +74,9 @@ export function createApp(options: { readinessCheck?: ReadinessCheck } = {}) {
 
   app.use('/api/v1/hipico/system', authRateLimit, hipicoSystemRoutes);
 
+  // hipico-bot is the compatibility/integration boundary. The legacy provider
+  // registry stays reachable here rather than competing with the canonical #286
+  // provider API for /api/v1/hipico/providers.
   app.use('/api/v1/hipico-bot', hipicoWebhookRoutes);
   app.use(
     '/api/v1/hipico-bot',
@@ -81,9 +86,12 @@ export function createApp(options: { readinessCheck?: ReadinessCheck } = {}) {
     hipicoLegacyProviderRoutes
   );
 
+  // Raw PDF upload/list/reprocess has its own explicit boundary and shares the
+  // same token/scope policy as the remaining canonical Hípico APIs.
   app.use('/api/v1/hipico/documents', authRateLimit, mutationRateLimit, hipicoDocumentRoutes);
 
-  // One canonical limiter chain for provider/race/agent/read-model/domain APIs.
+  // One canonical limiter chain avoids counting a request repeatedly while it
+  // traverses sibling routers. mutationRateLimit skips GET/HEAD/OPTIONS.
   // Individual routers still enforce their own operator/group authorization.
   app.use(
     '/api/v1/hipico',

@@ -4,22 +4,24 @@ import test from 'node:test';
 
 const root = 'frontend/public/hipico-control';
 const read = (path) => fs.readFile(path, 'utf8');
-const canonicalCss = ['./assets/css/app.css','./assets/css/mobile-accessibility.css','./assets/css/operational-copy-center.css','./assets/css/operational-access-guard.css'];
-const removedCss = ['styles.css','ui-system.css','tokens.css','themes.css','components.css','operations-pro.css','precision-hipica.css','offline-icons.css','recovery.css','ui-system-v2.css'];
+const removedCss = [
+  'styles.css','ui-system.css','tokens.css','themes.css','components.css','operations-pro.css','precision-hipica.css',
+  'offline-icons.css','recovery.css','ui-system-v2.css','mobile-accessibility.css','operational-copy-center.css','operational-access-guard.css'
+];
 
-test('PR268 exposes the canonical layered visual authority and official identity', async () => {
+test('PR268 exposes exactly one visual authority and official identity', async () => {
   const [index, recovery, manifest, css] = await Promise.all([
     read(`${root}/index.html`), read(`${root}/recovery.html`), read(`${root}/manifest.webmanifest`), read(`${root}/assets/css/app.css`)
   ]);
   const stylesheets = [...index.matchAll(/<link\s+rel="stylesheet"\s+href="([^"]+)"/g)].map((m) => m[1]);
-  assert.deepEqual(stylesheets, canonicalCss);
+  assert.deepEqual(stylesheets, ['./assets/css/app.css']);
   assert.match(index, /logo-control-hipico\.png/);
   assert.match(index, /help-center\.js/);
   assert.match(recovery, /icons\/icon-192\.png/);
   assert.match(manifest, /"theme_color"\s*:\s*"#721522"/);
   assert.match(css, /--hc-brand:\s*#721522/);
   assert.doesNotMatch(css, /radial-gradient\(/i);
-  assert.doesNotMatch(css, /font-weight:\s*(?:800|850|900)\b/);
+  assert.doesNotMatch(css, /font-weight:\s*(?:550|650|750|800|850|900)\b/);
   for (const file of removedCss) await assert.rejects(fs.access(`${root}/assets/css/${file}`));
   await assert.rejects(fs.access(`${root}/icon.svg`));
 });
@@ -89,17 +91,15 @@ test('PR268 keeps WhatsApp ingestion fail-closed and uses only official product 
   assert.match(workspace, /cleanLabel/);
 });
 
-test('PR268 Android sync requires the canonical web asset set and official launcher branding', async () => {
+test('PR268 Android sync requires canonical web assets and official launcher branding', async () => {
   const [pkg, sync, branding, capacitor] = await Promise.all([
     read('android/hipico-control-v1130/package.json'), read('android/hipico-control-v1130/scripts/sync-web.mjs'),
     read('android/hipico-control-v1130/scripts/configure-branding.mjs'), read('android/hipico-control-v1130/capacitor.config.json')
   ]);
   assert.match(pkg, /"android:branding"/);
-  assert.match(sync, /canonicalCss/);
-  assert.match(sync, /mobile-accessibility\.css/);
-  assert.match(sync, /operational-copy-center\.css/);
-  assert.match(sync, /operational-access-guard\.css/);
+  assert.match(sync, /assets\/css\/app\.css/);
   assert.match(sync, /help-center\.js/);
+  assert.match(sync, /cssFiles\.length !== 1/);
   for (const file of removedCss) assert.match(sync, new RegExp(file.replace('.', '\\.')));
   assert.match(branding, /icon-192\.png/);
   assert.match(branding, /ic_launcher_round/);
@@ -107,10 +107,10 @@ test('PR268 Android sync requires the canonical web asset set and official launc
   assert.match(capacitor, /"backgroundColor"\s*:\s*"#f7f7f6"/);
 });
 
-test('service worker cache matches the integrated runtime without legacy layers', async () => {
+test('service worker cache matches the zero-legacy integrated runtime', async () => {
   const sw = await read(`${root}/sw.js`);
-  for (const css of canonicalCss) assert.ok(sw.includes(css.replace('./', '')), `${css} must be cached`);
+  assert.match(sw, /assets\/css\/app\.css/);
   assert.match(sw, /help-center\.js/);
-  assert.match(sw, /shell-r\d+-[a-z0-9-]+/i);
+  assert.match(sw, /shell-r23-ui-system-v2-266/);
   for (const file of removedCss) assert.equal(sw.includes(`assets/css/${file}`), false, `${file} must not be cached`);
 });

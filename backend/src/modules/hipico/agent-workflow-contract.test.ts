@@ -19,6 +19,24 @@ void test('agent/shadow gate validates the exact candidate with real ephemeral P
   assert.match(workflow, /hipico-exact-sha-gate\.mjs/);
 });
 
+void test('agent/shadow workflow path filter covers routes, stores and both deployment migrations', () => {
+  const workflow = readFileSync(workflowUrl, 'utf8');
+  assert.match(workflow, /backend\/src\/modules\/hipico\/agent\.routes\.ts/);
+  assert.match(workflow, /backend\/src\/modules\/hipico\/automation\.store\.ts/);
+  assert.match(workflow, /supabase\/sql\/hipico_v22_agent_shadow\.sql/);
+  assert.match(workflow, /backend\/prisma\/migrations\/20260913230500_hipico_agent_shadow\/migration\.sql/);
+});
+
+void test('agent/shadow runtime smoke uses an operator token that satisfies production secret policy', () => {
+  const workflow = readFileSync(workflowUrl, 'utf8');
+  const envMatch = workflow.match(/HIPICO_OPERATOR_CONTROL_TOKEN=([^"\n]+)/);
+  assert.ok(envMatch?.[1], 'workflow must configure the operator token used by runtime smoke');
+  const token = String(envMatch[1]).trim();
+  assert.ok(Buffer.byteLength(token, 'utf8') >= 32, 'runtime smoke token must satisfy the 32-byte production minimum');
+  assert.doesNotMatch(token, /CHANGE[_-]?ME|PLACEHOLDER|EXAMPLE|YOUR[_-]?(?:SECRET|TOKEN|KEY)/i);
+  assert.ok(workflow.includes(`x-hipico-operator-token: ${token}`), 'runtime request must use exactly the configured token');
+});
+
 void test('agent/shadow gate remains fail-closed during cleanup', () => {
   const workflow = readFileSync(workflowUrl, 'utf8');
   assert.match(workflow, /if:\s*always\(\)/);
