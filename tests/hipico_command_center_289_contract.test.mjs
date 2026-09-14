@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
+import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -11,6 +12,21 @@ const pwa = path.join(repo, 'frontend/public/hipico-control');
 function read(relative) {
   return fs.readFileSync(path.join(repo, relative), 'utf8');
 }
+
+void test('Command Center runtime entrypoints are syntactically valid in the canonical root gate', () => {
+  for (const relative of [
+    'frontend/public/hipico-control/assets/js/theme-bootstrap.js',
+    'frontend/public/hipico-control/assets/js/command-center.js',
+    'frontend/public/hipico-control/assets/js/command-center-shell.js',
+    'frontend/api/hipico/command-center.js'
+  ]) {
+    const result = spawnSync(process.execPath, ['--check', path.join(repo, relative)], {
+      cwd: repo,
+      encoding: 'utf8'
+    });
+    assert.equal(result.status, 0, `${relative} must parse with Node --check\n${result.stderr || result.stdout}`);
+  }
+});
 
 void test('theme bootstrap runs before canonical styles and workspace remains runtime authority', () => {
   const index = read('frontend/public/hipico-control/index.html');
