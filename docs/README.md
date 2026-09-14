@@ -55,6 +55,11 @@ Para pruebas de persistencia/concurrencia se debe usar PostgreSQL real, aislado 
 
 La arquitectura canónica de Control Hípico se mantiene en código bajo `backend/src/modules/hipico`, sus adapters/compatibilidad bajo `backend/src/modules/hipico-bot`, la PWA bajo `frontend/public/hipico-control`, y tooling operacional bajo `tools/` y `scripts/`.
 
+Autoridades visuales y de marca:
+
+- [`../frontend/public/hipico-control/STYLE-GUIDE.md`](../frontend/public/hipico-control/STYLE-GUIDE.md) — Style Guide canónica de la PWA y wrapper Android; define `app.css` como única hoja global y `ui.js` como primitivas visuales.
+- [`brand/CONTROL_HIPICO_BRAND_MANUAL.md`](brand/CONTROL_HIPICO_BRAND_MANUAL.md) — identidad, assets y reglas de marca de Control Hípico.
+
 Fronteras que deben permanecer estables:
 
 ```text
@@ -105,7 +110,7 @@ No crear un segundo pipeline documental si la capacidad puede integrarse en el p
 
 ## 8. UX/UI, responsive y accesibilidad
 
-ContaGest ERP y Control Hípico pueden compartir principios, pero no deben fusionar accidentalmente sus autoridades CSS.
+ContaGest ERP y Control Hípico pueden compartir principios, pero no deben fusionar accidentalmente sus autoridades CSS. Para Hípico, la Style Guide enlazada en la sección anterior es la fuente canónica de implementación visual y el manual de marca gobierna identidad/assets.
 
 QA visual relevante debe cubrir, según alcance:
 
