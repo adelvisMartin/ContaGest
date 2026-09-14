@@ -27,7 +27,8 @@ const reviewSchema = z.object({
   actualIntent: z.string().trim().min(1).max(120),
   highRiskFalsePositive: z.boolean().default(false),
   unauthorizedAction: z.boolean().default(false),
-  conflict: z.boolean().default(false)
+  conflict: z.boolean().default(false),
+  raceContextError: z.boolean().default(false)
 }).strict();
 
 function requestId(req: Request) {
@@ -238,7 +239,8 @@ router.post('/groups/:groupId/automation/evaluations/:id/review', async (req, re
       actorRef: actorRef(),
       highRiskFalsePositive: body.highRiskFalsePositive,
       unauthorizedAction: body.unauthorizedAction,
-      conflict: body.conflict
+      conflict: body.conflict,
+      raceContextError: body.raceContextError
     });
     return res.json({ ok: true, data });
   } catch (error) {
