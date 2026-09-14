@@ -63,7 +63,7 @@ env:
   SUPABASE_AUTH_FALLBACK: 'false'
   ALLOW_PUBLIC_REGISTER: 'false'
   PRISMA_QUERY_TELEMETRY: 'true'
-  ERP157_FIXTURE_POLICY: 'SYNTHETIC_TEST_ONLY'
+  ERP157_FIXTURE_PROVENANCE: 'SYNTHETIC_TEST_ONLY'
   CANDIDATE_SHA: ${{ inputs.candidate_sha || github.event.pull_request.head.sha || github.event.workflow_run.head_sha || github.sha }}
   ERP157_EXPECTED_PEAK_USERS: ${{ inputs.expected_peak_users || vars.ERP157_EXPECTED_PEAK_USERS }}
 
