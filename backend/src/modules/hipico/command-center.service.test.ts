@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { buildHipicoCommandCenter } from './command-center.service.js';
 
 const scope = {
@@ -83,4 +84,22 @@ void test('missing selected group keeps agent disabled/not-configured instead of
   assert.equal(calls, 0);
   assert.equal(result.agent.state, 'not_configured');
   assert.equal(result.agent.reason, 'GROUP_ID_NOT_SELECTED');
+});
+
+void test('Command Center never returns channel metadata from another group', async () => {
+  const result = await buildHipicoCommandCenter(scope, dependencies({
+    channels: async () => [
+      { groupKey: scope.groupKey, label: 'SOURCE', channelType: 'web_bridge', status: 'active', mode: 'shadow', purpose: 'source', updatedAt: '2026-09-13T18:59:00Z' },
+      { groupKey: 'another-private-group', label: 'OTHER', channelType: 'web_bridge', status: 'active', mode: 'shadow', purpose: 'source', updatedAt: '2026-09-13T18:59:30Z' }
+    ]
+  }));
+
+  assert.equal(result.channels.state, 'ready');
+  assert.deepEqual(result.channels.items.map((channel) => channel.groupKey), [scope.groupKey]);
+  assert.doesNotMatch(JSON.stringify(result.channels), /another-private-group|OTHER/);
+});
+
+void test('default channel storage query is scoped by owner and group key', () => {
+  const source = readFileSync(new URL('./command-center.service.ts', import.meta.url), 'utf8');
+  assert.match(source, /FROM public\.hipico_bot_channels[\s\S]*WHERE owner_id = \$\{scope\.ownerId\}::uuid AND group_key = \$\{scope\.groupKey\}/);
 });
