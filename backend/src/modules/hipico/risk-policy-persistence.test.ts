@@ -39,3 +39,17 @@ test('Supabase and Prisma migrations add bounded policy columns without changing
     assert.doesNotMatch(sql, /financial_authority\s*=\s*true/i);
   }
 });
+
+test('risk policy migration cannot bypass one-time review immutability', () => {
+  for (const url of [supabaseUrl, prismaUrl]) {
+    const sql = readFileSync(url, 'utf8');
+    assert.match(sql, /LOCK TABLE public\.hipico_agent_evaluations IN ACCESS EXCLUSIVE MODE/i);
+    assert.match(sql, /DROP TRIGGER IF EXISTS hipico_agent_evaluations_review_once/i);
+    assert.match(sql, /CREATE OR REPLACE FUNCTION public\.hipico_guard_agent_evaluation_mutation/i);
+    assert.match(sql, /new\.policy_disposition\s*=\s*old\.policy_disposition/i);
+    assert.match(sql, /new\.policy_reason\s*=\s*old\.policy_reason/i);
+    assert.match(sql, /new\.policy_version\s*=\s*old\.policy_version/i);
+    assert.match(sql, /new\.policy_evidence_state\s*=\s*old\.policy_evidence_state/i);
+    assert.match(sql, /CREATE TRIGGER hipico_agent_evaluations_review_once/i);
+  }
+});
