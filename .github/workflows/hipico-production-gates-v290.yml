@@ -34,6 +34,7 @@ on:
 
 permissions:
   contents: read
+  actions: read
 
 concurrency:
   group: hipico-v290-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
@@ -552,33 +553,11 @@ jobs:
           name: hipico-v290-android-${{ env.HIPICO_CANDIDATE_SHA }}
           path: artifacts/upstream/android
 
-      - name: Normalize job verdicts to project status vocabulary
+      - name: Normalize job verdicts with runner-aware classifier
         env:
-          STATIC_RESULT: ${{ needs.static-release.result }}
-          POSTGRES_RESULT: ${{ needs.postgres-e2e.result }}
-          CHROMIUM_RESULT: ${{ needs.browser-chromium.result }}
-          SECURITY_RESULT: ${{ needs.security-regression.result }}
-          ANDROID_RESULT: ${{ needs.android-debug.result }}
-          MATRIX_RESULT: ${{ needs.browser-matrix.result }}
-          PHYSICAL_QA_INPUT: ${{ inputs.physical_qa_status }}
-        run: |
-          node --input-type=module <<'NODE'
-          import fs from 'node:fs';
-          const map = (value) => value === 'success' ? 'PASS' : value === 'skipped' || !value ? 'NOT_EXECUTED' : 'FAIL';
-          const values = {
-            HIPICO_GATE_STATIC: map(process.env.STATIC_RESULT),
-            HIPICO_GATE_POSTGRES: map(process.env.POSTGRES_RESULT),
-            HIPICO_GATE_RESTART: map(process.env.POSTGRES_RESULT),
-            HIPICO_GATE_CHROMIUM: map(process.env.CHROMIUM_RESULT),
-            HIPICO_GATE_SECURITY: map(process.env.SECURITY_RESULT),
-            HIPICO_GATE_ANDROID: map(process.env.ANDROID_RESULT),
-            HIPICO_GATE_MATRIX: map(process.env.MATRIX_RESULT),
-            HIPICO_GATE_PHYSICAL_QA: ['PASS','FAIL','BLOCKED','NOT_EXECUTED'].includes(String(process.env.PHYSICAL_QA_INPUT || '').toUpperCase())
-              ? String(process.env.PHYSICAL_QA_INPUT).toUpperCase()
-              : 'NOT_EXECUTED'
-          };
-          fs.appendFileSync(process.env.GITHUB_ENV, Object.entries(values).map(([key, value]) => `${key}=${value}`).join('\n') + '\n');
-          NODE
+          GITHUB_TOKEN: ${{ github.token }}
+          HIPICO_PHYSICAL_QA_STATUS: ${{ inputs.physical_qa_status }}
+        run: npm run ci:hipico:verdict:v290
 
       - name: Verify collected SHA-bound evidence
         env:
