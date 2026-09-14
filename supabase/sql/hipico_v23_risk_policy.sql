@@ -2,6 +2,7 @@
 -- Additive and replay-safe. Existing evaluations are intentionally backfilled as
 -- HUMAN_REQUIRED so no historical row can gain automatic authority retroactively.
 
+BEGIN;
 LOCK TABLE public.hipico_agent_evaluations IN ACCESS EXCLUSIVE MODE;
 
 ALTER TABLE public.hipico_agent_evaluations
@@ -99,3 +100,5 @@ COMMENT ON COLUMN public.hipico_agent_evaluations.policy_version IS
   'Version of the deterministic risk policy used for the evaluation.';
 COMMENT ON COLUMN public.hipico_agent_evaluations.policy_evidence_state IS
   'Server-resolved evidence state used by the policy; request bodies cannot elevate it.';
+
+COMMIT;
