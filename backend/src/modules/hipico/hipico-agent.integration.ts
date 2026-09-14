@@ -43,6 +43,7 @@ before(async () => {
     create or replace function auth.uid() returns uuid language sql stable as 'select null::uuid';
   `);
   await applySql('hipico_v22_agent_shadow.sql');
+  await applySql('hipico_v23_risk_policy.sql');
 });
 
 after(async () => {
@@ -122,8 +123,18 @@ void test('automation transition audit is append-only even for direct database w
   assert.ok(persisted.some((event: any) => event.id === eventId));
 });
 
-void test('reviewed agent evidence permits one controlled review then becomes immutable', async () => {
+void test('reviewed agent evidence preserves deterministic risk policy and becomes immutable', async () => {
   const store = new AutomationStore();
+  const riskPolicy = {
+    version: 'hipico-risk-policy-v1' as const,
+    disposition: 'HUMAN_REQUIRED' as const,
+    reason: 'EVIDENCE_MISSING',
+    autonomousSendAllowed: false,
+    requiresHuman: true,
+    toolExecutable: false,
+    evidenceState: 'MISSING' as const,
+    financialAuthority: false as const
+  };
   const receipt = await store.recordEvaluation({
     ownerId: OWNER,
     groupKey: GROUP_KEY_B,
@@ -140,6 +151,7 @@ void test('reviewed agent evidence permits one controlled review then becomes im
       modelVersion: 'e2e'
     },
     canAct: false,
+    riskPolicy,
     evidence: { source: 'e2e-review' }
   });
 
@@ -157,6 +169,10 @@ void test('reviewed agent evidence permits one controlled review then becomes im
     /HIPICO_AGENT_EVALUATION_IMMUTABLE/
   );
   await assert.rejects(
+    admin.query('update public.hipico_agent_evaluations set policy_disposition=$1 where id=$2::uuid', ['AUTO', receipt.id]),
+    /HIPICO_AGENT_EVALUATION_IMMUTABLE/
+  );
+  await assert.rejects(
     admin.query('delete from public.hipico_agent_evaluations where id=$1::uuid', [receipt.id]),
     /HIPICO_AGENT_EVALUATION_IMMUTABLE/
   );
@@ -164,6 +180,10 @@ void test('reviewed agent evidence permits one controlled review then becomes im
   const persisted = rows.find((row: any) => row.id === receipt.id);
   assert.equal(persisted?.actualIntent, 'query:NEXT_RACE');
   assert.equal(persisted?.reviewedBy, 'operator-token:e2e-agent');
+  assert.equal(persisted?.policyDisposition, 'HUMAN_REQUIRED');
+  assert.equal(persisted?.policyReason, 'EVIDENCE_MISSING');
+  assert.equal(persisted?.policyVersion, 'hipico-risk-policy-v1');
+  assert.equal(persisted?.policyEvidenceState, 'MISSING');
 });
 
 void test('rejected promotion is audited without changing mode and group scopes never cross', async () => {
