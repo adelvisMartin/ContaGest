@@ -9,6 +9,7 @@ import {
   type AutomationState,
   type PromotionDecision
 } from './agent-policy.js';
+import type { RiskPolicyDecision } from './risk-policy.js';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const GROUP_RE = /^[A-Za-z0-9._:-]{3,120}$/;
@@ -255,6 +256,7 @@ export class AutomationStore {
     expectedIntent?: string | null;
     candidate: AgentCandidate;
     canAct: boolean;
+    riskPolicy: RiskPolicyDecision;
     evidence?: unknown;
   }) {
     assertScope(input.ownerId, input.groupKey, input.groupId);
@@ -268,15 +270,17 @@ export class AutomationStore {
       await tx.$executeRaw`
         INSERT INTO public.hipico_agent_evaluations(
           id, owner_id, group_key, group_id, message_hash, expected_intent, predicted_intent,
-          confidence, risk, tool, can_act, model_version, evidence
+          confidence, risk, tool, can_act, model_version, evidence,
+          policy_disposition, policy_reason, policy_version, policy_evidence_state
         ) VALUES(
           ${id}::uuid, ${input.ownerId}::uuid, ${input.groupKey}, ${input.groupId}, ${messageHash},
           ${input.expectedIntent || null}, ${input.candidate.intent}, ${input.candidate.confidence}, ${input.candidate.risk},
           ${input.candidate.tool || null}, ${input.canAct}, ${input.candidate.modelVersion || input.candidate.source},
-          ${JSON.stringify(evidence)}::jsonb
+          ${JSON.stringify(evidence)}::jsonb, ${input.riskPolicy.disposition}, ${input.riskPolicy.reason},
+          ${input.riskPolicy.version}, ${input.riskPolicy.evidenceState}
         )`;
     });
-    return { id, messageHash };
+    return { id, messageHash, riskPolicy: input.riskPolicy };
   }
 
   async review(input: {
@@ -326,6 +330,8 @@ export class AutomationStore {
       SELECT id, message_hash AS "messageHash", expected_intent AS "expectedIntent",
         predicted_intent AS "predictedIntent", actual_intent AS "actualIntent", confidence, risk, tool,
         can_act AS "canAct", model_version AS "modelVersion", matched,
+        policy_disposition AS "policyDisposition", policy_reason AS "policyReason",
+        policy_version AS "policyVersion", policy_evidence_state AS "policyEvidenceState",
         high_risk_false_positive AS "highRiskFalsePositive", unauthorized_action AS "unauthorizedAction",
         conflict, evidence, created_at AS "createdAt", reviewed_at AS "reviewedAt", reviewed_by AS "reviewedBy"
       FROM public.hipico_agent_evaluations
