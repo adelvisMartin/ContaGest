@@ -7,7 +7,7 @@ const read = (path) => readFile(new URL(path, import.meta.url), 'utf8');
 const guardSource = await read('../frontend/public/hipico-control/assets/js/operational-access-guard.js');
 const centerSource = await read('../frontend/public/hipico-control/assets/js/operational-copy-center.js');
 const indexSource = await read('../frontend/public/hipico-control/index.html');
-const cssSource = await read('../frontend/public/hipico-control/assets/css/operational-access-guard.css');
+const cssSource = await read('../frontend/public/hipico-control/assets/css/app.css');
 const serviceWorkerSource = await read('../frontend/public/hipico-control/sw.js');
 
 test('operational center fails closed without an authenticated application shell', () => {
@@ -60,15 +60,17 @@ test('copy center refuses data reads and actions while its root is not authorize
 });
 
 test('operational center is hidden by default and only shown after the guard authorizes it', () => {
-  assert.match(cssSource, /\.ops-root\{display:none!important\}/);
-  assert.match(cssSource, /data-ops-authorized="true"/);
+  assert.match(cssSource, /\.ops-root\s*\{[^}]*display:\s*none\s*!important/);
+  assert.match(cssSource, /\.ops-root\[data-ops-authorized="true"\]\s*\{[^}]*display:\s*block\s*!important/);
 });
 
-test('production shell loads only the guarded entrypoint and caches guarded modules for offline operation', () => {
-  assert.match(indexSource, /operational-access-guard\.css/);
+test('production shell loads one canonical stylesheet and caches guarded JS for offline operation', () => {
+  assert.match(indexSource, /\.\/assets\/css\/app\.css/);
+  assert.doesNotMatch(indexSource, /operational-access-guard\.css|operational-copy-center\.css|mobile-accessibility\.css/);
   assert.match(indexSource, /operational-access-guard\.js/);
   assert.doesNotMatch(indexSource, /src="\.\/assets\/js\/operational-copy-center\.js"/);
-  for (const asset of ['operational-access-policy.js', 'operational-access-guard.js', 'operational-access-guard.css', 'operational-copy-center.js']) {
+  for (const asset of ['assets/css/app.css', 'operational-access-policy.js', 'operational-access-guard.js', 'operational-copy-center.js']) {
     assert.ok(serviceWorkerSource.includes(asset), `service worker must cache ${asset}`);
   }
+  assert.doesNotMatch(serviceWorkerSource, /operational-access-guard\.css|operational-copy-center\.css|mobile-accessibility\.css/);
 });

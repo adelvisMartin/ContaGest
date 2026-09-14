@@ -2,10 +2,25 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { __test__ } from '../frontend/api/hipico/group-bridge-ingest.js';
 
+const identity={
+  HIPICO_SOURCE_GROUP_ID:'120363000000000001@g.us',
+  HIPICO_LAB_GROUP_ID:'120363000000000002@g.us',
+  HIPICO_SOURCE_CHANNEL_KEY:'club-hipico-triple-crown-official',
+  HIPICO_LAB_CHANNEL_KEY:'control-hipico-lab'
+};
 const base={
+  bridgeVersion:'1.4.2',
+  externalMessageId:'wamid-297-flags',
+  groupId:identity.HIPICO_SOURCE_GROUP_ID,
+  groupName:'Grupo fuente',
+  channelKey:identity.HIPICO_SOURCE_CHANNEL_KEY,
+  labChannelKey:identity.HIPICO_LAB_CHANNEL_KEY,
+  channelRole:'source',
+  shadowMode:true,
   senderId:'584121234567',
   timestamp:'2026-09-11T06:00:00.000Z',
   type:'chat',
+  mediaKind:'none',
   text:'Juego 1N del 5 con 100k',
   quotedExternalMessageId:'origin-1',
   fromMe:false,
@@ -38,21 +53,22 @@ test('serverless bridge replay signature binds sender, instant, body, quote and 
   const sameInstant={...base,timestamp:'2026-09-11T01:00:00-05:00'};
   assert.equal(__test__.sourceReplaySignature(base),__test__.sourceReplaySignature(sameInstant));
   assert.notEqual(__test__.sourceReplaySignature(base),__test__.sourceReplaySignature({...base,fromMe:true}));
-  assert.notEqual(__test__.sourceReplaySignature(base),__test__.sourceReplaySignature({...base,hasMedia:true}));
+  assert.notEqual(__test__.sourceReplaySignature(base),__test__.sourceReplaySignature({...base,hasMedia:true,mediaKind:'image',type:'media'}));
   assert.notEqual(__test__.sourceReplaySignature(base),__test__.sourceReplaySignature({...base,text:'Juego 1N del 5 con 300k'}));
   assert.notEqual(__test__.sourceReplaySignature(base),__test__.sourceReplaySignature({...base,quotedExternalMessageId:'origin-2'}));
 });
 
-test('persisted bridge replay signature uses the same transport flags stored in normalized evidence',()=>{
-  const persisted={
-    sender_id:base.senderId,
-    sent_at:base.timestamp,
-    message_type:base.type,
-    raw_text:base.text,
-    quoted_external_message_id:base.quotedExternalMessageId,
-    normalized:{from_me:false,has_media:false}
-  };
-  assert.equal(__test__.persistedReplaySignature(persisted),__test__.sourceReplaySignature(base));
-  assert.notEqual(__test__.persistedReplaySignature({...persisted,normalized:{from_me:true,has_media:false}}),__test__.sourceReplaySignature(base));
-  assert.notEqual(__test__.persistedReplaySignature({...persisted,normalized:{from_me:false,has_media:true}}),__test__.sourceReplaySignature(base));
+test('canonical delegated event preserves the same transport flags and immutable replay digest',()=>{
+  const event=__test__.canonicalBridgeEvent(base,identity);
+  assert.equal(event.fromMe,false);
+  assert.equal(event.hasMedia,false);
+  assert.equal(event.mediaKind,'none');
+  assert.equal(event.timestamp,'2026-09-11T06:00:00.000Z');
+  assert.equal(event.quotedExternalMessageId,'origin-1');
+  assert.equal(event.rawMeta,`serverless-compat:${__test__.sourceReplaySignature(base).slice(0,24)}`);
+
+  const fromMe=__test__.canonicalBridgeEvent({...base,fromMe:true},identity);
+  const media=__test__.canonicalBridgeEvent({...base,type:'media',hasMedia:true,mediaKind:'image'},identity);
+  assert.notEqual(fromMe.rawMeta,event.rawMeta);
+  assert.notEqual(media.rawMeta,event.rawMeta);
 });
