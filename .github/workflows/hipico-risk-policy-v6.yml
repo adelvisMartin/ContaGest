@@ -89,7 +89,13 @@ jobs:
         run: npm --workspace backend run build
 
       - name: Diff whitespace gate
-        run: git diff --check "${{ github.event.pull_request.base.sha || 'HEAD^' }}" "${HIPICO_CANDIDATE_SHA}"
+        shell: bash
+        env:
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+          base="${PR_BASE_SHA:-${HIPICO_CANDIDATE_SHA}^}"
+          git diff --check "$base" "$HIPICO_CANDIDATE_SHA"
 
       - name: Drop isolated database even after failure
         if: always()
