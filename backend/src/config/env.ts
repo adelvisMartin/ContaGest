@@ -53,11 +53,9 @@ function normalizeOrigin(value?: string) {
   }
 }
 
-export function isSecureSecret(value?: string) {
+function isSecureSecret(value?: string) {
   const secret = String(value || '').trim();
-  if (secret.length < 32) return false;
-  if (secret === DEVELOPMENT_JWT_SECRET || secret === DEVELOPMENT_LICENSE_SECRET) return false;
-  return !/(?:dev[_-](?:secret|license)|change[_-]?me)/i.test(secret);
+  return secret.length >= 32 && !secret.includes('dev_secret');
 }
 
 function deriveSecret(seed: string, purpose: string) {
@@ -93,6 +91,9 @@ const appUrl = isProd && (!process.env.APP_URL || parsedEnv.APP_URL === DEFAULT_
 
 const explicitJwtSecret = String(parsedEnv.JWT_SECRET || '').trim();
 const explicitLicenseSecret = String(parsedEnv.LICENSE_HASH_SECRET || '').trim();
+// Preview deployments may derive stable secrets only from credentials that are themselves private.
+// Public deployment metadata (project/repo/SHA/URL) is deliberately excluded: anyone who can learn
+// that metadata must not be able to reconstruct JWT or license HMAC keys.
 const privateSeed = parsedEnv.SUPABASE_SERVICE_ROLE_KEY
   || parsedEnv.SUPABASE_JWT_SECRET
   || parsedEnv.DATABASE_RUNTIME_URL
@@ -108,39 +109,23 @@ const privateSeed = parsedEnv.SUPABASE_SERVICE_ROLE_KEY
   || parsedEnv.VERCEL_AUTOMATION_BYPASS_SECRET
   || '';
 
-const previewSeed = isVercelPreview
-  ? [process.env.VERCEL_PROJECT_ID, process.env.VERCEL_GIT_REPO_ID, process.env.VERCEL_GIT_COMMIT_SHA, process.env.VERCEL_URL]
-      .filter(Boolean)
-      .join(':')
-  : '';
-
 const derivedPrivateJwtSecret = !isSecureSecret(explicitJwtSecret) && privateSeed
   ? deriveSecret(privateSeed, 'jwt')
   : '';
-const derivedPreviewJwtSecret = !isSecureSecret(explicitJwtSecret) && !derivedPrivateJwtSecret && previewSeed
-  ? deriveSecret(previewSeed, 'preview-jwt')
-  : '';
 const derivedLicenseSecret = !isSecureSecret(explicitLicenseSecret) && privateSeed
   ? deriveSecret(privateSeed, 'license')
-  : '';
-const derivedPreviewLicenseSecret = !isSecureSecret(explicitLicenseSecret) && !derivedLicenseSecret && previewSeed
-  ? deriveSecret(previewSeed, 'preview-license')
   : '';
 
 export const jwtSecretSource = isSecureSecret(explicitJwtSecret)
   ? 'explicit'
   : derivedPrivateJwtSecret
     ? 'private-derived'
-    : derivedPreviewJwtSecret
-      ? 'preview-derived'
-      : 'development-default';
+    : 'development-default';
 export const licenseSecretSource = isSecureSecret(explicitLicenseSecret)
   ? 'explicit'
   : derivedLicenseSecret
     ? 'private-derived'
-    : derivedPreviewLicenseSecret
-      ? 'preview-derived'
-      : 'development-default';
+    : 'development-default';
 
 export const jwtSecretReady = jwtSecretSource !== 'development-default' || !isProd;
 export const licenseSecretReady = licenseSecretSource !== 'development-default' || !isProd;
@@ -152,8 +137,8 @@ export const env = {
   CORS_ORIGIN: corsOrigins.join(',') || parsedEnv.CORS_ORIGIN,
   JWT_SECRET: isSecureSecret(explicitJwtSecret)
     ? explicitJwtSecret
-    : derivedPrivateJwtSecret || derivedPreviewJwtSecret || DEVELOPMENT_JWT_SECRET,
+    : derivedPrivateJwtSecret || DEVELOPMENT_JWT_SECRET,
   LICENSE_HASH_SECRET: isSecureSecret(explicitLicenseSecret)
     ? explicitLicenseSecret
-    : derivedLicenseSecret || derivedPreviewLicenseSecret || DEVELOPMENT_LICENSE_SECRET
+    : derivedLicenseSecret || DEVELOPMENT_LICENSE_SECRET
 };

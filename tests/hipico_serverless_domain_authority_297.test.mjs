@@ -16,18 +16,16 @@ test('serverless heuristic is advisory while persisted capture is always unclass
   assert.ok(result.adapterHint.confidence>0);
 });
 
-test('linked-device serverless adapter persists capture semantics and exposes hint separately',()=>{
-  assert.match(bridge,/classification:\s*capture\.storedClassification/);
-  assert.match(bridge,/confidence:\s*capture\.storedConfidence/);
-  assert.match(bridge,/processing_status:\s*capture\.processingStatus/);
-  assert.match(bridge,/domain_authority:\s*capture\.domainAuthority/);
-  assert.match(bridge,/adapter_hint_authoritative:\s*false/);
-  assert.match(bridge,/adapter_hint:\s*capture\.adapterHint/);
-  assert.match(bridge,/adapterHint:\s*capture\.adapterHint/);
-  assert.match(bridge,/domainAuthority:\s*capture\.domainAuthority/);
-  assert.doesNotMatch(bridge,/processingStatus\s*=\s*classification/);
-  assert.match(bridge,/actions:\s*\[\]/);
-  assert.match(bridge,/monetaryAutoApply:\s*false/);
+test('linked-device serverless adapter delegates validated evidence to canonical backend and owns no business persistence',()=>{
+  assert.match(bridge,/proxyCanonicalRequest/);
+  assert.match(bridge,/path:\s*['"]\/api\/v1\/hipico-bot\/bridge\/events['"]/);
+  assert.match(bridge,/body:\s*JSON\.stringify\(canonicalBridgeEvent\(body\)\)/);
+  assert.match(bridge,/x-hipico-bridge-token/);
+  assert.match(bridge,/canonical_backend_unavailable/);
+  assert.doesNotMatch(bridge,/hipico_messages|hipico_bot_channels|hipico_shadow_evaluations/);
+  assert.doesNotMatch(bridge,/adapterCaptureDecision|storedClassification|processing_status/);
+  assert.doesNotMatch(bridge,/actions:\s*\[/);
+  assert.doesNotMatch(bridge,/monetaryAutoApply/);
 });
 
 test('Meta serverless adapter also persists only review capture and never authoritative intent',()=>{

@@ -78,5 +78,5 @@ jobs:
       - name: Internal XLSX writer smoke
         run: npm --workspace backend run test:xlsx
 
-      - name: Serverless staging smoke
+      - name: Serverless bundle excludes retired XLSX runtime chain
         run: node frontend/scripts/stage-backend.mjs

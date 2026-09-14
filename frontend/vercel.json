@@ -1,10 +1,17 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": "vite",
+  "installCommand": "npm ci --no-audit --no-fund",
   "buildCommand": "npm run build",
   "outputDirectory": "dist",
   "git": {
-    "deploymentEnabled": true
+    "deploymentEnabled": {
+      "**": false,
+      "main": true,
+      "release/**": true,
+      "qa/postmerge-58x5-verification": true,
+      "fix/post-312-gates-mobile-hardening": true
+    }
   },
   "ignoreCommand": "exit 1",
   "functions": {
