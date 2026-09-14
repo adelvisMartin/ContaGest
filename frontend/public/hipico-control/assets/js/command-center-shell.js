@@ -45,18 +45,19 @@ function renderHost() {
   if (host) host.innerHTML = renderCommandCenter(state);
 }
 
-async function refresh({ force = false } = {}) {
+async function refresh() {
   const key = readActiveGroupKey();
   if (!key) {
     state = {
       ...initialCommandCenterState(),
-      status: 'error',
-      error: 'No se pudo identificar de forma segura el grupo activo.'
+      status: 'disabled',
+      error: 'Selecciona un grupo válido para habilitar el Command Center.'
     };
+    refreshInFlight = false;
     renderHost();
     return;
   }
-  if (!force && refreshInFlight) return;
+  if (refreshInFlight) return;
 
   activeKey = key;
   const sequence = ++refreshSequence;
@@ -99,14 +100,14 @@ function scheduleMount() {
 document.addEventListener('click', (event) => {
   const action = event.target.closest('[data-action]')?.dataset?.action;
   if (action === 'refresh-command-center') {
-    void refresh({ force: true });
+    void refresh();
     return;
   }
   if (action === 'select-group') scheduleMount();
 });
 
-window.addEventListener('online', () => void refresh({ force: true }));
-window.addEventListener('offline', () => void refresh({ force: true }));
+window.addEventListener('online', () => void refresh());
+window.addEventListener('offline', () => void refresh());
 
 const appRoot = document.querySelector('#app');
 if (appRoot) {
