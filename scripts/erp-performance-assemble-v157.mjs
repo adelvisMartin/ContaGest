@@ -4,13 +4,16 @@ import path from 'node:path';
 
 const sha=String(process.env.CANDIDATE_SHA||'').trim();
 if(!/^[a-f0-9]{40}$/i.test(sha))throw new Error('CANDIDATE_SHA_REQUIRED_40_HEX');
-const fixturePolicy=String(process.env.ERP157_FIXTURE_POLICY||'').trim();
-if(fixturePolicy!=='SYNTHETIC_TEST_ONLY')throw new Error('ERP157_FIXTURE_PROVENANCE_REQUIRED');
 const dir=path.resolve('artifacts/qa/erp-performance-v157',sha);
 const read=(name)=>JSON.parse(fs.readFileSync(path.join(dir,name),'utf8'));
 const backend=read('backend-measurements.json');
 const frontend=read('frontend-measurements.json');
 if(backend.candidateSha!==sha||frontend.candidateSha!==sha)throw new Error('PERFORMANCE_COMPONENT_SHA_MISMATCH');
+
+const expectedFixtureProvenance='SYNTHETIC_TEST_ONLY';
+const provenanceVerified=process.env.ERP157_FIXTURE_PROVENANCE===expectedFixtureProvenance
+  && frontend.fixtureProvenance===expectedFixtureProvenance;
+if(!provenanceVerified)throw new Error('PERFORMANCE_FIXTURE_PROVENANCE_REQUIRED');
 
 const measured=(value)=>value==='MEASURED';
 const degradationKeys=['slow-db','pool-saturation','external-timeout','memory-pressure','large-payload','multi-user-concurrency'];
@@ -28,8 +31,7 @@ const evidence={
     runtime:backend.environment?.runtime||'NOT_EXECUTED',
     device:`${backend.environment?.device||'unknown'} + chromium`,
     network:`${backend.environment?.network||'unknown'} + CDP throttled profile`,
-    fixturePolicy,
-    sanitizedFixtures:true
+    sanitizedFixtures:provenanceVerified
   },
   workload:{
     expectedPeakConcurrentUsers:backend.expectedPeakConcurrentUsers,
@@ -45,4 +47,4 @@ const evidence={
 };
 
 fs.writeFileSync(path.join(dir,'measurements.json'),JSON.stringify(evidence,null,2)+'\n');
-console.log(JSON.stringify({issue:157,candidateSha:sha,metrics:Object.keys(evidence.metrics).length,profilingEvidence:evidence.profilingEvidence.length,degradation:evidence.degradation,fixturePolicy}));
+console.log(JSON.stringify({issue:157,candidateSha:sha,metrics:Object.keys(evidence.metrics).length,profilingEvidence:evidence.profilingEvidence.length,degradation:evidence.degradation}));
