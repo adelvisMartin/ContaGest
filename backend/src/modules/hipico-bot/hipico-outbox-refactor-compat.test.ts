@@ -17,6 +17,11 @@ import {
   reconcileCanonicalOutbound,
   sameCanonicalOutboundIntent
 } from './hipico-outbox.store.js';
+import {
+  normalizeCanonicalReceiptInput,
+  normalizeCanonicalReconciliationInput,
+  normalizeOutboxFailure
+} from './hipico-outbox-receipt-input.js';
 
 const moduleUrl = (name: string) => new URL(`./${name}`, import.meta.url);
 
@@ -87,6 +92,61 @@ void test('canonical outbound normalization keeps validation codes and normalize
       payload: { text: 'hola' }
     }),
     (error: any) => error?.code === 'HIPICO_OUTBOX_INPUT_INVALID'
+  );
+});
+
+void test('receipt and reconciliation normalization preserve bounded fields and error codes', () => {
+  const ownerId = '11111111-1111-4111-8111-111111111111';
+  const id = '22222222-2222-4222-8222-222222222222';
+  const timestamp = new Date('2026-09-15T20:00:00.000Z');
+  const receipt = normalizeCanonicalReceiptInput({
+    ownerId,
+    provider: ' META_CLOUD ',
+    providerMessageId: ' message-001 ',
+    status: 'delivered',
+    timestamp,
+    errorCode: ' '.repeat(3),
+    metadata: { recipient: 'masked' }
+  });
+  assert.equal(receipt.provider, 'meta_cloud');
+  assert.equal(receipt.providerMessageId, 'message-001');
+  assert.equal(receipt.errorCode, null);
+  assert.deepEqual(receipt.metadata, { recipient: 'masked' });
+
+  const reconciliation = normalizeCanonicalReconciliationInput({
+    ownerId,
+    id,
+    resolution: 'sent',
+    actorRef: ' operator-token:fixture ',
+    reason: ' provider receipt verified ',
+    providerMessageId: ' provider-123 '
+  });
+  assert.equal(reconciliation.actorRef, 'operator-token:fixture');
+  assert.equal(reconciliation.reason, 'provider receipt verified');
+  assert.equal(reconciliation.providerMessageId, 'provider-123');
+  assert.deepEqual(normalizeOutboxFailure(' x '.repeat(600), '', 'AMBIGUOUS_DELIVERY'), {
+    error: 'x '.repeat(500).trimEnd().slice(0, 1000),
+    errorCode: 'AMBIGUOUS_DELIVERY'
+  });
+
+  assert.throws(
+    () => normalizeCanonicalReceiptInput({
+      ownerId,
+      providerMessageId: '',
+      status: 'sent',
+      timestamp
+    }),
+    (error: any) => error?.code === 'HIPICO_OUTBOX_RECEIPT_INVALID'
+  );
+  assert.throws(
+    () => normalizeCanonicalReconciliationInput({
+      ownerId,
+      id,
+      resolution: 'sent',
+      actorRef: 'operator-token:fixture',
+      reason: 'valid reason'
+    }),
+    (error: any) => error?.code === 'HIPICO_OUTBOX_RECONCILIATION_INVALID'
   );
 });
 
