@@ -76,9 +76,9 @@ jobs:
           outbox_url="postgresql://postgres:postgres@127.0.0.1:5432/${outbox_db}"
           echo "HIPICO_E2E_DATABASE_URL=$agent_url" >> "$GITHUB_ENV"
           echo "HIPICO_TEST_POSTGRES_URL=$outbox_url" >> "$GITHUB_ENV"
+          echo "DATABASE_URL=$outbox_url" >> "$GITHUB_ENV"
           echo "HIPICO_OWNER_ID=11111111-1111-4111-8111-111111111111" >> "$GITHUB_ENV"
           echo "HIPICO_SOURCE_GROUP_ID=group-a@g.us" >> "$GITHUB_ENV"
-          echo "HIPICO_OPERATOR_CONTROL_TOKEN=ci-core-refactor-control-token-0001-strong" >> "$GITHUB_ENV"
 
       - name: Bootstrap canonical outbox PostgreSQL schema
         shell: bash
@@ -108,15 +108,16 @@ jobs:
 
       - name: Hípico unit, contract and outbox PostgreSQL regressions
         env:
-          DATABASE_URL: ${{ env.HIPICO_TEST_POSTGRES_URL }}
           HIPICO_CLOUD_SEND_ENABLED: 'false'
           HIPICO_OUTBOX_WORKER_ENABLED: 'false'
         run: npm --workspace backend run test:hipico
 
       - name: Agent PostgreSQL integration
-        env:
-          DATABASE_URL: ${{ env.HIPICO_E2E_DATABASE_URL }}
-        run: npm --workspace backend run test:hipico:agent
+        shell: bash
+        run: |
+          set -euo pipefail
+          export DATABASE_URL="$HIPICO_E2E_DATABASE_URL"
+          npm --workspace backend run test:hipico:agent
 
       - name: Build backend exact candidate
         run: npm --workspace backend run build
