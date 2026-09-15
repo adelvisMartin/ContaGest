@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import {
   agentCanAct,
@@ -87,4 +88,10 @@ test('v8 freezes dangerous tool-argument rejection', () => {
   };
 
   assert.throws(() => safeToolRequest(candidate), /AGENT_TOOL_ARGUMENTS_REJECTED/);
+});
+
+test('v8 promotion façade delegates to the focused promotion policy module', () => {
+  const source = readFileSync(new URL('./agent-policy.ts', import.meta.url), 'utf8');
+  assert.match(source, /evaluateAutomationPromotion/);
+  assert.match(source, /export function canPromoteAutomation/);
 });
