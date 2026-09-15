@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - 'backend/src/modules/hipico/agent-*.ts'
+      - 'backend/src/modules/hipico/agent.routes.ts'
       - 'backend/src/modules/hipico/automation-*.ts'
       - 'backend/src/modules/hipico/core-refactor-*.test.ts'
       - 'backend/src/modules/hipico/promotion-policy.ts'
