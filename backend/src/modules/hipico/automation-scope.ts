@@ -6,7 +6,7 @@ const GROUP_RE = /^[A-Za-z0-9._:-]{3,120}$/;
 const GROUP_ID_RE = /^[A-Za-z0-9@._:-]{3,220}$/;
 const SHADOW_INDEX = AUTOMATION_STATES.indexOf('SHADOW');
 
-export type AutomationDbClient = Pick<Prisma.TransactionClient, '$queryRaw'>;
+export type AutomationDbClient = Pick<Prisma.TransactionClient, '$queryRaw' | '$executeRaw'>;
 export type AutomationScope = { ownerId: string; groupKey: string; groupId: string };
 
 export function assertAutomationScope(ownerId: string, groupKey: string, groupId: string) {
