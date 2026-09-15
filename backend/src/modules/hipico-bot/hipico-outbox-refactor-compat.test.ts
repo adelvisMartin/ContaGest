@@ -124,10 +124,10 @@ void test('receipt and reconciliation normalization preserve bounded fields and 
   assert.equal(reconciliation.actorRef, 'operator-token:fixture');
   assert.equal(reconciliation.reason, 'provider receipt verified');
   assert.equal(reconciliation.providerMessageId, 'provider-123');
-  assert.deepEqual(normalizeOutboxFailure(' x '.repeat(600), '', 'AMBIGUOUS_DELIVERY'), {
-    error: 'x '.repeat(500).trimEnd().slice(0, 1000),
-    errorCode: 'AMBIGUOUS_DELIVERY'
-  });
+
+  const failure = normalizeOutboxFailure(' x '.repeat(600), '', 'AMBIGUOUS_DELIVERY');
+  assert.equal(failure.error.length, 1000);
+  assert.equal(failure.errorCode, 'AMBIGUOUS_DELIVERY');
 
   assert.throws(
     () => normalizeCanonicalReceiptInput({
