@@ -19,25 +19,26 @@
 - Preserve `public.hipico_outbox` authority, lease/idempotency behavior, receipt monotonicity, ambiguous-delivery reconciliation, approval gates, cooldown/backoff semantics, and runner disabled-by-default behavior.
 - Do not edit historical migrations v22/v23/v24 or any earlier migration.
 - Do not introduce a new schema migration in v8.
-- Preserve exact transaction ordering in `AutomationStore.setMode()`: lock scope → replay check → current state lock/read → metric snapshot → policy decision → optional state update → transition insert.
+- Preserve exact transaction ordering in `AutomationStore.setMode()`: scope lock → replay check → current-state lock/read → metric snapshot → policy decision → optional mode update → transition insert.
 - Preserve current golden-corpus result fields and signature input semantics.
 - Characterization tests must exist before each extraction.
 - A GitHub Actions job with no executed steps or `runner_id=0` is `BLOCKED_INFRASTRUCTURE`, never PASS.
 
 ---
 
-### Task 1: Freeze public contracts and characterization fixtures
+### Task 1: Freeze public contracts and representative behavior
 
 **Files:**
 - Create: `backend/src/modules/hipico/v8-public-contracts.test.ts`
 - Create: `backend/src/modules/hipico/v8-agent-policy-equivalence.test.ts`
-- Modify only if needed for testability: none in production code.
+- Test existing: `backend/src/modules/hipico/agent-policy.test.ts`
+- Test existing: `backend/src/modules/hipico/agent-golden.test.ts`
 
 **Interfaces:**
-- Consumes: current exports from `agent-policy.ts`, `automation.store.ts`, `agent-golden.ts`, `shadow-metrics.ts`, canonical outbox modules, and `agent.routes.ts` source contract.
-- Produces: characterization tests that later extraction tasks must keep green.
+- Consumes: current exports from `agent-policy.ts`, `automation.store.ts`, `agent-golden.ts`, `shadow-metrics.ts`, canonical outbox modules, and `agent.routes.ts`.
+- Produces: characterization tests that all later tasks must keep green.
 
-- [ ] **Step 1: Write public symbol manifest characterization**
+- [ ] **Step 1: Write public export manifest test**
 
 ```ts
 import assert from 'node:assert/strict';
@@ -46,50 +47,69 @@ import * as agentPolicy from './agent-policy.js';
 import * as automationStore from './automation.store.js';
 import * as golden from './agent-golden.js';
 
-const REQUIRED_AGENT_EXPORTS = [
+const requiredAgentExports = [
   'AUTOMATION_STATES', 'AGENT_TOOLS', 'AUTO_EXECUTABLE_TOOLS', 'MIN_AUTO_CONFIDENCE',
   'canPromoteAutomation', 'validateModelCandidate', 'agentCanAct', 'safeToolRequest', 'HipicoAgentEngine'
 ] as const;
 
 test('v8 preserves public Hípico façade exports', () => {
-  for (const key of REQUIRED_AGENT_EXPORTS) assert.ok(key in agentPolicy, `missing export ${key}`);
+  for (const key of requiredAgentExports) assert.ok(key in agentPolicy, `missing export ${key}`);
   assert.ok('AutomationStore' in automationStore);
   assert.ok('sanitizeAgentEvidence' in automationStore);
   assert.ok('scoreGoldenCorpus' in golden);
 });
 ```
 
-- [ ] **Step 2: Add policy equivalence fixtures**
+- [ ] **Step 2: Freeze representative policy outputs and errors**
 
 ```ts
-import { canPromoteAutomation, validateModelCandidate, safeToolRequest, agentCanAct } from './agent-policy.js';
+import {
+  agentCanAct,
+  canPromoteAutomation,
+  safeToolRequest,
+  validateModelCandidate,
+  type AgentCandidate
+} from './agent-policy.js';
 
-const recentWindow = { reviewed: 75, matched: 74, highRiskFalsePositive: 0, unauthorizedAction: 0, conflicts: 0, abstentions: 0, raceContextErrors: 0 };
-const historical = { reviewed: 200, matched: 196, highRiskFalsePositive: 0, unauthorizedAction: 0, conflicts: 0, abstentions: 0, raceContextErrors: 0 };
+const historical = {
+  reviewed: 200, matched: 196, highRiskFalsePositive: 0,
+  unauthorizedAction: 0, conflicts: 0, abstentions: 0, raceContextErrors: 0
+};
+const recent = {
+  reviewed: 75, matched: 74, highRiskFalsePositive: 0,
+  unauthorizedAction: 0, conflicts: 0, abstentions: 0, raceContextErrors: 0
+};
 
-test('v8 freezes representative promotion reasons', () => {
-  const allowed = canPromoteAutomation('SHADOW', 'ASSISTED', {
+test('v8 freezes promotion paths and reason codes', () => {
+  const pass = canPromoteAutomation('SHADOW', 'ASSISTED', {
     ...historical,
-    recent: recentWindow,
-    window: { recentDays: 30, metricSchemaVersion: 'v7', recentSince: '2026-08-16T00:00:00.000Z' }
+    recent,
+    window: { recentDays: 30, recentSince: '2026-08-16T00:00:00.000Z', metricSchemaVersion: 'v7' }
   });
-  assert.equal(allowed.allowed, true);
-  assert.equal(allowed.reason, 'SHADOW_GATE_PASSED');
+  assert.equal(pass.allowed, true);
+  assert.equal(pass.reason, 'SHADOW_GATE_PASSED');
   assert.equal(canPromoteAutomation('SHADOW', 'AUTOMATIC_LOW_RISK', historical).reason, 'INVALID_PROMOTION_PATH');
+});
+
+test('v8 freezes candidate/tool error codes and automatic eligibility', () => {
+  assert.throws(() => validateModelCandidate({ intent: '', confidence: 2 }), /AGENT_CANDIDATE_SCHEMA_INVALID/);
+  const candidate: AgentCandidate = {
+    intent: 'query:NEXT_RACE', confidence: .995, tool: 'queryNextRace',
+    arguments: { text: 'próxima carrera' }, risk: 'safe', source: 'deterministic', modelVersion: null
+  };
+  assert.equal(agentCanAct('AUTOMATIC_LOW_RISK', candidate), true);
+  assert.deepEqual(safeToolRequest(candidate), { tool: 'queryNextRace', arguments: { text: 'próxima carrera' } });
+  assert.throws(() => safeToolRequest({ ...candidate, arguments: { token: 'x' } }), /AGENT_TOOL_ARGUMENTS_REJECTED/);
 });
 ```
 
-Also include fixtures for model-candidate validation, tool-argument rejection, automatic low-risk eligibility, SOURCE guard source contract, and golden signature stability using the existing fixed corpus fixture.
-
-- [ ] **Step 3: Run characterization suite and record actual result**
-
-Run:
+- [ ] **Step 3: Run characterization suite**
 
 ```bash
 npm --workspace backend run test:hipico
 ```
 
-Expected: existing behavior passes. If execution is unavailable because GitHub runner never starts, record `BLOCKED_INFRASTRUCTURE` and do not describe it as PASS.
+Expected: all existing and new characterization tests pass if execution is available. If the runner never executes a step, record `BLOCKED_INFRASTRUCTURE` instead of PASS.
 
 - [ ] **Step 4: Commit characterization only**
 
@@ -109,10 +129,10 @@ git commit -m "test(hipico): freeze v8 public behavior contracts"
 - Test: `backend/src/modules/hipico/v8-agent-policy-equivalence.test.ts`
 
 **Interfaces:**
-- Consumes: existing `AutomationState`, `AutomationMetrics`, `AutomationMetricRates`, `PromotionDecision` public types.
-- Produces: internal `evaluateAutomationPromotion(current, target, metrics, ownerApproved)` used by public `canPromoteAutomation(...)`.
+- Consumes: existing `AutomationState`, `AutomationMetrics`, `AutomationMetricRates`, `PromotionDecision` types.
+- Produces: internal `evaluateAutomationPromotion(current, target, metrics, ownerApproved)` used by the public `canPromoteAutomation(...)` façade.
 
-- [ ] **Step 1: Add a failing delegation/source contract test**
+- [ ] **Step 1: Add failing delegation contract**
 
 ```ts
 import { readFileSync } from 'node:fs';
@@ -121,19 +141,44 @@ import test from 'node:test';
 
 const source = readFileSync(new URL('./agent-policy.ts', import.meta.url), 'utf8');
 
-test('public canPromoteAutomation remains in agent-policy façade and delegates internally', () => {
+test('public promotion function stays in façade and delegates internally', () => {
   assert.match(source, /export function canPromoteAutomation/);
   assert.match(source, /evaluateAutomationPromotion/);
 });
 ```
 
-- [ ] **Step 2: Create internal promotion module with copied semantics**
-
-`agent-promotion-policy.ts` must contain the current v7 constants and calculations unchanged:
+- [ ] **Step 2: Create pure internal promotion implementation with v7 semantics unchanged**
 
 ```ts
-export const RECENT_WINDOW_DAYS = 30;
-export const METRIC_SCHEMA_VERSION = 'v7';
+import type {
+  AutomationMetricRates,
+  AutomationMetrics,
+  AutomationMetricWindow,
+  AutomationState,
+  PromotionDecision
+} from './agent-policy.js';
+
+const RECENT_WINDOW_DAYS = 30;
+const METRIC_SCHEMA_VERSION = 'v7';
+const GATES = {
+  ASSISTED: { historicalReviewed: 200, recentReviewed: 75, accuracy: .98, conflictRate: .02, abstentionRate: .05, raceContextErrorRate: .02, passReason: 'SHADOW_GATE_PASSED', historicalFailureReason: 'SHADOW_METRICS_INSUFFICIENT' },
+  AUTOMATIC_LOW_RISK: { historicalReviewed: 500, recentReviewed: 200, accuracy: .99, conflictRate: .005, abstentionRate: .03, raceContextErrorRate: .005, passReason: 'LOW_RISK_GATE_PASSED', historicalFailureReason: 'LOW_RISK_METRICS_INSUFFICIENT' },
+  AUTOMATIC: { historicalReviewed: 1000, recentReviewed: 400, accuracy: .995, conflictRate: .002, abstentionRate: .02, raceContextErrorRate: .002, passReason: 'AUTOMATIC_GATE_PASSED', historicalFailureReason: 'AUTOMATIC_METRICS_INSUFFICIENT' }
+} as const;
+
+const states = ['DISABLED', 'SHADOW', 'ASSISTED', 'AUTOMATIC_LOW_RISK', 'AUTOMATIC'] as const;
+const nonNegative = (value: unknown) => Math.max(0, Number(value) || 0);
+
+function rates(metrics: AutomationMetricWindow): AutomationMetricRates {
+  const reviewed = nonNegative(metrics.reviewed);
+  const matched = Math.min(reviewed, nonNegative(metrics.matched));
+  return {
+    accuracy: reviewed ? matched / reviewed : 0,
+    conflictRate: reviewed ? nonNegative(metrics.conflicts) / reviewed : 1,
+    abstentionRate: reviewed ? nonNegative(metrics.abstentions) / reviewed : 1,
+    raceContextErrorRate: reviewed ? nonNegative(metrics.raceContextErrors) / reviewed : 1
+  };
+}
 
 export function evaluateAutomationPromotion(
   current: AutomationState,
@@ -141,13 +186,36 @@ export function evaluateAutomationPromotion(
   metrics: AutomationMetrics,
   ownerApproved = false
 ): PromotionDecision {
-  // Move the existing implementation byte-for-behavior, not threshold-by-threshold redesign.
+  const historicalRates = rates(metrics);
+  const calculated = metrics.recent ? { ...historicalRates, recent: rates(metrics.recent) } : historicalRates;
+  const currentIndex = states.indexOf(current);
+  const targetIndex = states.indexOf(target);
+  if (currentIndex < 0 || targetIndex < 0) return { allowed: false, reason: 'INVALID_PROMOTION_PATH', metrics: calculated };
+  if (targetIndex <= currentIndex) return { allowed: true, reason: 'DOWNGRADE_OR_SAME_STATE', metrics: calculated };
+  if (targetIndex !== currentIndex + 1) return { allowed: false, reason: 'INVALID_PROMOTION_PATH', metrics: calculated };
+  if (target === 'SHADOW') return { allowed: true, reason: 'SHADOW_SAFE_DEFAULT', metrics: calculated };
+  if (target === 'AUTOMATIC' && !ownerApproved) return { allowed: false, reason: 'OWNER_APPROVAL_REQUIRED', metrics: calculated };
+  const gate = GATES[target as keyof typeof GATES];
+  const windowPasses = (window: AutomationMetricWindow, minimum: number) => {
+    const value = rates(window);
+    return nonNegative(window.reviewed) >= minimum
+      && value.accuracy >= gate.accuracy
+      && value.conflictRate <= gate.conflictRate
+      && value.abstentionRate <= gate.abstentionRate
+      && value.raceContextErrorRate <= gate.raceContextErrorRate
+      && nonNegative(window.highRiskFalsePositive) === 0
+      && nonNegative(window.unauthorizedAction) === 0;
+  };
+  if (!windowPasses(metrics, gate.historicalReviewed)) return { allowed: false, reason: gate.historicalFailureReason, metrics: calculated };
+  const recentValid = Boolean(metrics.recent)
+    && metrics.window?.recentDays === RECENT_WINDOW_DAYS
+    && metrics.window?.metricSchemaVersion === METRIC_SCHEMA_VERSION;
+  if (!recentValid || !windowPasses(metrics.recent!, gate.recentReviewed)) return { allowed: false, reason: 'RECENT_METRICS_INSUFFICIENT', metrics: calculated };
+  return { allowed: true, reason: gate.passReason, metrics: calculated };
 }
 ```
 
-Keep `PROMOTION_GATES` values exactly as v7: ASSISTED `200/75/.98/.02/.05/.02`; AUTOMATIC_LOW_RISK `500/200/.99/.005/.03/.005`; AUTOMATIC `1000/400/.995/.002/.02/.002`.
-
-- [ ] **Step 3: Make `agent-policy.ts` façade delegate without changing signature**
+- [ ] **Step 3: Keep public signature and delegate**
 
 ```ts
 export function canPromoteAutomation(
@@ -160,25 +228,18 @@ export function canPromoteAutomation(
 }
 ```
 
-- [ ] **Step 4: Run policy and Hípico tests**
+- [ ] **Step 4: Run tests/typecheck and commit**
 
 ```bash
 npm --workspace backend run test:hipico
 npm --workspace backend run typecheck
-```
-
-Expected: no behavior change.
-
-- [ ] **Step 5: Commit**
-
-```bash
 git add backend/src/modules/hipico/agent-promotion-policy.ts backend/src/modules/hipico/agent-policy.ts backend/src/modules/hipico/agent-policy.test.ts backend/src/modules/hipico/v8-agent-policy-equivalence.test.ts
 git commit -m "refactor(hipico): isolate automation promotion policy"
 ```
 
 ---
 
-### Task 3: Extract model-candidate and tool policy while preserving façade exports
+### Task 3: Extract candidate and tool policy while preserving public exports
 
 **Files:**
 - Create: `backend/src/modules/hipico/agent-candidate-policy.ts`
@@ -189,31 +250,36 @@ git commit -m "refactor(hipico): isolate automation promotion policy"
 
 **Interfaces:**
 - Consumes: public `AgentCandidate`, `AgentTool`, `AutomationState` types.
-- Produces: internal `normalizeModelCandidate(value)`, `evaluateAgentCanAct(mode, candidate)`, and `buildSafeToolRequest(candidate)` while public functions retain the names `validateModelCandidate`, `agentCanAct`, and `safeToolRequest`.
+- Produces: internal `normalizeModelCandidate`, `evaluateAgentCanAct`, `buildSafeToolRequest`; public names remain `validateModelCandidate`, `agentCanAct`, `safeToolRequest`.
 
-- [ ] **Step 1: Add exact error-code characterization**
+- [ ] **Step 1: Extend characterization with existing error strings**
 
 ```ts
-test('candidate and tool policy preserves existing public error codes', () => {
+test('candidate/tool errors remain frozen', () => {
   assert.throws(() => validateModelCandidate({ intent: '', confidence: 2 }), /AGENT_CANDIDATE_SCHEMA_INVALID/);
   assert.throws(() => safeToolRequest({
-    intent: 'x', confidence: 1, tool: 'queryNextRace', arguments: { token: 'x' },
-    risk: 'safe', source: 'deterministic', modelVersion: null
+    intent: 'query:NEXT_RACE', confidence: 1, tool: 'queryNextRace',
+    arguments: { authorization: 'Bearer x' }, risk: 'safe', source: 'deterministic', modelVersion: null
   }), /AGENT_TOOL_ARGUMENTS_REJECTED/);
 });
 ```
 
-- [ ] **Step 2: Move candidate normalization unchanged**
+- [ ] **Step 2: Move candidate normalization into `agent-candidate-policy.ts`**
 
-`agent-candidate-policy.ts` owns bounded model candidate parsing. It must preserve `intent` length 120, confidence `[0,1]`, exact risk enum, tool validation, argument default `{}`, source `model`, and modelVersion length 120.
+Preserve: intent bounded to 120, confidence `[0,1]`, exact risk enum, tool validation, argument default `{}`, source `model`, modelVersion bounded to 120, and `AGENT_CANDIDATE_SCHEMA_INVALID`.
 
-- [ ] **Step 3: Move tool allowlist/sanitization unchanged**
+- [ ] **Step 3: Move tool policy into `agent-tool-policy.ts`**
 
-`agent-tool-policy.ts` owns `AUTO_EXECUTABLE_TOOLS`, `MIN_AUTO_CONFIDENCE`, dangerous-key rejection, `ALLOWED_KEYS`, `PROPOSABLE_INTENTS`, safe scalar/entity handling, and automatic eligibility. Do not alter max lengths, regexes, numeric bounds, or error strings.
+Preserve exactly:
 
-- [ ] **Step 4: Delegate from public façade**
+```ts
+export const AUTO_EXECUTABLE_TOOLS = ['queryRaceStatus', 'queryNextRace', 'queryLastResult', 'querySchedule', 'queryScratches'] as const;
+export const MIN_AUTO_CONFIDENCE = .95;
+```
 
-`agent-policy.ts` must continue exporting:
+Keep all current allowlists, dangerous-key regex, 8/24 key limits, 500/1000/4000 string bounds, numeric bound `1_000_000_000`, raceId/date regexes, proposable intents, and `AGENT_TOOL_ARGUMENTS_REJECTED`.
+
+- [ ] **Step 4: Delegate from `agent-policy.ts` without changing signatures**
 
 ```ts
 export const AUTO_EXECUTABLE_TOOLS = INTERNAL_AUTO_EXECUTABLE_TOOLS;
@@ -234,36 +300,54 @@ git commit -m "refactor(hipico): isolate candidate and tool policy"
 
 ---
 
-### Task 4: Extract automation scope and metrics repository without moving transaction boundaries
+### Task 4: Extract automation scope and metrics reads without moving transaction boundaries
 
 **Files:**
 - Create: `backend/src/modules/hipico/automation-scope.ts`
 - Create: `backend/src/modules/hipico/automation-metrics.repository.ts`
 - Modify: `backend/src/modules/hipico/automation.store.ts`
-- Test: `backend/src/modules/hipico/automation-store.test.ts`
-- Test: `backend/src/modules/hipico/agent-shadow-postgres.e2e.test.ts`
+- Test: `backend/src/modules/hipico/shadow-metrics-store.test.ts`
+- Test: `backend/src/modules/hipico/promotion-snapshot.test.ts`
+- PostgreSQL integration: `backend/src/modules/hipico/hipico-agent.integration.ts`
 
 **Interfaces:**
 - Consumes: Prisma/transaction client, `AutomationState`, `AutomationMetrics`.
 - Produces: `assertAutomationScope`, `defaultAutomationMode`, `sourceMayTargetAutomation`, `lockAutomationScope`, `readAutomationMetricsSnapshot`.
 
-- [ ] **Step 1: Characterize scope defaults and SOURCE restriction**
+- [ ] **Step 1: Characterize scope/default/metrics contracts**
 
-Add tests proving invalid owner/group/groupId produce the same codes, SOURCE defaults to `SHADOW`, non-SOURCE defaults to `DISABLED`, and SOURCE cannot target above `SHADOW`.
+Extend `shadow-metrics-store.test.ts` to assert the store still references `metric_schema_version = 'v7'`, `interval '30 days'`, `GROUP BY actual_intent`, and advisory locking. Extend `promotion-snapshot.test.ts` to assert SOURCE promotion still yields `SOURCE_SHADOW_ONLY` and transition replay returns persisted metrics/decision rather than recalculating them.
 
-- [ ] **Step 2: Move pure scope helpers**
+- [ ] **Step 2: Create `automation-scope.ts`**
 
-`automation-scope.ts` owns current regexes, SOURCE env lookup, default mode, target guard, advisory lock key, and `lockAutomationScope(db, ownerId, groupKey, groupId)`. Preserve the lock SQL exactly:
+```ts
+export type AutomationScope = { ownerId: string; groupKey: string; groupId: string };
+export function assertAutomationScope(ownerId: string, groupKey: string, groupId: string): void;
+export function defaultAutomationMode(groupId: string): AutomationState;
+export function sourceMayTargetAutomation(groupId: string, target: AutomationState): boolean;
+export async function lockAutomationScope(db: DbClient, ownerId: string, groupKey: string, groupId: string): Promise<void>;
+```
+
+Move the current regexes and SOURCE lookup unchanged. Preserve the lock SQL exactly:
 
 ```sql
 SELECT pg_advisory_xact_lock(hashtextextended(${key}, 0))
 ```
 
-- [ ] **Step 3: Move metric SELECTs unchanged**
+- [ ] **Step 3: Create `automation-metrics.repository.ts` with current SELECTs unchanged**
 
-`automation-metrics.repository.ts` owns historical, recent-v7/30-day, by-intent, recentSince reads and returns `buildAutomationMetrics(...)`. Keep the same SQL filters, aliases, `Promise.all` structure, and normalization.
+```ts
+export async function readAutomationMetricsSnapshot(
+  db: DbClient,
+  ownerId: string,
+  groupKey: string,
+  groupId: string
+): Promise<AutomationMetrics>;
+```
 
-- [ ] **Step 4: Keep `AutomationStore.metrics()` transaction shape unchanged**
+Move the historical, recent-v7/30-day, by-intent, and `recentSince` queries without changing filters, aliases, ordering, `Promise.all`, or `buildAutomationMetrics(...)` inputs.
+
+- [ ] **Step 4: Preserve `AutomationStore.metrics()` transaction shape**
 
 ```ts
 async metrics(ownerId: string, groupKey: string, groupId: string): Promise<AutomationMetrics> {
@@ -275,114 +359,135 @@ async metrics(ownerId: string, groupKey: string, groupId: string): Promise<Autom
 }
 ```
 
-- [ ] **Step 5: Run Hípico + PostgreSQL Agent suite and commit**
+- [ ] **Step 5: Run unit/integration/typecheck and commit**
 
 ```bash
 npm --workspace backend run test:hipico
 npm --workspace backend run test:hipico:agent
 npm --workspace backend run typecheck
-git add backend/src/modules/hipico/automation-scope.ts backend/src/modules/hipico/automation-metrics.repository.ts backend/src/modules/hipico/automation.store.ts backend/src/modules/hipico/automation-store.test.ts backend/src/modules/hipico/agent-shadow-postgres.e2e.test.ts
+git add backend/src/modules/hipico/automation-scope.ts backend/src/modules/hipico/automation-metrics.repository.ts backend/src/modules/hipico/automation.store.ts backend/src/modules/hipico/shadow-metrics-store.test.ts backend/src/modules/hipico/promotion-snapshot.test.ts backend/src/modules/hipico/hipico-agent.integration.ts
 git commit -m "refactor(hipico): isolate automation scope and metric reads"
 ```
 
 ---
 
-### Task 5: Extract evaluation and transition persistence behind `AutomationStore`
+### Task 5: Extract transition/evaluation persistence behind `AutomationStore`
 
 **Files:**
-- Create: `backend/src/modules/hipico/automation-evaluation.repository.ts`
 - Create: `backend/src/modules/hipico/automation-transition.repository.ts`
+- Create: `backend/src/modules/hipico/automation-evaluation.repository.ts`
 - Modify: `backend/src/modules/hipico/automation.store.ts`
-- Test: `backend/src/modules/hipico/automation-store.test.ts`
-- Test: `backend/src/modules/hipico/agent-shadow-postgres.e2e.test.ts`
+- Test: `backend/src/modules/hipico/promotion-snapshot.test.ts`
+- Test: `backend/src/modules/hipico/shadow-metrics-store.test.ts`
+- PostgreSQL integration: `backend/src/modules/hipico/hipico-agent.integration.ts`
 
 **Interfaces:**
-- Consumes: already-extracted scope/metrics helpers and existing `AutomationStore` public methods.
-- Produces: internal repository functions only; `AutomationStore` public method names and arguments remain unchanged.
+- Consumes: extracted scope/metrics helpers and current `AutomationStore` public methods.
+- Produces: internal repository functions only; `AutomationStore.metrics/read/get/setMode/recordEvaluation/review/evaluations/transitionEvents` remain public with the same signatures.
 
-- [ ] **Step 1: Characterize replay snapshot and review immutability**
+- [ ] **Step 1: Characterize replay, mismatch, and immutable review**
 
-Add tests proving that replay of the same idempotency key returns the original persisted metrics/decision snapshot, mismatched replay throws `HIPICO_AUTOMATION_IDEMPOTENCY_MISMATCH`, and second review throws `HIPICO_AGENT_EVALUATION_ALREADY_REVIEWED`.
-
-- [ ] **Step 2: Move transition read/insert SQL**
-
-Create helpers:
+Ensure the PostgreSQL integration covers:
 
 ```ts
-export async function readTransitionByIdempotency(db: DbClient, scope: Scope, idempotencyKey: string): Promise<TransitionEventRow | null>;
-export async function insertTransitionEvent(db: DbClient, input: InsertTransitionEventInput): Promise<{ createdAt: Date | string }>;
+await assert.rejects(secondReview, /HIPICO_AGENT_EVALUATION_ALREADY_REVIEWED/);
+await assert.rejects(mismatchedReplay, /HIPICO_AUTOMATION_IDEMPOTENCY_MISMATCH/);
+assert.deepEqual(replay.metrics, first.metrics);
+assert.deepEqual(replay.decision, first.decision);
 ```
 
-Do not change stored JSON payloads, idempotency signature calculation, or event disposition values.
-
-- [ ] **Step 3: Move evaluation insert/review/list SQL**
-
-Create repository functions for evaluation insert, one-time review, evaluation list, and transition list. Preserve all column names, sort order, limits, evidence fields, policy fields, and v7 metric fields.
-
-- [ ] **Step 4: Keep `setMode()` orchestration order explicit in `AutomationStore`**
-
-The façade must still perform, inside one Prisma transaction:
+- [ ] **Step 2: Create transition repository**
 
 ```ts
-await lockAutomationScope(...);
-const prior = await readTransitionByIdempotency(...);
-// replay/mismatch branch
-const current = await readCurrentModeForUpdate(...);
-const metrics = await readAutomationMetricsSnapshot(...);
-const policyDecision = canPromoteAutomation(...);
-// SOURCE restriction
-// optional state update
-await insertTransitionEvent(...);
+export async function readTransitionByIdempotency(
+  db: DbClient,
+  input: AutomationScope,
+  idempotencyKey: string
+): Promise<TransitionEventRow | null>;
+export async function readCurrentAutomationModeForUpdate(db: DbClient, input: AutomationScope): Promise<AutomationState | null>;
+export async function updateAutomationMode(db: DbClient, input: AutomationScope & { target: AutomationState; actorRef: string }): Promise<void>;
+export async function insertAutomationTransition(db: DbClient, input: InsertTransitionEventInput): Promise<{ createdAt: Date | string }>;
 ```
 
-Do not move any of these steps outside the transaction.
+Preserve SQL columns, JSON values, idempotency signature semantics, disposition values, and sort/limit behavior.
 
-- [ ] **Step 5: Run tests/typecheck and commit**
+- [ ] **Step 3: Create evaluation repository**
+
+Move only SQL persistence/list concerns. Preserve message SHA-256, evidence JSON, policy fields, v7 metric fields, review-once semantics, sort order, and bounds. `sanitizeAgentEvidence` stays exported from `automation.store.ts` as a façade even if its private implementation moves.
+
+- [ ] **Step 4: Keep `setMode()` orchestration order explicit**
+
+Inside one Prisma transaction, retain this exact logical order:
+
+```ts
+await lockAutomationScope(tx, input.ownerId, input.groupKey, input.groupId);
+const prior = await readTransitionByIdempotency(tx, automationScope, input.idempotencyKey);
+const current = await readCurrentAutomationModeForUpdate(tx, automationScope) ?? defaultAutomationMode(input.groupId);
+const metrics = await readAutomationMetricsSnapshot(tx, input.ownerId, input.groupKey, input.groupId);
+const policyDecision = canPromoteAutomation(current, input.target, metrics, input.ownerApproved);
+// existing SOURCE_SHADOW_ONLY override remains here
+// existing conditional mode update remains here
+await insertAutomationTransition(tx, eventInput);
+```
+
+The replay/mismatch branch must still occur immediately after `readTransitionByIdempotency` and before reading current metrics.
+
+- [ ] **Step 5: Run unit/PostgreSQL/typecheck and commit**
 
 ```bash
 npm --workspace backend run test:hipico
 npm --workspace backend run test:hipico:agent
 npm --workspace backend run typecheck
-git add backend/src/modules/hipico/automation-evaluation.repository.ts backend/src/modules/hipico/automation-transition.repository.ts backend/src/modules/hipico/automation.store.ts backend/src/modules/hipico/automation-store.test.ts backend/src/modules/hipico/agent-shadow-postgres.e2e.test.ts
+git add backend/src/modules/hipico/automation-transition.repository.ts backend/src/modules/hipico/automation-evaluation.repository.ts backend/src/modules/hipico/automation.store.ts backend/src/modules/hipico/promotion-snapshot.test.ts backend/src/modules/hipico/shadow-metrics-store.test.ts backend/src/modules/hipico/hipico-agent.integration.ts
 git commit -m "refactor(hipico): isolate automation persistence repositories"
 ```
 
 ---
 
-### Task 6: Deduplicate golden/metric helpers without changing signatures
+### Task 6: Audit golden/metrics and avoid unnecessary churn
 
 **Files:**
-- Modify: `backend/src/modules/hipico/agent-golden.ts`
-- Modify if needed: `backend/src/modules/hipico/shadow-metrics.ts`
+- Review: `backend/src/modules/hipico/agent-golden.ts`
+- Review: `backend/src/modules/hipico/shadow-metrics.ts`
 - Test: `backend/src/modules/hipico/agent-golden.test.ts`
 - Test: `backend/src/modules/hipico/shadow-metrics.test.ts`
 
 **Interfaces:**
-- Consumes: `normalizeMetricWindow`, existing case scoring, existing signature behavior.
-- Produces: same `scoreGoldenCorpus(value, parser)` result fields and same SHA-256 signature for the fixed corpus.
+- Consumes: current golden scorer and metric helpers.
+- Produces: explicit regression coverage; production files change only if an identical helper extraction removes real duplication without changing the golden signature input.
 
-- [ ] **Step 1: Freeze a fixed-corpus signature**
+- [ ] **Step 1: Strengthen signature-semantics test before any production edit**
 
-Add a fixture whose expected signature is generated from the pre-refactor v7 implementation and assert exact equality, together with the existing fields `version`, `total`, `matched`, `accuracy`, `highRiskFalsePositive`, `unauthorizedAutomaticAction`, `signature`, and `cases`.
+```ts
+const first = scoreGoldenCorpus(corpus, deterministicAgentParser);
+const second = scoreGoldenCorpus(corpus, deterministicAgentParser);
+assert.equal(second.signature, first.signature);
+assert.deepEqual(second.cases, first.cases);
+assert.deepEqual(second.byIntent, first.byIntent);
+```
 
-- [ ] **Step 2: Reuse only semantically identical metric normalization**
+Retain existing SHA-256 format and zero high-risk/unauthorized automatic assertions.
 
-Golden aggregation may call existing pure helpers, but the signature input remains exactly:
+- [ ] **Step 2: Keep signature input byte-semantics unchanged**
+
+If an attempted deduplication would alter the following expression, do not refactor that path:
 
 ```ts
 crypto.createHash('sha256').update(JSON.stringify({ version: corpus.version, cases })).digest('hex');
 ```
 
-Do not sort/rewrite the `cases` array or add new signature inputs.
+Only reuse `normalizeMetricWindow` for aggregations outside that signature input. If no safe duplication exists, leave both production files unchanged and commit only strengthened characterization.
 
-- [ ] **Step 3: Run golden/shadow/Hípico tests and commit**
+- [ ] **Step 3: Run tests/typecheck and commit**
 
 ```bash
 npm --workspace backend run test:hipico
 npm --workspace backend run typecheck
-git add backend/src/modules/hipico/agent-golden.ts backend/src/modules/hipico/shadow-metrics.ts backend/src/modules/hipico/agent-golden.test.ts backend/src/modules/hipico/shadow-metrics.test.ts
-git commit -m "refactor(hipico): reuse metric helpers without scoring drift"
+git add backend/src/modules/hipico/agent-golden.test.ts backend/src/modules/hipico/shadow-metrics.test.ts
+git commit -m "test(hipico): lock golden and metric equivalence for v8"
 ```
+
+If a production file was safely changed, include only that file in the same commit.
 
 ---
 
@@ -392,15 +497,16 @@ git commit -m "refactor(hipico): reuse metric helpers without scoring drift"
 - Create: `backend/src/modules/hipico/agent-route-support.ts`
 - Modify: `backend/src/modules/hipico/agent.routes.ts`
 - Test: `backend/src/modules/hipico/agent-route-security.test.ts`
+- Test: `backend/src/modules/hipico/shadow-metrics-routes.test.ts`
 - Test: `backend/src/modules/hipico/v8-public-contracts.test.ts`
 
 **Interfaces:**
-- Consumes: existing operator token utilities, env vars, Zod input values, and Hípico error mapping.
-- Produces: internal helpers for owner/group parsing, actor/idempotency resolution, SOURCE read-only context, and status-code mapping. Routes and response bodies remain unchanged.
+- Consumes: existing operator-token utilities, environment values, Zod parsed values, and Hípico error mapping.
+- Produces: internal request/config helpers; route paths, schemas, auth, headers, status mapping, and response JSON remain unchanged.
 
-- [ ] **Step 1: Characterize route method/path/status contract**
+- [ ] **Step 1: Characterize route methods/paths and status mapping**
 
-Assert the source still exposes:
+Freeze these exact routes:
 
 ```text
 GET  /groups/:groupId/automation
@@ -411,89 +517,129 @@ POST /groups/:groupId/automation/evaluate
 POST /groups/:groupId/automation/evaluations/:id/review
 ```
 
-Also freeze 401 for bad operator token, 503 for missing operator token/owner/actor configuration, 409 for replay mismatch/already-reviewed/metric gate failures, and `Cache-Control: no-store, max-age=0`.
+Keep 401 for invalid operator token, 503 for missing operator/owner/actor configuration, 409 for replay mismatch/already-reviewed/metric gate failures, and `Cache-Control: no-store, max-age=0`.
 
-- [ ] **Step 2: Extract private support helpers**
+- [ ] **Step 2: Create support helpers with existing semantics**
 
-Move only pure/request-resolution helpers; keep Zod schemas and router declarations in `agent.routes.ts` unless extraction would alter inference or strictness. `serverRiskContext(gid)` must continue returning fail-closed `evidenceState:'MISSING'`, `sourceAuthorized:false`, `systemHealthy:true`, `humanOwned:false`, `ambiguous:false`, plus SOURCE read-only state.
+```ts
+export function configuredHipicoOwnerId(): string;
+export function resolveHipicoGroupKey(req: Request): string;
+export function resolveAutomationGroupId(req: Request): string;
+export function resolveAutomationIdempotencyKey(req: Request): string;
+export function configuredAutomationActorRef(): string;
+export function automaticOwnerApprovalConfigured(): boolean;
+export function sourceReadOnly(groupId: string): boolean;
+export function serverRiskContext(groupId: string): AgentRiskContext;
+export function automationHttpStatus(code: string): number;
+```
 
-- [ ] **Step 3: Run route/security tests and commit**
+`serverRiskContext()` must preserve `evidenceState:'MISSING'`, `sourceAuthorized:false`, `systemHealthy:true`, `humanOwned:false`, `ambiguous:false`, and SOURCE read-only detection. Keep strict Zod schemas in `agent.routes.ts` so request acceptance semantics do not drift.
+
+- [ ] **Step 3: Delegate from routes and run tests**
 
 ```bash
 npm --workspace backend run test:hipico
 npm --workspace backend run typecheck
-git add backend/src/modules/hipico/agent-route-support.ts backend/src/modules/hipico/agent.routes.ts backend/src/modules/hipico/agent-route-security.test.ts backend/src/modules/hipico/v8-public-contracts.test.ts
+git add backend/src/modules/hipico/agent-route-support.ts backend/src/modules/hipico/agent.routes.ts backend/src/modules/hipico/agent-route-security.test.ts backend/src/modules/hipico/shadow-metrics-routes.test.ts backend/src/modules/hipico/v8-public-contracts.test.ts
 git commit -m "refactor(hipico): isolate agent route support helpers"
 ```
 
 ---
 
-### Task 8: Audit untouched outbox/Command Center boundaries and add exact-SHA v8 gate
+### Task 8: Protect untouched outbox/Command Center boundaries and add exact-SHA v8 workflow
 
 **Files:**
 - Create: `backend/src/modules/hipico/v8-boundary-regression.test.ts`
 - Create: `.github/workflows/hipico-v8-refactor.yml`
-- Modify production outbox/Command Center files only if a characterization test proves a behavior-identical extraction is necessary; otherwise leave them untouched.
+- Do not modify production outbox or Command Center files unless a new characterization test first proves a behavior-identical extraction is necessary.
 
 **Interfaces:**
-- Consumes: existing canonical outbox and Command Center contracts.
-- Produces: explicit evidence that v8 did not alter unrelated behavior and a dedicated exact-SHA workflow.
+- Consumes: canonical outbox and Command Center contracts.
+- Produces: evidence that v8 did not alter unrelated runtime behavior and a dedicated exact-SHA workflow.
 
-- [ ] **Step 1: Add boundary regression assertions**
+- [ ] **Step 1: Add boundary regression contracts**
 
-Cover at minimum: canonical outbox authority remains `public.hipico_outbox`; ambiguous delivery still resolves to `reconciliation_required`; approval-required rows are excluded from generic worker claims; runner default remains disabled; Command Center route/read-model source contracts remain present; SOURCE automatic enablement is absent; no financial-authority path is added.
+Assert that the canonical outbox remains `public.hipico_outbox`, ambiguous delivery still maps to `reconciliation_required`, approval-required rows remain excluded from generic claims, the runner remains disabled by default, Command Center route/service contracts remain present, SOURCE automatic enablement is absent, and no financial-authority path is introduced.
 
 - [ ] **Step 2: Add exact-SHA workflow**
 
-Workflow `Hípico v8 Behavior-Preserving Refactor` must:
-
 ```yaml
-- checkout exact PR head SHA
-- run scripts/hipico-exact-sha-gate.mjs
-- setup Node 22
-- npm ci --no-audit --no-fund
-- start PostgreSQL 16 service and isolated DB
-- npm --workspace backend run typecheck
-- npm --workspace backend run test:hipico
-- npm --workspace backend run test:hipico:agent
-- npm --workspace backend run build
-- git diff --check against PR base
-- always drop isolated DB
+name: Hípico v8 Behavior-Preserving Refactor
+on:
+  pull_request:
+  workflow_dispatch:
+permissions: { contents: read }
+env:
+  HIPICO_CANDIDATE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+jobs:
+  equivalence:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres -d postgres"
+          --health-interval 5s --health-timeout 5s --health-retries 20
+    steps:
+      - uses: actions/checkout@v7
+        with: { ref: "${{ env.HIPICO_CANDIDATE_SHA }}", fetch-depth: 0 }
+      - run: node scripts/hipico-exact-sha-gate.mjs
+      - uses: actions/setup-node@v7
+        with: { node-version: '22', cache: npm, cache-dependency-path: package-lock.json }
+      - run: npm ci --no-audit --no-fund
+      - run: npm --workspace backend run typecheck
+      - run: npm --workspace backend run test:hipico
+      - run: npm --workspace backend run test:hipico:agent
+      - run: npm --workspace backend run build
 ```
 
-- [ ] **Step 3: Verify no migration drift**
+Include isolated DB creation before `test:hipico:agent`, `git diff --check` against PR base, and `if: always()` database cleanup using the same safe pattern as v6/v7 workflows.
 
-Use compare/diff inspection to ensure no file under `supabase/sql/` or `backend/prisma/migrations/` changed from v7 baseline `5983efc0de1929ac674dbd96c756f960c380f703`.
-
-- [ ] **Step 4: Commit**
+- [ ] **Step 3: Compare migration paths to v7 baseline**
 
 ```bash
+git diff --name-only 5983efc0de1929ac674dbd96c756f960c380f703 HEAD -- supabase/sql backend/prisma/migrations
+```
+
+Expected: no output.
+
+- [ ] **Step 4: Run available gates and commit**
+
+```bash
+npm --workspace backend run test:hipico
+npm --workspace backend run typecheck
+npm --workspace backend run build
 git add backend/src/modules/hipico/v8-boundary-regression.test.ts .github/workflows/hipico-v8-refactor.yml
 git commit -m "ci(hipico): add v8 behavior equivalence gate"
 ```
 
 ---
 
-### Task 9: Final equivalence review and PR publication
+### Task 9: Final equivalence review and stacked PR
 
 **Files:**
-- Review all v8 changed files.
-- Modify only tests/docs/workflow if final review finds missing evidence; do not introduce new feature behavior.
+- Review every file changed from v7 baseline `5983efc0de1929ac674dbd96c756f960c380f703`.
+- Modify only tests/docs/workflow if final review finds missing evidence; do not introduce new behavior.
 
 **Interfaces:**
 - Consumes: Tasks 1–8.
 - Produces: one reviewable stacked PR whose diff contains only behavior-preserving refactor, tests, docs, and CI.
 
-- [ ] **Step 1: Compare v7 baseline to v8 candidate**
+- [ ] **Step 1: Review changed files and whitespace**
 
 ```bash
 git diff --check 5983efc0de1929ac674dbd96c756f960c380f703 HEAD
 git diff --name-status 5983efc0de1929ac674dbd96c756f960c380f703 HEAD
 ```
 
-Reject any route rename, migration edit, new env var requirement, threshold/reason change, outbox semantic change, SOURCE promotion path, or financial authority change.
+Reject any route rename, migration edit, new required env var, threshold/reason change, outbox semantic change, SOURCE promotion path, or financial-authority change.
 
-- [ ] **Step 2: Run full local/CI-capable gates**
+- [ ] **Step 2: Run full gates**
 
 ```bash
 npm --workspace backend run typecheck
@@ -502,16 +648,16 @@ npm --workspace backend run test:hipico:agent
 npm --workspace backend run build
 ```
 
-Record each as `VERIFIED`, `FAILED`, or `BLOCKED_INFRASTRUCTURE`; never infer green from a workflow conclusion with zero executed steps.
+Classify each as `VERIFIED`, `FAILED`, or `BLOCKED_INFRASTRUCTURE`; do not infer green from a workflow conclusion with zero executed steps.
 
 - [ ] **Step 3: Open stacked PR**
 
-Base the PR on `feat/hipico-shadow-metrics-v7` while PR #351 remains unmerged. Describe the baseline SHA, final candidate SHA, frozen contracts, files changed, verification evidence, parent blockers, and explicit statement that v8 contains no product behavior changes.
+Base the PR on `feat/hipico-shadow-metrics-v7` while PR #351 remains unmerged. Include baseline SHA, final candidate SHA, frozen contracts, changed files, verification evidence, parent blockers, and the explicit statement that v8 contains no intended product behavior changes.
 
-- [ ] **Step 4: Inspect exact-SHA workflow jobs**
+- [ ] **Step 4: Inspect exact-SHA job evidence**
 
-A valid verification requires at least the checkout step to have executed and the job to have a real runner. `steps=[]`, `steps=null`, or `runner_id=0` means `BLOCKED_INFRASTRUCTURE` and the PR stays DRAFT.
+A valid verification requires a real runner and executed steps. `steps=[]`, `steps=null`, or `runner_id=0` means `BLOCKED_INFRASTRUCTURE` and the PR remains DRAFT.
 
 - [ ] **Step 5: Final status**
 
-Declare `DONE` only after exact-SHA tests/build/PostgreSQL evidence are real and the diff review shows no contract drift. Otherwise report `PARTIAL/BLOCKED` with the exact external blocker.
+Declare `DONE` only after exact-SHA typecheck/tests/PostgreSQL/build evidence is real and diff review shows no contract drift. Otherwise report `PARTIAL/BLOCKED` with the exact external blocker.
