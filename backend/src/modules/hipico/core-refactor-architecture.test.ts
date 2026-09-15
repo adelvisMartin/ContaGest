@@ -6,6 +6,10 @@ function source(name: string) {
   return readFileSync(new URL(`./${name}`, import.meta.url), 'utf8');
 }
 
+function botSource(name: string) {
+  return readFileSync(new URL(`../hipico-bot/${name}`, import.meta.url), 'utf8');
+}
+
 void test('agent contracts and extracted policy modules do not depend on the compatibility facade', () => {
   for (const file of ['agent-contracts.ts', 'agent-tools.ts', 'promotion-policy.ts', 'agent-evaluator.ts']) {
     assert.doesNotMatch(source(file), /from ['"]\.\/agent-policy\.js['"]/);
@@ -42,4 +46,15 @@ void test('agent routes delegate parsing and policy-safe server context to agent
   assert.match(routes, /actions:\s*\[\]/);
   assert.match(routes, /financialAuthority:\s*false/);
   assert.match(routes, /directEffectsApplied:\s*false/);
+});
+
+void test('canonical outbox store delegates normalization but keeps database authority and lease semantics', () => {
+  const store = botSource('hipico-outbox.store.ts');
+  assert.match(store, /from ['"]\.\/hipico-outbox-input\.js['"]/);
+  assert.match(store, /from ['"]\.\/hipico-outbox-receipt-input\.js['"]/);
+  assert.match(store, /FOR UPDATE SKIP LOCKED/);
+  assert.match(store, /status = 'reconciliation_required'/);
+  assert.match(store, /status = 'sending' AND lease_token/);
+  assert.doesNotMatch(store, /const E164_DIGITS/);
+  assert.doesNotMatch(store, /function sameCanonicalOutboundIntent/);
 });
