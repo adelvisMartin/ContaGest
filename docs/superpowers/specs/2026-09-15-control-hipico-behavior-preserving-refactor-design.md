@@ -3,7 +3,7 @@
 **Date:** 2026-09-15  
 **Repository:** `adelvisMartin/ContaGest`  
 **Design baseline:** `main@82fed2c6cc01044bf639f5b33065c10fb6309fea`  
-**Status:** design approved in principle; implementation must follow this specification and preserve observable behavior.
+**Status:** strategy approved by repository owner; written specification pending final owner review before implementation planning.
 
 ## 1. Purpose
 
@@ -17,18 +17,20 @@ The desired end state is a smaller set of well-bounded modules with single respo
 
 The following are hard constraints for every refactor PR.
 
-1. **No public function rename.** Existing exported/public function names remain unchanged unless an alias preserves the original symbol exactly and the change is separately approved.
+1. **No public function rename.** Existing exported/public function names remain exactly unchanged throughout this refactor campaign.
 2. **No essential input/output rename.** Existing public request fields, response fields, command arguments, event payload fields and essential domain DTO fields remain unchanged.
-3. **No endpoint drift.** Existing routes, methods, HTTP status semantics, cache headers, authentication expectations and response shapes remain unchanged.
+3. **No endpoint drift.** Existing routes, methods, exact HTTP status codes for equivalent inputs, cache headers, authentication expectations and response shapes remain unchanged.
 4. **No state-machine drift.** Automation states, outbox states, race/document/provider states, SOURCE/LAB safety semantics and transition rules remain unchanged.
 5. **No persistence drift.** Existing table names, existing columns, constraints, idempotency semantics, ownership scopes, RLS assumptions and transaction boundaries remain unchanged unless a separate non-refactor ticket explicitly authorizes a schema change.
 6. **Historical migrations are immutable.** No previously committed/applied migration is edited for cleanup, formatting or restructuring. Any future schema correction must be an additive migration under a separately reviewed change.
-7. **No security relaxation.** Webhook signatures, operator authentication, SOURCE read-only behavior, LAB separation, secret handling, provider allowlists, fail-closed paths and audit/idempotency controls may only remain equivalent or become stricter under an independently approved security change. This refactor itself does not alter policy.
+7. **No security-policy drift.** Webhook signatures, operator authentication, SOURCE read-only behavior, LAB separation, secret handling, provider allowlists, fail-closed paths and audit/idempotency controls remain behaviorally equivalent in this campaign. Any security tightening that changes observable acceptance/rejection behavior is a separate change, not part of the refactor.
 8. **No financial-authority expansion.** No refactor may grant Agent/LLM code new write, settlement, betting, balance or monetary authority.
 9. **No cache/offline drift.** Live operational data remains subject to the same no-store/network/freshness behavior; PWA offline/stale semantics remain equivalent.
 10. **No framework rewrite.** No React/MUI/framework migration is part of this campaign.
-11. **No hidden compatibility removal.** Legacy adapters that are still consumed may be internally simplified but not removed without evidence that no supported consumer relies on them.
+11. **No hidden compatibility removal.** Legacy adapters that are still consumed may be internally simplified but not removed without evidence that no supported consumer relies on them and a separate compatibility-removal decision.
 12. **No test weakening.** Existing assertions may be rewritten only when they verify the same behavior more robustly. Tests must not be skipped, deleted or softened to make a refactor pass.
+
+Internal local variable names may change when they are not part of a public or serialized contract. Public names and essential input/output names may not.
 
 ## 3. Current architecture and refactor pressure
 
@@ -73,7 +75,7 @@ Dependencies must point inward toward stable domain contracts. Infrastructure mo
 
 When a large module is decomposed, the existing public module remains a compatibility facade where necessary. It re-exports or delegates to internal modules while preserving:
 
-- exported symbol names;
+- exported symbol names exactly;
 - parameter names/types that form external contracts;
 - return shapes;
 - thrown public error codes/messages where callers depend on them;
@@ -167,7 +169,7 @@ Primary targets:
 - document bridge ingestion;
 - provider transport adapters.
 
-Compatibility requirements include preserving public names such as existing parser/classifier/send/orchestration functions, public route paths, WhatsApp signature behavior, webhook replay semantics, outbox lease/idempotency behavior and `reconciliation_required` handling.
+Compatibility requirements include preserving existing public parser/classifier/send/orchestration function names, public route paths, exact status/error behavior, WhatsApp signature behavior, webhook replay semantics, outbox lease/idempotency behavior and `reconciliation_required` handling.
 
 ### Wave 4 — Serverless adapter simplification
 
@@ -185,7 +187,7 @@ Primary targets:
 
 Constraints:
 
-- Vercel endpoint paths and response contracts remain unchanged;
+- Vercel endpoint paths, exact HTTP status behavior and response contracts remain unchanged;
 - serverless must not become a second domain authority;
 - any delegation change must retain timeout/error/fallback behavior observable by supported clients;
 - no secret is moved to browser code.
@@ -223,7 +225,7 @@ Actions may include:
 - exact-SHA evidence helpers;
 - reusable security/input test factories.
 
-A test helper refactor must keep test counts/coverage intent and preserve or strengthen assertions. Golden corpora and historical regression evidence remain reproducible.
+A test helper refactor must keep test coverage intent and preserve or strengthen assertions. Golden corpora and historical regression evidence remain reproducible. Test-count changes caused only by consolidation are allowed only when the same scenarios remain explicitly exercised and reviewable.
 
 ### Wave 7 — Final cross-boundary cleanup
 
@@ -254,9 +256,9 @@ At minimum this includes:
 - same public function/export names;
 - same accepted/rejected input classes;
 - same normalized outputs;
-- same HTTP routes/methods/status classes;
+- same HTTP routes/methods and exact status codes for equivalent inputs;
 - same response field names/types/nullability;
-- same public error codes;
+- same public error codes/messages where part of the contract;
 - same authentication/authorization decision;
 - same DB rows created/updated/read under equivalent input;
 - same transaction/idempotency behavior;
@@ -303,15 +305,16 @@ A refactor PR is not complete merely because source review looks correct.
 A wave is acceptable only when all of the following are true:
 
 1. its diff is limited to the declared Hípico scope plus necessary tests/docs;
-2. no public export or endpoint was removed/renamed;
-3. no historical migration was modified;
-4. characterization tests demonstrate unchanged behavior for touched flows;
-5. typecheck/build/tests applicable to the wave are executed successfully, or any non-execution is explicitly classified as an infrastructure blocker;
-6. DB/security/idempotency behavior is unchanged for touched persistence paths;
-7. no secrets or real group/destination identities are introduced;
-8. no test/workflow was weakened to obtain green status;
-9. final diff review finds no unrelated product changes;
-10. exact final SHA is tied to the verification evidence.
+2. no public export, public function or endpoint was removed/renamed;
+3. no essential public input/output variable was renamed;
+4. no historical migration was modified;
+5. characterization tests demonstrate unchanged behavior for touched flows;
+6. typecheck/build/tests applicable to the wave are executed successfully, or any non-execution is explicitly classified as an infrastructure blocker;
+7. DB/security/idempotency behavior is unchanged for touched persistence paths;
+8. no secrets or real group/destination identities are introduced;
+9. no test/workflow was weakened to obtain green status;
+10. final diff review finds no unrelated product changes;
+11. exact final SHA is tied to the verification evidence.
 
 ## 11. Efficiency rule
 
@@ -397,13 +400,13 @@ This campaign does not:
 - change provider selection behavior;
 - introduce a new message broker;
 - migrate the UI framework;
-- rename public APIs;
+- rename public APIs, public functions or essential input/output variables;
 - remove supported legacy endpoints;
 - alter accounting/ERP features outside Hípico;
 - rewrite historical migrations;
 - change legal/governance policy;
 - claim external physical-device/24h-soak evidence that was not actually executed.
 
-## 18. First implementation action after design approval
+## 18. First implementation action after written-spec approval
 
-After this specification is reviewed and approved, create a detailed implementation plan beginning with **Wave 0 — Behavior Freeze**. Wave 0 must establish the baseline contracts before any production refactor begins. The first production-code refactor is therefore Wave 1, never Wave 0.
+After this written specification is reviewed and approved, create a detailed implementation plan beginning with **Wave 0 — Behavior Freeze**. Wave 0 must establish the baseline contracts before any production refactor begins. The first production-code refactor is therefore Wave 1, never Wave 0.
