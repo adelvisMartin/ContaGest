@@ -3,7 +3,11 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 
 const routes = readFileSync(new URL('./agent.routes.ts', import.meta.url), 'utf8');
+const routeSupport = readFileSync(new URL('./agent-route-support.ts', import.meta.url), 'utf8');
 const store = readFileSync(new URL('./automation.store.ts', import.meta.url), 'utf8');
+const scope = readFileSync(new URL('./automation-scope.ts', import.meta.url), 'utf8');
+const transitions = readFileSync(new URL('./automation-transition.repository.ts', import.meta.url), 'utf8');
+const evaluations = readFileSync(new URL('./automation-evaluation.repository.ts', import.meta.url), 'utf8');
 const app = readFileSync(new URL('../../app.ts', import.meta.url), 'utf8');
 
 test('automation routes derive audit identity from authenticated operator token and reject client actor fields by strict schema', () => {
@@ -17,16 +21,17 @@ test('automation routes derive audit identity from authenticated operator token 
 test('owner approval is server-controlled and cannot be self-asserted by the request body', () => {
   assert.doesNotMatch(routes, /ownerApproved:\s*body\.ownerApproved/);
   assert.doesNotMatch(routes, /ownerApproved:\s*z\.boolean/);
-  assert.match(routes, /HIPICO_AUTOMATIC_OWNER_APPROVED/);
+  assert.match(routeSupport, /HIPICO_AUTOMATIC_OWNER_APPROVED/);
   assert.match(routes, /ownerApproved:\s*automaticOwnerApprovalConfigured\(\)/);
 });
 
 test('automation persistence serializes promotion/review and makes review immutable', () => {
-  assert.match(store, /pg_advisory_xact_lock/);
-  assert.match(store, /FOR UPDATE/);
+  assert.match(scope, /pg_advisory_xact_lock/);
+  assert.match(transitions, /FOR UPDATE/);
+  assert.match(evaluations, /FOR UPDATE/);
   assert.match(store, /HIPICO_AGENT_EVALUATION_ALREADY_REVIEWED/);
-  assert.match(store, /updated_by\s*=\s*\$\{input\.actorRef\}/);
-  assert.match(store, /reviewed_by\s*=\s*\$\{input\.actorRef\}/);
+  assert.match(transitions, /updated_by\s*=\s*\$\{input\.actorRef\}/);
+  assert.match(evaluations, /reviewed_by\s*=\s*\$\{input\.actorRef\}/);
 });
 
 test('agent routes share the canonical Hípico limiter chain rather than creating an independent prefix', () => {
