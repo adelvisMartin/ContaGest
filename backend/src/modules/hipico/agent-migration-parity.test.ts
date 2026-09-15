@@ -4,6 +4,8 @@ import { readFileSync } from 'node:fs';
 
 const supabaseSql = readFileSync(new URL('../../../../supabase/sql/hipico_v22_agent_shadow.sql', import.meta.url), 'utf8');
 const prismaSql = readFileSync(new URL('../../../prisma/migrations/20260913230500_hipico_agent_shadow/migration.sql', import.meta.url), 'utf8');
+const supabaseV24 = readFileSync(new URL('../../../../supabase/sql/hipico_v24_shadow_metrics.sql', import.meta.url), 'utf8');
+const prismaV24 = readFileSync(new URL('../../../prisma/migrations/20260914194000_hipico_shadow_metrics_v7/migration.sql', import.meta.url), 'utf8');
 
 const requiredContracts = [
   'hipico_group_automation',
@@ -33,5 +35,23 @@ void test('both Agent/Shadow migrations keep anonymous and authenticated mutatio
     assert.match(sql, /revoke all on public\.hipico_group_automation from authenticated/i);
     assert.match(sql, /revoke all on public\.hipico_agent_evaluations from authenticated/i);
     assert.match(sql, /revoke all on public\.hipico_automation_transition_events from authenticated/i);
+  }
+});
+
+void test('v24 shadow-metrics migration has exact Prisma/Supabase deployment parity', () => {
+  assert.equal(prismaV24.replace(/\r\n/g, '\n'), supabaseV24.replace(/\r\n/g, '\n'));
+  for (const contract of [
+    'abstained',
+    'race_context_error',
+    'metric_schema_version',
+    'legacy-v6',
+    "SET DEFAULT 'v7'",
+    'hipico_agent_eval_recent_v7_idx',
+    'new.race_context_error',
+    'new.abstained = old.abstained',
+    'new.metric_schema_version = old.metric_schema_version',
+    'HIPICO_AGENT_EVALUATION_IMMUTABLE'
+  ]) {
+    assert.ok(supabaseV24.includes(contract), `v24 migration missing ${contract}`);
   }
 });
