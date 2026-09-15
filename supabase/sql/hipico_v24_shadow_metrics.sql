@@ -57,6 +57,7 @@ BEGIN
      AND new.reviewed_by LIKE 'operator-token:%'
      AND new.matched IS NOT NULL
      AND new.matched = (old.predicted_intent = new.actual_intent)
+     AND new.race_context_error IS NOT NULL
      AND new.reviewed_at >= old.created_at
      AND new.id = old.id
      AND new.owner_id = old.owner_id
