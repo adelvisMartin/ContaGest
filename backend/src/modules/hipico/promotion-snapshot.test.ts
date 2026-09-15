@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import test from 'node:test';
 
 const source = readFileSync(new URL('./automation.store.ts', import.meta.url), 'utf8');
+const transitionSource = readFileSync(new URL('./automation-transition.repository.ts', import.meta.url), 'utf8');
 
 test('promotion decision, metric snapshot and transition insert share one locked transaction', () => {
   const setModeStart = source.indexOf('async setMode(input:');
@@ -12,21 +13,24 @@ test('promotion decision, metric snapshot and transition insert share one locked
 
   assert.match(setMode, /prisma\.\$transaction\(async \(tx\) =>/);
   assert.match(setMode, /await lockAutomationScope\(tx,/);
+  assert.match(setMode, /readTransitionByIdempotency\(tx,/);
+  assert.match(setMode, /readCurrentAutomationModeForUpdate\(tx,/);
   assert.match(setMode, /readAutomationMetricsSnapshot\(tx,/);
   assert.match(setMode, /canPromoteAutomation\(current, input\.target, metrics, input\.ownerApproved\)/);
-  assert.match(setMode, /INSERT INTO public\.hipico_automation_transition_events/);
-  assert.match(setMode, /\$\{JSON\.stringify\(metrics\)\}::jsonb/);
-  assert.match(setMode, /\$\{JSON\.stringify\(decision\)\}::jsonb/);
+  assert.match(setMode, /insertAutomationTransition\(tx,/);
+  assert.match(transitionSource, /INSERT INTO public\.hipico_automation_transition_events/);
+  assert.match(transitionSource, /\$\{JSON\.stringify\(input\.metrics\)\}::jsonb/);
+  assert.match(transitionSource, /\$\{JSON\.stringify\(input\.decision\)\}::jsonb/);
 });
 
 test('idempotent transition replay returns the persisted snapshot without recomputing current metrics', () => {
-  const priorStart = source.indexOf('if (prior[0])');
-  const currentRead = source.indexOf('const rows = await tx.$queryRaw<Array<{ mode: AutomationState }>>', priorStart);
+  const priorStart = source.indexOf('if (prior)');
+  const currentRead = source.indexOf('readCurrentAutomationModeForUpdate', priorStart);
   assert.ok(priorStart >= 0 && currentRead > priorStart);
   const replayBranch = source.slice(priorStart, currentRead);
 
-  assert.match(replayBranch, /metrics: event\.metrics/);
-  assert.match(replayBranch, /decision: event\.decision/);
+  assert.match(replayBranch, /metrics: prior\.metrics/);
+  assert.match(replayBranch, /decision: prior\.decision/);
   assert.doesNotMatch(replayBranch, /readAutomationMetricsSnapshot/);
   assert.doesNotMatch(replayBranch, /canPromoteAutomation/);
 });
