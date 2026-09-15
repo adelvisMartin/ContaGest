@@ -8,32 +8,34 @@ import {
   type AutomationState,
   type PromotionDecision
 } from './agent-policy.js';
+import {
+  insertAgentEvaluation,
+  listAgentEvaluations,
+  readEvaluationForReview,
+  updateEvaluationReview
+} from './automation-evaluation.repository.js';
 import { readAutomationMetricsSnapshot } from './automation-metrics.repository.js';
 import {
   assertAutomationScope,
   defaultAutomationMode,
   lockAutomationScope,
-  sourceMayTargetAutomation
+  sourceMayTargetAutomation,
+  type AutomationScope
 } from './automation-scope.js';
-import { SHADOW_METRIC_SCHEMA_VERSION } from './shadow-metrics.js';
+import {
+  insertAutomationTransition,
+  listAutomationTransitions,
+  readCurrentAutomationModeForUpdate,
+  readTransitionByIdempotency,
+  updateAutomationMode,
+  type TransitionDisposition
+} from './automation-transition.repository.js';
 import type { RiskPolicyDecision } from './risk-policy.js';
 
 const IDEMPOTENCY_RE = /^[A-Za-z0-9._:-]{8,120}$/;
 const FORBIDDEN_EVIDENCE_KEY = /(?:token|secret|password|credential|authorization|cookie|api[_-]?key|prototype|constructor|__proto__)/i;
 const MAX_EVIDENCE_BYTES = 16 * 1024;
 const MAX_EVIDENCE_DEPTH = 16;
-
-type TransitionEventRow = {
-  id: string;
-  inputSignature: string;
-  fromMode: AutomationState;
-  toMode: AutomationState;
-  disposition: 'applied' | 'rejected' | 'noop';
-  reason: string;
-  metrics: AutomationMetrics;
-  decision: PromotionDecision;
-  createdAt: Date | string;
-};
 
 function assertEvidenceSafe(value: unknown, depth = 0): void {
   if (depth > MAX_EVIDENCE_DEPTH) throw new Error('HIPICO_AGENT_EVIDENCE_INVALID');
@@ -70,9 +72,17 @@ function transitionSignature(input: { target: AutomationState; ownerApproved: bo
   })).digest('hex');
 }
 
-function transitionDisposition(decision: PromotionDecision, current: AutomationState, target: AutomationState): TransitionEventRow['disposition'] {
+function transitionDisposition(
+  decision: PromotionDecision,
+  current: AutomationState,
+  target: AutomationState
+): TransitionDisposition {
   if (!decision.allowed) return 'rejected';
   return target === current ? 'noop' : 'applied';
+}
+
+function boundedListLimit(limit: number) {
+  return Math.min(500, Math.max(1, Math.trunc(limit) || 100));
 }
 
 export class AutomationStore {
@@ -125,40 +135,34 @@ export class AutomationStore {
     if (!IDEMPOTENCY_RE.test(String(input.idempotencyKey || '').trim())) throw new Error('HIPICO_AUTOMATION_IDEMPOTENCY_KEY_INVALID');
     await this.get(input.ownerId, input.groupKey, input.groupId);
     const inputSignature = transitionSignature(input);
+    const automationScope: AutomationScope = {
+      ownerId: input.ownerId,
+      groupKey: input.groupKey,
+      groupId: input.groupId
+    };
 
     return prisma.$transaction(async (tx) => {
       await lockAutomationScope(tx, input.ownerId, input.groupKey, input.groupId);
-      const prior = await tx.$queryRaw<TransitionEventRow[]>`
-        SELECT id::text AS id, input_signature AS "inputSignature", from_mode AS "fromMode", to_mode AS "toMode",
-          disposition, reason, metrics, decision, created_at AS "createdAt"
-        FROM public.hipico_automation_transition_events
-        WHERE owner_id = ${input.ownerId}::uuid AND group_key = ${input.groupKey} AND group_id = ${input.groupId}
-          AND idempotency_key = ${input.idempotencyKey}
-        LIMIT 1`;
-      if (prior[0]) {
-        if (prior[0].inputSignature !== inputSignature) {
+      const prior = await readTransitionByIdempotency(tx, automationScope, input.idempotencyKey);
+      if (prior) {
+        if (prior.inputSignature !== inputSignature) {
           throw Object.assign(new Error('HIPICO_AUTOMATION_IDEMPOTENCY_MISMATCH'), { code: 'HIPICO_AUTOMATION_IDEMPOTENCY_MISMATCH' });
         }
-        const event = prior[0];
         return {
           duplicate: true,
-          eventId: event.id,
-          previous: event.fromMode,
-          current: event.disposition === 'applied' ? event.toMode : event.fromMode,
-          target: event.toMode,
-          disposition: event.disposition,
-          decision: event.decision,
-          metrics: event.metrics,
-          createdAt: event.createdAt
+          eventId: prior.id,
+          previous: prior.fromMode,
+          current: prior.disposition === 'applied' ? prior.toMode : prior.fromMode,
+          target: prior.toMode,
+          disposition: prior.disposition,
+          decision: prior.decision,
+          metrics: prior.metrics,
+          createdAt: prior.createdAt
         };
       }
 
-      const rows = await tx.$queryRaw<Array<{ mode: AutomationState }>>`
-        SELECT mode
-        FROM public.hipico_group_automation
-        WHERE owner_id = ${input.ownerId}::uuid AND group_key = ${input.groupKey} AND group_id = ${input.groupId}
-        LIMIT 1 FOR UPDATE`;
-      const current = rows[0]?.mode || defaultAutomationMode(input.groupId);
+      const current = await readCurrentAutomationModeForUpdate(tx, automationScope)
+        || defaultAutomationMode(input.groupId);
       const metrics = await readAutomationMetricsSnapshot(tx, input.ownerId, input.groupKey, input.groupId);
       const policyDecision = canPromoteAutomation(current, input.target, metrics, input.ownerApproved);
       const decision: PromotionDecision = sourceMayTargetAutomation(input.groupId, input.target)
@@ -167,22 +171,27 @@ export class AutomationStore {
       const disposition = transitionDisposition(decision, current, input.target);
 
       if (disposition === 'applied') {
-        await tx.$executeRaw`
-          UPDATE public.hipico_group_automation
-          SET mode = ${input.target}, updated_by = ${input.actorRef}, updated_at = now()
-          WHERE owner_id = ${input.ownerId}::uuid AND group_key = ${input.groupKey} AND group_id = ${input.groupId}`;
+        await updateAutomationMode(tx, {
+          ...automationScope,
+          target: input.target,
+          actorRef: input.actorRef
+        });
       }
 
       const eventId = crypto.randomUUID();
-      const inserted = await tx.$queryRaw<Array<{ createdAt: Date | string }>>`
-        INSERT INTO public.hipico_automation_transition_events(
-          id, owner_id, group_key, group_id, idempotency_key, input_signature,
-          from_mode, to_mode, disposition, reason, actor_ref, owner_approved, metrics, decision
-        ) VALUES(
-          ${eventId}::uuid, ${input.ownerId}::uuid, ${input.groupKey}, ${input.groupId}, ${input.idempotencyKey}, ${inputSignature},
-          ${current}, ${input.target}, ${disposition}, ${decision.reason}, ${input.actorRef}, ${Boolean(input.ownerApproved)},
-          ${JSON.stringify(metrics)}::jsonb, ${JSON.stringify(decision)}::jsonb
-        ) RETURNING created_at AS "createdAt"`;
+      const inserted = await insertAutomationTransition(tx, {
+        ...automationScope,
+        eventId,
+        idempotencyKey: input.idempotencyKey,
+        inputSignature,
+        current,
+        target: input.target,
+        disposition,
+        decision,
+        metrics,
+        actorRef: input.actorRef,
+        ownerApproved: input.ownerApproved
+      });
 
       return {
         duplicate: false,
@@ -193,7 +202,7 @@ export class AutomationStore {
         disposition,
         decision,
         metrics,
-        createdAt: inserted[0]?.createdAt || null
+        createdAt: inserted.createdAt
       };
     });
   }
@@ -218,20 +227,19 @@ export class AutomationStore {
 
     await prisma.$transaction(async (tx) => {
       await lockAutomationScope(tx, input.ownerId, input.groupKey, input.groupId);
-      await tx.$executeRaw`
-        INSERT INTO public.hipico_agent_evaluations(
-          id, owner_id, group_key, group_id, message_hash, expected_intent, predicted_intent,
-          confidence, risk, tool, can_act, model_version, evidence,
-          policy_disposition, policy_reason, policy_version, policy_evidence_state,
-          abstained, metric_schema_version
-        ) VALUES(
-          ${id}::uuid, ${input.ownerId}::uuid, ${input.groupKey}, ${input.groupId}, ${messageHash},
-          ${input.expectedIntent || null}, ${input.candidate.intent}, ${input.candidate.confidence}, ${input.candidate.risk},
-          ${input.candidate.tool || null}, ${input.canAct}, ${input.candidate.modelVersion || input.candidate.source},
-          ${JSON.stringify(evidence)}::jsonb, ${input.riskPolicy.disposition}, ${input.riskPolicy.reason},
-          ${input.riskPolicy.version}, ${input.riskPolicy.evidenceState},
-          ${abstained}, ${SHADOW_METRIC_SCHEMA_VERSION}
-        )`;
+      await insertAgentEvaluation(tx, {
+        ownerId: input.ownerId,
+        groupKey: input.groupKey,
+        groupId: input.groupId,
+        id,
+        messageHash,
+        expectedIntent: input.expectedIntent,
+        candidate: input.candidate,
+        canAct: input.canAct,
+        riskPolicy: input.riskPolicy,
+        evidence,
+        abstained
+      });
     });
     return { id, messageHash, riskPolicy: input.riskPolicy };
   }
@@ -250,64 +258,51 @@ export class AutomationStore {
   }) {
     assertAutomationScope(input.ownerId, input.groupKey, input.groupId);
     if (!String(input.actorRef || '').startsWith('operator-token:')) throw new Error('HIPICO_OPERATOR_ACTOR_NOT_CONFIGURED');
+    const automationScope: AutomationScope = {
+      ownerId: input.ownerId,
+      groupKey: input.groupKey,
+      groupId: input.groupId
+    };
 
     return prisma.$transaction(async (tx) => {
       await lockAutomationScope(tx, input.ownerId, input.groupKey, input.groupId);
-      const rows = await tx.$queryRaw<Array<{ predictedIntent: string; actualIntent: string | null }>>`
-        SELECT predicted_intent AS "predictedIntent", actual_intent AS "actualIntent"
-        FROM public.hipico_agent_evaluations
-        WHERE id = ${input.id}::uuid AND owner_id = ${input.ownerId}::uuid
-          AND group_key = ${input.groupKey} AND group_id = ${input.groupId}
-        LIMIT 1 FOR UPDATE`;
-      const row = rows[0];
+      const row = await readEvaluationForReview(tx, { ...automationScope, id: input.id });
       if (!row) throw Object.assign(new Error('HIPICO_AGENT_EVALUATION_NOT_FOUND'), { code: 'HIPICO_AGENT_EVALUATION_NOT_FOUND' });
       if (row.actualIntent !== null) {
         throw Object.assign(new Error('HIPICO_AGENT_EVALUATION_ALREADY_REVIEWED'), { code: 'HIPICO_AGENT_EVALUATION_ALREADY_REVIEWED' });
       }
       const matched = row.predictedIntent === input.actualIntent;
-      await tx.$executeRaw`
-        UPDATE public.hipico_agent_evaluations
-        SET actual_intent = ${input.actualIntent}, matched = ${matched},
-          high_risk_false_positive = ${Boolean(input.highRiskFalsePositive)},
-          unauthorized_action = ${Boolean(input.unauthorizedAction)},
-          conflict = ${Boolean(input.conflict)},
-          race_context_error = ${Boolean(input.raceContextError)},
-          reviewed_by = ${input.actorRef}, reviewed_at = now()
-        WHERE id = ${input.id}::uuid AND owner_id = ${input.ownerId}::uuid
-          AND group_key = ${input.groupKey} AND group_id = ${input.groupId}`;
+      await updateEvaluationReview(tx, {
+        ...automationScope,
+        id: input.id,
+        actualIntent: input.actualIntent,
+        matched,
+        actorRef: input.actorRef,
+        highRiskFalsePositive: input.highRiskFalsePositive,
+        unauthorizedAction: input.unauthorizedAction,
+        conflict: input.conflict,
+        raceContextError: input.raceContextError
+      });
       return { matched };
     });
   }
 
   async evaluations(ownerId: string, groupKey: string, groupId: string, limit = 100) {
     assertAutomationScope(ownerId, groupKey, groupId);
-    const bounded = Math.min(500, Math.max(1, Math.trunc(limit) || 100));
-    return prisma.$queryRaw<any[]>`
-      SELECT id, message_hash AS "messageHash", expected_intent AS "expectedIntent",
-        predicted_intent AS "predictedIntent", actual_intent AS "actualIntent", confidence, risk, tool,
-        can_act AS "canAct", model_version AS "modelVersion", matched,
-        policy_disposition AS "policyDisposition", policy_reason AS "policyReason",
-        policy_version AS "policyVersion", policy_evidence_state AS "policyEvidenceState",
-        high_risk_false_positive AS "highRiskFalsePositive", unauthorized_action AS "unauthorizedAction",
-        conflict, abstained, race_context_error AS "raceContextError", metric_schema_version AS "metricSchemaVersion",
-        evidence, created_at AS "createdAt", reviewed_at AS "reviewedAt", reviewed_by AS "reviewedBy"
-      FROM public.hipico_agent_evaluations
-      WHERE owner_id = ${ownerId}::uuid AND group_key = ${groupKey} AND group_id = ${groupId}
-      ORDER BY created_at DESC
-      LIMIT ${bounded}`;
+    return listAgentEvaluations(
+      prisma,
+      { ownerId, groupKey, groupId },
+      boundedListLimit(limit)
+    );
   }
 
   async transitionEvents(ownerId: string, groupKey: string, groupId: string, limit = 100) {
     assertAutomationScope(ownerId, groupKey, groupId);
-    const bounded = Math.min(500, Math.max(1, Math.trunc(limit) || 100));
-    return prisma.$queryRaw<any[]>`
-      SELECT id, idempotency_key AS "idempotencyKey", from_mode AS "fromMode", to_mode AS "toMode",
-        disposition, reason, actor_ref AS "actorRef", owner_approved AS "ownerApproved",
-        metrics, decision, created_at AS "createdAt"
-      FROM public.hipico_automation_transition_events
-      WHERE owner_id = ${ownerId}::uuid AND group_key = ${groupKey} AND group_id = ${groupId}
-      ORDER BY created_at DESC, id DESC
-      LIMIT ${bounded}`;
+    return listAutomationTransitions(
+      prisma,
+      { ownerId, groupKey, groupId },
+      boundedListLimit(limit)
+    );
   }
 }
 
