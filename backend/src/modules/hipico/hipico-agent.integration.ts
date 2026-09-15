@@ -14,6 +14,10 @@ const GROUP_ID_A = 'group-a@g.us';
 const GROUP_ID_B = 'group-b@g.us';
 const READ_ONLY_KEY = 'agent-read-only';
 const READ_ONLY_ID = 'group-read-only@g.us';
+const METRICS_KEY = 'agent-metrics-v7';
+const METRICS_ID = 'group-metrics-v7@g.us';
+const CONTEXT_KEY = 'agent-context-v7';
+const CONTEXT_ID = 'group-context-v7@g.us';
 const databaseUrl = String(process.env.HIPICO_E2E_DATABASE_URL || '').trim();
 let admin: pg.Client;
 
@@ -33,6 +37,46 @@ async function applySql(file: string) {
   await admin.query(sql);
 }
 
+async function seedReviewedRows(input: {
+  groupKey: string;
+  groupId: string;
+  count: number;
+  seed: string;
+  daysAgo: number;
+  metricSchemaVersion: 'legacy-v6' | 'v7';
+  raceContextErrors?: number;
+}) {
+  if (input.count <= 0) return;
+  await admin.query(`
+    insert into public.hipico_agent_evaluations(
+      id, owner_id, group_key, group_id, message_hash, expected_intent, predicted_intent, actual_intent,
+      confidence, risk, tool, can_act, model_version, matched,
+      high_risk_false_positive, unauthorized_action, conflict, evidence, created_at, reviewed_at, reviewed_by,
+      policy_disposition, policy_reason, policy_version, policy_evidence_state,
+      abstained, race_context_error, metric_schema_version
+    )
+    select
+      gen_random_uuid(), $1::uuid, $2, $3,
+      encode(digest($4 || ':' || gs::text, 'sha256'), 'hex'),
+      'query:NEXT_RACE', 'query:NEXT_RACE', 'query:NEXT_RACE',
+      0.9900, 'safe', 'queryNextRace', false, 'e2e-seed', true,
+      false, false, false, '{}'::jsonb,
+      now() - make_interval(days => $5::int), now() - make_interval(days => $5::int), 'operator-token:e2e-seed',
+      'HUMAN_REQUIRED', 'E2E_SEED', 'hipico-risk-policy-v1', 'FRESH',
+      false, (gs <= $6::int), $7
+    from generate_series(1, $8::int) as gs
+  `, [
+    OWNER,
+    input.groupKey,
+    input.groupId,
+    input.seed,
+    input.daysAgo,
+    input.raceContextErrors || 0,
+    input.metricSchemaVersion,
+    input.count
+  ]);
+}
+
 before(async () => {
   admin = new Client({ connectionString: databaseUrl });
   await admin.connect();
@@ -44,6 +88,7 @@ before(async () => {
   `);
   await applySql('hipico_v22_agent_shadow.sql');
   await applySql('hipico_v23_risk_policy.sql');
+  await applySql('hipico_v24_shadow_metrics.sql');
 });
 
 after(async () => {
@@ -161,7 +206,8 @@ void test('reviewed agent evidence preserves deterministic risk policy and becom
     groupId: GROUP_ID_B,
     id: receipt.id,
     actualIntent: 'query:NEXT_RACE',
-    actorRef: 'operator-token:e2e-agent'
+    actorRef: 'operator-token:e2e-agent',
+    raceContextError: true
   });
 
   await assert.rejects(
@@ -170,6 +216,10 @@ void test('reviewed agent evidence preserves deterministic risk policy and becom
   );
   await assert.rejects(
     admin.query('update public.hipico_agent_evaluations set policy_disposition=$1 where id=$2::uuid', ['AUTO', receipt.id]),
+    /HIPICO_AGENT_EVALUATION_IMMUTABLE/
+  );
+  await assert.rejects(
+    admin.query('update public.hipico_agent_evaluations set race_context_error=false where id=$1::uuid', [receipt.id]),
     /HIPICO_AGENT_EVALUATION_IMMUTABLE/
   );
   await assert.rejects(
@@ -184,6 +234,8 @@ void test('reviewed agent evidence preserves deterministic risk policy and becom
   assert.equal(persisted?.policyReason, 'EVIDENCE_MISSING');
   assert.equal(persisted?.policyVersion, 'hipico-risk-policy-v1');
   assert.equal(persisted?.policyEvidenceState, 'MISSING');
+  assert.equal(persisted?.raceContextError, true);
+  assert.equal(persisted?.metricSchemaVersion, 'v7');
 });
 
 void test('rejected promotion is audited without changing mode and group scopes never cross', async () => {
@@ -199,4 +251,108 @@ void test('rejected promotion is audited without changing mode and group scopes 
   assert.ok(eventsA.length >= 1);
   assert.ok(eventsA.some((event: any) => event.disposition === 'rejected' && event.reason === 'SOURCE_SHADOW_ONLY'));
   assert.ok(eventsB.some((event: any) => event.disposition === 'rejected' && event.reason === 'SHADOW_METRICS_INSUFFICIENT'));
+});
+
+void test('historical pass cannot promote when recent v7 sample is insufficient, and replay keeps original snapshot', async () => {
+  const store = new AutomationStore();
+  await store.get(OWNER, METRICS_KEY, METRICS_ID);
+  const shadow = await store.setMode({
+    ownerId: OWNER,
+    groupKey: METRICS_KEY,
+    groupId: METRICS_ID,
+    target: 'SHADOW',
+    actorRef: 'operator-token:e2e-agent',
+    ownerApproved: false,
+    idempotencyKey: 'metrics-shadow-0001'
+  });
+  assert.equal(shadow.current, 'SHADOW');
+
+  await seedReviewedRows({ groupKey: METRICS_KEY, groupId: METRICS_ID, count: 126, seed: 'legacy-clean', daysAgo: 45, metricSchemaVersion: 'legacy-v6' });
+  await seedReviewedRows({ groupKey: METRICS_KEY, groupId: METRICS_ID, count: 74, seed: 'recent-clean', daysAgo: 1, metricSchemaVersion: 'v7' });
+
+  const rejected = await store.setMode({
+    ownerId: OWNER,
+    groupKey: METRICS_KEY,
+    groupId: METRICS_ID,
+    target: 'ASSISTED',
+    actorRef: 'operator-token:e2e-agent',
+    ownerApproved: false,
+    idempotencyKey: 'metrics-assisted-snapshot-0001'
+  });
+  assert.equal(rejected.disposition, 'rejected');
+  assert.equal(rejected.decision.reason, 'RECENT_METRICS_INSUFFICIENT');
+  assert.equal(rejected.metrics.reviewed, 200);
+  assert.equal(rejected.metrics.recent?.reviewed, 74);
+  assert.match(String(rejected.metrics.metricsSignature), /^[a-f0-9]{64}$/);
+  const originalSignature = rejected.metrics.metricsSignature;
+
+  await seedReviewedRows({ groupKey: METRICS_KEY, groupId: METRICS_ID, count: 1, seed: 'recent-clean-75', daysAgo: 1, metricSchemaVersion: 'v7' });
+  const replay = await store.setMode({
+    ownerId: OWNER,
+    groupKey: METRICS_KEY,
+    groupId: METRICS_ID,
+    target: 'ASSISTED',
+    actorRef: 'operator-token:e2e-agent',
+    ownerApproved: false,
+    idempotencyKey: 'metrics-assisted-snapshot-0001'
+  });
+  assert.equal(replay.duplicate, true);
+  assert.equal(replay.disposition, 'rejected');
+  assert.equal(replay.decision.reason, 'RECENT_METRICS_INSUFFICIENT');
+  assert.equal(replay.metrics.recent?.reviewed, 74);
+  assert.equal(replay.metrics.metricsSignature, originalSignature);
+
+  const promoted = await store.setMode({
+    ownerId: OWNER,
+    groupKey: METRICS_KEY,
+    groupId: METRICS_ID,
+    target: 'ASSISTED',
+    actorRef: 'operator-token:e2e-agent',
+    ownerApproved: false,
+    idempotencyKey: 'metrics-assisted-pass-0002'
+  });
+  assert.equal(promoted.disposition, 'applied');
+  assert.equal(promoted.decision.reason, 'SHADOW_GATE_PASSED');
+  assert.equal(promoted.metrics.reviewed, 201);
+  assert.equal(promoted.metrics.recent?.reviewed, 75);
+  assert.equal((await store.get(OWNER, METRICS_KEY, METRICS_ID)).mode, 'ASSISTED');
+});
+
+void test('recent race-context degradation blocks promotion even when lifetime metrics pass', async () => {
+  const store = new AutomationStore();
+  await store.get(OWNER, CONTEXT_KEY, CONTEXT_ID);
+  const shadow = await store.setMode({
+    ownerId: OWNER,
+    groupKey: CONTEXT_KEY,
+    groupId: CONTEXT_ID,
+    target: 'SHADOW',
+    actorRef: 'operator-token:e2e-agent',
+    ownerApproved: false,
+    idempotencyKey: 'context-shadow-0001'
+  });
+  assert.equal(shadow.current, 'SHADOW');
+
+  await seedReviewedRows({ groupKey: CONTEXT_KEY, groupId: CONTEXT_ID, count: 125, seed: 'context-legacy', daysAgo: 45, metricSchemaVersion: 'legacy-v6' });
+  await seedReviewedRows({ groupKey: CONTEXT_KEY, groupId: CONTEXT_ID, count: 75, seed: 'context-recent', daysAgo: 1, metricSchemaVersion: 'v7', raceContextErrors: 2 });
+
+  const metrics = await store.metrics(OWNER, CONTEXT_KEY, CONTEXT_ID);
+  assert.equal(metrics.reviewed, 200);
+  assert.equal(metrics.raceContextErrors, 2);
+  assert.equal(metrics.recent?.reviewed, 75);
+  assert.equal(metrics.recent?.raceContextErrors, 2);
+
+  const rejected = await store.setMode({
+    ownerId: OWNER,
+    groupKey: CONTEXT_KEY,
+    groupId: CONTEXT_ID,
+    target: 'ASSISTED',
+    actorRef: 'operator-token:e2e-agent',
+    ownerApproved: false,
+    idempotencyKey: 'context-assisted-0001'
+  });
+  assert.equal(rejected.disposition, 'rejected');
+  assert.equal(rejected.decision.reason, 'RECENT_METRICS_INSUFFICIENT');
+  assert.equal(rejected.decision.metrics.accuracy, 1);
+  assert.ok((rejected.decision.metrics.recent?.raceContextErrorRate || 0) > .02);
+  assert.equal((await store.get(OWNER, CONTEXT_KEY, CONTEXT_ID)).mode, 'SHADOW');
 });
