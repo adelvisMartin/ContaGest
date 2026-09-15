@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import test from 'node:test';
 
 const source = readFileSync(new URL('./automation.store.ts', import.meta.url), 'utf8');
+const metricsSource = readFileSync(new URL('./shadow-metrics.ts', import.meta.url), 'utf8');
 
 test('AutomationStore metrics remain server-measured and include historical/recent/per-intent dimensions', () => {
   assert.match(source, /metric_schema_version\s*=\s*'v7'/i);
@@ -11,7 +12,8 @@ test('AutomationStore metrics remain server-measured and include historical/rece
   assert.match(source, /race_context_error/i);
   assert.match(source, /abstained/i);
   assert.match(source, /buildAutomationMetrics/);
-  assert.match(source, /metricsSignature/);
+  assert.match(metricsSource, /metricsSignature/);
+  assert.match(metricsSource, /canonicalMetricsSignature/);
 });
 
 test('new evaluations are tagged v7 and abstention is derived from canonical unknown intent', () => {
