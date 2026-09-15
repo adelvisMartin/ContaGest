@@ -1,5 +1,4 @@
 import crypto from 'node:crypto';
-import type { Prisma } from '@prisma/client';
 import { prisma } from '../../database/prisma.js';
 import {
   AUTOMATION_STATES,
@@ -9,33 +8,21 @@ import {
   type AutomationState,
   type PromotionDecision
 } from './agent-policy.js';
+import { readAutomationMetricsSnapshot } from './automation-metrics.repository.js';
 import {
-  buildAutomationMetrics,
-  normalizeMetricWindow,
-  SHADOW_METRIC_SCHEMA_VERSION
-} from './shadow-metrics.js';
+  assertAutomationScope,
+  defaultAutomationMode,
+  lockAutomationScope,
+  sourceMayTargetAutomation
+} from './automation-scope.js';
+import { SHADOW_METRIC_SCHEMA_VERSION } from './shadow-metrics.js';
 import type { RiskPolicyDecision } from './risk-policy.js';
 
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-const GROUP_RE = /^[A-Za-z0-9._:-]{3,120}$/;
-const GROUP_ID_RE = /^[A-Za-z0-9@._:-]{3,220}$/;
 const IDEMPOTENCY_RE = /^[A-Za-z0-9._:-]{8,120}$/;
 const FORBIDDEN_EVIDENCE_KEY = /(?:token|secret|password|credential|authorization|cookie|api[_-]?key|prototype|constructor|__proto__)/i;
 const MAX_EVIDENCE_BYTES = 16 * 1024;
 const MAX_EVIDENCE_DEPTH = 16;
-const SHADOW_INDEX = AUTOMATION_STATES.indexOf('SHADOW');
 
-type DbClient = typeof prisma | Prisma.TransactionClient;
-type MetricAggregateRow = {
-  reviewed: bigint | number;
-  matched: bigint | number;
-  highRiskFalsePositive: bigint | number;
-  unauthorizedAction: bigint | number;
-  conflicts: bigint | number;
-  abstentions: bigint | number;
-  raceContextErrors: bigint | number;
-};
-type IntentMetricRow = MetricAggregateRow & { actualIntent: string };
 type TransitionEventRow = {
   id: string;
   inputSignature: string;
@@ -47,111 +34,6 @@ type TransitionEventRow = {
   decision: PromotionDecision;
   createdAt: Date | string;
 };
-
-type Scope = { ownerId: string; groupKey: string; groupId: string };
-
-function assertScope(ownerId: string, groupKey: string, groupId: string) {
-  if (!UUID_RE.test(ownerId)) throw new Error('HIPICO_OWNER_INVALID');
-  if (!GROUP_RE.test(groupKey)) throw new Error('HIPICO_GROUP_INVALID');
-  if (!GROUP_ID_RE.test(groupId)) throw new Error('HIPICO_AUTOMATION_GROUP_ID_INVALID');
-}
-
-function scope(input: Scope): Scope {
-  assertScope(input.ownerId, input.groupKey, input.groupId);
-  return input;
-}
-
-function isPinnedSourceGroup(groupId: string) {
-  const configured = String(process.env.HIPICO_SOURCE_GROUP_ID || '').trim();
-  return Boolean(configured) && configured.toLowerCase() === String(groupId || '').trim().toLowerCase();
-}
-
-function defaultMode(groupId: string): AutomationState {
-  return isPinnedSourceGroup(groupId) ? 'SHADOW' : 'DISABLED';
-}
-
-function sourceMayTarget(groupId: string, target: AutomationState) {
-  if (!isPinnedSourceGroup(groupId)) return true;
-  return AUTOMATION_STATES.indexOf(target) <= SHADOW_INDEX;
-}
-
-function scopeLockKey(ownerId: string, groupKey: string, groupId: string) {
-  return `hipico-agent:${ownerId}:${groupKey}:${groupId}`;
-}
-
-async function lockScope(db: DbClient, ownerId: string, groupKey: string, groupId: string) {
-  const key = scopeLockKey(ownerId, groupKey, groupId);
-  await db.$queryRaw`SELECT pg_advisory_xact_lock(hashtextextended(${key}, 0))`;
-}
-
-async function readHistoricalMetricWindow(db: DbClient, input: Scope) {
-  const rows = await db.$queryRaw<MetricAggregateRow[]>`
-    SELECT
-      count(*) FILTER (WHERE actual_intent IS NOT NULL) AS reviewed,
-      count(*) FILTER (WHERE actual_intent IS NOT NULL AND matched = true) AS matched,
-      count(*) FILTER (WHERE actual_intent IS NOT NULL AND high_risk_false_positive = true) AS "highRiskFalsePositive",
-      count(*) FILTER (WHERE actual_intent IS NOT NULL AND unauthorized_action = true) AS "unauthorizedAction",
-      count(*) FILTER (WHERE actual_intent IS NOT NULL AND conflict = true) AS conflicts,
-      count(*) FILTER (WHERE actual_intent IS NOT NULL AND abstained = true) AS abstentions,
-      count(*) FILTER (WHERE actual_intent IS NOT NULL AND race_context_error = true) AS "raceContextErrors"
-    FROM public.hipico_agent_evaluations
-    WHERE owner_id = ${input.ownerId}::uuid AND group_key = ${input.groupKey} AND group_id = ${input.groupId}`;
-  return normalizeMetricWindow(rows[0] || {});
-}
-
-async function readRecentMetricWindow(db: DbClient, input: Scope) {
-  const rows = await db.$queryRaw<MetricAggregateRow[]>`
-    SELECT
-      count(*) AS reviewed,
-      count(*) FILTER (WHERE matched = true) AS matched,
-      count(*) FILTER (WHERE high_risk_false_positive = true) AS "highRiskFalsePositive",
-      count(*) FILTER (WHERE unauthorized_action = true) AS "unauthorizedAction",
-      count(*) FILTER (WHERE conflict = true) AS conflicts,
-      count(*) FILTER (WHERE abstained = true) AS abstentions,
-      count(*) FILTER (WHERE race_context_error = true) AS "raceContextErrors"
-    FROM public.hipico_agent_evaluations
-    WHERE owner_id = ${input.ownerId}::uuid AND group_key = ${input.groupKey} AND group_id = ${input.groupId}
-      AND actual_intent IS NOT NULL
-      AND metric_schema_version = 'v7'
-      AND reviewed_at >= now() - interval '30 days'`;
-  return normalizeMetricWindow(rows[0] || {});
-}
-
-async function readIntentMetrics(db: DbClient, input: Scope) {
-  const rows = await db.$queryRaw<IntentMetricRow[]>`
-    SELECT
-      actual_intent AS "actualIntent",
-      count(*) AS reviewed,
-      count(*) FILTER (WHERE matched = true) AS matched,
-      count(*) FILTER (WHERE high_risk_false_positive = true) AS "highRiskFalsePositive",
-      count(*) FILTER (WHERE unauthorized_action = true) AS "unauthorizedAction",
-      count(*) FILTER (WHERE conflict = true) AS conflicts,
-      count(*) FILTER (WHERE abstained = true) AS abstentions,
-      count(*) FILTER (WHERE race_context_error = true) AS "raceContextErrors"
-    FROM public.hipico_agent_evaluations
-    WHERE owner_id = ${input.ownerId}::uuid AND group_key = ${input.groupKey} AND group_id = ${input.groupId}
-      AND actual_intent IS NOT NULL
-    GROUP BY actual_intent
-    ORDER BY actual_intent ASC`;
-  return Object.fromEntries(rows.map((row) => [row.actualIntent, normalizeMetricWindow(row)]));
-}
-
-async function readRecentSince(db: DbClient) {
-  const rows = await db.$queryRaw<Array<{ recentSince: Date | string }>>`
-    SELECT now() - interval '30 days' AS "recentSince"`;
-  return new Date(rows[0]?.recentSince || Date.now()).toISOString();
-}
-
-async function readMetricsSnapshot(db: DbClient, ownerId: string, groupKey: string, groupId: string): Promise<AutomationMetrics> {
-  const input = scope({ ownerId, groupKey, groupId });
-  const [historical, recent, byIntent, recentSince] = await Promise.all([
-    readHistoricalMetricWindow(db, input),
-    readRecentMetricWindow(db, input),
-    readIntentMetrics(db, input),
-    readRecentSince(db)
-  ]);
-  return buildAutomationMetrics({ historical, recent, byIntent, recentSince });
-}
 
 function assertEvidenceSafe(value: unknown, depth = 0): void {
   if (depth > MAX_EVIDENCE_DEPTH) throw new Error('HIPICO_AGENT_EVIDENCE_INVALID');
@@ -195,27 +77,27 @@ function transitionDisposition(decision: PromotionDecision, current: AutomationS
 
 export class AutomationStore {
   async metrics(ownerId: string, groupKey: string, groupId: string): Promise<AutomationMetrics> {
-    assertScope(ownerId, groupKey, groupId);
+    assertAutomationScope(ownerId, groupKey, groupId);
     return prisma.$transaction(async (tx) => {
-      await lockScope(tx, ownerId, groupKey, groupId);
-      return readMetricsSnapshot(tx, ownerId, groupKey, groupId);
+      await lockAutomationScope(tx, ownerId, groupKey, groupId);
+      return readAutomationMetricsSnapshot(tx, ownerId, groupKey, groupId);
     });
   }
 
   async read(ownerId: string, groupKey: string, groupId: string) {
-    assertScope(ownerId, groupKey, groupId);
+    assertAutomationScope(ownerId, groupKey, groupId);
     const rows = await prisma.$queryRaw<any[]>`
       SELECT mode, updated_at AS "updatedAt", updated_by AS "updatedBy"
       FROM public.hipico_group_automation
       WHERE owner_id = ${ownerId}::uuid AND group_key = ${groupKey} AND group_id = ${groupId}
       LIMIT 1`;
     if (rows[0]) return { ...rows[0], persisted: true };
-    return { mode: defaultMode(groupId), updatedAt: null, updatedBy: null, persisted: false };
+    return { mode: defaultAutomationMode(groupId), updatedAt: null, updatedBy: null, persisted: false };
   }
 
   async get(ownerId: string, groupKey: string, groupId: string) {
-    assertScope(ownerId, groupKey, groupId);
-    const mode = defaultMode(groupId);
+    assertAutomationScope(ownerId, groupKey, groupId);
+    const mode = defaultAutomationMode(groupId);
     await prisma.$executeRaw`
       INSERT INTO public.hipico_group_automation(id, owner_id, group_key, group_id, mode, updated_by)
       VALUES(${crypto.randomUUID()}::uuid, ${ownerId}::uuid, ${groupKey}, ${groupId}, ${mode}, 'system-default')
@@ -237,7 +119,7 @@ export class AutomationStore {
     ownerApproved: boolean;
     idempotencyKey: string;
   }) {
-    assertScope(input.ownerId, input.groupKey, input.groupId);
+    assertAutomationScope(input.ownerId, input.groupKey, input.groupId);
     if (!(AUTOMATION_STATES as readonly string[]).includes(input.target)) throw new Error('HIPICO_AUTOMATION_STATE_INVALID');
     if (!String(input.actorRef || '').startsWith('operator-token:')) throw new Error('HIPICO_OPERATOR_ACTOR_NOT_CONFIGURED');
     if (!IDEMPOTENCY_RE.test(String(input.idempotencyKey || '').trim())) throw new Error('HIPICO_AUTOMATION_IDEMPOTENCY_KEY_INVALID');
@@ -245,7 +127,7 @@ export class AutomationStore {
     const inputSignature = transitionSignature(input);
 
     return prisma.$transaction(async (tx) => {
-      await lockScope(tx, input.ownerId, input.groupKey, input.groupId);
+      await lockAutomationScope(tx, input.ownerId, input.groupKey, input.groupId);
       const prior = await tx.$queryRaw<TransitionEventRow[]>`
         SELECT id::text AS id, input_signature AS "inputSignature", from_mode AS "fromMode", to_mode AS "toMode",
           disposition, reason, metrics, decision, created_at AS "createdAt"
@@ -276,10 +158,10 @@ export class AutomationStore {
         FROM public.hipico_group_automation
         WHERE owner_id = ${input.ownerId}::uuid AND group_key = ${input.groupKey} AND group_id = ${input.groupId}
         LIMIT 1 FOR UPDATE`;
-      const current = rows[0]?.mode || defaultMode(input.groupId);
-      const metrics = await readMetricsSnapshot(tx, input.ownerId, input.groupKey, input.groupId);
+      const current = rows[0]?.mode || defaultAutomationMode(input.groupId);
+      const metrics = await readAutomationMetricsSnapshot(tx, input.ownerId, input.groupKey, input.groupId);
       const policyDecision = canPromoteAutomation(current, input.target, metrics, input.ownerApproved);
-      const decision: PromotionDecision = sourceMayTarget(input.groupId, input.target)
+      const decision: PromotionDecision = sourceMayTargetAutomation(input.groupId, input.target)
         ? policyDecision
         : { ...policyDecision, allowed: false, reason: 'SOURCE_SHADOW_ONLY' };
       const disposition = transitionDisposition(decision, current, input.target);
@@ -327,7 +209,7 @@ export class AutomationStore {
     riskPolicy: RiskPolicyDecision;
     evidence?: unknown;
   }) {
-    assertScope(input.ownerId, input.groupKey, input.groupId);
+    assertAutomationScope(input.ownerId, input.groupKey, input.groupId);
     await this.get(input.ownerId, input.groupKey, input.groupId);
     const id = crypto.randomUUID();
     const messageHash = crypto.createHash('sha256').update(input.text).digest('hex');
@@ -335,7 +217,7 @@ export class AutomationStore {
     const abstained = input.candidate.intent === 'unknown';
 
     await prisma.$transaction(async (tx) => {
-      await lockScope(tx, input.ownerId, input.groupKey, input.groupId);
+      await lockAutomationScope(tx, input.ownerId, input.groupKey, input.groupId);
       await tx.$executeRaw`
         INSERT INTO public.hipico_agent_evaluations(
           id, owner_id, group_key, group_id, message_hash, expected_intent, predicted_intent,
@@ -366,11 +248,11 @@ export class AutomationStore {
     conflict?: boolean;
     raceContextError?: boolean;
   }) {
-    assertScope(input.ownerId, input.groupKey, input.groupId);
+    assertAutomationScope(input.ownerId, input.groupKey, input.groupId);
     if (!String(input.actorRef || '').startsWith('operator-token:')) throw new Error('HIPICO_OPERATOR_ACTOR_NOT_CONFIGURED');
 
     return prisma.$transaction(async (tx) => {
-      await lockScope(tx, input.ownerId, input.groupKey, input.groupId);
+      await lockAutomationScope(tx, input.ownerId, input.groupKey, input.groupId);
       const rows = await tx.$queryRaw<Array<{ predictedIntent: string; actualIntent: string | null }>>`
         SELECT predicted_intent AS "predictedIntent", actual_intent AS "actualIntent"
         FROM public.hipico_agent_evaluations
@@ -398,7 +280,7 @@ export class AutomationStore {
   }
 
   async evaluations(ownerId: string, groupKey: string, groupId: string, limit = 100) {
-    assertScope(ownerId, groupKey, groupId);
+    assertAutomationScope(ownerId, groupKey, groupId);
     const bounded = Math.min(500, Math.max(1, Math.trunc(limit) || 100));
     return prisma.$queryRaw<any[]>`
       SELECT id, message_hash AS "messageHash", expected_intent AS "expectedIntent",
@@ -416,7 +298,7 @@ export class AutomationStore {
   }
 
   async transitionEvents(ownerId: string, groupKey: string, groupId: string, limit = 100) {
-    assertScope(ownerId, groupKey, groupId);
+    assertAutomationScope(ownerId, groupKey, groupId);
     const bounded = Math.min(500, Math.max(1, Math.trunc(limit) || 100));
     return prisma.$queryRaw<any[]>`
       SELECT id, idempotency_key AS "idempotencyKey", from_mode AS "fromMode", to_mode AS "toMode",
@@ -429,4 +311,5 @@ export class AutomationStore {
   }
 }
 
+const readMetricsSnapshot = readAutomationMetricsSnapshot;
 export const __test__ = { readMetricsSnapshot, transitionDisposition };
