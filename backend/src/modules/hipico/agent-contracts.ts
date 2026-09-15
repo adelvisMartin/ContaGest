@@ -1,5 +1,3 @@
-import type { RiskPolicyInput } from './risk-policy.js';
-
 export const AUTOMATION_STATES = ['DISABLED', 'SHADOW', 'ASSISTED', 'AUTOMATIC_LOW_RISK', 'AUTOMATIC'] as const;
 export type AutomationState = typeof AUTOMATION_STATES[number];
 
@@ -61,4 +59,12 @@ export interface StructuredCandidateGenerator {
   generate(input: { text: string; deterministic: AgentCandidate }): Promise<unknown>;
 }
 
-export type AgentRiskContext = Omit<RiskPolicyInput, 'mode' | 'candidate'>;
+export type AgentRiskContext = {
+  evidenceState?: 'NOT_REQUIRED' | 'MISSING' | 'FRESH' | 'STALE' | 'CONFLICT';
+  sourceAuthorized?: boolean;
+  systemHealthy?: boolean;
+  sourceReadOnly?: boolean;
+  humanOwned?: boolean;
+  ambiguous?: boolean;
+  toolValidated?: boolean;
+};
