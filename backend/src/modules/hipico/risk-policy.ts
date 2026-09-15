@@ -1,4 +1,4 @@
-import type { AgentCandidate, AutomationState, AgentTool } from './agent-policy.js';
+import type { AgentCandidate, AutomationState, AgentTool } from './agent-contracts.js';
 
 export const RISK_POLICY_VERSION = 'hipico-risk-policy-v1';
 export const RISK_DISPOSITIONS = ['AUTO', 'SUGGEST', 'HUMAN_REQUIRED', 'DENY'] as const;
