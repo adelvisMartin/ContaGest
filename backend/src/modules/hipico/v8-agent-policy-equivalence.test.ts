@@ -95,3 +95,13 @@ test('v8 promotion façade delegates to the focused promotion policy module', ()
   assert.match(source, /evaluateAutomationPromotion/);
   assert.match(source, /export function canPromoteAutomation/);
 });
+
+test('v8 candidate and tool façades delegate to focused internal policies', () => {
+  const source = readFileSync(new URL('./agent-policy.ts', import.meta.url), 'utf8');
+  assert.match(source, /normalizeModelCandidate/);
+  assert.match(source, /evaluateAgentCanAct/);
+  assert.match(source, /buildSafeToolRequest/);
+  assert.match(source, /export function validateModelCandidate/);
+  assert.match(source, /export function agentCanAct/);
+  assert.match(source, /export function safeToolRequest/);
+});
