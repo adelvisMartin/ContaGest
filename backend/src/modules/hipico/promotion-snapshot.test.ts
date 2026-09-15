@@ -11,8 +11,8 @@ test('promotion decision, metric snapshot and transition insert share one locked
   const setMode = source.slice(setModeStart, setModeEnd);
 
   assert.match(setMode, /prisma\.\$transaction\(async \(tx\) =>/);
-  assert.match(setMode, /await lockScope\(tx,/);
-  assert.match(setMode, /readMetricsSnapshot\(tx,/);
+  assert.match(setMode, /await lockAutomationScope\(tx,/);
+  assert.match(setMode, /readAutomationMetricsSnapshot\(tx,/);
   assert.match(setMode, /canPromoteAutomation\(current, input\.target, metrics, input\.ownerApproved\)/);
   assert.match(setMode, /INSERT INTO public\.hipico_automation_transition_events/);
   assert.match(setMode, /\$\{JSON\.stringify\(metrics\)\}::jsonb/);
@@ -27,6 +27,14 @@ test('idempotent transition replay returns the persisted snapshot without recomp
 
   assert.match(replayBranch, /metrics: event\.metrics/);
   assert.match(replayBranch, /decision: event\.decision/);
-  assert.doesNotMatch(replayBranch, /readMetricsSnapshot/);
+  assert.doesNotMatch(replayBranch, /readAutomationMetricsSnapshot/);
   assert.doesNotMatch(replayBranch, /canPromoteAutomation/);
+});
+
+test('SOURCE promotion remains fail-closed after scope extraction', () => {
+  const setModeStart = source.indexOf('async setMode(input:');
+  const setModeEnd = source.indexOf('async recordEvaluation(input:', setModeStart);
+  const setMode = source.slice(setModeStart, setModeEnd);
+  assert.match(setMode, /sourceMayTargetAutomation/);
+  assert.match(setMode, /SOURCE_SHADOW_ONLY/);
 });
