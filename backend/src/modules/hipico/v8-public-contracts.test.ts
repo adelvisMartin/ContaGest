@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import test from 'node:test';
 import * as agentPolicy from './agent-policy.js';
 import * as automationStore from './automation.store.js';
@@ -47,4 +47,16 @@ test('v8 keeps SOURCE and financial authority fail-closed contracts visible', ()
   assert.match(storeSource, /SOURCE_SHADOW_ONLY/);
   assert.match(routeSource, /financialAuthority:\s*false/);
   assert.match(routeSource, /directEffectsApplied:\s*false/);
+});
+
+test('v8 routes delegate configuration-only support while strict schemas stay in the router', () => {
+  const supportUrl = new URL('./agent-route-support.ts', import.meta.url);
+  assert.equal(existsSync(supportUrl), true, 'agent-route-support.ts must exist');
+  const routeSource = readFileSync(new URL('./agent.routes.ts', import.meta.url), 'utf8');
+  const supportSource = readFileSync(supportUrl, 'utf8');
+  assert.match(routeSource, /\.strict\(\)/);
+  assert.match(routeSource, /serverRiskContext/);
+  assert.match(routeSource, /automationHttpStatus/);
+  assert.match(supportSource, /HIPICO_AUTOMATIC_OWNER_APPROVED/);
+  assert.match(supportSource, /HIPICO_SOURCE_GROUP_ID/);
 });
