@@ -28,7 +28,24 @@ const migrations = [
   'supabase/sql/hipico_v19_race_idempotency.sql',
   'supabase/sql/hipico_v20_document_audit.sql',
   'supabase/sql/hipico_v21_race_data_conflicts.sql',
-  'supabase/sql/hipico_v22_agent_shadow.sql'
+  'supabase/sql/hipico_v22_agent_shadow.sql',
+  'supabase/sql/hipico_v23_risk_policy.sql',
+  'supabase/sql/hipico_v24_shadow_metrics.sql'
+];
+
+const requiredAgentColumns = [
+  'policy_disposition',
+  'policy_reason',
+  'policy_version',
+  'policy_evidence_state',
+  'abstained',
+  'race_context_error',
+  'metric_schema_version'
+];
+const requiredAgentConstraints = [
+  'hipico_agent_evaluations_policy_disposition_check',
+  'hipico_agent_evaluations_policy_evidence_state_check',
+  'hipico_agent_evaluations_metric_schema_version_check'
 ];
 
 function assertSafe(urlText) {
@@ -156,6 +173,40 @@ try {
   const missingTriggers = requiredTriggers.filter((name) => !triggers.has(name));
   if (missingTriggers.length) throw new Error(`Immutable audit trigger missing: ${missingTriggers.join(', ')}`);
 
+  const agentColumnRows = await client.query(`
+    SELECT column_name, is_nullable
+    FROM information_schema.columns
+    WHERE table_schema='public'
+      AND table_name='hipico_agent_evaluations'
+      AND column_name = ANY($1::text[])
+  `, [requiredAgentColumns]);
+  const agentColumns = new Map(agentColumnRows.rows.map((row) => [row.column_name, row.is_nullable]));
+  const missingAgentColumns = requiredAgentColumns.filter((name) => !agentColumns.has(name));
+  if (missingAgentColumns.length) throw new Error(`Agent policy/metric columns missing: ${missingAgentColumns.join(', ')}`);
+  const nullableAgentColumns = requiredAgentColumns.filter((name) => agentColumns.get(name) !== 'NO');
+  const agentPolicyColumnsNotNull = nullableAgentColumns.length === 0;
+  const agentMetricColumnsNotNull = ['abstained', 'race_context_error', 'metric_schema_version']
+    .every((name) => agentColumns.get(name) === 'NO');
+  if (!agentPolicyColumnsNotNull || !agentMetricColumnsNotNull) {
+    throw new Error(`Agent policy/metric columns must be NOT NULL: ${nullableAgentColumns.join(', ')}`);
+  }
+
+  const constraintRows = await client.query(`
+    SELECT conname
+    FROM pg_constraint
+    JOIN pg_class ON pg_class.oid=pg_constraint.conrelid
+    JOIN pg_namespace ON pg_namespace.oid=pg_class.relnamespace
+    WHERE pg_namespace.nspname='public'
+      AND pg_class.relname='hipico_agent_evaluations'
+      AND conname = ANY($1::text[])
+  `, [requiredAgentConstraints]);
+  const agentConstraints = new Set(constraintRows.rows.map((row) => row.conname));
+  const missingAgentConstraints = requiredAgentConstraints.filter((name) => !agentConstraints.has(name));
+  const agentPolicyConstraintsPresent = missingAgentConstraints.length === 0;
+  if (!agentPolicyConstraintsPresent) {
+    throw new Error(`Agent policy/metric constraints missing: ${missingAgentConstraints.join(', ')}`);
+  }
+
   const ownChannel = await client.query(`INSERT INTO public.hipico_bot_channels(owner_id,group_key,label,channel_type,status,config)
     VALUES($1::uuid,'rbac-own','RBAC own','web_bridge','active','{}'::jsonb)
     ON CONFLICT(owner_id,group_key) DO UPDATE SET label=excluded.label RETURNING id`, [ownerId]);
@@ -225,12 +276,16 @@ try {
       authenticatedDocumentWriteDenied: true,
       anonWorkspaceReadDenied: true,
       anonDocumentReadDenied: true,
+      agentPolicyColumnsNotNull,
+      agentMetricColumnsNotNull,
+      agentPolicyConstraintsPresent,
+      agentPolicyConstraints: [...agentConstraints].sort(),
       immutableAuditTriggers: [...triggers].sort(),
       rlsTables: required
     }
   }, null, 2)}\n`, 'utf8');
 
-  console.log(`[hipico-v290] current schema ready (${required.length} required tables; v12-v22 RLS/RBAC evidence executed)`);
+  console.log(`[hipico-v290] current schema ready (${required.length} required tables; v12-v24 RLS/RBAC evidence executed)`);
 } catch (error) {
   try { await client.query('ROLLBACK'); } catch {}
   throw error;
