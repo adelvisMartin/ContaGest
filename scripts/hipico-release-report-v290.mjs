@@ -3,7 +3,8 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import {
   computeReadinessScore,
-  deriveAutomationReadiness
+  deriveAutomationReadiness,
+  deriveProductionReadinessState
 } from './hipico-release-readiness-v9.mjs';
 
 const SHA40 = /^[0-9a-f]{40}$/i;
@@ -57,8 +58,8 @@ const codeReviewRequired = ['static', 'postgres', 'restartRecovery', 'browserChr
 const stableRequired = [...codeReviewRequired, 'browserMatrix', 'physicalQa'];
 const codeReviewStatus = aggregate(codeReviewRequired.map((key) => gates[key]));
 const stablePromotionStatus = aggregate(stableRequired.map((key) => gates[key]));
-const agentShadowStatus = status(process.env.HIPICO_GATE_AGENT_SHADOW || gates.postgres);
-const raceContextStatus = status(process.env.HIPICO_GATE_RACE_CONTEXT || gates.postgres);
+const agentShadowStatus = status(process.env.HIPICO_GATE_AGENT_SHADOW);
+const raceContextStatus = status(process.env.HIPICO_GATE_RACE_CONTEXT);
 const automationReadiness = deriveAutomationReadiness({
   evidenceStatus: evidence,
   agentShadowStatus,
@@ -73,6 +74,12 @@ const readinessScore = computeReadinessScore({
   securityCritical,
   raceContextVerified: raceContextStatus === 'PASS'
 });
+const readinessState = deriveProductionReadinessState({
+  stablePromotionStatus,
+  p0Open,
+  securityCritical,
+  automationReadiness
+});
 const blockedInfrastructure = String(process.env.HIPICO_BLOCKER_REASON || '') === 'BLOCKED_INFRASTRUCTURE';
 const blockers = stableRequired.filter((key) => gates[key] !== 'PASS').map((key) => ({ gate: key, status: gates[key] }));
 if (blockedInfrastructure) blockers.push({ gate: 'ci-runner', status: 'BLOCKED', reason: 'BLOCKED_INFRASTRUCTURE' });
@@ -82,10 +89,7 @@ if (securityCritical === true) blockers.push({ gate: 'security-critical', status
 if (securityCritical === null) blockers.push({ gate: 'security-critical-status', status: 'NOT_EXECUTED', reason: 'SECURITY_CRITICAL_STATUS_UNKNOWN' });
 if (automationReadiness !== 'VERIFIED') blockers.push({ gate: 'automation-readiness', status: 'NOT_EXECUTED', reason: 'AUTOMATION_NOT_VERIFIED' });
 
-const productionReady = stablePromotionStatus === 'PASS'
-  && p0Open === false
-  && securityCritical === false
-  && automationReadiness === 'VERIFIED';
+const productionReady = readinessState === 'PASS';
 
 const report = {
   schema: 'hipico-release-report.v290-current',
@@ -119,16 +123,16 @@ const report = {
     passedStableGates: readinessScore.passed,
     totalStableGates: readinessScore.total,
     productionReady,
-    state: productionReady ? 'PASS' : stablePromotionStatus,
+    state: readinessState,
     automationReadiness,
     note: productionReady
-      ? 'All required code, browser matrix, security, Android, evidence, P0/security status and physical QA gates are PASS on this exact SHA.'
+      ? 'All required code, browser matrix, security, Android, evidence, P0/security status, automation validation and physical QA gates are PASS on this exact SHA.'
       : 'Stable promotion remains blocked until every required gate is PASS on this exact SHA and P0/security/automation readiness evidence is explicit.'
   }
 };
 
 await fs.mkdir(outputRoot, { recursive: true });
 await fs.writeFile(path.join(outputRoot, 'release-report.json'), `${JSON.stringify(report, null, 2)}\n`, 'utf8');
-await fs.writeFile(path.join(outputRoot, 'release-report.md'), `# Control Hípico — Release report #290\n\n- SHA: \`${sha}\`\n- Code review: **${codeReviewStatus}**\n- Stable promotion: **${stablePromotionStatus}**\n- Automation readiness: **${automationReadiness}**\n- Readiness score: **${readinessScore.score}/100**\n- PostgreSQL chain: **v12-v24**\n- Infra: **${blockedInfrastructure ? 'BLOCKED_INFRASTRUCTURE' : 'N/A'}**\n\n## Applied caps\n${readinessScore.appliedCaps.length ? readinessScore.appliedCaps.map((item) => `- max ${item.max}: ${item.reason}`).join('\n') : '- Ninguno.'}\n\n## Gates\n${Object.entries(report.gates).map(([name, value]) => `- ${name}: **${value}**`).join('\n')}\n\n## Blockers\n${blockers.length ? blockers.map((item) => `- ${item.gate}: **${item.status}**${item.reason ? ` — ${item.reason}` : ''}`).join('\n') : '- Ninguno.'}\n`, 'utf8');
-console.log(`[hipico-v290] release report sha=${sha} codeReview=${codeReviewStatus} stable=${stablePromotionStatus} automation=${automationReadiness} score=${readinessScore.score}`);
+await fs.writeFile(path.join(outputRoot, 'release-report.md'), `# Control Hípico — Release report #290\n\n- SHA: \`${sha}\`\n- Code review: **${codeReviewStatus}**\n- Stable promotion: **${stablePromotionStatus}**\n- Production readiness: **${readinessState}**\n- Automation readiness: **${automationReadiness}**\n- Readiness score: **${readinessScore.score}/100**\n- PostgreSQL chain: **v12-v24**\n- Infra: **${blockedInfrastructure ? 'BLOCKED_INFRASTRUCTURE' : 'N/A'}**\n\n## Applied caps\n${readinessScore.appliedCaps.length ? readinessScore.appliedCaps.map((item) => `- max ${item.max}: ${item.reason}`).join('\n') : '- Ninguno.'}\n\n## Gates\n${Object.entries(report.gates).map(([name, value]) => `- ${name}: **${value}**`).join('\n')}\n\n## Blockers\n${blockers.length ? blockers.map((item) => `- ${item.gate}: **${item.status}**${item.reason ? ` — ${item.reason}` : ''}`).join('\n') : '- Ninguno.'}\n`, 'utf8');
+console.log(`[hipico-v290] release report sha=${sha} codeReview=${codeReviewStatus} stable=${stablePromotionStatus} readiness=${readinessState} automation=${automationReadiness} score=${readinessScore.score}`);
 if (codeReviewStatus !== 'PASS') process.exitCode = 1;
