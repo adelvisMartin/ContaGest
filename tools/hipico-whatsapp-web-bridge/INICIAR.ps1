@@ -1,5 +1,6 @@
 param(
   [switch]$RuntimeMode,
+  [switch]$SetupOnly,
   [switch]$CaptureGroupIds,
   [switch]$EnableLabSend,
   [switch]$EnableLabInput
@@ -112,6 +113,7 @@ if (-not $RuntimeMode) {
   catch { Fail "No pude preparar el runtime de usuario en $runtimeRoot. Error: $($_.Exception.Message)" }
 
   $runtimeArgs = @('-NoProfile','-ExecutionPolicy','Bypass','-File',(Join-Path $runtimeRoot 'INICIAR.ps1'),'-RuntimeMode')
+  if ($SetupOnly) { $runtimeArgs += '-SetupOnly' }
   if ($CaptureGroupIds) { $runtimeArgs += '-CaptureGroupIds' }
   if ($EnableLabSend) { $runtimeArgs += '-EnableLabSend' }
   if ($EnableLabInput) { $runtimeArgs += '-EnableLabInput' }
@@ -161,13 +163,28 @@ $nodeMajor = [int]($nodeVersion.Split('.')[0])
 if ($nodeMajor -ne 22) { Fail "Se requiere Node.js 22 LTS. Detectado: v$nodeVersion" }
 Write-Host "Node.js v$nodeVersion - OK" -ForegroundColor Green
 
-Write-Host '[1/5] Instalando dependencias bloqueadas...' -ForegroundColor Cyan
-& $npmCmd ci --no-fund --no-audit
-if ($LASTEXITCODE -ne 0) { Fail 'npm ci terminó con error.' }
+if ($SetupOnly) {
+  Write-Host '[SETUP 1/3] Instalando dependencias bloqueadas...' -ForegroundColor Cyan
+  & $npmCmd ci --no-fund --no-audit
+  if ($LASTEXITCODE -ne 0) { Fail 'npm ci terminó con error.' }
 
-Write-Host '[2/5] Verificando sintaxis y contratos...' -ForegroundColor Cyan
-& $npmCmd run qa
-if ($LASTEXITCODE -ne 0) { Fail 'Los checks/tests del Bridge fallaron.' }
+  Write-Host '[SETUP 2/3] Verificando sintaxis y contratos...' -ForegroundColor Cyan
+  & $npmCmd run qa
+  if ($LASTEXITCODE -ne 0) { Fail 'Los checks/tests del Bridge fallaron.' }
+
+  Write-Host '[SETUP 3/3] Probando Chrome/Edge controlado...' -ForegroundColor Cyan
+  & $npmCmd run selftest
+  if ($LASTEXITCODE -ne 0) { Fail 'Chrome/Edge no pasó el self-test.' }
+
+  Write-Host ''
+  Write-Host 'Setup del Bridge completado. El inicio diario no ejecutará npm ci.' -ForegroundColor Green
+  Write-Host 'Usa INICIAR-HIPICO-WHATSAPP.cmd para iniciar la operación diaria.' -ForegroundColor Green
+  exit 0
+}
+
+if (-not (Test-Path -LiteralPath (Join-Path $runtimeRoot 'node_modules') -PathType Container)) {
+  Fail 'Dependencias no instaladas. Ejecuta primero HIPICO-SETUP.ps1 desde la raíz del proyecto.'
+}
 
 if ($CaptureGroupIds) {
   Write-Host '[BINDING] Capturando IDs estables @g.us sin enviar mensajes...' -ForegroundColor Cyan
@@ -239,17 +256,13 @@ if ($EnableLabSend) {
 
 if (Test-Path -LiteralPath $profileResetFlag) { Quarantine-BridgeProfile 'reparación pendiente detectada' }
 
-Write-Host '[3/5] Probando Chrome/Edge controlado...' -ForegroundColor Cyan
-& $npmCmd run selftest
-if ($LASTEXITCODE -ne 0) { Fail 'Chrome/Edge no pasó el self-test.' }
-
-Write-Host '[4/5] Validando backend, token y persistencia...' -ForegroundColor Cyan
+Write-Host '[1/2] Validando backend, token y persistencia...' -ForegroundColor Cyan
 & $npmCmd run production:check
 if ($LASTEXITCODE -ne 0) {
   Fail 'El backend no cumple el gate de producción. Confirma despliegue, token y /bridge/health antes de reintentar.'
 }
 
-Write-Host '[5/5] Iniciando listener oficial...' -ForegroundColor Cyan
+Write-Host '[2/2] Iniciando listener oficial...' -ForegroundColor Cyan
 Write-Host 'FUENTE: CLUB HIPICO TRIPLE COWN/CROWN - SOLO LECTURA' -ForegroundColor Green
 Write-Host "LAB: $LabGroupName - SEND=$($labSendValue.ToUpperInvariant()) INPUT=$($labInputValue.ToUpperInvariant())" -ForegroundColor Green
 Write-Host 'Ledger, saldos, jugadas y resultados reales: SIN ESCRITURA AUTOMÁTICA.' -ForegroundColor Green
