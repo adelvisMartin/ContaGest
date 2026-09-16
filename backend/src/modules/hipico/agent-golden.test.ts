@@ -28,3 +28,30 @@ void test('versioned golden corpus produces deterministic scoring without high-r
     assert.equal(entry.autoEligible, false);
   }
 });
+
+void test('v7 golden reporting adds abstentions and per-intent aggregates without changing signature semantics', async () => {
+  const { scoreGoldenCorpus } = await import('./agent-golden.js');
+  const corpus = JSON.parse(readFileSync(corpusUrl, 'utf8'));
+  const baseline = scoreGoldenCorpus(corpus, deterministicAgentParser);
+
+  assert.equal(baseline.abstentions, baseline.cases.filter((entry: { predictedIntent: string }) => entry.predictedIntent === 'unknown').length);
+  assert.ok(baseline.abstentions >= 1);
+  assert.ok(baseline.byIntent && typeof baseline.byIntent === 'object');
+  assert.deepEqual(Object.keys(baseline.byIntent), [...Object.keys(baseline.byIntent)].sort());
+
+  const nextRace = baseline.byIntent['query:NEXT_RACE'];
+  assert.equal(nextRace.total, 1);
+  assert.equal(nextRace.matched, 1);
+  assert.equal(nextRace.highRiskFalsePositive, 0);
+  assert.equal(nextRace.unauthorizedAutomaticAction, 0);
+  assert.equal(nextRace.abstentions, 0);
+
+  const ambiguous = baseline.byIntent.unknown;
+  assert.equal(ambiguous.total, 1);
+  assert.equal(ambiguous.matched, 1);
+  assert.equal(ambiguous.abstentions, 1);
+
+  const repeat = scoreGoldenCorpus(corpus, deterministicAgentParser);
+  assert.equal(repeat.signature, baseline.signature, 'existing deterministic signature contract must remain stable');
+  assert.deepEqual(repeat.byIntent, baseline.byIntent);
+});

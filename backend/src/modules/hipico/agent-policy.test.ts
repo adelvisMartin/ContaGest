@@ -10,12 +10,27 @@ import {
 } from './agent-policy.js';
 import { deterministicAgentParser } from './agent-engine.js';
 
+const recent = (overrides = {}) => ({
+  reviewed: 1000,
+  matched: 1000,
+  highRiskFalsePositive: 0,
+  unauthorizedAction: 0,
+  conflicts: 0,
+  abstentions: 0,
+  raceContextErrors: 0,
+  ...overrides
+});
+
 const metrics = (overrides = {}) => ({
   reviewed: 1000,
   matched: 1000,
   highRiskFalsePositive: 0,
   unauthorizedAction: 0,
   conflicts: 0,
+  abstentions: 0,
+  raceContextErrors: 0,
+  recent: recent(),
+  window: { recentDays: 30, metricSchemaVersion: 'v7' },
   ...overrides
 });
 

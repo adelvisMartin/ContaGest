@@ -19,6 +19,28 @@ export type GoldenCorpus = {
   cases: GoldenCase[];
 };
 
+type ScoredGoldenCase = {
+  id: string;
+  expectedIntent: string;
+  predictedIntent: string;
+  expectedRisk: GoldenCase['risk'];
+  predictedRisk: AgentCandidate['risk'];
+  confidence: number;
+  tool: AgentCandidate['tool'];
+  matchedIntent: boolean;
+  matchedRisk: boolean;
+  matched: boolean;
+  autoEligible: boolean;
+};
+
+type GoldenIntentAggregate = {
+  total: number;
+  matched: number;
+  highRiskFalsePositive: number;
+  unauthorizedAutomaticAction: number;
+  abstentions: number;
+};
+
 const AUTO_TOOL_SET = new Set<string>(AUTO_EXECUTABLE_TOOLS);
 
 function normalizeCorpus(value: unknown): GoldenCorpus {
@@ -46,9 +68,41 @@ function normalizeCorpus(value: unknown): GoldenCorpus {
   return { version, description: typeof row.description === 'string' ? row.description.slice(0, 500) : undefined, cases };
 }
 
+function isUnauthorizedAutomaticAction(entry: ScoredGoldenCase) {
+  return entry.autoEligible && (!entry.tool || !AUTO_TOOL_SET.has(entry.tool));
+}
+
+function isHighRiskFalsePositive(entry: ScoredGoldenCase) {
+  return entry.expectedRisk !== 'safe' && entry.autoEligible;
+}
+
+function emptyIntentAggregate(): GoldenIntentAggregate {
+  return {
+    total: 0,
+    matched: 0,
+    highRiskFalsePositive: 0,
+    unauthorizedAutomaticAction: 0,
+    abstentions: 0
+  };
+}
+
+function aggregateByExpectedIntent(cases: ScoredGoldenCase[]) {
+  const grouped = new Map<string, GoldenIntentAggregate>();
+  for (const entry of cases) {
+    const aggregate = grouped.get(entry.expectedIntent) || emptyIntentAggregate();
+    aggregate.total += 1;
+    aggregate.matched += entry.matched ? 1 : 0;
+    aggregate.highRiskFalsePositive += isHighRiskFalsePositive(entry) ? 1 : 0;
+    aggregate.unauthorizedAutomaticAction += isUnauthorizedAutomaticAction(entry) ? 1 : 0;
+    aggregate.abstentions += entry.predictedIntent === 'unknown' ? 1 : 0;
+    grouped.set(entry.expectedIntent, aggregate);
+  }
+  return Object.fromEntries([...grouped.entries()].sort(([left], [right]) => left.localeCompare(right)));
+}
+
 export function scoreGoldenCorpus(value: unknown, parser: DeterministicAgentParser) {
   const corpus = normalizeCorpus(value);
-  const cases = corpus.cases.map((entry) => {
+  const cases: ScoredGoldenCase[] = corpus.cases.map((entry) => {
     const parsed = parser.parse(entry.text);
     const candidate: AgentCandidate = {
       ...parsed,
@@ -74,9 +128,14 @@ export function scoreGoldenCorpus(value: unknown, parser: DeterministicAgentPars
   });
 
   const matched = cases.filter((entry) => entry.matched).length;
-  const highRiskFalsePositive = cases.filter((entry) => entry.expectedRisk !== 'safe' && entry.autoEligible).length;
-  const unauthorizedAutomaticAction = cases.filter((entry) => entry.autoEligible && (!entry.tool || !AUTO_TOOL_SET.has(entry.tool))).length;
+  const highRiskFalsePositive = cases.filter(isHighRiskFalsePositive).length;
+  const unauthorizedAutomaticAction = cases.filter(isUnauthorizedAutomaticAction).length;
+
+  // Preserve the pre-v7 signature payload exactly: new report aggregates are derived
+  // only after this digest so downstream regression history remains comparable.
   const signature = crypto.createHash('sha256').update(JSON.stringify({ version: corpus.version, cases })).digest('hex');
+  const abstentions = cases.filter((entry) => entry.predictedIntent === 'unknown').length;
+  const byIntent = aggregateByExpectedIntent(cases);
 
   return {
     version: corpus.version,
@@ -86,6 +145,10 @@ export function scoreGoldenCorpus(value: unknown, parser: DeterministicAgentPars
     highRiskFalsePositive,
     unauthorizedAutomaticAction,
     signature,
-    cases
+    cases,
+    abstentions,
+    byIntent
   };
 }
+
+export const __test__ = { aggregateByExpectedIntent, isHighRiskFalsePositive, isUnauthorizedAutomaticAction };
