@@ -1,0 +1,75 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import {
+  cleanBaseUrl,
+  commandPlan,
+  parseCommand,
+  redact
+} from '../tools/hipico-cli/hipico.mjs';
+
+const read = (relativePath) => readFileSync(new URL(relativePath, import.meta.url), 'utf8');
+
+test('serverless messaging adapters delegate to canonical backend instead of owning business logic', () => {
+  for (const source of [
+    read('../frontend/api/hipico/group-bridge-ingest.js'),
+    read('../frontend/api/hipico/whatsapp-webhook.js')
+  ]) {
+    assert.match(source, /proxyCanonicalRequest/);
+    assert.doesNotMatch(source, /classifyText\s*\(/);
+    assert.doesNotMatch(source, /supabase\s*\(/);
+  }
+});
+
+test('WhatsApp bridge isolates DOM/session concerns behind WhatsAppWebAdapter', () => {
+  const runtime = read('../tools/hipico-whatsapp-bridge/src/index.mjs');
+  const adapter = read('../tools/hipico-whatsapp-bridge/src/whatsapp-web-adapter.mjs');
+
+  assert.match(runtime, /new WhatsAppWebAdapter/);
+  assert.doesNotMatch(runtime, /client\.on\s*\(/);
+  assert.doesNotMatch(runtime, /client\.sendMessage\s*\(/);
+  assert.match(adapter, /class WhatsAppWebAdapter/);
+  assert.doesNotMatch(adapter, /classif|persist|raceState|supabase/i);
+});
+
+test('CLI maps the required commands and preserves a stable json flag', () => {
+  assert.deepEqual(parseCommand(['bridge', 'status', '--json']), {
+    json: true,
+    group: '',
+    command: 'bridge',
+    subcommand: 'status',
+    value: ''
+  });
+  assert.equal(commandPlan(parseCommand(['status'])).path, '/api/v1/hipico/system/status');
+  assert.equal(commandPlan(parseCommand(['health'])).path, '/api/v1/hipico/system/readiness');
+  assert.equal(commandPlan(parseCommand(['version'])).path, '/api/v1/hipico/system/version');
+  assert.equal(commandPlan(parseCommand(['channel', 'status'])).transform, 'channel');
+  assert.equal(commandPlan(parseCommand(['groups'])).path, '/api/v1/hipico/groups');
+  assert.equal(commandPlan(parseCommand(['messages', 'tail', '25', '--group', 'source']))?.path, '/api/v1/hipico/messages?limit=25');
+  assert.equal(commandPlan(parseCommand(['events', 'tail', '25', '--group', 'source']))?.path, '/api/v1/hipico/events?limit=25');
+  assert.equal(commandPlan(parseCommand(['trace', 'corr-123', '--group', 'source']))?.path, '/api/v1/hipico/trace/corr-123');
+});
+
+test('CLI fails closed for malformed trace ids and unsafe remote HTTP', () => {
+  assert.equal(commandPlan(parseCommand(['trace', '../../secret']))?.local, 'invalid-trace');
+  assert.throws(() => cleanBaseUrl('http://example.com'), /HIPICO_CLI_REMOTE_HTTP_FORBIDDEN/);
+  assert.equal(cleanBaseUrl('http://127.0.0.1:3030'), 'http://127.0.0.1:3030');
+});
+
+test('CLI redaction removes secret fields and configured secret values from json-safe output', () => {
+  const source = {
+    HIPICO_GROUP_BRIDGE_TOKEN: 'bridge-secret-value-1234567890',
+    HIPICO_OPERATOR_CONTROL_TOKEN: 'operator-secret-value-1234567890'
+  };
+  const safe = redact({
+    token: 'raw-token',
+    nested: { password: 'raw-password' },
+    message: `prefix ${source.HIPICO_GROUP_BRIDGE_TOKEN} suffix`
+  }, source);
+  const serialized = JSON.stringify(safe);
+
+  assert.equal(safe.token, '[REDACTED]');
+  assert.equal(safe.nested.password, '[REDACTED]');
+  assert.doesNotMatch(serialized, /bridge-secret-value-1234567890/);
+  assert.doesNotMatch(serialized, /operator-secret-value-1234567890/);
+});
