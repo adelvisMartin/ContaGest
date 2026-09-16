@@ -1,5 +1,5 @@
 import crypto from 'node:crypto';
-import type { AutomationIntentMetrics, AutomationMetrics, AutomationMetricWindow } from './agent-policy.js';
+import type { AutomationIntentMetrics, AutomationMetrics, AutomationMetricWindow } from './agent-contracts.js';
 
 export const SHADOW_METRIC_SCHEMA_VERSION = 'v7';
 export const SHADOW_RECENT_WINDOW_DAYS = 30;
