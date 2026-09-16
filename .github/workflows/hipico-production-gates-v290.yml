@@ -377,7 +377,7 @@ jobs:
 
   release-report:
     if: always() && github.event_name != 'schedule'
-    needs: [static-release, postgres-e2e, browser-chromium, security-regression, android-debug]
+    needs: [static-release, postgres-e2e, browser-chromium, security-regression, android-debug, browser-matrix]
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
