@@ -50,3 +50,12 @@ test('#157 has a secret-free workflow contract for the budget lifecycle',()=>{
   assert.match(workflow,/erp-performance-ratify-v157\.mjs/);
   assert.doesNotMatch(workflow,/continue-on-error:\s*true|\|\|\s*true/);
 });
+
+test('#157 lifecycle contract is part of Vercel source preqa',()=>{
+  const frontendPackage=JSON.parse(fs.readFileSync('frontend/package.json','utf8'));
+  assert.match(
+    String(frontendPackage.scripts?.['preqa:source']||''),
+    /tests\/erp157_budget_ratification_issue_157\.test\.mjs/,
+    'Vercel preqa:source must execute the budget ratification contract'
+  );
+});
