@@ -20,6 +20,18 @@ on:
       - 'package-lock.json'
   workflow_dispatch:
     inputs:
+      p0_open:
+        description: Explicit P0 status for stable-promotion readiness
+        required: false
+        default: UNKNOWN
+        type: choice
+        options: [UNKNOWN, 'false', 'true']
+      security_critical:
+        description: Explicit critical-security status for stable-promotion readiness
+        required: false
+        default: UNKNOWN
+        type: choice
+        options: [UNKNOWN, 'false', 'true']
       physical_qa_status:
         description: Physical QA evidence status for reporting only
         required: false
@@ -370,6 +382,8 @@ jobs:
     timeout-minutes: 15
     env:
       GITHUB_TOKEN: ${{ github.token }}
+      HIPICO_P0_OPEN: ${{ inputs.p0_open || 'UNKNOWN' }}
+      HIPICO_SECURITY_CRITICAL: ${{ inputs.security_critical || 'UNKNOWN' }}
       HIPICO_PHYSICAL_QA_STATUS: ${{ inputs.physical_qa_status || 'NOT_EXECUTED' }}
     steps:
       - uses: actions/checkout@v7
@@ -377,14 +391,17 @@ jobs:
           ref: ${{ env.HIPICO_CANDIDATE_SHA }}
           fetch-depth: 0
       - name: Download SHA-bound evidence
+        if: always()
         uses: actions/download-artifact@v7
         with:
           pattern: hipico-v290-*-${{ env.HIPICO_CANDIDATE_SHA }}
           path: artifacts/qa/downloaded
           merge-multiple: false
       - name: Classify exact-run job outcomes
+        if: always()
         run: npm run ci:hipico:verdict:v290
       - name: Verify evidence integrity
+        if: always()
         run: npm run verify:hipico:evidence:v290
       - name: Write release report
         if: always()
