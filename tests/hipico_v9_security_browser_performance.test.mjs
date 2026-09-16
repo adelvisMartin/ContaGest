@@ -25,11 +25,13 @@ test('v9 security gate includes provider/document/agent/replay boundaries alread
 });
 
 test('Hípico browser release matrix includes 360/390/430, keyboard focus, reduced motion and semantic WCAG smoke', async () => {
-  const [config, catalog, spec, css] = await Promise.all([
+  const [config, catalog, spec, css, index, accessibility] = await Promise.all([
     read('playwright.hipico-matrix.config.mjs'),
     read('qa/support/hipico-visual-catalog-v105.mjs'),
     read('qa/hipico-visual-functional-v105.spec.mjs'),
-    read('frontend/public/hipico-control/assets/css/app.css')
+    read('frontend/public/hipico-control/assets/css/app.css'),
+    read('frontend/public/hipico-control/index.html'),
+    read('frontend/public/hipico-control/assets/js/control-accessibility.js')
   ]);
 
   for (const browser of ['chromium', 'firefox', 'webkit']) assert.ok(config.includes(`name: '${browser}'`));
@@ -41,6 +43,28 @@ test('Hípico browser release matrix includes 360/390/430, keyboard focus, reduc
   ]) assert.ok(spec.includes(marker), `missing Hípico accessibility check: ${marker}`);
   assert.match(css, /@media \(prefers-reduced-motion: reduce\)/);
   assert.match(css, /:focus-visible/);
+  assert.match(index, /control-accessibility\.js/);
+  assert.match(accessibility, /'focus-fast': 'Captura rápida'/);
+  assert.match(accessibility, /'calendar-prev': 'Mes anterior'/);
+  assert.match(accessibility, /MutationObserver/);
+});
+
+test('v9 hardening keeps the full existing operational PWA application intact', async () => {
+  const app = await read('frontend/public/hipico-control/assets/js/app.js');
+  assert.ok(Buffer.byteLength(app, 'utf8') > 100_000, 'app.js unexpectedly truncated');
+  for (const marker of [
+    'function renderDashboard()',
+    'function renderRace()',
+    'function settleRace()',
+    'function closeDay()',
+    'function closeWeek()',
+    'function exportDailyPdf()',
+    'function exportWeeklyXlsx()',
+    'function importChatMatches()',
+    'function saveCloudWorkspaceSafely()',
+    'init().catch'
+  ]) assert.ok(app.includes(marker), `operational application marker missing: ${marker}`);
+  assert.doesNotMatch(app, /Remaining application code is unchanged/);
 });
 
 test('v9 performance evidence preserves deterministic 100/500/2000 workload and separates physical acceptance', async () => {
