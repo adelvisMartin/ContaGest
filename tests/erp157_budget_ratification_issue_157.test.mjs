@@ -11,16 +11,19 @@ test('#157 performance budgets have an explicit provisional -> ratified lifecycl
   assert.match(String(policy.targetsLifecycle.state),/^(PROVISIONAL|RATIFIED)$/);
   assert.ok(Object.hasOwn(policy.targetsLifecycle,'baselineMeasurementHash'));
   assert.ok(Object.hasOwn(policy.targetsLifecycle,'baselineCandidateSha'));
+  assert.ok(Object.hasOwn(policy.targetsLifecycle,'budgetDefinitionHash'));
   assert.ok(Object.hasOwn(policy.targetsLifecycle,'ratifiedAt'));
   assert.ok(Object.hasOwn(policy.targetsLifecycle,'ratifiedBy'));
   assert.equal(Object.hasOwn(policy,'targetsAreProvisionalUntilMeasured'),false);
 });
 
-test('#157 gate can emit PASS only for a valid ratified policy',()=>{
+test('#157 gate can emit PASS only for a valid ratified policy bound to current budgets',()=>{
   assert.match(gate,/targetsLifecycle/);
   assert.match(gate,/ratificationValid/);
   assert.match(gate,/baselineMeasurementHash/);
   assert.match(gate,/baselineCandidateSha/);
+  assert.match(gate,/budgetDefinitionHash/);
+  assert.match(gate,/currentBudgetDefinitionHash/);
   assert.match(gate,/MEASURED_PROVISIONAL/);
   assert.doesNotMatch(gate,/targetsAreProvisionalUntilMeasured/);
 });
@@ -32,6 +35,7 @@ test('#157 ratification tool is evidence-bound and does not invent a baseline',(
   assert.match(ratify,/measurementHash/);
   assert.match(ratify,/baselineMeasurementHash/);
   assert.match(ratify,/baselineCandidateSha/);
+  assert.match(ratify,/budgetDefinitionHash/);
   assert.match(ratify,/ratifiedBy/);
   assert.match(ratify,/RATIFIED/);
   assert.doesNotMatch(ratify,/Math\.random|Date\.now\(\).*measurementHash/);
