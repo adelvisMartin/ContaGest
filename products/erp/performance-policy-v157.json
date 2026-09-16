@@ -1,6 +1,12 @@
 {
-  "version": "erp-performance-v157.2",
-  "targetsAreProvisionalUntilMeasured": true,
+  "version": "erp-performance-v157.3",
+  "targetsLifecycle": {
+    "state": "PROVISIONAL",
+    "baselineMeasurementHash": null,
+    "baselineCandidateSha": null,
+    "ratifiedAt": null,
+    "ratifiedBy": null
+  },
   "workloadModel": {
     "profiles": [
       "finance-admin",
