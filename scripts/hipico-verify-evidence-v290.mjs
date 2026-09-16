@@ -44,6 +44,11 @@ function evidenceStatus(data) {
   return 'NOT_EXECUTED';
 }
 
+function migrationsInclude(data, suffix) {
+  const migrations = Array.isArray(data?.migrations) ? data.migrations : [];
+  return migrations.some((entry) => String(entry).endsWith(suffix));
+}
+
 const files = await walk(evidenceRoot).catch(() => []);
 const jsonFiles = files.filter((file) => file.endsWith('.json'));
 const parsed = [];
@@ -58,20 +63,48 @@ for (const file of jsonFiles) {
 
 const requiredDescriptors = [
   { id: 'secretScan', name: 'secret-scan.json', schemas: ['hipico-secret-scan.v290', 'hipico-secret-scan.v290-current'] },
-  { id: 'releaseGuard', name: 'release-guard.json', schemas: ['hipico-release-guard.v290-current'] },
-  { id: 'postgresRbac', name: 'postgres-rbac.json', schemas: ['hipico-rbac.v290', 'hipico-rbac.v290-current'] },
-  { id: 'postgresGate', name: 'postgres-gate.json', schemas: ['hipico-postgres-gate.v290-current'] },
+  {
+    id: 'releaseGuard',
+    name: 'release-guard.json',
+    schemas: ['hipico-release-guard.v290-current'],
+    validate: (data) => data?.invariants?.currentPostgresChain === 'v12-v24'
+      && data?.invariants?.riskPolicyDeterministic === true
+      && data?.invariants?.modelAdvisoryOnly === true
+      && data?.invariants?.dualWindowPromotion === true
+      && data?.invariants?.canonicalOutboxAuthority === true
+  },
+  { id: 'staticGate', name: 'static-gate.json', schemas: ['hipico-static-gate.v290-current'] },
+  {
+    id: 'postgresRbac',
+    name: 'postgres-rbac.json',
+    schemas: ['hipico-rbac.v290', 'hipico-rbac.v290-current'],
+    validate: (data) => migrationsInclude(data, 'hipico_v23_risk_policy.sql')
+      && migrationsInclude(data, 'hipico_v24_shadow_metrics.sql')
+      && data?.assertions?.agentPolicyColumnsNotNull === true
+      && data?.assertions?.agentMetricColumnsNotNull === true
+      && data?.assertions?.agentPolicyConstraintsPresent === true
+  },
+  {
+    id: 'postgresGate',
+    name: 'postgres-gate.json',
+    schemas: ['hipico-postgres-gate.v290-current'],
+    validate: (data) => data?.migrations === 'v12-v24'
+      && data?.testChannelReplay === 'PASS'
+      && data?.agentPolicyMetrics === 'PASS'
+      && data?.restartRecovery === 'PASS'
+      && data?.loadProfile === 'PASS'
+  },
   { id: 'restart', name: 'restart-state.json', schemas: ['hipico-restart.v290', 'hipico-restart.v290-current'] },
   { id: 'performance', name: 'postgres-performance.json', schemas: ['hipico-performance.v290', 'hipico-performance.v290-current'] },
+  { id: 'chromiumGate', name: 'chromium-gate.json', schemas: ['hipico-browser-gate.v290-current'] },
+  { id: 'securityGate', name: 'security-gate.json', schemas: ['hipico-security-gate.v290-current'] },
+  { id: 'androidGate', name: 'android-gate.json', schemas: ['hipico-android-gate.v290-current'] },
   { id: 'releaseManifest', name: 'release-manifest.json', schemas: ['hipico-release-evidence.v1'], requireClean: true }
 ];
 
 const optionalDescriptors = [
   { id: 'runtimeBuild', name: 'build-info.json', schemas: [] },
-  { id: 'apkMetadata', name: 'QA_APK_METADATA.json', schemas: [] },
-  { id: 'chromiumGate', name: 'chromium-gate.json', schemas: ['hipico-browser-gate.v290-current'] },
-  { id: 'securityGate', name: 'security-gate.json', schemas: ['hipico-security-gate.v290-current'] },
-  { id: 'androidGate', name: 'android-gate.json', schemas: ['hipico-android-gate.v290-current'] }
+  { id: 'apkMetadata', name: 'QA_APK_METADATA.json', schemas: [] }
 ];
 
 function findDescriptor(descriptor) {
@@ -91,6 +124,9 @@ function findDescriptor(descriptor) {
   }
   if (descriptor.requireClean && selected.data?.dirty !== false) {
     return { id: descriptor.id, status: 'FAIL', file: path.relative(evidenceRoot, selected.file), reason: 'WORKTREE_DIRTY_OR_UNKNOWN' };
+  }
+  if (typeof descriptor.validate === 'function' && descriptor.validate(selected.data) !== true) {
+    return { id: descriptor.id, status: 'FAIL', file: path.relative(evidenceRoot, selected.file), reason: 'EVIDENCE_CONTRACT_MISMATCH' };
   }
   const status = evidenceStatus(selected.data);
   return {
@@ -127,6 +163,7 @@ const result = {
   allowedStatuses: STATUSES,
   checkedAt: new Date().toISOString(),
   evidenceRoot,
+  postgresChain: 'v12-v24',
   required,
   optional,
   browser
