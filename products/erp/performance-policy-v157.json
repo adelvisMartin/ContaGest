@@ -4,6 +4,7 @@
     "state": "PROVISIONAL",
     "baselineMeasurementHash": null,
     "baselineCandidateSha": null,
+    "budgetDefinitionHash": null,
     "ratifiedAt": null,
     "ratifiedBy": null
   },
