@@ -2,6 +2,8 @@ import { classify } from '../hipico-bot/hipico-operational-classifier.js';
 import { classifyRaceQueryIntent } from './race-lifecycle.js';
 import { HipicoAgentEngine, type DeterministicAgentParser } from './agent-policy.js';
 
+export const DETERMINISTIC_AGENT_PARSER_VERSION = 'hipico-agent-deterministic-v2';
+
 const TOOL_NAME = '(?:queryRaceStatus|queryNextRace|queryLastResult|querySchedule|queryScratches|proposeRaceCommand)';
 const PROMPT_INJECTION = new RegExp([
   'ignora\\s+(?:todas?\\s+)?(?:tus?\\s+)?(?:reglas|instrucciones|politicas)',
@@ -16,13 +18,29 @@ const DOCUMENT_REFERENCE = /\b(?:documento|archivo|pdf)\b[\s\S]{0,120}\b(?:adjun
 const AMBIGUOUS_LIFECYCLE = /\b(?:ya\s+)?est[aá]\s+(?:abierta|cerrada|corriendo|suspendida)\b/i;
 const EXPLICIT_RACE_CONTEXT = /\b(?:carrera|race)\b|\b\d{1,3}\s*(?:ra|da|ta|ma)?\b/i;
 const INVISIBLE_SECURITY_CHARS = /[\u200B-\u200D\u2060\uFEFF]/g;
+const BIDI_SECURITY_CHARS = /[\u061C\u200E\u200F\u202A-\u202E\u2066-\u2069]/g;
+const SECURITY_CONFUSABLES = new Map<string, string>([
+  ['а', 'a'], ['А', 'A'],
+  ['е', 'e'], ['Е', 'E'],
+  ['і', 'i'], ['І', 'I'],
+  ['ј', 'j'], ['Ј', 'J'],
+  ['о', 'o'], ['О', 'O'],
+  ['р', 'p'], ['Р', 'P'],
+  ['с', 'c'], ['С', 'C'],
+  ['ѕ', 's'], ['Ѕ', 'S'],
+  ['х', 'x'], ['Х', 'X'],
+  ['у', 'y'], ['У', 'Y']
+]);
+const SECURITY_CONFUSABLE_RE = /[аАеЕіІјЈоОрРсСѕЅхХуУ]/g;
 
 function normalizedSecurityText(text: string) {
   return String(text || '')
     .slice(0, 4000)
     .normalize('NFKD')
     .replace(/[\u0300-\u036f]/g, '')
-    .replace(INVISIBLE_SECURITY_CHARS, '');
+    .replace(INVISIBLE_SECURITY_CHARS, '')
+    .replace(BIDI_SECURITY_CHARS, '')
+    .replace(SECURITY_CONFUSABLE_RE, (value) => SECURITY_CONFUSABLES.get(value) || value);
 }
 
 export function looksLikeAgentPolicyInjection(text: string) {
@@ -126,3 +144,4 @@ export function createDefaultHipicoAgentEngine() {
 }
 
 export const deterministicAgentParser = parser;
+export const __test__ = { normalizedSecurityText };
