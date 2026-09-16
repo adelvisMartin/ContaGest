@@ -9,6 +9,29 @@ if(!/^[a-f0-9]{40}$/i.test(sha))throw new Error('CANDIDATE_SHA_REQUIRED_40_HEX')
 const root=path.resolve('artifacts/qa/erp-performance-v157',sha);
 const file=path.join(root,'measurements.json');
 
+const budgetDefinition={
+  workloadModel:policy.workloadModel,
+  frontend:policy.frontend,
+  backend:policy.backend,
+  heavyProcesses:policy.heavyProcesses,
+  degradationScenarios:policy.degradationScenarios,
+  profiles:policy.profiles
+};
+const currentBudgetDefinitionHash=crypto.createHash('sha256').update(JSON.stringify(budgetDefinition)).digest('hex');
+const lifecycle=policy.targetsLifecycle??{};
+const lifecycleState=String(lifecycle.state||'').trim();
+if(!['PROVISIONAL','RATIFIED'].includes(lifecycleState))throw new Error('PERFORMANCE_POLICY_LIFECYCLE_INVALID');
+const ratifiedAt=String(lifecycle.ratifiedAt||'').trim();
+const ratifiedBy=String(lifecycle.ratifiedBy||'').trim();
+const ratificationValid=
+  lifecycleState==='RATIFIED'&&
+  /^[a-f0-9]{64}$/i.test(String(lifecycle.baselineMeasurementHash||''))&&
+  /^[a-f0-9]{40}$/i.test(String(lifecycle.baselineCandidateSha||''))&&
+  String(lifecycle.budgetDefinitionHash||'')===currentBudgetDefinitionHash&&
+  Number.isFinite(Date.parse(ratifiedAt))&&
+  ratifiedBy.length>0&&ratifiedBy.length<=120;
+if(lifecycleState==='RATIFIED'&&!ratificationValid)throw new Error('PERFORMANCE_POLICY_RATIFICATION_INVALID');
+
 const processTemplate=()=>Object.fromEntries(policy.heavyProcesses.required.map((name)=>[
   name,
   Object.fromEntries(policy.heavyProcesses.requiredOutcomes.map((outcome)=>[outcome,'NOT_EXECUTED']))
@@ -63,7 +86,7 @@ const required={
   'backend.deadlockCount':policy.backend.deadlockCountMax,
   'backend.crossTenantLeakCount':policy.backend.crossTenantLeakCountMax
 };
-const metricNumber=(raw)=>typeof raw === 'number' && Number.isFinite(raw)?raw:null;
+const metricNumber=(raw)=>typeof raw==='number'&&Number.isFinite(raw)?raw:null;
 const checks=[];
 for(const [key,budget] of Object.entries(required)){
   const value=metricNumber(evidence.metrics?.[key]);
@@ -87,7 +110,7 @@ const profilingEvidenceComplete=Array.isArray(evidence.profilingEvidence)&&evide
 let verdict='PASS';
 if(checks.some((c)=>c.value!==null&&!c.pass))verdict='FAIL';
 else if(!profilesComplete||!workloadProfilesComplete||!expectedPeakDeclared||!loadFactorsComplete||!heavyProcessesComplete||!degradationComplete||!sanitizedFixtures||!profilingEvidenceComplete||checks.some((c)=>c.value===null))verdict='NOT_EXECUTED';
-if(verdict==='PASS'&&policy.targetsAreProvisionalUntilMeasured)verdict='MEASURED_PROVISIONAL';
+if(verdict==='PASS'&&!ratificationValid)verdict='MEASURED_PROVISIONAL';
 
 const completion={
   profilesComplete,
@@ -107,10 +130,20 @@ const summary={
   completion,
   checks,
   policyVersion:policy.version,
+  targetsLifecycle:{
+    state:lifecycleState,
+    ratificationValid,
+    baselineMeasurementHash:lifecycle.baselineMeasurementHash??null,
+    baselineCandidateSha:lifecycle.baselineCandidateSha??null,
+    budgetDefinitionHash:lifecycle.budgetDefinitionHash??null,
+    currentBudgetDefinitionHash,
+    ratifiedAt:lifecycle.ratifiedAt??null,
+    ratifiedBy:lifecycle.ratifiedBy??null
+  },
   measurementHash:crypto.createHash('sha256').update(JSON.stringify(evidence)).digest('hex'),
   checkedAt:new Date().toISOString()
 };
 fs.mkdirSync(root,{recursive:true});
 fs.writeFileSync(path.join(root,'summary.json'),JSON.stringify(summary,null,2)+'\n');
 console.log(JSON.stringify(summary));
-if(command==='check'&&!['PASS','MEASURED_PROVISIONAL'].includes(verdict))process.exitCode=2;
+if(command==='check'&&verdict!=='PASS')process.exitCode=2;
