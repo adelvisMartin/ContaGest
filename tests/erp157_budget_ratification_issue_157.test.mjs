@@ -4,7 +4,6 @@ import fs from 'node:fs';
 
 const policy=JSON.parse(fs.readFileSync('products/erp/performance-policy-v157.json','utf8'));
 const gate=fs.readFileSync('scripts/erp-performance-gate-v157.mjs','utf8');
-const workflow=fs.readFileSync('.github/workflows/erp-performance-capacity-v157.yml','utf8');
 
 test('#157 performance budgets have an explicit provisional -> ratified lifecycle',()=>{
   assert.ok(policy.targetsLifecycle,'targetsLifecycle is required');
@@ -41,7 +40,13 @@ test('#157 ratification tool is evidence-bound and does not invent a baseline',(
   assert.doesNotMatch(ratify,/Math\.random|Date\.now\(\).*measurementHash/);
 });
 
-test('#157 workflow executes the ratification lifecycle contract in both calibration and capacity jobs',()=>{
-  const occurrences=workflow.match(/erp157_budget_ratification_issue_157\.test\.mjs/g) ?? [];
-  assert.ok(occurrences.length>=2,`expected contract in calibration and capacity, got ${occurrences.length}`);
+test('#157 has a secret-free workflow contract for the budget lifecycle',()=>{
+  const workflowPath='.github/workflows/erp157-budget-lifecycle-contract.yml';
+  assert.equal(fs.existsSync(workflowPath),true);
+  const workflow=fs.readFileSync(workflowPath,'utf8');
+  assert.match(workflow,/erp157_budget_ratification_issue_157\.test\.mjs/);
+  assert.match(workflow,/performance-policy-v157\.json/);
+  assert.match(workflow,/erp-performance-gate-v157\.mjs/);
+  assert.match(workflow,/erp-performance-ratify-v157\.mjs/);
+  assert.doesNotMatch(workflow,/continue-on-error:\s*true|\|\|\s*true/);
 });
