@@ -51,7 +51,7 @@ test('v10 evidence runner is exact-SHA bound and fails on unsafe automatic decis
   assert.match(source, /financialAuthority/);
 });
 
-test('v10 workflow executes exact candidate, tests, evidence scorer, build and diff check', () => {
+test('v10 workflow executes exact candidate, root contracts, evidence scorer, build and diff check', () => {
   assert.equal(existsSync(workflow), true, 'v10 workflow missing');
   const source = read(workflow);
   for (const marker of [
@@ -60,7 +60,7 @@ test('v10 workflow executes exact candidate, tests, evidence scorer, build and d
     'node-version:',
     'npm ci --no-audit --no-fund',
     'npm --workspace backend run typecheck',
-    'npm --workspace backend run test:hipico',
+    'npm run test:hipico',
     'hipico-agent-golden-v10.ts',
     'npm --workspace backend run build',
     'git diff --check',
