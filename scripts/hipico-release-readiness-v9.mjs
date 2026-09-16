@@ -48,4 +48,19 @@ export function deriveAutomationReadiness({
     : 'NOT_VERIFIED';
 }
 
+export function deriveProductionReadinessState({
+  stablePromotionStatus = 'NOT_EXECUTED',
+  p0Open = null,
+  securityCritical = null,
+  automationReadiness = 'NOT_VERIFIED'
+} = {}) {
+  const stable = normalizeStatus(stablePromotionStatus);
+  if (stable === 'FAIL' || p0Open === true || securityCritical === true) return 'FAIL';
+  if (stable === 'BLOCKED') return 'BLOCKED';
+  if (stable !== 'PASS') return 'NOT_EXECUTED';
+  if (p0Open !== false || securityCritical !== false) return 'NOT_EXECUTED';
+  if (automationReadiness !== 'VERIFIED') return 'NOT_EXECUTED';
+  return 'PASS';
+}
+
 export const __test__ = { normalizeStatus };
