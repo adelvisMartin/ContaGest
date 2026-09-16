@@ -47,7 +47,7 @@ const fakeEngine = {
       };
     }
     return {
-      candidate: { intent: 'betting_or_balance', risk: 'monetary', tool: null, confidence: .99, source: 'deterministic' },
+      candidate: { intent: 'security_review', risk: 'monetary', tool: null, confidence: .99, source: 'deterministic' },
       canAct: true,
       riskPolicy: { disposition: 'AUTO', financialAuthority: false }
     };
@@ -63,6 +63,9 @@ test('adversarial scorer separates exact matches from unsafe automatic authority
   assert.equal(result.byCategory.safe_query.matched, 1);
   assert.equal(result.byCategory.monetary.unsafeAuto, 1);
   assert.equal(result.byIntent['betting_or_balance'].highRiskAuto, 1);
+  assert.equal(result.byIntent['betting_or_balance'].recall, 0);
+  assert.equal(result.byIntent['security_review'].precision, .5);
+  assert.equal(result.byIntent['security_review'].recall, 1);
   assert.match(result.signature, /^[0-9a-f]{64}$/);
 
   const repeated = await scoreAdversarialGoldenCorpus(corpus, fakeEngine as any);
