@@ -32,6 +32,26 @@ test('WhatsApp bridge isolates DOM/session concerns behind WhatsAppWebAdapter', 
   assert.doesNotMatch(adapter, /classif|persist|raceState|supabase/i);
 });
 
+test('canonical bridge suppresses LAB simulation for replayed and duplicate events', () => {
+  const route = read('../backend/src/modules/hipico-bot/hipico-bridge.routes.ts');
+  assert.match(route, /if\(input\.channelRole!==['"]source['"]\|\|input\.historySync\)return null/);
+  assert.match(route, /labSimulation:event\.inserted\?buildLabSimulation\([^)]*\):null/);
+});
+
+test('Windows setup and daily launcher are separated', () => {
+  const setup = read('../HIPICO-SETUP.ps1');
+  const daily = read('../INICIAR-HIPICO-WHATSAPP.cmd');
+  const launcher = read('../tools/hipico-whatsapp-web-bridge/INICIAR.ps1');
+
+  assert.match(setup, /hipico-whatsapp-web-bridge\\INICIAR\.ps1/);
+  assert.match(setup, /-SetupOnly/);
+  assert.match(daily, /hipico-whatsapp-web-bridge\\INICIAR\.ps1/);
+  assert.doesNotMatch(daily, /npm\s+ci/i);
+  assert.match(launcher, /if \(\$SetupOnly\) \{/);
+  assert.match(launcher, /npmCmd ci --no-fund --no-audit/);
+  assert.match(launcher, /Dependencias no instaladas\. Ejecuta primero HIPICO-SETUP\.ps1/);
+});
+
 test('CLI maps the required commands and preserves a stable json flag', () => {
   assert.deepEqual(parseCommand(['bridge', 'status', '--json']), {
     json: true,
