@@ -48,13 +48,25 @@ void test('Command Center public boundary uses only local groupKey and never acc
 void test('Command Center renders fail-closed observable states and SOURCE/LAB safety semantics', () => {
   const commandCenter = read('frontend/public/hipico-control/assets/js/command-center.js');
   const backend = read('backend/src/modules/hipico/command-center.service.ts');
+  const backendBehavior = read('backend/src/modules/hipico/command-center.service.test.ts');
   for (const state of ['idle', 'loading', 'success', 'error', 'offline']) {
     assert.ok(commandCenter.includes(`'${state}'`) || commandCenter.includes(`\"${state}\"`), `missing ${state} state`);
   }
   assert.match(commandCenter, /stale/);
   assert.match(commandCenter, /No disponible/);
-  assert.match(backend, /QUEUE_READ_UNAVAILABLE/);
-  assert.match(backend, /DOCUMENT_READ_UNAVAILABLE/);
+
+  // The v8 core decomposition deliberately generates read-failure codes from a
+  // single fail-closed table. Validate that mechanism instead of requiring dead
+  // QUEUE_READ_UNAVAILABLE / DOCUMENT_READ_UNAVAILABLE literals in production.
+  assert.match(backend, /const failedReads:/);
+  assert.match(backend, /\['DOCUMENT',\s*documentsRead\s+as\s+any,/);
+  assert.match(backend, /\['QUEUE',\s*queueRead\s+as\s+any,/);
+  assert.match(backend, /code:\s*`\$\{code\}_READ_UNAVAILABLE`/);
+  assert.match(backendBehavior, /queueStates:[\s\S]*throw new Error\(['"]queue unavailable['"]\)/);
+  assert.match(backendBehavior, /documentStates:[\s\S]*throw new Error\(['"]documents unavailable['"]\)/);
+  assert.match(backendBehavior, /alert\.code === ['"]QUEUE_READ_UNAVAILABLE['"]/);
+  assert.match(backendBehavior, /alert\.code === ['"]DOCUMENT_READ_UNAVAILABLE['"]/);
+
   assert.match(backend, /pending: queuePending/);
   assert.match(backend, /failed: queueFailed/);
   assert.match(commandCenter, /SOURCE/);
