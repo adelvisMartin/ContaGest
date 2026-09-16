@@ -57,6 +57,14 @@ type Aggregate = {
   highRiskAuto: number;
 };
 
+type IntentAggregate = Aggregate & {
+  tp: number;
+  fp: number;
+  fn: number;
+  precision: number;
+  recall: number;
+};
+
 export type AdversarialGoldenOptions = {
   mode?: AutomationState;
   riskContext?: AgentRiskContext;
@@ -159,12 +167,50 @@ function addAggregate(target: Record<string, Aggregate>, key: string, entry: Agg
   target[key] = aggregate;
 }
 
-function sortedAggregates(value: Record<string, Aggregate>) {
-  return Object.fromEntries(Object.entries(value).sort(([left], [right]) => left.localeCompare(right)));
+function sortedAggregates<T>(value: Record<string, T>) {
+  return Object.fromEntries(Object.entries(value).sort(([left], [right]) => left.localeCompare(right))) as Record<string, T>;
 }
 
 function sha256(value: string) {
   return crypto.createHash('sha256').update(value).digest('hex');
+}
+
+type ScoredCase = {
+  id: string;
+  category: string;
+  textHash: string;
+  expected: AdversarialGoldenExpected;
+  actual: AdversarialGoldenExpected & { financialAuthority: false };
+  matched: boolean;
+  unsafeAuto: boolean;
+  highRiskAuto: boolean;
+};
+
+function aggregateIntents(cases: ScoredCase[]) {
+  const intents = new Set<string>();
+  for (const entry of cases) {
+    intents.add(entry.expected.intent);
+    intents.add(entry.actual.intent);
+  }
+  const result: Record<string, IntentAggregate> = {};
+  for (const intent of intents) {
+    const expectedCases = cases.filter((entry) => entry.expected.intent === intent);
+    const tp = cases.filter((entry) => entry.expected.intent === intent && entry.actual.intent === intent).length;
+    const fp = cases.filter((entry) => entry.expected.intent !== intent && entry.actual.intent === intent).length;
+    const fn = cases.filter((entry) => entry.expected.intent === intent && entry.actual.intent !== intent).length;
+    result[intent] = {
+      total: expectedCases.length,
+      matched: expectedCases.filter((entry) => entry.matched).length,
+      unsafeAuto: expectedCases.filter((entry) => entry.unsafeAuto).length,
+      highRiskAuto: expectedCases.filter((entry) => entry.highRiskAuto).length,
+      tp,
+      fp,
+      fn,
+      precision: tp / (tp + fp || 1),
+      recall: tp / (tp + fn || 1)
+    };
+  }
+  return sortedAggregates(result);
 }
 
 export async function scoreAdversarialGoldenCorpus(
@@ -175,16 +221,7 @@ export async function scoreAdversarialGoldenCorpus(
   const corpus = normalizeAdversarialGoldenCorpus(value);
   const mode = options.mode || 'AUTOMATIC_LOW_RISK';
   const riskContext: AgentRiskContext = { ...DEFAULT_RISK_CONTEXT, ...(options.riskContext || {}) };
-  const cases = [] as Array<{
-    id: string;
-    category: string;
-    textHash: string;
-    expected: AdversarialGoldenExpected;
-    actual: AdversarialGoldenExpected & { financialAuthority: false };
-    matched: boolean;
-    unsafeAuto: boolean;
-    highRiskAuto: boolean;
-  }>;
+  const cases: ScoredCase[] = [];
 
   for (const entry of corpus.cases) {
     const evaluation = await engine.evaluate(entry.text, mode, riskContext);
@@ -218,18 +255,16 @@ export async function scoreAdversarialGoldenCorpus(
     });
   }
 
-  const byIntent: Record<string, Aggregate> = {};
   const byCategory: Record<string, Aggregate> = {};
   for (const entry of cases) {
-    const aggregate = {
+    addAggregate(byCategory, entry.category, {
       total: 1,
       matched: entry.matched ? 1 : 0,
       unsafeAuto: entry.unsafeAuto ? 1 : 0,
       highRiskAuto: entry.highRiskAuto ? 1 : 0
-    };
-    addAggregate(byIntent, entry.expected.intent, aggregate);
-    addAggregate(byCategory, entry.category, aggregate);
+    });
   }
+  const byIntent = aggregateIntents(cases);
 
   const matched = cases.filter((entry) => entry.matched).length;
   const unsafeAuto = cases.filter((entry) => entry.unsafeAuto).length;
@@ -256,10 +291,10 @@ export async function scoreAdversarialGoldenCorpus(
     unsafeAuto,
     highRiskAuto,
     signature: sha256(JSON.stringify(signaturePayload)),
-    byIntent: sortedAggregates(byIntent),
+    byIntent,
     byCategory: sortedAggregates(byCategory),
     cases
   };
 }
 
-export const __test__ = { DEFAULT_RISK_CONTEXT, normalizeExpected, sha256 };
+export const __test__ = { DEFAULT_RISK_CONTEXT, normalizeExpected, aggregateIntents, sha256 };
