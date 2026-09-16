@@ -67,7 +67,7 @@ test('CLI maps the required commands and preserves a stable json flag', () => {
     value: ''
   });
   assert.equal(commandPlan(parseCommand(['status'])).path, '/api/v1/hipico/system/status');
-  assert.equal(commandPlan(parseCommand(['doctor'])).local, 'doctor');
+  assert.equal(parseCommand(['doctor']).command, 'doctor');
   assert.equal(commandPlan(parseCommand(['health'])).path, '/api/v1/hipico/system/readiness');
   assert.equal(commandPlan(parseCommand(['version'])).path, '/api/v1/hipico/system/version');
   assert.equal(commandPlan(parseCommand(['channel', 'status'])).transform, 'channel');
