@@ -13,7 +13,7 @@
     "build": "npm run build:frontend && npm run build:backend",
     "typecheck": "npm --workspace backend run typecheck",
     "lint": "npm run typecheck && node --test tests/*.test.mjs",
-    "test:hipico": "npm --workspace backend run test:hipico && node scripts/hipico-root-contracts.mjs && npm --prefix tools/hipico-whatsapp-bridge test",
+    "test:hipico": "npm --workspace backend run test:hipico && node scripts/hipico-root-contracts.mjs && node --test tests/hipico_messaging_cli_284.test.mjs",
     "test:hipico:root-contracts": "node scripts/hipico-root-contracts.mjs",
     "test:hipico:runner": "node --test tests/hipico_qa_runner_issue_103.test.mjs",
     "test:hipico:exact-sha": "node --test tests/hipico_exact_sha_gate_297.test.mjs",
