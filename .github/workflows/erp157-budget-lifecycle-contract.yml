@@ -1,0 +1,49 @@
+name: ERP #157 Budget Lifecycle Contract
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'products/erp/performance-policy-v157.json'
+      - 'scripts/erp-performance-gate-v157.mjs'
+      - 'scripts/erp-performance-ratify-v157.mjs'
+      - 'tests/erp157_budget_ratification_issue_157.test.mjs'
+      - '.github/workflows/erp157-budget-lifecycle-contract.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'products/erp/performance-policy-v157.json'
+      - 'scripts/erp-performance-gate-v157.mjs'
+      - 'scripts/erp-performance-ratify-v157.mjs'
+      - 'tests/erp157_budget_ratification_issue_157.test.mjs'
+      - '.github/workflows/erp157-budget-lifecycle-contract.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: erp157-budget-lifecycle-${{ github.event.pull_request.head.sha || github.sha }}
+  cancel-in-progress: true
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout exact candidate
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Confirm runner and candidate SHA
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${RUNNER_NAME:-}"
+          test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha || github.sha }}"
+      - name: Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Verify budget lifecycle contract
+        run: node --test tests/erp157_budget_ratification_issue_157.test.mjs
