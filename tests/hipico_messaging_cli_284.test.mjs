@@ -21,15 +21,21 @@ test('serverless messaging adapters delegate to canonical backend instead of own
   }
 });
 
-test('WhatsApp bridge isolates DOM/session concerns behind WhatsAppWebAdapter', () => {
-  const runtime = read('../tools/hipico-whatsapp-bridge/src/index.mjs');
-  const adapter = read('../tools/hipico-whatsapp-bridge/src/whatsapp-web-adapter.mjs');
+test('canonical MessagingChannel remains transport-only and TestChannelAdapter is deterministic', () => {
+  const channel = read('../backend/src/modules/hipico/messaging-channel.ts');
+  const channelTests = read('../backend/src/modules/hipico/messaging-channel.test.ts');
 
-  assert.match(runtime, /new WhatsAppWebAdapter/);
-  assert.doesNotMatch(runtime, /client\.on\s*\(/);
-  assert.doesNotMatch(runtime, /client\.sendMessage\s*\(/);
-  assert.match(adapter, /class WhatsAppWebAdapter/);
-  assert.doesNotMatch(adapter, /classif|persist|raceState|supabase/i);
+  assert.match(channel, /export interface MessagingChannel/);
+  for (const method of ['connect', 'disconnect', 'status', 'receive', 'send']) {
+    assert.match(channel, new RegExp(`${method}\\(`));
+  }
+  assert.match(channel, /export class TestChannelAdapter implements MessagingChannel/);
+  assert.match(channel, /hipicoNormalizedMessageSchema\.parse\(input\)/);
+  assert.match(channel, /TEST_CHANNEL_RECEIVER_ALREADY_REGISTERED/);
+  assert.match(channel, /this\.seen\.has\(key\)/);
+  assert.doesNotMatch(channel, /classif|settlement|supabase|persistHipico|raceState/i);
+  assert.match(channelTests, /history\/live replay is deduplicated/);
+  assert.match(channelTests, /receiving history must never auto-send/);
 });
 
 test('canonical bridge suppresses LAB simulation for replayed and duplicate events', () => {
@@ -38,7 +44,7 @@ test('canonical bridge suppresses LAB simulation for replayed and duplicate even
   assert.match(route, /labSimulation:event\.inserted\?buildLabSimulation\([^)]*\):null/);
 });
 
-test('Windows setup and daily launcher are separated', () => {
+test('Windows setup and daily launcher are separated on the operational web bridge', () => {
   const setup = read('../HIPICO-SETUP.ps1');
   const daily = read('../INICIAR-HIPICO-WHATSAPP.cmd');
   const launcher = read('../tools/hipico-whatsapp-web-bridge/INICIAR.ps1');
@@ -61,6 +67,7 @@ test('CLI maps the required commands and preserves a stable json flag', () => {
     value: ''
   });
   assert.equal(commandPlan(parseCommand(['status'])).path, '/api/v1/hipico/system/status');
+  assert.equal(commandPlan(parseCommand(['doctor'])).local, 'doctor');
   assert.equal(commandPlan(parseCommand(['health'])).path, '/api/v1/hipico/system/readiness');
   assert.equal(commandPlan(parseCommand(['version'])).path, '/api/v1/hipico/system/version');
   assert.equal(commandPlan(parseCommand(['channel', 'status'])).transform, 'channel');
