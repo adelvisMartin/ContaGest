@@ -162,6 +162,76 @@ test.describe('Estados representativos por vista', () => {
   });
 });
 
+test.describe('WCAG 2.2 smoke y preferencias de movimiento', () => {
+  test.use({ viewport: { width: 390, height: 844 }, hasTouch: false });
+
+  test('semantic accessibility smoke has language, live region and named controls', async ({ page }) => {
+    await openView(page, 'dashboard', 'normal');
+    await expect(page.locator('html')).toHaveAttribute('lang', /^es(?:-|$)/i);
+    await expect(page.locator('#toast-region')).toHaveAttribute('aria-live', 'polite');
+
+    const unnamed = await page.locator('button:visible, input:visible, select:visible, textarea:visible, a[href]:visible').evaluateAll((nodes) => nodes
+      .filter((node) => !node.disabled && node.getAttribute('aria-hidden') !== 'true')
+      .filter((node) => {
+        const labelledBy = String(node.getAttribute('aria-labelledby') || '').split(/\s+/).filter(Boolean)
+          .map((id) => document.getElementById(id)?.textContent || '').join(' ').trim();
+        const labelText = Array.from(node.labels || []).map((label) => label.textContent || '').join(' ').trim();
+        const imageAlt = node.querySelector?.('img[alt]')?.getAttribute('alt') || '';
+        const name = [
+          node.getAttribute('aria-label'), labelledBy, labelText, node.textContent,
+          node.getAttribute('title'), node.getAttribute('placeholder'), imageAlt
+        ].map((value) => String(value || '').trim()).find(Boolean);
+        return !name;
+      })
+      .map((node) => `${node.tagName.toLowerCase()}#${node.id || ''}.${node.className || ''}`));
+    expect(unnamed, `Controles visibles sin nombre accesible: ${unnamed.join(', ')}`).toEqual([]);
+  });
+
+  test('keyboard focus remains visible and operable', async ({ page }) => {
+    await openView(page, 'dashboard', 'normal');
+    const visited = new Set();
+    for (let index = 0; index < 8; index += 1) {
+      await page.keyboard.press('Tab');
+      const focus = await page.evaluate(() => {
+        const node = document.activeElement;
+        if (!(node instanceof HTMLElement) || node === document.body) return null;
+        const rect = node.getBoundingClientRect();
+        const style = getComputedStyle(node);
+        return {
+          key: `${node.tagName}:${node.id || ''}:${node.getAttribute('data-action') || ''}:${node.textContent?.trim().slice(0, 40) || ''}`,
+          visible: rect.width > 0 && rect.height > 0 && style.visibility !== 'hidden' && style.display !== 'none',
+          focusVisible: style.outlineStyle !== 'none' && parseFloat(style.outlineWidth || '0') > 0
+        };
+      });
+      expect(focus, `Tab ${index + 1} no enfocó un control`).not.toBeNull();
+      expect(focus.visible, `Tab ${index + 1} enfocó un control oculto`).toBe(true);
+      expect(focus.focusVisible, `Tab ${index + 1} no tiene indicador de foco visible`).toBe(true);
+      visited.add(focus.key);
+    }
+    expect(visited.size).toBeGreaterThan(1);
+  });
+
+  test('reduced motion collapses transitions and smooth scrolling', async ({ page }) => {
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    await openView(page, 'dashboard', 'normal');
+    const motion = await page.evaluate(() => {
+      const control = document.querySelector('.button, button');
+      const style = control ? getComputedStyle(control) : null;
+      const seconds = (value) => String(value || '').split(',').map((part) => part.trim()).filter(Boolean).map((part) => part.endsWith('ms') ? parseFloat(part) / 1000 : parseFloat(part)).filter(Number.isFinite);
+      return {
+        reduced: matchMedia('(prefers-reduced-motion: reduce)').matches,
+        scrollBehavior: getComputedStyle(document.documentElement).scrollBehavior,
+        transitionDurations: seconds(style?.transitionDuration),
+        animationDurations: seconds(style?.animationDuration)
+      };
+    });
+    expect(motion.reduced).toBe(true);
+    expect(motion.scrollBehavior).toBe('auto');
+    expect(motion.transitionDurations.every((value) => value <= 0.001)).toBe(true);
+    expect(motion.animationDurations.every((value) => value <= 0.001)).toBe(true);
+  });
+});
+
 test('fixture roto deliberado demuestra que el detector bloquea regresiones', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   const brokenFixture = readFileSync(new URL('./fixtures/hipico-v105-broken-overflow.html', import.meta.url), 'utf8');
