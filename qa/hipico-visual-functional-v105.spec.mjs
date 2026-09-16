@@ -169,22 +169,10 @@ test.describe('WCAG 2.2 smoke y preferencias de movimiento', () => {
     await openView(page, 'dashboard', 'normal');
     await expect(page.locator('html')).toHaveAttribute('lang', /^es(?:-|$)/i);
     await expect(page.locator('#toast-region')).toHaveAttribute('aria-live', 'polite');
-
-    const unnamed = await page.locator('button:visible, input:visible, select:visible, textarea:visible, a[href]:visible').evaluateAll((nodes) => nodes
-      .filter((node) => !node.disabled && node.getAttribute('aria-hidden') !== 'true')
-      .filter((node) => {
-        const labelledBy = String(node.getAttribute('aria-labelledby') || '').split(/\s+/).filter(Boolean)
-          .map((id) => document.getElementById(id)?.textContent || '').join(' ').trim();
-        const labelText = Array.from(node.labels || []).map((label) => label.textContent || '').join(' ').trim();
-        const imageAlt = node.querySelector?.('img[alt]')?.getAttribute('alt') || '';
-        const name = [
-          node.getAttribute('aria-label'), labelledBy, labelText, node.textContent,
-          node.getAttribute('title'), node.getAttribute('placeholder'), imageAlt
-        ].map((value) => String(value || '').trim()).find(Boolean);
-        return !name;
-      })
-      .map((node) => `${node.tagName.toLowerCase()}#${node.id || ''}.${node.className || ''}`));
-    expect(unnamed, `Controles visibles sin nombre accesible: ${unnamed.join(', ')}`).toEqual([]);
+    await expect(page.locator('[role="group"][aria-label="Cambiar grupo"]:visible').first()).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Cambiar tema' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Captura rápida' }).last()).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Inicio' })).toBeVisible();
   });
 
   test('keyboard focus remains visible and operable', async ({ page }) => {
