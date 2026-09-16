@@ -47,8 +47,8 @@ jobs:
       - name: Typecheck current candidate
         run: npm --workspace backend run typecheck
 
-      - name: Hípico unit and contract regressions
-        run: npm --workspace backend run test:hipico
+      - name: Hípico unit and root contract regressions
+        run: npm run test:hipico
 
       - name: Produce adversarial golden evidence
         run: npm --workspace backend exec -- tsx scripts/hipico-agent-golden-v10.ts
