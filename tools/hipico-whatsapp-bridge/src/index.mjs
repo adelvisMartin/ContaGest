@@ -4,8 +4,6 @@ import crypto from 'node:crypto';
 import qrcode from 'qrcode-terminal';
 import pkg from 'whatsapp-web.js';
 import { isGroupId } from './group-identity.mjs';
-import { WhatsAppWebAdapter } from './whatsapp-web-adapter.mjs';
-import { shouldSendLabSimulation } from './delivery-policy.mjs';
 
 const { Client, LocalAuth } = pkg;
 const BRIDGE_VERSION = '0.3.2-shadow-only';
@@ -72,28 +70,62 @@ function safeRef(value) {
   return sha256(value).slice(0, 12);
 }
 
-function buildEvent(message, target, channelRole) {
+async function resolvePinnedGroup(client, role, id, configuredName) {
+  try {
+    const chat = await client.getChatById(id);
+    if (!chat?.isGroup || chat.id?._serialized !== id) return null;
+    return { id, name: configuredName || chat.name || `Grupo ${role}` };
+  } catch {
+    return null;
+  }
+}
+
+async function quotedMessageId(message) {
+  if (!message.hasQuotedMsg) return null;
+  try {
+    const quoted = await message.getQuotedMessage();
+    return quoted?.id?._serialized || null;
+  } catch { return null; }
+}
+
+async function senderLabel(message) {
+  try {
+    const contact = await message.getContact();
+    return contact?.pushname || contact?.name || contact?.shortName || '';
+  } catch { return ''; }
+}
+
+function eventGroupId(message) {
+  const from = String(message.from || '');
+  const to = String(message.to || '');
+  if (from.endsWith('@g.us')) return from;
+  if (to.endsWith('@g.us')) return to;
+  return '';
+}
+
+async function buildEvent(message, target, channelRole) {
+  const groupId = eventGroupId(message);
   return {
     bridgeVersion: BRIDGE_VERSION,
-    externalMessageId: message.externalMessageId,
-    groupId: message.groupId,
+    externalMessageId: message?.id?._serialized || sha256(`${groupId}|${message.timestamp}|${message.body}`),
+    groupId,
     groupName: target.name,
     channelKey: channelRole === 'source' ? SOURCE_CHANNEL_KEY : LAB_CHANNEL_KEY,
     labChannelKey: LAB_CHANNEL_KEY,
     channelRole,
     shadowMode: true,
-    historySync: message.historySync === true,
-    senderId: message.senderId,
-    senderLabel: String(message.senderLabel || '').slice(0, 220),
-    fromMe: message.fromMe === true,
-    timestamp: message.sentAt,
-    type: message.hasMedia ? 'media' : 'chat',
-    mediaKind: message.mediaKind,
+    historySync: false,
+    senderId: message.author || (message.fromMe ? 'self' : message.from || ''),
+    senderLabel: await senderLabel(message),
+    fromMe: Boolean(message.fromMe),
+    timestamp: message.timestamp ? new Date(Number(message.timestamp) * 1000).toISOString() : new Date().toISOString(),
+    type: String(message.type || 'chat').slice(0, 80),
+    mediaKind: message.hasMedia ? 'unknown' : 'none',
     mediaName: '',
-    text: String(message.text || '').slice(0, 4000),
-    hasMedia: message.hasMedia === true,
-    quotedExternalMessageId: message.quotedExternalMessageId ?? null,
-    quoteDepth: message.quotedExternalMessageId ? 1 : 0,
+    text: String(message.body || '').slice(0, 4000),
+    hasMedia: Boolean(message.hasMedia),
+    quotedExternalMessageId: await quotedMessageId(message),
+    quoteDepth: message.hasQuotedMsg ? 1 : 0,
     rawMeta: ''
   };
 }
@@ -184,7 +216,7 @@ function labTextFor(result, source) {
   return `🧪 SOMBRA · ${source.name}\n${serverText}`.slice(0, 4000);
 }
 
-async function deliverSpoolFile(channel, source, lab, file) {
+async function deliverSpoolFile(client, source, lab, file) {
   let event;
   try {
     event = JSON.parse(await fs.readFile(file, 'utf8'));
@@ -197,10 +229,9 @@ async function deliverSpoolFile(channel, source, lab, file) {
   const ref = safeRef(`${event.groupId}|${event.externalMessageId}`);
   try {
     const result = await postEvent(event);
-    const canSendLab = shouldSendLabSimulation(event, result);
-    const labText = canSendLab ? labTextFor(result, source) : '';
+    const labText = event.channelRole === 'source' ? labTextFor(result, source) : '';
     if (labText && !ALLOW_SEND) console.log('[BLOCKED] LAB simulation retained because HIPICO_ALLOW_SEND=false');
-    if (ALLOW_SEND && labText) await channel.send(lab.id, labText);
+    if (ALLOW_SEND && labText) await client.sendMessage(lab.id, labText);
     await fs.unlink(file);
     console.log(`[OK] ${event.channelRole}:${ref} -> ${result.classification || 'received'}${result.duplicate ? ' (duplicate)' : ''}`);
   } catch (error) {
@@ -213,9 +244,9 @@ async function deliverSpoolFile(channel, source, lab, file) {
   }
 }
 
-async function flushSpool(channel, source, lab) {
+async function flushSpool(client, source, lab) {
   const entries = (await fs.readdir(SPOOL_DIR)).filter((name) => name.endsWith('.json')).sort();
-  for (const name of entries) await deliverSpoolFile(channel, source, lab, path.join(SPOOL_DIR, name));
+  for (const name of entries) await deliverSpoolFile(client, source, lab, path.join(SPOOL_DIR, name));
 }
 
 const puppeteerArgs = PUPPETEER_NO_SANDBOX ? ['--no-sandbox', '--disable-setuid-sandbox'] : [];
@@ -227,85 +258,68 @@ const client = new Client({
 let source = null;
 let lab = null;
 let flushing = false;
-let channel;
 
-channel = new WhatsAppWebAdapter({
-  client,
-  allowedGroups: new Set([SOURCE_GROUP_ID_ENV, LAB_GROUP_ID_ENV]),
-  includeOwnMessages: INCLUDE_OWN_MESSAGES,
-  allowSend: ALLOW_SEND,
-  callbacks: {
-    onQr(qr) {
-      console.log('\nEscanea este QR desde WhatsApp/WhatsApp Business > Dispositivos vinculados:\n');
-      qrcode.generate(qr, { small: true });
-    },
-    onAuthenticated() {
-      console.log('WhatsApp vinculado.');
-    },
-    onAuthFailure() {
-      console.error('Fallo de autenticación de WhatsApp.');
-    },
-    onDisconnected() {
-      console.error('WhatsApp desconectado.');
-    },
-    async onReady() {
-      console.log('WhatsApp Web listo · bridge fallback SHADOW-ONLY.');
-      source = await channel.resolvePinnedGroup('source', SOURCE_GROUP_ID_ENV, SOURCE_GROUP_NAME_ENV);
-      lab = await channel.resolvePinnedGroup('lab', LAB_GROUP_ID_ENV, LAB_GROUP_NAME_ENV);
-      if (!source || !lab) {
-        console.error('No se pudieron verificar los grupos SOURCE/LAB pinneados.');
-        source = null;
-        lab = null;
-        return;
-      }
-      if (lab.id === source.id) {
-        console.error('SOURCE y LAB deben ser grupos distintos.');
-        source = null;
-        lab = null;
-        return;
-      }
+client.on('qr', (qr) => {
+  console.log('\nEscanea este QR desde WhatsApp/WhatsApp Business > Dispositivos vinculados:\n');
+  qrcode.generate(qr, { small: true });
+});
+client.on('authenticated', () => console.log('WhatsApp vinculado.'));
+client.on('auth_failure', () => console.error('Fallo de autenticación de WhatsApp.'));
+client.on('disconnected', () => console.error('WhatsApp desconectado.'));
 
-      console.log(`SOURCE verificado: ${safeRef(source.id)} · SOLO LECTURA`);
-      console.log(`LAB verificado: ${safeRef(lab.id)} · envío ${ALLOW_SEND ? 'HABILITADO' : 'BLOQUEADO'}`);
-
-      await flushSpool(channel, source, lab);
-      setInterval(() => {
-        if (!source || !lab || flushing) return;
-        flushing = true;
-        flushSpool(channel, source, lab).finally(() => { flushing = false; });
-      }, 5000).unref();
-    },
-    onError(error) {
-      console.error(`Error de canal WhatsApp: ${error?.code || error?.message || 'whatsapp_channel_error'}`);
-    }
+client.on('ready', async () => {
+  console.log('WhatsApp Web listo · bridge fallback SHADOW-ONLY.');
+  source = await resolvePinnedGroup(client, 'source', SOURCE_GROUP_ID_ENV, SOURCE_GROUP_NAME_ENV);
+  lab = await resolvePinnedGroup(client, 'lab', LAB_GROUP_ID_ENV, LAB_GROUP_NAME_ENV);
+  if (!source || !lab) {
+    console.error('No se pudieron verificar los grupos SOURCE/LAB pinneados.');
+    source = null;
+    lab = null;
+    return;
   }
+  if (lab.id === source.id) {
+    console.error('SOURCE y LAB deben ser grupos distintos.');
+    source = null;
+    lab = null;
+    return;
+  }
+
+  console.log(`SOURCE verificado: ${safeRef(source.id)} · SOLO LECTURA`);
+  console.log(`LAB verificado: ${safeRef(lab.id)} · envío ${ALLOW_SEND ? 'HABILITADO' : 'BLOQUEADO'}`);
+
+  await flushSpool(client, source, lab);
+  setInterval(() => {
+    if (!source || !lab || flushing) return;
+    flushing = true;
+    flushSpool(client, source, lab).finally(() => { flushing = false; });
+  }, 5000).unref();
 });
 
-channel.receive(async (message) => {
+client.on('message_create', async (message) => {
   try {
     if (!source || !lab) return;
+    const groupId = eventGroupId(message);
     let target = null;
     let channelRole = null;
-    if (message.groupId === source.id) { target = source; channelRole = 'source'; }
-    else if (message.groupId === lab.id) { target = lab; channelRole = 'lab'; }
+    if (groupId === source.id) { target = source; channelRole = 'source'; }
+    else if (groupId === lab.id) { target = lab; channelRole = 'lab'; }
     else return;
+    if (!INCLUDE_OWN_MESSAGES && message.fromMe) return;
 
-    const event = buildEvent(message, target, channelRole);
+    const event = await buildEvent(message, target, channelRole);
     const file = await spool(event);
-    await deliverSpoolFile(channel, source, lab, file);
+    await deliverSpoolFile(client, source, lab, file);
   } catch (error) {
-    const ref = safeRef(message?.externalMessageId || `${message?.sentAt || ''}|${message?.groupId || ''}`);
+    const ref = safeRef(message?.id?._serialized || `${message?.timestamp || ''}|${message?.from || ''}`);
     console.error(`No se pudo procesar el mensaje ${ref}: ${error?.code || error?.message || 'bridge_error'}`);
   }
 });
 
 process.on('SIGINT', async () => {
   console.log('\nCerrando Hípico WhatsApp Bridge...');
-  await channel.disconnect().catch(() => {});
+  await client.destroy().catch(() => {});
   process.exit(0);
 });
 
 console.log('Iniciando Hípico WhatsApp Group Bridge fallback SHADOW-ONLY...');
-channel.connect().catch((error) => {
-  console.error(`No se pudo iniciar WhatsApp Web: ${error?.code || error?.message || 'whatsapp_initialize_error'}`);
-});
+client.initialize();
