@@ -110,10 +110,25 @@ export class WhatsAppWebAdapter {
   #safeCallback(name, ...args) {
     const callback = this.#callbacks?.[name];
     if (typeof callback !== 'function') return;
-    Promise.resolve(callback(...args)).catch((error) => {
-      const onError = this.#callbacks?.onError;
-      if (typeof onError === 'function') onError(error);
-    });
+    let callbackResult;
+    try {
+      callbackResult = callback(...args);
+    } catch (error) {
+      this.#reportCallbackError(name, error);
+      return;
+    }
+    Promise.resolve(callbackResult).catch((error) => this.#reportCallbackError(name, error));
+  }
+
+  #reportCallbackError(sourceName, error) {
+    if (sourceName === 'onError') return;
+    const onError = this.#callbacks?.onError;
+    if (typeof onError !== 'function') return;
+    try {
+      Promise.resolve(onError(error)).catch(() => {});
+    } catch {
+      // Error reporting itself must never create a callback loop or unhandled effect.
+    }
   }
 
   #bindEvents() {
