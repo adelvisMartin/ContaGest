@@ -8,8 +8,8 @@ const root=process.cwd();
 const read=(file)=>fs.readFileSync(path.join(root,file),'utf8');
 
 function appRoutes(){
-  const source=read('frontend/src/app.js');
-  const start=source.indexOf('const pageRegistry={');
+  const source=read('frontend/src/data/pageRegistry.js');
+  const start=source.indexOf('export const PAGE_REGISTRY = {');
   const end=source.indexOf('\n};',start);
   assert.ok(start>=0&&end>start,'pageRegistry must exist');
   const block=source.slice(start,end+3);
