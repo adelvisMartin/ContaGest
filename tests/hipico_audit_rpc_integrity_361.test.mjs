@@ -39,7 +39,7 @@ test('v26 preserves the RPC signature and hardens SECURITY DEFINER execution', a
   assert.match(sql,/HIPICO_AUDIT_ACTION_INVALID/);
   assert.match(sql,/HIPICO_AUDIT_ENTITY_MISMATCH/);
   assert.match(sql,/HIPICO_AUDIT_PAYLOAD_TOO_LARGE/);
-  assert.match(sql,/pg_column_size\(v_payload\)\s*>\s*16384/i);
+  assert.match(sql,/pg_column_size\\(v_raw_payload\\)\s*>\s*16384/i);
   assert.match(sql,/HIPICO_AUDIT_EVENT_ID_REQUIRED/);
 });
 
@@ -65,4 +65,26 @@ test('v26 preserves historical rows and durable idempotency', async()=>{
   assert.match(sql,/hipico_audit_owner_idempotency_unique/i);
   assert.match(sql,/HIPICO_AUDIT_REPLAY_MISMATCH/);
   assert.doesNotMatch(sql,/delete\s+from\s+public\.hipico_audit_events/i);
+});
+
+
+test('v14 PostgreSQL probe is isolated, transactional and fail-closed', async()=>{
+  const probe=await read('scripts/hipico-audit-rpc-v14-pg.mjs');
+  assert.match(probe,/127\.0\.0\.1|localhost/);
+  assert.match(probe,/hipico_e2e_/);
+  assert.match(probe,/Refusing non-local audit RPC probe host/);
+  assert.match(probe,/BEGIN/);
+  assert.match(probe,/ROLLBACK/);
+  assert.doesNotMatch(probe,/\bCOMMIT\b/);
+  for(const marker of [
+    'V26_PROBE_ACTOR_SPOOFED',
+    'V26_EXPECTED_REPLAY_MISMATCH_MISSING',
+    'V26_EXPECTED_ACTION_REJECTION_MISSING',
+    'V26_EXPECTED_ENTITY_REJECTION_MISSING',
+    'V26_EXPECTED_PAYLOAD_REJECTION_MISSING',
+    'V26_EXPECTED_CROSS_WORKSPACE_REJECTION_MISSING',
+    'V26_EXPECTED_VIEWER_REJECTION_MISSING',
+    'V26_EXPECTED_AUDITOR_REJECTION_MISSING',
+    'V26_PROBE_ANON_EXECUTE_PRESENT'
+  ]) assert.match(probe,new RegExp(marker));
 });
