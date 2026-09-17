@@ -1,6 +1,13 @@
 {
   "schema": "hipico-mainline-reconciliation.v13",
   "baseline": "ab02c550f24c3347121d8c74c636b450245036ac",
+  "historicalMergeBase": "d40a00134104bd7f6ad3d72e9b6ff267a7b94f75",
+  "historicalCandidates": {
+    "v9": "5c285ce12ff0f62f4fc69fade57dff447015b81e",
+    "v10": "b8aeb88242dcc8e3ecd15501d113a97dd4cd0146",
+    "v11": "dc81330ee1e6c8d59cf14cac854520449e8a5851",
+    "v12": "5b36fc5965d7e654ef63c3c1baba3408fce7b0c7"
+  },
   "invariants": {
     "sourceReadOnly": true,
     "labWriteOnlyDuringQa": true,
@@ -9,12 +16,52 @@
     "llmSettlementAuthority": false
   },
   "entries": [
-    {"area":"v9-production-hardening","classification":"CONFLICT","authority":".github/workflows/hipico-production-gates-v290.yml"},
-    {"area":"v10-golden","classification":"MISSING","authority":"backend/src/modules/hipico/agent-adversarial-golden.ts"},
-    {"area":"v11-observability","classification":"MISSING","authority":"backend/src/modules/hipico-bot/hipico-observability.ts"},
-    {"area":"v11-agent-route","classification":"CONFLICT","authority":"backend/src/modules/hipico/agent.routes.ts"},
-    {"area":"v11-webhook-outbound","classification":"CONFLICT","authority":"backend/src/modules/hipico-bot/hipico-webhook-outbound.ts"},
-    {"area":"v11-outbound-worker","classification":"CONFLICT","authority":"backend/src/modules/hipico-bot/hipico-outbound-worker.ts"},
-    {"area":"v12-release","classification":"MISSING","authority":"scripts/hipico-release-manifest-v12.mjs"}
-  ]
+    {
+      "area": "v9-production-hardening",
+      "classification": "PRESENT",
+      "authority": ".github/workflows/hipico-production-gates-v290.yml",
+      "decision": "Historical v9 QA/release paths were unchanged between merge base and current main, so their candidate blobs were restored exactly. PostgreSQL base gate remains v12-v24; v25 is verified separately by the v11 observability probe."
+    },
+    {
+      "area": "v10-golden",
+      "classification": "PRESENT",
+      "authority": "backend/src/modules/hipico/agent-adversarial-golden.ts",
+      "decision": "Golden corpus assets were restored exactly; current agent-engine was preserved and received only deterministic parser versioning plus Unicode security normalization required by the corpus."
+    },
+    {
+      "area": "v11-observability",
+      "classification": "PRESENT",
+      "authority": "backend/src/modules/hipico-bot/hipico-observability.ts",
+      "decision": "Sanitized observability core/store/tests, isolated PostgreSQL probe and append-only v25 migration were restored because main had v23/v24 but no equivalent v25 schema."
+    },
+    {
+      "area": "v11-agent-route",
+      "classification": "PRESENT",
+      "authority": "backend/src/modules/hipico/agent.routes.ts",
+      "decision": "Current mainline route remained authoritative; only fail-soft RISK_POLICY, AGENT_DECISION and PERSISTENCE observation side effects were added."
+    },
+    {
+      "area": "v11-webhook-outbound",
+      "classification": "PRESENT",
+      "authority": "backend/src/modules/hipico-bot/hipico-webhook-outbound.ts",
+      "decision": "Current canonical outbox flow remained authoritative; sanitized INBOUND/NORMALIZATION/PARSER/PERSISTENCE/CONTEXT/OUTBOX observations were added without changing dispatch authority."
+    },
+    {
+      "area": "v11-outbound-worker",
+      "classification": "PRESENT",
+      "authority": "backend/src/modules/hipico-bot/hipico-outbound-worker.ts",
+      "decision": "Current lease/receipt/retry/reconciliation worker remained authoritative; DELIVERY_RECEIPT and RECONCILIATION_HANDOFF observations were added as fail-soft side effects."
+    },
+    {
+      "area": "v12-release",
+      "classification": "PRESENT",
+      "authority": "scripts/hipico-release-manifest-v12.mjs",
+      "decision": "Strict exact-SHA manifest, progressive rollout contract, rollback documentation and non-deploying workflow were restored as additive assets."
+    }
+  ],
+  "externalGates": {
+    "githubActionsRunner": "BLOCKED_INFRASTRUCTURE until exact-SHA jobs receive a runner and execute steps",
+    "physicalQa119": "BLOCKED until real device/session evidence exists",
+    "soak120": "BLOCKED until a real >=24h run exists"
+  }
 }
