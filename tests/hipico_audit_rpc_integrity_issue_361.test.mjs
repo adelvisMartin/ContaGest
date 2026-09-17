@@ -49,11 +49,13 @@ test('#361 allowlists the mutation families currently emitted by the PWA', async
   const sql = await read(migrationPath);
   for (const marker of [
     'race_locked', 'race_unlocked', 'race_created', 'race_settled', 'race_closed',
+    'settlement_reopened', 'board_updated', 'board_from_whatsapp', 'whatsapp_imported',
+    'advanced_loaded',
     'bet_created', 'bet_created_multi', 'bet_duplicated', 'bet_cancelled',
-    'participant_created', 'participant_updated', 'board_updated',
+    'participant_created', 'participant_updated',
     'movement_posted', 'settings_updated', 'group_created', 'rate_added',
     'polla_created', 'polla_entry_added', 'polla_updated',
-    'whatsapp_imported', 'advanced_created', 'advanced_imported', 'advanced_loaded',
+    'advanced_created', 'advanced_imported', 'advanced_group_cleared', 'advanced_deleted',
     'day_closed', 'week_closed'
   ]) assert.ok(sql.includes(marker), `v14 action catalog missing ${marker}`);
 });
