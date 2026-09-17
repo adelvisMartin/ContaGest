@@ -62,6 +62,8 @@ test('v26 append RPC is a bounded SECURITY DEFINER authority with server-owned a
   for (const marker of [
     'security definer',
     'set search_path = pg_catalog',
+    'public.hipico_workspace_owner()',
+    'public.hipico_access_role()',
     'HIPICO_AUDIT_ROLE_FORBIDDEN',
     'HIPICO_AUDIT_ACTION_FORBIDDEN',
     'HIPICO_AUDIT_ENTITY_MISMATCH',
@@ -78,6 +80,16 @@ test('v26 append RPC is a bounded SECURITY DEFINER authority with server-owned a
     "rolname = 'service_role'"
   ]) assert.ok(migration.toLowerCase().includes(marker.toLowerCase()), `missing hardening marker: ${marker}`);
   assert.doesNotMatch(migration, /grant\s+insert\s+on\s+table\s+public\.hipico_audit_events\s+to\s+authenticated/i);
+});
+
+test('v26 is self-contained for production drift and preserves replay protection', async () => {
+  const migration = await read('supabase/sql/hipico_v26_audit_rpc_integrity.sql');
+  assert.match(migration, /add column if not exists idempotency_key text/i);
+  assert.match(migration, /hipico_audit_owner_idempotency_unique/i);
+  assert.match(migration, /on conflict \(owner_id, idempotency_key\)/i);
+  assert.match(migration, /HIPICO_AUDIT_REPLAY_MISMATCH/);
+  assert.match(migration, /v_owner, v_workspace_id, v_action/);
+  assert.match(migration, /'actorUserId', v_uid::text/);
 });
 
 test('v26 adds compatible source/authority provenance without rewriting historical semantics', async () => {
@@ -99,15 +111,15 @@ test('PWA keeps the same append RPC signature and cannot supply server authority
   assert.doesNotMatch(supabase, /p_(?:actor|role|source|authority|financial_authority|settlement_authority)\s*:/i);
 });
 
-test('v26 PostgreSQL probe covers role, scope, mismatch, payload and forged metadata negatives', async () => {
+test('v26 PostgreSQL probe covers delegated role, scope, mismatch, payload and forged metadata negatives', async () => {
   const [probe, workflow] = await Promise.all([
     read('scripts/hipico-audit-rpc-v26-pg.mjs'),
     read('.github/workflows/hipico-audit-rpc-v26.yml')
   ]);
   for (const marker of [
-    'viewer', 'auditor', 'HIPICO_AUDIT_ACTION_FORBIDDEN', 'HIPICO_AUDIT_ENTITY_MISMATCH',
-    'HIPICO_WORKSPACE_FORBIDDEN', 'HIPICO_AUDIT_PAYLOAD_TOO_LARGE', 'forged-user',
-    'source,authority', 'financialAuthority', 'settlementAuthority', 'ROLLBACK'
+    'operatorId', 'workspace_owner_id', 'viewer', 'auditor', 'HIPICO_AUDIT_ACTION_FORBIDDEN',
+    'HIPICO_AUDIT_ENTITY_MISMATCH', 'HIPICO_WORKSPACE_FORBIDDEN', 'HIPICO_AUDIT_PAYLOAD_TOO_LARGE',
+    'forged-user', 'source,authority', 'financialAuthority', 'settlementAuthority', 'ROLLBACK'
   ]) assert.ok(probe.includes(marker), `probe missing ${marker}`);
   assert.match(workflow, /postgres:16/);
   assert.match(workflow, /HIPICO_CANDIDATE_SHA/);
