@@ -2,9 +2,34 @@
 -- Additive/replay-safe hardening for the PWA -> PostgreSQL audit boundary.
 -- Client-synchronized rows are advisory evidence only and never financial authority.
 
+-- The deployed production schema can predate the repository v13 idempotency migration.
+-- Make v26 self-contained so the hardened RPC never depends on migration drift.
 alter table public.hipico_audit_events
+  add column if not exists idempotency_key text,
   add column if not exists source text,
   add column if not exists authority text;
+
+with ranked as (
+  select
+    id,
+    nullif(trim(payload ->> 'id'), '') as candidate,
+    row_number() over (
+      partition by owner_id, nullif(trim(payload ->> 'id'), '')
+      order by id
+    ) as ordinal
+  from public.hipico_audit_events
+  where nullif(trim(payload ->> 'id'), '') is not null
+)
+update public.hipico_audit_events audit
+set idempotency_key = ranked.candidate
+from ranked
+where audit.id = ranked.id
+  and ranked.ordinal = 1
+  and audit.idempotency_key is null;
+
+create unique index if not exists hipico_audit_owner_idempotency_unique
+  on public.hipico_audit_events(owner_id, idempotency_key)
+  where idempotency_key is not null;
 
 -- Preserve historical meaning instead of retroactively declaring legacy rows authoritative.
 update public.hipico_audit_events
@@ -23,7 +48,7 @@ alter table public.hipico_audit_events
 do $$
 begin
   if not exists (
-    select 1 from pg_constraint
+    select 1 from pg_catalog.pg_constraint
     where conrelid = 'public.hipico_audit_events'::regclass
       and conname = 'hipico_audit_events_source_check'
   ) then
@@ -32,7 +57,7 @@ begin
       check (source in ('legacy','client_sync','server'));
   end if;
   if not exists (
-    select 1 from pg_constraint
+    select 1 from pg_catalog.pg_constraint
     where conrelid = 'public.hipico_audit_events'::regclass
       and conname = 'hipico_audit_events_authority_check'
   ) then
@@ -56,7 +81,8 @@ set search_path = pg_catalog
 as $$
 declare
   v_uid uuid := auth.uid();
-  v_role text;
+  v_owner uuid := public.hipico_workspace_owner();
+  v_role text := lower(coalesce(public.hipico_access_role(), ''));
   v_workspace_id uuid;
   v_id bigint;
   v_action text := lower(trim(coalesce(p_action, '')));
@@ -72,29 +98,27 @@ declare
   v_created_at text;
   v_existing public.hipico_audit_events;
 begin
-  if v_uid is null then
-    raise exception 'HIPICO_AUTH_REQUIRED' using errcode = '42501';
+  if v_uid is null or v_owner is null then
+    raise exception 'HIPICO_ACCESS_REQUIRED' using errcode = '42501';
   end if;
 
-  select lower(profile.role) into v_role
-  from public.hipico_profiles profile
-  where profile.owner_id = v_uid;
-
-  if v_role is null or v_role not in ('admin','operator') then
+  -- Any current/future read-only role is denied by default. Only the two roles
+  -- that already own mutation authority may synchronize client audit evidence.
+  if v_role not in ('admin','operator') then
     raise exception 'HIPICO_AUDIT_ROLE_FORBIDDEN' using errcode = '42501';
   end if;
 
   if p_workspace_id is null then
     select workspace.id into v_workspace_id
     from public.hipico_workspaces workspace
-    where workspace.owner_id = v_uid
+    where workspace.owner_id = v_owner
     order by workspace.updated_at desc
     limit 1;
   else
     select workspace.id into v_workspace_id
     from public.hipico_workspaces workspace
     where workspace.id = p_workspace_id
-      and workspace.owner_id = v_uid;
+      and workspace.owner_id = v_owner;
   end if;
 
   if v_workspace_id is null then
@@ -209,7 +233,7 @@ begin
   insert into public.hipico_audit_events(
     owner_id, workspace_id, action, entity_type, entity_id, payload, idempotency_key, source, authority
   ) values (
-    v_uid, v_workspace_id, v_action, v_entity_type, v_entity_id, v_payload, v_key, 'client_sync', 'advisory'
+    v_owner, v_workspace_id, v_action, v_entity_type, v_entity_id, v_payload, v_key, 'client_sync', 'advisory'
   )
   on conflict (owner_id, idempotency_key)
     where idempotency_key is not null
@@ -222,7 +246,7 @@ begin
 
   select * into v_existing
   from public.hipico_audit_events audit
-  where audit.owner_id = v_uid
+  where audit.owner_id = v_owner
     and audit.idempotency_key = v_key
   limit 1;
 
@@ -244,11 +268,16 @@ begin
 end;
 $$;
 
--- Authenticated clients may read their own rows through RLS, but all client writes
--- must cross the hardened append RPC. The sequence is not a direct-write capability.
+-- Authenticated clients keep only the RPC capability. Do not expand direct table
+-- read/write privileges in this migration; preserve the deployed access surface.
 revoke insert, update, delete on table public.hipico_audit_events from authenticated;
-grant select on table public.hipico_audit_events to authenticated;
-revoke usage, select on sequence public.hipico_audit_events_id_seq from authenticated;
+
+do $$
+begin
+  if pg_catalog.to_regclass('public.hipico_audit_events_id_seq') is not null then
+    execute 'revoke usage, select on sequence public.hipico_audit_events_id_seq from authenticated';
+  end if;
+end $$;
 
 revoke all on function public.hipico_append_audit(uuid, text, text, text, jsonb)
   from public, anon, authenticated;
@@ -257,7 +286,7 @@ grant execute on function public.hipico_append_audit(uuid, text, text, text, jso
 
 do $$
 begin
-  if exists (select 1 from pg_roles where rolname = 'service_role') then
+  if exists (select 1 from pg_catalog.pg_roles where rolname = 'service_role') then
     execute 'revoke all on function public.hipico_append_audit(uuid, text, text, text, jsonb) from service_role';
     execute 'grant execute on function public.hipico_append_audit(uuid, text, text, text, jsonb) to service_role';
   end if;
@@ -267,5 +296,7 @@ comment on column public.hipico_audit_events.source
   is 'Origin of audit evidence. PWA synchronization is client_sync; historical pre-v26 rows remain legacy.';
 comment on column public.hipico_audit_events.authority
   is 'Authority level of evidence. PWA client_sync events are advisory and never financial/settlement authority.';
+comment on index public.hipico_audit_owner_idempotency_unique
+  is 'Deduplicates durable Control Hípico client audit delivery by workspace owner + stable local event id.';
 comment on function public.hipico_append_audit(uuid, text, text, text, jsonb)
-  is 'Hardened owner-scoped PWA audit append. SECURITY DEFINER is bounded by role, workspace, exact action/entity catalog, payload limits, server-owned actor/provenance and idempotent replay checks.';
+  is 'Hardened workspace-scoped PWA audit append. SECURITY DEFINER preserves delegated access while role, workspace, exact action/entity catalog, payload limits, server-owned actor/provenance and idempotent replay fail closed.';
