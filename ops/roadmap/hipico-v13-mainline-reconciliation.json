@@ -1,0 +1,20 @@
+{
+  "schema": "hipico-mainline-reconciliation.v13",
+  "baseline": "ab02c550f24c3347121d8c74c636b450245036ac",
+  "invariants": {
+    "sourceReadOnly": true,
+    "labWriteOnlyDuringQa": true,
+    "financialAuthority": false,
+    "llmDirectDbWrites": false,
+    "llmSettlementAuthority": false
+  },
+  "entries": [
+    {"area":"v9-production-hardening","classification":"CONFLICT","authority":".github/workflows/hipico-production-gates-v290.yml"},
+    {"area":"v10-golden","classification":"MISSING","authority":"backend/src/modules/hipico/agent-adversarial-golden.ts"},
+    {"area":"v11-observability","classification":"MISSING","authority":"backend/src/modules/hipico-bot/hipico-observability.ts"},
+    {"area":"v11-agent-route","classification":"CONFLICT","authority":"backend/src/modules/hipico/agent.routes.ts"},
+    {"area":"v11-webhook-outbound","classification":"CONFLICT","authority":"backend/src/modules/hipico-bot/hipico-webhook-outbound.ts"},
+    {"area":"v11-outbound-worker","classification":"CONFLICT","authority":"backend/src/modules/hipico-bot/hipico-outbound-worker.ts"},
+    {"area":"v12-release","classification":"MISSING","authority":"scripts/hipico-release-manifest-v12.mjs"}
+  ]
+}
