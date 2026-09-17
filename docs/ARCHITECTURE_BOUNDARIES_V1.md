@@ -20,7 +20,7 @@ La clasificación es de composición y gobierno. No cambia por sí sola la API p
 
 `npm run audit:architecture` verifica:
 
-1. que `frontend/src/app.js` y `qa/support/module-visual-catalog.mjs` siguen declarando exactamente 58 rutas;
+1. que `frontend/src/data/pageRegistry.js` y `qa/support/module-visual-catalog.mjs` siguen declarando exactamente 58 rutas;
 2. que no aparecen duplicados ni drift entre ambas autoridades;
 3. que módulos protegidos del núcleo ERP no importan paquetes verticales opcionales (`verticals` o `hipico-bot`);
 4. que el resultado es determinista y falla con código distinto de cero ante una violación.
@@ -62,7 +62,7 @@ Este gate no significa que ContaGest esté al 100% ni que esté listo para produ
 Una vez estabilizado este contrato, las refactorizaciones de mayor tamaño deben hacerse por PR independiente:
 
 1. dividir `verticals.routes.ts` por bounded context conservando paths;
-2. reducir `frontend/src/app.js` extrayendo el registro de navegación a una autoridad importable sin cambiar las 58 rutas;
+2. mantener `frontend/src/data/pageRegistry.js` como autoridad importable de navegación y reducir progresivamente `frontend/src/app.js` sin cambiar las 58 rutas;
 3. introducir contratos/adapters explícitos para dependencias entre Platform/Core y Vertical Packs;
 4. extender el auditor con reglas de dependencia por dominio cuando el árbol ya refleje esas capas físicamente.
 
