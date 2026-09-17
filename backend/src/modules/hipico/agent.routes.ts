@@ -22,6 +22,8 @@ import {
   operatorTokenConfigured,
   operatorTokenValid
 } from '../hipico-bot/hipico-operator-security.js';
+import { buildObservationTrace, candidateSha } from '../hipico-bot/hipico-observability.js';
+import { recordHipicoObservationSafe } from '../hipico-bot/hipico-observability.store.js';
 
 const router = Router();
 const store = new AutomationStore();
@@ -122,14 +124,28 @@ router.get('/groups/:groupId/automation/evaluations', async (req, res) => {
 });
 
 router.post('/groups/:groupId/automation/evaluate', async (req, res) => {
+  const started = Date.now();
   try {
     const body = evaluateSchema.parse(req.body);
     const owner = ownerId();
     const g = groupKey(req);
     const gid = parsedGroupId(req);
+    const rid = requestId(req);
+    const trace = buildObservationTrace({ ownerId: owner, groupKey: g, groupId: gid, sourceRef: rid, requestId: rid });
     const config = await store.get(owner, g, gid);
     // Request evidence remains audit-only. Server-derived context alone can affect policy authority.
     const evaluation = await engine.evaluate(body.text, config.mode, serverRiskContext(gid));
+    const policy = evaluation.riskPolicy;
+    const disposition = String(policy?.disposition || 'HUMAN_REQUIRED');
+    await recordHipicoObservationSafe({
+      ...trace,
+      stage: 'RISK_POLICY',
+      outcome: disposition === 'DENY' ? 'DENIED' : disposition === 'AUTO' ? 'SUCCESS' : 'HELD',
+      reasonCode: String(policy?.reason || disposition),
+      latencyMs: Date.now() - started,
+      candidateSha: candidateSha(),
+      metadata: { disposition, mode: config.mode, evidenceState: policy?.evidenceState || null }
+    });
     const receipt = await store.recordEvaluation({
       ownerId: owner,
       groupKey: g,
@@ -140,6 +156,24 @@ router.post('/groups/:groupId/automation/evaluate', async (req, res) => {
       canAct: evaluation.canAct,
       riskPolicy: evaluation.riskPolicy,
       evidence: body.evidence
+    });
+    await recordHipicoObservationSafe({
+      ...trace,
+      stage: 'AGENT_DECISION',
+      outcome: evaluation.canAct ? 'SUCCESS' : 'HELD',
+      reasonCode: String(policy?.reason || 'AGENT_DECISION_RECORDED'),
+      latencyMs: Date.now() - started,
+      candidateSha: candidateSha(),
+      metadata: { canAct: Boolean(evaluation.canAct), intent: evaluation.candidate?.intent || null, disposition }
+    });
+    await recordHipicoObservationSafe({
+      ...trace,
+      stage: 'PERSISTENCE',
+      outcome: 'SUCCESS',
+      reasonCode: 'AGENT_EVALUATION_PERSISTED',
+      latencyMs: Date.now() - started,
+      candidateSha: candidateSha(),
+      metadata: { receiptRecorded: Boolean(receipt) }
     });
     return res.status(202).json({
       ok: true,
