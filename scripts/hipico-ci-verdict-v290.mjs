@@ -23,6 +23,23 @@ export function classifyJob(job = {}) {
   return 'NOT_EXECUTED';
 }
 
+function jobNameMatches(actualName, expectedName) {
+  const actual = String(actualName || '').trim();
+  const expected = String(expectedName || '').trim();
+  return actual === expected || actual.startsWith(`${expected} (`);
+}
+
+export function classifyNamedJobs(jobs = [], jobName) {
+  const matching = Array.isArray(jobs)
+    ? jobs.filter((job) => jobNameMatches(job?.name, jobName))
+    : [];
+  if (!matching.length) return 'NOT_EXECUTED';
+  const statuses = matching.map(classifyJob);
+  if (statuses.includes('FAIL')) return 'FAIL';
+  if (statuses.includes('BLOCKED')) return 'BLOCKED';
+  return statuses.every((status) => status === 'PASS') ? 'PASS' : 'NOT_EXECUTED';
+}
+
 export function summarizeBlocker(statuses = []) {
   if (statuses.includes('FAIL')) return '';
   return statuses.includes('BLOCKED') ? 'BLOCKED_INFRASTRUCTURE' : '';
@@ -61,19 +78,7 @@ async function main() {
   const jobs = Array.isArray(response?.jobs) ? response.jobs : [];
   const output = {};
   for (const [jobName, envName] of Object.entries(JOB_ENV)) {
-    const matching = jobs.filter((job) => String(job?.name || '') === jobName);
-    if (!matching.length) {
-      output[envName] = 'NOT_EXECUTED';
-      continue;
-    }
-    const statuses = matching.map(classifyJob);
-    output[envName] = statuses.includes('FAIL')
-      ? 'FAIL'
-      : statuses.includes('BLOCKED')
-        ? 'BLOCKED'
-        : statuses.every((status) => status === 'PASS')
-          ? 'PASS'
-          : 'NOT_EXECUTED';
+    output[envName] = classifyNamedJobs(jobs, jobName);
   }
   output.HIPICO_GATE_RESTART = output.HIPICO_GATE_POSTGRES;
   const physical = String(process.env.HIPICO_PHYSICAL_QA_STATUS || 'NOT_EXECUTED').trim().toUpperCase();

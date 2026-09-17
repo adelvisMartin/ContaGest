@@ -2,7 +2,6 @@ name: Control Hipico Production Gates v290
 
 on:
   pull_request:
-    branches: [main]
     paths:
       - 'backend/src/modules/hipico/**'
       - 'backend/src/modules/hipico-bot/**'
@@ -21,6 +20,18 @@ on:
       - 'package-lock.json'
   workflow_dispatch:
     inputs:
+      p0_open:
+        description: Explicit P0 status for stable-promotion readiness
+        required: false
+        default: UNKNOWN
+        type: choice
+        options: [UNKNOWN, 'false', 'true']
+      security_critical:
+        description: Explicit critical-security status for stable-promotion readiness
+        required: false
+        default: UNKNOWN
+        type: choice
+        options: [UNKNOWN, 'false', 'true']
       physical_qa_status:
         description: Physical QA evidence status for reporting only
         required: false
@@ -148,10 +159,12 @@ jobs:
         run: node scripts/hipico-ephemeral-db-v290.mjs create
       - name: Deploy Prisma persistence
         run: npm --workspace backend run prisma:deploy
-      - name: Apply v12-v22 Hípico schema and RLS RBAC probes
+      - name: Apply v12-v24 Hípico schema and RLS RBAC probes
         run: node scripts/hipico-apply-e2e-schema-v290.mjs
       - name: TestChannel persistence and replay E2E
         run: npm --workspace backend exec -- tsx --test src/modules/hipico-bot/production-e2e-v290.ts
+      - name: Agent policy metrics persistence E2E
+        run: npm --workspace backend run test:hipico:agent
       - name: Persist restart state in process A
         run: npm --workspace backend exec -- tsx scripts/hipico-restart-recovery-v290.ts prepare
       - name: Verify restart recovery in process B
@@ -167,8 +180,8 @@ jobs:
           import fs from 'node:fs';
           fs.writeFileSync('artifacts/qa/hipico-v290/postgres-gate.json', `${JSON.stringify({
             schema: 'hipico-postgres-gate.v290-current', sha: process.env.HIPICO_CANDIDATE_SHA,
-            status: 'PASS', database: 'isolated-ephemeral-postgresql-16', migrations: 'v12-v22',
-            testChannelReplay: 'PASS', restartRecovery: 'PASS', loadProfile: 'PASS', checkedAt: new Date().toISOString()
+            status: 'PASS', database: 'isolated-ephemeral-postgresql-16', migrations: 'v12-v24',
+            testChannelReplay: 'PASS', agentPolicyMetrics: 'PASS', restartRecovery: 'PASS', loadProfile: 'PASS', checkedAt: new Date().toISOString()
           }, null, 2)}\n`);
           NODE
       - name: Drop isolated database
@@ -364,11 +377,13 @@ jobs:
 
   release-report:
     if: always() && github.event_name != 'schedule'
-    needs: [static-release, postgres-e2e, browser-chromium, security-regression, android-debug]
+    needs: [static-release, postgres-e2e, browser-chromium, security-regression, android-debug, browser-matrix]
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
       GITHUB_TOKEN: ${{ github.token }}
+      HIPICO_P0_OPEN: ${{ inputs.p0_open || 'UNKNOWN' }}
+      HIPICO_SECURITY_CRITICAL: ${{ inputs.security_critical || 'UNKNOWN' }}
       HIPICO_PHYSICAL_QA_STATUS: ${{ inputs.physical_qa_status || 'NOT_EXECUTED' }}
     steps:
       - uses: actions/checkout@v7
@@ -376,14 +391,17 @@ jobs:
           ref: ${{ env.HIPICO_CANDIDATE_SHA }}
           fetch-depth: 0
       - name: Download SHA-bound evidence
+        if: always()
         uses: actions/download-artifact@v7
         with:
           pattern: hipico-v290-*-${{ env.HIPICO_CANDIDATE_SHA }}
           path: artifacts/qa/downloaded
           merge-multiple: false
       - name: Classify exact-run job outcomes
+        if: always()
         run: npm run ci:hipico:verdict:v290
       - name: Verify evidence integrity
+        if: always()
         run: npm run verify:hipico:evidence:v290
       - name: Write release report
         if: always()

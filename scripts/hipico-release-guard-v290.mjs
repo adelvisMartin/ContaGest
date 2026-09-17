@@ -26,12 +26,18 @@ for (const relative of [
   'scripts/hipico-verify-evidence-v290.mjs',
   'scripts/hipico-release-report-v290.mjs',
   'backend/src/modules/hipico/operator-read.routes.ts',
+  'backend/src/modules/hipico/risk-policy.ts',
+  'backend/src/modules/hipico/promotion-policy.ts',
+  'backend/src/modules/hipico/agent-policy.ts',
+  'backend/src/modules/hipico-bot/hipico-outbox.store.ts',
   'backend/src/modules/hipico-bot/hipico-test-channel.ts',
   'backend/src/modules/hipico-bot/production-e2e-v290.ts',
   'backend/scripts/hipico-restart-recovery-v290.ts',
   'backend/scripts/hipico-load-profile-v290.ts',
   'supabase/sql/hipico_v18_documents.sql',
   'supabase/sql/hipico_v22_agent_shadow.sql',
+  'supabase/sql/hipico_v23_risk_policy.sql',
+  'supabase/sql/hipico_v24_shadow_metrics.sql',
   '.github/workflows/hipico-production-gates-v290.yml'
 ]) assert(exists(relative), `${relative} missing`);
 
@@ -73,18 +79,51 @@ assert(agentRoutes.includes('directEffectsApplied: false'), 'agent must keep dir
 assert(!agentRoutes.includes('ownerApproved: body.ownerApproved'), 'client body must not grant owner approval');
 assert(agentRoutes.includes('HIPICO_AUTOMATIC_OWNER_APPROVED'), 'owner approval must be server controlled');
 
+const riskPolicy = read('backend/src/modules/hipico/risk-policy.ts');
+for (const marker of [
+  "RISK_DISPOSITIONS = ['AUTO', 'SUGGEST', 'HUMAN_REQUIRED', 'DENY']",
+  'MODEL_CANDIDATE_REQUIRES_REVIEW',
+  'FINANCIAL_AUTHORITY_DENIED',
+  'SOURCE_READ_ONLY',
+  'financialAuthority: false'
+]) assert(riskPolicy.includes(marker), `risk policy boundary missing: ${marker}`);
+assert(riskPolicy.includes("candidate.source === 'model'"), 'model candidate must remain advisory-only');
+
+const promotionPolicy = read('backend/src/modules/hipico/promotion-policy.ts');
+for (const marker of [
+  'RECENT_WINDOW_DAYS = 30',
+  "METRIC_SCHEMA_VERSION = 'v7'",
+  'historicalReviewed',
+  'recentReviewed',
+  'RECENT_METRICS_INSUFFICIENT'
+]) assert(promotionPolicy.includes(marker), `promotion boundary missing: ${marker}`);
+
+const outboxStore = read('backend/src/modules/hipico-bot/hipico-outbox.store.ts');
+for (const marker of [
+  'FOR UPDATE SKIP LOCKED',
+  "status IN ('queued', 'retry')",
+  'reconciliation_required',
+  'hipico_outbox_receipts',
+  'monotonicReceiptStatus'
+]) assert(outboxStore.includes(marker), `canonical outbox boundary missing: ${marker}`);
+
 const schema = read('scripts/hipico-apply-e2e-schema-v290.mjs');
 for (const migration of [
   'hipico_v17_provider_evidence.sql',
   'hipico_v18_documents.sql',
   'hipico_v20_document_audit.sql',
   'hipico_v21_race_data_conflicts.sql',
-  'hipico_v22_agent_shadow.sql'
+  'hipico_v22_agent_shadow.sql',
+  'hipico_v23_risk_policy.sql',
+  'hipico_v24_shadow_metrics.sql'
 ]) assert(schema.includes(migration), `current PostgreSQL chain missing ${migration}`);
 assert(!schema.includes('hipico_v16_agent_shadow.sql'), 'obsolete v16 agent migration must not be restored');
 assert(schema.includes('SET LOCAL ROLE'), 'PostgreSQL E2E must execute least-privilege role checks');
 assert(schema.includes('authenticatedAgentAutomationWriteDenied'), 'PostgreSQL E2E must deny browser agent writes');
 assert(schema.includes('authenticatedProviderEvidenceWriteDenied'), 'PostgreSQL E2E must deny browser provider writes');
+assert(schema.includes('agentPolicyColumnsNotNull'), 'PostgreSQL E2E must prove v23 policy columns');
+assert(schema.includes('agentMetricColumnsNotNull'), 'PostgreSQL E2E must prove v24 metric columns');
+assert(schema.includes('agentPolicyConstraintsPresent'), 'PostgreSQL E2E must prove v23/v24 constraints');
 
 const testChannel = read('backend/src/modules/hipico-bot/hipico-test-channel.ts');
 assert(testChannel.includes('TEST_CHANNEL_NOT_CONNECTED'), 'TestChannel must fail closed while disconnected');
@@ -95,6 +134,8 @@ assert(productionE2E.includes('result?.duplicate, true'), 'production E2E must p
 const loadProfile = read('backend/scripts/hipico-load-profile-v290.ts');
 assert(loadProfile.includes('[100, 500, 2000]'), 'load profile must measure 100/500/2000');
 assert(loadProfile.includes("acceptance: 'NOT_EXECUTED'"), 'physical acceptance must remain separate evidence');
+assert(loadProfile.includes('memorySnapshot()'), 'load profile must capture process memory');
+assert(loadProfile.includes('EXPLAIN (ANALYZE,BUFFERS,FORMAT JSON)'), 'load profile must capture PostgreSQL query plan');
 
 const workflow = read('.github/workflows/hipico-production-gates-v290.yml');
 for (const marker of [
@@ -105,22 +146,27 @@ for (const marker of [
   'production-e2e-v290.ts',
   'hipico-restart-recovery-v290.ts prepare',
   'hipico-restart-recovery-v290.ts verify',
+  'npm --workspace backend run test:hipico:agent',
   'hipico-load-profile-v290.ts',
-  'browser: [chromium, firefox, webkit]'
+  'browser: [chromium, firefox, webkit]',
+  'v12-v24'
 ]) assert(workflow.includes(marker), `production workflow missing ${marker}`);
+assert(!/pull_request:\s*\n\s*branches:\s*\[main\]/.test(workflow), 'stacked PRs must be able to execute the exact-SHA production gate');
 
 const bypassRules = [
   [/\btest\.(?:skip|only)\s*\(/, 'test.skip/test.only'],
   [/\b(?:describe|it)\.(?:skip|only)\s*\(/, 'suite skip/only'],
   [/waitForTimeout\s*\(/, 'waitForTimeout'],
   [/\bforce\s*:\s*true\b/, 'forced browser action'],
-  [/continue-on-error\s*:\s*true/, 'continue-on-error']
+  [/continue-on-error\s*:\s*true/, 'continue-on-error'],
+  [/\|\|\s*true/, 'shell bypass']
 ];
 for (const relative of [
   'backend/src/modules/hipico-bot/production-e2e-v290.ts',
   'tests/hipico_operator_read_facade_290.test.mjs',
   'tests/hipico_postgres_e2e_chain_290.test.mjs',
   'tests/hipico_release_hardening_290_contract.test.mjs',
+  'tests/hipico_v9_release_boundaries.test.mjs',
   '.github/workflows/hipico-production-gates-v290.yml'
 ]) {
   const source = read(relative);
@@ -141,7 +187,11 @@ fs.writeFileSync(path.join(artifactDir, 'release-guard.json'), `${JSON.stringify
     financialAuthority: false,
     directEffectsApplied: false,
     ownerApprovalServerControlled: true,
-    currentPostgresChain: 'v12-v22',
+    riskPolicyDeterministic: true,
+    modelAdvisoryOnly: true,
+    dualWindowPromotion: true,
+    canonicalOutboxAuthority: true,
+    currentPostgresChain: 'v12-v24',
     testChannelReplay: true,
     loadProfileVolumes: [100, 500, 2000],
     exactSha: true
