@@ -4,18 +4,21 @@ import test from 'node:test';
 
 const migrationDir = '20260917170000_hipico_audit_rpc_integrity';
 const migrationPath = `backend/prisma/migrations/${migrationDir}/migration.sql`;
+const probePath = 'scripts/hipico-audit-rpc-integrity-v14-pg.mjs';
+const workflowPath = '.github/workflows/hipico-audit-rpc-integrity-v14.yml';
 const read = (relative) => readFile(new URL(`../${relative}`, import.meta.url), 'utf8');
 
-test('#361 has a deployable audit-integrity migration and reapplies it last in v290', async () => {
+test('#361 has a deployable audit-integrity migration with isolated final-authority verification', async () => {
   const migrations = await readdir(new URL('../backend/prisma/migrations/', import.meta.url));
   assert.ok(
     migrations.includes(migrationDir),
     `${migrationDir} must harden the live SECURITY DEFINER audit RPC`
   );
 
-  const [sql, schemaProbe] = await Promise.all([
+  const [sql, probe, workflow] = await Promise.all([
     read(migrationPath),
-    read('scripts/hipico-apply-e2e-schema-v290.mjs')
+    read(probePath),
+    read(workflowPath)
   ]);
   for (const marker of [
     'actor_user_id',
@@ -40,9 +43,10 @@ test('#361 has a deployable audit-integrity migration and reapplies it last in v
   assert.match(sql, /'authority',\s*'advisory'/i);
   assert.match(sql, /'financialAuthority',\s*false/i);
 
-  const markerIndex = schemaProbe.indexOf(migrationPath);
-  const v24Index = schemaProbe.indexOf('hipico_v24_shadow_metrics.sql');
-  assert.ok(markerIndex > v24Index, 'v14 hardening must be the final schema authority after historical SQL');
+  assert.ok(probe.includes(migrationPath), 'isolated PG probe must reapply v14 after historical schema');
+  const baseSchemaIndex = workflow.indexOf('hipico-apply-e2e-schema-v290.mjs');
+  const v14ProbeIndex = workflow.indexOf('hipico-audit-rpc-integrity-v14-pg.mjs');
+  assert.ok(baseSchemaIndex >= 0 && v14ProbeIndex > baseSchemaIndex, 'v14 probe must run after historical schema setup');
 });
 
 test('#361 allowlists the mutation families currently emitted by the PWA', async () => {
