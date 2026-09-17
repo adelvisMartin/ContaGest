@@ -57,12 +57,18 @@ Este gate no significa que ContaGest esté al 100% ni que esté listo para produ
 - QA físico y soak de Control Hípico (#119/#120);
 - gates legales, de rendimiento, persistencia real y release readiness aplicables.
 
+## Vertical bounded contexts
+
+`backend/src/modules/verticals/verticals.routes.ts` es un agregador delgado. La propiedad de rutas se separa en `health.routes.ts`, `gym.routes.ts` y `communications.routes.ts`, manteniendo un único `requireTenant` en el agregador y los permisos específicos en cada contexto.
+
+La separación conserva los mismos paths y el mismo orden de handlers. `verticals-extended.routes.ts` permanece independiente y es una extracción posterior posible.
+
 ## Próximas extracciones seguras
 
-Una vez estabilizado este contrato, las refactorizaciones de mayor tamaño deben hacerse por PR independiente:
+Las refactorizaciones de mayor tamaño deben hacerse por PR independiente:
 
-1. dividir `verticals.routes.ts` por bounded context conservando paths;
-2. mantener `frontend/src/data/pageRegistry.js` como autoridad importable de navegación y reducir progresivamente `frontend/src/app.js` sin cambiar las 58 rutas;
+1. separar `verticals-extended.routes.ts` por bounded context cuando exista caracterización equivalente;
+2. continuar reduciendo `frontend/src/app.js` sin cambiar las 58 rutas ni navegación/licenciamiento;
 3. introducir contratos/adapters explícitos para dependencias entre Platform/Core y Vertical Packs;
 4. extender el auditor con reglas de dependencia por dominio cuando el árbol ya refleje esas capas físicamente.
 
