@@ -2,16 +2,21 @@ import assert from 'node:assert/strict';
 import { readdir, readFile } from 'node:fs/promises';
 import test from 'node:test';
 
+const migrationDir = '20260917170000_hipico_audit_rpc_integrity';
+const migrationPath = `backend/prisma/migrations/${migrationDir}/migration.sql`;
 const read = (relative) => readFile(new URL(`../${relative}`, import.meta.url), 'utf8');
 
-test('#361 has an additive audit-integrity migration that fails closed', async () => {
-  const files = await readdir(new URL('../supabase/sql/', import.meta.url));
+test('#361 has a deployable audit-integrity migration and reapplies it last in v290', async () => {
+  const migrations = await readdir(new URL('../backend/prisma/migrations/', import.meta.url));
   assert.ok(
-    files.includes('hipico_v26_audit_rpc_integrity.sql'),
-    'hipico_v26_audit_rpc_integrity.sql must harden the live SECURITY DEFINER audit RPC'
+    migrations.includes(migrationDir),
+    `${migrationDir} must harden the live SECURITY DEFINER audit RPC`
   );
 
-  const sql = await read('supabase/sql/hipico_v26_audit_rpc_integrity.sql');
+  const [sql, schemaProbe] = await Promise.all([
+    read(migrationPath),
+    read('scripts/hipico-apply-e2e-schema-v290.mjs')
+  ]);
   for (const marker of [
     'actor_user_id',
     'actor_role',
@@ -25,7 +30,7 @@ test('#361 has an additive audit-integrity migration that fails closed', async (
     'advisory',
     'financialAuthority',
     'hipico_audit_idempotency_guard'
-  ]) assert.ok(sql.includes(marker), `v26 audit migration missing ${marker}`);
+  ]) assert.ok(sql.includes(marker), `v14 audit migration missing ${marker}`);
 
   assert.match(sql, /v_role\s+NOT\s+IN\s*\('admin','operator'\)/i);
   assert.match(sql, /octet_length\s*\(v_payload::text\)\s*>\s*32768/i);
@@ -34,10 +39,14 @@ test('#361 has an additive audit-integrity migration that fails closed', async (
   assert.match(sql, /'source',\s*'client_sync'/i);
   assert.match(sql, /'authority',\s*'advisory'/i);
   assert.match(sql, /'financialAuthority',\s*false/i);
+
+  const markerIndex = schemaProbe.indexOf(migrationPath);
+  const v24Index = schemaProbe.indexOf('hipico_v24_shadow_metrics.sql');
+  assert.ok(markerIndex > v24Index, 'v14 hardening must be the final schema authority after historical SQL');
 });
 
 test('#361 allowlists the mutation families currently emitted by the PWA', async () => {
-  const sql = await read('supabase/sql/hipico_v26_audit_rpc_integrity.sql');
+  const sql = await read(migrationPath);
   for (const marker of [
     'race_locked', 'race_unlocked', 'race_created', 'race_settled', 'race_closed',
     'bet_created', 'bet_created_multi', 'bet_duplicated', 'bet_cancelled',
@@ -46,7 +55,7 @@ test('#361 allowlists the mutation families currently emitted by the PWA', async
     'polla_created', 'polla_entry_added', 'polla_updated',
     'whatsapp_imported', 'advanced_created', 'advanced_imported', 'advanced_loaded',
     'day_closed', 'week_closed'
-  ]) assert.ok(sql.includes(marker), `v26 action catalog missing ${marker}`);
+  ]) assert.ok(sql.includes(marker), `v14 action catalog missing ${marker}`);
 });
 
 test('#361 preserves the existing PWA RPC signature and server authority boundary', async () => {
