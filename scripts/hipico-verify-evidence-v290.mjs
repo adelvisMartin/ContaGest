@@ -59,6 +59,7 @@ for (const file of jsonFiles) {
 const requiredDescriptors = [
   { id: 'secretScan', name: 'secret-scan.json', schemas: ['hipico-secret-scan.v290', 'hipico-secret-scan.v290-current'] },
   { id: 'releaseGuard', name: 'release-guard.json', schemas: ['hipico-release-guard.v290-current'] },
+  { id: 'staticGate', name: 'static-gate.json', schemas: ['hipico-static-gate.v290-current'] },
   { id: 'postgresRbac', name: 'postgres-rbac.json', schemas: ['hipico-rbac.v290', 'hipico-rbac.v290-current'] },
   { id: 'postgresGate', name: 'postgres-gate.json', schemas: ['hipico-postgres-gate.v290-current'] },
   { id: 'restart', name: 'restart-state.json', schemas: ['hipico-restart.v290', 'hipico-restart.v290-current'] },
