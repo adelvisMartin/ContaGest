@@ -43,6 +43,9 @@ jobs:
       - name: TypeScript
         run: npm run typecheck
 
+      - name: Architecture boundaries
+        run: npm run audit:architecture
+
       - name: Characterization and contract tests
         run: npm test
 
