@@ -61,12 +61,12 @@ test('v26 append RPC is a bounded SECURITY DEFINER authority with server-owned a
   const migration = await read('supabase/sql/hipico_v26_audit_rpc_integrity.sql');
   for (const marker of [
     'security definer',
-    "set search_path = pg_catalog, public, auth",
-    "HIPICO_AUDIT_ROLE_FORBIDDEN",
-    "HIPICO_AUDIT_ACTION_FORBIDDEN",
-    "HIPICO_AUDIT_ENTITY_MISMATCH",
-    "HIPICO_AUDIT_PAYLOAD_TOO_LARGE",
-    "HIPICO_AUDIT_ENTITY_ID_INVALID",
+    'set search_path = pg_catalog',
+    'HIPICO_AUDIT_ROLE_FORBIDDEN',
+    'HIPICO_AUDIT_ACTION_FORBIDDEN',
+    'HIPICO_AUDIT_ENTITY_MISMATCH',
+    'HIPICO_AUDIT_PAYLOAD_TOO_LARGE',
+    'HIPICO_AUDIT_ENTITY_ID_INVALID',
     "'client_sync'",
     "'advisory'",
     "'financialAuthority', false",
@@ -74,7 +74,8 @@ test('v26 append RPC is a bounded SECURITY DEFINER authority with server-owned a
     'octet_length(v_input_payload::text)',
     'revoke insert, update, delete on table public.hipico_audit_events from authenticated',
     'revoke usage, select on sequence public.hipico_audit_events_id_seq from authenticated',
-    'grant execute on function public.hipico_append_audit(uuid, text, text, text, jsonb) to authenticated, service_role'
+    'grant execute on function public.hipico_append_audit(uuid, text, text, text, jsonb)',
+    "rolname = 'service_role'"
   ]) assert.ok(migration.toLowerCase().includes(marker.toLowerCase()), `missing hardening marker: ${marker}`);
   assert.doesNotMatch(migration, /grant\s+insert\s+on\s+table\s+public\.hipico_audit_events\s+to\s+authenticated/i);
 });
@@ -89,6 +90,15 @@ test('v26 adds compatible source/authority provenance without rewriting historic
   assert.match(migration, /alter column authority set default 'authoritative'/i);
 });
 
+test('PWA keeps the same append RPC signature and cannot supply server authority fields separately', async () => {
+  const supabase = await read('frontend/public/hipico-control/assets/js/supabase.js');
+  assert.match(supabase, /export async function appendCloudAudit\(event, workspaceId = null\)/);
+  for (const parameter of ['p_workspace_id', 'p_action', 'p_entity_type', 'p_entity_id', 'p_payload']) {
+    assert.ok(supabase.includes(parameter), `PWA RPC payload missing ${parameter}`);
+  }
+  assert.doesNotMatch(supabase, /p_(?:actor|role|source|authority|financial_authority|settlement_authority)\s*:/i);
+});
+
 test('v26 PostgreSQL probe covers role, scope, mismatch, payload and forged metadata negatives', async () => {
   const [probe, workflow] = await Promise.all([
     read('scripts/hipico-audit-rpc-v26-pg.mjs'),
@@ -97,7 +107,7 @@ test('v26 PostgreSQL probe covers role, scope, mismatch, payload and forged meta
   for (const marker of [
     'viewer', 'auditor', 'HIPICO_AUDIT_ACTION_FORBIDDEN', 'HIPICO_AUDIT_ENTITY_MISMATCH',
     'HIPICO_WORKSPACE_FORBIDDEN', 'HIPICO_AUDIT_PAYLOAD_TOO_LARGE', 'forged-user',
-    "source,authority", "financialAuthority", "settlementAuthority", 'ROLLBACK'
+    'source,authority', 'financialAuthority', 'settlementAuthority', 'ROLLBACK'
   ]) assert.ok(probe.includes(marker), `probe missing ${marker}`);
   assert.match(workflow, /postgres:16/);
   assert.match(workflow, /HIPICO_CANDIDATE_SHA/);
