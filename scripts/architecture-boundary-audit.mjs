@@ -13,9 +13,10 @@ const uniq = (values) => [...new Set(values)];
 const normalize = (value) => value.split(path.sep).join('/');
 
 export function extractPageRegistryRoutes(source) {
-  const start = source.indexOf('const pageRegistry={');
+  const markers = ['export const PAGE_REGISTRY = {', 'const pageRegistry={'];
+  const start = markers.map((marker) => source.indexOf(marker)).find((index) => index >= 0) ?? -1;
   const end = source.indexOf('\n};', start);
-  if (start < 0 || end < 0) throw new Error('pageRegistry no encontrado en frontend/src/app.js');
+  if (start < 0 || end < 0) throw new Error('page registry authority no encontrada');
   const block = source.slice(start, end + 3);
   const routes = [];
   const pattern = /(?:^|,)\s*(?:'([^']+)'|"([^"]+)"|([\w-]+))\s*:\s*\[/gm;
@@ -106,15 +107,15 @@ function walkSourceFiles(root) {
 }
 
 export function auditRepositoryArchitecture(root, { expectedRouteCount = DEFAULT_EXPECTED_ROUTES } = {}) {
-  const runtimePath = path.join(root, 'frontend', 'src', 'app.js');
+  const registryPath = path.join(root, 'frontend', 'src', 'data', 'pageRegistry.js');
   const catalogPath = path.join(root, 'qa', 'support', 'module-visual-catalog.mjs');
   const errors = [];
 
-  if (!fs.existsSync(runtimePath)) errors.push('missing frontend/src/app.js');
+  if (!fs.existsSync(registryPath)) errors.push('missing frontend/src/data/pageRegistry.js');
   if (!fs.existsSync(catalogPath)) errors.push('missing qa/support/module-visual-catalog.mjs');
   if (errors.length) return { ok: false, runtimeRouteCount: 0, visualRouteCount: 0, errors };
 
-  const runtimeRoutes = extractPageRegistryRoutes(fs.readFileSync(runtimePath, 'utf8'));
+  const runtimeRoutes = extractPageRegistryRoutes(fs.readFileSync(registryPath, 'utf8'));
   const visualRoutes = extractVisualCatalogRoutes(fs.readFileSync(catalogPath, 'utf8'));
   const parity = compareRouteAuthorities(runtimeRoutes, visualRoutes, { expectedCount: expectedRouteCount });
   errors.push(...parity.errors);

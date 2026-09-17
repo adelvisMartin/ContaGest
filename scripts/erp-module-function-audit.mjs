@@ -10,7 +10,7 @@ const esc=(value)=>String(value??'').replaceAll('|','\\|').replaceAll('\n',' ');
 const regexEscape=(value)=>String(value).replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
 
 function registry(){
-  const source=read('frontend','src','app.js'),start=source.indexOf('const pageRegistry={'),end=source.indexOf('\n};',start);
+  const source=read('frontend','src','data','pageRegistry.js'),start=source.indexOf('export const PAGE_REGISTRY = {'),end=source.indexOf('\n};',start);
   if(start<0||end<0)throw new Error('pageRegistry no encontrado');
   const block=source.slice(start,end+3),items=[],pattern=/(?:^|,)\s*(?:'([^']+)'|"([^"]+)"|([\w-]+))\s*:\s*\['\.\/pages\/([^']+)'\s*,\s*'([^']+)'\]/gm;
   for(const match of block.matchAll(pattern))items.push({route:match[1]||match[2]||match[3],file:match[4],exportName:match[5]});

@@ -11,7 +11,7 @@ import {
   findForbiddenBackendDependencies
 } from '../scripts/architecture-boundary-audit.mjs';
 
-const runtimeSource = `const pageRegistry={\n dashboard:['./pages/DashboardPage.js','DashboardPage'],'libro-mayor':['./pages/GeneralLedgerPage.js','GeneralLedgerPage'],veterinaria:['./pages/VeterinaryClinicPage.jsx','VeterinaryClinicPage']\n};`;
+const runtimeSource = `export const PAGE_REGISTRY = {\n dashboard:['./pages/DashboardPage.js','DashboardPage'],'libro-mayor':['./pages/GeneralLedgerPage.js','GeneralLedgerPage'],veterinaria:['./pages/VeterinaryClinicPage.jsx','VeterinaryClinicPage']\n};`;
 const catalogSource = `export const MODULE_VISUAL_CATALOG = Object.freeze([\n { route:'dashboard', family:'core' },\n { route:'libro-mayor', family:'accounting' },\n { route:'veterinaria', family:'health' }\n]);`;
 
 test('extractors keep runtime and visual route identities stable', () => {
@@ -52,10 +52,10 @@ test('core modules may not depend on optional vertical packs', () => {
 
 test('repository audit binds route parity and dependency direction in one deterministic result', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'contagest-arch-'));
-  fs.mkdirSync(path.join(root, 'frontend/src'), { recursive: true });
+  fs.mkdirSync(path.join(root, 'frontend/src/data'), { recursive: true });
   fs.mkdirSync(path.join(root, 'qa/support'), { recursive: true });
   fs.mkdirSync(path.join(root, 'backend/src/modules/accounting'), { recursive: true });
-  fs.writeFileSync(path.join(root, 'frontend/src/app.js'), runtimeSource);
+  fs.writeFileSync(path.join(root, 'frontend/src/data/pageRegistry.js'), runtimeSource);
   fs.writeFileSync(path.join(root, 'qa/support/module-visual-catalog.mjs'), catalogSource);
   fs.writeFileSync(path.join(root, 'backend/src/modules/accounting/accounting.routes.ts'), `import { prisma } from '../../database/prisma.js';`);
 

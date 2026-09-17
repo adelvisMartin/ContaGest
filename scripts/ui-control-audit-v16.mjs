@@ -8,8 +8,8 @@ const regexEscape=(value)=>String(value).replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
 const camel=(name)=>name.replace(/-([a-z])/g,(_,letter)=>letter.toUpperCase());
 
 function registry(){
-  const source=read('frontend','src','app.js');
-  const start=source.indexOf('const pageRegistry={');
+  const source=read('frontend','src','data','pageRegistry.js');
+  const start=source.indexOf('export const PAGE_REGISTRY = {');
   const end=source.indexOf('\n};',start);
   if(start<0||end<0)throw new Error('pageRegistry no encontrado');
   const block=source.slice(start,end+3),items=[];

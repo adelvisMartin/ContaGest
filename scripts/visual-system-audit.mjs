@@ -52,10 +52,10 @@ function walk(dir, predicate = () => true) {
 }
 
 function extractPageRegistry() {
-  const source = read(path.join(root, 'frontend', 'src', 'app.js'));
-  const start = source.indexOf('const pageRegistry={');
+  const source = read(path.join(root, 'frontend', 'src', 'data', 'pageRegistry.js'));
+  const start = source.indexOf('export const PAGE_REGISTRY = {');
   const end = source.indexOf('\n};', start);
-  if (start < 0 || end < 0) throw new Error('No se pudo leer pageRegistry en frontend/src/app.js');
+  if (start < 0 || end < 0) throw new Error('No se pudo leer frontend/src/data/pageRegistry.js');
 
   const block = source.slice(start, end + 3);
   const entries = [];
