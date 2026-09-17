@@ -10,6 +10,7 @@ const ownerId = String(process.env.HIPICO_E2E_OWNER_ID || '11111111-1111-4111-81
 const otherOwnerId = '22222222-2222-4222-8222-222222222222';
 const viewerId = '33333333-3333-4333-8333-333333333333';
 const auditorId = '44444444-4444-4444-8444-444444444444';
+const operatorId = '55555555-5555-4555-8555-555555555555';
 
 function assertSafe(urlText) {
   if (!urlText) throw new Error('HIPICO_E2E_DATABASE_URL is required.');
@@ -47,7 +48,7 @@ async function runAs(client, role, subject, fn) {
   }
 }
 
-async function expectDbError(client, { role = 'authenticated', subject = ownerId, code, marker }, fn) {
+async function expectDbError(client, { role = 'authenticated', subject = operatorId, code, marker }, fn) {
   let observed = null;
   try {
     await runAs(client, role, subject, fn);
@@ -78,7 +79,7 @@ const client = new Client({ connectionString: databaseUrl });
 await client.connect();
 
 try {
-  // The complete probe is transactional: fixture + v25/v26 DDL + all assertions are rolled back.
+  // The complete probe is transactional: fixtures + helper shims + v25/v26 DDL + assertions are rolled back.
   await client.query('BEGIN');
 
   const ownerWorkspace = await client.query(
@@ -87,6 +88,42 @@ try {
   );
   assert.equal(ownerWorkspace.rows.length, 1, 'v290 base schema must seed the primary QA workspace');
   const workspaceId = ownerWorkspace.rows[0].id;
+
+  await client.query(`
+    INSERT INTO public.hipico_workspaces(owner_id,name,state,version)
+    VALUES($1::uuid,'Other owner','{}'::jsonb,1)
+    ON CONFLICT(owner_id) DO NOTHING`, [otherOwnerId]);
+  const otherWorkspace = await client.query(`SELECT id FROM public.hipico_workspaces WHERE owner_id=$1::uuid`, [otherOwnerId]);
+
+  // Reproduce the deployed delegated-access contract inside this rolled-back transaction.
+  // The real project resolves user -> workspace_owner_id + access role through these helpers.
+  await client.query(`
+    CREATE TABLE public.hipico_v26_access_fixture(
+      user_id uuid primary key,
+      workspace_owner_id uuid not null,
+      role text not null,
+      status text not null default 'active'
+    );
+    INSERT INTO public.hipico_v26_access_fixture(user_id,workspace_owner_id,role,status) VALUES
+      ('${operatorId}'::uuid,'${ownerId}'::uuid,'operator','active'),
+      ('${viewerId}'::uuid,'${ownerId}'::uuid,'viewer','active'),
+      ('${auditorId}'::uuid,'${ownerId}'::uuid,'auditor','active');
+
+    CREATE OR REPLACE FUNCTION public.hipico_workspace_owner()
+    RETURNS uuid LANGUAGE sql STABLE SECURITY DEFINER SET search_path=pg_catalog AS $$
+      SELECT fixture.workspace_owner_id
+      FROM public.hipico_v26_access_fixture fixture
+      WHERE fixture.user_id=auth.uid() AND fixture.status='active'
+      LIMIT 1
+    $$;
+    CREATE OR REPLACE FUNCTION public.hipico_access_role()
+    RETURNS text LANGUAGE sql STABLE SECURITY DEFINER SET search_path=pg_catalog AS $$
+      SELECT fixture.role
+      FROM public.hipico_v26_access_fixture fixture
+      WHERE fixture.user_id=auth.uid() AND fixture.status='active'
+      LIMIT 1
+    $$;
+  `);
 
   const legacy = await client.query(`
     INSERT INTO public.hipico_audit_events(owner_id,workspace_id,action,entity_type,entity_id,payload)
@@ -101,29 +138,6 @@ try {
     [legacy.rows[0].id]
   );
   assert.deepEqual(legacyAfter.rows[0], { source: 'legacy', authority: 'legacy' });
-
-  await client.query(`
-    INSERT INTO public.hipico_workspaces(owner_id,name,state,version)
-    VALUES
-      ($1::uuid,'Other owner','{}'::jsonb,1),
-      ($2::uuid,'Viewer owner','{}'::jsonb,1),
-      ($3::uuid,'Auditor owner','{}'::jsonb,1)
-    ON CONFLICT(owner_id) DO NOTHING`, [otherOwnerId, viewerId, auditorId]);
-
-  // Simulate future/read-only roles only inside this rolled-back transaction. v26 must deny any role
-  // outside admin/operator even if the profile enum evolves later.
-  await client.query('ALTER TABLE public.hipico_profiles DROP CONSTRAINT IF EXISTS hipico_profiles_role_check');
-  await client.query(`
-    INSERT INTO public.hipico_profiles(owner_id,display_name,role,preferences)
-    VALUES
-      ($1::uuid,'QA operator','operator','{}'::jsonb),
-      ($2::uuid,'QA viewer','viewer','{}'::jsonb),
-      ($3::uuid,'QA auditor','auditor','{}'::jsonb)
-    ON CONFLICT(owner_id) DO UPDATE SET role=excluded.role`, [ownerId, viewerId, auditorId]);
-
-  const otherWorkspace = await client.query(`SELECT id FROM public.hipico_workspaces WHERE owner_id=$1::uuid`, [otherOwnerId]);
-  const viewerWorkspace = await client.query(`SELECT id FROM public.hipico_workspaces WHERE owner_id=$1::uuid`, [viewerId]);
-  const auditorWorkspace = await client.query(`SELECT id FROM public.hipico_workspaces WHERE owner_id=$1::uuid`, [auditorId]);
 
   await expectDbError(client, { code: '42501', marker: 'permission denied' }, async () => {
     await client.query(`INSERT INTO public.hipico_audit_events(owner_id,action,entity_type,payload) VALUES($1::uuid,'x','x','{}'::jsonb)`, [ownerId]);
@@ -141,7 +155,7 @@ try {
       financialAuthority: true, settlementAuthority: true, note: 'kept'
     }
   });
-  const inserted = await runAs(client, 'authenticated', ownerId, () => client.query(
+  const inserted = await runAs(client, 'authenticated', operatorId, () => client.query(
     `SELECT public.hipico_append_audit($1::uuid,$2,$3,$4,$5::jsonb) AS id`,
     [workspaceId, 'race_created', 'race', 'race-qa-1', JSON.stringify(forged)]
   ));
@@ -151,11 +165,11 @@ try {
   const row = await client.query(`
     SELECT owner_id::text,workspace_id::text,action,entity_type,entity_id,source,authority,payload
     FROM public.hipico_audit_events WHERE id=$1`, [auditId]);
-  assert.equal(row.rows[0].owner_id, ownerId);
+  assert.equal(row.rows[0].owner_id, ownerId, 'delegated operator must not become workspace owner');
   assert.equal(row.rows[0].workspace_id, String(workspaceId));
   assert.equal(row.rows[0].source, 'client_sync');
   assert.equal(row.rows[0].authority, 'advisory');
-  assert.equal(row.rows[0].payload.actorUserId, ownerId);
+  assert.equal(row.rows[0].payload.actorUserId, operatorId, 'actor identity must remain the authenticated operator');
   assert.equal(row.rows[0].payload.actorRole, 'operator');
   assert.equal(row.rows[0].payload.source, 'client_sync');
   assert.equal(row.rows[0].payload.authority, 'advisory');
@@ -164,7 +178,7 @@ try {
   assert.equal(row.rows[0].payload.payload.note, 'kept');
   assert.equal(row.rows[0].payload.payload.actorUserId, undefined);
 
-  const replay = await runAs(client, 'authenticated', ownerId, () => client.query(
+  const replay = await runAs(client, 'authenticated', operatorId, () => client.query(
     `SELECT public.hipico_append_audit($1::uuid,$2,$3,$4,$5::jsonb) AS id`,
     [workspaceId, 'race_created', 'race', 'race-qa-1', JSON.stringify(forged)]
   ));
@@ -192,13 +206,13 @@ try {
   );
   await expectDbError(client, { subject: viewerId, code: '42501', marker: 'HIPICO_AUDIT_ROLE_FORBIDDEN' }, () =>
     client.query(`SELECT public.hipico_append_audit($1::uuid,$2,$3,$4,$5::jsonb)`,
-      [viewerWorkspace.rows[0].id, 'race_created', 'race', 'race-viewer', JSON.stringify(validEvent())])
+      [workspaceId, 'race_created', 'race', 'race-viewer', JSON.stringify(validEvent())])
   );
   await expectDbError(client, { subject: auditorId, code: '42501', marker: 'HIPICO_AUDIT_ROLE_FORBIDDEN' }, () =>
     client.query(`SELECT public.hipico_append_audit($1::uuid,$2,$3,$4,$5::jsonb)`,
-      [auditorWorkspace.rows[0].id, 'race_created', 'race', 'race-auditor', JSON.stringify(validEvent())])
+      [workspaceId, 'race_created', 'race', 'race-auditor', JSON.stringify(validEvent())])
   );
-  await expectDbError(client, { role: 'anon', subject: null, code: '42501', marker: 'HIPICO_AUTH_REQUIRED' }, () =>
+  await expectDbError(client, { role: 'anon', subject: null, code: '42501', marker: 'HIPICO_ACCESS_REQUIRED' }, () =>
     client.query(`SELECT public.hipico_append_audit($1::uuid,$2,$3,$4,$5::jsonb)`,
       [workspaceId, 'race_created', 'race', 'race-anon', JSON.stringify(validEvent())])
   );
@@ -210,7 +224,8 @@ try {
     assertions: {
       historicalRowsRemainLegacy: true,
       directAuthenticatedInsertDenied: true,
-      operatorAppendAllowed: true,
+      delegatedOperatorAppendAllowed: true,
+      delegatedOwnerPreserved: true,
       viewerDenied: true,
       auditorDenied: true,
       crossWorkspaceDenied: true,
