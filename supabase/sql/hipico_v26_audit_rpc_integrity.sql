@@ -52,7 +52,7 @@ create or replace function public.hipico_append_audit(
 returns bigint
 language plpgsql
 security definer
-set search_path = pg_catalog, public, auth
+set search_path = pg_catalog
 as $$
 declare
   v_uid uuid := auth.uid();
@@ -171,7 +171,7 @@ begin
   end if;
 
   v_message := coalesce(v_input_payload ->> 'message', '');
-  if length(v_message) > 1000 or v_message ~ '[\u0000]' then
+  if length(v_message) > 1000 then
     raise exception 'HIPICO_AUDIT_MESSAGE_INVALID' using errcode = '22023';
   end if;
 
@@ -251,9 +251,17 @@ grant select on table public.hipico_audit_events to authenticated;
 revoke usage, select on sequence public.hipico_audit_events_id_seq from authenticated;
 
 revoke all on function public.hipico_append_audit(uuid, text, text, text, jsonb)
-  from public, anon, authenticated, service_role;
+  from public, anon, authenticated;
 grant execute on function public.hipico_append_audit(uuid, text, text, text, jsonb)
-  to authenticated, service_role;
+  to authenticated;
+
+do $$
+begin
+  if exists (select 1 from pg_roles where rolname = 'service_role') then
+    execute 'revoke all on function public.hipico_append_audit(uuid, text, text, text, jsonb) from service_role';
+    execute 'grant execute on function public.hipico_append_audit(uuid, text, text, text, jsonb) to service_role';
+  end if;
+end $$;
 
 comment on column public.hipico_audit_events.source
   is 'Origin of audit evidence. PWA synchronization is client_sync; historical pre-v26 rows remain legacy.';
