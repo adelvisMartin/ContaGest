@@ -45,3 +45,13 @@ test('composition root keeps cross-cutting gates around the manifest mount', () 
   assert.doesNotMatch(source, /from '\.\/verticals\//);
   assert.doesNotMatch(source, /from '\.\/sales\//);
 });
+
+test('root CI has an executable test aggregate and architecture gate', () => {
+  const pkg = JSON.parse(read('package.json'));
+  assert.equal(pkg.scripts['audit:architecture'], 'node scripts/architecture-boundary-audit.mjs');
+  assert.match(pkg.scripts.test, /npm --workspace backend test/);
+  assert.match(pkg.scripts.test, /tests\/\*\.test\.mjs/);
+  const workflow = read('.github/workflows/ci.yml');
+  assert.match(workflow, /Architecture boundaries/);
+  assert.match(workflow, /npm run audit:architecture/);
+});
