@@ -1,0 +1,57 @@
+name: Hípico Audit RPC Integrity v26
+on:
+  pull_request:
+    paths:
+      - 'supabase/sql/hipico_v26_audit_rpc_integrity.sql'
+      - 'scripts/hipico-audit-rpc-v26-pg.mjs'
+      - 'tests/hipico_v26_audit_rpc_integrity.test.mjs'
+      - 'frontend/public/hipico-control/assets/js/app.js'
+      - '.github/workflows/hipico-audit-rpc-v26.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: hipico_e2e_v26run01
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d hipico_e2e_v26run01"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      HIPICO_E2E_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/hipico_e2e_v26run01
+      HIPICO_E2E_OWNER_ID: 11111111-1111-4111-8111-111111111111
+      HIPICO_CANDIDATE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+    steps:
+      - name: Checkout exact candidate
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+      - name: Verify exact checkout
+        shell: bash
+        run: test "$(git rev-parse HEAD)" = "$HIPICO_CANDIDATE_SHA"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install locked workspace
+        run: npm ci --no-audit --no-fund
+      - name: Static audit integrity contract
+        run: node --test tests/hipico_v26_audit_rpc_integrity.test.mjs
+      - name: Typecheck backend
+        run: npm --workspace backend run typecheck
+      - name: Apply canonical Hípico base schema through v24
+        run: node scripts/hipico-apply-e2e-schema-v290.mjs
+      - name: Transactional v25-v26 audit integrity probe
+        run: node scripts/hipico-audit-rpc-v26-pg.mjs

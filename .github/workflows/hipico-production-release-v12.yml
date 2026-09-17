@@ -1,0 +1,76 @@
+name: Hipico Production Release v12
+on:
+  pull_request:
+    paths:
+      - 'scripts/hipico-release-manifest-v12.mjs'
+      - 'tests/hipico_release_v12_contract.test.mjs'
+      - 'docs/hipico/production-release-v12.md'
+      - '.github/workflows/hipico-production-release-v12.yml'
+  workflow_dispatch:
+    inputs:
+      candidate_sha:
+        description: Exact 40-character candidate SHA
+        required: true
+        type: string
+      evidence_json:
+        description: JSON object with exact-SHA executed gate evidence
+        required: true
+        type: string
+permissions:
+  contents: read
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: node --test tests/hipico_release_v12_contract.test.mjs
+      - run: npm run typecheck
+  release-candidate:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      HIPICO_CANDIDATE_SHA: ${{ inputs.candidate_sha }}
+      HIPICO_RELEASE_EVIDENCE: artifacts/qa/hipico-release-evidence-v12.json
+      HIPICO_RELEASE_MANIFEST: artifacts/qa/hipico-release-manifest-v12.json
+      EVIDENCE_JSON: ${{ inputs.evidence_json }}
+    steps:
+      - name: Validate requested SHA format
+        shell: bash
+        run: '[[ "$HIPICO_CANDIDATE_SHA" =~ ^[0-9a-fA-F]{40}$ ]]'
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.candidate_sha }}
+          fetch-depth: 1
+      - name: Freeze exact candidate
+        shell: bash
+        run: test "$(git rev-parse HEAD)" = "$HIPICO_CANDIDATE_SHA"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run test:hipico
+      - run: node --test tests/hipico_release_v12_contract.test.mjs
+      - run: npm run build:backend
+      - run: npm run build:frontend
+      - name: Existing production hardening guard
+        run: npm run release:hipico:v290
+      - name: Materialize supplied executed evidence
+        run: node -e "const fs=require('fs');fs.mkdirSync('artifacts/qa',{recursive:true});JSON.parse(process.env.EVIDENCE_JSON);fs.writeFileSync(process.env.HIPICO_RELEASE_EVIDENCE,process.env.EVIDENCE_JSON+'\n')"
+      - name: Generate strict release manifest
+        run: node scripts/hipico-release-manifest-v12.mjs "$HIPICO_RELEASE_EVIDENCE"
+      - name: Upload release evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: hipico-release-v12-${{ inputs.candidate_sha }}
+          path: artifacts/qa/hipico-release-*.json
+          if-no-files-found: warn

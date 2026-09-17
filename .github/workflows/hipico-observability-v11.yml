@@ -1,0 +1,49 @@
+name: Hipico Observability v11
+on:
+  pull_request:
+    paths:
+      - 'backend/src/modules/hipico/**'
+      - 'backend/src/modules/hipico-bot/**'
+      - 'supabase/sql/hipico_v25_observability.sql'
+      - 'scripts/hipico-observability-v11-pg.mjs'
+      - '.github/workflows/hipico-observability-v11.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: hipico_e2e_v11run01
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres -d hipico_e2e_v11run01"
+          --health-interval 5s --health-timeout 5s --health-retries 20
+    env:
+      HIPICO_E2E_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/hipico_e2e_v11run01
+      HIPICO_E2E_OWNER_ID: 11111111-1111-4111-8111-111111111111
+      HIPICO_CANDIDATE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Verify exact checkout
+        shell: bash
+        run: test "$(git rev-parse HEAD)" = "$HIPICO_CANDIDATE_SHA"
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run test:hipico
+      - run: node scripts/hipico-apply-e2e-schema-v290.mjs
+      - run: node scripts/hipico-observability-v11-pg.mjs
+      - run: npm run build:backend
+      - run: npm run build:frontend

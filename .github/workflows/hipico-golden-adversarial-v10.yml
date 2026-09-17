@@ -1,0 +1,75 @@
+name: Hípico Golden Adversarial v10
+
+on:
+  pull_request:
+    paths:
+      - 'backend/src/modules/hipico/agent-adversarial-*.ts'
+      - 'backend/src/modules/hipico/agent-engine.ts'
+      - 'backend/src/modules/hipico/corpus/hipico-agent-adversarial.v10.json'
+      - 'backend/scripts/hipico-agent-golden-v10.ts'
+      - 'tests/hipico_v10_golden_contract.test.mjs'
+      - '.github/workflows/hipico-golden-adversarial-v10.yml'
+  workflow_dispatch:
+
+permissions: { contents: read }
+
+env:
+  HIPICO_CANDIDATE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+
+concurrency:
+  group: hipico-golden-v10-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  golden-adversarial:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout exact candidate
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ env.HIPICO_CANDIDATE_SHA }}
+          fetch-depth: 0
+
+      - name: Setup Node 22
+        uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Install locked workspace
+        run: npm ci --no-audit --no-fund
+
+      - name: Exact candidate SHA gate
+        run: node scripts/hipico-exact-sha-gate.mjs
+
+      - name: Typecheck current candidate
+        run: npm --workspace backend run typecheck
+
+      - name: Hípico unit and root contract regressions
+        run: npm run test:hipico
+
+      - name: Produce adversarial golden evidence
+        run: npm --workspace backend exec -- tsx scripts/hipico-agent-golden-v10.ts
+
+      - name: Build backend current candidate
+        run: npm --workspace backend run build
+
+      - name: Diff whitespace gate
+        shell: bash
+        env:
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+          base="${PR_BASE_SHA:-${HIPICO_CANDIDATE_SHA}^}"
+          git diff --check "$base" "$HIPICO_CANDIDATE_SHA"
+
+      - name: Upload v10 golden evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: hipico-v10-golden-${{ env.HIPICO_CANDIDATE_SHA }}
+          path: artifacts/qa/hipico-v10/golden-adversarial.json
+          if-no-files-found: warn
+          retention-days: 30
