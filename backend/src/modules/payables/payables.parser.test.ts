@@ -8,7 +8,7 @@ const pdf = (text:string) => Buffer.from(`%PDF-1.4\n1 0 obj<</Type /Page>>endobj
 test('safe-local parser extracts traceable AP fields and exposes confidence per field', async () => {
   const parser = new SafeLocalParser('1.0.0');
   const result = await parser.parse({
-    bytes:pdf('PROVEEDOR ACME INDUSTRIAL C.A. RIF J-12345678-9 FACTURA FAC-1001 FECHA 06/09/2026 MONEDA USD SUBTOTAL 100,00 IVA 16,00 TOTAL 116,00 ORDEN DE COMPRA PO-77 RECEPCION GRN-9'),
+    bytes:pdf('PROVEEDOR ACME INDUSTRIAL C.A. RIF J-12345678-9 FACTURA FAC-1001 FECHA 06/09/2026 MONEDA USD ITEM Servicio técnico CANT 2 PRECIO 25 IVA 16 ITEM Repuesto A CANTIDAD 1 PRECIO UNITARIO 50 IVA 16 SUBTOTAL 100,00 IVA 16,00 TOTAL 116,00 ORDEN DE COMPRA PO-77 RECEPCION GRN-9'),
     mimeType:'application/pdf',
     fileName:'acme.pdf'
   });
@@ -21,6 +21,17 @@ test('safe-local parser extracts traceable AP fields and exposes confidence per 
   assert.equal(result.total.value,'116.00');
   assert.equal(result.poReference.value,'PO-77');
   assert.equal(result.receiptReference.value,'GRN-9');
+  assert.equal(result.lines.length,2);
+  assert.deepEqual(result.lines.map((line)=>({
+    description:line.description.value,
+    quantity:line.quantity.value,
+    unitCost:line.unitCost.value,
+    taxRate:line.taxRate.value
+  })),[
+    {description:'Servicio técnico',quantity:'2',unitCost:'25',taxRate:'16'},
+    {description:'Repuesto A',quantity:'1',unitCost:'50',taxRate:'16'}
+  ]);
+  assert.ok(result.lines.every((line)=>line.quantity.confidence>=0.9&&line.unitCost.confidence>=0.9));
   assert.ok(result.supplierRif.confidence >= 0.9);
 });
 
@@ -30,6 +41,17 @@ test('image without visual OCR is review-only and low confidence is explicit', a
   const result = await parser.parse({bytes:jpeg,mimeType:'image/jpeg',fileName:'scan.jpg'});
   assert.ok(result.warnings.some((item)=>item.includes('revisión humana')));
   assert.ok(lowConfidenceFields(result).includes('invoiceNumber'));
+});
+
+test('low confidence includes nested invoice-line fields', () => {
+  const extraction = {
+    supplierName:{value:'Proveedor',confidence:.9},supplierRif:{value:'J-1',confidence:.9},invoiceNumber:{value:'F-1',confidence:.9},
+    issueDate:{value:'2026-09-17',confidence:.9},currency:{value:'VES',confidence:.9},subtotal:{value:'10',confidence:.9},
+    tax:{value:'0',confidence:.9},total:{value:'10',confidence:.9},poReference:{value:null,confidence:.9},receiptReference:{value:null,confidence:.9},
+    lines:[{description:{value:'Producto',confidence:.9},quantity:{value:'1',confidence:.6},unitCost:{value:'10',confidence:.95},taxRate:{value:'0',confidence:.95}}],
+    warnings:[]
+  };
+  assert.deepEqual(lowConfidenceFields(extraction as any),['lines.0.quantity']);
 });
 
 test('upload validation rejects spoofed, active-content and oversized files', () => {

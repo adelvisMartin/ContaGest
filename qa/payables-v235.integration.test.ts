@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test, { after } from 'node:test';
 import { randomUUID } from 'node:crypto';
 import { prisma } from '../backend/src/database/prisma.js';
-import { getPayableDocument, ingestPayableDocument } from '../backend/src/modules/payables/payables.service.js';
+import { confirmPayableReview, getPayableDocument, ingestPayableDocument } from '../backend/src/modules/payables/payables.service.js';
 
 const pdf=(text:string,salt='')=>Buffer.from(`%PDF-1.4\n1 0 obj<</Type /Page>>endobj\nBT ${text} ${salt} ET\n%%EOF`,'latin1');
 const tenantData=(label:string)=>({rif:`QA-${label}-${randomUUID().slice(0,8)}`,name:`QA ${label}`});
@@ -21,7 +21,7 @@ test('v235 DB acceptance: tenant isolation, exact dedupe, PO/receipt match and r
     {tenantId:tenantA.id,moduleSlug:'goods-receipt',title:'GRN-235',status:'received',payload:{number:'GRN-235',lines:[{quantity:'1',unitCost:'10',taxRate:'16'}]}}
   ]});
 
-  const bytes=pdf('PROVEEDOR QA RIF J-44444444-4 FACTURA AP-235 FECHA 07/09/2026 MONEDA USD SUBTOTAL 20 IVA 3.2 TOTAL 23.2 ORDEN DE COMPRA PO-235 RECEPCION GRN-235');
+  const bytes=pdf('PROVEEDOR QA RIF J-44444444-4 FACTURA AP-235 FECHA 07/09/2026 MONEDA USD ITEM Tornillo CANT 2 PRECIO 10 IVA 16 SUBTOTAL 20 IVA 3.2 TOTAL 23.2 ORDEN DE COMPRA PO-235 RECEPCION GRN-235');
   const first=await ingestPayableDocument({tenantId:tenantA.id,fileName:'ap-235.pdf',mimeType:'application/pdf',bytes});
   assert.equal(first.duplicate,false);
   assert.equal(first.document.state,'review');
@@ -31,6 +31,17 @@ test('v235 DB acceptance: tenant isolation, exact dedupe, PO/receipt match and r
   assert.equal((first.document.matchResult as any).purchaseOrder.matched,true);
   assert.equal((first.document.matchResult as any).receipt.matched,true);
   assert.equal((first.document.matchResult as any).differencesPreserved,true);
+  assert.deepEqual((first.document.matchResult as any).purchaseOrder.differences,[]);
+  assert.ok((first.document.matchResult as any).receipt.differences.some((row:any)=>row.kind==='quantity'));
+
+  const reviewed=await confirmPayableReview({tenantId:tenantA.id,userId:'qa-payables-reviewer',documentId:first.document.id});
+  assert.equal(reviewed.purchase.status,'draft');
+  assert.equal(reviewed.purchase.lines.length,1,'accepted extracted lines must survive human review into the draft');
+  assert.equal(reviewed.purchase.lines[0].description,'Tornillo');
+  assert.equal(reviewed.purchase.lines[0].quantity.toString(),'2');
+  assert.equal(reviewed.purchase.lines[0].unitCost.toString(),'10');
+  assert.equal(reviewed.purchase.lines[0].taxRate.toString(),'16');
+  assert.equal(reviewed.purchase.lines[0].total.toString(),'23.2');
 
   const replay=await ingestPayableDocument({tenantId:tenantA.id,fileName:'duplicate.pdf',mimeType:'application/pdf',bytes});
   assert.equal(replay.duplicate,true);

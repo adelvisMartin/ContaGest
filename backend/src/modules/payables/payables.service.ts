@@ -220,6 +220,33 @@ function decimalOrZero(value: unknown) {
   return new Prisma.Decimal(text);
 }
 
+function reviewedLinesFrom(extraction: PayableExtraction, corrections: Record<string, unknown>) {
+  const corrected = Array.isArray(corrections.lines) ? corrections.lines as Array<Record<string, unknown>> : null;
+  const source: Array<Record<string, unknown>> = corrected || (extraction.lines || []).map((line) => ({
+    description: line.description.value,
+    quantity: line.quantity.value,
+    unitCost: line.unitCost.value,
+    taxRate: line.taxRate.value
+  }));
+  return source.map((line, index) => {
+    const description = String(line['description'] || '').trim();
+    if (!description) throw new HttpError(422, `La línea ${index + 1} requiere descripción.`, { code:'PAYABLE_LINE_DESCRIPTION_REQUIRED', line:index + 1 });
+    const quantity = decimalOrZero(line['quantity']);
+    const unitCost = decimalOrZero(line['unitCost']);
+    const taxRate = decimalOrZero(line['taxRate']);
+    const subtotal = quantity.mul(unitCost);
+    const total = subtotal.plus(subtotal.mul(taxRate).div(100));
+    return {
+      description,
+      productId: line['productId'] ? String(line['productId']) : null,
+      quantity: quantity.toString(),
+      unitCost: unitCost.toString(),
+      taxRate: taxRate.toString(),
+      total: total.toString()
+    };
+  });
+}
+
 export async function confirmPayableReview(input: { tenantId:string; userId:string; documentId:string; confirmedFields?:string[]; corrections?:Record<string,unknown> }) {
   const document = await getPayableDocument(input.tenantId, input.documentId);
   if (document.purchaseInvoiceId) {
@@ -233,7 +260,10 @@ export async function confirmPayableReview(input: { tenantId:string; userId:stri
   const corrections = input.corrections || {};
   const confirmed = new Set(input.confirmedFields || []);
   const required = lowConfidenceFields(extraction, LOW_CONFIDENCE_THRESHOLD);
-  const unresolved = required.filter((key) => !confirmed.has(key) && !Object.prototype.hasOwnProperty.call(corrections,key));
+  const hasLineCorrections = Array.isArray(corrections.lines);
+  const unresolved = required.filter((key) => !confirmed.has(key)
+    && !Object.prototype.hasOwnProperty.call(corrections,key)
+    && !(key.startsWith('lines.') && hasLineCorrections));
   if (unresolved.length) throw new HttpError(422, 'Debes confirmar o corregir todos los campos de baja confianza.', { code:'PAYABLE_LOW_CONFIDENCE_UNRESOLVED', fields:unresolved });
 
   const invoiceNumber = String(mergedField(extraction, corrections, 'invoiceNumber') || '').trim();
@@ -249,7 +279,7 @@ export async function confirmPayableReview(input: { tenantId:string; userId:stri
     const supplier = await prisma.supplier.findFirst({ where:{ id:supplierId, tenantId:input.tenantId, active:true }, select:{id:true} });
     if (!supplier) throw new HttpError(422, 'El proveedor seleccionado no pertenece al tenant o no está activo.', { code:'PAYABLE_SUPPLIER_INVALID' });
   }
-  const reviewedLines = Array.isArray(corrections.lines) ? corrections.lines as Array<Record<string,unknown>> : [];
+  const reviewedLines = reviewedLinesFrom(extraction, corrections);
   const subtotal = decimalOrZero(corrections.subtotal ?? mergedField(extraction, corrections, 'subtotal'));
   const iva = decimalOrZero(corrections.tax ?? mergedField(extraction, corrections, 'tax'));
   const total = decimalOrZero(corrections.total ?? mergedField(extraction, corrections, 'total'));
@@ -275,12 +305,12 @@ export async function confirmPayableReview(input: { tenantId:string; userId:stri
         status:'draft',
         ocrStatus:`reviewed:${document.parserName || 'parser'}@${document.parserVersion || 'unknown'}`,
         lines:{ create:reviewedLines.map((line) => ({
-          productId:line.productId ? String(line.productId) : null,
-          description:String(line.description || 'Línea revisada'),
-          quantity:new Prisma.Decimal(String(line.quantity || '1')),
-          unitCost:new Prisma.Decimal(String(line.unitCost || '0')),
-          taxRate:new Prisma.Decimal(String(line.taxRate || '0')),
-          total:new Prisma.Decimal(String(line.total || '0'))
+          productId:line.productId,
+          description:line.description,
+          quantity:new Prisma.Decimal(line.quantity),
+          unitCost:new Prisma.Decimal(line.unitCost),
+          taxRate:new Prisma.Decimal(line.taxRate),
+          total:new Prisma.Decimal(line.total)
         })) }
       },
       include:{supplier:true,lines:true}

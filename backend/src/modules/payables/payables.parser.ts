@@ -66,6 +66,26 @@ function dateIso(value: string | null) {
   return `${y}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`;
 }
 
+function extractLines(text: string): ParsedLine[] {
+  const rows: ParsedLine[] = [];
+  const pattern = /(?:L[IÍ]NEA|ITEM|PRODUCTO)\s*[:#-]?\s*(.{2,120}?)\s+(?:CANT(?:IDAD)?|QTY)\s*[:#-]?\s*([\d.,]+)\s+(?:PRECIO(?:\s+UNITARIO)?|UNIT(?:\s+PRICE)?|P\.?\s*U\.?)\s*[:#-]?\s*([\d.,]+)\s+(?:IVA|TAX)\s*[:#-]?\s*([\d.,]+)\s*%?(?=\s+(?:L[IÍ]NEA|ITEM|PRODUCTO|SUBTOTAL|TOTAL|ORDEN\s+DE\s+COMPRA|PURCHASE\s+ORDER|PO|RECEPCI[ÓO]N|RECEPCION|RECEIPT|GRN)\b|$)/giu;
+  for (const match of text.matchAll(pattern)) {
+    const description = String(match[1] || '').trim();
+    const quantity = decimal(match[2]);
+    const unitCost = decimal(match[3]);
+    const taxRate = decimal(match[4]);
+    if (!description || quantity == null || unitCost == null || taxRate == null) continue;
+    rows.push({
+      description: field(description, 0.9, 'local-line-heuristic'),
+      quantity: field(quantity, 0.93, 'local-line-heuristic'),
+      unitCost: field(unitCost, 0.93, 'local-line-heuristic'),
+      taxRate: field(taxRate, 0.9, 'local-line-heuristic')
+    });
+    if (rows.length >= 200) break;
+  }
+  return rows;
+}
+
 export class SafeLocalParser implements PayableDocumentParser {
   readonly name = 'safe-local';
   constructor(readonly version = '1.0.0') {}
@@ -84,7 +104,8 @@ export class SafeLocalParser implements PayableDocumentParser {
       || (/\bUSD\b|US\$|\$\s*\d/.test(text) ? 'USD' : /\bVES\b|Bs\.?\s*\d/i.test(text) ? 'VES' : null);
     const supplierName = capture(text, [/(?:PROVEEDOR|SUPPLIER)[\s:#-]*([A-ZÁÉÍÓÚÑ0-9 .,&'-]{3,80})/i]);
 
-    const extractedCount = [rif, invoiceNumber, rawDate, subtotal, tax, total, po, receipt, currencyRaw, supplierName].filter(Boolean).length;
+    const lines = extractLines(text);
+    const extractedCount = [rif, invoiceNumber, rawDate, subtotal, tax, total, po, receipt, currencyRaw, supplierName].filter(Boolean).length + (lines.length ? 1 : 0);
     const warnings: string[] = [];
     if (input.mimeType !== 'application/pdf') warnings.push('Imagen recibida: el parser local no ejecuta OCR visual; requiere revisión humana o provider aprobado.');
     if (extractedCount < 3) warnings.push('Extracción limitada. Confirma manualmente los campos de baja confianza.');
@@ -101,7 +122,7 @@ export class SafeLocalParser implements PayableDocumentParser {
       total: field(total, confidence(total, 0.93)),
       poReference: field(po, confidence(po, 0.86)),
       receiptReference: field(receipt, confidence(receipt, 0.86)),
-      lines: [],
+      lines,
       warnings
     };
   }
@@ -118,7 +139,13 @@ export function extractionFingerprint(extraction: PayableExtraction) {
 }
 
 export function lowConfidenceFields(extraction: PayableExtraction, threshold = 0.8) {
-  return Object.entries(extraction)
+  const topLevel = Object.entries(extraction)
     .filter(([key, value]) => key !== 'lines' && key !== 'warnings' && value && typeof value === 'object' && 'confidence' in value && Number((value as ConfidenceField<unknown>).confidence) < threshold)
     .map(([key]) => key);
+  const lineFields = (extraction.lines || []).flatMap((line, index) =>
+    Object.entries(line)
+      .filter(([, value]) => value && typeof value === 'object' && 'confidence' in value && Number((value as ConfidenceField<unknown>).confidence) < threshold)
+      .map(([key]) => `lines.${index}.${key}`)
+  );
+  return [...topLevel, ...lineFields];
 }
