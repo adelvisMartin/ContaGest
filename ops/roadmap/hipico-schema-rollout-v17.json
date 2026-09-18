@@ -1,0 +1,172 @@
+{
+  "schema": "hipico-schema-rollout.v17",
+  "baseline": "79a83b2302646b85f47eefd15cce9b4d75050ab9",
+  "chain": "v12-v26",
+  "autoApply": false,
+  "manualApplyRequired": true,
+  "backupEvidenceSchema": "hipico-schema-backup-evidence.v17",
+  "maxBackupAgeHours": 24,
+  "migrations": [
+    {
+      "path": "supabase/sql/hipico_v12_operations.sql",
+      "risk": "HIGH",
+      "manualReviewRequired": true,
+      "provides": []
+    },
+    {
+      "path": "supabase/sql/hipico_v12_group_bridge.sql",
+      "risk": "MEDIUM",
+      "manualReviewRequired": true,
+      "provides": []
+    },
+    {
+      "path": "supabase/sql/hipico_v12_shadow_validation.sql",
+      "risk": "MEDIUM",
+      "manualReviewRequired": true,
+      "provides": []
+    },
+    {
+      "path": "supabase/sql/hipico_v13_workspace_sync_security.sql",
+      "risk": "HIGH",
+      "manualReviewRequired": true,
+      "provides": []
+    },
+    {
+      "path": "supabase/sql/hipico_v13_audit_idempotency.sql",
+      "risk": "HIGH",
+      "manualReviewRequired": true,
+      "provides": [
+        "audit.idempotency_key"
+      ]
+    },
+    {
+      "path": "supabase/sql/hipico_v13_lab_channel_bootstrap.sql",
+      "risk": "MEDIUM",
+      "manualReviewRequired": true,
+      "provides": []
+    },
+    {
+      "path": "supabase/sql/hipico_v14_canonical_domain.sql",
+      "risk": "HIGH",
+      "manualReviewRequired": true,
+      "provides": [
+        "domain.aggregates",
+        "domain.events"
+      ]
+    },
+    {
+      "path": "supabase/sql/hipico_v14_documents.sql",
+      "risk": "MEDIUM",
+      "manualReviewRequired": true,
+      "provides": []
+    },
+    {
+      "path": "supabase/sql/hipico_v15_domain_integrity_alignment.sql",
+      "risk": "HIGH",
+      "manualReviewRequired": true,
+      "provides": []
+    },
+    {
+      "path": "supabase/sql/hipico_v15_race_lifecycle.sql",
+      "risk": "HIGH",
+      "manualReviewRequired": true,
+      "provides": []
+    },
+    {
+      "path": "supabase/sql/hipico_v16_operator_confirmation_audit.sql",
+      "risk": "MEDIUM",
+      "manualReviewRequired": true,
+      "provides": []
+    },
+    {
+      "path": "supabase/sql/hipico_v17_outbox_reconciliation_status.sql",
+      "risk": "HIGH",
+      "manualReviewRequired": true,
+      "provides": [
+        "outbox.reconciliation_constraint"
+      ]
+    },
+    {
+      "path": "supabase/sql/hipico_v17_provider_evidence.sql",
+      "risk": "MEDIUM",
+      "manualReviewRequired": true,
+      "provides": [
+        "provider.evidence"
+      ]
+    },
+    {
+      "path": "supabase/sql/hipico_v18_documents.sql",
+      "risk": "HIGH",
+      "manualReviewRequired": true,
+      "provides": [
+        "documents.documents",
+        "documents.sources"
+      ]
+    },
+    {
+      "path": "supabase/sql/hipico_v18_race_result_stages.sql",
+      "risk": "MEDIUM",
+      "manualReviewRequired": true,
+      "provides": []
+    },
+    {
+      "path": "supabase/sql/hipico_v19_race_idempotency.sql",
+      "risk": "HIGH",
+      "manualReviewRequired": true,
+      "provides": []
+    },
+    {
+      "path": "supabase/sql/hipico_v20_document_audit.sql",
+      "risk": "MEDIUM",
+      "manualReviewRequired": true,
+      "provides": []
+    },
+    {
+      "path": "supabase/sql/hipico_v21_race_data_conflicts.sql",
+      "risk": "HIGH",
+      "manualReviewRequired": true,
+      "provides": []
+    },
+    {
+      "path": "supabase/sql/hipico_v22_agent_shadow.sql",
+      "risk": "HIGH",
+      "manualReviewRequired": true,
+      "provides": [
+        "agent.automation"
+      ]
+    },
+    {
+      "path": "supabase/sql/hipico_v23_risk_policy.sql",
+      "risk": "HIGH",
+      "manualReviewRequired": true,
+      "provides": [
+        "agent.policy_disposition"
+      ]
+    },
+    {
+      "path": "supabase/sql/hipico_v24_shadow_metrics.sql",
+      "risk": "MEDIUM",
+      "manualReviewRequired": true,
+      "provides": [
+        "agent.metric_schema_version"
+      ]
+    },
+    {
+      "path": "supabase/sql/hipico_v25_observability.sql",
+      "risk": "MEDIUM",
+      "manualReviewRequired": true,
+      "provides": [
+        "observability.events"
+      ]
+    },
+    {
+      "path": "supabase/sql/hipico_v26_audit_rpc_integrity.sql",
+      "risk": "HIGH",
+      "manualReviewRequired": true,
+      "provides": [
+        "audit.source",
+        "audit.authority"
+      ]
+    }
+  ]
+}
