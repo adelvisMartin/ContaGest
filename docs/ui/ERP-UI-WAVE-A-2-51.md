@@ -42,3 +42,13 @@ Los viewports de evidencia son 360, 390, 430, 768 y 1366. El source gate no se h
 ## Follow-up
 
 **3/51** debe retirar estas excepciones mediante la migración de los renderers imperativos y la eliminación del doble renderer veterinario. No se debe ampliar el presupuesto legacy durante esa transición.
+
+## Gates de cierre
+
+- `npm run baseline:verify`;
+- `npm run audit:erp-ui-wave-a`;
+- `node --test tests/erp_ui_wave_a_2_51.test.mjs`;
+- source/typecheck/build del pipeline vigente;
+- Chromium: `npm run test:browser:erp-ui-wave-a` sobre 360/390/430/768/1366 cuando exista runner/browser aprobado.
+
+Los estados browser permanecen `NOT_EXECUTED` hasta obtener ejecución real; no se infieren desde el source gate.
