@@ -9,6 +9,34 @@ import { HealthVerticalService } from '../services/verticalService.js';
 const PERMANENT_TEETH=['11','12','13','14','15','16','17','18','21','22','23','24','25','26','27','28','31','32','33','34','35','36','37','38','41','42','43','44','45','46','47','48'];
 const PRIMARY_TEETH=['51','52','53','54','55','61','62','63','64','65','71','72','73','74','75','81','82','83','84','85'];
 const TOOTH_SURFACES=[['vestibular','Vestibular'],['lingual_palatal','Lingual / palatina'],['mesial','Mesial'],['distal','Distal'],['occlusal_incisal','Oclusal / incisal']];
+const SURFACE_META={
+  vestibular:{label:'Vestibular',short:'V'},
+  lingual_palatal:{label:'Lingual / palatina',short:'L/P'},
+  mesial:{label:'Mesial',short:'M'},
+  distal:{label:'Distal',short:'D'},
+  occlusal_incisal:{label:'Oclusal / incisal',short:'O/I'}
+};
+const surfaceKey=(dentition,tooth,surface)=>`${dentition}:${tooth}:${surface}`;
+function buildSurfaceState(encounters=[]){
+  const current={};
+  const ordered=[...encounters].sort((left,right)=>new Date(right?.createdAt||0).getTime()-new Date(left?.createdAt||0).getTime());
+  for(const encounter of ordered){
+    if(String(encounter?.type||'').toLowerCase()!=='dental-treatment')continue;
+    const odontogram=encounter?.clinicalData?.odontogram;
+    if(!odontogram?.dentition||!odontogram?.tooth||!Array.isArray(odontogram?.surfaces))continue;
+    for(const surface of odontogram.surfaces){
+      if(!SURFACE_META[surface])continue;
+      const key=surfaceKey(odontogram.dentition,odontogram.tooth,surface);
+      if(!current[key])current[key]={
+        condition:String(odontogram.condition||'Sin condición registrada'),
+        procedure:String(encounter?.clinicalData?.procedure||encounter?.type||'Tratamiento'),
+        createdAt:encounter?.createdAt||null,
+        encounterId:encounter?.id||null
+      };
+    }
+  }
+  return current;
+}
 const PROCEDURES=['Evaluación','Profilaxis / limpieza','Restauración','Endodoncia','Extracción','Periodoncia','Ortodoncia','Prótesis','Implante','Radiografía / estudio','Control postoperatorio'];
 const SPECIALTIES=[
   ['odontologia-general','Odontología general'],['ortodoncia','Ortodoncia'],['endodoncia','Endodoncia'],
@@ -49,6 +77,7 @@ function DentistryWorkspace({ state, context }){
   const patientOptions=useMemo(()=>[{value:'',label:'Seleccionar paciente'},...patients.map((item)=>({value:item.id,label:patientName(item)}))],[patients]);
   const professionalOptions=useMemo(()=>[{value:'',label:'Sin asignar'},...dentalProfessionals.map((item)=>({value:item.id,label:item.fullName||'Profesional'}))],[dentalProfessionals]);
   const toothOptions=dentition==='primary'?PRIMARY_TEETH:PERMANENT_TEETH;
+  const surfaceState=useMemo(()=>buildSurfaceState(encounters),[encounters]);
 
   const notify=(message,tone='success')=>Toast?.show?.(message,tone);
 
@@ -230,13 +259,46 @@ function DentistryWorkspace({ state, context }){
             <Typography variant="caption" color="text.secondary" sx={{fontWeight:600}}>Pieza dental</Typography>
             <CgSelect label="Dentición" value={dentition} onChange={(e)=>{setDentition(e.target.value);setSelectedTooth('');setSelectedSurfaces([]);}} options={[{value:'permanent',label:'Permanente'},{value:'primary',label:'Temporal'}]}/>
           </Stack>
-          <Box className="cg-dental-tooth-grid" sx={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(44px,1fr))',gap:.6,mt:.8}}>
-            {toothOptions.map((tooth)=><CgButton key={tooth} type="button" size="small" variant={selectedTooth===tooth?'contained':'outlined'} aria-pressed={selectedTooth===tooth} onClick={()=>{setSelectedTooth(tooth);setSelectedSurfaces([]);}} sx={{minWidth:44,minHeight:44,p:0}}>{tooth}</CgButton>)}
-          </Box>
-          <Typography variant="caption" color="text.secondary" sx={{display:'block',mt:1,fontWeight:600}}>Superficies</Typography>
-          <Stack direction="row" flexWrap="wrap" gap={.6} mt={.6}>
-            {TOOTH_SURFACES.map(([value,label])=><CgButton key={value} type="button" size="small" variant={selectedSurfaces.includes(value)?'contained':'outlined'} aria-pressed={selectedSurfaces.includes(value)} disabled={!selectedTooth} onClick={()=>setSelectedSurfaces((current)=>current.includes(value)?current.filter((item)=>item!==value):[...current,value])}>{label}</CgButton>)}
+          <Stack direction={{xs:'column',sm:'row'}} gap={.7} mt={.8} alignItems={{sm:'center'}} justifyContent="space-between">
+            <Typography variant="caption" color="text.secondary">Estado derivado del último tratamiento estructurado por superficie.</Typography>
+            <Stack direction="row" flexWrap="wrap" gap={.5} aria-label="Leyenda del estado visual del odontograma">
+              <CgStatusChip size="small" label="Seleccionada" tone="primary"/>
+              <CgStatusChip size="small" label="Con registro clínico" tone="info"/>
+              <CgStatusChip size="small" label="Sin registro" tone="default"/>
+            </Stack>
           </Stack>
+          <Typography variant="caption" color="text.secondary" sx={{display:'block',mt:.5}}>Superficies: V vestibular · L/P lingual/palatina · M mesial · D distal · O/I oclusal/incisal.</Typography>
+          <Box className="cg-dental-tooth-grid" sx={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(64px,1fr))',gap:.6,mt:.8}}>
+            {toothOptions.map((tooth)=>{
+              const records=TOOTH_SURFACES.map(([surface])=>surfaceState[surfaceKey(dentition,tooth,surface)]).filter(Boolean);
+              return <CgButton key={tooth} type="button" size="small" variant={selectedTooth===tooth?'contained':'outlined'} aria-pressed={selectedTooth===tooth} aria-label={`Pieza ${tooth}: ${records.length} superficies con registro clínico`} onClick={()=>{setSelectedTooth(tooth);setSelectedSurfaces([]);}} sx={{minWidth:64,minHeight:58,p:.5}}>
+                <Stack gap={.35} width="100%" alignItems="stretch">
+                  <Typography component="span" variant="body2" fontWeight={800} textAlign="center">{tooth}</Typography>
+                  <Box component="span" aria-hidden="true" sx={{display:'grid',gridTemplateColumns:'repeat(5,minmax(0,1fr))',gap:.2}}>
+                    {TOOTH_SURFACES.map(([surface])=>{
+                      const recorded=Boolean(surfaceState[surfaceKey(dentition,tooth,surface)]);
+                      return <Box key={surface} component="span" sx={{fontSize:'.58rem',lineHeight:1.1,textAlign:'center',px:.1,py:.25,border:'1px solid',borderColor:recorded?'info.main':'divider',borderStyle:recorded?'double':'dashed',borderRadius:.4,bgcolor:recorded?'action.selected':'transparent'}}>{SURFACE_META[surface].short}</Box>;
+                    })}
+                  </Box>
+                </Stack>
+              </CgButton>;
+            })}
+          </Box>
+          <Typography variant="caption" color="text.secondary" sx={{display:'block',mt:1,fontWeight:600}}>Superficies de la pieza seleccionada</Typography>
+          <Box role="group" aria-label="Estado visual por superficies de la pieza seleccionada" sx={{display:'grid',gridTemplateColumns:{xs:'1fr',sm:'repeat(2,minmax(0,1fr))',lg:'repeat(5,minmax(0,1fr))'},gap:.6,mt:.6}}>
+            {TOOTH_SURFACES.map(([value,label])=>{
+              const record=selectedTooth?surfaceState[surfaceKey(dentition,selectedTooth,value)]:null;
+              const selected=selectedSurfaces.includes(value);
+              const visualState=selected?'Seleccionada':record?'Con registro clínico':'Sin registro';
+              return <CgButton key={value} type="button" size="small" variant={selected?'contained':'outlined'} color={record&&!selected?'info':'primary'} aria-pressed={selected} aria-label={`${label}: ${visualState}${record?`; ${record.condition}`:''}`} disabled={!selectedTooth} onClick={()=>setSelectedSurfaces((current)=>current.includes(value)?current.filter((item)=>item!==value):[...current,value])} sx={{justifyContent:'flex-start',alignItems:'stretch',minHeight:64,borderStyle:selected?'solid':record?'double':'dashed'}}>
+                <Stack alignItems="flex-start" textAlign="left" lineHeight={1.15}>
+                  <Typography component="span" variant="caption" fontWeight={800}>{SURFACE_META[value].short} · {label}</Typography>
+                  <Typography component="span" variant="caption">{visualState}</Typography>
+                  {record?<Typography component="span" variant="caption" sx={{fontWeight:700,overflowWrap:'anywhere'}}>{record.condition}</Typography>:null}
+                </Stack>
+              </CgButton>;
+            })}
+          </Box>
         </Box>
         <CgSelect label="Procedimiento" value={encounterForm.procedure} onChange={(e)=>setEncounterForm({...encounterForm,procedure:e.target.value})} options={PROCEDURES.map((value)=>({value,label:value}))}/>
         <CgTextField size="small" fullWidth label="Condición clínica" required value={encounterForm.condition} onChange={(e)=>setEncounterForm({...encounterForm,condition:e.target.value})}/>
