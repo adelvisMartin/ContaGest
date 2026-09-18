@@ -81,7 +81,7 @@ export function PeriodontalChartPanel({
     if(!selectedPatientId||!tooth)return;
     setSaving(true);
     try{
-      await onCreate?.({
+      const created=await onCreate?.({
         professionalId:professionalId||null,
         dentition,
         tooth,
@@ -94,7 +94,7 @@ export function PeriodontalChartPanel({
         })),
         notes:notes.trim()
       });
-      resetMeasurements();
+      if(created!==false)resetMeasurements();
     }finally{setSaving(false);}
   }
 
