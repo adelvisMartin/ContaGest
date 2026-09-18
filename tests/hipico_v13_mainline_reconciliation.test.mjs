@@ -46,6 +46,8 @@ test('v13 schema evidence composes the canonical v12-v26 chain and retains the i
   const v25 = read('supabase/sql/hipico_v25_observability.sql');
   assert.match(baseSchema, /hipico_v23_risk_policy\.sql/);
   assert.match(baseSchema, /hipico_v24_shadow_metrics\.sql/);
+  assert.match(baseSchema, /hipico_v25_observability\.sql/);
+  assert.match(baseSchema, /hipico_v26_audit_rpc_integrity\.sql/);
   assert.match(observabilityWorkflow, /hipico-apply-e2e-schema-v290\.mjs/);
   assert.match(observabilityWorkflow, /hipico-observability-v11-pg\.mjs/);
   assert.match(v25, /hipico_observability_events/);
