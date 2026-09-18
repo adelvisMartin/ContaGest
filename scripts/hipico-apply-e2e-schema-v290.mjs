@@ -30,7 +30,9 @@ const migrations = [
   'supabase/sql/hipico_v21_race_data_conflicts.sql',
   'supabase/sql/hipico_v22_agent_shadow.sql',
   'supabase/sql/hipico_v23_risk_policy.sql',
-  'supabase/sql/hipico_v24_shadow_metrics.sql'
+  'supabase/sql/hipico_v24_shadow_metrics.sql',
+  'supabase/sql/hipico_v25_observability.sql',
+  'supabase/sql/hipico_v26_audit_rpc_integrity.sql'
 ];
 
 const requiredAgentColumns = [
@@ -46,6 +48,11 @@ const requiredAgentConstraints = [
   'hipico_agent_evaluations_policy_disposition_check',
   'hipico_agent_evaluations_policy_evidence_state_check',
   'hipico_agent_evaluations_metric_schema_version_check'
+];
+const requiredAuditColumns = ['idempotency_key', 'source', 'authority'];
+const requiredAuditConstraints = [
+  'hipico_audit_events_source_check',
+  'hipico_audit_events_authority_check'
 ];
 
 function assertSafe(urlText) {
@@ -104,7 +111,8 @@ try {
   await client.query('BEGIN');
   await client.query('CREATE EXTENSION IF NOT EXISTS pgcrypto');
   await client.query(`DO $$ BEGIN CREATE ROLE anon NOLOGIN; EXCEPTION WHEN duplicate_object THEN NULL; END $$`);
-  await client.query(`DO $$ BEGIN CREATE ROLE authenticated NOLOGIN; EXCEPTION WHEN duplicate_object THEN NULL; END $$`);
+  await client.query(`DO $ BEGIN CREATE ROLE authenticated NOLOGIN; EXCEPTION WHEN duplicate_object THEN NULL; END $`);
+  await client.query(`DO $ BEGIN CREATE ROLE service_role NOLOGIN; EXCEPTION WHEN duplicate_object THEN NULL; END $`);
   await client.query('CREATE SCHEMA IF NOT EXISTS auth');
   await client.query(`CREATE OR REPLACE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql STABLE AS $$
     SELECT NULLIF(current_setting('request.jwt.claim.sub', true), '')::uuid
@@ -137,7 +145,8 @@ try {
     'hipico_domain_aggregates', 'hipico_domain_events',
     'hipico_provider_evidence', 'hipico_meetings', 'hipico_races', 'hipico_race_events',
     'hipico_group_automation', 'hipico_agent_evaluations', 'hipico_automation_transition_events',
-    'hipico_documents', 'hipico_document_sources', 'hipico_document_events'
+    'hipico_documents', 'hipico_document_sources', 'hipico_document_events',
+    'hipico_observability_events'
   ];
   const rows = await client.query(
     `SELECT tablename FROM pg_tables WHERE schemaname='public' AND tablename = ANY($1::text[])`,
@@ -163,7 +172,9 @@ try {
     'hipico_document_sources_immutable',
     'hipico_document_events_immutable',
     'hipico_automation_transition_events_append_only',
-    'hipico_agent_evaluations_review_once'
+    'hipico_agent_evaluations_review_once',
+    'hipico_observability_no_mutation',
+    'hipico_audit_idempotency_guard'
   ];
   const triggerRows = await client.query(`
     SELECT tgname FROM pg_trigger
@@ -205,6 +216,58 @@ try {
   const agentPolicyConstraintsPresent = missingAgentConstraints.length === 0;
   if (!agentPolicyConstraintsPresent) {
     throw new Error(`Agent policy/metric constraints missing: ${missingAgentConstraints.join(', ')}`);
+  }
+
+  const auditColumnRows = await client.query(`
+    SELECT column_name, is_nullable
+    FROM information_schema.columns
+    WHERE table_schema='public'
+      AND table_name='hipico_audit_events'
+      AND column_name = ANY($1::text[])
+  `, [requiredAuditColumns]);
+  const auditColumns = new Map(auditColumnRows.rows.map((row) => [row.column_name, row.is_nullable]));
+  const missingAuditColumns = requiredAuditColumns.filter((name) => !auditColumns.has(name));
+  const auditV26ColumnsPresent = missingAuditColumns.length === 0
+    && auditColumns.get('source') === 'NO'
+    && auditColumns.get('authority') === 'NO';
+  if (!auditV26ColumnsPresent) {
+    throw new Error(`Audit v26 columns missing/invalid: ${missingAuditColumns.join(', ')}`);
+  }
+
+  const auditConstraintRows = await client.query(`
+    SELECT conname
+    FROM pg_constraint
+    JOIN pg_class ON pg_class.oid=pg_constraint.conrelid
+    JOIN pg_namespace ON pg_namespace.oid=pg_class.relnamespace
+    WHERE pg_namespace.nspname='public'
+      AND pg_class.relname='hipico_audit_events'
+      AND conname = ANY($1::text[])
+  `, [requiredAuditConstraints]);
+  const auditConstraints = new Set(auditConstraintRows.rows.map((row) => row.conname));
+  const missingAuditConstraints = requiredAuditConstraints.filter((name) => !auditConstraints.has(name));
+  const auditV26ConstraintsPresent = missingAuditConstraints.length === 0;
+  if (!auditV26ConstraintsPresent) {
+    throw new Error(`Audit v26 constraints missing: ${missingAuditConstraints.join(', ')}`);
+  }
+
+  const observabilityAppendOnlyTriggerPresent = triggers.has('hipico_observability_no_mutation');
+  const auditIdempotencyTriggerPresent = triggers.has('hipico_audit_idempotency_guard');
+  if (!observabilityAppendOnlyTriggerPresent || !auditIdempotencyTriggerPresent) {
+    throw new Error('v25/v26 trigger contract incomplete');
+  }
+
+  const auditRpcPrivilegeRows = await client.query(`
+    SELECT
+      has_function_privilege('anon','public.hipico_append_audit(uuid,text,text,text,jsonb)','EXECUTE') AS anon_execute,
+      has_function_privilege('authenticated','public.hipico_append_audit(uuid,text,text,text,jsonb)','EXECUTE') AS authenticated_execute,
+      has_function_privilege('service_role','public.hipico_append_audit(uuid,text,text,text,jsonb)','EXECUTE') AS service_role_execute
+  `);
+  const auditRpcPrivileges = auditRpcPrivilegeRows.rows[0] || {};
+  const auditRpcAnonExecuteDenied = auditRpcPrivileges.anon_execute === false;
+  const auditRpcAuthenticatedExecuteAllowed = auditRpcPrivileges.authenticated_execute === true;
+  const auditRpcServiceRoleExecuteAllowed = auditRpcPrivileges.service_role_execute === true;
+  if (!auditRpcAnonExecuteDenied || !auditRpcAuthenticatedExecuteAllowed || !auditRpcServiceRoleExecuteAllowed) {
+    throw new Error('Audit v26 RPC privilege contract incomplete');
   }
 
   const ownChannel = await client.query(`INSERT INTO public.hipico_bot_channels(owner_id,group_key,label,channel_type,status,config)
@@ -280,12 +343,20 @@ try {
       agentMetricColumnsNotNull,
       agentPolicyConstraintsPresent,
       agentPolicyConstraints: [...agentConstraints].sort(),
+      observabilityAppendOnlyTriggerPresent,
+      auditIdempotencyTriggerPresent,
+      auditV26ColumnsPresent,
+      auditV26ConstraintsPresent,
+      auditV26Constraints: [...auditConstraints].sort(),
+      auditRpcAnonExecuteDenied,
+      auditRpcAuthenticatedExecuteAllowed,
+      auditRpcServiceRoleExecuteAllowed,
       immutableAuditTriggers: [...triggers].sort(),
       rlsTables: required
     }
   }, null, 2)}\n`, 'utf8');
 
-  console.log(`[hipico-v290] current schema ready (${required.length} required tables; v12-v24 RLS/RBAC evidence executed)`);
+  console.log(`[hipico-v290] current schema ready (${required.length} required tables; v12-v26 RLS/RBAC evidence executed)`);
 } catch (error) {
   try { await client.query('ROLLBACK'); } catch {}
   throw error;
