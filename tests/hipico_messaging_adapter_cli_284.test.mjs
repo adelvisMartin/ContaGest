@@ -139,5 +139,7 @@ test('#284 Windows daily launcher stays separate from dependency setup', () => {
   assert.match(cmd, /tools\\hipico-cli\\hipico\.mjs/i);
   assert.doesNotMatch(ps, /npm\s+ci/i);
   assert.doesNotMatch(cmd, /npm\s+ci/i);
-  assert.match(setup, /hipico-whatsapp-web-bridge\\INICIAR\.ps1/);\n  assert.match(setup, /-SetupOnly/);\n  assert.match(read('tools/hipico-whatsapp-web-bridge/INICIAR.ps1'), /npmCmd ci --no-fund --no-audit/);
+  assert.match(setup, /hipico-whatsapp-web-bridge\\INICIAR\.ps1/);
+  assert.match(setup, /-SetupOnly/);
+  assert.match(read('tools/hipico-whatsapp-web-bridge/INICIAR.ps1'), /npmCmd ci --no-fund --no-audit/);
 });
