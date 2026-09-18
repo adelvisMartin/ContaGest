@@ -116,8 +116,8 @@ const dentalSnapshot = (clinicalData: any) => {
   };
 };
 
-const dentalChangedFields = (before: ReturnType<typeof dentalSnapshot>, after: ReturnType<typeof dentalSnapshot>) =>
-  (Object.keys(after) as Array<keyof typeof after>).filter((key) => JSON.stringify(before[key]) !== JSON.stringify(after[key]));
+const dentalChangedFields = (before: Record<string, unknown>, after: Record<string, unknown>) =>
+  Object.keys(after).filter((key) => JSON.stringify(before[key]) !== JSON.stringify(after[key]));
 
 const measurementSchema = z.object({
   patientId: z.string().min(10),
@@ -250,12 +250,22 @@ router.post('/health/encounters/:id/amend', requirePermission('health.manage'), 
     if (previous.status !== 'signed') throw new HttpError(409, 'Solo la versión firmada vigente puede enmendarse.');
 
     const previousClinicalData = previous.clinicalData && typeof previous.clinicalData === 'object' ? previous.clinicalData : {};
-    const before = dentalSnapshot(previousClinicalData);
-    const after = dentalSnapshot(b.clinicalData);
+    const beforeClinical = dentalSnapshot(previousClinicalData);
+    const afterClinical = dentalSnapshot(b.clinicalData);
+    const before = {
+      ...beforeClinical,
+      subjective:String(previous.subjective || ''),
+      assessment:String(previous.assessment || ''),
+      plan:String(previous.plan || '')
+    };
+    const after = {
+      ...afterClinical,
+      subjective:String(b.subjective ?? previous.subjective ?? ''),
+      assessment:String(b.assessment ?? previous.assessment ?? ''),
+      plan:String(b.plan ?? previous.plan ?? '')
+    };
     const changedFields = dentalChangedFields(before, after);
-    if (!changedFields.length && String(previous.subjective || '') === String(b.subjective || '') && String(previous.assessment || '') === String(b.assessment || '') && String(previous.plan || '') === String(b.plan || '')) {
-      throw new HttpError(422, 'La enmienda debe contener al menos un cambio clínico.');
-    }
+    if (!changedFields.length) throw new HttpError(422, 'La enmienda debe contener al menos un cambio clínico.');
 
     const priorVersioning = previousClinicalData.versioning && typeof previousClinicalData.versioning === 'object'
       ? previousClinicalData.versioning
@@ -299,7 +309,7 @@ router.post('/health/encounters/:id/amend', requirePermission('health.manage'), 
       previous.specialty,
       previous.type,
       b.subjective ?? previous.subjective,
-      `Pieza ${after.tooth}`,
+      `Pieza ${afterClinical.tooth}`,
       b.assessment ?? previous.assessment,
       b.plan ?? previous.plan,
       JSON.stringify(previous.diagnosisCodes || []),
