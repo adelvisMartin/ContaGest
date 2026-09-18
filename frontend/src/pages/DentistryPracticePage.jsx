@@ -1,8 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { Box, Divider, Paper, Stack, Typography } from '@mui/material';
+import { Box, Checkbox, Divider, FormControlLabel, Paper, Stack, Typography } from '@mui/material';
 import {
-  CgButton, CgEmptyState, CgPageHeader, CgProvider, CgSelect, CgState, CgStatusChip, CgTextField
+  CgButton, CgDataTable, CgEmptyState, CgPageHeader, CgProvider, CgSelect, CgState, CgStatusChip, CgTextField
 } from '../components/ui/cg/CgPrimitives.jsx';
 import { HealthVerticalService } from '../services/verticalService.js';
 import { ToothSurfaceSelector } from '../components/dentistry/ToothSurfaceSelector.jsx';
@@ -14,6 +14,51 @@ const SPECIALTIES=[
   ['odontologia-general','Odontología general'],['ortodoncia','Ortodoncia'],['endodoncia','Endodoncia'],
   ['periodoncia','Periodoncia'],['cirugia-bucal','Cirugía bucal'],['protesis','Prótesis / rehabilitación']
 ];
+const PERIODONTAL_SITES=[
+  ['mesiobuccal','MV · mesiovestibular'],
+  ['buccal','V · vestibular'],
+  ['distobuccal','DV · distovestibular'],
+  ['mesiolingual','ML/P · mesiolingual/palatina'],
+  ['lingual','L/P · lingual/palatina'],
+  ['distolingual','DL/P · distolingual/palatina']
+];
+const blankPeriodontalSites=()=>PERIODONTAL_SITES.map(([site])=>({
+  site,probingDepth:'',gingivalMargin:'',clinicalAttachmentLevel:'',bleeding:false,suppuration:false,plaque:false
+}));
+function buildPeriodontalEvolution(exams=[]){
+  const previousBySite=new Map();
+  const evolution=[];
+  const ordered=[...exams].sort((left,right)=>String(left?.measuredAt||'').localeCompare(String(right?.measuredAt||'')));
+  for(const exam of ordered){
+    for(const site of Array.isArray(exam?.sites)?exam.sites:[]){
+      const key=`${exam.dentition||'permanent'}:${exam.tooth||'unknown'}:${site.site||'unknown'}`;
+      const previous=previousBySite.get(key);
+      evolution.push({
+        id:`${exam.examId||'exam'}:${site.site}`,
+        examId:exam.examId,
+        measuredAt:exam.measuredAt,
+        dentition:exam.dentition,
+        tooth:exam.tooth,
+        site:site.site,
+        siteLabel:PERIODONTAL_SITES.find(([value])=>value===site.site)?.[1]||site.site,
+        probingDepth:Number(site.probingDepth||0),
+        gingivalMargin:Number(site.gingivalMargin||0),
+        clinicalAttachmentLevel:Number(site.clinicalAttachmentLevel||0),
+        deltaProbingDepth:previous?Number(site.probingDepth||0)-Number(previous.probingDepth||0):null,
+        deltaClinicalAttachment:previous?Number(site.clinicalAttachmentLevel||0)-Number(previous.clinicalAttachmentLevel||0):null,
+        bleeding:Boolean(site.bleeding),
+        suppuration:Boolean(site.suppuration),
+        plaque:Boolean(site.plaque),
+        mobility:Number(exam.mobility||0),
+        furcation:Number(exam.furcation||0),
+        professionalName:exam.professionalName||'—',
+        reason:exam.reason||'—'
+      });
+      previousBySite.set(key,site);
+    }
+  }
+  return evolution.reverse();
+}
 const rows=(value)=>Array.isArray(value)?value:value?.data||[];
 const patientName=(patient={})=>patient.displayName||patient.fullName||'Paciente';
 const statusLabel=(status='')=>({scheduled:'Programada',confirmed:'Confirmada',checked_in:'En sala',in_progress:'En atención',completed:'Completada',cancelled:'Cancelada',no_show:'No asistió'}[String(status).toLowerCase()]||status||'Programada');
