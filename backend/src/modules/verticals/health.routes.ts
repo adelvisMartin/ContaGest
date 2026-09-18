@@ -362,6 +362,142 @@ router.post('/health/encounters/:id/amend', requirePermission('health.manage'), 
   ok(res, amended, 201);
 }));
 
+router.get('/health/periodontal-exams', requirePermission('health.manage'), asyncHandler(async (req, res) => {
+  const tenantId = ctx(req).tenantId;
+  const patientId = String(req.query.patientId || '');
+  if (!patientId) throw new HttpError(422, 'patientId es obligatorio.');
+
+  const patientRows = await prisma.$queryRawUnsafe<any[]>(`
+    SELECT "id" FROM public."CarePatient"
+    WHERE "tenantId"=$1 AND "id"=$2 AND "kind"='human' AND "active"=true
+    LIMIT 1
+  `, tenantId, patientId);
+  if (!patientRows.length) throw new HttpError(404, 'Paciente odontológico no encontrado.');
+
+  const siteRows = await prisma.$queryRawUnsafe<any[]>(`
+    SELECT m.*, pr."fullName" AS "professionalName"
+    FROM public."CareMeasurement" m
+    LEFT JOIN public."CareProfessional" pr
+      ON pr."tenantId"=m."tenantId"
+     AND pr."id"=m."metadata"->>'professionalId'
+    WHERE m."tenantId"=$1
+      AND m."patientId"=$2
+      AND m."kind"='periodontal-site'
+    ORDER BY m."measuredAt" DESC, m."id" DESC
+    LIMIT 3000
+  `, tenantId, patientId);
+
+  const exams = new Map<string, any>();
+  for (const row of siteRows) {
+    const metadata = row.metadata && typeof row.metadata === 'object' ? row.metadata : {};
+    const examId = String(metadata.examId || row.id);
+    if (!exams.has(examId)) {
+      exams.set(examId, {
+        examId,
+        patientId:row.patientId,
+        measuredAt:row.measuredAt,
+        dentition:String(metadata.dentition || 'permanent'),
+        tooth:String(metadata.tooth || ''),
+        professionalId:String(metadata.professionalId || ''),
+        professionalName:String(row.professionalName || ''),
+        actorUserId:metadata.actorUserId ? String(metadata.actorUserId) : null,
+        reason:String(metadata.reason || ''),
+        mobility:Number(metadata.mobility || 0),
+        furcation:Number(metadata.furcation || 0),
+        sites:[]
+      });
+    }
+    exams.get(examId).sites.push({
+      site:String(metadata.site || ''),
+      probingDepth:Number(metadata.probingDepth ?? row.value ?? 0),
+      gingivalMargin:Number(metadata.gingivalMargin ?? 0),
+      clinicalAttachmentLevel:Number(metadata.clinicalAttachmentLevel ?? 0),
+      bleeding:Boolean(metadata.bleeding),
+      suppuration:Boolean(metadata.suppuration),
+      plaque:Boolean(metadata.plaque)
+    });
+  }
+
+  const order = new Map(PERIODONTAL_SITES.map((site, index) => [site, index]));
+  const result = [...exams.values()].map((exam) => ({
+    ...exam,
+    sites:exam.sites.sort((left:any, right:any) => (order.get(left.site as typeof PERIODONTAL_SITES[number]) ?? 99) - (order.get(right.site as typeof PERIODONTAL_SITES[number]) ?? 99))
+  }));
+  ok(res, result);
+}));
+
+router.post('/health/periodontal-exams', requirePermission('health.manage'), asyncHandler(async (req, res) => {
+  const tenantId = ctx(req).tenantId;
+  const actorUserId = ctx(req).userId || null;
+  const b = periodontalExamSchema.parse(req.body || {});
+  const examId = randomUUID();
+  const measuredAt = b.measuredAt || new Date().toISOString();
+
+  const created = await prisma.$transaction(async (tx) => {
+    const patientRows = await tx.$queryRawUnsafe<any[]>(`
+      SELECT "id" FROM public."CarePatient"
+      WHERE "tenantId"=$1 AND "id"=$2 AND "kind"='human' AND "active"=true
+      LIMIT 1
+    `, tenantId, b.patientId);
+    if (!patientRows.length) throw new HttpError(422, 'El paciente no pertenece al tenant activo o no es un paciente humano activo.');
+
+    const professionalRows = await tx.$queryRawUnsafe<any[]>(`
+      SELECT "id","fullName" FROM public."CareProfessional"
+      WHERE "tenantId"=$1 AND "id"=$2
+      LIMIT 1
+    `, tenantId, b.professionalId);
+    const professional = professionalRows[0];
+    if (!professional) throw new HttpError(422, 'El profesional no pertenece al tenant activo.');
+
+    const inserted:any[] = [];
+    for (const site of b.sites) {
+      const metadata = {
+        examId,
+        dentition:b.dentition,
+        tooth:b.tooth,
+        site:site.site,
+        probingDepth:site.probingDepth,
+        gingivalMargin:site.gingivalMargin,
+        clinicalAttachmentLevel:site.clinicalAttachmentLevel,
+        bleeding:site.bleeding,
+        suppuration:site.suppuration,
+        plaque:site.plaque,
+        mobility:b.mobility,
+        furcation:b.furcation,
+        reason:b.reason,
+        professionalId:b.professionalId,
+        actorUserId
+      };
+      const rows = await tx.$queryRawUnsafe<any[]>(`
+        INSERT INTO public."CareMeasurement"
+          ("id","tenantId","patientId","encounterId","kind","value","unit","measuredAt","metadata")
+        VALUES
+          (gen_random_uuid()::text,$1,$2,NULL,'periodontal-site',$3,'mm',$4::timestamptz,$5::jsonb)
+        RETURNING *
+      `, tenantId, b.patientId, site.probingDepth, measuredAt, JSON.stringify(metadata));
+      inserted.push(one(rows));
+    }
+
+    return {
+      examId,
+      patientId:b.patientId,
+      measuredAt,
+      dentition:b.dentition,
+      tooth:b.tooth,
+      professionalId:b.professionalId,
+      professionalName:String(professional.fullName || ''),
+      actorUserId,
+      reason:b.reason,
+      mobility:b.mobility,
+      furcation:b.furcation,
+      sites:b.sites,
+      measurementIds:inserted.map((row) => row.id)
+    };
+  });
+
+  ok(res, created, 201);
+}));
+
 router.post('/health/measurements', requirePermission('health.manage'), asyncHandler(async (req, res) => {
   const b = measurementSchema.parse(req.body || {});
   const rows = await prisma.$queryRawUnsafe<any[]>(`
