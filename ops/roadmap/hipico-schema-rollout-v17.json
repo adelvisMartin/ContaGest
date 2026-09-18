@@ -1,7 +1,7 @@
 {
   "schema": "hipico-schema-rollout.v17",
-  "baseline": "79a83b2302646b85f47eefd15cce9b4d75050ab9",
-  "chain": "v12-v26",
+  "baseline": "89286ce65e2466873463bcd5518e1dc820e2633b",
+  "chain": "v12-v27",
   "autoApply": false,
   "manualApplyRequired": true,
   "backupEvidenceSchema": "hipico-schema-backup-evidence.v17",
@@ -128,6 +128,26 @@
       "provides": []
     },
     {
+      "path": "supabase/sql/hipico_v21_production_outbox.sql",
+      "risk": "HIGH",
+      "manualReviewRequired": true,
+      "provides": [
+        "outbox.receipts",
+        "outbox.payload_digest",
+        "outbox.lease_token"
+      ]
+    },
+    {
+      "path": "supabase/sql/hipico_v21_outbox_reconciliation_audit.sql",
+      "risk": "HIGH",
+      "manualReviewRequired": true,
+      "provides": [
+        "outbox.reconciled_by",
+        "outbox.reconciled_at",
+        "outbox.reconciliation_reason"
+      ]
+    },
+    {
       "path": "supabase/sql/hipico_v22_agent_shadow.sql",
       "risk": "HIGH",
       "manualReviewRequired": true,
@@ -167,6 +187,12 @@
         "audit.source",
         "audit.authority"
       ]
+    },
+    {
+      "path": "supabase/sql/hipico_v27_outbox_authority.sql",
+      "risk": "HIGH",
+      "manualReviewRequired": true,
+      "provides": []
     }
   ]
 }

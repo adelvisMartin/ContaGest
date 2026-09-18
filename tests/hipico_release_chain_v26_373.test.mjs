@@ -19,14 +19,17 @@ test('v290 schema chain applies v25 then v26 and proves their database boundarie
   assert.match(source,/anon.*execute|anonExecute/i);
   assert.match(source,/authenticated.*execute|authenticatedExecute/i);
   assert.match(source,/service.*execute|serviceRoleExecute/i);
-  assert.match(source,/v12-v26/);
+  assert.match(source,/v12-v27/);
 });
 
-test('v290 release guard requires v25/v26 and advertises only v12-v26',async()=>{
+test('v290 release guard requires v25/v26 and advertises only v12-v27',async()=>{
   const source=await read('scripts/hipico-release-guard-v290.mjs');
   assert.match(source,/hipico_v25_observability\.sql/);
   assert.match(source,/hipico_v26_audit_rpc_integrity\.sql/);
-  assert.match(source,/currentPostgresChain:\s*'v12-v26'/);
+  assert.match(source,/hipico_v21_production_outbox\.sql/);
+  assert.match(source,/hipico_v21_outbox_reconciliation_audit\.sql/);
+  assert.match(source,/hipico_v27_outbox_authority\.sql/);
+  assert.match(source,/currentPostgresChain:\s*'v12-v27'/);
   assert.match(source,/observability/i);
   assert.match(source,/audit/i);
   assert.doesNotMatch(source,/currentPostgresChain:\s*'v12-v24'/);
@@ -34,22 +37,22 @@ test('v290 release guard requires v25/v26 and advertises only v12-v26',async()=>
 
 test('v290 evidence verifier rejects the obsolete v12-v24 chain',async()=>{
   const source=await read('scripts/hipico-verify-evidence-v290.mjs');
-  assert.match(source,/currentPostgresChain\s*===\s*'v12-v26'/);
+  assert.match(source,/currentPostgresChain\s*===\s*'v12-v27'/);
   assert.match(source,/migrationsInclude\(data,\s*'hipico_v25_observability\.sql'\)/);
   assert.match(source,/migrationsInclude\(data,\s*'hipico_v26_audit_rpc_integrity\.sql'\)/);
-  assert.match(source,/data\?\.migrations\s*===\s*'v12-v26'/);
-  assert.match(source,/postgresChain:\s*'v12-v26'/);
+  assert.match(source,/data\?\.migrations\s*===\s*'v12-v27'/);
+  assert.match(source,/postgresChain:\s*'v12-v27'/);
   assert.doesNotMatch(source,/currentPostgresChain\s*===\s*'v12-v24'/);
 });
 
-test('v290 report and workflow expose the same v12-v26 chain',async()=>{
+test('v290 report and workflow expose the same v12-v27 chain',async()=>{
   const [report,workflow]=await Promise.all([
     read('scripts/hipico-release-report-v290.mjs'),
     read('.github/workflows/hipico-production-gates-v290.yml')
   ]);
-  assert.match(report,/postgresChain:\s*'v12-v26'/);
-  assert.match(report,/PostgreSQL chain:\s*\*\*v12-v26\*\*/);
-  assert.match(workflow,/Apply v12-v26 Hípico schema and RLS RBAC probes/);
-  assert.match(workflow,/migrations:\s*'v12-v26'/);
+  assert.match(report,/postgresChain:\s*'v12-v27'/);
+  assert.match(report,/PostgreSQL chain:\s*\*\*v12-v27\*\*/);
+  assert.match(workflow,/Apply v12-v27 Hípico schema and RLS RBAC probes/);
+  assert.match(workflow,/migrations:\s*'v12-v27'/);
   assert.doesNotMatch(workflow,/migrations:\s*'v12-v24'/);
 });

@@ -50,5 +50,5 @@ test('v290 PostgreSQL chain uses isolated local databases, current v26 schema ch
   assert.match(workflow, /hipico-ephemeral-db-v290\.mjs create/);
   assert.match(workflow, /hipico-ephemeral-db-v290\.mjs drop/);
   assert.match(workflow, /if: always\(\)/);
-  assert.match(workflow, /v12-v26/);
+  assert.match(workflow, /v12-v27/);
 });

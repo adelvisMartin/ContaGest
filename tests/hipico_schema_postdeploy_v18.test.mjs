@@ -11,6 +11,24 @@ const allChecks=()=>({
   observabilityTablePresent:true,
   observabilityRls:true,
   observabilityAppendOnlyTrigger:true,
+  outboxReceiptsPresent:true,
+  outboxRls:true,
+  outboxReceiptsRls:true,
+  outboxReceiptsAppendOnlyTrigger:true,
+  outboxAuthenticatedSelectPolicyPresent:true,
+  outboxReceiptsAuthenticatedSelectPolicyPresent:true,
+  outboxClientMutationPolicyAbsent:true,
+  outboxReceiptsClientMutationPolicyAbsent:true,
+  outboxAuthenticatedDirectSelect:true,
+  outboxAuthenticatedDirectInsert:false,
+  outboxAuthenticatedDirectUpdate:false,
+  outboxAuthenticatedDirectDelete:false,
+  outboxAuthenticatedDirectTruncate:false,
+  outboxReceiptsAuthenticatedDirectSelect:true,
+  outboxReceiptsAuthenticatedDirectInsert:false,
+  outboxReceiptsAuthenticatedDirectUpdate:false,
+  outboxReceiptsAuthenticatedDirectDelete:false,
+  outboxReceiptsAuthenticatedDirectTruncate:false,
   auditIdempotencyIndex:true,
   auditSourceConstraint:true,
   auditAuthorityConstraint:true,
@@ -105,7 +123,7 @@ test('v18 drift NOT_EXECUTED remains NOT_EXECUTED',()=>{
   assert.equal(report.reason,'DATABASE_URL_REQUIRED');
 });
 
-test('v18 verifier is read-only and checks v25/v26 security primitives',async()=>{
+test('v18 verifier is read-only and checks v25-v27 security primitives',async()=>{
   const source=await read('scripts/hipico-schema-postdeploy-v18.mjs');
   assert.match(source,/runDriftCheck/);
   assert.match(source,/BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY/i);
