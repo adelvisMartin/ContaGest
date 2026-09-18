@@ -23,7 +23,7 @@ test('v9 evidence verifier requires every PR code artifact on the same SHA', asy
     'androidGate',
     'releaseManifest'
   ]) assert.match(verifier, new RegExp(`id: '${id}'`), `missing required evidence descriptor ${id}`);
-  assert.match(verifier, /migrations.*v12-v24/);
+  assert.match(verifier, /migrations.*v12-v26/);
   assert.match(verifier, /agentPolicyMetrics/);
 });
 
@@ -56,7 +56,7 @@ test('automation readiness requires evidence, shadow and race context on the sam
 test('release report publishes current chain, automation readiness and applied caps', async () => {
   const report = await read('scripts/hipico-release-report-v290.mjs');
   assert.match(report, /hipico-release-readiness-v9\.mjs/);
-  assert.match(report, /postgresChain:\s*'v12-v24'/);
+  assert.match(report, /postgresChain:\s*'v12-v26'/);
   assert.match(report, /automationReadiness/);
   assert.match(report, /appliedCaps/);
 });
