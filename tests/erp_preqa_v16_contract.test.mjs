@@ -19,11 +19,11 @@ const expectedRoutes=[
 test('pre-QA v16 covers all 58 registered runtime routes',()=>{
   assert.equal(expectedRoutes.length,58);
   assert.equal(new Set(expectedRoutes).size,58);
-  const app=read('frontend','src','app.js');
+  const registry=read('frontend','src','data','pageRegistry.js');
   const catalog=read('frontend','src','data','moduleCatalog.js');
   const visualCatalog=read('qa','support','module-visual-catalog.mjs');
   for(const route of expectedRoutes){
-    assert.match(app,new RegExp(`(?:^|[,\\s])['\"]?${route.replaceAll('-','\\-')}['\"]?\\s*:`),`runtime registry missing ${route}`);
+    assert.match(registry,new RegExp(`(?:^|[,\\s])['\"]?${route.replaceAll('-','\\-')}['\"]?\\s*:`),`runtime registry missing ${route}`);
     assert.match(visualCatalog,new RegExp(`route:'${route.replaceAll('-','\\-')}'`),`visual audit catalog missing ${route}`);
     if(route!=='login')assert.match(catalog,new RegExp(`route:'${route.replaceAll('-','\\-')}'`),`module catalog missing ${route}`);
   }
