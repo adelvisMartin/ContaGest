@@ -66,3 +66,7 @@ La validación post-merge detectó contratos de QA obsoletos y se corrigieron si
 ## Baseline acumulado de integración
 
 El hardening del harness se rebasó sobre `main@35cceed5d8d9e3df4ca09138b5b61bab6ca283d7`, que ya contiene las implementaciones acumuladas hasta 7/51. No reemplaza sus scripts ni revierte trabajo de Banking; sólo añade los dos entrypoints de DB reales y corrige contratos del browser runner.
+
+## Contratos posteriores a 8/51
+
+Las migraciones posteriores retiraron `GymManagementPage.js` y `BankingPage.js`. Los source contracts de pre-QA ahora siguen los renderers canónicos `.jsx` y exigen cero lifecycle imperativo/legacy en Fitness, en lugar de conservar presupuestos legacy que ya no existen.
