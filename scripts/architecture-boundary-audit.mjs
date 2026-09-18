@@ -3,10 +3,6 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const DEFAULT_EXPECTED_ROUTES = 58;
-const PROTECTED_BACKEND_DOMAINS = new Set([
-  'accounting', 'approvals', 'banking', 'bank-reconciliation', 'commercial',
-  'fiscal', 'inventory', 'payroll', 'purchases', 'rbac', 'sales', 'user-security'
-]);
 const OPTIONAL_PACK_MODULES = new Set(['verticals', 'food', 'hipico', 'hipico-bot']);
 const OPTIONAL_PACK_FAMILIES = new Map([
   ['verticals', 'verticals'],
@@ -75,12 +71,14 @@ function moduleSegmentFor(filePath) {
   const marker = '/backend/src/modules/';
   const index = normalized.indexOf(marker);
   if (index < 0) return null;
-  return normalized.slice(index + marker.length).split('/')[0] || null;
+  const tail = normalized.slice(index + marker.length);
+  if (!tail.includes('/')) return null;
+  return tail.split('/')[0] || null;
 }
 
 function protectedDomainFor(filePath) {
   const segment = moduleSegmentFor(filePath);
-  return segment && PROTECTED_BACKEND_DOMAINS.has(segment) ? segment : null;
+  return segment && !OPTIONAL_PACK_MODULES.has(segment) ? segment : null;
 }
 
 function relativeImportTargetModule(filePath, specifier) {
@@ -96,7 +94,7 @@ function isTestOnlySource(filePath) {
 export function findForbiddenBackendDependencies(files) {
   const findings = [];
   for (const file of files) {
-    if (!protectedDomainFor(file.path)) continue;
+    if (isTestOnlySource(file.path) || !protectedDomainFor(file.path)) continue;
     for (const specifier of importSpecifiers(file.source)) {
       const targetModule = relativeImportTargetModule(file.path, specifier);
       if (targetModule && OPTIONAL_PACK_MODULES.has(targetModule)) {
