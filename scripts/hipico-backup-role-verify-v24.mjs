@@ -90,8 +90,8 @@ export function classifyBackupRoleVerification({
     if(item.rls===true&&item.backupPolicy!==true)findings.push(`RLS_POLICY_MISSING:${table}`);
   }
 
-  for(const grant of Array.isArray(observation.crossScopeGrants)?observation.crossScopeGrants:[]){
-    findings.push(`CROSS_SCOPE_GRANT:${grant}`);
+  for(const crossScopeGrant of Array.isArray(observation.crossScopeGrants)?observation.crossScopeGrants:[]){
+    findings.push(`CROSS_SCOPE_GRANT:${crossScopeGrant}`);
   }
 
   report.findings=findings;
