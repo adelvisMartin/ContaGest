@@ -29,14 +29,14 @@ function DentistryWorkspace({ state, context }){
   const [professionals,setProfessionals]=useState(rows(initial.professionals));
   const [appointments,setAppointments]=useState(rows(initial.appointments).filter((item)=>String(item.type||'').toLowerCase()==='dentistry'));
   const [encounters,setEncounters]=useState(rows(initial.encounters));
-  const [encounterPatientId,setEncounterPatientId]=useState(rows(initial.patients)[0]?.id||'');
+  const [selectedPatientId,setSelectedPatientId]=useState(initial.selectedPatientId||'');
   const [selectedTooth,setSelectedTooth]=useState('');
   const [loading,setLoading]=useState(false);
   const [error,setError]=useState('');
   const [patientForm,setPatientForm]=useState({displayName:'',email:'',phone:''});
   const [professionalForm,setProfessionalForm]=useState({fullName:'',specialty:'odontologia-general',licenseNumber:''});
   const [appointmentForm,setAppointmentForm]=useState({patientId:'',professionalId:'',date:localToday(),time:'09:00',reason:''});
-  const [encounterForm,setEncounterForm]=useState({patientId:'',professionalId:'',procedure:'Evaluación',finding:'',assessment:'',plan:''});
+  const [encounterForm,setEncounterForm]=useState({professionalId:'',procedure:'Evaluación',finding:'',assessment:'',plan:''});
   const Toast=context?.Toast;
 
   const dentalProfessionals=useMemo(()=>professionals.filter((item)=>/odont|dental|ortodon|endodon|periodon|cirugia-bucal|protesis/i.test(String(item.specialty||''))||!item.specialty),[professionals]);
@@ -62,10 +62,9 @@ function DentistryWorkspace({ state, context }){
       setPatients(nextPatients);
       setProfessionals(nextProfessionals);
       setAppointments(nextAppointments);
-      const nextPatientId=encounterPatientId&&nextPatients.some((item)=>item.id===encounterPatientId)?encounterPatientId:(nextPatients[0]?.id||'');
-      setEncounterPatientId(nextPatientId);
-      setEncounterForm((current)=>({...current,patientId:current.patientId&&nextPatients.some((item)=>item.id===current.patientId)?current.patientId:nextPatientId}));
-      setAppointmentForm((current)=>({...current,patientId:current.patientId&&nextPatients.some((item)=>item.id===current.patientId)?current.patientId:(nextPatients[0]?.id||'')}));
+      const nextPatientId=selectedPatientId&&nextPatients.some((item)=>item.id===selectedPatientId)?selectedPatientId:'';
+      setSelectedPatientId(nextPatientId);
+      setAppointmentForm((current)=>({...current,patientId:current.patientId&&nextPatients.some((item)=>item.id===current.patientId)?current.patientId:''}));
       if(nextPatientId)setEncounters(rows(await HealthVerticalService.encounters(nextPatientId)));else setEncounters([]);
     }catch(cause){
       const message=cause?.message||'No se pudo actualizar odontología.';
@@ -79,8 +78,8 @@ function DentistryWorkspace({ state, context }){
   useEffect(()=>{void loadAll({silent:true});},[]);
 
   async function loadEncounters(patientId){
-    setEncounterPatientId(patientId);
-    setEncounterForm((current)=>({...current,patientId}));
+    setSelectedPatientId(patientId);
+    setSelectedTooth('');
     if(!patientId){setEncounters([]);return;}
     try{setEncounters(rows(await HealthVerticalService.encounters(patientId)));}
     catch(cause){notify(`No se cargó la historia odontológica: ${cause?.message||'Error de lectura'}`,'warning');}
@@ -93,7 +92,7 @@ function DentistryWorkspace({ state, context }){
       const patient=await HealthVerticalService.createPatient({kind:'human',displayName:patientForm.displayName.trim(),email:patientForm.email.trim(),phone:patientForm.phone.trim()});
       setPatients((current)=>[patient,...current]);
       setPatientForm({displayName:'',email:'',phone:''});
-      if(!encounterPatientId)void loadEncounters(patient.id);
+      if(!selectedPatientId)void loadEncounters(patient.id);
       setAppointmentForm((current)=>({...current,patientId:current.patientId||patient.id}));
       notify('Paciente odontológico guardado.','success');
     }catch(cause){notify(`No se guardó el paciente: ${cause?.message||'Error'}`,'error');}
@@ -135,12 +134,11 @@ function DentistryWorkspace({ state, context }){
 
   async function submitEncounter(event){
     event.preventDefault();
-    const patientId=encounterForm.patientId||encounterPatientId;
-    if(!patientId)return notify('Selecciona un paciente.','warning');
+    if(!selectedPatientId)return notify('Selecciona un paciente.','warning');
     if(!selectedTooth)return notify('Selecciona una pieza dental.','warning');
     try{
       const item=await HealthVerticalService.createEncounter({
-        patientId,
+        patientId:selectedPatientId,
         professionalId:encounterForm.professionalId||null,
         specialty:'dentistry',
         type:'dental-treatment',
@@ -153,9 +151,9 @@ function DentistryWorkspace({ state, context }){
         confidential:false,
         status:'signed'
       });
-      setEncounterPatientId(patientId);
-      setEncounters((current)=>patientId===encounterPatientId?[item,...current]:[item]);
-      setEncounterForm((current)=>({...current,patientId,procedure:'Evaluación',finding:'',assessment:'',plan:''}));
+      setSelectedPatientId(selectedPatientId);
+      setEncounters((current)=>[item,...current]);
+      setEncounterForm((current)=>({...current,procedure:'Evaluación',finding:'',assessment:'',plan:''}));
       setSelectedTooth('');
       notify('Tratamiento odontológico registrado.','success');
     }catch(cause){notify(`No se registró el tratamiento: ${cause?.message||'Error'}`,'error');}
@@ -213,7 +211,7 @@ function DentistryWorkspace({ state, context }){
       <Stack direction={{xs:'column',md:'row'}} justifyContent="space-between" gap={1}><Box><Typography variant="h6">Odontograma y tratamiento rápido</Typography><Typography variant="caption" color="text.secondary">Selecciona la pieza y registra hallazgos/procedimiento.</Typography></Box><CgStatusChip label={selectedTooth?`Pieza ${selectedTooth}`:'Sin pieza seleccionada'} tone={selectedTooth?'primary':'default'}/></Stack>
       <Divider sx={{my:1.4}}/>
       <Box className="cg-dental-treatment-form" sx={{display:'grid',gridTemplateColumns:{xs:'1fr',md:'repeat(2,minmax(0,1fr))'},gap:1.2}}>
-        <CgSelect label="Paciente" value={encounterForm.patientId||encounterPatientId} onChange={(e)=>{setEncounterForm({...encounterForm,patientId:e.target.value});void loadEncounters(e.target.value);}} options={patientOptions}/>
+        <CgSelect label="Paciente" value={selectedPatientId} onChange={(e)=>void loadEncounters(e.target.value)} options={patientOptions}/>
         <CgSelect label="Profesional" value={encounterForm.professionalId} onChange={(e)=>setEncounterForm({...encounterForm,professionalId:e.target.value})} options={professionalOptions}/>
         <Box sx={{gridColumn:'1/-1'}}>
           <Typography variant="caption" color="text.secondary" sx={{display:'block',mb:.6,fontWeight:600}}>Pieza dental</Typography>
@@ -235,7 +233,7 @@ function DentistryWorkspace({ state, context }){
         {appointments.length?<Stack className="cg-dental-list" divider={<Divider flexItem/>}>{appointments.slice(0,12).map((item)=>{const patient=patientById.get(item.patientId)||{};return <Stack key={item.id} direction={{xs:'column',sm:'row'}} justifyContent="space-between" gap={1} py={.8}><Box sx={{minWidth:0}}><Typography variant="body2" fontWeight={650}>{patientName(patient)}</Typography><Typography variant="caption" color="text.secondary">{new Date(item.startsAt).toLocaleString('es-VE',{dateStyle:'short',timeStyle:'short'})} · {item.reason||'Consulta odontológica'}</Typography></Box><CgStatusChip label={statusLabel(item.status)} tone={statusTone(item.status)}/></Stack>;})}</Stack>:<CgEmptyState title="Sin citas odontológicas" description="Las nuevas citas aparecerán aquí."/>}
       </Paper>
       <Paper variant="outlined" sx={{p:1.5,minWidth:0}}>
-        <Stack direction={{xs:'column',sm:'row'}} justifyContent="space-between" gap={1}><Typography variant="h6">Historia odontológica reciente</Typography><CgSelect label="Paciente de historia" value={encounterPatientId} onChange={(e)=>void loadEncounters(e.target.value)} options={patientOptions}/></Stack><Divider sx={{my:1}}/>
+        <Stack direction={{xs:'column',sm:'row'}} justifyContent="space-between" gap={1}><Typography variant="h6">Historia odontológica reciente</Typography><CgSelect label="Paciente de historia" value={selectedPatientId} onChange={(e)=>void loadEncounters(e.target.value)} options={patientOptions}/></Stack><Divider sx={{my:1}}/>
         {encounters.length?<Stack className="cg-dental-list" divider={<Divider flexItem/>}>{encounters.slice(0,12).map((item)=><Stack key={item.id} direction={{xs:'column',sm:'row'}} justifyContent="space-between" gap={1} py={.8}><Box sx={{minWidth:0}}><Typography variant="body2" fontWeight={650}>{item.clinicalData?.procedure||item.type||'Atención odontológica'}</Typography><Typography variant="caption" color="text.secondary">{item.clinicalData?.tooth?`Pieza ${item.clinicalData.tooth} · `:''}{item.assessment||item.subjective||'Sin diagnóstico resumido'}</Typography></Box><CgStatusChip label={item.status==='signed'?'Firmado':'Borrador'} tone={item.status==='signed'?'success':'warning'}/></Stack>)}</Stack>:<CgEmptyState title="Sin tratamientos registrados" description="Selecciona un paciente y registra el primer procedimiento."/>}
       </Paper>
     </Box>
