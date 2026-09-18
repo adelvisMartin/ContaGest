@@ -22,8 +22,12 @@ La clasificación es de composición y gobierno. No cambia por sí sola la API p
 
 1. que `frontend/src/data/pageRegistry.js` y `qa/support/module-visual-catalog.mjs` siguen declarando exactamente 58 rutas;
 2. que no aparecen duplicados ni drift entre ambas autoridades;
-3. que módulos protegidos del núcleo ERP no importan paquetes verticales opcionales (`verticals` o `hipico-bot`);
-4. que el resultado es determinista y falla con código distinto de cero ante una violación.
+3. que módulos protegidos del núcleo ERP no importan paquetes verticales opcionales (`verticals`, `food`, `hipico` o `hipico-bot`);
+4. que los IDs de `MODULE_ROUTE_MANIFEST` son únicos y conservan el orden canónico;
+5. que cada mount tiene un path normalizado y un dominio arquitectónico permitido;
+6. que los únicos paths duplicados son `/commercial` (`service-restrictions → commercial`) y `/verticals` (`vertical-core → veterinary-crud → vertical-extended`), en ese orden;
+7. que routers importados desde optional packs se clasifican como `vertical` y que el dominio `vertical` no apunta a routers Core importados;
+8. que el resultado es determinista y falla con código distinto de cero ante una violación.
 
 El CI ejecuta este gate antes de la suite general.
 
@@ -39,6 +43,8 @@ El CI ejecuta este gate antes de la suite general.
 6. health check de base de datos.
 
 Los routers concretos y CRUDs pasan a `backend/src/modules/route-manifest.ts`. El orden del manifiesto replica el orden legacy para preservar routing y precedencia.
+
+Los mounts duplicados son excepciones explícitas porque el orden sí afecta precedencia. El auditor mantiene una allowlist exacta para `/commercial` y `/verticals`; agregar otro path duplicado o reordenar sus routers requiere actualizar deliberadamente el contrato y su regresión, no sólo editar el manifiesto.
 
 ## Regla de dependencias
 
