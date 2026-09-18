@@ -6,9 +6,9 @@ import {
 } from '../components/ui/cg/CgPrimitives.jsx';
 import { HealthVerticalService } from '../services/verticalService.js';
 import { ToothSurfaceSelector } from '../components/dentistry/ToothSurfaceSelector.jsx';
+import { PERMANENT_TEETH, PRIMARY_TEETH } from '../components/dentistry/dentalCatalog.js';
+import { PeriodontalChartPanel } from '../components/dentistry/PeriodontalChartPanel.jsx';
 
-const PERMANENT_TEETH=['11','12','13','14','15','16','17','18','21','22','23','24','25','26','27','28','31','32','33','34','35','36','37','38','41','42','43','44','45','46','47','48'];
-const PRIMARY_TEETH=['51','52','53','54','55','61','62','63','64','65','71','72','73','74','75','81','82','83','84','85'];
 const PROCEDURES=['Evaluación','Profilaxis / limpieza','Restauración','Endodoncia','Extracción','Periodoncia','Ortodoncia','Prótesis','Implante','Radiografía / estudio','Control postoperatorio'];
 const SPECIALTIES=[
   ['odontologia-general','Odontología general'],['ortodoncia','Ortodoncia'],['endodoncia','Endodoncia'],
@@ -48,6 +48,7 @@ function DentistryWorkspace({ state, context }){
   const dentalProfessionals=useMemo(()=>professionals.filter((item)=>/odont|dental|ortodon|endodon|periodon|cirugia-bucal|protesis/i.test(String(item.specialty||''))||!item.specialty),[professionals]);
   const patientById=useMemo(()=>new Map(patients.map((item)=>[item.id,item])),[patients]);
   const activeAppointments=useMemo(()=>appointments.filter((item)=>!['completed','cancelled'].includes(String(item.status||'').toLowerCase())),[appointments]);
+  const dentalTreatmentEncounters=useMemo(()=>encounters.filter((item)=>item.type==='dental-treatment'),[encounters]);
   const patientOptions=useMemo(()=>[{value:'',label:'Seleccionar paciente'},...patients.map((item)=>({value:item.id,label:patientName(item)}))],[patients]);
   const professionalOptions=useMemo(()=>[{value:'',label:'Sin asignar'},...dentalProfessionals.map((item)=>({value:item.id,label:item.fullName||'Profesional'}))],[dentalProfessionals]);
   const toothOptions=dentition==='primary'?PRIMARY_TEETH:PERMANENT_TEETH;
@@ -212,6 +213,38 @@ function DentistryWorkspace({ state, context }){
     });
   }
 
+  async function createPeriodontalChart(chart){
+    if(!selectedPatientId){notify('Selecciona un paciente antes de registrar el periodontograma.','warning');return false;}
+    try{
+      const item=await HealthVerticalService.createEncounter({
+        patientId:selectedPatientId,
+        professionalId:chart.professionalId||null,
+        specialty:'periodontics',
+        type:'periodontal-chart',
+        subjective:chart.notes||'',
+        objective:`Periodontograma pieza ${chart.tooth}`,
+        assessment:'',
+        plan:'',
+        diagnosisCodes:[],
+        clinicalData:{periodontogram:{
+          dentition:chart.dentition,
+          tooth:chart.tooth,
+          mobilityGrade:chart.mobilityGrade,
+          furcationGrade:chart.furcationGrade,
+          sites:chart.sites
+        },notes:chart.notes||''},
+        confidential:false,
+        status:'signed'
+      });
+      setEncounters((current)=>[item,...current]);
+      notify('Periodontograma firmado y agregado a la evolución periodontal.','success');
+      return true;
+    }catch(cause){
+      notify(`No se registró el periodontograma: ${cause?.message||'Error'}`,'error');
+      return false;
+    }
+  }
+
   return <Stack className="cg-dentistry-workspace" gap={1.5}>
     <CgPageHeader eyebrow="Salud · Odontología" title="Consultorio odontológico" description="Pacientes, agenda, odontograma operativo y registro de procedimientos en un mismo flujo." actions={<CgButton variant="outlined" onClick={()=>void loadAll()} disabled={loading}>Actualizar</CgButton>}/>
     {error?<CgState severity="warning" title="Actualización incompleta">{error}</CgState>:null}
@@ -221,7 +254,7 @@ function DentistryWorkspace({ state, context }){
       <Metric label="Pacientes" value={patients.length} tone="primary"/>
       <Metric label="Citas activas" value={activeAppointments.length} tone={activeAppointments.length?'warning':'success'}/>
       <Metric label="Profesionales" value={dentalProfessionals.length} tone="info"/>
-      <Metric label="Tratamientos cargados" value={encounters.length} tone="secondary"/>
+      <Metric label="Registros clínicos" value={encounters.length} tone="secondary"/>
     </Box>
 
     <Box className="cg-dental-grid" sx={{display:'grid',gridTemplateColumns:{xs:'1fr',lg:'repeat(3,minmax(0,1fr))'},gap:1.25}}>
@@ -297,6 +330,15 @@ function DentistryWorkspace({ state, context }){
       </Box>
     </Paper>
 
+    <PeriodontalChartPanel
+      selectedPatientId={selectedPatientId}
+      onPatientChange={(patientId)=>void loadEncounters(patientId)}
+      patientOptions={patientOptions}
+      professionalOptions={professionalOptions}
+      encounters={encounters}
+      onCreate={createPeriodontalChart}
+    />
+
     <Box className="cg-dental-grid" sx={{display:'grid',gridTemplateColumns:{xs:'1fr',lg:'repeat(2,minmax(0,1fr))'},gap:1.25}}>
       <Paper variant="outlined" sx={{p:1.5,minWidth:0}}>
         <Typography variant="h6">Próximas citas</Typography><Divider sx={{my:1}}/>
@@ -304,7 +346,7 @@ function DentistryWorkspace({ state, context }){
       </Paper>
       <Paper variant="outlined" sx={{p:1.5,minWidth:0}}>
         <Stack direction={{xs:'column',sm:'row'}} justifyContent="space-between" gap={1}><Typography variant="h6">Historia odontológica reciente</Typography><CgSelect label="Paciente de historia" value={selectedPatientId} onChange={(e)=>void loadEncounters(e.target.value)} options={patientOptions}/></Stack><Divider sx={{my:1}}/>
-        {encounters.length?<Stack className="cg-dental-list" divider={<Divider flexItem/>}>{encounters.slice(0,20).map((item)=>{
+        {dentalTreatmentEncounters.length?<Stack className="cg-dental-list" divider={<Divider flexItem/>}>{dentalTreatmentEncounters.slice(0,20).map((item)=>{
           const versioning=item.clinicalData?.versioning;
           const revision=versioning?.revision||1;
           const actor=versioning?.actor?.email||versioning?.actor?.userId||'registro original';
