@@ -75,7 +75,22 @@ export async function loadBackupScopeContract({rootDir=root}={}){
   }
   const bytes=await fs.readFile(path.resolve(rootDir,tableInventory));
   const tableManifestSha256=createHash('sha256').update(bytes).digest('hex');
-  return {scope,migrationChain,tableInventory,tableManifestSha256};
+  const canonicalTables=bytes.toString('utf8').split(/\r?\n/)
+    .map((line)=>line.trim())
+    .filter((line)=>line&&!line.startsWith('#'));
+  if(canonicalTables.length!==25
+      || new Set(canonicalTables).size!==25
+      || canonicalTables.some((table)=>!/^hipico_[a-z0-9_]+$/.test(table))){
+    throw new Error('HIPICO_BACKUP_TABLE_INVENTORY_CONTENT_INVALID');
+  }
+  return {
+    scope,
+    migrationChain,
+    tableInventory,
+    tableManifestSha256,
+    canonicalTableCount:canonicalTables.length,
+    canonicalTables
+  };
 }
 
 export function validateBackupEvidence(evidence,{
@@ -84,6 +99,9 @@ export function validateBackupEvidence(evidence,{
   expectedScope,
   expectedMigrationChain,
   expectedTableManifestSha256,
+  expectedMode,
+  expectedCanonicalTableCount,
+  expectedCanonicalTables,
   now=new Date(),
   maxAgeHours=DEFAULT_MAX_BACKUP_AGE_HOURS
 }={}){
@@ -112,6 +130,45 @@ export function validateBackupEvidence(evidence,{
   )){
     return {ok:false,reason:'BACKUP_TABLE_MANIFEST_MISMATCH'};
   }
+
+  const normalizedExpectedMode=String(expectedMode||'').trim().toUpperCase();
+  const evidenceMode=String(evidence.mode||'').trim().toUpperCase();
+  if(normalizedExpectedMode&&evidenceMode!==normalizedExpectedMode){
+    return {ok:false,reason:'BACKUP_MODE_MISMATCH'};
+  }
+
+  const canonicalCount=Number(evidence.canonicalTableCount);
+  if(expectedCanonicalTableCount&&canonicalCount!==Number(expectedCanonicalTableCount)){
+    return {ok:false,reason:'BACKUP_CANONICAL_TABLE_COUNT_MISMATCH'};
+  }
+
+  if(normalizedExpectedMode||evidenceMode){
+    const present=Array.isArray(evidence.presentTables)?evidence.presentTables.map(String):[];
+    const deferred=Array.isArray(evidence.deferredTables)?evidence.deferredTables.map(String):[];
+    const sourceTableCount=Number(evidence.sourceTableCount);
+    const duplicatePresent=new Set(present).size!==present.length;
+    const duplicateDeferred=new Set(deferred).size!==deferred.length;
+    const overlap=present.some((table)=>deferred.includes(table));
+    if(!present.length||duplicatePresent||duplicateDeferred||overlap){
+      return {ok:false,reason:'BACKUP_TABLE_PARTITION_INVALID'};
+    }
+    if(sourceTableCount!==present.length){
+      return {ok:false,reason:'BACKUP_SOURCE_TABLE_COUNT_MISMATCH'};
+    }
+    if(canonicalCount!==present.length+deferred.length){
+      return {ok:false,reason:'BACKUP_TABLE_PARTITION_INVALID'};
+    }
+    if(Array.isArray(expectedCanonicalTables)&&expectedCanonicalTables.length){
+      const expected=[...expectedCanonicalTables].map(String).sort();
+      const actual=[...present,...deferred].sort();
+      if(expected.length!==actual.length||expected.some((table,index)=>table!==actual[index])){
+        return {ok:false,reason:'BACKUP_TABLE_PARTITION_INVALID'};
+      }
+    }
+    if(evidenceMode==='STEADY_STATE'&&(present.length!==canonicalCount||deferred.length!==0)){
+      return {ok:false,reason:'BACKUP_STEADY_STATE_SCOPE_INVALID'};
+    }
+  }
   const checkedAt=new Date(String(evidence.checkedAt||''));
   if(Number.isNaN(checkedAt.getTime()))return {ok:false,reason:'BACKUP_EVIDENCE_TIME_INVALID'};
   const maxAge=Math.max(1,Math.min(168,Number(maxAgeHours)||DEFAULT_MAX_BACKUP_AGE_HOURS))*60*60*1000;
@@ -128,6 +185,11 @@ export function validateBackupEvidence(evidence,{
       scope:String(evidence.scope||expectedScope||''),
       migrationChain:String(evidence.migrationChain||expectedMigrationChain||''),
       tableManifestSha256:evidenceTableManifestSha256,
+      mode:evidenceMode||null,
+      canonicalTableCount:Number.isSafeInteger(canonicalCount)?canonicalCount:null,
+      sourceTableCount:Number.isSafeInteger(Number(evidence.sourceTableCount))?Number(evidence.sourceTableCount):null,
+      presentTables:Array.isArray(evidence.presentTables)?[...evidence.presentTables]:[],
+      deferredTables:Array.isArray(evidence.deferredTables)?[...evidence.deferredTables]:[],
       checkedAt:checkedAt.toISOString()
     }
   };
@@ -223,6 +285,9 @@ export function buildRolloutPlan({
     expectedScope:backupScopeContract.scope,
     expectedMigrationChain:backupScopeContract.migrationChain,
     expectedTableManifestSha256:backupScopeContract.tableManifestSha256,
+    expectedMode:'PRE_ROLLOUT',
+    expectedCanonicalTableCount:backupScopeContract.canonicalTableCount,
+    expectedCanonicalTables:backupScopeContract.canonicalTables,
     now,
     maxAgeHours:maxBackupAgeHours
   });

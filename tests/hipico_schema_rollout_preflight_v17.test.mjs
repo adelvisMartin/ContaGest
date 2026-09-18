@@ -26,6 +26,11 @@ function validBackup(contract,overrides={}){
     scope:contract.scope,
     migrationChain:contract.migrationChain,
     tableManifestSha256:contract.tableManifestSha256,
+    mode:'PRE_ROLLOUT',
+    canonicalTableCount:contract.canonicalTableCount,
+    sourceTableCount:contract.canonicalTableCount,
+    presentTables:[...contract.canonicalTables],
+    deferredTables:[],
     ...overrides
   };
 }
@@ -91,6 +96,7 @@ test('v17 DRIFT is READY_FOR_MANUAL_APPLY only with valid backup restore evidenc
   const manifest=JSON.parse(await read('ops/roadmap/hipico-schema-rollout-v17.json'));
   const units=await loadMigrationUnits(manifest);
   const contract=await loadBackupScopeContract();
+  assert.equal(contract.canonicalTableCount,25);
   const plan=buildRolloutPlan({
     candidateSha:SHA,
     driftReport:drift(),

@@ -34,30 +34,52 @@ restore_database="${url_parts[1]}"
 }
 [[ "$restore_database" =~ (_drill|_restore)$ ]] || { echo "Restore DB must end in _drill or _restore." >&2; exit 5; }
 
+tmpdir="$(mktemp -d)"
+trap 'rm -rf "$tmpdir"' EXIT
+
 table_manifest_sha256="$(sha256sum "$TABLE_FILE" | awk '{print $1}')"
-manifest_values="$(node --input-type=module - "$MANIFEST" <<'NODE'
+node --input-type=module - "$MANIFEST" "$TABLE_FILE" "$tmpdir/present-tables.txt" "$tmpdir/deferred-tables.txt" "$tmpdir/manifest-values.txt" <<'NODE'
 import fs from 'node:fs';
-const j=JSON.parse(fs.readFileSync(process.argv[2],'utf8'));
-for(const value of [
-  j.backupId,j.candidateSha,j.targetDatabase,j.scope,j.migrationChain,j.tableManifestSha256,
-  j.plaintextDigests?.dumpSha256,j.plaintextDigests?.sourceCountsSha256,j.plaintextDigests?.authUserIdsSha256
-]) console.log(String(value||''));
+const [manifestFile,inventoryFile,presentFile,deferredFile,valuesFile]=process.argv.slice(2);
+const manifest=JSON.parse(fs.readFileSync(manifestFile,'utf8'));
+const canonical=fs.readFileSync(inventoryFile,'utf8')
+  .split(/\r?\n/).map((x)=>x.trim()).filter((x)=>x&&!x.startsWith('#'));
+const present=Array.isArray(manifest.presentTables)?manifest.presentTables.map(String):[];
+const deferred=Array.isArray(manifest.deferredTables)?manifest.deferredTables.map(String):[];
+const validNames=(items)=>items.every((x)=>/^hipico_[a-z0-9_]+$/.test(x));
+const sameSet=(a,b)=>a.length===b.length&&[...a].sort().every((x,i)=>x===[...b].sort()[i]);
+if(canonical.length!==25||new Set(canonical).size!==25)throw new Error('Canonical inventory invalid');
+if(!['PRE_ROLLOUT','STEADY_STATE'].includes(String(manifest.mode||'')))throw new Error('Backup mode invalid');
+if(!present.length||new Set(present).size!==present.length||new Set(deferred).size!==deferred.length)throw new Error('Backup partition invalid');
+if(!validNames(present)||!validNames(deferred))throw new Error('Backup partition names invalid');
+if(present.some((x)=>deferred.includes(x))||!sameSet([...present,...deferred],canonical))throw new Error('Backup partition does not cover canonical inventory');
+if(Number(manifest.canonicalTableCount)!==25||Number(manifest.sourceTableCount)!==present.length)throw new Error('Backup table counts invalid');
+if(manifest.mode==='STEADY_STATE'&&(present.length!==25||deferred.length!==0))throw new Error('STEADY_STATE backup is incomplete');
+fs.writeFileSync(presentFile,present.join('\n')+'\n');
+fs.writeFileSync(deferredFile,deferred.join('\n')+(deferred.length?'\n':''));
+const values=[
+  manifest.backupId,manifest.candidateSha,manifest.targetDatabase,manifest.scope,manifest.migrationChain,
+  manifest.tableManifestSha256,manifest.mode,String(manifest.canonicalTableCount),String(manifest.sourceTableCount),
+  manifest.plaintextDigests?.dumpSha256,manifest.plaintextDigests?.sourceCountsSha256,manifest.plaintextDigests?.authUserIdsSha256
+];
+fs.writeFileSync(valuesFile,values.map((x)=>String(x||'')).join('\n')+'\n');
 NODE
-)"
-mapfile -t MV <<<"$manifest_values"
+
+mapfile -t MV < "$tmpdir/manifest-values.txt"
 backup_id="${MV[0]}"; manifest_sha="${MV[1]}"; target_database="${MV[2]}"; scope="${MV[3]}"; chain="${MV[4]}"
-manifest_table_sha="${MV[5]}"; dump_sha="${MV[6]}"; counts_sha="${MV[7]}"; auth_sha="${MV[8]}"
+manifest_table_sha="${MV[5]}"; mode="${MV[6]}"; canonical_table_count="${MV[7]}"; source_table_count="${MV[8]}"
+dump_sha="${MV[9]}"; counts_sha="${MV[10]}"; auth_sha="${MV[11]}"
 
 [[ "$manifest_sha" == "${HIPICO_CANDIDATE_SHA,,}" ]] || { echo "Backup SHA mismatch." >&2; exit 6; }
 [[ "$scope" == "hipico-canonical-v12-v27" && "$chain" == "v12-v27" ]] || { echo "Backup scope/chain mismatch." >&2; exit 6; }
 [[ "$manifest_table_sha" == "$table_manifest_sha256" ]] || { echo "Table inventory digest mismatch." >&2; exit 6; }
+[[ "$canonical_table_count" == "25" ]] || { echo "Canonical table count mismatch." >&2; exit 6; }
+[[ "$source_table_count" =~ ^[0-9]+$ && "$source_table_count" -ge 1 ]] || { echo "Source table count invalid." >&2; exit 6; }
 
 for file in hipico.data.dump.age source-counts.json.age auth-user-ids.txt.age; do
   (cd "$HIPICO_BACKUP_OUTPUT_DIR" && sha256sum --check "$file.sha256")
 done
 
-tmpdir="$(mktemp -d)"
-trap 'rm -rf "$tmpdir"' EXIT
 age -d -i "$HIPICO_BACKUP_AGE_IDENTITY" -o "$tmpdir/hipico.data.dump" "$HIPICO_BACKUP_OUTPUT_DIR/hipico.data.dump.age"
 age -d -i "$HIPICO_BACKUP_AGE_IDENTITY" -o "$tmpdir/source-counts.json" "$HIPICO_BACKUP_OUTPUT_DIR/source-counts.json.age"
 age -d -i "$HIPICO_BACKUP_AGE_IDENTITY" -o "$tmpdir/auth-user-ids.txt" "$HIPICO_BACKUP_OUTPUT_DIR/auth-user-ids.txt.age"
@@ -97,7 +119,7 @@ for migration in "${MIGRATIONS[@]}"; do
 done
 
 mapfile -t TABLES < <(grep -Ev '^\s*(#|$)' "$TABLE_FILE")
-[[ "${#TABLES[@]}" -eq 25 ]] || { echo "Expected 25 restore tables." >&2; exit 8; }
+[[ "${#TABLES[@]}" -eq 25 ]] || { echo "Expected 25 restored schema tables." >&2; exit 8; }
 truncate_sql=""
 for table in "${TABLES[@]}"; do
   [[ "$table" =~ ^hipico_[a-z0-9_]+$ ]] || { echo "Unsafe restore table: $table" >&2; exit 8; }
@@ -164,6 +186,19 @@ SQL
 )"
 [[ "$orphan_foreign_keys" =~ ^[0-9]+$ ]] || { echo "Invalid orphan FK result." >&2; exit 9; }
 
+present_json="$(node --input-type=module - "$tmpdir/present-tables.txt" <<'NODE'
+import fs from 'node:fs';
+const rows=fs.readFileSync(process.argv[2],'utf8').split(/\r?\n/).filter(Boolean);
+process.stdout.write(JSON.stringify(rows));
+NODE
+)"
+deferred_json="$(node --input-type=module - "$tmpdir/deferred-tables.txt" <<'NODE'
+import fs from 'node:fs';
+const rows=fs.readFileSync(process.argv[2],'utf8').split(/\r?\n/).filter(Boolean);
+process.stdout.write(JSON.stringify(rows));
+NODE
+)"
+
 HIPICO_BACKUP_SOURCE_COUNTS_FILE="$tmpdir/source-counts.json" \
 HIPICO_BACKUP_RESTORED_COUNTS_FILE="$tmpdir/restored-counts.json" \
 HIPICO_BACKUP_ID="$backup_id" \
@@ -172,10 +207,14 @@ HIPICO_BACKUP_TARGET_DATABASE="$target_database" \
 HIPICO_BACKUP_SCOPE="$scope" \
 HIPICO_BACKUP_MIGRATION_CHAIN="$chain" \
 HIPICO_BACKUP_TABLE_MANIFEST_SHA256="$table_manifest_sha256" \
+HIPICO_BACKUP_MODE="$mode" \
+HIPICO_BACKUP_PRESENT_TABLES_JSON="$present_json" \
+HIPICO_BACKUP_DEFERRED_TABLES_JSON="$deferred_json" \
 HIPICO_RESTORE_ORPHAN_FOREIGN_KEYS="$orphan_foreign_keys" \
 HIPICO_RESTORE_VERIFIED=true \
 HIPICO_BACKUP_EVIDENCE_OUTPUT="$EVIDENCE" \
 node scripts/hipico-schema-backup-evidence-v23.mjs
 
 printf 'Hípico restore drill verified: %s\n' "$RESTORE_TEST_ID"
+printf 'Mode: %s; source tables: %s/25\n' "$mode" "$source_table_count"
 printf 'Orphan foreign keys: %s\n' "$orphan_foreign_keys"
