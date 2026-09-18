@@ -28,12 +28,11 @@ test('linked-device serverless adapter delegates validated evidence to canonical
   assert.doesNotMatch(bridge,/monetaryAutoApply/);
 });
 
-test('Meta serverless adapter also persists only review capture and never authoritative intent',()=>{
-  assert.match(meta,/classification:\s*capture\.storedClassification/);
-  assert.match(meta,/confidence:\s*capture\.storedConfidence/);
-  assert.match(meta,/processing_status:\s*capture\.processingStatus/);
-  assert.match(meta,/domain_authority:\s*capture\.domainAuthority/);
-  assert.match(meta,/adapter_hint_authoritative:\s*false/);
-  assert.match(meta,/adapter_hint:\s*capture\.adapterHint/);
-  assert.match(meta,/domainAuthority:'backend_canonical_only'/);
+test('Meta serverless adapter delegates evidence and owns no classification or persistence',()=>{
+  assert.match(meta,/proxyCanonicalRequest/);
+  assert.match(meta,/path:'\/api\/v1\/hipico-bot\/webhook'/);
+  assert.match(meta,/body:raw/);
+  assert.match(meta,/relayCanonicalResponse/);
+  assert.doesNotMatch(meta,/adapterCaptureDecision|storedClassification|storedConfidence|processing_status|domain_authority/);
+  assert.doesNotMatch(meta,/\bsupabase\s*\(|persistMetaMessage/);
 });
