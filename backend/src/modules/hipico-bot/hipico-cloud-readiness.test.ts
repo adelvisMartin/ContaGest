@@ -111,7 +111,7 @@ test('sendCloudText rejects weak transport before attempting any network request
 test('operator outbound preflight blocks unready transport before DB/outbox claim',()=>{
   const routes=readFileSync(new URL('./hipico-operator.routes.ts',import.meta.url),'utf8');
   const preflightStart=routes.indexOf('function outboundPreflight');
-  const preflightEnd=routes.indexOf('async function persistSendFailure',preflightStart);
+  const preflightEnd=routes.indexOf('function dispatchHttp',preflightStart);
   assert.ok(preflightStart>=0&&preflightEnd>preflightStart);
   const preflight=routes.slice(preflightStart,preflightEnd);
   assert.match(preflight,/cloudTransportConfiguration\(\)/);
@@ -121,10 +121,10 @@ test('operator outbound preflight blocks unready transport before DB/outbox clai
   const testMessageStart=routes.indexOf("router.post('/test-message'");
   const testMessageEnd=routes.indexOf("router.post('/approve/:id'",testMessageStart);
   const testMessage=routes.slice(testMessageStart,testMessageEnd);
-  assert.ok(testMessage.indexOf('outboundPreflight')<testMessage.indexOf('HipicoBotStore.dbReady'));
+  assert.ok(testMessage.indexOf('outboundPreflight')<testMessage.indexOf('canonicalOutboxReadiness'));
   assert.match(testMessage,/res\.status\(preflight\.status\)/);
 
   const approve=routes.slice(testMessageEnd);
-  assert.ok(approve.indexOf('outboundPreflight')<approve.indexOf('claimForSend'));
+  assert.ok(approve.indexOf('outboundPreflight')<approve.indexOf('dispatchCanonicalOutbound'));
   assert.match(approve,/res\.status\(preflight\.status\)/);
 });
