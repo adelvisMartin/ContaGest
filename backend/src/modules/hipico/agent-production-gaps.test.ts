@@ -28,11 +28,12 @@ void test('automatic eligibility is confidence- and tool-bounded instead of trus
 
 void test('automation mode changes require an idempotency key and database-enforced append-only transition audit', () => {
   const routes = readFileSync(new URL('./agent.routes.ts', import.meta.url), 'utf8');
+  const http = readFileSync(new URL('./agent-http.ts', import.meta.url), 'utf8');
   const store = readFileSync(new URL('./automation.store.ts', import.meta.url), 'utf8');
   const migration = readFileSync(new URL('../../../../supabase/sql/hipico_v22_agent_shadow.sql', import.meta.url), 'utf8');
 
-  assert.match(routes, /idempotency-key/i);
-  assert.match(routes, /idempotencyKey/);
+  assert.match(http, /idempotency-key/i);
+  assert.match(routes, /idempotencyKey:\s*idempotencyKey\(req\)/);
   assert.match(store, /hipico_automation_transition_events/);
   assert.match(store, /HIPICO_AUTOMATION_IDEMPOTENCY_MISMATCH/);
   assert.match(migration, /create table if not exists public\.hipico_automation_transition_events/i);
@@ -70,8 +71,10 @@ void test('ambiguous lifecycle phrases and attachment-only references require hu
 });
 
 void test('shadow evidence rejects secret-shaped keys recursively before persistence', async () => {
+  const evidenceSource = readFileSync(new URL('./automation-evidence.ts', import.meta.url), 'utf8');
   const storeSource = readFileSync(new URL('./automation.store.ts', import.meta.url), 'utf8');
-  assert.match(storeSource, /export function sanitizeAgentEvidence/);
+  assert.match(evidenceSource, /export function sanitizeAgentEvidence/);
+  assert.match(storeSource, /export \{ sanitizeAgentEvidence \}/);
   const { sanitizeAgentEvidence } = await import('./automation.store.js');
 
   assert.deepEqual(sanitizeAgentEvidence({ source: 'provider', meta: { official: true } }), {
