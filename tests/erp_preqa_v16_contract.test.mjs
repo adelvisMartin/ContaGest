@@ -164,3 +164,27 @@ test('production secret guard runs before parsing and every business router whil
   assert.ok(app.indexOf('registerHealthRoutes')<guard,'health probes must remain available before secret enforcement');
   assert.ok(app.indexOf("'/api/v1/security/csp-report'")<guard,'CSP reporting must remain available before secret enforcement');
 });
+
+
+test('58x5 browser harness tracks current Login shell and executes real route batches',()=>{
+  const loginPage=page('LoginPage.js');
+  const loginSpec=read('qa','login-auth-runtime-v161.spec.mjs');
+  const mobileSpec=read('qa','mobile-navigation-v163.spec.mjs');
+  const runner=read('scripts','vercel-browser-preqa-v16.mjs');
+  const rootPackage=JSON.parse(read('package.json'));
+
+  assert.match(loginPage,/login-shell-v162/);
+  assert.match(loginSpec,/locator\('\.login-shell'\)/);
+  assert.doesNotMatch(loginSpec,/login-shell-v161/);
+  assert.match(mobileSpec,/fill\('ayuda'\)/);
+  assert.match(mobileSpec,/toBe\('ayuda'\)/);
+
+  assert.match(runner,/2\/51 vertical Wave A geometry/);
+  assert.match(runner,/qa\/erp-ui-wave-a-v251\.spec\.mjs/);
+  assert.doesNotMatch(runner,/pattern=\`\^\(\?:/,'batch grep must match Playwright full titles instead of anchoring at string start');
+  assert.doesNotMatch(runner,/runCommandGate\('REAL BACKEND \/ POSTGRES PERSISTENCE'/);
+  assert.doesNotMatch(runner,/runCommandGate\('REAL FINANCIAL DOMAIN'/);
+
+  assert.equal(rootPackage.scripts['test:backend:persistence:real'],'npm --workspace backend exec -- tsx --test ../qa/postmerge-backend-persistence-v17.test.ts');
+  assert.equal(rootPackage.scripts['test:backend:financial:real'],'npm --workspace backend exec -- tsx --test ../qa/postmerge-financial-domain-v17.test.ts');
+});
