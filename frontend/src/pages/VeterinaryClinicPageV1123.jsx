@@ -7,7 +7,7 @@ import {
 } from '@mui/material';
 import { createContaGestMuiTheme } from '../components/muiRuntime.js';
 import { HealthVerticalService, VeterinaryService } from '../services/verticalService.js';
-import { VeterinaryClinicPage as VeterinaryClinicLegacy } from './VeterinaryClinicPage.jsx';
+import { VeterinaryClinicPage as VeterinaryClinicMuiWorkspace } from './VeterinaryClinicPage.jsx';
 
 const Icon = ({ name }) => <i className={`fa-solid ${name}`} aria-hidden="true" />;
 const rows = (value) => Array.isArray(value) ? value : value?.data || [];
@@ -172,10 +172,10 @@ function VeterinaryDossier({ ctx, state }) {
 let dossierRoot=null;
 export const VeterinaryClinicPage={
   render(state,ctx){
-    return `<section class="cg-page-stack"><div id="veterinaryDossierRoot"></div>${VeterinaryClinicLegacy.render(state,ctx)}</section>`;
+    return `<section class="cg-page-stack"><div id="veterinaryDossierRoot"></div>${VeterinaryClinicMuiWorkspace.render(state,ctx)}</section>`;
   },
   mount(state,ctx){
-    VeterinaryClinicLegacy.mount(state,ctx);
+    VeterinaryClinicMuiWorkspace.mount(state,ctx);
     const host=document.getElementById('veterinaryDossierRoot');
     if(!host)return;
     try{dossierRoot?.unmount();}catch{}
