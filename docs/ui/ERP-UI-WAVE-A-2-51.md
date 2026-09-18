@@ -16,9 +16,9 @@ No modifica APIs, reglas clínicas, cálculos, persistencia ni permisos.
 
 La clasificación se registra en `qa/support/erp-ui-wave-a-v251.mjs`.
 
-`VeterinaryClinicPageV1123.jsx` ya usa React/MUI y en esta ola su dossier adopta `CgProvider`, `CgButton`, `CgTextField`, `CgState` y `CgStatusChip`. La ruta completa continúa como `LEGACY_EXCEPTION_APPROVED` porque todavía monta `VeterinaryClinicLegacy`.
+`VeterinaryClinicPageV1123.jsx` adoptó `CgProvider`, `CgButton`, `CgTextField`, `CgState` y `CgStatusChip` en 2/51. El follow-up 3/51 eliminó el page lifecycle doble: dossier y workspace clínico ahora se componen declarativamente bajo un único React root, por lo que Veterinaria queda `MIGRATED`.
 
-Odontología y Gimnasio/Rutinas/Nutrición continúan como `LEGACY_EXCEPTION_APPROVED` porque son renderers HTML/DOM imperativos. Reescribirlos parcialmente aquí dejaría dos arquitecturas dentro de la misma pantalla. La retirada de esas excepciones pertenece explícitamente a **3/51**, donde el objetivo es unificar los tres verticales en React declarativo + Cg/MUI.
+Odontología y Gimnasio/Rutinas/Nutrición continúan como `LEGACY_EXCEPTION_APPROVED` porque son renderers HTML/DOM imperativos. Su retirada sigue perteneciendo a **3/51**, que continúa hasta unificar esas superficies en React declarativo + Cg/MUI.
 
 ## Regla anti-regresión
 
@@ -41,7 +41,7 @@ Los viewports de evidencia son 360, 390, 430, 768 y 1366. El source gate no se h
 
 ## Follow-up
 
-**3/51** debe retirar estas excepciones mediante la migración de los renderers imperativos y la eliminación del doble renderer veterinario. No se debe ampliar el presupuesto legacy durante esa transición.
+**3/51** ya retiró la excepción veterinaria y debe completar Odontología + Gimnasio/Rutinas/Nutrición mediante la migración de sus renderers imperativos. No se debe ampliar el presupuesto legacy durante esa transición.
 
 ## Gates de cierre
 
