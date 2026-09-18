@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { MODULE_VISUAL_CATALOG } from '../qa/support/module-visual-catalog.mjs';
+import { auditUiMigration } from '../qa/support/ui-migration-audit.mjs';
 
 const root = process.cwd();
 const strict = process.argv.includes('--strict');
@@ -330,6 +331,7 @@ function buildMarkdown(report) {
   const bySeverity = (severity) => findings.filter((item) => item.severity === severity).length;
   const migrationFailures = Object.entries(report.criticalMigrations).filter(([, ok]) => !ok).map(([key]) => key);
   const shellFailures = Object.entries(report.shell).filter(([, value]) => typeof value === 'boolean' && !value).map(([key]) => key);
+  const uiMigrationErrors = report.uiMigration.errors || [];
   const lines = [
     '# ContaGest · Visual + Interaction Source Audit v16',
     '',
@@ -343,6 +345,7 @@ function buildMarkdown(report) {
     `- CSS global inline en index.html: **${report.shell.inlineStyleBlocks}**`,
     `- Gradientes en index.html: **${report.shell.gradients}**`,
     `- Fallos shell: **${shellFailures.length}** · invariantes críticas: **${migrationFailures.length}**`,
+    `- Gobierno UI vertical: **${report.uiMigration.ok ? 'PASS' : 'FAIL'}** · MUI: **${report.uiMigration.counts.migratedMui}** · excepciones aprobadas: **${report.uiMigration.counts.legacyExceptions}** · errores: **${uiMigrationErrors.length}**`,
     `- Hallazgos de páginas critical/high/medium/low: **${bySeverity('critical')} / ${bySeverity('high')} / ${bySeverity('medium')} / ${bySeverity('low')}**`,
     '',
     '## Rutas / módulos',
@@ -359,6 +362,11 @@ function buildMarkdown(report) {
   }
   lines.push('', '## Invariantes críticas', '');
   for (const [key, value] of Object.entries(report.criticalMigrations)) lines.push(`- ${value ? 'PASS' : 'FAIL'} · ${key}`);
+  lines.push('', '## UI migration governance', '');
+  for (const [route, item] of Object.entries(report.uiMigration.routes)) {
+    lines.push(`- ${item.ok ? 'PASS' : 'FAIL'} · ${route}: ${item.status} · ${item.registryFile} · owner=${item.owner || 'n/a'}`);
+  }
+  if (uiMigrationErrors.length) for (const error of uiMigrationErrors) lines.push(`  - ${escapeCell(error)}`);
   lines.push('', '## Evidencia', '', 'Este auditor certifica fuente/ownership y señales estáticas de interacción. El estado visual/funcional real exige navegador; nunca se transforma un SOURCE PASS en BROWSER PASS.');
   return `${lines.join('\n')}\n`;
 }
@@ -371,7 +379,8 @@ const theme = auditTheme();
 const shell = auditDocumentShell();
 const criticalMigrations = auditCriticalMigrations();
 const parity = parityAudit(registry);
-const report = { schemaVersion:16, generatedAt:new Date().toISOString(), strict, parity, modules, css, theme, shell, criticalMigrations };
+const uiMigration = auditUiMigration(root);
+const report = { schemaVersion:16, generatedAt:new Date().toISOString(), strict, parity, modules, css, theme, shell, criticalMigrations, uiMigration };
 const jsonFile = path.join(outDir, 'visual-source-audit.json');
 const mdFile = path.join(outDir, 'visual-source-audit.md');
 fs.writeFileSync(jsonFile, `${JSON.stringify(report, null, 2)}\n`);
@@ -391,8 +400,9 @@ const structural =
   (theme.appBinary ? 0 : 1) +
   (parity.ok ? 0 : 1) +
   Object.values(shell).filter((value) => typeof value === 'boolean' && !value).length +
-  Object.values(criticalMigrations).filter((value) => !value).length;
+  Object.values(criticalMigrations).filter((value) => !value).length +
+  uiMigration.errors.length;
 
-console.log(`Visual v16 audit: ${modules.length} rutas · ${css.activeCssFiles.length}/${css.totalCssFiles} CSS activos · ${structural} fallos estructurales · ${pageCritical} hallazgos high/critical de página.`);
+console.log(`Visual v16 audit: ${modules.length} rutas · ${css.activeCssFiles.length}/${css.totalCssFiles} CSS activos · ${structural} fallos estructurales · ${pageCritical} hallazgos high/critical de página · UI migration errors=${uiMigration.errors.length}.`);
 console.log(`Reporte: ${rel(mdFile)}`);
 if (strict && (structural > 0 || pageCritical > 0)) process.exitCode = 1;
