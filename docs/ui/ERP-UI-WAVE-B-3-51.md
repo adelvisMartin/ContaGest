@@ -1,4 +1,4 @@
-# 3/51 · Frontend vertical unificado — fase Veterinaria
+# 3/51 · Frontend vertical unificado
 
 Baseline de fase: `main@3bbb7d776cc2245fb893760c276b90357071ae95`.
 
@@ -28,4 +28,4 @@ La evidencia browser sigue siendo independiente: SOURCE PASS no implica Chromium
 
 ## Estado del 3/51
 
-Esta fase elimina el doble renderer veterinario. El ticket/roadmap 3/51 permanece abierto hasta retirar también las excepciones imperativas de Odontología y Gimnasio/Rutinas/Nutrición.
+### Fase Odontología\n\nOdontología deja de usar HTML strings, `mountSubmit`, listeners DOM y el kit `components/ui/index.js`. `DentistryPracticePage.jsx` conserva los service contracts de pacientes, profesionales, citas y encuentros; el odontograma usa estado React controlado y botones Cg accesibles. El registry apunta al renderer JSX y el archivo imperativo anterior se elimina.\n\nEl ticket/roadmap 3/51 permanece abierto únicamente por la superficie compartida Gimnasio/Rutinas/Nutrición.
