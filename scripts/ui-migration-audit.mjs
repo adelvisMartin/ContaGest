@@ -9,5 +9,5 @@ fs.mkdirSync(outDir,{recursive:true});
 const outFile=path.join(outDir,'ui-migration-audit.json');
 fs.writeFileSync(outFile,JSON.stringify(report,null,2)+'\n');
 console.log(`UI migration audit: MUI=${report.counts.migratedMui} exceptions=${report.counts.legacyExceptions} errors=${report.errors.length}`);
-console.log(`Report: ${path.relative(root,outFile).replaceAll('\\\\','/')}`);
+console.log(`Report: ${path.relative(root,outFile).replaceAll('\\','/')}`);
 if(!report.ok)process.exitCode=1;
