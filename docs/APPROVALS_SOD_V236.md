@@ -17,6 +17,7 @@ ContaGest aplica maker-checker únicamente cuando existe una política activa pa
 5. Editar el payload crea una nueva revisión, cambia su SHA-256 y devuelve la solicitud a `pending` sin borrar decisiones históricas.
 6. La operación productiva se ejecuta normalmente contra su endpoint de dominio agregando `x-approval-request-id`. El gate transversal recalcula el contexto desde el estado actual y rechaza payload, monto o moneda distintos.
 7. La aprobación se reclama atómicamente antes del efecto. Doble click o ejecución concurrente no pueden reutilizar la misma aprobación. Un HTTP exitoso termina en `executed`; un error libera el claim para reintento.
+8. Al vencer `expiresAt`, el backend materializa el estado `expired` de forma idempotente antes de lecturas operativas, decisiones, revisiones, cancelaciones, break-glass y claims. Una solicitud vencida no puede revivirse mediante edición ni presentarse como `pending` en `mine`/reportes.
 
 `executing` es un estado técnico transitorio para exclusión mutua y no representa una decisión del negocio.
 

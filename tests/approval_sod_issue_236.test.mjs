@@ -40,3 +40,13 @@ test('issue 236 exposes operational inbox, aging, delegation and break-glass aud
   assert.match(ui,/Esperando aprobación/);
   assert.match(ui,/Edad pendiente/);
 });
+
+
+test('issue 236 materializes expiration instead of leaving stale pending approvals',()=>{
+  assert.match(service,/UPDATE "ApprovalRequest" SET "status"='expired'/);
+  assert.match(service,/materializeExpiredApprovalRequests\(input\.tenantId,input\.requestId\)/);
+  assert.match(service,/request\.status==='expired'/);
+  assert.match(service,/listMyApprovalRequests[\s\S]*materializeExpiredApprovalRequests\(tenantId\)/);
+  assert.match(service,/approvalReport[\s\S]*materializeExpiredApprovalRequests\(tenantId\)/);
+  assert.match(ui,/expired:'Expirada'/);
+});
