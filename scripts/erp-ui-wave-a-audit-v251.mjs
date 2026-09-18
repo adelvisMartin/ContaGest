@@ -31,6 +31,7 @@ for(const item of ERP_UI_WAVE_A_2_51){
   if(item.status==='LEGACY_EXCEPTION_APPROVED'){
     if(!item.exception?.owner||!item.exception?.reason||!item.exception?.approvedAt||!item.exception?.reviewBy)fail(`${item.route}: incomplete legacy exception`);
   }
+  if(item.status==='MIGRATED'&&item.exception)fail(`${item.route}: migrated route cannot keep a legacy exception`);
 
   if(!sourceCache.has(item.renderer))sourceCache.set(item.renderer,read(item.renderer));
   const source=sourceCache.get(item.renderer);
@@ -40,12 +41,18 @@ for(const item of ERP_UI_WAVE_A_2_51){
   }
 }
 
+const vetEntry=ERP_UI_WAVE_A_2_51.find((item)=>item.route==='veterinaria');
 const vet=sourceCache.get('frontend/src/pages/VeterinaryClinicPageV1123.jsx');
 for(const primitive of ['CgProvider','CgButton','CgTextField','CgState','CgStatusChip']){
   if(!vet.includes(primitive))fail(`veterinaria: missing canonical primitive ${primitive}`);
 }
 for(const forbidden of ['ThemeProvider','createContaGestMuiTheme']){
   if(vet.includes(forbidden))fail(`veterinaria: direct theme owner reintroduced: ${forbidden}`);
+}
+if(vetEntry?.status==='MIGRATED'){
+  if(/VeterinaryClinicLegacy|\.render\(state,ctx\)|\.mount\(state,ctx\)/.test(vet))fail('veterinaria: migrated route reintroduced legacy lifecycle composition');
+  if((vet.match(/createRoot\(/g)||[]).length!==1)fail('veterinaria: migrated route must own exactly one React root');
+  if(!/import \{ VeterinaryWorkspace \} from '\.\/VeterinaryClinicPage\.jsx'/.test(vet))fail('veterinaria: migrated route must compose VeterinaryWorkspace declaratively');
 }
 
 const css=read('frontend/src/styles/erp-runtime.css');

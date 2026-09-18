@@ -7,7 +7,7 @@ import {
 } from '@mui/material';
 import { CgButton, CgProvider, CgState, CgStatusChip, CgTextField } from '../components/ui/cg/CgPrimitives.jsx';
 import { HealthVerticalService, VeterinaryService } from '../services/verticalService.js';
-import { VeterinaryClinicPage as VeterinaryClinicLegacy } from './VeterinaryClinicPage.jsx';
+import { VeterinaryWorkspace } from './VeterinaryClinicPage.jsx';
 
 const Icon = ({ name }) => <i className={`fa-solid ${name}`} aria-hidden="true" />;
 const rows = (value) => Array.isArray(value) ? value : value?.data || [];
@@ -103,7 +103,7 @@ function VeterinaryDossier({ ctx, state }) {
     await loadPatients();
   }
 
-  return <CgProvider state={state}><Paper className="cg-vet-dossier" variant="outlined" sx={{p:1.5,minWidth:0,maxWidth:'100%'}}>
+  return <Paper className="cg-vet-dossier" variant="outlined" sx={{p:1.5,minWidth:0,maxWidth:'100%'}}>
     <Stack className="cg-vet-dossier-head" direction={{xs:'column',sm:'row'}} gap={{xs:1.5,sm:2}} justifyContent="space-between" alignItems={{xs:'stretch',sm:'flex-start'}} sx={{mb:1.2}}>
       <Box sx={{minWidth:0,pr:{sm:1}}}>
         <Typography variant="caption" color="primary" sx={{fontWeight:600,textTransform:'uppercase',letterSpacing:'.08em'}}>Expediente rápido</Typography>
@@ -165,20 +165,24 @@ function VeterinaryDossier({ ctx, state }) {
       </Box></DialogContent>
       <DialogActions><CgButton variant="text" onClick={()=>setEditing(false)} color="inherit">Cancelar</CgButton><CgButton onClick={()=>save().catch(()=>null)}>Guardar cambios</CgButton></DialogActions>
     </Dialog>
-  </Paper></CgProvider>;
+  </Paper>;
 }
 
-let dossierRoot=null;
+let activeRoot=null;
 export const VeterinaryClinicPage={
-  render(state,ctx){
-    return `<section class="cg-page-stack"><div id="veterinaryDossierRoot"></div>${VeterinaryClinicLegacy.render(state,ctx)}</section>`;
-  },
+  render(){return '<section class="cg-page-stack"><div id="veterinaryUnifiedRoot"></div></section>';},
   mount(state,ctx){
-    VeterinaryClinicLegacy.mount(state,ctx);
-    const host=document.getElementById('veterinaryDossierRoot');
+    const host=document.getElementById('veterinaryUnifiedRoot');
     if(!host)return;
-    try{dossierRoot?.unmount();}catch{}
-    dossierRoot=createRoot(host);
-    dossierRoot.render(<VeterinaryDossier ctx={ctx} state={state}/>);
+    try{activeRoot?.unmount();}catch{}
+    activeRoot=createRoot(host);
+    activeRoot.render(
+      <CgProvider state={state}>
+        <Box sx={{display:'grid',gap:1.5,minWidth:0,maxWidth:'100%'}}>
+          <VeterinaryDossier ctx={ctx} state={state}/>
+          <VeterinaryWorkspace state={state} UrlStateService={ctx.UrlStateService}/>
+        </Box>
+      </CgProvider>
+    );
   }
 };

@@ -17,11 +17,13 @@ test('2/51 classifies the five requested vertical routes with explicit legacy ow
   }
 });
 
-test('Veterinary dossier consumes canonical Cg primitives while legacy double-renderer remains explicit',()=>{
+test('Veterinary route keeps canonical Cg primitives after graduating to a single React root',()=>{
   const source=read('frontend/src/pages/VeterinaryClinicPageV1123.jsx');
+  const entry=ERP_UI_WAVE_A_2_51.find((item)=>item.route==='veterinaria');
+  assert.equal(entry.status,'MIGRATED');
   for(const token of ['CgProvider','CgButton','CgTextField','CgState','CgStatusChip'])assert.match(source,new RegExp(token));
-  assert.doesNotMatch(source,/ThemeProvider|createContaGestMuiTheme/);
-  assert.match(source,/VeterinaryClinicLegacy/);
+  assert.doesNotMatch(source,/ThemeProvider|createContaGestMuiTheme|VeterinaryClinicLegacy/);
+  assert.equal((source.match(/createRoot\(/g)||[]).length,1);
 });
 
 test('legacy budgets are monotonic: this wave cannot add new HTML primitives to dentistry or fitness',()=>{
