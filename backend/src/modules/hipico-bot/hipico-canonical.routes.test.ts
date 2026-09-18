@@ -185,7 +185,7 @@ test('application mounts canonical facade separately from legacy integration ada
   const source=readFileSync(new URL('../../app.ts',import.meta.url),'utf8');
   assert.match(source,/app\.use\('\/api\/v1\/hipico-bot', hipicoWebhookRoutes\)/);
   assert.match(source,/app\.use\(\s*'\/api\/v1\/hipico',\s*authRateLimit,\s*mutationRateLimit,\s*hipicoProviderRoutes,\s*hipicoRaceRoutes,\s*hipicoAgentRoutes,\s*hipicoCommandCenterRoutes,\s*hipicoOperatorReadRoutes,\s*hipicoCanonicalRoutes\s*\)/s);
-  const canonicalMount=source.indexOf("'\/api\/v1\/hipico',".replaceAll('\\/','/'));
+  const canonicalMount=source.indexOf("'/api/v1/hipico',");
   assert.ok(canonicalMount>=0,'canonical Hípico chain must mount the complete bounded facade under one limiter chain');
   assert.ok(canonicalMount<source.indexOf('app.use(csrfProtection)'), 'token-authenticated canonical facade must not depend on cookie CSRF');
 });
