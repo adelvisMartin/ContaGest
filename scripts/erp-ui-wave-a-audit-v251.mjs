@@ -89,6 +89,9 @@ if(dentistryEntry?.status==='MIGRATED'){
   if(!dentistry.includes("type:'periodontal-chart'")||!dentistry.includes('clinicalData:{periodontogram:'))fail('odontologia: periodontogram must persist through canonical CareEncounter payload');
   const treatmentPlan=read('frontend/src/components/dentistry/TreatmentPlanPanel.jsx');
   if(!dentistry.includes('TreatmentPlanPanel'))fail('odontologia: treatment plan panel is not composed');
+  if((dentistry.match(/<TreatmentPlanPanel/g)||[]).length!==1)fail('odontologia: treatment plan panel must be composed exactly once');
+  if((dentistry.match(/async function createTreatmentPlan\(/g)||[]).length!==1)fail('odontologia: treatment plan create handler must have one owner');
+  if((dentistry.match(/async function decideTreatmentPlan\(/g)||[]).length!==1)fail('odontologia: treatment plan decision handler must have one owner');
   if(/querySelector|addEventListener|innerHTML|document\./.test(treatmentPlan))fail('odontologia: treatment plan reintroduced imperative DOM lifecycle');
   for(const contract of ['alternatives','phases','procedures','Presupuesto estimado','Aceptar plan','Rechazar plan']){
     if(!treatmentPlan.includes(contract))fail(`odontologia: missing treatment-plan contract ${contract}`);
