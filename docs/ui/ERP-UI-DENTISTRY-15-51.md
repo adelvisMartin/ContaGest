@@ -82,6 +82,7 @@ No usa DOM imperativo.
 ## Seguridad
 
 - tenant deriva del request context;
+- `POST /health/encounters` valida que paciente y profesional pertenezcan al tenant activo antes de insertar;
 - actor de decisión no es enviado por el cliente;
 - plan nuevo sólo puede iniciar como `draft/proposed/pending`;
 - aceptación no se promociona a “consentimiento”;
