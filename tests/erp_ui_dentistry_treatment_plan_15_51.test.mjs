@@ -14,6 +14,14 @@ test('15/51 validates diagnosis alternatives phases procedures and server-priced
   assert.match(source,/normalizeDentalTreatmentPlan/);
 });
 
+test('15/51 encounter creation validates patient and professional tenant ownership',()=>{
+  const source=backend();
+  assert.match(source,/CarePatient" WHERE "tenantId"=\$1 AND "id"=\$2/);
+  assert.match(source,/CareProfessional" WHERE "tenantId"=\$1 AND "id"=\$2/);
+  assert.match(source,/El paciente no pertenece al tenant activo/);
+  assert.match(source,/El profesional no pertenece al tenant activo/);
+});
+
 test('15/51 creates a proposed draft through existing CareEncounter authority',()=>{
   const source=page();
   assert.match(source,/HealthVerticalService\.createEncounter\(/);
