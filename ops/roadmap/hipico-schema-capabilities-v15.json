@@ -1,0 +1,105 @@
+{
+  "schema": "hipico-schema-capabilities.v15",
+  "baseline": "8ceab45ee90c41bcdc5bee631a5b83b42992fe6d",
+  "source": "main",
+  "capabilities": [
+    {
+      "id": "audit.idempotency_key",
+      "kind": "column",
+      "schema": "public",
+      "table": "hipico_audit_events",
+      "column": "idempotency_key",
+      "sourceFile": "supabase/sql/hipico_v13_audit_idempotency.sql"
+    },
+    {
+      "id": "domain.aggregates",
+      "kind": "table",
+      "schema": "public",
+      "table": "hipico_domain_aggregates",
+      "sourceFile": "supabase/sql/hipico_v14_canonical_domain.sql"
+    },
+    {
+      "id": "domain.events",
+      "kind": "table",
+      "schema": "public",
+      "table": "hipico_domain_events",
+      "sourceFile": "supabase/sql/hipico_v14_canonical_domain.sql"
+    },
+    {
+      "id": "outbox.reconciliation_constraint",
+      "kind": "constraint_contains",
+      "schema": "public",
+      "table": "hipico_outbox",
+      "constraint": "hipico_outbox_status_check",
+      "contains": "reconciliation_required",
+      "sourceFile": "supabase/sql/hipico_v17_outbox_reconciliation_status.sql"
+    },
+    {
+      "id": "provider.evidence",
+      "kind": "table",
+      "schema": "public",
+      "table": "hipico_provider_evidence",
+      "sourceFile": "supabase/sql/hipico_v17_provider_evidence.sql"
+    },
+    {
+      "id": "documents.documents",
+      "kind": "table",
+      "schema": "public",
+      "table": "hipico_documents",
+      "sourceFile": "supabase/sql/hipico_v18_documents.sql"
+    },
+    {
+      "id": "documents.sources",
+      "kind": "table",
+      "schema": "public",
+      "table": "hipico_document_sources",
+      "sourceFile": "supabase/sql/hipico_v18_documents.sql"
+    },
+    {
+      "id": "agent.automation",
+      "kind": "table",
+      "schema": "public",
+      "table": "hipico_group_automation",
+      "sourceFile": "supabase/sql/hipico_v22_agent_shadow.sql"
+    },
+    {
+      "id": "agent.policy_disposition",
+      "kind": "column",
+      "schema": "public",
+      "table": "hipico_agent_evaluations",
+      "column": "policy_disposition",
+      "sourceFile": "supabase/sql/hipico_v23_risk_policy.sql"
+    },
+    {
+      "id": "agent.metric_schema_version",
+      "kind": "column",
+      "schema": "public",
+      "table": "hipico_agent_evaluations",
+      "column": "metric_schema_version",
+      "sourceFile": "supabase/sql/hipico_v24_shadow_metrics.sql"
+    },
+    {
+      "id": "observability.events",
+      "kind": "table",
+      "schema": "public",
+      "table": "hipico_observability_events",
+      "sourceFile": "supabase/sql/hipico_v25_observability.sql"
+    },
+    {
+      "id": "audit.source",
+      "kind": "column",
+      "schema": "public",
+      "table": "hipico_audit_events",
+      "column": "source",
+      "sourceFile": "supabase/sql/hipico_v26_audit_rpc_integrity.sql"
+    },
+    {
+      "id": "audit.authority",
+      "kind": "column",
+      "schema": "public",
+      "table": "hipico_audit_events",
+      "column": "authority",
+      "sourceFile": "supabase/sql/hipico_v26_audit_rpc_integrity.sql"
+    }
+  ]
+}
