@@ -76,6 +76,8 @@ function DentistryWorkspace({ state, context }){
   const [professionals,setProfessionals]=useState(rows(initial.professionals));
   const [appointments,setAppointments]=useState(rows(initial.appointments).filter((item)=>String(item.type||'').toLowerCase()==='dentistry'));
   const [encounters,setEncounters]=useState(rows(initial.encounters));
+  const [periodontalExams,setPeriodontalExams]=useState(rows(initial.periodontalExams));
+  const [periodontalLoading,setPeriodontalLoading]=useState(false);
   const [selectedPatientId,setSelectedPatientId]=useState(initial.selectedPatientId||'');
   const [dentition,setDentition]=useState('permanent');
   const [selectedTooth,setSelectedTooth]=useState('');
@@ -88,6 +90,10 @@ function DentistryWorkspace({ state, context }){
   const [professionalForm,setProfessionalForm]=useState({fullName:'',specialty:'odontologia-general',licenseNumber:''});
   const [appointmentForm,setAppointmentForm]=useState({patientId:'',professionalId:'',date:localToday(),time:'09:00',reason:''});
   const [encounterForm,setEncounterForm]=useState({professionalId:'',procedure:'Evaluación',condition:'',finding:'',assessment:'',plan:''});
+  const [periodontalForm,setPeriodontalForm]=useState({
+    professionalId:'',dentition:'permanent',tooth:'',measuredAt:localToday(),reason:'Evaluación periodontal',
+    mobility:'0',furcation:'0',sites:blankPeriodontalSites()
+  });
   const Toast=context?.Toast;
 
   const dentalProfessionals=useMemo(()=>professionals.filter((item)=>/odont|dental|ortodon|endodon|periodon|cirugia-bucal|protesis/i.test(String(item.specialty||''))||!item.specialty),[professionals]);
@@ -96,6 +102,8 @@ function DentistryWorkspace({ state, context }){
   const patientOptions=useMemo(()=>[{value:'',label:'Seleccionar paciente'},...patients.map((item)=>({value:item.id,label:patientName(item)}))],[patients]);
   const professionalOptions=useMemo(()=>[{value:'',label:'Sin asignar'},...dentalProfessionals.map((item)=>({value:item.id,label:item.fullName||'Profesional'}))],[dentalProfessionals]);
   const toothOptions=dentition==='primary'?PRIMARY_TEETH:PERMANENT_TEETH;
+  const periodontalToothOptions=periodontalForm.dentition==='primary'?PRIMARY_TEETH:PERMANENT_TEETH;
+  const periodontalEvolution=useMemo(()=>buildPeriodontalEvolution(periodontalExams),[periodontalExams]);
 
   const notify=(message,tone='success')=>Toast?.show?.(message,tone);
 
