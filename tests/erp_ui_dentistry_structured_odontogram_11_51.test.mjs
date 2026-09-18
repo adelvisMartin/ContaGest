@@ -24,7 +24,7 @@ test('11/51 supports permanent and primary dentitions with explicit tooth catalo
 test('11/51 backend validates structured dental-treatment clinicalData',()=>{
   const source=backend();
   for(const token of ['dentalClinicalDataSchema','odontogram','dentition','surfaces','condition']) assert.ok(source.includes(token),token);
-  assert.match(source,/type==='dental-treatment'/);
+  assert.match(source,/type\s*===\s*'dental-treatment'/);
   assert.match(source,/dentalClinicalDataSchema\.safeParse/);
 });
 
