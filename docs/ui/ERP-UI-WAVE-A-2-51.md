@@ -52,3 +52,13 @@ Los viewports de evidencia son 360, 390, 430, 768 y 1366. El source gate no se h
 - Chromium: `npm run test:browser:erp-ui-wave-a` sobre 360/390/430/768/1366 cuando exista runner/browser aprobado.
 
 Los estados browser permanecen `NOT_EXECUTED` hasta obtener ejecución real; no se infieren desde el source gate.
+
+## Corrección del harness 58×5
+
+La validación post-merge detectó contratos de QA obsoletos y se corrigieron sin cambiar funcionalidad de producto:
+
+- el spec de Login usa el selector estable `.login-shell` en lugar de un sufijo de versión;
+- los lotes Playwright 58×5 usan expresiones que coinciden con el título completo que evalúa Playwright y ya no producen `No tests found` por anclaje incorrecto;
+- la navegación de Command Palette valida una ruta core (`ayuda`) disponible para cualquier sesión autenticada válida;
+- la matriz dedicada 2/51 (Odontología, Veterinaria, Gimnasio, Rutinas y Nutrición × 360/390/430/768/1366) forma parte del preview 58×5;
+- Vercel preview se limita a browser/composición. Los tests PostgreSQL reales conservan comandos propios y deben ejecutarse únicamente en un runner con base aislada.
