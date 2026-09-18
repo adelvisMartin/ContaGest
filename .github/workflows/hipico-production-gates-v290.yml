@@ -157,10 +157,12 @@ jobs:
         run: node scripts/hipico-exact-sha-gate.mjs
       - name: Create isolated PostgreSQL database
         run: node scripts/hipico-ephemeral-db-v290.mjs create
+      - name: Bootstrap local Supabase/Auth and v12-v24 prerequisites
+        run: node scripts/hipico-apply-e2e-schema-v290.mjs --phase=prisma-prereqs
       - name: Deploy Prisma persistence
         run: npm --workspace backend run prisma:deploy
-      - name: Apply v12-v26 Hípico schema and RLS RBAC probes
-        run: node scripts/hipico-apply-e2e-schema-v290.mjs
+      - name: Apply canonical v12-v26 Hípico schema and RLS RBAC probes
+        run: node scripts/hipico-apply-e2e-schema-v290.mjs --phase=final
       - name: TestChannel persistence and replay E2E
         run: npm --workspace backend exec -- tsx --test src/modules/hipico-bot/production-e2e-v290.ts
       - name: Agent policy metrics persistence E2E
