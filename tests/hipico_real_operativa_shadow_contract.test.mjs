@@ -28,7 +28,7 @@ test('official source creates only a lab simulation for live events and never an
   const route=read('backend/src/modules/hipico-bot/hipico-bridge.routes.ts');
   assert.match(route,/channelRole:z\.enum\(\['source','lab'\]\)/);
   assert.match(route,/if\(input\.channelRole!==['"]source['"]\|\|input\.historySync\)return null/);
-  assert.match(route,/labSimulation:buildLabSimulation/);
+  assert.match(route,/labSimulation:event\.inserted\?buildLabSimulation/);
   assert.match(route,/SOLO LABORATORIO/);
   assert.match(route,/actions:\[\]/);
   assert.doesNotMatch(route,/sendCloudText|sendMessage/);
