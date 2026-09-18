@@ -48,6 +48,7 @@ function DentistryWorkspace({ state, context }){
   const dentalProfessionals=useMemo(()=>professionals.filter((item)=>/odont|dental|ortodon|endodon|periodon|cirugia-bucal|protesis/i.test(String(item.specialty||''))||!item.specialty),[professionals]);
   const patientById=useMemo(()=>new Map(patients.map((item)=>[item.id,item])),[patients]);
   const activeAppointments=useMemo(()=>appointments.filter((item)=>!['completed','cancelled'].includes(String(item.status||'').toLowerCase())),[appointments]);
+  const dentalTreatmentEncounters=useMemo(()=>encounters.filter((item)=>item.type==='dental-treatment'),[encounters]);
   const patientOptions=useMemo(()=>[{value:'',label:'Seleccionar paciente'},...patients.map((item)=>({value:item.id,label:patientName(item)}))],[patients]);
   const professionalOptions=useMemo(()=>[{value:'',label:'Sin asignar'},...dentalProfessionals.map((item)=>({value:item.id,label:item.fullName||'Profesional'}))],[dentalProfessionals]);
   const toothOptions=dentition==='primary'?PRIMARY_TEETH:PERMANENT_TEETH;
@@ -253,7 +254,7 @@ function DentistryWorkspace({ state, context }){
       <Metric label="Pacientes" value={patients.length} tone="primary"/>
       <Metric label="Citas activas" value={activeAppointments.length} tone={activeAppointments.length?'warning':'success'}/>
       <Metric label="Profesionales" value={dentalProfessionals.length} tone="info"/>
-      <Metric label="Tratamientos cargados" value={encounters.length} tone="secondary"/>
+      <Metric label="Registros clínicos" value={encounters.length} tone="secondary"/>
     </Box>
 
     <Box className="cg-dental-grid" sx={{display:'grid',gridTemplateColumns:{xs:'1fr',lg:'repeat(3,minmax(0,1fr))'},gap:1.25}}>
@@ -345,7 +346,7 @@ function DentistryWorkspace({ state, context }){
       </Paper>
       <Paper variant="outlined" sx={{p:1.5,minWidth:0}}>
         <Stack direction={{xs:'column',sm:'row'}} justifyContent="space-between" gap={1}><Typography variant="h6">Historia odontológica reciente</Typography><CgSelect label="Paciente de historia" value={selectedPatientId} onChange={(e)=>void loadEncounters(e.target.value)} options={patientOptions}/></Stack><Divider sx={{my:1}}/>
-        {encounters.length?<Stack className="cg-dental-list" divider={<Divider flexItem/>}>{encounters.slice(0,20).map((item)=>{
+        {dentalTreatmentEncounters.length?<Stack className="cg-dental-list" divider={<Divider flexItem/>}>{dentalTreatmentEncounters.slice(0,20).map((item)=>{
           const versioning=item.clinicalData?.versioning;
           const revision=versioning?.revision||1;
           const actor=versioning?.actor?.email||versioning?.actor?.userId||'registro original';
