@@ -35,7 +35,9 @@ export const HealthVerticalService = {
   prescriptions(patientId) { return BackendApi.get(`/verticals/health/prescriptions${query({ patientId })}`); },
   createPrescription(payload) { return BackendApi.post('/api/v1/verticals/health/prescriptions', payload); },
   consents(patientId) { return BackendApi.get(`/verticals/health/consents${query({ patientId })}`); },
-  createConsent(payload) { return BackendApi.post('/api/v1/verticals/health/consents', payload); }
+  createConsent(payload) { return BackendApi.post('/api/v1/verticals/health/consents', payload); },
+  signDentalConsent(payload) { return BackendApi.post('/api/v1/verticals/health/consents/dental-treatment', payload); },
+  revokeConsent(id, payload) { return BackendApi.post(`/api/v1/verticals/health/consents/${encodeURIComponent(id)}/revoke`, payload); }
 };
 
 export const VeterinaryService = {
