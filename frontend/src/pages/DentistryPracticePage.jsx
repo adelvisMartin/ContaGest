@@ -125,7 +125,17 @@ function DentistryWorkspace({ state, context }){
       const nextPatientId=selectedPatientId&&nextPatients.some((item)=>item.id===selectedPatientId)?selectedPatientId:'';
       setSelectedPatientId(nextPatientId);
       setAppointmentForm((current)=>({...current,patientId:current.patientId&&nextPatients.some((item)=>item.id===current.patientId)?current.patientId:''}));
-      if(nextPatientId)setEncounters(rows(await HealthVerticalService.encounters(nextPatientId)));else setEncounters([]);
+      if(nextPatientId){
+        const [nextEncounters,nextPeriodontalExams]=await Promise.all([
+          HealthVerticalService.encounters(nextPatientId),
+          HealthVerticalService.periodontalExams(nextPatientId)
+        ]);
+        setEncounters(rows(nextEncounters));
+        setPeriodontalExams(rows(nextPeriodontalExams));
+      }else{
+        setEncounters([]);
+        setPeriodontalExams([]);
+      }
     }catch(cause){
       const message=cause?.message||'No se pudo actualizar odontología.';
       setError(message);
@@ -143,9 +153,18 @@ function DentistryWorkspace({ state, context }){
     setSelectedSurfaces([]);
     setAmendmentTarget(null);
     setAmendmentReason('');
-    if(!patientId){setEncounters([]);return;}
-    try{setEncounters(rows(await HealthVerticalService.encounters(patientId)));}
-    catch(cause){notify(`No se cargó la historia odontológica: ${cause?.message||'Error de lectura'}`,'warning');}
+    if(!patientId){setEncounters([]);setPeriodontalExams([]);return;}
+    setPeriodontalLoading(true);
+    try{
+      const [nextEncounters,nextPeriodontalExams]=await Promise.all([
+        HealthVerticalService.encounters(patientId),
+        HealthVerticalService.periodontalExams(patientId)
+      ]);
+      setEncounters(rows(nextEncounters));
+      setPeriodontalExams(rows(nextPeriodontalExams));
+    }catch(cause){
+      notify(`No se cargó la historia odontológica/periodontal: ${cause?.message||'Error de lectura'}`,'warning');
+    }finally{setPeriodontalLoading(false);}
   }
 
   async function submitPatient(event){
