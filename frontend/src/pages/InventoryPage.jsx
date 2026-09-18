@@ -220,13 +220,13 @@ function InventoryWorkspace({state,context}){
     <Box>
       <Typography variant="h6" sx={{mb:.25}}>Existencias</Typography>
       <Typography variant="caption" color="text.secondary">Saldos materializados derivados de movimientos auditables.</Typography>
-      <Box sx={{mt:1,maxWidth:'100%',overflowX:'auto'}}>{inventory.length?<CgDataTable columns={inventoryColumns} rows={inventory} empty="Sin productos"/>:<CgEmptyState title="Sin productos" description="Registra el producto maestro y luego su saldo inicial como movimiento."/ >}</Box>
+      <Box sx={{mt:1,maxWidth:'100%',overflowX:'auto'}}>{inventory.length?<CgDataTable columns={inventoryColumns} rows={inventory} empty="Sin productos"/>:<CgEmptyState title="Sin productos" description="Registra el producto maestro y luego su saldo inicial como movimiento."/>}</Box>
     </Box>
 
     <Box>
       <Typography variant="h6" sx={{mb:.25}}>Historial reciente</Typography>
       <Typography variant="caption" color="text.secondary">Los movimientos no se eliminan; los errores se corrigen mediante reversos explícitos.</Typography>
-      <Box sx={{mt:1,maxWidth:'100%',overflowX:'auto'}}>{movements.length?<CgDataTable columns={movementColumns} rows={movements} empty="Sin movimientos"/>:<CgEmptyState title="Sin movimientos" description="Los movimientos auditables aparecerán aquí."/ >}</Box>
+      <Box sx={{mt:1,maxWidth:'100%',overflowX:'auto'}}>{movements.length?<CgDataTable columns={movementColumns} rows={movements} empty="Sin movimientos"/>:<CgEmptyState title="Sin movimientos" description="Los movimientos auditables aparecerán aquí."/>}</Box>
     </Box>
 
     <CgDialog open={Boolean(reverseTarget)} title="Reversar movimiento" onClose={()=>setReverseTarget(null)} confirmLabel={saving==='reverse'?'Reversando…':'Crear reverso'} destructive onConfirm={()=>void confirmReverse()}>
