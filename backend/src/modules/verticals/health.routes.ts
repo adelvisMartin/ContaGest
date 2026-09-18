@@ -97,6 +97,69 @@ const periodontalClinicalDataSchema = z.object({
   notes: optionalText
 }).passthrough();
 
+const dentalMoneyText = z.string().trim().regex(/^\d+(?:\.\d{1,2})?$/, 'Monto inválido; usa máximo dos decimales.');
+const dentalTreatmentProcedureSchema = z.object({
+  name: z.string().trim().min(2).max(180),
+  tooth: optionalText,
+  quantity: z.coerce.number().int().min(1).max(99),
+  unitPrice: dentalMoneyText
+});
+const dentalTreatmentPhaseSchema = z.object({
+  order: z.coerce.number().int().min(1).max(50),
+  name: z.string().trim().min(2).max(180),
+  procedures: z.array(dentalTreatmentProcedureSchema).min(1).max(50)
+});
+const dentalTreatmentPlanClinicalDataSchema = z.object({
+  treatmentPlan: z.object({
+    diagnosis: z.string().trim().min(2).max(2000),
+    alternatives: z.array(z.object({
+      name:z.string().trim().min(2).max(180),
+      description:optionalText
+    })).min(1).max(12),
+    phases: z.array(dentalTreatmentPhaseSchema).min(1).max(12),
+    budget: z.object({
+      currency:z.enum(['VES','USD']),
+      estimatedTotal:dentalMoneyText.optional()
+    }),
+    status:z.literal('proposed').default('proposed'),
+    acceptance:z.object({ status:z.literal('pending') }).default({status:'pending'})
+  }).superRefine((value, refinement) => {
+    const allTeeth = new Set([...DENTAL_PERMANENT_TEETH,...DENTAL_PRIMARY_TEETH]);
+    value.phases.forEach((phase, phaseIndex) => phase.procedures.forEach((procedure, procedureIndex) => {
+      const tooth = String(procedure.tooth || '').trim();
+      if (tooth && !allTeeth.has(tooth)) refinement.addIssue({ code:'custom', path:['phases',phaseIndex,'procedures',procedureIndex,'tooth'], message:'La pieza indicada no es válida.' });
+    }));
+  })
+}).passthrough();
+
+const dentalMoneyCents = (value: unknown) => {
+  const raw=String(value??'').trim();
+  if(!/^\d+(?:\.\d{1,2})?$/.test(raw))throw new HttpError(422,'Monto estimado inválido.');
+  const [whole,fraction='']=raw.split('.');
+  return BigInt(whole)*100n+BigInt(fraction.padEnd(2,'0'));
+};
+const dentalCentsMoney = (value: bigint) => `${value/100n}.${(value%100n).toString().padStart(2,'0')}`;
+const normalizeDentalTreatmentPlan = (clinicalData: unknown) => {
+  const parsed=dentalTreatmentPlanClinicalDataSchema.parse(clinicalData);
+  const total=parsed.treatmentPlan.phases.reduce((phaseTotal,phase)=>phaseTotal+phase.procedures.reduce((procedureTotal,procedure)=>procedureTotal+(dentalMoneyCents(procedure.unitPrice)*BigInt(procedure.quantity)),0n),0n);
+  return {
+    ...parsed,
+    treatmentPlan:{
+      ...parsed.treatmentPlan,
+      budget:{...parsed.treatmentPlan.budget,estimatedTotal:dentalCentsMoney(total)},
+      status:'proposed',
+      acceptance:{status:'pending'}
+    }
+  };
+};
+
+const treatmentPlanDecisionSchema = z.object({
+  decision:z.enum(['accepted','rejected']),
+  reason:optionalText
+}).superRefine((value, refinement) => {
+  if(value.decision==='rejected'&&!String(value.reason||'').trim()) refinement.addIssue({code:'custom',path:['reason'],message:'El rechazo requiere un motivo.'});
+});
+
 const encounterSchema = z.object({
   patientId: z.string().min(10),
   professionalId: z.string().optional().nullable(),
@@ -123,6 +186,13 @@ const encounterSchema = z.object({
     if (!parsed.success) {
       for (const issue of parsed.error.issues) refinement.addIssue({ code:'custom', path:['clinicalData',...issue.path], message:issue.message });
     }
+  }
+  if (value.type === 'dental-treatment-plan') {
+    const parsed = dentalTreatmentPlanClinicalDataSchema.safeParse(value.clinicalData);
+    if (!parsed.success) {
+      for (const issue of parsed.error.issues) refinement.addIssue({ code:'custom', path:['clinicalData',...issue.path], message:issue.message });
+    }
+    if(value.status!=='draft') refinement.addIssue({code:'custom',path:['status'],message:'Los planes nuevos deben iniciar como borrador propuesto.'});
   }
 });
 
@@ -255,10 +325,11 @@ router.get('/health/encounters', requirePermission('health.manage'), asyncHandle
 
 router.post('/health/encounters', requirePermission('health.manage'), asyncHandler(async (req, res) => {
   const b = encounterSchema.parse(req.body || {});
+  const clinicalData = b.type==='dental-treatment-plan' ? normalizeDentalTreatmentPlan(b.clinicalData) : b.clinicalData;
   const rows = await prisma.$queryRawUnsafe<any[]>(`
     INSERT INTO public."CareEncounter" ("id","tenantId","patientId","professionalId","appointmentId","specialty","type","subjective","objective","assessment","plan","diagnosisCodes","clinicalData","confidential","status","signedAt","createdAt","updatedAt")
     VALUES (gen_random_uuid()::text,$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11::jsonb,$12::jsonb,$13,$14,CASE WHEN $14='signed' THEN now() ELSE NULL END,now(),now()) RETURNING *
-  `, ctx(req).tenantId,b.patientId,b.professionalId||null,b.appointmentId||null,b.specialty,b.type,b.subjective||null,b.objective||null,b.assessment||null,b.plan||null,JSON.stringify(b.diagnosisCodes),JSON.stringify(b.clinicalData),b.confidential,b.status);
+  `, ctx(req).tenantId,b.patientId,b.professionalId||null,b.appointmentId||null,b.specialty,b.type,b.subjective||null,b.objective||null,b.assessment||null,b.plan||null,JSON.stringify(b.diagnosisCodes),JSON.stringify(clinicalData),b.confidential,b.status);
   ok(res, one(rows), 201);
 }));
 
@@ -361,6 +432,58 @@ router.post('/health/encounters/:id/amend', requirePermission('health.manage'), 
   });
 
   ok(res, amended, 201);
+}));
+
+router.post('/health/encounters/:id/treatment-plan-decision', requirePermission('health.manage'), asyncHandler(async (req, res) => {
+  const tenantId=ctx(req).tenantId;
+  const actorUserId=ctx(req).userId||null;
+  const actorEmail=ctx(req).email||null;
+  const encounterId=String(req.params.id||'');
+  const b=treatmentPlanDecisionSchema.parse(req.body||{});
+
+  const decided=await prisma.$transaction(async (tx)=>{
+    const rows=await tx.$queryRawUnsafe<any[]>(`
+      SELECT * FROM public."CareEncounter"
+      WHERE "tenantId"=$1 AND "id"=$2
+      FOR UPDATE
+    `,tenantId,encounterId);
+    const previous=one(rows,'Plan de tratamiento no encontrado.');
+    if(previous.type!=='dental-treatment-plan')throw new HttpError(422,'El encuentro no es un plan de tratamiento.');
+    if(previous.status!=='draft')throw new HttpError(409,'El plan ya tiene una decisión terminal.');
+
+    const clinicalData=dentalTreatmentPlanClinicalDataSchema.parse(previous.clinicalData||{});
+    const decidedAt=new Date().toISOString();
+    const nextStatus=b.decision==='accepted'?'signed':'cancelled';
+    const nextClinicalData={
+      ...clinicalData,
+      treatmentPlan:{
+        ...clinicalData.treatmentPlan,
+        status:b.decision,
+        acceptance:{
+          status:b.decision,
+          decidedAt,
+          actor:{userId:actorUserId,email:actorEmail},
+          actorUserId,
+          actorEmail,
+          reason:String(b.reason||'').trim()||null,
+          evidence:'operational-decision-only'
+        }
+      }
+    };
+
+    const updated=await tx.$queryRawUnsafe<any[]>(`
+      UPDATE public."CareEncounter"
+      SET "clinicalData"=$3::jsonb,
+          "status"=$4,
+          "signedAt"=CASE WHEN $4='signed' THEN now() ELSE "signedAt" END,
+          "updatedAt"=now()
+      WHERE "tenantId"=$1 AND "id"=$2 AND "status"='draft'
+      RETURNING *
+    `,tenantId,previous.id,JSON.stringify(nextClinicalData),nextStatus);
+    return one(updated);
+  });
+
+  ok(res,decided);
 }));
 
 router.post('/health/measurements', requirePermission('health.manage'), asyncHandler(async (req, res) => {
