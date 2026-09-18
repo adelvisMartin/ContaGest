@@ -16,9 +16,11 @@ import { QueryParamEnhancer } from './services/queryParamEnhancer.js';
 import { THEME_OPTIONS } from './data/themeCatalog.js';
 import { PAGE_REGISTRY as pageRegistry } from './data/pageRegistry.js';
 import { ModuleRuntimePage } from './pages/ModuleRuntimePage.js';
+import { createPageResolver } from './runtime/pageResolver.js';
 
 const pageModules=import.meta.glob(['./pages/*Page.js','./pages/*Page.jsx','./pages/*Page*.jsx','!./pages/ModuleRuntimePage.js']);
-const loaded=new Map(),CORE_LICENSE=new Set(['dashboard','profile','ayuda','soporte','login']),REACT_MANAGED_ROUTES=new Set(['veterinaria']);
+const CORE_LICENSE=new Set(['dashboard','profile','ayuda','soporte','login']),REACT_MANAGED_ROUTES=new Set(['veterinaria']);
+const {resolvePage}=createPageResolver({registry:pageRegistry,modules:pageModules,moduleRuntimePage:ModuleRuntimePage});
 const originalCanAccess=AccessControlService.canAccessRoute.bind(AccessControlService);
 AccessControlService.canAccessRoute=(state,route)=>{
   const session=AuthService.getSession();
@@ -47,8 +49,6 @@ function applyAuthenticatedSession(session){
     settings:{...current.settings,companyName:session.tenant?.name||current.settings?.companyName,companyRif:session.tenant?.rif||current.settings?.companyRif,...(licenseMode?{businessMode:licenseMode}:{})}
   });
 }
-async function loadPage(route){if(loaded.has(route))return loaded.get(route);const def=pageRegistry[route];if(!def)return null;const importer=pageModules[def[0]];if(!importer)throw new Error(`No se encontró el módulo de ruta: ${route}`);const mod=await importer(),page=mod[def[1]];if(!page)throw new Error(`El módulo ${def[0]} no exporta ${def[1]}`);loaded.set(route,page);return page;}
-async function resolvePage(route){const page=await loadPage(route);if(page)return{page,route};if(String(route||'').startsWith('stitch-'))return{page:{render:(s)=>ModuleRuntimePage.render(s,route),mount:(s,c)=>ModuleRuntimePage.mount(s,c,route)},route};return{page:await loadPage('dashboard'),route:'dashboard'};}
 const signature=(s,r)=>JSON.stringify({r,theme:s.settings?.theme,lang:s.settings?.lang,mode:s.settings?.businessMode,support:s.settings?.supportWidget,collapsed:s.settings?.sidebarCollapsed,profile:[s.profile?.name,s.profile?.role,s.profile?.avatarDataUrl],license:[s.activeLicense?.id,s.activeLicense?.status,s.activeLicense?.expiresAt,s.activeLicense?.qaMode]});
 const canNavigate=(route)=>{const s=Store.get();return (AuthService.isAuthenticated()||route==='login')&&AccessControlService.canAccessRoute(s,route);};
 const deny=()=>Toast.show('Este módulo no está habilitado para el usuario, rol, licencia o plan activo.','warning');
