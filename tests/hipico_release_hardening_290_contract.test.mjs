@@ -37,6 +37,8 @@ test('v290 production gate is exact-SHA, current v12-v26, real-PostgreSQL, OCR c
   assert.match(guard, /currentPostgresChain: 'v12-v26'/);
   assert.match(guard, /hipico_v23_risk_policy\.sql/);
   assert.match(guard, /hipico_v24_shadow_metrics\.sql/);
+  assert.match(guard, /hipico_v25_observability\.sql/);
+  assert.match(guard, /hipico_v26_audit_rpc_integrity\.sql/);
   assert.match(guard, /ownerApprovalServerControlled: true/);
   assert.match(guard, /MODEL_CANDIDATE_REQUIRES_REVIEW/);
   assert.match(guard, /RECENT_METRICS_INSUFFICIENT/);
