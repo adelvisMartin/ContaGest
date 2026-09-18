@@ -28,6 +28,7 @@ export const HealthVerticalService = {
   deleteAppointment(id) { return BackendApi.delete(`/api/v1/verticals/health/appointments/${encodeURIComponent(id)}`); },
   encounters(patientId) { return BackendApi.get(`/verticals/health/encounters${query({ patientId })}`); },
   createEncounter(payload) { return BackendApi.post('/api/v1/verticals/health/encounters', payload); },
+  amendEncounter(id, payload) { return BackendApi.post(`/api/v1/verticals/health/encounters/${encodeURIComponent(id)}/amend`, payload); },
   createMeasurement(payload) { return BackendApi.post('/api/v1/verticals/health/measurements', payload); },
   createImmunization(payload) { return BackendApi.post('/api/v1/verticals/health/immunizations', payload); },
   prescriptions(patientId) { return BackendApi.get(`/verticals/health/prescriptions${query({ patientId })}`); },
