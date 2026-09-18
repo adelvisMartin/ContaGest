@@ -309,11 +309,17 @@ function DentistryWorkspace({ state, context }){
           const revision=versioning?.revision||1;
           const actor=versioning?.actor?.email||versioning?.actor?.userId||'registro original';
           const changed=Array.isArray(versioning?.changedFields)?versioning.changedFields:[];
+          const changeSummary=changed.map((field)=>{
+            const beforeValue=versioning?.before?.[field];
+            const afterValue=versioning?.after?.[field];
+            const format=(value)=>Array.isArray(value)?value.join(', '):String(value??'—');
+            return `${field}: ${format(beforeValue)} → ${format(afterValue)}`;
+          }).join(' · ');
           return <Stack key={item.id} direction={{xs:'column',sm:'row'}} justifyContent="space-between" gap={1} py={.8}>
             <Box sx={{minWidth:0}}>
               <Stack direction="row" gap={.6} alignItems="center" flexWrap="wrap"><Typography variant="body2" fontWeight={650}>{item.clinicalData?.procedure||item.type||'Atención odontológica'}</Typography><CgStatusChip size="small" label={`Versión ${revision}`} tone="primary"/></Stack>
               <Typography variant="caption" color="text.secondary" display="block">{item.clinicalData?.odontogram?.tooth?`${item.clinicalData.odontogram.dentition==='primary'?'Temporal':'Permanente'} · Pieza ${item.clinicalData.odontogram.tooth} · ${item.clinicalData.odontogram.surfaces?.join(', ')||'sin superficie'} · ${item.clinicalData.odontogram.condition||'sin condición'} · `:item.clinicalData?.tooth?`Pieza ${item.clinicalData.tooth} · `:''}{item.assessment||item.subjective||'Sin diagnóstico resumido'}</Typography>
-              {versioning?<Typography variant="caption" color="text.secondary" display="block">Modificado por {actor} · Motivo: {versioning?.reason||'—'} · Cambios: {changed.length?changed.join(', '):'sin resumen'}</Typography>:null}
+              {versioning?<Typography variant="caption" color="text.secondary" display="block">Modificado por {actor} · Motivo: {versioning?.reason||'—'} · Cambios: {changeSummary||'sin resumen'}</Typography>:null}
             </Box>
             <Stack direction="row" gap={.6} alignItems="center" flexWrap="wrap">
               <CgStatusChip label={item.status==='signed'?'Firmado':item.status==='amended'?'Enmendado':item.status||'Borrador'} tone={item.status==='signed'?'success':item.status==='amended'?'default':'warning'}/>
