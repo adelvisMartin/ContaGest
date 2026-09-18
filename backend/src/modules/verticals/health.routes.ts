@@ -95,6 +95,30 @@ const encounterSchema = z.object({
   }
 });
 
+const dentalEncounterAmendmentSchema = z.object({
+  reason: z.string().trim().min(5).max(500),
+  professionalId: z.string().optional().nullable(),
+  subjective: optionalText,
+  assessment: optionalText,
+  plan: optionalText,
+  clinicalData: dentalClinicalDataSchema
+});
+
+const dentalSnapshot = (clinicalData: any) => {
+  const source = clinicalData && typeof clinicalData === 'object' ? clinicalData : {};
+  const odontogram = source.odontogram && typeof source.odontogram === 'object' ? source.odontogram : {};
+  return {
+    dentition:String(odontogram.dentition || ''),
+    tooth:String(odontogram.tooth || source.tooth || ''),
+    surfaces:Array.isArray(odontogram.surfaces) ? [...odontogram.surfaces].map(String).sort() : [],
+    condition:String(odontogram.condition || ''),
+    procedure:String(source.procedure || '')
+  };
+};
+
+const dentalChangedFields = (before: ReturnType<typeof dentalSnapshot>, after: ReturnType<typeof dentalSnapshot>) =>
+  (Object.keys(after) as Array<keyof typeof after>).filter((key) => JSON.stringify(before[key]) !== JSON.stringify(after[key]));
+
 const measurementSchema = z.object({
   patientId: z.string().min(10),
   encounterId: z.string().optional().nullable(),
@@ -205,6 +229,87 @@ router.post('/health/encounters', requirePermission('health.manage'), asyncHandl
     VALUES (gen_random_uuid()::text,$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11::jsonb,$12::jsonb,$13,$14,CASE WHEN $14='signed' THEN now() ELSE NULL END,now(),now()) RETURNING *
   `, ctx(req).tenantId,b.patientId,b.professionalId||null,b.appointmentId||null,b.specialty,b.type,b.subjective||null,b.objective||null,b.assessment||null,b.plan||null,JSON.stringify(b.diagnosisCodes),JSON.stringify(b.clinicalData),b.confidential,b.status);
   ok(res, one(rows), 201);
+}));
+
+router.post('/health/encounters/:id/amend', requirePermission('health.manage'), asyncHandler(async (req, res) => {
+  const tenantId = ctx(req).tenantId;
+  const actorUserId = ctx(req).userId || null;
+  const actorEmail = ctx(req).email || null;
+  const encounterId = String(req.params.id || '');
+  const b = dentalEncounterAmendmentSchema.parse(req.body || {});
+
+  const amended = await prisma.$transaction(async (tx) => {
+    const previousRows = await tx.$queryRawUnsafe<any[]>(`
+      SELECT * FROM public."CareEncounter"
+      WHERE "tenantId"=$1 AND "id"=$2
+      FOR UPDATE
+    `, tenantId, encounterId);
+    const previous = one(previousRows, 'Encuentro odontológico no encontrado.');
+
+    if (previous.type !== 'dental-treatment') throw new HttpError(422, 'Solo los tratamientos odontológicos admiten este flujo de enmienda.');
+    if (previous.status !== 'signed') throw new HttpError(409, 'Solo la versión firmada vigente puede enmendarse.');
+
+    const previousClinicalData = previous.clinicalData && typeof previous.clinicalData === 'object' ? previous.clinicalData : {};
+    const before = dentalSnapshot(previousClinicalData);
+    const after = dentalSnapshot(b.clinicalData);
+    const changedFields = dentalChangedFields(before, after);
+    if (!changedFields.length && String(previous.subjective || '') === String(b.subjective || '') && String(previous.assessment || '') === String(b.assessment || '') && String(previous.plan || '') === String(b.plan || '')) {
+      throw new HttpError(422, 'La enmienda debe contener al menos un cambio clínico.');
+    }
+
+    const priorVersioning = previousClinicalData.versioning && typeof previousClinicalData.versioning === 'object'
+      ? previousClinicalData.versioning
+      : {};
+    const revision = Math.max(1, Number(priorVersioning.revision || 1)) + 1;
+    const amendedAt = new Date().toISOString();
+    const nextClinicalData = {
+      ...b.clinicalData,
+      versioning:{
+        revision,
+        rootEncounterId:String(priorVersioning.rootEncounterId || previous.id),
+        previousEncounterId:previous.id,
+        reason:b.reason,
+        actor:{ userId:actorUserId, email:actorEmail },
+        actorUserId,
+        actorEmail,
+        amendedAt,
+        changedFields,
+        before,
+        after
+      }
+    };
+
+    await tx.$executeRawUnsafe(`
+      UPDATE public."CareEncounter"
+      SET "status"='amended',"updatedAt"=now()
+      WHERE "tenantId"=$1 AND "id"=$2 AND "status"='signed'
+    `, tenantId, previous.id);
+
+    const created = await tx.$queryRawUnsafe<any[]>(`
+      INSERT INTO public."CareEncounter"
+        ("id","tenantId","patientId","professionalId","appointmentId","specialty","type","subjective","objective","assessment","plan","diagnosisCodes","clinicalData","confidential","status","signedAt","createdAt","updatedAt")
+      VALUES
+        (gen_random_uuid()::text,$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11::jsonb,$12::jsonb,$13,'signed',now(),now(),now())
+      RETURNING *
+    `,
+      tenantId,
+      previous.patientId,
+      b.professionalId === undefined ? previous.professionalId : b.professionalId,
+      previous.appointmentId,
+      previous.specialty,
+      previous.type,
+      b.subjective ?? previous.subjective,
+      `Pieza ${after.tooth}`,
+      b.assessment ?? previous.assessment,
+      b.plan ?? previous.plan,
+      JSON.stringify(previous.diagnosisCodes || []),
+      JSON.stringify(nextClinicalData),
+      Boolean(previous.confidential)
+    );
+    return one(created);
+  });
+
+  ok(res, amended, 201);
 }));
 
 router.post('/health/measurements', requirePermission('health.manage'), asyncHandler(async (req, res) => {
