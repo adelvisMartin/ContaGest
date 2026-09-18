@@ -50,7 +50,7 @@ test('serverless Meta endpoint is transport-only: raw signature verification pre
   const rawRead=source.indexOf('readRawBody(req)');
   const signature=source.indexOf('verifyMetaSignature(raw');
   const proxy=source.indexOf('proxyCanonicalRequest({');
-  const relay=source.indexOf('relayCanonicalResponse');
+  const relay=source.indexOf('return relayCanonicalResponse');
   assert.ok(configCheck>=0&&rawRead>configCheck&&signature>rawRead&&proxy>signature&&relay>proxy);
   assert.match(source,/bodyParser:\s*false/);
   assert.match(source,/path:'\/api\/v1\/hipico-bot\/webhook'/);
