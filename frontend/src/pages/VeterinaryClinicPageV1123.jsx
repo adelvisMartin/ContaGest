@@ -1,11 +1,11 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import {
-  Alert, Avatar, Box, Button, Chip, Dialog, DialogActions, DialogContent, DialogTitle,
+  Avatar, Box, Dialog, DialogActions, DialogContent, DialogTitle,
   Divider, InputAdornment, List, ListItemAvatar, ListItemButton, ListItemText, MenuItem,
-  Paper, Stack, TextField, ThemeProvider, Typography
+  Paper, Stack, TextField, Typography
 } from '@mui/material';
-import { createContaGestMuiTheme } from '../components/muiRuntime.js';
+import { CgButton, CgProvider, CgState, CgStatusChip, CgTextField } from '../components/ui/cg/CgPrimitives.jsx';
 import { HealthVerticalService, VeterinaryService } from '../services/verticalService.js';
 import { VeterinaryClinicPage as VeterinaryClinicLegacy } from './VeterinaryClinicPage.jsx';
 
@@ -35,7 +35,6 @@ function TimelineItem({ icon, title, meta, body, tone='primary.main' }) {
 }
 
 function VeterinaryDossier({ ctx, state }) {
-  const theme=useMemo(()=>createContaGestMuiTheme(state?.settings?.theme==='dark'?'dark':'light'),[state?.settings?.theme]);
   const initialPatient = ctx?.query?.patient || '';
   const [patients,setPatients]=useState([]);
   const [selectedId,setSelectedId]=useState(initialPatient);
@@ -104,7 +103,7 @@ function VeterinaryDossier({ ctx, state }) {
     await loadPatients();
   }
 
-  return <ThemeProvider theme={theme}><Paper className="cg-vet-dossier" variant="outlined" sx={{p:1.5}}>
+  return <CgProvider state={state}><Paper className="cg-vet-dossier" variant="outlined" sx={{p:1.5,minWidth:0,maxWidth:'100%'}}>
     <Stack className="cg-vet-dossier-head" direction={{xs:'column',sm:'row'}} gap={{xs:1.5,sm:2}} justifyContent="space-between" alignItems={{xs:'stretch',sm:'flex-start'}} sx={{mb:1.2}}>
       <Box sx={{minWidth:0,pr:{sm:1}}}>
         <Typography variant="caption" color="primary" sx={{fontWeight:600,textTransform:'uppercase',letterSpacing:'.08em'}}>Expediente rápido</Typography>
@@ -112,14 +111,14 @@ function VeterinaryDossier({ ctx, state }) {
         <Typography variant="caption" color="text.secondary">Consulta datos, antecedentes y cronología sin salir del módulo.</Typography>
       </Box>
       <Box className="cg-vet-dossier-actions" sx={{display:'grid',gridTemplateColumns:{xs:'repeat(2,minmax(0,1fr))',sm:'repeat(2,max-content)'},gap:1,width:{xs:'100%',sm:'auto'},alignSelf:'flex-start'}}>
-        <Button size="small" variant="outlined" disabled={!selected} onClick={openEdit} startIcon={<Icon name="fa-pen"/>} sx={{minWidth:0,minHeight:{xs:44,sm:34},px:{xs:1,sm:1.1}}}>Editar ficha</Button>
-        <Button size="small" disabled={!selected} onClick={()=>ctx.navigate?.('veterinaria',{tab:'historia',patient:selectedId})} startIcon={<Icon name="fa-file-waveform"/>} sx={{minWidth:0,minHeight:{xs:44,sm:34},px:{xs:1,sm:1.1}}}>Historia completa</Button>
+        <CgButton size="small" variant="outlined" disabled={!selected} onClick={openEdit} startIcon={<Icon name="fa-pen"/>} sx={{minWidth:0,minHeight:{xs:44,sm:34},px:{xs:1,sm:1.1}}}>Editar ficha</CgButton>
+        <CgButton size="small" disabled={!selected} onClick={()=>ctx.navigate?.('veterinaria',{tab:'historia',patient:selectedId})} startIcon={<Icon name="fa-file-waveform"/>} sx={{minWidth:0,minHeight:{xs:44,sm:34},px:{xs:1,sm:1.1}}}>Historia completa</CgButton>
       </Box>
     </Stack>
     <Divider sx={{mb:1.25}}/>
     <Box className="cg-vet-master-detail" sx={{display:'grid',gridTemplateColumns:{xs:'1fr',md:'250px minmax(0,1fr)'},gap:1.5}}>
       <Box sx={{minWidth:0}}>
-        <TextField size="small" fullWidth placeholder="Buscar mascota, tutor o microchip" value={search} onChange={(event)=>setSearch(event.target.value)} slotProps={{input:{startAdornment:<InputAdornment position="start"><Icon name="fa-magnifying-glass"/></InputAdornment>}}}/>
+        <CgTextField size="small" fullWidth label="Buscar mascota" placeholder="Nombre, tutor o microchip" value={search} onChange={(event)=>setSearch(event.target.value)} slotProps={{input:{startAdornment:<InputAdornment position="start"><Icon name="fa-magnifying-glass"/></InputAdornment>}}}/>
         {loading ? <Box className="cg-vet-list-state">Cargando mascotas…</Box> : filtered.length ? <List dense className="cg-vet-patient-list" sx={{mt:.75,maxHeight:{xs:180,md:390},overflow:'auto'}}>
           {filtered.map((item)=><ListItemButton key={item.id} selected={item.id===selectedId} onClick={()=>setSelectedId(item.id)} sx={{borderRadius:1}}>
             <ListItemAvatar><Avatar variant="rounded" src={item.photoUrl||''} sx={{width:30,height:30,borderRadius:'7px',bgcolor:'primary.main',fontSize:13}}>{item.displayName?.slice(0,1)}</Avatar></ListItemAvatar>
@@ -137,10 +136,10 @@ function VeterinaryDossier({ ctx, state }) {
           <KeyValue label="Nacimiento" value={onlyDate(selected.birthDate)}/><KeyValue label="Sexo" value={selected.sex}/><KeyValue label="Color" value={selected.color}/><KeyValue label="Notas" value={selected.notes}/>
         </Box>
         <Stack direction={{xs:'column',lg:'row'}} gap={1}>
-          <Alert severity={selected.allergies?'warning':'success'} sx={{flex:1}}><b>Alergias:</b> {selected.allergies||'Sin registro'}</Alert>
-          <Alert severity={selected.conditions?'info':'success'} sx={{flex:1}}><b>Antecedentes:</b> {selected.conditions||'Sin registro'}</Alert>
+          <Box sx={{flex:1}}><CgState severity={selected.allergies?'warning':'success'} title="Alergias">{selected.allergies||'Sin registro'}</CgState></Box>
+          <Box sx={{flex:1}}><CgState severity={selected.conditions?'info':'success'} title="Antecedentes">{selected.conditions||'Sin registro'}</CgState></Box>
         </Stack>
-        <Box className="cg-vet-activity"><Stack direction="row" gap={.6} flexWrap="wrap"><Chip size="small" label={`${history.encounters.length} consultas`}/><Chip size="small" label={`${history.labs.length} órdenes`}/><Chip size="small" label={`${history.studies.length} estudios`}/><Chip size="small" label={`${history.procedures.length} procedimientos`}/></Stack></Box>
+        <Box className="cg-vet-activity"><Stack direction="row" gap={.6} flexWrap="wrap"><CgStatusChip size="small" label={`${history.encounters.length} consultas`}/><CgStatusChip size="small" label={`${history.labs.length} órdenes`}/><CgStatusChip size="small" label={`${history.studies.length} estudios`}/><CgStatusChip size="small" label={`${history.procedures.length} procedimientos`}/></Stack></Box>
         <Box className="cg-vet-timeline">
           <Typography variant="subtitle2" sx={{mb:.7}}>Cronología médica</Typography>
           {timeline.length ? timeline.slice(0,30).map((item,index)=><TimelineItem key={`${item.title}-${item.date}-${index}`} {...item}/>) : <Typography variant="body2" color="text.secondary">Aún no hay eventos clínicos para esta mascota.</Typography>}
@@ -164,9 +163,9 @@ function VeterinaryDossier({ ctx, state }) {
         <TextField label="Condiciones / antecedentes" multiline minRows={2} value={form.conditions||''} onChange={(e)=>setForm({...form,conditions:e.target.value})}/>
         <TextField label="Notas" multiline minRows={2} value={form.notes||''} onChange={(e)=>setForm({...form,notes:e.target.value})} sx={{gridColumn:'1/-1'}}/>
       </Box></DialogContent>
-      <DialogActions><Button onClick={()=>setEditing(false)} color="inherit">Cancelar</Button><Button onClick={()=>save().catch(()=>null)}>Guardar cambios</Button></DialogActions>
+      <DialogActions><CgButton variant="text" onClick={()=>setEditing(false)} color="inherit">Cancelar</CgButton><CgButton onClick={()=>save().catch(()=>null)}>Guardar cambios</CgButton></DialogActions>
     </Dialog>
-  </Paper></ThemeProvider>;
+  </Paper></CgProvider>;
 }
 
 let dossierRoot=null;
