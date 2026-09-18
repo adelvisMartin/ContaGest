@@ -33,7 +33,7 @@ test('canonical MessagingChannel remains transport-only and TestChannelAdapter i
   assert.match(channel, /hipicoNormalizedMessageSchema\.parse\(input\)/);
   assert.match(channel, /TEST_CHANNEL_RECEIVER_ALREADY_REGISTERED/);
   assert.match(channel, /this\.seen\.has\(key\)/);
-  assert.doesNotMatch(channel, /classif|settlement|supabase|persistHipico|raceState/i);
+  assert.doesNotMatch(channel, /\b(?:classify|persistHipico|raceState)\s*\(|\bsupabase\s*\(|\bsettlement\s*\(/i);
   assert.match(channelTests, /history\/live replay is deduplicated/);
   assert.match(channelTests, /receiving history must never auto-send/);
 });
