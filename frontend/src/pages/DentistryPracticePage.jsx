@@ -5,11 +5,13 @@ import {
   CgButton, CgEmptyState, CgPageHeader, CgProvider, CgSelect, CgState, CgStatusChip, CgTextField
 } from '../components/ui/cg/CgPrimitives.jsx';
 import { HealthVerticalService } from '../services/verticalService.js';
+import { MediaService } from '../services/mediaService.js';
 import { ToothSurfaceSelector } from '../components/dentistry/ToothSurfaceSelector.jsx';
 import { PERMANENT_TEETH, PRIMARY_TEETH } from '../components/dentistry/dentalCatalog.js';
 import { PeriodontalChartPanel } from '../components/dentistry/PeriodontalChartPanel.jsx';
 import { TreatmentPlanPanel } from '../components/dentistry/TreatmentPlanPanel.jsx';
 import { DentalConsentPanel } from '../components/dentistry/DentalConsentPanel.jsx';
+import { DentalMediaPanel } from '../components/dentistry/DentalMediaPanel.jsx';
 
 const PROCEDURES=['Evaluación','Profilaxis / limpieza','Restauración','Endodoncia','Extracción','Periodoncia','Ortodoncia','Prótesis','Implante','Radiografía / estudio','Control postoperatorio'];
 const SPECIALTIES=[
@@ -34,6 +36,7 @@ function DentistryWorkspace({ state, context }){
   const [appointments,setAppointments]=useState(rows(initial.appointments).filter((item)=>String(item.type||'').toLowerCase()==='dentistry'));
   const [encounters,setEncounters]=useState(rows(initial.encounters));
   const [consents,setConsents]=useState(rows(initial.consents));
+  const [dentalAttachments,setDentalAttachments]=useState(rows(initial.dentalAttachments));
   const [selectedPatientId,setSelectedPatientId]=useState(initial.selectedPatientId||'');
   const [dentition,setDentition]=useState('permanent');
   const [selectedTooth,setSelectedTooth]=useState('');
@@ -77,15 +80,18 @@ function DentistryWorkspace({ state, context }){
       setSelectedPatientId(nextPatientId);
       setAppointmentForm((current)=>({...current,patientId:current.patientId&&nextPatients.some((item)=>item.id===current.patientId)?current.patientId:''}));
       if(nextPatientId){
-        const [encounterResponse,consentResponse]=await Promise.all([
+        const [encounterResponse,consentResponse,attachmentResponse]=await Promise.all([
           HealthVerticalService.encounters(nextPatientId),
-          HealthVerticalService.consents(nextPatientId)
+          HealthVerticalService.consents(nextPatientId),
+          MediaService.dentalAttachments(nextPatientId)
         ]);
         setEncounters(rows(encounterResponse));
         setConsents(rows(consentResponse));
+        setDentalAttachments(rows(attachmentResponse));
       }else{
         setEncounters([]);
         setConsents([]);
+        setDentalAttachments([]);
       }
     }catch(cause){
       const message=cause?.message||'No se pudo actualizar odontología.';
@@ -104,14 +110,16 @@ function DentistryWorkspace({ state, context }){
     setSelectedSurfaces([]);
     setAmendmentTarget(null);
     setAmendmentReason('');
-    if(!patientId){setEncounters([]);setConsents([]);return;}
+    if(!patientId){setEncounters([]);setConsents([]);setDentalAttachments([]);return;}
     try{
-      const [encounterResponse,consentResponse]=await Promise.all([
+      const [encounterResponse,consentResponse,attachmentResponse]=await Promise.all([
         HealthVerticalService.encounters(patientId),
-        HealthVerticalService.consents(patientId)
+        HealthVerticalService.consents(patientId),
+        MediaService.dentalAttachments(patientId)
       ]);
       setEncounters(rows(encounterResponse));
       setConsents(rows(consentResponse));
+      setDentalAttachments(rows(attachmentResponse));
     }catch(cause){notify(`No se cargó la historia odontológica: ${cause?.message||'Error de lectura'}`,'warning');}
   }
 
@@ -285,6 +293,20 @@ function DentistryWorkspace({ state, context }){
     }
   }
 
+
+  async function uploadDentalAttachment(payload){
+    try{
+      const item=await MediaService.uploadDentalAttachment(payload);
+      setDentalAttachments((current)=>[item,...current]);
+      setEncounters((current)=>[item,...current]);
+      notify('Adjunto clínico privado guardado con integridad SHA-256.','success');
+      return true;
+    }catch(cause){
+      notify(`No se guardó el adjunto clínico: ${cause?.message||'Error'}`,'error');
+      return false;
+    }
+  }
+
   function prepareAmendment(item){
     const odontogram=item?.clinicalData?.odontogram;
     if(!odontogram?.tooth)return notify('Esta versión legacy no tiene odontograma estructurado para enmendar.','warning');
@@ -447,6 +469,15 @@ function DentistryWorkspace({ state, context }){
       consents={consents}
       onSign={signDentalConsent}
       onRevoke={revokeDentalConsent}
+    />
+
+    <DentalMediaPanel
+      selectedPatientId={selectedPatientId}
+      onPatientChange={(patientId)=>void loadEncounters(patientId)}
+      patientOptions={patientOptions}
+      encounters={encounters}
+      dentalAttachments={dentalAttachments}
+      onUpload={uploadDentalAttachment}
     />
 
     <Box className="cg-dental-grid" sx={{display:'grid',gridTemplateColumns:{xs:'1fr',lg:'repeat(2,minmax(0,1fr))'},gap:1.25}}>
