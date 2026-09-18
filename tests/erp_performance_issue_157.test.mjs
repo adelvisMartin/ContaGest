@@ -4,7 +4,7 @@ import test from 'node:test';
 const policy=JSON.parse(fs.readFileSync('products/erp/performance-policy-v157.json','utf8'));
 
 test('performance policy covers frontend/backend and required profiles',()=>{
-  assert.equal(policy.targetsAreProvisionalUntilMeasured,true);
+  assert.equal(['PROVISIONAL','RATIFIED'].includes(policy.targetsLifecycle?.state),true,'targets lifecycle');
   for(const p of ['cold','warm','repeated-navigation','long-session','network-throttled'])assert.equal(policy.profiles.includes(p),true,p);
   for(const k of ['startupP95Ms','routeSwitchP95Ms','saveP95Ms','import1000RowsP95Ms','longTaskCountPerMinuteMax'])assert.equal(Number.isFinite(policy.frontend[k]),true,k);
   for(const k of ['apiP50Ms','apiP95Ms','apiP99Ms','errorRatePctMax','throughputRpsMin','dbQueryP95Ms','poolSaturationPctMax','slowQueryCountMax','nPlusOneFindingCountMax','deadlockCountMax','crossTenantLeakCountMax'])assert.equal(Number.isFinite(policy.backend[k]),true,k);
