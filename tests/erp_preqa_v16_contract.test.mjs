@@ -189,3 +189,13 @@ test('58x5 browser harness tracks current Login shell and executes real route ba
   assert.equal(rootPackage.scripts['test:backend:persistence:real'],'npm --workspace backend exec -- tsx --test ../qa/postmerge-backend-persistence-v17.test.ts');
   assert.equal(rootPackage.scripts['test:backend:financial:real'],'npm --workspace backend exec -- tsx --test ../qa/postmerge-financial-domain-v17.test.ts');
 });
+
+
+test('Ledger printable book uses external stylesheet and never injects runtime style blocks',()=>{
+  const ledger=page('LedgerPage.jsx');
+  const printCss=read('frontend','public','print','ledger-book.css');
+  assert.match(ledger,/\/print\/ledger-book\.css/);
+  assert.doesNotMatch(ledger,/<style(?:\s|>)/i);
+  assert.match(printCss,/table\s*\{/);
+  assert.match(printCss,/@media\s+print/);
+});
