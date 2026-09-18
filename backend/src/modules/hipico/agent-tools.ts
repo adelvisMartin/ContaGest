@@ -17,8 +17,12 @@ export function validateModelCandidate(value: unknown): AgentCandidate {
   const row = (value && typeof value === 'object' && !Array.isArray(value) ? value : {}) as Record<string, unknown>;
   const intent = boundedString(row.intent, 120);
   const confidence = Number(row.confidence);
-  const tool = row.tool == null ? null : row.tool;
-  if (!intent || !Number.isFinite(confidence) || confidence < 0 || confidence > 1 || (tool !== null && !isAgentTool(tool))) {
+  let tool: AgentTool | null = null;
+  if (row.tool != null) {
+    if (!isAgentTool(row.tool)) throw new Error('AGENT_CANDIDATE_SCHEMA_INVALID');
+    tool = row.tool;
+  }
+  if (!intent || !Number.isFinite(confidence) || confidence < 0 || confidence > 1) {
     throw new Error('AGENT_CANDIDATE_SCHEMA_INVALID');
   }
   const risk = row.risk;
