@@ -68,7 +68,7 @@ const dentalClinicalDataSchema = z.object({
     condition: z.string().trim().min(1).max(120)
   }).superRefine((value, refinement) => {
     const catalog = value.dentition === 'primary' ? DENTAL_PRIMARY_TEETH : DENTAL_PERMANENT_TEETH;
-    if (!catalog.has(value.tooth)) refinement.addIssue({ code:z.ZodIssueCode.custom, path:['tooth'], message:'La pieza no pertenece a la dentición seleccionada.' });
+    if (!catalog.has(value.tooth)) refinement.addIssue({ code:'custom', path:['tooth'], message:'La pieza no pertenece a la dentición seleccionada.' });
   })
 }).passthrough();
 
@@ -90,7 +90,7 @@ const encounterSchema = z.object({
   if (value.type === 'dental-treatment') {
     const parsed = dentalClinicalDataSchema.safeParse(value.clinicalData);
     if (!parsed.success) {
-      for (const issue of parsed.error.issues) refinement.addIssue({ code:z.ZodIssueCode.custom, path:['clinicalData',...issue.path], message:issue.message });
+      for (const issue of parsed.error.issues) refinement.addIssue({ code:'custom', path:['clinicalData',...issue.path], message:issue.message });
     }
   }
 });
