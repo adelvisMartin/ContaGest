@@ -115,7 +115,7 @@ test('service worker caches only the canonical CSS and invalidates the previous 
   assert.match(sw, /user-access\.js/);
   assert.match(sw, /help-center\.js/);
   assert.match(sw, /whatsapp\/ui-transcript\.js/);
-  assert.match(sw, /shell-r23-ui-system-v2-266/);
+  assert.match(sw, /shell-r24-command-center-289/);
   for (const file of removedCss) assert.equal(sw.includes(`assets/css/${file}`), false, `${file} must not be cached`);
 });
 
