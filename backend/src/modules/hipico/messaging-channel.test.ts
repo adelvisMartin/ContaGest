@@ -24,7 +24,7 @@ function message(overrides: Record<string, unknown> = {}) {
 test('TestChannelAdapter reuses the canonical message contract including mediaKind/historySync', async () => {
   const channel = new TestChannelAdapter('test', new Set(['source-group']));
   const received: any[] = [];
-  channel.receive((value) => received.push(value));
+  channel.receive((value) => { received.push(value); });
   await channel.connect();
 
   const result = await channel.inject(message({ historySync: true, hasMedia: true, type: 'media', mediaKind: 'image' }));
