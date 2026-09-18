@@ -26,12 +26,13 @@ test('Veterinary route keeps canonical Cg primitives after graduating to a singl
   assert.equal((source.match(/createRoot\(/g)||[]).length,1);
 });
 
-test('legacy budgets are monotonic: this wave cannot add new HTML primitives to dentistry or fitness',()=>{
-  const dental=read('frontend/src/pages/DentistryPracticePage.js');
+test('legacy budgets are monotonic: migrated dentistry is zero while fitness cannot grow',()=>{
+  const dental=read('frontend/src/pages/DentistryPracticePage.jsx');
   const gym=read('frontend/src/pages/GymManagementPage.js');
   const count=(source,re)=>(source.match(re)||[]).length;
-  assert.ok(count(dental,/<button\b/g)<=1);
-  assert.ok(count(dental,/<input\b/g)<=1);
+  assert.doesNotMatch(dental,/components\/ui\/index\.js|mountSubmit|escapeHtml/);
+  assert.equal(count(dental,/<button\b/g),0);
+  assert.equal(count(dental,/<input\b/g),0);
   assert.ok(count(gym,/<button\b/g)<=16);
   assert.ok(count(gym,/<input\b/g)<=30);
   assert.ok(count(gym,/<select\b/g)<=15);
