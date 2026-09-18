@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { Router } from 'express';
 import { z } from 'zod';
 import { prisma } from '../../database/prisma.js';
@@ -118,6 +119,35 @@ const dentalSnapshot = (clinicalData: any) => {
 
 const dentalChangedFields = (before: Record<string, unknown>, after: Record<string, unknown>) =>
   Object.keys(after).filter((key) => JSON.stringify(before[key]) !== JSON.stringify(after[key]));
+
+const PERIODONTAL_SITES = ['mesiobuccal','buccal','distobuccal','mesiolingual','lingual','distolingual'] as const;
+const periodontalSiteSchema = z.object({
+  site: z.enum(PERIODONTAL_SITES),
+  probingDepth: z.coerce.number().min(0).max(30),
+  gingivalMargin: z.coerce.number().min(-30).max(30),
+  clinicalAttachmentLevel: z.coerce.number().min(0).max(40),
+  bleeding: z.boolean().default(false),
+  suppuration: z.boolean().default(false),
+  plaque: z.boolean().default(false)
+});
+const periodontalExamSchema = z.object({
+  patientId: z.string().min(10),
+  professionalId: z.string().min(10),
+  dentition: z.enum(['permanent','primary']),
+  tooth: z.string().trim().min(2).max(2),
+  measuredAt: z.string().optional(),
+  reason: z.string().trim().min(3).max(240),
+  mobility: z.coerce.number().int().min(0).max(3).default(0),
+  furcation: z.coerce.number().int().min(0).max(3).default(0),
+  sites: z.array(periodontalSiteSchema).length(6)
+}).superRefine((value, refinement) => {
+  const catalog = value.dentition === 'primary' ? DENTAL_PRIMARY_TEETH : DENTAL_PERMANENT_TEETH;
+  if (!catalog.has(value.tooth)) refinement.addIssue({ code:'custom', path:['tooth'], message:'La pieza no pertenece a la dentición seleccionada.' });
+  const siteSet = new Set(value.sites.map((site) => site.site));
+  if (siteSet.size !== PERIODONTAL_SITES.length || PERIODONTAL_SITES.some((site) => !siteSet.has(site))) {
+    refinement.addIssue({ code:'custom', path:['sites'], message:'El periodontograma requiere exactamente los seis sitios canónicos.' });
+  }
+});
 
 const measurementSchema = z.object({
   patientId: z.string().min(10),
