@@ -16,13 +16,12 @@ export const ERP_UI_WAVE_A_2_51 = Object.freeze([
     route:'veterinaria',
     module:'health/veterinary',
     renderer:'frontend/src/pages/VeterinaryClinicPageV1123.jsx',
-    status:'LEGACY_EXCEPTION_APPROVED',
-    canonicalRegions:['CgProvider','CgButton','CgTextField','CgState','CgStatusChip','MUI layout/list/dialog'],
-    owners:{pageHeader:'legacy veterinary surface',actions:'CgButton',forms:'CgTextField + MUI TextField',dialogs:'MUI Dialog + CgButton',data:'MUI List/Paper',kpi:'CgStatusChip'},
+    status:'MIGRATED',
+    canonicalRegions:['single React root','CgProvider','CgButton','CgTextField','CgState','CgStatusChip','MUI layout/list/dialog'],
+    owners:{pageHeader:'VeterinaryWorkspace/MUI',actions:'CgButton + MUI Button',forms:'CgTextField + MUI TextField',dialogs:'MUI Dialog + CgButton',data:'MUI List/Table/Paper',kpi:'CgStatusChip + MUI metrics'},
     cssOwners:['frontend/src/styles/erp-runtime.css','frontend/src/styles/module-adapters.css','frontend/src/styles/contagest-visual-system-v12.css'],
-    legacyBefore:['VeterinaryClinicLegacy mounted below canonical dossier'],
-    legacyBudget:{legacyVetImport:3,kitImport:0,rawButtonString:0,rawInputString:0,rawSelectString:0,rawTextareaString:0,cgxBtn:0},
-    exception:{owner:'roadmap 3/51',reason:'El dossier master/detail ya consume Cg*/MUI, pero la ruta aún monta VeterinaryClinicLegacy; retirar el doble renderer pertenece a 3/51.',approvedAt:'2026-09-18',reviewBy:'3/51'},
+    legacyBefore:['VeterinaryClinicLegacy page lifecycle removed in 3/51; dossier and full workspace now share one React root.'],
+    legacyBudget:{legacyVetImport:0,kitImport:0,rawButtonString:0,rawInputString:0,rawSelectString:0,rawTextareaString:0,cgxBtn:0},
     qa:{source:'PASS_REQUIRED',phone360:'NOT_EXECUTED',phone390:'NOT_EXECUTED',phone430:'NOT_EXECUTED',tablet768:'NOT_EXECUTED',desktop1366:'NOT_EXECUTED'}
   },
   {
