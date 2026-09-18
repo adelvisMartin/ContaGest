@@ -15,6 +15,7 @@ function validObservation(overrides={}){
       superuser:false,
       createdb:false,
       createrole:false,
+      inherit:false,
       replication:false,
       bypassrls:false,
       serviceRoleMember:false,
@@ -90,11 +91,33 @@ test('v24 mutable privilege is FAIL',()=>{
   assert.ok(report.findings.some((x)=>x.startsWith('MUTABLE_PRIVILEGE:')));
 });
 
+test('v24 inherited privileges are forbidden',()=>{
+  const obs=validObservation();
+  obs.role.inherit=true;
+  const report=classifyBackupRoleVerification({candidateSha:SHA,observation:obs,mode:'STEADY_STATE',now:NOW});
+  assert.equal(report.status,'FAIL');
+  assert.ok(report.findings.includes('ROLE_INHERIT_FORBIDDEN'));
+});
+
 test('v24 cross-scope grant is FAIL',()=>{
   const obs=validObservation({crossScopeGrants:['public.CustomerAccount']});
   const report=classifyBackupRoleVerification({candidateSha:SHA,observation:obs,mode:'STEADY_STATE',now:NOW});
   assert.equal(report.status,'FAIL');
   assert.ok(report.findings.includes('CROSS_SCOPE_GRANT:public.CustomerAccount'));
+});
+
+test('v24 effective auth schema access is FAIL',()=>{
+  const obs=validObservation({authScopeAccess:['TABLE:users']});
+  const report=classifyBackupRoleVerification({candidateSha:SHA,observation:obs,mode:'STEADY_STATE',now:NOW});
+  assert.equal(report.status,'FAIL');
+  assert.ok(report.findings.includes('AUTH_SCHEMA_ACCESS:TABLE:users'));
+});
+
+test('v24 default privileges that could reach future tables are FAIL',()=>{
+  const obs=validObservation({defaultPrivileges:['r']});
+  const report=classifyBackupRoleVerification({candidateSha:SHA,observation:obs,mode:'STEADY_STATE',now:NOW});
+  assert.equal(report.status,'FAIL');
+  assert.ok(report.findings.includes('DEFAULT_PRIVILEGE_FORBIDDEN:r'));
 });
 
 test('v24 RLS table without backup policy is FAIL',()=>{
@@ -116,29 +139,31 @@ test('v24 invalid SHA is NOT_EXECUTED',()=>{
   assert.equal(report.reason,'CANDIDATE_SHA_REQUIRED');
 });
 
-test('v24 provisioner consumes canonical inventory and never hardcodes the 25-table list',async()=>{
-  const [script,inventory]=await Promise.all([
+test('v24 provisioner consumes canonical inventory and delegates role SQL to one versioned artifact',async()=>{
+  const [script,sql,inventory]=await Promise.all([
     read('ops/database/provision-hipico-backup-role.sh'),
+    read('ops/database/provision-hipico-backup-role.sql'),
     read('ops/backup/hipico-public-tables.txt')
   ]);
   const tables=inventory.split(/\r?\n/).map((x)=>x.trim()).filter((x)=>x&&!x.startsWith('#'));
   assert.equal(tables.length,25);
-  assert.match(script,/HIPICO_BACKUP_TABLE_FILE/);
-  assert.match(script,/while IFS= read -r table/);
+  assert.match(script,/ops\\/backup\\/hipico-public-tables\\.txt/);
+  assert.doesNotMatch(script,/HIPICO_BACKUP_TABLE_FILE/);
   assert.match(script,/HIPICO_BACKUP_PASSWORD/);
   assert.match(script,/HIPICO_BACKUP_DDL_URL/);
   assert.match(script,/HIPICO_BACKUP_ROLE_MODE/);
-  assert.match(script,/PRE_ROLLOUT/);
-  assert.match(script,/STEADY_STATE/);
-  assert.match(script,/CREATE ROLE hipico_backup/);
-  for(const flag of ['NOSUPERUSER','NOCREATEDB','NOCREATEROLE','NOREPLICATION','NOBYPASSRLS']){
-    assert.match(script,new RegExp(flag));
+  assert.match(script,/provision-hipico-backup-role\.sql/);
+  assert.doesNotMatch(script,/CREATE ROLE hipico_backup/);
+  assert.match(sql,/ops\/backup\/hipico-public-tables\.txt/);
+  assert.match(sql,/CREATE ROLE hipico_backup/);
+  for(const flag of ['NOSUPERUSER','NOCREATEDB','NOCREATEROLE','NOINHERIT','NOREPLICATION','NOBYPASSRLS']){
+    assert.match(sql,new RegExp(flag));
   }
-  assert.match(script,/REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA public FROM hipico_backup/);
-  assert.match(script,/GRANT SELECT ON TABLE public\.%I TO hipico_backup/);
-  assert.match(script,/CREATE POLICY hipico_backup_read_all/);
+  assert.match(sql,/REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA public FROM hipico_backup/);
+  assert.match(sql,/GRANT SELECT ON TABLE public\.%I TO hipico_backup/);
+  assert.match(sql,/CREATE POLICY hipico_backup_read_all/);
   for(const table of tables){
-    assert.doesNotMatch(script,new RegExp(`['"]${table}['"]`));
+    assert.doesNotMatch(sql,new RegExp(`public\\.${table}\\b`));
   }
 });
 

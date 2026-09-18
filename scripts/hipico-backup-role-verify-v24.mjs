@@ -58,6 +58,7 @@ export function classifyBackupRoleVerification({
     if(role.superuser===true)findings.push('ROLE_SUPERUSER_FORBIDDEN');
     if(role.createdb===true)findings.push('ROLE_CREATEDB_FORBIDDEN');
     if(role.createrole===true)findings.push('ROLE_CREATEROLE_FORBIDDEN');
+    if(role.inherit!==false)findings.push('ROLE_INHERIT_FORBIDDEN');
     if(role.replication===true)findings.push('ROLE_REPLICATION_FORBIDDEN');
     if(role.bypassrls===true)findings.push('ROLE_BYPASSRLS_FORBIDDEN');
     if(role.serviceRoleMember===true)findings.push('SERVICE_ROLE_MEMBERSHIP_FORBIDDEN');
@@ -92,6 +93,12 @@ export function classifyBackupRoleVerification({
 
   for(const crossScopeGrant of Array.isArray(observation.crossScopeGrants)?observation.crossScopeGrants:[]){
     findings.push(`CROSS_SCOPE_GRANT:${crossScopeGrant}`);
+  }
+  for(const authAccess of Array.isArray(observation.authScopeAccess)?observation.authScopeAccess:[]){
+    findings.push(`AUTH_SCHEMA_ACCESS:${authAccess}`);
+  }
+  for(const defaultPrivilege of Array.isArray(observation.defaultPrivileges)?observation.defaultPrivileges:[]){
+    findings.push(`DEFAULT_PRIVILEGE_FORBIDDEN:${defaultPrivilege}`);
   }
 
   report.findings=findings;
@@ -141,6 +148,7 @@ export async function observeBackupRole({
         rolsuper as superuser,
         rolcreatedb as createdb,
         rolcreaterole as createrole,
+        rolinherit as inherit,
         rolreplication as replication,
         rolbypassrls as bypassrls
       from pg_roles
@@ -160,6 +168,7 @@ export async function observeBackupRole({
           superuser:false,
           createdb:false,
           createrole:false,
+          inherit:false,
           replication:false,
           bypassrls:false,
           serviceRoleMember:false,
@@ -228,6 +237,51 @@ export async function observeBackupRole({
       order by qualified_name
     `,[expectedTables]);
 
+    const authScopeResult=await client.query(`
+      select access_path
+      from (
+        select 'SCHEMA:auth'::text as access_path
+        where case
+          when exists(select 1 from pg_namespace where nspname='auth')
+            then has_schema_privilege('hipico_backup','auth','USAGE')
+          else false
+        end
+        union all
+        select 'TABLE:'||c.relname
+        from pg_class c
+        join pg_namespace n on n.oid=c.relnamespace
+        where n.nspname='auth'
+          and c.relkind in ('r','p','v','m')
+          and (
+            has_table_privilege('hipico_backup',c.oid,'SELECT')
+            or has_table_privilege('hipico_backup',c.oid,'INSERT')
+            or has_table_privilege('hipico_backup',c.oid,'UPDATE')
+            or has_table_privilege('hipico_backup',c.oid,'DELETE')
+            or has_table_privilege('hipico_backup',c.oid,'TRUNCATE')
+            or has_table_privilege('hipico_backup',c.oid,'REFERENCES')
+            or has_table_privilege('hipico_backup',c.oid,'TRIGGER')
+          )
+        union all
+        select 'FUNCTION:'||p.proname
+        from pg_proc p
+        join pg_namespace n on n.oid=p.pronamespace
+        where n.nspname='auth'
+          and has_function_privilege('hipico_backup',p.oid,'EXECUTE')
+      ) access
+      order by access_path
+    `);
+
+    const defaultPrivilegeResult=await client.query(`
+      select distinct d.defaclobjtype::text as object_type
+      from pg_default_acl d
+      where exists (
+        select 1
+        from unnest(coalesce(d.defaclacl,'{}'::aclitem[])) item
+        where item::text like 'hipico_backup=%'
+      )
+      order by object_type
+    `);
+
     const roleRow=roleResult.rows[0];
     const privilegeRow=rolePrivileges.rows[0]||{};
     return {
@@ -243,12 +297,15 @@ export async function observeBackupRole({
         backupPolicy:row.backup_policy===true
       })),
       crossScopeGrants:crossScopeResult.rows.map((row)=>row.qualified_name),
+      authScopeAccess:authScopeResult.rows.map((row)=>row.access_path),
+      defaultPrivileges:defaultPrivilegeResult.rows.map((row)=>row.object_type),
       role:{
         exists:true,
         login:roleRow.login===true,
         superuser:roleRow.superuser===true,
         createdb:roleRow.createdb===true,
         createrole:roleRow.createrole===true,
+        inherit:roleRow.inherit===true,
         replication:roleRow.replication===true,
         bypassrls:roleRow.bypassrls===true,
         serviceRoleMember:privilegeRow.service_role_member===true,
