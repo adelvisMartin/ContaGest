@@ -4,7 +4,7 @@ export const PAGE_REGISTRY = {
   clientes: ['./pages/ClientsPage.js', 'ClientsPage'],
   ventas: ['./pages/SalesPage.jsx', 'SalesPage'],
   inventario: ['./pages/InventoryPage.jsx', 'InventoryPage'],
-  tributos: ['./pages/TaxesPage.js', 'TaxesPage'],
+  tributos: ['./pages/TaxesPage.jsx', 'TaxesPage'],
   normativa: ['./pages/RegulatoryPage.js', 'RegulatoryPage'],
   historial: ['./pages/HistoryPage.js', 'HistoryPage'],
   reportes: ['./pages/ReportsPage.js', 'ReportsPage'],
