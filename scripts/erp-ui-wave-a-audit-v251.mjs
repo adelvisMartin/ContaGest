@@ -63,6 +63,10 @@ if(dentistryEntry?.status==='MIGRATED'){
   for(const primitive of ['CgProvider','CgPageHeader','CgButton','CgTextField','CgSelect','CgStatusChip','CgEmptyState']){
     if(!dentistry.includes(primitive))fail(`odontologia: missing canonical primitive ${primitive}`);
   }
+  if(/rows\(initial\.patients\)\[0\]|nextPatients\[0\]|patients\[0\]/.test(dentistry))fail('odontologia: clinical context must never fall back to the first patient');
+  for(const contract of ['selectedPatientId','patientId:selectedPatientId',"setSelectedTooth('')"]){
+    if(!dentistry.includes(contract))fail(`odontologia: missing explicit selected-patient contract ${contract}`);
+  }
 }
 
 const fitnessEntries=ERP_UI_WAVE_A_2_51.filter((item)=>['gimnasio','rutinas','nutricion'].includes(item.route));
