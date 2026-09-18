@@ -46,10 +46,9 @@ function runCommandGate(label,command,args,{env={}}={}){
 // graph immediately before QA. Reuse that deterministic workspace install and
 // add only the exact serverless Chromium runtime required by this preview gate.
 if(isPostMerge58x5){
-  // These gates are intentionally non-short-circuiting. A missing DB secret or a
-  // diagnostic failure must not hide browser evidence for the other 58x5 gates.
-  runCommandGate('REAL BACKEND / POSTGRES PERSISTENCE','npm',['run','test:backend:persistence:real']);
-  runCommandGate('REAL FINANCIAL DOMAIN','npm',['run','test:backend:financial:real']);
+  // Vercel preview is the browser/composition authority only. Real PostgreSQL
+  // persistence and financial-domain gates remain available as standalone
+  // scripts for a runner that can provide an isolated database.
   runCommandGate('REACT DOCTOR CHANGED','npm',['run','doctor:changed']);
   runCommandGate('REACT DOCTOR DESIGN','npm',['run','doctor:design']);
 }
@@ -82,12 +81,13 @@ runGroup('login mobile 360px',['qa/login-auth-runtime-v161.spec.mjs','--grep','m
 runGroup('login mobile 390px',['qa/login-auth-runtime-v161.spec.mjs','--grep','mobile login 390px']);
 runGroup('login mobile 430px',['qa/login-auth-runtime-v161.spec.mjs','--grep','mobile login 430px']);
 runGroup('mobile command navigation',['qa/mobile-navigation-v163.spec.mjs','--grep','command palette opens']);
+if(isPostMerge58x5)runGroup('2/51 vertical Wave A geometry',['qa/erp-ui-wave-a-v251.spec.mjs']);
 
 // Fine-composition is intentionally early so obvious spacing/symmetry failures are
 // visible even if a later serverless Chromium process becomes unstable.
 if(isPostMerge58x5){
   routeBatches(6).forEach((routes,index)=>{
-    const pattern=`^(?:${routes.map(regexEscape).join('|')}) · fine composition desktop/mobile$`;
+    const pattern=`(?:${routes.map(regexEscape).join('|')}) · fine composition desktop/mobile`;
     runGroup(`58x5 fine-composition batch ${index+1}/${Math.ceil(MODULE_VISUAL_CATALOG.length/6)} [${routes.join(', ')}]`,['qa/fine-composition-v166.spec.mjs','--grep',pattern]);
   });
 }
@@ -112,7 +112,7 @@ runGroup('observable safe click-smoke',['qa/module-actions-runtime-v163.spec.mjs
 
 if(isPostMerge58x5){
   routeBatches(6).forEach((routes,index)=>{
-    const pattern=`^(?:${routes.map(regexEscape).join('|')}) · deep desktop/mobile light/dark audit$`;
+    const pattern=`(?:${routes.map(regexEscape).join('|')}) · deep desktop/mobile light/dark audit`;
     runGroup(`58x5 exhaustive batch ${index+1}/${Math.ceil(MODULE_VISUAL_CATALOG.length/6)} [${routes.join(', ')}]`,['qa/exhaustive-route-v164.spec.mjs','--grep',pattern]);
   });
   runGroup('58x5 transition sequential',['qa/route-transition-v164.spec.mjs','--grep','all registered protected routes']);
@@ -125,4 +125,4 @@ if(failures.length){
   failures.forEach((item)=>console.error(` - ${item.label} (exit ${item.status})`));
   process.exit(1);
 }
-console.log('\n[browser-preqa][PASS] Backend real, dominio financiero, React Doctor, navegación, controles, responsive, composición fina y 58x5 Chromium sin fallos.');
+console.log('\n[browser-preqa][PASS] React Doctor, navegación, controles, responsive, composición fina y 58x5 Chromium sin fallos. Los gates PostgreSQL reales se ejecutan en un runner con base aislada.');
