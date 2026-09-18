@@ -21,12 +21,17 @@ test('core dependency gate covers every optional pack root',()=>{
     {
       path:'/repo/backend/src/modules/inventory/inventory.routes.ts',
       source:`import veterinary from '../verticals/veterinary.routes.js';`
+    },
+    {
+      path:'/repo/backend/src/modules/auth/auth.routes.ts',
+      source:`import bridge from '../hipico-bot/hipico-bridge.routes.js';`
     }
   ]);
-  assert.equal(findings.length,3);
+  assert.equal(findings.length,4);
   assert.ok(findings.some((item)=>item.includes('/hipico/')));
   assert.ok(findings.some((item)=>item.includes('/food/')));
   assert.ok(findings.some((item)=>item.includes('/verticals/')));
+  assert.ok(findings.some((item)=>item.includes('/hipico-bot/')));
 });
 
 test('verticals may depend on shared/database/own package but not ERP implementation modules',()=>{
