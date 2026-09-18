@@ -6,7 +6,7 @@ const source=await readFile(new URL('../scripts/hipico-apply-e2e-schema-v290.mjs
 
 test('v19 PostgreSQL role bootstrap uses valid dollar-quoted DO blocks',()=>{
   for(const role of ['anon','authenticated','service_role']){
-    const pattern=new RegExp(`DO \\\$\\\\$ BEGIN CREATE ROLE ${role} NOLOGIN; EXCEPTION WHEN duplicate_object THEN NULL; END \\\$\\\\$`);
+    const pattern=new RegExp(`DO \\$\\$ BEGIN CREATE ROLE ${role} NOLOGIN; EXCEPTION WHEN duplicate_object THEN NULL; END \\$\\$`);
     assert.match(source,pattern,`${role} bootstrap must use DO $$ ... END $$`);
   }
 });
