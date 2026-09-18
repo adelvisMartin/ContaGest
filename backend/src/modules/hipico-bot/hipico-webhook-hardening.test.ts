@@ -64,8 +64,8 @@ test('malformed item in a signed batch cannot make valid sibling messages disapp
   const timestampPartition=source.indexOf('const messages=extractedMessages.filter(webhookTimestampValid)');
   const invalidCount=source.indexOf('const invalidMessages=Math.max(0,expectedRawMessages-messages.length)');
   const persistence=source.indexOf('HipicoBotStore.dbReady(true)');
-  const processing=source.indexOf('const result=await processMessagesBounded(messages)');
-  const partialAck=source.indexOf("error:'invalid_message_identity_partial'");
+  const processing=source.indexOf('const result=messages.length>0?await processMessagesBounded(messages)');
+  const partialAck=source.indexOf("error:'invalid_webhook_items_partial'");
   assert.ok(extraction>=0&&timestampPartition>extraction&&invalidCount>timestampPartition&&persistence>invalidCount&&processing>persistence&&partialAck>processing);
   assert.match(source,/accepted:true,\n\s*partial:true,\n\s*retryable:false/);
   assert.match(source,/received:expectedRawMessages/);
@@ -74,10 +74,9 @@ test('malformed item in a signed batch cannot make valid sibling messages disapp
 });
 
 test('a fully malformed signed message set is permanently acknowledged without touching persistence',()=>{
-  const empty=source.indexOf('if(messages.length===0)');
-  const allInvalid=source.indexOf('if(invalidMessages>0)',empty);
+  const allInvalid=source.indexOf('if(expectedRawMessages>0&&messages.length===0)');
   const persistence=source.indexOf('HipicoBotStore.dbReady(true)');
-  assert.ok(empty>=0&&allInvalid>empty&&persistence>allInvalid);
+  assert.ok(allInvalid>=0&&persistence>allInvalid);
   assert.match(source,/error:'invalid_message_identity'/);
   assert.match(source,/accepted:false,retryable:false/);
 });
@@ -96,7 +95,8 @@ test('signed status-only callbacks are bound to raw envelope phone identity befo
   assert.equal(__test__.rawEnvelopeIdentityError(statusEnvelope('9999999999'),env),'WEBHOOK_PHONE_NUMBER_MISMATCH');
   assert.equal(__test__.rawEnvelopeIdentityError({entry:[{changes:[{value:{statuses:[{id:'s1'}]}}]}]},env),'WEBHOOK_PHONE_NUMBER_MISMATCH');
   const envelope=source.indexOf('const envelopeIdentityError=rawEnvelopeIdentityError(req.body)');
-  const empty=source.indexOf('if(messages.length===0)');
-  const db=source.indexOf('HipicoBotStore.dbReady(true)');
-  assert.ok(envelope>=0&&empty>envelope&&db>empty);
+  const extraction=source.indexOf('const expectedRawMessages=rawMessageCount(req.body)');
+  const db=source.indexOf('messages.length>0&&!await HipicoBotStore.dbReady(true)');
+  assert.ok(envelope>=0&&extraction>envelope&&db>extraction);
+  assert.match(source,/if\(receipts\.length>0\)[\s\S]*processReceiptsBounded\(receipts\)/);
 });
