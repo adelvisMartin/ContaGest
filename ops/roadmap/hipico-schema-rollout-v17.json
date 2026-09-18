@@ -1,6 +1,6 @@
 {
   "schema": "hipico-schema-rollout.v17",
-  "baseline": "89286ce65e2466873463bcd5518e1dc820e2633b",
+  "baseline": "d60fca810a082e691ff4157e043469a87eadee33",
   "chain": "v12-v27",
   "autoApply": false,
   "manualApplyRequired": true,
@@ -194,5 +194,7 @@
       "manualReviewRequired": true,
       "provides": []
     }
-  ]
+  ],
+  "backupScope": "hipico-canonical-v12-v27",
+  "backupTableInventory": "ops/backup/hipico-public-tables.txt"
 }

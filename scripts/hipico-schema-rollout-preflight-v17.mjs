@@ -62,9 +62,28 @@ export async function loadMigrationUnits(manifest,{rootDir=root}={}){
   return units;
 }
 
+export async function loadBackupScopeContract({rootDir=root}={}){
+  const manifest=JSON.parse(await fs.readFile(path.resolve(rootDir,'ops/roadmap/hipico-schema-rollout-v17.json'),'utf8'));
+  const scope=String(manifest?.backupScope||'').trim();
+  const migrationChain=String(manifest?.chain||'').trim();
+  const tableInventory=String(manifest?.backupTableInventory||'').trim();
+  if(!scope||!migrationChain||!tableInventory){
+    throw new Error('HIPICO_BACKUP_SCOPE_CONTRACT_INVALID');
+  }
+  if(!tableInventory.startsWith('ops/backup/')||!tableInventory.endsWith('.txt')){
+    throw new Error('HIPICO_BACKUP_TABLE_INVENTORY_INVALID');
+  }
+  const bytes=await fs.readFile(path.resolve(rootDir,tableInventory));
+  const tableManifestSha256=createHash('sha256').update(bytes).digest('hex');
+  return {scope,migrationChain,tableInventory,tableManifestSha256};
+}
+
 export function validateBackupEvidence(evidence,{
   candidateSha,
   targetDatabase,
+  expectedScope,
+  expectedMigrationChain,
+  expectedTableManifestSha256,
   now=new Date(),
   maxAgeHours=DEFAULT_MAX_BACKUP_AGE_HOURS
 }={}){
@@ -80,6 +99,19 @@ export function validateBackupEvidence(evidence,{
   if(targetDatabase&&String(evidence.targetDatabase||'')!==String(targetDatabase)){
     return {ok:false,reason:'BACKUP_TARGET_MISMATCH'};
   }
+  if(expectedScope&&String(evidence.scope||'').trim()!==String(expectedScope)){
+    return {ok:false,reason:'BACKUP_SCOPE_MISMATCH'};
+  }
+  if(expectedMigrationChain&&String(evidence.migrationChain||'').trim()!==String(expectedMigrationChain)){
+    return {ok:false,reason:'BACKUP_MIGRATION_CHAIN_MISMATCH'};
+  }
+  const evidenceTableManifestSha256=String(evidence.tableManifestSha256||'').trim().toLowerCase();
+  if(expectedTableManifestSha256&&(
+    !/^[a-f0-9]{64}$/.test(evidenceTableManifestSha256)
+    || evidenceTableManifestSha256!==String(expectedTableManifestSha256).trim().toLowerCase()
+  )){
+    return {ok:false,reason:'BACKUP_TABLE_MANIFEST_MISMATCH'};
+  }
   const checkedAt=new Date(String(evidence.checkedAt||''));
   if(Number.isNaN(checkedAt.getTime()))return {ok:false,reason:'BACKUP_EVIDENCE_TIME_INVALID'};
   const maxAge=Math.max(1,Math.min(168,Number(maxAgeHours)||DEFAULT_MAX_BACKUP_AGE_HOURS))*60*60*1000;
@@ -93,6 +125,9 @@ export function validateBackupEvidence(evidence,{
       restoreTestId:String(evidence.restoreTestId),
       restoreVerified:true,
       targetDatabase:String(evidence.targetDatabase||targetDatabase||''),
+      scope:String(evidence.scope||expectedScope||''),
+      migrationChain:String(evidence.migrationChain||expectedMigrationChain||''),
+      tableManifestSha256:evidenceTableManifestSha256,
       checkedAt:checkedAt.toISOString()
     }
   };
@@ -132,6 +167,7 @@ export function buildRolloutPlan({
   migrationUnits=[],
   backupEvidence=null,
   changeTicket='',
+  backupScopeContract=null,
   orderValidation={ok:true,reason:null},
   now=new Date(),
   maxBackupAgeHours=DEFAULT_MAX_BACKUP_AGE_HOURS
@@ -173,10 +209,20 @@ export function buildRolloutPlan({
     plan.reason='CHANGE_TICKET_REQUIRED';
     return plan;
   }
+  if(!backupScopeContract
+      || !String(backupScopeContract.scope||'').trim()
+      || !String(backupScopeContract.migrationChain||'').trim()
+      || !/^[a-f0-9]{64}$/i.test(String(backupScopeContract.tableManifestSha256||'').trim())){
+    plan.reason='BACKUP_SCOPE_CONTRACT_REQUIRED';
+    return plan;
+  }
 
   const backup=validateBackupEvidence(backupEvidence,{
     candidateSha:sha,
     targetDatabase:plan.target.database,
+    expectedScope:backupScopeContract.scope,
+    expectedMigrationChain:backupScopeContract.migrationChain,
+    expectedTableManifestSha256:backupScopeContract.tableManifestSha256,
     now,
     maxAgeHours:maxBackupAgeHours
   });
@@ -206,6 +252,7 @@ export async function runPreflight({env=process.env,now=new Date(),driftRunner=r
   const manifest=JSON.parse(manifestText);
   const orderValidation=validateMigrationOrder(manifest,chainSource);
   const migrationUnits=await loadMigrationUnits(manifest);
+  const backupScopeContract=await loadBackupScopeContract();
   const candidateSha=String(env.HIPICO_CANDIDATE_SHA||env.GITHUB_SHA||'').trim();
 
   let driftReport;
@@ -236,6 +283,7 @@ export async function runPreflight({env=process.env,now=new Date(),driftRunner=r
     migrationUnits,
     backupEvidence,
     changeTicket:String(env.HIPICO_SCHEMA_CHANGE_TICKET||'').trim(),
+    backupScopeContract,
     orderValidation,
     now,
     maxBackupAgeHours:Number(env.HIPICO_SCHEMA_BACKUP_MAX_AGE_HOURS||manifest.maxBackupAgeHours||DEFAULT_MAX_BACKUP_AGE_HOURS)
