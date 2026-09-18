@@ -61,12 +61,12 @@ test('#284 canonical proxy revalidates normalized paths and rejects namespace tr
 });
 
 test('#284 CLI command mapping uses only real bounded read surfaces', () => {
-  assert.deepEqual(parseCommand(['events', 'tail', '25', '--json']), { json: true, command: 'events', subcommand: 'tail', value: '25' });
+  assert.deepEqual(parseCommand(['events', 'tail', '25', '--json', '--group', 'source']), { json: true, group: 'source', command: 'events', subcommand: 'tail', value: '25' });
   assert.equal(commandPlan(parseCommand(['status'])).path, '/api/v1/hipico/system/status');
   assert.equal(commandPlan(parseCommand(['bridge', 'status'])).auth, 'bridge');
-  assert.equal(commandPlan(parseCommand(['messages', 'tail', '500'])).path, '/api/v1/hipico-bot/events?limit=100');
-  assert.equal(commandPlan(parseCommand(['events', 'tail', '7'])).path, '/api/v1/hipico-bot/events?limit=7');
-  assert.equal(commandPlan(parseCommand(['trace', 'corr-123'])).transform, 'trace');
+  assert.equal(commandPlan(parseCommand(['messages', 'tail', '500', '--group', 'source'])).path, '/api/v1/hipico/messages?limit=100');
+  assert.equal(commandPlan(parseCommand(['events', 'tail', '7', '--group', 'source'])).path, '/api/v1/hipico/events?limit=7');
+  assert.equal(commandPlan(parseCommand(['trace', 'corr-123', '--group', 'source'])).path, '/api/v1/hipico/trace/corr-123');
 });
 
 test('#284 CLI forbids plaintext remote credentials while retaining localhost development', () => {
@@ -139,5 +139,5 @@ test('#284 Windows daily launcher stays separate from dependency setup', () => {
   assert.match(cmd, /tools\\hipico-cli\\hipico\.mjs/i);
   assert.doesNotMatch(ps, /npm\s+ci/i);
   assert.doesNotMatch(cmd, /npm\s+ci/i);
-  assert.match(setup, /npm ci --no-audit --no-fund/);
+  assert.match(setup, /hipico-whatsapp-web-bridge\\INICIAR\.ps1/);\n  assert.match(setup, /-SetupOnly/);\n  assert.match(read('tools/hipico-whatsapp-web-bridge/INICIAR.ps1'), /npmCmd ci --no-fund --no-audit/);
 });
