@@ -2,7 +2,7 @@ export const PAGE_REGISTRY = {
   dashboard: ['./pages/DashboardPage.js', 'DashboardPage'],
   cotizacion: ['./pages/QuotePage.js', 'QuotePage'],
   clientes: ['./pages/ClientsPage.js', 'ClientsPage'],
-  ventas: ['./pages/SalesPage.js', 'SalesPage'],
+  ventas: ['./pages/SalesPage.jsx', 'SalesPage'],
   inventario: ['./pages/InventoryPage.jsx', 'InventoryPage'],
   tributos: ['./pages/TaxesPage.js', 'TaxesPage'],
   normativa: ['./pages/RegulatoryPage.js', 'RegulatoryPage'],
