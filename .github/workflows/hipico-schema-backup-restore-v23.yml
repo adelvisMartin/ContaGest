@@ -1,0 +1,103 @@
+name: Hípico PostgreSQL Backup Restore v23
+
+on:
+  workflow_dispatch:
+    inputs:
+      candidate_sha:
+        description: Exact 40-hex candidate SHA to back up and verify
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+env:
+  NODE_VERSION: '22'
+  HIPICO_CANDIDATE_SHA: ${{ inputs.candidate_sha }}
+  HIPICO_BACKUP_OUTPUT_DIR: artifacts/qa/hipico-schema-backup/${{ inputs.candidate_sha }}
+
+jobs:
+  backup-restore:
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: hipico-restore-only
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    steps:
+      - name: Checkout exact candidate
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.candidate_sha }}
+          fetch-depth: 0
+
+      - name: Setup Node 22
+        uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Install locked workspace and recovery tools
+        run: |
+          npm ci --no-audit --no-fund
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends postgresql-client age rclone
+
+      - name: Verify exact candidate SHA
+        run: node scripts/hipico-exact-sha-gate.mjs
+
+      - name: Prepare isolated recovery credentials
+        env:
+          HIPICO_BACKUP_RCLONE_CONFIG_B64: ${{ secrets.HIPICO_BACKUP_RCLONE_CONFIG_B64 }}
+          HIPICO_BACKUP_AGE_IDENTITY_B64: ${{ secrets.HIPICO_BACKUP_AGE_IDENTITY_B64 }}
+        run: |
+          set -euo pipefail
+          test -n "$HIPICO_BACKUP_RCLONE_CONFIG_B64"
+          test -n "$HIPICO_BACKUP_AGE_IDENTITY_B64"
+          printf '%s' "$HIPICO_BACKUP_RCLONE_CONFIG_B64" | base64 --decode > "$RUNNER_TEMP/hipico-rclone.conf"
+          printf '%s' "$HIPICO_BACKUP_AGE_IDENTITY_B64" | base64 --decode > "$RUNNER_TEMP/hipico-age-identity.txt"
+          chmod 600 "$RUNNER_TEMP/hipico-rclone.conf" "$RUNNER_TEMP/hipico-age-identity.txt"
+
+      - name: Produce encrypted off-site Hípico backup
+        env:
+          HIPICO_BACKUP_DATABASE_URL: ${{ secrets.HIPICO_BACKUP_DATABASE_URL }}
+          HIPICO_BACKUP_EXPECTED_ROLE: hipico_backup
+          HIPICO_BACKUP_AGE_RECIPIENT: ${{ secrets.HIPICO_BACKUP_AGE_RECIPIENT }}
+          HIPICO_BACKUP_RCLONE_REMOTE: ${{ secrets.HIPICO_BACKUP_RCLONE_REMOTE }}
+          RCLONE_CONFIG: ${{ runner.temp }}/hipico-rclone.conf
+        run: bash ops/backup/hipico-backup-postgres.sh
+
+      - name: Create disposable restore database
+        env:
+          PGPASSWORD: hipico-restore-only
+        run: createdb -h 127.0.0.1 -U postgres hipico_schema_restore
+
+      - name: Restore and verify exact candidate
+        env:
+          HIPICO_RESTORE_DATABASE_URL: postgresql://postgres:hipico-restore-only@127.0.0.1:5432/hipico_schema_restore
+          HIPICO_BACKUP_AGE_IDENTITY: ${{ runner.temp }}/hipico-age-identity.txt
+        run: bash ops/backup/hipico-restore-drill.sh
+
+      - name: Upload SHA-bound backup restore evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: hipico-schema-backup-restore-${{ inputs.candidate_sha }}
+          path: |
+            artifacts/qa/hipico-schema-backup/${{ inputs.candidate_sha }}/backup-evidence.json
+            artifacts/qa/hipico-schema-backup/${{ inputs.candidate_sha }}/backup-manifest.json
+            artifacts/qa/hipico-schema-backup/${{ inputs.candidate_sha }}/*.age
+            artifacts/qa/hipico-schema-backup/${{ inputs.candidate_sha }}/*.sha256
+          if-no-files-found: warn
+          retention-days: 30
