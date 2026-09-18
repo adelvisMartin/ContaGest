@@ -38,6 +38,8 @@ for (const relative of [
   'supabase/sql/hipico_v22_agent_shadow.sql',
   'supabase/sql/hipico_v23_risk_policy.sql',
   'supabase/sql/hipico_v24_shadow_metrics.sql',
+  'supabase/sql/hipico_v25_observability.sql',
+  'supabase/sql/hipico_v26_audit_rpc_integrity.sql',
   '.github/workflows/hipico-production-gates-v290.yml'
 ]) assert(exists(relative), `${relative} missing`);
 
@@ -115,7 +117,9 @@ for (const migration of [
   'hipico_v21_race_data_conflicts.sql',
   'hipico_v22_agent_shadow.sql',
   'hipico_v23_risk_policy.sql',
-  'hipico_v24_shadow_metrics.sql'
+  'hipico_v24_shadow_metrics.sql',
+  'hipico_v25_observability.sql',
+  'hipico_v26_audit_rpc_integrity.sql'
 ]) assert(schema.includes(migration), `current PostgreSQL chain missing ${migration}`);
 assert(!schema.includes('hipico_v16_agent_shadow.sql'), 'obsolete v16 agent migration must not be restored');
 assert(schema.includes('SET LOCAL ROLE'), 'PostgreSQL E2E must execute least-privilege role checks');
@@ -124,6 +128,12 @@ assert(schema.includes('authenticatedProviderEvidenceWriteDenied'), 'PostgreSQL 
 assert(schema.includes('agentPolicyColumnsNotNull'), 'PostgreSQL E2E must prove v23 policy columns');
 assert(schema.includes('agentMetricColumnsNotNull'), 'PostgreSQL E2E must prove v24 metric columns');
 assert(schema.includes('agentPolicyConstraintsPresent'), 'PostgreSQL E2E must prove v23/v24 constraints');
+assert(schema.includes('observabilityAppendOnlyTriggerPresent'), 'PostgreSQL E2E must prove v25 append-only observability');
+assert(schema.includes('auditV26ColumnsPresent'), 'PostgreSQL E2E must prove v26 audit columns');
+assert(schema.includes('auditV26ConstraintsPresent'), 'PostgreSQL E2E must prove v26 audit constraints');
+assert(schema.includes('auditRpcAnonExecuteDenied'), 'PostgreSQL E2E must prove anon cannot execute audit RPC');
+assert(schema.includes('auditRpcAuthenticatedExecuteAllowed'), 'PostgreSQL E2E must prove authenticated audit RPC capability');
+assert(schema.includes('auditRpcServiceRoleExecuteAllowed'), 'PostgreSQL E2E must prove service_role audit RPC capability');
 
 const testChannel = read('backend/src/modules/hipico-bot/hipico-test-channel.ts');
 assert(testChannel.includes('TEST_CHANNEL_NOT_CONNECTED'), 'TestChannel must fail closed while disconnected');
@@ -149,7 +159,7 @@ for (const marker of [
   'npm --workspace backend run test:hipico:agent',
   'hipico-load-profile-v290.ts',
   'browser: [chromium, firefox, webkit]',
-  'v12-v24'
+  'v12-v26'
 ]) assert(workflow.includes(marker), `production workflow missing ${marker}`);
 assert(!/pull_request:\s*\n\s*branches:\s*\[main\]/.test(workflow), 'stacked PRs must be able to execute the exact-SHA production gate');
 
@@ -191,7 +201,7 @@ fs.writeFileSync(path.join(artifactDir, 'release-guard.json'), `${JSON.stringify
     modelAdvisoryOnly: true,
     dualWindowPromotion: true,
     canonicalOutboxAuthority: true,
-    currentPostgresChain: 'v12-v24',
+    currentPostgresChain: 'v12-v26',
     testChannelReplay: true,
     loadProfileVolumes: [100, 500, 2000],
     exactSha: true
