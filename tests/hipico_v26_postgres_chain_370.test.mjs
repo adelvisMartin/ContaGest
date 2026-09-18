@@ -61,3 +61,26 @@ test('issue 370 keeps production deployment out of the E2E chain',async()=>{
   assert.doesNotMatch(schema,/SUPABASE_SERVICE_ROLE_KEY|SUPABASE_DB_URL|PRODUCTION_DATABASE_URL/);
   assert.doesNotMatch(workflow,/SUPABASE_SERVICE_ROLE_KEY|PRODUCTION_DATABASE_URL/);
 });
+
+
+test('issue 370 bootstraps Supabase Auth prerequisites before Prisma deploy',async()=>{
+  const [schema,workflow]=await Promise.all([
+    read('scripts/hipico-apply-e2e-schema-v290.mjs'),
+    read('.github/workflows/hipico-production-gates-v290.yml')
+  ]);
+  assert.match(schema,/--phase=prisma-prereqs/);
+  assert.match(schema,/CREATE TABLE IF NOT EXISTS auth\.users/i);
+  for(const column of ['raw_user_meta_data','raw_app_meta_data','encrypted_password']) {
+    assert.match(schema,new RegExp(column));
+  }
+  assert.match(schema,/CREATE OR REPLACE FUNCTION auth\.uid\(\)/i);
+  assert.match(schema,/CREATE OR REPLACE FUNCTION auth\.jwt\(\)/i);
+  assert.match(schema,/CREATE OR REPLACE FUNCTION public\.hipico_set_updated_at\(\)/i);
+  assert.match(schema,/prisma-prereqs/);
+  assert.match(schema,/phase === 'final'/);
+
+  const prereq=workflow.indexOf('hipico-apply-e2e-schema-v290.mjs --phase=prisma-prereqs');
+  const prisma=workflow.indexOf('npm --workspace backend run prisma:deploy');
+  const final=workflow.indexOf('hipico-apply-e2e-schema-v290.mjs --phase=final');
+  assert.ok(prereq>=0 && prisma>prereq && final>prisma,'prerequisites → Prisma → final chain order required');
+});
