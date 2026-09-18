@@ -291,14 +291,14 @@ function auditTheme() {
 }
 
 function auditCriticalMigrations() {
-  const app = read(path.join(root, 'frontend', 'src', 'app.js'));
+  const registry = read(path.join(root, 'frontend', 'src', 'data', 'pageRegistry.js'));
   const health = read(path.join(root, 'frontend', 'src', 'pages', 'HealthcarePage.js'));
   const ledger = read(path.join(root, 'frontend', 'src', 'pages', 'LedgerPage.js'));
   const psych = read(path.join(root, 'frontend', 'src', 'pages', 'PsychologyPracticePage.js'));
   const adapters = read(path.join(root, 'frontend', 'src', 'styles', 'module-adapters.css'));
   const visual = read(path.join(root, 'frontend', 'src', 'styles', 'contagest-visual-system-v12.css'));
   return {
-    veterinaryDedicated:/veterinaria:\['\.\/pages\/VeterinaryClinicPageV1123\.jsx','VeterinaryClinicPage'\]/.test(app),
+    veterinaryDedicated:/veterinaria:\['\.\/pages\/VeterinaryClinicPageV1123\.jsx','VeterinaryClinicPage'\]/.test(registry),
     healthAnimalBranchRemoved:!/(animal\s*\?|kind:\s*'animal'|careImmunizationForm)/.test(health),
     ledgerUsesCanonical:/MetricGrid/.test(ledger) && /Section/.test(ledger) && /Table/.test(ledger),
     ledgerPrintStylesIsolated:/<style data-cg-print-only>/.test(ledger),
