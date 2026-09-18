@@ -225,8 +225,12 @@ export const BackendApi = {
     const method = String(fetchOptions.method || 'GET').toUpperCase();
     const rawBody = fetchOptions.body;
     const isFormData = typeof FormData !== 'undefined' && rawBody instanceof FormData;
-    const cleanedBody = rawBody && typeof rawBody !== 'string' && !isFormData ? cleanPayload(rawBody) : rawBody;
-    const body = cleanedBody && typeof cleanedBody !== 'string' && !isFormData
+    const isBlob = typeof Blob !== 'undefined' && rawBody instanceof Blob;
+    const isArrayBuffer = typeof ArrayBuffer !== 'undefined' && rawBody instanceof ArrayBuffer;
+    const isArrayBufferView = typeof ArrayBuffer !== 'undefined' && rawBody && ArrayBuffer.isView(rawBody);
+    const isBinaryBody = isBlob || isArrayBuffer || isArrayBufferView;
+    const cleanedBody = rawBody && typeof rawBody !== 'string' && !isFormData && !isBinaryBody ? cleanPayload(rawBody) : rawBody;
+    const body = cleanedBody && typeof cleanedBody !== 'string' && !isFormData && !isBinaryBody
       ? JSON.stringify(cleanedBody)
       : cleanedBody;
     const csrf = isUnsafeMethod(method) && !publicRequest ? csrfToken() : '';
@@ -236,7 +240,7 @@ export const BackendApi = {
     const generatedIdempotencyKey = shouldProtect ? acquireFinancialIdempotencyKey(idempotencySignature) : '';
     const idempotencyKey = explicitIdempotencyKey || generatedIdempotencyKey;
     const headers = {
-      ...(!isFormData && body !== undefined ? { 'content-type': 'application/json' } : {}),
+      ...(!isFormData && !isBinaryBody && body !== undefined ? { 'content-type': 'application/json' } : {}),
       ...(csrf ? { 'x-csrf-token':csrf } : {}),
       ...(idempotencyKey ? { 'Idempotency-Key':idempotencyKey } : {}),
       ...customHeaders
