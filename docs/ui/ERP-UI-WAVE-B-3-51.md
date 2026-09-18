@@ -29,3 +29,16 @@ La evidencia browser sigue siendo independiente: SOURCE PASS no implica Chromium
 ## Estado del 3/51
 
 ### Fase Odontología\n\nOdontología deja de usar HTML strings, `mountSubmit`, listeners DOM y el kit `components/ui/index.js`. `DentistryPracticePage.jsx` conserva los service contracts de pacientes, profesionales, citas y encuentros; el odontograma usa estado React controlado y botones Cg accesibles. El registry apunta al renderer JSX y el archivo imperativo anterior se elimina.\n\nEl ticket/roadmap 3/51 permanece abierto únicamente por la superficie compartida Gimnasio/Rutinas/Nutrición.
+
+
+### Fase Fitness — Gimnasio / Rutinas / Nutrición
+
+Las tres rutas comparten ahora `GymManagementPage.jsx` como renderer declarativo. El page object crea un único React root con `CgProvider`; tabs, formularios, métricas, listas, estados y acciones se gestionan con estado React y Cg*/MUI.
+
+Las capacidades productivas existentes se preservan: summary, miembros, instructores, planes, membresías, check-in, evaluaciones, rutinas, nutrición y clases. Las herramientas rápidas de rutina/nutrición, CSV y FoodData Central pasan a `FitnessProductivityTools.jsx` y dejan de inyectarse mediante `MutationObserver`.
+
+Se retiran `GymManagementPage.js` y `fitnessProductivityEnhancer.js`. El auditor Wave A bloquea la reintroducción de lifecycle DOM imperativo, enhancer por mutación o múltiples React roots.
+
+## Cierre de 3/51
+
+Las cinco rutas de Wave A quedan `MIGRATED` en source. La evidencia browser 360/390/430/768/1366 sigue separada y permanece `NOT_EXECUTED` mientras no exista runner aprobado.

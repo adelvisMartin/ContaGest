@@ -18,7 +18,7 @@ La clasificación se registra en `qa/support/erp-ui-wave-a-v251.mjs`.
 
 `VeterinaryClinicPageV1123.jsx` adoptó `CgProvider`, `CgButton`, `CgTextField`, `CgState` y `CgStatusChip` en 2/51. El follow-up 3/51 eliminó el page lifecycle doble: dossier y workspace clínico ahora se componen declarativamente bajo un único React root, por lo que Veterinaria queda `MIGRATED`.
 
-Odontología fue graduada a `MIGRATED` en 3/51: el renderer imperativo fue sustituido por un único React root con Cg/MUI y estado controlado. Gimnasio/Rutinas/Nutrición continúan como `LEGACY_EXCEPTION_APPROVED` porque comparten el renderer HTML/DOM imperativo restante.
+Odontología fue graduada a `MIGRATED` en 3/51: el renderer imperativo fue sustituido por un único React root con Cg/MUI y estado controlado. Gimnasio/Rutinas/Nutrición también quedan `MIGRATED`: comparten `GymManagementPage.jsx`, un único React root, formularios controlados Cg*/MUI y herramientas de productividad React sin `MutationObserver`.
 
 ## Regla anti-regresión
 
@@ -41,7 +41,7 @@ Los viewports de evidencia son 360, 390, 430, 768 y 1366. El source gate no se h
 
 ## Follow-up
 
-**3/51** ya retiró las excepciones de Veterinaria y Odontología. Falta completar Gimnasio/Rutinas/Nutrición mediante la migración del renderer compartido; no se debe ampliar su presupuesto legacy durante esa transición.
+**3/51 cerrado en source**: Veterinaria, Odontología, Gimnasio, Rutinas y Nutrición están clasificadas como `MIGRATED`. El siguiente paso es evidencia browser real; mientras #134 impida runners, los viewports permanecen `NOT_EXECUTED` y no se infiere PASS desde source.
 
 ## Gates de cierre
 

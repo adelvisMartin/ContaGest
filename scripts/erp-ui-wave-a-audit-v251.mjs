@@ -65,9 +65,23 @@ if(dentistryEntry?.status==='MIGRATED'){
   }
 }
 
+const fitnessEntries=ERP_UI_WAVE_A_2_51.filter((item)=>['gimnasio','rutinas','nutricion'].includes(item.route));
+const fitness=sourceCache.get('frontend/src/pages/GymManagementPage.jsx');
+if(fitnessEntries.every((item)=>item.status==='MIGRATED')){
+  if(/components\/ui\/index\.js|escapeHtml|innerHTML|querySelector|addEventListener|mountSubmit|MutationObserver/.test(fitness))fail('fitness: migrated renderer reintroduced imperative fitness lifecycle or legacy kit');
+  if((fitness.match(/createRoot\(/g)||[]).length!==1)fail('fitness: migrated renderer must own exactly one React root');
+  for(const primitive of ['CgProvider','CgPageHeader','CgButton','CgTextField','CgSelect','CgStatusChip','CgEmptyState']){
+    if(!fitness.includes(primitive))fail(`fitness: missing canonical primitive ${primitive}`);
+  }
+  const productivityPath='frontend/src/components/fitness/FitnessProductivityTools.jsx';
+  const productivity=read(productivityPath);
+  if(/MutationObserver|innerHTML|querySelector|addEventListener|document\.createElement/.test(productivity))fail('fitness: productivity tools reintroduced imperative DOM mutation');
+  if(fs.existsSync(path.join(root,'frontend/src/services/fitnessProductivityEnhancer.js')))fail('fitness: superseded MutationObserver enhancer still exists');
+}
+
 const css=read('frontend/src/styles/erp-runtime.css');
 for(const required of ['cg.visual.responsive','cg-dental-tooth-grid','cg-dental-list','cg-gym-v1124-grid','min-height:44px']){
   if(!css.includes(required))fail(`responsive owner missing ${required}`);
 }
 
-if(!process.exitCode)console.log('[erp-ui-wave-a][PASS] 5 vertical routes classified; no legacy budget growth; Veterinary dossier uses Cg*/MUI.');
+if(!process.exitCode)console.log('[erp-ui-wave-a][PASS] 5 vertical routes MIGRATED; no imperative vertical lifecycle; Cg*/MUI owners enforced.');

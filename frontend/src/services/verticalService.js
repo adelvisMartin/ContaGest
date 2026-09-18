@@ -87,8 +87,3 @@ export const CommunicationTemplateService = {
   render(payload) { return BackendApi.post('/api/v1/verticals/communications/render', payload); }
 };
 
-if (typeof window !== 'undefined') {
-  queueMicrotask(() => import('./fitnessProductivityEnhancer.js')
-    .then(({ installFitnessProductivityEnhancer }) => installFitnessProductivityEnhancer())
-    .catch((error) => console.warn('[ContaGest Fitness Enhancer]', error)));
-}

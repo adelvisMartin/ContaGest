@@ -53,9 +53,9 @@ export const PAGE_REGISTRY = {
   veterinaria: ['./pages/VeterinaryClinicPageV1123.jsx', 'VeterinaryClinicPage'],
   psicologia: ['./pages/PsychologyPracticePage.js', 'PsychologyPracticePage'],
   odontologia: ['./pages/DentistryPracticePage.jsx', 'DentistryPracticePage'],
-  gimnasio: ['./pages/GymManagementPage.js', 'GymManagementPage'],
-  rutinas: ['./pages/GymManagementPage.js', 'GymManagementPage'],
-  nutricion: ['./pages/GymManagementPage.js', 'GymManagementPage'],
+  gimnasio: ['./pages/GymManagementPage.jsx', 'GymManagementPage'],
+  rutinas: ['./pages/GymManagementPage.jsx', 'GymManagementPage'],
+  nutricion: ['./pages/GymManagementPage.jsx', 'GymManagementPage'],
   mensajes: ['./pages/CommunicationTemplatesPage.js', 'CommunicationTemplatesPage']
 };
 
