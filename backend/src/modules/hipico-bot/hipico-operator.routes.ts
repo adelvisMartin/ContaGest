@@ -59,6 +59,17 @@ router.post('/classify',(req,res)=>{
   return res.json({ok:true,data:classify(parsed.data.text)});
 });
 
+function outboundErrorContract(error:any){
+  const code=String(error?.code||'');
+  if(code==='HIPICO_CLOUD_DELIVERY_AMBIGUOUS')return{status:202,body:{ok:false,retryable:false,error:'reconciliation_required',code}};
+  if(code==='HIPICO_CLOUD_TRANSPORT_NOT_CONFIGURED')return{status:503,body:{ok:false,retryable:true,error:'sender_not_configured',code}};
+  if(code==='HIPICO_CLOUD_SEND_DISABLED'||code==='HIPICO_DESTINATION_NOT_ALLOWLISTED')return{status:409,body:{ok:false,retryable:false,error:'outbound_disabled',code}};
+  if(code==='HIPICO_CLOUD_MESSAGE_INVALID')return{status:400,body:{ok:false,retryable:false,error:'message_invalid',code}};
+  if(code==='HIPICO_CLOUD_HTTP_ERROR')return{status:502,body:{ok:false,retryable:false,error:'provider_http_rejection_review_required',code}};
+  return{status:502,body:{ok:false,retryable:false,error:'send_failed_review_required',code:code||undefined}};
+}
+function outboundError(res:any,error:any){const contract=outboundErrorContract(error);return res.status(contract.status).json(contract.body);}
+
 function outboundPreflight(to:string){
   const policy=cloudOutboundPolicy();if(!policy.enabled)return{ok:false as const,status:409,retryable:false,error:'outbound_disabled',reasons:policy.reasons};
   const transport=cloudTransportConfiguration();if(!transport.configured)return{ok:false as const,status:503,retryable:true,error:'sender_not_configured',reasons:transport.reasons};
@@ -90,6 +101,7 @@ router.post('/test-message',async(req,res)=>{
   }catch(error:any){
     if(error?.code==='HIPICO_OUTBOUND_IDEMPOTENCY_MISMATCH')return res.status(409).json({ok:false,retryable:false,error:'request_id_reused_with_different_content'});
     console.error('[hipico-outbox] test message failed',{error:error?.message||String(error),code:error?.code||null});
+    if(String(error?.code||'').startsWith('HIPICO_CLOUD_'))return outboundError(res,error);
     return res.status(503).json({ok:false,retryable:true,error:'canonical_outbox_send_unavailable'});
   }
 });
@@ -105,7 +117,7 @@ router.post('/approve/:id',async(req,res)=>{
   if(status!=='queued'&&status!=='retry')return res.status(409).json({ok:false,retryable:false,error:'La salida no está disponible para envío.',status});
   const preflight=outboundPreflight(String(item.destination||''));if(!preflight.ok)return res.status(preflight.status).json({ok:false,retryable:preflight.retryable,error:preflight.error,reasons:preflight.reasons});
   try{return dispatchHttp(res,await dispatchCanonicalOutbound({ownerId,id:item.id,allowApprovalRequired:true}));}
-  catch(error:any){console.error('[hipico-outbox] approval dispatch failed',{id:item.id,error:error?.message||String(error),code:error?.code||null});return res.status(503).json({ok:false,retryable:false,error:'reconciliation_required'});}
+  catch(error:any){console.error('[hipico-outbox] approval dispatch failed',{id:item.id,error:error?.message||String(error),code:error?.code||null});if(String(error?.code||'').startsWith('HIPICO_CLOUD_'))return outboundError(res,error);return res.status(503).json({ok:false,retryable:false,error:'reconciliation_required'});}
 });
 
 router.post('/outbox/:id/reconcile',async(req,res)=>{
@@ -122,4 +134,4 @@ router.post('/outbox/:id/reconcile',async(req,res)=>{
 });
 
 export default router;
-export const __test__={outboundPreflight,dispatchHttp};
+export const __test__={outboundErrorContract,outboundPreflight,dispatchHttp};
