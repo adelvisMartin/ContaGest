@@ -4,10 +4,11 @@ import fs from 'node:fs';
 
 const read = (path) => fs.readFileSync(new URL(`../${path}`, import.meta.url), 'utf8');
 const app = read('frontend/src/app.js');
+const pageRegistry = read('frontend/src/data/pageRegistry.js');
 const urlState = read('frontend/src/services/urlStateService.js');
 const admin = read('frontend/src/pages/AdminPanelPage.js');
 const access = read('frontend/src/services/accessControlService.js');
-const dentistry = read('frontend/src/pages/DentistryPracticePage.js');
+const dentistry = read('frontend/src/pages/DentistryPracticePage.jsx');
 const fitness = read('frontend/src/services/fitnessProductivityEnhancer.js');
 const transfer = read('frontend/src/services/fitnessClientTransferService.js');
 const routine = read('frontend/src/services/fitnessRoutineService.js');
@@ -40,12 +41,14 @@ test('demo user form uses one native role selector and explicit bounded module p
   assert.match(access, /modulesForUser/);
 });
 
-test('dentistry is a real route with odontogram-oriented workflow', () => {
-  assert.match(app, /odontologia:\['\.\/pages\/DentistryPracticePage\.js','DentistryPracticePage'\]/);
+test('dentistry is a real React route with controlled odontogram workflow', () => {
+  assert.match(pageRegistry, /odontologia:\s*\['\.\/pages\/DentistryPracticePage\.jsx',\s*'DentistryPracticePage'\]/);
   assert.match(access, /role-odontologia/);
   assert.match(dentistry, /Odontograma y tratamiento rápido/);
-  assert.match(dentistry, /data-dental-teeth/);
+  assert.match(dentistry, /selectedTooth/);
+  assert.match(dentistry, /setSelectedTooth/);
   assert.match(dentistry, /createEncounter/);
+  assert.doesNotMatch(dentistry, /mountSubmit|components\/ui\/index\.js/);
 });
 
 test('fitness quick tools support guest routine, WhatsApp copy and Excel-compatible client transfer', () => {
