@@ -14,7 +14,7 @@ function TaxesWorkspace({state,context}){
   const [taxes,setTaxes]=useState(()=>structuredClone(state.quote?.taxes||{}));
   const [governance,setGovernance]=useState(state.fiscalGovernance||{capabilities:{}});
   const [documents,setDocuments]=useState(Array.isArray(state.fiscalDocuments)?state.fiscalDocuments:[]);
-  const [loading,setLoading]=useState(false);
+  const [loading,setLoading]=useState(!state.fiscalGovernance?.loaded||state.fiscalDocuments===undefined);
   const [saving,setSaving]=useState(false);
   const [error,setError]=useState('');
   const [form,setForm]=useState({kind:FISCAL_DOCUMENT_KINDS[0]?.value||'invoice',number:'',period:currentPeriod(),module:FISCAL_MODULES[0]?.value||'fiscal',payloadJson:'{}'});
@@ -29,23 +29,23 @@ function TaxesWorkspace({state,context}){
   }
 
   async function loadFiscal({silent=true}={}){
-    if(!silent)setLoading(true);setError('');
+    setLoading(true);setError('');
     try{
       const status=await FiscalService.periods();
       const docs=await FiscalService.documents();
       const next={...status,denied:false,loaded:true};
       setGovernance(next);setDocuments(docs||[]);
       Store.set({fiscalGovernance:next,fiscalDocuments:docs||[]});
-    }catch(cause){
-      if(cause?.status===403){
+    }catch(error){
+      if(error.status===403){
         const denied={periods:[],capabilities:{},denied:true,loaded:true};
         setGovernance(denied);setDocuments([]);
         Store.set({fiscalGovernance:denied,fiscalDocuments:[]});
         return;
       }
-      const message=cause?.message||'No se cargaron documentos fiscales.';
+      const message=error?.message||'No se cargaron documentos fiscales.';
       setError(message);notify(message,'error');
-    }finally{if(!silent)setLoading(false);}
+    }finally{setLoading(false);}
   }
 
   useEffect(()=>{if(!state.fiscalGovernance?.loaded||state.fiscalDocuments===undefined)void loadFiscal({silent:true});},[]);
