@@ -439,6 +439,59 @@ function DentistryWorkspace({ state, context }){
       </Box>
     </Paper>
 
+    <Paper component="form" onSubmit={submitPeriodontalExam} variant="outlined" sx={{p:1.5,minWidth:0}}>
+      <Stack direction={{xs:'column',md:'row'}} justifyContent="space-between" gap={1}>
+        <Box>
+          <Typography variant="h6">Periodontograma</Typography>
+          <Typography variant="caption" color="text.secondary">Seis sitios canónicos por diente. Registra mediciones observadas por el profesional; ContaGest muestra evolución y no emite diagnóstico ni estadificación automática.</Typography>
+        </Box>
+        <CgStatusChip label={`${periodontalExams.length} exámenes`} tone={periodontalExams.length?'info':'default'}/>
+      </Stack>
+      <Divider sx={{my:1.3}}/>
+      <Box sx={{display:'grid',gridTemplateColumns:{xs:'1fr',sm:'repeat(2,minmax(0,1fr))',lg:'repeat(4,minmax(0,1fr))'},gap:1}}>
+        <CgSelect label="Paciente periodontal" value={selectedPatientId} onChange={(e)=>void loadEncounters(e.target.value)} options={patientOptions}/>
+        <CgSelect label="Profesional responsable" value={periodontalForm.professionalId} onChange={(e)=>setPeriodontalForm({...periodontalForm,professionalId:e.target.value})} options={professionalOptions}/>
+        <CgSelect label="Dentición periodontal" value={periodontalForm.dentition} onChange={(e)=>setPeriodontalForm({...periodontalForm,dentition:e.target.value,tooth:'',sites:blankPeriodontalSites()})} options={[{value:'permanent',label:'Permanente'},{value:'primary',label:'Temporal'}]}/>
+        <CgSelect label="Pieza periodontal" value={periodontalForm.tooth} onChange={(e)=>setPeriodontalForm({...periodontalForm,tooth:e.target.value,sites:blankPeriodontalSites()})} options={[{value:'',label:'Seleccionar pieza'},...periodontalToothOptions.map((value)=>({value,label:value}))]}/>
+        <CgTextField label="Fecha del examen" type="date" slotProps={{inputLabel:{shrink:true}}} value={periodontalForm.measuredAt} onChange={(e)=>setPeriodontalForm({...periodontalForm,measuredAt:e.target.value})}/>
+        <CgSelect label="Movilidad" value={periodontalForm.mobility} onChange={(e)=>setPeriodontalForm({...periodontalForm,mobility:e.target.value})} options={['0','1','2','3'].map((value)=>({value,label:`Grado ${value}`}))}/>
+        <CgSelect label="Furcación" value={periodontalForm.furcation} onChange={(e)=>setPeriodontalForm({...periodontalForm,furcation:e.target.value})} options={['0','1','2','3'].map((value)=>({value,label:`Grado ${value}`}))}/>
+        <CgTextField label="Motivo del examen" required value={periodontalForm.reason} onChange={(e)=>setPeriodontalForm({...periodontalForm,reason:e.target.value})}/>
+      </Box>
+
+      <Box sx={{display:'grid',gridTemplateColumns:{xs:'1fr',xl:'repeat(2,minmax(0,1fr))'},gap:1,mt:1.2}}>
+        {PERIODONTAL_SITES.map(([site,label])=>{
+          const measurement=periodontalForm.sites.find((item)=>item.site===site);
+          return <Paper key={site} variant="outlined" sx={{p:1.1,minWidth:0}}>
+            <Typography variant="subtitle2">{label}</Typography>
+            <Box sx={{display:'grid',gridTemplateColumns:{xs:'1fr',sm:'repeat(3,minmax(0,1fr))'},gap:.8,mt:.8}}>
+              <CgTextField size="small" label="Sondaje (mm)" type="number" inputProps={{min:0,max:30,step:.1}} required value={measurement?.probingDepth??''} onChange={(e)=>updatePeriodontalSite(site,{probingDepth:e.target.value})}/>
+              <CgTextField size="small" label="Margen gingival (mm)" type="number" inputProps={{min:-30,max:30,step:.1}} required value={measurement?.gingivalMargin??''} onChange={(e)=>updatePeriodontalSite(site,{gingivalMargin:e.target.value})}/>
+              <CgTextField size="small" label="Nivel inserción clínica (mm)" type="number" inputProps={{min:0,max:40,step:.1}} required value={measurement?.clinicalAttachmentLevel??''} onChange={(e)=>updatePeriodontalSite(site,{clinicalAttachmentLevel:e.target.value})}/>
+            </Box>
+            <Stack direction="row" flexWrap="wrap" gap={.25} mt={.5}>
+              <FormControlLabel control={<Checkbox checked={Boolean(measurement?.bleeding)} onChange={(e)=>updatePeriodontalSite(site,{bleeding:e.target.checked})}/>} label="Sangrado"/>
+              <FormControlLabel control={<Checkbox checked={Boolean(measurement?.suppuration)} onChange={(e)=>updatePeriodontalSite(site,{suppuration:e.target.checked})}/>} label="Supuración"/>
+              <FormControlLabel control={<Checkbox checked={Boolean(measurement?.plaque)} onChange={(e)=>updatePeriodontalSite(site,{plaque:e.target.checked})}/>} label="Placa"/>
+            </Stack>
+          </Paper>;
+        })}
+      </Box>
+      <Stack direction={{xs:'column',sm:'row'}} gap={.8} mt={1.2} alignItems={{sm:'center'}}>
+        <CgButton type="submit" disabled={periodontalLoading}>{periodontalLoading?'Guardando examen…':'Guardar examen periodontal'}</CgButton>
+        <Typography variant="caption" color="text.secondary">Profundidad, margen e inserción se conservan como valores ingresados; los deltas históricos son sólo comparativos.</Typography>
+      </Stack>
+
+      <Divider sx={{my:1.4}}/>
+      <Stack direction={{xs:'column',sm:'row'}} justifyContent="space-between" gap={1} mb={.8}>
+        <Box><Typography variant="subtitle1" fontWeight={700}>Evolución periodontal</Typography><Typography variant="caption" color="text.secondary">Comparación por pieza/sitio contra la medición previa disponible.</Typography></Box>
+        {periodontalLoading?<CgStatusChip label="Actualizando" tone="info"/>:null}
+      </Stack>
+      {periodontalEvolution.length?
+        <Box sx={{maxWidth:'100%',overflowX:'auto'}}><CgDataTable columns={periodontalColumns} rows={periodontalEvolution} empty="Sin evolución periodontal"/></Box>
+        :<CgEmptyState title="Sin exámenes periodontales" description="Selecciona paciente, pieza y registra los seis sitios para comenzar la evolución."/>}
+    </Paper>
+
     <Box className="cg-dental-grid" sx={{display:'grid',gridTemplateColumns:{xs:'1fr',lg:'repeat(2,minmax(0,1fr))'},gap:1.25}}>
       <Paper variant="outlined" sx={{p:1.5,minWidth:0}}>
         <Typography variant="h6">Próximas citas</Typography><Divider sx={{my:1}}/>
