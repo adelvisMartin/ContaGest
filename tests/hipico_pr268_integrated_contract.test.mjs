@@ -111,6 +111,6 @@ test('service worker cache matches the zero-legacy integrated runtime', async ()
   const sw = await read(`${root}/sw.js`);
   assert.match(sw, /assets\/css\/app\.css/);
   assert.match(sw, /help-center\.js/);
-  assert.match(sw, /shell-r23-ui-system-v2-266/);
+  assert.match(sw, /shell-r24-command-center-289/);
   for (const file of removedCss) assert.equal(sw.includes(`assets/css/${file}`), false, `${file} must not be cached`);
 });
