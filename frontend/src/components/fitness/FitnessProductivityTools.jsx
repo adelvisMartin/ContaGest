@@ -74,9 +74,9 @@ export function FitnessRoutineQuickTool({members,Toast,onDataChanged}){
       <CgSelect label="Objetivo" value={goal} onChange={(e)=>setGoal(e.target.value)} options={['Hipertrofia / volumen','Fuerza','Resistencia muscular','Potencia / acondicionamiento'].map((value)=>({value,label:value}))}/>
       <CgSelect label="Duración" value={durationMin} onChange={(e)=>setDurationMin(e.target.value)} options={[40,60,80,100].map((value)=>({value:String(value),label:`${value} min`}))}/>
     </Box>
-    <Box sx={{mt:1.25}}><Typography variant="caption" color="text.secondary" fontWeight={700}>Músculos de hoy</Typography><Stack direction="row" flexWrap="wrap" gap=.65 mt=.6>{FitnessRoutineService.muscles.map((muscle)=><CgButton key={muscle} type="button" size="small" variant={muscles.includes(muscle)?'contained':'outlined'} aria-pressed={muscles.includes(muscle)} onClick={()=>toggleMuscle(muscle)}>{muscle}</CgButton>)}</Stack></Box>
+    <Box sx={{mt:1.25}}><Typography variant="caption" color="text.secondary" fontWeight={700}>Músculos de hoy</Typography><Stack direction="row" flexWrap="wrap" gap={.65} mt={.6}>{FitnessRoutineService.muscles.map((muscle)=><CgButton key={muscle} type="button" size="small" variant={muscles.includes(muscle)?'contained':'outlined'} aria-pressed={muscles.includes(muscle)} onClick={()=>toggleMuscle(muscle)}>{muscle}</CgButton>)}</Stack></Box>
     <CgTextField fullWidth size="small" label="Nota rápida del entrenador" value={notes} onChange={(e)=>setNotes(e.target.value)} sx={{mt:1.2}}/>
-    <Stack direction="row" flexWrap="wrap" gap=.8 mt={1.2}><CgButton onClick={generate}>Generar sugerencia</CgButton><CgButton variant="outlined" onClick={()=>void copy()} disabled={!generated}>Copiar para WhatsApp</CgButton><CgButton variant="outlined" onClick={()=>void save()} disabled={!generated||!memberId}>Guardar al cliente</CgButton></Stack>
+    <Stack direction="row" flexWrap="wrap" gap={.8} mt={1.2}><CgButton onClick={generate}>Generar sugerencia</CgButton><CgButton variant="outlined" onClick={()=>void copy()} disabled={!generated}>Copiar para WhatsApp</CgButton><CgButton variant="outlined" onClick={()=>void save()} disabled={!generated||!memberId}>Guardar al cliente</CgButton></Stack>
     <Box mt={1.3}><RoutineResult routine={generated}/></Box>
   </Paper>;
 }
@@ -140,7 +140,7 @@ export function FitnessNutritionQuickTool({members,Toast,onDataChanged}){
         <CgSelect label="Días" value={form.days} onChange={set('days')} options={['1','3','7'].map((value)=>({value,label:value}))}/>
       </Box>
       <FormControlLabel sx={{mt:1}} control={<Checkbox checked={Boolean(form.clinicalRisk)} onChange={(e)=>setForm((current)=>({...current,clinicalRisk:e.target.checked}))}/>} label="Existe embarazo, trastorno alimentario, enfermedad renal/metabólica, medicación relevante o dieta terapéutica"/>
-      <Stack direction="row" flexWrap="wrap" gap=.8 mt={1}><CgButton onClick={generate}>Generar plan</CgButton><CgButton variant="outlined" onClick={()=>void copy()} disabled={!generated}>Copiar para WhatsApp</CgButton><CgButton variant="outlined" onClick={()=>void save()} disabled={!generated||generated.blocked||!memberId}>Guardar al cliente</CgButton></Stack>
+      <Stack direction="row" flexWrap="wrap" gap={.8} mt={1}><CgButton onClick={generate}>Generar plan</CgButton><CgButton variant="outlined" onClick={()=>void copy()} disabled={!generated}>Copiar para WhatsApp</CgButton><CgButton variant="outlined" onClick={()=>void save()} disabled={!generated||generated.blocked||!memberId}>Guardar al cliente</CgButton></Stack>
       <Box mt={1.3}><NutritionResult plan={generated}/></Box>
     </Paper>
 
@@ -170,7 +170,7 @@ export function FitnessClientTransferTool({members,Toast,onDataChanged}){
   };
   return <Paper className="cg-client-transfer" variant="outlined" sx={{p:1.5}}>
     <Typography variant="h6">Importar / exportar clientes</Typography><Typography variant="caption" color="text.secondary">CSV compatible con Excel para altas masivas y respaldo operativo.</Typography>
-    <Stack direction="row" flexWrap="wrap" gap=.8 mt={1.2}>
+    <Stack direction="row" flexWrap="wrap" gap={.8} mt={1.2}>
       <CgButton variant="outlined" onClick={()=>FitnessClientTransferService.download('plantilla-clientes-gimnasio.csv',FitnessClientTransferService.template())}>Descargar plantilla</CgButton>
       <CgButton variant="outlined" onClick={()=>FitnessClientTransferService.download('clientes-gimnasio.csv',FitnessClientTransferService.export(members))}>Exportar {members.length} clientes</CgButton>
       <CgButton component="label">Importar lista<input hidden type="file" accept=".csv,text/csv" onChange={(event)=>void importFile(event)}/></CgButton>
