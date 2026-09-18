@@ -9,7 +9,7 @@ void test('agent/shadow gate validates the exact candidate with real ephemeral P
   const workflow = readFileSync(workflowUrl, 'utf8');
   assert.match(workflow, /pull_request\s*:/);
   assert.match(workflow, /HIPICO_CANDIDATE_SHA/);
-  assert.match(workflow, /ref:\s*\$\{\{\s*env\.HIPICO_CANDIDATE_SHA\s*\}\}/);
+  assert.match(workflow, /ref:\s*["']?\$\{\{\s*env\.HIPICO_CANDIDATE_SHA\s*\}\}["']?/);
   assert.match(workflow, /postgres:16/);
   assert.match(workflow, /hipico_agent_e2e_\$\{GITHUB_RUN_ID\}_\$\{GITHUB_RUN_ATTEMPT\}/);
   assert.match(workflow, /npm --workspace backend run typecheck/);
