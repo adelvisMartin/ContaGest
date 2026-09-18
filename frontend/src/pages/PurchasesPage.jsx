@@ -126,7 +126,7 @@ function PurchasesWorkspace({state,context}){
       <Metric label="Total vigente" value={<CgMoney value={subtotal+iva} currency="VES"/>} tone="success"/>
     </Box>
 
-    <PayablesPanel state={state} Store={Store} Toast={Toast} SupabaseSyncService={SupabaseSyncService}/>
+    <PayablesPanel state={state} context={context} onPurchasesChanged={()=>setPurchases(rows(Store.get().purchases))}/>
 
     <Paper component="form" onSubmit={submit} variant="outlined" sx={{p:1.5}}>
       <Typography variant="h6">Registrar compra</Typography>
