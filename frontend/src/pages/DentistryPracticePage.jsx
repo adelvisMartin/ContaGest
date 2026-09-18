@@ -196,6 +196,53 @@ function DentistryWorkspace({ state, context }){
     }catch(cause){notify(`No se registró el tratamiento: ${cause?.message||'Error'}`,'error');}
   }
 
+  async function createTreatmentPlan(plan){
+    if(!selectedPatientId){notify('Selecciona un paciente antes de crear el plan.','warning');return false;}
+    try{
+      const item=await HealthVerticalService.createEncounter({
+        patientId:selectedPatientId,
+        professionalId:plan.professionalId||null,
+        specialty:'dentistry',
+        type:'dental-treatment-plan',
+        subjective:plan.diagnosis,
+        objective:'Plan de tratamiento odontológico propuesto',
+        assessment:plan.diagnosis,
+        plan:plan.phases.map((phase)=>`${phase.order}. ${phase.name}: ${phase.procedures.map((procedure)=>procedure.name).join(', ')}`).join('\n'),
+        diagnosisCodes:[],
+        clinicalData:{
+          treatmentPlan:{
+            diagnosis:plan.diagnosis,
+            alternatives:plan.alternatives,
+            phases:plan.phases,
+            budget:plan.budget,
+            status:'proposed',
+            acceptance:{status:'pending'}
+          }
+        },
+        confidential:false,
+        status:'draft'
+      });
+      setEncounters((current)=>[item,...current]);
+      notify('Plan de tratamiento propuesto guardado; el total fue recalculado por el servidor.','success');
+      return item;
+    }catch(cause){
+      notify(`No se guardó el plan de tratamiento: ${cause?.message||'Error'}`,'error');
+      return false;
+    }
+  }
+
+  async function decideTreatmentPlan(id,payload){
+    try{
+      await HealthVerticalService.decideTreatmentPlan(id,payload);
+      setEncounters(rows(await HealthVerticalService.encounters(selectedPatientId)));
+      notify(payload.decision==='accepted'?'Plan aceptado como decisión operativa.':'Plan rechazado con trazabilidad.','success');
+      return true;
+    }catch(cause){
+      notify(`No se registró la decisión del plan: ${cause?.message||'Error'}`,'error');
+      return false;
+    }
+  }
+
   function prepareAmendment(item){
     const odontogram=item?.clinicalData?.odontogram;
     if(!odontogram?.tooth)return notify('Esta versión legacy no tiene odontograma estructurado para enmendar.','warning');
