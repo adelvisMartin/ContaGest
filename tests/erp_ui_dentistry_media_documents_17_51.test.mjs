@@ -47,6 +47,13 @@ test('17/51 storage migration permits clinical PDF and 15 MB without weakening b
   assert.match(source,/public\s*=\s*false|public=false/);
 });
 
+test('17/51 direct authenticated storage policies exclude the clinical dental folder',()=>{
+  const source=read('backend/prisma/migrations/20260918222000_dental_clinical_media_v1751/migration.sql');
+  assert.match(source,/dental-attachments/);
+  assert.ok((source.match(/<> 'dental-attachments'/g)||[]).length>=4);
+  for(const policy of ['tenant read','tenant insert','tenant update','tenant delete']) assert.ok(source.includes(policy),policy);
+});
+
 test('17/51 MediaService uploads binary dental attachments and lists signed records',()=>{
   const source=read('frontend/src/services/mediaService.js');
   for(const token of ['uploadDentalAttachment','dentalAttachments','application/pdf','15 * 1024 * 1024','content-type'])assert.ok(source.includes(token),token);
