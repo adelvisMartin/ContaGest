@@ -102,6 +102,27 @@ if(dentistryEntry?.status==='MIGRATED'){
   if((dentistry.match(/async function createTreatmentPlan\(/g)||[]).length!==1)fail('odontologia: createTreatmentPlan must remain singleton');
   if((dentistry.match(/async function decideTreatmentPlan\(/g)||[]).length!==1)fail('odontologia: decideTreatmentPlan must remain singleton');
   if((dentistry.match(/<TreatmentPlanPanel/g)||[]).length!==1)fail('odontologia: treatment plan panel must render exactly once');
+  const consentPanel=read('frontend/src/components/dentistry/DentalConsentPanel.jsx');
+  if(!dentistry.includes('DentalConsentPanel'))fail('odontologia: dental consent evidence panel is not composed');
+  if(/querySelector|addEventListener|innerHTML|document\./.test(consentPanel))fail('odontologia: dental consent panel reintroduced imperative DOM lifecycle');
+  for(const contract of ['Firma declarativa','No es un certificado criptográfico','attestation','Nombre del firmante','Texto del consentimiento','Revocar consentimiento','SHA-256','Revisión']){
+    if(!consentPanel.includes(contract))fail(`odontologia: missing consent evidence contract ${contract}`);
+  }
+  for(const contract of ['HealthVerticalService.consents(','HealthVerticalService.signDentalConsent(','HealthVerticalService.revokeConsent(']){
+    if(!dentistry.includes(contract))fail(`odontologia: missing consent service wiring ${contract}`);
+  }
+  if((dentistry.match(/DentalConsentPanel/g)||[]).length!==2)fail('odontologia: DentalConsentPanel symbol must appear exactly twice (one import + one component)');
+  if((dentistry.match(/<DentalConsentPanel/g)||[]).length!==1)fail('odontologia: dental consent panel must render exactly once');
+  const dentalConsent=read('frontend/src/components/dentistry/DentalConsentPanel.jsx');
+  if(!dentistry.includes('DentalConsentPanel'))fail('odontologia: dental consent evidence panel is not composed');
+  if((dentistry.match(/<DentalConsentPanel/g)||[]).length!==1)fail('odontologia: dental consent panel must render exactly once');
+  if(/querySelector|addEventListener|innerHTML|document\./.test(dentalConsent))fail('odontologia: dental consent reintroduced imperative DOM lifecycle');
+  for(const contract of ['Firma declarativa','No es un certificado criptográfico','attestation','Nombre del firmante','Texto del consentimiento','Revocar consentimiento','SHA-256','Revisión']){
+    if(!dentalConsent.includes(contract))fail(`odontologia: missing consent evidence contract ${contract}`);
+  }
+  for(const contract of ['HealthVerticalService.consents(','HealthVerticalService.signDentalConsent(','HealthVerticalService.revokeConsent(']){
+    if(!dentistry.includes(contract))fail(`odontologia: missing canonical consent service contract ${contract}`);
+  }
 
 }
 

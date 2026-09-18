@@ -9,6 +9,7 @@ import { ToothSurfaceSelector } from '../components/dentistry/ToothSurfaceSelect
 import { PERMANENT_TEETH, PRIMARY_TEETH } from '../components/dentistry/dentalCatalog.js';
 import { PeriodontalChartPanel } from '../components/dentistry/PeriodontalChartPanel.jsx';
 import { TreatmentPlanPanel } from '../components/dentistry/TreatmentPlanPanel.jsx';
+import { DentalConsentPanel } from '../components/dentistry/DentalConsentPanel.jsx';
 
 const PROCEDURES=['Evaluación','Profilaxis / limpieza','Restauración','Endodoncia','Extracción','Periodoncia','Ortodoncia','Prótesis','Implante','Radiografía / estudio','Control postoperatorio'];
 const SPECIALTIES=[
@@ -32,6 +33,7 @@ function DentistryWorkspace({ state, context }){
   const [professionals,setProfessionals]=useState(rows(initial.professionals));
   const [appointments,setAppointments]=useState(rows(initial.appointments).filter((item)=>String(item.type||'').toLowerCase()==='dentistry'));
   const [encounters,setEncounters]=useState(rows(initial.encounters));
+  const [consents,setConsents]=useState(rows(initial.consents));
   const [selectedPatientId,setSelectedPatientId]=useState(initial.selectedPatientId||'');
   const [dentition,setDentition]=useState('permanent');
   const [selectedTooth,setSelectedTooth]=useState('');
@@ -74,7 +76,17 @@ function DentistryWorkspace({ state, context }){
       const nextPatientId=selectedPatientId&&nextPatients.some((item)=>item.id===selectedPatientId)?selectedPatientId:'';
       setSelectedPatientId(nextPatientId);
       setAppointmentForm((current)=>({...current,patientId:current.patientId&&nextPatients.some((item)=>item.id===current.patientId)?current.patientId:''}));
-      if(nextPatientId)setEncounters(rows(await HealthVerticalService.encounters(nextPatientId)));else setEncounters([]);
+      if(nextPatientId){
+        const [encounterResponse,consentResponse]=await Promise.all([
+          HealthVerticalService.encounters(nextPatientId),
+          HealthVerticalService.consents(nextPatientId)
+        ]);
+        setEncounters(rows(encounterResponse));
+        setConsents(rows(consentResponse));
+      }else{
+        setEncounters([]);
+        setConsents([]);
+      }
     }catch(cause){
       const message=cause?.message||'No se pudo actualizar odontología.';
       setError(message);
@@ -92,9 +104,15 @@ function DentistryWorkspace({ state, context }){
     setSelectedSurfaces([]);
     setAmendmentTarget(null);
     setAmendmentReason('');
-    if(!patientId){setEncounters([]);return;}
-    try{setEncounters(rows(await HealthVerticalService.encounters(patientId)));}
-    catch(cause){notify(`No se cargó la historia odontológica: ${cause?.message||'Error de lectura'}`,'warning');}
+    if(!patientId){setEncounters([]);setConsents([]);return;}
+    try{
+      const [encounterResponse,consentResponse]=await Promise.all([
+        HealthVerticalService.encounters(patientId),
+        HealthVerticalService.consents(patientId)
+      ]);
+      setEncounters(rows(encounterResponse));
+      setConsents(rows(consentResponse));
+    }catch(cause){notify(`No se cargó la historia odontológica: ${cause?.message||'Error de lectura'}`,'warning');}
   }
 
   async function submitPatient(event){
@@ -239,6 +257,30 @@ function DentistryWorkspace({ state, context }){
       return true;
     }catch(cause){
       notify(`No se registró la decisión del plan: ${cause?.message||'Error'}`,'error');
+      return false;
+    }
+  }
+
+  async function signDentalConsent(payload){
+    try{
+      const item=await HealthVerticalService.signDentalConsent(payload);
+      setConsents((current)=>[item,...current]);
+      notify('Consentimiento firmado con revisión e integridad SHA-256.','success');
+      return true;
+    }catch(cause){
+      notify(`No se registró el consentimiento: ${cause?.message||'Error'}`,'error');
+      return false;
+    }
+  }
+
+  async function revokeDentalConsent(id,payload){
+    try{
+      const item=await HealthVerticalService.revokeConsent(id,payload);
+      setConsents((current)=>current.map((consent)=>consent.id===item.id?item:consent));
+      notify('Consentimiento revocado con trazabilidad; la evidencia firmada se conserva.','success');
+      return true;
+    }catch(cause){
+      notify(`No se revocó el consentimiento: ${cause?.message||'Error'}`,'error');
       return false;
     }
   }
@@ -395,6 +437,16 @@ function DentistryWorkspace({ state, context }){
       encounters={encounters}
       onCreate={createTreatmentPlan}
       onDecision={decideTreatmentPlan}
+    />
+
+    <DentalConsentPanel
+      selectedPatientId={selectedPatientId}
+      onPatientChange={(patientId)=>void loadEncounters(patientId)}
+      patientOptions={patientOptions}
+      encounters={encounters}
+      consents={consents}
+      onSign={signDentalConsent}
+      onRevoke={revokeDentalConsent}
     />
 
     <Box className="cg-dental-grid" sx={{display:'grid',gridTemplateColumns:{xs:'1fr',lg:'repeat(2,minmax(0,1fr))'},gap:1.25}}>
