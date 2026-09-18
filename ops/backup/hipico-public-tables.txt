@@ -1,0 +1,26 @@
+# Control Hipico canonical PostgreSQL backup inventory
+hipico_agent_evaluations
+hipico_audit_events
+hipico_automation_transition_events
+hipico_bot_channels
+hipico_document_events
+hipico_document_sources
+hipico_documents
+hipico_domain_aggregates
+hipico_domain_events
+hipico_group_automation
+hipico_ledger_entries
+hipico_meetings
+hipico_messages
+hipico_observability_events
+hipico_operation_events
+hipico_outbox
+hipico_outbox_receipts
+hipico_profiles
+hipico_provider_evidence
+hipico_race_events
+hipico_races
+hipico_reconciliations
+hipico_shadow_evaluations
+hipico_users
+hipico_workspaces
