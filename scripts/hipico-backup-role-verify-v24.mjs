@@ -55,6 +55,7 @@ export function classifyBackupRoleVerification({
   if(role.exists!==true)findings.push('ROLE_MISSING');
   if(role.exists===true){
     if(role.login!==true)findings.push('ROLE_LOGIN_REQUIRED');
+    if(role.inherit===true)findings.push('ROLE_INHERIT_FORBIDDEN');
     if(role.superuser===true)findings.push('ROLE_SUPERUSER_FORBIDDEN');
     if(role.createdb===true)findings.push('ROLE_CREATEDB_FORBIDDEN');
     if(role.createrole===true)findings.push('ROLE_CREATEROLE_FORBIDDEN');
@@ -64,6 +65,10 @@ export function classifyBackupRoleVerification({
     if(role.schemaUsage!==true)findings.push('PUBLIC_SCHEMA_USAGE_REQUIRED');
     if(role.schemaCreate===true)findings.push('PUBLIC_SCHEMA_CREATE_FORBIDDEN');
     if(role.databaseConnect!==true)findings.push('DATABASE_CONNECT_REQUIRED');
+    if(role.authSchemaUsage===true)findings.push('AUTH_SCHEMA_USAGE_FORBIDDEN');
+    for(const grant of Array.isArray(role.authExplicitGrants)?role.authExplicitGrants:[]){
+      findings.push(`AUTH_EXPLICIT_GRANT:${grant}`);
+    }
   }
 
   const expected=Array.isArray(observation.expectedTables)?observation.expectedTables:[];
@@ -138,6 +143,7 @@ export async function observeBackupRole({
     const roleResult=await client.query(`
       select
         rolcanlogin as login,
+        rolinherit as inherit,
         rolsuper as superuser,
         rolcreatedb as createdb,
         rolcreaterole as createrole,
@@ -157,6 +163,7 @@ export async function observeBackupRole({
         role:{
           exists:false,
           login:false,
+          inherit:false,
           superuser:false,
           createdb:false,
           createrole:false,
@@ -165,7 +172,9 @@ export async function observeBackupRole({
           serviceRoleMember:false,
           schemaUsage:false,
           schemaCreate:false,
-          databaseConnect:false
+          databaseConnect:false,
+          authSchemaUsage:false,
+          authExplicitGrants:[]
         }
       };
     }
@@ -181,7 +190,29 @@ export async function observeBackupRole({
         ) as service_role_member,
         has_database_privilege('hipico_backup',current_database(),'CONNECT') as database_connect,
         has_schema_privilege('hipico_backup','public','USAGE') as schema_usage,
-        has_schema_privilege('hipico_backup','public','CREATE') as schema_create
+        has_schema_privilege('hipico_backup','public','CREATE') as schema_create,
+        case
+          when to_regnamespace('auth') is null then false
+          else has_schema_privilege('hipico_backup','auth','USAGE')
+        end as auth_schema_usage
+    `);
+
+    const authGrantResult=await client.query(`
+      select grant_name
+      from (
+        select format('%I.%I:%s',table_schema,table_name,privilege_type) as grant_name
+        from information_schema.role_table_grants
+        where grantee='hipico_backup' and table_schema='auth'
+        union all
+        select format('%I.%I:%s',routine_schema,routine_name,privilege_type)
+        from information_schema.role_routine_grants
+        where grantee='hipico_backup' and routine_schema='auth'
+        union all
+        select format('%I.%I:%s',object_schema,object_name,privilege_type)
+        from information_schema.usage_privileges
+        where grantee='hipico_backup' and object_schema='auth'
+      ) grants
+      order by grant_name
     `);
 
     const tableResult=await client.query(`
@@ -246,6 +277,7 @@ export async function observeBackupRole({
       role:{
         exists:true,
         login:roleRow.login===true,
+        inherit:roleRow.inherit===true,
         superuser:roleRow.superuser===true,
         createdb:roleRow.createdb===true,
         createrole:roleRow.createrole===true,
@@ -254,7 +286,9 @@ export async function observeBackupRole({
         serviceRoleMember:privilegeRow.service_role_member===true,
         schemaUsage:privilegeRow.schema_usage===true,
         schemaCreate:privilegeRow.schema_create===true,
-        databaseConnect:privilegeRow.database_connect===true
+        databaseConnect:privilegeRow.database_connect===true,
+        authSchemaUsage:privilegeRow.auth_schema_usage===true,
+        authExplicitGrants:authGrantResult.rows.map((row)=>String(row.grant_name))
       }
     };
   }finally{
