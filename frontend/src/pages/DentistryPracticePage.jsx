@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { Box, Divider, Paper, Stack, Typography } from '@mui/material';
 import {
-  CgButton, CgEmptyState, CgPageHeader, CgProvider, CgSelect, CgState, CgStatusChip, CgTextField
+  CgButton, CgDataTable, CgEmptyState, CgPageHeader, CgProvider, CgSelect, CgState, CgStatusChip, CgTextField
 } from '../components/ui/cg/CgPrimitives.jsx';
 import { HealthVerticalService } from '../services/verticalService.js';
 import { ToothSurfaceSelector } from '../components/dentistry/ToothSurfaceSelector.jsx';
@@ -14,6 +14,48 @@ const SPECIALTIES=[
   ['odontologia-general','Odontología general'],['ortodoncia','Ortodoncia'],['endodoncia','Endodoncia'],
   ['periodoncia','Periodoncia'],['cirugia-bucal','Cirugía bucal'],['protesis','Prótesis / rehabilitación']
 ];
+const SURFACE_LABELS={
+  vestibular:'Vestibular',
+  lingual_palatal:'Lingual / palatina',
+  mesial:'Mesial',
+  distal:'Distal',
+  occlusal_incisal:'Oclusal / incisal'
+};
+function buildOdontogramHistory(encounters=[]){
+  const previousBySurface=new Map();
+  const events=[];
+  const ordered=[...encounters]
+    .filter((item)=>String(item?.type||'').toLowerCase()==='dental-treatment'&&item?.clinicalData?.odontogram)
+    .sort((left,right)=>String(left.createdAt||'').localeCompare(String(right.createdAt||'')));
+  for(const encounter of ordered){
+    const odontogram=encounter.clinicalData?.odontogram||{};
+    for(const surface of Array.isArray(odontogram.surfaces)?odontogram.surfaces:[]){
+      const key=`${odontogram.dentition||'unknown'}:${odontogram.tooth||'unknown'}:${surface}`;
+      const previous=previousBySurface.get(key);
+      const condition=String(odontogram.condition||'Sin condición registrada');
+      const version=Number(previous?.version||0)+1;
+      const previousCondition=previous?.condition||'Sin registro previo';
+      events.push({
+        id:`${encounter.id||'encounter'}:${surface}`,
+        createdAt:encounter.createdAt||null,
+        dentition:odontogram.dentition||'unknown',
+        tooth:odontogram.tooth||encounter.clinicalData?.tooth||'—',
+        surface,
+        surfaceLabel:SURFACE_LABELS[surface]||surface,
+        version,
+        previousCondition,
+        condition,
+        change:previous?`${previousCondition} → ${condition}`:`Alta: ${condition}`,
+        actorUserId:odontogram.actorUserId||'',
+        professionalName:encounter.professionalName||'',
+        author:odontogram.actorUserId?`Usuario ${odontogram.actorUserId}`:(encounter.professionalName||'Autor no disponible'),
+        reason:odontogram.changeReason||'Motivo no registrado (legado)'
+      });
+      previousBySurface.set(key,{condition,version});
+    }
+  }
+  return events.reverse();
+}
 const rows=(value)=>Array.isArray(value)?value:value?.data||[];
 const patientName=(patient={})=>patient.displayName||patient.fullName||'Paciente';
 const statusLabel=(status='')=>({scheduled:'Programada',confirmed:'Confirmada',checked_in:'En sala',in_progress:'En atención',completed:'Completada',cancelled:'Cancelada',no_show:'No asistió'}[String(status).toLowerCase()]||status||'Programada');
@@ -40,7 +82,7 @@ function DentistryWorkspace({ state, context }){
   const [patientForm,setPatientForm]=useState({displayName:'',email:'',phone:''});
   const [professionalForm,setProfessionalForm]=useState({fullName:'',specialty:'odontologia-general',licenseNumber:''});
   const [appointmentForm,setAppointmentForm]=useState({patientId:'',professionalId:'',date:localToday(),time:'09:00',reason:''});
-  const [encounterForm,setEncounterForm]=useState({professionalId:'',procedure:'Evaluación',condition:'',finding:'',assessment:'',plan:''});
+  const [encounterForm,setEncounterForm]=useState({professionalId:'',procedure:'Evaluación',condition:'',changeReason:'',finding:'',assessment:'',plan:''});
   const Toast=context?.Toast;
 
   const dentalProfessionals=useMemo(()=>professionals.filter((item)=>/odont|dental|ortodon|endodon|periodon|cirugia-bucal|protesis/i.test(String(item.specialty||''))||!item.specialty),[professionals]);
@@ -49,6 +91,7 @@ function DentistryWorkspace({ state, context }){
   const patientOptions=useMemo(()=>[{value:'',label:'Seleccionar paciente'},...patients.map((item)=>({value:item.id,label:patientName(item)}))],[patients]);
   const professionalOptions=useMemo(()=>[{value:'',label:'Sin asignar'},...dentalProfessionals.map((item)=>({value:item.id,label:item.fullName||'Profesional'}))],[dentalProfessionals]);
   const toothOptions=dentition==='primary'?PRIMARY_TEETH:PERMANENT_TEETH;
+  const odontogramHistory=useMemo(()=>buildOdontogramHistory(encounters),[encounters]);
 
   const notify=(message,tone='success')=>Toast?.show?.(message,tone);
 
@@ -144,6 +187,7 @@ function DentistryWorkspace({ state, context }){
     if(!selectedTooth)return notify('Selecciona una pieza dental.','warning');
     if(!selectedSurfaces.length)return notify('Selecciona al menos una superficie dental.','warning');
     if(!encounterForm.condition.trim())return notify('Indica la condición clínica de la pieza.','warning');
+    if(!encounterForm.changeReason.trim())return notify('Indica el motivo del cambio clínico.','warning');
     try{
       const item=await HealthVerticalService.createEncounter({
         patientId:selectedPatientId,
@@ -158,18 +202,28 @@ function DentistryWorkspace({ state, context }){
         clinicalData:{
           tooth:selectedTooth,
           procedure:encounterForm.procedure||'Evaluación',
-          odontogram:{dentition,tooth:selectedTooth,surfaces:selectedSurfaces,condition:encounterForm.condition.trim()}
+          odontogram:{dentition,tooth:selectedTooth,surfaces:selectedSurfaces,condition:encounterForm.condition.trim(),changeReason:encounterForm.changeReason.trim()}
         },
         confidential:false,
         status:'signed'
       });
       setEncounters((current)=>[item,...current]);
-      setEncounterForm((current)=>({...current,procedure:'Evaluación',condition:'',finding:'',assessment:'',plan:''}));
+      setEncounterForm((current)=>({...current,procedure:'Evaluación',condition:'',changeReason:'',finding:'',assessment:'',plan:''}));
       setSelectedTooth('');
       setSelectedSurfaces([]);
       notify('Tratamiento odontológico registrado.','success');
     }catch(cause){notify(`No se registró el tratamiento: ${cause?.message||'Error'}`,'error');}
   }
+
+  const odontogramHistoryColumns=[
+    {key:'createdAt',label:'Fecha',render:(item)=>item.createdAt?new Date(item.createdAt).toLocaleString('es-VE'):'—'},
+    {key:'toothSurface',label:'Pieza / superficie',render:(item)=>`${item.dentition==='primary'?'Temporal':'Permanente'} · ${item.tooth} · ${item.surfaceLabel}`},
+    {key:'version',label:'Versión',render:(item)=>`v${item.version}`},
+    {key:'previousCondition',label:'Condición previa'},
+    {key:'change',label:'Cambio'},
+    {key:'author',label:'Autor',render:(item)=><Box><Typography variant="body2">{item.author}</Typography>{item.professionalName?<Typography variant="caption" color="text.secondary">Profesional: {item.professionalName}</Typography>:null}</Box>},
+    {key:'reason',label:'Motivo'}
+  ];
 
   return <Stack className="cg-dentistry-workspace" gap={1.5}>
     <CgPageHeader eyebrow="Salud · Odontología" title="Consultorio odontológico" description="Pacientes, agenda, odontograma operativo y registro de procedimientos en un mismo flujo." actions={<CgButton variant="outlined" onClick={()=>void loadAll()} disabled={loading}>Actualizar</CgButton>}/>
@@ -244,6 +298,7 @@ function DentistryWorkspace({ state, context }){
         </Box>
         <CgSelect label="Procedimiento" value={encounterForm.procedure} onChange={(e)=>setEncounterForm({...encounterForm,procedure:e.target.value})} options={PROCEDURES.map((value)=>({value,label:value}))}/>
         <CgTextField size="small" fullWidth label="Condición clínica" required value={encounterForm.condition} onChange={(e)=>setEncounterForm({...encounterForm,condition:e.target.value})}/>
+        <CgTextField size="small" fullWidth label="Motivo del cambio" required value={encounterForm.changeReason} onChange={(e)=>setEncounterForm({...encounterForm,changeReason:e.target.value})}/>
         <CgTextField size="small" fullWidth label="Hallazgo" value={encounterForm.finding} onChange={(e)=>setEncounterForm({...encounterForm,finding:e.target.value})}/>
         <CgTextField size="small" fullWidth label="Diagnóstico resumido" value={encounterForm.assessment} onChange={(e)=>setEncounterForm({...encounterForm,assessment:e.target.value})}/>
         <CgTextField size="small" fullWidth multiline minRows={3} label="Plan / indicaciones" value={encounterForm.plan} onChange={(e)=>setEncounterForm({...encounterForm,plan:e.target.value})} sx={{gridColumn:'1/-1'}}/>
@@ -261,6 +316,19 @@ function DentistryWorkspace({ state, context }){
         {encounters.length?<Stack className="cg-dental-list" divider={<Divider flexItem/>}>{encounters.slice(0,12).map((item)=><Stack key={item.id} direction={{xs:'column',sm:'row'}} justifyContent="space-between" gap={1} py={.8}><Box sx={{minWidth:0}}><Typography variant="body2" fontWeight={650}>{item.clinicalData?.procedure||item.type||'Atención odontológica'}</Typography><Typography variant="caption" color="text.secondary">{item.clinicalData?.odontogram?.tooth?`${item.clinicalData.odontogram.dentition==='primary'?'Temporal':'Permanente'} · Pieza ${item.clinicalData.odontogram.tooth} · ${item.clinicalData.odontogram.surfaces?.join(', ')||'sin superficie'} · ${item.clinicalData.odontogram.condition||'sin condición'} · `:item.clinicalData?.tooth?`Pieza ${item.clinicalData.tooth} · `:''}{item.assessment||item.subjective||'Sin diagnóstico resumido'}</Typography></Box><CgStatusChip label={item.status==='signed'?'Firmado':'Borrador'} tone={item.status==='signed'?'success':'warning'}/></Stack>)}</Stack>:<CgEmptyState title="Sin tratamientos registrados" description="Selecciona un paciente y registra el primer procedimiento."/>}
       </Paper>
     </Box>
+    <Paper variant="outlined" sx={{p:1.5,minWidth:0}}>
+      <Stack direction={{xs:'column',sm:'row'}} justifyContent="space-between" gap={1}>
+        <Box>
+          <Typography variant="h6">Historial versionado del odontograma</Typography>
+          <Typography variant="caption" color="text.secondary">Por superficie: condición previa, cambio, autor autenticado y motivo. Los encuentros permanecen append-only.</Typography>
+        </Box>
+        <CgStatusChip label={`${odontogramHistory.length} cambios`} tone={odontogramHistory.length?'info':'default'}/>
+      </Stack>
+      <Divider sx={{my:1}}/>
+      {odontogramHistory.length?
+        <Box sx={{maxWidth:'100%',overflowX:'auto'}}><CgDataTable columns={odontogramHistoryColumns} rows={odontogramHistory} empty="Sin cambios versionados"/></Box>
+        :<CgEmptyState title="Sin historial estructurado" description="Los tratamientos legacy permanecen en la historia reciente; las versiones por superficie aparecerán con nuevos tratamientos estructurados."/>}
+    </Paper>
   </Stack>;
 }
 

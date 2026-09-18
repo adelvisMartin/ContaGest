@@ -65,7 +65,8 @@ const dentalClinicalDataSchema = z.object({
     dentition: z.enum(['permanent','primary']),
     tooth: z.string().trim().min(2).max(2),
     surfaces: z.array(z.enum(['vestibular','lingual_palatal','mesial','distal','occlusal_incisal'])).min(1).max(5),
-    condition: z.string().trim().min(1).max(120)
+    condition: z.string().trim().min(1).max(120),
+    changeReason: z.string().trim().min(3).max(240)
   }).superRefine((value, refinement) => {
     const catalog = value.dentition === 'primary' ? DENTAL_PRIMARY_TEETH : DENTAL_PERMANENT_TEETH;
     if (!catalog.has(value.tooth)) refinement.addIssue({ code:'custom', path:['tooth'], message:'La pieza no pertenece a la dentición seleccionada.' });
@@ -200,10 +201,18 @@ router.get('/health/encounters', requirePermission('health.manage'), asyncHandle
 
 router.post('/health/encounters', requirePermission('health.manage'), asyncHandler(async (req, res) => {
   const b = encounterSchema.parse(req.body || {});
+  const dentalClinicalData = b.type === 'dental-treatment' ? dentalClinicalDataSchema.parse(b.clinicalData) : null;
+  const persistedClinicalData = dentalClinicalData ? {
+    ...b.clinicalData,
+    odontogram:{
+      ...dentalClinicalData.odontogram,
+      actorUserId: ctx(req).userId || null
+    }
+  } : b.clinicalData;
   const rows = await prisma.$queryRawUnsafe<any[]>(`
     INSERT INTO public."CareEncounter" ("id","tenantId","patientId","professionalId","appointmentId","specialty","type","subjective","objective","assessment","plan","diagnosisCodes","clinicalData","confidential","status","signedAt","createdAt","updatedAt")
     VALUES (gen_random_uuid()::text,$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11::jsonb,$12::jsonb,$13,$14,CASE WHEN $14='signed' THEN now() ELSE NULL END,now(),now()) RETURNING *
-  `, ctx(req).tenantId,b.patientId,b.professionalId||null,b.appointmentId||null,b.specialty,b.type,b.subjective||null,b.objective||null,b.assessment||null,b.plan||null,JSON.stringify(b.diagnosisCodes),JSON.stringify(b.clinicalData),b.confidential,b.status);
+  `, ctx(req).tenantId,b.patientId,b.professionalId||null,b.appointmentId||null,b.specialty,b.type,b.subjective||null,b.objective||null,b.assessment||null,b.plan||null,JSON.stringify(b.diagnosisCodes),JSON.stringify(persistedClinicalData),b.confidential,b.status);
   ok(res, one(rows), 201);
 }));
 

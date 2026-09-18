@@ -31,6 +31,7 @@ test('11/51 backend validates structured dental-treatment clinicalData',()=>{
 test('11/51 keeps existing encounter transport and persistence authority',()=>{
   const source=backend();
   assert.match(source,/clinicalData: jsonRecord/);
-  assert.match(source,/JSON\.stringify\(b\.clinicalData\)/);
+  assert.match(source,/JSON\.stringify\((?:b\.clinicalData|persistedClinicalData)\)/);
+  assert.match(source,/CareEncounter/);
   assert.match(page(),/HealthVerticalService\.createEncounter\(/);
 });
