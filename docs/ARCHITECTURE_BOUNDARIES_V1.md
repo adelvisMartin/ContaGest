@@ -61,15 +61,15 @@ Este gate no significa que ContaGest esté al 100% ni que esté listo para produ
 
 `backend/src/modules/verticals/verticals.routes.ts` es un agregador delgado. La propiedad de rutas se separa en `health.routes.ts`, `gym.routes.ts` y `communications.routes.ts`, manteniendo un único `requireTenant` en el agregador y los permisos específicos en cada contexto.
 
-La separación conserva los mismos paths y el mismo orden de handlers. `verticals-extended.routes.ts` permanece independiente y es una extracción posterior posible.
+La separación conserva los mismos paths y el mismo orden de handlers. La extensión de Health/Gym también se distribuye en `health-extended.routes.ts` y `gym-extended.routes.ts`, mientras `verticals-extended.routes.ts` actúa como agregador con un único `requireTenant`.
 
 ## Próximas extracciones seguras
 
 Las refactorizaciones de mayor tamaño deben hacerse por PR independiente:
 
-1. separar `verticals-extended.routes.ts` por bounded context cuando exista caracterización equivalente;
-2. continuar reduciendo `frontend/src/app.js` sin cambiar las 58 rutas ni navegación/licenciamiento;
-3. introducir contratos/adapters explícitos para dependencias entre Platform/Core y Vertical Packs;
-4. extender el auditor con reglas de dependencia por dominio cuando el árbol ya refleje esas capas físicamente.
+1. continuar reduciendo `frontend/src/app.js` sin cambiar las 58 rutas ni navegación/licenciamiento;
+2. introducir contratos/adapters explícitos para dependencias entre Platform/Core y Vertical Packs;
+3. extender el auditor con reglas de dependencia por dominio cuando el árbol ya refleje esas capas físicamente;
+4. separar lógica de dominio repetida de routers únicamente cuando exista caracterización suficiente y sin mover autoridad financiera.
 
 Cada extracción debe incluir caracterización previa y evidencia de equivalencia de comportamiento.
