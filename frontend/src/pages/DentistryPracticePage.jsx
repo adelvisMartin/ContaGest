@@ -151,7 +151,6 @@ function DentistryWorkspace({ state, context }){
         confidential:false,
         status:'signed'
       });
-      setSelectedPatientId(selectedPatientId);
       setEncounters((current)=>[item,...current]);
       setEncounterForm((current)=>({...current,procedure:'Evaluación',finding:'',assessment:'',plan:''}));
       setSelectedTooth('');
