@@ -1,0 +1,506 @@
+{
+  "schemaVersion": 1,
+  "roadmapItem": "1/51",
+  "title": "P0 — Congelar baseline técnico",
+  "repository": "adelvisMartin/ContaGest",
+  "branch": "main",
+  "capturedAt": "2026-09-18T00:10:13Z",
+  "requestedAuditSha": "ab02c550f24c3347121d8c74c636b450245036ac",
+  "baselineSourceSha": "9566d77ad51e6eccc51d95fa76c65487a1b08821",
+  "shaSemantics": {
+    "requestedAuditSha": "SHA explicitamente solicitado por el propietario y usado en la auditoría previa; quedó supersedido antes de iniciar 1/51.",
+    "baselineSourceSha": "HEAD real de main al comenzar la implementación 1/51. Es la fuente técnica congelada.",
+    "validationRule": "Toda evidencia posterior debe declarar baselineSha=baselineSourceSha y candidateSha=testedSha. candidateSha puede avanzar; testedSha nunca puede referir otro commit."
+  },
+  "supersession": {
+    "reason": "main avanzó antes de iniciar 1/51 mediante refactors ya fusionados",
+    "merges": [
+      {
+        "pr": 365,
+        "mergeSha": "ca43572a6374bf2d39285377d88ad34aee5e7467",
+        "headSha": "17267cfa113af3528786f4c988aa60ea78b42ce1",
+        "title": "extract canonical 58-route registry"
+      },
+      {
+        "pr": 367,
+        "mergeSha": "9566d77ad51e6eccc51d95fa76c65487a1b08821",
+        "headSha": "ff53aaf5e3c10211071af11c4a4be7264be6aec1",
+        "title": "split health gym and communications contexts"
+      }
+    ]
+  },
+  "routeCatalog": {
+    "authority": "frontend/src/data/pageRegistry.js",
+    "blobSha": "9a815253515be143123c955a5c516e116e0a0a07",
+    "expectedCount": 58,
+    "routes": [
+      "dashboard",
+      "cotizacion",
+      "clientes",
+      "ventas",
+      "inventario",
+      "tributos",
+      "normativa",
+      "historial",
+      "reportes",
+      "contabilidad",
+      "libro-mayor",
+      "balance-sumas-saldos",
+      "hoja-trabajo",
+      "estados-financieros",
+      "cierre-contable",
+      "bancos",
+      "nomina",
+      "proveedores",
+      "compras",
+      "auditoria",
+      "configuracion",
+      "ayuda",
+      "tasks",
+      "profile",
+      "mobile",
+      "libro-ventas",
+      "marca",
+      "admin",
+      "backend",
+      "vistas",
+      "login",
+      "plan-cuentas",
+      "rrhh",
+      "analytics",
+      "qr",
+      "inventario-scan",
+      "pedidos",
+      "pos-sede",
+      "tracking-pedidos",
+      "delivery-mapa",
+      "asistente-ia",
+      "soporte",
+      "demo-control",
+      "modulos-madurez",
+      "reglas-negocio",
+      "licencias",
+      "importacion-data",
+      "kardex",
+      "normativa-contable",
+      "pretesting",
+      "salud",
+      "veterinaria",
+      "psicologia",
+      "odontologia",
+      "gimnasio",
+      "rutinas",
+      "nutricion",
+      "mensajes"
+    ]
+  },
+  "architecture": {
+    "contract": {
+      "path": "AGENTS.md",
+      "blobSha": "177b0d1dd762ee44f9228e90892c574bc7c371a1"
+    },
+    "boundaries": {
+      "path": "docs/ARCHITECTURE_BOUNDARIES_V1.md",
+      "blobSha": "eca5c891fd50c2681616c14689325e64500f4cf2"
+    },
+    "backendManifest": {
+      "path": "backend/src/modules/route-manifest.ts",
+      "blobSha": "6f84a366b705b1be2968435f0cc8063c2151c072"
+    },
+    "verticalAggregator": {
+      "path": "backend/src/modules/verticals/verticals.routes.ts",
+      "blobSha": "c1b5d96678f73e4f1af32d5bcdf46075902ce984"
+    },
+    "verticalShared": {
+      "path": "backend/src/modules/verticals/verticals.shared.ts",
+      "blobSha": "1224616ce72c984425be8643abb191f106dd6555"
+    }
+  },
+  "verticalSchemas": {
+    "sharedHealth": {
+      "owner": "backend/src/modules/verticals/health.routes.ts",
+      "blobSha": "8ebdae16ee5e020feab4fd191e85ea6ea7121d8e",
+      "zod": [
+        "patientSchema",
+        "professionalSchema",
+        "appointmentSchema",
+        "encounterSchema",
+        "measurementSchema",
+        "immunizationSchema"
+      ]
+    },
+    "gym": {
+      "owner": "backend/src/modules/verticals/gym.routes.ts",
+      "blobSha": "c2b418679246890351dcc95a31281d8a5391c533",
+      "zod": [
+        "memberSchema",
+        "trainerSchema",
+        "planSchema",
+        "membershipSchema",
+        "checkInSchema",
+        "assessmentSchema",
+        "routineSchema",
+        "nutritionSchema",
+        "classSchema"
+      ]
+    },
+    "communications": {
+      "owner": "backend/src/modules/verticals/communications.routes.ts",
+      "blobSha": "0a1395cfaa746a1cd82594c84bf583660a625ba4",
+      "zod": [
+        "templateSchema"
+      ]
+    },
+    "extended": {
+      "owner": "backend/src/modules/verticals/verticals-extended.routes.ts",
+      "blobSha": "ae11702390ebf23c7562a9e3d53e75dbb42ec136",
+      "zod": [
+        "prescriptionSchema",
+        "consentSchema",
+        "paymentSchema",
+        "bookingSchema",
+        "membershipStatusSchema"
+      ]
+    },
+    "veterinary": {
+      "owner": "backend/src/modules/verticals/veterinary.routes.ts",
+      "blobSha": "a4e2261debbb9070ae3a7d4579dc4fee0a5ac45f",
+      "zod": [
+        "labOrderSchema",
+        "labResultSchema",
+        "studySchema",
+        "hospitalizationSchema",
+        "hospitalizationStatusSchema",
+        "observationSchema",
+        "procedureSchema",
+        "communicationSchema",
+        "appointmentStatusSchema"
+      ]
+    },
+    "veterinaryCrud": {
+      "owner": "backend/src/modules/verticals/veterinary-crud.routes.ts",
+      "blobSha": "b2e65397ccb57b11fbb3c217792def8f60fe1447",
+      "zod": [
+        "patientPatchSchema",
+        "appointmentPatchSchema"
+      ]
+    }
+  },
+  "database": {
+    "migrations": [
+      {
+        "path": "backend/prisma/migrations/20260731011800_v11_5_health_veterinary_gym_verticals/migration.sql",
+        "blobSha": "fb7e91e746ddd3b56d37a7126890a0483c5c7416",
+        "tables": [
+          "CareProfessional",
+          "CarePatient",
+          "CareAppointment",
+          "CareEncounter",
+          "CareMeasurement",
+          "CarePrescription",
+          "CareConsent",
+          "CareImmunization",
+          "GymMember",
+          "GymTrainer",
+          "GymMembershipPlan",
+          "GymMembership",
+          "GymCheckIn",
+          "GymAssessment",
+          "GymExercise",
+          "GymRoutine",
+          "GymRoutineExercise",
+          "GymNutritionPlan",
+          "GymMeal",
+          "GymClass",
+          "GymClassBooking",
+          "GymPayment",
+          "CommunicationTemplate"
+        ]
+      },
+      {
+        "path": "backend/prisma/migrations/20260731055200_v11_10_veterinary_clinical_operations/migration.sql",
+        "blobSha": "a4a5b13c6a9542120faa06a6bc6fc5ce1ed35d9a",
+        "tables": [
+          "CareLabOrder",
+          "CareLabResult",
+          "CareDiagnosticStudy",
+          "CareHospitalization",
+          "CareHospitalObservation",
+          "CareProcedure",
+          "CareCommunicationLog"
+        ]
+      }
+    ],
+    "note": "Odontología reutiliza actualmente CarePatient/CareProfessional/CareAppointment/CareEncounter; no existe tabla odontológica dedicada en este baseline."
+  },
+  "endpoints": {
+    "mountPoints": {
+      "healthGymCommunications": "/api/v1/verticals",
+      "veterinary": "/api/v1/verticals/veterinary",
+      "veterinaryCrud": "/api/v1/verticals"
+    },
+    "bySource": {
+      "backend/src/modules/verticals/health.routes.ts": [
+        "GET /health/summary",
+        "GET /health/patients",
+        "POST /health/patients",
+        "GET /health/professionals",
+        "POST /health/professionals",
+        "GET /health/appointments",
+        "POST /health/appointments",
+        "GET /health/encounters",
+        "POST /health/encounters",
+        "POST /health/measurements",
+        "POST /health/immunizations"
+      ],
+      "backend/src/modules/verticals/gym.routes.ts": [
+        "GET /gym/summary",
+        "GET /gym/members",
+        "POST /gym/members",
+        "GET /gym/trainers",
+        "POST /gym/trainers",
+        "GET /gym/plans",
+        "POST /gym/plans",
+        "POST /gym/memberships",
+        "POST /gym/checkins",
+        "GET /gym/assessments",
+        "POST /gym/assessments",
+        "GET /gym/routines",
+        "POST /gym/routines",
+        "GET /gym/nutrition",
+        "POST /gym/nutrition",
+        "GET /gym/classes",
+        "POST /gym/classes"
+      ],
+      "backend/src/modules/verticals/communications.routes.ts": [
+        "GET /communications/templates",
+        "POST /communications/templates",
+        "POST /communications/render"
+      ],
+      "backend/src/modules/verticals/verticals-extended.routes.ts": [
+        "GET /health/prescriptions",
+        "POST /health/prescriptions",
+        "GET /health/consents",
+        "POST /health/consents",
+        "GET /gym/payments",
+        "POST /gym/payments",
+        "GET /gym/classes/:classId/bookings",
+        "POST /gym/classes/bookings",
+        "PATCH /gym/memberships/:id/status"
+      ],
+      "backend/src/modules/verticals/veterinary.routes.ts": [
+        "GET /dashboard",
+        "GET /lab-orders",
+        "POST /lab-orders",
+        "GET /lab-results",
+        "POST /lab-results",
+        "GET /studies",
+        "POST /studies",
+        "GET /hospitalizations",
+        "POST /hospitalizations",
+        "PATCH /hospitalizations/:id/status",
+        "GET /observations",
+        "POST /observations",
+        "GET /procedures",
+        "POST /procedures",
+        "GET /communications",
+        "POST /communications",
+        "PATCH /appointments/:id/status"
+      ],
+      "backend/src/modules/verticals/veterinary-crud.routes.ts": [
+        "PATCH /health/patients/:id",
+        "DELETE /health/patients/:id",
+        "PATCH /health/appointments/:id",
+        "DELETE /health/appointments/:id"
+      ]
+    }
+  },
+  "verticalFrontends": {
+    "dentistry": {
+      "routes": [
+        "odontologia"
+      ],
+      "owner": "frontend/src/pages/DentistryPracticePage.js",
+      "blobSha": "70a5463dd866278f1fc2f076ecb688c9a87ec51d",
+      "apiContexts": [
+        "health",
+        "extended-health"
+      ],
+      "status": "SOURCE_REVIEW"
+    },
+    "veterinary": {
+      "routes": [
+        "veterinaria"
+      ],
+      "owner": "frontend/src/pages/VeterinaryClinicPageV1123.jsx",
+      "blobSha": "a7f85564219344fe969c030025a45a27d8827a53",
+      "apiContexts": [
+        "health",
+        "extended-health",
+        "veterinary",
+        "veterinary-crud"
+      ],
+      "status": "SOURCE_REVIEW"
+    },
+    "gym": {
+      "routes": [
+        "gimnasio",
+        "rutinas",
+        "nutricion"
+      ],
+      "owner": "frontend/src/pages/GymManagementPage.js",
+      "blobSha": "0c87ebb3350d6484c94637e16072569c69c43d7e",
+      "services": [
+        {
+          "path": "frontend/src/services/fitnessRoutineService.js",
+          "blobSha": "1e8a9a83ef9357d7b54c6dbfc57adcac523e7ffa"
+        },
+        {
+          "path": "frontend/src/services/fitnessNutritionService.js",
+          "blobSha": "93bd591021dc38dd8838298063ac87ab6058cda6"
+        },
+        {
+          "path": "frontend/src/services/fitnessProductivityEnhancer.js",
+          "blobSha": "85e533f116d21dbcddbe2e546b9065dae1dbde09"
+        },
+        {
+          "path": "api/fooddata.ts",
+          "blobSha": "b9096b315fb40b660e7a894126f1aedddc040b58"
+        }
+      ],
+      "apiContexts": [
+        "gym",
+        "extended-gym"
+      ],
+      "status": "SOURCE_REVIEW"
+    }
+  },
+  "tests": {
+    "contracts": [
+      {
+        "path": "tests/frontend_page_registry_v2.test.mjs",
+        "blobSha": "08a26934a48d4db0d9d6678c73ea92e78b0b1d47"
+      },
+      {
+        "path": "tests/backend_module_manifest_contract.test.mjs",
+        "blobSha": "ccab157333af2a06b568e17e4a3df10699e3c410"
+      },
+      {
+        "path": "tests/vertical_bounded_contexts_v3.test.mjs",
+        "blobSha": "52cf9c5a34b8929d6978ba14207c7002c03466ba"
+      },
+      {
+        "path": "tests/v11_10_veterinary.test.mjs",
+        "blobSha": "eb30a36d9c808f9fe5e097295d545ad586051aca"
+      },
+      {
+        "path": "tests/v11_24_mobile_verticals_hipico.test.mjs",
+        "blobSha": "4da6f2b23d891a9e185e0c744226cdf57378e180"
+      },
+      {
+        "path": "tests/v11_25_productivity_and_parity.test.mjs",
+        "blobSha": "778c5a73e941cca03dd8d6d97e193b73dfa3ff0d"
+      },
+      {
+        "path": "tests/v11_26_shell_access_fooddata.test.mjs",
+        "blobSha": "a25e0f718a277b855c49da679004987af66043ed"
+      }
+    ],
+    "browser": [
+      {
+        "path": "qa/veterinary.spec.mjs",
+        "blobSha": "26e96a8d91196f7c932c6a4daabcd971cbf902a3"
+      },
+      {
+        "path": "qa/erp-functional-smoke-v14.spec.mjs",
+        "blobSha": "515d98a24cd73095f449c80d31f8c229617b53ec"
+      },
+      {
+        "path": "qa/mobile-deep-v162.spec.mjs",
+        "blobSha": "7605e5fa2188f99cf91533b16140d76592024391"
+      },
+      {
+        "path": "qa/module-actions-runtime-v163.spec.mjs",
+        "blobSha": "a51239674717a7a2dc547bb46e35a2f1aa7ca274"
+      }
+    ],
+    "playwright": {
+      "path": "playwright.config.mjs",
+      "blobSha": "1307b27bb71105f4bde16d0dfbed95cb9dfcaaec",
+      "projects": [
+        "chromium",
+        "firefox",
+        "webkit-safari",
+        "webkit-iphone"
+      ]
+    },
+    "knownCoverageGap": "No existe evidencia E2E específica y completa de CRUD/persistencia/tenant para Odontología y Gimnasio en este baseline; se conserva como gap, no como PASS."
+  },
+  "ci": {
+    "mainAtCapture": {
+      "sha": "9566d77ad51e6eccc51d95fa76c65487a1b08821",
+      "githubActions": "NOT_EXECUTED_ON_MERGE_SHA_BY_CURRENT_TRIGGER_POLICY",
+      "workflowTriggerEvidence": ".github/workflows/ci.yml => pull_request + workflow_dispatch; no push",
+      "vercel": {
+        "status": "FAIL",
+        "targetUrl": "https://vercel.com/adelvismartin-6485s-projects/conta-gest-frontend/267CY9qXP82XS4QftrmeURQR5oDP"
+      }
+    },
+    "latestArchitectureCandidate": {
+      "pr": 367,
+      "candidateSha": "ff53aaf5e3c10211071af11c4a4be7264be6aec1",
+      "classification": "BLOCKED_INFRASTRUCTURE_PRE_STEPS",
+      "evidence": [
+        {
+          "workflow": "ContaGest CI",
+          "runId": 35286288631,
+          "jobId": 105419251670,
+          "conclusion": "failure",
+          "steps": null
+        },
+        {
+          "workflow": "ContaGest Browser QA",
+          "runId": 35286288901,
+          "jobId": 105419252719,
+          "conclusion": "failure",
+          "steps": null
+        },
+        {
+          "workflow": "ContaGest PR Quality Gate",
+          "runId": 35286289010,
+          "conclusion": "failure",
+          "allObservedJobsSteps": null
+        },
+        {
+          "workflow": "PostgreSQL",
+          "runId": 35286288993,
+          "jobId": 105419253200,
+          "conclusion": "failure",
+          "steps": null
+        },
+        {
+          "workflow": "Accessibility WCAG22",
+          "runId": 35286289130,
+          "jobId": 105419254611,
+          "conclusion": "failure",
+          "steps": null
+        },
+        {
+          "workflow": "security-baseline",
+          "runId": 35286289209,
+          "jobId": 105419253794,
+          "conclusion": "failure",
+          "steps": null
+        }
+      ],
+      "rule": "failure con steps=null no se reclasifica como fallo de código ni como PASS."
+    }
+  },
+  "validationContract": {
+    "baselineField": "baselineSha",
+    "candidateField": "candidateSha",
+    "testedField": "testedSha",
+    "requiredBaselineSha": "9566d77ad51e6eccc51d95fa76c65487a1b08821",
+    "rule": "baselineSha debe ser el SHA congelado y candidateSha debe ser idéntico a testedSha. Evidencia de otro SHA es inválida."
+  }
+}
