@@ -1,6 +1,4 @@
 import { Store } from '../state/store.js';
-import { Toast } from '../components/toast.js';
-import { FitnessProductivityEnhancer } from './fitnessProductivityEnhancer.js';
 
 const PARAM_BY_NAME = {
   q:'q', search:'search', query:'search', status:'status', type:'type', kind:'kind', category:'category',
@@ -208,11 +206,5 @@ export const QueryParamEnhancer = {
     syncResponsiveSidebar(root);
     applyDeepLink(root,params,current.route);
 
-    // The productivity layer used to exist as dead code: its installer was not
-    // connected to the SPA entrypoint. Mount it from this runtime enhancer,
-    // which already runs after each route render and can safely dedupe its cards.
-    if(['gimnasio','rutinas','nutricion'].includes(current.route)) {
-      FitnessProductivityEnhancer.mount(Store.get(),{Store,Toast});
-    }
   }
 };
