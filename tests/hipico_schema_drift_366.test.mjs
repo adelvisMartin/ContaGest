@@ -8,13 +8,15 @@ const read=(relative)=>readFile(new URL(`../${relative}`,import.meta.url),'utf8'
 test('v15 manifest freezes mainline schema capabilities without branch-only migrations',async()=>{
   const manifest=JSON.parse(await read('ops/roadmap/hipico-schema-capabilities-v15.json'));
   assert.equal(manifest.schema,'hipico-schema-capabilities.v15');
-  assert.equal(manifest.baseline,'8ceab45ee90c41bcdc5bee631a5b83b42992fe6d');
-  assert.equal(manifest.capabilities.length,13);
+  assert.equal(manifest.baseline,'89286ce65e2466873463bcd5518e1dc820e2633b');
+  assert.equal(manifest.capabilities.length,19);
   const ids=new Set(manifest.capabilities.map((item)=>item.id));
   for(const id of [
     'audit.idempotency_key','domain.aggregates','domain.events','outbox.reconciliation_constraint',
     'provider.evidence','documents.documents','documents.sources','agent.automation',
-    'agent.policy_disposition','agent.metric_schema_version','observability.events','audit.source','audit.authority'
+    'agent.policy_disposition','agent.metric_schema_version','observability.events','audit.source','audit.authority',
+    'outbox.receipts','outbox.payload_digest','outbox.lease_token','outbox.reconciled_by',
+    'outbox.reconciled_at','outbox.reconciliation_reason'
   ]) assert.ok(ids.has(id),`missing capability ${id}`);
 });
 
@@ -71,5 +73,5 @@ test('v15 deliberately missing marker is detected without touching a database',a
   const result=await inspectSchema(fakeClient,manifest);
   assert.equal(result.status,'DRIFT');
   assert.deepEqual(result.missing,[missingId]);
-  assert.equal(result.observed.filter((item)=>item.present).length,12);
+  assert.equal(result.observed.filter((item)=>item.present).length,18);
 });
