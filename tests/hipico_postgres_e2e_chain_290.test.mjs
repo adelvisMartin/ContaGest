@@ -4,7 +4,7 @@ import test from 'node:test';
 
 const read = (relative) => readFile(new URL(`../${relative}`, import.meta.url), 'utf8');
 
-test('v290 PostgreSQL chain uses isolated local databases, current v24 Agent schema and guaranteed cleanup', async () => {
+test('v290 PostgreSQL chain uses isolated local databases, current v26 schema chain and guaranteed cleanup', async () => {
   const [db, schema, workflow] = await Promise.all([
     read('scripts/hipico-ephemeral-db-v290.mjs'),
     read('scripts/hipico-apply-e2e-schema-v290.mjs'),
@@ -50,5 +50,5 @@ test('v290 PostgreSQL chain uses isolated local databases, current v24 Agent sch
   assert.match(workflow, /hipico-ephemeral-db-v290\.mjs create/);
   assert.match(workflow, /hipico-ephemeral-db-v290\.mjs drop/);
   assert.match(workflow, /if: always\(\)/);
-  assert.match(workflow, /v12-v24/);
+  assert.match(workflow, /v12-v26/);
 });

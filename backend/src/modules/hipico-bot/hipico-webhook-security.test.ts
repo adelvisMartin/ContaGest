@@ -91,7 +91,7 @@ test('Meta message identity is preserved exactly and malformed identities are re
 
 test('signed malformed or foreign identity is transport-acknowledged but never accepted',()=>{
   const postRoute=routes.slice(routes.indexOf("router.post('/webhook'"),routes.indexOf('export default router'));
-  assert.match(postRoute,/messages\.length!==expectedRawMessages[\s\S]*status\(200\)[\s\S]*accepted:false[\s\S]*invalid_message_identity/);
+  assert.match(postRoute,/expectedRawMessages>0&&messages\.length===0[\s\S]*status\(200\)[\s\S]*accepted:false[\s\S]*invalid_message_identity/);
   assert.match(postRoute,/webhook_phone_number_mismatch/);
   assert.match(postRoute,/acknowledged:true,accepted:false,retryable:false/);
 });

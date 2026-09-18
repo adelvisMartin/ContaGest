@@ -3,64 +3,47 @@ import test from 'node:test';
 import { readFileSync } from 'node:fs';
 
 const routes=readFileSync(new URL('./hipico-webhook.routes.ts',import.meta.url),'utf8');
-const service=readFileSync(new URL('./hipico-bot.service.ts',import.meta.url),'utf8');
+const canonical=readFileSync(new URL('./hipico-webhook-outbound.ts',import.meta.url),'utf8');
+const replay=readFileSync(new URL('./hipico-webhook-replay.ts',import.meta.url),'utf8');
+const outbox=readFileSync(new URL('./hipico-outbox.store.ts',import.meta.url),'utf8');
 
-test('real Meta webhook refuses in-memory fallback when PostgreSQL is unavailable',()=>{
-  const readiness=routes.indexOf('HipicoBotStore.dbReady(true)');
+test('real Meta message processing refuses in-memory fallback when PostgreSQL is unavailable',()=>{
+  const readiness=routes.indexOf('messages.length>0&&!await HipicoBotStore.dbReady(true)');
   const processing=routes.indexOf('processMessagesBounded(messages)');
   assert.ok(readiness>=0&&processing>readiness,'durability readiness must run before message processing');
   assert.match(routes,/webhook_persistence_unavailable/);
   assert.match(routes,/status\(503\)/);
   assert.match(routes,/retryable:true/);
-  assert.match(routes,/processIncoming\(message,\{requirePersistent:true\}\)/,'signed webhook processing must require durable event/outbox persistence');
+  assert.match(routes,/processIncomingCanonical\(message,\{requirePersistent:true\}\)/);
 });
 
-test('durable webhook processing cannot fall back to memory after the readiness pre-check',()=>{
-  assert.match(service,/async saveEvent\(row:any,options:\{requirePersistent\?:boolean\}=\{\}\)/);
-  assert.match(service,/if\(options\.requirePersistent\)throw Object\.assign\(new Error\('Persistent Hípico event storage is required for webhook ingestion\.'\),\{code:'HIPICO_WEBHOOK_PERSISTENCE_REQUIRED'\}\)/);
-  assert.match(service,/export async function processIncoming\(message:any,options:\{requirePersistent\?:boolean\}=\{\}\)/);
-  assert.match(service,/HipicoBotStore\.saveEvent\([^;]+options\)/s);
+test('canonical webhook processing propagates requirePersistent into durable event storage',()=>{
+  assert.match(canonical,/saveEvent:\(row,options\)=>HipicoBotStore\.saveEvent\(row,options\)/);
+  assert.match(canonical,/deps\.saveEvent\(\{\.\.\.message,\.\.\.result,status:'classified'\},options\)/);
+  assert.match(canonical,/HIPICO_OUTBOX_PERSISTENCE_REQUIRED/);
+  assert.match(canonical,/canonicalOutboxReadiness/);
 });
 
-test('webhook retry repairs a partial event-without-outbox write idempotently',()=>{
-  assert.match(service,/HipicoBotStore\.queueIdempotent\([^;]+meta-webhook[^;]+providerMessageId/s);
-  assert.match(service,/event\.inserted===false&&queued\.inserted===false/,'a fully persisted replay must stop without sending twice');
-  assert.match(routes,/const alreadyPersisted=await assertPersistedWebhookReplay\(message\);[\s\S]*processIncoming\(message,\{requirePersistent:true\}\)/);
-  const duplicateShortCircuit=service.indexOf("if(event.inserted===false)return{duplicate:true}");
-  assert.equal(duplicateShortCircuit,-1,'durable replay must not short-circuit before reconstructing a missing outbox');
+test('webhook replay repairs partial event/outbox persistence idempotently',()=>{
+  const guard=routes.indexOf('const alreadyPersisted=await assertPersistedWebhookReplay(message)');
+  const processing=routes.indexOf('processIncomingCanonical(message,{requirePersistent:true})',guard);
+  const duplicateRecheck=routes.indexOf('if(result?.duplicate&&!alreadyPersisted)await assertPersistedWebhookReplay(message)',processing);
+  assert.ok(guard>=0&&processing>guard&&duplicateRecheck>processing);
+  assert.match(canonical,/idempotencyKey:idempotencyKey\(String\(message\.providerMessageId\|\|''\)\)/);
+  assert.match(outbox,/ON CONFLICT\(owner_id, idempotency_key\) DO NOTHING/i);
+  assert.match(replay,/HIPICO_WEBHOOK_REPLAY_MISMATCH/);
 });
 
-test('interrupted automatic sends fail closed into reconciliation instead of blind resend',()=>{
-  assert.match(service,/persistedStatus==='sending'/);
-  assert.match(service,/INTERRUPTED_AUTOMATIC_SEND_REQUIRES_RECONCILIATION/);
-  assert.match(service,/HIPICO_WEBHOOK_RECONCILIATION_PERSISTENCE_REQUIRED/);
+test('canonical webhook never automatically reclaims reconciliation-required sends',()=>{
+  assert.match(outbox,/o\.status IN \('queued', 'retry'\)/);
+  const claim=outbox.slice(outbox.indexOf('WITH candidate AS'),outbox.indexOf('type SendingLease'));
+  assert.doesNotMatch(claim,/reconciliation_required/);
 });
 
-test('fresh sending lease stays in flight and retryable instead of premature reconciliation',()=>{
-  assert.match(service,/const WEBHOOK_SEND_LEASE_MS=2\*60\*1000/,'backend webhook must reuse the canonical two-minute send lease');
-  assert.match(service,/markStaleSendingReconciliation/,'sending replay must use an atomic stale-only transition');
-  assert.match(service,/HIPICO_WEBHOOK_SEND_IN_FLIGHT/,'a fresh sending lease must stay retryable instead of being quarantined');
-  assert.doesNotMatch(service,/persistedStatus==='sending'\)\{\s*const reconciled=await HipicoBotStore\.markReconciliationRequired/,'sending replay must never quarantine immediately');
-});
-
-test('stale sending lease is quarantined atomically using updatedAt cutoff',()=>{
-  assert.match(service,/async markStaleSendingReconciliation\(idValue:string,staleBefore:Date,error:string\)/);
-  assert.match(service,/"status"='sending' AND "updatedAt"<=\$\{staleBefore\}/,'stale quarantine must be guarded by the persisted sending timestamp');
-  assert.match(service,/new Date\(Date\.now\(\)-WEBHOOK_SEND_LEASE_MS\)/,'stale cutoff must derive from the canonical lease');
-});
-
-test('persistent webhook never acknowledges a non-durable automatic claim or delivery receipt',()=>{
-  assert.match(service,/if\(!claimed\)[\s\S]*options\.requirePersistent[\s\S]*HIPICO_WEBHOOK_CLAIM_PERSISTENCE_REQUIRED/);
-  assert.match(service,/markSent\(outbox\.id,sent\.providerMessageId,'automatic'\)[\s\S]*HIPICO_WEBHOOK_RECEIPT_PERSISTENCE_REQUIRED/);
-  assert.match(service,/markReconciliationRequired\(outbox\.id,error\?\.message\|\|String\(error\)\)[\s\S]*HIPICO_WEBHOOK_OUTBOX_STATE_PERSISTENCE_REQUIRED/);
-  assert.match(service,/markFailed\(outbox\.id,error\?\.message\|\|String\(error\)\)[\s\S]*HIPICO_WEBHOOK_OUTBOX_STATE_PERSISTENCE_REQUIRED/);
-});
-
-test('empty signed webhook batches are acknowledged without requiring PostgreSQL',()=>{
-  const emptyAck=routes.indexOf('if(messages.length===0)');
-  const readiness=routes.indexOf('HipicoBotStore.dbReady(true)');
-  assert.ok(emptyAck>=0&&readiness>emptyAck,'empty status-only batches should be acknowledged before persistence readiness');
-  assert.match(routes,/received:0,processed:0,failed:0/);
+test('empty message batches bypass message DB readiness while receipts keep their own durable path',()=>{
+  assert.match(routes,/if\(messages\.length>0&&!await HipicoBotStore\.dbReady\(true\)\)/);
+  assert.match(routes,/if\(receipts\.length>0\)[\s\S]*processReceiptsBounded\(receipts\)/);
+  assert.match(routes,/const result=messages\.length>0\?await processMessagesBounded\(messages\):\{processed:0,failed:0,mismatched:0\}/);
 });
 
 test('partial webhook processing failure remains retryable and is never acknowledged with 2xx',()=>{

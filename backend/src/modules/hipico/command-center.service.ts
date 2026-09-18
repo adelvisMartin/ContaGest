@@ -229,7 +229,6 @@ export async function buildHipicoCommandCenter(
   const failedReads: Array<[string, typeof providersRead, string]> = [
     ['MEETING', meetingsRead as any, 'Reuniones no disponibles.'],
     ['RACE', racesRead as any, 'Carreras no disponibles.'],
-    ['DOCUMENT', documentsRead as any, 'Documentos no disponibles.'],
     ['PROVIDER', providersRead as any, 'Providers no disponibles.'],
     ['CHANNEL', channelsRead as any, 'Canales no disponibles.'],
     ['QUEUE', queueRead as any, 'Cola operativa no disponible.'],
@@ -237,6 +236,9 @@ export async function buildHipicoCommandCenter(
   ];
   for (const [code, result, message] of failedReads) {
     if (result.state === 'unavailable') alerts.push({ severity: 'warning', code: `${code}_READ_UNAVAILABLE`, message });
+  }
+  if (documentsRead.state === 'unavailable' || documentStatesRead.state === 'unavailable') {
+    alerts.push({ severity: 'warning', code: 'DOCUMENT_READ_UNAVAILABLE', message: 'Documentos no disponibles.' });
   }
 
   if (agentIdentityRead.state === 'unavailable') {

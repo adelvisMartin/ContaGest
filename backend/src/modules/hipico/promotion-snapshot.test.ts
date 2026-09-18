@@ -11,7 +11,7 @@ test('promotion decision, metric snapshot and transition insert share one locked
   const setMode = source.slice(setModeStart, setModeEnd);
 
   assert.match(setMode, /prisma\.\$transaction\(async \(tx\) =>/);
-  assert.match(setMode, /await lockScope\(tx,/);
+  assert.match(setMode, /await lockAutomationScope\(tx,/);
   assert.match(setMode, /readMetricsSnapshot\(tx,/);
   assert.match(setMode, /canPromoteAutomation\(current, input\.target, metrics, input\.ownerApproved\)/);
   assert.match(setMode, /INSERT INTO public\.hipico_automation_transition_events/);

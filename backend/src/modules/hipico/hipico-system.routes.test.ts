@@ -52,7 +52,8 @@ void test('canonical system API exposes version/status and healthy readiness ove
   const status = await statusResponse.json() as any;
   assert.equal(status.ok, true);
   assert.equal(status.data.components.bridge.state, 'not_configured');
-  assert.equal(status.data.components.documentEngine.state, 'not_configured');
+  assert.equal(status.data.components.documentEngine.state, 'degraded');
+  assert.equal(status.data.components.agent.state, 'degraded');
 
   const readinessResponse = await fetch(`${runtime.origin}/api/v1/hipico/system/readiness`);
   assert.equal(readinessResponse.status, 200);
