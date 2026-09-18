@@ -17,7 +17,7 @@ export const PAGE_REGISTRY = {
   bancos: ['./pages/BankingPage.js', 'BankingPage'],
   nomina: ['./pages/PayrollPage.js', 'PayrollPage'],
   proveedores: ['./pages/SuppliersPage.js', 'SuppliersPage'],
-  compras: ['./pages/PurchasesPage.js', 'PurchasesPage'],
+  compras: ['./pages/PurchasesPage.jsx', 'PurchasesPage'],
   auditoria: ['./pages/AuditPage.js', 'AuditPage'],
   configuracion: ['./pages/SettingsPage.js', 'SettingsPage'],
   ayuda: ['./pages/HelpPage.js', 'HelpPage'],
