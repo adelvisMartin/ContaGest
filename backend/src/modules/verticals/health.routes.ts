@@ -56,6 +56,22 @@ const appointmentSchema = z.object({
   notes: optionalText
 });
 
+const DENTAL_PERMANENT_TEETH = new Set(['11','12','13','14','15','16','17','18','21','22','23','24','25','26','27','28','31','32','33','34','35','36','37','38','41','42','43','44','45','46','47','48']);
+const DENTAL_PRIMARY_TEETH = new Set(['51','52','53','54','55','61','62','63','64','65','71','72','73','74','75','81','82','83','84','85']);
+const dentalClinicalDataSchema = z.object({
+  tooth: optionalText,
+  procedure: optionalText,
+  odontogram: z.object({
+    dentition: z.enum(['permanent','primary']),
+    tooth: z.string().trim().min(2).max(2),
+    surfaces: z.array(z.enum(['vestibular','lingual_palatal','mesial','distal','occlusal_incisal'])).min(1).max(5),
+    condition: z.string().trim().min(1).max(120)
+  }).superRefine((value, refinement) => {
+    const catalog = value.dentition === 'primary' ? DENTAL_PRIMARY_TEETH : DENTAL_PERMANENT_TEETH;
+    if (!catalog.has(value.tooth)) refinement.addIssue({ code:'custom', path:['tooth'], message:'La pieza no pertenece a la dentición seleccionada.' });
+  })
+}).passthrough();
+
 const encounterSchema = z.object({
   patientId: z.string().min(10),
   professionalId: z.string().optional().nullable(),
@@ -70,6 +86,13 @@ const encounterSchema = z.object({
   clinicalData: jsonRecord,
   confidential: z.boolean().default(false),
   status: z.enum(['draft','signed','amended','cancelled']).default('draft')
+}).superRefine((value, refinement) => {
+  if (value.type === 'dental-treatment') {
+    const parsed = dentalClinicalDataSchema.safeParse(value.clinicalData);
+    if (!parsed.success) {
+      for (const issue of parsed.error.issues) refinement.addIssue({ code:'custom', path:['clinicalData',...issue.path], message:issue.message });
+    }
+  }
 });
 
 const measurementSchema = z.object({
