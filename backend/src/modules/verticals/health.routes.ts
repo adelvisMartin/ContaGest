@@ -267,6 +267,16 @@ router.post('/health/encounters/:id/amend', requirePermission('health.manage'), 
     const changedFields = dentalChangedFields(before, after);
     if (!changedFields.length) throw new HttpError(422, 'La enmienda debe contener al menos un cambio clínico.');
 
+    const nextProfessionalId = b.professionalId === undefined ? previous.professionalId : b.professionalId;
+    if (nextProfessionalId) {
+      const professionalRows = await tx.$queryRawUnsafe<any[]>(`
+        SELECT "id" FROM public."CareProfessional"
+        WHERE "tenantId"=$1 AND "id"=$2
+        LIMIT 1
+      `, tenantId, nextProfessionalId);
+      if (!professionalRows.length) throw new HttpError(422, 'El profesional no pertenece al tenant activo.');
+    }
+
     const priorVersioning = previousClinicalData.versioning && typeof previousClinicalData.versioning === 'object'
       ? previousClinicalData.versioning
       : {};
@@ -304,7 +314,7 @@ router.post('/health/encounters/:id/amend', requirePermission('health.manage'), 
     `,
       tenantId,
       previous.patientId,
-      b.professionalId === undefined ? previous.professionalId : b.professionalId,
+      nextProfessionalId,
       previous.appointmentId,
       previous.specialty,
       previous.type,
