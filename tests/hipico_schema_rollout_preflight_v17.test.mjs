@@ -164,3 +164,36 @@ test('v17 planner source has no mutation or auto-apply path',async()=>{
   assert.match(source,/runDriftCheck/);
   assert.doesNotMatch(source,/console\.(?:log|error)\([^\n]*(?:DATABASE_URL|connectionString|password|token)/i);
 });
+
+
+test('v17 manifest/order mismatch blocks rollout readiness',async()=>{
+  const manifest=JSON.parse(await read('ops/roadmap/hipico-schema-rollout-v17.json'));
+  const units=await loadMigrationUnits(manifest);
+  const plan=buildRolloutPlan({
+    candidateSha:SHA,
+    driftReport:drift(),
+    migrationUnits:units,
+    backupEvidence:validBackup(),
+    changeTicket:'#375',
+    orderValidation:{ok:false,reason:'MIGRATION_ORDER_MISMATCH'},
+    now:new Date(NOW)
+  });
+  assert.equal(plan.status,'BLOCKED');
+  assert.equal(plan.reason,'MIGRATION_ORDER_MISMATCH');
+});
+
+test('v17 drift NOT_EXECUTED never becomes rollout readiness',async()=>{
+  const manifest=JSON.parse(await read('ops/roadmap/hipico-schema-rollout-v17.json'));
+  const units=await loadMigrationUnits(manifest);
+  const plan=buildRolloutPlan({
+    candidateSha:SHA,
+    driftReport:drift('NOT_EXECUTED',{reason:'DATABASE_URL_REQUIRED'}),
+    migrationUnits:units,
+    backupEvidence:validBackup(),
+    changeTicket:'#375',
+    now:new Date(NOW)
+  });
+  assert.equal(plan.status,'NOT_EXECUTED');
+  assert.equal(plan.reason,'DATABASE_URL_REQUIRED');
+  assert.equal(plan.autoApply,false);
+});
