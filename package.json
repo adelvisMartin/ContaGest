@@ -76,7 +76,8 @@
     "audit:erp-ui-purchases": "node scripts/erp-ui-purchases-audit-v651.mjs",
     "audit:erp-ui-banking": "node scripts/erp-ui-banking-audit-v751.mjs",
     "test:backend:persistence:real": "npm --workspace backend exec -- tsx --test ../qa/postmerge-backend-persistence-v17.test.ts",
-    "test:backend:financial:real": "npm --workspace backend exec -- tsx --test ../qa/postmerge-financial-domain-v17.test.ts"
+    "test:backend:financial:real": "npm --workspace backend exec -- tsx --test ../qa/postmerge-financial-domain-v17.test.ts",
+    "audit:erp-ui-ledger": "node scripts/erp-ui-ledger-audit-v851.mjs"
   },
   "devDependencies": {
     "@playwright/test": "1.63.0"

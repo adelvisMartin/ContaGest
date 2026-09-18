@@ -8,7 +8,7 @@ export const PAGE_REGISTRY = {
   normativa: ['./pages/RegulatoryPage.js', 'RegulatoryPage'],
   historial: ['./pages/HistoryPage.js', 'HistoryPage'],
   reportes: ['./pages/ReportsPage.js', 'ReportsPage'],
-  contabilidad: ['./pages/LedgerPage.js', 'LedgerPage'],
+  contabilidad: ['./pages/LedgerPage.jsx', 'LedgerPage'],
   'libro-mayor': ['./pages/GeneralLedgerPage.js', 'GeneralLedgerPage'],
   'balance-sumas-saldos': ['./pages/TrialBalancePage.js', 'TrialBalancePage'],
   'hoja-trabajo': ['./pages/WorksheetPage.js', 'WorksheetPage'],
