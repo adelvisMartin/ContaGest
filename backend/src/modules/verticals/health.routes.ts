@@ -324,12 +324,19 @@ router.get('/health/encounters', requirePermission('health.manage'), asyncHandle
 }));
 
 router.post('/health/encounters', requirePermission('health.manage'), asyncHandler(async (req, res) => {
+  const tenantId=ctx(req).tenantId;
   const b = encounterSchema.parse(req.body || {});
+  const patientRows=await prisma.$queryRawUnsafe<any[]>(`SELECT "id" FROM public."CarePatient" WHERE "tenantId"=$1 AND "id"=$2 LIMIT 1`,tenantId,b.patientId);
+  if(!patientRows.length)throw new HttpError(422,'El paciente no pertenece al tenant activo.');
+  if(b.professionalId){
+    const professionalRows=await prisma.$queryRawUnsafe<any[]>(`SELECT "id" FROM public."CareProfessional" WHERE "tenantId"=$1 AND "id"=$2 LIMIT 1`,tenantId,b.professionalId);
+    if(!professionalRows.length)throw new HttpError(422,'El profesional no pertenece al tenant activo.');
+  }
   const clinicalData = b.type==='dental-treatment-plan' ? normalizeDentalTreatmentPlan(b.clinicalData) : b.clinicalData;
   const rows = await prisma.$queryRawUnsafe<any[]>(`
     INSERT INTO public."CareEncounter" ("id","tenantId","patientId","professionalId","appointmentId","specialty","type","subjective","objective","assessment","plan","diagnosisCodes","clinicalData","confidential","status","signedAt","createdAt","updatedAt")
     VALUES (gen_random_uuid()::text,$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11::jsonb,$12::jsonb,$13,$14,CASE WHEN $14='signed' THEN now() ELSE NULL END,now(),now()) RETURNING *
-  `, ctx(req).tenantId,b.patientId,b.professionalId||null,b.appointmentId||null,b.specialty,b.type,b.subjective||null,b.objective||null,b.assessment||null,b.plan||null,JSON.stringify(b.diagnosisCodes),JSON.stringify(clinicalData),b.confidential,b.status);
+  `, tenantId,b.patientId,b.professionalId||null,b.appointmentId||null,b.specialty,b.type,b.subjective||null,b.objective||null,b.assessment||null,b.plan||null,JSON.stringify(b.diagnosisCodes),JSON.stringify(clinicalData),b.confidential,b.status);
   ok(res, one(rows), 201);
 }));
 
