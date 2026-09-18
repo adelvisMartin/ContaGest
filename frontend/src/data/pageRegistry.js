@@ -52,7 +52,7 @@ export const PAGE_REGISTRY = {
   salud: ['./pages/HealthcarePage.js', 'HealthcarePage'],
   veterinaria: ['./pages/VeterinaryClinicPageV1123.jsx', 'VeterinaryClinicPage'],
   psicologia: ['./pages/PsychologyPracticePage.js', 'PsychologyPracticePage'],
-  odontologia: ['./pages/DentistryPracticePage.js', 'DentistryPracticePage'],
+  odontologia: ['./pages/DentistryPracticePage.jsx', 'DentistryPracticePage'],
   gimnasio: ['./pages/GymManagementPage.js', 'GymManagementPage'],
   rutinas: ['./pages/GymManagementPage.js', 'GymManagementPage'],
   nutricion: ['./pages/GymManagementPage.js', 'GymManagementPage'],
