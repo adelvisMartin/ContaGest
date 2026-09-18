@@ -18,6 +18,7 @@ const allChecks=()=>({
   auditRpcAnonExecute:false,
   auditRpcAuthenticatedExecute:true,
   auditRpcServiceRoleExecute:true,
+  auditSanitizerPresent:true,
   auditAnonDirectInsert:false,
   auditAnonDirectUpdate:false,
   auditAnonDirectDelete:false,
@@ -120,6 +121,7 @@ test('v18 verifier is read-only and checks v25/v26 security primitives',async()=
     'hipico_audit_events_authority_check',
     'hipico_append_audit',
     'hipico_audit_strip_reserved',
+    'auditSanitizerPresent',
     'has_function_privilege',
     'has_table_privilege'
   ]) assert.match(source,new RegExp(marker));
