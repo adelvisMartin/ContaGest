@@ -46,7 +46,7 @@ test('approval route checks policy before canonical worker claims an approval-re
   const dispatch=indexOfRequired(approve,'dispatchCanonicalOutbound');
   assert.ok(preflight<dispatch,'approval preflight must happen before canonical dispatch/claim');
   assert.match(approve,/allowApprovalRequired:true/);
-  assert.match(worker,/claimCanonicalOutbound\(\{[\s\S]*allowApprovalRequired:input\.allowApprovalRequired/);
+  assert.match(worker,/claim:\(input\)=>claimCanonicalOutbound\(input\)/);\n  assert.match(worker,/deps\.claim\(\{ownerId:input\.ownerId,id:input\.id\|\|null,allowApprovalRequired:input\.allowApprovalRequired===true\}\)/);
   assert.match(routes,/outbound_disabled/);
 });
 
@@ -63,8 +63,8 @@ test('accepted retry failed and reconciliation transitions are durable canonical
 
 test('unknown Meta acceptance is quarantined and never exposed as a blind retry',()=>{
   assert.match(policy,/HIPICO_CLOUD_DELIVERY_AMBIGUOUS/);
-  assert.match(policy,/action:'reconciliation'/);
-  assert.match(worker,/classification\.action==='reconciliation'/);
+  assert.match(policy,/action:'reconciliation_required'/);
+  assert.match(worker,/decision\.action==='reconciliation_required'/);
   assert.match(worker,/markCanonicalReconciliationRequired/);
   assert.match(routes,/result\.status==='reconciliation_required'/);
   assert.match(routes,/retryable:false,error:'reconciliation_required'/);
