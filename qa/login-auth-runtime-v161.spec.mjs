@@ -25,7 +25,7 @@ test('stale local session is rejected before Veterinaria mounts and intended rou
   let meCalls=0;
   await page.route('**/api/v1/auth/me',async(route)=>{meCalls+=1;await route.fulfill({status:401,contentType:'application/json',body:JSON.stringify({ok:false,message:'Sesión vencida'})});});
   await page.goto('/?module=veterinaria',{waitUntil:'domcontentloaded'});
-  await expect(page.locator('.login-shell-v161')).toBeVisible();
+  await expect(page.locator('.login-shell')).toBeVisible();
   await expect(page.locator('#veterinaryClinicRoot')).toHaveCount(0);
   expect(meCalls).toBe(1);
   await expect.poll(()=>page.evaluate(()=>localStorage.getItem('contagest_auth_session'))).toBeNull();
@@ -35,7 +35,7 @@ test('stale local session is rejected before Veterinaria mounts and intended rou
 test('desktop login is compact, aligned and has explicit icon/text spacing',async({page})=>{
   await mockCaptcha(page);
   await page.goto('/?module=login',{waitUntil:'domcontentloaded'});
-  await expect(page.locator('.login-shell-v161')).toBeVisible();
+  await expect(page.locator('.login-shell')).toBeVisible();
   await expect(page.locator('.login-card')).toBeVisible();
   await expect(page.locator('.login-panel')).toBeVisible();
   await expect(page.locator('body')).not.toContainText('Equipo interno');
@@ -80,7 +80,7 @@ for(const viewport of LOGIN_VIEWPORTS){
     await page.setViewportSize(viewport);
     await mockCaptcha(page);
     await page.goto('/?module=login',{waitUntil:'domcontentloaded'});
-    await expect(page.locator('.login-shell-v161')).toBeVisible();
+    await expect(page.locator('.login-shell')).toBeVisible();
     await expect(page.locator('.login-panel')).toBeHidden();
     const audit=await page.evaluate(()=>{
       const width=innerWidth;
