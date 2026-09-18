@@ -14,7 +14,7 @@ export const PAGE_REGISTRY = {
   'hoja-trabajo': ['./pages/WorksheetPage.js', 'WorksheetPage'],
   'estados-financieros': ['./pages/FinancialStatementsPage.js', 'FinancialStatementsPage'],
   'cierre-contable': ['./pages/AccountingClosePage.js', 'AccountingClosePage'],
-  bancos: ['./pages/BankingPage.js', 'BankingPage'],
+  bancos: ['./pages/BankingPage.jsx', 'BankingPage'],
   nomina: ['./pages/PayrollPage.js', 'PayrollPage'],
   proveedores: ['./pages/SuppliersPage.js', 'SuppliersPage'],
   compras: ['./pages/PurchasesPage.jsx', 'PurchasesPage'],
