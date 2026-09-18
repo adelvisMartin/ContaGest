@@ -55,6 +55,16 @@ if(vetEntry?.status==='MIGRATED'){
   if(!/import \{ VeterinaryWorkspace \} from '\.\/VeterinaryClinicPage\.jsx'/.test(vet))fail('veterinaria: migrated route must compose VeterinaryWorkspace declaratively');
 }
 
+const dentistryEntry=ERP_UI_WAVE_A_2_51.find((item)=>item.route==='odontologia');
+const dentistry=sourceCache.get(dentistryEntry?.renderer);
+if(dentistryEntry?.status==='MIGRATED'){
+  if(/components\/ui\/index\.js|mountSubmit|escapeHtml|innerHTML|querySelector|addEventListener/.test(dentistry))fail('odontologia: migrated route reintroduced imperative dentistry lifecycle or legacy kit');
+  if((dentistry.match(/createRoot\(/g)||[]).length!==1)fail('odontologia: migrated route must own exactly one React root');
+  for(const primitive of ['CgProvider','CgPageHeader','CgButton','CgTextField','CgSelect','CgStatusChip','CgEmptyState']){
+    if(!dentistry.includes(primitive))fail(`odontologia: missing canonical primitive ${primitive}`);
+  }
+}
+
 const css=read('frontend/src/styles/erp-runtime.css');
 for(const required of ['cg.visual.responsive','cg-dental-tooth-grid','cg-dental-list','cg-gym-v1124-grid','min-height:44px']){
   if(!css.includes(required))fail(`responsive owner missing ${required}`);
