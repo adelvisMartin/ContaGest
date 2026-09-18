@@ -43,12 +43,13 @@ test('legacy visual hotspots migrated to canonical contracts',()=>{
   }
 });
 
-test('Gym layout uses the reusable wide-card contract, not inline geometry',()=>{
-  const gym=page('GymManagementPage.js');
-  const adapters=read('frontend','src','styles','module-adapters.css');
-  assert.doesNotMatch(gym,/style=["']grid-column:1\/-1["']/);
-  assert.match(gym,/cg-gym-wide/);
-  assert.match(adapters,/\.cg-gym-wide\s*\{\s*grid-column:1\/-1;/);
+test('Gym layout is React/Cg/MUI and keeps wide-section geometry declarative',()=>{
+  const gym=page('GymManagementPage.jsx');
+  assert.match(gym,/createRoot\(/);
+  assert.match(gym,/CgProvider/);
+  assert.match(gym,/CgPageHeader/);
+  assert.match(gym,/gridColumn:wide\?'1\/-1':undefined/);
+  assert.doesNotMatch(gym,/components\/ui\/index\.js|mountSubmit|innerHTML|querySelector|addEventListener|MutationObserver/);
 });
 
 test('pretesting and module maturity never present heuristic scores as QA PASS',()=>{
@@ -133,7 +134,7 @@ test('source gates cover functional bindings plus buttons and icons before Vite 
 
 test('previous v16 financial safety fixes remain in place',()=>{
   const payroll=read('backend','src','modules','payroll','payroll.routes.ts');
-  const banking=page('BankingPage.js');
+  const banking=page('BankingPage.jsx');
   const dataImport=page('DataImportPage.js');
   const qr=page('QrBarcodePage.js');
   assert.match(payroll,/paid:\s*\[\s*\]/);
