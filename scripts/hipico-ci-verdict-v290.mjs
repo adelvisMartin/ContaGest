@@ -8,7 +8,8 @@ const JOB_ENV = Object.freeze({
   'browser-chromium': 'HIPICO_GATE_CHROMIUM',
   'security-regression': 'HIPICO_GATE_SECURITY',
   'android-debug': 'HIPICO_GATE_ANDROID',
-  'browser-matrix': 'HIPICO_GATE_MATRIX'
+  'browser-matrix': 'HIPICO_GATE_MATRIX',
+  'production-schema': 'HIPICO_GATE_PRODUCTION_SCHEMA'
 });
 
 export function classifyJob(job = {}) {

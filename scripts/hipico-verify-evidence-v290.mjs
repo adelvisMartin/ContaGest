@@ -115,7 +115,8 @@ const requiredDescriptors = [
 
 const optionalDescriptors = [
   { id: 'runtimeBuild', name: 'build-info.json', schemas: [] },
-  { id: 'apkMetadata', name: 'QA_APK_METADATA.json', schemas: [] }
+  { id: 'apkMetadata', name: 'QA_APK_METADATA.json', schemas: [] },
+  { id: 'productionSchema', name: 'schema-postdeploy.json', schemas: ['hipico-schema-postdeploy.v18'] }
 ];
 
 function findDescriptor(descriptor) {

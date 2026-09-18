@@ -375,9 +375,44 @@ jobs:
           if-no-files-found: warn
           retention-days: 30
 
+
+  production-schema:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      HIPICO_SCHEMA_DRIFT_DATABASE_URL: ${{ secrets.HIPICO_SCHEMA_VERIFY_DATABASE_URL }}
+      HIPICO_SCHEMA_POSTDEPLOY_REPORT: artifacts/qa/hipico-v290/schema-postdeploy.json
+    steps:
+      - name: Checkout exact candidate
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ env.HIPICO_CANDIDATE_SHA }}
+          fetch-depth: 0
+      - name: Setup Node 22
+        uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - name: Install locked workspace
+        run: npm ci --no-audit --no-fund
+      - name: Exact SHA gate
+        run: node scripts/hipico-exact-sha-gate.mjs
+      - name: Verify production schema post-deploy
+        run: node scripts/hipico-schema-postdeploy-v18.mjs
+      - name: Upload production schema evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: hipico-v290-production-schema-${{ env.HIPICO_CANDIDATE_SHA }}
+          path: artifacts/qa/hipico-v290/schema-postdeploy.json
+          if-no-files-found: warn
+          retention-days: 30
+
   release-report:
     if: always() && github.event_name != 'schedule'
-    needs: [static-release, postgres-e2e, browser-chromium, security-regression, android-debug, browser-matrix]
+    needs: [static-release, postgres-e2e, browser-chromium, security-regression, android-debug, browser-matrix, production-schema]
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
