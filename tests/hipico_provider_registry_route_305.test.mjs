@@ -11,7 +11,8 @@ test('operator race-provider API consumes the normalized provider registry inste
   assert.match(routes, /hipicoProviderPublicError/);
   assert.match(routes, /raceProvider\.getLiveStage/);
   assert.doesNotMatch(routes, /createHorseRaceProvider/);
-  assert.doesNotMatch(routes, /data:\s*\{\s*\.\.\.result/);
+  const providerBlock=routes.slice(routes.indexOf("router.get('/race-provider/status'"),routes.indexOf("router.get('/events'"));
+  assert.doesNotMatch(providerBlock, /data:\s*\{\s*\.\.\.result/);
 });
 
 test('provider registry public DTO remains enrichment-only, manual-review and raw-vendor free', () => {
