@@ -3,11 +3,13 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const DEFAULT_EXPECTED_ROUTES = 58;
-const PROTECTED_BACKEND_DOMAINS = new Set([
-  'accounting', 'approvals', 'banking', 'bank-reconciliation', 'commercial',
-  'fiscal', 'inventory', 'payroll', 'purchases', 'rbac', 'sales', 'user-security'
+const OPTIONAL_PACK_MODULES = new Set(['verticals', 'food', 'hipico', 'hipico-bot']);
+const OPTIONAL_PACK_FAMILIES = new Map([
+  ['verticals', 'verticals'],
+  ['food', 'food'],
+  ['hipico', 'hipico'],
+  ['hipico-bot', 'hipico']
 ]);
-const OPTIONAL_VERTICAL_SEGMENTS = ['/verticals/', '/hipico-bot/'];
 
 const uniq = (values) => [...new Set(values)];
 const normalize = (value) => value.split(path.sep).join('/');
@@ -64,24 +66,59 @@ function importSpecifiers(source) {
   return uniq(values);
 }
 
-function protectedDomainFor(filePath) {
+function moduleSegmentFor(filePath) {
   const normalized = normalize(filePath);
   const marker = '/backend/src/modules/';
   const index = normalized.indexOf(marker);
   if (index < 0) return null;
-  const segment = normalized.slice(index + marker.length).split('/')[0];
-  return PROTECTED_BACKEND_DOMAINS.has(segment) ? segment : null;
+  const tail = normalized.slice(index + marker.length);
+  if (!tail.includes('/')) return null;
+  return tail.split('/')[0] || null;
+}
+
+function protectedDomainFor(filePath) {
+  const segment = moduleSegmentFor(filePath);
+  return segment && !OPTIONAL_PACK_MODULES.has(segment) ? segment : null;
+}
+
+function relativeImportTargetModule(filePath, specifier) {
+  if (!specifier.startsWith('.')) return null;
+  const absoluteTarget = path.resolve(path.dirname(filePath), specifier);
+  return moduleSegmentFor(absoluteTarget);
+}
+
+function isTestOnlySource(filePath) {
+  return /\.(?:test|integration)\.(?:ts|tsx|js|mjs)$/.test(normalize(filePath));
 }
 
 export function findForbiddenBackendDependencies(files) {
   const findings = [];
   for (const file of files) {
-    if (!protectedDomainFor(file.path)) continue;
+    if (isTestOnlySource(file.path) || !protectedDomainFor(file.path)) continue;
     for (const specifier of importSpecifiers(file.source)) {
-      const normalizedSpecifier = `/${specifier.replaceAll('\\', '/')}/`;
-      if (OPTIONAL_VERTICAL_SEGMENTS.some((segment) => normalizedSpecifier.includes(segment))) {
+      const targetModule = relativeImportTargetModule(file.path, specifier);
+      if (targetModule && OPTIONAL_PACK_MODULES.has(targetModule)) {
         findings.push(`${normalize(file.path)} imports optional vertical dependency ${specifier}`);
       }
+    }
+  }
+  return findings.sort();
+}
+
+export function findForbiddenOptionalPackDependencies(files) {
+  const findings = [];
+  for (const file of files) {
+    if (isTestOnlySource(file.path)) continue;
+    const sourceModule = moduleSegmentFor(file.path);
+    const sourceFamily = sourceModule ? OPTIONAL_PACK_FAMILIES.get(sourceModule) : null;
+    if (!sourceFamily) continue;
+
+    for (const specifier of importSpecifiers(file.source)) {
+      const targetModule = relativeImportTargetModule(file.path, specifier);
+      if (!targetModule) continue;
+      const targetFamily = OPTIONAL_PACK_FAMILIES.get(targetModule);
+      if (targetFamily === sourceFamily) continue;
+      findings.push(`${normalize(file.path)} imports ERP implementation dependency ${specifier}`);
     }
   }
   return findings.sort();
@@ -122,6 +159,7 @@ export function auditRepositoryArchitecture(root, { expectedRouteCount = DEFAULT
 
   const backendFiles = walkSourceFiles(path.join(root, 'backend', 'src', 'modules'));
   errors.push(...findForbiddenBackendDependencies(backendFiles));
+  errors.push(...findForbiddenOptionalPackDependencies(backendFiles));
 
   return {
     ok: errors.length === 0,

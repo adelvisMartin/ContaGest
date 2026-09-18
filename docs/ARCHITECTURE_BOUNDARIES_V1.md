@@ -42,9 +42,14 @@ Los routers concretos y CRUDs pasan a `backend/src/modules/route-manifest.ts`. E
 
 ## Regla de dependencias
 
-El núcleo puede exponer contratos que consuman verticales, pero los dominios protegidos de contabilidad, banca, compras, ventas, inventario, seguridad y fiscalidad no pueden importar directamente implementación de `verticals` ni `hipico-bot`.
+La frontera es bidireccional y ejecutable:
 
-Las integraciones deben entrar mediante contratos/adapters ubicados en una capa compartida o de integración explícita.
+- ningún módulo Core puede importar implementación de packs opcionales (`verticals`, `food`, `hipico`, `hipico-bot`);
+- un pack opcional puede depender de `shared`, `database`, librerías externas y de archivos de su propia familia;
+- `hipico` y `hipico-bot` forman una misma familia de pack y pueden colaborar entre sí;
+- un pack opcional no puede importar directamente `accounting`, `sales`, `inventory`, `auth`, `rbac` u otra implementación interna del ERP.
+
+Los cruces deben entrar mediante contratos/adapters ubicados en `backend/src/shared` o en una capa de integración explícita. `backend/src/shared/contracts/optional-pack.ts` define el contexto tenant mínimo compartido actualmente por los verticales.
 
 ## Lo que este cambio NO certifica
 
