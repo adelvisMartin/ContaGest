@@ -114,7 +114,7 @@ const report = {
   },
   blockers,
   evidence: {
-    postgresChain: 'v12-v26',
+    postgresChain: 'v12-v27',
     database: 'isolated-ephemeral',
     loadVolumes: [100, 500, 2000],
     sourceReadOnly: true,
@@ -141,6 +141,6 @@ const report = {
 
 await fs.mkdir(outputRoot, { recursive: true });
 await fs.writeFile(path.join(outputRoot, 'release-report.json'), `${JSON.stringify(report, null, 2)}\n`, 'utf8');
-await fs.writeFile(path.join(outputRoot, 'release-report.md'), `# Control Hípico — Release report #290\n\n- SHA: \`${sha}\`\n- Code review: **${codeReviewStatus}**\n- Stable promotion: **${stablePromotionStatus}**\n- Production readiness: **${readinessState}**\n- Automation readiness: **${automationReadiness}**\n- Readiness score: **${readinessScore.score}/100**\n- PostgreSQL chain: **v12-v26**\n- Infra: **${blockedInfrastructure ? 'BLOCKED_INFRASTRUCTURE' : 'N/A'}**\n\n## Applied caps\n${readinessScore.appliedCaps.length ? readinessScore.appliedCaps.map((item) => `- max ${item.max}: ${item.reason}`).join('\n') : '- Ninguno.'}\n\n## Gates\n${Object.entries(report.gates).map(([name, value]) => `- ${name}: **${value}**`).join('\n')}\n\n## Blockers\n${blockers.length ? blockers.map((item) => `- ${item.gate}: **${item.status}**${item.reason ? ` — ${item.reason}` : ''}`).join('\n') : '- Ninguno.'}\n`, 'utf8');
+await fs.writeFile(path.join(outputRoot, 'release-report.md'), `# Control Hípico — Release report #290\n\n- SHA: \`${sha}\`\n- Code review: **${codeReviewStatus}**\n- Stable promotion: **${stablePromotionStatus}**\n- Production readiness: **${readinessState}**\n- Automation readiness: **${automationReadiness}**\n- Readiness score: **${readinessScore.score}/100**\n- PostgreSQL chain: **v12-v27**\n- Infra: **${blockedInfrastructure ? 'BLOCKED_INFRASTRUCTURE' : 'N/A'}**\n\n## Applied caps\n${readinessScore.appliedCaps.length ? readinessScore.appliedCaps.map((item) => `- max ${item.max}: ${item.reason}`).join('\n') : '- Ninguno.'}\n\n## Gates\n${Object.entries(report.gates).map(([name, value]) => `- ${name}: **${value}**`).join('\n')}\n\n## Blockers\n${blockers.length ? blockers.map((item) => `- ${item.gate}: **${item.status}**${item.reason ? ` — ${item.reason}` : ''}`).join('\n') : '- Ninguno.'}\n`, 'utf8');
 console.log(`[hipico-v290] release report sha=${sha} codeReview=${codeReviewStatus} stable=${stablePromotionStatus} readiness=${readinessState} automation=${automationReadiness} score=${readinessScore.score}`);
 if (codeReviewStatus !== 'PASS') process.exitCode = 1;

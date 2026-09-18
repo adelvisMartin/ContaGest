@@ -38,7 +38,7 @@ function drift(status='DRIFT',overrides={}){
   };
 }
 
-test('v17 rollout manifest exactly matches the canonical v12-v26 E2E migration order',async()=>{
+test('v17 rollout manifest exactly matches the canonical v12-v27 E2E migration order',async()=>{
   const [manifestText,chain]=await Promise.all([
     read('ops/roadmap/hipico-schema-rollout-v17.json'),
     read('scripts/hipico-apply-e2e-schema-v290.mjs')
@@ -47,9 +47,9 @@ test('v17 rollout manifest exactly matches the canonical v12-v26 E2E migration o
   assert.equal(manifest.schema,'hipico-schema-rollout.v17');
   assert.equal(manifest.autoApply,false);
   assert.equal(manifest.manualApplyRequired,true);
-  assert.equal(manifest.migrations.length,23);
+  assert.equal(manifest.migrations.length,26);
   const parsed=[...chain.matchAll(/'((?:supabase\/sql\/hipico_v[^']+\.sql))'/g)].map((m)=>m[1]);
-  const canonical=[...new Set(parsed)].slice(0,23);
+  const canonical=[...new Set(parsed)].slice(0,26);
   assert.deepEqual(manifest.migrations.map((m)=>m.path),canonical);
   assert.equal(validateMigrationOrder(manifest,chain).ok,true);
 });
@@ -57,7 +57,7 @@ test('v17 rollout manifest exactly matches the canonical v12-v26 E2E migration o
 test('v17 migration units bind every SQL file to a SHA-256 digest',async()=>{
   const manifest=JSON.parse(await read('ops/roadmap/hipico-schema-rollout-v17.json'));
   const units=await loadMigrationUnits(manifest);
-  assert.equal(units.length,23);
+  assert.equal(units.length,26);
   for(const unit of units){
     assert.match(unit.sha256,/^[a-f0-9]{64}$/);
     assert.equal(unit.autoApply,false);
@@ -99,7 +99,7 @@ test('v17 DRIFT is READY_FOR_MANUAL_APPLY only with valid backup restore evidenc
   assert.equal(plan.changeTicket,'#375');
   assert.equal(plan.backup.restoreVerified,true);
   assert.deepEqual(plan.missingCapabilities,['audit.source','observability.events']);
-  assert.equal(plan.migrations.length,23);
+  assert.equal(plan.migrations.length,26);
 });
 
 test('v17 DRIFT without verified restore evidence is BLOCKED',async()=>{

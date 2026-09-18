@@ -12,6 +12,24 @@ const EXPECTED_SECURITY=Object.freeze({
   observabilityTablePresent:true,
   observabilityRls:true,
   observabilityAppendOnlyTrigger:true,
+  outboxReceiptsPresent:true,
+  outboxRls:true,
+  outboxReceiptsRls:true,
+  outboxReceiptsAppendOnlyTrigger:true,
+  outboxAuthenticatedSelectPolicyPresent:true,
+  outboxReceiptsAuthenticatedSelectPolicyPresent:true,
+  outboxClientMutationPolicyAbsent:true,
+  outboxReceiptsClientMutationPolicyAbsent:true,
+  outboxAuthenticatedDirectSelect:true,
+  outboxAuthenticatedDirectInsert:false,
+  outboxAuthenticatedDirectUpdate:false,
+  outboxAuthenticatedDirectDelete:false,
+  outboxAuthenticatedDirectTruncate:false,
+  outboxReceiptsAuthenticatedDirectSelect:true,
+  outboxReceiptsAuthenticatedDirectInsert:false,
+  outboxReceiptsAuthenticatedDirectUpdate:false,
+  outboxReceiptsAuthenticatedDirectDelete:false,
+  outboxReceiptsAuthenticatedDirectTruncate:false,
   auditIdempotencyIndex:true,
   auditSourceConstraint:true,
   auditAuthorityConstraint:true,
@@ -119,6 +137,24 @@ function mapSecurityRow(row={}){
     observabilityTablePresent:row.observability_table_present===true,
     observabilityRls:row.observability_rls===true,
     observabilityAppendOnlyTrigger:row.observability_append_only_trigger===true,
+    outboxReceiptsPresent:row.outbox_receipts_present===true,
+    outboxRls:row.outbox_rls===true,
+    outboxReceiptsRls:row.outbox_receipts_rls===true,
+    outboxReceiptsAppendOnlyTrigger:row.outbox_receipts_append_only_trigger===true,
+    outboxAuthenticatedSelectPolicyPresent:row.outbox_authenticated_select_policy_present===true,
+    outboxReceiptsAuthenticatedSelectPolicyPresent:row.outbox_receipts_authenticated_select_policy_present===true,
+    outboxClientMutationPolicyAbsent:row.outbox_client_mutation_policy_absent===true,
+    outboxReceiptsClientMutationPolicyAbsent:row.outbox_receipts_client_mutation_policy_absent===true,
+    outboxAuthenticatedDirectSelect:row.outbox_authenticated_direct_select===true,
+    outboxAuthenticatedDirectInsert:row.outbox_authenticated_direct_insert===true,
+    outboxAuthenticatedDirectUpdate:row.outbox_authenticated_direct_update===true,
+    outboxAuthenticatedDirectDelete:row.outbox_authenticated_direct_delete===true,
+    outboxAuthenticatedDirectTruncate:row.outbox_authenticated_direct_truncate===true,
+    outboxReceiptsAuthenticatedDirectSelect:row.outbox_receipts_authenticated_direct_select===true,
+    outboxReceiptsAuthenticatedDirectInsert:row.outbox_receipts_authenticated_direct_insert===true,
+    outboxReceiptsAuthenticatedDirectUpdate:row.outbox_receipts_authenticated_direct_update===true,
+    outboxReceiptsAuthenticatedDirectDelete:row.outbox_receipts_authenticated_direct_delete===true,
+    outboxReceiptsAuthenticatedDirectTruncate:row.outbox_receipts_authenticated_direct_truncate===true,
     auditIdempotencyIndex:row.audit_idempotency_index===true,
     auditSourceConstraint:row.audit_source_constraint===true,
     auditAuthorityConstraint:row.audit_authority_constraint===true,
@@ -166,6 +202,61 @@ export async function runSecurityChecks({
           select 1 from pg_trigger
           where not tgisinternal and tgname='hipico_observability_no_mutation'
         ) as observability_append_only_trigger,
+        (to_regclass('public.hipico_outbox_receipts') is not null) as outbox_receipts_present,
+        coalesce((
+          select c.relrowsecurity
+          from pg_class c
+          join pg_namespace n on n.oid=c.relnamespace
+          where n.nspname='public' and c.relname='hipico_outbox'
+          limit 1
+        ),false) as outbox_rls,
+        coalesce((
+          select c.relrowsecurity
+          from pg_class c
+          join pg_namespace n on n.oid=c.relnamespace
+          where n.nspname='public' and c.relname='hipico_outbox_receipts'
+          limit 1
+        ),false) as outbox_receipts_rls,
+        exists(
+          select 1 from pg_trigger
+          where not tgisinternal and tgname='hipico_outbox_receipts_immutable'
+        ) as outbox_receipts_append_only_trigger,
+        exists(
+          select 1 from pg_policies
+          where schemaname='public' and tablename='hipico_outbox'
+            and policyname='hipico_outbox_select_own'
+            and cmd='SELECT'
+            and array_position(roles,'authenticated'::name) is not null
+        ) as outbox_authenticated_select_policy_present,
+        exists(
+          select 1 from pg_policies
+          where schemaname='public' and tablename='hipico_outbox_receipts'
+            and policyname='hipico_outbox_receipts_select_own'
+            and cmd='SELECT'
+            and array_position(roles,'authenticated'::name) is not null
+        ) as outbox_receipts_authenticated_select_policy_present,
+        not exists(
+          select 1 from pg_policies
+          where schemaname='public' and tablename='hipico_outbox'
+            and cmd in ('INSERT','UPDATE','DELETE','ALL')
+            and array_position(roles,'authenticated'::name) is not null
+        ) as outbox_client_mutation_policy_absent,
+        not exists(
+          select 1 from pg_policies
+          where schemaname='public' and tablename='hipico_outbox_receipts'
+            and cmd in ('INSERT','UPDATE','DELETE','ALL')
+            and array_position(roles,'authenticated'::name) is not null
+        ) as outbox_receipts_client_mutation_policy_absent,
+        coalesce(has_table_privilege('authenticated',to_regclass('public.hipico_outbox'),'SELECT'),false) as outbox_authenticated_direct_select,
+        coalesce(has_table_privilege('authenticated',to_regclass('public.hipico_outbox'),'INSERT'),false) as outbox_authenticated_direct_insert,
+        coalesce(has_table_privilege('authenticated',to_regclass('public.hipico_outbox'),'UPDATE'),false) as outbox_authenticated_direct_update,
+        coalesce(has_table_privilege('authenticated',to_regclass('public.hipico_outbox'),'DELETE'),false) as outbox_authenticated_direct_delete,
+        coalesce(has_table_privilege('authenticated',to_regclass('public.hipico_outbox'),'TRUNCATE'),false) as outbox_authenticated_direct_truncate,
+        coalesce(has_table_privilege('authenticated',to_regclass('public.hipico_outbox_receipts'),'SELECT'),false) as outbox_receipts_authenticated_direct_select,
+        coalesce(has_table_privilege('authenticated',to_regclass('public.hipico_outbox_receipts'),'INSERT'),false) as outbox_receipts_authenticated_direct_insert,
+        coalesce(has_table_privilege('authenticated',to_regclass('public.hipico_outbox_receipts'),'UPDATE'),false) as outbox_receipts_authenticated_direct_update,
+        coalesce(has_table_privilege('authenticated',to_regclass('public.hipico_outbox_receipts'),'DELETE'),false) as outbox_receipts_authenticated_direct_delete,
+        coalesce(has_table_privilege('authenticated',to_regclass('public.hipico_outbox_receipts'),'TRUNCATE'),false) as outbox_receipts_authenticated_direct_truncate,
         exists(
           select 1 from pg_indexes
           where schemaname='public'

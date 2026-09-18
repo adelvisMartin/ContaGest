@@ -28,11 +28,14 @@ const migrations = [
   'supabase/sql/hipico_v19_race_idempotency.sql',
   'supabase/sql/hipico_v20_document_audit.sql',
   'supabase/sql/hipico_v21_race_data_conflicts.sql',
+  'supabase/sql/hipico_v21_production_outbox.sql',
+  'supabase/sql/hipico_v21_outbox_reconciliation_audit.sql',
   'supabase/sql/hipico_v22_agent_shadow.sql',
   'supabase/sql/hipico_v23_risk_policy.sql',
   'supabase/sql/hipico_v24_shadow_metrics.sql',
   'supabase/sql/hipico_v25_observability.sql',
-  'supabase/sql/hipico_v26_audit_rpc_integrity.sql'
+  'supabase/sql/hipico_v26_audit_rpc_integrity.sql',
+  'supabase/sql/hipico_v27_outbox_authority.sql'
 ];
 
 const requiredAgentColumns = [
@@ -137,7 +140,7 @@ try {
   const required = [
     'hipico_workspaces', 'hipico_profiles', 'hipico_audit_events',
     'hipico_bot_channels', 'hipico_messages', 'hipico_operation_events', 'hipico_shadow_evaluations',
-    'hipico_outbox', 'hipico_ledger_entries', 'hipico_reconciliations',
+    'hipico_outbox', 'hipico_outbox_receipts', 'hipico_ledger_entries', 'hipico_reconciliations',
     'hipico_domain_aggregates', 'hipico_domain_events',
     'hipico_provider_evidence', 'hipico_meetings', 'hipico_races', 'hipico_race_events',
     'hipico_group_automation', 'hipico_agent_evaluations', 'hipico_automation_transition_events',
@@ -169,7 +172,8 @@ try {
     'hipico_document_events_immutable',
     'hipico_automation_transition_events_append_only',
     'hipico_agent_evaluations_review_once',
-    'hipico_observability_no_mutation'
+    'hipico_observability_no_mutation',
+    'hipico_outbox_receipts_immutable'
   ];
   const triggerRows = await client.query(`
     SELECT tgname FROM pg_trigger
@@ -211,6 +215,54 @@ try {
   const agentPolicyConstraintsPresent = missingAgentConstraints.length === 0;
   if (!agentPolicyConstraintsPresent) {
     throw new Error(`Agent policy/metric constraints missing: ${missingAgentConstraints.join(', ')}`);
+  }
+
+  const requiredOutboxColumns = [
+    'correlation_id','payload_digest','provider','lease_token','leased_at','leased_until',
+    'reconciled_by','reconciled_at','reconciliation_reason'
+  ];
+  const outboxColumnRows = await client.query(`
+    SELECT column_name
+    FROM information_schema.columns
+    WHERE table_schema='public'
+      AND table_name='hipico_outbox'
+      AND column_name = ANY($1::text[])
+  `, [requiredOutboxColumns]);
+  const outboxColumns = new Set(outboxColumnRows.rows.map((row) => row.column_name));
+  const missingOutboxColumns = requiredOutboxColumns.filter((name) => !outboxColumns.has(name));
+  if (missingOutboxColumns.length) {
+    throw new Error(`Canonical outbox v21/v27 columns missing: ${missingOutboxColumns.join(', ')}`);
+  }
+
+  const outboxPrivileges = await client.query(`
+    SELECT
+      has_table_privilege('authenticated','public.hipico_outbox','SELECT') AS outbox_select,
+      has_table_privilege('authenticated','public.hipico_outbox','INSERT') AS outbox_insert,
+      has_table_privilege('authenticated','public.hipico_outbox','UPDATE') AS outbox_update,
+      has_table_privilege('authenticated','public.hipico_outbox','DELETE') AS outbox_delete,
+      has_table_privilege('authenticated','public.hipico_outbox','TRUNCATE') AS outbox_truncate,
+      has_table_privilege('authenticated','public.hipico_outbox_receipts','SELECT') AS receipts_select,
+      has_table_privilege('authenticated','public.hipico_outbox_receipts','INSERT') AS receipts_insert,
+      has_table_privilege('authenticated','public.hipico_outbox_receipts','UPDATE') AS receipts_update,
+      has_table_privilege('authenticated','public.hipico_outbox_receipts','DELETE') AS receipts_delete,
+      has_table_privilege('authenticated','public.hipico_outbox_receipts','TRUNCATE') AS receipts_truncate
+  `);
+  const outboxPrivilege = outboxPrivileges.rows[0] || {};
+  const authenticatedOutboxReadAllowed = outboxPrivilege.outbox_select === true;
+  const authenticatedOutboxReceiptReadAllowed = outboxPrivilege.receipts_select === true;
+  const authenticatedOutboxWriteDenied =
+    outboxPrivilege.outbox_insert !== true
+    && outboxPrivilege.outbox_update !== true
+    && outboxPrivilege.outbox_delete !== true
+    && outboxPrivilege.outbox_truncate !== true;
+  const authenticatedOutboxReceiptWriteDenied =
+    outboxPrivilege.receipts_insert !== true
+    && outboxPrivilege.receipts_update !== true
+    && outboxPrivilege.receipts_delete !== true
+    && outboxPrivilege.receipts_truncate !== true;
+  if (!authenticatedOutboxReadAllowed || !authenticatedOutboxReceiptReadAllowed
+      || !authenticatedOutboxWriteDenied || !authenticatedOutboxReceiptWriteDenied) {
+    throw new Error('Canonical outbox v27 client authority mismatch');
   }
 
   const auditColumnRows = await client.query(`
@@ -287,6 +339,8 @@ try {
   await expectPermissionDenied(client, 'authenticated', ownerId,
     `INSERT INTO public.hipico_outbox(owner_id,group_key,destination,idempotency_key,payload) VALUES('${ownerId}'::uuid,'rbac-own','test','forbidden-outbox','{}'::jsonb)`);
   await expectPermissionDenied(client, 'authenticated', ownerId,
+    `INSERT INTO public.hipico_outbox_receipts(owner_id,outbox_id,provider,provider_message_id,receipt_status,receipt_timestamp) VALUES('${ownerId}'::uuid,'00000000-0000-4000-8000-000000000001'::uuid,'test','forbidden-receipt','sent',now())`);
+  await expectPermissionDenied(client, 'authenticated', ownerId,
     `INSERT INTO public.hipico_domain_aggregates(owner_id,group_key,aggregate_kind,aggregate_key,status) VALUES('${ownerId}'::uuid,'rbac-own','race','forbidden-race','OPEN')`);
   await expectPermissionDenied(client, 'authenticated', ownerId,
     `INSERT INTO public.hipico_meetings(owner_id,group_key,venue_code,meeting_date,status) VALUES('${ownerId}'::uuid,'rbac-own','QA','2026-09-13','OPEN')`);
@@ -315,7 +369,12 @@ try {
       workspaceOwnerIsolation: true,
       messageOwnerIsolation: true,
       authenticatedLedgerWriteDenied: true,
-      authenticatedOutboxWriteDenied: true,
+      authenticatedOutboxWriteDenied,
+      authenticatedOutboxReceiptWriteDenied,
+      authenticatedOutboxReadAllowed,
+      authenticatedOutboxReceiptReadAllowed,
+      outboxAuthorityColumnsPresent: missingOutboxColumns.length === 0,
+      outboxReceiptsAppendOnlyTrigger: triggers.has('hipico_outbox_receipts_immutable'),
       authenticatedCanonicalDomainWriteDenied: true,
       authenticatedRaceWriteDenied: true,
       authenticatedAgentAutomationWriteDenied: true,
@@ -342,7 +401,7 @@ try {
     }
   }, null, 2)}\n`, 'utf8');
 
-  console.log(`[hipico-v290] current schema ready (${required.length} required tables; v12-v26 RLS/RBAC evidence executed)`);
+  console.log(`[hipico-v290] current schema ready (${required.length} required tables; v12-v27 RLS/RBAC evidence executed)`);
 } catch (error) {
   try { await client.query('ROLLBACK'); } catch {}
   throw error;
