@@ -24,7 +24,7 @@ if(!fs.existsSync(manifestPath)){
   if(PAGE_ROUTES.length!==manifest.routeCatalog.expectedCount) fail(`pageRegistry count drift: ${PAGE_ROUTES.length}`);
   if(!same([...PAGE_ROUTES],[...manifest.routeCatalog.routes])) fail('pageRegistry route/order drift from frozen manifest');
 
-  const routesOf=(relative)=>[...read(relative).matchAll(/\\brouter\\.(get|post|put|patch|delete)\\(\\s*['"]([^'"]+)['"]/g)]
+  const routesOf=(relative)=>[...read(relative).matchAll(/\brouter\.(get|post|put|patch|delete)\(\s*['"]([^'"]+)['"]/g)]
     .map((match)=>`${match[1].toUpperCase()} ${match[2]}`);
 
   for(const [relative,expected] of Object.entries(manifest.endpoints.bySource||{})){
