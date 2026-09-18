@@ -5,10 +5,10 @@ import {
   CgButton, CgEmptyState, CgPageHeader, CgProvider, CgSelect, CgState, CgStatusChip, CgTextField
 } from '../components/ui/cg/CgPrimitives.jsx';
 import { HealthVerticalService } from '../services/verticalService.js';
+import { ToothSurfaceSelector } from '../components/dentistry/ToothSurfaceSelector.jsx';
 
 const PERMANENT_TEETH=['11','12','13','14','15','16','17','18','21','22','23','24','25','26','27','28','31','32','33','34','35','36','37','38','41','42','43','44','45','46','47','48'];
 const PRIMARY_TEETH=['51','52','53','54','55','61','62','63','64','65','71','72','73','74','75','81','82','83','84','85'];
-const TOOTH_SURFACES=[['vestibular','Vestibular'],['lingual_palatal','Lingual / palatina'],['mesial','Mesial'],['distal','Distal'],['occlusal_incisal','Oclusal / incisal']];
 const PROCEDURES=['Evaluación','Profilaxis / limpieza','Restauración','Endodoncia','Extracción','Periodoncia','Ortodoncia','Prótesis','Implante','Radiografía / estudio','Control postoperatorio'];
 const SPECIALTIES=[
   ['odontologia-general','Odontología general'],['ortodoncia','Ortodoncia'],['endodoncia','Endodoncia'],
@@ -233,10 +233,14 @@ function DentistryWorkspace({ state, context }){
           <Box className="cg-dental-tooth-grid" sx={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(44px,1fr))',gap:.6,mt:.8}}>
             {toothOptions.map((tooth)=><CgButton key={tooth} type="button" size="small" variant={selectedTooth===tooth?'contained':'outlined'} aria-pressed={selectedTooth===tooth} onClick={()=>{setSelectedTooth(tooth);setSelectedSurfaces([]);}} sx={{minWidth:44,minHeight:44,p:0}}>{tooth}</CgButton>)}
           </Box>
-          <Typography variant="caption" color="text.secondary" sx={{display:'block',mt:1,fontWeight:600}}>Superficies</Typography>
-          <Stack direction="row" flexWrap="wrap" gap={.6} mt={.6}>
-            {TOOTH_SURFACES.map(([value,label])=><CgButton key={value} type="button" size="small" variant={selectedSurfaces.includes(value)?'contained':'outlined'} aria-pressed={selectedSurfaces.includes(value)} disabled={!selectedTooth} onClick={()=>setSelectedSurfaces((current)=>current.includes(value)?current.filter((item)=>item!==value):[...current,value])}>{label}</CgButton>)}
-          </Stack>
+          <Typography variant="caption" color="text.secondary" sx={{display:'block',mt:1,fontWeight:600}}>Superficies visuales</Typography>
+          <Box mt={.6}>
+            <ToothSurfaceSelector
+              selectedSurfaces={selectedSurfaces}
+              onChange={setSelectedSurfaces}
+              disabled={!selectedTooth}
+            />
+          </Box>
         </Box>
         <CgSelect label="Procedimiento" value={encounterForm.procedure} onChange={(e)=>setEncounterForm({...encounterForm,procedure:e.target.value})} options={PROCEDURES.map((value)=>({value,label:value}))}/>
         <CgTextField size="small" fullWidth label="Condición clínica" required value={encounterForm.condition} onChange={(e)=>setEncounterForm({...encounterForm,condition:e.target.value})}/>
