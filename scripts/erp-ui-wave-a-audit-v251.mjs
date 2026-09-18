@@ -70,6 +70,9 @@ if(dentistryEntry?.status==='MIGRATED'){
   for(const contract of ['PERMANENT_TEETH','PRIMARY_TEETH','selectedSurfaces','odontogram:{dentition','surfaces:selectedSurfaces','condition:encounterForm.condition.trim()']){
     if(!dentistry.includes(contract))fail(`odontologia: missing structured odontogram contract ${contract}`);
   }
+  for(const contract of ['SURFACE_META','buildSurfaceState','surfaceState','Con registro clínico','Sin registro','Seleccionada','aria-label','borderStyle']){
+    if(!dentistry.includes(contract))fail(`odontologia: missing surface visual-state contract ${contract}`);
+  }
 }
 
 const fitnessEntries=ERP_UI_WAVE_A_2_51.filter((item)=>['gimnasio','rutinas','nutricion'].includes(item.route));
