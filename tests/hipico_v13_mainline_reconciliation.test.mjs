@@ -40,7 +40,7 @@ test('v13 contains the required v9-v12 production artifacts', () => {
   }
 });
 
-test('v13 schema evidence composes v9 v12-v24 with isolated v11 v25 observability probe', () => {
+test('v13 schema evidence composes the canonical v12-v26 chain and retains the isolated observability probe', () => {
   const baseSchema = read('scripts/hipico-apply-e2e-schema-v290.mjs');
   const observabilityWorkflow = read('.github/workflows/hipico-observability-v11.yml');
   const v25 = read('supabase/sql/hipico_v25_observability.sql');
