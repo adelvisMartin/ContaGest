@@ -72,6 +72,31 @@ const dentalClinicalDataSchema = z.object({
   })
 }).passthrough();
 
+const PERIODONTAL_SITE_KEYS = ['mesiobuccal','midbuccal','distobuccal','mesiolingual','midlingual','distolingual'] as const;
+const periodontalSiteSchema = z.object({
+  site: z.enum(PERIODONTAL_SITE_KEYS),
+  probingDepthMm: z.coerce.number().int().min(0).max(15),
+  gingivalMarginMm: z.coerce.number().int().min(-10).max(20),
+  bleeding: z.boolean(),
+  suppuration: z.boolean(),
+  plaque: z.boolean()
+});
+const periodontalClinicalDataSchema = z.object({
+  periodontogram: z.object({
+    dentition: z.enum(['permanent','primary']),
+    tooth: z.string().trim().min(2).max(2),
+    mobilityGrade: z.coerce.number().int().min(0).max(3),
+    furcationGrade: z.coerce.number().int().min(0).max(3),
+    sites: z.array(periodontalSiteSchema).length(6)
+  }).superRefine((value, refinement) => {
+    const catalog = value.dentition === 'primary' ? DENTAL_PRIMARY_TEETH : DENTAL_PERMANENT_TEETH;
+    if (!catalog.has(value.tooth)) refinement.addIssue({ code:'custom', path:['tooth'], message:'La pieza no pertenece a la dentición seleccionada.' });
+    const uniqueSites = new Set(value.sites.map((site) => site.site));
+    if (uniqueSites.size !== PERIODONTAL_SITE_KEYS.length) refinement.addIssue({ code:'custom', path:['sites'], message:'El periodontograma requiere los seis sitios canónicos sin duplicados.' });
+  }),
+  notes: optionalText
+}).passthrough();
+
 const encounterSchema = z.object({
   patientId: z.string().min(10),
   professionalId: z.string().optional().nullable(),
@@ -89,6 +114,12 @@ const encounterSchema = z.object({
 }).superRefine((value, refinement) => {
   if (value.type === 'dental-treatment') {
     const parsed = dentalClinicalDataSchema.safeParse(value.clinicalData);
+    if (!parsed.success) {
+      for (const issue of parsed.error.issues) refinement.addIssue({ code:'custom', path:['clinicalData',...issue.path], message:issue.message });
+    }
+  }
+  if (value.type === 'periodontal-chart') {
+    const parsed = periodontalClinicalDataSchema.safeParse(value.clinicalData);
     if (!parsed.success) {
       for (const issue of parsed.error.issues) refinement.addIssue({ code:'custom', path:['clinicalData',...issue.path], message:issue.message });
     }
