@@ -11,6 +11,31 @@ const allChecks=()=>({
   observabilityTablePresent:true,
   observabilityRls:true,
   observabilityAppendOnlyTrigger:true,
+  outboxRls:true,
+  outboxReceiptsTablePresent:true,
+  outboxReceiptsRls:true,
+  outboxReceiptsAppendOnlyTrigger:true,
+  outboxSelectPolicyPresent:true,
+  outboxReceiptsSelectPolicyPresent:true,
+  outboxInsertPolicyPresent:false,
+  outboxUpdatePolicyPresent:false,
+  outboxReceiptsInsertPolicyPresent:false,
+  outboxAnonInsert:false,
+  outboxAnonUpdate:false,
+  outboxAnonDelete:false,
+  outboxAnonTruncate:false,
+  outboxAuthenticatedInsert:false,
+  outboxAuthenticatedUpdate:false,
+  outboxAuthenticatedDelete:false,
+  outboxAuthenticatedTruncate:false,
+  outboxReceiptsAnonInsert:false,
+  outboxReceiptsAnonUpdate:false,
+  outboxReceiptsAnonDelete:false,
+  outboxReceiptsAnonTruncate:false,
+  outboxReceiptsAuthenticatedInsert:false,
+  outboxReceiptsAuthenticatedUpdate:false,
+  outboxReceiptsAuthenticatedDelete:false,
+  outboxReceiptsAuthenticatedTruncate:false,
   auditIdempotencyIndex:true,
   auditSourceConstraint:true,
   auditAuthorityConstraint:true,
@@ -43,7 +68,7 @@ const drift=(status='MATCH',overrides={})=>({
   ...overrides
 });
 
-test('v18 PASS requires drift MATCH and every v25/v26 security boundary',()=>{
+test('v18 PASS requires drift MATCH and every v25-v27 security boundary',()=>{
   const report=classifyPostdeploy({
     candidateSha:SHA,
     driftReport:drift(),
@@ -105,7 +130,7 @@ test('v18 drift NOT_EXECUTED remains NOT_EXECUTED',()=>{
   assert.equal(report.reason,'DATABASE_URL_REQUIRED');
 });
 
-test('v18 verifier is read-only and checks v25/v26 security primitives',async()=>{
+test('v18 verifier is read-only and checks v25-v27 security primitives',async()=>{
   const source=await read('scripts/hipico-schema-postdeploy-v18.mjs');
   assert.match(source,/runDriftCheck/);
   assert.match(source,/BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY/i);
@@ -118,6 +143,10 @@ test('v18 verifier is read-only and checks v25/v26 security primitives',async()=
   for(const marker of [
     'hipico_observability_events',
     'hipico_observability_no_mutation',
+    'hipico_outbox_receipts',
+    'hipico_outbox_receipts_immutable',
+    'hipico_outbox_select_own',
+    'hipico_outbox_receipts_select_own',
     'hipico_audit_owner_idempotency_unique',
     'hipico_audit_events_source_check',
     'hipico_audit_events_authority_check',

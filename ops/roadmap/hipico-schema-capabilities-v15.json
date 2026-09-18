@@ -1,6 +1,6 @@
 {
   "schema": "hipico-schema-capabilities.v15",
-  "baseline": "8ceab45ee90c41bcdc5bee631a5b83b42992fe6d",
+  "baseline": "58720210a762336a29c59d6cab38951c799d196c",
   "source": "main",
   "capabilities": [
     {
@@ -33,6 +33,37 @@
       "constraint": "hipico_outbox_status_check",
       "contains": "reconciliation_required",
       "sourceFile": "supabase/sql/hipico_v17_outbox_reconciliation_status.sql"
+    },
+    {
+      "id": "outbox.receipts",
+      "kind": "table",
+      "schema": "public",
+      "table": "hipico_outbox_receipts",
+      "sourceFile": "supabase/sql/hipico_v21_production_outbox.sql"
+    },
+    {
+      "id": "outbox.reconciled_by",
+      "kind": "column",
+      "schema": "public",
+      "table": "hipico_outbox",
+      "column": "reconciled_by",
+      "sourceFile": "supabase/sql/hipico_v21_outbox_reconciliation_audit.sql"
+    },
+    {
+      "id": "outbox.reconciled_at",
+      "kind": "column",
+      "schema": "public",
+      "table": "hipico_outbox",
+      "column": "reconciled_at",
+      "sourceFile": "supabase/sql/hipico_v21_outbox_reconciliation_audit.sql"
+    },
+    {
+      "id": "outbox.reconciliation_reason",
+      "kind": "column",
+      "schema": "public",
+      "table": "hipico_outbox",
+      "column": "reconciliation_reason",
+      "sourceFile": "supabase/sql/hipico_v21_outbox_reconciliation_audit.sql"
     },
     {
       "id": "provider.evidence",

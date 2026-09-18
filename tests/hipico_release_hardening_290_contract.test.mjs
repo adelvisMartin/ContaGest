@@ -4,7 +4,7 @@ import test from 'node:test';
 
 const read = (relative) => readFile(new URL(`../${relative}`, import.meta.url), 'utf8');
 
-test('v290 production gate is exact-SHA, current v12-v26, real-PostgreSQL, OCR capable and multi-browser without bypasses', async () => {
+test('v290 production gate is exact-SHA, current v12-v27, complete-outbox, real-PostgreSQL, OCR capable and multi-browser without bypasses', async () => {
   const [workflow, guard, packageJson] = await Promise.all([
     read('.github/workflows/hipico-production-gates-v290.yml'),
     read('scripts/hipico-release-guard-v290.mjs'),
@@ -23,7 +23,7 @@ test('v290 production gate is exact-SHA, current v12-v26, real-PostgreSQL, OCR c
     'npm --workspace backend run test:hipico:agent',
     'browser: [chromium, firefox, webkit]',
     'npm audit --omit=dev --audit-level=high',
-    'v12-v26'
+    'v12-v27'
   ]) assert.ok(workflow.includes(marker), `workflow missing ${marker}`);
 
   assert.doesNotMatch(workflow, /pull_request:\s*\n\s*branches:\s*\[main\]/);
@@ -34,8 +34,12 @@ test('v290 production gate is exact-SHA, current v12-v26, real-PostgreSQL, OCR c
     /\|\|\s*true/
   ]) assert.doesNotMatch(workflow, forbidden);
 
-  assert.match(guard, /currentPostgresChain: 'v12-v26'/);
+  assert.match(guard, /currentPostgresChain: 'v12-v27'/);
+  assert.match(guard, /hipico_v21_production_outbox\.sql/);
+  assert.match(guard, /hipico_v21_outbox_reconciliation_audit\.sql/);
   assert.match(guard, /hipico_v23_risk_policy\.sql/);
+  assert.match(guard, /hipico_v27_outbox_authority\.sql/);
+  assert.match(guard, /outboxAuthorityPoliciesRemoved/);
   assert.match(guard, /hipico_v24_shadow_metrics\.sql/);
   assert.match(guard, /ownerApprovalServerControlled: true/);
   assert.match(guard, /MODEL_CANDIDATE_REQUIRES_REVIEW/);

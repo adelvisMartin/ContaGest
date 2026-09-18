@@ -67,7 +67,7 @@ const requiredDescriptors = [
     id: 'releaseGuard',
     name: 'release-guard.json',
     schemas: ['hipico-release-guard.v290-current'],
-    validate: (data) => data?.invariants?.currentPostgresChain === 'v12-v26'
+    validate: (data) => data?.invariants?.currentPostgresChain === 'v12-v27'
       && data?.invariants?.riskPolicyDeterministic === true
       && data?.invariants?.modelAdvisoryOnly === true
       && data?.invariants?.dualWindowPromotion === true
@@ -78,13 +78,21 @@ const requiredDescriptors = [
     id: 'postgresRbac',
     name: 'postgres-rbac.json',
     schemas: ['hipico-rbac.v290', 'hipico-rbac.v290-current'],
-    validate: (data) => migrationsInclude(data, 'hipico_v23_risk_policy.sql')
+    validate: (data) => migrationsInclude(data, 'hipico_v21_production_outbox.sql')
+      && migrationsInclude(data, 'hipico_v21_outbox_reconciliation_audit.sql')
+      && migrationsInclude(data, 'hipico_v23_risk_policy.sql')
       && migrationsInclude(data, 'hipico_v24_shadow_metrics.sql')
       && migrationsInclude(data, 'hipico_v25_observability.sql')
       && migrationsInclude(data, 'hipico_v26_audit_rpc_integrity.sql')
+      && migrationsInclude(data, 'hipico_v27_outbox_authority.sql')
       && data?.assertions?.agentPolicyColumnsNotNull === true
       && data?.assertions?.agentMetricColumnsNotNull === true
       && data?.assertions?.agentPolicyConstraintsPresent === true
+      && data?.assertions?.authenticatedOutboxReceiptWriteDenied === true
+      && data?.assertions?.authenticatedOutboxPrivilegesDenied === true
+      && data?.assertions?.outboxReceiptAppendOnlyTrigger === true
+      && data?.assertions?.outboxAuthorityPoliciesRemoved === true
+      && data?.assertions?.outboxRequiredNotNull === true
       && data?.assertions?.observabilityTablePresent === true
       && data?.assertions?.observabilityAppendOnlyTrigger === true
       && data?.assertions?.authenticatedObservabilityWriteDenied === true
@@ -99,7 +107,7 @@ const requiredDescriptors = [
     id: 'postgresGate',
     name: 'postgres-gate.json',
     schemas: ['hipico-postgres-gate.v290-current'],
-    validate: (data) => data?.migrations === 'v12-v26'
+    validate: (data) => data?.migrations === 'v12-v27'
       && data?.testChannelReplay === 'PASS'
       && data?.agentPolicyMetrics === 'PASS'
       && data?.restartRecovery === 'PASS'
@@ -175,7 +183,7 @@ const result = {
   allowedStatuses: STATUSES,
   checkedAt: new Date().toISOString(),
   evidenceRoot,
-  postgresChain: 'v12-v26',
+  postgresChain: 'v12-v27',
   required,
   optional,
   browser

@@ -12,6 +12,31 @@ const EXPECTED_SECURITY=Object.freeze({
   observabilityTablePresent:true,
   observabilityRls:true,
   observabilityAppendOnlyTrigger:true,
+  outboxRls:true,
+  outboxReceiptsTablePresent:true,
+  outboxReceiptsRls:true,
+  outboxReceiptsAppendOnlyTrigger:true,
+  outboxSelectPolicyPresent:true,
+  outboxReceiptsSelectPolicyPresent:true,
+  outboxInsertPolicyPresent:false,
+  outboxUpdatePolicyPresent:false,
+  outboxReceiptsInsertPolicyPresent:false,
+  outboxAnonInsert:false,
+  outboxAnonUpdate:false,
+  outboxAnonDelete:false,
+  outboxAnonTruncate:false,
+  outboxAuthenticatedInsert:false,
+  outboxAuthenticatedUpdate:false,
+  outboxAuthenticatedDelete:false,
+  outboxAuthenticatedTruncate:false,
+  outboxReceiptsAnonInsert:false,
+  outboxReceiptsAnonUpdate:false,
+  outboxReceiptsAnonDelete:false,
+  outboxReceiptsAnonTruncate:false,
+  outboxReceiptsAuthenticatedInsert:false,
+  outboxReceiptsAuthenticatedUpdate:false,
+  outboxReceiptsAuthenticatedDelete:false,
+  outboxReceiptsAuthenticatedTruncate:false,
   auditIdempotencyIndex:true,
   auditSourceConstraint:true,
   auditAuthorityConstraint:true,
@@ -119,6 +144,31 @@ function mapSecurityRow(row={}){
     observabilityTablePresent:row.observability_table_present===true,
     observabilityRls:row.observability_rls===true,
     observabilityAppendOnlyTrigger:row.observability_append_only_trigger===true,
+    outboxRls:row.outbox_rls===true,
+    outboxReceiptsTablePresent:row.outbox_receipts_table_present===true,
+    outboxReceiptsRls:row.outbox_receipts_rls===true,
+    outboxReceiptsAppendOnlyTrigger:row.outbox_receipts_append_only_trigger===true,
+    outboxSelectPolicyPresent:row.outbox_select_policy_present===true,
+    outboxReceiptsSelectPolicyPresent:row.outbox_receipts_select_policy_present===true,
+    outboxInsertPolicyPresent:row.outbox_insert_policy_present===true,
+    outboxUpdatePolicyPresent:row.outbox_update_policy_present===true,
+    outboxReceiptsInsertPolicyPresent:row.outbox_receipts_insert_policy_present===true,
+    outboxAnonInsert:row.outbox_anon_insert===true,
+    outboxAnonUpdate:row.outbox_anon_update===true,
+    outboxAnonDelete:row.outbox_anon_delete===true,
+    outboxAnonTruncate:row.outbox_anon_truncate===true,
+    outboxAuthenticatedInsert:row.outbox_authenticated_insert===true,
+    outboxAuthenticatedUpdate:row.outbox_authenticated_update===true,
+    outboxAuthenticatedDelete:row.outbox_authenticated_delete===true,
+    outboxAuthenticatedTruncate:row.outbox_authenticated_truncate===true,
+    outboxReceiptsAnonInsert:row.outbox_receipts_anon_insert===true,
+    outboxReceiptsAnonUpdate:row.outbox_receipts_anon_update===true,
+    outboxReceiptsAnonDelete:row.outbox_receipts_anon_delete===true,
+    outboxReceiptsAnonTruncate:row.outbox_receipts_anon_truncate===true,
+    outboxReceiptsAuthenticatedInsert:row.outbox_receipts_authenticated_insert===true,
+    outboxReceiptsAuthenticatedUpdate:row.outbox_receipts_authenticated_update===true,
+    outboxReceiptsAuthenticatedDelete:row.outbox_receipts_authenticated_delete===true,
+    outboxReceiptsAuthenticatedTruncate:row.outbox_receipts_authenticated_truncate===true,
     auditIdempotencyIndex:row.audit_idempotency_index===true,
     auditSourceConstraint:row.audit_source_constraint===true,
     auditAuthorityConstraint:row.audit_authority_constraint===true,
@@ -166,6 +216,61 @@ export async function runSecurityChecks({
           select 1 from pg_trigger
           where not tgisinternal and tgname='hipico_observability_no_mutation'
         ) as observability_append_only_trigger,
+        coalesce((
+          select c.relrowsecurity
+          from pg_class c
+          join pg_namespace n on n.oid=c.relnamespace
+          where n.nspname='public' and c.relname='hipico_outbox'
+          limit 1
+        ),false) as outbox_rls,
+        (to_regclass('public.hipico_outbox_receipts') is not null) as outbox_receipts_table_present,
+        coalesce((
+          select c.relrowsecurity
+          from pg_class c
+          join pg_namespace n on n.oid=c.relnamespace
+          where n.nspname='public' and c.relname='hipico_outbox_receipts'
+          limit 1
+        ),false) as outbox_receipts_rls,
+        exists(
+          select 1 from pg_trigger
+          where not tgisinternal and tgname='hipico_outbox_receipts_immutable'
+        ) as outbox_receipts_append_only_trigger,
+        exists(
+          select 1 from pg_policies
+          where schemaname='public' and tablename='hipico_outbox' and policyname='hipico_outbox_select_own'
+        ) as outbox_select_policy_present,
+        exists(
+          select 1 from pg_policies
+          where schemaname='public' and tablename='hipico_outbox_receipts' and policyname='hipico_outbox_receipts_select_own'
+        ) as outbox_receipts_select_policy_present,
+        exists(
+          select 1 from pg_policies
+          where schemaname='public' and tablename='hipico_outbox' and policyname='hipico_outbox_insert_own'
+        ) as outbox_insert_policy_present,
+        exists(
+          select 1 from pg_policies
+          where schemaname='public' and tablename='hipico_outbox' and policyname='hipico_outbox_update_own'
+        ) as outbox_update_policy_present,
+        exists(
+          select 1 from pg_policies
+          where schemaname='public' and tablename='hipico_outbox_receipts' and policyname='hipico_outbox_receipts_insert_own'
+        ) as outbox_receipts_insert_policy_present,
+        coalesce(has_table_privilege('anon','public.hipico_outbox','INSERT'),false) as outbox_anon_insert,
+        coalesce(has_table_privilege('anon','public.hipico_outbox','UPDATE'),false) as outbox_anon_update,
+        coalesce(has_table_privilege('anon','public.hipico_outbox','DELETE'),false) as outbox_anon_delete,
+        coalesce(has_table_privilege('anon','public.hipico_outbox','TRUNCATE'),false) as outbox_anon_truncate,
+        coalesce(has_table_privilege('authenticated','public.hipico_outbox','INSERT'),false) as outbox_authenticated_insert,
+        coalesce(has_table_privilege('authenticated','public.hipico_outbox','UPDATE'),false) as outbox_authenticated_update,
+        coalesce(has_table_privilege('authenticated','public.hipico_outbox','DELETE'),false) as outbox_authenticated_delete,
+        coalesce(has_table_privilege('authenticated','public.hipico_outbox','TRUNCATE'),false) as outbox_authenticated_truncate,
+        coalesce(has_table_privilege('anon','public.hipico_outbox_receipts','INSERT'),false) as outbox_receipts_anon_insert,
+        coalesce(has_table_privilege('anon','public.hipico_outbox_receipts','UPDATE'),false) as outbox_receipts_anon_update,
+        coalesce(has_table_privilege('anon','public.hipico_outbox_receipts','DELETE'),false) as outbox_receipts_anon_delete,
+        coalesce(has_table_privilege('anon','public.hipico_outbox_receipts','TRUNCATE'),false) as outbox_receipts_anon_truncate,
+        coalesce(has_table_privilege('authenticated','public.hipico_outbox_receipts','INSERT'),false) as outbox_receipts_authenticated_insert,
+        coalesce(has_table_privilege('authenticated','public.hipico_outbox_receipts','UPDATE'),false) as outbox_receipts_authenticated_update,
+        coalesce(has_table_privilege('authenticated','public.hipico_outbox_receipts','DELETE'),false) as outbox_receipts_authenticated_delete,
+        coalesce(has_table_privilege('authenticated','public.hipico_outbox_receipts','TRUNCATE'),false) as outbox_receipts_authenticated_truncate,
         exists(
           select 1 from pg_indexes
           where schemaname='public'

@@ -40,6 +40,7 @@ for (const relative of [
   'supabase/sql/hipico_v24_shadow_metrics.sql',
   'supabase/sql/hipico_v25_observability.sql',
   'supabase/sql/hipico_v26_audit_rpc_integrity.sql',
+  'supabase/sql/hipico_v27_outbox_authority.sql',
   '.github/workflows/hipico-production-gates-v290.yml'
 ]) assert(exists(relative), `${relative} missing`);
 
@@ -115,11 +116,14 @@ for (const migration of [
   'hipico_v18_documents.sql',
   'hipico_v20_document_audit.sql',
   'hipico_v21_race_data_conflicts.sql',
+  'hipico_v21_production_outbox.sql',
+  'hipico_v21_outbox_reconciliation_audit.sql',
   'hipico_v22_agent_shadow.sql',
   'hipico_v23_risk_policy.sql',
   'hipico_v24_shadow_metrics.sql',
   'hipico_v25_observability.sql',
-  'hipico_v26_audit_rpc_integrity.sql'
+  'hipico_v26_audit_rpc_integrity.sql',
+  'hipico_v27_outbox_authority.sql'
 ]) assert(schema.includes(migration), `current PostgreSQL chain missing ${migration}`);
 assert(!schema.includes('hipico_v16_agent_shadow.sql'), 'obsolete v16 agent migration must not be restored');
 assert(schema.includes('SET LOCAL ROLE'), 'PostgreSQL E2E must execute least-privilege role checks');
@@ -128,6 +132,11 @@ assert(schema.includes('authenticatedProviderEvidenceWriteDenied'), 'PostgreSQL 
 assert(schema.includes('agentPolicyColumnsNotNull'), 'PostgreSQL E2E must prove v23 policy columns');
 assert(schema.includes('agentMetricColumnsNotNull'), 'PostgreSQL E2E must prove v24 metric columns');
 assert(schema.includes('agentPolicyConstraintsPresent'), 'PostgreSQL E2E must prove v23/v24 constraints');
+assert(schema.includes('outboxReceiptAppendOnlyTrigger'), 'PostgreSQL E2E must prove v21 receipt append-only evidence');
+assert(schema.includes('outboxAuthorityPoliciesRemoved'), 'PostgreSQL E2E must prove v27 client write policies are removed');
+assert(schema.includes('authenticatedOutboxPrivilegesDenied'), 'PostgreSQL E2E must prove v27 client outbox privileges are denied');
+assert(schema.includes('authenticatedOutboxReceiptWriteDenied'), 'PostgreSQL E2E must deny browser receipt writes');
+assert(schema.includes('outboxRequiredNotNull'), 'PostgreSQL E2E must prove canonical outbox required columns');
 assert(schema.includes('observabilityAppendOnlyTrigger'), 'PostgreSQL E2E must prove v25 append-only observability');
 assert(schema.includes('auditProvenanceColumnsPresent'), 'PostgreSQL E2E must prove v26 audit provenance columns');
 assert(schema.includes('auditProvenanceColumnsNotNull'), 'PostgreSQL E2E must prove v26 provenance NOT NULL');
@@ -160,7 +169,7 @@ for (const marker of [
   'npm --workspace backend run test:hipico:agent',
   'hipico-load-profile-v290.ts',
   'browser: [chromium, firefox, webkit]',
-  'v12-v26'
+  'v12-v27'
 ]) assert(workflow.includes(marker), `production workflow missing ${marker}`);
 assert(!/pull_request:\s*\n\s*branches:\s*\[main\]/.test(workflow), 'stacked PRs must be able to execute the exact-SHA production gate');
 
@@ -202,7 +211,7 @@ fs.writeFileSync(path.join(artifactDir, 'release-guard.json'), `${JSON.stringify
     modelAdvisoryOnly: true,
     dualWindowPromotion: true,
     canonicalOutboxAuthority: true,
-    currentPostgresChain: 'v12-v26',
+    currentPostgresChain: 'v12-v27',
     testChannelReplay: true,
     loadProfileVolumes: [100, 500, 2000],
     exactSha: true

@@ -9,10 +9,11 @@ test('v15 manifest freezes mainline schema capabilities without branch-only migr
   const manifest=JSON.parse(await read('ops/roadmap/hipico-schema-capabilities-v15.json'));
   assert.equal(manifest.schema,'hipico-schema-capabilities.v15');
   assert.equal(manifest.baseline,'8ceab45ee90c41bcdc5bee631a5b83b42992fe6d');
-  assert.equal(manifest.capabilities.length,13);
+  assert.equal(manifest.capabilities.length,17);
   const ids=new Set(manifest.capabilities.map((item)=>item.id));
   for(const id of [
     'audit.idempotency_key','domain.aggregates','domain.events','outbox.reconciliation_constraint',
+    'outbox.receipts','outbox.reconciled_by','outbox.reconciled_at','outbox.reconciliation_reason',
     'provider.evidence','documents.documents','documents.sources','agent.automation',
     'agent.policy_disposition','agent.metric_schema_version','observability.events','audit.source','audit.authority'
   ]) assert.ok(ids.has(id),`missing capability ${id}`);
