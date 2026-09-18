@@ -1,0 +1,54 @@
+name: Hípico Schema Post-Deploy v18
+
+on:
+  workflow_dispatch:
+    inputs:
+      candidate_sha:
+        description: Exact 40-hex candidate SHA deployed to the target
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+env:
+  NODE_VERSION: '22'
+  HIPICO_CANDIDATE_SHA: ${{ inputs.candidate_sha }}
+  HIPICO_SCHEMA_DRIFT_DATABASE_URL: ${{ secrets.HIPICO_SCHEMA_VERIFY_DATABASE_URL }}
+  HIPICO_SCHEMA_POSTDEPLOY_REPORT: artifacts/qa/hipico-schema-postdeploy/${{ inputs.candidate_sha }}.json
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout exact candidate
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.candidate_sha }}
+          fetch-depth: 0
+
+      - name: Setup Node 22
+        uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Install locked workspace
+        run: npm ci --no-audit --no-fund
+
+      - name: Verify checkout SHA
+        run: node scripts/hipico-exact-sha-gate.mjs
+
+      - name: Verify production schema read-only
+        run: node scripts/hipico-schema-postdeploy-v18.mjs
+
+      - name: Upload post-deploy evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: hipico-schema-postdeploy-${{ inputs.candidate_sha }}
+          path: artifacts/qa/hipico-schema-postdeploy/${{ inputs.candidate_sha }}.json
+          if-no-files-found: warn
+          retention-days: 30
