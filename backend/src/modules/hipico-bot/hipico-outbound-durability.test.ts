@@ -46,7 +46,8 @@ test('approval route checks policy before canonical worker claims an approval-re
   const dispatch=indexOfRequired(approve,'dispatchCanonicalOutbound');
   assert.ok(preflight<dispatch,'approval preflight must happen before canonical dispatch/claim');
   assert.match(approve,/allowApprovalRequired:true/);
-  assert.match(worker,/claim:\(input\)=>claimCanonicalOutbound\(input\)/);\n  assert.match(worker,/deps\.claim\(\{ownerId:input\.ownerId,id:input\.id\|\|null,allowApprovalRequired:input\.allowApprovalRequired===true\}\)/);
+  assert.match(worker,/claim:\(input\)=>claimCanonicalOutbound\(input\)/);
+  assert.match(worker,/deps\.claim\(\{ownerId:input\.ownerId,id:input\.id\|\|null,allowApprovalRequired:input\.allowApprovalRequired===true\}\)/);
   assert.match(routes,/outbound_disabled/);
 });
 
