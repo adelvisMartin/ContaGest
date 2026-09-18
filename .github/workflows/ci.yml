@@ -43,6 +43,9 @@ jobs:
       - name: TypeScript
         run: npm run typecheck
 
+      - name: Technical baseline freeze
+        run: npm run baseline:verify
+
       - name: Architecture boundaries
         run: npm run audit:architecture
 
