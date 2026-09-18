@@ -30,7 +30,9 @@ const migrations = [
   'supabase/sql/hipico_v21_race_data_conflicts.sql',
   'supabase/sql/hipico_v22_agent_shadow.sql',
   'supabase/sql/hipico_v23_risk_policy.sql',
-  'supabase/sql/hipico_v24_shadow_metrics.sql'
+  'supabase/sql/hipico_v24_shadow_metrics.sql',
+  'supabase/sql/hipico_v25_observability.sql',
+  'supabase/sql/hipico_v26_audit_rpc_integrity.sql'
 ];
 
 const requiredAgentColumns = [
@@ -47,6 +49,7 @@ const requiredAgentConstraints = [
   'hipico_agent_evaluations_policy_evidence_state_check',
   'hipico_agent_evaluations_metric_schema_version_check'
 ];
+const requiredAuditColumns = ['idempotency_key', 'source', 'authority'];
 
 function assertSafe(urlText) {
   if (!urlText) throw new Error('HIPICO_E2E_DATABASE_URL is required.');
@@ -104,7 +107,8 @@ try {
   await client.query('BEGIN');
   await client.query('CREATE EXTENSION IF NOT EXISTS pgcrypto');
   await client.query(`DO $$ BEGIN CREATE ROLE anon NOLOGIN; EXCEPTION WHEN duplicate_object THEN NULL; END $$`);
-  await client.query(`DO $$ BEGIN CREATE ROLE authenticated NOLOGIN; EXCEPTION WHEN duplicate_object THEN NULL; END $$`);
+  await client.query(`DO $ BEGIN CREATE ROLE authenticated NOLOGIN; EXCEPTION WHEN duplicate_object THEN NULL; END $`);
+  await client.query(`DO $ BEGIN CREATE ROLE service_role NOLOGIN; EXCEPTION WHEN duplicate_object THEN NULL; END $`);
   await client.query('CREATE SCHEMA IF NOT EXISTS auth');
   await client.query(`CREATE OR REPLACE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql STABLE AS $$
     SELECT NULLIF(current_setting('request.jwt.claim.sub', true), '')::uuid
@@ -137,7 +141,8 @@ try {
     'hipico_domain_aggregates', 'hipico_domain_events',
     'hipico_provider_evidence', 'hipico_meetings', 'hipico_races', 'hipico_race_events',
     'hipico_group_automation', 'hipico_agent_evaluations', 'hipico_automation_transition_events',
-    'hipico_documents', 'hipico_document_sources', 'hipico_document_events'
+    'hipico_documents', 'hipico_document_sources', 'hipico_document_events',
+    'hipico_observability_events'
   ];
   const rows = await client.query(
     `SELECT tablename FROM pg_tables WHERE schemaname='public' AND tablename = ANY($1::text[])`,
@@ -163,7 +168,8 @@ try {
     'hipico_document_sources_immutable',
     'hipico_document_events_immutable',
     'hipico_automation_transition_events_append_only',
-    'hipico_agent_evaluations_review_once'
+    'hipico_agent_evaluations_review_once',
+    'hipico_observability_no_mutation'
   ];
   const triggerRows = await client.query(`
     SELECT tgname FROM pg_trigger
@@ -205,6 +211,46 @@ try {
   const agentPolicyConstraintsPresent = missingAgentConstraints.length === 0;
   if (!agentPolicyConstraintsPresent) {
     throw new Error(`Agent policy/metric constraints missing: ${missingAgentConstraints.join(', ')}`);
+  }
+
+  const auditColumnRows = await client.query(`
+    SELECT column_name, is_nullable
+    FROM information_schema.columns
+    WHERE table_schema='public'
+      AND table_name='hipico_audit_events'
+      AND column_name = ANY($1::text[])
+  `, [requiredAuditColumns]);
+  const auditColumns = new Map(auditColumnRows.rows.map((row) => [row.column_name, row.is_nullable]));
+  const missingAuditColumns = requiredAuditColumns.filter((name) => !auditColumns.has(name));
+  if (missingAuditColumns.length) {
+    throw new Error(`Audit v26 columns missing: ${missingAuditColumns.join(', ')}`);
+  }
+  const auditProvenanceColumnsNotNull = ['source', 'authority']
+    .every((name) => auditColumns.get(name) === 'NO');
+  if (!auditProvenanceColumnsNotNull) {
+    throw new Error('Audit v26 provenance columns must be NOT NULL');
+  }
+
+  const auditRpcRows = await client.query(`
+    SELECT
+      p.prosecdef AS security_definer,
+      has_function_privilege('anon', p.oid, 'EXECUTE') AS anon_execute,
+      has_function_privilege('authenticated', p.oid, 'EXECUTE') AS authenticated_execute,
+      has_function_privilege('service_role', p.oid, 'EXECUTE') AS service_role_execute
+    FROM pg_proc p
+    JOIN pg_namespace n ON n.oid=p.pronamespace
+    WHERE n.nspname='public'
+      AND p.proname='hipico_append_audit'
+      AND pg_get_function_identity_arguments(p.oid)='p_workspace_id uuid, p_action text, p_entity_type text, p_entity_id text, p_payload jsonb'
+  `);
+  if (auditRpcRows.rows.length !== 1) throw new Error('Audit v26 RPC signature missing');
+  const auditRpc = auditRpcRows.rows[0];
+  const auditRpcSecurityDefiner = auditRpc.security_definer === true;
+  const auditRpcAnonExecute = auditRpc.anon_execute === true;
+  const auditRpcAuthenticatedExecute = auditRpc.authenticated_execute === true;
+  const auditRpcServiceRoleExecute = auditRpc.service_role_execute === true;
+  if (!auditRpcSecurityDefiner || auditRpcAnonExecute || !auditRpcAuthenticatedExecute || !auditRpcServiceRoleExecute) {
+    throw new Error('Audit v26 RPC grants/security mode mismatch');
   }
 
   const ownChannel = await client.query(`INSERT INTO public.hipico_bot_channels(owner_id,group_key,label,channel_type,status,config)
@@ -249,6 +295,8 @@ try {
   await expectPermissionDenied(client, 'authenticated', ownerId,
     `INSERT INTO public.hipico_provider_evidence(owner_id,group_key,provider_id,capability,source,source_provider,fetched_at,freshness,officiality,payload_hash,normalized,provenance) VALUES('${ownerId}'::uuid,'rbac-own','test-provider','getRace','https://example.invalid','test-provider',now(),'FRESH','observed',repeat('a',64),'{}'::jsonb,'{}'::jsonb)`);
   await expectPermissionDenied(client, 'authenticated', ownerId,
+    `INSERT INTO public.hipico_observability_events(owner_id,group_key,group_id,request_id,correlation_id,stage,outcome,reason_code) VALUES('${ownerId}'::uuid,'rbac-own','lab-group','req','corr','INBOUND','SUCCESS','e2e')`);
+  await expectPermissionDenied(client, 'authenticated', ownerId,
     `SELECT raw_pdf FROM public.hipico_documents LIMIT 1`);
   await expectPermissionDenied(client, 'authenticated', ownerId,
     `INSERT INTO public.hipico_documents(owner_id,group_key,sha256,size_bytes,page_count_estimate,filename,mime,raw_pdf) VALUES('${ownerId}'::uuid,'rbac-own',repeat('a',64),1,1,'x.pdf','application/pdf',decode('00','hex'))`);
@@ -272,6 +320,7 @@ try {
       authenticatedRaceWriteDenied: true,
       authenticatedAgentAutomationWriteDenied: true,
       authenticatedProviderEvidenceWriteDenied: true,
+      authenticatedObservabilityWriteDenied: true,
       authenticatedRawDocumentReadDenied: true,
       authenticatedDocumentWriteDenied: true,
       anonWorkspaceReadDenied: true,
@@ -279,13 +328,21 @@ try {
       agentPolicyColumnsNotNull,
       agentMetricColumnsNotNull,
       agentPolicyConstraintsPresent,
+      observabilityTablePresent: found.has('hipico_observability_events'),
+      observabilityAppendOnlyTrigger: triggers.has('hipico_observability_no_mutation'),
+      auditProvenanceColumnsPresent: missingAuditColumns.length === 0,
+      auditProvenanceColumnsNotNull,
+      auditRpcSecurityDefiner,
+      auditRpcAnonExecute,
+      auditRpcAuthenticatedExecute,
+      auditRpcServiceRoleExecute,
       agentPolicyConstraints: [...agentConstraints].sort(),
       immutableAuditTriggers: [...triggers].sort(),
       rlsTables: required
     }
   }, null, 2)}\n`, 'utf8');
 
-  console.log(`[hipico-v290] current schema ready (${required.length} required tables; v12-v24 RLS/RBAC evidence executed)`);
+  console.log(`[hipico-v290] current schema ready (${required.length} required tables; v12-v26 RLS/RBAC evidence executed)`);
 } catch (error) {
   try { await client.query('ROLLBACK'); } catch {}
   throw error;

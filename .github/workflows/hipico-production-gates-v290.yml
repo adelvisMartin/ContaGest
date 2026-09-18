@@ -159,7 +159,7 @@ jobs:
         run: node scripts/hipico-ephemeral-db-v290.mjs create
       - name: Deploy Prisma persistence
         run: npm --workspace backend run prisma:deploy
-      - name: Apply v12-v24 Hípico schema and RLS RBAC probes
+      - name: Apply v12-v26 Hípico schema and RLS RBAC probes
         run: node scripts/hipico-apply-e2e-schema-v290.mjs
       - name: TestChannel persistence and replay E2E
         run: npm --workspace backend exec -- tsx --test src/modules/hipico-bot/production-e2e-v290.ts
@@ -180,7 +180,7 @@ jobs:
           import fs from 'node:fs';
           fs.writeFileSync('artifacts/qa/hipico-v290/postgres-gate.json', `${JSON.stringify({
             schema: 'hipico-postgres-gate.v290-current', sha: process.env.HIPICO_CANDIDATE_SHA,
-            status: 'PASS', database: 'isolated-ephemeral-postgresql-16', migrations: 'v12-v24',
+            status: 'PASS', database: 'isolated-ephemeral-postgresql-16', migrations: 'v12-v26',
             testChannelReplay: 'PASS', agentPolicyMetrics: 'PASS', restartRecovery: 'PASS', loadProfile: 'PASS', checkedAt: new Date().toISOString()
           }, null, 2)}\n`);
           NODE

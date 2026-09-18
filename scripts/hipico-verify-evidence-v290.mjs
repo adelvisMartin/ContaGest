@@ -67,7 +67,7 @@ const requiredDescriptors = [
     id: 'releaseGuard',
     name: 'release-guard.json',
     schemas: ['hipico-release-guard.v290-current'],
-    validate: (data) => data?.invariants?.currentPostgresChain === 'v12-v24'
+    validate: (data) => data?.invariants?.currentPostgresChain === 'v12-v26'
       && data?.invariants?.riskPolicyDeterministic === true
       && data?.invariants?.modelAdvisoryOnly === true
       && data?.invariants?.dualWindowPromotion === true
@@ -80,15 +80,26 @@ const requiredDescriptors = [
     schemas: ['hipico-rbac.v290', 'hipico-rbac.v290-current'],
     validate: (data) => migrationsInclude(data, 'hipico_v23_risk_policy.sql')
       && migrationsInclude(data, 'hipico_v24_shadow_metrics.sql')
+      && migrationsInclude(data, 'hipico_v25_observability.sql')
+      && migrationsInclude(data, 'hipico_v26_audit_rpc_integrity.sql')
       && data?.assertions?.agentPolicyColumnsNotNull === true
       && data?.assertions?.agentMetricColumnsNotNull === true
       && data?.assertions?.agentPolicyConstraintsPresent === true
+      && data?.assertions?.observabilityTablePresent === true
+      && data?.assertions?.observabilityAppendOnlyTrigger === true
+      && data?.assertions?.authenticatedObservabilityWriteDenied === true
+      && data?.assertions?.auditProvenanceColumnsPresent === true
+      && data?.assertions?.auditProvenanceColumnsNotNull === true
+      && data?.assertions?.auditRpcSecurityDefiner === true
+      && data?.assertions?.auditRpcAnonExecute === false
+      && data?.assertions?.auditRpcAuthenticatedExecute === true
+      && data?.assertions?.auditRpcServiceRoleExecute === true
   },
   {
     id: 'postgresGate',
     name: 'postgres-gate.json',
     schemas: ['hipico-postgres-gate.v290-current'],
-    validate: (data) => data?.migrations === 'v12-v24'
+    validate: (data) => data?.migrations === 'v12-v26'
       && data?.testChannelReplay === 'PASS'
       && data?.agentPolicyMetrics === 'PASS'
       && data?.restartRecovery === 'PASS'
@@ -163,7 +174,7 @@ const result = {
   allowedStatuses: STATUSES,
   checkedAt: new Date().toISOString(),
   evidenceRoot,
-  postgresChain: 'v12-v24',
+  postgresChain: 'v12-v26',
   required,
   optional,
   browser
