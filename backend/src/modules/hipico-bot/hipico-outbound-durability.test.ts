@@ -5,6 +5,9 @@ import { readFileSync } from 'node:fs';
 const read=(file:string)=>readFileSync(new URL(file,import.meta.url),'utf8');
 const service=read('./hipico-bot.service.ts');
 const routes=read('./hipico-operator.routes.ts');
+const store=read('./hipico-outbox.store.ts');
+const worker=read('./hipico-outbound-worker.ts');
+const policy=read('./hipico-outbox-policy.ts');
 
 function indexOfRequired(source:string,needle:string){
   const index=source.indexOf(needle);
@@ -19,51 +22,55 @@ function routeBlock(start:string,end:string|null=null){
   return routes.slice(startIndex,endIndex);
 }
 
-test('real operator outbound requires live persistent outbox before send',()=>{
-  assert.match(routes,/HipicoBotStore\.dbReady\(true\)/);
-  assert.match(routes,/outbox_persistence_unavailable/);
-  assert.match(service,/HIPICO_OUTBOX_PERSISTENCE_REQUIRED/);
-  assert.match(service,/async queueIdempotent/);
+test('real operator outbound requires canonical PostgreSQL outbox readiness before dispatch',()=>{
+  const testMessage=routeBlock("router.post('/test-message'","router.post('/approve/:id'");
+  assert.match(testMessage,/canonicalOutboxReadiness\(\)/);
+  assert.match(testMessage,/canonical_outbox_unavailable/);
+  assert.match(store,/to_regclass\('public\.hipico_outbox'\)/);
+  assert.match(store,/to_regclass\('public\.hipico_outbox_receipts'\)/);
+  assert.match(worker,/claimCanonicalOutbound/);
 });
 
 test('operator test sends are idempotent and never reuse request id with different content',()=>{
   assert.match(routes,/requestId:requestIdSchema/);
-  assert.match(routes,/queueIdempotent/);
-  assert.match(service,/ON CONFLICT \("id"\) DO NOTHING/);
-  assert.match(service,/HIPICO_OUTBOX_IDEMPOTENCY_MISMATCH/);
+  assert.match(routes,/enqueueCanonicalOutbound/);
+  assert.match(store,/ON CONFLICT\(owner_id, idempotency_key\) DO NOTHING/i);
+  assert.match(store,/HIPICO_OUTBOUND_IDEMPOTENCY_MISMATCH/);
   assert.match(routes,/request_id_reused_with_different_content/);
-  assert.match(routes,/previous_attempt_failed_use_new_request_id_after_review/);
+  assert.match(routes,/previous_attempt_terminal_use_new_request_id_after_review/);
 });
 
-test('approval route checks policy and destination allowlist before atomic send claim',()=>{
-  const approve=routeBlock("router.post('/approve/:id'",'export default router');
+test('approval route checks policy before canonical worker claims an approval-required row',()=>{
+  const approve=routeBlock("router.post('/approve/:id'","router.post('/outbox/:id/reconcile'");
   const preflight=indexOfRequired(approve,'const preflight=outboundPreflight');
-  const claim=indexOfRequired(approve,"HipicoBotStore.claimForSend(item.id,'pending_approval')");
-  assert.ok(preflight<claim,'approval preflight must happen before claiming a sendable row');
-  assert.match(approve,/cloudDestinationAllowed|outboundPreflight/);
+  const dispatch=indexOfRequired(approve,'dispatchCanonicalOutbound');
+  assert.ok(preflight<dispatch,'approval preflight must happen before canonical dispatch/claim');
+  assert.match(approve,/allowApprovalRequired:true/);
+  assert.match(worker,/claimCanonicalOutbound\(\{[\s\S]*allowApprovalRequired:input\.allowApprovalRequired/);
   assert.match(routes,/outbound_disabled/);
 });
 
-test('sent, failed and reconciliation transitions verify one durable row',()=>{
-  assert.match(service,/const affected=await prisma\.\$executeRaw/);
-  assert.match(service,/return affected===1/);
-  assert.match(service,/async markReconciliationRequired/);
-  assert.match(service,/"status"='reconciliation_required'/);
-  assert.match(routes,/reconciliation_required/);
-  assert.match(service,/status:persisted\?'sent':'reconciliation_required'/);
+test('accepted retry failed and reconciliation transitions are durable canonical outbox writes',()=>{
+  assert.match(worker,/markCanonicalAccepted/);
+  assert.match(worker,/markCanonicalRetry/);
+  assert.match(worker,/markCanonicalFailed/);
+  assert.match(worker,/markCanonicalReconciliationRequired/);
+  assert.match(store,/SET status = 'accepted'/);
+  assert.match(store,/SET status = 'retry'/);
+  assert.match(store,/SET status = 'failed'/);
+  assert.match(store,/SET status = 'reconciliation_required'/);
 });
 
-test('transport failures with unknown Meta acceptance are quarantined and never reported retryable',()=>{
-  assert.match(service,/HIPICO_CLOUD_DELIVERY_AMBIGUOUS/);
-  assert.match(service,/requiere conciliación manual/);
-  assert.match(service,/markReconciliationRequired/);
-  assert.match(routes,/persistSendFailure/);
-  assert.match(routes,/state\.ambiguous/);
+test('unknown Meta acceptance is quarantined and never exposed as a blind retry',()=>{
+  assert.match(policy,/HIPICO_CLOUD_DELIVERY_AMBIGUOUS/);
+  assert.match(policy,/action:'reconciliation'/);
+  assert.match(worker,/classification\.action==='reconciliation'/);
+  assert.match(worker,/markCanonicalReconciliationRequired/);
+  assert.match(routes,/result\.status==='reconciliation_required'/);
   assert.match(routes,/retryable:false,error:'reconciliation_required'/);
-  assert.match(routes,/item\.status==='sending'\|\|item\.status==='reconciliation_required'/);
 });
 
-test('Meta 2xx without a provider message id is also ambiguous and not a confirmed failure',()=>{
+test('Meta 2xx without a provider message id is ambiguous and not a confirmed failure',()=>{
   const sender=service.slice(indexOfRequired(service,'export async function sendCloudText'),indexOfRequired(service,'export async function processIncoming'));
   const successCheck=indexOfRequired(sender,'if(!response.ok)');
   const missingReceipt=indexOfRequired(sender,"receiptReason:'MESSAGE_ID_MISSING'");
