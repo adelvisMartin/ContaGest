@@ -4,7 +4,7 @@ import test from 'node:test';
 
 const read = (relative) => readFile(new URL(`../${relative}`, import.meta.url), 'utf8');
 
-test('v290 PostgreSQL chain uses isolated local databases, current v24 Agent schema and guaranteed cleanup', async () => {
+test('v290 PostgreSQL chain uses isolated local databases, current v26 schema and guaranteed cleanup', async () => {
   const [db, schema, workflow] = await Promise.all([
     read('scripts/hipico-ephemeral-db-v290.mjs'),
     read('scripts/hipico-apply-e2e-schema-v290.mjs'),
@@ -19,7 +19,9 @@ test('v290 PostgreSQL chain uses isolated local databases, current v24 Agent sch
   for (const migration of [
     'hipico_v22_agent_shadow.sql',
     'hipico_v23_risk_policy.sql',
-    'hipico_v24_shadow_metrics.sql'
+    'hipico_v24_shadow_metrics.sql',
+    'hipico_v25_observability.sql',
+    'hipico_v26_audit_rpc_integrity.sql'
   ]) assert.match(schema, new RegExp(migration.replace('.', '\\.')));
   assert.doesNotMatch(schema, /hipico_v16_agent_shadow\.sql/);
 
@@ -46,9 +48,17 @@ test('v290 PostgreSQL chain uses isolated local databases, current v24 Agent sch
   assert.match(schema, /agentPolicyColumnsNotNull/);
   assert.match(schema, /agentMetricColumnsNotNull/);
   assert.match(schema, /agentPolicyConstraintsPresent/);
+  assert.match(schema, /CREATE ROLE service_role NOLOGIN/);
+  assert.match(schema, /hipico_observability_events/);
+  assert.match(schema, /observabilityAppendOnlyTriggerPresent/);
+  assert.match(schema, /auditV26ColumnsPresent/);
+  assert.match(schema, /auditV26ConstraintsPresent/);
+  assert.match(schema, /auditRpcAnonExecuteDenied/);
+  assert.match(schema, /auditRpcAuthenticatedExecuteAllowed/);
+  assert.match(schema, /auditRpcServiceRoleExecuteAllowed/);
 
   assert.match(workflow, /hipico-ephemeral-db-v290\.mjs create/);
   assert.match(workflow, /hipico-ephemeral-db-v290\.mjs drop/);
   assert.match(workflow, /if: always\(\)/);
-  assert.match(workflow, /v12-v24/);
+  assert.match(workflow, /v12-v26/);
 });
