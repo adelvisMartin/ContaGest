@@ -217,6 +217,26 @@
 
     #pages textarea { min-height:96px; }
 
+    #pages .cg-dental-tooth-grid > button {
+      min-width:44px!important;
+      min-height:44px!important;
+    }
+
+    #pages .cg-dental-list > article {
+      display:flex;
+      flex-wrap:wrap;
+      align-items:flex-start;
+      gap:.75rem;
+      min-width:0;
+      max-width:100%;
+    }
+
+    #pages .cg-dental-list > article > div {
+      flex:1 1 220px;
+      min-width:0;
+      overflow-wrap:anywhere;
+    }
+
     #pages .cg-record-fields,
     #pages .cg-fields-compact,
     #pages .cg-gym-v1124-grid,
