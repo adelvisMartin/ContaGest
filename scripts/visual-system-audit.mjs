@@ -298,7 +298,7 @@ function auditCriticalMigrations() {
   const adapters = read(path.join(root, 'frontend', 'src', 'styles', 'module-adapters.css'));
   const visual = read(path.join(root, 'frontend', 'src', 'styles', 'contagest-visual-system-v12.css'));
   return {
-    veterinaryDedicated:/veterinaria:\['\.\/pages\/VeterinaryClinicPageV1123\.jsx','VeterinaryClinicPage'\]/.test(registry),
+    veterinaryDedicated:/\bveterinaria\s*:\s*\[\s*['"]\.\/pages\/VeterinaryClinicPageV1123\.jsx['"]\s*,\s*['"]VeterinaryClinicPage['"]\s*\]/.test(registry),
     healthAnimalBranchRemoved:!/(animal\s*\?|kind:\s*'animal'|careImmunizationForm)/.test(health),
     ledgerUsesCanonical:/MetricGrid/.test(ledger) && /Section/.test(ledger) && /Table/.test(ledger),
     ledgerPrintStylesIsolated:/<style data-cg-print-only>/.test(ledger),
