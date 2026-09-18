@@ -2,14 +2,13 @@ export const ERP_UI_WAVE_A_2_51 = Object.freeze([
   {
     route:'odontologia',
     module:'health/dentistry',
-    renderer:'frontend/src/pages/DentistryPracticePage.js',
-    status:'LEGACY_EXCEPTION_APPROVED',
-    canonicalRegions:['cg.visual.responsive/shared-runtime-adapter'],
-    owners:{pageHeader:'legacy-kit/PageHeader',actions:'legacy-kit/Button',forms:'legacy-kit/Field|Select|Textarea',dialogs:'none',data:'legacy-html',kpi:'legacy-kit/StatCard'},
+    renderer:'frontend/src/pages/DentistryPracticePage.jsx',
+    status:'MIGRATED',
+    canonicalRegions:['single React root','CgProvider','CgPageHeader','CgButton','CgTextField','CgSelect','CgStatusChip','CgEmptyState','MUI layout'],
+    owners:{pageHeader:'CgPageHeader',actions:'CgButton',forms:'CgTextField + CgSelect',dialogs:'none',data:'React state + MUI Paper/Stack',kpi:'React metrics + CgStatusChip'},
     cssOwners:['frontend/src/styles/erp-runtime.css','frontend/src/styles/module-adapters.css','frontend/src/styles/contagest-visual-system-v12.css'],
-    legacyBefore:['components/ui/index.js -> kit.js','imperative HTML renderer','raw tooth buttons'],
-    legacyBudget:{kitImport:1,rawButtonString:1,rawInputString:1,rawSelectString:0,rawTextareaString:0,cgxBtn:0},
-    exception:{owner:'roadmap 3/51',reason:'Renderer HTML/DOM imperativo; su sustitución completa por React declarativo pertenece a 3/51 para evitar mezclar dos arquitecturas en esta ola visual.',approvedAt:'2026-09-18',reviewBy:'3/51'},
+    legacyBefore:['components/ui/index.js -> kit.js','imperative HTML renderer','raw tooth buttons','mountSubmit DOM lifecycle'],
+    legacyBudget:{kitImport:0,rawButtonString:0,rawInputString:0,rawSelectString:0,rawTextareaString:0,cgxBtn:0},
     qa:{source:'PASS_REQUIRED',phone360:'NOT_EXECUTED',phone390:'NOT_EXECUTED',phone430:'NOT_EXECUTED',tablet768:'NOT_EXECUTED',desktop1366:'NOT_EXECUTED'}
   },
   {
