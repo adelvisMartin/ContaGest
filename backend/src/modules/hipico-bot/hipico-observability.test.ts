@@ -33,7 +33,7 @@ test('metadata sanitizer removes credentials and message/identity payloads recur
     text:'raw whatsapp text',destination:'584121234567',sender:'584121234567',
     nested:{apiKey:'secret',password:'secret',safe:'ok'},
     list:[{message:'private',code:'E1'}]
-  });
+  }) as Record<string,unknown>;
   const rendered=JSON.stringify(clean);
   for(const forbidden of ['do-not-log','sid=secret','raw whatsapp text','584121234567','apiKey','password','private']){
     assert.equal(rendered.includes(forbidden),false,forbidden);
