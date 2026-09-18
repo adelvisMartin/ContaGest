@@ -42,7 +42,7 @@
     "audit:visual:strict": "node scripts/visual-system-audit.mjs --strict",
     "audit:functions": "node scripts/erp-module-function-audit.mjs",
     "audit:functions:strict": "node scripts/erp-module-function-audit.mjs --strict",
-    "audit:architecture": "node scripts/architecture-boundary-audit.mjs",
+    "baseline:verify": "node scripts/verify-technical-baseline-v1.mjs",\n    "audit:architecture": "node scripts/architecture-boundary-audit.mjs",
     "agent:gates": "node scripts/agent-gate-router.mjs",
     "doctor:changed": "npx --yes react-doctor@latest --verbose --scope changed",
     "doctor:full": "npx --yes react-doctor@latest --verbose",
