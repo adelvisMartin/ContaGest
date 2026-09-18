@@ -214,6 +214,61 @@ function DentistryWorkspace({ state, context }){
     }catch(cause){notify(`No se registró la cita: ${cause?.message||'Error'}`,'error');}
   }
 
+  function updatePeriodontalSite(siteId,patch){
+    setPeriodontalForm((current)=>({
+      ...current,
+      sites:current.sites.map((site)=>site.site===siteId?{...site,...patch}:site)
+    }));
+  }
+
+  async function submitPeriodontalExam(event){
+    event.preventDefault();
+    if(!selectedPatientId)return notify('Selecciona un paciente para el periodontograma.','warning');
+    if(!periodontalForm.professionalId)return notify('Selecciona el profesional responsable.','warning');
+    if(!periodontalForm.tooth)return notify('Selecciona la pieza periodontal.','warning');
+    if(!periodontalForm.reason.trim())return notify('Indica el motivo del examen periodontal.','warning');
+    const incomplete=periodontalForm.sites.some((site)=>[
+      site.probingDepth,site.gingivalMargin,site.clinicalAttachmentLevel
+    ].some((value)=>String(value).trim()===''));
+    if(incomplete)return notify('Completa profundidad, margen gingival y nivel de inserción en los seis sitios.','warning');
+
+    setPeriodontalLoading(true);
+    try{
+      const payload={
+        patientId:selectedPatientId,
+        professionalId:periodontalForm.professionalId,
+        dentition:periodontalForm.dentition,
+        tooth:periodontalForm.tooth,
+        measuredAt:periodontalForm.measuredAt,
+        reason:periodontalForm.reason.trim(),
+        mobility:Number(periodontalForm.mobility||0),
+        furcation:Number(periodontalForm.furcation||0),
+        sites:periodontalForm.sites.map((site)=>({
+          site:site.site,
+          probingDepth:Number(site.probingDepth),
+          gingivalMargin:Number(site.gingivalMargin),
+          clinicalAttachmentLevel:Number(site.clinicalAttachmentLevel),
+          bleeding:Boolean(site.bleeding),
+          suppuration:Boolean(site.suppuration),
+          plaque:Boolean(site.plaque)
+        }))
+      };
+      await HealthVerticalService.createPeriodontalExam(payload);
+      setPeriodontalExams(rows(await HealthVerticalService.periodontalExams(selectedPatientId)));
+      setPeriodontalForm((current)=>({
+        ...current,
+        measuredAt:localToday(),
+        reason:'Evaluación periodontal',
+        mobility:'0',
+        furcation:'0',
+        sites:blankPeriodontalSites()
+      }));
+      notify('Examen periodontal guardado con seis sitios auditables.','success');
+    }catch(cause){
+      notify(`No se guardó el periodontograma: ${cause?.message||'Error'}`,'error');
+    }finally{setPeriodontalLoading(false);}
+  }
+
   async function submitEncounter(event){
     event.preventDefault();
     if(!selectedPatientId)return notify('Selecciona un paciente.','warning');
