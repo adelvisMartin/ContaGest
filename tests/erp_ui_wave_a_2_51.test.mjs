@@ -26,17 +26,18 @@ test('Veterinary route keeps canonical Cg primitives after graduating to a singl
   assert.equal((source.match(/createRoot\(/g)||[]).length,1);
 });
 
-test('legacy budgets are monotonic: migrated dentistry is zero while fitness cannot grow',()=>{
+test('legacy budgets are zero after Dentistry and Fitness migrated to React/Cg/MUI',()=>{
   const dental=read('frontend/src/pages/DentistryPracticePage.jsx');
-  const gym=read('frontend/src/pages/GymManagementPage.js');
+  const gym=read('frontend/src/pages/GymManagementPage.jsx');
   const count=(source,re)=>(source.match(re)||[]).length;
-  assert.doesNotMatch(dental,/components\/ui\/index\.js|mountSubmit|escapeHtml/);
-  assert.equal(count(dental,/<button\b/g),0);
-  assert.equal(count(dental,/<input\b/g),0);
-  assert.ok(count(gym,/<button\b/g)<=16);
-  assert.ok(count(gym,/<input\b/g)<=30);
-  assert.ok(count(gym,/<select\b/g)<=15);
-  assert.ok(count(gym,/<textarea\b/g)<=4);
+  for(const source of [dental,gym]){
+    assert.doesNotMatch(source,/components\/ui\/index\.js|mountSubmit|escapeHtml|innerHTML|querySelector|addEventListener|MutationObserver/);
+    assert.equal(count(source,/<button\b/g),0);
+    assert.equal(count(source,/<input\b/g),0);
+    assert.equal(count(source,/<select\b/g),0);
+    assert.equal(count(source,/<textarea\b/g),0);
+  }
+  for(const primitive of ['CgProvider','CgPageHeader','CgButton','CgTextField','CgSelect'])assert.match(gym,new RegExp(primitive));
 });
 
 test('responsive owner covers dental touch targets and both dental/gym wrapping surfaces',()=>{
