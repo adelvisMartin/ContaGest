@@ -77,6 +77,10 @@ if(dentistryEntry?.status==='MIGRATED'){
     if(!toothSurfaceSelector.includes(contract))fail(`odontologia: missing visual surface contract ${contract}`);
   }
   if(!/minWidth:\s*44/.test(toothSurfaceSelector)||!/minHeight:\s*44/.test(toothSurfaceSelector))fail('odontologia: tooth surface targets must remain at least 44px');
+  for(const contract of ['PERIODONTAL_SITES','buildPeriodontalEvolution','periodontalExams','createPeriodontalExam','clinicalAttachmentLevel']){
+    if(!dentistry.includes(contract))fail(`odontologia: missing periodontal contract ${contract}`);
+  }
+  if(/autoDiagnosis|periodontitisStage|diagnosePeriodontitis/.test(dentistry))fail('odontologia: periodontal UI must not become diagnosis authority');
   for(const contract of ['amendmentTarget','amendmentReason','prepareAmendment','HealthVerticalService.amendEncounter(','versioning?.revision','versioning?.reason','versioning?.actor','versioning?.changedFields','versioning?.before','versioning?.after']){
     if(!dentistry.includes(contract))fail(`odontologia: missing versioned history contract ${contract}`);
   }
