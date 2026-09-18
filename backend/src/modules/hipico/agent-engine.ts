@@ -88,6 +88,19 @@ const parser: DeterministicAgentParser = {
       };
     }
 
+    const result = classify(text);
+    // Concrete lifecycle evidence must never be downgraded to a safe query merely
+    // because it contains words such as "pizarra" or "resultado".
+    if (['race_open', 'race_close', 'race_result', 'day_close'].includes(result.intent)) {
+      return {
+        intent: result.intent,
+        confidence: result.confidence,
+        tool: 'proposeRaceCommand',
+        arguments: { intent: result.intent, entities: result.entities || {} },
+        risk: 'review'
+      };
+    }
+
     const query = classifyRaceQueryIntent(text);
     if (query !== 'UNKNOWN') {
       const tool = query === 'NEXT_RACE'
@@ -108,7 +121,6 @@ const parser: DeterministicAgentParser = {
       };
     }
 
-    const result = classify(text);
     if (result.intent === 'greeting' || result.intent === 'help' || result.intent === 'status_non_monetary') {
       return {
         intent: result.intent,
@@ -116,16 +128,6 @@ const parser: DeterministicAgentParser = {
         tool: 'queryRaceStatus',
         arguments: { text },
         risk: 'safe'
-      };
-    }
-
-    if (['race_open', 'race_close', 'race_result', 'result', 'day_close'].includes(result.intent)) {
-      return {
-        intent: result.intent,
-        confidence: result.confidence,
-        tool: 'proposeRaceCommand',
-        arguments: { intent: result.intent, entities: result.entities || {} },
-        risk: 'review'
       };
     }
 
