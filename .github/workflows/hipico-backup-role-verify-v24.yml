@@ -1,0 +1,63 @@
+name: Hípico Backup Role Verify v24
+
+on:
+  workflow_dispatch:
+    inputs:
+      candidate_sha:
+        description: Exact 40-hex candidate SHA to verify
+        required: true
+        type: string
+      mode:
+        description: Backup role verification phase
+        required: true
+        default: PRE_ROLLOUT
+        type: choice
+        options:
+          - PRE_ROLLOUT
+          - STEADY_STATE
+
+permissions:
+  contents: read
+
+env:
+  NODE_VERSION: '22'
+  HIPICO_CANDIDATE_SHA: ${{ inputs.candidate_sha }}
+  HIPICO_BACKUP_ROLE_MODE: ${{ inputs.mode }}
+  HIPICO_BACKUP_DATABASE_URL: ${{ secrets.HIPICO_BACKUP_DATABASE_URL }}
+  HIPICO_BACKUP_ROLE_REPORT: artifacts/qa/hipico-backup-role/${{ inputs.candidate_sha }}.json
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout exact candidate
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.candidate_sha }}
+          fetch-depth: 0
+
+      - name: Setup Node 22
+        uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Install locked workspace
+        run: npm ci --no-audit --no-fund
+
+      - name: Exact SHA gate
+        run: node scripts/hipico-exact-sha-gate.mjs
+
+      - name: Verify hipico_backup role read-only
+        run: node scripts/hipico-backup-role-verify-v24.mjs
+
+      - name: Upload backup role evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: hipico-backup-role-${{ inputs.candidate_sha }}
+          path: artifacts/qa/hipico-backup-role/${{ inputs.candidate_sha }}.json
+          if-no-files-found: warn
+          retention-days: 30
