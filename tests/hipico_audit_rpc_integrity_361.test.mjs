@@ -48,8 +48,8 @@ test('v26 makes audit provenance server-owned and advisory for client sync', asy
   for(const key of ['actorUserId','actorRole','source','authority','financialAuthority','settlementAuthority']){
     assert.match(sql,new RegExp(`'${key}'`));
   }
-  assert.match(sql,/source\s*=\s*'client_sync'/i);
-  assert.match(sql,/authority\s*=\s*'advisory'/i);
+  assert.match(sql,/'source'\s*,\s*'client_sync'/i);
+  assert.match(sql,/'authority'\s*,\s*'advisory'/i);
   assert.match(sql,/financialAuthority['"]?\s*,\s*false/i);
   assert.match(sql,/settlementAuthority['"]?\s*,\s*false/i);
   assert.match(sql,/revoke all on function public\.hipico_append_audit\(uuid, text, text, text, jsonb\) from public, anon/i);
