@@ -71,7 +71,8 @@
     "skills:check": "node scripts/verify-agent-skills.mjs",
     "audit:erp-ui-wave-a": "node scripts/erp-ui-wave-a-audit-v251.mjs",
     "test:browser:erp-ui-wave-a": "npx playwright test qa/erp-ui-wave-a-v251.spec.mjs --project=chromium",
-    "audit:erp-ui-inventory": "node scripts/erp-ui-inventory-audit-v451.mjs"
+    "audit:erp-ui-inventory": "node scripts/erp-ui-inventory-audit-v451.mjs",
+    "audit:erp-ui-sales": "node scripts/erp-ui-sales-audit-v551.mjs"
   },
   "devDependencies": {
     "@playwright/test": "1.63.0"
