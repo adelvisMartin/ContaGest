@@ -1,0 +1,152 @@
+name: Hípico Schema Change Control v24
+
+on:
+  workflow_dispatch:
+    inputs:
+      candidate_sha:
+        description: Exact 40-hex candidate SHA
+        required: true
+        type: string
+      change_ticket:
+        description: Approved change ticket reference, for example #403
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+env:
+  NODE_VERSION: '22'
+  HIPICO_CANDIDATE_SHA: ${{ inputs.candidate_sha }}
+  HIPICO_SCHEMA_CHANGE_TICKET: ${{ inputs.change_ticket }}
+  HIPICO_BACKUP_OUTPUT_DIR: artifacts/qa/hipico-schema-change-control/${{ inputs.candidate_sha }}
+  HIPICO_SCHEMA_BACKUP_EVIDENCE: artifacts/qa/hipico-schema-change-control/${{ inputs.candidate_sha }}/backup-evidence.json
+  HIPICO_SCHEMA_ROLLOUT_REPORT: artifacts/qa/hipico-schema-change-control/${{ inputs.candidate_sha }}/change-plan.json
+
+jobs:
+  change-control:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: hipico-change-control-only
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      HIPICO_BACKUP_DATABASE_URL: ${{ secrets.HIPICO_BACKUP_DATABASE_URL }}
+      HIPICO_BACKUP_EXPECTED_ROLE: hipico_backup
+      HIPICO_BACKUP_AGE_RECIPIENT: ${{ secrets.HIPICO_BACKUP_AGE_RECIPIENT }}
+      HIPICO_BACKUP_RCLONE_REMOTE: ${{ secrets.HIPICO_BACKUP_RCLONE_REMOTE }}
+      HIPICO_SCHEMA_DRIFT_DATABASE_URL: ${{ secrets.HIPICO_SCHEMA_VERIFY_DATABASE_URL }}
+      HIPICO_RESTORE_DATABASE_URL: postgresql://postgres:hipico-change-control-only@127.0.0.1:5432/hipico_change_control_restore
+    steps:
+      - name: Checkout exact candidate
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.candidate_sha }}
+          fetch-depth: 0
+
+      - name: Setup Node 22
+        uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Install locked workspace and recovery tools
+        run: |
+          npm ci --no-audit --no-fund
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends postgresql-client age rclone
+
+      - name: Verify exact candidate SHA
+        run: node scripts/hipico-exact-sha-gate.mjs
+
+      - name: Validate change ticket input
+        run: |
+          node --input-type=module <<'NODE'
+          const value=String(process.env.HIPICO_SCHEMA_CHANGE_TICKET||'').trim();
+          if(!/^(?:#\d+|[A-Z][A-Z0-9_-]{2,63})$/i.test(value)) {
+            throw new Error('HIPICO_SCHEMA_CHANGE_TICKET_INVALID');
+          }
+          NODE
+
+      - name: Prepare isolated recovery credentials
+        env:
+          HIPICO_BACKUP_RCLONE_CONFIG_B64: ${{ secrets.HIPICO_BACKUP_RCLONE_CONFIG_B64 }}
+          HIPICO_BACKUP_AGE_IDENTITY_B64: ${{ secrets.HIPICO_BACKUP_AGE_IDENTITY_B64 }}
+        run: |
+          set -euo pipefail
+          test -n "$HIPICO_BACKUP_RCLONE_CONFIG_B64"
+          test -n "$HIPICO_BACKUP_AGE_IDENTITY_B64"
+          printf '%s' "$HIPICO_BACKUP_RCLONE_CONFIG_B64" | base64 --decode > "$RUNNER_TEMP/hipico-rclone.conf"
+          printf '%s' "$HIPICO_BACKUP_AGE_IDENTITY_B64" | base64 --decode > "$RUNNER_TEMP/hipico-age-identity.txt"
+          chmod 600 "$RUNNER_TEMP/hipico-rclone.conf" "$RUNNER_TEMP/hipico-age-identity.txt"
+
+      - name: Produce encrypted off-site backup
+        env:
+          RCLONE_CONFIG: ${{ runner.temp }}/hipico-rclone.conf
+        run: bash ops/backup/hipico-backup-postgres.sh
+
+      - name: Create disposable local restore database
+        env:
+          PGPASSWORD: hipico-change-control-only
+        run: createdb -h 127.0.0.1 -U postgres hipico_change_control_restore
+
+      - name: Verify backup through local restore
+        env:
+          HIPICO_BACKUP_AGE_IDENTITY: ${{ runner.temp }}/hipico-age-identity.txt
+        run: bash ops/backup/hipico-restore-drill.sh
+
+      - name: Run read-only drift and rollout preflight
+        run: node scripts/hipico-schema-rollout-preflight-v17.mjs
+
+      - name: Validate change-control state
+        if: always()
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          const file=process.env.HIPICO_SCHEMA_ROLLOUT_REPORT;
+          if(!file || !fs.existsSync(file)) {
+            console.log(JSON.stringify({status:'NOT_EXECUTED',reason:'CHANGE_PLAN_NOT_PRODUCED'}));
+            process.exitCode=3;
+          } else {
+            const plan=JSON.parse(fs.readFileSync(file,'utf8'));
+            const allowed=new Set(['NO_CHANGES','READY_FOR_MANUAL_APPLY','BLOCKED','NOT_EXECUTED']);
+            if(!allowed.has(String(plan.status||''))) throw new Error('HIPICO_CHANGE_CONTROL_STATE_INVALID');
+            if(plan.autoApply!==false || plan.manualApplyRequired!==true) {
+              throw new Error('HIPICO_CHANGE_CONTROL_MANUAL_BOUNDARY_INVALID');
+            }
+            console.log(JSON.stringify({
+              schema:'hipico-schema-change-control.v24',
+              candidateSha:plan.candidateSha,
+              changeTicket:plan.changeTicket,
+              status:plan.status,
+              reason:plan.reason||null,
+              autoApply:false,
+              manualApplyRequired:true
+            }));
+          }
+          NODE
+
+      - name: Upload SHA-bound change-control evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: hipico-schema-change-control-${{ inputs.candidate_sha }}
+          path: |
+            artifacts/qa/hipico-schema-change-control/${{ inputs.candidate_sha }}/change-plan.json
+            artifacts/qa/hipico-schema-change-control/${{ inputs.candidate_sha }}/backup-evidence.json
+            artifacts/qa/hipico-schema-change-control/${{ inputs.candidate_sha }}/backup-manifest.json
+            artifacts/qa/hipico-schema-change-control/${{ inputs.candidate_sha }}/*.sha256
+          if-no-files-found: warn
+          retention-days: 30
