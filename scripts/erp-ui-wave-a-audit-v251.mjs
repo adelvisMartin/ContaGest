@@ -67,6 +67,9 @@ if(dentistryEntry?.status==='MIGRATED'){
   for(const contract of ['selectedPatientId','patientId:selectedPatientId',"setSelectedTooth('')"]){
     if(!dentistry.includes(contract))fail(`odontologia: missing explicit selected-patient contract ${contract}`);
   }
+  for(const contract of ['PERMANENT_TEETH','PRIMARY_TEETH','selectedSurfaces','odontogram:{dentition','surfaces:selectedSurfaces','condition:encounterForm.condition.trim()']){
+    if(!dentistry.includes(contract))fail(`odontologia: missing structured odontogram contract ${contract}`);
+  }
 }
 
 const fitnessEntries=ERP_UI_WAVE_A_2_51.filter((item)=>['gimnasio','rutinas','nutricion'].includes(item.route));
