@@ -3,8 +3,13 @@
   "version": "11.14.0",
   "private": true,
   "type": "module",
-  "engines": {"node": "22.x"},
-  "workspaces": ["frontend","backend"],
+  "engines": {
+    "node": "22.x"
+  },
+  "workspaces": [
+    "frontend",
+    "backend"
+  ],
   "scripts": {
     "dev:frontend": "npm --workspace frontend run dev",
     "dev:backend": "npm --workspace backend run dev",
@@ -63,8 +68,15 @@
     "audit:prod": "npm audit --omit=dev --audit-level=high",
     "check:bundle": "node scripts/check-bundle-budget.mjs",
     "skills:sync": "node scripts/sync-agent-skills.mjs",
-    "skills:check": "node scripts/verify-agent-skills.mjs"
+    "skills:check": "node scripts/verify-agent-skills.mjs",
+    "audit:erp-ui-wave-a": "node scripts/erp-ui-wave-a-audit-v251.mjs",
+    "test:browser:erp-ui-wave-a": "npx playwright test qa/erp-ui-wave-a-v251.spec.mjs --project=chromium"
   },
-  "devDependencies": {"@playwright/test": "1.63.0"},
-  "overrides": {"deepmerge-ts": "8.0.1","uuid": "11.1.1"}
+  "devDependencies": {
+    "@playwright/test": "1.63.0"
+  },
+  "overrides": {
+    "deepmerge-ts": "8.0.1",
+    "uuid": "11.1.1"
+  }
 }
