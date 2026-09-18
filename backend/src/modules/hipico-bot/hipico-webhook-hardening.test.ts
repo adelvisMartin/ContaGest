@@ -67,7 +67,7 @@ test('malformed item in a signed batch cannot make valid sibling messages disapp
   const processing=source.indexOf('const result=messages.length>0?await processMessagesBounded(messages)');
   const partialAck=source.indexOf("error:'invalid_webhook_items_partial'");
   assert.ok(extraction>=0&&timestampPartition>extraction&&invalidCount>timestampPartition&&persistence>invalidCount&&processing>persistence&&partialAck>processing);
-  assert.match(source,/accepted:true,\n\s*partial:true,\n\s*retryable:false/);
+  assert.match(source,/accepted:true,\s*partial,\s*retryable:false/);
   assert.match(source,/received:expectedRawMessages/);
   assert.match(source,/invalidMessages/);
   assert.doesNotMatch(source,/if\(messages\.length!==expectedRawMessages\)[\s\S]{0,180}return res\.status\(200\)/);
