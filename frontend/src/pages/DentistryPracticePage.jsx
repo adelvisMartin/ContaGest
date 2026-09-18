@@ -8,6 +8,7 @@ import { HealthVerticalService } from '../services/verticalService.js';
 import { ToothSurfaceSelector } from '../components/dentistry/ToothSurfaceSelector.jsx';
 import { PERMANENT_TEETH, PRIMARY_TEETH } from '../components/dentistry/dentalCatalog.js';
 import { PeriodontalChartPanel } from '../components/dentistry/PeriodontalChartPanel.jsx';
+import { TreatmentPlanPanel } from '../components/dentistry/TreatmentPlanPanel.jsx';
 
 const PROCEDURES=['Evaluación','Profilaxis / limpieza','Restauración','Endodoncia','Extracción','Periodoncia','Ortodoncia','Prótesis','Implante','Radiografía / estudio','Control postoperatorio'];
 const SPECIALTIES=[
@@ -245,6 +246,51 @@ function DentistryWorkspace({ state, context }){
     }
   }
 
+  async function createTreatmentPlan(plan){
+    if(!selectedPatientId){notify('Selecciona un paciente antes de crear el plan.','warning');return false;}
+    try{
+      const item=await HealthVerticalService.createEncounter({
+        patientId:selectedPatientId,
+        professionalId:plan.professionalId||null,
+        specialty:'dentistry',
+        type:'dental-treatment-plan',
+        subjective:'',
+        objective:'Plan de tratamiento odontológico',
+        assessment:plan.diagnosis,
+        plan:'Plan odontológico estructurado',
+        diagnosisCodes:[],
+        clinicalData:{treatmentPlan:{
+          diagnosis:plan.diagnosis,
+          alternatives:plan.alternatives,
+          phases:plan.phases,
+          budget:plan.budget,
+          status:'proposed',
+          acceptance:{status:'pending'}
+        }},
+        confidential:false,
+        status:'draft'
+      });
+      setEncounters((current)=>[item,...current]);
+      notify('Plan propuesto guardado con presupuesto recalculado por el servidor.','success');
+      return true;
+    }catch(cause){
+      notify(`No se guardó el plan de tratamiento: ${cause?.message||'Error'}`,'error');
+      return false;
+    }
+  }
+
+  async function decideTreatmentPlan(id,payload){
+    try{
+      await HealthVerticalService.decideTreatmentPlan(id,payload);
+      setEncounters(rows(await HealthVerticalService.encounters(selectedPatientId)));
+      notify(payload.decision==='accepted'?'Plan aceptado operativamente.':'Plan rechazado y cerrado.','success');
+      return true;
+    }catch(cause){
+      notify(`No se registró la decisión del plan: ${cause?.message||'Error'}`,'error');
+      return false;
+    }
+  }
+
   return <Stack className="cg-dentistry-workspace" gap={1.5}>
     <CgPageHeader eyebrow="Salud · Odontología" title="Consultorio odontológico" description="Pacientes, agenda, odontograma operativo y registro de procedimientos en un mismo flujo." actions={<CgButton variant="outlined" onClick={()=>void loadAll()} disabled={loading}>Actualizar</CgButton>}/>
     {error?<CgState severity="warning" title="Actualización incompleta">{error}</CgState>:null}
@@ -337,6 +383,16 @@ function DentistryWorkspace({ state, context }){
       professionalOptions={professionalOptions}
       encounters={encounters}
       onCreate={createPeriodontalChart}
+    />
+
+    <TreatmentPlanPanel
+      selectedPatientId={selectedPatientId}
+      onPatientChange={(patientId)=>void loadEncounters(patientId)}
+      patientOptions={patientOptions}
+      professionalOptions={professionalOptions}
+      encounters={encounters}
+      onCreate={createTreatmentPlan}
+      onDecision={decideTreatmentPlan}
     />
 
     <Box className="cg-dental-grid" sx={{display:'grid',gridTemplateColumns:{xs:'1fr',lg:'repeat(2,minmax(0,1fr))'},gap:1.25}}>
