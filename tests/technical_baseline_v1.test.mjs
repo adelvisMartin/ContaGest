@@ -33,7 +33,7 @@ test('technical baseline v1 inventories the three requested vertical surfaces an
 });
 
 test('technical baseline v1 preserves exact endpoint inventories by source',()=>{
-  const routesOf=(relative)=>[...read(relative).matchAll(/\\brouter\\.(get|post|put|patch|delete)\\(\\s*['"]([^'"]+)['"]/g)]
+  const routesOf=(relative)=>[...read(relative).matchAll(/\brouter\.(get|post|put|patch|delete)\(\s*['"]([^'"]+)['"]/g)]
     .map((match)=>`${match[1].toUpperCase()} ${match[2]}`);
   for(const [relative,expected] of Object.entries(manifest.endpoints.bySource)){
     assert.deepEqual(routesOf(relative),expected,relative);
