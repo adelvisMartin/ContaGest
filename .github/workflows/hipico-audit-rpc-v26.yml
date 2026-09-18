@@ -3,8 +3,8 @@ on:
   pull_request:
     paths:
       - 'supabase/sql/hipico_v26_audit_rpc_integrity.sql'
-      - 'scripts/hipico-audit-rpc-v26-pg.mjs'
-      - 'tests/hipico_v26_audit_rpc_integrity.test.mjs'
+      - 'scripts/hipico-audit-rpc-v14-pg.mjs'
+      - 'tests/hipico_audit_rpc_integrity_361.test.mjs'
       - 'frontend/public/hipico-control/assets/js/app.js'
       - '.github/workflows/hipico-audit-rpc-v26.yml'
   workflow_dispatch:
@@ -48,10 +48,10 @@ jobs:
       - name: Install locked workspace
         run: npm ci --no-audit --no-fund
       - name: Static audit integrity contract
-        run: node --test tests/hipico_v26_audit_rpc_integrity.test.mjs
+        run: node --test tests/hipico_audit_rpc_integrity_361.test.mjs
       - name: Typecheck backend
         run: npm --workspace backend run typecheck
       - name: Apply canonical Hípico base schema through v24
         run: node scripts/hipico-apply-e2e-schema-v290.mjs
-      - name: Transactional v25-v26 audit integrity probe
-        run: node scripts/hipico-audit-rpc-v26-pg.mjs
+      - name: Transactional v26 audit integrity probe (canonical v14 runner)
+        run: node scripts/hipico-audit-rpc-v14-pg.mjs
