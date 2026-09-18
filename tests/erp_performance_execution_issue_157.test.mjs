@@ -105,7 +105,7 @@ test('#157 executes heavy success/error contracts and controlled degradation',()
 });
 
 test('#157 gate cannot coerce null or string evidence into numeric PASS values',()=>{
-  assert.match(gate,/typeof raw === 'number' && Number\.isFinite\(raw\)/);
+  assert.match(gate,/typeof raw\s*===\s*'number'\s*&&\s*Number\.isFinite\(raw\)/);
   assert.match(gate,/metricNumber\(evidence\.metrics\?\.\[key\]\)/);
   assert.match(gate,/metricNumber\(evidence\.metrics\?\.\['backend\.throughputRps'\]\)/);
   assert.match(gate,/checks\.some\(\(c\)=>c\.value===null\)/);
