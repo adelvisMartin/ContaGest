@@ -44,7 +44,7 @@ Un antivirus dedicado o CDR puede agregarse después como adapter, pero la valid
 
 ## OCR/parser
 
-`PayableDocumentParser` es el contrato reemplazable. `SafeLocalParser` es el provider inicial y no envía datos a terceros. Extrae conservadoramente texto visible de documentos PDF digitales y genera `confidence` por campo para proveedor/RIF, factura, fecha, moneda, subtotal, impuesto, total y referencias PO/recepción.
+`PayableDocumentParser` es el contrato reemplazable. `SafeLocalParser` es el provider inicial y no envía datos a terceros. Extrae conservadoramente texto visible de documentos PDF digitales y genera `confidence` por campo para proveedor/RIF, factura, fecha, moneda, subtotal, impuesto, total, referencias PO/recepción y líneas etiquetadas. Para evitar falsos positivos, una línea local sólo se materializa cuando el texto contiene un marcador `ITEM/LÍNEA/PRODUCTO` seguido de cantidad, precio unitario e IVA/TAX. Las líneas aceptadas por la revisión humana se trasladan al borrador y su total se recalcula con `Prisma.Decimal`; no se confía en un total de línea aportado por el cliente.
 
 Para JPG/PNG/WebP el adapter local **no finge OCR visual**: el archivo es válido y entra al flujo, pero sus campos quedan en baja confianza y requieren revisión/corrección humana. Un provider OCR externo futuro debe implementar el mismo contrato y no puede habilitarse en producción sin revisión contractual, privacidad/data-processing y consentimiento aplicables.
 
@@ -58,7 +58,7 @@ El matching usa registros tenant-scoped de órdenes de compra y recepciones cuan
 - `3-way`: factura + PO + recepción.
 - `none`: no existe referencia verificable.
 
-Las diferencias de cantidad, precio e impuesto se conservan en `matchResult`. No se corrige silenciosamente el documento ni el PO/recepción. Cuando no existen líneas estructuradas suficientes se registra explícitamente `lines_unavailable` en lugar de fingir igualdad.
+Las diferencias de cantidad, precio e impuesto se conservan en `matchResult`. No se corrige silenciosamente el documento ni el PO/recepción. La UI de revisión avisa explícitamente cuántas diferencias existen antes de confirmar el borrador. Cuando no existen líneas estructuradas suficientes se registra explícitamente `lines_unavailable` en lugar de fingir igualdad.
 
 ## Confidence y revisión
 
@@ -75,7 +75,7 @@ Al almacenarse en PostgreSQL, `PayableDocument` y `PayableParserRun` entran en e
 El gate `.github/workflows/payables-v235.yml` levanta PostgreSQL 17 efímero, aplica migraciones y ejecuta:
 
 - `backend/src/modules/payables/payables.parser.test.ts`: parsing, confidence, MIME spoofing, contenido activo y tamaño.
-- `qa/payables-v235-accuracy.test.ts`: exactitud por campo sobre corpus sintético/sanitizado VES/USD.
+- `qa/payables-v235-accuracy.test.ts`: exactitud por campo sobre corpus sintético/sanitizado VES/USD, incluyendo descripción/cantidad/precio/IVA de líneas etiquetadas.
 - `qa/payables-v235.integration.test.ts`: aislamiento A→B/B→A, dedupe exacto, duplicate supplier+reference, proveedor desconocido, 3-way matching y ausencia de auto-post.
 - `qa/payables-v235.spec.mjs`: comportamiento de UI para upload, baja confianza, revisión y creación exclusiva de borrador.
 

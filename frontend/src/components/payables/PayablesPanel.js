@@ -7,7 +7,9 @@ const stateTone=(value)=>value==='draft_created'?'success':value==='error'?'dang
 const stateLabel=(value)=>({uploaded:'Recibido',parsing:'Procesando',review:'Revisión',draft_created:'Borrador creado',error:'Error'})[value]||value||'—';
 const confidenceSummary=(document)=>{
   const extraction=document?.parserResult||{};
-  const scores=Object.entries(extraction).filter(([key,value])=>!['lines','warnings'].includes(key)&&value&&typeof value==='object'&&'confidence' in value).map(([,value])=>Number(value.confidence||0));
+  const topScores=Object.entries(extraction).filter(([key,value])=>!['lines','warnings'].includes(key)&&value&&typeof value==='object'&&'confidence' in value).map(([,value])=>Number(value.confidence||0));
+  const lineScores=(Array.isArray(extraction.lines)?extraction.lines:[]).flatMap((line)=>Object.values(line||{}).filter((value)=>value&&typeof value==='object'&&'confidence' in value).map((value)=>Number(value.confidence||0)));
+  const scores=[...topScores,...lineScores];
   if(!scores.length)return {label:'Sin extracción',tone:'warning'};
   const low=scores.filter((score)=>score<0.8).length;
   return low?{label:`${low} por confirmar`,tone:'warning'}:{label:'Confianza revisable',tone:'success'};
@@ -89,6 +91,10 @@ export const PayablesPanel={
         const required=detail.requiredConfirmations||[];
         if(required.length&&!window.confirm(`Hay ${required.length} campos de baja confianza (${required.join(', ')}). Al continuar confirmas que los revisaste; corrige el número de factura si falta.`))return;
         const extraction=detail.parserRuns?.find((run)=>run.status==='success')?.result||detail.parserResult||{};
+        const poDifferences=detail.matchResult?.purchaseOrder?.differences||[];
+        const receiptDifferences=detail.matchResult?.receipt?.differences||[];
+        const differenceCount=poDifferences.length+receiptDifferences.length;
+        if(differenceCount&&!window.confirm(`El match detectó ${differenceCount} diferencia(s) entre factura, PO o recepción. Las diferencias se conservarán sin autocorrección. Líneas extraídas: ${Array.isArray(extraction.lines)?extraction.lines.length:0}. ¿Continuar con la revisión?`))return;
         const corrections={};
         if(!extraction.invoiceNumber?.value){const value=window.prompt('Número de factura confirmado');if(!value)return;corrections.invoiceNumber=value.trim();}
         if(!extraction.currency?.value){const value=window.prompt('Moneda confirmada (VES, USD o EUR)','VES');if(!value)return;corrections.currency=value.trim().toUpperCase();}

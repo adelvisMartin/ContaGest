@@ -17,7 +17,7 @@ const baseDocument={
     supplierRif:{value:'J-12345678-9',confidence:.96,source:'local-heuristic'},invoiceNumber:{value:'FAC-235',confidence:.9,source:'local-heuristic'},
     issueDate:{value:'2026-09-07',confidence:.9,source:'local-heuristic'},currency:{value:'USD',confidence:.88,source:'local-heuristic'},
     subtotal:{value:'100.00',confidence:.9,source:'local-heuristic'},tax:{value:'16.00',confidence:.72,source:'local-heuristic'},total:{value:'116.00',confidence:.93,source:'local-heuristic'},
-    poReference:{value:'PO-235',confidence:.86,source:'local-heuristic'},receiptReference:{value:'GRN-235',confidence:.86,source:'local-heuristic'},lines:[],warnings:[]
+    poReference:{value:'PO-235',confidence:.86,source:'local-heuristic'},receiptReference:{value:'GRN-235',confidence:.86,source:'local-heuristic'},lines:[{description:{value:'Tornillo',confidence:.9,source:'local-line-heuristic'},quantity:{value:'1',confidence:.93,source:'local-line-heuristic'},unitCost:{value:'100',confidence:.93,source:'local-line-heuristic'},taxRate:{value:'16',confidence:.9,source:'local-line-heuristic'}}],warnings:[]
   }
 };
 
@@ -71,10 +71,13 @@ test('AP upload requires human confirmation and creates only a draft',async({pag
   await expect(page.locator('body')).toContainText('3-way');
   await expect(page.locator('body')).toContainText('1 por confirmar');
 
-  page.once('dialog',(dialog)=>dialog.accept());
+  const dialogs=[];
+  page.on('dialog',async(dialog)=>{dialogs.push(dialog.message());await dialog.accept();});
   await page.locator('[data-payable-review="payable-doc-235"]').click();
 
   await expect.poll(()=>reviewPayload).not.toBeNull();
+  expect(dialogs.some((message)=>message.includes('campos de baja confianza'))).toBe(true);
+  expect(dialogs.some((message)=>message.includes('diferencia(s)')&&message.includes('Líneas extraídas: 1'))).toBe(true);
   expect(reviewPayload.confirmedFields).toContain('tax');
   expect(reviewPayload.corrections).toEqual({});
   await expect(page.locator('body')).toContainText('Borrador creado');
