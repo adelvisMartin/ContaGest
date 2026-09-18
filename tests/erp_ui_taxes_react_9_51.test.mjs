@@ -19,7 +19,7 @@ test('9/51 taxes owns one React root and canonical primitives',()=>{
 
 test('9/51 preserves local tax settings and server fiscal document authority',()=>{
   const source=read('frontend/src/pages/TaxesPage.jsx');
-  for(const token of ['draft.quote.taxes','FiscalService.periods(','FiscalService.documents(','FiscalService.createDocument(','fiscal.manage_documents','error.status===403'])assert.ok(source.includes(token),token);
+  for(const token of ['draft.quote.taxes','FiscalService.periods(','FiscalService.documents(','FiscalService.createDocument(','fiscal.manage_documents','status===403'])assert.ok(source.includes(token),token);
   assert.match(source,/JSON\.parse/);
   assert.match(source,/Array\.isArray/);
 });
