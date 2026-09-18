@@ -65,7 +65,7 @@ test('invalid malformed oversized and hostile PDFs fail closed',()=>{
 test('document duplicate is idempotent, revision is traceable and processing history is append-only',async()=>{
   const store=new PostgresDocumentStore(),service=new DocumentIngestionService(store,fakeExtractor),firstPdf=await pdfBuffer((doc)=>doc.text('PROGRAMA DE CARRERAS A'));
   const provenance={sourceChannel:'e2e',sourceMessageId:'doc-first',sender:'operator-e2e',receivedAt:new Date().toISOString(),authority:'operator' as const};
-  const first=await service.ingest({ownerId:OWNER,groupKey:GROUP_A,pdf:firstPdf,filename:'programa-a.pdf',provenance});assert.equal(first.duplicate,false);assert.equal(first.structured.runners?.length,2);
+  const first=await service.ingest({ownerId:OWNER,groupKey:GROUP_A,pdf:firstPdf,filename:'programa-a.pdf',provenance});assert.equal(first.duplicate,false);assert.ok('structured' in first,'configured extraction must return structured document data');assert.equal(first.structured.runners?.length,2);
   const eventsBefore=await store.events(OWNER,GROUP_A,first.id);assert.equal((eventsBefore as any[]).length,2);
   const duplicate=await service.ingest({ownerId:OWNER,groupKey:GROUP_A,pdf:firstPdf,filename:'copy.pdf',provenance:{...provenance,sourceMessageId:'doc-copy'}});assert.equal(duplicate.duplicate,true);assert.equal(duplicate.id,first.id);
   assert.equal((await store.events(OWNER,GROUP_A,first.id) as any[]).length,2,'duplicate must create zero processing/domain effects');
