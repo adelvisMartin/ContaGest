@@ -141,14 +141,25 @@ async function requestPolicy(db:Db,request:ApprovalRequestRecord){
   return rows[0];
 }
 
+const approvalExpiredError=()=>new HttpError(409,'La solicitud de aprobación expiró.',{code:'APPROVAL_EXPIRED'});
+
 function assertRequestNotExpired(request:ApprovalRequestRecord){
-  if(request.expiresAt.getTime()<=Date.now())throw new HttpError(409,'La solicitud de aprobación expiró.',{code:'APPROVAL_EXPIRED'});
+  if(request.status==='expired'||request.expiresAt.getTime()<=Date.now())throw approvalExpiredError();
+}
+
+export async function materializeExpiredApprovalRequests(tenantId:string,requestId?:string|null,db:Db=prisma){
+  const changed=requestId
+    ? await db.$executeRaw(Prisma.sql`UPDATE "ApprovalRequest" SET "status"='expired',"updatedAt"=now() WHERE "tenantId"=${tenantId} AND "id"=${requestId} AND "status" IN ('pending','approved') AND "expiresAt"<=now()`)
+    : await db.$executeRaw(Prisma.sql`UPDATE "ApprovalRequest" SET "status"='expired',"updatedAt"=now() WHERE "tenantId"=${tenantId} AND "status" IN ('pending','approved') AND "expiresAt"<=now()`);
+  return Number(changed);
 }
 
 export async function reviseApprovalRequest(input:{tenantId:string;requesterId:string;requestId:string;payload:unknown;amount?:DecimalInput|null;currency?:string|null;comment?:string|null}){
+  await materializeExpiredApprovalRequests(input.tenantId,input.requestId);
   return prisma.$transaction(async(tx)=>{
     const request=await lockRequest(tx,input.tenantId,input.requestId);
     if(request.requesterId!==input.requesterId)throw new HttpError(403,'Sólo el solicitante puede modificar su solicitud.');
+    assertRequestNotExpired(request);
     if(['executing','executed','cancelled','rejected'].includes(request.status))throw new HttpError(409,'La solicitud ya no puede modificarse.',{code:'APPROVAL_REVISION_NOT_ALLOWED',status:request.status});
     const policy=await requestPolicy(tx,request);const nextAmount=input.amount===undefined||input.amount===null?request.amount:money(input.amount);
     if(!approvalPolicyApplies(policy,nextAmount,input.currency||request.currency))throw new HttpError(409,'La revisión queda fuera del umbral de aprobación.',{code:'APPROVAL_NOT_REQUIRED'});
@@ -162,10 +173,11 @@ export async function reviseApprovalRequest(input:{tenantId:string;requesterId:s
 }
 
 export async function decideApprovalRequest(input:{tenantId:string;approverId:string;requestId:string;decision:'approved'|'rejected';reasonCode?:string|null;comment?:string|null}){
+  await materializeExpiredApprovalRequests(input.tenantId,input.requestId);
   return prisma.$transaction(async(tx)=>{
     const request=await lockRequest(tx,input.tenantId,input.requestId);
-    if(!['pending','approved'].includes(request.status))throw new HttpError(409,'La solicitud no acepta nuevas decisiones.',{code:'APPROVAL_DECISION_NOT_ALLOWED',status:request.status});
     assertRequestNotExpired(request);
+    if(!['pending','approved'].includes(request.status))throw new HttpError(409,'La solicitud no acepta nuevas decisiones.',{code:'APPROVAL_DECISION_NOT_ALLOWED',status:request.status});
     const policy=await requestPolicy(tx,request);
     if(!policy.selfApprovalAllowed&&request.requesterId===input.approverId)throw new HttpError(403,'Maker-checker impide aprobar la propia solicitud.',{code:'APPROVAL_SELF_APPROVAL_FORBIDDEN'});
     await assertApproverQualified(tx,policy,input.tenantId,input.approverId,request.capability);
@@ -182,6 +194,7 @@ export async function decideApprovalRequest(input:{tenantId:string;approverId:st
 }
 
 export async function breakGlassApproval(input:{tenantId:string;actorId:string;requestId:string;reasonCode:string;comment:string}){
+  await materializeExpiredApprovalRequests(input.tenantId,input.requestId);
   return prisma.$transaction(async(tx)=>{
     const request=await lockRequest(tx,input.tenantId,input.requestId);assertRequestNotExpired(request);
     const actor=await actorSnapshot(tx,input.tenantId,input.actorId);if(!actor?.permissions.has('admin.manage'))throw new HttpError(403,'Break-glass requiere admin.manage.',{code:'APPROVAL_BREAK_GLASS_FORBIDDEN'});
@@ -193,8 +206,10 @@ export async function breakGlassApproval(input:{tenantId:string;actorId:string;r
 }
 
 export async function cancelApprovalRequest(input:{tenantId:string;actorId:string;requestId:string}){
+  await materializeExpiredApprovalRequests(input.tenantId,input.requestId);
   return prisma.$transaction(async(tx)=>{
     const request=await lockRequest(tx,input.tenantId,input.requestId);if(request.requesterId!==input.actorId)throw new HttpError(403,'Sólo el solicitante puede cancelar.');
+    assertRequestNotExpired(request);
     if(!['pending','approved'].includes(request.status))throw new HttpError(409,'La solicitud no puede cancelarse.',{code:'APPROVAL_CANCEL_NOT_ALLOWED'});
     const rows=await tx.$queryRaw<ApprovalRequestRecord[]>(Prisma.sql`UPDATE "ApprovalRequest" SET "status"='cancelled',"updatedAt"=now() WHERE "id"=${request.id} RETURNING *`);return rows[0];
   });
@@ -219,6 +234,7 @@ export async function consumeApprovalTx(tx:Prisma.TransactionClient,request:Appr
 }
 
 export async function claimApproval(input:{tenantId:string;approvalRequestId?:string|null;capability:string;payload:unknown;amount?:DecimalInput|null;currency?:string|null}){
+  if(input.approvalRequestId)await materializeExpiredApprovalRequests(input.tenantId,input.approvalRequestId);
   return prisma.$transaction(async(tx)=>{
     const request=await guardApprovalTx(tx,input);if(!request)return null;
     const changed=await tx.$executeRaw(Prisma.sql`UPDATE "ApprovalRequest" SET "status"='executing',"updatedAt"=now() WHERE "id"=${request.id} AND "status"='approved'`);
@@ -235,12 +251,14 @@ export async function createDelegation(input:{tenantId:string;delegatorId:string
 }
 
 export async function listApprovalInbox(tenantId:string,userId:string){
+  await materializeExpiredApprovalRequests(tenantId);
   const rows=await prisma.$queryRaw<ApprovalRequestRecord[]>(Prisma.sql`SELECT * FROM "ApprovalRequest" WHERE "tenantId"=${tenantId} AND "status" IN ('pending','approved') AND "expiresAt">now() ORDER BY "createdAt" ASC LIMIT 250`);
   const output=[] as ApprovalRequestRecord[];for(const row of rows){const policy=await requestPolicy(prisma,row);if(row.requesterId===userId&&!policy.selfApprovalAllowed)continue;try{await assertApproverQualified(prisma,policy,tenantId,userId,row.capability);output.push(row);}catch{}}
   return output;
 }
-export async function listMyApprovalRequests(tenantId:string,userId:string){return prisma.$queryRaw<ApprovalRequestRecord[]>(Prisma.sql`SELECT * FROM "ApprovalRequest" WHERE "tenantId"=${tenantId} AND "requesterId"=${userId} ORDER BY "createdAt" DESC LIMIT 250`);}
+export async function listMyApprovalRequests(tenantId:string,userId:string){await materializeExpiredApprovalRequests(tenantId);return prisma.$queryRaw<ApprovalRequestRecord[]>(Prisma.sql`SELECT * FROM "ApprovalRequest" WHERE "tenantId"=${tenantId} AND "requesterId"=${userId} ORDER BY "createdAt" DESC LIMIT 250`);}
 export async function approvalReport(tenantId:string){
+  await materializeExpiredApprovalRequests(tenantId);
   const rows=await prisma.$queryRaw<Array<{capability:string;status:string;count:bigint;avgAgeHours:number|null}>>(Prisma.sql`SELECT "capability","status",COUNT(*)::bigint AS count,AVG(EXTRACT(EPOCH FROM (now()-"createdAt"))/3600)::float AS "avgAgeHours" FROM "ApprovalRequest" WHERE "tenantId"=${tenantId} GROUP BY "capability","status" ORDER BY "capability","status"`);
   return rows.map((row)=>({...row,count:Number(row.count),avgAgeHours:row.avgAgeHours===null?null:Number(row.avgAgeHours.toFixed(2))}));
 }

@@ -3,8 +3,8 @@ import test from 'node:test';
 import { randomUUID } from 'node:crypto';
 import { prisma } from '../backend/src/database/prisma.js';
 import {
-  approvalPayloadHash, createApprovalPolicy, createApprovalRequest, decideApprovalRequest,
-  guardApprovalTx, consumeApprovalTx, reviseApprovalRequest, createDelegation, listApprovalInbox
+  approvalPayloadHash, approvalReport, createApprovalPolicy, createApprovalRequest, decideApprovalRequest,
+  guardApprovalTx, consumeApprovalTx, reviseApprovalRequest, createDelegation, listApprovalInbox, listMyApprovalRequests
 } from '../backend/src/modules/approvals/approvals.service.js';
 
 async function fixture(label:string){
@@ -60,4 +60,31 @@ test('v236: delegation is time-bounded and report inbox respects current qualifi
   await createDelegation({tenantId:f.tenant.id,delegatorId:f.checker.id,delegateId:delegate.id,capability:'fiscal.reopen',startsAt:new Date(Date.now()-60_000),endsAt:new Date(Date.now()+3_600_000),reason:'Cobertura temporal QA'});
   assert.equal((await listApprovalInbox(f.tenant.id,delegate.id)).some((row)=>row.id===request.id),true);
   const approved=await decideApprovalRequest({tenantId:f.tenant.id,approverId:delegate.id,requestId:request.id,decision:'approved'});assert.equal(approved.status,'approved');
+});
+
+
+test('v236: expired requests are materialized, visible as expired and cannot be revived',async(t)=>{
+  const f=await fixture('EXPIRED');t.after(async()=>{await prisma.tenant.deleteMany({where:{id:f.tenant.id}});await prisma.$disconnect();});
+  await createApprovalPolicy({tenantId:f.tenant.id,capability:'fiscal.reopen',approverPermissions:['qa236.approve'],createdBy:f.maker.id});
+  const payload={period:'2026-08',module:'fiscal',reason:'Corrección fuera de ventana'};
+  const request=await createApprovalRequest({tenantId:f.tenant.id,requesterId:f.maker.id,capability:'fiscal.reopen',payload});
+  await prisma.$executeRaw`UPDATE "ApprovalRequest" SET "expiresAt" = now() - interval '1 minute' WHERE "id" = ${request.id} AND "tenantId" = ${f.tenant.id}`;
+
+  const mine=await listMyApprovalRequests(f.tenant.id,f.maker.id);
+  const expired=mine.find((row)=>row.id===request.id);
+  assert.equal(expired?.status,'expired');
+  assert.equal((await listApprovalInbox(f.tenant.id,f.checker.id)).some((row)=>row.id===request.id),false);
+
+  await assert.rejects(
+    ()=>reviseApprovalRequest({tenantId:f.tenant.id,requesterId:f.maker.id,requestId:request.id,payload:{...payload,reason:'Intento de revivir'}}),
+    (error:any)=>error?.status===409&&error?.details?.code==='APPROVAL_EXPIRED'
+  );
+  await assert.rejects(
+    ()=>decideApprovalRequest({tenantId:f.tenant.id,approverId:f.checker.id,requestId:request.id,decision:'approved'}),
+    (error:any)=>error?.status===409&&error?.details?.code==='APPROVAL_EXPIRED'
+  );
+
+  const report=await approvalReport(f.tenant.id);
+  const row=report.find((item)=>item.capability==='fiscal.reopen'&&item.status==='expired');
+  assert.equal(row?.count,1);
 });
