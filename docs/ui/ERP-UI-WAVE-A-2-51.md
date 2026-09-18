@@ -62,3 +62,7 @@ La validación post-merge detectó contratos de QA obsoletos y se corrigieron si
 - la navegación de Command Palette valida una ruta core (`ayuda`) disponible para cualquier sesión autenticada válida;
 - la matriz dedicada 2/51 (Odontología, Veterinaria, Gimnasio, Rutinas y Nutrición × 360/390/430/768/1366) forma parte del preview 58×5;
 - Vercel preview se limita a browser/composición. Los tests PostgreSQL reales conservan comandos propios y deben ejecutarse únicamente en un runner con base aislada.
+
+## Baseline acumulado de integración
+
+El hardening del harness se rebasó sobre `main@35cceed5d8d9e3df4ca09138b5b61bab6ca283d7`, que ya contiene las implementaciones acumuladas hasta 7/51. No reemplaza sus scripts ni revierte trabajo de Banking; sólo añade los dos entrypoints de DB reales y corrige contratos del browser runner.
