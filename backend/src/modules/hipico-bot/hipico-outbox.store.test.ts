@@ -27,13 +27,13 @@ test('canonical outbox store: claim uses PostgreSQL row locking and only queued/
   assert.match(source,/lease_token/i);
   assert.match(source,/leased_until/i);
   assert.match(source,/cooldown/i);
-  assert.match(source,/status='sending'/i);
+  assert.match(source,/SET\s+status\s*=\s*'sending'/i);
 });
 
 test('canonical outbox store: generic worker cannot claim approval-required rows',()=>{
   assert.match(source,/allowApprovalRequired/);
   assert.match(source,/payload\s*->>\s*'approvalRequired'/i);
-  assert.match(source,/COALESCE\([^\n]+approvalRequired[^\n]+false\)/i);
+  assert.match(source,/COALESCE\(\s*o\.payload->>'approvalRequired'\s*,\s*'false'\s*\)\s*<>\s*'true'/i);
 });
 
 test('canonical outbox store: production authority never writes legacy HipicoBotOutbox',()=>{
