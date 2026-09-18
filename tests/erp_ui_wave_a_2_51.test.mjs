@@ -54,3 +54,13 @@ test('Wave A audit is wired into the production source gate',()=>{
   assert.equal(root.scripts['audit:erp-ui-wave-a'],'node scripts/erp-ui-wave-a-audit-v251.mjs');
   assert.match(frontend.scripts['preqa:source'],/npm run audit:erp-ui-wave-a/);
 });
+
+
+test('Fitness productivity stays declarative after 3/51 and query enhancer never revives the retired MutationObserver layer',()=>{
+  const queryEnhancer=read('frontend/src/services/queryParamEnhancer.js');
+  const tools=read('frontend/src/components/fitness/FitnessProductivityTools.jsx');
+  const gym=read('frontend/src/pages/GymManagementPage.jsx');
+  assert.doesNotMatch(queryEnhancer,/FitnessProductivityEnhancer|fitnessProductivityEnhancer\.js/);
+  assert.match(gym,/FitnessProductivityTools/);
+  assert.doesNotMatch(tools,/\b[A-Za-z][A-Za-z0-9]*=\.\d+/);
+});
