@@ -59,6 +59,8 @@ test('v22 preflight derives scope contract from the versioned inventory hash',as
 
 test('v22 valid Hípico backup evidence can unlock manual apply',async()=>{
   const contract=await loadBackupScopeContract();
+  const presentTables=contract.canonicalTables.slice(0,11);
+  const deferredTables=contract.canonicalTables.slice(11);
   const evidence={
     schema:'hipico-schema-backup-evidence.v17',
     candidateSha:SHA,
@@ -70,7 +72,12 @@ test('v22 valid Hípico backup evidence can unlock manual apply',async()=>{
     checkedAt:'2026-09-18T02:00:00.000Z',
     scope:contract.scope,
     migrationChain:contract.migrationChain,
-    tableManifestSha256:contract.tableManifestSha256
+    tableManifestSha256:contract.tableManifestSha256,
+    mode:'PRE_ROLLOUT',
+    canonicalTableCount:contract.canonicalTableCount,
+    sourceTableCount:presentTables.length,
+    presentTables,
+    deferredTables
   };
   const validated=validateBackupEvidence(evidence,{
     candidateSha:SHA,
@@ -78,7 +85,10 @@ test('v22 valid Hípico backup evidence can unlock manual apply',async()=>{
     now:NOW,
     expectedScope:contract.scope,
     expectedMigrationChain:contract.migrationChain,
-    expectedTableManifestSha256:contract.tableManifestSha256
+    expectedTableManifestSha256:contract.tableManifestSha256,
+    expectedMode:'PRE_ROLLOUT',
+    expectedCanonicalTableCount:contract.canonicalTableCount,
+    expectedCanonicalTables:contract.canonicalTables
   });
   assert.equal(validated.ok,true);
 
