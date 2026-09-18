@@ -339,6 +339,21 @@ function DentistryWorkspace({ state, context }){
     });
   }
 
+  const formatPeriodontalDelta=(value)=>value===null||value===undefined?'—':`${value>0?'+':''}${value.toFixed(1)} mm`;
+  const periodontalColumns=[
+    {key:'measuredAt',label:'Fecha',render:(item)=>item.measuredAt?new Date(item.measuredAt).toLocaleDateString('es-VE'):'—'},
+    {key:'site',label:'Pieza / sitio',render:(item)=>`${item.dentition==='primary'?'Temporal':'Permanente'} · ${item.tooth} · ${item.siteLabel}`},
+    {key:'probingDepth',label:'Sondaje',align:'right',render:(item)=>`${item.probingDepth.toFixed(1)} mm`},
+    {key:'gingivalMargin',label:'Margen',align:'right',render:(item)=>`${item.gingivalMargin.toFixed(1)} mm`},
+    {key:'clinicalAttachmentLevel',label:'Inserción',align:'right',render:(item)=>`${item.clinicalAttachmentLevel.toFixed(1)} mm`},
+    {key:'deltaProbingDepth',label:'Δ sondaje',align:'right',render:(item)=>formatPeriodontalDelta(item.deltaProbingDepth)},
+    {key:'deltaClinicalAttachment',label:'Δ inserción',align:'right',render:(item)=>formatPeriodontalDelta(item.deltaClinicalAttachment)},
+    {key:'findings',label:'Hallazgos',render:(item)=><Stack direction="row" gap={.4} flexWrap="wrap">{item.bleeding?<CgStatusChip size="small" label="Sangrado" tone="warning"/>:null}{item.suppuration?<CgStatusChip size="small" label="Supuración" tone="error"/>:null}{item.plaque?<CgStatusChip size="small" label="Placa" tone="info"/>:null}{!item.bleeding&&!item.suppuration&&!item.plaque?<CgStatusChip size="small" label="Sin marcas" tone="default"/>:null}</Stack>},
+    {key:'mobility',label:'Mov./furca.',render:(item)=>`M${item.mobility} · F${item.furcation}`},
+    {key:'professionalName',label:'Profesional'},
+    {key:'reason',label:'Motivo'}
+  ];
+
   return <Stack className="cg-dentistry-workspace" gap={1.5}>
     <CgPageHeader eyebrow="Salud · Odontología" title="Consultorio odontológico" description="Pacientes, agenda, odontograma operativo y registro de procedimientos en un mismo flujo." actions={<CgButton variant="outlined" onClick={()=>void loadAll()} disabled={loading}>Actualizar</CgButton>}/>
     {error?<CgState severity="warning" title="Actualización incompleta">{error}</CgState>:null}
