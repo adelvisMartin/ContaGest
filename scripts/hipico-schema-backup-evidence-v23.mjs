@@ -1,31 +1,60 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { pathToFileURL } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
+const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
 const SHA40=/^[a-f0-9]{40}$/i;
 const SHA64=/^[a-f0-9]{64}$/i;
 const EXPECTED_SCOPE='hipico-canonical-v12-v27';
 const EXPECTED_CHAIN='v12-v27';
-const EXPECTED_TABLES=Object.freeze([
-  'hipico_agent_evaluations','hipico_audit_events','hipico_automation_transition_events',
-  'hipico_bot_channels','hipico_document_events','hipico_document_sources','hipico_documents',
-  'hipico_domain_aggregates','hipico_domain_events','hipico_group_automation','hipico_ledger_entries',
-  'hipico_meetings','hipico_messages','hipico_observability_events','hipico_operation_events',
-  'hipico_outbox','hipico_outbox_receipts','hipico_profiles','hipico_provider_evidence',
-  'hipico_race_events','hipico_races','hipico_reconciliations','hipico_shadow_evaluations',
-  'hipico_users','hipico_workspaces'
-]);
+const MODES=new Set(['PRE_ROLLOUT','STEADY_STATE']);
+const DEFAULT_INVENTORY=path.join(root,'ops/backup/hipico-public-tables.txt');
 
-function normalizeCounts(value){
+function normalizeTableList(value){
+  if(!Array.isArray(value))return null;
+  const tables=value.map((item)=>String(item||'').trim()).filter(Boolean);
+  if(!tables.length||new Set(tables).size!==tables.length)return null;
+  if(tables.some((table)=>!/^hipico_[a-z0-9_]+$/.test(table)))return null;
+  return tables;
+}
+
+function normalizeCountsForTables(value,tables){
   if(!value||typeof value!=='object'||Array.isArray(value))return null;
+  const expected=[...tables].sort();
   const keys=Object.keys(value).sort();
-  const expected=[...EXPECTED_TABLES].sort();
   if(JSON.stringify(keys)!==JSON.stringify(expected))return null;
   const normalized={};
-  for(const table of EXPECTED_TABLES){
+  for(const table of tables){
     const count=Number(value[table]);
     if(!Number.isSafeInteger(count)||count<0)return null;
     normalized[table]=count;
+  }
+  return normalized;
+}
+
+function sameSet(left,right){
+  if(left.length!==right.length)return false;
+  const a=[...left].sort();
+  const b=[...right].sort();
+  return a.every((item,index)=>item===b[index]);
+}
+
+function validatePartition(canonical,present,deferred){
+  if(!canonical||!present||!deferred)return false;
+  if(!present.length)return false;
+  const overlap=present.some((table)=>deferred.includes(table));
+  if(overlap)return false;
+  return sameSet([...present,...deferred],canonical);
+}
+
+export async function loadCanonicalTables(file=DEFAULT_INVENTORY){
+  const text=await fs.readFile(path.resolve(file),'utf8');
+  const tables=text.split(/\r?\n/)
+    .map((line)=>line.trim())
+    .filter((line)=>line&&!line.startsWith('#'));
+  const normalized=normalizeTableList(tables);
+  if(!normalized||normalized.length!==25){
+    throw new Error(`HIPICO_BACKUP_INVENTORY_INVALID:${normalized?.length||0}`);
   }
   return normalized;
 }
@@ -38,14 +67,31 @@ export function buildBackupEvidence({
   scope,
   migrationChain,
   tableManifestSha256,
+  canonicalTables,
+  mode,
+  presentTables,
+  deferredTables,
   sourceCounts,
   restoredCounts,
   orphanForeignKeys,
   restoreVerified,
   now=new Date()
 }={}){
-  const source=normalizeCounts(sourceCounts);
-  const restored=normalizeCounts(restoredCounts);
+  const inferredCanonical=normalizeTableList(Object.keys(restoredCounts||{}));
+  const canonical=normalizeTableList(canonicalTables)||inferredCanonical;
+  const inferredPresent=normalizeTableList(Object.keys(sourceCounts||{}));
+  const present=normalizeTableList(presentTables)||inferredPresent;
+  const inferredDeferred=canonical&&present
+    ? canonical.filter((table)=>!present.includes(table))
+    : null;
+  const deferred=Array.isArray(deferredTables)
+    ? (deferredTables.length===0?[]:normalizeTableList(deferredTables))
+    : inferredDeferred;
+  const requestedMode=String(mode||'').trim().toUpperCase();
+  const normalizedMode=requestedMode
+    || (canonical&&present&&sameSet(canonical,present)?'STEADY_STATE':'');
+  const source=canonical&&present?normalizeCountsForTables(sourceCounts,present):null;
+  const restored=canonical?normalizeCountsForTables(restoredCounts,canonical):null;
   const reasons=[];
   const sha=String(candidateSha||'').trim().toLowerCase();
   const tableHash=String(tableManifestSha256||'').trim().toLowerCase();
@@ -63,14 +109,20 @@ export function buildBackupEvidence({
   if(scopeValue!==EXPECTED_SCOPE)reasons.push('BACKUP_SCOPE_MISMATCH');
   if(chainValue!==EXPECTED_CHAIN)reasons.push('MIGRATION_CHAIN_MISMATCH');
   if(!SHA64.test(tableHash))reasons.push('TABLE_MANIFEST_SHA_INVALID');
-  if(!source)reasons.push('SOURCE_COUNTS_INVALID');
-  if(!restored)reasons.push('RESTORED_COUNTS_INVALID');
+  if(!canonical||canonical.length!==25)reasons.push('CANONICAL_TABLES_INVALID');
+  if(!MODES.has(normalizedMode))reasons.push('BACKUP_MODE_INVALID');
+  if(!validatePartition(canonical,present,deferred))reasons.push('TABLE_PARTITION_INVALID');
+  if(source===null)reasons.push('SOURCE_COUNTS_SCOPE_MISMATCH');
+  if(restored===null)reasons.push('RESTORED_COUNTS_INVALID');
+  if(normalizedMode==='STEADY_STATE'&&(
+    !canonical||!present||!sameSet(present,canonical)||!deferred||deferred.length!==0
+  ))reasons.push('STEADY_STATE_REQUIRES_FULL_SCOPE');
   if(!Number.isSafeInteger(orphans)||orphans<0)reasons.push('ORPHAN_FK_COUNT_INVALID');
   else if(orphans!==0)reasons.push('ORPHAN_FOREIGN_KEYS');
   if(restoreVerified!==true)reasons.push('RESTORE_NOT_VERIFIED');
 
-  if(source&&restored){
-    for(const table of EXPECTED_TABLES){
+  if(source&&restored&&present){
+    for(const table of present){
       if(source[table]!==restored[table])reasons.push(`COUNT_MISMATCH:${table}`);
     }
   }
@@ -90,7 +142,12 @@ export function buildBackupEvidence({
     scope:scopeValue||null,
     migrationChain:chainValue||null,
     tableManifestSha256:SHA64.test(tableHash)?tableHash:null,
-    tableCount:EXPECTED_TABLES.length,
+    mode:MODES.has(normalizedMode)?normalizedMode:null,
+    canonicalTableCount:canonical?.length||null,
+    sourceTableCount:present?.length||null,
+    tableCount:canonical?.length||null,
+    presentTables:present||[],
+    deferredTables:deferred||[],
     orphanForeignKeys:Number.isSafeInteger(orphans)&&orphans>=0?orphans:null,
     reasons
   };
@@ -103,6 +160,9 @@ async function readJson(file){
 async function main(){
   const sourceCounts=await readJson(process.env.HIPICO_BACKUP_SOURCE_COUNTS_FILE||'');
   const restoredCounts=await readJson(process.env.HIPICO_BACKUP_RESTORED_COUNTS_FILE||'');
+  const canonicalTables=await loadCanonicalTables(process.env.HIPICO_BACKUP_TABLE_FILE||DEFAULT_INVENTORY);
+  const presentTables=JSON.parse(String(process.env.HIPICO_BACKUP_PRESENT_TABLES_JSON||'[]'));
+  const deferredTables=JSON.parse(String(process.env.HIPICO_BACKUP_DEFERRED_TABLES_JSON||'[]'));
   const evidence=buildBackupEvidence({
     candidateSha:process.env.HIPICO_CANDIDATE_SHA,
     backupId:process.env.HIPICO_BACKUP_ID,
@@ -111,6 +171,10 @@ async function main(){
     scope:process.env.HIPICO_BACKUP_SCOPE,
     migrationChain:process.env.HIPICO_BACKUP_MIGRATION_CHAIN,
     tableManifestSha256:process.env.HIPICO_BACKUP_TABLE_MANIFEST_SHA256,
+    canonicalTables,
+    mode:process.env.HIPICO_BACKUP_MODE,
+    presentTables,
+    deferredTables,
     sourceCounts,
     restoredCounts,
     orphanForeignKeys:Number(process.env.HIPICO_RESTORE_ORPHAN_FOREIGN_KEYS),
@@ -127,4 +191,11 @@ if(process.argv[1]&&import.meta.url===pathToFileURL(path.resolve(process.argv[1]
   await main();
 }
 
-export const __test__={EXPECTED_SCOPE,EXPECTED_CHAIN,EXPECTED_TABLES,normalizeCounts};
+export const __test__={
+  EXPECTED_SCOPE,
+  EXPECTED_CHAIN,
+  MODES,
+  normalizeTableList,
+  normalizeCountsForTables,
+  validatePartition
+};

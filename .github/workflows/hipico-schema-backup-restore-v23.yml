@@ -7,6 +7,14 @@ on:
         description: Exact 40-hex candidate SHA to back up and verify
         required: true
         type: string
+      mode:
+        description: Backup/restore phase
+        required: true
+        default: PRE_ROLLOUT
+        type: choice
+        options:
+          - PRE_ROLLOUT
+          - STEADY_STATE
 
 permissions:
   contents: read
@@ -14,6 +22,7 @@ permissions:
 env:
   NODE_VERSION: '22'
   HIPICO_CANDIDATE_SHA: ${{ inputs.candidate_sha }}
+  HIPICO_BACKUP_MODE: ${{ inputs.mode }}
   HIPICO_BACKUP_OUTPUT_DIR: artifacts/qa/hipico-schema-backup/${{ inputs.candidate_sha }}
 
 jobs:

@@ -8,6 +8,7 @@ umask 077
 : "${HIPICO_CANDIDATE_SHA:?set HIPICO_CANDIDATE_SHA to an exact 40-hex commit}"
 
 EXPECTED_ROLE="${HIPICO_BACKUP_EXPECTED_ROLE:-hipico_backup}"
+MODE="${HIPICO_BACKUP_MODE:-PRE_ROLLOUT}"
 SCOPE="hipico-canonical-v12-v27"
 CHAIN="v12-v27"
 TABLE_FILE="${HIPICO_BACKUP_TABLE_FILE:-$(cd "$(dirname "$0")" && pwd)/hipico-public-tables.txt}"
@@ -16,6 +17,10 @@ STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
 BACKUP_ID="hipico-${STAMP}-${HIPICO_CANDIDATE_SHA:0:12}"
 
 [[ "$HIPICO_CANDIDATE_SHA" =~ ^[0-9a-fA-F]{40}$ ]] || { echo "HIPICO_CANDIDATE_SHA must be 40 hex." >&2; exit 2; }
+case "$MODE" in
+  PRE_ROLLOUT|STEADY_STATE) ;;
+  *) echo "HIPICO_BACKUP_MODE must be PRE_ROLLOUT or STEADY_STATE." >&2; exit 2 ;;
+esac
 [[ -f "$TABLE_FILE" ]] || { echo "Missing Hípico table inventory: $TABLE_FILE" >&2; exit 3; }
 
 for command in psql pg_dump pg_restore age rclone sha256sum node; do
@@ -23,7 +28,8 @@ for command in psql pg_dump pg_restore age rclone sha256sum node; do
 done
 
 mapfile -t TABLES < <(grep -Ev '^\s*(#|$)' "$TABLE_FILE")
-table_count="${#TABLES[@]}"; [[ "$table_count" -eq 25 ]] || { echo "Expected 25 inventory tables, found $table_count." >&2; exit 4; }
+table_count="${#TABLES[@]}"
+[[ "$table_count" -eq 25 ]] || { echo "Expected 25 inventory tables, found $table_count." >&2; exit 4; }
 for table in "${TABLES[@]}"; do
   [[ "$table" =~ ^hipico_[a-z0-9_]+$ ]] || { echo "Unsafe table in inventory: $table" >&2; exit 4; }
 done
@@ -44,13 +50,26 @@ for flag in "$rolsuper" "$rolcreatedb" "$rolcreaterole" "$rolbypassrls"; do
 done
 
 counts_tsv="$tmpdir/source-counts.tsv"
+present_file="$tmpdir/present-tables.txt"
+deferred_file="$tmpdir/deferred-tables.txt"
 : > "$counts_tsv"
+: > "$present_file"
+: > "$deferred_file"
 dump_args=(--format=custom --compress=9 --data-only --enable-row-security --no-owner --no-acl --file "$tmpdir/hipico.data.dump")
 
 for table in "${TABLES[@]}"; do
+  present="$(psql "$HIPICO_BACKUP_DATABASE_URL" -At -v ON_ERROR_STOP=1 -c "select to_regclass('public.$table') is not null")"
+  if [[ "$present" != "t" ]]; then
+    if [[ "$MODE" == "PRE_ROLLOUT" ]]; then
+      printf '%s\n' "$table" >> "$deferred_file"
+      continue
+    fi
+    echo "STEADY_STATE missing canonical table: public.$table" >&2
+    exit 6
+  fi
+
   perms="$(psql "$HIPICO_BACKUP_DATABASE_URL" -AtF '|' -v ON_ERROR_STOP=1 -c "
     select
-      to_regclass('public.$table') is not null,
       has_table_privilege(current_user,'public.$table','SELECT'),
       not exists (
         select 1
@@ -61,18 +80,26 @@ for table in "${TABLES[@]}"; do
           and g.privilege_type <> 'SELECT'
       )
   ")"
-  IFS='|' read -r present can_select select_only <<<"$perms"
-  [[ "$present" == "t" ]] || { echo "Backup scope table missing: public.$table" >&2; exit 6; }
+  IFS='|' read -r can_select select_only <<<"$perms"
   [[ "$can_select" == "t" ]] || { echo "Backup role cannot SELECT public.$table" >&2; exit 6; }
-  [[ "$select_only" == "t" ]] || {
-    echo "Backup role has non-SELECT privilege on public.$table" >&2
-    exit 6
-  }
+  [[ "$select_only" == "t" ]] || { echo "Backup role has non-SELECT privilege on public.$table" >&2; exit 6; }
+
   count="$(psql "$HIPICO_BACKUP_DATABASE_URL" -At -v ON_ERROR_STOP=1 -c "select count(*)::bigint from public.$table")"
   [[ "$count" =~ ^[0-9]+$ ]] || { echo "Invalid row count for public.$table" >&2; exit 6; }
   printf '%s\t%s\n' "$table" "$count" >> "$counts_tsv"
+  printf '%s\n' "$table" >> "$present_file"
   dump_args+=("--table=public.$table")
 done
+
+source_table_count="$(wc -l < "$present_file" | tr -d ' ')"
+deferred_table_count="$(wc -l < "$deferred_file" | tr -d ' ')"
+[[ "$source_table_count" -ge 1 ]] || { echo "No canonical Hípico tables exist in source target." >&2; exit 6; }
+if [[ "$MODE" == "STEADY_STATE" ]]; then
+  [[ "$source_table_count" -eq 25 && "$deferred_table_count" -eq 0 ]] || {
+    echo "STEADY_STATE requires all 25 canonical tables." >&2
+    exit 6
+  }
+fi
 
 node --input-type=module - "$counts_tsv" "$tmpdir/source-counts.json" <<'NODE'
 import fs from 'node:fs';
@@ -85,19 +112,26 @@ const data=Object.fromEntries(rows.map((line)=>{
 fs.writeFileSync(output,JSON.stringify(data,null,2)+'\n');
 NODE
 
-psql "$HIPICO_BACKUP_DATABASE_URL" -At -v ON_ERROR_STOP=1 -c "
-  select distinct id::text
-  from (
-    select owner_id as id from public.hipico_workspaces
-    union all select owner_id from public.hipico_profiles
-    union all select owner_id from public.hipico_audit_events
-    union all select user_id from public.hipico_users
-    union all select created_by from public.hipico_users
-    union all select workspace_owner_id from public.hipico_users
-  ) ids
-  where id is not null
-  order by id
-" > "$tmpdir/auth-user-ids.txt"
+: > "$tmpdir/auth-user-ids.txt"
+if grep -Fxq 'hipico_workspaces' "$present_file"; then
+  psql "$HIPICO_BACKUP_DATABASE_URL" -At -v ON_ERROR_STOP=1 -c "select owner_id::text from public.hipico_workspaces where owner_id is not null" >> "$tmpdir/auth-user-ids.txt"
+fi
+if grep -Fxq 'hipico_profiles' "$present_file"; then
+  psql "$HIPICO_BACKUP_DATABASE_URL" -At -v ON_ERROR_STOP=1 -c "select owner_id::text from public.hipico_profiles where owner_id is not null" >> "$tmpdir/auth-user-ids.txt"
+fi
+if grep -Fxq 'hipico_audit_events' "$present_file"; then
+  psql "$HIPICO_BACKUP_DATABASE_URL" -At -v ON_ERROR_STOP=1 -c "select owner_id::text from public.hipico_audit_events where owner_id is not null" >> "$tmpdir/auth-user-ids.txt"
+fi
+if grep -Fxq 'hipico_users' "$present_file"; then
+  psql "$HIPICO_BACKUP_DATABASE_URL" -At -v ON_ERROR_STOP=1 -c "
+    select id::text from (
+      select user_id as id from public.hipico_users
+      union all select created_by from public.hipico_users
+      union all select workspace_owner_id from public.hipico_users
+    ) x where id is not null
+  " >> "$tmpdir/auth-user-ids.txt"
+fi
+sort -u "$tmpdir/auth-user-ids.txt" -o "$tmpdir/auth-user-ids.txt"
 
 if grep -Ev '^$|^[0-9a-fA-F-]{36}$' "$tmpdir/auth-user-ids.txt" | grep -q .; then
   echo "Unexpected auth UUID export format." >&2
@@ -120,25 +154,49 @@ for encrypted in hipico.data.dump.age source-counts.json.age auth-user-ids.txt.a
   sha256sum "$OUTPUT_ROOT/$encrypted" > "$OUTPUT_ROOT/$encrypted.sha256"
 done
 
-cat > "$OUTPUT_ROOT/backup-manifest.json" <<JSON
-{
-  "schema": "hipico-schema-backup-manifest.v23",
-  "backupId": "$BACKUP_ID",
-  "candidateSha": "${HIPICO_CANDIDATE_SHA,,}",
-  "createdAt": "$STAMP",
-  "targetDatabase": "$source_database",
-  "databaseRole": "$current_role",
-  "scope": "$SCOPE",
-  "migrationChain": "$CHAIN",
-  "tableCount": $table_count,
-  "tableManifestSha256": "$table_manifest_sha256",
-  "plaintextDigests": {
-    "dumpSha256": "$dump_sha256",
-    "sourceCountsSha256": "$source_counts_sha256",
-    "authUserIdsSha256": "$auth_ids_sha256"
+HIPICO_BACKUP_MODE_VALUE="$MODE" \
+HIPICO_BACKUP_ID_VALUE="$BACKUP_ID" \
+HIPICO_BACKUP_SHA_VALUE="${HIPICO_CANDIDATE_SHA,,}" \
+HIPICO_BACKUP_CREATED_AT="$STAMP" \
+HIPICO_BACKUP_TARGET_DATABASE_VALUE="$source_database" \
+HIPICO_BACKUP_ROLE_VALUE="$current_role" \
+HIPICO_BACKUP_SCOPE_VALUE="$SCOPE" \
+HIPICO_BACKUP_CHAIN_VALUE="$CHAIN" \
+HIPICO_BACKUP_TABLE_SHA_VALUE="$table_manifest_sha256" \
+HIPICO_BACKUP_DUMP_SHA_VALUE="$dump_sha256" \
+HIPICO_BACKUP_COUNTS_SHA_VALUE="$source_counts_sha256" \
+HIPICO_BACKUP_AUTH_SHA_VALUE="$auth_ids_sha256" \
+node --input-type=module - "$TABLE_FILE" "$present_file" "$deferred_file" "$OUTPUT_ROOT/backup-manifest.json" <<'NODE'
+import fs from 'node:fs';
+const [inventoryFile,presentFile,deferredFile,output]=process.argv.slice(2);
+const lines=(file)=>fs.readFileSync(file,'utf8').split(/\r?\n/).map((x)=>x.trim()).filter((x)=>x&&!x.startsWith('#'));
+const canonical=lines(inventoryFile);
+const present=lines(presentFile);
+const deferred=lines(deferredFile);
+const manifest={
+  schema:'hipico-schema-backup-manifest.v25',
+  backupId:process.env.HIPICO_BACKUP_ID_VALUE,
+  candidateSha:process.env.HIPICO_BACKUP_SHA_VALUE,
+  createdAt:process.env.HIPICO_BACKUP_CREATED_AT,
+  targetDatabase:process.env.HIPICO_BACKUP_TARGET_DATABASE_VALUE,
+  databaseRole:process.env.HIPICO_BACKUP_ROLE_VALUE,
+  scope:process.env.HIPICO_BACKUP_SCOPE_VALUE,
+  migrationChain:process.env.HIPICO_BACKUP_CHAIN_VALUE,
+  mode:process.env.HIPICO_BACKUP_MODE_VALUE,
+  canonicalTableCount:canonical.length,
+  sourceTableCount:present.length,
+  presentTables:present,
+  deferredTables:deferred,
+  tableCount:canonical.length,
+  tableManifestSha256:process.env.HIPICO_BACKUP_TABLE_SHA_VALUE,
+  plaintextDigests:{
+    dumpSha256:process.env.HIPICO_BACKUP_DUMP_SHA_VALUE,
+    sourceCountsSha256:process.env.HIPICO_BACKUP_COUNTS_SHA_VALUE,
+    authUserIdsSha256:process.env.HIPICO_BACKUP_AUTH_SHA_VALUE
   }
-}
-JSON
+};
+fs.writeFileSync(output,JSON.stringify(manifest,null,2)+'\n');
+NODE
 
 remote="${HIPICO_BACKUP_RCLONE_REMOTE%/}/$BACKUP_ID"
 for file in hipico.data.dump.age hipico.data.dump.age.sha256 source-counts.json.age source-counts.json.age.sha256 auth-user-ids.txt.age auth-user-ids.txt.age.sha256 backup-manifest.json; do
@@ -151,5 +209,7 @@ for file in hipico.data.dump.age hipico.data.dump.age.sha256 source-counts.json.
 done
 
 printf 'Hípico encrypted off-site backup verified: %s\n' "$BACKUP_ID"
+printf 'Mode: %s\n' "$MODE"
 printf 'Target database: %s\n' "$source_database"
+printf 'Source tables: %s/25; deferred: %s\n' "$source_table_count" "$deferred_table_count"
 printf 'Table manifest SHA-256: %s\n' "$table_manifest_sha256"
