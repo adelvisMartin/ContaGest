@@ -39,6 +39,7 @@
     "test:backend:ledger:real": "npm --workspace backend exec -- tsx --test ../qa/ledger-posting-real-v91.test.ts ../qa/ledger-posting-authz-v91.test.ts",
     "test:qa:58x5": "npm run test:backend:persistence:real && npm run test:backend:financial:real && npm run doctor:changed && npm run doctor:design && npm run test:browser:58",
     "audit:visual": "node scripts/visual-system-audit.mjs",
+    "audit:ui-migration": "node scripts/ui-migration-audit.mjs",
     "audit:visual:strict": "node scripts/visual-system-audit.mjs --strict",
     "audit:functions": "node scripts/erp-module-function-audit.mjs",
     "audit:functions:strict": "node scripts/erp-module-function-audit.mjs --strict",
