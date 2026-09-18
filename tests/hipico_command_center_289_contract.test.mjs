@@ -59,7 +59,7 @@ void test('Command Center renders fail-closed observable states and SOURCE/LAB s
   // single fail-closed table. Validate that mechanism instead of requiring dead
   // QUEUE_READ_UNAVAILABLE / DOCUMENT_READ_UNAVAILABLE literals in production.
   assert.match(backend, /const failedReads:/);
-  assert.match(backend, /\['DOCUMENT',\s*documentsRead\s+as\s+any,/);
+  assert.match(backend, /documentsRead\.state === 'unavailable' \|\| documentStatesRead\.state === 'unavailable'/);
   assert.match(backend, /\['QUEUE',\s*queueRead\s+as\s+any,/);
   assert.match(backend, /code:\s*`\$\{code\}_READ_UNAVAILABLE`/);
   assert.match(backendBehavior, /queueStates:[\s\S]*throw new Error\(['"]queue unavailable['"]\)/);
