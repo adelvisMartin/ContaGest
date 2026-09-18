@@ -39,14 +39,14 @@ test('v26 preserves the RPC signature and hardens SECURITY DEFINER execution', a
   assert.match(sql,/HIPICO_AUDIT_ACTION_INVALID/);
   assert.match(sql,/HIPICO_AUDIT_ENTITY_MISMATCH/);
   assert.match(sql,/HIPICO_AUDIT_PAYLOAD_TOO_LARGE/);
-  assert.match(sql,/pg_column_size\\(v_raw_payload\\)\s*>\s*16384/i);
+  assert.match(sql,/pg_column_size\(v_raw_payload\)\s*>\s*16384/i);
   assert.match(sql,/HIPICO_AUDIT_EVENT_ID_REQUIRED/);
 });
 
 test('v26 makes audit provenance server-owned and advisory for client sync', async()=>{
   const sql=await read(MIGRATION);
   for(const key of ['actorUserId','actorRole','source','authority','financialAuthority','settlementAuthority']){
-    assert.match(sql,new RegExp(`'\${key}'`));
+    assert.match(sql,new RegExp(`'${key}'`));
   }
   assert.match(sql,/source\s*=\s*'client_sync'/i);
   assert.match(sql,/authority\s*=\s*'advisory'/i);
