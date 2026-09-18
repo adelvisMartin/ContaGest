@@ -64,7 +64,8 @@ router.post('/bridge/documents',(req,res,next)=>{
     const metadata=parseBridgeDocumentHeaders(req.headers as HeaderBag);
     const pdf=Buffer.isBuffer(req.body)?req.body:Buffer.alloc(0);
     const result=await service.ingest({ownerId:metadata.ownerId,groupKey:metadata.groupKey,pdf,filename:metadata.filename,mimeType:'application/pdf',provenance:metadata.provenance});
-    return res.status(result.duplicate?200:201).json({ok:true,duplicate:result.duplicate,data:{id:result.id,status:result.status,classification:result.classification,confidence:result.confidence,extractionStatus:result.extractionStatus,financialAuthority:false}});
+    const confidence='confidence' in result?result.confidence:0;
+    return res.status(result.duplicate?200:201).json({ok:true,duplicate:result.duplicate,data:{id:result.id,status:result.status,classification:result.classification,confidence,extractionStatus:result.extractionStatus,financialAuthority:false}});
   }catch(error){return fail(req,res,error);}
 });
 router.use((error:any,req:Request,res:Response,_next:any)=>fail(req,res,error));
