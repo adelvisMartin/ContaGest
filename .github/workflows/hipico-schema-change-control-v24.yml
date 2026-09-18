@@ -20,6 +20,9 @@ env:
   HIPICO_CANDIDATE_SHA: ${{ inputs.candidate_sha }}
   HIPICO_SCHEMA_CHANGE_TICKET: ${{ inputs.change_ticket }}
   HIPICO_BACKUP_OUTPUT_DIR: artifacts/qa/hipico-schema-change-control/${{ inputs.candidate_sha }}
+  HIPICO_BACKUP_MODE: PRE_ROLLOUT
+  HIPICO_BACKUP_ROLE_MODE: PRE_ROLLOUT
+  HIPICO_BACKUP_ROLE_REPORT: artifacts/qa/hipico-schema-change-control/${{ inputs.candidate_sha }}/backup-role.json
   HIPICO_SCHEMA_BACKUP_EVIDENCE: artifacts/qa/hipico-schema-change-control/${{ inputs.candidate_sha }}/backup-evidence.json
   HIPICO_SCHEMA_ROLLOUT_REPORT: artifacts/qa/hipico-schema-change-control/${{ inputs.candidate_sha }}/change-plan.json
 
@@ -92,6 +95,9 @@ jobs:
           printf '%s' "$HIPICO_BACKUP_AGE_IDENTITY_B64" | base64 --decode > "$RUNNER_TEMP/hipico-age-identity.txt"
           chmod 600 "$RUNNER_TEMP/hipico-rclone.conf" "$RUNNER_TEMP/hipico-age-identity.txt"
 
+      - name: Verify hipico_backup role
+        run: node scripts/hipico-backup-role-verify-v24.mjs
+
       - name: Produce encrypted off-site backup
         env:
           RCLONE_CONFIG: ${{ runner.temp }}/hipico-rclone.conf
@@ -145,6 +151,7 @@ jobs:
           name: hipico-schema-change-control-${{ inputs.candidate_sha }}
           path: |
             artifacts/qa/hipico-schema-change-control/${{ inputs.candidate_sha }}/change-plan.json
+            artifacts/qa/hipico-schema-change-control/${{ inputs.candidate_sha }}/backup-role.json
             artifacts/qa/hipico-schema-change-control/${{ inputs.candidate_sha }}/backup-evidence.json
             artifacts/qa/hipico-schema-change-control/${{ inputs.candidate_sha }}/backup-manifest.json
             artifacts/qa/hipico-schema-change-control/${{ inputs.candidate_sha }}/*.sha256
