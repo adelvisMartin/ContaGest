@@ -8,6 +8,12 @@ const ownerId = String(process.env.HIPICO_E2E_OWNER_ID || '11111111-1111-4111-81
 const otherOwnerId = '22222222-2222-4222-8222-222222222222';
 const qaSha = String(process.env.HIPICO_CANDIDATE_SHA || process.env.GITHUB_SHA || process.env.HIPICO_QA_SHA || 'local').trim();
 const rbacArtifact = path.resolve('artifacts/qa/hipico-v290/postgres-rbac.json');
+const phaseArg = process.argv.find((arg) => arg.startsWith('--phase='));
+const phase = phaseArg ? phaseArg.slice('--phase='.length) : 'full';
+if (!['full', 'prisma-prereqs', 'final'].includes(phase)) {
+  throw new Error(`HIPICO_E2E_PHASE_INVALID:${phase}`);
+}
+const finalPhase = phase === 'final';
 
 const migrations = [
   'supabase/sql/hipico_v12_operations.sql',
@@ -111,22 +117,48 @@ try {
   await client.query('BEGIN');
   await client.query('CREATE EXTENSION IF NOT EXISTS pgcrypto');
   await client.query(`DO $$ BEGIN CREATE ROLE anon NOLOGIN; EXCEPTION WHEN duplicate_object THEN NULL; END $$`);
-  await client.query(`DO $ BEGIN CREATE ROLE authenticated NOLOGIN; EXCEPTION WHEN duplicate_object THEN NULL; END $`);
-  await client.query(`DO $ BEGIN CREATE ROLE service_role NOLOGIN; EXCEPTION WHEN duplicate_object THEN NULL; END $`);
+  await client.query(`DO $$ BEGIN CREATE ROLE authenticated NOLOGIN; EXCEPTION WHEN duplicate_object THEN NULL; END $$`);
+  await client.query(`DO $$ BEGIN CREATE ROLE service_role NOLOGIN BYPASSRLS; EXCEPTION WHEN duplicate_object THEN NULL; END $$`);
   await client.query('CREATE SCHEMA IF NOT EXISTS auth');
+  await client.query(`CREATE TABLE IF NOT EXISTS auth.users (
+    id uuid PRIMARY KEY,
+    email text,
+    encrypted_password text,
+    raw_user_meta_data jsonb NOT NULL DEFAULT '{}'::jsonb,
+    raw_app_meta_data jsonb NOT NULL DEFAULT '{}'::jsonb
+  )`);
   await client.query(`CREATE OR REPLACE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql STABLE AS $$
     SELECT NULLIF(current_setting('request.jwt.claim.sub', true), '')::uuid
   $$`);
   await client.query(`CREATE OR REPLACE FUNCTION auth.jwt() RETURNS jsonb LANGUAGE sql STABLE AS $$
     SELECT COALESCE(NULLIF(current_setting('request.jwt.claims', true), '')::jsonb, '{}'::jsonb)
   $$`);
+  await client.query(`CREATE OR REPLACE FUNCTION public.hipico_set_updated_at()
+    RETURNS trigger LANGUAGE plpgsql AS $$
+    BEGIN
+      NEW.updated_at = now();
+      RETURN NEW;
+    END
+  $$`);
+  await client.query('GRANT USAGE ON SCHEMA auth TO anon, authenticated, service_role');
+  await client.query('GRANT EXECUTE ON FUNCTION auth.uid() TO anon, authenticated, service_role');
+  await client.query('GRANT EXECUTE ON FUNCTION auth.jwt() TO anon, authenticated, service_role');
   await client.query('COMMIT');
 
-  for (const relative of migrations) {
+  const migrationsToApply = phase === 'prisma-prereqs'
+    ? migrations.filter((relative) => !relative.endsWith('hipico_v25_observability.sql') && !relative.endsWith('hipico_v26_audit_rpc_integrity.sql'))
+    : migrations;
+  for (const relative of migrationsToApply) {
     const sql = await fs.readFile(path.resolve(relative), 'utf8');
     console.log(`[hipico-v290] applying ${relative}`);
     await client.query(sql);
   }
+
+  await client.query(`INSERT INTO auth.users(id,email,encrypted_password,raw_user_meta_data,raw_app_meta_data)
+    VALUES
+      ($1::uuid,'hipico-owner@e2e.invalid',NULL,'{"name":"Operador E2E"}'::jsonb,'{"app":"hipico-control","role":"admin"}'::jsonb),
+      ($2::uuid,'hipico-foreign@e2e.invalid',NULL,'{"name":"Foreign E2E"}'::jsonb,'{"app":"hipico-control","role":"operator"}'::jsonb)
+    ON CONFLICT(id) DO NOTHING`, [ownerId, otherOwnerId]);
 
   await client.query(`INSERT INTO public.hipico_workspaces(owner_id,name,state,version)
     VALUES($1::uuid,'Control Hípico E2E','{}'::jsonb,1)
@@ -138,6 +170,9 @@ try {
     VALUES($1::uuid,'Foreign E2E owner','{}'::jsonb,1)
     ON CONFLICT(owner_id) DO NOTHING`, [otherOwnerId]);
 
+  if (phase === 'prisma-prereqs') {
+    console.log('[hipico-v290] Prisma prerequisites ready (Supabase Auth compatibility + v12-v24)');
+  } else {
   const required = [
     'hipico_workspaces', 'hipico_profiles', 'hipico_audit_events',
     'hipico_bot_channels', 'hipico_messages', 'hipico_operation_events', 'hipico_shadow_evaluations',
@@ -356,7 +391,8 @@ try {
     }
   }, null, 2)}\n`, 'utf8');
 
-  console.log(`[hipico-v290] current schema ready (${required.length} required tables; v12-v26 RLS/RBAC evidence executed)`);
+  console.log(`[hipico-v290] current schema ready (${required.length} required tables; v12-v26 RLS/RBAC evidence executed; phase=${finalPhase ? 'final' : 'full'})`);
+  }
 } catch (error) {
   try { await client.query('ROLLBACK'); } catch {}
   throw error;
