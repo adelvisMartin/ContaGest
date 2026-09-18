@@ -73,11 +73,11 @@ test('command palette opens, filters, navigates and closes from a touch viewport
   await page.locator('#btnCommandPalette').click({timeout:12_000});
   await expect(page.locator('#commandPalette')).toBeVisible({timeout:5_000});
   const input=page.locator('#commandSearchInput');
-  await input.fill('inventario');
+  await input.fill('ayuda');
   const results=page.locator('[data-command-route]:visible');
   await expect(results.first()).toBeVisible({timeout:5_000});
   const target=await results.first().getAttribute('data-command-route');
-  expect(target).toBeTruthy();
+  expect(target).toBe('ayuda');
   await results.first().click({timeout:12_000});
   await expect.poll(()=>page.locator('body').getAttribute('data-route'),{timeout:10_000}).toBe(target);
   await expect(page.locator('#pages')).toHaveAttribute('data-rendered-route',target,{timeout:10_000});
