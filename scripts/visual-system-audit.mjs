@@ -294,6 +294,7 @@ function auditCriticalMigrations() {
   const registry = read(path.join(root, 'frontend', 'src', 'data', 'pageRegistry.js'));
   const health = read(path.join(root, 'frontend', 'src', 'pages', 'HealthcarePage.js'));
   const ledger = read(path.join(root, 'frontend', 'src', 'pages', 'LedgerPage.jsx'));
+  const ledgerPrint = read(path.join(root, 'frontend', 'public', 'print', 'ledger-book.css'));
   const psych = read(path.join(root, 'frontend', 'src', 'pages', 'PsychologyPracticePage.js'));
   const adapters = read(path.join(root, 'frontend', 'src', 'styles', 'module-adapters.css'));
   const visual = read(path.join(root, 'frontend', 'src', 'styles', 'contagest-visual-system-v12.css'));
@@ -301,7 +302,7 @@ function auditCriticalMigrations() {
     veterinaryDedicated:/\bveterinaria\s*:\s*\[\s*['"]\.\/pages\/VeterinaryClinicPageV1123\.jsx['"]\s*,\s*['"]VeterinaryClinicPage['"]\s*\]/.test(registry),
     healthAnimalBranchRemoved:!/(animal\s*\?|kind:\s*'animal'|careImmunizationForm)/.test(health),
     ledgerUsesCanonical:/createRoot\(/.test(ledger) && /CgPageHeader/.test(ledger) && /CgDataTable/.test(ledger) && /CgMoney/.test(ledger),
-    ledgerPrintStylesIsolated:/function htmlBook\(/.test(ledger) && /<style>/.test(ledger) && !/<style data-cg-print-only>/.test(ledger),
+    ledgerPrintStylesIsolated:/function htmlBook\(/.test(ledger) && /\/print\/ledger-book\.css/.test(ledger) && !/<style\b/i.test(ledger) && /@media\s+print/.test(ledgerPrint) && /table\s*\{/.test(ledgerPrint),
     psychAppointmentBound:/mountSubmit\('#psychAppointmentForm'/.test(psych) && /createAppointment/.test(psych),
     psychNoUuidLabel:/UUID_RE/.test(psych) && /Paciente sin nombre/.test(psych),
     psychCalendar:/cg-psych-calendar/.test(psych) && /cg-psych-calendar/.test(adapters),
