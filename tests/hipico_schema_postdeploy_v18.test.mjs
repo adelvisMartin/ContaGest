@@ -8,12 +8,14 @@ const SHA='aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
 const NOW=new Date('2026-09-18T01:20:00.000Z');
 
 const allChecks=()=>({
+  observabilityTablePresent:true,
   observabilityRls:true,
   observabilityAppendOnlyTrigger:true,
   auditIdempotencyIndex:true,
   auditSourceConstraint:true,
   auditAuthorityConstraint:true,
   auditProvenanceColumnsNotNull:true,
+  auditRpcPresent:true,
   auditRpcSecurityDefiner:true,
   auditRpcAnonExecute:false,
   auditRpcAuthenticatedExecute:true,
