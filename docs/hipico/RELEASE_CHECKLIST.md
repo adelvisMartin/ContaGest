@@ -17,3 +17,6 @@
 - [ ] Outbox no envía dos veces la misma respuesta.
 - [ ] Backup/restore probado antes de actualizar APK.
 - [ ] Dispositivo Android físico aprobado antes de marcar release estable.
+- [ ] Physical QA #119 posee artifact canónico PASS ligado al SHA exacto.
+- [ ] Soak #120 real >=24 h posee `soak-evidence.json` PASS ligado al mismo SHA; smoke/flags manuales no cuentan.
+- [ ] Stable promotion consume Physical QA + soak desde evidence verificada, no desde selectores manuales.

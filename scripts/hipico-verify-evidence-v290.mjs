@@ -6,6 +6,7 @@ const SHA40 = /^[0-9a-f]{40}$/i;
 const STATUSES = Object.freeze(['PASS', 'FAIL', 'BLOCKED', 'NOT_EXECUTED']);
 const evidenceRoot = path.resolve(process.env.HIPICO_EVIDENCE_ROOT || 'artifacts/qa');
 const outputRoot = path.resolve('artifacts/qa/hipico-v290');
+const soakPolicy = JSON.parse(await fs.readFile(path.resolve('products/hipico-control/soak-policy-v120.json'), 'utf8'));
 
 function gitHead() {
   try {
@@ -47,6 +48,73 @@ function evidenceStatus(data) {
 function migrationsInclude(data, suffix) {
   const migrations = Array.isArray(data?.migrations) ? data.migrations : [];
   return migrations.some((entry) => String(entry).endsWith(suffix));
+}
+
+function validSha256(value) {
+  return /^[a-f0-9]{64}$/i.test(String(value || ''));
+}
+
+function validTimestamp(value) {
+  return Number.isFinite(Date.parse(String(value || '')));
+}
+
+function validateSoakEvidence(data) {
+  const evaluation = data?.evaluation || {};
+  const summaryInput = data?.summaryInput || {};
+  const integrity = data?.evidenceIntegrity || {};
+  const thresholds = soakPolicy?.thresholds || {};
+  const requiredDrills = Array.isArray(soakPolicy?.requiredDrills) ? soakPolicy.requiredDrills : [];
+  const drills = summaryInput?.drills || {};
+  const safetyMaterial = Array.isArray(integrity?.safetyMaterial) ? integrity.safetyMaterial : [];
+  const drillMaterial = Array.isArray(integrity?.drillMaterial) ? integrity.drillMaterial : [];
+  const candidateSha = String(data?.candidateSha || '').toLowerCase();
+  const summarySha = String(summaryInput?.candidateSha || '').toLowerCase();
+
+  return data?.status === 'PASS'
+    && Number(data?.policyVersion) === Number(soakPolicy?.version)
+    && validTimestamp(data?.startedAt)
+    && validTimestamp(data?.completedAt)
+    && Date.parse(data.completedAt) >= Date.parse(data.startedAt)
+    && String(data?.operatorId || '').trim().length > 0
+    && summarySha === candidateSha
+    && Number(data?.durationRequestedMinutes) >= Number(soakPolicy?.releaseMinimumHours) * 60
+    && evaluation?.status === 'PASS'
+    && Number(evaluation?.durationHours) >= Number(soakPolicy?.releaseMinimumHours)
+    && Array.isArray(evaluation?.violations) && evaluation.violations.length === 0
+    && Array.isArray(evaluation?.blocked) && evaluation.blocked.length === 0
+    && Number(evaluation?.rssGrowthMbPerHour) <= Number(thresholds?.maxRssGrowthMbPerHour)
+    && Number(evaluation?.heapGrowthMbPerHour) <= Number(thresholds?.maxHeapGrowthMbPerHour)
+    && Number(summaryInput?.eventLoopP95Ms) <= Number(thresholds?.maxEventLoopP95Ms)
+    && Number(summaryInput?.maxBacklogAgeSeconds) <= Number(thresholds?.maxBacklogAgeSeconds)
+    && Number(summaryInput?.maxSpoolBytes) <= Number(thresholds?.maxSpoolBytes)
+    && Number(summaryInput?.unexpectedDuplicateResponses) <= Number(thresholds?.maxUnexpectedDuplicateResponses)
+    && Number(summaryInput?.lostDecisions) <= Number(thresholds?.maxLostDecisions)
+    && Number(summaryInput?.contextLeaks) <= Number(thresholds?.maxContextLeaks)
+    && Number(evaluation?.healthFailureRate) <= Number(thresholds?.maxHealthFailureRate)
+    && Number(evaluation?.healthCoverageRatio) >= Number(soakPolicy?.minimumHealthCoverageRatio)
+    && Number(evaluation?.spoolCoverageRatio) >= Number(soakPolicy?.minimumSpoolCoverageRatio)
+    && Number(summaryInput?.samples) > 0
+    && summaryInput?.healthConfigured === true
+    && summaryInput?.spoolConfigured === true
+    && summaryInput?.physicalEvidenceComplete === true
+    && summaryInput?.invariantEvidenceComplete === true
+    && summaryInput?.drillMaterialEvidenceComplete === true
+    && summaryInput?.sourceReadOnly === 'PASS'
+    && summaryInput?.labOnlyWriteDestination === 'PASS'
+    && summaryInput?.sessionFallbackSafe === 'PASS'
+    && requiredDrills.length > 0
+    && requiredDrills.every((id) => drills?.[id]?.status === 'PASS'
+      && Array.isArray(drills[id]?.evidence)
+      && drills[id].evidence.length > 0)
+    && validSha256(integrity?.samplesSha256)
+    && validSha256(integrity?.physicalEvidenceSha256)
+    && validSha256(integrity?.safetyEvidenceSha256)
+    && validSha256(integrity?.drillEvidenceSha256)
+    && Number(integrity?.physicalVerifiedFiles) > 0
+    && safetyMaterial.length >= 3
+    && safetyMaterial.every((item) => validSha256(item?.sha256) && String(item?.artifact || '').length > 0)
+    && drillMaterial.length >= requiredDrills.length
+    && drillMaterial.every((item) => validSha256(item?.sha256) && String(item?.artifact || '').length > 0);
 }
 
 const files = await walk(evidenceRoot).catch(() => []);
@@ -123,6 +191,12 @@ const optionalDescriptors = [
   { id: 'runtimeBuild', name: 'build-info.json', schemas: [] },
   { id: 'apkMetadata', name: 'QA_APK_METADATA.json', schemas: [] },
   { id: 'productionSchema', name: 'schema-postdeploy.json', schemas: ['hipico-schema-postdeploy.v18'] },
+  {
+    id: 'soak',
+    name: 'soak-evidence.json',
+    schemas: ['hipico-soak-evidence.v120'],
+    validate: validateSoakEvidence
+  },
   {
     id: 'physicalQa',
     name: 'physical-qa-evidence.json',

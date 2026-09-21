@@ -6,7 +6,7 @@ import { execFileSync } from 'node:child_process';
 import { monitorEventLoopDelay } from 'node:perf_hooks';
 import { runLabScenario } from '../src/modules/hipico-bot/hipico-lab-simulator.js';
 import { labScenarioById } from '../src/modules/hipico-bot/hipico-lab-scenarios.js';
-import { evaluateSoak, type EvidenceStatus, type SoakDrillEvidence, type SoakSummaryInput } from '../src/modules/hipico-bot/hipico-soak-policy.js';
+import { createSoakReleaseEvidence, evaluateSoak, type EvidenceStatus, type SoakDrillEvidence, type SoakSummaryInput } from '../src/modules/hipico-bot/hipico-soak-policy.js';
 
 const backendDir=path.basename(process.cwd())==='backend'?process.cwd():path.join(process.cwd(),'backend');
 const root=path.resolve(backendDir,'..');
@@ -288,19 +288,28 @@ const evidenceIntegrity={
   drillEvidenceSha256:drillEvidenceArtifact?sha256File(drillEvidenceArtifact):null,
   physicalVerifiedFiles:physical.material.length,safetyMaterial,drillMaterial
 };
+const startedAt=new Date(start).toISOString();
+const completedAt=new Date(runEndedAt).toISOString();
 const final={
   schemaVersion:5,product:'control-hipico',candidateSha,attemptId,repoHead:/^[a-f0-9]{40}$/i.test(repoHead)?repoHead:null,operatorId:operatorId||null,
-  startedAt:new Date(start).toISOString(),completedAt:new Date(runEndedAt).toISOString(),durationRequestedMinutes:durationMinutes,sampleSeconds,
+  startedAt,completedAt,durationRequestedMinutes:durationMinutes,sampleSeconds,
   healthUrlConfigured:Boolean(healthUrl),spoolPathConfigured:Boolean(spoolPathArg),physicalEvidenceConfigured:Boolean(physicalEvidenceArg),physicalEvidenceVerified:physical.complete,
   drillEvidenceConfigured:Boolean(drillEvidenceArg),drillEvidenceCopied:Boolean(drillEvidenceArtifact),safetyEvidenceConfigured:Boolean(safetyEvidenceArg),safetyEvidenceCopied:Boolean(safetyEvidenceArtifact),
   replayScenario:scenario.id,decisions,summaryInput,evaluation,evidenceIntegrity,policyVersion:policy.version
 };
 fs.writeFileSync(summaryFile,`${JSON.stringify(final,null,2)}\n`,{flag:'wx'});
+const releaseEvidence=createSoakReleaseEvidence({
+  candidateSha,attemptId,operatorId:operatorId||null,startedAt,completedAt,durationRequestedMinutes:durationMinutes,
+  policyVersion:policy.version,summaryInput,evaluation,evidenceIntegrity
+},policy);
+const releaseEvidenceFile=path.join(outDir,'soak-evidence.json');
+if(releaseEvidence)fs.writeFileSync(releaseEvidenceFile,`${JSON.stringify(releaseEvidence,null,2)}\n`,{flag:'wx'});
 const checksumRows=[
   `${evidenceIntegrity.samplesSha256}  samples.jsonl`,
   evidenceIntegrity.physicalEvidenceSha256?`${evidenceIntegrity.physicalEvidenceSha256}  physical-evidence-v119.json`:null,
   evidenceIntegrity.safetyEvidenceSha256?`${evidenceIntegrity.safetyEvidenceSha256}  safety-evidence-input.json`:null,
   evidenceIntegrity.drillEvidenceSha256?`${evidenceIntegrity.drillEvidenceSha256}  drill-evidence-input.json`:null,
+  releaseEvidence?`${sha256File(releaseEvidenceFile)}  soak-evidence.json`:null,
   ...safetyMaterial.map((row)=>`${row.sha256}  ${row.artifact}`),...drillMaterial.map((row)=>`${row.sha256}  ${row.artifact}`)
 ].filter((row):row is string=>Boolean(row));
 fs.writeFileSync(checksumsFile,`${checksumRows.join('\n')}\n`,{flag:'wx'});

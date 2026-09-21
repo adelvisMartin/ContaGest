@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import test from 'node:test';
-import { evaluateSoak } from './hipico-soak-policy.js';
+import { createSoakReleaseEvidence, evaluateSoak } from './hipico-soak-policy.js';
 
 const policy={
   releaseMinimumHours:24,
@@ -48,3 +48,52 @@ test('runner measures nested spool-v2 and computes backlog from queued plus fail
 test('runner binds release to exact HEAD and verified #119 evidence',()=>{const script=fs.readFileSync('scripts/hipico-soak-v120.ts','utf8');assert.match(script,/CANDIDATE_SHA_HEAD_MISMATCH/);assert.match(script,/physical-evidence/);assert.match(script,/PHYSICAL_EVIDENCE_SHA_MISMATCH/);assert.match(script,/PHYSICAL_QA_119_NOT_PASS/);assert.match(script,/materialEvidenceComplete/);assert.match(script,/PHYSICAL_EVIDENCE_CHANGED_DURING_RUN/);});
 test('runner rejects path escapes and symlink/non-file material evidence',()=>{const script=fs.readFileSync('scripts/hipico-soak-v120.ts','utf8');assert.match(script,/isSymbolicLink\(\)/);assert.match(script,/realpathSync/);assert.match(script,/NOT_REGULAR_FILE/);assert.match(script,/PATH_ESCAPE/);assert.match(script,/SHA256_MISMATCH/);});
 test('runner preserves run-bound safety and drill material inside immutable attempt artifact',()=>{const script=fs.readFileSync('scripts/hipico-soak-v120.ts','utf8');assert.match(script,/operator-id/);assert.match(script,/safety-evidence/);assert.match(script,/SAFETY_EVIDENCE_SHA_MISMATCH/);assert.match(script,/invariantEvidenceComplete/);assert.match(script,/timestampNearRunEnd/);assert.match(script,/drillMaterialEvidenceComplete/);assert.match(script,/attemptId/);assert.match(script,/samplesSha256/);assert.match(script,/drillEvidenceSha256/);assert.match(script,/safetyEvidenceSha256/);assert.match(script,/drill-evidence-input\.json/);assert.match(script,/safety-evidence-input\.json/);assert.match(script,/copyMaterials/);assert.match(script,/schemaVersion:5/);});
+
+
+test('release evidence is emitted only from a real release PASS, never from smoke or blocked evaluation',()=>{
+  const passEvaluation=evaluateSoak(base,policy);
+  const evidenceIntegrity={
+    samplesSha256:'1'.repeat(64),
+    physicalEvidenceSha256:'2'.repeat(64),
+    safetyEvidenceSha256:'3'.repeat(64),
+    drillEvidenceSha256:'4'.repeat(64),
+    physicalVerifiedFiles:1,
+    safetyMaterial:[{artifact:'safety-material/001-source.log',sha256:'5'.repeat(64)}],
+    drillMaterial:[{artifact:'drill-material/001-restart.log',sha256:'6'.repeat(64)}]
+  };
+  const common={
+    candidateSha:base.candidateSha,
+    attemptId:'release-attempt',
+    operatorId:'qa-operator',
+    startedAt:'2026-08-30T00:00:00.000Z',
+    completedAt:'2026-08-31T00:00:00.000Z',
+    durationRequestedMinutes:1440,
+    policyVersion:5,
+    summaryInput:base,
+    evidenceIntegrity
+  };
+  const release=createSoakReleaseEvidence({...common,evaluation:passEvaluation},policy);
+  assert.ok(release);
+  assert.equal(release.schema,'hipico-soak-evidence.v120');
+  assert.equal(release.status,'PASS');
+  assert.equal(release.candidateSha,base.candidateSha);
+  assert.equal(release.evaluation.status,'PASS');
+  assert.ok(release.evaluation.durationHours>=24);
+
+  const smokeInput={...base,durationMs:60_000,rssEndMb:base.rssStartMb,heapEndMb:base.heapStartMb};
+  const smoke=createSoakReleaseEvidence({
+    ...common,
+    durationRequestedMinutes:1,
+    summaryInput:smokeInput,
+    evaluation:evaluateSoak(smokeInput,policy)
+  },policy);
+  assert.equal(smoke,null);
+
+  const blockedInput={...base,physicalEvidenceComplete:false};
+  const blocked=createSoakReleaseEvidence({
+    ...common,
+    summaryInput:blockedInput,
+    evaluation:evaluateSoak(blockedInput,policy)
+  },policy);
+  assert.equal(blocked,null);
+});

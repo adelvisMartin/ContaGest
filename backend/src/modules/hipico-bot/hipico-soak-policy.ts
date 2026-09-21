@@ -64,6 +64,67 @@ export type SoakPolicy={
   invariantEvidenceRequiredForRelease:boolean;
   thresholds:SoakThresholds;
 };
+export type SoakMaterialHash={artifact:string;sha256:string;label?:string;reference?:string};
+export type SoakEvidenceIntegrity={
+  samplesSha256:string;
+  physicalEvidenceSha256:string|null;
+  safetyEvidenceSha256:string|null;
+  drillEvidenceSha256:string|null;
+  physicalVerifiedFiles:number;
+  safetyMaterial:SoakMaterialHash[];
+  drillMaterial:SoakMaterialHash[];
+};
+export type SoakReleaseEvidenceInput={
+  candidateSha:string;
+  attemptId:string;
+  operatorId:string|null;
+  startedAt:string;
+  completedAt:string;
+  durationRequestedMinutes:number;
+  policyVersion:number;
+  summaryInput:SoakSummaryInput;
+  evaluation:SoakEvaluation;
+  evidenceIntegrity:SoakEvidenceIntegrity;
+};
+export type SoakReleaseEvidence={
+  schema:'hipico-soak-evidence.v120';
+  candidateSha:string;
+  status:'PASS';
+  attemptId:string;
+  operatorId:string;
+  startedAt:string;
+  completedAt:string;
+  durationRequestedMinutes:number;
+  policyVersion:number;
+  summaryInput:SoakSummaryInput;
+  evaluation:SoakEvaluation;
+  evidenceIntegrity:SoakEvidenceIntegrity;
+};
+
+export function createSoakReleaseEvidence(input:SoakReleaseEvidenceInput,policy:SoakPolicy):SoakReleaseEvidence|null{
+  const candidateSha=String(input.candidateSha||'').trim().toLowerCase();
+  const summarySha=String(input.summaryInput?.candidateSha||'').trim().toLowerCase();
+  const operatorId=String(input.operatorId||'').trim();
+  const minimumMinutes=policy.releaseMinimumHours*60;
+  const releasePass=input.evaluation?.status==='PASS'
+    && input.evaluation.durationHours>=policy.releaseMinimumHours
+    && input.durationRequestedMinutes>=minimumMinutes;
+  if(!releasePass||!/^[a-f0-9]{40}$/i.test(candidateSha)||summarySha!==candidateSha||!operatorId)return null;
+  return{
+    schema:'hipico-soak-evidence.v120',
+    candidateSha,
+    status:'PASS',
+    attemptId:input.attemptId,
+    operatorId,
+    startedAt:input.startedAt,
+    completedAt:input.completedAt,
+    durationRequestedMinutes:input.durationRequestedMinutes,
+    policyVersion:input.policyVersion,
+    summaryInput:input.summaryInput,
+    evaluation:input.evaluation,
+    evidenceIntegrity:input.evidenceIntegrity
+  };
+}
 
 export function evaluateSoak(input:SoakSummaryInput,policy:SoakPolicy):SoakEvaluation{
   const durationHours=input.durationMs/3_600_000;
