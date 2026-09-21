@@ -7,7 +7,7 @@ import {
 } from '@mui/material';
 import { CgButton, CgProvider, CgState, CgStatusChip, CgTextField } from '../components/ui/cg/CgPrimitives.jsx';
 import { HealthVerticalService, VeterinaryService } from '../services/verticalService.js';
-import { VeterinaryWorkspace } from './VeterinaryClinicPage.jsx';
+import { VeterinaryWorkspace } from '../components/veterinary/VeterinaryWorkspace.jsx';
 
 const Icon = ({ name }) => <i className={`fa-solid ${name}`} aria-hidden="true" />;
 const rows = (value) => Array.isArray(value) ? value : value?.data || [];
