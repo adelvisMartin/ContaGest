@@ -160,6 +160,24 @@ const treatmentPlanDecisionSchema = z.object({
   if(value.decision==='rejected'&&!String(value.reason||'').trim()) refinement.addIssue({code:'custom',path:['reason'],message:'El rechazo requiere un motivo.'});
 });
 
+const dentalEncounterWorkflowSchema = z.object({
+  action:z.enum(['submit-review','sign'])
+});
+
+const normalizeDentalTreatmentDraft = (clinicalData: unknown, actor: { userId:string|null; email:string|null }) => {
+  const parsed=dentalClinicalDataSchema.parse(clinicalData);
+  const createdAt=new Date().toISOString();
+  return {
+    ...parsed,
+    lifecycle:{
+      state:'draft',
+      purpose:'treatment',
+      createdBy:actor,
+      createdAt
+    }
+  };
+};
+
 const encounterSchema = z.object({
   patientId: z.string().min(10),
   professionalId: z.string().optional().nullable(),
@@ -173,13 +191,14 @@ const encounterSchema = z.object({
   diagnosisCodes: jsonArray,
   clinicalData: jsonRecord,
   confidential: z.boolean().default(false),
-  status: z.enum(['draft','signed','amended','cancelled']).default('draft')
+  status: z.enum(['draft','review','signed','amended','cancelled']).default('draft')
 }).superRefine((value, refinement) => {
   if (value.type === 'dental-treatment') {
     const parsed = dentalClinicalDataSchema.safeParse(value.clinicalData);
     if (!parsed.success) {
       for (const issue of parsed.error.issues) refinement.addIssue({ code:'custom', path:['clinicalData',...issue.path], message:issue.message });
     }
+    if (value.status !== 'draft') refinement.addIssue({ code:'custom', path:['status'], message:'Los tratamientos odontológicos nuevos deben iniciar como borrador.' });
   }
   if (value.type === 'periodontal-chart') {
     const parsed = periodontalClinicalDataSchema.safeParse(value.clinicalData);
@@ -332,7 +351,12 @@ router.post('/health/encounters', requirePermission('health.manage'), asyncHandl
     const professionalRows=await prisma.$queryRawUnsafe<any[]>(`SELECT "id" FROM public."CareProfessional" WHERE "tenantId"=$1 AND "id"=$2 LIMIT 1`,tenantId,b.professionalId);
     if(!professionalRows.length)throw new HttpError(422,'El profesional no pertenece al tenant activo.');
   }
-  const clinicalData = b.type==='dental-treatment-plan' ? normalizeDentalTreatmentPlan(b.clinicalData) : b.clinicalData;
+  const actor={userId:ctx(req).userId||null,email:ctx(req).email||null};
+  const clinicalData = b.type==='dental-treatment-plan'
+    ? normalizeDentalTreatmentPlan(b.clinicalData)
+    : b.type==='dental-treatment'
+      ? normalizeDentalTreatmentDraft(b.clinicalData,actor)
+      : b.clinicalData;
   const rows = await prisma.$queryRawUnsafe<any[]>(`
     INSERT INTO public."CareEncounter" ("id","tenantId","patientId","professionalId","appointmentId","specialty","type","subjective","objective","assessment","plan","diagnosisCodes","clinicalData","confidential","status","signedAt","createdAt","updatedAt")
     VALUES (gen_random_uuid()::text,$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11::jsonb,$12::jsonb,$13,$14,CASE WHEN $14='signed' THEN now() ELSE NULL END,now(),now()) RETURNING *
