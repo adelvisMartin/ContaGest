@@ -1,0 +1,68 @@
+name: Hípico Auth Recovery E2E v28
+
+on:
+  workflow_dispatch:
+    inputs:
+      candidate_sha:
+        description: Exact 40-hex candidate SHA to verify
+        required: true
+        type: string
+      phase:
+        description: Recovery verification phase
+        required: true
+        default: REQUEST
+        type: choice
+        options:
+          - REQUEST
+          - COMPLETE
+      dedicated_test_account_ack:
+        description: I confirm HIPICO_AUTH_RECOVERY_TEST_EMAIL is a dedicated disposable recovery-test account
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+env:
+  NODE_VERSION: '22'
+  HIPICO_CANDIDATE_SHA: ${{ inputs.candidate_sha }}
+  HIPICO_AUTH_RECOVERY_PHASE: ${{ inputs.phase }}
+  HIPICO_AUTH_RECOVERY_TEST_ACCOUNT_ACK: ${{ inputs.dedicated_test_account_ack }}
+  HIPICO_AUTH_RECOVERY_REDIRECT_URL: https://conta-gest-frontend.vercel.app/hipico-control/
+  HIPICO_SUPABASE_URL: ${{ secrets.HIPICO_SUPABASE_URL }}
+  HIPICO_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.HIPICO_SUPABASE_PUBLISHABLE_KEY }}
+  HIPICO_AUTH_RECOVERY_TEST_EMAIL: ${{ secrets.HIPICO_AUTH_RECOVERY_TEST_EMAIL }}
+  HIPICO_AUTH_RECOVERY_EMAIL_LINK: ${{ secrets.HIPICO_AUTH_RECOVERY_EMAIL_LINK }}
+  HIPICO_AUTH_RECOVERY_REPORT: artifacts/qa/hipico-auth-recovery/${{ inputs.candidate_sha }}/${{ inputs.phase }}.json
+
+jobs:
+  recovery-e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout exact candidate
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.candidate_sha }}
+          fetch-depth: 0
+
+      - name: Setup Node 22
+        uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Verify exact candidate SHA
+        run: node scripts/hipico-exact-sha-gate.mjs
+
+      - name: Run manual recovery evidence phase
+        run: node scripts/hipico-auth-recovery-e2e-v28.mjs
+
+      - name: Upload sanitized recovery evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: hipico-auth-recovery-${{ inputs.candidate_sha }}-${{ inputs.phase }}
+          path: artifacts/qa/hipico-auth-recovery/${{ inputs.candidate_sha }}/${{ inputs.phase }}.json
+          if-no-files-found: warn
+          retention-days: 30
