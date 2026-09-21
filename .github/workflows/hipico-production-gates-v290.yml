@@ -32,12 +32,6 @@ on:
         default: UNKNOWN
         type: choice
         options: [UNKNOWN, 'false', 'true']
-      physical_qa_status:
-        description: Physical QA evidence status for reporting only
-        required: false
-        default: NOT_EXECUTED
-        type: choice
-        options: [NOT_EXECUTED, PASS, BLOCKED, FAIL]
       auth_recovery_test_account_ack:
         description: I confirm the configured recovery email is a dedicated disposable test account
         required: false
@@ -437,7 +431,6 @@ jobs:
       GITHUB_TOKEN: ${{ github.token }}
       HIPICO_P0_OPEN: ${{ inputs.p0_open || 'UNKNOWN' }}
       HIPICO_SECURITY_CRITICAL: ${{ inputs.security_critical || 'UNKNOWN' }}
-      HIPICO_PHYSICAL_QA_STATUS: ${{ inputs.physical_qa_status || 'NOT_EXECUTED' }}
     steps:
       - uses: actions/checkout@v7
         with:
