@@ -96,6 +96,25 @@ if(dentistryEntry?.status==='MIGRATED'){
   const treatmentSubmit=dentistry.slice(dentistry.indexOf('async function submitEncounter'),dentistry.indexOf('async function createTreatmentPlan'));
   if(!treatmentSubmit.includes("status:'draft'")||treatmentSubmit.includes("status:'signed'"))fail('odontologia: new dental treatment must remain draft until explicit review/sign');
   if(!lifecycleMigration.includes("'review'"))fail('odontologia: CareEncounter lifecycle migration must preserve review state');
+
+  const dentalSchedule=read('frontend/src/components/dentistry/DentalSchedulePanel.jsx');
+  const scheduleService19=read('frontend/src/services/verticalService.js');
+  const scheduleMigration19=read('backend/prisma/migrations/20260921135000_dental_advanced_scheduling_v1951/migration.sql');
+  if(!dentistry.includes('DentalSchedulePanel'))fail('odontologia: advanced schedule panel is not composed');
+  if((dentistry.match(/<DentalSchedulePanel/g)||[]).length!==1)fail('odontologia: advanced schedule must render from one owner');
+  if(/submitAppointment|appointmentForm|appointmentIso/.test(dentistry))fail('odontologia: legacy appointment form wiring still exists');
+  if(/querySelector|addEventListener|innerHTML|document\./.test(dentalSchedule))fail('odontologia: advanced schedule reintroduced imperative DOM lifecycle');
+  for(const contract of ['Agenda odontológica avanzada','Sillón / recurso','Duración','Agregar a lista de espera','Intentar programar','Confirmar','Guardar recall']){
+    if(!dentalSchedule.includes(contract))fail(`odontologia: missing advanced schedule UI contract ${contract}`);
+  }
+  for(const contract of ['appointmentStatusSchema','lockAppointmentSchedule','pg_advisory_xact_lock','assertAppointmentSlotAvailable',"router.patch('/health/appointments/:id'",'recallDueAt','schedulingMeta']){
+    if(!healthRoutes.includes(contract))fail(`odontologia: missing advanced schedule backend contract ${contract}`);
+  }
+  if(!scheduleService19.includes('updateAppointment(id, payload)')||!scheduleService19.includes("method:'PATCH'"))fail('odontologia: advanced schedule must use canonical appointment PATCH service');
+  for(const contract of ["'waitlisted'",'"recallDueAt"','"schedulingMeta"','CareAppointment_tenant_professional_slot_idx','CareAppointment_tenant_room_slot_idx']){
+    if(!scheduleMigration19.includes(contract))fail(`odontologia: missing advanced schedule migration contract ${contract}`);
+  }
+
   const periodontal=read('frontend/src/components/dentistry/PeriodontalChartPanel.jsx');
   if(!dentistry.includes('PeriodontalChartPanel'))fail('odontologia: structured periodontogram panel is not composed');
   if(/querySelector|addEventListener|innerHTML|document\./.test(periodontal))fail('odontologia: periodontogram reintroduced imperative DOM lifecycle');
