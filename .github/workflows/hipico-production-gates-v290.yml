@@ -6,6 +6,7 @@ on:
       - 'backend/src/modules/hipico/**'
       - 'backend/src/modules/hipico-bot/**'
       - 'backend/scripts/hipico-*-v290.ts'
+      - 'backend/scripts/hipico-soak-v120.ts'
       - 'backend/prisma/**'
       - 'tools/hipico-cli/**'
       - 'supabase/sql/hipico_v*.sql'
