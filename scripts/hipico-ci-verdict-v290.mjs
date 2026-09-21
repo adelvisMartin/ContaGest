@@ -83,10 +83,6 @@ async function main() {
     output[envName] = classifyNamedJobs(jobs, jobName);
   }
   output.HIPICO_GATE_RESTART = output.HIPICO_GATE_POSTGRES;
-  const physical = String(process.env.HIPICO_PHYSICAL_QA_STATUS || 'NOT_EXECUTED').trim().toUpperCase();
-  output.HIPICO_GATE_PHYSICAL_QA = ['PASS', 'FAIL', 'BLOCKED', 'NOT_EXECUTED'].includes(physical)
-    ? physical
-    : 'NOT_EXECUTED';
   output.HIPICO_BLOCKER_REASON = summarizeBlocker(Object.values(output));
 
   const envFile = String(process.env.GITHUB_ENV || '').trim();
