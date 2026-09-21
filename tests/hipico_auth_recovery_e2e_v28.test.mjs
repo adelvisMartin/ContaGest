@@ -117,7 +117,11 @@ test('v28 script uses publishable auth endpoints only and never persists sensiti
     'hipico_users'
   ]) assert.match(source,new RegExp(marker.replace(/[?]/g,'\\?')));
 
-  assert.doesNotMatch(source,/service_role|SUPABASE_SERVICE_ROLE/i);
+  assert.match(source,/SERVICE_ROLE_KEY_FORBIDDEN/);
+  assert.match(source,/role==='service_role'/);
+  assert.match(source,/\^sb_secret_/);
+  assert.doesNotMatch(source,/process\.env\.(?:SUPABASE_SERVICE_ROLE|HIPICO_SUPABASE_SERVICE_ROLE|SERVICE_ROLE)/i);
+  assert.doesNotMatch(source,/\b(?:const|let|var)\s+(?:serviceRoleKey|service_role_key)\b/i);
   assert.match(source,/randomBytes/);
   assert.match(source,/createHash/);
   assert.match(source,/redirect:\s*'manual'/);
@@ -133,7 +137,7 @@ test('v28 runbook requires a dedicated disposable account and secret cleanup',as
   assert.match(doc,/COMPLETE/);
   assert.match(doc,/HIPICO_AUTH_RECOVERY_EMAIL_LINK/);
   assert.match(doc,/secret/i);
-  assert.match(doc,/eliminar|remove|borrar/i);
+  assert.match(doc,/elimin(?:a|ar)|remove|borrar/i);
   assert.match(doc,/no.*service role|service role.*no/i);
   assert.match(doc,/no.*cerrar.*#267|#267.*COMPLETE PASS/is);
 });
