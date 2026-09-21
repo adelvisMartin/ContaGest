@@ -198,6 +198,53 @@ if(dentistryEntry?.status==='MIGRATED'){
   if(/UPDATE storage\.buckets[\s\S]{0,300}WHERE id = 'contagest-media'/.test(mediaMigration))fail('odontologia: clinical media migration must not widen generic contagest-media limits');
   if(!mediaRoutes.includes("DENTAL_BUCKET = 'contagest-clinical-media'"))fail('odontologia: dental media route must use isolated clinical bucket');
 
+  const dentalFinancial=read('frontend/src/components/dentistry/DentalFinancialPanel.jsx');
+  const dentalFinancialMigration=read('backend/prisma/migrations/20260921141000_dental_erp_financial_v2051/migration.sql');
+  const dentalFinancialService=read('frontend/src/services/verticalService.js');
+  const salesRoutes20=read('backend/src/modules/sales/sales.routes.ts');
+  if(!dentistry.includes('DentalFinancialPanel'))fail('odontologia: ERP financial panel is not composed');
+  if((dentistry.match(/<DentalFinancialPanel/g)||[]).length!==1)fail('odontologia: ERP financial panel must render from one owner');
+  if(/querySelector|addEventListener|innerHTML|document\./.test(dentalFinancial))fail('odontologia: ERP financial panel reintroduced imperative DOM lifecycle');
+  for(const contract of ['Presupuesto, cobranza y analítica ERP','SalesInvoice','Crear borrador ERP','Producción por profesional','Producción por procedimiento','Cobrado']){
+    if(!dentalFinancial.includes(contract))fail(`odontologia: missing ERP financial UI contract ${contract}`);
+  }
+  for(const contract of ['dentalFinancial(params = {})','createDentalFinancialLink(id)']){
+    if(!dentalFinancialService.includes(contract))fail(`odontologia: missing ERP financial service contract ${contract}`);
+  }
+  for(const contract of [
+    "router.get('/health/dental/financial'",
+    "router.post('/health/encounters/:id/financial-link'",
+    "requirePermission('sales.view')",
+    "requirePermission('sales.manage')",
+    'pg_advisory_xact_lock',
+    'acceptedDentalTreatmentPlanClinicalDataSchema',
+    'calculateInvoiceTotals',
+    "taxRate:'0'",
+    "status:'draft'",
+    'dental.financial.link.created',
+    'fiscalReviewRequired:true'
+  ]){
+    if(!healthRoutes.includes(contract))fail(`odontologia: missing ERP financial backend contract ${contract}`);
+  }
+  const financialStart=healthRoutes.indexOf("router.get('/health/dental/financial'");
+  const financialEnd=healthRoutes.indexOf("router.post('/health/measurements'",financialStart);
+  const financialBlock=healthRoutes.slice(financialStart,financialEnd);
+  if(financialStart<0||financialEnd<0)fail('odontologia: ERP financial route boundaries missing');
+  if(/ledgerEntry|salesInvoiceLinesForLedger|assertBalanced|postedAt|postedBy/.test(financialBlock))fail('odontologia: Health must never post accounting entries from dental financial integration');
+  for(const contract of [
+    'CREATE TABLE IF NOT EXISTS public."DentalFinancialLink"',
+    '"treatmentPlanId"',
+    '"salesInvoiceId"',
+    '"budgetSnapshot"',
+    'DentalFinancialLink_tenant_plan_unique',
+    'DentalFinancialLink_tenant_sale_unique',
+    'ENABLE ROW LEVEL SECURITY',
+    'REVOKE ALL'
+  ]){
+    if(!dentalFinancialMigration.includes(contract))fail(`odontologia: missing ERP financial persistence contract ${contract}`);
+  }
+  if(!salesRoutes20.includes('DentalFinancialLink')||!salesRoutes20.includes('provenance financiera'))fail('odontologia: Sales draft deletion must protect dental financial provenance');
+
 }
 
 const fitnessEntries=ERP_UI_WAVE_A_2_51.filter((item)=>['gimnasio','rutinas','nutricion'].includes(item.route));
