@@ -53,6 +53,10 @@ El bucket general `contagest-media` no se modifica. Sus límites y políticas pe
 
 Si el insert de `CareEncounter` falla después de guardar el objeto, el backend elimina el objeto recién creado para evitar huérfanos.
 
+### Privacidad de metadata durante upload
+
+El binario viaja como body raw. La metadata clínica potencialmente sensible (título, notas, pieza y vínculos clínicos) **no** viaja en la query string: se serializa en el header acotado `x-clinical-metadata`, se decodifica y valida con Zod en backend. Los campos opcionales vacíos se omiten para mantener la validación estricta y evitar identificadores vacíos artificiales.
+
 ## Lectura
 
 `GET /media/dental-attachments?patientId=...`:
