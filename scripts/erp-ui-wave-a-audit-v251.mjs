@@ -85,6 +85,14 @@ if(vetEntry?.status==='MIGRATED'){
     if(!veterinaryPreventive.includes(contract))fail(`veterinaria: missing preventive care contract ${contract}`);
   }
   if(!vet.includes('HealthVerticalService.immunizations(patientId)'))fail('veterinaria: dossier must load canonical immunization history');
+  const veterinarySoap=read('frontend/src/components/veterinary/veterinarySoapTemplates.js');
+  for(const contract of ['SOAP_TEMPLATE_VERSION','canine','feline','wellness','problem','follow_up','emergency','resolveVeterinarySoapTemplate']){
+    if(!veterinarySoap.includes(contract))fail(`veterinaria: missing SOAP template contract ${contract}`);
+  }
+  for(const contract of ['Plantilla SOAP','Tipo de consulta','Aplicar plantilla','soapTemplateId','soapTemplateVersion']){
+    if(!veterinaryWorkspace.includes(contract))fail(`veterinaria: missing SOAP workspace contract ${contract}`);
+  }
+  if(!veterinaryWorkspace.includes('clinicalData:{soapTemplate:'))fail('veterinaria: SOAP template provenance must persist in CareEncounter clinicalData');
 }
 
 const dentistryEntry=ERP_UI_WAVE_A_2_51.find((item)=>item.route==='odontologia');
