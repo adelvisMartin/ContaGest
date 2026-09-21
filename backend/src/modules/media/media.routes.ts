@@ -11,6 +11,7 @@ const router = Router();
 router.use(requireTenant);
 
 const BUCKET = 'contagest-media';
+const DENTAL_BUCKET = 'contagest-clinical-media';
 const MAX_BYTES = 3 * 1024 * 1024;
 const allowedMime = new Map([
   ['image/jpeg', 'jpg'],
@@ -215,7 +216,7 @@ router.get('/dental-attachments', asyncHandler(async (req,res)=>{
     const attachment=row.clinicalData?.dentalAttachment||{};
     const storagePath=String(attachment.storagePath||'');
     if(!storagePath.startsWith(`${context.tenantId}/dental-attachments/`)) return {...row,signedUrl:null};
-    const {data,error}=await storage.storage.from(BUCKET).createSignedUrl(storagePath,3600);
+    const {data,error}=await storage.storage.from(DENTAL_BUCKET).createSignedUrl(storagePath,3600);
     return {...row,signedUrl:error?null:data.signedUrl,signError:error?.message||null};
   }));
   ok(res,records);
@@ -257,7 +258,7 @@ router.post(
     };
     const authority={type:'dental-attachment',confidential:true,status:'signed'} as const;
     const storage=client();
-    const {error:uploadError}=await storage.storage.from(BUCKET).upload(storagePath,bytes,{
+    const {error:uploadError}=await storage.storage.from(DENTAL_BUCKET).upload(storagePath,bytes,{
       contentType:mime,
       cacheControl:'3600',
       upsert:false
@@ -276,11 +277,11 @@ router.post(
       encounter=rows[0];
       if(!encounter) throw new Error('No se creó la autoridad clínica del adjunto.');
     }catch(error){
-      await storage.storage.from(BUCKET).remove([storagePath]).catch(()=>undefined);
+      await storage.storage.from(DENTAL_BUCKET).remove([storagePath]).catch(()=>undefined);
       throw error;
     }
 
-    const {data:signed,error:signError}=await storage.storage.from(BUCKET).createSignedUrl(storagePath,3600);
+    const {data:signed,error:signError}=await storage.storage.from(DENTAL_BUCKET).createSignedUrl(storagePath,3600);
     ok(res,{...encounter,signedUrl:signError?null:signed.signedUrl,signError:signError?.message||null},201);
   })
 );
