@@ -86,3 +86,12 @@ test('18/51 signed treatment remains the only state that can start amendment',()
   assert.match(actions,/onAmend\?\.\(encounter\)/);
   assert.match(source,/onAmend=\{prepareAmendment\}/);
 });
+
+
+test('18/51 Wave A audit keeps lifecycle source owners singleton',()=>{
+  const audit=fs.readFileSync('scripts/erp-ui-wave-a-audit-v251.mjs','utf8');
+  assert.equal((audit.match(/const lifecycleActions=/g)||[]).length,1);
+  assert.equal((audit.match(/const healthRoutes=/g)||[]).length,1);
+  assert.equal((audit.match(/const lifecycleMigration=/g)||[]).length,1);
+  assert.equal((audit.match(/const verticalService=/g)||[]).length,1);
+});
