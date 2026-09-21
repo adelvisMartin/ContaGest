@@ -117,6 +117,22 @@ function summary(result){
   return{counts,totalCases:expectedCases,environments:(result.environments||[]).length,modeCoverage,requiredModesCovered,sourceSafe,invariantEvidenceComplete,operatorPresent,sessionTopologySafe,evidenceComplete,passRowsWithEvidence,releasePhysicalGate:complete?'PASS':'NOT_READY'};
 }
 function writeManifest(result,target){const dir=path.dirname(target);fs.mkdirSync(dir,{recursive:true});fs.writeFileSync(target,`${JSON.stringify(result,null,2)}\n`);}
+function writeReleaseEvidence(final,target){
+  const evidence={
+    schema:'hipico-physical-qa-evidence.v119',
+    candidateSha:final.candidateSha,
+    status:'PASS',
+    checkedAt:final.checkedAt,
+    completedAt:final.completedAt,
+    operator:final.operator,
+    requiredModes:final.requiredModes,
+    environments:(final.environments||[]).map((env)=>({id:env.id,mode:env.mode,device:env.device})),
+    invariants:final.invariants,
+    summary:final.summary,
+    evidenceFiles:final.evidenceFiles
+  };
+  writeManifest(evidence,target);
+}
 
 const sha=gitSha();
 if(command==='init'){
@@ -180,6 +196,9 @@ if(command==='check'){
   const final={...result,checkedAt,completedAt,summary:report,evidenceFiles:material.evidenceFiles};
   const manifest=path.join(path.dirname(target),'manifest.json');writeManifest(final,manifest);
   fs.writeFileSync(path.join(path.dirname(target),'SHA256SUMS.txt'),material.evidenceFiles.map((item)=>`${item.sha256}  ${item.path}`).join('\n')+(material.evidenceFiles.length?'\n':''));
+  if(report.releasePhysicalGate==='PASS'){
+    writeReleaseEvidence(final,path.join(path.dirname(target),'physical-qa-evidence.json'));
+  }
   console.log(JSON.stringify(report,null,2));
   if(report.releasePhysicalGate!=='PASS')process.exit(3);
   process.exit(0);
