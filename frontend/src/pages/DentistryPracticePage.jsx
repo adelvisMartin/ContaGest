@@ -13,6 +13,7 @@ import { TreatmentPlanPanel } from '../components/dentistry/TreatmentPlanPanel.j
 import { DentalConsentPanel } from '../components/dentistry/DentalConsentPanel.jsx';
 import { DentalMediaPanel } from '../components/dentistry/DentalMediaPanel.jsx';
 import { DentalLifecycleActions } from '../components/dentistry/DentalLifecycleActions.jsx';
+import { DentalSchedulePanel } from '../components/dentistry/DentalSchedulePanel.jsx';
 
 const PROCEDURES=['Evaluación','Profilaxis / limpieza','Restauración','Endodoncia','Extracción','Periodoncia','Ortodoncia','Prótesis','Implante','Radiografía / estudio','Control postoperatorio'];
 const SPECIALTIES=[
@@ -23,8 +24,6 @@ const rows=(value)=>Array.isArray(value)?value:value?.data||[];
 const patientName=(patient={})=>patient.displayName||patient.fullName||'Paciente';
 const statusLabel=(status='')=>({scheduled:'Programada',confirmed:'Confirmada',checked_in:'En sala',in_progress:'En atención',completed:'Completada',cancelled:'Cancelada',no_show:'No asistió'}[String(status).toLowerCase()]||status||'Programada');
 const statusTone=(status='')=>['completed','confirmed','checked_in'].includes(String(status).toLowerCase())?'success':['cancelled','no_show'].includes(String(status).toLowerCase())?'error':'warning';
-const localToday=()=>{const now=new Date();return new Date(now.getTime()-now.getTimezoneOffset()*60000).toISOString().slice(0,10);};
-const appointmentIso=(date,time,duration=45)=>{const start=new Date(`${date}T${time||'09:00'}:00`);if(Number.isNaN(start.getTime()))throw new Error('Fecha u hora inválida.');const end=new Date(start.getTime()+Math.max(15,Number(duration||45))*60000);return{startsAt:start.toISOString(),endsAt:end.toISOString()};};
 
 function Metric({label,value,tone='default'}){
   return <Paper variant="outlined" sx={{p:1.4,minWidth:0}}><Typography variant="caption" color="text.secondary">{label}</Typography><Stack direction="row" alignItems="center" justifyContent="space-between" gap={1}><Typography variant="h5" sx={{fontVariantNumeric:'tabular-nums'}}>{value}</Typography><CgStatusChip label={String(value)} tone={tone}/></Stack></Paper>;
@@ -48,7 +47,6 @@ function DentistryWorkspace({ state, context }){
   const [error,setError]=useState('');
   const [patientForm,setPatientForm]=useState({displayName:'',email:'',phone:''});
   const [professionalForm,setProfessionalForm]=useState({fullName:'',specialty:'odontologia-general',licenseNumber:''});
-  const [appointmentForm,setAppointmentForm]=useState({patientId:'',professionalId:'',date:localToday(),time:'09:00',reason:''});
   const [encounterForm,setEncounterForm]=useState({professionalId:'',procedure:'Evaluación',condition:'',finding:'',assessment:'',plan:''});
   const Toast=context?.Toast;
 
@@ -79,7 +77,6 @@ function DentistryWorkspace({ state, context }){
       setAppointments(nextAppointments);
       const nextPatientId=selectedPatientId&&nextPatients.some((item)=>item.id===selectedPatientId)?selectedPatientId:'';
       setSelectedPatientId(nextPatientId);
-      setAppointmentForm((current)=>({...current,patientId:current.patientId&&nextPatients.some((item)=>item.id===current.patientId)?current.patientId:''}));
       if(nextPatientId){
         const [encounterResponse,consentResponse,attachmentResponse]=await Promise.all([
           HealthVerticalService.encounters(nextPatientId),
@@ -152,23 +149,6 @@ function DentistryWorkspace({ state, context }){
       setProfessionalForm({fullName:'',specialty:'odontologia-general',licenseNumber:''});
       notify('Profesional odontológico guardado.','success');
     }catch(cause){notify(`No se guardó el profesional: ${cause?.message||'Error'}`,'error');}
-  }
-
-  async function submitAppointment(event){
-    event.preventDefault();
-    if(!appointmentForm.patientId)return notify('Selecciona un paciente.','warning');
-    try{
-      const {startsAt,endsAt}=appointmentIso(appointmentForm.date,appointmentForm.time,45);
-      const item=await HealthVerticalService.createAppointment({
-        patientId:appointmentForm.patientId,
-        professionalId:appointmentForm.professionalId||null,
-        startsAt,endsAt,type:'dentistry',status:'scheduled',
-        reason:appointmentForm.reason.trim(),channel:'onsite',notes:''
-      });
-      setAppointments((current)=>[item,...current]);
-      setAppointmentForm((current)=>({...current,reason:''}));
-      notify('Cita odontológica registrada.','success');
-    }catch(cause){notify(`No se registró la cita: ${cause?.message||'Error'}`,'error');}
   }
 
   async function submitEncounter(event){
@@ -382,7 +362,7 @@ function DentistryWorkspace({ state, context }){
       <Metric label="Registros clínicos" value={encounters.length} tone="secondary"/>
     </Box>
 
-    <Box className="cg-dental-grid" sx={{display:'grid',gridTemplateColumns:{xs:'1fr',lg:'repeat(3,minmax(0,1fr))'},gap:1.25}}>
+    <Box className="cg-dental-grid" sx={{display:'grid',gridTemplateColumns:{xs:'1fr',lg:'repeat(2,minmax(0,1fr))'},gap:1.25}}>
       <Paper component="form" onSubmit={submitPatient} variant="outlined" sx={{p:1.5}}>
         <Typography variant="h6">Nuevo paciente</Typography><Typography variant="caption" color="text.secondary">Registro rápido para agenda y ficha odontológica.</Typography>
         <Stack gap={1.1} mt={1.25}>
@@ -403,20 +383,15 @@ function DentistryWorkspace({ state, context }){
         </Stack>
       </Paper>
 
-      <Paper component="form" onSubmit={submitAppointment} variant="outlined" sx={{p:1.5}}>
-        <Typography variant="h6">Nueva cita</Typography><Typography variant="caption" color="text.secondary">Agenda sin salir del módulo.</Typography>
-        <Stack gap={1.1} mt={1.25}>
-          <CgSelect label="Paciente" value={appointmentForm.patientId} onChange={(e)=>setAppointmentForm({...appointmentForm,patientId:e.target.value})} options={patientOptions}/>
-          <CgSelect label="Profesional" value={appointmentForm.professionalId} onChange={(e)=>setAppointmentForm({...appointmentForm,professionalId:e.target.value})} options={professionalOptions}/>
-          <Stack direction={{xs:'column',sm:'row'}} gap={1}>
-            <CgTextField size="small" fullWidth label="Fecha" type="date" slotProps={{inputLabel:{shrink:true}}} value={appointmentForm.date} onChange={(e)=>setAppointmentForm({...appointmentForm,date:e.target.value})}/>
-            <CgTextField size="small" fullWidth label="Hora" type="time" slotProps={{inputLabel:{shrink:true}}} value={appointmentForm.time} onChange={(e)=>setAppointmentForm({...appointmentForm,time:e.target.value})}/>
-          </Stack>
-          <CgTextField size="small" fullWidth label="Motivo" value={appointmentForm.reason} onChange={(e)=>setAppointmentForm({...appointmentForm,reason:e.target.value})}/>
-          <CgButton type="submit">Agendar cita</CgButton>
-        </Stack>
-      </Paper>
     </Box>
+
+    <DentalSchedulePanel
+      patientOptions={patientOptions}
+      professionalOptions={professionalOptions}
+      selectedPatientId={selectedPatientId}
+      notify={notify}
+      onAppointmentsChanged={()=>loadAll({silent:true})}
+    />
 
     <Paper component="form" onSubmit={submitEncounter} variant="outlined" sx={{p:1.5}}>
       <Stack direction={{xs:'column',md:'row'}} justifyContent="space-between" gap={1}><Box><Typography variant="h6">{amendmentTarget?'Enmendar versión odontológica':'Odontograma y tratamiento rápido'}</Typography><Typography variant="caption" color="text.secondary">{amendmentTarget?'La versión firmada original permanece vigente; la nueva versión inicia como borrador enlazado.':'Selecciona la pieza, registra hallazgos y guarda primero un borrador clínico.'}</Typography></Box><Stack direction="row" gap={.7} alignItems="center"><CgStatusChip label={selectedTooth?`Pieza ${selectedTooth}`:'Sin pieza seleccionada'} tone={selectedTooth?'primary':'default'}/>{amendmentTarget?<CgStatusChip label={`Enmienda de v${amendmentTarget.clinicalData?.versioning?.revision||1}`} tone="warning"/>:null}</Stack></Stack>
