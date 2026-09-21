@@ -107,12 +107,17 @@ artifacts/qa/hipico-v120/<candidate-sha>/<attempt-id>/
   safety-material/
   drill-material/
   summary.json
+  soak-evidence.json   # sólo existe cuando el run real de release termina PASS
   SHA256SUMS.txt
 ```
 
 `attempt-id` se genera automáticamente con timestamp+PID o puede fijarse mediante `--attempt-id=<id>` para una ejecución coordinada. Un ID ya existente falla cerrado con `SOAK_ATTEMPT_ALREADY_EXISTS`.
 
 El summary schema v5 conserva candidate SHA, attempt ID, HEAD observado, operador, duración real, cobertura health/spool, thresholds, resultado, hashes de inputs y hashes de los archivos materializados.
+
+Cuando y sólo cuando el run real cumple duración de release (>=24 h) y `evaluation.status=PASS`, el runner genera además `soak-evidence.json` con schema `hipico-soak-evidence.v120`. Ese artifact queda ligado al mismo SHA, incluye operador/timestamps/policy, evaluación completa, invariantes/drills y los hashes de evidencia. Un smoke, un run bloqueado o un FAIL no genera ese artifact.
+
+El verifier de release v290 descubre `soak-evidence.json` como evidencia opcional exact-SHA. La revisión de código no depende de él, pero **stable promotion sí exige que el gate `soak` sea PASS**. Si el artifact real no existe, el estado es `NOT_EXECUTED`; no existe selector manual para convertirlo en PASS.
 
 ## Regla fail-closed
 
