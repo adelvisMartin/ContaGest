@@ -382,7 +382,7 @@ function DentistryWorkspace({ state, context }){
       <Metric label="Registros clínicos" value={encounters.length} tone="secondary"/>
     </Box>
 
-    <Box className="cg-dental-grid" sx={{display:'grid',gridTemplateColumns:{xs:'1fr'},gap:1.25}}>
+    <Box className="cg-dental-grid" sx={{display:'grid',gridTemplateColumns:{xs:'1fr',lg:'repeat(2,minmax(0,1fr))'},gap:1.25}}>
       <Paper component="form" onSubmit={submitPatient} variant="outlined" sx={{p:1.5}}>
         <Typography variant="h6">Nuevo paciente</Typography><Typography variant="caption" color="text.secondary">Registro rápido para agenda y ficha odontológica.</Typography>
         <Stack gap={1.1} mt={1.25}>
@@ -488,7 +488,7 @@ function DentistryWorkspace({ state, context }){
       onUpload={uploadDentalAttachment}
     />
 
-    <Box className="cg-dental-grid" sx={{display:'grid',gridTemplateColumns:{xs:'1fr',lg:'repeat(2,minmax(0,1fr))'},gap:1.25}}>
+    <Box className="cg-dental-grid" sx={{display:'grid',gridTemplateColumns:{xs:'1fr'},gap:1.25}}>
       <Paper variant="outlined" sx={{p:1.5,minWidth:0}}>
         <Stack direction={{xs:'column',sm:'row'}} justifyContent="space-between" gap={1}><Typography variant="h6">Historia odontológica reciente</Typography><CgSelect label="Paciente de historia" value={selectedPatientId} onChange={(e)=>void loadEncounters(e.target.value)} options={patientOptions}/></Stack><Divider sx={{my:1}}/>
         {dentalTreatmentEncounters.length?<Stack className="cg-dental-list" divider={<Divider flexItem/>}>{dentalTreatmentEncounters.slice(0,20).map((item)=>{
