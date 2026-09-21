@@ -61,6 +61,14 @@ if(vetEntry?.status==='MIGRATED'){
   if(/createRoot\(|CgProvider|export const VeterinaryClinicPage|veterinaryClinicRoot/.test(veterinaryWorkspace))fail('veterinaria: VeterinaryWorkspace must remain rootless and provider-free');
   if(!/export function VeterinaryWorkspace/.test(veterinaryWorkspace))fail('veterinaria: rootless VeterinaryWorkspace export missing');
   if(fs.existsSync(path.join(root,'frontend/src/pages/VeterinaryClinicPage.jsx')))fail('veterinaria: superseded second page owner still exists');
+  if(/\.catch\(\s*\(?.*?\)?\s*=>\s*null\s*\)|catch\s*\{\s*\}/s.test(vet))fail('veterinaria: page owner reintroduced silent error swallowing');
+  if(/\.catch\(\s*\(?.*?\)?\s*=>\s*null\s*\)|catch\s*\{\s*\}/s.test(veterinaryWorkspace))fail('veterinaria: workspace reintroduced silent error swallowing');
+  for(const contract of ['loadError','historyError','saveError','reportVeterinaryError','Reintentar']){
+    if(!vet.includes(contract))fail(`veterinaria: missing dossier error-handling contract ${contract}`);
+  }
+  for(const contract of ['baseError','patientDataError','actionError','reportVeterinaryError','Se conserva la última información válida','Reintentar']){
+    if(!veterinaryWorkspace.includes(contract))fail(`veterinaria: missing workspace error-handling contract ${contract}`);
+  }
 }
 
 const dentistryEntry=ERP_UI_WAVE_A_2_51.find((item)=>item.route==='odontologia');

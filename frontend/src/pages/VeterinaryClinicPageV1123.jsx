@@ -15,6 +15,15 @@ const shortCode = (value) => String(value || '').replaceAll('-', '').slice(0, 8)
 const dateLabel = (value) => value ? new Date(value).toLocaleString('es-VE', { dateStyle:'medium', timeStyle:'short' }) : '—';
 const onlyDate = (value) => value ? new Date(value).toLocaleDateString('es-VE') : '—';
 const text = (value) => String(value || '').trim();
+const veterinaryErrorMessage = (error) => error?.message || 'No se pudo completar la operación.';
+const reportVeterinaryError = (scope,error) => {
+  console.error('[veterinary]', {
+    scope,
+    name:error?.name || 'Error',
+    message:veterinaryErrorMessage(error),
+    status:error?.status || error?.statusCode || null
+  });
+};
 
 function KeyValue({ label, value }) {
   return <Box className="cg-vet-fact">
@@ -41,6 +50,9 @@ function VeterinaryDossier({ ctx, state }) {
   const [search,setSearch]=useState('');
   const [loading,setLoading]=useState(true);
   const [history,setHistory]=useState({encounters:[],prescriptions:[],labs:[],results:[],studies:[],hospitalizations:[],procedures:[]});
+  const [loadError,setLoadError]=useState('');
+  const [historyError,setHistoryError]=useState('');
+  const [saveError,setSaveError]=useState('');
   const [editing,setEditing]=useState(false);
   const [form,setForm]=useState({});
   const selected=useMemo(()=>patients.find((item)=>item.id===selectedId)||null,[patients,selectedId]);
@@ -48,30 +60,48 @@ function VeterinaryDossier({ ctx, state }) {
 
   async function loadPatients() {
     setLoading(true);
+    setLoadError('');
     try {
       const response=await HealthVerticalService.patients({kind:'animal'});
       const active=rows(response).filter((item)=>item.kind==='animal'&&item.active!==false);
       setPatients(active);
       if (!active.some((item)=>item.id===selectedId)) setSelectedId(active[0]?.id || '');
+      return true;
+    } catch(error) {
+      reportVeterinaryError('dossier.loadPatients',error);
+      setLoadError(veterinaryErrorMessage(error));
+      return false;
     } finally { setLoading(false); }
   }
 
   async function loadHistory(patientId) {
-    if (!patientId) return setHistory({encounters:[],prescriptions:[],labs:[],results:[],studies:[],hospitalizations:[],procedures:[]});
-    const [encounters,prescriptions,labs,results,studies,hospitalizations,procedures]=await Promise.all([
-      HealthVerticalService.encounters(patientId),
-      HealthVerticalService.prescriptions(patientId),
-      VeterinaryService.labOrders({patientId}),
-      VeterinaryService.labResults({patientId}),
-      VeterinaryService.studies({patientId}),
-      VeterinaryService.hospitalizations({patientId}),
-      VeterinaryService.procedures({patientId})
-    ]);
-    setHistory({encounters:rows(encounters),prescriptions:rows(prescriptions),labs:rows(labs),results:rows(results),studies:rows(studies),hospitalizations:rows(hospitalizations),procedures:rows(procedures)});
+    if (!patientId) {
+      setHistoryError('');
+      setHistory({encounters:[],prescriptions:[],labs:[],results:[],studies:[],hospitalizations:[],procedures:[]});
+      return true;
+    }
+    setHistoryError('');
+    try {
+      const [encounters,prescriptions,labs,results,studies,hospitalizations,procedures]=await Promise.all([
+        HealthVerticalService.encounters(patientId),
+        HealthVerticalService.prescriptions(patientId),
+        VeterinaryService.labOrders({patientId}),
+        VeterinaryService.labResults({patientId}),
+        VeterinaryService.studies({patientId}),
+        VeterinaryService.hospitalizations({patientId}),
+        VeterinaryService.procedures({patientId})
+      ]);
+      setHistory({encounters:rows(encounters),prescriptions:rows(prescriptions),labs:rows(labs),results:rows(results),studies:rows(studies),hospitalizations:rows(hospitalizations),procedures:rows(procedures)});
+      return true;
+    } catch(error) {
+      reportVeterinaryError('dossier.loadHistory',error);
+      setHistoryError(veterinaryErrorMessage(error));
+      return false;
+    }
   }
 
-  useEffect(()=>{loadPatients().catch(()=>null);},[]);
-  useEffect(()=>{loadHistory(selectedId).catch(()=>null);},[selectedId]);
+  useEffect(()=>{void loadPatients();},[]);
+  useEffect(()=>{void loadHistory(selectedId);},[selectedId]);
 
   const timeline=useMemo(()=>[
     ...history.encounters.map((item)=>({date:item.createdAt,icon:'fa-file-waveform',title:item.specialty||'Consulta clínica',meta:`Consulta · ${dateLabel(item.createdAt)} · ${item.professionalName||'Profesional'}`,body:[item.assessment,item.plan].filter(Boolean).join('\n')})),
@@ -93,14 +123,22 @@ function VeterinaryDossier({ ctx, state }) {
   }
 
   async function save() {
-    if (!selected) return;
-    await HealthVerticalService.updatePatient(selected.id, {
-      kind:'animal',displayName:text(form.displayName),species:text(form.species),breed:text(form.breed),color:text(form.color),sex:text(form.sex),
-      birthDate:form.birthDate||null,microchip:text(form.microchip),guardianName:text(form.guardianName),guardianPhone:text(form.guardianPhone),
-      guardianEmail:text(form.guardianEmail),allergies:text(form.allergies),conditions:text(form.conditions),notes:text(form.notes),active:true
-    });
-    setEditing(false);
-    await loadPatients();
+    if (!selected) return false;
+    setSaveError('');
+    try {
+      await HealthVerticalService.updatePatient(selected.id, {
+        kind:'animal',displayName:text(form.displayName),species:text(form.species),breed:text(form.breed),color:text(form.color),sex:text(form.sex),
+        birthDate:form.birthDate||null,microchip:text(form.microchip),guardianName:text(form.guardianName),guardianPhone:text(form.guardianPhone),
+        guardianEmail:text(form.guardianEmail),allergies:text(form.allergies),conditions:text(form.conditions),notes:text(form.notes),active:true
+      });
+      setEditing(false);
+      await loadPatients();
+      return true;
+    } catch(error) {
+      reportVeterinaryError('dossier.savePatient',error);
+      setSaveError(veterinaryErrorMessage(error));
+      return false;
+    }
   }
 
   return <Paper className="cg-vet-dossier" variant="outlined" sx={{p:1.5,minWidth:0,maxWidth:'100%'}}>
@@ -116,6 +154,8 @@ function VeterinaryDossier({ ctx, state }) {
       </Box>
     </Stack>
     <Divider sx={{mb:1.25}}/>
+    {loadError?<Box sx={{mb:1}}><CgState severity="error" title="No se pudo actualizar la lista de mascotas">{loadError}<Box mt={1}><CgButton size="small" variant="outlined" onClick={()=>void loadPatients()}>Reintentar</CgButton></Box></CgState></Box>:null}
+    {historyError?<Box sx={{mb:1}}><CgState severity="warning" title="La historia reciente no pudo actualizarse">Se conserva la última información cargada. {historyError}<Box mt={1}><CgButton size="small" variant="outlined" onClick={()=>void loadHistory(selectedId)} disabled={!selectedId}>Reintentar historia</CgButton></Box></CgState></Box>:null}
     <Box className="cg-vet-master-detail" sx={{display:'grid',gridTemplateColumns:{xs:'1fr',md:'250px minmax(0,1fr)'},gap:1.5}}>
       <Box sx={{minWidth:0}}>
         <CgTextField size="small" fullWidth label="Buscar mascota" placeholder="Nombre, tutor o microchip" value={search} onChange={(event)=>setSearch(event.target.value)} slotProps={{input:{startAdornment:<InputAdornment position="start"><Icon name="fa-magnifying-glass"/></InputAdornment>}}}/>
@@ -163,7 +203,8 @@ function VeterinaryDossier({ ctx, state }) {
         <TextField label="Condiciones / antecedentes" multiline minRows={2} value={form.conditions||''} onChange={(e)=>setForm({...form,conditions:e.target.value})}/>
         <TextField label="Notas" multiline minRows={2} value={form.notes||''} onChange={(e)=>setForm({...form,notes:e.target.value})} sx={{gridColumn:'1/-1'}}/>
       </Box></DialogContent>
-      <DialogActions><CgButton variant="text" onClick={()=>setEditing(false)} color="inherit">Cancelar</CgButton><CgButton onClick={()=>save().catch(()=>null)}>Guardar cambios</CgButton></DialogActions>
+      {saveError?<Box px={3} pb={1}><CgState severity="error" title="No se guardaron los cambios">{saveError}</CgState></Box>:null}
+      <DialogActions><CgButton variant="text" onClick={()=>setEditing(false)} color="inherit">Cancelar</CgButton><CgButton onClick={()=>void save()}>Guardar cambios</CgButton></DialogActions>
     </Dialog>
   </Paper>;
 }
@@ -174,7 +215,7 @@ export const VeterinaryClinicPage={
   mount(state,ctx){
     const host=document.getElementById('veterinaryUnifiedRoot');
     if(!host)return;
-    try{activeRoot?.unmount();}catch{}
+    try{activeRoot?.unmount();}catch(error){reportVeterinaryError('page.unmountPreviousRoot',error);}
     activeRoot=createRoot(host);
     activeRoot.render(
       <CgProvider state={state}>
