@@ -357,10 +357,11 @@ router.post('/health/encounters', requirePermission('health.manage'), asyncHandl
     : b.type==='dental-treatment'
       ? normalizeDentalTreatmentDraft(b.clinicalData,actor)
       : b.clinicalData;
+  const encounterStatus=b.type==='dental-treatment'?'draft':b.status;
   const rows = await prisma.$queryRawUnsafe<any[]>(`
     INSERT INTO public."CareEncounter" ("id","tenantId","patientId","professionalId","appointmentId","specialty","type","subjective","objective","assessment","plan","diagnosisCodes","clinicalData","confidential","status","signedAt","createdAt","updatedAt")
     VALUES (gen_random_uuid()::text,$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11::jsonb,$12::jsonb,$13,$14,CASE WHEN $14='signed' THEN now() ELSE NULL END,now(),now()) RETURNING *
-  `, tenantId,b.patientId,b.professionalId||null,b.appointmentId||null,b.specialty,b.type,b.subjective||null,b.objective||null,b.assessment||null,b.plan||null,JSON.stringify(b.diagnosisCodes),JSON.stringify(clinicalData),b.confidential,b.status);
+  `, tenantId,b.patientId,b.professionalId||null,b.appointmentId||null,b.specialty,b.type,b.subjective||null,b.objective||null,b.assessment||null,b.plan||null,JSON.stringify(b.diagnosisCodes),JSON.stringify(clinicalData),b.confidential,encounterStatus);
   ok(res, one(rows), 201);
 }));
 
