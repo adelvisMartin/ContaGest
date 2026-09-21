@@ -18,7 +18,7 @@ test('v31 verifier indexes soak as optional exact-SHA release evidence with rele
   assert.match(source,/id:\s*'soak'/);
   assert.match(source,/name:\s*'soak-evidence\.json'/);
   assert.match(source,/schemas:\s*\['hipico-soak-evidence\.v120'\]/);
-  assert.match(source,/soakPolicy\.releaseMinimumHours/);
+  assert.match(source,/soakPolicy\??\.releaseMinimumHours/);
   assert.match(source,/evaluation\?\.status\s*===\s*'PASS'/);
   assert.match(source,/summaryInput\?\.physicalEvidenceComplete\s*===\s*true/);
   assert.match(source,/summaryInput\?\.invariantEvidenceComplete\s*===\s*true/);
