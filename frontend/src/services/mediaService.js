@@ -41,10 +41,12 @@ export const MediaService = {
     if(!allowed.includes(file.type)) throw new Error('Usa JPEG, PNG, WebP o PDF.');
     if(!file.size||file.size>15 * 1024 * 1024) throw new Error('El archivo clínico debe pesar entre 1 byte y 15 MB.');
     const clinicalMetadata={
-      patientId:String(patientId||''),kind:String(kind||''),title:String(title||''),
-      tooth:String(tooth||''),linkedEncounterId:String(linkedEncounterId||''),
-      treatmentPlanEncounterId:String(treatmentPlanEncounterId||''),notes:String(notes||'')
+      patientId:String(patientId||''),kind:String(kind||''),title:String(title||'')
     };
+    if(tooth)clinicalMetadata.tooth=String(tooth);
+    if(linkedEncounterId)clinicalMetadata.linkedEncounterId=String(linkedEncounterId);
+    if(treatmentPlanEncounterId)clinicalMetadata.treatmentPlanEncounterId=String(treatmentPlanEncounterId);
+    if(notes)clinicalMetadata.notes=String(notes);
     const encodedMetadata=encodeURIComponent(JSON.stringify(clinicalMetadata));
     if(encodedMetadata.length>7000)throw new Error('La metadata clínica del adjunto es demasiado extensa.');
     return BackendApi.request('/media/dental-attachments',{
