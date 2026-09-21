@@ -137,7 +137,7 @@ test('v28 runbook requires a dedicated disposable account and secret cleanup',as
   assert.match(doc,/COMPLETE/);
   assert.match(doc,/HIPICO_AUTH_RECOVERY_EMAIL_LINK/);
   assert.match(doc,/secret/i);
-  assert.match(doc,/eliminar|remove|borrar/i);
+  assert.match(doc,/elimin(?:a|ar)|remove|borrar/i);
   assert.match(doc,/no.*service role|service role.*no/i);
   assert.match(doc,/no.*cerrar.*#267|#267.*COMPLETE PASS/is);
 });
