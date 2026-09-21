@@ -43,18 +43,74 @@ const professionalSchema = z.object({
   schedule: jsonRecord
 });
 
+const appointmentStatusSchema = z.enum(['waitlisted','scheduled','confirmed','checked_in','in_progress','completed','cancelled','no_show']);
 const appointmentSchema = z.object({
   patientId: z.string().min(10),
   professionalId: z.string().optional().nullable(),
   startsAt: dateText,
   endsAt: dateText,
   type: z.string().trim().max(120).default('consultation'),
-  status: z.enum(['scheduled','confirmed','checked_in','in_progress','completed','cancelled','no_show']).default('scheduled'),
+  status: appointmentStatusSchema.default('scheduled'),
   reason: optionalText,
   channel: z.enum(['onsite','telemedicine','home_visit']).default('onsite'),
   room: optionalText,
+  recallDueAt: dateText.optional().nullable(),
   notes: optionalText
+}).superRefine((value, refinement) => {
+  const startsAt=new Date(value.startsAt).getTime();
+  const endsAt=new Date(value.endsAt).getTime();
+  if(!Number.isFinite(startsAt)||!Number.isFinite(endsAt)||endsAt<=startsAt){
+    refinement.addIssue({code:'custom',path:['endsAt'],message:'La cita debe terminar después de comenzar.'});
+  }
 });
+
+const appointmentPatchSchema = z.object({
+  professionalId:z.string().optional().nullable(),
+  startsAt:dateText.optional(),
+  endsAt:dateText.optional(),
+  status:appointmentStatusSchema.optional(),
+  reason:optionalText,
+  room:optionalText,
+  recallDueAt:dateText.optional().nullable(),
+  notes:optionalText
+}).strict().refine((value)=>Object.keys(value).length>0,{message:'Indica al menos un cambio.'});
+
+const ACTIVE_APPOINTMENT_STATUSES=['scheduled','confirmed','checked_in','in_progress'] as const;
+const lockAppointmentSchedule = async (tx:any, tenantId:string) => {
+  await tx.$queryRawUnsafe('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',`care-appointment:${tenantId}`);
+};
+const assertAppointmentSlotAvailable = async (tx:any, input:{
+  tenantId:string; appointmentId?:string; patientId:string; professionalId?:string|null;
+  startsAt:string; endsAt:string; room?:string|null;
+}) => {
+  const room=String(input.room||'').trim()||null;
+  const rows=await tx.$queryRawUnsafe<any[]>(`
+    SELECT "id","patientId","professionalId","room","startsAt","endsAt"
+    FROM public."CareAppointment"
+    WHERE "tenantId"=$1
+      AND "id"<>$2
+      AND "status" = ANY($3::text[])
+      AND "startsAt" < $5::timestamptz
+      AND "endsAt" > $4::timestamptz
+      AND (
+        "patientId"=$6
+        OR ($7::text IS NOT NULL AND "professionalId"=$7)
+        OR ($8::text IS NOT NULL AND "room" IS NOT NULL AND lower(btrim("room"))=lower(btrim($8)))
+      )
+    ORDER BY "startsAt" ASC
+    LIMIT 10
+  `,input.tenantId,input.appointmentId||'',ACTIVE_APPOINTMENT_STATUSES,input.startsAt,input.endsAt,input.patientId,input.professionalId||null,room);
+  if(!rows.length)return;
+  const patientConflict=rows.some((row)=>row.patientId===input.patientId);
+  const professionalConflict=Boolean(input.professionalId)&&rows.some((row)=>row.professionalId===input.professionalId);
+  const resourceConflict=Boolean(room)&&rows.some((row)=>String(row.room||'').trim().toLowerCase()===room.toLowerCase());
+  const conflicts=[
+    patientConflict?'paciente':null,
+    professionalConflict?'profesional':null,
+    resourceConflict?'sillón/recurso':null
+  ].filter(Boolean).join(', ');
+  throw new HttpError(409,`Conflicto de agenda: ${conflicts||'franja ocupada'}.`);
+};
 
 const DENTAL_PERMANENT_TEETH = new Set(['11','12','13','14','15','16','17','18','21','22','23','24','25','26','27','28','31','32','33','34','35','36','37','38','41','42','43','44','45','46','47','48']);
 const DENTAL_PRIMARY_TEETH = new Set(['51','52','53','54','55','61','62','63','64','65','71','72','73','74','75','81','82','83','84','85']);
@@ -310,25 +366,111 @@ router.post('/health/professionals', requirePermission('health.manage'), asyncHa
 
 router.get('/health/appointments', requirePermission('health.manage'), asyncHandler(async (req, res) => {
   const from = String(req.query.from || new Date(Date.now() - 86400000).toISOString());
-  const to = String(req.query.to || new Date(Date.now() + 30 * 86400000).toISOString());
+  const to = String(req.query.to || new Date(Date.now() + 90 * 86400000).toISOString());
+  const type = String(req.query.type || '').trim();
   const rows = await prisma.$queryRawUnsafe<any[]>(`
     SELECT a.*, p."displayName" AS "patientName", p."kind" AS "patientKind", pr."fullName" AS "professionalName", pr."specialty"
     FROM public."CareAppointment" a
-    JOIN public."CarePatient" p ON p."id"=a."patientId"
-    LEFT JOIN public."CareProfessional" pr ON pr."id"=a."professionalId"
-    WHERE a."tenantId"=$1 AND a."startsAt" BETWEEN $2::timestamptz AND $3::timestamptz
-    ORDER BY a."startsAt" ASC LIMIT 1000
-  `, ctx(req).tenantId, from, to);
+    JOIN public."CarePatient" p ON p."id"=a."patientId" AND p."tenantId"=a."tenantId"
+    LEFT JOIN public."CareProfessional" pr ON pr."id"=a."professionalId" AND pr."tenantId"=a."tenantId"
+    WHERE a."tenantId"=$1
+      AND ($4::text='' OR a."type"=$4)
+      AND (
+        a."startsAt" BETWEEN $2::timestamptz AND $3::timestamptz
+        OR (a."recallDueAt" IS NOT NULL AND a."recallDueAt" BETWEEN $2::timestamptz AND $3::timestamptz)
+      )
+    ORDER BY CASE WHEN a."status"='waitlisted' THEN 1 ELSE 0 END, a."startsAt" ASC
+    LIMIT 1000
+  `, ctx(req).tenantId, from, to, type);
   ok(res, rows);
 }));
 
 router.post('/health/appointments', requirePermission('health.manage'), asyncHandler(async (req, res) => {
+  const tenantId=ctx(req).tenantId;
+  const actor={userId:ctx(req).userId||null,email:ctx(req).email||null};
   const b = appointmentSchema.parse(req.body || {});
-  const rows = await prisma.$queryRawUnsafe<any[]>(`
-    INSERT INTO public."CareAppointment" ("id","tenantId","patientId","professionalId","startsAt","endsAt","type","status","reason","channel","room","reminderStatus","notes","createdAt","updatedAt")
-    VALUES (gen_random_uuid()::text,$1,$2,$3,$4::timestamptz,$5::timestamptz,$6,$7,$8,$9,$10,'pending',$11,now(),now()) RETURNING *
-  `, ctx(req).tenantId,b.patientId,b.professionalId||null,b.startsAt,b.endsAt,b.type,b.status,b.reason||null,b.channel,b.room||null,b.notes||null);
-  ok(res, one(rows), 201);
+  const created=await prisma.$transaction(async (tx)=>{
+    await lockAppointmentSchedule(tx,tenantId);
+    const patientRows=await tx.$queryRawUnsafe<any[]>(`SELECT "id" FROM public."CarePatient" WHERE "tenantId"=$1 AND "id"=$2 AND "active"=true LIMIT 1`,tenantId,b.patientId);
+    if(!patientRows.length)throw new HttpError(422,'El paciente no pertenece al tenant activo.');
+    if(b.professionalId){
+      const professionalRows=await tx.$queryRawUnsafe<any[]>(`SELECT "id" FROM public."CareProfessional" WHERE "tenantId"=$1 AND "id"=$2 AND "status"='active' LIMIT 1`,tenantId,b.professionalId);
+      if(!professionalRows.length)throw new HttpError(422,'El profesional no está disponible en el tenant activo.');
+    }
+    if(b.status!=='waitlisted'){
+      await assertAppointmentSlotAvailable(tx,{tenantId,patientId:b.patientId,professionalId:b.professionalId,startsAt:b.startsAt,endsAt:b.endsAt,room:b.room});
+    }
+    const schedulingMeta={
+      createdAt:new Date().toISOString(),
+      createdBy:actor,
+      ...(b.status==='waitlisted'?{waitlist:{requestedAt:new Date().toISOString(),requestedBy:actor}}:{})
+    };
+    const rows = await tx.$queryRawUnsafe<any[]>(`
+      INSERT INTO public."CareAppointment"
+        ("id","tenantId","patientId","professionalId","startsAt","endsAt","type","status","reason","channel","room","reminderStatus","recallDueAt","schedulingMeta","notes","createdAt","updatedAt")
+      VALUES
+        (gen_random_uuid()::text,$1,$2,$3,$4::timestamptz,$5::timestamptz,$6,$7,$8,$9,$10,'pending',$11::timestamptz,$12::jsonb,$13,now(),now())
+      RETURNING *
+    `,tenantId,b.patientId,b.professionalId||null,b.startsAt,b.endsAt,b.type,b.status,b.reason||null,b.channel,b.room||null,b.recallDueAt||null,JSON.stringify(schedulingMeta),b.notes||null);
+    return one(rows);
+  });
+  ok(res, created, 201);
+}));
+
+router.patch('/health/appointments/:id', requirePermission('health.manage'), asyncHandler(async (req, res) => {
+  const tenantId=ctx(req).tenantId;
+  const actor={userId:ctx(req).userId||null,email:ctx(req).email||null};
+  const appointmentId=String(req.params.id||'');
+  const b=appointmentPatchSchema.parse(req.body||{});
+  const updated=await prisma.$transaction(async (tx)=>{
+    await lockAppointmentSchedule(tx,tenantId);
+    const currentRows=await tx.$queryRawUnsafe<any[]>(`
+      SELECT * FROM public."CareAppointment"
+      WHERE "tenantId"=$1 AND "id"=$2
+      FOR UPDATE
+    `,tenantId,appointmentId);
+    const current=one(currentRows,'Cita no encontrada.');
+    const startsAt=b.startsAt||new Date(current.startsAt).toISOString();
+    const endsAt=b.endsAt||new Date(current.endsAt).toISOString();
+    if(new Date(endsAt).getTime()<=new Date(startsAt).getTime())throw new HttpError(422,'La cita debe terminar después de comenzar.');
+    const professionalId=b.professionalId===undefined?current.professionalId:b.professionalId;
+    const room=b.room===undefined?current.room:b.room;
+    const status=b.status||current.status;
+    if(professionalId){
+      const professionalRows=await tx.$queryRawUnsafe<any[]>(`SELECT "id" FROM public."CareProfessional" WHERE "tenantId"=$1 AND "id"=$2 AND "status"='active' LIMIT 1`,tenantId,professionalId);
+      if(!professionalRows.length)throw new HttpError(422,'El profesional no está disponible en el tenant activo.');
+    }
+    if(ACTIVE_APPOINTMENT_STATUSES.includes(status as any)){
+      await assertAppointmentSlotAvailable(tx,{tenantId,appointmentId,patientId:current.patientId,professionalId,startsAt,endsAt,room});
+    }
+    const now=new Date().toISOString();
+    const previousMeta=current.schedulingMeta&&typeof current.schedulingMeta==='object'?current.schedulingMeta:{};
+    const schedulingMeta={
+      ...previousMeta,
+      lastChangedAt:now,
+      lastChangedBy:actor,
+      ...(status==='confirmed'&&current.status!=='confirmed'?{confirmation:{confirmedAt:now,confirmedBy:actor}}:{}),
+      ...(current.status==='waitlisted'&&status==='scheduled'?{waitlist:{...(previousMeta.waitlist||{}),convertedAt:now,convertedBy:actor}}:{}),
+      ...(Object.prototype.hasOwnProperty.call(b,'recallDueAt')?{recall:{updatedAt:now,updatedBy:actor,dueAt:b.recallDueAt||null}}:{})
+    };
+    const rows=await tx.$queryRawUnsafe<any[]>(`
+      UPDATE public."CareAppointment"
+      SET "professionalId"=$3,
+          "startsAt"=$4::timestamptz,
+          "endsAt"=$5::timestamptz,
+          "status"=$6,
+          "reason"=$7,
+          "room"=$8,
+          "recallDueAt"=$9::timestamptz,
+          "schedulingMeta"=$10::jsonb,
+          "notes"=$11,
+          "updatedAt"=now()
+      WHERE "tenantId"=$1 AND "id"=$2
+      RETURNING *
+    `,tenantId,appointmentId,professionalId||null,startsAt,endsAt,status,b.reason===undefined?current.reason:b.reason||null,room||null,b.recallDueAt===undefined?current.recallDueAt:b.recallDueAt||null,JSON.stringify(schedulingMeta),b.notes===undefined?current.notes:b.notes||null);
+    return one(rows);
+  });
+  ok(res,updated);
 }));
 
 router.get('/health/encounters', requirePermission('health.manage'), asyncHandler(async (req, res) => {
