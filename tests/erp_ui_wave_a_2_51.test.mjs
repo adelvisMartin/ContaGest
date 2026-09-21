@@ -64,3 +64,23 @@ test('Fitness productivity stays declarative after 3/51 and query enhancer never
   assert.match(gym,/FitnessProductivityTools/);
   assert.doesNotMatch(tools,/\b[A-Za-z][A-Za-z0-9]*=\.\d+/);
 });
+
+
+test('58x5 browser coverage is sharded outside Vercel without reducing the route matrix',()=>{
+  const root=JSON.parse(read('package.json'));
+  const vercel=read('scripts/vercel-browser-preqa-v16.mjs');
+  const runner=read('scripts/erp-browser-58x5-v251.mjs');
+  const workflow=read('.github/workflows/erp-ui-58x5-v251.yml');
+  assert.equal(root.scripts['test:browser:58:core'],'node scripts/erp-browser-58x5-v251.mjs core');
+  assert.equal(root.scripts['test:browser:58:shard'],'node scripts/erp-browser-58x5-v251.mjs shard');
+  assert.equal(root.scripts['test:browser:58'],'node scripts/erp-browser-58x5-v251.mjs full');
+  assert.match(runner,/MODULE_VISUAL_CATALOG\.length!==58/);
+  assert.match(runner,/fine-composition-v166\.spec\.mjs/);
+  assert.match(runner,/exhaustive-route-v164\.spec\.mjs/);
+  assert.match(runner,/mobile-navigation-v163\.spec\.mjs/);
+  assert.match(runner,/route-transition-v164\.spec\.mjs/);
+  assert.match(workflow,/batch: \[0,1,2,3,4,5,6,7,8,9\]/);
+  assert.match(workflow,/qa\/postmerge-58x5-verification/);
+  assert.doesNotMatch(vercel,/58x5 fine-composition batch|58x5 exhaustive batch|mobile sidebar navigation batch/);
+  assert.match(vercel,/delegated to \.github\/workflows\/erp-ui-58x5-v251\.yml/);
+});

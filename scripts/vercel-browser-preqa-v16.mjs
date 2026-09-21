@@ -8,7 +8,6 @@ const pr=String(process.env.VERCEL_GIT_PULL_REQUEST_ID||'').trim();
 const gitRef=String(process.env.VERCEL_GIT_COMMIT_REF||'').trim();
 const isPostMerge58x5=gitRef==='qa/postmerge-58x5-verification';
 const SERVERLESS_CHROMIUM_VERSION='149.0.0';
-const MOBILE_NAV_BATCH_SIZE=6;
 const failures=[];
 
 if(isVercel&&(!isPreview||(!pr&&!isPostMerge58x5))){
@@ -71,8 +70,6 @@ function runGroup(label,args,{env={}}={}){
   const result=execute('npx',['--no-install','playwright','test',...args,'--project=chromium','--workers=1'],{env:{...browserEnv,...env},allowFailure:true});
   if(result.status!==0){failures.push({label,status:result.status||1});console.error(`[browser-preqa][FAIL] ${label}`);}else console.log(`[browser-preqa][PASS] ${label}`);
 }
-function regexEscape(value){return String(value).replace(/[.*+?^${}()|[\]\\]/g,'\\$&');}
-function routeBatches(size=6){const routes=MODULE_VISUAL_CATALOG.map((item)=>item.route);const result=[];for(let index=0;index<routes.length;index+=size)result.push(routes.slice(index,index+size));return result;}
 
 // Fast, high-signal navigation/auth checks first. They must report before long route matrices.
 runGroup('auth stale-session rejection',['qa/login-auth-runtime-v161.spec.mjs','--grep','stale local session']);
@@ -82,15 +79,6 @@ runGroup('login mobile 390px',['qa/login-auth-runtime-v161.spec.mjs','--grep','m
 runGroup('login mobile 430px',['qa/login-auth-runtime-v161.spec.mjs','--grep','mobile login 430px']);
 runGroup('mobile command navigation',['qa/mobile-navigation-v163.spec.mjs','--grep','command palette opens']);
 if(isPostMerge58x5)runGroup('2/51 vertical Wave A geometry',['qa/erp-ui-wave-a-v251.spec.mjs']);
-
-// Fine-composition is intentionally early so obvious spacing/symmetry failures are
-// visible even if a later serverless Chromium process becomes unstable.
-if(isPostMerge58x5){
-  routeBatches(6).forEach((routes,index)=>{
-    const pattern=`(?:${routes.map(regexEscape).join('|')}) · fine composition desktop/mobile`;
-    runGroup(`58x5 fine-composition batch ${index+1}/${Math.ceil(MODULE_VISUAL_CATALOG.length/6)} [${routes.join(', ')}]`,['qa/fine-composition-v166.spec.mjs','--grep',pattern]);
-  });
-}
 
 runGroup('58-route mount + DOM integrity',['qa/erp-functional-smoke-v14.spec.mjs','--grep','58 registered routes']);
 runGroup('psychology create-appointment flow',['qa/erp-functional-smoke-v14.spec.mjs','--grep','psychology creates an appointment']);
@@ -102,23 +90,9 @@ runGroup('mobile deep 390px',['qa/mobile-deep-v162.spec.mjs','--grep','inside 39
 runGroup('mobile deep 430px',['qa/mobile-deep-v162.spec.mjs','--grep','inside 430px']);
 runGroup('mobile shell + light/dark contrast',['qa/mobile-deep-v162.spec.mjs','--grep','mobile shell controls']);
 
-const mobileNavBatchCount=Math.ceil(MODULE_VISUAL_CATALOG.length/MOBILE_NAV_BATCH_SIZE);
-for(let index=0;index<mobileNavBatchCount;index+=1){
-  runGroup(`mobile sidebar navigation batch ${index+1}/${mobileNavBatchCount}`,
-    ['qa/mobile-navigation-v163.spec.mjs','--grep','every actual sidebar route button'],
-    {env:{CG_MOBILE_NAV_BATCH_INDEX:String(index),CG_MOBILE_NAV_BATCH_SIZE:String(MOBILE_NAV_BATCH_SIZE)}});
-}
 runGroup('observable safe click-smoke',['qa/module-actions-runtime-v163.spec.mjs']);
 
-if(isPostMerge58x5){
-  routeBatches(6).forEach((routes,index)=>{
-    const pattern=`(?:${routes.map(regexEscape).join('|')}) · deep desktop/mobile light/dark audit`;
-    runGroup(`58x5 exhaustive batch ${index+1}/${Math.ceil(MODULE_VISUAL_CATALOG.length/6)} [${routes.join(', ')}]`,['qa/exhaustive-route-v164.spec.mjs','--grep',pattern]);
-  });
-  runGroup('58x5 transition sequential',['qa/route-transition-v164.spec.mjs','--grep','all registered protected routes']);
-  runGroup('58x5 transition rapid',['qa/route-transition-v164.spec.mjs','--grep','rapid navigation']);
-  runGroup('58x5 transition command palette',['qa/route-transition-v164.spec.mjs','--grep','real command palette']);
-}
+if(isPostMerge58x5)console.log('[browser-preqa] Full 58x5 route/composition/navigation/transition matrix is delegated to .github/workflows/erp-ui-58x5-v251.yml; Vercel preview keeps high-signal smoke + Wave A geometry only.');
 
 if(failures.length){
   console.error(`\n[browser-preqa] ${failures.length} gate/grupo(s) quedaron FAIL o BLOCKED:`);

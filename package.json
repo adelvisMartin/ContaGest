@@ -78,7 +78,10 @@
     "test:backend:persistence:real": "npm --workspace backend exec -- tsx --test ../qa/postmerge-backend-persistence-v17.test.ts",
     "test:backend:financial:real": "npm --workspace backend exec -- tsx --test ../qa/postmerge-financial-domain-v17.test.ts",
     "audit:erp-ui-ledger": "node scripts/erp-ui-ledger-audit-v851.mjs",
-    "audit:erp-ui-taxes": "node scripts/erp-ui-taxes-audit-v951.mjs"
+    "audit:erp-ui-taxes": "node scripts/erp-ui-taxes-audit-v951.mjs",
+    "test:browser:58:core": "node scripts/erp-browser-58x5-v251.mjs core",
+    "test:browser:58:shard": "node scripts/erp-browser-58x5-v251.mjs shard",
+    "test:browser:58": "node scripts/erp-browser-58x5-v251.mjs full"
   },
   "devDependencies": {
     "@playwright/test": "1.63.0"
