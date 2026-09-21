@@ -137,7 +137,9 @@ if(dentistryEntry?.status==='MIGRATED'){
   for(const contract of ['CLINICAL_MAX_BYTES','express.raw','validateClinicalMagic','dental-attachments',"type:'dental-attachment'",'health.manage','sha256','storagePath']){
     if(!mediaRoutes.includes(contract))fail(`odontologia: missing clinical media backend contract ${contract}`);
   }
-  if(!mediaMigration.includes('15728640')||!mediaMigration.includes('application/pdf')||!/public\s*=\s*false/.test(mediaMigration))fail('odontologia: clinical media bucket migration must remain private with 15 MB/PDF support');
+  if(!mediaMigration.includes('contagest-clinical-media')||!mediaMigration.includes('15728640')||!mediaMigration.includes('application/pdf')||!/public\s*=\s*false/.test(mediaMigration))fail('odontologia: clinical media bucket must remain isolated/private with 15 MB/PDF support');
+  if(/UPDATE storage\.buckets[\s\S]{0,300}WHERE id = 'contagest-media'/.test(mediaMigration))fail('odontologia: clinical media migration must not widen generic contagest-media limits');
+  if(!mediaRoutes.includes("DENTAL_BUCKET = 'contagest-clinical-media'"))fail('odontologia: dental media route must use isolated clinical bucket');
 
 }
 
