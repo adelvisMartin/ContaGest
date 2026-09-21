@@ -12,7 +12,8 @@ test('17/51 BackendApi preserves binary bodies and does not JSON stringify Blob/
 
 test('17/51 media route accepts private dental images and PDFs through bounded raw upload',()=>{
   const source=read('backend/src/modules/media/media.routes.ts');
-  for(const token of ['CLINICAL_MAX_BYTES','application/pdf','clinicalAttachmentSchema','express.raw','validateClinicalMagic','dental-attachments','dental-attachment'])assert.ok(source.includes(token),token);
+  for(const token of ['CLINICAL_MAX_BYTES','application/pdf','clinicalAttachmentSchema','express.raw','validateClinicalMagic','dental-attachments','dental-attachment','DENTAL_BUCKET'])assert.ok(source.includes(token),token);
+  assert.match(source,/DENTAL_BUCKET\s*=\s*'contagest-clinical-media'/);
   assert.match(source,/15\s*\*\s*1024\s*\*\s*1024/);
   assert.match(source,/image\/jpeg/);
   assert.match(source,/image\/png/);
@@ -39,19 +40,21 @@ test('17/51 generic media signing and deletion cannot bypass clinical media boun
   assert.match(source,/adjuntos clínicos|adjunto clínico/i);
 });
 
-test('17/51 storage migration permits clinical PDF and 15 MB without weakening bucket privacy',()=>{
+test('17/51 storage migration isolates clinical PDF/15 MB from generic media bucket',()=>{
   const source=read('backend/prisma/migrations/20260918222000_dental_clinical_media_v1751/migration.sql');
-  assert.match(source,/contagest-media/);
+  assert.match(source,/contagest-clinical-media/);
   assert.match(source,/15728640/);
   assert.match(source,/application\/pdf/);
   assert.match(source,/public\s*=\s*false|public=false/);
+  assert.doesNotMatch(source,/UPDATE storage\.buckets[\s\S]{0,300}WHERE id = 'contagest-media'/);
 });
 
-test('17/51 direct authenticated storage policies exclude the clinical dental folder',()=>{
+test('17/51 clinical storage is server-only with no authenticated direct policies',()=>{
   const source=read('backend/prisma/migrations/20260918222000_dental_clinical_media_v1751/migration.sql');
-  assert.match(source,/dental-attachments/);
-  assert.ok((source.match(/<> 'dental-attachments'/g)||[]).length>=4);
-  for(const policy of ['tenant read','tenant insert','tenant update','tenant delete']) assert.ok(source.includes(policy),policy);
+  for(const policy of ['clinical media tenant read','clinical media tenant insert','clinical media tenant update','clinical media tenant delete']){
+    assert.ok(source.includes(`DROP POLICY IF EXISTS "ContaGest ${policy}"`),policy);
+    assert.ok(!source.includes(`CREATE POLICY "ContaGest ${policy}"`),policy);
+  }
 });
 
 test('17/51 MediaService uploads binary dental attachments and lists signed records',()=>{
