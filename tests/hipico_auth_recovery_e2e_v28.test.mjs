@@ -117,7 +117,11 @@ test('v28 script uses publishable auth endpoints only and never persists sensiti
     'hipico_users'
   ]) assert.match(source,new RegExp(marker.replace(/[?]/g,'\\?')));
 
-  assert.doesNotMatch(source,/service_role|SUPABASE_SERVICE_ROLE/i);
+  assert.match(source,/SERVICE_ROLE_KEY_FORBIDDEN/);
+  assert.match(source,/role==='service_role'/);
+  assert.match(source,/\^sb_secret_/);
+  assert.doesNotMatch(source,/process\.env\.(?:SUPABASE_SERVICE_ROLE|HIPICO_SUPABASE_SERVICE_ROLE|SERVICE_ROLE)/i);
+  assert.doesNotMatch(source,/serviceRoleKey|service_role_key/i);
   assert.match(source,/randomBytes/);
   assert.match(source,/createHash/);
   assert.match(source,/redirect:\s*'manual'/);
