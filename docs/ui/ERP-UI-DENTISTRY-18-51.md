@@ -1,112 +1,76 @@
-# 18/51 · Lifecycle clínico odontológico
+# 18/51 · Lifecycle clínico odontológico explícito
 
 ## Objetivo
 
-Evitar que un tratamiento recién capturado quede firmado automáticamente. El lifecycle canónico pasa a ser:
+Separar captura, revisión y firma de un tratamiento odontológico para que crear o enmendar datos no equivalga automáticamente a firmar autoridad clínica.
 
-`Borrador → En revisión → Firmado → Enmienda`
+## Máquina de estados
 
-La firma es una transición explícita e irreversible sobre esa versión; cualquier corrección posterior se realiza mediante una nueva versión de enmienda.
+`draft → review → signed`
 
-## Estados
+Estados terminales/históricos existentes:
 
-`CareEncounter.status` admite:
+- `amended`: versión firmada sustituida por una enmienda firmada posterior;
+- `cancelled`: permanece disponible para flujos que ya lo usan.
 
-- `draft`;
-- `review`;
-- `signed`;
-- `amended`;
-- `cancelled`.
+La migración amplía `CareEncounter_status_check` con `review`; no elimina estados históricos.
 
-La migración 18/51 amplía únicamente el check constraint; no crea una tabla paralela.
+## Nuevos tratamientos
 
-## Alta de tratamiento
+Un `dental-treatment` nuevo debe llegar como `draft`. El backend vuelve a validar esa regla y normaliza `clinicalData.lifecycle` server-side con:
 
-Un `dental-treatment` nuevo:
+- `state: draft`;
+- `purpose: treatment`;
+- actor creador;
+- fecha de creación.
 
-- debe llegar como `draft`;
-- el backend rechaza creación directa como `signed` o `review`;
-- el backend vuelve a fijar `draft` como defensa adicional;
-- `clinicalData.workflow` guarda `state=draft`, propósito, actor y fecha server-side.
+El navegador no puede crear directamente un tratamiento firmado.
 
-## Transiciones
+## Revisión y firma
 
-`POST /health/encounters/:id/workflow`
+`POST /health/encounters/:id/workflow` admite sólo:
 
-Acciones:
+- `submit-review`: exige estado `draft`, registra actor/fecha de revisión y pasa a `review`;
+- `sign`: exige estado `review`, registra actor/fecha de firma y pasa a `signed`.
 
-### submit-review
-- sólo desde `draft`;
-- bloquea la fila con `FOR UPDATE`;
-- cambia estado a `review`;
-- registra `reviewRequestedAt` y `reviewRequestedBy`.
-
-### sign
-- sólo desde `review`;
-- registra `signedAt` y `signedBy` server-side;
-- cambia estado a `signed`;
-- la UI exige confirmación explícita antes de ejecutar.
-
-No existe transición directa `draft → signed`.
+Ambas transiciones son tenant-scoped y se ejecutan con lock `FOR UPDATE` dentro de transacción.
 
 ## Enmiendas
 
-18/51 endurece el flujo introducido en 13/51.
+Una enmienda sólo puede partir de una versión `signed`. Al crearla:
 
-Al solicitar una enmienda de una versión `signed`:
+- la versión firmada anterior **permanece signed y vigente**;
+- se crea una nueva versión `draft` enlazada por `previousEncounterId`;
+- se conserva reason, before/after, changedFields, revision y actor de creación;
+- la UI la presenta como borrador de enmienda, no como firma.
 
-1. se bloquea la versión vigente;
-2. se rechaza si ya existe otra enmienda `draft/review` pendiente;
-3. se calcula diff/versionado;
-4. se crea una nueva versión `draft`;
-5. la versión anterior permanece `signed`.
+Al firmar esa nueva versión, en una sola transacción:
 
-La nueva versión debe pasar por revisión y firma.
+1. se bloquea la versión nueva;
+2. se bloquea la versión firmada anterior;
+3. se verifica que la anterior siga siendo `signed`;
+4. anterior → `amended`;
+5. nueva → `signed`.
 
-Al firmar la enmienda, dentro de la misma transacción:
-
-1. se bloquea la versión anterior;
-2. se verifica que todavía sea la autoridad `signed`;
-3. se marca como `amended`;
-4. se firma la nueva versión.
-
-Así no existe una ventana donde el paciente quede sin versión clínica firmada vigente.
+Así no existe una ventana donde la historia pierda su autoridad firmada vigente.
 
 ## UI
 
-`DentalLifecycleActions.jsx` centraliza:
+`DentalLifecycleActions.jsx` muestra estado y acciones permitidas:
 
-- Borrador → **Enviar a revisión**;
-- En revisión → **Firmar versión**;
-- Firmado → **Enmendar**;
-- Enmendado → sólo lectura.
+- Borrador → Enviar a revisión;
+- En revisión → Firmar versión;
+- Firmado → Enmendar;
+- Enmendado/Cancelado → sin acciones de firma.
 
-Las transiciones de revisión y firma usan `CgDialog` para evitar acciones accidentales.
-
-## Seguridad y concurrencia
-
-- permiso `health.manage`;
-- tenant derivado del contexto;
-- actor y fechas server-side;
-- `FOR UPDATE` en cada transición;
-- no se puede firmar una versión fuera de `review`;
-- no se puede enmendar una versión que ya no sea `signed`;
-- no se puede abrir una segunda enmienda pendiente sobre la misma versión.
+Las transiciones requieren diálogo explícito y muestran que actor/fechas los registra el servidor.
 
 ## Compatibilidad
 
-- periodontogramas siguen siendo encuentros firmados independientes;
-- planes de tratamiento conservan su lifecycle operativo propio de 15/51;
-- consentimientos siguen bajo `CareConsent`;
-- adjuntos clínicos siguen siendo `dental-attachment` firmados al crearse.
-
-18/51 aplica específicamente a `dental-treatment`.
+El lifecycle aplica a `dental-treatment`. Planes de tratamiento mantienen su decisión propia de 15/51; periodontogramas, consentimientos y adjuntos clínicos conservan sus autoridades específicas.
 
 ## QA
 
-- `tests/erp_ui_dentistry_clinical_lifecycle_18_51.test.mjs`;
-- contrato 13/51 actualizado a supersession diferida;
-- Wave A fail-closed;
-- migración del check constraint.
-
-Browser/E2E/typecheck/build sólo se consideran PASS con ejecución real del SHA exacto.
+- `tests/erp_ui_dentistry_clinical_lifecycle_18_51.test.mjs` cubre estados, draft obligatorio, workflow, enmienda pendiente y supersesión atómica;
+- Wave A bloquea pérdida del componente/servicio/backend/migración;
+- browser/typecheck/PostgreSQL real se reportan únicamente si el runner ejecuta steps; un pre-runner failure sigue siendo `BLOCKED_INFRASTRUCTURE`.
