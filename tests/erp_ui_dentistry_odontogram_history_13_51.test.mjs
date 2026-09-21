@@ -6,13 +6,12 @@ const backend=()=>fs.readFileSync('backend/src/modules/verticals/health.routes.t
 const service=()=>fs.readFileSync('frontend/src/services/verticalService.js','utf8');
 const page=()=>fs.readFileSync('frontend/src/pages/DentistryPracticePage.jsx','utf8');
 
-test('13/51 adds a server-authoritative encounter amendment endpoint',()=>{
+test('13/51 keeps a server-authoritative versioned amendment endpoint',()=>{
   const source=backend();
   assert.match(source,/router\.post\('\/health\/encounters\/:id\/amend'/);
   assert.match(source,/requirePermission\('health\.manage'\)/);
   assert.match(source,/FOR UPDATE/);
-  assert.match(source,/status"='signed'|status\"='signed'|status\s*===\s*'signed'/);
-  assert.match(source,/SET "status"='amended'/);
+  assert.match(source,/previous\.status\s*!==\s*'signed'/);
   assert.match(source,/INSERT INTO public\."CareEncounter"/);
 });
 
@@ -24,12 +23,16 @@ test('13/51 computes version metadata on the server and never trusts client acto
   assert.doesNotMatch(source,/b\.actorUserId|b\.revision|b\.previousEncounterId/);
 });
 
-test('13/51 preserves prior clinicalData and creates a new signed version instead of overwriting it',()=>{
+test('13/51 preserves prior clinicalData while 18/51 defers supersession until the amendment is signed',()=>{
   const source=backend();
-  assert.match(source,/JSON\.stringify\(nextClinicalData\)/);
-  assert.match(source,/old\.clinicalData|previous\.clinicalData/);
-  assert.doesNotMatch(source,/UPDATE public\."CareEncounter"[\s\S]{0,400}SET[^;]*"clinicalData"/);
-  assert.match(source,/status[^\n]{0,80}'signed'/);
+  const amendStart=source.indexOf("router.post('/health/encounters/:id/amend'");
+  const workflowStart=source.indexOf("router.post('/health/encounters/:id/workflow'");
+  const amend=source.slice(amendStart,workflowStart);
+  assert.match(amend,/JSON\.stringify\(nextClinicalData\)/);
+  assert.match(amend,/previous\.clinicalData/);
+  assert.doesNotMatch(amend,/UPDATE public\."CareEncounter"[\s\S]{0,500}SET[^;]*"clinicalData"/);
+  assert.match(amend,/status[^\n]{0,100}'draft'/);
+  assert.match(amend,/amendedAt:null/);
 });
 
 test('13/51 frontend uses the canonical amend service with an explicit reason',()=>{
