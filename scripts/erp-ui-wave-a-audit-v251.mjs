@@ -69,6 +69,14 @@ if(vetEntry?.status==='MIGRATED'){
   for(const contract of ['baseError','patientDataError','actionError','reportVeterinaryError','Se conserva la última información válida','Reintentar']){
     if(!veterinaryWorkspace.includes(contract))fail(`veterinaria: missing workspace error-handling contract ${contract}`);
   }
+  const veterinaryLongitudinal=read('frontend/src/components/veterinary/VeterinaryLongitudinalRecord.jsx');
+  if(!vet.includes('VeterinaryLongitudinalRecord'))fail('veterinaria: longitudinal clinical record is not composed');
+  if((vet.match(/<VeterinaryLongitudinalRecord/g)||[]).length!==1)fail('veterinaria: longitudinal clinical record must render from one owner');
+  if(/querySelector|addEventListener|innerHTML|document\./.test(veterinaryLongitudinal))fail('veterinaria: longitudinal record reintroduced imperative DOM lifecycle');
+  for(const contract of ['Problemas activos','Alergias','Diagnósticos','Tratamientos','Peso','Temperatura','Frecuencia cardíaca','Frecuencia respiratoria','trendDelta']){
+    if(!veterinaryLongitudinal.includes(contract))fail(`veterinaria: missing longitudinal record contract ${contract}`);
+  }
+  if(!vet.includes('HealthVerticalService.measurements(patientId)'))fail('veterinaria: dossier must load canonical longitudinal measurements');
 }
 
 const dentistryEntry=ERP_UI_WAVE_A_2_51.find((item)=>item.route==='odontologia');
