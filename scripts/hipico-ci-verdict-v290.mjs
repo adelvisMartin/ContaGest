@@ -9,7 +9,8 @@ const JOB_ENV = Object.freeze({
   'security-regression': 'HIPICO_GATE_SECURITY',
   'android-debug': 'HIPICO_GATE_ANDROID',
   'browser-matrix': 'HIPICO_GATE_MATRIX',
-  'production-schema': 'HIPICO_GATE_PRODUCTION_SCHEMA'
+  'production-schema': 'HIPICO_GATE_PRODUCTION_SCHEMA',
+  'auth-recovery': 'HIPICO_GATE_AUTH_RECOVERY'
 });
 
 export function classifyJob(job = {}) {
@@ -27,7 +28,7 @@ export function classifyJob(job = {}) {
 function jobNameMatches(actualName, expectedName) {
   const actual = String(actualName || '').trim();
   const expected = String(expectedName || '').trim();
-  return actual === expected || actual.startsWith(`${expected} (`);
+  return actual === expected || actual.startsWith(`${expected} (`) || actual.startsWith(`${expected} /`);
 }
 
 export function classifyNamedJobs(jobs = [], jobName) {

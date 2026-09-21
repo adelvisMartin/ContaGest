@@ -38,6 +38,11 @@ on:
         default: NOT_EXECUTED
         type: choice
         options: [NOT_EXECUTED, PASS, BLOCKED, FAIL]
+      auth_recovery_test_account_ack:
+        description: I confirm the configured recovery email is a dedicated disposable test account
+        required: false
+        default: false
+        type: boolean
   schedule:
     - cron: '23 5 * * 2,5'
 
@@ -410,9 +415,22 @@ jobs:
           if-no-files-found: warn
           retention-days: 30
 
+  auth-recovery:
+    if: github.event_name == 'workflow_dispatch' && inputs.auth_recovery_test_account_ack == true
+    uses: ./.github/workflows/hipico-auth-recovery-e2e-v28.yml
+    with:
+      candidate_sha: ${{ github.sha }}
+      phase: COMPLETE
+      dedicated_test_account_ack: true
+    secrets:
+      HIPICO_SUPABASE_URL: ${{ secrets.HIPICO_SUPABASE_URL }}
+      HIPICO_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.HIPICO_SUPABASE_PUBLISHABLE_KEY }}
+      HIPICO_AUTH_RECOVERY_TEST_EMAIL: ${{ secrets.HIPICO_AUTH_RECOVERY_TEST_EMAIL }}
+      HIPICO_AUTH_RECOVERY_EMAIL_LINK: ${{ secrets.HIPICO_AUTH_RECOVERY_EMAIL_LINK }}
+
   release-report:
     if: always() && github.event_name != 'schedule'
-    needs: [static-release, postgres-e2e, browser-chromium, security-regression, android-debug, browser-matrix, production-schema]
+    needs: [static-release, postgres-e2e, browser-chromium, security-regression, android-debug, browser-matrix, production-schema, auth-recovery]
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:

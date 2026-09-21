@@ -20,6 +20,26 @@ on:
         required: true
         default: false
         type: boolean
+  workflow_call:
+    inputs:
+      candidate_sha:
+        required: true
+        type: string
+      phase:
+        required: true
+        type: string
+      dedicated_test_account_ack:
+        required: true
+        type: boolean
+    secrets:
+      HIPICO_SUPABASE_URL:
+        required: true
+      HIPICO_SUPABASE_PUBLISHABLE_KEY:
+        required: true
+      HIPICO_AUTH_RECOVERY_TEST_EMAIL:
+        required: true
+      HIPICO_AUTH_RECOVERY_EMAIL_LINK:
+        required: true
 
 permissions:
   contents: read
@@ -34,7 +54,7 @@ env:
   HIPICO_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.HIPICO_SUPABASE_PUBLISHABLE_KEY }}
   HIPICO_AUTH_RECOVERY_TEST_EMAIL: ${{ secrets.HIPICO_AUTH_RECOVERY_TEST_EMAIL }}
   HIPICO_AUTH_RECOVERY_EMAIL_LINK: ${{ secrets.HIPICO_AUTH_RECOVERY_EMAIL_LINK }}
-  HIPICO_AUTH_RECOVERY_REPORT: artifacts/qa/hipico-auth-recovery/${{ inputs.candidate_sha }}/${{ inputs.phase }}.json
+  HIPICO_AUTH_RECOVERY_REPORT: artifacts/qa/hipico-auth-recovery/${{ inputs.candidate_sha }}/auth-recovery-evidence.json
 
 jobs:
   recovery-e2e:
@@ -62,7 +82,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: hipico-auth-recovery-${{ inputs.candidate_sha }}-${{ inputs.phase }}
-          path: artifacts/qa/hipico-auth-recovery/${{ inputs.candidate_sha }}/${{ inputs.phase }}.json
+          name: hipico-v290-auth-recovery-${{ inputs.phase }}-${{ inputs.candidate_sha }}
+          path: artifacts/qa/hipico-auth-recovery/${{ inputs.candidate_sha }}/auth-recovery-evidence.json
           if-no-files-found: warn
           retention-days: 30

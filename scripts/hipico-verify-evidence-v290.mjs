@@ -122,7 +122,13 @@ const requiredDescriptors = [
 const optionalDescriptors = [
   { id: 'runtimeBuild', name: 'build-info.json', schemas: [] },
   { id: 'apkMetadata', name: 'QA_APK_METADATA.json', schemas: [] },
-  { id: 'productionSchema', name: 'schema-postdeploy.json', schemas: ['hipico-schema-postdeploy.v18'] }
+  { id: 'productionSchema', name: 'schema-postdeploy.json', schemas: ['hipico-schema-postdeploy.v18'] },
+  {
+    id: 'authRecovery',
+    name: 'auth-recovery-evidence.json',
+    schemas: ['hipico-auth-recovery-e2e.v28'],
+    validate: (data) => data?.phase === 'COMPLETE' && data?.status === 'PASS' && data?.e2eComplete === true
+  }
 ];
 
 function findDescriptor(descriptor) {
