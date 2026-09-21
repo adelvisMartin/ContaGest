@@ -62,7 +62,8 @@ test('17/51 clinical metadata stays out of upload URLs',()=>{
   const backend=read('backend/src/modules/media/media.routes.ts');
   assert.match(service,/x-clinical-metadata/);
   assert.match(backend,/x-clinical-metadata/);
-  assert.doesNotMatch(service,/dental-attachments\?\$\{params\.toString\(\)\}/);
+  assert.match(service,/BackendApi\.request\('\/media\/dental-attachments',\{/);
+  assert.doesNotMatch(service,/uploadDentalAttachment[\s\S]{0,1800}BackendApi\.request\(`\/media\/dental-attachments\?/);
   assert.doesNotMatch(backend,/clinicalAttachmentSchema\.parse\(req\.query/);
 });
 
