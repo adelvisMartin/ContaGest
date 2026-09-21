@@ -9,6 +9,7 @@ import { CgButton, CgProvider, CgState, CgStatusChip, CgTextField } from '../com
 import { HealthVerticalService, VeterinaryService } from '../services/verticalService.js';
 import { VeterinaryWorkspace } from '../components/veterinary/VeterinaryWorkspace.jsx';
 import { VeterinaryLongitudinalRecord } from '../components/veterinary/VeterinaryLongitudinalRecord.jsx';
+import { VeterinaryPreventiveCarePanel } from '../components/veterinary/VeterinaryPreventiveCarePanel.jsx';
 
 const Icon = ({ name }) => <i className={`fa-solid ${name}`} aria-hidden="true" />;
 const rows = (value) => Array.isArray(value) ? value : value?.data || [];
@@ -47,10 +48,11 @@ function TimelineItem({ icon, title, meta, body, tone='primary.main' }) {
 function VeterinaryDossier({ ctx, state }) {
   const initialPatient = ctx?.query?.patient || '';
   const [patients,setPatients]=useState([]);
+  const [professionals,setProfessionals]=useState([]);
   const [selectedId,setSelectedId]=useState(initialPatient);
   const [search,setSearch]=useState('');
   const [loading,setLoading]=useState(true);
-  const [history,setHistory]=useState({encounters:[],prescriptions:[],measurements:[],labs:[],results:[],studies:[],hospitalizations:[],procedures:[]});
+  const [history,setHistory]=useState({encounters:[],prescriptions:[],measurements:[],immunizations:[],labs:[],results:[],studies:[],hospitalizations:[],procedures:[]});
   const [loadError,setLoadError]=useState('');
   const [historyError,setHistoryError]=useState('');
   const [saveError,setSaveError]=useState('');
@@ -63,9 +65,13 @@ function VeterinaryDossier({ ctx, state }) {
     setLoading(true);
     setLoadError('');
     try {
-      const response=await HealthVerticalService.patients({kind:'animal'});
-      const active=rows(response).filter((item)=>item.kind==='animal'&&item.active!==false);
+      const [patientResponse,professionalResponse]=await Promise.all([
+        HealthVerticalService.patients({kind:'animal'}),
+        HealthVerticalService.professionals()
+      ]);
+      const active=rows(patientResponse).filter((item)=>item.kind==='animal'&&item.active!==false);
       setPatients(active);
+      setProfessionals(rows(professionalResponse));
       if (!active.some((item)=>item.id===selectedId)) setSelectedId(active[0]?.id || '');
       return true;
     } catch(error) {
@@ -78,22 +84,23 @@ function VeterinaryDossier({ ctx, state }) {
   async function loadHistory(patientId) {
     if (!patientId) {
       setHistoryError('');
-      setHistory({encounters:[],prescriptions:[],measurements:[],labs:[],results:[],studies:[],hospitalizations:[],procedures:[]});
+      setHistory({encounters:[],prescriptions:[],measurements:[],immunizations:[],labs:[],results:[],studies:[],hospitalizations:[],procedures:[]});
       return true;
     }
     setHistoryError('');
     try {
-      const [encounters,prescriptions,measurements,labs,results,studies,hospitalizations,procedures]=await Promise.all([
+      const [encounters,prescriptions,measurements,immunizations,labs,results,studies,hospitalizations,procedures]=await Promise.all([
         HealthVerticalService.encounters(patientId),
         HealthVerticalService.prescriptions(patientId),
         HealthVerticalService.measurements(patientId),
+        HealthVerticalService.immunizations(patientId),
         VeterinaryService.labOrders({patientId}),
         VeterinaryService.labResults({patientId}),
         VeterinaryService.studies({patientId}),
         VeterinaryService.hospitalizations({patientId}),
         VeterinaryService.procedures({patientId})
       ]);
-      setHistory({encounters:rows(encounters),prescriptions:rows(prescriptions),measurements:rows(measurements),labs:rows(labs),results:rows(results),studies:rows(studies),hospitalizations:rows(hospitalizations),procedures:rows(procedures)});
+      setHistory({encounters:rows(encounters),prescriptions:rows(prescriptions),measurements:rows(measurements),immunizations:rows(immunizations),labs:rows(labs),results:rows(results),studies:rows(studies),hospitalizations:rows(hospitalizations),procedures:rows(procedures)});
       return true;
     } catch(error) {
       reportVeterinaryError('dossier.loadHistory',error);
@@ -109,6 +116,7 @@ function VeterinaryDossier({ ctx, state }) {
     ...history.encounters.map((item)=>({date:item.createdAt,icon:'fa-file-waveform',title:item.specialty||'Consulta clínica',meta:`Consulta · ${dateLabel(item.createdAt)} · ${item.professionalName||'Profesional'}`,body:[item.assessment,item.plan].filter(Boolean).join('\n')})),
     ...history.prescriptions.map((item)=>({date:item.createdAt,icon:'fa-pills',title:item.medication||'Tratamiento',meta:`Prescripción · ${dateLabel(item.createdAt)}`,body:[item.dose,item.frequency,item.duration,item.instructions].filter(Boolean).join(' · ')})),
     ...history.measurements.map((item)=>({date:item.measuredAt,icon:'fa-chart-line',title:`${item.kind}: ${item.value} ${item.unit}`,meta:`Medición · ${dateLabel(item.measuredAt)}`,body:''})),
+    ...history.immunizations.map((item)=>({date:item.administeredAt||item.createdAt,icon:'fa-syringe',title:item.vaccine||'Vacuna',meta:`Preventivo · ${dateLabel(item.administeredAt||item.createdAt)}`,body:item.nextDueAt?`Próximo vencimiento: ${onlyDate(item.nextDueAt)}`:item.notes||''})),
     ...history.labs.map((item)=>({date:item.orderedAt||item.createdAt,icon:'fa-flask-vial',title:item.orderNumber||'Orden de laboratorio',meta:`Laboratorio · ${dateLabel(item.orderedAt||item.createdAt)}`,body:item.notes||''})),
     ...history.studies.map((item)=>({date:item.performedAt||item.scheduledAt||item.createdAt,icon:'fa-x-ray',title:item.title||'Estudio diagnóstico',meta:`Estudio · ${dateLabel(item.performedAt||item.scheduledAt||item.createdAt)}`,body:item.impression||item.findings||''})),
     ...history.hospitalizations.map((item)=>({date:item.admittedAt||item.createdAt,icon:'fa-house-medical',title:item.admissionNumber||'Hospitalización',meta:`Hospitalización · ${dateLabel(item.admittedAt||item.createdAt)}`,body:[item.reason,item.diagnosis].filter(Boolean).join(' · ')})),
@@ -188,6 +196,15 @@ function VeterinaryDossier({ ctx, state }) {
           prescriptions={history.prescriptions}
           measurements={history.measurements}
           onMeasurementCreated={(created)=>setHistory((current)=>({...current,measurements:[...created,...current.measurements]}))}
+        />
+        <VeterinaryPreventiveCarePanel
+          patient={selected}
+          professionals={professionals}
+          encounters={history.encounters}
+          immunizations={history.immunizations}
+          onCreated={({kind,record})=>setHistory((current)=>kind==='vaccine'
+            ? {...current,immunizations:[record,...current.immunizations]}
+            : {...current,encounters:[record,...current.encounters]})}
         />
         <Box className="cg-vet-activity"><Stack direction="row" gap={.6} flexWrap="wrap"><CgStatusChip size="small" label={`${history.encounters.length} consultas`}/><CgStatusChip size="small" label={`${history.labs.length} órdenes`}/><CgStatusChip size="small" label={`${history.studies.length} estudios`}/><CgStatusChip size="small" label={`${history.procedures.length} procedimientos`}/></Stack></Box>
         <Box className="cg-vet-timeline">
