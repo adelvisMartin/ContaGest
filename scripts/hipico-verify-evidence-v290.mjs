@@ -124,6 +124,34 @@ const optionalDescriptors = [
   { id: 'apkMetadata', name: 'QA_APK_METADATA.json', schemas: [] },
   { id: 'productionSchema', name: 'schema-postdeploy.json', schemas: ['hipico-schema-postdeploy.v18'] },
   {
+    id: 'physicalQa',
+    name: 'physical-qa-evidence.json',
+    schemas: ['hipico-physical-qa-evidence.v119'],
+    validate: (data) => {
+      const requiredModes = ['pwa-browser', 'pwa-standalone', 'android-apk'];
+      const declaredModes = Array.isArray(data?.requiredModes) ? data.requiredModes : [];
+      const environments = Array.isArray(data?.environments) ? data.environments : [];
+      const evidenceFiles = Array.isArray(data?.evidenceFiles) ? data.evidenceFiles : [];
+      const completedAt = String(data?.completedAt || '').trim();
+      const operator = String(data?.operator || '').trim();
+      const invariants = data?.invariants || {};
+      return data?.summary?.releasePhysicalGate === 'PASS'
+        && data?.summary?.materialEvidenceComplete === true
+        && Boolean(completedAt)
+        && Number.isFinite(Date.parse(completedAt))
+        && operator.length >= 2
+        && requiredModes.every((mode) => declaredModes.includes(mode))
+        && requiredModes.every((mode) => environments.some((env) => env?.mode === mode))
+        && invariants.sourceReadOnly === 'PASS'
+        && invariants.labOnlyWriteDestination === 'PASS'
+        && invariants.sessionFallbackSafe === 'PASS'
+        && evidenceFiles.length > 0
+        && evidenceFiles.every((item) => typeof item?.path === 'string'
+          && item.path.length > 0
+          && /^[a-f0-9]{64}$/i.test(String(item?.sha256 || '')))
+    }
+  },
+  {
     id: 'authRecovery',
     name: 'auth-recovery-evidence.json',
     schemas: ['hipico-auth-recovery-e2e.v28'],
