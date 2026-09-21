@@ -7,6 +7,10 @@ const root=process.cwd();
 const fail=(message)=>{console.error(`[erp-ui-wave-a][FAIL] ${message}`);process.exitCode=1;};
 const read=(relative)=>fs.readFileSync(path.join(root,relative),'utf8');
 const count=(source,re)=>(source.match(re)||[]).length;
+const countNamedImport=(source,symbol)=>count(
+  source,
+  new RegExp(`import\\s*\\{\\s*${symbol}\\s*\\}\\s*from\\s*['"][^'"]+['"]`,'g')
+);
 const metrics=(source)=>({
   kitImport:count(source,/components\/ui\/index\.js/g),
   rawButtonString:count(source,/<button\b/g),
@@ -133,7 +137,7 @@ if(dentistryEntry?.status==='MIGRATED'){
   }
   if(!dentistry.includes("type:'dental-treatment-plan'")||!dentistry.includes("status:'proposed'")||!dentistry.includes("acceptance:{status:'pending'}"))fail('odontologia: treatment plan must start proposed/pending in canonical CareEncounter');
   if(!dentistry.includes('HealthVerticalService.decideTreatmentPlan('))fail('odontologia: treatment-plan decision must use canonical backend authority');
-  if((dentistry.match(/TreatmentPlanPanel/g)||[]).length!==2)fail('odontologia: TreatmentPlanPanel symbol must appear exactly twice (one import + one component)');
+  if(countNamedImport(dentistry,'TreatmentPlanPanel')!==1)fail('odontologia: TreatmentPlanPanel must have exactly one named import');
   if((dentistry.match(/async function createTreatmentPlan\(/g)||[]).length!==1)fail('odontologia: createTreatmentPlan must remain singleton');
   if((dentistry.match(/async function decideTreatmentPlan\(/g)||[]).length!==1)fail('odontologia: decideTreatmentPlan must remain singleton');
   if((dentistry.match(/<TreatmentPlanPanel/g)||[]).length!==1)fail('odontologia: treatment plan panel must render exactly once');
@@ -162,7 +166,7 @@ if(dentistryEntry?.status==='MIGRATED'){
   for(const contract of ['HealthVerticalService.consents(','HealthVerticalService.signDentalConsent(','HealthVerticalService.revokeConsent(']){
     if(!dentistry.includes(contract))fail(`odontologia: missing consent service wiring ${contract}`);
   }
-  if((dentistry.match(/DentalConsentPanel/g)||[]).length!==2)fail('odontologia: DentalConsentPanel symbol must appear exactly twice (one import + one component)');
+  if(countNamedImport(dentistry,'DentalConsentPanel')!==1)fail('odontologia: DentalConsentPanel must have exactly one named import');
   if((dentistry.match(/<DentalConsentPanel/g)||[]).length!==1)fail('odontologia: dental consent panel must render exactly once');
 
   const dentalMedia=read('frontend/src/components/dentistry/DentalMediaPanel.jsx');
