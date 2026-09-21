@@ -19,7 +19,7 @@ test('18/51 new dental treatments are forced to draft server-side',()=>{
   assert.match(source,/value\.type\s*===\s*'dental-treatment'/);
   assert.match(source,/value\.status\s*!==\s*'draft'/);
   assert.match(source,/normalizeDentalTreatmentDraft/);
-  for(const token of ['state:'draft'','purpose:'treatment'','createdBy','createdAt']) assert.ok(source.includes(token),token);
+  for(const token of ["state:'draft'","purpose:'treatment'",'createdBy','createdAt']) assert.ok(source.includes(token),token);
 });
 
 test('18/51 workflow endpoint only permits draft -> review -> signed',()=>{
