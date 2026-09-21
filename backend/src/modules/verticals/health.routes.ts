@@ -4,6 +4,8 @@ import { prisma } from '../../database/prisma.js';
 import { asyncHandler, HttpError, ok } from '../../shared/http.js';
 import { requirePermission } from '../../shared/middleware/context.js';
 import { optionalText, dateText, jsonRecord, jsonArray, ctx, one, num } from './verticals.shared.js';
+import { calculateInvoiceTotals } from '../../shared/financial/invoice.js';
+import { serializeDecimal } from '../../shared/financial/decimal.js';
 
 const router = Router();
 
@@ -208,6 +210,153 @@ const normalizeDentalTreatmentPlan = (clinicalData: unknown) => {
     }
   };
 };
+
+const acceptedDentalTreatmentPlanClinicalDataSchema = z.object({
+  treatmentPlan: z.object({
+    phases: z.array(dentalTreatmentPhaseSchema).min(1).max(12),
+    budget: z.object({
+      currency:z.enum(['VES','USD']),
+      estimatedTotal:dentalMoneyText
+    }),
+    status:z.literal('accepted'),
+    acceptance:z.object({
+      status:z.literal('accepted'),
+      decidedAt:z.string().optional().nullable()
+    }).passthrough()
+  }).passthrough()
+}).passthrough();
+
+const dentalFinancialQuerySchema = z.object({
+  patientId:z.string().min(10).optional()
+});
+
+type DentalFinancialBucket = {
+  currency:string;
+  quotedCents:bigint;
+  draftCents:bigint;
+  receivableCents:bigint;
+  paidCents:bigint;
+};
+
+const financialBucket=(currency:string):DentalFinancialBucket=>({
+  currency,
+  quotedCents:0n,
+  draftCents:0n,
+  receivableCents:0n,
+  paidCents:0n
+});
+
+const addFinancialAmount=(bucket:DentalFinancialBucket,status:string,quotedAmount:bigint,invoiceAmount:bigint=quotedAmount)=>{
+  bucket.quotedCents+=quotedAmount;
+  if(status==='draft')bucket.draftCents+=invoiceAmount;
+  if(status==='issued'||status==='overdue')bucket.receivableCents+=invoiceAmount;
+  if(status==='paid')bucket.paidCents+=invoiceAmount;
+};
+
+const serializeFinancialBucket=(bucket:DentalFinancialBucket)=>({
+  currency:bucket.currency,
+  quotedTotal:dentalCentsMoney(bucket.quotedCents),
+  draftTotal:dentalCentsMoney(bucket.draftCents),
+  receivableTotal:dentalCentsMoney(bucket.receivableCents),
+  paidTotal:dentalCentsMoney(bucket.paidCents)
+});
+
+const normalizeFinancialLink=(row:any)=>({
+  id:String(row.id),
+  treatmentPlanId:String(row.treatmentPlanId),
+  patientId:String(row.patientId),
+  patientName:String(row.patientName||'Paciente'),
+  professionalId:row.professionalId?String(row.professionalId):null,
+  professionalName:row.professionalName?String(row.professionalName):'Sin profesional',
+  salesInvoiceId:String(row.salesInvoiceId),
+  invoiceNumber:String(row.invoiceNumber||''),
+  invoiceStatus:String(row.invoiceStatus||'draft'),
+  currency:String(row.currency||'VES'),
+  quotedTotal:String(row.quotedTotal||'0.00'),
+  invoiceTotal:String(row.invoiceTotal||row.quotedTotal||'0.00'),
+  budgetSnapshot:row.budgetSnapshot&&typeof row.budgetSnapshot==='object'?row.budgetSnapshot:{},
+  createdBy:row.createdBy?String(row.createdBy):null,
+  createdAt:row.createdAt
+});
+
+const buildDentalFinancialAnalytics=(rows:any[])=>{
+  const totals=new Map<string,DentalFinancialBucket>();
+  const professionals=new Map<string,{key:string;professionalId:string|null;professionalName:string;bucket:DentalFinancialBucket}>();
+  const procedures=new Map<string,{key:string;procedure:string;currency:string;quantity:number;bucket:DentalFinancialBucket}>();
+
+  for(const raw of rows){
+    const row=normalizeFinancialLink(raw);
+    const quotedAmount=dentalMoneyCents(row.quotedTotal);
+    const invoiceAmount=dentalMoneyCents(row.invoiceTotal);
+    if(!totals.has(row.currency))totals.set(row.currency,financialBucket(row.currency));
+    addFinancialAmount(totals.get(row.currency)!,row.invoiceStatus,quotedAmount,invoiceAmount);
+
+    const professionalKey=`${row.professionalId||'unassigned'}:${row.currency}`;
+    if(!professionals.has(professionalKey))professionals.set(professionalKey,{
+      key:professionalKey,
+      professionalId:row.professionalId,
+      professionalName:row.professionalName,
+      bucket:financialBucket(row.currency)
+    });
+    addFinancialAmount(professionals.get(professionalKey)!.bucket,row.invoiceStatus,quotedAmount,invoiceAmount);
+
+    const lines=Array.isArray((row.budgetSnapshot as any)?.lines)?(row.budgetSnapshot as any).lines:[];
+    for(const line of lines){
+      const procedure=String(line?.procedure||'Procedimiento').trim()||'Procedimiento';
+      const currency=String(row.currency||'VES');
+      const procedureKey=`${procedure}:${currency}`;
+      if(!procedures.has(procedureKey))procedures.set(procedureKey,{
+        key:procedureKey,
+        procedure,
+        currency,
+        quantity:0,
+        bucket:financialBucket(currency)
+      });
+      const target=procedures.get(procedureKey)!;
+      target.quantity+=Number.isFinite(Number(line?.quantity))?Number(line.quantity):0;
+      addFinancialAmount(target.bucket,row.invoiceStatus,dentalMoneyCents(String(line?.lineTotal||'0.00')));
+    }
+  }
+
+  const byQuoted=(left:{bucket:DentalFinancialBucket},right:{bucket:DentalFinancialBucket})=>
+    left.bucket.quotedCents===right.bucket.quotedCents?0:left.bucket.quotedCents>right.bucket.quotedCents?-1:1;
+
+  return {
+    totalsByCurrency:[...totals.values()].sort((a,b)=>a.currency.localeCompare(b.currency)).map(serializeFinancialBucket),
+    professionals:[...professionals.values()].sort(byQuoted).map((item)=>({
+      key:item.key,
+      professionalId:item.professionalId,
+      professionalName:item.professionalName,
+      ...serializeFinancialBucket(item.bucket)
+    })),
+    procedures:[...procedures.values()].sort(byQuoted).map((item)=>({
+      key:item.key,
+      procedure:item.procedure,
+      currency:item.currency,
+      quantity:item.quantity,
+      ...serializeFinancialBucket(item.bucket)
+    }))
+  };
+};
+
+const dentalFinancialLinkSelect = `
+  SELECT l.*,
+         s."number" AS "invoiceNumber",
+         s."status"::text AS "invoiceStatus",
+         s."total" AS "invoiceTotal",
+         p."displayName" AS "patientName",
+         e."professionalId" AS "professionalId",
+         pr."fullName" AS "professionalName"
+  FROM public."DentalFinancialLink" l
+  JOIN public."SalesInvoice" s
+    ON s."tenantId"=l."tenantId" AND s."id"=l."salesInvoiceId"
+  JOIN public."CarePatient" p
+    ON p."tenantId"=l."tenantId" AND p."id"=l."patientId"
+  JOIN public."CareEncounter" e
+    ON e."tenantId"=l."tenantId" AND e."id"=l."treatmentPlanId"
+  LEFT JOIN public."CareProfessional" pr
+    ON pr."tenantId"=e."tenantId" AND pr."id"=e."professionalId"
+`;
 
 const treatmentPlanDecisionSchema = z.object({
   decision:z.enum(['accepted','rejected']),
@@ -758,6 +907,218 @@ router.post('/health/encounters/:id/treatment-plan-decision', requirePermission(
   });
 
   ok(res,decided);
+}));
+
+router.get('/health/dental/financial', requirePermission('health.manage'), requirePermission('sales.view'), asyncHandler(async (req, res) => {
+  const tenantId=ctx(req).tenantId;
+  const query=dentalFinancialQuerySchema.parse(req.query||{});
+  const patientId=query.patientId||null;
+
+  const [linkRows,planCounts]=await Promise.all([
+    prisma.$queryRawUnsafe<any[]>(`
+      ${dentalFinancialLinkSelect}
+      WHERE l."tenantId"=$1
+        AND ($2::text IS NULL OR l."patientId"=$2)
+      ORDER BY l."createdAt" DESC
+      LIMIT 1000
+    `,tenantId,patientId),
+    prisma.$queryRawUnsafe<any[]>(`
+      SELECT
+        count(*) FILTER (
+          WHERE "clinicalData" #>> '{treatmentPlan,acceptance,status}' = 'accepted'
+            AND "status"='signed'
+        )::int AS "acceptedPlans",
+        count(*) FILTER (
+          WHERE "clinicalData" #>> '{treatmentPlan,acceptance,status}' = 'pending'
+            AND "status"='draft'
+        )::int AS "pendingPlans",
+        count(*) FILTER (
+          WHERE "clinicalData" #>> '{treatmentPlan,acceptance,status}' = 'rejected'
+            AND "status"='cancelled'
+        )::int AS "rejectedPlans"
+      FROM public."CareEncounter"
+      WHERE "tenantId"=$1
+        AND "type"='dental-treatment-plan'
+        AND ($2::text IS NULL OR "patientId"=$2)
+    `,tenantId,patientId)
+  ]);
+
+  const links=linkRows.map(normalizeFinancialLink);
+  const analytics=buildDentalFinancialAnalytics(linkRows);
+  ok(res,{
+    scope:patientId?{patientId}:{patientId:null},
+    summary:{
+      acceptedPlans:num(planCounts[0]?.acceptedPlans),
+      pendingPlans:num(planCounts[0]?.pendingPlans),
+      rejectedPlans:num(planCounts[0]?.rejectedPlans),
+      linkedPlans:links.length,
+      unlinkedAcceptedPlans:Math.max(0,num(planCounts[0]?.acceptedPlans)-links.length),
+      totalsByCurrency:analytics.totalsByCurrency
+    },
+    professionals:analytics.professionals,
+    procedures:analytics.procedures,
+    links
+  });
+}));
+
+router.post('/health/encounters/:id/financial-link', requirePermission('health.manage'), requirePermission('sales.manage'), asyncHandler(async (req, res) => {
+  const tenantId=ctx(req).tenantId;
+  const actorId=String(ctx(req).userId||'').trim();
+  if(!actorId)throw new HttpError(401,'La integración financiera requiere un actor autenticado.');
+  const treatmentPlanId=String(req.params.id||'').trim();
+  if(!treatmentPlanId)throw new HttpError(422,'Plan de tratamiento inválido.');
+
+  const result=await prisma.$transaction(async (tx)=>{
+    const lockKey=`dental-financial:${tenantId}:${treatmentPlanId}`;
+    await tx.$queryRawUnsafe(`SELECT pg_advisory_xact_lock(hashtextextended($1,0))`,lockKey);
+
+    const existing=await tx.$queryRawUnsafe<any[]>(`
+      ${dentalFinancialLinkSelect}
+      WHERE l."tenantId"=$1 AND l."treatmentPlanId"=$2
+      LIMIT 1
+    `,tenantId,treatmentPlanId);
+    if(existing.length)return {record:normalizeFinancialLink(existing[0]),replayed:true};
+
+    const planRows=await tx.$queryRawUnsafe<any[]>(`
+      SELECT e.*,
+             p."displayName" AS "patientName",
+             pr."fullName" AS "professionalName"
+      FROM public."CareEncounter" e
+      JOIN public."CarePatient" p
+        ON p."tenantId"=e."tenantId" AND p."id"=e."patientId"
+      LEFT JOIN public."CareProfessional" pr
+        ON pr."tenantId"=e."tenantId" AND pr."id"=e."professionalId"
+      WHERE e."tenantId"=$1 AND e."id"=$2
+      FOR UPDATE OF e
+    `,tenantId,treatmentPlanId);
+    const planEncounter=one(planRows,'Plan de tratamiento no encontrado.');
+    if(planEncounter.type!=='dental-treatment-plan')throw new HttpError(422,'El encuentro no es un plan de tratamiento odontológico.');
+    if(planEncounter.status!=='signed')throw new HttpError(409,'Sólo un plan aceptado y firmado puede originar un borrador ERP.');
+
+    const clinicalData=acceptedDentalTreatmentPlanClinicalDataSchema.parse(planEncounter.clinicalData||{});
+    const treatmentPlan=clinicalData.treatmentPlan;
+    const commercialLines=treatmentPlan.phases.flatMap((phase)=>phase.procedures.map((procedure)=>({
+      phaseOrder:phase.order,
+      phaseName:phase.name,
+      procedure:procedure.name,
+      tooth:String(procedure.tooth||'').trim()||null,
+      quantity:procedure.quantity,
+      unitPrice:procedure.unitPrice,
+      description:`${phase.name} · ${procedure.name}${String(procedure.tooth||'').trim()?` · Pieza ${String(procedure.tooth).trim()}`:''}`
+    })));
+    if(!commercialLines.length)throw new HttpError(409,'El plan aceptado no contiene procedimientos facturables.');
+
+    const calculated=calculateInvoiceTotals(commercialLines.map((line)=>({
+      quantity:String(line.quantity),
+      unitAmount:String(line.unitPrice),
+      taxRate:'0'
+    })));
+    const acceptedTotal=dentalCentsMoney(dentalMoneyCents(treatmentPlan.budget.estimatedTotal));
+    const calculatedTotal=serializeDecimal(calculated.total,2);
+    if(calculatedTotal!==acceptedTotal)throw new HttpError(409,'El presupuesto aceptado no coincide con las líneas recalculadas. Revisa el plan antes de crear el borrador ERP.');
+
+    const now=new Date();
+    const invoiceNumber=`DENT-${treatmentPlanId}`;
+    const fiscalPeriod=now.toISOString().slice(0,7);
+    const invoice=await tx.salesInvoice.create({
+      data:{
+        tenantId,
+        clientId:null,
+        number:invoiceNumber,
+        issueDate:now,
+        fiscalPeriod,
+        currency:treatmentPlan.budget.currency,
+        exchangeRate:'1',
+        subtotal:calculated.subtotal,
+        iva:calculated.tax,
+        igtf:'0',
+        islrRetention:'0',
+        total:calculated.total,
+        status:'draft',
+        notes:'Borrador ERP originado desde un plan odontológico aceptado. Validar cliente, tratamiento fiscal y tasa de cambio antes de emitir.',
+        lines:{
+          create:commercialLines.map((line,index)=>({
+            description:line.description,
+            quantity:calculated.lines[index].quantity,
+            unitPrice:calculated.lines[index].unitAmount,
+            taxRate:calculated.lines[index].taxRate,
+            total:calculated.lines[index].total
+          }))
+        }
+      },
+      include:{lines:true}
+    });
+
+    const budgetSnapshot={
+      schema:'dental-financial-budget.v1',
+      treatmentPlanId,
+      acceptedAt:treatmentPlan.acceptance.decidedAt||planEncounter.signedAt||null,
+      patient:{id:String(planEncounter.patientId),displayName:String(planEncounter.patientName||'Paciente')},
+      professional:{
+        id:planEncounter.professionalId?String(planEncounter.professionalId):null,
+        name:planEncounter.professionalName?String(planEncounter.professionalName):'Sin profesional'
+      },
+      currency:treatmentPlan.budget.currency,
+      estimatedTotal:acceptedTotal,
+      invoiceNumber,
+      fiscalReviewRequired:true,
+      fiscalPolicy:'draft-only-no-tax-assumption',
+      lines:commercialLines.map((line,index)=>({
+        phaseOrder:line.phaseOrder,
+        phaseName:line.phaseName,
+        procedure:line.procedure,
+        tooth:line.tooth,
+        quantity:line.quantity,
+        unitPrice:String(line.unitPrice),
+        lineTotal:serializeDecimal(calculated.lines[index].total,2)
+      }))
+    };
+
+    const inserted=await tx.$queryRawUnsafe<any[]>(`
+      INSERT INTO public."DentalFinancialLink"
+        ("id","tenantId","treatmentPlanId","patientId","salesInvoiceId","currency","quotedTotal","budgetSnapshot","createdBy","createdAt")
+      VALUES
+        (gen_random_uuid()::text,$1,$2,$3,$4,$5,$6::numeric,$7::jsonb,$8,now())
+      RETURNING *
+    `,tenantId,treatmentPlanId,planEncounter.patientId,invoice.id,treatmentPlan.budget.currency,acceptedTotal,JSON.stringify(budgetSnapshot),actorId);
+    const link=one(inserted);
+
+    await tx.auditLog.create({
+      data:{
+        tenantId,
+        userId:actorId,
+        action:'dental.financial.link.created',
+        entity:'DentalFinancialLink',
+        entityId:String(link.id),
+        after:{
+          treatmentPlanId,
+          patientId:String(planEncounter.patientId),
+          salesInvoiceId:invoice.id,
+          invoiceNumber,
+          currency:treatmentPlan.budget.currency,
+          quotedTotal:acceptedTotal,
+          status:'draft',
+          fiscalReviewRequired:true
+        }
+      }
+    });
+
+    return {
+      record:normalizeFinancialLink({
+        ...link,
+        invoiceNumber,
+        invoiceStatus:'draft',
+        invoiceTotal:calculatedTotal,
+        patientName:planEncounter.patientName,
+        professionalId:planEncounter.professionalId,
+        professionalName:planEncounter.professionalName
+      }),
+      replayed:false
+    };
+  });
+
+  res.setHeader('Idempotency-Replayed',result.replayed?'true':'false');
+  ok(res,{...result.record,replayed:result.replayed},result.replayed?200:201);
 }));
 
 router.post('/health/measurements', requirePermission('health.manage'), asyncHandler(async (req, res) => {
