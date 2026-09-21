@@ -7,11 +7,9 @@ const root=process.cwd();
 const fail=(message)=>{console.error(`[erp-ui-wave-a][FAIL] ${message}`);process.exitCode=1;};
 const read=(relative)=>fs.readFileSync(path.join(root,relative),'utf8');
 const count=(source,re)=>(source.match(re)||[]).length;
-const escapeRegExp=(value)=>String(value).replace(/[.*+?^${}()|[\]\\]/g,'\\const count=(source,re)=>(source.match(re)||[]).length;
-');
 const countNamedImport=(source,symbol)=>count(
   source,
-  new RegExp(`import\\s*\\{\\s*${escapeRegExp(symbol)}\\s*\\}\\s*from\\s*['"][^'"]+['"]`,'g')
+  new RegExp(`import\\s*\\{\\s*${symbol}\\s*\\}\\s*from\\s*['"][^'"]+['"]`,'g')
 );
 const metrics=(source)=>({
   kitImport:count(source,/components\/ui\/index\.js/g),
