@@ -118,6 +118,25 @@ if(dentistryEntry?.status==='MIGRATED'){
   if((dentistry.match(/async function createTreatmentPlan\(/g)||[]).length!==1)fail('odontologia: createTreatmentPlan must remain singleton');
   if((dentistry.match(/async function decideTreatmentPlan\(/g)||[]).length!==1)fail('odontologia: decideTreatmentPlan must remain singleton');
   if((dentistry.match(/<TreatmentPlanPanel/g)||[]).length!==1)fail('odontologia: treatment plan panel must render exactly once');
+  const lifecycleActions=read('frontend/src/components/dentistry/DentalLifecycleActions.jsx');
+  const healthRoutes=read('backend/src/modules/verticals/health.routes.ts');
+  const verticalService=read('frontend/src/services/verticalService.js');
+  const lifecycleMigration=read('backend/prisma/migrations/20260921122000_dental_encounter_lifecycle_v1851/migration.sql');
+  if(!dentistry.includes('DentalLifecycleActions'))fail('odontologia: clinical lifecycle actions are not composed');
+  if(/querySelector|addEventListener|innerHTML|document\./.test(lifecycleActions))fail('odontologia: clinical lifecycle actions reintroduced imperative DOM lifecycle');
+  for(const contract of ['Enviar a revisión','Firmar versión','En revisión','Borrador','Firmado','Enmendado','CgDialog']){
+    if(!lifecycleActions.includes(contract))fail(`odontologia: missing clinical lifecycle UI contract ${contract}`);
+  }
+  for(const contract of ['transitionDentalEncounter','/workflow']){
+    if(!verticalService.includes(contract))fail(`odontologia: missing lifecycle service contract ${contract}`);
+  }
+  for(const contract of ['dentalEncounterWorkflowSchema','normalizeDentalTreatmentDraft',"'submit-review'","'review'","reviewRequestedAt","reviewRequestedBy","signedBy","previousEncounterId"]){
+    if(!healthRoutes.includes(contract))fail(`odontologia: missing lifecycle backend contract ${contract}`);
+  }
+  if(!lifecycleMigration.includes("'review'"))fail('odontologia: CareEncounter DB status constraint must admit review');
+  if(!dentistry.includes("status:'draft'"))fail('odontologia: new dental treatment must be submitted as draft');
+  if((dentistry.match(/HealthVerticalService\.transitionDentalEncounter\(/g)||[]).length!==1)fail('odontologia: lifecycle transition must have a single page owner');
+
   const consentPanel=read('frontend/src/components/dentistry/DentalConsentPanel.jsx');
   if(!dentistry.includes('DentalConsentPanel'))fail('odontologia: dental consent evidence panel is not composed');
   if(/querySelector|addEventListener|innerHTML|document\./.test(consentPanel))fail('odontologia: dental consent panel reintroduced imperative DOM lifecycle');
