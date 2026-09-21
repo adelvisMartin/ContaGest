@@ -419,7 +419,7 @@ function DentistryWorkspace({ state, context }){
     </Box>
 
     <Paper component="form" onSubmit={submitEncounter} variant="outlined" sx={{p:1.5}}>
-      <Stack direction={{xs:'column',md:'row'}} justifyContent="space-between" gap={1}><Box><Typography variant="h6">{amendmentTarget?'Enmendar versión odontológica':'Odontograma y tratamiento rápido'}</Typography><Typography variant="caption" color="text.secondary">{amendmentTarget?'La versión firmada original se conserva y se crea una revisión enlazada.':'Selecciona la pieza y registra hallazgos/procedimiento.'}</Typography></Box><Stack direction="row" gap={.7} alignItems="center"><CgStatusChip label={selectedTooth?`Pieza ${selectedTooth}`:'Sin pieza seleccionada'} tone={selectedTooth?'primary':'default'}/>{amendmentTarget?<CgStatusChip label={`Enmienda de v${amendmentTarget.clinicalData?.versioning?.revision||1}`} tone="warning"/>:null}</Stack></Stack>
+      <Stack direction={{xs:'column',md:'row'}} justifyContent="space-between" gap={1}><Box><Typography variant="h6">{amendmentTarget?'Enmendar versión odontológica':'Odontograma y tratamiento rápido'}</Typography><Typography variant="caption" color="text.secondary">{amendmentTarget?'La versión firmada original permanece vigente; la nueva versión inicia como borrador enlazado.':'Selecciona la pieza, registra hallazgos y guarda primero un borrador clínico.'}</Typography></Box><Stack direction="row" gap={.7} alignItems="center"><CgStatusChip label={selectedTooth?`Pieza ${selectedTooth}`:'Sin pieza seleccionada'} tone={selectedTooth?'primary':'default'}/>{amendmentTarget?<CgStatusChip label={`Enmienda de v${amendmentTarget.clinicalData?.versioning?.revision||1}`} tone="warning"/>:null}</Stack></Stack>
       <Divider sx={{my:1.4}}/>
       {amendmentTarget?<CgState severity="warning" title="Enmienda auditada">No se sobrescribe la versión firmada. El servidor registra actor, revisión, motivo, before/after y campos modificados.</CgState>:null}
       <Box className="cg-dental-treatment-form" sx={{display:'grid',gridTemplateColumns:{xs:'1fr',md:'repeat(2,minmax(0,1fr))'},gap:1.2}}>
@@ -449,7 +449,7 @@ function DentistryWorkspace({ state, context }){
         <CgTextField size="small" fullWidth multiline minRows={3} label="Plan / indicaciones" value={encounterForm.plan} onChange={(e)=>setEncounterForm({...encounterForm,plan:e.target.value})} sx={{gridColumn:'1/-1'}}/>
         {amendmentTarget?<CgTextField size="small" fullWidth multiline minRows={2} label="Motivo de la enmienda" required value={amendmentReason} onChange={(e)=>setAmendmentReason(e.target.value)} sx={{gridColumn:'1/-1'}}/>:null}
         <Stack direction={{xs:'column',sm:'row'}} gap={.8} sx={{gridColumn:'1/-1'}}>
-          <CgButton type="submit">{amendmentTarget?'Firmar enmienda':'Registrar tratamiento'}</CgButton>
+          <CgButton type="submit">{amendmentTarget?'Crear borrador de enmienda':'Guardar borrador clínico'}</CgButton>
           {amendmentTarget?<CgButton type="button" variant="outlined" onClick={()=>{setAmendmentTarget(null);setAmendmentReason('');setSelectedTooth('');setSelectedSurfaces([]);}}>Cancelar enmienda</CgButton>:null}
         </Stack>
       </Box>
