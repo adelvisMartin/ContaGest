@@ -77,6 +77,14 @@ if(vetEntry?.status==='MIGRATED'){
     if(!veterinaryLongitudinal.includes(contract))fail(`veterinaria: missing longitudinal record contract ${contract}`);
   }
   if(!vet.includes('HealthVerticalService.measurements(patientId)'))fail('veterinaria: dossier must load canonical longitudinal measurements');
+  const veterinaryPreventive=read('frontend/src/components/veterinary/VeterinaryPreventiveCarePanel.jsx');
+  if(!vet.includes('VeterinaryPreventiveCarePanel'))fail('veterinaria: preventive care panel is not composed');
+  if((vet.match(/<VeterinaryPreventiveCarePanel/g)||[]).length!==1)fail('veterinaria: preventive care panel must render from one owner');
+  if(/querySelector|addEventListener|innerHTML|document\./.test(veterinaryPreventive))fail('veterinaria: preventive panel reintroduced imperative DOM lifecycle');
+  for(const contract of ['Vacunas','Desparasitación','Control preventivo','Próximos vencimientos','Recordatorio','Anticipación','preventive_due_reminder']){
+    if(!veterinaryPreventive.includes(contract))fail(`veterinaria: missing preventive care contract ${contract}`);
+  }
+  if(!vet.includes('HealthVerticalService.immunizations(patientId)'))fail('veterinaria: dossier must load canonical immunization history');
 }
 
 const dentistryEntry=ERP_UI_WAVE_A_2_51.find((item)=>item.route==='odontologia');
