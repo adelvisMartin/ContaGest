@@ -84,3 +84,19 @@ test('58x5 browser coverage is sharded outside Vercel without reducing the route
   assert.doesNotMatch(vercel,/58x5 fine-composition batch|58x5 exhaustive batch|mobile sidebar navigation batch/);
   assert.match(vercel,/delegated to \.github\/workflows\/erp-ui-58x5-v251\.yml/);
 });
+
+
+test('Wave A dentistry owner guards count semantic imports/renders, never filename substrings (#442)',()=>{
+  const audit=read('scripts/erp-ui-wave-a-audit-v251.mjs');
+  const dentistry=read('frontend/src/pages/DentistryPracticePage.jsx');
+  for(const symbol of ['TreatmentPlanPanel','DentalConsentPanel']){
+    const importPattern=new RegExp(`import\\s*\\{\\s*${symbol}\\s*\\}\\s*from\\s*['"][^'"]+['"]`,'g');
+    const renderPattern=new RegExp(`<${symbol}\\b`,'g');
+    assert.equal((dentistry.match(importPattern)||[]).length,1,`${symbol} must have exactly one named import`);
+    assert.equal((dentistry.match(renderPattern)||[]).length,1,`${symbol} must render exactly once`);
+  }
+  assert.doesNotMatch(audit,/dentistry\.match\(\/TreatmentPlanPanel\/g\)/);
+  assert.doesNotMatch(audit,/dentistry\.match\(\/DentalConsentPanel\/g\)/);
+  assert.match(audit,/countNamedImport\(dentistry,'TreatmentPlanPanel'\)/);
+  assert.match(audit,/countNamedImport\(dentistry,'DentalConsentPanel'\)/);
+});
