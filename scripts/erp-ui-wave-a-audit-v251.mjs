@@ -164,7 +164,7 @@ if(dentistryEntry?.status==='MIGRATED'){
     if(!dentistry.includes(contract))fail(`odontologia: missing clinical media service wiring ${contract}`);
   }
   if(!mediaService.includes('x-clinical-metadata')||!mediaRoutes.includes('x-clinical-metadata'))fail('odontologia: clinical media metadata must stay out of upload URLs');
-  if(/uploadDentalAttachment[\\s\\S]{0,1800}BackendApi\\.request\\(`\\/media\\/dental-attachments\\?/.test(mediaService)||/clinicalAttachmentSchema\\.parse\\(req\\.query/.test(mediaRoutes))fail('odontologia: clinical attachment metadata leaked into upload URL/query');
+  if(/uploadDentalAttachment[\s\S]{0,1800}BackendApi\.request\(`\/media\/dental-attachments\?/.test(mediaService)||/clinicalAttachmentSchema\.parse\(req\.query/.test(mediaRoutes))fail('odontologia: clinical attachment metadata leaked into upload URL/query');
   for(const contract of ['uploadDentalAttachment','dentalAttachments','application/pdf','15 * 1024 * 1024']){
     if(!mediaService.includes(contract))fail(`odontologia: missing clinical media service contract ${contract}`);
   }
