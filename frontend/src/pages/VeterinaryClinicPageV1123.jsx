@@ -48,6 +48,7 @@ function TimelineItem({ icon, title, meta, body, tone='primary.main' }) {
 function VeterinaryDossier({ ctx, state }) {
   const initialPatient = ctx?.query?.patient || '';
   const [patients,setPatients]=useState([]);
+  const [professionals,setProfessionals]=useState([]);
   const [selectedId,setSelectedId]=useState(initialPatient);
   const [search,setSearch]=useState('');
   const [loading,setLoading]=useState(true);
@@ -64,9 +65,13 @@ function VeterinaryDossier({ ctx, state }) {
     setLoading(true);
     setLoadError('');
     try {
-      const response=await HealthVerticalService.patients({kind:'animal'});
-      const active=rows(response).filter((item)=>item.kind==='animal'&&item.active!==false);
+      const [patientResponse,professionalResponse]=await Promise.all([
+        HealthVerticalService.patients({kind:'animal'}),
+        HealthVerticalService.professionals()
+      ]);
+      const active=rows(patientResponse).filter((item)=>item.kind==='animal'&&item.active!==false);
       setPatients(active);
+      setProfessionals(rows(professionalResponse));
       if (!active.some((item)=>item.id===selectedId)) setSelectedId(active[0]?.id || '');
       return true;
     } catch(error) {
@@ -194,6 +199,7 @@ function VeterinaryDossier({ ctx, state }) {
         />
         <VeterinaryPreventiveCarePanel
           patient={selected}
+          professionals={professionals}
           encounters={history.encounters}
           immunizations={history.immunizations}
           onCreated={({kind,record})=>setHistory((current)=>kind==='vaccine'
