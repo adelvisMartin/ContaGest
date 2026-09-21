@@ -12,7 +12,7 @@ test('24/51 immunizations expose tenant-scoped reads and ownership-safe writes',
   assert.match(source,/router\.get\('\/health\/immunizations'/);
   assert.match(source,/patientId es obligatorio/);
   assert.match(source,/CareImmunization/);
-  assert.match(source,/"tenantId"=\$1 AND "patientId"=\$2/);
+  assert.match(source,/i\."tenantId"=\$1 AND i\."patientId"=\$2/);
   assert.match(source,/El paciente no pertenece al tenant activo/);
   assert.match(source,/El profesional no pertenece al tenant activo/);
 });
