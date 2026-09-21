@@ -57,6 +57,15 @@ test('17/51 clinical storage is server-only with no authenticated direct policie
   }
 });
 
+test('17/51 clinical metadata stays out of upload URLs',()=>{
+  const service=read('frontend/src/services/mediaService.js');
+  const backend=read('backend/src/modules/media/media.routes.ts');
+  assert.match(service,/x-clinical-metadata/);
+  assert.match(backend,/x-clinical-metadata/);
+  assert.doesNotMatch(service,/dental-attachments\?\$\{params\.toString\(\)\}/);
+  assert.doesNotMatch(backend,/clinicalAttachmentSchema\.parse\(req\.query/);
+});
+
 test('17/51 MediaService uploads binary dental attachments and lists signed records',()=>{
   const source=read('frontend/src/services/mediaService.js');
   for(const token of ['uploadDentalAttachment','dentalAttachments','application/pdf','15 * 1024 * 1024','content-type'])assert.ok(source.includes(token),token);
