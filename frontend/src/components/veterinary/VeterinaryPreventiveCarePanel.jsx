@@ -15,7 +15,7 @@ const statusForDue=(value)=>{
 const reminderAt=(dueAt,daysBefore)=>{
   const due=new Date(dueAt);
   const when=new Date(due.getTime()-Math.max(0,Number(daysBefore||0))*86400000);
-  return when.toISOString();
+  return new Date(Math.max(Date.now(),when.getTime())).toISOString();
 };
 
 export function VeterinaryPreventiveCarePanel({
