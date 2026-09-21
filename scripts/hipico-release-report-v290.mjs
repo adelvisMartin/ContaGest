@@ -49,6 +49,7 @@ const optionalEvidence = Array.isArray(verified?.optional) ? verified.optional :
 const productionSchemaArtifact = status(optionalEvidence.find((item) => item?.id === 'productionSchema')?.status);
 const productionSchemaJob = status(process.env.HIPICO_GATE_PRODUCTION_SCHEMA);
 const productionSchemaStatus = combineProductionSchemaGate(productionSchemaJob, productionSchemaArtifact);
+const physicalQaArtifact = status(optionalEvidence.find((item) => item?.id === 'physicalQa')?.status);
 const authRecoveryArtifact = status(optionalEvidence.find((item) => item?.id === 'authRecovery')?.status);
 const authRecoveryJob = status(process.env.HIPICO_GATE_AUTH_RECOVERY);
 const authRecoveryStatus = combineAuthRecoveryGate(authRecoveryJob, authRecoveryArtifact);
@@ -61,7 +62,7 @@ const gates = {
   android: status(process.env.HIPICO_GATE_ANDROID),
   evidence,
   browserMatrix: status(process.env.HIPICO_GATE_MATRIX),
-  physicalQa: status(process.env.HIPICO_GATE_PHYSICAL_QA),
+  physicalQa: physicalQaArtifact,
   productionSchema: productionSchemaStatus,
   authRecovery: authRecoveryStatus
 };
@@ -127,6 +128,7 @@ const report = {
     p0Open,
     securityCritical,
     physicalQa: gates.physicalQa,
+    physicalQaArtifact,
     productionSchemaJob,
     productionSchemaArtifact,
     authRecoveryJob,
