@@ -383,6 +383,16 @@ const normalizeDentalTreatmentDraft = (clinicalData: unknown, actor: { userId:st
   };
 };
 
+const veterinaryPreventiveClinicalDataSchema = z.object({
+  preventiveCare:z.object({
+    kind:z.enum(['deworming','checkup']),
+    name:z.string().trim().min(2).max(180),
+    performedAt:z.string().optional().nullable(),
+    nextDueAt:z.string().optional().nullable(),
+    notes:optionalText
+  })
+}).passthrough();
+
 const encounterSchema = z.object({
   patientId: z.string().min(10),
   professionalId: z.string().optional().nullable(),
@@ -417,6 +427,13 @@ const encounterSchema = z.object({
       for (const issue of parsed.error.issues) refinement.addIssue({ code:'custom', path:['clinicalData',...issue.path], message:issue.message });
     }
     if(value.status!=='draft') refinement.addIssue({code:'custom',path:['status'],message:'Los planes nuevos deben iniciar como borrador propuesto.'});
+  }
+  if (value.type === 'veterinary-preventive') {
+    const parsed = veterinaryPreventiveClinicalDataSchema.safeParse(value.clinicalData);
+    if (!parsed.success) {
+      for (const issue of parsed.error.issues) refinement.addIssue({ code:'custom', path:['clinicalData',...issue.path], message:issue.message });
+    }
+    if(value.status!=='signed') refinement.addIssue({code:'custom',path:['status'],message:'Los preventivos veterinarios registrados deben quedar firmados.'});
   }
 });
 
@@ -1150,12 +1167,41 @@ router.post('/health/measurements', requirePermission('health.manage'), asyncHan
   ok(res, one(rows), 201);
 }));
 
+router.get('/health/immunizations', requirePermission('health.manage'), asyncHandler(async (req, res) => {
+  const patientId=String(req.query.patientId||'');
+  if(!patientId)throw new HttpError(422,'patientId es obligatorio.');
+  const rows=await prisma.$queryRawUnsafe<any[]>(`
+    SELECT i.*,pr."fullName" AS "professionalName"
+    FROM public."CareImmunization" i
+    LEFT JOIN public."CareProfessional" pr ON pr."tenantId"=i."tenantId" AND pr."id"=i."professionalId"
+    WHERE i."tenantId"=$1 AND i."patientId"=$2
+    ORDER BY i."administeredAt" DESC,i."createdAt" DESC
+    LIMIT 500
+  `,ctx(req).tenantId,patientId);
+  ok(res,rows);
+}));
+
 router.post('/health/immunizations', requirePermission('health.manage'), asyncHandler(async (req, res) => {
+  const tenantId=ctx(req).tenantId;
   const b = immunizationSchema.parse(req.body || {});
+  const patientRows=await prisma.$queryRawUnsafe<any[]>(`
+    SELECT "id" FROM public."CarePatient"
+    WHERE "tenantId"=$1 AND "id"=$2 AND "kind"='animal'
+    LIMIT 1
+  `,tenantId,b.patientId);
+  if(!patientRows.length)throw new HttpError(422,'El paciente no pertenece al tenant activo.');
+  if(b.professionalId){
+    const professionalRows=await prisma.$queryRawUnsafe<any[]>(`
+      SELECT "id" FROM public."CareProfessional"
+      WHERE "tenantId"=$1 AND "id"=$2
+      LIMIT 1
+    `,tenantId,b.professionalId);
+    if(!professionalRows.length)throw new HttpError(422,'El profesional no pertenece al tenant activo.');
+  }
   const rows = await prisma.$queryRawUnsafe<any[]>(`
     INSERT INTO public."CareImmunization" ("id","tenantId","patientId","professionalId","vaccine","dose","lot","administeredAt","nextDueAt","notes","createdAt")
     VALUES (gen_random_uuid()::text,$1,$2,$3,$4,$5,$6,COALESCE($7::timestamptz,now()),$8::timestamptz,$9,now()) RETURNING *
-  `, ctx(req).tenantId,b.patientId,b.professionalId||null,b.vaccine,b.dose||null,b.lot||null,b.administeredAt||null,b.nextDueAt||null,b.notes||null);
+  `, tenantId,b.patientId,b.professionalId||null,b.vaccine,b.dose||null,b.lot||null,b.administeredAt||null,b.nextDueAt||null,b.notes||null);
   ok(res, one(rows), 201);
 }));
 
