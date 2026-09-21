@@ -414,7 +414,7 @@ router.post('/health/encounters/:id/amend', requirePermission('health.manage'), 
       ? previousClinicalData.versioning
       : {};
     const revision = Math.max(1, Number(priorVersioning.revision || 1)) + 1;
-    const amendedAt = new Date().toISOString();
+    const draftCreatedAt = new Date().toISOString();
     const nextClinicalData = {
       ...b.clinicalData,
       versioning:{
@@ -425,24 +425,26 @@ router.post('/health/encounters/:id/amend', requirePermission('health.manage'), 
         actor:{ userId:actorUserId, email:actorEmail },
         actorUserId,
         actorEmail,
-        amendedAt,
+        amendedAt:draftCreatedAt,
         changedFields,
         before,
         after
+      },
+      lifecycle:{
+        state:'draft',
+        purpose:'amendment',
+        previousEncounterId:previous.id,
+        createdBy:{userId:actorUserId,email:actorEmail},
+        createdAt:draftCreatedAt,
+        workflowNote:'enmienda pendiente de revisión y firma'
       }
     };
-
-    await tx.$executeRawUnsafe(`
-      UPDATE public."CareEncounter"
-      SET "status"='amended',"updatedAt"=now()
-      WHERE "tenantId"=$1 AND "id"=$2 AND "status"='signed'
-    `, tenantId, previous.id);
 
     const created = await tx.$queryRawUnsafe<any[]>(`
       INSERT INTO public."CareEncounter"
         ("id","tenantId","patientId","professionalId","appointmentId","specialty","type","subjective","objective","assessment","plan","diagnosisCodes","clinicalData","confidential","status","signedAt","createdAt","updatedAt")
       VALUES
-        (gen_random_uuid()::text,$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11::jsonb,$12::jsonb,$13,'signed',now(),now(),now())
+        (gen_random_uuid()::text,$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11::jsonb,$12::jsonb,$13,'draft',NULL,now(),now())
       RETURNING *
     `,
       tenantId,
@@ -463,6 +465,90 @@ router.post('/health/encounters/:id/amend', requirePermission('health.manage'), 
   });
 
   ok(res, amended, 201);
+}));
+
+router.post('/health/encounters/:id/workflow', requirePermission('health.manage'), asyncHandler(async (req, res) => {
+  const tenantId=ctx(req).tenantId;
+  const actor={userId:ctx(req).userId||null,email:ctx(req).email||null};
+  const encounterId=String(req.params.id||'');
+  const b=dentalEncounterWorkflowSchema.parse(req.body||{});
+
+  const transitioned=await prisma.$transaction(async (tx)=>{
+    const rows=await tx.$queryRawUnsafe<any[]>(`
+      SELECT * FROM public."CareEncounter"
+      WHERE "tenantId"=$1 AND "id"=$2
+      FOR UPDATE
+    `,tenantId,encounterId);
+    const previous=one(rows,'Encuentro odontológico no encontrado.');
+    if(previous.type!=='dental-treatment')throw new HttpError(422,'Solo los tratamientos odontológicos usan este lifecycle.');
+
+    const clinicalData=previous.clinicalData&&typeof previous.clinicalData==='object'?previous.clinicalData:{};
+    const lifecycle=clinicalData.lifecycle&&typeof clinicalData.lifecycle==='object'?clinicalData.lifecycle:{};
+    const changedAt=new Date().toISOString();
+
+    if(b.action==='submit-review'){
+      if(previous.status!=='draft')throw new HttpError(409,'Solo un borrador puede enviarse a revisión.');
+      const nextClinicalData={
+        ...clinicalData,
+        lifecycle:{
+          ...lifecycle,
+          state:'review',
+          reviewRequestedAt:changedAt,
+          reviewRequestedBy:actor
+        }
+      };
+      const updated=await tx.$queryRawUnsafe<any[]>(`
+        UPDATE public."CareEncounter"
+        SET "clinicalData"=$3::jsonb,"status"='review',"updatedAt"=now()
+        WHERE "tenantId"=$1 AND "id"=$2 AND "status"='draft'
+        RETURNING *
+      `,tenantId,previous.id,JSON.stringify(nextClinicalData));
+      return one(updated);
+    }
+
+    if(previous.status!=='review')throw new HttpError(409,'Solo una versión en revisión puede firmarse.');
+    const previousEncounterId=String(
+      clinicalData?.versioning?.previousEncounterId ||
+      lifecycle?.previousEncounterId ||
+      ''
+    );
+
+    if(previousEncounterId){
+      const authorityRows=await tx.$queryRawUnsafe<any[]>(`
+        SELECT * FROM public."CareEncounter"
+        WHERE "tenantId"=$1 AND "patientId"=$2 AND "id"=$3
+        FOR UPDATE
+      `,tenantId,previous.patientId,previousEncounterId);
+      const authority=one(authorityRows,'La versión firmada previa de la enmienda no existe.');
+      if(authority.type!=='dental-treatment'||authority.status!=='signed'){
+        throw new HttpError(409,'La versión previa ya no es la autoridad clínica firmada.');
+      }
+      await tx.$executeRawUnsafe(`
+        UPDATE public."CareEncounter"
+        SET "status"='amended',"updatedAt"=now()
+        WHERE "tenantId"=$1 AND "id"=$2 AND "status"='signed'
+      `,tenantId,authority.id);
+    }
+
+    const nextClinicalData={
+      ...clinicalData,
+      lifecycle:{
+        ...lifecycle,
+        state:'signed',
+        signedAt:changedAt,
+        signedBy:actor
+      }
+    };
+    const updated=await tx.$queryRawUnsafe<any[]>(`
+      UPDATE public."CareEncounter"
+      SET "clinicalData"=$3::jsonb,"status"='signed',"signedAt"=now(),"updatedAt"=now()
+      WHERE "tenantId"=$1 AND "id"=$2 AND "status"='review'
+      RETURNING *
+    `,tenantId,previous.id,JSON.stringify(nextClinicalData));
+    return one(updated);
+  });
+
+  ok(res,transitioned);
 }));
 
 router.post('/health/encounters/:id/treatment-plan-decision', requirePermission('health.manage'), asyncHandler(async (req, res) => {
