@@ -1,4 +1,4 @@
-name: ERP UI 58x5 #2/51
+name: 'ERP UI 58x5 #2/51'
 
 on:
   pull_request:
@@ -52,7 +52,7 @@ jobs:
           retention-days: 14
 
   route-shards:
-    name: Route shard ${{ matrix.batch + 1 }}/10
+    name: Route shard batch-${{ matrix.batch }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     strategy:
