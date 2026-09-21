@@ -80,7 +80,9 @@ test('18/51 frontend exposes explicit review/sign actions through canonical serv
 });
 
 test('18/51 signed treatment remains the only state that can start amendment',()=>{
+  const actions=lifecycle();
   const source=page();
-  assert.match(source,/status===['"]signed['"]/);
-  assert.match(source,/onAmend/);
+  assert.match(actions,/status===['"]signed['"]/);
+  assert.match(actions,/onAmend\?\.\(encounter\)/);
+  assert.match(source,/onAmend=\{prepareAmendment\}/);
 });
