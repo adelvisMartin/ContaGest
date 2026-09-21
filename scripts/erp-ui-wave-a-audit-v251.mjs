@@ -80,6 +80,22 @@ if(dentistryEntry?.status==='MIGRATED'){
   for(const contract of ['amendmentTarget','amendmentReason','prepareAmendment','HealthVerticalService.amendEncounter(','versioning?.revision','versioning?.reason','versioning?.actor','versioning?.changedFields','versioning?.before','versioning?.after']){
     if(!dentistry.includes(contract))fail(`odontologia: missing versioned history contract ${contract}`);
   }
+  const lifecycleActions=read('frontend/src/components/dentistry/DentalLifecycleActions.jsx');
+  const healthRoutes=read('backend/src/modules/verticals/health.routes.ts');
+  const lifecycleMigration=read('backend/prisma/migrations/20260921122000_dental_encounter_lifecycle_v1851/migration.sql');
+  if(!dentistry.includes('DentalLifecycleActions'))fail('odontologia: clinical lifecycle actions are not composed');
+  if((dentistry.match(/<DentalLifecycleActions/g)||[]).length!==1)fail('odontologia: clinical lifecycle actions must render from one owner');
+  if(/querySelector|addEventListener|innerHTML|document\./.test(lifecycleActions))fail('odontologia: clinical lifecycle actions reintroduced imperative DOM lifecycle');
+  for(const contract of ['Enviar a revisión','Firmar versión','Borrador','En revisión','Firmado','Enmendado','CgDialog']){
+    if(!lifecycleActions.includes(contract))fail(`odontologia: missing clinical lifecycle UI contract ${contract}`);
+  }
+  for(const contract of ["router.post('/health/encounters/:id/workflow'","submit-review","previous.status!=='draft'","previous.status!=='review'","reviewRequestedAt","reviewRequestedBy","signedBy"]){
+    if(!healthRoutes.includes(contract))fail(`odontologia: missing clinical lifecycle backend contract ${contract}`);
+  }
+  if(!dentistry.includes('HealthVerticalService.transitionDentalEncounter('))fail('odontologia: lifecycle must use canonical transition service');
+  const treatmentSubmit=dentistry.slice(dentistry.indexOf('async function submitEncounter'),dentistry.indexOf('async function createTreatmentPlan'));
+  if(!treatmentSubmit.includes("status:'draft'")||treatmentSubmit.includes("status:'signed'"))fail('odontologia: new dental treatment must remain draft until explicit review/sign');
+  if(!lifecycleMigration.includes("'review'"))fail('odontologia: CareEncounter lifecycle migration must preserve review state');
   const periodontal=read('frontend/src/components/dentistry/PeriodontalChartPanel.jsx');
   if(!dentistry.includes('PeriodontalChartPanel'))fail('odontologia: structured periodontogram panel is not composed');
   if(/querySelector|addEventListener|innerHTML|document\./.test(periodontal))fail('odontologia: periodontogram reintroduced imperative DOM lifecycle');
