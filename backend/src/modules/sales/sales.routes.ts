@@ -261,6 +261,14 @@ router.delete('/:id', requirePermission('sales.manage'), asyncHandler(async (req
   const sale = await prisma.salesInvoice.findFirst({ where: { id: req.params.id, tenantId: ctx.tenantId }, include: { lines: true } });
   if (!sale) throw new HttpError(404, 'Venta no encontrada.');
   if (sale.status !== 'draft') throw new HttpError(409, 'Solo se eliminan ventas en borrador. Las ventas emitidas deben anularse.');
+  const dentalLinks = await prisma.$queryRawUnsafe<Array<{ treatmentPlanId: string }>>(
+    `SELECT "treatmentPlanId" FROM public."DentalFinancialLink" WHERE "tenantId"=$1 AND "salesInvoiceId"=$2 LIMIT 1`,
+    ctx.tenantId,
+    sale.id
+  );
+  if (dentalLinks.length) {
+    throw new HttpError(409, 'El borrador está vinculado a un plan odontológico aceptado y conserva provenance financiera; no puede eliminarse desde Ventas.');
+  }
   await prisma.salesInvoice.delete({ where: { id: sale.id } });
   await writeAudit({ tenantId: ctx.tenantId, userId: ctx.userId, action: 'delete-draft', entity: 'salesInvoice', entityId: sale.id, before: sale, ipAddress: ctx.ip, userAgent: ctx.userAgent });
   ok(res, { deleted: true, id: sale.id });
