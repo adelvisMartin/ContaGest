@@ -12,6 +12,7 @@ import { PeriodontalChartPanel } from '../components/dentistry/PeriodontalChartP
 import { TreatmentPlanPanel } from '../components/dentistry/TreatmentPlanPanel.jsx';
 import { DentalConsentPanel } from '../components/dentistry/DentalConsentPanel.jsx';
 import { DentalMediaPanel } from '../components/dentistry/DentalMediaPanel.jsx';
+import { DentalLifecycleActions } from '../components/dentistry/DentalLifecycleActions.jsx';
 
 const PROCEDURES=['Evaluación','Profilaxis / limpieza','Restauración','Endodoncia','Extracción','Periodoncia','Ortodoncia','Prótesis','Implante','Radiografía / estudio','Control postoperatorio'];
 const SPECIALTIES=[
@@ -195,7 +196,7 @@ function DentistryWorkspace({ state, context }){
           clinicalData
         });
         setEncounters(rows(await HealthVerticalService.encounters(selectedPatientId)));
-        notify('Enmienda odontológica firmada; la versión anterior permanece en el historial.','success');
+        notify('Borrador de enmienda creado; la versión firmada anterior sigue vigente hasta completar revisión y firma.','success');
       }else{
         const item=await HealthVerticalService.createEncounter({
           patientId:selectedPatientId,
@@ -209,10 +210,10 @@ function DentistryWorkspace({ state, context }){
           diagnosisCodes:[],
           clinicalData,
           confidential:false,
-          status:'signed'
+          status:'draft'
         });
         setEncounters((current)=>[item,...current]);
-        notify('Tratamiento odontológico registrado.','success');
+        notify('Borrador odontológico registrado; envíalo a revisión antes de firmar.','success');
       }
       setEncounterForm((current)=>({...current,procedure:'Evaluación',condition:'',finding:'',assessment:'',plan:''}));
       setSelectedTooth('');
@@ -303,6 +304,18 @@ function DentistryWorkspace({ state, context }){
       return true;
     }catch(cause){
       notify(`No se guardó el adjunto clínico: ${cause?.message||'Error'}`,'error');
+      return false;
+    }
+  }
+
+  async function transitionDentalEncounter(id,payload){
+    try{
+      await HealthVerticalService.transitionDentalEncounter(id,payload);
+      setEncounters(rows(await HealthVerticalService.encounters(selectedPatientId)));
+      notify(payload.action==='submit-review'?'Versión enviada a revisión.':'Versión clínica firmada.','success');
+      return true;
+    }catch(cause){
+      notify(`No se actualizó el lifecycle clínico: ${cause?.message||'Error'}`,'error');
       return false;
     }
   }
@@ -406,7 +419,7 @@ function DentistryWorkspace({ state, context }){
     </Box>
 
     <Paper component="form" onSubmit={submitEncounter} variant="outlined" sx={{p:1.5}}>
-      <Stack direction={{xs:'column',md:'row'}} justifyContent="space-between" gap={1}><Box><Typography variant="h6">{amendmentTarget?'Enmendar versión odontológica':'Odontograma y tratamiento rápido'}</Typography><Typography variant="caption" color="text.secondary">{amendmentTarget?'La versión firmada original se conserva y se crea una revisión enlazada.':'Selecciona la pieza y registra hallazgos/procedimiento.'}</Typography></Box><Stack direction="row" gap={.7} alignItems="center"><CgStatusChip label={selectedTooth?`Pieza ${selectedTooth}`:'Sin pieza seleccionada'} tone={selectedTooth?'primary':'default'}/>{amendmentTarget?<CgStatusChip label={`Enmienda de v${amendmentTarget.clinicalData?.versioning?.revision||1}`} tone="warning"/>:null}</Stack></Stack>
+      <Stack direction={{xs:'column',md:'row'}} justifyContent="space-between" gap={1}><Box><Typography variant="h6">{amendmentTarget?'Enmendar versión odontológica':'Odontograma y tratamiento rápido'}</Typography><Typography variant="caption" color="text.secondary">{amendmentTarget?'La versión firmada original permanece vigente; la nueva versión inicia como borrador enlazado.':'Selecciona la pieza, registra hallazgos y guarda primero un borrador clínico.'}</Typography></Box><Stack direction="row" gap={.7} alignItems="center"><CgStatusChip label={selectedTooth?`Pieza ${selectedTooth}`:'Sin pieza seleccionada'} tone={selectedTooth?'primary':'default'}/>{amendmentTarget?<CgStatusChip label={`Enmienda de v${amendmentTarget.clinicalData?.versioning?.revision||1}`} tone="warning"/>:null}</Stack></Stack>
       <Divider sx={{my:1.4}}/>
       {amendmentTarget?<CgState severity="warning" title="Enmienda auditada">No se sobrescribe la versión firmada. El servidor registra actor, revisión, motivo, before/after y campos modificados.</CgState>:null}
       <Box className="cg-dental-treatment-form" sx={{display:'grid',gridTemplateColumns:{xs:'1fr',md:'repeat(2,minmax(0,1fr))'},gap:1.2}}>
@@ -436,7 +449,7 @@ function DentistryWorkspace({ state, context }){
         <CgTextField size="small" fullWidth multiline minRows={3} label="Plan / indicaciones" value={encounterForm.plan} onChange={(e)=>setEncounterForm({...encounterForm,plan:e.target.value})} sx={{gridColumn:'1/-1'}}/>
         {amendmentTarget?<CgTextField size="small" fullWidth multiline minRows={2} label="Motivo de la enmienda" required value={amendmentReason} onChange={(e)=>setAmendmentReason(e.target.value)} sx={{gridColumn:'1/-1'}}/>:null}
         <Stack direction={{xs:'column',sm:'row'}} gap={.8} sx={{gridColumn:'1/-1'}}>
-          <CgButton type="submit">{amendmentTarget?'Firmar enmienda':'Registrar tratamiento'}</CgButton>
+          <CgButton type="submit">{amendmentTarget?'Crear borrador de enmienda':'Guardar borrador clínico'}</CgButton>
           {amendmentTarget?<CgButton type="button" variant="outlined" onClick={()=>{setAmendmentTarget(null);setAmendmentReason('');setSelectedTooth('');setSelectedSurfaces([]);}}>Cancelar enmienda</CgButton>:null}
         </Stack>
       </Box>
@@ -504,10 +517,11 @@ function DentistryWorkspace({ state, context }){
               <Typography variant="caption" color="text.secondary" display="block">{item.clinicalData?.odontogram?.tooth?`${item.clinicalData.odontogram.dentition==='primary'?'Temporal':'Permanente'} · Pieza ${item.clinicalData.odontogram.tooth} · ${item.clinicalData.odontogram.surfaces?.join(', ')||'sin superficie'} · ${item.clinicalData.odontogram.condition||'sin condición'} · `:item.clinicalData?.tooth?`Pieza ${item.clinicalData.tooth} · `:''}{item.assessment||item.subjective||'Sin diagnóstico resumido'}</Typography>
               {versioning?<Typography variant="caption" color="text.secondary" display="block">Modificado por {actor} · Motivo: {versioning?.reason||'—'} · Cambios: {changeSummary||'sin resumen'}</Typography>:null}
             </Box>
-            <Stack direction="row" gap={.6} alignItems="center" flexWrap="wrap">
-              <CgStatusChip label={item.status==='signed'?'Firmado':item.status==='amended'?'Enmendado':item.status||'Borrador'} tone={item.status==='signed'?'success':item.status==='amended'?'default':'warning'}/>
-              {item.status==='signed'&&item.type==='dental-treatment'?<CgButton size="small" variant="outlined" onClick={()=>prepareAmendment(item)}>Enmendar</CgButton>:null}
-            </Stack>
+            <DentalLifecycleActions
+              encounter={item}
+              onTransition={transitionDentalEncounter}
+              onAmend={prepareAmendment}
+            />
           </Stack>;
         })}</Stack>:<CgEmptyState title="Sin tratamientos registrados" description="Selecciona un paciente y registra el primer procedimiento."/>}
       </Paper>

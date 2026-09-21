@@ -22,8 +22,8 @@ La enmienda usa `POST /health/encounters/:id/amend` bajo `health.manage` y una t
 3. valida el odontograma estructurado;
 4. valida que el profesional pertenezca al tenant;
 5. calcula actor, revisión, timestamp y diff en servidor;
-6. marca la versión anterior `amended` sin modificar su `clinicalData`;
-7. inserta una nueva versión `signed`.
+6. desde 18/51, crea la nueva revisión como `draft` sin retirar la autoridad de la versión firmada vigente;
+7. la nueva revisión pasa por `draft → review → signed`; sólo al firmarse se marca la versión anterior `amended` de forma atómica.
 
 ## Metadata de versión
 
@@ -44,7 +44,7 @@ El cliente no puede enviar actor, revisión ni ID de versión previa como autori
 
 ## UI
 
-La historia muestra cada versión, su estado, actor, motivo y cambios como `anterior → nuevo`. Sólo una versión `signed` ofrece la acción **Enmendar**. Las versiones `amended` permanecen visibles e inmutables clínicamente.
+La historia muestra cada versión, su estado, actor, motivo y cambios como `anterior → nuevo`. Sólo una versión `signed` ofrece la acción **Enmendar**. Desde 18/51, la enmienda resultante es un borrador pendiente de revisión/firma; la versión anterior permanece `signed` hasta la firma de la revisión nueva. Las versiones `amended` permanecen visibles e inmutables clínicamente.
 
 ## Seguridad y concurrencia
 
