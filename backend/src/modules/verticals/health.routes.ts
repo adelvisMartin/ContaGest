@@ -382,6 +382,17 @@ router.post('/health/encounters/:id/amend', requirePermission('health.manage'), 
     if (previous.type !== 'dental-treatment') throw new HttpError(422, 'Solo los tratamientos odontológicos admiten este flujo de enmienda.');
     if (previous.status !== 'signed') throw new HttpError(409, 'Solo la versión firmada vigente puede enmendarse.');
 
+    const pendingAmendments=await tx.$queryRawUnsafe<any[]>(`
+      SELECT "id" FROM public."CareEncounter"
+      WHERE "tenantId"=$1
+        AND "patientId"=$2
+        AND "type"='dental-treatment'
+        AND "status" IN ('draft','review')
+        AND "clinicalData"->'versioning'->>'previousEncounterId'=$3
+      LIMIT 1
+    `,tenantId,previous.patientId,previous.id);
+    if(pendingAmendments.length) throw new HttpError(409,'Ya existe una enmienda pendiente para esta versión firmada.');
+
     const previousClinicalData = previous.clinicalData && typeof previous.clinicalData === 'object' ? previous.clinicalData : {};
     const beforeClinical = dentalSnapshot(previousClinicalData);
     const afterClinical = dentalSnapshot(b.clinicalData);
@@ -425,7 +436,7 @@ router.post('/health/encounters/:id/amend', requirePermission('health.manage'), 
         actor:{ userId:actorUserId, email:actorEmail },
         actorUserId,
         actorEmail,
-        amendedAt:draftCreatedAt,
+        amendedAt:null,
         changedFields,
         before,
         after
@@ -532,6 +543,9 @@ router.post('/health/encounters/:id/workflow', requirePermission('health.manage'
 
     const nextClinicalData={
       ...clinicalData,
+      ...(previousEncounterId&&clinicalData.versioning&&typeof clinicalData.versioning==='object'
+        ? {versioning:{...clinicalData.versioning,amendedAt:changedAt}}
+        : {}),
       lifecycle:{
         ...lifecycle,
         state:'signed',
