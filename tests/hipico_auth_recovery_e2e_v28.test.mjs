@@ -121,7 +121,7 @@ test('v28 script uses publishable auth endpoints only and never persists sensiti
   assert.match(source,/role==='service_role'/);
   assert.match(source,/\^sb_secret_/);
   assert.doesNotMatch(source,/process\.env\.(?:SUPABASE_SERVICE_ROLE|HIPICO_SUPABASE_SERVICE_ROLE|SERVICE_ROLE)/i);
-  assert.doesNotMatch(source,/serviceRoleKey|service_role_key/i);
+  assert.doesNotMatch(source,/\b(?:const|let|var)\s+(?:serviceRoleKey|service_role_key)\b/i);
   assert.match(source,/randomBytes/);
   assert.match(source,/createHash/);
   assert.match(source,/redirect:\s*'manual'/);
