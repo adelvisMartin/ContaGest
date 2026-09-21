@@ -14,6 +14,7 @@ import { DentalConsentPanel } from '../components/dentistry/DentalConsentPanel.j
 import { DentalMediaPanel } from '../components/dentistry/DentalMediaPanel.jsx';
 import { DentalLifecycleActions } from '../components/dentistry/DentalLifecycleActions.jsx';
 import { DentalSchedulePanel } from '../components/dentistry/DentalSchedulePanel.jsx';
+import { DentalFinancialPanel } from '../components/dentistry/DentalFinancialPanel.jsx';
 
 const PROCEDURES=['Evaluación','Profilaxis / limpieza','Restauración','Endodoncia','Extracción','Periodoncia','Ortodoncia','Prótesis','Implante','Radiografía / estudio','Control postoperatorio'];
 const SPECIALTIES=[
@@ -467,6 +468,12 @@ function DentistryWorkspace({ state, context }){
       encounters={encounters}
       onCreate={createTreatmentPlan}
       onDecision={decideTreatmentPlan}
+    />
+
+    <DentalFinancialPanel
+      selectedPatientId={selectedPatientId}
+      encounters={encounters}
+      notify={notify}
     />
 
     <DentalConsentPanel
