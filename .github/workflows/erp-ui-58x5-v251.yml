@@ -1,0 +1,102 @@
+name: ERP UI 58x5 #2/51
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'frontend/**'
+      - 'qa/**'
+      - 'scripts/vercel-browser-preqa-v16.mjs'
+      - 'scripts/erp-browser-58x5-v251.mjs'
+      - 'tests/erp_ui_wave_a_2_51.test.mjs'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/erp-ui-58x5-v251.yml'
+  push:
+    branches: [qa/postmerge-58x5-verification]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: erp-ui-58x5-v251-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  core:
+    name: Core browser contracts
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install locked dependencies
+        run: npm ci --no-audit --no-fund
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+      - name: Run core browser matrix
+        run: npm run test:browser:58:core
+      - name: Upload core evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: erp-ui-58x5-core-${{ github.event.pull_request.head.sha || github.sha }}
+          path: |
+            test-results
+            playwright-report
+          if-no-files-found: warn
+          retention-days: 14
+
+  route-shards:
+    name: Route shard ${{ matrix.batch + 1 }}/10
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        batch: [0,1,2,3,4,5,6,7,8,9]
+    env:
+      CG_58X5_BATCH_INDEX: ${{ matrix.batch }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install locked dependencies
+        run: npm ci --no-audit --no-fund
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+      - name: Run route shard
+        run: npm run test:browser:58:shard
+      - name: Upload shard evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: erp-ui-58x5-shard-${{ matrix.batch }}-${{ github.event.pull_request.head.sha || github.sha }}
+          path: |
+            test-results
+            playwright-report
+          if-no-files-found: warn
+          retention-days: 14
+
+  verdict:
+    name: 58x5 aggregate verdict
+    if: always()
+    needs: [core, route-shards]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Require every browser shard to pass
+        env:
+          CORE_RESULT: ${{ needs.core.result }}
+          SHARDS_RESULT: ${{ needs.route-shards.result }}
+        run: |
+          set -euo pipefail
+          printf 'core=%s\nroute-shards=%s\n' "$CORE_RESULT" "$SHARDS_RESULT"
+          test "$CORE_RESULT" = "success"
+          test "$SHARDS_RESULT" = "success"
