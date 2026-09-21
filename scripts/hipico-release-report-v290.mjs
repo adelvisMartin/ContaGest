@@ -7,6 +7,7 @@ import {
   deriveProductionReadinessState
 } from './hipico-release-readiness-v9.mjs';
 import { combineProductionSchemaGate } from './hipico-production-schema-gate-v20.mjs';
+import { combineAuthRecoveryGate } from './hipico-auth-recovery-gate-v29.mjs';
 
 const SHA40 = /^[0-9a-f]{40}$/i;
 const STATUSES = Object.freeze(['PASS', 'FAIL', 'BLOCKED', 'NOT_EXECUTED']);
@@ -48,6 +49,9 @@ const optionalEvidence = Array.isArray(verified?.optional) ? verified.optional :
 const productionSchemaArtifact = status(optionalEvidence.find((item) => item?.id === 'productionSchema')?.status);
 const productionSchemaJob = status(process.env.HIPICO_GATE_PRODUCTION_SCHEMA);
 const productionSchemaStatus = combineProductionSchemaGate(productionSchemaJob, productionSchemaArtifact);
+const authRecoveryArtifact = status(optionalEvidence.find((item) => item?.id === 'authRecovery')?.status);
+const authRecoveryJob = status(process.env.HIPICO_GATE_AUTH_RECOVERY);
+const authRecoveryStatus = combineAuthRecoveryGate(authRecoveryJob, authRecoveryArtifact);
 const gates = {
   static: status(process.env.HIPICO_GATE_STATIC),
   postgres: status(process.env.HIPICO_GATE_POSTGRES),
@@ -58,10 +62,11 @@ const gates = {
   evidence,
   browserMatrix: status(process.env.HIPICO_GATE_MATRIX),
   physicalQa: status(process.env.HIPICO_GATE_PHYSICAL_QA),
-  productionSchema: productionSchemaStatus
+  productionSchema: productionSchemaStatus,
+  authRecovery: authRecoveryStatus
 };
 const codeReviewRequired = ['static', 'postgres', 'restartRecovery', 'browserChromium', 'security', 'android', 'evidence'];
-const stableRequired = [...codeReviewRequired, 'browserMatrix', 'physicalQa', 'productionSchema'];
+const stableRequired = [...codeReviewRequired, 'browserMatrix', 'physicalQa', 'productionSchema', 'authRecovery'];
 const codeReviewStatus = aggregate(codeReviewRequired.map((key) => gates[key]));
 const stablePromotionStatus = aggregate(stableRequired.map((key) => gates[key]));
 const agentShadowStatus = status(process.env.HIPICO_GATE_AGENT_SHADOW);
@@ -123,7 +128,9 @@ const report = {
     securityCritical,
     physicalQa: gates.physicalQa,
     productionSchemaJob,
-    productionSchemaArtifact
+    productionSchemaArtifact,
+    authRecoveryJob,
+    authRecoveryArtifact
   },
   readiness: {
     score: readinessScore.score,
@@ -134,8 +141,8 @@ const report = {
     state: readinessState,
     automationReadiness,
     note: productionReady
-      ? 'All required code, browser matrix, security, Android, evidence, production schema, P0/security status, automation validation and physical QA gates are PASS on this exact SHA.'
-      : 'Stable promotion remains blocked until every required gate, including production schema verification, is PASS on this exact SHA and P0/security/automation readiness evidence is explicit.'
+      ? 'All required code, browser matrix, security, Android, evidence, production schema, auth recovery, P0/security status, automation validation and physical QA gates are PASS on this exact SHA.'
+      : 'Stable promotion remains blocked until every required gate, including production schema and auth recovery verification, is PASS on this exact SHA and P0/security/automation readiness evidence is explicit.'
   }
 };
 
