@@ -137,6 +137,16 @@ function safeFileName(value: unknown) {
   return decoded.replace(/[\\/\0\r\n]/g,'_').trim().slice(0,240)||'archivo';
 }
 
+function parseClinicalMetadataHeader(req:any) {
+  const raw=String(req.headers['x-clinical-metadata']||'');
+  if(!raw) throw new HttpError(422,'Falta metadata clínica del adjunto.');
+  if(raw.length>7000) throw new HttpError(431,'La metadata clínica del adjunto es demasiado extensa.');
+  let parsed:unknown;
+  try{parsed=JSON.parse(decodeURIComponent(raw));}
+  catch{throw new HttpError(422,'La metadata clínica del adjunto no es válida.');}
+  return clinicalAttachmentSchema.parse(parsed);
+}
+
 function clinicalStoragePath(tenantId:string, patientId:string, extension:string) {
   const safePatientId=patientId.replace(/[^a-zA-Z0-9_-]/g,'_');
   return `${tenantId}/dental-attachments/${safePatientId}/${crypto.randomUUID()}.${extension}`;
@@ -227,7 +237,7 @@ router.post(
   express.raw({type:['image/jpeg','image/png','image/webp','application/pdf'],limit:CLINICAL_MAX_BYTES}),
   asyncHandler(async (req,res)=>{
     const context=await requireHealthManage(req);
-    const metadata=clinicalAttachmentSchema.parse(req.query||{});
+    const metadata=parseClinicalMetadataHeader(req);
     await validateClinicalPatient(context.tenantId,metadata.patientId);
     await validateClinicalLink(context.tenantId,metadata.patientId,metadata.linkedEncounterId);
     await validateClinicalLink(context.tenantId,metadata.patientId,metadata.treatmentPlanEncounterId,{treatmentPlan:true});
