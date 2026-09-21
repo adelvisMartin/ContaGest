@@ -1121,12 +1121,32 @@ router.post('/health/encounters/:id/financial-link', requirePermission('health.m
   ok(res,{...result.record,replayed:result.replayed},result.replayed?200:201);
 }));
 
+router.get('/health/measurements', requirePermission('health.manage'), asyncHandler(async (req, res) => {
+  const patientId=String(req.query.patientId||'');
+  if(!patientId)throw new HttpError(422,'patientId es obligatorio.');
+  const rows=await prisma.$queryRawUnsafe<any[]>(`
+    SELECT *
+    FROM public."CareMeasurement"
+    WHERE "tenantId"=$1 AND "patientId"=$2
+    ORDER BY "measuredAt" DESC, "id" DESC
+    LIMIT 1000
+  `,ctx(req).tenantId,patientId);
+  ok(res,rows);
+}));
+
 router.post('/health/measurements', requirePermission('health.manage'), asyncHandler(async (req, res) => {
+  const tenantId=ctx(req).tenantId;
   const b = measurementSchema.parse(req.body || {});
+  const patientRows=await prisma.$queryRawUnsafe<any[]>(`
+    SELECT "id" FROM public."CarePatient"
+    WHERE "tenantId"=$1 AND "id"=$2
+    LIMIT 1
+  `,tenantId,b.patientId);
+  if(!patientRows.length)throw new HttpError(422,'El paciente no pertenece al tenant activo.');
   const rows = await prisma.$queryRawUnsafe<any[]>(`
     INSERT INTO public."CareMeasurement" ("id","tenantId","patientId","encounterId","kind","value","unit","measuredAt","metadata")
     VALUES (gen_random_uuid()::text,$1,$2,$3,$4,$5,$6,COALESCE($7::timestamptz,now()),$8::jsonb) RETURNING *
-  `, ctx(req).tenantId,b.patientId,b.encounterId||null,b.kind,b.value,b.unit,b.measuredAt||null,JSON.stringify(b.metadata));
+  `, tenantId,b.patientId,b.encounterId||null,b.kind,b.value,b.unit,b.measuredAt||null,JSON.stringify(b.metadata));
   ok(res, one(rows), 201);
 }));
 
