@@ -56,6 +56,58 @@ const appointmentSchema = z.object({
   notes: optionalText
 });
 
+const dentalResourceSchema=z.object({
+  name:z.string().trim().min(2).max(120),
+  kind:z.enum(['chair','room','equipment']).default('chair')
+});
+const dentalScheduleAppointmentSchema=z.object({
+  patientId:z.string().min(10),
+  professionalId:z.string().min(10),
+  resourceId:z.string().min(10),
+  startsAt:dateText,
+  durationMinutes:z.coerce.number().int().min(15).max(480),
+  reason:optionalText,
+  notes:optionalText,
+  recallId:z.string().min(10).optional().nullable()
+});
+const dentalConfirmationSchema=z.object({
+  action:z.enum(['confirm','cancel','no-show']),
+  reason:optionalText
+});
+const dentalWaitlistSchema=z.object({
+  patientId:z.string().min(10),
+  professionalId:z.string().min(10).optional().nullable(),
+  resourceId:z.string().min(10).optional().nullable(),
+  reason:optionalText,
+  preferredFrom:z.string().optional().nullable(),
+  preferredTo:z.string().optional().nullable(),
+  durationMinutes:z.coerce.number().int().min(15).max(480).default(45),
+  priority:z.coerce.number().int().min(1).max(5).default(3),
+  notes:optionalText
+}).superRefine((value,refinement)=>{
+  if(value.preferredFrom&&value.preferredTo&&new Date(value.preferredTo)<=new Date(value.preferredFrom)){
+    refinement.addIssue({code:'custom',path:['preferredTo'],message:'El final de preferencia debe ser posterior al inicio.'});
+  }
+});
+const dentalWaitlistBookingSchema=z.object({
+  startsAt:dateText,
+  professionalId:z.string().min(10).optional().nullable(),
+  resourceId:z.string().min(10).optional().nullable(),
+  durationMinutes:z.coerce.number().int().min(15).max(480).optional(),
+  notes:optionalText
+});
+const dentalRecallSchema=z.object({
+  patientId:z.string().min(10),
+  professionalId:z.string().min(10).optional().nullable(),
+  dueAt:dateText,
+  kind:z.string().trim().min(2).max(160),
+  notes:optionalText
+});
+const dentalRecallStatusSchema=z.object({
+  action:z.enum(['contacted','dismissed']),
+  notes:optionalText
+});
+
 const DENTAL_PERMANENT_TEETH = new Set(['11','12','13','14','15','16','17','18','21','22','23','24','25','26','27','28','31','32','33','34','35','36','37','38','41','42','43','44','45','46','47','48']);
 const DENTAL_PRIMARY_TEETH = new Set(['51','52','53','54','55','61','62','63','64','65','71','72','73','74','75','81','82','83','84','85']);
 const dentalClinicalDataSchema = z.object({
@@ -260,6 +312,91 @@ const immunizationSchema = z.object({
   notes: optionalText
 });
 
+async function validateDentalSchedulePatient(db:any,tenantId:string,patientId:string){
+  const rows=await db.$queryRawUnsafe<any[]>(`
+    SELECT "id","displayName" FROM public."CarePatient"
+    WHERE "tenantId"=$1 AND "id"=$2 AND "kind"='human' AND "active"=true
+    LIMIT 1
+  `,tenantId,patientId);
+  if(!rows.length)throw new HttpError(422,'El paciente odontológico no pertenece al tenant activo.');
+  return rows[0];
+}
+
+async function validateDentalScheduleProfessional(db:any,tenantId:string,professionalId:string){
+  const rows=await db.$queryRawUnsafe<any[]>(`
+    SELECT "id","fullName" FROM public."CareProfessional"
+    WHERE "tenantId"=$1 AND "id"=$2 AND "status"='active'
+    LIMIT 1
+  `,tenantId,professionalId);
+  if(!rows.length)throw new HttpError(422,'El profesional no pertenece al tenant activo o no está activo.');
+  return rows[0];
+}
+
+async function validateDentalScheduleResource(db:any,tenantId:string,resourceId:string){
+  const rows=await db.$queryRawUnsafe<any[]>(`
+    SELECT "id","name","kind" FROM public."CareDentalResource"
+    WHERE "tenantId"=$1 AND "id"=$2 AND "active"=true
+    LIMIT 1
+  `,tenantId,resourceId);
+  if(!rows.length)throw new HttpError(422,'El recurso odontológico no pertenece al tenant activo o no está disponible.');
+  return rows[0];
+}
+
+async function createDentalScheduledAppointment(tx:any,tenantId:string,payload:z.infer<typeof dentalScheduleAppointmentSchema>){
+  await tx.$queryRawUnsafe<any[]>(`SELECT pg_advisory_xact_lock(hashtext($1),hashtext('dental-schedule'))`,tenantId);
+  await validateDentalSchedulePatient(tx,tenantId,payload.patientId);
+  await validateDentalScheduleProfessional(tx,tenantId,payload.professionalId);
+  const resource=await validateDentalScheduleResource(tx,tenantId,payload.resourceId);
+  const startsAt=new Date(payload.startsAt);
+  if(Number.isNaN(startsAt.getTime()))throw new HttpError(422,'Fecha de inicio inválida.');
+  const endsAt=new Date(startsAt.getTime()+payload.durationMinutes*60000);
+
+  if(payload.recallId){
+    const recallRows=await tx.$queryRawUnsafe<any[]>(`
+      SELECT * FROM public."CareDentalRecall"
+      WHERE "tenantId"=$1 AND "id"=$2 AND "patientId"=$3
+      FOR UPDATE
+    `,tenantId,payload.recallId,payload.patientId);
+    const recall=one(recallRows,'Recall no encontrado.');
+    if(!['pending','contacted'].includes(String(recall.status)))throw new HttpError(409,'El recall ya no está disponible para agendar.');
+  }
+
+  const conflicts=await tx.$queryRawUnsafe<any[]>(`
+    SELECT "id","patientId","professionalId","resourceId","startsAt","endsAt"
+    FROM public."CareAppointment"
+    WHERE "tenantId"=$1
+      AND "type"='dentistry'
+      AND "status" NOT IN ('cancelled','no_show')
+      AND "startsAt"<$3::timestamptz
+      AND "endsAt">$2::timestamptz
+      AND (
+        "patientId"=$4
+        OR "professionalId"=$5
+        OR "resourceId"=$6
+      )
+    LIMIT 20
+  `,tenantId,startsAt.toISOString(),endsAt.toISOString(),payload.patientId,payload.professionalId,payload.resourceId);
+  if(conflicts.length)throw new HttpError(409,'Conflicto de agenda: paciente, profesional o recurso ocupado en ese intervalo.');
+
+  const rows=await tx.$queryRawUnsafe<any[]>(`
+    INSERT INTO public."CareAppointment"
+      ("id","tenantId","patientId","professionalId","resourceId","startsAt","endsAt","type","status","reason","channel","room","reminderStatus","confirmationData","notes","createdAt","updatedAt")
+    VALUES
+      (gen_random_uuid()::text,$1,$2,$3,$4,$5::timestamptz,$6::timestamptz,'dentistry','scheduled',$7,'onsite',$8,'pending','{}'::jsonb,$9,now(),now())
+    RETURNING *
+  `,tenantId,payload.patientId,payload.professionalId,payload.resourceId,startsAt.toISOString(),endsAt.toISOString(),payload.reason||null,resource.name,payload.notes||null);
+  const appointment=one(rows);
+
+  if(payload.recallId){
+    await tx.$executeRawUnsafe(`
+      UPDATE public."CareDentalRecall"
+      SET "status"='scheduled',"appointmentId"=$3,"updatedAt"=now()
+      WHERE "tenantId"=$1 AND "id"=$2
+    `,tenantId,payload.recallId,appointment.id);
+  }
+  return appointment;
+}
+
 router.get('/health/summary', requirePermission('health.manage'), asyncHandler(async (req, res) => {
   const tenantId = ctx(req).tenantId;
   const [patients, appointments, dueVaccines, encounters] = await Promise.all([
@@ -306,6 +443,216 @@ router.post('/health/professionals', requirePermission('health.manage'), asyncHa
     VALUES (gen_random_uuid()::text,$1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,now(),now()) RETURNING *
   `, ctx(req).tenantId,ctx(req).userId||null,b.fullName,b.specialty,b.licenseNumber||null,b.email||null,b.phone||null,b.status,JSON.stringify(b.schedule));
   ok(res, one(rows), 201);
+}));
+
+router.get('/health/dental-schedule/resources', requirePermission('health.manage'), asyncHandler(async (req,res)=>{
+  const rows=await prisma.$queryRawUnsafe<any[]>(`
+    SELECT * FROM public."CareDentalResource"
+    WHERE "tenantId"=$1
+    ORDER BY "active" DESC,"kind","name"
+  `,ctx(req).tenantId);
+  ok(res,rows);
+}));
+
+router.post('/health/dental-schedule/resources', requirePermission('health.manage'), asyncHandler(async (req,res)=>{
+  const tenantId=ctx(req).tenantId;
+  const body=dentalResourceSchema.parse(req.body||{});
+  const rows=await prisma.$queryRawUnsafe<any[]>(`
+    INSERT INTO public."CareDentalResource" ("id","tenantId","name","kind","active","createdAt","updatedAt")
+    VALUES (gen_random_uuid()::text,$1,$2,$3,true,now(),now())
+    RETURNING *
+  `,tenantId,body.name,body.kind);
+  ok(res,one(rows),201);
+}));
+
+router.get('/health/dental-schedule/appointments', requirePermission('health.manage'), asyncHandler(async (req,res)=>{
+  const tenantId=ctx(req).tenantId;
+  const from=String(req.query.from||new Date(Date.now()-86400000).toISOString());
+  const to=String(req.query.to||new Date(Date.now()+30*86400000).toISOString());
+  const rows=await prisma.$queryRawUnsafe<any[]>(`
+    SELECT a.*,p."displayName" AS "patientName",pr."fullName" AS "professionalName",
+           r."name" AS "resourceName",r."kind" AS "resourceKind"
+    FROM public."CareAppointment" a
+    JOIN public."CarePatient" p ON p."id"=a."patientId" AND p."tenantId"=a."tenantId"
+    LEFT JOIN public."CareProfessional" pr ON pr."id"=a."professionalId" AND pr."tenantId"=a."tenantId"
+    LEFT JOIN public."CareDentalResource" r ON r."id"=a."resourceId" AND r."tenantId"=a."tenantId"
+    WHERE a."tenantId"=$1 AND a."type"='dentistry'
+      AND a."startsAt"<$3::timestamptz AND a."endsAt">$2::timestamptz
+    ORDER BY a."startsAt" ASC
+    LIMIT 1000
+  `,tenantId,from,to);
+  ok(res,rows);
+}));
+
+router.post('/health/dental-schedule/appointments', requirePermission('health.manage'), asyncHandler(async (req,res)=>{
+  const tenantId=ctx(req).tenantId;
+  const body=dentalScheduleAppointmentSchema.parse(req.body||{});
+  const appointment=await prisma.$transaction((tx)=>createDentalScheduledAppointment(tx,tenantId,body));
+  ok(res,appointment,201);
+}));
+
+router.post('/health/dental-schedule/appointments/:id/confirmation', requirePermission('health.manage'), asyncHandler(async (req,res)=>{
+  const tenantId=ctx(req).tenantId;
+  const actorUserId=ctx(req).userId||null;
+  const actorEmail=ctx(req).email||null;
+  const appointmentId=String(req.params.id||'');
+  const body=dentalConfirmationSchema.parse(req.body||{});
+  const updated=await prisma.$transaction(async (tx)=>{
+    const rows=await tx.$queryRawUnsafe<any[]>(`
+      SELECT * FROM public."CareAppointment"
+      WHERE "tenantId"=$1 AND "id"=$2 AND "type"='dentistry'
+      FOR UPDATE
+    `,tenantId,appointmentId);
+    const previous=one(rows,'Cita odontológica no encontrada.');
+    if(['completed','cancelled','no_show'].includes(String(previous.status)))throw new HttpError(409,'La cita ya está en un estado terminal.');
+    const status=body.action==='confirm'?'confirmed':body.action==='cancel'?'cancelled':'no_show';
+    const confirmedAt=new Date().toISOString();
+    const confirmationData={
+      ...(previous.confirmationData&&typeof previous.confirmationData==='object'?previous.confirmationData:{}),
+      action:body.action,
+      reason:String(body.reason||'').trim()||null,
+      confirmedAt,
+      actor:{userId:actorUserId,email:actorEmail},
+      actorUserId,
+      actorEmail
+    };
+    const result=await tx.$queryRawUnsafe<any[]>(`
+      UPDATE public."CareAppointment"
+      SET "status"=$3,
+          "confirmationData"=$4::jsonb,
+          "reminderStatus"=CASE WHEN $3='confirmed' THEN 'acknowledged' ELSE "reminderStatus" END,
+          "updatedAt"=now()
+      WHERE "tenantId"=$1 AND "id"=$2
+      RETURNING *
+    `,tenantId,previous.id,status,JSON.stringify(confirmationData));
+    return one(result);
+  });
+  ok(res,updated);
+}));
+
+router.get('/health/dental-schedule/waitlist', requirePermission('health.manage'), asyncHandler(async (req,res)=>{
+  const tenantId=ctx(req).tenantId;
+  const status=String(req.query.status||'waiting');
+  const rows=await prisma.$queryRawUnsafe<any[]>(`
+    SELECT w.*,p."displayName" AS "patientName",pr."fullName" AS "professionalName",r."name" AS "resourceName"
+    FROM public."CareDentalWaitlist" w
+    JOIN public."CarePatient" p ON p."id"=w."patientId" AND p."tenantId"=w."tenantId"
+    LEFT JOIN public."CareProfessional" pr ON pr."id"=w."professionalId" AND pr."tenantId"=w."tenantId"
+    LEFT JOIN public."CareDentalResource" r ON r."id"=w."resourceId" AND r."tenantId"=w."tenantId"
+    WHERE w."tenantId"=$1 AND ($2='all' OR w."status"=$2)
+    ORDER BY w."priority" ASC,w."createdAt" ASC
+    LIMIT 500
+  `,tenantId,status);
+  ok(res,rows);
+}));
+
+router.post('/health/dental-schedule/waitlist', requirePermission('health.manage'), asyncHandler(async (req,res)=>{
+  const tenantId=ctx(req).tenantId;
+  const body=dentalWaitlistSchema.parse(req.body||{});
+  await validateDentalSchedulePatient(prisma,tenantId,body.patientId);
+  if(body.professionalId)await validateDentalScheduleProfessional(prisma,tenantId,body.professionalId);
+  if(body.resourceId)await validateDentalScheduleResource(prisma,tenantId,body.resourceId);
+  const rows=await prisma.$queryRawUnsafe<any[]>(`
+    INSERT INTO public."CareDentalWaitlist"
+      ("id","tenantId","patientId","professionalId","resourceId","reason","preferredFrom","preferredTo","durationMinutes","priority","status","notes","metadata","createdAt","updatedAt")
+    VALUES
+      (gen_random_uuid()::text,$1,$2,$3,$4,$5,$6::timestamptz,$7::timestamptz,$8,$9,'waiting',$10,'{}'::jsonb,now(),now())
+    RETURNING *
+  `,tenantId,body.patientId,body.professionalId||null,body.resourceId||null,body.reason||null,body.preferredFrom||null,body.preferredTo||null,body.durationMinutes,body.priority,body.notes||null);
+  ok(res,one(rows),201);
+}));
+
+router.post('/health/dental-schedule/waitlist/:id/book', requirePermission('health.manage'), asyncHandler(async (req,res)=>{
+  const tenantId=ctx(req).tenantId;
+  const waitlistId=String(req.params.id||'');
+  const body=dentalWaitlistBookingSchema.parse(req.body||{});
+  const result=await prisma.$transaction(async (tx)=>{
+    const rows=await tx.$queryRawUnsafe<any[]>(`
+      SELECT * FROM public."CareDentalWaitlist"
+      WHERE "tenantId"=$1 AND "id"=$2
+      FOR UPDATE
+    `,tenantId,waitlistId);
+    const waitlist=one(rows,'Entrada de lista de espera no encontrada.');
+    if(!['waiting','contacted'].includes(String(waitlist.status)))throw new HttpError(409,'La entrada de lista de espera ya no está disponible.');
+    const professionalId=body.professionalId||waitlist.professionalId;
+    const resourceId=body.resourceId||waitlist.resourceId;
+    if(!professionalId||!resourceId)throw new HttpError(422,'Para agendar desde lista de espera se requiere profesional y recurso.');
+    const appointment=await createDentalScheduledAppointment(tx,tenantId,{
+      patientId:waitlist.patientId,
+      professionalId,
+      resourceId,
+      startsAt:body.startsAt,
+      durationMinutes:body.durationMinutes||waitlist.durationMinutes,
+      reason:waitlist.reason||'Lista de espera odontológica',
+      notes:body.notes||waitlist.notes||null,
+      recallId:null
+    });
+    const bookedAt=new Date().toISOString();
+    await tx.$executeRawUnsafe(`
+      UPDATE public."CareDentalWaitlist"
+      SET "status"='booked',
+          "metadata"=COALESCE("metadata",'{}'::jsonb)||$3::jsonb,
+          "updatedAt"=now()
+      WHERE "tenantId"=$1 AND "id"=$2
+    `,tenantId,waitlist.id,JSON.stringify({appointmentId:appointment.id,bookedAt}));
+    return appointment;
+  });
+  ok(res,result,201);
+}));
+
+router.get('/health/dental-schedule/recalls', requirePermission('health.manage'), asyncHandler(async (req,res)=>{
+  const tenantId=ctx(req).tenantId;
+  const status=String(req.query.status||'pending');
+  const rows=await prisma.$queryRawUnsafe<any[]>(`
+    SELECT r.*,p."displayName" AS "patientName",pr."fullName" AS "professionalName"
+    FROM public."CareDentalRecall" r
+    JOIN public."CarePatient" p ON p."id"=r."patientId" AND p."tenantId"=r."tenantId"
+    LEFT JOIN public."CareProfessional" pr ON pr."id"=r."professionalId" AND pr."tenantId"=r."tenantId"
+    WHERE r."tenantId"=$1 AND ($2='all' OR r."status"=$2)
+    ORDER BY r."dueAt" ASC
+    LIMIT 500
+  `,tenantId,status);
+  ok(res,rows);
+}));
+
+router.post('/health/dental-schedule/recalls', requirePermission('health.manage'), asyncHandler(async (req,res)=>{
+  const tenantId=ctx(req).tenantId;
+  const body=dentalRecallSchema.parse(req.body||{});
+  await validateDentalSchedulePatient(prisma,tenantId,body.patientId);
+  if(body.professionalId)await validateDentalScheduleProfessional(prisma,tenantId,body.professionalId);
+  const rows=await prisma.$queryRawUnsafe<any[]>(`
+    INSERT INTO public."CareDentalRecall"
+      ("id","tenantId","patientId","professionalId","dueAt","kind","status","notes","metadata","createdAt","updatedAt")
+    VALUES
+      (gen_random_uuid()::text,$1,$2,$3,$4::timestamptz,$5,'pending',$6,'{}'::jsonb,now(),now())
+    RETURNING *
+  `,tenantId,body.patientId,body.professionalId||null,body.dueAt,body.kind,body.notes||null);
+  ok(res,one(rows),201);
+}));
+
+router.post('/health/dental-schedule/recalls/:id/status', requirePermission('health.manage'), asyncHandler(async (req,res)=>{
+  const tenantId=ctx(req).tenantId;
+  const actorUserId=ctx(req).userId||null;
+  const actorEmail=ctx(req).email||null;
+  const recallId=String(req.params.id||'');
+  const body=dentalRecallStatusSchema.parse(req.body||{});
+  const rows=await prisma.$queryRawUnsafe<any[]>(`
+    UPDATE public."CareDentalRecall"
+    SET "status"=$3,
+        "metadata"=COALESCE("metadata",'{}'::jsonb)||$4::jsonb,
+        "notes"=COALESCE($5,"notes"),
+        "updatedAt"=now()
+    WHERE "tenantId"=$1 AND "id"=$2 AND "status" IN ('pending','contacted')
+    RETURNING *
+  `,tenantId,recallId,body.action,JSON.stringify({
+    action:body.action,
+    changedAt:new Date().toISOString(),
+    actor:{userId:actorUserId,email:actorEmail},
+    actorUserId,
+    actorEmail
+  }),body.notes||null);
+  if(!rows.length)throw new HttpError(409,'El recall no existe o ya está cerrado.');
+  ok(res,one(rows));
 }));
 
 router.get('/health/appointments', requirePermission('health.manage'), asyncHandler(async (req, res) => {
