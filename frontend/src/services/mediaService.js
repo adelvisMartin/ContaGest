@@ -35,6 +35,34 @@ export const MediaService = {
       return { ...record, photoPath: path, [field]: signed.get(path) || '' };
     });
   },
+  async uploadDentalAttachment({ patientId, file, kind, title, tooth = '', linkedEncounterId = '', treatmentPlanEncounterId = '', notes = '' }) {
+    if (!(file instanceof File)) throw new Error('Selecciona un archivo clínico válido.');
+    const allowed=['image/jpeg','image/png','image/webp','application/pdf'];
+    if(!allowed.includes(file.type)) throw new Error('Usa JPEG, PNG, WebP o PDF.');
+    if(!file.size||file.size>15 * 1024 * 1024) throw new Error('El archivo clínico debe pesar entre 1 byte y 15 MB.');
+    const clinicalMetadata={
+      patientId:String(patientId||''),kind:String(kind||''),title:String(title||'')
+    };
+    if(tooth)clinicalMetadata.tooth=String(tooth);
+    if(linkedEncounterId)clinicalMetadata.linkedEncounterId=String(linkedEncounterId);
+    if(treatmentPlanEncounterId)clinicalMetadata.treatmentPlanEncounterId=String(treatmentPlanEncounterId);
+    if(notes)clinicalMetadata.notes=String(notes);
+    const encodedMetadata=encodeURIComponent(JSON.stringify(clinicalMetadata));
+    if(encodedMetadata.length>7000)throw new Error('La metadata clínica del adjunto es demasiado extensa.');
+    return BackendApi.request('/media/dental-attachments',{
+      method:'POST',
+      body:file,
+      headers:{
+        'content-type':file.type,
+        'x-file-name':encodeURIComponent(file.name||'archivo'),
+        'x-clinical-metadata':encodedMetadata
+      }
+    });
+  },
+  async dentalAttachments(patientId) {
+    const params=new URLSearchParams({patientId:String(patientId||'')});
+    return BackendApi.get(`/media/dental-attachments?${params.toString()}`);
+  },
   async remove(path) {
     return BackendApi.request('/media', { method: 'DELETE', body: { path } });
   }

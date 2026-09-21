@@ -113,16 +113,35 @@ if(dentistryEntry?.status==='MIGRATED'){
   }
   if((dentistry.match(/DentalConsentPanel/g)||[]).length!==2)fail('odontologia: DentalConsentPanel symbol must appear exactly twice (one import + one component)');
   if((dentistry.match(/<DentalConsentPanel/g)||[]).length!==1)fail('odontologia: dental consent panel must render exactly once');
-  const dentalConsent=read('frontend/src/components/dentistry/DentalConsentPanel.jsx');
-  if(!dentistry.includes('DentalConsentPanel'))fail('odontologia: dental consent evidence panel is not composed');
-  if((dentistry.match(/<DentalConsentPanel/g)||[]).length!==1)fail('odontologia: dental consent panel must render exactly once');
-  if(/querySelector|addEventListener|innerHTML|document\./.test(dentalConsent))fail('odontologia: dental consent reintroduced imperative DOM lifecycle');
-  for(const contract of ['Firma declarativa','No es un certificado criptográfico','attestation','Nombre del firmante','Texto del consentimiento','Revocar consentimiento','SHA-256','Revisión']){
-    if(!dentalConsent.includes(contract))fail(`odontologia: missing consent evidence contract ${contract}`);
+
+  const dentalMedia=read('frontend/src/components/dentistry/DentalMediaPanel.jsx');
+  const mediaService=read('frontend/src/services/mediaService.js');
+  const backendApi=read('frontend/src/services/backendApi.js');
+  const mediaRoutes=read('backend/src/modules/media/media.routes.ts');
+  const mediaMigration=read('backend/prisma/migrations/20260918222000_dental_clinical_media_v1751/migration.sql');
+  if(!dentistry.includes('DentalMediaPanel'))fail('odontologia: clinical media panel is not composed');
+  if((dentistry.match(/<DentalMediaPanel/g)||[]).length!==1)fail('odontologia: clinical media panel must render exactly once');
+  if(/querySelector|addEventListener|innerHTML|document\./.test(dentalMedia))fail('odontologia: clinical media panel reintroduced imperative DOM lifecycle');
+  for(const contract of ['Radiografía','Foto clínica','Estudio / informe','Documento','Pieza','Encuentro relacionado','Plan relacionado','SHA-256','Abrir archivo']){
+    if(!dentalMedia.includes(contract))fail(`odontologia: missing clinical media UI contract ${contract}`);
   }
-  for(const contract of ['HealthVerticalService.consents(','HealthVerticalService.signDentalConsent(','HealthVerticalService.revokeConsent(']){
-    if(!dentistry.includes(contract))fail(`odontologia: missing canonical consent service contract ${contract}`);
+  for(const contract of ['MediaService.dentalAttachments(','MediaService.uploadDentalAttachment(']){
+    if(!dentistry.includes(contract))fail(`odontologia: missing clinical media service wiring ${contract}`);
   }
+  if(!mediaService.includes('x-clinical-metadata')||!mediaRoutes.includes('x-clinical-metadata'))fail('odontologia: clinical media metadata must stay out of upload URLs');
+  if(/dental-attachments\\?\\$\\{params\\.toString\\(\\)\\}/.test(mediaService)||/clinicalAttachmentSchema\\.parse\\(req\\.query/.test(mediaRoutes))fail('odontologia: clinical attachment metadata leaked into URL/query');
+  for(const contract of ['uploadDentalAttachment','dentalAttachments','application/pdf','15 * 1024 * 1024']){
+    if(!mediaService.includes(contract))fail(`odontologia: missing clinical media service contract ${contract}`);
+  }
+  for(const contract of ['isBinaryBody','Blob','ArrayBuffer','ArrayBuffer.isView']){
+    if(!backendApi.includes(contract))fail(`odontologia: BackendApi missing binary body contract ${contract}`);
+  }
+  for(const contract of ['CLINICAL_MAX_BYTES','express.raw','validateClinicalMagic','dental-attachments',"type:'dental-attachment'",'health.manage','sha256','storagePath']){
+    if(!mediaRoutes.includes(contract))fail(`odontologia: missing clinical media backend contract ${contract}`);
+  }
+  if(!mediaMigration.includes('contagest-clinical-media')||!mediaMigration.includes('15728640')||!mediaMigration.includes('application/pdf')||!/public\s*=\s*false/.test(mediaMigration))fail('odontologia: clinical media bucket must remain isolated/private with 15 MB/PDF support');
+  if(/UPDATE storage\.buckets[\s\S]{0,300}WHERE id = 'contagest-media'/.test(mediaMigration))fail('odontologia: clinical media migration must not widen generic contagest-media limits');
+  if(!mediaRoutes.includes("DENTAL_BUCKET = 'contagest-clinical-media'"))fail('odontologia: dental media route must use isolated clinical bucket');
 
 }
 
