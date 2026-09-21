@@ -215,7 +215,7 @@ export const VeterinaryClinicPage={
   mount(state,ctx){
     const host=document.getElementById('veterinaryUnifiedRoot');
     if(!host)return;
-    try{activeRoot?.unmount();}catch{}
+    try{activeRoot?.unmount();}catch(error){reportVeterinaryError('page.unmountPreviousRoot',error);}
     activeRoot=createRoot(host);
     activeRoot.render(
       <CgProvider state={state}>
