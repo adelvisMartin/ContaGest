@@ -147,7 +147,7 @@ test('v24 provisioner consumes canonical inventory and delegates role SQL to one
   ]);
   const tables=inventory.split(/\r?\n/).map((x)=>x.trim()).filter((x)=>x&&!x.startsWith('#'));
   assert.equal(tables.length,25);
-  assert.match(script,/ops\\/backup\\/hipico-public-tables\\.txt/);
+  assert.match(script,/ops\/backup\/hipico-public-tables\.txt/);
   assert.doesNotMatch(script,/HIPICO_BACKUP_TABLE_FILE/);
   assert.match(script,/HIPICO_BACKUP_PASSWORD/);
   assert.match(script,/HIPICO_BACKUP_DDL_URL/);
