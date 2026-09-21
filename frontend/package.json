@@ -15,7 +15,7 @@
     "preqa:browser": "cd .. && node scripts/vercel-browser-preqa-v16.mjs",
     "build": "npm run build:identity && npm run preqa:source && npm run preqa:browser && npm run stage:backend && vite build",
     "preview": "vite preview --host 0.0.0.0 --port 8080",
-    "diag:preqa-a": "cd .. && node --test tests/hipico_auth_recovery_e2e_v28.test.mjs && mkdir -p frontend/dist && printf '<!doctype html><title>auth-v28-pass</title>' > frontend/dist/index.html"
+    "diag:preqa-a": "cd .. && node scripts/hipico-root-contracts.mjs && mkdir -p frontend/dist && printf '<!doctype html><title>hipico-root-pass</title>' > frontend/dist/index.html"
   },
   "dependencies": {
     "@emotion/react": "11.14.0",
