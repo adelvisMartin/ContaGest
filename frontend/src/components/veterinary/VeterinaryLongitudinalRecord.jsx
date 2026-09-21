@@ -100,7 +100,7 @@ export function VeterinaryLongitudinalRecord({patient,encounters=[],prescription
     <Box component="form" onSubmit={submit} sx={{mt:1.2}}>
       <Typography variant="subtitle1" fontWeight={700}>Última medición / nueva toma</Typography>
       <Box sx={{display:'grid',gridTemplateColumns:{xs:'repeat(2,minmax(0,1fr))',lg:'repeat(4,minmax(0,1fr))'},gap:1,mt:.8}}>
-        {measurementKinds.map((definition)=><CgTextField key={definition.kind} size="small" label={`${definition.label} (${definition.unit})`} type="number" inputProps={{step:definition.kind==='weight'||definition.kind==='temperature'?.1:1}} value={form[definition.kind]} onChange={(e)=>setForm({...form,[definition.kind]:e.target.value})}/>)}
+        {measurementKinds.map((definition)=><CgTextField key={definition.kind} size="small" label={`${definition.label} (${definition.unit})`} type="number" inputProps={{step:(definition.kind==='weight'||definition.kind==='temperature')?0.1:1}} value={form[definition.kind]} onChange={(e)=>setForm({...form,[definition.kind]:e.target.value})}/>)}
       </Box>
       {error?<Box mt={1}><CgState severity="error" title="No se guardaron las mediciones">{error}</CgState></Box>:null}
       <CgButton type="submit" disabled={!patient||saving} sx={{mt:1}}>{saving?'Guardando…':'Guardar mediciones'}</CgButton>
