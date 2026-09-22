@@ -232,6 +232,7 @@ model Product {
 
   tenant      Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   movements   InventoryMovement[]
+  lots        InventoryLot[]
   productCodes ProductCode[]
   saleLines   SalesInvoiceLine[]
   purchaseLines PurchaseInvoiceLine[]
@@ -279,10 +280,30 @@ model AnalyticsEvent {
   @@index([tenantId, sessionId])
 }
 
+model InventoryLot {
+  id          String   @id @default(uuid())
+  tenantId    String
+  productId   String
+  lotNumber   String
+  expiresAt   DateTime? @db.Date
+  receivedAt  DateTime @default(now())
+  notes       String?
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  product     Product @relation(fields: [productId], references: [id], onDelete: Restrict)
+  movements   InventoryMovement[]
+
+  @@unique([tenantId, productId, lotNumber])
+  @@index([tenantId, productId, expiresAt])
+}
+
 model InventoryMovement {
   id          String   @id @default(uuid())
   tenantId    String
   productId   String
+  lotId       String?
   type        MovementType
   quantity    Decimal  @db.Decimal(18,3)
   unitCost    Decimal? @db.Decimal(18,2)
@@ -292,8 +313,10 @@ model InventoryMovement {
   createdAt   DateTime @default(now())
 
   product     Product @relation(fields: [productId], references: [id], onDelete: Restrict)
+  lot         InventoryLot? @relation(fields: [lotId], references: [id], onDelete: Restrict)
 
   @@index([tenantId, productId, createdAt])
+  @@index([tenantId, lotId, createdAt])
 }
 
 model SalesInvoice {
