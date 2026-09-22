@@ -24,8 +24,11 @@ Esto producía:
 Con `resultId`:
 
 - bloquea la orden con `FOR UPDATE`;
-- actualiza la fila placeholder exacta del mismo tenant + orden;
-- rechaza IDs fuera de la orden.
+- rechaza órdenes `cancelled` o `completed`;
+- bloquea también la fila placeholder pendiente;
+- actualiza sólo valor/flag/fecha/verificador/notas/adjunto;
+- **no reescribe** nombre, código, categoría, unidad ni rangos ordenados desde el cliente;
+- rechaza IDs fuera de la orden y un segundo write concurrente sobre la misma prueba.
 
 Sin `resultId`, conserva compatibilidad para resultados ad hoc mediante INSERT.
 
@@ -45,6 +48,8 @@ Para resultados numéricos con rango:
 - menor al mínimo → `low`;
 - mayor al máximo → `high`;
 - dentro del rango → `normal`.
+
+Un resultado puramente textual no se marca automáticamente como anormal: sin una regla tipada de referencia eso sería una inferencia clínica no sustentada, por lo que permanece `normal`.
 
 El cliente no expone un selector de bandera normal/high/low.
 
@@ -72,7 +77,7 @@ La orden y sus filas placeholder se crean dentro de una única transacción: no 
 
 ## UI
 
-La captura selecciona una **Prueba ordenada** del pedido y arrastra:
+La captura selecciona una **Prueba ordenada** del pedido y presenta:
 
 - testCode;
 - nombre;
@@ -82,7 +87,9 @@ La captura selecciona una **Prueba ordenada** del pedido y arrastra:
 - referencia máxima;
 - referencia textual.
 
-Unidad y referencias se muestran como metadata de la prueba ordenada y no se reescriben manualmente desde la captura.
+Esos metadatos son sólo lectura en UI y vuelven a validarse desde la fila ordenada en servidor; no son autoridad del request.
+
+Los placeholders aún no informados muestran estado **Pendiente** en vez de aparentar una bandera clínica `normal`.
 
 La acción cambia a **Completa** cuando el pedido ya está finalizado.
 
@@ -91,4 +98,5 @@ La acción cambia a **Completa** cuando el pedido ya está finalizado.
 - `erp_ui_veterinary_lab_lifecycle_26_51.test.mjs`;
 - Wave A exige `availableLabTests`, `resultId`, referencias y selección de prueba ordenada;
 - el cliente no puede reintroducir un override visual de flag;
+- el gate verifica además estados terminales, metadata server-authoritative, joins tenant-safe y ausencia de override de verificador/flag;
 - browser/runtime sólo cuentan con ejecución real del SHA.
