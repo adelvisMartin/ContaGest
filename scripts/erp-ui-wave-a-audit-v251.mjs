@@ -172,7 +172,7 @@ if(vetEntry?.status==='MIGRATED'){
     if(!veterinaryRoutes.includes(contract))fail(`veterinaria: missing medication backend contract ${contract}`);
   }
   const medicationRouteStart=veterinaryRoutes.indexOf("router.post('/medications/prescriptions'");
-  const medicationRouteEnd=veterinaryRoutes.indexOf("router.get('/dashboard'",medicationRouteStart);
+  const medicationRouteEnd=veterinaryRoutes.indexOf("router.get('/clinical-inventory'",medicationRouteStart);
   const medicationRouteBlock=veterinaryRoutes.slice(medicationRouteStart,medicationRouteEnd);
   if(/InventoryMovement|inventoryMovement\.create|stock.*decrement|applyStandardEffect/.test(medicationRouteBlock))fail('veterinaria: 28/51 must not consume inventory before clinical inventory authority');
   for(const contract of ['"productId"','"labelSnapshot"','"veterinaryMeta"','CarePrescription_productId_fkey','CarePrescription_tenant_product_idx']){
@@ -181,6 +181,53 @@ if(vetEntry?.status==='MIGRATED'){
   if(/CREATE TABLE/i.test(veterinaryMedicationMigration))fail('veterinaria: 28/51 must extend CarePrescription instead of creating a second prescription authority');
   for(const contract of ['prod."tenantId"=p."tenantId"','pr."tenantId"=p."tenantId"']){
     if(!healthExtendedRoutes.includes(contract))fail(`veterinaria: missing tenant-safe prescription read contract ${contract}`);
+  }
+
+  const veterinaryClinicalInventory=read('frontend/src/components/veterinary/VeterinaryClinicalInventoryPanel.jsx');
+  const clinicalInventoryMigration=read('backend/prisma/migrations/20260922221500_veterinary_clinical_inventory_v2951/migration.sql');
+  const inventoryRoutes=read('backend/src/modules/inventory/inventory.routes.ts');
+  const inventoryCoreService=read('backend/src/shared/services/inventory-movement.service.ts');
+  const prismaSchema=read('backend/prisma/schema.prisma');
+  if((veterinaryWorkspace.match(/<VeterinaryClinicalInventoryPanel/g)||[]).length!==1)fail('veterinaria: clinical inventory panel must render exactly once');
+  if((veterinaryWorkspace.match(/import \{ VeterinaryClinicalInventoryPanel \}/g)||[]).length!==1)fail('veterinaria: clinical inventory panel must have one owner import');
+  if(/querySelector|addEventListener|innerHTML|document\./.test(veterinaryClinicalInventory))fail('veterinaria: clinical inventory reintroduced imperative DOM lifecycle');
+  for(const contract of ['Inventario clínico','Lote','Vencimiento','Mínimo','Reorden','Consumo derivado del acto clínico','Prescripción','Cantidad consumida','No hay selección automática de dosis ni de lote']){
+    if(!veterinaryClinicalInventory.includes(contract))fail(`veterinaria: missing clinical inventory UI contract ${contract}`);
+  }
+  for(const contract of ['VeterinaryService.clinicalInventory(','VeterinaryService.createClinicalInventoryLot(','VeterinaryService.clinicalConsumptions(','VeterinaryService.consumeClinicalInventory(']){
+    if(!veterinaryClinicalInventory.includes(contract))fail(`veterinaria: missing clinical inventory service wiring ${contract}`);
+  }
+  if(/calculateDose|recommendDose|autoDose|doseRecommendation|autoSelectLot|recommendedLot/.test(veterinaryClinicalInventory))fail('veterinaria: clinical inventory must not auto-select dose or lot');
+  for(const contract of [
+    "router.get('/clinical-inventory'",
+    "router.post('/clinical-inventory/lots'",
+    "router.get('/clinical-inventory/consumptions'",
+    "router.post('/clinical-inventory/consume'",
+    "requirePermission('inventory.manage')",
+    'clinicalInventoryConsumptionSchema',
+    'pg_advisory_xact_lock',
+    'lockInventoryProduct',
+    'lockInventoryLot',
+    'inventoryLotBalance',
+    "source:'veterinary-prescription'",
+    'No se puede consumir un lote vencido.',
+    'Existencia insuficiente en el lote seleccionado.'
+  ]){
+    if(!veterinaryRoutes.includes(contract))fail(`veterinaria: missing clinical inventory backend contract ${contract}`);
+  }
+  for(const contract of ['model InventoryLot','lots        InventoryLot[]','lotId       String?','InventoryLot?']){
+    if(!prismaSchema.includes(contract))fail(`veterinaria: missing canonical lot schema contract ${contract}`);
+  }
+  for(const contract of ['CREATE TABLE IF NOT EXISTS public."InventoryLot"','InventoryMovement_lotId_fkey','InventoryMovement_vet_clinical_act_unique','ENABLE ROW LEVEL SECURITY','REVOKE ALL']){
+    if(!clinicalInventoryMigration.includes(contract))fail(`veterinaria: missing clinical inventory migration contract ${contract}`);
+  }
+  if(/"stock"\s+numeric/.test(clinicalInventoryMigration))fail('veterinaria: InventoryLot must not duplicate materialized product stock');
+  for(const contract of ['lockInventoryProduct','applyInventoryStandardEffect','lockInventoryLot','inventoryLotBalance']){
+    if(!inventoryCoreService.includes(contract))fail(`veterinaria: missing shared inventory authority ${contract}`);
+  }
+  if(/async function lockProduct\(|async function applyStandardEffect\(/.test(inventoryRoutes))fail('inventory: route must not reintroduce duplicated stock-effect helpers');
+  for(const contract of ['original.lotId','lockInventoryLot','inventoryLotBalance','INVENTORY_LOT_REVERSAL_INVALID_BALANCE','lotId: original.lotId || null']){
+    if(!inventoryRoutes.includes(contract))fail(`inventory: missing lot-aware reversal contract ${contract}`);
   }
 
 }
