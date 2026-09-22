@@ -4,6 +4,15 @@ import { z } from 'zod';
 import { prisma } from '../../database/prisma.js';
 import { asyncHandler, HttpError, ok } from '../../shared/http.js';
 import { requirePermission, requireTenant } from '../../shared/middleware/context.js';
+import { compare, serializeDecimal, ZERO } from '../../shared/financial/decimal.js';
+import { decimalSchema } from '../../shared/financial/zod.js';
+import { writeAudit } from '../../shared/services/audit.service.js';
+import {
+  applyInventoryStandardEffect,
+  inventoryLotBalance,
+  lockInventoryLot,
+  lockInventoryProduct
+} from '../../shared/services/inventory-movement.service.js';
 
 const router = Router();
 router.use(requireTenant, requirePermission('health.manage'));
@@ -27,6 +36,23 @@ const veterinaryMedicationPrescriptionSchema = z.object({
   duration: z.string().trim().min(1).max(240),
   instructions: optionalText,
   productId: z.string().uuid().optional().nullable()
+}).strict();
+
+const clinicalInventoryLotSchema = z.object({
+  productId: z.string().uuid(),
+  lotNumber: z.string().trim().min(1).max(120),
+  expiresAt: z.string().date().optional().nullable(),
+  receivedQuantity: decimalSchema('quantity',{nonnegative:true,defaultValue:0}),
+  unitCost: decimalSchema('money',{nonnegative:true}).optional(),
+  notes: optionalText
+}).strict();
+
+const clinicalInventoryConsumptionSchema = z.object({
+  prescriptionId: z.string().min(10),
+  lotId: z.string().uuid(),
+  quantity: decimalSchema('quantity',{positive:true}),
+  clinicalActId: z.string().uuid(),
+  note: optionalText
 }).strict();
 
 const labOrderSchema = z.object({
