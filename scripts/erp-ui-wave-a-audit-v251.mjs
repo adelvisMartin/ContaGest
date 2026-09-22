@@ -93,6 +93,11 @@ if(vetEntry?.status==='MIGRATED'){
     if(!veterinaryWorkspace.includes(contract))fail(`veterinaria: missing SOAP workspace contract ${contract}`);
   }
   if(!veterinaryWorkspace.includes('clinicalData:{soapTemplate:'))fail('veterinaria: SOAP template provenance must persist in CareEncounter clinicalData');
+  for(const contract of ['availableLabTests','Prueba ordenada','resultId','referenceMin','referenceMax','Capturar resultado']){
+    if(!veterinaryWorkspace.includes(contract))fail(`veterinaria: missing complete lab UI contract ${contract}`);
+  }
+  if(/label="Bandera"|name="flag"/.test(veterinaryWorkspace))fail('veterinaria: client must not override laboratory reference flag');
+
 }
 
 const dentistryEntry=ERP_UI_WAVE_A_2_51.find((item)=>item.route==='odontologia');

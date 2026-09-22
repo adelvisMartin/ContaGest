@@ -39,6 +39,7 @@ const labOrderSchema = z.object({
 
 const labResultSchema = z.object({
   labOrderId: z.string().min(10),
+  resultId: z.string().min(10).optional().nullable(),
   testCode: z.string().trim().max(80).optional().nullable(),
   testName: z.string().trim().min(2).max(180),
   category: z.string().trim().max(100).optional().nullable(),
@@ -48,11 +49,16 @@ const labResultSchema = z.object({
   referenceMin: z.coerce.number().optional().nullable(),
   referenceMax: z.coerce.number().optional().nullable(),
   referenceText: z.string().trim().max(240).optional().nullable(),
-  flag: z.enum(['normal', 'low', 'high', 'critical', 'abnormal']).optional(),
   observedAt: optionalDate,
-  verifiedBy: optionalText,
   notes: optionalText,
   attachmentPath: optionalText
+}).superRefine((value, refinement) => {
+  const hasText=Boolean(String(value.valueText||'').trim());
+  const hasNumeric=value.valueNumeric!==null&&value.valueNumeric!==undefined;
+  if(!hasText&&!hasNumeric) refinement.addIssue({code:'custom',path:['valueNumeric'],message:'El resultado requiere un valor numérico o textual.'});
+  if(value.referenceMin!==null&&value.referenceMin!==undefined&&value.referenceMax!==null&&value.referenceMax!==undefined&&value.referenceMin>value.referenceMax){
+    refinement.addIssue({code:'custom',path:['referenceMax'],message:'El máximo de referencia debe ser mayor o igual al mínimo.'});
+  }
 });
 
 const studySchema = z.object({
@@ -135,11 +141,12 @@ const appointmentStatusSchema = z.object({
 });
 
 function inferFlag(body: z.infer<typeof labResultSchema>) {
-  if (body.flag) return body.flag;
-  if (body.valueNumeric === null || body.valueNumeric === undefined) return body.valueText ? 'abnormal' : 'normal';
-  if (body.referenceMin !== null && body.referenceMin !== undefined && body.valueNumeric < body.referenceMin) return 'low';
-  if (body.referenceMax !== null && body.referenceMax !== undefined && body.valueNumeric > body.referenceMax) return 'high';
-  return 'normal';
+  if (body.valueNumeric !== null && body.valueNumeric !== undefined) {
+    if (body.referenceMin !== null && body.referenceMin !== undefined && body.valueNumeric < body.referenceMin) return 'low';
+    if (body.referenceMax !== null && body.referenceMax !== undefined && body.valueNumeric > body.referenceMax) return 'high';
+    return 'normal';
+  }
+  return body.valueText ? 'abnormal' : 'normal';
 }
 
 router.get('/dashboard', asyncHandler(async (req, res) => {
@@ -185,18 +192,29 @@ router.post('/lab-orders', asyncHandler(async (req, res) => {
   const tenantId = ctx(req).tenantId;
   const patientRows = await prisma.$queryRawUnsafe<any[]>(`SELECT "id" FROM public."CarePatient" WHERE "tenantId"=$1 AND "id"=$2 AND "kind"='animal' LIMIT 1`, tenantId, body.patientId);
   if (!patientRows.length) throw new HttpError(404, 'Mascota no encontrada.');
-  const orderNumber = referenceNumber('VET-LAB');
-  const orderRows = await prisma.$queryRawUnsafe<any[]>(`
-    INSERT INTO public."CareLabOrder" ("id","tenantId","patientId","encounterId","professionalId","orderNumber","status","priority","laboratory","specimenType","fasting","notes","orderedAt","createdAt","updatedAt")
-    VALUES (gen_random_uuid()::text,$1,$2,$3,$4,$5,'ordered',$6,$7,$8,$9,$10,now(),now(),now()) RETURNING *
-  `, tenantId, body.patientId, body.encounterId || null, body.professionalId || null, orderNumber, body.priority, body.laboratory || null, body.specimenType || null, body.fasting, body.notes || null);
-  const order = one(orderRows);
-  for (const test of body.tests) {
-    await prisma.$executeRawUnsafe(`
-      INSERT INTO public."CareLabResult" ("id","tenantId","labOrderId","testCode","testName","category","unit","referenceMin","referenceMax","referenceText","flag","createdAt")
-      VALUES (gen_random_uuid()::text,$1,$2,$3,$4,$5,$6,$7,$8,$9,'normal',now())
-    `, tenantId, order.id, test.testCode || null, test.testName, test.category || null, test.unit || null, test.referenceMin ?? null, test.referenceMax ?? null, test.referenceText || null);
+  if(body.professionalId){
+    const professionalRows=await prisma.$queryRawUnsafe<any[]>(`SELECT "id" FROM public."CareProfessional" WHERE "tenantId"=$1 AND "id"=$2 LIMIT 1`,tenantId,body.professionalId);
+    if(!professionalRows.length)throw new HttpError(422,'El profesional no pertenece al tenant activo.');
   }
+  if(body.encounterId){
+    const encounterRows=await prisma.$queryRawUnsafe<any[]>(`SELECT "id" FROM public."CareEncounter" WHERE "tenantId"=$1 AND "id"=$2 AND "patientId"=$3 LIMIT 1`,tenantId,body.encounterId,body.patientId);
+    if(!encounterRows.length)throw new HttpError(422,'El encuentro no pertenece a la mascota activa.');
+  }
+  const orderNumber = referenceNumber('VET-LAB');
+  const order = await prisma.$transaction(async (tx) => {
+    const orderRows = await tx.$queryRawUnsafe<any[]>(`
+      INSERT INTO public."CareLabOrder" ("id","tenantId","patientId","encounterId","professionalId","orderNumber","status","priority","laboratory","specimenType","fasting","notes","orderedAt","createdAt","updatedAt")
+      VALUES (gen_random_uuid()::text,$1,$2,$3,$4,$5,'ordered',$6,$7,$8,$9,$10,now(),now(),now()) RETURNING *
+    `, tenantId, body.patientId, body.encounterId || null, body.professionalId || null, orderNumber, body.priority, body.laboratory || null, body.specimenType || null, body.fasting, body.notes || null);
+    const createdOrder = one(orderRows);
+    for (const test of body.tests) {
+      await tx.$executeRawUnsafe(`
+        INSERT INTO public."CareLabResult" ("id","tenantId","labOrderId","testCode","testName","category","unit","referenceMin","referenceMax","referenceText","flag","createdAt")
+        VALUES (gen_random_uuid()::text,$1,$2,$3,$4,$5,$6,$7,$8,$9,'normal',now())
+      `, tenantId, createdOrder.id, test.testCode || null, test.testName, test.category || null, test.unit || null, test.referenceMin ?? null, test.referenceMax ?? null, test.referenceText || null);
+    }
+    return createdOrder;
+  });
   ok(res, order, 201);
 }));
 
@@ -216,15 +234,66 @@ router.get('/lab-results', asyncHandler(async (req, res) => {
 
 router.post('/lab-results', asyncHandler(async (req, res) => {
   const body = labResultSchema.parse(req.body || {});
+  const tenantId=ctx(req).tenantId;
+  const verifier=ctx(req).email||ctx(req).userId||null;
   const flag = inferFlag(body);
-  const rows = await prisma.$queryRawUnsafe<any[]>(`
-    INSERT INTO public."CareLabResult" ("id","tenantId","labOrderId","testCode","testName","category","valueText","valueNumeric","unit","referenceMin","referenceMax","referenceText","flag","observedAt","verifiedBy","notes","attachmentPath","createdAt")
-    SELECT gen_random_uuid()::text,$1,o."id",$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,COALESCE($13::timestamptz,now()),$14,$15,$16,now()
-    FROM public."CareLabOrder" o WHERE o."id"=$2 AND o."tenantId"=$1 RETURNING *
-  `, ctx(req).tenantId, body.labOrderId, body.testCode || null, body.testName, body.category || null, body.valueText || null, body.valueNumeric ?? null, body.unit || null, body.referenceMin ?? null, body.referenceMax ?? null, body.referenceText || null, flag, body.observedAt || null, body.verifiedBy || null, body.notes || null, body.attachmentPath || null);
-  const result = one(rows, 'Orden de laboratorio no encontrada.');
-  await prisma.$executeRawUnsafe(`UPDATE public."CareLabOrder" SET "status"='completed',"updatedAt"=now() WHERE "id"=$1 AND "tenantId"=$2`, body.labOrderId, ctx(req).tenantId);
-  ok(res, result, 201);
+
+  const result=await prisma.$transaction(async (tx)=>{
+    const orderRows=await tx.$queryRawUnsafe<any[]>(`
+      SELECT "id","status" FROM public."CareLabOrder"
+      WHERE "tenantId"=$1 AND "id"=$2
+      FOR UPDATE
+    `,tenantId,body.labOrderId);
+    one(orderRows,'Orden de laboratorio no encontrada.');
+
+    let rows:any[]=[];
+    if(body.resultId){
+      rows=await tx.$queryRawUnsafe<any[]>(`
+        UPDATE public."CareLabResult"
+        SET "testCode"=COALESCE($4,"testCode"),
+            "testName"=$5,
+            "category"=COALESCE($6,"category"),
+            "valueText"=$7,
+            "valueNumeric"=$8,
+            "unit"=COALESCE($9,"unit"),
+            "referenceMin"=$10,
+            "referenceMax"=$11,
+            "referenceText"=$12,
+            "flag"=$13,
+            "observedAt"=COALESCE($14::timestamptz,now()),
+            "verifiedBy"=$15,
+            "notes"=$16,
+            "attachmentPath"=$17
+        WHERE "tenantId"=$1 AND "id"=$2 AND "labOrderId"=$3
+        RETURNING *
+      `,tenantId,body.resultId,body.labOrderId,body.testCode||null,body.testName,body.category||null,body.valueText||null,body.valueNumeric??null,body.unit||null,body.referenceMin??null,body.referenceMax??null,body.referenceText||null,flag,body.observedAt||null,verifier,body.notes||null,body.attachmentPath||null);
+      if(!rows.length)throw new HttpError(404,'Prueba ordenada no encontrada.');
+    }else{
+      rows=await tx.$queryRawUnsafe<any[]>(`
+        INSERT INTO public."CareLabResult" ("id","tenantId","labOrderId","testCode","testName","category","valueText","valueNumeric","unit","referenceMin","referenceMax","referenceText","flag","observedAt","verifiedBy","notes","attachmentPath","createdAt")
+        VALUES (gen_random_uuid()::text,$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,COALESCE($13::timestamptz,now()),$14,$15,$16,now())
+        RETURNING *
+      `,tenantId,body.labOrderId,body.testCode||null,body.testName,body.category||null,body.valueText||null,body.valueNumeric??null,body.unit||null,body.referenceMin??null,body.referenceMax??null,body.referenceText||null,flag,body.observedAt||null,verifier,body.notes||null,body.attachmentPath||null);
+    }
+
+    const pendingRows=await tx.$queryRawUnsafe<any[]>(`
+      SELECT count(*)::int AS "pendingCount"
+      FROM public."CareLabResult"
+      WHERE "tenantId"=$1 AND "labOrderId"=$2
+        AND "valueNumeric" IS NULL
+        AND COALESCE("valueText",'')=''
+    `,tenantId,body.labOrderId);
+    const pendingCount=Number(pendingRows[0]?.pendingCount||0);
+    await tx.$executeRawUnsafe(`
+      UPDATE public."CareLabOrder"
+      SET "status"=$3,"updatedAt"=now()
+      WHERE "id"=$1 AND "tenantId"=$2
+    `,body.labOrderId,tenantId,pendingCount===0?'completed':'processing');
+
+    return one(rows);
+  });
+
+  ok(res,result,201);
 }));
 
 router.get('/studies', asyncHandler(async (req, res) => {
