@@ -93,10 +93,30 @@ if(vetEntry?.status==='MIGRATED'){
     if(!veterinaryWorkspace.includes(contract))fail(`veterinaria: missing SOAP workspace contract ${contract}`);
   }
   if(!veterinaryWorkspace.includes('clinicalData:{soapTemplate:'))fail('veterinaria: SOAP template provenance must persist in CareEncounter clinicalData');
-  for(const contract of ['availableLabTests','Prueba ordenada','resultId','referenceMin','referenceMax','Capturar resultado']){
+  for(const contract of ['availableLabTests','Prueba ordenada','resultId','referenceMin','referenceMax','Capturar resultado','isLabResultPending','Pendiente']){
     if(!veterinaryWorkspace.includes(contract))fail(`veterinaria: missing complete lab UI contract ${contract}`);
   }
-  if(/label="Bandera"|name="flag"/.test(veterinaryWorkspace))fail('veterinaria: client must not override laboratory reference flag');
+  if(/label="Bandera"|name="flag"|verifiedBy:field/.test(veterinaryWorkspace))fail('veterinaria: client must not override laboratory flag/verifier authority');
+  const veterinaryRoutes=read('backend/src/modules/verticals/veterinary.routes.ts');
+  for(const contract of [
+    'const order = await prisma.$transaction',
+    'resultId: z.string().min(10).optional().nullable()',
+    'FOR UPDATE',
+    "order.status==='cancelled'",
+    "order.status==='completed'",
+    'Prueba ordenada no encontrada o ya fue informada.',
+    'const verifier=ctx(req).email||ctx(req).userId||null',
+    'pendingCount===0?\'completed\':\'processing\'',
+    'p."tenantId"=o."tenantId"',
+    'r."tenantId"=o."tenantId"'
+  ]){
+    if(!veterinaryRoutes.includes(contract))fail(`veterinaria: missing complete lab backend contract ${contract}`);
+  }
+  if(/verifiedBy:\s*optionalText|flag:\s*z\.enum/.test(veterinaryRoutes))fail('veterinaria: lab result schema reintroduced client verifier/flag authority');
+  const orderedResultStart=veterinaryRoutes.indexOf('if(body.resultId){');
+  const orderedResultEnd=veterinaryRoutes.indexOf('}else{',orderedResultStart);
+  const orderedResultBlock=veterinaryRoutes.slice(orderedResultStart,orderedResultEnd);
+  if(/SET[\s\S]*"testCode"=|SET[\s\S]*"testName"=|SET[\s\S]*"referenceMin"=|SET[\s\S]*"referenceMax"=/.test(orderedResultBlock))fail('veterinaria: ordered lab result must not rewrite ordered test metadata');
 
 }
 
