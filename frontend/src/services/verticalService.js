@@ -58,6 +58,8 @@ export const VeterinaryService = {
   updateHospitalizationStatus(id, payload) { return BackendApi.request(`/verticals/veterinary/hospitalizations/${encodeURIComponent(id)}/status`, { method:'PATCH', body:payload }); },
   observations(hospitalizationId) { return BackendApi.get(`/verticals/veterinary/observations${query({ hospitalizationId })}`); },
   createObservation(payload) { return BackendApi.post('/api/v1/verticals/veterinary/observations', payload); },
+  treatmentSheet(hospitalizationId) { return BackendApi.get(`/verticals/veterinary/hospitalizations/${encodeURIComponent(hospitalizationId)}/treatment-sheet`); },
+  createTreatmentSheetEntry(hospitalizationId, payload) { return BackendApi.post(`/api/v1/verticals/veterinary/hospitalizations/${encodeURIComponent(hospitalizationId)}/treatment-sheet`, payload); },
   procedures(params = {}) { return BackendApi.get(`/verticals/veterinary/procedures${query(params)}`); },
   createProcedure(payload) { return BackendApi.post('/api/v1/verticals/veterinary/procedures', payload); },
   communications(params = {}) { return BackendApi.get(`/verticals/veterinary/communications${query(params)}`); },
