@@ -11,6 +11,7 @@ import { HealthVerticalService, VeterinaryService } from '../../services/vertica
 import { SOAP_TEMPLATE_VERSION, resolveVeterinarySoapTemplate, veterinaryConsultationTypes } from './veterinarySoapTemplates.js';
 import { VeterinaryTreatmentSheet } from './VeterinaryTreatmentSheet.jsx';
 import { VeterinaryMedicationPanel } from './VeterinaryMedicationPanel.jsx';
+import { VeterinaryClinicalInventoryPanel } from './VeterinaryClinicalInventoryPanel.jsx';
 
 const TABS = [
   ['resumen', 'Resumen', 'fa-chart-pie'], ['pacientes', 'Mascotas', 'fa-paw'], ['agenda', 'Agenda', 'fa-calendar-days'],
@@ -114,6 +115,10 @@ export function VeterinaryWorkspace({ state, UrlStateService }) {
             professionals={professionals}
             prescriptions={prescriptions}
             onCreated={()=>loadPatientData(selectedPatientId)}
+          />
+          <VeterinaryClinicalInventoryPanel
+            selectedPatient={selectedPatient}
+            prescriptions={prescriptions}
           />
           <SectionCard title="Consentimientos" action={<Button variant="outlined" onClick={()=>openDialog('consent',{status:'pending'})}>Nuevo</Button>}>
             {consents.length?consents.slice(0,8).map((item)=><Paper key={item.id} variant="outlined" sx={{p:1,mb:.7,display:'flex',justifyContent:'space-between'}}><Box><Typography variant="subtitle2">{item.kind}</Typography><Typography variant="caption">{item.signerName||'Pendiente de firma'}</Typography></Box><StatusChip value={item.status}/></Paper>):<EmptyState icon="fa-file-signature" title="Sin consentimientos"/>}
