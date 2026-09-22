@@ -140,13 +140,15 @@ const appointmentStatusSchema = z.object({
   notes: optionalText
 });
 
-function inferFlag(body: z.infer<typeof labResultSchema>) {
+function inferFlag(body: Pick<z.infer<typeof labResultSchema>, 'valueNumeric'|'valueText'|'referenceMin'|'referenceMax'>) {
   if (body.valueNumeric !== null && body.valueNumeric !== undefined) {
     if (body.referenceMin !== null && body.referenceMin !== undefined && body.valueNumeric < body.referenceMin) return 'low';
     if (body.referenceMax !== null && body.referenceMax !== undefined && body.valueNumeric > body.referenceMax) return 'high';
     return 'normal';
   }
-  return body.valueText ? 'abnormal' : 'normal';
+  // Text alone does not prove an abnormal result. Without an explicit typed
+  // reference rule, keep the deterministic neutral flag instead of guessing.
+  return 'normal';
 }
 
 router.get('/dashboard', asyncHandler(async (req, res) => {
@@ -177,9 +179,9 @@ router.get('/lab-orders', asyncHandler(async (req, res) => {
       count(r."id")::int AS "resultCount",
       count(r."id") FILTER (WHERE r."flag" IN ('critical','high','low','abnormal'))::int AS "abnormalCount"
     FROM public."CareLabOrder" o
-    JOIN public."CarePatient" p ON p."id"=o."patientId" AND p."kind"='animal'
-    LEFT JOIN public."CareProfessional" pr ON pr."id"=o."professionalId"
-    LEFT JOIN public."CareLabResult" r ON r."labOrderId"=o."id"
+    JOIN public."CarePatient" p ON p."id"=o."patientId" AND p."tenantId"=o."tenantId" AND p."kind"='animal'
+    LEFT JOIN public."CareProfessional" pr ON pr."id"=o."professionalId" AND pr."tenantId"=o."tenantId"
+    LEFT JOIN public."CareLabResult" r ON r."labOrderId"=o."id" AND r."tenantId"=o."tenantId"
     WHERE o."tenantId"=$1 AND ($2='' OR o."patientId"=$2) AND ($3='' OR o."status"=$3)
     GROUP BY o."id", p."displayName", p."species", p."breed", pr."fullName"
     ORDER BY o."orderedAt" DESC LIMIT 1000
@@ -224,8 +226,8 @@ router.get('/lab-results', asyncHandler(async (req, res) => {
   const rows = await prisma.$queryRawUnsafe<any[]>(`
     SELECT r.*, o."orderNumber", o."patientId", o."status" AS "orderStatus", p."displayName" AS "patientName"
     FROM public."CareLabResult" r
-    JOIN public."CareLabOrder" o ON o."id"=r."labOrderId"
-    JOIN public."CarePatient" p ON p."id"=o."patientId" AND p."kind"='animal'
+    JOIN public."CareLabOrder" o ON o."id"=r."labOrderId" AND o."tenantId"=r."tenantId"
+    JOIN public."CarePatient" p ON p."id"=o."patientId" AND p."tenantId"=o."tenantId" AND p."kind"='animal'
     WHERE r."tenantId"=$1 AND ($2='' OR r."labOrderId"=$2) AND ($3='' OR o."patientId"=$3)
     ORDER BY r."observedAt" DESC, r."testName" ASC LIMIT 2000
   `, ctx(req).tenantId, labOrderId, patientId);
@@ -236,7 +238,6 @@ router.post('/lab-results', asyncHandler(async (req, res) => {
   const body = labResultSchema.parse(req.body || {});
   const tenantId=ctx(req).tenantId;
   const verifier=ctx(req).email||ctx(req).userId||null;
-  const flag = inferFlag(body);
 
   const result=await prisma.$transaction(async (tx)=>{
     const orderRows=await tx.$queryRawUnsafe<any[]>(`
@@ -244,31 +245,47 @@ router.post('/lab-results', asyncHandler(async (req, res) => {
       WHERE "tenantId"=$1 AND "id"=$2
       FOR UPDATE
     `,tenantId,body.labOrderId);
-    one(orderRows,'Orden de laboratorio no encontrada.');
+    const order=one(orderRows,'Orden de laboratorio no encontrada.');
+    if(order.status==='cancelled')throw new HttpError(409,'La orden de laboratorio está cancelada.');
+    if(order.status==='completed')throw new HttpError(409,'La orden de laboratorio ya está completada.');
 
     let rows:any[]=[];
     if(body.resultId){
+      const targetRows=await tx.$queryRawUnsafe<any[]>(`
+        SELECT "id","testCode","testName","category","unit","referenceMin","referenceMax","referenceText"
+        FROM public."CareLabResult"
+        WHERE "tenantId"=$1 AND "id"=$2 AND "labOrderId"=$3
+          AND "valueNumeric" IS NULL
+          AND COALESCE("valueText",'')=''
+        FOR UPDATE
+      `,tenantId,body.resultId,body.labOrderId);
+      const target=one(targetRows,'Prueba ordenada no encontrada o ya fue informada.');
+      const referenceMin=target.referenceMin===null||target.referenceMin===undefined?null:Number(target.referenceMin);
+      const referenceMax=target.referenceMax===null||target.referenceMax===undefined?null:Number(target.referenceMax);
+      const flag=inferFlag({
+        valueNumeric:body.valueNumeric,
+        valueText:body.valueText,
+        referenceMin,
+        referenceMax
+      });
+
       rows=await tx.$queryRawUnsafe<any[]>(`
         UPDATE public."CareLabResult"
-        SET "testCode"=COALESCE($4,"testCode"),
-            "testName"=$5,
-            "category"=COALESCE($6,"category"),
-            "valueText"=$7,
-            "valueNumeric"=$8,
-            "unit"=COALESCE($9,"unit"),
-            "referenceMin"=$10,
-            "referenceMax"=$11,
-            "referenceText"=$12,
-            "flag"=$13,
-            "observedAt"=COALESCE($14::timestamptz,now()),
-            "verifiedBy"=$15,
-            "notes"=$16,
-            "attachmentPath"=$17
+        SET "valueText"=$4,
+            "valueNumeric"=$5,
+            "flag"=$6,
+            "observedAt"=COALESCE($7::timestamptz,now()),
+            "verifiedBy"=$8,
+            "notes"=$9,
+            "attachmentPath"=$10
         WHERE "tenantId"=$1 AND "id"=$2 AND "labOrderId"=$3
+          AND "valueNumeric" IS NULL
+          AND COALESCE("valueText",'')=''
         RETURNING *
-      `,tenantId,body.resultId,body.labOrderId,body.testCode||null,body.testName,body.category||null,body.valueText||null,body.valueNumeric??null,body.unit||null,body.referenceMin??null,body.referenceMax??null,body.referenceText||null,flag,body.observedAt||null,verifier,body.notes||null,body.attachmentPath||null);
-      if(!rows.length)throw new HttpError(404,'Prueba ordenada no encontrada.');
+      `,tenantId,body.resultId,body.labOrderId,body.valueText||null,body.valueNumeric??null,flag,body.observedAt||null,verifier,body.notes||null,body.attachmentPath||null);
+      if(!rows.length)throw new HttpError(409,'La prueba ya fue informada por otra operación.');
     }else{
+      const flag=inferFlag(body);
       rows=await tx.$queryRawUnsafe<any[]>(`
         INSERT INTO public."CareLabResult" ("id","tenantId","labOrderId","testCode","testName","category","valueText","valueNumeric","unit","referenceMin","referenceMax","referenceText","flag","observedAt","verifiedBy","notes","attachmentPath","createdAt")
         VALUES (gen_random_uuid()::text,$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,COALESCE($13::timestamptz,now()),$14,$15,$16,now())
@@ -295,7 +312,6 @@ router.post('/lab-results', asyncHandler(async (req, res) => {
 
   ok(res,result,201);
 }));
-
 router.get('/studies', asyncHandler(async (req, res) => {
   const patientId = String(req.query.patientId || '');
   const rows = await prisma.$queryRawUnsafe<any[]>(`
