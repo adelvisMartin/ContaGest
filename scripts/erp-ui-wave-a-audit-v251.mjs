@@ -118,6 +118,35 @@ if(vetEntry?.status==='MIGRATED'){
   const orderedResultBlock=veterinaryRoutes.slice(orderedResultStart,orderedResultEnd);
   if(/SET[\s\S]*"testCode"=|SET[\s\S]*"testName"=|SET[\s\S]*"referenceMin"=|SET[\s\S]*"referenceMax"=/.test(orderedResultBlock))fail('veterinaria: ordered lab result must not rewrite ordered test metadata');
 
+  const veterinaryTreatmentSheet=read('frontend/src/components/veterinary/VeterinaryTreatmentSheet.jsx');
+  if((veterinaryWorkspace.match(/<VeterinaryTreatmentSheet/g)||[]).length!==1)fail('veterinaria: treatment sheet must render exactly once');
+  if((veterinaryWorkspace.match(/import \{ VeterinaryTreatmentSheet \}/g)||[]).length!==1)fail('veterinaria: treatment sheet must have one owner import');
+  if(/querySelector|addEventListener|innerHTML|document\./.test(veterinaryTreatmentSheet))fail('veterinaria: treatment sheet reintroduced imperative DOM lifecycle');
+  for(const contract of ['Hoja de tratamiento','Medicacion','Observacion','Alimentacion','Fluidos','Tarea','Responsable','Programado','Realizado','Omitido','Cancelado','scheduledAt','performedAt','responsibleProfessionalId']){
+    if(!veterinaryTreatmentSheet.includes(contract))fail(`veterinaria: missing treatment-sheet UI contract ${contract}`);
+  }
+  for(const contract of ['VeterinaryService.treatmentSheet(','VeterinaryService.createTreatmentSheetEntry(']){
+    if(!veterinaryTreatmentSheet.includes(contract))fail(`veterinaria: missing treatment-sheet service wiring ${contract}`);
+  }
+  if(/calculateDose|recommendDose|autoDose|doseRecommendation/.test(veterinaryTreatmentSheet))fail('veterinaria: treatment sheet must not recommend medication doses');
+  for(const contract of [
+    'treatmentSheetEntrySchema',
+    "router.get('/hospitalizations/:id/treatment-sheet'",
+    "router.post('/hospitalizations/:id/treatment-sheet'",
+    "category: z.enum(['medication','feeding','fluid','task','observation','vitals'])",
+    "status: z.enum(['scheduled','completed','skipped','cancelled'])",
+    'responsibleProfessionalId',
+    'scheduledAt',
+    'performedAt',
+    'actorUserId:ctx(req).userId||null',
+    'actorEmail:ctx(req).email||null',
+    'FOR UPDATE OF h',
+    'treatmentSheetVersion'
+  ]){
+    if(!veterinaryRoutes.includes(contract))fail(`veterinaria: missing treatment-sheet backend contract ${contract}`);
+  }
+  if(/UPDATE public\."CareHospitalObservation"|DELETE FROM public\."CareHospitalObservation"/.test(veterinaryRoutes))fail('veterinaria: treatment-sheet events must remain append-only');
+
 }
 
 const dentistryEntry=ERP_UI_WAVE_A_2_51.find((item)=>item.route==='odontologia');
