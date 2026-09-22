@@ -12,7 +12,15 @@ const isExpired=(value)=>{
   const today=new Date(); today.setUTCHours(0,0,0,0);
   return expiry.getTime()<today.getTime();
 };
-const nextClinicalActId=()=>globalThis.crypto?.randomUUID?.()||`clinical-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+const nextClinicalActId=()=>{
+  if(globalThis.crypto?.randomUUID)return globalThis.crypto.randomUUID();
+  const template='xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx';
+  return template.replace(/[xy]/g,(token)=>{
+    const value=Math.floor(Math.random()*16);
+    const nibble=token==='x'?value:(value&0x3)|0x8;
+    return nibble.toString(16);
+  });
+};
 
 export function VeterinaryClinicalInventoryPanel({selectedPatient,prescriptions=[]}){
   const [inventory,setInventory]=useState({products:[],lots:[]});
