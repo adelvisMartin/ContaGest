@@ -10,6 +10,7 @@ import { add, compare, quantity, serializeDecimal, serializeLegacyNumber, subtra
 import { decimalSchema } from '../../shared/financial/zod.js';
 import { runFinancialIdempotentMutation } from '../../shared/services/financial-idempotency.service.js';
 import { writeAudit } from '../../shared/services/audit.service.js';
+import { applyInventoryStandardEffect as applyStandardEffect, lockInventoryProduct as lockProduct } from '../../shared/services/inventory-movement.service.js';
 
 const router = Router();
 router.use(requireTenant, requirePermission('inventory.manage'));
@@ -59,16 +60,6 @@ const serializeMovement = (movement: any) => ({
   unitCostExact: movement.unitCost === null || movement.unitCost === undefined ? null : serializeDecimal(movement.unitCost, 2)
 });
 
-async function lockProduct(tx: Prisma.TransactionClient, tenantId: string, productId: string) {
-  const rows = await tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`
-    SELECT "id" FROM "Product"
-    WHERE "tenantId"=${tenantId} AND "id"=${productId} AND "active"=true
-    FOR UPDATE
-  `);
-  if (!rows.length) throw new HttpError(404, 'Producto no encontrado para el tenant activo.', { code: 'INVENTORY_PRODUCT_NOT_FOUND' });
-  return tx.product.findFirstOrThrow({ where: { id: productId, tenantId, active: true } });
-}
-
 async function insertAuditLink(tx: Prisma.TransactionClient, input: {
   tenantId: string; productId: string; originalMovementId?: string | null; relatedMovementId: string;
   kind: 'opening' | 'adjustment' | 'reversal'; reasonCode: string; reason: string; createdBy?: string;
@@ -79,23 +70,6 @@ async function insertAuditLink(tx: Prisma.TransactionClient, input: {
     VALUES
       (${randomUUID()},${input.tenantId},${input.productId},${input.originalMovementId || null},${input.relatedMovementId},${input.kind},${input.reasonCode},${input.reason},${input.createdBy || null})
   `);
-}
-
-async function applyStandardEffect(tx: Prisma.TransactionClient, product: any, type: 'in'|'out'|'reservation'|'release', amount: Prisma.Decimal) {
-  const available = subtract(product.stock, product.reserved);
-  if (type === 'out') {
-    if (compare(available, amount) < 0) throw new HttpError(409, 'Stock disponible insuficiente.', { code: 'INVENTORY_INSUFFICIENT_STOCK' });
-    return tx.product.update({ where: { id: product.id }, data: { stock: { decrement: amount } } });
-  }
-  if (type === 'reservation') {
-    if (compare(available, amount) < 0) throw new HttpError(409, 'Stock disponible insuficiente para reservar.', { code: 'INVENTORY_INSUFFICIENT_STOCK' });
-    return tx.product.update({ where: { id: product.id }, data: { reserved: { increment: amount } } });
-  }
-  if (type === 'release') {
-    if (compare(product.reserved, amount) < 0) throw new HttpError(409, 'La liberación excede la cantidad reservada.', { code: 'INVENTORY_RELEASE_EXCEEDS_RESERVED' });
-    return tx.product.update({ where: { id: product.id }, data: { reserved: { decrement: amount } } });
-  }
-  return tx.product.update({ where: { id: product.id }, data: { stock: { increment: amount } } });
 }
 
 async function replayMovement(tx: Prisma.TransactionClient, tenantId: string, resourceId: string | null) {
