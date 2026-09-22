@@ -128,8 +128,23 @@ const treatmentSheetEntrySchema = z.object({
     weight: optionalText
   }).default({})
 }).superRefine((value, refinement) => {
+  const requireDetail=(field, message)=>{
+    if(!String(value.details?.[field]||'').trim()) refinement.addIssue({code:'custom',path:['details',field],message});
+  };
   if (value.status === 'scheduled' && !value.scheduledAt) {
     refinement.addIssue({ code:'custom', path:['scheduledAt'], message:'Una tarea programada requiere fecha/hora.' });
+  }
+  if(value.category==='medication'){
+    requireDetail('medication','Indica el medicamento.');
+    requireDetail('dose','Indica la dosis registrada manualmente.');
+  }
+  if(value.category==='feeding')requireDetail('food','Indica la alimentación.');
+  if(value.category==='fluid')requireDetail('fluid','Indica el fluido.');
+  if(value.category==='observation'&&!String(value.note||'').trim()){
+    refinement.addIssue({code:'custom',path:['note'],message:'La observación no puede estar vacía.'});
+  }
+  if(value.category==='vitals'&&!['temperature','heartRate','respiratoryRate','weight'].some((key)=>String(value.details?.[key]||'').trim())){
+    refinement.addIssue({code:'custom',path:['details'],message:'Registra al menos un signo vital.'});
   }
 });
 
@@ -443,64 +458,72 @@ router.get('/hospitalizations/:id/treatment-sheet', asyncHandler(async (req, res
 router.post('/hospitalizations/:id/treatment-sheet', asyncHandler(async (req, res) => {
   const tenantId=ctx(req).tenantId;
   const body=treatmentSheetEntrySchema.parse(req.body||{});
-  const hospitalizationRows=await prisma.$queryRawUnsafe<any[]>(`
-    SELECT "id","patientId","status"
-    FROM public."CareHospitalization"
-    WHERE "tenantId"=$1 AND "id"=$2
-    LIMIT 1
-  `,tenantId,req.params.id);
-  const hospitalization=one(hospitalizationRows,'Hospitalización no encontrada.');
-  if(!['admitted','observed'].includes(String(hospitalization.status)))throw new HttpError(409,'La hospitalización ya no admite nuevas tareas o cuidados.');
-
-  if(body.responsibleProfessionalId){
-    const professionals=await prisma.$queryRawUnsafe<any[]>(`
-      SELECT "id" FROM public."CareProfessional"
-      WHERE "tenantId"=$1 AND "id"=$2
-      LIMIT 1
-    `,tenantId,body.responsibleProfessionalId);
-    if(!professionals.length)throw new HttpError(422,'El profesional no pertenece al tenant activo.');
-  }
-
   const now=new Date().toISOString();
-  const scheduledAt=body.scheduledAt||null;
-  const performedAt=body.status==='completed'?(body.performedAt||now):(body.performedAt||null);
-  const observedAt=performedAt||scheduledAt||now;
-  const type=body.category==='observation'?'note':body.category;
-  const values={
-    treatmentSheetVersion:'1',
-    category:body.category,
-    status:body.status,
-    title:body.title,
-    scheduledAt,
-    performedAt,
-    responsibleProfessionalId:body.responsibleProfessionalId||null,
-    actorUserId:ctx(req).userId||null,
-    actorEmail:ctx(req).email||null,
-    details:body.details
-  };
+  const result=await prisma.$transaction(async (tx)=>{
+    const hospitalizationRows=await tx.$queryRawUnsafe<any[]>(`
+      SELECT h."id",h."patientId",h."status"
+      FROM public."CareHospitalization" h
+      JOIN public."CarePatient" p
+        ON p."id"=h."patientId" AND p."tenantId"=h."tenantId" AND p."kind"='animal'
+      WHERE h."tenantId"=$1 AND h."id"=$2
+      FOR UPDATE OF h
+    `,tenantId,req.params.id);
+    const hospitalization=one(hospitalizationRows,'Hospitalización no encontrada.');
+    if(!['admitted','observed'].includes(String(hospitalization.status))){
+      throw new HttpError(409,'La hospitalización ya no admite nuevas tareas o cuidados.');
+    }
 
-  const rows=await prisma.$queryRawUnsafe<any[]>(`
-    INSERT INTO public."CareHospitalObservation"
-      ("id","tenantId","hospitalizationId","professionalId","observedAt","type","values","note","createdAt")
-    VALUES
-      (gen_random_uuid()::text,$1,$2,$3,$4::timestamptz,$5,$6::jsonb,$7,now())
-    RETURNING *
-  `,tenantId,hospitalization.id,body.responsibleProfessionalId||null,observedAt,type,JSON.stringify(values),body.note||null);
+    if(body.responsibleProfessionalId){
+      const professionals=await tx.$queryRawUnsafe<any[]>(`
+        SELECT "id" FROM public."CareProfessional"
+        WHERE "tenantId"=$1 AND "id"=$2
+        LIMIT 1
+      `,tenantId,body.responsibleProfessionalId);
+      if(!professionals.length)throw new HttpError(422,'El profesional no pertenece al tenant activo.');
+    }
 
-  const row=one(rows);
-  ok(res,{
-    ...row,
-    ...values,
-    responsibleProfessionalId:row.professionalId
-  },201);
+    const scheduledAt=body.scheduledAt||null;
+    const performedAt=body.status==='completed'?(body.performedAt||now):(body.performedAt||null);
+    const observedAt=performedAt||scheduledAt||now;
+    const type=body.category==='observation'?'note':body.category;
+    const values={
+      treatmentSheetVersion:'1',
+      category:body.category,
+      status:body.status,
+      title:body.title,
+      scheduledAt,
+      performedAt,
+      responsibleProfessionalId:body.responsibleProfessionalId||null,
+      actorUserId:ctx(req).userId||null,
+      actorEmail:ctx(req).email||null,
+      details:body.details
+    };
+
+    const rows=await tx.$queryRawUnsafe<any[]>(`
+      INSERT INTO public."CareHospitalObservation"
+        ("id","tenantId","hospitalizationId","professionalId","observedAt","type","values","note","createdAt")
+      VALUES
+        (gen_random_uuid()::text,$1,$2,$3,$4::timestamptz,$5,$6::jsonb,$7,now())
+      RETURNING *
+    `,tenantId,hospitalization.id,body.responsibleProfessionalId||null,observedAt,type,JSON.stringify(values),body.note||null);
+
+    const row=one(rows);
+    return {
+      ...row,
+      ...values,
+      responsibleProfessionalId:row.professionalId
+    };
+  });
+
+  ok(res,result,201);
 }));
-
 router.get('/observations', asyncHandler(async (req, res) => {
   const hospitalizationId = String(req.query.hospitalizationId || '');
   if (!hospitalizationId) throw new HttpError(422, 'hospitalizationId es obligatorio.');
   const rows = await prisma.$queryRawUnsafe<any[]>(`
     SELECT o.*,pr."fullName" AS "professionalName" FROM public."CareHospitalObservation" o
-    LEFT JOIN public."CareProfessional" pr ON pr."id"=o."professionalId"
+    JOIN public."CareHospitalization" h ON h."id"=o."hospitalizationId" AND h."tenantId"=o."tenantId"
+    LEFT JOIN public."CareProfessional" pr ON pr."id"=o."professionalId" AND pr."tenantId"=o."tenantId"
     WHERE o."tenantId"=$1 AND o."hospitalizationId"=$2 ORDER BY o."observedAt" DESC LIMIT 2000
   `, ctx(req).tenantId, hospitalizationId);
   ok(res, rows);
@@ -516,9 +539,9 @@ router.post('/observations', asyncHandler(async (req, res) => {
   const rows = await prisma.$queryRawUnsafe<any[]>(`
     INSERT INTO public."CareHospitalObservation" ("id","tenantId","hospitalizationId","professionalId","observedAt","type","values","note","createdAt")
     SELECT gen_random_uuid()::text,$1,h."id",$3,COALESCE($4::timestamptz,now()),$5,$6::jsonb,$7,now()
-    FROM public."CareHospitalization" h WHERE h."id"=$2 AND h."tenantId"=$1 RETURNING *
+    FROM public."CareHospitalization" h WHERE h."id"=$2 AND h."tenantId"=$1 AND h."status" IN ('admitted','observed') RETURNING *
   `, ctx(req).tenantId, b.hospitalizationId, b.professionalId || null, b.observedAt || null, b.type, JSON.stringify(b.values), b.note || null);
-  ok(res, one(rows, 'Hospitalización no encontrada.'), 201);
+  ok(res, one(rows, 'Hospitalización activa no encontrada.'), 201);
 }));
 
 router.get('/procedures', asyncHandler(async (req, res) => {
