@@ -17,6 +17,18 @@ const one = <T>(rows: T[], message = 'Registro no encontrado.') => {
 };
 const referenceNumber = (prefix: string) => `${prefix}-${new Date().toISOString().slice(0, 10).replaceAll('-', '')}-${randomUUID().slice(0, 8).toUpperCase()}`;
 
+const veterinaryMedicationPrescriptionSchema = z.object({
+  patientId: z.string().min(10),
+  encounterId: z.string().min(10).optional().nullable(),
+  professionalId: z.string().min(10).optional().nullable(),
+  medication: z.string().trim().min(2).max(240),
+  dose: z.string().trim().min(1).max(240),
+  frequency: z.string().trim().min(1).max(240),
+  duration: z.string().trim().min(1).max(240),
+  instructions: optionalText,
+  productId: z.string().uuid().optional().nullable()
+}).strict();
+
 const labOrderSchema = z.object({
   patientId: z.string().min(10),
   encounterId: z.string().optional().nullable(),
@@ -193,6 +205,108 @@ function inferFlag(body: Pick<z.infer<typeof labResultSchema>, 'valueNumeric'|'v
   // reference rule, keep the deterministic neutral flag instead of guessing.
   return 'normal';
 }
+
+router.get('/medication-products', requirePermission('inventory.manage'), asyncHandler(async (req, res) => {
+  const tenantId=ctx(req).tenantId;
+  const rows=await prisma.$queryRawUnsafe<any[]>(`
+    SELECT "id","sku","name","unit","stock"::text AS "stock","reserved"::text AS "reserved","active"
+    FROM public."Product"
+    WHERE "tenantId"=$1 AND "active"=true
+    ORDER BY lower("name"),"sku"
+    LIMIT 1000
+  `,tenantId);
+  ok(res,rows);
+}));
+
+router.post('/medications/prescriptions', asyncHandler(async (req, res) => {
+  const tenantId=ctx(req).tenantId;
+  const body=veterinaryMedicationPrescriptionSchema.parse(req.body||{});
+  const actorUserId=ctx(req).userId||null;
+  const actorEmail=ctx(req).email||null;
+
+  const created=await prisma.$transaction(async (tx)=>{
+    const patientRows=await tx.$queryRawUnsafe<any[]>(`
+      SELECT "id","displayName","species","guardianName"
+      FROM public."CarePatient"
+      WHERE "tenantId"=$1 AND "id"=$2 AND "kind"='animal' AND "active"=true
+      LIMIT 1
+      FOR SHARE
+    `,tenantId,body.patientId);
+    const patient=one(patientRows,'Mascota no encontrada.');
+
+    let professional:any=null;
+    if(body.professionalId){
+      const professionalRows=await tx.$queryRawUnsafe<any[]>(`
+        SELECT "id","fullName","licenseNumber"
+        FROM public."CareProfessional"
+        WHERE "tenantId"=$1 AND "id"=$2
+        LIMIT 1
+        FOR SHARE
+      `,tenantId,body.professionalId);
+      professional=one(professionalRows,'El profesional no pertenece al tenant activo.');
+    }
+
+    if(body.encounterId){
+      const encounterRows=await tx.$queryRawUnsafe<any[]>(`
+        SELECT "id"
+        FROM public."CareEncounter"
+        WHERE "tenantId"=$1 AND "id"=$2 AND "patientId"=$3
+        LIMIT 1
+        FOR SHARE
+      `,tenantId,body.encounterId,body.patientId);
+      if(!encounterRows.length)throw new HttpError(422,'El encuentro no pertenece a la mascota activa.');
+    }
+
+    let product:any=null;
+    if(body.productId){
+      const productRows=await tx.$queryRawUnsafe<any[]>(`
+        SELECT "id","sku","name","unit"
+        FROM public."Product"
+        WHERE "tenantId"=$1 AND "id"=$2 AND "active"=true
+        LIMIT 1
+        FOR SHARE
+      `,tenantId,body.productId);
+      product=one(productRows,'El producto no pertenece al inventario activo del tenant.');
+    }
+
+    const prescribedAt=new Date().toISOString();
+    const labelSnapshot={
+      schema:'veterinary-medication-label.v1',
+      prescribedAt,
+      patient:{id:patient.id,name:patient.displayName,species:patient.species||null,guardianName:patient.guardianName||null},
+      professional:professional?{id:professional.id,name:professional.fullName,licenseNumber:professional.licenseNumber||null}:null,
+      medication:body.medication,
+      dose:body.dose,
+      frequency:body.frequency,
+      duration:body.duration,
+      instructions:body.instructions||null,
+      inventoryProduct:product?{id:product.id,sku:product.sku,name:product.name,unit:product.unit}:null
+    };
+    const veterinaryMeta={
+      schemaVersion:1,
+      prescribedAt,
+      actorUserId,
+      actorEmail,
+      inventoryProductId:product?.id||null,
+      inventoryConsumption:'not-performed'
+    };
+
+    const rows=await tx.$queryRawUnsafe<any[]>(`
+      INSERT INTO public."CarePrescription"
+        ("id","tenantId","patientId","encounterId","professionalId","medication","dose","frequency","duration","instructions","status","productId","labelSnapshot","veterinaryMeta","createdAt")
+      VALUES
+        (gen_random_uuid()::text,$1,$2,$3,$4,$5,$6,$7,$8,$9,'active',$10,$11::jsonb,$12::jsonb,now())
+      RETURNING *
+    `,
+      tenantId,body.patientId,body.encounterId||null,body.professionalId||null,
+      body.medication,body.dose,body.frequency,body.duration,body.instructions||null,
+      product?.id||null,JSON.stringify(labelSnapshot),JSON.stringify(veterinaryMeta)
+    );
+    return {...one(rows),productName:product?.name||null,productSku:product?.sku||null};
+  });
+
+  ok(res,created,201);
+}));
 
 router.get('/dashboard', asyncHandler(async (req, res) => {
   const tenantId = ctx(req).tenantId;

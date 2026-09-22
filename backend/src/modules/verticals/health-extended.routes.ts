@@ -56,9 +56,10 @@ router.get('/health/prescriptions', requirePermission('health.manage'), asyncHan
   const patientId = String(req.query.patientId || '');
   if (!patientId) throw new HttpError(422, 'patientId es obligatorio.');
   const rows = await prisma.$queryRawUnsafe<any[]>(`
-    SELECT p.*, pr."fullName" AS "professionalName"
+    SELECT p.*, pr."fullName" AS "professionalName", prod."name" AS "productName", prod."sku" AS "productSku"
     FROM public."CarePrescription" p
-    LEFT JOIN public."CareProfessional" pr ON pr."id" = p."professionalId"
+    LEFT JOIN public."CareProfessional" pr ON pr."id" = p."professionalId" AND pr."tenantId"=p."tenantId"
+    LEFT JOIN public."Product" prod ON prod."id"=p."productId" AND prod."tenantId"=p."tenantId"
     WHERE p."tenantId" = $1 AND p."patientId" = $2
     ORDER BY p."createdAt" DESC
     LIMIT 500

@@ -47,6 +47,8 @@ export const HealthVerticalService = {
 
 export const VeterinaryService = {
   dashboard() { return BackendApi.get('/verticals/veterinary/dashboard'); },
+  medicationProducts() { return BackendApi.get('/verticals/veterinary/medication-products'); },
+  createMedicationPrescription(payload) { return BackendApi.post('/api/v1/verticals/veterinary/medications/prescriptions', payload); },
   labOrders(params = {}) { return BackendApi.get(`/verticals/veterinary/lab-orders${query(params)}`); },
   createLabOrder(payload) { return BackendApi.post('/api/v1/verticals/veterinary/lab-orders', payload); },
   labResults(params = {}) { return BackendApi.get(`/verticals/veterinary/lab-results${query(params)}`); },

@@ -147,6 +147,42 @@ if(vetEntry?.status==='MIGRATED'){
   }
   if(/UPDATE public\."CareHospitalObservation"|DELETE FROM public\."CareHospitalObservation"/.test(veterinaryRoutes))fail('veterinaria: treatment-sheet events must remain append-only');
 
+  const veterinaryMedication=read('frontend/src/components/veterinary/VeterinaryMedicationPanel.jsx');
+  const veterinaryMedicationMigration=read('backend/prisma/migrations/20260922214500_veterinary_medication_integration_v2851/migration.sql');
+  const healthExtendedRoutes=read('backend/src/modules/verticals/health-extended.routes.ts');
+  if((veterinaryWorkspace.match(/<VeterinaryMedicationPanel/g)||[]).length!==1)fail('veterinaria: medication panel must render exactly once');
+  if((veterinaryWorkspace.match(/import \{ VeterinaryMedicationPanel \}/g)||[]).length!==1)fail('veterinaria: medication panel must have one owner import');
+  if(/querySelector|addEventListener|innerHTML|document\./.test(veterinaryMedication))fail('veterinaria: medication panel reintroduced imperative DOM lifecycle');
+  for(const contract of ['Medicación integrada','Prescripción','Dosis','Frecuencia','Duración','Etiqueta clínica','Producto de inventario (opcional)','VeterinaryService.medicationProducts(','VeterinaryService.createMedicationPrescription(']){
+    if(!veterinaryMedication.includes(contract))fail(`veterinaria: missing medication integration UI contract ${contract}`);
+  }
+  if(/calculateDose|recommendDose|autoDose|doseRecommendation/.test(veterinaryMedication))fail('veterinaria: medication integration must not calculate or recommend doses');
+  if(veterinaryWorkspace.includes("case'prescription':")||veterinaryWorkspace.includes("openDialog('prescription')"))fail('veterinaria: legacy prescription dialog must not coexist with integrated medication owner');
+  for(const contract of [
+    'veterinaryMedicationPrescriptionSchema',
+    "router.get('/medication-products'",
+    "requirePermission('inventory.manage')",
+    "router.post('/medications/prescriptions'",
+    'labelSnapshot',
+    'veterinaryMeta',
+    'actorUserId',
+    'actorEmail',
+    'inventoryConsumption:\'not-performed\''
+  ]){
+    if(!veterinaryRoutes.includes(contract))fail(`veterinaria: missing medication backend contract ${contract}`);
+  }
+  const medicationRouteStart=veterinaryRoutes.indexOf("router.post('/medications/prescriptions'");
+  const medicationRouteEnd=veterinaryRoutes.indexOf("router.get('/dashboard'",medicationRouteStart);
+  const medicationRouteBlock=veterinaryRoutes.slice(medicationRouteStart,medicationRouteEnd);
+  if(/InventoryMovement|inventoryMovement\.create|stock.*decrement|applyStandardEffect/.test(medicationRouteBlock))fail('veterinaria: 28/51 must not consume inventory before clinical inventory authority');
+  for(const contract of ['"productId"','"labelSnapshot"','"veterinaryMeta"','CarePrescription_productId_fkey','CarePrescription_tenant_product_idx']){
+    if(!veterinaryMedicationMigration.includes(contract))fail(`veterinaria: missing medication persistence contract ${contract}`);
+  }
+  if(/CREATE TABLE/i.test(veterinaryMedicationMigration))fail('veterinaria: 28/51 must extend CarePrescription instead of creating a second prescription authority');
+  for(const contract of ['prod."tenantId"=p."tenantId"','pr."tenantId"=p."tenantId"']){
+    if(!healthExtendedRoutes.includes(contract))fail(`veterinaria: missing tenant-safe prescription read contract ${contract}`);
+  }
+
 }
 
 const dentistryEntry=ERP_UI_WAVE_A_2_51.find((item)=>item.route==='odontologia');
