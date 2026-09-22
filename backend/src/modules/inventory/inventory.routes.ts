@@ -10,7 +10,12 @@ import { add, compare, quantity, serializeDecimal, serializeLegacyNumber, subtra
 import { decimalSchema } from '../../shared/financial/zod.js';
 import { runFinancialIdempotentMutation } from '../../shared/services/financial-idempotency.service.js';
 import { writeAudit } from '../../shared/services/audit.service.js';
-import { applyInventoryStandardEffect as applyStandardEffect, lockInventoryProduct as lockProduct } from '../../shared/services/inventory-movement.service.js';
+import {
+  applyInventoryStandardEffect as applyStandardEffect,
+  inventoryLotBalance,
+  lockInventoryLot,
+  lockInventoryProduct as lockProduct
+} from '../../shared/services/inventory-movement.service.js';
 
 const router = Router();
 router.use(requireTenant, requirePermission('inventory.manage'));
@@ -172,13 +177,23 @@ router.post('/movements/:id/reverse', requirePermission('inventory.adjust'), val
     else if (original.type === 'reservation') type = 'release';
     else if (original.type === 'release') type = 'reservation';
     else { type = 'adjustment'; reversalQuantity = quantity(original.quantity).negated(); }
+    if (original.lotId) {
+      const lot=await lockInventoryLot(tx,ctx.tenantId,product.id,original.lotId);
+      const lotBalance=await inventoryLotBalance(tx,ctx.tenantId,lot.id);
+      if(type==='out'&&compare(lotBalance,reversalQuantity)<0){
+        throw new HttpError(409,'El reverso dejaría el lote con saldo negativo.',{code:'INVENTORY_LOT_REVERSAL_INVALID_BALANCE'});
+      }
+      if(type==='adjustment'&&compare(add(lotBalance,reversalQuantity),ZERO)<0){
+        throw new HttpError(409,'El reverso dejaría el lote con saldo negativo.',{code:'INVENTORY_LOT_REVERSAL_INVALID_BALANCE'});
+      }
+    }
     let updated: any;
     if (type === 'adjustment') {
       const nextStock = add(product.stock, reversalQuantity);
       if (compare(nextStock, ZERO) < 0 || compare(nextStock, product.reserved) < 0) throw new HttpError(409, 'El reverso dejaría un saldo de inventario inválido.', { code: 'INVENTORY_REVERSAL_INVALID_BALANCE' });
       updated = await tx.product.update({ where: { id: product.id }, data: { stock: nextStock } });
     } else updated = await applyStandardEffect(tx, product, type, reversalQuantity);
-    const reversal = await tx.inventoryMovement.create({ data: { tenantId: ctx.tenantId, productId: product.id, type, quantity: reversalQuantity, unitCost: original.unitCost, source: 'reversal', sourceId: original.id, note: input.reason } });
+    const reversal = await tx.inventoryMovement.create({ data: { tenantId: ctx.tenantId, productId: product.id, lotId: original.lotId || null, type, quantity: reversalQuantity, unitCost: original.unitCost, source: 'reversal', sourceId: original.id, note: input.reason } });
     await insertAuditLink(tx, { tenantId: ctx.tenantId, productId: product.id, originalMovementId: original.id, relatedMovementId: reversal.id, kind: 'reversal', reasonCode: input.reasonCode, reason: input.reason, createdBy: ctx.userId });
     return { data: { movement: serializeMovement(reversal), product: serializeProduct(updated), originalMovementId: original.id }, resourceType: 'InventoryMovement', resourceId: reversal.id };
   });
