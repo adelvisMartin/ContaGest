@@ -747,6 +747,28 @@ if(fitnessEntries.every((item)=>item.status==='MIGRATED')){
   if(performanceStart<0||performanceEnd<0)fail('fitness: performance history 41 route boundaries missing');
   if(/INSERT INTO|UPDATE public|DELETE FROM/.test(performanceBlock))fail('fitness: performance history 41 must remain derived/read-only');
   if(/substitute|replacementExercise|alternativeExercise/.test(performanceBlock))fail('fitness: performance history 41 must not pre-implement contextual substitutions 42');
+  const substitutionPanel=read('frontend/src/components/fitness/ExerciseSubstitutionPanel.jsx');
+  const substitutionMigration=read('backend/prisma/migrations/20260923182500_gym_contextual_substitutions_42_51/migration.sql');
+  if((workoutPanel.match(/<ExerciseSubstitutionPanel/g)||[]).length!==1)fail('fitness: ExerciseSubstitutionPanel must render from one workout owner');
+  if(/querySelector|addEventListener|innerHTML|document\./.test(substitutionPanel))fail('fitness: contextual substitutions 42 reintroduced imperative DOM lifecycle');
+  for(const contract of ['Equipamiento disponible','Ejercicio preferido','Ejercicio a excluir','Limitación declarada','Revisión humana requerida','Usar en esta sesión','Volver al prescrito']){
+    if(!substitutionPanel.includes(contract))fail(`fitness: contextual substitutions 42 UI missing ${contract}`);
+  }
+  for(const contract of ['exerciseSubstitutionSchema','availableEquipment','preferredExerciseIds','excludedExerciseIds','declaredLimitations','humanReviewRequired','healthAutomationBlocked:true','limitationsApplied:false','same_muscle_group','preferred_exercise','equipment_match']){
+    if(!gymRoutes.includes(contract))fail(`fitness: contextual substitutions 42 backend missing ${contract}`);
+  }
+  for(const contract of ['performedExerciseId','substitutionReason','El ejercicio sustituto no pertenece al tenant activo.','El ejercicio sustituto debe conservar el mismo grupo muscular.']){
+    if(!gymRoutes.includes(contract))fail(`fitness: contextual substitutions 42 workout provenance missing ${contract}`);
+  }
+  if(!substitutionMigration.includes('performedExerciseId')||!substitutionMigration.includes('substitutionReason'))fail('fitness: contextual substitutions 42 migration contract missing');
+  if(!gymRoutes.includes('COALESCE(ws."performedExerciseId",re."exerciseId")'))fail('fitness: performance 41 must attribute substituted work to performed exercise');
+  const substitutionStart=gymRoutes.indexOf("router.post('/gym/exercise-substitutions/suggest'");
+  const substitutionEnd=gymRoutes.indexOf("router.get('/gym/routines'",substitutionStart);
+  const substitutionBlock=gymRoutes.slice(substitutionStart,substitutionEnd);
+  if(substitutionStart<0||substitutionEnd<0)fail('fitness: contextual substitutions 42 route boundaries missing');
+  if(!substitutionBlock.includes('b.declaredLimitations.length>0')||!substitutionBlock.includes('suggestions:[]'))fail('fitness: contextual substitutions 42 must fail closed on declared health limitations');
+  if(/diagnos|injuryScore|medicalRisk|contraindicationEngine/i.test(substitutionBlock))fail('fitness: contextual substitutions 42 must not infer health decisions');
+  if(/ingredient|recipe|macronutrient|micronutrient|mealPlan/i.test(substitutionBlock))fail('fitness: contextual substitutions 42 must not pre-implement nutrition model 43');
 }
 
 const css=read('frontend/src/styles/erp-runtime.css');
