@@ -617,6 +617,19 @@ if(fitnessEntries.every((item)=>item.status==='MIGRATED')){
   for(const contract of ['prisma.$transaction','GymMember','GymTrainer','GymExercise','GymRoutineExercise','El cliente no pertenece al tenant activo.','El instructor no pertenece al tenant activo.','El ejercicio seleccionado no pertenece al tenant activo.']){
     if(!routineRoute.includes(contract))fail(`fitness: missing atomic/tenant-safe routine contract ${contract}`);
   }
+  const exerciseLibrary=read('frontend/src/components/fitness/ExerciseLibraryPanel.jsx');
+  if((fitness.match(/<ExerciseLibraryPanel/g)||[]).length!==1)fail('fitness: exercise library must render from one owner');
+  if(/querySelector|addEventListener|innerHTML|document\./.test(exerciseLibrary))fail('fitness: exercise library reintroduced imperative DOM lifecycle');
+  for(const contract of ['Buscar ejercicios','Grupo muscular','Equipo','Categoría','Nuevo ejercicio','Editar','Archivar','Reactivar','GymVerticalService.exercises(','GymVerticalService.createExercise(','GymVerticalService.updateExercise(']){
+    if(!exerciseLibrary.includes(contract))fail(`fitness: missing exercise-library contract ${contract}`);
+  }
+  if(!fitness.includes('exerciseLibrary')||!fitness.includes('catalog={exerciseLibrary}'))fail('fitness: persisted exercise library is not passed to RoutineBuilder');
+  for(const contract of ["router.get('/gym/exercises'","router.post('/gym/exercises'","router.patch('/gym/exercises/:id'",'exerciseLibrarySchema','public."GymExercise"','"tenantId"=$1']){
+    if(!gymRoutes.includes(contract))fail(`fitness: missing exercise-library backend contract ${contract}`);
+  }
+  for(const contract of ['persistedCatalog','exerciseId:selected.id','defaultSets','defaultReps']){
+    if(!routineBuilder.includes(contract))fail(`fitness: routine builder missing persisted-catalog contract ${contract}`);
+  }
 }
 
 const css=read('frontend/src/styles/erp-runtime.css');
