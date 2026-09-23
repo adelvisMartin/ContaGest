@@ -269,6 +269,14 @@ router.delete('/:id', requirePermission('sales.manage'), asyncHandler(async (req
   if (dentalLinks.length) {
     throw new HttpError(409, 'El borrador está vinculado a un plan odontológico aceptado y conserva provenance financiera; no puede eliminarse desde Ventas.');
   }
+  const veterinaryLinks = await prisma.$queryRawUnsafe<Array<{ id: string }>>(
+    `SELECT "id" FROM public."VeterinaryFinancialCase" WHERE "tenantId"=$1 AND "salesInvoiceId"=$2 LIMIT 1`,
+    ctx.tenantId,
+    sale.id
+  );
+  if (veterinaryLinks.length) {
+    throw new HttpError(409, 'El borrador está vinculado al flujo financiero veterinario y conserva provenance de estimación, autorización, atención y consumos; no puede eliminarse desde Ventas.');
+  }
   await prisma.salesInvoice.delete({ where: { id: sale.id } });
   await writeAudit({ tenantId: ctx.tenantId, userId: ctx.userId, action: 'delete-draft', entity: 'salesInvoice', entityId: sale.id, before: sale, ipAddress: ctx.ip, userAgent: ctx.userAgent });
   ok(res, { deleted: true, id: sale.id });

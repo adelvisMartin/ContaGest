@@ -272,6 +272,44 @@ if(vetEntry?.status==='MIGRATED'){
     if(!inventoryRoutes.includes(contract))fail(`inventory: missing lot-aware reversal contract ${contract}`);
   }
 
+  const veterinaryFinancial=read('frontend/src/components/veterinary/VeterinaryFinancialPanel.jsx');
+  const veterinaryFinancialMigration=read('backend/prisma/migrations/20260922224500_veterinary_financial_flow_v3051/migration.sql');
+  const salesRoutes=read('backend/src/modules/sales/sales.routes.ts');
+  if((veterinaryWorkspace.match(/import \{ VeterinaryFinancialPanel \}/g)||[]).length!==1)fail('veterinaria: financial workflow must have one owner import');
+  if((veterinaryWorkspace.match(/<VeterinaryFinancialPanel/g)||[]).length!==1)fail('veterinaria: financial workflow must render exactly once');
+  if(!veterinaryWorkspace.includes("['finanzas', 'Finanzas'"))fail('veterinaria: financial workflow tab is missing');
+  if(/querySelector|addEventListener|innerHTML|document\./.test(veterinaryFinancial))fail('veterinaria: financial workflow reintroduced imperative DOM lifecycle');
+  for(const contract of ['Estimación','Autorizar','Atención registrada','Crear factura borrador','Consumos reales','No contabiliza']){
+    if(!veterinaryFinancial.includes(contract))fail(`veterinaria: missing financial UI contract ${contract}`);
+  }
+  for(const contract of ['VeterinaryService.financialCases(','VeterinaryService.financialCatalog(','VeterinaryService.createFinancialCase(','VeterinaryService.authorizeFinancialCase(','VeterinaryService.attendFinancialCase(','VeterinaryService.financialConsumptions(','VeterinaryService.invoiceFinancialCase(']){
+    if(!veterinaryFinancial.includes(contract))fail(`veterinaria: missing financial service wiring ${contract}`);
+  }
+  for(const contract of [
+    'veterinaryEstimateLineSchema',
+    "router.get('/financial-cases/catalog'",
+    "router.get('/financial-cases'",
+    "router.post('/financial-cases'",
+    "router.post('/financial-cases/:id/authorize'",
+    "router.post('/financial-cases/:id/attend'",
+    "router.get('/financial-cases/:id/consumptions'",
+    "router.post('/financial-cases/:id/invoice'",
+    'calculateInvoiceTotals',
+    'estimateSha256',
+    'VETERINARY_FINANCIAL_CONSENT_KIND',
+    "mode:'typed-attestation'",
+    'VeterinaryFinancialConsumptionLink',
+    "status:'draft'",
+    "accountingPosting:'not-performed'"
+  ]){
+    if(!veterinaryRoutes.includes(contract))fail(`veterinaria: missing financial backend contract ${contract}`);
+  }
+  if(/ledgerEntry\.create|INSERT INTO public\."LedgerEntry"/.test(veterinaryRoutes))fail('veterinaria: financial workflow must not post accounting entries');
+  for(const contract of ['VeterinaryFinancialCase','VeterinaryFinancialConsumptionLink','estimateSha256','authorizationConsentId','salesInvoiceId','ENABLE ROW LEVEL SECURITY','REVOKE ALL']){
+    if(!veterinaryFinancialMigration.includes(contract))fail(`veterinaria: missing financial persistence contract ${contract}`);
+  }
+  if(!salesRoutes.includes('VeterinaryFinancialCase')||!salesRoutes.includes('flujo financiero veterinario'))fail('sales: veterinary provenance-linked drafts must be protected from deletion');
+
 }
 
 const dentistryEntry=ERP_UI_WAVE_A_2_51.find((item)=>item.route==='odontologia');
