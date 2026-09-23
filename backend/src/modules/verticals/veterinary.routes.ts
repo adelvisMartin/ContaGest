@@ -303,6 +303,7 @@ const VETERINARY_TREATMENT_VITAL_UNITS={
   heartRate:'lpm',
   respiratoryRate:'rpm'
 } as const;
+const VETERINARY_TREATMENT_VITAL_KEYS=Object.keys(VETERINARY_TREATMENT_VITAL_UNITS) as Array<keyof typeof VETERINARY_TREATMENT_VITAL_UNITS>;
 
 const treatmentSheetEntrySchema = z.object({
   responsibleProfessionalId: z.string().min(10).optional().nullable(),
@@ -343,8 +344,8 @@ const treatmentSheetEntrySchema = z.object({
     refinement.addIssue({code:'custom',path:['note'],message:'La observación no puede estar vacía.'});
   }
   if(value.category==='vitals'){
-    const vitalEntries=Object.keys(VETERINARY_TREATMENT_VITAL_UNITS)
-      .map((key)=>[key,String(value.details?.[key]||'').trim()])
+    const vitalEntries=VETERINARY_TREATMENT_VITAL_KEYS
+      .map((key)=>[key,String(value.details?.[key]||'').trim()] as const)
       .filter(([,raw])=>raw!=='');
     if(!vitalEntries.length){
       refinement.addIssue({code:'custom',path:['details'],message:'Registra al menos un signo vital.'});
@@ -1032,10 +1033,10 @@ router.post('/hospitalizations/:id/treatment-sheet', asyncHandler(async (req, re
     const row=one(rows);
 
     if(body.category==='vitals'&&body.status==='completed'){
-      const vitalEntries=Object.entries(VETERINARY_TREATMENT_VITAL_UNITS)
-        .map(([detailKey,unit])=>({
+      const vitalEntries=VETERINARY_TREATMENT_VITAL_KEYS
+        .map((detailKey)=>({
           detailKey,
-          unit,
+          unit:VETERINARY_TREATMENT_VITAL_UNITS[detailKey],
           raw:String(body.details?.[detailKey]||'').trim()
         }))
         .filter((item)=>item.raw!=='');
