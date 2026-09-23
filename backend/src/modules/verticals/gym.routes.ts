@@ -205,6 +205,46 @@ const routineExerciseSchema = z.object({
   }
 });
 
+const periodizationWeekSchema = z.object({
+  weekType: z.enum(['load','deload']),
+  volumePct: z.coerce.number().min(1).max(200),
+  intensityPct: z.coerce.number().min(1).max(200),
+  notes: optionalText
+});
+const periodizationPhaseSchema = z.object({
+  name: z.string().trim().min(2).max(120),
+  kind: z.enum(['accumulation','intensification','realization','deload','custom']),
+  weeks: z.array(periodizationWeekSchema).min(1).max(12),
+  notes: optionalText
+});
+const periodizationStructureSchema = z.object({
+  phases: z.array(periodizationPhaseSchema).min(1).max(24)
+});
+const periodizationTemplateSchema = z.object({
+  name: z.string().trim().min(2).max(160),
+  description: optionalText,
+  structure: periodizationStructureSchema
+});
+const periodizationProgramSchema = z.object({
+  routineId: z.string().min(10),
+  name: z.string().trim().min(2).max(180),
+  startsAt: z.string().optional().nullable(),
+  sourceTemplateId: z.string().optional().nullable(),
+  notes: optionalText,
+  structure: periodizationStructureSchema
+});
+
+const decoratePeriodizationProgram = (row:any) => {
+  const phases=Array.isArray(row?.structure?.phases)?row.structure.phases:[];
+  const weeks=phases.flatMap((phase:any)=>Array.isArray(phase?.weeks)?phase.weeks:[]);
+  return {
+    ...row,
+    totalWeeks:weeks.length,
+    loadWeeks:weeks.filter((week:any)=>week?.weekType==='load').length,
+    deloadWeeks:weeks.filter((week:any)=>week?.weekType==='deload').length
+  };
+};
+
 const routineSchema = z.object({
   memberId: z.string().min(10),
   trainerId: z.string().optional().nullable(),
@@ -469,6 +509,139 @@ router.post('/gym/progression/evaluate', requirePermission('gym.manage'), asyncH
   const b=progressionEvaluationSchema.parse(req.body||{});
   const result=evaluateGymProgression(b);
   ok(res,result);
+}));
+
+router.get('/gym/periodization/templates', requirePermission('gym.manage'), asyncHandler(async (req, res) => {
+  const rows=await prisma.$queryRawUnsafe<any[]>(`
+    SELECT *
+    FROM public."GymPeriodizationTemplate"
+    WHERE "tenantId"=$1
+    ORDER BY "createdAt" DESC, "name" ASC
+  `,ctx(req).tenantId);
+  ok(res,rows);
+}));
+
+router.post('/gym/periodization/templates', requirePermission('gym.manage'), asyncHandler(async (req, res) => {
+  const b=periodizationTemplateSchema.parse(req.body||{});
+  const tenantId=ctx(req).tenantId;
+  const created=await prisma.$transaction(async(tx)=>{
+    const lockKey=`gym-periodization-template:${tenantId}:${b.name.trim().toLocaleLowerCase('es')}`;
+    await tx.$queryRawUnsafe('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',lockKey);
+    const duplicate=await tx.$queryRawUnsafe<any[]>(`
+      SELECT "id" FROM public."GymPeriodizationTemplate"
+      WHERE "tenantId"=$1 AND lower(btrim("name"))=lower(btrim($2))
+      LIMIT 1
+    `,tenantId,b.name);
+    if(duplicate.length)throw new HttpError(409,'Ya existe una plantilla de periodización con ese nombre.');
+    const rows=await tx.$queryRawUnsafe<any[]>(`
+      INSERT INTO public."GymPeriodizationTemplate"
+        ("id","tenantId","name","description","structure","createdBy","createdAt")
+      VALUES (gen_random_uuid()::text,$1,$2,$3,$4::jsonb,$5,now())
+      RETURNING *
+    `,tenantId,b.name,b.description||null,JSON.stringify(b.structure),ctx(req).userId||null);
+    return one(rows);
+  });
+  ok(res,created,201);
+}));
+
+router.get('/gym/periodization/programs', requirePermission('gym.manage'), asyncHandler(async (req, res) => {
+  const routineId=String(req.query.routineId||'').trim();
+  if(!routineId)throw new HttpError(422,'routineId es obligatorio.');
+  const tenantId=ctx(req).tenantId;
+  const routineRows=await prisma.$queryRawUnsafe<any[]>(`
+    SELECT "id" FROM public."GymRoutine"
+    WHERE "tenantId"=$1 AND "id"=$2
+    LIMIT 1
+  `,tenantId,routineId);
+  if(!routineRows.length)throw new HttpError(404,'La rutina no pertenece al tenant activo.');
+  const rows=await prisma.$queryRawUnsafe<any[]>(`
+    SELECT p.*, t."name" AS "sourceTemplateName"
+    FROM public."GymPeriodizationProgram" p
+    LEFT JOIN public."GymPeriodizationTemplate" t
+      ON t."tenantId"=p."tenantId" AND t."id"=p."sourceTemplateId"
+    WHERE p."tenantId"=$1 AND p."routineId"=$2
+    ORDER BY p."createdAt" DESC, p."programKey" ASC, p."version" DESC
+  `,tenantId,routineId);
+  ok(res,rows.map(decoratePeriodizationProgram));
+}));
+
+router.post('/gym/periodization/programs', requirePermission('gym.manage'), asyncHandler(async (req, res) => {
+  const b=periodizationProgramSchema.parse(req.body||{});
+  const tenantId=ctx(req).tenantId;
+  const created=await prisma.$transaction(async(tx)=>{
+    const routineRows=await tx.$queryRawUnsafe<any[]>(`
+      SELECT "id" FROM public."GymRoutine"
+      WHERE "tenantId"=$1 AND "id"=$2
+      LIMIT 1
+    `,tenantId,b.routineId);
+    if(!routineRows.length)throw new HttpError(422,'La rutina no pertenece al tenant activo.');
+    if(b.sourceTemplateId){
+      const templateRows=await tx.$queryRawUnsafe<any[]>(`
+        SELECT "id" FROM public."GymPeriodizationTemplate"
+        WHERE "tenantId"=$1 AND "id"=$2
+        LIMIT 1
+      `,tenantId,b.sourceTemplateId);
+      if(!templateRows.length)throw new HttpError(422,'La plantilla no pertenece al tenant activo.');
+    }
+    const rows=await tx.$queryRawUnsafe<any[]>(`
+      INSERT INTO public."GymPeriodizationProgram"
+        ("id","tenantId","routineId","programKey","version","name","startsAt","structure","sourceTemplateId","supersedesId","notes","createdBy","createdAt")
+      VALUES (gen_random_uuid()::text,$1,$2,gen_random_uuid()::text,1,$3,$4::date,$5::jsonb,$6,NULL,$7,$8,now())
+      RETURNING *
+    `,tenantId,b.routineId,b.name,b.startsAt||null,JSON.stringify(b.structure),b.sourceTemplateId||null,b.notes||null,ctx(req).userId||null);
+    return one(rows);
+  });
+  ok(res,decoratePeriodizationProgram(created),201);
+}));
+
+router.post('/gym/periodization/programs/:id/version', requirePermission('gym.manage'), asyncHandler(async (req, res) => {
+  const b=periodizationProgramSchema.parse(req.body||{});
+  const tenantId=ctx(req).tenantId;
+  const sourceId=String(req.params.id);
+  const created=await prisma.$transaction(async(tx)=>{
+    const sourceRows=await tx.$queryRawUnsafe<any[]>(`
+      SELECT * FROM public."GymPeriodizationProgram"
+      WHERE "tenantId"=$1 AND "id"=$2
+      LIMIT 1
+    `,tenantId,sourceId);
+    const source=one(sourceRows,'Programa de periodización no encontrado.');
+    if(source.routineId!==b.routineId)throw new HttpError(422,'Una versión debe conservar la misma rutina.');
+
+    const routineRows=await tx.$queryRawUnsafe<any[]>(`
+      SELECT "id" FROM public."GymRoutine"
+      WHERE "tenantId"=$1 AND "id"=$2
+      LIMIT 1
+    `,tenantId,b.routineId);
+    if(!routineRows.length)throw new HttpError(422,'La rutina no pertenece al tenant activo.');
+
+    if(b.sourceTemplateId){
+      const templateRows=await tx.$queryRawUnsafe<any[]>(`
+        SELECT "id" FROM public."GymPeriodizationTemplate"
+        WHERE "tenantId"=$1 AND "id"=$2
+        LIMIT 1
+      `,tenantId,b.sourceTemplateId);
+      if(!templateRows.length)throw new HttpError(422,'La plantilla no pertenece al tenant activo.');
+    }
+
+    const lockKey=`gym-periodization-program:${tenantId}:${source.programKey}`;
+    await tx.$queryRawUnsafe('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',lockKey);
+    const versionRows=await tx.$queryRawUnsafe<any[]>(`
+      SELECT COALESCE(MAX("version"),0)::int AS "maxVersion"
+      FROM public."GymPeriodizationProgram"
+      WHERE "tenantId"=$1 AND "programKey"=$2
+    `,tenantId,source.programKey);
+    const maxVersion=Number(versionRows[0]?.maxVersion||0);
+    if(Number(source.version)!==maxVersion)throw new HttpError(409,'Solo la versión más reciente puede generar una nueva revisión.');
+    const nextVersion=maxVersion+1;
+    const rows=await tx.$queryRawUnsafe<any[]>(`
+      INSERT INTO public."GymPeriodizationProgram"
+        ("id","tenantId","routineId","programKey","version","name","startsAt","structure","sourceTemplateId","supersedesId","notes","createdBy","createdAt")
+      VALUES (gen_random_uuid()::text,$1,$2,$3,$4,$5,$6::date,$7::jsonb,$8,$9,$10,$11,now())
+      RETURNING *
+    `,tenantId,b.routineId,source.programKey,nextVersion,b.name,b.startsAt||null,JSON.stringify(b.structure),b.sourceTemplateId||null,source.id,b.notes||null,ctx(req).userId||null);
+    return one(rows);
+  });
+  ok(res,decoratePeriodizationProgram(created),201);
 }));
 
 router.get('/gym/routines', requirePermission('gym.manage'), asyncHandler(async (req, res) => {

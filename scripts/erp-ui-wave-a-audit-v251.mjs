@@ -691,6 +691,28 @@ if(fitnessEntries.every((item)=>item.status==='MIGRATED')){
   if(!progressionMigration.includes('GymRoutineExercise_progressionStrategy_check')||!progressionMigration.includes('"progressionConfig" jsonb'))fail('fitness: progression migration contract missing');
   if(!fitness.includes('progressionStrategy:String(exercise.progressionStrategy')||!fitness.includes('progressionConfig:exercise.progressionStrategy'))fail('fitness: progression configuration is not sanitized before persistence');
   if(/mesocycle|periodization|GymWorkoutSession|GymWorkoutSet/.test(progressionDomain))fail('fitness: 38/51 progression engine must not pre-implement periodization or session execution');
+  const periodizationPanel=read('frontend/src/components/fitness/PeriodizationPanel.jsx');
+  const periodizationBuilder=read('frontend/src/components/fitness/PeriodizationBuilder.jsx');
+  const periodizationMigration=read('backend/prisma/migrations/20260923172500_gym_periodization_39_51/migration.sql');
+  if((fitness.match(/<PeriodizationPanel/g)||[]).length!==1)fail('fitness: PeriodizationPanel must render from one owner');
+  if(/querySelector|addEventListener|innerHTML|document\./.test(periodizationPanel+periodizationBuilder))fail('fitness: periodization 39 reintroduced imperative DOM lifecycle');
+  for(const contract of ['Plantillas','Nueva versión','Historial de versiones','PeriodizationBuilder']){
+    if(!periodizationPanel.includes(contract))fail(`fitness: periodization 39 panel missing ${contract}`);
+  }
+  for(const contract of ['Mesociclo','Carga','Descarga','Volumen objetivo','Intensidad objetivo']){
+    if(!periodizationBuilder.includes(contract))fail(`fitness: periodization 39 builder missing ${contract}`);
+  }
+  for(const contract of ['periodizationStructureSchema','GymPeriodizationProgram','GymPeriodizationTemplate','/gym/periodization/programs/:id/version','pg_advisory_xact_lock','MAX("version")','Solo la versión más reciente puede generar una nueva revisión.','La rutina no pertenece al tenant activo.','La plantilla no pertenece al tenant activo.']){
+    if(!gymRoutes.includes(contract))fail(`fitness: backend missing periodization 39 contract ${contract}`);
+  }
+  for(const contract of ['programKey','version','structure','sourceTemplateId','supersedesId']){
+    if(!periodizationMigration.includes(contract))fail(`fitness: periodization 39 migration missing ${contract}`);
+  }
+  const periodizationStart=gymRoutes.indexOf("router.get('/gym/periodization/templates'");
+  const periodizationEnd=gymRoutes.indexOf("router.get('/gym/routines'",periodizationStart);
+  const periodizationBlock=gymRoutes.slice(periodizationStart,periodizationEnd);
+  if(periodizationStart<0||periodizationEnd<0)fail('fitness: periodization 39 route boundaries missing');
+  if(/GymWorkoutSession|GymWorkoutSet|completedSets|actualRir|actualRpe|timer/.test(periodizationBlock))fail('fitness: periodization 39 must not pre-implement workout execution 40');
 }
 
 const css=read('frontend/src/styles/erp-runtime.css');
