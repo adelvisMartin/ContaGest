@@ -246,6 +246,40 @@ export function FitnessNutritionQuickTool({members,Toast,onDataChanged}){
       <Box mt={1.3}><NutritionResult plan={generated}/></Box>
     </Paper>
 
+    <Paper className="cg-ingredient-nutrition" variant="outlined" sx={{p:1.5}}>
+      <Stack direction={{xs:'column',sm:'row'}} justifyContent="space-between" gap={1}>
+        <Box><Typography variant="h6">Comida por ingredientes</Typography><Typography variant="caption" color="text.secondary">Gramos, base nutricional y provenance por ingrediente. El servidor recalcula los macros al guardar.</Typography></Box>
+        <CgStatusChip label={`${nutritionIngredients.length} ingrediente(s)`} tone={nutritionIngredients.length?'info':'default'}/>
+      </Stack>
+      <Box sx={{display:'grid',gridTemplateColumns:{xs:'1fr',sm:'repeat(2,minmax(0,1fr))',lg:'repeat(4,minmax(0,1fr))'},gap:1,mt:1.2}}>
+        <CgSelect label="Cliente" value={memberId} onChange={(e)=>setMemberId(e.target.value)} options={options}/>
+        <CgSelect label="Tipo de comida" value={ingredientMealType} onChange={(e)=>setIngredientMealType(e.target.value)} options={['Desayuno','Almuerzo','Cena','Snack'].map((value)=>({value,label:value}))}/>
+        <CgTextField size="small" label="Ingrediente manual" value={ingredientDraft.name} onChange={(e)=>setIngredientDraft({...ingredientDraft,name:e.target.value})}/>
+        <CgTextField size="small" label="Cantidad (g)" type="number" inputProps={{min:.1,step:.1}} value={ingredientDraft.amountG} onChange={(e)=>setIngredientDraft({...ingredientDraft,amountG:e.target.value})}/>
+        <CgTextField size="small" label="Base nutricional (g)" type="number" inputProps={{min:.1,step:.1}} value={ingredientDraft.basisGrams} onChange={(e)=>setIngredientDraft({...ingredientDraft,basisGrams:e.target.value})}/>
+        <CgTextField size="small" label="kcal / base" type="number" inputProps={{min:0,step:.1}} value={ingredientDraft.calories} onChange={(e)=>setIngredientDraft({...ingredientDraft,calories:e.target.value})}/>
+        <CgTextField size="small" label="Proteína g / base" type="number" inputProps={{min:0,step:.1}} value={ingredientDraft.proteinG} onChange={(e)=>setIngredientDraft({...ingredientDraft,proteinG:e.target.value})}/>
+        <CgTextField size="small" label="Carbohidratos g / base" type="number" inputProps={{min:0,step:.1}} value={ingredientDraft.carbsG} onChange={(e)=>setIngredientDraft({...ingredientDraft,carbsG:e.target.value})}/>
+        <CgTextField size="small" label="Grasa g / base" type="number" inputProps={{min:0,step:.1}} value={ingredientDraft.fatG} onChange={(e)=>setIngredientDraft({...ingredientDraft,fatG:e.target.value})}/>
+        <CgTextField size="small" label="Fibra g / base" type="number" inputProps={{min:0,step:.1}} value={ingredientDraft.fiberG} onChange={(e)=>setIngredientDraft({...ingredientDraft,fiberG:e.target.value})}/>
+        <CgTextField size="small" label="Sodio mg / base" type="number" inputProps={{min:0,step:.1}} value={ingredientDraft.sodiumMg} onChange={(e)=>setIngredientDraft({...ingredientDraft,sodiumMg:e.target.value})}/>
+      </Box>
+      <CgButton variant="outlined" sx={{mt:1}} onClick={addManualIngredient}>Agregar ingrediente manual</CgButton>
+      <Stack gap={.7} mt={1.2}>
+        {nutritionIngredients.length?nutritionIngredients.map((ingredient,index)=><Paper key={`${ingredient.source}:${ingredient.fdcId||ingredient.name}:${index}`} variant="outlined" sx={{p:1}}>
+          <Stack direction={{xs:'column',sm:'row'}} justifyContent="space-between" gap={1} alignItems={{sm:'center'}}>
+            <Box><Typography variant="body2" fontWeight={700}>{ingredient.name}</Typography><Typography variant="caption" color="text.secondary">{ingredient.source==='usda_fdc'?`USDA FDC ${ingredient.fdcId} · ${ingredient.dataType}`:'Manual'} · base {ingredient.basisGrams} g</Typography></Box>
+            <Stack direction="row" gap={.7} alignItems="center"><CgTextField size="small" label="Gramos" type="number" inputProps={{min:.1,step:.1}} value={ingredient.amountG} onChange={(e)=>updateIngredientAmount(index,e.target.value)} sx={{width:120}}/><CgButton size="small" color="error" variant="outlined" onClick={()=>removeIngredient(index)}>Quitar</CgButton></Stack>
+          </Stack>
+        </Paper>):<CgEmptyState title="Sin ingredientes" description="Añade manualmente o importa un alimento USDA compatible."/>}
+      </Stack>
+      <Paper variant="outlined" sx={{p:1,mt:1.2}}>
+        <Typography variant="subtitle2">Previsualización local · no autoritativa</Typography>
+        <Typography variant="body2">~{Math.round(structuredPreview.calories)} kcal · P {structuredPreview.proteinG.toFixed(1)}g · C {structuredPreview.carbsG.toFixed(1)}g · G {structuredPreview.fatG.toFixed(1)}g · fibra {structuredPreview.fiberG.toFixed(1)}g · sodio {Math.round(structuredPreview.sodiumMg)}mg</Typography>
+      </Paper>
+      <CgButton sx={{mt:1}} onClick={()=>void saveIngredientMeal()} disabled={ingredientSaving||!memberId||!nutritionIngredients.length}>{ingredientSaving?'Guardando…':'Guardar comida por ingredientes'}</CgButton>
+    </Paper>
+
     <Paper className="cg-fooddata-tool" variant="outlined" sx={{p:1.5}}>
       <Typography variant="h6">Verificar alimento · USDA FoodData Central</Typography><Typography variant="caption" color="text.secondary">La clave API permanece sólo en servidor.</Typography>
       <Stack direction={{xs:'column',sm:'row'}} gap={1} mt={1.2}><CgTextField fullWidth size="small" label="Buscar alimento" value={foodQuery} onChange={(e)=>setFoodQuery(e.target.value)} onKeyDown={(e)=>{if(e.key==='Enter'){e.preventDefault();void searchFood();}}}/><CgButton variant="outlined" onClick={()=>void searchFood()} disabled={foodLoading}>{foodLoading?'Consultando…':'Buscar'}</CgButton></Stack>
