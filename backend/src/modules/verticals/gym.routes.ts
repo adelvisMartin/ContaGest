@@ -335,12 +335,33 @@ const routineSchema = z.object({
   }
 });
 
+const micronutrientValueSchema=z.object({
+  amount:z.coerce.number().min(0).max(1000000000),
+  unit:z.string().trim().min(1).max(40)
+});
+const micronutrientMapSchema=z.record(micronutrientValueSchema).refine((value)=>Object.keys(value).length<=64,{message:'Se permiten como máximo 64 micronutrientes.'}).default({});
 const ingredientSchema = z.object({
   name: z.string().trim().min(2).max(180),
   category: optionalText,
   defaultUnit: z.string().trim().min(1).max(40).default('g'),
   notes: optionalText,
-  active: z.boolean().default(true)
+  active: z.boolean().default(true),
+  nutrientBasisQuantity:z.coerce.number().positive().max(1000000).optional().nullable(),
+  nutrientBasisUnit:z.string().trim().min(1).max(40).optional().nullable(),
+  energyKcal:z.coerce.number().min(0).max(1000000).optional().nullable(),
+  proteinG:z.coerce.number().min(0).max(1000000).optional().nullable(),
+  carbsG:z.coerce.number().min(0).max(1000000).optional().nullable(),
+  fatG:z.coerce.number().min(0).max(1000000).optional().nullable(),
+  fiberG:z.coerce.number().min(0).max(1000000).optional().nullable(),
+  micronutrients:micronutrientMapSchema,
+  nutritionSource:z.string().trim().min(1).max(120).optional().nullable(),
+  nutritionSourceRef:z.string().trim().max(500).optional().nullable()
+}).superRefine((value,refinement)=>{
+  const hasComposition=[value.energyKcal,value.proteinG,value.carbsG,value.fatG,value.fiberG].some((item)=>item!=null)||Object.keys(value.micronutrients||{}).length>0;
+  if(!hasComposition)return;
+  if(!value.nutrientBasisQuantity)refinement.addIssue({code:'custom',path:['nutrientBasisQuantity'],message:'La composición nutricional requiere una cantidad base explícita.'});
+  if(!String(value.nutrientBasisUnit||'').trim())refinement.addIssue({code:'custom',path:['nutrientBasisUnit'],message:'La composición nutricional requiere una unidad base explícita.'});
+  if(!String(value.nutritionSource||'').trim())refinement.addIssue({code:'custom',path:['nutritionSource'],message:'La composición nutricional requiere procedencia explícita.'});
 });
 const ingredientPatchSchema = ingredientSchema.partial().refine((value)=>Object.keys(value).length>0,{message:'Indica al menos un campo para actualizar.'});
 const mealIngredientSchema = z.object({
@@ -411,6 +432,8 @@ const completeNutritionSchema = z.object({
   proteinG:z.coerce.number().min(0).optional().nullable(),
   carbsG:z.coerce.number().min(0).optional().nullable(),
   fatG:z.coerce.number().min(0).optional().nullable(),
+  fiberG:z.coerce.number().min(0).optional().nullable(),
+  micronutrientTargets:micronutrientMapSchema,
   waterMl:z.coerce.number().int().min(0).optional().nullable(),
   notes:optionalText,
   startsAt:z.string().optional().nullable(),
@@ -1234,11 +1257,17 @@ router.get('/gym/ingredients', requirePermission('gym.manage'), asyncHandler(asy
 router.post('/gym/ingredients', requirePermission('gym.manage'), asyncHandler(async (req, res) => {
   const b=ingredientSchema.parse(req.body||{});
   const rows=await prisma.$queryRawUnsafe<any[]>(`
-    INSERT INTO public."GymIngredient" ("id","tenantId","name","category","defaultUnit","notes","active","createdAt","updatedAt")
-    VALUES (gen_random_uuid()::text,$1,$2,$3,$4,$5,$6,now(),now())
+    INSERT INTO public."GymIngredient" (
+      "id","tenantId","name","category","defaultUnit","notes","active",
+      "nutrientBasisQuantity","nutrientBasisUnit","energyKcal","proteinG","carbsG","fatG","fiberG",
+      "micronutrients","nutritionSource","nutritionSourceRef","createdAt","updatedAt"
+    )
+    VALUES (gen_random_uuid()::text,$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14::jsonb,$15,$16,now(),now())
     ON CONFLICT DO NOTHING
     RETURNING *
-  `,ctx(req).tenantId,b.name,b.category||null,b.defaultUnit,b.notes||null,b.active);
+  `,ctx(req).tenantId,b.name,b.category||null,b.defaultUnit,b.notes||null,b.active,
+    b.nutrientBasisQuantity??null,b.nutrientBasisUnit||null,b.energyKcal??null,b.proteinG??null,b.carbsG??null,b.fatG??null,b.fiberG??null,
+    JSON.stringify(b.micronutrients||{}),b.nutritionSource||null,b.nutritionSourceRef||null);
   if(!rows.length)throw new HttpError(409,'Ya existe un ingrediente con ese nombre en el tenant activo.');
   ok(res,one(rows),201);
 }));
@@ -1260,10 +1289,14 @@ router.patch('/gym/ingredients/:id', requirePermission('gym.manage'), asyncHandl
   if(duplicateRows.length)throw new HttpError(409,'Ya existe un ingrediente con ese nombre en el tenant activo.');
   const rows=await prisma.$queryRawUnsafe<any[]>(`
     UPDATE public."GymIngredient"
-    SET "name"=$3,"category"=$4,"defaultUnit"=$5,"notes"=$6,"active"=$7,"updatedAt"=now()
+    SET "name"=$3,"category"=$4,"defaultUnit"=$5,"notes"=$6,"active"=$7,
+        "nutrientBasisQuantity"=$8,"nutrientBasisUnit"=$9,"energyKcal"=$10,"proteinG"=$11,"carbsG"=$12,"fatG"=$13,"fiberG"=$14,
+        "micronutrients"=$15::jsonb,"nutritionSource"=$16,"nutritionSourceRef"=$17,"updatedAt"=now()
     WHERE "tenantId"=$1 AND "id"=$2
     RETURNING *
-  `,tenantId,id,next.name,next.category||null,next.defaultUnit,next.notes||null,next.active);
+  `,tenantId,id,next.name,next.category||null,next.defaultUnit,next.notes||null,next.active,
+    next.nutrientBasisQuantity??null,next.nutrientBasisUnit||null,next.energyKcal??null,next.proteinG??null,next.carbsG??null,next.fatG??null,next.fiberG??null,
+    JSON.stringify(next.micronutrients||{}),next.nutritionSource||null,next.nutritionSourceRef||null);
   ok(res,one(rows));
 }));
 
@@ -1488,9 +1521,9 @@ router.post('/gym/nutrition', requirePermission('gym.manage'), asyncHandler(asyn
     }
 
     const planRows = await tx.$queryRawUnsafe<any[]>(`
-      INSERT INTO public."GymNutritionPlan" ("id","tenantId","memberId","trainerId","name","goal","durationDays","targetCalories","proteinG","carbsG","fatG","waterMl","notes","startsAt","endsAt","active","createdAt","updatedAt")
-      VALUES (gen_random_uuid()::text,$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13::date,$14::date,true,now(),now()) RETURNING *
-    `, tenantId,b.memberId,b.trainerId||null,b.name,b.goal||null,b.durationDays,b.targetCalories||null,b.proteinG||null,b.carbsG||null,b.fatG||null,b.waterMl||null,b.notes||null,b.startsAt||null,b.endsAt||null);
+      INSERT INTO public."GymNutritionPlan" ("id","tenantId","memberId","trainerId","name","goal","durationDays","targetCalories","proteinG","carbsG","fatG","fiberG","micronutrientTargets","waterMl","notes","startsAt","endsAt","active","createdAt","updatedAt")
+      VALUES (gen_random_uuid()::text,$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12::jsonb,$13,$14,$15::date,$16::date,true,now(),now()) RETURNING *
+    `, tenantId,b.memberId,b.trainerId||null,b.name,b.goal||null,b.durationDays,b.targetCalories||null,b.proteinG||null,b.carbsG||null,b.fatG||null,b.fiberG||null,JSON.stringify(b.micronutrientTargets||{}),b.waterMl||null,b.notes||null,b.startsAt||null,b.endsAt||null);
     const createdPlan = one(planRows);
     for (const meal of b.meals) {
       const mealRows=await tx.$queryRawUnsafe<any[]>(`
@@ -1517,6 +1550,98 @@ router.post('/gym/nutrition', requirePermission('gym.manage'), asyncHandler(asyn
     return createdPlan;
   });
   ok(res, plan, 201);
+}));
+
+router.get('/gym/nutrition/:id/composition', requirePermission('gym.manage'), asyncHandler(async(req,res)=>{
+  const tenantId=ctx(req).tenantId;
+  const planId=String(req.params.id||'');
+  const planRows=await prisma.$queryRawUnsafe<any[]>(`
+    SELECT "id","targetCalories","proteinG","carbsG","fatG","fiberG","micronutrientTargets"
+    FROM public."GymNutritionPlan"
+    WHERE "tenantId"=$1 AND "id"=$2
+    LIMIT 1
+  `,tenantId,planId);
+  const plan=one(planRows,'Plan nutricional no encontrado.');
+  const nutrientRows=await prisma.$queryRawUnsafe<any[]>(`
+    WITH plan_items AS (
+      SELECT mi."ingredientId",mi."quantity"::numeric AS quantity,mi."unit"
+      FROM public."GymMeal" m
+      JOIN public."GymMealItem" mi ON mi."tenantId"=m."tenantId" AND mi."mealId"=m."id"
+      WHERE m."tenantId"=$1 AND m."nutritionPlanId"=$2
+      UNION ALL
+      SELECT ri."ingredientId",(ri."quantity"::numeric*m."servings"::numeric/r."servings"::numeric) AS quantity,ri."unit"
+      FROM public."GymMeal" m
+      JOIN public."GymRecipe" r ON r."tenantId"=m."tenantId" AND r."id"=m."recipeId"
+      JOIN public."GymRecipeItem" ri ON ri."tenantId"=r."tenantId" AND ri."recipeId"=r."id"
+      WHERE m."tenantId"=$1 AND m."nutritionPlanId"=$2
+    )
+    SELECT
+      COALESCE(SUM(CASE WHEN p."unit"=i."nutrientBasisUnit" AND i."nutrientBasisQuantity">0 THEN p.quantity/i."nutrientBasisQuantity"*i."energyKcal" END),0) AS "energyKcal",
+      COALESCE(SUM(CASE WHEN p."unit"=i."nutrientBasisUnit" AND i."nutrientBasisQuantity">0 THEN p.quantity/i."nutrientBasisQuantity"*i."proteinG" END),0) AS "proteinG",
+      COALESCE(SUM(CASE WHEN p."unit"=i."nutrientBasisUnit" AND i."nutrientBasisQuantity">0 THEN p.quantity/i."nutrientBasisQuantity"*i."carbsG" END),0) AS "carbsG",
+      COALESCE(SUM(CASE WHEN p."unit"=i."nutrientBasisUnit" AND i."nutrientBasisQuantity">0 THEN p.quantity/i."nutrientBasisQuantity"*i."fatG" END),0) AS "fatG",
+      COALESCE(SUM(CASE WHEN p."unit"=i."nutrientBasisUnit" AND i."nutrientBasisQuantity">0 THEN p.quantity/i."nutrientBasisQuantity"*i."fiberG" END),0) AS "fiberG"
+    FROM plan_items p
+    JOIN public."GymIngredient" i ON i."tenantId"=$1 AND i."id"=p."ingredientId"
+  `,tenantId,planId);
+  const micronutrients=await prisma.$queryRawUnsafe<any[]>(`
+    WITH plan_items AS (
+      SELECT mi."ingredientId",mi."quantity"::numeric AS quantity,mi."unit"
+      FROM public."GymMeal" m
+      JOIN public."GymMealItem" mi ON mi."tenantId"=m."tenantId" AND mi."mealId"=m."id"
+      WHERE m."tenantId"=$1 AND m."nutritionPlanId"=$2
+      UNION ALL
+      SELECT ri."ingredientId",(ri."quantity"::numeric*m."servings"::numeric/r."servings"::numeric) AS quantity,ri."unit"
+      FROM public."GymMeal" m
+      JOIN public."GymRecipe" r ON r."tenantId"=m."tenantId" AND r."id"=m."recipeId"
+      JOIN public."GymRecipeItem" ri ON ri."tenantId"=r."tenantId" AND ri."recipeId"=r."id"
+      WHERE m."tenantId"=$1 AND m."nutritionPlanId"=$2
+    )
+    SELECT nutrient.key AS "name", nutrient.value->>'unit' AS "unit",
+           SUM(p.quantity/i."nutrientBasisQuantity"*(nutrient.value->>'amount')::numeric) AS "amount"
+    FROM plan_items p
+    JOIN public."GymIngredient" i ON i."tenantId"=$1 AND i."id"=p."ingredientId"
+    CROSS JOIN LATERAL jsonb_each(i."micronutrients") nutrient
+    WHERE p."unit"=i."nutrientBasisUnit"
+      AND i."nutrientBasisQuantity">0
+      AND jsonb_typeof(nutrient.value)='object'
+      AND nutrient.value ? 'amount'
+      AND nutrient.value ? 'unit'
+    GROUP BY nutrient.key,nutrient.value->>'unit'
+    ORDER BY nutrient.key,nutrient.value->>'unit'
+  `,tenantId,planId);
+  const unresolvedItems=await prisma.$queryRawUnsafe<any[]>(`
+    WITH plan_items AS (
+      SELECT mi."ingredientId",mi."quantity",mi."unit"
+      FROM public."GymMeal" m
+      JOIN public."GymMealItem" mi ON mi."tenantId"=m."tenantId" AND mi."mealId"=m."id"
+      WHERE m."tenantId"=$1 AND m."nutritionPlanId"=$2
+      UNION ALL
+      SELECT ri."ingredientId",ri."quantity",ri."unit"
+      FROM public."GymMeal" m
+      JOIN public."GymRecipe" r ON r."tenantId"=m."tenantId" AND r."id"=m."recipeId"
+      JOIN public."GymRecipeItem" ri ON ri."tenantId"=r."tenantId" AND ri."recipeId"=r."id"
+      WHERE m."tenantId"=$1 AND m."nutritionPlanId"=$2
+    )
+    SELECT DISTINCT i."id" AS "ingredientId",i."name",p."unit",i."nutrientBasisUnit"
+    FROM plan_items p
+    JOIN public."GymIngredient" i ON i."tenantId"=$1 AND i."id"=p."ingredientId"
+    WHERE i."nutrientBasisQuantity" IS NULL
+       OR i."nutrientBasisUnit" IS NULL
+       OR p."unit"<>i."nutrientBasisUnit"
+    ORDER BY i."name"
+  `,tenantId,planId);
+  ok(res,{
+    planId:plan.id,
+    targets:{
+      energyKcal:plan.targetCalories,proteinG:plan.proteinG,carbsG:plan.carbsG,fatG:plan.fatG,fiberG:plan.fiberG,
+      micronutrients:plan.micronutrientTargets||{}
+    },
+    totals:nutrientRows[0]||{energyKcal:0,proteinG:0,carbsG:0,fatG:0,fiberG:0},
+    micronutrients,
+    unresolvedItems,
+    conversionPolicy:'exact-basis-unit-only'
+  });
 }));
 
 router.get('/gym/nutrition/:id/shopping-list', requirePermission('gym.manage'), asyncHandler(async(req,res)=>{
