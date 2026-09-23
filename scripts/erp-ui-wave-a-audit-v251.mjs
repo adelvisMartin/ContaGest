@@ -325,13 +325,24 @@ if(vetEntry?.status==='MIGRATED'){
     if(!guardianPortalMigration.includes(contract))fail(`veterinaria: missing guardian portal persistence contract ${contract}`);
   }
   if(/"token"\s+text/i.test(guardianPortalMigration))fail('veterinaria: guardian portal must never persist plaintext tokens');
-  for(const contract of ["router.get('/:token'",'createHash(\'sha256\')','guardianText','appointments','discharges','documents','billing','communications']){
+  for(const contract of ["router.post('/session'",'createHash(\'sha256\')','appointments','discharges','documents','billing','communications']){
     if(!guardianPortalPublic.includes(contract))fail(`veterinaria: missing public portal allow-list contract ${contract}`);
   }
-  if(/router\.(post|put|patch|delete)\(/.test(guardianPortalPublic))fail('veterinaria: public guardian portal must remain read-only');
-  if(guardianPortalPublic.includes('attachmentPath'))fail('veterinaria: public guardian portal must not expose internal storage paths');
+  if(/router\.(get|put|patch|delete)\(/.test(guardianPortalPublic))fail('veterinaria: public guardian portal boundary must expose only the token-session POST');
+  if((guardianPortalPublic.match(/UPDATE public\."VeterinaryGuardianPortalGrant"/g)||[]).length!==1||!guardianPortalPublic.includes('"lastUsedAt"=now()'))fail('veterinaria: public portal may mutate only grant lastUsedAt');
+  for(const forbidden of ['attachmentPath','clinicalData','"diagnosis"','"findings"','"impression"','"payload"','providerMessageId']){
+    if(guardianPortalPublic.includes(forbidden))fail(`veterinaria: public guardian portal exposed forbidden field ${forbidden}`);
+  }
+  if(!veterinaryRoutes.includes('randomBytes(32)')||!veterinaryRoutes.includes('expiresInHours')||!veterinaryRoutes.includes('max(168)'))fail('veterinaria: guardian grants must use 256-bit tokens with <=7 day TTL');
+  if(veterinaryRoutes.includes('?token='))fail('veterinaria: guardian token must never be placed in query parameters');
+  if(!veterinaryRoutes.includes('#access='))fail('veterinaria: guardian portal link must keep token in URL fragment');
+  if(!guardianPortalPanel.includes('expiresInHours')||!guardianPortalPanel.includes('scopes'))fail('veterinaria: guardian admin must expose TTL and explicit scopes');
   if(!viteConfig.includes('portal-veterinaria'))fail('veterinaria: guardian portal Vite entry is missing');
-  if(!guardianPortalEntry.includes('noAuth:true'))fail('veterinaria: guardian portal frontend must not depend on ERP authentication');
+  if(!guardianPortalEntry.includes('noAuth:true')||!guardianPortalEntry.includes("sessionStorage.setItem('cg_veterinary_portal_access'")||!guardianPortalEntry.includes("replace(/^#/"))fail('veterinaria: portal frontend must consume fragment token without ERP auth');
+  if(guardianPortalEntry.includes('location.search')||guardianPortalEntry.includes("get('token')"))fail('veterinaria: portal frontend must not read secret from query string');
+  for(const forbidden of ['x.diagnosis','x.impression','guardianText']){
+    if(guardianPortalEntry.includes(forbidden))fail(`veterinaria: portal UI reintroduced sensitive field ${forbidden}`);
+  }
 
 }
 
