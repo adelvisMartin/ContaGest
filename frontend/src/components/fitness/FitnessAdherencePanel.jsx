@@ -120,10 +120,15 @@ export function FitnessAdherencePanel({members=[],memberId='',onMemberChange,nut
     await action(async()=>{
       const dataUrl=await MediaService.fileToDataUrl(photoForm.file,{maxBytes:3*1024*1024});
       const uploaded=await MediaService.upload({entityType:'gym-progress',entityId:memberId,dataUrl,alt:'Foto de progreso autorizada'});
-      await GymVerticalService.createProgressPhoto({
-        memberId,storagePath:uploaded.path,capturedAt:new Date(photoForm.capturedAt).toISOString(),
-        authorizationConfirmed:true,notes:photoForm.notes.trim()||null
-      });
+      try{
+        await GymVerticalService.createProgressPhoto({
+          memberId,storagePath:uploaded.path,capturedAt:new Date(photoForm.capturedAt).toISOString(),
+          authorizationConfirmed:true,notes:photoForm.notes.trim()||null
+        });
+      }catch(cause){
+        try{await MediaService.remove(uploaded.path);}catch{}
+        throw cause;
+      }
     },'Foto de progreso autorizada guardada.');
     setPhotoForm({file:null,capturedAt:localDateTime(),authorized:false,notes:''});
   }
