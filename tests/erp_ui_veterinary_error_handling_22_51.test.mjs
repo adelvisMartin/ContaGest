@@ -49,3 +49,33 @@ test('22/51 veterinary logging avoids clinical payload serialization',()=>{
     assert.doesNotMatch(source,/console\.error\([^\n]*form|console\.error\([^\n]*patient|console\.error\([^\n]*clinicalData/);
   }
 });
+
+
+test('22/51 current veterinary child surfaces use safe error reporting',()=>{
+  const paths=[
+    'frontend/src/components/veterinary/VeterinaryLongitudinalRecord.jsx',
+    'frontend/src/components/veterinary/VeterinaryPreventiveCarePanel.jsx',
+    'frontend/src/components/veterinary/VeterinaryTreatmentSheet.jsx',
+    'frontend/src/components/veterinary/VeterinaryMedicationPanel.jsx',
+    'frontend/src/components/veterinary/VeterinaryClinicalInventoryPanel.jsx'
+  ];
+  for(const path of paths){
+    const source=fs.readFileSync(path,'utf8');
+    assert.match(source,/reportVeterinaryError/);
+    assert.doesNotMatch(source,silentCatch);
+    assert.doesNotMatch(source,/console\.error\([^\n]*(form|patient|clinicalData|details)/);
+  }
+  const reporter=fs.readFileSync('frontend/src/components/veterinary/veterinaryError.js','utf8');
+  for(const token of ['scope','name','message','status']) assert.ok(reporter.includes(token),token);
+  assert.doesNotMatch(reporter,/JSON\.stringify|clinicalData|patient|form/);
+});
+
+test('22/51 medication inventory read is retryable and preserves prior data on transient failure',()=>{
+  const source=fs.readFileSync('frontend/src/components/veterinary/VeterinaryMedicationPanel.jsx','utf8');
+  for(const token of ['loadProducts','preserveOnError','productPermissionBlocked','productsLoading','Reintentar']) assert.ok(source.includes(token),token);
+  const start=source.indexOf('async function loadProducts');
+  const end=source.indexOf('useEffect(()=>{void loadProducts',start);
+  const block=source.slice(start,end);
+  assert.match(block,/if\(permissionBlocked\|\|!preserveOnError\)setProducts\(\[\]\)/);
+  assert.doesNotMatch(block,/catch[\s\S]*setProducts\(\[\]\)[\s\S]*setProductError\([^)]*No se pudo cargar/);
+});
