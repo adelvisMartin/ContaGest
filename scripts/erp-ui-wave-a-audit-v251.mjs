@@ -189,6 +189,25 @@ if(vetEntry?.status==='MIGRATED'){
   }
   if(/UPDATE public\."CareHospitalObservation"|DELETE FROM public\."CareHospitalObservation"/.test(veterinaryRoutes))fail('veterinaria: treatment-sheet events must remain append-only');
 
+  const inpatientVitalMigration=read('backend/prisma/migrations/20260923155000_veterinary_longitudinal_inpatient_v2351/migration.sql');
+  for(const contract of [
+    'VETERINARY_TREATMENT_VITAL_UNITS',
+    "body.category==='vitals'",
+    "body.status==='completed'",
+    "source:'veterinary-treatment-sheet'",
+    'sourceObservationId:row.id',
+    'INSERT INTO public."CareMeasurement"',
+    'hospitalization.encounterId'
+  ]){
+    if(!veterinaryRoutes.includes(contract))fail(`veterinaria: missing inpatient longitudinal vital contract ${contract}`);
+  }
+  for(const contract of ['Temperatura (°C)','Frecuencia cardíaca (lpm)','Frecuencia respiratoria (rpm)','Peso (kg)']){
+    if(!veterinaryTreatmentSheet.includes(contract))fail(`veterinaria: treatment sheet missing canonical longitudinal vital input ${contract}`);
+  }
+  for(const contract of ['CareMeasurement_vet_treatment_observation_kind_unique',"metadata->>'sourceObservationId'","'veterinary-treatment-sheet'"]){
+    if(!inpatientVitalMigration.includes(contract))fail(`veterinaria: missing inpatient vital uniqueness contract ${contract}`);
+  }
+
   const veterinaryMedication=read('frontend/src/components/veterinary/VeterinaryMedicationPanel.jsx');
   const veterinaryMedicationMigration=read('backend/prisma/migrations/20260922214500_veterinary_medication_integration_v2851/migration.sql');
   const healthExtendedRoutes=read('backend/src/modules/verticals/health-extended.routes.ts');
