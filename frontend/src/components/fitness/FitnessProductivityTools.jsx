@@ -98,8 +98,23 @@ export function FitnessNutritionQuickTool({members,Toast,onDataChanged}){
   const [foodQuery,setFoodQuery]=useState('');
   const [foods,setFoods]=useState([]);
   const [foodLoading,setFoodLoading]=useState(false);
+  const [nutritionIngredients,setNutritionIngredients]=useState([]);
+  const [ingredientMealType,setIngredientMealType]=useState('Almuerzo');
+  const [ingredientDraft,setIngredientDraft]=useState({name:'',amountG:'100',basisGrams:'100',calories:'0',proteinG:'0',carbsG:'0',fatG:'0',fiberG:'0',sodiumMg:'0'});
+  const [ingredientSaving,setIngredientSaving]=useState(false);
   const options=useMemo(()=>memberOptions(members),[members]);
   const set=(key)=>(event)=>setForm((current)=>({...current,[key]:event.target.value}));
+
+  const structuredPreview=useMemo(()=>nutritionIngredients.reduce((total,ingredient)=>{
+    const scale=Number(ingredient.amountG||0)/Math.max(.001,Number(ingredient.basisGrams||100));
+    total.calories+=Number(ingredient.nutrients?.calories||0)*scale;
+    total.proteinG+=Number(ingredient.nutrients?.proteinG||0)*scale;
+    total.carbsG+=Number(ingredient.nutrients?.carbsG||0)*scale;
+    total.fatG+=Number(ingredient.nutrients?.fatG||0)*scale;
+    total.fiberG+=Number(ingredient.nutrients?.fiberG||0)*scale;
+    total.sodiumMg+=Number(ingredient.nutrients?.sodiumMg||0)*scale;
+    return total;
+  },{calories:0,proteinG:0,carbsG:0,fatG:0,fiberG:0,sodiumMg:0}),[nutritionIngredients]);
 
   const generate=()=>setGenerated(FitnessNutritionService.generate({...form,clinicalRisk:Boolean(form.clinicalRisk)}));
   const copy=async()=>{
