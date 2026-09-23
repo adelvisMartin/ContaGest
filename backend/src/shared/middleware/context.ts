@@ -34,7 +34,7 @@ const PERMISSION_MODULES: Record<string, string[]> = {
   'payroll.manage': ['nomina','rrhh'],
   'banking.manage': ['bancos'],
   'taxes.export': ['tributos','libro-ventas','normativa'],
-  'health.manage': ['salud','veterinaria'],
+  'health.manage': ['salud','veterinaria','psicologia','odontologia'],
   'gym.manage': ['gimnasio','rutinas','nutricion'],
   'communications.manage': ['mensajes'],
   'admin.manage': ['admin','configuracion','backend','licencias','demo-control'],
