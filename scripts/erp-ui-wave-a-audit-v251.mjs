@@ -794,6 +794,32 @@ if(fitnessEntries.every((item)=>item.status==='MIGRATED')){
   const nutritionBlock=gymRoutes.slice(nutritionStart,nutritionEnd);
   if(nutritionStart<0||nutritionEnd<0)fail('fitness: nutrition ingredient 43 route boundaries missing');
   if(/micronutrient|vitamin|mineral|fiberG|sodiumMg/i.test(nutritionBlock+ingredientMigration))fail('fitness: nutrition ingredient 43 must not pre-implement nutrient persistence 46');
+  const completeMealPlan=read('frontend/src/components/fitness/CompleteMealPlanBuilder.jsx');
+  const recipeLibrary=read('frontend/src/components/fitness/NutritionRecipeLibrary.jsx');
+  const shoppingPanel=read('frontend/src/components/fitness/NutritionShoppingListPanel.jsx');
+  const completeMealMigration=read('backend/prisma/migrations/20260923193000_gym_complete_meal_plan_44_51/migration.sql');
+  if((fitness.match(/<CompleteMealPlanBuilder/g)||[]).length!==1)fail('fitness: complete meal plan 44 must render from one owner');
+  if((fitness.match(/<NutritionRecipeLibrary/g)||[]).length!==1)fail('fitness: recipe library 44 must render from one owner');
+  if((fitness.match(/<NutritionShoppingListPanel/g)||[]).length!==1)fail('fitness: shopping list 44 must render from one owner');
+  if(/querySelector|addEventListener|innerHTML|document\./.test(completeMealPlan+recipeLibrary+shoppingPanel))fail('fitness: complete meal plan 44 reintroduced imperative DOM lifecycle');
+  for(const contract of ['7 días','14 días','28 días','Día','Porciones','Preparación','Alternativas','Agregar comida']){
+    if(!completeMealPlan.includes(contract))fail(`fitness: complete meal plan 44 UI missing ${contract}`);
+  }
+  if(!shoppingPanel.includes('Lista de compras')||!shoppingPanel.includes('GymVerticalService.shoppingList('))fail('fitness: shopping list 44 UI/service owner missing');
+  for(const contract of ['recipeSchema','completeNutritionSchema',"router.get('/gym/recipes'","router.post('/gym/recipes'","router.get('/gym/nutrition/:id/shopping-list'",'GymRecipeItem','GymMealAlternative','Las recetas del plan deben estar activas y pertenecer al tenant.']){
+    if(!gymRoutes.includes(contract))fail(`fitness: complete meal plan 44 backend missing ${contract}`);
+  }
+  for(const contract of ['GymRecipe','GymRecipeItem','GymMealAlternative','durationDays','dayIndex','recipeId','servings','preparation']){
+    if(!completeMealMigration.includes(contract))fail(`fitness: complete meal plan 44 migration missing ${contract}`);
+  }
+  if(!gymRoutes.includes('meal.dayIndex>Number(value.durationDays)')||!gymRoutes.includes('Cada comida debe pertenecer al horizonte configurado del plan.'))fail('fitness: complete meal plan 44 horizon validation missing');
+  const shoppingStart=gymRoutes.indexOf("router.get('/gym/nutrition/:id/shopping-list'");
+  const shoppingEnd=gymRoutes.indexOf("router.get('/gym/classes'",shoppingStart);
+  const shoppingBlock=gymRoutes.slice(shoppingStart,shoppingEnd);
+  if(shoppingStart<0||shoppingEnd<0)fail('fitness: complete meal plan 44 shopping-list route boundaries missing');
+  if(/INSERT INTO|UPDATE public|DELETE FROM/.test(shoppingBlock))fail('fitness: shopping list 44 must remain derived/read-only');
+  if(/allerg|intoler|preference|micronutrient|adherence/i.test(completeMealPlan+recipeLibrary+shoppingPanel+completeMealMigration))fail('fitness: complete meal plan 44 must not pre-implement 45-47');
+
   const mealPlanMigration=read('backend/prisma/migrations/20260923190000_gym_complete_meal_plan_44_51/migration.sql');
   for(const contract of ['Plan alimenticio semanal','FITNESS_WEEK_DAYS','Agregar comida','Día sin comidas programadas','Subir','Bajar','Duplicar']){
     if(!nutritionBuilder.includes(contract))fail(`fitness: complete meal plan 44 UI missing ${contract}`);
