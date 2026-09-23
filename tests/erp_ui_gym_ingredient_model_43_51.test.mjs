@@ -25,6 +25,7 @@ test('43/51 nutrition writes validate member trainer and ingredient ownership at
   const block=source.slice(start,end);
   for(const token of ['prisma.$transaction','GymMember','GymTrainer','GymIngredient','GymMealItem','El cliente no pertenece al tenant activo.','El responsable no pertenece al tenant activo.','Uno o más ingredientes no pertenecen al tenant activo o están archivados.']) assert.ok(block.includes(token),token);
   assert.match(block,/'\[\]'::jsonb/);
+  assert.match(source,/jsonb_typeof\(m\."items"\)='array'/);
 });
 
 test('43/51 frontend replaces free-text meal parsing with controlled ingredients',()=>{
