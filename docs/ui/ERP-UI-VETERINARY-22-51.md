@@ -71,3 +71,21 @@ La lectura opcional de productos en `VeterinaryMedicationPanel` ahora:
 - `erp_ui_veterinary_error_handling_22_51.test.mjs`;
 - Wave A bloquea reintroducción de `.catch(()=>null)` o `catch{}`;
 - source contract exige errores persistentes, retry y logging seguro.
+
+
+## Hardening posterior 30/51–32/51
+
+Las superficies añadidas después del primer hardening también quedan bajo el mismo contrato:
+
+- `VeterinaryFinancialPanel`;
+- `VeterinaryGuardianPortalPanel`;
+- `VeterinaryBoardingPanel`.
+
+Todas usan `reportVeterinaryError`, conservan error persistente en UI y ofrecen **Reintentar** en lecturas.
+
+En el portal del tutor se cerraron dos huecos concretos:
+
+- un fallo de `navigator.clipboard` ya no usa `catch{}`: se registra de forma segura y permanece visible;
+- si falla el registro de `CareCommunicationLog`, el canal externo aún puede abrirse, pero la UI informa que la comunicación no quedó auditada en el ERP.
+
+El reporter sigue sin serializar el enlace secreto del portal, formularios ni payloads clínicos.
