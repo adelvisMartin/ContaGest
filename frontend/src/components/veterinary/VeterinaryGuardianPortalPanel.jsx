@@ -103,8 +103,7 @@ export function VeterinaryGuardianPortalPanel({ selectedPatient, onCommunication
         channel,
         event:'guardian_portal_access_issued',
         recipient,
-        status:'sent',
-        sentAt:new Date().toISOString(),
+        status:'queued',
         payload:{
           grantId:latestGrant.id,
           expiresAt:latestGrant.expiresAt,
