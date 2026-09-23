@@ -22,22 +22,25 @@ export function ExerciseLibraryPanel({items=[],onItemsChange,Toast}){
   const [saving,setSaving]=useState(false);
   const [error,setError]=useState('');
 
-  useEffect(()=>setCatalog(rows(items)),[items]);
+  useEffect(()=>{
+    const hasCustomFilter=Boolean(filters.q||filters.muscleGroup||filters.equipment||filters.category||filters.active!=='true');
+    if(!hasCustomFilter)setCatalog(rows(items));
+  },[items,filters.q,filters.muscleGroup,filters.equipment,filters.category,filters.active]);
 
   const notify=(message,tone='success')=>Toast?.show?.(message,tone);
   const equipmentOptions=useMemo(()=>unique(catalog.map((item)=>item.equipment)),[catalog]);
   const categoryOptions=useMemo(()=>unique(catalog.map((item)=>item.category)),[catalog]);
 
-  function commit(next){
-    setCatalog(next);
-    onItemsChange?.(next);
+  async function syncCanonical(){
+    const response=await GymVerticalService.exercises({active:'true'});
+    onItemsChange?.(rows(response));
   }
 
   async function load(nextFilters=filters){
     setLoading(true);setError('');
     try{
       const response=await GymVerticalService.exercises(nextFilters);
-      commit(rows(response));
+      setCatalog(rows(response));
     }catch(cause){
       const message=cause?.message||'No se pudo cargar la biblioteca de ejercicios.';
       setError(message);notify(message,'error');
@@ -82,15 +85,14 @@ export function ExerciseLibraryPanel({items=[],onItemsChange,Toast}){
     };
     try{
       if(editingId){
-        const updated=await GymVerticalService.updateExercise(editingId,payload);
-        commit(catalog.map((item)=>item.id===editingId?updated:item));
+        await GymVerticalService.updateExercise(editingId,payload);
         notify('Ejercicio actualizado.','success');
       }else{
-        const created=await GymVerticalService.createExercise(payload);
-        commit([created,...catalog]);
+        await GymVerticalService.createExercise(payload);
         notify('Ejercicio agregado a la biblioteca.','success');
       }
       resetForm();
+      await Promise.all([load(filters),syncCanonical()]);
     }catch(cause){
       const message=cause?.message||'No se pudo guardar el ejercicio.';
       setError(message);notify(message,'error');
@@ -101,8 +103,8 @@ export function ExerciseLibraryPanel({items=[],onItemsChange,Toast}){
     setSaving(true);setError('');
     try{
       const updated=await GymVerticalService.updateExercise(item.id,{active:item.active===false});
-      commit(catalog.map((entry)=>entry.id===item.id?updated:entry));
       notify(updated.active?'Ejercicio reactivado.':'Ejercicio archivado.','success');
+      await Promise.all([load(filters),syncCanonical()]);
     }catch(cause){
       const message=cause?.message||'No se pudo cambiar el estado.';
       setError(message);notify(message,'error');

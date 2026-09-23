@@ -89,6 +89,12 @@ Cuando el ejercicio proviene de `GymExercise`:
 
 Los ejercicios persistidos tienen prioridad sobre un ejercicio estático con el mismo nombre.
 
+### Hardening posterior al merge
+
+Los filtros de la biblioteca son únicamente una **vista administrativa**. No reemplazan el catálogo activo que consume `RoutineBuilder`: después de crear, editar, archivar o reactivar se ejecuta una sincronización canónica separada con `active=true`.
+
+El alta también cierra la carrera entre la comprobación previa y el INSERT mediante `ON CONFLICT ("tenantId","name") DO NOTHING`; un conflicto concurrente conserva la semántica HTTP 409.
+
 Los ejercicios estáticos siguen disponibles como fallback y, al guardarse en una rutina sin `exerciseId`, el backend reutiliza/crea `GymExercise` mediante la autoridad existente.
 
 ## Límites

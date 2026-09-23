@@ -630,6 +630,10 @@ if(fitnessEntries.every((item)=>item.status==='MIGRATED')){
   for(const contract of ['persistedCatalog','exerciseId:selected.id','defaultSets','defaultReps']){
     if(!routineBuilder.includes(contract))fail(`fitness: routine builder missing persisted-catalog contract ${contract}`);
   }
+  if(!exerciseLibrary.includes('syncCanonical')||!exerciseLibrary.includes("GymVerticalService.exercises({active:'true'})"))fail('fitness: filtered exercise-library view must not replace canonical active routine catalog');
+  if(/function commit\(next\)[\s\S]{0,220}onItemsChange/.test(exerciseLibrary))fail('fitness: filtered exercise-library view leaked into canonical routine catalog');
+  if(!gymRoutes.includes('ON CONFLICT ("tenantId","name") DO NOTHING'))fail('fitness: exercise creation must close duplicate-name race');
+  if(/router\.delete\('\/gym\/exercises/.test(gymRoutes))fail('fitness: exercise lifecycle must archive/reactivate instead of deleting history');
   const weeklySchedule=read('frontend/src/components/fitness/WeeklyRoutineSchedule.jsx');
   const weekDays=read('frontend/src/data/fitnessWeekDays.js');
   if((fitness.match(/<WeeklyRoutineSchedule/g)||[]).length!==1)fail('fitness: weekly schedule must render from one owner');

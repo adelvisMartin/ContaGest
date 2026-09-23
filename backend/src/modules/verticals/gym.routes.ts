@@ -303,8 +303,10 @@ router.post('/gym/exercises', requirePermission('gym.manage'), asyncHandler(asyn
       ("id","tenantId","name","category","muscleGroup","equipment","instructions","mediaUrl","defaultSets","defaultReps","active","createdAt","updatedAt")
     VALUES
       (gen_random_uuid()::text,$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,now(),now())
+    ON CONFLICT ("tenantId","name") DO NOTHING
     RETURNING *
   `,tenantId,b.name,b.category||null,b.muscleGroup||null,b.equipment||null,b.instructions||null,b.mediaUrl||null,b.defaultSets??null,b.defaultReps||null,b.active);
+  if(!rows.length)throw new HttpError(409,'Ya existe un ejercicio con ese nombre.');
   ok(res,one(rows),201);
 }));
 
