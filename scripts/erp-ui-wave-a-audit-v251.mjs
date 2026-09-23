@@ -97,6 +97,28 @@ if(vetEntry?.status==='MIGRATED'){
     if(!veterinaryLongitudinal.includes(contract))fail(`veterinaria: missing longitudinal record contract ${contract}`);
   }
   if(!vet.includes('HealthVerticalService.measurements(patientId)'))fail('veterinaria: dossier must load canonical longitudinal measurements');
+  for(const contract of ['nextVitalBatchId','batchId','createVeterinaryVitalMeasurements','batch atómico y reintentable','Number.isFinite']){
+    if(!veterinaryLongitudinal.includes(contract))fail(`veterinaria: missing retry-safe longitudinal vital contract ${contract}`);
+  }
+  if(veterinaryLongitudinal.includes('HealthVerticalService.createMeasurement('))fail('veterinaria: longitudinal vital UI must not reintroduce partial per-measurement writes');
+  const healthRoutes=read('backend/src/modules/verticals/health.routes.ts');
+  for(const contract of [
+    'veterinaryVitalBatchSchema',
+    "router.post('/health/measurements/veterinary-vitals'",
+    'pg_advisory_xact_lock',
+    '"kind"=\'animal\'',
+    "metadata\"->>'source'='veterinary-longitudinal-record'",
+    "metadata\"->>'batchId'=$3",
+    'El batchId ya fue usado para una toma de signos vitales diferente.',
+    'result.replayed?200:201'
+  ]){
+    const normalized=contract.replaceAll('\\"','"');
+    if(!healthRoutes.includes(normalized))fail(`veterinaria: missing longitudinal vital backend contract ${normalized}`);
+  }
+  const longitudinalBatchMigration=read('backend/prisma/migrations/20260923014000_veterinary_longitudinal_batch_v2351/migration.sql');
+  for(const contract of ['CareMeasurement_vet_batch_kind_unique','"tenantId"','"patientId"',"(metadata->>'batchId')",'"kind"',"'veterinary-longitudinal-record'"]){
+    if(!longitudinalBatchMigration.includes(contract))fail(`veterinaria: missing longitudinal batch migration contract ${contract}`);
+  }
   const veterinaryPreventive=read('frontend/src/components/veterinary/VeterinaryPreventiveCarePanel.jsx');
   if(!vet.includes('VeterinaryPreventiveCarePanel'))fail('veterinaria: preventive care panel is not composed');
   if((vet.match(/<VeterinaryPreventiveCarePanel/g)||[]).length!==1)fail('veterinaria: preventive care panel must render from one owner');

@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Box, Divider, Paper, Stack, Typography } from '@mui/material';
 import { CgButton, CgDataTable, CgEmptyState, CgState, CgStatusChip, CgTextField } from '../ui/cg/CgPrimitives.jsx';
 import { HealthVerticalService } from '../../services/verticalService.js';
@@ -13,6 +13,15 @@ export const measurementKinds=[
 
 const toNumber=(value)=>Number(value||0);
 const rows=(value)=>Array.isArray(value)?value:value?.data||[];
+const nextVitalBatchId=()=>{
+  if(globalThis.crypto?.randomUUID)return globalThis.crypto.randomUUID();
+  const template='xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx';
+  return template.replace(/[xy]/g,(token)=>{
+    const value=Math.floor(Math.random()*16);
+    const nibble=token==='x'?value:(value&0x3)|0x8;
+    return nibble.toString(16);
+  });
+};
 const trendDelta=(current,previous,unit='')=>{
   if(!previous)return 'Sin previo';
   const delta=toNumber(current.value)-toNumber(previous.value);
@@ -32,8 +41,15 @@ function TrendCard({definition,items}){
 
 export function VeterinaryLongitudinalRecord({patient,encounters=[],prescriptions=[],measurements=[],onMeasurementCreated}){
   const [form,setForm]=useState({weight:'',temperature:'',heart_rate:'',respiratory_rate:''});
+  const [batchId,setBatchId]=useState(()=>nextVitalBatchId());
   const [saving,setSaving]=useState(false);
   const [error,setError]=useState('');
+
+  useEffect(()=>{
+    setForm({weight:'',temperature:'',heart_rate:'',respiratory_rate:''});
+    setBatchId(nextVitalBatchId());
+    setError('');
+  },[patient?.id]);
 
   const grouped=useMemo(()=>Object.fromEntries(measurementKinds.map((definition)=>[
     definition.kind,
@@ -48,30 +64,39 @@ export function VeterinaryLongitudinalRecord({patient,encounters=[],prescription
 
   async function submit(event){
     event.preventDefault();
-    if(!patient?.id)return;
+    if(!patient?.id||saving)return;
     const pending=measurementKinds
       .map((definition)=>({definition,value:String(form[definition.kind]||'').trim()}))
       .filter((item)=>item.value!=='');
     if(!pending.length){setError('Registra al menos una medición.');return;}
+    const measurements=pending.map((item)=>({
+      kind:item.definition.kind,
+      value:Number(item.value),
+      unit:item.definition.unit
+    }));
+    if(measurements.some((item)=>!Number.isFinite(item.value))){
+      setError('Todas las mediciones deben contener un valor numérico válido.');
+      return;
+    }
+
     setSaving(true);setError('');
     try{
-      const created=[];
-      for(const item of pending){
-        const record=await HealthVerticalService.createMeasurement({
-          patientId:patient.id,
-          kind:item.definition.kind,
-          value:Number(item.value),
-          unit:item.definition.unit,
-          metadata:{source:'veterinary-longitudinal-record'}
-        });
-        created.push(record);
+      const response=await HealthVerticalService.createVeterinaryVitalMeasurements({
+        patientId:patient.id,
+        batchId,
+        measurements
+      });
+      const payload=response?.data||response||{};
+      const created=rows(payload.measurements);
+      if(created.length!==measurements.length){
+        throw new Error('La toma no devolvió todas las mediciones esperadas.');
       }
       setForm({weight:'',temperature:'',heart_rate:'',respiratory_rate:''});
+      setBatchId(nextVitalBatchId());
       onMeasurementCreated?.(created);
     }catch(cause){
       setError(reportVeterinaryError('longitudinal.saveMeasurements',cause,'No se pudieron guardar las mediciones.'));
-    }
-    finally{setSaving(false);}
+    }finally{setSaving(false);}
   }
 
   const diagnosisColumns=[
@@ -102,6 +127,7 @@ export function VeterinaryLongitudinalRecord({patient,encounters=[],prescription
 
     <Box component="form" onSubmit={submit} sx={{mt:1.2}}>
       <Typography variant="subtitle1" fontWeight={700}>Última medición / nueva toma</Typography>
+      <Typography variant="caption" color="text.secondary">La toma se guarda como un batch atómico y reintentable: no deja signos vitales a medias.</Typography>
       <Box sx={{display:'grid',gridTemplateColumns:{xs:'repeat(2,minmax(0,1fr))',lg:'repeat(4,minmax(0,1fr))'},gap:1,mt:.8}}>
         {measurementKinds.map((definition)=><CgTextField key={definition.kind} size="small" label={`${definition.label} (${definition.unit})`} type="number" inputProps={{step:(definition.kind==='weight'||definition.kind==='temperature')?0.1:1}} value={form[definition.kind]} onChange={(e)=>setForm({...form,[definition.kind]:e.target.value})}/>)}
       </Box>

@@ -471,6 +471,36 @@ const measurementSchema = z.object({
   metadata: jsonRecord
 });
 
+const VETERINARY_VITAL_UNITS={
+  weight:'kg',
+  temperature:'°C',
+  heart_rate:'lpm',
+  respiratory_rate:'rpm'
+} as const;
+const veterinaryVitalKindSchema=z.enum(['weight','temperature','heart_rate','respiratory_rate']);
+const veterinaryVitalBatchSchema=z.object({
+  patientId:z.string().min(10),
+  encounterId:z.string().min(10).optional().nullable(),
+  batchId:z.string().uuid(),
+  measuredAt:z.string().datetime({offset:true}).optional().nullable(),
+  measurements:z.array(z.object({
+    kind:veterinaryVitalKindSchema,
+    value:z.coerce.number().finite(),
+    unit:z.enum(['kg','°C','lpm','rpm'])
+  }).strict()).min(1).max(4)
+}).strict().superRefine((value,refinement)=>{
+  const seen=new Set<string>();
+  for(const [index,item] of value.measurements.entries()){
+    if(seen.has(item.kind)){
+      refinement.addIssue({code:'custom',path:['measurements',index,'kind'],message:'Cada signo vital puede registrarse una sola vez por toma.'});
+    }
+    seen.add(item.kind);
+    if(item.unit!==VETERINARY_VITAL_UNITS[item.kind]){
+      refinement.addIssue({code:'custom',path:['measurements',index,'unit'],message:'La unidad no corresponde al signo vital.'});
+    }
+  }
+});
+
 const immunizationSchema = z.object({
   patientId: z.string().min(10),
   professionalId: z.string().optional().nullable(),
@@ -1165,6 +1195,70 @@ router.post('/health/measurements', requirePermission('health.manage'), asyncHan
     VALUES (gen_random_uuid()::text,$1,$2,$3,$4,$5,$6,COALESCE($7::timestamptz,now()),$8::jsonb) RETURNING *
   `, tenantId,b.patientId,b.encounterId||null,b.kind,b.value,b.unit,b.measuredAt||null,JSON.stringify(b.metadata));
   ok(res, one(rows), 201);
+}));
+
+router.post('/health/measurements/veterinary-vitals', requirePermission('health.manage'), asyncHandler(async (req,res)=>{
+  const tenantId=ctx(req).tenantId;
+  const body=veterinaryVitalBatchSchema.parse(req.body||{});
+  const result=await prisma.$transaction(async(tx)=>{
+    await tx.$queryRawUnsafe<any[]>(`
+      SELECT pg_advisory_xact_lock(hashtextextended($1,0))
+    `,`${tenantId}:veterinary-vitals:${body.patientId}:${body.batchId}`);
+
+    const patientRows=await tx.$queryRawUnsafe<any[]>(`
+      SELECT "id" FROM public."CarePatient"
+      WHERE "tenantId"=$1 AND "id"=$2 AND "kind"='animal' AND "active"=true
+      LIMIT 1
+      FOR SHARE
+    `,tenantId,body.patientId);
+    if(!patientRows.length)throw new HttpError(422,'La mascota no pertenece al tenant activo.');
+
+    if(body.encounterId){
+      const encounterRows=await tx.$queryRawUnsafe<any[]>(`
+        SELECT "id" FROM public."CareEncounter"
+        WHERE "tenantId"=$1 AND "id"=$2 AND "patientId"=$3
+        LIMIT 1
+        FOR SHARE
+      `,tenantId,body.encounterId,body.patientId);
+      if(!encounterRows.length)throw new HttpError(422,'El encuentro no pertenece a la mascota activa.');
+    }
+
+    const existing=await tx.$queryRawUnsafe<any[]>(`
+      SELECT * FROM public."CareMeasurement"
+      WHERE "tenantId"=$1
+        AND "patientId"=$2
+        AND "metadata"->>'source'='veterinary-longitudinal-record'
+        AND "metadata"->>'batchId'=$3
+      ORDER BY "kind" ASC
+    `,tenantId,body.patientId,body.batchId);
+    if(existing.length){
+      const byKind=new Map(existing.map((item)=>[String(item.kind),item]));
+      const sameRequest=existing.length===body.measurements.length&&body.measurements.every((item)=>{
+        const previous=byKind.get(item.kind);
+        return previous&&Number(previous.value)===item.value&&String(previous.unit)===item.unit;
+      });
+      if(!sameRequest)throw new HttpError(409,'El batchId ya fue usado para una toma de signos vitales diferente.');
+      return {measurements:existing,replayed:true};
+    }
+
+    const measuredAt=body.measuredAt||new Date().toISOString();
+    const created:any[]=[];
+    for(const item of body.measurements){
+      const metadata={source:'veterinary-longitudinal-record',batchId:body.batchId};
+      const rows=await tx.$queryRawUnsafe<any[]>(`
+        INSERT INTO public."CareMeasurement"
+          ("id","tenantId","patientId","encounterId","kind","value","unit","measuredAt","metadata")
+        VALUES
+          (gen_random_uuid()::text,$1,$2,$3,$4,$5,$6,$7::timestamptz,$8::jsonb)
+        RETURNING *
+      `,tenantId,body.patientId,body.encounterId||null,item.kind,item.value,item.unit,measuredAt,JSON.stringify(metadata));
+      created.push(one(rows));
+    }
+    return {measurements:created,replayed:false};
+  });
+
+  res.setHeader('Idempotency-Replayed',result.replayed?'true':'false');
+  ok(res,result,result.replayed?200:201);
 }));
 
 router.get('/health/immunizations', requirePermission('health.manage'), asyncHandler(async (req, res) => {
