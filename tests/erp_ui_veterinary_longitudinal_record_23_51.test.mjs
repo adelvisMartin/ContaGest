@@ -97,3 +97,55 @@ test('23/51 frontend service exposes veterinary vital batch endpoint',()=>{
   assert.match(source,/createVeterinaryVitalMeasurements\(payload\)/);
   assert.match(source,/\/health\/measurements\/veterinary-vitals/);
 });
+
+
+test('23/51 completed inpatient vital events project atomically into CareMeasurement',()=>{
+  const source=fs.readFileSync('backend/src/modules/verticals/veterinary.routes.ts','utf8');
+  const start=source.indexOf("router.post('/hospitalizations/:id/treatment-sheet'");
+  const end=source.indexOf("router.get('/observations'",start);
+  const block=source.slice(start,end);
+  for(const token of [
+    'VETERINARY_TREATMENT_VITAL_UNITS',
+    "body.category==='vitals'",
+    "body.status==='completed'",
+    'sourceObservationId:row.id',
+    "source:'veterinary-treatment-sheet'",
+    'hospitalizationId:hospitalization.id',
+    'INSERT INTO public."CareMeasurement"',
+    '"patientId"',
+    '"encounterId"',
+    '"measuredAt"'
+  ]) assert.ok(block.includes(token),token);
+  assert.match(block,/SELECT h\."id",h\."patientId",h\."encounterId",h\."status"/);
+  assert.match(block,/performedAt\|\|observedAt/);
+});
+
+test('23/51 inpatient vital projection rejects non-numeric values before persistence',()=>{
+  const source=fs.readFileSync('backend/src/modules/verticals/veterinary.routes.ts','utf8');
+  const start=source.indexOf('const VETERINARY_TREATMENT_VITAL_UNITS');
+  const end=source.indexOf('const procedureSchema',start);
+  const block=source.slice(start,end);
+  assert.match(block,/Number\.isFinite\(Number\(raw\)\)/);
+  assert.match(block,/El signo vital debe ser numérico/);
+  for(const token of ["weight:'kg'","temperature:'°C'","heartRate:'lpm'","respiratoryRate:'rpm'"]) assert.ok(block.includes(token),token);
+});
+
+test('23/51 treatment-sheet vital UI exposes canonical units and numeric inputs',()=>{
+  const source=fs.readFileSync('frontend/src/components/veterinary/VeterinaryTreatmentSheet.jsx','utf8');
+  for(const token of ['Temperatura (°C)','Frecuencia cardíaca (lpm)','Frecuencia respiratoria (rpm)','Peso (kg)']) assert.ok(source.includes(token),token);
+  const start=source.indexOf("{form.category==='vitals'?");
+  const end=source.indexOf('</Box>:null}',start);
+  const block=source.slice(start,end);
+  assert.equal((block.match(/type="number"/g)||[]).length,4);
+});
+
+test('23/51 database guards one longitudinal projection per inpatient observation and kind',()=>{
+  const migration=fs.readFileSync('backend/prisma/migrations/20260923155000_veterinary_longitudinal_inpatient_v2351/migration.sql','utf8');
+  for(const token of [
+    'CareMeasurement_vet_treatment_observation_kind_unique',
+    '"tenantId"',
+    "(metadata->>'sourceObservationId')",
+    '"kind"',
+    "'veterinary-treatment-sheet'"
+  ]) assert.ok(migration.includes(token),token);
+});
