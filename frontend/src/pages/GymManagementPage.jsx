@@ -178,6 +178,19 @@ function GymWorkspace({state,context}){
         groupKey:String(exercise.techniqueConfig?.groupKey||'').trim()||null,
         holdSeconds:exercise.techniqueConfig?.holdSeconds==null?null:Number(exercise.techniqueConfig.holdSeconds),
         techniqueNotes:String(exercise.techniqueConfig?.techniqueNotes||'').trim()||null
+      }:{},
+      progressionStrategy:String(exercise.progressionStrategy||'manual'),
+      progressionConfig:exercise.progressionStrategy&&exercise.progressionStrategy!=='manual'?{
+        repRangeMin:exercise.progressionConfig?.repRangeMin==null?null:Number(exercise.progressionConfig.repRangeMin),
+        repRangeMax:exercise.progressionConfig?.repRangeMax==null?null:Number(exercise.progressionConfig.repRangeMax),
+        repIncrement:exercise.progressionConfig?.repIncrement==null?null:Number(exercise.progressionConfig.repIncrement),
+        loadIncrementKg:exercise.progressionConfig?.loadIncrementKg==null?null:Number(exercise.progressionConfig.loadIncrementKg),
+        targetRir:exercise.progressionConfig?.targetRir==null?null:Number(exercise.progressionConfig.targetRir),
+        targetRpe:exercise.progressionConfig?.targetRpe==null?null:Number(exercise.progressionConfig.targetRpe),
+        oneRepMaxKg:exercise.progressionConfig?.oneRepMaxKg==null?null:Number(exercise.progressionConfig.oneRepMaxKg),
+        percent1Rm:exercise.progressionConfig?.percent1Rm==null?null:Number(exercise.progressionConfig.percent1Rm),
+        stallAfter:exercise.progressionConfig?.stallAfter==null?null:Number(exercise.progressionConfig.stallAfter),
+        resetPct:exercise.progressionConfig?.resetPct==null?null:Number(exercise.progressionConfig.resetPct)
       }:{}
     }));
     if(exercises.some((exercise)=>!exercise.exerciseName))throw new Error('Todos los ejercicios necesitan nombre.');
