@@ -1,0 +1,74 @@
+name: Verticales 49/51 · Matriz visual anti-overlap
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'frontend/**'
+      - 'qa/verticals-visual-matrix-v4951.spec.mjs'
+      - 'tests/erp_verticals_visual_matrix_49_51.test.mjs'
+      - 'playwright.config.mjs'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/erp-verticals-visual-v4951.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: erp-verticals-visual-v4951-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  visual-matrix:
+    name: 5 routes × 5 viewports × 2 themes
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      CANDIDATE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+    steps:
+      - name: Checkout exact candidate
+        uses: actions/checkout@v7
+
+      - name: Verify candidate SHA
+        shell: bash
+        run: |
+          set -euo pipefail
+          actual="$(git rev-parse HEAD)"
+          printf 'candidate=%s\nactual=%s\n' "$CANDIDATE_SHA" "$actual" | tee visual-v4951-sha.log
+          test "$actual" = "$CANDIDATE_SHA"
+
+      - name: Setup Node 22
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install locked dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Static contract
+        run: node --test tests/erp_verticals_visual_matrix_49_51.test.mjs
+
+      - name: Execute visual matrix
+        shell: bash
+        run: |
+          set -o pipefail
+          npm run test:browser:verticals:visual 2>&1 | tee visual-v4951.log
+
+      - name: Upload exact-SHA evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: evidencia-visual-49-51-${{ env.CANDIDATE_SHA }}
+          path: |
+            visual-v4951-sha.log
+            visual-v4951.log
+            test-results
+            playwright-report
+          if-no-files-found: warn
+          retention-days: 14
