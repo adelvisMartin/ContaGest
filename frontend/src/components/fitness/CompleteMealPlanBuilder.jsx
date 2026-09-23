@@ -5,7 +5,7 @@ import { CgButton, CgEmptyState, CgSelect, CgTextField } from '../ui/cg/CgPrimit
 const DAYS=['Lunes','Martes','Miércoles','Jueves','Viernes','Sábado','Domingo'];
 const newMeal=(dayIndex=1,sortOrder=1)=>({dayIndex,dayOfWeek:((dayIndex-1)%7)+1,sortOrder,mealType:'Comida',plannedAt:'',recipeId:'',servings:'1',preparation:'',alternatives:[],items:[],notes:''});
 const newItem=()=>({ingredientId:'',quantity:'100',unit:'g',notes:''});
-const newAlternative=()=>({recipeId:'',label:''});
+const newAlternative=()=>({recipeId:'',label:'',servings:'1'});
 
 export function CompleteMealPlanBuilder({durationDays=7,onDurationChange,value=[],onChange,ingredients=[],recipes=[],disabled=false}){
   const meals=Array.isArray(value)?value:[];
@@ -56,9 +56,10 @@ export function CompleteMealPlanBuilder({durationDays=7,onDurationChange,value=[
       </Stack>:null}
       <Typography variant="caption" color="text.secondary" sx={{display:'block',mt:1,fontWeight:700}}>Alternativas</Typography>
       <Stack gap={.7} mt={.6}>
-        {(meal.alternatives||[]).map((alt,altIndex)=><Box key={altIndex} sx={{display:'grid',gridTemplateColumns:{xs:'1fr',sm:'2fr 2fr auto'},gap:.8}}>
+        {(meal.alternatives||[]).map((alt,altIndex)=><Box key={altIndex} sx={{display:'grid',gridTemplateColumns:{xs:'1fr',sm:'2fr 2fr 1fr auto'},gap:.8}}>
           <CgSelect label="Receta alternativa" value={alt.recipeId||''} options={recipeOptions.slice(1)} onChange={(e)=>updateAlternative(mealIndex,altIndex,{recipeId:e.target.value})}/>
           <CgTextField label="Etiqueta" value={alt.label||''} onChange={(e)=>updateAlternative(mealIndex,altIndex,{label:e.target.value})}/>
+          <CgTextField label="Porciones alternativa" type="number" inputProps={{min:.001,max:100,step:.001}} value={alt.servings??'1'} onChange={(e)=>updateAlternative(mealIndex,altIndex,{servings:e.target.value})}/>
           <CgButton type="button" variant="outlined" onClick={()=>updateMeal(mealIndex,{alternatives:(meal.alternatives||[]).filter((_x,i)=>i!==altIndex)})}>Quitar</CgButton>
         </Box>)}
         <CgButton type="button" size="small" variant="outlined" disabled={!recipes.length} onClick={()=>updateMeal(mealIndex,{alternatives:[...(meal.alternatives||[]),newAlternative()]})}>Agregar alternativa</CgButton>
