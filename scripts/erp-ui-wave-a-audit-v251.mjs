@@ -647,6 +647,15 @@ if(fitnessEntries.every((item)=>item.status==='MIGRATED')){
   for(const contract of ['routineSchema.superRefine','scheduledDays','value.daysPerWeek!==scheduledDays.size','La frecuencia semanal debe coincidir con los días programados.']){
     if(!gymRoutes.includes(contract))fail(`fitness: missing weekly schedule backend contract ${contract}`);
   }
+  const trainingModes=read('frontend/src/data/fitnessTrainingModes.js');
+  const trainingModeMigration=read('backend/prisma/migrations/20260923161500_gym_training_mode_36_51/migration.sql');
+  for(const contract of ['strength','hypertrophy','pump','endurance','power','conditioning','mobility']){
+    if(!trainingModes.includes(contract))fail(`fitness: missing training mode ${contract}`);
+  }
+  if(!fitness.includes('FITNESS_TRAINING_MODES')||!fitness.includes('label="Modo de entrenamiento"')||!fitness.includes('trainingMode:routineForm.trainingMode')||!fitness.includes('fitnessTrainingModeLabel(item.trainingMode)'))fail('fitness: explicit training mode is not wired end-to-end in routine UI');
+  if(!gymRoutes.includes("trainingMode: z.enum(['strength','hypertrophy','pump','endurance','power','conditioning','mobility'])"))fail('fitness: backend must require an explicit training mode for new routines');
+  if(!trainingModeMigration.includes("DEFAULT 'unspecified'")||!trainingModeMigration.includes('GymRoutine_trainingMode_check'))fail('fitness: legacy training-mode migration contract missing');
+  if(/applyMode.*(?:sets|reps|loadKg)/s.test(fitness))fail('fitness: training mode must not silently rewrite exercise prescription');
 }
 
 const css=read('frontend/src/styles/erp-runtime.css');
