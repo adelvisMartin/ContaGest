@@ -113,6 +113,12 @@ const ROLE_DEFINITIONS = [
     modules:['dashboard','gimnasio','rutinas','nutricion','clientes','cotizacion','ventas','historial','inventario','bancos','analytics','reportes','mensajes','soporte']
   },
   {
+    id:'role-nutricion', name:'Nutrición / Consulta', tone:'success', description:'Pacientes, planes alimentarios, composición, adherencia y seguimiento.',
+    scope:'Perfil independiente para profesionales de nutrición. Usa la capacidad nutricional del dominio Fitness sin habilitar por defecto la operación del gimnasio.',
+    permissions:['dashboard.view','clients.manage','gym.manage','reports.view','communications.manage'],
+    modules:['dashboard','nutricion','clientes','analytics','reportes','mensajes','soporte']
+  },
+  {
     id:'role-inventario', name:'Inventario / Almacén', tone:'warning', description:'Productos, stock, kardex, escaneo, alertas y movimientos.',
     scope:'Controla productos, existencias, kardex, escaneo y reportes de stock.',
     permissions:['dashboard.view','inventory.manage','reports.view','audit.view'],
@@ -179,6 +185,7 @@ function buildUsers() {
     { id:'user-veterinaria', fullName:'Profesional veterinario', email:'veterinaria@empresa.com', roleId:'role-veterinaria', status:'active', demo:false, maxModules:16, demoExpiresAt:null },
     { id:'user-psicologia', fullName:'Profesional de psicología', email:'psicologia@empresa.com', roleId:'role-psicologia', status:'active', demo:false, maxModules:10, demoExpiresAt:null },
     { id:'user-odontologia', fullName:'Profesional odontológico', email:'odontologia@empresa.com', roleId:'role-odontologia', status:'active', demo:false, maxModules:10, demoExpiresAt:null },
+    { id:'user-nutricion', fullName:'Profesional de nutrición', email:'nutricion@empresa.com', roleId:'role-nutricion', status:'active', demo:false, maxModules:7, demoExpiresAt:null },
     { id:'user-inventario', fullName:'Ana Inventario', email:'inventario@empresa.com', roleId:'role-inventario', status:'active', demo:false, maxModules:7, demoExpiresAt:null },
     { id:'user-compras', fullName:'Pedro Compras', email:'compras@empresa.com', roleId:'role-compras', status:'active', demo:false, maxModules:7, demoExpiresAt:null },
     { id:'user-rrhh', fullName:'Laura RRHH', email:'rrhh@empresa.com', roleId:'role-rrhh', status:'active', demo:false, maxModules:5, demoExpiresAt:null },
