@@ -691,12 +691,27 @@ router.get('/gym/assessments', requirePermission('gym.manage'), asyncHandler(asy
 }));
 
 router.post('/gym/assessments', requirePermission('gym.manage'), asyncHandler(async (req, res) => {
+  const tenantId=ctx(req).tenantId;
   const b = assessmentSchema.parse(req.body || {});
+  const memberRows=await prisma.$queryRawUnsafe<any[]>(`
+    SELECT "id" FROM public."GymMember"
+    WHERE "tenantId"=$1 AND "id"=$2
+    LIMIT 1
+  `,tenantId,b.memberId);
+  if(!memberRows.length)throw new HttpError(422,'El cliente no pertenece al tenant activo.');
+  if(b.trainerId){
+    const trainerRows=await prisma.$queryRawUnsafe<any[]>(`
+      SELECT "id" FROM public."GymTrainer"
+      WHERE "tenantId"=$1 AND "id"=$2
+      LIMIT 1
+    `,tenantId,b.trainerId);
+    if(!trainerRows.length)throw new HttpError(422,'El entrenador no pertenece al tenant activo.');
+  }
   const bmi = b.weightKg && b.heightCm ? Number((b.weightKg / Math.pow(b.heightCm / 100, 2)).toFixed(2)) : null;
   const rows = await prisma.$queryRawUnsafe<any[]>(`
     INSERT INTO public."GymAssessment" ("id","tenantId","memberId","trainerId","measuredAt","weightKg","heightCm","bodyFatPct","muscleMassKg","visceralFat","bmi","waistCm","hipCm","chestCm","armCm","thighCm","restingHeartRate","notes","createdAt")
     VALUES (gen_random_uuid()::text,$1,$2,$3,COALESCE($4::timestamptz,now()),$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,now()) RETURNING *
-  `, ctx(req).tenantId,b.memberId,b.trainerId||null,b.measuredAt||null,b.weightKg||null,b.heightCm||null,b.bodyFatPct||null,b.muscleMassKg||null,b.visceralFat||null,bmi,b.waistCm||null,b.hipCm||null,b.chestCm||null,b.armCm||null,b.thighCm||null,b.restingHeartRate||null,b.notes||null);
+  `, tenantId,b.memberId,b.trainerId||null,b.measuredAt||null,b.weightKg||null,b.heightCm||null,b.bodyFatPct||null,b.muscleMassKg||null,b.visceralFat||null,bmi,b.waistCm||null,b.hipCm||null,b.chestCm||null,b.armCm||null,b.thighCm||null,b.restingHeartRate||null,b.notes||null);
   ok(res, one(rows), 201);
 }));
 

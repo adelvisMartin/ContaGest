@@ -1,0 +1,144 @@
+name: Verticales 48/51 · PostgreSQL E2E real
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'backend/src/modules/verticals/**'
+      - 'backend/prisma/**'
+      - 'qa/verticals-backend-real-v4851.test.ts'
+      - 'qa/support/real-backend-harness.ts'
+      - 'ops/database/prepare-supabase-ephemeral.sql'
+      - 'tests/erp_verticals_real_e2e_48_51.test.mjs'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/erp-verticals-real-e2e-v4851.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: erp-verticals-v4851-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verticals-real-postgres:
+    name: Dentistry + Veterinary + Gym · PostgreSQL real
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: contagest_verticals_e2e
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d contagest_verticals_e2e"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+
+    env:
+      NODE_ENV: test
+      API_MODE: prisma
+      DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/contagest_verticals_e2e?schema=public
+      DIRECT_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/contagest_verticals_e2e?schema=public
+      APP_URL: http://127.0.0.1:8080
+      CORS_ORIGIN: http://127.0.0.1:8080
+      JWT_SECRET: v4851_only_jwt_secret_0123456789abcdefghijklmnopqrstuvwxyz_ABCDEF
+      LICENSE_HASH_SECRET: v4851_only_license_secret_0123456789abcdefghijklmnopqrstuvwxyz_XYZ
+      ALLOW_DEV_TENANT_HEADER: 'false'
+      SUPABASE_AUTH_FALLBACK: 'false'
+      CANDIDATE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+
+    steps:
+      - name: Descargar código exacto
+        uses: actions/checkout@v7
+
+      - name: Confirmar SHA candidato
+        shell: bash
+        run: |
+          set -euo pipefail
+          ACTUAL_SHA="$(git rev-parse HEAD)"
+          echo "candidate_sha=$CANDIDATE_SHA" | tee verticals-v4851-sha.log
+          echo "actual_sha=$ACTUAL_SHA" | tee -a verticals-v4851-sha.log
+          test "$ACTUAL_SHA" = "$CANDIDATE_SHA"
+
+      - name: Configurar Node 22
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Instalar dependencias bloqueadas y cliente PostgreSQL
+        run: |
+          npm ci --no-audit --no-fund
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client
+
+      - name: Preparar prerequisitos Supabase mínimos
+        env:
+          PGPASSWORD: postgres
+        shell: bash
+        run: |
+          set -o pipefail
+          psql -h 127.0.0.1 -U postgres -d contagest_verticals_e2e             -v ON_ERROR_STOP=1             -f ops/database/prepare-supabase-ephemeral.sql 2>&1 | tee verticals-v4851-prereq.log
+
+      - name: Aplicar historial canónico de migraciones
+        shell: bash
+        run: |
+          set -o pipefail
+          npm --workspace backend run prisma:deploy 2>&1 | tee verticals-v4851-migrations.log
+          npx prisma migrate status --schema backend/prisma/schema.prisma 2>&1 | tee -a verticals-v4851-migrations.log
+
+      - name: Sembrar tenant y administrador QA
+        run: npm run seed
+
+      - name: Validar tipos
+        run: npm run typecheck
+
+      - name: Ejecutar contrato estático 48/51
+        run: node --test tests/erp_verticals_real_e2e_48_51.test.mjs
+
+      - name: Ejecutar E2E real de tres verticales
+        shell: bash
+        run: |
+          set -o pipefail
+          npm run test:backend:verticals:real 2>&1 | tee verticals-v4851-e2e.log
+
+      - name: Inventario de persistencia y cleanup
+        if: always()
+        env:
+          PGPASSWORD: postgres
+        shell: bash
+        run: |
+          set -euo pipefail
+          care_count="$(psql -h 127.0.0.1 -U postgres -d contagest_verticals_e2e -Atc "select count(*) from \"CarePatient\" where \"displayName\" like 'V48-%';")"
+          gym_count="$(psql -h 127.0.0.1 -U postgres -d contagest_verticals_e2e -Atc "select count(*) from \"GymMember\" where \"memberCode\" like 'V48-%';")"
+          {
+            echo "candidate_sha=$CANDIDATE_SHA"
+            echo "postgres=$(psql -h 127.0.0.1 -U postgres -d contagest_verticals_e2e -Atc 'show server_version;')"
+            echo "qa48_care_patients=$care_count"
+            echo "qa48_gym_members=$gym_count"
+          } > verticals-v4851-inventory.log 2>&1
+          test "$care_count" = "0"
+          test "$gym_count" = "0"
+
+      - name: Conservar evidencia exact-SHA
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: evidencia-verticales-48-51-${{ env.CANDIDATE_SHA }}
+          path: |
+            verticals-v4851-sha.log
+            verticals-v4851-prereq.log
+            verticals-v4851-migrations.log
+            verticals-v4851-e2e.log
+            verticals-v4851-inventory.log
+          if-no-files-found: warn
+          retention-days: 14
