@@ -108,14 +108,6 @@ export function FitnessNutritionQuickTool({members,Toast,onDataChanged}){
     try{await copyText(FitnessNutritionService.whatsapp(generated,{clientName:client?.fullName||'',guest:!client}),Toast,'Plan copiado para WhatsApp.');}
     catch(error){notify(Toast,`No se pudo copiar: ${error.message}`,'error');}
   };
-  const save=async()=>{
-    if(!generated||generated.blocked||!memberId)return;
-    try{
-      await GymVerticalService.createNutrition({memberId,trainerId:null,name:`Plan ${generated.goal} · ${generated.days.length} días`,goal:generated.goal,targetCalories:generated.calories,waterMl:generated.waterMl,meals:FitnessNutritionService.toApiMeals(generated),notes:generated.disclaimer,active:true});
-      notify(Toast,'Plan nutricional guardado.','success');
-      await onDataChanged?.(memberId);
-    }catch(error){notify(Toast,`No se pudo guardar: ${error.message}`,'error');}
-  };
   const searchFood=async()=>{
     const query=foodQuery.trim();
     if(query.length<2)return notify(Toast,'Escribe al menos dos caracteres para buscar alimentos.','warning');
@@ -140,7 +132,8 @@ export function FitnessNutritionQuickTool({members,Toast,onDataChanged}){
         <CgSelect label="Días" value={form.days} onChange={set('days')} options={['1','3','7'].map((value)=>({value,label:value}))}/>
       </Box>
       <FormControlLabel sx={{mt:1}} control={<Checkbox checked={Boolean(form.clinicalRisk)} onChange={(e)=>setForm((current)=>({...current,clinicalRisk:e.target.checked}))}/>} label="Existe embarazo, trastorno alimentario, enfermedad renal/metabólica, medicación relevante o dieta terapéutica"/>
-      <Stack direction="row" flexWrap="wrap" gap={.8} mt={1}><CgButton onClick={generate}>Generar plan</CgButton><CgButton variant="outlined" onClick={()=>void copy()} disabled={!generated}>Copiar para WhatsApp</CgButton><CgButton variant="outlined" onClick={()=>void save()} disabled={!generated||generated.blocked||!memberId}>Guardar al cliente</CgButton></Stack>
+      <Stack direction="row" flexWrap="wrap" gap={.8} mt={1}><CgButton onClick={generate}>Generar plan</CgButton><CgButton variant="outlined" onClick={()=>void copy()} disabled={!generated}>Copiar para WhatsApp</CgButton></Stack>
+      <CgState severity="info" title="Persistencia estructurada">Las sugerencias rápidas son orientativas y no se guardan como texto libre. Para persistir un plan usa el constructor semanal por ingredientes del catálogo.</CgState>
       <Box mt={1.3}><NutritionResult plan={generated}/></Box>
     </Paper>
 
