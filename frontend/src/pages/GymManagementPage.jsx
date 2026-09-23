@@ -12,7 +12,9 @@ import { PeriodizationPanel } from '../components/fitness/PeriodizationPanel.jsx
 import { WorkoutSessionPanel } from '../components/fitness/WorkoutSessionPanel.jsx';
 import { PerformanceHistoryPanel } from '../components/fitness/PerformanceHistoryPanel.jsx';
 import { IngredientLibraryPanel } from '../components/fitness/IngredientLibraryPanel.jsx';
-import { NutritionMealBuilder } from '../components/fitness/NutritionMealBuilder.jsx';
+import { CompleteMealPlanBuilder } from '../components/fitness/CompleteMealPlanBuilder.jsx';
+import { NutritionRecipeLibrary } from '../components/fitness/NutritionRecipeLibrary.jsx';
+import { NutritionShoppingListPanel } from '../components/fitness/NutritionShoppingListPanel.jsx';
 import { FITNESS_TRAINING_MODES, fitnessTrainingMode, fitnessTrainingModeLabel } from '../data/fitnessTrainingModes.js';
 import { GymVerticalService } from '../services/verticalService.js';
 
@@ -65,6 +67,7 @@ function GymWorkspace({state,context}){
   const [routines,setRoutines]=useState(rows(initial.routines));
   const [nutrition,setNutrition]=useState(rows(initial.nutrition));
   const [ingredients,setIngredients]=useState(rows(initial.ingredients));
+  const [nutritionRecipes,setNutritionRecipes]=useState(rows(initial.nutritionRecipes));
   const [exerciseLibrary,setExerciseLibrary]=useState(rows(initial.exerciseLibrary));
   const [loading,setLoading]=useState(false);
   const [error,setError]=useState('');
@@ -77,7 +80,7 @@ function GymWorkspace({state,context}){
   const [checkInForm,setCheckInForm]=useState({memberId:'',method:'manual'});
   const [assessmentForm,setAssessmentForm]=useState({memberId:'',trainerId:'',weightKg:'',heightCm:'',bodyFatPct:'',muscleMassKg:'',notes:''});
   const [routineForm,setRoutineForm]=useState({memberId:'',trainerId:'',name:'',goal:'',level:'beginner',trainingMode:'hypertrophy',daysPerWeek:'3',exercises:[]});
-  const [nutritionForm,setNutritionForm]=useState({memberId:'',trainerId:'',name:'',goal:'',targetCalories:'',waterMl:'',startsAt:localDate(),endsAt:'',meals:[]});
+  const [nutritionForm,setNutritionForm]=useState({memberId:'',trainerId:'',name:'',goal:'',durationDays:7,targetCalories:'',waterMl:'',startsAt:localDate(),endsAt:'',meals:[]});
   const [classForm,setClassForm]=useState({name:'',trainerId:'',startsAt:localDateTime(60),endsAt:localDateTime(120),capacity:'20',location:''});
 
   const notify=(message,tone='success')=>Toast?.show?.(message,tone);
@@ -99,11 +102,11 @@ function GymWorkspace({state,context}){
   async function loadAll({silent=false,memberId=selectedMemberId}={}){
     if(!silent)setLoading(true);setError('');
     try{
-      const [summaryResponse,membersResponse,trainersResponse,plansResponse,classesResponse,exerciseResponse,ingredientResponse]=await Promise.all([
-        GymVerticalService.summary(),GymVerticalService.members(),GymVerticalService.trainers(),GymVerticalService.plans(),GymVerticalService.classes(),GymVerticalService.exercises({active:'true'}),GymVerticalService.ingredients({active:'true'})
+      const [summaryResponse,membersResponse,trainersResponse,plansResponse,classesResponse,exerciseResponse,ingredientResponse,recipeResponse]=await Promise.all([
+        GymVerticalService.summary(),GymVerticalService.members(),GymVerticalService.trainers(),GymVerticalService.plans(),GymVerticalService.classes(),GymVerticalService.exercises({active:'true'}),GymVerticalService.ingredients({active:'true'}),GymVerticalService.recipes()
       ]);
-      const nextMembers=rows(membersResponse),nextTrainers=rows(trainersResponse),nextPlans=rows(plansResponse),nextClasses=rows(classesResponse),nextExercises=rows(exerciseResponse),nextIngredients=rows(ingredientResponse);
-      setSummary(object(summaryResponse));setMembers(nextMembers);setTrainers(nextTrainers);setPlans(nextPlans);setClasses(nextClasses);setExerciseLibrary(nextExercises);setIngredients(nextIngredients);
+      const nextMembers=rows(membersResponse),nextTrainers=rows(trainersResponse),nextPlans=rows(plansResponse),nextClasses=rows(classesResponse),nextExercises=rows(exerciseResponse),nextIngredients=rows(ingredientResponse),nextRecipes=rows(recipeResponse);
+      setSummary(object(summaryResponse));setMembers(nextMembers);setTrainers(nextTrainers);setPlans(nextPlans);setClasses(nextClasses);setExerciseLibrary(nextExercises);setIngredients(nextIngredients);setNutritionRecipes(nextRecipes);
       const nextMemberId=memberId&&nextMembers.some((item)=>item.id===memberId)?memberId:(nextMembers[0]?.id||'');
       setMembershipForm((current)=>({...current,memberId:current.memberId||nextMembers[0]?.id||'',planId:current.planId||nextPlans[0]?.id||''}));
       setCheckInForm((current)=>({...current,memberId:current.memberId||nextMembers[0]?.id||''}));
@@ -206,12 +209,21 @@ function GymWorkspace({state,context}){
   },'Rutina creada.',()=>loadAll({silent:true,memberId:routineForm.memberId}));};
 
   const submitNutrition=(event)=>{event.preventDefault();if(!nutritionForm.memberId)return notify('Selecciona un cliente.','warning');void execute(async()=>{
+    const durationDays=Number(nutritionForm.durationDays||7);
     const meals=(nutritionForm.meals||[]).map((meal)=>({
+      dayIndex:Number(meal.dayIndex),
       dayOfWeek:Number(meal.dayOfWeek),
       sortOrder:Number(meal.sortOrder),
       mealType:String(meal.mealType||'').trim(),
       plannedAt:String(meal.plannedAt||'').trim()||null,
-      calories:meal.calories===''||meal.calories==null?null:Number(meal.calories),
+      recipeId:String(meal.recipeId||'').trim()||null,
+      servings:Number(meal.servings||1),
+      preparation:String(meal.preparation||'').trim()||null,
+      alternatives:(meal.alternatives||[]).map((item)=>({recipeId:String(item.recipeId||'').trim(),label:String(item.label||'').trim()||null})).filter((item)=>item.recipeId),
+      calories:null,
+      proteinG:null,
+      carbsG:null,
+      fatG:null,
       notes:String(meal.notes||'').trim()||null,
       items:(meal.items||[]).map((item)=>({
         ingredientId:String(item.ingredientId||'').trim(),
@@ -220,11 +232,14 @@ function GymWorkspace({state,context}){
         notes:String(item.notes||'').trim()||null
       }))
     }));
-    if(meals.some((meal)=>!meal.mealType||!Number.isInteger(meal.dayOfWeek)||meal.dayOfWeek<1||meal.dayOfWeek>7||!Number.isInteger(meal.sortOrder)||meal.sortOrder<1))throw new Error('Todas las comidas necesitan día, posición y tipo válidos.');
+    if(![7,14,28].includes(durationDays))throw new Error('La duración debe ser 7, 14 o 28 días.');
+    if(!meals.length)throw new Error('Agrega al menos una comida al plan.');
+    if(meals.some((meal)=>!meal.mealType||!Number.isInteger(meal.dayIndex)||meal.dayIndex<1||meal.dayIndex>durationDays||!Number.isInteger(meal.sortOrder)||meal.sortOrder<1))throw new Error('Todas las comidas necesitan día real, posición y tipo válidos.');
+    if(meals.some((meal)=>!meal.recipeId&&!meal.items.length))throw new Error('Cada comida necesita una receta o ingredientes directos.');
     if(meals.some((meal)=>meal.items.some((item)=>!item.ingredientId||!Number.isFinite(item.quantity)||item.quantity<=0||!item.unit)))throw new Error('Cada ingrediente necesita identidad, cantidad positiva y unidad.');
-    await GymVerticalService.createNutrition({...nutritionForm,targetCalories:Number(nutritionForm.targetCalories||0)||null,waterMl:Number(nutritionForm.waterMl||0)||null,meals});
-    setNutritionForm((current)=>({...current,name:'',goal:'',targetCalories:'',waterMl:'',startsAt:localDate(),endsAt:'',meals:[]}));
-  },'Plan nutricional creado.',()=>loadAll({silent:true,memberId:nutritionForm.memberId}));};
+    await GymVerticalService.createNutrition({...nutritionForm,durationDays,targetCalories:Number(nutritionForm.targetCalories||0)||null,waterMl:Number(nutritionForm.waterMl||0)||null,meals});
+    setNutritionForm((current)=>({...current,name:'',goal:'',durationDays:7,targetCalories:'',waterMl:'',startsAt:localDate(),endsAt:'',meals:[]}));
+  },'Plan alimenticio completo creado.',()=>loadAll({silent:true,memberId:nutritionForm.memberId}));};
 
   const submitClass=(event)=>{event.preventDefault();if(!classForm.trainerId)return notify('Selecciona un instructor.','warning');void execute(
     ()=>GymVerticalService.createClass({...classForm,capacity:Number(classForm.capacity||20)}),'Clase programada.',()=>loadAll({silent:true})
@@ -257,10 +272,31 @@ function GymWorkspace({state,context}){
     <Section title="Rutinas activas" description={selectedMember?`Planes de ${selectedMember.fullName}`:'Selecciona un cliente.'}>{memberTracking}<Box mt={1}><RecordList items={routines} empty="No hay rutinas del cliente seleccionado" render={(item)=><Stack direction="row" justifyContent="space-between"><Box><Typography variant="body2" fontWeight={700}>{item.name}</Typography><Typography variant="caption" color="text.secondary">{item.goal||'Objetivo general'} · {item.level||''} · {fitnessTrainingModeLabel(item.trainingMode)} · {Array.isArray(item.exercises)?item.exercises.length:0} ejercicios</Typography></Box><CgStatusChip label={item.active===false?'Inactiva':'Activa'} tone={item.active===false?'warning':'success'}/></Stack>}/></Box></Section>
   </Box></Stack>;
 
-  const panelNutrition=<Stack gap={1.25}><FitnessProductivityTools tab="nutrition" members={members} Toast={Toast} onDataChanged={(id)=>loadAll({silent:true,memberId:id||selectedMemberId})}/><IngredientLibraryPanel items={ingredients} onItemsChange={setIngredients} Toast={Toast}/><Box className="cg-gym-v1124-grid" sx={{display:'grid',gridTemplateColumns:{xs:'1fr',lg:'minmax(0,1.35fr) minmax(320px,.65fr)'},gap:1.25}}>
-    <Section title="Plan nutricional estructurado" description="Comidas compuestas por ingredientes del catálogo; sin listas de texto."><Box component="form" onSubmit={submitNutrition}><Stack gap={1}><CgSelect label="Cliente" value={nutritionForm.memberId} onChange={(e)=>setNutritionForm({...nutritionForm,memberId:e.target.value})} options={memberOpts}/><CgSelect label="Responsable" value={nutritionForm.trainerId} onChange={(e)=>setNutritionForm({...nutritionForm,trainerId:e.target.value})} options={trainerOpts}/><CgTextField size="small" label="Nombre" required value={nutritionForm.name} onChange={(e)=>setNutritionForm({...nutritionForm,name:e.target.value})}/><CgTextField size="small" label="Objetivo" value={nutritionForm.goal} onChange={(e)=>setNutritionForm({...nutritionForm,goal:e.target.value})}/><Box className="cg-gym-v1124-fields" sx={{display:'grid',gridTemplateColumns:{xs:'1fr',sm:'1fr 1fr'},gap:1}}><CgTextField size="small" label="Calorías" type="number" value={nutritionForm.targetCalories} onChange={(e)=>setNutritionForm({...nutritionForm,targetCalories:e.target.value})}/><CgTextField size="small" label="Agua ml" type="number" value={nutritionForm.waterMl} onChange={(e)=>setNutritionForm({...nutritionForm,waterMl:e.target.value})}/><CgTextField size="small" label="Inicio del plan" type="date" slotProps={{inputLabel:{shrink:true}}} value={nutritionForm.startsAt} onChange={(e)=>setNutritionForm({...nutritionForm,startsAt:e.target.value})}/><CgTextField size="small" label="Fin del plan" type="date" slotProps={{inputLabel:{shrink:true}}} value={nutritionForm.endsAt} onChange={(e)=>setNutritionForm({...nutritionForm,endsAt:e.target.value})}/></Box><NutritionMealBuilder value={nutritionForm.meals} onChange={(meals)=>setNutritionForm({...nutritionForm,meals})} ingredients={ingredients} disabled={!members.length}/><CgButton type="submit" disabled={!members.length}>Crear plan nutricional</CgButton></Stack></Box></Section>
-    <Section title="Planes activos" description={selectedMember?`Seguimiento de ${selectedMember.fullName}`:'Selecciona un cliente.'}>{memberTracking}<Box mt={1}><RecordList items={nutrition} empty="No hay planes nutricionales del cliente seleccionado" render={(item)=><Stack direction="row" justifyContent="space-between" gap={1}><Box><Typography variant="body2" fontWeight={700}>{item.name}</Typography><Typography variant="caption" color="text.secondary">{item.goal||'Plan nutricional'} · {item.targetCalories||'—'} kcal · {Array.isArray(item.meals)?item.meals.length:0} comidas · {[...new Set((item.meals||[]).map((meal)=>Number(meal.dayOfWeek)).filter((day)=>day>=1&&day<=7))].length} días programados</Typography></Box><CgStatusChip label={item.active===false?'Inactivo':'Activo'} tone={item.active===false?'warning':'success'}/></Stack>}/></Box></Section>
-  </Box></Stack>;
+  const panelNutrition=<Stack gap={1.25}>
+    <FitnessProductivityTools tab="nutrition" members={members} Toast={Toast} onDataChanged={(id)=>loadAll({silent:true,memberId:id||selectedMemberId})}/>
+    <IngredientLibraryPanel items={ingredients} onItemsChange={setIngredients} Toast={Toast}/>
+    <NutritionRecipeLibrary ingredients={ingredients} recipes={nutritionRecipes} Toast={Toast} onChanged={()=>loadAll({silent:true,memberId:selectedMemberId})}/>
+    <Box className="cg-gym-v1124-grid" sx={{display:'grid',gridTemplateColumns:{xs:'1fr',lg:'minmax(0,1.35fr) minmax(320px,.65fr)'},gap:1.25}}>
+      <Section title="Plan alimenticio completo" description="7/14/28 días, recetas, porciones, preparación y alternativas explícitas.">
+        <Box component="form" onSubmit={submitNutrition}><Stack gap={1}>
+          <CgSelect label="Cliente" value={nutritionForm.memberId} onChange={(e)=>setNutritionForm({...nutritionForm,memberId:e.target.value})} options={memberOpts}/>
+          <CgSelect label="Responsable" value={nutritionForm.trainerId} onChange={(e)=>setNutritionForm({...nutritionForm,trainerId:e.target.value})} options={trainerOpts}/>
+          <CgTextField size="small" label="Nombre" required value={nutritionForm.name} onChange={(e)=>setNutritionForm({...nutritionForm,name:e.target.value})}/>
+          <CgTextField size="small" label="Objetivo" value={nutritionForm.goal} onChange={(e)=>setNutritionForm({...nutritionForm,goal:e.target.value})}/>
+          <Box className="cg-gym-v1124-fields" sx={{display:'grid',gridTemplateColumns:{xs:'1fr',sm:'repeat(2,minmax(0,1fr))'},gap:1}}>
+            <CgTextField size="small" label="Calorías orientativas" type="number" value={nutritionForm.targetCalories} onChange={(e)=>setNutritionForm({...nutritionForm,targetCalories:e.target.value})}/>
+            <CgTextField size="small" label="Agua ml" type="number" value={nutritionForm.waterMl} onChange={(e)=>setNutritionForm({...nutritionForm,waterMl:e.target.value})}/>
+            <CgTextField size="small" label="Inicio del plan" type="date" slotProps={{inputLabel:{shrink:true}}} value={nutritionForm.startsAt} onChange={(e)=>setNutritionForm({...nutritionForm,startsAt:e.target.value})}/>
+            <CgTextField size="small" label="Fin del plan" type="date" slotProps={{inputLabel:{shrink:true}}} value={nutritionForm.endsAt} onChange={(e)=>setNutritionForm({...nutritionForm,endsAt:e.target.value})}/>
+          </Box>
+          <CompleteMealPlanBuilder durationDays={nutritionForm.durationDays} onDurationChange={(durationDays)=>setNutritionForm({...nutritionForm,durationDays,meals:(nutritionForm.meals||[]).filter((meal)=>Number(meal.dayIndex)<=durationDays)})} value={nutritionForm.meals} onChange={(meals)=>setNutritionForm({...nutritionForm,meals})} ingredients={ingredients} recipes={nutritionRecipes} disabled={!members.length}/>
+          <CgButton type="submit" disabled={!members.length||!nutritionForm.meals.length}>Crear plan alimenticio</CgButton>
+        </Stack></Box>
+      </Section>
+      <Section title="Planes activos" description={selectedMember?`Seguimiento de ${selectedMember.fullName}`:'Selecciona un cliente.'}>{memberTracking}<Box mt={1}><RecordList items={nutrition} empty="No hay planes nutricionales del cliente seleccionado" render={(item)=><Stack direction="row" justifyContent="space-between" gap={1}><Box><Typography variant="body2" fontWeight={700}>{item.name}</Typography><Typography variant="caption" color="text.secondary">{item.goal||'Plan nutricional'} · {item.durationDays||7} días · {Array.isArray(item.meals)?item.meals.length:0} comidas</Typography></Box><CgStatusChip label={item.active===false?'Inactivo':'Activo'} tone={item.active===false?'warning':'success'}/></Stack>}/></Box></Section>
+    </Box>
+    <NutritionShoppingListPanel plans={nutrition}/>
+  </Stack>;
 
   const readyForClass=members.length>0&&trainers.length>0;
   const panelClasses=<Box className="cg-gym-v1124-grid" sx={{display:'grid',gridTemplateColumns:{xs:'1fr',lg:'repeat(2,minmax(0,1fr))'},gap:1.25}}>
