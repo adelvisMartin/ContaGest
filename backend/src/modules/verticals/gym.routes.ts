@@ -74,6 +74,19 @@ const assessmentSchema = z.object({
   notes: optionalText
 });
 
+const exerciseLibrarySchema = z.object({
+  name: z.string().trim().min(2).max(180),
+  category: optionalText,
+  muscleGroup: optionalText,
+  equipment: optionalText,
+  instructions: optionalText,
+  mediaUrl: z.string().url().max(2000).optional().nullable().or(z.literal('')),
+  defaultSets: z.coerce.number().int().min(1).max(20).optional().nullable(),
+  defaultReps: z.string().trim().max(60).optional().nullable(),
+  active: z.boolean().default(true)
+});
+const exerciseLibraryPatchSchema = exerciseLibrarySchema.partial().refine((value)=>Object.keys(value).length>0,{message:'Indica al menos un campo para actualizar.'});
+
 const routineSchema = z.object({
   memberId: z.string().min(10),
   trainerId: z.string().optional().nullable(),
@@ -242,6 +255,75 @@ router.post('/gym/assessments', requirePermission('gym.manage'), asyncHandler(as
     VALUES (gen_random_uuid()::text,$1,$2,$3,COALESCE($4::timestamptz,now()),$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,now()) RETURNING *
   `, ctx(req).tenantId,b.memberId,b.trainerId||null,b.measuredAt||null,b.weightKg||null,b.heightCm||null,b.bodyFatPct||null,b.muscleMassKg||null,b.visceralFat||null,bmi,b.waistCm||null,b.hipCm||null,b.chestCm||null,b.armCm||null,b.thighCm||null,b.restingHeartRate||null,b.notes||null);
   ok(res, one(rows), 201);
+}));
+
+router.get('/gym/exercises', requirePermission('gym.manage'), asyncHandler(async (req, res) => {
+  const tenantId=ctx(req).tenantId;
+  const q=String(req.query.q||'').trim();
+  const muscleGroup=String(req.query.muscleGroup||'').trim();
+  const equipment=String(req.query.equipment||'').trim();
+  const category=String(req.query.category||'').trim();
+  const active=String(req.query.active||'').trim();
+  const rows=await prisma.$queryRawUnsafe<any[]>(`
+    SELECT *
+    FROM public."GymExercise"
+    WHERE "tenantId"=$1
+      AND ($2='' OR "name" ILIKE '%'||$2||'%' OR COALESCE("instructions",'') ILIKE '%'||$2||'%')
+      AND ($3='' OR COALESCE("muscleGroup",'')=$3)
+      AND ($4='' OR COALESCE("equipment",'')=$4)
+      AND ($5='' OR COALESCE("category",'')=$5)
+      AND ($6='' OR "active"=($6='true'))
+    ORDER BY "active" DESC,"muscleGroup" NULLS LAST,"name"
+    LIMIT 1000
+  `,tenantId,q,muscleGroup,equipment,category,active);
+  ok(res,rows);
+}));
+
+router.post('/gym/exercises', requirePermission('gym.manage'), asyncHandler(async (req, res) => {
+  const tenantId=ctx(req).tenantId;
+  const b=exerciseLibrarySchema.parse(req.body||{});
+  const existing=await prisma.$queryRawUnsafe<any[]>(`
+    SELECT "id" FROM public."GymExercise"
+    WHERE "tenantId"=$1 AND lower("name")=lower($2)
+    LIMIT 1
+  `,tenantId,b.name);
+  if(existing.length)throw new HttpError(409,'Ya existe un ejercicio con ese nombre.');
+  const rows=await prisma.$queryRawUnsafe<any[]>(`
+    INSERT INTO public."GymExercise"
+      ("id","tenantId","name","category","muscleGroup","equipment","instructions","mediaUrl","defaultSets","defaultReps","active","createdAt","updatedAt")
+    VALUES
+      (gen_random_uuid()::text,$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,now(),now())
+    RETURNING *
+  `,tenantId,b.name,b.category||null,b.muscleGroup||null,b.equipment||null,b.instructions||null,b.mediaUrl||null,b.defaultSets??null,b.defaultReps||null,b.active);
+  ok(res,one(rows),201);
+}));
+
+router.patch('/gym/exercises/:id', requirePermission('gym.manage'), asyncHandler(async (req, res) => {
+  const tenantId=ctx(req).tenantId;
+  const b=exerciseLibraryPatchSchema.parse(req.body||{});
+  if(b.name){
+    const duplicate=await prisma.$queryRawUnsafe<any[]>(`
+      SELECT "id" FROM public."GymExercise"
+      WHERE "tenantId"=$1 AND lower("name")=lower($2) AND "id"<>$3
+      LIMIT 1
+    `,tenantId,b.name,String(req.params.id));
+    if(duplicate.length)throw new HttpError(409,'Ya existe otro ejercicio con ese nombre.');
+  }
+  const currentRows=await prisma.$queryRawUnsafe<any[]>(`
+    SELECT * FROM public."GymExercise"
+    WHERE "tenantId"=$1 AND "id"=$2
+    LIMIT 1
+  `,tenantId,String(req.params.id));
+  const current=one(currentRows,'Ejercicio no encontrado.');
+  const next={...current,...b};
+  const rows=await prisma.$queryRawUnsafe<any[]>(`
+    UPDATE public."GymExercise"
+    SET "name"=$3,"category"=$4,"muscleGroup"=$5,"equipment"=$6,"instructions"=$7,
+        "mediaUrl"=$8,"defaultSets"=$9,"defaultReps"=$10,"active"=$11,"updatedAt"=now()
+    WHERE "tenantId"=$1 AND "id"=$2
+    RETURNING *
+  `,tenantId,current.id,next.name,next.category||null,next.muscleGroup||null,next.equipment||null,next.instructions||null,next.mediaUrl||null,next.defaultSets??null,next.defaultReps||null,Boolean(next.active));
+  ok(res,one(rows));
 }));
 
 router.get('/gym/routines', requirePermission('gym.manage'), asyncHandler(async (req, res) => {

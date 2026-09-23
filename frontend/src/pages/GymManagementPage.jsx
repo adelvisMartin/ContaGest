@@ -6,6 +6,7 @@ import {
 } from '../components/ui/cg/CgPrimitives.jsx';
 import { FitnessProductivityTools } from '../components/fitness/FitnessProductivityTools.jsx';
 import { RoutineBuilder } from '../components/fitness/RoutineBuilder.jsx';
+import { ExerciseLibraryPanel } from '../components/fitness/ExerciseLibraryPanel.jsx';
 import { GymVerticalService } from '../services/verticalService.js';
 
 const rows=(value)=>Array.isArray(value)?value:value?.data||[];
@@ -56,6 +57,7 @@ function GymWorkspace({state,context}){
   const [assessments,setAssessments]=useState(rows(initial.assessments));
   const [routines,setRoutines]=useState(rows(initial.routines));
   const [nutrition,setNutrition]=useState(rows(initial.nutrition));
+  const [exerciseLibrary,setExerciseLibrary]=useState(rows(initial.exerciseLibrary));
   const [loading,setLoading]=useState(false);
   const [error,setError]=useState('');
   const Toast=context.Toast;
@@ -89,11 +91,11 @@ function GymWorkspace({state,context}){
   async function loadAll({silent=false,memberId=selectedMemberId}={}){
     if(!silent)setLoading(true);setError('');
     try{
-      const [summaryResponse,membersResponse,trainersResponse,plansResponse,classesResponse]=await Promise.all([
-        GymVerticalService.summary(),GymVerticalService.members(),GymVerticalService.trainers(),GymVerticalService.plans(),GymVerticalService.classes()
+      const [summaryResponse,membersResponse,trainersResponse,plansResponse,classesResponse,exerciseResponse]=await Promise.all([
+        GymVerticalService.summary(),GymVerticalService.members(),GymVerticalService.trainers(),GymVerticalService.plans(),GymVerticalService.classes(),GymVerticalService.exercises({active:'true'})
       ]);
-      const nextMembers=rows(membersResponse),nextTrainers=rows(trainersResponse),nextPlans=rows(plansResponse),nextClasses=rows(classesResponse);
-      setSummary(object(summaryResponse));setMembers(nextMembers);setTrainers(nextTrainers);setPlans(nextPlans);setClasses(nextClasses);
+      const nextMembers=rows(membersResponse),nextTrainers=rows(trainersResponse),nextPlans=rows(plansResponse),nextClasses=rows(classesResponse),nextExercises=rows(exerciseResponse);
+      setSummary(object(summaryResponse));setMembers(nextMembers);setTrainers(nextTrainers);setPlans(nextPlans);setClasses(nextClasses);setExerciseLibrary(nextExercises);
       const nextMemberId=memberId&&nextMembers.some((item)=>item.id===memberId)?memberId:(nextMembers[0]?.id||'');
       setMembershipForm((current)=>({...current,memberId:current.memberId||nextMembers[0]?.id||'',planId:current.planId||nextPlans[0]?.id||''}));
       setCheckInForm((current)=>({...current,memberId:current.memberId||nextMembers[0]?.id||''}));
@@ -203,8 +205,8 @@ function GymWorkspace({state,context}){
     <Section title="Evolución" description={selectedMember?`Historial de ${selectedMember.fullName}`:'Selecciona un cliente.'}>{memberTracking}<Box mt={1}><RecordList items={assessments} empty="No hay evaluaciones del cliente seleccionado" render={(item)=><Stack direction="row" justifyContent="space-between"><Box><Typography variant="body2" fontWeight={700}>{new Date(item.measuredAt||item.createdAt).toLocaleDateString('es-VE')}</Typography><Typography variant="caption" color="text.secondary">Peso {item.weightKg??'—'} kg · Grasa {item.bodyFatPct??'—'}% · Músculo {item.muscleMassKg??'—'} kg</Typography></Box><CgStatusChip label={`IMC ${item.bmi??'—'}`} tone="info"/></Stack>}/></Box></Section>
   </Box>;
 
-  const panelRoutines=<Stack gap={1.25}><FitnessProductivityTools tab="routines" members={members} Toast={Toast} onDataChanged={(id)=>loadAll({silent:true,memberId:id||selectedMemberId})}/><Box className="cg-gym-v1124-grid" sx={{display:'grid',gridTemplateColumns:{xs:'1fr',xl:'minmax(0,1.35fr) minmax(320px,.65fr)'},gap:1.25}}>
-    <Section title="Constructor de rutina" description="Construye cada ejercicio con campos estructurados; sin formatos de texto ni separadores."><Box component="form" onSubmit={submitRoutine}><Stack gap={1}><CgSelect label="Cliente" value={routineForm.memberId} onChange={(e)=>setRoutineForm({...routineForm,memberId:e.target.value})} options={memberOpts}/><CgSelect label="Instructor" value={routineForm.trainerId} onChange={(e)=>setRoutineForm({...routineForm,trainerId:e.target.value})} options={trainerOpts}/><CgTextField size="small" label="Nombre" required value={routineForm.name} onChange={(e)=>setRoutineForm({...routineForm,name:e.target.value})}/><CgTextField size="small" label="Objetivo" value={routineForm.goal} onChange={(e)=>setRoutineForm({...routineForm,goal:e.target.value})}/><Box className="cg-gym-v1124-fields" sx={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:1}}><CgSelect label="Nivel" value={routineForm.level} onChange={(e)=>setRoutineForm({...routineForm,level:e.target.value})} options={['beginner','intermediate','advanced'].map((value)=>({value,label:value}))}/><CgTextField size="small" label="Días/semana" type="number" inputProps={{min:1,max:7}} value={routineForm.daysPerWeek} onChange={(e)=>setRoutineForm({...routineForm,daysPerWeek:e.target.value})}/></Box><RoutineBuilder value={routineForm.exercises} onChange={(exercises)=>setRoutineForm({...routineForm,exercises})} disabled={!members.length}/><CgButton type="submit" disabled={!members.length||!routineForm.exercises.length}>Crear rutina</CgButton></Stack></Box></Section>
+  const panelRoutines=<Stack gap={1.25}><FitnessProductivityTools tab="routines" members={members} Toast={Toast} onDataChanged={(id)=>loadAll({silent:true,memberId:id||selectedMemberId})}/><ExerciseLibraryPanel items={exerciseLibrary} onItemsChange={setExerciseLibrary} Toast={Toast}/><Box className="cg-gym-v1124-grid" sx={{display:'grid',gridTemplateColumns:{xs:'1fr',xl:'minmax(0,1.35fr) minmax(320px,.65fr)'},gap:1.25}}>
+    <Section title="Constructor de rutina" description="Construye cada ejercicio con campos estructurados; sin formatos de texto ni separadores."><Box component="form" onSubmit={submitRoutine}><Stack gap={1}><CgSelect label="Cliente" value={routineForm.memberId} onChange={(e)=>setRoutineForm({...routineForm,memberId:e.target.value})} options={memberOpts}/><CgSelect label="Instructor" value={routineForm.trainerId} onChange={(e)=>setRoutineForm({...routineForm,trainerId:e.target.value})} options={trainerOpts}/><CgTextField size="small" label="Nombre" required value={routineForm.name} onChange={(e)=>setRoutineForm({...routineForm,name:e.target.value})}/><CgTextField size="small" label="Objetivo" value={routineForm.goal} onChange={(e)=>setRoutineForm({...routineForm,goal:e.target.value})}/><Box className="cg-gym-v1124-fields" sx={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:1}}><CgSelect label="Nivel" value={routineForm.level} onChange={(e)=>setRoutineForm({...routineForm,level:e.target.value})} options={['beginner','intermediate','advanced'].map((value)=>({value,label:value}))}/><CgTextField size="small" label="Días/semana" type="number" inputProps={{min:1,max:7}} value={routineForm.daysPerWeek} onChange={(e)=>setRoutineForm({...routineForm,daysPerWeek:e.target.value})}/></Box><RoutineBuilder value={routineForm.exercises} onChange={(exercises)=>setRoutineForm({...routineForm,exercises})} disabled={!members.length} catalog={exerciseLibrary}/><CgButton type="submit" disabled={!members.length||!routineForm.exercises.length}>Crear rutina</CgButton></Stack></Box></Section>
     <Section title="Rutinas activas" description={selectedMember?`Planes de ${selectedMember.fullName}`:'Selecciona un cliente.'}>{memberTracking}<Box mt={1}><RecordList items={routines} empty="No hay rutinas del cliente seleccionado" render={(item)=><Stack direction="row" justifyContent="space-between"><Box><Typography variant="body2" fontWeight={700}>{item.name}</Typography><Typography variant="caption" color="text.secondary">{item.goal||'Objetivo general'} · {item.level||''} · {Array.isArray(item.exercises)?item.exercises.length:0} ejercicios</Typography></Box><CgStatusChip label={item.active===false?'Inactiva':'Activa'} tone={item.active===false?'warning':'success'}/></Stack>}/></Box></Section>
   </Box></Stack>;
 
