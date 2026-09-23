@@ -90,5 +90,12 @@ export const ERP_E2E_REQUIRED_ASSERTIONS_V155=Object.freeze([
   'empty-state-actionable',
   'error-state-recoverable',
   'refresh-preserves-committed-state',
-  'retry-does-not-duplicate-mutation'
+  'retry-does-not-duplicate-mutation',
+  'long-data-boundary-layout',
+  'keyboard-focus-observable',
+  'light-dark-layout',
+  'zoom-200-layout',
+  'dialog-within-viewport',
+  'no-interactive-occlusion',
+  'touch-targets-mobile'
 ]);
