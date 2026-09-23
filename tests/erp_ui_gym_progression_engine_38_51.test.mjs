@@ -22,7 +22,7 @@ test('38/51 backend validates RIR RPE double progression and percent 1RM config'
 
 test('38/51 deterministic engine recommends without mutating the routine',()=>{
   const source=read('backend/src/modules/verticals/gym.progression.ts');
-  for(const token of ['evaluateGymProgression','increase_load','increase_reps','target_percent_1rm','reset_load','missing_effort_evidence','stall_threshold_reached','applied:false']) assert.ok(source.includes(token),token);
+  for(const token of ['evaluateGymProgression','gym-progression-38-v1','increase_load','increase_reps','target_percent_1rm','reset_load','missing_effort_evidence','stall_threshold_reached','applied:false']) assert.ok(source.includes(token),token);
   assert.doesNotMatch(source,/prisma|UPDATE public|INSERT INTO public/);
 });
 
