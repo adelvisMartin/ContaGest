@@ -117,12 +117,17 @@ jobs:
           PGPASSWORD: postgres
         shell: bash
         run: |
+          set -euo pipefail
+          care_count="$(psql -h 127.0.0.1 -U postgres -d contagest_verticals_e2e -Atc "select count(*) from \"CarePatient\" where \"displayName\" like 'V48-%';")"
+          gym_count="$(psql -h 127.0.0.1 -U postgres -d contagest_verticals_e2e -Atc "select count(*) from \"GymMember\" where \"memberCode\" like 'V48-%';")"
           {
             echo "candidate_sha=$CANDIDATE_SHA"
-            echo "postgres=$(psql -h 127.0.0.1 -U postgres -d contagest_verticals_e2e -Atc 'show server_version;' || true)"
-            echo "qa48_care_patients=$(psql -h 127.0.0.1 -U postgres -d contagest_verticals_e2e -Atc "select count(*) from \"CarePatient\" where \"displayName\" like 'V48-%';" || true)"
-            echo "qa48_gym_members=$(psql -h 127.0.0.1 -U postgres -d contagest_verticals_e2e -Atc "select count(*) from \"GymMember\" where \"memberCode\" like 'V48-%';" || true)"
+            echo "postgres=$(psql -h 127.0.0.1 -U postgres -d contagest_verticals_e2e -Atc 'show server_version;')"
+            echo "qa48_care_patients=$care_count"
+            echo "qa48_gym_members=$gym_count"
           } > verticals-v4851-inventory.log 2>&1
+          test "$care_count" = "0"
+          test "$gym_count" = "0"
 
       - name: Conservar evidencia exact-SHA
         if: always()
