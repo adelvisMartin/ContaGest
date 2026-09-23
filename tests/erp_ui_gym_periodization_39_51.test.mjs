@@ -21,6 +21,7 @@ test('39/51 creates versions without mutating historical program rows',()=>{
   assert.match(routes,/router\.post\('\/gym\/periodization\/programs\/:id\/version'/);
   assert.match(routes,/pg_advisory_xact_lock/);
   assert.match(routes,/MAX\("version"\)/);
+  assert.match(routes,/Solo la versión más reciente puede generar una nueva revisión/);
   assert.match(routes,/"supersedesId"/);
   assert.doesNotMatch(routes,/UPDATE public\."GymPeriodizationProgram"/);
   assert.doesNotMatch(routes,/DELETE FROM public\."GymPeriodizationProgram"/);
@@ -38,7 +39,7 @@ test('39/51 UI composes one declarative periodization owner with templates and v
   assert.equal((page.match(/<PeriodizationPanel/g)||[]).length,1);
   const panel=read('frontend/src/components/fitness/PeriodizationPanel.jsx');
   const builder=read('frontend/src/components/fitness/PeriodizationBuilder.jsx');
-  for(const token of ['Plantillas','Nueva versión','Historial de versiones','PeriodizationBuilder']) assert.ok(panel.includes(token),token);
+  for(const token of ['Plantillas','Nueva versión','Historial de versiones','PeriodizationBuilder','latestVersionByKey']) assert.ok(panel.includes(token),token);
   for(const token of ['Mesociclo','Carga','Descarga','Volumen objetivo','Intensidad objetivo']) assert.ok(builder.includes(token),token);
   assert.doesNotMatch(panel,/querySelector|addEventListener|innerHTML|document\./);
   assert.doesNotMatch(builder,/querySelector|addEventListener|innerHTML|document\./);
