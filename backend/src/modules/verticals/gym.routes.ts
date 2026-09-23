@@ -2071,20 +2071,28 @@ router.post('/gym/adherence/meals', requirePermission('gym.manage'), asyncHandle
     if(!memberRows.length)throw new HttpError(422,'El cliente no pertenece al tenant activo.');
 
     const planRows=await tx.$queryRawUnsafe<any[]>(`
-      SELECT "id","memberId"
+      SELECT "id","memberId","startsAt","active"
       FROM public."GymNutritionPlan"
       WHERE "tenantId"=$1 AND "id"=$2 AND "memberId"=$3
       LIMIT 1
     `,tenantId,b.nutritionPlanId,b.memberId);
     if(!planRows.length)throw new HttpError(422,'El plan nutricional no pertenece al cliente activo.');
+    const plan=planRows[0];
+    if(!plan.startsAt)throw new HttpError(409,'El plan necesita fecha de inicio para registrar adherencia temporal.');
 
     const mealRows=await tx.$queryRawUnsafe<any[]>(`
-      SELECT "id","nutritionPlanId"
+      SELECT "id","nutritionPlanId","dayIndex"
       FROM public."GymMeal"
       WHERE "tenantId"=$1 AND "id"=$2 AND "nutritionPlanId"=$3
       LIMIT 1
     `,tenantId,b.mealId,b.nutritionPlanId);
     if(!mealRows.length)throw new HttpError(422,'La comida planificada no pertenece al plan seleccionado.');
+    const meal=mealRows[0];
+    const plannedDate=new Date(plan.startsAt);
+    plannedDate.setUTCDate(plannedDate.getUTCDate()+Number(meal.dayIndex||1)-1);
+    const today=new Date();
+    const todayUtc=new Date(Date.UTC(today.getUTCFullYear(),today.getUTCMonth(),today.getUTCDate()));
+    if(plannedDate.getTime()>todayUtc.getTime())throw new HttpError(409,'No se puede registrar adherencia de una comida futura.');
 
     await tx.$queryRawUnsafe('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',`gym-meal-adherence-47:${tenantId}:${b.mealId}`);
     const rows=await tx.$queryRawUnsafe<any[]>(`
