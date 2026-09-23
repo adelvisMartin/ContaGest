@@ -888,6 +888,11 @@ if(fitnessEntries.every((item)=>item.status==='MIGRATED')){
   if(!gymRoutes.includes('DISTINCT ON (e."mealId")')||!gymRoutes.includes('ORDER BY e."mealId",e."recordedAt" DESC,e."id" DESC'))fail('fitness: adherence 47 must derive current meal status from the latest explicit event');
   if(!adherenceMigration.includes('GymMealAdherenceEvent_status_check')||!adherenceMigration.includes("'completed','skipped'"))fail('fitness: adherence 47 migration must constrain explicit meal outcomes');
   if(/autoAdjust|autoRecommend|inferAllerg|inferDiagnos|prescribe|clinicalDecision/i.test(adherencePanel+adherenceMigration))fail('fitness: adherence 47 must not infer clinical decisions or auto-adjust plans');
+  if((gymRoutes.match(/const mealAdherenceSchema=/g)||[]).length!==1)fail('fitness: adherence 47 schema must remain singleton');
+  if((gymRoutes.match(/router\.get\('\/gym\/adherence'/g)||[]).length!==1)fail('fitness: adherence 47 GET route must remain singleton');
+  if((gymRoutes.match(/router\.post\('\/gym\/adherence\/meals'/g)||[]).length!==1)fail('fitness: adherence 47 POST route must remain singleton');
+  if((verticalService.match(/adherence\(memberId\)/g)||[]).length!==1)fail('fitness: adherence 47 service reader must remain singleton');
+  if((verticalService.match(/recordMealAdherence\(payload\)/g)||[]).length!==1)fail('fitness: adherence 47 service writer must remain singleton');
 }
 
 const css=read('frontend/src/styles/erp-runtime.css');
