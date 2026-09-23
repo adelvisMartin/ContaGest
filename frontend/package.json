@@ -15,7 +15,7 @@
     "preqa:browser": "cd .. && node scripts/vercel-browser-preqa-v16.mjs",
     "build": "npm run build:identity && npm run preqa:source && npm run preqa:browser && npm run stage:backend && vite build",
     "preview": "vite preview --host 0.0.0.0 --port 8080",
-    "diag:boarding-32": "esbuild src/components/veterinary/VeterinaryBoardingPanel.jsx --format=esm --outfile=/tmp/boarding-panel.js && esbuild src/components/veterinary/VeterinaryWorkspace.jsx --format=esm --outfile=/tmp/boarding-workspace.js && mkdir -p dist && printf '<!doctype html><title>boarding-32-jsx-pass</title>' > dist/index.html"
+    "diag:boarding-32": "esbuild ../backend/src/modules/verticals/veterinary.routes.ts --format=esm --outfile=/tmp/veterinary-routes.js && mkdir -p dist && printf '<!doctype html><title>boarding-32-ts-syntax-pass</title>' > dist/index.html"
   },
   "dependencies": {
     "@emotion/react": "11.14.0",
