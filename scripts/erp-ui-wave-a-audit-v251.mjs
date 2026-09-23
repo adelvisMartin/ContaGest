@@ -344,6 +344,24 @@ if(vetEntry?.status==='MIGRATED'){
     if(guardianPortalEntry.includes(forbidden))fail(`veterinaria: portal UI reintroduced sensitive field ${forbidden}`);
   }
 
+  const veterinaryBoarding=read('frontend/src/components/veterinary/VeterinaryBoardingPanel.jsx');
+  const veterinaryBoardingMigration=read('backend/prisma/migrations/20260923141000_veterinary_boarding_resources_v3251/migration.sql');
+  if((veterinaryWorkspace.match(/import \{ VeterinaryBoardingPanel \}/g)||[]).length!==1)fail('veterinaria: boarding panel must have one owner import');
+  if((veterinaryWorkspace.match(/<VeterinaryBoardingPanel/g)||[]).length!==1)fail('veterinaria: boarding panel must render exactly once');
+  if(!veterinaryWorkspace.includes("['boarding', 'Estancia'"))fail('veterinaria: boarding tab is missing');
+  if(/querySelector|addEventListener|innerHTML|document\./.test(veterinaryBoarding))fail('veterinaria: boarding reintroduced imperative DOM lifecycle');
+  for(const contract of ['Boarding / estancia opcional','Activar módulo opcional','Ventana de disponibilidad','Nuevo recurso','Reservar estancia','Registrar ingreso','Finalizar estancia','No sustituye Hospitalización']){
+    if(!veterinaryBoarding.includes(contract))fail(`veterinaria: missing boarding UI contract ${contract}`);
+  }
+  for(const contract of ["router.get('/boarding/settings'","router.patch('/boarding/settings', requirePermission('admin.manage')","router.get('/boarding/resources'","router.post('/boarding/resources'","router.patch('/boarding/resources/:id/status'","router.get('/boarding/stays'","router.post('/boarding/stays'","router.patch('/boarding/stays/:id/status'",'pg_advisory_xact_lock','veterinary-boarding-resource','veterinary-boarding-patient','estancia solapada']){
+    if(!veterinaryRoutes.includes(contract))fail(`veterinaria: missing boarding backend contract ${contract}`);
+  }
+  for(const contract of ['VeterinaryBoardingSetting','VeterinaryBoardingResource','VeterinaryBoardingStay','ENABLE ROW LEVEL SECURITY','REVOKE ALL']){
+    if(!veterinaryBoardingMigration.includes(contract))fail(`veterinaria: missing boarding persistence contract ${contract}`);
+  }
+  if(/ALTER TABLE public\."CareHospitalization"/.test(veterinaryBoardingMigration))fail('veterinaria: boarding must not rewrite hospitalization authority');
+  if(/autoAssign|recommendedResource|recommendResource|autoSelect/.test(veterinaryBoarding))fail('veterinaria: boarding must not auto-assign resources');
+
 }
 
 const dentistryEntry=ERP_UI_WAVE_A_2_51.find((item)=>item.route==='odontologia');
