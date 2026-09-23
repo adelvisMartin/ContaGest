@@ -25,6 +25,7 @@ test('42/51 fails closed when a declared limitation would require health interpr
   assert.match(routes,/b\.declaredLimitations\.length>0/);
   assert.match(routes,/suggestions:\[\]/);
   assert.match(routes,/healthAutomationBlocked:true/);
+  assert.match(routes,/contextInsufficient:true/);
   assert.doesNotMatch(routes,/diagnos|injuryScore|medicalRisk|contraindicationEngine/i);
 });
 
