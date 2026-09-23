@@ -140,6 +140,93 @@ export function FitnessNutritionQuickTool({members,Toast,onDataChanged}){
     finally{setFoodLoading(false);}
   };
 
+  const addManualIngredient=()=>{
+    if(!ingredientDraft.name.trim())return notify(Toast,'Indica el nombre del ingrediente.','warning');
+    const amountG=Number(ingredientDraft.amountG||0);
+    const basisGrams=Number(ingredientDraft.basisGrams||0);
+    if(!(amountG>0)||!(basisGrams>0))return notify(Toast,'Gramos y base nutricional deben ser mayores que cero.','warning');
+    setNutritionIngredients((current)=>[...current,{
+      kind:'ingredient',
+      name:ingredientDraft.name.trim(),
+      amountG,
+      basisGrams,
+      source:'manual',
+      fdcId:null,
+      dataType:null,
+      sourceDescription:'Ingreso manual',
+      snapshotAt:new Date().toISOString(),
+      nutrients:{
+        calories:Number(ingredientDraft.calories||0),
+        proteinG:Number(ingredientDraft.proteinG||0),
+        carbsG:Number(ingredientDraft.carbsG||0),
+        fatG:Number(ingredientDraft.fatG||0),
+        fiberG:Number(ingredientDraft.fiberG||0),
+        sodiumMg:Number(ingredientDraft.sodiumMg||0),
+        potassiumMg:0,calciumMg:0,ironMg:0
+      }
+    }]);
+    setIngredientDraft({name:'',amountG:'100',basisGrams:'100',calories:'0',proteinG:'0',carbsG:'0',fatG:'0',fiberG:'0',sodiumMg:'0'});
+  };
+
+  const addUsdaIngredient=async(food)=>{
+    const dataType=String(food?.dataType||'');
+    if(!/^(Foundation|SR Legacy)$/i.test(dataType)){
+      return notify(Toast,'Este tipo USDA no se autoimporta porque su base nutricional puede diferir. Usa ingreso manual con base explícita.','warning');
+    }
+    setFoodLoading(true);
+    try{
+      const detail=await FoodDataCentralService.detail(food.fdcId);
+      if(!detail)throw new Error('USDA no devolvió el detalle del alimento.');
+      setNutritionIngredients((current)=>[...current,{
+        kind:'ingredient',
+        name:detail.description||food.description||'Alimento USDA',
+        amountG:100,
+        basisGrams:100,
+        source:'usda_fdc',
+        fdcId:String(detail.fdcId||food.fdcId),
+        dataType:String(detail.dataType||dataType),
+        sourceDescription:'USDA FoodData Central',
+        snapshotAt:new Date().toISOString(),
+        nutrients:{
+          calories:Number(detail.nutrients?.calories||0),
+          proteinG:Number(detail.nutrients?.proteinG||0),
+          carbsG:Number(detail.nutrients?.carbsG||0),
+          fatG:Number(detail.nutrients?.fatG||0),
+          fiberG:Number(detail.nutrients?.fiberG||0),
+          sodiumMg:Number(detail.nutrients?.sodiumMg||0),
+          potassiumMg:Number(detail.nutrients?.potassiumMg||0),
+          calciumMg:Number(detail.nutrients?.calciumMg||0),
+          ironMg:Number(detail.nutrients?.ironMg||0)
+        }
+      }]);
+      notify(Toast,'Ingrediente USDA agregado como snapshot por 100 g.','success');
+    }catch(error){notify(Toast,`No se agregó el ingrediente USDA: ${error.message}`,'error');}
+    finally{setFoodLoading(false);}
+  };
+
+  const updateIngredientAmount=(index,value)=>setNutritionIngredients((current)=>current.map((item,itemIndex)=>itemIndex===index?{...item,amountG:value}:item));
+  const removeIngredient=(index)=>setNutritionIngredients((current)=>current.filter((_item,itemIndex)=>itemIndex!==index));
+
+  const saveIngredientMeal=async()=>{
+    if(!memberId)return notify(Toast,'Selecciona un cliente real para guardar la comida estructurada.','warning');
+    if(!nutritionIngredients.length)return notify(Toast,'Agrega al menos un ingrediente.','warning');
+    setIngredientSaving(true);
+    try{
+      await GymVerticalService.createNutrition({
+        memberId,
+        trainerId:null,
+        name:`Comida estructurada · ${ingredientMealType}`,
+        goal:'Composición por ingrediente',
+        meals:[{mealType:ingredientMealType,items:nutritionIngredients,notes:'Totales recalculados por el servidor desde snapshots por ingrediente.'}],
+        notes:'43/51 · composición por ingrediente; el backend es autoridad de los totales.'
+      });
+      setNutritionIngredients([]);
+      notify(Toast,'Comida estructurada guardada; macros recalculados por el servidor.','success');
+      await onDataChanged?.(memberId);
+    }catch(error){notify(Toast,`No se guardó la comida estructurada: ${error.message}`,'error');}
+    finally{setIngredientSaving(false);}
+  };
+
   return <Stack gap={1.25}>
     <Paper className="cg-fast-coach" variant="outlined" sx={{p:1.5}}>
       <Stack direction={{xs:'column',sm:'row'}} justifyContent="space-between" gap={1}><Box><Typography variant="h6">Plan nutricional rápido</Typography><Typography variant="caption" color="text.secondary">Propuesta editable por objetivos; el modo test no registra cliente.</Typography></Box><CgStatusChip label="1–7 días" tone="success"/></Stack>
