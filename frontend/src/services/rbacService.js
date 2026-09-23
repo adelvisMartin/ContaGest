@@ -12,7 +12,7 @@ export const RbacService = {
     return BackendApi.request('/rbac/bootstrap', { method:'POST', body:{ source:'frontend-admin' } });
   },
   async saveRoleModules(role) {
-    const permissionKeys = (role.modules || []).map((route) => AccessControlService.routePermission(route));
+    const permissionKeys = (role.modules || []).map((route) => AccessControlService.routePermission(route)).filter(Boolean);
     return BackendApi.request(`/rbac/roles/${encodeURIComponent(role.name)}/permissions`, { method:'PUT', body:{ permissionKeys:[...new Set(permissionKeys)] } });
   },
   async createDemoAccess(demo) {
