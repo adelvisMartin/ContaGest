@@ -112,6 +112,16 @@ const routineSchema = z.object({
     tempo: optionalText,
     notes: optionalText
   })).default([])
+).superRefine((value, refinement) => {
+  if(!value.exercises.length)return;
+  const scheduledDays=new Set(value.exercises.map((exercise)=>exercise.dayOfWeek));
+  if(value.daysPerWeek!==scheduledDays.size){
+    refinement.addIssue({
+      code:'custom',
+      path:['daysPerWeek'],
+      message:'La frecuencia semanal debe coincidir con los días programados.'
+    });
+  }
 });
 
 const nutritionSchema = z.object({

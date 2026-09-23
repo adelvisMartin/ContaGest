@@ -630,6 +630,19 @@ if(fitnessEntries.every((item)=>item.status==='MIGRATED')){
   for(const contract of ['persistedCatalog','exerciseId:selected.id','defaultSets','defaultReps']){
     if(!routineBuilder.includes(contract))fail(`fitness: routine builder missing persisted-catalog contract ${contract}`);
   }
+  const weeklySchedule=read('frontend/src/components/fitness/WeeklyRoutineSchedule.jsx');
+  const weekDays=read('frontend/src/data/fitnessWeekDays.js');
+  if((fitness.match(/<WeeklyRoutineSchedule/g)||[]).length!==1)fail('fitness: weekly schedule must render from one owner');
+  for(const contract of ['Lunes','Martes','Miércoles','Jueves','Viernes','Sábado','Domingo']){
+    if(!weekDays.includes(contract))fail(`fitness: missing canonical weekday ${contract}`);
+  }
+  if(!routineBuilder.includes('FITNESS_WEEK_DAYS'))fail('fitness: RoutineBuilder must use canonical weekdays');
+  if(/label="Días\/semana"/.test(fitness))fail('fitness: manual daysPerWeek input reintroduced');
+  if(!fitness.includes('scheduledDays')||!fitness.includes('daysPerWeek:scheduledDays.length'))fail('fitness: daysPerWeek must derive from programmed weekdays');
+  if(/querySelector|addEventListener|innerHTML|document\./.test(weeklySchedule))fail('fitness: weekly schedule reintroduced imperative DOM lifecycle');
+  for(const contract of ['routineSchema.superRefine','scheduledDays','value.daysPerWeek!==scheduledDays.size','La frecuencia semanal debe coincidir con los días programados.']){
+    if(!gymRoutes.includes(contract))fail(`fitness: missing weekly schedule backend contract ${contract}`);
+  }
 }
 
 const css=read('frontend/src/styles/erp-runtime.css');

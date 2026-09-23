@@ -4,8 +4,9 @@ import {
   CgButton, CgEmptyState, CgSelect, CgTextField
 } from '../ui/cg/CgPrimitives.jsx';
 import { FITNESS_EXERCISES, FITNESS_MUSCLES } from '../../data/fitnessExerciseCatalog.js';
+import { FITNESS_WEEK_DAYS } from '../../data/fitnessWeekDays.js';
 
-const dayOptions=Array.from({length:7},(_,index)=>({value:String(index+1),label:`Día ${index+1}`}));
+const dayOptions=FITNESS_WEEK_DAYS.map((day)=>({value:String(day.value),label:day.label}));
 const muscleOptions=[{value:'',label:'Seleccionar grupo'},...FITNESS_MUSCLES.map((value)=>({value,label:value}))];
 
 const newExercise=(dayOfWeek=1,sortOrder=1)=>({
