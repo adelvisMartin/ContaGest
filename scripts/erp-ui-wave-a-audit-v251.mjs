@@ -769,6 +769,31 @@ if(fitnessEntries.every((item)=>item.status==='MIGRATED')){
   if(!substitutionBlock.includes('b.declaredLimitations.length>0')||!substitutionBlock.includes('suggestions:[]'))fail('fitness: contextual substitutions 42 must fail closed on declared health limitations');
   if(/diagnos|injuryScore|medicalRisk|contraindicationEngine/i.test(substitutionBlock))fail('fitness: contextual substitutions 42 must not infer health decisions');
   if(/ingredient|recipe|macronutrient|micronutrient|mealPlan/i.test(substitutionBlock))fail('fitness: contextual substitutions 42 must not pre-implement nutrition model 43');
+  const ingredientLibrary=read('frontend/src/components/fitness/IngredientLibraryPanel.jsx');
+  const nutritionBuilder=read('frontend/src/components/fitness/NutritionMealBuilder.jsx');
+  const ingredientMigration=read('backend/prisma/migrations/20260923183500_gym_ingredient_model_43_51/migration.sql');
+  if((fitness.match(/<IngredientLibraryPanel/g)||[]).length!==1)fail('fitness: ingredient library 43 must render from one owner');
+  if((fitness.match(/<NutritionMealBuilder/g)||[]).length!==1)fail('fitness: structured nutrition builder 43 must render from one owner');
+  if(/querySelector|addEventListener|innerHTML|document\./.test(ingredientLibrary+nutritionBuilder))fail('fitness: nutrition ingredient 43 reintroduced imperative DOM lifecycle');
+  for(const contract of ['Catálogo de ingredientes','Ingrediente','Categoría','Unidad base','Archivar','Reactivar']){
+    if(!ingredientLibrary.includes(contract))fail(`fitness: ingredient library 43 UI missing ${contract}`);
+  }
+  for(const contract of ['Comidas por ingrediente','Agregar comida','Seleccionar ingrediente','Cantidad','Unidad','Agregar ingrediente']){
+    if(!nutritionBuilder.includes(contract))fail(`fitness: nutrition builder 43 UI missing ${contract}`);
+  }
+  for(const contract of ['ingredientSchema','mealIngredientSchema',"/gym/ingredients",'GymIngredient','GymMealItem','Uno o más ingredientes no pertenecen al tenant activo o están archivados.','prisma.$transaction']){
+    if(!gymRoutes.includes(contract))fail(`fitness: nutrition ingredient 43 backend missing ${contract}`);
+  }
+  for(const contract of ['CREATE TABLE IF NOT EXISTS public."GymIngredient"','CREATE TABLE IF NOT EXISTS public."GymMealItem"','GymIngredient_tenant_name_unique','GymMealItem_meal_fk','GymMealItem_ingredient_fk']){
+    if(!ingredientMigration.includes(contract))fail(`fitness: nutrition ingredient 43 migration missing ${contract}`);
+  }
+  if(/mealLines|Tipo \| kcal \| alimentos/.test(fitness))fail('fitness: nutrition 43 must not use free-text meal parsing');
+  if(!fitness.includes('GymVerticalService.ingredients({active:\'true\'})')||!fitness.includes('ingredientId:String(item.ingredientId'))fail('fitness: nutrition 43 structured ingredient wiring missing');
+  const nutritionStart=gymRoutes.indexOf("router.get('/gym/ingredients'");
+  const nutritionEnd=gymRoutes.indexOf("router.get('/gym/classes'",nutritionStart);
+  const nutritionBlock=gymRoutes.slice(nutritionStart,nutritionEnd);
+  if(nutritionStart<0||nutritionEnd<0)fail('fitness: nutrition ingredient 43 route boundaries missing');
+  if(/micronutrient|vitamin|mineral|fiberG|sodiumMg/i.test(nutritionBlock+ingredientMigration))fail('fitness: nutrition ingredient 43 must not pre-implement nutrient persistence 46');
 }
 
 const css=read('frontend/src/styles/erp-runtime.css');

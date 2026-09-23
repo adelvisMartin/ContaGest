@@ -335,6 +335,21 @@ const routineSchema = z.object({
   }
 });
 
+const ingredientSchema = z.object({
+  name: z.string().trim().min(2).max(180),
+  category: optionalText,
+  defaultUnit: z.string().trim().min(1).max(40).default('g'),
+  notes: optionalText,
+  active: z.boolean().default(true)
+});
+const ingredientPatchSchema = ingredientSchema.partial().refine((value)=>Object.keys(value).length>0,{message:'Indica al menos un campo para actualizar.'});
+const mealIngredientSchema = z.object({
+  ingredientId: z.string().min(10),
+  quantity: z.coerce.number().positive().max(100000),
+  unit: z.string().trim().min(1).max(40),
+  notes: optionalText
+});
+
 const nutritionSchema = z.object({
   memberId: z.string().min(10),
   trainerId: z.string().optional().nullable(),
@@ -351,7 +366,7 @@ const nutritionSchema = z.object({
   meals: z.array(z.object({
     mealType: z.string().trim().min(2).max(80),
     plannedAt: z.string().optional().nullable(),
-    items: z.array(z.unknown()).default([]),
+    items: z.array(mealIngredientSchema).max(100).default([]),
     calories: z.coerce.number().int().min(0).optional().nullable(),
     proteinG: z.coerce.number().min(0).optional().nullable(),
     carbsG: z.coerce.number().min(0).optional().nullable(),
@@ -1136,29 +1151,143 @@ router.post('/gym/routines', requirePermission('gym.manage'), asyncHandler(async
   ok(res, routine, 201);
 }));
 
+router.get('/gym/ingredients', requirePermission('gym.manage'), asyncHandler(async (req, res) => {
+  const q=`%${String(req.query.q||'').trim()}%`;
+  const category=String(req.query.category||'').trim();
+  const active=String(req.query.active||'').trim();
+  const rows=await prisma.$queryRawUnsafe<any[]>(`
+    SELECT *
+    FROM public."GymIngredient"
+    WHERE "tenantId"=$1
+      AND ($2='%%' OR "name" ILIKE $2)
+      AND ($3='' OR COALESCE("category",'')=$3)
+      AND ($4='' OR "active"=$4::boolean)
+    ORDER BY "active" DESC,"name" ASC
+    LIMIT 1000
+  `,ctx(req).tenantId,q,category,active);
+  ok(res,rows);
+}));
+
+router.post('/gym/ingredients', requirePermission('gym.manage'), asyncHandler(async (req, res) => {
+  const b=ingredientSchema.parse(req.body||{});
+  const rows=await prisma.$queryRawUnsafe<any[]>(`
+    INSERT INTO public."GymIngredient" ("id","tenantId","name","category","defaultUnit","notes","active","createdAt","updatedAt")
+    VALUES (gen_random_uuid()::text,$1,$2,$3,$4,$5,$6,now(),now())
+    ON CONFLICT DO NOTHING
+    RETURNING *
+  `,ctx(req).tenantId,b.name,b.category||null,b.defaultUnit,b.notes||null,b.active);
+  if(!rows.length)throw new HttpError(409,'Ya existe un ingrediente con ese nombre en el tenant activo.');
+  ok(res,one(rows),201);
+}));
+
+router.patch('/gym/ingredients/:id', requirePermission('gym.manage'), asyncHandler(async (req, res) => {
+  const b=ingredientPatchSchema.parse(req.body||{});
+  const tenantId=ctx(req).tenantId;
+  const id=String(req.params.id);
+  const currentRows=await prisma.$queryRawUnsafe<any[]>(`
+    SELECT * FROM public."GymIngredient" WHERE "tenantId"=$1 AND "id"=$2 LIMIT 1
+  `,tenantId,id);
+  const current=one(currentRows,'Ingrediente no encontrado.');
+  const next={...current,...b};
+  const duplicateRows=await prisma.$queryRawUnsafe<any[]>(`
+    SELECT "id" FROM public."GymIngredient"
+    WHERE "tenantId"=$1 AND "id"<>$2 AND lower(btrim("name"))=lower(btrim($3))
+    LIMIT 1
+  `,tenantId,id,next.name);
+  if(duplicateRows.length)throw new HttpError(409,'Ya existe un ingrediente con ese nombre en el tenant activo.');
+  const rows=await prisma.$queryRawUnsafe<any[]>(`
+    UPDATE public."GymIngredient"
+    SET "name"=$3,"category"=$4,"defaultUnit"=$5,"notes"=$6,"active"=$7,"updatedAt"=now()
+    WHERE "tenantId"=$1 AND "id"=$2
+    RETURNING *
+  `,tenantId,id,next.name,next.category||null,next.defaultUnit,next.notes||null,next.active);
+  ok(res,one(rows));
+}));
+
 router.get('/gym/nutrition', requirePermission('gym.manage'), asyncHandler(async (req, res) => {
   const memberId = String(req.query.memberId || '');
   const rows = await prisma.$queryRawUnsafe<any[]>(`
-    SELECT p.*, COALESCE(json_agg(m ORDER BY m."plannedAt") FILTER (WHERE m."id" IS NOT NULL),'[]') AS meals
-    FROM public."GymNutritionPlan" p LEFT JOIN public."GymMeal" m ON m."nutritionPlanId"=p."id"
-    WHERE p."tenantId"=$1 AND ($2='' OR p."memberId"=$2) GROUP BY p."id" ORDER BY p."active" DESC,p."createdAt" DESC LIMIT 500
+    SELECT p.*,
+      COALESCE((
+        SELECT jsonb_agg(
+          to_jsonb(m) || jsonb_build_object(
+            'items',COALESCE((
+              SELECT jsonb_agg(jsonb_build_object(
+                'id',mi."id",
+                'ingredientId',mi."ingredientId",
+                'ingredientName',i."name",
+                'quantity',mi."quantity",
+                'unit',mi."unit",
+                'notes',mi."notes",
+                'sortOrder',mi."sortOrder"
+              ) ORDER BY mi."sortOrder")
+              FROM public."GymMealItem" mi
+              JOIN public."GymIngredient" i
+                ON i."tenantId"=mi."tenantId" AND i."id"=mi."ingredientId"
+              WHERE mi."tenantId"=m."tenantId" AND mi."mealId"=m."id"
+            ),CASE WHEN jsonb_typeof(m."items")='array' THEN m."items" ELSE '[]'::jsonb END)
+          )
+          ORDER BY m."plannedAt",m."id"
+        )
+        FROM public."GymMeal" m
+        WHERE m."tenantId"=p."tenantId" AND m."nutritionPlanId"=p."id"
+      ),'[]'::jsonb) AS meals
+    FROM public."GymNutritionPlan" p
+    WHERE p."tenantId"=$1 AND ($2='' OR p."memberId"=$2)
+    ORDER BY p."active" DESC,p."createdAt" DESC
+    LIMIT 500
   `, ctx(req).tenantId,memberId);
   ok(res, rows);
 }));
 
 router.post('/gym/nutrition', requirePermission('gym.manage'), asyncHandler(async (req, res) => {
   const b = nutritionSchema.parse(req.body || {});
-  const planRows = await prisma.$queryRawUnsafe<any[]>(`
-    INSERT INTO public."GymNutritionPlan" ("id","tenantId","memberId","trainerId","name","goal","targetCalories","proteinG","carbsG","fatG","waterMl","notes","startsAt","endsAt","active","createdAt","updatedAt")
-    VALUES (gen_random_uuid()::text,$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12::date,$13::date,true,now(),now()) RETURNING *
-  `, ctx(req).tenantId,b.memberId,b.trainerId||null,b.name,b.goal||null,b.targetCalories||null,b.proteinG||null,b.carbsG||null,b.fatG||null,b.waterMl||null,b.notes||null,b.startsAt||null,b.endsAt||null);
-  const plan = one(planRows);
-  for (const meal of b.meals) {
-    await prisma.$executeRawUnsafe(`
-      INSERT INTO public."GymMeal" ("id","tenantId","nutritionPlanId","mealType","plannedAt","items","calories","proteinG","carbsG","fatG","notes")
-      VALUES (gen_random_uuid()::text,$1,$2,$3,$4::time,$5::jsonb,$6,$7,$8,$9,$10)
-    `, ctx(req).tenantId,plan.id,meal.mealType,meal.plannedAt||null,JSON.stringify(meal.items),meal.calories||null,meal.proteinG||null,meal.carbsG||null,meal.fatG||null,meal.notes||null);
-  }
+  const tenantId=ctx(req).tenantId;
+  const plan=await prisma.$transaction(async(tx)=>{
+    const memberRows=await tx.$queryRawUnsafe<any[]>(`
+      SELECT "id" FROM public."GymMember" WHERE "tenantId"=$1 AND "id"=$2 LIMIT 1
+    `,tenantId,b.memberId);
+    if(!memberRows.length)throw new HttpError(422,'El cliente no pertenece al tenant activo.');
+    if(b.trainerId){
+      const trainerRows=await tx.$queryRawUnsafe<any[]>(`
+        SELECT "id" FROM public."GymTrainer" WHERE "tenantId"=$1 AND "id"=$2 LIMIT 1
+      `,tenantId,b.trainerId);
+      if(!trainerRows.length)throw new HttpError(422,'El responsable no pertenece al tenant activo.');
+    }
+
+    const ingredientIds=[...new Set(b.meals.flatMap((meal)=>meal.items.map((item)=>item.ingredientId)))];
+    if(ingredientIds.length){
+      const ingredientRows=await tx.$queryRawUnsafe<any[]>(`
+        SELECT "id" FROM public."GymIngredient"
+        WHERE "tenantId"=$1 AND "active"=true AND "id"=ANY($2::text[])
+      `,tenantId,ingredientIds);
+      const valid=new Set(ingredientRows.map((row:any)=>String(row.id)));
+      const invalid=ingredientIds.filter((id)=>!valid.has(id));
+      if(invalid.length)throw new HttpError(422,'Uno o más ingredientes no pertenecen al tenant activo o están archivados.');
+    }
+
+    const planRows = await tx.$queryRawUnsafe<any[]>(`
+      INSERT INTO public."GymNutritionPlan" ("id","tenantId","memberId","trainerId","name","goal","targetCalories","proteinG","carbsG","fatG","waterMl","notes","startsAt","endsAt","active","createdAt","updatedAt")
+      VALUES (gen_random_uuid()::text,$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12::date,$13::date,true,now(),now()) RETURNING *
+    `, tenantId,b.memberId,b.trainerId||null,b.name,b.goal||null,b.targetCalories||null,b.proteinG||null,b.carbsG||null,b.fatG||null,b.waterMl||null,b.notes||null,b.startsAt||null,b.endsAt||null);
+    const createdPlan = one(planRows);
+    for (const meal of b.meals) {
+      const mealRows=await tx.$queryRawUnsafe<any[]>(`
+        INSERT INTO public."GymMeal" ("id","tenantId","nutritionPlanId","mealType","plannedAt","items","calories","proteinG","carbsG","fatG","notes")
+        VALUES (gen_random_uuid()::text,$1,$2,$3,$4::time,'[]'::jsonb,$5,$6,$7,$8,$9)
+        RETURNING "id"
+      `, tenantId,createdPlan.id,meal.mealType,meal.plannedAt||null,meal.calories||null,meal.proteinG||null,meal.carbsG||null,meal.fatG||null,meal.notes||null);
+      const mealId=String(mealRows[0]?.id||'');
+      for(let index=0;index<meal.items.length;index+=1){
+        const item=meal.items[index];
+        await tx.$executeRawUnsafe(`
+          INSERT INTO public."GymMealItem" ("id","tenantId","mealId","ingredientId","quantity","unit","notes","sortOrder","createdAt")
+          VALUES (gen_random_uuid()::text,$1,$2,$3,$4,$5,$6,$7,now())
+        `,tenantId,mealId,item.ingredientId,item.quantity,item.unit,item.notes||null,index+1);
+      }
+    }
+    return createdPlan;
+  });
   ok(res, plan, 201);
 }));
 
