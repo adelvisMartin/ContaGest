@@ -22,6 +22,8 @@ const memberSchema = z.object({
   status: z.enum(['active','inactive','frozen','blocked']).default('active')
 });
 
+const memberPatchSchema=memberSchema.partial().strict().refine((value)=>Object.keys(value).length>0,{message:'Indica al menos un cambio.'});
+
 const trainerSchema = z.object({
   fullName: z.string().trim().min(2).max(180),
   email: z.string().email().optional().nullable().or(z.literal('')),
@@ -622,6 +624,38 @@ router.post('/gym/members', requirePermission('gym.manage'), asyncHandler(async 
     VALUES (gen_random_uuid()::text,$1,NULL,$2,$3,$4,$5,$6::date,$7,$8,$9::jsonb,$10::jsonb,$11,$12,now(),now(),now()) RETURNING *
   `, ctx(req).tenantId,b.memberCode,b.fullName,b.email||null,b.phone||null,b.birthDate||null,b.sex||null,b.photoUrl||null,JSON.stringify(b.emergencyContact),JSON.stringify(b.goals),b.medicalNotes||null,b.status);
   ok(res, one(rows), 201);
+}));
+
+router.patch('/gym/members/:id', requirePermission('gym.manage'), asyncHandler(async(req,res)=>{
+  const tenantId=ctx(req).tenantId;
+  const id=String(req.params.id);
+  const patch=memberPatchSchema.parse(req.body||{});
+  const currentRows=await prisma.$queryRawUnsafe<any[]>(`
+    SELECT * FROM public."GymMember"
+    WHERE "tenantId"=$1 AND "id"=$2
+    LIMIT 1
+  `,tenantId,id);
+  const current=one(currentRows,'Cliente no encontrado.');
+  const next=memberSchema.parse({...current,...patch});
+  const rows=await prisma.$queryRawUnsafe<any[]>(`
+    UPDATE public."GymMember"
+    SET "memberCode"=$3,"fullName"=$4,"email"=$5,"phone"=$6,"birthDate"=$7::date,"sex"=$8,"photoUrl"=$9,
+        "emergencyContact"=$10::jsonb,"goals"=$11::jsonb,"medicalNotes"=$12,"status"=$13,"updatedAt"=now()
+    WHERE "tenantId"=$1 AND "id"=$2
+    RETURNING *
+  `,tenantId,id,next.memberCode,next.fullName,next.email||null,next.phone||null,next.birthDate||null,next.sex||null,next.photoUrl||null,
+    JSON.stringify(next.emergencyContact),JSON.stringify(next.goals),next.medicalNotes||null,next.status);
+  ok(res,one(rows,'Cliente no encontrado.'));
+}));
+
+router.delete('/gym/members/:id', requirePermission('gym.manage'), asyncHandler(async(req,res)=>{
+  const rows=await prisma.$queryRawUnsafe<any[]>(`
+    UPDATE public."GymMember"
+    SET "status"='inactive',"updatedAt"=now()
+    WHERE "tenantId"=$1 AND "id"=$2
+    RETURNING *
+  `,ctx(req).tenantId,String(req.params.id));
+  ok(res,one(rows,'Cliente no encontrado.'));
 }));
 
 router.get('/gym/trainers', requirePermission('gym.manage'), asyncHandler(async (req, res) => {
