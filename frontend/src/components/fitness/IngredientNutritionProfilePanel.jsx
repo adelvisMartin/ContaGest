@@ -66,10 +66,11 @@ export function IngredientNutritionProfilePanel({ingredients=[],Toast}){
         unit:item.unit
       }))
     };
-    if([payload.basisQuantity,payload.energyKcal,payload.proteinG,payload.carbsG,payload.fatG,payload.fiberG].some((value)=>!Number.isFinite(value)||value<0)||payload.basisQuantity<=0){
-      setError('Completa la base y los macronutrientes con valores no negativos.');return;
+    const requiredRaw=[form.basisQuantity,form.basisUnit,form.energyKcal,form.proteinG,form.carbsG,form.fatG,form.fiberG];
+    if(requiredRaw.some((value)=>String(value??'').trim()==='')||[payload.basisQuantity,payload.energyKcal,payload.proteinG,payload.carbsG,payload.fatG,payload.fiberG].some((value)=>!Number.isFinite(value)||value<0)||payload.basisQuantity<=0){
+      setError('Completa la base y los macronutrientes con valores explícitos no negativos.');return;
     }
-    if(payload.micronutrients.some((item)=>!item.key||!item.label||!Number.isFinite(item.amount)||item.amount<0)){
+    if(form.micronutrients.some((item)=>String(item.amount??'').trim()==='')||payload.micronutrients.some((item)=>!item.key||!item.label||!Number.isFinite(item.amount)||item.amount<0)){
       setError('Completa los micronutrientes o elimínalos.');return;
     }
     setSaving(true);setError('');
