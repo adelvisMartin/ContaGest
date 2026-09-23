@@ -2,6 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { Box, Divider, FormControlLabel, Paper, Stack, Switch, Typography } from '@mui/material';
 import { CgButton, CgDataTable, CgEmptyState, CgSelect, CgState, CgStatusChip, CgTextField } from '../ui/cg/CgPrimitives.jsx';
 import { HealthVerticalService, VeterinaryService } from '../../services/verticalService.js';
+import { reportVeterinaryError } from './veterinaryError.js';
 
 const localDate=()=>{const now=new Date();return new Date(now.getTime()-now.getTimezoneOffset()*60000).toISOString().slice(0,10);};
 const rows=(value)=>Array.isArray(value)?value:value?.data||[];
@@ -139,7 +140,9 @@ export function VeterinaryPreventiveCarePanel({
       const reminder=await scheduleReminder(eventRecord);
       onCreated?.({kind,record:created,reminder});
       setName('');setDose('');setLot('');setNotes('');setNextDueAt('');setReminderEnabled(false);
-    }catch(cause){setError(cause?.message||'No se registró el cuidado preventivo.');}
+    }catch(cause){
+      setError(reportVeterinaryError('preventive.save',cause,'No se registró el cuidado preventivo.'));
+    }
     finally{setSaving(false);}
   }
 
