@@ -60,7 +60,7 @@ test('48/51 real PostgreSQL: dentistry + veterinary + gym lifecycle, isolation, 
         rif:`QA-${RUN}`,
         name:`${RUN} Foreign`,
         legalName:`${RUN} Foreign C.A.`,
-        plan:'qa',
+        plan:'commercial',
         status:'active',
         settings:{}
       }
