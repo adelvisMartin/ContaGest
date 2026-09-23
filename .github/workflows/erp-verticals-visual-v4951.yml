@@ -5,8 +5,8 @@ on:
     branches: [main]
     paths:
       - 'frontend/**'
-      - 'qa/verticals-visual-matrix-v4951.spec.mjs'
-      - 'tests/erp_verticals_visual_matrix_49_51.test.mjs'
+      - 'qa/erp-visual-overlap-v4951.spec.mjs'
+      - 'tests/erp_ui_visual_overlap_49_51.test.mjs'
       - 'playwright.config.mjs'
       - 'package.json'
       - 'package-lock.json'
@@ -22,7 +22,7 @@ concurrency:
 
 jobs:
   visual-matrix:
-    name: 5 routes × 5 viewports × 2 themes
+    name: 5 routes × 6 viewports × 2 themes
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
@@ -52,7 +52,7 @@ jobs:
         run: npx playwright install --with-deps chromium
 
       - name: Static contract
-        run: node --test tests/erp_verticals_visual_matrix_49_51.test.mjs
+        run: node --test tests/erp_ui_visual_overlap_49_51.test.mjs
 
       - name: Execute visual matrix
         shell: bash
