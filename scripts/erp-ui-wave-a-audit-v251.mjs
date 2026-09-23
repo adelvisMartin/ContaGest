@@ -310,6 +310,29 @@ if(vetEntry?.status==='MIGRATED'){
   }
   if(!salesRoutes.includes('VeterinaryFinancialCase')||!salesRoutes.includes('flujo financiero veterinario'))fail('sales: veterinary provenance-linked drafts must be protected from deletion');
 
+  const guardianPortalPanel=read('frontend/src/components/veterinary/VeterinaryGuardianPortalPanel.jsx');
+  const guardianPortalPublic=read('backend/src/modules/verticals/veterinary-guardian-portal.public.routes.ts');
+  const guardianPortalMigration=read('backend/prisma/migrations/20260923134500_veterinary_guardian_portal_v3151/migration.sql');
+  const guardianPortalEntry=read('frontend/src/guardianPortal.jsx');
+  const viteConfig=read('frontend/vite.config.js');
+  if((veterinaryWorkspace.match(/import \{ VeterinaryGuardianPortalPanel \}/g)||[]).length!==1)fail('veterinaria: guardian portal admin must have one owner import');
+  if((veterinaryWorkspace.match(/<VeterinaryGuardianPortalPanel/g)||[]).length!==1)fail('veterinaria: guardian portal admin must render exactly once');
+  if(!veterinaryWorkspace.includes("['tutor', 'Portal tutor'"))fail('veterinaria: guardian portal tab is missing');
+  for(const contract of ['guardianPortalGrants','createGuardianPortalGrant','revokeGuardianPortalGrant','createCommunication']){
+    if(!guardianPortalPanel.includes(contract))fail(`veterinaria: missing guardian portal admin contract ${contract}`);
+  }
+  for(const contract of ['tokenSha256','VeterinaryGuardianPortalGrant','ENABLE ROW LEVEL SECURITY','REVOKE ALL']){
+    if(!guardianPortalMigration.includes(contract))fail(`veterinaria: missing guardian portal persistence contract ${contract}`);
+  }
+  if(/"token"\s+text/i.test(guardianPortalMigration))fail('veterinaria: guardian portal must never persist plaintext tokens');
+  for(const contract of ["router.get('/:token'",'createHash(\'sha256\')','guardianText','appointments','discharges','documents','billing','communications']){
+    if(!guardianPortalPublic.includes(contract))fail(`veterinaria: missing public portal allow-list contract ${contract}`);
+  }
+  if(/router\.(post|put|patch|delete)\(/.test(guardianPortalPublic))fail('veterinaria: public guardian portal must remain read-only');
+  if(guardianPortalPublic.includes('attachmentPath'))fail('veterinaria: public guardian portal must not expose internal storage paths');
+  if(!viteConfig.includes('portal-veterinaria'))fail('veterinaria: guardian portal Vite entry is missing');
+  if(!guardianPortalEntry.includes('noAuth:true'))fail('veterinaria: guardian portal frontend must not depend on ERP authentication');
+
 }
 
 const dentistryEntry=ERP_UI_WAVE_A_2_51.find((item)=>item.route==='odontologia');
