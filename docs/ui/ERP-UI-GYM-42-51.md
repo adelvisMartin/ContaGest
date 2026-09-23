@@ -33,6 +33,7 @@ Las decisiones de salud quedan fuera de automatización no supervisada.
 - valida `routineExerciseId` dentro del tenant;
 - lee el ejercicio prescrito y catálogo activo del mismo tenant;
 - sólo considera alternativas del mismo `muscleGroup`;
+- si el ejercicio prescrito no tiene `muscleGroup`, responde `contextInsufficient: true` y no adivina equivalencias;
 - filtra exclusiones;
 - filtra por equipamiento cuando se declara;
 - da prioridad explícita al ejercicio preferido;
