@@ -873,6 +873,25 @@ if(fitnessEntries.every((item)=>item.status==='MIGRATED')){
   if(!gymRoutes.includes('await createPlanNutrientSnapshot(tx,tenantId,createdPlan.id'))fail('fitness: nutrition plan creation must freeze the nutrient snapshot transactionally');
   if(/UPDATE public\."GymIngredientNutritionProfile"|DELETE FROM public\."GymIngredientNutritionProfile"/.test(gymRoutes))fail('fitness: nutrient profiles 46 must remain immutable/versioned');
   if(/adherence|compliance|consumedAt|mealCompletion/i.test(nutrientProfilePanel+nutrientSnapshotPanel+nutrientMigration))fail('fitness: nutrient composition 46 must not pre-implement adherence 47');
+
+  const adherencePanel=read('frontend/src/components/fitness/FitnessAdherencePanel.jsx');
+  const adherenceMigration=read('backend/prisma/migrations/20260923220000_gym_integral_adherence_47_51/migration.sql');
+  const mediaRoutes47=read('backend/src/modules/media/media.routes.ts');
+  if((fitness.match(/<FitnessAdherencePanel/g)||[]).length!==1)fail('fitness: integral adherence 47 must render from one owner');
+  if(/querySelector|addEventListener|innerHTML|document\./.test(adherencePanel))fail('fitness: integral adherence 47 reintroduced imperative DOM lifecycle');
+  for(const contract of ['Adherencia integral','Registro de comidas','Hábitos','Objetivos y evolución','Mediciones canónicas','Entrenamientos canónicos','Fotos de progreso autorizadas','autorización explícita']){
+    if(!adherencePanel.includes(contract))fail(`fitness: integral adherence 47 UI missing ${contract}`);
+  }
+  for(const contract of ['GymMealAdherenceEvent','GymHabit','GymHabitCheckIn','GymAdherenceGoal','GymProgressPhoto','authorizationConfirmed']){
+    if(!adherenceMigration.includes(contract))fail(`fitness: integral adherence 47 migration missing ${contract}`);
+  }
+  for(const contract of ["router.get('/gym/adherence'","router.post('/gym/adherence/meals'","router.post('/gym/adherence/habits'","router.post('/gym/adherence/habits/:id/checkins'","router.post('/gym/adherence/goals'","router.post('/gym/adherence/photos'",'GymWorkoutSession','GymAssessment']){
+    if(!gymRoutes.includes(contract))fail(`fitness: integral adherence 47 backend missing ${contract}`);
+  }
+  if(!mediaRoutes47.includes("'gym-progress'")||!adherencePanel.includes("entityType:'gym-progress'"))fail('fitness: integral adherence 47 authorized photos must use isolated gym-progress storage');
+  const adherenceRead=gymRoutes.slice(gymRoutes.indexOf("router.get('/gym/adherence'"),gymRoutes.indexOf("router.post('/gym/adherence/meals'"));
+  if(/INSERT INTO public\."GymWorkoutSession"|INSERT INTO public\."GymAssessment"/.test(adherenceRead))fail('fitness: integral adherence 47 must derive workouts and assessments from canonical authorities');
+  if(/CREATE TABLE[\s\S]{0,200}(streak|badge|leaderboard|points)/i.test(adherenceMigration))fail('fitness: integral adherence 47 must not own gamification or streaks');
 }
 
 const css=read('frontend/src/styles/erp-runtime.css');
