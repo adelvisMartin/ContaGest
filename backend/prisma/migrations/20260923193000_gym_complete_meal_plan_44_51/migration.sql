@@ -64,8 +64,10 @@ CREATE TABLE IF NOT EXISTS public."GymMealAlternative" (
   "mealId" text NOT NULL,
   "recipeId" text NOT NULL,
   "label" text,
+  "servings" numeric(8,3) NOT NULL DEFAULT 1,
   "sortOrder" integer NOT NULL DEFAULT 1,
   "createdAt" timestamptz NOT NULL DEFAULT now(),
+  CONSTRAINT "GymMealAlternative_servings_positive" CHECK ("servings">0 AND "servings"<=100),
   CONSTRAINT "GymMealAlternative_meal_fk" FOREIGN KEY ("mealId") REFERENCES public."GymMeal"("id") ON DELETE CASCADE,
   CONSTRAINT "GymMealAlternative_recipe_fk" FOREIGN KEY ("recipeId") REFERENCES public."GymRecipe"("id") ON DELETE RESTRICT
 );
