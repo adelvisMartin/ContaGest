@@ -16,6 +16,8 @@ import { CompleteMealPlanBuilder } from '../components/fitness/CompleteMealPlanB
 import { NutritionRecipeLibrary } from '../components/fitness/NutritionRecipeLibrary.jsx';
 import { NutritionShoppingListPanel } from '../components/fitness/NutritionShoppingListPanel.jsx';
 import { NutritionRulesPanel } from '../components/fitness/NutritionRulesPanel.jsx';
+import { IngredientNutritionProfilePanel } from '../components/fitness/IngredientNutritionProfilePanel.jsx';
+import { NutritionSnapshotPanel } from '../components/fitness/NutritionSnapshotPanel.jsx';
 import { FITNESS_TRAINING_MODES, fitnessTrainingMode, fitnessTrainingModeLabel } from '../data/fitnessTrainingModes.js';
 import { GymVerticalService } from '../services/verticalService.js';
 
@@ -276,6 +278,7 @@ function GymWorkspace({state,context}){
   const panelNutrition=<Stack gap={1.25}>
     <FitnessProductivityTools tab="nutrition" members={members} Toast={Toast} onDataChanged={(id)=>loadAll({silent:true,memberId:id||selectedMemberId})}/>
     <IngredientLibraryPanel items={ingredients} onItemsChange={setIngredients} Toast={Toast}/>
+    <IngredientNutritionProfilePanel ingredients={ingredients} Toast={Toast}/>
     <NutritionRulesPanel memberId={selectedMemberId} ingredients={ingredients} Toast={Toast}/>
     <NutritionRecipeLibrary ingredients={ingredients} recipes={nutritionRecipes} Toast={Toast} onChanged={()=>loadAll({silent:true,memberId:selectedMemberId})}/>
     <Box className="cg-gym-v1124-grid" sx={{display:'grid',gridTemplateColumns:{xs:'1fr',lg:'minmax(0,1.35fr) minmax(320px,.65fr)'},gap:1.25}}>
@@ -298,6 +301,7 @@ function GymWorkspace({state,context}){
       <Section title="Planes activos" description={selectedMember?`Seguimiento de ${selectedMember.fullName}`:'Selecciona un cliente.'}>{memberTracking}<Box mt={1}><RecordList items={nutrition} empty="No hay planes nutricionales del cliente seleccionado" render={(item)=><Stack direction="row" justifyContent="space-between" gap={1}><Box><Typography variant="body2" fontWeight={700}>{item.name}</Typography><Typography variant="caption" color="text.secondary">{item.goal||'Plan nutricional'} · {item.durationDays||7} días · {Array.isArray(item.meals)?item.meals.length:0} comidas</Typography></Box><CgStatusChip label={item.active===false?'Inactivo':'Activo'} tone={item.active===false?'warning':'success'}/></Stack>}/></Box></Section>
     </Box>
     <NutritionShoppingListPanel plans={nutrition}/>
+    <NutritionSnapshotPanel plans={nutrition}/>
   </Stack>;
 
   const readyForClass=members.length>0&&trainers.length>0;
