@@ -41,7 +41,7 @@ export function CompleteMealPlanBuilder({durationDays=7,onDurationChange,value=[
         <CgTextField label="Orden" type="number" inputProps={{min:1,max:50,step:1}} value={meal.sortOrder} onChange={(e)=>updateMeal(mealIndex,{sortOrder:Number(e.target.value||1)})}/>
         <CgTextField label="Tipo de comida" value={meal.mealType||''} onChange={(e)=>updateMeal(mealIndex,{mealType:e.target.value})}/>
         <CgTextField label="Hora" type="time" slotProps={{inputLabel:{shrink:true}}} value={meal.plannedAt||''} onChange={(e)=>updateMeal(mealIndex,{plannedAt:e.target.value})}/>
-        <CgSelect label="Receta" value={meal.recipeId||''} options={recipeOptions} onChange={(e)=>updateMeal(mealIndex,{recipeId:e.target.value})}/>
+        <CgSelect label="Receta" value={meal.recipeId||''} options={recipeOptions} onChange={(e)=>updateMeal(mealIndex,{recipeId:e.target.value,items:e.target.value?[]:(meal.items||[])})}/>
         <CgTextField label="Porciones" type="number" inputProps={{min:.001,max:100,step:.001}} value={meal.servings??'1'} onChange={(e)=>updateMeal(mealIndex,{servings:e.target.value})}/>
       </Box>
       <CgTextField fullWidth multiline minRows={2} label="Preparación" value={meal.preparation||''} onChange={(e)=>updateMeal(mealIndex,{preparation:e.target.value})} sx={{mt:1}}/>
