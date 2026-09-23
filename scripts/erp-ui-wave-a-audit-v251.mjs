@@ -794,6 +794,19 @@ if(fitnessEntries.every((item)=>item.status==='MIGRATED')){
   const nutritionBlock=gymRoutes.slice(nutritionStart,nutritionEnd);
   if(nutritionStart<0||nutritionEnd<0)fail('fitness: nutrition ingredient 43 route boundaries missing');
   if(/micronutrient|vitamin|mineral|fiberG|sodiumMg/i.test(nutritionBlock+ingredientMigration))fail('fitness: nutrition ingredient 43 must not pre-implement nutrient persistence 46');
+  const mealPlanMigration=read('backend/prisma/migrations/20260923190000_gym_complete_meal_plan_44_51/migration.sql');
+  for(const contract of ['Plan alimenticio semanal','FITNESS_WEEK_DAYS','Agregar comida','Día sin comidas programadas','Subir','Bajar','Duplicar']){
+    if(!nutritionBuilder.includes(contract))fail(`fitness: complete meal plan 44 UI missing ${contract}`);
+  }
+  for(const contract of ['nutritionMealSchema','dayOfWeek','sortOrder','Cada comida debe tener una posición única dentro de su día.','La vigencia del plan no puede finalizar antes de comenzar.']){
+    if(!gymRoutes.includes(contract))fail(`fitness: complete meal plan 44 backend missing ${contract}`);
+  }
+  for(const contract of ['GymMeal_dayOfWeek_check','GymMeal_sortOrder_check','GymMeal_plan_day_order_unique','NULL preserves legacy meals']){
+    if(!mealPlanMigration.includes(contract))fail(`fitness: complete meal plan 44 migration missing ${contract}`);
+  }
+  if(!fitness.includes('dayOfWeek:Number(meal.dayOfWeek)')||!fitness.includes('sortOrder:Number(meal.sortOrder)')||!fitness.includes('Inicio del plan')||!fitness.includes('Fin del plan'))fail('fitness: complete meal plan 44 scheduling is not wired end-to-end');
+  if(!gymRoutes.includes('ORDER BY m."dayOfWeek" NULLS LAST,m."sortOrder"'))fail('fitness: complete meal plan 44 reads must preserve weekly order');
+  if(/restriction|allerg|preference|vegan|vegetarian|gluten/i.test(mealPlanMigration+nutritionBuilder))fail('fitness: complete meal plan 44 must not pre-implement restrictions/preferences 45');
 }
 
 const css=read('frontend/src/styles/erp-runtime.css');
