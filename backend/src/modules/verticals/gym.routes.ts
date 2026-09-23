@@ -350,46 +350,80 @@ const mealIngredientSchema = z.object({
   notes: optionalText
 });
 
-const nutritionMealSchema = z.object({
-  dayOfWeek: z.coerce.number().int().min(1).max(7),
-  sortOrder: z.coerce.number().int().min(1).max(50),
-  mealType: z.string().trim().min(2).max(80),
-  plannedAt: z.string().optional().nullable(),
-  items: z.array(mealIngredientSchema).max(100).default([]),
-  calories: z.coerce.number().int().min(0).optional().nullable(),
-  proteinG: z.coerce.number().min(0).optional().nullable(),
-  carbsG: z.coerce.number().min(0).optional().nullable(),
-  fatG: z.coerce.number().min(0).optional().nullable(),
-  notes: optionalText
+const recipeSchema=z.object({
+  name:z.string().trim().min(2).max(180),
+  servings:z.coerce.number().positive().max(100).default(1),
+  preparation:optionalText,
+  items:z.array(mealIngredientSchema).min(1).max(100)
+}).superRefine((value,refinement)=>{
+  const ingredientIds=value.items.map((item)=>item.ingredientId);
+  if(new Set(ingredientIds).size!==ingredientIds.length){
+    refinement.addIssue({code:'custom',path:['items'],message:'Una receta no puede repetir el mismo ingrediente.'});
+  }
 });
 
-const nutritionSchema = z.object({
-  memberId: z.string().min(10),
-  trainerId: z.string().optional().nullable(),
-  name: z.string().trim().min(2).max(180),
-  goal: optionalText,
-  targetCalories: z.coerce.number().int().min(0).max(20000).optional().nullable(),
-  proteinG: z.coerce.number().min(0).optional().nullable(),
-  carbsG: z.coerce.number().min(0).optional().nullable(),
-  fatG: z.coerce.number().min(0).optional().nullable(),
-  waterMl: z.coerce.number().int().min(0).optional().nullable(),
-  notes: optionalText,
-  startsAt: z.string().optional().nullable(),
-  endsAt: z.string().optional().nullable(),
-  meals: z.array(nutritionMealSchema).max(350).default([])
+const nutritionMealSchema = z.object({
+  dayIndex:z.coerce.number().int().min(1).max(28),
+  dayOfWeek:z.coerce.number().int().min(1).max(7),
+  sortOrder:z.coerce.number().int().min(1).max(50),
+  mealType:z.string().trim().min(2).max(80),
+  plannedAt:z.string().optional().nullable(),
+  recipeId:z.string().min(10).optional().nullable(),
+  servings:z.coerce.number().positive().max(100).default(1),
+  preparation:optionalText,
+  alternatives:z.array(z.object({
+    recipeId:z.string().min(10),
+    label:z.string().trim().max(120).optional().nullable()
+  })).max(8).default([]),
+  items:z.array(mealIngredientSchema).max(100).default([]),
+  calories:z.coerce.number().int().min(0).optional().nullable(),
+  proteinG:z.coerce.number().min(0).optional().nullable(),
+  carbsG:z.coerce.number().min(0).optional().nullable(),
+  fatG:z.coerce.number().min(0).optional().nullable(),
+  notes:optionalText
+}).superRefine((value,refinement)=>{
+  if(!value.recipeId&&!value.items.length)refinement.addIssue({code:'custom',path:['items'],message:'Cada comida necesita una receta o ingredientes directos.'});
+  if(value.recipeId&&value.alternatives.some((item)=>item.recipeId===value.recipeId))refinement.addIssue({code:'custom',path:['alternatives'],message:'La receta principal no puede repetirse como alternativa.'});
+  const alternatives=value.alternatives.map((item)=>item.recipeId);
+  if(new Set(alternatives).size!==alternatives.length)refinement.addIssue({code:'custom',path:['alternatives'],message:'No repitas la misma receta alternativa.'});
+});
+
+const completeNutritionSchema = z.object({
+  memberId:z.string().min(10),
+  trainerId:z.string().optional().nullable(),
+  name:z.string().trim().min(2).max(180),
+  goal:optionalText,
+  durationDays:z.enum(['7','14','28']).transform(Number).or(z.union([z.literal(7),z.literal(14),z.literal(28)])),
+  targetCalories:z.coerce.number().int().min(0).max(20000).optional().nullable(),
+  proteinG:z.coerce.number().min(0).optional().nullable(),
+  carbsG:z.coerce.number().min(0).optional().nullable(),
+  fatG:z.coerce.number().min(0).optional().nullable(),
+  waterMl:z.coerce.number().int().min(0).optional().nullable(),
+  notes:optionalText,
+  startsAt:z.string().optional().nullable(),
+  endsAt:z.string().optional().nullable(),
+  meals:z.array(nutritionMealSchema).min(1).max(1400)
 }).superRefine((value, refinement) => {
   if(value.startsAt&&value.endsAt&&new Date(value.endsAt).getTime()<new Date(value.startsAt).getTime()){
     refinement.addIssue({code:'custom',path:['endsAt'],message:'La vigencia del plan no puede finalizar antes de comenzar.'});
   }
   const positions=new Set<string>();
   value.meals.forEach((meal,index)=>{
-    const key=`${meal.dayOfWeek}:${meal.sortOrder}`;
+    if(meal.dayIndex>Number(value.durationDays)){
+      refinement.addIssue({code:'custom',path:['meals',index,'dayIndex'],message:'Cada comida debe pertenecer al horizonte configurado del plan.'});
+    }
+    const expectedDay=((meal.dayIndex-1)%7)+1;
+    if(meal.dayOfWeek!==expectedDay){
+      refinement.addIssue({code:'custom',path:['meals',index,'dayOfWeek'],message:'El día semanal debe corresponder al día real del plan.'});
+    }
+    const key=`${meal.dayIndex}:${meal.sortOrder}`;
     if(positions.has(key)){
       refinement.addIssue({code:'custom',path:['meals',index,'sortOrder'],message:'Cada comida debe tener una posición única dentro de su día.'});
     }
     positions.add(key);
   });
 });
+const nutritionSchema=completeNutritionSchema;
 
 const classSchema = z.object({
   trainerId: z.string().optional().nullable(),
@@ -1220,6 +1254,62 @@ router.patch('/gym/ingredients/:id', requirePermission('gym.manage'), asyncHandl
   ok(res,one(rows));
 }));
 
+router.get('/gym/recipes', requirePermission('gym.manage'), asyncHandler(async (req,res)=>{
+  const tenantId=ctx(req).tenantId;
+  const rows=await prisma.$queryRawUnsafe<any[]>(`
+    SELECT r.*,
+      COALESCE((
+        SELECT jsonb_agg(jsonb_build_object(
+          'id',ri."id",'ingredientId',ri."ingredientId",'ingredientName',i."name",
+          'quantity',ri."quantity",'unit',ri."unit",'notes',ri."notes",'sortOrder',ri."sortOrder"
+        ) ORDER BY ri."sortOrder")
+        FROM public."GymRecipeItem" ri
+        JOIN public."GymIngredient" i ON i."tenantId"=ri."tenantId" AND i."id"=ri."ingredientId"
+        WHERE ri."tenantId"=r."tenantId" AND ri."recipeId"=r."id"
+      ),'[]'::jsonb) AS items
+    FROM public."GymRecipe" r
+    WHERE r."tenantId"=$1
+    ORDER BY r."active" DESC,r."name"
+    LIMIT 500
+  `,tenantId);
+  ok(res,rows);
+}));
+
+router.post('/gym/recipes', requirePermission('gym.manage'), asyncHandler(async (req,res)=>{
+  const tenantId=ctx(req).tenantId;
+  const b=recipeSchema.parse(req.body||{});
+  const created=await prisma.$transaction(async(tx)=>{
+    await tx.$executeRawUnsafe(`SELECT pg_advisory_xact_lock(hashtext($1))`,`gym-recipe-44:${tenantId}:${b.name.toLowerCase()}`);
+    const ids=[...new Set(b.items.map((item)=>item.ingredientId))];
+    const ingredients=await tx.$queryRawUnsafe<any[]>(`
+      SELECT "id" FROM public."GymIngredient"
+      WHERE "tenantId"=$1 AND "active"=true AND "id"=ANY($2::text[])
+    `,tenantId,ids);
+    if(ingredients.length!==ids.length)throw new HttpError(422,'Los ingredientes de la receta deben estar activos y pertenecer al tenant.');
+    const duplicates=await tx.$queryRawUnsafe<any[]>(`
+      SELECT "id" FROM public."GymRecipe"
+      WHERE "tenantId"=$1 AND lower(btrim("name"))=lower(btrim($2))
+      LIMIT 1
+    `,tenantId,b.name);
+    if(duplicates.length)throw new HttpError(409,'Ya existe una receta con ese nombre.');
+    const rows=await tx.$queryRawUnsafe<any[]>(`
+      INSERT INTO public."GymRecipe" ("id","tenantId","name","servings","preparation","active","createdBy","createdAt","updatedAt")
+      VALUES (gen_random_uuid()::text,$1,$2,$3,$4,true,$5,now(),now())
+      RETURNING *
+    `,tenantId,b.name,b.servings,b.preparation||null,ctx(req).userId||null);
+    const recipe=one(rows);
+    for(let index=0;index<b.items.length;index+=1){
+      const item=b.items[index];
+      await tx.$executeRawUnsafe(`
+        INSERT INTO public."GymRecipeItem" ("id","tenantId","recipeId","ingredientId","quantity","unit","sortOrder","notes")
+        VALUES (gen_random_uuid()::text,$1,$2,$3,$4,$5,$6,$7)
+      `,tenantId,recipe.id,item.ingredientId,item.quantity,item.unit,index+1,item.notes||null);
+    }
+    return recipe;
+  });
+  ok(res,created,201);
+}));
+
 router.get('/gym/nutrition', requirePermission('gym.manage'), asyncHandler(async (req, res) => {
   const memberId = String(req.query.memberId || '');
   const rows = await prisma.$queryRawUnsafe<any[]>(`
@@ -1227,6 +1317,13 @@ router.get('/gym/nutrition', requirePermission('gym.manage'), asyncHandler(async
       COALESCE((
         SELECT jsonb_agg(
           to_jsonb(m) || jsonb_build_object(
+            'recipeName',(SELECT r."name" FROM public."GymRecipe" r WHERE r."tenantId"=m."tenantId" AND r."id"=m."recipeId"),
+            'alternatives',COALESCE((
+              SELECT jsonb_agg(jsonb_build_object('recipeId',a."recipeId",'recipeName',r."name",'label',a."label",'sortOrder',a."sortOrder") ORDER BY a."sortOrder")
+              FROM public."GymMealAlternative" a
+              JOIN public."GymRecipe" r ON r."tenantId"=a."tenantId" AND r."id"=a."recipeId"
+              WHERE a."tenantId"=m."tenantId" AND a."mealId"=m."id"
+            ),'[]'::jsonb),
             'items',COALESCE((
               SELECT jsonb_agg(jsonb_build_object(
                 'id',mi."id",
@@ -1257,7 +1354,7 @@ router.get('/gym/nutrition', requirePermission('gym.manage'), asyncHandler(async
 }));
 
 router.post('/gym/nutrition', requirePermission('gym.manage'), asyncHandler(async (req, res) => {
-  const b = nutritionSchema.parse(req.body || {});
+  const b = completeNutritionSchema.parse(req.body || {});
   const tenantId=ctx(req).tenantId;
   const plan=await prisma.$transaction(async(tx)=>{
     const memberRows=await tx.$queryRawUnsafe<any[]>(`
@@ -1272,6 +1369,7 @@ router.post('/gym/nutrition', requirePermission('gym.manage'), asyncHandler(asyn
     }
 
     const ingredientIds=[...new Set(b.meals.flatMap((meal)=>meal.items.map((item)=>item.ingredientId)))];
+    const recipeIds=[...new Set(b.meals.flatMap((meal)=>[meal.recipeId,...meal.alternatives.map((item)=>item.recipeId)].filter(Boolean) as string[]))];
     if(ingredientIds.length){
       const ingredientRows=await tx.$queryRawUnsafe<any[]>(`
         SELECT "id" FROM public."GymIngredient"
@@ -1282,17 +1380,25 @@ router.post('/gym/nutrition', requirePermission('gym.manage'), asyncHandler(asyn
       if(invalid.length)throw new HttpError(422,'Uno o más ingredientes no pertenecen al tenant activo o están archivados.');
     }
 
+    if(recipeIds.length){
+      const recipeRows=await tx.$queryRawUnsafe<any[]>(`
+        SELECT "id" FROM public."GymRecipe"
+        WHERE "tenantId"=$1 AND "active"=true AND "id"=ANY($2::text[])
+      `,tenantId,recipeIds);
+      if(recipeRows.length!==recipeIds.length)throw new HttpError(422,'Las recetas del plan deben estar activas y pertenecer al tenant.');
+    }
+
     const planRows = await tx.$queryRawUnsafe<any[]>(`
-      INSERT INTO public."GymNutritionPlan" ("id","tenantId","memberId","trainerId","name","goal","targetCalories","proteinG","carbsG","fatG","waterMl","notes","startsAt","endsAt","active","createdAt","updatedAt")
-      VALUES (gen_random_uuid()::text,$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12::date,$13::date,true,now(),now()) RETURNING *
-    `, tenantId,b.memberId,b.trainerId||null,b.name,b.goal||null,b.targetCalories||null,b.proteinG||null,b.carbsG||null,b.fatG||null,b.waterMl||null,b.notes||null,b.startsAt||null,b.endsAt||null);
+      INSERT INTO public."GymNutritionPlan" ("id","tenantId","memberId","trainerId","name","goal","durationDays","targetCalories","proteinG","carbsG","fatG","waterMl","notes","startsAt","endsAt","active","createdAt","updatedAt")
+      VALUES (gen_random_uuid()::text,$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13::date,$14::date,true,now(),now()) RETURNING *
+    `, tenantId,b.memberId,b.trainerId||null,b.name,b.goal||null,b.durationDays,b.targetCalories||null,b.proteinG||null,b.carbsG||null,b.fatG||null,b.waterMl||null,b.notes||null,b.startsAt||null,b.endsAt||null);
     const createdPlan = one(planRows);
     for (const meal of b.meals) {
       const mealRows=await tx.$queryRawUnsafe<any[]>(`
-        INSERT INTO public."GymMeal" ("id","tenantId","nutritionPlanId","dayOfWeek","sortOrder","mealType","plannedAt","items","calories","proteinG","carbsG","fatG","notes")
-        VALUES (gen_random_uuid()::text,$1,$2,$3,$4,$5,$6::time,'[]'::jsonb,$7,$8,$9,$10,$11)
+        INSERT INTO public."GymMeal" ("id","tenantId","nutritionPlanId","dayIndex","dayOfWeek","sortOrder","mealType","plannedAt","recipeId","servings","preparation","items","calories","proteinG","carbsG","fatG","notes")
+        VALUES (gen_random_uuid()::text,$1,$2,$3,$4,$5,$6,$7::time,$8,$9,$10,'[]'::jsonb,$11,$12,$13,$14,$15)
         RETURNING "id"
-      `, tenantId,createdPlan.id,meal.dayOfWeek,meal.sortOrder,meal.mealType,meal.plannedAt||null,meal.calories||null,meal.proteinG||null,meal.carbsG||null,meal.fatG||null,meal.notes||null);
+      `, tenantId,createdPlan.id,meal.dayIndex,meal.dayOfWeek,meal.sortOrder,meal.mealType,meal.plannedAt||null,meal.recipeId||null,meal.servings,meal.preparation||null,meal.calories||null,meal.proteinG||null,meal.carbsG||null,meal.fatG||null,meal.notes||null);
       const mealId=String(mealRows[0]?.id||'');
       for(let index=0;index<meal.items.length;index+=1){
         const item=meal.items[index];
@@ -1301,10 +1407,47 @@ router.post('/gym/nutrition', requirePermission('gym.manage'), asyncHandler(asyn
           VALUES (gen_random_uuid()::text,$1,$2,$3,$4,$5,$6,$7,now())
         `,tenantId,mealId,item.ingredientId,item.quantity,item.unit,item.notes||null,index+1);
       }
+      for(let index=0;index<meal.alternatives.length;index+=1){
+        const alternative=meal.alternatives[index];
+        await tx.$executeRawUnsafe(`
+          INSERT INTO public."GymMealAlternative" ("id","tenantId","mealId","recipeId","label","sortOrder","createdAt")
+          VALUES (gen_random_uuid()::text,$1,$2,$3,$4,$5,$6,now())
+        `,tenantId,mealId,alternative.recipeId,alternative.label||null,index+1);
+      }
     }
     return createdPlan;
   });
   ok(res, plan, 201);
+}));
+
+router.get('/gym/nutrition/:id/shopping-list', requirePermission('gym.manage'), asyncHandler(async(req,res)=>{
+  const tenantId=ctx(req).tenantId;
+  const planId=String(req.params.id||'');
+  const planRows=await prisma.$queryRawUnsafe<any[]>(`
+    SELECT "id","durationDays" FROM public."GymNutritionPlan"
+    WHERE "tenantId"=$1 AND "id"=$2
+    LIMIT 1
+  `,tenantId,planId);
+  const plan=one(planRows,'Plan nutricional no encontrado.');
+  const shoppingList=await prisma.$queryRawUnsafe<any[]>(`
+    SELECT x."ingredientId",i."name",x."unit",ROUND(SUM(x."quantity")::numeric,3) AS "quantity"
+    FROM (
+      SELECT mi."ingredientId",mi."unit",mi."quantity"::numeric AS "quantity"
+      FROM public."GymMeal" m
+      JOIN public."GymMealItem" mi ON mi."tenantId"=m."tenantId" AND mi."mealId"=m."id"
+      WHERE m."tenantId"=$1 AND m."nutritionPlanId"=$2
+      UNION ALL
+      SELECT ri."ingredientId",ri."unit",(ri."quantity"::numeric*m."servings"::numeric/r."servings"::numeric) AS "quantity"
+      FROM public."GymMeal" m
+      JOIN public."GymRecipe" r ON r."tenantId"=m."tenantId" AND r."id"=m."recipeId"
+      JOIN public."GymRecipeItem" ri ON ri."tenantId"=r."tenantId" AND ri."recipeId"=r."id"
+      WHERE m."tenantId"=$1 AND m."nutritionPlanId"=$2
+    ) x
+    JOIN public."GymIngredient" i ON i."tenantId"=$1 AND i."id"=x."ingredientId"
+    GROUP BY x."ingredientId",i."name",x."unit"
+    ORDER BY i."name",x."unit"
+  `,tenantId,planId);
+  ok(res,{planId:plan.id,durationDays:plan.durationDays,shoppingList});
 }));
 
 router.get('/gym/classes', requirePermission('gym.manage'), asyncHandler(async (req, res) => {
