@@ -6,6 +6,7 @@ import {
 import { FITNESS_EXERCISES, FITNESS_MUSCLES } from '../../data/fitnessExerciseCatalog.js';
 import { FITNESS_WEEK_DAYS } from '../../data/fitnessWeekDays.js';
 import { FITNESS_INTENSITY_TECHNIQUES, fitnessIntensityTechnique } from '../../data/fitnessIntensityTechniques.js';
+import { FITNESS_PROGRESSION_STRATEGIES, fitnessProgressionStrategy } from '../../data/fitnessProgressionStrategies.js';
 
 const dayOptions=FITNESS_WEEK_DAYS.map((day)=>({value:String(day.value),label:day.label}));
 const muscleOptions=[{value:'',label:'Seleccionar grupo'},...FITNESS_MUSCLES.map((value)=>({value,label:value}))];
@@ -25,7 +26,9 @@ const newExercise=(dayOfWeek=1,sortOrder=1)=>({
   tempo:'',
   notes:'',
   intensityTechnique:'standard',
-  techniqueConfig:{}
+  techniqueConfig:{},
+  progressionStrategy:'manual',
+  progressionConfig:{}
 });
 
 const normalizeOrder=(items)=>items.map((item,index)=>({...item,sortOrder:index+1}));
@@ -70,7 +73,7 @@ export function RoutineBuilder({value=[],onChange,disabled=false,catalog=[]}){
   function duplicateExercise(index){
     const current=exercises[index];
     if(!current)return;
-    const copy={...current,exerciseId:null,sortOrder:index+2,techniqueConfig:{...(current.techniqueConfig||{})}};
+    const copy={...current,exerciseId:null,sortOrder:index+2,techniqueConfig:{...(current.techniqueConfig||{})},progressionConfig:{...(current.progressionConfig||{})}};
     const next=[...exercises.slice(0,index+1),copy,...exercises.slice(index+1)];
     commit(next);
   }
@@ -109,6 +112,10 @@ export function RoutineBuilder({value=[],onChange,disabled=false,catalog=[]}){
       const technique=fitnessIntensityTechnique(intensityTechnique);
       const techniqueConfig=exercise.techniqueConfig||{};
       const updateTechniqueConfig=(patch)=>updateExercise(index,{techniqueConfig:{...techniqueConfig,...patch}});
+      const progressionStrategy=exercise.progressionStrategy||'manual';
+      const progression=fitnessProgressionStrategy(progressionStrategy);
+      const progressionConfig=exercise.progressionConfig||{};
+      const updateProgressionConfig=(patch)=>updateExercise(index,{progressionConfig:{...progressionConfig,...patch}});
       return <Paper key={`${exercise.sortOrder}-${index}`} variant="outlined" sx={{p:1.2}}>
         <Stack direction={{xs:'column',sm:'row'}} justifyContent="space-between" gap={1} alignItems={{sm:'center'}}>
           <Box>
@@ -171,6 +178,25 @@ export function RoutineBuilder({value=[],onChange,disabled=false,catalog=[]}){
           {technique.config.includes('groupKey')?<CgTextField size="small" label="Clave de grupo" placeholder="Ej. A1" value={techniqueConfig.groupKey||''} onChange={(event)=>updateTechniqueConfig({groupKey:event.target.value})}/>:null}
           {technique.config.includes('holdSeconds')?<CgTextField size="small" label="Duración isométrica (s)" type="number" inputProps={{min:1,max:300,step:1}} value={techniqueConfig.holdSeconds??''} onChange={(event)=>updateTechniqueConfig({holdSeconds:event.target.value===''?null:Number(event.target.value)})}/>:null}
           {intensityTechnique!=='standard'?<CgTextField size="small" multiline minRows={2} label="Notas de técnica" value={techniqueConfig.techniqueNotes||''} onChange={(event)=>updateTechniqueConfig({techniqueNotes:event.target.value})} sx={{gridColumn:'1/-1'}}/>:null}
+          <CgSelect
+            label="Estrategia de progresión"
+            value={progressionStrategy}
+            onChange={(event)=>updateExercise(index,{progressionStrategy:event.target.value,progressionConfig:event.target.value==='manual'?{}:{...progressionConfig}})}
+            options={FITNESS_PROGRESSION_STRATEGIES.map(({value,label})=>({value,label}))}
+          />
+          <Box sx={{gridColumn:'1/-1'}}>
+            <Typography variant="caption" color="text.secondary">{progression.description} La recomendación nunca se aplica automáticamente.</Typography>
+          </Box>
+          {progression.config.includes('repRangeMin')?<CgTextField size="small" label="Rango reps mín." type="number" inputProps={{min:1,max:100,step:1}} value={progressionConfig.repRangeMin??''} onChange={(event)=>updateProgressionConfig({repRangeMin:event.target.value===''?null:Number(event.target.value)})}/>:null}
+          {progression.config.includes('repRangeMax')?<CgTextField size="small" label="Rango reps máx." type="number" inputProps={{min:1,max:100,step:1}} value={progressionConfig.repRangeMax??''} onChange={(event)=>updateProgressionConfig({repRangeMax:event.target.value===''?null:Number(event.target.value)})}/>:null}
+          {progression.config.includes('repIncrement')?<CgTextField size="small" label="Incremento reps" type="number" inputProps={{min:1,max:20,step:1}} value={progressionConfig.repIncrement??''} onChange={(event)=>updateProgressionConfig({repIncrement:event.target.value===''?null:Number(event.target.value)})}/>:null}
+          {progression.config.includes('loadIncrementKg')?<CgTextField size="small" label="Incremento carga (kg)" type="number" inputProps={{min:.01,max:100,step:.25}} value={progressionConfig.loadIncrementKg??''} onChange={(event)=>updateProgressionConfig({loadIncrementKg:event.target.value===''?null:Number(event.target.value)})}/>:null}
+          {progression.config.includes('targetRir')?<CgTextField size="small" label="RIR objetivo" type="number" inputProps={{min:0,max:10,step:.5}} value={progressionConfig.targetRir??''} onChange={(event)=>updateProgressionConfig({targetRir:event.target.value===''?null:Number(event.target.value)})}/>:null}
+          {progression.config.includes('targetRpe')?<CgTextField size="small" label="RPE objetivo" type="number" inputProps={{min:1,max:10,step:.5}} value={progressionConfig.targetRpe??''} onChange={(event)=>updateProgressionConfig({targetRpe:event.target.value===''?null:Number(event.target.value)})}/>:null}
+          {progression.config.includes('oneRepMaxKg')?<CgTextField size="small" label="1RM de referencia (kg)" type="number" inputProps={{min:.01,max:1000,step:.25}} value={progressionConfig.oneRepMaxKg??''} onChange={(event)=>updateProgressionConfig({oneRepMaxKg:event.target.value===''?null:Number(event.target.value)})}/>:null}
+          {progression.config.includes('percent1Rm')?<CgTextField size="small" label="% de 1RM" type="number" inputProps={{min:1,max:100,step:1}} value={progressionConfig.percent1Rm??''} onChange={(event)=>updateProgressionConfig({percent1Rm:event.target.value===''?null:Number(event.target.value)})}/>:null}
+          {progression.config.includes('stallAfter')?<CgTextField size="small" label="Estancamiento tras (sesiones)" type="number" inputProps={{min:1,max:12,step:1}} value={progressionConfig.stallAfter??''} onChange={(event)=>updateProgressionConfig({stallAfter:event.target.value===''?null:Number(event.target.value)})}/>:null}
+          {progression.config.includes('resetPct')?<CgTextField size="small" label="Reset de carga (%)" type="number" inputProps={{min:1,max:50,step:1}} value={progressionConfig.resetPct??''} onChange={(event)=>updateProgressionConfig({resetPct:event.target.value===''?null:Number(event.target.value)})}/>:null}
           <CgTextField size="small" multiline minRows={2} label="Instrucciones" value={exercise.instructions||''} onChange={(event)=>updateExercise(index,{instructions:event.target.value})} sx={{gridColumn:'1/-1'}}/>
           <CgTextField size="small" multiline minRows={2} label="Notas" value={exercise.notes||''} onChange={(event)=>updateExercise(index,{notes:event.target.value})} sx={{gridColumn:'1/-1'}}/>
         </Box>

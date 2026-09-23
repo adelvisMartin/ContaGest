@@ -4,6 +4,7 @@ import { prisma } from '../../database/prisma.js';
 import { asyncHandler, HttpError, ok } from '../../shared/http.js';
 import { requirePermission } from '../../shared/middleware/context.js';
 import { optionalText, dateText, jsonRecord, ctx, one, num } from './verticals.shared.js';
+import { evaluateGymProgression } from './gym.progression.js';
 
 const router = Router();
 
@@ -99,6 +100,55 @@ const techniqueConfigSchema = z.object({
   holdSeconds: z.coerce.number().int().min(1).max(300).optional().nullable(),
   techniqueNotes: z.string().trim().max(500).optional().nullable()
 }).default({});
+const progressionStrategySchema = z.enum(['manual','linear_load','double_progression','percent_1rm']);
+const progressionConfigSchema = z.object({
+  repRangeMin: z.coerce.number().int().min(1).max(100).optional().nullable(),
+  repRangeMax: z.coerce.number().int().min(1).max(100).optional().nullable(),
+  repIncrement: z.coerce.number().int().min(1).max(20).optional().nullable(),
+  loadIncrementKg: z.coerce.number().positive().max(100).optional().nullable(),
+  targetRir: z.coerce.number().min(0).max(10).optional().nullable(),
+  targetRpe: z.coerce.number().min(1).max(10).optional().nullable(),
+  oneRepMaxKg: z.coerce.number().positive().max(1000).optional().nullable(),
+  percent1Rm: z.coerce.number().min(1).max(100).optional().nullable(),
+  stallAfter: z.coerce.number().int().min(1).max(12).optional().nullable(),
+  resetPct: z.coerce.number().min(1).max(50).optional().nullable()
+}).default({});
+
+const progressionEvaluationSchema = z.object({
+  strategy: progressionStrategySchema,
+  config: progressionConfigSchema,
+  current: z.object({
+    loadKg: z.coerce.number().min(0).optional().nullable(),
+    reps: z.coerce.number().int().min(1).max(200)
+  }),
+  performance: z.object({
+    completed: z.boolean().default(true),
+    achievedReps: z.coerce.number().int().min(0).max(200),
+    rir: z.coerce.number().min(0).max(10).optional().nullable(),
+    rpe: z.coerce.number().min(1).max(10).optional().nullable(),
+    consecutiveMisses: z.coerce.number().int().min(0).max(100).default(0)
+  })
+}).superRefine((value, refinement) => {
+  const progression=value.config||{};
+  if(progression.targetRir!=null&&progression.targetRpe!=null&&Math.abs((10-Number(progression.targetRir))-Number(progression.targetRpe))>0.5){
+    refinement.addIssue({code:'custom',path:['config','targetRpe'],message:'RPE y RIR no son coherentes entre sí.'});
+  }
+  if(value.strategy==='linear_load'&&!progression.loadIncrementKg){
+    refinement.addIssue({code:'custom',path:['config','loadIncrementKg'],message:'La progresión lineal requiere un incremento de carga.'});
+  }
+  if(value.strategy==='double_progression'){
+    if(!progression.repRangeMin||!progression.repRangeMax||Number(progression.repRangeMin)>Number(progression.repRangeMax)){
+      refinement.addIssue({code:'custom',path:['config','repRangeMax'],message:'La doble progresión requiere un rango de repeticiones válido.'});
+    }
+    if(!progression.loadIncrementKg){
+      refinement.addIssue({code:'custom',path:['config','loadIncrementKg'],message:'La doble progresión requiere un incremento de carga.'});
+    }
+  }
+  if(value.strategy==='percent_1rm'&&(!progression.oneRepMaxKg||!progression.percent1Rm)){
+    refinement.addIssue({code:'custom',path:['config','percent1Rm'],message:'La progresión por %1RM requiere 1RM y porcentaje.'});
+  }
+});
+
 const routineExerciseSchema = z.object({
   exerciseId: z.string().optional().nullable(),
   exerciseName: z.string().trim().min(2).max(180),
@@ -114,7 +164,9 @@ const routineExerciseSchema = z.object({
   tempo: optionalText,
   notes: optionalText,
   intensityTechnique: intensityTechniqueSchema.default('standard'),
-  techniqueConfig: techniqueConfigSchema
+  techniqueConfig: techniqueConfigSchema,
+  progressionStrategy: progressionStrategySchema.default('manual'),
+  progressionConfig: progressionConfigSchema
 }).superRefine((value, refinement) => {
   const config=value.techniqueConfig||{};
   const multiRound=['drop_set','rest_pause','myo_reps','cluster','mechanical_drop'].includes(value.intensityTechnique);
@@ -132,6 +184,24 @@ const routineExerciseSchema = z.object({
   }
   if(value.intensityTechnique==='isometric_hold' && !config.holdSeconds){
     refinement.addIssue({code:'custom',path:['techniqueConfig','holdSeconds'],message:'La pausa isométrica requiere duración en segundos.'});
+  }
+  const progression=value.progressionConfig||{};
+  if(progression.targetRir!=null&&progression.targetRpe!=null&&Math.abs((10-Number(progression.targetRir))-Number(progression.targetRpe))>0.5){
+    refinement.addIssue({code:'custom',path:['progressionConfig','targetRpe'],message:'RPE y RIR no son coherentes entre sí.'});
+  }
+  if(value.progressionStrategy==='linear_load'&&!progression.loadIncrementKg){
+    refinement.addIssue({code:'custom',path:['progressionConfig','loadIncrementKg'],message:'La progresión lineal requiere un incremento de carga.'});
+  }
+  if(value.progressionStrategy==='double_progression'){
+    if(!progression.repRangeMin||!progression.repRangeMax||Number(progression.repRangeMin)>Number(progression.repRangeMax)){
+      refinement.addIssue({code:'custom',path:['progressionConfig','repRangeMax'],message:'La doble progresión requiere un rango de repeticiones válido.'});
+    }
+    if(!progression.loadIncrementKg){
+      refinement.addIssue({code:'custom',path:['progressionConfig','loadIncrementKg'],message:'La doble progresión requiere un incremento de carga.'});
+    }
+  }
+  if(value.progressionStrategy==='percent_1rm'&&(!progression.oneRepMaxKg||!progression.percent1Rm)){
+    refinement.addIssue({code:'custom',path:['progressionConfig','percent1Rm'],message:'La progresión por %1RM requiere 1RM y porcentaje.'});
   }
 });
 
@@ -395,6 +465,12 @@ router.patch('/gym/exercises/:id', requirePermission('gym.manage'), asyncHandler
   ok(res,one(rows));
 }));
 
+router.post('/gym/progression/evaluate', requirePermission('gym.manage'), asyncHandler(async (req, res) => {
+  const b=progressionEvaluationSchema.parse(req.body||{});
+  const result=evaluateGymProgression(b);
+  ok(res,result);
+}));
+
 router.get('/gym/routines', requirePermission('gym.manage'), asyncHandler(async (req, res) => {
   const memberId = String(req.query.memberId || '');
   const rows = await prisma.$queryRawUnsafe<any[]>(`
@@ -458,9 +534,9 @@ router.post('/gym/routines', requirePermission('gym.manage'), asyncHandler(async
       }
 
       await tx.$executeRawUnsafe(`
-        INSERT INTO public."GymRoutineExercise" ("id","tenantId","routineId","exerciseId","dayOfWeek","sortOrder","sets","reps","loadKg","restSeconds","tempo","notes","intensityTechnique","techniqueConfig")
-        VALUES (gen_random_uuid()::text,$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13::jsonb)
-      `, tenantId,createdRoutine.id,exerciseId,item.dayOfWeek,item.sortOrder,item.sets,item.reps,item.loadKg??null,item.restSeconds,item.tempo||null,item.notes||null,item.intensityTechnique,JSON.stringify(item.techniqueConfig||{}));
+        INSERT INTO public."GymRoutineExercise" ("id","tenantId","routineId","exerciseId","dayOfWeek","sortOrder","sets","reps","loadKg","restSeconds","tempo","notes","intensityTechnique","techniqueConfig","progressionStrategy","progressionConfig")
+        VALUES (gen_random_uuid()::text,$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13::jsonb,$14,$15::jsonb)
+      `, tenantId,createdRoutine.id,exerciseId,item.dayOfWeek,item.sortOrder,item.sets,item.reps,item.loadKg??null,item.restSeconds,item.tempo||null,item.notes||null,item.intensityTechnique,JSON.stringify(item.techniqueConfig||{}),item.progressionStrategy,JSON.stringify(item.progressionConfig||{}));
     }
 
     return createdRoutine;

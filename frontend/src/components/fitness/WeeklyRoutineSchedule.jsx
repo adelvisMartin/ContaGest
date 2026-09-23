@@ -3,6 +3,7 @@ import { Box, Paper, Stack, Typography } from '@mui/material';
 import { CgEmptyState, CgStatusChip } from '../ui/cg/CgPrimitives.jsx';
 import { FITNESS_WEEK_DAYS } from '../../data/fitnessWeekDays.js';
 import { fitnessIntensityTechniqueLabel } from '../../data/fitnessIntensityTechniques.js';
+import { fitnessProgressionStrategyLabel } from '../../data/fitnessProgressionStrategies.js';
 
 export function WeeklyRoutineSchedule({exercises=[]}){
   const items=Array.isArray(exercises)?exercises:[];
@@ -24,7 +25,7 @@ export function WeeklyRoutineSchedule({exercises=[]}){
       <Stack gap={.6} mt={.8}>
         {day.exercises.length?day.exercises.map((exercise,index)=><Box key={(exercise.sortOrder||index)+'-'+(exercise.exerciseName||index)}>
           <Typography variant="body2" fontWeight={650}>{exercise.exerciseName||'Ejercicio'}</Typography>
-          <Typography variant="caption" color="text.secondary">{exercise.sets||3} × {exercise.reps||'10'} · descanso {exercise.restSeconds??60}s · {fitnessIntensityTechniqueLabel(exercise.intensityTechnique||'standard')}</Typography>
+          <Typography variant="caption" color="text.secondary">{exercise.sets||3} × {exercise.reps||'10'} · descanso {exercise.restSeconds??60}s · {fitnessIntensityTechniqueLabel(exercise.intensityTechnique||'standard')} · {fitnessProgressionStrategyLabel(exercise.progressionStrategy||'manual')}</Typography>
         </Box>):<Typography variant="caption" color="text.secondary">Día de descanso</Typography>}
       </Stack>
     </Paper>)}

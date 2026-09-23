@@ -673,6 +673,24 @@ if(fitnessEntries.every((item)=>item.status==='MIGRATED')){
     if(!gymRoutes.includes(contract))fail(`fitness: grouped intensity technique invariant missing ${contract}`);
   }
   if(/trainingMode[\s\S]{0,300}intensityTechnique\s*:/.test(fitness)||/trainingMode/.test(routineBuilder))fail('fitness: training mode must not auto-select intensity techniques');
+  const progressionStrategies=read('frontend/src/data/fitnessProgressionStrategies.js');
+  const progressionDomain=read('backend/src/modules/verticals/gym.progression.ts');
+  const progressionMigration=read('backend/prisma/migrations/20260923170000_gym_progression_engine_38_51/migration.sql');
+  for(const contract of ['manual','linear_load','double_progression','percent_1rm']){
+    if(!progressionStrategies.includes(contract))fail(`fitness: missing progression strategy ${contract}`);
+  }
+  for(const contract of ['FITNESS_PROGRESSION_STRATEGIES','progressionStrategy','progressionConfig','Estrategia de progresión','RIR objetivo','RPE objetivo','1RM de referencia','Estancamiento tras']){
+    if(!routineBuilder.includes(contract))fail(`fitness: RoutineBuilder missing progression contract ${contract}`);
+  }
+  for(const contract of ['progressionStrategySchema','progressionConfigSchema','RPE y RIR no son coherentes','La doble progresión requiere un rango de repeticiones válido.','La progresión por %1RM requiere 1RM y porcentaje.','/gym/progression/evaluate','evaluateGymProgression']){
+    if(!gymRoutes.includes(contract))fail(`fitness: backend missing progression engine contract ${contract}`);
+  }
+  for(const contract of ['increase_load','increase_reps','target_percent_1rm','reset_load','missing_effort_evidence','stall_threshold_reached','applied:false']){
+    if(!progressionDomain.includes(contract))fail(`fitness: progression domain missing deterministic contract ${contract}`);
+  }
+  if(!progressionMigration.includes('GymRoutineExercise_progressionStrategy_check')||!progressionMigration.includes('"progressionConfig" jsonb'))fail('fitness: progression migration contract missing');
+  if(!fitness.includes('progressionStrategy:String(exercise.progressionStrategy')||!fitness.includes('progressionConfig:exercise.progressionStrategy'))fail('fitness: progression configuration is not sanitized before persistence');
+  if(/mesocycle|periodization|GymWorkoutSession|GymWorkoutSet/.test(progressionDomain))fail('fitness: 38/51 progression engine must not pre-implement periodization or session execution');
 }
 
 const css=read('frontend/src/styles/erp-runtime.css');
