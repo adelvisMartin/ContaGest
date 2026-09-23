@@ -4,10 +4,13 @@ import fs from 'node:fs';
 import { BUSINESS_MODES, modulesForMode } from '../frontend/src/data/moduleCatalog.js';
 
 const read=(path)=>fs.readFileSync(new URL(`../${path}`,import.meta.url),'utf8');
+const json=(path)=>JSON.parse(read(path));
 const licenses=read('backend/src/modules/licenses/licenses.routes.ts');
 const context=read('backend/src/shared/middleware/context.ts');
 const licensePage=read('frontend/src/pages/LicensesPage.js');
 const access=read('frontend/src/services/accessControlService.js');
+const manifest=json('backend/src/shared/contracts/access-manifest.json');
+const byRoute=new Map(manifest.modules.map((item)=>[item.route,item]));
 
 test('52/75 licensing accepts every clinical and fitness business sector exposed by the product',()=>{
   for(const sector of ['salud','veterinaria','psicologia','odontologia','gimnasio','nutricion']){
@@ -16,15 +19,15 @@ test('52/75 licensing accepts every clinical and fitness business sector exposed
   }
 });
 
-test('52/75 clinical modules resolve to health.manage and fitness modules resolve to gym.manage',()=>{
+test('52/75 clinical and fitness entitlements resolve through the canonical manifest',()=>{
   for(const route of ['salud','veterinaria','psicologia','odontologia']){
-    assert.match(licenses,new RegExp(`\\b${route}: \\['health\\.manage'\\]`),route);
+    assert.equal(byRoute.get(route)?.permission,'health.manage',route);
   }
   for(const route of ['gimnasio','rutinas','nutricion']){
-    assert.match(licenses,new RegExp(`\\b${route}: \\['gym\\.manage'\\]`),route);
+    assert.equal(byRoute.get(route)?.permission,'gym.manage',route);
   }
-  assert.match(context,/'health\.manage': \['salud','veterinaria','psicologia','odontologia'\]/);
-  assert.match(context,/'gym\.manage': \['gimnasio','rutinas','nutricion'\]/);
+  assert.match(licenses,/permissionForRoute/);
+  assert.match(context,/PERMISSION_MODULES/);
 });
 
 test('52/75 vertical license keys remain visibly distinguishable without changing secret entropy',()=>{
