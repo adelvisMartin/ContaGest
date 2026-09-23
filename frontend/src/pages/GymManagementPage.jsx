@@ -219,7 +219,7 @@ function GymWorkspace({state,context}){
       recipeId:String(meal.recipeId||'').trim()||null,
       servings:Number(meal.servings||1),
       preparation:String(meal.preparation||'').trim()||null,
-      alternatives:(meal.alternatives||[]).map((item)=>({recipeId:String(item.recipeId||'').trim(),label:String(item.label||'').trim()||null})).filter((item)=>item.recipeId),
+      alternatives:(meal.alternatives||[]).map((item)=>({recipeId:String(item.recipeId||'').trim(),label:String(item.label||'').trim()||null,servings:Number(item.servings||1)})).filter((item)=>item.recipeId),
       calories:null,
       proteinG:null,
       carbsG:null,
