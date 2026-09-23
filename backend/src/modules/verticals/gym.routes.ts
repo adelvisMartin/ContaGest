@@ -384,6 +384,7 @@ const nutritionMealSchema = z.object({
   notes:optionalText
 }).superRefine((value,refinement)=>{
   if(!value.recipeId&&!value.items.length)refinement.addIssue({code:'custom',path:['items'],message:'Cada comida necesita una receta o ingredientes directos.'});
+  if(value.recipeId&&value.items.length)refinement.addIssue({code:'custom',path:['items'],message:'Una comida con receta principal no puede mezclar ingredientes directos.'});
   if(value.recipeId&&value.alternatives.some((item)=>item.recipeId===value.recipeId))refinement.addIssue({code:'custom',path:['alternatives'],message:'La receta principal no puede repetirse como alternativa.'});
   const alternatives=value.alternatives.map((item)=>item.recipeId);
   if(new Set(alternatives).size!==alternatives.length)refinement.addIssue({code:'custom',path:['alternatives'],message:'No repitas la misma receta alternativa.'});
@@ -1341,7 +1342,7 @@ router.get('/gym/nutrition', requirePermission('gym.manage'), asyncHandler(async
               WHERE mi."tenantId"=m."tenantId" AND mi."mealId"=m."id"
             ),CASE WHEN jsonb_typeof(m."items")='array' THEN m."items" ELSE '[]'::jsonb END)
           )
-          ORDER BY m."dayOfWeek" NULLS LAST,m."sortOrder",m."plannedAt",m."id"
+          ORDER BY m."dayIndex" NULLS LAST,m."dayOfWeek" NULLS LAST,m."sortOrder",m."plannedAt",m."id"
         )
         FROM public."GymMeal" m
         WHERE m."tenantId"=p."tenantId" AND m."nutritionPlanId"=p."id"
