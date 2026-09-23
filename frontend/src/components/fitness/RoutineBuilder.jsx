@@ -5,6 +5,7 @@ import {
 } from '../ui/cg/CgPrimitives.jsx';
 import { FITNESS_EXERCISES, FITNESS_MUSCLES } from '../../data/fitnessExerciseCatalog.js';
 import { FITNESS_WEEK_DAYS } from '../../data/fitnessWeekDays.js';
+import { FITNESS_INTENSITY_TECHNIQUES, fitnessIntensityTechnique } from '../../data/fitnessIntensityTechniques.js';
 
 const dayOptions=FITNESS_WEEK_DAYS.map((day)=>({value:String(day.value),label:day.label}));
 const muscleOptions=[{value:'',label:'Seleccionar grupo'},...FITNESS_MUSCLES.map((value)=>({value,label:value}))];
@@ -22,7 +23,9 @@ const newExercise=(dayOfWeek=1,sortOrder=1)=>({
   loadKg:'',
   restSeconds:60,
   tempo:'',
-  notes:''
+  notes:'',
+  intensityTechnique:'standard',
+  techniqueConfig:{}
 });
 
 const normalizeOrder=(items)=>items.map((item,index)=>({...item,sortOrder:index+1}));
@@ -67,7 +70,7 @@ export function RoutineBuilder({value=[],onChange,disabled=false,catalog=[]}){
   function duplicateExercise(index){
     const current=exercises[index];
     if(!current)return;
-    const copy={...current,exerciseId:null,sortOrder:index+2};
+    const copy={...current,exerciseId:null,sortOrder:index+2,techniqueConfig:{...(current.techniqueConfig||{})}};
     const next=[...exercises.slice(0,index+1),copy,...exercises.slice(index+1)];
     commit(next);
   }
@@ -102,6 +105,10 @@ export function RoutineBuilder({value=[],onChange,disabled=false,catalog=[]}){
         {value:'',label:'Seleccionar del catálogo'},
         ...exerciseCatalog.map((item)=>({value:item.name,label:`${item.name} · ${item.muscleGroup||'Sin grupo'}${item.id?' · Biblioteca':''}`}))
       ];
+      const intensityTechnique=exercise.intensityTechnique||'standard';
+      const technique=fitnessIntensityTechnique(intensityTechnique);
+      const techniqueConfig=exercise.techniqueConfig||{};
+      const updateTechniqueConfig=(patch)=>updateExercise(index,{techniqueConfig:{...techniqueConfig,...patch}});
       return <Paper key={`${exercise.sortOrder}-${index}`} variant="outlined" sx={{p:1.2}}>
         <Stack direction={{xs:'column',sm:'row'}} justifyContent="space-between" gap={1} alignItems={{sm:'center'}}>
           <Box>
@@ -149,6 +156,21 @@ export function RoutineBuilder({value=[],onChange,disabled=false,catalog=[]}){
           <CgTextField size="small" label="Carga kg" type="number" inputProps={{min:0,step:.25}} value={exercise.loadKg??''} onChange={(event)=>updateExercise(index,{loadKg:event.target.value===''?'':Number(event.target.value)})}/>
           <CgTextField size="small" label="Descanso (s)" type="number" inputProps={{min:0,max:3600,step:5}} value={exercise.restSeconds} onChange={(event)=>updateExercise(index,{restSeconds:Number(event.target.value||0)})}/>
           <CgTextField size="small" label="Tempo" placeholder="Ej. 3-1-1" value={exercise.tempo||''} onChange={(event)=>updateExercise(index,{tempo:event.target.value})}/>
+          <CgSelect
+            label="Técnica de intensidad"
+            value={intensityTechnique}
+            onChange={(event)=>updateExercise(index,{intensityTechnique:event.target.value,techniqueConfig:event.target.value==='standard'?{}:{...techniqueConfig}})}
+            options={FITNESS_INTENSITY_TECHNIQUES.map(({value,label})=>({value,label}))}
+          />
+          <Box sx={{gridColumn:'1/-1'}}>
+            <Typography variant="caption" color="text.secondary">{technique.description}</Typography>
+          </Box>
+          {technique.config.includes('rounds')?<CgTextField size="small" label="Rondas" type="number" inputProps={{min:1,max:12,step:1}} value={techniqueConfig.rounds??''} onChange={(event)=>updateTechniqueConfig({rounds:event.target.value===''?null:Number(event.target.value)})}/>:null}
+          {technique.config.includes('intraRestSeconds')?<CgTextField size="small" label="Descanso intra-técnica (s)" type="number" inputProps={{min:1,max:600,step:5}} value={techniqueConfig.intraRestSeconds??''} onChange={(event)=>updateTechniqueConfig({intraRestSeconds:event.target.value===''?null:Number(event.target.value)})}/>:null}
+          {technique.config.includes('loadDropPct')?<CgTextField size="small" label="Reducción de carga (%)" type="number" inputProps={{min:1,max:90,step:1}} value={techniqueConfig.loadDropPct??''} onChange={(event)=>updateTechniqueConfig({loadDropPct:event.target.value===''?null:Number(event.target.value)})}/>:null}
+          {technique.config.includes('groupKey')?<CgTextField size="small" label="Clave de grupo" placeholder="Ej. A1" value={techniqueConfig.groupKey||''} onChange={(event)=>updateTechniqueConfig({groupKey:event.target.value})}/>:null}
+          {technique.config.includes('holdSeconds')?<CgTextField size="small" label="Duración isométrica (s)" type="number" inputProps={{min:1,max:300,step:1}} value={techniqueConfig.holdSeconds??''} onChange={(event)=>updateTechniqueConfig({holdSeconds:event.target.value===''?null:Number(event.target.value)})}/>:null}
+          {intensityTechnique!=='standard'?<CgTextField size="small" multiline minRows={2} label="Notas de técnica" value={techniqueConfig.techniqueNotes||''} onChange={(event)=>updateTechniqueConfig({techniqueNotes:event.target.value})} sx={{gridColumn:'1/-1'}}/>:null}
           <CgTextField size="small" multiline minRows={2} label="Instrucciones" value={exercise.instructions||''} onChange={(event)=>updateExercise(index,{instructions:event.target.value})} sx={{gridColumn:'1/-1'}}/>
           <CgTextField size="small" multiline minRows={2} label="Notas" value={exercise.notes||''} onChange={(event)=>updateExercise(index,{notes:event.target.value})} sx={{gridColumn:'1/-1'}}/>
         </Box>

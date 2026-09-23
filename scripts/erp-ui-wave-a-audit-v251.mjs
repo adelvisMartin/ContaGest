@@ -656,6 +656,23 @@ if(fitnessEntries.every((item)=>item.status==='MIGRATED')){
   if(!gymRoutes.includes("trainingMode: z.enum(['strength','hypertrophy','pump','endurance','power','conditioning','mobility'])"))fail('fitness: backend must require an explicit training mode for new routines');
   if(!trainingModeMigration.includes("DEFAULT 'unspecified'")||!trainingModeMigration.includes('GymRoutine_trainingMode_check'))fail('fitness: legacy training-mode migration contract missing');
   if(/applyMode.*(?:sets|reps|loadKg)/s.test(fitness))fail('fitness: training mode must not silently rewrite exercise prescription');
+  const intensityTechniques=read('frontend/src/data/fitnessIntensityTechniques.js');
+  const intensityMigration=read('backend/prisma/migrations/20260923163000_gym_intensity_techniques_37_51/migration.sql');
+  for(const contract of ['standard','drop_set','rest_pause','myo_reps','cluster','superset','giant_set','mechanical_drop','isometric_hold']){
+    if(!intensityTechniques.includes(contract))fail(`fitness: missing structured intensity technique ${contract}`);
+  }
+  for(const contract of ['FITNESS_INTENSITY_TECHNIQUES','intensityTechnique','techniqueConfig','Técnica de intensidad','Rondas','Descanso intra-técnica','Reducción de carga','Clave de grupo','Notas de técnica']){
+    if(!routineBuilder.includes(contract))fail(`fitness: RoutineBuilder missing intensity-technique contract ${contract}`);
+  }
+  for(const contract of ['intensityTechniqueSchema','techniqueConfigSchema','La técnica drop set requiere un porcentaje de reducción de carga.','requiere una clave de grupo.','"intensityTechnique","techniqueConfig"','JSON.stringify(item.techniqueConfig']){
+    if(!gymRoutes.includes(contract))fail(`fitness: backend missing intensity-technique contract ${contract}`);
+  }
+  if(!intensityMigration.includes('GymRoutineExercise_intensityTechnique_check')||!intensityMigration.includes('"techniqueConfig" jsonb'))fail('fitness: intensity-technique migration contract missing');
+  if(!fitness.includes('intensityTechnique:String(exercise.intensityTechnique')||!fitness.includes('techniqueConfig:exercise.intensityTechnique'))fail('fitness: structured intensity technique is not sanitized before persistence');
+  for(const contract of ['Un superset requiere exactamente 2 ejercicios con la misma clave y día.','Un giant set requiere al menos 3 ejercicios con la misma clave y día.','no puede mezclar superset y giant set el mismo día']){
+    if(!gymRoutes.includes(contract))fail(`fitness: grouped intensity technique invariant missing ${contract}`);
+  }
+  if(/trainingMode[\s\S]{0,300}intensityTechnique\s*:/.test(fitness)||/trainingMode/.test(routineBuilder))fail('fitness: training mode must not auto-select intensity techniques');
 }
 
 const css=read('frontend/src/styles/erp-runtime.css');

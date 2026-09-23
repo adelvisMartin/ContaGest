@@ -87,6 +87,54 @@ const exerciseLibrarySchema = z.object({
 });
 const exerciseLibraryPatchSchema = exerciseLibrarySchema.partial().refine((value)=>Object.keys(value).length>0,{message:'Indica al menos un campo para actualizar.'});
 
+const intensityTechniqueSchema = z.enum([
+  'standard','drop_set','rest_pause','myo_reps','cluster',
+  'superset','giant_set','mechanical_drop','isometric_hold'
+]);
+const techniqueConfigSchema = z.object({
+  rounds: z.coerce.number().int().min(1).max(12).optional().nullable(),
+  intraRestSeconds: z.coerce.number().int().min(1).max(600).optional().nullable(),
+  loadDropPct: z.coerce.number().min(1).max(90).optional().nullable(),
+  groupKey: z.string().trim().max(80).optional().nullable(),
+  holdSeconds: z.coerce.number().int().min(1).max(300).optional().nullable(),
+  techniqueNotes: z.string().trim().max(500).optional().nullable()
+}).default({});
+const routineExerciseSchema = z.object({
+  exerciseId: z.string().optional().nullable(),
+  exerciseName: z.string().trim().min(2).max(180),
+  muscleGroup: optionalText,
+  equipment: optionalText,
+  instructions: optionalText,
+  dayOfWeek: z.coerce.number().int().min(1).max(7),
+  sortOrder: z.coerce.number().int().min(1).default(1),
+  sets: z.coerce.number().int().min(1).max(20).default(3),
+  reps: z.string().max(60).default('10'),
+  loadKg: z.coerce.number().min(0).optional().nullable(),
+  restSeconds: z.coerce.number().int().min(0).max(3600).default(60),
+  tempo: optionalText,
+  notes: optionalText,
+  intensityTechnique: intensityTechniqueSchema.default('standard'),
+  techniqueConfig: techniqueConfigSchema
+}).superRefine((value, refinement) => {
+  const config=value.techniqueConfig||{};
+  const multiRound=['drop_set','rest_pause','myo_reps','cluster','mechanical_drop'].includes(value.intensityTechnique);
+  if(multiRound && !config.rounds){
+    refinement.addIssue({code:'custom',path:['techniqueConfig','rounds'],message:'La técnica seleccionada requiere indicar rondas.'});
+  }
+  if(value.intensityTechnique==='drop_set' && !config.loadDropPct){
+    refinement.addIssue({code:'custom',path:['techniqueConfig','loadDropPct'],message:'La técnica drop set requiere un porcentaje de reducción de carga.'});
+  }
+  if(['rest_pause','myo_reps','cluster'].includes(value.intensityTechnique) && !config.intraRestSeconds){
+    refinement.addIssue({code:'custom',path:['techniqueConfig','intraRestSeconds'],message:'La técnica seleccionada requiere descanso intra-técnica.'});
+  }
+  if(['superset','giant_set'].includes(value.intensityTechnique) && !String(config.groupKey||'').trim()){
+    refinement.addIssue({code:'custom',path:['techniqueConfig','groupKey'],message:'La técnica seleccionada requiere una clave de grupo.'});
+  }
+  if(value.intensityTechnique==='isometric_hold' && !config.holdSeconds){
+    refinement.addIssue({code:'custom',path:['techniqueConfig','holdSeconds'],message:'La pausa isométrica requiere duración en segundos.'});
+  }
+});
+
 const routineSchema = z.object({
   memberId: z.string().min(10),
   trainerId: z.string().optional().nullable(),
@@ -98,21 +146,7 @@ const routineSchema = z.object({
   endsAt: z.string().optional().nullable(),
   daysPerWeek: z.coerce.number().int().min(1).max(7).default(3),
   notes: optionalText,
-  exercises: z.array(z.object({
-    exerciseId: z.string().optional().nullable(),
-    exerciseName: z.string().trim().min(2).max(180),
-    muscleGroup: optionalText,
-    equipment: optionalText,
-    instructions: optionalText,
-    dayOfWeek: z.coerce.number().int().min(1).max(7),
-    sortOrder: z.coerce.number().int().min(1).default(1),
-    sets: z.coerce.number().int().min(1).max(20).default(3),
-    reps: z.string().max(60).default('10'),
-    loadKg: z.coerce.number().min(0).optional().nullable(),
-    restSeconds: z.coerce.number().int().min(0).max(3600).default(60),
-    tempo: optionalText,
-    notes: optionalText
-  })).default([])
+  exercises: z.array(routineExerciseSchema).default([])
 ).superRefine((value, refinement) => {
   if(!value.exercises.length)return;
   const scheduledDays=new Set(value.exercises.map((exercise)=>exercise.dayOfWeek));
@@ -122,6 +156,28 @@ const routineSchema = z.object({
       path:['daysPerWeek'],
       message:'La frecuencia semanal debe coincidir con los días programados.'
     });
+  }
+
+  const grouped=new Map<string,{technique:string;indexes:number[]}>();
+  value.exercises.forEach((exercise,index)=>{
+    if(!['superset','giant_set'].includes(exercise.intensityTechnique))return;
+    const groupKey=String(exercise.techniqueConfig?.groupKey||'').trim();
+    if(!groupKey)return;
+    const key=`${exercise.dayOfWeek}:${groupKey}`;
+    const current=grouped.get(key)||{technique:exercise.intensityTechnique,indexes:[]};
+    if(current.technique!==exercise.intensityTechnique){
+      refinement.addIssue({code:'custom',path:['exercises',index,'techniqueConfig','groupKey'],message:'Una clave de grupo no puede mezclar superset y giant set el mismo día.'});
+    }
+    current.indexes.push(index);
+    grouped.set(key,current);
+  });
+  for(const group of grouped.values()){
+    if(group.technique==='superset'&&group.indexes.length!==2){
+      refinement.addIssue({code:'custom',path:['exercises',group.indexes[0]??0,'techniqueConfig','groupKey'],message:'Un superset requiere exactamente 2 ejercicios con la misma clave y día.'});
+    }
+    if(group.technique==='giant_set'&&group.indexes.length<3){
+      refinement.addIssue({code:'custom',path:['exercises',group.indexes[0]??0,'techniqueConfig','groupKey'],message:'Un giant set requiere al menos 3 ejercicios con la misma clave y día.'});
+    }
   }
 });
 
@@ -402,9 +458,9 @@ router.post('/gym/routines', requirePermission('gym.manage'), asyncHandler(async
       }
 
       await tx.$executeRawUnsafe(`
-        INSERT INTO public."GymRoutineExercise" ("id","tenantId","routineId","exerciseId","dayOfWeek","sortOrder","sets","reps","loadKg","restSeconds","tempo","notes")
-        VALUES (gen_random_uuid()::text,$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
-      `, tenantId,createdRoutine.id,exerciseId,item.dayOfWeek,item.sortOrder,item.sets,item.reps,item.loadKg??null,item.restSeconds,item.tempo||null,item.notes||null);
+        INSERT INTO public."GymRoutineExercise" ("id","tenantId","routineId","exerciseId","dayOfWeek","sortOrder","sets","reps","loadKg","restSeconds","tempo","notes","intensityTechnique","techniqueConfig")
+        VALUES (gen_random_uuid()::text,$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13::jsonb)
+      `, tenantId,createdRoutine.id,exerciseId,item.dayOfWeek,item.sortOrder,item.sets,item.reps,item.loadKg??null,item.restSeconds,item.tempo||null,item.notes||null,item.intensityTechnique,JSON.stringify(item.techniqueConfig||{}));
     }
 
     return createdRoutine;
