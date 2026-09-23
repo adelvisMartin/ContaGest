@@ -1,9 +1,19 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
-  Alert, Box, Button, Divider, MenuItem, Paper, Stack, TextField, Typography
+  Alert, Box, Button, Checkbox, FormControlLabel, MenuItem, Paper, Stack, TextField, Typography
 } from '@mui/material';
 import { toast } from 'react-hot-toast';
 import { VeterinaryService } from '../../services/verticalService.js';
+import { reportVeterinaryError } from './veterinaryError.js';
+
+const SCOPE_OPTIONS=[
+  ['appointments','Citas'],
+  ['reminders','Recordatorios'],
+  ['discharge','Alta / estancia'],
+  ['documents','Documentos'],
+  ['payments','Pagos / facturación'],
+  ['communications','Comunicaciones']
+];
 
 const statusOf=(grant)=>{
   if(grant?.revokedAt)return'revoked';
@@ -15,83 +25,104 @@ const statusLabel={active:'Activo',revoked:'Revocado',expired:'Vencido'};
 export function VeterinaryGuardianPortalPanel({ selectedPatient, onCommunicationCreated }) {
   const [grants,setGrants]=useState([]);
   const [loading,setLoading]=useState(false);
-  const [expiresInDays,setExpiresInDays]=useState('30');
-  const [latestLink,setLatestLink]=useState('');
-  const [message,setMessage]=useState({channel:'whatsapp',event:'general_update',recipient:'',guardianText:''});
+  const [expiresInHours,setExpiresInHours]=useState('48');
+  const [scopes,setScopes]=useState(SCOPE_OPTIONS.map(([value])=>value));
+  const [latestGrant,setLatestGrant]=useState(null);
+  const [error,setError]=useState('');
 
   const patientId=selectedPatient?.id||'';
-  const defaultRecipient=useMemo(()=>{
-    if(message.channel==='email')return selectedPatient?.guardianEmail||'';
-    return selectedPatient?.guardianPhone||'';
-  },[message.channel,selectedPatient?.guardianEmail,selectedPatient?.guardianPhone]);
-
-  useEffect(()=>{
-    setLatestLink('');
-    setMessage((current)=>({...current,recipient:current.channel==='email'?(selectedPatient?.guardianEmail||''):(selectedPatient?.guardianPhone||'')}));
-    if(!patientId){setGrants([]);return;}
-    let active=true;
-    setLoading(true);
-    VeterinaryService.guardianPortalGrants(patientId)
-      .then((rows)=>{if(active)setGrants(Array.isArray(rows)?rows:[]);})
-      .catch((error)=>{if(active)toast.error(error?.message||'No se cargaron los accesos del tutor.');})
-      .finally(()=>{if(active)setLoading(false);});
-    return()=>{active=false;};
-  },[patientId]);
+  const active=useMemo(()=>grants.find((grant)=>statusOf(grant)==='active')||null,[grants]);
 
   async function reload(){
-    if(!patientId)return;
+    if(!patientId){setGrants([]);return;}
     const rows=await VeterinaryService.guardianPortalGrants(patientId);
-    setGrants(Array.isArray(rows)?rows:[]);
+    setGrants(Array.isArray(rows)?rows:rows?.data||[]);
+  }
+
+  useEffect(()=>{
+    setLatestGrant(null);setError('');
+    if(!patientId){setGrants([]);return;}
+    let mounted=true;
+    setLoading(true);
+    VeterinaryService.guardianPortalGrants(patientId)
+      .then((rows)=>{if(mounted)setGrants(Array.isArray(rows)?rows:rows?.data||[]);})
+      .catch((cause)=>{if(mounted)setError(reportVeterinaryError('guardianPortal.load',cause,'No se cargaron los accesos del tutor.'));})
+      .finally(()=>{if(mounted)setLoading(false);});
+    return()=>{mounted=false;};
+  },[patientId]);
+
+  function toggleScope(scope){
+    setScopes((current)=>current.includes(scope)?current.filter((item)=>item!==scope):[...current,scope]);
   }
 
   async function createGrant(){
     if(!patientId)return toast.error('Selecciona una mascota.');
-    setLoading(true);
+    if(!scopes.length)return toast.error('Selecciona al menos una sección.');
+    setLoading(true);setError('');
     try{
-      const grant=await VeterinaryService.createGuardianPortalGrant({patientId,expiresInDays:Number(expiresInDays||30)});
-      const url=new URL(grant.portalPath,window.location.origin).toString();
-      setLatestLink(url);
+      const grant=await VeterinaryService.createGuardianPortalGrant({
+        patientId,
+        expiresInHours:Number(expiresInHours||48),
+        scopes
+      });
+      const absoluteUrl=new URL(grant.portalPath,window.location.origin).toString();
+      setLatestGrant({...grant,absoluteUrl});
       await reload();
-      toast.success('Enlace temporal creado. Los enlaces activos anteriores quedaron revocados.');
-    }catch(error){toast.error(error?.message||'No se pudo crear el acceso del tutor.');}
-    finally{setLoading(false);}
+      toast.success(active?'Acceso anterior revocado y nuevo acceso creado.':'Acceso temporal creado.');
+    }catch(cause){
+      const message=reportVeterinaryError('guardianPortal.issue',cause,'No se pudo crear el acceso del tutor.');
+      setError(message);toast.error(message);
+    }finally{setLoading(false);}
   }
 
   async function copyLink(){
-    if(!latestLink)return;
-    try{await navigator.clipboard.writeText(latestLink);toast.success('Enlace copiado.');}
-    catch{toast.error('No se pudo copiar. Selecciona el enlace manualmente.');}
+    if(!latestGrant?.absoluteUrl)return;
+    try{await navigator.clipboard.writeText(latestGrant.absoluteUrl);toast.success('Enlace copiado.');}
+    catch{toast.error('No se pudo copiar automáticamente. Selecciona el enlace manualmente.');}
   }
 
   async function revokeGrant(id){
-    setLoading(true);
-    try{await VeterinaryService.revokeGuardianPortalGrant(id);setLatestLink('');await reload();toast.success('Acceso revocado.');}
-    catch(error){toast.error(error?.message||'No se pudo revocar el acceso.');}
-    finally{setLoading(false);}
+    setLoading(true);setError('');
+    try{
+      await VeterinaryService.revokeGuardianPortalGrant(id);
+      if(latestGrant?.id===id)setLatestGrant(null);
+      await reload();toast.success('Acceso revocado.');
+    }catch(cause){
+      const message=reportVeterinaryError('guardianPortal.revoke',cause,'No se pudo revocar el acceso.');
+      setError(message);toast.error(message);
+    }finally{setLoading(false);}
   }
 
-  async function registerCommunication(event){
-    event.preventDefault();
-    if(!patientId)return toast.error('Selecciona una mascota.');
-    const recipient=(message.recipient||defaultRecipient||'').trim();
-    const guardianText=message.guardianText.trim();
-    if(!recipient)return toast.error('Indica el destinatario.');
-    if(!guardianText)return toast.error('Escribe el mensaje visible para el tutor.');
-    setLoading(true);
+  async function communicate(channel){
+    if(!latestGrant?.absoluteUrl||!selectedPatient)return;
+    const recipient=channel==='email'?selectedPatient.guardianEmail:selectedPatient.guardianPhone;
+    if(!recipient)return toast.error(channel==='email'?'El tutor no tiene correo registrado.':'El tutor no tiene teléfono registrado.');
     try{
       await VeterinaryService.createCommunication({
         patientId,
-        channel:message.channel,
-        event:message.event,
+        channel,
+        event:'guardian_portal_access_issued',
         recipient,
-        status:'queued',
-        payload:{guardianText,source:'guardian-portal-admin.v1'}
+        status:'sent',
+        sentAt:new Date().toISOString(),
+        payload:{
+          grantId:latestGrant.id,
+          expiresAt:latestGrant.expiresAt,
+          scopes:latestGrant.scopes,
+          portalSecretPersisted:false
+        }
       });
-      setMessage((current)=>({...current,guardianText:''}));
       await onCommunicationCreated?.();
-      toast.success('Comunicación registrada y visible en el portal; permanece en cola hasta que el proveedor confirme envío.');
-    }catch(error){toast.error(error?.message||'No se pudo registrar la comunicación.');}
-    finally{setLoading(false);}
+    }catch(cause){
+      reportVeterinaryError('guardianPortal.communicationLog',cause);
+    }
+    const body=`Hola ${selectedPatient.guardianName||'tutor'}, acceso temporal al portal de ${selectedPatient.displayName}: ${latestGrant.absoluteUrl}`;
+    if(channel==='whatsapp'){
+      const phone=String(recipient).replace(/\D/g,'');
+      window.open(`https://wa.me/${phone}?text=${encodeURIComponent(body)}`,'_blank','noopener,noreferrer');
+    }else{
+      window.location.href=`mailto:${encodeURIComponent(recipient)}?subject=${encodeURIComponent('Portal veterinario de '+selectedPatient.displayName)}&body=${encodeURIComponent(body)}`;
+    }
   }
 
   if(!selectedPatient)return <Alert severity="info">Selecciona una mascota para administrar el portal de su tutor.</Alert>;
@@ -99,41 +130,50 @@ export function VeterinaryGuardianPortalPanel({ selectedPatient, onCommunication
   return <Stack gap={1.4}>
     <Paper variant="outlined" sx={{p:1.5}}>
       <Typography variant="h6">Portal del tutor</Typography>
-      <Typography variant="body2" color="text.secondary">Enlace temporal de solo lectura para citas, alta, documentos, facturación y comunicaciones de {selectedPatient.displayName}.</Typography>
-      <Stack direction={{xs:'column',sm:'row'}} gap={1} mt={1.3} alignItems={{sm:'end'}}>
-        <TextField select size="small" label="Vigencia" value={expiresInDays} onChange={(e)=>setExpiresInDays(e.target.value)} sx={{minWidth:180}}>
-          <MenuItem value="7">7 días</MenuItem><MenuItem value="30">30 días</MenuItem><MenuItem value="60">60 días</MenuItem><MenuItem value="90">90 días</MenuItem>
+      <Typography variant="body2" color="text.secondary">Acceso temporal de solo lectura para citas, recordatorios, alta, documentos, pagos y comunicaciones de {selectedPatient.displayName}.</Typography>
+      {error?<Alert severity="error" sx={{mt:1}} action={<Button color="inherit" size="small" onClick={()=>void reload()}>Reintentar</Button>}>{error}</Alert>:null}
+      <Alert severity="info" sx={{mt:1}}>El secreto se persiste únicamente como SHA-256. El enlace completo se muestra sólo en la respuesta de creación y usa <code>#access</code>, por lo que el token no viaja en la URL HTTP.</Alert>
+      <Box sx={{display:'grid',gridTemplateColumns:{xs:'1fr',md:'200px minmax(0,1fr)'},gap:1.2,mt:1.2}}>
+        <TextField select size="small" label="Vigencia" value={expiresInHours} onChange={(e)=>setExpiresInHours(e.target.value)}>
+          <MenuItem value="24">24 horas</MenuItem>
+          <MenuItem value="48">48 horas</MenuItem>
+          <MenuItem value="72">72 horas</MenuItem>
+          <MenuItem value="168">7 días</MenuItem>
         </TextField>
-        <Button variant="contained" onClick={()=>void createGrant()} disabled={loading}>Crear nuevo enlace</Button>
+        <Box>
+          <Typography variant="caption" color="text.secondary">Secciones autorizadas</Typography>
+          <Stack direction="row" flexWrap="wrap">
+            {SCOPE_OPTIONS.map(([scope,label])=><FormControlLabel key={scope} control={<Checkbox checked={scopes.includes(scope)} onChange={()=>toggleScope(scope)}/>} label={label}/>)}
+          </Stack>
+        </Box>
+      </Box>
+      <Button variant="contained" sx={{mt:1}} onClick={()=>void createGrant()} disabled={loading||!scopes.length}>{loading?'Procesando…':active?'Reemplazar acceso activo':'Crear acceso temporal'}</Button>
+    </Paper>
+
+    {latestGrant?<Paper variant="outlined" sx={{p:1.5}}>
+      <Alert severity="warning">Copia o envía este enlace ahora. ContaGest no puede reconstruir el token desde el hash almacenado.</Alert>
+      <TextField fullWidth size="small" label="Enlace recién creado" value={latestGrant.absoluteUrl} InputProps={{readOnly:true}} sx={{mt:1}}/>
+      <Stack direction={{xs:'column',sm:'row'}} gap={.8} mt={1}>
+        <Button variant="outlined" onClick={()=>void copyLink()}>Copiar enlace</Button>
+        <Button variant="outlined" onClick={()=>void communicate('whatsapp')}>Enviar por WhatsApp</Button>
+        <Button variant="outlined" onClick={()=>void communicate('email')}>Enviar por correo</Button>
       </Stack>
-      <Alert severity="warning" sx={{mt:1}}>El token se muestra sólo al crearlo. ContaGest persiste únicamente su SHA-256; crear uno nuevo revoca los enlaces activos anteriores.</Alert>
-      {latestLink?<Stack direction={{xs:'column',sm:'row'}} gap={1} mt={1.2}><TextField fullWidth size="small" label="Enlace recién creado" value={latestLink} InputProps={{readOnly:true}}/><Button variant="outlined" onClick={()=>void copyLink()}>Copiar</Button></Stack>:null}
-      <Divider sx={{my:1.3}}/>
-      <Stack gap={.7}>
+    </Paper>:null}
+
+    <Paper variant="outlined" sx={{p:1.5}}>
+      <Stack direction="row" justifyContent="space-between" gap={1} alignItems="center">
+        <Box><Typography variant="h6">Accesos emitidos</Typography><Typography variant="caption" color="text.secondary">Nunca se lista el token: sólo scopes, vencimiento, uso y estado.</Typography></Box>
+        <Button size="small" variant="outlined" onClick={()=>void reload()} disabled={loading}>{loading?'Cargando…':'Actualizar'}</Button>
+      </Stack>
+      <Stack gap={.7} mt={1}>
         {grants.length?grants.map((grant)=>{
           const status=statusOf(grant);
           return <Paper key={grant.id} variant="outlined" sx={{p:1,display:'grid',gridTemplateColumns:{xs:'1fr',sm:'minmax(0,1fr) auto'},gap:1,alignItems:'center'}}>
-            <Box><Typography variant="body2" fontWeight={700}>{statusLabel[status]}</Typography><Typography variant="caption" color="text.secondary">Creado {new Date(grant.createdAt).toLocaleString('es-VE')} · vence {new Date(grant.expiresAt).toLocaleString('es-VE')}{grant.lastUsedAt?` · último acceso ${new Date(grant.lastUsedAt).toLocaleString('es-VE')}`:''}</Typography></Box>
+            <Box><Typography variant="body2" fontWeight={700}>{statusLabel[status]}</Typography><Typography variant="caption" color="text.secondary">{Array.isArray(grant.scopes)?grant.scopes.join(' · '):'Sin scopes'} · vence {new Date(grant.expiresAt).toLocaleString('es-VE')}{grant.lastUsedAt?` · último acceso ${new Date(grant.lastUsedAt).toLocaleString('es-VE')}`:''}</Typography></Box>
             <Button size="small" color="error" variant="outlined" disabled={status!=='active'||loading} onClick={()=>void revokeGrant(grant.id)}>Revocar</Button>
           </Paper>;
         }):<Typography variant="body2" color="text.secondary">No hay accesos creados.</Typography>}
       </Stack>
-    </Paper>
-
-    <Paper component="form" onSubmit={registerCommunication} variant="outlined" sx={{p:1.5}}>
-      <Typography variant="h6">Comunicación visible al tutor</Typography>
-      <Typography variant="body2" color="text.secondary">Registra el mensaje y su canal. El portal sólo muestra guardianText; no expone el payload interno completo.</Typography>
-      <Box sx={{display:'grid',gridTemplateColumns:{xs:'1fr',sm:'repeat(2,minmax(0,1fr))'},gap:1,mt:1.2}}>
-        <TextField select size="small" label="Canal" value={message.channel} onChange={(e)=>setMessage({...message,channel:e.target.value,recipient:e.target.value==='email'?(selectedPatient.guardianEmail||''):(selectedPatient.guardianPhone||'')})}>
-          <MenuItem value="whatsapp">WhatsApp</MenuItem><MenuItem value="email">Correo</MenuItem><MenuItem value="sms">SMS</MenuItem>
-        </TextField>
-        <TextField select size="small" label="Evento" value={message.event} onChange={(e)=>setMessage({...message,event:e.target.value})}>
-          <MenuItem value="appointment_reminder">Recordatorio de cita</MenuItem><MenuItem value="discharge_ready">Alta disponible</MenuItem><MenuItem value="document_ready">Documento disponible</MenuItem><MenuItem value="invoice_ready">Factura disponible</MenuItem><MenuItem value="general_update">Actualización general</MenuItem>
-        </TextField>
-        <TextField size="small" label="Destinatario" value={message.recipient||defaultRecipient} onChange={(e)=>setMessage({...message,recipient:e.target.value})}/>
-        <TextField size="small" label="Mensaje para el tutor" multiline minRows={3} value={message.guardianText} onChange={(e)=>setMessage({...message,guardianText:e.target.value})} sx={{gridColumn:{sm:'1/-1'}}}/>
-      </Box>
-      <Button type="submit" sx={{mt:1.2}} disabled={loading}>Registrar comunicación</Button>
     </Paper>
   </Stack>;
 }
