@@ -350,6 +350,17 @@ const mealIngredientSchema = z.object({
   notes: optionalText
 });
 
+const nutritionRuleKindSchema=z.enum(['allergy','intolerance','exclusion','preferred']);
+const nutritionRuleSchema=z.object({
+  memberId:z.string().min(10),
+  ingredientId:z.string().min(10),
+  kind:nutritionRuleKindSchema,
+  notes:optionalText
+});
+const nutritionRulePatchSchema=z.object({
+  active:z.boolean()
+});
+
 const recipeSchema=z.object({
   name:z.string().trim().min(2).max(180),
   servings:z.coerce.number().positive().max(100).default(1),
@@ -1256,6 +1267,67 @@ router.patch('/gym/ingredients/:id', requirePermission('gym.manage'), asyncHandl
   ok(res,one(rows));
 }));
 
+router.get('/gym/nutrition-rules', requirePermission('gym.manage'), asyncHandler(async(req,res)=>{
+  const tenantId=ctx(req).tenantId;
+  const memberId=String(req.query.memberId||'').trim();
+  if(!memberId)throw new HttpError(400,'memberId es obligatorio.');
+  const memberRows=await prisma.$queryRawUnsafe<any[]>(`
+    SELECT "id" FROM public."GymMember" WHERE "tenantId"=$1 AND "id"=$2 LIMIT 1
+  `,tenantId,memberId);
+  if(!memberRows.length)throw new HttpError(404,'El cliente no pertenece al tenant activo.');
+  const rows=await prisma.$queryRawUnsafe<any[]>(`
+    SELECT r.*,i."name" AS "ingredientName",i."active" AS "ingredientActive"
+    FROM public."GymNutritionRule" r
+    JOIN public."GymIngredient" i ON i."tenantId"=r."tenantId" AND i."id"=r."ingredientId"
+    WHERE r."tenantId"=$1 AND r."memberId"=$2
+    ORDER BY r."active" DESC,r."kind",i."name"
+  `,tenantId,memberId);
+  ok(res,rows);
+}));
+
+router.post('/gym/nutrition-rules', requirePermission('gym.manage'), asyncHandler(async(req,res)=>{
+  const tenantId=ctx(req).tenantId;
+  const b=nutritionRuleSchema.parse(req.body||{});
+  const created=await prisma.$transaction(async(tx)=>{
+    const memberRows=await tx.$queryRawUnsafe<any[]>(`
+      SELECT "id" FROM public."GymMember" WHERE "tenantId"=$1 AND "id"=$2 LIMIT 1
+    `,tenantId,b.memberId);
+    if(!memberRows.length)throw new HttpError(422,'El cliente no pertenece al tenant activo.');
+    const ingredientRows=await tx.$queryRawUnsafe<any[]>(`
+      SELECT "id","name" FROM public."GymIngredient"
+      WHERE "tenantId"=$1 AND "id"=$2 AND "active"=true
+      LIMIT 1
+    `,tenantId,b.ingredientId);
+    if(!ingredientRows.length)throw new HttpError(422,'El ingrediente no pertenece al tenant activo o está archivado.');
+    await tx.$executeRawUnsafe(`SELECT pg_advisory_xact_lock(hashtext($1))`,`gym-nutrition-rule-45:${tenantId}:${b.memberId}:${b.ingredientId}:${b.kind}`);
+    const existing=await tx.$queryRawUnsafe<any[]>(`
+      SELECT "id" FROM public."GymNutritionRule"
+      WHERE "tenantId"=$1 AND "memberId"=$2 AND "ingredientId"=$3 AND "kind"=$4
+      LIMIT 1
+    `,tenantId,b.memberId,b.ingredientId,b.kind);
+    if(existing.length)throw new HttpError(409,'Esta regla ya existe para el cliente e ingrediente.');
+    const rows=await tx.$queryRawUnsafe<any[]>(`
+      INSERT INTO public."GymNutritionRule" ("id","tenantId","memberId","ingredientId","kind","notes","active","createdBy","createdAt","updatedAt")
+      VALUES (gen_random_uuid()::text,$1,$2,$3,$4,$5,true,$6,now(),now())
+      RETURNING *
+    `,tenantId,b.memberId,b.ingredientId,b.kind,b.notes||null,ctx(req).userId||null);
+    return one(rows);
+  });
+  ok(res,created,201);
+}));
+
+router.patch('/gym/nutrition-rules/:id', requirePermission('gym.manage'), asyncHandler(async(req,res)=>{
+  const tenantId=ctx(req).tenantId;
+  const b=nutritionRulePatchSchema.parse(req.body||{});
+  const rows=await prisma.$queryRawUnsafe<any[]>(`
+    UPDATE public."GymNutritionRule"
+    SET "active"=$3,"updatedAt"=now()
+    WHERE "tenantId"=$1 AND "id"=$2
+    RETURNING *
+  `,tenantId,String(req.params.id),b.active);
+  ok(res,one(rows,'Regla nutricional no encontrada.'));
+}));
+
 router.get('/gym/recipes', requirePermission('gym.manage'), asyncHandler(async (req,res)=>{
   const tenantId=ctx(req).tenantId;
   const rows=await prisma.$queryRawUnsafe<any[]>(`
@@ -1388,6 +1460,31 @@ router.post('/gym/nutrition', requirePermission('gym.manage'), asyncHandler(asyn
         WHERE "tenantId"=$1 AND "active"=true AND "id"=ANY($2::text[])
       `,tenantId,recipeIds);
       if(recipeRows.length!==recipeIds.length)throw new HttpError(422,'Las recetas del plan deben estar activas y pertenecer al tenant.');
+    }
+
+    const directIngredientIds=[...new Set(ingredientIds)];
+    const recipeIngredientRows=recipeIds.length?await tx.$queryRawUnsafe<any[]>(`
+      SELECT DISTINCT ri."ingredientId"
+      FROM public."GymRecipeItem" ri
+      WHERE ri."tenantId"=$1 AND ri."recipeId"=ANY($2::text[])
+    `,tenantId,recipeIds):[];
+    const planIngredientIds=[...new Set([...directIngredientIds,...recipeIngredientRows.map((row:any)=>String(row.ingredientId))])];
+    if(planIngredientIds.length){
+      const restricted=await tx.$queryRawUnsafe<any[]>(`
+        SELECT r."kind",i."name" AS "ingredientName"
+        FROM public."GymNutritionRule" r
+        JOIN public."GymIngredient" i ON i."tenantId"=r."tenantId" AND i."id"=r."ingredientId"
+        WHERE r."tenantId"=$1
+          AND r."memberId"=$2
+          AND r."active"=true
+          AND r."kind" IN ('allergy','intolerance','exclusion')
+          AND r."ingredientId"=ANY($3::text[])
+        ORDER BY i."name",r."kind"
+      `,tenantId,b.memberId,planIngredientIds);
+      if(restricted.length){
+        const conflicts=restricted.map((row:any)=>`${row.ingredientName} (${row.kind})`).join(', ');
+        throw new HttpError(422,`El plan contiene ingredientes restringidos declarados para el cliente: ${conflicts}.`);
+      }
     }
 
     const planRows = await tx.$queryRawUnsafe<any[]>(`

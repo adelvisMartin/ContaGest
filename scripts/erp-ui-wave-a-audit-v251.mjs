@@ -832,6 +832,23 @@ if(fitnessEntries.every((item)=>item.status==='MIGRATED')){
   if(!gymRoutes.includes('Una comida con receta principal no puede mezclar ingredientes directos.'))fail('fitness: complete meal plan 44 must keep recipe and direct-item authorities exclusive');
   const quickNutrition=productivity.slice(productivity.indexOf('export function FitnessNutritionQuickTool'),productivity.indexOf('export function FitnessClientTransferTool'));
   if(!quickNutrition.includes('Persistencia estructurada')||/GymVerticalService\.createNutrition\(|FitnessNutritionService\.toApiMeals\(/.test(quickNutrition))fail('fitness: quick nutrition must not bypass canonical 44 persistence');
+
+  const nutritionRules=read('frontend/src/components/fitness/NutritionRulesPanel.jsx');
+  const nutritionRulesMigration=read('backend/prisma/migrations/20260923203000_gym_nutrition_rules_45_51/migration.sql');
+  if((fitness.match(/<NutritionRulesPanel/g)||[]).length!==1)fail('fitness: nutrition rules 45 must render from one owner');
+  if(/querySelector|addEventListener|innerHTML|document\./.test(nutritionRules))fail('fitness: nutrition rules 45 reintroduced imperative DOM lifecycle');
+  for(const contract of ['Restricciones y preferencias','Alergia declarada','Intolerancia declarada','Exclusión','Preferido','nunca modifica el plan automáticamente']){
+    if(!nutritionRules.includes(contract))fail(`fitness: nutrition rules 45 UI missing ${contract}`);
+  }
+  for(const contract of ['nutritionRuleKindSchema','nutritionRuleSchema',"router.get('/gym/nutrition-rules'","router.post('/gym/nutrition-rules'","router.patch('/gym/nutrition-rules/:id'",'GymNutritionRule','El plan contiene ingredientes restringidos declarados para el cliente:']){
+    if(!gymRoutes.includes(contract))fail(`fitness: nutrition rules 45 backend missing ${contract}`);
+  }
+  for(const contract of ['GymNutritionRule','GymNutritionRule_kind_check','GymNutritionRule_tenant_member_ingredient_kind_unique',"'allergy','intolerance','exclusion','preferred'"]){
+    if(!nutritionRulesMigration.includes(contract))fail(`fitness: nutrition rules 45 migration missing ${contract}`);
+  }
+  if(!gymRoutes.includes("r.\"kind\" IN ('allergy','intolerance','exclusion')"))fail('fitness: nutrition rules 45 must block only explicit blocking kinds');
+  if(!gymRoutes.includes('GymRecipeItem')||!gymRoutes.includes('planIngredientIds'))fail('fitness: nutrition rules 45 must inspect direct and recipe ingredients');
+  if(/autoSelect|automaticSubstitut|inferAllerg|diagnos/i.test(nutritionRules+nutritionRulesMigration))fail('fitness: nutrition rules 45 must not infer clinical restrictions or auto-select meals');
 }
 
 const css=read('frontend/src/styles/erp-runtime.css');

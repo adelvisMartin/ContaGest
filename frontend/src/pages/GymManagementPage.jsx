@@ -15,6 +15,7 @@ import { IngredientLibraryPanel } from '../components/fitness/IngredientLibraryP
 import { CompleteMealPlanBuilder } from '../components/fitness/CompleteMealPlanBuilder.jsx';
 import { NutritionRecipeLibrary } from '../components/fitness/NutritionRecipeLibrary.jsx';
 import { NutritionShoppingListPanel } from '../components/fitness/NutritionShoppingListPanel.jsx';
+import { NutritionRulesPanel } from '../components/fitness/NutritionRulesPanel.jsx';
 import { FITNESS_TRAINING_MODES, fitnessTrainingMode, fitnessTrainingModeLabel } from '../data/fitnessTrainingModes.js';
 import { GymVerticalService } from '../services/verticalService.js';
 
@@ -275,6 +276,7 @@ function GymWorkspace({state,context}){
   const panelNutrition=<Stack gap={1.25}>
     <FitnessProductivityTools tab="nutrition" members={members} Toast={Toast} onDataChanged={(id)=>loadAll({silent:true,memberId:id||selectedMemberId})}/>
     <IngredientLibraryPanel items={ingredients} onItemsChange={setIngredients} Toast={Toast}/>
+    <NutritionRulesPanel memberId={selectedMemberId} ingredients={ingredients} Toast={Toast}/>
     <NutritionRecipeLibrary ingredients={ingredients} recipes={nutritionRecipes} Toast={Toast} onChanged={()=>loadAll({silent:true,memberId:selectedMemberId})}/>
     <Box className="cg-gym-v1124-grid" sx={{display:'grid',gridTemplateColumns:{xs:'1fr',lg:'minmax(0,1.35fr) minmax(320px,.65fr)'},gap:1.25}}>
       <Section title="Plan alimenticio completo" description="7/14/28 días, recetas, porciones, preparación y alternativas explícitas.">
