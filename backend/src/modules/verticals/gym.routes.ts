@@ -350,6 +350,19 @@ const mealIngredientSchema = z.object({
   notes: optionalText
 });
 
+const nutritionMealSchema = z.object({
+  dayOfWeek: z.coerce.number().int().min(1).max(7),
+  sortOrder: z.coerce.number().int().min(1).max(50),
+  mealType: z.string().trim().min(2).max(80),
+  plannedAt: z.string().optional().nullable(),
+  items: z.array(mealIngredientSchema).max(100).default([]),
+  calories: z.coerce.number().int().min(0).optional().nullable(),
+  proteinG: z.coerce.number().min(0).optional().nullable(),
+  carbsG: z.coerce.number().min(0).optional().nullable(),
+  fatG: z.coerce.number().min(0).optional().nullable(),
+  notes: optionalText
+});
+
 const nutritionSchema = z.object({
   memberId: z.string().min(10),
   trainerId: z.string().optional().nullable(),
@@ -363,16 +376,19 @@ const nutritionSchema = z.object({
   notes: optionalText,
   startsAt: z.string().optional().nullable(),
   endsAt: z.string().optional().nullable(),
-  meals: z.array(z.object({
-    mealType: z.string().trim().min(2).max(80),
-    plannedAt: z.string().optional().nullable(),
-    items: z.array(mealIngredientSchema).max(100).default([]),
-    calories: z.coerce.number().int().min(0).optional().nullable(),
-    proteinG: z.coerce.number().min(0).optional().nullable(),
-    carbsG: z.coerce.number().min(0).optional().nullable(),
-    fatG: z.coerce.number().min(0).optional().nullable(),
-    notes: optionalText
-  })).default([])
+  meals: z.array(nutritionMealSchema).max(350).default([])
+}).superRefine((value, refinement) => {
+  if(value.startsAt&&value.endsAt&&new Date(value.endsAt).getTime()<new Date(value.startsAt).getTime()){
+    refinement.addIssue({code:'custom',path:['endsAt'],message:'La vigencia del plan no puede finalizar antes de comenzar.'});
+  }
+  const positions=new Set<string>();
+  value.meals.forEach((meal,index)=>{
+    const key=`${meal.dayOfWeek}:${meal.sortOrder}`;
+    if(positions.has(key)){
+      refinement.addIssue({code:'custom',path:['meals',index,'sortOrder'],message:'Cada comida debe tener una posición única dentro de su día.'});
+    }
+    positions.add(key);
+  });
 });
 
 const classSchema = z.object({
@@ -1227,7 +1243,7 @@ router.get('/gym/nutrition', requirePermission('gym.manage'), asyncHandler(async
               WHERE mi."tenantId"=m."tenantId" AND mi."mealId"=m."id"
             ),CASE WHEN jsonb_typeof(m."items")='array' THEN m."items" ELSE '[]'::jsonb END)
           )
-          ORDER BY m."plannedAt",m."id"
+          ORDER BY m."dayOfWeek" NULLS LAST,m."sortOrder",m."plannedAt",m."id"
         )
         FROM public."GymMeal" m
         WHERE m."tenantId"=p."tenantId" AND m."nutritionPlanId"=p."id"
@@ -1273,10 +1289,10 @@ router.post('/gym/nutrition', requirePermission('gym.manage'), asyncHandler(asyn
     const createdPlan = one(planRows);
     for (const meal of b.meals) {
       const mealRows=await tx.$queryRawUnsafe<any[]>(`
-        INSERT INTO public."GymMeal" ("id","tenantId","nutritionPlanId","mealType","plannedAt","items","calories","proteinG","carbsG","fatG","notes")
-        VALUES (gen_random_uuid()::text,$1,$2,$3,$4::time,'[]'::jsonb,$5,$6,$7,$8,$9)
+        INSERT INTO public."GymMeal" ("id","tenantId","nutritionPlanId","dayOfWeek","sortOrder","mealType","plannedAt","items","calories","proteinG","carbsG","fatG","notes")
+        VALUES (gen_random_uuid()::text,$1,$2,$3,$4,$5,$6::time,'[]'::jsonb,$7,$8,$9,$10,$11)
         RETURNING "id"
-      `, tenantId,createdPlan.id,meal.mealType,meal.plannedAt||null,meal.calories||null,meal.proteinG||null,meal.carbsG||null,meal.fatG||null,meal.notes||null);
+      `, tenantId,createdPlan.id,meal.dayOfWeek,meal.sortOrder,meal.mealType,meal.plannedAt||null,meal.calories||null,meal.proteinG||null,meal.carbsG||null,meal.fatG||null,meal.notes||null);
       const mealId=String(mealRows[0]?.id||'');
       for(let index=0;index<meal.items.length;index+=1){
         const item=meal.items[index];
