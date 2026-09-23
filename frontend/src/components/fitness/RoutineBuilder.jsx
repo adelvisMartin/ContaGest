@@ -26,11 +26,18 @@ const newExercise=(dayOfWeek=1,sortOrder=1)=>({
 
 const normalizeOrder=(items)=>items.map((item,index)=>({...item,sortOrder:index+1}));
 
-export function RoutineBuilder({value=[],onChange,disabled=false}){
+export function RoutineBuilder({value=[],onChange,disabled=false,catalog=[]}){
   const exercises=Array.isArray(value)?value:[];
-  const exerciseCatalog=useMemo(()=>Object.entries(FITNESS_EXERCISES).flatMap(([muscleGroup,items])=>
-    items.map((item)=>({...item,muscleGroup}))
-  ),[]);
+  const persistedCatalog=useMemo(()=>Array.isArray(catalog)?catalog.filter((item)=>item?.active!==false):[],[catalog]);
+  const exerciseCatalog=useMemo(()=>{
+    const persistedNames=new Set(persistedCatalog.map((item)=>String(item.name||'').toLocaleLowerCase('es')));
+    const builtIn=Object.entries(FITNESS_EXERCISES).flatMap(([muscleGroup,items])=>
+      items
+        .filter((item)=>!persistedNames.has(String(item.name||'').toLocaleLowerCase('es')))
+        .map((item)=>({...item,muscleGroup,id:null,defaultSets:3,defaultReps:'10'}))
+    );
+    return [...persistedCatalog,...builtIn];
+  },[persistedCatalog]);
 
   function commit(next){
     onChange?.(normalizeOrder(next));
@@ -71,11 +78,13 @@ export function RoutineBuilder({value=[],onChange,disabled=false}){
       return;
     }
     updateExercise(index,{
-      exerciseId:null,
+      exerciseId:selected.id||null,
       exerciseName:selected.name,
-      muscleGroup:selected.muscleGroup,
+      muscleGroup:selected.muscleGroup||'',
       equipment:selected.equipment||'',
-      instructions:selected.cue||''
+      instructions:selected.instructions||selected.cue||'',
+      sets:Number(selected.defaultSets||3),
+      reps:String(selected.defaultReps||'10')
     });
   }
 
@@ -90,7 +99,7 @@ export function RoutineBuilder({value=[],onChange,disabled=false}){
     {exercises.map((exercise,index)=>{
       const catalogNames=[
         {value:'',label:'Seleccionar del catálogo'},
-        ...exerciseCatalog.map((item)=>({value:item.name,label:`${item.name} · ${item.muscleGroup}`}))
+        ...exerciseCatalog.map((item)=>({value:item.name,label:`${item.name} · ${item.muscleGroup||'Sin grupo'}${item.id?' · Biblioteca':''}`}))
       ];
       return <Paper key={`${exercise.sortOrder}-${index}`} variant="outlined" sx={{p:1.2}}>
         <Stack direction={{xs:'column',sm:'row'}} justifyContent="space-between" gap={1} alignItems={{sm:'center'}}>
