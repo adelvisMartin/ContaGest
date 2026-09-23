@@ -2,150 +2,184 @@
 
 ## Objetivo
 
-Entregar al tutor un acceso externo temporal y revocable para consultar información veterinaria ya autorizada, sin convertir el portal en una segunda autoridad clínica, comercial o de agenda.
+Dar al tutor un acceso externo **temporal, revocable y de solo lectura** a información ya autorizada de su mascota, sin crear una segunda autoridad clínica, de agenda, comunicaciones o facturación.
 
-El alcance cubre:
+El portal cubre:
 
-- citas y estado de recordatorios;
-- hospitalización y alta;
-- estudios/documentos clínicos publicados;
-- estimaciones, facturas y estado comercial;
-- comunicaciones marcadas explícitamente para el tutor.
-
-El portal es **read-only**.
-
-## Seguridad del acceso
-
-El personal autorizado crea un grant temporal desde la pestaña **Portal tutor**.
-
-El servidor:
-
-1. genera un token aleatorio de 32 bytes;
-2. devuelve el token únicamente en la respuesta de creación;
-3. persiste sólo `tokenSha256`;
-4. revoca grants activos anteriores de la misma mascota al crear uno nuevo;
-5. admite vigencia de 1 a 90 días;
-6. permite revocación explícita;
-7. registra creación/revocación en auditoría;
-8. registra `lastUsedAt` al consumir el enlace.
-
-El token no se almacena en texto plano.
-
-La tabla `VeterinaryGuardianPortalGrant` tiene RLS activado y acceso directo revocado a `anon` y `authenticated`.
-
-## Boundary público
-
-El GET público se monta en:
-
-`/api/v1/public/veterinary-portal/:token`
-
-antes del middleware de sesión privada, pero después de los controles globales de seguridad/rate limit.
-
-No existen POST/PUT/PATCH/DELETE públicos para el portal en 31/51.
-
-Las respuestas usan:
-
-- `Cache-Control: no-store`;
-- `Referrer-Policy: no-referrer`;
-- `X-Robots-Tag: noindex, nofollow, noarchive`.
-
-## Allow-list de datos
-
-El snapshot público no serializa entidades completas.
-
-### Mascota
-
-Se exponen nombre, especie, raza, sexo, fecha de nacimiento y nombre del tutor.
-
-No se exponen notas internas, alergias, antecedentes, tenantId ni IDs internos.
-
-### Citas y recordatorios
-
-Autoridad: `CareAppointment`.
-
-Se exponen únicamente fecha/hora, estado, motivo, canal y `reminderStatus`.
-
-### Alta y hospitalización
-
-Autoridad: `CareHospitalization`.
-
-Se exponen número de admisión, fechas de ingreso/alta, estado, diagnóstico registrado y sala.
-
-No se expone `carePlan` ni observaciones internas.
-
-### Documentos clínicos
-
-Autoridad: `CareDiagnosticStudy`.
-
-Se exponen metadatos clínicos seleccionados y `externalUrl` sólo cuando es HTTPS.
-
-`attachmentPath` no se consulta ni se devuelve.
-
-### Facturación y pagos
-
-Autoridades: `VeterinaryFinancialCase` + `SalesInvoice`.
-
-Se muestran estado del caso, estimación, número/estado/total de factura y fechas.
-
-El portal no emite, paga, postea ni anula facturas.
-
-### Comunicaciones
-
-Autoridad: `CareCommunicationLog`.
-
-Sólo se muestra `payload.guardianText`; el payload completo nunca forma parte de la respuesta pública.
-
-Registrar una comunicación desde el panel admin crea un log `queued`. Esto **no se presenta como envío confirmado**: el estado sólo cambia cuando el proveedor/canal correspondiente lo confirma.
-
-## Frontend
-
-### Admin
-
-`VeterinaryGuardianPortalPanel.jsx` es el único owner del flujo:
-
-- seleccionar vigencia;
-- crear enlace;
-- copiar el token recién emitido;
-- revisar uso/vigencia;
-- revocar;
-- registrar comunicación visible al tutor.
-
-### Tutor
-
-`frontend/portal/veterinaria/index.html` es una entrada Vite independiente del shell ERP privado.
-
-`guardianPortal.jsx` consume el snapshot con `noAuth:true` y muestra:
-
-- Citas y recordatorios;
-- Alta y hospitalización;
-- Documentos clínicos;
-- Facturación y pagos;
-- Comunicaciones.
+- citas;
+- estado de recordatorios;
+- alta/estancia hospitalaria;
+- documentos publicados;
+- estimaciones/facturas;
+- trazabilidad de comunicaciones.
 
 ## Autoridades preservadas
 
-31/51 no crea duplicados de:
+El portal sólo agrega lecturas de:
 
-- agenda;
-- hospitalización;
-- estudios;
-- facturación;
-- comunicaciones;
-- historia clínica.
+- `CareAppointment`;
+- `CareCommunicationLog`;
+- `CareHospitalization`;
+- `CareDiagnosticStudy`;
+- `VeterinaryFinancialCase` + `SalesInvoice`.
 
-`VeterinaryGuardianPortalGrant` sólo gobierna acceso temporal.
+`VeterinaryGuardianPortalGrant` controla únicamente **acceso**. No almacena historia clínica ni datos comerciales duplicados.
+
+## Grant autorizado
+
+El personal con permisos de salud + comunicaciones administra la pestaña **Portal tutor**.
+
+Al emitir un grant:
+
+1. se valida una mascota activa del tenant;
+2. se genera `randomBytes(32)` (256 bits);
+3. se persiste sólo `tokenSha256`;
+4. se revoca cualquier grant activo anterior de la misma mascota;
+5. se elige vigencia de 1 a 168 horas;
+6. se eligen scopes explícitos:
+   - `appointments`;
+   - `reminders`;
+   - `discharge`;
+   - `documents`;
+   - `payments`;
+   - `communications`;
+7. creación/revocación se auditan sin token ni hash en el payload de auditoría.
+
+El token en claro se devuelve únicamente en la respuesta de creación.
+
+## Transporte del secreto
+
+El enlace generado usa:
+
+`/portal/veterinaria/#access=<token>`
+
+El fragmento no forma parte de la solicitud HTTP. La vista pública:
+
+1. lee `#access`;
+2. mueve el token a `sessionStorage`;
+3. elimina inmediatamente el fragmento con `history.replaceState`;
+4. envía el token mediante `POST /api/v1/public/veterinary-portal/session`;
+5. elimina el token de sessionStorage si la sesión resulta inválida/revocada/vencida.
+
+No se usa query string, path token, localStorage ni tenant header.
+
+## Boundary público
+
+Se monta antes de CSRF/requestContext privado, pero después de controles globales de seguridad, secretos y rate limit.
+
+La frontera pública expone únicamente:
+
+`POST /api/v1/public/veterinary-portal/session`
+
+El token se hashea y el servidor deriva `tenantId + patientId` exclusivamente del grant activo.
+
+La única escritura pública permitida es:
+
+`VeterinaryGuardianPortalGrant.lastUsedAt = now()`
+
+No existen operaciones públicas para editar citas, clínica, documentos, facturas o comunicaciones.
+
+## Allow-list pública
+
+### Identidad
+
+Sólo datos básicos de mascota/tutor necesarios para la vista.
+
+### Citas / recordatorios
+
+Fecha/hora, estado, motivo, canal y `reminderStatus`.
+
+### Alta / estancia
+
+Número de admisión, fechas, estado y sala.
+
+**No** se expone diagnóstico, care plan ni hoja de tratamiento.
+
+### Documentos
+
+Título/tipo/estado/fecha y `externalUrl` únicamente cuando es HTTPS.
+
+**No** se exponen `attachmentPath`, findings, impression ni rutas internas.
+
+### Pagos / facturación
+
+Estado de caso, estimación, número/estado/total de factura.
+
+El portal no cobra, emite, anula ni contabiliza.
+
+### Comunicaciones
+
+Sólo canal, evento, estado y timestamps.
+
+No se exponen payload, error, providerMessageId ni texto interno.
+
+## Comunicación del enlace
+
+El panel interno puede copiar el enlace o preparar WhatsApp/correo. Antes de abrir el canal registra un `CareCommunicationLog` sin persistir el secreto:
+
+- grantId;
+- expiresAt;
+- scopes;
+- `portalSecretPersisted:false`.
+
+El enlace real sólo existe en memoria del navegador durante esa acción.
+
+## Persistencia y RLS
+
+La migración `20260923134500_veterinary_guardian_portal_v3151` crea `VeterinaryGuardianPortalGrant` con:
+
+- token SHA-256 único;
+- scopes JSONB;
+- expiración;
+- revocación;
+- actor creador;
+- último uso;
+- índices;
+- RLS;
+- `REVOKE ALL` para anon/authenticated.
+
+## UX
+
+### Staff
+
+`VeterinaryGuardianPortalPanel.jsx` es el único owner:
+
+- TTL 24/48/72/168 h;
+- scopes configurables;
+- creación/reemplazo de acceso;
+- enlace visible una sola vez;
+- copiar;
+- preparar WhatsApp/correo;
+- estado activo/vencido/revocado;
+- último uso;
+- revocación;
+- loading/error/retry/disabled.
+
+### Tutor
+
+`frontend/portal/veterinaria/index.html` es una entrada Vite independiente del ERP privado.
+
+`guardianPortal.jsx` presenta:
+
+- citas y recordatorios;
+- alta/estancia;
+- documentos;
+- facturación/pagos;
+- comunicaciones.
+
+Sin controles de mutación.
 
 ## QA
 
-`tests/erp_ui_veterinary_guardian_portal_31_51.test.mjs` bloquea:
+`tests/erp_ui_veterinary_guardian_portal_31_51.test.mjs` y Wave A bloquean regresiones de:
 
-- tokens persistidos en plano;
-- portal público con mutaciones;
-- exposición de `attachmentPath` o payload crudo;
-- pérdida de headers anti-cache/referrer;
-- pérdida del owner admin único;
-- pérdida de la entrada Vite pública.
+- token en texto plano;
+- token en query/path;
+- TTL > 7 días;
+- pérdida de scopes;
+- exposición de clinicalData, diagnóstico, findings/impression, payloads o storage paths;
+- mutaciones públicas distintas de lastUsedAt;
+- owner UI duplicado;
+- pérdida de la entrada pública Vite.
 
-Wave A replica los mismos contratos de forma fail-closed.
-
-Runtime/PostgreSQL/browser sólo se clasifican PASS cuando existan steps/logs reales del SHA candidato. Si Actions termina antes del runner, el estado es `BLOCKED_INFRASTRUCTURE`.
+Browser/PostgreSQL/runtime sólo se consideran PASS con ejecución real del SHA exacto. Un job sin runner/steps/logs se clasifica `BLOCKED_INFRASTRUCTURE`.
