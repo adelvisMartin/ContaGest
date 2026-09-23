@@ -30,7 +30,7 @@ concurrency:
 jobs:
   contract:
     name: Contract and broken-fixture gate
-    if: github.event_name == 'workflow_dispatch' || startsWith(github.head_ref, 'test/erp-155-') || startsWith(github.head_ref, 'release/candidate-')
+    if: github.event_name == 'workflow_dispatch' || (startsWith(github.head_ref, 'test/erp-155-') || startsWith(github.head_ref, 'test/erp-visual-matrix-')) || startsWith(github.head_ref, 'release/candidate-')
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -57,7 +57,7 @@ jobs:
 
   browser-matrix:
     name: chromium / ${{ matrix.role }} / ${{ matrix.viewport }}
-    if: github.event_name == 'workflow_dispatch' || startsWith(github.head_ref, 'test/erp-155-') || startsWith(github.head_ref, 'release/candidate-')
+    if: github.event_name == 'workflow_dispatch' || (startsWith(github.head_ref, 'test/erp-155-') || startsWith(github.head_ref, 'test/erp-visual-matrix-')) || startsWith(github.head_ref, 'release/candidate-')
     runs-on: ubuntu-latest
     timeout-minutes: 120
     strategy:
@@ -109,7 +109,7 @@ jobs:
 
   cross-browser-matrix:
     name: ${{ matrix.browser.project }} / ${{ matrix.role }} / ${{ matrix.viewport }}
-    if: github.event_name == 'workflow_dispatch' || startsWith(github.head_ref, 'test/erp-155-') || startsWith(github.head_ref, 'release/candidate-')
+    if: github.event_name == 'workflow_dispatch' || (startsWith(github.head_ref, 'test/erp-155-') || startsWith(github.head_ref, 'test/erp-visual-matrix-')) || startsWith(github.head_ref, 'release/candidate-')
     runs-on: ubuntu-latest
     timeout-minutes: 120
     strategy:
@@ -159,7 +159,7 @@ jobs:
 
   regression-pack:
     name: Existing 58-route functional/a11y/reliability pack
-    if: github.event_name == 'workflow_dispatch' || startsWith(github.head_ref, 'test/erp-155-') || startsWith(github.head_ref, 'release/candidate-')
+    if: github.event_name == 'workflow_dispatch' || (startsWith(github.head_ref, 'test/erp-155-') || startsWith(github.head_ref, 'test/erp-visual-matrix-')) || startsWith(github.head_ref, 'release/candidate-')
     runs-on: ubuntu-latest
     timeout-minutes: 180
     outputs:
@@ -236,7 +236,7 @@ jobs:
 
   aggregate:
     name: Aggregate evidence, harvest P0/P1 and fail closed
-    if: always() && (github.event_name == 'workflow_dispatch' || startsWith(github.head_ref, 'test/erp-155-') || startsWith(github.head_ref, 'release/candidate-'))
+    if: always() && (github.event_name == 'workflow_dispatch' || (startsWith(github.head_ref, 'test/erp-155-') || startsWith(github.head_ref, 'test/erp-visual-matrix-')) || startsWith(github.head_ref, 'release/candidate-'))
     needs: [contract, browser-matrix, cross-browser-matrix, regression-pack]
     runs-on: ubuntu-latest
     timeout-minutes: 20
