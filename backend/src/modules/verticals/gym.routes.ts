@@ -245,6 +245,29 @@ const decoratePeriodizationProgram = (row:any) => {
   };
 };
 
+const workoutSessionSchema = z.object({
+  routineId: z.string().min(10),
+  notes: optionalText
+});
+const workoutSetSchema = z.object({
+  routineExerciseId: z.string().min(10),
+  setNumber: z.coerce.number().int().min(1).max(100),
+  status: z.enum(['completed','skipped']),
+  loadKg: z.coerce.number().min(0).max(5000).optional().nullable(),
+  reps: z.coerce.number().int().min(0).max(500).optional().nullable(),
+  rir: z.coerce.number().min(0).max(10).optional().nullable(),
+  rpe: z.coerce.number().min(1).max(10).optional().nullable(),
+  restSeconds: z.coerce.number().int().min(0).max(3600).default(0),
+  notes: optionalText
+}).superRefine((value, refinement) => {
+  if(value.status==='completed'&&value.reps==null){
+    refinement.addIssue({code:'custom',path:['reps'],message:'Las series realizadas requieren repeticiones.'});
+  }
+  if(value.rir!=null&&value.rpe!=null&&Math.abs((10-Number(value.rir))-Number(value.rpe))>0.5){
+    refinement.addIssue({code:'custom',path:['rpe'],message:'RIR y RPE no son coherentes entre sí.'});
+  }
+});
+
 const routineSchema = z.object({
   memberId: z.string().min(10),
   trainerId: z.string().optional().nullable(),
@@ -642,6 +665,133 @@ router.post('/gym/periodization/programs/:id/version', requirePermission('gym.ma
     return one(rows);
   });
   ok(res,decoratePeriodizationProgram(created),201);
+}));
+
+router.get('/gym/workout-sessions', requirePermission('gym.manage'), asyncHandler(async (req, res) => {
+  const memberId=String(req.query.memberId||'').trim();
+  if(!memberId)throw new HttpError(422,'memberId es obligatorio.');
+  const tenantId=ctx(req).tenantId;
+  const memberRows=await prisma.$queryRawUnsafe<any[]>(`
+    SELECT "id" FROM public."GymMember"
+    WHERE "tenantId"=$1 AND "id"=$2
+    LIMIT 1
+  `,tenantId,memberId);
+  if(!memberRows.length)throw new HttpError(404,'El cliente no pertenece al tenant activo.');
+  const rows=await prisma.$queryRawUnsafe<any[]>(`
+    SELECT s.*,
+      COALESCE((
+        SELECT json_agg(ws ORDER BY ws."recordedAt",ws."routineExerciseId",ws."setNumber")
+        FROM public."GymWorkoutSet" ws
+        WHERE ws."tenantId"=s."tenantId" AND ws."sessionId"=s."id"
+      ),'[]') AS sets
+    FROM public."GymWorkoutSession" s
+    WHERE s."tenantId"=$1 AND s."memberId"=$2
+    ORDER BY (s."status"='in_progress') DESC,s."startedAt" DESC
+    LIMIT 200
+  `,tenantId,memberId);
+  ok(res,rows);
+}));
+
+router.post('/gym/workout-sessions', requirePermission('gym.manage'), asyncHandler(async (req, res) => {
+  const b=workoutSessionSchema.parse(req.body||{});
+  const tenantId=ctx(req).tenantId;
+  const created=await prisma.$transaction(async(tx)=>{
+    const routineRows=await tx.$queryRawUnsafe<any[]>(`
+      SELECT "id","memberId"
+      FROM public."GymRoutine"
+      WHERE "tenantId"=$1 AND "id"=$2 AND "active"=true
+      LIMIT 1
+    `,tenantId,b.routineId);
+    if(!routineRows.length)throw new HttpError(422,'La rutina no pertenece al tenant activo.');
+    const routine=routineRows[0];
+    const lockKey=`gym-workout-session:${tenantId}:${routine.memberId}`;
+    await tx.$queryRawUnsafe('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',lockKey);
+    const activeRows=await tx.$queryRawUnsafe<any[]>(`
+      SELECT "id" FROM public."GymWorkoutSession"
+      WHERE "tenantId"=$1 AND "memberId"=$2 AND "status"='in_progress'
+      LIMIT 1
+    `,tenantId,routine.memberId);
+    if(activeRows.length)throw new HttpError(409,'El cliente ya tiene una sesión activa.');
+    const rows=await tx.$queryRawUnsafe<any[]>(`
+      INSERT INTO public."GymWorkoutSession"
+        ("id","tenantId","routineId","memberId","status","startedAt","completedAt","notes","createdBy","createdAt","updatedAt")
+      VALUES (gen_random_uuid()::text,$1,$2,$3,'in_progress',now(),NULL,$4,$5,now(),now())
+      RETURNING *
+    `,tenantId,b.routineId,routine.memberId,b.notes||null,ctx(req).userId||null);
+    return one(rows);
+  });
+  ok(res,{...created,sets:[]},201);
+}));
+
+router.post('/gym/workout-sessions/:id/sets', requirePermission('gym.manage'), asyncHandler(async (req, res) => {
+  const b=workoutSetSchema.parse(req.body||{});
+  const tenantId=ctx(req).tenantId;
+  const sessionId=String(req.params.id);
+  const created=await prisma.$transaction(async(tx)=>{
+    const sessionRows=await tx.$queryRawUnsafe<any[]>(`
+      SELECT s.*
+      FROM public."GymWorkoutSession" s
+      WHERE s."tenantId"=$1 AND s."id"=$2
+      LIMIT 1
+      FOR UPDATE OF s
+    `,tenantId,sessionId);
+    const session=one(sessionRows,'Sesión de entrenamiento no encontrada.');
+    if(session.status!=='in_progress')throw new HttpError(409,'La sesión ya está completada.');
+
+    const exerciseRows=await tx.$queryRawUnsafe<any[]>(`
+      SELECT "id","routineId"
+      FROM public."GymRoutineExercise"
+      WHERE "tenantId"=$1 AND "id"=$2 AND "routineId"=$3
+      LIMIT 1
+    `,tenantId,b.routineExerciseId,session.routineId);
+    if(!exerciseRows.length)throw new HttpError(422,'El ejercicio no pertenece a la rutina de esta sesión.');
+
+    const duplicate=await tx.$queryRawUnsafe<any[]>(`
+      SELECT "id" FROM public."GymWorkoutSet"
+      WHERE "sessionId"=$1 AND "routineExerciseId"=$2 AND "setNumber"=$3
+      LIMIT 1
+    `,session.id,b.routineExerciseId,b.setNumber);
+    if(duplicate.length)throw new HttpError(409,'La serie indicada ya fue registrada.');
+
+    const completed=b.status==='completed';
+    const rows=await tx.$queryRawUnsafe<any[]>(`
+      INSERT INTO public."GymWorkoutSet"
+        ("id","tenantId","sessionId","routineExerciseId","setNumber","status","loadKg","reps","rir","rpe","restSeconds","notes","recordedAt","createdBy")
+      VALUES (gen_random_uuid()::text,$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,now(),$12)
+      RETURNING *
+    `,tenantId,session.id,b.routineExerciseId,b.setNumber,b.status,
+      completed?(b.loadKg??null):null,
+      completed?(b.reps??null):null,
+      completed?(b.rir??null):null,
+      completed?(b.rpe??null):null,
+      b.restSeconds,b.notes||null,ctx(req).userId||null);
+    return one(rows);
+  });
+  ok(res,created,201);
+}));
+
+router.post('/gym/workout-sessions/:id/complete', requirePermission('gym.manage'), asyncHandler(async (req, res) => {
+  const tenantId=ctx(req).tenantId;
+  const sessionId=String(req.params.id);
+  const completed=await prisma.$transaction(async(tx)=>{
+    const sessionRows=await tx.$queryRawUnsafe<any[]>(`
+      SELECT s.*
+      FROM public."GymWorkoutSession" s
+      WHERE s."tenantId"=$1 AND s."id"=$2
+      LIMIT 1
+      FOR UPDATE OF s
+    `,tenantId,sessionId);
+    const session=one(sessionRows,'Sesión de entrenamiento no encontrada.');
+    if(session.status!=='in_progress')throw new HttpError(409,'La sesión ya está completada.');
+    const rows=await tx.$queryRawUnsafe<any[]>(`
+      UPDATE public."GymWorkoutSession"
+      SET "status"='completed',"completedAt"=now(),"updatedAt"=now()
+      WHERE "tenantId"=$1 AND "id"=$2
+      RETURNING *
+    `,tenantId,session.id);
+    return one(rows);
+  });
+  ok(res,completed);
 }));
 
 router.get('/gym/routines', requirePermission('gym.manage'), asyncHandler(async (req, res) => {

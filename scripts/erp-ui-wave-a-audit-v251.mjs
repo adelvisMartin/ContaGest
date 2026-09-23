@@ -713,6 +713,24 @@ if(fitnessEntries.every((item)=>item.status==='MIGRATED')){
   const periodizationBlock=gymRoutes.slice(periodizationStart,periodizationEnd);
   if(periodizationStart<0||periodizationEnd<0)fail('fitness: periodization 39 route boundaries missing');
   if(/GymWorkoutSession|GymWorkoutSet|completedSets|actualRir|actualRpe|timer/.test(periodizationBlock))fail('fitness: periodization 39 must not pre-implement workout execution 40');
+  const workoutPanel=read('frontend/src/components/fitness/WorkoutSessionPanel.jsx');
+  const workoutMigration=read('backend/prisma/migrations/20260923175500_gym_workout_execution_40_51/migration.sql');
+  if((fitness.match(/<WorkoutSessionPanel/g)||[]).length!==1)fail('fitness: WorkoutSessionPanel must render from one owner');
+  if(/querySelector|addEventListener|innerHTML|document\./.test(workoutPanel))fail('fitness: workout execution 40 reintroduced imperative DOM lifecycle');
+  for(const contract of ['Registrar serie','Omitir serie','Carga realizada','Reps realizadas','RIR','RPE','Descanso tras serie','Temporizador de descanso','Completar sesión','setInterval','clearInterval']){
+    if(!workoutPanel.includes(contract))fail(`fitness: workout execution 40 UI missing ${contract}`);
+  }
+  for(const contract of ['workoutSessionSchema','workoutSetSchema','/gym/workout-sessions/:id/sets','/gym/workout-sessions/:id/complete','FOR UPDATE OF s','El ejercicio no pertenece a la rutina de esta sesión.','La sesión ya está completada.']){
+    if(!gymRoutes.includes(contract))fail(`fitness: workout execution 40 backend missing ${contract}`);
+  }
+  for(const contract of ['GymWorkoutSession','GymWorkoutSet','one_active_member_unique','session_exercise_set_unique','restSeconds']){
+    if(!workoutMigration.includes(contract))fail(`fitness: workout execution 40 migration missing ${contract}`);
+  }
+  const workoutStart=gymRoutes.indexOf("router.get('/gym/workout-sessions'");
+  const workoutEnd=gymRoutes.indexOf("router.get('/gym/routines'",workoutStart);
+  const workoutBlock=gymRoutes.slice(workoutStart,workoutEnd);
+  if(workoutStart<0||workoutEnd<0)fail('fitness: workout execution 40 route boundaries missing');
+  if(/personalRecord|estimated1RM|e1RM|adherence|volumeBy|performanceChart/.test(workoutBlock))fail('fitness: workout execution 40 must not pre-implement history/performance 41');
 }
 
 const css=read('frontend/src/styles/erp-runtime.css');
