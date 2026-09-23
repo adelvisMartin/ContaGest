@@ -36,7 +36,9 @@ Antes de insertar un evento el backend revalida dentro de una transacción:
 1. cliente del tenant activo;
 2. plan del mismo cliente/tenant;
 3. comida perteneciente a ese plan;
-4. advisory lock por comida.
+4. advisory lock por comida;
+5. fecha de inicio explícita en el plan;
+6. la comida no puede estar en una fecha futura.
 
 El endpoint no acepta actor ni timestamp como autoridad desde el cliente.
 
