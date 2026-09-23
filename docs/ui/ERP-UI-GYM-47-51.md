@@ -130,11 +130,7 @@ La lectura deriva:
 - fotos autorizadas;
 - cumplimiento de cada hábito.
 
-Para adherencia de comidas:
-
-- completada = 1;
-- parcial = 0.5;
-- omitida/sin registro = 0.
+Para adherencia de comidas, el porcentaje principal es **comidas completadas / comidas planificadas**. Los estados parcial, omitida y sin registro se exponen por separado y no reciben una ponderación inventada.
 
 La métrica es descriptiva y no produce decisiones clínicas.
 
@@ -164,7 +160,8 @@ Las fotos:
 - requieren `gym.manage`;
 - quedan tenant scoped;
 - exigen autorización explícita por carga;
-- se muestran mediante signed URLs temporales.
+- se muestran mediante signed URLs temporales;
+- si falla el registro de metadata después del upload, la UI intenta eliminar el archivo recién subido para evitar huérfanos.
 
 ## Frontera
 
