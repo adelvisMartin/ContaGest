@@ -770,15 +770,15 @@ if(fitnessEntries.every((item)=>item.status==='MIGRATED')){
   if(/diagnos|injuryScore|medicalRisk|contraindicationEngine/i.test(substitutionBlock))fail('fitness: contextual substitutions 42 must not infer health decisions');
   if(/ingredient|recipe|macronutrient|micronutrient|mealPlan/i.test(substitutionBlock))fail('fitness: contextual substitutions 42 must not pre-implement nutrition model 43');
   const ingredientLibrary=read('frontend/src/components/fitness/IngredientLibraryPanel.jsx');
-  const nutritionBuilder=read('frontend/src/components/fitness/NutritionMealBuilder.jsx');
+  const nutritionBuilder=read('frontend/src/components/fitness/CompleteMealPlanBuilder.jsx');
   const ingredientMigration=read('backend/prisma/migrations/20260923183500_gym_ingredient_model_43_51/migration.sql');
   if((fitness.match(/<IngredientLibraryPanel/g)||[]).length!==1)fail('fitness: ingredient library 43 must render from one owner');
-  if((fitness.match(/<NutritionMealBuilder/g)||[]).length!==1)fail('fitness: structured nutrition builder 43 must render from one owner');
+  if((fitness.match(/<CompleteMealPlanBuilder/g)||[]).length!==1)fail('fitness: structured nutrition builder must have one owner after 44/51 supersedes the 43 builder');
   if(/querySelector|addEventListener|innerHTML|document\./.test(ingredientLibrary+nutritionBuilder))fail('fitness: nutrition ingredient 43 reintroduced imperative DOM lifecycle');
   for(const contract of ['Catálogo de ingredientes','Ingrediente','Categoría','Unidad base','Archivar','Reactivar']){
     if(!ingredientLibrary.includes(contract))fail(`fitness: ingredient library 43 UI missing ${contract}`);
   }
-  for(const contract of ['Comidas por ingrediente','Agregar comida','Seleccionar ingrediente','Cantidad','Unidad','Agregar ingrediente']){
+  for(const contract of ['Plan alimenticio completo','Agregar comida','Ingrediente','Cantidad','Unidad','Agregar ingrediente']){
     if(!nutritionBuilder.includes(contract))fail(`fitness: nutrition builder 43 UI missing ${contract}`);
   }
   for(const contract of ['ingredientSchema','mealIngredientSchema',"/gym/ingredients",'GymIngredient','GymMealItem','Uno o más ingredientes no pertenecen al tenant activo o están archivados.','prisma.$transaction']){
