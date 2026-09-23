@@ -702,7 +702,7 @@ if(fitnessEntries.every((item)=>item.status==='MIGRATED')){
   for(const contract of ['Mesociclo','Carga','Descarga','Volumen objetivo','Intensidad objetivo']){
     if(!periodizationBuilder.includes(contract))fail(`fitness: periodization 39 builder missing ${contract}`);
   }
-  for(const contract of ['periodizationStructureSchema','GymPeriodizationProgram','GymPeriodizationTemplate','/gym/periodization/programs/:id/version','pg_advisory_xact_lock','MAX("version")','La rutina no pertenece al tenant activo.','La plantilla no pertenece al tenant activo.']){
+  for(const contract of ['periodizationStructureSchema','GymPeriodizationProgram','GymPeriodizationTemplate','/gym/periodization/programs/:id/version','pg_advisory_xact_lock','MAX("version")','Solo la versión más reciente puede generar una nueva revisión.','La rutina no pertenece al tenant activo.','La plantilla no pertenece al tenant activo.']){
     if(!gymRoutes.includes(contract))fail(`fitness: backend missing periodization 39 contract ${contract}`);
   }
   for(const contract of ['programKey','version','structure','sourceTemplateId','supersedesId']){
