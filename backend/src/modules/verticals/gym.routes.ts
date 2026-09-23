@@ -1509,14 +1509,14 @@ router.get('/gym/adherence', requirePermission('gym.manage'), asyncHandler(async
   if(!memberId)throw new HttpError(422,'memberId es obligatorio.');
 
   const memberRows=await prisma.$queryRawUnsafe<any[]>(`
-    SELECT "id","fullName"
+    SELECT "id","fullName","goals"
     FROM public."GymMember"
     WHERE "tenantId"=$1 AND "id"=$2
     LIMIT 1
   `,tenantId,memberId);
   const member=one(memberRows,'El cliente no pertenece al tenant activo.');
 
-  const planned=await prisma.$queryRawUnsafe<any[]>(`
+  const plannedRows=await prisma.$queryRawUnsafe<any[]>(`
     WITH planned_meals AS (
       SELECT
         m."id" AS "mealId",
@@ -1527,11 +1527,10 @@ router.get('/gym/adherence', requirePermission('gym.manage'), asyncHandler(async
         m."sortOrder",
         m."mealType",
         m."plannedAt",
-        (
-          COALESCE(p."startsAt",p."createdAt"::date)
-          + (GREATEST(COALESCE(m."dayIndex",1),1)-1)
-          + COALESCE(m."plannedAt",'00:00'::time)
-        ) AS "dueAt"
+        CASE
+          WHEN p."startsAt" IS NULL THEN NULL
+          ELSE to_char((p."startsAt" + (GREATEST(COALESCE(m."dayIndex",1),1)-1))::date,'YYYY-MM-DD')
+        END AS "plannedDate"
       FROM public."GymNutritionPlan" p
       JOIN public."GymMeal" m
         ON m."tenantId"=p."tenantId"
@@ -1547,28 +1546,36 @@ router.get('/gym/adherence', requirePermission('gym.manage'), asyncHandler(async
       WHERE e."tenantId"=$1 AND e."memberId"=$2
       ORDER BY e."mealId",e."recordedAt" DESC,e."id" DESC
     )
-    SELECT p.*,e."status" AS "adherenceStatus",e."notes" AS "adherenceNotes",
-           e."recordedAt",e."recordedBy"
+    SELECT
+      p.*,
+      COALESCE(e."status",'pending') AS "latestStatus",
+      CASE WHEN e."mealId" IS NULL THEN NULL ELSE jsonb_build_object(
+        'status',e."status",
+        'notes',e."notes",
+        'recordedAt',e."recordedAt",
+        'recordedBy',e."recordedBy"
+      ) END AS "latestEvent"
     FROM planned_meals p
     LEFT JOIN latest_events e ON e."mealId"=p."mealId"
-    ORDER BY p."dueAt",p."sortOrder",p."mealId"
+    ORDER BY p."plannedDate" NULLS LAST,p."sortOrder",p."mealId"
   `,tenantId,memberId);
 
-  const now=Date.now();
-  const dueRows=planned.filter((row:any)=>{
-    const dueAt=new Date(row.dueAt).getTime();
-    return Number.isFinite(dueAt)&&dueAt<=now;
-  });
-  const plannedMeals=planned.length;
+  const today=new Date().toISOString().slice(0,10);
+  const meals=plannedRows.map((row:any)=>({
+    ...row,
+    due:Boolean(row.plannedDate&&String(row.plannedDate)<=today)
+  }));
+  const dueRows=meals.filter((row:any)=>row.due);
+  const plannedMeals=meals.length;
   const dueMeals=dueRows.length;
-  const completedMeals=dueRows.filter((row:any)=>row.adherenceStatus==='completed').length;
-  const skippedMeals=dueRows.filter((row:any)=>row.adherenceStatus==='skipped').length;
+  const completedMeals=dueRows.filter((row:any)=>row.latestStatus==='completed').length;
+  const skippedMeals=dueRows.filter((row:any)=>row.latestStatus==='skipped').length;
   const pendingMeals=Math.max(0,dueMeals-completedMeals-skippedMeals);
   const adherencePct=dueMeals?Math.round((completedMeals/dueMeals)*10000)/100:0;
 
   const dueByDay=new Map<string,any[]>();
   for(const row of dueRows){
-    const day=new Date(row.dueAt).toISOString().slice(0,10);
+    const day=String(row.plannedDate);
     const list=dueByDay.get(day)||[];
     list.push(row);
     dueByDay.set(day,list);
@@ -1576,30 +1583,35 @@ router.get('/gym/adherence', requirePermission('gym.manage'), asyncHandler(async
   let nutritionCompletionStreakDays=0;
   for(const day of [...dueByDay.keys()].sort().reverse()){
     const dayMeals=dueByDay.get(day)||[];
-    if(!dayMeals.length||!dayMeals.every((row:any)=>row.adherenceStatus==='completed'))break;
+    if(!dayMeals.length||!dayMeals.every((row:any)=>row.latestStatus==='completed'))break;
     nutritionCompletionStreakDays+=1;
   }
 
   const trainingRows=await prisma.$queryRawUnsafe<any[]>(`
     SELECT
-      count(*) FILTER (WHERE "status"='completed')::int AS "trainingCompletedSessions",
+      count(*) FILTER (
+        WHERE "status"='completed' AND "completedAt">=now()-interval '28 days'
+      )::int AS "trainingCompletedSessions",
+      count(DISTINCT ("completedAt"::date)) FILTER (
+        WHERE "status"='completed' AND "completedAt">=now()-interval '28 days'
+      )::int AS "trainingDays",
       max("completedAt") FILTER (WHERE "status"='completed') AS "lastTrainingCompletedAt"
     FROM public."GymWorkoutSession"
     WHERE "tenantId"=$1 AND "memberId"=$2
   `,tenantId,memberId);
-  const training=trainingRows[0]||{trainingCompletedSessions:0,lastTrainingCompletedAt:null};
+  const trainingRow=trainingRows[0]||{};
 
   const assessments=await prisma.$queryRawUnsafe<any[]>(`
     SELECT *
     FROM public."GymAssessment"
     WHERE "tenantId"=$1 AND "memberId"=$2
-    ORDER BY "measuredAt" ASC,"createdAt" ASC
-    LIMIT 500
+    ORDER BY "measuredAt" DESC,"createdAt" DESC
+    LIMIT 2
   `,tenantId,memberId);
-  const firstAssessment=assessments[0]||null;
-  const latestAssessment=assessments[assessments.length-1]||null;
-  const weightDeltaKg=firstAssessment?.weightKg!=null&&latestAssessment?.weightKg!=null
-    ? Math.round((Number(latestAssessment.weightKg)-Number(firstAssessment.weightKg))*1000)/1000
+  const latestAssessment=assessments[0]||null;
+  const previousAssessment=assessments[1]||null;
+  const weightDeltaKg=latestAssessment?.weightKg!=null&&previousAssessment?.weightKg!=null
+    ? Math.round((Number(latestAssessment.weightKg)-Number(previousAssessment.weightKg))*1000)/1000
     : null;
 
   ok(res,{
@@ -1607,17 +1619,18 @@ router.get('/gym/adherence', requirePermission('gym.manage'), asyncHandler(async
     nutrition:{
       plannedMeals,dueMeals,completedMeals,skippedMeals,pendingMeals,adherencePct,
       nutritionCompletionStreakDays,
-      meals:planned
+      meals
     },
     training:{
-      trainingCompletedSessions:Number(training.trainingCompletedSessions||0),
-      lastTrainingCompletedAt:training.lastTrainingCompletedAt||null
+      trainingCompletedSessions:Number(trainingRow.trainingCompletedSessions||0),
+      trainingDays:Number(trainingRow.trainingDays||0),
+      periodDays:28,
+      lastTrainingCompletedAt:trainingRow.lastTrainingCompletedAt||null
     },
-    body:{
-      weightDeltaKg,
-      firstAssessment,
+    evolution:{
       latestAssessment,
-      evolution:assessments
+      previousAssessment,
+      weightDeltaKg
     }
   });
 }));
