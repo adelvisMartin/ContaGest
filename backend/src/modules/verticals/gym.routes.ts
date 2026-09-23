@@ -1342,7 +1342,7 @@ router.get('/gym/nutrition', requirePermission('gym.manage'), asyncHandler(async
               WHERE mi."tenantId"=m."tenantId" AND mi."mealId"=m."id"
             ),CASE WHEN jsonb_typeof(m."items")='array' THEN m."items" ELSE '[]'::jsonb END)
           )
-          ORDER BY m."dayIndex" NULLS LAST,m."dayOfWeek" NULLS LAST,m."sortOrder",m."plannedAt",m."id"
+          ORDER BY m."dayIndex" NULLS LAST,m."sortOrder",m."dayOfWeek" NULLS LAST,m."plannedAt",m."id"
         )
         FROM public."GymMeal" m
         WHERE m."tenantId"=p."tenantId" AND m."nutritionPlanId"=p."id"
