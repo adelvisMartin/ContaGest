@@ -5,17 +5,17 @@ import { prisma } from '../../database/prisma.js';
 import { asyncHandler, HttpError, ok } from '../../shared/http.js';
 
 const router = Router();
-const tokenSchema = z.string().min(32).max(128).regex(/^[A-Za-z0-9_-]+$/);
+const sessionSchema = z.object({ accessToken:z.string().min(32).max(128).regex(/^[A-Za-z0-9_-]+$/) }).strict();
 const sha256 = (value: string) => createHash('sha256').update(value).digest('hex');
 
-router.get('/:token', asyncHandler(async (req, res) => {
+router.post('/session', asyncHandler(async (req, res) => {
   res.setHeader('Cache-Control', 'no-store, max-age=0');
   res.setHeader('Pragma', 'no-cache');
   res.setHeader('Referrer-Policy', 'no-referrer');
   res.setHeader('X-Robots-Tag', 'noindex, nofollow, noarchive');
 
-  const token = tokenSchema.parse(String(req.params.token || ''));
-  const tokenSha256 = sha256(token);
+  const { accessToken } = sessionSchema.parse(req.body || {});
+  const tokenSha256 = sha256(accessToken);
   const grants = await prisma.$queryRawUnsafe<any[]>(`
     SELECT g."id",g."tenantId",g."patientId",g."scopes",g."expiresAt",
            p."displayName",p."species",p."breed",p."sex",p."birthDate",p."guardianName",
@@ -53,14 +53,14 @@ router.get('/:token', asyncHandler(async (req, res) => {
       LIMIT 40
     `, tenantId, patientId) : Promise.resolve([]),
     allowed('discharges') ? prisma.$queryRawUnsafe<any[]>(`
-      SELECT "admissionNumber","admittedAt","dischargedAt","status","diagnosis","ward"
+      SELECT "admissionNumber","admittedAt","dischargedAt","status","ward"
       FROM public."CareHospitalization"
       WHERE "tenantId"=$1 AND "patientId"=$2
       ORDER BY "admittedAt" DESC
       LIMIT 20
     `, tenantId, patientId) : Promise.resolve([]),
     allowed('documents') ? prisma.$queryRawUnsafe<any[]>(`
-      SELECT "kind","title","status","scheduledAt","performedAt","findings","impression","externalUrl"
+      SELECT "kind","title","status","scheduledAt","performedAt","externalUrl"
       FROM public."CareDiagnosticStudy"
       WHERE "tenantId"=$1 AND "patientId"=$2
       ORDER BY COALESCE("performedAt","scheduledAt","createdAt") DESC
@@ -79,8 +79,7 @@ router.get('/:token', asyncHandler(async (req, res) => {
       LIMIT 30
     `, tenantId, patientId) : Promise.resolve([]),
     allowed('communications') ? prisma.$queryRawUnsafe<any[]>(`
-      SELECT "channel","event","status","scheduledAt","sentAt","createdAt",
-             NULLIF("payload"->>'guardianText','') AS "guardianText"
+      SELECT "channel","event","status","scheduledAt","sentAt","createdAt"
       FROM public."CareCommunicationLog"
       WHERE "tenantId"=$1 AND "patientId"=$2
       ORDER BY "createdAt" DESC
@@ -94,8 +93,6 @@ router.get('/:token', asyncHandler(async (req, res) => {
     status:String(row.status || ''),
     scheduledAt:row.scheduledAt || null,
     performedAt:row.performedAt || null,
-    findings:row.findings ? String(row.findings) : null,
-    impression:row.impression ? String(row.impression) : null,
     externalUrl:/^https:\/\//i.test(String(row.externalUrl || '')) ? String(row.externalUrl) : null
   }));
 
@@ -118,8 +115,7 @@ router.get('/:token', asyncHandler(async (req, res) => {
     discharges:dischargeRows.map((row) => ({
       admissionNumber:String(row.admissionNumber || ''),
       admittedAt:row.admittedAt, dischargedAt:row.dischargedAt || null,
-      status:String(row.status || ''), diagnosis:row.diagnosis ? String(row.diagnosis) : null,
-      ward:row.ward ? String(row.ward) : null
+      status:String(row.status || ''), ward:row.ward ? String(row.ward) : null
     })),
     documents,
     billing:billingRows.map((row) => ({
@@ -140,8 +136,7 @@ router.get('/:token', asyncHandler(async (req, res) => {
       status:String(row.status || ''),
       scheduledAt:row.scheduledAt || null,
       sentAt:row.sentAt || null,
-      createdAt:row.createdAt,
-      guardianText:row.guardianText ? String(row.guardianText) : null
+      createdAt:row.createdAt
     }))
   });
 }));
