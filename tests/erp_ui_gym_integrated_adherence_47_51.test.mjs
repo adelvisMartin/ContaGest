@@ -19,6 +19,13 @@ test('47/51 record endpoint revalidates tenant plan member and meal ownership',(
   assert.doesNotMatch(source,/UPDATE public\."GymMealAdherenceEvent"|DELETE FROM public\."GymMealAdherenceEvent"/);
 });
 
+test('47/51 blocks future meals and plans without a temporal anchor',()=>{
+  const source=backend();
+  assert.match(source,/El plan necesita fecha de inicio para registrar adherencia temporal/);
+  assert.match(source,/No se puede registrar adherencia de una comida futura/);
+  assert.match(source,/plannedDate\.setUTCDate/);
+});
+
 test('47/51 integrated summary derives training and body evolution from canonical existing authorities',()=>{
   const source=read('backend/src/modules/verticals/gym.routes.ts');
   const start=source.indexOf("router.get('/gym/adherence'");
