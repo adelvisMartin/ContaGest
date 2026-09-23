@@ -769,6 +769,14 @@ if(fitnessEntries.every((item)=>item.status==='MIGRATED')){
   if(!substitutionBlock.includes('b.declaredLimitations.length>0')||!substitutionBlock.includes('suggestions:[]'))fail('fitness: contextual substitutions 42 must fail closed on declared health limitations');
   if(/diagnos|injuryScore|medicalRisk|contraindicationEngine/i.test(substitutionBlock))fail('fitness: contextual substitutions 42 must not infer health decisions');
   if(/ingredient|recipe|macronutrient|micronutrient|mealPlan/i.test(substitutionBlock))fail('fitness: contextual substitutions 42 must not pre-implement nutrition model 43');
+
+  const nutritionRoute=gymRoutes.slice(gymRoutes.indexOf("router.post('/gym/nutrition'"),gymRoutes.indexOf("router.get('/gym/classes'"));
+  for(const contract of ['nutritionIngredientSchema','basisGrams','amountG','usda_fdc','fdcId','deriveIngredientNutrition','deriveMealNutrition','prisma.$transaction','El cliente no pertenece al tenant activo.','El instructor no pertenece al tenant activo.']){
+    if(!gymRoutes.includes(contract))fail(`fitness: ingredient nutrition 43 backend missing ${contract}`);
+  }
+  if(!nutritionRoute.includes('mealNutrition.calories')||!nutritionRoute.includes('JSON.stringify(meal.items)'))fail('fitness: ingredient nutrition 43 must derive macros server-side and persist ingredient snapshots');
+  if(!productivity.includes('FoodDataCentralService.detail(')||!productivity.includes("source:'usda_fdc'")||!productivity.includes('basisGrams:100')||!productivity.includes('nutritionIngredients'))fail('fitness: ingredient nutrition 43 UI provenance/builder contract missing');
+  if(!productivity.includes('Previsualización local · no autoritativa')||!productivity.includes('backend es autoridad de los totales'))fail('fitness: ingredient nutrition 43 must label client preview as non-authoritative');
 }
 
 const css=read('frontend/src/styles/erp-runtime.css');
