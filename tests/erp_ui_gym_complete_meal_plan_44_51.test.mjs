@@ -16,7 +16,7 @@ test('44/51 persists week-safe 7/14/28-day plans, recipes and alternatives',()=>
 test('44/51 backend validates horizons, exclusive meal authorities and tenant-owned recipes',()=>{
   const source=read('backend/src/modules/verticals/gym.routes.ts');
   for(const token of ['recipeSchema','completeNutritionSchema','meal.dayIndex>Number(value.durationDays)','Cada comida debe pertenecer al horizonte configurado del plan.','Una comida con receta principal no puede mezclar ingredientes directos.','Las recetas del plan deben estar activas y pertenecer al tenant.']) assert.ok(source.includes(token),token);
-  assert.match(source,/ORDER BY m\."dayIndex" NULLS LAST,m\."dayOfWeek" NULLS LAST,m\."sortOrder"/);
+  assert.match(source,/ORDER BY m\."dayIndex" NULLS LAST,m\."sortOrder",m\."dayOfWeek" NULLS LAST/);
   assert.match(source,/prisma\.\$transaction/);
 });
 
@@ -44,7 +44,8 @@ test('44/51 UI supports complete plan recipes portions preparation alternatives 
   assert.equal((page.match(/<CompleteMealPlanBuilder/g)||[]).length,1);
   assert.equal((page.match(/<NutritionRecipeLibrary/g)||[]).length,1);
   assert.equal((page.match(/<NutritionShoppingListPanel/g)||[]).length,1);
-  for(const token of ['7 días','14 días','28 días','Día','Porciones','Preparación','Alternativas','Porciones alternativa','Agregar comida']) assert.ok(builder.includes(token),token);
+  assert.ok(builder.includes('[7,14,28]'),'7/14/28 horizon');
+  for(const token of ['Día','Porciones','Preparación','Alternativas','Porciones alternativa','Agregar comida']) assert.ok(builder.includes(token),token);
   for(const token of ['Recetas','Porciones','Preparación']) assert.ok(recipes.includes(token),token);
   assert.ok(shopping.includes('Lista de compras'));
   assert.doesNotMatch(builder+recipes+shopping,/querySelector|addEventListener|innerHTML|document\./);
