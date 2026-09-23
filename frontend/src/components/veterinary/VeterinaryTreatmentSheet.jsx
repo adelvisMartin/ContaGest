@@ -225,10 +225,10 @@ export function VeterinaryTreatmentSheet({hospitalizations=[],professionals=[]})
       </Box>:null}
 
       {form.category==='vitals'?<Box sx={{display:'grid',gridTemplateColumns:{xs:'1fr 1fr',md:'repeat(4,minmax(0,1fr))'},gap:1,mt:1}}>
-        <TextField label="Temperatura" value={form.temperature} onChange={setField('temperature')}/>
-        <TextField label="Frecuencia cardíaca" value={form.heartRate} onChange={setField('heartRate')}/>
-        <TextField label="Frecuencia respiratoria" value={form.respiratoryRate} onChange={setField('respiratoryRate')}/>
-        <TextField label="Peso" value={form.weight} onChange={setField('weight')}/>
+        <TextField label="Temperatura (°C)" type="number" inputProps={{step:.1}} value={form.temperature} onChange={setField('temperature')}/>
+        <TextField label="Frecuencia cardíaca (lpm)" type="number" inputProps={{step:1}} value={form.heartRate} onChange={setField('heartRate')}/>
+        <TextField label="Frecuencia respiratoria (rpm)" type="number" inputProps={{step:1}} value={form.respiratoryRate} onChange={setField('respiratoryRate')}/>
+        <TextField label="Peso (kg)" type="number" inputProps={{step:.1}} value={form.weight} onChange={setField('weight')}/>
       </Box>:null}
 
       <TextField

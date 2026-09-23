@@ -91,3 +91,37 @@ La UI conserva formulario y `batchId` cuando hay error, por lo que **Reintentar 
 - gate exige lectura canónica `HealthVerticalService.measurements(patientId)` y escritura batch `createVeterinaryVitalMeasurements`;
 - gate bloquea la reintroducción de writes parciales `createMeasurement` desde el panel longitudinal;
 - no se declara runtime/browser PASS sin ejecución real del SHA.
+
+
+## Integración con hospitalización / Treatment Sheet
+
+Después de 27/51, los signos vitales de una estancia podían quedar únicamente en `CareHospitalObservation`. Eso preservaba el evento hospitalario, pero dejaba una discontinuidad: Peso/Temperatura/FC/FR registrados durante hospitalización no alimentaban las tendencias de la ficha longitudinal.
+
+El flujo actual mantiene ambas autoridades sin duplicar responsabilidades:
+
+- `CareHospitalObservation` conserva el evento append-only de la hoja de tratamiento;
+- `CareMeasurement` recibe, dentro de la **misma transacción**, la proyección normalizada de un evento de signos vitales completado.
+
+Sólo se proyecta cuando:
+
+- `category='vitals'`;
+- `status='completed'`;
+- el valor es numérico finito.
+
+Mapeo canónico:
+
+- Peso → `weight / kg`;
+- Temperatura → `temperature / °C`;
+- Frecuencia cardíaca → `heart_rate / lpm`;
+- Frecuencia respiratoria → `respiratory_rate / rpm`.
+
+La metadata longitudinal conserva:
+
+- `source='veterinary-treatment-sheet'`;
+- `sourceObservationId`;
+- `hospitalizationId`;
+- `treatmentSheetVersion='1'`.
+
+Una restricción PostgreSQL impide más de una proyección por `tenant + sourceObservationId + kind`.
+
+La UI de la hoja de tratamiento usa entradas numéricas y muestra las unidades canónicas, evitando texto ambiguo antes de llegar al backend.
