@@ -181,7 +181,7 @@ export const LicensesPage = {
   render(state) {
     const licenses = state.licenses || [];
     const isPlatform=Array.isArray(state.profile?.permissions)&&state.profile.permissions.includes('platform.manage');
-    const modules = [...new Set([...DemoAccessService.modules, 'salud','veterinaria','gimnasio','rutinas','nutricion','mensajes','libro-mayor','balance-sumas-saldos','hoja-trabajo','estados-financieros','cierre-contable','tributos','libro-ventas'])];
+    const modules = [...new Set([...DemoAccessService.modules, 'salud','veterinaria','psicologia','odontologia','gimnasio','rutinas','nutricion','mensajes','libro-mayor','balance-sumas-saldos','hoja-trabajo','estados-financieros','cierre-contable','tributos','libro-ventas'])];
     const selectedSector = state.licenseDraft?.businessSector || 'comercio';
     const defaults = sectorDefaults[selectedSector] || sectorDefaults.comercio;
     const moduleOptions = modules.map((module) => `<label class="cg-feature-pill"><input type="checkbox" name="modules" value="${escapeHtml(module)}" ${defaults.includes(module) ? 'checked' : ''}/><span>${escapeHtml(module)}</span></label>`).join('');
