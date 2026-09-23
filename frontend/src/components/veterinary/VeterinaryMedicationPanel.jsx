@@ -3,6 +3,7 @@ import {
   Alert, Box, Button, Chip, Divider, MenuItem, Paper, Stack, TextField, Typography
 } from '@mui/material';
 import { VeterinaryService } from '../../services/verticalService.js';
+import { reportVeterinaryError } from './veterinaryError.js';
 
 const rows=(value)=>Array.isArray(value)?value:value?.data||[];
 
@@ -33,6 +34,8 @@ function MedicationLabel({prescription}){
 export function VeterinaryMedicationPanel({selectedPatient,professionals=[],prescriptions=[],onCreated}){
   const [products,setProducts]=useState([]);
   const [productError,setProductError]=useState('');
+  const [productPermissionBlocked,setProductPermissionBlocked]=useState(false);
+  const [productsLoading,setProductsLoading]=useState(false);
   const [saving,setSaving]=useState(false);
   const [error,setError]=useState('');
   const [success,setSuccess]=useState('');
@@ -46,19 +49,29 @@ export function VeterinaryMedicationPanel({selectedPatient,professionals=[],pres
     productId:''
   });
 
-  useEffect(()=>{
-    let cancelled=false;
-    VeterinaryService.medicationProducts()
-      .then((response)=>{if(!cancelled){setProducts(rows(response));setProductError('');}})
-      .catch((cause)=>{
-        if(cancelled)return;
-        setProducts([]);
-        setProductError(cause?.status===403
-          ? 'No tienes permiso de inventario. La prescripción clínica sigue disponible sin vínculo de producto.'
-          : cause?.message||'No se pudo cargar el inventario para vinculación opcional.');
-      });
-    return()=>{cancelled=true;};
-  },[]);
+  async function loadProducts({preserveOnError=true}={}){
+    setProductsLoading(true);
+    setProductError('');
+    try{
+      const response=await VeterinaryService.medicationProducts();
+      setProducts(rows(response));
+      setProductPermissionBlocked(false);
+      return true;
+    }catch(cause){
+      const permissionBlocked=cause?.status===403;
+      reportVeterinaryError('medication.loadProducts',cause,'No se pudo cargar el inventario para vinculación opcional.');
+      if(permissionBlocked||!preserveOnError)setProducts([]);
+      setProductPermissionBlocked(permissionBlocked);
+      setProductError(permissionBlocked
+        ? 'No tienes permiso de inventario. La prescripción clínica sigue disponible sin vínculo de producto.'
+        : cause?.message||'No se pudo cargar el inventario para vinculación opcional.');
+      return false;
+    }finally{
+      setProductsLoading(false);
+    }
+  }
+
+  useEffect(()=>{void loadProducts({preserveOnError:true});},[]);
 
   useEffect(()=>{
     setError('');
@@ -100,7 +113,7 @@ export function VeterinaryMedicationPanel({selectedPatient,professionals=[],pres
       setForm({professionalId:'',medication:'',dose:'',frequency:'',duration:'',instructions:'',productId:''});
       await onCreated?.();
     }catch(cause){
-      setError(cause?.message||'No se pudo registrar la prescripción.');
+      setError(reportVeterinaryError('medication.createPrescription',cause,'No se pudo registrar la prescripción.'));
     }finally{
       setSaving(false);
     }
@@ -116,7 +129,11 @@ export function VeterinaryMedicationPanel({selectedPatient,professionals=[],pres
     {!selectedPatient?<Alert severity="info">Selecciona una mascota para prescribir.</Alert>:<>
       {error?<Alert severity="error" sx={{mb:1}}>{error}</Alert>:null}
       {success?<Alert severity="success" sx={{mb:1}}>{success}</Alert>:null}
-      {productError?<Alert severity="info" sx={{mb:1}}>{productError}</Alert>:null}
+      {productError?<Alert
+        severity={productPermissionBlocked?'info':'error'}
+        sx={{mb:1}}
+        action={!productPermissionBlocked?<Button color="inherit" size="small" onClick={()=>void loadProducts({preserveOnError:true})}>Reintentar</Button>:undefined}
+      >{productError}</Alert>:null}
       <Alert severity="warning" sx={{mb:1}}>
         Vincular un producto no descuenta stock ni selecciona lote. El consumo clínico y la autoridad de lotes pertenecen al flujo de inventario clínico posterior.
       </Alert>
@@ -127,7 +144,7 @@ export function VeterinaryMedicationPanel({selectedPatient,professionals=[],pres
             <MenuItem value="">Sin asignar</MenuItem>
             {professionals.map((item)=><MenuItem key={item.id} value={item.id}>{item.fullName} · {item.specialty||'Profesional'}</MenuItem>)}
           </TextField>
-          <TextField select label="Producto de inventario (opcional)" value={form.productId} onChange={setField('productId')} disabled={!products.length}>
+          <TextField select label="Producto de inventario (opcional)" value={form.productId} onChange={setField('productId')} disabled={productsLoading||!products.length}>
             <MenuItem value="">Sin vínculo de inventario</MenuItem>
             {products.map((item)=><MenuItem key={item.id} value={item.id}>{item.name} · {item.sku} · stock {item.stock} {item.unit}</MenuItem>)}
           </TextField>
