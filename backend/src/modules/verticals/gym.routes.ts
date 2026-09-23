@@ -373,7 +373,8 @@ const nutritionMealSchema = z.object({
   preparation:optionalText,
   alternatives:z.array(z.object({
     recipeId:z.string().min(10),
-    label:z.string().trim().max(120).optional().nullable()
+    label:z.string().trim().max(120).optional().nullable(),
+    servings:z.coerce.number().positive().max(100).default(1)
   })).max(8).default([]),
   items:z.array(mealIngredientSchema).max(100).default([]),
   calories:z.coerce.number().int().min(0).optional().nullable(),
@@ -1319,7 +1320,7 @@ router.get('/gym/nutrition', requirePermission('gym.manage'), asyncHandler(async
           to_jsonb(m) || jsonb_build_object(
             'recipeName',(SELECT r."name" FROM public."GymRecipe" r WHERE r."tenantId"=m."tenantId" AND r."id"=m."recipeId"),
             'alternatives',COALESCE((
-              SELECT jsonb_agg(jsonb_build_object('recipeId',a."recipeId",'recipeName',r."name",'label',a."label",'sortOrder',a."sortOrder") ORDER BY a."sortOrder")
+              SELECT jsonb_agg(jsonb_build_object('recipeId',a."recipeId",'recipeName',r."name",'label',a."label",'servings',a."servings",'sortOrder',a."sortOrder") ORDER BY a."sortOrder")
               FROM public."GymMealAlternative" a
               JOIN public."GymRecipe" r ON r."tenantId"=a."tenantId" AND r."id"=a."recipeId"
               WHERE a."tenantId"=m."tenantId" AND a."mealId"=m."id"
@@ -1410,9 +1411,9 @@ router.post('/gym/nutrition', requirePermission('gym.manage'), asyncHandler(asyn
       for(let index=0;index<meal.alternatives.length;index+=1){
         const alternative=meal.alternatives[index];
         await tx.$executeRawUnsafe(`
-          INSERT INTO public."GymMealAlternative" ("id","tenantId","mealId","recipeId","label","sortOrder","createdAt")
-          VALUES (gen_random_uuid()::text,$1,$2,$3,$4,$5,$6,now())
-        `,tenantId,mealId,alternative.recipeId,alternative.label||null,index+1);
+          INSERT INTO public."GymMealAlternative" ("id","tenantId","mealId","recipeId","label","servings","sortOrder","createdAt")
+          VALUES (gen_random_uuid()::text,$1,$2,$3,$4,$5,$6,$7,now())
+        `,tenantId,mealId,alternative.recipeId,alternative.label||null,alternative.servings,index+1);
       }
     }
     return createdPlan;
