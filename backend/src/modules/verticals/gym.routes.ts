@@ -1225,7 +1225,7 @@ router.get('/gym/nutrition', requirePermission('gym.manage'), asyncHandler(async
               JOIN public."GymIngredient" i
                 ON i."tenantId"=mi."tenantId" AND i."id"=mi."ingredientId"
               WHERE mi."tenantId"=m."tenantId" AND mi."mealId"=m."id"
-            ),'[]'::jsonb)
+            ),CASE WHEN jsonb_typeof(m."items")='array' THEN m."items" ELSE '[]'::jsonb END)
           )
           ORDER BY m."plannedAt",m."id"
         )
