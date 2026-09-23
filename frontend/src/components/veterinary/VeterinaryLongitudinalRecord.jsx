@@ -2,6 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { Box, Divider, Paper, Stack, Typography } from '@mui/material';
 import { CgButton, CgDataTable, CgEmptyState, CgState, CgStatusChip, CgTextField } from '../ui/cg/CgPrimitives.jsx';
 import { HealthVerticalService } from '../../services/verticalService.js';
+import { reportVeterinaryError } from './veterinaryError.js';
 
 export const measurementKinds=[
   {kind:'weight',label:'Peso',unit:'kg'},
@@ -67,7 +68,9 @@ export function VeterinaryLongitudinalRecord({patient,encounters=[],prescription
       }
       setForm({weight:'',temperature:'',heart_rate:'',respiratory_rate:''});
       onMeasurementCreated?.(created);
-    }catch(cause){setError(cause?.message||'No se pudieron guardar las mediciones.');}
+    }catch(cause){
+      setError(reportVeterinaryError('longitudinal.saveMeasurements',cause,'No se pudieron guardar las mediciones.'));
+    }
     finally{setSaving(false);}
   }
 

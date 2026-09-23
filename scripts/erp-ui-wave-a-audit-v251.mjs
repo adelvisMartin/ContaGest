@@ -69,6 +69,26 @@ if(vetEntry?.status==='MIGRATED'){
   for(const contract of ['baseError','patientDataError','actionError','reportVeterinaryError','Se conserva la última información válida','Reintentar']){
     if(!veterinaryWorkspace.includes(contract))fail(`veterinaria: missing workspace error-handling contract ${contract}`);
   }
+  const veterinaryErrorReporter=read('frontend/src/components/veterinary/veterinaryError.js');
+  for(const contract of ['scope','name','message','status']){
+    if(!veterinaryErrorReporter.includes(contract))fail(`veterinaria: missing safe error reporter contract ${contract}`);
+  }
+  if(/JSON\.stringify|clinicalData|patient|form/.test(veterinaryErrorReporter))fail('veterinaria: safe error reporter must not serialize clinical payloads');
+  for(const childPath of [
+    'frontend/src/components/veterinary/VeterinaryLongitudinalRecord.jsx',
+    'frontend/src/components/veterinary/VeterinaryPreventiveCarePanel.jsx',
+    'frontend/src/components/veterinary/VeterinaryTreatmentSheet.jsx',
+    'frontend/src/components/veterinary/VeterinaryMedicationPanel.jsx',
+    'frontend/src/components/veterinary/VeterinaryClinicalInventoryPanel.jsx'
+  ]){
+    const child=read(childPath);
+    if(!child.includes('reportVeterinaryError'))fail(`veterinaria: child surface lacks safe error reporting: ${childPath}`);
+    if(/\.catch\(\s*\(?.*?\)?\s*=>\s*null\s*\)|catch\s*\{\s*\}/s.test(child))fail(`veterinaria: child surface reintroduced silent error swallowing: ${childPath}`);
+  }
+  const veterinaryMedicationErrorSurface=read('frontend/src/components/veterinary/VeterinaryMedicationPanel.jsx');
+  for(const contract of ['loadProducts','preserveOnError','productPermissionBlocked','productsLoading','Reintentar']){
+    if(!veterinaryMedicationErrorSurface.includes(contract))fail(`veterinaria: medication error surface missing retry/fail-soft contract ${contract}`);
+  }
   const veterinaryLongitudinal=read('frontend/src/components/veterinary/VeterinaryLongitudinalRecord.jsx');
   if(!vet.includes('VeterinaryLongitudinalRecord'))fail('veterinaria: longitudinal clinical record is not composed');
   if((vet.match(/<VeterinaryLongitudinalRecord/g)||[]).length!==1)fail('veterinaria: longitudinal clinical record must render from one owner');

@@ -47,6 +47,25 @@ La regla es fail-soft:
 - lectura fallida → conserva el último estado válido;
 - ausencia explícita de paciente → sí limpia el contexto dependiente.
 
+## Hardening posterior
+
+Tras 24/51–29/51 aparecieron nuevas superficies veterinarias hijas. 22/51 se reaplica sobre ellas para que el contrato de error handling siga siendo transversal:
+
+- `VeterinaryLongitudinalRecord`;
+- `VeterinaryPreventiveCarePanel`;
+- `VeterinaryTreatmentSheet`;
+- `VeterinaryMedicationPanel`;
+- `VeterinaryClinicalInventoryPanel`.
+
+Todas reportan errores mediante `veterinaryError.js`, que limita el logging a `scope/name/message/status` y no serializa formularios ni payloads clínicos.
+
+La lectura opcional de productos en `VeterinaryMedicationPanel` ahora:
+
+- conserva el último catálogo válido ante errores transitorios;
+- limpia el catálogo sólo ante pérdida explícita de permiso;
+- expone **Reintentar**;
+- no bloquea la prescripción clínica cuando `inventory.manage` no está disponible.
+
 ## QA
 
 - `erp_ui_veterinary_error_handling_22_51.test.mjs`;
