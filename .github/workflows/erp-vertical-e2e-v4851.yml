@@ -1,0 +1,91 @@
+name: 'ERP Vertical Real E2E #48/51'
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'backend/**'
+      - 'frontend/src/services/verticalService.js'
+      - 'qa/erp-vertical-real-e2e-v4851.test.ts'
+      - 'qa/support/real-backend-harness.ts'
+      - 'tests/erp_ui_vertical_e2e_48_51.test.mjs'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/erp-vertical-e2e-v4851.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: erp-vertical-e2e-v4851-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  vertical-real-e2e:
+    name: PostgreSQL real · dental + veterinary + gym
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: contagest_v4851
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d contagest_v4851"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      NODE_ENV: test
+      DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/contagest_v4851
+      DIRECT_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/contagest_v4851
+      JWT_SECRET: v4851-ci-only-secret-with-more-than-thirty-two-characters
+      CORS_ORIGIN: http://127.0.0.1:8080
+      ALLOW_PUBLIC_REGISTER: 'false'
+      ALLOW_DEV_TENANT_HEADER: 'false'
+      SEED_ADMIN_PASSWORD: 'V48ci$Only-Password-2026'
+    steps:
+      - name: Checkout exact candidate
+        uses: actions/checkout@v4
+
+      - name: Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install locked dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Validate Prisma schema
+        run: npm --workspace backend run db:validate
+
+      - name: Deploy migrations to ephemeral PostgreSQL
+        run: npm --workspace backend run prisma:deploy
+
+      - name: Seed isolated QA tenant
+        run: npm --workspace backend run prisma:seed
+
+      - name: Apply RLS
+        run: npm --workspace backend run db:rls
+
+      - name: Run three-vertical real E2E
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts
+          npm run test:e2e:verticals:real 2>&1 | tee artifacts/erp-vertical-e2e-v4851.txt
+
+      - name: Upload exact-SHA E2E evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: erp-vertical-e2e-v4851-${{ github.event.pull_request.head.sha || github.sha }}
+          path: artifacts/erp-vertical-e2e-v4851.txt
+          if-no-files-found: error
+          retention-days: 14
