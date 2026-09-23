@@ -101,12 +101,42 @@ function auditDom(){
   const ids=[...document.querySelectorAll('[id]')].map((node)=>node.id).filter(Boolean);const dup=[...new Set(ids.filter((id,index)=>ids.indexOf(id)!==index))];if(dup.length)findings.push({kind:'DUPLICATE_IDS',ids:dup.slice(0,10)});
   const scrollOwners='.table-wrap,.pl-table-wrap,.ds-table-wrap,.cgv-table-shell,.cgx-table-wrap,.MuiTableContainer-root,.MuiTabs-scroller,.cg-kanban,.cgx-tabs,.page-tabs,.cg-vertical-tabs,.overflow-x-auto';
   const out=[...root.querySelectorAll('*')].filter(visible).filter((node)=>!node.closest(scrollOwners)).filter((node)=>{const r=node.getBoundingClientRect();return r.left<-2||r.right>innerWidth+2;}).slice(0,10).map((node)=>({target:label(node),left:Math.round(node.getBoundingClientRect().left),right:Math.round(node.getBoundingClientRect().right)}));if(out.length)findings.push({kind:'VIEWPORT_OVERFLOW',items:out});
-  const buttons=[...root.querySelectorAll('button,[role="button"],summary,a')].filter(visible);if(innerWidth<=430){const small=buttons.filter((node)=>{const r=node.getBoundingClientRect();return r.height<43.5&&(r.width<43.5||!String(node.textContent||'').trim());}).slice(0,10).map((node)=>({target:label(node),width:Math.round(node.getBoundingClientRect().width),height:Math.round(node.getBoundingClientRect().height)}));if(small.length)findings.push({kind:'TOUCH_TARGET_UNDERSIZED',items:small});const zoomRisk=[...root.querySelectorAll('input,select,textarea')].filter(visible).filter((node)=>parseFloat(getComputedStyle(node).fontSize)<16).slice(0,10).map((node)=>({target:label(node),fontSize:getComputedStyle(node).fontSize}));if(zoomRisk.length)findings.push({kind:'MOBILE_INPUT_FONT_LT_16',items:zoomRisk});}
+  const buttons=[...root.querySelectorAll('button,[role="button"],summary,a')].filter(visible);
+  if(innerWidth<=430){
+    const small=buttons.filter((node)=>{const r=node.getBoundingClientRect();return r.height<43.5&&(r.width<43.5||!String(node.textContent||'').trim());}).slice(0,10).map((node)=>({target:label(node),width:Math.round(node.getBoundingClientRect().width),height:Math.round(node.getBoundingClientRect().height)}));if(small.length)findings.push({kind:'TOUCH_TARGET_UNDERSIZED',items:small});
+    const zoomRisk=[...root.querySelectorAll('input,select,textarea')].filter(visible).filter((node)=>parseFloat(getComputedStyle(node).fontSize)<16).slice(0,10).map((node)=>({target:label(node),fontSize:getComputedStyle(node).fontSize}));if(zoomRisk.length)findings.push({kind:'MOBILE_INPUT_FONT_LT_16',items:zoomRisk});
+  }
   const unlabeled=buttons.filter((node)=>!String(node.getAttribute('aria-label')||node.getAttribute('title')||node.textContent||'').trim()).slice(0,10).map(label);if(unlabeled.length)findings.push({kind:'UNLABELED_INTERACTIVE',items:unlabeled});
-  const clipped=[...root.querySelectorAll('h1,h2,h3,h4,p,label,button,summary,.cgx-btn,.btn')].filter(visible).filter((node)=>!node.closest(scrollOwners)).filter((node)=>{const s=getComputedStyle(node);return s.overflow==='hidden'&&(node.scrollWidth>node.clientWidth+3||node.scrollHeight>node.clientHeight+3);}).slice(0,10).map(label);if(clipped.length)findings.push({kind:'CLIPPED_OPERATIONAL_TEXT',items:clipped});return findings;
+  const clipped=[...root.querySelectorAll('h1,h2,h3,h4,p,label,button,summary,.cgx-btn,.btn')].filter(visible).filter((node)=>!node.closest(scrollOwners)).filter((node)=>{const s=getComputedStyle(node);return s.overflow==='hidden'&&(node.scrollWidth>node.clientWidth+3||node.scrollHeight>node.clientHeight+3);}).slice(0,10).map(label);if(clipped.length)findings.push({kind:'CLIPPED_OPERATIONAL_TEXT',items:clipped});
+  const occluded=buttons.filter((node)=>{const r=node.getBoundingClientRect();const x=Math.max(0,Math.min(innerWidth-1,r.left+r.width/2));const y=Math.max(0,Math.min(innerHeight-1,r.top+r.height/2));if(x<0||y<0||x>=innerWidth||y>=innerHeight)return false;const top=document.elementFromPoint(x,y);return Boolean(top&&top!==node&&!node.contains(top)&&!top.contains(node));}).slice(0,10).map((node)=>({target:label(node)}));if(occluded.length)findings.push({kind:'INTERACTIVE_OCCLUDED',items:occluded});
+  const dialogs=[...document.querySelectorAll('[role="dialog"]')].filter(visible);for(const dialog of dialogs){const r=dialog.getBoundingClientRect();if(r.left<-2||r.right>innerWidth+2||r.top<-2||r.bottom>innerHeight+2)findings.push({kind:'DIALOG_OUTSIDE_VIEWPORT',target:label(dialog)});if(dialog.scrollWidth>dialog.clientWidth+3)findings.push({kind:'DIALOG_HORIZONTAL_OVERFLOW',target:label(dialog)});}
+  return findings;
 }
 
-async function auditZoom(page){await page.evaluate(()=>{document.documentElement.style.zoom='1.25';});await page.waitForTimeout(30);const overflow=await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth+2);await page.evaluate(()=>{document.documentElement.style.zoom='';});return overflow?['ZOOM_125_HORIZONTAL_OVERFLOW']:[];}
+async function auditZoom200(page){
+  await page.evaluate(()=>{document.documentElement.style.zoom='2';});
+  await page.waitForTimeout(40);
+  const findings=(await page.evaluate(auditDom)).map((item)=>({...item,mode:'zoom-200'}));
+  await page.evaluate(()=>{document.documentElement.style.zoom='';});
+  await page.waitForTimeout(20);
+  return findings;
+}
+
+async function auditThemeModes(page,item){
+  if(item.route==='login')return{findings:[],interactions:['theme-skip-login'],warnings:[]};
+  const findings=[];const interactions=[];const warnings=[];
+  const select=page.locator('#userMenuTheme');
+  if(!(await select.count()))return{findings,interactions,warnings:['THEME_CONTROL_NOT_FOUND']};
+  for(const mode of ['light','dark']){
+    await select.selectOption(mode).catch(()=>{});
+    await page.waitForTimeout(40);
+    const applied=await page.evaluate((expected)=>document.documentElement.dataset.theme===expected,mode);
+    if(!applied)findings.push({kind:'THEME_MODE_NOT_APPLIED',mode});
+    findings.push(...(await page.evaluate(auditDom)).map((item)=>({...item,mode:`theme-${mode}`})));
+    interactions.push(`theme-${mode}`);
+  }
+  return{findings,interactions,warnings};
+}
 
 for(const [groupKey,cases] of groups){
   const[routeName,flowName]=groupKey.split('|');
@@ -124,7 +154,12 @@ for(const [groupKey,cases] of groups){
           if(navigation.actual!==item.route)findings.push({kind:'AUTHORIZED_ROUTE_NOT_RENDERED',expected:item.route,actual:navigation.actual});
           if(item.state==='loading'){const loadingVisible=await page.locator('[aria-busy="true"]:visible,.loading:visible,.spinner:visible,.skeleton:visible,[data-loading="true"]:visible').count();if(!loadingVisible)warnings.push('LOADING_STATE_NOT_VISUALLY_OBSERVED');await page.waitForTimeout(800);}
           if(item.state==='error'||item.state==='offline'){const recovery=page.getByRole('button',{name:/reintentar|recargar|actualizar|retry/i}).first();stateRef.value='baseline';if(await recovery.count())await recovery.click({timeout:2500}).catch(()=>{});else await page.reload({waitUntil:'domcontentloaded'});await page.waitForSelector(item.route==='login'?'.login-shell':'#app',{state:'attached',timeout:15_000});interactions.push('error-offline-recovery');}
-          const flow=await exercise(page,item);interactions.push(...flow.interactions);warnings.push(...flow.warnings);findings.push(...await page.evaluate(auditDom));if(['baseline','boundary'].includes(item.state))findings.push(...(await auditZoom(page)).map((kind)=>({kind})));
+          const flow=await exercise(page,item);interactions.push(...flow.interactions);warnings.push(...flow.warnings);
+          findings.push(...await page.evaluate(auditDom));
+          if(['baseline','boundary'].includes(item.state)){
+            findings.push(...await auditZoom200(page));
+            const themed=await auditThemeModes(page,item);findings.push(...themed.findings);interactions.push(...themed.interactions);warnings.push(...themed.warnings);
+          }
           if(item.state==='role-denied'){const bodyText=await page.locator('body').innerText().catch(()=>'');if(/QA-LARGO-ÁÉÍÓÚ-漢字/.test(bodyText))findings.push({kind:'ROLE_DENIED_DATA_LEAK'});}
         }
         if(pageErrors.length)findings.push({kind:'PAGE_ERROR',items:pageErrors.slice(0,8)});if(consoleErrors.length)findings.push({kind:'CONSOLE_ERROR',items:consoleErrors.slice(0,8)});
