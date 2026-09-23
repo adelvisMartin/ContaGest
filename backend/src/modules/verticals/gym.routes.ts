@@ -335,6 +335,36 @@ const routineSchema = z.object({
   }
 });
 
+const macroNumber=z.coerce.number().min(0).max(100000);
+const foodSchema=z.object({
+  name:z.string().trim().min(2).max(180),
+  brand:optionalText,
+  source:z.enum(['manual','usda']).default('manual'),
+  sourceRef:z.string().trim().max(80).optional().nullable(),
+  caloriesPer100g:macroNumber,
+  proteinGPer100g:macroNumber,
+  carbsGPer100g:macroNumber,
+  fatGPer100g:macroNumber,
+  fiberGPer100g:macroNumber.default(0),
+  active:z.boolean().default(true)
+}).superRefine((value,refinement)=>{
+  if(value.source==='usda'&&!String(value.sourceRef||'').trim())refinement.addIssue({code:'custom',path:['sourceRef'],message:'Un alimento USDA requiere su referencia FDC.'});
+});
+const foodPatchSchema=foodSchema.partial().refine((value)=>Object.keys(value).length>0,{message:'Indica al menos un campo para actualizar.'});
+const recipeSchema=z.object({
+  name:z.string().trim().min(2).max(180),
+  servings:z.coerce.number().int().min(1).max(100).default(1),
+  instructions:optionalText,
+  ingredients:z.array(z.object({
+    foodId:z.string().min(10),
+    grams:z.coerce.number().positive().max(100000),
+    sortOrder:z.coerce.number().int().min(1).max(500).default(1)
+  })).min(1).max(200)
+}).superRefine((value,refinement)=>{
+  const ids=value.ingredients.map((item)=>item.foodId);
+  if(new Set(ids).size!==ids.length)refinement.addIssue({code:'custom',path:['ingredients'],message:'Una receta no puede repetir el mismo alimento; ajusta los gramos del ingrediente existente.'});
+});
+
 const nutritionSchema = z.object({
   memberId: z.string().min(10),
   trainerId: z.string().optional().nullable(),
@@ -1134,6 +1164,135 @@ router.post('/gym/routines', requirePermission('gym.manage'), asyncHandler(async
   });
 
   ok(res, routine, 201);
+}));
+
+router.get('/gym/foods', requirePermission('gym.manage'), asyncHandler(async (req,res)=>{
+  const tenantId=ctx(req).tenantId;
+  const q=String(req.query.q||'').trim();
+  const active=String(req.query.active||'true');
+  const rows=await prisma.$queryRawUnsafe<any[]>(`
+    SELECT *
+    FROM public."GymFood"
+    WHERE "tenantId"=$1
+      AND ($2='' OR "name" ILIKE '%'||$2||'%' OR COALESCE("brand",'') ILIKE '%'||$2||'%')
+      AND ($3='all' OR "active"=($3='true'))
+    ORDER BY "active" DESC,"name"
+    LIMIT 1000
+  `,tenantId,q,active);
+  ok(res,rows);
+}));
+
+router.post('/gym/foods', requirePermission('gym.manage'), asyncHandler(async (req,res)=>{
+  const tenantId=ctx(req).tenantId;
+  const b=foodSchema.parse(req.body||{});
+  const rows=await prisma.$queryRawUnsafe<any[]>(`
+    INSERT INTO public."GymFood"
+      ("id","tenantId","name","brand","source","sourceRef","caloriesPer100g","proteinGPer100g","carbsGPer100g","fatGPer100g","fiberGPer100g","active","createdAt","updatedAt")
+    VALUES
+      (gen_random_uuid()::text,$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,now(),now())
+    ON CONFLICT ("tenantId",lower(btrim("name")),COALESCE(lower(btrim("brand")),''))
+    DO NOTHING
+    RETURNING *
+  `,tenantId,b.name,b.brand||null,b.source,b.sourceRef||null,b.caloriesPer100g,b.proteinGPer100g,b.carbsGPer100g,b.fatGPer100g,b.fiberGPer100g,b.active);
+  if(!rows.length)throw new HttpError(409,'Ya existe un alimento con ese nombre y marca en este tenant.');
+  ok(res,one(rows),201);
+}));
+
+router.patch('/gym/foods/:id', requirePermission('gym.manage'), asyncHandler(async (req,res)=>{
+  const tenantId=ctx(req).tenantId;
+  const foodId=String(req.params.id||'');
+  const patch=foodPatchSchema.parse(req.body||{});
+  const currentRows=await prisma.$queryRawUnsafe<any[]>(`SELECT * FROM public."GymFood" WHERE "tenantId"=$1 AND "id"=$2 LIMIT 1`,tenantId,foodId);
+  const current=one(currentRows,'Alimento no encontrado.');
+  const next=foodSchema.parse({
+    name:patch.name??current.name,
+    brand:patch.brand===undefined?current.brand:patch.brand,
+    source:patch.source??current.source,
+    sourceRef:patch.sourceRef===undefined?current.sourceRef:patch.sourceRef,
+    caloriesPer100g:patch.caloriesPer100g??current.caloriesPer100g,
+    proteinGPer100g:patch.proteinGPer100g??current.proteinGPer100g,
+    carbsGPer100g:patch.carbsGPer100g??current.carbsGPer100g,
+    fatGPer100g:patch.fatGPer100g??current.fatGPer100g,
+    fiberGPer100g:patch.fiberGPer100g??current.fiberGPer100g,
+    active:patch.active??current.active
+  });
+  const rows=await prisma.$queryRawUnsafe<any[]>(`
+    UPDATE public."GymFood"
+    SET "name"=$3,"brand"=$4,"source"=$5,"sourceRef"=$6,
+        "caloriesPer100g"=$7,"proteinGPer100g"=$8,"carbsGPer100g"=$9,"fatGPer100g"=$10,"fiberGPer100g"=$11,
+        "active"=$12,"updatedAt"=now()
+    WHERE "tenantId"=$1 AND "id"=$2
+    RETURNING *
+  `,tenantId,foodId,next.name,next.brand||null,next.source,next.sourceRef||null,next.caloriesPer100g,next.proteinGPer100g,next.carbsGPer100g,next.fatGPer100g,next.fiberGPer100g,next.active);
+  ok(res,one(rows));
+}));
+
+router.get('/gym/recipes', requirePermission('gym.manage'), asyncHandler(async (req,res)=>{
+  const tenantId=ctx(req).tenantId;
+  const rows=await prisma.$queryRawUnsafe<any[]>(`
+    SELECT
+      r.*,
+      COALESCE(json_agg(json_build_object(
+        'id',ri."id",'foodId',f."id",'foodName',f."name",'brand',f."brand",'grams',ri."grams",'sortOrder',ri."sortOrder",
+        'calories',ROUND((f."caloriesPer100g"*ri."grams"/100)::numeric,2),
+        'proteinG',ROUND((f."proteinGPer100g"*ri."grams"/100)::numeric,2),
+        'carbsG',ROUND((f."carbsGPer100g"*ri."grams"/100)::numeric,2),
+        'fatG',ROUND((f."fatGPer100g"*ri."grams"/100)::numeric,2),
+        'fiberG',ROUND((f."fiberGPer100g"*ri."grams"/100)::numeric,2)
+      ) ORDER BY ri."sortOrder") FILTER (WHERE ri."id" IS NOT NULL),'[]') AS ingredients,
+      ROUND(COALESCE(SUM(f."caloriesPer100g"*ri."grams"/100),0)::numeric,2) AS "totalCalories",
+      ROUND(COALESCE(SUM(f."proteinGPer100g"*ri."grams"/100),0)::numeric,2) AS "totalProteinG",
+      ROUND(COALESCE(SUM(f."carbsGPer100g"*ri."grams"/100),0)::numeric,2) AS "totalCarbsG",
+      ROUND(COALESCE(SUM(f."fatGPer100g"*ri."grams"/100),0)::numeric,2) AS "totalFatG",
+      ROUND(COALESCE(SUM(f."fiberGPer100g"*ri."grams"/100),0)::numeric,2) AS "totalFiberG"
+    FROM public."GymRecipe" r
+    LEFT JOIN public."GymRecipeIngredient" ri ON ri."tenantId"=r."tenantId" AND ri."recipeId"=r."id"
+    LEFT JOIN public."GymFood" f ON f."tenantId"=r."tenantId" AND f."id"=ri."foodId"
+    WHERE r."tenantId"=$1
+    GROUP BY r."id"
+    ORDER BY r."active" DESC,r."name"
+    LIMIT 500
+  `,tenantId);
+  ok(res,rows.map((recipe)=>({
+    ...recipe,
+    perServing:{
+      calories:Number(recipe.totalCalories||0)/Number(recipe.servings||1),
+      proteinG:Number(recipe.totalProteinG||0)/Number(recipe.servings||1),
+      carbsG:Number(recipe.totalCarbsG||0)/Number(recipe.servings||1),
+      fatG:Number(recipe.totalFatG||0)/Number(recipe.servings||1),
+      fiberG:Number(recipe.totalFiberG||0)/Number(recipe.servings||1)
+    }
+  })));
+}));
+
+router.post('/gym/recipes', requirePermission('gym.manage'), asyncHandler(async (req,res)=>{
+  const tenantId=ctx(req).tenantId;
+  const b=recipeSchema.parse(req.body||{});
+  const recipe=await prisma.$transaction(async(tx)=>{
+    await tx.$executeRawUnsafe(`SELECT pg_advisory_xact_lock(hashtext($1))`,`gym-recipe:${tenantId}:${b.name.toLowerCase()}`);
+    const foodIds=b.ingredients.map((item)=>item.foodId);
+    const foods=await tx.$queryRawUnsafe<any[]>(`
+      SELECT "id" FROM public."GymFood"
+      WHERE "tenantId"=$1 AND "active"=true AND "id"=ANY($2::text[])
+    `,tenantId,foodIds);
+    if(foods.length!==foodIds.length)throw new HttpError(422,'Uno o más ingredientes no pertenecen al tenant activo o están archivados.');
+    const existing=await tx.$queryRawUnsafe<any[]>(`SELECT "id" FROM public."GymRecipe" WHERE "tenantId"=$1 AND lower(btrim("name"))=lower(btrim($2)) LIMIT 1`,tenantId,b.name);
+    if(existing.length)throw new HttpError(409,'Ya existe una receta con ese nombre en este tenant.');
+    const rows=await tx.$queryRawUnsafe<any[]>(`
+      INSERT INTO public."GymRecipe" ("id","tenantId","name","servings","instructions","active","createdBy","createdAt","updatedAt")
+      VALUES (gen_random_uuid()::text,$1,$2,$3,$4,true,$5,now(),now())
+      RETURNING *
+    `,tenantId,b.name,b.servings,b.instructions||null,ctx(req).userId||null);
+    const created=one(rows);
+    for(const ingredient of b.ingredients){
+      await tx.$executeRawUnsafe(`
+        INSERT INTO public."GymRecipeIngredient" ("id","tenantId","recipeId","foodId","grams","sortOrder")
+        VALUES (gen_random_uuid()::text,$1,$2,$3,$4,$5)
+      `,tenantId,created.id,ingredient.foodId,ingredient.grams,ingredient.sortOrder);
+    }
+    return created;
+  });
+  ok(res,recipe,201);
 }));
 
 router.get('/gym/nutrition', requirePermission('gym.manage'), asyncHandler(async (req, res) => {
