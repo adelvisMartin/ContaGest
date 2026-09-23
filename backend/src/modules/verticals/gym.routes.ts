@@ -467,6 +467,49 @@ const completeNutritionSchema = z.object({
 });
 const nutritionSchema=completeNutritionSchema;
 
+const adherenceMealSchema=z.object({
+  memberId:z.string().min(10),
+  planId:z.string().min(10),
+  mealId:z.string().min(10),
+  status:z.enum(['completed','partial','skipped']),
+  occurredAt:z.string().datetime().optional().nullable(),
+  notes:optionalText
+});
+const adherenceHabitSchema=z.object({
+  memberId:z.string().min(10),
+  name:z.string().trim().min(2).max(180),
+  targetPerWeek:z.coerce.number().int().min(1).max(14).default(7),
+  notes:optionalText
+});
+const adherenceHabitPatchSchema=z.object({active:z.boolean()});
+const adherenceHabitCheckInSchema=z.object({
+  status:z.enum(['completed','skipped']),
+  occurredAt:z.string().datetime().optional().nullable(),
+  notes:optionalText
+});
+const adherenceGoalSchema=z.object({
+  memberId:z.string().min(10),
+  kind:z.enum(['workouts_per_week','meal_adherence_pct','habit_adherence_pct','weight_kg','custom']),
+  label:z.string().trim().min(2).max(180),
+  targetValue:z.coerce.number().min(0).max(1000000),
+  unit:z.string().trim().min(1).max(40),
+  dueAt:z.string().optional().nullable(),
+  notes:optionalText
+});
+const adherenceGoalPatchSchema=z.object({active:z.boolean()});
+const adherencePhotoSchema=z.object({
+  memberId:z.string().min(10),
+  storagePath:z.string().trim().min(10).max(500),
+  capturedAt:z.string().datetime(),
+  authorizationConfirmed:z.literal(true),
+  notes:optionalText
+});
+const adherenceQuerySchema=z.object({
+  memberId:z.string().min(10),
+  from:z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  to:z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional()
+});
+
 const createPlanNutrientSnapshot=async(tx:any,tenantId:string,planId:string,createdBy:string|null)=>{
   const occurrences=await tx.$queryRawUnsafe<any[]>(`
     SELECT m."id" AS "mealId",mi."ingredientId",mi."quantity"::numeric AS "quantity",mi."unit"
@@ -1769,6 +1812,265 @@ router.get('/gym/nutrition/:id/shopping-list', requirePermission('gym.manage'), 
     ORDER BY i."name",x."unit"
   `,tenantId,planId);
   ok(res,{planId:plan.id,durationDays:plan.durationDays,shoppingList});
+}));
+
+router.get('/gym/adherence', requirePermission('gym.manage'), asyncHandler(async(req,res)=>{
+  const today=new Date();
+  const defaultTo=today.toISOString().slice(0,10);
+  const defaultFrom=new Date(today.getTime()-27*86400000).toISOString().slice(0,10);
+  const q=adherenceQuerySchema.parse({
+    memberId:String(req.query.memberId||''),
+    from:req.query.from?String(req.query.from):undefined,
+    to:req.query.to?String(req.query.to):undefined
+  });
+  const from=q.from||defaultFrom;
+  const to=q.to||defaultTo;
+  const fromDate=new Date(`${from}T00:00:00.000Z`);
+  const toDate=new Date(`${to}T00:00:00.000Z`);
+  if(!Number.isFinite(fromDate.getTime())||!Number.isFinite(toDate.getTime())||toDate<fromDate)throw new HttpError(422,'El período de adherencia no es válido.');
+  const toExclusive=new Date(toDate.getTime()+86400000);
+  const periodDays=Math.ceil((toExclusive.getTime()-fromDate.getTime())/86400000);
+  if(periodDays>366)throw new HttpError(422,'El período de adherencia no puede superar 366 días.');
+
+  const tenantId=ctx(req).tenantId;
+  const memberRows=await prisma.$queryRawUnsafe<any[]>(`
+    SELECT "id","fullName" FROM public."GymMember"
+    WHERE "tenantId"=$1 AND "id"=$2
+    LIMIT 1
+  `,tenantId,q.memberId);
+  const member=one(memberRows,'El cliente no pertenece al tenant activo.');
+
+  const plannedMeals=await prisma.$queryRawUnsafe<any[]>(`
+    SELECT m."id" AS "mealId",p."id" AS "planId",p."name" AS "planName",m."mealType",m."dayIndex",
+           (p."startsAt"::date + (m."dayIndex"-1))::date AS "plannedDate",
+           latest."status",latest."occurredAt",latest."notes"
+    FROM public."GymMeal" m
+    JOIN public."GymNutritionPlan" p ON p."tenantId"=m."tenantId" AND p."id"=m."nutritionPlanId"
+    LEFT JOIN LATERAL (
+      SELECT e."status",e."occurredAt",e."notes"
+      FROM public."GymMealAdherenceEvent" e
+      WHERE e."tenantId"=m."tenantId" AND e."memberId"=p."memberId" AND e."mealId"=m."id"
+      ORDER BY e."occurredAt" DESC,e."createdAt" DESC
+      LIMIT 1
+    ) latest ON true
+    WHERE m."tenantId"=$1 AND p."memberId"=$2 AND p."startsAt" IS NOT NULL
+      AND (p."startsAt"::date + (m."dayIndex"-1)) >= $3::date
+      AND (p."startsAt"::date + (m."dayIndex"-1)) <= $4::date
+    ORDER BY "plannedDate",m."sortOrder"
+  `,tenantId,q.memberId,from,to);
+
+  const workoutRows=await prisma.$queryRawUnsafe<any[]>(`
+    SELECT "id","routineId","startedAt","completedAt"
+    FROM public."GymWorkoutSession"
+    WHERE "tenantId"=$1 AND "memberId"=$2 AND "status"='completed'
+      AND "startedAt">=$3::timestamptz AND "startedAt"<$4::timestamptz
+    ORDER BY "startedAt" DESC
+  `,tenantId,q.memberId,fromDate.toISOString(),toExclusive.toISOString());
+
+  const assessmentRows=await prisma.$queryRawUnsafe<any[]>(`
+    SELECT "id","measuredAt","weightKg","heightCm","bodyFatPct","muscleMassKg","bmi","notes"
+    FROM public."GymAssessment"
+    WHERE "tenantId"=$1 AND "memberId"=$2
+      AND COALESCE("measuredAt","createdAt")>=$3::timestamptz
+      AND COALESCE("measuredAt","createdAt")<$4::timestamptz
+    ORDER BY COALESCE("measuredAt","createdAt") DESC
+    LIMIT 100
+  `,tenantId,q.memberId,fromDate.toISOString(),toExclusive.toISOString());
+
+  const habits=await prisma.$queryRawUnsafe<any[]>(`
+    SELECT h.*,
+      COALESCE((SELECT count(*)::int FROM public."GymHabitCheckIn" c
+        WHERE c."tenantId"=h."tenantId" AND c."habitId"=h."id" AND c."status"='completed'
+          AND c."occurredAt">=$3::timestamptz AND c."occurredAt"<$4::timestamptz),0) AS "completedCount",
+      COALESCE((SELECT count(*)::int FROM public."GymHabitCheckIn" c
+        WHERE c."tenantId"=h."tenantId" AND c."habitId"=h."id" AND c."status"='skipped'
+          AND c."occurredAt">=$3::timestamptz AND c."occurredAt"<$4::timestamptz),0) AS "skippedCount"
+    FROM public."GymHabit" h
+    WHERE h."tenantId"=$1 AND h."memberId"=$2
+    ORDER BY h."active" DESC,h."name"
+  `,tenantId,q.memberId,fromDate.toISOString(),toExclusive.toISOString());
+
+  const goals=await prisma.$queryRawUnsafe<any[]>(`
+    SELECT * FROM public."GymAdherenceGoal"
+    WHERE "tenantId"=$1 AND "memberId"=$2
+    ORDER BY "active" DESC,"createdAt" DESC
+    LIMIT 100
+  `,tenantId,q.memberId);
+
+  const photos=await prisma.$queryRawUnsafe<any[]>(`
+    SELECT "id","memberId","storagePath","capturedAt","authorizationConfirmedAt","notes","createdAt"
+    FROM public."GymProgressPhoto"
+    WHERE "tenantId"=$1 AND "memberId"=$2
+      AND "capturedAt">=$3::timestamptz AND "capturedAt"<$4::timestamptz
+    ORDER BY "capturedAt" DESC
+    LIMIT 100
+  `,tenantId,q.memberId,fromDate.toISOString(),toExclusive.toISOString());
+
+  const mealStats={planned:plannedMeals.length,completed:0,partial:0,skipped:0,unlogged:0};
+  for(const meal of plannedMeals){
+    const status=String(meal.status||'');
+    if(status==='completed')mealStats.completed+=1;
+    else if(status==='partial')mealStats.partial+=1;
+    else if(status==='skipped')mealStats.skipped+=1;
+    else mealStats.unlogged+=1;
+  }
+  const mealAdherencePct=mealStats.planned?Number((((mealStats.completed+mealStats.partial*.5)/mealStats.planned)*100).toFixed(1)):null;
+  const habitSummaries=habits.map((habit:any)=>{
+    const expected=Math.max(1,Math.ceil((periodDays/7)*Number(habit.targetPerWeek||1)));
+    const completed=Number(habit.completedCount||0);
+    return {...habit,expectedCount:expected,adherencePct:Number((Math.min(1,completed/expected)*100).toFixed(1))};
+  });
+
+  ok(res,{
+    member,
+    period:{from,to,days:periodDays},
+    summary:{
+      mealAdherencePct,
+      plannedMeals:mealStats.planned,
+      completedMeals:mealStats.completed,
+      partialMeals:mealStats.partial,
+      skippedMeals:mealStats.skipped,
+      unloggedMeals:mealStats.unlogged,
+      completedWorkouts:workoutRows.length,
+      assessments:assessmentRows.length,
+      authorizedPhotos:photos.length
+    },
+    meals:plannedMeals,
+    workouts:workoutRows,
+    assessments:assessmentRows,
+    habits:habitSummaries,
+    goals,
+    photos
+  });
+}));
+
+router.post('/gym/adherence/meals', requirePermission('gym.manage'), asyncHandler(async(req,res)=>{
+  const tenantId=ctx(req).tenantId;
+  const b=adherenceMealSchema.parse(req.body||{});
+  const created=await prisma.$transaction(async(tx)=>{
+    const rows=await tx.$queryRawUnsafe<any[]>(`
+      SELECT m."id",p."id" AS "planId",p."memberId"
+      FROM public."GymMeal" m
+      JOIN public."GymNutritionPlan" p ON p."tenantId"=m."tenantId" AND p."id"=m."nutritionPlanId"
+      WHERE m."tenantId"=$1 AND m."id"=$2 AND p."id"=$3 AND p."memberId"=$4
+      LIMIT 1
+    `,tenantId,b.mealId,b.planId,b.memberId);
+    if(!rows.length)throw new HttpError(422,'La comida no pertenece al plan y cliente activos.');
+    const events=await tx.$queryRawUnsafe<any[]>(`
+      INSERT INTO public."GymMealAdherenceEvent"
+        ("id","tenantId","memberId","planId","mealId","status","occurredAt","notes","createdBy","createdAt")
+      VALUES (gen_random_uuid()::text,$1,$2,$3,$4,$5,$6::timestamptz,$7,$8,now())
+      RETURNING *
+    `,tenantId,b.memberId,b.planId,b.mealId,b.status,b.occurredAt||new Date().toISOString(),b.notes||null,ctx(req).userId||null);
+    return one(events);
+  });
+  ok(res,created,201);
+}));
+
+router.post('/gym/adherence/habits', requirePermission('gym.manage'), asyncHandler(async(req,res)=>{
+  const tenantId=ctx(req).tenantId;
+  const b=adherenceHabitSchema.parse(req.body||{});
+  const created=await prisma.$transaction(async(tx)=>{
+    const members=await tx.$queryRawUnsafe<any[]>(`
+      SELECT "id" FROM public."GymMember" WHERE "tenantId"=$1 AND "id"=$2 LIMIT 1
+    `,tenantId,b.memberId);
+    if(!members.length)throw new HttpError(422,'El cliente no pertenece al tenant activo.');
+    await tx.$queryRawUnsafe('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',`gym-habit-47:${tenantId}:${b.memberId}:${b.name.toLocaleLowerCase('es')}`);
+    const duplicates=await tx.$queryRawUnsafe<any[]>(`
+      SELECT "id" FROM public."GymHabit"
+      WHERE "tenantId"=$1 AND "memberId"=$2 AND lower(btrim("name"))=lower(btrim($3))
+      LIMIT 1
+    `,tenantId,b.memberId,b.name);
+    if(duplicates.length)throw new HttpError(409,'Ese hábito ya existe para el cliente.');
+    const rows=await tx.$queryRawUnsafe<any[]>(`
+      INSERT INTO public."GymHabit" ("id","tenantId","memberId","name","targetPerWeek","notes","active","createdBy","createdAt","updatedAt")
+      VALUES (gen_random_uuid()::text,$1,$2,$3,$4,$5,true,$6,now(),now())
+      RETURNING *
+    `,tenantId,b.memberId,b.name,b.targetPerWeek,b.notes||null,ctx(req).userId||null);
+    return one(rows);
+  });
+  ok(res,created,201);
+}));
+
+router.patch('/gym/adherence/habits/:id', requirePermission('gym.manage'), asyncHandler(async(req,res)=>{
+  const tenantId=ctx(req).tenantId;
+  const b=adherenceHabitPatchSchema.parse(req.body||{});
+  const rows=await prisma.$queryRawUnsafe<any[]>(`
+    UPDATE public."GymHabit"
+    SET "active"=$3,"updatedAt"=now()
+    WHERE "tenantId"=$1 AND "id"=$2
+    RETURNING *
+  `,tenantId,String(req.params.id),b.active);
+  ok(res,one(rows,'Hábito no encontrado.'));
+}));
+
+router.post('/gym/adherence/habits/:id/checkins', requirePermission('gym.manage'), asyncHandler(async(req,res)=>{
+  const tenantId=ctx(req).tenantId;
+  const habitId=String(req.params.id);
+  const b=adherenceHabitCheckInSchema.parse(req.body||{});
+  const created=await prisma.$transaction(async(tx)=>{
+    const habits=await tx.$queryRawUnsafe<any[]>(`
+      SELECT "id","memberId" FROM public."GymHabit"
+      WHERE "tenantId"=$1 AND "id"=$2 AND "active"=true
+      LIMIT 1
+    `,tenantId,habitId);
+    const habit=one(habits,'Hábito activo no encontrado.');
+    const rows=await tx.$queryRawUnsafe<any[]>(`
+      INSERT INTO public."GymHabitCheckIn"
+        ("id","tenantId","memberId","habitId","status","occurredAt","notes","createdBy","createdAt")
+      VALUES (gen_random_uuid()::text,$1,$2,$3,$4,$5::timestamptz,$6,$7,now())
+      RETURNING *
+    `,tenantId,habit.memberId,habit.id,b.status,b.occurredAt||new Date().toISOString(),b.notes||null,ctx(req).userId||null);
+    return one(rows);
+  });
+  ok(res,created,201);
+}));
+
+router.post('/gym/adherence/goals', requirePermission('gym.manage'), asyncHandler(async(req,res)=>{
+  const tenantId=ctx(req).tenantId;
+  const b=adherenceGoalSchema.parse(req.body||{});
+  const members=await prisma.$queryRawUnsafe<any[]>(`
+    SELECT "id" FROM public."GymMember" WHERE "tenantId"=$1 AND "id"=$2 LIMIT 1
+  `,tenantId,b.memberId);
+  if(!members.length)throw new HttpError(422,'El cliente no pertenece al tenant activo.');
+  const rows=await prisma.$queryRawUnsafe<any[]>(`
+    INSERT INTO public."GymAdherenceGoal"
+      ("id","tenantId","memberId","kind","label","targetValue","unit","dueAt","notes","active","createdBy","createdAt","updatedAt")
+    VALUES (gen_random_uuid()::text,$1,$2,$3,$4,$5,$6,$7::date,$8,true,$9,now(),now())
+    RETURNING *
+  `,tenantId,b.memberId,b.kind,b.label,b.targetValue,b.unit,b.dueAt||null,b.notes||null,ctx(req).userId||null);
+  ok(res,one(rows),201);
+}));
+
+router.patch('/gym/adherence/goals/:id', requirePermission('gym.manage'), asyncHandler(async(req,res)=>{
+  const tenantId=ctx(req).tenantId;
+  const b=adherenceGoalPatchSchema.parse(req.body||{});
+  const rows=await prisma.$queryRawUnsafe<any[]>(`
+    UPDATE public."GymAdherenceGoal"
+    SET "active"=$3,"updatedAt"=now()
+    WHERE "tenantId"=$1 AND "id"=$2
+    RETURNING *
+  `,tenantId,String(req.params.id),b.active);
+  ok(res,one(rows,'Objetivo no encontrado.'));
+}));
+
+router.post('/gym/adherence/photos', requirePermission('gym.manage'), asyncHandler(async(req,res)=>{
+  const tenantId=ctx(req).tenantId;
+  const b=adherencePhotoSchema.parse(req.body||{});
+  const members=await prisma.$queryRawUnsafe<any[]>(`
+    SELECT "id" FROM public."GymMember" WHERE "tenantId"=$1 AND "id"=$2 LIMIT 1
+  `,tenantId,b.memberId);
+  if(!members.length)throw new HttpError(422,'El cliente no pertenece al tenant activo.');
+  const safeMemberId=b.memberId.replace(/[^a-zA-Z0-9_-]/g,'_');
+  const expectedPrefix=`${tenantId}/gym-progress/${safeMemberId}/`;
+  if(!b.storagePath.startsWith(expectedPrefix))throw new HttpError(422,'La foto de progreso no pertenece al cliente y tenant activos.');
+  const rows=await prisma.$queryRawUnsafe<any[]>(`
+    INSERT INTO public."GymProgressPhoto"
+      ("id","tenantId","memberId","storagePath","capturedAt","authorizationConfirmed","authorizationConfirmedAt","notes","createdBy","createdAt")
+    VALUES (gen_random_uuid()::text,$1,$2,$3,$4::timestamptz,true,now(),$5,$6,now())
+    RETURNING *
+  `,tenantId,b.memberId,b.storagePath,b.capturedAt,b.notes||null,ctx(req).userId||null);
+  ok(res,one(rows),201);
 }));
 
 router.get('/gym/classes', requirePermission('gym.manage'), asyncHandler(async (req, res) => {
