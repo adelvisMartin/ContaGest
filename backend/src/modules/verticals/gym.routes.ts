@@ -1235,18 +1235,43 @@ router.get('/gym/nutrition', requirePermission('gym.manage'), asyncHandler(async
 
 router.post('/gym/nutrition', requirePermission('gym.manage'), asyncHandler(async (req, res) => {
   const b = nutritionSchema.parse(req.body || {});
-  const planRows = await prisma.$queryRawUnsafe<any[]>(`
-    INSERT INTO public."GymNutritionPlan" ("id","tenantId","memberId","trainerId","name","goal","targetCalories","proteinG","carbsG","fatG","waterMl","notes","startsAt","endsAt","active","createdAt","updatedAt")
-    VALUES (gen_random_uuid()::text,$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12::date,$13::date,true,now(),now()) RETURNING *
-  `, ctx(req).tenantId,b.memberId,b.trainerId||null,b.name,b.goal||null,b.targetCalories||null,b.proteinG||null,b.carbsG||null,b.fatG||null,b.waterMl||null,b.notes||null,b.startsAt||null,b.endsAt||null);
-  const plan = one(planRows);
-  for (const meal of b.meals) {
-    await prisma.$executeRawUnsafe(`
-      INSERT INTO public."GymMeal" ("id","tenantId","nutritionPlanId","mealType","plannedAt","items","calories","proteinG","carbsG","fatG","notes")
-      VALUES (gen_random_uuid()::text,$1,$2,$3,$4::time,$5::jsonb,$6,$7,$8,$9,$10)
-    `, ctx(req).tenantId,plan.id,meal.mealType,meal.plannedAt||null,JSON.stringify(meal.items),meal.calories||null,meal.proteinG||null,meal.carbsG||null,meal.fatG||null,meal.notes||null);
-  }
-  ok(res, plan, 201);
+  const tenantId = ctx(req).tenantId;
+  const created = await prisma.$transaction(async (tx) => {
+    const memberRows = await tx.$queryRawUnsafe<any[]>(`
+      SELECT "id" FROM public."GymMember"
+      WHERE "tenantId"=$1 AND "id"=$2
+      LIMIT 1
+    `, tenantId, b.memberId);
+    if (!memberRows.length) throw new HttpError(422, 'El cliente no pertenece al tenant activo.');
+
+    if (b.trainerId) {
+      const trainerRows = await tx.$queryRawUnsafe<any[]>(`
+        SELECT "id" FROM public."GymTrainer"
+        WHERE "tenantId"=$1 AND "id"=$2
+        LIMIT 1
+      `, tenantId, b.trainerId);
+      if (!trainerRows.length) throw new HttpError(422, 'El instructor no pertenece al tenant activo.');
+    }
+
+    const planRows = await tx.$queryRawUnsafe<any[]>(`
+      INSERT INTO public."GymNutritionPlan" ("id","tenantId","memberId","trainerId","name","goal","targetCalories","proteinG","carbsG","fatG","waterMl","notes","startsAt","endsAt","active","createdAt","updatedAt")
+      VALUES (gen_random_uuid()::text,$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12::date,$13::date,true,now(),now()) RETURNING *
+    `, tenantId,b.memberId,b.trainerId||null,b.name,b.goal||null,b.targetCalories||null,b.proteinG||null,b.carbsG||null,b.fatG||null,b.waterMl||null,b.notes||null,b.startsAt||null,b.endsAt||null);
+    const plan = one(planRows);
+
+    const meals:any[] = [];
+    for (const meal of b.meals) {
+      const mealNutrition = deriveMealNutrition(meal);
+      const rows = await tx.$queryRawUnsafe<any[]>(`
+        INSERT INTO public."GymMeal" ("id","tenantId","nutritionPlanId","mealType","plannedAt","items","calories","proteinG","carbsG","fatG","notes")
+        VALUES (gen_random_uuid()::text,$1,$2,$3,$4::time,$5::jsonb,$6,$7,$8,$9,$10)
+        RETURNING *
+      `, tenantId,plan.id,meal.mealType,meal.plannedAt||null,JSON.stringify(meal.items),mealNutrition.calories,mealNutrition.proteinG,mealNutrition.carbsG,mealNutrition.fatG,meal.notes||null);
+      meals.push(one(rows));
+    }
+    return { ...plan, meals };
+  });
+  ok(res, created, 201);
 }));
 
 router.get('/gym/classes', requirePermission('gym.manage'), asyncHandler(async (req, res) => {
