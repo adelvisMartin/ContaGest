@@ -6,6 +6,7 @@ import { verifyAccessToken } from '../auth/jwt.js';
 import { readAccessToken, readCsrfToken, validateCsrfAgainstSession } from '../auth/sessionCookies.js';
 import { hasPlatformAccess, isPlatformPermission } from '../identity/platformAccess.js';
 import { HttpError } from '../http.js';
+import { PERMISSION_MODULES } from '../contracts/accessManifest.js';
 
 const DEV_TENANT_ID_HEADER = 'x-tenant-id';
 const DEV_USER_ID_HEADER = 'x-user-id';
@@ -23,23 +24,7 @@ type RequestContext = {
 
 type AuthIdentityContext = Pick<RequestContext, 'authMode'> & Omit<Partial<RequestContext>, 'authMode'>;
 
-const PERMISSION_MODULES: Record<string, string[]> = {
-  'clients.manage': ['clientes'],
-  'inventory.manage': ['inventario','inventario-scan','kardex','qr','veterinaria','gimnasio'],
-  'sales.manage': ['ventas','cotizacion','pos-sede','pedidos'],
-  'sales.view': ['ventas','cotizacion','dashboard','reportes'],
-  'purchases.manage': ['compras','proveedores'],
-  'reports.view': ['dashboard','reportes','analytics','asistente-ia','pretesting','salud','veterinaria','gimnasio','rutinas','nutricion'],
-  'modules.manage': ['admin','vistas','modulos-madurez'],
-  'payroll.manage': ['nomina','rrhh'],
-  'banking.manage': ['bancos'],
-  'taxes.export': ['tributos','libro-ventas','normativa'],
-  'health.manage': ['salud','veterinaria','psicologia','odontologia'],
-  'gym.manage': ['gimnasio','rutinas','nutricion'],
-  'communications.manage': ['mensajes'],
-  'admin.manage': ['admin','configuracion','backend','licencias','demo-control'],
-  'platform.manage': ['commercial']
-};
+
 
 async function resolveBackendJwtContext(token: string, cookieMode = false): Promise<AuthIdentityContext> {
   const decoded = verifyAccessToken(token);
