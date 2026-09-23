@@ -197,7 +197,7 @@ if(vetEntry?.status==='MIGRATED'){
     "source:'veterinary-treatment-sheet'",
     'sourceObservationId:row.id',
     'INSERT INTO public."CareMeasurement"',
-    'hospitalization."encounterId"'
+    'hospitalization.encounterId'
   ]){
     if(!veterinaryRoutes.includes(contract))fail(`veterinaria: missing inpatient longitudinal vital contract ${contract}`);
   }
