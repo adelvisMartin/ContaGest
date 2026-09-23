@@ -41,6 +41,12 @@ export function PeriodizationPanel({routines=[],Toast}){
     ...templates.map((item)=>({value:item.id,label:item.name}))
   ],[templates]);
 
+  const latestVersionByKey=useMemo(()=>programs.reduce((map,item)=>{
+    const current=Number(map[item.programKey]||0);
+    map[item.programKey]=Math.max(current,Number(item.version||0));
+    return map;
+  },{}),[programs]);
+
   const notify=(message,tone='success')=>{
     if(typeof Toast==='function')Toast(message,tone);
   };
@@ -197,7 +203,7 @@ export function PeriodizationPanel({routines=[],Toast}){
             <Typography variant="body2" fontWeight={700}>{program.name} · v{program.version}</Typography>
             <Typography variant="caption" color="text.secondary">{program.totalWeeks||0} semana(s) · {program.loadWeeks||0} carga · {program.deloadWeeks||0} descarga{program.sourceTemplateName?` · Plantilla: ${program.sourceTemplateName}`:''}</Typography>
           </Box>
-          <CgButton type="button" size="small" variant="outlined" onClick={()=>beginVersion(program)} disabled={saving}>Nueva versión</CgButton>
+          <CgButton type="button" size="small" variant="outlined" onClick={()=>beginVersion(program)} disabled={saving||Number(program.version)!==Number(latestVersionByKey[program.programKey]||0)}>Nueva versión</CgButton>
         </Stack>
       </Paper>):<CgEmptyState title="Sin versiones" description="Crea el primer programa para conservar un historial inmutable."/>}
     </Stack>
