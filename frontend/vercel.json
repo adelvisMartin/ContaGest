@@ -2,7 +2,7 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": "vite",
   "installCommand": "npm ci --no-audit --no-fund",
-  "buildCommand": "cd .. && node --test tests/erp_ui_veterinary_boarding_32_51.test.mjs && node scripts/erp-ui-wave-a-audit-v251.mjs && npm --workspace backend run typecheck && mkdir -p frontend/dist && printf '<!doctype html><title>boarding-32-51-pass</title>' > frontend/dist/index.html",
+  "buildCommand": "npm run diag:boarding-32",
   "outputDirectory": "dist",
   "git": {
     "deploymentEnabled": {
