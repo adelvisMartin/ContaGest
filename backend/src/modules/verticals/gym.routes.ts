@@ -268,6 +268,16 @@ const workoutSetSchema = z.object({
   }
 });
 
+const performanceQuerySchema = z.object({
+  memberId: z.string().min(10),
+  from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional()
+});
+
+const epleyEstimate = (load:number,reps:number) => reps>=1&&reps<=12&&load>0
+  ? Number((load*(1+reps/30)).toFixed(2))
+  : null;
+
 const routineSchema = z.object({
   memberId: z.string().min(10),
   trainerId: z.string().optional().nullable(),
@@ -792,6 +802,144 @@ router.post('/gym/workout-sessions/:id/complete', requirePermission('gym.manage'
     return one(rows);
   });
   ok(res,completed);
+}));
+
+router.get('/gym/performance', requirePermission('gym.manage'), asyncHandler(async (req, res) => {
+  const today=new Date();
+  const defaultTo=today.toISOString().slice(0,10);
+  const defaultFrom=new Date(today.getTime()-89*86400000).toISOString().slice(0,10);
+  const q=performanceQuerySchema.parse({
+    memberId:String(req.query.memberId||''),
+    from:req.query.from?String(req.query.from):undefined,
+    to:req.query.to?String(req.query.to):undefined
+  });
+  const from=q.from||defaultFrom;
+  const to=q.to||defaultTo;
+  const fromDate=new Date(`${from}T00:00:00.000Z`);
+  const toDate=new Date(`${to}T00:00:00.000Z`);
+  if(!Number.isFinite(fromDate.getTime())||!Number.isFinite(toDate.getTime())||toDate<fromDate)throw new HttpError(422,'El período de performance no es válido.');
+  const toExclusive=new Date(toDate.getTime()+86400000);
+  const periodDays=Math.ceil((toExclusive.getTime()-fromDate.getTime())/86400000);
+  if(periodDays>366)throw new HttpError(422,'El período de performance no puede superar 366 días.');
+
+  const tenantId=ctx(req).tenantId;
+  const memberRows=await prisma.$queryRawUnsafe<any[]>(`
+    SELECT "id" FROM public."GymMember"
+    WHERE "tenantId"=$1 AND "id"=$2
+    LIMIT 1
+  `,tenantId,q.memberId);
+  if(!memberRows.length)throw new HttpError(404,'El cliente no pertenece al tenant activo.');
+
+  const sessions=await prisma.$queryRawUnsafe<any[]>(`
+    SELECT s."id",s."routineId",s."startedAt",s."completedAt",r."daysPerWeek"
+    FROM public."GymWorkoutSession" s
+    JOIN public."GymRoutine" r
+      ON r."tenantId"=s."tenantId" AND r."id"=s."routineId"
+    WHERE s."tenantId"=$1 AND s."memberId"=$2 AND s."status"='completed'
+      AND s."startedAt">=$3::timestamptz AND s."startedAt"<$4::timestamptz
+    ORDER BY s."startedAt" ASC
+  `,tenantId,q.memberId,fromDate.toISOString(),toExclusive.toISOString());
+
+  const setRows=await prisma.$queryRawUnsafe<any[]>(`
+    SELECT ws."id",ws."sessionId",ws."routineExerciseId",ws."status",ws."loadKg",ws."reps",ws."rir",ws."rpe",ws."restSeconds",ws."recordedAt",
+           s."routineId",s."startedAt",
+           re."exerciseId",
+           e."name" AS "exerciseName",
+           e."muscleGroup"
+    FROM public."GymWorkoutSet" ws
+    JOIN public."GymWorkoutSession" s
+      ON s."tenantId"=ws."tenantId" AND s."id"=ws."sessionId"
+    JOIN public."GymRoutineExercise" re
+      ON re."tenantId"=ws."tenantId" AND re."id"=ws."routineExerciseId"
+    JOIN public."GymExercise" e
+      ON e."tenantId"=re."tenantId" AND e."id"=re."exerciseId"
+    WHERE ws."tenantId"=$1 AND s."memberId"=$2 AND s."status"='completed'
+      AND s."startedAt">=$3::timestamptz AND s."startedAt"<$4::timestamptz
+    ORDER BY ws."recordedAt" ASC
+  `,tenantId,q.memberId,fromDate.toISOString(),toExclusive.toISOString());
+
+  const planRows=await prisma.$queryRawUnsafe<any[]>(`
+    SELECT r."id" AS "routineId",COALESCE(sum(re."sets"),0)::int AS "plannedSets"
+    FROM public."GymRoutine" r
+    LEFT JOIN public."GymRoutineExercise" re
+      ON re."tenantId"=r."tenantId" AND re."routineId"=r."id"
+    WHERE r."tenantId"=$1 AND r."memberId"=$2
+    GROUP BY r."id"
+  `,tenantId,q.memberId);
+  const plannedByRoutine=new Map(planRows.map((row:any)=>[String(row.routineId),Number(row.plannedSets||0)]));
+  const plannedSets=sessions.reduce((total:any,session:any)=>total+Number(plannedByRoutine.get(String(session.routineId))||0),0);
+
+  const byExerciseMap=new Map<string,any>();
+  const byMuscleMap=new Map<string,any>();
+  const dailyMap=new Map<string,any>();
+  let totalVolume=0;
+  let completedSets=0;
+  let skippedSets=0;
+
+  for(const row of setRows){
+    const exerciseId=String(row.exerciseId);
+    const exerciseName=String(row.exerciseName||'Ejercicio');
+    const muscleGroup=String(row.muscleGroup||'Sin grupo');
+    if(!byExerciseMap.has(exerciseId))byExerciseMap.set(exerciseId,{
+      exerciseId,exerciseName,muscleGroup,completedSets:0,skippedSets:0,totalVolume:0,maxLoadKg:0,maxReps:0,bestEstimated1RmKg:null,lastPerformedAt:null
+    });
+    if(!byMuscleMap.has(muscleGroup))byMuscleMap.set(muscleGroup,{muscleGroup,completedSets:0,skippedSets:0,totalVolume:0});
+    const exercise=byExerciseMap.get(exerciseId);
+    const muscle=byMuscleMap.get(muscleGroup);
+
+    if(row.status==='skipped'){
+      skippedSets+=1;exercise.skippedSets+=1;muscle.skippedSets+=1;
+      continue;
+    }
+    if(row.status!=='completed')continue;
+    completedSets+=1;exercise.completedSets+=1;muscle.completedSets+=1;
+    const load=Number(row.loadKg||0);
+    const reps=Number(row.reps||0);
+    const volume=load>0&&reps>0?load*reps:0;
+    const estimated=epleyEstimate(load,reps);
+    totalVolume+=volume;
+    exercise.totalVolume+=volume;
+    muscle.totalVolume+=volume;
+    exercise.maxLoadKg=Math.max(exercise.maxLoadKg,load);
+    exercise.maxReps=Math.max(exercise.maxReps,reps);
+    exercise.bestEstimated1RmKg=estimated==null?exercise.bestEstimated1RmKg:Math.max(Number(exercise.bestEstimated1RmKg||0),estimated);
+    exercise.lastPerformedAt=row.recordedAt;
+
+    const date=new Date(row.recordedAt).toISOString().slice(0,10);
+    if(!dailyMap.has(date))dailyMap.set(date,{date,completedSets:0,totalVolume:0});
+    const day=dailyMap.get(date);
+    day.completedSets+=1;
+    day.totalVolume+=volume;
+  }
+
+  const trainingDays=new Set(sessions.map((session:any)=>new Date(session.startedAt).toISOString().slice(0,10))).size;
+  const completedSessions=sessions.length;
+  const sessionsPerWeek=periodDays>0?Number((completedSessions/(periodDays/7)).toFixed(2)):0;
+  const setAdherencePct=plannedSets>0?Number((Math.min(1,completedSets/plannedSets)*100).toFixed(1)):0;
+  const roundMetrics=(item:any)=>({...item,totalVolume:Number(Number(item.totalVolume||0).toFixed(2))});
+
+  const byExercise=[...byExerciseMap.values()]
+    .map((item)=>({...roundMetrics(item),bestEstimated1RmKg:item.bestEstimated1RmKg==null?null:Number(Number(item.bestEstimated1RmKg).toFixed(2))}))
+    .sort((a,b)=>b.totalVolume-a.totalVolume||a.exerciseName.localeCompare(b.exerciseName));
+  const byMuscleGroup=[...byMuscleMap.values()].map(roundMetrics).sort((a,b)=>b.totalVolume-a.totalVolume||a.muscleGroup.localeCompare(b.muscleGroup));
+  const dailyTrend=[...dailyMap.values()].map(roundMetrics).sort((a,b)=>a.date.localeCompare(b.date));
+
+  ok(res,{
+    period:{from,to,days:periodDays},
+    summary:{
+      completedSessions,
+      trainingDays,
+      sessionsPerWeek,
+      plannedSets,
+      completedSets,
+      skippedSets,
+      setAdherencePct,
+      totalVolume:Number(totalVolume.toFixed(2))
+    },
+    byExercise,
+    byMuscleGroup,
+    dailyTrend
+  });
 }));
 
 router.get('/gym/routines', requirePermission('gym.manage'), asyncHandler(async (req, res) => {
