@@ -582,6 +582,24 @@ if(fitnessEntries.every((item)=>item.status==='MIGRATED')){
   const productivity=read(productivityPath);
   if(/MutationObserver|innerHTML|querySelector|addEventListener|document\.createElement/.test(productivity))fail('fitness: productivity tools reintroduced imperative DOM mutation');
   if(fs.existsSync(path.join(root,'frontend/src/services/fitnessProductivityEnhancer.js')))fail('fitness: superseded MutationObserver enhancer still exists');
+  const routineBuilderPath='frontend/src/components/fitness/RoutineBuilder.jsx';
+  if(!fs.existsSync(path.join(root,routineBuilderPath)))fail('fitness: structured routine builder owner missing');
+  const routineBuilder=read(routineBuilderPath);
+  if(!fitness.includes('RoutineBuilder'))fail('fitness: structured routine builder is not composed');
+  if((fitness.match(/<RoutineBuilder/g)||[]).length!==1)fail('fitness: routine builder must render from one owner');
+  if(/exerciseLines|Ejercicios: Día \| Ejercicio \| Grupo \| Series \| Reps \| Descanso|split\('\|'\)/.test(fitness))fail('fitness: structured routine builder regressed to legacy free-text parsing');
+  if(/querySelector|addEventListener|innerHTML|document\./.test(routineBuilder))fail('fitness: routine builder reintroduced imperative DOM lifecycle');
+  for(const contract of ['addExercise','removeExercise','updateExercise','moveExercise','duplicateExercise','exerciseName','muscleGroup','equipment','sets','reps','loadKg','restSeconds','tempo','notes','FITNESS_EXERCISES']){
+    if(!routineBuilder.includes(contract))fail(`fitness: missing routine-builder contract ${contract}`);
+  }
+  const routineSubmit=fitness.slice(fitness.indexOf('const submitRoutine'),fitness.indexOf('const submitNutrition'));
+  if(/exerciseLines|split\('\n'\)|split\('\|'\)/.test(routineSubmit))fail('fitness: structured routine submit reintroduced free-text parsing');
+  if(!routineSubmit.includes('const exercises=routineForm.exercises.map')||!routineSubmit.includes('GymVerticalService.createRoutine('))fail('fitness: routine builder must sanitize and persist through canonical GymVerticalService');
+  const gymRoutes=read('backend/src/modules/verticals/gym.routes.ts');
+  const routineRoute=gymRoutes.slice(gymRoutes.indexOf("router.post('/gym/routines'"),gymRoutes.indexOf("router.get('/gym/nutrition'"));
+  for(const contract of ['prisma.$transaction','GymMember','GymTrainer','GymExercise','GymRoutineExercise','El cliente no pertenece al tenant activo.','El instructor no pertenece al tenant activo.','El ejercicio seleccionado no pertenece al tenant activo.']){
+    if(!routineRoute.includes(contract))fail(`fitness: missing atomic/tenant-safe routine contract ${contract}`);
+  }
 }
 
 const css=read('frontend/src/styles/erp-runtime.css');
