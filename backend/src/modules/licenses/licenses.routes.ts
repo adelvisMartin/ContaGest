@@ -14,7 +14,7 @@ const router = Router();
 router.use(requireTenant);
 
 const BUSINESS_SECTORS = [
-  'contador', 'comercio', 'servicios', 'restaurante', 'salud', 'veterinaria', 'gimnasio',
+  'contador', 'comercio', 'servicios', 'restaurante', 'salud', 'veterinaria', 'psicologia', 'odontologia', 'gimnasio', 'nutricion',
   'manufactura', 'distribucion', 'profesional', 'otro'
 ] as const;
 const COMMERCIAL_USES = ['evaluacion', 'demostracion', 'operacion', 'capacitacion', 'soporte'] as const;
@@ -67,6 +67,8 @@ const permissionByModule: Record<string, string[]> = {
   tributos: ['taxes.export'],
   salud: ['health.manage'],
   veterinaria: ['health.manage'],
+  psicologia: ['health.manage'],
+  odontologia: ['health.manage'],
   gimnasio: ['gym.manage'],
   rutinas: ['gym.manage'],
   nutricion: ['gym.manage'],
@@ -74,7 +76,7 @@ const permissionByModule: Record<string, string[]> = {
 };
 
 const sectorPrefix: Record<string, string> = {
-  contador:'CNT', comercio:'COM', servicios:'SRV', restaurante:'RES', salud:'MED', veterinaria:'VET', gimnasio:'GYM',
+  contador:'CNT', comercio:'COM', servicios:'SRV', restaurante:'RES', salud:'MED', veterinaria:'VET', psicologia:'PSI', odontologia:'ODO', gimnasio:'GYM', nutricion:'NUT',
   manufactura:'MAN', distribucion:'DIS', profesional:'PRO', otro:'ERP'
 };
 
@@ -308,7 +310,7 @@ router.post('/', requirePermission('admin.manage'), asyncHandler(async (req, res
     userProfileId:user.id,
     email:user.email,
     fullName:user.fullName,
-    roleLabel:body.businessSector === 'contador' ? 'Contador' : body.businessSector === 'comercio' ? 'Operador comercial' : 'Cliente'
+    roleLabel:({ contador:'Contador', comercio:'Operador comercial', salud:'Profesional de salud', veterinaria:'Profesional veterinario', psicologia:'Profesional de psicología', odontologia:'Profesional odontológico', gimnasio:'Operador de gimnasio', nutricion:'Profesional de nutrición' } as Record<string,string>)[body.businessSector] || 'Cliente'
   });
 
   await assignTrialRole(ctx.tenantId, user.id, body.modules);

@@ -5,8 +5,8 @@ export const MODULE_TIERS = {
 };
 
 export const MODULE_AREAS = ['Inicio','Ventas','Operaciones','Inventario','Compras','Contabilidad','Fiscal','RRHH','Salud','Fitness','Comunicación','Analítica','Administración','Soporte'];
-const ALL_OPERATIONAL_MODES = ['contador','comercio','restaurante','servicios','salud','veterinaria','psicologia','odontologia','gimnasio','admin'];
-const CLIENT_MODES = ['comercio','restaurante','servicios','salud','veterinaria','psicologia','odontologia','gimnasio','admin'];
+const ALL_OPERATIONAL_MODES = ['contador','comercio','restaurante','servicios','salud','veterinaria','psicologia','odontologia','gimnasio','nutricion','admin'];
+const CLIENT_MODES = ['comercio','restaurante','servicios','salud','veterinaria','psicologia','odontologia','gimnasio','nutricion','admin'];
 
 export const MODULE_CATALOG = [
   { route:'dashboard', name:'Dashboard', area:'Inicio', tier:'core', modes:ALL_OPERATIONAL_MODES },
@@ -46,8 +46,8 @@ export const MODULE_CATALOG = [
   { route:'odontologia', name:'Odontología', area:'Salud', tier:'core', modes:['odontologia','admin'] },
   { route:'gimnasio', name:'Control de gimnasio', area:'Fitness', tier:'core', modes:['gimnasio','admin'] },
   { route:'rutinas', name:'Rutinas e instructor', area:'Fitness', tier:'core', modes:['gimnasio','admin'] },
-  { route:'nutricion', name:'Nutrición y composición', area:'Fitness', tier:'advanced', modes:['gimnasio','admin'] },
-  { route:'mensajes', name:'Mensajes WhatsApp', area:'Comunicación', tier:'core', modes:['salud','veterinaria','psicologia','odontologia','gimnasio','comercio','restaurante','servicios','admin'] },
+  { route:'nutricion', name:'Nutrición y composición', area:'Fitness', tier:'advanced', modes:['gimnasio','nutricion','admin'] },
+  { route:'mensajes', name:'Mensajes WhatsApp', area:'Comunicación', tier:'core', modes:['salud','veterinaria','psicologia','odontologia','gimnasio','nutricion','comercio','restaurante','servicios','admin'] },
   { route:'analytics', name:'Analítica', area:'Analítica', tier:'advanced', modes:ALL_OPERATIONAL_MODES },
   { route:'reportes', name:'Reportes', area:'Analítica', tier:'core', modes:ALL_OPERATIONAL_MODES },
   { route:'auditoria', name:'Auditoría', area:'Analítica', tier:'advanced', modes:['contador','salud','veterinaria','psicologia','odontologia','gimnasio','admin'] },
@@ -78,6 +78,7 @@ export const BUSINESS_MODES = {
   psicologia:{ label:'Modo Psicología', description:'Pacientes, citas, planificación semanal, confirmaciones y seguimiento.' },
   odontologia:{ label:'Modo Odontología', description:'Pacientes, odontograma, tratamientos, citas, presupuestos y seguimiento.' },
   gimnasio:{ label:'Modo Gimnasio', description:'Socios, membresías, asistencia, rutinas y nutrición.' },
+  nutricion:{ label:'Modo Nutrición', description:'Pacientes, planes alimentarios, composición, adherencia y seguimiento nutricional.' },
   demo:{ label:'Modo Comercial', description:'Selección de módulos para presentaciones y accesos temporales.' },
   admin:{ label:'Modo Administrador', description:'Todos los módulos, seguridad y configuración.' }
 };

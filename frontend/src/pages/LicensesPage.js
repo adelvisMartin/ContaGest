@@ -12,7 +12,10 @@ const sectorOptions = [
   { value:'restaurante', label:'Restaurante / alimentos' },
   { value:'salud', label:'Salud / práctica médica' },
   { value:'veterinaria', label:'Veterinaria' },
+  { value:'psicologia', label:'Psicología' },
+  { value:'odontologia', label:'Odontología' },
   { value:'gimnasio', label:'Gimnasio / fitness' },
+  { value:'nutricion', label:'Nutrición' },
   { value:'manufactura', label:'Manufactura' },
   { value:'distribucion', label:'Distribución' },
   { value:'profesional', label:'Profesional independiente' },
@@ -22,7 +25,10 @@ const sectorOptions = [
 const sectorDefaults = {
   salud:['dashboard','salud','clientes','reportes','analytics','soporte'],
   veterinaria:['dashboard','veterinaria','clientes','inventario','reportes','analytics','soporte'],
+  psicologia:['dashboard','psicologia','clientes','reportes','analytics','mensajes','soporte'],
+  odontologia:['dashboard','odontologia','clientes','reportes','analytics','mensajes','soporte'],
   gimnasio:['dashboard','gimnasio','rutinas','nutricion','clientes','reportes','analytics','soporte'],
+  nutricion:['dashboard','nutricion','clientes','reportes','analytics','mensajes','soporte'],
   contador:['dashboard','contabilidad','plan-cuentas','libro-mayor','balance-sumas-saldos','hoja-trabajo','estados-financieros','cierre-contable','bancos','tributos','libro-ventas','reportes','analytics','soporte'],
   restaurante:['dashboard','ventas','pedidos','pos-sede','tracking-pedidos','inventario','reportes','soporte'],
   comercio:['dashboard','ventas','cotizacion','clientes','inventario','kardex','compras','reportes','analytics','soporte'],
@@ -175,7 +181,7 @@ export const LicensesPage = {
   render(state) {
     const licenses = state.licenses || [];
     const isPlatform=Array.isArray(state.profile?.permissions)&&state.profile.permissions.includes('platform.manage');
-    const modules = [...new Set([...DemoAccessService.modules, 'salud','veterinaria','gimnasio','rutinas','nutricion','mensajes','libro-mayor','balance-sumas-saldos','hoja-trabajo','estados-financieros','cierre-contable','tributos','libro-ventas'])];
+    const modules = [...new Set([...DemoAccessService.modules, 'salud','veterinaria','psicologia','odontologia','gimnasio','rutinas','nutricion','mensajes','libro-mayor','balance-sumas-saldos','hoja-trabajo','estados-financieros','cierre-contable','tributos','libro-ventas'])];
     const selectedSector = state.licenseDraft?.businessSector || 'comercio';
     const defaults = sectorDefaults[selectedSector] || sectorDefaults.comercio;
     const moduleOptions = modules.map((module) => `<label class="cg-feature-pill"><input type="checkbox" name="modules" value="${escapeHtml(module)}" ${defaults.includes(module) ? 'checked' : ''}/><span>${escapeHtml(module)}</span></label>`).join('');
