@@ -361,20 +361,27 @@ const nutritionRulePatchSchema=z.object({
   active:z.boolean()
 });
 
+const requiredNutritionNumber=(max:number)=>z.preprocess(
+  (value)=>value===''||value===null||value===undefined?undefined:value,
+  z.coerce.number().min(0).max(max)
+);
 const micronutrientSchema=z.object({
   key:z.string().trim().min(2).max(64).regex(/^[a-z0-9_]+$/,'Usa una clave estable en minúsculas, números y guion bajo.'),
   label:z.string().trim().min(2).max(120),
-  amount:z.coerce.number().min(0).max(1000000000),
+  amount:requiredNutritionNumber(1000000000),
   unit:z.enum(['g','mg','mcg','IU'])
 });
 const ingredientNutritionProfileSchema=z.object({
-  basisQuantity:z.coerce.number().positive().max(100000),
+  basisQuantity:z.preprocess(
+    (value)=>value===''||value===null||value===undefined?undefined:value,
+    z.coerce.number().positive().max(100000)
+  ),
   basisUnit:z.string().trim().min(1).max(40),
-  energyKcal:z.coerce.number().min(0).max(1000000),
-  proteinG:z.coerce.number().min(0).max(1000000),
-  carbsG:z.coerce.number().min(0).max(1000000),
-  fatG:z.coerce.number().min(0).max(1000000),
-  fiberG:z.coerce.number().min(0).max(1000000),
+  energyKcal:requiredNutritionNumber(1000000),
+  proteinG:requiredNutritionNumber(1000000),
+  carbsG:requiredNutritionNumber(1000000),
+  fatG:requiredNutritionNumber(1000000),
+  fiberG:requiredNutritionNumber(1000000),
   micronutrients:z.array(micronutrientSchema).max(100).default([])
 }).superRefine((value,refinement)=>{
   const keys=value.micronutrients.map((item)=>`${item.key}:${item.unit}`);
