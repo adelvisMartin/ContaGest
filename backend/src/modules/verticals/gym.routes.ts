@@ -256,26 +256,65 @@ router.get('/gym/routines', requirePermission('gym.manage'), asyncHandler(async 
 
 router.post('/gym/routines', requirePermission('gym.manage'), asyncHandler(async (req, res) => {
   const b = routineSchema.parse(req.body || {});
-  const routineRows = await prisma.$queryRawUnsafe<any[]>(`
-    INSERT INTO public."GymRoutine" ("id","tenantId","memberId","trainerId","name","goal","level","startsAt","endsAt","daysPerWeek","notes","active","createdAt","updatedAt")
-    VALUES (gen_random_uuid()::text,$1,$2,$3,$4,$5,$6,$7::date,$8::date,$9,$10,true,now(),now()) RETURNING *
-  `, ctx(req).tenantId,b.memberId,b.trainerId||null,b.name,b.goal||null,b.level,b.startsAt||null,b.endsAt||null,b.daysPerWeek,b.notes||null);
-  const routine = one(routineRows);
-  for (const item of b.exercises) {
-    let exerciseId = item.exerciseId || null;
-    if (!exerciseId) {
-      const exRows = await prisma.$queryRawUnsafe<any[]>(`
-        INSERT INTO public."GymExercise" ("id","tenantId","name","muscleGroup","equipment","instructions","active","createdAt","updatedAt")
-        VALUES (gen_random_uuid()::text,$1,$2,$3,$4,$5,true,now(),now())
-        ON CONFLICT ("tenantId","name") DO UPDATE SET "updatedAt"=now() RETURNING "id"
-      `, ctx(req).tenantId,item.exerciseName,item.muscleGroup||null,item.equipment||null,item.instructions||null);
-      exerciseId = exRows[0]?.id;
+  const tenantId = ctx(req).tenantId;
+
+  const routine = await prisma.$transaction(async (tx) => {
+    const memberRows = await tx.$queryRawUnsafe<any[]>(`
+      SELECT "id" FROM public."GymMember"
+      WHERE "tenantId"=$1 AND "id"=$2
+      LIMIT 1
+    `, tenantId, b.memberId);
+    if (!memberRows.length) throw new HttpError(422, 'El cliente no pertenece al tenant activo.');
+
+    if (b.trainerId) {
+      const trainerRows = await tx.$queryRawUnsafe<any[]>(`
+        SELECT "id" FROM public."GymTrainer"
+        WHERE "tenantId"=$1 AND "id"=$2
+        LIMIT 1
+      `, tenantId, b.trainerId);
+      if (!trainerRows.length) throw new HttpError(422, 'El instructor no pertenece al tenant activo.');
     }
-    await prisma.$executeRawUnsafe(`
-      INSERT INTO public."GymRoutineExercise" ("id","tenantId","routineId","exerciseId","dayOfWeek","sortOrder","sets","reps","loadKg","restSeconds","tempo","notes")
-      VALUES (gen_random_uuid()::text,$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
-    `, ctx(req).tenantId,routine.id,exerciseId,item.dayOfWeek,item.sortOrder,item.sets,item.reps,item.loadKg||null,item.restSeconds,item.tempo||null,item.notes||null);
-  }
+
+    const routineRows = await tx.$queryRawUnsafe<any[]>(`
+      INSERT INTO public."GymRoutine" ("id","tenantId","memberId","trainerId","name","goal","level","startsAt","endsAt","daysPerWeek","notes","active","createdAt","updatedAt")
+      VALUES (gen_random_uuid()::text,$1,$2,$3,$4,$5,$6,$7::date,$8::date,$9,$10,true,now(),now())
+      RETURNING *
+    `, tenantId,b.memberId,b.trainerId||null,b.name,b.goal||null,b.level,b.startsAt||null,b.endsAt||null,b.daysPerWeek,b.notes||null);
+    const createdRoutine = one(routineRows);
+
+    for (const item of b.exercises) {
+      let exerciseId = item.exerciseId || null;
+      if (exerciseId) {
+        const exerciseRows = await tx.$queryRawUnsafe<any[]>(`
+          SELECT "id" FROM public."GymExercise"
+          WHERE "tenantId"=$1 AND "id"=$2
+          LIMIT 1
+        `, tenantId, exerciseId);
+        if (!exerciseRows.length) throw new HttpError(422, 'El ejercicio seleccionado no pertenece al tenant activo.');
+      } else {
+        const exerciseRows = await tx.$queryRawUnsafe<any[]>(`
+          INSERT INTO public."GymExercise" AS existing ("id","tenantId","name","muscleGroup","equipment","instructions","active","createdAt","updatedAt")
+          VALUES (gen_random_uuid()::text,$1,$2,$3,$4,$5,true,now(),now())
+          ON CONFLICT ("tenantId","name")
+          DO UPDATE SET
+            "muscleGroup"=COALESCE(EXCLUDED."muscleGroup", existing."muscleGroup"),
+            "equipment"=COALESCE(EXCLUDED."equipment", existing."equipment"),
+            "instructions"=COALESCE(EXCLUDED."instructions", existing."instructions"),
+            "updatedAt"=now()
+          RETURNING "id"
+        `, tenantId,item.exerciseName,item.muscleGroup||null,item.equipment||null,item.instructions||null);
+        exerciseId = exerciseRows[0]?.id;
+      }
+
+      await tx.$executeRawUnsafe(`
+        INSERT INTO public."GymRoutineExercise" ("id","tenantId","routineId","exerciseId","dayOfWeek","sortOrder","sets","reps","loadKg","restSeconds","tempo","notes")
+        VALUES (gen_random_uuid()::text,$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+      `, tenantId,createdRoutine.id,exerciseId,item.dayOfWeek,item.sortOrder,item.sets,item.reps,item.loadKg??null,item.restSeconds,item.tempo||null,item.notes||null);
+    }
+
+    return createdRoutine;
+  });
+
   ok(res, routine, 201);
 }));
 
