@@ -362,6 +362,24 @@ if(vetEntry?.status==='MIGRATED'){
   if(/ALTER TABLE public\."CareHospitalization"/.test(veterinaryBoardingMigration))fail('veterinaria: boarding must not rewrite hospitalization authority');
   if(/autoAssign|recommendedResource|recommendResource|autoSelect/.test(veterinaryBoarding))fail('veterinaria: boarding must not auto-assign resources');
 
+  for(const [surfaceName,surface] of [
+    ['financial',veterinaryFinancial],
+    ['guardian portal',guardianPortalPanel],
+    ['boarding',veterinaryBoarding]
+  ]){
+    if(!surface.includes('reportVeterinaryError'))fail(`veterinaria: ${surfaceName} surface must use safe error reporting`);
+    if(/\.catch\(\s*\(?.*?\)?\s*=>\s*null\s*\)|catch\s*\{\s*\}/s.test(surface))fail(`veterinaria: ${surfaceName} surface reintroduced silent catch swallowing`);
+    if(!surface.includes('Reintentar'))fail(`veterinaria: ${surfaceName} surface must expose retry for failed reads`);
+  }
+  for(const contract of [
+    "reportVeterinaryError('guardianPortal.copyLink'",
+    "reportVeterinaryError('guardianPortal.communicationLog'",
+    'setError(message)',
+    'toast.error(message)'
+  ]){
+    if(!guardianPortalPanel.includes(contract))fail(`veterinaria: guardian portal missing visible error contract ${contract}`);
+  }
+
 }
 
 const dentistryEntry=ERP_UI_WAVE_A_2_51.find((item)=>item.route==='odontologia');
