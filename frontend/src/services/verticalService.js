@@ -78,6 +78,9 @@ export const VeterinaryService = {
   createProcedure(payload) { return BackendApi.post('/api/v1/verticals/veterinary/procedures', payload); },
   communications(params = {}) { return BackendApi.get(`/verticals/veterinary/communications${query(params)}`); },
   createCommunication(payload) { return BackendApi.post('/api/v1/verticals/veterinary/communications', payload); },
+  guardianPortalGrants(patientId) { return BackendApi.get(`/verticals/veterinary/guardian-portal/grants${query({ patientId })}`); },
+  createGuardianPortalGrant(payload) { return BackendApi.post('/api/v1/verticals/veterinary/guardian-portal/grants', payload); },
+  revokeGuardianPortalGrant(id) { return BackendApi.post(`/api/v1/verticals/veterinary/guardian-portal/grants/${encodeURIComponent(id)}/revoke`, {}); },
   updateAppointmentStatus(id, payload) { return BackendApi.request(`/verticals/veterinary/appointments/${encodeURIComponent(id)}/status`, { method:'PATCH', body:payload }); }
 };
 

@@ -46,7 +46,8 @@ export default defineConfig({
         'soluciones-contadores': resolve(rootDir, 'soluciones/contadores/index.html'),
         'soluciones-salud-veterinaria': resolve(rootDir, 'soluciones/salud-veterinaria/index.html'),
         'soluciones-gimnasios': resolve(rootDir, 'soluciones/gimnasios/index.html'),
-        'soluciones-multiempresa': resolve(rootDir, 'soluciones/multiempresa/index.html')
+        'soluciones-multiempresa': resolve(rootDir, 'soluciones/multiempresa/index.html'),
+        'portal-veterinaria': resolve(rootDir, 'portal/veterinaria/index.html')
       },
       output: {
         manualChunks(id) {

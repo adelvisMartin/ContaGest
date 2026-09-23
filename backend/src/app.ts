@@ -10,6 +10,7 @@ import hipicoRaceRoutes from './modules/hipico/race.routes.js';
 import hipicoAgentRoutes from './modules/hipico/agent.routes.js';
 import hipicoCommandCenterRoutes from './modules/hipico/command-center.routes.js';
 import hipicoOperatorReadRoutes from './modules/hipico/operator-read.routes.js';
+import veterinaryGuardianPortalPublicRoutes from './modules/verticals/veterinary-guardian-portal.public.routes.js';
 import hipicoWebhookRoutes from './modules/hipico-bot/hipico-webhook.routes.js';
 import hipicoBridgeRoutes from './modules/hipico-bot/hipico-bridge.routes.js';
 import hipicoOperatorRoutes from './modules/hipico-bot/hipico-operator.routes.js';
@@ -110,6 +111,8 @@ export function createApp(options: { readinessCheck?: ReadinessCheck } = {}) {
     hipicoOperatorReadRoutes,
     hipicoCanonicalRoutes
   );
+
+  app.use('/api/v1/public/veterinary-portal', authRateLimit, veterinaryGuardianPortalPublicRoutes);
 
   app.use(csrfProtection);
   app.use('/api/v1/auth', authRateLimit, authRoutes);

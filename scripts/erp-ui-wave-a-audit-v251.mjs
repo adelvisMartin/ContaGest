@@ -310,6 +310,40 @@ if(vetEntry?.status==='MIGRATED'){
   }
   if(!salesRoutes.includes('VeterinaryFinancialCase')||!salesRoutes.includes('flujo financiero veterinario'))fail('sales: veterinary provenance-linked drafts must be protected from deletion');
 
+  const guardianPortalPanel=read('frontend/src/components/veterinary/VeterinaryGuardianPortalPanel.jsx');
+  const guardianPortalPublic=read('backend/src/modules/verticals/veterinary-guardian-portal.public.routes.ts');
+  const guardianPortalMigration=read('backend/prisma/migrations/20260923134500_veterinary_guardian_portal_v3151/migration.sql');
+  const guardianPortalEntry=read('frontend/src/guardianPortal.jsx');
+  const viteConfig=read('frontend/vite.config.js');
+  if((veterinaryWorkspace.match(/import \{ VeterinaryGuardianPortalPanel \}/g)||[]).length!==1)fail('veterinaria: guardian portal admin must have one owner import');
+  if((veterinaryWorkspace.match(/<VeterinaryGuardianPortalPanel/g)||[]).length!==1)fail('veterinaria: guardian portal admin must render exactly once');
+  if(!veterinaryWorkspace.includes("['tutor', 'Portal tutor'"))fail('veterinaria: guardian portal tab is missing');
+  for(const contract of ['guardianPortalGrants','createGuardianPortalGrant','revokeGuardianPortalGrant','createCommunication']){
+    if(!guardianPortalPanel.includes(contract))fail(`veterinaria: missing guardian portal admin contract ${contract}`);
+  }
+  for(const contract of ['tokenSha256','VeterinaryGuardianPortalGrant','ENABLE ROW LEVEL SECURITY','REVOKE ALL']){
+    if(!guardianPortalMigration.includes(contract))fail(`veterinaria: missing guardian portal persistence contract ${contract}`);
+  }
+  if(/"token"\s+text/i.test(guardianPortalMigration))fail('veterinaria: guardian portal must never persist plaintext tokens');
+  for(const contract of ["router.post('/session'",'createHash(\'sha256\')','appointments','discharges','documents','billing','communications']){
+    if(!guardianPortalPublic.includes(contract))fail(`veterinaria: missing public portal allow-list contract ${contract}`);
+  }
+  if(/router\.(get|put|patch|delete)\(/.test(guardianPortalPublic))fail('veterinaria: public guardian portal boundary must expose only the token-session POST');
+  if((guardianPortalPublic.match(/UPDATE public\."VeterinaryGuardianPortalGrant"/g)||[]).length!==1||!guardianPortalPublic.includes('"lastUsedAt"=now()'))fail('veterinaria: public portal may mutate only grant lastUsedAt');
+  for(const forbidden of ['attachmentPath','clinicalData','"diagnosis"','"findings"','"impression"','"payload"','providerMessageId']){
+    if(guardianPortalPublic.includes(forbidden))fail(`veterinaria: public guardian portal exposed forbidden field ${forbidden}`);
+  }
+  if(!veterinaryRoutes.includes('randomBytes(32)')||!veterinaryRoutes.includes('expiresInHours')||!veterinaryRoutes.includes('max(168)'))fail('veterinaria: guardian grants must use 256-bit tokens with <=7 day TTL');
+  if(veterinaryRoutes.includes('?token='))fail('veterinaria: guardian token must never be placed in query parameters');
+  if(!veterinaryRoutes.includes('#access='))fail('veterinaria: guardian portal link must keep token in URL fragment');
+  if(!guardianPortalPanel.includes('expiresInHours')||!guardianPortalPanel.includes('scopes'))fail('veterinaria: guardian admin must expose TTL and explicit scopes');
+  if(!viteConfig.includes('portal-veterinaria'))fail('veterinaria: guardian portal Vite entry is missing');
+  if(!guardianPortalEntry.includes('noAuth:true')||!guardianPortalEntry.includes("sessionStorage.setItem('cg_veterinary_portal_access'")||!guardianPortalEntry.includes("replace(/^#/"))fail('veterinaria: portal frontend must consume fragment token without ERP auth');
+  if(guardianPortalEntry.includes('location.search')||guardianPortalEntry.includes("get('token')"))fail('veterinaria: portal frontend must not read secret from query string');
+  for(const forbidden of ['x.diagnosis','x.impression','guardianText']){
+    if(guardianPortalEntry.includes(forbidden))fail(`veterinaria: portal UI reintroduced sensitive field ${forbidden}`);
+  }
+
 }
 
 const dentistryEntry=ERP_UI_WAVE_A_2_51.find((item)=>item.route==='odontologia');
