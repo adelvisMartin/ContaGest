@@ -3,6 +3,7 @@ import {
   Alert, Box, Button, Chip, CircularProgress, Divider, MenuItem, Paper, Stack, TextField, Typography
 } from '@mui/material';
 import { VeterinaryService } from '../../services/verticalService.js';
+import { reportVeterinaryError } from './veterinaryError.js';
 
 const CATEGORY_OPTIONS=[
   {value:'medication',label:'Medicacion'},
@@ -84,7 +85,7 @@ export function VeterinaryTreatmentSheet({hospitalizations=[],professionals=[]})
       const response=await VeterinaryService.treatmentSheet(id);
       setEntries(Array.isArray(response)?response:response?.data||[]);
     }catch(cause){
-      setError(cause?.message||'No se pudo cargar la hoja de tratamiento.');
+      setError(reportVeterinaryError('treatmentSheet.load',cause,'No se pudo cargar la hoja de tratamiento.'));
     }finally{
       setLoading(false);
     }
@@ -143,7 +144,7 @@ export function VeterinaryTreatmentSheet({hospitalizations=[],professionals=[]})
       setForm(initialForm());
       await load(hospitalizationId);
     }catch(cause){
-      setError(cause?.message||'No se pudo registrar la entrada.');
+      setError(reportVeterinaryError('treatmentSheet.createEntry',cause,'No se pudo registrar la entrada.'));
     }finally{
       setSaving(false);
     }
