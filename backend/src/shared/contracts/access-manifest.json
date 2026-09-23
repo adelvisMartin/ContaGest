@@ -1,0 +1,985 @@
+{
+  "schemaVersion": 1,
+  "areas": [
+    "Inicio",
+    "Ventas",
+    "Operaciones",
+    "Inventario",
+    "Compras",
+    "Contabilidad",
+    "Fiscal",
+    "RRHH",
+    "Salud",
+    "Fitness",
+    "Comunicación",
+    "Analítica",
+    "Administración",
+    "Soporte"
+  ],
+  "businessModes": {
+    "contador": {
+      "label": "Modo Contador",
+      "description": "Contabilidad, fiscal, nómina y reportes."
+    },
+    "comercio": {
+      "label": "Modo Comercio",
+      "description": "Ventas, inventario, clientes y compras."
+    },
+    "restaurante": {
+      "label": "Modo Restaurante",
+      "description": "POS, pedidos, delivery y stock."
+    },
+    "servicios": {
+      "label": "Modo Servicios",
+      "description": "Cotizaciones, clientes, facturación y soporte."
+    },
+    "salud": {
+      "label": "Modo Salud",
+      "description": "Pacientes, profesionales, agenda e historias clínicas."
+    },
+    "veterinaria": {
+      "label": "Modo Veterinaria",
+      "description": "Mascotas, tutores, agenda, historias y vacunas."
+    },
+    "psicologia": {
+      "label": "Modo Psicología",
+      "description": "Pacientes, citas, planificación semanal, confirmaciones y seguimiento."
+    },
+    "odontologia": {
+      "label": "Modo Odontología",
+      "description": "Pacientes, odontograma, tratamientos, citas, presupuestos y seguimiento."
+    },
+    "gimnasio": {
+      "label": "Modo Gimnasio",
+      "description": "Socios, membresías, asistencia, rutinas y nutrición."
+    },
+    "nutricion": {
+      "label": "Modo Nutrición",
+      "description": "Pacientes, planes alimentarios, composición, adherencia y seguimiento nutricional."
+    },
+    "demo": {
+      "label": "Modo Comercial",
+      "description": "Selección de módulos para presentaciones y accesos temporales."
+    },
+    "admin": {
+      "label": "Modo Administrador",
+      "description": "Todos los módulos, seguridad y configuración."
+    }
+  },
+  "landingByMode": {
+    "contador": "dashboard",
+    "comercio": "dashboard",
+    "restaurante": "pos-sede",
+    "servicios": "dashboard",
+    "salud": "salud",
+    "veterinaria": "veterinaria",
+    "psicologia": "psicologia",
+    "odontologia": "odontologia",
+    "gimnasio": "gimnasio",
+    "nutricion": "nutricion",
+    "demo": "vistas",
+    "admin": "dashboard"
+  },
+  "modules": [
+    {
+      "route": "dashboard",
+      "name": "Dashboard",
+      "area": "Inicio",
+      "tier": "core",
+      "modes": [
+        "contador",
+        "comercio",
+        "restaurante",
+        "servicios",
+        "salud",
+        "veterinaria",
+        "psicologia",
+        "odontologia",
+        "gimnasio",
+        "nutricion",
+        "admin"
+      ],
+      "permission": "dashboard.view",
+      "accessGroup": "Inicio",
+      "licenseModule": "dashboard",
+      "coreAccess": true
+    },
+    {
+      "route": "mobile",
+      "name": "Vista móvil",
+      "area": "Inicio",
+      "tier": "advanced",
+      "modes": [
+        "comercio",
+        "restaurante",
+        "servicios",
+        "salud",
+        "veterinaria",
+        "psicologia",
+        "odontologia",
+        "gimnasio",
+        "nutricion",
+        "admin"
+      ],
+      "permission": "dashboard.view",
+      "accessGroup": "Inicio",
+      "licenseModule": "mobile"
+    },
+    {
+      "route": "ventas",
+      "name": "Ventas",
+      "area": "Ventas",
+      "tier": "core",
+      "modes": [
+        "comercio",
+        "restaurante",
+        "servicios",
+        "salud",
+        "veterinaria",
+        "psicologia",
+        "odontologia",
+        "gimnasio",
+        "admin"
+      ],
+      "permission": "sales.manage",
+      "accessGroup": "Ventas",
+      "licenseModule": "ventas"
+    },
+    {
+      "route": "cotizacion",
+      "name": "Cotizador",
+      "area": "Ventas",
+      "tier": "core",
+      "modes": [
+        "comercio",
+        "servicios",
+        "salud",
+        "veterinaria",
+        "psicologia",
+        "odontologia",
+        "gimnasio",
+        "admin"
+      ],
+      "permission": "sales.manage",
+      "accessGroup": "Ventas",
+      "licenseModule": "cotizacion"
+    },
+    {
+      "route": "clientes",
+      "name": "Clientes",
+      "area": "Ventas",
+      "tier": "core",
+      "modes": [
+        "contador",
+        "comercio",
+        "restaurante",
+        "servicios",
+        "salud",
+        "veterinaria",
+        "psicologia",
+        "odontologia",
+        "gimnasio",
+        "nutricion",
+        "admin"
+      ],
+      "permission": "clients.manage",
+      "accessGroup": "CRM",
+      "licenseModule": "clientes"
+    },
+    {
+      "route": "historial",
+      "name": "Histórico",
+      "area": "Ventas",
+      "tier": "advanced",
+      "modes": [
+        "comercio",
+        "servicios",
+        "salud",
+        "veterinaria",
+        "psicologia",
+        "odontologia",
+        "gimnasio",
+        "admin"
+      ],
+      "permission": "sales.view",
+      "accessGroup": "Ventas",
+      "licenseModule": "historial"
+    },
+    {
+      "route": "pos-sede",
+      "name": "POS sede",
+      "area": "Operaciones",
+      "tier": "advanced",
+      "modes": [
+        "restaurante",
+        "comercio",
+        "gimnasio",
+        "admin"
+      ],
+      "permission": "orders.manage",
+      "accessGroup": "Operaciones",
+      "licenseModule": "pos-sede"
+    },
+    {
+      "route": "pedidos",
+      "name": "Pedidos",
+      "area": "Operaciones",
+      "tier": "advanced",
+      "modes": [
+        "restaurante",
+        "comercio",
+        "admin"
+      ],
+      "permission": "orders.manage",
+      "accessGroup": "Operaciones",
+      "licenseModule": "pedidos"
+    },
+    {
+      "route": "tracking-pedidos",
+      "name": "Tracking pedidos",
+      "area": "Operaciones",
+      "tier": "advanced",
+      "modes": [
+        "restaurante",
+        "comercio",
+        "admin"
+      ],
+      "permission": "orders.view",
+      "accessGroup": "Operaciones",
+      "licenseModule": "tracking-pedidos"
+    },
+    {
+      "route": "delivery-mapa",
+      "name": "Delivery mapa",
+      "area": "Operaciones",
+      "tier": "advanced",
+      "modes": [
+        "restaurante",
+        "comercio",
+        "admin"
+      ],
+      "permission": "orders.manage",
+      "accessGroup": "Operaciones",
+      "licenseModule": "delivery-mapa"
+    },
+    {
+      "route": "tasks",
+      "name": "Tareas",
+      "area": "Operaciones",
+      "tier": "advanced",
+      "modes": [
+        "contador",
+        "comercio",
+        "restaurante",
+        "servicios",
+        "salud",
+        "veterinaria",
+        "psicologia",
+        "odontologia",
+        "gimnasio",
+        "nutricion",
+        "admin"
+      ],
+      "permission": "dashboard.view",
+      "accessGroup": "Operaciones",
+      "licenseModule": "tasks"
+    },
+    {
+      "route": "inventario",
+      "name": "Inventario",
+      "area": "Inventario",
+      "tier": "core",
+      "modes": [
+        "comercio",
+        "restaurante",
+        "veterinaria",
+        "gimnasio",
+        "admin"
+      ],
+      "permission": "inventory.manage",
+      "accessGroup": "Inventario",
+      "licenseModule": "inventario"
+    },
+    {
+      "route": "inventario-scan",
+      "name": "Escáner inventario",
+      "area": "Inventario",
+      "tier": "advanced",
+      "modes": [
+        "comercio",
+        "restaurante",
+        "veterinaria",
+        "gimnasio",
+        "admin"
+      ],
+      "permission": "inventory.manage",
+      "accessGroup": "Inventario",
+      "licenseModule": "inventario-scan"
+    },
+    {
+      "route": "kardex",
+      "name": "Kardex",
+      "area": "Inventario",
+      "tier": "core",
+      "modes": [
+        "comercio",
+        "restaurante",
+        "veterinaria",
+        "gimnasio",
+        "admin"
+      ],
+      "permission": "inventory.manage",
+      "accessGroup": "Inventario",
+      "licenseModule": "kardex"
+    },
+    {
+      "route": "qr",
+      "name": "QR / Barcode",
+      "area": "Inventario",
+      "tier": "advanced",
+      "modes": [
+        "comercio",
+        "restaurante",
+        "veterinaria",
+        "gimnasio",
+        "admin"
+      ],
+      "permission": "inventory.manage",
+      "accessGroup": "Inventario",
+      "licenseModule": "qr"
+    },
+    {
+      "route": "proveedores",
+      "name": "Proveedores",
+      "area": "Compras",
+      "tier": "core",
+      "modes": [
+        "comercio",
+        "restaurante",
+        "veterinaria",
+        "gimnasio",
+        "admin"
+      ],
+      "permission": "purchases.manage",
+      "accessGroup": "Compras",
+      "licenseModule": "proveedores"
+    },
+    {
+      "route": "compras",
+      "name": "Compras",
+      "area": "Compras",
+      "tier": "core",
+      "modes": [
+        "contador",
+        "comercio",
+        "restaurante",
+        "veterinaria",
+        "gimnasio",
+        "admin"
+      ],
+      "permission": "purchases.manage",
+      "accessGroup": "Compras",
+      "licenseModule": "compras"
+    },
+    {
+      "route": "contabilidad",
+      "name": "Libro diario",
+      "area": "Contabilidad",
+      "tier": "core",
+      "modes": [
+        "contador",
+        "admin"
+      ],
+      "permission": "accounting.manage",
+      "accessGroup": "Contabilidad",
+      "licenseModule": "contabilidad"
+    },
+    {
+      "route": "plan-cuentas",
+      "name": "Plan de cuentas",
+      "area": "Contabilidad",
+      "tier": "core",
+      "modes": [
+        "contador",
+        "admin"
+      ],
+      "permission": "accounting.manage",
+      "accessGroup": "Contabilidad",
+      "licenseModule": "plan-cuentas"
+    },
+    {
+      "route": "libro-mayor",
+      "name": "Libro mayor",
+      "area": "Contabilidad",
+      "tier": "core",
+      "modes": [
+        "contador",
+        "admin"
+      ],
+      "permission": "accounting.manage",
+      "accessGroup": "Contabilidad",
+      "licenseModule": "libro-mayor"
+    },
+    {
+      "route": "balance-sumas-saldos",
+      "name": "Balance de sumas y saldos",
+      "area": "Contabilidad",
+      "tier": "core",
+      "modes": [
+        "contador",
+        "admin"
+      ],
+      "permission": "accounting.manage",
+      "accessGroup": "Contabilidad",
+      "licenseModule": "balance-sumas-saldos"
+    },
+    {
+      "route": "hoja-trabajo",
+      "name": "Hoja de trabajo",
+      "area": "Contabilidad",
+      "tier": "core",
+      "modes": [
+        "contador",
+        "admin"
+      ],
+      "permission": "accounting.manage",
+      "accessGroup": "Contabilidad",
+      "licenseModule": "hoja-trabajo"
+    },
+    {
+      "route": "estados-financieros",
+      "name": "Estados financieros",
+      "area": "Contabilidad",
+      "tier": "core",
+      "modes": [
+        "contador",
+        "admin"
+      ],
+      "permission": "reports.view",
+      "accessGroup": "Contabilidad",
+      "licenseModule": "estados-financieros"
+    },
+    {
+      "route": "cierre-contable",
+      "name": "Cierre contable",
+      "area": "Contabilidad",
+      "tier": "advanced",
+      "modes": [
+        "contador",
+        "admin"
+      ],
+      "permission": "accounting.manage",
+      "accessGroup": "Contabilidad",
+      "licenseModule": "cierre-contable"
+    },
+    {
+      "route": "bancos",
+      "name": "Bancos",
+      "area": "Contabilidad",
+      "tier": "advanced",
+      "modes": [
+        "contador",
+        "comercio",
+        "salud",
+        "veterinaria",
+        "psicologia",
+        "odontologia",
+        "gimnasio",
+        "admin"
+      ],
+      "permission": "banking.manage",
+      "accessGroup": "Finanzas",
+      "licenseModule": "bancos"
+    },
+    {
+      "route": "normativa-contable",
+      "name": "Normativa contable",
+      "area": "Contabilidad",
+      "tier": "advanced",
+      "modes": [
+        "contador",
+        "admin"
+      ],
+      "permission": "accounting.manage",
+      "accessGroup": "Contabilidad",
+      "licenseModule": "normativa-contable"
+    },
+    {
+      "route": "tributos",
+      "name": "Tributos",
+      "area": "Fiscal",
+      "tier": "core",
+      "modes": [
+        "contador",
+        "admin"
+      ],
+      "permission": "taxes.export",
+      "accessGroup": "Fiscal",
+      "licenseModule": "tributos"
+    },
+    {
+      "route": "libro-ventas",
+      "name": "Libro de ventas",
+      "area": "Fiscal",
+      "tier": "core",
+      "modes": [
+        "contador",
+        "admin"
+      ],
+      "permission": "taxes.export",
+      "accessGroup": "Fiscal",
+      "licenseModule": "libro-ventas"
+    },
+    {
+      "route": "normativa",
+      "name": "Normativa legal",
+      "area": "Fiscal",
+      "tier": "advanced",
+      "modes": [
+        "contador",
+        "admin"
+      ],
+      "permission": "taxes.export",
+      "accessGroup": "Fiscal",
+      "licenseModule": "normativa"
+    },
+    {
+      "route": "nomina",
+      "name": "Nómina",
+      "area": "RRHH",
+      "tier": "advanced",
+      "modes": [
+        "contador",
+        "gimnasio",
+        "admin"
+      ],
+      "permission": "payroll.manage",
+      "accessGroup": "RRHH",
+      "licenseModule": "nomina"
+    },
+    {
+      "route": "rrhh",
+      "name": "Dashboard RRHH",
+      "area": "RRHH",
+      "tier": "advanced",
+      "modes": [
+        "contador",
+        "gimnasio",
+        "admin"
+      ],
+      "permission": "payroll.manage",
+      "accessGroup": "RRHH",
+      "licenseModule": "rrhh"
+    },
+    {
+      "route": "salud",
+      "name": "Consultorio y clínica",
+      "area": "Salud",
+      "tier": "core",
+      "modes": [
+        "salud",
+        "admin"
+      ],
+      "permission": "health.manage",
+      "accessGroup": "Salud",
+      "licenseModule": "salud"
+    },
+    {
+      "route": "veterinaria",
+      "name": "Clínica veterinaria",
+      "area": "Salud",
+      "tier": "core",
+      "modes": [
+        "veterinaria",
+        "admin"
+      ],
+      "permission": "health.manage",
+      "accessGroup": "Salud",
+      "licenseModule": "veterinaria"
+    },
+    {
+      "route": "psicologia",
+      "name": "Psicología y agenda",
+      "area": "Salud",
+      "tier": "core",
+      "modes": [
+        "psicologia",
+        "admin"
+      ],
+      "permission": "health.manage",
+      "accessGroup": "Salud",
+      "licenseModule": "psicologia"
+    },
+    {
+      "route": "odontologia",
+      "name": "Odontología",
+      "area": "Salud",
+      "tier": "core",
+      "modes": [
+        "odontologia",
+        "admin"
+      ],
+      "permission": "health.manage",
+      "accessGroup": "Salud",
+      "licenseModule": "odontologia"
+    },
+    {
+      "route": "gimnasio",
+      "name": "Control de gimnasio",
+      "area": "Fitness",
+      "tier": "core",
+      "modes": [
+        "gimnasio",
+        "admin"
+      ],
+      "permission": "gym.manage",
+      "accessGroup": "Fitness",
+      "licenseModule": "gimnasio"
+    },
+    {
+      "route": "rutinas",
+      "name": "Rutinas e instructor",
+      "area": "Fitness",
+      "tier": "core",
+      "modes": [
+        "gimnasio",
+        "admin"
+      ],
+      "permission": "gym.manage",
+      "accessGroup": "Fitness",
+      "licenseModule": "rutinas"
+    },
+    {
+      "route": "nutricion",
+      "name": "Nutrición y composición",
+      "area": "Fitness",
+      "tier": "advanced",
+      "modes": [
+        "gimnasio",
+        "nutricion",
+        "admin"
+      ],
+      "permission": "gym.manage",
+      "accessGroup": "Fitness",
+      "licenseModule": "nutricion"
+    },
+    {
+      "route": "mensajes",
+      "name": "Mensajes WhatsApp",
+      "area": "Comunicación",
+      "tier": "core",
+      "modes": [
+        "salud",
+        "veterinaria",
+        "psicologia",
+        "odontologia",
+        "gimnasio",
+        "nutricion",
+        "comercio",
+        "restaurante",
+        "servicios",
+        "admin"
+      ],
+      "permission": "communications.manage",
+      "accessGroup": "Comunicación",
+      "licenseModule": "mensajes"
+    },
+    {
+      "route": "analytics",
+      "name": "Analítica",
+      "area": "Analítica",
+      "tier": "advanced",
+      "modes": [
+        "contador",
+        "comercio",
+        "restaurante",
+        "servicios",
+        "salud",
+        "veterinaria",
+        "psicologia",
+        "odontologia",
+        "gimnasio",
+        "nutricion",
+        "admin"
+      ],
+      "permission": "reports.view",
+      "accessGroup": "Reportes",
+      "licenseModule": "analytics"
+    },
+    {
+      "route": "reportes",
+      "name": "Reportes",
+      "area": "Analítica",
+      "tier": "core",
+      "modes": [
+        "contador",
+        "comercio",
+        "restaurante",
+        "servicios",
+        "salud",
+        "veterinaria",
+        "psicologia",
+        "odontologia",
+        "gimnasio",
+        "nutricion",
+        "admin"
+      ],
+      "permission": "reports.view",
+      "accessGroup": "Reportes",
+      "licenseModule": "reportes"
+    },
+    {
+      "route": "auditoria",
+      "name": "Auditoría",
+      "area": "Analítica",
+      "tier": "advanced",
+      "modes": [
+        "contador",
+        "salud",
+        "veterinaria",
+        "psicologia",
+        "odontologia",
+        "gimnasio",
+        "admin"
+      ],
+      "permission": "audit.view",
+      "accessGroup": "Seguridad",
+      "licenseModule": "auditoria"
+    },
+    {
+      "route": "configuracion",
+      "name": "Configuración",
+      "area": "Administración",
+      "tier": "core",
+      "modes": [
+        "admin"
+      ],
+      "permission": "admin.manage",
+      "accessGroup": "Admin",
+      "licenseModule": "configuracion",
+      "adminOnly": true
+    },
+    {
+      "route": "backend",
+      "name": "Integraciones",
+      "area": "Administración",
+      "tier": "core",
+      "modes": [
+        "admin"
+      ],
+      "permission": "admin.manage",
+      "accessGroup": "Admin",
+      "licenseModule": "backend",
+      "adminOnly": true
+    },
+    {
+      "route": "admin",
+      "name": "Panel admin",
+      "area": "Administración",
+      "tier": "core",
+      "modes": [
+        "admin"
+      ],
+      "permission": "admin.manage",
+      "accessGroup": "Admin",
+      "licenseModule": "admin",
+      "adminOnly": true
+    },
+    {
+      "route": "marca",
+      "name": "Manual de marca",
+      "area": "Administración",
+      "tier": "advanced",
+      "modes": [
+        "admin"
+      ],
+      "permission": "admin.manage",
+      "accessGroup": "Admin",
+      "licenseModule": "marca",
+      "adminOnly": true
+    },
+    {
+      "route": "demo-control",
+      "name": "Accesos comerciales",
+      "area": "Administración",
+      "tier": "core",
+      "modes": [
+        "admin"
+      ],
+      "permission": "demos.manage",
+      "accessGroup": "Admin",
+      "licenseModule": "demo-control",
+      "adminOnly": true
+    },
+    {
+      "route": "licencias",
+      "name": "Licencias",
+      "area": "Administración",
+      "tier": "core",
+      "modes": [
+        "admin"
+      ],
+      "permission": "licenses.manage",
+      "accessGroup": "Admin",
+      "licenseModule": "licencias",
+      "adminOnly": true
+    },
+    {
+      "route": "importacion-data",
+      "name": "Carga masiva",
+      "area": "Administración",
+      "tier": "core",
+      "modes": [
+        "admin",
+        "contador",
+        "comercio"
+      ],
+      "permission": "modules.manage",
+      "accessGroup": "Admin",
+      "licenseModule": "importacion-data"
+    },
+    {
+      "route": "reglas-negocio",
+      "name": "Reglas de negocio",
+      "area": "Administración",
+      "tier": "core",
+      "modes": [
+        "admin",
+        "contador"
+      ],
+      "permission": "modules.manage",
+      "accessGroup": "Admin",
+      "licenseModule": "reglas-negocio"
+    },
+    {
+      "route": "modulos-madurez",
+      "name": "Módulos disponibles",
+      "area": "Administración",
+      "tier": "core",
+      "modes": [
+        "admin"
+      ],
+      "permission": "modules.manage",
+      "accessGroup": "Admin",
+      "licenseModule": "modulos-madurez",
+      "adminOnly": true
+    },
+    {
+      "route": "pretesting",
+      "name": "Estado del sistema",
+      "area": "Administración",
+      "tier": "core",
+      "modes": [
+        "admin"
+      ],
+      "permission": "admin.manage",
+      "accessGroup": "Admin",
+      "licenseModule": "pretesting",
+      "adminOnly": true
+    },
+    {
+      "route": "vistas",
+      "name": "Galería de módulos",
+      "area": "Administración",
+      "tier": "demo",
+      "modes": [
+        "demo",
+        "admin"
+      ],
+      "permission": "modules.manage",
+      "accessGroup": "Admin",
+      "licenseModule": "vistas"
+    },
+    {
+      "route": "profile",
+      "name": "Perfil",
+      "area": "Administración",
+      "tier": "advanced",
+      "modes": [
+        "contador",
+        "comercio",
+        "restaurante",
+        "servicios",
+        "salud",
+        "veterinaria",
+        "psicologia",
+        "odontologia",
+        "gimnasio",
+        "nutricion",
+        "admin"
+      ],
+      "permission": "dashboard.view",
+      "accessGroup": "Admin",
+      "licenseModule": "profile",
+      "coreAccess": true
+    },
+    {
+      "route": "asistente-ia",
+      "name": "Asistente IA",
+      "area": "Soporte",
+      "tier": "advanced",
+      "modes": [
+        "contador",
+        "comercio",
+        "restaurante",
+        "servicios",
+        "salud",
+        "veterinaria",
+        "psicologia",
+        "odontologia",
+        "gimnasio",
+        "nutricion",
+        "admin"
+      ],
+      "permission": "reports.view",
+      "accessGroup": "Soporte",
+      "licenseModule": "asistente-ia"
+    },
+    {
+      "route": "soporte",
+      "name": "Soporte WhatsApp",
+      "area": "Soporte",
+      "tier": "core",
+      "modes": [
+        "contador",
+        "comercio",
+        "restaurante",
+        "servicios",
+        "salud",
+        "veterinaria",
+        "psicologia",
+        "odontologia",
+        "gimnasio",
+        "nutricion",
+        "admin"
+      ],
+      "permission": "dashboard.view",
+      "accessGroup": "Soporte",
+      "licenseModule": "soporte",
+      "coreAccess": true
+    },
+    {
+      "route": "ayuda",
+      "name": "Ayuda",
+      "area": "Soporte",
+      "tier": "core",
+      "modes": [
+        "contador",
+        "comercio",
+        "restaurante",
+        "servicios",
+        "salud",
+        "veterinaria",
+        "psicologia",
+        "odontologia",
+        "gimnasio",
+        "nutricion",
+        "admin"
+      ],
+      "permission": "dashboard.view",
+      "accessGroup": "Soporte",
+      "licenseModule": "ayuda",
+      "coreAccess": true
+    }
+  ]
+}
