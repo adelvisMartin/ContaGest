@@ -40,7 +40,7 @@ const clinicalAttachmentSchema = z.object({
 });
 
 const uploadSchema = z.object({
-  entityType: z.enum(['care-patient', 'gym-member', 'profile', 'company']),
+  entityType: z.enum(['care-patient', 'gym-member', 'gym-progress', 'profile', 'company']),
   entityId: z.string().min(5).max(180),
   dataUrl: z.string().min(30).max(5_000_000),
   alt: z.string().trim().max(240).optional()
