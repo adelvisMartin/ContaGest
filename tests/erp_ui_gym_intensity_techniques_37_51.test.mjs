@@ -47,7 +47,7 @@ test('37/51 Wave A audit fails closed on intensity-technique regression',()=>{
 
 
 test('37/51 grouped techniques enforce same-day cardinality',()=>{
-  const source=backend();
+  const source=read('backend/src/modules/verticals/gym.routes.ts');
   assert.match(source,/Un superset requiere exactamente 2 ejercicios con la misma clave y día\./);
   assert.match(source,/Un giant set requiere al menos 3 ejercicios con la misma clave y día\./);
   assert.match(source,/no puede mezclar superset y giant set el mismo día/);
