@@ -2,52 +2,42 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import test from 'node:test';
 
-const routes=()=>fs.readFileSync('backend/src/modules/verticals/gym.routes.ts','utf8');
-const migration=()=>fs.readFileSync('backend/prisma/migrations/20260923193000_gym_complete_meal_plan_44_51/migration.sql','utf8');
-const page=()=>fs.readFileSync('frontend/src/pages/GymManagementPage.jsx','utf8');
-const builder=()=>fs.readFileSync('frontend/src/components/fitness/CompleteMealPlanBuilder.jsx','utf8');
-const recipes=()=>fs.readFileSync('frontend/src/components/fitness/NutritionRecipeLibrary.jsx','utf8');
-const service=()=>fs.readFileSync('frontend/src/services/verticalService.js','utf8');
+const read=(path)=>fs.readFileSync(path,'utf8');
 
-test('44/51 persists recipes, real day horizon, portions, preparation and explicit alternatives',()=>{
-  const sql=migration();
-  for(const token of ['GymRecipe','GymRecipeItem','GymMealAlternative','durationDays','dayIndex','recipeId','servings','preparation']) assert.ok(sql.includes(token),token);
-  assert.match(sql,/durationDays" IN \(7,14,28\)/);
-  assert.doesNotMatch(sql,/allerg|intoler|preference|micronutrient|adherence/i);
+test('44/51 persists canonical weekly meal positions without rewriting legacy rows',()=>{
+  const migration=read('backend/prisma/migrations/20260923190000_gym_complete_meal_plan_44_51/migration.sql');
+  for(const token of ['dayOfWeek','sortOrder','GymMeal_dayOfWeek_check','GymMeal_sortOrder_check','GymMeal_plan_day_order_unique','NULL preserves legacy meals']) assert.ok(migration.includes(token),token);
+  assert.match(migration,/BETWEEN 1 AND 7/);
+  assert.match(migration,/WHERE "dayOfWeek" IS NOT NULL/);
 });
 
-test('44/51 backend validates complete plans against 7 14 28 day horizons',()=>{
-  const source=routes();
-  for(const token of ['recipeSchema','completeNutritionSchema','durationDays','dayIndex','alternatives','recipeId','servings','preparation']) assert.ok(source.includes(token),token);
-  assert.match(source,/z\.enum\(\['7','14','28'\]\)|z\.union/);
-  assert.match(source,/meal\.dayIndex>Number\(value\.durationDays\)/);
-  assert.match(source,/Cada comida debe pertenecer al horizonte/);
+test('44/51 validates plan validity and unique meal order per weekday',()=>{
+  const source=read('backend/src/modules/verticals/gym.routes.ts');
+  for(const token of ['nutritionMealSchema','dayOfWeek','sortOrder','Cada comida debe tener una posición única dentro de su día.','La vigencia del plan no puede finalizar antes de comenzar.']) assert.ok(source.includes(token),token);
+  assert.match(source,/ORDER BY m\."dayOfWeek" NULLS LAST,m\."sortOrder"/);
+  assert.match(source,/meal\.dayOfWeek,meal\.sortOrder,meal\.mealType/);
 });
 
-test('44/51 recipe and plan writes revalidate tenant authorities in one transaction',()=>{
-  const source=routes();
-  for(const token of ["router.get('/gym/recipes'","router.post('/gym/recipes'","GymRecipeItem",'prisma.$transaction','Los ingredientes de la receta deben estar activos y pertenecer al tenant.','Las recetas del plan deben estar activas y pertenecer al tenant.']) assert.ok(source.includes(token),token);
+test('44/51 UI renders all canonical weekdays and structured meal ordering',()=>{
+  const builder=read('frontend/src/components/fitness/NutritionMealBuilder.jsx');
+  assert.match(builder,/FITNESS_WEEK_DAYS/);
+  for(const token of ['Plan alimenticio semanal','Agregar comida','Día sin comidas programadas','Subir','Bajar','Duplicar','normalizeOrders']) assert.ok(builder.includes(token),token);
+  assert.doesNotMatch(builder,/querySelector|addEventListener|innerHTML|document\./);
 });
 
-test('44/51 shopping list is derived read-only from primary meals and recipe/direct ingredients',()=>{
-  const source=routes();
-  assert.match(source,/router\.get\('\/gym\/nutrition\/:id\/shopping-list'/);
-  assert.match(source,/shoppingList/);
-  assert.match(source,/GymRecipeItem/);
-  assert.match(source,/GymMealItem/);
-  assert.doesNotMatch(source.slice(source.indexOf("router.get('/gym/nutrition/:id/shopping-list'"),source.indexOf("router.get('/gym/classes'")),/INSERT INTO|UPDATE public|DELETE FROM/);
+test('44/51 page wires plan dates and scheduled meal fields',()=>{
+  const page=read('frontend/src/pages/GymManagementPage.jsx');
+  for(const token of ['Inicio del plan','Fin del plan','dayOfWeek:Number(meal.dayOfWeek)','sortOrder:Number(meal.sortOrder)','días programados']) assert.ok(page.includes(token),token);
+  assert.doesNotMatch(page,/mealLines|Tipo \| kcal \| alimentos/);
 });
 
-test('44/51 UI supports recipes, 7 14 28 days, portions, preparation, alternatives and shopping list',()=>{
-  const source=builder()+recipes();
-  for(const token of ['7 días','14 días','28 días','Día','Porciones','Preparación','Alternativas','Lista de compras','Receta','Agregar comida']) assert.ok(source.includes(token),token);
-  assert.doesNotMatch(source,/querySelector|addEventListener|innerHTML|document\./);
+test('44/51 does not pre-implement restrictions preferences nutrients or adherence',()=>{
+  const migration=read('backend/prisma/migrations/20260923190000_gym_complete_meal_plan_44_51/migration.sql');
+  const builder=read('frontend/src/components/fitness/NutritionMealBuilder.jsx');
+  assert.doesNotMatch(migration+builder,/restriction|allerg|preference|vegan|vegetarian|gluten|micronutrient|vitamin|mineral|adherence/i);
 });
 
-test('44/51 integration has one complete-plan owner and defers 45-47',()=>{
-  const ui=page();
-  const svc=service();
-  assert.equal((ui.match(/<CompleteMealPlanBuilder/g)||[]).length,1);
-  for(const token of ['recipes(','createRecipe(','shoppingList(']) assert.ok(svc.includes(token),token);
-  assert.doesNotMatch(builder()+recipes(),/alergia|intolerancia|micronutriente|adherencia/i);
+test('44/51 Wave A fails closed on weekly meal-plan regression',()=>{
+  const audit=read('scripts/erp-ui-wave-a-audit-v251.mjs');
+  for(const token of ['complete meal plan 44','GymMeal_plan_day_order_unique','weekly order']) assert.ok(audit.includes(token),token);
 });
