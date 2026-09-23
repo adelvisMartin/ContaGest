@@ -1,0 +1,99 @@
+name: ERP 51/51 · Exact-SHA release candidate
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'backend/**'
+      - 'frontend/**'
+      - 'qa/**'
+      - 'scripts/erp-release-candidate-v5151.mjs'
+      - 'tests/erp_release_candidate_51_51.test.mjs'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/erp-release-candidate-v5151.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: erp-release-v5151-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  release-candidate:
+    name: Exact SHA · static + PostgreSQL + browser + a11y
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: contagest_release_5151
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d contagest_release_5151"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+
+    env:
+      CANDIDATE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+      NODE_ENV: test
+      API_MODE: prisma
+      DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/contagest_release_5151?schema=public
+      DIRECT_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/contagest_release_5151?schema=public
+      APP_URL: http://127.0.0.1:8080
+      CORS_ORIGIN: http://127.0.0.1:8080
+      JWT_SECRET: v5151_release_only_jwt_secret_0123456789abcdefghijklmnopqrstuvwxyz
+      LICENSE_HASH_SECRET: v5151_release_only_license_secret_0123456789abcdefghijklmnopqrstuvwxyz
+      ALLOW_DEV_TENANT_HEADER: 'false'
+      SUPABASE_AUTH_FALLBACK: 'false'
+
+    steps:
+      - name: Checkout exact candidate
+        uses: actions/checkout@v7
+
+      - name: Verify candidate SHA
+        shell: bash
+        run: |
+          set -euo pipefail
+          actual="$(git rev-parse HEAD)"
+          printf 'candidate=%s\nactual=%s\n' "$CANDIDATE_SHA" "$actual" | tee erp-v5151-sha.log
+          test "$actual" = "$CANDIDATE_SHA"
+
+      - name: Setup Node 22
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install locked dependencies and PostgreSQL client
+        run: |
+          npm ci --no-audit --no-fund
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client
+
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Execute 51/51 release candidate
+        run: npm run release:erp:v5151
+
+      - name: Upload exact-SHA release evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: erp-release-51-51-${{ env.CANDIDATE_SHA }}
+          path: |
+            erp-v5151-sha.log
+            artifacts/release/erp-v5151
+            test-results
+            playwright-report
+          if-no-files-found: warn
+          retention-days: 30
