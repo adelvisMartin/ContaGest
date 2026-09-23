@@ -18,6 +18,7 @@ import { NutritionShoppingListPanel } from '../components/fitness/NutritionShopp
 import { NutritionRulesPanel } from '../components/fitness/NutritionRulesPanel.jsx';
 import { IngredientNutritionProfilePanel } from '../components/fitness/IngredientNutritionProfilePanel.jsx';
 import { NutritionSnapshotPanel } from '../components/fitness/NutritionSnapshotPanel.jsx';
+import { FitnessAdherencePanel } from '../components/fitness/FitnessAdherencePanel.jsx';
 import { FITNESS_TRAINING_MODES, fitnessTrainingMode, fitnessTrainingModeLabel } from '../data/fitnessTrainingModes.js';
 import { GymVerticalService } from '../services/verticalService.js';
 
@@ -275,6 +276,14 @@ function GymWorkspace({state,context}){
     <Section title="Rutinas activas" description={selectedMember?`Planes de ${selectedMember.fullName}`:'Selecciona un cliente.'}>{memberTracking}<Box mt={1}><RecordList items={routines} empty="No hay rutinas del cliente seleccionado" render={(item)=><Stack direction="row" justifyContent="space-between"><Box><Typography variant="body2" fontWeight={700}>{item.name}</Typography><Typography variant="caption" color="text.secondary">{item.goal||'Objetivo general'} · {item.level||''} · {fitnessTrainingModeLabel(item.trainingMode)} · {Array.isArray(item.exercises)?item.exercises.length:0} ejercicios</Typography></Box><CgStatusChip label={item.active===false?'Inactiva':'Activa'} tone={item.active===false?'warning':'success'}/></Stack>}/></Box></Section>
   </Box></Stack>;
 
+  const panelAdherence=<FitnessAdherencePanel
+    members={members}
+    memberId={selectedMemberId}
+    onMemberChange={(id)=>void loadMemberData(id)}
+    nutritionPlans={nutrition}
+    Toast={Toast}
+  />;
+
   const panelNutrition=<Stack gap={1.25}>
     <FitnessProductivityTools tab="nutrition" members={members} Toast={Toast} onDataChanged={(id)=>loadAll({silent:true,memberId:id||selectedMemberId})}/>
     <IngredientLibraryPanel items={ingredients} onItemsChange={setIngredients} Toast={Toast}/>
@@ -318,7 +327,7 @@ function GymWorkspace({state,context}){
     <Section wide title="Próximas clases" description="Agenda disponible para operación diaria." action={<CgButton variant="outlined" onClick={()=>selectTab('classes')}>Programar clase</CgButton>}><RecordList items={classes} empty="No hay clases próximas" render={(item)=><Stack direction={{xs:'column',sm:'row'}} justifyContent="space-between"><Box><Typography variant="body2" fontWeight={700}>{item.name}</Typography><Typography variant="caption" color="text.secondary">{new Date(item.startsAt).toLocaleString('es-VE',{dateStyle:'short',timeStyle:'short'})} · {item.trainerName||'Sin instructor'}</Typography></Box><Typography variant="body2">{Number(item.bookings||0)} / {Number(item.capacity||0)}</Typography></Stack>}/></Section>
   </Box>;
 
-  const panels={overview,members:panelMembers,trainers:panelTrainers,assessments:panelAssessments,routines:panelRoutines,nutrition:panelNutrition,classes:panelClasses};
+  const panels={overview,members:panelMembers,trainers:panelTrainers,assessments:panelAssessments,routines:panelRoutines,nutrition:panelNutrition,adherence:panelAdherence,classes:panelClasses};
 
   return <Stack className="cg-vertical-page cg-gym-page" gap={1.5}>
     <CgPageHeader eyebrow="Vertical Fitness" title="Control integral de gimnasio" description="Clientes, instructores, membresías, asistencia, evaluaciones, rutinas, nutrición y clases desde una sola vista funcional." actions={<Stack direction="row" gap={.8}><CgButton variant="outlined" onClick={()=>void loadAll()} disabled={loading}>Actualizar</CgButton><CgButton variant="outlined" onClick={()=>context.navigate('mensajes')}>Mensajes WhatsApp</CgButton></Stack>}/>
@@ -331,7 +340,7 @@ function GymWorkspace({state,context}){
       <Metric label="Ingresos del mes" value={`$ ${Number(summary.revenueThisMonth||0).toLocaleString('es-VE',{minimumFractionDigits:2})}`} hint="Pagos confirmados" tone="secondary"/>
     </Box>
     <Section title="Coaching y retención" description="Señales operativas para seguimiento antes de perder una membresía."><Box className="cg-gym-v1124-grid cg-gym-retention-grid" sx={{display:'grid',gridTemplateColumns:{xs:'1fr',sm:'repeat(3,1fr)'},gap:1}}><Metric label="Renovaciones próximas" value={Number(summary.memberships?.expiring||0)}/><Metric label="Clases ≥ 80%" value={highOccupancy}/><Metric label="Clientes con coaching" value={Number(summary.members?.active||0)}/></Box></Section>
-    <Paper variant="outlined" sx={{px:1,overflow:'hidden'}}><Tabs value={tab} onChange={(_e,value)=>selectTab(value)} variant="scrollable" scrollButtons="auto" allowScrollButtonsMobile>{[['overview','Operación'],['members','Clientes'],['trainers','Instructores'],['assessments','Evaluaciones'],['routines','Rutinas'],['nutrition','Nutrición'],['classes','Clases']].map(([value,label])=><Tab key={value} value={value} label={label}/>)}</Tabs></Paper>
+    <Paper variant="outlined" sx={{px:1,overflow:'hidden'}}><Tabs value={tab} onChange={(_e,value)=>selectTab(value)} variant="scrollable" scrollButtons="auto" allowScrollButtonsMobile>{[['overview','Operación'],['members','Clientes'],['trainers','Instructores'],['assessments','Evaluaciones'],['routines','Rutinas'],['nutrition','Nutrición'],['adherence','Adherencia'],['classes','Clases']].map(([value,label])=><Tab key={value} value={value} label={label}/>)}</Tabs></Paper>
     <Box data-gym-panel={tab}>{panels[tab]||overview}</Box>
   </Stack>;
 }
