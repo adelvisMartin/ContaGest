@@ -137,6 +137,8 @@ export const GymVerticalService = {
   nutritionSnapshot(planId) { return BackendApi.get(`/verticals/gym/nutrition/${encodeURIComponent(planId)}/nutrients`); },
   adherence(memberId) { return BackendApi.get(`/verticals/gym/adherence${query({ memberId })}`); },
   recordMealAdherence(payload) { return BackendApi.post('/api/v1/verticals/gym/adherence/meals', payload); },
+  adherence(memberId) { return BackendApi.get(`/verticals/gym/adherence${query({ memberId })}`); },
+  recordMealAdherence(payload) { return BackendApi.post('/api/v1/verticals/gym/adherence/meals', payload); },
   createNutrition(payload) { return BackendApi.post('/api/v1/verticals/gym/nutrition', payload); },
   classes() { return BackendApi.get('/verticals/gym/classes'); },
   createClass(payload) { return BackendApi.post('/api/v1/verticals/gym/classes', payload); },
