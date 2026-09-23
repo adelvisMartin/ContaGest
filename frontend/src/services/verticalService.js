@@ -81,6 +81,14 @@ export const VeterinaryService = {
   guardianPortalGrants(patientId) { return BackendApi.get(`/verticals/veterinary/guardian-portal/grants${query({ patientId })}`); },
   createGuardianPortalGrant(payload) { return BackendApi.post('/api/v1/verticals/veterinary/guardian-portal/grants', payload); },
   revokeGuardianPortalGrant(id) { return BackendApi.post(`/api/v1/verticals/veterinary/guardian-portal/grants/${encodeURIComponent(id)}/revoke`, {}); },
+  boardingSettings() { return BackendApi.get('/verticals/veterinary/boarding/settings'); },
+  updateBoardingSettings(payload) { return BackendApi.request('/verticals/veterinary/boarding/settings', { method:'PATCH', body:payload }); },
+  boardingResources(params = {}) { return BackendApi.get(`/verticals/veterinary/boarding/resources${query(params)}`); },
+  createBoardingResource(payload) { return BackendApi.post('/api/v1/verticals/veterinary/boarding/resources', payload); },
+  updateBoardingResourceStatus(id, payload) { return BackendApi.request(`/verticals/veterinary/boarding/resources/${encodeURIComponent(id)}/status`, { method:'PATCH', body:payload }); },
+  boardingStays(params = {}) { return BackendApi.get(`/verticals/veterinary/boarding/stays${query(params)}`); },
+  createBoardingStay(payload) { return BackendApi.post('/api/v1/verticals/veterinary/boarding/stays', payload); },
+  transitionBoardingStay(id, payload) { return BackendApi.request(`/verticals/veterinary/boarding/stays/${encodeURIComponent(id)}/status`, { method:'PATCH', body:payload }); },
   updateAppointmentStatus(id, payload) { return BackendApi.request(`/verticals/veterinary/appointments/${encodeURIComponent(id)}/status`, { method:'PATCH', body:payload }); }
 };
 
