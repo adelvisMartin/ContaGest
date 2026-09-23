@@ -120,6 +120,7 @@ export const GymVerticalService = {
   startWorkoutSession(payload) { return BackendApi.post('/api/v1/verticals/gym/workout-sessions', payload); },
   recordWorkoutSet(sessionId, payload) { return BackendApi.post(`/api/v1/verticals/gym/workout-sessions/${encodeURIComponent(sessionId)}/sets`, payload); },
   completeWorkoutSession(sessionId) { return BackendApi.post(`/api/v1/verticals/gym/workout-sessions/${encodeURIComponent(sessionId)}/complete`, {}); },
+  performance(memberId, filters = {}) { return BackendApi.get(`/verticals/gym/performance${query({ memberId, ...filters })}`); },
   nutrition(memberId = '') { return BackendApi.get(`/verticals/gym/nutrition${query({ memberId })}`); },
   createNutrition(payload) { return BackendApi.post('/api/v1/verticals/gym/nutrition', payload); },
   classes() { return BackendApi.get('/verticals/gym/classes'); },
