@@ -361,6 +361,35 @@ const nutritionRulePatchSchema=z.object({
   active:z.boolean()
 });
 
+const requiredNutritionNumber=(max:number)=>z.preprocess(
+  (value)=>value===''||value===null||value===undefined?undefined:value,
+  z.coerce.number().min(0).max(max)
+);
+const micronutrientSchema=z.object({
+  key:z.string().trim().min(2).max(64).regex(/^[a-z0-9_]+$/,'Usa una clave estable en minúsculas, números y guion bajo.'),
+  label:z.string().trim().min(2).max(120),
+  amount:requiredNutritionNumber(1000000000),
+  unit:z.enum(['g','mg','mcg','IU'])
+});
+const ingredientNutritionProfileSchema=z.object({
+  basisQuantity:z.preprocess(
+    (value)=>value===''||value===null||value===undefined?undefined:value,
+    z.coerce.number().positive().max(100000)
+  ),
+  basisUnit:z.string().trim().min(1).max(40),
+  energyKcal:requiredNutritionNumber(1000000),
+  proteinG:requiredNutritionNumber(1000000),
+  carbsG:requiredNutritionNumber(1000000),
+  fatG:requiredNutritionNumber(1000000),
+  fiberG:requiredNutritionNumber(1000000),
+  micronutrients:z.array(micronutrientSchema).max(100).default([])
+}).superRefine((value,refinement)=>{
+  const keys=value.micronutrients.map((item)=>`${item.key}:${item.unit}`);
+  if(new Set(keys).size!==keys.length){
+    refinement.addIssue({code:'custom',path:['micronutrients'],message:'No repitas el mismo micronutriente con la misma unidad.'});
+  }
+});
+
 const recipeSchema=z.object({
   name:z.string().trim().min(2).max(180),
   servings:z.coerce.number().positive().max(100).default(1),
@@ -437,6 +466,114 @@ const completeNutritionSchema = z.object({
   });
 });
 const nutritionSchema=completeNutritionSchema;
+
+const createPlanNutrientSnapshot=async(tx:any,tenantId:string,planId:string,createdBy:string|null)=>{
+  const occurrences=await tx.$queryRawUnsafe<any[]>(`
+    SELECT m."id" AS "mealId",mi."ingredientId",mi."quantity"::numeric AS "quantity",mi."unit"
+    FROM public."GymMeal" m
+    JOIN public."GymMealItem" mi ON mi."tenantId"=m."tenantId" AND mi."mealId"=m."id"
+    WHERE m."tenantId"=$1 AND m."nutritionPlanId"=$2
+    UNION ALL
+    SELECT m."id" AS "mealId",ri."ingredientId",
+           (ri."quantity"::numeric*m."servings"::numeric/r."servings"::numeric) AS "quantity",
+           ri."unit"
+    FROM public."GymMeal" m
+    JOIN public."GymRecipe" r ON r."tenantId"=m."tenantId" AND r."id"=m."recipeId"
+    JOIN public."GymRecipeItem" ri ON ri."tenantId"=r."tenantId" AND ri."recipeId"=r."id"
+    WHERE m."tenantId"=$1 AND m."nutritionPlanId"=$2
+  `,tenantId,planId);
+
+  const ingredientIds=[...new Set(occurrences.map((row:any)=>String(row.ingredientId)))];
+  const profiles=ingredientIds.length?await tx.$queryRawUnsafe<any[]>(`
+    SELECT DISTINCT ON (p."ingredientId")
+      p.*,i."name" AS "ingredientName"
+    FROM public."GymIngredientNutritionProfile" p
+    JOIN public."GymIngredient" i ON i."tenantId"=p."tenantId" AND i."id"=p."ingredientId"
+    WHERE p."tenantId"=$1 AND p."ingredientId"=ANY($2::text[])
+    ORDER BY p."ingredientId",p."version" DESC
+  `,tenantId,ingredientIds):[];
+  const profileByIngredient=new Map(profiles.map((row:any)=>[String(row.ingredientId),row]));
+  const profileIds=profiles.map((row:any)=>String(row.id));
+  const micronutrients=profileIds.length?await tx.$queryRawUnsafe<any[]>(`
+    SELECT * FROM public."GymIngredientMicronutrient"
+    WHERE "tenantId"=$1 AND "profileId"=ANY($2::text[])
+    ORDER BY "profileId","key","unit"
+  `,tenantId,profileIds):[];
+  const microByProfile=new Map<string,any[]>();
+  for(const row of micronutrients){
+    const key=String(row.profileId);
+    const list=microByProfile.get(key)||[];
+    list.push(row);
+    microByProfile.set(key,list);
+  }
+
+  const totals={energyKcal:0,proteinG:0,carbsG:0,fatG:0,fiberG:0};
+  const microTotals=new Map<string,{key:string;label:string;unit:string;amount:number}>();
+  const issues:any[]=[];
+  const profileRefs:any[]=[];
+  const seenRefs=new Set<string>();
+
+  for(const occurrence of occurrences){
+    const ingredientId=String(occurrence.ingredientId);
+    const profile:any=profileByIngredient.get(ingredientId);
+    if(!profile){
+      issues.push({code:'MISSING_PROFILE',mealId:String(occurrence.mealId),ingredientId,unit:String(occurrence.unit)});
+      continue;
+    }
+    if(String(occurrence.unit)!==String(profile.basisUnit)){
+      issues.push({
+        code:'UNIT_MISMATCH',
+        mealId:String(occurrence.mealId),
+        ingredientId,
+        ingredientName:String(profile.ingredientName||'Ingrediente'),
+        itemUnit:String(occurrence.unit),
+        profileUnit:String(profile.basisUnit)
+      });
+      continue;
+    }
+    const basis=Number(profile.basisQuantity);
+    const quantity=Number(occurrence.quantity);
+    if(!Number.isFinite(basis)||basis<=0||!Number.isFinite(quantity)||quantity<0){
+      issues.push({code:'INVALID_QUANTITY',mealId:String(occurrence.mealId),ingredientId});
+      continue;
+    }
+    const factor=quantity/basis;
+    totals.energyKcal+=Number(profile.energyKcal)*factor;
+    totals.proteinG+=Number(profile.proteinG)*factor;
+    totals.carbsG+=Number(profile.carbsG)*factor;
+    totals.fatG+=Number(profile.fatG)*factor;
+    totals.fiberG+=Number(profile.fiberG)*factor;
+    for(const micro of microByProfile.get(String(profile.id))||[]){
+      const microKey=`${micro.key}:${micro.unit}`;
+      const current=microTotals.get(microKey)||{key:String(micro.key),label:String(micro.label),unit:String(micro.unit),amount:0};
+      current.amount+=Number(micro.amount)*factor;
+      microTotals.set(microKey,current);
+    }
+    if(!seenRefs.has(String(profile.id))){
+      seenRefs.add(String(profile.id));
+      profileRefs.push({
+        profileId:String(profile.id),
+        ingredientId,
+        ingredientName:String(profile.ingredientName||'Ingrediente'),
+        version:Number(profile.version),
+        basisQuantity:Number(profile.basisQuantity),
+        basisUnit:String(profile.basisUnit)
+      });
+    }
+  }
+
+  const rounded=(value:number)=>Math.round((value+Number.EPSILON)*1000)/1000;
+  const complete=issues.length===0;
+  const snapshotRows=await tx.$queryRawUnsafe<any[]>(`
+    INSERT INTO public."GymNutritionPlanNutrientSnapshot"
+      ("id","tenantId","planId","complete","energyKcal","proteinG","carbsG","fatG","fiberG","micronutrients","issues","profileRefs","createdBy","createdAt")
+    VALUES (gen_random_uuid()::text,$1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,$10::jsonb,$11::jsonb,$12,now())
+    RETURNING *
+  `,tenantId,planId,complete,rounded(totals.energyKcal),rounded(totals.proteinG),rounded(totals.carbsG),rounded(totals.fatG),rounded(totals.fiberG),
+    JSON.stringify([...microTotals.values()].map((item)=>({...item,amount:rounded(item.amount)}))),
+    JSON.stringify(issues),JSON.stringify(profileRefs),createdBy);
+  return one(snapshotRows);
+};
 
 const classSchema = z.object({
   trainerId: z.string().optional().nullable(),
@@ -1267,6 +1404,90 @@ router.patch('/gym/ingredients/:id', requirePermission('gym.manage'), asyncHandl
   ok(res,one(rows));
 }));
 
+router.get('/gym/ingredients/:id/nutrition-profiles', requirePermission('gym.manage'), asyncHandler(async(req,res)=>{
+  const tenantId=ctx(req).tenantId;
+  const ingredientId=String(req.params.id);
+  const ingredientRows=await prisma.$queryRawUnsafe<any[]>(`
+    SELECT "id","name","defaultUnit","active"
+    FROM public."GymIngredient"
+    WHERE "tenantId"=$1 AND "id"=$2
+    LIMIT 1
+  `,tenantId,ingredientId);
+  const ingredient=one(ingredientRows,'Ingrediente no encontrado.');
+  const profiles=await prisma.$queryRawUnsafe<any[]>(`
+    SELECT p.*,
+      COALESCE((
+        SELECT jsonb_agg(jsonb_build_object(
+          'id',m."id",'key',m."key",'label',m."label",'amount',m."amount",'unit',m."unit"
+        ) ORDER BY m."key",m."unit")
+        FROM public."GymIngredientMicronutrient" m
+        WHERE m."tenantId"=p."tenantId" AND m."profileId"=p."id"
+      ),'[]'::jsonb) AS micronutrients
+    FROM public."GymIngredientNutritionProfile" p
+    WHERE p."tenantId"=$1 AND p."ingredientId"=$2
+    ORDER BY p."version" DESC
+    LIMIT 50
+  `,tenantId,ingredientId);
+  ok(res,{ingredient,latest:profiles[0]||null,history:profiles});
+}));
+
+router.post('/gym/ingredients/:id/nutrition-profiles', requirePermission('gym.manage'), asyncHandler(async(req,res)=>{
+  const tenantId=ctx(req).tenantId;
+  const ingredientId=String(req.params.id);
+  const b=ingredientNutritionProfileSchema.parse(req.body||{});
+  const created=await prisma.$transaction(async(tx)=>{
+    const ingredientRows=await tx.$queryRawUnsafe<any[]>(`
+      SELECT "id","name","defaultUnit"
+      FROM public."GymIngredient"
+      WHERE "tenantId"=$1 AND "id"=$2 AND "active"=true
+      LIMIT 1
+    `,tenantId,ingredientId);
+    if(!ingredientRows.length)throw new HttpError(422,'El ingrediente no pertenece al tenant activo o está archivado.');
+    await tx.$executeRawUnsafe(`SELECT pg_advisory_xact_lock(hashtext($1))`,`gym-nutrient-profile-46:${tenantId}:${ingredientId}`);
+    const versionRows=await tx.$queryRawUnsafe<any[]>(`
+      SELECT COALESCE(MAX("version"),0)::int+1 AS "nextVersion"
+      FROM public."GymIngredientNutritionProfile"
+      WHERE "tenantId"=$1 AND "ingredientId"=$2
+    `,tenantId,ingredientId);
+    const version=Number(versionRows[0]?.nextVersion||1);
+    const rows=await tx.$queryRawUnsafe<any[]>(`
+      INSERT INTO public."GymIngredientNutritionProfile"
+        ("id","tenantId","ingredientId","version","basisQuantity","basisUnit","energyKcal","proteinG","carbsG","fatG","fiberG","createdBy","createdAt")
+      VALUES (gen_random_uuid()::text,$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,now())
+      RETURNING *
+    `,tenantId,ingredientId,version,b.basisQuantity,b.basisUnit,b.energyKcal,b.proteinG,b.carbsG,b.fatG,b.fiberG,ctx(req).userId||null);
+    const profile=one(rows);
+    for(const micro of b.micronutrients){
+      await tx.$executeRawUnsafe(`
+        INSERT INTO public."GymIngredientMicronutrient"
+          ("id","tenantId","profileId","key","label","amount","unit","createdAt")
+        VALUES (gen_random_uuid()::text,$1,$2,$3,$4,$5,$6,now())
+      `,tenantId,profile.id,micro.key,micro.label,micro.amount,micro.unit);
+    }
+    return {...profile,micronutrients:b.micronutrients};
+  });
+  ok(res,created,201);
+}));
+
+router.get('/gym/nutrition/:id/nutrients', requirePermission('gym.manage'), asyncHandler(async(req,res)=>{
+  const tenantId=ctx(req).tenantId;
+  const planId=String(req.params.id);
+  const planRows=await prisma.$queryRawUnsafe<any[]>(`
+    SELECT "id","name","memberId","durationDays"
+    FROM public."GymNutritionPlan"
+    WHERE "tenantId"=$1 AND "id"=$2
+    LIMIT 1
+  `,tenantId,planId);
+  const plan=one(planRows,'Plan nutricional no encontrado.');
+  const snapshots=await prisma.$queryRawUnsafe<any[]>(`
+    SELECT *
+    FROM public."GymNutritionPlanNutrientSnapshot"
+    WHERE "tenantId"=$1 AND "planId"=$2
+    LIMIT 1
+  `,tenantId,planId);
+  ok(res,{plan,snapshot:snapshots[0]||null});
+}));
+
 router.get('/gym/nutrition-rules', requirePermission('gym.manage'), asyncHandler(async(req,res)=>{
   const tenantId=ctx(req).tenantId;
   const memberId=String(req.query.memberId||'').trim();
@@ -1514,6 +1735,7 @@ router.post('/gym/nutrition', requirePermission('gym.manage'), asyncHandler(asyn
         `,tenantId,mealId,alternative.recipeId,alternative.label||null,alternative.servings,index+1);
       }
     }
+    await createPlanNutrientSnapshot(tx,tenantId,createdPlan.id,ctx(req).userId||null);
     return createdPlan;
   });
   ok(res, plan, 201);

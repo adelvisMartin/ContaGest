@@ -849,6 +849,30 @@ if(fitnessEntries.every((item)=>item.status==='MIGRATED')){
   if(!gymRoutes.includes("r.\"kind\" IN ('allergy','intolerance','exclusion')"))fail('fitness: nutrition rules 45 must block only explicit blocking kinds');
   if(!gymRoutes.includes('GymRecipeItem')||!gymRoutes.includes('planIngredientIds'))fail('fitness: nutrition rules 45 must inspect direct and recipe ingredients');
   if(/autoSelect|automaticSubstitut|inferAllerg|diagnos/i.test(nutritionRules+nutritionRulesMigration))fail('fitness: nutrition rules 45 must not infer clinical restrictions or auto-select meals');
+
+  const nutrientProfilePanel=read('frontend/src/components/fitness/IngredientNutritionProfilePanel.jsx');
+  const nutrientSnapshotPanel=read('frontend/src/components/fitness/NutritionSnapshotPanel.jsx');
+  const nutrientMigration=read('backend/prisma/migrations/20260923213000_gym_nutrient_composition_46_51/migration.sql');
+  if((fitness.match(/<IngredientNutritionProfilePanel/g)||[]).length!==1)fail('fitness: ingredient nutrient profile 46 must render from one owner');
+  if((fitness.match(/<NutritionSnapshotPanel/g)||[]).length!==1)fail('fitness: nutrient snapshot 46 must render from one owner');
+  if(/querySelector|addEventListener|innerHTML|document\./.test(nutrientProfilePanel+nutrientSnapshotPanel))fail('fitness: nutrient composition 46 reintroduced imperative DOM lifecycle');
+  for(const contract of ['Composición nutricional por ingrediente','Cantidad base','Unidad base','Energía kcal','Proteína g','Carbohidratos g','Grasa g','Fibra g','Micronutrientes','Guardar nueva versión']){
+    if(!nutrientProfilePanel.includes(contract))fail(`fitness: nutrient profile 46 UI missing ${contract}`);
+  }
+  for(const contract of ['Snapshot nutricional del plan','Totales congelados al crear el plan','Completo','Incompleto','Plan sin snapshot']){
+    if(!nutrientSnapshotPanel.includes(contract))fail(`fitness: nutrient snapshot 46 UI missing ${contract}`);
+  }
+  for(const contract of ['micronutrientSchema','ingredientNutritionProfileSchema','createPlanNutrientSnapshot',"router.get('/gym/ingredients/:id/nutrition-profiles'","router.post('/gym/ingredients/:id/nutrition-profiles'","router.get('/gym/nutrition/:id/nutrients'",'MISSING_PROFILE','UNIT_MISMATCH','GymIngredientNutritionProfile','GymIngredientMicronutrient','GymNutritionPlanNutrientSnapshot']){
+    if(!gymRoutes.includes(contract))fail(`fitness: nutrient composition 46 backend missing ${contract}`);
+  }
+  for(const contract of ['GymIngredientNutritionProfile','GymIngredientMicronutrient','GymNutritionPlanNutrientSnapshot','version','basisQuantity','basisUnit','micronutrients','issues','profileRefs']){
+    if(!nutrientMigration.includes(contract))fail(`fitness: nutrient composition 46 migration missing ${contract}`);
+  }
+  if(!gymRoutes.includes('String(occurrence.unit)!==String(profile.basisUnit)'))fail('fitness: nutrient composition 46 must not silently convert incompatible units');
+  if(!gymRoutes.includes('ORDER BY p."ingredientId",p."version" DESC'))fail('fitness: nutrient composition 46 snapshot must resolve latest profile only at creation time');
+  if(!gymRoutes.includes('await createPlanNutrientSnapshot(tx,tenantId,createdPlan.id'))fail('fitness: nutrition plan creation must freeze the nutrient snapshot transactionally');
+  if(/UPDATE public\."GymIngredientNutritionProfile"|DELETE FROM public\."GymIngredientNutritionProfile"/.test(gymRoutes))fail('fitness: nutrient profiles 46 must remain immutable/versioned');
+  if(/adherence|compliance|consumedAt|mealCompletion/i.test(nutrientProfilePanel+nutrientSnapshotPanel+nutrientMigration))fail('fitness: nutrient composition 46 must not pre-implement adherence 47');
 }
 
 const css=read('frontend/src/styles/erp-runtime.css');
