@@ -1,4 +1,4 @@
-import { createHash, randomUUID } from 'node:crypto';
+import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { Router } from 'express';
 import { z } from 'zod';
 import { prisma } from '../../database/prisma.js';
@@ -95,6 +95,11 @@ const veterinaryFinancialInvoiceSchema=z.object({
 const veterinaryFinancialQuerySchema=z.object({
   patientId:z.string().min(10).optional()
 });
+const veterinaryGuardianPortalGrantSchema=z.object({
+  patientId:z.string().min(10),
+  expiresInDays:z.coerce.number().int().min(1).max(90).default(30)
+}).strict();
+const VETERINARY_GUARDIAN_PORTAL_SCOPES=['appointments','discharges','documents','billing','communications'] as const;
 
 const VETERINARY_FINANCIAL_CONSENT_KIND='veterinary-financial-authorization';
 const stableJson=(value:unknown):string=>{
@@ -1012,6 +1017,104 @@ router.post('/procedures', asyncHandler(async (req, res) => {
     FROM public."CarePatient" p WHERE p."id"=$2 AND p."tenantId"=$1 AND p."kind"='animal' RETURNING *
   `, ctx(req).tenantId, b.patientId, b.encounterId || null, b.professionalId || null, b.name, b.kind, b.status, b.scheduledAt || null, b.performedAt || null, b.anesthesia || null, b.notes || null, b.outcome || null);
   ok(res, one(rows, 'Mascota no encontrada.'), 201);
+}));
+
+router.get('/guardian-portal/grants', requirePermission('communications.manage'), asyncHandler(async (req,res)=>{
+  const tenantId=ctx(req).tenantId;
+  const patientId=String(req.query.patientId||'').trim();
+  if(!patientId)throw new HttpError(422,'patientId es obligatorio.');
+  const patientRows=await prisma.$queryRawUnsafe<any[]>(`
+    SELECT "id"
+    FROM public."CarePatient"
+    WHERE "tenantId"=$1 AND "id"=$2 AND "kind"='animal' AND "active"=true
+    LIMIT 1
+  `,tenantId,patientId);
+  one(patientRows,'Mascota activa no encontrada.');
+  const rows=await prisma.$queryRawUnsafe<any[]>(`
+    SELECT "id","patientId","scopes","expiresAt","revokedAt","createdBy","lastUsedAt","createdAt"
+    FROM public."VeterinaryGuardianPortalGrant"
+    WHERE "tenantId"=$1 AND "patientId"=$2
+    ORDER BY "createdAt" DESC
+    LIMIT 50
+  `,tenantId,patientId);
+  ok(res,rows);
+}));
+
+router.post('/guardian-portal/grants', requirePermission('communications.manage'), asyncHandler(async (req,res)=>{
+  const tenantId=ctx(req).tenantId;
+  const actorUserId=String(ctx(req).userId||'').trim();
+  if(!actorUserId)throw new HttpError(401,'Crear acceso del tutor requiere un actor autenticado.');
+  const body=veterinaryGuardianPortalGrantSchema.parse(req.body||{});
+  const portalToken=randomBytes(32).toString('base64url');
+  const tokenSha256=sha256(portalToken);
+  const expiresAt=new Date(Date.now()+body.expiresInDays*24*60*60*1000).toISOString();
+
+  const grant=await prisma.$transaction(async (tx)=>{
+    const patientRows=await tx.$queryRawUnsafe<any[]>(`
+      SELECT "id","displayName","guardianName","guardianPhone","guardianEmail"
+      FROM public."CarePatient"
+      WHERE "tenantId"=$1 AND "id"=$2 AND "kind"='animal' AND "active"=true
+      LIMIT 1
+      FOR SHARE
+    `,tenantId,body.patientId);
+    const patient=one(patientRows,'Mascota activa no encontrada.');
+
+    await tx.$executeRawUnsafe(`
+      UPDATE public."VeterinaryGuardianPortalGrant"
+      SET "revokedAt"=COALESCE("revokedAt",now())
+      WHERE "tenantId"=$1 AND "patientId"=$2 AND "revokedAt" IS NULL
+    `,tenantId,body.patientId);
+
+    const rows=await tx.$queryRawUnsafe<any[]>(`
+      INSERT INTO public."VeterinaryGuardianPortalGrant"
+        ("id","tenantId","patientId","tokenSha256","scopes","expiresAt","createdBy","createdAt")
+      VALUES
+        (gen_random_uuid()::text,$1,$2,$3,$4::jsonb,$5::timestamptz,$6,now())
+      RETURNING "id","patientId","scopes","expiresAt","revokedAt","createdBy","lastUsedAt","createdAt"
+    `,tenantId,body.patientId,tokenSha256,JSON.stringify(VETERINARY_GUARDIAN_PORTAL_SCOPES),expiresAt,actorUserId);
+    return {...one(rows),patient};
+  });
+
+  await writeAudit({
+    tenantId,userId:actorUserId,
+    action:'veterinary.guardian_portal.grant.created',
+    entity:'VeterinaryGuardianPortalGrant',entityId:grant.id,
+    after:{patientId:body.patientId,expiresAt,scopes:VETERINARY_GUARDIAN_PORTAL_SCOPES}
+  });
+  res.setHeader('Cache-Control','no-store');
+  ok(res,{
+    id:grant.id,
+    patientId:grant.patientId,
+    patientName:grant.patient.displayName,
+    guardianName:grant.patient.guardianName||null,
+    guardianPhone:grant.patient.guardianPhone||null,
+    guardianEmail:grant.patient.guardianEmail||null,
+    scopes:grant.scopes,
+    expiresAt:grant.expiresAt,
+    createdAt:grant.createdAt,
+    portalToken,
+    portalPath:`/portal/veterinaria/?token=${encodeURIComponent(portalToken)}`
+  },201);
+}));
+
+router.post('/guardian-portal/grants/:id/revoke', requirePermission('communications.manage'), asyncHandler(async (req,res)=>{
+  const tenantId=ctx(req).tenantId;
+  const actorUserId=String(ctx(req).userId||'').trim();
+  if(!actorUserId)throw new HttpError(401,'Revocar acceso del tutor requiere un actor autenticado.');
+  const rows=await prisma.$queryRawUnsafe<any[]>(`
+    UPDATE public."VeterinaryGuardianPortalGrant"
+    SET "revokedAt"=COALESCE("revokedAt",now())
+    WHERE "tenantId"=$1 AND "id"=$2
+    RETURNING "id","patientId","scopes","expiresAt","revokedAt","createdBy","lastUsedAt","createdAt"
+  `,tenantId,req.params.id);
+  const grant=one(rows,'Acceso del tutor no encontrado.');
+  await writeAudit({
+    tenantId,userId:actorUserId,
+    action:'veterinary.guardian_portal.grant.revoked',
+    entity:'VeterinaryGuardianPortalGrant',entityId:grant.id,
+    after:{patientId:grant.patientId,revokedAt:grant.revokedAt}
+  });
+  ok(res,grant);
 }));
 
 router.get('/communications', asyncHandler(async (req, res) => {
