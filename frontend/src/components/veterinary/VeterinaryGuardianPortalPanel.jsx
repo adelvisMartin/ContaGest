@@ -77,8 +77,14 @@ export function VeterinaryGuardianPortalPanel({ selectedPatient, onCommunication
 
   async function copyLink(){
     if(!latestGrant?.absoluteUrl)return;
-    try{await navigator.clipboard.writeText(latestGrant.absoluteUrl);toast.success('Enlace copiado.');}
-    catch{toast.error('No se pudo copiar automáticamente. Selecciona el enlace manualmente.');}
+    try{
+      await navigator.clipboard.writeText(latestGrant.absoluteUrl);
+      toast.success('Enlace copiado.');
+    }catch(cause){
+      const message=reportVeterinaryError('guardianPortal.copyLink',cause,'No se pudo copiar automáticamente. Selecciona el enlace manualmente.');
+      setError(message);
+      toast.error(message);
+    }
   }
 
   async function revokeGrant(id){
@@ -114,7 +120,9 @@ export function VeterinaryGuardianPortalPanel({ selectedPatient, onCommunication
       });
       await onCommunicationCreated?.();
     }catch(cause){
-      reportVeterinaryError('guardianPortal.communicationLog',cause);
+      const message=reportVeterinaryError('guardianPortal.communicationLog',cause,'El canal se abrirá, pero no se pudo registrar la comunicación.');
+      setError(message);
+      toast.error(message);
     }
     const body=`Hola ${selectedPatient.guardianName||'tutor'}, acceso temporal al portal de ${selectedPatient.displayName}: ${latestGrant.absoluteUrl}`;
     if(channel==='whatsapp'){
