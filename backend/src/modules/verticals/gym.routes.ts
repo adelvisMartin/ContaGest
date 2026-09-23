@@ -128,6 +128,25 @@ const progressionEvaluationSchema = z.object({
     rpe: z.coerce.number().min(1).max(10).optional().nullable(),
     consecutiveMisses: z.coerce.number().int().min(0).max(100).default(0)
   })
+}).superRefine((value, refinement) => {
+  const progression=value.config||{};
+  if(progression.targetRir!=null&&progression.targetRpe!=null&&Math.abs((10-Number(progression.targetRir))-Number(progression.targetRpe))>0.5){
+    refinement.addIssue({code:'custom',path:['config','targetRpe'],message:'RPE y RIR no son coherentes entre sí.'});
+  }
+  if(value.strategy==='linear_load'&&!progression.loadIncrementKg){
+    refinement.addIssue({code:'custom',path:['config','loadIncrementKg'],message:'La progresión lineal requiere un incremento de carga.'});
+  }
+  if(value.strategy==='double_progression'){
+    if(!progression.repRangeMin||!progression.repRangeMax||Number(progression.repRangeMin)>Number(progression.repRangeMax)){
+      refinement.addIssue({code:'custom',path:['config','repRangeMax'],message:'La doble progresión requiere un rango de repeticiones válido.'});
+    }
+    if(!progression.loadIncrementKg){
+      refinement.addIssue({code:'custom',path:['config','loadIncrementKg'],message:'La doble progresión requiere un incremento de carga.'});
+    }
+  }
+  if(value.strategy==='percent_1rm'&&(!progression.oneRepMaxKg||!progression.percent1Rm)){
+    refinement.addIssue({code:'custom',path:['config','percent1Rm'],message:'La progresión por %1RM requiere 1RM y porcentaje.'});
+  }
 });
 
 const routineExerciseSchema = z.object({
