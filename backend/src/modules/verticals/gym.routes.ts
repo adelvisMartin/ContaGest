@@ -249,6 +249,15 @@ const workoutSessionSchema = z.object({
   routineId: z.string().min(10),
   notes: optionalText
 });
+const exerciseSubstitutionSchema = z.object({
+  routineExerciseId: z.string().min(10),
+  availableEquipment: z.array(z.string().trim().min(1).max(120)).max(50).default([]),
+  preferredExerciseIds: z.array(z.string().min(10)).max(50).default([]),
+  excludedExerciseIds: z.array(z.string().min(10)).max(50).default([]),
+  declaredLimitations: z.array(z.string().trim().min(1).max(500)).max(20).default([]),
+  limit: z.coerce.number().int().min(1).max(10).default(5)
+});
+
 const workoutSetSchema = z.object({
   routineExerciseId: z.string().min(10),
   setNumber: z.coerce.number().int().min(1).max(100),
@@ -258,7 +267,9 @@ const workoutSetSchema = z.object({
   rir: z.coerce.number().min(0).max(10).optional().nullable(),
   rpe: z.coerce.number().min(1).max(10).optional().nullable(),
   restSeconds: z.coerce.number().int().min(0).max(3600).default(0),
-  notes: optionalText
+  notes: optionalText,
+  performedExerciseId: z.string().optional().nullable(),
+  substitutionReason: z.string().trim().max(500).optional().nullable()
 }).superRefine((value, refinement) => {
   if(value.status==='completed'&&value.reps==null){
     refinement.addIssue({code:'custom',path:['reps'],message:'Las series realizadas requieren repeticiones.'});
@@ -749,12 +760,35 @@ router.post('/gym/workout-sessions/:id/sets', requirePermission('gym.manage'), a
     if(session.status!=='in_progress')throw new HttpError(409,'La sesión ya está completada.');
 
     const exerciseRows=await tx.$queryRawUnsafe<any[]>(`
-      SELECT "id","routineId"
-      FROM public."GymRoutineExercise"
-      WHERE "tenantId"=$1 AND "id"=$2 AND "routineId"=$3
+      SELECT re."id",re."routineId",re."exerciseId",e."muscleGroup"
+      FROM public."GymRoutineExercise" re
+      JOIN public."GymExercise" e
+        ON e."tenantId"=re."tenantId" AND e."id"=re."exerciseId"
+      WHERE re."tenantId"=$1 AND re."id"=$2 AND re."routineId"=$3
       LIMIT 1
     `,tenantId,b.routineExerciseId,session.routineId);
     if(!exerciseRows.length)throw new HttpError(422,'El ejercicio no pertenece a la rutina de esta sesión.');
+    const prescribedExercise=exerciseRows[0];
+
+    let performedExerciseId:string|null=null;
+    let substitutionReason:string|null=null;
+    if(b.status==='completed'&&b.performedExerciseId&&b.performedExerciseId!==prescribedExercise.exerciseId){
+      const substituteRows=await tx.$queryRawUnsafe<any[]>(`
+        SELECT "id","muscleGroup"
+        FROM public."GymExercise"
+        WHERE "tenantId"=$1 AND "id"=$2 AND "active"=true
+        LIMIT 1
+      `,tenantId,b.performedExerciseId);
+      if(!substituteRows.length)throw new HttpError(422,'El ejercicio sustituto no pertenece al tenant activo.');
+      const substitute=substituteRows[0];
+      const prescribedMuscle=String(prescribedExercise.muscleGroup||'').trim().toLocaleLowerCase('es');
+      const substituteMuscle=String(substitute.muscleGroup||'').trim().toLocaleLowerCase('es');
+      if(!prescribedMuscle||!substituteMuscle||prescribedMuscle!==substituteMuscle){
+        throw new HttpError(422,'El ejercicio sustituto debe conservar el mismo grupo muscular.');
+      }
+      performedExerciseId=String(substitute.id);
+      substitutionReason=String(b.substitutionReason||'').trim()||'explicit_session_substitution';
+    }
 
     const duplicate=await tx.$queryRawUnsafe<any[]>(`
       SELECT "id" FROM public."GymWorkoutSet"
@@ -766,15 +800,18 @@ router.post('/gym/workout-sessions/:id/sets', requirePermission('gym.manage'), a
     const completed=b.status==='completed';
     const rows=await tx.$queryRawUnsafe<any[]>(`
       INSERT INTO public."GymWorkoutSet"
-        ("id","tenantId","sessionId","routineExerciseId","setNumber","status","loadKg","reps","rir","rpe","restSeconds","notes","recordedAt","createdBy")
-      VALUES (gen_random_uuid()::text,$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,now(),$12)
+        ("id","tenantId","sessionId","routineExerciseId","setNumber","status","loadKg","reps","rir","rpe","restSeconds","notes","performedExerciseId","substitutionReason","recordedAt","createdBy")
+      VALUES (gen_random_uuid()::text,$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,now(),$14)
       RETURNING *
     `,tenantId,session.id,b.routineExerciseId,b.setNumber,b.status,
       completed?(b.loadKg??null):null,
       completed?(b.reps??null):null,
       completed?(b.rir??null):null,
       completed?(b.rpe??null):null,
-      b.restSeconds,b.notes||null,ctx(req).userId||null);
+      b.restSeconds,b.notes||null,
+      completed?performedExerciseId:null,
+      completed?substitutionReason:null,
+      ctx(req).userId||null);
     return one(rows);
   });
   ok(res,created,201);
@@ -843,7 +880,7 @@ router.get('/gym/performance', requirePermission('gym.manage'), asyncHandler(asy
   const setRows=await prisma.$queryRawUnsafe<any[]>(`
     SELECT ws."id",ws."sessionId",ws."routineExerciseId",ws."status",ws."loadKg",ws."reps",ws."rir",ws."rpe",ws."restSeconds",ws."recordedAt",
            s."routineId",s."startedAt",
-           re."exerciseId",
+           COALESCE(ws."performedExerciseId",re."exerciseId") AS "exerciseId",
            e."name" AS "exerciseName",
            e."muscleGroup"
     FROM public."GymWorkoutSet" ws
@@ -852,7 +889,7 @@ router.get('/gym/performance', requirePermission('gym.manage'), asyncHandler(asy
     JOIN public."GymRoutineExercise" re
       ON re."tenantId"=ws."tenantId" AND re."id"=ws."routineExerciseId"
     JOIN public."GymExercise" e
-      ON e."tenantId"=re."tenantId" AND e."id"=re."exerciseId"
+      ON e."tenantId"=re."tenantId" AND e."id"=COALESCE(ws."performedExerciseId",re."exerciseId")
     WHERE ws."tenantId"=$1 AND s."memberId"=$2 AND s."status"='completed'
       AND s."startedAt">=$3::timestamptz AND s."startedAt"<$4::timestamptz
     ORDER BY ws."recordedAt" ASC
@@ -939,6 +976,89 @@ router.get('/gym/performance', requirePermission('gym.manage'), asyncHandler(asy
     byExercise,
     byMuscleGroup,
     dailyTrend
+  });
+}));
+
+router.post('/gym/exercise-substitutions/suggest', requirePermission('gym.manage'), asyncHandler(async (req, res) => {
+  const b=exerciseSubstitutionSchema.parse(req.body||{});
+  const tenantId=ctx(req).tenantId;
+  const sourceRows=await prisma.$queryRawUnsafe<any[]>(`
+    SELECT re."id" AS "routineExerciseId",re."exerciseId",
+           e."name",e."category",e."muscleGroup",e."equipment"
+    FROM public."GymRoutineExercise" re
+    JOIN public."GymExercise" e
+      ON e."tenantId"=re."tenantId" AND e."id"=re."exerciseId"
+    WHERE re."tenantId"=$1 AND re."id"=$2
+    LIMIT 1
+  `,tenantId,b.routineExerciseId);
+  const source=one(sourceRows,'El ejercicio prescrito no pertenece al tenant activo.');
+
+  if(b.declaredLimitations.length>0){
+    ok(res,{
+      source,
+      humanReviewRequired:true,
+      healthAutomationBlocked:true,
+      limitationsApplied:false,
+      declaredLimitationsCount:b.declaredLimitations.length,
+      suggestions:[]
+    });
+    return;
+  }
+
+  if(!String(source.muscleGroup||'').trim()){
+    ok(res,{
+      source,
+      humanReviewRequired:false,
+      healthAutomationBlocked:false,
+      limitationsApplied:false,
+      contextInsufficient:true,
+      suggestions:[]
+    });
+    return;
+  }
+
+  const rows=await prisma.$queryRawUnsafe<any[]>(`
+    SELECT "id","name","category","muscleGroup","equipment"
+    FROM public."GymExercise"
+    WHERE "tenantId"=$1
+      AND "active"=true
+      AND "id"<>$2
+      AND lower(COALESCE("muscleGroup",''))=lower(COALESCE($3,''))
+    ORDER BY "name" ASC
+    LIMIT 500
+  `,tenantId,source.exerciseId,source.muscleGroup||'');
+
+  const availableEquipment=new Set(b.availableEquipment.map((value)=>value.trim().toLocaleLowerCase('es')));
+  const preferred=new Set(b.preferredExerciseIds);
+  const excluded=new Set(b.excludedExerciseIds);
+  const sourceCategory=String(source.category||'').trim().toLocaleLowerCase('es');
+
+  const suggestions=rows
+    .filter((candidate)=>!excluded.has(String(candidate.id)))
+    .filter((candidate)=>{
+      if(!availableEquipment.size)return true;
+      const equipment=String(candidate.equipment||'').trim().toLocaleLowerCase('es');
+      return !equipment||availableEquipment.has(equipment);
+    })
+    .map((candidate)=>{
+      const reasons=['same_muscle_group'];
+      let score=100;
+      if(preferred.has(String(candidate.id))){score+=30;reasons.push('preferred_exercise');}
+      const equipment=String(candidate.equipment||'').trim().toLocaleLowerCase('es');
+      if(availableEquipment.size&&equipment&&availableEquipment.has(equipment)){score+=15;reasons.push('equipment_match');}
+      if(sourceCategory&&String(candidate.category||'').trim().toLocaleLowerCase('es')===sourceCategory){score+=10;reasons.push('same_category');}
+      if(!equipment){score+=5;reasons.push('no_equipment_required');}
+      return {...candidate,score,reasons};
+    })
+    .sort((left,right)=>right.score-left.score||String(left.name).localeCompare(String(right.name),'es'))
+    .slice(0,b.limit);
+
+  ok(res,{
+    source,
+    humanReviewRequired:false,
+    healthAutomationBlocked:false,
+    limitationsApplied:false,
+    suggestions
   });
 }));
 

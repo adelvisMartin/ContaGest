@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { Box, Divider, Paper, Stack, Typography } from '@mui/material';
 import { CgButton, CgEmptyState, CgSelect, CgState, CgStatusChip, CgTextField } from '../ui/cg/CgPrimitives.jsx';
 import { GymVerticalService } from '../../services/verticalService.js';
+import { ExerciseSubstitutionPanel } from './ExerciseSubstitutionPanel.jsx';
 
 const rows=(value)=>Array.isArray(value)?value:value?.data||[];
 const numericReps=(value)=>/^\d+$/.test(String(value||'').trim())?Number(value):'';
@@ -19,6 +20,7 @@ export function WorkoutSessionPanel({routines=[],memberId='',Toast}){
   const [sessionNotes,setSessionNotes]=useState('');
   const [exerciseId,setExerciseId]=useState('');
   const [draft,setDraft]=useState({loadKg:'',reps:'',rir:'',rpe:'',restSeconds:60,notes:''});
+  const [selectedSubstitution,setSelectedSubstitution]=useState(null);
   const [timerSeconds,setTimerSeconds]=useState(0);
   const [timerRunning,setTimerRunning]=useState(false);
   const [loading,setLoading]=useState(false);
@@ -38,8 +40,9 @@ export function WorkoutSessionPanel({routines=[],memberId='',Toast}){
   },[routineRows,routineId,activeSession]);
 
   useEffect(()=>{
-    if(!selectedExercise){setExerciseId('');return;}
+    if(!selectedExercise){setExerciseId('');setSelectedSubstitution(null);return;}
     if(exerciseId!==selectedExercise.id)setExerciseId(selectedExercise.id);
+    setSelectedSubstitution(null);
     setDraft((current)=>({
       ...current,
       loadKg:current.loadKg===''?(selectedExercise.loadKg??''):current.loadKg,
@@ -116,7 +119,11 @@ export function WorkoutSessionPanel({routines=[],memberId='',Toast}){
         rir:status==='completed'&&draft.rir!==''?Number(draft.rir):null,
         rpe:status==='completed'&&draft.rpe!==''?Number(draft.rpe):null,
         restSeconds:Number(draft.restSeconds||0),
-        notes:draft.notes.trim()||null
+        notes:draft.notes.trim()||null,
+        performedExerciseId:status==='completed'?(selectedSubstitution?.id||null):null,
+        substitutionReason:status==='completed'&&selectedSubstitution
+          ? selectedSubstitution.reasons.join(',')
+          : null
       });
       if(status==='completed')startRestTimer();
       setDraft((current)=>({...current,rir:'',rpe:'',notes:''}));
@@ -172,7 +179,7 @@ export function WorkoutSessionPanel({routines=[],memberId='',Toast}){
     </Stack>:<Stack gap={1}>
       <Box sx={{display:'grid',gridTemplateColumns:{xs:'1fr',md:'minmax(0,1fr) 220px'},gap:1}}>
         <Box>
-          <CgSelect label="Ejercicio" value={selectedExercise?.id||''} onChange={(event)=>{setExerciseId(event.target.value);setDraft({loadKg:'',reps:'',rir:'',rpe:'',restSeconds:60,notes:''});}} options={exerciseOptions}/>
+          <CgSelect label="Ejercicio" value={selectedExercise?.id||''} onChange={(event)=>{setExerciseId(event.target.value);setSelectedSubstitution(null);setDraft({loadKg:'',reps:'',rir:'',rpe:'',restSeconds:60,notes:''});}} options={exerciseOptions}/>
           {selectedExercise?<Typography variant="caption" color="text.secondary" display="block" mt={.5}>
             Prescrito: {selectedExercise.sets||3} × {selectedExercise.reps||'—'} · carga {selectedExercise.loadKg??'—'} kg · descanso {selectedExercise.restSeconds??60}s
           </Typography>:null}
@@ -187,6 +194,13 @@ export function WorkoutSessionPanel({routines=[],memberId='',Toast}){
           </Stack>
         </Paper>
       </Box>
+
+      {selectedExercise?<ExerciseSubstitutionPanel
+        routineExercise={selectedExercise}
+        selected={selectedSubstitution}
+        onSelect={setSelectedSubstitution}
+        disabled={saving}
+      />:null}
 
       {selectedExercise?<Box sx={{display:'grid',gridTemplateColumns:{xs:'1fr',sm:'repeat(3,minmax(0,1fr))'},gap:1}}>
         <CgTextField size="small" label="Carga realizada (kg)" type="number" inputProps={{min:0,step:.25}} value={draft.loadKg} onChange={(event)=>setDraft({...draft,loadKg:event.target.value})}/>
