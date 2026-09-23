@@ -849,6 +849,23 @@ if(fitnessEntries.every((item)=>item.status==='MIGRATED')){
   if(!gymRoutes.includes("r.\"kind\" IN ('allergy','intolerance','exclusion')"))fail('fitness: nutrition rules 45 must block only explicit blocking kinds');
   if(!gymRoutes.includes('GymRecipeItem')||!gymRoutes.includes('planIngredientIds'))fail('fitness: nutrition rules 45 must inspect direct and recipe ingredients');
   if(/autoSelect|automaticSubstitut|inferAllerg|diagnos/i.test(nutritionRules+nutritionRulesMigration))fail('fitness: nutrition rules 45 must not infer clinical restrictions or auto-select meals');
+
+  const nutrientMigration=read('backend/prisma/migrations/20260923213000_gym_nutrient_persistence_46_51/migration.sql');
+  const nutrientTargets=read('frontend/src/components/fitness/NutritionTargetFields.jsx');
+  for(const contract of ['nutrientBasisQuantity','nutrientBasisUnit','energyKcal','proteinG','carbsG','fatG','fiberG','micronutrients','nutritionSource','nutritionSourceRef']){
+    if(!nutrientMigration.includes(contract))fail(`fitness: nutrient persistence 46 migration missing ${contract}`);
+  }
+  for(const contract of ['La composición nutricional requiere una cantidad base explícita.','La composición nutricional requiere una unidad base explícita.','La composición nutricional requiere procedencia explícita.',"router.get('/gym/nutrition/:id/composition'",'unresolvedItems',"conversionPolicy:'exact-basis-unit-only'"]){
+    if(!gymRoutes.includes(contract))fail(`fitness: nutrient persistence 46 backend missing ${contract}`);
+  }
+  for(const contract of ['Cantidad base','Unidad nutricional','Energía kcal','Proteína g','Carbohidratos g','Grasa g','Fibra g','Procedencia','Micronutrientes disponibles en la fuente']){
+    if(!ingredientLibrary.includes(contract))fail(`fitness: nutrient persistence 46 ingredient UI missing ${contract}`);
+  }
+  for(const contract of ['Objetivos nutricionales diarios','Agregar objetivo micronutricional','No se calculan ni recomiendan automáticamente']){
+    if(!nutrientTargets.includes(contract))fail(`fitness: nutrient persistence 46 target UI missing ${contract}`);
+  }
+  if(!fitness.includes('NutritionTargetFields')||!fitness.includes('micronutrientTargets')||!fitness.includes('fiberG'))fail('fitness: nutrient persistence 46 targets are not wired to plan persistence');
+  if(!gymRoutes.includes('p."unit"=i."nutrientBasisUnit"')||/convertUnit|unitConversion|gramsPer|millilitersPer/i.test(gymRoutes.slice(gymRoutes.indexOf("router.get('/gym/nutrition/:id/composition'"),gymRoutes.indexOf("router.get('/gym/nutrition/:id/shopping-list'"))))fail('fitness: nutrient persistence 46 must not infer unit conversions');
 }
 
 const css=read('frontend/src/styles/erp-runtime.css');
