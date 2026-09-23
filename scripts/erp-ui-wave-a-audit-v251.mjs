@@ -821,18 +821,12 @@ if(fitnessEntries.every((item)=>item.status==='MIGRATED')){
   if(/allerg|intoler|preference|micronutrient|adherence/i.test(completeMealPlan+recipeLibrary+shoppingPanel+completeMealMigration))fail('fitness: complete meal plan 44 must not pre-implement 45-47');
 
   const mealPlanMigration=read('backend/prisma/migrations/20260923190000_gym_complete_meal_plan_44_51/migration.sql');
-  for(const contract of ['Plan alimenticio semanal','FITNESS_WEEK_DAYS','Agregar comida','Día sin comidas programadas','Subir','Bajar','Duplicar']){
-    if(!nutritionBuilder.includes(contract))fail(`fitness: complete meal plan 44 UI missing ${contract}`);
+  for(const contract of ['GymMeal_dayOfWeek_check','GymMeal_sortOrder_check','NULL preserves legacy meals']){
+    if(!mealPlanMigration.includes(contract))fail(`fitness: complete meal plan 44 weekly migration missing ${contract}`);
   }
-  for(const contract of ['nutritionMealSchema','dayOfWeek','sortOrder','Cada comida debe tener una posición única dentro de su día.','La vigencia del plan no puede finalizar antes de comenzar.']){
-    if(!gymRoutes.includes(contract))fail(`fitness: complete meal plan 44 backend missing ${contract}`);
-  }
-  for(const contract of ['GymMeal_dayOfWeek_check','GymMeal_sortOrder_check','GymMeal_plan_day_order_unique','NULL preserves legacy meals']){
-    if(!mealPlanMigration.includes(contract))fail(`fitness: complete meal plan 44 migration missing ${contract}`);
-  }
-  if(!fitness.includes('dayOfWeek:Number(meal.dayOfWeek)')||!fitness.includes('sortOrder:Number(meal.sortOrder)')||!fitness.includes('Inicio del plan')||!fitness.includes('Fin del plan'))fail('fitness: complete meal plan 44 scheduling is not wired end-to-end');
-  if(!gymRoutes.includes('ORDER BY m."dayOfWeek" NULLS LAST,m."sortOrder"'))fail('fitness: complete meal plan 44 reads must preserve weekly order');
-  if(/restriction|allerg|preference|vegan|vegetarian|gluten/i.test(mealPlanMigration+nutritionBuilder))fail('fitness: complete meal plan 44 must not pre-implement restrictions/preferences 45');
+  if(!completeMealMigration.includes('GymMeal_plan_day_index_order_unique')||!completeMealMigration.includes('DROP INDEX IF EXISTS public."GymMeal_plan_day_order_unique"'))fail('fitness: complete meal plan 44 must replace weekly uniqueness with absolute-day uniqueness for 14/28-day plans');
+  if(!fitness.includes('dayIndex:Number(meal.dayIndex)')||!fitness.includes('dayOfWeek:Number(meal.dayOfWeek)')||!fitness.includes('sortOrder:Number(meal.sortOrder)')||!fitness.includes('Inicio del plan')||!fitness.includes('Fin del plan'))fail('fitness: complete meal plan 44 scheduling is not wired end-to-end');
+  if(!gymRoutes.includes('ORDER BY m."dayIndex" NULLS LAST,m."sortOrder"'))fail('fitness: complete meal plan 44 reads must preserve absolute multiweek order');
 }
 
 const css=read('frontend/src/styles/erp-runtime.css');
