@@ -827,6 +827,10 @@ if(fitnessEntries.every((item)=>item.status==='MIGRATED')){
   if(!completeMealMigration.includes('GymMeal_plan_day_index_order_unique')||!completeMealMigration.includes('DROP INDEX IF EXISTS public."GymMeal_plan_day_order_unique"'))fail('fitness: complete meal plan 44 must replace weekly uniqueness with absolute-day uniqueness for 14/28-day plans');
   if(!fitness.includes('dayIndex:Number(meal.dayIndex)')||!fitness.includes('dayOfWeek:Number(meal.dayOfWeek)')||!fitness.includes('sortOrder:Number(meal.sortOrder)')||!fitness.includes('Inicio del plan')||!fitness.includes('Fin del plan'))fail('fitness: complete meal plan 44 scheduling is not wired end-to-end');
   if(!gymRoutes.includes('ORDER BY m."dayIndex" NULLS LAST,m."sortOrder"'))fail('fitness: complete meal plan 44 reads must preserve absolute multiweek order');
+  if(!completeMealMigration.includes('GymMealAlternative_servings_positive'))fail('fitness: complete meal plan 44 alternatives must persist explicit portions');
+  if(!gymRoutes.includes('Una comida con receta principal no puede mezclar ingredientes directos.'))fail('fitness: complete meal plan 44 must keep recipe and direct-item authorities exclusive');
+  const quickNutrition=productivity.slice(productivity.indexOf('export function FitnessNutritionQuickTool'),productivity.indexOf('export function FitnessClientTransferTool'));
+  if(!quickNutrition.includes('Persistencia estructurada')||/GymVerticalService\.createNutrition\(|FitnessNutritionService\.toApiMeals\(/.test(quickNutrition))fail('fitness: quick nutrition must not bypass canonical 44 persistence');
 }
 
 const css=read('frontend/src/styles/erp-runtime.css');
