@@ -96,6 +96,8 @@ export const GymVerticalService = {
   summary() { return BackendApi.get('/verticals/gym/summary'); },
   async members(params = {}) { return MediaService.signRecords(await BackendApi.get(`/verticals/gym/members${query(params)}`)); },
   createMember(payload) { return createWithPhoto((data) => BackendApi.post('/api/v1/verticals/gym/members', data), payload, 'gym-member', 'fullName'); },
+  updateMember(id, payload) { return BackendApi.request(`/verticals/gym/members/${encodeURIComponent(id)}`, { method:'PATCH', body:payload }); },
+  archiveMember(id) { return BackendApi.delete(`/api/v1/verticals/gym/members/${encodeURIComponent(id)}`); },
   trainers() { return BackendApi.get('/verticals/gym/trainers'); },
   createTrainer(payload) { return BackendApi.post('/api/v1/verticals/gym/trainers', payload); },
   plans() { return BackendApi.get('/verticals/gym/plans'); },
