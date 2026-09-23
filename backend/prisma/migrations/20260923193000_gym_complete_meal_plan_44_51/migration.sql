@@ -87,6 +87,12 @@ CREATE UNIQUE INDEX IF NOT EXISTS "GymMeal_plan_dayIndex_order_unique"
   ON public."GymMeal" ("nutritionPlanId","dayIndex","sortOrder")
   WHERE "dayIndex" IS NOT NULL;
 
+DROP INDEX IF EXISTS public."GymMeal_plan_day_order_unique";
+
+CREATE UNIQUE INDEX IF NOT EXISTS "GymMeal_plan_day_index_order_unique"
+  ON public."GymMeal" ("nutritionPlanId","dayIndex","sortOrder")
+  WHERE "dayIndex" IS NOT NULL;
+
 CREATE INDEX IF NOT EXISTS "GymMeal_plan_day_idx"
   ON public."GymMeal" ("tenantId","nutritionPlanId","dayIndex","sortOrder");
 
