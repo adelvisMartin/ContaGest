@@ -95,11 +95,12 @@ const veterinaryFinancialInvoiceSchema=z.object({
 const veterinaryFinancialQuerySchema=z.object({
   patientId:z.string().min(10).optional()
 });
+const VETERINARY_GUARDIAN_PORTAL_SCOPES=['appointments','reminders','discharge','documents','payments','communications'] as const;
 const veterinaryGuardianPortalGrantSchema=z.object({
   patientId:z.string().min(10),
-  expiresInDays:z.coerce.number().int().min(1).max(90).default(30)
+  expiresInHours:z.coerce.number().int().min(1).max(168).default(48),
+  scopes:z.array(z.enum(VETERINARY_GUARDIAN_PORTAL_SCOPES)).min(1).max(VETERINARY_GUARDIAN_PORTAL_SCOPES.length).default([...VETERINARY_GUARDIAN_PORTAL_SCOPES])
 }).strict();
-const VETERINARY_GUARDIAN_PORTAL_SCOPES=['appointments','discharges','documents','billing','communications'] as const;
 
 const VETERINARY_FINANCIAL_CONSENT_KIND='veterinary-financial-authorization';
 const stableJson=(value:unknown):string=>{
@@ -1047,7 +1048,7 @@ router.post('/guardian-portal/grants', requirePermission('communications.manage'
   const body=veterinaryGuardianPortalGrantSchema.parse(req.body||{});
   const portalToken=randomBytes(32).toString('base64url');
   const tokenSha256=sha256(portalToken);
-  const expiresAt=new Date(Date.now()+body.expiresInDays*24*60*60*1000).toISOString();
+  const expiresAt=new Date(Date.now()+body.expiresInHours*60*60*1000).toISOString();
 
   const grant=await prisma.$transaction(async (tx)=>{
     const patientRows=await tx.$queryRawUnsafe<any[]>(`
@@ -1071,7 +1072,7 @@ router.post('/guardian-portal/grants', requirePermission('communications.manage'
       VALUES
         (gen_random_uuid()::text,$1,$2,$3,$4::jsonb,$5::timestamptz,$6,now())
       RETURNING "id","patientId","scopes","expiresAt","revokedAt","createdBy","lastUsedAt","createdAt"
-    `,tenantId,body.patientId,tokenSha256,JSON.stringify(VETERINARY_GUARDIAN_PORTAL_SCOPES),expiresAt,actorUserId);
+    `,tenantId,body.patientId,tokenSha256,JSON.stringify([...new Set(body.scopes)]),expiresAt,actorUserId);
     return {...one(rows),patient};
   });
 
@@ -1079,7 +1080,7 @@ router.post('/guardian-portal/grants', requirePermission('communications.manage'
     tenantId,userId:actorUserId,
     action:'veterinary.guardian_portal.grant.created',
     entity:'VeterinaryGuardianPortalGrant',entityId:grant.id,
-    after:{patientId:body.patientId,expiresAt,scopes:VETERINARY_GUARDIAN_PORTAL_SCOPES}
+    after:{patientId:body.patientId,expiresAt,scopes:[...new Set(body.scopes)]}
   });
   res.setHeader('Cache-Control','no-store');
   ok(res,{
@@ -1093,7 +1094,8 @@ router.post('/guardian-portal/grants', requirePermission('communications.manage'
     expiresAt:grant.expiresAt,
     createdAt:grant.createdAt,
     portalToken,
-    portalPath:`/portal/veterinaria/?token=${encodeURIComponent(portalToken)}`
+    portalPath:`/portal/veterinaria/#access=${encodeURIComponent(portalToken)}`,
+    portalEndpoint:'/api/v1/public/veterinary-portal/session'
   },201);
 }));
 
