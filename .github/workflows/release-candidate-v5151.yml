@@ -1,0 +1,357 @@
+name: Release Candidate 51/51 · exact SHA
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'frontend/**'
+      - 'backend/**'
+      - 'qa/**'
+      - 'tests/**'
+      - 'scripts/**'
+      - 'ops/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/release-candidate-v5151.yml'
+  push:
+    branches:
+      - 'release/candidate-*'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-candidate-v5151-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  CANDIDATE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+  EVIDENCE_ROOT: artifacts/release/51-51
+
+jobs:
+  source-build-security:
+    name: Source · Prisma · tests · build · audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    steps:
+      - name: Checkout exact candidate
+        uses: actions/checkout@v7
+      - name: Verify exact SHA
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$EVIDENCE_ROOT/$CANDIDATE_SHA/source"
+          ACTUAL_SHA="$(git rev-parse HEAD)"
+          printf 'candidate_sha=%s\nactual_sha=%s\n' "$CANDIDATE_SHA" "$ACTUAL_SHA" | tee "$EVIDENCE_ROOT/$CANDIDATE_SHA/source/sha.log"
+          test "$ACTUAL_SHA" = "$CANDIDATE_SHA"
+      - name: Node 22
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install locked dependencies
+        run: npm ci --no-audit --no-fund
+      - name: Prisma validate
+        shell: bash
+        run: |
+          set -o pipefail
+          npm --workspace backend run db:validate 2>&1 | tee "$EVIDENCE_ROOT/$CANDIDATE_SHA/source/prisma-validate.log"
+      - name: Typecheck
+        shell: bash
+        run: |
+          set -o pipefail
+          npm run typecheck 2>&1 | tee "$EVIDENCE_ROOT/$CANDIDATE_SHA/source/typecheck.log"
+      - name: Lint and source contracts
+        shell: bash
+        run: |
+          set -o pipefail
+          npm run lint 2>&1 | tee "$EVIDENCE_ROOT/$CANDIDATE_SHA/source/lint.log"
+      - name: Full tests
+        shell: bash
+        run: |
+          set -o pipefail
+          npm test 2>&1 | tee "$EVIDENCE_ROOT/$CANDIDATE_SHA/source/tests.log"
+      - name: Frontend and backend builds
+        shell: bash
+        run: |
+          set -o pipefail
+          npm run build 2>&1 | tee "$EVIDENCE_ROOT/$CANDIDATE_SHA/source/build.log"
+      - name: Bundle budget
+        shell: bash
+        run: |
+          set -o pipefail
+          npm run check:bundle 2>&1 | tee "$EVIDENCE_ROOT/$CANDIDATE_SHA/source/bundle.log"
+      - name: Production dependency audit
+        shell: bash
+        run: |
+          set -o pipefail
+          npm audit --omit=dev --audit-level=high 2>&1 | tee "$EVIDENCE_ROOT/$CANDIDATE_SHA/source/npm-audit.log"
+      - name: Upload source/build evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-51-source-${{ env.CANDIDATE_SHA }}
+          path: artifacts/release/51-51/${{ env.CANDIDATE_SHA }}/source
+          if-no-files-found: warn
+          retention-days: 30
+
+  postgres-real:
+    name: PostgreSQL real · three verticals
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: contagest_release_51
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d contagest_release_51"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      NODE_ENV: test
+      API_MODE: prisma
+      DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/contagest_release_51?schema=public
+      DIRECT_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/contagest_release_51?schema=public
+      APP_URL: http://127.0.0.1:8080
+      CORS_ORIGIN: http://127.0.0.1:8080
+      JWT_SECRET: v5151_only_jwt_secret_0123456789abcdefghijklmnopqrstuvwxyz_ABCDEF
+      LICENSE_HASH_SECRET: v5151_only_license_secret_0123456789abcdefghijklmnopqrstuvwxyz_XYZ
+      ALLOW_DEV_TENANT_HEADER: 'false'
+      SUPABASE_AUTH_FALLBACK: 'false'
+    steps:
+      - name: Checkout exact candidate
+        uses: actions/checkout@v7
+      - name: Verify exact SHA
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$EVIDENCE_ROOT/$CANDIDATE_SHA/postgres"
+          ACTUAL_SHA="$(git rev-parse HEAD)"
+          printf 'candidate_sha=%s\nactual_sha=%s\n' "$CANDIDATE_SHA" "$ACTUAL_SHA" | tee "$EVIDENCE_ROOT/$CANDIDATE_SHA/postgres/sha.log"
+          test "$ACTUAL_SHA" = "$CANDIDATE_SHA"
+      - name: Node 22
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install locked dependencies and PostgreSQL client
+        run: |
+          npm ci --no-audit --no-fund
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client
+      - name: Prepare minimal Supabase prerequisites
+        env:
+          PGPASSWORD: postgres
+        shell: bash
+        run: |
+          set -o pipefail
+          psql -h 127.0.0.1 -U postgres -d contagest_release_51 -v ON_ERROR_STOP=1 -f ops/database/prepare-supabase-ephemeral.sql 2>&1 | tee "$EVIDENCE_ROOT/$CANDIDATE_SHA/postgres/prerequisites.log"
+      - name: Apply and verify canonical migrations
+        shell: bash
+        run: |
+          set -o pipefail
+          npm --workspace backend run prisma:deploy 2>&1 | tee "$EVIDENCE_ROOT/$CANDIDATE_SHA/postgres/migrations.log"
+          npx prisma migrate status --schema backend/prisma/schema.prisma 2>&1 | tee -a "$EVIDENCE_ROOT/$CANDIDATE_SHA/postgres/migrations.log"
+      - name: Seed QA tenant
+        run: npm run seed
+      - name: Execute real three-vertical E2E
+        shell: bash
+        run: |
+          set -o pipefail
+          npm run test:backend:verticals:real 2>&1 | tee "$EVIDENCE_ROOT/$CANDIDATE_SHA/postgres/verticals-e2e.log"
+      - name: Verify cleanup inventory
+        if: always()
+        env:
+          PGPASSWORD: postgres
+        shell: bash
+        run: |
+          set -euo pipefail
+          care_count="$(psql -h 127.0.0.1 -U postgres -d contagest_release_51 -Atc "select count(*) from \"CarePatient\" where \"displayName\" like 'V48-%';")"
+          gym_count="$(psql -h 127.0.0.1 -U postgres -d contagest_release_51 -Atc "select count(*) from \"GymMember\" where \"memberCode\" like 'V48-%';")"
+          printf 'candidate_sha=%s\nqa48_care_patients=%s\nqa48_gym_members=%s\n' "$CANDIDATE_SHA" "$care_count" "$gym_count" > "$EVIDENCE_ROOT/$CANDIDATE_SHA/postgres/cleanup.log"
+          test "$care_count" = "0"
+          test "$gym_count" = "0"
+      - name: Upload PostgreSQL evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-51-postgres-${{ env.CANDIDATE_SHA }}
+          path: artifacts/release/51-51/${{ env.CANDIDATE_SHA }}/postgres
+          if-no-files-found: warn
+          retention-days: 30
+
+  chromium-ui:
+    name: Chromium · 58x5 core · 49/50
+    runs-on: ubuntu-latest
+    timeout-minutes: 80
+    steps:
+      - uses: actions/checkout@v7
+      - name: Verify exact SHA
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$EVIDENCE_ROOT/$CANDIDATE_SHA/chromium"
+          ACTUAL_SHA="$(git rev-parse HEAD)"
+          printf 'candidate_sha=%s\nactual_sha=%s\n' "$CANDIDATE_SHA" "$ACTUAL_SHA" | tee "$EVIDENCE_ROOT/$CANDIDATE_SHA/chromium/sha.log"
+          test "$ACTUAL_SHA" = "$CANDIDATE_SHA"
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - run: npx playwright install --with-deps chromium
+      - name: Canonical Chromium release gate
+        shell: bash
+        run: |
+          set -o pipefail
+          npm run test:browser:58:core 2>&1 | tee "$EVIDENCE_ROOT/$CANDIDATE_SHA/chromium/browser-core.log"
+      - name: Upload Chromium evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-51-chromium-${{ env.CANDIDATE_SHA }}
+          path: |
+            artifacts/release/51-51/${{ env.CANDIDATE_SHA }}/chromium
+            test-results
+            playwright-report
+          if-no-files-found: warn
+          retention-days: 30
+
+  wcag:
+    name: WCAG 2.2 + contrast
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+      - name: Verify exact SHA
+        run: test "$(git rev-parse HEAD)" = "$CANDIDATE_SHA"
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - run: npx playwright install --with-deps chromium
+      - name: WCAG 2.2
+        run: npx playwright test qa/accessibility-wcag22-v99.spec.mjs --project=chromium --workers=1 --reporter=list
+      - name: Contrast
+        run: npx playwright test qa/contrast-v15.spec.mjs --project=chromium --workers=1 --reporter=list
+      - name: Upload WCAG evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-51-wcag-${{ env.CANDIDATE_SHA }}
+          path: |
+            artifacts/qa/accessibility-v99
+            test-results
+            playwright-report
+          if-no-files-found: warn
+          retention-days: 30
+
+  cross-browser:
+    name: Compatibility · ${{ matrix.project }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 70
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - project: firefox
+            engine: firefox
+          - project: webkit-safari
+            engine: webkit
+    steps:
+      - uses: actions/checkout@v7
+      - name: Verify exact SHA
+        run: test "$(git rev-parse HEAD)" = "$CANDIDATE_SHA"
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - run: npx playwright install --with-deps ${{ matrix.engine }}
+      - name: Visual and reusable-component compatibility
+        run: npx playwright test qa/erp-visual-overlap-v4951.spec.mjs qa/erp-component-contracts-v5051.spec.mjs --project=${{ matrix.project }} --workers=1 --reporter=list
+      - name: Upload compatibility evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-51-${{ matrix.project }}-${{ env.CANDIDATE_SHA }}
+          path: |
+            test-results
+            playwright-report
+          if-no-files-found: warn
+          retention-days: 30
+
+  verdict:
+    name: Release truth gate
+    if: always()
+    needs: [source-build-security, postgres-real, chromium-ui, wcag, cross-browser]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Materialize exact-SHA release evidence
+        shell: bash
+        env:
+          SOURCE_RESULT: ${{ needs.source-build-security.result }}
+          POSTGRES_RESULT: ${{ needs.postgres-real.result }}
+          CHROMIUM_RESULT: ${{ needs.chromium-ui.result }}
+          WCAG_RESULT: ${{ needs.wcag.result }}
+          CROSS_BROWSER_RESULT: ${{ needs.cross-browser.result }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$EVIDENCE_ROOT/$CANDIDATE_SHA/final"
+          node - <<'NODE'
+          const fs=require('node:fs');
+          const path=require('node:path');
+          const map=(value)=>value==='success'?'PASS':value==='failure'?'FAIL':value==='skipped'?'NOT_EXECUTED':'BLOCKED';
+          const sha=process.env.CANDIDATE_SHA;
+          const record={
+            schemaVersion:1,
+            roadmap:'51/51',
+            candidateSha:sha,
+            generatedAt:new Date().toISOString(),
+            gates:{
+              sourceBuildSecurity:map(process.env.SOURCE_RESULT),
+              postgresReal:map(process.env.POSTGRES_RESULT),
+              chromium:map(process.env.CHROMIUM_RESULT),
+              wcag:map(process.env.WCAG_RESULT),
+              crossBrowser:map(process.env.CROSS_BROWSER_RESULT),
+              vercel:'NOT_EXECUTED'
+            },
+            vercelEvidence:'SEPARATE_REQUIRED_FOR_DEPLOYMENT_SIGNOFF',
+            productionIdentityRule:'GitHub main SHA == deployment source SHA == /api/health buildCommit',
+            releaseStatus:[process.env.SOURCE_RESULT,process.env.POSTGRES_RESULT,process.env.CHROMIUM_RESULT,process.env.WCAG_RESULT,process.env.CROSS_BROWSER_RESULT].every((value)=>value==='success')?'PASS':'BLOCKED_OR_FAIL_REQUIRES_CLASSIFICATION'
+          };
+          fs.writeFileSync(path.join(process.env.EVIDENCE_ROOT,sha,'final','release-evidence.json'),JSON.stringify(record,null,2)+'\n');
+          NODE
+      - name: Upload final candidate evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-51-final-${{ env.CANDIDATE_SHA }}
+          path: artifacts/release/51-51/${{ env.CANDIDATE_SHA }}/final
+          if-no-files-found: error
+          retention-days: 30
+      - name: Require every automated release gate to execute and pass
+        env:
+          SOURCE_RESULT: ${{ needs.source-build-security.result }}
+          POSTGRES_RESULT: ${{ needs.postgres-real.result }}
+          CHROMIUM_RESULT: ${{ needs.chromium-ui.result }}
+          WCAG_RESULT: ${{ needs.wcag.result }}
+          CROSS_BROWSER_RESULT: ${{ needs.cross-browser.result }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf 'source=%s\npostgres=%s\nchromium=%s\nwcag=%s\ncross-browser=%s\n' "$SOURCE_RESULT" "$POSTGRES_RESULT" "$CHROMIUM_RESULT" "$WCAG_RESULT" "$CROSS_BROWSER_RESULT"
+          test "$SOURCE_RESULT" = "success"
+          test "$POSTGRES_RESULT" = "success"
+          test "$CHROMIUM_RESULT" = "success"
+          test "$WCAG_RESULT" = "success"
+          test "$CROSS_BROWSER_RESULT" = "success"
