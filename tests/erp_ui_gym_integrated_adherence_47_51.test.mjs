@@ -11,6 +11,16 @@ test('47/51 persists meal adherence as append-only events',()=>{
   assert.doesNotMatch(migration,/consumedCalories|diagnosis|recommendation/i);
 });
 
+test('47/51 adherence owners remain singletons after branch reconciliation',()=>{
+  const backend=read('backend/src/modules/verticals/gym.routes.ts');
+  const service=read('frontend/src/services/verticalService.js');
+  assert.equal((backend.match(/const mealAdherenceSchema=/g)||[]).length,1);
+  assert.equal((backend.match(/router\.get\('\/gym\/adherence'/g)||[]).length,1);
+  assert.equal((backend.match(/router\.post\('\/gym\/adherence\/meals'/g)||[]).length,1);
+  assert.equal((service.match(/adherence\(memberId\)/g)||[]).length,1);
+  assert.equal((service.match(/recordMealAdherence\(payload\)/g)||[]).length,1);
+});
+
 test('47/51 record endpoint revalidates tenant plan member and meal ownership',()=>{
   const source=read('backend/src/modules/verticals/gym.routes.ts');
   for(const token of ["router.post('/gym/adherence/meals'","mealAdherenceSchema",'GymNutritionPlan','GymMeal','GymMealAdherenceEvent','gym-meal-adherence-47:']) assert.ok(source.includes(token),token);
