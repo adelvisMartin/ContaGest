@@ -769,6 +769,23 @@ if(fitnessEntries.every((item)=>item.status==='MIGRATED')){
   if(!substitutionBlock.includes('b.declaredLimitations.length>0')||!substitutionBlock.includes('suggestions:[]'))fail('fitness: contextual substitutions 42 must fail closed on declared health limitations');
   if(/diagnos|injuryScore|medicalRisk|contraindicationEngine/i.test(substitutionBlock))fail('fitness: contextual substitutions 42 must not infer health decisions');
   if(/ingredient|recipe|macronutrient|micronutrient|mealPlan/i.test(substitutionBlock))fail('fitness: contextual substitutions 42 must not pre-implement nutrition model 43');
+  const nutritionIngredientLibrary=read('frontend/src/components/fitness/NutritionIngredientLibrary.jsx');
+  const nutritionMigration=read('backend/prisma/migrations/20260923190000_gym_ingredient_model_43_51/migration.sql');
+  if((fitness.match(/<NutritionIngredientLibrary/g)||[]).length!==1)fail('fitness: NutritionIngredientLibrary must render from one owner');
+  if(/querySelector|addEventListener|innerHTML|document\./.test(nutritionIngredientLibrary))fail('fitness: nutrition ingredient model 43 reintroduced imperative DOM lifecycle');
+  for(const contract of ['Alimentos','Ingredientes','Recetas','Calorías','Proteína','Carbohidratos','Grasas','Fibra','USDA','Agregar ingrediente','Por porción']){
+    if(!nutritionIngredientLibrary.includes(contract))fail(`fitness: nutrition ingredient model 43 UI missing ${contract}`);
+  }
+  for(const contract of ["router.get('/gym/foods'","router.post('/gym/foods'","router.patch('/gym/foods/:id'","router.get('/gym/recipes'","router.post('/gym/recipes'",'foodSchema','recipeSchema','GymRecipeIngredient','perServing']){
+    if(!gymRoutes.includes(contract))fail(`fitness: nutrition ingredient model 43 backend missing ${contract}`);
+  }
+  for(const contract of ['GymFood','GymRecipe','GymRecipeIngredient','caloriesPer100g','proteinGPer100g','carbsGPer100g','fatGPer100g','fiberGPer100g','sourceRef']){
+    if(!nutritionMigration.includes(contract))fail(`fitness: nutrition ingredient model 43 migration missing ${contract}`);
+  }
+  if(!gymRoutes.includes('pg_advisory_xact_lock')||!gymRoutes.includes('Uno o más ingredientes no pertenecen al tenant activo o están archivados.'))fail('fitness: recipe creation must validate tenant ingredient authority under lock');
+  if(/b\.totalCalories|b\.totalProtein|b\.totalCarbs|b\.totalFat/.test(gymRoutes))fail('fitness: recipe macro totals must remain server-derived');
+  if(/plan semanal|adherencia|restricciones médicas|micronutrientes/i.test(nutritionIngredientLibrary))fail('fitness: nutrition ingredient model 43 must not pre-implement 44-47');
+
 }
 
 const css=read('frontend/src/styles/erp-runtime.css');
