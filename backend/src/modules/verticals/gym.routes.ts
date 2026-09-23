@@ -1503,6 +1503,161 @@ router.get('/gym/nutrition/:id/nutrients', requirePermission('gym.manage'), asyn
   ok(res,{plan,snapshot:snapshots[0]||null});
 }));
 
+router.get('/gym/adherence', requirePermission('gym.manage'), asyncHandler(async(req,res)=>{
+  const tenantId=ctx(req).tenantId;
+  const memberId=String(req.query.memberId||'').trim();
+  if(!memberId)throw new HttpError(422,'memberId es obligatorio.');
+
+  const memberRows=await prisma.$queryRawUnsafe<any[]>(`
+    SELECT "id","fullName"
+    FROM public."GymMember"
+    WHERE "tenantId"=$1 AND "id"=$2
+    LIMIT 1
+  `,tenantId,memberId);
+  const member=one(memberRows,'El cliente no pertenece al tenant activo.');
+
+  const planned=await prisma.$queryRawUnsafe<any[]>(`
+    WITH planned_meals AS (
+      SELECT
+        m."id" AS "mealId",
+        m."nutritionPlanId",
+        p."name" AS "planName",
+        m."dayIndex",
+        m."dayOfWeek",
+        m."sortOrder",
+        m."mealType",
+        m."plannedAt",
+        (
+          COALESCE(p."startsAt",p."createdAt"::date)
+          + (GREATEST(COALESCE(m."dayIndex",1),1)-1)
+          + COALESCE(m."plannedAt",'00:00'::time)
+        ) AS "dueAt"
+      FROM public."GymNutritionPlan" p
+      JOIN public."GymMeal" m
+        ON m."tenantId"=p."tenantId"
+       AND m."nutritionPlanId"=p."id"
+      WHERE p."tenantId"=$1
+        AND p."memberId"=$2
+        AND p."active"=true
+    ),
+    latest_events AS (
+      SELECT DISTINCT ON (e."mealId")
+        e."mealId",e."status",e."notes",e."recordedAt",e."recordedBy"
+      FROM public."GymMealAdherenceEvent" e
+      WHERE e."tenantId"=$1 AND e."memberId"=$2
+      ORDER BY e."mealId",e."recordedAt" DESC,e."id" DESC
+    )
+    SELECT p.*,e."status" AS "adherenceStatus",e."notes" AS "adherenceNotes",
+           e."recordedAt",e."recordedBy"
+    FROM planned_meals p
+    LEFT JOIN latest_events e ON e."mealId"=p."mealId"
+    ORDER BY p."dueAt",p."sortOrder",p."mealId"
+  `,tenantId,memberId);
+
+  const now=Date.now();
+  const dueRows=planned.filter((row:any)=>{
+    const dueAt=new Date(row.dueAt).getTime();
+    return Number.isFinite(dueAt)&&dueAt<=now;
+  });
+  const plannedMeals=planned.length;
+  const dueMeals=dueRows.length;
+  const completedMeals=dueRows.filter((row:any)=>row.adherenceStatus==='completed').length;
+  const skippedMeals=dueRows.filter((row:any)=>row.adherenceStatus==='skipped').length;
+  const pendingMeals=Math.max(0,dueMeals-completedMeals-skippedMeals);
+  const adherencePct=dueMeals?Math.round((completedMeals/dueMeals)*10000)/100:0;
+
+  const dueByDay=new Map<string,any[]>();
+  for(const row of dueRows){
+    const day=new Date(row.dueAt).toISOString().slice(0,10);
+    const list=dueByDay.get(day)||[];
+    list.push(row);
+    dueByDay.set(day,list);
+  }
+  let nutritionCompletionStreakDays=0;
+  for(const day of [...dueByDay.keys()].sort().reverse()){
+    const dayMeals=dueByDay.get(day)||[];
+    if(!dayMeals.length||!dayMeals.every((row:any)=>row.adherenceStatus==='completed'))break;
+    nutritionCompletionStreakDays+=1;
+  }
+
+  const trainingRows=await prisma.$queryRawUnsafe<any[]>(`
+    SELECT
+      count(*) FILTER (WHERE "status"='completed')::int AS "trainingCompletedSessions",
+      max("completedAt") FILTER (WHERE "status"='completed') AS "lastTrainingCompletedAt"
+    FROM public."GymWorkoutSession"
+    WHERE "tenantId"=$1 AND "memberId"=$2
+  `,tenantId,memberId);
+  const training=trainingRows[0]||{trainingCompletedSessions:0,lastTrainingCompletedAt:null};
+
+  const assessments=await prisma.$queryRawUnsafe<any[]>(`
+    SELECT *
+    FROM public."GymAssessment"
+    WHERE "tenantId"=$1 AND "memberId"=$2
+    ORDER BY "measuredAt" ASC,"createdAt" ASC
+    LIMIT 500
+  `,tenantId,memberId);
+  const firstAssessment=assessments[0]||null;
+  const latestAssessment=assessments[assessments.length-1]||null;
+  const weightDeltaKg=firstAssessment?.weightKg!=null&&latestAssessment?.weightKg!=null
+    ? Math.round((Number(latestAssessment.weightKg)-Number(firstAssessment.weightKg))*1000)/1000
+    : null;
+
+  ok(res,{
+    member,
+    nutrition:{
+      plannedMeals,dueMeals,completedMeals,skippedMeals,pendingMeals,adherencePct,
+      nutritionCompletionStreakDays,
+      meals:planned
+    },
+    training:{
+      trainingCompletedSessions:Number(training.trainingCompletedSessions||0),
+      lastTrainingCompletedAt:training.lastTrainingCompletedAt||null
+    },
+    body:{
+      weightDeltaKg,
+      firstAssessment,
+      latestAssessment,
+      evolution:assessments
+    }
+  });
+}));
+
+router.post('/gym/adherence/meals', requirePermission('gym.manage'), asyncHandler(async(req,res)=>{
+  const tenantId=ctx(req).tenantId;
+  const b=mealAdherenceSchema.parse(req.body||{});
+  const created=await prisma.$transaction(async(tx)=>{
+    const planRows=await tx.$queryRawUnsafe<any[]>(`
+      SELECT "id"
+      FROM public."GymNutritionPlan"
+      WHERE "tenantId"=$1 AND "id"=$2 AND "memberId"=$3
+      LIMIT 1
+    `,tenantId,b.nutritionPlanId,b.memberId);
+    if(!planRows.length)throw new HttpError(422,'El plan no pertenece al cliente y tenant activos.');
+
+    const mealRows=await tx.$queryRawUnsafe<any[]>(`
+      SELECT "id"
+      FROM public."GymMeal"
+      WHERE "tenantId"=$1 AND "id"=$2 AND "nutritionPlanId"=$3
+      LIMIT 1
+    `,tenantId,b.mealId,b.nutritionPlanId);
+    if(!mealRows.length)throw new HttpError(422,'La comida no pertenece al plan seleccionado.');
+
+    await tx.$executeRawUnsafe(
+      `SELECT pg_advisory_xact_lock(hashtext($1))`,
+      `gym-meal-adherence-47:${tenantId}:${b.mealId}`
+    );
+    const rows=await tx.$queryRawUnsafe<any[]>(`
+      INSERT INTO public."GymMealAdherenceEvent"
+        ("id","tenantId","memberId","nutritionPlanId","mealId","status","notes","recordedBy","recordedAt")
+      VALUES
+        (gen_random_uuid()::text,$1,$2,$3,$4,$5,$6,$7,now())
+      RETURNING *
+    `,tenantId,b.memberId,b.nutritionPlanId,b.mealId,b.status,b.notes||null,ctx(req).userId||null);
+    return one(rows);
+  });
+  ok(res,created,201);
+}));
+
 router.get('/gym/nutrition-rules', requirePermission('gym.manage'), asyncHandler(async(req,res)=>{
   const tenantId=ctx(req).tenantId;
   const memberId=String(req.query.memberId||'').trim();
