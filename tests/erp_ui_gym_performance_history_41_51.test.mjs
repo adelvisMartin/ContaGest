@@ -7,7 +7,8 @@ const read=(path)=>fs.readFileSync(path,'utf8');
 test('41/51 derives performance from canonical workout session and set authorities',()=>{
   const routes=read('backend/src/modules/verticals/gym.routes.ts');
   assert.match(routes,/router\.get\('\/gym\/performance'/);
-  for(const token of ['GymWorkoutSession','GymWorkoutSet','status\"=\'completed\'','GymRoutineExercise','GymExercise']) assert.ok(routes.includes(token.replace('\\','')),token);
+  for(const token of ['GymWorkoutSession','GymWorkoutSet','GymRoutineExercise','GymExercise']) assert.ok(routes.includes(token),token);
+  assert.match(routes,/s\."status"='completed'/);
   const start=routes.indexOf("router.get('/gym/performance'");
   const end=routes.indexOf("router.get('/gym/routines'",start);
   const block=routes.slice(start,end);
