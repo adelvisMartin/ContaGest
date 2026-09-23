@@ -57,7 +57,10 @@ test('22/51 current veterinary child surfaces use safe error reporting',()=>{
     'frontend/src/components/veterinary/VeterinaryPreventiveCarePanel.jsx',
     'frontend/src/components/veterinary/VeterinaryTreatmentSheet.jsx',
     'frontend/src/components/veterinary/VeterinaryMedicationPanel.jsx',
-    'frontend/src/components/veterinary/VeterinaryClinicalInventoryPanel.jsx'
+    'frontend/src/components/veterinary/VeterinaryClinicalInventoryPanel.jsx',
+    'frontend/src/components/veterinary/VeterinaryFinancialPanel.jsx',
+    'frontend/src/components/veterinary/VeterinaryGuardianPortalPanel.jsx',
+    'frontend/src/components/veterinary/VeterinaryBoardingPanel.jsx'
   ];
   for(const path of paths){
     const source=fs.readFileSync(path,'utf8');
@@ -78,4 +81,40 @@ test('22/51 medication inventory read is retryable and preserves prior data on t
   const block=source.slice(start,end);
   assert.match(block,/if\(permissionBlocked\|\|!preserveOnError\)setProducts\(\[\]\)/);
   assert.doesNotMatch(block,/catch[\s\S]*setProducts\(\[\]\)[\s\S]*setProductError\([^)]*No se pudo cargar/);
+});
+
+
+test('22/51 guardian portal clipboard and communication-log failures stay visible and safely logged',()=>{
+  const source=fs.readFileSync('frontend/src/components/veterinary/VeterinaryGuardianPortalPanel.jsx','utf8');
+  const copyStart=source.indexOf('async function copyLink');
+  const copyEnd=source.indexOf('async function revokeGrant',copyStart);
+  const copyBlock=source.slice(copyStart,copyEnd);
+  assert.match(copyBlock,/catch\(cause\)/);
+  assert.match(copyBlock,/reportVeterinaryError\('guardianPortal\.copyLink'/);
+  assert.match(copyBlock,/setError\(message\)/);
+  assert.match(copyBlock,/toast\.error\(message\)/);
+
+  const communicationStart=source.indexOf('async function communicate');
+  const communicationEnd=source.indexOf('if\(!selectedPatient\)',communicationStart);
+  const communicationBlock=source.slice(communicationStart,communicationEnd);
+  assert.match(communicationBlock,/reportVeterinaryError\('guardianPortal\.communicationLog'/);
+  assert.match(communicationBlock,/setError\(message\)/);
+  assert.match(communicationBlock,/toast\.error\(message\)/);
+  assert.doesNotMatch(communicationBlock,/console\.error\([^\n]*(absoluteUrl|access|token|payload)/);
+});
+
+test('22/51 current post-29 veterinary modules expose retryable persistent errors',()=>{
+  const expectations=[
+    ['frontend/src/components/veterinary/VeterinaryFinancialPanel.jsx','financialFlow.load'],
+    ['frontend/src/components/veterinary/VeterinaryGuardianPortalPanel.jsx','guardianPortal.issue'],
+    ['frontend/src/components/veterinary/VeterinaryBoardingPanel.jsx','boarding.load']
+  ];
+  for(const [path,scope] of expectations){
+    const source=fs.readFileSync(path,'utf8');
+    assert.ok(source.includes('reportVeterinaryError'),path);
+    assert.ok(source.includes(scope),scope);
+    assert.ok(source.includes('setError'),path);
+    assert.ok(source.includes('Reintentar'),path);
+    assert.doesNotMatch(source,silentCatch);
+  }
 });
