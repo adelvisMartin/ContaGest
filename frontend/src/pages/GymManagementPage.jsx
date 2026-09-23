@@ -169,7 +169,16 @@ function GymWorkspace({state,context}){
       loadKg:exercise.loadKg===''||exercise.loadKg==null?null:Number(exercise.loadKg),
       restSeconds:Number(exercise.restSeconds||0),
       tempo:String(exercise.tempo||'').trim(),
-      notes:String(exercise.notes||'').trim()
+      notes:String(exercise.notes||'').trim(),
+      intensityTechnique:String(exercise.intensityTechnique||'standard'),
+      techniqueConfig:exercise.intensityTechnique&&exercise.intensityTechnique!=='standard'?{
+        rounds:exercise.techniqueConfig?.rounds==null?null:Number(exercise.techniqueConfig.rounds),
+        intraRestSeconds:exercise.techniqueConfig?.intraRestSeconds==null?null:Number(exercise.techniqueConfig.intraRestSeconds),
+        loadDropPct:exercise.techniqueConfig?.loadDropPct==null?null:Number(exercise.techniqueConfig.loadDropPct),
+        groupKey:String(exercise.techniqueConfig?.groupKey||'').trim()||null,
+        holdSeconds:exercise.techniqueConfig?.holdSeconds==null?null:Number(exercise.techniqueConfig.holdSeconds),
+        techniqueNotes:String(exercise.techniqueConfig?.techniqueNotes||'').trim()||null
+      }:{}
     }));
     if(exercises.some((exercise)=>!exercise.exerciseName))throw new Error('Todos los ejercicios necesitan nombre.');
     const scheduledDays=new Set(routineForm.exercises.map((exercise)=>Number(exercise.dayOfWeek||1)));
