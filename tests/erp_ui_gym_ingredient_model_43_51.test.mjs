@@ -30,12 +30,12 @@ test('43/51 nutrition writes validate member trainer and ingredient ownership at
 
 test('43/51 frontend replaces free-text meal parsing with controlled ingredients',()=>{
   const page=read('frontend/src/pages/GymManagementPage.jsx');
-  const builder=read('frontend/src/components/fitness/NutritionMealBuilder.jsx');
+  const builder=read('frontend/src/components/fitness/CompleteMealPlanBuilder.jsx');
   const library=read('frontend/src/components/fitness/IngredientLibraryPanel.jsx');
   assert.equal((page.match(/<IngredientLibraryPanel/g)||[]).length,1);
-  assert.equal((page.match(/<NutritionMealBuilder/g)||[]).length,1);
+  assert.equal((page.match(/<CompleteMealPlanBuilder/g)||[]).length,1);
   assert.doesNotMatch(page,/mealLines|Tipo \| kcal \| alimentos/);
-  for(const token of ['Comidas por ingrediente','Seleccionar ingrediente','Cantidad','Unidad','Agregar ingrediente']) assert.ok(builder.includes(token),token);
+  for(const token of ['Plan alimenticio completo','Ingrediente','Cantidad','Unidad','Agregar ingrediente']) assert.ok(builder.includes(token),token);
   for(const token of ['Catálogo de ingredientes','Archivar','Reactivar']) assert.ok(library.includes(token),token);
   assert.doesNotMatch(builder+library,/querySelector|addEventListener|innerHTML|document\./);
 });
