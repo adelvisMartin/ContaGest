@@ -873,6 +873,26 @@ if(fitnessEntries.every((item)=>item.status==='MIGRATED')){
   if(!gymRoutes.includes('await createPlanNutrientSnapshot(tx,tenantId,createdPlan.id'))fail('fitness: nutrition plan creation must freeze the nutrient snapshot transactionally');
   if(/UPDATE public\."GymIngredientNutritionProfile"|DELETE FROM public\."GymIngredientNutritionProfile"/.test(gymRoutes))fail('fitness: nutrient profiles 46 must remain immutable/versioned');
   if(/adherence|compliance|consumedAt|mealCompletion/i.test(nutrientProfilePanel+nutrientSnapshotPanel+nutrientMigration))fail('fitness: nutrient composition 46 must not pre-implement adherence 47');
+
+  const adherencePanel=read('frontend/src/components/fitness/IntegratedAdherencePanel.jsx');
+  const adherenceMigration=read('backend/prisma/migrations/20260923222000_gym_integrated_adherence_47_51/migration.sql');
+  if((fitness.match(/<IntegratedAdherencePanel/g)||[]).length!==1)fail('fitness: adherence 47 must render from one owner');
+  if(/querySelector|addEventListener|innerHTML|document\./.test(adherencePanel))fail('fitness: adherence 47 reintroduced imperative DOM lifecycle');
+  for(const contract of ['Adherencia integral','Completada','Omitida','Racha nutricional','Sesiones completadas','Evolución corporal','Marcar completada','Marcar omitida']){
+    if(!adherencePanel.includes(contract))fail(`fitness: adherence 47 UI missing ${contract}`);
+  }
+  for(const contract of ["router.get('/gym/adherence'","router.post('/gym/adherence/meals'",'mealAdherenceSchema','GymMealAdherenceEvent','GymWorkoutSession','GymAssessment','nutritionCompletionStreakDays','trainingCompletedSessions','weightDeltaKg']){
+    if(!gymRoutes.includes(contract))fail(`fitness: adherence 47 backend missing ${contract}`);
+  }
+  if(/UPDATE public\."GymMealAdherenceEvent"|DELETE FROM public\."GymMealAdherenceEvent"/.test(gymRoutes))fail('fitness: adherence 47 events must remain append-only');
+  if(!gymRoutes.includes('DISTINCT ON (e."mealId")')||!gymRoutes.includes('ORDER BY e."mealId",e."recordedAt" DESC,e."id" DESC'))fail('fitness: adherence 47 must derive current meal status from the latest explicit event');
+  if(!adherenceMigration.includes('GymMealAdherenceEvent_status_check')||!adherenceMigration.includes("'completed','skipped'"))fail('fitness: adherence 47 migration must constrain explicit meal outcomes');
+  if(/autoAdjust|autoRecommend|inferAllerg|inferDiagnos|prescribe|clinicalDecision/i.test(adherencePanel+adherenceMigration))fail('fitness: adherence 47 must not infer clinical decisions or auto-adjust plans');
+  if((gymRoutes.match(/const mealAdherenceSchema=/g)||[]).length!==1)fail('fitness: adherence 47 schema must remain singleton');
+  if((gymRoutes.match(/router\.get\('\/gym\/adherence'/g)||[]).length!==1)fail('fitness: adherence 47 GET route must remain singleton');
+  if((gymRoutes.match(/router\.post\('\/gym\/adherence\/meals'/g)||[]).length!==1)fail('fitness: adherence 47 POST route must remain singleton');
+  if((verticalService.match(/adherence\(memberId\)/g)||[]).length!==1)fail('fitness: adherence 47 service reader must remain singleton');
+  if((verticalService.match(/recordMealAdherence\(payload\)/g)||[]).length!==1)fail('fitness: adherence 47 service writer must remain singleton');
 }
 
 const css=read('frontend/src/styles/erp-runtime.css');

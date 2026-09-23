@@ -18,6 +18,7 @@ import { NutritionShoppingListPanel } from '../components/fitness/NutritionShopp
 import { NutritionRulesPanel } from '../components/fitness/NutritionRulesPanel.jsx';
 import { IngredientNutritionProfilePanel } from '../components/fitness/IngredientNutritionProfilePanel.jsx';
 import { NutritionSnapshotPanel } from '../components/fitness/NutritionSnapshotPanel.jsx';
+import { IntegratedAdherencePanel } from '../components/fitness/IntegratedAdherencePanel.jsx';
 import { FITNESS_TRAINING_MODES, fitnessTrainingMode, fitnessTrainingModeLabel } from '../data/fitnessTrainingModes.js';
 import { GymVerticalService } from '../services/verticalService.js';
 
@@ -302,6 +303,7 @@ function GymWorkspace({state,context}){
     </Box>
     <NutritionShoppingListPanel plans={nutrition}/>
     <NutritionSnapshotPanel plans={nutrition}/>
+    <IntegratedAdherencePanel memberId={selectedMemberId} Toast={Toast}/>
   </Stack>;
 
   const readyForClass=members.length>0&&trainers.length>0;
