@@ -44,7 +44,7 @@ router.post('/session', asyncHandler(async (req, res) => {
   const allowed = (scope: string) => scopes.includes(scope);
 
   const [appointmentRows, dischargeRows, documentRows, billingRows, communicationRows] = await Promise.all([
-    allowed('appointments') ? prisma.$queryRawUnsafe<any[]>(`
+    (allowed('appointments') || allowed('reminders')) ? prisma.$queryRawUnsafe<any[]>(`
       SELECT "startsAt","endsAt","status","reason","channel","reminderStatus"
       FROM public."CareAppointment"
       WHERE "tenantId"=$1 AND "patientId"=$2
@@ -52,7 +52,7 @@ router.post('/session', asyncHandler(async (req, res) => {
       ORDER BY "startsAt" ASC
       LIMIT 40
     `, tenantId, patientId) : Promise.resolve([]),
-    allowed('discharges') ? prisma.$queryRawUnsafe<any[]>(`
+    allowed('discharge') ? prisma.$queryRawUnsafe<any[]>(`
       SELECT "admissionNumber","admittedAt","dischargedAt","status","ward"
       FROM public."CareHospitalization"
       WHERE "tenantId"=$1 AND "patientId"=$2
@@ -66,7 +66,7 @@ router.post('/session', asyncHandler(async (req, res) => {
       ORDER BY COALESCE("performedAt","scheduledAt","createdAt") DESC
       LIMIT 30
     `, tenantId, patientId) : Promise.resolve([]),
-    allowed('billing') ? prisma.$queryRawUnsafe<any[]>(`
+    allowed('payments') ? prisma.$queryRawUnsafe<any[]>(`
       SELECT f."status" AS "caseStatus",f."estimatedTotal"::text AS "estimatedTotal",f."currency",
              f."authorizedAt",f."attendedAt",f."invoicedAt",
              s."number" AS "invoiceNumber",s."status"::text AS "invoiceStatus",
