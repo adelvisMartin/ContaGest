@@ -630,7 +630,9 @@ router.post('/gym/periodization/programs/:id/version', requirePermission('gym.ma
       FROM public."GymPeriodizationProgram"
       WHERE "tenantId"=$1 AND "programKey"=$2
     `,tenantId,source.programKey);
-    const nextVersion=Number(versionRows[0]?.maxVersion||0)+1;
+    const maxVersion=Number(versionRows[0]?.maxVersion||0);
+    if(Number(source.version)!==maxVersion)throw new HttpError(409,'Solo la versión más reciente puede generar una nueva revisión.');
+    const nextVersion=maxVersion+1;
     const rows=await tx.$queryRawUnsafe<any[]>(`
       INSERT INTO public."GymPeriodizationProgram"
         ("id","tenantId","routineId","programKey","version","name","startsAt","structure","sourceTemplateId","supersedesId","notes","createdBy","createdAt")
