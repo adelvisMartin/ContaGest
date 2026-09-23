@@ -4,6 +4,7 @@ import bcrypt from 'bcryptjs';
 import { prisma } from '../../database/prisma.js';
 import { asyncHandler, HttpError, ok } from '../../shared/http.js';
 import { requireTenant, requirePermission } from '../../shared/middleware/context.js';
+import { ACCESS_MANIFEST, ROUTE_PERMISSION_MAP } from '../../shared/contracts/accessManifest.js';
 
 const router = Router();
 router.use(requireTenant, requirePermission('admin.manage'));
@@ -19,17 +20,8 @@ const MODULE_PERMISSIONS = [
 
 const TENANT_PERMISSION_KEYS = new Set(MODULE_PERMISSIONS.map(([key]) => key));
 const PLATFORM_PERMISSION_PREFIX = 'platform.';
-const ADMIN_DEMO_ROUTES = new Set(['admin','backend','configuracion','demo-control','licencias','marca','modulos-madurez','pretesting']);
-const ROUTE_PERMISSION_MAP: Record<string,string> = {
-  dashboard:'dashboard.view', clientes:'clients.manage', cotizacion:'sales.manage', ventas:'sales.manage', historial:'sales.view',
-  'libro-ventas':'taxes.export', inventario:'inventory.manage', 'inventario-scan':'inventory.manage', kardex:'inventory.manage', qr:'inventory.manage',
-  proveedores:'purchases.manage', compras:'purchases.manage', contabilidad:'accounting.manage', 'plan-cuentas':'accounting.manage', 'libro-mayor':'accounting.manage',
-  'balance-sumas-saldos':'accounting.manage', 'hoja-trabajo':'accounting.manage', 'estados-financieros':'reports.view', 'cierre-contable':'accounting.manage',
-  bancos:'banking.manage', tributos:'taxes.export', nomina:'payroll.manage', rrhh:'payroll.manage', salud:'health.manage', veterinaria:'health.manage',
-  psicologia:'health.manage', odontologia:'health.manage', gimnasio:'gym.manage', rutinas:'gym.manage', nutricion:'gym.manage', mensajes:'communications.manage',
-  pedidos:'orders.manage', 'pos-sede':'orders.manage', 'tracking-pedidos':'orders.view', 'delivery-mapa':'orders.manage', analytics:'reports.view', reportes:'reports.view',
-  auditoria:'audit.view', 'importacion-data':'modules.manage', vistas:'modules.manage', ayuda:'dashboard.view', soporte:'dashboard.view'
-};
+const ADMIN_DEMO_ROUTES = new Set(ACCESS_MANIFEST.modules.filter((item)=>item.adminOnly===true).map((item)=>item.route));
+
 
 function assertTenantPermissionKeys(permissionKeys: string[]) {
   const invalid = [...new Set(permissionKeys)].filter((key) => !TENANT_PERMISSION_KEYS.has(key as any));

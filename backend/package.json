@@ -4,8 +4,13 @@
   "type": "module",
   "private": true,
   "main": "./src/app.ts",
-  "exports": { ".": "./src/app.ts" },
-  "engines": { "node": "22.x" },
+  "exports": {
+    ".": "./src/app.ts",
+    "./access-manifest.json": "./src/shared/contracts/access-manifest.json"
+  },
+  "engines": {
+    "node": "22.x"
+  },
   "description": "Backend ContaGest-VE Enterprise con RBAC, licencias, MFA, Prisma/Supabase, verticales clínicas y endurecimiento operativo.",
   "scripts": {
     "dev": "tsx watch src/server.ts",
@@ -77,5 +82,7 @@
     "tsx": "4.23.13",
     "typescript": "5.9.3"
   },
-  "prisma": { "seed": "tsx prisma/seed.ts" }
+  "prisma": {
+    "seed": "tsx prisma/seed.ts"
+  }
 }

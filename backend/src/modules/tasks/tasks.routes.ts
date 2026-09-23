@@ -8,7 +8,7 @@ import { validateBody } from '../../shared/middleware/validate.js';
 import { writeAudit } from '../../shared/services/audit.service.js';
 
 const router = Router();
-router.use(requireTenant, requirePermission('dashboard.read'));
+router.use(requireTenant, requirePermission('dashboard.view'));
 
 const taskSchema = z.object({
   title:z.string().min(2).max(180),

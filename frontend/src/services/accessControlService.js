@@ -1,56 +1,17 @@
-const CORE_ROUTES = ['dashboard', 'login', 'profile', 'ayuda', 'soporte'];
-const ADMIN_ONLY_ROUTES = new Set(['admin', 'demo-control', 'licencias', 'backend', 'configuracion', 'marca', 'modulos-madurez', 'pretesting']);
+import accessManifest from 'contagest-ve-backend/access-manifest.json' with { type:'json' };
 
-export const MODULE_CATALOG_ACCESS = [
-  { route:'dashboard', label:'Dashboard', permission:'dashboard.view', group:'Inicio' },
-  { route:'clientes', label:'Clientes', permission:'clients.manage', group:'CRM' },
-  { route:'cotizacion', label:'Cotizaciones', permission:'sales.manage', group:'Ventas' },
-  { route:'ventas', label:'Ventas', permission:'sales.manage', group:'Ventas' },
-  { route:'historial', label:'Histórico', permission:'sales.view', group:'Ventas' },
-  { route:'libro-ventas', label:'Libro de ventas', permission:'taxes.export', group:'Fiscal' },
-  { route:'inventario', label:'Inventario', permission:'inventory.manage', group:'Inventario' },
-  { route:'inventario-scan', label:'Escáner inventario', permission:'inventory.manage', group:'Inventario' },
-  { route:'kardex', label:'Kardex', permission:'inventory.manage', group:'Inventario' },
-  { route:'qr', label:'QR / Barcode', permission:'inventory.manage', group:'Inventario' },
-  { route:'proveedores', label:'Proveedores', permission:'purchases.manage', group:'Compras' },
-  { route:'compras', label:'Compras', permission:'purchases.manage', group:'Compras' },
-  { route:'contabilidad', label:'Libro diario', permission:'accounting.manage', group:'Contabilidad' },
-  { route:'plan-cuentas', label:'Plan de cuentas', permission:'accounting.manage', group:'Contabilidad' },
-  { route:'libro-mayor', label:'Libro mayor', permission:'accounting.manage', group:'Contabilidad' },
-  { route:'balance-sumas-saldos', label:'Balance de sumas y saldos', permission:'accounting.manage', group:'Contabilidad' },
-  { route:'hoja-trabajo', label:'Hoja de trabajo', permission:'accounting.manage', group:'Contabilidad' },
-  { route:'estados-financieros', label:'Estados financieros', permission:'reports.view', group:'Contabilidad' },
-  { route:'cierre-contable', label:'Cierre contable', permission:'accounting.manage', group:'Contabilidad' },
-  { route:'bancos', label:'Bancos', permission:'banking.manage', group:'Finanzas' },
-  { route:'tributos', label:'Tributos', permission:'taxes.export', group:'Fiscal' },
-  { route:'nomina', label:'Nómina', permission:'payroll.manage', group:'RRHH' },
-  { route:'rrhh', label:'RRHH', permission:'payroll.manage', group:'RRHH' },
-  { route:'salud', label:'Clínica y consultorio', permission:'health.manage', group:'Salud' },
-  { route:'veterinaria', label:'Clínica veterinaria', permission:'health.manage', group:'Salud' },
-  { route:'psicologia', label:'Psicología y agenda', permission:'health.manage', group:'Salud' },
-  { route:'odontologia', label:'Odontología', permission:'health.manage', group:'Salud' },
-  { route:'gimnasio', label:'Gimnasio', permission:'gym.manage', group:'Fitness' },
-  { route:'rutinas', label:'Rutinas', permission:'gym.manage', group:'Fitness' },
-  { route:'nutricion', label:'Nutrición', permission:'gym.manage', group:'Fitness' },
-  { route:'mensajes', label:'Mensajes', permission:'communications.manage', group:'Comunicación' },
-  { route:'pedidos', label:'Pedidos', permission:'orders.manage', group:'Operaciones' },
-  { route:'pos-sede', label:'POS sede', permission:'orders.manage', group:'Operaciones' },
-  { route:'tracking-pedidos', label:'Seguimiento pedidos', permission:'orders.view', group:'Operaciones' },
-  { route:'delivery-mapa', label:'Mapa de entregas', permission:'orders.manage', group:'Operaciones' },
-  { route:'analytics', label:'Analítica', permission:'reports.view', group:'Reportes' },
-  { route:'reportes', label:'Reportes', permission:'reports.view', group:'Reportes' },
-  { route:'auditoria', label:'Auditoría', permission:'audit.view', group:'Seguridad' },
-  { route:'admin', label:'Panel admin', permission:'admin.manage', group:'Admin' },
-  { route:'backend', label:'Integraciones', permission:'admin.manage', group:'Admin' },
-  { route:'licencias', label:'Licencias', permission:'licenses.manage', group:'Admin' },
-  { route:'demo-control', label:'Accesos comerciales', permission:'demos.manage', group:'Admin' },
-  { route:'importacion-data', label:'Importación', permission:'modules.manage', group:'Admin' },
-  { route:'vistas', label:'Galería de módulos', permission:'modules.manage', group:'Admin' },
-  { route:'pretesting', label:'Estado del sistema', permission:'admin.manage', group:'Admin' }
-];
+const manifestModules=Array.isArray(accessManifest?.modules)?accessManifest.modules:[];
+const CORE_ROUTES = ['login',...manifestModules.filter((module)=>module.coreAccess===true).map((module)=>module.route)];
+const ADMIN_ONLY_ROUTES = new Set(manifestModules.filter((module)=>module.adminOnly===true).map((module)=>module.route));
+
+export const MODULE_CATALOG_ACCESS = Object.freeze(manifestModules.map((module)=>Object.freeze({
+  route:String(module.route),
+  label:String(module.name),
+  permission:String(module.permission),
+  group:String(module.accessGroup||module.area||'General')
+})));
 
 const allModules = MODULE_CATALOG_ACCESS.map((module) => module.route);
-
 const ROLE_DEFINITIONS = [
   {
     id:'role-admin', name:'Administrador', tone:'danger', description:'Control total de empresa, usuarios, permisos, seguridad, integraciones, reportes y módulos.',
@@ -249,5 +210,5 @@ export const AccessControlService = {
   updateUser(rbacInput,userId,data={}) {
     const rbac=this.ensure(rbacInput); rbac.users=rbac.users.map((user)=>{if(user.id!==userId)return user;const days=data.days??data.demoDays;const roleId=data.roleId??user.roleId;const role=rbac.roles.find((item)=>item.id===roleId);const maxModules=data.maxModules!==undefined?Math.max(1,Number(data.maxModules)):user.maxModules;const requested=normalizeEnabledModules(data.enabledModules!==undefined?data.enabledModules:user.enabledModules);const enabledModules=requested.filter((route)=>(role?.modules||[]).includes(route)).slice(0,maxModules);return { ...user,fullName:data.fullName??user.fullName,email:data.email??user.email,roleId,status:data.status??user.status,maxModules,enabledModules,demo:data.demo!==undefined?Boolean(data.demo):user.demo,demoExpiresAt:days!==undefined?daysFromNow(Number(days)):(data.demoExpiresAt??user.demoExpiresAt) };}).map(sanitizeUser);rbac.audit=[{ at:new Date().toISOString(),action:'edit-user',userId,data:Object.keys(data) },...(rbac.audit||[])].slice(0,60);return rbac;
   },
-  routePermission(route) { return MODULE_CATALOG_ACCESS.find((item)=>item.route===route)?.permission||'modules.manage'; }
+  routePermission(route) { return MODULE_CATALOG_ACCESS.find((item)=>item.route===route)?.permission||null; }
 };
