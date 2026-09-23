@@ -754,7 +754,7 @@ if(fitnessEntries.every((item)=>item.status==='MIGRATED')){
   for(const contract of ['Equipamiento disponible','Ejercicio preferido','Ejercicio a excluir','Limitación declarada','Revisión humana requerida','Usar en esta sesión','Volver al prescrito']){
     if(!substitutionPanel.includes(contract))fail(`fitness: contextual substitutions 42 UI missing ${contract}`);
   }
-  for(const contract of ['exerciseSubstitutionSchema','availableEquipment','preferredExerciseIds','excludedExerciseIds','declaredLimitations','humanReviewRequired','healthAutomationBlocked:true','limitationsApplied:false','same_muscle_group','preferred_exercise','equipment_match']){
+  for(const contract of ['exerciseSubstitutionSchema','availableEquipment','preferredExerciseIds','excludedExerciseIds','declaredLimitations','humanReviewRequired','healthAutomationBlocked:true','limitationsApplied:false','contextInsufficient:true','same_muscle_group','preferred_exercise','equipment_match']){
     if(!gymRoutes.includes(contract))fail(`fitness: contextual substitutions 42 backend missing ${contract}`);
   }
   for(const contract of ['performedExerciseId','substitutionReason','El ejercicio sustituto no pertenece al tenant activo.','El ejercicio sustituto debe conservar el mismo grupo muscular.']){
