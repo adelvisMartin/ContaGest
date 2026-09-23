@@ -466,6 +466,13 @@ const completeNutritionSchema = z.object({
   });
 });
 const nutritionSchema=completeNutritionSchema;
+const mealAdherenceSchema=z.object({
+  memberId:z.string().min(10),
+  nutritionPlanId:z.string().min(10),
+  mealId:z.string().min(10),
+  status:z.enum(['completed','skipped']),
+  notes:optionalText
+});
 
 const mealAdherenceSchema=z.object({
   memberId:z.string().min(10),
