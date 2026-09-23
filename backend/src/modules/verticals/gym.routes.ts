@@ -1914,7 +1914,7 @@ router.get('/gym/adherence', requirePermission('gym.manage'), asyncHandler(async
     else if(status==='skipped')mealStats.skipped+=1;
     else mealStats.unlogged+=1;
   }
-  const mealAdherencePct=mealStats.planned?Number((((mealStats.completed+mealStats.partial*.5)/mealStats.planned)*100).toFixed(1)):null;
+  const mealAdherencePct=mealStats.planned?Number(((mealStats.completed/mealStats.planned)*100).toFixed(1)):null;
   const habitSummaries=habits.map((habit:any)=>{
     const expected=Math.max(1,Math.ceil((periodDays/7)*Number(habit.targetPerWeek||1)));
     const completed=Number(habit.completedCount||0);
