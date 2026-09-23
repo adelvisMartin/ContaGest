@@ -35,6 +35,8 @@ const patientSchema = z.object({
   active: z.boolean().default(true)
 });
 
+const patientPatchSchema=patientSchema.partial().strict().refine((value)=>Object.keys(value).length>0,{message:'Indica al menos un cambio.'});
+
 const professionalSchema = z.object({
   fullName: z.string().trim().min(2).max(180),
   specialty: z.string().trim().min(2).max(120).default('general'),
@@ -544,6 +546,42 @@ router.post('/health/patients', requirePermission('health.manage'), asyncHandler
     VALUES (gen_random_uuid()::text,$1,$2,$3,$4,$5,$6,$7::date,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20::jsonb,$21,$22,$23,$24,now(),now()) RETURNING *
   `, tenantId,b.kind,b.firstName||null,b.lastName||null,b.displayName,b.idNumber||null,b.birthDate||null,b.sex||null,b.phone||null,b.email||null,b.address||null,b.photoUrl||null,b.species||null,b.breed||null,b.color||null,b.microchip||null,b.guardianName||null,b.guardianPhone||null,b.guardianEmail||null,JSON.stringify(b.emergencyContact),b.allergies||null,b.conditions||null,b.notes||null,b.active);
   ok(res, one(rows), 201);
+}));
+
+router.patch('/health/patients/:id', requirePermission('health.manage'), asyncHandler(async(req,res)=>{
+  const tenantId=ctx(req).tenantId;
+  const id=String(req.params.id);
+  const patch=patientPatchSchema.parse(req.body||{});
+  const currentRows=await prisma.$queryRawUnsafe<any[]>(`
+    SELECT * FROM public."CarePatient"
+    WHERE "tenantId"=$1 AND "id"=$2
+    LIMIT 1
+  `,tenantId,id);
+  const current=one(currentRows,'Paciente no encontrado.');
+  const next=patientSchema.parse({...current,...patch});
+  const rows=await prisma.$queryRawUnsafe<any[]>(`
+    UPDATE public."CarePatient"
+    SET "kind"=$3,"firstName"=$4,"lastName"=$5,"displayName"=$6,"idNumber"=$7,"birthDate"=$8::date,
+        "sex"=$9,"phone"=$10,"email"=$11,"address"=$12,"photoUrl"=$13,"species"=$14,"breed"=$15,"color"=$16,
+        "microchip"=$17,"guardianName"=$18,"guardianPhone"=$19,"guardianEmail"=$20,"emergencyContact"=$21::jsonb,
+        "allergies"=$22,"conditions"=$23,"notes"=$24,"active"=$25,"updatedAt"=now()
+    WHERE "tenantId"=$1 AND "id"=$2
+    RETURNING *
+  `,tenantId,id,next.kind,next.firstName||null,next.lastName||null,next.displayName,next.idNumber||null,next.birthDate||null,
+    next.sex||null,next.phone||null,next.email||null,next.address||null,next.photoUrl||null,next.species||null,next.breed||null,next.color||null,
+    next.microchip||null,next.guardianName||null,next.guardianPhone||null,next.guardianEmail||null,JSON.stringify(next.emergencyContact),
+    next.allergies||null,next.conditions||null,next.notes||null,next.active);
+  ok(res,one(rows,'Paciente no encontrado.'));
+}));
+
+router.delete('/health/patients/:id', requirePermission('health.manage'), asyncHandler(async(req,res)=>{
+  const rows=await prisma.$queryRawUnsafe<any[]>(`
+    UPDATE public."CarePatient"
+    SET "active"=false,"updatedAt"=now()
+    WHERE "tenantId"=$1 AND "id"=$2
+    RETURNING *
+  `,ctx(req).tenantId,String(req.params.id));
+  ok(res,one(rows,'Paciente no encontrado.'));
 }));
 
 router.get('/health/professionals', requirePermission('health.manage'), asyncHandler(async (req, res) => {
