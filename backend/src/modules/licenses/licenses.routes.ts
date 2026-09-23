@@ -9,6 +9,7 @@ import { ensureAccountMembership } from '../../shared/identity/accountMembership
 import { hashLicenseKey, validateUserLicense } from '../../shared/licensing/licenseGuard.js';
 import { bootstrapQaLicense } from '../../shared/licensing/qaBootstrap.js';
 import { readDeviceCredential, setDeviceCredentialCookie } from '../../shared/auth/sessionCookies.js';
+import { permissionForRoute } from '../../shared/contracts/accessManifest.js';
 
 const router = Router();
 router.use(requireTenant);
@@ -41,39 +42,7 @@ const validateSchema = z.object({
   metadata: z.record(z.string(), z.unknown()).optional()
 });
 
-const permissionByModule: Record<string, string[]> = {
-  dashboard: ['reports.view'],
-  ventas: ['sales.manage','sales.view'],
-  cotizacion: ['sales.manage','sales.view'],
-  clientes: ['clients.manage'],
-  inventario: ['inventory.manage'],
-  kardex: ['inventory.manage'],
-  compras: ['purchases.manage'],
-  proveedores: ['purchases.manage'],
-  reportes: ['reports.view'],
-  analytics: ['reports.view'],
-  contabilidad: ['reports.view'],
-  'libro-mayor': ['reports.view'],
-  'balance-sumas-saldos': ['reports.view'],
-  'hoja-trabajo': ['reports.view'],
-  'estados-financieros': ['reports.view'],
-  'cierre-contable': ['reports.view'],
-  'plan-cuentas': ['reports.view'],
-  'libro-ventas': ['taxes.export'],
-  'asistente-ia': ['reports.view'],
-  bancos: ['banking.manage'],
-  nomina: ['payroll.manage'],
-  rrhh: ['payroll.manage'],
-  tributos: ['taxes.export'],
-  salud: ['health.manage'],
-  veterinaria: ['health.manage'],
-  psicologia: ['health.manage'],
-  odontologia: ['health.manage'],
-  gimnasio: ['gym.manage'],
-  rutinas: ['gym.manage'],
-  nutricion: ['gym.manage'],
-  mensajes: ['communications.manage']
-};
+
 
 const sectorPrefix: Record<string, string> = {
   contador:'CNT', comercio:'COM', servicios:'SRV', restaurante:'RES', salud:'MED', veterinaria:'VET', psicologia:'PSI', odontologia:'ODO', gimnasio:'GYM', nutricion:'NUT',
@@ -156,7 +125,8 @@ async function extensionByLicenseIds(ids: string[]) {
 }
 
 async function assignTrialRole(tenantId: string, userId: string, modules: string[]) {
-  const permissionKeys = [...new Set(['reports.view', ...modules.flatMap((module) => permissionByModule[module] || [])])];
+  const modulePermissions = modules.map((module)=>permissionForRoute(module)).filter((key): key is string => Boolean(key));
+  const permissionKeys = [...new Set(['reports.view', ...modulePermissions])];
   for (const key of permissionKeys) {
     await prisma.permission.upsert({
       where: { key },
