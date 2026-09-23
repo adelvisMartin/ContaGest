@@ -51,5 +51,5 @@ test('37/51 grouped techniques enforce same-day cardinality',()=>{
   assert.match(source,/Un superset requiere exactamente 2 ejercicios con la misma clave y día\./);
   assert.match(source,/Un giant set requiere al menos 3 ejercicios con la misma clave y día\./);
   assert.match(source,/no puede mezclar superset y giant set el mismo día/);
-  assert.match(source,/const key=\\`\\$\\\{exercise\.dayOfWeek\\\}:\\$\\\{groupKey\\\}\\`/);
+  assert.ok(source.includes('const key=`${exercise.dayOfWeek}:${groupKey}`;'));
 });
