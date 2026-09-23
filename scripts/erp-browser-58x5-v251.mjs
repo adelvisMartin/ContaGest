@@ -40,6 +40,7 @@ function runGroup(label,args,{env={}}={}){
 function runCore(){
   runGroup('auth + login runtime',['qa/login-auth-runtime-v161.spec.mjs']);
   runGroup('2/51 vertical Wave A geometry',['qa/erp-ui-wave-a-v251.spec.mjs']);
+  runGroup('49/51 anti-overlap visual matrix',['qa/erp-visual-overlap-v4951.spec.mjs']);
   runGroup('58-route functional smoke',['qa/erp-functional-smoke-v14.spec.mjs']);
   runGroup('58-route controls/icons',['qa/ui-controls-runtime-v16.spec.mjs']);
   runGroup('mobile deep 360/390/430 + shell contrast',['qa/mobile-deep-v162.spec.mjs']);
