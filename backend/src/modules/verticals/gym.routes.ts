@@ -93,6 +93,7 @@ const routineSchema = z.object({
   name: z.string().trim().min(2).max(180),
   goal: optionalText,
   level: z.enum(['beginner','intermediate','advanced']).default('beginner'),
+  trainingMode: z.enum(['strength','hypertrophy','pump','endurance','power','conditioning','mobility']),
   startsAt: z.string().optional().nullable(),
   endsAt: z.string().optional().nullable(),
   daysPerWeek: z.coerce.number().int().min(1).max(7).default(3),
@@ -370,10 +371,10 @@ router.post('/gym/routines', requirePermission('gym.manage'), asyncHandler(async
     }
 
     const routineRows = await tx.$queryRawUnsafe<any[]>(`
-      INSERT INTO public."GymRoutine" ("id","tenantId","memberId","trainerId","name","goal","level","startsAt","endsAt","daysPerWeek","notes","active","createdAt","updatedAt")
-      VALUES (gen_random_uuid()::text,$1,$2,$3,$4,$5,$6,$7::date,$8::date,$9,$10,true,now(),now())
+      INSERT INTO public."GymRoutine" ("id","tenantId","memberId","trainerId","name","goal","level","trainingMode","startsAt","endsAt","daysPerWeek","notes","active","createdAt","updatedAt")
+      VALUES (gen_random_uuid()::text,$1,$2,$3,$4,$5,$6,$7,$8::date,$9::date,$10,$11,true,now(),now())
       RETURNING *
-    `, tenantId,b.memberId,b.trainerId||null,b.name,b.goal||null,b.level,b.startsAt||null,b.endsAt||null,b.daysPerWeek,b.notes||null);
+    `, tenantId,b.memberId,b.trainerId||null,b.name,b.goal||null,b.level,b.trainingMode,b.startsAt||null,b.endsAt||null,b.daysPerWeek,b.notes||null);
     const createdRoutine = one(routineRows);
 
     for (const item of b.exercises) {
