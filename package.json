@@ -81,7 +81,8 @@
     "audit:erp-ui-taxes": "node scripts/erp-ui-taxes-audit-v951.mjs",
     "test:browser:58:core": "node scripts/erp-browser-58x5-v251.mjs core",
     "test:browser:58:shard": "node scripts/erp-browser-58x5-v251.mjs shard",
-    "test:browser:58": "node scripts/erp-browser-58x5-v251.mjs full"
+    "test:browser:58": "node scripts/erp-browser-58x5-v251.mjs full",
+    "test:e2e:verticals:real": "npm --workspace backend exec -- tsx --test ../qa/erp-vertical-real-e2e-v4851.test.ts"
   },
   "devDependencies": {
     "@playwright/test": "1.63.0"
