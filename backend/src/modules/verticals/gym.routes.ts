@@ -335,6 +335,102 @@ const routineSchema = z.object({
   }
 });
 
+const nutritionNutrientsSchema = z.object({
+  calories: z.coerce.number().min(0).max(5000).default(0),
+  proteinG: z.coerce.number().min(0).max(1000).default(0),
+  carbsG: z.coerce.number().min(0).max(1000).default(0),
+  fatG: z.coerce.number().min(0).max(1000).default(0),
+  fiberG: z.coerce.number().min(0).max(1000).default(0),
+  sodiumMg: z.coerce.number().min(0).max(100000).default(0),
+  potassiumMg: z.coerce.number().min(0).max(100000).default(0),
+  calciumMg: z.coerce.number().min(0).max(100000).default(0),
+  ironMg: z.coerce.number().min(0).max(10000).default(0)
+});
+
+const nutritionIngredientSchema = z.object({
+  kind: z.literal('ingredient'),
+  name: z.string().trim().min(1).max(240),
+  amountG: z.coerce.number().gt(0).max(10000),
+  basisGrams: z.coerce.number().gt(0).max(10000).default(100),
+  source: z.enum(['manual','usda_fdc']).default('manual'),
+  fdcId: z.string().regex(/^\d{1,12}$/).optional().nullable(),
+  dataType: z.string().trim().max(120).optional().nullable(),
+  sourceDescription: z.string().trim().max(240).optional().nullable(),
+  snapshotAt: z.string().datetime().optional().nullable(),
+  nutrients: nutritionNutrientsSchema
+}).superRefine((ingredient, refinement) => {
+  if (ingredient.source === 'usda_fdc' && !ingredient.fdcId) {
+    refinement.addIssue({ code:'custom', path:['fdcId'], message:'Un ingrediente USDA requiere fdcId.' });
+  }
+});
+
+const nutritionMealSchema = z.object({
+  mealType: z.string().trim().min(2).max(80),
+  plannedAt: z.string().optional().nullable(),
+  items: z.array(z.union([z.string().trim().min(1).max(500), nutritionIngredientSchema])).default([]),
+  calories: z.coerce.number().min(0).optional().nullable(),
+  proteinG: z.coerce.number().min(0).optional().nullable(),
+  carbsG: z.coerce.number().min(0).optional().nullable(),
+  fatG: z.coerce.number().min(0).optional().nullable(),
+  notes: optionalText
+}).superRefine((meal, refinement) => {
+  const hasLegacy = meal.items.some((item) => typeof item === 'string');
+  const hasStructured = meal.items.some((item) => typeof item === 'object');
+  if (hasLegacy && hasStructured) {
+    refinement.addIssue({ code:'custom', path:['items'], message:'No mezcles ingredientes estructurados con items legacy en la misma comida.' });
+  }
+});
+
+const roundNutrition = (value:number, precision=2) => {
+  const factor = 10 ** precision;
+  return Math.round((Number(value) + Number.EPSILON) * factor) / factor;
+};
+
+const deriveIngredientNutrition = (ingredient:z.infer<typeof nutritionIngredientSchema>) => {
+  const scale = ingredient.amountG / ingredient.basisGrams;
+  return {
+    calories: roundNutrition(ingredient.nutrients.calories * scale, 1),
+    proteinG: roundNutrition(ingredient.nutrients.proteinG * scale),
+    carbsG: roundNutrition(ingredient.nutrients.carbsG * scale),
+    fatG: roundNutrition(ingredient.nutrients.fatG * scale),
+    fiberG: roundNutrition(ingredient.nutrients.fiberG * scale),
+    sodiumMg: roundNutrition(ingredient.nutrients.sodiumMg * scale, 1),
+    potassiumMg: roundNutrition(ingredient.nutrients.potassiumMg * scale, 1),
+    calciumMg: roundNutrition(ingredient.nutrients.calciumMg * scale, 1),
+    ironMg: roundNutrition(ingredient.nutrients.ironMg * scale, 2)
+  };
+};
+
+const deriveMealNutrition = (meal:z.infer<typeof nutritionMealSchema>) => {
+  const structured = meal.items.filter((item): item is z.infer<typeof nutritionIngredientSchema> => typeof item === 'object');
+  if (!structured.length) {
+    return {
+      calories: meal.calories ?? null,
+      proteinG: meal.proteinG ?? null,
+      carbsG: meal.carbsG ?? null,
+      fatG: meal.fatG ?? null
+    };
+  }
+  const totals = structured.reduce((acc, ingredient) => {
+    const derived = deriveIngredientNutrition(ingredient);
+    acc.calories += derived.calories;
+    acc.proteinG += derived.proteinG;
+    acc.carbsG += derived.carbsG;
+    acc.fatG += derived.fatG;
+    acc.fiberG += derived.fiberG;
+    acc.sodiumMg += derived.sodiumMg;
+    return acc;
+  }, { calories:0, proteinG:0, carbsG:0, fatG:0, fiberG:0, sodiumMg:0 });
+  return {
+    calories: roundNutrition(totals.calories, 0),
+    proteinG: roundNutrition(totals.proteinG),
+    carbsG: roundNutrition(totals.carbsG),
+    fatG: roundNutrition(totals.fatG),
+    fiberG: roundNutrition(totals.fiberG),
+    sodiumMg: roundNutrition(totals.sodiumMg, 1)
+  };
+};
+
 const nutritionSchema = z.object({
   memberId: z.string().min(10),
   trainerId: z.string().optional().nullable(),
@@ -348,16 +444,7 @@ const nutritionSchema = z.object({
   notes: optionalText,
   startsAt: z.string().optional().nullable(),
   endsAt: z.string().optional().nullable(),
-  meals: z.array(z.object({
-    mealType: z.string().trim().min(2).max(80),
-    plannedAt: z.string().optional().nullable(),
-    items: z.array(z.unknown()).default([]),
-    calories: z.coerce.number().int().min(0).optional().nullable(),
-    proteinG: z.coerce.number().min(0).optional().nullable(),
-    carbsG: z.coerce.number().min(0).optional().nullable(),
-    fatG: z.coerce.number().min(0).optional().nullable(),
-    notes: optionalText
-  })).default([])
+  meals: z.array(nutritionMealSchema).default([])
 });
 
 const classSchema = z.object({
