@@ -297,6 +297,13 @@ const observationSchema = z.object({
   note: optionalText
 });
 
+const VETERINARY_TREATMENT_VITAL_UNITS={
+  weight:'kg',
+  temperature:'°C',
+  heartRate:'lpm',
+  respiratoryRate:'rpm'
+} as const;
+
 const treatmentSheetEntrySchema = z.object({
   responsibleProfessionalId: z.string().min(10).optional().nullable(),
   category: z.enum(['medication','feeding','fluid','task','observation','vitals']),
@@ -335,8 +342,18 @@ const treatmentSheetEntrySchema = z.object({
   if(value.category==='observation'&&!String(value.note||'').trim()){
     refinement.addIssue({code:'custom',path:['note'],message:'La observación no puede estar vacía.'});
   }
-  if(value.category==='vitals'&&!['temperature','heartRate','respiratoryRate','weight'].some((key)=>String(value.details?.[key]||'').trim())){
-    refinement.addIssue({code:'custom',path:['details'],message:'Registra al menos un signo vital.'});
+  if(value.category==='vitals'){
+    const vitalEntries=Object.keys(VETERINARY_TREATMENT_VITAL_UNITS)
+      .map((key)=>[key,String(value.details?.[key]||'').trim()])
+      .filter(([,raw])=>raw!=='');
+    if(!vitalEntries.length){
+      refinement.addIssue({code:'custom',path:['details'],message:'Registra al menos un signo vital.'});
+    }
+    for(const [key,raw] of vitalEntries){
+      if(!Number.isFinite(Number(raw))){
+        refinement.addIssue({code:'custom',path:['details',key],message:'El signo vital debe ser numérico.'});
+      }
+    }
   }
 });
 
@@ -966,7 +983,7 @@ router.post('/hospitalizations/:id/treatment-sheet', asyncHandler(async (req, re
   const now=new Date().toISOString();
   const result=await prisma.$transaction(async (tx)=>{
     const hospitalizationRows=await tx.$queryRawUnsafe<any[]>(`
-      SELECT h."id",h."patientId",h."status"
+      SELECT h."id",h."patientId",h."encounterId",h."status"
       FROM public."CareHospitalization" h
       JOIN public."CarePatient" p
         ON p."id"=h."patientId" AND p."tenantId"=h."tenantId" AND p."kind"='animal'
@@ -1013,6 +1030,46 @@ router.post('/hospitalizations/:id/treatment-sheet', asyncHandler(async (req, re
     `,tenantId,hospitalization.id,body.responsibleProfessionalId||null,observedAt,type,JSON.stringify(values),body.note||null);
 
     const row=one(rows);
+
+    if(body.category==='vitals'&&body.status==='completed'){
+      const vitalEntries=Object.entries(VETERINARY_TREATMENT_VITAL_UNITS)
+        .map(([detailKey,unit])=>({
+          detailKey,
+          unit,
+          raw:String(body.details?.[detailKey]||'').trim()
+        }))
+        .filter((item)=>item.raw!=='');
+      for(const item of vitalEntries){
+        const kind=item.detailKey==='heartRate'
+          ? 'heart_rate'
+          : item.detailKey==='respiratoryRate'
+            ? 'respiratory_rate'
+            : item.detailKey;
+        const metadata={
+          source:'veterinary-treatment-sheet',
+          sourceObservationId:row.id,
+          hospitalizationId:hospitalization.id,
+          treatmentSheetVersion:'1'
+        };
+        await tx.$queryRawUnsafe<any[]>(`
+          INSERT INTO public."CareMeasurement"
+            ("id","tenantId","patientId","encounterId","kind","value","unit","measuredAt","metadata")
+          VALUES
+            (gen_random_uuid()::text,$1,$2,$3,$4,$5,$6,$7::timestamptz,$8::jsonb)
+          RETURNING "id"
+        `,
+          tenantId,
+          hospitalization.patientId,
+          hospitalization.encounterId||null,
+          kind,
+          Number(item.raw),
+          item.unit,
+          performedAt||observedAt,
+          JSON.stringify(metadata)
+        );
+      }
+    }
+
     return {
       ...row,
       ...values,
