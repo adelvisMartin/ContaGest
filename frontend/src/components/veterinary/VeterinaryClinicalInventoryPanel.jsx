@@ -3,6 +3,7 @@ import {
   Alert, Box, Button, Chip, Divider, MenuItem, Paper, Stack, TextField, Typography
 } from '@mui/material';
 import { VeterinaryService } from '../../services/verticalService.js';
+import { reportVeterinaryError } from './veterinaryError.js';
 
 const rows=(value)=>Array.isArray(value)?value:value?.data||[];
 const exact=(value)=>String(value??'0');
@@ -51,12 +52,13 @@ export function VeterinaryClinicalInventoryPanel({selectedPatient,prescriptions=
       setConsumptions(rows(consumptionResponse));
       setPermissionBlocked(false);
     }catch(cause){
+      const message=reportVeterinaryError('clinicalInventory.refresh',cause,'No se pudo cargar el inventario clínico.');
       if(cause?.status===403){
         setPermissionBlocked(true);
         setInventory({products:[],lots:[]});
         setConsumptions([]);
       }else{
-        setError(cause?.message||'No se pudo cargar el inventario clínico.');
+        setError(message);
       }
     }finally{
       setLoading(false);
@@ -103,7 +105,9 @@ export function VeterinaryClinicalInventoryPanel({selectedPatient,prescriptions=
       setSuccess(result?.replayed?'El lote ya existía; no se duplicó la recepción.':'Lote registrado en el inventario canónico.');
       setLotForm({productId:'',lotNumber:'',expiresAt:'',receivedQuantity:'0',unitCost:'',notes:''});
       await refresh();
-    }catch(cause){setError(cause?.message||'No se pudo registrar el lote.');}
+    }catch(cause){
+      setError(reportVeterinaryError('clinicalInventory.createLot',cause,'No se pudo registrar el lote.'));
+    }
     finally{setLotSaving(false);}
   }
 
@@ -122,7 +126,9 @@ export function VeterinaryClinicalInventoryPanel({selectedPatient,prescriptions=
       setSuccess(result?.replayed?'El consumo ya había sido registrado; se devolvió el movimiento existente.':'Consumo clínico registrado como InventoryMovement de salida.');
       setConsumeForm({prescriptionId:'',lotId:'',quantity:'',note:'',clinicalActId:nextClinicalActId()});
       await refresh();
-    }catch(cause){setError(cause?.message||'No se pudo registrar el consumo clínico.');}
+    }catch(cause){
+      setError(reportVeterinaryError('clinicalInventory.consume',cause,'No se pudo registrar el consumo clínico.'));
+    }
     finally{setConsumeSaving(false);}
   }
 
