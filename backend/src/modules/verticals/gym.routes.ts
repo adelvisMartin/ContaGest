@@ -1005,6 +1005,18 @@ router.post('/gym/exercise-substitutions/suggest', requirePermission('gym.manage
     return;
   }
 
+  if(!String(source.muscleGroup||'').trim()){
+    ok(res,{
+      source,
+      humanReviewRequired:false,
+      healthAutomationBlocked:false,
+      limitationsApplied:false,
+      contextInsufficient:true,
+      suggestions:[]
+    });
+    return;
+  }
+
   const rows=await prisma.$queryRawUnsafe<any[]>(`
     SELECT "id","name","category","muscleGroup","equipment"
     FROM public."GymExercise"
