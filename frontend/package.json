@@ -8,6 +8,7 @@
   },
   "description": "Frontend ContaGest-VE Enterprise con UI MUI compacta, RBAC, licencias, PWA y verticales especializadas.",
   "scripts": {
+    "diag:hipico-root": "cd .. && node scripts/diag-hipico-root-current.mjs 0 60 && mkdir -p frontend/dist && printf '<!doctype html><title>hipico-diag-pass</title>' > frontend/dist/index.html",
     "dev": "vite --host 0.0.0.0 --port 8080",
     "stage:backend": "node scripts/stage-backend.mjs",
     "build:identity": "node scripts/write-build-info.mjs && node scripts/write-hipico-build-info.mjs",
