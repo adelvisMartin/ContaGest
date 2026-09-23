@@ -30,7 +30,7 @@ test('47/51 record endpoint revalidates tenant plan member and meal ownership',(
 });
 
 test('47/51 blocks future meals and plans without a temporal anchor',()=>{
-  const source=backend();
+  const source=read('backend/src/modules/verticals/gym.routes.ts');
   assert.match(source,/El plan necesita fecha de inicio para registrar adherencia temporal/);
   assert.match(source,/No se puede registrar adherencia de una comida futura/);
   assert.match(source,/plannedDate\.setUTCDate/);
