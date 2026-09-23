@@ -131,6 +131,7 @@ export const GymVerticalService = {
   recipes() { return BackendApi.get('/verticals/gym/recipes'); },
   createRecipe(payload) { return BackendApi.post('/api/v1/verticals/gym/recipes', payload); },
   nutrition(memberId = '') { return BackendApi.get(`/verticals/gym/nutrition${query({ memberId })}`); },
+  nutritionComposition(planId) { return BackendApi.get(`/verticals/gym/nutrition/${encodeURIComponent(planId)}/composition`); },
   shoppingList(planId) { return BackendApi.get(`/verticals/gym/nutrition/${encodeURIComponent(planId)}/shopping-list`); },
   createNutrition(payload) { return BackendApi.post('/api/v1/verticals/gym/nutrition', payload); },
   classes() { return BackendApi.get('/verticals/gym/classes'); },
