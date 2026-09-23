@@ -731,6 +731,22 @@ if(fitnessEntries.every((item)=>item.status==='MIGRATED')){
   const workoutBlock=gymRoutes.slice(workoutStart,workoutEnd);
   if(workoutStart<0||workoutEnd<0)fail('fitness: workout execution 40 route boundaries missing');
   if(/personalRecord|estimated1RM|e1RM|adherence|volumeBy|performanceChart/.test(workoutBlock))fail('fitness: workout execution 40 must not pre-implement history/performance 41');
+  const performancePanel=read('frontend/src/components/fitness/PerformanceHistoryPanel.jsx');
+  if((fitness.match(/<PerformanceHistoryPanel/g)||[]).length!==1)fail('fitness: PerformanceHistoryPanel must render from one owner');
+  if(/querySelector|addEventListener|innerHTML|document\./.test(performancePanel))fail('fitness: performance history 41 reintroduced imperative DOM lifecycle');
+  for(const contract of ['Aplicar período','PR carga','PR reps','e1RM','Volumen por día','Volumen por grupo muscular','Gráfica']){
+    if(!performancePanel.includes(contract))fail(`fitness: performance history 41 UI missing ${contract}`);
+  }
+  for(const contract of ['performanceQuerySchema','/gym/performance','sessionsPerWeek','setAdherencePct','bestEstimated1RmKg','dailyTrend','byExercise','byMuscleGroup']){
+    if(!gymRoutes.includes(contract))fail(`fitness: performance history 41 backend missing ${contract}`);
+  }
+  if(!gymRoutes.includes('reps>=1&&reps<=12')||!gymRoutes.includes('load*(1+reps/30)'))fail('fitness: performance history 41 e1RM applicability/formula contract missing');
+  const performanceStart=gymRoutes.indexOf("router.get('/gym/performance'");
+  const performanceEnd=gymRoutes.indexOf("router.get('/gym/routines'",performanceStart);
+  const performanceBlock=gymRoutes.slice(performanceStart,performanceEnd);
+  if(performanceStart<0||performanceEnd<0)fail('fitness: performance history 41 route boundaries missing');
+  if(/INSERT INTO|UPDATE public|DELETE FROM/.test(performanceBlock))fail('fitness: performance history 41 must remain derived/read-only');
+  if(/substitute|replacementExercise|alternativeExercise/.test(performanceBlock))fail('fitness: performance history 41 must not pre-implement contextual substitutions 42');
 }
 
 const css=read('frontend/src/styles/erp-runtime.css');
