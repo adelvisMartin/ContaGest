@@ -51,3 +51,18 @@ test('34/51 Gym page composes one library owner and passes canonical catalog int
   assert.match(source,/catalog=\{exerciseLibrary\}/);
   assert.doesNotMatch(source,/fetch\(.+gym\/exercises/);
 });
+
+
+test('34/51 filtered library view does not replace the canonical active routine catalog',()=>{
+  const source=library();
+  assert.match(source,/syncCanonical/);
+  assert.match(source,/GymVerticalService\.exercises\(\{active:'true'\}\)/);
+  assert.match(source,/setCatalog\(rows\(response\)\)/);
+  assert.doesNotMatch(source,/function commit\(next\)[\s\S]*onItemsChange/);
+});
+
+test('34/51 create is race-safe and exercises are archived rather than deleted',()=>{
+  const source=backend();
+  assert.match(source,/ON CONFLICT \("tenantId","name"\) DO NOTHING/);
+  assert.doesNotMatch(source,/router\.delete\('\/gym\/exercises/);
+});
