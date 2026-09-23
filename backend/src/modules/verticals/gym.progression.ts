@@ -56,7 +56,10 @@ export const evaluateGymProgression = (input:GymProgressionEvaluationInput) => {
   const resetPct=Math.min(50,Math.max(1,Number(config.resetPct||10)));
   const effort=effortEvidence(input);
   const base={
+    engineVersion:'gym-progression-38-v1',
     strategy,
+    config:{...config},
+    evidence:{...input.performance},
     action:'hold' as 'hold'|'increase_load'|'increase_reps'|'target_percent_1rm'|'reset_load',
     current:{loadKg:currentLoad,reps:currentReps},
     next:{loadKg:currentLoad,reps:currentReps},
