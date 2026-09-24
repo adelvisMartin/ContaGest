@@ -25,6 +25,13 @@ test('50/51 canonical Cg primitives keep accessible component contracts',()=>{
   assert.match(source,/scope="col"/);
 });
 
+test('50/51 canonical TextField boundary normalizes removed MUI v9 props into slotProps',()=>{
+  const source=read('frontend/src/components/ui/cg/CgPrimitives.jsx');
+  for(const token of ['normalizeTextFieldSlots','mergeSlotProp','slotProps={normalizedSlotProps}','htmlInput','formHelperText']) assert.ok(source.includes(token),token);
+  assert.doesNotMatch(source,/<TextField[^>]*\binputProps=/);
+  assert.match(source,/sx=\{\{ gap: 2, justifyContent: 'space-between'/);
+});
+
 test('50/51 focus and reduced-motion remain globally owned by the visual system',()=>{
   const css=read('frontend/src/styles/contagest-visual-system-v12.css');
   assert.match(css,/:focus-visible\s*\{/);
