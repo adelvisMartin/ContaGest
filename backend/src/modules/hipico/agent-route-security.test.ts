@@ -46,3 +46,12 @@ test('agent evaluation API exposes evidence-only receipts and never direct monet
   assert.match(routes, /directEffectsApplied:\s*false/);
   assert.doesNotMatch(routes, /ledger|settlement|sendMessage|sendCloudText/);
 });
+
+
+test('external decision provider remains shadow evidence and cannot become an authorization primitive', () => {
+  assert.match(routes, /decisionProvider\.observe/);
+  assert.match(routes, /decisionProvider:\s*decisionProviderObservation/);
+  assert.match(routes, /canAct:\s*evaluation\.canAct/);
+  assert.doesNotMatch(routes, /canAct:\s*decisionProviderObservation/);
+  assert.doesNotMatch(routes, /riskPolicy:\s*decisionProviderObservation/);
+});
