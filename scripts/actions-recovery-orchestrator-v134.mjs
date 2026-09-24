@@ -33,6 +33,24 @@ function gh(args, { json = false } = {}) {
   }
 }
 
+function ghBytes(args) {
+  try {
+    const raw = execFileSync('gh', args, {
+      stdio: ['ignore', 'pipe', 'pipe'],
+      windowsHide: true,
+      env: process.env,
+      maxBuffer: 16 * 1024 * 1024,
+    });
+    return { ok: true, bytes: Buffer.isBuffer(raw) ? raw.length : Buffer.byteLength(String(raw || '')) };
+  } catch (error) {
+    return {
+      ok: false,
+      bytes: 0,
+      error: sanitize(error?.stderr || error?.message || 'GH_COMMAND_FAILED').slice(0, 1200),
+    };
+  }
+}
+
 function api(endpoint) {
   return gh(['api', endpoint], { json: true });
 }
@@ -80,6 +98,45 @@ async function waitForCompletion(runId) {
   throw new Error(`WORKFLOW_TIMEOUT:${runId}`);
 }
 
+function collectJobEvidence(runId) {
+  const payload = api(`repos/${repo}/actions/runs/${runId}/jobs?per_page=100`);
+  const jobs = Array.isArray(payload?.jobs) ? payload.jobs : [];
+
+  return jobs.map((job) => {
+    const steps = Array.isArray(job.steps) ? job.steps : [];
+    const runnerId = Number(job.runner_id || 0);
+    const runnerName = String(job.runner_name || '').trim();
+    const runnerAssigned = runnerId > 0 || Boolean(runnerName);
+    const completedStepCount = steps.filter((step) => step?.status === 'completed').length;
+    const logs = runnerAssigned && completedStepCount > 0
+      ? ghBytes(['api', `repos/${repo}/actions/jobs/${job.id}/logs`])
+      : { ok: false, bytes: 0, error: 'JOB_NOT_EXECUTED' };
+
+    return {
+      id: Number(job.id),
+      name: String(job.name || ''),
+      status: job.status || null,
+      conclusion: job.conclusion || null,
+      runnerId,
+      runnerName,
+      runnerAssigned,
+      stepCount: steps.length,
+      completedStepCount,
+      logsAvailable: Boolean(logs.ok && logs.bytes > 0),
+      logBytes: logs.ok ? logs.bytes : 0,
+      logError: logs.ok ? null : logs.error,
+    };
+  });
+}
+
+function hasRealExecutionEvidence(jobs) {
+  return jobs.some((job) =>
+    job.runnerAssigned &&
+    job.completedStepCount > 0 &&
+    job.logsAvailable
+  );
+}
+
 function writeReport(report) {
   const shaKey = /^[0-9a-f]{40}$/i.test(String(report.candidateSha || '')) ? report.candidateSha : 'unbound';
   const outDir = path.resolve('artifacts', 'qa', 'actions-recovery-v134', shaKey);
@@ -92,7 +149,7 @@ async function main() {
   const candidateSha = mainSha();
   const stateBefore = issueState();
   const report = {
-    schemaVersion: 1,
+    schemaVersion: 2,
     issue: issueNumber,
     repository: repo,
     candidateSha,
@@ -131,6 +188,14 @@ async function main() {
 
   for (const workflow of discovered) {
     const completed = await waitForCompletion(workflow.id);
+    const jobs = collectJobEvidence(workflow.id);
+    const executedEvidence = hasRealExecutionEvidence(jobs);
+    const verifiedExecution =
+      completed.status === 'completed' &&
+      completed.conclusion === 'success' &&
+      completed.head_sha === candidateSha &&
+      executedEvidence;
+
     report.workflows.push({
       file: workflow.file,
       label: workflow.label,
@@ -140,20 +205,26 @@ async function main() {
       status: completed.status || null,
       conclusion: completed.conclusion || null,
       attempt: completed.run_attempt || null,
+      executedEvidence,
+      verifiedExecution,
+      jobs,
     });
   }
 
-  const allPass = report.workflows.length === workflows.length && report.workflows.every((entry) =>
-    entry.status === 'completed' && entry.conclusion === 'success' && entry.headSha === candidateSha
-  );
+  const allPass =
+    report.workflows.length === workflows.length &&
+    report.workflows.every((entry) => entry.verifiedExecution);
 
   report.verdict = allPass ? 'PASS' : 'FAIL';
 
   if (allPass && closeIssue) {
-    const evidence = report.workflows.map((entry) => `- ${entry.label}: ${entry.url}`).join('\n');
+    const evidence = report.workflows.map((entry) => {
+      const executedJobs = entry.jobs.filter((job) => job.runnerAssigned && job.completedStepCount > 0 && job.logsAvailable).length;
+      return `- ${entry.label}: ${entry.url} · executedJobs=${executedJobs}`;
+    }).join('\n');
     gh([
       'issue', 'close', String(issueNumber), '--repo', repo, '--reason', 'completed', '--comment',
-      `Recuperación verificada sobre main@${candidateSha}. Un GitHub-hosted runner ejecutó este orquestador y los workflows requeridos terminaron realmente en success:\n${evidence}\n\n#134 se cierra por evidencia ejecutada, no por omitir checks.`,
+      `Recuperación verificada sobre main@${candidateSha}. Los workflows requeridos terminaron en success y además tienen evidencia job-level de runner asignado, steps ejecutados y logs disponibles:\n${evidence}\n\n#134 se cierra por evidencia ejecutada, no por omitir checks.`,
     ]);
     report.issueClosed = true;
   }
@@ -165,7 +236,7 @@ async function main() {
 
 main().catch((error) => {
   const fallback = {
-    schemaVersion: 1,
+    schemaVersion: 2,
     issue: issueNumber,
     repository: repo,
     candidateSha: null,
