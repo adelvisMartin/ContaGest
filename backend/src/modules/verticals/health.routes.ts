@@ -78,10 +78,10 @@ const appointmentPatchSchema = z.object({
 }).strict().refine((value)=>Object.keys(value).length>0,{message:'Indica al menos un cambio.'});
 
 const ACTIVE_APPOINTMENT_STATUSES=['scheduled','confirmed','checked_in','in_progress'] as const;
-const lockAppointmentSchedule = async (tx:any, tenantId:string) => {
+const lockAppointmentSchedule = async (tx:VerticalTransaction, tenantId:string) => {
   await tx.$queryRawUnsafe('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',`care-appointment:${tenantId}`);
 };
-const assertAppointmentSlotAvailable = async (tx:any, input:{
+const assertAppointmentSlotAvailable = async (tx:VerticalTransaction, input:{
   tenantId:string; appointmentId?:string; patientId:string; professionalId?:string|null;
   startsAt:string; endsAt:string; room?:string|null;
 }) => {
