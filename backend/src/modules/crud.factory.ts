@@ -1,13 +1,13 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import { prisma } from '../database/prisma.js';
+import type { PrismaClient } from '@prisma/client';
 import { asyncHandler, HttpError, ok } from '../shared/http.js';
 import { requirePermission, requireTenant } from '../shared/middleware/context.js';
 import { validateBody } from '../shared/middleware/validate.js';
 import { writeAudit } from '../shared/services/audit.service.js';
 
 type CrudOptions = {
-  model: keyof typeof prisma;
+  model: keyof PrismaClient;
   entity: string;
   permission: string;
   schema: z.ZodTypeAny;
