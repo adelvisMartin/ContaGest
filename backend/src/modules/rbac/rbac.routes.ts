@@ -5,6 +5,7 @@ import { prisma } from '../../database/prisma.js';
 import { asyncHandler, HttpError, ok } from '../../shared/http.js';
 import { requireTenant, requirePermission } from '../../shared/middleware/context.js';
 import { ACCESS_MANIFEST, ROUTE_PERMISSION_MAP } from '../../shared/contracts/accessManifest.js';
+import { ROLE_ACCESS_PROFILES } from '../../shared/contracts/roleAccessProfiles.js';
 
 const router = Router();
 router.use(requireTenant, requirePermission('admin.manage'));
@@ -33,21 +34,16 @@ async function assertRoleIsTenantManaged(roleId: string) {
   if (platformPermissions) throw new HttpError(403, 'Los roles de plataforma no pueden modificarse desde la administración RBAC de una empresa.');
 }
 
-const ROLE_BLUEPRINTS = [
-  { name: 'Administrador', description: 'Control total del sistema dentro de la empresa.', system: true, permissions: MODULE_PERMISSIONS.map(([key]) => key) },
-  { name: 'Contador', description: 'Fiscal, contabilidad, compras, ventas y reportes.', system: true, permissions: ['dashboard.view','clients.manage','sales.view','purchases.manage','accounting.manage','banking.manage','taxes.export','reports.view','audit.view'] },
-  { name: 'Vendedor / Caja', description: 'Clientes, cotizaciones, ventas, pedidos y comunicación comercial.', system: true, permissions: ['dashboard.view','clients.manage','sales.manage','sales.view','orders.manage','orders.view','communications.manage'] },
-  { name: 'Inventario', description: 'Stock, kardex, productos y reportes.', system: true, permissions: ['dashboard.view','inventory.manage','reports.view'] },
-  { name: 'RRHH', description: 'Gestión de nómina y empleados.', system: true, permissions: ['dashboard.view','payroll.manage','reports.view'] },
-  { name: 'Clínica / Consultorio', description: 'Pacientes, agenda, atención, facturación y comunicaciones sin RRHH por defecto.', system: true, permissions: ['dashboard.view','clients.manage','sales.manage','sales.view','health.manage','banking.manage','reports.view','communications.manage'] },
-  { name: 'Clínica veterinaria', description: 'Pacientes veterinarios, tutores, agenda, inventario, compras y facturación.', system: true, permissions: ['dashboard.view','clients.manage','sales.manage','sales.view','health.manage','inventory.manage','purchases.manage','banking.manage','reports.view','communications.manage'] },
-  { name: 'Psicología / Consultorio', description: 'Pacientes, agenda, confirmaciones, cobranza y reportes del consultorio.', system: true, permissions: ['dashboard.view','clients.manage','sales.manage','sales.view','health.manage','banking.manage','reports.view','communications.manage'] },
-  { name: 'Odontología / Consultorio dental', description: 'Pacientes, odontograma, tratamientos, citas, presupuestos, seguimiento y cobranza.', system: true, permissions: ['dashboard.view','clients.manage','sales.manage','sales.view','health.manage','banking.manage','reports.view','communications.manage'] },
-  { name: 'Gimnasio / Fitness', description: 'Socios, membresías, asistencia, rutinas, nutrición y cobranza.', system: true, permissions: ['dashboard.view','clients.manage','sales.manage','sales.view','gym.manage','inventory.manage','banking.manage','reports.view','communications.manage'] },
-  { name: 'Demo limitado', description: 'Acceso comercial con permisos recortados y vencimiento.', system: false, permissions: ['dashboard.view','clients.manage','sales.view','orders.view','reports.view'] }
-];
+const ROLE_BLUEPRINTS = ROLE_ACCESS_PROFILES
+  .filter((profile)=>Boolean(profile.backend))
+  .map((profile)=>({
+    name:profile.backend!.name,
+    description:profile.backend!.description,
+    system:profile.backend!.system,
+    permissions:profile.routePermissions.filter((key)=>TENANT_PERMISSION_KEYS.has(key as any))
+  }));
 
-const USERS = [
+const USERS= [
   { email:'admin@empresa.com', fullName:'Admin Principal', role:'Administrador' },
   { email:'contador@empresa.com', fullName:'María Contador', role:'Contador' },
   { email:'ventas@empresa.com', fullName:'Carlos Ventas', role:'Vendedor / Caja' },
