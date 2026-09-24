@@ -1,8 +1,9 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import test from 'node:test';
+import { gymBackendSource } from '../qa/support/vertical-authority-sources.mjs';
 
-const backend=()=>fs.readFileSync('backend/src/modules/verticals/gym.routes.ts','utf8');
+const backend=()=>gymBackendSource();
 const page=()=>fs.readFileSync('frontend/src/pages/GymManagementPage.jsx','utf8');
 const modes=()=>fs.readFileSync('frontend/src/data/fitnessTrainingModes.js','utf8');
 const migration=()=>fs.readFileSync('backend/prisma/migrations/20260923161500_gym_training_mode_36_51/migration.sql','utf8');

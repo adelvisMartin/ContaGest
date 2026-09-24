@@ -30,6 +30,6 @@ test('superseded concurrent PRs are not restored as implementation authorities',
 });
 
 test('Clean Code batch 1 is explicitly traceable to affected vertical implementations',()=>{
-  const reviewed=rows.filter((row)=>row.reviewStatus==='CLEAN_CODE_BATCH_1').map((row)=>row.id);
+  const reviewed=rows.filter((row)=>row.reviewBatches?.includes('CLEAN_CODE_BATCH_1')).map((row)=>row.id);
   assert.deepEqual(reviewed,[26,27,28,29,30,31,32,37,38,39,40]);
 });

@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import test from 'node:test';
+import { gymBackendSource } from '../qa/support/vertical-authority-sources.mjs';
 
 const read=(path)=>fs.readFileSync(path,'utf8');
 
@@ -14,19 +15,19 @@ test('44/51 persists week-safe 7/14/28-day plans, recipes and alternatives',()=>
 });
 
 test('44/51 backend validates horizons, exclusive meal authorities and tenant-owned recipes',()=>{
-  const source=read('backend/src/modules/verticals/gym.routes.ts');
+  const source=gymBackendSource();
   for(const token of ['recipeSchema','completeNutritionSchema','meal.dayIndex>Number(value.durationDays)','Cada comida debe pertenecer al horizonte configurado del plan.','Una comida con receta principal no puede mezclar ingredientes directos.','Las recetas del plan deben estar activas y pertenecer al tenant.']) assert.ok(source.includes(token),token);
   assert.match(source,/ORDER BY m\."dayIndex" NULLS LAST,m\."sortOrder",m\."dayOfWeek" NULLS LAST/);
   assert.match(source,/prisma\.\$transaction/);
 });
 
 test('44/51 recipe writes validate tenant ingredients atomically',()=>{
-  const source=read('backend/src/modules/verticals/gym.routes.ts');
+  const source=gymBackendSource();
   for(const token of ["router.get('/gym/recipes'","router.post('/gym/recipes'",'GymRecipeItem','pg_advisory_xact_lock','Los ingredientes de la receta deben estar activos y pertenecer al tenant.']) assert.ok(source.includes(token),token);
 });
 
 test('44/51 shopping list is read-only and excludes alternatives from purchasing totals',()=>{
-  const source=read('backend/src/modules/verticals/gym.routes.ts');
+  const source=gymBackendSource();
   const start=source.indexOf("router.get('/gym/nutrition/:id/shopping-list'");
   const end=source.indexOf("router.get('/gym/adherence'",start);
   const block=source.slice(start,end);

@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { ERP_UI_WAVE_A_2_51, ERP_UI_MIGRATION_STATUSES } from '../qa/support/erp-ui-wave-a-v251.mjs';
 import { PAGE_REGISTRY } from '../frontend/src/data/pageRegistry.js';
+import { gymBackendSource, healthBackendSource, veterinaryBackendSource, veterinaryWorkspaceSource } from '../qa/support/vertical-authority-sources.mjs';
 
 const root=process.cwd();
 const fail=(message)=>{console.error(`[erp-ui-wave-a][FAIL] ${message}`);process.exitCode=1;};
@@ -57,7 +58,7 @@ if(vetEntry?.status==='MIGRATED'){
   if(/VeterinaryClinicLegacy|\.render\(state,ctx\)|\.mount\(state,ctx\)/.test(vet))fail('veterinaria: migrated route reintroduced legacy lifecycle composition');
   if((vet.match(/createRoot\(/g)||[]).length!==1)fail('veterinaria: migrated route must own exactly one React root');
   if(!/import \{ VeterinaryWorkspace \} from '\.\.\/components\/veterinary\/VeterinaryWorkspace\.jsx'/.test(vet))fail('veterinaria: migrated route must compose the rootless VeterinaryWorkspace component');
-  const veterinaryWorkspace=read('frontend/src/components/veterinary/VeterinaryWorkspace.jsx');
+  const veterinaryWorkspace=veterinaryWorkspaceSource();
   if(/createRoot\(|CgProvider|export const VeterinaryClinicPage|veterinaryClinicRoot/.test(veterinaryWorkspace))fail('veterinaria: VeterinaryWorkspace must remain rootless and provider-free');
   if(!/export function VeterinaryWorkspace/.test(veterinaryWorkspace))fail('veterinaria: rootless VeterinaryWorkspace export missing');
   if(fs.existsSync(path.join(root,'frontend/src/pages/VeterinaryClinicPage.jsx')))fail('veterinaria: superseded second page owner still exists');
@@ -101,7 +102,7 @@ if(vetEntry?.status==='MIGRATED'){
     if(!veterinaryLongitudinal.includes(contract))fail(`veterinaria: missing retry-safe longitudinal vital contract ${contract}`);
   }
   if(veterinaryLongitudinal.includes('HealthVerticalService.createMeasurement('))fail('veterinaria: longitudinal vital UI must not reintroduce partial per-measurement writes');
-  const healthRoutes=read('backend/src/modules/verticals/health.routes.ts');
+  const healthRoutes=healthBackendSource();
   for(const contract of [
     'veterinaryVitalBatchSchema',
     "router.post('/health/measurements/veterinary-vitals'",
@@ -139,7 +140,7 @@ if(vetEntry?.status==='MIGRATED'){
     if(!veterinaryWorkspace.includes(contract))fail(`veterinaria: missing complete lab UI contract ${contract}`);
   }
   if(/label="Bandera"|name="flag"|verifiedBy:field/.test(veterinaryWorkspace))fail('veterinaria: client must not override laboratory flag/verifier authority');
-  const veterinaryRoutes=read('backend/src/modules/verticals/veterinary.routes.ts');
+  const veterinaryRoutes=veterinaryBackendSource();
   const veterinarySchemas=read('backend/src/modules/verticals/veterinary.schemas.ts');
   const veterinaryBackend=`${veterinaryRoutes}\n${veterinarySchemas}`;
   for(const contract of [
@@ -429,7 +430,7 @@ if(dentistryEntry?.status==='MIGRATED'){
     if(!dentistry.includes(contract))fail(`odontologia: missing versioned history contract ${contract}`);
   }
   const lifecycleActions=read('frontend/src/components/dentistry/DentalLifecycleActions.jsx');
-  const healthRoutes=read('backend/src/modules/verticals/health.routes.ts');
+  const healthRoutes=healthBackendSource();
   const lifecycleMigration=read('backend/prisma/migrations/20260921122000_dental_encounter_lifecycle_v1851/migration.sql');
   if(!dentistry.includes('DentalLifecycleActions'))fail('odontologia: clinical lifecycle actions are not composed');
   if((dentistry.match(/<DentalLifecycleActions/g)||[]).length!==1)fail('odontologia: clinical lifecycle actions must render from one owner');
@@ -615,7 +616,7 @@ if(fitnessEntries.every((item)=>item.status==='MIGRATED')){
   const routineSubmit=fitness.slice(fitness.indexOf('const submitRoutine'),fitness.indexOf('const submitNutrition'));
   if(/exerciseLines|split\('\\n'\)|split\('\|'\)/.test(routineSubmit))fail('fitness: structured routine submit reintroduced free-text parsing');
   if(!routineSubmit.includes('const exercises=routineForm.exercises.map')||!routineSubmit.includes('GymVerticalService.createRoutine('))fail('fitness: routine builder must sanitize and persist through canonical GymVerticalService');
-  const gymRoutes=read('backend/src/modules/verticals/gym.routes.ts');
+  const gymRoutes=gymBackendSource();
   const gymSchemas=read('backend/src/modules/verticals/gym.schemas.ts');
   const gymBackend=`${gymRoutes}\n${gymSchemas}`;
   const routineRoute=gymRoutes.slice(gymRoutes.indexOf("router.post('/gym/routines'"),gymRoutes.indexOf("router.get('/gym/nutrition'"));

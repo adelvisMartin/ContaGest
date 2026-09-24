@@ -1,8 +1,9 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import test from 'node:test';
+import { healthBackendSource, veterinaryBackendSource, veterinaryWorkspaceSource } from '../qa/support/vertical-authority-sources.mjs';
 
-const health=()=>fs.readFileSync('backend/src/modules/verticals/health.routes.ts','utf8');
+const health=()=>healthBackendSource();
 const service=()=>fs.readFileSync('frontend/src/services/verticalService.js','utf8');
 const page=()=>fs.readFileSync('frontend/src/pages/VeterinaryClinicPageV1123.jsx','utf8');
 const panel=()=>fs.readFileSync('frontend/src/components/veterinary/VeterinaryPreventiveCarePanel.jsx','utf8');

@@ -1,11 +1,12 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import test from 'node:test';
+import { veterinaryBackendSource, veterinaryWorkspaceSource } from '../qa/support/vertical-authority-sources.mjs';
 
-const routes=()=>fs.readFileSync('backend/src/modules/verticals/veterinary.routes.ts','utf8');
+const routes=()=>veterinaryBackendSource();
 const sales=()=>fs.readFileSync('backend/src/modules/sales/sales.routes.ts','utf8');
 const service=()=>fs.readFileSync('frontend/src/services/verticalService.js','utf8');
-const workspace=()=>fs.readFileSync('frontend/src/components/veterinary/VeterinaryWorkspace.jsx','utf8');
+const workspace=()=>veterinaryWorkspaceSource();
 const panel=()=>fs.readFileSync('frontend/src/components/veterinary/VeterinaryFinancialPanel.jsx','utf8');
 const migration=()=>fs.readFileSync('backend/prisma/migrations/20260922224500_veterinary_financial_flow_v3051/migration.sql','utf8');
 

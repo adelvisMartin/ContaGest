@@ -373,7 +373,7 @@ router.post('/movements', validateBody(movementSchema), asyncHandler(async (req,
     tenantId: ctx.tenantId,
     scope: 'banking.movements.create',
     key: idempotencyKey(req),
-    request: input,
+    request: { ...input, amount: serializeDecimal(input.amount, 2) },
     requestId: requestId(req),
     replay: async (tx, record) => {
       if (!record.resourceId) throw new HttpError(409, 'El resultado original del movimiento no tiene recurso asociado.', { code: 'IDEMPOTENCY_RESULT_UNAVAILABLE', scope: 'banking.movements.create' });
@@ -471,7 +471,7 @@ router.post('/movements/:id/correct', validateBody(correctionSchema), asyncHandl
     tenantId: ctx.tenantId,
     scope: 'banking.movements.correct',
     key: idempotencyKey(req),
-    request: { movementId: req.params.id, ...input },
+    request: { movementId: req.params.id, ...input, amount: serializeDecimal(input.amount, 2) },
     requestId: requestId(req),
     replay: async (tx, record) => {
       if (!record.resourceId) throw new HttpError(409, 'La corrección original no puede reconstruirse.', { code: 'IDEMPOTENCY_RESULT_UNAVAILABLE' });

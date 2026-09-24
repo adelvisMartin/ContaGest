@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import test from 'node:test';
+import { veterinaryBackendSource, veterinaryWorkspaceSource } from '../qa/support/vertical-authority-sources.mjs';
 
 const read=(path)=>fs.readFileSync(path,'utf8');
 
@@ -12,7 +13,7 @@ test('27/51 DB contract admits immutable treatment-sheet task events',()=>{
 });
 
 test('27/51 backend validates structured treatment-sheet entries and server provenance',()=>{
-  const source=read('backend/src/modules/verticals/veterinary.routes.ts');
+  const source=veterinaryBackendSource();
   for(const token of ['treatmentSheetEntrySchema','medication','feeding','fluid','task','observation','scheduled','completed','skipped','cancelled','scheduledAt','performedAt','responsibleProfessionalId'])assert.ok(source.includes(token),token);
   assert.match(source,/actorUserId:ctx\(req\)\.userId\|\|null/);
   assert.match(source,/actorEmail:ctx\(req\)\.email\|\|null/);
@@ -20,7 +21,7 @@ test('27/51 backend validates structured treatment-sheet entries and server prov
 });
 
 test('27/51 treatment sheet is tenant scoped and append-only',()=>{
-  const source=read('backend/src/modules/verticals/veterinary.routes.ts');
+  const source=veterinaryBackendSource();
   assert.match(source,/router\.get\('\/hospitalizations\/:id\/treatment-sheet'/);
   assert.match(source,/router\.post\('\/hospitalizations\/:id\/treatment-sheet'/);
   assert.match(source,/CareHospitalization"[\s\S]*?"tenantId"=\$1/);
@@ -30,7 +31,7 @@ test('27/51 treatment sheet is tenant scoped and append-only',()=>{
 });
 
 test('27/51 hospitalization and observation references reject cross-tenant professionals and encounters',()=>{
-  const source=read('backend/src/modules/verticals/veterinary.routes.ts');
+  const source=veterinaryBackendSource();
   assert.match(source,/El profesional no pertenece al tenant activo/);
   assert.match(source,/El encuentro no pertenece a la mascota hospitalizada|El encuentro no pertenece a la mascota activa/);
   assert.match(source,/CareProfessional" pr ON pr\."id"=o\."professionalId" AND pr\."tenantId"=o\."tenantId"/);
@@ -49,7 +50,7 @@ test('27/51 Treatment Sheet UI covers medications observations feeding fluids ta
 });
 
 test('27/51 veterinary workspace composes exactly one treatment sheet',()=>{
-  const source=read('frontend/src/components/veterinary/VeterinaryWorkspace.jsx');
+  const source=veterinaryWorkspaceSource();
   assert.equal((source.match(/<VeterinaryTreatmentSheet/g)||[]).length,1);
   assert.equal((source.match(/import \{ VeterinaryTreatmentSheet \}/g)||[]).length,1);
 });

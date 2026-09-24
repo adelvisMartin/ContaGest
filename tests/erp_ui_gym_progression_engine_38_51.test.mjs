@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import test from 'node:test';
+import { gymBackendSource } from '../qa/support/vertical-authority-sources.mjs';
 
 const read=(path)=>fs.readFileSync(path,'utf8');
 
@@ -13,7 +14,7 @@ test('38/51 defines explicit progression strategies on routine exercises',()=>{
 });
 
 test('38/51 backend validates RIR RPE double progression and percent 1RM config',()=>{
-  const routes=read('backend/src/modules/verticals/gym.routes.ts');
+  const routes=gymBackendSource();
   const domain=read('backend/src/modules/verticals/gym.progression.ts');
   for(const token of ['progressionStrategySchema','progressionConfigSchema','targetRir','targetRpe','repRangeMin','repRangeMax','oneRepMaxKg','percent1Rm','stallAfter','resetPct']) assert.ok(routes.includes(token),token);
   for(const token of ['gymProgressionConfigIssues','isRirRpePairCoherent','RPE y RIR no son coherentes','La doble progresión requiere un rango de repeticiones','La progresión por %1RM requiere 1RM y porcentaje']) assert.ok(domain.includes(token),token);
@@ -29,7 +30,7 @@ test('38/51 deterministic engine recommends without mutating the routine',()=>{
 });
 
 test('38/51 exposes evaluation endpoint and preserves explicit non-applied semantics',()=>{
-  const routes=read('backend/src/modules/verticals/gym.routes.ts');
+  const routes=gymBackendSource();
   assert.match(routes,/router\.post\('\/gym\/progression\/evaluate'/);
   assert.match(routes,/evaluateGymProgression\(/);
   const service=read('frontend/src/services/verticalService.js');
