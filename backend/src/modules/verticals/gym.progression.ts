@@ -29,6 +29,44 @@ export type GymProgressionEvaluationInput = {
   };
 };
 
+export type GymProgressionConfigIssue = {
+  field: keyof GymProgressionConfig;
+  message: string;
+};
+
+export const isRirRpePairCoherent = (rir?: number | null, rpe?: number | null) =>
+  rir == null || rpe == null || Math.abs((10 - Number(rir)) - Number(rpe)) <= 0.5;
+
+export function gymProgressionConfigIssues(
+  strategy: GymProgressionStrategy,
+  config: GymProgressionConfig = {}
+): GymProgressionConfigIssue[] {
+  const issues: GymProgressionConfigIssue[] = [];
+
+  if (!isRirRpePairCoherent(config.targetRir, config.targetRpe)) {
+    issues.push({ field:'targetRpe', message:'RPE y RIR no son coherentes entre sí.' });
+  }
+
+  if (strategy === 'linear_load' && !config.loadIncrementKg) {
+    issues.push({ field:'loadIncrementKg', message:'La progresión lineal requiere un incremento de carga.' });
+  }
+
+  if (strategy === 'double_progression') {
+    if (!config.repRangeMin || !config.repRangeMax || Number(config.repRangeMin) > Number(config.repRangeMax)) {
+      issues.push({ field:'repRangeMax', message:'La doble progresión requiere un rango de repeticiones válido.' });
+    }
+    if (!config.loadIncrementKg) {
+      issues.push({ field:'loadIncrementKg', message:'La doble progresión requiere un incremento de carga.' });
+    }
+  }
+
+  if (strategy === 'percent_1rm' && (!config.oneRepMaxKg || !config.percent1Rm)) {
+    issues.push({ field:'percent1Rm', message:'La progresión por %1RM requiere 1RM y porcentaje.' });
+  }
+
+  return issues;
+}
+
 const roundToIncrement = (value:number, increment:number) => {
   const safeIncrement=Number.isFinite(increment)&&increment>0?increment:0.25;
   return Number((Math.round(value/safeIncrement)*safeIncrement).toFixed(3));
