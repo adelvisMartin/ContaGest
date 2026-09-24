@@ -1,0 +1,52 @@
+name: Prisma baseline recovery audit
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'backend/prisma/baseline/initial-v11.prisma'
+      - '.github/workflows/prisma-baseline-recovery.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  generate-baseline:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Node 22
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install locked dependencies
+        run: npm ci --ignore-scripts --no-audit --no-fund
+
+      - name: Generate historical baseline SQL
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/qa/prisma-baseline
+          npx prisma migrate diff \
+            --from-empty \
+            --to-schema backend/prisma/baseline/initial-v11.prisma \
+            --script \
+            --output artifacts/qa/prisma-baseline/migration.sql
+          test -s artifacts/qa/prisma-baseline/migration.sql
+          sha256sum artifacts/qa/prisma-baseline/migration.sql > artifacts/qa/prisma-baseline/SHA256SUMS.txt
+
+      - name: Upload generated baseline for review
+        uses: actions/upload-artifact@v7
+        with:
+          name: prisma-baseline-${{ github.event.pull_request.head.sha || github.sha }}
+          path: artifacts/qa/prisma-baseline
+          if-no-files-found: error
+          retention-days: 7
