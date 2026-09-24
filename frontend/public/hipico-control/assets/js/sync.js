@@ -44,6 +44,39 @@ function rawChatImports(value) {
     if (!Array.isArray(value)) return [];
     return structuredClone(value).map((entry) => String(entry || "").trim()).filter(Boolean);
 }
+function canonicalGroups(config = {}) {
+    if (Array.isArray(config.groups) && config.groups.length) return config.groups;
+    return Array.isArray(config.whatsappGroups) ? config.whatsappGroups : [];
+}
+function mergeGroupRegistry(olderConfig = {}, newestConfig = {}) {
+    const result = new Map();
+    for (const group of [...canonicalGroups(olderConfig), ...canonicalGroups(newestConfig)]) {
+        const id = String(group?.id || "").trim();
+        if (!id) continue;
+        result.set(id, { ...(result.get(id) || {}), ...structuredClone(group) });
+    }
+    return [...result.values()];
+}
+function configValidationView(workspace) {
+    const copy = structuredClone(workspace);
+    copy.participants = [];
+    copy.days = [];
+    copy.races = [];
+    copy.advancedBets = [];
+    copy.movements = [];
+    copy.exchangeRates = [];
+    copy.weekClosures = [];
+    copy.pollas = [];
+    copy.audit = [];
+    copy.syncQueue = [];
+    copy.activeRaceId = null;
+    return copy;
+}
+function withGroupRegistry(workspace, groups) {
+    const copy = structuredClone(workspace);
+    copy.config = { ...(copy.config || {}), groups: structuredClone(groups), whatsappGroups: structuredClone(groups) };
+    return copy;
+}
 export function mergeChatImports(localRows = [], remoteRows = []) {
     return [...new Set([...rawChatImports(remoteRows), ...rawChatImports(localRows)])];
 }
@@ -87,15 +120,19 @@ export function mergeWorkspaces(localWorkspace, remoteWorkspace) {
         assertWorkspaceInputSafety(remoteWorkspace);
         return markWorkspaceSynced(remoteWorkspace, { version: remoteWorkspace.version });
     }
-    assertWorkspaceInputSafety(localWorkspace);
-    assertWorkspaceInputSafety(remoteWorkspace);
+    assertWorkspaceInputSafety(configValidationView(localWorkspace));
+    assertWorkspaceInputSafety(configValidationView(remoteWorkspace));
     const localNewer = recordTime(localWorkspace) >= recordTime(remoteWorkspace);
     const newest = localNewer ? localWorkspace : remoteWorkspace;
     const older = localNewer ? remoteWorkspace : localWorkspace;
+    const groups = mergeGroupRegistry(older.config, newest.config);
+    assertWorkspaceInputSafety(withGroupRegistry(localWorkspace, groups));
+    assertWorkspaceInputSafety(withGroupRegistry(remoteWorkspace, groups));
+    const mergedConfig = { ...(older.config || {}), ...(newest.config || {}), groups, whatsappGroups: groups };
     const merged = {
         ...structuredClone(older),
         ...structuredClone(newest),
-        config: { ...(older.config || {}), ...(newest.config || {}) },
+        config: mergedConfig,
         participants: mergeById(localWorkspace.participants, remoteWorkspace.participants),
         days: mergeById(localWorkspace.days, remoteWorkspace.days),
         races: mergeById(localWorkspace.races, remoteWorkspace.races, mergeRace),
@@ -123,4 +160,4 @@ export function shouldMergeCloud(localWorkspace, cloudRow) {
     return remoteVersion > lastSyncedVersion;
 }
 
-export const __test__ = { scopedRecordKey };
+export const __test__ = { scopedRecordKey, mergeGroupRegistry };
