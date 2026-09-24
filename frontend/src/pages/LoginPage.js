@@ -100,14 +100,18 @@ export const LoginPage={
       }finally{box?.classList.remove('is-loading');box?.setAttribute('aria-busy','false');refresh?.removeAttribute('disabled');}
     };
     const setSessionState=(session)=>{
-      const licenseMode=session.license?.businessSector;
-      Store.set({pendingMfa:null,route:'dashboard',profile:{name:session.user?.fullName||session.user?.name||'Usuario',email:session.user?.email||'',role:session.user?.role||'client',permissions:Array.isArray(session.user?.permissions)?session.user.permissions:[],branch:session.tenant?.name||'Empresa',plan:session.license?.plan||session.tenant?.plan||'Enterprise',avatarDataUrl:Store.get().profile?.avatarDataUrl||''},activeLicense:session.license||null,settings:{...Store.get().settings,companyName:session.tenant?.name||Store.get().settings.companyName,companyRif:session.tenant?.rif||Store.get().settings.companyRif,...(licenseMode?{businessMode:licenseMode}:{})}});
+      const experience=session.experienceProfile||null;
+      const licenseMode=experience?.mode||session.license?.businessSector;
+      const landing=experience?.landingRoute||'dashboard';
+      Store.set({pendingMfa:null,route:landing,profile:{name:session.user?.fullName||session.user?.name||'Usuario',email:session.user?.email||'',role:session.user?.role||'client',permissions:Array.isArray(session.user?.permissions)?session.user.permissions:[],branch:session.tenant?.name||'Empresa',plan:session.license?.plan||session.tenant?.plan||'Enterprise',avatarDataUrl:Store.get().profile?.avatarDataUrl||''},activeLicense:session.license||null,experienceProfile:experience,settings:{...Store.get().settings,companyName:session.tenant?.name||Store.get().settings.companyName,companyRif:session.tenant?.rif||Store.get().settings.companyRif,...(licenseMode?{businessMode:licenseMode}:{})}});
     };
     const finish=async(session)=>{
       setSessionState(session);Toast.show(session.license?'Licencia y seguridad verificadas.':'Sesión segura iniciada.','success');
       await SupabaseSyncService?.syncCore?.({Store,Toast,force:true,silent:true});
       const requested=sessionStorage.getItem('cg_post_login_route');sessionStorage.removeItem('cg_post_login_route');
-      const target=requested&&requested!=='login'&&AccessControlService.canAccessRoute(Store.get(),requested)?requested:'dashboard';navigate(target);
+      const landing=session.experienceProfile?.landingRoute||'dashboard';
+      const target=requested&&requested!=='login'&&AccessControlService.canAccessRoute(Store.get(),requested)?requested:landing;
+      navigate(AccessControlService.canAccessRoute(Store.get(),target)?target:'dashboard');
     };
     const loginForm=document.getElementById('loginForm');setCaptchaReady(loginForm,false);loadCaptcha(loginForm);
     document.getElementById('btnOpenLegalPolicies')?.addEventListener('click',async()=>{const button=document.getElementById('btnOpenLegalPolicies');button?.setAttribute('disabled','disabled');try{const catalog=await LegalService.publicCatalog();document.querySelector('[data-public-legal-dialog]')?.remove();document.body.insertAdjacentHTML('beforeend',publicLegalDialog(catalog));const dialog=document.querySelector('[data-public-legal-dialog]');const close=()=>dialog?.remove();document.getElementById('btnClosePublicLegal')?.addEventListener('click',close);dialog?.addEventListener('click',(event)=>{if(event.target===dialog)close();});document.getElementById('btnClosePublicLegal')?.focus();}catch(error){Toast.show(error.message||'No se pudieron consultar las políticas vigentes.','error');}finally{button?.removeAttribute('disabled');}});
