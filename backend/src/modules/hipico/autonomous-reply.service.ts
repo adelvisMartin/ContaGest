@@ -2,12 +2,17 @@ import { createDefaultHipicoAgentEngine } from './agent-engine.js';
 import { safeToolRequest } from './agent-tools.js';
 import { AutomationStore } from './automation.store.js';
 import {
-  canonicalIntentToJevClass,
   decisionProviderReadiness,
   type DecisionProviderReadiness
 } from './decision-provider-metrics.js';
 import type { DecisionProviderObservation } from './decision-provider.js';
 import { createHipicoDecisionProvider, type JevShadowDecision } from './jev-decision-provider.js';
+import {
+  providerRequiresSafetyDowngrade,
+  safeConversationalIntent,
+  safeQueryIntent,
+  sourceAutoReplyEnabled
+} from './autonomous-reply.policy.js';
 import { RaceQueryService, formatRaceQueryResponse } from './race-query.service.js';
 import { decideRiskPolicy, type RiskPolicyDecision } from './risk-policy.js';
 import type { SafeResponsePlan } from '../hipico-bot/hipico-response-safety.js';
@@ -68,14 +73,6 @@ type AutonomousReplyDependencies = {
   env?: RuntimeEnv;
 };
 
-function enabledFlag(value: unknown) {
-  return String(value || '').trim().toLowerCase() === 'true';
-}
-
-export function sourceAutoReplyEnabled(env: RuntimeEnv = process.env) {
-  return enabledFlag(env.HIPICO_SOURCE_AUTO_REPLY_ENABLED);
-}
-
 function baseDecision(input: AutonomousReplyInput): Pick<
   AutonomousReplyDecision,
   'version' | 'responseIdempotencyKey' | 'sourceMessageId' | 'handoffRequired' | 'authority'
@@ -107,13 +104,16 @@ function none(input: AutonomousReplyInput, reason: string): AutonomousReplyDecis
   };
 }
 
+type AutonomousReplyDecisionContext = Partial<Pick<AutonomousReplyDecision, 'candidateIntent' | 'riskPolicy'>> & {
+  observation?: DecisionProviderObservation<JevShadowDecision> | null;
+  readiness?: DecisionProviderReadiness | null;
+  providerInfluence?: AutonomousReplyDecision['provider']['influence'];
+};
+
 function hold(
   input: AutonomousReplyInput,
   reason: string,
-  options: Partial<Pick<AutonomousReplyDecision, 'candidateIntent' | 'riskPolicy'>> & {
-    observation?: DecisionProviderObservation<JevShadowDecision> | null;
-    readiness?: DecisionProviderReadiness | null;
-  } = {}
+  options: AutonomousReplyDecisionContext = {}
 ): AutonomousReplyDecision {
   return {
     ...baseDecision(input),
@@ -126,7 +126,7 @@ function hold(
     provider: {
       observation: options.observation || null,
       readiness: options.readiness || null,
-      influence: options.observation ? 'DOWNGRADE_ONLY' : 'NONE'
+      influence: options.providerInfluence || 'NONE'
     }
   };
 }
@@ -135,10 +135,7 @@ function send(
   input: AutonomousReplyInput,
   text: string,
   reason: string,
-  options: Partial<Pick<AutonomousReplyDecision, 'candidateIntent' | 'riskPolicy'>> & {
-    observation?: DecisionProviderObservation<JevShadowDecision> | null;
-    readiness?: DecisionProviderReadiness | null;
-  } = {}
+  options: AutonomousReplyDecisionContext = {}
 ): AutonomousReplyDecision {
   return {
     ...baseDecision(input),
@@ -151,31 +148,9 @@ function send(
     provider: {
       observation: options.observation || null,
       readiness: options.readiness || null,
-      influence: options.observation ? 'DOWNGRADE_ONLY' : 'NONE'
+      influence: options.providerInfluence || 'NONE'
     }
   };
-}
-
-function providerDisagrees(
-  candidateIntent: string,
-  observation: DecisionProviderObservation<JevShadowDecision> | null,
-  readiness: DecisionProviderReadiness | null
-) {
-  if (!readiness?.eligibleForAssistedRanking || observation?.status !== 'OBSERVED' || !observation.decision) {
-    return false;
-  }
-  const expectedClass = canonicalIntentToJevClass(candidateIntent);
-  return observation.decision.intentClass !== expectedClass
-    || observation.decision.humanReviewProbability >= .5
-    || observation.decision.candidateAgreementProbability < .5;
-}
-
-function safeConversationalIntent(intent: string) {
-  return intent === 'greeting' || intent === 'help' || intent === 'status_non_monetary';
-}
-
-function safeQueryIntent(intent: string) {
-  return intent.startsWith('query:');
 }
 
 export class AutonomousReplyService {
@@ -199,7 +174,11 @@ export class AutonomousReplyService {
     if (input.fromMe) return none(input, 'SELF_MESSAGE_NO_RESPONSE');
     if (input.duplicate) return none(input, 'DUPLICATE_SOURCE_MESSAGE');
     if (!input.rateAllowed) return none(input, 'RATE_LIMIT');
-    if (!input.systemHealthy) return hold(input, 'SYSTEM_NOT_AUTHORITATIVE');
+    if (!input.systemHealthy) {
+      return input.responsePlan.canSend && input.responsePlan.text
+        ? send(input, input.responsePlan.text, 'SYSTEM_DEGRADED_SAFE_REPLY')
+        : hold(input, 'SYSTEM_NOT_AUTHORITATIVE');
+    }
     if (!input.responsePlan.canSend || !input.responsePlan.text) {
       return input.responsePlan.handoffRequired
         ? hold(input, input.responsePlan.reason)
@@ -264,13 +243,14 @@ export class AutonomousReplyService {
       });
     }
 
-    if (providerDisagrees(candidate.intent, observation, readiness)) {
+    if (providerRequiresSafetyDowngrade(candidate.intent, observation, readiness)) {
       const clarification = 'Necesito una precisión adicional para responder con seguridad. Reformula la consulta indicando la carrera o el dato que deseas consultar.';
       return send(input, clarification, 'PROVIDER_DOWNGRADE_REQUIRES_CLARIFICATION', {
         candidateIntent: candidate.intent,
         riskPolicy: shadowEvaluation.riskPolicy,
         observation,
-        readiness
+        readiness,
+        providerInfluence: 'DOWNGRADE_ONLY'
       });
     }
 
@@ -332,9 +312,10 @@ export class AutonomousReplyService {
   }
 }
 
+export { sourceAutoReplyEnabled } from './autonomous-reply.policy.js';
+
 export const __test__ = {
-  enabledFlag,
-  providerDisagrees,
+  providerRequiresSafetyDowngrade,
   safeConversationalIntent,
   safeQueryIntent
 };

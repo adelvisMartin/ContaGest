@@ -1028,8 +1028,15 @@ async function visibleOutgoingTextCount(textValue) {
   if (!expected) return 0;
   return page.evaluate((needle) => {
     const normalizeText = (value) => String(value || '').replace(/\s+/g, ' ').trim();
+    const visibleMessageText = (node) => {
+      const selectable = node.querySelector('span.selectable-text');
+      if (selectable) return normalizeText(selectable.innerText || selectable.textContent);
+      const messageText = node.querySelector('[data-testid="msg-text"]');
+      if (messageText) return normalizeText(messageText.innerText || messageText.textContent);
+      return normalizeText(node.innerText || node.textContent);
+    };
     const messages = Array.from(document.querySelectorAll('.message-out')).slice(-120);
-    return messages.filter((node) => normalizeText(node.innerText || node.textContent) === needle).length;
+    return messages.filter((node) => visibleMessageText(node) === needle).length;
   }, expected).catch(() => 0);
 }
 
@@ -1060,8 +1067,15 @@ async function sendTextInCurrentSource(record) {
     error.safeToRetry = true;
     throw error;
   }
-  await composer.click({ timeout: 3000 });
-  await page.keyboard.insertText(String(record.text).slice(0, 3900));
+  try {
+    await composer.click({ timeout: 3000 });
+    await page.keyboard.insertText(String(record.text).slice(0, 3900));
+  } catch (cause) {
+    await clearComposerSafely(composer);
+    const error = new Error(`SOURCE_REPLY_COMPOSE_FAILED: ${cause?.message || cause}`);
+    error.safeToRetry = true;
+    throw error;
+  }
   try { await assertCurrentSourceIdentity(); }
   catch (cause) {
     await clearComposerSafely(composer);
