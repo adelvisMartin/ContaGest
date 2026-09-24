@@ -1,5 +1,5 @@
 import type { Router } from 'express';
-import { createCrudRouter } from './crud.factory.js';
+import { createLazyCrudRouter } from './crud.factory.js';
 import { clientSchema, supplierSchema, productSchema, bankAccountSchema, taxPeriodSchema } from './schemas.js';
 import tenantRoutes from './tenants/tenants.routes.js';
 import licenseDeviceRoutes from './license-devices/license-devices.routes.js';
@@ -55,12 +55,12 @@ type RouteManifestEntry = Readonly<{
 
 export const MODULE_ROUTE_MANIFEST: readonly RouteManifestEntry[] = Object.freeze([
   { id: 'tenants', domain: 'platform', path: '/tenants', router: tenantRoutes },
-  { id: 'clients', domain: 'commercial', path: '/clients', router: createCrudRouter({ model:'client' as any, entity:'client', permission:'clients.manage', schema:clientSchema, searchFields:['name','rif'] }) },
-  { id: 'suppliers', domain: 'commercial', path: '/suppliers', router: createCrudRouter({ model:'supplier' as any, entity:'supplier', permission:'purchases.manage', schema:supplierSchema, searchFields:['name','rif'] }) },
-  { id: 'products', domain: 'operations', path: '/products', router: createCrudRouter({ model:'product' as any, entity:'product', permission:'inventory.manage', schema:productSchema, searchFields:['name','sku'] }) },
-  { id: 'bank-accounts', domain: 'financial', path: '/bank-accounts', router: createCrudRouter({ model:'bankAccount' as any, entity:'bankAccount', permission:'banking.manage', schema:bankAccountSchema, searchFields:['bankName','accountNo'] }) },
+  { id: 'clients', domain: 'commercial', path: '/clients', router: createLazyCrudRouter({ model:'client' as any, entity:'client', permission:'clients.manage', schema:clientSchema, searchFields:['name','rif'] }) },
+  { id: 'suppliers', domain: 'commercial', path: '/suppliers', router: createLazyCrudRouter({ model:'supplier' as any, entity:'supplier', permission:'purchases.manage', schema:supplierSchema, searchFields:['name','rif'] }) },
+  { id: 'products', domain: 'operations', path: '/products', router: createLazyCrudRouter({ model:'product' as any, entity:'product', permission:'inventory.manage', schema:productSchema, searchFields:['name','sku'] }) },
+  { id: 'bank-accounts', domain: 'financial', path: '/bank-accounts', router: createLazyCrudRouter({ model:'bankAccount' as any, entity:'bankAccount', permission:'banking.manage', schema:bankAccountSchema, searchFields:['bankName','accountNo'] }) },
   { id: 'employees', domain: 'operations', path: '/employees', router: employeesRoutes },
-  { id: 'tax-periods', domain: 'financial', path: '/tax-periods', router: createCrudRouter({ model:'taxPeriod' as any, entity:'taxPeriod', permission:'taxes.export', schema:taxPeriodSchema, searchFields:['period'] }) },
+  { id: 'tax-periods', domain: 'financial', path: '/tax-periods', router: createLazyCrudRouter({ model:'taxPeriod' as any, entity:'taxPeriod', permission:'taxes.export', schema:taxPeriodSchema, searchFields:['period'] }) },
   { id: 'sales', domain: 'commercial', path: '/sales', router: salesRoutes },
   { id: 'purchases', domain: 'commercial', path: '/purchases', router: purchasesRoutes },
   { id: 'payables', domain: 'financial', path: '/payables', router: payablesRoutes },
