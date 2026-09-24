@@ -112,3 +112,24 @@ export function permissionForRoute(route){
 export function landingForMode(mode){
   return ACCESS_MANIFEST.landingByMode[String(mode||'')]||ACCESS_MANIFEST.landingByMode.admin||'dashboard';
 }
+
+export function experienceProfileForMode(mode){
+  const requested=String(mode||'').trim();
+  const normalized=Object.prototype.hasOwnProperty.call(ACCESS_MANIFEST.businessModes,requested)?requested:'admin';
+  const meta=ACCESS_MANIFEST.businessModes[normalized]||ACCESS_MANIFEST.businessModes.admin;
+  const landingRoute=landingForMode(normalized);
+  const landingModule=ACCESS_MANIFEST.modules.find((item)=>item.route===landingRoute);
+  const enabled=ACCESS_MANIFEST.modules.filter((item)=>normalized==='admin'||item.modes.includes(normalized));
+  const quickRoutes=[landingRoute,...enabled.filter((item)=>item.tier==='core').map((item)=>item.route)]
+    .filter((route,index,list)=>list.indexOf(route)===index)
+    .slice(0,6);
+  return Object.freeze({
+    schemaVersion:1,
+    mode:normalized,
+    label:meta?.label||'Modo Administrador',
+    description:meta?.description||'Experiencia de trabajo de ContaGest.',
+    landingRoute,
+    landingLabel:landingModule?.name||'Dashboard',
+    quickRoutes:Object.freeze(quickRoutes)
+  });
+}
