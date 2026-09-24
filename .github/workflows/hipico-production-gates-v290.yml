@@ -297,7 +297,6 @@ jobs:
         with:
           distribution: temurin
           java-version: '21'
-          cache: gradle
       - uses: android-actions/setup-android@v4
       - name: Install pinned Android SDK
         run: |
