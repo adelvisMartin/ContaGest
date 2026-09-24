@@ -192,6 +192,7 @@ test('system degradation still returns the safe degraded message instead of goin
   assert.equal(result.canSend,true);
   assert.equal(result.reason,'SYSTEM_DEGRADED_SAFE_REPLY');
   assert.match(result.text||'',/No puedo verificar/i);
+  assert.equal(result.handoffRequired,false,'safe degradation must not transfer conversation ownership to a human');
   assert.equal(result.authority.domainEffectsAllowed,false);
   assert.equal(audit.length,0,'degraded reply must not pretend an agent evaluation was authoritative');
 });
