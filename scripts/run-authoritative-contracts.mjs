@@ -19,7 +19,8 @@ const required59=[
   'tests/full_58_route_anti_overlap_61_75.test.mjs',
   'tests/playwright_determinism_62_75.test.mjs',
   'tests/cross_browser_critical_matrix_63_75.test.mjs',
-  'tests/veterinary_bounded_contexts_64_75.test.mjs'
+  'tests/veterinary_bounded_contexts_64_75.test.mjs',
+  'tests/gym_nutrition_bounded_contexts_65_75.test.mjs'
 ];
 const tests=[...new Set([...regressionPaths,...required59])];
 
