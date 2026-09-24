@@ -149,3 +149,12 @@ test('emergency kill switch blocks autonomous source delivery without deleting q
   assert.match(send,/localKillSwitchState\(process\.env, process\.cwd\(\)\)\.active/);
   assert.doesNotMatch(send,/rmSync|unlink|delete/);
 });
+
+
+test('source delivery receipt cannot be spoofed by incoming group text', () => {
+  const start=source.indexOf('async function visibleSourceHasTag');
+  const end=source.indexOf('async function sendAutonomousReplyToSource',start);
+  const receipt=source.slice(start,end);
+  assert.match(receipt,/querySelectorAll\('\.message-out'\)/);
+  assert.doesNotMatch(receipt,/\.message-out,\s*\[data-id\]/);
+});
