@@ -20,7 +20,8 @@ const required59=[
   'tests/playwright_determinism_62_75.test.mjs',
   'tests/cross_browser_critical_matrix_63_75.test.mjs',
   'tests/database_authority_67_75.test.mjs',
-  'tests/raw_sql_security_68_75.test.mjs'
+  'tests/raw_sql_security_68_75.test.mjs',
+  'tests/design_system_authority_69_75.test.mjs'
 ];
 const tests=[...new Set([...regressionPaths,...required59])];
 
