@@ -61,6 +61,16 @@ function capture(text: string, patterns: RegExp[]) {
 function captureLast(text: string, pattern: RegExp) {
   const flags = pattern.flags.includes('g') ? pattern.flags : `${pattern.flags}g`;
   const globalPattern = new RegExp(pattern.source, flags);
+  let last: string | null = null;
+  for (const match of text.matchAll(globalPattern)) {
+    if (match?.[1]) last = match[1].trim();
+  }
+  return last;
+}
+
+function captureLast(text: string, pattern: RegExp) {
+  const flags = pattern.flags.includes('g') ? pattern.flags : `${pattern.flags}g`;
+  const globalPattern = new RegExp(pattern.source, flags);
   let value: string | null = null;
   for (const match of text.matchAll(globalPattern)) {
     if (match[1]) value = match[1].trim();
