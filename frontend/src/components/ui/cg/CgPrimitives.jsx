@@ -44,10 +44,46 @@ export function CgIconButton({ label, children, ...props }) {
   return <IconButton aria-label={label} title={label} {...props}>{children}</IconButton>;
 }
 
-export function CgTextField({ label, helperText, errorText, ...props }) {
+function mergeSlotProp(slotProp, legacyProp) {
+  if (!legacyProp) return slotProp;
+  if (typeof slotProp === 'function') {
+    return (ownerState) => ({ ...(slotProp(ownerState) || {}), ...legacyProp });
+  }
+  return { ...(slotProp || {}), ...legacyProp };
+}
+
+function normalizeTextFieldSlots(slotProps, legacy) {
+  const next = { ...(slotProps || {}) };
+  next.htmlInput = mergeSlotProp(next.htmlInput, legacy.inputProps);
+  next.input = mergeSlotProp(next.input, legacy.InputProps);
+  next.inputLabel = mergeSlotProp(next.inputLabel, legacy.InputLabelProps);
+  next.formHelperText = mergeSlotProp(next.formHelperText, legacy.FormHelperTextProps);
+  next.select = mergeSlotProp(next.select, legacy.SelectProps);
+  return Object.values(legacy).some(Boolean) ? next : slotProps;
+}
+
+export function CgTextField({
+  label,
+  helperText,
+  errorText,
+  inputProps,
+  InputProps,
+  InputLabelProps,
+  FormHelperTextProps,
+  SelectProps,
+  slotProps,
+  ...props
+}) {
   if (!String(label || '').trim()) throw new Error('CgTextField requires a persistent label.');
   const error = Boolean(errorText || props.error);
-  return <TextField label={label} error={error} helperText={errorText || helperText} {...props} />;
+  const normalizedSlotProps = normalizeTextFieldSlots(slotProps, {
+    inputProps,
+    InputProps,
+    InputLabelProps,
+    FormHelperTextProps,
+    SelectProps,
+  });
+  return <TextField label={label} error={error} helperText={errorText || helperText} slotProps={normalizedSlotProps} {...props} />;
 }
 
 export function CgSelect({ label, value, options = [], onChange, id, ...props }) {
@@ -72,13 +108,13 @@ export function CgStatusChip({ label, tone = 'default', ...props }) {
 
 export function CgPageHeader({ eyebrow = 'ContaGest', title, description, actions = null }) {
   return (
-    <Stack direction={{ xs: 'column', sm: 'row' }} gap={2} justifyContent="space-between" alignItems={{ xs: 'stretch', sm: 'flex-start' }}>
+    <Stack direction={{ xs: 'column', sm: 'row' }} sx={{ gap: 2, justifyContent: 'space-between', alignItems: { xs: 'stretch', sm: 'flex-start' } }}>
       <Box sx={{ minWidth: 0 }}>
         <Typography variant="caption" component="p" color="text.secondary" sx={{ textTransform: 'uppercase', letterSpacing: '.06em', fontWeight: 700, mb: .5 }}>{eyebrow}</Typography>
         <Typography variant="h4" component="h1">{title}</Typography>
         {description ? <Typography variant="body2" color="text.secondary" sx={{ mt: .75, maxWidth: 760 }}>{description}</Typography> : null}
       </Box>
-      {actions ? <Stack direction="row" gap={1} flexWrap="wrap">{actions}</Stack> : null}
+      {actions ? <Stack direction="row" sx={{ gap: 1, flexWrap: 'wrap' }}>{actions}</Stack> : null}
     </Stack>
   );
 }
@@ -151,9 +187,9 @@ function FoundationPilot({ variant = 'brand' }) {
   ];
   if (variant === 'help') {
     return (
-      <Stack gap={1.5} data-cg-pilot="help">
+      <Stack sx={{ gap: 1.5 }} data-cg-pilot="help">
         <CgState severity="info" title="Design System foundation">Esta superficie usa componentes Cg* sobre el mismo theme MUI canónico.</CgState>
-        <Stack direction={{ xs: 'column', sm: 'row' }} gap={1}>
+        <Stack direction={{ xs: 'column', sm: 'row' }} sx={{ gap: 1 }}>
           <CgTextField label="Buscar ayuda" value={query} onChange={(event) => setQuery(event.target.value)} />
           <CgButton startIcon={<FontAwesomeIcon name="fa-magnifying-glass" />} onClick={() => setStatus(query ? 'filtered' : 'ready')}>Buscar</CgButton>
         </Stack>
@@ -162,18 +198,18 @@ function FoundationPilot({ variant = 'brand' }) {
     );
   }
   return (
-    <Stack gap={2} data-cg-pilot="brand">
+    <Stack sx={{ gap: 2 }} data-cg-pilot="brand">
       <CgPageHeader
         eyebrow="Foundation #100"
         title="Primitives canónicos Cg*"
         description="Piloto de bajo riesgo: los wrappers conservan la identidad ContaGest y delegan estados, foco y semántica base a Material UI 9."
         actions={<><CgButton variant="outlined" onClick={() => setDialogOpen(true)}>Probar diálogo</CgButton><CgIconButton label="Ayuda del piloto"><FontAwesomeIcon name="fa-circle-question" /></CgIconButton></>}
       />
-      <Stack direction={{ xs: 'column', sm: 'row' }} gap={1.5}>
+      <Stack direction={{ xs: 'column', sm: 'row' }} sx={{ gap: 1.5 }}>
         <CgTextField label="Campo de ejemplo" value={query} onChange={(event) => setQuery(event.target.value)} helperText="38 px desktop / 44 px touch por theme canónico." />
         <CgSelect label="Estado" value={status} onChange={(event) => setStatus(event.target.value)} options={[{ value: 'ready', label: 'Listo' }, { value: 'review', label: 'En revisión' }]} />
       </Stack>
-      <Stack direction="row" gap={1} alignItems="center" flexWrap="wrap">
+      <Stack direction="row" sx={{ gap: 1, alignItems: 'center', flexWrap: 'wrap' }}>
         <CgStatusChip label={status === 'ready' ? 'READY' : 'REVIEW'} tone={status === 'ready' ? 'success' : 'warning'} />
         <Typography variant="body2">Importe de presentación: <CgMoney value="1234.50" currency="USD" /></Typography>
       </Stack>
