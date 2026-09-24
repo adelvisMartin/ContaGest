@@ -18,6 +18,8 @@ const METRICS_KEY = 'agent-metrics-v7';
 const METRICS_ID = 'group-metrics-v7@g.us';
 const CONTEXT_KEY = 'agent-context-v7';
 const CONTEXT_ID = 'group-context-v7@g.us';
+const PROVIDER_KEY = 'agent-provider-v14';
+const PROVIDER_ID = 'group-provider-v14@g.us';
 const databaseUrl = String(process.env.HIPICO_E2E_DATABASE_URL || '').trim();
 let admin: pg.Client;
 
@@ -355,4 +357,122 @@ void test('recent race-context degradation blocks promotion even when lifetime m
   assert.equal(rejected.decision.metrics.accuracy, 1);
   assert.ok((rejected.decision.metrics.recent?.raceContextErrorRate || 0) > .02);
   assert.equal((await store.get(OWNER, CONTEXT_KEY, CONTEXT_ID)).mode, 'SHADOW');
+});
+
+
+void test('Jev shadow metrics are derived from immutable PostgreSQL evidence and flag safety disagreement', async () => {
+  const store = new AutomationStore();
+  await store.get(OWNER, PROVIDER_KEY, PROVIDER_ID);
+
+  const rows = [
+    {
+      seed: 'provider-next',
+      predicted: 'query:NEXT_RACE',
+      actual: 'query:NEXT_RACE',
+      risk: 'safe',
+      disposition: 'SUGGEST',
+      status: 'OBSERVED',
+      intentClass: 'query_next_race',
+      humanReviewProbability: .02,
+      matched: true
+    },
+    {
+      seed: 'provider-money',
+      predicted: 'betting_or_balance',
+      actual: 'betting_or_balance',
+      risk: 'monetary',
+      disposition: 'DENY',
+      status: 'OBSERVED',
+      intentClass: 'monetary',
+      humanReviewProbability: .97,
+      matched: true
+    },
+    {
+      seed: 'provider-lifecycle-low-review',
+      predicted: 'race_open',
+      actual: 'race_open',
+      risk: 'review',
+      disposition: 'HUMAN_REQUIRED',
+      status: 'OBSERVED',
+      intentClass: 'lifecycle',
+      humanReviewProbability: .10,
+      matched: true
+    },
+    {
+      seed: 'provider-unavailable',
+      predicted: 'query:SCHEDULE',
+      actual: null,
+      risk: 'safe',
+      disposition: 'SUGGEST',
+      status: 'UNAVAILABLE',
+      intentClass: null,
+      humanReviewProbability: null,
+      matched: null
+    }
+  ];
+
+  for (const row of rows) {
+    const evidence = {
+      decisionProvider: {
+        providerId: 'typesafe-jev',
+        mode: 'SHADOW',
+        status: row.status,
+        authoritative: false,
+        canAuthorize: false,
+        model: row.status === 'OBSERVED' ? 'jev-test' : null,
+        latencyMs: 5,
+        failureCode: row.status === 'UNAVAILABLE' ? 'JEV_PROVIDER_UNAVAILABLE' : null,
+        decision: row.intentClass ? {
+          intentClass: row.intentClass,
+          intentConfidence: .99,
+          intentProbabilities: { [row.intentClass]: .99 },
+          humanReviewProbability: row.humanReviewProbability,
+          candidateAgreementProbability: .99
+        } : null,
+        usage: row.status === 'OBSERVED' ? { inputUnits: 10, outputUnits: 2 } : null
+      }
+    };
+    await admin.query(`
+      insert into public.hipico_agent_evaluations(
+        id, owner_id, group_key, group_id, message_hash, expected_intent, predicted_intent, actual_intent,
+        confidence, risk, tool, can_act, model_version, matched,
+        high_risk_false_positive, unauthorized_action, conflict, evidence, created_at, reviewed_at, reviewed_by,
+        policy_disposition, policy_reason, policy_version, policy_evidence_state,
+        abstained, race_context_error, metric_schema_version
+      ) values(
+        gen_random_uuid(), $1::uuid, $2, $3, encode(digest($4, 'sha256'), 'hex'), $5, $5, $6,
+        .9900, $7, null, false, 'e2e-provider-v14', $8,
+        false, false, false, $9::jsonb, now() - interval '1 day',
+        case when $6::text is null then null else now() - interval '1 day' end,
+        case when $6::text is null then null else 'operator-token:e2e-provider' end,
+        $10, 'E2E_PROVIDER', 'hipico-risk-policy-v1', 'FRESH',
+        false, false, 'v7'
+      )
+    `, [
+      OWNER,
+      PROVIDER_KEY,
+      PROVIDER_ID,
+      row.seed,
+      row.predicted,
+      row.actual,
+      row.risk,
+      row.matched,
+      JSON.stringify(evidence),
+      row.disposition
+    ]);
+  }
+
+  const metrics = await store.decisionProviderMetrics(OWNER, PROVIDER_KEY, PROVIDER_ID);
+  assert.equal(metrics.historical.evaluations, 4);
+  assert.equal(metrics.historical.observed, 3);
+  assert.equal(metrics.historical.unavailable, 1);
+  assert.equal(metrics.historical.reviewedObserved, 3);
+  assert.equal(metrics.historical.intentClassMatched, 3);
+  assert.equal(metrics.historical.safetyDisagreements, 1);
+  assert.equal(metrics.recent.evaluations, 4);
+  assert.equal(metrics.recent.safetyDisagreements, 1);
+  assert.equal(metrics.byIntentClass.query_next_race.reviewedObserved, 1);
+  assert.equal(metrics.byIntentClass.monetary.intentClassMatched, 1);
+  assert.equal(metrics.byIntentClass.lifecycle.intentClassMatched, 1);
+  assert.match(metrics.metricsSignature, /^[a-f0-9]{64}$/);
 });
