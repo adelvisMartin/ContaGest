@@ -78,7 +78,7 @@ export async function ensureAccountMembership(input: MembershipIdentityInput,db:
 
   // Deliberately create a distinct AccountUser. Equal email text across tenants is NOT
   // sufficient proof that the profiles belong to the same human identity.
-  const accountRows = await prisma.$queryRaw<Array<{ id:string }>>`
+  const accountRows = await db.$queryRaw<Array<{ id:string }>>`
     INSERT INTO public."AccountUser" ("id","email","fullName","status","createdAt","updatedAt")
     VALUES (gen_random_uuid()::text, ${email}, ${input.fullName || null}, 'active', now(), now())
     RETURNING "id"
