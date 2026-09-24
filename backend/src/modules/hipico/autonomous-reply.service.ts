@@ -136,6 +136,7 @@ function send(
   options: Partial<Pick<AutonomousReplyDecision, 'candidateIntent' | 'riskPolicy'>> & {
     observation?: DecisionProviderObservation<JevShadowDecision> | null;
     readiness?: DecisionProviderReadiness | null;
+    providerInfluence?: AutonomousReplyDecision['provider']['influence'];
   } = {}
 ): AutonomousReplyDecision {
   return {
