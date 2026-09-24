@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import type { Prisma } from '@prisma/client';
 import { z } from 'zod';
 import { prisma } from '../../database/prisma.js';
 import { asyncHandler, HttpError, ok } from '../../shared/http.js';
@@ -78,10 +79,10 @@ const appointmentPatchSchema = z.object({
 }).strict().refine((value)=>Object.keys(value).length>0,{message:'Indica al menos un cambio.'});
 
 const ACTIVE_APPOINTMENT_STATUSES=['scheduled','confirmed','checked_in','in_progress'] as const;
-const lockAppointmentSchedule = async (tx:any, tenantId:string) => {
+const lockAppointmentSchedule = async (tx:Prisma.TransactionClient, tenantId:string) => {
   await tx.$queryRawUnsafe('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',`care-appointment:${tenantId}`);
 };
-const assertAppointmentSlotAvailable = async (tx:any, input:{
+const assertAppointmentSlotAvailable = async (tx:Prisma.TransactionClient, input:{
   tenantId:string; appointmentId?:string; patientId:string; professionalId?:string|null;
   startsAt:string; endsAt:string; room?:string|null;
 }) => {
