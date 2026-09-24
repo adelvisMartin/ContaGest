@@ -10,6 +10,13 @@ test('51/51 release candidate is exact-SHA and runs on release/candidate branche
   assert.match(source,/CANDIDATE_SHA:\s*\$\{\{ github\.event\.pull_request\.head\.sha \|\| github\.sha \}\}/);
   assert.match(source,/release\/candidate-\*/);
   assert.ok((source.match(/git rev-parse HEAD/g)||[]).length>=5);
+
+  const checkouts=[...source.matchAll(/uses: actions\/checkout@v7\n([\s\S]*?)(?=\n\s*- |\n\s{2,}\w|$)/g)];
+  assert.ok(checkouts.length>=5,'expected exact-SHA checkout in every automated release job');
+  for(const [,config] of checkouts){
+    assert.match(config,/ref:\s*\$\{\{ env\.CANDIDATE_SHA \}\}/);
+    assert.match(config,/fetch-depth:\s*0/);
+  }
 });
 
 test('51/51 source gate covers install prisma types lint tests builds bundle and high audit',()=>{
