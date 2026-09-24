@@ -4,11 +4,15 @@ import fs from 'node:fs/promises';
 
 const source = await fs.readFile(new URL('../src/index.mjs', import.meta.url), 'utf8');
 
-test('source group has no generic sendMessage route', () => {
+test('source group has no generic sendMessage route and only backend-approved autonomous replies can send', () => {
   assert.equal(/sendMessage\s*\(/.test(source), false);
   assert.match(source, /sendMirrorToLab/);
   assert.match(source, /openGroup\(LAB_GROUP_NAME, true\)/);
-  assert.match(source, /sourceSendPossible: false/);
+  assert.match(source, /SOURCE_AUTO_REPLY_ENABLED/);
+  assert.match(source, /result\?\.autonomousReply/);
+  assert.match(source, /queueSourceReply/);
+  assert.match(source, /sendAutonomousReplyToSource/);
+  assert.doesNotMatch(source, /classifyLocal[\s\S]{0,600}sendAutonomousReplyToSource/);
 });
 
 test('LAB send path requires live stable group identity before and after composing', () => {
@@ -78,7 +82,7 @@ test('production mode is loaded through strict configuration', () => {
   assert.match(source, /assertRuntimeConfig\(loadRuntimeConfig\(\)\)/);
   assert.match(source, /runtimeMode: RUNTIME_MODE/);
   assert.match(source, /body\?\.ready !== true/);
-  assert.match(source, /sourceSendPossible: false/);
+  assert.match(source, /sourceSendPossible: Boolean\(SOURCE_AUTO_REPLY_ENABLED/);
 });
 
 test('WhatsApp group discovery has DOM/header fallback and diagnostics', () => {
@@ -105,5 +109,32 @@ test('LAB can be used as test input without creating shadow loops', () => {
 
 test('LAB test poll returns to the read-only source group', () => {
   assert.match(source, /await openSourceGroup\(\)\.catch/);
-  assert.match(source, /sourceSendPossible: false/);
+  assert.match(source, /sourceSendPossible: Boolean\(SOURCE_AUTO_REPLY_ENABLED/);
+});
+
+
+test('autonomous source replies are durably queued before browser delivery and visually idempotent', () => {
+  assert.match(source, /spoolRuntime\.queueSourceReply/);
+  assert.match(source, /spoolRuntime\.flushSourceReplies/);
+  assert.match(source, /sourceReplyTag/);
+  assert.match(source, /SOURCE_REPLY_ALREADY_VISIBLE/);
+  assert.match(source, /SOURCE_REPLY_VISUAL_RECEIPT_MISSING/);
+
+  const backendStart=source.indexOf('async function deliverBackendEvent');
+  const backendReply=source.indexOf('result?.autonomousReply',backendStart);
+  const queueAt=source.indexOf('await queueSourceReply(',backendReply);
+  const sourceSend=source.indexOf('async function sendAutonomousReplyToSource');
+  assert.ok(backendReply>backendStart&&queueAt>backendReply&&sourceSend>queueAt);
+});
+
+test('local fallback and LAB simulation can never become a SOURCE reply', () => {
+  const captureStart=source.indexOf('async function captureRow');
+  const processStart=source.indexOf('async function processSourceRows',captureStart);
+  const capture=source.slice(captureStart,processStart);
+  assert.match(capture,/classifyLocal/);
+  assert.doesNotMatch(capture,/queueSourceReply|sendAutonomousReplyToSource/);
+
+  const localMirrorStart=source.indexOf('function localMirrorText');
+  const appendTrainingStart=source.indexOf('async function appendTraining',localMirrorStart);
+  assert.doesNotMatch(source.slice(localMirrorStart,appendTrainingStart),/queueSourceReply|sendAutonomousReplyToSource/);
 });
