@@ -121,10 +121,27 @@ router.post('/bridge/events',async(req,res)=>{
       providerObservation:providerEvidence.observation,
       providerReadiness:providerEvidence.readiness
     });
-    const responseReceipt=safetyReady.ready&&!input.historySync&&event.inserted?await persistResponsePlan(responsePlan):null;
+    const autonomousResponsePlan={
+      ...responsePlan,
+      intent:autonomousDecision.action==='ASK_CLARIFICATION'
+        ?'NEEDS_CLARIFICATION' as const
+        :autonomousDecision.action==='HUMAN_LAST_RESORT'
+          ?'ESCALATED' as const
+          :autonomousDecision.action==='SILENT'
+            ?'NONE' as const
+            :responsePlan.intent,
+      text:autonomousDecision.canSend?autonomousDecision.text:null,
+      canSend:autonomousDecision.canSend,
+      handoffRequired:autonomousDecision.humanRequired,
+      decisionVersion:`${responsePlan.decisionVersion}+${autonomousDecision.policyVersion}`,
+      reason:autonomousDecision.reason
+    };
+    const responseReceipt=safetyReady.ready&&!input.historySync&&event.inserted
+      ?await persistResponsePlan(autonomousResponsePlan)
+      :null;
     const autonomousReply=event.inserted&&autonomousDecision.canSend&&autonomousDecision.text
       ?{
-        replyId:responsePlan.responseIdempotencyKey,
+        replyId:autonomousResponsePlan.responseIdempotencyKey,
         sourceMessageId:input.externalMessageId,
         groupId:input.groupId,
         groupKey,
