@@ -20,6 +20,8 @@ import {
   reportVeterinaryError, arrayData, objectData, shortCode, localDateTime, localDateTimeFromIso
 } from './veterinaryWorkspace.helpers.js';
 
+const Icon = ({ name, size = 14 }) => <i className={`fa-solid ${name}`} style={{ fontSize:size }} aria-hidden="true" />;
+
 function Metric({ icon,label,value,hint,tone='primary' }) {
   return <Card sx={{minHeight:78}}><CardContent sx={{p:'11px!important',display:'grid',gridTemplateColumns:'30px minmax(0,1fr)',gap:1,alignItems:'start'}}><Avatar variant="rounded" sx={{width:30,height:30,borderRadius:'8px',bgcolor:'action.hover',color:`${tone}.main`,border:'1px solid',borderColor:'divider',fontSize:13}}><Icon name={icon}/></Avatar><Box sx={{minWidth:0}}><Typography variant="caption" color="text.secondary" sx={{fontWeight:600}}>{label}</Typography><Typography sx={{fontWeight:700,fontSize:'1rem',lineHeight:1.12,fontVariantNumeric:'tabular-nums',whiteSpace:'nowrap',overflow:'visible'}}>{value??0}</Typography>{hint&&<Typography variant="caption" color="text.secondary" noWrap>{hint}</Typography>}</Box></CardContent></Card>;
 }
