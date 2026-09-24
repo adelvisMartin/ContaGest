@@ -324,8 +324,8 @@ export class JevDecisionProvider implements DecisionProvider<JevShadowDecision> 
           candidateAgreementProbability: result.answers.agrees_with_candidate.noul
         },
         usage: {
-          inputTokens: result.usage.input_tokens,
-          outputTokens: result.usage.output_tokens
+          inputUnits: result.usage.input_tokens,
+          outputUnits: result.usage.output_tokens
         }
       };
     } catch (error: any) {

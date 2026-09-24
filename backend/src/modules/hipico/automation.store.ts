@@ -9,6 +9,7 @@ import {
 } from './agent-contracts.js';
 import { sanitizeAgentEvidence, automationTransitionSignature } from './automation-evidence.js';
 import { readMetricsSnapshot } from './automation-metrics.store.js';
+import { readDecisionProviderMetricsSnapshot } from './decision-provider-metrics.store.js';
 import {
   assertAutomationScope,
   defaultAutomationMode,
@@ -42,6 +43,11 @@ function transitionDisposition(
 }
 
 export class AutomationStore {
+  async decisionProviderMetrics(ownerId: string, groupKey: string, groupId: string) {
+    assertAutomationScope(ownerId, groupKey, groupId);
+    return readDecisionProviderMetricsSnapshot(prisma, ownerId, groupKey, groupId);
+  }
+
   async metrics(ownerId: string, groupKey: string, groupId: string): Promise<AutomationMetrics> {
     assertAutomationScope(ownerId, groupKey, groupId);
     return prisma.$transaction(async (tx) => {

@@ -117,7 +117,7 @@ test('Jev SHADOW records typed evidence but can never authorize an action', asyn
   assert.equal(result.decision?.intentConfidence, .98);
   assert.equal(result.decision?.humanReviewProbability, .04);
   assert.equal(result.decision?.candidateAgreementProbability, .99);
-  assert.deepEqual(result.usage, { inputTokens: 120, outputTokens: 3 });
+  assert.deepEqual(result.usage, { inputUnits: 120, outputUnits: 3 });
 });
 
 test('provider failure and malformed output fail closed without replacing deterministic authority', async () => {
@@ -150,4 +150,37 @@ test('provider failure and malformed output fail closed without replacing determ
   assert.equal(invalid.failureCode, 'JEV_RESPONSE_SCHEMA_INVALID');
   assert.equal(invalid.canAuthorize, false);
   assert.equal(invalid.authoritative, false);
+});
+
+
+test('observed Jev evidence remains compatible with the agent evidence secret sanitizer', async () => {
+  const provider = new JevDecisionProvider(shadowEnv(), (async () => new Response(JSON.stringify({
+    model: 'jev-2026-09-15',
+    answers: {
+      intent_class: {
+        type: 'choice',
+        choice: 'query_next_race',
+        confidence: .99,
+        probabilities: {
+          query_race_status: 0,
+          query_next_race: .99,
+          query_last_result: 0,
+          query_schedule: 0,
+          query_scratches: 0,
+          lifecycle: 0,
+          monetary: 0,
+          security: 0,
+          greeting_help: 0,
+          unknown: .01
+        }
+      },
+      requires_human_review: { type: 'noul', noul: .02 },
+      agrees_with_candidate: { type: 'noul', noul: .99 }
+    },
+    usage: { input_tokens: 44, output_tokens: 3 }
+  }), { status: 200 })) as typeof fetch);
+  const { sanitizeAgentEvidence } = await import('./automation-evidence.js');
+  const observation = await provider.observe({ text: '¿Cuál sigue?', candidate });
+  assert.equal(observation.status, 'OBSERVED');
+  assert.doesNotThrow(() => sanitizeAgentEvidence({ decisionProvider: observation }));
 });

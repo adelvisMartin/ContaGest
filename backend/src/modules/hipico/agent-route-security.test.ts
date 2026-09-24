@@ -55,3 +55,17 @@ test('external decision provider remains shadow evidence and cannot become an au
   assert.doesNotMatch(routes, /canAct:\s*decisionProviderObservation/);
   assert.doesNotMatch(routes, /riskPolicy:\s*decisionProviderObservation/);
 });
+
+
+test('decision provider metrics and readiness remain observability-only', () => {
+  assert.match(routes, /automation\/provider-metrics/);
+  assert.match(routes, /decisionProviderReadiness\(status, metrics\)/);
+  assert.match(routes, /authoritative:\s*false/);
+  assert.match(routes, /canAuthorize:\s*false/);
+  assert.doesNotMatch(routes, /canAct:\s*providerReadiness/);
+
+  const setModeStart = routes.indexOf("router.post('/groups/:groupId/automation'");
+  const transitionsStart = routes.indexOf("router.get('/groups/:groupId/automation/transitions'", setModeStart);
+  assert.ok(setModeStart >= 0 && transitionsStart > setModeStart);
+  assert.doesNotMatch(routes.slice(setModeStart, transitionsStart), /providerReadiness|decisionProviderReadiness/);
+});

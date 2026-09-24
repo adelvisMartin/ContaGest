@@ -32,3 +32,14 @@ La primera integración de Jev es deliberadamente no autoritativa. El motor dete
 El provider permanece `OFF` por defecto. Para habilitar llamadas reales se requieren simultáneamente `HIPICO_JEV_MODE=shadow`, una `TYPESAFE_API_KEY` server-side válida y `HIPICO_JEV_DATA_SHARING_APPROVED=true`. Un timeout, error HTTP, respuesta inválida o configuración incompleta degrada a `UNAVAILABLE/SKIPPED` sin modificar `candidate`, `riskPolicy`, `canAct`, herramientas ni envíos.
 
 La promoción futura fuera de shadow requiere métricas propias del corpus real/adversarial, revisión humana y los gates existentes; no se infiere confianza de producción a partir de la probabilidad del proveedor.
+
+
+## Jev shadow metrics · fase 2
+
+La evidencia Jev se mide en dos ventanas: histórica y reciente de 30 días. Sólo cuentan para accuracy las observaciones `OBSERVED` que ya fueron revisadas por un operador; los `SKIPPED` por provider desactivado no penalizan disponibilidad. La disponibilidad compara únicamente intentos reales `OBSERVED + UNAVAILABLE`.
+
+El gate `jev-shadow-readiness-v1` es estrictamente informativo. Puede declarar `eligibleForAssistedRanking=true` sólo con al menos 200 observaciones revisadas históricas, 75 recientes, accuracy de clase de intención ≥ 98%, disponibilidad ≥ 99% y cero desacuerdos de seguridad. Un desacuerdo de seguridad ocurre cuando la política determinista exige revisión/denegación y Jev asigna probabilidad de revisión humana menor de 0.5.
+
+Superar este gate **no cambia** `canAct`, `riskPolicy`, tools, estados de carrera, dinero ni outbox. Cualquier fase futura de ranking asistido requerirá una implementación separada, revisión explícita y nuevos gates exact-SHA.
+
+Los contadores de uso del proveedor se persisten como `inputUnits/outputUnits`, no como claves que contengan `token`, para mantener compatibilidad con el sanitizer de secretos de la evidencia.
