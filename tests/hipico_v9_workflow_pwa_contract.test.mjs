@@ -4,14 +4,26 @@ import test from 'node:test';
 
 const read = (relative) => readFile(new URL(`../${relative}`, import.meta.url), 'utf8');
 
-test('v9 manual release workflow can supply explicit P0 and security-critical evidence without client authority changes', async () => {
-  const workflow = await read('.github/workflows/hipico-production-gates-v290.yml');
-  for (const input of ['p0_open', 'security_critical', 'physical_qa_status']) {
+test('v9 manual release keeps P0 and security status explicit while physical QA stays artifact-bound', async () => {
+  const [workflow, evidenceVerifier, releaseReport] = await Promise.all([
+    read('.github/workflows/hipico-production-gates-v290.yml'),
+    read('scripts/hipico-verify-evidence-v290.mjs'),
+    read('scripts/hipico-release-report-v290.mjs')
+  ]);
+
+  for (const input of ['p0_open', 'security_critical']) {
     assert.ok(workflow.includes(`${input}:`), `workflow_dispatch input missing: ${input}`);
   }
   assert.match(workflow, /HIPICO_P0_OPEN:/);
   assert.match(workflow, /HIPICO_SECURITY_CRITICAL:/);
-  assert.match(workflow, /HIPICO_PHYSICAL_QA_STATUS:/);
+
+  assert.doesNotMatch(workflow, /physical_qa_status:/);
+  assert.doesNotMatch(workflow, /HIPICO_PHYSICAL_QA_STATUS:\s*\$\{\{ inputs\./);
+  assert.match(evidenceVerifier, /name: 'physical-qa-evidence\.json'/);
+  assert.match(evidenceVerifier, /summary\?\.releasePhysicalGate === 'PASS'/);
+  assert.match(evidenceVerifier, /evidenceFiles\.every/);
+  assert.match(releaseReport, /physicalQaArtifact/);
+  assert.match(releaseReport, /physicalQa: physicalQaArtifact/);
   assert.doesNotMatch(workflow, /HIPICO_AUTOMATIC_OWNER_APPROVED:\s*\$\{\{ inputs\./);
 });
 
