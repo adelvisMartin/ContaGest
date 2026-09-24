@@ -53,14 +53,14 @@ if(isPostMerge58x5){
 execute('npm',['install','--no-save','--package-lock=false','--ignore-scripts','--no-audit','--no-fund',`@sparticuz/chromium@${SERVERLESS_CHROMIUM_VERSION}`]);
 execute('npx',['--no-install','playwright','install','ffmpeg']);
 
-const probeSource=`import fs from 'node:fs';import chromium from '@sparticuz/chromium';chromium.setGraphicsMode=false;const executablePath=await chromium.executablePath();const al2023='/tmp/al2023/lib';const currentLd=process.env.LD_LIBRARY_PATH||'';const runtimeEnv={LD_LIBRARY_PATH:fs.existsSync(al2023)?[al2023,currentLd].filter(Boolean).join(':'):currentLd,FONTCONFIG_PATH:process.env.FONTCONFIG_PATH||'',HOME:process.env.HOME||''};process.stdout.write('__CG_CHROMIUM__'+JSON.stringify({executablePath,args:chromium.args,runtimeEnv,al2023Ready:fs.existsSync(al2023)}));`;
+const probeSource=`import chromium from '@sparticuz/chromium';import { chromium as playwrightChromium } from 'playwright';chromium.setGraphicsMode=false;const executablePath=await chromium.executablePath();const args=chromium.args;const browser=await playwrightChromium.launch({executablePath,args,headless:true});await browser.close();const runtimeEnv={LD_LIBRARY_PATH:process.env.LD_LIBRARY_PATH||'',FONTCONFIG_PATH:process.env.FONTCONFIG_PATH||'',HOME:process.env.HOME||''};process.stdout.write('__CG_CHROMIUM__'+JSON.stringify({executablePath,args,runtimeEnv,launchVerified:true}));`;
 const probe=execute(process.execPath,['--input-type=module','--eval',probeSource],{capture:true});
 const marker='__CG_CHROMIUM__',markerIndex=String(probe.stdout||'').lastIndexOf(marker);
 if(markerIndex<0){console.error('[browser-preqa] No se pudo resolver Chromium serverless.');process.exit(1);}
 let browserConfig;
 try{browserConfig=JSON.parse(String(probe.stdout).slice(markerIndex+marker.length));}catch(error){console.error(`[browser-preqa] Configuración Chromium inválida: ${error.message}`);process.exit(1);}
 if(!browserConfig?.executablePath||!Array.isArray(browserConfig?.args))process.exit(1);
-if(browserConfig.al2023Ready!==true||!String(browserConfig.runtimeEnv?.LD_LIBRARY_PATH||'').split(':').includes('/tmp/al2023/lib')){console.error('[browser-preqa] Capa AL2023 no activa después de extraer Chromium.');process.exit(1);}
+if(browserConfig.launchVerified!==true){console.error('[browser-preqa] Chromium serverless no superó el smoke launch real.');process.exit(1);}
 
 const browserEnv={...browserConfig.runtimeEnv,CI:'1',PLAYWRIGHT_HTML_OPEN:'never',CG_PLAYWRIGHT_CHROMIUM_EXECUTABLE:browserConfig.executablePath,CG_PLAYWRIGHT_CHROMIUM_ARGS:JSON.stringify(browserConfig.args)};
 function runGroup(label,args,{env={}}={}){
