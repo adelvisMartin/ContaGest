@@ -110,6 +110,7 @@ function hold(
   options: Partial<Pick<AutonomousReplyDecision, 'candidateIntent' | 'riskPolicy'>> & {
     observation?: DecisionProviderObservation<JevShadowDecision> | null;
     readiness?: DecisionProviderReadiness | null;
+    providerInfluence?: AutonomousReplyDecision['provider']['influence'];
   } = {}
 ): AutonomousReplyDecision {
   return {
@@ -123,7 +124,7 @@ function hold(
     provider: {
       observation: options.observation || null,
       readiness: options.readiness || null,
-      influence: options.observation ? 'DOWNGRADE_ONLY' : 'NONE'
+      influence: options.providerInfluence || 'NONE'
     }
   };
 }
@@ -148,7 +149,7 @@ function send(
     provider: {
       observation: options.observation || null,
       readiness: options.readiness || null,
-      influence: options.observation ? 'DOWNGRADE_ONLY' : 'NONE'
+      influence: options.providerInfluence || 'NONE'
     }
   };
 }
@@ -249,7 +250,8 @@ export class AutonomousReplyService {
         candidateIntent: candidate.intent,
         riskPolicy: shadowEvaluation.riskPolicy,
         observation,
-        readiness
+        readiness,
+        providerInfluence: 'DOWNGRADE_ONLY'
       });
     }
 
