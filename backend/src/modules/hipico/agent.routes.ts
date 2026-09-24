@@ -3,6 +3,7 @@ import { createDefaultHipicoAgentEngine } from './agent-engine.js';
 import { AutomationStore } from './automation.store.js';
 import { hipicoError } from './hipico-domain.js';
 import { createHipicoDecisionProvider } from './jev-decision-provider.js';
+import { decisionProviderReadiness } from './decision-provider-metrics.js';
 import {
   actorRef,
   automaticOwnerApprovalConfigured,
@@ -56,8 +57,13 @@ router.get('/groups/:groupId/automation', async (req, res) => {
     const owner = ownerId();
     const g = groupKey(req);
     const gid = parsedGroupId(req);
-    const config = await store.read(owner, g, gid);
-    const metrics = await store.metrics(owner, g, gid);
+    const [config, metrics, providerMetrics] = await Promise.all([
+      store.read(owner, g, gid),
+      store.metrics(owner, g, gid),
+      store.decisionProviderMetrics(owner, g, gid)
+    ]);
+    const providerStatus = decisionProvider.publicStatus();
+    const providerReadiness = decisionProviderReadiness(providerStatus, providerMetrics);
     return res.json({
       ok: true,
       data: {
@@ -66,7 +72,11 @@ router.get('/groups/:groupId/automation', async (req, res) => {
         agent: {
           generatorConfigured: false,
           deterministicFirst: true,
-          decisionProvider: decisionProvider.publicStatus(),
+          decisionProvider: {
+            ...providerStatus,
+            metrics: providerMetrics,
+            readiness: providerReadiness
+          },
           financialAuthority: false,
           directEffectsAllowed: false
         }
@@ -107,6 +117,32 @@ router.get('/groups/:groupId/automation/transitions', async (req, res) => {
       Number(req.query.limit) || 100
     );
     return res.json({ ok: true, data });
+  } catch (error) {
+    return sendAutomationError(req, res, error);
+  }
+});
+
+router.get('/groups/:groupId/automation/provider-metrics', async (req, res) => {
+  try {
+    const owner = ownerId();
+    const g = groupKey(req);
+    const gid = parsedGroupId(req);
+    const status = decisionProvider.publicStatus();
+    const metrics = await store.decisionProviderMetrics(owner, g, gid);
+    return res.json({
+      ok: true,
+      data: {
+        status,
+        metrics,
+        readiness: decisionProviderReadiness(status, metrics),
+        authority: {
+          authoritative: false,
+          canAuthorize: false,
+          financialAuthority: false,
+          directEffectsAllowed: false
+        }
+      }
+    });
   } catch (error) {
     return sendAutomationError(req, res, error);
   }
