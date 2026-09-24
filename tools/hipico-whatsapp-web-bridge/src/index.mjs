@@ -977,18 +977,110 @@ async function clearComposerSafely(composer) {
   } catch {}
 }
 
-async function sendTextInCurrentLab(textValue, tag) {
-  await assertCurrentLabIdentity();
-  if (tag && await visibleLabHasTag(tag)) return true;
+async function messageComposer() {
   const candidates = [
     page.locator('footer div[contenteditable="true"][role="textbox"]').last(),
     page.locator('footer div[contenteditable="true"]').last(),
     page.locator('#main footer [contenteditable="true"]').last()
   ];
-  let composer = null;
   for (const candidate of candidates) {
-    if (await candidate.count() && await candidate.isVisible().catch(() => false)) { composer = candidate; break; }
+    if (await candidate.count() && await candidate.isVisible().catch(() => false)) return candidate;
   }
+  return null;
+}
+
+function sourceReplyTag(replyId) {
+  return `[CHBOT:${sha256(replyId).slice(0, 10)}]`;
+}
+
+async function visibleSourceHasTag(tag) {
+  await assertCurrentSourceIdentity();
+  return page.evaluate((needle) => {
+    const messages = Array.from(document.querySelectorAll('.message-out, [data-id]')).slice(-120);
+    return messages.some((node) => String(node.innerText || '').includes(needle));
+  }, tag).catch(() => false);
+}
+
+async function sendAutonomousReplyToSource(reply) {
+  if (!SOURCE_AUTO_REPLY_ENABLED) {
+    const error = new Error('SOURCE_AUTO_REPLY_DISABLED');
+    error.retryable = true;
+    throw error;
+  }
+  if (RUNTIME_MODE !== RUNTIME_MODES.PRODUCTION || !BACKEND_SYNC_ENABLED || !SOURCE_GROUP_ID) {
+    const error = new Error('SOURCE_AUTO_REPLY_RUNTIME_NOT_AUTHORIZED');
+    error.retryable = false;
+    throw error;
+  }
+  if (String(reply.groupId || '').toLowerCase() !== SOURCE_GROUP_ID.toLowerCase()) {
+    const error = new Error('SOURCE_AUTO_REPLY_DESTINATION_MISMATCH');
+    error.retryable = false;
+    throw error;
+  }
+  if (!(await openSourceGroup())) {
+    const error = new Error('SOURCE_GROUP_NOT_AVAILABLE');
+    error.retryable = true;
+    throw error;
+  }
+
+  await assertCurrentSourceIdentity();
+  const tag = sourceReplyTag(reply.replyId);
+  if (await visibleSourceHasTag(tag)) {
+    await log(`SOURCE_REPLY_ALREADY_VISIBLE ${reply.sourceMessageId} ${tag}`);
+    return true;
+  }
+
+  const composer = await messageComposer();
+  if (!composer) {
+    const error = new Error('SOURCE_COMPOSER_NOT_FOUND');
+    error.retryable = true;
+    throw error;
+  }
+
+  const body = `${String(reply.text || '').trim().slice(0, 3600)}\n${tag}`.trim();
+  if (!body || body.length > 3900) {
+    const error = new Error('SOURCE_AUTO_REPLY_TEXT_INVALID');
+    error.retryable = false;
+    throw error;
+  }
+
+  await composer.click({ timeout: 3000 });
+  await page.keyboard.insertText(body);
+  try {
+    await assertCurrentSourceIdentity();
+  } catch (error) {
+    await clearComposerSafely(composer);
+    throw error;
+  }
+
+  await page.keyboard.press('Enter');
+  await sleep(800);
+  await assertCurrentSourceIdentity();
+  if (!(await visibleSourceHasTag(tag))) {
+    const error = new Error('SOURCE_REPLY_VISUAL_RECEIPT_MISSING');
+    error.retryable = true;
+    throw error;
+  }
+
+  sourceReplyCount += 1;
+  await log(`SOURCE_REPLY_SENT ${reply.sourceMessageId} ${tag} action=${reply.action}`);
+  return true;
+}
+
+async function flushSourceReplySpool() {
+  if (!SOURCE_AUTO_REPLY_ENABLED || flushingSourceReplies) return;
+  flushingSourceReplies = true;
+  try {
+    return await spoolRuntime.flushSourceReplies(sendAutonomousReplyToSource, { limit: 8 });
+  } finally {
+    flushingSourceReplies = false;
+  }
+}
+
+async function sendTextInCurrentLab(textValue, tag) {
+  await assertCurrentLabIdentity();
+  if (tag && await visibleLabHasTag(tag)) return true;
+  const composer = await messageComposer();
   if (!composer) throw new Error('No encontré el compositor del grupo LAB.');
   await composer.click({ timeout: 3000 });
   await page.keyboard.insertText(String(textValue).slice(0, 3900));
