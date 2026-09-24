@@ -474,6 +474,35 @@ async function deliverBackendEvent(event) {
         createdAt: isoNow()
       });
     }
+
+    if (SOURCE_AUTO_REPLY_ENABLED && event.channelRole === 'source' && result?.autonomousReply) {
+      const reply = result.autonomousReply;
+      if (!SOURCE_GROUP_ID || String(reply.groupId || '').toLowerCase() !== SOURCE_GROUP_ID.toLowerCase()) {
+        const error = new Error('AUTONOMOUS_REPLY_GROUP_ID_MISMATCH');
+        error.retryable = false;
+        throw error;
+      }
+      if (String(reply.sourceMessageId || '') !== String(event.externalMessageId || '')) {
+        const error = new Error('AUTONOMOUS_REPLY_SOURCE_ID_MISMATCH');
+        error.retryable = false;
+        throw error;
+      }
+      if (!['AUTO_REPLY','ASK_CLARIFICATION','HUMAN_LAST_RESORT'].includes(String(reply.action || ''))) {
+        const error = new Error('AUTONOMOUS_REPLY_ACTION_INVALID');
+        error.retryable = false;
+        throw error;
+      }
+      await queueSourceReply({
+        replyId: String(reply.replyId || ''),
+        sourceMessageId: String(reply.sourceMessageId || ''),
+        groupId: String(reply.groupId || ''),
+        groupKey: String(reply.groupKey || ''),
+        action: String(reply.action || ''),
+        text: String(reply.text || '').slice(0, 3600),
+        humanRequired: Boolean(reply.humanRequired),
+        createdAt: isoNow()
+      });
+    }
     deliveredCount += 1;
     await log(`DELIVERED ${event.externalMessageId} ${result?.classification || 'received'} duplicate=${Boolean(result?.duplicate)}`);
     return result;
