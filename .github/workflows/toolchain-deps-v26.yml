@@ -54,7 +54,9 @@ jobs:
         run: node scripts/normalize-package-lock-v26.mjs
 
       - name: Regenerate lock deterministically
-        run: npm install --package-lock-only --ignore-scripts --no-audit --no-fund
+        run: |
+          npm install --package-lock-only --ignore-scripts --no-audit --no-fund
+          npm update deepmerge-ts qs --package-lock-only --ignore-scripts --no-audit --no-fund
 
       - name: Upload regenerated lock evidence
         if: always()
