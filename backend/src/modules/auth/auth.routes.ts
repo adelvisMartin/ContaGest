@@ -107,13 +107,13 @@ async function sessionPayload(req:any,res:any,user:any,tenant:any,options:{role?
   };
 }
 
-async function ensureAdminRole(tenantId:string,userId:string){
+async function ensureAdminRole(db:any,tenantId:string,userId:string){
   const permissionKeys=['admin.manage','clients.manage','inventory.manage','sales.manage','sales.view','purchases.manage','reports.view','modules.manage','payroll.manage','banking.manage','taxes.export','health.manage','gym.manage','communications.manage'];
-  for(const key of permissionKeys)await prisma.permission.upsert({where:{key},update:{},create:{key,description:`Permiso ${key}`}});
-  const role=await prisma.role.upsert({where:{tenantId_name:{tenantId,name:'Administrador'}},update:{description:'Rol administrador de ContaGest.',system:true},create:{tenantId,name:'Administrador',description:'Rol administrador de ContaGest.',system:true}});
-  const permissions=await prisma.permission.findMany({where:{key:{in:permissionKeys}},select:{id:true}});
-  for(const permission of permissions)await prisma.rolePermission.upsert({where:{roleId_permissionId:{roleId:role.id,permissionId:permission.id}},update:{},create:{roleId:role.id,permissionId:permission.id}});
-  await prisma.userRole.upsert({where:{userId_roleId:{userId,roleId:role.id}},update:{},create:{userId,roleId:role.id}});
+  for(const key of permissionKeys)await db.permission.upsert({where:{key},update:{},create:{key,description:`Permiso ${key}`}});
+  const role=await db.role.upsert({where:{tenantId_name:{tenantId,name:'Administrador'}},update:{description:'Rol administrador de ContaGest.',system:true},create:{tenantId,name:'Administrador',description:'Rol administrador de ContaGest.',system:true}});
+  const permissions=await db.permission.findMany({where:{key:{in:permissionKeys}},select:{id:true}});
+  for(const permission of permissions)await db.rolePermission.upsert({where:{roleId_permissionId:{roleId:role.id,permissionId:permission.id}},update:{},create:{roleId:role.id,permissionId:permission.id}});
+  await db.userRole.upsert({where:{userId_roleId:{userId,roleId:role.id}},update:{},create:{userId,roleId:role.id}});
 }
 
 async function authenticatedSession(req:any){
@@ -136,15 +136,28 @@ router.get('/captcha',(_req,res)=>ok(res,createCaptchaChallenge()));
 router.post('/register',validateBody(registerSchema),asyncHandler(async(req,res)=>{
   const registerKey=req.header('x-admin-register-key')||'',publicAllowed=env.ALLOW_PUBLIC_REGISTER==='true'||(!isProd&&env.ALLOW_PUBLIC_REGISTER==='local'),keyAllowed=Boolean(env.ADMIN_REGISTER_KEY&&registerKey===env.ADMIN_REGISTER_KEY);
   if(!publicAllowed&&!keyAllowed)throw new HttpError(403,'Registro público deshabilitado. La empresa debe ser creada por un administrador.');
-  verifyCaptcha(req.body);const body=req.body,passwordHash=await bcrypt.hash(body.password,12),email=String(body.email).trim().toLowerCase();
-  const tenant=await prisma.tenant.upsert({where:{rif:body.tenantRif},update:{name:body.tenantName,legalName:body.legalName||body.tenantName,plan:body.plan||'enterprise',status:'active'},create:{rif:body.tenantRif,name:body.tenantName,legalName:body.legalName||body.tenantName,plan:body.plan||'enterprise',status:'active',settings:{}}});
-  const existing=await prisma.userProfile.findUnique({where:{tenantId_email:{tenantId:tenant.id,email}}});
-  if(existing?.passwordHash)throw new HttpError(409,'Ya existe un usuario con ese email para esta empresa.');
-  const user=existing?await prisma.userProfile.update({where:{id:existing.id},data:{fullName:body.fullName,passwordHash,status:'active'}}):await prisma.userProfile.create({data:{tenantId:tenant.id,email,fullName:body.fullName,passwordHash,status:'active'}});
-  await ensureAdminRole(tenant.id,user.id);
-  await ensureAccountMembership({tenantId:tenant.id,userProfileId:user.id,email:user.email,fullName:user.fullName,roleLabel:'Administrador'});
-  const sessionUser=await prisma.userProfile.findUnique({where:{id:user.id},include:{userRoles:userRoleInclude}});
-  ok(res,await sessionPayload(req,res,sessionUser||user,tenant,{role:'admin'}),201);
+  verifyCaptcha(req.body);
+  const body=req.body,email=String(body.email).trim().toLowerCase(),tenantRif=String(body.tenantRif).trim().toUpperCase();
+  const passwordHash=await bcrypt.hash(body.password,12);
+  let provisioned:{tenant:any;userId:string};
+  try{
+    provisioned=await prisma.$transaction(async(tx)=>{
+      const existingTenant=await tx.tenant.findFirst({where:{rif:{equals:tenantRif,mode:'insensitive'}},select:{id:true}});
+      if(existingTenant)throw new HttpError(409,'Ya existe una empresa registrada con ese RIF. Usa el acceso existente o solicita vinculación controlada.');
+      const tenant=await tx.tenant.create({data:{rif:tenantRif,name:body.tenantName,legalName:body.legalName||body.tenantName,plan:body.plan||'enterprise',status:'active',settings:{}}});
+      const user=await tx.userProfile.create({data:{tenantId:tenant.id,email,fullName:body.fullName,passwordHash,status:'active'}});
+      await ensureAdminRole(tx,tenant.id,user.id);
+      await ensureAccountMembership({tenantId:tenant.id,userProfileId:user.id,email:user.email,fullName:user.fullName,roleLabel:'Administrador'},tx);
+      return{tenant,userId:user.id};
+    });
+  }catch(error:any){
+    if(error instanceof HttpError)throw error;
+    if(error?.code==='P2002')throw new HttpError(409,'El RIF o correo ya está asociado a un alta concurrente. Revisa la empresa existente antes de reintentar.');
+    throw error;
+  }
+  const sessionUser=await prisma.userProfile.findUnique({where:{id:provisioned.userId},include:{userRoles:userRoleInclude}});
+  if(!sessionUser)throw new HttpError(500,'El alta se confirmó pero la sesión administrativa no pudo materializarse.');
+  ok(res,await sessionPayload(req,res,sessionUser,provisioned.tenant,{role:'admin'}),201);
 }));
 
 router.post('/login',validateBody(loginSchema),asyncHandler(async(req,res)=>{
