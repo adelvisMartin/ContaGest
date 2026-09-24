@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import test from 'node:test';
+import { gymBackendSource } from '../qa/support/vertical-authority-sources.mjs';
 
 const read=(path)=>fs.readFileSync(path,'utf8');
 
@@ -11,13 +12,13 @@ test('46/51 persists immutable versioned ingredient nutrient profiles',()=>{
 });
 
 test('46/51 profile API appends versions under a tenant ingredient lock',()=>{
-  const source=read('backend/src/modules/verticals/gym.routes.ts');
+  const source=gymBackendSource();
   for(const token of ["router.get('/gym/ingredients/:id/nutrition-profiles'","router.post('/gym/ingredients/:id/nutrition-profiles'",'ingredientNutritionProfileSchema','gym-nutrient-profile-46:','MAX("version")','GymIngredientMicronutrient']) assert.ok(source.includes(token),token);
   assert.doesNotMatch(source,/UPDATE public\."GymIngredientNutritionProfile"|DELETE FROM public\."GymIngredientNutritionProfile"/);
 });
 
 test('46/51 snapshots direct and recipe ingredients at plan creation',()=>{
-  const source=read('backend/src/modules/verticals/gym.routes.ts');
+  const source=gymBackendSource();
   const start=source.indexOf('const createPlanNutrientSnapshot');
   const end=source.indexOf('const classSchema',start);
   const block=source.slice(start,end);
@@ -27,7 +28,7 @@ test('46/51 snapshots direct and recipe ingredients at plan creation',()=>{
 });
 
 test('46/51 plan write freezes one nutrient snapshot transactionally',()=>{
-  const source=read('backend/src/modules/verticals/gym.routes.ts');
+  const source=gymBackendSource();
   const start=source.indexOf("router.post('/gym/nutrition'");
   const end=source.indexOf("router.get('/gym/nutrition/:id/shopping-list'",start);
   const block=source.slice(start,end);
@@ -36,7 +37,7 @@ test('46/51 plan write freezes one nutrient snapshot transactionally',()=>{
 });
 
 test('46/51 nutrient endpoint reads the frozen snapshot and never rebuilds history',()=>{
-  const source=read('backend/src/modules/verticals/gym.routes.ts');
+  const source=gymBackendSource();
   const start=source.indexOf("router.get('/gym/nutrition/:id/nutrients'");
   const end=source.indexOf("router.get('/gym/nutrition-rules'",start);
   const block=source.slice(start,end);

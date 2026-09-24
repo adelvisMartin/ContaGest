@@ -1,8 +1,9 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import test from 'node:test';
+import { healthBackendSource, veterinaryBackendSource, veterinaryWorkspaceSource } from '../qa/support/vertical-authority-sources.mjs';
 
-const backend=()=>fs.readFileSync('backend/src/modules/verticals/health.routes.ts','utf8');
+const backend=()=>healthBackendSource();
 const service=()=>fs.readFileSync('frontend/src/services/verticalService.js','utf8');
 const page=()=>fs.readFileSync('frontend/src/pages/VeterinaryClinicPageV1123.jsx','utf8');
 const panel=()=>fs.readFileSync('frontend/src/components/veterinary/VeterinaryLongitudinalRecord.jsx','utf8');
@@ -71,7 +72,7 @@ test('23/51 veterinary vital batch is atomic tenant-scoped and retry-safe',()=>{
 test('23/51 veterinary vital schema limits kinds units duplicates and finite values',()=>{
   const source=backend();
   const start=source.indexOf('const VETERINARY_VITAL_UNITS');
-  const end=source.indexOf('const immunizationSchema',start);
+  const end=source.indexOf('export const immunizationSchema',start);
   const block=source.slice(start,end);
   for(const token of ['weight','temperature','heart_rate','respiratory_rate','kg','°C','lpm','rpm','.finite()','Cada signo vital puede registrarse una sola vez por toma.','La unidad no corresponde al signo vital.']) assert.ok(block.includes(token),token);
 });
@@ -100,7 +101,7 @@ test('23/51 frontend service exposes veterinary vital batch endpoint',()=>{
 
 
 test('23/51 completed inpatient vital events project atomically into CareMeasurement',()=>{
-  const source=fs.readFileSync('backend/src/modules/verticals/veterinary.routes.ts','utf8');
+  const source=veterinaryBackendSource();
   const start=source.indexOf("router.post('/hospitalizations/:id/treatment-sheet'");
   const end=source.indexOf("router.get('/observations'",start);
   const block=source.slice(start,end);
@@ -121,9 +122,9 @@ test('23/51 completed inpatient vital events project atomically into CareMeasure
 });
 
 test('23/51 inpatient vital projection rejects non-numeric values before persistence',()=>{
-  const source=fs.readFileSync('backend/src/modules/verticals/veterinary.routes.ts','utf8');
+  const source=veterinaryBackendSource();
   const start=source.indexOf('const VETERINARY_TREATMENT_VITAL_UNITS');
-  const end=source.indexOf('const procedureSchema',start);
+  const end=source.indexOf('export const procedureSchema',start);
   const block=source.slice(start,end);
   assert.match(block,/Number\.isFinite\(Number\(raw\)\)/);
   assert.match(block,/El signo vital debe ser numérico/);

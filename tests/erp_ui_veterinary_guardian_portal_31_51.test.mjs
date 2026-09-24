@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import test from 'node:test';
+import { veterinaryBackendSource, veterinaryWorkspaceSource } from '../qa/support/vertical-authority-sources.mjs';
 
 const read=(path)=>fs.readFileSync(path,'utf8');
 
@@ -13,7 +14,7 @@ test('31/51 persists only hashed, revocable, RLS-protected guardian grants',()=>
 });
 
 test('31/51 staff grant API uses 256-bit tokens, <=7 day TTL, explicit scopes and no query secret',()=>{
-  const source=read('backend/src/modules/verticals/veterinary.routes.ts');
+  const source=veterinaryBackendSource();
   for(const token of ['guardian-portal/grants','randomBytes(32)','sha256(portalToken)','communications.manage','expiresInHours','max(168)','scopes','#access='])assert.ok(source.includes(token),token);
   assert.doesNotMatch(source,/\?token=/);
   assert.doesNotMatch(source,/after:\{[^}]*portalToken/s);
@@ -60,7 +61,7 @@ test('31/51 frontend keeps token in fragment/session storage and never reads que
 
 test('31/51 frontend has one admin owner, explicit scopes and independent public Vite entry',()=>{
   const vite=read('frontend/vite.config.js');
-  const workspace=read('frontend/src/components/veterinary/VeterinaryWorkspace.jsx');
+  const workspace=veterinaryWorkspaceSource();
   const panel=read('frontend/src/components/veterinary/VeterinaryGuardianPortalPanel.jsx');
   assert.match(vite,/portal-veterinaria/);
   assert.equal((workspace.match(/import \{ VeterinaryGuardianPortalPanel \}/g)||[]).length,1);

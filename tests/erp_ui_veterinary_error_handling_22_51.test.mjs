@@ -41,7 +41,10 @@ test('22/51 workspace preserves previous data on read failure and exposes retry'
 });
 
 test('22/51 veterinary logging avoids clinical payload serialization',()=>{
-  for(const source of [owner(),workspace()]){
+  const workspaceSource=workspace();
+  const workspaceReporter=fs.readFileSync('frontend/src/components/veterinary/veterinaryWorkspace.helpers.js','utf8');
+  assert.match(workspaceSource,/reportVeterinaryError/);
+  for(const source of [owner(),workspaceReporter]){
     assert.match(source,/console\.error\('\[veterinary\]'/);
     assert.match(source,/scope/);
     assert.match(source,/message/);

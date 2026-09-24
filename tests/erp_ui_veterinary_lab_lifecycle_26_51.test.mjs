@@ -1,9 +1,10 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import test from 'node:test';
+import { veterinaryBackendSource, veterinaryWorkspaceSource } from '../qa/support/vertical-authority-sources.mjs';
 
-const backend=()=>fs.readFileSync('backend/src/modules/verticals/veterinary.routes.ts','utf8');
-const workspace=()=>fs.readFileSync('frontend/src/components/veterinary/VeterinaryWorkspace.jsx','utf8');
+const backend=()=>veterinaryBackendSource();
+const workspace=()=>veterinaryWorkspaceSource();
 
 test('26/51 laboratory order and placeholders are persisted atomically',()=>{
   const source=backend();

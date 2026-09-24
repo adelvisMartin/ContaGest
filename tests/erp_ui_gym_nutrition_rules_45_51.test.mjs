@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import test from 'node:test';
+import { gymBackendSource } from '../qa/support/vertical-authority-sources.mjs';
 
 const read=(path)=>fs.readFileSync(path,'utf8');
 
@@ -11,13 +12,13 @@ test('45/51 persists only explicit member ingredient rules',()=>{
 });
 
 test('45/51 rule CRUD stays tenant scoped and archive/reactivate based',()=>{
-  const source=read('backend/src/modules/verticals/gym.routes.ts');
+  const source=gymBackendSource();
   for(const token of ["router.get('/gym/nutrition-rules'","router.post('/gym/nutrition-rules'","router.patch('/gym/nutrition-rules/:id'",'nutritionRuleSchema','El cliente no pertenece al tenant activo.','El ingrediente no pertenece al tenant activo o está archivado.']) assert.ok(source.includes(token),token);
   assert.doesNotMatch(source,/router\.delete\('\/gym\/nutrition-rules/);
 });
 
 test('45/51 new plans inspect direct and recipe ingredients against blocking rules',()=>{
-  const source=read('backend/src/modules/verticals/gym.routes.ts');
+  const source=gymBackendSource();
   const start=source.indexOf("router.post('/gym/nutrition'");
   const end=source.indexOf("router.get('/gym/nutrition/:id/shopping-list'",start);
   const block=source.slice(start,end);
