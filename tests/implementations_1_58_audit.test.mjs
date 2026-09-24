@@ -8,7 +8,6 @@ const rows=manifest.implementations;
 test('implementation audit owns exactly 1 through 58 without gaps or duplicates',()=>{
   assert.equal(rows.length,58);
   assert.deepEqual(rows.map((row)=>row.id),Array.from({length:58},(_,index)=>index+1));
-  assert.equal(new Set(rows.map((row)=>row.id).size),undefined);
   assert.equal(new Set(rows.map((row)=>row.id)).size,58);
 });
 
