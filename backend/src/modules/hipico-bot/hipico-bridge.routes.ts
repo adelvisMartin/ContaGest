@@ -12,6 +12,9 @@ import { canonicalShadowReadiness, persistCanonicalShadow } from './hipico-canon
 import { bridgePersistenceReady, ensureGroupShadowOutbox, persistBridgeTransportEvent } from './hipico-bridge-transport.store.js';
 import { bridgeTokenConfigured, bridgeTokenValid } from './hipico-bridge-security.js';
 import { operatorActorRef, operatorTokenConfigured, operatorTokenValid } from './hipico-operator-security.js';
+import { configuredOutboxOwnerId } from './hipico-outbox.store.js';
+import { arbitrateAutonomousConversation } from '../hipico/autonomous-conversation-arbiter.js';
+import { observeAutonomousProvider } from '../hipico/autonomous-provider-observer.js';
 
 const router = Router();
 const OFFICIAL_SOURCE_CHANNEL_KEY=String(process.env.HIPICO_OFFICIAL_SOURCE_CHANNEL_KEY||'club-hipico-triple-crown-official').trim();
@@ -95,10 +98,66 @@ router.post('/bridge/events',async(req,res)=>{
       }
     }
     let responsePlan=planSafeResponse(conversationDecision,{handoffState,systemHealthy:safetyReady.ready,at:new Date()});
+    const providerEvidence=!input.historySync&&!input.fromMe&&event.inserted
+      ?await observeAutonomousProvider({
+        ownerId:configuredOutboxOwnerId(),
+        groupKey,
+        groupId:input.groupId,
+        text:assessment.sanitizedText,
+        sourceMessageId:input.externalMessageId,
+        humanOwned:handoffState?.ownership==='human',
+        systemHealthy:safetyReady.ready
+      })
+      :{observation:null,readiness:null,evaluationId:null,failureCode:null};
     if(input.historySync)responsePlan={...responsePlan,intent:'NONE',text:null,canSend:false,confirmationVerified:false,evidence:null,handoffRequired:false,reason:'HISTORY_SYNC_NO_RESPONSE'};
     else if(!rate.allowed)responsePlan={...responsePlan,intent:'NONE',text:null,canSend:false,confirmationVerified:false,evidence:null,handoffRequired:false,reason:rate.reason||'RATE_LIMIT'};
+    const autonomousDecision=arbitrateAutonomousConversation({
+      classification:result,
+      conversation:conversationDecision,
+      responsePlan,
+      fromMe:input.fromMe,
+      historySync:input.historySync,
+      rateAllowed:rate.allowed,
+      providerObservation:providerEvidence.observation,
+      providerReadiness:providerEvidence.readiness
+    });
     const responseReceipt=safetyReady.ready&&!input.historySync&&event.inserted?await persistResponsePlan(responsePlan):null;
-    return res.status(event.inserted?202:200).json({ok:true,duplicate:!event.inserted,mode:'shadow',historySync:input.historySync,classification:result.intent,actions:[] as never[],conversationalAppSec:abuse,conversationDecision,responsePlan,responseReceipt,labSimulation:event.inserted?buildLabSimulation(input,result,canonical,responsePlan.text):null,data:{eventId:event.id,outboxId:outbox.id,canonical,raceContextKey,intent:result.intent,risk:result.risk,entities:result.entities||null,autoEligible:false}});
+    const autonomousReply=event.inserted&&autonomousDecision.canSend&&autonomousDecision.text
+      ?{
+        replyId:responsePlan.responseIdempotencyKey,
+        sourceMessageId:input.externalMessageId,
+        groupId:input.groupId,
+        groupKey,
+        action:autonomousDecision.action,
+        text:String(autonomousDecision.text).slice(0,3600),
+        humanRequired:autonomousDecision.humanRequired,
+        humanIsLastResort:true,
+        directEffectsAllowed:false,
+        financialAuthority:false
+      }
+      :null;
+    return res.status(event.inserted?202:200).json({
+      ok:true,
+      duplicate:!event.inserted,
+      mode:'shadow-domain-autonomous-reply',
+      historySync:input.historySync,
+      classification:result.intent,
+      actions:[] as never[],
+      conversationalAppSec:abuse,
+      conversationDecision,
+      responsePlan,
+      responseReceipt,
+      autonomousDecision,
+      autonomousReply,
+      decisionProvider:{
+        status:providerEvidence.observation?.status||'NOT_OBSERVED',
+        readiness:providerEvidence.readiness?.reason||null,
+        evaluationId:providerEvidence.evaluationId,
+        failureCode:providerEvidence.failureCode
+      },
+      labSimulation:event.inserted?buildLabSimulation(input,result,canonical,responsePlan.text):null,
+      data:{eventId:event.id,outboxId:outbox.id,canonical,raceContextKey,intent:result.intent,risk:result.risk,entities:result.entities||null,autoEligible:false}
+    });
   }catch(error:any){
     const mismatch=replayMismatchCode(error);
     if(mismatch){console.warn('[hipico-bridge] replay identity mismatch',{messageRef:shadowTag(input.externalMessageId),channelRole:input.channelRole,code:mismatch});return res.status(409).json({ok:false,retryable:false,error:'REPLAY_IDENTITY_MISMATCH'});}
