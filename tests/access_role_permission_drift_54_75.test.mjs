@@ -30,8 +30,10 @@ test('54/75 default roles derive every route permission from the canonical acces
   }
 });
 
-test('54/75 normalization preserves explicit capability permissions while adding canonical route permissions',()=>{
-  assert.match(access,/new Set\(\[\.\.\.\(role\.permissions\|\|\[\]\),\.\.\.permissionsForModules\(role\.modules\)\]\)/);
+test('54/75 normalization preserves only non-route capabilities and derives all route permissions',()=>{
+  assert.match(access,/const routePermissions = new Set\(permissionByRoute\.values\(\)\)/);
+  assert.match(access,/filter\(\(permission\)=>!routePermissions\.has\(permission\)\)/);
+  assert.match(access,/permissionsForModules\(modules\)/);
   assert.match(access,/permissionByRoute/);
 });
 
