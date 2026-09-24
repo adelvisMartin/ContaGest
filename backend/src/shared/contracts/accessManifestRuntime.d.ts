@@ -22,6 +22,6 @@ export type AccessManifest = {
 export function validateAccessManifest(input:unknown):AccessManifest;
 export const ACCESS_MANIFEST:AccessManifest;
 export const ROUTE_PERMISSION_MAP:Readonly<Record<string,string>>;
-export const PERMISSION_MODULES:Readonly<Record<string,string[]>>;
+export const PERMISSION_MODULES:Readonly<Record<string,readonly string[]>>;
 export function permissionForRoute(route:string):string|null;
 export function landingForMode(mode:string):string;
