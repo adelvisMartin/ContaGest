@@ -1,4 +1,4 @@
-import accessManifest from 'contagest-ve-backend/access-manifest.json' with { type:'json' };
+import { ACCESS_MANIFEST as accessManifest } from 'contagest-ve-backend/access-manifest';
 
 const manifestModules=Array.isArray(accessManifest?.modules)?accessManifest.modules:[];
 const CORE_ROUTES = ['login',...manifestModules.filter((module)=>module.coreAccess===true).map((module)=>module.route)];
