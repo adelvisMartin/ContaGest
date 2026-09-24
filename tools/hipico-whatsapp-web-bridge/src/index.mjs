@@ -232,6 +232,7 @@ async function writeHealth(extra = {}) {
     sourceMatches: SOURCE_MATCHES,
     eventSpool: counters.eventSpool,
     mirrorSpool: counters.mirrorSpool,
+    sourceReplySpool: counters.sourceReplySpool,
     deadLetters: counters.deadLetters
   });
   const payload = {
@@ -1207,6 +1208,7 @@ async function printHealthSummary(force = false) {
     sourceMatches: SOURCE_MATCHES,
     eventSpool,
     mirrorSpool,
+    sourceReplySpool,
     deadLetters
   });
   const line = `HEALTH ready=${readiness.ready} mode=${RUNTIME_MODE} source=${activeSourceTitle || 'buscando'} | backend=${backendLabel}${cooldown && BACKEND_SYNC_ENABLED ? ` cooldown=${Math.ceil(cooldown/1000)}s` : ''} | capturados=${capturedCount} | respuestas=${sourceReplyCount} | spool=${eventSpool} | replyPend=${sourceReplySpool} | labPend=${mirrorSpool} | dead=${deadLetters}`;
