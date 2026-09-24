@@ -16,7 +16,7 @@
   "scripts": {
     "dev": "tsx watch src/server.ts",
     "start": "node dist/src/server.js",
-    "build": "tsc -p tsconfig.json",
+    "build": "tsc -p tsconfig.json && node scripts/copy-runtime-assets.mjs",
     "lint": "tsc --noEmit",
     "typecheck": "tsc --noEmit",
     "test:config": "tsx --test src/config/*.test.ts",
