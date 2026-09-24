@@ -21,6 +21,17 @@ function modelDelegate(model: CrudOptions['model']) {
   return delegate;
 }
 
+
+export function createLazyCrudRouter(options: CrudOptions) {
+  const router = Router();
+  let delegateRouter: ReturnType<typeof createCrudRouter> | null = null;
+  router.use((req, res, next) => {
+    delegateRouter ||= createCrudRouter(options);
+    return delegateRouter(req, res, next);
+  });
+  return router;
+}
+
 export function createCrudRouter(options: CrudOptions) {
   const router = Router();
 
