@@ -113,9 +113,14 @@ async function auditKeyboardFocus(page){
 }
 
 async function auditOptionalDialog(page){
-  const trigger=page.getByRole('button',{name:/nuevo|nueva|crear|agregar|registrar/i}).first();
-  if(!(await trigger.count())||!(await trigger.isVisible().catch(()=>false)))return [];
-  await trigger.click();
+  const triggers=page.getByRole('button',{name:/nuevo|nueva|crear|agregar|registrar/i});
+  let trigger=null;
+  for(let index=0;index<await triggers.count();index+=1){
+    const candidate=triggers.nth(index);
+    if(await candidate.isVisible().catch(()=>false)&&await candidate.isEnabled().catch(()=>false)){trigger=candidate;break;}
+  }
+  if(!trigger)return [];
+  await trigger.click({timeout:5_000});
   const dialog=page.getByRole('dialog').first();
   if(!(await dialog.count())||!(await dialog.isVisible().catch(()=>false)))return [];
   const box=await dialog.boundingBox();
