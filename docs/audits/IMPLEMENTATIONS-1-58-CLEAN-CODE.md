@@ -49,7 +49,7 @@ Durante la recuperación real de CI aparecieron defectos adicionales en AppSec, 
 6. Cada lote debe pasar typecheck, tests, build, AppSec, PostgreSQL y browser cuando aplique.
 7. Ningún job de un SHA anterior valida un head nuevo.
 
-## Lote 2 · completado en rama de refactor
+## Lote 2 · mergeado
 
 - `gym.schemas.ts` centraliza los contratos de request de 33–47;
 - `veterinary.schemas.ts` centraliza los contratos de request de 26–32;
@@ -57,9 +57,16 @@ Durante la recuperación real de CI aparecieron defectos adicionales en AppSec, 
 - límites veterinarios específicos se preservan sin forzar reutilización incompatible;
 - regresión: `tests/verticals_schema_authority_batch2.test.mjs`.
 
+## Lote 3 · Health/Odontología
+
+- `health.schemas.ts` centraliza 22 contratos Zod antes incrustados en `health.routes.ts`;
+- `health.routes.ts` conserva 20/20 rutas, RBAC, transacciones, SQL, locks, normalización y analytics financieros;
+- el módulo de schemas no importa Prisma, Router ni middleware de permisos;
+- trazabilidad directa: 11, 12, 13, 14, 15, 18, 19 y 20;
+- regresión: `tests/health_schema_authority_batch3.test.mjs`.
+
 ## Pendiente priorizado
 
-- lote 3: dental backend `health.routes.ts`;
 - lote 4: `VeterinaryWorkspace`, `GymManagementPage`, `DentistryPracticePage`;
 - lote 5: servicios frontend y eliminación de boilerplate;
 - lote 6: acceso/licensing 52–57;
