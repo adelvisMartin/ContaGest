@@ -999,7 +999,7 @@ function sourceReplyTag(replyId) {
 async function visibleSourceHasTag(tag) {
   await assertCurrentSourceIdentity();
   return page.evaluate((needle) => {
-    const messages = Array.from(document.querySelectorAll('.message-out, [data-id]')).slice(-120);
+    const messages = Array.from(document.querySelectorAll('.message-out')).slice(-120);
     return messages.some((node) => String(node.innerText || '').includes(needle));
   }, tag).catch(() => false);
 }
