@@ -35,14 +35,9 @@ Se reconciliaron **58/58 implementaciones** sin huecos. La auditoría de PRs eli
 ### Gimnasio 37–40
 La validación de progresión 38/51 estaba copiada en evaluación y rutina, y la relación RIR/RPE se repetía en workout sets. Se movió a funciones puras de `gym.progression.ts` y los schemas sólo traducen issues al path correspondiente.
 
-### Seguridad transversal
-Con runners recuperados, AppSec encontró que el scanner trataba `frontend/api/**` —funciones serverless— como JavaScript de navegador. Se corrigió la frontera por superficie, conservando el detector de secretos en browser code.
+## Hallazgos concurrentes observados, fuera de este lote
 
-### Release 51/51
-Con ejecución real se detectó que `actions/checkout` obtenía el merge-ref del PR mientras el gate comparaba con el head SHA. Todos los jobs 51/51 ahora hacen checkout explícito de `CANDIDATE_SHA`.
-
-### Hípico / PWA
-El contrato v9 todavía pedía `physical_qa_status` manual, aunque el sistema actual exige `physical-qa-evidence.json` SHA-bound. La regresión se actualizó para impedir que un input manual vuelva a convertirse en autoridad de QA física.
+Durante la recuperación real de CI aparecieron defectos adicionales en AppSec, checkout exact-SHA y contratos Hípico/PWA. Se documentan como **follow-up** y no se consideran corregidos por este PR salvo que su diff los contenga. La política es no mezclar esas superficies con el refactor behavior-preserving de verticales.
 
 ## Política para próximos lotes
 
