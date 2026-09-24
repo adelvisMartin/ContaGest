@@ -40,6 +40,7 @@ const {
   labGroupId: LAB_GROUP_ID,
   labChannelKey: LAB_CHANNEL_KEY,
   labSendEnabled: LAB_SEND_ENABLED,
+  sourceAutoReplyEnabled: SOURCE_AUTO_REPLY_ENABLED,
   requirePinnedGroupIds: REQUIRE_PINNED_GROUP_IDS,
   pollMs: POLL_MS,
   backendTimeoutMs: BACKEND_TIMEOUT_MS,
@@ -86,6 +87,7 @@ let sourceBaselineCompleted = false;
 let activeSourceTitle = '';
 let flushingEvents = false;
 let flushingMirrors = false;
+let flushingSourceReplies = false;
 let stopping = false;
 let seenSaveTimer = null;
 let backendNextAllowedAt = 0;
@@ -97,6 +99,7 @@ let lastSourceSeenAt = null;
 let capturedCount = 0;
 let deliveredCount = 0;
 let mirroredCount = 0;
+let sourceReplyCount = 0;
 let duplicateVisibleCount = 0;
 let nonOperationalCount = 0;
 let lastPostStartedAt = 0;
@@ -217,6 +220,7 @@ async function writeHealth(extra = {}) {
     labSeenIds: labSeen.size,
     eventSpool: spool.pendingBackend,
     mirrorSpool: spool.pendingLab,
+    sourceReplySpool: spool.pendingSourceReplies,
     deadLetters: spool.quarantined,
     spoolStates: spool.counts
   };
@@ -245,7 +249,8 @@ async function writeHealth(extra = {}) {
     },
     labSendEnabled: LAB_SEND_ENABLED,
     labTestInputEnabled: LAB_TEST_INPUT_ENABLED,
-    sourceSendPossible: false,
+    sourceAutoReplyEnabled: SOURCE_AUTO_REPLY_ENABLED,
+    sourceSendPossible: Boolean(SOURCE_AUTO_REPLY_ENABLED && SOURCE_GROUP_ID && BACKEND_SYNC_ENABLED && RUNTIME_MODE === RUNTIME_MODES.PRODUCTION),
     backend: {
       state: backendState,
       failureStreak: backendFailureStreak,
@@ -333,6 +338,9 @@ async function queueEvent(event) {
 }
 async function queueMirror(mirror) {
   return spoolRuntime.queueLabMirror(mirror);
+}
+async function queueSourceReply(reply) {
+  return spoolRuntime.queueSourceReply(reply);
 }
 
 function classifyHttpFailure(response, body, raw) {
