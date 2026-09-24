@@ -80,16 +80,22 @@ test('64/75 preserves veterinary patient and appointment CRUD paths behind the s
 test('64/75 turns VeterinaryWorkspace into an orchestrator and keeps one visual owner',()=>{
   const workspace=read('frontend/src/components/veterinary/VeterinaryWorkspace.jsx');
   const views=read('frontend/src/components/veterinary/VeterinaryWorkspaceViews.jsx');
+  const dialogs=read('frontend/src/components/veterinary/VeterinaryWorkspaceDialogs.jsx');
   const primitives=read('frontend/src/components/veterinary/VeterinaryWorkspacePrimitives.jsx');
-  assert.ok(workspace.length<40_000,`workspace remains monolithic: ${workspace.length} chars`);
+  assert.ok(workspace.length<25_000,`workspace remains monolithic: ${workspace.length} chars`);
   assert.match(workspace,/VeterinaryWorkspacePrimitives\.jsx/);
   assert.match(workspace,/renderVeterinaryWorkspaceTab/);
+  assert.match(workspace,/renderVeterinaryDialogFields/);
   assert.doesNotMatch(workspace,/const renderOverview=|const renderPatients=|const renderLabs=|const renderHospital=/);
   assert.equal((workspace.match(/cg-veterinary-workspace/g)||[]).length,1);
   for(const name of ['renderOverview','renderPatients','renderAgenda','renderHistory','renderLabs','renderStudies','renderHospital','renderProcedures','renderCommunications','renderFinance','renderGuardianPortal','renderBoarding']){
     assert.match(views,new RegExp(`const ${name}=`),`missing bounded view ${name}`);
   }
   assert.doesNotMatch(views,/useState\(|useEffect\(/,'view module must stay presentational');
+  assert.doesNotMatch(dialogs,/useState\(|useEffect\(/,'dialog module must stay presentational');
+  assert.match(dialogs,/const patientSelect=/);
+  assert.match(dialogs,/const professionalSelect=/);
+  assert.match(dialogs,/const DateParts=/);
   assert.match(primitives,/export function SectionCard/);
   assert.match(primitives,/export function EntityLabel/);
 });
@@ -101,7 +107,8 @@ test('64/75 does not reintroduce bypasses while decomposing the vertical',()=>{
     'backend/src/modules/verticals/veterinary-crud-patients.routes.ts',
     'backend/src/modules/verticals/veterinary-crud-appointments.routes.ts',
     'frontend/src/components/veterinary/VeterinaryWorkspace.jsx',
-    'frontend/src/components/veterinary/VeterinaryWorkspaceViews.jsx'
+    'frontend/src/components/veterinary/VeterinaryWorkspaceViews.jsx',
+    'frontend/src/components/veterinary/VeterinaryWorkspaceDialogs.jsx'
   ].map(read).join('\n');
   assert.doesNotMatch(sources,/\.catch\(\(\)=>null\)|waitForTimeout|test\.skip|test\.only/);
 });
