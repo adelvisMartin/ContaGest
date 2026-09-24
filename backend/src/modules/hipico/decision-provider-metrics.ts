@@ -215,6 +215,13 @@ export function decisionProviderReadiness(
   if (!status.enabled || status.mode !== 'SHADOW') {
     return { ...base, eligibleForAssistedRanking: false, reason: 'PROVIDER_DISABLED' };
   }
+  if (metrics.providerId !== status.providerId) {
+    return { ...base, eligibleForAssistedRanking: false, reason: 'PROVIDER_METRIC_IDENTITY_MISMATCH' };
+  }
+  if (metrics.window.recentDays !== DECISION_PROVIDER_RECENT_WINDOW_DAYS
+    || metrics.window.metricSchemaVersion !== DECISION_PROVIDER_METRIC_SCHEMA_VERSION) {
+    return { ...base, eligibleForAssistedRanking: false, reason: 'PROVIDER_METRIC_WINDOW_INVALID' };
+  }
   if (metrics.historical.reviewedObserved < READINESS_THRESHOLDS.historicalReviewedObserved) {
     return { ...base, eligibleForAssistedRanking: false, reason: 'PROVIDER_SHADOW_SAMPLE_INSUFFICIENT' };
   }
