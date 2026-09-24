@@ -4,6 +4,7 @@ import { prisma } from '../../database/prisma.js';
 import { asyncHandler, HttpError, ok } from '../../shared/http.js';
 import { requirePermission } from '../../shared/middleware/context.js';
 import { optionalText, dateText, jsonRecord, ctx, one, num } from './verticals.shared.js';
+import type { VerticalTransaction } from './verticals.shared.js';
 import { evaluateGymProgression, gymProgressionConfigIssues, isRirRpePairCoherent } from './gym.progression.js';
 
 const router = Router();
@@ -444,7 +445,7 @@ const mealAdherenceSchema=z.object({
   notes:optionalText
 });
 
-const createPlanNutrientSnapshot=async(tx:any,tenantId:string,planId:string,createdBy:string|null)=>{
+const createPlanNutrientSnapshot=async(tx:VerticalTransaction,tenantId:string,planId:string,createdBy:string|null)=>{
   const occurrences=await tx.$queryRawUnsafe(`
     SELECT m."id" AS "mealId",mi."ingredientId",mi."quantity"::numeric AS "quantity",mi."unit"
     FROM public."GymMeal" m
