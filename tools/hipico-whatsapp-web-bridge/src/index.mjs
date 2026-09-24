@@ -24,6 +24,7 @@ import {
 } from './group-identity.mjs';
 import { assessRuntimeReadiness } from './health-state.mjs';
 import { createBridgeSpoolRuntime } from './spool-runtime.mjs';
+import { localKillSwitchState } from './promotion-guard.mjs';
 
 const config = assertRuntimeConfig(loadRuntimeConfig());
 const {
@@ -1010,6 +1011,11 @@ async function sendAutonomousReplyToSource(reply) {
   if (RUNTIME_MODE !== RUNTIME_MODES.PRODUCTION || !BACKEND_SYNC_ENABLED || !SOURCE_GROUP_ID) {
     const error = new Error('SOURCE_AUTO_REPLY_RUNTIME_NOT_AUTHORIZED');
     error.retryable = false;
+    throw error;
+  }
+  if (localKillSwitchState(process.env, process.cwd()).active) {
+    const error = new Error('SOURCE_AUTO_REPLY_KILL_SWITCH_ACTIVE');
+    error.retryable = true;
     throw error;
   }
   if (String(reply.groupId || '').toLowerCase() !== SOURCE_GROUP_ID.toLowerCase()) {
