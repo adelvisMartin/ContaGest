@@ -76,3 +76,14 @@ test('issue #26 no reintroduce @types/bcryptjs obsoleto', () => {
     '@types/bcryptjs no debe volver al manifiesto del backend',
   );
 });
+
+test('issue #26 lock uses patched security transitive versions', () => {
+  const deepmerge=packageLock.packages?.['node_modules/deepmerge-ts']?.version;
+  const qs=packageLock.packages?.['node_modules/qs']?.version;
+  assert.equal(deepmerge,'8.0.1','Prisma config must resolve the patched deepmerge-ts');
+  assert.equal(qs,'6.16.0','Express/body-parser must resolve patched qs');
+});
+
+test('issue #26 workflow explicitly refreshes security overrides during deterministic lock regeneration', () => {
+  assert.match(workflow,/npm update deepmerge-ts qs --package-lock-only/);
+});
