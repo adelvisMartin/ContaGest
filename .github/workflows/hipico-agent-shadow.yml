@@ -88,6 +88,12 @@ jobs:
           grep -q '"mode":"SHADOW"' "$evidence/source-automation.json"
           grep -q '"financialAuthority":false' "$evidence/source-automation.json"
           grep -q '"directEffectsAllowed":false' "$evidence/source-automation.json"
+          grep -q '"eligibleForAssistedRanking":false' "$evidence/source-automation.json"
+          grep -q '"reason":"PROVIDER_DISABLED"' "$evidence/source-automation.json"
+          provider_status=$(curl --silent --output "$evidence/source-provider-metrics.json" --write-out '%{http_code}' -H 'x-hipico-operator-token: ci-agent-control-token-288-0001-strong' -H 'x-hipico-group-key: agent-e2e-a' 'http://127.0.0.1:3031/api/v1/hipico/groups/group-a@g.us/automation/provider-metrics')
+          test "$provider_status" = "200"
+          grep -q '"authoritative":false' "$evidence/source-provider-metrics.json"
+          grep -q '"canAuthorize":false' "$evidence/source-provider-metrics.json"
       - name: Drop isolated database even after failure
         if: always()
         shell: bash
