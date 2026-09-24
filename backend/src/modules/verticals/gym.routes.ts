@@ -271,7 +271,7 @@ const routineSchema = z.object({
   daysPerWeek: z.coerce.number().int().min(1).max(7).default(3),
   notes: optionalText,
   exercises: z.array(routineExerciseSchema).default([])
-).superRefine((value, refinement) => {
+}).superRefine((value, refinement) => {
   if(!value.exercises.length)return;
   const scheduledDays=new Set(value.exercises.map((exercise)=>exercise.dayOfWeek));
   if(value.daysPerWeek!==scheduledDays.size){
