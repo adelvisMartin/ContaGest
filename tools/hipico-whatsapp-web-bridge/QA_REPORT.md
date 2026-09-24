@@ -1,29 +1,33 @@
-# QA REPORT — Bridge v1.4.0
+# QA REPORT — Bridge v1.5.0
 
-## Defectos corregidos
+## Objetivo
 
-- El runtime instalado v1.3.3 funcionaba en `local-only` y no enviaba eventos al backend.
-- El nombre LAB quedó serializado como `Control hÃ­pico lab`, por lo que WhatsApp no encontraba el chat.
-- Se acumularon mirrors LAB sin entregar mientras el spool cloud permanecía en cero.
-- El launcher raíz seguía invocando el puente anterior/deprecado.
-- La consola repetía el mismo health cada 15 segundos.
+La versión 1.5.0 añade respuesta autónoma segura en el grupo SOURCE. El canal permanece en solo lectura por defecto y sólo puede enviar cuando backend y Bridge habilitan explícitamente `HIPICO_SOURCE_AUTO_REPLY_ENABLED=true`, el grupo `@g.us` está pinneado, el preflight está listo y no existe kill switch local.
 
-## Controles v1.4.0
+## Controles v1.5.0
 
-- modo producción estricto y separado de `shadow-local`;
-- token DPAPI reutilizable sin portapapeles ni impresión;
-- UTF-8 sin BOM y reparación compatible de mojibake;
-- preflight autenticado contra persistencia;
-- health local con razones de degradación;
-- circuit breaker, retry/backoff, spool y dead-letter;
-- fuente oficial sin ruta de envío;
-- LAB exacto con tags anti-duplicado/anti-loop;
-- journal pseudonimizado y reporte sin muestras por defecto;
-- diagnósticos DOM sin texto de chats y screenshots desactivados por defecto.
+- árbitro backend determinista para respuestas autónomas;
+- Jev sólo puede degradar una respuesta segura; nunca aumenta autoridad;
+- consultas hípicas read-only usan el store canónico y Risk Policy antes de responder;
+- mensajes monetarios/lifecycle pueden recibir ACK o aclaración, pero nunca ejecutar dinero/estado;
+- adjuntos solicitan texto antes de recurrir a humano;
+- hasta tres aclaraciones automáticas antes del handoff de último recurso;
+- comandos `source_reply` persistidos e idempotentes;
+- journal local `prepared → sending → sent|ambiguous`;
+- un crash durante envío queda `ambiguous` y no se reenvía a ciegas;
+- mensajes `fromMe` se excluyen para evitar feedback loops;
+- identidad SOURCE se revalida antes de escribir y antes de Enter;
+- recibos de entrega se reconcilian con backend;
+- kill switch local bloquea auto-reply aunque la configuración siga activa;
+- datos/colas permanecen bajo el directorio persistente del Bridge.
 
 ## Gate
 
-`npm run check`, `npm test`, `npm run selftest`, el conjunto Hipico del
-monorepo y el smoke browser deben pasar. El Bridge solo puede informarse listo
-cuando `/api/v1/hipico-bot/bridge/health` responde `ready=true`, el grupo
-fuente está activo y las tres colas reportan cero pendientes.
+`npm run check`, `npm test`, typecheck y tests Hípico del backend, PostgreSQL
+aislado para idempotencia/recibos, build backend y `git diff --check` deben pasar
+sobre el SHA exacto. CI nunca activa el envío real a WhatsApp.
+
+El Bridge sólo puede operar SOURCE auto-reply cuando
+`/api/v1/hipico-bot/bridge/health` responde `ready=true`,
+`sourceSendPossible=true` y `mode=safe-auto`. En cualquier discrepancia el
+preflight falla cerrado.

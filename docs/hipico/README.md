@@ -43,3 +43,16 @@ El gate `jev-shadow-readiness-v1` es estrictamente informativo. Puede declarar `
 Superar este gate **no cambia** `canAct`, `riskPolicy`, tools, estados de carrera, dinero ni outbox. Cualquier fase futura de ranking asistido requerirá una implementación separada, revisión explícita y nuevos gates exact-SHA.
 
 Los contadores de uso del proveedor se persisten como `inputUnits/outputUnits`, no como claves que contengan `token`, para mantener compatibilidad con el sanitizer de secretos de la evidencia.
+
+
+## Fase 3 · respuestas autónomas en el grupo WhatsApp
+
+La fase 3 separa la autonomía conversacional de la autoridad operacional. El bot puede responder por sí solo en el grupo oficial cuando `HIPICO_SOURCE_AUTO_REPLY_ENABLED=true`, pero una respuesta nunca equivale a una mutación de carrera, jugada, saldo, ledger o liquidación.
+
+El flujo es: mensaje SOURCE → persistencia/dedupe → clasificación determinista → response safety → Jev como evidencia downgrade-only → consulta canónica read-only cuando aplique → Risk Policy → comando `source_reply` persistido → journal durable del Bridge → validación del `@g.us` exacto → envío → recibo `sent|ambiguous`.
+
+Jev nunca puede ampliar autoridad. Cuando su readiness está probado sólo puede degradar una respuesta segura a aclaración. Si Jev está OFF o no disponible, una consulta determinista segura puede continuar usando la fuente canónica. Para consultas ambiguas, el bot solicita contexto; para adjuntos solicita texto; la intervención humana se reserva como último recurso tras tres aclaraciones fallidas o cuando existe un bloqueo real de seguridad/estado.
+
+El Bridge evita loops ignorando mensajes `fromMe`. Antes de pulsar Enter revalida el grupo SOURCE exacto. Si falla antes de enviar, el journal permite reintento; si el proceso cae durante o después del intento y no puede probarse la entrega, el estado queda `ambiguous` y no se reenvía automáticamente.
+
+La autonomía SOURCE exige simultáneamente switch backend + Bridge, owner configurado, grupo `@g.us` pinneado, schema de `source_reply` listo, backend saludable y kill switch local inactivo. El default continúa siendo OFF.

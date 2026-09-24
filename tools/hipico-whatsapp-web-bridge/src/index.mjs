@@ -24,6 +24,8 @@ import {
 } from './group-identity.mjs';
 import { assessRuntimeReadiness } from './health-state.mjs';
 import { createBridgeSpoolRuntime } from './spool-runtime.mjs';
+import { createSourceReplyJournal } from './source-reply-journal.mjs';
+import { localKillSwitchState } from './promotion-guard.mjs';
 
 const config = assertRuntimeConfig(loadRuntimeConfig());
 const {
@@ -40,6 +42,7 @@ const {
   labGroupId: LAB_GROUP_ID,
   labChannelKey: LAB_CHANNEL_KEY,
   labSendEnabled: LAB_SEND_ENABLED,
+  sourceAutoReplyEnabled: SOURCE_AUTO_REPLY_ENABLED,
   requirePinnedGroupIds: REQUIRE_PINNED_GROUP_IDS,
   pollMs: POLL_MS,
   backendTimeoutMs: BACKEND_TIMEOUT_MS,
@@ -54,11 +57,14 @@ const {
   labTestPollMs: LAB_TEST_POLL_MS,
   labTestBootstrapLimit: LAB_TEST_BOOTSTRAP_LIMIT
 } = config;
+const SOURCE_REPLY_KILL_SWITCH = localKillSwitchState();
+const SOURCE_AUTO_REPLY_ACTIVE = SOURCE_AUTO_REPLY_ENABLED && !SOURCE_REPLY_KILL_SWITCH.active;
 const PROFILE_DIR = path.join(DATA_DIR, 'chrome-profile');
 const LEGACY_EVENT_SPOOL_DIR = path.join(DATA_DIR, 'spool-events');
 const LEGACY_MIRROR_SPOOL_DIR = path.join(DATA_DIR, 'spool-lab-mirror');
 const LEGACY_DEADLETTER_DIR = path.join(DATA_DIR, 'dead-letter');
 const SPOOL_V2_DIR = path.join(DATA_DIR, 'spool-v2');
+const SOURCE_REPLY_DIR = path.join(DATA_DIR, 'source-replies');
 const TRAINING_DIR = path.join(DATA_DIR, 'training');
 const SEEN_FILE = path.join(DATA_DIR, 'seen-source-message-ids.json');
 const LAB_SEEN_FILE = path.join(DATA_DIR, 'seen-lab-test-message-ids.json');
@@ -74,7 +80,7 @@ const TRAINING_JOURNAL = path.join(TRAINING_DIR, `shadow-${new Date().toISOStrin
 function sleep(ms) { return new Promise((resolve) => setTimeout(resolve, ms)); }
 function isoNow() { return new Date().toISOString(); }
 
-for (const dir of [DATA_DIR, PROFILE_DIR, LEGACY_EVENT_SPOOL_DIR, LEGACY_MIRROR_SPOOL_DIR, LEGACY_DEADLETTER_DIR, TRAINING_DIR]) {
+for (const dir of [DATA_DIR, PROFILE_DIR, LEGACY_EVENT_SPOOL_DIR, LEGACY_MIRROR_SPOOL_DIR, LEGACY_DEADLETTER_DIR, TRAINING_DIR, SOURCE_REPLY_DIR]) {
   await fs.mkdir(dir, { recursive: true });
 }
 
@@ -86,6 +92,7 @@ let sourceBaselineCompleted = false;
 let activeSourceTitle = '';
 let flushingEvents = false;
 let flushingMirrors = false;
+let flushingSourceReplies = false;
 let stopping = false;
 let seenSaveTimer = null;
 let backendNextAllowedAt = 0;
@@ -97,6 +104,8 @@ let lastSourceSeenAt = null;
 let capturedCount = 0;
 let deliveredCount = 0;
 let mirroredCount = 0;
+let sourceReplySentCount = 0;
+let sourceReplyAmbiguousCount = 0;
 let duplicateVisibleCount = 0;
 let nonOperationalCount = 0;
 let lastPostStartedAt = 0;
@@ -195,6 +204,10 @@ const spoolRuntime = createBridgeSpoolRuntime({
   jitter: 0.1,
   logger: log
 });
+const sourceReplyJournal = createSourceReplyJournal({
+  rootDir: SOURCE_REPLY_DIR,
+  logger: log
+});
 async function screenshot(tag = 'error') {
   if (!DIAGNOSTIC_SCREENSHOTS_ENABLED) return;
   if (!page || page.isClosed()) return;
@@ -207,10 +220,13 @@ async function screenshot(tag = 'error') {
 async function writeHealth(extra = {}) {
   const now = Date.now();
   const spool = await spoolRuntime.snapshot();
+  const sourceReplies = await sourceReplyJournal.snapshot();
   const counters = {
     captured: capturedCount,
     delivered: deliveredCount,
     mirrored: mirroredCount,
+    sourceRepliesSent: sourceReplySentCount,
+    sourceRepliesAmbiguous: sourceReplyAmbiguousCount,
     duplicateVisible: duplicateVisibleCount,
     nonOperational: nonOperationalCount,
     seenIds: seen.size,
@@ -218,7 +234,9 @@ async function writeHealth(extra = {}) {
     eventSpool: spool.pendingBackend,
     mirrorSpool: spool.pendingLab,
     deadLetters: spool.quarantined,
-    spoolStates: spool.counts
+    spoolStates: spool.counts,
+    sourceReplyStates: sourceReplies.counts,
+    sourceReplyPending: sourceReplies.pending
   };
   const readiness = assessRuntimeReadiness({
     runtimeMode: RUNTIME_MODE,
@@ -232,7 +250,7 @@ async function writeHealth(extra = {}) {
   const payload = {
     version: VERSION,
     timestamp: isoNow(),
-    mode: 'SOURCE_READ_ONLY_TO_LAB_SHADOW',
+    mode: SOURCE_AUTO_REPLY_ACTIVE ? 'SOURCE_SAFE_AUTO_REPLY' : 'SOURCE_READ_ONLY_TO_LAB_SHADOW',
     runtimeMode: RUNTIME_MODE,
     readiness,
     sourceAliases: SOURCE_MATCHES,
@@ -245,7 +263,8 @@ async function writeHealth(extra = {}) {
     },
     labSendEnabled: LAB_SEND_ENABLED,
     labTestInputEnabled: LAB_TEST_INPUT_ENABLED,
-    sourceSendPossible: false,
+    sourceAutoReplyEnabled: SOURCE_AUTO_REPLY_ACTIVE,
+    sourceSendPossible: SOURCE_AUTO_REPLY_ACTIVE && backendState === 'online',
     backend: {
       state: backendState,
       failureStreak: backendFailureStreak,
@@ -398,6 +417,41 @@ async function backendPost(event) {
   return body;
 }
 
+function sourceReplyReceiptUrl(commandId) {
+  const url = new URL(INGEST_URL);
+  if (!/\/events$/.test(url.pathname)) throw new Error('SOURCE_REPLY_RECEIPT_URL_INVALID');
+  url.pathname = url.pathname.replace(/\/events$/, `/replies/${encodeURIComponent(commandId)}/receipt`);
+  return url.toString();
+}
+
+async function backendPostSourceReplyReceipt(record) {
+  if (!BACKEND_SYNC_ENABLED || !TOKEN) throw new Error('SOURCE_REPLY_RECEIPT_BACKEND_UNAVAILABLE');
+  const response = await fetch(sourceReplyReceiptUrl(record.commandId), {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      'x-hipico-bridge-token': TOKEN,
+      'x-request-id': `hipico-reply-${sha256(record.commandId).slice(0, 24)}`
+    },
+    body: JSON.stringify({
+      status: record.state === 'sent' ? 'sent' : 'ambiguous',
+      providerMessageId: record.deliveryRef || null,
+      error: record.lastError || null
+    }),
+    signal: AbortSignal.timeout(BACKEND_TIMEOUT_MS)
+  });
+  const raw = await response.text();
+  let body = {};
+  try { body = raw ? JSON.parse(raw) : {}; } catch {}
+  if (!response.ok) {
+    const info = classifyHttpFailure(response, body, raw);
+    const error = new Error(`Source reply receipt ${info.status}: ${info.message}`);
+    Object.assign(error, info);
+    throw error;
+  }
+  return body;
+}
+
 async function backendHealth() {
   if (!BACKEND_SYNC_ENABLED) {
     return { ok: true, state: 'local-only', status: 0, retryAfterMs: 0 };
@@ -424,6 +478,9 @@ async function backendHealth() {
     if (!response.ok) return { state: 'unavailable', ok: false, status: response.status };
     if (RUNTIME_MODE === RUNTIME_MODES.PRODUCTION && body?.ready !== true) {
       return { state: 'persistence-unready', ok: false, status: response.status, body };
+    }
+    if (RUNTIME_MODE === RUNTIME_MODES.PRODUCTION && Boolean(body?.sourceSendPossible) !== Boolean(SOURCE_AUTO_REPLY_ACTIVE)) {
+      return { state: 'source-reply-config-mismatch', ok: false, status: response.status, body };
     }
     return { state: 'online', ok: true, body };
   } catch (error) {
@@ -465,6 +522,15 @@ async function deliverBackendEvent(event) {
         source: 'backend',
         createdAt: isoNow()
       });
+    }
+    if (SOURCE_AUTO_REPLY_ACTIVE && event.channelRole === 'source' && result?.sourceReply?.canSend) {
+      if (String(result.sourceReply.targetGroupId || '').toLowerCase() !== String(SOURCE_GROUP_ID || '').toLowerCase()) {
+        const error = new Error('SOURCE_REPLY_DESTINATION_MISMATCH');
+        error.retryable = false;
+        throw error;
+      }
+      await sourceReplyJournal.queue(result.sourceReply);
+      await log(`SOURCE_REPLY_QUEUED command=${result.sourceReply.commandId} source=${event.externalMessageId}`);
     }
     deliveredCount += 1;
     await log(`DELIVERED ${event.externalMessageId} ${result?.classification || 'received'} duplicate=${Boolean(result?.duplicate)}`);
@@ -902,6 +968,11 @@ async function processSourceRows() {
   const rows = await extractVisibleMessages();
   for (const row of rows) {
     if (seen.has(row.id)) { duplicateVisibleCount += 1; continue; }
+    if (row.fromMe) {
+      rememberSeen(row.id);
+      await log(`SOURCE_SELF_SKIP id=${String(row.id||'').slice(0,120)}`);
+      continue;
+    }
     await captureRow(row);
   }
 }
@@ -940,18 +1011,110 @@ async function clearComposerSafely(composer) {
   } catch {}
 }
 
-async function sendTextInCurrentLab(textValue, tag) {
-  await assertCurrentLabIdentity();
-  if (tag && await visibleLabHasTag(tag)) return true;
+async function visibleComposer() {
   const candidates = [
     page.locator('footer div[contenteditable="true"][role="textbox"]').last(),
     page.locator('footer div[contenteditable="true"]').last(),
     page.locator('#main footer [contenteditable="true"]').last()
   ];
-  let composer = null;
   for (const candidate of candidates) {
-    if (await candidate.count() && await candidate.isVisible().catch(() => false)) { composer = candidate; break; }
+    if (await candidate.count() && await candidate.isVisible().catch(() => false)) return candidate;
   }
+  return null;
+}
+
+async function visibleOutgoingTextCount(textValue) {
+  const expected = String(textValue || '').replace(/\s+/g, ' ').trim();
+  if (!expected) return 0;
+  return page.evaluate((needle) => {
+    const normalizeText = (value) => String(value || '').replace(/\s+/g, ' ').trim();
+    const messages = Array.from(document.querySelectorAll('.message-out')).slice(-120);
+    return messages.filter((node) => normalizeText(node.innerText || node.textContent) === needle).length;
+  }, expected).catch(() => 0);
+}
+
+async function sendTextInCurrentSource(record) {
+  if (!SOURCE_AUTO_REPLY_ACTIVE) {
+    const error = new Error('SOURCE_AUTO_REPLY_DISABLED');
+    error.safeToRetry = true;
+    throw error;
+  }
+  if (String(record.targetGroupId || '').toLowerCase() !== String(SOURCE_GROUP_ID || '').toLowerCase()) {
+    throw new Error('SOURCE_REPLY_DESTINATION_MISMATCH');
+  }
+  if (!(await currentChatIsSource()) && !(await openSourceGroup())) {
+    const error = new Error('SOURCE_GROUP_NOT_OPEN');
+    error.safeToRetry = true;
+    throw error;
+  }
+  try { await assertCurrentSourceIdentity(); }
+  catch (cause) {
+    const error = new Error(`SOURCE_IDENTITY_NOT_VERIFIED: ${cause?.message || cause}`);
+    error.safeToRetry = true;
+    throw error;
+  }
+  const outgoingBefore = await visibleOutgoingTextCount(record.text);
+  const composer = await visibleComposer();
+  if (!composer) {
+    const error = new Error('SOURCE_COMPOSER_NOT_FOUND');
+    error.safeToRetry = true;
+    throw error;
+  }
+  await composer.click({ timeout: 3000 });
+  await page.keyboard.insertText(String(record.text).slice(0, 3900));
+  try { await assertCurrentSourceIdentity(); }
+  catch (cause) {
+    await clearComposerSafely(composer);
+    const error = new Error(`SOURCE_IDENTITY_CHANGED_BEFORE_SEND: ${cause?.message || cause}`);
+    error.safeToRetry = true;
+    throw error;
+  }
+  await page.keyboard.press('Enter');
+  let outgoingAfter = outgoingBefore;
+  for (let attempt = 0; attempt < 5 && outgoingAfter <= outgoingBefore; attempt += 1) {
+    await sleep(300);
+    await assertCurrentSourceIdentity();
+    outgoingAfter = await visibleOutgoingTextCount(record.text);
+  }
+  if (outgoingAfter <= outgoingBefore) throw new Error('SOURCE_REPLY_DELIVERY_NOT_VERIFIED');
+  return { deliveryRef: `waweb-local:${record.commandId}` };
+}
+
+async function syncSourceReplyReceipts() {
+  if (!BACKEND_SYNC_ENABLED) return;
+  for (const record of await sourceReplyJournal.receiptPending(20)) {
+    try {
+      await backendPostSourceReplyReceipt(record);
+      await sourceReplyJournal.markReceiptSynced(record.commandId);
+      await log(`SOURCE_REPLY_RECEIPT_SYNCED id=${record.commandId} state=${record.state}`);
+    } catch (error) {
+      await log(`SOURCE_REPLY_RECEIPT_PENDING id=${record.commandId} state=${record.state} error=${error?.message || error}`);
+    }
+  }
+}
+
+async function flushSourceReplies() {
+  if (!SOURCE_AUTO_REPLY_ACTIVE || flushingSourceReplies) return;
+  flushingSourceReplies = true;
+  try {
+    const result = await sourceReplyJournal.flush(async (record) => {
+      const receipt = await sendTextInCurrentSource(record);
+      sourceReplySentCount += 1;
+      await log(`SOURCE_REPLY_SENT id=${record.commandId} source=${record.sourceMessageId}`);
+      return receipt;
+    }, { limit: 8 });
+    sourceReplyAmbiguousCount += result.ambiguous;
+    await syncSourceReplyReceipts();
+    return result;
+  } finally {
+    flushingSourceReplies = false;
+  }
+}
+
+async function sendTextInCurrentLab(textValue, tag) {
+  await assertCurrentLabIdentity();
+  if (tag && await visibleLabHasTag(tag)) return true;
+  const composer = await visibleComposer();
   if (!composer) throw new Error('No encontré el compositor del grupo LAB.');
   await composer.click({ timeout: 3000 });
   await page.keyboard.insertText(String(textValue).slice(0, 3900));
@@ -1059,6 +1222,7 @@ async function flushMirrorSpool() {
 
 async function printHealthSummary(force = false) {
   const spool = await spoolRuntime.snapshot();
+  const sourceReplies = await sourceReplyJournal.snapshot();
   const eventSpool = spool.pendingBackend;
   const mirrorSpool = spool.pendingLab;
   const deadLetters = spool.quarantined;
@@ -1073,7 +1237,7 @@ async function printHealthSummary(force = false) {
     mirrorSpool,
     deadLetters
   });
-  const line = `HEALTH ready=${readiness.ready} mode=${RUNTIME_MODE} source=${activeSourceTitle || 'buscando'} | backend=${backendLabel}${cooldown && BACKEND_SYNC_ENABLED ? ` cooldown=${Math.ceil(cooldown/1000)}s` : ''} | capturados=${capturedCount} | spool=${eventSpool} | labPend=${mirrorSpool} | dead=${deadLetters}`;
+  const line = `HEALTH ready=${readiness.ready} mode=${RUNTIME_MODE} source=${activeSourceTitle || 'buscando'} | backend=${backendLabel}${cooldown && BACKEND_SYNC_ENABLED ? ` cooldown=${Math.ceil(cooldown/1000)}s` : ''} | capturados=${capturedCount} | spool=${eventSpool} | sourceReply=${sourceReplies.pending}/${sourceReplies.ambiguous} | labPend=${mirrorSpool} | dead=${deadLetters}`;
   const heartbeatDue = Date.now() - lastHealthHeartbeatAt >= 300000;
   if (force && (line !== lastPrintedHealthLine || heartbeatDue)) {
     console.log(line);
@@ -1118,10 +1282,10 @@ async function monitor() {
       if (lastStatus !== 'monitoring') {
         console.log(`\nFuente activa: ${activeSourceTitle}`);
         console.log(`Binding fuente: ${SOURCE_GROUP_ID ? redactGroupId(SOURCE_GROUP_ID) : 'solo nombre (LAB bloqueado)'}`);
-        console.log('FUENTE: SOLO LECTURA. El Bridge no contiene ruta de envío hacia el grupo real.');
+        console.log(`FUENTE: ${SOURCE_AUTO_REPLY_ACTIVE ? 'RESPUESTA AUTÓNOMA SEGURA HABILITADA' : 'SOLO LECTURA'}. Dominio/dinero/estado siguen sin autoridad de escritura.`);
         console.log(`LAB: ${LAB_GROUP_NAME} (${LAB_SEND_ENABLED ? 'shadow habilitado con ID pinneado' : 'shadow deshabilitado'})`);
         console.log('Dinero/ledger/estado real: BLOQUEADOS.\n');
-        await log(`SOURCE_ACTIVE title=${activeSourceTitle} key=${SOURCE_CHANNEL_KEY} sourceBound=${Boolean(SOURCE_GROUP_ID)} labBound=${Boolean(LAB_GROUP_ID)} labSend=${LAB_SEND_ENABLED}`);
+        await log(`SOURCE_ACTIVE title=${activeSourceTitle} key=${SOURCE_CHANNEL_KEY} sourceBound=${Boolean(SOURCE_GROUP_ID)} autoReply=${SOURCE_AUTO_REPLY_ACTIVE} labBound=${Boolean(LAB_GROUP_ID)} labSend=${LAB_SEND_ENABLED}`);
         lastStatus = 'monitoring';
       }
       await assertCurrentSourceIdentity();
@@ -1129,6 +1293,7 @@ async function monitor() {
       else await processSourceRows();
 
       await flushEventSpool();
+      await flushSourceReplies();
       await flushMirrorSpool();
       if (LAB_TEST_INPUT_ENABLED && Date.now() - lastLabTestPollAt >= LAB_TEST_POLL_MS) {
         lastLabTestPollAt = Date.now();
@@ -1148,7 +1313,7 @@ async function monitor() {
 async function main() {
   console.log('\n========================================================');
   console.log(` CONTROL HÍPICO - WHATSAPP WEB BRIDGE v${VERSION}`);
-  console.log(' FUENTE REAL READ-ONLY -> LAB SHADOW + SPOOL V2 DURABLE');
+  console.log(` FUENTE REAL ${SOURCE_AUTO_REPLY_ACTIVE ? 'SAFE AUTO-REPLY' : 'READ-ONLY'} -> BACKEND + JOURNAL DURABLE`);
   console.log(' Chrome/Edge oficial + Playwright 1.62.1');
   console.log('========================================================\n');
   console.log('No implementa el protocolo de WhatsApp: controla web.whatsapp.com real.');
@@ -1160,13 +1325,18 @@ async function main() {
   console.log(`LAB ID: ${LAB_GROUP_ID ? redactGroupId(LAB_GROUP_ID) : 'NO CONFIGURADO'}`);
   console.log(`Mirror LAB: ${LAB_SEND_ENABLED ? 'HABILITADO' : 'DESHABILITADO'}`);
   console.log(`Entrada de prueba LAB: ${LAB_TEST_INPUT_ENABLED ? 'HABILITADA' : 'DESHABILITADA'}`);
-  console.log('Envío al grupo fuente: IMPOSIBLE POR DISEÑO.');
+  console.log(`Respuesta al grupo fuente: ${SOURCE_AUTO_REPLY_ACTIVE ? 'HABILITADA SOLO PARA COMANDOS AUTORIZADOS POR BACKEND' : 'DESHABILITADA'}.`);
   console.log(`Seen IDs cargados: ${seen.size}`);
   console.log(`Modo runtime: ${RUNTIME_MODE}`);
   console.log(`Backend cloud: ${BACKEND_SYNC_ENABLED ? 'HABILITADO CON SPOOL V2 DURABLE' : 'DESACTIVADO - SHADOW LOCAL'}`);
   console.log(`Datos locales: ${DATA_DIR}\n`);
 
   const spoolInit = await spoolRuntime.initialize();
+  const sourceReplyInit = await sourceReplyJournal.initialize();
+  if (sourceReplyInit.recovered) {
+    console.log(`Source reply: ${sourceReplyInit.recovered} entrega(s) in-flight quedaron ambiguas; no se reenviarán automáticamente.`);
+    await log(`SOURCE_REPLY_RECOVERED_AMBIGUOUS count=${sourceReplyInit.recovered}`);
+  }
   const legacyMigrated = spoolInit.events.migrated + spoolInit.mirrors.migrated + spoolInit.dead.migrated;
   const legacyCorrupt = spoolInit.events.corrupt + spoolInit.mirrors.corrupt + spoolInit.dead.corrupt;
   if (legacyMigrated || legacyCorrupt) {

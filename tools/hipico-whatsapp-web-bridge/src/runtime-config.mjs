@@ -6,7 +6,7 @@ import { normalizeGroupId } from './group-identity.mjs';
 // it creates private by default on POSIX; Windows safely ignores POSIX modes.
 try { process.umask(0o077); } catch {}
 
-export const VERSION = '1.4.2';
+export const VERSION = '1.5.0';
 export const RUNTIME_MODES = Object.freeze({
   PRODUCTION: 'production',
   SHADOW_LOCAL: 'shadow-local'
@@ -84,6 +84,7 @@ export function loadRuntimeConfig(env = process.env, cwd = process.cwd()) {
     labGroupId: envText(env, 'HIPICO_LAB_GROUP_ID', '').toLowerCase(),
     labChannelKey: envText(env, 'HIPICO_LAB_CHANNEL_KEY', 'control-hipico-lab'),
     labSendEnabled: boolEnv(env, 'HIPICO_LAB_SEND_ENABLED', false),
+    sourceAutoReplyEnabled: boolEnv(env, 'HIPICO_SOURCE_AUTO_REPLY_ENABLED', false),
     requirePinnedGroupIds: boolEnv(env, 'HIPICO_REQUIRE_PINNED_GROUP_IDS', true),
     pollMs: numberEnv(env, 'HIPICO_POLL_MS', 1000, 500, 5000),
     backendTimeoutMs: numberEnv(env, 'HIPICO_BACKEND_TIMEOUT_MS', 15000, 5000, 60000),
@@ -122,6 +123,9 @@ export function validateRuntimeConfig(config) {
   if (!CHANNEL_KEY_RE.test(config.sourceChannelKey)) errors.push('HIPICO_SOURCE_CHANNEL_KEY no es válido.');
   if (!CHANNEL_KEY_RE.test(config.labChannelKey)) errors.push('HIPICO_LAB_CHANNEL_KEY no es válido.');
   if (config.sourceChannelKey === config.labChannelKey) errors.push('SOURCE y LAB deben usar channel keys distintos.');
+  if (config.sourceAutoReplyEnabled && config.runtimeMode !== RUNTIME_MODES.PRODUCTION) errors.push('HIPICO_SOURCE_AUTO_REPLY_ENABLED solo se admite en production.');
+  if (config.sourceAutoReplyEnabled && !config.backendSyncEnabled) errors.push('Auto reply SOURCE exige backend sync autoritativo.');
+  if (config.sourceAutoReplyEnabled && !isWhatsAppGroupId(config.sourceGroupId)) errors.push('Auto reply SOURCE exige HIPICO_SOURCE_GROUP_ID pinneado.');
   if ((config.labSendEnabled || config.labTestInputEnabled) && config.requirePinnedGroupIds) {
     if (!isWhatsAppGroupId(config.sourceGroupId)) errors.push('Para habilitar LAB se exige HIPICO_SOURCE_GROUP_ID pinneado.');
     if (!isWhatsAppGroupId(config.labGroupId)) errors.push('Para habilitar LAB se exige HIPICO_LAB_GROUP_ID pinneado.');

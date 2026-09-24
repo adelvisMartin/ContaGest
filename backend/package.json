@@ -52,7 +52,8 @@
     "postinstall": "npm run prisma:generate",
     "seed": "tsx prisma/seed.ts",
     "seed:admin": "tsx prisma/seed.ts",
-    "seed:clean": "tsx prisma/seed.ts --clean-demo"
+    "seed:clean": "tsx prisma/seed.ts --clean-demo",
+    "test:hipico:autonomous-reply": "tsx --test src/modules/hipico-bot/hipico-autonomous-source-reply.integration.ts"
   },
   "dependencies": {
     "@prisma/client": "6.19.3",

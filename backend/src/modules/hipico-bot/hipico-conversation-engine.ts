@@ -270,10 +270,10 @@ export function decideConversation(
     return response(
       normalizedMessage,
       result,
-      'ESCALATED',
-      'MEDIA_REQUIRES_OPERATOR_REVIEW',
-      'ESCALATED',
-      'El adjunto y cualquier texto asociado requieren revisión de un operador. No se aplicó ninguna operación.',
+      'NEEDS_CLARIFICATION',
+      'MEDIA_TEXT_REQUIRED',
+      'NEEDS_CLARIFICATION',
+      'No puedo aplicar una operación basándome solo en el adjunto. Escribe en texto el dato u operación que deseas procesar.',
       audit
     );
   }

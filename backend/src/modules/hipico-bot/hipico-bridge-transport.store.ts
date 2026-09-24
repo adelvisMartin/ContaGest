@@ -153,6 +153,19 @@ export async function ensureGroupShadowOutbox(input:GroupOutboxInput){
   return{id:existing[0].id};
 }
 
+export async function sourceReplyOutboxReady(){
+  try{
+    const rows=await prisma.$queryRaw<Array<{outboxTable:string|null;sourceReplyIndex:string|null}>>`
+      SELECT
+        to_regclass('public."HipicoBotOutbox"')::text AS "outboxTable",
+        to_regclass('public."HipicoBotOutbox_source_reply_event_unique"')::text AS "sourceReplyIndex"
+    `;
+    return Boolean(rows[0]?.outboxTable&&rows[0]?.sourceReplyIndex);
+  }catch{
+    return false;
+  }
+}
+
 export async function bridgePersistenceReady(){
   if(!bridgeGroupIdentityReady())return false;
   const rows=await prisma.$queryRaw<Array<{eventTable:string|null;outboxTable:string|null}>>`
@@ -163,4 +176,116 @@ export async function bridgePersistenceReady(){
   return Boolean(rows[0]?.eventTable&&rows[0]?.outboxTable);
 }
 
-export const __test__={assertTransportReplay,assertGroupShadowReplay,assertGroupShadowReplayAtTransportBoundary,assertGroupShadowDestination,assertBridgeGroupIdentity,bridgeGroupIdentityReady,normalizeGroupId:normalizeBridgeGroupId};
+export const __test__={assertTransportReplay,assertGroupShadowReplay,assertGroupShadowReplayAtTransportBoundary,assertGroupShadowDestination,assertSourceReplyReplay,assertBridgeGroupIdentity,bridgeGroupIdentityReady,normalizeGroupId:normalizeBridgeGroupId};
+
+
+export type SourceReplyOutboxInput={
+  eventId:string;
+  recipient:string;
+  message:string;
+  intent:string;
+  risk:string;
+};
+
+export type SourceReplyOutboxRow={
+  id:string;
+  eventId:string;
+  recipient:string;
+  message:string;
+  intent:string;
+  risk:string;
+  status:string;
+  providerMessageId:string|null;
+  error:string|null;
+  sentAt:Date|string|null;
+};
+
+function assertSourceReplyReplay(existing:SourceReplyOutboxRow,input:SourceReplyOutboxInput){
+  const matches=String(existing.eventId||'')===String(input.eventId||'')
+    && String(existing.recipient||'')===String(input.recipient||'')
+    && String(existing.message||'')===String(input.message||'')
+    && String(existing.intent||'')===String(input.intent||'')
+    && String(existing.risk||'')===String(input.risk||'');
+  if(!matches){
+    throw Object.assign(new Error('Autonomous source reply changed for the same event.'),{
+      code:'HIPICO_SOURCE_REPLY_REPLAY_MISMATCH'
+    });
+  }
+}
+
+export async function getSourceReplyOutbox(eventId:string){
+  const rows=await prisma.$queryRaw<SourceReplyOutboxRow[]>`
+    SELECT
+      "id","eventId","recipient","message","intent","risk","status",
+      "providerMessageId","error","sentAt"
+    FROM public."HipicoBotOutbox"
+    WHERE "eventId"=${eventId} AND "targetType"='source_reply'
+    LIMIT 1
+  `;
+  return rows[0]||null;
+}
+
+export async function ensureSourceReplyOutbox(input:SourceReplyOutboxInput){
+  const candidateId=id('hsr');
+  const inserted=await prisma.$queryRaw<SourceReplyOutboxRow[]>`
+    INSERT INTO public."HipicoBotOutbox"
+      ("id","eventId","recipient","targetType","message","intent","risk","status","createdAt","updatedAt")
+    VALUES
+      (${candidateId},${input.eventId},${input.recipient},'source_reply',${input.message},
+       ${input.intent},${input.risk},'planned',CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)
+    ON CONFLICT ("eventId","targetType")
+      WHERE "eventId" IS NOT NULL AND "targetType"='source_reply'
+    DO NOTHING
+    RETURNING
+      "id","eventId","recipient","message","intent","risk","status",
+      "providerMessageId","error","sentAt"
+  `;
+  if(inserted[0])return{row:inserted[0],inserted:true};
+  const existing=await getSourceReplyOutbox(input.eventId);
+  if(!existing)throw new Error('HIPICO_SOURCE_REPLY_OUTBOX_DEDUPE_ROW_MISSING');
+  assertSourceReplyReplay(existing,input);
+  return{row:existing,inserted:false};
+}
+
+const SOURCE_REPLY_DELIVERY_STATES=new Set(['sent','ambiguous']);
+
+export async function recordSourceReplyDelivery(input:{
+  id:string;
+  status:'sent'|'ambiguous';
+  providerMessageId?:string|null;
+  error?:string|null;
+}){
+  if(!SOURCE_REPLY_DELIVERY_STATES.has(input.status))throw new Error('HIPICO_SOURCE_REPLY_STATUS_INVALID');
+  const current=await prisma.$queryRaw<SourceReplyOutboxRow[]>`
+    SELECT
+      "id","eventId","recipient","message","intent","risk","status",
+      "providerMessageId","error","sentAt"
+    FROM public."HipicoBotOutbox"
+    WHERE "id"=${input.id} AND "targetType"='source_reply'
+    LIMIT 1
+  `;
+  const row=current[0];
+  if(!row)throw Object.assign(new Error('HIPICO_SOURCE_REPLY_NOT_FOUND'),{code:'HIPICO_SOURCE_REPLY_NOT_FOUND'});
+  if(row.status==='sent'){
+    if(input.status!=='sent')throw Object.assign(new Error('HIPICO_SOURCE_REPLY_TERMINAL'),{code:'HIPICO_SOURCE_REPLY_TERMINAL'});
+    return{...row,duplicate:true};
+  }
+  if(row.status!=='planned'&&row.status!=='ambiguous'){
+    throw Object.assign(new Error('HIPICO_SOURCE_REPLY_STATUS_CONFLICT'),{code:'HIPICO_SOURCE_REPLY_STATUS_CONFLICT'});
+  }
+  const rows=await prisma.$queryRaw<SourceReplyOutboxRow[]>`
+    UPDATE public."HipicoBotOutbox"
+    SET
+      "status"=${input.status},
+      "providerMessageId"=${String(input.providerMessageId||'').trim()||null},
+      "error"=${String(input.error||'').trim().slice(0,500)||null},
+      "sentAt"=CASE WHEN ${input.status}='sent' THEN COALESCE("sentAt",CURRENT_TIMESTAMP) ELSE "sentAt" END,
+      "updatedAt"=CURRENT_TIMESTAMP
+    WHERE "id"=${input.id} AND "targetType"='source_reply' AND "status" IN ('planned','ambiguous')
+    RETURNING
+      "id","eventId","recipient","message","intent","risk","status",
+      "providerMessageId","error","sentAt"
+  `;
+  if(!rows[0])throw Object.assign(new Error('HIPICO_SOURCE_REPLY_STATUS_CONFLICT'),{code:'HIPICO_SOURCE_REPLY_STATUS_CONFLICT'});
+  return{...rows[0],duplicate:false};
+}
