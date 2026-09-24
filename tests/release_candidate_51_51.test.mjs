@@ -21,6 +21,9 @@ test('51/51 release candidate is exact-SHA and runs on release/candidate branche
 
 test('51/51 source gate covers install prisma types lint tests builds bundle and high audit',()=>{
   const source=workflow();
+  const sourceBlock=source.slice(source.indexOf('source-build-security:'),source.indexOf('postgres-real:'));
+  assert.match(sourceBlock,/DATABASE_URL:\s*postgresql:\/\/postgres:postgres@127\.0\.0\.1:5432\/contagest_release_contract\?schema=public/);
+  assert.match(sourceBlock,/DIRECT_DATABASE_URL:\s*postgresql:\/\/postgres:postgres@127\.0\.0\.1:5432\/contagest_release_contract\?schema=public/);
   for(const token of [
     'npm ci --no-audit --no-fund',
     'npm --workspace backend run db:validate',
@@ -31,8 +34,7 @@ test('51/51 source gate covers install prisma types lint tests builds bundle and
     'npm run check:bundle',
     'npm audit --omit=dev --audit-level=high'
   ]) assert.ok(source.includes(token),token);
-  const block=source.slice(source.indexOf('source-build-security:'),source.indexOf('postgres-real:'));
-  assert.doesNotMatch(block,/continue-on-error:\s*true/);
+  assert.doesNotMatch(sourceBlock,/continue-on-error:\s*true/);
 });
 
 test('51/51 real PostgreSQL gate reuses canonical 48/51 vertical E2E with tenant-safe auth',()=>{
