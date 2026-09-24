@@ -1,0 +1,85 @@
+name: ERP Cross-browser 63/75
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'frontend/**'
+      - 'qa/**'
+      - 'scripts/erp-cross-browser-v6375.mjs'
+      - 'tests/cross_browser_critical_matrix_63_75.test.mjs'
+      - 'playwright.config.mjs'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/erp-cross-browser-v6375.yml'
+  schedule:
+    - cron: '17 6 * * *'
+  workflow_dispatch:
+    inputs:
+      scope:
+        description: Cross-browser route scope
+        required: true
+        default: critical
+        type: choice
+        options:
+          - critical
+          - full
+
+permissions:
+  contents: read
+
+concurrency:
+  group: erp-cross-browser-v6375-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  CANDIDATE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+
+jobs:
+  compatibility:
+    name: ${{ matrix.project }} · ${{ github.event_name == 'schedule' && '58 routes nightly' || 'critical + vertical PR' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 70
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - project: firefox
+            engine: firefox
+          - project: webkit-safari
+            engine: webkit
+    env:
+      CG_CROSS_BROWSER_PROJECT: ${{ matrix.project }}
+      CG_CROSS_BROWSER_SCOPE: ${{ github.event_name == 'schedule' && 'full' || (github.event_name == 'workflow_dispatch' && inputs.scope || 'critical') }}
+    steps:
+      - name: Checkout exact candidate
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ env.CANDIDATE_SHA }}
+          fetch-depth: 0
+      - name: Verify exact SHA
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$CANDIDATE_SHA"
+      - name: Node 22
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install locked dependencies
+        run: npm ci --no-audit --no-fund
+      - name: Install browser engine
+        run: npx playwright install --with-deps ${{ matrix.engine }}
+      - name: Run compatibility matrix
+        run: node scripts/erp-cross-browser-v6375.mjs
+      - name: Upload browser evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: cross-browser-63-${{ matrix.project }}-${{ env.CANDIDATE_SHA }}
+          path: |
+            test-results
+            playwright-report
+          if-no-files-found: warn
+          retention-days: 14
