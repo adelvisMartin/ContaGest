@@ -13,11 +13,13 @@ test('38/51 defines explicit progression strategies on routine exercises',()=>{
 });
 
 test('38/51 backend validates RIR RPE double progression and percent 1RM config',()=>{
-  const source=read('backend/src/modules/verticals/gym.routes.ts');
-  for(const token of ['progressionStrategySchema','progressionConfigSchema','targetRir','targetRpe','repRangeMin','repRangeMax','oneRepMaxKg','percent1Rm','stallAfter','resetPct']) assert.ok(source.includes(token),token);
-  assert.match(source,/RPE y RIR no son coherentes/);
-  assert.match(source,/La doble progresión requiere un rango de repeticiones/);
-  assert.match(source,/La progresión por %1RM requiere 1RM y porcentaje/);
+  const routes=read('backend/src/modules/verticals/gym.routes.ts');
+  const domain=read('backend/src/modules/verticals/gym.progression.ts');
+  for(const token of ['progressionStrategySchema','progressionConfigSchema','targetRir','targetRpe','repRangeMin','repRangeMax','oneRepMaxKg','percent1Rm','stallAfter','resetPct']) assert.ok(routes.includes(token),token);
+  for(const token of ['gymProgressionConfigIssues','isRirRpePairCoherent','RPE y RIR no son coherentes','La doble progresión requiere un rango de repeticiones','La progresión por %1RM requiere 1RM y porcentaje']) assert.ok(domain.includes(token),token);
+  assert.match(routes,/gymProgressionConfigIssues\(value\.strategy/);
+  assert.match(routes,/gymProgressionConfigIssues\(value\.progressionStrategy/);
+  assert.match(routes,/isRirRpePairCoherent\(value\.rir, value\.rpe\)/);
 });
 
 test('38/51 deterministic engine recommends without mutating the routine',()=>{
