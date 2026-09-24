@@ -207,6 +207,9 @@ jobs:
     timeout-minutes: 80
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.CANDIDATE_SHA }}
+          fetch-depth: 0
       - name: Verify exact SHA
         shell: bash
         run: |
@@ -244,6 +247,9 @@ jobs:
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.CANDIDATE_SHA }}
+          fetch-depth: 0
       - name: Verify exact SHA
         run: test "$(git rev-parse HEAD)" = "$CANDIDATE_SHA"
       - uses: actions/setup-node@v7
@@ -282,6 +288,9 @@ jobs:
             engine: webkit
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.CANDIDATE_SHA }}
+          fetch-depth: 0
       - name: Verify exact SHA
         run: test "$(git rev-parse HEAD)" = "$CANDIDATE_SHA"
       - uses: actions/setup-node@v7
