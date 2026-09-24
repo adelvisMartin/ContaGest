@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import type { Prisma } from '@prisma/client';
 import crypto from 'node:crypto';
 import bcrypt from 'bcryptjs';
 import { z } from 'zod';
@@ -111,8 +112,10 @@ function publicLicense(record: any, tenant?: any, extension: Partial<LicenseExte
   };
 }
 
-async function extensionByLicenseId(id:string) {
-  const rows = await prisma.$queryRaw<LicenseExtension[]>`
+type ProvisioningDb = typeof prisma | Prisma.TransactionClient;
+
+async function extensionByLicenseId(id:string,db:ProvisioningDb=prisma) {
+  const rows = await db.$queryRaw<LicenseExtension[]>`
     SELECT "id", "businessCategory", "companyName", "companyRif", "maxUsers", "maxDevices", "activationCount", "revokedAt", "subscriptionId", "issuedForMembershipId"
     FROM public."LicenseKey" WHERE "id"=${id} LIMIT 1
   `;
@@ -124,11 +127,11 @@ async function extensionByLicenseIds(ids: string[]) {
   return new Map(entries.filter(([, value]) => Boolean(value)) as Array<readonly [string, LicenseExtension]>);
 }
 
-async function assignTrialRole(tenantId: string, userId: string, modules: string[]) {
+async function assignTrialRole(db:ProvisioningDb,tenantId: string, userId: string, modules: string[]) {
   const modulePermissions = modules.map((module)=>permissionForRoute(module)).filter((key): key is string => Boolean(key));
   const permissionKeys = [...new Set(['reports.view', ...modulePermissions])];
   for (const key of permissionKeys) {
-    await prisma.permission.upsert({
+    await db.permission.upsert({
       where: { key },
       update: {},
       create: { key, description: `Permiso ${key}` }
@@ -136,30 +139,30 @@ async function assignTrialRole(tenantId: string, userId: string, modules: string
   }
 
   const roleName = `Cliente licencia ${userId.slice(0, 8)}`;
-  const role = await prisma.role.upsert({
+  const role = await db.role.upsert({
     where: { tenantId_name: { tenantId, name: roleName } },
     update: { description: 'Acceso limitado por módulos y vigencia de licencia.', system: false },
     create: { tenantId, name: roleName, description: 'Acceso limitado por módulos y vigencia de licencia.', system: false }
   });
 
-  await prisma.rolePermission.deleteMany({ where: { roleId: role.id } });
-  const permissions = await prisma.permission.findMany({ where: { key: { in: permissionKeys } }, select: { id: true } });
+  await db.rolePermission.deleteMany({ where: { roleId: role.id } });
+  const permissions = await db.permission.findMany({ where: { key: { in: permissionKeys } }, select: { id: true } });
   if (permissions.length) {
-    await prisma.rolePermission.createMany({
+    await db.rolePermission.createMany({
       data: permissions.map((permission) => ({ roleId: role.id, permissionId: permission.id })),
       skipDuplicates: true
     });
   }
-  await prisma.userRole.upsert({
+  await db.userRole.upsert({
     where: { userId_roleId: { userId, roleId: role.id } },
     update: {},
     create: { userId, roleId: role.id }
   });
 }
 
-async function audit(req: any, action: string, entityId: string, after: unknown) {
+async function audit(req: any, action: string, entityId: string, after: unknown,db:ProvisioningDb=prisma) {
   const ctx = req.context;
-  await prisma.auditLog.create({
+  await db.auditLog.create({
     data: {
       tenantId: ctx.tenantId,
       userId: ctx.userId || null,
@@ -256,73 +259,80 @@ router.post('/', requirePermission('admin.manage'), asyncHandler(async (req, res
   }
 
   const normalizedEmail = body.userEmail.trim().toLowerCase();
-  const existingUser = await prisma.userProfile.findUnique({
-    where: { tenantId_email: { tenantId: ctx.tenantId, email: normalizedEmail } },
-    include: { userRoles: { include: { role: true } } }
-  });
-  if (existingUser?.userRoles.some((assignment) => assignment.role.system)) {
-    throw new HttpError(409, 'No se puede reemplazar la credencial de un usuario administrativo mediante una licencia comercial.');
-  }
-
   const temporaryPassword = generateTemporaryPassword();
   const passwordHash = await bcrypt.hash(temporaryPassword, 12);
-  const user = existingUser
-    ? await prisma.userProfile.update({
-        where: { id: existingUser.id },
-        data: { fullName: body.fullName, passwordHash, status: 'active' }
-      })
-    : await prisma.userProfile.create({
-        data: { tenantId: ctx.tenantId, email: normalizedEmail, fullName: body.fullName, passwordHash, status: 'active' }
-      });
-
-  const membership = await ensureAccountMembership({
-    tenantId:ctx.tenantId,
-    userProfileId:user.id,
-    email:user.email,
-    fullName:user.fullName,
-    roleLabel:({ contador:'Contador', comercio:'Operador comercial', salud:'Profesional de salud', veterinaria:'Profesional veterinario', psicologia:'Profesional de psicología', odontologia:'Profesional odontológico', gimnasio:'Operador de gimnasio', nutricion:'Profesional de nutrición' } as Record<string,string>)[body.businessSector] || 'Cliente'
-  });
-
-  await assignTrialRole(ctx.tenantId, user.id, body.modules);
-  const previous = await prisma.licenseKey.findMany({ where: { tenantId: ctx.tenantId, userEmail: normalizedEmail, status: 'active' }, select: { id:true } });
-  if (previous.length) {
-    await prisma.licenseKey.updateMany({ where: { id: { in: previous.map((item) => item.id) } }, data: { status: 'revoked' } });
-    for (const item of previous) {
-      await prisma.$executeRaw`
-        UPDATE public."LicenseActivation" SET "status"='revoked', "revokedAt"=now() WHERE "licenseId"=${item.id}
-      `;
-    }
-  }
-
   const rawKey = generateLicenseKey(body.businessSector);
   const expiresAt = new Date(Date.now() + body.days * 86400000);
   const config = { enabled: body.modules, businessSector: body.businessSector, commercialUse: body.commercialUse };
-  const record = await prisma.licenseKey.create({
-    data: {
-      tenantId: ctx.tenantId,
-      userId: user.id,
-      userEmail: normalizedEmail,
-      plan: body.plan,
-      keyHash: hashLicenseKey(rawKey),
-      keyPreview: `${rawKey.slice(0, 14)}-••••-${rawKey.slice(-4)}`,
-      modules: config as any,
-      expiresAt,
-      status: 'active'
+
+  const provisioned=await prisma.$transaction(async(tx)=>{
+    const existingUser = await tx.userProfile.findUnique({
+      where: { tenantId_email: { tenantId: ctx.tenantId, email: normalizedEmail } },
+      include: { userRoles: { include: { role: true } } }
+    });
+    if (existingUser?.userRoles.some((assignment) => assignment.role.system)) {
+      throw new HttpError(409, 'No se puede reemplazar la credencial de un usuario administrativo mediante una licencia comercial.');
     }
+
+    const user = existingUser
+      ? await tx.userProfile.update({
+          where: { id: existingUser.id },
+          data: { fullName: body.fullName, passwordHash, status: 'active' }
+        })
+      : await tx.userProfile.create({
+          data: { tenantId: ctx.tenantId, email: normalizedEmail, fullName: body.fullName, passwordHash, status: 'active' }
+        });
+
+    const membership = await ensureAccountMembership({
+      tenantId:ctx.tenantId,
+      userProfileId:user.id,
+      email:user.email,
+      fullName:user.fullName,
+      roleLabel:({ contador:'Contador', comercio:'Operador comercial', salud:'Profesional de salud', veterinaria:'Profesional veterinario', psicologia:'Profesional de psicología', odontologia:'Profesional odontológico', gimnasio:'Operador de gimnasio', nutricion:'Profesional de nutrición' } as Record<string,string>)[body.businessSector] || 'Cliente'
+    },tx);
+
+    await assignTrialRole(tx,ctx.tenantId,user.id,body.modules);
+
+    const previous = await tx.licenseKey.findMany({ where: { tenantId: ctx.tenantId, userEmail: normalizedEmail, status: 'active' }, select: { id:true } });
+    if (previous.length) {
+      await tx.licenseKey.updateMany({ where: { id: { in: previous.map((item) => item.id) } }, data: { status: 'revoked' } });
+      for (const item of previous) {
+        await tx.$executeRaw`
+          UPDATE public."LicenseActivation" SET "status"='revoked', "revokedAt"=now() WHERE "licenseId"=${item.id}
+        `;
+      }
+    }
+
+    const record = await tx.licenseKey.create({
+      data: {
+        tenantId: ctx.tenantId,
+        userId: user.id,
+        userEmail: normalizedEmail,
+        plan: body.plan,
+        keyHash: hashLicenseKey(rawKey),
+        keyPreview: `${rawKey.slice(0, 14)}-••••-${rawKey.slice(-4)}`,
+        modules: config as any,
+        expiresAt,
+        status: 'active'
+      }
+    });
+
+    await tx.$executeRaw`
+      UPDATE public."LicenseKey"
+      SET "businessCategory"=${body.businessSector}, "companyName"=${tenant.name}, "companyRif"=${tenant.rif},
+          "maxUsers"=${body.maxUsers}, "maxDevices"=${body.maxDevices}, "activationCount"=0,
+          "metadata"=${JSON.stringify({ commercialUse:body.commercialUse, notes:body.notes || '', issuedBy:ctx.userId || null })}::jsonb,
+          "subscriptionId"=${body.subscriptionId || null}, "issuedForMembershipId"=${membership?.id || null}, "updatedAt"=now()
+      WHERE "id"=${record.id}
+    `;
+
+    const extension=await extensionByLicenseId(record.id,tx);
+    const publicData=publicLicense(record,tenant,extension||undefined);
+    await audit(req,'license.create',record.id,publicData,tx);
+    return{record,publicData};
   });
 
-  await prisma.$executeRaw`
-    UPDATE public."LicenseKey"
-    SET "businessCategory"=${body.businessSector}, "companyName"=${tenant.name}, "companyRif"=${tenant.rif},
-        "maxUsers"=${body.maxUsers}, "maxDevices"=${body.maxDevices}, "activationCount"=0,
-        "metadata"=${JSON.stringify({ commercialUse:body.commercialUse, notes:body.notes || '', issuedBy:ctx.userId || null })}::jsonb,
-        "subscriptionId"=${body.subscriptionId || null}, "issuedForMembershipId"=${membership?.id || null}, "updatedAt"=now()
-    WHERE "id"=${record.id}
-  `;
-
-  const extension = await extensionByLicenseId(record.id);
-  const publicData = publicLicense(record, tenant, extension || undefined);
-  await audit(req, 'license.create', record.id, publicData);
+  const {record,publicData}=provisioned;
 
   ok(res, {
     ...publicData,

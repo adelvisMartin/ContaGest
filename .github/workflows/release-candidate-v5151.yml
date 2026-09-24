@@ -161,11 +161,12 @@ jobs:
           npx prisma migrate status --schema backend/prisma/schema.prisma 2>&1 | tee -a "$EVIDENCE_ROOT/$CANDIDATE_SHA/postgres/migrations.log"
       - name: Seed QA tenant
         run: npm run seed
-      - name: Execute real three-vertical E2E
+      - name: Execute real vertical and provisioning E2E
         shell: bash
         run: |
           set -o pipefail
           npm run test:backend:verticals:real 2>&1 | tee "$EVIDENCE_ROOT/$CANDIDATE_SHA/postgres/verticals-e2e.log"
+          npm run test:backend:provisioning:real 2>&1 | tee "$EVIDENCE_ROOT/$CANDIDATE_SHA/postgres/provisioning-e2e.log"
       - name: Verify cleanup inventory
         if: always()
         env:
@@ -175,9 +176,13 @@ jobs:
           set -euo pipefail
           care_count="$(psql -h 127.0.0.1 -U postgres -d contagest_release_51 -Atc "select count(*) from \"CarePatient\" where \"displayName\" like 'V48-%';")"
           gym_count="$(psql -h 127.0.0.1 -U postgres -d contagest_release_51 -Atc "select count(*) from \"GymMember\" where \"memberCode\" like 'V48-%';")"
-          printf 'candidate_sha=%s\nqa48_care_patients=%s\nqa48_gym_members=%s\n' "$CANDIDATE_SHA" "$care_count" "$gym_count" > "$EVIDENCE_ROOT/$CANDIDATE_SHA/postgres/cleanup.log"
+          provision_tenant_count="$(psql -h 127.0.0.1 -U postgres -d contagest_release_51 -Atc "select count(*) from \"Tenant\" where \"rif\" like 'QA55-%';")"
+          provision_user_count="$(psql -h 127.0.0.1 -U postgres -d contagest_release_51 -Atc "select count(*) from \"UserProfile\" where \"email\" like 'qa55-%@example.test';")"
+          printf 'candidate_sha=%s\nqa48_care_patients=%s\nqa48_gym_members=%s\nqa55_tenants=%s\nqa55_users=%s\n' "$CANDIDATE_SHA" "$care_count" "$gym_count" "$provision_tenant_count" "$provision_user_count" > "$EVIDENCE_ROOT/$CANDIDATE_SHA/postgres/cleanup.log"
           test "$care_count" = "0"
           test "$gym_count" = "0"
+          test "$provision_tenant_count" = "0"
+          test "$provision_user_count" = "0"
       - name: Upload PostgreSQL evidence
         if: always()
         uses: actions/upload-artifact@v7
