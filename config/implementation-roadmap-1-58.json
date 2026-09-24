@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "scope": "ContaGest implementations 1-58",
   "authority": "merged GitHub PRs + current main contracts",
-  "generatedFromBaseline": "defeb6411538d6a2b9298a265024d96da4a30233",
+  "generatedFromBaseline": "25c5f705df0bf6da9f5bdac85ed98bd738469d2a",
   "rules": {
     "sourceOfTruth": [
       "merged PR",
@@ -199,7 +199,7 @@
       "regressionPaths": [
         "tests/erp_ui_dentistry_structured_odontogram_11_51.test.mjs"
       ],
-      "reviewStatus": "BASELINE_RECONCILED"
+      "reviewStatus": "CLEAN_CODE_BATCH_3_SCHEMA_AUTHORITY"
     },
     {
       "id": 12,
@@ -215,7 +215,7 @@
       "regressionPaths": [
         "tests/erp_ui_dentistry_visual_surfaces_12_51.test.mjs"
       ],
-      "reviewStatus": "BASELINE_RECONCILED"
+      "reviewStatus": "CLEAN_CODE_BATCH_3_SCHEMA_AUTHORITY"
     },
     {
       "id": 13,
@@ -231,7 +231,7 @@
       "regressionPaths": [
         "tests/erp_ui_dentistry_odontogram_history_13_51.test.mjs"
       ],
-      "reviewStatus": "BASELINE_RECONCILED"
+      "reviewStatus": "CLEAN_CODE_BATCH_3_SCHEMA_AUTHORITY"
     },
     {
       "id": 14,
@@ -247,7 +247,7 @@
       "regressionPaths": [
         "tests/erp_ui_dentistry_periodontogram_14_51.test.mjs"
       ],
-      "reviewStatus": "BASELINE_RECONCILED"
+      "reviewStatus": "CLEAN_CODE_BATCH_3_SCHEMA_AUTHORITY"
     },
     {
       "id": 15,
@@ -266,7 +266,7 @@
       "regressionPaths": [
         "tests/erp_ui_dentistry_treatment_plan_15_51.test.mjs"
       ],
-      "reviewStatus": "BASELINE_RECONCILED"
+      "reviewStatus": "CLEAN_CODE_BATCH_3_SCHEMA_AUTHORITY"
     },
     {
       "id": 16,
@@ -316,7 +316,7 @@
       "regressionPaths": [
         "tests/erp_ui_dentistry_clinical_lifecycle_18_51.test.mjs"
       ],
-      "reviewStatus": "BASELINE_RECONCILED"
+      "reviewStatus": "CLEAN_CODE_BATCH_3_SCHEMA_AUTHORITY"
     },
     {
       "id": 19,
@@ -332,7 +332,7 @@
       "regressionPaths": [
         "tests/erp_ui_dentistry_advanced_scheduling_19_51.test.mjs"
       ],
-      "reviewStatus": "BASELINE_RECONCILED"
+      "reviewStatus": "CLEAN_CODE_BATCH_3_SCHEMA_AUTHORITY"
     },
     {
       "id": 20,
@@ -348,7 +348,7 @@
       "regressionPaths": [
         "tests/dentistry_erp_financial_20_51.test.mjs"
       ],
-      "reviewStatus": "BASELINE_RECONCILED"
+      "reviewStatus": "CLEAN_CODE_BATCH_3_SCHEMA_AUTHORITY"
     },
     {
       "id": 21,
