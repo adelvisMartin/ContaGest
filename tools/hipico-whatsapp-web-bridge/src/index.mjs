@@ -1029,12 +1029,11 @@ async function visibleOutgoingTextCount(textValue) {
   return page.evaluate((needle) => {
     const normalizeText = (value) => String(value || '').replace(/\s+/g, ' ').trim();
     const visibleMessageText = (node) => {
-      const selectable = Array.from(node.querySelectorAll('span.selectable-text, [data-testid="msg-text"] span'))
-        .map((item) => normalizeText(item.innerText || item.textContent))
-        .filter(Boolean)
-        .join(' ')
-        .trim();
-      return selectable || normalizeText(node.innerText || node.textContent);
+      const selectable = node.querySelector('span.selectable-text');
+      if (selectable) return normalizeText(selectable.innerText || selectable.textContent);
+      const messageText = node.querySelector('[data-testid="msg-text"]');
+      if (messageText) return normalizeText(messageText.innerText || messageText.textContent);
+      return normalizeText(node.innerText || node.textContent);
     };
     const messages = Array.from(document.querySelectorAll('.message-out')).slice(-120);
     return messages.filter((node) => visibleMessageText(node) === needle).length;
