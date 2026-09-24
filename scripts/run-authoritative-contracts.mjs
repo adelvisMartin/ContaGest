@@ -20,7 +20,8 @@ const required59=[
   'tests/playwright_determinism_62_75.test.mjs',
   'tests/cross_browser_critical_matrix_63_75.test.mjs',
   'tests/veterinary_bounded_contexts_64_75.test.mjs',
-  'tests/gym_nutrition_bounded_contexts_65_75.test.mjs'
+  'tests/gym_nutrition_bounded_contexts_65_75.test.mjs',
+  'tests/health_dentistry_bounded_contexts_66_75.test.mjs'
 ];
 const tests=[...new Set([...regressionPaths,...required59])];
 
