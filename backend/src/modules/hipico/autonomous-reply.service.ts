@@ -108,7 +108,6 @@ type AutonomousReplyDecisionContext = Partial<Pick<AutonomousReplyDecision, 'can
   observation?: DecisionProviderObservation<JevShadowDecision> | null;
   readiness?: DecisionProviderReadiness | null;
   providerInfluence?: AutonomousReplyDecision['provider']['influence'];
-  handoffRequired?: boolean;
 };
 
 function hold(
@@ -140,7 +139,6 @@ function send(
 ): AutonomousReplyDecision {
   return {
     ...baseDecision(input),
-    handoffRequired: options.handoffRequired ?? input.responsePlan.handoffRequired,
     action: 'SEND',
     canSend: true,
     text: String(text || '').trim().slice(0, 3900),
@@ -178,7 +176,7 @@ export class AutonomousReplyService {
     if (!input.rateAllowed) return none(input, 'RATE_LIMIT');
     if (!input.systemHealthy) {
       return input.responsePlan.canSend && input.responsePlan.text
-        ? send(input, input.responsePlan.text, 'SYSTEM_DEGRADED_SAFE_REPLY', { handoffRequired: false })
+        ? send(input, input.responsePlan.text, 'SYSTEM_DEGRADED_SAFE_REPLY')
         : hold(input, 'SYSTEM_NOT_AUTHORITATIVE');
     }
     if (!input.responsePlan.canSend || !input.responsePlan.text) {
