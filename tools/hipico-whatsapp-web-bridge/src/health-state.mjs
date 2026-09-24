@@ -8,6 +8,7 @@ export function assessRuntimeReadiness({
   sourceMatches,
   eventSpool = 0,
   mirrorSpool = 0,
+  sourceReplySpool = 0,
   deadLetters = 0
 }) {
   const reasons = [];
@@ -16,6 +17,7 @@ export function assessRuntimeReadiness({
   if (production && backendState !== 'online') reasons.push(`BACKEND_${String(backendState || 'unknown').toUpperCase()}`);
   if (eventSpool > 0) reasons.push('EVENT_SPOOL_PENDING');
   if (mirrorSpool > 0) reasons.push('LAB_MIRROR_PENDING');
+  if (sourceReplySpool > 0) reasons.push('SOURCE_REPLY_PENDING');
   if (deadLetters > 0) reasons.push('DEAD_LETTERS_PRESENT');
   if (!production) reasons.push('LOCAL_SHADOW_MODE');
   return {
