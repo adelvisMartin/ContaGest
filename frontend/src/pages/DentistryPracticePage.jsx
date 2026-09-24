@@ -15,14 +15,7 @@ import { DentalMediaPanel } from '../components/dentistry/DentalMediaPanel.jsx';
 import { DentalLifecycleActions } from '../components/dentistry/DentalLifecycleActions.jsx';
 import { DentalSchedulePanel } from '../components/dentistry/DentalSchedulePanel.jsx';
 import { DentalFinancialPanel } from '../components/dentistry/DentalFinancialPanel.jsx';
-
-const PROCEDURES=['Evaluación','Profilaxis / limpieza','Restauración','Endodoncia','Extracción','Periodoncia','Ortodoncia','Prótesis','Implante','Radiografía / estudio','Control postoperatorio'];
-const SPECIALTIES=[
-  ['odontologia-general','Odontología general'],['ortodoncia','Ortodoncia'],['endodoncia','Endodoncia'],
-  ['periodoncia','Periodoncia'],['cirugia-bucal','Cirugía bucal'],['protesis','Prótesis / rehabilitación']
-];
-const rows=(value)=>Array.isArray(value)?value:value?.data||[];
-const patientName=(patient={})=>patient.displayName||patient.fullName||'Paciente';
+import { PROCEDURES, SPECIALTIES, rows, patientName } from '../components/dentistry/dentistryWorkspace.helpers.js';
 
 function Metric({label,value,tone='default'}){
   return <Paper variant="outlined" sx={{p:1.4,minWidth:0}}><Typography variant="caption" color="text.secondary">{label}</Typography><Stack direction="row" alignItems="center" justifyContent="space-between" gap={1}><Typography variant="h5" sx={{fontVariantNumeric:'tabular-nums'}}>{value}</Typography><CgStatusChip label={String(value)} tone={tone}/></Stack></Paper>;

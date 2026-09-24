@@ -23,6 +23,10 @@ for(const row of rows){
   }
   const expectedRoadmap=row.id<=51?'51':'75';
   if(String(row.roadmap)!==expectedRoadmap) errors.push(`${row.id}: expected roadmap denominator ${expectedRoadmap}`);
+  if(row.reviewBatches!==undefined){
+    if(!Array.isArray(row.reviewBatches)) errors.push(`${row.id}: reviewBatches must be an array when present`);
+    else if(row.reviewBatches.some((batch)=>typeof batch!=='string'||!batch.trim())) errors.push(`${row.id}: invalid review batch`);
+  }
 }
 
 const superseded=new Set(manifest?.rules?.supersededDoNotRestore||[]);
@@ -42,4 +46,6 @@ const byArea=Object.fromEntries(
   [...new Set(rows.map((row)=>row.area))].sort().map((area)=>[area,rows.filter((row)=>row.area===area).length])
 );
 console.log('Implementation roadmap audit: PASS');
-console.log(JSON.stringify({count:rows.length,byArea,cleanCodeReviewed:rows.filter((row)=>String(row.reviewStatus||'').startsWith('CLEAN_CODE_')).map((row)=>row.id)},null,2));
+const cleanCodeReviewed=rows.filter((row)=>String(row.reviewStatus||'').startsWith('CLEAN_CODE_')||(row.reviewBatches||[]).some((batch)=>String(batch).startsWith('CLEAN_CODE_'))).map((row)=>row.id);
+const reviewBatches=Object.fromEntries([...new Set(rows.flatMap((row)=>row.reviewBatches||[]))].sort().map((batch)=>[batch,rows.filter((row)=>(row.reviewBatches||[]).includes(batch)).map((row)=>row.id)]));
+console.log(JSON.stringify({count:rows.length,byArea,cleanCodeReviewed,reviewBatches},null,2));

@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "scope": "ContaGest implementations 1-58",
   "authority": "merged GitHub PRs + current main contracts",
-  "generatedFromBaseline": "25c5f705df0bf6da9f5bdac85ed98bd738469d2a",
+  "generatedFromBaseline": "e85ac04c4a70a8cf7d8a2ba0362bf795a9ed731b",
   "rules": {
     "sourceOfTruth": [
       "merged PR",
@@ -71,7 +71,10 @@
       "regressionPaths": [
         "tests/erp_ui_dentistry_react_3_51.test.mjs"
       ],
-      "reviewStatus": "BASELINE_RECONCILED"
+      "reviewStatus": "BASELINE_RECONCILED",
+      "reviewBatches": [
+        "CLEAN_CODE_BATCH_4_FRONTEND_HELPERS"
+      ]
     },
     {
       "id": 4,
@@ -183,7 +186,11 @@
       "regressionPaths": [
         "tests/erp_ui_dentistry_patient_context_10_51.test.mjs"
       ],
-      "reviewStatus": "BASELINE_RECONCILED"
+      "reviewStatus": "BASELINE_RECONCILED",
+      "reviewBatches": [
+        "CLEAN_CODE_BATCH_4_FRONTEND_HELPERS",
+        "CLEAN_CODE_BATCH_5_VERTICAL_CLIENT"
+      ]
     },
     {
       "id": 11,
@@ -199,7 +206,11 @@
       "regressionPaths": [
         "tests/erp_ui_dentistry_structured_odontogram_11_51.test.mjs"
       ],
-      "reviewStatus": "CLEAN_CODE_BATCH_3_SCHEMA_AUTHORITY"
+      "reviewStatus": "CLEAN_CODE_BATCH_3_SCHEMA_AUTHORITY",
+      "reviewBatches": [
+        "CLEAN_CODE_BATCH_4_FRONTEND_HELPERS",
+        "CLEAN_CODE_BATCH_5_VERTICAL_CLIENT"
+      ]
     },
     {
       "id": 12,
@@ -215,7 +226,11 @@
       "regressionPaths": [
         "tests/erp_ui_dentistry_visual_surfaces_12_51.test.mjs"
       ],
-      "reviewStatus": "CLEAN_CODE_BATCH_3_SCHEMA_AUTHORITY"
+      "reviewStatus": "CLEAN_CODE_BATCH_3_SCHEMA_AUTHORITY",
+      "reviewBatches": [
+        "CLEAN_CODE_BATCH_4_FRONTEND_HELPERS",
+        "CLEAN_CODE_BATCH_5_VERTICAL_CLIENT"
+      ]
     },
     {
       "id": 13,
@@ -231,7 +246,11 @@
       "regressionPaths": [
         "tests/erp_ui_dentistry_odontogram_history_13_51.test.mjs"
       ],
-      "reviewStatus": "CLEAN_CODE_BATCH_3_SCHEMA_AUTHORITY"
+      "reviewStatus": "CLEAN_CODE_BATCH_3_SCHEMA_AUTHORITY",
+      "reviewBatches": [
+        "CLEAN_CODE_BATCH_4_FRONTEND_HELPERS",
+        "CLEAN_CODE_BATCH_5_VERTICAL_CLIENT"
+      ]
     },
     {
       "id": 14,
@@ -247,7 +266,11 @@
       "regressionPaths": [
         "tests/erp_ui_dentistry_periodontogram_14_51.test.mjs"
       ],
-      "reviewStatus": "CLEAN_CODE_BATCH_3_SCHEMA_AUTHORITY"
+      "reviewStatus": "CLEAN_CODE_BATCH_3_SCHEMA_AUTHORITY",
+      "reviewBatches": [
+        "CLEAN_CODE_BATCH_4_FRONTEND_HELPERS",
+        "CLEAN_CODE_BATCH_5_VERTICAL_CLIENT"
+      ]
     },
     {
       "id": 15,
@@ -266,7 +289,11 @@
       "regressionPaths": [
         "tests/erp_ui_dentistry_treatment_plan_15_51.test.mjs"
       ],
-      "reviewStatus": "CLEAN_CODE_BATCH_3_SCHEMA_AUTHORITY"
+      "reviewStatus": "CLEAN_CODE_BATCH_3_SCHEMA_AUTHORITY",
+      "reviewBatches": [
+        "CLEAN_CODE_BATCH_4_FRONTEND_HELPERS",
+        "CLEAN_CODE_BATCH_5_VERTICAL_CLIENT"
+      ]
     },
     {
       "id": 16,
@@ -282,7 +309,11 @@
       "regressionPaths": [
         "tests/erp_ui_dentistry_consent_evidence_16_51.test.mjs"
       ],
-      "reviewStatus": "BASELINE_RECONCILED"
+      "reviewStatus": "BASELINE_RECONCILED",
+      "reviewBatches": [
+        "CLEAN_CODE_BATCH_4_FRONTEND_HELPERS",
+        "CLEAN_CODE_BATCH_5_VERTICAL_CLIENT"
+      ]
     },
     {
       "id": 17,
@@ -299,7 +330,11 @@
       "regressionPaths": [
         "tests/erp_ui_dentistry_media_documents_17_51.test.mjs"
       ],
-      "reviewStatus": "BASELINE_RECONCILED"
+      "reviewStatus": "BASELINE_RECONCILED",
+      "reviewBatches": [
+        "CLEAN_CODE_BATCH_4_FRONTEND_HELPERS",
+        "CLEAN_CODE_BATCH_5_VERTICAL_CLIENT"
+      ]
     },
     {
       "id": 18,
@@ -316,7 +351,11 @@
       "regressionPaths": [
         "tests/erp_ui_dentistry_clinical_lifecycle_18_51.test.mjs"
       ],
-      "reviewStatus": "CLEAN_CODE_BATCH_3_SCHEMA_AUTHORITY"
+      "reviewStatus": "CLEAN_CODE_BATCH_3_SCHEMA_AUTHORITY",
+      "reviewBatches": [
+        "CLEAN_CODE_BATCH_4_FRONTEND_HELPERS",
+        "CLEAN_CODE_BATCH_5_VERTICAL_CLIENT"
+      ]
     },
     {
       "id": 19,
@@ -332,7 +371,11 @@
       "regressionPaths": [
         "tests/erp_ui_dentistry_advanced_scheduling_19_51.test.mjs"
       ],
-      "reviewStatus": "CLEAN_CODE_BATCH_3_SCHEMA_AUTHORITY"
+      "reviewStatus": "CLEAN_CODE_BATCH_3_SCHEMA_AUTHORITY",
+      "reviewBatches": [
+        "CLEAN_CODE_BATCH_4_FRONTEND_HELPERS",
+        "CLEAN_CODE_BATCH_5_VERTICAL_CLIENT"
+      ]
     },
     {
       "id": 20,
@@ -348,7 +391,11 @@
       "regressionPaths": [
         "tests/dentistry_erp_financial_20_51.test.mjs"
       ],
-      "reviewStatus": "CLEAN_CODE_BATCH_3_SCHEMA_AUTHORITY"
+      "reviewStatus": "CLEAN_CODE_BATCH_3_SCHEMA_AUTHORITY",
+      "reviewBatches": [
+        "CLEAN_CODE_BATCH_4_FRONTEND_HELPERS",
+        "CLEAN_CODE_BATCH_5_VERTICAL_CLIENT"
+      ]
     },
     {
       "id": 21,
@@ -364,7 +411,11 @@
       "regressionPaths": [
         "tests/erp_ui_veterinary_single_owner_21_51.test.mjs"
       ],
-      "reviewStatus": "BASELINE_RECONCILED"
+      "reviewStatus": "BASELINE_RECONCILED",
+      "reviewBatches": [
+        "CLEAN_CODE_BATCH_4_FRONTEND_HELPERS",
+        "CLEAN_CODE_BATCH_5_VERTICAL_CLIENT"
+      ]
     },
     {
       "id": 22,
@@ -382,7 +433,11 @@
       "regressionPaths": [
         "tests/erp_ui_veterinary_error_handling_22_51.test.mjs"
       ],
-      "reviewStatus": "BASELINE_RECONCILED"
+      "reviewStatus": "BASELINE_RECONCILED",
+      "reviewBatches": [
+        "CLEAN_CODE_BATCH_4_FRONTEND_HELPERS",
+        "CLEAN_CODE_BATCH_5_VERTICAL_CLIENT"
+      ]
     },
     {
       "id": 23,
@@ -400,7 +455,11 @@
       "regressionPaths": [
         "tests/erp_ui_veterinary_longitudinal_record_23_51.test.mjs"
       ],
-      "reviewStatus": "BASELINE_RECONCILED"
+      "reviewStatus": "BASELINE_RECONCILED",
+      "reviewBatches": [
+        "CLEAN_CODE_BATCH_4_FRONTEND_HELPERS",
+        "CLEAN_CODE_BATCH_5_VERTICAL_CLIENT"
+      ]
     },
     {
       "id": 24,
@@ -416,7 +475,11 @@
       "regressionPaths": [
         "tests/erp_ui_veterinary_preventive_care_24_51.test.mjs"
       ],
-      "reviewStatus": "BASELINE_RECONCILED"
+      "reviewStatus": "BASELINE_RECONCILED",
+      "reviewBatches": [
+        "CLEAN_CODE_BATCH_4_FRONTEND_HELPERS",
+        "CLEAN_CODE_BATCH_5_VERTICAL_CLIENT"
+      ]
     },
     {
       "id": 25,
@@ -432,7 +495,11 @@
       "regressionPaths": [
         "tests/erp_ui_veterinary_soap_templates_25_51.test.mjs"
       ],
-      "reviewStatus": "BASELINE_RECONCILED"
+      "reviewStatus": "BASELINE_RECONCILED",
+      "reviewBatches": [
+        "CLEAN_CODE_BATCH_4_FRONTEND_HELPERS",
+        "CLEAN_CODE_BATCH_5_VERTICAL_CLIENT"
+      ]
     },
     {
       "id": 26,
@@ -449,7 +516,11 @@
       "regressionPaths": [
         "tests/erp_ui_veterinary_lab_lifecycle_26_51.test.mjs"
       ],
-      "reviewStatus": "CLEAN_CODE_BATCH_2_SCHEMA_AUTHORITY"
+      "reviewStatus": "CLEAN_CODE_BATCH_2_SCHEMA_AUTHORITY",
+      "reviewBatches": [
+        "CLEAN_CODE_BATCH_4_FRONTEND_HELPERS",
+        "CLEAN_CODE_BATCH_5_VERTICAL_CLIENT"
+      ]
     },
     {
       "id": 27,
@@ -465,7 +536,11 @@
       "regressionPaths": [
         "tests/erp_ui_veterinary_treatment_sheet_27_51.test.mjs"
       ],
-      "reviewStatus": "CLEAN_CODE_BATCH_2_SCHEMA_AUTHORITY"
+      "reviewStatus": "CLEAN_CODE_BATCH_2_SCHEMA_AUTHORITY",
+      "reviewBatches": [
+        "CLEAN_CODE_BATCH_4_FRONTEND_HELPERS",
+        "CLEAN_CODE_BATCH_5_VERTICAL_CLIENT"
+      ]
     },
     {
       "id": 28,
@@ -481,7 +556,11 @@
       "regressionPaths": [
         "tests/erp_ui_veterinary_medication_integration_28_51.test.mjs"
       ],
-      "reviewStatus": "CLEAN_CODE_BATCH_2_SCHEMA_AUTHORITY"
+      "reviewStatus": "CLEAN_CODE_BATCH_2_SCHEMA_AUTHORITY",
+      "reviewBatches": [
+        "CLEAN_CODE_BATCH_4_FRONTEND_HELPERS",
+        "CLEAN_CODE_BATCH_5_VERTICAL_CLIENT"
+      ]
     },
     {
       "id": 29,
@@ -497,7 +576,11 @@
       "regressionPaths": [
         "tests/erp_ui_veterinary_clinical_inventory_29_51.test.mjs"
       ],
-      "reviewStatus": "CLEAN_CODE_BATCH_2_SCHEMA_AUTHORITY"
+      "reviewStatus": "CLEAN_CODE_BATCH_2_SCHEMA_AUTHORITY",
+      "reviewBatches": [
+        "CLEAN_CODE_BATCH_4_FRONTEND_HELPERS",
+        "CLEAN_CODE_BATCH_5_VERTICAL_CLIENT"
+      ]
     },
     {
       "id": 30,
@@ -513,7 +596,11 @@
       "regressionPaths": [
         "tests/erp_ui_veterinary_financial_flow_30_51.test.mjs"
       ],
-      "reviewStatus": "CLEAN_CODE_BATCH_2_SCHEMA_AUTHORITY"
+      "reviewStatus": "CLEAN_CODE_BATCH_2_SCHEMA_AUTHORITY",
+      "reviewBatches": [
+        "CLEAN_CODE_BATCH_4_FRONTEND_HELPERS",
+        "CLEAN_CODE_BATCH_5_VERTICAL_CLIENT"
+      ]
     },
     {
       "id": 31,
@@ -529,7 +616,11 @@
       "regressionPaths": [
         "tests/erp_ui_veterinary_guardian_portal_31_51.test.mjs"
       ],
-      "reviewStatus": "CLEAN_CODE_BATCH_2_SCHEMA_AUTHORITY"
+      "reviewStatus": "CLEAN_CODE_BATCH_2_SCHEMA_AUTHORITY",
+      "reviewBatches": [
+        "CLEAN_CODE_BATCH_4_FRONTEND_HELPERS",
+        "CLEAN_CODE_BATCH_5_VERTICAL_CLIENT"
+      ]
     },
     {
       "id": 32,
@@ -545,7 +636,11 @@
       "regressionPaths": [
         "tests/erp_ui_veterinary_boarding_32_51.test.mjs"
       ],
-      "reviewStatus": "CLEAN_CODE_BATCH_2_SCHEMA_AUTHORITY"
+      "reviewStatus": "CLEAN_CODE_BATCH_2_SCHEMA_AUTHORITY",
+      "reviewBatches": [
+        "CLEAN_CODE_BATCH_4_FRONTEND_HELPERS",
+        "CLEAN_CODE_BATCH_5_VERTICAL_CLIENT"
+      ]
     },
     {
       "id": 33,
@@ -561,7 +656,11 @@
       "regressionPaths": [
         "tests/erp_ui_gym_routine_builder_33_51.test.mjs"
       ],
-      "reviewStatus": "CLEAN_CODE_BATCH_2_SCHEMA_AUTHORITY"
+      "reviewStatus": "CLEAN_CODE_BATCH_2_SCHEMA_AUTHORITY",
+      "reviewBatches": [
+        "CLEAN_CODE_BATCH_4_FRONTEND_HELPERS",
+        "CLEAN_CODE_BATCH_5_VERTICAL_CLIENT"
+      ]
     },
     {
       "id": 34,
@@ -578,7 +677,11 @@
       "regressionPaths": [
         "tests/erp_ui_gym_exercise_library_34_51.test.mjs"
       ],
-      "reviewStatus": "CLEAN_CODE_BATCH_2_SCHEMA_AUTHORITY"
+      "reviewStatus": "CLEAN_CODE_BATCH_2_SCHEMA_AUTHORITY",
+      "reviewBatches": [
+        "CLEAN_CODE_BATCH_4_FRONTEND_HELPERS",
+        "CLEAN_CODE_BATCH_5_VERTICAL_CLIENT"
+      ]
     },
     {
       "id": 35,
@@ -594,7 +697,11 @@
       "regressionPaths": [
         "tests/erp_ui_gym_weekly_schedule_35_51.test.mjs"
       ],
-      "reviewStatus": "CLEAN_CODE_BATCH_2_SCHEMA_AUTHORITY"
+      "reviewStatus": "CLEAN_CODE_BATCH_2_SCHEMA_AUTHORITY",
+      "reviewBatches": [
+        "CLEAN_CODE_BATCH_4_FRONTEND_HELPERS",
+        "CLEAN_CODE_BATCH_5_VERTICAL_CLIENT"
+      ]
     },
     {
       "id": 36,
@@ -610,7 +717,11 @@
       "regressionPaths": [
         "tests/erp_ui_gym_training_modes_36_51.test.mjs"
       ],
-      "reviewStatus": "CLEAN_CODE_BATCH_2_SCHEMA_AUTHORITY"
+      "reviewStatus": "CLEAN_CODE_BATCH_2_SCHEMA_AUTHORITY",
+      "reviewBatches": [
+        "CLEAN_CODE_BATCH_4_FRONTEND_HELPERS",
+        "CLEAN_CODE_BATCH_5_VERTICAL_CLIENT"
+      ]
     },
     {
       "id": 37,
@@ -626,7 +737,11 @@
       "regressionPaths": [
         "tests/erp_ui_gym_intensity_techniques_37_51.test.mjs"
       ],
-      "reviewStatus": "CLEAN_CODE_BATCH_2_SCHEMA_AUTHORITY"
+      "reviewStatus": "CLEAN_CODE_BATCH_2_SCHEMA_AUTHORITY",
+      "reviewBatches": [
+        "CLEAN_CODE_BATCH_4_FRONTEND_HELPERS",
+        "CLEAN_CODE_BATCH_5_VERTICAL_CLIENT"
+      ]
     },
     {
       "id": 38,
@@ -642,7 +757,11 @@
       "regressionPaths": [
         "tests/erp_ui_gym_progression_engine_38_51.test.mjs"
       ],
-      "reviewStatus": "CLEAN_CODE_BATCH_2_SCHEMA_AUTHORITY"
+      "reviewStatus": "CLEAN_CODE_BATCH_2_SCHEMA_AUTHORITY",
+      "reviewBatches": [
+        "CLEAN_CODE_BATCH_4_FRONTEND_HELPERS",
+        "CLEAN_CODE_BATCH_5_VERTICAL_CLIENT"
+      ]
     },
     {
       "id": 39,
@@ -658,7 +777,11 @@
       "regressionPaths": [
         "tests/erp_ui_gym_periodization_39_51.test.mjs"
       ],
-      "reviewStatus": "CLEAN_CODE_BATCH_2_SCHEMA_AUTHORITY"
+      "reviewStatus": "CLEAN_CODE_BATCH_2_SCHEMA_AUTHORITY",
+      "reviewBatches": [
+        "CLEAN_CODE_BATCH_4_FRONTEND_HELPERS",
+        "CLEAN_CODE_BATCH_5_VERTICAL_CLIENT"
+      ]
     },
     {
       "id": 40,
@@ -674,7 +797,11 @@
       "regressionPaths": [
         "tests/erp_ui_gym_workout_execution_40_51.test.mjs"
       ],
-      "reviewStatus": "CLEAN_CODE_BATCH_2_SCHEMA_AUTHORITY"
+      "reviewStatus": "CLEAN_CODE_BATCH_2_SCHEMA_AUTHORITY",
+      "reviewBatches": [
+        "CLEAN_CODE_BATCH_4_FRONTEND_HELPERS",
+        "CLEAN_CODE_BATCH_5_VERTICAL_CLIENT"
+      ]
     },
     {
       "id": 41,
@@ -690,7 +817,11 @@
       "regressionPaths": [
         "tests/erp_ui_gym_performance_history_41_51.test.mjs"
       ],
-      "reviewStatus": "CLEAN_CODE_BATCH_2_SCHEMA_AUTHORITY"
+      "reviewStatus": "CLEAN_CODE_BATCH_2_SCHEMA_AUTHORITY",
+      "reviewBatches": [
+        "CLEAN_CODE_BATCH_4_FRONTEND_HELPERS",
+        "CLEAN_CODE_BATCH_5_VERTICAL_CLIENT"
+      ]
     },
     {
       "id": 42,
@@ -706,7 +837,11 @@
       "regressionPaths": [
         "tests/erp_ui_gym_contextual_substitutions_42_51.test.mjs"
       ],
-      "reviewStatus": "CLEAN_CODE_BATCH_2_SCHEMA_AUTHORITY"
+      "reviewStatus": "CLEAN_CODE_BATCH_2_SCHEMA_AUTHORITY",
+      "reviewBatches": [
+        "CLEAN_CODE_BATCH_4_FRONTEND_HELPERS",
+        "CLEAN_CODE_BATCH_5_VERTICAL_CLIENT"
+      ]
     },
     {
       "id": 43,
@@ -722,7 +857,11 @@
       "regressionPaths": [
         "tests/erp_ui_gym_ingredient_model_43_51.test.mjs"
       ],
-      "reviewStatus": "CLEAN_CODE_BATCH_2_SCHEMA_AUTHORITY"
+      "reviewStatus": "CLEAN_CODE_BATCH_2_SCHEMA_AUTHORITY",
+      "reviewBatches": [
+        "CLEAN_CODE_BATCH_4_FRONTEND_HELPERS",
+        "CLEAN_CODE_BATCH_5_VERTICAL_CLIENT"
+      ]
     },
     {
       "id": 44,
@@ -738,7 +877,11 @@
       "regressionPaths": [
         "tests/erp_ui_gym_complete_meal_plan_44_51.test.mjs"
       ],
-      "reviewStatus": "CLEAN_CODE_BATCH_2_SCHEMA_AUTHORITY"
+      "reviewStatus": "CLEAN_CODE_BATCH_2_SCHEMA_AUTHORITY",
+      "reviewBatches": [
+        "CLEAN_CODE_BATCH_4_FRONTEND_HELPERS",
+        "CLEAN_CODE_BATCH_5_VERTICAL_CLIENT"
+      ]
     },
     {
       "id": 45,
@@ -754,7 +897,11 @@
       "regressionPaths": [
         "tests/erp_ui_gym_nutrition_rules_45_51.test.mjs"
       ],
-      "reviewStatus": "CLEAN_CODE_BATCH_2_SCHEMA_AUTHORITY"
+      "reviewStatus": "CLEAN_CODE_BATCH_2_SCHEMA_AUTHORITY",
+      "reviewBatches": [
+        "CLEAN_CODE_BATCH_4_FRONTEND_HELPERS",
+        "CLEAN_CODE_BATCH_5_VERTICAL_CLIENT"
+      ]
     },
     {
       "id": 46,
@@ -770,7 +917,11 @@
       "regressionPaths": [
         "tests/erp_ui_gym_nutrient_composition_46_51.test.mjs"
       ],
-      "reviewStatus": "CLEAN_CODE_BATCH_2_SCHEMA_AUTHORITY"
+      "reviewStatus": "CLEAN_CODE_BATCH_2_SCHEMA_AUTHORITY",
+      "reviewBatches": [
+        "CLEAN_CODE_BATCH_4_FRONTEND_HELPERS",
+        "CLEAN_CODE_BATCH_5_VERTICAL_CLIENT"
+      ]
     },
     {
       "id": 47,
@@ -786,7 +937,11 @@
       "regressionPaths": [
         "tests/erp_ui_gym_integrated_adherence_47_51.test.mjs"
       ],
-      "reviewStatus": "CLEAN_CODE_BATCH_2_SCHEMA_AUTHORITY"
+      "reviewStatus": "CLEAN_CODE_BATCH_2_SCHEMA_AUTHORITY",
+      "reviewBatches": [
+        "CLEAN_CODE_BATCH_4_FRONTEND_HELPERS",
+        "CLEAN_CODE_BATCH_5_VERTICAL_CLIENT"
+      ]
     },
     {
       "id": 48,
@@ -866,7 +1021,10 @@
       "regressionPaths": [
         "tests/vertical_entitlements_52_75.test.mjs"
       ],
-      "reviewStatus": "BASELINE_RECONCILED"
+      "reviewStatus": "BASELINE_RECONCILED",
+      "reviewBatches": [
+        "CLEAN_CODE_BATCH_6_ACCESS_LICENSING"
+      ]
     },
     {
       "id": 53,
@@ -882,7 +1040,10 @@
       "regressionPaths": [
         "tests/access_manifest_53_75.test.mjs"
       ],
-      "reviewStatus": "BASELINE_RECONCILED"
+      "reviewStatus": "BASELINE_RECONCILED",
+      "reviewBatches": [
+        "CLEAN_CODE_BATCH_6_ACCESS_LICENSING"
+      ]
     },
     {
       "id": 54,
@@ -898,7 +1059,10 @@
       "regressionPaths": [
         "tests/access_role_permission_drift_54_75.test.mjs"
       ],
-      "reviewStatus": "BASELINE_RECONCILED"
+      "reviewStatus": "BASELINE_RECONCILED",
+      "reviewBatches": [
+        "CLEAN_CODE_BATCH_6_ACCESS_LICENSING"
+      ]
     },
     {
       "id": 55,
@@ -917,7 +1081,10 @@
         "tests/access_manifest_runtime_validation_55_75.test.mjs",
         "tests/tenant_user_provisioning_55_75.test.mjs"
       ],
-      "reviewStatus": "BASELINE_RECONCILED"
+      "reviewStatus": "BASELINE_RECONCILED",
+      "reviewBatches": [
+        "CLEAN_CODE_BATCH_6_ACCESS_LICENSING"
+      ]
     },
     {
       "id": 56,
@@ -933,7 +1100,10 @@
       "regressionPaths": [
         "tests/license_canonical_modules_56_75.test.mjs"
       ],
-      "reviewStatus": "BASELINE_RECONCILED"
+      "reviewStatus": "BASELINE_RECONCILED",
+      "reviewBatches": [
+        "CLEAN_CODE_BATCH_6_ACCESS_LICENSING"
+      ]
     },
     {
       "id": 57,
@@ -950,7 +1120,10 @@
       "regressionPaths": [
         "tests/vertical_experience_profile_57_75.test.mjs"
       ],
-      "reviewStatus": "BASELINE_RECONCILED"
+      "reviewStatus": "BASELINE_RECONCILED",
+      "reviewBatches": [
+        "CLEAN_CODE_BATCH_6_ACCESS_LICENSING"
+      ]
     },
     {
       "id": 58,

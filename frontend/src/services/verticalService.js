@@ -1,38 +1,26 @@
 import { BackendApi } from './backendApi.js';
 import { MediaService } from './mediaService.js';
-
-const query = (params = {}) => {
-  const value = new URLSearchParams(Object.entries(params).filter(([, item]) => item !== undefined && item !== null && item !== '')).toString();
-  return value ? `?${value}` : '';
-};
-
-async function createWithPhoto(create, payload, entityType, altField) {
-  const { photoDataUrl = '', ...data } = payload || {};
-  const record = await create(data);
-  if (!photoDataUrl) return record;
-  const media = await MediaService.upload({ entityType, entityId: record.id, dataUrl: photoDataUrl, alt: record?.[altField] || '' });
-  return { ...record, photoPath: media.path, photoUrl: media.signedUrl };
-}
+import { query, pathId, createWithPhoto } from './verticalService.helpers.js';
 
 export const HealthVerticalService = {
   summary() { return BackendApi.get('/verticals/health/summary'); },
   async patients(params = {}) { return MediaService.signRecords(await BackendApi.get(`/verticals/health/patients${query(params)}`)); },
   createPatient(payload) { return createWithPhoto((data) => BackendApi.post('/api/v1/verticals/health/patients', data), payload, 'care-patient', 'displayName'); },
-  updatePatient(id, payload) { return BackendApi.request(`/verticals/health/patients/${encodeURIComponent(id)}`, { method:'PATCH', body:payload }); },
-  archivePatient(id) { return BackendApi.delete(`/api/v1/verticals/health/patients/${encodeURIComponent(id)}`); },
+  updatePatient(id, payload) { return BackendApi.request(`/verticals/health/patients/${pathId(id)}`, { method:'PATCH', body:payload }); },
+  archivePatient(id) { return BackendApi.delete(`/api/v1/verticals/health/patients/${pathId(id)}`); },
   professionals() { return BackendApi.get('/verticals/health/professionals'); },
   createProfessional(payload) { return BackendApi.post('/api/v1/verticals/health/professionals', payload); },
   appointments(params = {}) { return BackendApi.get(`/verticals/health/appointments${query(params)}`); },
   createAppointment(payload) { return BackendApi.post('/api/v1/verticals/health/appointments', payload); },
-  updateAppointment(id, payload) { return BackendApi.request(`/verticals/health/appointments/${encodeURIComponent(id)}`, { method:'PATCH', body:payload }); },
-  deleteAppointment(id) { return BackendApi.delete(`/api/v1/verticals/health/appointments/${encodeURIComponent(id)}`); },
+  updateAppointment(id, payload) { return BackendApi.request(`/verticals/health/appointments/${pathId(id)}`, { method:'PATCH', body:payload }); },
+  deleteAppointment(id) { return BackendApi.delete(`/api/v1/verticals/health/appointments/${pathId(id)}`); },
   encounters(patientId) { return BackendApi.get(`/verticals/health/encounters${query({ patientId })}`); },
   createEncounter(payload) { return BackendApi.post('/api/v1/verticals/health/encounters', payload); },
-  amendEncounter(id, payload) { return BackendApi.post(`/api/v1/verticals/health/encounters/${encodeURIComponent(id)}/amend`, payload); },
-  transitionDentalEncounter(id, payload) { return BackendApi.post(`/api/v1/verticals/health/encounters/${encodeURIComponent(id)}/workflow`, payload); },
-  decideTreatmentPlan(id, payload) { return BackendApi.post(`/api/v1/verticals/health/encounters/${encodeURIComponent(id)}/treatment-plan-decision`, payload); },
+  amendEncounter(id, payload) { return BackendApi.post(`/api/v1/verticals/health/encounters/${pathId(id)}/amend`, payload); },
+  transitionDentalEncounter(id, payload) { return BackendApi.post(`/api/v1/verticals/health/encounters/${pathId(id)}/workflow`, payload); },
+  decideTreatmentPlan(id, payload) { return BackendApi.post(`/api/v1/verticals/health/encounters/${pathId(id)}/treatment-plan-decision`, payload); },
   dentalFinancial(params = {}) { return BackendApi.get(`/verticals/health/dental/financial${query(params)}`); },
-  createDentalFinancialLink(id) { return BackendApi.post(`/api/v1/verticals/health/encounters/${encodeURIComponent(id)}/financial-link`, {}); },
+  createDentalFinancialLink(id) { return BackendApi.post(`/api/v1/verticals/health/encounters/${pathId(id)}/financial-link`, {}); },
   measurements(patientId) { return BackendApi.get(`/verticals/health/measurements${query({ patientId })}`); },
   createMeasurement(payload) { return BackendApi.post('/api/v1/verticals/health/measurements', payload); },
   createVeterinaryVitalMeasurements(payload) { return BackendApi.post('/api/v1/verticals/health/measurements/veterinary-vitals', payload); },
@@ -43,7 +31,7 @@ export const HealthVerticalService = {
   consents(patientId) { return BackendApi.get(`/verticals/health/consents${query({ patientId })}`); },
   createConsent(payload) { return BackendApi.post('/api/v1/verticals/health/consents', payload); },
   signDentalConsent(payload) { return BackendApi.post('/api/v1/verticals/health/consents/dental-treatment', payload); },
-  revokeConsent(id, payload) { return BackendApi.post(`/api/v1/verticals/health/consents/${encodeURIComponent(id)}/revoke`, payload); }
+  revokeConsent(id, payload) { return BackendApi.post(`/api/v1/verticals/health/consents/${pathId(id)}/revoke`, payload); }
 };
 
 export const VeterinaryService = {
@@ -57,10 +45,10 @@ export const VeterinaryService = {
   financialCatalog() { return BackendApi.get('/verticals/veterinary/financial-cases/catalog'); },
   financialCases(patientId = '') { return BackendApi.get(`/verticals/veterinary/financial-cases${query({ patientId })}`); },
   createFinancialCase(payload) { return BackendApi.post('/api/v1/verticals/veterinary/financial-cases', payload); },
-  authorizeFinancialCase(id, payload) { return BackendApi.post(`/api/v1/verticals/veterinary/financial-cases/${encodeURIComponent(id)}/authorize`, payload); },
-  attendFinancialCase(id, payload) { return BackendApi.post(`/api/v1/verticals/veterinary/financial-cases/${encodeURIComponent(id)}/attend`, payload); },
-  financialConsumptions(id) { return BackendApi.get(`/verticals/veterinary/financial-cases/${encodeURIComponent(id)}/consumptions`); },
-  invoiceFinancialCase(id, payload) { return BackendApi.post(`/api/v1/verticals/veterinary/financial-cases/${encodeURIComponent(id)}/invoice`, payload); },
+  authorizeFinancialCase(id, payload) { return BackendApi.post(`/api/v1/verticals/veterinary/financial-cases/${pathId(id)}/authorize`, payload); },
+  attendFinancialCase(id, payload) { return BackendApi.post(`/api/v1/verticals/veterinary/financial-cases/${pathId(id)}/attend`, payload); },
+  financialConsumptions(id) { return BackendApi.get(`/verticals/veterinary/financial-cases/${pathId(id)}/consumptions`); },
+  invoiceFinancialCase(id, payload) { return BackendApi.post(`/api/v1/verticals/veterinary/financial-cases/${pathId(id)}/invoice`, payload); },
   labOrders(params = {}) { return BackendApi.get(`/verticals/veterinary/lab-orders${query(params)}`); },
   createLabOrder(payload) { return BackendApi.post('/api/v1/verticals/veterinary/lab-orders', payload); },
   labResults(params = {}) { return BackendApi.get(`/verticals/veterinary/lab-results${query(params)}`); },
@@ -69,27 +57,27 @@ export const VeterinaryService = {
   createStudy(payload) { return BackendApi.post('/api/v1/verticals/veterinary/studies', payload); },
   hospitalizations(params = {}) { return BackendApi.get(`/verticals/veterinary/hospitalizations${query(params)}`); },
   createHospitalization(payload) { return BackendApi.post('/api/v1/verticals/veterinary/hospitalizations', payload); },
-  updateHospitalizationStatus(id, payload) { return BackendApi.request(`/verticals/veterinary/hospitalizations/${encodeURIComponent(id)}/status`, { method:'PATCH', body:payload }); },
+  updateHospitalizationStatus(id, payload) { return BackendApi.request(`/verticals/veterinary/hospitalizations/${pathId(id)}/status`, { method:'PATCH', body:payload }); },
   observations(hospitalizationId) { return BackendApi.get(`/verticals/veterinary/observations${query({ hospitalizationId })}`); },
   createObservation(payload) { return BackendApi.post('/api/v1/verticals/veterinary/observations', payload); },
-  treatmentSheet(hospitalizationId) { return BackendApi.get(`/verticals/veterinary/hospitalizations/${encodeURIComponent(hospitalizationId)}/treatment-sheet`); },
-  createTreatmentSheetEntry(hospitalizationId, payload) { return BackendApi.post(`/api/v1/verticals/veterinary/hospitalizations/${encodeURIComponent(hospitalizationId)}/treatment-sheet`, payload); },
+  treatmentSheet(hospitalizationId) { return BackendApi.get(`/verticals/veterinary/hospitalizations/${pathId(hospitalizationId)}/treatment-sheet`); },
+  createTreatmentSheetEntry(hospitalizationId, payload) { return BackendApi.post(`/api/v1/verticals/veterinary/hospitalizations/${pathId(hospitalizationId)}/treatment-sheet`, payload); },
   procedures(params = {}) { return BackendApi.get(`/verticals/veterinary/procedures${query(params)}`); },
   createProcedure(payload) { return BackendApi.post('/api/v1/verticals/veterinary/procedures', payload); },
   communications(params = {}) { return BackendApi.get(`/verticals/veterinary/communications${query(params)}`); },
   createCommunication(payload) { return BackendApi.post('/api/v1/verticals/veterinary/communications', payload); },
   guardianPortalGrants(patientId) { return BackendApi.get(`/verticals/veterinary/guardian-portal/grants${query({ patientId })}`); },
   createGuardianPortalGrant(payload) { return BackendApi.post('/api/v1/verticals/veterinary/guardian-portal/grants', payload); },
-  revokeGuardianPortalGrant(id) { return BackendApi.post(`/api/v1/verticals/veterinary/guardian-portal/grants/${encodeURIComponent(id)}/revoke`, {}); },
+  revokeGuardianPortalGrant(id) { return BackendApi.post(`/api/v1/verticals/veterinary/guardian-portal/grants/${pathId(id)}/revoke`, {}); },
   boardingSettings() { return BackendApi.get('/verticals/veterinary/boarding/settings'); },
   updateBoardingSettings(payload) { return BackendApi.request('/verticals/veterinary/boarding/settings', { method:'PATCH', body:payload }); },
   boardingResources(params = {}) { return BackendApi.get(`/verticals/veterinary/boarding/resources${query(params)}`); },
   createBoardingResource(payload) { return BackendApi.post('/api/v1/verticals/veterinary/boarding/resources', payload); },
-  updateBoardingResourceStatus(id, payload) { return BackendApi.request(`/verticals/veterinary/boarding/resources/${encodeURIComponent(id)}/status`, { method:'PATCH', body:payload }); },
+  updateBoardingResourceStatus(id, payload) { return BackendApi.request(`/verticals/veterinary/boarding/resources/${pathId(id)}/status`, { method:'PATCH', body:payload }); },
   boardingStays(params = {}) { return BackendApi.get(`/verticals/veterinary/boarding/stays${query(params)}`); },
   createBoardingStay(payload) { return BackendApi.post('/api/v1/verticals/veterinary/boarding/stays', payload); },
-  transitionBoardingStay(id, payload) { return BackendApi.request(`/verticals/veterinary/boarding/stays/${encodeURIComponent(id)}/status`, { method:'PATCH', body:payload }); },
-  updateAppointmentStatus(id, payload) { return BackendApi.request(`/verticals/veterinary/appointments/${encodeURIComponent(id)}/status`, { method:'PATCH', body:payload }); }
+  transitionBoardingStay(id, payload) { return BackendApi.request(`/verticals/veterinary/boarding/stays/${pathId(id)}/status`, { method:'PATCH', body:payload }); },
+  updateAppointmentStatus(id, payload) { return BackendApi.request(`/verticals/veterinary/appointments/${pathId(id)}/status`, { method:'PATCH', body:payload }); }
 };
 
 export const GymVerticalService = {
@@ -101,13 +89,13 @@ export const GymVerticalService = {
   plans() { return BackendApi.get('/verticals/gym/plans'); },
   createPlan(payload) { return BackendApi.post('/api/v1/verticals/gym/plans', payload); },
   createMembership(payload) { return BackendApi.post('/api/v1/verticals/gym/memberships', payload); },
-  updateMembershipStatus(id, payload) { return BackendApi.request(`/verticals/gym/memberships/${encodeURIComponent(id)}/status`, { method:'PATCH', body:payload }); },
+  updateMembershipStatus(id, payload) { return BackendApi.request(`/verticals/gym/memberships/${pathId(id)}/status`, { method:'PATCH', body:payload }); },
   checkIn(payload) { return BackendApi.post('/api/v1/verticals/gym/checkins', payload); },
   assessments(memberId) { return BackendApi.get(`/verticals/gym/assessments${query({ memberId })}`); },
   createAssessment(payload) { return BackendApi.post('/api/v1/verticals/gym/assessments', payload); },
   exercises(params = {}) { return BackendApi.get(`/verticals/gym/exercises${query(params)}`); },
   createExercise(payload) { return BackendApi.post('/api/v1/verticals/gym/exercises', payload); },
-  updateExercise(id, payload) { return BackendApi.request(`/verticals/gym/exercises/${encodeURIComponent(id)}`, { method:'PATCH', body:payload }); },
+  updateExercise(id, payload) { return BackendApi.request(`/verticals/gym/exercises/${pathId(id)}`, { method:'PATCH', body:payload }); },
   routines(memberId = '') { return BackendApi.get(`/verticals/gym/routines${query({ memberId })}`); },
   createRoutine(payload) { return BackendApi.post('/api/v1/verticals/gym/routines', payload); },
   evaluateProgression(payload) { return BackendApi.post('/api/v1/verticals/gym/progression/evaluate', payload); },
@@ -115,32 +103,32 @@ export const GymVerticalService = {
   createPeriodizationTemplate(payload) { return BackendApi.post('/api/v1/verticals/gym/periodization/templates', payload); },
   periodizationPrograms(routineId) { return BackendApi.get(`/verticals/gym/periodization/programs${query({ routineId })}`); },
   createPeriodizationProgram(payload) { return BackendApi.post('/api/v1/verticals/gym/periodization/programs', payload); },
-  createPeriodizationVersion(id, payload) { return BackendApi.post(`/api/v1/verticals/gym/periodization/programs/${encodeURIComponent(id)}/version`, payload); },
+  createPeriodizationVersion(id, payload) { return BackendApi.post(`/api/v1/verticals/gym/periodization/programs/${pathId(id)}/version`, payload); },
   workoutSessions(memberId) { return BackendApi.get(`/verticals/gym/workout-sessions${query({ memberId })}`); },
   startWorkoutSession(payload) { return BackendApi.post('/api/v1/verticals/gym/workout-sessions', payload); },
-  recordWorkoutSet(sessionId, payload) { return BackendApi.post(`/api/v1/verticals/gym/workout-sessions/${encodeURIComponent(sessionId)}/sets`, payload); },
-  completeWorkoutSession(sessionId) { return BackendApi.post(`/api/v1/verticals/gym/workout-sessions/${encodeURIComponent(sessionId)}/complete`, {}); },
+  recordWorkoutSet(sessionId, payload) { return BackendApi.post(`/api/v1/verticals/gym/workout-sessions/${pathId(sessionId)}/sets`, payload); },
+  completeWorkoutSession(sessionId) { return BackendApi.post(`/api/v1/verticals/gym/workout-sessions/${pathId(sessionId)}/complete`, {}); },
   performance(memberId, filters = {}) { return BackendApi.get(`/verticals/gym/performance${query({ memberId, ...filters })}`); },
   suggestExerciseSubstitutions(payload) { return BackendApi.post('/api/v1/verticals/gym/exercise-substitutions/suggest', payload); },
   ingredients(params = {}) { return BackendApi.get(`/verticals/gym/ingredients${query(params)}`); },
   createIngredient(payload) { return BackendApi.post('/api/v1/verticals/gym/ingredients', payload); },
-  updateIngredient(id, payload) { return BackendApi.request(`/verticals/gym/ingredients/${encodeURIComponent(id)}`, { method:'PATCH', body:payload }); },
-  ingredientNutritionProfiles(id) { return BackendApi.get(`/verticals/gym/ingredients/${encodeURIComponent(id)}/nutrition-profiles`); },
-  createIngredientNutritionProfile(id, payload) { return BackendApi.post(`/api/v1/verticals/gym/ingredients/${encodeURIComponent(id)}/nutrition-profiles`, payload); },
+  updateIngredient(id, payload) { return BackendApi.request(`/verticals/gym/ingredients/${pathId(id)}`, { method:'PATCH', body:payload }); },
+  ingredientNutritionProfiles(id) { return BackendApi.get(`/verticals/gym/ingredients/${pathId(id)}/nutrition-profiles`); },
+  createIngredientNutritionProfile(id, payload) { return BackendApi.post(`/api/v1/verticals/gym/ingredients/${pathId(id)}/nutrition-profiles`, payload); },
   nutritionRules(memberId) { return BackendApi.get(`/verticals/gym/nutrition-rules${query({ memberId })}`); },
   createNutritionRule(payload) { return BackendApi.post('/api/v1/verticals/gym/nutrition-rules', payload); },
-  updateNutritionRule(id, payload) { return BackendApi.request(`/verticals/gym/nutrition-rules/${encodeURIComponent(id)}`, { method:'PATCH', body:payload }); },
+  updateNutritionRule(id, payload) { return BackendApi.request(`/verticals/gym/nutrition-rules/${pathId(id)}`, { method:'PATCH', body:payload }); },
   recipes() { return BackendApi.get('/verticals/gym/recipes'); },
   createRecipe(payload) { return BackendApi.post('/api/v1/verticals/gym/recipes', payload); },
   nutrition(memberId = '') { return BackendApi.get(`/verticals/gym/nutrition${query({ memberId })}`); },
-  shoppingList(planId) { return BackendApi.get(`/verticals/gym/nutrition/${encodeURIComponent(planId)}/shopping-list`); },
-  nutritionSnapshot(planId) { return BackendApi.get(`/verticals/gym/nutrition/${encodeURIComponent(planId)}/nutrients`); },
+  shoppingList(planId) { return BackendApi.get(`/verticals/gym/nutrition/${pathId(planId)}/shopping-list`); },
+  nutritionSnapshot(planId) { return BackendApi.get(`/verticals/gym/nutrition/${pathId(planId)}/nutrients`); },
   adherence(memberId) { return BackendApi.get(`/verticals/gym/adherence${query({ memberId })}`); },
   recordMealAdherence(payload) { return BackendApi.post('/api/v1/verticals/gym/adherence/meals', payload); },
   createNutrition(payload) { return BackendApi.post('/api/v1/verticals/gym/nutrition', payload); },
   classes() { return BackendApi.get('/verticals/gym/classes'); },
   createClass(payload) { return BackendApi.post('/api/v1/verticals/gym/classes', payload); },
-  classBookings(classId) { return BackendApi.get(`/verticals/gym/classes/${encodeURIComponent(classId)}/bookings`); },
+  classBookings(classId) { return BackendApi.get(`/verticals/gym/classes/${pathId(classId)}/bookings`); },
   bookClass(payload) { return BackendApi.post('/api/v1/verticals/gym/classes/bookings', payload); },
   payments(memberId = '') { return BackendApi.get(`/verticals/gym/payments${query({ memberId })}`); },
   createPayment(payload) { return BackendApi.post('/api/v1/verticals/gym/payments', payload); }
