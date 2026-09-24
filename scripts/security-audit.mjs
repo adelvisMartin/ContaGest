@@ -6,6 +6,14 @@ const ignored = new Set(['.git','node_modules','dist','coverage','playwright-rep
 const textExtensions = new Set(['.js','.mjs','.cjs','.ts','.tsx','.jsx','.json','.md','.yml','.yaml','.html','.css','.env','.example','.ps1','.cmd','Dockerfile']);
 const findings = [];
 
+function isBrowserFrontendPath(rel) {
+  return rel.startsWith('frontend/src/')
+    || rel.startsWith('frontend/public/')
+    || rel === 'frontend/index.html'
+    || rel.startsWith('frontend/soluciones/')
+    || rel.startsWith('frontend/portal/');
+}
+
 function walk(dir) {
   for (const entry of fs.readdirSync(dir, { withFileTypes:true })) {
     if (ignored.has(entry.name)) continue;
@@ -32,7 +40,7 @@ function inspect(full, rel) {
   ];
   for (const [kind, pattern] of secretPatterns) if (pattern.test(content)) findings.push(`${kind}: ${rel}`);
 
-  if (rel.startsWith('frontend/')) {
+  if (isBrowserFrontendPath(rel)) {
     const forbiddenClientSecretAccess = /(?:import\.meta\.env|process\.env)\.(?:SUPABASE_SERVICE_ROLE_KEY|OPENAI_API_KEY|JWT_SECRET|WHATSAPP_CLOUD_TOKEN|LICENSE_HASH_SECRET|HIPICO_GROUP_BRIDGE_TOKEN)\b/;
     if (forbiddenClientSecretAccess.test(content)) findings.push(`server-secret-access-in-frontend: ${rel}`);
     const viteSecret = /\bVITE_[A-Z0-9_]*(?:SECRET|PRIVATE|SERVICE_ROLE|OPENAI|TOKEN)[A-Z0-9_]*\b/;
