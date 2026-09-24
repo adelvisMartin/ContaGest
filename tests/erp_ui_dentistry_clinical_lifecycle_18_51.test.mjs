@@ -1,8 +1,9 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import test from 'node:test';
+import { healthBackendSource } from '../qa/support/vertical-authority-sources.mjs';
 
-const backend=()=>fs.readFileSync('backend/src/modules/verticals/health.routes.ts','utf8');
+const backend=()=>healthBackendSource();
 const page=()=>fs.readFileSync('frontend/src/pages/DentistryPracticePage.jsx','utf8');
 const service=()=>fs.readFileSync('frontend/src/services/verticalService.js','utf8');
 const lifecycle=()=>fs.readFileSync('frontend/src/components/dentistry/DentalLifecycleActions.jsx','utf8');
