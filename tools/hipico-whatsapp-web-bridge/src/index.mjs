@@ -215,6 +215,7 @@ async function writeHealth(extra = {}) {
     captured: capturedCount,
     delivered: deliveredCount,
     mirrored: mirroredCount,
+    sourceReplies: sourceReplyCount,
     duplicateVisible: duplicateVisibleCount,
     nonOperational: nonOperationalCount,
     seenIds: seen.size,
@@ -238,7 +239,7 @@ async function writeHealth(extra = {}) {
   const payload = {
     version: VERSION,
     timestamp: isoNow(),
-    mode: 'SOURCE_READ_ONLY_TO_LAB_SHADOW',
+    mode: SOURCE_AUTO_REPLY_ENABLED ? 'SOURCE_AUTONOMOUS_REPLY_WITH_DOMAIN_SHADOW' : 'SOURCE_READ_ONLY_TO_LAB_SHADOW',
     runtimeMode: RUNTIME_MODE,
     readiness,
     sourceAliases: SOURCE_MATCHES,
