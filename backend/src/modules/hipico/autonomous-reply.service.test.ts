@@ -184,7 +184,7 @@ test('system degradation still returns the safe degraded message instead of goin
       ...basePlan,
       intent:'SYSTEM_DEGRADED',
       text:'No puedo verificar la operación en este momento. No se confirmó ningún registro.',
-      handoffRequired:true,
+      handoffRequired:false,
       reason:'SYSTEM_NOT_AUTHORITATIVE'
     }
   } as any);
