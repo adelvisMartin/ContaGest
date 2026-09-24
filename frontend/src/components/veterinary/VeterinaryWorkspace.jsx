@@ -15,40 +15,12 @@ import { VeterinaryClinicalInventoryPanel } from './VeterinaryClinicalInventoryP
 import { VeterinaryFinancialPanel } from './VeterinaryFinancialPanel.jsx';
 import { VeterinaryGuardianPortalPanel } from './VeterinaryGuardianPortalPanel.jsx';
 import { VeterinaryBoardingPanel } from './VeterinaryBoardingPanel.jsx';
+import {
+  TABS, STATUS_TONE, MONTHS, compactDate, onlyDate, phoneDigits, displayError,
+  reportVeterinaryError, arrayData, objectData, shortCode, localDateTime, localDateTimeFromIso
+} from './veterinaryWorkspace.helpers.js';
 
-const TABS = [
-  ['resumen', 'Resumen', 'fa-chart-pie'], ['pacientes', 'Mascotas', 'fa-paw'], ['agenda', 'Agenda', 'fa-calendar-days'],
-  ['historia', 'Historia clínica', 'fa-file-waveform'], ['laboratorio', 'Laboratorio', 'fa-flask-vial'], ['estudios', 'Estudios', 'fa-x-ray'],
-  ['hospitalizacion', 'Hospitalización', 'fa-house-medical'], ['boarding', 'Estancia', 'fa-door-open'], ['procedimientos', 'Procedimientos', 'fa-stethoscope'], ['finanzas', 'Finanzas', 'fa-file-invoice-dollar'], ['tutor', 'Portal tutor', 'fa-user-shield'], ['comunicaciones', 'Comunicaciones', 'fa-message']
-];
-const STATUS_TONE = { scheduled:'info', confirmed:'success', checked_in:'warning', in_progress:'warning', completed:'success', cancelled:'default', no_show:'error', ordered:'info', processing:'warning', admitted:'error', observed:'warning', discharged:'success', critical:'error', high:'warning', low:'warning', abnormal:'warning', normal:'success', active:'success', pending:'warning', signed:'success', sent:'success', delivered:'success', failed:'error' };
-const MONTHS = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
 const Icon = ({ name, size = 14 }) => <i className={`fa-solid ${name}`} style={{ fontSize:size }} aria-hidden="true" />;
-const compactDate = (value) => value ? new Date(value).toLocaleString('es-VE', { dateStyle:'short', timeStyle:'short' }) : '—';
-const onlyDate = (value) => value ? new Date(value).toLocaleDateString('es-VE') : '—';
-const phoneDigits = (value) => String(value || '').replace(/\D/g, '');
-const displayError = (error) => error?.message || 'No se pudo completar la operación.';
-const reportVeterinaryError = (scope,error) => {
-  console.error('[veterinary]', {
-    scope,
-    name:error?.name || 'Error',
-    message:displayError(error),
-    status:error?.status || error?.statusCode || null
-  });
-};
-const arrayData = (value) => Array.isArray(value) ? value : value?.data || [];
-const objectData = (value) => value?.data || value || {};
-const shortCode = (value) => String(value || '').replaceAll('-', '').slice(0, 8).toUpperCase();
-const localDateTime = (minutes = 0) => {
-  const date = new Date(Date.now() + minutes * 60000 - new Date().getTimezoneOffset() * 60000);
-  return date.toISOString().slice(0, 16);
-};
-const localDateTimeFromIso = (value) => {
-  if (!value) return '';
-  const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return String(value).slice(0, 16);
-  return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
-};
 
 function Metric({ icon,label,value,hint,tone='primary' }) {
   return <Card sx={{minHeight:78}}><CardContent sx={{p:'11px!important',display:'grid',gridTemplateColumns:'30px minmax(0,1fr)',gap:1,alignItems:'start'}}><Avatar variant="rounded" sx={{width:30,height:30,borderRadius:'8px',bgcolor:'action.hover',color:`${tone}.main`,border:'1px solid',borderColor:'divider',fontSize:13}}><Icon name={icon}/></Avatar><Box sx={{minWidth:0}}><Typography variant="caption" color="text.secondary" sx={{fontWeight:600}}>{label}</Typography><Typography sx={{fontWeight:700,fontSize:'1rem',lineHeight:1.12,fontVariantNumeric:'tabular-nums',whiteSpace:'nowrap',overflow:'visible'}}>{value??0}</Typography>{hint&&<Typography variant="caption" color="text.secondary" noWrap>{hint}</Typography>}</Box></CardContent></Card>;
