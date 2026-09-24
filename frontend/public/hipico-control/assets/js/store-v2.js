@@ -1,3 +1,5 @@
+import { SAFE_INTERNAL_ID } from "./workspace-input-safety.js";
+
 const DB_NAME = "hipico-control";
 export const DB_VERSION = 2;
 export const LOCAL_SCHEMA_VERSION = 2;
@@ -176,10 +178,82 @@ function repairWeekClose(workspace, previous, event) {
 }
 function tagUnscoped(workspace) {
   const fallback = firstGroupId(workspace);
-  for (const key of ["participants", "days", "races", "advancedBets", "movements", "exchangeRates", "weekClosures", "pollas", "audit"]) {
+  for (const key of ["participants", "days", "races", "advancedBets", "movements", "exchangeRates", "weekClosures", "pollas", "audit", "syncQueue"]) {
     for (const item of workspace?.[key] || []) item.groupId ||= fallback;
   }
   for (const race of workspace?.races || []) for (const bet of race.bets || []) bet.groupId ||= race.groupId || fallback;
+}
+
+function referencedGroupIds(workspace) {
+  const references = new Set();
+  const add = (value) => {
+    const groupId = String(value || "").trim();
+    if (groupId) references.add(groupId);
+  };
+  const config = workspace?.config || {};
+  add(config.activeGroupId);
+  add(config.activeWhatsappGroupId);
+  for (const groupId of config.captureGroupIds || []) add(groupId);
+  for (const groupId of Object.keys(config.activeRaceByGroup || {})) add(groupId);
+  for (const key of ["participants", "days", "races", "advancedBets", "movements", "exchangeRates", "weekClosures", "pollas", "audit", "syncQueue"]) {
+    for (const item of workspace?.[key] || []) add(item?.groupId);
+  }
+  for (const race of workspace?.races || []) {
+    for (const bet of race?.bets || []) add(bet?.groupId);
+  }
+  return references;
+}
+
+function recoveredGroupDefinition(workspace, groupId, index, legacyById) {
+  const legacy = legacyById.get(groupId);
+  if (legacy) return structuredClone(legacy);
+
+  const config = workspace?.config || {};
+  const active = String(config.activeGroupId || config.activeWhatsappGroupId || "") === groupId
+    || (config.captureGroupIds || []).some((candidate) => String(candidate) === groupId);
+  const colors = ["#526f86", "#8d7545", "#35705a", "#721522"];
+  return {
+    id: groupId,
+    name: `Grupo recuperado ${index + 1}`,
+    companyName: String(config.clubName || "CONTROL HÍPICO"),
+    color: colors[index % colors.length],
+    currency: ["Bs.", "USD"].includes(config.currency) ? config.currency : "Bs.",
+    exchangeRate: validExchangeRate(config.exchangeRate) ?? 160,
+    commission: validCommission(config.commission) ?? 0.05,
+    showConversion: true,
+    autoRate: false,
+    footerMessage: String(config.footerMessage || ""),
+    clientLabel: "Participantes",
+    active
+  };
+}
+
+function recoverOrphanGroupDefinitions(workspace) {
+  if (!workspace || typeof workspace !== "object") return 0;
+  workspace.config ||= {};
+  const config = workspace.config;
+  const canonical = Array.isArray(config.groups) && config.groups.length
+    ? config.groups
+    : (Array.isArray(config.whatsappGroups) ? config.whatsappGroups : []);
+  const groups = [...canonical];
+  const legacyById = new Map((config.whatsappGroups || [])
+    .filter((group) => SAFE_INTERNAL_ID.test(String(group?.id || "")))
+    .map((group) => [String(group.id), group]));
+  const known = new Set(groups.map((group) => String(group?.id || "")).filter(Boolean));
+  let recovered = 0;
+
+  for (const groupId of referencedGroupIds(workspace)) {
+    if (known.has(groupId) || !SAFE_INTERNAL_ID.test(groupId)) continue;
+    groups.push(recoveredGroupDefinition(workspace, groupId, groups.length, legacyById));
+    known.add(groupId);
+    recovered += 1;
+  }
+
+  if (recovered || !Array.isArray(config.groups) || !config.groups.length) {
+    config.groups = groups;
+    config.whatsappGroups = groups;
+  }
+  return recovered;
 }
 
 /**
@@ -199,6 +273,7 @@ export function repairWorkspaceGroupScope(workspace, previous = lastWorkspaceSna
     else if (event.action === "week_closed") repairWeekClose(workspace, previous, event);
   }
   tagUnscoped(workspace);
+  if (!previous) recoverOrphanGroupDefinitions(workspace);
   preferNewestOpenDay(workspace);
   syncLegacyFinancialConfig(workspace, previous);
   return workspace;
@@ -311,4 +386,4 @@ export async function storageDiagnostics() { const [estimate, persisted, outbox,
 export async function getWorkspaceSyncStatus({ staleAfterMs = 5 * 60 * 1000, now = Date.now() } = {}) { const record = await getRecord("workspaces", WORKSPACE_ID); const lastSyncedAt = record?.workspace?.syncMeta?.lastSyncedAt || null; const stamp = Date.parse(String(lastSyncedAt || "")); return { lastSyncedAt, stale: !Number.isFinite(stamp) || now - stamp > staleAfterMs, offline: globalThis.navigator?.onLine === false, schemaVersion: LOCAL_SCHEMA_VERSION }; }
 export function downloadBlob(filename, blob) { const url = URL.createObjectURL(blob); const link = document.createElement("a"); link.href = url; link.download = filename; link.rel = "noopener"; document.body.appendChild(link); link.click(); link.remove(); setTimeout(() => URL.revokeObjectURL(url), 1000); }
 export function downloadFile(filename, content, type = "application/json") { downloadBlob(filename, new Blob([content], { type })); }
-export const __test__ = { isQuotaError, outboxIdempotencyKey, outboxIntent, sameOutboxIntent, ensureOutboxIndexes, matchingLoadedBet, firstGroupId, syncLegacyFinancialConfig, preferNewestOpenDay };
+export const __test__ = { isQuotaError, outboxIdempotencyKey, outboxIntent, sameOutboxIntent, ensureOutboxIndexes, matchingLoadedBet, firstGroupId, syncLegacyFinancialConfig, preferNewestOpenDay, referencedGroupIds, recoverOrphanGroupDefinitions };
