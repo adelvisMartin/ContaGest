@@ -42,7 +42,12 @@ export function automationScopeLockKey(ownerId: string, groupKey: string, groupI
 
 export async function lockAutomationScope(db: AutomationDbClient, ownerId: string, groupKey: string, groupId: string) {
   const key = automationScopeLockKey(ownerId, groupKey, groupId);
-  await db.$queryRaw`SELECT pg_advisory_xact_lock(hashtextextended(${key}, 0))`;
+  // pg_advisory_xact_lock returns PostgreSQL `void`. Prisma 6 cannot deserialize
+  // a top-level void column, so keep the lock side effect inside a materialized
+  // CTE and return a supported boolean scalar to the client.
+  await db.$queryRaw`WITH acquired AS MATERIALIZED (
+    SELECT pg_advisory_xact_lock(hashtextextended(${key}, 0))
+  ) SELECT true AS "locked" FROM acquired`;
 }
 
 export function isValidAutomationIdempotencyKey(value: unknown) {

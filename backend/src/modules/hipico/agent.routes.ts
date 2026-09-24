@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { createDefaultHipicoAgentEngine } from './agent-engine.js';
 import { AutomationStore } from './automation.store.js';
 import { hipicoError } from './hipico-domain.js';
+import { createHipicoDecisionProvider } from './jev-decision-provider.js';
 import {
   actorRef,
   automaticOwnerApprovalConfigured,
@@ -28,6 +29,7 @@ import { recordHipicoObservationSafe } from '../hipico-bot/hipico-observability.
 const router = Router();
 const store = new AutomationStore();
 const engine = createDefaultHipicoAgentEngine();
+const decisionProvider = createHipicoDecisionProvider();
 
 router.use((req, res, next) => {
   res.setHeader('Cache-Control', 'no-store, max-age=0');
@@ -64,6 +66,7 @@ router.get('/groups/:groupId/automation', async (req, res) => {
         agent: {
           generatorConfigured: false,
           deterministicFirst: true,
+          decisionProvider: decisionProvider.publicStatus(),
           financialAuthority: false,
           directEffectsAllowed: false
         }
@@ -135,6 +138,12 @@ router.post('/groups/:groupId/automation/evaluate', async (req, res) => {
     const config = await store.get(owner, g, gid);
     // Request evidence remains audit-only. Server-derived context alone can affect policy authority.
     const evaluation = await engine.evaluate(body.text, config.mode, serverRiskContext(gid));
+    // External decision providers are evidence-only in v13. They cannot replace the
+    // deterministic candidate, policy, tool gate, canAct decision, or outbox authority.
+    const decisionProviderObservation = await decisionProvider.observe({
+      text: body.text,
+      candidate: evaluation.candidate
+    });
     const policy = evaluation.riskPolicy;
     const disposition = String(policy?.disposition || 'HUMAN_REQUIRED');
     await recordHipicoObservationSafe({
@@ -144,7 +153,12 @@ router.post('/groups/:groupId/automation/evaluate', async (req, res) => {
       reasonCode: String(policy?.reason || disposition),
       latencyMs: Date.now() - started,
       candidateSha: candidateSha(),
-      metadata: { disposition, mode: config.mode, evidenceState: policy?.evidenceState || null }
+      metadata: {
+        disposition,
+        mode: config.mode,
+        evidenceState: policy?.evidenceState || null,
+        decisionProviderStatus: decisionProviderObservation.status
+      }
     });
     const receipt = await store.recordEvaluation({
       ownerId: owner,
@@ -155,7 +169,10 @@ router.post('/groups/:groupId/automation/evaluate', async (req, res) => {
       candidate: evaluation.candidate,
       canAct: evaluation.canAct,
       riskPolicy: evaluation.riskPolicy,
-      evidence: body.evidence
+      evidence: {
+        ...(body.evidence || {}),
+        decisionProvider: decisionProviderObservation
+      }
     });
     await recordHipicoObservationSafe({
       ...trace,
@@ -164,7 +181,13 @@ router.post('/groups/:groupId/automation/evaluate', async (req, res) => {
       reasonCode: String(policy?.reason || 'AGENT_DECISION_RECORDED'),
       latencyMs: Date.now() - started,
       candidateSha: candidateSha(),
-      metadata: { canAct: Boolean(evaluation.canAct), intent: evaluation.candidate?.intent || null, disposition }
+      metadata: {
+        canAct: Boolean(evaluation.canAct),
+        intent: evaluation.candidate?.intent || null,
+        disposition,
+        decisionProviderStatus: decisionProviderObservation.status,
+        decisionProviderFailure: decisionProviderObservation.failureCode
+      }
     });
     await recordHipicoObservationSafe({
       ...trace,
@@ -180,6 +203,7 @@ router.post('/groups/:groupId/automation/evaluate', async (req, res) => {
       data: {
         ...evaluation,
         riskPolicy: evaluation.riskPolicy,
+        decisionProvider: decisionProviderObservation,
         receipt,
         actions: [],
         financialAuthority: false,
