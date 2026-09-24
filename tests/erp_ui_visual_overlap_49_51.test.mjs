@@ -6,12 +6,12 @@ const read=(path)=>fs.readFileSync(path,'utf8');
 
 test('49/51 owns the full anti-overlap viewport matrix',()=>{
   const source=read('qa/erp-visual-overlap-v4951.spec.mjs');
-  for(const token of ['360','390','430','768','1366','1920','light','dark',"zoom='2'",'LONG_TEXT']) assert.ok(source.includes(token),token);
+  for(const token of ['360','390','430','768','1366','1920','light','dark',"200%-reflow-proxy",'effectiveZoomWidth','LONG_TEXT']) assert.ok(source.includes(token),token);
 });
 
 test('49/51 audits overflow clipping occlusion touch targets keyboard focus and dialogs',()=>{
   const source=read('qa/erp-visual-overlap-v4951.spec.mjs');
-  for(const token of ['document-overflow','outside-viewport','occluded-center','touch-height','focus-clipped','dialog-clipped',"keyboard.press('Tab')","keyboard.press('Escape')"]) assert.ok(source.includes(token),token);
+  for(const token of ['document-overflow','outside-viewport','occluded-center','touch-height','focus-clipped','dialog-clipped','MuiTabs-scroller','[role="tablist"]',"keyboard.press('Tab')","keyboard.press('Escape')"]) assert.ok(source.includes(token),token);
 });
 
 test('49/51 is wired into the canonical 58x5 browser runner',()=>{
