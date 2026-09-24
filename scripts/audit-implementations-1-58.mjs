@@ -42,4 +42,4 @@ const byArea=Object.fromEntries(
   [...new Set(rows.map((row)=>row.area))].sort().map((area)=>[area,rows.filter((row)=>row.area===area).length])
 );
 console.log('Implementation roadmap audit: PASS');
-console.log(JSON.stringify({count:rows.length,byArea,cleanCodeReviewed:rows.filter((row)=>row.reviewStatus==='CLEAN_CODE_BATCH_1').map((row)=>row.id)},null,2));
+console.log(JSON.stringify({count:rows.length,byArea,cleanCodeReviewed:rows.filter((row)=>String(row.reviewStatus||'').startsWith('CLEAN_CODE_')).map((row)=>row.id)},null,2));
