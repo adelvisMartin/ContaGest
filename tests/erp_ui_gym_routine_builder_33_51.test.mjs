@@ -1,10 +1,11 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import test from 'node:test';
+import { gymBackendSource } from '../qa/support/vertical-authority-sources.mjs';
 
 const page=()=>fs.readFileSync('frontend/src/pages/GymManagementPage.jsx','utf8');
 const builder=()=>fs.readFileSync('frontend/src/components/fitness/RoutineBuilder.jsx','utf8');
-const backend=()=>fs.readFileSync('backend/src/modules/verticals/gym.routes.ts','utf8');
+const backend=()=>gymBackendSource();
 
 test('33/51 replaces free-text routine parsing with the reusable structured builder',()=>{
   const source=page();
@@ -48,7 +49,7 @@ test('33/51 has explicit empty and disabled states for routine construction',()=
 
 
 test('33/51 routine creation is atomic and tenant-scoped',()=>{
-  const source=fs.readFileSync('backend/src/modules/verticals/gym.routes.ts','utf8');
+  const source=gymBackendSource();
   const start=source.indexOf("router.post('/gym/routines'");
   const end=source.indexOf("router.get('/gym/nutrition'",start);
   const block=source.slice(start,end);

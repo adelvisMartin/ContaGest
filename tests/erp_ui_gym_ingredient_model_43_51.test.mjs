@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import test from 'node:test';
+import { gymBackendSource } from '../qa/support/vertical-authority-sources.mjs';
 
 const read=(path)=>fs.readFileSync(path,'utf8');
 
@@ -12,14 +13,14 @@ test('43/51 adds tenant-scoped canonical ingredient persistence',()=>{
 });
 
 test('43/51 ingredient API is CRUD-safe and tenant scoped',()=>{
-  const source=read('backend/src/modules/verticals/gym.routes.ts');
+  const source=gymBackendSource();
   for(const token of ["router.get('/gym/ingredients'","router.post('/gym/ingredients'","router.patch('/gym/ingredients/:id'",'ingredientSchema','ingredientPatchSchema','"tenantId"=$1']) assert.ok(source.includes(token),token);
   assert.match(source,/ON CONFLICT DO NOTHING/);
   assert.match(source,/Ya existe un ingrediente con ese nombre en el tenant activo/);
 });
 
 test('43/51 nutrition writes validate member trainer and ingredient ownership atomically',()=>{
-  const source=read('backend/src/modules/verticals/gym.routes.ts');
+  const source=gymBackendSource();
   const start=source.indexOf("router.post('/gym/nutrition'");
   const end=source.indexOf("router.get('/gym/classes'",start);
   const block=source.slice(start,end);

@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import test from 'node:test';
+import { gymBackendSource } from '../qa/support/vertical-authority-sources.mjs';
 
 const read=(path)=>fs.readFileSync(path,'utf8');
 
@@ -12,12 +13,12 @@ test('40/51 persists canonical workout sessions and sets',()=>{
 });
 
 test('40/51 backend validates RIR RPE and completed versus skipped sets',()=>{
-  const routes=read('backend/src/modules/verticals/gym.routes.ts');
+  const routes=gymBackendSource();
   for(const token of ['workoutSetSchema','workoutSessionSchema','RIR y RPE no son coherentes','Las series realizadas requieren repeticiones','completed','skipped']) assert.ok(routes.includes(token),token);
 });
 
 test('40/51 session start and set writes are tenant safe and serialized',()=>{
-  const routes=read('backend/src/modules/verticals/gym.routes.ts');
+  const routes=gymBackendSource();
   for(const token of [
     "router.post('/gym/workout-sessions'",
     "router.post('/gym/workout-sessions/:id/sets'",
@@ -46,7 +47,7 @@ test('40/51 exposes canonical frontend service methods',()=>{
 });
 
 test('40/51 does not pre-implement history/performance analytics from 41/51',()=>{
-  const routes=read('backend/src/modules/verticals/gym.routes.ts');
+  const routes=gymBackendSource();
   const start=routes.indexOf("router.get('/gym/workout-sessions'");
   const end=routes.indexOf("router.get('/gym/routines'",start);
   const block=routes.slice(start,end);

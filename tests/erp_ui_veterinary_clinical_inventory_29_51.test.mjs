@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import test from 'node:test';
+import { veterinaryBackendSource, veterinaryWorkspaceSource } from '../qa/support/vertical-authority-sources.mjs';
 
 const read=(path)=>fs.readFileSync(path,'utf8');
 
@@ -33,7 +34,7 @@ test('29/51 lot balance is derived from inventory movements',()=>{
 });
 
 test('29/51 clinical inventory exposes stock minimum reorder lot and expiration without duplicating stock authority',()=>{
-  const source=read('backend/src/modules/verticals/veterinary.routes.ts');
+  const source=veterinaryBackendSource();
   const start=source.indexOf("router.get('/clinical-inventory'");
   const end=source.indexOf("router.post('/clinical-inventory/lots'",start);
   const block=source.slice(start,end);
@@ -42,7 +43,7 @@ test('29/51 clinical inventory exposes stock minimum reorder lot and expiration 
 });
 
 test('29/51 lot creation uses canonical product lock and movement effect',()=>{
-  const source=read('backend/src/modules/verticals/veterinary.routes.ts');
+  const source=veterinaryBackendSource();
   const start=source.indexOf("router.post('/clinical-inventory/lots'");
   const end=source.indexOf("router.get('/clinical-inventory/consumptions'",start);
   const block=source.slice(start,end);
@@ -54,7 +55,7 @@ test('29/51 lot creation uses canonical product lock and movement effect',()=>{
 });
 
 test('29/51 clinical consumption is explicitly derived from active prescription product and selected lot',()=>{
-  const source=read('backend/src/modules/verticals/veterinary.routes.ts');
+  const source=veterinaryBackendSource();
   const start=source.indexOf("router.post('/clinical-inventory/consume'");
   const end=source.indexOf("router.get('/dashboard'",start);
   const block=source.slice(start,end);
@@ -67,7 +68,7 @@ test('29/51 clinical consumption is explicitly derived from active prescription 
 });
 
 test('29/51 clinical consumption is retry-safe for one clinical act',()=>{
-  const source=read('backend/src/modules/verticals/veterinary.routes.ts');
+  const source=veterinaryBackendSource();
   const start=source.indexOf("router.post('/clinical-inventory/consume'");
   const end=source.indexOf("router.get('/dashboard'",start);
   const block=source.slice(start,end);
@@ -93,7 +94,7 @@ test('29/51 lot-aware reversals preserve lot provenance and cannot create negati
 
 test('29/51 UI covers lot expiry minimum reorder and explicit prescription-derived consumption',()=>{
   const panel=read('frontend/src/components/veterinary/VeterinaryClinicalInventoryPanel.jsx');
-  const workspace=read('frontend/src/components/veterinary/VeterinaryWorkspace.jsx');
+  const workspace=veterinaryWorkspaceSource();
   for(const token of ['Inventario clínico','Lote','Vencimiento','Mínimo','Reorden','Cantidad consumida','Consumo derivado del acto clínico','Prescripción','VeterinaryService.clinicalInventory(','VeterinaryService.consumeClinicalInventory(']) assert.ok(panel.includes(token),token);
   assert.match(panel,/prescriptions\.filter\(\(item\)=>item\.status==='active'&&item\.productId\)/);
   assert.match(panel,/disabled=\{isExpired\(lot\.expiresAt\)\|\|Number\(lot\.onHand\)<=0\}/);
