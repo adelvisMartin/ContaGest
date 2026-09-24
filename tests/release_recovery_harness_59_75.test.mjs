@@ -20,13 +20,23 @@ test('59/75 real persistence test owns its restricted-user fixture',()=>{
   assert.doesNotMatch(source,/Temporary QA user .* not found/);
 });
 
-test('59/75 browser preqa activates AL2023 explicitly after Chromium extraction',()=>{
+test('59/75 browser preqa verifies the serverless Chromium executable by launching it',()=>{
   const source=read('scripts/vercel-browser-preqa-v16.mjs');
-  assert.match(source,/const al2023='\/tmp\/al2023\/lib'/);
-  assert.match(source,/fs\.existsSync\(al2023\)/);
-  assert.match(source,/al2023Ready/);
-  assert.match(source,/split\(': '\)|split\(':'\)/);
-  assert.match(source,/Capa AL2023 no activa después de extraer Chromium/);
+  assert.match(source,/chromium as playwrightChromium/);
+  assert.match(source,/playwrightChromium\.launch/);
+  assert.match(source,/await browser\.close\(\)/);
+  assert.match(source,/launchVerified:true/);
+  assert.match(source,/Chromium serverless no superó el smoke launch real/);
+  assert.doesNotMatch(source,/Capa AL2023 no activa/);
+});
+
+test('59/75 root browser QA entrypoints are explicit and executable',()=>{
+  const pkg=JSON.parse(read('package.json'));
+  assert.equal(pkg.scripts['test:browser:functional'],'npx playwright test qa/erp-functional-smoke-v14.spec.mjs qa/module-actions-runtime-v163.spec.mjs --project=chromium --workers=1');
+  assert.match(pkg.scripts['test:browser'],/test:browser:58/);
+  assert.match(pkg.scripts['test:browser'],/test:browser:functional/);
+  assert.match(pkg.scripts['test:browser'],/test:browser:a11y/);
+  assert.match(pkg.scripts['test:browser'],/test:browser:contrast/);
 });
 
 
