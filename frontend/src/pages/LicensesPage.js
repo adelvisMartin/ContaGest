@@ -1,7 +1,7 @@
 import { PageHeader, Button, Badge, Field, Select } from '../components/ui/index.js';
 import { LicenseService } from '../services/licenseService.js';
 import { CommercialService } from '../services/commercialService.js';
-import { DemoAccessService } from '../services/demoAccessService.js';
+import { MODULE_CATALOG } from '../data/moduleCatalog.js';
 import { downloadCommercialCsv, downloadCommercialPdf } from '../utils/commercialExport.js';
 import { escapeHtml } from '../utils/dom.js';
 
@@ -22,7 +22,8 @@ const sectorOptions = [
   { value:'otro', label:'Otro rubro' }
 ];
 
-const sectorDefaults = {
+const canonicalLicenseModules = new Set(MODULE_CATALOG.map((item)=>item.route));
+const sectorDefaultsRaw = {
   salud:['dashboard','salud','clientes','reportes','analytics','soporte'],
   veterinaria:['dashboard','veterinaria','clientes','inventario','reportes','analytics','soporte'],
   psicologia:['dashboard','psicologia','clientes','reportes','analytics','mensajes','soporte'],
@@ -34,6 +35,12 @@ const sectorDefaults = {
   comercio:['dashboard','ventas','cotizacion','clientes','inventario','kardex','compras','reportes','analytics','soporte'],
   servicios:['dashboard','cotizacion','clientes','ventas','reportes','analytics','soporte']
 };
+const sectorDefaults = Object.freeze(Object.fromEntries(
+  Object.entries(sectorDefaultsRaw).map(([sector,routes])=>[
+    sector,
+    Object.freeze(routes.filter((route)=>canonicalLicenseModules.has(route)))
+  ])
+));
 
 const statusLabels={trial:'Trial',active:'Activa',past_due:'Morosa',suspended:'Suspendida',cancelled:'Cancelada',expired:'Vencida',earned:'Devengada',paid:'Pagada',pending:'Pendiente',failed:'Fallida',refunded:'Reembolsada',void:'Anulada'};
 const statusTone=(status)=>status==='active'||status==='paid'?'success':status==='trial'?'brand':status==='past_due'||status==='earned'||status==='pending'?'warning':status==='suspended'||status==='cancelled'||status==='expired'||status==='failed'||status==='void'?'danger':'neutral';
@@ -181,7 +188,7 @@ export const LicensesPage = {
   render(state) {
     const licenses = state.licenses || [];
     const isPlatform=Array.isArray(state.profile?.permissions)&&state.profile.permissions.includes('platform.manage');
-    const modules = [...new Set([...DemoAccessService.modules, 'salud','veterinaria','psicologia','odontologia','gimnasio','rutinas','nutricion','mensajes','libro-mayor','balance-sumas-saldos','hoja-trabajo','estados-financieros','cierre-contable','tributos','libro-ventas'])];
+    const modules = MODULE_CATALOG.map((item)=>item.route);
     const selectedSector = state.licenseDraft?.businessSector || 'comercio';
     const defaults = sectorDefaults[selectedSector] || sectorDefaults.comercio;
     const moduleOptions = modules.map((module) => `<label class="cg-feature-pill"><input type="checkbox" name="modules" value="${escapeHtml(module)}" ${defaults.includes(module) ? 'checked' : ''}/><span>${escapeHtml(module)}</span></label>`).join('');
