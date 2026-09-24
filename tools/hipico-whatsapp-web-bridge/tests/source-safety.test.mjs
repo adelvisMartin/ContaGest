@@ -120,3 +120,15 @@ test('source reply delivery verification reads message body before container met
   assert.match(source, /data-testid="msg-text"/);
   assert.match(source, /return selectable \|\| normalizeText\(node\.innerText \|\| node\.textContent\)/);
 });
+
+
+test('source reply marks only proven pre-send compose failures as retryable', () => {
+  const start = source.indexOf('async function sendTextInCurrentSource(record)');
+  const enter = source.indexOf("await page.keyboard.press('Enter');", start);
+  const beforeEnter = source.slice(start, enter);
+  assert.match(beforeEnter, /SOURCE_REPLY_COMPOSE_FAILED/);
+  assert.match(beforeEnter, /SOURCE_IDENTITY_CHANGED_BEFORE_SEND/);
+  assert.match(beforeEnter, /safeToRetry = true/);
+  const afterEnter = source.slice(enter, source.indexOf('async function syncSourceReplyReceipts', enter));
+  assert.doesNotMatch(afterEnter, /safeToRetry = true/);
+});
