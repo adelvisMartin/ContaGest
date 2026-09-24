@@ -12,14 +12,16 @@ export const MODULE_CATALOG_ACCESS = Object.freeze(manifestModules.map((module)=
 })));
 
 const permissionByRoute = new Map(MODULE_CATALOG_ACCESS.map((module)=>[module.route,module.permission]));
+const routePermissions = new Set(permissionByRoute.values());
 const canonicalModules = (modules=[]) => [...new Set((Array.isArray(modules)?modules:[]).map(String).filter((route)=>permissionByRoute.has(route)))];
 const permissionsForModules = (modules=[]) => [...new Set(canonicalModules(modules).map((route)=>permissionByRoute.get(route)).filter(Boolean))];
 const normalizeRoleDefinition = (role={}) => {
   const modules=canonicalModules(role.modules);
+  const capabilityPermissions=(role.permissions||[]).map(String).filter((permission)=>!routePermissions.has(permission));
   return {
     ...role,
     modules,
-    permissions:[...new Set([...(role.permissions||[]),...permissionsForModules(role.modules)])]
+    permissions:[...new Set([...capabilityPermissions,...permissionsForModules(modules)])]
   };
 };
 
