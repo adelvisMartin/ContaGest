@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "scope": "ContaGest implementations 1-58",
   "authority": "merged GitHub PRs + current main contracts",
-  "generatedFromBaseline": "0eabeca86592a129ba1adc4b94d655571b5e1fef",
+  "generatedFromBaseline": "e85ac04c4a70a8cf7d8a2ba0362bf795a9ed731b",
   "rules": {
     "sourceOfTruth": [
       "merged PR",
@@ -1021,7 +1021,10 @@
       "regressionPaths": [
         "tests/vertical_entitlements_52_75.test.mjs"
       ],
-      "reviewStatus": "BASELINE_RECONCILED"
+      "reviewStatus": "BASELINE_RECONCILED",
+      "reviewBatches": [
+        "CLEAN_CODE_BATCH_6_ACCESS_LICENSING"
+      ]
     },
     {
       "id": 53,
@@ -1037,7 +1040,10 @@
       "regressionPaths": [
         "tests/access_manifest_53_75.test.mjs"
       ],
-      "reviewStatus": "BASELINE_RECONCILED"
+      "reviewStatus": "BASELINE_RECONCILED",
+      "reviewBatches": [
+        "CLEAN_CODE_BATCH_6_ACCESS_LICENSING"
+      ]
     },
     {
       "id": 54,
@@ -1053,7 +1059,10 @@
       "regressionPaths": [
         "tests/access_role_permission_drift_54_75.test.mjs"
       ],
-      "reviewStatus": "BASELINE_RECONCILED"
+      "reviewStatus": "BASELINE_RECONCILED",
+      "reviewBatches": [
+        "CLEAN_CODE_BATCH_6_ACCESS_LICENSING"
+      ]
     },
     {
       "id": 55,
@@ -1072,7 +1081,10 @@
         "tests/access_manifest_runtime_validation_55_75.test.mjs",
         "tests/tenant_user_provisioning_55_75.test.mjs"
       ],
-      "reviewStatus": "BASELINE_RECONCILED"
+      "reviewStatus": "BASELINE_RECONCILED",
+      "reviewBatches": [
+        "CLEAN_CODE_BATCH_6_ACCESS_LICENSING"
+      ]
     },
     {
       "id": 56,
@@ -1088,7 +1100,10 @@
       "regressionPaths": [
         "tests/license_canonical_modules_56_75.test.mjs"
       ],
-      "reviewStatus": "BASELINE_RECONCILED"
+      "reviewStatus": "BASELINE_RECONCILED",
+      "reviewBatches": [
+        "CLEAN_CODE_BATCH_6_ACCESS_LICENSING"
+      ]
     },
     {
       "id": 57,
@@ -1105,7 +1120,10 @@
       "regressionPaths": [
         "tests/vertical_experience_profile_57_75.test.mjs"
       ],
-      "reviewStatus": "BASELINE_RECONCILED"
+      "reviewStatus": "BASELINE_RECONCILED",
+      "reviewBatches": [
+        "CLEAN_CODE_BATCH_6_ACCESS_LICENSING"
+      ]
     },
     {
       "id": 58,
