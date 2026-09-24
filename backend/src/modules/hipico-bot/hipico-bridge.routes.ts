@@ -105,7 +105,7 @@ router.post('/bridge/events',async(req,res)=>{
         groupId:input.groupId,
         text:assessment.sanitizedText,
         sourceMessageId:input.externalMessageId,
-        humanOwned:handoffState?.ownership==='human',
+        humanOwned:Boolean(handoffState?.ownership==='human'),
         systemHealthy:safetyReady.ready
       })
       :{observation:null,readiness:null,evaluationId:null,failureCode:null};
