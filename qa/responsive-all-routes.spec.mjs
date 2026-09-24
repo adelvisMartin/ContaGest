@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { waitForRouteReady, waitForStableLayout } from './support/playwright-determinism.mjs';
 
 const ROUTES = [
   'dashboard','cotizacion','clientes','ventas','inventario','tributos','normativa','historial','reportes',
@@ -33,7 +34,7 @@ async function seedAuthenticatedUi(page) {
 async function openRoute(page, route) {
   await page.goto(`/?module=${route}`, { waitUntil:'domcontentloaded' });
   await page.waitForSelector('#pages', { state:'attached', timeout:15_000 });
-  await page.waitForTimeout(220);
+  await waitForRouteReady(page,route);
 }
 
 async function viewportAudit(page) {
@@ -153,7 +154,7 @@ test.describe('mobile shell interaction contract v11.21', () => {
     await seedAuthenticatedUi(page);
     await openRoute(page, 'psicologia');
     await page.waitForSelector('#psychAppointmentForm [data-cgx-kit]', { timeout:10_000 });
-    await page.waitForTimeout(150);
+    await waitForStableLayout(page,'#psychAppointmentForm');
     const audit=await page.locator('#psychAppointmentForm [data-cgx-kit]').evaluateAll((hosts)=>hosts.map((host)=>{
       const visible=(node)=>{if(!node)return false;const style=getComputedStyle(node);const rect=node.getBoundingClientRect();return style.display!=='none'&&style.visibility!=='hidden'&&rect.width>1&&rect.height>1;};
       const legacy=[...host.querySelectorAll(':scope > label, :scope > span')].filter(visible).length;

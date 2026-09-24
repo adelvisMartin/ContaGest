@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { waitForStableLayout } from './support/playwright-determinism.mjs';
 
 const purchaseFixture = {
   id:'purchase-qa',
@@ -128,7 +129,7 @@ test('mobile shell remains usable across strengthened modules', async ({ page })
     await page.goto(`/?module=${route}`, { waitUntil:'domcontentloaded' });
     await expect(page.locator('body')).toHaveAttribute('data-route', route);
     await expect(page.getByRole('heading',{ name:heading, exact:true }).first()).toBeVisible({ timeout:8000 });
-    await page.waitForTimeout(120);
+    await waitForStableLayout(page,'#pages');
     await expectNoOverflow(page);
     await expect(page.locator('#cg-install-app')).toHaveCount(0);
     await page.screenshot({ path:`test-results/screenshots/v11-15-${route}-mobile.png`, fullPage:true });

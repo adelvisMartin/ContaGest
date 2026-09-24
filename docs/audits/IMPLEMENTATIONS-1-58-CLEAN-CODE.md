@@ -65,9 +65,30 @@ Durante la recuperación real de CI aparecieron defectos adicionales en AppSec, 
 - trazabilidad directa: 11, 12, 13, 14, 15, 18, 19 y 20;
 - regresión: `tests/health_schema_authority_batch3.test.mjs`.
 
+## Lote 4 · shells frontend
+
+- helpers puros extraídos para Odontología, Veterinaria y Gimnasio;
+- estado, effects, callbacks y render ownership permanecen en sus workspaces;
+- la matriz conserva historial multi-lote mediante `reviewBatches`;
+- regresión: `tests/frontend_vertical_helpers_batch4.test.mjs`.
+
+## Lote 5 · cliente vertical frontend
+
+- `query`, `pathId` y `createWithPhoto` centralizados en `verticalService.helpers.js`;
+- las cuatro autoridades públicas de servicio conservan firmas y endpoints;
+- `BackendApi` sigue siendo owner de auth/CSRF/idempotencia;
+- trazabilidad añadida a 10–47 sin borrar revisiones previas;
+- regresión: `tests/vertical_service_clean_code_batch5.test.mjs`.
+
+## Lote 6 · Access/Licensing 52–57
+
+- presets declarativos de roles extraídos de `accessControlService.js`;
+- contratos/allowlists Zod de licensing extraídos a `licenses.contracts.ts`;
+- manifiesto de acceso, RBAC derivado, provisioning, transacciones y sesión conservan sus autoridades;
+- caracterización: 15/15 métodos públicos de AccessControlService y 6/6 rutas licensing intactas;
+- regresión: `tests/access_licensing_clean_code_batch6.test.mjs`.
+
 ## Pendiente priorizado
 
-- lote 4: `VeterinaryWorkspace`, `GymManagementPage`, `DentistryPracticePage`;
-- lote 5: servicios frontend y eliminación de boilerplate;
-- lote 6: acceso/licensing 52–57;
-- cierre: reejecutar 48–51/58 sobre el SHA final y actualizar esta matriz a `CLEAN_CODE_REVIEWED` por bloque.
+- revisar/marcar 1–9, 48–51 y 58 para completar cobertura explícita 1–58;
+- reejecutar 48–51/58 sobre el SHA final y actualizar esta matriz a `CLEAN_CODE_REVIEWED` por bloque.

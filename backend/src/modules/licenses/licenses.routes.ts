@@ -2,7 +2,6 @@ import { Router } from 'express';
 import type { Prisma } from '@prisma/client';
 import crypto from 'node:crypto';
 import bcrypt from 'bcryptjs';
-import { z } from 'zod';
 import { prisma } from '../../database/prisma.js';
 import { asyncHandler, HttpError, ok } from '../../shared/http.js';
 import { requireTenant, requirePermission } from '../../shared/middleware/context.js';
@@ -10,50 +9,12 @@ import { ensureAccountMembership } from '../../shared/identity/accountMembership
 import { hashLicenseKey, validateUserLicense } from '../../shared/licensing/licenseGuard.js';
 import { bootstrapQaLicense } from '../../shared/licensing/qaBootstrap.js';
 import { readDeviceCredential, setDeviceCredentialCookie } from '../../shared/auth/sessionCookies.js';
-import { ACCESS_MANIFEST, permissionForRoute } from '../../shared/contracts/accessManifest.js';
+import { permissionForRoute } from '../../shared/contracts/accessManifest.js';
+import { CANONICAL_LICENSE_MODULES, licenseSchema, validateSchema } from './licenses.contracts.js';
+import type { ValidateLicenseInput } from './licenses.contracts.js';
 
 const router = Router();
 router.use(requireTenant);
-
-const BUSINESS_SECTORS = [
-  'contador', 'comercio', 'servicios', 'restaurante', 'salud', 'veterinaria', 'psicologia', 'odontologia', 'gimnasio', 'nutricion',
-  'manufactura', 'distribucion', 'profesional', 'otro'
-] as const;
-const COMMERCIAL_USES = ['evaluacion', 'demostracion', 'operacion', 'capacitacion', 'soporte'] as const;
-const CANONICAL_LICENSE_MODULES = new Set(ACCESS_MANIFEST.modules.map((item) => item.route));
-const LICENSE_ROUTE_ALLOWLIST = new Set(['login', ...CANONICAL_LICENSE_MODULES]);
-const licenseModuleSchema = z.string().min(1).max(80).refine(
-  (value) => CANONICAL_LICENSE_MODULES.has(value),
-  'Módulo no reconocido por el manifiesto de acceso.'
-);
-const licenseRouteSchema = z.string().max(160).refine(
-  (value) => LICENSE_ROUTE_ALLOWLIST.has(value),
-  'Ruta no reconocida por el manifiesto de acceso.'
-);
-
-const licenseSchema = z.object({
-  userEmail: z.string().email(),
-  fullName: z.string().trim().min(2).max(120).default('Cliente de prueba'),
-  plan: z.enum(['trial', 'monthly', 'quarterly', 'annual', 'enterprise']).default('trial'),
-  days: z.coerce.number().int().min(1).max(3650).default(15),
-  modules: z.array(licenseModuleSchema).min(1).max(120).transform((modules) => [...new Set(modules)]),
-  businessSector: z.enum(BUSINESS_SECTORS).default('comercio'),
-  commercialUse: z.enum(COMMERCIAL_USES).default('evaluacion'),
-  maxUsers: z.coerce.number().int().min(1).max(100).default(1),
-  maxDevices: z.coerce.number().int().min(1).max(20).default(1),
-  subscriptionId: z.string().uuid().optional(),
-  notes: z.string().trim().max(1000).optional()
-});
-
-const validateSchema = z.object({
-  licenseKey: z.string().min(20).max(180).optional(),
-  deviceId: z.string().min(8).max(240).optional(),
-  deviceLabel: z.string().trim().max(120).optional(),
-  route: licenseRouteSchema.optional(),
-  metadata: z.record(z.string(), z.unknown()).optional()
-});
-
-
 
 const sectorPrefix: Record<string, string> = {
   contador:'CNT', comercio:'COM', servicios:'SRV', restaurante:'RES', salud:'MED', veterinaria:'VET', psicologia:'PSI', odontologia:'ODO', gimnasio:'GYM', nutricion:'NUT',
@@ -211,7 +172,7 @@ async function assertSubscriptionModules(subscriptionId:string, tenantId:string,
   return subscription;
 }
 
-async function validateFromRequest(req:any, body:z.infer<typeof validateSchema>) {
+async function validateFromRequest(req:any, body:ValidateLicenseInput) {
   const ctx = req.context;
   if (!ctx.email) throw new HttpError(401, 'La sesión no contiene correo de usuario.');
 
