@@ -1,0 +1,66 @@
+{
+  "version": 1,
+  "structuralAuthority": {
+    "prismaSchema": "backend/prisma/schema.prisma",
+    "migrationsDirectory": "backend/prisma/migrations",
+    "deployEntrypoint": "backend/scripts/prisma-deploy-safe.mjs"
+  },
+  "policyAuthority": {
+    "applyEntrypoint": "backend/scripts/apply-rls.mjs",
+    "sql": [
+      "backend/supabase/migrations/0002_rls_policies.sql",
+      "supabase/sql/contagest_revoke_direct_rest_access.sql",
+      "supabase/sql/hipico_v27_outbox_authority.sql"
+    ]
+  },
+  "historicalEphemeralBaseline": {
+    "bootstrapEntrypoint": "ops/database/prepare-supabase-ephemeral.sql",
+    "allowedDatabaseSuffixes": [
+      "_e2e",
+      "_drill",
+      "_restore"
+    ],
+    "sql": [
+      "supabase/sql/contagest_full_bootstrap_v8_5.sql",
+      "supabase/sql/hipico_v12_operations.sql",
+      "supabase/sql/hipico_v12_shadow_validation.sql",
+      "supabase/sql/hipico_v13_workspace_sync_security.sql"
+    ]
+  },
+  "legacyCompatibilitySql": [
+    "supabase/sql/contagest_auth_patch_v8_7.sql",
+    "supabase/sql/contagest_full_schema_v8_3.sql",
+    "supabase/sql/contagest_keepalive.sql",
+    "supabase/sql/contagest_rbac_demo_users_v9_3.sql",
+    "supabase/sql/hipico_v12_group_bridge.sql",
+    "supabase/sql/hipico_v13_audit_idempotency.sql",
+    "supabase/sql/hipico_v13_lab_channel_bootstrap.sql",
+    "supabase/sql/hipico_v14_canonical_domain.sql",
+    "supabase/sql/hipico_v14_documents.sql",
+    "supabase/sql/hipico_v15_domain_integrity_alignment.sql",
+    "supabase/sql/hipico_v15_race_lifecycle.sql",
+    "supabase/sql/hipico_v16_operator_confirmation_audit.sql",
+    "supabase/sql/hipico_v17_outbox_reconciliation_status.sql",
+    "supabase/sql/hipico_v17_provider_evidence.sql",
+    "supabase/sql/hipico_v18_documents.sql",
+    "supabase/sql/hipico_v18_race_result_stages.sql",
+    "supabase/sql/hipico_v19_race_idempotency.sql",
+    "supabase/sql/hipico_v20_document_audit.sql",
+    "supabase/sql/hipico_v21_outbox_reconciliation_audit.sql",
+    "supabase/sql/hipico_v21_production_outbox.sql",
+    "supabase/sql/hipico_v21_race_data_conflicts.sql",
+    "supabase/sql/hipico_v22_agent_shadow.sql",
+    "supabase/sql/hipico_v23_risk_policy.sql",
+    "supabase/sql/hipico_v24_shadow_metrics.sql",
+    "supabase/sql/hipico_v25_observability.sql",
+    "supabase/sql/hipico_v26_audit_rpc_integrity.sql",
+    "supabase/sql/hipico_v26_autonomous_source_reply.sql"
+  ],
+  "rules": {
+    "newStructuralChanges": "backend/prisma/migrations/<timestamp>_<name>/migration.sql",
+    "supabaseSqlMustBeClassified": true,
+    "policySqlMayCreateTables": false,
+    "historicalBaselineIsEphemeralOnly": true,
+    "productionDeployUsesPrismaMigrateDeploy": true
+  }
+}
