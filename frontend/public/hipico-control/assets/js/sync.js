@@ -40,53 +40,42 @@ function mergeById(localRows = [], remoteRows = [], nestedMerge = null) {
     }
     return [...result.values()];
 }
-function configGroups(config = {}) {
-    const groups = Array.isArray(config.groups) && config.groups.length
-        ? config.groups
-        : (Array.isArray(config.whatsappGroups) ? config.whatsappGroups : []);
-    return groups.filter((group) => String(group?.id || "").trim());
-}
-function mergeGroupDefinitions(olderConfig = {}, newestConfig = {}) {
-    const byId = new Map();
-    for (const group of configGroups(olderConfig)) byId.set(String(group.id), structuredClone(group));
-    for (const group of configGroups(newestConfig)) {
-        const id = String(group.id);
-        byId.set(id, { ...(byId.get(id) || {}), ...structuredClone(group) });
-    }
-    const newestOrder = configGroups(newestConfig).map((group) => String(group.id));
-    const olderOnly = configGroups(olderConfig)
-        .map((group) => String(group.id))
-        .filter((id) => !newestOrder.includes(id));
-    return [...newestOrder, ...olderOnly].map((id) => byId.get(id)).filter(Boolean);
-}
-function mergeWorkspaceConfig(olderConfig = {}, newestConfig = {}) {
-    const config = { ...structuredClone(olderConfig), ...structuredClone(newestConfig) };
-    const groups = mergeGroupDefinitions(olderConfig, newestConfig);
-    if (groups.length) {
-        config.groups = groups;
-        config.whatsappGroups = groups;
-    }
-    config.activeRaceByGroup = {
-        ...(olderConfig.activeRaceByGroup || {}),
-        ...(newestConfig.activeRaceByGroup || {})
-    };
-    const groupIds = new Set(groups.map((group) => String(group.id)));
-    if (config.activeGroupId && !groupIds.has(String(config.activeGroupId))) {
-        config.activeGroupId = groups[0]?.id || null;
-    }
-    if (config.activeWhatsappGroupId && !groupIds.has(String(config.activeWhatsappGroupId))) {
-        config.activeWhatsappGroupId = config.activeGroupId || groups[0]?.id || null;
-    }
-    if (Array.isArray(config.captureGroupIds)) {
-        config.captureGroupIds = config.captureGroupIds.filter((id) => groupIds.has(String(id)));
-    }
-    if (!config.captureGroupIds?.length && config.activeGroupId) config.captureGroupIds = [config.activeGroupId];
-    return config;
-}
-
 function rawChatImports(value) {
     if (!Array.isArray(value)) return [];
     return structuredClone(value).map((entry) => String(entry || "").trim()).filter(Boolean);
+}
+function canonicalGroups(config = {}) {
+    if (Array.isArray(config.groups) && config.groups.length) return config.groups;
+    return Array.isArray(config.whatsappGroups) ? config.whatsappGroups : [];
+}
+function mergeGroupRegistry(olderConfig = {}, newestConfig = {}) {
+    const result = new Map();
+    for (const group of [...canonicalGroups(olderConfig), ...canonicalGroups(newestConfig)]) {
+        const id = String(group?.id || "").trim();
+        if (!id) continue;
+        result.set(id, { ...(result.get(id) || {}), ...structuredClone(group) });
+    }
+    return [...result.values()];
+}
+function configValidationView(workspace) {
+    const copy = structuredClone(workspace);
+    copy.participants = [];
+    copy.days = [];
+    copy.races = [];
+    copy.advancedBets = [];
+    copy.movements = [];
+    copy.exchangeRates = [];
+    copy.weekClosures = [];
+    copy.pollas = [];
+    copy.audit = [];
+    copy.syncQueue = [];
+    copy.activeRaceId = null;
+    return copy;
+}
+function withGroupRegistry(workspace, groups) {
+    const copy = structuredClone(workspace);
+    copy.config = { ...(copy.config || {}), groups: structuredClone(groups), whatsappGroups: structuredClone(groups) };
+    return copy;
 }
 export function mergeChatImports(localRows = [], remoteRows = []) {
     return [...new Set([...rawChatImports(remoteRows), ...rawChatImports(localRows)])];
@@ -131,15 +120,28 @@ export function mergeWorkspaces(localWorkspace, remoteWorkspace) {
         assertWorkspaceInputSafety(remoteWorkspace);
         return markWorkspaceSynced(remoteWorkspace, { version: remoteWorkspace.version });
     }
-    assertWorkspaceInputSafety(localWorkspace);
-    assertWorkspaceInputSafety(remoteWorkspace);
+    assertWorkspaceInputSafety(configValidationView(localWorkspace));
+    assertWorkspaceInputSafety(configValidationView(remoteWorkspace));
     const localNewer = recordTime(localWorkspace) >= recordTime(remoteWorkspace);
     const newest = localNewer ? localWorkspace : remoteWorkspace;
     const older = localNewer ? remoteWorkspace : localWorkspace;
+    const groups = mergeGroupRegistry(older.config, newest.config);
+    assertWorkspaceInputSafety(withGroupRegistry(localWorkspace, groups));
+    assertWorkspaceInputSafety(withGroupRegistry(remoteWorkspace, groups));
+    const mergedConfig = {
+        ...(older.config || {}),
+        ...(newest.config || {}),
+        groups,
+        whatsappGroups: groups,
+        activeRaceByGroup: {
+            ...(older.config?.activeRaceByGroup || {}),
+            ...(newest.config?.activeRaceByGroup || {})
+        }
+    };
     const merged = {
         ...structuredClone(older),
         ...structuredClone(newest),
-        config: mergeWorkspaceConfig(older.config || {}, newest.config || {}),
+        config: mergedConfig,
         participants: mergeById(localWorkspace.participants, remoteWorkspace.participants),
         days: mergeById(localWorkspace.days, remoteWorkspace.days),
         races: mergeById(localWorkspace.races, remoteWorkspace.races, mergeRace),
@@ -167,4 +169,4 @@ export function shouldMergeCloud(localWorkspace, cloudRow) {
     return remoteVersion > lastSyncedVersion;
 }
 
-export const __test__ = { scopedRecordKey, configGroups, mergeGroupDefinitions, mergeWorkspaceConfig };
+export const __test__ = { scopedRecordKey, mergeGroupRegistry };
