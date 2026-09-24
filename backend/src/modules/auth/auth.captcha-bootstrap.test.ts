@@ -12,8 +12,8 @@ const dbEnvKeys = [
   'POSTGRES_URL_NON_POOLING'
 ] as const;
 
-const testJwtSecret = `test-captcha-jwt-${'x'.repeat(32)}`;
-const testLicenseHashSecret = `test-license-hash-${'x'.repeat(32)}`;
+const testJwtSecret = `captcha-ci-jwt-${'x'.repeat(40)}`;
+const testLicenseHashSecret = `license-ci-hash-${'x'.repeat(40)}`;
 
 test('GET /api/v1/auth/captcha boots the full app without weakening the DB runtime guard', async (t) => {
   const originalEnv = new Map<string, string | undefined>();

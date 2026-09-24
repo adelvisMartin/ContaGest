@@ -1,0 +1,973 @@
+{
+  "schemaVersion": 1,
+  "scope": "ContaGest implementations 1-58",
+  "authority": "merged GitHub PRs + current main contracts",
+  "generatedFromBaseline": "b5ed36e6a35a491bf7735feb834ff15f78e8dee1",
+  "rules": {
+    "sourceOfTruth": [
+      "merged PR",
+      "current code",
+      "tests",
+      "documentation"
+    ],
+    "supersededDoNotRestore": [
+      417,
+      427,
+      466,
+      480,
+      488,
+      499
+    ],
+    "behaviorPreservingRefactors": true
+  },
+  "implementations": [
+    {
+      "id": 1,
+      "roadmap": "51",
+      "area": "platform",
+      "summary": "Baseline técnico / Hípico contracts",
+      "prs": [
+        376
+      ],
+      "ownerPaths": [
+        "backend/src/modules/hipico/agent-engine.ts"
+      ],
+      "regressionPaths": [
+        "tests/hipico_v9_evidence_readiness.test.mjs"
+      ],
+      "reviewStatus": "BASELINE_RECONCILED"
+    },
+    {
+      "id": 2,
+      "roadmap": "51",
+      "area": "qa",
+      "summary": "QA browser 58×5 sharded",
+      "prs": [
+        429
+      ],
+      "ownerPaths": [
+        "scripts/erp-browser-58x5-v251.mjs"
+      ],
+      "regressionPaths": [
+        "tests/erp_ui_wave_a_2_51.test.mjs"
+      ],
+      "reviewStatus": "BASELINE_RECONCILED"
+    },
+    {
+      "id": 3,
+      "roadmap": "51",
+      "area": "ui",
+      "summary": "Migración verticales Wave A a React Cg/MUI",
+      "prs": [
+        390,
+        392,
+        396
+      ],
+      "ownerPaths": [
+        "frontend/src/pages/DentistryPracticePage.jsx",
+        "frontend/src/pages/VeterinaryClinicPageV1123.jsx",
+        "frontend/src/pages/GymManagementPage.jsx"
+      ],
+      "regressionPaths": [
+        "tests/erp_ui_dentistry_react_3_51.test.mjs"
+      ],
+      "reviewStatus": "BASELINE_RECONCILED"
+    },
+    {
+      "id": 4,
+      "roadmap": "51",
+      "area": "ui",
+      "summary": "Inventario React Cg/MUI",
+      "prs": [
+        398
+      ],
+      "ownerPaths": [
+        "frontend/src/pages/InventoryPage.jsx"
+      ],
+      "regressionPaths": [
+        "tests/erp_ui_inventory_react_4_51.test.mjs"
+      ],
+      "reviewStatus": "BASELINE_RECONCILED"
+    },
+    {
+      "id": 5,
+      "roadmap": "51",
+      "area": "ui",
+      "summary": "Ventas React Cg/MUI",
+      "prs": [
+        399
+      ],
+      "ownerPaths": [
+        "frontend/src/pages/SalesPage.jsx"
+      ],
+      "regressionPaths": [
+        "tests/erp_ui_sales_react_5_51.test.mjs"
+      ],
+      "reviewStatus": "BASELINE_RECONCILED"
+    },
+    {
+      "id": 6,
+      "roadmap": "51",
+      "area": "ui",
+      "summary": "Compras y cuentas por pagar React Cg/MUI",
+      "prs": [
+        401
+      ],
+      "ownerPaths": [
+        "frontend/src/pages/PurchasesPage.jsx"
+      ],
+      "regressionPaths": [
+        "tests/erp_ui_purchases_react_6_51.test.mjs"
+      ],
+      "reviewStatus": "BASELINE_RECONCILED"
+    },
+    {
+      "id": 7,
+      "roadmap": "51",
+      "area": "ui",
+      "summary": "Tesorería y conciliación React Cg/MUI",
+      "prs": [
+        402
+      ],
+      "ownerPaths": [
+        "frontend/src/pages/BankingPage.jsx"
+      ],
+      "regressionPaths": [
+        "tests/erp_ui_banking_react_7_51.test.mjs"
+      ],
+      "reviewStatus": "BASELINE_RECONCILED"
+    },
+    {
+      "id": 8,
+      "roadmap": "51",
+      "area": "ui",
+      "summary": "Libro diario React Cg/MUI",
+      "prs": [
+        405
+      ],
+      "ownerPaths": [
+        "frontend/src/pages/LedgerPage.jsx"
+      ],
+      "regressionPaths": [
+        "tests/erp_ui_ledger_react_8_51.test.mjs"
+      ],
+      "reviewStatus": "BASELINE_RECONCILED"
+    },
+    {
+      "id": 9,
+      "roadmap": "51",
+      "area": "ui",
+      "summary": "Impuestos React Cg/MUI",
+      "prs": [
+        407
+      ],
+      "ownerPaths": [
+        "frontend/src/pages/TaxesPage.jsx"
+      ],
+      "regressionPaths": [
+        "tests/erp_ui_taxes_react_9_51.test.mjs"
+      ],
+      "reviewStatus": "BASELINE_RECONCILED"
+    },
+    {
+      "id": 10,
+      "roadmap": "51",
+      "area": "dentistry",
+      "summary": "Paciente seleccionado como contexto clínico dental",
+      "prs": [
+        409
+      ],
+      "ownerPaths": [
+        "frontend/src/pages/DentistryPracticePage.jsx"
+      ],
+      "regressionPaths": [
+        "tests/erp_ui_dentistry_patient_context_10_51.test.mjs"
+      ],
+      "reviewStatus": "BASELINE_RECONCILED"
+    },
+    {
+      "id": 11,
+      "roadmap": "51",
+      "area": "dentistry",
+      "summary": "Odontograma estructurado persistente",
+      "prs": [
+        412
+      ],
+      "ownerPaths": [
+        "backend/src/modules/verticals/health.routes.ts"
+      ],
+      "regressionPaths": [
+        "tests/erp_ui_dentistry_structured_odontogram_11_51.test.mjs"
+      ],
+      "reviewStatus": "BASELINE_RECONCILED"
+    },
+    {
+      "id": 12,
+      "roadmap": "51",
+      "area": "dentistry",
+      "summary": "Selector visual de superficies dentales",
+      "prs": [
+        416
+      ],
+      "ownerPaths": [
+        "frontend/src/components/dentistry/ToothSurfaceSelector.jsx"
+      ],
+      "regressionPaths": [
+        "tests/erp_ui_dentistry_visual_surfaces_12_51.test.mjs"
+      ],
+      "reviewStatus": "BASELINE_RECONCILED"
+    },
+    {
+      "id": 13,
+      "roadmap": "51",
+      "area": "dentistry",
+      "summary": "Historial y enmiendas versionadas de odontograma",
+      "prs": [
+        418
+      ],
+      "ownerPaths": [
+        "backend/src/modules/verticals/health.routes.ts"
+      ],
+      "regressionPaths": [
+        "tests/erp_ui_dentistry_odontogram_history_13_51.test.mjs"
+      ],
+      "reviewStatus": "BASELINE_RECONCILED"
+    },
+    {
+      "id": 14,
+      "roadmap": "51",
+      "area": "dentistry",
+      "summary": "Periodontograma estructurado y evolución",
+      "prs": [
+        420
+      ],
+      "ownerPaths": [
+        "frontend/src/components/dentistry/PeriodontalChartPanel.jsx"
+      ],
+      "regressionPaths": [
+        "tests/erp_ui_dentistry_periodontogram_14_51.test.mjs"
+      ],
+      "reviewStatus": "BASELINE_RECONCILED"
+    },
+    {
+      "id": 15,
+      "roadmap": "51",
+      "area": "dentistry",
+      "summary": "Planes de tratamiento con owner único",
+      "prs": [
+        422,
+        423,
+        424,
+        426
+      ],
+      "ownerPaths": [
+        "frontend/src/components/dentistry/TreatmentPlanPanel.jsx"
+      ],
+      "regressionPaths": [
+        "tests/erp_ui_dentistry_treatment_plan_15_51.test.mjs"
+      ],
+      "reviewStatus": "BASELINE_RECONCILED"
+    },
+    {
+      "id": 16,
+      "roadmap": "51",
+      "area": "dentistry",
+      "summary": "Consentimiento versionado y lifecycle",
+      "prs": [
+        425
+      ],
+      "ownerPaths": [
+        "frontend/src/components/dentistry/DentalConsentPanel.jsx"
+      ],
+      "regressionPaths": [
+        "tests/erp_ui_dentistry_consent_evidence_16_51.test.mjs"
+      ],
+      "reviewStatus": "BASELINE_RECONCILED"
+    },
+    {
+      "id": 17,
+      "roadmap": "51",
+      "area": "dentistry",
+      "summary": "Media y documentos clínicos aislados",
+      "prs": [
+        430,
+        431
+      ],
+      "ownerPaths": [
+        "frontend/src/components/dentistry/DentalMediaPanel.jsx"
+      ],
+      "regressionPaths": [
+        "tests/erp_ui_dentistry_media_documents_17_51.test.mjs"
+      ],
+      "reviewStatus": "BASELINE_RECONCILED"
+    },
+    {
+      "id": 18,
+      "roadmap": "51",
+      "area": "dentistry",
+      "summary": "Lifecycle clínico dental explícito",
+      "prs": [
+        434,
+        437
+      ],
+      "ownerPaths": [
+        "frontend/src/components/dentistry/DentalLifecycleActions.jsx"
+      ],
+      "regressionPaths": [
+        "tests/erp_ui_dentistry_clinical_lifecycle_18_51.test.mjs"
+      ],
+      "reviewStatus": "BASELINE_RECONCILED"
+    },
+    {
+      "id": 19,
+      "roadmap": "51",
+      "area": "dentistry",
+      "summary": "Agenda dental avanzada conflict-safe",
+      "prs": [
+        440
+      ],
+      "ownerPaths": [
+        "frontend/src/components/dentistry/DentalSchedulePanel.jsx"
+      ],
+      "regressionPaths": [
+        "tests/erp_ui_dentistry_advanced_scheduling_19_51.test.mjs"
+      ],
+      "reviewStatus": "BASELINE_RECONCILED"
+    },
+    {
+      "id": 20,
+      "roadmap": "51",
+      "area": "dentistry",
+      "summary": "Integración financiera dental con ERP",
+      "prs": [
+        445
+      ],
+      "ownerPaths": [
+        "frontend/src/components/dentistry/DentalFinancialPanel.jsx"
+      ],
+      "regressionPaths": [
+        "tests/dentistry_erp_financial_20_51.test.mjs"
+      ],
+      "reviewStatus": "BASELINE_RECONCILED"
+    },
+    {
+      "id": 21,
+      "roadmap": "51",
+      "area": "veterinary",
+      "summary": "Veterinaria renderer/root único",
+      "prs": [
+        448
+      ],
+      "ownerPaths": [
+        "frontend/src/components/veterinary/VeterinaryWorkspace.jsx"
+      ],
+      "regressionPaths": [
+        "tests/erp_ui_veterinary_single_owner_21_51.test.mjs"
+      ],
+      "reviewStatus": "BASELINE_RECONCILED"
+    },
+    {
+      "id": 22,
+      "roadmap": "51",
+      "area": "veterinary",
+      "summary": "Errores veterinarios visibles y retryable",
+      "prs": [
+        449,
+        458,
+        465
+      ],
+      "ownerPaths": [
+        "frontend/src/components/veterinary/VeterinaryWorkspace.jsx"
+      ],
+      "regressionPaths": [
+        "tests/erp_ui_veterinary_error_handling_22_51.test.mjs"
+      ],
+      "reviewStatus": "BASELINE_RECONCILED"
+    },
+    {
+      "id": 23,
+      "roadmap": "51",
+      "area": "veterinary",
+      "summary": "Historia longitudinal y tendencias de signos vitales",
+      "prs": [
+        450,
+        460,
+        468
+      ],
+      "ownerPaths": [
+        "frontend/src/components/veterinary/VeterinaryLongitudinalRecord.jsx"
+      ],
+      "regressionPaths": [
+        "tests/erp_ui_veterinary_longitudinal_record_23_51.test.mjs"
+      ],
+      "reviewStatus": "BASELINE_RECONCILED"
+    },
+    {
+      "id": 24,
+      "roadmap": "51",
+      "area": "veterinary",
+      "summary": "Cuidados preventivos y recordatorios",
+      "prs": [
+        451
+      ],
+      "ownerPaths": [
+        "frontend/src/components/veterinary/VeterinaryPreventiveCarePanel.jsx"
+      ],
+      "regressionPaths": [
+        "tests/erp_ui_veterinary_preventive_care_24_51.test.mjs"
+      ],
+      "reviewStatus": "BASELINE_RECONCILED"
+    },
+    {
+      "id": 25,
+      "roadmap": "51",
+      "area": "veterinary",
+      "summary": "Templates SOAP editables por especie",
+      "prs": [
+        452
+      ],
+      "ownerPaths": [
+        "frontend/src/components/veterinary/veterinarySoapTemplates.js"
+      ],
+      "regressionPaths": [
+        "tests/erp_ui_veterinary_soap_templates_25_51.test.mjs"
+      ],
+      "reviewStatus": "BASELINE_RECONCILED"
+    },
+    {
+      "id": 26,
+      "roadmap": "51",
+      "area": "veterinary",
+      "summary": "Lifecycle de laboratorio veterinario",
+      "prs": [
+        453,
+        454
+      ],
+      "ownerPaths": [
+        "backend/src/modules/verticals/veterinary.routes.ts"
+      ],
+      "regressionPaths": [
+        "tests/erp_ui_veterinary_lab_lifecycle_26_51.test.mjs"
+      ],
+      "reviewStatus": "CLEAN_CODE_BATCH_1"
+    },
+    {
+      "id": 27,
+      "roadmap": "51",
+      "area": "veterinary",
+      "summary": "Hoja de tratamiento append-only",
+      "prs": [
+        455
+      ],
+      "ownerPaths": [
+        "frontend/src/components/veterinary/VeterinaryTreatmentSheet.jsx"
+      ],
+      "regressionPaths": [
+        "tests/erp_ui_veterinary_treatment_sheet_27_51.test.mjs"
+      ],
+      "reviewStatus": "CLEAN_CODE_BATCH_1"
+    },
+    {
+      "id": 28,
+      "roadmap": "51",
+      "area": "veterinary",
+      "summary": "Prescripciones veterinarias y etiquetas",
+      "prs": [
+        456
+      ],
+      "ownerPaths": [
+        "frontend/src/components/veterinary/VeterinaryMedicationPanel.jsx"
+      ],
+      "regressionPaths": [
+        "tests/erp_ui_veterinary_medication_integration_28_51.test.mjs"
+      ],
+      "reviewStatus": "CLEAN_CODE_BATCH_1"
+    },
+    {
+      "id": 29,
+      "roadmap": "51",
+      "area": "veterinary",
+      "summary": "Inventario clínico veterinario por lotes",
+      "prs": [
+        457
+      ],
+      "ownerPaths": [
+        "frontend/src/components/veterinary/VeterinaryClinicalInventoryPanel.jsx"
+      ],
+      "regressionPaths": [
+        "tests/erp_ui_veterinary_clinical_inventory_29_51.test.mjs"
+      ],
+      "reviewStatus": "CLEAN_CODE_BATCH_1"
+    },
+    {
+      "id": 30,
+      "roadmap": "51",
+      "area": "veterinary",
+      "summary": "Flujo financiero veterinario estimate→invoice",
+      "prs": [
+        462
+      ],
+      "ownerPaths": [
+        "frontend/src/components/veterinary/VeterinaryFinancialPanel.jsx"
+      ],
+      "regressionPaths": [
+        "tests/erp_ui_veterinary_financial_flow_30_51.test.mjs"
+      ],
+      "reviewStatus": "CLEAN_CODE_BATCH_1"
+    },
+    {
+      "id": 31,
+      "roadmap": "51",
+      "area": "veterinary",
+      "summary": "Portal autorizado de tutor",
+      "prs": [
+        463
+      ],
+      "ownerPaths": [
+        "backend/src/modules/verticals/veterinary-guardian-portal.public.routes.ts"
+      ],
+      "regressionPaths": [
+        "tests/erp_ui_veterinary_guardian_portal_31_51.test.mjs"
+      ],
+      "reviewStatus": "CLEAN_CODE_BATCH_1"
+    },
+    {
+      "id": 32,
+      "roadmap": "51",
+      "area": "veterinary",
+      "summary": "Gestión opcional de boarding",
+      "prs": [
+        464
+      ],
+      "ownerPaths": [
+        "frontend/src/components/veterinary/VeterinaryBoardingPanel.jsx"
+      ],
+      "regressionPaths": [
+        "tests/erp_ui_veterinary_boarding_32_51.test.mjs"
+      ],
+      "reviewStatus": "CLEAN_CODE_BATCH_1"
+    },
+    {
+      "id": 33,
+      "roadmap": "51",
+      "area": "gym",
+      "summary": "Constructor estructurado de rutinas",
+      "prs": [
+        467
+      ],
+      "ownerPaths": [
+        "frontend/src/components/fitness/RoutineBuilder.jsx"
+      ],
+      "regressionPaths": [
+        "tests/erp_ui_gym_routine_builder_33_51.test.mjs"
+      ],
+      "reviewStatus": "BASELINE_RECONCILED"
+    },
+    {
+      "id": 34,
+      "roadmap": "51",
+      "area": "gym",
+      "summary": "Biblioteca tenant-scoped de ejercicios",
+      "prs": [
+        469,
+        471
+      ],
+      "ownerPaths": [
+        "frontend/src/components/fitness/ExerciseLibraryPanel.jsx"
+      ],
+      "regressionPaths": [
+        "tests/erp_ui_gym_exercise_library_34_51.test.mjs"
+      ],
+      "reviewStatus": "BASELINE_RECONCILED"
+    },
+    {
+      "id": 35,
+      "roadmap": "51",
+      "area": "gym",
+      "summary": "Programación semanal real",
+      "prs": [
+        470
+      ],
+      "ownerPaths": [
+        "frontend/src/components/fitness/WeeklyRoutineSchedule.jsx"
+      ],
+      "regressionPaths": [
+        "tests/erp_ui_gym_weekly_schedule_35_51.test.mjs"
+      ],
+      "reviewStatus": "BASELINE_RECONCILED"
+    },
+    {
+      "id": 36,
+      "roadmap": "51",
+      "area": "gym",
+      "summary": "Modos explícitos de entrenamiento",
+      "prs": [
+        472
+      ],
+      "ownerPaths": [
+        "frontend/src/data/fitnessTrainingModes.js"
+      ],
+      "regressionPaths": [
+        "tests/erp_ui_gym_training_modes_36_51.test.mjs"
+      ],
+      "reviewStatus": "BASELINE_RECONCILED"
+    },
+    {
+      "id": 37,
+      "roadmap": "51",
+      "area": "gym",
+      "summary": "Técnicas estructuradas de intensidad",
+      "prs": [
+        473
+      ],
+      "ownerPaths": [
+        "frontend/src/data/fitnessIntensityTechniques.js"
+      ],
+      "regressionPaths": [
+        "tests/erp_ui_gym_intensity_techniques_37_51.test.mjs"
+      ],
+      "reviewStatus": "CLEAN_CODE_BATCH_1"
+    },
+    {
+      "id": 38,
+      "roadmap": "51",
+      "area": "gym",
+      "summary": "Motor determinista de progresión",
+      "prs": [
+        474
+      ],
+      "ownerPaths": [
+        "backend/src/modules/verticals/gym.progression.ts"
+      ],
+      "regressionPaths": [
+        "tests/erp_ui_gym_progression_engine_38_51.test.mjs"
+      ],
+      "reviewStatus": "CLEAN_CODE_BATCH_1"
+    },
+    {
+      "id": 39,
+      "roadmap": "51",
+      "area": "gym",
+      "summary": "Periodización inmutable",
+      "prs": [
+        475
+      ],
+      "ownerPaths": [
+        "frontend/src/components/fitness/PeriodizationPanel.jsx"
+      ],
+      "regressionPaths": [
+        "tests/erp_ui_gym_periodization_39_51.test.mjs"
+      ],
+      "reviewStatus": "CLEAN_CODE_BATCH_1"
+    },
+    {
+      "id": 40,
+      "roadmap": "51",
+      "area": "gym",
+      "summary": "Ejecución sesión por sesión",
+      "prs": [
+        476
+      ],
+      "ownerPaths": [
+        "frontend/src/components/fitness/WorkoutSessionPanel.jsx"
+      ],
+      "regressionPaths": [
+        "tests/erp_ui_gym_workout_execution_40_51.test.mjs"
+      ],
+      "reviewStatus": "CLEAN_CODE_BATCH_1"
+    },
+    {
+      "id": 41,
+      "roadmap": "51",
+      "area": "gym",
+      "summary": "Analítica histórica de rendimiento",
+      "prs": [
+        477
+      ],
+      "ownerPaths": [
+        "frontend/src/components/fitness/PerformanceHistoryPanel.jsx"
+      ],
+      "regressionPaths": [
+        "tests/erp_ui_gym_performance_history_41_51.test.mjs"
+      ],
+      "reviewStatus": "BASELINE_RECONCILED"
+    },
+    {
+      "id": 42,
+      "roadmap": "51",
+      "area": "gym",
+      "summary": "Sustituciones contextuales seguras",
+      "prs": [
+        478
+      ],
+      "ownerPaths": [
+        "frontend/src/components/fitness/ExerciseSubstitutionPanel.jsx"
+      ],
+      "regressionPaths": [
+        "tests/erp_ui_gym_contextual_substitutions_42_51.test.mjs"
+      ],
+      "reviewStatus": "BASELINE_RECONCILED"
+    },
+    {
+      "id": 43,
+      "roadmap": "51",
+      "area": "gym",
+      "summary": "Modelo canónico de ingredientes",
+      "prs": [
+        479
+      ],
+      "ownerPaths": [
+        "frontend/src/components/fitness/IngredientLibraryPanel.jsx"
+      ],
+      "regressionPaths": [
+        "tests/erp_ui_gym_ingredient_model_43_51.test.mjs"
+      ],
+      "reviewStatus": "BASELINE_RECONCILED"
+    },
+    {
+      "id": 44,
+      "roadmap": "51",
+      "area": "gym",
+      "summary": "Plan alimenticio multi-semana completo",
+      "prs": [
+        481
+      ],
+      "ownerPaths": [
+        "frontend/src/components/fitness/CompleteMealPlanBuilder.jsx"
+      ],
+      "regressionPaths": [
+        "tests/erp_ui_gym_complete_meal_plan_44_51.test.mjs"
+      ],
+      "reviewStatus": "BASELINE_RECONCILED"
+    },
+    {
+      "id": 45,
+      "roadmap": "51",
+      "area": "gym",
+      "summary": "Restricciones y preferencias nutricionales explícitas",
+      "prs": [
+        482
+      ],
+      "ownerPaths": [
+        "frontend/src/components/fitness/NutritionRulesPanel.jsx"
+      ],
+      "regressionPaths": [
+        "tests/erp_ui_gym_nutrition_rules_45_51.test.mjs"
+      ],
+      "reviewStatus": "BASELINE_RECONCILED"
+    },
+    {
+      "id": 46,
+      "roadmap": "51",
+      "area": "gym",
+      "summary": "Snapshots inmutables de composición nutricional",
+      "prs": [
+        483
+      ],
+      "ownerPaths": [
+        "frontend/src/components/fitness/NutritionSnapshotPanel.jsx"
+      ],
+      "regressionPaths": [
+        "tests/erp_ui_gym_nutrient_composition_46_51.test.mjs"
+      ],
+      "reviewStatus": "BASELINE_RECONCILED"
+    },
+    {
+      "id": 47,
+      "roadmap": "51",
+      "area": "gym",
+      "summary": "Adherencia y evolución integradas",
+      "prs": [
+        484
+      ],
+      "ownerPaths": [
+        "frontend/src/components/fitness/IntegratedAdherencePanel.jsx"
+      ],
+      "regressionPaths": [
+        "tests/erp_ui_gym_integrated_adherence_47_51.test.mjs"
+      ],
+      "reviewStatus": "BASELINE_RECONCILED"
+    },
+    {
+      "id": 48,
+      "roadmap": "51",
+      "area": "qa",
+      "summary": "E2E PostgreSQL real de tres verticales",
+      "prs": [
+        485
+      ],
+      "ownerPaths": [
+        "qa/verticals-backend-real-v4851.test.ts"
+      ],
+      "regressionPaths": [
+        "tests/erp_verticals_real_e2e_48_51.test.mjs"
+      ],
+      "reviewStatus": "BASELINE_RECONCILED"
+    },
+    {
+      "id": 49,
+      "roadmap": "51",
+      "area": "qa",
+      "summary": "Matriz visual anti-solapamiento consolidada",
+      "prs": [
+        489
+      ],
+      "ownerPaths": [
+        "qa/erp-visual-overlap-v4951.spec.mjs"
+      ],
+      "regressionPaths": [
+        "tests/erp_ui_visual_overlap_49_51.test.mjs"
+      ],
+      "reviewStatus": "BASELINE_RECONCILED"
+    },
+    {
+      "id": 50,
+      "roadmap": "51",
+      "area": "qa",
+      "summary": "Contratos de componentes reutilizables",
+      "prs": [
+        490
+      ],
+      "ownerPaths": [
+        "qa/erp-component-contracts-v5051.spec.mjs"
+      ],
+      "regressionPaths": [
+        "tests/erp_ui_component_contracts_50_51.test.mjs"
+      ],
+      "reviewStatus": "BASELINE_RECONCILED"
+    },
+    {
+      "id": 51,
+      "roadmap": "51",
+      "area": "release",
+      "summary": "Release candidate demostrable exact-SHA",
+      "prs": [
+        491
+      ],
+      "ownerPaths": [
+        ".github/workflows/release-candidate-v5151.yml"
+      ],
+      "regressionPaths": [
+        "tests/release_candidate_51_51.test.mjs"
+      ],
+      "reviewStatus": "BASELINE_RECONCILED"
+    },
+    {
+      "id": 52,
+      "roadmap": "75",
+      "area": "access",
+      "summary": "Entitlements verticales canónicos",
+      "prs": [
+        492
+      ],
+      "ownerPaths": [
+        "backend/src/shared/contracts/access-manifest.json"
+      ],
+      "regressionPaths": [
+        "tests/vertical_entitlements_52_75.test.mjs"
+      ],
+      "reviewStatus": "BASELINE_RECONCILED"
+    },
+    {
+      "id": 53,
+      "roadmap": "75",
+      "area": "access",
+      "summary": "Single Access Manifest",
+      "prs": [
+        493
+      ],
+      "ownerPaths": [
+        "backend/src/shared/contracts/access-manifest.json"
+      ],
+      "regressionPaths": [
+        "tests/access_manifest_53_75.test.mjs"
+      ],
+      "reviewStatus": "BASELINE_RECONCILED"
+    },
+    {
+      "id": 54,
+      "roadmap": "75",
+      "area": "access",
+      "summary": "Permisos de roles derivados del manifiesto",
+      "prs": [
+        494
+      ],
+      "ownerPaths": [
+        "frontend/src/services/accessControlService.js"
+      ],
+      "regressionPaths": [
+        "tests/access_role_permission_drift_54_75.test.mjs"
+      ],
+      "reviewStatus": "BASELINE_RECONCILED"
+    },
+    {
+      "id": 55,
+      "roadmap": "75",
+      "area": "access",
+      "summary": "Validación runtime del manifiesto y provisioning atómico",
+      "prs": [
+        495,
+        496
+      ],
+      "ownerPaths": [
+        "backend/src/shared/contracts/accessManifestRuntime.js",
+        "backend/src/modules/auth/auth.routes.ts"
+      ],
+      "regressionPaths": [
+        "tests/access_manifest_runtime_validation_55_75.test.mjs",
+        "tests/tenant_user_provisioning_55_75.test.mjs"
+      ],
+      "reviewStatus": "BASELINE_RECONCILED"
+    },
+    {
+      "id": 56,
+      "roadmap": "75",
+      "area": "access",
+      "summary": "Módulos/licencias canónicos",
+      "prs": [
+        497
+      ],
+      "ownerPaths": [
+        "backend/src/modules/licenses/licenses.routes.ts"
+      ],
+      "regressionPaths": [
+        "tests/license_canonical_modules_56_75.test.mjs"
+      ],
+      "reviewStatus": "BASELINE_RECONCILED"
+    },
+    {
+      "id": 57,
+      "roadmap": "75",
+      "area": "access",
+      "summary": "Landing/navegación vertical server-authoritative",
+      "prs": [
+        498
+      ],
+      "ownerPaths": [
+        "backend/src/shared/contracts/accessManifestRuntime.js",
+        "frontend/src/app.js"
+      ],
+      "regressionPaths": [
+        "tests/vertical_experience_profile_57_75.test.mjs"
+      ],
+      "reviewStatus": "BASELINE_RECONCILED"
+    },
+    {
+      "id": 58,
+      "roadmap": "75",
+      "area": "qa",
+      "summary": "Browser→API→PostgreSQL E2E real",
+      "prs": [
+        500
+      ],
+      "ownerPaths": [
+        "qa/erp-real-browser-v5875.spec.mjs",
+        "scripts/erp-real-browser-postgres-v5875.mjs"
+      ],
+      "regressionPaths": [
+        "tests/real_browser_postgres_58_75.test.mjs"
+      ],
+      "reviewStatus": "BASELINE_RECONCILED"
+    }
+  ]
+}

@@ -1,10 +1,11 @@
 import { Router } from 'express';
+import type { Prisma } from '@prisma/client';
 import { z } from 'zod';
 import { prisma } from '../../database/prisma.js';
 import { asyncHandler, HttpError, ok } from '../../shared/http.js';
 import { requirePermission } from '../../shared/middleware/context.js';
 import { optionalText, dateText, jsonRecord, ctx, one, num } from './verticals.shared.js';
-import { evaluateGymProgression } from './gym.progression.js';
+import { evaluateGymProgression, gymProgressionConfigIssues, isRirRpePairCoherent } from './gym.progression.js';
 
 const router = Router();
 
@@ -129,23 +130,8 @@ const progressionEvaluationSchema = z.object({
     consecutiveMisses: z.coerce.number().int().min(0).max(100).default(0)
   })
 }).superRefine((value, refinement) => {
-  const progression=value.config||{};
-  if(progression.targetRir!=null&&progression.targetRpe!=null&&Math.abs((10-Number(progression.targetRir))-Number(progression.targetRpe))>0.5){
-    refinement.addIssue({code:'custom',path:['config','targetRpe'],message:'RPE y RIR no son coherentes entre sí.'});
-  }
-  if(value.strategy==='linear_load'&&!progression.loadIncrementKg){
-    refinement.addIssue({code:'custom',path:['config','loadIncrementKg'],message:'La progresión lineal requiere un incremento de carga.'});
-  }
-  if(value.strategy==='double_progression'){
-    if(!progression.repRangeMin||!progression.repRangeMax||Number(progression.repRangeMin)>Number(progression.repRangeMax)){
-      refinement.addIssue({code:'custom',path:['config','repRangeMax'],message:'La doble progresión requiere un rango de repeticiones válido.'});
-    }
-    if(!progression.loadIncrementKg){
-      refinement.addIssue({code:'custom',path:['config','loadIncrementKg'],message:'La doble progresión requiere un incremento de carga.'});
-    }
-  }
-  if(value.strategy==='percent_1rm'&&(!progression.oneRepMaxKg||!progression.percent1Rm)){
-    refinement.addIssue({code:'custom',path:['config','percent1Rm'],message:'La progresión por %1RM requiere 1RM y porcentaje.'});
+  for (const issue of gymProgressionConfigIssues(value.strategy, value.config || {})) {
+    refinement.addIssue({ code:'custom', path:['config', issue.field], message:issue.message });
   }
 });
 
@@ -185,23 +171,8 @@ const routineExerciseSchema = z.object({
   if(value.intensityTechnique==='isometric_hold' && !config.holdSeconds){
     refinement.addIssue({code:'custom',path:['techniqueConfig','holdSeconds'],message:'La pausa isométrica requiere duración en segundos.'});
   }
-  const progression=value.progressionConfig||{};
-  if(progression.targetRir!=null&&progression.targetRpe!=null&&Math.abs((10-Number(progression.targetRir))-Number(progression.targetRpe))>0.5){
-    refinement.addIssue({code:'custom',path:['progressionConfig','targetRpe'],message:'RPE y RIR no son coherentes entre sí.'});
-  }
-  if(value.progressionStrategy==='linear_load'&&!progression.loadIncrementKg){
-    refinement.addIssue({code:'custom',path:['progressionConfig','loadIncrementKg'],message:'La progresión lineal requiere un incremento de carga.'});
-  }
-  if(value.progressionStrategy==='double_progression'){
-    if(!progression.repRangeMin||!progression.repRangeMax||Number(progression.repRangeMin)>Number(progression.repRangeMax)){
-      refinement.addIssue({code:'custom',path:['progressionConfig','repRangeMax'],message:'La doble progresión requiere un rango de repeticiones válido.'});
-    }
-    if(!progression.loadIncrementKg){
-      refinement.addIssue({code:'custom',path:['progressionConfig','loadIncrementKg'],message:'La doble progresión requiere un incremento de carga.'});
-    }
-  }
-  if(value.progressionStrategy==='percent_1rm'&&(!progression.oneRepMaxKg||!progression.percent1Rm)){
-    refinement.addIssue({code:'custom',path:['progressionConfig','percent1Rm'],message:'La progresión por %1RM requiere 1RM y porcentaje.'});
+  for (const issue of gymProgressionConfigIssues(value.progressionStrategy, value.progressionConfig || {})) {
+    refinement.addIssue({ code:'custom', path:['progressionConfig', issue.field], message:issue.message });
   }
 });
 
@@ -274,7 +245,7 @@ const workoutSetSchema = z.object({
   if(value.status==='completed'&&value.reps==null){
     refinement.addIssue({code:'custom',path:['reps'],message:'Las series realizadas requieren repeticiones.'});
   }
-  if(value.rir!=null&&value.rpe!=null&&Math.abs((10-Number(value.rir))-Number(value.rpe))>0.5){
+  if(!isRirRpePairCoherent(value.rir, value.rpe)){
     refinement.addIssue({code:'custom',path:['rpe'],message:'RIR y RPE no son coherentes entre sí.'});
   }
 });
@@ -301,7 +272,7 @@ const routineSchema = z.object({
   daysPerWeek: z.coerce.number().int().min(1).max(7).default(3),
   notes: optionalText,
   exercises: z.array(routineExerciseSchema).default([])
-).superRefine((value, refinement) => {
+}).superRefine((value, refinement) => {
   if(!value.exercises.length)return;
   const scheduledDays=new Set(value.exercises.map((exercise)=>exercise.dayOfWeek));
   if(value.daysPerWeek!==scheduledDays.size){
@@ -474,7 +445,7 @@ const mealAdherenceSchema=z.object({
   notes:optionalText
 });
 
-const createPlanNutrientSnapshot=async(tx:any,tenantId:string,planId:string,createdBy:string|null)=>{
+const createPlanNutrientSnapshot=async(tx:Prisma.TransactionClient,tenantId:string,planId:string,createdBy:string|null)=>{
   const occurrences=await tx.$queryRawUnsafe<any[]>(`
     SELECT m."id" AS "mealId",mi."ingredientId",mi."quantity"::numeric AS "quantity",mi."unit"
     FROM public."GymMeal" m

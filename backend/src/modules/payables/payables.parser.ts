@@ -96,7 +96,10 @@ export class SafeLocalParser implements PayableDocumentParser {
     const invoiceNumber = capture(text, [/(?:FACTURA|INVOICE|NRO\.?|N[ÚU]MERO)[\s:#-]*(?:N[°º]\s*)?([A-Z0-9-]{3,30})/i]);
     const rawDate = capture(text, [/(?:FECHA|DATE)[\s:#-]*(\d{1,2}[\/-]\d{1,2}[\/-]\d{4})/i]);
     const subtotal = decimal(capture(text, [/(?:SUBTOTAL|BASE IMPONIBLE)[\s:$Bs.VESUSD]*([\d.,-]+)/i]));
-    const tax = decimal(capture(text, [/(?:IVA|IMPUESTO)[^\d]{0,20}([\d.,-]+)/i]));
+    const tax = decimal(capture(text, [
+      /(?:SUBTOTAL|BASE IMPONIBLE)[\s:$Bs.VESUSD]*[\d.,-]+[^\d]{0,30}(?:IVA|IMPUESTO)[^\d]{0,20}([\d.,-]+)/i,
+      /(?:IVA|IMPUESTO)[^\d]{0,20}([\d.,-]+)/i
+    ]));
     const total = decimal(capture(text, [/\bTOTAL(?:\s+A\s+PAGAR)?[\s:$Bs.VESUSD]*([\d.,-]+)/i]));
     const po = capture(text, [/(?:PO|ORDEN DE COMPRA|PURCHASE ORDER)[\s:#-]*([A-Z0-9-]{2,40})/i]);
     const receipt = capture(text, [/(?:RECEPCI[ÓO]N|RECEIPT|GRN)[\s:#-]*([A-Z0-9-]{2,40})/i]);
