@@ -58,6 +58,16 @@ function capture(text: string, patterns: RegExp[]) {
   return null;
 }
 
+function captureLast(text: string, pattern: RegExp) {
+  const flags = pattern.flags.includes('g') ? pattern.flags : `${pattern.flags}g`;
+  const globalPattern = new RegExp(pattern.source, flags);
+  let value: string | null = null;
+  for (const match of text.matchAll(globalPattern)) {
+    if (match[1]) value = match[1].trim();
+  }
+  return value;
+}
+
 function dateIso(value: string | null) {
   if (!value) return null;
   const match = value.match(/(\d{1,2})[\/-](\d{1,2})[\/-](\d{4})/);
@@ -96,7 +106,7 @@ export class SafeLocalParser implements PayableDocumentParser {
     const invoiceNumber = capture(text, [/(?:FACTURA|INVOICE|NRO\.?|N[ÚU]MERO)[\s:#-]*(?:N[°º]\s*)?([A-Z0-9-]{3,30})/i]);
     const rawDate = capture(text, [/(?:FECHA|DATE)[\s:#-]*(\d{1,2}[\/-]\d{1,2}[\/-]\d{4})/i]);
     const subtotal = decimal(capture(text, [/(?:SUBTOTAL|BASE IMPONIBLE)[\s:$Bs.VESUSD]*([\d.,-]+)/i]));
-    const tax = decimal(capture(text, [/(?:IVA|IMPUESTO)[^\d]{0,20}([\d.,-]+)/i]));
+    const tax = decimal(captureLast(text, /(?:IVA|IMPUESTO)[^\d]{0,20}([\d.,-]+)/i));
     const total = decimal(capture(text, [/\bTOTAL(?:\s+A\s+PAGAR)?[\s:$Bs.VESUSD]*([\d.,-]+)/i]));
     const po = capture(text, [/(?:PO|ORDEN DE COMPRA|PURCHASE ORDER)[\s:#-]*([A-Z0-9-]{2,40})/i]);
     const receipt = capture(text, [/(?:RECEPCI[ÓO]N|RECEIPT|GRN)[\s:#-]*([A-Z0-9-]{2,40})/i]);
