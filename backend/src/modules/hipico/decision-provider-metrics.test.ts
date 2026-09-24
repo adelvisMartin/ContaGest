@@ -135,3 +135,22 @@ test('provider metric signatures are deterministic across intent aggregate key o
   assert.equal(left.metricsSignature, right.metricsSignature);
   assert.match(left.metricsSignature, /^[a-f0-9]{64}$/);
 });
+
+
+test('readiness fails closed on provider identity or metric schema mismatch', () => {
+  const identityMismatch = decisionProviderReadiness(
+    { ...enabledStatus, providerId: 'other-provider' },
+    metrics()
+  );
+  assert.equal(identityMismatch.eligibleForAssistedRanking, false);
+  assert.equal(identityMismatch.reason, 'PROVIDER_METRIC_IDENTITY_MISMATCH');
+
+  const stale = metrics();
+  const staleMetrics = {
+    ...stale,
+    window: { ...stale.window, metricSchemaVersion: 'legacy-provider-v0' }
+  };
+  const schemaMismatch = decisionProviderReadiness(enabledStatus, staleMetrics);
+  assert.equal(schemaMismatch.eligibleForAssistedRanking, false);
+  assert.equal(schemaMismatch.reason, 'PROVIDER_METRIC_WINDOW_INVALID');
+});
