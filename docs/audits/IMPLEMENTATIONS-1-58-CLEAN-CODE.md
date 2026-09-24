@@ -49,9 +49,16 @@ Durante la recuperación real de CI aparecieron defectos adicionales en AppSec, 
 6. Cada lote debe pasar typecheck, tests, build, AppSec, PostgreSQL y browser cuando aplique.
 7. Ningún job de un SHA anterior valida un head nuevo.
 
+## Lote 2 · completado en rama de refactor
+
+- `gym.schemas.ts` centraliza los contratos de request de 33–47;
+- `veterinary.schemas.ts` centraliza los contratos de request de 26–32;
+- rutas conservan RBAC, tenant context, transacciones, SQL y respuestas;
+- límites veterinarios específicos se preservan sin forzar reutilización incompatible;
+- regresión: `tests/verticals_schema_authority_batch2.test.mjs`.
+
 ## Pendiente priorizado
 
-- lote 2: separar contratos/schemas de `gym.routes.ts` y `veterinary.routes.ts`;
 - lote 3: dental backend `health.routes.ts`;
 - lote 4: `VeterinaryWorkspace`, `GymManagementPage`, `DentistryPracticePage`;
 - lote 5: servicios frontend y eliminación de boilerplate;
