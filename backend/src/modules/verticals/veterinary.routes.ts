@@ -14,17 +14,13 @@ import {
   lockInventoryLot,
   lockInventoryProduct
 } from '../../shared/services/inventory-movement.service.js';
+import { ctx, one } from './verticals.shared.js';
 
 const router = Router();
 router.use(requireTenant, requirePermission('health.manage'));
 
-const ctx = (req: any) => req.context as { tenantId: string; userId?: string; email?: string };
 const optionalText = z.string().trim().max(4000).optional().nullable();
 const optionalDate = z.string().trim().min(8).max(50).optional().nullable();
-const one = <T>(rows: T[], message = 'Registro no encontrado.') => {
-  if (!rows.length) throw new HttpError(404, message);
-  return rows[0];
-};
 const referenceNumber = (prefix: string) => `${prefix}-${new Date().toISOString().slice(0, 10).replaceAll('-', '')}-${randomUUID().slice(0, 8).toUpperCase()}`;
 
 const veterinaryMedicationPrescriptionSchema = z.object({
