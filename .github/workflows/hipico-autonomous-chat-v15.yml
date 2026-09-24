@@ -1,0 +1,121 @@
+name: Hípico Autonomous Chat v15
+
+on:
+  pull_request:
+    paths:
+      - 'backend/src/modules/hipico/autonomous-*.ts'
+      - 'backend/src/modules/hipico-bot/hipico-bridge.routes.ts'
+      - 'backend/src/modules/hipico-bot/hipico-response-safety*.ts'
+      - 'tools/hipico-whatsapp-web-bridge/**'
+      - 'docs/hipico/**'
+      - '.github/workflows/hipico-autonomous-chat-v15.yml'
+  workflow_dispatch:
+
+permissions: { contents: read }
+
+env:
+  HIPICO_CANDIDATE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+
+concurrency:
+  group: hipico-autonomous-chat-v15-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  autonomous-chat:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_USER: postgres
+          POSTGRES_DB: postgres
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres -d postgres"
+          --health-interval 5s --health-timeout 5s --health-retries 20
+    steps:
+      - name: Checkout exact candidate
+        uses: actions/checkout@v7
+        with:
+          ref: "${{ env.HIPICO_CANDIDATE_SHA }}"
+          fetch-depth: 0
+
+      - name: Exact candidate SHA and clean-tree gate
+        run: node scripts/hipico-exact-sha-gate.mjs
+
+      - name: Configure Node 22
+        uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            tools/hipico-whatsapp-web-bridge/package-lock.json
+
+      - name: Install root lockfile
+        run: npm ci --no-audit --no-fund
+
+      - name: Install PostgreSQL client
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends postgresql-client
+
+      - name: Create isolated PostgreSQL database
+        shell: bash
+        env:
+          PGPASSWORD: postgres
+        run: |
+          set -euo pipefail
+          db="hipico_autonomous_v15_${GITHUB_RUN_ID}_${GITHUB_RUN_ATTEMPT}"; db="${db,,}"
+          createdb -h 127.0.0.1 -p 5432 -U postgres "$db"
+          url="postgresql://postgres:postgres@127.0.0.1:5432/${db}"
+          echo "HIPICO_E2E_DATABASE_URL=$url" >> "$GITHUB_ENV"
+          echo "DATABASE_URL=$url" >> "$GITHUB_ENV"
+          echo "HIPICO_OWNER_ID=11111111-1111-4111-8111-111111111111" >> "$GITHUB_ENV"
+          echo "HIPICO_SOURCE_GROUP_ID=group-a@g.us" >> "$GITHUB_ENV"
+          echo "HIPICO_OPERATOR_CONTROL_TOKEN=ci-autonomous-chat-v15-control-token-strong" >> "$GITHUB_ENV"
+
+      - name: Backend typecheck
+        run: npm --workspace backend run typecheck
+
+      - name: Autonomous, security and Hípico regressions
+        run: npm --workspace backend run test:hipico
+
+      - name: PostgreSQL agent integration
+        run: npm --workspace backend run test:hipico:agent
+
+      - name: Backend build
+        run: npm --workspace backend run build
+
+      - name: Install linked-device bridge lockfile
+        working-directory: tools/hipico-whatsapp-web-bridge
+        run: npm ci --no-audit --no-fund
+
+      - name: Linked-device bridge syntax and safety
+        working-directory: tools/hipico-whatsapp-web-bridge
+        run: |
+          npm run check
+          npm test
+
+      - name: Diff whitespace gate
+        shell: bash
+        env:
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+          git diff --check "$PR_BASE_SHA" "$HIPICO_CANDIDATE_SHA"
+
+      - name: Drop isolated database even after failure
+        if: always()
+        shell: bash
+        env:
+          PGPASSWORD: postgres
+        run: |
+          set -uo pipefail
+          cleanup_rc=0
+          if [ -n "${HIPICO_E2E_DATABASE_URL:-}" ]; then
+            db="${HIPICO_E2E_DATABASE_URL##*/}"
+            psql -h 127.0.0.1 -p 5432 -U postgres -d postgres -v ON_ERROR_STOP=1 -c "select pg_terminate_backend(pid) from pg_stat_activity where datname='${db}' and pid <> pg_backend_pid();" || cleanup_rc=1
+            dropdb -h 127.0.0.1 -p 5432 -U postgres --if-exists "$db" || cleanup_rc=1
+          fi
+          exit "$cleanup_rc"
