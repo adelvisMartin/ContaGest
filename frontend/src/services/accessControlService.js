@@ -1,4 +1,5 @@
 import { ACCESS_MANIFEST as accessManifest } from 'contagest-ve-backend/access-manifest';
+import { roleAccessProfile } from 'contagest-ve-backend/role-access-profiles';
 
 const manifestModules=Array.isArray(accessManifest?.modules)?accessManifest.modules:[];
 const CORE_ROUTES = ['login',...manifestModules.filter((module)=>module.coreAccess===true).map((module)=>module.route)];
