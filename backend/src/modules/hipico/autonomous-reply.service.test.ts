@@ -141,7 +141,7 @@ test('deterministic canonical query replies autonomously when Jev is unavailable
 
 test('a mature Jev disagreement can only downgrade a safe reply to clarification',async()=>{
   const {deps}=dependencies({
-    observation:observed({humanReviewProbability:.8,candidateAgreementProbability:.2}),
+    observation:observed({humanReviewProbability:.95,candidateAgreementProbability:.05}),
     metricsValue:metrics()
   });
   const service=new AutonomousReplyService(deps as any);
@@ -151,6 +151,49 @@ test('a mature Jev disagreement can only downgrade a safe reply to clarification
   assert.match(result.text||'',/precisión adicional/i);
   assert.equal(result.provider.influence,'DOWNGRADE_ONLY');
   assert.equal(result.authority.domainEffectsAllowed,false);
+});
+
+
+
+test('weak Jev disagreement does not create unnecessary clarification or human work',async()=>{
+  const {deps}=dependencies({
+    observation:observed({
+      intentClass:'query_last_result',
+      intentConfidence:.62,
+      humanReviewProbability:.55,
+      candidateAgreementProbability:.45
+    }),
+    metricsValue:metrics()
+  });
+  const service=new AutonomousReplyService(deps as any);
+  const result=await service.decide(baseInput as any);
+  assert.equal(result.action,'SEND');
+  assert.equal(result.reason,'CANONICAL_READ_ONLY_QUERY');
+  assert.match(result.text||'',/Próxima carrera/);
+  assert.equal(result.provider.influence,'DOWNGRADE_ONLY');
+  assert.equal(result.handoffRequired,false);
+});
+
+test('system degradation still returns the safe degraded message instead of going silent',async()=>{
+  const {deps,audit}=dependencies();
+  const service=new AutonomousReplyService(deps as any);
+  const result=await service.decide({
+    ...baseInput,
+    systemHealthy:false,
+    responsePlan:{
+      ...basePlan,
+      intent:'SYSTEM_DEGRADED',
+      text:'No puedo verificar la operación en este momento. No se confirmó ningún registro.',
+      handoffRequired:true,
+      reason:'SYSTEM_NOT_AUTHORITATIVE'
+    }
+  } as any);
+  assert.equal(result.action,'SEND');
+  assert.equal(result.canSend,true);
+  assert.equal(result.reason,'SYSTEM_DEGRADED_SAFE_REPLY');
+  assert.match(result.text||'',/No puedo verificar/i);
+  assert.equal(result.authority.domainEffectsAllowed,false);
+  assert.equal(audit.length,0,'degraded reply must not pretend an agent evaluation was authoritative');
 });
 
 test('monetary messages may receive a non-confirming autonomous response but never a domain action',async()=>{
