@@ -322,18 +322,18 @@ function GymWorkspace({state,context}){
 
   const panels={overview,members:panelMembers,trainers:panelTrainers,assessments:panelAssessments,routines:panelRoutines,nutrition:panelNutrition,classes:panelClasses};
 
-  return <Stack className="cg-vertical-page cg-gym-page" gap={1.5}>
-    <CgPageHeader eyebrow="Vertical Fitness" title="Control integral de gimnasio" description="Clientes, instructores, membresías, asistencia, evaluaciones, rutinas, nutrición y clases desde una sola vista funcional." actions={<Stack direction="row" gap={.8}><CgButton variant="outlined" onClick={()=>void loadAll()} disabled={loading}>Actualizar</CgButton><CgButton variant="outlined" onClick={()=>context.navigate('mensajes')}>Mensajes WhatsApp</CgButton></Stack>}/>
+  return <Stack className="cg-vertical-page cg-gym-page" gap={1.5} sx={{minWidth:0,maxWidth:'100%',width:'100%',overflowX:'hidden'}}>
+    <CgPageHeader eyebrow="Vertical Fitness" title="Control integral de gimnasio" description="Clientes, instructores, membresías, asistencia, evaluaciones, rutinas, nutrición y clases desde una sola vista funcional." actions={<Stack direction="row" gap={.8} flexWrap="wrap" sx={{minWidth:0,maxWidth:'100%'}}><CgButton variant="outlined" onClick={()=>void loadAll()} disabled={loading}>Actualizar</CgButton><CgButton variant="outlined" onClick={()=>context.navigate('mensajes')}>Mensajes WhatsApp</CgButton></Stack>}/>
     {error?<CgState severity="error" title="No se pudo actualizar">{error}</CgState>:null}
     {loading?<CgState severity="info" title="Actualizando">Cargando operación del gimnasio.</CgState>:null}
-    <Box className="cg-vertical-kpis cg-gym-kpis" sx={{display:'grid',gridTemplateColumns:{xs:'repeat(2,minmax(0,1fr))',lg:'repeat(4,minmax(0,1fr))'},gap:1}}>
+    <Box className="cg-vertical-kpis cg-gym-kpis" sx={{display:'grid',gridTemplateColumns:{xs:'minmax(0,1fr)',sm:'repeat(2,minmax(0,1fr))',lg:'repeat(4,minmax(0,1fr))'},gap:1}}>
       <Metric label="Clientes activos" value={Number(summary.members?.active||0)} hint={`${Number(summary.members?.total||0)} registrados`} tone="primary"/>
       <Metric label="Membresías activas" value={Number(summary.memberships?.active||0)} hint={`${Number(summary.memberships?.expiring||0)} vencen en 7 días`} tone="success"/>
       <Metric label="Entradas de hoy" value={Number(summary.checkinsToday||0)} hint="Control de acceso" tone="info"/>
       <Metric label="Ingresos del mes" value={`$ ${Number(summary.revenueThisMonth||0).toLocaleString('es-VE',{minimumFractionDigits:2})}`} hint="Pagos confirmados" tone="secondary"/>
     </Box>
     <Section title="Coaching y retención" description="Señales operativas para seguimiento antes de perder una membresía."><Box className="cg-gym-v1124-grid cg-gym-retention-grid" sx={{display:'grid',gridTemplateColumns:{xs:'1fr',sm:'repeat(3,1fr)'},gap:1}}><Metric label="Renovaciones próximas" value={Number(summary.memberships?.expiring||0)}/><Metric label="Clases ≥ 80%" value={highOccupancy}/><Metric label="Clientes con coaching" value={Number(summary.members?.active||0)}/></Box></Section>
-    <Paper variant="outlined" sx={{px:1,overflow:'hidden'}}><Tabs value={tab} onChange={(_e,value)=>selectTab(value)} variant="scrollable" scrollButtons="auto" allowScrollButtonsMobile>{[['overview','Operación'],['members','Clientes'],['trainers','Instructores'],['assessments','Evaluaciones'],['routines','Rutinas'],['nutrition','Nutrición'],['classes','Clases']].map(([value,label])=><Tab key={value} value={value} label={label}/>)}</Tabs></Paper>
+    <Paper className="cg-gym-v1124-tabs" variant="outlined" sx={{px:1,minWidth:0,maxWidth:'100%',overflow:'hidden'}}><Tabs sx={{minWidth:0,maxWidth:'100%'}} value={tab} onChange={(_e,value)=>selectTab(value)} variant="scrollable" scrollButtons="auto" allowScrollButtonsMobile>{[['overview','Operación'],['members','Clientes'],['trainers','Instructores'],['assessments','Evaluaciones'],['routines','Rutinas'],['nutrition','Nutrición'],['classes','Clases']].map(([value,label])=><Tab key={value} value={value} label={label}/>)}</Tabs></Paper>
     <Box data-gym-panel={tab}>{panels[tab]||overview}</Box>
   </Stack>;
 }
