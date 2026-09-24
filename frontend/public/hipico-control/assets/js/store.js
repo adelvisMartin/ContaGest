@@ -17,6 +17,11 @@ function validateWorkspace(workspace) {
   return workspace;
 }
 
+function recoverPersistedWorkspace(workspace) {
+  if (workspace) storageV2.repairWorkspaceGroupScope(workspace, null);
+  return validateWorkspace(workspace);
+}
+
 function hardenWorkspaceWrites(workspace) {
   validateWorkspace(workspace);
   const result = enforceAdvancedLoadGroupScope(workspace);
@@ -28,15 +33,15 @@ function hardenWorkspaceWrites(workspace) {
 // Explicit read exports win over export* so persisted/imported/cloud-restored data
 // is rejected before the application can render unsafe structural values.
 export async function initializeStorage(fallbackFactory) {
-  return validateWorkspace(await storageV2.initializeStorage(fallbackFactory));
+  return recoverPersistedWorkspace(await storageV2.initializeStorage(fallbackFactory));
 }
 
 export async function loadLocalWorkspace(fallbackFactory) {
-  return validateWorkspace(await storageV2.loadLocalWorkspace(fallbackFactory));
+  return recoverPersistedWorkspace(await storageV2.loadLocalWorkspace(fallbackFactory));
 }
 
 export async function restoreSnapshot(snapshotId) {
-  return validateWorkspace(await storageV2.restoreSnapshot(snapshotId));
+  return recoverPersistedWorkspace(await storageV2.restoreSnapshot(snapshotId));
 }
 
 // Explicit exports win over export* so all application writes pass through the
