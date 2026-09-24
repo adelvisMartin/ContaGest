@@ -112,7 +112,12 @@ export async function openAccessibilityRoute(page, item, context, index = 0) {
   await page.goto(`/?module=${encodeURIComponent(item.route)}`, { waitUntil: 'domcontentloaded' });
   const root = item.standalone ? '.login-shell' : '#pages';
   await page.waitForSelector(root, { state: 'attached', timeout: 20_000 });
-  await page.waitForTimeout(item.route === 'veterinaria' ? 450 : 140);
+  await page.waitForFunction((selector) => {
+    const host = document.querySelector(selector);
+    if (!host) return false;
+    return Boolean(host.querySelector('button,a[href],input,select,textarea,table,form,[role="button"],[role="tab"]'));
+  }, root, { timeout: 20_000 }).catch(() => {});
+  await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
 }
 
 export async function inspectRepresentativeState(page, item) {
@@ -239,47 +244,87 @@ export async function scanAutomatedAccessibility(page, item) {
   }, { standalone: Boolean(item.standalone), route: item.route });
 }
 
+async function focusedState(page) {
+  return page.evaluate(async () => {
+    const node = document.activeElement;
+    if (!(node instanceof HTMLElement) || node === document.body) {
+      return { key: 'body', token: 'body', visible: true, obscured: false, outsideViewport: false };
+    }
+
+    node.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+    await new Promise((resolve) => requestAnimationFrame(resolve));
+
+    const rect = node.getBoundingClientRect();
+    const style = getComputedStyle(node);
+    const key = node.id || node.getAttribute('name') || node.getAttribute('aria-label') || node.textContent?.trim().slice(0, 60) || node.tagName;
+    const focusables = [...document.querySelectorAll('a[href],button,input:not([type="hidden"]),select,textarea,[tabindex]:not([tabindex="-1"])')];
+    const token = node.id || node.getAttribute('name') || `${node.tagName}:${focusables.indexOf(node)}`;
+    const left = Math.max(0, rect.left);
+    const right = Math.min(innerWidth, rect.right);
+    const topEdge = Math.max(0, rect.top);
+    const bottom = Math.min(innerHeight, rect.bottom);
+    const outsideViewport = right <= left || bottom <= topEdge;
+    const pointX = outsideViewport ? 0 : left + (right - left) / 2;
+    const pointY = outsideViewport ? 0 : topEdge + (bottom - topEdge) / 2;
+    const top = outsideViewport ? null : document.elementFromPoint(pointX, pointY);
+    const obscured = Boolean(top && top !== node && !node.contains(top) && !top.contains(node));
+
+    return {
+      key,
+      token,
+      visible: style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 0 && rect.height > 0,
+      obscured,
+      outsideViewport,
+    };
+  });
+}
+
 export async function auditKeyboardAndFocus(page, item) {
   const rootSelector = item.standalone ? '.login-shell' : '#pages';
   const focusableSelector = `${rootSelector} a[href], ${rootSelector} button:not([disabled]), ${rootSelector} input:not([disabled]):not([type="hidden"]), ${rootSelector} select:not([disabled]), ${rootSelector} textarea:not([disabled]), ${rootSelector} [tabindex]:not([tabindex="-1"])`;
   const count = await page.locator(focusableSelector).count();
-  if (count === 0) return [{ rule: 'keyboard-operability', severity: 'serious', selector: rootSelector, message: 'Ruta interactiva sin elementos enfocables por teclado', wcag: '2.1.1' }];
+  if (count === 0) {
+    return [{ rule: 'keyboard-operability', severity: 'serious', selector: rootSelector, message: 'Ruta interactiva sin elementos enfocables por teclado', wcag: '2.1.1' }];
+  }
 
   await page.locator('body').click({ position: { x: 2, y: 2 } }).catch(() => {});
   const samples = [];
+  const findings = [];
   const iterations = Math.min(Math.max(count + 2, 4), 16);
-  for (let index = 0; index < iterations; index += 1) {
+
+  await page.keyboard.press('Tab');
+  const first = await focusedState(page);
+  samples.push(first);
+
+  if (iterations > 1) {
     await page.keyboard.press('Tab');
-    samples.push(await page.evaluate(() => {
-      const node = document.activeElement;
-      if (!(node instanceof HTMLElement) || node === document.body) return { key: 'body', visible: true, obscured: false };
-      const rect = node.getBoundingClientRect();
-      const style = getComputedStyle(node);
-      const key = node.id || node.getAttribute('name') || node.getAttribute('aria-label') || node.textContent?.trim().slice(0, 60) || node.tagName;
-      const pointX = Math.max(0, Math.min(innerWidth - 1, rect.left + Math.min(rect.width / 2, 4)));
-      const pointY = Math.max(0, Math.min(innerHeight - 1, rect.top + Math.min(rect.height / 2, 4)));
-      const top = document.elementFromPoint(pointX, pointY);
-      const obscured = Boolean(top && top !== node && !node.contains(top) && !top.contains(node));
-      return {
-        key,
-        visible: style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 0 && rect.height > 0,
-        obscured,
-        outsideViewport: rect.bottom <= 0 || rect.top >= innerHeight || rect.right <= 0 || rect.left >= innerWidth,
-      };
-    }));
+    const second = await focusedState(page);
+    samples.push(second);
+
+    if (count > 1 && first.token !== 'body' && second.token !== 'body' && first.token !== second.token) {
+      await page.keyboard.press('Shift+Tab');
+      const backward = await focusedState(page);
+      if (backward.token !== first.token) {
+        findings.push({ rule: 'reverse-tab', severity: 'serious', selector: rootSelector, message: 'Shift+Tab no regresa al control anterior', wcag: '2.1.1' });
+      }
+      await page.keyboard.press('Tab');
+    }
   }
 
-  const findings = [];
-  const unique = new Set(samples.filter((sample) => sample.key !== 'body').map((sample) => sample.key));
-  if (count > 1 && unique.size < 2) findings.push({ rule: 'keyboard-trap', severity: 'serious', selector: rootSelector, message: 'Tab no alcanzó al menos dos controles únicos', wcag: '2.1.2' });
+  for (let index = samples.length; index < iterations; index += 1) {
+    await page.keyboard.press('Tab');
+    samples.push(await focusedState(page));
+  }
+
+  const unique = new Set(samples.filter((sample) => sample.token !== 'body').map((sample) => sample.token));
+  if (count > 1 && unique.size < 2) {
+    findings.push({ rule: 'keyboard-trap', severity: 'serious', selector: rootSelector, message: 'Tab no alcanzó al menos dos controles únicos', wcag: '2.1.2' });
+  }
   for (const sample of samples) {
     if (!sample.visible) findings.push({ rule: 'focus-hidden', severity: 'serious', selector: String(sample.key), message: 'El foco llegó a un elemento no visible', wcag: '2.4.7' });
     if (sample.obscured || sample.outsideViewport) findings.push({ rule: 'focus-not-obscured', severity: 'serious', selector: String(sample.key), message: 'El elemento enfocado está fuera de viewport u oculto por otra capa', wcag: '2.4.11' });
   }
 
-  await page.keyboard.press('Shift+Tab');
-  const backward = await page.evaluate(() => document.activeElement !== document.body);
-  if (!backward) findings.push({ rule: 'reverse-tab', severity: 'serious', selector: rootSelector, message: 'Shift+Tab no conserva navegación de foco', wcag: '2.1.1' });
   return findings;
 }
 
@@ -297,35 +342,43 @@ export async function auditReducedMotion(page, item) {
 }
 
 export async function auditZoomProxy(page, item) {
-  const result = await page.evaluate(({ standalone }) => {
-    const root = document.querySelector(standalone ? '.login-shell' : '#pages');
-    if (!root) return { missing: true, overflow: false, clipped: [] };
-    document.documentElement.dataset.cgA11yOriginalZoom = document.documentElement.style.zoom || '';
-    document.documentElement.style.zoom = '2';
-    const visible = (node) => {
-      if (!(node instanceof HTMLElement)) return false;
-      const style = getComputedStyle(node);
-      const rect = node.getBoundingClientRect();
-      return style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 1 && rect.height > 1;
-    };
-    const clipped = [...root.querySelectorAll('button,label,input,select,textarea,h1,h2,h3,p')]
-      .filter(visible)
-      .filter((node) => getComputedStyle(node).overflow === 'hidden' && (node.scrollWidth > node.clientWidth + 3 || node.scrollHeight > node.clientHeight + 3))
-      .slice(0, 8)
-      .map((node) => node.id || node.getAttribute('name') || node.textContent?.trim().slice(0, 60) || node.tagName);
-    return { missing: false, overflow: document.documentElement.scrollWidth > document.documentElement.clientWidth * 2 + 4, clipped };
-  }, { standalone: Boolean(item.standalone) });
+  const original = page.viewportSize();
+  if (!original) return [{ rule: 'zoom-root', severity: 'critical', selector: item.route, message: 'No se pudo determinar el viewport para el proxy de zoom 200%', wcag: '1.4.4' }];
 
-  await page.evaluate(() => {
-    document.documentElement.style.zoom = document.documentElement.dataset.cgA11yOriginalZoom || '';
-    delete document.documentElement.dataset.cgA11yOriginalZoom;
-  });
+  const effectiveWidth = Math.max(320, Math.floor(original.width / 2));
+  await page.setViewportSize({ width: effectiveWidth, height: original.height });
+  await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
 
-  const findings = [];
-  if (result.missing) findings.push({ rule: 'zoom-root', severity: 'critical', selector: item.route, message: 'No se pudo evaluar zoom 200% porque falta el root', wcag: '1.4.4' });
-  if (result.overflow) findings.push({ rule: 'zoom-overflow', severity: 'serious', selector: item.route, message: 'Proxy de zoom 200% introduce overflow horizontal anómalo', wcag: '1.4.10' });
-  for (const selector of result.clipped) findings.push({ rule: 'zoom-clipping', severity: 'serious', selector: String(selector), message: 'Texto/control se recorta con proxy de zoom 200%', wcag: '1.4.4' });
-  return findings;
+  try {
+    const result = await page.evaluate(({ standalone }) => {
+      const root = document.querySelector(standalone ? '.login-shell' : '#pages');
+      if (!root) return { missing: true, overflow: false, clipped: [] };
+      const visible = (node) => {
+        if (!(node instanceof HTMLElement)) return false;
+        const style = getComputedStyle(node);
+        const rect = node.getBoundingClientRect();
+        return style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 1 && rect.height > 1;
+      };
+      const clipped = [...root.querySelectorAll('button,label,input,select,textarea,h1,h2,h3,p')]
+        .filter(visible)
+        .filter((node) => getComputedStyle(node).overflow === 'hidden' && (node.scrollWidth > node.clientWidth + 3 || node.scrollHeight > node.clientHeight + 3))
+        .slice(0, 8)
+        .map((node) => node.id || node.getAttribute('name') || node.textContent?.trim().slice(0, 60) || node.tagName);
+      return {
+        missing: false,
+        overflow: document.documentElement.scrollWidth > document.documentElement.clientWidth + 4,
+        clipped,
+      };
+    }, { standalone: Boolean(item.standalone) });
+
+    const findings = [];
+    if (result.missing) findings.push({ rule: 'zoom-root', severity: 'critical', selector: item.route, message: 'No se pudo evaluar el proxy de zoom 200% porque falta el root', wcag: '1.4.4' });
+    if (result.overflow) findings.push({ rule: 'zoom-overflow', severity: 'serious', selector: item.route, message: `Proxy de zoom 200% (${effectiveWidth}px CSS) introduce overflow horizontal`, wcag: '1.4.10' });
+    for (const selector of result.clipped) findings.push({ rule: 'zoom-clipping', severity: 'serious', selector: String(selector), message: 'Texto/control se recorta con proxy de zoom 200%', wcag: '1.4.4' });
+    return findings;
+  } finally {
+    await page.setViewportSize(original);
+  }
 }
 
 export function applyWaivers(findings, waivers, context) {
