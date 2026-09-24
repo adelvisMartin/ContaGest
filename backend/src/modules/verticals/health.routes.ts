@@ -78,10 +78,10 @@ const appointmentPatchSchema = z.object({
 }).strict().refine((value)=>Object.keys(value).length>0,{message:'Indica al menos un cambio.'});
 
 const ACTIVE_APPOINTMENT_STATUSES=['scheduled','confirmed','checked_in','in_progress'] as const;
-const lockAppointmentSchedule = async (tx:VerticalTransaction, tenantId:string) => {
+const lockAppointmentSchedule = async (tx:any, tenantId:string) => {
   await tx.$queryRawUnsafe('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',`care-appointment:${tenantId}`);
 };
-const assertAppointmentSlotAvailable = async (tx:VerticalTransaction, input:{
+const assertAppointmentSlotAvailable = async (tx:any, input:{
   tenantId:string; appointmentId?:string; patientId:string; professionalId?:string|null;
   startsAt:string; endsAt:string; room?:string|null;
 }) => {
@@ -587,10 +587,10 @@ router.post('/health/appointments', requirePermission('health.manage'), asyncHan
   const b = appointmentSchema.parse(req.body || {});
   const created=await prisma.$transaction(async (tx)=>{
     await lockAppointmentSchedule(tx,tenantId);
-    const patientRows=await tx.$queryRawUnsafe(`SELECT "id" FROM public."CarePatient" WHERE "tenantId"=$1 AND "id"=$2 AND "active"=true LIMIT 1`,tenantId,b.patientId);
+    const patientRows=await tx.$queryRawUnsafe<any[]>(`SELECT "id" FROM public."CarePatient" WHERE "tenantId"=$1 AND "id"=$2 AND "active"=true LIMIT 1`,tenantId,b.patientId);
     if(!patientRows.length)throw new HttpError(422,'El paciente no pertenece al tenant activo.');
     if(b.professionalId){
-      const professionalRows=await tx.$queryRawUnsafe(`SELECT "id" FROM public."CareProfessional" WHERE "tenantId"=$1 AND "id"=$2 AND "status"='active' LIMIT 1`,tenantId,b.professionalId);
+      const professionalRows=await tx.$queryRawUnsafe<any[]>(`SELECT "id" FROM public."CareProfessional" WHERE "tenantId"=$1 AND "id"=$2 AND "status"='active' LIMIT 1`,tenantId,b.professionalId);
       if(!professionalRows.length)throw new HttpError(422,'El profesional no está disponible en el tenant activo.');
     }
     if(b.status!=='waitlisted'){
@@ -601,7 +601,7 @@ router.post('/health/appointments', requirePermission('health.manage'), asyncHan
       createdBy:actor,
       ...(b.status==='waitlisted'?{waitlist:{requestedAt:new Date().toISOString(),requestedBy:actor}}:{})
     };
-    const rows = await tx.$queryRawUnsafe(`
+    const rows = await tx.$queryRawUnsafe<any[]>(`
       INSERT INTO public."CareAppointment"
         ("id","tenantId","patientId","professionalId","startsAt","endsAt","type","status","reason","channel","room","reminderStatus","recallDueAt","schedulingMeta","notes","createdAt","updatedAt")
       VALUES
@@ -620,7 +620,7 @@ router.patch('/health/appointments/:id', requirePermission('health.manage'), asy
   const b=appointmentPatchSchema.parse(req.body||{});
   const updated=await prisma.$transaction(async (tx)=>{
     await lockAppointmentSchedule(tx,tenantId);
-    const currentRows=await tx.$queryRawUnsafe(`
+    const currentRows=await tx.$queryRawUnsafe<any[]>(`
       SELECT * FROM public."CareAppointment"
       WHERE "tenantId"=$1 AND "id"=$2
       FOR UPDATE
@@ -633,7 +633,7 @@ router.patch('/health/appointments/:id', requirePermission('health.manage'), asy
     const room=b.room===undefined?current.room:b.room;
     const status=b.status||current.status;
     if(professionalId){
-      const professionalRows=await tx.$queryRawUnsafe(`SELECT "id" FROM public."CareProfessional" WHERE "tenantId"=$1 AND "id"=$2 AND "status"='active' LIMIT 1`,tenantId,professionalId);
+      const professionalRows=await tx.$queryRawUnsafe<any[]>(`SELECT "id" FROM public."CareProfessional" WHERE "tenantId"=$1 AND "id"=$2 AND "status"='active' LIMIT 1`,tenantId,professionalId);
       if(!professionalRows.length)throw new HttpError(422,'El profesional no está disponible en el tenant activo.');
     }
     if(ACTIVE_APPOINTMENT_STATUSES.includes(status as any)){
@@ -649,7 +649,7 @@ router.patch('/health/appointments/:id', requirePermission('health.manage'), asy
       ...(current.status==='waitlisted'&&status==='scheduled'?{waitlist:{...(previousMeta.waitlist||{}),convertedAt:now,convertedBy:actor}}:{}),
       ...(Object.prototype.hasOwnProperty.call(b,'recallDueAt')?{recall:{updatedAt:now,updatedBy:actor,dueAt:b.recallDueAt||null}}:{})
     };
-    const rows=await tx.$queryRawUnsafe(`
+    const rows=await tx.$queryRawUnsafe<any[]>(`
       UPDATE public."CareAppointment"
       SET "professionalId"=$3,
           "startsAt"=$4::timestamptz,
@@ -711,7 +711,7 @@ router.post('/health/encounters/:id/amend', requirePermission('health.manage'), 
   const b = dentalEncounterAmendmentSchema.parse(req.body || {});
 
   const amended = await prisma.$transaction(async (tx) => {
-    const previousRows = await tx.$queryRawUnsafe(`
+    const previousRows = await tx.$queryRawUnsafe<any[]>(`
       SELECT * FROM public."CareEncounter"
       WHERE "tenantId"=$1 AND "id"=$2
       FOR UPDATE
@@ -721,7 +721,7 @@ router.post('/health/encounters/:id/amend', requirePermission('health.manage'), 
     if (previous.type !== 'dental-treatment') throw new HttpError(422, 'Solo los tratamientos odontológicos admiten este flujo de enmienda.');
     if (previous.status !== 'signed') throw new HttpError(409, 'Solo la versión firmada vigente puede enmendarse.');
 
-    const pendingAmendments=await tx.$queryRawUnsafe(`
+    const pendingAmendments=await tx.$queryRawUnsafe<any[]>(`
       SELECT "id" FROM public."CareEncounter"
       WHERE "tenantId"=$1
         AND "patientId"=$2
@@ -752,7 +752,7 @@ router.post('/health/encounters/:id/amend', requirePermission('health.manage'), 
 
     const nextProfessionalId = b.professionalId === undefined ? previous.professionalId : b.professionalId;
     if (nextProfessionalId) {
-      const professionalRows = await tx.$queryRawUnsafe(`
+      const professionalRows = await tx.$queryRawUnsafe<any[]>(`
         SELECT "id" FROM public."CareProfessional"
         WHERE "tenantId"=$1 AND "id"=$2
         LIMIT 1
@@ -790,7 +790,7 @@ router.post('/health/encounters/:id/amend', requirePermission('health.manage'), 
       }
     };
 
-    const created = await tx.$queryRawUnsafe(`
+    const created = await tx.$queryRawUnsafe<any[]>(`
       INSERT INTO public."CareEncounter"
         ("id","tenantId","patientId","professionalId","appointmentId","specialty","type","subjective","objective","assessment","plan","diagnosisCodes","clinicalData","confidential","status","signedAt","createdAt","updatedAt")
       VALUES
@@ -824,7 +824,7 @@ router.post('/health/encounters/:id/workflow', requirePermission('health.manage'
   const b=dentalEncounterWorkflowSchema.parse(req.body||{});
 
   const transitioned=await prisma.$transaction(async (tx)=>{
-    const rows=await tx.$queryRawUnsafe(`
+    const rows=await tx.$queryRawUnsafe<any[]>(`
       SELECT * FROM public."CareEncounter"
       WHERE "tenantId"=$1 AND "id"=$2
       FOR UPDATE
@@ -847,7 +847,7 @@ router.post('/health/encounters/:id/workflow', requirePermission('health.manage'
           reviewRequestedBy:actor
         }
       };
-      const updated=await tx.$queryRawUnsafe(`
+      const updated=await tx.$queryRawUnsafe<any[]>(`
         UPDATE public."CareEncounter"
         SET "clinicalData"=$3::jsonb,"status"='review',"updatedAt"=now()
         WHERE "tenantId"=$1 AND "id"=$2 AND "status"='draft'
@@ -864,7 +864,7 @@ router.post('/health/encounters/:id/workflow', requirePermission('health.manage'
     );
 
     if(previousEncounterId){
-      const authorityRows=await tx.$queryRawUnsafe(`
+      const authorityRows=await tx.$queryRawUnsafe<any[]>(`
         SELECT * FROM public."CareEncounter"
         WHERE "tenantId"=$1 AND "patientId"=$2 AND "id"=$3
         FOR UPDATE
@@ -892,7 +892,7 @@ router.post('/health/encounters/:id/workflow', requirePermission('health.manage'
         signedBy:actor
       }
     };
-    const updated=await tx.$queryRawUnsafe(`
+    const updated=await tx.$queryRawUnsafe<any[]>(`
       UPDATE public."CareEncounter"
       SET "clinicalData"=$3::jsonb,"status"='signed',"signedAt"=now(),"updatedAt"=now()
       WHERE "tenantId"=$1 AND "id"=$2 AND "status"='review'
@@ -912,7 +912,7 @@ router.post('/health/encounters/:id/treatment-plan-decision', requirePermission(
   const b=treatmentPlanDecisionSchema.parse(req.body||{});
 
   const decided=await prisma.$transaction(async (tx)=>{
-    const rows=await tx.$queryRawUnsafe(`
+    const rows=await tx.$queryRawUnsafe<any[]>(`
       SELECT * FROM public."CareEncounter"
       WHERE "tenantId"=$1 AND "id"=$2
       FOR UPDATE
@@ -941,7 +941,7 @@ router.post('/health/encounters/:id/treatment-plan-decision', requirePermission(
       }
     };
 
-    const updated=await tx.$queryRawUnsafe(`
+    const updated=await tx.$queryRawUnsafe<any[]>(`
       UPDATE public."CareEncounter"
       SET "clinicalData"=$3::jsonb,
           "status"=$4,
@@ -1019,14 +1019,14 @@ router.post('/health/encounters/:id/financial-link', requirePermission('health.m
     const lockKey=`dental-financial:${tenantId}:${treatmentPlanId}`;
     await tx.$queryRawUnsafe(`SELECT pg_advisory_xact_lock(hashtextextended($1,0))`,lockKey);
 
-    const existing=await tx.$queryRawUnsafe(`
+    const existing=await tx.$queryRawUnsafe<any[]>(`
       ${dentalFinancialLinkSelect}
       WHERE l."tenantId"=$1 AND l."treatmentPlanId"=$2
       LIMIT 1
     `,tenantId,treatmentPlanId);
     if(existing.length)return {record:normalizeFinancialLink(existing[0]),replayed:true};
 
-    const planRows=await tx.$queryRawUnsafe(`
+    const planRows=await tx.$queryRawUnsafe<any[]>(`
       SELECT e.*,
              p."displayName" AS "patientName",
              pr."fullName" AS "professionalName"
@@ -1121,7 +1121,7 @@ router.post('/health/encounters/:id/financial-link', requirePermission('health.m
       }))
     };
 
-    const inserted=await tx.$queryRawUnsafe(`
+    const inserted=await tx.$queryRawUnsafe<any[]>(`
       INSERT INTO public."DentalFinancialLink"
         ("id","tenantId","treatmentPlanId","patientId","salesInvoiceId","currency","quotedTotal","budgetSnapshot","createdBy","createdAt")
       VALUES
@@ -1201,11 +1201,11 @@ router.post('/health/measurements/veterinary-vitals', requirePermission('health.
   const tenantId=ctx(req).tenantId;
   const body=veterinaryVitalBatchSchema.parse(req.body||{});
   const result=await prisma.$transaction(async(tx)=>{
-    await tx.$queryRawUnsafe(`
+    await tx.$queryRawUnsafe<any[]>(`
       SELECT pg_advisory_xact_lock(hashtextextended($1,0))
     `,`${tenantId}:veterinary-vitals:${body.patientId}:${body.batchId}`);
 
-    const patientRows=await tx.$queryRawUnsafe(`
+    const patientRows=await tx.$queryRawUnsafe<any[]>(`
       SELECT "id" FROM public."CarePatient"
       WHERE "tenantId"=$1 AND "id"=$2 AND "kind"='animal' AND "active"=true
       LIMIT 1
@@ -1214,7 +1214,7 @@ router.post('/health/measurements/veterinary-vitals', requirePermission('health.
     if(!patientRows.length)throw new HttpError(422,'La mascota no pertenece al tenant activo.');
 
     if(body.encounterId){
-      const encounterRows=await tx.$queryRawUnsafe(`
+      const encounterRows=await tx.$queryRawUnsafe<any[]>(`
         SELECT "id" FROM public."CareEncounter"
         WHERE "tenantId"=$1 AND "id"=$2 AND "patientId"=$3
         LIMIT 1
@@ -1223,7 +1223,7 @@ router.post('/health/measurements/veterinary-vitals', requirePermission('health.
       if(!encounterRows.length)throw new HttpError(422,'El encuentro no pertenece a la mascota activa.');
     }
 
-    const existing=await tx.$queryRawUnsafe(`
+    const existing=await tx.$queryRawUnsafe<any[]>(`
       SELECT * FROM public."CareMeasurement"
       WHERE "tenantId"=$1
         AND "patientId"=$2
@@ -1245,7 +1245,7 @@ router.post('/health/measurements/veterinary-vitals', requirePermission('health.
     const created:any[]=[];
     for(const item of body.measurements){
       const metadata={source:'veterinary-longitudinal-record',batchId:body.batchId};
-      const rows=await tx.$queryRawUnsafe(`
+      const rows=await tx.$queryRawUnsafe<any[]>(`
         INSERT INTO public."CareMeasurement"
           ("id","tenantId","patientId","encounterId","kind","value","unit","measuredAt","metadata")
         VALUES
