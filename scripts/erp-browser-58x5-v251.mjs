@@ -64,6 +64,9 @@ function runShard(index){
   runGroup('exhaustive responsive shard '+(index+1)+'/'+batches.length,[
     'qa/exhaustive-route-v164.spec.mjs','--grep',routePattern+' · deep desktop/mobile light/dark audit'
   ]);
+  runGroup('61/75 anti-overlap shard '+(index+1)+'/'+batches.length,[
+    'qa/erp-visual-overlap-v6175.spec.mjs','--grep',routePattern+' · full anti-overlap 58-route matrix'
+  ]);
   runGroup('mobile sidebar shard '+(index+1)+'/'+batches.length,[
     'qa/mobile-navigation-v163.spec.mjs','--grep','every actual sidebar route button'
   ],{env:{CG_MOBILE_NAV_BATCH_INDEX:String(index),CG_MOBILE_NAV_BATCH_SIZE:String(BATCH_SIZE)}});
