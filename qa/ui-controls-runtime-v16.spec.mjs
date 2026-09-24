@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { MODULE_VISUAL_CATALOG } from './support/module-visual-catalog.mjs';
+import { waitForRouteReady } from './support/playwright-determinism.mjs';
 
 test.setTimeout(360_000);
 
@@ -30,7 +31,7 @@ async function seedAndInstrument(page){
 async function openRoute(page,route){
   await page.goto(`/?module=${route}`,{waitUntil:'domcontentloaded'});
   await page.waitForSelector(route==='login'?'.login-shell':'#pages',{state:'attached',timeout:20_000});
-  await page.waitForTimeout(route==='veterinaria'?500:220);
+  await waitForRouteReady(page,route,{standalone:route==='login'});
 }
 
 async function runtimeControlAudit(page,route){

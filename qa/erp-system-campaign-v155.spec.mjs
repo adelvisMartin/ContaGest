@@ -3,6 +3,7 @@ import path from 'node:path';
 import { test, expect } from '@playwright/test';
 import { AccessControlService } from '../frontend/src/services/accessControlService.js';
 import {
+import { waitForRouteReady, waitForStableLayout } from './support/playwright-determinism.mjs';
   buildErpE2EMatrixV155,
   caseIdentityV155,
   ERP_E2E_ROLES_V155,
@@ -69,13 +70,13 @@ async function openRoute(page,item){
   await page.setViewportSize({width:item.width,height:item.height});
   await page.goto(`/?module=${encodeURIComponent(item.route)}`,{waitUntil:'domcontentloaded'});
   await page.waitForSelector(item.route==='login'?'.login-shell':'#app',{state:'attached',timeout:20_000});
-  await page.waitForTimeout(item.route==='veterinaria'?420:160);
+  await waitForRouteReady(page,item.route,{standalone:item.route==='login'});
   return{requested:item.route,actual:await page.locator('body').getAttribute('data-route'),root:item.route==='login'?'.login-shell':'#pages'};
 }
 
 async function exercise(page,item){
   const result={interactions:[],warnings:[]};const selector=item.route==='login'?'.login-shell':'#pages';const root=page.locator(selector);
-  await root.evaluate((node)=>node.scrollTo?.(0,node.scrollHeight)).catch(()=>{});await page.evaluate(()=>window.scrollTo(0,document.documentElement.scrollHeight));await page.waitForTimeout(20);await page.evaluate(()=>window.scrollTo(0,0));result.interactions.push('scroll-cycle');
+  await root.evaluate((node)=>node.scrollTo?.(0,node.scrollHeight)).catch(()=>{});await page.evaluate(()=>window.scrollTo(0,document.documentElement.scrollHeight));await waitForStableLayout(page,selector);await page.evaluate(()=>window.scrollTo(0,0));result.interactions.push('scroll-cycle');
   await page.keyboard.press('Tab').catch(()=>{});const focused=await page.evaluate(()=>document.activeElement&&document.activeElement!==document.body&&document.activeElement!==document.documentElement);if(focused)result.interactions.push('keyboard-focus');else result.warnings.push('NO_KEYBOARD_FOCUS_TARGET');
   const details=page.locator(`${selector} details:visible`).first();if(await details.count()){await details.evaluate((node)=>{node.open=true;});result.interactions.push('details-open');}
   const tab=page.locator('[role="tab"]:visible,.cgx-tabs button:visible,.page-tabs button:visible,.cg-vertical-tabs button:visible').first();if(await tab.count()){await tab.click({timeout:2500}).catch(()=>{});result.interactions.push('tab-click');}
@@ -106,7 +107,7 @@ function auditDom(){
   const clipped=[...root.querySelectorAll('h1,h2,h3,h4,p,label,button,summary,.cgx-btn,.btn')].filter(visible).filter((node)=>!node.closest(scrollOwners)).filter((node)=>{const s=getComputedStyle(node);return s.overflow==='hidden'&&(node.scrollWidth>node.clientWidth+3||node.scrollHeight>node.clientHeight+3);}).slice(0,10).map(label);if(clipped.length)findings.push({kind:'CLIPPED_OPERATIONAL_TEXT',items:clipped});return findings;
 }
 
-async function auditZoom(page){await page.evaluate(()=>{document.documentElement.style.zoom='1.25';});await page.waitForTimeout(30);const overflow=await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth+2);await page.evaluate(()=>{document.documentElement.style.zoom='';});return overflow?['ZOOM_125_HORIZONTAL_OVERFLOW']:[];}
+async function auditZoom(page){await page.evaluate(()=>{document.documentElement.style.zoom='1.25';});await waitForStableLayout(page,'#pages');const overflow=await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth+2);await page.evaluate(()=>{document.documentElement.style.zoom='';});return overflow?['ZOOM_125_HORIZONTAL_OVERFLOW']:[];}
 
 for(const [groupKey,cases] of groups){
   const[routeName,flowName]=groupKey.split('|');
@@ -122,7 +123,7 @@ for(const [groupKey,cases] of groups){
           const bodyText=await page.locator('body').innerText().catch(()=>'');if(/QA-LARGO-ÁÉÍÓÚ-漢字|Cliente QA|Producto QA/.test(bodyText)&&navigation.actual===item.route)findings.push({kind:'RBAC_DENIED_DATA_LEAK'});
         }else{
           if(navigation.actual!==item.route)findings.push({kind:'AUTHORIZED_ROUTE_NOT_RENDERED',expected:item.route,actual:navigation.actual});
-          if(item.state==='loading'){const loadingVisible=await page.locator('[aria-busy="true"]:visible,.loading:visible,.spinner:visible,.skeleton:visible,[data-loading="true"]:visible').count();if(!loadingVisible)warnings.push('LOADING_STATE_NOT_VISUALLY_OBSERVED');await page.waitForTimeout(800);}
+          if(item.state==='loading'){const loadingVisible=await page.locator('[aria-busy="true"]:visible,.loading:visible,.spinner:visible,.skeleton:visible,[data-loading="true"]:visible').count();if(!loadingVisible)warnings.push('LOADING_STATE_NOT_VISUALLY_OBSERVED');await waitForStableLayout(page,item.route==='login'?'.login-shell':'#pages');}
           if(item.state==='error'||item.state==='offline'){const recovery=page.getByRole('button',{name:/reintentar|recargar|actualizar|retry/i}).first();stateRef.value='baseline';if(await recovery.count())await recovery.click({timeout:2500}).catch(()=>{});else await page.reload({waitUntil:'domcontentloaded'});await page.waitForSelector(item.route==='login'?'.login-shell':'#app',{state:'attached',timeout:15_000});interactions.push('error-offline-recovery');}
           const flow=await exercise(page,item);interactions.push(...flow.interactions);warnings.push(...flow.warnings);findings.push(...await page.evaluate(auditDom));if(['baseline','boundary'].includes(item.state))findings.push(...(await auditZoom(page)).map((kind)=>({kind})));
           if(item.state==='role-denied'){const bodyText=await page.locator('body').innerText().catch(()=>'');if(/QA-LARGO-ÁÉÍÓÚ-漢字/.test(bodyText))findings.push({kind:'ROLE_DENIED_DATA_LEAK'});}

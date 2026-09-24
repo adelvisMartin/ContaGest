@@ -140,6 +140,8 @@ if(vetEntry?.status==='MIGRATED'){
   }
   if(/label="Bandera"|name="flag"|verifiedBy:field/.test(veterinaryWorkspace))fail('veterinaria: client must not override laboratory flag/verifier authority');
   const veterinaryRoutes=read('backend/src/modules/verticals/veterinary.routes.ts');
+  const veterinarySchemas=read('backend/src/modules/verticals/veterinary.schemas.ts');
+  const veterinaryBackend=`${veterinaryRoutes}\n${veterinarySchemas}`;
   for(const contract of [
     'const order = await prisma.$transaction',
     'resultId: z.string().min(10).optional().nullable()',
@@ -152,9 +154,9 @@ if(vetEntry?.status==='MIGRATED'){
     'p."tenantId"=o."tenantId"',
     'r."tenantId"=o."tenantId"'
   ]){
-    if(!veterinaryRoutes.includes(contract))fail(`veterinaria: missing complete lab backend contract ${contract}`);
+    if(!veterinaryBackend.includes(contract))fail(`veterinaria: missing complete lab backend contract ${contract}`);
   }
-  if(/verifiedBy:\s*optionalText|flag:\s*z\.enum/.test(veterinaryRoutes))fail('veterinaria: lab result schema reintroduced client verifier/flag authority');
+  if(/verifiedBy:\s*optionalText|flag:\s*z\.enum/.test(veterinaryBackend))fail('veterinaria: lab result schema reintroduced client verifier/flag authority');
   const orderedResultStart=veterinaryRoutes.indexOf('if(body.resultId){');
   const orderedResultEnd=veterinaryRoutes.indexOf('}else{',orderedResultStart);
   const orderedResultBlock=veterinaryRoutes.slice(orderedResultStart,orderedResultEnd);
@@ -185,9 +187,9 @@ if(vetEntry?.status==='MIGRATED'){
     'FOR UPDATE OF h',
     'treatmentSheetVersion'
   ]){
-    if(!veterinaryRoutes.includes(contract))fail(`veterinaria: missing treatment-sheet backend contract ${contract}`);
+    if(!veterinaryBackend.includes(contract))fail(`veterinaria: missing treatment-sheet backend contract ${contract}`);
   }
-  if(/UPDATE public\."CareHospitalObservation"|DELETE FROM public\."CareHospitalObservation"/.test(veterinaryRoutes))fail('veterinaria: treatment-sheet events must remain append-only');
+  if(/UPDATE public\."CareHospitalObservation"|DELETE FROM public\."CareHospitalObservation"/.test(veterinaryBackend))fail('veterinaria: treatment-sheet events must remain append-only');
 
   const inpatientVitalMigration=read('backend/prisma/migrations/20260923155000_veterinary_longitudinal_inpatient_v2351/migration.sql');
   for(const contract of [
@@ -199,7 +201,7 @@ if(vetEntry?.status==='MIGRATED'){
     'INSERT INTO public."CareMeasurement"',
     'hospitalization.encounterId'
   ]){
-    if(!veterinaryRoutes.includes(contract))fail(`veterinaria: missing inpatient longitudinal vital contract ${contract}`);
+    if(!veterinaryBackend.includes(contract))fail(`veterinaria: missing inpatient longitudinal vital contract ${contract}`);
   }
   for(const contract of ['Temperatura (°C)','Frecuencia cardíaca (lpm)','Frecuencia respiratoria (rpm)','Peso (kg)']){
     if(!veterinaryTreatmentSheet.includes(contract))fail(`veterinaria: treatment sheet missing canonical longitudinal vital input ${contract}`);
@@ -230,7 +232,7 @@ if(vetEntry?.status==='MIGRATED'){
     'actorEmail',
     'inventoryConsumption:\'not-performed\''
   ]){
-    if(!veterinaryRoutes.includes(contract))fail(`veterinaria: missing medication backend contract ${contract}`);
+    if(!veterinaryBackend.includes(contract))fail(`veterinaria: missing medication backend contract ${contract}`);
   }
   const medicationRouteStart=veterinaryRoutes.indexOf("router.post('/medications/prescriptions'");
   const medicationRouteEnd=veterinaryRoutes.indexOf("router.get('/clinical-inventory'",medicationRouteStart);
@@ -274,7 +276,7 @@ if(vetEntry?.status==='MIGRATED'){
     'No se puede consumir un lote vencido.',
     'Existencia insuficiente en el lote seleccionado.'
   ]){
-    if(!veterinaryRoutes.includes(contract))fail(`veterinaria: missing clinical inventory backend contract ${contract}`);
+    if(!veterinaryBackend.includes(contract))fail(`veterinaria: missing clinical inventory backend contract ${contract}`);
   }
   for(const contract of ['model InventoryLot','lots        InventoryLot[]','lotId       String?','InventoryLot?']){
     if(!prismaSchema.includes(contract))fail(`veterinaria: missing canonical lot schema contract ${contract}`);
@@ -321,9 +323,9 @@ if(vetEntry?.status==='MIGRATED'){
     "status:'draft'",
     "accountingPosting:'not-performed'"
   ]){
-    if(!veterinaryRoutes.includes(contract))fail(`veterinaria: missing financial backend contract ${contract}`);
+    if(!veterinaryBackend.includes(contract))fail(`veterinaria: missing financial backend contract ${contract}`);
   }
-  if(/ledgerEntry\.create|INSERT INTO public\."LedgerEntry"/.test(veterinaryRoutes))fail('veterinaria: financial workflow must not post accounting entries');
+  if(/ledgerEntry\.create|INSERT INTO public\."LedgerEntry"/.test(veterinaryBackend))fail('veterinaria: financial workflow must not post accounting entries');
   for(const contract of ['VeterinaryFinancialCase','VeterinaryFinancialConsumptionLink','estimateSha256','authorizationConsentId','salesInvoiceId','ENABLE ROW LEVEL SECURITY','REVOKE ALL']){
     if(!veterinaryFinancialMigration.includes(contract))fail(`veterinaria: missing financial persistence contract ${contract}`);
   }
@@ -352,9 +354,9 @@ if(vetEntry?.status==='MIGRATED'){
   for(const forbidden of ['attachmentPath','clinicalData','"diagnosis"','"findings"','"impression"','"payload"','providerMessageId']){
     if(guardianPortalPublic.includes(forbidden))fail(`veterinaria: public guardian portal exposed forbidden field ${forbidden}`);
   }
-  if(!veterinaryRoutes.includes('randomBytes(32)')||!veterinaryRoutes.includes('expiresInHours')||!veterinaryRoutes.includes('max(168)'))fail('veterinaria: guardian grants must use 256-bit tokens with <=7 day TTL');
-  if(veterinaryRoutes.includes('?token='))fail('veterinaria: guardian token must never be placed in query parameters');
-  if(!veterinaryRoutes.includes('#access='))fail('veterinaria: guardian portal link must keep token in URL fragment');
+  if(!veterinaryBackend.includes('randomBytes(32)')||!veterinaryBackend.includes('expiresInHours')||!veterinaryBackend.includes('max(168)'))fail('veterinaria: guardian grants must use 256-bit tokens with <=7 day TTL');
+  if(veterinaryBackend.includes('?token='))fail('veterinaria: guardian token must never be placed in query parameters');
+  if(!veterinaryBackend.includes('#access='))fail('veterinaria: guardian portal link must keep token in URL fragment');
   if(!guardianPortalPanel.includes('expiresInHours')||!guardianPortalPanel.includes('scopes'))fail('veterinaria: guardian admin must expose TTL and explicit scopes');
   if(!viteConfig.includes('portal-veterinaria'))fail('veterinaria: guardian portal Vite entry is missing');
   if(!guardianPortalEntry.includes('noAuth:true')||!guardianPortalEntry.includes("sessionStorage.setItem('cg_veterinary_portal_access'")||!guardianPortalEntry.includes("replace(/^#/"))fail('veterinaria: portal frontend must consume fragment token without ERP auth');
@@ -373,7 +375,7 @@ if(vetEntry?.status==='MIGRATED'){
     if(!veterinaryBoarding.includes(contract))fail(`veterinaria: missing boarding UI contract ${contract}`);
   }
   for(const contract of ["router.get('/boarding/settings'","router.patch('/boarding/settings', requirePermission('admin.manage')","router.get('/boarding/resources'","router.post('/boarding/resources'","router.patch('/boarding/resources/:id/status'","router.get('/boarding/stays'","router.post('/boarding/stays'","router.patch('/boarding/stays/:id/status'",'pg_advisory_xact_lock','veterinary-boarding-resource','veterinary-boarding-patient','estancia solapada']){
-    if(!veterinaryRoutes.includes(contract))fail(`veterinaria: missing boarding backend contract ${contract}`);
+    if(!veterinaryBackend.includes(contract))fail(`veterinaria: missing boarding backend contract ${contract}`);
   }
   for(const contract of ['VeterinaryBoardingSetting','VeterinaryBoardingResource','VeterinaryBoardingStay','ENABLE ROW LEVEL SECURITY','REVOKE ALL']){
     if(!veterinaryBoardingMigration.includes(contract))fail(`veterinaria: missing boarding persistence contract ${contract}`);
@@ -614,6 +616,8 @@ if(fitnessEntries.every((item)=>item.status==='MIGRATED')){
   if(/exerciseLines|split\('\\n'\)|split\('\|'\)/.test(routineSubmit))fail('fitness: structured routine submit reintroduced free-text parsing');
   if(!routineSubmit.includes('const exercises=routineForm.exercises.map')||!routineSubmit.includes('GymVerticalService.createRoutine('))fail('fitness: routine builder must sanitize and persist through canonical GymVerticalService');
   const gymRoutes=read('backend/src/modules/verticals/gym.routes.ts');
+  const gymSchemas=read('backend/src/modules/verticals/gym.schemas.ts');
+  const gymBackend=`${gymRoutes}\n${gymSchemas}`;
   const routineRoute=gymRoutes.slice(gymRoutes.indexOf("router.post('/gym/routines'"),gymRoutes.indexOf("router.get('/gym/nutrition'"));
   for(const contract of ['prisma.$transaction','GymMember','GymTrainer','GymExercise','GymRoutineExercise','El cliente no pertenece al tenant activo.','El instructor no pertenece al tenant activo.','El ejercicio seleccionado no pertenece al tenant activo.']){
     if(!routineRoute.includes(contract))fail(`fitness: missing atomic/tenant-safe routine contract ${contract}`);
@@ -626,15 +630,15 @@ if(fitnessEntries.every((item)=>item.status==='MIGRATED')){
   }
   if(!fitness.includes('exerciseLibrary')||!fitness.includes('catalog={exerciseLibrary}'))fail('fitness: persisted exercise library is not passed to RoutineBuilder');
   for(const contract of ["router.get('/gym/exercises'","router.post('/gym/exercises'","router.patch('/gym/exercises/:id'",'exerciseLibrarySchema','public."GymExercise"','"tenantId"=$1']){
-    if(!gymRoutes.includes(contract))fail(`fitness: missing exercise-library backend contract ${contract}`);
+    if(!gymBackend.includes(contract))fail(`fitness: missing exercise-library backend contract ${contract}`);
   }
   for(const contract of ['persistedCatalog','exerciseId:selected.id','defaultSets','defaultReps']){
     if(!routineBuilder.includes(contract))fail(`fitness: routine builder missing persisted-catalog contract ${contract}`);
   }
   if(!exerciseLibrary.includes('syncCanonical')||!exerciseLibrary.includes("GymVerticalService.exercises({active:'true'})"))fail('fitness: filtered exercise-library view must not replace canonical active routine catalog');
   if(/function commit\(next\)[\s\S]{0,220}onItemsChange/.test(exerciseLibrary))fail('fitness: filtered exercise-library view leaked into canonical routine catalog');
-  if(!gymRoutes.includes('ON CONFLICT ("tenantId","name") DO NOTHING'))fail('fitness: exercise creation must close duplicate-name race');
-  if(/router\.delete\('\/gym\/exercises/.test(gymRoutes))fail('fitness: exercise lifecycle must archive/reactivate instead of deleting history');
+  if(!gymBackend.includes('ON CONFLICT ("tenantId","name") DO NOTHING'))fail('fitness: exercise creation must close duplicate-name race');
+  if(/router\.delete\('\/gym\/exercises/.test(gymBackend))fail('fitness: exercise lifecycle must archive/reactivate instead of deleting history');
   const weeklySchedule=read('frontend/src/components/fitness/WeeklyRoutineSchedule.jsx');
   const weekDays=read('frontend/src/data/fitnessWeekDays.js');
   if((fitness.match(/<WeeklyRoutineSchedule/g)||[]).length!==1)fail('fitness: weekly schedule must render from one owner');
@@ -645,9 +649,9 @@ if(fitnessEntries.every((item)=>item.status==='MIGRATED')){
   if(/label="Días\/semana"/.test(fitness))fail('fitness: manual daysPerWeek input reintroduced');
   if(!fitness.includes('scheduledDays')||!fitness.includes('daysPerWeek:scheduledDays.length'))fail('fitness: daysPerWeek must derive from programmed weekdays');
   if(/querySelector|addEventListener|innerHTML|document\./.test(weeklySchedule))fail('fitness: weekly schedule reintroduced imperative DOM lifecycle');
-  if(!/const routineSchema = z\.object\(\{[\s\S]*?\}\)\.superRefine\(\(value, refinement\) => \{/.test(gymRoutes))fail('fitness: routine schema must attach weekly schedule refinement to the canonical Zod object');
+  if(!/const routineSchema = z\.object\(\{[\s\S]*?\}\)\.superRefine\(\(value, refinement\) => \{/.test(gymBackend))fail('fitness: routine schema must attach weekly schedule refinement to the canonical Zod object');
   for(const contract of ['scheduledDays','value.daysPerWeek!==scheduledDays.size','La frecuencia semanal debe coincidir con los días programados.']){
-    if(!gymRoutes.includes(contract))fail(`fitness: missing weekly schedule backend contract ${contract}`);
+    if(!gymBackend.includes(contract))fail(`fitness: missing weekly schedule backend contract ${contract}`);
   }
   const trainingModes=read('frontend/src/data/fitnessTrainingModes.js');
   const trainingModeMigration=read('backend/prisma/migrations/20260923161500_gym_training_mode_36_51/migration.sql');
@@ -655,7 +659,7 @@ if(fitnessEntries.every((item)=>item.status==='MIGRATED')){
     if(!trainingModes.includes(contract))fail(`fitness: missing training mode ${contract}`);
   }
   if(!fitness.includes('FITNESS_TRAINING_MODES')||!fitness.includes('label="Modo de entrenamiento"')||!fitness.includes('trainingMode:routineForm.trainingMode')||!fitness.includes('fitnessTrainingModeLabel(item.trainingMode)'))fail('fitness: explicit training mode is not wired end-to-end in routine UI');
-  if(!gymRoutes.includes("trainingMode: z.enum(['strength','hypertrophy','pump','endurance','power','conditioning','mobility'])"))fail('fitness: backend must require an explicit training mode for new routines');
+  if(!gymBackend.includes("trainingMode: z.enum(['strength','hypertrophy','pump','endurance','power','conditioning','mobility'])"))fail('fitness: backend must require an explicit training mode for new routines');
   if(!trainingModeMigration.includes("DEFAULT 'unspecified'")||!trainingModeMigration.includes('GymRoutine_trainingMode_check'))fail('fitness: legacy training-mode migration contract missing');
   if(/applyMode.*(?:sets|reps|loadKg)/s.test(fitness))fail('fitness: training mode must not silently rewrite exercise prescription');
   const intensityTechniques=read('frontend/src/data/fitnessIntensityTechniques.js');
@@ -667,12 +671,12 @@ if(fitnessEntries.every((item)=>item.status==='MIGRATED')){
     if(!routineBuilder.includes(contract))fail(`fitness: RoutineBuilder missing intensity-technique contract ${contract}`);
   }
   for(const contract of ['intensityTechniqueSchema','techniqueConfigSchema','La técnica drop set requiere un porcentaje de reducción de carga.','requiere una clave de grupo.','"intensityTechnique","techniqueConfig"','JSON.stringify(item.techniqueConfig']){
-    if(!gymRoutes.includes(contract))fail(`fitness: backend missing intensity-technique contract ${contract}`);
+    if(!gymBackend.includes(contract))fail(`fitness: backend missing intensity-technique contract ${contract}`);
   }
   if(!intensityMigration.includes('GymRoutineExercise_intensityTechnique_check')||!intensityMigration.includes('"techniqueConfig" jsonb'))fail('fitness: intensity-technique migration contract missing');
   if(!fitness.includes('intensityTechnique:String(exercise.intensityTechnique')||!fitness.includes('techniqueConfig:exercise.intensityTechnique'))fail('fitness: structured intensity technique is not sanitized before persistence');
   for(const contract of ['Un superset requiere exactamente 2 ejercicios con la misma clave y día.','Un giant set requiere al menos 3 ejercicios con la misma clave y día.','no puede mezclar superset y giant set el mismo día']){
-    if(!gymRoutes.includes(contract))fail(`fitness: grouped intensity technique invariant missing ${contract}`);
+    if(!gymBackend.includes(contract))fail(`fitness: grouped intensity technique invariant missing ${contract}`);
   }
   if(/trainingMode[\s\S]{0,300}intensityTechnique\s*:/.test(fitness)||/trainingMode/.test(routineBuilder))fail('fitness: training mode must not auto-select intensity techniques');
   const progressionStrategies=read('frontend/src/data/fitnessProgressionStrategies.js');
@@ -685,7 +689,7 @@ if(fitnessEntries.every((item)=>item.status==='MIGRATED')){
     if(!routineBuilder.includes(contract))fail(`fitness: RoutineBuilder missing progression contract ${contract}`);
   }
   for(const contract of ['progressionStrategySchema','progressionConfigSchema','/gym/progression/evaluate','evaluateGymProgression']){
-    if(!gymRoutes.includes(contract))fail(`fitness: backend missing progression route contract ${contract}`);
+    if(!gymBackend.includes(contract))fail(`fitness: backend missing progression route contract ${contract}`);
   }
   for(const contract of ['RPE y RIR no son coherentes','La doble progresión requiere un rango de repeticiones válido.','La progresión por %1RM requiere 1RM y porcentaje.','increase_load','increase_reps','target_percent_1rm','reset_load','missing_effort_evidence','stall_threshold_reached','applied:false']){
     if(!progressionDomain.includes(contract))fail(`fitness: progression domain missing deterministic contract ${contract}`);
@@ -705,7 +709,7 @@ if(fitnessEntries.every((item)=>item.status==='MIGRATED')){
     if(!periodizationBuilder.includes(contract))fail(`fitness: periodization 39 builder missing ${contract}`);
   }
   for(const contract of ['periodizationStructureSchema','GymPeriodizationProgram','GymPeriodizationTemplate','/gym/periodization/programs/:id/version','pg_advisory_xact_lock','MAX("version")','Solo la versión más reciente puede generar una nueva revisión.','La rutina no pertenece al tenant activo.','La plantilla no pertenece al tenant activo.']){
-    if(!gymRoutes.includes(contract))fail(`fitness: backend missing periodization 39 contract ${contract}`);
+    if(!gymBackend.includes(contract))fail(`fitness: backend missing periodization 39 contract ${contract}`);
   }
   for(const contract of ['programKey','version','structure','sourceTemplateId','supersedesId']){
     if(!periodizationMigration.includes(contract))fail(`fitness: periodization 39 migration missing ${contract}`);
@@ -723,7 +727,7 @@ if(fitnessEntries.every((item)=>item.status==='MIGRATED')){
     if(!workoutPanel.includes(contract))fail(`fitness: workout execution 40 UI missing ${contract}`);
   }
   for(const contract of ['workoutSessionSchema','workoutSetSchema','/gym/workout-sessions/:id/sets','/gym/workout-sessions/:id/complete','FOR UPDATE OF s','El ejercicio no pertenece a la rutina de esta sesión.','La sesión ya está completada.']){
-    if(!gymRoutes.includes(contract))fail(`fitness: workout execution 40 backend missing ${contract}`);
+    if(!gymBackend.includes(contract))fail(`fitness: workout execution 40 backend missing ${contract}`);
   }
   for(const contract of ['GymWorkoutSession','GymWorkoutSet','one_active_member_unique','session_exercise_set_unique','restSeconds']){
     if(!workoutMigration.includes(contract))fail(`fitness: workout execution 40 migration missing ${contract}`);
@@ -740,9 +744,9 @@ if(fitnessEntries.every((item)=>item.status==='MIGRATED')){
     if(!performancePanel.includes(contract))fail(`fitness: performance history 41 UI missing ${contract}`);
   }
   for(const contract of ['performanceQuerySchema','/gym/performance','sessionsPerWeek','setAdherencePct','bestEstimated1RmKg','dailyTrend','byExercise','byMuscleGroup']){
-    if(!gymRoutes.includes(contract))fail(`fitness: performance history 41 backend missing ${contract}`);
+    if(!gymBackend.includes(contract))fail(`fitness: performance history 41 backend missing ${contract}`);
   }
-  if(!gymRoutes.includes('reps>=1&&reps<=12')||!gymRoutes.includes('load*(1+reps/30)'))fail('fitness: performance history 41 e1RM applicability/formula contract missing');
+  if(!gymBackend.includes('reps>=1&&reps<=12')||!gymBackend.includes('load*(1+reps/30)'))fail('fitness: performance history 41 e1RM applicability/formula contract missing');
   const performanceStart=gymRoutes.indexOf("router.get('/gym/performance'");
   const performanceEnd=gymRoutes.indexOf("router.get('/gym/routines'",performanceStart);
   const performanceBlock=gymRoutes.slice(performanceStart,performanceEnd);
@@ -757,13 +761,13 @@ if(fitnessEntries.every((item)=>item.status==='MIGRATED')){
     if(!substitutionPanel.includes(contract))fail(`fitness: contextual substitutions 42 UI missing ${contract}`);
   }
   for(const contract of ['exerciseSubstitutionSchema','availableEquipment','preferredExerciseIds','excludedExerciseIds','declaredLimitations','humanReviewRequired','healthAutomationBlocked:true','limitationsApplied:false','contextInsufficient:true','same_muscle_group','preferred_exercise','equipment_match']){
-    if(!gymRoutes.includes(contract))fail(`fitness: contextual substitutions 42 backend missing ${contract}`);
+    if(!gymBackend.includes(contract))fail(`fitness: contextual substitutions 42 backend missing ${contract}`);
   }
   for(const contract of ['performedExerciseId','substitutionReason','El ejercicio sustituto no pertenece al tenant activo.','El ejercicio sustituto debe conservar el mismo grupo muscular.']){
-    if(!gymRoutes.includes(contract))fail(`fitness: contextual substitutions 42 workout provenance missing ${contract}`);
+    if(!gymBackend.includes(contract))fail(`fitness: contextual substitutions 42 workout provenance missing ${contract}`);
   }
   if(!substitutionMigration.includes('performedExerciseId')||!substitutionMigration.includes('substitutionReason'))fail('fitness: contextual substitutions 42 migration contract missing');
-  if(!gymRoutes.includes('COALESCE(ws."performedExerciseId",re."exerciseId")'))fail('fitness: performance 41 must attribute substituted work to performed exercise');
+  if(!gymBackend.includes('COALESCE(ws."performedExerciseId",re."exerciseId")'))fail('fitness: performance 41 must attribute substituted work to performed exercise');
   const substitutionStart=gymRoutes.indexOf("router.post('/gym/exercise-substitutions/suggest'");
   const substitutionEnd=gymRoutes.indexOf("router.get('/gym/routines'",substitutionStart);
   const substitutionBlock=gymRoutes.slice(substitutionStart,substitutionEnd);
@@ -784,7 +788,7 @@ if(fitnessEntries.every((item)=>item.status==='MIGRATED')){
     if(!nutritionBuilder.includes(contract))fail(`fitness: nutrition builder 43 UI missing ${contract}`);
   }
   for(const contract of ['ingredientSchema','mealIngredientSchema',"/gym/ingredients",'GymIngredient','GymMealItem','Uno o más ingredientes no pertenecen al tenant activo o están archivados.','prisma.$transaction']){
-    if(!gymRoutes.includes(contract))fail(`fitness: nutrition ingredient 43 backend missing ${contract}`);
+    if(!gymBackend.includes(contract))fail(`fitness: nutrition ingredient 43 backend missing ${contract}`);
   }
   for(const contract of ['CREATE TABLE IF NOT EXISTS public."GymIngredient"','CREATE TABLE IF NOT EXISTS public."GymMealItem"','GymIngredient_tenant_name_unique','GymMealItem_meal_fk','GymMealItem_ingredient_fk']){
     if(!ingredientMigration.includes(contract))fail(`fitness: nutrition ingredient 43 migration missing ${contract}`);
@@ -810,12 +814,12 @@ if(fitnessEntries.every((item)=>item.status==='MIGRATED')){
   }
   if(!shoppingPanel.includes('Lista de compras')||!shoppingPanel.includes('GymVerticalService.shoppingList('))fail('fitness: shopping list 44 UI/service owner missing');
   for(const contract of ['recipeSchema','completeNutritionSchema',"router.get('/gym/recipes'","router.post('/gym/recipes'","router.get('/gym/nutrition/:id/shopping-list'",'GymRecipeItem','GymMealAlternative','Las recetas del plan deben estar activas y pertenecer al tenant.']){
-    if(!gymRoutes.includes(contract))fail(`fitness: complete meal plan 44 backend missing ${contract}`);
+    if(!gymBackend.includes(contract))fail(`fitness: complete meal plan 44 backend missing ${contract}`);
   }
   for(const contract of ['GymRecipe','GymRecipeItem','GymMealAlternative','durationDays','dayIndex','recipeId','servings','preparation']){
     if(!completeMealMigration.includes(contract))fail(`fitness: complete meal plan 44 migration missing ${contract}`);
   }
-  if(!gymRoutes.includes('meal.dayIndex>Number(value.durationDays)')||!gymRoutes.includes('Cada comida debe pertenecer al horizonte configurado del plan.'))fail('fitness: complete meal plan 44 horizon validation missing');
+  if(!gymBackend.includes('meal.dayIndex>Number(value.durationDays)')||!gymBackend.includes('Cada comida debe pertenecer al horizonte configurado del plan.'))fail('fitness: complete meal plan 44 horizon validation missing');
   const shoppingStart=gymRoutes.indexOf("router.get('/gym/nutrition/:id/shopping-list'");
   const shoppingEnd=gymRoutes.indexOf("router.get('/gym/adherence'",shoppingStart);
   const shoppingBlock=gymRoutes.slice(shoppingStart,shoppingEnd);
@@ -829,9 +833,9 @@ if(fitnessEntries.every((item)=>item.status==='MIGRATED')){
   }
   if(!completeMealMigration.includes('GymMeal_plan_dayIndex_order_unique')||!completeMealMigration.includes('DROP INDEX IF EXISTS public."GymMeal_plan_day_order_unique"'))fail('fitness: complete meal plan 44 must replace weekly uniqueness with absolute-day uniqueness for 14/28-day plans');
   if(!fitness.includes('dayIndex:Number(meal.dayIndex)')||!fitness.includes('dayOfWeek:Number(meal.dayOfWeek)')||!fitness.includes('sortOrder:Number(meal.sortOrder)')||!fitness.includes('Inicio del plan')||!fitness.includes('Fin del plan'))fail('fitness: complete meal plan 44 scheduling is not wired end-to-end');
-  if(!gymRoutes.includes('ORDER BY m."dayIndex" NULLS LAST,m."sortOrder"'))fail('fitness: complete meal plan 44 reads must preserve absolute multiweek order');
+  if(!gymBackend.includes('ORDER BY m."dayIndex" NULLS LAST,m."sortOrder"'))fail('fitness: complete meal plan 44 reads must preserve absolute multiweek order');
   if(!completeMealMigration.includes('GymMealAlternative_servings_positive'))fail('fitness: complete meal plan 44 alternatives must persist explicit portions');
-  if(!gymRoutes.includes('Una comida con receta principal no puede mezclar ingredientes directos.'))fail('fitness: complete meal plan 44 must keep recipe and direct-item authorities exclusive');
+  if(!gymBackend.includes('Una comida con receta principal no puede mezclar ingredientes directos.'))fail('fitness: complete meal plan 44 must keep recipe and direct-item authorities exclusive');
   const quickNutrition=productivity.slice(productivity.indexOf('export function FitnessNutritionQuickTool'),productivity.indexOf('export function FitnessClientTransferTool'));
   if(!quickNutrition.includes('Persistencia estructurada')||/GymVerticalService\.createNutrition\(|FitnessNutritionService\.toApiMeals\(/.test(quickNutrition))fail('fitness: quick nutrition must not bypass canonical 44 persistence');
 
@@ -843,13 +847,13 @@ if(fitnessEntries.every((item)=>item.status==='MIGRATED')){
     if(!nutritionRules.includes(contract))fail(`fitness: nutrition rules 45 UI missing ${contract}`);
   }
   for(const contract of ['nutritionRuleKindSchema','nutritionRuleSchema',"router.get('/gym/nutrition-rules'","router.post('/gym/nutrition-rules'","router.patch('/gym/nutrition-rules/:id'",'GymNutritionRule','El plan contiene ingredientes restringidos declarados para el cliente:']){
-    if(!gymRoutes.includes(contract))fail(`fitness: nutrition rules 45 backend missing ${contract}`);
+    if(!gymBackend.includes(contract))fail(`fitness: nutrition rules 45 backend missing ${contract}`);
   }
   for(const contract of ['GymNutritionRule','GymNutritionRule_kind_check','GymNutritionRule_tenant_member_ingredient_kind_unique',"'allergy','intolerance','exclusion','preferred'"]){
     if(!nutritionRulesMigration.includes(contract))fail(`fitness: nutrition rules 45 migration missing ${contract}`);
   }
-  if(!gymRoutes.includes("r.\"kind\" IN ('allergy','intolerance','exclusion')"))fail('fitness: nutrition rules 45 must block only explicit blocking kinds');
-  if(!gymRoutes.includes('GymRecipeItem')||!gymRoutes.includes('planIngredientIds'))fail('fitness: nutrition rules 45 must inspect direct and recipe ingredients');
+  if(!gymBackend.includes("r.\"kind\" IN ('allergy','intolerance','exclusion')"))fail('fitness: nutrition rules 45 must block only explicit blocking kinds');
+  if(!gymBackend.includes('GymRecipeItem')||!gymBackend.includes('planIngredientIds'))fail('fitness: nutrition rules 45 must inspect direct and recipe ingredients');
   if(/autoSelect|automaticSubstitut|inferAllerg|diagnos/i.test(nutritionRules+nutritionRulesMigration))fail('fitness: nutrition rules 45 must not infer clinical restrictions or auto-select meals');
 
   const nutrientProfilePanel=read('frontend/src/components/fitness/IngredientNutritionProfilePanel.jsx');
@@ -865,15 +869,15 @@ if(fitnessEntries.every((item)=>item.status==='MIGRATED')){
     if(!nutrientSnapshotPanel.includes(contract))fail(`fitness: nutrient snapshot 46 UI missing ${contract}`);
   }
   for(const contract of ['micronutrientSchema','ingredientNutritionProfileSchema','createPlanNutrientSnapshot',"router.get('/gym/ingredients/:id/nutrition-profiles'","router.post('/gym/ingredients/:id/nutrition-profiles'","router.get('/gym/nutrition/:id/nutrients'",'MISSING_PROFILE','UNIT_MISMATCH','GymIngredientNutritionProfile','GymIngredientMicronutrient','GymNutritionPlanNutrientSnapshot']){
-    if(!gymRoutes.includes(contract))fail(`fitness: nutrient composition 46 backend missing ${contract}`);
+    if(!gymBackend.includes(contract))fail(`fitness: nutrient composition 46 backend missing ${contract}`);
   }
   for(const contract of ['GymIngredientNutritionProfile','GymIngredientMicronutrient','GymNutritionPlanNutrientSnapshot','version','basisQuantity','basisUnit','micronutrients','issues','profileRefs']){
     if(!nutrientMigration.includes(contract))fail(`fitness: nutrient composition 46 migration missing ${contract}`);
   }
-  if(!gymRoutes.includes('String(occurrence.unit)!==String(profile.basisUnit)'))fail('fitness: nutrient composition 46 must not silently convert incompatible units');
-  if(!gymRoutes.includes('ORDER BY p."ingredientId",p."version" DESC'))fail('fitness: nutrient composition 46 snapshot must resolve latest profile only at creation time');
-  if(!gymRoutes.includes('await createPlanNutrientSnapshot(tx,tenantId,createdPlan.id'))fail('fitness: nutrition plan creation must freeze the nutrient snapshot transactionally');
-  if(/UPDATE public\."GymIngredientNutritionProfile"|DELETE FROM public\."GymIngredientNutritionProfile"/.test(gymRoutes))fail('fitness: nutrient profiles 46 must remain immutable/versioned');
+  if(!gymBackend.includes('String(occurrence.unit)!==String(profile.basisUnit)'))fail('fitness: nutrient composition 46 must not silently convert incompatible units');
+  if(!gymBackend.includes('ORDER BY p."ingredientId",p."version" DESC'))fail('fitness: nutrient composition 46 snapshot must resolve latest profile only at creation time');
+  if(!gymBackend.includes('await createPlanNutrientSnapshot(tx,tenantId,createdPlan.id'))fail('fitness: nutrition plan creation must freeze the nutrient snapshot transactionally');
+  if(/UPDATE public\."GymIngredientNutritionProfile"|DELETE FROM public\."GymIngredientNutritionProfile"/.test(gymBackend))fail('fitness: nutrient profiles 46 must remain immutable/versioned');
   if(/adherence|compliance|consumedAt|mealCompletion/i.test(nutrientProfilePanel+nutrientSnapshotPanel+nutrientMigration))fail('fitness: nutrient composition 46 must not pre-implement adherence 47');
 
   const adherencePanel=read('frontend/src/components/fitness/IntegratedAdherencePanel.jsx');
@@ -884,15 +888,15 @@ if(fitnessEntries.every((item)=>item.status==='MIGRATED')){
     if(!adherencePanel.includes(contract))fail(`fitness: adherence 47 UI missing ${contract}`);
   }
   for(const contract of ["router.get('/gym/adherence'","router.post('/gym/adherence/meals'",'mealAdherenceSchema','GymMealAdherenceEvent','GymWorkoutSession','GymAssessment','nutritionCompletionStreakDays','trainingCompletedSessions','weightDeltaKg']){
-    if(!gymRoutes.includes(contract))fail(`fitness: adherence 47 backend missing ${contract}`);
+    if(!gymBackend.includes(contract))fail(`fitness: adherence 47 backend missing ${contract}`);
   }
-  if(/UPDATE public\."GymMealAdherenceEvent"|DELETE FROM public\."GymMealAdherenceEvent"/.test(gymRoutes))fail('fitness: adherence 47 events must remain append-only');
-  if(!gymRoutes.includes('DISTINCT ON (e."mealId")')||!gymRoutes.includes('ORDER BY e."mealId",e."recordedAt" DESC,e."id" DESC'))fail('fitness: adherence 47 must derive current meal status from the latest explicit event');
+  if(/UPDATE public\."GymMealAdherenceEvent"|DELETE FROM public\."GymMealAdherenceEvent"/.test(gymBackend))fail('fitness: adherence 47 events must remain append-only');
+  if(!gymBackend.includes('DISTINCT ON (e."mealId")')||!gymBackend.includes('ORDER BY e."mealId",e."recordedAt" DESC,e."id" DESC'))fail('fitness: adherence 47 must derive current meal status from the latest explicit event');
   if(!adherenceMigration.includes('GymMealAdherenceEvent_status_check')||!adherenceMigration.includes("'completed','skipped'"))fail('fitness: adherence 47 migration must constrain explicit meal outcomes');
   if(/autoAdjust|autoRecommend|inferAllerg|inferDiagnos|clinicalDecision|\bprescribe\s*\(/i.test(adherencePanel+adherenceMigration))fail('fitness: adherence 47 must not infer clinical decisions or auto-adjust plans');
-  if((gymRoutes.match(/const mealAdherenceSchema=/g)||[]).length!==1)fail('fitness: adherence 47 schema must remain singleton');
-  if((gymRoutes.match(/router\.get\('\/gym\/adherence'/g)||[]).length!==1)fail('fitness: adherence 47 GET route must remain singleton');
-  if((gymRoutes.match(/router\.post\('\/gym\/adherence\/meals'/g)||[]).length!==1)fail('fitness: adherence 47 POST route must remain singleton');
+  if((gymBackend.match(/const mealAdherenceSchema=/g)||[]).length!==1)fail('fitness: adherence 47 schema must remain singleton');
+  if((gymBackend.match(/router\.get\('\/gym\/adherence'/g)||[]).length!==1)fail('fitness: adherence 47 GET route must remain singleton');
+  if((gymBackend.match(/router\.post\('\/gym\/adherence\/meals'/g)||[]).length!==1)fail('fitness: adherence 47 POST route must remain singleton');
   if((fitnessVerticalService.match(/adherence\(memberId\)/g)||[]).length!==1)fail('fitness: adherence 47 service reader must remain singleton');
   if((fitnessVerticalService.match(/recordMealAdherence\(payload\)/g)||[]).length!==1)fail('fitness: adherence 47 service writer must remain singleton');
 }

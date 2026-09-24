@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { MODULE_VISUAL_CATALOG } from './support/module-visual-catalog.mjs';
+import { waitForRouteReady, waitForStableLayout } from './support/playwright-determinism.mjs';
 
 test.setTimeout(900_000);
 
@@ -44,7 +45,7 @@ async function installApiIsolation(page,onApiRequest){
 async function openRoute(page,route){
   await page.goto(`/?module=${route}`,{waitUntil:'domcontentloaded'});
   await page.waitForSelector('#pages',{state:'attached',timeout:20_000});
-  await page.waitForTimeout(route==='veterinaria'?420:130);
+  await waitForRouteReady(page,route);
   await page.evaluate(()=>{window.__cgQaRuntimeErrors=[];window.__cgQaEffects={open:0,print:0,clipboard:0,share:0,fileClick:0,download:0,confirm:0};});
 }
 
@@ -126,7 +127,7 @@ const observable=(before,after,requestsBefore,requestsAfter)=>before.url!==after
         const invoked=await invokeNthAction(page,index);
         if(invoked.missing){failures.push({route:item.route,kind:'action-disappeared',descriptor,invoked});continue;}
         actionCount+=1;
-        await page.waitForTimeout(120);
+        await waitForStableLayout(page,'#pages');
         const after=await snapshot(page),errors=await runtimeErrors(page),requestsAfter=apiRequestCount;
         if(errors.length){failures.push({route:item.route,kind:'action-runtime-error',descriptor,invoked,before,after,errors,apiRequests:apiRequests.slice(-3)});continue;}
         if(descriptor.route){
@@ -143,7 +144,7 @@ const observable=(before,after,requestsBefore,requestsAfter)=>before.url!==after
         const invoked=await invokeNthSubmit(page,index);
         if(invoked.missing){failures.push({route:item.route,kind:'submit-disappeared',descriptor,invoked});continue;}
         submitCount+=1;
-        await page.waitForTimeout(130);
+        await waitForStableLayout(page,'#pages');
         const after=await snapshot(page),errors=await runtimeErrors(page),requestsAfter=apiRequestCount;
         if(errors.length){failures.push({route:item.route,kind:'submit-runtime-error',descriptor,invoked,errors});continue;}
         // Invalid empty forms legitimately stop at native validation. Valid forms must

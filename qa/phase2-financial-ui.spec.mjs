@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { waitForStableLayout } from './support/playwright-determinism.mjs';
 
 async function seedAuthenticatedUi(page) {
   await page.addInitScript(() => {
@@ -16,7 +17,7 @@ async function openRoute(page, route, width=390, height=844) {
   await seedAuthenticatedUi(page);
   await page.goto(`/?module=${route}`,{waitUntil:'domcontentloaded'});
   await page.waitForSelector('.hf-app-topbar',{state:'visible'});
-  await page.waitForTimeout(150);
+  await waitForStableLayout(page,'#pages');
 }
 
 for (const route of ['compras','bancos','nomina','kardex']) {

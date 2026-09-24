@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { MODULE_VISUAL_CATALOG } from './support/module-visual-catalog.mjs';
+import { waitForRouteReady } from './support/playwright-determinism.mjs';
 
 test.setTimeout(420_000);
 test.use({hasTouch:true,isMobile:true});
@@ -29,7 +30,7 @@ async function seed(page){
 async function openRoute(page,route){
   await page.goto(`/?module=${route}`,{waitUntil:'domcontentloaded'});
   await page.waitForSelector('#pages',{state:'attached',timeout:20_000});
-  await page.waitForTimeout(route==='veterinaria'?420:120);
+  await waitForRouteReady(page,route);
 }
 
 async function auditMobile(page,route){

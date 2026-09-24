@@ -53,11 +53,9 @@ for (const viewport of [
     await rif.click();
     await expect(rif).toBeFocused();
     await expect.poll(() => page.evaluate(() => window.__cgCredentialClickPrevented)).toBe(false);
-    await page.waitForTimeout(350);
     expect(await page.evaluate(() => window.__cgOriginalRif === document.querySelector('#loginForm input[name="tenantRif"]'))).toBe(true);
 
     await rif.pressSequentially('0000',{delay:180});
-    await page.waitForTimeout(900);
     await expect(rif).toBeFocused();
     await expect(rif).toHaveValue('0000');
     expect(await page.evaluate(() => window.__cgOriginalRif === document.querySelector('#loginForm input[name="tenantRif"]'))).toBe(true);
@@ -67,14 +65,12 @@ for (const viewport of [
     await email.click();
     await expect(email).toBeFocused();
     await email.pressSequentially('qa.user@example.test',{delay:90});
-    await page.waitForTimeout(750);
     await expect(email).toHaveValue('qa.user@example.test');
     await expect(email).toBeFocused();
 
     await password.click();
     await expect(password).toBeFocused();
     await password.pressSequentially('Synthetic-QA-Value-2026',{delay:45});
-    await page.waitForTimeout(500);
     await expect(password).toHaveValue('Synthetic-QA-Value-2026');
     await expect(password).toBeFocused();
     await expect(captcha).not.toBeFocused();
