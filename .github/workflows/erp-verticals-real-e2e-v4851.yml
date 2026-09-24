@@ -59,6 +59,9 @@ jobs:
     steps:
       - name: Descargar código exacto
         uses: actions/checkout@v7
+        with:
+          ref: ${{ env.CANDIDATE_SHA }}
+          fetch-depth: 0
 
       - name: Confirmar SHA candidato
         shell: bash
