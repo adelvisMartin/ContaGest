@@ -6,10 +6,14 @@ on:
       - 'backend/src/app.ts'
       - 'backend/src/modules/hipico/agent-*.ts'
       - 'backend/src/modules/hipico/agent.routes.ts'
+      - 'backend/src/modules/hipico/decision-provider*.ts'
+      - 'backend/src/modules/hipico/jev-decision-provider*.ts'
       - 'backend/src/modules/hipico/automation.store.ts'
       - 'backend/src/modules/hipico/hipico-agent.integration.ts'
       - 'backend/prisma/migrations/20260913230500_hipico_agent_shadow/migration.sql'
       - 'backend/package.json'
+      - 'backend/.env.example'
+      - 'docs/hipico/README.md'
       - 'qa/fixtures/hipico-agent-golden-v1.json'
       - 'supabase/sql/hipico_v22_agent_shadow.sql'
       - '.github/workflows/hipico-agent-shadow.yml'
@@ -58,6 +62,10 @@ jobs:
           echo "HIPICO_OWNER_ID=11111111-1111-4111-8111-111111111111" >> "$GITHUB_ENV"
           echo "HIPICO_SOURCE_GROUP_ID=group-a@g.us" >> "$GITHUB_ENV"
           echo "HIPICO_OPERATOR_CONTROL_TOKEN=ci-agent-control-token-288-0001-strong" >> "$GITHUB_ENV"
+      - name: Agent risk routing gates
+        env:
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: npm run agent:gates -- --base "$PR_BASE_SHA"
       - name: Typecheck canonical Hípico modules
         run: npm --workspace backend run typecheck
       - name: Unit, security and golden corpus regressions
