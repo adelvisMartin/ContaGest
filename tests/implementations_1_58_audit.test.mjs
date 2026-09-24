@@ -33,3 +33,11 @@ test('Clean Code batch 1 is explicitly traceable to affected vertical implementa
   const reviewed=rows.filter((row)=>row.reviewStatus==='CLEAN_CODE_BATCH_1').map((row)=>row.id);
   assert.deepEqual(reviewed,[26,27,28,29,30,31,32,37,38,39,40]);
 });
+
+
+test('implementation audit has a human-readable maintained report',()=>{
+  const path='docs/architecture/IMPLEMENTATION-AUDIT-1-58.md';
+  assert.ok(fs.existsSync(path),path);
+  const source=fs.readFileSync(path,'utf8');
+  for(const token of ['Matriz 1–58','Clean Code batch 1','Clean Code batch 2','59/75','P0','P1']) assert.ok(source.includes(token),token);
+});
