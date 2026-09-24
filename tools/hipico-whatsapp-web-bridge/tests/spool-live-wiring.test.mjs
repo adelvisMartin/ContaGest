@@ -15,8 +15,10 @@ test('live bridge is wired to spool v2 and no longer executes legacy spool helpe
   assert.match(code,/spoolRuntime\.initialize\(\)/);
   assert.match(code,/spoolRuntime\.queueBackendEvent/);
   assert.match(code,/spoolRuntime\.queueLabMirror/);
+  assert.match(code,/spoolRuntime\.queueSourceReply/);
   assert.match(code,/spoolRuntime\.flushBackend/);
   assert.match(code,/spoolRuntime\.flushLab/);
+  assert.match(code,/spoolRuntime\.flushSourceReplies/);
   assert.doesNotMatch(code,/async function spoolJson\(/);
   assert.doesNotMatch(code,/async function deliverEventFile\(/);
   assert.doesNotMatch(code,/async function deadLetter\(/);
@@ -34,13 +36,15 @@ test('capture persists durable work before marking source message seen',async()=
   assert.ok(queueEvent>=0&&queueMirror>=0&&remember>queueEvent&&remember>queueMirror);
 });
 
-test('source remains read-only while LAB send stays identity-pinned',async()=>{
+test('source autonomous reply path is opt-in, backend-derived and identity-pinned',async()=>{
   const code=await source('index.mjs');
-  assert.match(code,/sourceSendPossible:\s*false/);
-  assert.match(code,/FUENTE: SOLO LECTURA/);
+  assert.match(code,/sourceSendPossible:\s*Boolean\(SOURCE_AUTO_REPLY_ENABLED/);
+  assert.match(code,/result\?\.autonomousReply/);
+  assert.match(code,/async function sendAutonomousReplyToSource/);
+  assert.match(code,/SOURCE_AUTO_REPLY_DESTINATION_MISMATCH/);
+  assert.match(code,/await assertCurrentSourceIdentity\(\)/);
   assert.match(code,/async function sendTextInCurrentLab/);
   assert.match(code,/await assertCurrentLabIdentity\(\)/);
-  assert.doesNotMatch(code,/function sendTextInCurrentSource/);
 });
 
 test('replay CLI requeues only after destination, count and explicit confirmation checks',async()=>{
