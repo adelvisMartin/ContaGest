@@ -32,7 +32,8 @@ function inspect(full, rel) {
   ];
   for (const [kind, pattern] of secretPatterns) if (pattern.test(content)) findings.push(`${kind}: ${rel}`);
 
-  if (rel.startsWith('frontend/')) {
+  const isFrontendServerlessApi = rel.startsWith('frontend/api/');
+  if (rel.startsWith('frontend/') && !isFrontendServerlessApi) {
     const forbiddenClientSecretAccess = /(?:import\.meta\.env|process\.env)\.(?:SUPABASE_SERVICE_ROLE_KEY|OPENAI_API_KEY|JWT_SECRET|WHATSAPP_CLOUD_TOKEN|LICENSE_HASH_SECRET|HIPICO_GROUP_BRIDGE_TOKEN)\b/;
     if (forbiddenClientSecretAccess.test(content)) findings.push(`server-secret-access-in-frontend: ${rel}`);
     const viteSecret = /\bVITE_[A-Z0-9_]*(?:SECRET|PRIVATE|SERVICE_ROLE|OPENAI|TOKEN)[A-Z0-9_]*\b/;
