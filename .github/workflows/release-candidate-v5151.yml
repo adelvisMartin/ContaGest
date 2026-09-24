@@ -37,6 +37,9 @@ jobs:
     steps:
       - name: Checkout exact candidate
         uses: actions/checkout@v7
+        with:
+          ref: ${{ env.CANDIDATE_SHA }}
+          fetch-depth: 0
       - name: Verify exact SHA
         shell: bash
         run: |
@@ -128,6 +131,9 @@ jobs:
     steps:
       - name: Checkout exact candidate
         uses: actions/checkout@v7
+        with:
+          ref: ${{ env.CANDIDATE_SHA }}
+          fetch-depth: 0
       - name: Verify exact SHA
         shell: bash
         run: |
