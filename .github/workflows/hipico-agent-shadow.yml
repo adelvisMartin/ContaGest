@@ -8,6 +8,8 @@ on:
       - 'backend/src/modules/hipico/agent.routes.ts'
       - 'backend/src/modules/hipico/decision-provider*.ts'
       - 'backend/src/modules/hipico/jev-decision-provider*.ts'
+      - 'backend/src/modules/hipico/autonomous-*.ts'
+      - 'backend/src/modules/hipico-bot/hipico-bridge.routes.ts'
       - 'backend/src/modules/hipico/automation.store.ts'
       - 'backend/src/modules/hipico/hipico-agent.integration.ts'
       - 'backend/prisma/migrations/20260913230500_hipico_agent_shadow/migration.sql'
