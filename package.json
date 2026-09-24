@@ -83,7 +83,8 @@
     "test:browser:58:shard": "node scripts/erp-browser-58x5-v251.mjs shard",
     "test:browser:58": "node scripts/erp-browser-58x5-v251.mjs full",
     "test:backend:verticals:real": "npm --workspace backend exec -- tsx --test ../qa/verticals-backend-real-v4851.test.ts",
-    "test:browser:verticals:visual": "npx playwright test qa/erp-visual-overlap-v4951.spec.mjs --project=chromium --workers=1"
+    "test:browser:verticals:visual": "npx playwright test qa/erp-visual-overlap-v4951.spec.mjs --project=chromium --workers=1",
+    "test:backend:provisioning:real": "npm --workspace backend exec -- tsx --test ../qa/tenant-user-provisioning-v5575.test.ts"
   },
   "devDependencies": {
     "@playwright/test": "1.63.0"
