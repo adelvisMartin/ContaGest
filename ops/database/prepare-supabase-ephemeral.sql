@@ -46,3 +46,11 @@ GRANT EXECUTE ON FUNCTION auth.jwt() TO anon, authenticated, service_role, authe
 GRANT EXECUTE ON FUNCTION auth.role() TO anon, authenticated, service_role, authenticator;
 
 \echo 'Supabase compatibility stubs prepared for ephemeral database only.'
+
+-- The Prisma history starts from the deployed v8.5 schema baseline; it is a delta
+-- history, not a zero-to-current schema. Ephemeral CI databases must recreate that
+-- exact baseline before replaying versioned migrations. This include is reachable
+-- only after the database-name fail-closed guard above succeeds.
+\ir ../../supabase/sql/contagest_full_bootstrap_v8_5.sql
+
+\echo 'ContaGest v8.5 schema baseline prepared; versioned migrations may now replay.'
