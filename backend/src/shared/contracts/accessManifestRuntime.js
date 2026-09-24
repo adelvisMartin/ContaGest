@@ -96,11 +96,14 @@ export const ROUTE_PERMISSION_MAP=Object.freeze(Object.fromEntries(
   ACCESS_MANIFEST.modules.map((item)=>[item.route,item.permission])
 ));
 
-export const PERMISSION_MODULES=Object.freeze(ACCESS_MANIFEST.modules.reduce((result,item)=>{
+const permissionModules=ACCESS_MANIFEST.modules.reduce((result,item)=>{
   if(!result[item.permission])result[item.permission]=[];
   if(!result[item.permission].includes(item.licenseModule))result[item.permission].push(item.licenseModule);
   return result;
-},{}));
+},{});
+export const PERMISSION_MODULES=Object.freeze(Object.fromEntries(
+  Object.entries(permissionModules).map(([permission,modules])=>[permission,Object.freeze([...modules])])
+));
 
 export function permissionForRoute(route){
   return ROUTE_PERMISSION_MAP[String(route||'')]||null;
