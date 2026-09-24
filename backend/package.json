@@ -6,7 +6,8 @@
   "main": "./src/app.ts",
   "exports": {
     ".": "./src/app.ts",
-    "./access-manifest.json": "./src/shared/contracts/access-manifest.json"
+    "./access-manifest.json": "./src/shared/contracts/access-manifest.json",
+    "./access-manifest": "./src/shared/contracts/accessManifestRuntime.js"
   },
   "engines": {
     "node": "22.x"
