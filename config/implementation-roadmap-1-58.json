@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "scope": "ContaGest implementations 1-58",
   "authority": "merged GitHub PRs + current main contracts",
-  "generatedFromBaseline": "b5ed36e6a35a491bf7735feb834ff15f78e8dee1",
+  "generatedFromBaseline": "defeb6411538d6a2b9298a265024d96da4a30233",
   "rules": {
     "sourceOfTruth": [
       "merged PR",
@@ -449,7 +449,7 @@
       "regressionPaths": [
         "tests/erp_ui_veterinary_lab_lifecycle_26_51.test.mjs"
       ],
-      "reviewStatus": "CLEAN_CODE_BATCH_1"
+      "reviewStatus": "CLEAN_CODE_BATCH_2_SCHEMA_AUTHORITY"
     },
     {
       "id": 27,
@@ -465,7 +465,7 @@
       "regressionPaths": [
         "tests/erp_ui_veterinary_treatment_sheet_27_51.test.mjs"
       ],
-      "reviewStatus": "CLEAN_CODE_BATCH_1"
+      "reviewStatus": "CLEAN_CODE_BATCH_2_SCHEMA_AUTHORITY"
     },
     {
       "id": 28,
@@ -481,7 +481,7 @@
       "regressionPaths": [
         "tests/erp_ui_veterinary_medication_integration_28_51.test.mjs"
       ],
-      "reviewStatus": "CLEAN_CODE_BATCH_1"
+      "reviewStatus": "CLEAN_CODE_BATCH_2_SCHEMA_AUTHORITY"
     },
     {
       "id": 29,
@@ -497,7 +497,7 @@
       "regressionPaths": [
         "tests/erp_ui_veterinary_clinical_inventory_29_51.test.mjs"
       ],
-      "reviewStatus": "CLEAN_CODE_BATCH_1"
+      "reviewStatus": "CLEAN_CODE_BATCH_2_SCHEMA_AUTHORITY"
     },
     {
       "id": 30,
@@ -513,7 +513,7 @@
       "regressionPaths": [
         "tests/erp_ui_veterinary_financial_flow_30_51.test.mjs"
       ],
-      "reviewStatus": "CLEAN_CODE_BATCH_1"
+      "reviewStatus": "CLEAN_CODE_BATCH_2_SCHEMA_AUTHORITY"
     },
     {
       "id": 31,
@@ -529,7 +529,7 @@
       "regressionPaths": [
         "tests/erp_ui_veterinary_guardian_portal_31_51.test.mjs"
       ],
-      "reviewStatus": "CLEAN_CODE_BATCH_1"
+      "reviewStatus": "CLEAN_CODE_BATCH_2_SCHEMA_AUTHORITY"
     },
     {
       "id": 32,
@@ -545,7 +545,7 @@
       "regressionPaths": [
         "tests/erp_ui_veterinary_boarding_32_51.test.mjs"
       ],
-      "reviewStatus": "CLEAN_CODE_BATCH_1"
+      "reviewStatus": "CLEAN_CODE_BATCH_2_SCHEMA_AUTHORITY"
     },
     {
       "id": 33,
@@ -561,7 +561,7 @@
       "regressionPaths": [
         "tests/erp_ui_gym_routine_builder_33_51.test.mjs"
       ],
-      "reviewStatus": "BASELINE_RECONCILED"
+      "reviewStatus": "CLEAN_CODE_BATCH_2_SCHEMA_AUTHORITY"
     },
     {
       "id": 34,
@@ -578,7 +578,7 @@
       "regressionPaths": [
         "tests/erp_ui_gym_exercise_library_34_51.test.mjs"
       ],
-      "reviewStatus": "BASELINE_RECONCILED"
+      "reviewStatus": "CLEAN_CODE_BATCH_2_SCHEMA_AUTHORITY"
     },
     {
       "id": 35,
@@ -594,7 +594,7 @@
       "regressionPaths": [
         "tests/erp_ui_gym_weekly_schedule_35_51.test.mjs"
       ],
-      "reviewStatus": "BASELINE_RECONCILED"
+      "reviewStatus": "CLEAN_CODE_BATCH_2_SCHEMA_AUTHORITY"
     },
     {
       "id": 36,
@@ -610,7 +610,7 @@
       "regressionPaths": [
         "tests/erp_ui_gym_training_modes_36_51.test.mjs"
       ],
-      "reviewStatus": "BASELINE_RECONCILED"
+      "reviewStatus": "CLEAN_CODE_BATCH_2_SCHEMA_AUTHORITY"
     },
     {
       "id": 37,
@@ -626,7 +626,7 @@
       "regressionPaths": [
         "tests/erp_ui_gym_intensity_techniques_37_51.test.mjs"
       ],
-      "reviewStatus": "CLEAN_CODE_BATCH_1"
+      "reviewStatus": "CLEAN_CODE_BATCH_2_SCHEMA_AUTHORITY"
     },
     {
       "id": 38,
@@ -642,7 +642,7 @@
       "regressionPaths": [
         "tests/erp_ui_gym_progression_engine_38_51.test.mjs"
       ],
-      "reviewStatus": "CLEAN_CODE_BATCH_1"
+      "reviewStatus": "CLEAN_CODE_BATCH_2_SCHEMA_AUTHORITY"
     },
     {
       "id": 39,
@@ -658,7 +658,7 @@
       "regressionPaths": [
         "tests/erp_ui_gym_periodization_39_51.test.mjs"
       ],
-      "reviewStatus": "CLEAN_CODE_BATCH_1"
+      "reviewStatus": "CLEAN_CODE_BATCH_2_SCHEMA_AUTHORITY"
     },
     {
       "id": 40,
@@ -674,7 +674,7 @@
       "regressionPaths": [
         "tests/erp_ui_gym_workout_execution_40_51.test.mjs"
       ],
-      "reviewStatus": "CLEAN_CODE_BATCH_1"
+      "reviewStatus": "CLEAN_CODE_BATCH_2_SCHEMA_AUTHORITY"
     },
     {
       "id": 41,
@@ -690,7 +690,7 @@
       "regressionPaths": [
         "tests/erp_ui_gym_performance_history_41_51.test.mjs"
       ],
-      "reviewStatus": "BASELINE_RECONCILED"
+      "reviewStatus": "CLEAN_CODE_BATCH_2_SCHEMA_AUTHORITY"
     },
     {
       "id": 42,
@@ -706,7 +706,7 @@
       "regressionPaths": [
         "tests/erp_ui_gym_contextual_substitutions_42_51.test.mjs"
       ],
-      "reviewStatus": "BASELINE_RECONCILED"
+      "reviewStatus": "CLEAN_CODE_BATCH_2_SCHEMA_AUTHORITY"
     },
     {
       "id": 43,
@@ -722,7 +722,7 @@
       "regressionPaths": [
         "tests/erp_ui_gym_ingredient_model_43_51.test.mjs"
       ],
-      "reviewStatus": "BASELINE_RECONCILED"
+      "reviewStatus": "CLEAN_CODE_BATCH_2_SCHEMA_AUTHORITY"
     },
     {
       "id": 44,
@@ -738,7 +738,7 @@
       "regressionPaths": [
         "tests/erp_ui_gym_complete_meal_plan_44_51.test.mjs"
       ],
-      "reviewStatus": "BASELINE_RECONCILED"
+      "reviewStatus": "CLEAN_CODE_BATCH_2_SCHEMA_AUTHORITY"
     },
     {
       "id": 45,
@@ -754,7 +754,7 @@
       "regressionPaths": [
         "tests/erp_ui_gym_nutrition_rules_45_51.test.mjs"
       ],
-      "reviewStatus": "BASELINE_RECONCILED"
+      "reviewStatus": "CLEAN_CODE_BATCH_2_SCHEMA_AUTHORITY"
     },
     {
       "id": 46,
@@ -770,7 +770,7 @@
       "regressionPaths": [
         "tests/erp_ui_gym_nutrient_composition_46_51.test.mjs"
       ],
-      "reviewStatus": "BASELINE_RECONCILED"
+      "reviewStatus": "CLEAN_CODE_BATCH_2_SCHEMA_AUTHORITY"
     },
     {
       "id": 47,
@@ -786,7 +786,7 @@
       "regressionPaths": [
         "tests/erp_ui_gym_integrated_adherence_47_51.test.mjs"
       ],
-      "reviewStatus": "BASELINE_RECONCILED"
+      "reviewStatus": "CLEAN_CODE_BATCH_2_SCHEMA_AUTHORITY"
     },
     {
       "id": 48,
