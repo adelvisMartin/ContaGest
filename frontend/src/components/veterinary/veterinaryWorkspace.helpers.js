@@ -5,7 +5,6 @@ export const TABS = [
 ];
 export const STATUS_TONE = { scheduled:'info', confirmed:'success', checked_in:'warning', in_progress:'warning', completed:'success', cancelled:'default', no_show:'error', ordered:'info', processing:'warning', admitted:'error', observed:'warning', discharged:'success', critical:'error', high:'warning', low:'warning', abnormal:'warning', normal:'success', active:'success', pending:'warning', signed:'success', sent:'success', delivered:'success', failed:'error' };
 export const MONTHS = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
-const Icon = ({ name, size = 14 }) => <i className={`fa-solid ${name}`} style={{ fontSize:size }} aria-hidden="true" />;
 export const compactDate = (value) => value ? new Date(value).toLocaleString('es-VE', { dateStyle:'short', timeStyle:'short' }) : '—';
 export const onlyDate = (value) => value ? new Date(value).toLocaleDateString('es-VE') : '—';
 export const phoneDigits = (value) => String(value || '').replace(/\D/g, '');
