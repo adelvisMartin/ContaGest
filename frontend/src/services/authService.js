@@ -23,6 +23,7 @@ function normalizeSession(payload){
     tenant:payload.tenant||null,
     user:payload.user||null,
     license:payload.license||null,
+    experienceProfile:payload.experienceProfile||null,
     accessibleTenants:Array.isArray(payload.accessibleTenants)?payload.accessibleTenants:[],
     audience,
     sessionMode:payload.sessionMode||'cookie',
@@ -49,7 +50,7 @@ export const AuthService={
     if(mode==='demo'){
       if(!demoModeEnabled())throw new Error('El modo demo local está deshabilitado en esta compilación.');
       if(!email||!password)throw new Error('Ingresa email y contraseña.');
-      return AuthSession.set({sessionMode:'demo',user:{...DEMO_USER,email},tenantId:'demo-tenant',tenant:{id:'demo-tenant',name:'Demo local',rif:'00000000',plan:'development'},audience:'staff',expiresAt:Date.now()+1000*60*60*8,mode:'demo'});
+      return AuthSession.set({sessionMode:'demo',user:{...DEMO_USER,email},tenantId:'demo-tenant',tenant:{id:'demo-tenant',name:'Demo local',rif:'00000000',plan:'development'},experienceProfile:{schemaVersion:1,mode:'admin',label:'Modo Administrador',description:'Experiencia local de desarrollo.',landingRoute:'dashboard',landingLabel:'Dashboard',quickRoutes:['dashboard','ventas','inventario','contabilidad','reportes']},audience:'staff',expiresAt:Date.now()+1000*60*60*8,mode:'demo'});
     }
     const payload=await BackendApi.request('/auth/login',{method:'POST',noAuth:true,body:{
       email,password,tenantRif,captchaToken,captchaAnswer,
