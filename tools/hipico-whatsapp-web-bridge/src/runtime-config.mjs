@@ -84,6 +84,7 @@ export function loadRuntimeConfig(env = process.env, cwd = process.cwd()) {
     labGroupId: envText(env, 'HIPICO_LAB_GROUP_ID', '').toLowerCase(),
     labChannelKey: envText(env, 'HIPICO_LAB_CHANNEL_KEY', 'control-hipico-lab'),
     labSendEnabled: boolEnv(env, 'HIPICO_LAB_SEND_ENABLED', false),
+    sourceAutoReplyEnabled: boolEnv(env, 'HIPICO_SOURCE_AUTO_REPLY_ENABLED', false),
     requirePinnedGroupIds: boolEnv(env, 'HIPICO_REQUIRE_PINNED_GROUP_IDS', true),
     pollMs: numberEnv(env, 'HIPICO_POLL_MS', 1000, 500, 5000),
     backendTimeoutMs: numberEnv(env, 'HIPICO_BACKEND_TIMEOUT_MS', 15000, 5000, 60000),
@@ -122,7 +123,7 @@ export function validateRuntimeConfig(config) {
   if (!CHANNEL_KEY_RE.test(config.sourceChannelKey)) errors.push('HIPICO_SOURCE_CHANNEL_KEY no es válido.');
   if (!CHANNEL_KEY_RE.test(config.labChannelKey)) errors.push('HIPICO_LAB_CHANNEL_KEY no es válido.');
   if (config.sourceChannelKey === config.labChannelKey) errors.push('SOURCE y LAB deben usar channel keys distintos.');
-  if ((config.labSendEnabled || config.labTestInputEnabled) && config.requirePinnedGroupIds) {
+  if ((config.labSendEnabled || config.labTestInputEnabled || config.sourceAutoReplyEnabled) && config.requirePinnedGroupIds) {
     if (!isWhatsAppGroupId(config.sourceGroupId)) errors.push('Para habilitar LAB se exige HIPICO_SOURCE_GROUP_ID pinneado.');
     if (!isWhatsAppGroupId(config.labGroupId)) errors.push('Para habilitar LAB se exige HIPICO_LAB_GROUP_ID pinneado.');
   }
@@ -132,6 +133,7 @@ export function validateRuntimeConfig(config) {
     if (!isSafeHttps(config.healthUrl)) errors.push('Producción exige HIPICO_BRIDGE_HEALTH_URL HTTPS sin credenciales, query ni fragment.');
     if (!strongBridgeTokenConfigured(config.token)) errors.push('Producción exige HIPICO_GROUP_BRIDGE_TOKEN secreto, no-placeholder y de al menos 32 bytes.');
     if (!config.trainingJournalEnabled) errors.push('Producción exige journal shadow para auditoría y evaluación.');
+    if (config.sourceAutoReplyEnabled && !config.backendSyncEnabled) errors.push('Respuesta autónoma SOURCE exige HIPICO_BACKEND_SYNC_ENABLED=true.');
     if (!config.requirePinnedGroupIds) errors.push('Producción exige HIPICO_REQUIRE_PINNED_GROUP_IDS=true.');
     if (!isWhatsAppGroupId(config.sourceGroupId)) errors.push('Producción exige HIPICO_SOURCE_GROUP_ID pinneado.');
     if (!isWhatsAppGroupId(config.labGroupId)) errors.push('Producción exige HIPICO_LAB_GROUP_ID pinneado.');
