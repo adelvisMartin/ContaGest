@@ -104,3 +104,48 @@ test('non-retryable backend errors quarantine immediately',async()=>{
   assert.equal(result.quarantined,1);assert.equal((await f.runtime.snapshot()).pendingBackend,0);
   await fs.rm(f.dir,{recursive:true,force:true});
 });
+
+
+test('source replies are durable, idempotent and never duplicated after confirmed delivery',async()=>{
+  const f=await fixture();await f.runtime.initialize();
+  const reply={replyId:'resp_12345678',sourceMessageId:'source-1',groupId:'120363111111111111@g.us',text:'Respuesta automática'};
+  const first=await f.runtime.queueSourceReply(reply);
+  const duplicate=await f.runtime.queueSourceReply(reply);
+  assert.equal(first.duplicate,false);
+  assert.equal(duplicate.duplicate,true);
+  assert.equal((await f.runtime.snapshot()).pendingSourceReplies,1);
+
+  let calls=0;
+  const flushed=await f.runtime.flushSourceReplies(async(payload)=>{
+    calls+=1;
+    assert.equal(payload.replyId,reply.replyId);
+    assert.equal(payload.groupId,reply.groupId);
+  });
+  assert.equal(flushed.delivered,1);
+  assert.equal(calls,1);
+  assert.equal((await f.runtime.snapshot()).pendingSourceReplies,0);
+
+  const after=await f.runtime.queueSourceReply(reply);
+  assert.equal(after.duplicate,true);
+  assert.equal(after.record.state,'sent');
+  const secondFlush=await f.runtime.flushSourceReplies(async()=>{calls+=1;});
+  assert.equal(secondFlush.attempted,0);
+  assert.equal(calls,1);
+  await fs.rm(f.dir,{recursive:true,force:true});
+});
+
+test('source reply identity cannot be reused with altered text or destination',async()=>{
+  const f=await fixture();await f.runtime.initialize();
+  const reply={replyId:'resp_abcdefgh',sourceMessageId:'source-2',groupId:'120363111111111111@g.us',text:'Texto uno'};
+  await f.runtime.queueSourceReply(reply);
+
+  await assert.rejects(
+    ()=>f.runtime.queueSourceReply({...reply,text:'Texto alterado'}),
+    (error)=>error?.code==='SPOOL_REPLAY_MISMATCH'&&error?.retryable===false
+  );
+  await assert.rejects(
+    ()=>f.runtime.queueSourceReply({...reply,groupId:'120363222222222222@g.us'}),
+    (error)=>error?.code==='SPOOL_REPLAY_MISMATCH'&&error?.retryable===false
+  );
+  await fs.rm(f.dir,{recursive:true,force:true});
+});
