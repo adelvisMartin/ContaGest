@@ -93,6 +93,10 @@ test('64/75 turns VeterinaryWorkspace into an orchestrator and keeps one visual 
     assert.match(views,new RegExp(`const ${name}=`),`missing bounded view ${name}`);
   }
   assert.doesNotMatch(views,/useState\(|useEffect\(/,'view module must stay presentational');
+  assert.doesNotMatch(views,/VeterinaryService|HealthVerticalService/,'view module must not own service calls');
+  assert.match(workspace,/const dischargeHospitalization=async/);
+  assert.match(workspace,/VeterinaryService\.updateHospitalizationStatus/);
+  assert.match(views,/dischargeHospitalization/);
   assert.doesNotMatch(dialogs,/useState\(|useEffect\(/,'dialog module must stay presentational');
   assert.match(dialogs,/const patientSelect=/);
   assert.match(dialogs,/const professionalSelect=/);
