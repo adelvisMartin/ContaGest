@@ -62,10 +62,10 @@ async function readProviderMetricWindow(
             ELSE NULL
           END AS human_review_probability
         FROM public.hipico_agent_evaluations
-        WHERE owner_id = `{input.ownerId}::uuid
-          AND group_key = `{input.groupKey}
-          AND group_id = `{input.groupId}
-          AND evidence #>> '{decisionProvider,providerId}' = `{JEV_PROVIDER_ID}
+        WHERE owner_id = ${input.ownerId}::uuid
+          AND group_key = ${input.groupKey}
+          AND group_id = ${input.groupId}
+          AND evidence #>> '{decisionProvider,providerId}' = ${JEV_PROVIDER_ID}
           AND created_at >= now() - interval '30 days'
       )
       SELECT
@@ -115,10 +115,10 @@ async function readProviderMetricWindow(
             ELSE NULL
           END AS human_review_probability
         FROM public.hipico_agent_evaluations
-        WHERE owner_id = `{input.ownerId}::uuid
-          AND group_key = `{input.groupKey}
-          AND group_id = `{input.groupId}
-          AND evidence #>> '{decisionProvider,providerId}' = `{JEV_PROVIDER_ID}
+        WHERE owner_id = ${input.ownerId}::uuid
+          AND group_key = ${input.groupKey}
+          AND group_id = ${input.groupId}
+          AND evidence #>> '{decisionProvider,providerId}' = ${JEV_PROVIDER_ID}
       )
       SELECT
         count(*) AS evaluations,
@@ -172,10 +172,10 @@ async function readProviderIntentMetrics(db: AutomationDbClient, input: Automati
           ELSE 'unknown'
         END AS expected_class
       FROM public.hipico_agent_evaluations
-      WHERE owner_id = `{input.ownerId}::uuid
-        AND group_key = `{input.groupKey}
-        AND group_id = `{input.groupId}
-        AND evidence #>> '{decisionProvider,providerId}' = `{JEV_PROVIDER_ID}
+      WHERE owner_id = ${input.ownerId}::uuid
+        AND group_key = ${input.groupKey}
+        AND group_id = ${input.groupId}
+        AND evidence #>> '{decisionProvider,providerId}' = ${JEV_PROVIDER_ID}
     )
     SELECT
       expected_class AS "expectedClass",
@@ -197,7 +197,7 @@ async function readProviderIntentMetrics(db: AutomationDbClient, input: Automati
 
 async function readProviderRecentSince(db: AutomationDbClient) {
   const rows = await db.$queryRaw<Array<{ recentSince: Date | string }>>`
-    SELECT now() - (`{DECISION_PROVIDER_RECENT_WINDOW_DAYS}::int * interval '1 day') AS "recentSince"`;
+    SELECT now() - (${DECISION_PROVIDER_RECENT_WINDOW_DAYS}::int * interval '1 day') AS "recentSince"`;
   return new Date(rows[0]?.recentSince || Date.now()).toISOString();
 }
 
