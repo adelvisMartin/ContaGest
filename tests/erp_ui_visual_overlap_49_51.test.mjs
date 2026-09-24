@@ -25,3 +25,10 @@ test('49/51 workflow observes spec and contract changes',()=>{
   assert.ok(workflow.includes("qa/erp-visual-overlap-v4951.spec.mjs"));
   assert.ok(workflow.includes("tests/erp_ui_visual_overlap_49_51.test.mjs"));
 });
+
+test('49/51 dedicated workflow checks out the exact PR candidate instead of the synthetic merge commit',()=>{
+  const workflow=read('.github/workflows/erp-verticals-visual-v4951.yml');
+  assert.match(workflow,/CANDIDATE_SHA:.*pull_request\.head\.sha/);
+  assert.match(workflow,/ref:\s*\$\{\{ env\.CANDIDATE_SHA \}\}/);
+  assert.match(workflow,/git rev-parse HEAD/);
+});
