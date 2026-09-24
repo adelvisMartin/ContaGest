@@ -104,14 +104,17 @@ function none(input: AutonomousReplyInput, reason: string): AutonomousReplyDecis
   };
 }
 
+type AutonomousReplyDecisionContext = Partial<Pick<AutonomousReplyDecision, 'candidateIntent' | 'riskPolicy'>> & {
+  observation?: DecisionProviderObservation<JevShadowDecision> | null;
+  readiness?: DecisionProviderReadiness | null;
+  providerInfluence?: AutonomousReplyDecision['provider']['influence'];
+  handoffRequired?: boolean;
+};
+
 function hold(
   input: AutonomousReplyInput,
   reason: string,
-  options: Partial<Pick<AutonomousReplyDecision, 'candidateIntent' | 'riskPolicy'>> & {
-    observation?: DecisionProviderObservation<JevShadowDecision> | null;
-    readiness?: DecisionProviderReadiness | null;
-    providerInfluence?: AutonomousReplyDecision['provider']['influence'];
-  } = {}
+  options: AutonomousReplyDecisionContext = {}
 ): AutonomousReplyDecision {
   return {
     ...baseDecision(input),
@@ -133,14 +136,11 @@ function send(
   input: AutonomousReplyInput,
   text: string,
   reason: string,
-  options: Partial<Pick<AutonomousReplyDecision, 'candidateIntent' | 'riskPolicy'>> & {
-    observation?: DecisionProviderObservation<JevShadowDecision> | null;
-    readiness?: DecisionProviderReadiness | null;
-    providerInfluence?: AutonomousReplyDecision['provider']['influence'];
-  } = {}
+  options: AutonomousReplyDecisionContext = {}
 ): AutonomousReplyDecision {
   return {
     ...baseDecision(input),
+    handoffRequired: options.handoffRequired ?? input.responsePlan.handoffRequired,
     action: 'SEND',
     canSend: true,
     text: String(text || '').trim().slice(0, 3900),
@@ -178,7 +178,7 @@ export class AutonomousReplyService {
     if (!input.rateAllowed) return none(input, 'RATE_LIMIT');
     if (!input.systemHealthy) {
       return input.responsePlan.canSend && input.responsePlan.text
-        ? send(input, input.responsePlan.text, 'SYSTEM_DEGRADED_SAFE_REPLY')
+        ? send(input, input.responsePlan.text, 'SYSTEM_DEGRADED_SAFE_REPLY', { handoffRequired: false })
         : hold(input, 'SYSTEM_NOT_AUTHORITATIVE');
     }
     if (!input.responsePlan.canSend || !input.responsePlan.text) {
