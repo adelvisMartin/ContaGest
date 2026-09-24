@@ -11,6 +11,16 @@ export type AccessManifestModule = {
   coreAccess?:boolean;
 };
 
+export type ExperienceProfile = {
+  schemaVersion:1;
+  mode:string;
+  label:string;
+  description:string;
+  landingRoute:string;
+  landingLabel:string;
+  quickRoutes:readonly string[];
+};
+
 export type AccessManifest = {
   schemaVersion:1;
   areas:readonly string[];
@@ -25,3 +35,4 @@ export const ROUTE_PERMISSION_MAP:Readonly<Record<string,string>>;
 export const PERMISSION_MODULES:Readonly<Record<string,readonly string[]>>;
 export function permissionForRoute(route:string):string|null;
 export function landingForMode(mode:string):string;
+export function experienceProfileForMode(mode:string):ExperienceProfile;
