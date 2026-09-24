@@ -1190,6 +1190,7 @@ async function printHealthSummary(force = false) {
   const spool = await spoolRuntime.snapshot();
   const eventSpool = spool.pendingBackend;
   const mirrorSpool = spool.pendingLab;
+  const sourceReplySpool = spool.pendingSourceReplies;
   const deadLetters = spool.quarantined;
   const cooldown = Math.max(0, backendNextAllowedAt - Date.now());
   const backendLabel = BACKEND_SYNC_ENABLED ? backendState : 'local-only';
@@ -1202,7 +1203,7 @@ async function printHealthSummary(force = false) {
     mirrorSpool,
     deadLetters
   });
-  const line = `HEALTH ready=${readiness.ready} mode=${RUNTIME_MODE} source=${activeSourceTitle || 'buscando'} | backend=${backendLabel}${cooldown && BACKEND_SYNC_ENABLED ? ` cooldown=${Math.ceil(cooldown/1000)}s` : ''} | capturados=${capturedCount} | spool=${eventSpool} | labPend=${mirrorSpool} | dead=${deadLetters}`;
+  const line = `HEALTH ready=${readiness.ready} mode=${RUNTIME_MODE} source=${activeSourceTitle || 'buscando'} | backend=${backendLabel}${cooldown && BACKEND_SYNC_ENABLED ? ` cooldown=${Math.ceil(cooldown/1000)}s` : ''} | capturados=${capturedCount} | respuestas=${sourceReplyCount} | spool=${eventSpool} | replyPend=${sourceReplySpool} | labPend=${mirrorSpool} | dead=${deadLetters}`;
   const heartbeatDue = Date.now() - lastHealthHeartbeatAt >= 300000;
   if (force && (line !== lastPrintedHealthLine || heartbeatDue)) {
     console.log(line);
@@ -1247,7 +1248,7 @@ async function monitor() {
       if (lastStatus !== 'monitoring') {
         console.log(`\nFuente activa: ${activeSourceTitle}`);
         console.log(`Binding fuente: ${SOURCE_GROUP_ID ? redactGroupId(SOURCE_GROUP_ID) : 'solo nombre (LAB bloqueado)'}`);
-        console.log('FUENTE: SOLO LECTURA. El Bridge no contiene ruta de envío hacia el grupo real.');
+        console.log(`Respuestas autónomas SOURCE: ${SOURCE_AUTO_REPLY_ENABLED ? 'HABILITADAS con ID pinneado + spool durable' : 'DESHABILITADAS'}.`);
         console.log(`LAB: ${LAB_GROUP_NAME} (${LAB_SEND_ENABLED ? 'shadow habilitado con ID pinneado' : 'shadow deshabilitado'})`);
         console.log('Dinero/ledger/estado real: BLOQUEADOS.\n');
         await log(`SOURCE_ACTIVE title=${activeSourceTitle} key=${SOURCE_CHANNEL_KEY} sourceBound=${Boolean(SOURCE_GROUP_ID)} labBound=${Boolean(LAB_GROUP_ID)} labSend=${LAB_SEND_ENABLED}`);
@@ -1258,6 +1259,7 @@ async function monitor() {
       else await processSourceRows();
 
       await flushEventSpool();
+      await flushSourceReplySpool();
       await flushMirrorSpool();
       if (LAB_TEST_INPUT_ENABLED && Date.now() - lastLabTestPollAt >= LAB_TEST_POLL_MS) {
         lastLabTestPollAt = Date.now();
@@ -1289,7 +1291,7 @@ async function main() {
   console.log(`LAB ID: ${LAB_GROUP_ID ? redactGroupId(LAB_GROUP_ID) : 'NO CONFIGURADO'}`);
   console.log(`Mirror LAB: ${LAB_SEND_ENABLED ? 'HABILITADO' : 'DESHABILITADO'}`);
   console.log(`Entrada de prueba LAB: ${LAB_TEST_INPUT_ENABLED ? 'HABILITADA' : 'DESHABILITADA'}`);
-  console.log('Envío al grupo fuente: IMPOSIBLE POR DISEÑO.');
+  console.log(`Envío autónomo al grupo fuente: ${SOURCE_AUTO_REPLY_ENABLED ? 'HABILITADO con gates backend + identidad pinneada' : 'DESHABILITADO'}.`);
   console.log(`Seen IDs cargados: ${seen.size}`);
   console.log(`Modo runtime: ${RUNTIME_MODE}`);
   console.log(`Backend cloud: ${BACKEND_SYNC_ENABLED ? 'HABILITADO CON SPOOL V2 DURABLE' : 'DESACTIVADO - SHADOW LOCAL'}`);
