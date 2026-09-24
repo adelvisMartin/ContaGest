@@ -24,3 +24,11 @@ Se preservan Resumen, Captura, Participantes, Chat WhatsApp, Adelantadas, Histor
 ## Regla de identidad
 
 La única marca visible y activa es **CONTROL HÍPICO**. Cualquier identidad histórica debe permanecer fuera de build, PWA, metadata, exports, tests visibles y caches activos.
+
+## Orquestación IA · Jev shadow
+
+La primera integración de Jev es deliberadamente no autoritativa. El motor determinista, la política de riesgo, los tool guards y el outbox conservan toda la autoridad operacional. Jev sólo observa evaluaciones y produce evidencia tipada para comparar clasificación, necesidad de revisión humana y acuerdo con el candidato actual.
+
+El provider permanece `OFF` por defecto. Para habilitar llamadas reales se requieren simultáneamente `HIPICO_JEV_MODE=shadow`, una `TYPESAFE_API_KEY` server-side válida y `HIPICO_JEV_DATA_SHARING_APPROVED=true`. Un timeout, error HTTP, respuesta inválida o configuración incompleta degrada a `UNAVAILABLE/SKIPPED` sin modificar `candidate`, `riskPolicy`, `canAct`, herramientas ni envíos.
+
+La promoción futura fuera de shadow requiere métricas propias del corpus real/adversarial, revisión humana y los gates existentes; no se infiere confianza de producción a partir de la probabilidad del proveedor.
