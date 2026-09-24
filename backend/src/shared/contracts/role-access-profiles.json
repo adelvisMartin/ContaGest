@@ -1,0 +1,377 @@
+{
+  "schemaVersion": 1,
+  "profiles": [
+    {
+      "id": "role-admin",
+      "modules": "*",
+      "capabilities": [
+        "settings.manage",
+        "support.manage",
+        "care.manage",
+        "veterinary.manage",
+        "psychology.manage",
+        "fitness.manage"
+      ],
+      "backend": {
+        "name": "Administrador",
+        "description": "Control total del sistema dentro de la empresa.",
+        "system": true
+      }
+    },
+    {
+      "id": "role-gerente",
+      "modules": [
+        "dashboard",
+        "analytics",
+        "clientes",
+        "cotizacion",
+        "ventas",
+        "historial",
+        "libro-ventas",
+        "inventario",
+        "inventario-scan",
+        "kardex",
+        "proveedores",
+        "compras",
+        "bancos",
+        "pedidos",
+        "pos-sede",
+        "tracking-pedidos",
+        "delivery-mapa",
+        "reportes",
+        "auditoria",
+        "demo-control",
+        "licencias",
+        "soporte"
+      ],
+      "capabilities": []
+    },
+    {
+      "id": "role-contador",
+      "modules": [
+        "dashboard",
+        "clientes",
+        "ventas",
+        "libro-ventas",
+        "compras",
+        "proveedores",
+        "contabilidad",
+        "plan-cuentas",
+        "libro-mayor",
+        "balance-sumas-saldos",
+        "hoja-trabajo",
+        "estados-financieros",
+        "cierre-contable",
+        "bancos",
+        "tributos",
+        "normativa",
+        "normativa-contable",
+        "reportes",
+        "auditoria",
+        "analytics",
+        "reglas-negocio",
+        "importacion-data",
+        "soporte"
+      ],
+      "capabilities": [],
+      "backend": {
+        "name": "Contador",
+        "description": "Fiscal, contabilidad, compras, ventas y reportes.",
+        "system": true
+      }
+    },
+    {
+      "id": "role-tesoreria",
+      "modules": [
+        "dashboard",
+        "clientes",
+        "ventas",
+        "compras",
+        "proveedores",
+        "bancos",
+        "libro-mayor",
+        "balance-sumas-saldos",
+        "estados-financieros",
+        "reportes",
+        "analytics",
+        "auditoria",
+        "soporte"
+      ],
+      "capabilities": []
+    },
+    {
+      "id": "role-vendedor",
+      "modules": [
+        "dashboard",
+        "clientes",
+        "cotizacion",
+        "ventas",
+        "historial",
+        "pedidos",
+        "pos-sede",
+        "tracking-pedidos",
+        "mensajes",
+        "soporte"
+      ],
+      "capabilities": [],
+      "backend": {
+        "name": "Vendedor / Caja",
+        "description": "Clientes, cotizaciones, ventas, pedidos y comunicación comercial.",
+        "system": true
+      }
+    },
+    {
+      "id": "role-clinica",
+      "modules": [
+        "dashboard",
+        "salud",
+        "clientes",
+        "cotizacion",
+        "ventas",
+        "historial",
+        "bancos",
+        "analytics",
+        "reportes",
+        "auditoria",
+        "mensajes",
+        "soporte"
+      ],
+      "capabilities": [
+        "care.manage"
+      ],
+      "backend": {
+        "name": "Clínica / Consultorio",
+        "description": "Pacientes, agenda, atención, facturación y comunicaciones sin RRHH por defecto.",
+        "system": true
+      }
+    },
+    {
+      "id": "role-veterinaria",
+      "modules": [
+        "dashboard",
+        "veterinaria",
+        "clientes",
+        "cotizacion",
+        "ventas",
+        "historial",
+        "inventario",
+        "inventario-scan",
+        "kardex",
+        "qr",
+        "proveedores",
+        "compras",
+        "bancos",
+        "analytics",
+        "reportes",
+        "auditoria",
+        "mensajes",
+        "soporte"
+      ],
+      "capabilities": [
+        "veterinary.manage"
+      ],
+      "backend": {
+        "name": "Clínica veterinaria",
+        "description": "Pacientes veterinarios, tutores, agenda, inventario, compras y facturación.",
+        "system": true
+      }
+    },
+    {
+      "id": "role-psicologia",
+      "modules": [
+        "dashboard",
+        "psicologia",
+        "clientes",
+        "cotizacion",
+        "ventas",
+        "historial",
+        "bancos",
+        "reportes",
+        "mensajes",
+        "soporte"
+      ],
+      "capabilities": [
+        "psychology.manage"
+      ],
+      "backend": {
+        "name": "Psicología / Consultorio",
+        "description": "Pacientes, agenda, confirmaciones, cobranza y reportes del consultorio.",
+        "system": true
+      }
+    },
+    {
+      "id": "role-odontologia",
+      "modules": [
+        "dashboard",
+        "odontologia",
+        "clientes",
+        "cotizacion",
+        "ventas",
+        "historial",
+        "bancos",
+        "reportes",
+        "mensajes",
+        "soporte"
+      ],
+      "capabilities": [
+        "care.manage"
+      ],
+      "backend": {
+        "name": "Odontología / Consultorio dental",
+        "description": "Pacientes, odontograma, tratamientos, citas, presupuestos, seguimiento y cobranza.",
+        "system": true
+      }
+    },
+    {
+      "id": "role-gimnasio",
+      "modules": [
+        "dashboard",
+        "gimnasio",
+        "rutinas",
+        "nutricion",
+        "clientes",
+        "cotizacion",
+        "ventas",
+        "historial",
+        "inventario",
+        "bancos",
+        "analytics",
+        "reportes",
+        "mensajes",
+        "soporte"
+      ],
+      "capabilities": [
+        "fitness.manage"
+      ],
+      "backend": {
+        "name": "Gimnasio / Fitness",
+        "description": "Socios, membresías, asistencia, rutinas, nutrición y cobranza.",
+        "system": true
+      }
+    },
+    {
+      "id": "role-nutricion",
+      "modules": [
+        "dashboard",
+        "nutricion",
+        "clientes",
+        "analytics",
+        "reportes",
+        "mensajes",
+        "soporte"
+      ],
+      "capabilities": []
+    },
+    {
+      "id": "role-inventario",
+      "modules": [
+        "dashboard",
+        "inventario",
+        "inventario-scan",
+        "kardex",
+        "qr",
+        "reportes",
+        "auditoria",
+        "soporte"
+      ],
+      "capabilities": [],
+      "backend": {
+        "name": "Inventario",
+        "description": "Stock, kardex, productos y reportes.",
+        "system": true
+      }
+    },
+    {
+      "id": "role-compras",
+      "modules": [
+        "dashboard",
+        "proveedores",
+        "compras",
+        "inventario",
+        "kardex",
+        "reportes",
+        "soporte"
+      ],
+      "capabilities": []
+    },
+    {
+      "id": "role-rrhh",
+      "modules": [
+        "dashboard",
+        "nomina",
+        "rrhh",
+        "reportes",
+        "auditoria",
+        "soporte"
+      ],
+      "capabilities": [],
+      "backend": {
+        "name": "RRHH",
+        "description": "Gestión de nómina y empleados.",
+        "system": true
+      }
+    },
+    {
+      "id": "role-auditor",
+      "modules": [
+        "dashboard",
+        "reportes",
+        "libro-mayor",
+        "balance-sumas-saldos",
+        "hoja-trabajo",
+        "estados-financieros",
+        "auditoria",
+        "pretesting",
+        "modulos-madurez",
+        "normativa",
+        "normativa-contable",
+        "soporte"
+      ],
+      "capabilities": []
+    },
+    {
+      "id": "role-soporte",
+      "modules": [
+        "dashboard",
+        "auditoria",
+        "backend",
+        "pretesting",
+        "soporte",
+        "ayuda",
+        "asistente-ia"
+      ],
+      "capabilities": [
+        "support.manage"
+      ]
+    },
+    {
+      "id": "role-demo",
+      "modules": [
+        "dashboard",
+        "clientes",
+        "ventas",
+        "pedidos",
+        "tracking-pedidos",
+        "analytics",
+        "soporte"
+      ],
+      "capabilities": [],
+      "backend": {
+        "name": "Demo limitado",
+        "description": "Acceso comercial con permisos recortados y vencimiento.",
+        "system": false
+      }
+    },
+    {
+      "id": "role-lectura",
+      "modules": [
+        "dashboard",
+        "reportes",
+        "analytics",
+        "ayuda",
+        "soporte"
+      ],
+      "capabilities": []
+    }
+  ]
+}
