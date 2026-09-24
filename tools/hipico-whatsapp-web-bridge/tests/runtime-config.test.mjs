@@ -169,3 +169,15 @@ test('source autonomous replies are opt-in and require pinned identity plus back
   }, 'C:/tmp');
   assert.match(validateRuntimeConfig(noBackend).join(' '), /Respuesta autónoma SOURCE exige HIPICO_BACKEND_SYNC_ENABLED=true/);
 });
+
+test('runtime readiness includes pending autonomous source replies', () => {
+  const state = assessRuntimeReadiness({
+    runtimeMode: 'production',
+    backendState: 'online',
+    activeSourceTitle: 'CLUB HIPICO TRIPLE CROWN',
+    sourceMatches: ['CLUB HIPICO TRIPLE CROWN'],
+    sourceReplySpool: 1
+  });
+  assert.equal(state.ready, false);
+  assert.ok(state.reasons.includes('SOURCE_REPLY_PENDING'));
+});
