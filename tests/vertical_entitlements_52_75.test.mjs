@@ -49,7 +49,8 @@ test('52/75 license UI provides safe defaults for psychology dentistry and stand
   assert.match(licensePage,/psicologia:\['dashboard','psicologia','clientes','reportes','analytics','mensajes','soporte'\]/);
   assert.match(licensePage,/odontologia:\['dashboard','odontologia','clientes','reportes','analytics','mensajes','soporte'\]/);
   assert.match(licensePage,/nutricion:\['dashboard','nutricion','clientes','reportes','analytics','mensajes','soporte'\]/);
-  assert.match(licensePage,/'salud','veterinaria','psicologia','odontologia','gimnasio','rutinas','nutricion','mensajes'/);
+  assert.match(licensePage,/MODULE_CATALOG/);
+  assert.match(licensePage,/canonicalLicenseModules/);
 });
 
 test('52/75 local access model mirrors the standalone nutrition entitlement without widening it to gym',()=>{

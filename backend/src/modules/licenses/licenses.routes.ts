@@ -10,7 +10,7 @@ import { ensureAccountMembership } from '../../shared/identity/accountMembership
 import { hashLicenseKey, validateUserLicense } from '../../shared/licensing/licenseGuard.js';
 import { bootstrapQaLicense } from '../../shared/licensing/qaBootstrap.js';
 import { readDeviceCredential, setDeviceCredentialCookie } from '../../shared/auth/sessionCookies.js';
-import { permissionForRoute } from '../../shared/contracts/accessManifest.js';
+import { ACCESS_MANIFEST, permissionForRoute } from '../../shared/contracts/accessManifest.js';
 
 const router = Router();
 router.use(requireTenant);
@@ -20,13 +20,23 @@ const BUSINESS_SECTORS = [
   'manufactura', 'distribucion', 'profesional', 'otro'
 ] as const;
 const COMMERCIAL_USES = ['evaluacion', 'demostracion', 'operacion', 'capacitacion', 'soporte'] as const;
+const CANONICAL_LICENSE_MODULES = new Set(ACCESS_MANIFEST.modules.map((item) => item.route));
+const LICENSE_ROUTE_ALLOWLIST = new Set(['login', ...CANONICAL_LICENSE_MODULES]);
+const licenseModuleSchema = z.string().min(1).max(80).refine(
+  (value) => CANONICAL_LICENSE_MODULES.has(value),
+  'Módulo no reconocido por el manifiesto de acceso.'
+);
+const licenseRouteSchema = z.string().max(160).refine(
+  (value) => LICENSE_ROUTE_ALLOWLIST.has(value),
+  'Ruta no reconocida por el manifiesto de acceso.'
+);
 
 const licenseSchema = z.object({
   userEmail: z.string().email(),
   fullName: z.string().trim().min(2).max(120).default('Cliente de prueba'),
   plan: z.enum(['trial', 'monthly', 'quarterly', 'annual', 'enterprise']).default('trial'),
   days: z.coerce.number().int().min(1).max(3650).default(15),
-  modules: z.array(z.string().min(1).max(80)).min(1).max(120),
+  modules: z.array(licenseModuleSchema).min(1).max(120).transform((modules) => [...new Set(modules)]),
   businessSector: z.enum(BUSINESS_SECTORS).default('comercio'),
   commercialUse: z.enum(COMMERCIAL_USES).default('evaluacion'),
   maxUsers: z.coerce.number().int().min(1).max(100).default(1),
@@ -39,7 +49,7 @@ const validateSchema = z.object({
   licenseKey: z.string().min(20).max(180).optional(),
   deviceId: z.string().min(8).max(240).optional(),
   deviceLabel: z.string().trim().max(120).optional(),
-  route: z.string().max(160).optional(),
+  route: licenseRouteSchema.optional(),
   metadata: z.record(z.string(), z.unknown()).optional()
 });
 
@@ -60,10 +70,10 @@ function generateTemporaryPassword() {
 }
 
 function normalizeConfig(value: unknown) {
-  if (Array.isArray(value)) return { enabled: value, businessSector: 'comercio', commercialUse: 'evaluacion', qaMode:false };
+  if (Array.isArray(value)) return { enabled:[...new Set(value.map(String))].filter((module)=>CANONICAL_LICENSE_MODULES.has(module)), businessSector:'comercio', commercialUse:'evaluacion', qaMode:false };
   const data = value && typeof value === 'object' ? value as Record<string, unknown> : {};
   return {
-    enabled: Array.isArray(data.enabled) ? data.enabled.map(String) : [],
+    enabled: Array.isArray(data.enabled) ? [...new Set(data.enabled.map(String))].filter((module)=>CANONICAL_LICENSE_MODULES.has(module)) : [],
     businessSector: String(data.businessSector || 'comercio'),
     commercialUse: String(data.commercialUse || 'evaluacion'),
     qaMode: data.qaMode === true
@@ -128,7 +138,8 @@ async function extensionByLicenseIds(ids: string[]) {
 }
 
 async function assignTrialRole(db:ProvisioningDb,tenantId: string, userId: string, modules: string[]) {
-  const modulePermissions = modules.map((module)=>permissionForRoute(module)).filter((key): key is string => Boolean(key));
+  const canonicalModules=[...new Set(modules)].filter((module)=>CANONICAL_LICENSE_MODULES.has(module));
+  const modulePermissions = canonicalModules.map((module)=>permissionForRoute(module)).filter((key): key is string => Boolean(key));
   const permissionKeys = [...new Set(['reports.view', ...modulePermissions])];
   for (const key of permissionKeys) {
     await db.permission.upsert({
