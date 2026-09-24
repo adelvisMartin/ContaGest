@@ -80,7 +80,15 @@ Durante la recuperación real de CI aparecieron defectos adicionales en AppSec, 
 - trazabilidad añadida a 10–47 sin borrar revisiones previas;
 - regresión: `tests/vertical_service_clean_code_batch5.test.mjs`.
 
+## Lote 6 · Access/Licensing 52–57
+
+- presets declarativos de roles extraídos de `accessControlService.js`;
+- contratos/allowlists Zod de licensing extraídos a `licenses.contracts.ts`;
+- manifiesto de acceso, RBAC derivado, provisioning, transacciones y sesión conservan sus autoridades;
+- caracterización: 15/15 métodos públicos de AccessControlService y 6/6 rutas licensing intactas;
+- regresión: `tests/access_licensing_clean_code_batch6.test.mjs`.
+
 ## Pendiente priorizado
 
-- lote 6: acceso/licensing 52–57;
-- cierre: reejecutar 48–51/58 sobre el SHA final y actualizar esta matriz a `CLEAN_CODE_REVIEWED` por bloque.
+- revisar/marcar 1–9, 48–51 y 58 para completar cobertura explícita 1–58;
+- reejecutar 48–51/58 sobre el SHA final y actualizar esta matriz a `CLEAN_CODE_REVIEWED` por bloque.
