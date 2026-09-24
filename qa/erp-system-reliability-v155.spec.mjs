@@ -1,6 +1,7 @@
 import { test, expect } from '@playwright/test';
 import { AccessControlService } from '../frontend/src/services/accessControlService.js';
 import { fixtureForRequest } from './support/erp-system-fixtures-v155.mjs';
+import { waitForRouteReady } from './support/playwright-determinism.mjs';
 
 test.setTimeout(120_000);
 const BASE_URL=String(process.env.QA_BASE_URL||'http://127.0.0.1:8080').replace(/\/$/,'');
@@ -38,7 +39,7 @@ async function seedContext(context){
 }
 
 async function open(page,route,viewport={width:390,height:844}){
-  await page.setViewportSize(viewport);await page.goto(`${BASE_URL}/?module=${encodeURIComponent(route)}`,{waitUntil:'domcontentloaded'});await page.waitForSelector(route==='login'?'.login-shell':'#pages',{state:'attached',timeout:20_000});await page.waitForTimeout(160);
+  await page.setViewportSize(viewport);await page.goto(`${BASE_URL}/?module=${encodeURIComponent(route)}`,{waitUntil:'domcontentloaded'});await page.waitForSelector(route==='login'?'.login-shell':'#pages',{state:'attached',timeout:20_000});await waitForRouteReady(page,route,{standalone:route==='login'});
 }
 
 test('two tabs keep independent navigation and survive refresh/back',async({context})=>{

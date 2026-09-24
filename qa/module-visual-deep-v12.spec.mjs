@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { MODULE_VISUAL_CATALOG, CRITICAL_VISUAL_ROUTES } from './support/module-visual-catalog.mjs';
+import { waitForRouteReady, waitForStableLayout } from './support/playwright-determinism.mjs';
 
 test.setTimeout(300_000);
 
@@ -18,7 +19,7 @@ async function openRoute(page, route, viewport) {
   await page.setViewportSize(viewport);
   await page.goto(`/?module=${route}`, { waitUntil:'domcontentloaded' });
   await page.waitForSelector(route === 'login' ? '.login-shell' : '#pages', { state:'attached', timeout:15_000 });
-  await page.waitForTimeout(route === 'veterinaria' ? 420 : route === 'login' ? 260 : 180);
+  await waitForRouteReady(page,route,{standalone:route==='login'});
 }
 
 async function auditGeometry(page, route, viewport) {
@@ -202,7 +203,7 @@ test('light/dark changes color, never shared geometry', async ({ page }) => {
     const themeButton=page.locator('#btnTema');
     if(await themeButton.count()){
       await themeButton.click();
-      await page.waitForTimeout(120);
+      await waitForStableLayout(page,'#pages');
       const after=await page.evaluate(()=>{
         const nodes=[document.querySelector('.hf-app-main'),document.querySelector('.cgx-page-header'),document.querySelector('.cgx-metric'),document.querySelector('.cgx-section')].filter(Boolean);
         return nodes.map((node)=>{const r=node.getBoundingClientRect();return{w:r.width,h:r.height,x:r.x,y:r.y};});

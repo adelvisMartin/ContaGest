@@ -14,7 +14,8 @@ const required59=[
   'tests/prisma_ephemeral_baseline_contract.test.mjs',
   'tests/security_audit_surface_boundary.test.mjs',
   'tests/authoritative_contract_suite_59_75.test.mjs',
-  'tests/api_validation_error_59_75.test.mjs'
+  'tests/api_validation_error_59_75.test.mjs',
+  'tests/playwright_determinism_62_75.test.mjs'
 ];
 const tests=[...new Set([...regressionPaths,...required59])];
 

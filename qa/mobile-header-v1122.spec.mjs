@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { waitForStableLayout } from './support/playwright-determinism.mjs';
 
 const VIEWPORTS = [
   { name:'360', width:360, height:800 },
@@ -20,7 +21,7 @@ async function seedAuthenticatedUi(page) {
 async function openDashboard(page) {
   await page.goto('/?module=dashboard', { waitUntil:'domcontentloaded' });
   await page.waitForSelector('.hf-app-topbar', { state:'visible', timeout:15_000 });
-  await page.waitForTimeout(250);
+  await waitForStableLayout(page,'.hf-app-topbar');
 }
 
 for (const viewport of VIEWPORTS) {

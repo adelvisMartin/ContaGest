@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { MODULE_VISUAL_CATALOG } from './support/module-visual-catalog.mjs';
+import { waitForStableLayout } from './support/playwright-determinism.mjs';
 
 test.setTimeout(360_000);
 
@@ -71,7 +72,7 @@ test('rapid navigation cannot let an older async page overwrite the final route'
     await expect.poll(()=>page.locator('body').getAttribute('data-route'),{timeout:20_000}).toBe(expected);
     await expect(page.locator('#pages')).toHaveAttribute('data-rendered-route',expected);
     expect(new URL(page.url()).searchParams.get('module')).toBe(expected);
-    await page.waitForTimeout(350);
+    await waitForStableLayout(page,'#pages');
     await expect(page.locator('#pages')).toHaveAttribute('data-rendered-route',expected);
   }
 });

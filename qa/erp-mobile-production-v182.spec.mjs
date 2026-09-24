@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { MODULE_VISUAL_CATALOG } from './support/module-visual-catalog.mjs';
+import { waitForRouteReady } from './support/playwright-determinism.mjs';
 
 const BASE=String(process.env.ERP_PRODUCTION_URL||'').replace(/\/$/,'');
 const SHA=String(process.env.CANDIDATE_SHA||'').toLowerCase();
@@ -33,7 +34,7 @@ test.describe('ERP production mobile #182',()=>{
     test(`${item.route} served mobile 360/390/430`,async({page})=>{
       const session=prerequisites();await page.addInitScript((value)=>localStorage.setItem('contagest_auth_session',JSON.stringify(value)),session);
       const failures=[];
-      for(const width of WIDTHS){await page.setViewportSize({width,height:width===360?800:width===390?844:932});await page.goto(`${BASE}/?module=${encodeURIComponent(item.route)}`,{waitUntil:'domcontentloaded'});await page.waitForSelector('#pages',{timeout:20_000});await page.waitForTimeout(200);const findings=await page.evaluate(mobileFindings);if(findings.length)failures.push({width,findings});}
+      for(const width of WIDTHS){await page.setViewportSize({width,height:width===360?800:width===390?844:932});await page.goto(`${BASE}/?module=${encodeURIComponent(item.route)}`,{waitUntil:'domcontentloaded'});await page.waitForSelector('#pages',{timeout:20_000});await waitForRouteReady(page,item.route,{standalone:item.standalone});const findings=await page.evaluate(mobileFindings);if(findings.length)failures.push({width,findings});}
       expect(failures,JSON.stringify(failures,null,2)).toEqual([]);
     });
   }

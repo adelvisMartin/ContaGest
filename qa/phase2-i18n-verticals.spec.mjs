@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { waitForStableLayout } from './support/playwright-determinism.mjs';
 
 async function seed(page, { lang='es', mode='admin', route='dashboard' } = {}) {
   await page.addInitScript(({ lang, mode, route }) => {
@@ -56,7 +57,7 @@ test('psychology context applies calm domain palette', async ({ page }) => {
 
 test('veterinary and sales contexts keep Inter as their UI family', async ({ page }) => {
   await open(page, { mode:'veterinaria', route:'veterinaria' });
-  await page.waitForTimeout(250);
+  await waitForStableLayout(page,'#pages');
   const vetFont=await page.evaluate(()=>getComputedStyle(document.body).fontFamily.toLowerCase());
   expect(vetFont).toContain('inter');
   await page.goto('/?module=ventas', { waitUntil:'domcontentloaded' });

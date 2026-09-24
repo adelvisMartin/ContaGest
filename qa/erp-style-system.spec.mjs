@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { waitForStableLayout } from './support/playwright-determinism.mjs';
 
 async function seedAuthenticatedUi(page) {
   await page.addInitScript(() => {
@@ -16,7 +17,7 @@ async function openDashboard(page, width, height = 900) {
   await seedAuthenticatedUi(page);
   await page.goto('/?module=dashboard', { waitUntil:'domcontentloaded' });
   await page.waitForSelector('.hf-app-topbar', { state:'visible' });
-  await page.waitForTimeout(150);
+  await waitForStableLayout(page,'.hf-app-topbar');
 }
 
 const overlap = (a,b) => Math.max(0,Math.min(a.right,b.right)-Math.max(a.left,b.left)) > 1

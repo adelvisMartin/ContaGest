@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { MODULE_VISUAL_CATALOG } from './support/module-visual-catalog.mjs';
+import { waitForRouteReady } from './support/playwright-determinism.mjs';
 
 test.setTimeout(180_000);
 
@@ -133,7 +134,7 @@ for(const item of MODULE_VISUAL_CATALOG){
       await page.setViewportSize({width:context.width,height:context.height});
       await page.goto(`/?module=${encodeURIComponent(item.route)}`,{waitUntil:'domcontentloaded'});
       await page.waitForSelector(item.standalone?'.login-shell':'#pages',{timeout:20_000});
-      await page.waitForTimeout(item.route==='veterinaria'?900:180);
+      await waitForRouteReady(page,item.route,{standalone:item.standalone});
       const findings=await page.evaluate(inspectComposition);
       if(findings.length)failures.push({context:context.name,findings});
     }

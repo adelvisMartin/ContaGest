@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { MODULE_VISUAL_CATALOG } from './support/module-visual-catalog.mjs';
+import { waitForRouteReady, waitForStableLayout } from './support/playwright-determinism.mjs';
 
 test.setTimeout(300_000);
 
@@ -18,7 +19,7 @@ async function seedAuthenticatedUi(page){
 async function openRoute(page,route){
   await page.goto(`/?module=${route}`,{waitUntil:'domcontentloaded'});
   await page.waitForSelector(route==='login'?'.login-shell':'#pages',{state:'attached',timeout:15_000});
-  await page.waitForTimeout(route==='veterinaria'?420:160);
+  await waitForRouteReady(page,route,{standalone:route==='login'});
 }
 
 test('58 registered routes mount without duplicate DOM ids or legacy global chrome',async({page})=>{
@@ -104,7 +105,7 @@ test('dark/light share geometry and dark workspace is neutral rather than blue-g
   const geometry=async()=>page.evaluate(()=>{const sidebar=document.querySelector('#sidebar')?.getBoundingClientRect(),header=document.querySelector('.hf-topbar')?.getBoundingClientRect();return{sidebar:sidebar&&{w:sidebar.width,h:sidebar.height},header:header&&{w:header.width,h:header.height},body:getComputedStyle(document.body).backgroundColor,bgImage:getComputedStyle(document.body).backgroundImage};});
   const light=await geometry();
   await page.locator('#btnTema').click();
-  await page.waitForTimeout(120);
+  await waitForStableLayout(page,'#pages');
   const dark=await geometry();
   expect(Math.abs((light.sidebar?.w||0)-(dark.sidebar?.w||0))).toBeLessThan(2);
   expect(Math.abs((light.header?.h||0)-(dark.header?.h||0))).toBeLessThan(2);
