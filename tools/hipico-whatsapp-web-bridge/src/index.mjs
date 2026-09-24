@@ -1068,8 +1068,15 @@ async function sendTextInCurrentSource(record) {
     error.safeToRetry = true;
     throw error;
   }
-  await composer.click({ timeout: 3000 });
-  await page.keyboard.insertText(String(record.text).slice(0, 3900));
+  try {
+    await composer.click({ timeout: 3000 });
+    await page.keyboard.insertText(String(record.text).slice(0, 3900));
+  } catch (cause) {
+    await clearComposerSafely(composer);
+    const error = new Error(`SOURCE_REPLY_COMPOSE_FAILED: ${cause?.message || cause}`);
+    error.safeToRetry = true;
+    throw error;
+  }
   try { await assertCurrentSourceIdentity(); }
   catch (cause) {
     await clearComposerSafely(composer);
