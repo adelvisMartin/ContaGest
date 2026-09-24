@@ -26,7 +26,7 @@ test('LAB send path requires live stable group identity before and after composi
   assert.match(source, /clearComposerSafely/);
 });
 
-test('source monitoring also verifies its pinned ID when configured', () => {
+test('source monitoring verifies its pinned ID before autonomous delivery', () => {
   assert.match(source, /async function assertCurrentSourceIdentity/);
   assert.match(source, /async function currentChatIsSource/);
   assert.match(source, /SOURCE_GROUP_ID \|\| `official-web:/);
@@ -107,7 +107,7 @@ test('LAB can be used as test input without creating shadow loops', () => {
   assert.match(source, /body\.includes\('\[LABTEST:'/);
 });
 
-test('LAB test poll returns to the read-only source group', () => {
+test('LAB test poll returns to the pinned source group', () => {
   assert.match(source, /await openSourceGroup\(\)\.catch/);
   assert.match(source, /sourceSendPossible: Boolean\(SOURCE_AUTO_REPLY_ENABLED/);
 });
@@ -137,4 +137,15 @@ test('local fallback and LAB simulation can never become a SOURCE reply', () => 
   const localMirrorStart=source.indexOf('function localMirrorText');
   const appendTrainingStart=source.indexOf('async function appendTraining',localMirrorStart);
   assert.doesNotMatch(source.slice(localMirrorStart,appendTrainingStart),/queueSourceReply|sendAutonomousReplyToSource/);
+});
+
+
+test('emergency kill switch blocks autonomous source delivery without deleting queued work', () => {
+  assert.match(source, /localKillSwitchState/);
+  assert.match(source, /SOURCE_AUTO_REPLY_KILL_SWITCH_ACTIVE/);
+  const sendStart=source.indexOf('async function sendAutonomousReplyToSource');
+  const flushStart=source.indexOf('async function flushSourceReplySpool',sendStart);
+  const send=source.slice(sendStart,flushStart);
+  assert.match(send,/localKillSwitchState\(process\.env, process\.cwd\(\)\)\.active/);
+  assert.doesNotMatch(send,/rmSync|unlink|delete/);
 });
