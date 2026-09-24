@@ -85,7 +85,7 @@ test('55/75 real PostgreSQL: create-only tenant registration and atomic licensed
       registeredTenantId,registeredAdminId
     );
     assert.equal(membershipRows.length,1);
-    assert.equal(membershipRows[0].roleLabel,'Administrador');
+    assert.equal(membershipRows[0].roleLabel,'admin');
     registeredAccountUserId=membershipRows[0].accountUserId;
 
     const adminPermission=await harness.prisma.userRole.count({
