@@ -1,3 +1,4 @@
+import type { Prisma } from '@prisma/client';
 import { prisma } from '../../database/prisma.js';
 import { HttpError } from '../http.js';
 import { assertSubscriptionAccess } from '../commercial/subscriptionGuard.js';
@@ -41,8 +42,10 @@ function normalizeLicenseModules(value:unknown){
   };
 }
 
-export async function membershipForProfile(userProfileId:string) {
-  const rows = await prisma.$queryRaw<MembershipRow[]>`
+type IdentityDb = typeof prisma | Prisma.TransactionClient;
+
+export async function membershipForProfile(userProfileId:string,db:IdentityDb=prisma) {
+  const rows = await db.$queryRaw<MembershipRow[]>`
     SELECT tm."id",tm."accountUserId",tm."tenantId",tm."userProfileId",tm."roleLabel",tm."status",tm."isDefault",
            tm."linkSource",au."status" AS "accountStatus"
     FROM public."TenantMembership" tm
@@ -53,20 +56,20 @@ export async function membershipForProfile(userProfileId:string) {
   return rows[0] || null;
 }
 
-export async function ensureAccountMembership(input: MembershipIdentityInput) {
+export async function ensureAccountMembership(input: MembershipIdentityInput,db:IdentityDb=prisma) {
   const email = input.email.trim().toLowerCase();
   if (!email) throw new HttpError(422, 'La membresía requiere un correo válido.');
 
-  const existing=await membershipForProfile(input.userProfileId);
+  const existing=await membershipForProfile(input.userProfileId,db);
   if(existing){
     if(existing.accountStatus==='disabled')throw new HttpError(403,'La identidad global de esta cuenta está deshabilitada.');
-    const rows=await prisma.$queryRaw<MembershipRow[]>`
+    const rows=await db.$queryRaw<MembershipRow[]>`
       UPDATE public."TenantMembership"
       SET "roleLabel"=COALESCE(${input.roleLabel||null},"roleLabel"),"status"='active',"updatedAt"=now()
       WHERE "id"=${existing.id} AND "tenantId"=${input.tenantId}
       RETURNING "id","accountUserId","tenantId","userProfileId","roleLabel","status","isDefault","linkSource"
     `;
-    await prisma.$executeRaw`
+    await db.$executeRaw`
       UPDATE public."AccountUser" SET "fullName"=COALESCE(${input.fullName||null},"fullName"),"updatedAt"=now()
       WHERE "id"=${existing.accountUserId} AND "status"<>'disabled'
     `;
@@ -83,7 +86,7 @@ export async function ensureAccountMembership(input: MembershipIdentityInput) {
   const accountUserId = accountRows[0]?.id;
   if (!accountUserId) throw new HttpError(500, 'No se pudo crear la identidad global del usuario.');
 
-  const membershipRows = await prisma.$queryRaw<MembershipRow[]>`
+  const membershipRows = await db.$queryRaw<MembershipRow[]>`
     INSERT INTO public."TenantMembership"
       ("id","accountUserId","tenantId","userProfileId","roleLabel","status","isDefault","linkSource","linkedAt","createdAt","updatedAt")
     VALUES
