@@ -7,7 +7,8 @@
   "exports": {
     ".": "./src/app.ts",
     "./access-manifest.json": "./src/shared/contracts/access-manifest.json",
-    "./access-manifest": "./src/shared/contracts/accessManifestRuntime.js"
+    "./access-manifest": "./src/shared/contracts/accessManifestRuntime.js",
+    "./role-access-profiles": "./src/shared/contracts/roleAccessProfilesRuntime.js"
   },
   "engines": {
     "node": "22.x"
