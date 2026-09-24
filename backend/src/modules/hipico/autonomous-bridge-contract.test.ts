@@ -34,3 +34,10 @@ test('Jev observation remains best-effort evidence around deterministic conversa
   assert.doesNotMatch(route,/canAct.*providerEvidence/);
   assert.doesNotMatch(route,/riskPolicy.*providerEvidence/);
 });
+
+test('bridge plans the current clarification before advancing handoff ownership',()=>{
+  const decision=route.indexOf('const conversationDecision=decideConversation');
+  const plan=route.indexOf('let responsePlan=planSafeResponse',decision);
+  const advance=route.indexOf('updateHandoffAfterDecision(',plan);
+  assert.ok(decision>=0&&plan>decision&&advance>plan);
+});
