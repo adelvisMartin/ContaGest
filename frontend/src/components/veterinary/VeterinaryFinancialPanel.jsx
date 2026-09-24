@@ -196,7 +196,7 @@ export function VeterinaryFinancialPanel({ selectedPatient, encounters = [], hos
               <TableCell><Chip size="small" label={statusLabel[item.status]||item.status} color={statusColor[item.status]||'default'}/></TableCell>
               <TableCell>{item.authorizationSigner||'—'}</TableCell>
               <TableCell>{item.invoiceNumber?<><b>{item.invoiceNumber}</b><Typography variant="caption" display="block">{item.invoiceStatus} · {money(item.invoiceTotal)}</Typography></>:'—'}</TableCell>
-              <TableCell align="right"><Stack direction="row" gap=.5 justifyContent="flex-end" flexWrap="wrap">
+              <TableCell align="right"><Stack direction="row" gap={.5} justifyContent="flex-end" flexWrap="wrap">
                 {item.status==='proposed'?<Button size="small" onClick={()=>{setAuthTarget(item);setSignerName(item.guardianName||'');setAttestation(false);}}>Autorizar</Button>:null}
                 {item.status==='authorized'?<Button size="small" variant="outlined" onClick={()=>{setCareTarget(item);setCareType('encounter');setCareSourceId('');}}>Registrar atención</Button>:null}
                 {item.status==='attended'?<Button size="small" variant="outlined" onClick={()=>void openInvoice(item)}>Crear factura borrador</Button>:null}
