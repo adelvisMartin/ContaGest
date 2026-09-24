@@ -13,6 +13,8 @@ on:
       - 'backend/src/modules/hipico/hipico-agent.integration.ts'
       - 'backend/src/modules/hipico/promotion-snapshot.test.ts'
       - 'backend/src/modules/hipico/shadow-metrics*.ts'
+      - 'backend/src/modules/hipico/decision-provider*.ts'
+      - 'backend/src/modules/hipico/jev-decision-provider*.ts'
       - 'backend/prisma/migrations/20260914194000_hipico_shadow_metrics_v7/migration.sql'
       - 'supabase/sql/hipico_v24_shadow_metrics.sql'
       - '.github/workflows/hipico-shadow-metrics-v7.yml'
