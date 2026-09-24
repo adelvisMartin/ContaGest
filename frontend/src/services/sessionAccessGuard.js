@@ -2,7 +2,7 @@ import { AccessControlService } from './accessControlService.js';
 import { AuthSession } from './authSession.js';
 
 let installed = false;
-const CORE = new Set(['dashboard','login','profile','ayuda','soporte']);
+const CORE = new Set(['dashboard','profile','ayuda','soporte']);
 const ADMIN_SENSITIVE = new Set(['admin','backend','configuracion','marca','modulos-madurez','pretesting','licencias','demo-control','vistas','importacion-data']);
 const ADMIN_ROLES = new Set(['admin','administrator','administrador','sysadmin','superadmin']);
 
@@ -12,7 +12,7 @@ const normalizeRole = (value = '') => String(value || '')
   .normalize('NFD')
   .replace(/[\u0300-\u036f]/g, '');
 
-const normalizePermissions = (value) => Array.isArray(value) ? value.map(String) : [];
+const normalizePermissions = (value) => Array.isArray(value) ? [...new Set(value.map(String).filter(Boolean))] : [];
 const roleName = (role) => typeof role === 'string' ? role : (role?.key || role?.slug || role?.name || role?.id || '');
 
 const validLicense = (license) => Boolean(
@@ -25,22 +25,7 @@ const isActiveQaLicense = (state, route) => {
   return CORE.has(route) || (Array.isArray(license.modules) && license.modules.includes(route));
 };
 
-const profileAccess = (state = {}) => {
-  const profile = state.profile || {};
-  const role = normalizeRole(roleName(profile.role));
-  const permissions = normalizePermissions(profile.permissions);
-  const isClient = role === 'client' || role === 'cliente';
-  return {
-    source:'profile',
-    role,
-    permissions,
-    isClient,
-    isAdmin: !isClient && (ADMIN_ROLES.has(role) || permissions.includes('*') || permissions.includes('admin.manage'))
-  };
-};
-
-const sessionAccess = () => {
-  const session = AuthSession.get();
+export const sessionAccess = (session = AuthSession.get()) => {
   if (!session) return null;
   const user = session.user || {};
   const role = normalizeRole(roleName(user.role || session.role));
@@ -49,25 +34,40 @@ const sessionAccess = () => {
   const isClient = audience === 'client' || role === 'client' || role === 'cliente';
   return {
     source:'session',
+    sessionMode:session.sessionMode || session.mode || 'cookie',
     role,
     permissions,
     audience,
+    license:session.license || null,
     isClient,
     isAdmin: !isClient && (ADMIN_ROLES.has(role) || permissions.includes('*') || permissions.includes('admin.manage'))
   };
 };
 
-/* The authenticated session is authoritative for identity. Local profile data is
-   presentation state and may be stale after a role/license/tenant change. A
-   client session must never inherit an old local admin profile. If a staff
-   session does not expose role metadata, we may use the local profile only as a
-   display/navigation fallback; backend authorization remains authoritative. */
-const resolveIdentity = (state = {}) => {
-  const session = sessionAccess();
-  if (!session) return profileAccess(state);
-  if (session.isClient || session.role || session.permissions.length) return session;
-  const local = profileAccess(state);
-  return { ...local, source:'session+profile-fallback', isClient:false };
+export const canSessionAccessRoute = (identity, route) => {
+  if (!identity || !route) return false;
+  if (route === 'login') return true;
+
+  const catalogued = AccessControlService.modules.some((item) => item.route === route);
+  if (!catalogued) return false;
+
+  const required = AccessControlService.routePermission(route);
+  const wildcard = identity.permissions.includes('*');
+  const adminPermission = wildcard || identity.permissions.includes('admin.manage');
+
+  if (identity.isAdmin && !identity.isClient) return true;
+
+  if (identity.isClient) {
+    if (!validLicense(identity.license)) return false;
+    const licensedModules = Array.isArray(identity.license?.modules) ? identity.license.modules.map(String) : [];
+    if (!CORE.has(route) && !licensedModules.includes(route)) return false;
+  }
+
+  if (!required) return false;
+  if (!identity.permissions.length) return false;
+  if (!wildcard && !adminPermission && !identity.permissions.includes(required)) return false;
+  if (ADMIN_SENSITIVE.has(route) && identity.isClient) return false;
+  return true;
 };
 
 export function installSessionAccessGuard() {
@@ -77,44 +77,20 @@ export function installSessionAccessGuard() {
     const previous = AccessControlService.canAccessRoute.bind(AccessControlService);
     AccessControlService.canAccessRoute = (state, route) => {
       if (!route) return false;
-      const identity = resolveIdentity(state);
-      const role = identity.role;
-      const license = state?.activeLicense;
 
-      // Explicit QA licenses are evaluated before stale local RBAC metadata, but
-      // only for the routes actually listed in that license.
+      const identity = sessionAccess();
+      if (identity) {
+        // Cookie/demo session metadata is the only frontend navigation authority
+        // once authentication exists. Local RBAC/profile state can be stale after
+        // role, license or tenant changes and must never grant or veto real access.
+        return canSessionAccessRoute(identity, route);
+      }
+
+      // Before authentication, preserve the existing local/demo QA behavior used
+      // by login/bootstrap tooling. Production demo sessions can only be created
+      // through AuthService's DEV-only VITE_ENABLE_DEMO_MODE gate.
       if (isActiveQaLicense(state, route)) return true;
-
-      // Internal staff administrators can inspect all ERP modules for QA. This
-      // is navigation visibility only; API writes still require backend auth,
-      // tenant context, permissions and commercial/legal gates.
-      if (identity.isAdmin && !identity.isClient) return true;
-
-      if (CORE.has(route)) return previous(state, route);
-
-      // Commercial/client sessions are always license-scoped. Missing, expired
-      // or incomplete licenses cannot be converted into access by local RBAC.
-      if (identity.isClient) {
-        if (!validLicense(license)) return false;
-        if (!Array.isArray(license.modules) || !license.modules.includes(route)) return false;
-      }
-
-      const allowedByExistingRules = previous(state, route);
-      if (!allowedByExistingRules) return false;
-
-      const catalogued = AccessControlService.modules.some((item) => item.route === route);
-      const required = catalogued ? AccessControlService.routePermission(route) : null;
-      const wildcard = identity.permissions.includes('*');
-      const adminPermission = wildcard || identity.permissions.includes('admin.manage');
-
-      if (ADMIN_SENSITIVE.has(route)) {
-        if (identity.isClient) return false;
-        if (required === 'admin.manage' && role !== 'admin' && !identity.isAdmin && !adminPermission) return false;
-        if (identity.permissions.length && required && !wildcard && !identity.permissions.includes(required) && !adminPermission) return false;
-      }
-
-      if (catalogued && identity.permissions.length && required && !wildcard && !identity.permissions.includes(required) && !adminPermission) return false;
-      return true;
+      return previous(state, route);
     };
   });
 }
