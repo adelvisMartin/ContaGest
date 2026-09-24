@@ -85,7 +85,9 @@
     "test:backend:verticals:real": "npm --workspace backend exec -- tsx --test ../qa/verticals-backend-real-v4851.test.ts",
     "test:browser:verticals:visual": "npx playwright test qa/erp-visual-overlap-v4951.spec.mjs --project=chromium --workers=1",
     "test:backend:provisioning:real": "npm --workspace backend exec -- tsx --test ../qa/tenant-user-provisioning-v5575.test.ts",
-    "test:browser:verticals:real": "node scripts/erp-real-browser-postgres-v5875.mjs"
+    "test:browser:verticals:real": "node scripts/erp-real-browser-postgres-v5875.mjs",
+    "test:browser:a11y": "npx playwright test qa/accessibility-wcag22-v99.spec.mjs --project=chromium --workers=1",
+    "test:browser:contrast": "npx playwright test qa/contrast-v15.spec.mjs --project=chromium --workers=1"
   },
   "devDependencies": {
     "@playwright/test": "1.63.0"
