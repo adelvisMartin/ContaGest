@@ -37,7 +37,7 @@ jobs:
           mkdir -p artifacts/qa/prisma-baseline
           npx prisma migrate diff \
             --from-empty \
-            --to-schema backend/prisma/baseline/initial-v11.prisma \
+            --to-schema-datamodel backend/prisma/baseline/initial-v11.prisma \
             --script \
             --output artifacts/qa/prisma-baseline/migration.sql
           test -s artifacts/qa/prisma-baseline/migration.sql
