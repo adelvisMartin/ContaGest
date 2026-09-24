@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { waitForRouteReady, waitForStableLayout } from './support/playwright-determinism.mjs';
 
 const ROUTES = [
   'dashboard','cotizacion','clientes','ventas','inventario','tributos','normativa','historial','reportes',
@@ -24,7 +25,7 @@ async function seedAuthenticatedUi(page) {
 async function openRoute(page, route) {
   await page.goto(`/?module=${route}`, { waitUntil:'domcontentloaded' });
   await page.waitForSelector('#pages', { state:'attached', timeout:15_000 });
-  await page.waitForTimeout(180);
+  await waitForRouteReady(page,route);
 }
 
 async function auditVisualHierarchy(page) {
@@ -121,7 +122,7 @@ test.describe('ContaGest Visual System v12', () => {
       cards:[...document.querySelectorAll('.cgx-metric')].map((n)=>{const r=n.getBoundingClientRect();return[Math.round(r.width),Math.round(r.height)];})
     }));
     await page.locator('#btnTema').click();
-    await page.waitForTimeout(100);
+    await waitForStableLayout(page,'#pages');
     const dark=await page.evaluate(() => ({
       surface:getComputedStyle(document.documentElement).getPropertyValue('--cg-v-surface').trim(),
       text:getComputedStyle(document.documentElement).getPropertyValue('--cg-v-text').trim(),

@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { MODULE_VISUAL_CATALOG } from './support/module-visual-catalog.mjs';
+import { waitForRouteReady } from './support/playwright-determinism.mjs';
 
 test.setTimeout(180_000);
 
@@ -53,7 +54,7 @@ async function openRoute(page,item,ctx,index){
   await page.goto(`/?module=${encodeURIComponent(item.route)}`,{waitUntil:'domcontentloaded'});
   const root=item.standalone?'.login-shell':'#pages';
   await page.waitForSelector(root,{state:'attached',timeout:20_000});
-  await page.waitForTimeout(item.route==='veterinaria'?450:120);
+  await waitForRouteReady(page,item.route,{standalone:item.standalone});
   await expect(page.locator('body')).toHaveAttribute('data-route',item.route);
   if(!item.standalone)await expect(page.locator('#pages')).toHaveAttribute('data-rendered-route',item.route);
 }

@@ -15,7 +15,10 @@ const required59=[
   'tests/security_audit_surface_boundary.test.mjs',
   'tests/authoritative_contract_suite_59_75.test.mjs',
   'tests/api_validation_error_59_75.test.mjs',
-  'tests/rbac_authoritative_session_60_75.test.mjs'
+  'tests/rbac_authoritative_session_60_75.test.mjs',
+  'tests/full_58_route_anti_overlap_61_75.test.mjs',
+  'tests/playwright_determinism_62_75.test.mjs',
+  'tests/cross_browser_critical_matrix_63_75.test.mjs'
 ];
 const tests=[...new Set([...regressionPaths,...required59])];
 

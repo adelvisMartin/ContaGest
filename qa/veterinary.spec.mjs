@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { mkdirSync } from 'node:fs';
+import { waitForStableLayout } from './support/playwright-determinism.mjs';
 
 const pets = [
   {
@@ -160,7 +161,7 @@ async function openVeterinary(page, viewport, tab = 'resumen') {
   await expect(page.getByRole('heading', { name: 'Clínica veterinaria', exact: true })).toBeVisible();
   await expect(page.locator('body')).toHaveAttribute('data-route', 'veterinaria');
   await expect(page).toHaveURL(/module=veterinaria/);
-  await page.waitForTimeout(500);
+  await waitForStableLayout(page,'#pages');
 }
 
 async function expectNoPageOverflow(page) {

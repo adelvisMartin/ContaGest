@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { MODULE_VISUAL_CATALOG } from './support/module-visual-catalog.mjs';
+import { waitForRouteReady } from './support/playwright-determinism.mjs';
 
 const VIEWPORTS=[{width:360,height:800},{width:390,height:844},{width:430,height:932}];
 const QA_SESSION={sessionMode:'cookie',mode:'cookie',tenantId:'qa-tenant',tenant:{id:'qa-tenant',name:'ContaGest QA',rif:'J-00000000-0',plan:'enterprise'},user:{id:'qa-admin',name:'QA Admin',fullName:'QA Admin',email:'qa@contagest.local',role:'admin',permissions:['*']},audience:'staff',expiresAt:Date.now()+8*60*60*1000};
@@ -42,7 +43,7 @@ for(const item of MODULE_VISUAL_CATALOG){
       await page.setViewportSize(viewport);
       await page.goto(`/?module=${encodeURIComponent(item.route)}`,{waitUntil:'domcontentloaded'});
       await page.waitForSelector(item.standalone?'.login-shell':'#pages',{state:'attached',timeout:20_000});
-      await page.waitForTimeout(120);
+      await waitForRouteReady(page,item.route,{standalone:item.standalone});
       const findings=await page.evaluate(auditMobile);
       if(findings.length)failures.push({viewport,findings});
     }
