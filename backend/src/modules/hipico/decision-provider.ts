@@ -31,8 +31,8 @@ export type DecisionProviderObservation<TDecision extends Record<string, unknown
   failureCode: string | null;
   decision: TDecision | null;
   usage: {
-    inputTokens: number;
-    outputTokens: number;
+    inputUnits: number;
+    outputUnits: number;
   } | null;
 };
 
