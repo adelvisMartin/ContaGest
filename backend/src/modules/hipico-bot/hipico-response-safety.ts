@@ -1,8 +1,9 @@
 import crypto from 'node:crypto';
 import type { ConversationDecision } from './hipico-conversation-engine.js';
 
-export const RESPONSE_POLICY_VERSION = 'hipico-response-v2';
-export const MAX_CLARIFICATIONS = 2;
+export const RESPONSE_POLICY_VERSION = 'hipico-response-v3';
+export const MAX_CLARIFICATIONS = 3;
+export const AUTOMATIC_HANDOFF_TTL_MS = 15 * 60 * 1000;
 
 export type SafeResponseIntent =
   | 'ACK_RECEIVED'
@@ -162,6 +163,7 @@ export function recoverExpiredHandoff(state: HandoffState, at: Date | string | n
     humanOwnerId: null,
     reason: 'handoff-timeout-released',
     expiresAt: null,
+    clarificationCount: state.reason === 'max-clarifications-reached' ? 0 : state.clarificationCount,
     updatedAt: iso(at)
   };
 }
@@ -177,7 +179,7 @@ export function updateHandoffAfterDecision(state: HandoffState, decision: Conver
     ownership: 'human' as const,
     humanOwnerId: null,
     reason: 'max-clarifications-reached',
-    expiresAt: null,
+    expiresAt: new Date(new Date(at).getTime() + AUTOMATIC_HANDOFF_TTL_MS).toISOString(),
     updatedAt: iso(at)
   };
 }
@@ -208,7 +210,13 @@ export function planSafeResponse(
     sourceMessageId: decision.sourceMessageId
   };
 
-  if (state && activeHuman(state, options.at ?? new Date())) {
+  const clarificationLimitHandoff = Boolean(
+    state
+    && state.ownership === 'human'
+    && state.reason === 'max-clarifications-reached'
+    && decision.decision === 'NEEDS_CLARIFICATION'
+  );
+  if (state && activeHuman(state, options.at ?? new Date()) && !clarificationLimitHandoff) {
     return { ...base, intent: 'NONE', text: null, canSend: false, confirmationVerified: false, evidence: null, handoffRequired: true, reason: 'HUMAN_OWNS_CONVERSATION' };
   }
 
@@ -221,7 +229,7 @@ export function planSafeResponse(
   }
 
   if (decision.decision === 'NEEDS_CLARIFICATION') {
-    const reachedLimit = Boolean(state && state.clarificationCount + 1 >= MAX_CLARIFICATIONS);
+    const reachedLimit = Boolean(state && state.clarificationCount >= MAX_CLARIFICATIONS);
     return {
       ...base,
       intent: reachedLimit ? 'ESCALATED' : 'NEEDS_CLARIFICATION',

@@ -25,6 +25,7 @@ const productionEnv = {
   HIPICO_LAB_CHANNEL_KEY: 'control-hipico-lab',
   HIPICO_TRAINING_JOURNAL_ENABLED: 'true',
   HIPICO_REQUIRE_PINNED_GROUP_IDS: 'true',
+  HIPICO_SOURCE_AUTO_REPLY_ENABLED: 'false',
   HIPICO_LAB_SEND_ENABLED: 'false',
   HIPICO_LAB_TEST_INPUT_ENABLED: 'false'
 };
@@ -63,6 +64,7 @@ test('production config is strict, pinned and never accepts local-only', () => {
   const valid = loadRuntimeConfig(productionEnv, 'C:/tmp');
   assert.deepEqual(validateRuntimeConfig(valid), []);
   assert.equal(valid.diagnosticScreenshotsEnabled, false);
+  assert.equal(valid.sourceAutoReplyEnabled, false);
   assert.equal(valid.labSendEnabled, false);
   assert.equal(valid.labTestInputEnabled, false);
 
@@ -143,4 +145,20 @@ test('readiness requires source, cloud and empty durable queues', () => {
   });
   assert.equal(degraded.ready, false);
   assert.ok(degraded.reasons.includes('LAB_MIRROR_PENDING'));
+});
+
+
+test('SOURCE auto reply is production-only, backend-bound and requires the exact pinned source group',()=>{
+  const enabled=loadRuntimeConfig({...productionEnv,HIPICO_SOURCE_AUTO_REPLY_ENABLED:'true'},'C:/tmp');
+  assert.deepEqual(validateRuntimeConfig(enabled),[]);
+  assert.equal(enabled.sourceAutoReplyEnabled,true);
+
+  const local=loadRuntimeConfig({...productionEnv,HIPICO_RUNTIME_MODE:'shadow-local',HIPICO_SOURCE_AUTO_REPLY_ENABLED:'true'},'C:/tmp');
+  assert.match(validateRuntimeConfig(local).join(' '),/solo se admite en production/);
+
+  const noBackend=loadRuntimeConfig({...productionEnv,HIPICO_SOURCE_AUTO_REPLY_ENABLED:'true',HIPICO_BACKEND_SYNC_ENABLED:'false'},'C:/tmp');
+  assert.match(validateRuntimeConfig(noBackend).join(' '),/backend sync autoritativo/);
+
+  const noSourceId=loadRuntimeConfig({...productionEnv,HIPICO_SOURCE_AUTO_REPLY_ENABLED:'true',HIPICO_SOURCE_GROUP_ID:''},'C:/tmp');
+  assert.match(validateRuntimeConfig(noSourceId).join(' '),/Auto reply SOURCE exige HIPICO_SOURCE_GROUP_ID pinneado/);
 });

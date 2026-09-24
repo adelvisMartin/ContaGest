@@ -96,11 +96,11 @@ test('human ownership is canonicalized on both message and context sides', () =>
   assert.equal(result.effectsAllowed, false);
 });
 
-test('unsupported media without text escalates', () => {
+test('unsupported media asks for text before considering human handoff', () => {
   const result = decideConversation({ ...at('m7'), text: '', mediaKind: 'audio' });
-  assert.equal(result.decision, 'ESCALATED');
-  assert.equal(result.decisionReason, 'MEDIA_REQUIRES_OPERATOR_REVIEW');
-  assert.equal(result.responseIntent, 'ESCALATED');
+  assert.equal(result.decision, 'NEEDS_CLARIFICATION');
+  assert.equal(result.decisionReason, 'MEDIA_TEXT_REQUIRED');
+  assert.equal(result.responseIntent, 'NEEDS_CLARIFICATION');
   assert.equal(result.classifierIntent, 'media_message');
   assert.equal(result.effectsAllowed, false);
 });
@@ -116,8 +116,8 @@ test('media caption cannot impersonate a result or invoke the text classifier', 
     }
   );
   assert.equal(classifierCalls,0);
-  assert.equal(result.decision,'ESCALATED');
-  assert.equal(result.decisionReason,'MEDIA_REQUIRES_OPERATOR_REVIEW');
+  assert.equal(result.decision,'NEEDS_CLARIFICATION');
+  assert.equal(result.decisionReason,'MEDIA_TEXT_REQUIRED');
   assert.equal(result.classifierIntent,'media_message');
   assert.equal(result.audit.monetaryOrStateful,false);
   assert.equal(result.effectsAllowed,false);
@@ -126,9 +126,9 @@ test('media caption cannot impersonate a result or invoke the text classifier', 
 
 test('PDF filename/caption remains document evidence instead of a race opening', () => {
   const result=decideConversation({...at('pdf-caption','p1','Churchill Downs 5ta carrera abierta.pdf'),raceId:null,mediaKind:'document'});
-  assert.equal(result.decision,'ESCALATED');
+  assert.equal(result.decision,'NEEDS_CLARIFICATION');
   assert.equal(result.classifierIntent,'document_reference');
-  assert.equal(result.decisionReason,'MEDIA_REQUIRES_OPERATOR_REVIEW');
+  assert.equal(result.decisionReason,'MEDIA_TEXT_REQUIRED');
   assert.equal(result.effectsAllowed,false);
 });
 

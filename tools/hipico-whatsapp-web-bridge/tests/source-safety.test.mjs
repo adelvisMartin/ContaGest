@@ -4,11 +4,14 @@ import fs from 'node:fs/promises';
 
 const source = await fs.readFile(new URL('../src/index.mjs', import.meta.url), 'utf8');
 
-test('source group has no generic sendMessage route', () => {
+test('source group has no generic sendMessage route and only exposes guarded source replies', () => {
   assert.equal(/sendMessage\s*\(/.test(source), false);
   assert.match(source, /sendMirrorToLab/);
   assert.match(source, /openGroup\(LAB_GROUP_NAME, true\)/);
-  assert.match(source, /sourceSendPossible: false/);
+  assert.match(source, /sourceSendPossible: SOURCE_AUTO_REPLY_ACTIVE && backendState === 'online'/);
+  assert.match(source, /async function sendTextInCurrentSource\(record\)/);
+  assert.match(source, /if \(!SOURCE_AUTO_REPLY_ACTIVE\)/);
+  assert.match(source, /SOURCE_REPLY_DESTINATION_MISMATCH/);
 });
 
 test('LAB send path requires live stable group identity before and after composing', () => {
@@ -78,7 +81,7 @@ test('production mode is loaded through strict configuration', () => {
   assert.match(source, /assertRuntimeConfig\(loadRuntimeConfig\(\)\)/);
   assert.match(source, /runtimeMode: RUNTIME_MODE/);
   assert.match(source, /body\?\.ready !== true/);
-  assert.match(source, /sourceSendPossible: false/);
+  assert.match(source, /sourceSendPossible: SOURCE_AUTO_REPLY_ACTIVE && backendState === 'online'/);
 });
 
 test('WhatsApp group discovery has DOM/header fallback and diagnostics', () => {
@@ -103,7 +106,9 @@ test('LAB can be used as test input without creating shadow loops', () => {
   assert.match(source, /body\.includes\('\[LABTEST:'/);
 });
 
-test('LAB test poll returns to the read-only source group', () => {
+test('LAB test poll returns to the source group without bypassing guarded reply authority', () => {
   assert.match(source, /await openSourceGroup\(\)\.catch/);
-  assert.match(source, /sourceSendPossible: false/);
+  assert.match(source, /sourceSendPossible: SOURCE_AUTO_REPLY_ACTIVE && backendState === 'online'/);
+  assert.match(source, /async function sendTextInCurrentSource[\s\S]*await assertCurrentSourceIdentity\(\)/);
+  assert.match(source, /async function flushSourceReplies[\s\S]*sourceReplyJournal\.flush/);
 });

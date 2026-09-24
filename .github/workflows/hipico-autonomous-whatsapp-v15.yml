@@ -1,0 +1,126 @@
+name: Hípico Autonomous WhatsApp v15
+
+on:
+  pull_request:
+    paths:
+      - 'backend/src/modules/hipico/autonomous-reply.service*.ts'
+      - 'backend/src/modules/hipico/race-query.service*.ts'
+      - 'backend/src/modules/hipico/race.routes.ts'
+      - 'backend/src/modules/hipico-bot/hipico-bridge*.ts'
+      - 'backend/src/modules/hipico-bot/hipico-conversation-engine*.ts'
+      - 'backend/src/modules/hipico-bot/hipico-response-safety*.ts'
+      - 'backend/src/modules/hipico-bot/hipico-autonomous-source-reply.integration.ts'
+      - 'backend/prisma/migrations/20260924142000_hipico_autonomous_source_reply_v15/migration.sql'
+      - 'backend/package.json'
+      - 'backend/.env.example'
+      - 'supabase/sql/hipico_v26_autonomous_source_reply.sql'
+      - 'tools/hipico-whatsapp-web-bridge/**'
+      - 'INICIAR-HIPICO-AUTONOMO.cmd'
+      - 'INICIAR-HIPICO-WHATSAPP.cmd'
+      - 'docs/hipico/README.md'
+      - '.github/workflows/hipico-autonomous-whatsapp-v15.yml'
+  workflow_dispatch:
+
+permissions: { contents: read }
+
+env:
+  HIPICO_CANDIDATE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+
+concurrency:
+  group: hipico-autonomous-whatsapp-v15-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  autonomous-whatsapp:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_USER: postgres
+          POSTGRES_DB: postgres
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres -d postgres"
+          --health-interval 5s --health-timeout 5s --health-retries 20
+
+    steps:
+      - name: Checkout exact candidate
+        uses: actions/checkout@v7
+        with:
+          ref: "${{ env.HIPICO_CANDIDATE_SHA }}"
+          fetch-depth: 0
+
+      - name: Exact candidate SHA and clean-tree gate
+        run: node scripts/hipico-exact-sha-gate.mjs
+
+      - name: Configure Node 22
+        uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            tools/hipico-whatsapp-web-bridge/package-lock.json
+
+      - name: Install root lockfile dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Install Bridge lockfile dependencies
+        run: npm --prefix tools/hipico-whatsapp-web-bridge ci --no-audit --no-fund
+
+      - name: Install PostgreSQL client
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends postgresql-client
+
+      - name: Create isolated ephemeral PostgreSQL database
+        shell: bash
+        env:
+          PGPASSWORD: postgres
+        run: |
+          set -euo pipefail
+          db="hipico_autoreply_e2e_${GITHUB_RUN_ID}_${GITHUB_RUN_ATTEMPT}"; db="${db,,}"
+          createdb -h 127.0.0.1 -p 5432 -U postgres "$db"
+          url="postgresql://postgres:postgres@127.0.0.1:5432/$db"
+          echo "HIPICO_E2E_DATABASE_URL=$url" >> "$GITHUB_ENV"
+          echo "DATABASE_URL=$url" >> "$GITHUB_ENV"
+
+      - name: Backend typecheck
+        run: npm --workspace backend run typecheck
+
+      - name: Backend Hípico unit and security regressions
+        run: npm --workspace backend run test:hipico
+
+      - name: WhatsApp Bridge syntax and unit regressions
+        run: npm --prefix tools/hipico-whatsapp-web-bridge run qa
+
+      - name: PostgreSQL autonomous reply durability E2E
+        run: npm --workspace backend run test:hipico:autonomous-reply
+
+      - name: Backend build exact candidate
+        run: npm --workspace backend run build
+
+      - name: Diff whitespace gate
+        shell: bash
+        env:
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+          base="${PR_BASE_SHA:-${HIPICO_CANDIDATE_SHA}^}"
+          git diff --check "$base" "$HIPICO_CANDIDATE_SHA"
+
+      - name: Drop isolated database even after failure
+        if: always()
+        shell: bash
+        env:
+          PGPASSWORD: postgres
+        run: |
+          set -uo pipefail
+          cleanup_rc=0
+          if [ -n "${HIPICO_E2E_DATABASE_URL:-}" ]; then
+            db="${HIPICO_E2E_DATABASE_URL##*/}"
+            psql -h 127.0.0.1 -p 5432 -U postgres -d postgres -v ON_ERROR_STOP=1               -c "select pg_terminate_backend(pid) from pg_stat_activity where datname='${db}' and pid <> pg_backend_pid();" || cleanup_rc=1
+            dropdb -h 127.0.0.1 -p 5432 -U postgres --if-exists "$db" || cleanup_rc=1
+          fi
+          exit "$cleanup_rc"

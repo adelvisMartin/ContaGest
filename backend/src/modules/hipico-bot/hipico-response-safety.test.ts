@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { decideConversation } from './hipico-conversation-engine.js';
-import { applyOperatorCommand, initialHandoffState, planSafeResponse, responseIdempotencyKey, updateHandoffAfterDecision } from './hipico-response-safety.js';
+import { applyOperatorCommand, initialHandoffState, planSafeResponse, recoverExpiredHandoff, responseIdempotencyKey, updateHandoffAfterDecision } from './hipico-response-safety.js';
 import type { IntentResult } from './hipico-operational-classifier.js';
 
 const message={sourceMessageId:'m-152',participantId:'p1',text:'hola',timestamp:'2026-08-29T12:00:00.000Z',raceId:'1'};
@@ -69,16 +69,29 @@ test('malformed persisted handoff expiry fails closed and keeps the human owner'
   assert.equal(plan.reason,'HUMAN_OWNS_CONVERSATION');
 });
 
-test('second clarification escalates to human ownership',()=>{
+test('three autonomous clarifications are attempted before human ownership becomes the last fallback',()=>{
   let state=initialHandoffState('group-a','p1','1','2026-08-29T12:00:00.000Z');
   const ambiguous=decideConversation({...message,text:'juega 2N'}, {}, classifier({intent:'offer_player',risk:'monetary',confidence:.99,entities:{play:'2N'}}));
+
   state=updateHandoffAfterDecision(state,ambiguous,'2026-08-29T12:00:01.000Z');
   assert.equal(state.ownership,'bot');
-  const beforeSecond=planSafeResponse(ambiguous,{handoffState:state,at:'2026-08-29T12:00:02.000Z'});
-  assert.equal(beforeSecond.intent,'ESCALATED');
+  assert.equal(state.clarificationCount,1);
+  assert.equal(planSafeResponse(ambiguous,{handoffState:state,at:'2026-08-29T12:00:01.000Z'}).intent,'NEEDS_CLARIFICATION');
+
   state=updateHandoffAfterDecision(state,ambiguous,'2026-08-29T12:00:02.000Z');
+  assert.equal(state.ownership,'bot');
+  assert.equal(state.clarificationCount,2);
+  assert.equal(planSafeResponse(ambiguous,{handoffState:state,at:'2026-08-29T12:00:02.000Z'}).intent,'NEEDS_CLARIFICATION');
+
+  state=updateHandoffAfterDecision(state,ambiguous,'2026-08-29T12:00:03.000Z');
   assert.equal(state.ownership,'human');
+  assert.equal(state.clarificationCount,3);
   assert.equal(state.reason,'max-clarifications-reached');
+  assert.ok(state.expiresAt);
+  const finalPlan=planSafeResponse(ambiguous,{handoffState:state,at:'2026-08-29T12:00:03.000Z'});
+  assert.equal(finalPlan.intent,'ESCALATED');
+  assert.equal(finalPlan.canSend,true);
+  assert.equal(finalPlan.handoffRequired,true);
 });
 
 test('handoff timeout releases ownership but does not invent a monetary confirmation',()=>{
@@ -103,4 +116,18 @@ test('handoff conversation key is isolated by group and race',()=>{
   const c=initialHandoffState('group-a','p1','2');
   assert.notEqual(a.conversationKey,b.conversationKey);
   assert.notEqual(a.conversationKey,c.conversationKey);
+});
+
+
+test('unattended max-clarification handoff auto-releases and resets clarification budget',()=>{
+  let state=initialHandoffState('group-a','p1','1','2026-08-29T12:00:00.000Z');
+  const ambiguous=decideConversation({...message,text:'juega 2N'}, {}, classifier({intent:'offer_player',risk:'monetary',confidence:.99,entities:{play:'2N'}}));
+  for(const at of ['2026-08-29T12:00:01.000Z','2026-08-29T12:00:02.000Z','2026-08-29T12:00:03.000Z']){
+    state=updateHandoffAfterDecision(state,ambiguous,at);
+  }
+  assert.equal(state.ownership,'human');
+  const recovered=recoverExpiredHandoff(state,'2026-08-29T12:15:04.000Z');
+  assert.equal(recovered.ownership,'bot');
+  assert.equal(recovered.clarificationCount,0);
+  assert.equal(recovered.reason,'handoff-timeout-released');
 });

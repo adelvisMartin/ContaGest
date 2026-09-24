@@ -1,13 +1,13 @@
 {
   "name": "control-hipico-whatsapp-web-bridge",
   "private": true,
-  "version": "1.4.2",
+  "version": "1.5.0",
   "type": "module",
   "engines": {
     "node": ">=22 <23"
   },
   "scripts": {
-    "check": "node --check src/index.mjs && node --check src/runtime-config.mjs && node --check src/runtime-utils.mjs && node --check src/group-identity.mjs && node --check src/capture-group-ids.mjs && node --check src/health-state.mjs && node --check src/preflight.mjs && node --check src/report.mjs && node --check src/selftest.mjs && node --check src/history-v130.mjs && node --check src/live-v130.mjs && node --check src/server-runner.mjs && node --check src/healthcheck.mjs && node --check src/observability.mjs && node --check src/support-bundle.mjs && node --check src/diagnostic-status.mjs && node --check src/spool-journal.mjs && node --check src/spool-runtime.mjs && node --check src/replay-policy.mjs && node --check src/replay-spool.mjs",
+    "check": "node --check src/index.mjs && node --check src/runtime-config.mjs && node --check src/runtime-utils.mjs && node --check src/group-identity.mjs && node --check src/capture-group-ids.mjs && node --check src/health-state.mjs && node --check src/preflight.mjs && node --check src/report.mjs && node --check src/selftest.mjs && node --check src/history-v130.mjs && node --check src/live-v130.mjs && node --check src/server-runner.mjs && node --check src/healthcheck.mjs && node --check src/observability.mjs && node --check src/support-bundle.mjs && node --check src/diagnostic-status.mjs && node --check src/spool-journal.mjs && node --check src/spool-runtime.mjs && node --check src/source-reply-journal.mjs && node --check src/replay-policy.mjs && node --check src/replay-spool.mjs",
     "test": "node --test tests/*.test.mjs",
     "qa": "npm run check && npm test",
     "production:check": "node --env-file=.env src/preflight.mjs",

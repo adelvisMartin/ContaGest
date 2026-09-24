@@ -112,3 +112,49 @@ test('bridge decision transition keeps the version returned by persistence',()=>
   assert.match(routes,/handoffState=await saveHandoff\(next/);
   assert.match(routes,/HANDOFF_CONFLICT_RETRY/);
 });
+
+test('autonomous SOURCE reply path stays pinned, idempotent and non-authoritative',()=>{
+  const eventStart=routes.indexOf("router.post('/bridge/events'");
+  const eventEnd=routes.indexOf('export default router',eventStart);
+  const eventRoute=routes.slice(eventStart,eventEnd);
+  assert.match(eventRoute,/input\.channelRole==='source'&&autoReplyConfigured/);
+  assert.match(eventRoute,/targetGroupId:stored\.row\.recipient/);
+  assert.match(eventRoute,/ensureSourceReplyOutbox\(\{/);
+  assert.match(eventRoute,/domainEffectsAllowed:false/);
+  assert.match(eventRoute,/financialAuthority:false/);
+  assert.match(eventRoute,/stateMutationAllowed:false/);
+  assert.doesNotMatch(eventRoute,/targetGroupId:req\./);
+});
+
+test('source reply receipt is bridge-authenticated and only accepts sent or ambiguous terminal evidence',()=>{
+  const start=routes.indexOf("router.post('/bridge/replies/:id/receipt'");
+  const end=routes.indexOf("router.post('/bridge/events'",start);
+  assert.ok(start>=0&&end>start);
+  const receipt=routes.slice(start,end);
+  assert.match(receipt,/bridgeTokenValid/);
+  assert.match(receipt,/sourceReplyReceiptSchema/);
+  assert.match(receipt,/recordSourceReplyDelivery/);
+  assert.match(transportStore,/status:'sent'\|'ambiguous'/);
+  assert.match(transportStore,/HIPICO_SOURCE_REPLY_TERMINAL/);
+});
+
+test('source reply replay rejects destination, message, intent or risk substitution',()=>{
+  const existing={
+    id:'hsr_11111111-1111-4111-8111-111111111111',
+    eventId:'hwe-1',recipient:'120363111111111111@g.us',message:'hola',
+    intent:'greeting',risk:'safe',status:'planned',providerMessageId:null,error:null,sentAt:null
+  };
+  const input={eventId:'hwe-1',recipient:'120363111111111111@g.us',message:'hola',intent:'greeting',risk:'safe'};
+  assert.doesNotThrow(()=>transportTest.assertSourceReplyReplay(existing as any,input));
+  for(const changed of [
+    {...input,recipient:'120363222222222222@g.us'},
+    {...input,message:'otro'},
+    {...input,intent:'query:NEXT_RACE'},
+    {...input,risk:'review'}
+  ]){
+    assert.throws(
+      ()=>transportTest.assertSourceReplyReplay(existing as any,changed as any),
+      (error:any)=>error?.code==='HIPICO_SOURCE_REPLY_REPLAY_MISMATCH'
+    );
+  }
+});

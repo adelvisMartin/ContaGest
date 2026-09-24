@@ -34,13 +34,16 @@ test('capture persists durable work before marking source message seen',async()=
   assert.ok(queueEvent>=0&&queueMirror>=0&&remember>queueEvent&&remember>queueMirror);
 });
 
-test('source remains read-only while LAB send stays identity-pinned',async()=>{
+test('source replies are authority-gated while LAB send stays independently identity-pinned',async()=>{
   const code=await source('index.mjs');
-  assert.match(code,/sourceSendPossible:\s*false/);
-  assert.match(code,/FUENTE: SOLO LECTURA/);
+  assert.match(code,/sourceSendPossible:\s*SOURCE_AUTO_REPLY_ACTIVE && backendState === 'online'/);
+  assert.match(code,/FUENTE: \$\{SOURCE_AUTO_REPLY_ACTIVE \? 'RESPUESTA AUTÓNOMA SEGURA HABILITADA' : 'SOLO LECTURA'\}/);
   assert.match(code,/async function sendTextInCurrentLab/);
   assert.match(code,/await assertCurrentLabIdentity\(\)/);
-  assert.doesNotMatch(code,/function sendTextInCurrentSource/);
+  assert.match(code,/async function sendTextInCurrentSource\(record\)/);
+  assert.match(code,/if \(!SOURCE_AUTO_REPLY_ACTIVE\)/);
+  assert.match(code,/SOURCE_REPLY_DESTINATION_MISMATCH/);
+  assert.match(code,/await assertCurrentSourceIdentity\(\)/);
 });
 
 test('replay CLI requeues only after destination, count and explicit confirmation checks',async()=>{
