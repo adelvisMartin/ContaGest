@@ -65,6 +65,7 @@ test('production config is strict, pinned and never accepts local-only', () => {
   assert.equal(valid.diagnosticScreenshotsEnabled, false);
   assert.equal(valid.labSendEnabled, false);
   assert.equal(valid.labTestInputEnabled, false);
+  assert.equal(valid.sourceAutoReplyEnabled, false);
 
   const invalid = loadRuntimeConfig({
     ...productionEnv,
@@ -143,4 +144,28 @@ test('readiness requires source, cloud and empty durable queues', () => {
   });
   assert.equal(degraded.ready, false);
   assert.ok(degraded.reasons.includes('LAB_MIRROR_PENDING'));
+});
+
+
+test('source autonomous replies are opt-in and require pinned identity plus backend sync', () => {
+  const enabled = loadRuntimeConfig({
+    ...productionEnv,
+    HIPICO_SOURCE_AUTO_REPLY_ENABLED: 'true'
+  }, 'C:/tmp');
+  assert.deepEqual(validateRuntimeConfig(enabled), []);
+  assert.equal(enabled.sourceAutoReplyEnabled, true);
+
+  const noSourceId = loadRuntimeConfig({
+    ...productionEnv,
+    HIPICO_SOURCE_AUTO_REPLY_ENABLED: 'true',
+    HIPICO_SOURCE_GROUP_ID: ''
+  }, 'C:/tmp');
+  assert.match(validateRuntimeConfig(noSourceId).join(' '), /SOURCE_GROUP_ID pinneado/);
+
+  const noBackend = loadRuntimeConfig({
+    ...productionEnv,
+    HIPICO_SOURCE_AUTO_REPLY_ENABLED: 'true',
+    HIPICO_BACKEND_SYNC_ENABLED: 'false'
+  }, 'C:/tmp');
+  assert.match(validateRuntimeConfig(noBackend).join(' '), /Respuesta autónoma SOURCE exige HIPICO_BACKEND_SYNC_ENABLED=true/);
 });
