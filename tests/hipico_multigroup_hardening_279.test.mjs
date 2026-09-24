@@ -58,6 +58,35 @@ test('newest open day wins while closed-day fallback remains chronological',()=>
   assert.equal(days.find((day)=>day.status==='open').id,'new-open');
 });
 
+test('migration-only recovery preserves orphaned group data without collapsing tenants',()=>{
+  const ws=workspace();
+  ws.participants=[{id:'legacy-g3',groupId:'g3',name:'Histórico'}];
+  ws.syncQueue=[{id:'sync-g3',groupId:'g3',action:'legacy_pending'}];
+
+  repairWorkspaceGroupScope(ws,null);
+
+  const recovered=ws.config.groups.find((group)=>group.id==='g3');
+  assert.ok(recovered);
+  assert.equal(recovered.active,false);
+  assert.equal(ws.participants[0].groupId,'g3');
+  assert.equal(ws.syncQueue[0].groupId,'g3');
+  assert.doesNotThrow(()=>normalizeWorkspaceShape(ws));
+});
+
+test('runtime writes still fail closed for newly unknown group references',()=>{
+  const previous=workspace();
+  const ws=workspace();
+  ws.participants=[{id:'bad-runtime-ref',groupId:'g3',name:'No debe autocorregirse'}];
+
+  repairWorkspaceGroupScope(ws,previous);
+
+  assert.equal(ws.config.groups.some((group)=>group.id==='g3'),false);
+  assert.throws(
+    ()=>normalizeWorkspaceShape(ws),
+    (error)=>error?.code==='HIPICO_WORKSPACE_UNKNOWN_GROUP'
+  );
+});
+
 test('financial UI guard enforces commission and rate bounds and is available offline',()=>{
   assert.match(guardSource,/La comisión debe estar entre 0% y 100%/);
   assert.match(guardSource,/La tasa Bs\/USD debe ser mayor que cero/);
