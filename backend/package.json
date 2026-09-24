@@ -35,7 +35,7 @@
     "prisma:sync-schema": "node scripts/sync-employee-prisma-schema.mjs",
     "prisma:generate": "npm run prisma:sync-schema && prisma generate",
     "prisma:migrate": "npm run prisma:sync-schema && prisma migrate dev",
-    "prisma:deploy": "npm run prisma:sync-schema && prisma migrate deploy",
+    "prisma:deploy": "npm run prisma:sync-schema && npm run prisma:baseline:ephemeral && prisma migrate deploy",
     "prisma:seed": "tsx prisma/seed.ts",
     "studio": "npm run prisma:sync-schema && prisma studio",
     "dev:mock": "node mock-server.mjs",
@@ -52,7 +52,8 @@
     "postinstall": "npm run prisma:generate",
     "seed": "tsx prisma/seed.ts",
     "seed:admin": "tsx prisma/seed.ts",
-    "seed:clean": "tsx prisma/seed.ts --clean-demo"
+    "seed:clean": "tsx prisma/seed.ts --clean-demo",
+    "prisma:baseline:ephemeral": "node scripts/prepare-ephemeral-prisma-baseline.mjs"
   },
   "dependencies": {
     "@prisma/client": "6.19.3",
