@@ -12,6 +12,7 @@ on:
       - 'backend/src/modules/hipico/hipico-agent.integration.ts'
       - 'backend/prisma/migrations/20260913230500_hipico_agent_shadow/migration.sql'
       - 'backend/package.json'
+      - 'backend/scripts/copy-runtime-assets.mjs'
       - 'backend/.env.example'
       - 'docs/hipico/README.md'
       - 'qa/fixtures/hipico-agent-golden-v1.json'
