@@ -168,6 +168,21 @@ test('harness detecta fixtures deliberadamente rotos', async ({ page }) => {
   expect(rules.has('aria-hidden-focus')).toBe(true);
 });
 
+test('harness acepta navegación Tab y Shift+Tab normal sin falso positivo', async ({ page }) => {
+  await page.setContent(`
+    <div class="login-shell">
+      <button id="first-ok">Primero</button>
+      <button id="second-ok">Segundo</button>
+      <button id="third-ok">Tercero</button>
+    </div>
+  `);
+  const findings = await auditKeyboardAndFocus(page, { route: 'keyboard-positive', standalone: true });
+  const blockingRules = new Set(findings.filter((finding) => ['critical', 'serious'].includes(finding.severity)).map((finding) => finding.rule));
+  expect(blockingRules.has('reverse-tab')).toBe(false);
+  expect(blockingRules.has('keyboard-trap')).toBe(false);
+  expect(blockingRules.has('focus-not-obscured')).toBe(false);
+});
+
 test('harness detecta keyboard trap y foco oscurecido', async ({ page }) => {
   await page.setContent(`
     <div class="login-shell">
