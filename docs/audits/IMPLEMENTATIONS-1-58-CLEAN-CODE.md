@@ -72,8 +72,15 @@ Durante la recuperación real de CI aparecieron defectos adicionales en AppSec, 
 - la matriz conserva historial multi-lote mediante `reviewBatches`;
 - regresión: `tests/frontend_vertical_helpers_batch4.test.mjs`.
 
+## Lote 5 · cliente vertical frontend
+
+- `query`, `pathId` y `createWithPhoto` centralizados en `verticalService.helpers.js`;
+- las cuatro autoridades públicas de servicio conservan firmas y endpoints;
+- `BackendApi` sigue siendo owner de auth/CSRF/idempotencia;
+- trazabilidad añadida a 10–47 sin borrar revisiones previas;
+- regresión: `tests/vertical_service_clean_code_batch5.test.mjs`.
+
 ## Pendiente priorizado
 
-- lote 5: servicios frontend y eliminación de boilerplate;
 - lote 6: acceso/licensing 52–57;
 - cierre: reejecutar 48–51/58 sobre el SHA final y actualizar esta matriz a `CLEAN_CODE_REVIEWED` por bloque.
