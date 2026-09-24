@@ -8,17 +8,19 @@ const backend=()=>fs.readFileSync('backend/src/modules/verticals/health.routes.t
 test('11/51 persists a structured odontogram payload, not only a tooth number',()=>{
   const source=page();
   for(const token of ['dentition','odontogram','selectedSurfaces','condition','surfaces:selectedSurfaces','tooth:selectedTooth']) assert.ok(source.includes(token),token);
-  assert.match(source,/clinicalData:\{[^}]*tooth:selectedTooth/s);
-  assert.match(source,/odontogram:\{dentition,[^}]*tooth:selectedTooth,[^}]*surfaces:selectedSurfaces,[^}]*condition:/s);
+  assert.match(source,/const clinicalData=\{/);
+  assert.match(source,/tooth:selectedTooth/);
+  assert.match(source,/odontogram:\{dentition,tooth:selectedTooth,surfaces:selectedSurfaces,condition:/);
 });
 
 test('11/51 supports permanent and primary dentitions with explicit tooth catalogs',()=>{
   const source=page();
+  const catalog=fs.readFileSync('frontend/src/components/dentistry/dentalCatalog.js','utf8');
   assert.match(source,/PERMANENT_TEETH/);
   assert.match(source,/PRIMARY_TEETH/);
   assert.match(source,/permanent/);
   assert.match(source,/primary/);
-  for(const tooth of ['11','48','51','85']) assert.ok(source.includes(`'${tooth}'`),tooth);
+  for(const tooth of ['11','48','51','85']) assert.ok(catalog.includes(`'${tooth}'`),tooth);
 });
 
 test('11/51 backend validates structured dental-treatment clinicalData',()=>{
@@ -31,6 +33,6 @@ test('11/51 backend validates structured dental-treatment clinicalData',()=>{
 test('11/51 keeps existing encounter transport and persistence authority',()=>{
   const source=backend();
   assert.match(source,/clinicalData: jsonRecord/);
-  assert.match(source,/JSON\.stringify\(b\.clinicalData\)/);
+  assert.match(source,/JSON\.stringify\(clinicalData\)/);
   assert.match(page(),/HealthVerticalService\.createEncounter\(/);
 });

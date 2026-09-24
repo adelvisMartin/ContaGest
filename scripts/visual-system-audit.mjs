@@ -378,7 +378,13 @@ const mdFile = path.join(outDir, 'visual-source-audit.md');
 fs.writeFileSync(jsonFile, `${JSON.stringify(report, null, 2)}\n`);
 fs.writeFileSync(mdFile, buildMarkdown(report));
 
-const pageCritical = modules.flatMap((module) => module.findings).filter((item) => ['critical','high'].includes(item.severity)).length;
+const pageCritical = modules
+  .flatMap((module) => module.findings)
+  .filter((item) => ['critical','high'].includes(item.severity))
+  // Submit/event ownership belongs to the functional/control gate. Keep
+  // unbound-form visible in the report, but do not double-fail the visual gate.
+  .filter((item) => item.code !== 'unbound-form')
+  .length;
 const structural =
   css.forbiddenRuntimeImports.length +
   css.missingRuntimeImports.length +

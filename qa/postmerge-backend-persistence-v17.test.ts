@@ -94,8 +94,15 @@ test('post-merge real persistence: CRUD, audit, licensing and tenant isolation',
   assert.ok(platformPermission>0,'Admin used by persistence E2E does not have platform.manage');
   const token=signAccessToken({id:admin.id,email:admin.email},tenant.id);
 
-  const qaUser=await prisma.userProfile.findFirst({where:{tenantId:tenant.id,email:QA_USER_EMAIL,status:'active'}});
-  assert.ok(qaUser,`Temporary QA user ${QA_USER_EMAIL} not found`);
+  const qaUser=await prisma.userProfile.upsert({
+    where:{tenantId_email:{tenantId:tenant.id,email:QA_USER_EMAIL}},
+    update:{fullName:'QA Restricted User',status:'active'},
+    create:{tenantId:tenant.id,email:QA_USER_EMAIL,fullName:'QA Restricted User',passwordHash:'qa-fixture-not-used-for-login',status:'active'}
+  });
+  t.after(async()=>{
+    await prisma.userRole.deleteMany({where:{userId:qaUser.id}}).catch(()=>undefined);
+    await prisma.userProfile.deleteMany({where:{id:qaUser.id,email:QA_USER_EMAIL}}).catch(()=>undefined);
+  });
   const restrictedToken=signAccessToken({id:qaUser.id,email:qaUser.email},tenant.id);
 
   const app=createApp();

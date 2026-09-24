@@ -25,3 +25,11 @@ test('49/51 workflow observes spec and contract changes',()=>{
   assert.ok(workflow.includes("qa/erp-visual-overlap-v4951.spec.mjs"));
   assert.ok(workflow.includes("tests/erp_ui_visual_overlap_49_51.test.mjs"));
 });
+
+
+test('49/51 waits for canonical migrated React owners instead of the retired standard wrapper',()=>{
+  const source=read('qa/erp-visual-overlap-v4951.spec.mjs');
+  for(const selector of ['#dentistryReactRoot .cg-dentistry-workspace','#veterinaryUnifiedRoot .cg-vet-dossier','#gymReactRoot .cg-gym-page']) assert.ok(source.includes(selector),selector);
+  assert.doesNotMatch(source,/#pages \.cgx-module-standard/);
+  assert.match(source,/ROUTE_READY_SELECTOR\[route\]/);
+});

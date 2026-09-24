@@ -34,7 +34,9 @@ test('3/51 dentistry preserves service contracts and controlled tooth selection'
   }
   assert.match(source,/selectedTooth/);
   assert.match(source,/setSelectedTooth/);
-  assert.match(source,/clinicalData:\{tooth:selectedTooth,procedure:/);
+  assert.match(source,/const clinicalData=\{/);
+  assert.match(source,/tooth:selectedTooth/);
+  assert.match(source,/procedure:encounterForm\.procedure/);
   assert.match(source,/type:'dentistry'/);
   assert.match(source,/type:'dental-treatment'/);
 });

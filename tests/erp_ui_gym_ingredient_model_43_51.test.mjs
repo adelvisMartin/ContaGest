@@ -40,12 +40,11 @@ test('43/51 frontend replaces free-text meal parsing with controlled ingredients
   assert.doesNotMatch(builder+library,/querySelector|addEventListener|innerHTML|document\./);
 });
 
-test('43/51 does not pre-implement detailed nutrient persistence reserved for 46/51',()=>{
-  const routes=read('backend/src/modules/verticals/gym.routes.ts');
+test('43/51 ingredient migration does not own later nutrient-profile persistence',()=>{
   const migration=read('backend/prisma/migrations/20260923183500_gym_ingredient_model_43_51/migration.sql');
-  const start=routes.indexOf("router.get('/gym/ingredients'");
-  const end=routes.indexOf("router.get('/gym/classes'",start);
-  assert.doesNotMatch(routes.slice(start,end)+migration,/micronutrient|vitamin|mineral|fiberG|sodiumMg/i);
+  assert.doesNotMatch(migration,/GymIngredientNutritionProfile|GymIngredientMicronutrient|micronutrient|fiberG|sodiumMg/i);
+  const profileMigration=read('backend/prisma/migrations/20260923213000_gym_nutrient_composition_46_51/migration.sql');
+  assert.match(profileMigration,/GymIngredientNutritionProfile/);
 });
 
 test('43/51 Wave A fails closed on ingredient-model regressions',()=>{

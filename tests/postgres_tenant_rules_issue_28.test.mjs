@@ -24,6 +24,14 @@ test('runner rechaza cualquier base que no termine en _e2e',()=>{
   assert.match(sql,/current_database\(\) !~ '_e2e\$'/);
 });
 
+test('runner adapta la URL Prisma para psql sin relajar el guard efímero',()=>{
+  assert.match(runner,/PSQL_DATABASE_URL=/);
+  assert.match(runner,/searchParams\.delete\('schema'\)/);
+  assert.match(runner,/DB_NAME=.*PSQL_DATABASE_URL.*current_database/);
+  assert.match(runner,/psql "\$PSQL_DATABASE_URL"/);
+  assert.doesNotMatch(runner,/psql "\$DATABASE_URL"/);
+});
+
 test('SQL prueba físicamente RIF inmutable',()=>{
   assert.match(sql,/UPDATE public\."Tenant" SET "rif"/);
   assert.match(sql,/SQLSTATE='23514'/);

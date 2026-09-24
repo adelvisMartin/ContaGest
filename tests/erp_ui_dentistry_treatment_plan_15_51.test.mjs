@@ -44,7 +44,9 @@ test('15/51 acceptance decision is server-authored and terminal for the draft pl
 test('15/51 UI models alternatives and phased procedures without pretending acceptance is a signature',()=>{
   const source=panel();
   for(const token of ['alternatives','phases','procedures','Agregar alternativa','Agregar fase','Agregar procedimiento','Presupuesto estimado','Aceptar plan','Rechazar plan']) assert.ok(source.includes(token),token);
-  assert.doesNotMatch(source,/firma|signature|CareConsent/i);
+  assert.match(source,/Aceptación ≠ consentimiento/);
+  assert.match(source,/No representa firma ni consentimiento clínico/);
+  assert.doesNotMatch(source,/HealthVerticalService\.createConsent|DentalConsentPanel|CareConsent/);
 });
 
 test('15/51 frontend uses canonical treatment-plan decision service',()=>{

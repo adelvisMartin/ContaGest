@@ -37,6 +37,9 @@ jobs:
     steps:
       - name: Checkout exact candidate
         uses: actions/checkout@v7
+        with:
+          ref: ${{ env.CANDIDATE_SHA }}
+          fetch-depth: 0
       - name: Verify exact SHA
         shell: bash
         run: |
@@ -53,6 +56,9 @@ jobs:
       - name: Install locked dependencies
         run: npm ci --no-audit --no-fund
       - name: Prisma validate
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/contagest_schema_validation_e2e?schema=public
+          DIRECT_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/contagest_schema_validation_e2e?schema=public
         shell: bash
         run: |
           set -o pipefail
@@ -106,19 +112,19 @@ jobs:
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: contagest_release_51
+          POSTGRES_DB: contagest_release_51_e2e
         ports:
           - 5432:5432
         options: >-
-          --health-cmd "pg_isready -U postgres -d contagest_release_51"
+          --health-cmd "pg_isready -U postgres -d contagest_release_51_e2e"
           --health-interval 5s
           --health-timeout 5s
           --health-retries 12
     env:
       NODE_ENV: test
       API_MODE: prisma
-      DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/contagest_release_51?schema=public
-      DIRECT_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/contagest_release_51?schema=public
+      DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/contagest_release_51_e2e?schema=public
+      DIRECT_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/contagest_release_51_e2e?schema=public
       APP_URL: http://127.0.0.1:8080
       CORS_ORIGIN: http://127.0.0.1:8080
       JWT_SECRET: v5151_only_jwt_secret_0123456789abcdefghijklmnopqrstuvwxyz_ABCDEF
@@ -128,6 +134,9 @@ jobs:
     steps:
       - name: Checkout exact candidate
         uses: actions/checkout@v7
+        with:
+          ref: ${{ env.CANDIDATE_SHA }}
+          fetch-depth: 0
       - name: Verify exact SHA
         shell: bash
         run: |
@@ -152,7 +161,7 @@ jobs:
         shell: bash
         run: |
           set -o pipefail
-          psql -h 127.0.0.1 -U postgres -d contagest_release_51 -v ON_ERROR_STOP=1 -f ops/database/prepare-supabase-ephemeral.sql 2>&1 | tee "$EVIDENCE_ROOT/$CANDIDATE_SHA/postgres/prerequisites.log"
+          psql -h 127.0.0.1 -U postgres -d contagest_release_51_e2e -v ON_ERROR_STOP=1 -f ops/database/prepare-supabase-ephemeral.sql 2>&1 | tee "$EVIDENCE_ROOT/$CANDIDATE_SHA/postgres/prerequisites.log"
       - name: Apply and verify canonical migrations
         shell: bash
         run: |
@@ -177,10 +186,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          care_count="$(psql -h 127.0.0.1 -U postgres -d contagest_release_51 -Atc "select count(*) from \"CarePatient\" where \"displayName\" like 'V48-%';")"
-          gym_count="$(psql -h 127.0.0.1 -U postgres -d contagest_release_51 -Atc "select count(*) from \"GymMember\" where \"memberCode\" like 'V48-%';")"
-          provision_tenant_count="$(psql -h 127.0.0.1 -U postgres -d contagest_release_51 -Atc "select count(*) from \"Tenant\" where \"rif\" like 'QA55-%';")"
-          provision_user_count="$(psql -h 127.0.0.1 -U postgres -d contagest_release_51 -Atc "select count(*) from \"UserProfile\" where \"email\" like 'qa55-%@example.test';")"
+          care_count="$(psql -h 127.0.0.1 -U postgres -d contagest_release_51_e2e -Atc "select count(*) from \"CarePatient\" where \"displayName\" like 'V48-%';")"
+          gym_count="$(psql -h 127.0.0.1 -U postgres -d contagest_release_51_e2e -Atc "select count(*) from \"GymMember\" where \"memberCode\" like 'V48-%';")"
+          provision_tenant_count="$(psql -h 127.0.0.1 -U postgres -d contagest_release_51_e2e -Atc "select count(*) from \"Tenant\" where \"rif\" like 'QA55-%';")"
+          provision_user_count="$(psql -h 127.0.0.1 -U postgres -d contagest_release_51_e2e -Atc "select count(*) from \"UserProfile\" where \"email\" like 'qa55-%@example.test';")"
           printf 'candidate_sha=%s\nqa48_care_patients=%s\nqa48_gym_members=%s\nqa55_tenants=%s\nqa55_users=%s\n' "$CANDIDATE_SHA" "$care_count" "$gym_count" "$provision_tenant_count" "$provision_user_count" > "$EVIDENCE_ROOT/$CANDIDATE_SHA/postgres/cleanup.log"
           test "$care_count" = "0"
           test "$gym_count" = "0"
@@ -201,6 +210,9 @@ jobs:
     timeout-minutes: 80
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.CANDIDATE_SHA }}
+          fetch-depth: 0
       - name: Verify exact SHA
         shell: bash
         run: |
@@ -238,6 +250,9 @@ jobs:
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.CANDIDATE_SHA }}
+          fetch-depth: 0
       - name: Verify exact SHA
         run: test "$(git rev-parse HEAD)" = "$CANDIDATE_SHA"
       - uses: actions/setup-node@v7
@@ -276,6 +291,9 @@ jobs:
             engine: webkit
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.CANDIDATE_SHA }}
+          fetch-depth: 0
       - name: Verify exact SHA
         run: test "$(git rev-parse HEAD)" = "$CANDIDATE_SHA"
       - uses: actions/setup-node@v7

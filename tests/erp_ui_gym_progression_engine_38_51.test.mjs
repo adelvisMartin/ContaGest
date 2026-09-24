@@ -50,5 +50,7 @@ test('38/51 stays separate from periodization and workout session execution',()=
   const domain=read('backend/src/modules/verticals/gym.progression.ts');
   assert.doesNotMatch(domain,/mesocycle|periodization|GymWorkoutSession|GymWorkoutSet/);
   const audit=read('scripts/erp-ui-wave-a-audit-v251.mjs');
-  for(const token of ['fitnessProgressionStrategies.js','progressionStrategy','progressionConfig','progression engine']) assert.ok(audit.includes(token),token);
+  for(const token of ['fitnessProgressionStrategies.js','progressionStrategy','progressionConfig','progression domain']) assert.ok(audit.includes(token),token);
+  assert.match(audit,/progressionDomain\.includes\(contract\)/);
+  assert.doesNotMatch(audit,/gymRoutes\.includes\(contract\)\)fail\(\`fitness: backend missing progression engine contract/);
 });

@@ -1,6 +1,13 @@
 import { test, expect } from '@playwright/test';
 
 const ROUTES=['odontologia','veterinaria','gimnasio','rutinas','nutricion'];
+const ROUTE_READY_SELECTOR={
+  odontologia:'#dentistryReactRoot .cg-dentistry-workspace',
+  veterinaria:'#veterinaryUnifiedRoot .cg-vet-dossier',
+  gimnasio:'#gymReactRoot .cg-gym-page',
+  rutinas:'#gymReactRoot .cg-gym-page',
+  nutricion:'#gymReactRoot .cg-gym-page'
+};
 const VIEWPORTS=[
   {name:'phone-360',width:360,height:800},
   {name:'phone-390',width:390,height:844},
@@ -130,7 +137,7 @@ for(const route of ROUTES){
         await page.setViewportSize({width:viewport.width,height:viewport.height});
         await page.goto(`/?module=${route}`,{waitUntil:'domcontentloaded'});
         await expect(page.locator('#pages')).toBeAttached();
-        await expect(page.locator('#pages .cgx-module-standard').first()).toBeAttached({timeout:20_000});
+        await expect(page.locator(ROUTE_READY_SELECTOR[route]).first()).toBeAttached({timeout:20_000});
         await page.evaluate((text)=>{
           for(const input of document.querySelectorAll('#pages input[type="text"],#pages textarea')){
             if(!input.disabled&&!input.readOnly&&!input.value)input.value=text;

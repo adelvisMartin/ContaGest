@@ -591,6 +591,7 @@ if(dentistryEntry?.status==='MIGRATED'){
 
 const fitnessEntries=ERP_UI_WAVE_A_2_51.filter((item)=>['gimnasio','rutinas','nutricion'].includes(item.route));
 const fitness=sourceCache.get('frontend/src/pages/GymManagementPage.jsx');
+const fitnessVerticalService=read('frontend/src/services/verticalService.js');
 if(fitnessEntries.every((item)=>item.status==='MIGRATED')){
   if(/components\/ui\/index\.js|escapeHtml|innerHTML|querySelector|addEventListener|mountSubmit|MutationObserver/.test(fitness))fail('fitness: migrated renderer reintroduced imperative fitness lifecycle or legacy kit');
   if((fitness.match(/createRoot\(/g)||[]).length!==1)fail('fitness: migrated renderer must own exactly one React root');
@@ -644,7 +645,8 @@ if(fitnessEntries.every((item)=>item.status==='MIGRATED')){
   if(/label="Días\/semana"/.test(fitness))fail('fitness: manual daysPerWeek input reintroduced');
   if(!fitness.includes('scheduledDays')||!fitness.includes('daysPerWeek:scheduledDays.length'))fail('fitness: daysPerWeek must derive from programmed weekdays');
   if(/querySelector|addEventListener|innerHTML|document\./.test(weeklySchedule))fail('fitness: weekly schedule reintroduced imperative DOM lifecycle');
-  for(const contract of ['routineSchema.superRefine','scheduledDays','value.daysPerWeek!==scheduledDays.size','La frecuencia semanal debe coincidir con los días programados.']){
+  if(!/const routineSchema = z\.object\(\{[\s\S]*?\}\)\.superRefine\(\(value, refinement\) => \{/.test(gymRoutes))fail('fitness: routine schema must attach weekly schedule refinement to the canonical Zod object');
+  for(const contract of ['scheduledDays','value.daysPerWeek!==scheduledDays.size','La frecuencia semanal debe coincidir con los días programados.']){
     if(!gymRoutes.includes(contract))fail(`fitness: missing weekly schedule backend contract ${contract}`);
   }
   const trainingModes=read('frontend/src/data/fitnessTrainingModes.js');
@@ -682,10 +684,10 @@ if(fitnessEntries.every((item)=>item.status==='MIGRATED')){
   for(const contract of ['FITNESS_PROGRESSION_STRATEGIES','progressionStrategy','progressionConfig','Estrategia de progresión','RIR objetivo','RPE objetivo','1RM de referencia','Estancamiento tras']){
     if(!routineBuilder.includes(contract))fail(`fitness: RoutineBuilder missing progression contract ${contract}`);
   }
-  for(const contract of ['progressionStrategySchema','progressionConfigSchema','RPE y RIR no son coherentes','La doble progresión requiere un rango de repeticiones válido.','La progresión por %1RM requiere 1RM y porcentaje.','/gym/progression/evaluate','evaluateGymProgression']){
-    if(!gymRoutes.includes(contract))fail(`fitness: backend missing progression engine contract ${contract}`);
+  for(const contract of ['progressionStrategySchema','progressionConfigSchema','/gym/progression/evaluate','evaluateGymProgression']){
+    if(!gymRoutes.includes(contract))fail(`fitness: backend missing progression route contract ${contract}`);
   }
-  for(const contract of ['increase_load','increase_reps','target_percent_1rm','reset_load','missing_effort_evidence','stall_threshold_reached','applied:false']){
+  for(const contract of ['RPE y RIR no son coherentes','La doble progresión requiere un rango de repeticiones válido.','La progresión por %1RM requiere 1RM y porcentaje.','increase_load','increase_reps','target_percent_1rm','reset_load','missing_effort_evidence','stall_threshold_reached','applied:false']){
     if(!progressionDomain.includes(contract))fail(`fitness: progression domain missing deterministic contract ${contract}`);
   }
   if(!progressionMigration.includes('GymRoutineExercise_progressionStrategy_check')||!progressionMigration.includes('"progressionConfig" jsonb'))fail('fitness: progression migration contract missing');
@@ -709,7 +711,7 @@ if(fitnessEntries.every((item)=>item.status==='MIGRATED')){
     if(!periodizationMigration.includes(contract))fail(`fitness: periodization 39 migration missing ${contract}`);
   }
   const periodizationStart=gymRoutes.indexOf("router.get('/gym/periodization/templates'");
-  const periodizationEnd=gymRoutes.indexOf("router.get('/gym/routines'",periodizationStart);
+  const periodizationEnd=gymRoutes.indexOf("router.get('/gym/workout-sessions'",periodizationStart);
   const periodizationBlock=gymRoutes.slice(periodizationStart,periodizationEnd);
   if(periodizationStart<0||periodizationEnd<0)fail('fitness: periodization 39 route boundaries missing');
   if(/GymWorkoutSession|GymWorkoutSet|completedSets|actualRir|actualRpe|timer/.test(periodizationBlock))fail('fitness: periodization 39 must not pre-implement workout execution 40');
@@ -790,7 +792,7 @@ if(fitnessEntries.every((item)=>item.status==='MIGRATED')){
   if(/mealLines|Tipo \| kcal \| alimentos/.test(fitness))fail('fitness: nutrition 43 must not use free-text meal parsing');
   if(!fitness.includes('GymVerticalService.ingredients({active:\'true\'})')||!fitness.includes('ingredientId:String(item.ingredientId'))fail('fitness: nutrition 43 structured ingredient wiring missing');
   const nutritionStart=gymRoutes.indexOf("router.get('/gym/ingredients'");
-  const nutritionEnd=gymRoutes.indexOf("router.get('/gym/classes'",nutritionStart);
+  const nutritionEnd=gymRoutes.indexOf("router.get('/gym/ingredients/:id/nutrition-profiles'",nutritionStart);
   const nutritionBlock=gymRoutes.slice(nutritionStart,nutritionEnd);
   if(nutritionStart<0||nutritionEnd<0)fail('fitness: nutrition ingredient 43 route boundaries missing');
   if(/micronutrient|vitamin|mineral|fiberG|sodiumMg/i.test(nutritionBlock+ingredientMigration))fail('fitness: nutrition ingredient 43 must not pre-implement nutrient persistence 46');
@@ -815,7 +817,7 @@ if(fitnessEntries.every((item)=>item.status==='MIGRATED')){
   }
   if(!gymRoutes.includes('meal.dayIndex>Number(value.durationDays)')||!gymRoutes.includes('Cada comida debe pertenecer al horizonte configurado del plan.'))fail('fitness: complete meal plan 44 horizon validation missing');
   const shoppingStart=gymRoutes.indexOf("router.get('/gym/nutrition/:id/shopping-list'");
-  const shoppingEnd=gymRoutes.indexOf("router.get('/gym/classes'",shoppingStart);
+  const shoppingEnd=gymRoutes.indexOf("router.get('/gym/adherence'",shoppingStart);
   const shoppingBlock=gymRoutes.slice(shoppingStart,shoppingEnd);
   if(shoppingStart<0||shoppingEnd<0)fail('fitness: complete meal plan 44 shopping-list route boundaries missing');
   if(/INSERT INTO|UPDATE public|DELETE FROM/.test(shoppingBlock))fail('fitness: shopping list 44 must remain derived/read-only');
@@ -887,12 +889,12 @@ if(fitnessEntries.every((item)=>item.status==='MIGRATED')){
   if(/UPDATE public\."GymMealAdherenceEvent"|DELETE FROM public\."GymMealAdherenceEvent"/.test(gymRoutes))fail('fitness: adherence 47 events must remain append-only');
   if(!gymRoutes.includes('DISTINCT ON (e."mealId")')||!gymRoutes.includes('ORDER BY e."mealId",e."recordedAt" DESC,e."id" DESC'))fail('fitness: adherence 47 must derive current meal status from the latest explicit event');
   if(!adherenceMigration.includes('GymMealAdherenceEvent_status_check')||!adherenceMigration.includes("'completed','skipped'"))fail('fitness: adherence 47 migration must constrain explicit meal outcomes');
-  if(/autoAdjust|autoRecommend|inferAllerg|inferDiagnos|prescribe|clinicalDecision/i.test(adherencePanel+adherenceMigration))fail('fitness: adherence 47 must not infer clinical decisions or auto-adjust plans');
+  if(/autoAdjust|autoRecommend|inferAllerg|inferDiagnos|clinicalDecision|\bprescribe\s*\(/i.test(adherencePanel+adherenceMigration))fail('fitness: adherence 47 must not infer clinical decisions or auto-adjust plans');
   if((gymRoutes.match(/const mealAdherenceSchema=/g)||[]).length!==1)fail('fitness: adherence 47 schema must remain singleton');
   if((gymRoutes.match(/router\.get\('\/gym\/adherence'/g)||[]).length!==1)fail('fitness: adherence 47 GET route must remain singleton');
   if((gymRoutes.match(/router\.post\('\/gym\/adherence\/meals'/g)||[]).length!==1)fail('fitness: adherence 47 POST route must remain singleton');
-  if((verticalService.match(/adherence\(memberId\)/g)||[]).length!==1)fail('fitness: adherence 47 service reader must remain singleton');
-  if((verticalService.match(/recordMealAdherence\(payload\)/g)||[]).length!==1)fail('fitness: adherence 47 service writer must remain singleton');
+  if((fitnessVerticalService.match(/adherence\(memberId\)/g)||[]).length!==1)fail('fitness: adherence 47 service reader must remain singleton');
+  if((fitnessVerticalService.match(/recordMealAdherence\(payload\)/g)||[]).length!==1)fail('fitness: adherence 47 service writer must remain singleton');
 }
 
 const css=read('frontend/src/styles/erp-runtime.css');

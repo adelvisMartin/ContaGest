@@ -11,6 +11,7 @@ const subscription=read('backend/src/shared/commercial/subscriptionMiddleware.ts
 const membership=read('backend/src/shared/identity/accountMembership.ts');
 const legal=read('backend/src/shared/legal/legalAcceptanceMiddleware.ts');
 const migration=read('backend/prisma/migrations/20260827043000_issue_27_platform_identity_normalization/migration.sql');
+const prismaSchema=read('backend/prisma/schema.prisma');
 
 test('Role.system no identifica operador interno ni evita validateUserLicense',()=>{
   assert.doesNotMatch(auth,/isInternalUser\s*\(/);
@@ -51,8 +52,9 @@ test('normalización revoca bindings inválidos sin conceder privilegios nuevos'
 });
 
 test('Role.system puede seguir existiendo como metadata sin autoridad',()=>{
-  assert.match(auth,/system:true/);
-  assert.doesNotMatch(context,/\.system/);
-  assert.doesNotMatch(subscription,/\.system/);
-  assert.doesNotMatch(legal,/\.system/);
+  assert.match(prismaSchema,/model Role \{[\s\S]*?system\s+Boolean\s+@default\(false\)/);
+  for(const source of [auth,context,access,subscription,membership,legal]){
+    assert.doesNotMatch(source,/role\?*\.system|\.system\s*===\s*true|system\s*&&/);
+  }
+  assert.match(auth,/platformOperator=await hasPlatformAccess/);
 });

@@ -176,7 +176,7 @@ export function VeterinaryFinancialPanel({ selectedPatient, encounters = [], hos
           <Typography variant="caption" color="text.secondary">Línea {index+1} · {line.kind==='product'?'Producto: el servidor fija precio/impuesto.':'Servicio: monto estimativo que será recalculado server-side.'}</Typography>
         </Paper>)}
       </Stack>
-      <Stack direction="row" gap=.7 mt={1.2} flexWrap="wrap">
+      <Stack direction="row" gap={0.7} mt={1.2} flexWrap="wrap">
         <Button type="button" variant="outlined" onClick={()=>addLine('service')}>Agregar servicio</Button>
         <Button type="button" variant="outlined" onClick={()=>addLine('product')}>Agregar producto</Button>
         <Button type="submit" disabled={busy}>Guardar estimación</Button>

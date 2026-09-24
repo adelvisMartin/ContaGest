@@ -59,6 +59,9 @@ jobs:
     steps:
       - name: Descargar código exacto
         uses: actions/checkout@v7
+        with:
+          ref: ${{ env.CANDIDATE_SHA }}
+          fetch-depth: 0
 
       - name: Confirmar SHA candidato
         shell: bash
@@ -118,8 +121,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          care_count="$(psql -h 127.0.0.1 -U postgres -d contagest_verticals_e2e -Atc "select count(*) from \"CarePatient\" where \"displayName\" like 'V48-%';")"
-          gym_count="$(psql -h 127.0.0.1 -U postgres -d contagest_verticals_e2e -Atc "select count(*) from \"GymMember\" where \"memberCode\" like 'V48-%';")"
+          care_count="$(psql -h 127.0.0.1 -U postgres -d contagest_verticals_e2e -Atc "select case when to_regclass('public.\"CarePatient\"') is null then 0 else (select count(*) from \"CarePatient\" where \"displayName\" like 'V48-%') end;")"
+          gym_count="$(psql -h 127.0.0.1 -U postgres -d contagest_verticals_e2e -Atc "select case when to_regclass('public.\"GymMember\"') is null then 0 else (select count(*) from \"GymMember\" where \"memberCode\" like 'V48-%') end;")"
           {
             echo "candidate_sha=$CANDIDATE_SHA"
             echo "postgres=$(psql -h 127.0.0.1 -U postgres -d contagest_verticals_e2e -Atc 'show server_version;')"

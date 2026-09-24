@@ -28,7 +28,7 @@ test('44/51 recipe writes validate tenant ingredients atomically',()=>{
 test('44/51 shopping list is read-only and excludes alternatives from purchasing totals',()=>{
   const source=read('backend/src/modules/verticals/gym.routes.ts');
   const start=source.indexOf("router.get('/gym/nutrition/:id/shopping-list'");
-  const end=source.indexOf("router.get('/gym/classes'",start);
+  const end=source.indexOf("router.get('/gym/adherence'",start);
   const block=source.slice(start,end);
   assert.ok(start>=0&&end>start);
   for(const token of ['shoppingList','GymRecipeItem','GymMealItem']) assert.ok(block.includes(token),token);
@@ -60,13 +60,15 @@ test('44/51 quick generator cannot bypass canonical persistence',()=>{
   assert.doesNotMatch(block,/GymVerticalService\.createNutrition\(|FitnessNutritionService\.toApiMeals\(/);
 });
 
-test('44/51 defers restrictions detailed nutrients and adherence to 45-47',()=>{
-  const routes=read('backend/src/modules/verticals/gym.routes.ts');
-  const migration=read('backend/prisma/migrations/20260923193000_gym_complete_meal_plan_44_51/migration.sql');
+test('44/51 meal-plan migration does not own later rules nutrients or adherence persistence',()=>{
+  const weekly=read('backend/prisma/migrations/20260923190000_gym_complete_meal_plan_44_51/migration.sql');
+  const complete=read('backend/prisma/migrations/20260923193000_gym_complete_meal_plan_44_51/migration.sql');
   const builder=read('frontend/src/components/fitness/CompleteMealPlanBuilder.jsx');
-  const start=routes.indexOf('const recipeSchema');
-  const end=routes.indexOf('const classSchema',start);
-  assert.doesNotMatch(routes.slice(start,end)+migration+builder,/allerg|intoler|preferenceRule|micronutrient|vitamin|mineral|adherence|compliance/i);
+  assert.doesNotMatch(weekly+complete,/GymNutritionRule|GymIngredientNutritionProfile|GymMealAdherenceEvent/);
+  assert.doesNotMatch(builder,/createNutritionRule|createIngredientNutritionProfile|recordMealAdherence/);
+  assert.ok(read('backend/prisma/migrations/20260923203000_gym_nutrition_rules_45_51/migration.sql').includes('GymNutritionRule'));
+  assert.ok(read('backend/prisma/migrations/20260923213000_gym_nutrient_composition_46_51/migration.sql').includes('GymIngredientNutritionProfile'));
+  assert.ok(read('backend/prisma/migrations/20260923222000_gym_integrated_adherence_47_51/migration.sql').includes('GymMealAdherenceEvent'));
 });
 
 test('44/51 Wave A fails closed on complete-plan regressions',()=>{

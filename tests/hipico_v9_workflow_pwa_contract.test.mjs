@@ -4,15 +4,25 @@ import test from 'node:test';
 
 const read = (relative) => readFile(new URL(`../${relative}`, import.meta.url), 'utf8');
 
-test('v9 manual release workflow can supply explicit P0 and security-critical evidence without client authority changes', async () => {
-  const workflow = await read('.github/workflows/hipico-production-gates-v290.yml');
-  for (const input of ['p0_open', 'security_critical', 'physical_qa_status']) {
+test('v9 manual release workflow accepts governance inputs but keeps physical QA artifact-authoritative', async () => {
+  const [workflow, report] = await Promise.all([
+    read('.github/workflows/hipico-production-gates-v290.yml'),
+    read('scripts/hipico-release-report-v290.mjs')
+  ]);
+
+  for (const input of ['p0_open', 'security_critical']) {
     assert.ok(workflow.includes(`${input}:`), `workflow_dispatch input missing: ${input}`);
   }
+
   assert.match(workflow, /HIPICO_P0_OPEN:/);
   assert.match(workflow, /HIPICO_SECURITY_CRITICAL:/);
-  assert.match(workflow, /HIPICO_PHYSICAL_QA_STATUS:/);
+  assert.doesNotMatch(workflow, /physical_qa_status:/);
+  assert.doesNotMatch(workflow, /HIPICO_PHYSICAL_QA_STATUS:/);
   assert.doesNotMatch(workflow, /HIPICO_AUTOMATIC_OWNER_APPROVED:\s*\$\{\{ inputs\./);
+
+  assert.match(report, /physicalQaArtifact\s*=\s*status\(optionalEvidence\.find/);
+  assert.match(report, /physicalQa:\s*physicalQaArtifact/);
+  assert.doesNotMatch(report, /process\.env\.HIPICO_PHYSICAL_QA_STATUS/);
 });
 
 test('PWA update and cloud version conflict paths are fail-safe and preserve local recovery before retry', async () => {

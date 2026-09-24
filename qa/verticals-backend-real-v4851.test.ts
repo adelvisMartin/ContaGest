@@ -149,11 +149,23 @@ test('48/51 real PostgreSQL: dentistry + veterinary + gym lifecycle, isolation, 
           odontogram:{dentition:'permanent',tooth:'11',surfaces:['vestibular'],condition:'caries'}
         },
         confidential:false,
-        status:'signed'
+        status:'draft'
       })
     });
     dentalEncounterId=String(created.id);
-    assert.equal(created.status,'signed');
+    assert.equal(created.status,'draft');
+
+    const initialReview=await harness.ok(`/verticals/health/encounters/${encodeURIComponent(dentalEncounterId)}/workflow`,{
+      method:'POST',
+      body:JSON.stringify({action:'submit-review'})
+    });
+    assert.equal(initialReview.status,'review');
+
+    const initialSigned=await harness.ok(`/verticals/health/encounters/${encodeURIComponent(dentalEncounterId)}/workflow`,{
+      method:'POST',
+      body:JSON.stringify({action:'sign'})
+    });
+    assert.equal(initialSigned.status,'signed');
 
     const before=await harness.ok(`/verticals/health/encounters?patientId=${encodeURIComponent(dentalPatientId)}`);
     assert.ok(before.some((row:any)=>String(row.id)===dentalEncounterId));
@@ -175,8 +187,24 @@ test('48/51 real PostgreSQL: dentistry + veterinary + gym lifecycle, isolation, 
     });
     amendedDentalEncounterId=String(amended.id);
     assert.notEqual(amendedDentalEncounterId,dentalEncounterId);
-    assert.equal(amended.status,'signed');
+    assert.equal(amended.status,'draft');
     assert.equal(amended.clinicalData?.versioning?.previousEncounterId,dentalEncounterId);
+
+    const beforeReviewRows=await harness.prisma.$queryRawUnsafe<any[]>('SELECT "status","clinicalData" FROM public."CareEncounter" WHERE "tenantId"=$1 AND "id"=$2',harness.tenant.id,dentalEncounterId);
+    assert.equal(beforeReviewRows[0]?.status,'signed');
+    assert.equal(beforeReviewRows[0]?.clinicalData?.odontogram?.condition,'caries');
+
+    const review=await harness.ok(`/verticals/health/encounters/${encodeURIComponent(amendedDentalEncounterId)}/workflow`,{
+      method:'POST',
+      body:JSON.stringify({action:'submit-review'})
+    });
+    assert.equal(review.status,'review');
+
+    const signed=await harness.ok(`/verticals/health/encounters/${encodeURIComponent(amendedDentalEncounterId)}/workflow`,{
+      method:'POST',
+      body:JSON.stringify({action:'sign'})
+    });
+    assert.equal(signed.status,'signed');
 
     const oldRows=await harness.prisma.$queryRawUnsafe<any[]>('SELECT "status","clinicalData" FROM public."CareEncounter" WHERE "tenantId"=$1 AND "id"=$2',harness.tenant.id,dentalEncounterId);
     assert.equal(oldRows[0]?.status,'amended');
