@@ -78,6 +78,17 @@ runGroup('login mobile 360px',['qa/login-auth-runtime-v161.spec.mjs','--grep','m
 runGroup('login mobile 390px',['qa/login-auth-runtime-v161.spec.mjs','--grep','mobile login 390px']);
 runGroup('login mobile 430px',['qa/login-auth-runtime-v161.spec.mjs','--grep','mobile login 430px']);
 runGroup('mobile command navigation',['qa/mobile-navigation-v163.spec.mjs','--grep','command palette opens']);
+const MOBILE_NAV_BATCH_SIZE=8;
+const mobileNavBatchCount=Math.ceil(MODULE_VISUAL_CATALOG.length/MOBILE_NAV_BATCH_SIZE);
+for(let batchIndex=0;batchIndex<mobileNavBatchCount;batchIndex+=1){
+  runGroup(`mobile sidebar navigation batch ${batchIndex+1}/${mobileNavBatchCount}`,[
+    'qa/mobile-navigation-v163.spec.mjs',
+    '--grep','every actual sidebar route button'
+  ],{env:{
+    CG_MOBILE_NAV_BATCH_INDEX:String(batchIndex),
+    CG_MOBILE_NAV_BATCH_SIZE:String(MOBILE_NAV_BATCH_SIZE)
+  }});
+}
 if(isPostMerge58x5)runGroup('2/51 vertical Wave A geometry',['qa/erp-ui-wave-a-v251.spec.mjs']);
 
 runGroup('58-route mount + DOM integrity',['qa/erp-functional-smoke-v14.spec.mjs','--grep','58 registered routes']);
