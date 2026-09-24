@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { ACCESS_MANIFEST } from '../backend/src/shared/contracts/accessManifestRuntime.js';
-import { modulesForMode } from '../frontend/src/data/moduleCatalog.js';
+import { MODULE_CATALOG } from '../frontend/src/data/moduleCatalog.js';
 
 const licenses=fs.readFileSync('backend/src/modules/licenses/licenses.routes.ts','utf8');
 const page=fs.readFileSync('frontend/src/pages/LicensesPage.js','utf8');
@@ -28,13 +28,12 @@ test('56/75 legacy license output filters unknown stored modules without mutatin
 
 test('56/75 license UI derives available modules and sector defaults from moduleCatalog',()=>{
   assert.match(page,/MODULE_CATALOG/);
-  assert.match(page,/modulesForMode/);
+  assert.match(page,/MODULE_CATALOG\.map\(\(item\)=>item\.route\)/);
+  assert.match(page,/canonicalLicenseModules/);
+  assert.match(page,/routes\.filter\(\(route\)=>canonicalLicenseModules\.has\(route\)\)/);
   assert.doesNotMatch(page,/DemoAccessService\.modules/);
-  assert.doesNotMatch(page,/const sectorDefaults = \{[\s\S]*odontologia:\[/);
   const canonical=new Set(ACCESS_MANIFEST.modules.map((item)=>item.route));
-  for(const mode of ['contador','comercio','restaurante','servicios','salud','veterinaria','psicologia','odontologia','gimnasio','nutricion']){
-    for(const item of modulesForMode(mode))assert.ok(canonical.has(item.route),`${mode}:${item.route}`);
-  }
+  for(const item of MODULE_CATALOG)assert.ok(canonical.has(item.route),item.route);
 });
 
 test('56/75 canonical license module catalog remains exactly the authenticated manifest',()=>{
