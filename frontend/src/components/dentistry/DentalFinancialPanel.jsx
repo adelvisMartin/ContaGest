@@ -122,7 +122,7 @@ export function DentalFinancialPanel({selectedPatientId,encounters,notify}){
       <Box sx={{display:'grid',gridTemplateColumns:{xs:'1fr',lg:'repeat(2,minmax(0,1fr))'},gap:1,mt:1.5}}>
         <Paper variant="outlined" sx={{p:1.2,minWidth:0}}>
           <Typography variant="subtitle1" fontWeight={800}>Producción por profesional</Typography>
-          <Stack gap=.7 mt={1}>
+          <Stack gap={0.7} mt={1}>
             {professionals.slice(0,8).map((item)=><Paper key={item.key} variant="outlined" sx={{p:.9}}>
               <Stack direction="row" justifyContent="space-between" gap={1} alignItems="center">
                 <Box sx={{minWidth:0}}><Typography variant="body2" fontWeight={700} noWrap>{item.professionalName}</Typography><Typography variant="caption" color="text.secondary">{item.currency}</Typography></Box>
@@ -135,7 +135,7 @@ export function DentalFinancialPanel({selectedPatientId,encounters,notify}){
 
         <Paper variant="outlined" sx={{p:1.2,minWidth:0}}>
           <Typography variant="subtitle1" fontWeight={800}>Producción por procedimiento</Typography>
-          <Stack gap=.7 mt={1}>
+          <Stack gap={0.7} mt={1}>
             {procedures.slice(0,8).map((item)=><Paper key={item.key} variant="outlined" sx={{p:.9}}>
               <Stack direction="row" justifyContent="space-between" gap={1} alignItems="center">
                 <Box sx={{minWidth:0}}><Typography variant="body2" fontWeight={700} noWrap>{item.procedure}</Typography><Typography variant="caption" color="text.secondary">{item.quantity} unidad(es) · {item.currency}</Typography></Box>

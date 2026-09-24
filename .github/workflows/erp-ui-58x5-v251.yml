@@ -6,6 +6,7 @@ on:
     paths:
       - 'frontend/**'
       - 'qa/**'
+      - 'qa/erp-visual-overlap-v4951.spec.mjs'
       - 'tests/erp_ui_visual_overlap_49_51.test.mjs'
       - 'tests/erp_ui_component_contracts_50_51.test.mjs'
       - 'scripts/vercel-browser-preqa-v16.mjs'

@@ -1,6 +1,4 @@
 import { spawnSync } from 'node:child_process';
-import { MODULE_VISUAL_CATALOG } from '../qa/support/module-visual-catalog.mjs';
-
 const root=process.cwd();
 const isVercel=Boolean(process.env.VERCEL);
 const isPreview=process.env.VERCEL_ENV==='preview';
@@ -55,14 +53,14 @@ if(isPostMerge58x5){
 execute('npm',['install','--no-save','--package-lock=false','--ignore-scripts','--no-audit','--no-fund',`@sparticuz/chromium@${SERVERLESS_CHROMIUM_VERSION}`]);
 execute('npx',['--no-install','playwright','install','ffmpeg']);
 
-const probeSource=`import chromium from '@sparticuz/chromium';chromium.setGraphicsMode=false;const executablePath=await chromium.executablePath();const runtimeEnv={LD_LIBRARY_PATH:process.env.LD_LIBRARY_PATH||'',FONTCONFIG_PATH:process.env.FONTCONFIG_PATH||'',HOME:process.env.HOME||''};process.stdout.write('__CG_CHROMIUM__'+JSON.stringify({executablePath,args:chromium.args,runtimeEnv}));`;
+const probeSource=`import chromium from '@sparticuz/chromium';import { chromium as playwrightChromium } from 'playwright';chromium.setGraphicsMode=false;const executablePath=await chromium.executablePath();const args=chromium.args;const browser=await playwrightChromium.launch({executablePath,args,headless:true});await browser.close();const runtimeEnv={LD_LIBRARY_PATH:process.env.LD_LIBRARY_PATH||'',FONTCONFIG_PATH:process.env.FONTCONFIG_PATH||'',HOME:process.env.HOME||''};process.stdout.write('__CG_CHROMIUM__'+JSON.stringify({executablePath,args,runtimeEnv,launchVerified:true}));`;
 const probe=execute(process.execPath,['--input-type=module','--eval',probeSource],{capture:true});
 const marker='__CG_CHROMIUM__',markerIndex=String(probe.stdout||'').lastIndexOf(marker);
 if(markerIndex<0){console.error('[browser-preqa] No se pudo resolver Chromium serverless.');process.exit(1);}
 let browserConfig;
 try{browserConfig=JSON.parse(String(probe.stdout).slice(markerIndex+marker.length));}catch(error){console.error(`[browser-preqa] Configuración Chromium inválida: ${error.message}`);process.exit(1);}
 if(!browserConfig?.executablePath||!Array.isArray(browserConfig?.args))process.exit(1);
-if(!String(browserConfig.runtimeEnv?.LD_LIBRARY_PATH||'').includes('/tmp/al2023/lib')){console.error('[browser-preqa] Capa AL2023 no activa.');process.exit(1);}
+if(browserConfig.launchVerified!==true){console.error('[browser-preqa] Chromium serverless no superó el smoke launch real.');process.exit(1);}
 
 const browserEnv={...browserConfig.runtimeEnv,CI:'1',PLAYWRIGHT_HTML_OPEN:'never',CG_PLAYWRIGHT_CHROMIUM_EXECUTABLE:browserConfig.executablePath,CG_PLAYWRIGHT_CHROMIUM_ARGS:JSON.stringify(browserConfig.args)};
 function runGroup(label,args,{env={}}={}){
@@ -78,6 +76,7 @@ runGroup('login mobile 360px',['qa/login-auth-runtime-v161.spec.mjs','--grep','m
 runGroup('login mobile 390px',['qa/login-auth-runtime-v161.spec.mjs','--grep','mobile login 390px']);
 runGroup('login mobile 430px',['qa/login-auth-runtime-v161.spec.mjs','--grep','mobile login 430px']);
 runGroup('mobile command navigation',['qa/mobile-navigation-v163.spec.mjs','--grep','command palette opens']);
+
 if(isPostMerge58x5)runGroup('2/51 vertical Wave A geometry',['qa/erp-ui-wave-a-v251.spec.mjs']);
 
 runGroup('58-route mount + DOM integrity',['qa/erp-functional-smoke-v14.spec.mjs','--grep','58 registered routes']);
@@ -99,4 +98,4 @@ if(failures.length){
   failures.forEach((item)=>console.error(` - ${item.label} (exit ${item.status})`));
   process.exit(1);
 }
-console.log('\n[browser-preqa][PASS] React Doctor, navegación, controles, responsive, composición fina y 58x5 Chromium sin fallos. Los gates PostgreSQL reales se ejecutan en un runner con base aislada.');
+console.log('\n[browser-preqa][PASS] Navegación, controles, responsive y smoke Chromium de alta señal sin fallos. La matriz exhaustiva 58x5 y PostgreSQL se ejecutan en workflows dedicados.');

@@ -80,7 +80,7 @@ test('22/51 medication inventory read is retryable and preserves prior data on t
   const end=source.indexOf('useEffect(()=>{void loadProducts',start);
   const block=source.slice(start,end);
   assert.match(block,/if\(permissionBlocked\|\|!preserveOnError\)setProducts\(\[\]\)/);
-  assert.doesNotMatch(block,/catch[\s\S]*setProducts\(\[\]\)[\s\S]*setProductError\([^)]*No se pudo cargar/);
+  assert.equal((block.match(/setProducts\(\[\]\)/g)||[]).length,1,'products may only be cleared by the explicit permission/non-preserve guard');
 });
 
 

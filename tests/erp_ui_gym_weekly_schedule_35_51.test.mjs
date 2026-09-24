@@ -28,10 +28,13 @@ test('35/51 derives daysPerWeek from the actual programmed days',()=>{
 
 test('35/51 backend rejects mismatched declared frequency and scheduled weekdays',()=>{
   const source=backend();
-  assert.match(source,/routineSchema\.superRefine/);
-  assert.match(source,/scheduledDays/);
-  assert.match(source,/value\.daysPerWeek!==scheduledDays\.size/);
-  assert.match(source,/La frecuencia semanal debe coincidir con los días programados/);
+  const start=source.indexOf('const routineSchema = z.object');
+  const end=source.indexOf('const ingredientSchema',start);
+  const block=source.slice(start,end);
+  assert.match(block,/\)\.superRefine\(\(value, refinement\)/);
+  assert.match(block,/scheduledDays/);
+  assert.match(block,/value\.daysPerWeek!==scheduledDays\.size/);
+  assert.match(block,/La frecuencia semanal debe coincidir con los días programados/);
 });
 
 test('35/51 weekly schedule renders seven days and groups structured exercises',()=>{

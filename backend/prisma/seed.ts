@@ -129,7 +129,7 @@ async function seedOperationalData(tenantId: string) {
         INSERT INTO "InventoryMovementAuditLink"
           ("id","tenantId","productId","originalMovementId","relatedMovementId","kind","reasonCode","reason","createdBy")
         VALUES
-          (${randomUUID()},${tenantId},${product.id},NULL,${movement.id},'opening','SEED_OPENING','Saldo inicial demo creado por seed.',NULL)
+          (CAST(${randomUUID()} AS uuid),${tenantId},${product.id},NULL,${movement.id},'opening','SEED_OPENING','Saldo inicial demo creado por seed.',NULL)
         ON CONFLICT DO NOTHING
       `);
     });

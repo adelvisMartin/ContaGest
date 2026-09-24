@@ -17,8 +17,8 @@
     "build:backend": "npm --workspace backend run build",
     "build": "npm run build:frontend && npm run build:backend",
     "typecheck": "npm --workspace backend run typecheck",
-    "test": "npm --workspace backend test && node --test tests/*.test.mjs",
-    "lint": "npm run typecheck && node --test tests/*.test.mjs",
+    "test": "npm --workspace backend test && npm run test:contracts:current",
+    "lint": "npm run typecheck && npm run test:contracts:current",
     "test:hipico": "npm --workspace backend run test:hipico && node scripts/hipico-root-contracts.mjs && node --test tests/hipico_messaging_cli_284.test.mjs",
     "test:hipico:root-contracts": "node scripts/hipico-root-contracts.mjs",
     "test:hipico:runner": "node --test tests/hipico_qa_runner_issue_103.test.mjs",
@@ -85,7 +85,12 @@
     "test:backend:verticals:real": "npm --workspace backend exec -- tsx --test ../qa/verticals-backend-real-v4851.test.ts",
     "test:browser:verticals:visual": "npx playwright test qa/erp-visual-overlap-v4951.spec.mjs --project=chromium --workers=1",
     "test:backend:provisioning:real": "npm --workspace backend exec -- tsx --test ../qa/tenant-user-provisioning-v5575.test.ts",
-    "test:browser:verticals:real": "node scripts/erp-real-browser-postgres-v5875.mjs"
+    "test:browser:verticals:real": "node scripts/erp-real-browser-postgres-v5875.mjs",
+    "test:contracts:current": "node scripts/run-authoritative-contracts.mjs",
+    "test:browser:a11y": "npx playwright test qa/accessibility-wcag22-v99.spec.mjs --project=chromium --workers=1",
+    "test:browser:contrast": "npx playwright test qa/contrast-v15.spec.mjs --project=chromium --workers=1",
+    "test:browser:functional": "npx playwright test qa/erp-functional-smoke-v14.spec.mjs qa/module-actions-runtime-v163.spec.mjs --project=chromium --workers=1",
+    "test:browser": "npm run test:browser:58 && npm run test:browser:functional && npm run test:browser:a11y && npm run test:browser:contrast"
   },
   "devDependencies": {
     "@playwright/test": "1.63.0"

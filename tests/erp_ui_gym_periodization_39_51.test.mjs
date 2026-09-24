@@ -45,12 +45,11 @@ test('39/51 UI composes one declarative periodization owner with templates and v
   assert.doesNotMatch(builder,/querySelector|addEventListener|innerHTML|document\./);
 });
 
-test('39/51 does not pre-implement workout execution from 40/51',()=>{
-  const routes=read('backend/src/modules/verticals/gym.routes.ts');
-  const start=routes.indexOf("router.get('/gym/periodization/templates'");
-  const end=routes.indexOf("router.get('/gym/routines'",start);
-  const block=routes.slice(start,end);
-  assert.doesNotMatch(block,/GymWorkoutSession|GymWorkoutSet|timer|completedSets|actualRir|actualRpe/);
+test('39/51 keeps periodization authority separate from workout execution',()=>{
+  const migration=read('backend/prisma/migrations/20260923172500_gym_periodization_39_51/migration.sql');
+  const panel=read('frontend/src/components/fitness/PeriodizationPanel.jsx');
+  assert.doesNotMatch(migration,/GymWorkoutSession|GymWorkoutSet/);
+  assert.doesNotMatch(panel,/startWorkoutSession|recordWorkoutSet|completeWorkoutSession/);
   const audit=read('scripts/erp-ui-wave-a-audit-v251.mjs');
   for(const token of ['GymPeriodizationProgram','PeriodizationPanel','periodization 39']) assert.ok(audit.includes(token),token);
 });

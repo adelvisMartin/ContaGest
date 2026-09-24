@@ -28,6 +28,9 @@ test('10/51 patient selection is explicit and survives refresh only when the pat
 
 test('10/51 appointment patient remains independent from clinical-context selection',()=>{
   const code=source();
-  assert.match(code,/appointmentForm\.patientId/);
-  assert.match(code,/Selecciona un paciente/);
+  const schedule=fs.readFileSync('frontend/src/components/dentistry/DentalSchedulePanel.jsx','utf8');
+  assert.equal((code.match(/<DentalSchedulePanel/g)||[]).length,1);
+  assert.match(schedule,/useState\(\{patientId:''/);
+  assert.match(schedule,/form\.patientId/);
+  assert.doesNotMatch(schedule,/selectedPatientId/);
 });

@@ -49,6 +49,9 @@ jobs:
       - name: Architecture boundaries
         run: npm run audit:architecture
 
+      - name: ERP Wave A source audit
+        run: npm run audit:erp-ui-wave-a
+
       - name: Characterization and contract tests
         run: npm test
 

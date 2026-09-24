@@ -22,12 +22,16 @@ test('pre-QA v16 covers all 58 registered runtime routes',()=>{
   const registry=read('frontend','src','data','pageRegistry.js');
   const catalog=read('frontend','src','data','moduleCatalog.js');
   const visualCatalog=read('qa','support','module-visual-catalog.mjs');
+  const accessManifest=JSON.parse(read('backend','src','shared','contracts','access-manifest.json'));
+  const licensedRoutes=new Set((accessManifest.modules||[]).map((item)=>String(item.route)));
+  assert.match(catalog,/contagest-ve-backend\/access-manifest/,'module catalog must derive from the canonical backend access manifest');
+  assert.deepEqual([...licensedRoutes].sort(),expectedRoutes.filter((route)=>route!=='login').sort());
   for(const route of expectedRoutes){
-    assert.match(registry,new RegExp(`(?:^|[,\\s])['\"]?${route.replaceAll('-','\\-')}['\"]?\\s*:`),`runtime registry missing ${route}`);
+    assert.match(registry,new RegExp(`(?:^|[,\\s])['"]?${route.replaceAll('-','\\-')}['"]?\\s*:`),`runtime registry missing ${route}`);
     assert.match(visualCatalog,new RegExp(`route:'${route.replaceAll('-','\\-')}'`),`visual audit catalog missing ${route}`);
-    if(route!=='login')assert.match(catalog,new RegExp(`route:'${route.replaceAll('-','\\-')}'`),`module catalog missing ${route}`);
+    if(route!=='login')assert.ok(licensedRoutes.has(route),`canonical access manifest missing ${route}`);
   }
-  assert.doesNotMatch(catalog,/route:'login'/,'login is intentionally runtime-only, not a licensed module');
+  assert.equal(licensedRoutes.has('login'),false,'login is intentionally runtime-only, not a licensed module');
 });
 
 test('legacy visual hotspots migrated to canonical contracts',()=>{
@@ -126,10 +130,24 @@ test('canonical icon helper preserves Font Awesome family instead of forcing fa-
 
 test('source gates cover functional bindings plus buttons and icons before Vite build',()=>{
   const frontendPackage=JSON.parse(read('frontend','package.json'));
+  const buildRunner=read('frontend','scripts','vercel-build.mjs');
   assert.match(frontendPackage.scripts['preqa:source'],/visual-source-gate-v16\.mjs/);
   assert.match(frontendPackage.scripts['preqa:source'],/erp-functional-source-gate-v16\.mjs/);
   assert.match(frontendPackage.scripts['preqa:source'],/ui-control-audit-v16\.mjs/);
-  assert.match(frontendPackage.scripts.build,/preqa:source.*stage:backend.*vite build/);
+  assert.equal(frontendPackage.scripts.build,'node scripts/vercel-build.mjs');
+  const ordered=[
+    "id:'identity'",
+    "id:'source-qa'",
+    "id:'browser-qa'",
+    "id:'backend-stage'",
+    "id:'vite-build'"
+  ];
+  let previous=-1;
+  for(const marker of ordered){
+    const index=buildRunner.indexOf(marker);
+    assert.ok(index>previous,`missing or reordered staged build marker: ${marker}`);
+    previous=index;
+  }
 });
 
 test('previous v16 financial safety fixes remain in place',()=>{

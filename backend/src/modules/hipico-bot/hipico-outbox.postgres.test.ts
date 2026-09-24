@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { randomUUID } from 'node:crypto';
 import test from 'node:test';
 import { prisma } from '../../database/prisma.js';
 import {
@@ -13,20 +14,15 @@ import {
 
 const enabled=Boolean(process.env.HIPICO_TEST_POSTGRES_URL);
 const ownerId='11111111-1111-4111-8111-111111111111';
-const groupKey='postgres-contract';
-
-async function cleanup(){
-  if(!enabled)return;
-  await prisma.$executeRawUnsafe(`DELETE FROM public.hipico_outbox_receipts WHERE owner_id='${ownerId}'::uuid`);
-  await prisma.$executeRawUnsafe(`DELETE FROM public.hipico_outbox WHERE owner_id='${ownerId}'::uuid`);
-}
+const runId=randomUUID();
+const groupKey=`postgres-contract:${runId}`;
 
 function input(key:string,overrides:Record<string,unknown>={}){
   return{
     ownerId,
     groupKey,
     destination:'584121234567',
-    idempotencyKey:`pg:${key}`,
+    idempotencyKey:`pg-contract:${runId}:${key}`,
     replyType:'test',
     payload:{text:'PostgreSQL contract',approvalRequired:false},
     ...overrides
@@ -34,7 +30,6 @@ function input(key:string,overrides:Record<string,unknown>={}){
 }
 
 test('postgres outbox: migration is ready and idempotency is semantic',{skip:!enabled},async()=>{
-  await cleanup();
   assert.deepEqual(await canonicalOutboxReadiness(),{ready:true,outboxReady:true,receiptsReady:true});
   const first=await enqueueCanonicalOutbound(input('idem'));
   const replay=await enqueueCanonicalOutbound(input('idem'));
@@ -48,7 +43,6 @@ test('postgres outbox: migration is ready and idempotency is semantic',{skip:!en
 });
 
 test('postgres outbox: concurrent claim has one winner and reconciliation blocks reclaim',{skip:!enabled},async()=>{
-  await cleanup();
   const queued=await enqueueCanonicalOutbound(input('concurrency'));
   const [a,b]=await Promise.all([
     claimCanonicalOutbound({ownerId,id:String(queued.row.id),leaseMs:30_000}),
@@ -69,7 +63,6 @@ test('postgres outbox: concurrent claim has one winner and reconciliation blocks
 });
 
 test('postgres outbox: approval-required rows need explicit approval claim',{skip:!enabled},async()=>{
-  await cleanup();
   const queued=await enqueueCanonicalOutbound(input('approval',{payload:{text:'needs operator',approvalRequired:true}}));
   assert.equal(await claimCanonicalOutbound({ownerId,id:String(queued.row.id)}),null);
   const approved=await claimCanonicalOutbound({ownerId,id:String(queued.row.id),allowApprovalRequired:true});
@@ -86,30 +79,29 @@ test('postgres outbox: approval-required rows need explicit approval claim',{ski
 });
 
 test('postgres outbox: provider receipts are idempotent and monotonic',{skip:!enabled},async()=>{
-  await cleanup();
   const queued=await enqueueCanonicalOutbound(input('receipts'));
   const claimed=await claimCanonicalOutbound({ownerId,id:String(queued.row.id)});
   assert.ok(claimed);
-  const accepted=await markCanonicalAccepted({ownerId,id:String(claimed.id),leaseToken:String(claimed.lease_token),providerMessageId:'wamid.pg.contract'});
+  const providerMessageId=`wamid.pg.contract.${runId}`;
+  const accepted=await markCanonicalAccepted({ownerId,id:String(claimed.id),leaseToken:String(claimed.lease_token),providerMessageId});
   assert.equal(String(accepted?.status),'accepted');
 
   const sentAt=new Date('2026-09-14T00:00:00.000Z');
-  const sent=await recordCanonicalReceipt({ownerId,providerMessageId:'wamid.pg.contract',status:'sent',timestamp:sentAt});
+  const sent=await recordCanonicalReceipt({ownerId,providerMessageId,status:'sent',timestamp:sentAt});
   assert.equal(sent.inserted,true);
   assert.equal(String(sent.row.status),'sent');
-  const duplicate=await recordCanonicalReceipt({ownerId,providerMessageId:'wamid.pg.contract',status:'sent',timestamp:sentAt});
+  const duplicate=await recordCanonicalReceipt({ownerId,providerMessageId,status:'sent',timestamp:sentAt});
   assert.equal(duplicate.inserted,false);
 
-  const read=await recordCanonicalReceipt({ownerId,providerMessageId:'wamid.pg.contract',status:'read',timestamp:new Date('2026-09-14T00:00:02.000Z')});
+  const read=await recordCanonicalReceipt({ownerId,providerMessageId,status:'read',timestamp:new Date('2026-09-14T00:00:02.000Z')});
   assert.equal(String(read.row.status),'read');
-  const lateDelivered=await recordCanonicalReceipt({ownerId,providerMessageId:'wamid.pg.contract',status:'delivered',timestamp:new Date('2026-09-14T00:00:01.000Z')});
+  const lateDelivered=await recordCanonicalReceipt({ownerId,providerMessageId,status:'delivered',timestamp:new Date('2026-09-14T00:00:01.000Z')});
   assert.equal(String(lateDelivered.row.status),'read');
-  const lateFailed=await recordCanonicalReceipt({ownerId,providerMessageId:'wamid.pg.contract',status:'failed',timestamp:new Date('2026-09-14T00:00:03.000Z'),errorCode:'131047'});
+  const lateFailed=await recordCanonicalReceipt({ownerId,providerMessageId,status:'failed',timestamp:new Date('2026-09-14T00:00:03.000Z'),errorCode:'131047'});
   assert.equal(String(lateFailed.row.status),'read');
 });
 
 test.after(async()=>{
   if(!enabled)return;
-  await cleanup();
   await prisma.$disconnect();
 });

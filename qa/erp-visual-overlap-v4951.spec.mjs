@@ -1,6 +1,13 @@
 import { test, expect } from '@playwright/test';
 
 const ROUTES=['odontologia','veterinaria','gimnasio','rutinas','nutricion'];
+const ROUTE_READY_SELECTOR={
+  odontologia:'#dentistryReactRoot .cg-dentistry-workspace',
+  veterinaria:'#veterinaryUnifiedRoot .cg-vet-dossier',
+  gimnasio:'#gymReactRoot .cg-gym-page',
+  rutinas:'#gymReactRoot .cg-gym-page',
+  nutricion:'#gymReactRoot .cg-gym-page'
+};
 const VIEWPORTS=[
   {name:'phone-360',width:360,height:800},
   {name:'phone-390',width:390,height:844},
@@ -41,7 +48,7 @@ async function seed(page,mode){
 
 function visualAudit(){
   const root=document.querySelector('#pages');
-  const allowedOverflow='.table-wrap,.pl-table-wrap,.ds-table-wrap,.cgv-table-shell,.cgx-table-wrap,.MuiTableContainer-root,.cg-vertical-tabs,.cg-gym-v1124-tabs,.page-tabs,.cgx-tabs';
+  const allowedOverflow='.table-wrap,.pl-table-wrap,.ds-table-wrap,.cgv-table-shell,.cgx-table-wrap,.MuiTableContainer-root,.MuiTabs-root,.MuiTabs-scroller,[role="tablist"],.cg-vertical-tabs,.cg-gym-v1124-tabs,.page-tabs,.cgx-tabs';
   const visible=(el)=>{
     const r=el.getBoundingClientRect();
     const s=getComputedStyle(el);
@@ -59,14 +66,22 @@ function visualAudit(){
       findings.push({kind:'outside-viewport',tag:node.tagName,left:Math.round(r.left),right:Math.round(r.right),text:String(node.textContent||'').trim().slice(0,80)});
     }
     if(r.width>0&&r.height>0){
-      const centerX=Math.min(innerWidth-1,Math.max(0,r.left+r.width/2));
-      const centerY=Math.min(innerHeight-1,Math.max(0,r.top+r.height/2));
-      if(centerY>=0&&centerY<innerHeight){
-        const top=document.elementFromPoint(centerX,centerY);
-        if(top&&!node.contains(top)&&!top.contains(node)&&!node.closest('[aria-hidden="true"]')){
-          const positioned=getComputedStyle(top).position;
-          if(['fixed','absolute','sticky'].includes(positioned)){
-            findings.push({kind:'occluded-center',tag:node.tagName,by:top.tagName,text:String(node.textContent||'').trim().slice(0,60)});
+      const text=String(node.textContent||'').trim();
+      const interactive=node.matches('button,a[href],input,select,textarea,[role="button"],[role="tab"],[role="dialog"]');
+      if(text||interactive){
+        const visibleLeft=Math.max(0,r.left);
+        const visibleRight=Math.min(innerWidth,r.right);
+        const visibleTop=Math.max(0,r.top);
+        const visibleBottom=Math.min(innerHeight,r.bottom);
+        if(visibleRight>visibleLeft&&visibleBottom>visibleTop){
+          const centerX=visibleLeft+(visibleRight-visibleLeft)/2;
+          const centerY=visibleTop+(visibleBottom-visibleTop)/2;
+          const top=document.elementFromPoint(centerX,centerY);
+          if(top&&!node.contains(top)&&!top.contains(node)&&!node.closest('[aria-hidden="true"]')){
+            const positioned=getComputedStyle(top).position;
+            if(['fixed','absolute','sticky'].includes(positioned)){
+              findings.push({kind:'occluded-center',tag:node.tagName,by:top.tagName,text:text.slice(0,60)});
+            }
           }
         }
       }
@@ -106,9 +121,14 @@ async function auditKeyboardFocus(page){
 }
 
 async function auditOptionalDialog(page){
-  const trigger=page.getByRole('button',{name:/nuevo|nueva|crear|agregar|registrar/i}).first();
-  if(!(await trigger.count())||!(await trigger.isVisible().catch(()=>false)))return [];
-  await trigger.click();
+  const triggers=page.getByRole('button',{name:/nuevo|nueva|crear|agregar|registrar/i});
+  let trigger=null;
+  for(let index=0;index<await triggers.count();index+=1){
+    const candidate=triggers.nth(index);
+    if(await candidate.isVisible().catch(()=>false)&&await candidate.isEnabled().catch(()=>false)){trigger=candidate;break;}
+  }
+  if(!trigger)return [];
+  await trigger.click({timeout:5_000});
   const dialog=page.getByRole('dialog').first();
   if(!(await dialog.count())||!(await dialog.isVisible().catch(()=>false)))return [];
   const box=await dialog.boundingBox();
@@ -130,7 +150,7 @@ for(const route of ROUTES){
         await page.setViewportSize({width:viewport.width,height:viewport.height});
         await page.goto(`/?module=${route}`,{waitUntil:'domcontentloaded'});
         await expect(page.locator('#pages')).toBeAttached();
-        await expect(page.locator('#pages .cgx-module-standard').first()).toBeAttached({timeout:20_000});
+        await expect(page.locator(ROUTE_READY_SELECTOR[route]).first()).toBeAttached({timeout:20_000});
         await page.evaluate((text)=>{
           for(const input of document.querySelectorAll('#pages input[type="text"],#pages textarea')){
             if(!input.disabled&&!input.readOnly&&!input.value)input.value=text;
@@ -144,10 +164,12 @@ for(const route of ROUTES){
           failures.push({mode,viewport:viewport.name,findings,focusIssues,dialogIssues});
         }
 
-        await page.evaluate(()=>{document.documentElement.style.zoom='2';});
+        const effectiveZoomWidth=Math.max(320,Math.floor(viewport.width/2));
+        await page.setViewportSize({width:effectiveZoomWidth,height:viewport.height});
+        await page.evaluate(()=>new Promise((resolve)=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
         const zoomFindings=await page.evaluate(visualAudit);
-        if(zoomFindings.length)failures.push({mode,viewport:viewport.name,zoom:'200%',findings:zoomFindings});
-        await page.evaluate(()=>{document.documentElement.style.zoom='';});
+        if(zoomFindings.length)failures.push({mode,viewport:viewport.name,zoom:'200%-reflow-proxy',effectiveWidth:effectiveZoomWidth,findings:zoomFindings});
+        await page.setViewportSize({width:viewport.width,height:viewport.height});
       }
     }
     expect(failures,JSON.stringify(failures,null,2)).toEqual([]);

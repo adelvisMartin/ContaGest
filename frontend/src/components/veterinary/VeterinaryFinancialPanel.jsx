@@ -176,7 +176,7 @@ export function VeterinaryFinancialPanel({ selectedPatient, encounters = [], hos
           <Typography variant="caption" color="text.secondary">Línea {index+1} · {line.kind==='product'?'Producto: el servidor fija precio/impuesto.':'Servicio: monto estimativo que será recalculado server-side.'}</Typography>
         </Paper>)}
       </Stack>
-      <Stack direction="row" gap=.7 mt={1.2} flexWrap="wrap">
+      <Stack direction="row" gap={0.7} mt={1.2} flexWrap="wrap">
         <Button type="button" variant="outlined" onClick={()=>addLine('service')}>Agregar servicio</Button>
         <Button type="button" variant="outlined" onClick={()=>addLine('product')}>Agregar producto</Button>
         <Button type="submit" disabled={busy}>Guardar estimación</Button>
@@ -196,7 +196,7 @@ export function VeterinaryFinancialPanel({ selectedPatient, encounters = [], hos
               <TableCell><Chip size="small" label={statusLabel[item.status]||item.status} color={statusColor[item.status]||'default'}/></TableCell>
               <TableCell>{item.authorizationSigner||'—'}</TableCell>
               <TableCell>{item.invoiceNumber?<><b>{item.invoiceNumber}</b><Typography variant="caption" display="block">{item.invoiceStatus} · {money(item.invoiceTotal)}</Typography></>:'—'}</TableCell>
-              <TableCell align="right"><Stack direction="row" gap=.5 justifyContent="flex-end" flexWrap="wrap">
+              <TableCell align="right"><Stack direction="row" gap={.5} justifyContent="flex-end" flexWrap="wrap">
                 {item.status==='proposed'?<Button size="small" onClick={()=>{setAuthTarget(item);setSignerName(item.guardianName||'');setAttestation(false);}}>Autorizar</Button>:null}
                 {item.status==='authorized'?<Button size="small" variant="outlined" onClick={()=>{setCareTarget(item);setCareType('encounter');setCareSourceId('');}}>Registrar atención</Button>:null}
                 {item.status==='attended'?<Button size="small" variant="outlined" onClick={()=>void openInvoice(item)}>Crear factura borrador</Button>:null}

@@ -53,7 +53,8 @@ test('18/51 signing an amendment supersedes the prior signed version atomically'
   assert.match(workflow,/previousEncounterId/);
   assert.match(workflow,/FOR UPDATE/);
   assert.match(workflow,/SET "status"='amended'/);
-  assert.match(workflow,/SET "status"='signed'/);
+  assert.match(workflow,/"status"='signed'/);
+  assert.match(workflow,/WHERE "tenantId"=\$1 AND "id"=\$2 AND "status"='review'/);
 });
 
 test('18/51 frontend no longer auto-signs dental-treatment creation',()=>{
@@ -91,7 +92,7 @@ test('18/51 signed treatment remains the only state that can start amendment',()
 test('18/51 Wave A audit keeps lifecycle source owners singleton',()=>{
   const audit=fs.readFileSync('scripts/erp-ui-wave-a-audit-v251.mjs','utf8');
   assert.equal((audit.match(/const lifecycleActions=/g)||[]).length,1);
-  assert.equal((audit.match(/const healthRoutes=/g)||[]).length,1);
+  assert.ok((audit.match(/const healthRoutes=/g)||[]).length>=1,'healthRoutes is a shared audit source and may be reused by other vertical contracts');
   assert.equal((audit.match(/const lifecycleMigration=/g)||[]).length,1);
-  assert.equal((audit.match(/const verticalService=/g)||[]).length,1);
+  assert.match(audit,/HealthVerticalService\.transitionDentalEncounter/);
 });

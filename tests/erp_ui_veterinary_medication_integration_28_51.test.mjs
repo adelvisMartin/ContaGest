@@ -23,7 +23,7 @@ test('28/51 veterinary prescription requires medication dose frequency and durat
 test('28/51 prescription references remain patient professional encounter and product tenant scoped',()=>{
   const source=read('backend/src/modules/verticals/veterinary.routes.ts');
   const start=source.indexOf("router.post('/medications/prescriptions'");
-  const end=source.indexOf("router.get('/dashboard'",start);
+  const end=source.indexOf("router.get('/clinical-inventory'",start);
   const block=source.slice(start,end);
   assert.match(block,/CarePatient"[\s\S]*"tenantId"=\$1[\s\S]*"kind"='animal'/);
   assert.match(block,/CareProfessional"[\s\S]*"tenantId"=\$1/);
@@ -34,7 +34,7 @@ test('28/51 prescription references remain patient professional encounter and pr
 test('28/51 server creates label and provenance from authenticated context',()=>{
   const source=read('backend/src/modules/verticals/veterinary.routes.ts');
   const start=source.indexOf("router.post('/medications/prescriptions'");
-  const end=source.indexOf("router.get('/dashboard'",start);
+  const end=source.indexOf("router.get('/clinical-inventory'",start);
   const block=source.slice(start,end);
   for(const token of ['veterinary-medication-label.v1','labelSnapshot','veterinaryMeta','actorUserId','actorEmail',"inventoryConsumption:'not-performed'",'prescribedAt']) assert.ok(block.includes(token),token);
   assert.match(block,/ctx\(req\)\.userId\|\|null/);
@@ -45,7 +45,7 @@ test('28/51 server creates label and provenance from authenticated context',()=>
 test('28/51 product linkage is optional and does not mutate stock or create a lot authority',()=>{
   const source=read('backend/src/modules/verticals/veterinary.routes.ts');
   const start=source.indexOf("router.post('/medications/prescriptions'");
-  const end=source.indexOf("router.get('/dashboard'",start);
+  const end=source.indexOf("router.get('/clinical-inventory'",start);
   const block=source.slice(start,end);
   assert.doesNotMatch(block,/InventoryMovement|inventoryMovement\.create|applyStandardEffect|stock.*decrement/i);
   assert.doesNotMatch(block,/lotId|lotNumber|batchId|batchNumber/);

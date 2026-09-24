@@ -56,9 +56,11 @@ test('53/75 frontend and backend consume the same manifest instead of route-perm
   const licenses=read('backend/src/modules/licenses/licenses.routes.ts');
   const pkg=json('backend/package.json');
 
-  assert.equal(pkg.exports['./access-manifest.json'],'./src/shared/contracts/access-manifest.json');
-  assert.match(moduleCatalog,/contagest-ve-backend\/access-manifest\.json/);
-  assert.match(access,/contagest-ve-backend\/access-manifest\.json/);
+  assert.equal(pkg.exports['./access-manifest'],'./src/shared/contracts/accessManifestRuntime.js');
+  assert.match(moduleCatalog,/contagest-ve-backend\/access-manifest['"]/);
+  assert.match(access,/contagest-ve-backend\/access-manifest['"]/);
+  assert.doesNotMatch(moduleCatalog,/access-manifest\.json/);
+  assert.doesNotMatch(access,/access-manifest\.json/);
   assert.match(context,/contracts\/accessManifest\.js/);
   assert.match(rbac,/contracts\/accessManifest\.js/);
   assert.match(licenses,/contracts\/accessManifest\.js/);

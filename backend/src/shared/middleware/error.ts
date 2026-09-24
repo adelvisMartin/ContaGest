@@ -1,4 +1,5 @@
 import type { Request, Response, NextFunction } from 'express';
+import { ZodError } from 'zod';
 import { HttpError } from '../http.js';
 import { requestLogger, requestRouteTemplate, sanitizeLogValue } from '../observability/logger.js';
 
@@ -29,7 +30,8 @@ export function notFound(req: Request, res: Response) {
 
 export function errorHandler(error: Error, req: Request, res: Response, _next: NextFunction) {
   const db = databaseMessage(error);
-  const status = db?.status || (error instanceof HttpError ? error.status : 500);
+  const validation = error instanceof ZodError;
+  const status = db?.status || (error instanceof HttpError ? error.status : validation ? 422 : 500);
   const requestId = sanitizeLogValue((req as any).requestId || '', 96);
   const errorCode = sanitizeLogValue((error as any)?.code || '', 80) || undefined;
 
@@ -47,9 +49,10 @@ export function errorHandler(error: Error, req: Request, res: Response, _next: N
 
   const payload: Record<string, unknown> = {
     ok: false,
-    message: db?.message || error.message || 'Error interno',
+    message: validation ? 'La solicitud contiene datos inválidos.' : (db?.message || error.message || 'Error interno'),
     requestId
   };
+  if (validation) payload.details = error.issues;
   if (error instanceof HttpError && error.details) payload.details = error.details;
   if (process.env.NODE_ENV === 'development') payload.stack = error.stack;
   res.status(status).json(payload);

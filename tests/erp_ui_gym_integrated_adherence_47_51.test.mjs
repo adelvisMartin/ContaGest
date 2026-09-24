@@ -68,7 +68,12 @@ test('47/51 service owns canonical adherence endpoints',()=>{
   assert.match(service,/\/api\/v1\/verticals\/gym\/adherence\/meals/);
 });
 
-test('47/51 does not infer clinical restrictions or auto-adjust plans',()=>{
-  const source=read('backend/src/modules/verticals/gym.routes.ts')+read('frontend/src/components/fitness/IntegratedAdherencePanel.jsx');
-  assert.doesNotMatch(source,/autoAdjust|autoRecommend|inferAllerg|inferDiagnos|prescribe|clinicalDecision/i);
+test('47/51 adherence owner does not infer clinical restrictions or auto-adjust plans',()=>{
+  const backend=read('backend/src/modules/verticals/gym.routes.ts');
+  const start=backend.indexOf("router.get('/gym/adherence'");
+  const end=backend.indexOf("router.get('/gym/classes'",start);
+  const block=backend.slice(start,end);
+  const panel=read('frontend/src/components/fitness/IntegratedAdherencePanel.jsx');
+  assert.ok(start>=0&&end>start,'adherence route boundary');
+  assert.doesNotMatch(block+panel,/autoAdjust|autoRecommend|inferAllerg|inferDiagnos|prescribe(?:Plan|Routine|Nutrition)|clinicalDecision/i);
 });

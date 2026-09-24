@@ -100,3 +100,15 @@ test('Wave A dentistry owner guards count semantic imports/renders, never filena
   assert.match(audit,/countNamedImport\(dentistry,'TreatmentPlanPanel'\)/);
   assert.match(audit,/countNamedImport\(dentistry,'DentalConsentPanel'\)/);
 });
+
+test('Wave A fitness adherence audit owns its vertical service source inside the fitness scope',()=>{
+  const audit=read('scripts/erp-ui-wave-a-audit-v251.mjs');
+  const fitnessStart=audit.indexOf("const fitnessEntries=");
+  const fitnessEnd=audit.indexOf("const css=read('frontend/src/styles/erp-runtime.css')");
+  assert.ok(fitnessStart>=0&&fitnessEnd>fitnessStart);
+  const fitnessBlock=audit.slice(fitnessStart,fitnessEnd);
+  assert.match(fitnessBlock,/const fitnessVerticalService=read\('frontend\/src\/services\/verticalService\.js'\)/);
+  assert.match(fitnessBlock,/fitnessVerticalService\.match\(\/adherence\\\(memberId\\\)\/g\)/);
+  assert.match(fitnessBlock,/fitnessVerticalService\.match\(\/recordMealAdherence\\\(payload\\\)\/g\)/);
+  assert.doesNotMatch(fitnessBlock,/\bverticalService\.match\(/);
+});
