@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import test from 'node:test';
+import { gymBackendSource } from '../qa/support/vertical-authority-sources.mjs';
 
 const read=(path)=>fs.readFileSync(path,'utf8');
 
@@ -12,9 +13,9 @@ test('47/51 persists meal adherence as append-only events',()=>{
 });
 
 test('47/51 adherence owners remain singletons after branch reconciliation',()=>{
-  const backend=read('backend/src/modules/verticals/gym.routes.ts');
+  const backend=gymBackendSource();
   const service=read('frontend/src/services/verticalService.js');
-  assert.equal((backend.match(/const mealAdherenceSchema=/g)||[]).length,1);
+  assert.equal((backend.match(/const mealAdherenceSchema\s*=\s*/g)||[]).length,1);
   assert.equal((backend.match(/router\.get\('\/gym\/adherence'/g)||[]).length,1);
   assert.equal((backend.match(/router\.post\('\/gym\/adherence\/meals'/g)||[]).length,1);
   assert.equal((service.match(/adherence\(memberId\)/g)||[]).length,1);
@@ -22,7 +23,7 @@ test('47/51 adherence owners remain singletons after branch reconciliation',()=>
 });
 
 test('47/51 record endpoint revalidates tenant plan member and meal ownership',()=>{
-  const source=read('backend/src/modules/verticals/gym.routes.ts');
+  const source=gymBackendSource();
   for(const token of ["router.post('/gym/adherence/meals'","mealAdherenceSchema",'GymNutritionPlan','GymMeal','GymMealAdherenceEvent','gym-meal-adherence-47:']) assert.ok(source.includes(token),token);
   assert.match(source,/"tenantId"=\$1 AND "id"=\$2 AND "memberId"=\$3/);
   assert.match(source,/"tenantId"=\$1 AND "id"=\$2 AND "nutritionPlanId"=\$3/);
@@ -30,14 +31,14 @@ test('47/51 record endpoint revalidates tenant plan member and meal ownership',(
 });
 
 test('47/51 blocks future meals and plans without a temporal anchor',()=>{
-  const source=read('backend/src/modules/verticals/gym.routes.ts');
+  const source=gymBackendSource();
   assert.match(source,/El plan necesita fecha de inicio para registrar adherencia temporal/);
   assert.match(source,/No se puede registrar adherencia de una comida futura/);
   assert.match(source,/plannedDate\.setUTCDate/);
 });
 
 test('47/51 integrated summary derives training and body evolution from canonical existing authorities',()=>{
-  const source=read('backend/src/modules/verticals/gym.routes.ts');
+  const source=gymBackendSource();
   const start=source.indexOf("router.get('/gym/adherence'");
   const end=source.indexOf("router.post('/gym/adherence/meals'",start);
   const block=source.slice(start,end);
@@ -46,7 +47,7 @@ test('47/51 integrated summary derives training and body evolution from canonica
 });
 
 test('47/51 nutrition adherence compares planned meals with latest explicit event only',()=>{
-  const source=read('backend/src/modules/verticals/gym.routes.ts');
+  const source=gymBackendSource();
   assert.match(source,/DISTINCT ON \(e\."mealId"\)/);
   assert.match(source,/ORDER BY e\."mealId",e\."recordedAt" DESC,e\."id" DESC/);
   for(const token of ['plannedMeals','dueMeals','completedMeals','skippedMeals','pendingMeals','adherencePct']) assert.ok(source.includes(token),token);
@@ -69,7 +70,7 @@ test('47/51 service owns canonical adherence endpoints',()=>{
 });
 
 test('47/51 adherence owner does not infer clinical restrictions or auto-adjust plans',()=>{
-  const backend=read('backend/src/modules/verticals/gym.routes.ts');
+  const backend=gymBackendSource();
   const start=backend.indexOf("router.get('/gym/adherence'");
   const end=backend.indexOf("router.get('/gym/classes'",start);
   const block=backend.slice(start,end);

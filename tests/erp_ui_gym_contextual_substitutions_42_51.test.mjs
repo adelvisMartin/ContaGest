@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import test from 'node:test';
+import { gymBackendSource } from '../qa/support/vertical-authority-sources.mjs';
 
 const read=(path)=>fs.readFileSync(path,'utf8');
 
@@ -12,7 +13,7 @@ test('42/51 persists prescribed versus actually performed exercise provenance',(
 });
 
 test('42/51 suggestion engine uses only declared non-medical context',()=>{
-  const routes=read('backend/src/modules/verticals/gym.routes.ts');
+  const routes=gymBackendSource();
   for(const token of ['exerciseSubstitutionSchema','availableEquipment','preferredExerciseIds','excludedExerciseIds','declaredLimitations','humanReviewRequired','limitationsApplied:false']) assert.ok(routes.includes(token),token);
   assert.match(routes,/router\.post\('\/gym\/exercise-substitutions\/suggest'/);
   assert.match(routes,/same_muscle_group/);
@@ -21,7 +22,7 @@ test('42/51 suggestion engine uses only declared non-medical context',()=>{
 });
 
 test('42/51 fails closed when a declared limitation would require health interpretation',()=>{
-  const routes=read('backend/src/modules/verticals/gym.routes.ts');
+  const routes=gymBackendSource();
   assert.match(routes,/b\.declaredLimitations\.length>0/);
   assert.match(routes,/suggestions:\[\]/);
   assert.match(routes,/healthAutomationBlocked:true/);
@@ -30,12 +31,12 @@ test('42/51 fails closed when a declared limitation would require health interpr
 });
 
 test('42/51 workout set write revalidates actual substitute in same tenant and muscle group',()=>{
-  const routes=read('backend/src/modules/verticals/gym.routes.ts');
+  const routes=gymBackendSource();
   for(const token of ['performedExerciseId','substitutionReason','El ejercicio sustituto no pertenece al tenant activo.','El ejercicio sustituto debe conservar el mismo grupo muscular.']) assert.ok(routes.includes(token),token);
 });
 
 test('42/51 performance analytics attributes work to performed exercise when substituted',()=>{
-  const routes=read('backend/src/modules/verticals/gym.routes.ts');
+  const routes=gymBackendSource();
   assert.match(routes,/COALESCE\(ws\."performedExerciseId",re\."exerciseId"\)/);
 });
 
@@ -49,7 +50,7 @@ test('42/51 UI keeps substitutions explicit and never auto-applies a suggestion'
 });
 
 test('42/51 stays out of nutrition model 43/51',()=>{
-  const routes=read('backend/src/modules/verticals/gym.routes.ts');
+  const routes=gymBackendSource();
   const start=routes.indexOf("router.post('/gym/exercise-substitutions/suggest'");
   const end=routes.indexOf("router.get('/gym/routines'",start);
   const block=routes.slice(start,end);

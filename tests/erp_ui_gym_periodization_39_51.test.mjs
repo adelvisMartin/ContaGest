@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import test from 'node:test';
+import { gymBackendSource } from '../qa/support/vertical-authority-sources.mjs';
 
 const read=(path)=>fs.readFileSync(path,'utf8');
 
@@ -11,13 +12,13 @@ test('39/51 persists reusable templates and immutable versioned programs',()=>{
 });
 
 test('39/51 validates mesocycles with explicit load and deload weeks',()=>{
-  const routes=read('backend/src/modules/verticals/gym.routes.ts');
+  const routes=gymBackendSource();
   for(const token of ['periodizationStructureSchema','accumulation','intensification','realization','deload','weekType','volumePct','intensityPct']) assert.ok(routes.includes(token),token);
   assert.match(routes,/z\.enum\(\['load','deload'\]\)/);
 });
 
 test('39/51 creates versions without mutating historical program rows',()=>{
-  const routes=read('backend/src/modules/verticals/gym.routes.ts');
+  const routes=gymBackendSource();
   assert.match(routes,/router\.post\('\/gym\/periodization\/programs\/:id\/version'/);
   assert.match(routes,/pg_advisory_xact_lock/);
   assert.match(routes,/MAX\("version"\)/);
@@ -28,7 +29,7 @@ test('39/51 creates versions without mutating historical program rows',()=>{
 });
 
 test('39/51 enforces tenant ownership for routine and template provenance',()=>{
-  const routes=read('backend/src/modules/verticals/gym.routes.ts');
+  const routes=gymBackendSource();
   assert.match(routes,/La rutina no pertenece al tenant activo/);
   assert.match(routes,/La plantilla no pertenece al tenant activo/);
   assert.match(routes,/WHERE "tenantId"=\$1 AND "id"=\$2/);
