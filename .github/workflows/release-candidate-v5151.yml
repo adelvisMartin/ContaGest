@@ -161,12 +161,15 @@ jobs:
           npx prisma migrate status --schema backend/prisma/schema.prisma 2>&1 | tee -a "$EVIDENCE_ROOT/$CANDIDATE_SHA/postgres/migrations.log"
       - name: Seed QA tenant
         run: npm run seed
-      - name: Execute real vertical and provisioning E2E
+      - name: Install Chromium for browser-to-database gate
+        run: npx playwright install --with-deps chromium
+      - name: Execute real vertical, provisioning and browser E2E
         shell: bash
         run: |
           set -o pipefail
           npm run test:backend:verticals:real 2>&1 | tee "$EVIDENCE_ROOT/$CANDIDATE_SHA/postgres/verticals-e2e.log"
           npm run test:backend:provisioning:real 2>&1 | tee "$EVIDENCE_ROOT/$CANDIDATE_SHA/postgres/provisioning-e2e.log"
+          npm run test:browser:verticals:real 2>&1 | tee "$EVIDENCE_ROOT/$CANDIDATE_SHA/postgres/browser-verticals-e2e.log"
       - name: Verify cleanup inventory
         if: always()
         env:
