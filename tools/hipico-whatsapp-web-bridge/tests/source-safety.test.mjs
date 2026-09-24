@@ -112,3 +112,11 @@ test('LAB test poll returns to the source group without bypassing guarded reply 
   assert.match(source, /async function sendTextInCurrentSource[\s\S]*await assertCurrentSourceIdentity\(\)/);
   assert.match(source, /async function flushSourceReplies[\s\S]*sourceReplyJournal\.flush/);
 });
+
+
+test('source reply delivery verification reads message body before container metadata', () => {
+  assert.match(source, /async function visibleOutgoingTextCount/);
+  assert.match(source, /span\.selectable-text/);
+  assert.match(source, /data-testid="msg-text"/);
+  assert.match(source, /return selectable \|\| normalizeText\(node\.innerText \|\| node\.textContent\)/);
+});
