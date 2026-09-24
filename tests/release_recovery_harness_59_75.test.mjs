@@ -28,3 +28,26 @@ test('59/75 browser preqa activates AL2023 explicitly after Chromium extraction'
   assert.match(source,/split\(': '\)|split\(':'\)/);
   assert.match(source,/Capa AL2023 no activa después de extraer Chromium/);
 });
+
+
+test('59/75 visual matrix never clicks a disabled dialog trigger',()=>{
+  const source=read('qa/erp-visual-overlap-v4951.spec.mjs');
+  assert.match(source,/isEnabled\(\)/);
+  assert.match(source,/if\(!trigger\)return \[\]/);
+  assert.doesNotMatch(source,/getByRole\('button',[\s\S]{0,120}\.first\(\)/);
+});
+
+test('59/75 veterinary financial panel remains valid JSX',()=>{
+  const source=read('frontend/src/components/veterinary/VeterinaryFinancialPanel.jsx');
+  assert.doesNotMatch(source,/\bgap=\.\d/);
+  assert.match(source,/gap=\{\.5\}/);
+});
+
+test('59/75 fitness root contains mobile width and horizontally scrollable tabs',()=>{
+  const source=read('frontend/src/pages/GymManagementPage.jsx');
+  assert.match(source,/cg-vertical-page cg-gym-page[\s\S]{0,180}minWidth:0/);
+  assert.match(source,/overflowX:'hidden'/);
+  assert.match(source,/cg-gym-v1124-tabs/);
+  assert.match(source,/flexWrap="wrap"/);
+  assert.match(source,/xs:'minmax\(0,1fr\)'/);
+});
