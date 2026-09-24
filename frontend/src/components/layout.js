@@ -18,7 +18,7 @@ const compactRate = (value) => {
 const areaIcon = (area) => ({ Inicio:'fa-house', Ventas:'fa-cash-register', Operaciones:'fa-bell-concierge', Inventario:'fa-boxes-stacked', Compras:'fa-cart-shopping', Contabilidad:'fa-scale-balanced', Fiscal:'fa-landmark', RRHH:'fa-users-gear', Salud:'fa-heart-pulse', Fitness:'fa-dumbbell', Comunicación:'fa-comments', Analítica:'fa-chart-line', Administración:'fa-user-shield', Soporte:'fa-headset' }[area] || 'fa-layer-group');
 const AREA_I18N = { Inicio:'areaHome', Ventas:'areaSales', Operaciones:'areaOperations', Inventario:'areaInventory', Compras:'areaPurchases', Contabilidad:'areaAccounting', Fiscal:'areaTax', RRHH:'areaHr', Salud:'areaHealth', Fitness:'areaFitness', Comunicación:'areaCommunication', Analítica:'areaAnalytics', Administración:'areaAdministration', Soporte:'areaSupport' };
 const moduleIcon = (route) => ({ dashboard:'fa-chart-pie', mobile:'fa-mobile-screen-button', ventas:'fa-receipt', cotizacion:'fa-file-invoice-dollar', clientes:'fa-users', historial:'fa-clock-rotate-left', pedidos:'fa-bell-concierge', 'pos-sede':'fa-cash-register', 'tracking-pedidos':'fa-timeline', 'delivery-mapa':'fa-map-location-dot', tasks:'fa-list-check', inventario:'fa-boxes-stacked', 'inventario-scan':'fa-barcode', kardex:'fa-clipboard-list', qr:'fa-qrcode', proveedores:'fa-truck-field', compras:'fa-cart-shopping', contabilidad:'fa-book', 'plan-cuentas':'fa-sitemap', 'libro-mayor':'fa-book-open-reader', 'balance-sumas-saldos':'fa-scale-balanced', 'hoja-trabajo':'fa-table-columns', 'estados-financieros':'fa-file-invoice-dollar', 'cierre-contable':'fa-lock', bancos:'fa-building-columns', 'normativa-contable':'fa-globe', tributos:'fa-scale-balanced', 'libro-ventas':'fa-book-open', normativa:'fa-book-open', nomina:'fa-users-gear', rrhh:'fa-user-tie', salud:'fa-stethoscope', veterinaria:'fa-paw', psicologia:'fa-brain', odontologia:'fa-tooth', gimnasio:'fa-dumbbell', rutinas:'fa-person-running', nutricion:'fa-apple-whole', mensajes:'fa-comments', analytics:'fa-chart-line', reportes:'fa-chart-simple', auditoria:'fa-shield-halved', configuracion:'fa-gear', backend:'fa-plug', admin:'fa-user-shield', marca:'fa-swatchbook', 'demo-control':'fa-user-lock', licencias:'fa-key', 'importacion-data':'fa-file-import', 'reglas-negocio':'fa-gears', 'modulos-madurez':'fa-cubes', pretesting:'fa-shield-check', vistas:'fa-layer-group', profile:'fa-user', 'asistente-ia':'fa-robot', soporte:'fa-headset', ayuda:'fa-circle-question' }[route] || 'fa-circle-dot');
-const PRIMARY_ROUTES = ['dashboard','ventas','inventario','contabilidad','reportes'];
+const DEFAULT_PRIMARY_ROUTES = ['dashboard','ventas','inventario','contabilidad','reportes'];
 const routeLabel = (route) => ({ dashboard:'Dashboard', 'libro-ventas':'Libro de ventas', inventario:'Inventario', kardex:'Kardex', ventas:'Ventas', pedidos:'Pedidos', contabilidad:'Libro diario', 'libro-mayor':'Libro mayor', 'balance-sumas-saldos':'Balance de sumas y saldos', 'hoja-trabajo':'Hoja de trabajo', 'estados-financieros':'Estados financieros', 'cierre-contable':'Cierre contable', 'plan-cuentas':'Plan de cuentas', 'importacion-data':'Carga masiva', licencias:'Licencias', analytics:'Analítica', reportes:'Reportes', soporte:'Soporte', pretesting:'Estado del sistema', salud:'Clínica', veterinaria:'Clínica veterinaria', psicologia:'Psicología y agenda', odontologia:'Odontología', gimnasio:'Gimnasio', mensajes:'Mensajes', vistas:'Galería de módulos' }[route] || route);
 const whatsappDigits = (value = '') => String(value || '').replace(/\D/g, '');
 const whatsappSupportUrl = (state = {}) => { const phone=whatsappDigits(state.settings?.whatsappBusinessNumber || state.support?.whatsapp || state.settings?.companyPhone || ''); const text=encodeURIComponent('Hola, necesito soporte técnico con ContaGest-VE'); return phone ? `https://api.whatsapp.com/send?phone=${phone}&text=${text}` : `https://api.whatsapp.com/send?text=${text}`; };
@@ -29,8 +29,12 @@ function moduleButton(item,activeRoute,state){
   const locked=!AccessControlService.canAccessRoute(state,item.route);
   return `<button type="button" class="menu-link hf-menu-item ${activeRoute===item.route?'active':''} ${locked?'is-locked':''}" data-route="${item.route}" title="${locked?'Bloqueado por rol, licencia o plan activo':escapeHtml(item.name)}" aria-disabled="${locked?'true':'false'}" ${activeRoute===item.route?'aria-current="page"':''}><span class="hf-menu-item-icon"><i class="fa-solid ${locked?'fa-lock':moduleIcon(item.route)}"></i></span><span data-i18n-route="${item.route}">${escapeHtml(item.name)}</span></button>`;
 }
+function primaryRoutes(state){
+  const fromExperience=Array.isArray(state.experienceProfile?.quickRoutes)?state.experienceProfile.quickRoutes:[];
+  return [...new Set((fromExperience.length?fromExperience:DEFAULT_PRIMARY_ROUTES).map(String))];
+}
 function primaryMenu(state){
-  const available=PRIMARY_ROUTES.map(routeMeta).filter((item)=>item&&AccessControlService.canAccessRoute(state,item.route));
+  const available=primaryRoutes(state).map(routeMeta).filter((item)=>item&&AccessControlService.canAccessRoute(state,item.route));
   if(!available.length)return'';
   return `<section class="hf-primary-nav" aria-label="Accesos principales"><p class="hf-sidebar-label">Espacio de trabajo</p><div class="hf-primary-list">${available.map((item)=>moduleButton(item,state.route,state)).join('')}</div></section>`;
 }
@@ -38,8 +42,9 @@ function menuSections(state){
   const byArea=modulesByArea(state.settings?.businessMode||'admin',{includeAll:false});
   const activeRoute=state.route;
   const activeArea=routeMeta(activeRoute).area;
+  const promoted=new Set(primaryRoutes(state));
   return Object.entries(byArea).map(([area,rawItems])=>{
-    const items=rawItems.filter((item)=>!PRIMARY_ROUTES.includes(item.route));
+    const items=rawItems.filter((item)=>!promoted.has(item.route));
     if(!items.length)return'';
     const open=area===activeArea;
     return `<details name="cg-sidebar-modules" class="hf-menu-section" data-sidebar-section="${escapeHtml(area)}" ${open?'open':''}><summary class="cg-area-toggle"><span><span class="hf-area-icon"><i class="fa-solid ${areaIcon(area)}"></i></span><span data-i18n="${AREA_I18N[area]||''}">${escapeHtml(area)}</span></span><span class="hf-area-meta"><small>${items.length}</small><i class="fa-solid fa-chevron-down hf-section-chevron"></i></span></summary><div class="hf-menu-list">${items.map((item)=>moduleButton(item,activeRoute,state)).join('')}</div></details>`;
@@ -49,9 +54,11 @@ const themeOptions=(current)=>THEME_OPTIONS.map((item)=>`<option value="${item.k
 const supportWidgetOptions=(current)=>SUPPORT_WIDGET_OPTIONS.map((item)=>`<option value="${item.value}" ${current===item.value?'selected':''}>${escapeHtml(item.label)}</option>`).join('');
 
 export const Shell=(state,pagesHtml)=>{
-  const mode=state.settings?.businessMode||'admin',lang=state.settings?.lang||'es',sidebarCollapsed=Boolean(state.settings?.sidebarCollapsed),sidebarStateClass=sidebarCollapsed?'is-collapsed -translate-x-full':'-translate-x-full lg:translate-x-0';
+  const mode=state.experienceProfile?.mode||state.settings?.businessMode||'admin',lang=state.settings?.lang||'es',sidebarCollapsed=Boolean(state.settings?.sidebarCollapsed),sidebarStateClass=sidebarCollapsed?'is-collapsed -translate-x-full':'-translate-x-full lg:translate-x-0';
   const activeMeta=routeMeta(state.route),breadcrumbs=breadcrumbItems(state.route),commandItems=commandPaletteItems(state),avatarSrc=state.profile?.avatarDataUrl||'',avatarInitials=String(state.profile?.name||'A').split(' ').map((p)=>p[0]).join('').slice(0,2).toUpperCase()||'A',supportWidget=state.settings?.supportWidget||'peek',supportUrl=whatsappSupportUrl(state),rateSource=`${state.bcv.source||'Pendiente'}${state.bcv.stale?' · revisar':''}`,rateMobile=compactRate(state.bcv.rate),darkTheme=state.settings.theme==='dark';
-  const modeLabel=BUSINESS_MODES[mode]?.label||'Modo Administrador';
+  const modeLabel=state.experienceProfile?.label||BUSINESS_MODES[mode]?.label||'Modo Administrador';
+  const experienceActionRoute=state.experienceProfile?.landingRoute||'dashboard';
+  const experienceActionLabel=state.experienceProfile?.landingLabel||routeMeta(experienceActionRoute).name||'Inicio';
   return `<div id="sidebarBackdrop" class="fixed inset-0 z-40 hidden bg-black/45 lg:hidden"></div>
   <aside id="sidebar" class="hf-sidebar hf-app-sidebar cg-sidebar ${sidebarStateClass}">
     <div class="hf-brand hf-app-brand"><div class="hf-brand-mark" aria-hidden="true"><img src="${escapeHtml(logoUrl)}" alt="" /></div><div class="hf-sidebar-wordmark"><h1>ContaGest</h1><p>${escapeHtml(modeLabel)}</p></div><button id="btnCloseSidebar" class="hf-sidebar-collapse" type="button" aria-label="Contraer menú"><i class="fa-solid fa-chevron-left"></i></button></div>
@@ -63,7 +70,7 @@ export const Shell=(state,pagesHtml)=>{
       <div class="hf-topbar-left"><button id="btnOpenSidebar" class="hf-icon-button hf-menu-toggle" type="button" aria-label="${sidebarCollapsed?'Abrir menú':'Menú abierto'}">${MenuSvg()}</button><div class="hf-header-context"><span>${escapeHtml(activeMeta.area||'ContaGest')}</span><strong>${escapeHtml(activeMeta.name||routeLabel(state.route))}</strong></div></div>
       <button id="btnCommandPalette" class="hf-command-trigger" type="button" aria-label="Buscar módulos, clientes, documentos y reportes"><i class="fa-solid fa-magnifying-glass"></i><span>Buscar en ContaGest</span><kbd>Ctrl K</kbd></button>
       <div class="hf-topbar-actions hf-app-topbar-actions">
-        <button class="hf-create-button" data-route="cotizacion" type="button"><i class="fa-solid fa-plus"></i><span>Nueva operación</span></button>
+        <button class="hf-create-button" data-route="${escapeHtml(experienceActionRoute)}" data-experience-action="true" type="button"><i class="fa-solid ${moduleIcon(experienceActionRoute)}"></i><span>${escapeHtml(experienceActionLabel)}</span></button>
         <div class="hf-rate-compact" aria-label="Tasa BCV ${escapeHtml(bs(state.bcv.rate))} por USD. Fuente ${escapeHtml(rateSource)}" title="Tasa BCV · ${escapeHtml(rateSource)}"><span class="hf-rate-status-dot" aria-hidden="true"></span><span class="hf-rate-copy"><small>BCV</small><strong><span id="tasaHeader" class="hf-rate-full">${bs(state.bcv.rate)}</span><span id="tasaHeaderMobile" class="hf-rate-mobile" aria-hidden="true">${escapeHtml(rateMobile)}</span></strong></span></div>
         <button id="btnActualizarTasaTop" class="hf-icon-button hf-rate-update" type="button" aria-label="Actualizar tasa BCV" title="Actualizar tasa BCV"><i class="fa-solid fa-rotate"></i></button>
         <button id="btnTema" class="hf-icon-button" type="button" aria-label="Cambiar tema" title="Cambiar tema">${ThemeSvg(darkTheme)}</button>
