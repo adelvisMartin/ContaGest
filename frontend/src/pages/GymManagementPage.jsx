@@ -21,15 +21,7 @@ import { NutritionSnapshotPanel } from '../components/fitness/NutritionSnapshotP
 import { IntegratedAdherencePanel } from '../components/fitness/IntegratedAdherencePanel.jsx';
 import { FITNESS_TRAINING_MODES, fitnessTrainingMode, fitnessTrainingModeLabel } from '../data/fitnessTrainingModes.js';
 import { GymVerticalService } from '../services/verticalService.js';
-
-const rows=(value)=>Array.isArray(value)?value:value?.data||[];
-const object=(value)=>value?.data||value||{};
-const localDate=(days=0)=>{const date=new Date(Date.now()+days*86400000-new Date().getTimezoneOffset()*60000);return date.toISOString().slice(0,10);};
-const localDateTime=(minutes=0)=>{const date=new Date(Date.now()+minutes*60000-new Date().getTimezoneOffset()*60000);return date.toISOString().slice(0,16);};
-const amount=(value,currency='USD')=>`${currency} ${Number(value||0).toLocaleString('es-VE',{minimumFractionDigits:2,maximumFractionDigits:2})}`;
-const memberOptions=(members,empty='Seleccionar cliente')=>[{value:'',label:empty},...members.map((item)=>({value:item.id,label:item.fullName||item.memberCode||'Cliente'}))];
-const trainerOptions=(trainers)=>[{value:'',label:'Sin asignar'},...trainers.map((item)=>({value:item.id,label:item.fullName||'Instructor'}))];
-const planOptions=(plans)=>[{value:'',label:'Seleccionar plan'},...plans.map((item)=>({value:item.id,label:`${item.name} · ${amount(item.price,item.currency)}`}))];
+import { rows, object, localDate, localDateTime, amount, memberOptions, trainerOptions, planOptions, MONTHS } from '../components/fitness/gymWorkspace.helpers.js';
 
 function Metric({label,value,hint,tone='default'}){
   return <Paper variant="outlined" sx={{p:1.35,minWidth:0}}><Typography variant="caption" color="text.secondary">{label}</Typography><Stack direction="row" alignItems="center" justifyContent="space-between" gap={1}><Typography variant="h5" sx={{fontVariantNumeric:'tabular-nums'}}>{value}</Typography><CgStatusChip label={hint||String(value)} tone={tone}/></Stack></Paper>;
@@ -48,10 +40,9 @@ function RecordList({items,empty,render}){
 }
 
 function DateOfBirthFields({form,setForm}){
-  const months=['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
   return <Box className="cg-gym-v1124-fields" sx={{display:'grid',gridTemplateColumns:'minmax(0,.7fr) minmax(0,1fr) minmax(0,1fr)',gap:1}}>
     <CgTextField size="small" label="Día nacimiento" type="number" inputProps={{min:1,max:31}} value={form.birthDay} onChange={(e)=>setForm({...form,birthDay:e.target.value})}/>
-    <CgSelect label="Mes nacimiento" value={form.birthMonth} onChange={(e)=>setForm({...form,birthMonth:e.target.value})} options={[{value:'',label:'Mes'},...months.map((label,index)=>({value:String(index+1).padStart(2,'0'),label}))]}/>
+    <CgSelect label="Mes nacimiento" value={form.birthMonth} onChange={(e)=>setForm({...form,birthMonth:e.target.value})} options={[{value:'',label:'Mes'},...MONTHS.map((label,index)=>({value:String(index+1).padStart(2,'0'),label}))]}/>
     <CgTextField size="small" label="Año nacimiento" type="number" inputProps={{min:1900,max:2100}} value={form.birthYear} onChange={(e)=>setForm({...form,birthYear:e.target.value})}/>
   </Box>;
 }
