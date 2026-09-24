@@ -4,6 +4,7 @@ import type { AddressInfo } from 'node:net';
 import bcrypt from 'bcryptjs';
 import { createApp } from '../backend/src/app.ts';
 import { prisma } from '../backend/src/database/prisma.ts';
+import { logger } from '../backend/src/shared/observability/logger.ts';
 import {
   getLoginThrottleState,
   loadLoginThrottlePolicy,
@@ -196,8 +197,10 @@ test('issue #89 real DB/API: temporary account throttle never becomes administra
 
   await t.test('security telemetry pseudonymizes identity and never logs password/CAPTCHA token',async()=>{
     const telemetry:string[]=[];
-    const original=console.info;
-    console.info=(...args:unknown[])=>{telemetry.push(args.map(String).join(' '));};
+    const originalInfo=logger.info;
+    (logger as any).info=(payload:unknown,message?:unknown)=>{
+      telemetry.push(`${JSON.stringify(payload)} ${String(message||'')}`);
+    };
     try{
       const isolatedEmail=`logs.${RUN.toLowerCase()}@qa.local`;
       const isolated=await prisma.userProfile.create({data:{tenantId:b.tenant.id,email:isolatedEmail,fullName:'QA telemetry',passwordHash:await bcrypt.hash(PASSWORD,12),status:'active'}});
@@ -215,7 +218,7 @@ test('issue #89 real DB/API: temporary account throttle never becomes administra
         await prisma.userProfile.deleteMany({where:{id:isolated.id}});
       }
     }finally{
-      console.info=original;
+      (logger as any).info=originalInfo;
     }
   });
 });
