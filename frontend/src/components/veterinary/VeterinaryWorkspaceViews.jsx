@@ -6,7 +6,6 @@ import {
   TextField, Tooltip, Typography
 } from '@mui/material';
 import { toast } from 'react-hot-toast';
-import { VeterinaryService } from '../../services/verticalService.js';
 import { VeterinaryTreatmentSheet } from './VeterinaryTreatmentSheet.jsx';
 import { VeterinaryMedicationPanel } from './VeterinaryMedicationPanel.jsx';
 import { VeterinaryClinicalInventoryPanel } from './VeterinaryClinicalInventoryPanel.jsx';
@@ -24,7 +23,7 @@ export function renderVeterinaryWorkspaceTab({
   selectedPatient, encounters, prescriptions, consents, labOrders, labResults,
   studies, hospitalizations, procedures, communications, search, setSearch,
   navigateToTab, openDialog, editPatient, archivePatient, editAppointment, removeAppointment,
-  notifyAppointment, updateAppointment, filteredPatients, isLabResultPending,
+  notifyAppointment, updateAppointment, dischargeHospitalization, filteredPatients, isLabResultPending,
   selectPatient, loadPatientData, setActionError
 }) {
 const renderOverview=()=> <Box sx={{display:'grid',gridTemplateColumns:{xs:'1fr',lg:'1.25fr .75fr'},gap:1.5}}><SectionCard title="Agenda de hoy" subtitle="Confirmación y seguimiento desde la misma vista" action={<Button startIcon={<Icon name="fa-plus"/>} onClick={()=>openDialog('appointment',{patientId:selectedPatientId,startsAt:localDateTime(60),endsAt:localDateTime(90),channel:'onsite'})}>Nueva cita</Button>}>{appointments.length?<Stack gap={.8}>{appointments.slice(0,8).map((item)=><Paper key={item.id} variant="outlined" sx={{p:1,display:'grid',gridTemplateColumns:{xs:'1fr auto',sm:'70px minmax(0,1fr) auto'},gap:1,alignItems:'center'}}><Box><Typography variant="subtitle2">{new Date(item.startsAt).toLocaleTimeString('es-VE',{hour:'2-digit',minute:'2-digit'})}</Typography><Typography variant="caption">{onlyDate(item.startsAt)}</Typography></Box><Box sx={{minWidth:0}}><Typography variant="subtitle2" noWrap>{item.patientName||patients.find((p)=>p.id===item.patientId)?.displayName||'Mascota'}</Typography><Typography variant="caption" color="text.secondary" noWrap>{item.reason||'Consulta'} · {item.professionalName||'Sin asignar'}</Typography></Box><Stack direction="row" gap={.3}><Tooltip title="Editar"><IconButton size="small" onClick={()=>editAppointment(item)}><Icon name="fa-pen"/></IconButton></Tooltip><Tooltip title="WhatsApp"><IconButton size="small" color="success" onClick={()=>notifyAppointment(item,'whatsapp')}><i className="fa-brands fa-whatsapp"/></IconButton></Tooltip></Stack></Paper>)}</Stack>:<EmptyState icon="fa-calendar-check" title="Agenda libre" text="No hay citas próximas registradas."/>}</SectionCard><Stack gap={1.5}><SectionCard title="Alertas clínicas" subtitle="Prioridades de los últimos 30 días"><Stack gap={.8}><Alert severity={Number(dashboard.abnormalResults)?'warning':'success'}><b>{dashboard.abnormalResults||0}</b> resultados fuera de rango</Alert><Alert severity={Number(dashboard.pendingLabOrders)?'info':'success'}><b>{dashboard.pendingLabOrders||0}</b> órdenes pendientes</Alert><Alert severity={Number(dashboard.vaccinesDue)?'warning':'success'}><b>{dashboard.vaccinesDue||0}</b> vacunas próximas</Alert></Stack></SectionCard><SectionCard title="Acciones rápidas"><Box sx={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:.8}}><Button variant="outlined" disabled={!selectedPatient} onClick={()=>navigateToTab('historia')}>Historia</Button><Button variant="outlined" disabled={!selectedPatient} onClick={()=>openDialog('labOrder',{priority:'routine',tests:'Hemograma completo|Hematología||||\nBioquímica básica|Bioquímica||||'})}>Laboratorio</Button><Button variant="outlined" disabled={!selectedPatient} onClick={()=>openDialog('hospitalization',{admittedAt:localDateTime()})}>Hospitalizar</Button><Button variant="outlined" disabled={!selectedPatient} onClick={()=>openDialog('procedure',{status:'planned',scheduledAt:localDateTime(60)})}>Procedimiento</Button></Box></SectionCard></Stack></Box>;
@@ -72,18 +71,7 @@ const renderOverview=()=> <Box sx={{display:'grid',gridTemplateColumns:{xs:'1fr'
           <Typography variant="body2" mt={.8}><b>Motivo:</b> {x.reason}</Typography>
           <Typography variant="body2"><b>Diagnóstico:</b> {x.diagnosis||'En evaluación'}</Typography>
           {!['discharged','cancelled','transferred'].includes(x.status)?<Stack direction="row" gap={.6} mt={1}>
-            <Button color="success" variant="outlined" onClick={async()=>{
-              try{
-                await VeterinaryService.updateHospitalizationStatus(x.id,{status:'discharged'});
-                setActionError('');
-                await loadPatientData(selectedPatientId);
-                toast.success('Alta registrada.');
-              }catch(error){
-                reportVeterinaryError('workspace.dischargeHospitalization',error);
-                setActionError(displayError(error));
-                toast.error(displayError(error));
-              }
-            }}>Dar alta</Button>
+            <Button color="success" variant="outlined" onClick={()=>dischargeHospitalization(x)}>Dar alta</Button>
           </Stack>:null}
         </Paper>)}</Stack>:<EmptyState icon="fa-house-medical" title="Sin hospitalizaciones"/>}
       </SectionCard>
