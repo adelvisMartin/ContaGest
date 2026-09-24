@@ -170,7 +170,7 @@ test('weak Jev disagreement does not create unnecessary clarification or human w
   assert.equal(result.action,'SEND');
   assert.equal(result.reason,'CANONICAL_READ_ONLY_QUERY');
   assert.match(result.text||'',/Próxima carrera/);
-  assert.equal(result.provider.influence,'DOWNGRADE_ONLY');
+  assert.equal(result.provider.influence,'NONE');
   assert.equal(result.handoffRequired,false);
 });
 
