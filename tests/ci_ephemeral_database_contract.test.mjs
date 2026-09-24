@@ -15,3 +15,10 @@ test('el guard de compatibilidad Supabase mantiene fail-closed fuera de bases ef
   assert.match(guard, /\(_e2e\|_drill\|_restore\)\$/);
   assert.match(guard, /Refusing Supabase compatibility stubs in non-ephemeral database/);
 });
+
+test('la preparación efímera recrea el baseline canónico antes del historial Prisma', () => {
+  assert.match(guard, /contagest_full_bootstrap_v8_5\.sql/);
+  const guardIndex=guard.indexOf('Refusing Supabase compatibility stubs');
+  const baselineIndex=guard.indexOf('contagest_full_bootstrap_v8_5.sql');
+  assert.ok(guardIndex>=0&&baselineIndex>guardIndex,'baseline SQL must remain behind the ephemeral database-name guard');
+});
