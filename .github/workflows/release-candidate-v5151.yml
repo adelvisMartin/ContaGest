@@ -34,6 +34,9 @@ jobs:
     name: Source · Prisma · tests · build · audit
     runs-on: ubuntu-latest
     timeout-minutes: 50
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/contagest_release_contract?schema=public
+      DIRECT_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/contagest_release_contract?schema=public
     steps:
       - name: Checkout exact candidate
         uses: actions/checkout@v7
