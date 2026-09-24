@@ -14,7 +14,8 @@ import { normalizeReplayArgs } from './replay-policy.mjs';
 
 export const BRIDGE_SPOOL_KINDS=Object.freeze({
   BACKEND_EVENT:'backend-event',
-  LAB_MIRROR:'lab-mirror'
+  LAB_MIRROR:'lab-mirror',
+  SOURCE_REPLY:'source-reply'
 });
 
 const ACTIVE_STATES=new Set(['queued','failed']);
@@ -236,7 +237,8 @@ export function createBridgeSpoolRuntime({
     const counts=Object.fromEntries(SPOOL_STATES.map((state)=>[state,0]));
     const byKind={
       [BRIDGE_SPOOL_KINDS.BACKEND_EVENT]:Object.fromEntries(SPOOL_STATES.map((state)=>[state,0])),
-      [BRIDGE_SPOOL_KINDS.LAB_MIRROR]:Object.fromEntries(SPOOL_STATES.map((state)=>[state,0]))
+      [BRIDGE_SPOOL_KINDS.LAB_MIRROR]:Object.fromEntries(SPOOL_STATES.map((state)=>[state,0])),
+      [BRIDGE_SPOOL_KINDS.SOURCE_REPLY]:Object.fromEntries(SPOOL_STATES.map((state)=>[state,0]))
     };
     for(const state of SPOOL_STATES){
       for(const item of await listState(state)){
@@ -248,6 +250,7 @@ export function createBridgeSpoolRuntime({
       counts,byKind,
       pendingBackend:byKind[BRIDGE_SPOOL_KINDS.BACKEND_EVENT].queued+byKind[BRIDGE_SPOOL_KINDS.BACKEND_EVENT].failed,
       pendingLab:byKind[BRIDGE_SPOOL_KINDS.LAB_MIRROR].queued+byKind[BRIDGE_SPOOL_KINDS.LAB_MIRROR].failed,
+      pendingSourceReplies:byKind[BRIDGE_SPOOL_KINDS.SOURCE_REPLY].queued+byKind[BRIDGE_SPOOL_KINDS.SOURCE_REPLY].failed,
       quarantined:counts.quarantined
     };
   }
@@ -315,8 +318,13 @@ export function createBridgeSpoolRuntime({
       if(!mirror?.sourceExternalMessageId)throw new Error('SPOOL_MIRROR_ID_REQUIRED');
       return queue(BRIDGE_SPOOL_KINDS.LAB_MIRROR,String(mirror.sourceExternalMessageId),mirror);
     },
+    queueSourceReply:(reply)=>{
+      if(!reply?.replyId||!reply?.sourceMessageId)throw new Error('SPOOL_SOURCE_REPLY_ID_REQUIRED');
+      return queue(BRIDGE_SPOOL_KINDS.SOURCE_REPLY,`${reply.replyId}|${reply.sourceMessageId}`,reply);
+    },
     flushBackend:(deliver,options)=>flushKind(BRIDGE_SPOOL_KINDS.BACKEND_EVENT,deliver,options),
     flushLab:(deliver,options)=>flushKind(BRIDGE_SPOOL_KINDS.LAB_MIRROR,deliver,options),
+    flushSourceReplies:(deliver,options)=>flushKind(BRIDGE_SPOOL_KINDS.SOURCE_REPLY,deliver,options),
     snapshot,replayPlan,requestReplay,findRecord
   });
 }
