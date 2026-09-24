@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { BUSINESS_MODES, modulesForMode } from '../frontend/src/data/moduleCatalog.js';
+import { roleAccessProfile } from '../backend/src/shared/contracts/roleAccessProfilesRuntime.js';
 
 const read=(path)=>fs.readFileSync(new URL(`../${path}`,import.meta.url),'utf8');
 const json=(path)=>JSON.parse(read(path));
@@ -54,7 +55,9 @@ test('52/75 license UI provides safe defaults for psychology dentistry and stand
 });
 
 test('52/75 local access model mirrors the standalone nutrition entitlement without widening it to gym',()=>{
-  assert.match(access,/id:'role-nutricion'/);
-  assert.match(access,/modules:\['dashboard','nutricion','clientes','analytics','reportes','mensajes','soporte'\]/);
+  const profile=roleAccessProfile('role-nutricion');
+  assert.deepEqual([...profile.modules],['dashboard','nutricion','clientes','analytics','reportes','mensajes','soporte']);
+  assert.ok(!profile.modules.includes('gimnasio'));
+  assert.ok(!profile.modules.includes('rutinas'));
   assert.match(access,/id:'user-nutricion'/);
 });
