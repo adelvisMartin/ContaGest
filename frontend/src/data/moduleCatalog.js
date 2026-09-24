@@ -1,4 +1,4 @@
-import accessManifest from 'contagest-ve-backend/access-manifest.json' with { type:'json' };
+import { ACCESS_MANIFEST as accessManifest } from 'contagest-ve-backend/access-manifest';
 
 export const MODULE_TIERS = {
   core: { label:'Operativo', tone:'success', description:'Funciones esenciales para la operación diaria.' },
