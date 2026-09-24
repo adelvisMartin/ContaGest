@@ -92,7 +92,8 @@
     "test:browser:functional": "npx playwright test qa/erp-functional-smoke-v14.spec.mjs qa/module-actions-runtime-v163.spec.mjs --project=chromium --workers=1",
     "test:browser": "npm run test:browser:58 && npm run test:browser:functional && npm run test:browser:a11y && npm run test:browser:contrast",
     "audit:database-authority": "node scripts/database-authority-audit-v6775.mjs",
-    "audit:raw-sql-security": "node scripts/raw-sql-security-audit-v6875.mjs"
+    "audit:raw-sql-security": "node scripts/raw-sql-security-audit-v6875.mjs",
+    "audit:design-system-authority": "node scripts/design-system-authority-audit-v6975.mjs"
   },
   "devDependencies": {
     "@playwright/test": "1.63.0"
