@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import test from 'node:test';
-import { gymBackendSource } from '../qa/support/vertical-authority-sources.mjs';
+import { fitnessWorkspaceSource, gymBackendSource } from '../qa/support/vertical-authority-sources.mjs';
 
-const page=()=>fs.readFileSync('frontend/src/pages/GymManagementPage.jsx','utf8');
+const page=()=>fitnessWorkspaceSource();
 const builder=()=>fs.readFileSync('frontend/src/components/fitness/RoutineBuilder.jsx','utf8');
 const backend=()=>gymBackendSource();
 
