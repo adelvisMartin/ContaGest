@@ -3,6 +3,9 @@ import { z } from 'zod';
 import { prisma } from '../../database/prisma.js';
 import { asyncHandler, ok } from '../../shared/http.js';
 import { requireTenant, requirePermission } from '../../shared/middleware/context.js';
+import { UnifiedAgentRuntime } from '../../shared/agents/unified-agent-runtime.js';
+import { writeAudit } from '../../shared/services/audit.service.js';
+import { logger } from '../../shared/observability/logger.js';
 
 const router = Router();
 router.use(requireTenant);
@@ -172,6 +175,102 @@ async function askOpenAi(message: string, history: Array<{ role: 'user' | 'assis
   }
 }
 
+type AssistantRuntimeInput = {
+  tenantId: string;
+  userId?: string;
+  message: string;
+  history: Array<{ role: 'user' | 'assistant'; content: string }>;
+};
+
+type AssistantRuntimeOutput = {
+  answer: string;
+  provider: 'openai' | 'contagest-operational';
+  model: string;
+  providerWarning: string | null;
+  rawId: string | null;
+};
+
+export const ERP_ASSISTANT_RUNTIME_ID = 'contagest-erp-assistant-v1';
+
+const assistantRuntime = new UnifiedAgentRuntime<AssistantRuntimeInput, OperationalSnapshot, AssistantRuntimeOutput>({
+  runtimeId: ERP_ASSISTANT_RUNTIME_ID,
+  contextBuilder: ({ tenantId }) => loadOperationalSnapshot(tenantId),
+  decide: async ({ input, context }) => {
+    let provider: AssistantRuntimeOutput['provider'] = 'contagest-operational';
+    let rawId: string | null = null;
+    let providerWarning: string | null = null;
+    let answer = '';
+
+    try {
+      const generated = await askOpenAi(input.message, input.history, context);
+      if (generated) {
+        answer = generated.answer;
+        rawId = generated.rawId;
+        provider = 'openai';
+      }
+    } catch (error: any) {
+      providerWarning = String(error?.message || 'Proveedor generativo no disponible.');
+    }
+
+    if (!answer) answer = operationalAnswer(input.message, context);
+    return {
+      intent: 'operational_assistance',
+      confidence: 1,
+      risk: 'safe',
+      source: provider === 'openai' ? 'model' : 'rules',
+      modelVersion: provider === 'openai' ? (process.env.OPENAI_MODEL || 'gpt-5-mini') : 'motor-operativo-local',
+      tool: null,
+      output: {
+        answer,
+        provider,
+        model: provider === 'openai' ? (process.env.OPENAI_MODEL || 'gpt-5-mini') : 'motor-operativo-local',
+        providerWarning,
+        rawId
+      }
+    };
+  },
+  policy: () => ({
+    disposition: 'SUGGEST',
+    reason: 'READ_ONLY_ASSISTANT',
+    autonomousAllowed: false,
+    humanRequired: false
+  }),
+  audit: async (event) => {
+    if (event.stage !== 'COMPLETE') return;
+    await writeAudit({
+      tenantId: event.trace.runtimeId ? undefined : undefined,
+      action: 'agent.runtime.evaluate',
+      entity: 'UnifiedAgentRuntime',
+      after: {
+        runtimeId: event.trace.runtimeId,
+        mode: event.trace.mode,
+        disposition: event.trace.disposition,
+        reason: event.trace.reason,
+        intent: event.trace.intent,
+        risk: event.trace.risk,
+        source: event.trace.source,
+        toolName: event.trace.toolName,
+        directEffectsApplied: event.trace.directEffectsApplied
+      }
+    });
+  },
+  metrics: (trace) => {
+    logger.info({
+      event: 'agent.runtime.complete',
+      runtimeId: trace.runtimeId,
+      mode: trace.mode,
+      disposition: trace.disposition,
+      reason: trace.reason,
+      intent: trace.intent,
+      source: trace.source,
+      risk: trace.risk,
+      toolName: trace.toolName,
+      directEffectsApplied: trace.directEffectsApplied,
+      durationMs: trace.durationMs
+    }, 'agent runtime completed');
+  }
+});
+
 async function persistConversation(params: {
   tenantId: string;
   userId?: string;
@@ -212,6 +311,12 @@ router.get('/status', requirePermission('reports.view'), asyncHandler(async (req
       openSales: snapshot.sales.open,
       overdueSales: snapshot.sales.overdue,
       unpostedLedger: snapshot.ledger.unposted
+    },
+    runtime: {
+      runtimeId: ERP_ASSISTANT_RUNTIME_ID,
+      mode: 'ASSISTED',
+      financialAuthority: false,
+      directEffectsAllowed: false
     }
   });
 }));
@@ -220,43 +325,41 @@ router.post('/chat', requirePermission('reports.view'), asyncHandler(async(req,r
   const body = chatSchema.parse(req.body || {});
   const ctx = (req as any).context;
   const history = body.history || [];
-  const snapshot = await loadOperationalSnapshot(ctx.tenantId);
+  const evaluation = await assistantRuntime.run({
+    tenantId: ctx.tenantId,
+    userId: ctx.userId,
+    message: body.message,
+    history
+  }, 'ASSISTED');
+  if (!evaluation.proposal) throw new Error('AGENT_RUNTIME_PROPOSAL_REQUIRED');
+  const output = evaluation.proposal.output;
 
-  let provider = 'contagest-operational';
-  let rawId: string | null = null;
-  let answer = '';
-  let providerWarning: string | null = null;
-
-  try {
-    const generated = await askOpenAi(body.message, history, snapshot);
-    if (generated) {
-      answer = generated.answer;
-      rawId = generated.rawId;
-      provider = 'openai';
-    }
-  } catch (error: any) {
-    providerWarning = String(error?.message || 'Proveedor generativo no disponible.');
-  }
-
-  if (!answer) answer = operationalAnswer(body.message, snapshot);
   const conversationId = await persistConversation({
     tenantId: ctx.tenantId,
     userId: ctx.userId,
     conversationId: body.conversationId,
     history,
     message: body.message,
-    answer
+    answer: output.answer
   });
 
   ok(res, {
-    answer,
-    provider,
-    model: provider === 'openai' ? (process.env.OPENAI_MODEL || 'gpt-5-mini') : 'motor-operativo-local',
-    providerWarning,
-    rawId,
+    answer: output.answer,
+    provider: output.provider,
+    model: output.model,
+    providerWarning: output.providerWarning,
+    rawId: output.rawId,
     conversationId,
     snapshotAt: new Date().toISOString(),
-    suggestions: ['Auditar ventas vencidas', 'Revisar stock crítico', 'Validar asientos pendientes', 'Examinar caja y bancos']
+    suggestions: ['Auditar ventas vencidas', 'Revisar stock crítico', 'Validar asientos pendientes', 'Examinar caja y bancos'],
+    runtime: {
+      runtimeId: evaluation.trace.runtimeId,
+      mode: evaluation.trace.mode,
+      disposition: evaluation.trace.disposition,
+      reason: evaluation.trace.reason,
+      humanRequired: evaluation.trace.humanRequired,
+      directEffectsApplied: evaluation.trace.directEffectsApplied
+    }
   });
 }));
 
