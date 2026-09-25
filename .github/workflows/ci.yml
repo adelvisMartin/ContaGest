@@ -55,6 +55,9 @@ jobs:
       - name: Raw SQL security audit
         run: npm run audit:raw-sql-security
 
+      - name: Design system authority
+        run: npm run audit:design-system-authority
+
       - name: ERP Wave A source audit
         run: npm run audit:erp-ui-wave-a
 
