@@ -23,6 +23,7 @@ const required59=[
   'tests/vertical_schema_authority_67_75.test.mjs',
   'tests/database_authority_67_75.test.mjs',
   'tests/raw_sql_security_68_75.test.mjs',
+  'tests/design_system_authority_69_75.test.mjs',
 ];
 const tests=[...new Set([...regressionPaths,...required59])];
 
