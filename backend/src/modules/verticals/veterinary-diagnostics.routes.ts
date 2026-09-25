@@ -1,6 +1,5 @@
 import { randomUUID } from 'node:crypto';
 import { Router } from 'express';
-import { z } from 'zod';
 import { prisma } from '../../database/prisma.js';
 import { asyncHandler, HttpError, ok } from '../../shared/http.js';
 import { ctx, one } from './verticals.shared.js';
@@ -9,12 +8,13 @@ import {
   labResultSchema,
   studySchema
 } from './veterinary.schemas.js';
+import type { VeterinaryLabResultFlagInput } from './veterinary.schemas.js';
 
 const router = Router();
 
 const referenceNumber = (prefix: string) => `${prefix}-${new Date().toISOString().slice(0, 10).replaceAll('-', '')}-${randomUUID().slice(0, 8).toUpperCase()}`;
 
-function inferFlag(body: Pick<z.infer<typeof labResultSchema>, 'valueNumeric'|'valueText'|'referenceMin'|'referenceMax'>) {
+function inferFlag(body: VeterinaryLabResultFlagInput) {
   if (body.valueNumeric !== null && body.valueNumeric !== undefined) {
     if (body.referenceMin !== null && body.referenceMin !== undefined && body.valueNumeric < body.referenceMin) return 'low';
     if (body.referenceMax !== null && body.referenceMax !== undefined && body.valueNumeric > body.referenceMax) return 'high';
