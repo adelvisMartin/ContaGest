@@ -1,31 +1,16 @@
 import { Router } from 'express';
-import { z } from 'zod';
 import { prisma } from '../../database/prisma.js';
 import { asyncHandler, HttpError, ok } from '../../shared/http.js';
+import { veterinaryAppointmentPatchSchema } from './veterinary.schemas.js';
 
 const router = Router();
 const ctx = (req: any) => req.context as { tenantId: string };
-const optionalText = z.string().trim().max(4000).optional().nullable();
-const appointmentStatus = z.enum(['scheduled','confirmed','checked_in','in_progress','completed','cancelled','no_show']);
-const appointmentPatchSchema = z.object({
-  patientId: z.string().min(10).optional(),
-  professionalId: z.string().optional().nullable(),
-  startsAt: z.string().min(8).max(50).optional(),
-  endsAt: z.string().min(8).max(50).optional(),
-  type: z.string().trim().max(120).optional(),
-  status: appointmentStatus.optional(),
-  reason: optionalText,
-  channel: z.enum(['onsite','telemedicine','home_visit']).optional(),
-  room: optionalText,
-  notes: optionalText
-}).strict();
-
 function changed<T extends Record<string, unknown>>(body: T, key: keyof T) {
   return Object.prototype.hasOwnProperty.call(body, key);
 }
 
 router.patch('/health/appointments/:id', asyncHandler(async (req, res) => {
-  const b = appointmentPatchSchema.parse(req.body || {});
+  const b = veterinaryAppointmentPatchSchema.parse(req.body || {});
   const rows = await prisma.$queryRawUnsafe<any[]>(`
     UPDATE public."CareAppointment" SET
       "patientId"=CASE WHEN $3 THEN $4 ELSE "patientId" END,
