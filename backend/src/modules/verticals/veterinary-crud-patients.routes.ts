@@ -1,34 +1,16 @@
 import { Router } from 'express';
-import { z } from 'zod';
 import { prisma } from '../../database/prisma.js';
 import { asyncHandler, HttpError, ok } from '../../shared/http.js';
+import { veterinaryPatientPatchSchema } from './veterinary.schemas.js';
 
 const router = Router();
 const ctx = (req: any) => req.context as { tenantId: string };
-const optionalText = z.string().trim().max(4000).optional().nullable();
-const patientPatchSchema = z.object({
-  displayName: z.string().trim().min(2).max(180).optional(),
-  species: optionalText,
-  breed: optionalText,
-  color: optionalText,
-  sex: optionalText,
-  birthDate: z.string().optional().nullable(),
-  microchip: optionalText,
-  guardianName: optionalText,
-  guardianPhone: optionalText,
-  guardianEmail: z.string().email().optional().nullable().or(z.literal('')),
-  allergies: optionalText,
-  conditions: optionalText,
-  notes: optionalText,
-  active: z.boolean().optional()
-}).strict();
-
 function changed<T extends Record<string, unknown>>(body: T, key: keyof T) {
   return Object.prototype.hasOwnProperty.call(body, key);
 }
 
 router.patch('/health/patients/:id', asyncHandler(async (req, res) => {
-  const b = patientPatchSchema.parse(req.body || {});
+  const b = veterinaryPatientPatchSchema.parse(req.body || {});
   const rows = await prisma.$queryRawUnsafe<any[]>(`
     UPDATE public."CarePatient" SET
       "displayName"=CASE WHEN $3 THEN $4 ELSE "displayName" END,
