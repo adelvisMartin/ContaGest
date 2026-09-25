@@ -511,7 +511,7 @@ function DentistryWorkspace({ state, context }){
               onAmend={prepareAmendment}
             />
           </Stack>;
-        })}</Stack>:<CgEmptyState title="Sin tratamientos registrados" description="Selecciona un paciente y registra el primer procedimiento."/>}
+        })}</Stack>:<CgEmptyState title="Sin tratamientos registrados" description="Selecciona un paciente y registra el primer procedimiento." assetKey="dentistry"/>}
       </Paper>
     </Box>
   </Stack>;

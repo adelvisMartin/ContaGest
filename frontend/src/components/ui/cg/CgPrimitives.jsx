@@ -28,6 +28,7 @@ import {
 } from '@mui/material';
 import { createContaGestMuiTheme, muiModeFor } from '../../muiRuntime.js';
 import { formatMoneyExact } from './moneyFormat.js';
+import { verticalAsset } from '../../../assets/verticalAssets.js';
 
 export function CgProvider({ state, children }) {
   const mode = muiModeFor(state);
@@ -119,9 +120,11 @@ export function CgPageHeader({ eyebrow = 'ContaGest', title, description, action
   );
 }
 
-export function CgEmptyState({ title, description, action = null }) {
+export function CgEmptyState({ title, description, action = null, assetKey = '' }) {
+  const asset=verticalAsset(assetKey);
   return (
     <Paper variant="outlined" sx={{ p: 2.5, textAlign: 'center' }}>
+      {asset ? <Box component="img" className="cgx-empty-asset" src={asset} alt="" aria-hidden="true" sx={{ mx:'auto', mb:1 }} /> : null}
       <Typography variant="subtitle1" component="h3">{title}</Typography>
       {description ? <Typography variant="body2" color="text.secondary" sx={{ mt: .5 }}>{description}</Typography> : null}
       {action ? <Box sx={{ mt: 1.5 }}>{action}</Box> : null}
