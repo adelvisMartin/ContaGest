@@ -593,7 +593,11 @@ if(dentistryEntry?.status==='MIGRATED'){
 }
 
 const fitnessEntries=ERP_UI_WAVE_A_2_51.filter((item)=>['gimnasio','rutinas','nutricion'].includes(item.route));
-const fitness=sourceCache.get('frontend/src/pages/GymManagementPage.jsx');
+const fitnessPage=sourceCache.get('frontend/src/pages/GymManagementPage.jsx');
+const fitnessTrainingPanel=read('frontend/src/components/fitness/GymTrainingPanel.jsx');
+const fitnessNutritionPanel=read('frontend/src/components/fitness/GymNutritionPanel.jsx');
+const fitnessPrimitives=read('frontend/src/components/fitness/GymWorkspacePrimitives.jsx');
+const fitness=[fitnessPage,fitnessTrainingPanel,fitnessNutritionPanel,fitnessPrimitives].join('\n');
 const fitnessVerticalService=read('frontend/src/services/verticalService.js');
 if(fitnessEntries.every((item)=>item.status==='MIGRATED')){
   if(/components\/ui\/index\.js|escapeHtml|innerHTML|querySelector|addEventListener|mountSubmit|MutationObserver/.test(fitness))fail('fitness: migrated renderer reintroduced imperative fitness lifecycle or legacy kit');
