@@ -58,6 +58,9 @@ jobs:
       - name: Design system authority
         run: npm run audit:design-system-authority
 
+      - name: Vertical asset system
+        run: npm run audit:vertical-assets
+
       - name: ERP Wave A source audit
         run: npm run audit:erp-ui-wave-a
 
