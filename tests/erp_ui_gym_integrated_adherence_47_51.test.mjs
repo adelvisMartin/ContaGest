@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import test from 'node:test';
-import { gymBackendSource } from '../qa/support/vertical-authority-sources.mjs';
+import { fitnessWorkspaceSource, gymBackendSource } from '../qa/support/vertical-authority-sources.mjs';
 
 const read=(path)=>fs.readFileSync(path,'utf8');
 
@@ -54,7 +54,7 @@ test('47/51 nutrition adherence compares planned meals with latest explicit even
 });
 
 test('47/51 UI logs complete or skipped and exposes integrated evolution',()=>{
-  const page=read('frontend/src/pages/GymManagementPage.jsx');
+  const page=fitnessWorkspaceSource();
   const panel=read('frontend/src/components/fitness/IntegratedAdherencePanel.jsx');
   assert.equal((page.match(/<IntegratedAdherencePanel/g)||[]).length,1);
   for(const token of ['Adherencia integral','Completada','Omitida','Racha nutricional','Sesiones completadas','Evolución corporal','Marcar completada','Marcar omitida']) assert.ok(panel.includes(token),token);

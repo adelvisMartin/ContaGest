@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import test from 'node:test';
+import { healthBackendSource } from '../qa/support/vertical-authority-sources.mjs';
 
 const read=(path)=>fs.readFileSync(path,'utf8');
 
@@ -20,7 +21,7 @@ test('20/51 persists only an auditable provenance link between clinical and comm
 });
 
 test('20/51 financial-link endpoint requires an accepted signed plan and creates only an ERP draft',()=>{
-  const source=read('backend/src/modules/verticals/health.routes.ts');
+  const source=healthBackendSource();
   const start=source.indexOf("router.post('/health/encounters/:id/financial-link'");
   const end=source.indexOf("router.post('/health/measurements'",start);
   const block=source.slice(start,end);
@@ -43,7 +44,7 @@ test('20/51 financial-link endpoint requires an accepted signed plan and creates
 });
 
 test('20/51 accepted budget must equal server-recalculated invoice lines before persistence',()=>{
-  const source=read('backend/src/modules/verticals/health.routes.ts');
+  const source=healthBackendSource();
   const start=source.indexOf("router.post('/health/encounters/:id/financial-link'");
   const end=source.indexOf("router.post('/health/measurements'",start);
   const block=source.slice(start,end);
@@ -54,7 +55,7 @@ test('20/51 accepted budget must equal server-recalculated invoice lines before 
 });
 
 test('20/51 analytics separates currencies and derives collection from SalesInvoice status',()=>{
-  const source=read('backend/src/modules/verticals/health.routes.ts');
+  const source=healthBackendSource();
   for(const token of [
     "router.get('/health/dental/financial'",
     "requirePermission('sales.view')",
@@ -70,7 +71,7 @@ test('20/51 analytics separates currencies and derives collection from SalesInvo
 });
 
 test('20/51 commercial snapshot excludes diagnosis and records fiscal-review boundary',()=>{
-  const source=read('backend/src/modules/verticals/health.routes.ts');
+  const source=healthBackendSource();
   const start=source.indexOf('const budgetSnapshot={');
   const end=source.indexOf('const inserted=',start);
   const block=source.slice(start,end);

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import test from 'node:test';
-import { veterinaryBackendSource, veterinaryWorkspaceSource } from '../qa/support/vertical-authority-sources.mjs';
+import { veterinaryBackendSource, veterinaryGuardianPortalPublicSource, veterinaryWorkspaceSource } from '../qa/support/vertical-authority-sources.mjs';
 
 const read=(path)=>fs.readFileSync(path,'utf8');
 
@@ -22,10 +22,10 @@ test('31/51 staff grant API uses 256-bit tokens, <=7 day TTL, explicit scopes an
 });
 
 test('31/51 public boundary accepts token only in POST body and derives tenant/patient from grant',()=>{
-  const source=read('backend/src/modules/verticals/veterinary-guardian-portal.public.routes.ts');
+  const source=veterinaryGuardianPortalPublicSource();
   const app=read('backend/src/app.ts');
   assert.match(source,/router\.post\('\/session'/);
-  assert.match(source,/sessionSchema\.parse\(req\.body/);
+  assert.match(source,/veterinaryGuardianPortalSessionSchema\\.parse\\(req\\.body/);
   assert.doesNotMatch(source,/req\.params\.token|req\.query.*token/);
   assert.match(source,/createHash\('sha256'\)/);
   assert.match(source,/"revokedAt" IS NULL/);

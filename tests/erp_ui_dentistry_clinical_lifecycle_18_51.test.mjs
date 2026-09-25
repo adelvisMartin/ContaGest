@@ -74,7 +74,7 @@ test('18/51 frontend exposes explicit review/sign actions through canonical serv
   const ui=page();
   const actions=lifecycle();
   assert.match(svc,/transitionDentalEncounter\(id,\s*payload\)/);
-  assert.match(svc,/encounters\/\$\{encodeURIComponent\(id\)\}\/workflow/);
+  assert.match(svc,/encounters\\/\\$\\{pathId\\(id\\)\\}\\/workflow/);
   assert.match(ui,/HealthVerticalService\.transitionDentalEncounter\(/);
   assert.match(ui,/DentalLifecycleActions/);
   for(const token of ['Enviar a revisión','Firmar versión','En revisión','Borrador','Firmado','Enmendado']) assert.ok(actions.includes(token),token);

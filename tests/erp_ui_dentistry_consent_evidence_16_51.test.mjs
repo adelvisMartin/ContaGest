@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import test from 'node:test';
+import { healthBackendSource } from '../qa/support/vertical-authority-sources.mjs';
 
 const backend=()=>fs.readFileSync('backend/src/modules/verticals/health-extended.routes.ts','utf8');
 const service=()=>fs.readFileSync('frontend/src/services/verticalService.js','utf8');
@@ -79,7 +80,7 @@ test('16/51 frontend loads, signs and revokes consent through canonical services
   assert.match(svc,/signDentalConsent\(payload\)/);
   assert.match(svc,/consents\/dental-treatment/);
   assert.match(svc,/revokeConsent\(id,\s*payload\)/);
-  assert.match(svc,/consents\/\$\{encodeURIComponent\(id\)\}\/revoke/);
+  assert.match(svc,/consents\\/\\$\\{pathId\\(id\\)\\}\\/revoke/);
   assert.match(ui,/HealthVerticalService\.consents\(/);
   assert.match(ui,/HealthVerticalService\.signDentalConsent\(/);
   assert.match(ui,/HealthVerticalService\.revokeConsent\(/);

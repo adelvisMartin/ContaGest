@@ -68,3 +68,34 @@ export const veterinaryWorkspaceSource = () => joinBoundedAuthority(
     'frontend/src/components/veterinary/VeterinaryWorkspacePrimitives.jsx'
   ]
 );
+
+export const fitnessWorkspaceSource = () => joinBoundedAuthority(
+  [
+    'frontend/src/pages/GymManagementPage.jsx',
+    'frontend/src/components/fitness/GymTrainingPanel.jsx',
+    'frontend/src/components/fitness/GymNutritionPanel.jsx'
+  ],
+  [
+    'frontend/src/components/fitness/GymWorkspacePrimitives.jsx'
+  ]
+);
+
+export const healthFrontendServiceSource = () => joinRequired(
+  'frontend/src/services/verticalService.js',
+  'frontend/src/services/verticalService.helpers.js'
+);
+
+export const accessControlSource = () => joinRequired(
+  'frontend/src/services/accessControlService.js',
+  'frontend/src/services/accessControlPresets.js'
+);
+
+export const licensesBackendSource = () => joinRequired(
+  'backend/src/modules/licenses/licenses.routes.ts',
+  'backend/src/modules/licenses/licenses.contracts.ts'
+);
+
+export const veterinaryGuardianPortalPublicSource = () => joinRequired(
+  'backend/src/modules/verticals/veterinary-guardian-portal.public.routes.ts',
+  'backend/src/modules/verticals/veterinary.schemas.ts'
+);

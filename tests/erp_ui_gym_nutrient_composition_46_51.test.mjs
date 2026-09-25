@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import test from 'node:test';
-import { gymBackendSource } from '../qa/support/vertical-authority-sources.mjs';
+import { fitnessWorkspaceSource, gymBackendSource } from '../qa/support/vertical-authority-sources.mjs';
 
 const read=(path)=>fs.readFileSync(path,'utf8');
 
@@ -46,7 +46,7 @@ test('46/51 nutrient endpoint reads the frozen snapshot and never rebuilds histo
 });
 
 test('46/51 UI exposes profile versioning and complete/incomplete snapshot states',()=>{
-  const page=read('frontend/src/pages/GymManagementPage.jsx');
+  const page=fitnessWorkspaceSource();
   const profile=read('frontend/src/components/fitness/IngredientNutritionProfilePanel.jsx');
   const snapshot=read('frontend/src/components/fitness/NutritionSnapshotPanel.jsx');
   assert.equal((page.match(/<IngredientNutritionProfilePanel/g)||[]).length,1);

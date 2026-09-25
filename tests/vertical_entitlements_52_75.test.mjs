@@ -2,13 +2,14 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { BUSINESS_MODES, modulesForMode } from '../frontend/src/data/moduleCatalog.js';
+import { accessControlSource, licensesBackendSource } from '../qa/support/vertical-authority-sources.mjs';
 
 const read=(path)=>fs.readFileSync(new URL(`../${path}`,import.meta.url),'utf8');
 const json=(path)=>JSON.parse(read(path));
-const licenses=read('backend/src/modules/licenses/licenses.routes.ts');
+const licenses=licensesBackendSource();
 const context=read('backend/src/shared/middleware/context.ts');
 const licensePage=read('frontend/src/pages/LicensesPage.js');
-const access=read('frontend/src/services/accessControlService.js');
+const access=accessControlSource();
 const manifest=json('backend/src/shared/contracts/access-manifest.json');
 const byRoute=new Map(manifest.modules.map((item)=>[item.route,item]));
 

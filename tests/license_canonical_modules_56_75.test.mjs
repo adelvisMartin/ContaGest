@@ -3,8 +3,9 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { ACCESS_MANIFEST } from '../backend/src/shared/contracts/accessManifestRuntime.js';
 import { MODULE_CATALOG } from '../frontend/src/data/moduleCatalog.js';
+import { licensesBackendSource } from '../qa/support/vertical-authority-sources.mjs';
 
-const licenses=fs.readFileSync('backend/src/modules/licenses/licenses.routes.ts','utf8');
+const licenses=licensesBackendSource();
 const page=fs.readFileSync('frontend/src/pages/LicensesPage.js','utf8');
 const routes=new Set(ACCESS_MANIFEST.modules.map((item)=>item.route));
 

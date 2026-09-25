@@ -1,8 +1,9 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import test from 'node:test';
+import { healthBackendSource } from '../qa/support/vertical-authority-sources.mjs';
 
-const backend=()=>fs.readFileSync('backend/src/modules/verticals/health.routes.ts','utf8');
+const backend=()=>healthBackendSource();
 const service=()=>fs.readFileSync('frontend/src/services/verticalService.js','utf8');
 const page=()=>fs.readFileSync('frontend/src/pages/DentistryPracticePage.jsx','utf8');
 
@@ -39,7 +40,7 @@ test('13/51 frontend uses the canonical amend service with an explicit reason',(
   const svc=service();
   const ui=page();
   assert.match(svc,/amendEncounter\(id,\s*payload\)/);
-  assert.match(svc,/encounters\/\$\{encodeURIComponent\(id\)\}\/amend/);
+  assert.match(svc,/encounters\\/\\$\\{pathId\\(id\\)\\}\\/amend/);
   for(const token of ['amendmentTarget','amendmentReason','prepareAmendment','HealthVerticalService.amendEncounter(','Motivo de la enmienda']) assert.ok(ui.includes(token),token);
 });
 

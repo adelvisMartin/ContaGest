@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import test from 'node:test';
-import { gymBackendSource } from '../qa/support/vertical-authority-sources.mjs';
+import { fitnessWorkspaceSource, gymBackendSource } from '../qa/support/vertical-authority-sources.mjs';
 
 const read=(path)=>fs.readFileSync(path,'utf8');
 
@@ -32,7 +32,7 @@ test('40/51 session start and set writes are tenant safe and serialized',()=>{
 });
 
 test('40/51 UI logs completed and skipped sets with a declarative rest timer',()=>{
-  const page=read('frontend/src/pages/GymManagementPage.jsx');
+  const page=fitnessWorkspaceSource();
   assert.equal((page.match(/<WorkoutSessionPanel/g)||[]).length,1);
   const panel=read('frontend/src/components/fitness/WorkoutSessionPanel.jsx');
   for(const token of ['Registrar serie','Omitir serie','Carga realizada','Reps realizadas','RIR','RPE','Descanso tras serie','Temporizador de descanso','Completar sesión']) assert.ok(panel.includes(token),token);
