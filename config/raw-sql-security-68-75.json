@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "scope": {
+    "roots": ["backend/src"],
+    "extensions": [".ts", ".js", ".mjs"],
+    "excludePatterns": ["\\.test\\.", "\\.spec\\.", "\\.d\\.ts$"]
+  },
+  "methods": ["queryRawUnsafe", "executeRawUnsafe"],
+  "rules": {
+    "forbidTemplateInterpolation": true,
+    "forbidStringConcatenation": true,
+    "forbidRequestDerivedSqlArgument": true,
+    "forbidDynamicPrismaRaw": true,
+    "forbidInlineIgnoreDirectives": true
+  },
+  "requestDerivedTokens": [
+    "req.", "request.", "body.", "params.", "query.", "headers.", "searchParams."
+  ],
+  "approvedDynamicSql": []
+}
