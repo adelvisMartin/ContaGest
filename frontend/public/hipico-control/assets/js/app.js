@@ -5,12 +5,12 @@ import { backupFilename, deliverJsonBackup, serializeWorkspaceBackup } from "./b
 import { clearLocalWorkspace, createSnapshot, downloadFile, enqueueOutbox, flushWorkspaceWrites, getAppMode, initializeStorage, listOutbox, listSnapshots, loadLocalWorkspace, queueWorkspaceSave, removeOutbox, requestPersistentStorage, restoreSnapshot, saveLocalWorkspace, setAppMode, storageDiagnostics } from "./store.js";
 import { downloadPdf, downloadXlsx, fixedWidthTable } from "./reports.js";
 import { mergeWorkspaces, shouldMergeCloud } from "./sync.js";
-import { appendCloudAudit, currentSession, currentUserSummary, fetchCloudProfile, fetchCloudWorkspace, fetchRecentShadowEvaluations, initializeCloudSession, isVersionConflict, saveCloudWorkspace, signIn, signOut, signUp } from "./supabase.js";
+import { appendCloudAudit, currentSession, currentUserSummary, fetchCloudAccess, fetchCloudProfile, fetchCloudWorkspace, fetchRecentShadowEvaluations, initializeCloudSession, isTransientCloudError, isVersionConflict, saveCloudWorkspace, signIn, signOut, signUp } from "./supabase.js";
 import { APP_VERSION, CLOUD_CONFIG } from "./config.js";
 import { escapeHtml, icon, toast } from "./ui.js";
 import { createId as uid, isoNow as now, normalizeWorkspaceShape, rateForDate, todayIso as today } from "./workspace.js";
 import { generateClosureText, parseWhatsAppChat, participantMatchesSender, senderCode } from "./whatsapp.js";
-import { enrollLocalAdmin, hasLocalAdminEnrollment, verifyLocalAdmin } from "./local-auth.js";
+import { clearLocalAdminEnrollment, enrollLocalAdmin, hasLocalAdminEnrollment, verifyLocalAdmin } from "./local-auth.js";
 const root = document.querySelector("#app");
 let mode = null;
 let workspace = null;
@@ -309,6 +309,9 @@ async function init() {
     mode = await getAppMode();
     if (mode === "cloud" && currentSession()) {
         workspace = normalizeWorkspaceShape(await loadLocalWorkspace(createBlankWorkspace));
+        (_d = globalThis.__HIPICO_SET_BOOT_STATUS__) === null || _d === void 0 ? void 0 : _d.call(globalThis, "Preparando interfaz…");
+        await refreshStorageInfo();
+        render();
         if (navigator.onLine) {
             try {
                 cloudProfile = await fetchCloudProfile();
@@ -320,13 +323,15 @@ async function init() {
                     workspace.syncMeta.lastSyncedAt = now();
                     await saveLocalWorkspace(workspace);
                 }
+                render();
             }
             catch (error) {
                 toast(`Continuidad sin conexión activa: ${error.message}`, "error");
             }
         }
+        return;
     }
-    else if (mode === "local") {
+    if (mode === "local") {
         cloudProfile = null;
         workspace = normalizeWorkspaceShape(await loadLocalWorkspace(createBlankWorkspace));
     }
@@ -1108,11 +1113,47 @@ root.addEventListener("submit", async (event) => {
             }
             if (!(session === null || session === void 0 ? void 0 : session.access_token))
                 throw new Error("Revisa el correo para confirmar la cuenta.");
+            let cloudAccess = null;
+            try {
+                cloudAccess = await fetchCloudAccess();
+            }
+            catch (accessError) {
+                const localReady = isTransientCloudError(accessError)
+                    && (await hasLocalAdminEnrollment())
+                    && await verifyLocalAdmin(email, password);
+                if (localReady) {
+                    await signOut().catch(() => { });
+                    await enterLocal("La identidad fue validada, pero la autorización remota no respondió. Se abrió la continuidad local ya enrolada.");
+                    return;
+                }
+                await signOut().catch(() => { });
+                if (isTransientCloudError(accessError))
+                    throw new Error("Tu identidad fue validada, pero Control Hípico no pudo confirmar los permisos. Reintenta; si este dispositivo ya estaba habilitado, usa Entrar sin conexión.");
+                throw accessError;
+            }
+            if (!cloudAccess) {
+                await clearLocalAdminEnrollment().catch(() => { });
+                await signOut().catch(() => { });
+                throw new Error("Tu identidad es válida, pero todavía no tiene acceso a Control Hípico.");
+            }
+            if (cloudAccess.status !== "active") {
+                await clearLocalAdminEnrollment().catch(() => { });
+                await signOut().catch(() => { });
+                throw new Error(cloudAccess.status === "suspended"
+                    ? "Tu acceso a Control Hípico está suspendido."
+                    : "Tu acceso a Control Hípico está deshabilitado.");
+            }
+            cloudProfile = {
+                display_name: cloudAccess.display_name || email,
+                role: cloudAccess.role || "operator"
+            };
             await enrollLocalAdmin(email, password).catch((error) => console.warn("No se pudo habilitar el acceso sin conexión:", error));
             mode = "cloud";
             await setAppMode(mode);
             workspace = normalizeWorkspaceShape(await loadLocalWorkspace(createBlankWorkspace));
-            await init().catch((error) => { var _a; console.error("No se pudo iniciar Hípico Control:", error); (_a = globalThis.__HIPICO_BOOT_FAIL__) === null || _a === void 0 ? void 0 : _a.call(globalThis, error); });
+            await refreshStorageInfo();
+            render();
+            init().catch((error) => { var _a; console.error("No se pudo completar la hidratación de Hípico Control:", error); (_a = globalThis.__HIPICO_BOOT_FAIL__) === null || _a === void 0 ? void 0 : _a.call(globalThis, error); });
             return;
         }
         if (formId === "race-form") {
