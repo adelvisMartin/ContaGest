@@ -1,5 +1,5 @@
 import { CLOUD_CONFIG } from './config.js';
-import { currentSession, signOut } from './supabase.js';
+import { currentSession, fetchCloudAccess, signOut } from './supabase.js';
 import { clearLocalAdminEnrollment } from './local-auth.js';
 import { escapeHtml, toast, ui } from './ui.js';
 
@@ -40,8 +40,7 @@ async function rpc(name,body={}){
 }
 
 export async function fetchMyAccess(){
-  const rows=await rpc('hipico_get_my_access');
-  return Array.isArray(rows)?rows[0]||null:rows||null;
+  return fetchCloudAccess();
 }
 export async function listManagedUsers(){
   const rows=await rpc('hipico_admin_list_users');

@@ -71,8 +71,12 @@ async function request(path, options = {}) {
         return body;
     }
     catch (error) {
-        if ((error === null || error === void 0 ? void 0 : error.name) === "AbortError")
-            throw new Error("La nube tardó demasiado en responder.");
+        if ((error === null || error === void 0 ? void 0 : error.name) === "AbortError") {
+            const timeoutError = new Error("La nube tardó demasiado en responder.");
+            timeoutError.code = "HIPICO_CLOUD_TIMEOUT";
+            timeoutError.retryable = true;
+            throw timeoutError;
+        }
         throw error;
     }
     finally {
@@ -203,6 +207,20 @@ export async function signOut() {
     catch (_b) {
         // La sesión local ya fue eliminada; un fallo remoto no debe impedir salir.
     }
+}
+export function isTransientCloudError(error) {
+    const status = Number(error === null || error === void 0 ? void 0 : error.status) || 0;
+    return Boolean((error === null || error === void 0 ? void 0 : error.retryable)
+        || (error === null || error === void 0 ? void 0 : error.code) === "HIPICO_CLOUD_TIMEOUT"
+        || status >= 500
+        || (!status && (error === null || error === void 0 ? void 0 : error.name) === "TypeError"));
+}
+export async function fetchCloudAccess() {
+    const rows = await authorizedRequest("/rest/v1/rpc/hipico_get_my_access", {
+        method: "POST",
+        body: "{}"
+    });
+    return Array.isArray(rows) ? (rows[0] || null) : (rows || null);
 }
 export async function fetchCloudProfile() {
     var _a, _b;

@@ -597,6 +597,7 @@ const fitness=sourceCache.get('frontend/src/pages/GymManagementPage.jsx');
 const fitnessTraining=read('frontend/src/components/fitness/GymTrainingPanel.jsx');
 const fitnessNutrition=read('frontend/src/components/fitness/GymNutritionPanel.jsx');
 const fitnessComposition=fitnessWorkspaceSource();
+
 const fitnessVerticalService=read('frontend/src/services/verticalService.js');
 if(fitnessEntries.every((item)=>item.status==='MIGRATED')){
   if(/components\/ui\/index\.js|escapeHtml|innerHTML|querySelector|addEventListener|mountSubmit|MutationObserver/.test(fitness))fail('fitness: migrated renderer reintroduced imperative fitness lifecycle or legacy kit');
