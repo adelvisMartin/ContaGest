@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import test from 'node:test';
-import { gymBackendSource } from '../qa/support/vertical-authority-sources.mjs';
+import { fitnessWorkspaceSource, gymBackendSource } from '../qa/support/vertical-authority-sources.mjs';
 
 const read=(path)=>fs.readFileSync(path,'utf8');
 
@@ -38,7 +38,7 @@ test('44/51 shopping list is read-only and excludes alternatives from purchasing
 });
 
 test('44/51 UI supports complete plan recipes portions preparation alternatives and shopping list',()=>{
-  const page=read('frontend/src/pages/GymManagementPage.jsx');
+  const page=fitnessWorkspaceSource();
   const builder=read('frontend/src/components/fitness/CompleteMealPlanBuilder.jsx');
   const recipes=read('frontend/src/components/fitness/NutritionRecipeLibrary.jsx');
   const shopping=read('frontend/src/components/fitness/NutritionShoppingListPanel.jsx');
