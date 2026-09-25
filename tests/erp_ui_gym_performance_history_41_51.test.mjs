@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import test from 'node:test';
-import { gymBackendSource } from '../qa/support/vertical-authority-sources.mjs';
+import { fitnessWorkspaceSource, gymBackendSource } from '../qa/support/vertical-authority-sources.mjs';
 
 const read=(path)=>fs.readFileSync(path,'utf8');
 
@@ -34,7 +34,7 @@ test('41/51 provides trends by date exercise and muscle group',()=>{
 });
 
 test('41/51 UI renders one declarative history owner with period filters and charts',()=>{
-  const page=read('frontend/src/pages/GymManagementPage.jsx');
+  const page=fitnessWorkspaceSource();
   assert.equal((page.match(/<PerformanceHistoryPanel/g)||[]).length,1);
   const panel=read('frontend/src/components/fitness/PerformanceHistoryPanel.jsx');
   for(const token of ['Aplicar período','PR carga','PR reps','e1RM','Volumen por día','Volumen por grupo muscular','Gráfica']) assert.ok(panel.includes(token),token);
