@@ -97,8 +97,8 @@ function Read-GroupBindings([string]$BindingsPath) {
     $binding = Get-Content -LiteralPath $BindingsPath -Raw -Encoding UTF8 | ConvertFrom-Json
     $sourceId = [string]$binding.source.groupId
     $labId = [string]$binding.lab.groupId
-    if ($sourceId -notmatch '^\d{5,}(?:-\d+)?@g\.us) { return $null }
-    if ($labId -notmatch '^\d{5,}-\d+@g\.us$') { return $null }
+    if ($sourceId -notmatch '^(?:\d{5,}-\d+|\d{10,})@g\.us$') { return $null }
+    if ($labId -notmatch '^(?:\d{5,}-\d+|\d{10,})@g\.us$') { return $null }
     if ($sourceId -eq $labId) { return $null }
     return @{ SourceId = $sourceId; LabId = $labId }
   } catch { return $null }
@@ -292,7 +292,7 @@ while ($true) {
   if ($code -ne 0) { Fail "El Bridge terminó con código $code. Revisa $dataDir\bridge.log y health.json." }
   break
 }) { return $null }
-    if ($labId -notmatch '^\d{5,}(?:-\d+)?@g\.us) { return $null }
+    if ($labId -notmatch '^(?:\d{5,}-\d+|\d{10,})@g\.us$') { return $null }
     if ($sourceId -eq $labId) { return $null }
     return @{ SourceId = $sourceId; LabId = $labId }
   } catch { return $null }
