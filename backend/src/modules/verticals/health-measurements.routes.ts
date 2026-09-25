@@ -143,5 +143,3 @@ router.post('/health/immunizations', requirePermission('health.manage'), asyncHa
 }));
 
 export default router;
-
-export default router;
