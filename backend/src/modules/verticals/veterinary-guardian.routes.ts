@@ -1,4 +1,4 @@
-import { randomBytes } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 import { Router } from 'express';
 import { prisma } from '../../database/prisma.js';
 import { asyncHandler, HttpError, ok } from '../../shared/http.js';
@@ -10,6 +10,7 @@ import {
 } from './veterinary.schemas.js';
 
 const router = Router();
+const sha256 = (value: string) => createHash('sha256').update(value).digest('hex');
 
 router.get('/guardian-portal/grants', requirePermission('communications.manage'), asyncHandler(async (req,res)=>{
   const tenantId=ctx(req).tenantId;
