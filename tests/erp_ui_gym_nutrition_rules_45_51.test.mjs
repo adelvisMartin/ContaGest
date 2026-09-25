@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import test from 'node:test';
-import { gymBackendSource } from '../qa/support/vertical-authority-sources.mjs';
+import { fitnessWorkspaceSource, gymBackendSource } from '../qa/support/vertical-authority-sources.mjs';
 
 const read=(path)=>fs.readFileSync(path,'utf8');
 
@@ -27,7 +27,7 @@ test('45/51 new plans inspect direct and recipe ingredients against blocking rul
 });
 
 test('45/51 UI exposes declared rules without automatic plan rewriting',()=>{
-  const page=read('frontend/src/pages/GymManagementPage.jsx');
+  const page=fitnessWorkspaceSource();
   const panel=read('frontend/src/components/fitness/NutritionRulesPanel.jsx');
   assert.equal((page.match(/<NutritionRulesPanel/g)||[]).length,1);
   for(const token of ['Restricciones y preferencias','Alergia declarada','Intolerancia declarada','Exclusión','Preferido','nunca modifica el plan automáticamente']) assert.ok(panel.includes(token),token);
