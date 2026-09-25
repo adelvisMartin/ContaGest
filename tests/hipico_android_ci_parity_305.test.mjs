@@ -28,3 +28,17 @@ test('Android package lock keeps nested kleur tarball bound to the declared kleu
     'lockfile must never bind a kleur package entry to another package tarball'
   );
 });
+
+
+test('Android RC Java setup must not require Gradle files before Capacitor sync', () => {
+  const androidRc = fs.readFileSync(path.join(root, '.github/workflows/hipico-android-rc.yml'), 'utf8');
+  const jdkStart = androidRc.indexOf('- name: Set up JDK 21');
+  const sdkStart = androidRc.indexOf('- name: Set up Android SDK', jdkStart);
+  assert.ok(jdkStart >= 0 && sdkStart > jdkStart, 'Android RC must configure JDK before the Android SDK');
+  const jdkStep = androidRc.slice(jdkStart, sdkStart);
+  assert.doesNotMatch(
+    jdkStep,
+    /cache:\s*gradle/,
+    'setup-java runs before Capacitor creates Gradle files, so Gradle caching here makes the workflow fail before the build'
+  );
+});

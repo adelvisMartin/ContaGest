@@ -74,3 +74,18 @@ test('production shell loads one canonical stylesheet and caches guarded JS for 
   }
   assert.doesNotMatch(serviceWorkerSource, /operational-access-guard\.css|operational-copy-center\.css|mobile-accessibility\.css/);
 });
+
+
+test('self-access UI delegates to the canonical authenticated cloud client', async () => {
+  const userAccess = await read('../frontend/public/hipico-control/assets/js/user-access.js');
+  const supabase = await read('../frontend/public/hipico-control/assets/js/supabase.js');
+  assert.match(userAccess, /fetchCloudAccess/);
+  assert.match(userAccess, /return fetchCloudAccess\(\)/);
+  assert.doesNotMatch(userAccess, /rpc\('hipico_get_my_access'\)/);
+  assert.match(supabase, /export async function fetchCloudAccess\(\)/);
+  assert.match(supabase, /\/rest\/v1\/rpc\/hipico_get_my_access/);
+});
+
+test('PWA rotates its cache-first shell when access bootstrap JS changes', () => {
+  assert.match(serviceWorkerSource, /shell-r26-access-bootstrap-local-group-recovery/);
+});
