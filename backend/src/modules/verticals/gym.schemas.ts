@@ -438,3 +438,26 @@ export const classSchema = z.object({
   capacity: z.coerce.number().int().min(1).max(1000).default(20),
   location: optionalText
 });
+
+
+export const gymPaymentSchema = z.object({
+  memberId: z.string().min(10),
+  membershipId: z.string().optional().nullable(),
+  amount: z.coerce.number().positive().max(999999999),
+  currency: z.string().trim().min(2).max(10).default('USD'),
+  paidAt: z.string().optional(),
+  method: z.string().trim().max(80).optional().nullable(),
+  reference: z.string().trim().max(160).optional().nullable(),
+  status: z.enum(['pending', 'paid', 'void', 'refunded']).default('paid')
+});
+
+export const gymClassBookingSchema = z.object({
+  classId: z.string().min(10),
+  memberId: z.string().min(10),
+  status: z.enum(['booked', 'attended', 'cancelled', 'no_show']).default('booked')
+});
+
+export const gymMembershipStatusSchema = z.object({
+  status: z.enum(['active', 'expired', 'frozen', 'cancelled', 'pending']),
+  endsAt: z.string().optional().nullable()
+});

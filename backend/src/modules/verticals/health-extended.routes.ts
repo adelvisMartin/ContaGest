@@ -1,48 +1,15 @@
 import { createHash } from 'node:crypto';
 import { Router } from 'express';
-import { z } from 'zod';
 import { prisma } from '../../database/prisma.js';
 import { asyncHandler, HttpError, ok } from '../../shared/http.js';
 import { requirePermission } from '../../shared/middleware/context.js';
-import { ctx as context, one, optionalText } from './verticals.shared.js';
+import { ctx as context, one } from './verticals.shared.js';
+import { careConsentSchema, carePrescriptionSchema, consentRevocationSchema, dentalTreatmentConsentSchema } from './health.schemas.js';
 
 const router = Router();
 
-const prescriptionSchema = z.object({
-  patientId: z.string().min(10),
-  encounterId: z.string().optional().nullable(),
-  professionalId: z.string().optional().nullable(),
-  medication: z.string().trim().min(2).max(240),
-  dose: optionalText,
-  frequency: optionalText,
-  duration: optionalText,
-  instructions: optionalText,
-  status: z.enum(['active', 'completed', 'cancelled']).default('active')
-});
-
-const consentSchema = z.object({
-  patientId: z.string().min(10),
-  kind: z.string().trim().min(2).max(160),
-  status: z.enum(['pending', 'signed', 'revoked', 'expired']).default('pending'),
-  signerName: optionalText,
-  documentUrl: optionalText,
-  metadata: z.record(z.string(), z.unknown()).default({})
-});
-
 const DENTAL_CONSENT_KIND = 'dental-treatment-consent';
 const DENTAL_CONSENT_TEMPLATE_VERSION='dental-treatment-plan-consent-v1';
-const dentalTreatmentConsentSchema = z.object({
-  patientId: z.string().min(10),
-  treatmentPlanEncounterId: z.string().min(10),
-  signerName: z.string().trim().min(2).max(180),
-  signerRole: z.enum(['patient','guardian','representative']).default('patient'),
-  consentText: z.string().trim().min(20).max(12000),
-  attestation: z.literal(true),
-  documentUrl: z.string().url().max(2000).optional().nullable()
-});
-const consentRevocationSchema = z.object({
-  reason: z.string().trim().min(5).max(500)
-});
 const stableJson = (value: unknown): string => {
   if (value === null || typeof value !== 'object') { const encoded=JSON.stringify(value); return encoded===undefined?'null':encoded; }
   if (Array.isArray(value)) return `[${value.map((item)=>stableJson(item)).join(',')}]`;
@@ -68,7 +35,7 @@ router.get('/health/prescriptions', requirePermission('health.manage'), asyncHan
 }));
 
 router.post('/health/prescriptions', requirePermission('health.manage'), asyncHandler(async (req, res) => {
-  const body = prescriptionSchema.parse(req.body || {});
+  const body = carePrescriptionSchema.parse(req.body || {});
   const rows = await prisma.$queryRawUnsafe<any[]>(`
     INSERT INTO public."CarePrescription"
       ("id", "tenantId", "patientId", "encounterId", "professionalId", "medication", "dose", "frequency", "duration", "instructions", "status", "createdAt")
@@ -103,7 +70,7 @@ router.get('/health/consents', requirePermission('health.manage'), asyncHandler(
 }));
 
 router.post('/health/consents', requirePermission('health.manage'), asyncHandler(async (req, res) => {
-  const body = consentSchema.parse(req.body || {});
+  const body = careConsentSchema.parse(req.body || {});
   if (body.kind===DENTAL_CONSENT_KIND) throw new HttpError(422, 'El consentimiento odontológico usa el flujo especializado.');
   const signedAt = body.status === 'signed' ? new Date().toISOString() : null;
   const rows = await prisma.$queryRawUnsafe<any[]>(`

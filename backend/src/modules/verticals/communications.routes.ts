@@ -1,21 +1,11 @@
 import { Router } from 'express';
-import { z } from 'zod';
 import { prisma } from '../../database/prisma.js';
 import { asyncHandler, ok } from '../../shared/http.js';
 import { requirePermission } from '../../shared/middleware/context.js';
+import { communicationRenderSchema, communicationTemplateSchema } from './communications.schemas.js';
 import { ctx, one } from './verticals.shared.js';
 
 const router = Router();
-
-const templateSchema = z.object({
-  channel: z.enum(['whatsapp','email','sms']).default('whatsapp'),
-  vertical: z.enum(['general','health','veterinary','gym']).default('general'),
-  event: z.string().trim().min(2).max(100),
-  name: z.string().trim().min(2).max(160),
-  body: z.string().trim().min(2).max(4000),
-  variables: z.array(z.string().max(80)).default([]),
-  active: z.boolean().default(true)
-});
 
 router.get('/communications/templates', requirePermission('communications.manage'), asyncHandler(async (req, res) => {
   const vertical = String(req.query.vertical || '');
@@ -26,7 +16,7 @@ router.get('/communications/templates', requirePermission('communications.manage
 }));
 
 router.post('/communications/templates', requirePermission('communications.manage'), asyncHandler(async (req, res) => {
-  const b = templateSchema.parse(req.body || {});
+  const b = communicationTemplateSchema.parse(req.body || {});
   const rows = await prisma.$queryRawUnsafe<any[]>(`
     INSERT INTO public."CommunicationTemplate" ("id","tenantId","channel","vertical","event","name","body","variables","active","createdAt","updatedAt")
     VALUES (gen_random_uuid()::text,$1,$2,$3,$4,$5,$6,$7::jsonb,$8,now(),now())
@@ -37,7 +27,7 @@ router.post('/communications/templates', requirePermission('communications.manag
 }));
 
 router.post('/communications/render', requirePermission('communications.manage'), asyncHandler(async (req, res) => {
-  const body = z.object({ vertical:z.string(), event:z.string(), values:z.record(z.string(),z.union([z.string(),z.number(),z.boolean(),z.null()])).default({}) }).parse(req.body || {});
+  const body = communicationRenderSchema.parse(req.body || {});
   const rows = await prisma.$queryRawUnsafe<any[]>(`
     SELECT * FROM public."CommunicationTemplate" WHERE "tenantId"=$1 AND "channel"='whatsapp' AND "vertical"=$2 AND "event"=$3 AND "active"=true LIMIT 1
   `, ctx(req).tenantId,body.vertical,body.event);

@@ -1,33 +1,11 @@
 import { Router } from 'express';
-import { z } from 'zod';
 import { prisma } from '../../database/prisma.js';
 import { asyncHandler, HttpError, ok } from '../../shared/http.js';
 import { requirePermission } from '../../shared/middleware/context.js';
 import { ctx as context, one } from './verticals.shared.js';
+import { gymClassBookingSchema, gymMembershipStatusSchema, gymPaymentSchema } from './gym.schemas.js';
 
 const router = Router();
-
-const paymentSchema = z.object({
-  memberId: z.string().min(10),
-  membershipId: z.string().optional().nullable(),
-  amount: z.coerce.number().positive().max(999999999),
-  currency: z.string().trim().min(2).max(10).default('USD'),
-  paidAt: z.string().optional(),
-  method: z.string().trim().max(80).optional().nullable(),
-  reference: z.string().trim().max(160).optional().nullable(),
-  status: z.enum(['pending', 'paid', 'void', 'refunded']).default('paid')
-});
-
-const bookingSchema = z.object({
-  classId: z.string().min(10),
-  memberId: z.string().min(10),
-  status: z.enum(['booked', 'attended', 'cancelled', 'no_show']).default('booked')
-});
-
-const membershipStatusSchema = z.object({
-  status: z.enum(['active', 'expired', 'frozen', 'cancelled', 'pending']),
-  endsAt: z.string().optional().nullable()
-});
 
 router.get('/gym/payments', requirePermission('gym.manage'), asyncHandler(async (req, res) => {
   const memberId = String(req.query.memberId || '');
@@ -43,7 +21,7 @@ router.get('/gym/payments', requirePermission('gym.manage'), asyncHandler(async 
 }));
 
 router.post('/gym/payments', requirePermission('gym.manage'), asyncHandler(async (req, res) => {
-  const body = paymentSchema.parse(req.body || {});
+  const body = gymPaymentSchema.parse(req.body || {});
   const membershipRows = body.membershipId
     ? await prisma.$queryRawUnsafe<any[]>(`
         SELECT "id", "balance" FROM public."GymMembership"
@@ -92,7 +70,7 @@ router.get('/gym/classes/:classId/bookings', requirePermission('gym.manage'), as
 }));
 
 router.post('/gym/classes/bookings', requirePermission('gym.manage'), asyncHandler(async (req, res) => {
-  const body = bookingSchema.parse(req.body || {});
+  const body = gymClassBookingSchema.parse(req.body || {});
   const classRows = await prisma.$queryRawUnsafe<any[]>(`
     SELECT c.*, count(b."id") FILTER (WHERE b."status" = 'booked')::int AS bookings
     FROM public."GymClass" c
@@ -129,7 +107,7 @@ router.post('/gym/classes/bookings', requirePermission('gym.manage'), asyncHandl
 }));
 
 router.patch('/gym/memberships/:id/status', requirePermission('gym.manage'), asyncHandler(async (req, res) => {
-  const body = membershipStatusSchema.parse(req.body || {});
+  const body = gymMembershipStatusSchema.parse(req.body || {});
   const rows = await prisma.$queryRawUnsafe<any[]>(`
     UPDATE public."GymMembership"
     SET "status" = $3,
