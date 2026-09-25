@@ -19,6 +19,6 @@ test('post-split vertical routers expose at most one default export',()=>{
 test('guardian portal token hashing remains defined after bounded-context extraction',()=>{
   const source=read('backend/src/modules/verticals/veterinary-guardian.routes.ts');
   assert.match(source,/import \{ createHash, randomBytes \} from 'node:crypto';/);
-  assert.match(source,/const sha256 = \(value: string\) => createHash\('sha256'\)\.update\(value\)\.digest\('hex'\);/);
+  assert.match(source,/const\s+sha256\s*=\s*\(value\s*:\s*string\)\s*=>\s*createHash\('sha256'\)\.update\(value\)\.digest\('hex'\);/);
   assert.match(source,/const tokenSha256=sha256\(portalToken\);/);
 });

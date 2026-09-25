@@ -10,7 +10,7 @@ import {
 } from './veterinary.schemas.js';
 
 const router = Router();
-const sha256 = (value: string) => createHash('sha256').update(value).digest('hex');
+const sha256=(value:string)=>createHash('sha256').update(value).digest('hex');
 
 router.get('/guardian-portal/grants', requirePermission('communications.manage'), asyncHandler(async (req,res)=>{
   const tenantId=ctx(req).tenantId;

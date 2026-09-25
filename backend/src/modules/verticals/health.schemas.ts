@@ -288,3 +288,39 @@ export const immunizationSchema = z.object({
   nextDueAt: z.string().optional().nullable(),
   notes: optionalText
 });
+
+
+export const carePrescriptionSchema = z.object({
+  patientId: z.string().min(10),
+  encounterId: z.string().optional().nullable(),
+  professionalId: z.string().optional().nullable(),
+  medication: z.string().trim().min(2).max(240),
+  dose: optionalText,
+  frequency: optionalText,
+  duration: optionalText,
+  instructions: optionalText,
+  status: z.enum(['active', 'completed', 'cancelled']).default('active')
+});
+
+export const careConsentSchema = z.object({
+  patientId: z.string().min(10),
+  kind: z.string().trim().min(2).max(160),
+  status: z.enum(['pending', 'signed', 'revoked', 'expired']).default('pending'),
+  signerName: optionalText,
+  documentUrl: optionalText,
+  metadata: z.record(z.string(), z.unknown()).default({})
+});
+
+export const dentalTreatmentConsentSchema = z.object({
+  patientId: z.string().min(10),
+  treatmentPlanEncounterId: z.string().min(10),
+  signerName: z.string().trim().min(2).max(180),
+  signerRole: z.enum(['patient','guardian','representative']).default('patient'),
+  consentText: z.string().trim().min(20).max(12000),
+  attestation: z.literal(true),
+  documentUrl: z.string().url().max(2000).optional().nullable()
+});
+
+export const consentRevocationSchema = z.object({
+  reason: z.string().trim().min(5).max(500)
+});

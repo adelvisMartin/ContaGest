@@ -126,3 +126,11 @@ test('64/75 does not reintroduce bypasses while decomposing the vertical',()=>{
   ].map(read).join('\n');
   assert.doesNotMatch(sources,/\.catch\(\(\)=>null\)|waitForTimeout|test\.skip|test\.only/);
 });
+
+
+test('64/75 guardian portal keeps token hashing inside its bounded owner',()=>{
+  const source=read('backend/src/modules/verticals/veterinary-guardian.routes.ts');
+  assert.match(source,/import \{ createHash, randomBytes \} from 'node:crypto'/);
+  assert.match(source,/const sha256=\(value:string\)=>createHash\('sha256'\)/);
+  assert.match(source,/const tokenSha256=sha256\(portalToken\)/);
+});
