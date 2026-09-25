@@ -26,5 +26,3 @@ router.post('/gym/classes', requirePermission('gym.manage'), asyncHandler(async 
 }));
 
 export default router;
-
-export default router;

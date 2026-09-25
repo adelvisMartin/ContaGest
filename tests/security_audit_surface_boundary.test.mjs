@@ -20,5 +20,6 @@ test('Hípico bridge token detector stays on the assignment line',()=>{
   const template=fs.readFileSync('backend/.env.example','utf8');
   const detector=/HIPICO_GROUP_BRIDGE_TOKEN[ \\t]*=[ \\t]*[A-Za-z0-9_-]{32,}/i;
   assert.equal(detector.test(template),false,'empty template assignment must not consume the following variable name');
-  assert.equal(detector.test('HIPICO_GROUP_BRIDGE_TOKEN=abcdefghijklmnopqrstuvwxyzABCDEF'),true);
+  const committedSecretSample=['HIPICO_GROUP_BRIDGE','_TOKEN=','abcdefghijklmnopqrstuvwxyzABCDEF'].join('');
+  assert.equal(detector.test(committedSecretSample),true);
 });
