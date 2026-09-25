@@ -36,7 +36,7 @@ function inspect(full, rel) {
     ['openai-key', /\bsk-[A-Za-z0-9_-]{20,}\b/],
     ['jwt-literal', /(?<![A-Z0-9_])JWT_SECRET\s*=\s*(?!replace_|change_|process\.env|\$\{|['"]?\s*$)[^\s#]{20,}/i],
     ['supabase-service-role-literal', /SUPABASE_SERVICE_ROLE_KEY\s*=\s*(?!replace_|process\.env|\$\{|['"]?\s*$)[^\s#]{20,}/i],
-    ['hipico-bridge-token-literal', /HIPICO_GROUP_BRIDGE_TOKEN\s*=\s*[A-Za-z0-9_-]{32,}/i]
+    ['hipico-bridge-token-literal', /HIPICO_GROUP_BRIDGE_TOKEN[ \t]*=[ \t]*[A-Za-z0-9_-]{32,}/i]
   ];
   for (const [kind, pattern] of secretPatterns) if (pattern.test(content)) findings.push(`${kind}: ${rel}`);
 
