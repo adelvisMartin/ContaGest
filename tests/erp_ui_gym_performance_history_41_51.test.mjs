@@ -1,11 +1,12 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import test from 'node:test';
+import { gymBackendSource } from '../qa/support/vertical-authority-sources.mjs';
 
 const read=(path)=>fs.readFileSync(path,'utf8');
 
 test('41/51 derives performance from canonical workout session and set authorities',()=>{
-  const routes=read('backend/src/modules/verticals/gym.routes.ts');
+  const routes=gymBackendSource();
   assert.match(routes,/router\.get\('\/gym\/performance'/);
   for(const token of ['GymWorkoutSession','GymWorkoutSet','GymRoutineExercise','GymExercise']) assert.ok(routes.includes(token),token);
   assert.match(routes,/s\."status"='completed'/);
@@ -16,19 +17,19 @@ test('41/51 derives performance from canonical workout session and set authoriti
 });
 
 test('41/51 calculates volume frequency set adherence and PRs',()=>{
-  const routes=read('backend/src/modules/verticals/gym.routes.ts');
+  const routes=gymBackendSource();
   for(const token of ['totalVolume','sessionsPerWeek','setAdherencePct','plannedSets','maxLoadKg','maxReps','trainingDays']) assert.ok(routes.includes(token),token);
 });
 
 test('41/51 e1RM uses explicit Epley estimate only for applicable rep ranges',()=>{
-  const routes=read('backend/src/modules/verticals/gym.routes.ts');
+  const routes=gymBackendSource();
   assert.match(routes,/reps>=1&&reps<=12/);
   assert.match(routes,/load\*\(1\+reps\/30\)/);
   assert.match(routes,/bestEstimated1RmKg/);
 });
 
 test('41/51 provides trends by date exercise and muscle group',()=>{
-  const routes=read('backend/src/modules/verticals/gym.routes.ts');
+  const routes=gymBackendSource();
   for(const token of ['dailyTrend','byExercise','byMuscleGroup','muscleGroup','exerciseName']) assert.ok(routes.includes(token),token);
 });
 
@@ -41,7 +42,7 @@ test('41/51 UI renders one declarative history owner with period filters and cha
 });
 
 test('41/51 does not pre-implement contextual substitutions from 42/51',()=>{
-  const routes=read('backend/src/modules/verticals/gym.routes.ts');
+  const routes=gymBackendSource();
   const start=routes.indexOf("router.get('/gym/performance'");
   const end=routes.indexOf("router.get('/gym/routines'",start);
   const block=routes.slice(start,end);

@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import test from 'node:test';
+import { veterinaryBackendSource, veterinaryWorkspaceSource } from '../qa/support/vertical-authority-sources.mjs';
 
 const read=(path)=>fs.readFileSync(path,'utf8');
 
@@ -12,7 +13,7 @@ test('28/51 extends canonical CarePrescription instead of creating a second pres
 });
 
 test('28/51 veterinary prescription requires medication dose frequency and duration',()=>{
-  const source=read('backend/src/modules/verticals/veterinary.routes.ts');
+  const source=veterinaryBackendSource();
   const start=source.indexOf('const veterinaryMedicationPrescriptionSchema');
   const end=source.indexOf('const labOrderSchema',start);
   const block=source.slice(start,end);
@@ -21,7 +22,7 @@ test('28/51 veterinary prescription requires medication dose frequency and durat
 });
 
 test('28/51 prescription references remain patient professional encounter and product tenant scoped',()=>{
-  const source=read('backend/src/modules/verticals/veterinary.routes.ts');
+  const source=veterinaryBackendSource();
   const start=source.indexOf("router.post('/medications/prescriptions'");
   const end=source.indexOf("router.get('/clinical-inventory'",start);
   const block=source.slice(start,end);
@@ -32,7 +33,7 @@ test('28/51 prescription references remain patient professional encounter and pr
 });
 
 test('28/51 server creates label and provenance from authenticated context',()=>{
-  const source=read('backend/src/modules/verticals/veterinary.routes.ts');
+  const source=veterinaryBackendSource();
   const start=source.indexOf("router.post('/medications/prescriptions'");
   const end=source.indexOf("router.get('/clinical-inventory'",start);
   const block=source.slice(start,end);
@@ -43,7 +44,7 @@ test('28/51 server creates label and provenance from authenticated context',()=>
 });
 
 test('28/51 product linkage is optional and does not mutate stock or create a lot authority',()=>{
-  const source=read('backend/src/modules/verticals/veterinary.routes.ts');
+  const source=veterinaryBackendSource();
   const start=source.indexOf("router.post('/medications/prescriptions'");
   const end=source.indexOf("router.get('/clinical-inventory'",start);
   const block=source.slice(start,end);
@@ -52,7 +53,7 @@ test('28/51 product linkage is optional and does not mutate stock or create a lo
 });
 
 test('28/51 inventory product discovery is separately permission guarded',()=>{
-  const source=read('backend/src/modules/verticals/veterinary.routes.ts');
+  const source=veterinaryBackendSource();
   const start=source.indexOf("router.get('/medication-products'");
   const end=source.indexOf("router.post('/medications/prescriptions'",start);
   const block=source.slice(start,end);
@@ -71,7 +72,7 @@ test('28/51 prescription reads join professional and product through the same te
 
 test('28/51 UI owns one integrated prescription flow with label and optional inventory trace',()=>{
   const panel=read('frontend/src/components/veterinary/VeterinaryMedicationPanel.jsx');
-  const workspace=read('frontend/src/components/veterinary/VeterinaryWorkspace.jsx');
+  const workspace=veterinaryWorkspaceSource();
   for(const token of ['Medicación integrada','Medicamento','Dosis','Frecuencia','Duración','Etiqueta clínica','Producto de inventario (opcional)','VeterinaryService.medicationProducts(','VeterinaryService.createMedicationPrescription(']) assert.ok(panel.includes(token),token);
   assert.equal((workspace.match(/<VeterinaryMedicationPanel/g)||[]).length,1);
   assert.equal((workspace.match(/import \{ VeterinaryMedicationPanel \}/g)||[]).length,1);

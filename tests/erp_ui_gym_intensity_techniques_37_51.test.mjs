@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import test from 'node:test';
+import { gymBackendSource } from '../qa/support/vertical-authority-sources.mjs';
 
 const read=(path)=>fs.readFileSync(path,'utf8');
 
@@ -13,7 +14,7 @@ test('37/51 defines explicit per-exercise intensity techniques separately from t
 });
 
 test('37/51 routine exercise schema validates technique and structured config',()=>{
-  const backend=read('backend/src/modules/verticals/gym.routes.ts');
+  const backend=gymBackendSource();
   for(const token of ['intensityTechnique','techniqueConfig','rounds','intraRestSeconds','loadDropPct','groupKey','techniqueNotes']) assert.ok(backend.includes(token),token);
   assert.match(backend,/drop_set/);
   assert.match(backend,/superset/);
@@ -27,7 +28,7 @@ test('37/51 persistence adds technique fields without rewriting legacy exercise 
   assert.match(migration,/ADD COLUMN IF NOT EXISTS "intensityTechnique"/);
   assert.match(migration,/DEFAULT 'standard'/);
   assert.match(migration,/ADD COLUMN IF NOT EXISTS "techniqueConfig" jsonb/);
-  const backend=read('backend/src/modules/verticals/gym.routes.ts');
+  const backend=gymBackendSource();
   assert.match(backend,/"intensityTechnique","techniqueConfig"/);
   assert.match(backend,/JSON\.stringify\(item\.techniqueConfig/);
 });
@@ -47,7 +48,7 @@ test('37/51 Wave A audit fails closed on intensity-technique regression',()=>{
 
 
 test('37/51 grouped techniques enforce same-day cardinality',()=>{
-  const source=read('backend/src/modules/verticals/gym.routes.ts');
+  const source=gymBackendSource();
   assert.match(source,/Un superset requiere exactamente 2 ejercicios con la misma clave y día\./);
   assert.match(source,/Un giant set requiere al menos 3 ejercicios con la misma clave y día\./);
   assert.match(source,/no puede mezclar superset y giant set el mismo día/);

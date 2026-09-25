@@ -1,8 +1,9 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import test from 'node:test';
+import { gymBackendSource } from '../qa/support/vertical-authority-sources.mjs';
 
-const backend=()=>fs.readFileSync('backend/src/modules/verticals/gym.routes.ts','utf8');
+const backend=()=>gymBackendSource();
 const page=()=>fs.readFileSync('frontend/src/pages/GymManagementPage.jsx','utf8');
 const builder=()=>fs.readFileSync('frontend/src/components/fitness/RoutineBuilder.jsx','utf8');
 const schedule=()=>fs.readFileSync('frontend/src/components/fitness/WeeklyRoutineSchedule.jsx','utf8');
@@ -28,8 +29,8 @@ test('35/51 derives daysPerWeek from the actual programmed days',()=>{
 
 test('35/51 backend rejects mismatched declared frequency and scheduled weekdays',()=>{
   const source=backend();
-  const start=source.indexOf('const routineSchema = z.object');
-  const end=source.indexOf('const ingredientSchema',start);
+  const start=source.indexOf('export const routineSchema = z.object');
+  const end=source.indexOf('export const ingredientSchema',start);
   const block=source.slice(start,end);
   assert.match(block,/\)\.superRefine\(\(value, refinement\)/);
   assert.match(block,/scheduledDays/);

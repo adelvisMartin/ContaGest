@@ -72,6 +72,76 @@ test('known-looking but nonexistent group references fail closed', () => {
   );
 });
 
+test('cloud merge keeps older group definitions required by scoped records', () => {
+  const local = workspace({
+    config: {
+      groups: [
+        { id: 'group-1', name: 'Grupo 1' },
+        { id: 'group-2', name: 'Grupo 2' },
+        { id: 'group-3', name: 'Grupo histórico' }
+      ],
+      activeGroupId: 'group-1',
+      activeWhatsappGroupId: 'group-1',
+      activeRaceByGroup: {},
+      captureGroupIds: ['group-1']
+    },
+    participants: [{ id: 'participant-42', groupId: 'group-3', name: 'Histórico', updatedAt: '2026-09-24T12:28:00.000Z' }],
+    updatedAt: '2026-09-24T12:28:00.000Z'
+  });
+  const remote = workspace({
+    config: {
+      groups: [
+        { id: 'group-1', name: 'Grupo 1 nube' },
+        { id: 'group-2', name: 'Grupo 2 nube' }
+      ],
+      activeGroupId: 'group-1',
+      activeWhatsappGroupId: 'group-1',
+      activeRaceByGroup: {},
+      captureGroupIds: ['group-1']
+    },
+    updatedAt: '2026-09-24T12:29:35.000Z'
+  });
+
+  const merged = mergeWorkspaces(local, remote);
+
+  assert.equal(merged.config.groups.some((group) => group.id === 'group-3'), true);
+  assert.equal(merged.participants.find((row) => row.id === 'participant-42')?.groupId, 'group-3');
+  assert.doesNotThrow(() => assertWorkspaceInputSafety(merged));
+});
+
+test('stale local registry can recover when cloud knows the referenced group', () => {
+  const local = workspace({
+    config: {
+      groups: [{ id: 'group-1', name: 'Grupo 1' }],
+      activeGroupId: 'group-1', activeWhatsappGroupId: 'group-1', activeRaceByGroup: {}, captureGroupIds: ['group-1']
+    },
+    participants: [{ id: 'participant-g2', groupId: 'group-2', name: 'Persistido localmente' }],
+    updatedAt: '2026-09-11T20:03:00.000Z'
+  });
+  const remote = workspace({
+    config: {
+      groups: [{ id: 'group-1', name: 'Grupo 1' }, { id: 'group-2', name: 'Grupo 2' }],
+      activeGroupId: 'group-1', activeWhatsappGroupId: 'group-1', activeRaceByGroup: {}, captureGroupIds: ['group-1']
+    },
+    version: 4,
+    updatedAt: '2026-09-11T20:02:00.000Z'
+  });
+  const merged = mergeWorkspaces(local, remote);
+  assert.equal(merged.config.groups.length, 2);
+  assert.equal(merged.participants.find((row) => row.id === 'participant-g2')?.groupId, 'group-2');
+  assert.doesNotThrow(() => assertWorkspaceInputSafety(merged));
+});
+
+test('sync still rejects references unknown to both local and cloud registries', () => {
+  const local = workspace({
+    participants: [{ id: 'participant-ghost', groupId: 'group-ghost', name: 'Fantasma' }]
+  });
+  assert.throws(
+    () => mergeWorkspaces(local, workspace({ version: 2 })),
+    (error) => error?.code === 'HIPICO_WORKSPACE_UNKNOWN_GROUP'
+  );
+});
+
 test('a bet cannot be attached to a race owned by another group', () => {
   const config = {
     groups: [{ id: 'group-1', name: 'Grupo 1' }, { id: 'group-2', name: 'Grupo 2' }],

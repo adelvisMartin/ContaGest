@@ -28,6 +28,7 @@ test('DB/backend degradation never emits false confirmation',()=>{
   const plan=planSafeResponse(decision,{systemHealthy:false,evidence:{persisted:true,receiptId:'should-not-win',sourceMessageId:decision.sourceMessageId,correlationId:decision.correlationId}});
   assert.equal(plan.intent,'SYSTEM_DEGRADED');
   assert.equal(plan.confirmationVerified,false);
+  assert.equal(plan.handoffRequired,false,'technical degradation alone must not transfer conversation ownership');
   assert.match(plan.text||'',/no se confirmó/i);
 });
 
@@ -130,4 +131,22 @@ test('unattended max-clarification handoff auto-releases and resets clarificatio
   assert.equal(recovered.ownership,'bot');
   assert.equal(recovered.clarificationCount,0);
   assert.equal(recovered.reason,'handoff-timeout-released');
+});
+
+
+test('system degradation preserves last-resort handoff after the clarification budget is exhausted',()=>{
+  let state=initialHandoffState('group-a','p1','1','2026-08-29T12:00:00.000Z');
+  const ambiguous=decideConversation({...message,text:'juega 2N'}, {}, classifier({intent:'offer_player',risk:'monetary',confidence:.99,entities:{play:'2N'}}));
+  for(const at of ['2026-08-29T12:00:01.000Z','2026-08-29T12:00:02.000Z','2026-08-29T12:00:03.000Z']){
+    state=updateHandoffAfterDecision(state,ambiguous,at);
+  }
+  const plan=planSafeResponse(ambiguous,{
+    handoffState:state,
+    systemHealthy:false,
+    at:'2026-08-29T12:00:03.000Z'
+  });
+  assert.equal(plan.intent,'SYSTEM_DEGRADED');
+  assert.equal(plan.canSend,true);
+  assert.equal(plan.handoffRequired,true);
+  assert.match(plan.text||'',/no se confirmó/i);
 });

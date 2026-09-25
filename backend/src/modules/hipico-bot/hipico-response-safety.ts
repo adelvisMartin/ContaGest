@@ -221,7 +221,16 @@ export function planSafeResponse(
   }
 
   if (options.systemHealthy === false) {
-    return { ...base, intent: 'SYSTEM_DEGRADED', text: 'El sistema no puede verificar la operación en este momento. Queda pendiente de revisión; no se confirmó ningún registro.', canSend: true, confirmationVerified: false, evidence: null, handoffRequired: true, reason: 'SYSTEM_NOT_AUTHORITATIVE' };
+    return {
+      ...base,
+      intent: 'SYSTEM_DEGRADED',
+      text: 'El sistema no puede verificar la operación en este momento. Queda pendiente de validación; no se confirmó ningún registro.',
+      canSend: true,
+      confirmationVerified: false,
+      evidence: null,
+      handoffRequired: clarificationLimitHandoff,
+      reason: 'SYSTEM_NOT_AUTHORITATIVE'
+    };
   }
 
   if (decision.responseIntent === 'NONE') {

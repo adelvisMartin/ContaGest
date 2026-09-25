@@ -47,8 +47,8 @@ function Read-Bindings {
     $binding = Get-Content -LiteralPath $BindingsPath -Raw -Encoding UTF8 | ConvertFrom-Json
     $sourceId = [string]$binding.source.groupId
     $labId = [string]$binding.lab.groupId
-    if ($sourceId -notmatch '^\d{5,}-\d+@g\.us$') { return $null }
-    if ($labId -notmatch '^\d{5,}-\d+@g\.us$') { return $null }
+    if ($sourceId -notmatch '^(?:\d{5,}-\d+|\d{10,})@g\.us$') { return $null }
+    if ($labId -notmatch '^(?:\d{5,}-\d+|\d{10,})@g\.us$') { return $null }
     if ($sourceId -eq $labId) { return $null }
     return @{ SourceId = $sourceId; LabId = $labId }
   } catch { return $null }

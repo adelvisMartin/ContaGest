@@ -1,8 +1,9 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import test from 'node:test';
+import { veterinaryBackendSource, veterinaryWorkspaceSource } from '../qa/support/vertical-authority-sources.mjs';
 
-const workspace=()=>fs.readFileSync('frontend/src/components/veterinary/VeterinaryWorkspace.jsx','utf8');
+const workspace=()=>veterinaryWorkspaceSource();
 const catalog=()=>fs.readFileSync('frontend/src/components/veterinary/veterinarySoapTemplates.js','utf8');
 
 test('25/51 provides versioned SOAP templates by species and consultation type',()=>{

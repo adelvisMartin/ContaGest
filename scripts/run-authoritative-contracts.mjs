@@ -19,8 +19,10 @@ const required59=[
   'tests/full_58_route_anti_overlap_61_75.test.mjs',
   'tests/playwright_determinism_62_75.test.mjs',
   'tests/cross_browser_critical_matrix_63_75.test.mjs',
+  'tests/health_dentistry_bounded_contexts_66_75.test.mjs',
+  'tests/vertical_schema_authority_67_75.test.mjs',
   'tests/database_authority_67_75.test.mjs',
-  'tests/raw_sql_security_68_75.test.mjs'
+  'tests/raw_sql_security_68_75.test.mjs',
 ];
 const tests=[...new Set([...regressionPaths,...required59])];
 

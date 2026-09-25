@@ -16,10 +16,7 @@ import { DentalLifecycleActions } from '../components/dentistry/DentalLifecycleA
 import { DentalSchedulePanel } from '../components/dentistry/DentalSchedulePanel.jsx';
 import { DentalFinancialPanel } from '../components/dentistry/DentalFinancialPanel.jsx';
 import { PROCEDURES, SPECIALTIES, rows, patientName } from '../components/dentistry/dentistryWorkspace.helpers.js';
-
-function Metric({label,value,tone='default'}){
-  return <Paper variant="outlined" sx={{p:1.4,minWidth:0}}><Typography variant="caption" color="text.secondary">{label}</Typography><Stack direction="row" alignItems="center" justifyContent="space-between" gap={1}><Typography variant="h5" sx={{fontVariantNumeric:'tabular-nums'}}>{value}</Typography><CgStatusChip label={String(value)} tone={tone}/></Stack></Paper>;
-}
+import { Metric } from '../components/dentistry/DentistryWorkspacePrimitives.jsx';
 
 function DentistryWorkspace({ state, context }){
   const initial=state?.dentistry||{};

@@ -112,3 +112,23 @@ test('LAB test poll returns to the source group without bypassing guarded reply 
   assert.match(source, /async function sendTextInCurrentSource[\s\S]*await assertCurrentSourceIdentity\(\)/);
   assert.match(source, /async function flushSourceReplies[\s\S]*sourceReplyJournal\.flush/);
 });
+
+
+test('source reply delivery verification reads message body before container metadata', () => {
+  assert.match(source, /async function visibleOutgoingTextCount/);
+  assert.match(source, /querySelector\('span\.selectable-text'\)/);
+  assert.match(source, /querySelector\('\[data-testid="msg-text"\]'\)/);
+  assert.match(source, /return normalizeText\(node\.innerText \|\| node\.textContent\)/);
+});
+
+
+test('source reply marks only proven pre-send compose failures as retryable', () => {
+  const start = source.indexOf('async function sendTextInCurrentSource(record)');
+  const enter = source.indexOf("await page.keyboard.press('Enter');", start);
+  const beforeEnter = source.slice(start, enter);
+  assert.match(beforeEnter, /SOURCE_REPLY_COMPOSE_FAILED/);
+  assert.match(beforeEnter, /SOURCE_IDENTITY_CHANGED_BEFORE_SEND/);
+  assert.match(beforeEnter, /safeToRetry = true/);
+  const afterEnter = source.slice(enter, source.indexOf('async function syncSourceReplyReceipts', enter));
+  assert.doesNotMatch(afterEnter, /safeToRetry = true/);
+});

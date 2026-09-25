@@ -1,11 +1,10 @@
 import { createHash } from 'node:crypto';
 import { Router } from 'express';
-import { z } from 'zod';
 import { prisma } from '../../database/prisma.js';
 import { asyncHandler, HttpError, ok } from '../../shared/http.js';
+import { veterinaryGuardianPortalSessionSchema } from './veterinary.schemas.js';
 
 const router = Router();
-const sessionSchema = z.object({ accessToken:z.string().min(32).max(128).regex(/^[A-Za-z0-9_-]+$/) }).strict();
 const sha256 = (value: string) => createHash('sha256').update(value).digest('hex');
 
 router.post('/session', asyncHandler(async (req, res) => {
@@ -14,7 +13,7 @@ router.post('/session', asyncHandler(async (req, res) => {
   res.setHeader('Referrer-Policy', 'no-referrer');
   res.setHeader('X-Robots-Tag', 'noindex, nofollow, noarchive');
 
-  const { accessToken } = sessionSchema.parse(req.body || {});
+  const { accessToken } = veterinaryGuardianPortalSessionSchema.parse(req.body || {});
   const tokenSha256 = sha256(accessToken);
   const grants = await prisma.$queryRawUnsafe<any[]>(`
     SELECT g."id",g."tenantId",g."patientId",g."scopes",g."expiresAt",

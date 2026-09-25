@@ -310,3 +310,43 @@ export const appointmentStatusSchema = z.object({
   reminderStatus: z.enum(['pending', 'queued', 'sent', 'failed', 'skipped']).optional(),
   notes: optionalText
 });
+
+
+export const veterinaryAppointmentPatchSchema = z.object({
+  patientId: z.string().min(10).optional(),
+  professionalId: z.string().optional().nullable(),
+  startsAt: z.string().min(8).max(50).optional(),
+  endsAt: z.string().min(8).max(50).optional(),
+  type: z.string().trim().max(120).optional(),
+  status: z.enum(['scheduled','confirmed','checked_in','in_progress','completed','cancelled','no_show']).optional(),
+  reason: optionalText,
+  channel: z.enum(['onsite','telemedicine','home_visit']).optional(),
+  room: optionalText,
+  notes: optionalText
+}).strict();
+
+export const veterinaryPatientPatchSchema = z.object({
+  displayName: z.string().trim().min(2).max(180).optional(),
+  species: optionalText,
+  breed: optionalText,
+  color: optionalText,
+  sex: optionalText,
+  birthDate: z.string().optional().nullable(),
+  microchip: optionalText,
+  guardianName: optionalText,
+  guardianPhone: optionalText,
+  guardianEmail: z.string().email().optional().nullable().or(z.literal('')),
+  allergies: optionalText,
+  conditions: optionalText,
+  notes: optionalText,
+  active: z.boolean().optional()
+}).strict();
+
+export const veterinaryGuardianPortalSessionSchema = z.object({
+  accessToken:z.string().min(32).max(128).regex(/^[A-Za-z0-9_-]+$/)
+}).strict();
+
+export type VeterinaryLabResultFlagInput = Pick<
+  z.infer<typeof labResultSchema>,
+  'valueNumeric'|'valueText'|'referenceMin'|'referenceMax'
+>;

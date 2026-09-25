@@ -3,7 +3,7 @@ name: Hípico Autonomous WhatsApp v15
 on:
   pull_request:
     paths:
-      - 'backend/src/modules/hipico/autonomous-reply.service*.ts'
+      - 'backend/src/modules/hipico/autonomous-reply*.ts'
       - 'backend/src/modules/hipico/race-query.service*.ts'
       - 'backend/src/modules/hipico/race.routes.ts'
       - 'backend/src/modules/hipico-bot/hipico-bridge*.ts'

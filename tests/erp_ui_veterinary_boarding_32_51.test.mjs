@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import test from 'node:test';
+import { veterinaryBackendSource, veterinaryWorkspaceSource } from '../qa/support/vertical-authority-sources.mjs';
 const read=(path)=>fs.readFileSync(path,'utf8');
 
 test('32/51 persists optional boarding settings, resources and stays without replacing hospitalization',()=>{
@@ -10,7 +11,7 @@ test('32/51 persists optional boarding settings, resources and stays without rep
 });
 
 test('32/51 boarding is explicitly optional and admin-gated at tenant setting boundary',()=>{
-  const source=read('backend/src/modules/verticals/veterinary.routes.ts');
+  const source=veterinaryBackendSource();
   assert.match(source,/router\.get\('\/boarding\/settings'/);
   assert.match(source,/router\.patch\('\/boarding\/settings', requirePermission\('admin\.manage'\)/);
   assert.match(source,/assertBoardingEnabled/);
@@ -19,12 +20,12 @@ test('32/51 boarding is explicitly optional and admin-gated at tenant setting bo
 });
 
 test('32/51 availability is derived from overlapping active stays and resource state',()=>{
-  const source=read('backend/src/modules/verticals/veterinary.routes.ts');
+  const source=veterinaryBackendSource();
   for(const token of ["router.get('/boarding/resources'","status\" IN ('reserved','checked_in')",'"startsAt" < $3::timestamptz','COALESCE(s."endedAt",s."plannedEndsAt") > $2::timestamptz',"available:resource.status==='active'&&!occupancy"])assert.ok(source.includes(token),token);
 });
 
 test('32/51 reservations serialize resource and patient conflict checks',()=>{
-  const source=read('backend/src/modules/verticals/veterinary.routes.ts');
+  const source=veterinaryBackendSource();
   const start=source.indexOf("router.post('/boarding/stays'");
   const end=source.indexOf("router.patch('/boarding/stays/:id/status'",start);
   const block=source.slice(start,end);
@@ -37,7 +38,7 @@ test('32/51 reservations serialize resource and patient conflict checks',()=>{
 });
 
 test('32/51 stay lifecycle is forward-only and releases occupancy on terminal state',()=>{
-  const source=read('backend/src/modules/verticals/veterinary.routes.ts');
+  const source=veterinaryBackendSource();
   const start=source.indexOf("router.patch('/boarding/stays/:id/status'");
   const block=source.slice(start);
   assert.match(block,/reserved:\['checked_in','cancelled'\]/);
@@ -50,7 +51,7 @@ test('32/51 stay lifecycle is forward-only and releases occupancy on terminal st
 });
 
 test('32/51 UI has one declarative boarding owner with optional-state and availability UX',()=>{
-  const workspace=read('frontend/src/components/veterinary/VeterinaryWorkspace.jsx');
+  const workspace=veterinaryWorkspaceSource();
   const panel=read('frontend/src/components/veterinary/VeterinaryBoardingPanel.jsx');
   const service=read('frontend/src/services/verticalService.js');
   assert.equal((workspace.match(/import \{ VeterinaryBoardingPanel \}/g)||[]).length,1);
@@ -62,7 +63,7 @@ test('32/51 UI has one declarative boarding owner with optional-state and availa
 });
 
 test('32/51 audit preserves non-clinical boundary and no automated boarding decisions',()=>{
-  const source=read('backend/src/modules/verticals/veterinary.routes.ts');
+  const source=veterinaryBackendSource();
   const panel=read('frontend/src/components/veterinary/VeterinaryBoardingPanel.jsx');
   assert.match(source,/veterinary\.boarding\.resource\.created/);
   assert.match(source,/veterinary\.boarding\.stay\.reserved/);
