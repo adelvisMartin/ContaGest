@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import test from 'node:test';
+import { healthBackendSource } from '../qa/support/vertical-authority-sources.mjs';
 
 const read=(path)=>fs.readFileSync(path,'utf8');
 
@@ -19,7 +20,7 @@ test('19/51 migration extends CareAppointment without creating a second scheduli
 });
 
 test('19/51 scheduling backend serializes tenant writes and rejects overlapping active slots',()=>{
-  const source=read('backend/src/modules/verticals/health.routes.ts');
+  const source=healthBackendSource();
   for(const token of [
     'appointmentStatusSchema',
     "'waitlisted'",
@@ -36,7 +37,7 @@ test('19/51 scheduling backend serializes tenant writes and rejects overlapping 
 });
 
 test('19/51 appointment creation validates tenant ownership and waitlist does not reserve capacity',()=>{
-  const source=read('backend/src/modules/verticals/health.routes.ts');
+  const source=healthBackendSource();
   const start=source.indexOf("router.post('/health/appointments'");
   const end=source.indexOf("router.patch('/health/appointments/:id'",start);
   const block=source.slice(start,end);
@@ -50,7 +51,7 @@ test('19/51 appointment creation validates tenant ownership and waitlist does no
 });
 
 test('19/51 appointment patch owns confirmation waitlist conversion and recall evidence',()=>{
-  const source=read('backend/src/modules/verticals/health.routes.ts');
+  const source=healthBackendSource();
   const start=source.indexOf("router.patch('/health/appointments/:id'");
   const end=source.indexOf("router.get('/health/encounters'",start);
   const block=source.slice(start,end);
@@ -70,7 +71,7 @@ test('19/51 appointment patch owns confirmation waitlist conversion and recall e
 });
 
 test('19/51 appointment reads include typed dentistry filter and future recall rows',()=>{
-  const source=read('backend/src/modules/verticals/health.routes.ts');
+  const source=healthBackendSource();
   const start=source.indexOf("router.get('/health/appointments'");
   const end=source.indexOf("router.post('/health/appointments'",start);
   const block=source.slice(start,end);
