@@ -6,11 +6,18 @@
   "start_url": "/?source=pwa",
   "scope": "/",
   "display": "standalone",
-  "display_override": ["standalone", "minimal-ui"],
+  "display_override": [
+    "standalone",
+    "minimal-ui"
+  ],
   "orientation": "any",
   "background_color": "#08152f",
   "theme_color": "#0b1f44",
-  "categories": ["business", "finance", "productivity"],
+  "categories": [
+    "business",
+    "finance",
+    "productivity"
+  ],
   "lang": "es-VE",
   "dir": "ltr",
   "prefer_related_applications": false,
@@ -35,10 +42,75 @@
     }
   ],
   "shortcuts": [
-    { "name": "Dashboard", "short_name": "Dashboard", "url": "/?module=dashboard" },
-    { "name": "Clientes", "short_name": "Clientes", "url": "/?module=clientes" },
-    { "name": "Psicología y agenda", "short_name": "Psicología", "url": "/?module=psicologia" },
-    { "name": "Clínica veterinaria", "short_name": "Veterinaria", "url": "/?module=veterinaria" },
-    { "name": "Gimnasio y fitness", "short_name": "Gimnasio", "url": "/?module=gimnasio" }
+    {
+      "name": "Dashboard",
+      "short_name": "Dashboard",
+      "url": "/?module=dashboard"
+    },
+    {
+      "name": "Clientes",
+      "short_name": "Clientes",
+      "url": "/?module=clientes"
+    },
+    {
+      "name": "Odontología",
+      "short_name": "Odontología",
+      "url": "/?module=odontologia",
+      "icons": [
+        {
+          "src": "/vertical-assets/dentistry.svg",
+          "sizes": "any",
+          "type": "image/svg+xml"
+        }
+      ]
+    },
+    {
+      "name": "Psicología y agenda",
+      "short_name": "Psicología",
+      "url": "/?module=psicologia",
+      "icons": [
+        {
+          "src": "/vertical-assets/psychology.svg",
+          "sizes": "any",
+          "type": "image/svg+xml"
+        }
+      ]
+    },
+    {
+      "name": "Clínica veterinaria",
+      "short_name": "Veterinaria",
+      "url": "/?module=veterinaria",
+      "icons": [
+        {
+          "src": "/vertical-assets/veterinary.svg",
+          "sizes": "any",
+          "type": "image/svg+xml"
+        }
+      ]
+    },
+    {
+      "name": "Gimnasio y fitness",
+      "short_name": "Gimnasio",
+      "url": "/?module=gimnasio",
+      "icons": [
+        {
+          "src": "/vertical-assets/gym.svg",
+          "sizes": "any",
+          "type": "image/svg+xml"
+        }
+      ]
+    },
+    {
+      "name": "Nutrición",
+      "short_name": "Nutrición",
+      "url": "/?module=nutricion",
+      "icons": [
+        {
+          "src": "/vertical-assets/nutrition.svg",
+          "sizes": "any",
+          "type": "image/svg+xml"
+        }
+      ]
+    }
   ]
 }

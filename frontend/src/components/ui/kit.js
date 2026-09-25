@@ -1,4 +1,5 @@
 import { escapeHtml } from '../../utils/dom.js';
+import { verticalAsset } from '../../assets/verticalAssets.js';
 
 const safe = (value) => escapeHtml(String(value ?? ''));
 const rawAttrs = (attrs = '') => String(attrs || '');
@@ -101,8 +102,9 @@ export function Select({labelKey='',name='',options=[],value='',className='',att
   return `<div class="cgx-field ${safe(className)}" data-cgx-kit="select"><label class="label cgx-label" for="${safe(inputId)}" ${labelKey?`data-i18n="${safe(labelKey)}"`:''}>${safe(labelKey)}</label><select id="${safe(inputId)}" name="${safe(name)}" class="select cgx-field-normalized mui-fallback-select" ${rawAttrs(attrs)}>${options.map((option)=>`<option value="${safe(option.value)}" ${String(option.value)===String(value)?'selected':''}>${safe(option.label??option.value)}</option>`).join('')}</select></div>`;
 }
 
-export function EmptyState({title='Sin datos',description='',iconName='',icon:iconArg=''}={}){
-  return `<div class="cgx-empty" data-cgx-kit="empty"><span class="cgx-empty-icon">${icon(iconName||iconArg||'fa-inbox')}</span><strong>${safe(title)}</strong>${description?`<p>${safe(description)}</p>`:''}</div>`;
+export function EmptyState({title='Sin datos',description='',iconName='',icon:iconArg='',assetKey=''}={}){
+  const asset=verticalAsset(assetKey);
+  return `<div class="cgx-empty" data-cgx-kit="empty">${asset?`<img class="cgx-empty-asset" src="${safe(asset)}" alt="" aria-hidden="true">`:`<span class="cgx-empty-icon">${icon(iconName||iconArg||'fa-inbox')}</span>`}<strong>${safe(title)}</strong>${description?`<p>${safe(description)}</p>`:''}</div>`;
 }
 export function Toolbar({title='',searchPlaceholder='Buscar...',actions=''}={}){
   return `<div class="cgx-toolbar" data-cgx-kit="toolbar"><strong>${safe(title)}</strong><label class="cgx-toolbar-search"><i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i><input type="search" placeholder="${safe(searchPlaceholder)}" /></label><div class="cgx-toolbar-actions">${actions}</div></div>`;

@@ -352,6 +352,8 @@
 
   body .cgx-empty { display:grid; justify-items:center; align-content:center; min-height:150px; padding:24px; text-align:center; }
   body .cgx-empty-icon { display:grid; place-items:center; width:34px; height:34px; border:1px solid var(--cg-v-border); border-radius:9px; background:var(--cg-v-surface-2); color:var(--cg-v-text-subtle); }
+  body .cgx-empty-asset { display:block; width:min(132px,42vw); height:auto; max-height:96px; object-fit:contain; opacity:.92; }
+  body .login-security-asset { display:block; width:min(150px,46vw); height:auto; margin:0 0 14px; opacity:.94; }
   body .cgx-empty strong { margin-top:10px; font-size:12px; }
   body .cgx-empty p { margin:4px 0 0!important; max-width:48ch; font-size:10px!important; }
 

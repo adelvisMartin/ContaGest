@@ -9,6 +9,8 @@ public/
 ├─ brand/
 │  └─ contagest-logo.svg      # marca global del ERP
 ├─ icons/                     # PWA, favicon y app icons
+├─ vertical-assets/           # ilustraciones semánticas del catálogo 70/75
+├─ vendor/                    # dependencias visuales críticas self-hosted + licencias
 ├─ hipico-control/            # producto Control Hípico, aislado del ERP
 ├─ manifest.webmanifest
 ├─ pwa-install.js
@@ -20,7 +22,9 @@ public/
 - La marca global se referencia desde `brand/`; no copiar el logo dentro de páginas, verticales o componentes.
 - `icons/` contiene únicamente variantes técnicas de iconos PWA/app. Evitar copias con nombres de versión.
 - `hipico-control/` pertenece al producto Control Hípico y no se usa como librería visual de ContaGest.
-- Iconos funcionales de botones, navegación, KPIs y estados usan el helper `icon()` del UI kit y la misma familia Font Awesome.
+- Iconos funcionales de botones, navegación, KPIs y estados usan el helper `icon()` del UI kit y Font Awesome Free self-hosted bajo `vendor/fontawesome/`.
+- Inter y JetBrains Mono se sirven localmente desde `vendor/fonts/`; sus licencias OFL se conservan junto a los binarios.
+- Las ilustraciones de vertical se resuelven únicamente mediante `frontend/src/assets/verticalAssets.js`; no hardcodear rutas alternativas por vista.
 - Una ilustración específica de un vertical debe vivir bajo una carpeta propia solo si existe una necesidad funcional/documentada; no usar imágenes para tapar problemas de jerarquía/layout.
 - SVG nuevos deben tener `viewBox`, tamaño intrínseco razonable y no incluir scripts ni recursos remotos.
 - No usar assets remotos como dependencia crítica del shell.

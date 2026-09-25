@@ -3,6 +3,7 @@ import { BackendApi } from '../services/backendApi.js';
 import { LegalService } from '../services/legalService.js';
 import { Button } from '../components/ui/index.js';
 import { escapeHtml } from '../utils/dom.js';
+import { verticalAsset } from '../assets/verticalAssets.js';
 
 const safe=(value)=>escapeHtml(String(value??''));
 const legalBody=(body)=>String(body||'').split(/\n{2,}/).filter(Boolean).map((paragraph)=>`<p>${safe(paragraph).replace(/\n/g,'<br>')}</p>`).join('');
@@ -55,7 +56,7 @@ export const LoginPage={
         </form>
         <div class="login-privacy"><i class="fa-solid fa-lock" aria-hidden="true"></i><span>Sesión cifrada, permisos por rol y aislamiento por empresa.</span>${Button({id:'btnOpenLegalPolicies',label:'Legal y privacidad',iconName:'fa-scale-balanced',variant:'secondary',type:'button'})}</div>
       </section>
-      <section class="login-panel" aria-label="Seguridad y alcance de ContaGest"><div class="login-panel-inner"><span class="login-panel-badge"><i class="fa-solid fa-building" aria-hidden="true"></i><span>ContaGest Enterprise</span></span><h2>Un acceso claro para toda la operación.</h2><p class="login-panel-lead">Cada usuario entra únicamente a los módulos, empresas y funciones que le corresponden.</p><div class="login-assurance-grid">${assurance('fa-user-shield','Permisos por rol','La navegación refleja el alcance real del usuario.')}${assurance('fa-building-lock','Aislamiento por empresa','Cada RIF mantiene sus datos y contexto separados.')}${assurance('fa-layer-group','Verticales adaptables','Comercio, contabilidad, salud, veterinaria y más.')}${assurance('fa-display','Responsive real','La misma operación se adapta a escritorio, tablet y móvil.')}</div><div class="login-panel-foot"><i class="fa-solid fa-circle-check" aria-hidden="true"></i><span>Las cuentas de prueba y clientes se habilitan mediante invitación o licencia; no se publican credenciales administrativas.</span></div></div></section>
+      <section class="login-panel" aria-label="Seguridad y alcance de ContaGest"><div class="login-panel-inner"><img class="login-security-asset" src="${safe(verticalAsset('login'))}" alt="" aria-hidden="true"><span class="login-panel-badge"><i class="fa-solid fa-building" aria-hidden="true"></i><span>ContaGest Enterprise</span></span><h2>Un acceso claro para toda la operación.</h2><p class="login-panel-lead">Cada usuario entra únicamente a los módulos, empresas y funciones que le corresponden.</p><div class="login-assurance-grid">${assurance('fa-user-shield','Permisos por rol','La navegación refleja el alcance real del usuario.')}${assurance('fa-building-lock','Aislamiento por empresa','Cada RIF mantiene sus datos y contexto separados.')}${assurance('fa-layer-group','Verticales adaptables','Comercio, contabilidad, salud, veterinaria y más.')}${assurance('fa-display','Responsive real','La misma operación se adapta a escritorio, tablet y móvil.')}</div><div class="login-panel-foot"><i class="fa-solid fa-circle-check" aria-hidden="true"></i><span>Las cuentas de prueba y clientes se habilitan mediante invitación o licencia; no se publican credenciales administrativas.</span></div></div></section>
       ${coordinateChallenge(state.pendingMfa)}
     </main>`;
   },

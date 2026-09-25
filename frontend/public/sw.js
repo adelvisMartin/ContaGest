@@ -1,5 +1,22 @@
-const CACHE = 'contagest-ve-v11-16-2';
-const APP_SHELL = ['/', '/index.html', '/manifest.webmanifest', '/icons/contagest-app.svg', '/icons/contagest-app-192.svg', '/icons/contagest-app-512.svg'];
+const CACHE = 'contagest-ve-v70-assets-1';
+const APP_SHELL = [
+  '/', '/index.html', '/manifest.webmanifest',
+  '/icons/contagest-app.svg', '/icons/contagest-app-192.svg', '/icons/contagest-app-512.svg',
+  '/vendor/fontawesome/css/all.min.css',
+  '/vendor/fontawesome/webfonts/fa-solid-900.woff2',
+  '/vendor/fontawesome/webfonts/fa-regular-400.woff2',
+  '/vendor/fontawesome/webfonts/fa-brands-400.woff2',
+  '/vendor/fontawesome/webfonts/fa-v4compatibility.woff2',
+  '/vendor/fonts/fonts.css',
+  '/vendor/fonts/inter/Inter-Variable.ttf',
+  '/vendor/fonts/jetbrains-mono/JetBrainsMono-Variable.ttf',
+  '/vertical-assets/veterinary.svg',
+  '/vertical-assets/dentistry.svg',
+  '/vertical-assets/psychology.svg',
+  '/vertical-assets/gym.svg',
+  '/vertical-assets/nutrition.svg',
+  '/vertical-assets/login-security.svg'
+];
 
 self.addEventListener('install', (event) => {
   self.skipWaiting();

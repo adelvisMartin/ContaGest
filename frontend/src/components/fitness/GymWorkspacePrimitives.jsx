@@ -13,7 +13,7 @@ export function Section({title,description,children,action=null,wide=false}){
   </Paper>;
 }
 
-export function RecordList({items,empty,render}){
-  if(!items.length)return <CgEmptyState title={empty} description="Los nuevos registros aparecerán aquí."/>;
+export function RecordList({items,empty,render,assetKey='gym'}){
+  if(!items.length)return <CgEmptyState title={empty} description="Los nuevos registros aparecerán aquí." assetKey={assetKey}/>;
   return <Stack className="cg-gym-v1124-list" divider={<Divider flexItem/>}>{items.map((item,index)=><Box key={item.id||index} py={.8}>{render(item)}</Box>)}</Stack>;
 }
