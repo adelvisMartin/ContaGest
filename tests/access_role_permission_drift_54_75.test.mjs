@@ -1,15 +1,16 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import { accessControlSource } from '../qa/support/vertical-authority-sources.mjs';
 
 const manifest=JSON.parse(fs.readFileSync('backend/src/shared/contracts/access-manifest.json','utf8'));
-const access=fs.readFileSync('frontend/src/services/accessControlService.js','utf8');
+const access=accessControlSource();
 
 const byRoute=new Map(manifest.modules.map((item)=>[item.route,item.permission]));
 
 function roleDefinitionsFromSource(){
-  const start=access.indexOf('const ROLE_DEFINITION_INPUT = [');
-  const end=access.indexOf('];\n\nconst ROLE_DEFINITIONS',start);
+  const start=access.indexOf('export const createRolePresetInput=(allModules)=>[');
+  const end=access.indexOf(' ];;',start);
   assert.ok(start>=0&&end>start,'normalized role definition input must exist');
   const block=access.slice(start,end+2);
   return [...block.matchAll(/id:'([^']+)'[\s\S]*?permissions:\[([^\]]*)\],[\s\S]*?modules:(\[[^\]]*\]|allModules)/g)].map((match)=>({
@@ -23,6 +24,7 @@ test('54/75 default roles derive every route permission from the canonical acces
   assert.match(access,/permissionsForModules/);
   assert.match(access,/ROLE_DEFINITION_INPUT/);
   assert.match(access,/const ROLE_DEFINITIONS = ROLE_DEFINITION_INPUT\.map/);
+  assert.match(access,/createRolePresetInput\(allModules\)/);
   for(const role of roleDefinitionsFromSource()){
     for(const route of role.modules){
       assert.ok(byRoute.has(route),`${role.id}: unknown route ${route}`);

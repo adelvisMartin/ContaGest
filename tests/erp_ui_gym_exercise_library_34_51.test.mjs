@@ -1,11 +1,11 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import test from 'node:test';
-import { gymBackendSource } from '../qa/support/vertical-authority-sources.mjs';
+import { fitnessWorkspaceSource, gymBackendSource } from '../qa/support/vertical-authority-sources.mjs';
 
 const backend=()=>gymBackendSource();
 const service=()=>fs.readFileSync('frontend/src/services/verticalService.js','utf8');
-const page=()=>fs.readFileSync('frontend/src/pages/GymManagementPage.jsx','utf8');
+const page=()=>fitnessWorkspaceSource();
 const library=()=>fs.readFileSync('frontend/src/components/fitness/ExerciseLibraryPanel.jsx','utf8');
 const builder=()=>fs.readFileSync('frontend/src/components/fitness/RoutineBuilder.jsx','utf8');
 

@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import test from 'node:test';
+import { gymBackendSource } from '../qa/support/vertical-authority-sources.mjs';
 
 const read=(path)=>fs.readFileSync(path,'utf8');
 
@@ -36,7 +37,7 @@ test('48/51 cleanup inventory is fail-visible rather than hidden',()=>{
 });
 
 test('48/51 gym assessment creation enforces tenant ownership before insert',()=>{
-  const source=read('backend/src/modules/verticals/gym.routes.ts');
+  const source=gymBackendSource();
   const start=source.indexOf("router.post('/gym/assessments'");
   const end=source.indexOf("router.get('/gym/exercises'",start);
   const block=source.slice(start,end);

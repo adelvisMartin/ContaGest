@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import test from 'node:test';
-import { gymBackendSource } from '../qa/support/vertical-authority-sources.mjs';
+import { fitnessWorkspaceSource, gymBackendSource } from '../qa/support/vertical-authority-sources.mjs';
 
 const read=(path)=>fs.readFileSync(path,'utf8');
 
@@ -30,7 +30,7 @@ test('43/51 nutrition writes validate member trainer and ingredient ownership at
 });
 
 test('43/51 frontend replaces free-text meal parsing with controlled ingredients',()=>{
-  const page=read('frontend/src/pages/GymManagementPage.jsx');
+  const page=fitnessWorkspaceSource();
   const builder=read('frontend/src/components/fitness/CompleteMealPlanBuilder.jsx');
   const library=read('frontend/src/components/fitness/IngredientLibraryPanel.jsx');
   assert.equal((page.match(/<IngredientLibraryPanel/g)||[]).length,1);

@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { ERP_UI_WAVE_A_2_51, ERP_UI_MIGRATION_STATUSES } from '../qa/support/erp-ui-wave-a-v251.mjs';
 import { PAGE_REGISTRY } from '../frontend/src/data/pageRegistry.js';
-import { gymBackendSource, healthBackendSource, veterinaryBackendSource, veterinaryWorkspaceSource } from '../qa/support/vertical-authority-sources.mjs';
+import { fitnessWorkspaceSource, gymBackendSource, healthBackendSource, veterinaryBackendSource, veterinaryWorkspaceSource } from '../qa/support/vertical-authority-sources.mjs';
 
 const root=process.cwd();
 const fail=(message)=>{console.error(`[erp-ui-wave-a][FAIL] ${message}`);process.exitCode=1;};
@@ -593,25 +593,25 @@ if(dentistryEntry?.status==='MIGRATED'){
 }
 
 const fitnessEntries=ERP_UI_WAVE_A_2_51.filter((item)=>['gimnasio','rutinas','nutricion'].includes(item.route));
-const fitnessPage=sourceCache.get('frontend/src/pages/GymManagementPage.jsx');
-const fitnessTrainingPanel=read('frontend/src/components/fitness/GymTrainingPanel.jsx');
-const fitnessNutritionPanel=read('frontend/src/components/fitness/GymNutritionPanel.jsx');
-const fitnessPrimitives=read('frontend/src/components/fitness/GymWorkspacePrimitives.jsx');
-const fitness=[fitnessPage,fitnessTrainingPanel,fitnessNutritionPanel,fitnessPrimitives].join('\n');
+const fitness=sourceCache.get('frontend/src/pages/GymManagementPage.jsx');
+const fitnessTraining=read('frontend/src/components/fitness/GymTrainingPanel.jsx');
+const fitnessNutrition=read('frontend/src/components/fitness/GymNutritionPanel.jsx');
+const fitnessComposition=fitnessWorkspaceSource();
+
 const fitnessVerticalService=read('frontend/src/services/verticalService.js');
 if(fitnessEntries.every((item)=>item.status==='MIGRATED')){
   if(/components\/ui\/index\.js|escapeHtml|innerHTML|querySelector|addEventListener|mountSubmit|MutationObserver/.test(fitness))fail('fitness: migrated renderer reintroduced imperative fitness lifecycle or legacy kit');
   if((fitness.match(/createRoot\(/g)||[]).length!==1)fail('fitness: migrated renderer must own exactly one React root');
   for(const primitive of ['CgProvider','CgPageHeader','CgButton','CgTextField','CgSelect','CgStatusChip','CgEmptyState']){
-    if(!fitness.includes(primitive))fail(`fitness: missing canonical primitive ${primitive}`);
+    if(!fitnessComposition.includes(primitive))fail(`fitness: missing canonical primitive ${primitive}`);
   }
   const productivityPath='frontend/src/components/fitness/FitnessProductivityTools.jsx';
   const productivity=read(productivityPath);
   if(/MutationObserver|innerHTML|querySelector|addEventListener|document\.createElement/.test(productivity))fail('fitness: productivity tools reintroduced imperative DOM mutation');
   if(fs.existsSync(path.join(root,'frontend/src/services/fitnessProductivityEnhancer.js')))fail('fitness: superseded MutationObserver enhancer still exists');
   const routineBuilder=read('frontend/src/components/fitness/RoutineBuilder.jsx');
-  if(!fitness.includes('RoutineBuilder'))fail('fitness: structured routine builder is not composed');
-  if((fitness.match(/<RoutineBuilder/g)||[]).length!==1)fail('fitness: routine builder must render from one owner');
+  if(!fitnessTraining.includes('RoutineBuilder'))fail('fitness: structured routine builder is not composed');
+  if((fitnessTraining.match(/<RoutineBuilder/g)||[]).length!==1)fail('fitness: routine builder must render from one owner');
   if(/exerciseLines|Ejercicios: Día \| Ejercicio \| Grupo \| Series \| Reps \| Descanso/.test(fitness))fail('fitness: free-text routine parser/editor reintroduced');
   if(/querySelector|addEventListener|innerHTML|document\./.test(routineBuilder))fail('fitness: routine builder reintroduced imperative DOM lifecycle');
   for(const contract of ['addExercise','removeExercise','updateExercise','moveExercise','duplicateExercise','exerciseName','muscleGroup','equipment','sets','reps','loadKg','restSeconds','tempo','notes','FITNESS_EXERCISES']){
@@ -628,12 +628,12 @@ if(fitnessEntries.every((item)=>item.status==='MIGRATED')){
     if(!routineRoute.includes(contract))fail(`fitness: missing atomic/tenant-safe routine contract ${contract}`);
   }
   const exerciseLibrary=read('frontend/src/components/fitness/ExerciseLibraryPanel.jsx');
-  if((fitness.match(/<ExerciseLibraryPanel/g)||[]).length!==1)fail('fitness: exercise library must render from one owner');
+  if((fitnessTraining.match(/<ExerciseLibraryPanel/g)||[]).length!==1)fail('fitness: exercise library must render from one owner');
   if(/querySelector|addEventListener|innerHTML|document\./.test(exerciseLibrary))fail('fitness: exercise library reintroduced imperative DOM lifecycle');
   for(const contract of ['Buscar ejercicios','Grupo muscular','Equipo','Categoría','Nuevo ejercicio','Editar','Archivar','Reactivar','GymVerticalService.exercises(','GymVerticalService.createExercise(','GymVerticalService.updateExercise(']){
     if(!exerciseLibrary.includes(contract))fail(`fitness: missing exercise-library contract ${contract}`);
   }
-  if(!fitness.includes('exerciseLibrary')||!fitness.includes('catalog={exerciseLibrary}'))fail('fitness: persisted exercise library is not passed to RoutineBuilder');
+  if(!fitness.includes('exerciseLibrary')||!fitnessTraining.includes('catalog={exerciseLibrary}'))fail('fitness: persisted exercise library is not passed to RoutineBuilder');
   for(const contract of ["router.get('/gym/exercises'","router.post('/gym/exercises'","router.patch('/gym/exercises/:id'",'exerciseLibrarySchema','public."GymExercise"','"tenantId"=$1']){
     if(!gymBackend.includes(contract))fail(`fitness: missing exercise-library backend contract ${contract}`);
   }
@@ -646,7 +646,7 @@ if(fitnessEntries.every((item)=>item.status==='MIGRATED')){
   if(/router\.delete\('\/gym\/exercises/.test(gymBackend))fail('fitness: exercise lifecycle must archive/reactivate instead of deleting history');
   const weeklySchedule=read('frontend/src/components/fitness/WeeklyRoutineSchedule.jsx');
   const weekDays=read('frontend/src/data/fitnessWeekDays.js');
-  if((fitness.match(/<WeeklyRoutineSchedule/g)||[]).length!==1)fail('fitness: weekly schedule must render from one owner');
+  if((fitnessTraining.match(/<WeeklyRoutineSchedule/g)||[]).length!==1)fail('fitness: weekly schedule must render from one owner');
   for(const contract of ['Lunes','Martes','Miércoles','Jueves','Viernes','Sábado','Domingo']){
     if(!weekDays.includes(contract))fail(`fitness: missing canonical weekday ${contract}`);
   }
@@ -663,7 +663,7 @@ if(fitnessEntries.every((item)=>item.status==='MIGRATED')){
   for(const contract of ['strength','hypertrophy','pump','endurance','power','conditioning','mobility']){
     if(!trainingModes.includes(contract))fail(`fitness: missing training mode ${contract}`);
   }
-  if(!fitness.includes('FITNESS_TRAINING_MODES')||!fitness.includes('label="Modo de entrenamiento"')||!fitness.includes('trainingMode:routineForm.trainingMode')||!fitness.includes('fitnessTrainingModeLabel(item.trainingMode)'))fail('fitness: explicit training mode is not wired end-to-end in routine UI');
+  if(!fitnessTraining.includes('FITNESS_TRAINING_MODES')||!fitnessTraining.includes('label="Modo de entrenamiento"')||!fitness.includes('trainingMode:routineForm.trainingMode')||!fitnessTraining.includes('fitnessTrainingModeLabel(item.trainingMode)'))fail('fitness: explicit training mode is not wired end-to-end in routine UI');
   if(!gymBackend.includes("trainingMode: z.enum(['strength','hypertrophy','pump','endurance','power','conditioning','mobility'])"))fail('fitness: backend must require an explicit training mode for new routines');
   if(!trainingModeMigration.includes("DEFAULT 'unspecified'")||!trainingModeMigration.includes('GymRoutine_trainingMode_check'))fail('fitness: legacy training-mode migration contract missing');
   if(/applyMode.*(?:sets|reps|loadKg)/s.test(fitness))fail('fitness: training mode must not silently rewrite exercise prescription');
@@ -705,7 +705,7 @@ if(fitnessEntries.every((item)=>item.status==='MIGRATED')){
   const periodizationPanel=read('frontend/src/components/fitness/PeriodizationPanel.jsx');
   const periodizationBuilder=read('frontend/src/components/fitness/PeriodizationBuilder.jsx');
   const periodizationMigration=read('backend/prisma/migrations/20260923172500_gym_periodization_39_51/migration.sql');
-  if((fitness.match(/<PeriodizationPanel/g)||[]).length!==1)fail('fitness: PeriodizationPanel must render from one owner');
+  if((fitnessTraining.match(/<PeriodizationPanel/g)||[]).length!==1)fail('fitness: PeriodizationPanel must render from one owner');
   if(/querySelector|addEventListener|innerHTML|document\./.test(periodizationPanel+periodizationBuilder))fail('fitness: periodization 39 reintroduced imperative DOM lifecycle');
   for(const contract of ['Plantillas','Nueva versión','Historial de versiones','PeriodizationBuilder']){
     if(!periodizationPanel.includes(contract))fail(`fitness: periodization 39 panel missing ${contract}`);
@@ -726,7 +726,7 @@ if(fitnessEntries.every((item)=>item.status==='MIGRATED')){
   if(/GymWorkoutSession|GymWorkoutSet|completedSets|actualRir|actualRpe|timer/.test(periodizationBlock))fail('fitness: periodization 39 must not pre-implement workout execution 40');
   const workoutPanel=read('frontend/src/components/fitness/WorkoutSessionPanel.jsx');
   const workoutMigration=read('backend/prisma/migrations/20260923175500_gym_workout_execution_40_51/migration.sql');
-  if((fitness.match(/<WorkoutSessionPanel/g)||[]).length!==1)fail('fitness: WorkoutSessionPanel must render from one owner');
+  if((fitnessTraining.match(/<WorkoutSessionPanel/g)||[]).length!==1)fail('fitness: WorkoutSessionPanel must render from one owner');
   if(/querySelector|addEventListener|innerHTML|document\./.test(workoutPanel))fail('fitness: workout execution 40 reintroduced imperative DOM lifecycle');
   for(const contract of ['Registrar serie','Omitir serie','Carga realizada','Reps realizadas','RIR','RPE','Descanso tras serie','Temporizador de descanso','Completar sesión','setInterval','clearInterval']){
     if(!workoutPanel.includes(contract))fail(`fitness: workout execution 40 UI missing ${contract}`);
@@ -743,7 +743,7 @@ if(fitnessEntries.every((item)=>item.status==='MIGRATED')){
   if(workoutStart<0||workoutEnd<0)fail('fitness: workout execution 40 route boundaries missing');
   if(/personalRecord|estimated1RM|e1RM|adherence|volumeBy|performanceChart/.test(workoutBlock))fail('fitness: workout execution 40 must not pre-implement history/performance 41');
   const performancePanel=read('frontend/src/components/fitness/PerformanceHistoryPanel.jsx');
-  if((fitness.match(/<PerformanceHistoryPanel/g)||[]).length!==1)fail('fitness: PerformanceHistoryPanel must render from one owner');
+  if((fitnessTraining.match(/<PerformanceHistoryPanel/g)||[]).length!==1)fail('fitness: PerformanceHistoryPanel must render from one owner');
   if(/querySelector|addEventListener|innerHTML|document\./.test(performancePanel))fail('fitness: performance history 41 reintroduced imperative DOM lifecycle');
   for(const contract of ['Aplicar período','PR carga','PR reps','e1RM','Volumen por día','Volumen por grupo muscular','Gráfica']){
     if(!performancePanel.includes(contract))fail(`fitness: performance history 41 UI missing ${contract}`);
@@ -783,8 +783,8 @@ if(fitnessEntries.every((item)=>item.status==='MIGRATED')){
   const ingredientLibrary=read('frontend/src/components/fitness/IngredientLibraryPanel.jsx');
   const nutritionBuilder=read('frontend/src/components/fitness/CompleteMealPlanBuilder.jsx');
   const ingredientMigration=read('backend/prisma/migrations/20260923183500_gym_ingredient_model_43_51/migration.sql');
-  if((fitness.match(/<IngredientLibraryPanel/g)||[]).length!==1)fail('fitness: ingredient library 43 must render from one owner');
-  if((fitness.match(/<CompleteMealPlanBuilder/g)||[]).length!==1)fail('fitness: structured nutrition builder must have one owner after 44/51 supersedes the 43 builder');
+  if((fitnessNutrition.match(/<IngredientLibraryPanel/g)||[]).length!==1)fail('fitness: ingredient library 43 must render from one owner');
+  if((fitnessNutrition.match(/<CompleteMealPlanBuilder/g)||[]).length!==1)fail('fitness: structured nutrition builder must have one owner after 44/51 supersedes the 43 builder');
   if(/querySelector|addEventListener|innerHTML|document\./.test(ingredientLibrary+nutritionBuilder))fail('fitness: nutrition ingredient 43 reintroduced imperative DOM lifecycle');
   for(const contract of ['Catálogo de ingredientes','Ingrediente','Categoría','Unidad base','Archivar','Reactivar']){
     if(!ingredientLibrary.includes(contract))fail(`fitness: ingredient library 43 UI missing ${contract}`);
@@ -809,9 +809,9 @@ if(fitnessEntries.every((item)=>item.status==='MIGRATED')){
   const recipeLibrary=read('frontend/src/components/fitness/NutritionRecipeLibrary.jsx');
   const shoppingPanel=read('frontend/src/components/fitness/NutritionShoppingListPanel.jsx');
   const completeMealMigration=read('backend/prisma/migrations/20260923193000_gym_complete_meal_plan_44_51/migration.sql');
-  if((fitness.match(/<CompleteMealPlanBuilder/g)||[]).length!==1)fail('fitness: complete meal plan 44 must render from one owner');
-  if((fitness.match(/<NutritionRecipeLibrary/g)||[]).length!==1)fail('fitness: recipe library 44 must render from one owner');
-  if((fitness.match(/<NutritionShoppingListPanel/g)||[]).length!==1)fail('fitness: shopping list 44 must render from one owner');
+  if((fitnessNutrition.match(/<CompleteMealPlanBuilder/g)||[]).length!==1)fail('fitness: complete meal plan 44 must render from one owner');
+  if((fitnessNutrition.match(/<NutritionRecipeLibrary/g)||[]).length!==1)fail('fitness: recipe library 44 must render from one owner');
+  if((fitnessNutrition.match(/<NutritionShoppingListPanel/g)||[]).length!==1)fail('fitness: shopping list 44 must render from one owner');
   if(/querySelector|addEventListener|innerHTML|document\./.test(completeMealPlan+recipeLibrary+shoppingPanel))fail('fitness: complete meal plan 44 reintroduced imperative DOM lifecycle');
   if(!completeMealPlan.includes('[7,14,28]'))fail('fitness: complete meal plan 44 must expose the 7/14/28-day horizon');
   for(const contract of ['Día','Porciones','Preparación','Alternativas','Agregar comida']){
@@ -837,7 +837,7 @@ if(fitnessEntries.every((item)=>item.status==='MIGRATED')){
     if(!mealPlanMigration.includes(contract))fail(`fitness: complete meal plan 44 weekly migration missing ${contract}`);
   }
   if(!completeMealMigration.includes('GymMeal_plan_dayIndex_order_unique')||!completeMealMigration.includes('DROP INDEX IF EXISTS public."GymMeal_plan_day_order_unique"'))fail('fitness: complete meal plan 44 must replace weekly uniqueness with absolute-day uniqueness for 14/28-day plans');
-  if(!fitness.includes('dayIndex:Number(meal.dayIndex)')||!fitness.includes('dayOfWeek:Number(meal.dayOfWeek)')||!fitness.includes('sortOrder:Number(meal.sortOrder)')||!fitness.includes('Inicio del plan')||!fitness.includes('Fin del plan'))fail('fitness: complete meal plan 44 scheduling is not wired end-to-end');
+  if(!fitness.includes('dayIndex:Number(meal.dayIndex)')||!fitness.includes('dayOfWeek:Number(meal.dayOfWeek)')||!fitness.includes('sortOrder:Number(meal.sortOrder)')||!fitnessNutrition.includes('Inicio del plan')||!fitnessNutrition.includes('Fin del plan'))fail('fitness: complete meal plan 44 scheduling is not wired end-to-end');
   if(!gymBackend.includes('ORDER BY m."dayIndex" NULLS LAST,m."sortOrder"'))fail('fitness: complete meal plan 44 reads must preserve absolute multiweek order');
   if(!completeMealMigration.includes('GymMealAlternative_servings_positive'))fail('fitness: complete meal plan 44 alternatives must persist explicit portions');
   if(!gymBackend.includes('Una comida con receta principal no puede mezclar ingredientes directos.'))fail('fitness: complete meal plan 44 must keep recipe and direct-item authorities exclusive');
@@ -846,7 +846,7 @@ if(fitnessEntries.every((item)=>item.status==='MIGRATED')){
 
   const nutritionRules=read('frontend/src/components/fitness/NutritionRulesPanel.jsx');
   const nutritionRulesMigration=read('backend/prisma/migrations/20260923203000_gym_nutrition_rules_45_51/migration.sql');
-  if((fitness.match(/<NutritionRulesPanel/g)||[]).length!==1)fail('fitness: nutrition rules 45 must render from one owner');
+  if((fitnessNutrition.match(/<NutritionRulesPanel/g)||[]).length!==1)fail('fitness: nutrition rules 45 must render from one owner');
   if(/querySelector|addEventListener|innerHTML|document\./.test(nutritionRules))fail('fitness: nutrition rules 45 reintroduced imperative DOM lifecycle');
   for(const contract of ['Restricciones y preferencias','Alergia declarada','Intolerancia declarada','Exclusión','Preferido','nunca modifica el plan automáticamente']){
     if(!nutritionRules.includes(contract))fail(`fitness: nutrition rules 45 UI missing ${contract}`);
@@ -864,8 +864,8 @@ if(fitnessEntries.every((item)=>item.status==='MIGRATED')){
   const nutrientProfilePanel=read('frontend/src/components/fitness/IngredientNutritionProfilePanel.jsx');
   const nutrientSnapshotPanel=read('frontend/src/components/fitness/NutritionSnapshotPanel.jsx');
   const nutrientMigration=read('backend/prisma/migrations/20260923213000_gym_nutrient_composition_46_51/migration.sql');
-  if((fitness.match(/<IngredientNutritionProfilePanel/g)||[]).length!==1)fail('fitness: ingredient nutrient profile 46 must render from one owner');
-  if((fitness.match(/<NutritionSnapshotPanel/g)||[]).length!==1)fail('fitness: nutrient snapshot 46 must render from one owner');
+  if((fitnessNutrition.match(/<IngredientNutritionProfilePanel/g)||[]).length!==1)fail('fitness: ingredient nutrient profile 46 must render from one owner');
+  if((fitnessNutrition.match(/<NutritionSnapshotPanel/g)||[]).length!==1)fail('fitness: nutrient snapshot 46 must render from one owner');
   if(/querySelector|addEventListener|innerHTML|document\./.test(nutrientProfilePanel+nutrientSnapshotPanel))fail('fitness: nutrient composition 46 reintroduced imperative DOM lifecycle');
   for(const contract of ['Composición nutricional por ingrediente','Cantidad base','Unidad base','Energía kcal','Proteína g','Carbohidratos g','Grasa g','Fibra g','Micronutrientes','Guardar nueva versión']){
     if(!nutrientProfilePanel.includes(contract))fail(`fitness: nutrient profile 46 UI missing ${contract}`);
@@ -887,7 +887,7 @@ if(fitnessEntries.every((item)=>item.status==='MIGRATED')){
 
   const adherencePanel=read('frontend/src/components/fitness/IntegratedAdherencePanel.jsx');
   const adherenceMigration=read('backend/prisma/migrations/20260923222000_gym_integrated_adherence_47_51/migration.sql');
-  if((fitness.match(/<IntegratedAdherencePanel/g)||[]).length!==1)fail('fitness: adherence 47 must render from one owner');
+  if((fitnessNutrition.match(/<IntegratedAdherencePanel/g)||[]).length!==1)fail('fitness: adherence 47 must render from one owner');
   if(/querySelector|addEventListener|innerHTML|document\./.test(adherencePanel))fail('fitness: adherence 47 reintroduced imperative DOM lifecycle');
   for(const contract of ['Adherencia integral','Completada','Omitida','Racha nutricional','Sesiones completadas','Evolución corporal','Marcar completada','Marcar omitida']){
     if(!adherencePanel.includes(contract))fail(`fitness: adherence 47 UI missing ${contract}`);
@@ -899,7 +899,7 @@ if(fitnessEntries.every((item)=>item.status==='MIGRATED')){
   if(!gymBackend.includes('DISTINCT ON (e."mealId")')||!gymBackend.includes('ORDER BY e."mealId",e."recordedAt" DESC,e."id" DESC'))fail('fitness: adherence 47 must derive current meal status from the latest explicit event');
   if(!adherenceMigration.includes('GymMealAdherenceEvent_status_check')||!adherenceMigration.includes("'completed','skipped'"))fail('fitness: adherence 47 migration must constrain explicit meal outcomes');
   if(/autoAdjust|autoRecommend|inferAllerg|inferDiagnos|clinicalDecision|\bprescribe\s*\(/i.test(adherencePanel+adherenceMigration))fail('fitness: adherence 47 must not infer clinical decisions or auto-adjust plans');
-  if((gymBackend.match(/const mealAdherenceSchema=/g)||[]).length!==1)fail('fitness: adherence 47 schema must remain singleton');
+  if((gymSchemas.match(/export const mealAdherenceSchema\s*=/g)||[]).length!==1)fail('fitness: adherence 47 schema must remain singleton');
   if((gymBackend.match(/router\.get\('\/gym\/adherence'/g)||[]).length!==1)fail('fitness: adherence 47 GET route must remain singleton');
   if((gymBackend.match(/router\.post\('\/gym\/adherence\/meals'/g)||[]).length!==1)fail('fitness: adherence 47 POST route must remain singleton');
   if((fitnessVerticalService.match(/adherence\(memberId\)/g)||[]).length!==1)fail('fitness: adherence 47 service reader must remain singleton');

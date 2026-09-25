@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import test from 'node:test';
-import { gymBackendSource } from '../qa/support/vertical-authority-sources.mjs';
+import { fitnessWorkspaceSource, gymBackendSource } from '../qa/support/vertical-authority-sources.mjs';
 
 const read=(path)=>fs.readFileSync(path,'utf8');
 
@@ -36,7 +36,7 @@ test('39/51 enforces tenant ownership for routine and template provenance',()=>{
 });
 
 test('39/51 UI composes one declarative periodization owner with templates and version action',()=>{
-  const page=read('frontend/src/pages/GymManagementPage.jsx');
+  const page=fitnessWorkspaceSource();
   assert.equal((page.match(/<PeriodizationPanel/g)||[]).length,1);
   const panel=read('frontend/src/components/fitness/PeriodizationPanel.jsx');
   const builder=read('frontend/src/components/fitness/PeriodizationBuilder.jsx');
