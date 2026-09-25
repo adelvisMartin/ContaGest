@@ -1,5 +1,7 @@
-export const AUTOMATION_STATES = ['DISABLED', 'SHADOW', 'ASSISTED', 'AUTOMATIC_LOW_RISK', 'AUTOMATIC'] as const;
-export type AutomationState = typeof AUTOMATION_STATES[number];
+import { UNIFIED_AGENT_MODES, type UnifiedAgentMode, type UnifiedAgentRisk } from '../../shared/agents/unified-agent-runtime.js';
+
+export const AUTOMATION_STATES = UNIFIED_AGENT_MODES;
+export type AutomationState = UnifiedAgentMode;
 
 export const AGENT_TOOLS = ['queryRaceStatus', 'queryNextRace', 'queryLastResult', 'querySchedule', 'queryScratches', 'proposeRaceCommand'] as const;
 export type AgentTool = typeof AGENT_TOOLS[number];
@@ -45,7 +47,7 @@ export type AgentCandidate = {
   confidence: number;
   tool: AgentTool | null;
   arguments: Record<string, unknown>;
-  risk: 'safe' | 'review' | 'monetary';
+  risk: UnifiedAgentRisk;
   source: 'deterministic' | 'model';
   modelVersion: string | null;
 };

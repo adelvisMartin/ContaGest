@@ -31,7 +31,7 @@
     "soak:hipico": "tsx scripts/hipico-soak-v120.ts",
     "soak:hipico:smoke": "tsx scripts/hipico-soak-v120.ts --duration-minutes=0.1 --sample-seconds=1",
     "test:observability": "tsx --test ../qa/observability-v98.test.ts",
-    "test": "npm run test:config && tsx --test src/modules/auth/*.test.ts src/modules/hipico-bot/*.test.ts src/modules/hipico/*.test.ts src/modules/payables/*.test.ts src/shared/services/*.test.ts && npm run test:xlsx && npm run test:observability",
+    "test": "npm run test:config && tsx --test src/modules/auth/*.test.ts src/modules/hipico-bot/*.test.ts src/modules/hipico/*.test.ts src/modules/payables/*.test.ts src/shared/services/*.test.ts && npm run test:agent-runtime && npm run test:xlsx && npm run test:observability",
     "prisma:sync-schema": "node scripts/sync-employee-prisma-schema.mjs",
     "prisma:generate": "npm run prisma:sync-schema && prisma generate",
     "prisma:migrate": "npm run prisma:sync-schema && prisma migrate dev",
@@ -53,7 +53,8 @@
     "seed": "tsx prisma/seed.ts",
     "seed:admin": "tsx prisma/seed.ts",
     "seed:clean": "tsx prisma/seed.ts --clean-demo",
-    "test:hipico:autonomous-reply": "tsx --test src/modules/hipico-bot/hipico-autonomous-source-reply.integration.ts"
+    "test:hipico:autonomous-reply": "tsx --test src/modules/hipico-bot/hipico-autonomous-source-reply.integration.ts",
+    "test:agent-runtime": "tsx --test src/shared/agents/*.test.ts"
   },
   "dependencies": {
     "@prisma/client": "6.19.3",
