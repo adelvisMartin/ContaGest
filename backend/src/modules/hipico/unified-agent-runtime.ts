@@ -51,8 +51,10 @@ type EvaluationRecordInput = {
   evidence?: unknown;
 };
 
+export type AgentEvaluationRecord = Record<string, unknown>;
+
 export interface AgentEvaluationRecorder {
-  recordEvaluation(input: EvaluationRecordInput): Promise<unknown>;
+  recordEvaluation(input: EvaluationRecordInput): Promise<AgentEvaluationRecord>;
 }
 
 export type UnifiedAgentRuntimeOptions = {
@@ -84,7 +86,7 @@ export class UnifiedAgentRuntime {
     const evaluation = await this.engine.evaluate(input.text, input.mode, input.riskContext || {});
     const executableToolRequest = evaluation.canAct ? evaluation.toolRequest : null;
 
-    let auditRecord: unknown = null;
+    let auditRecord: AgentEvaluationRecord | null = null;
     if (input.scope && this.options.recorder) {
       const scope = normalizeScope(input.scope);
       auditRecord = await this.options.recorder.recordEvaluation({
