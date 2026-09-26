@@ -89,6 +89,38 @@ test('unified runtime delegates promotion decisions to the canonical promotion p
   assert.equal(decision.reason, 'SHADOW_GATE_PASSED');
 });
 
+test('runtime recorder reuses the canonical evaluation audit contract without gaining financial authority', async () => {
+  const recorded: unknown[] = [];
+  const recorder = {
+    async recordEvaluation(input: unknown) {
+      recorded.push(input);
+      return { id: 'evaluation-1', messageHash: 'hash-1' };
+    }
+  };
+  const runtime = new UnifiedAgentRuntime(new HipicoAgentEngine(parser), { recorder });
+
+  const result = await runtime.evaluate({
+    text: 'estado de la carrera',
+    mode: 'SHADOW',
+    scope: {
+      ownerId: '00000000-0000-4000-8000-000000000001',
+      groupKey: 'source',
+      groupId: '120363000000000000@g.us'
+    },
+    expectedIntent: 'query:RACE_STATUS',
+    evidence: { source: 'official-feed' },
+    riskContext: {
+      evidenceState: 'FRESH',
+      sourceAuthorized: true,
+      systemHealthy: true
+    }
+  });
+
+  assert.equal(recorded.length, 1);
+  assert.equal(result.audit?.id, 'evaluation-1');
+  assert.equal(result.riskPolicy.financialAuthority, false);
+});
+
 test('audit events contain bounded decision metadata but never the raw user message', async () => {
   const events: unknown[] = [];
   const runtime = new UnifiedAgentRuntime(new HipicoAgentEngine(parser), {
