@@ -83,6 +83,14 @@ test('68/75 never treats request-derived interpolation as an approved static fra
   assert.ok(findings.some((f) => f.code === 'RAW_SQL_INTERPOLATION'));
 });
 
+test('68/75 keeps the media table interpolation behind a closed enum-derived mapping', () => {
+  const source = fs.readFileSync('backend/src/modules/media/media.routes.ts', 'utf8');
+  assert.match(source, /entityType: z\.enum\(\['care-patient', 'gym-member', 'profile', 'company'\]\)/);
+  assert.match(source, /const table = entityType === 'care-patient' \? 'CarePatient' : 'GymMember';/);
+  assert.match(source, /await authorize\(req, body\.entityType, body\.entityId\);/);
+  assert.doesNotMatch(source, /const table\s*=\s*(?:req|request|body|params|query|headers|searchParams)\./);
+});
+
 test('68/75 requires explicit classification for dynamic SQL expressions', () => {
   const findings = analyzeRawSqlSource(
     "await prisma.$executeRawUnsafe(sql, tenantId);",
