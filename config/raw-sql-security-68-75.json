@@ -24,6 +24,11 @@
       "reason": "Source-controlled static column projection; all runtime values remain bound parameters."
     },
     {
+      "file": "backend/src/modules/media/media.routes.ts",
+      "expression": "table",
+      "reason": "Closed enum branch maps only care-patient to CarePatient and gym-member to GymMember; identifiers cannot be bound as SQL values."
+    },
+    {
       "file": "backend/src/modules/verticals/health-dental-financial.routes.ts",
       "expression": "dentalFinancialLinkSelect",
       "reason": "Imported source-controlled static SELECT/JOIN projection; request and tenant values remain bound parameters."
