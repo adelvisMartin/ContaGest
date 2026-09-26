@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-08-13",
+  "generatedAt": "2026-09-26",
   "policy": {
     "updateMode": "pinned-only",
     "executeUpstreamScripts": false,
@@ -100,6 +100,38 @@
       "package": "@playwright/mcp",
       "packageVersion": "0.0.79",
       "vendorPaths": []
+    },
+    {
+      "id": "cloudflare-security-audit",
+      "kind": "github-skill",
+      "repo": "cloudflare/security-audit-skill",
+      "commit": "c1c8a8c1471069fb0e188eeaff69b8e8db6564a8",
+      "license": "MIT",
+      "trustLevel": "reviewed-security-guidance",
+      "namespace": "cloudflare-security",
+      "vendorPaths": [
+        "LICENSE",
+        "skills/security-audit/SKILL.md",
+        "skills/security-audit/ATTACK-CLASSES.md",
+        "skills/security-audit/RECONNAISSANCE.md",
+        "skills/security-audit/HUNTING.md",
+        "skills/security-audit/VALIDATION-AND-REPORTING.md",
+        "skills/security-audit/WEB-PROTOCOL-AND-AUTH.md",
+        "skills/security-audit/DATA-ISOLATION-AND-LIFECYCLE.md",
+        "skills/security-audit/CLIENT-SIDE.md",
+        "skills/security-audit/CLOUD-AND-DEPLOYMENT.md",
+        "skills/security-audit/SUPPLY-CHAIN-AND-RELEASE.md",
+        "skills/security-audit/AI-AND-LLM.md",
+        "skills/security-audit/PROTOCOLS-RPC-AND-MESSAGING.md",
+        "skills/security-audit/RESOURCE-EXHAUSTION-AND-AVAILABILITY.md",
+        "skills/security-audit/DESKTOP-MOBILE-AND-LOCAL-IPC.md",
+        "skills/security-audit/MEMORY-SAFETY-AND-BINARY.md",
+        "skills/security-audit/report-schema.json",
+        "skills/security-audit/validate-coverage-ledger.cjs",
+        "skills/security-audit/validate-coverage-ledger.test.cjs",
+        "skills/security-audit/validate-findings.cjs",
+        "skills/security-audit/validate-findings.test.cjs"
+      ]
     }
   ]
 }
