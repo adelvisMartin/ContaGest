@@ -12,7 +12,6 @@ import {
 import {
   buildDentalFinancialAnalytics,
   dentalCentsMoney,
-  dentalFinancialLinkSelect,
   dentalMoneyCents,
   normalizeFinancialLink
 } from './health.route-helpers.js';
@@ -26,7 +25,22 @@ router.get('/health/dental/financial', requirePermission('health.manage'), requi
 
   const [linkRows,planCounts]=await Promise.all([
     prisma.$queryRawUnsafe<any[]>(`
-      ${dentalFinancialLinkSelect}
+      SELECT l.*,
+             s."number" AS "invoiceNumber",
+             s."status"::text AS "invoiceStatus",
+             s."total" AS "invoiceTotal",
+             p."displayName" AS "patientName",
+             e."professionalId" AS "professionalId",
+             pr."fullName" AS "professionalName"
+      FROM public."DentalFinancialLink" l
+      JOIN public."SalesInvoice" s
+        ON s."tenantId"=l."tenantId" AND s."id"=l."salesInvoiceId"
+      JOIN public."CarePatient" p
+        ON p."tenantId"=l."tenantId" AND p."id"=l."patientId"
+      JOIN public."CareEncounter" e
+        ON e."tenantId"=l."tenantId" AND e."id"=l."treatmentPlanId"
+      LEFT JOIN public."CareProfessional" pr
+        ON pr."tenantId"=e."tenantId" AND pr."id"=e."professionalId"
       WHERE l."tenantId"=$1
         AND ($2::text IS NULL OR l."patientId"=$2)
       ORDER BY l."createdAt" DESC
@@ -83,7 +97,22 @@ router.post('/health/encounters/:id/financial-link', requirePermission('health.m
     await tx.$queryRawUnsafe(`SELECT pg_advisory_xact_lock(hashtextextended($1,0))`,lockKey);
 
     const existing=await tx.$queryRawUnsafe<any[]>(`
-      ${dentalFinancialLinkSelect}
+      SELECT l.*,
+             s."number" AS "invoiceNumber",
+             s."status"::text AS "invoiceStatus",
+             s."total" AS "invoiceTotal",
+             p."displayName" AS "patientName",
+             e."professionalId" AS "professionalId",
+             pr."fullName" AS "professionalName"
+      FROM public."DentalFinancialLink" l
+      JOIN public."SalesInvoice" s
+        ON s."tenantId"=l."tenantId" AND s."id"=l."salesInvoiceId"
+      JOIN public."CarePatient" p
+        ON p."tenantId"=l."tenantId" AND p."id"=l."patientId"
+      JOIN public."CareEncounter" e
+        ON e."tenantId"=l."tenantId" AND e."id"=l."treatmentPlanId"
+      LEFT JOIN public."CareProfessional" pr
+        ON pr."tenantId"=e."tenantId" AND pr."id"=e."professionalId"
       WHERE l."tenantId"=$1 AND l."treatmentPlanId"=$2
       LIMIT 1
     `,tenantId,treatmentPlanId);
@@ -230,6 +259,5 @@ router.post('/health/encounters/:id/financial-link', requirePermission('health.m
   res.setHeader('Idempotency-Replayed',result.replayed?'true':'false');
   ok(res,{...result.record,replayed:result.replayed},result.replayed?200:201);
 }));
-
 
 export default router;
