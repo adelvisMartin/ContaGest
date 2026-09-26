@@ -124,7 +124,9 @@ test('runtime recorder reuses the canonical evaluation audit contract without ga
 test('audit events contain bounded decision metadata but never the raw user message', async () => {
   const events: unknown[] = [];
   const runtime = new UnifiedAgentRuntime(new HipicoAgentEngine(parser), {
-    audit: (event) => events.push(event)
+    audit: (event) => {
+      events.push(event);
+    }
   });
   const secretLikeMessage = 'estado de la carrera token-super-secreto';
 
