@@ -4,6 +4,7 @@ import { AutomationStore } from './automation.store.js';
 import { hipicoError } from './hipico-domain.js';
 import { createHipicoDecisionProvider } from './jev-decision-provider.js';
 import { decisionProviderReadiness } from './decision-provider-metrics.js';
+import { UnifiedAgentRuntime } from './unified-agent-runtime.js';
 import {
   actorRef,
   automaticOwnerApprovalConfigured,
@@ -30,6 +31,7 @@ import { recordHipicoObservationSafe } from '../hipico-bot/hipico-observability.
 const router = Router();
 const store = new AutomationStore();
 const engine = createDefaultHipicoAgentEngine();
+const runtime = new UnifiedAgentRuntime(engine);
 const decisionProvider = createHipicoDecisionProvider();
 
 router.use((req, res, next) => {
@@ -173,7 +175,18 @@ router.post('/groups/:groupId/automation/evaluate', async (req, res) => {
     const trace = buildObservationTrace({ ownerId: owner, groupKey: g, groupId: gid, sourceRef: rid, requestId: rid });
     const config = await store.get(owner, g, gid);
     // Request evidence remains audit-only. Server-derived context alone can affect policy authority.
-    const evaluation = await engine.evaluate(body.text, config.mode, serverRiskContext(gid));
+    const runtimeEvaluation = await runtime.evaluate({
+      text: body.text,
+      mode: config.mode,
+      riskContext: serverRiskContext(gid)
+    });
+    const evaluation = {
+      candidate: runtimeEvaluation.candidate,
+      toolRequest: runtimeEvaluation.proposal.toolRequest,
+      canAct: runtimeEvaluation.execution.allowed,
+      mode: runtimeEvaluation.mode,
+      riskPolicy: runtimeEvaluation.riskPolicy
+    };
     // External decision providers are evidence-only in v13. They cannot replace the
     // deterministic candidate, policy, tool gate, canAct decision, or outbox authority.
     const decisionProviderObservation = await decisionProvider.observe({
