@@ -96,8 +96,9 @@ async function authorize(req: any, entityType: string, entityId: string) {
 
   const permission = entityType === 'care-patient' ? 'health.manage' : 'gym.manage';
   if (!await hasPermission(context.userId, context.tenantId, permission)) throw new HttpError(403, `Permiso requerido: ${permission}`);
-  const table = entityType === 'care-patient' ? 'CarePatient' : 'GymMember';
-  const rows = await prisma.$queryRawUnsafe<any[]>(`SELECT "id" FROM public."${table}" WHERE "id" = $1 AND "tenantId" = $2 LIMIT 1`, entityId, context.tenantId);
+  const rows = entityType === 'care-patient'
+    ? await prisma.$queryRaw<any[]>`SELECT "id" FROM public."CarePatient" WHERE "id" = ${entityId} AND "tenantId" = ${context.tenantId} LIMIT 1`
+    : await prisma.$queryRaw<any[]>`SELECT "id" FROM public."GymMember" WHERE "id" = ${entityId} AND "tenantId" = ${context.tenantId} LIMIT 1`;
   if (!rows.length) throw new HttpError(404, 'El registro no existe en la empresa activa.');
 }
 

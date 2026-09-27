@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { Prisma } from '@prisma/client';
 import { Router } from 'express';
 import { prisma } from '../../database/prisma.js';
 import { asyncHandler, HttpError, ok } from '../../shared/http.js';
@@ -27,7 +28,7 @@ const stableJson=(value:unknown):string=>{
   return JSON.stringify(value);
 };
 const sha256=(value:unknown)=>createHash('sha256').update(typeof value==='string'?value:stableJson(value)).digest('hex');
-const financialCaseSelect=`
+const financialCaseSelect=Prisma.sql`
   SELECT f.*,
          p."displayName" AS "patientName",
          p."guardianName" AS "guardianName",
@@ -90,13 +91,13 @@ router.get('/financial-cases', requirePermission('sales.view'), asyncHandler(asy
   const tenantId=ctx(req).tenantId;
   const query=veterinaryFinancialQuerySchema.parse(req.query||{});
   const patientId=query.patientId||null;
-  const rows=await prisma.$queryRawUnsafe<any[]>(`
+  const rows=await prisma.$queryRaw<any[]>(Prisma.sql`
     ${financialCaseSelect}
-    WHERE f."tenantId"=$1
-      AND ($2::text IS NULL OR f."patientId"=$2)
+    WHERE f."tenantId"=${tenantId}
+      AND (${patientId}::text IS NULL OR f."patientId"=${patientId})
     ORDER BY f."createdAt" DESC
     LIMIT 1000
-  `,tenantId,patientId);
+  `);
   ok(res,rows.map(normalizeVeterinaryFinancialCase));
 }));
 
@@ -211,12 +212,12 @@ router.post('/financial-cases/:id/authorize', requirePermission('sales.manage'),
 
   const result=await prisma.$transaction(async (tx)=>{
     await tx.$queryRawUnsafe(`SELECT pg_advisory_xact_lock(hashtextextended($1,0))`,`veterinary-financial:authorize:${tenantId}:${caseId}`);
-    const rows=await tx.$queryRawUnsafe<any[]>(`
+    const rows=await tx.$queryRaw<any[]>(Prisma.sql`
       ${financialCaseSelect}
-      WHERE f."tenantId"=$1 AND f."id"=$2
+      WHERE f."tenantId"=${tenantId} AND f."id"=${caseId}
       LIMIT 1
       FOR UPDATE OF f
-    `,tenantId,caseId);
+    `);
     const financialCase=one(rows,'Caso financiero veterinario no encontrado.');
     if(String(financialCase.estimateSha256)!==sha256(financialCase.estimateSnapshot||{}))throw new HttpError(409,'La estimación cambió después de ser calculada y no puede autorizarse.');
     if(financialCase.status!=='proposed')throw new HttpError(409,'Sólo una estimación propuesta puede autorizarse.');
@@ -275,12 +276,12 @@ router.post('/financial-cases/:id/attend', asyncHandler(async (req,res)=>{
 
   const result=await prisma.$transaction(async (tx)=>{
     await tx.$queryRawUnsafe(`SELECT pg_advisory_xact_lock(hashtextextended($1,0))`,`veterinary-financial:attend:${tenantId}:${caseId}`);
-    const rows=await tx.$queryRawUnsafe<any[]>(`
+    const rows=await tx.$queryRaw<any[]>(Prisma.sql`
       ${financialCaseSelect}
-      WHERE f."tenantId"=$1 AND f."id"=$2
+      WHERE f."tenantId"=${tenantId} AND f."id"=${caseId}
       LIMIT 1
       FOR UPDATE OF f
-    `,tenantId,caseId);
+    `);
     const financialCase=one(rows,'Caso financiero veterinario no encontrado.');
     if(financialCase.status!=='authorized')throw new HttpError(409,'La atención sólo puede asociarse después de autorizar la estimación.');
     if(financialCase.authorizationStatus!=='signed')throw new HttpError(409,'La autorización vinculada ya no está firmada y no permite registrar atención.');
@@ -373,12 +374,12 @@ router.post('/financial-cases/:id/invoice', requirePermission('sales.manage'), r
 
   const result=await prisma.$transaction(async (tx)=>{
     await tx.$queryRawUnsafe(`SELECT pg_advisory_xact_lock(hashtextextended($1,0))`,`veterinary-financial:invoice:${tenantId}:${caseId}`);
-    const rows=await tx.$queryRawUnsafe<any[]>(`
+    const rows=await tx.$queryRaw<any[]>(Prisma.sql`
       ${financialCaseSelect}
-      WHERE f."tenantId"=$1 AND f."id"=$2
+      WHERE f."tenantId"=${tenantId} AND f."id"=${caseId}
       LIMIT 1
       FOR UPDATE OF f
-    `,tenantId,caseId);
+    `);
     const financialCase=one(rows,'Caso financiero veterinario no encontrado.');
 
     if(financialCase.salesInvoiceId){
