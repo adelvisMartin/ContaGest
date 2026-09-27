@@ -1,0 +1,97 @@
+name: "Fiscal #561 · rules, numbering, close"
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'backend/prisma/migrations/**'
+      - 'backend/src/modules/accounting/**'
+      - 'qa/fiscal-engine-v561.test.ts'
+      - 'tests/fiscal_engine_v561_contract.test.mjs'
+      - '.github/workflows/fiscal-engine-v561.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CANDIDATE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.CANDIDATE_SHA }}
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install locked dependencies
+        run: npm ci --no-audit --no-fund
+      - name: Fiscal source contract
+        run: node --test tests/fiscal_engine_v561_contract.test.mjs
+
+  postgres:
+    needs: contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: fiscal-ci-only
+          POSTGRES_DB: contagest_fiscal_v561
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d contagest_fiscal_v561"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      NODE_ENV: test
+      API_MODE: prisma
+      DATABASE_URL: postgresql://postgres:fiscal-ci-only@127.0.0.1:5432/contagest_fiscal_v561?schema=public
+      DIRECT_DATABASE_URL: postgresql://postgres:fiscal-ci-only@127.0.0.1:5432/contagest_fiscal_v561?schema=public
+      JWT_SECRET: fiscal-v561-ci-only-secret-more-than-thirty-two-characters
+      LICENSE_HASH_SECRET: fiscal-v561-license-secret-more-than-thirty-two-characters
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.CANDIDATE_SHA }}
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install locked dependencies
+        run: npm ci --no-audit --no-fund
+      - name: Prepare isolated PostgreSQL
+        env:
+          PGPASSWORD: fiscal-ci-only
+        run: psql -h 127.0.0.1 -U postgres -d contagest_fiscal_v561 -v ON_ERROR_STOP=1 -f ops/database/prepare-supabase-ephemeral.sql
+      - name: Apply forward migrations
+        run: npm --workspace backend run prisma:deploy
+      - name: Typecheck and authoritative lint/contracts
+        run: |
+          npm run typecheck
+          npm run lint
+      - name: PostgreSQL concurrency and period boundaries
+        run: npm --workspace backend exec -- tsx --test ../qa/fiscal-engine-v561.test.ts
+      - name: Backend build
+        run: npm run build:backend
+      - name: Capture exact-SHA evidence
+        if: always()
+        run: |
+          mkdir -p artifacts/qa
+          printf 'ticket=#561\nsha=%s\nworkflow=%s\nrun_id=%s\n' "$CANDIDATE_SHA" "$GITHUB_WORKFLOW" "$GITHUB_RUN_ID" > artifacts/qa/fiscal-v561-sha.txt
+      - name: Upload fiscal evidence
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: fiscal-v561-${{ env.CANDIDATE_SHA }}
+          path: artifacts/qa/fiscal-v561-sha.txt
+          if-no-files-found: error
