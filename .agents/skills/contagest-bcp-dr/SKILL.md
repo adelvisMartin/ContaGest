@@ -1,6 +1,7 @@
 ---
 name: contagest-bcp-dr
 description: Backup, restore, ransomware containment and business-continuity gate for ERP production data.
+contractVersion: 2
 ---
 
 # ContaGest BCP / Disaster Recovery
@@ -8,25 +9,38 @@ description: Backup, restore, ransomware containment and business-continuity gat
 ## Trigger
 Production readiness, DB/storage architecture changes, retention/deletion, migration, incident response or any change affecting recoverability.
 
-## Principles
-A backup that has never been restored is not verified recovery. Recovery must preserve tenant/accounting integrity and evidence.
+## Non-trigger
+Do not claim recoverability from backup configuration alone; a restore that has not executed is not verified recovery.
 
-## Required controls
-- documented RPO/RTO by service tier;
-- encrypted backups with credentials separate from primary runtime;
-- offsite copy and retention appropriate to business/legal needs;
-- point-in-time recovery where supported;
-- restore drill into isolated environment;
-- application + DB + object/file storage inventory;
-- recovery of secrets/config through controlled escrow/rotation, never committed plaintext;
-- ransomware blast-radius review and immutable/append-only protection where justified;
-- audit evidence for destructive recovery operations.
+## Authority
+Owner recovery requirements, `AGENTS.md`, database/storage authorities and executed restore evidence outrank documentation snapshots.
 
-## Restore drill
-Select a timestamp/backup, restore into isolated environment, run migrations if required, verify tenant counts and representative financial totals, verify login/RBAC, verify selected exports, compare checksums/control totals, record duration and failures, then destroy isolated sensitive copy safely.
+## Source of truth
+Backup configuration, retention policy, isolated restore runs, DB/storage inventories and control totals.
+
+## Graphify probes
+Use to locate persistence/storage/config dependencies only; never treat a graph as restore evidence.
+
+## Inputs
+Exact SHA, service tier, RPO/RTO target, backup identity/time, storage inventory, representative tenant/financial control totals and recovery environment.
+
+## Invariants
+Encrypted/offsite backups; separated credentials; appropriate retention/PITR; isolated restore drill; application+DB+object storage inventory; controlled secret recovery; ransomware blast-radius review; audit evidence for destructive recovery actions.
+
+## Workflow
+Select a timestamp/backup, restore in isolation, apply migrations if required, verify tenant counts and representative financial totals, login/RBAC and selected exports, compare checksums/control totals, record duration/failures, then safely destroy the isolated sensitive copy.
+
+## Negative tests
+Missing object storage, stale backup, compromised shared credentials, failed migration during restore, tenant-count mismatch, financial-control mismatch and unavailable secret/config recovery.
 
 ## Stop conditions
-No recent backup, restore not tested, unknown RPO/RTO, backup credentials share the compromised blast radius, financial control totals fail after restore, or migration lacks recoverability => `BLOCK_PRODUCTION=yes`.
+No recent backup, restore not tested, unknown RPO/RTO, shared compromise blast radius, failed financial control totals or migration without recoverability => `BLOCK_PRODUCTION=yes`.
 
-## Output
-Backup source/time, restore target, control totals, RPO/RTO achieved, duration, evidence, gaps and production block decision.
+## Verification
+Execute a restore drill for production sign-off; record timestamps, versions, control totals and achieved RPO/RTO.
+
+## Output schema
+Backup source/time; restore target; control totals; achieved RPO/RTO; duration; `STATUS`; gaps; production block decision.
+
+## References
+`AGENTS.md`, `contagest-db-migration-safety`, `contagest-release-evidence`.

@@ -1,21 +1,46 @@
 ---
 name: contagest-motion
 description: Applies deliberate motion, timing and transitions to ContaGest without harming ERP productivity or accessibility.
+contractVersion: 2
 ---
 
 # ContaGest Motion
 
-Reference the pinned `emil-motion` source in `agent-skills.lock.json` and use Impeccable's motion review only after behavior is stable.
+## Trigger
+UI motion, transition, animation, overlay/drawer/modal timing or interaction-polish changes.
 
-## Motion principles
-- Motion must explain hierarchy, state change, causality or spatial relationship; never animate merely to decorate every surface.
-- Prefer transform/opacity for UI motion. Avoid layout-thrashing animation on dense tables and dashboards.
-- Keep high-frequency ERP actions fast. Suggested project ranges: micro feedback 120-180ms, common transitions 180-260ms, deliberate reveal 260-400ms. These are guidelines, not a reason to delay task completion.
-- Use consistent easing families and direction. Enter/exit pairs must feel related.
-- Never move or remount a focused input because exchange rates, analytics, timers, CAPTCHA or background state changed.
-- Never attach global click/pointer handlers that cancel native form-control behavior.
-- Honor `prefers-reduced-motion: reduce`; core workflows must remain understandable with motion disabled.
-- Avoid auto-playing decorative motion in accounting entry, checkout, login, medical or destructive-confirmation flows.
+## Non-trigger
+Do not add motion merely for decoration or before the underlying workflow is behaviorally stable.
 
-## QA gate
-For every motion change verify: keyboard navigation, reduced motion, no focus loss, no cumulative layout shift that impedes data entry, mobile performance, and no duplicate submissions during transitions.
+## Authority
+Accessibility, native browser/form behavior and canonical UI ownership outrank external motion references.
+
+## Source of truth
+Rendered browser behavior, canonical ContaGest styles/components and accessibility/runtime tests.
+
+## Graphify probes
+Optional for locating component/style owners; not needed for simple local motion changes and never proof of runtime behavior.
+
+## Inputs
+Affected component/route, interaction causality, focus owner, viewport/device, reduced-motion state and candidate SHA.
+
+## Invariants
+Motion explains hierarchy/state/causality; prefer transform/opacity; dense ERP actions stay fast; consistent easing/direction; never remount/move focused inputs due background changes; no global pointer cancellation; honor reduced motion; avoid autoplay decorative motion in accounting/login/medical/destructive flows.
+
+## Workflow
+Characterize interaction; identify one motion owner; implement minimal transform/opacity transition; verify enter/exit pair, focus/native behavior, responsive performance and reduced-motion fallback.
+
+## Negative tests
+Keyboard navigation, `prefers-reduced-motion`, focus retention, duplicate submit during transition, layout shift and mobile performance.
+
+## Stop conditions
+Focus loss, native-control cancellation, inaccessible reduced-motion state, duplicate action, material layout shift or motion that delays critical ERP work.
+
+## Verification
+Execute affected browser interaction with keyboard and reduced-motion coverage; source inspection alone is not runtime PASS.
+
+## Output schema
+Affected route/control; motion purpose; timings; accessibility checks; `STATUS`; evidence; residual risk.
+
+## References
+`AGENTS.md`, pinned `emil-motion`, `contagest-ui-audit`, `contagest-functional-module-audit`.

@@ -1,59 +1,52 @@
+---
+name: contagest-secure-verification
+description: Project-owned secure review/TDD gate for ContaGest and Control Hípico changes.
+contractVersion: 2
+---
+
 # ContaGest Secure Verification
 
-Project-owned review gate for ContaGest-VE and Control Hípico. It adapts publicly documented code-review/TDD ideas after manual inspection. No third-party executable skill, hook, MCP integration or remote installer is trusted automatically.
+## Trigger
+Every security-sensitive change and every non-trivial change requiring regression evidence before merge/release.
 
-## Threat model for changes
+## Non-trigger
+Do not execute third-party hooks/installers/binaries merely because a copied skill recommends them; do not expose credentials or production data.
 
-Review every change for:
-- hardcoded secrets, private keys, bearer tokens or service-role credentials;
-- authorization bypass or UI-only access assumptions;
-- SQL/command/template injection;
-- XSS from user/chat/imported content;
-- unsafe redirects, path traversal and arbitrary file handling;
-- SSRF or unrestricted external API proxying;
-- missing server-side validation;
-- uncontrolled rate/cost amplification;
-- cross-tenant data exposure;
-- stale PWA/service-worker caches;
-- dependency/postinstall/supply-chain behavior;
-- monetary or irreversible automation without an approval gate.
+## Authority
+`AGENTS.md`, project-owned security/accounting/tenant policy and owner instruction outrank external review/TDD guidance.
 
-## Review protocol
+## Source of truth
+Changed source, project contracts/tests, backend authorization/RLS and exact-SHA runtime evidence.
 
-### 1. Contract
-State what behavior must remain unchanged and what behavior is intentionally changed.
+## Graphify probes
+Use to trace ownership/data flow and locate sinks/dependencies; never treat it as authorization or exploit evidence.
 
-### 2. Static security
-Search changed files for dangerous secret names and sinks. Confirm external API keys stay server-side. Validate query/body length, enum/range constraints, destination allowlists and output encoding.
+## Inputs
+Behavior contract, changed files, exact SHA, routes/principals/data sensitivity, providers and required verification surfaces.
 
-### 3. Authorization
-Verify backend authorization/RLS remains authoritative. Frontend navigation may reveal an allowed module but may never manufacture backend privilege.
+## Invariants
+Review secrets, auth bypass, injection/XSS, redirects/path/file handling, SSRF, server validation, rate/cost amplification, tenant exposure, PWA caches, supply chain and monetary/irreversible automation. Backend policy remains authoritative; external-provider failure cannot corrupt domain state; Hípico automation remains auditable/kill-switchable and never gains implicit financial authority.
 
-### 4. Tests
-Use RED → GREEN → REFACTOR where a deterministic regression can be expressed. Add characterization tests around routing, guards, parsing, calculations, state migration and cache rules.
+## Workflow
+1. State preserved/changed behavior.
+2. Static security review.
+3. Verify authorization/RLS.
+4. RED→GREEN→REFACTOR deterministic regression where practical.
+5. Browser/PWA direct URL/refresh/history/mobile/offline as relevant.
+6. Validate provider timeouts/limits/backoff/server-side secrets/failure behavior.
+7. Record exact-SHA release evidence separately.
 
-### 5. Browser/PWA
-Test direct URL, refresh, back/forward, installed PWA, service-worker update, light/dark, mobile/desktop and offline where relevant. Confirm no accidental horizontal overflow or hidden actions.
+## Negative tests
+Tenant/role abuse, dangerous inputs/sinks, provider failure, stale PWA cache, duplicate action/retry and unsafe automation paths as applicable.
 
-### 6. External integrations
-For USDA/Meta/Supabase/other providers:
-- use official documented endpoints;
-- keep secrets server-side;
-- cap request size and result count;
-- use timeouts/caching/backoff appropriate to the provider;
-- handle provider failure without corrupting local/domain state;
-- never silently fall back to invented external data.
+## Stop conditions
+Critical/high finding, bypassed backend authority, uncharacterized financial/settlement behavior, unsafe WhatsApp irreversible action or missing prerequisite required to verify safely.
 
-### 7. WhatsApp automation
-Shadow mode is the default for new classifiers/agents. Monetary, result, settlement and balance actions require review until measured evidence supports promotion. A kill switch and audit trail are mandatory before autonomous production sending.
+## Verification
+Run routed tests and inspect full output. Missing runner/browser evidence remains `BLOCKED`/`NOT_EXECUTED`.
 
-### 8. Release evidence
-Record separately:
-- code review complete;
-- static tests executed/not executed;
-- build status;
-- browser/E2E status;
-- preview deployment SHA;
-- production SHA only after merge.
+## Output schema
+Behavior contract; threats reviewed; tests and statuses; browser/runtime status; security findings; residual risk; rollback/block decision.
 
-CRITICAL/HIGH security findings block merge. Missing runner/browser evidence is `BLOCKED/NOT EXECUTED`, never rewritten as success.
+## References
+`AGENTS.md`, `contagest-appsec-review`, `contagest-tenant-isolation-rbac`, `contagest-release-evidence`.
