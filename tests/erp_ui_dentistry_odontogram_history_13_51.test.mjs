@@ -40,7 +40,7 @@ test('13/51 frontend uses the canonical amend service with an explicit reason',(
   const svc=service();
   const ui=page();
   assert.match(svc,/amendEncounter\(id,\s*payload\)/);
-  assert.match(svc,/encounters\\/\\$\\{pathId\\(id\\)\\}\\/amend/);
+  assert.match(svc,/encounters\/\$\{pathId\(id\)\}\/amend/);
   for(const token of ['amendmentTarget','amendmentReason','prepareAmendment','HealthVerticalService.amendEncounter(','Motivo de la enmienda']) assert.ok(ui.includes(token),token);
 });
 

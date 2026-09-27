@@ -80,7 +80,7 @@ test('16/51 frontend loads, signs and revokes consent through canonical services
   assert.match(svc,/signDentalConsent\(payload\)/);
   assert.match(svc,/consents\/dental-treatment/);
   assert.match(svc,/revokeConsent\(id,\s*payload\)/);
-  assert.match(svc,/consents\\/\\$\\{pathId\\(id\\)\\}\\/revoke/);
+  assert.match(svc,/consents\/\$\{pathId\(id\)\}\/revoke/);
   assert.match(ui,/HealthVerticalService\.consents\(/);
   assert.match(ui,/HealthVerticalService\.signDentalConsent\(/);
   assert.match(ui,/HealthVerticalService\.revokeConsent\(/);
