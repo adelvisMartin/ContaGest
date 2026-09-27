@@ -1,0 +1,80 @@
+{
+  "schemaVersion": 1,
+  "benchmarkVersion": "2026-09-27.v1",
+  "baselineSha": "4c9e52586000e41f5e1ff5191af8752f5a158c79",
+  "statusSemantics": {
+    "VERIFIED": "Repository route/API/test/history evidence was identified.",
+    "PARTIAL": "Some internal evidence exists but the end-to-end capability is not fully demonstrated.",
+    "NOT_VERIFIED": "No sufficient evidence was established in this audit; this is not a claim that the feature is absent.",
+    "NOT_APPLICABLE": "Dimension is outside the vertical's intended scope."
+  },
+  "externalSources": [
+    {"name":"Odoo 19 Accounting","url":"https://www.odoo.com/documentation/19.0/applications/finance/accounting.html","checkedAt":"2026-09-27","scope":["accounting","billing","access"]},
+    {"name":"Odoo 19 Access Rights","url":"https://www.odoo.com/documentation/19.0/applications/general/users/access_rights.html","checkedAt":"2026-09-27","scope":["roles","permissions","security"]},
+    {"name":"ezyVet Features","url":"https://www.ezyvet.com/features","checkedAt":"2026-09-27","scope":["veterinary","clinical-record","appointments","inventory","payments","reminders","reports"]},
+    {"name":"ABC Trainerize Features","url":"https://www.trainerize.com/features/","checkedAt":"2026-09-27","scope":["gym","members","workouts","nutrition","payments","roles","locations"]},
+    {"name":"Meta WhatsApp Cloud API","url":"https://developers.facebook.com/docs/whatsapp/cloud-api/","checkedAt":"2026-09-27","scope":["whatsapp","messages","webhooks"]}
+  ],
+  "verticals": {
+    "enterprise": {
+      "referenceProducts": ["Odoo 19"],
+      "dimensions": {
+        "accounting":"NOT_VERIFIED","billing_collections":"NOT_VERIFIED","receipts":"NOT_VERIFIED","accounts_payable":"PARTIAL","inventory":"NOT_VERIFIED","suppliers_purchases":"NOT_VERIFIED","expenses_cash":"NOT_VERIFIED","audit_trail":"NOT_VERIFIED","reports":"NOT_VERIFIED","exports_imports":"NOT_VERIFIED","settings":"NOT_VERIFIED","roles_permissions":"PARTIAL","branches_tenancy":"NOT_VERIFIED","backup_recovery":"NOT_VERIFIED","observability_security":"PARTIAL"
+      },
+      "evidence": ["repository history includes payables and access/security contracts, but this benchmark did not establish full route/API/test evidence for every enterprise dimension"],
+      "followUp": 589
+    },
+    "companies": {
+      "referenceProducts": ["Odoo 19"],
+      "dimensions": {
+        "crm_client_service":"NOT_VERIFIED","revenue_expenses":"NOT_VERIFIED","inventory_materials":"NOT_VERIFIED","quotes":"NOT_VERIFIED","jobs_projects_tickets":"NOT_VERIFIED","suppliers_purchases":"NOT_VERIFIED","kpi_reports":"NOT_VERIFIED","multi_user_roles":"PARTIAL","audit_trail":"NOT_VERIFIED","imports_exports":"NOT_VERIFIED"
+      },
+      "evidence": ["insufficient route/API/test evidence established in this audit"],
+      "followUp": 589
+    },
+    "dental": {
+      "referenceProducts": ["Open Dental category benchmark"],
+      "dimensions": {
+        "patient":"NOT_VERIFIED","clinical_history":"NOT_VERIFIED","odontogram":"NOT_VERIFIED","treatment_plan":"NOT_VERIFIED","appointment":"NOT_VERIFIED","reminders":"NOT_VERIFIED","budgets_payments":"NOT_VERIFIED","consents_docs":"NOT_VERIFIED","prescriptions":"NOT_VERIFIED","imaging_integration":"NOT_VERIFIED","recalls_followup":"NOT_VERIFIED","inventory":"NOT_VERIFIED","reports":"NOT_VERIFIED"
+      },
+      "evidence": ["repository search did not provide sufficient route/API/test evidence during this audit; no absence claim is made"],
+      "followUp": 590
+    },
+    "gym": {
+      "referenceProducts": ["ABC Trainerize"],
+      "dimensions": {
+        "member":"NOT_VERIFIED","plans_memberships":"NOT_VERIFIED","subscriptions_renewals":"NOT_VERIFIED","collections_delinquency":"NOT_VERIFIED","attendance_access":"NOT_VERIFIED","routines_training":"NOT_VERIFIED","body_metrics":"NOT_VERIFIED","instructor_schedule":"NOT_VERIFIED","nutrition_followup":"NOT_VERIFIED","sales_crm":"NOT_VERIFIED","inventory":"NOT_VERIFIED","kpi":"NOT_VERIFIED"
+      },
+      "evidence": ["runtime evidence was not established for representative gym flows in this audit"],
+      "followUp": 590
+    },
+    "veterinary": {
+      "referenceProducts": ["ezyVet"],
+      "dimensions": {
+        "patient_owner":"NOT_VERIFIED","clinical_history":"NOT_VERIFIED","vaccines_deworming":"NOT_VERIFIED","reminders":"NOT_VERIFIED","consults":"NOT_VERIFIED","hospitalization":"NOT_VERIFIED","prescriptions":"NOT_VERIFIED","diagnostics":"NOT_VERIFIED","procedures_surgery":"NOT_VERIFIED","drug_inventory":"NOT_VERIFIED","budgets_payments":"NOT_VERIFIED","suppliers_purchases":"NOT_VERIFIED","kpi":"NOT_VERIFIED"
+      },
+      "evidence": ["runtime evidence was not established for representative veterinary flows in this audit"],
+      "followUp": 590
+    },
+    "hipico": {
+      "referenceProducts": ["Meta WhatsApp Cloud API operational model"],
+      "dimensions": {
+        "whatsapp_reception":"PARTIAL","intent_classification":"VERIFIED","source_lab_policy":"VERIFIED","bets_combinations":"PARTIAL","races_results":"PARTIAL","customer_accounts":"PARTIAL","visible_balance":"PARTIAL","collections_payments":"PARTIAL","cashier_commissions_close":"PARTIAL","grouped_reports_pdf_receipts":"PARTIAL","traceability":"VERIFIED","integrated_agent":"VERIFIED","risk_promotion_tool_authority":"VERIFIED","jev":"VERIFIED","allowlist_side_effects":"VERIFIED","dedupe":"VERIFIED","outbox_receipts":"VERIFIED","reconciliation_replay":"VERIFIED","dead_letter":"VERIFIED","circuit_breakers_backpressure":"PARTIAL","sli_slo_alerts":"PARTIAL"
+      },
+      "evidence": [
+        "backend/src/modules/hipico-bot/hipico-autonomous-runtime.ts",
+        "backend/src/modules/hipico-bot/hipico-autonomous-runtime.test.ts",
+        "backend/src/modules/hipico/agent-reliability-lab.ts",
+        "backend/src/modules/hipico/fixtures/agent-reliability.v1.json",
+        "docs/hipico/AGENT_RELIABILITY_LAB.md",
+        "issues #545-#551"
+      ],
+      "followUp": 588
+    }
+  },
+  "derivedBacklog": [
+    {"issue":588,"priority":"P1","owner":"QA/Frontend/Backend","reason":"runtime UX/RBAC/a11y evidence for critical flows"},
+    {"issue":589,"priority":"P2","owner":"Architecture/QA","reason":"machine-readable route/API/test/history evidence manifest"},
+    {"issue":590,"priority":"P2","owner":"Vertical teams/QA","reason":"runtime validation for dental/gym/veterinary representative flows"}
+  ]
+}
