@@ -18,7 +18,7 @@ La versión 0 significa baseline técnico incorporado. Una versión tenant poste
 
 ## Purge
 
-El purge requiere `admin.manage`, `Idempotency-Key`, política efectiva y ausencia de legal hold. Sólo una allowlist cerrada puede ejecutar `deleteMany`, y todos los predicados incluyen `tenantId`. No existe SQL dinámico por nombre de tabla.
+El purge requiere `platform.manage`, `Idempotency-Key`, política efectiva y ausencia de legal hold. Sólo una allowlist cerrada puede ejecutar `deleteMany`, y todos los predicados incluyen `tenantId`. No existe SQL dinámico por nombre de tabla. `archival` sigue siendo semánticamente distinto de `purgeable`: una política tenant no convierte archivado en borrado físico.
 
 `execute=false` produce un preview. `execute=true` elimina únicamente filas más antiguas que el cutoff server-side. El resultado persistido conserva conteos, cutoff, versión de política y actor, pero no copia el payload de las filas eliminadas. Así existe evidence sin retener datos que la política ordenó eliminar.
 
@@ -45,7 +45,7 @@ No se modifica ni elimina ninguna migración aplicada. La implementación reutil
 ## Seguridad
 
 - tenant viene de contexto autenticado;
-- `admin.manage` es gate server-side;
+- `platform.manage` es gate server-side;
 - no `$queryRawUnsafe/$executeRawUnsafe`;
 - ninguna ruta permite indicar tabla/SQL arbitrario;
 - ledger/audit/fiscal evidence no tiene rama de delete;
