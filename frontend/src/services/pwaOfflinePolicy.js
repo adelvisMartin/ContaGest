@@ -1,9 +1,13 @@
+import '../styles/pwa-offline.css';
+
 const DB_NAME='contagest-offline-v563';
 const DB_VERSION=1;
 const OUTBOX_STORE='outbox';
 const META_STORE='meta';
 const CACHE_PREFIX='contagest-ve-session-';
 const SHELL_CACHE_PREFIX='contagest-ve-shell-';
+const SW_VERSION='v563';
+const OFFLINE_STATUS_ID='cg-offline-status';
 
 export const ALLOWLISTED_OUTBOX_OPERATIONS=Object.freeze(new Set([
   'profile.preferences.update',
@@ -21,7 +25,7 @@ export function sessionIdentity(session){
   return tenantId?{tenantId,userId:userId||'anonymous'}:null;
 }
 
-export function cacheNamespace(session,version='v563'){
+export function cacheNamespace(session,version=SW_VERSION){
   const identity=sessionIdentity(session);
   if(!identity)return `${SHELL_CACHE_PREFIX}${clean(version)}`;
   return `${CACHE_PREFIX}${clean(version)}-${identity.tenantId}-${identity.userId}`;
@@ -117,19 +121,35 @@ function postWorkerMessage(message){
   navigator.serviceWorker.ready.then((registration)=>registration.active?.postMessage(message)).catch(()=>undefined);
 }
 
+function renderFreshness(fresh){
+  if(!hasWindow())return;
+  document.documentElement.dataset.offlineFreshness=fresh?'fresh':'stale';
+  let status=document.getElementById(OFFLINE_STATUS_ID);
+  if(!status){
+    status=document.createElement('div');
+    status.id=OFFLINE_STATUS_ID;
+    status.className='cg-offline-status';
+    status.setAttribute('role','status');
+    status.setAttribute('aria-live','polite');
+    status.setAttribute('aria-atomic','true');
+    document.body.appendChild(status);
+  }
+  status.dataset.state=fresh?'fresh':'stale';
+  status.hidden=fresh;
+  status.textContent=fresh?'Conexión restablecida.':'Sin conexión · los datos visibles pueden estar desactualizados hasta reconectar.';
+  window.dispatchEvent(new CustomEvent('cg:offline-freshness',{detail:{fresh}}));
+}
+
 export async function setPwaSessionContext(session){
   const identity=sessionIdentity(session);
-  postWorkerMessage({type:'CG_SESSION_CONTEXT',version:'v563',tenantId:identity?.tenantId||null,userId:identity?.userId||null});
-  if(hasWindow()){
-    document.documentElement.dataset.offlineFreshness=navigator.onLine?'fresh':'stale';
-    window.dispatchEvent(new CustomEvent('cg:offline-freshness',{detail:{fresh:navigator.onLine,tenantId:identity?.tenantId||null}}));
-  }
+  postWorkerMessage({type:'CG_SESSION_CONTEXT',version:SW_VERSION,tenantId:identity?.tenantId||null,userId:identity?.userId||null});
+  if(hasWindow())renderFreshness(navigator.onLine);
 }
 
 export async function purgeSessionArtifacts(session,{reason='session-end'}={}){
   const identity=sessionIdentity(session);
   await Promise.all([clearSessionCaches(session),clearIndexedDbSession(session)]);
-  postWorkerMessage({type:'CG_CLEAR_SESSION',version:'v563',tenantId:identity?.tenantId||null,userId:identity?.userId||null,reason});
+  postWorkerMessage({type:'CG_CLEAR_SESSION',version:SW_VERSION,tenantId:identity?.tenantId||null,userId:identity?.userId||null,reason});
   if(hasWindow()){
     sessionStorage.removeItem('cg_post_login_route');
     sessionStorage.removeItem('cg_sidebar_scroll_top');
@@ -139,18 +159,39 @@ export async function purgeSessionArtifacts(session,{reason='session-end'}={}){
 
 export function installOfflineFreshnessObserver(){
   if(!hasWindow())return ()=>{};
-  const apply=()=>{
-    const fresh=navigator.onLine;
-    document.documentElement.dataset.offlineFreshness=fresh?'fresh':'stale';
-    window.dispatchEvent(new CustomEvent('cg:offline-freshness',{detail:{fresh}}));
-  };
+  const apply=()=>renderFreshness(navigator.onLine);
   window.addEventListener('online',apply);
   window.addEventListener('offline',apply);
-  apply();
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',apply,{once:true});
+  else apply();
   return ()=>{window.removeEventListener('online',apply);window.removeEventListener('offline',apply);};
 }
 
+export async function installPwaRuntime(session){
+  if(!hasWindow()||!('serviceWorker' in navigator))return null;
+  const registration=await navigator.serviceWorker.register('/sw.js',{scope:'/',updateViaCache:'none'});
+  const announceUpdate=()=>window.dispatchEvent(new CustomEvent('cg:pwa-update-ready',{detail:{version:SW_VERSION}}));
+  if(registration.waiting)announceUpdate();
+  registration.addEventListener('updatefound',()=>{
+    const worker=registration.installing;
+    worker?.addEventListener('statechange',()=>{
+      if(worker.state==='installed'&&navigator.serviceWorker.controller)announceUpdate();
+    });
+  });
+  await setPwaSessionContext(session);
+  return registration;
+}
+
+export async function activatePwaUpdate(){
+  if(!hasWindow()||!navigator.serviceWorker)return false;
+  const registration=await navigator.serviceWorker.getRegistration('/');
+  const waiting=registration?.waiting;
+  if(!waiting)return false;
+  waiting.postMessage({type:'CG_ACTIVATE_UPDATE',version:SW_VERSION});
+  return true;
+}
+
 export function recoverServiceWorkerCaches(){
-  postWorkerMessage({type:'CG_RECOVER_CACHE',version:'v563'});
+  postWorkerMessage({type:'CG_RECOVER_CACHE',version:SW_VERSION});
   return recoverIndexedDb();
 }
