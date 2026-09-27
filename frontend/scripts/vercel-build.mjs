@@ -57,3 +57,7 @@ if (!process.exitCode) {
   const context = safeBuildContext();
   console.log(`[vercel-build][PASS] all-stages=${stages.length} sha=${context.sha}`);
 }
+
+// Diagnostic marker: no behavioral change. This commit exists only to trigger a
+// Vercel release/** preview without a pull request, matching production's
+// browser-preQA skip path while preserving all other build stages.
