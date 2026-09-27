@@ -32,6 +32,12 @@ const ratificationValid=
   ratifiedBy.length>0&&ratifiedBy.length<=120;
 if(lifecycleState==='RATIFIED'&&!ratificationValid)throw new Error('PERFORMANCE_POLICY_RATIFICATION_INVALID');
 
+// #564: numeric targets may exist as a proposal while calibration is running,
+// but CI budgets become authoritative only after an exact-SHA baseline and the
+// current budget definition are explicitly ratified. Before that point the gate
+// measures completeness and publishes evidence without failing against arbitrary numbers.
+const budgetsEnforced=ratificationValid;
+
 const processTemplate=()=>Object.fromEntries(policy.heavyProcesses.required.map((name)=>[
   name,
   Object.fromEntries(policy.heavyProcesses.requiredOutcomes.map((outcome)=>[outcome,'NOT_EXECUTED']))
@@ -90,10 +96,10 @@ const metricNumber=(raw)=>typeof raw==='number'&&Number.isFinite(raw)?raw:null;
 const checks=[];
 for(const [key,budget] of Object.entries(required)){
   const value=metricNumber(evidence.metrics?.[key]);
-  checks.push({key,value,budget,pass:value!==null&&value<=budget,direction:'max'});
+  checks.push({key,value,budget,pass:value!==null&&value<=budget,direction:'max',enforced:budgetsEnforced});
 }
 const throughput=metricNumber(evidence.metrics?.['backend.throughputRps']);
-checks.push({key:'backend.throughputRps',value:throughput,budget:policy.backend.throughputRpsMin,pass:throughput!==null&&throughput>=policy.backend.throughputRpsMin,direction:'min'});
+checks.push({key:'backend.throughputRps',value:throughput,budget:policy.backend.throughputRpsMin,pass:throughput!==null&&throughput>=policy.backend.throughputRpsMin,direction:'min',enforced:budgetsEnforced});
 
 const profilesComplete=policy.profiles.every((p)=>evidence.profiles?.[p]==='MEASURED');
 const workloadProfilesComplete=policy.workloadModel.profiles.every((p)=>evidence.workload?.profileCoverage?.[p]==='MEASURED');
@@ -106,11 +112,15 @@ const heavyProcessesComplete=policy.heavyProcesses.required.every((name)=>
 const degradationComplete=policy.degradationScenarios.every((scenario)=>evidence.degradation?.[scenario]==='MEASURED');
 const sanitizedFixtures=evidence.environment?.sanitizedFixtures===true;
 const profilingEvidenceComplete=Array.isArray(evidence.profilingEvidence)&&evidence.profilingEvidence.length>0;
+const metricsComplete=checks.every((c)=>c.value!==null);
+const provisionalMeasurementComplete=profilesComplete&&workloadProfilesComplete&&expectedPeakDeclared&&loadFactorsComplete&&heavyProcessesComplete&&degradationComplete&&sanitizedFixtures&&profilingEvidenceComplete&&metricsComplete;
 
-let verdict='PASS';
-if(checks.some((c)=>c.value!==null&&!c.pass))verdict='FAIL';
-else if(!profilesComplete||!workloadProfilesComplete||!expectedPeakDeclared||!loadFactorsComplete||!heavyProcessesComplete||!degradationComplete||!sanitizedFixtures||!profilingEvidenceComplete||checks.some((c)=>c.value===null))verdict='NOT_EXECUTED';
-if(verdict==='PASS'&&!ratificationValid)verdict='MEASURED_PROVISIONAL';
+let verdict='NOT_EXECUTED';
+if(provisionalMeasurementComplete){
+  if(budgetsEnforced && checks.some((c)=>!c.pass)) verdict='FAIL';
+  else if(budgetsEnforced) verdict='PASS';
+  else verdict='MEASURED_PROVISIONAL';
+}
 
 const completion={
   profilesComplete,
@@ -120,15 +130,20 @@ const completion={
   heavyProcessesComplete,
   degradationComplete,
   sanitizedFixtures,
-  profilingEvidenceComplete
+  profilingEvidenceComplete,
+  metricsComplete,
+  provisionalMeasurementComplete
 };
 const summary={
   issue:157,
+  governanceIssue:564,
   schemaVersion:2,
   candidateSha:sha,
   verdict,
   completion,
   checks,
+  budgetsEnforced,
+  provisionalMeasurementState:provisionalMeasurementComplete?'PROVISIONAL_MEASUREMENT_COMPLETE':'PROVISIONAL_MEASUREMENT_INCOMPLETE',
   policyVersion:policy.version,
   targetsLifecycle:{
     state:lifecycleState,
@@ -146,4 +161,8 @@ const summary={
 fs.mkdirSync(root,{recursive:true});
 fs.writeFileSync(path.join(root,'summary.json'),JSON.stringify(summary,null,2)+'\n');
 console.log(JSON.stringify(summary));
-if(command==='check'&&verdict!=='PASS')process.exitCode=2;
+
+if(command==='check'){
+  if(verdict==='NOT_EXECUTED'||verdict==='FAIL') process.exitCode=2;
+  else if(verdict==='MEASURED_PROVISIONAL') console.error('PROVISIONAL_MEASUREMENT_COMPLETE: budgets are not enforced until baseline ratification.');
+}
