@@ -80,6 +80,7 @@
     "test:backend:financial:reconciliation:real": "npm --workspace backend exec -- tsx --test ../qa/financial-reconciliation-v559.test.ts",
     "test:backend:financial:fx:real": "npm --workspace backend exec -- tsx --test ../qa/financial-fx-v560.test.ts",
     "test:backend:fiscal:authority:real": "npm --workspace backend exec -- tsx --test ../qa/fiscal-authority-v561.test.ts",
+    "test:backend:data-lifecycle:real": "npm --workspace backend exec -- tsx --test ../qa/data-lifecycle-v562.test.ts",
     "audit:erp-ui-ledger": "node scripts/erp-ui-ledger-audit-v851.mjs",
     "audit:erp-ui-taxes": "node scripts/erp-ui-taxes-audit-v951.mjs",
     "test:browser:58:core": "node scripts/erp-browser-58x5-v251.mjs core",
