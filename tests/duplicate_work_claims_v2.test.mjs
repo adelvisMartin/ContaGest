@@ -29,6 +29,44 @@ test('explicit machine-readable supersession permits exactly one active closing 
   assert.deepEqual(result.superseded, [{ pullRequest: 599, by: 600 }]);
 });
 
+test('supersession without a shared exclusive issue cannot silence an owner', () => {
+  const result = detectDuplicateExclusiveClaims([
+    { number: 599, body: 'Closes #562', state: 'open' },
+    { number: 600, body: 'Agent-Claim-Supersedes: 599\nCloses #563', state: 'open' },
+    { number: 601, body: 'Fixes #562', state: 'open' },
+  ]);
+
+  assert.equal(result.ok, false);
+  assert.equal(result.code, 'DUPLICATE_WORK_CLAIM');
+  assert.deepEqual(result.duplicates, [{ issue: 562, pullRequests: [599, 601] }]);
+  assert.deepEqual(result.superseded, []);
+});
+
+test('cyclic supersession fails closed because it leaves no unique closing owner', () => {
+  const result = detectDuplicateExclusiveClaims([
+    { number: 599, body: 'Agent-Claim-Supersedes: 600\nCloses #562', state: 'open' },
+    { number: 600, body: 'Agent-Claim-Supersedes: 599\nFixes #562', state: 'open' },
+  ]);
+
+  assert.equal(result.ok, false);
+  assert.equal(result.code, 'DUPLICATE_WORK_CLAIM');
+  assert.deepEqual(result.duplicates, [{ issue: 562, pullRequests: [599, 600] }]);
+  assert.deepEqual(result.superseded, []);
+});
+
+test('rooted cycle also fails closed instead of hiding contradictory supersession metadata', () => {
+  const result = detectDuplicateExclusiveClaims([
+    { number: 599, body: 'Agent-Claim-Supersedes: 600\nCloses #562', state: 'open' },
+    { number: 600, body: 'Agent-Claim-Supersedes: 599\nFixes #562', state: 'open' },
+    { number: 601, body: 'Agent-Claim-Supersedes: 599\nResolves #562', state: 'open' },
+  ]);
+
+  assert.equal(result.ok, false);
+  assert.equal(result.code, 'DUPLICATE_WORK_CLAIM');
+  assert.deepEqual(result.duplicates, [{ issue: 562, pullRequests: [599, 600, 601] }]);
+  assert.deepEqual(result.superseded, []);
+});
+
 test('diagnostic or stacked PR without closure syntax is not an exclusive claim', () => {
   const result = detectDuplicateExclusiveClaims([
     { number: 701, body: 'Agent-Claim-Mode: diagnostic\nInvestigates #562', state: 'open' },

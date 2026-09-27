@@ -38,11 +38,23 @@ async function githubJson(repository, endpoint, token) {
   return response.json();
 }
 
+async function githubAllPages(repository, endpoint, token, maxPages = 10) {
+  const results = [];
+  const separator = endpoint.includes('?') ? '&' : '?';
+  for (let page = 1; page <= maxPages; page += 1) {
+    const batch = await githubJson(repository, `${endpoint}${separator}per_page=100&page=${page}`, token);
+    if (!Array.isArray(batch)) throw new Error(`GitHub ${endpoint} pagination expected an array`);
+    results.push(...batch);
+    if (batch.length < 100) break;
+  }
+  return results;
+}
+
 async function resolveLiveState({ repository, queue, token }) {
   const metadata = await githubJson(repository, '', token);
   const defaultBranch = metadata.default_branch || 'main';
   const branch = await githubJson(repository, `/branches/${encodeURIComponent(defaultBranch)}`, token);
-  const pullRequests = await githubJson(repository, '/pulls?state=open&per_page=100', token);
+  const pullRequests = await githubAllPages(repository, '/pulls?state=open', token);
   const normalizedPullRequests = pullRequests.map((pullRequest) => ({
     number: pullRequest.number,
     title: pullRequest.title,
