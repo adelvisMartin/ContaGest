@@ -13,13 +13,15 @@ test('#565 makes API contracts machine-readable and drift-detectable',()=>{
   const generator=read('scripts/api-contract-v565.mjs');
   const policy=JSON.parse(read(policyPath));
   const app=read('backend/src/app.ts');
+  const contractRoutes=read('backend/src/contracts/api-contract.routes.ts');
   const manifest=read('backend/src/modules/route-manifest.ts');
 
   for(const token of ['OpenAPI','route-manifest.ts','app.ts','router.get','router.post','drift','operationId']){
     assert.match(generator,new RegExp(token.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'),'i'),`generator missing ${token}`);
   }
-  assert.match(app,/\/api\/v1\/openapi\.json/);
-  assert.match(app,/\/api\/v1\/contract\.json/);
+  assert.match(app,/apiContractRoutes/);
+  assert.match(contractRoutes,/\/openapi\.json/);
+  assert.match(contractRoutes,/\/contract\.json/);
   assert.match(manifest,/MODULE_ROUTE_MANIFEST/);
   assert.equal(policy.schemaVersion,1);
   assert.equal(policy.apiVersion,'v1');
@@ -35,10 +37,9 @@ test('#565 makes API contracts machine-readable and drift-detectable',()=>{
 test('#565 central error envelope is stable and never exposes stack',()=>{
   const http=read('backend/src/shared/http.ts');
   const errors=read('backend/src/shared/middleware/error.ts');
-  for(const token of ['code','message','details','requestId','retryable']){
-    assert.match(errors,new RegExp(token,'i'),`error middleware missing ${token}`);
-  }
-  assert.doesNotMatch(errors,/stack\s*:/,'HTTP errors must never serialize stack');
+  for(const token of ['code','message','details','requestId','retryable']) assert.match(errors,new RegExp(token,'i'),`error middleware missing ${token}`);
+  assert.doesNotMatch(errors,/payload\.stack|stack\s*:/,'HTTP errors must never serialize stack');
+  assert.doesNotMatch(errors,/DATABASE_URL|pooler\.supabase|connection_limit/,'HTTP error copy must not disclose database topology/configuration');
   assert.match(http,/code\??:/);
   assert.match(http,/retryable\??:/);
 });
