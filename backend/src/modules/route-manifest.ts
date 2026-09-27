@@ -43,6 +43,7 @@ import verticalExtendedRoutes from './verticals/verticals-extended.routes.js';
 import veterinaryRoutes from './verticals/veterinary.routes.js';
 import veterinaryCrudRoutes from './verticals/veterinary-crud.routes.js';
 import mediaRoutes from './media/media.routes.js';
+import dataLifecycleRoutes from './data-lifecycle/data-lifecycle.routes.js';
 
 export type ArchitectureDomain = 'platform' | 'financial' | 'commercial' | 'operations' | 'vertical';
 
@@ -96,6 +97,7 @@ export const MODULE_ROUTE_MANIFEST: readonly RouteManifestEntry[] = Object.freez
   { id: 'rules', domain: 'platform', path: '/rules', router: rulesRoutes },
   { id: 'rbac', domain: 'platform', path: '/rbac', router: rbacRoutes },
   { id: 'user-security', domain: 'platform', path: '/user-security', router: userSecurityRoutes },
+  { id: 'data-lifecycle', domain: 'platform', path: '/data-lifecycle', router: dataLifecycleRoutes },
   { id: 'vertical-core', domain: 'vertical', path: '/verticals', router: verticalRoutes },
   { id: 'veterinary-crud', domain: 'vertical', path: '/verticals', router: veterinaryCrudRoutes },
   { id: 'vertical-extended', domain: 'vertical', path: '/verticals', router: verticalExtendedRoutes },
