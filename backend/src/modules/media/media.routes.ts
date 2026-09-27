@@ -52,6 +52,13 @@ const signSchema = z.object({
 });
 
 const deleteSchema = z.object({ path: z.string().min(5).max(500) });
+const SIGNABLE_ENTITY_TYPES = new Set(['care-patient', 'gym-member', 'profile', 'company']);
+
+type SignableMediaTarget = {
+  path: string;
+  entityType: string;
+  entityId: string;
+};
 
 function client() {
   if (!env.SUPABASE_URL || !env.SUPABASE_SERVICE_ROLE_KEY) {
@@ -100,6 +107,26 @@ async function authorize(req: any, entityType: string, entityId: string) {
     ? await prisma.$queryRaw<any[]>`SELECT "id" FROM public."CarePatient" WHERE "id" = ${entityId} AND "tenantId" = ${context.tenantId} LIMIT 1`
     : await prisma.$queryRaw<any[]>`SELECT "id" FROM public."GymMember" WHERE "id" = ${entityId} AND "tenantId" = ${context.tenantId} LIMIT 1`;
   if (!rows.length) throw new HttpError(404, 'El registro no existe en la empresa activa.');
+}
+
+function parseAuthorizedMediaPath(path: string, tenantId: string): SignableMediaTarget {
+  const segments = path.split('/');
+  if (segments.length !== 4 || segments.some((segment) => !segment || segment === '.' || segment === '..')) {
+    throw new HttpError(422, 'La ruta del archivo no tiene el formato canónico esperado.');
+  }
+
+  const [pathTenantId, entityType, entityId, objectName] = segments;
+  if (pathTenantId !== tenantId) {
+    throw new HttpError(403, 'Una o más imágenes no pertenecen a la empresa activa.');
+  }
+  if (!SIGNABLE_ENTITY_TYPES.has(entityType)) {
+    throw new HttpError(403, 'El tipo de recurso no admite firmado mediante el endpoint genérico.');
+  }
+  if (!/^[a-zA-Z0-9_-]+$/.test(entityId) || !/^[a-zA-Z0-9][a-zA-Z0-9._-]*$/.test(objectName)) {
+    throw new HttpError(422, 'La ruta del archivo contiene segmentos no permitidos.');
+  }
+
+  return { path, entityType, entityId };
 }
 
 function parseDataUrl(value: string) {
@@ -300,11 +327,15 @@ router.post(
 router.post('/sign', asyncHandler(async (req, res) => {
   const body = signSchema.parse(req.body || {});
   const context = (req as any).context as { tenantId: string };
-  const prefix = `${context.tenantId}/`;
-  if (body.paths.some((path) => !path.startsWith(prefix))) throw new HttpError(403, 'Una o más imágenes no pertenecen a la empresa activa.');
-  if (body.paths.some((path) => path.startsWith(`${context.tenantId}/dental-attachments/`))) throw new HttpError(403, 'Los adjuntos clínicos deben firmarse mediante el flujo dental autorizado con health.manage.');
+  const targets = body.paths.map((path) => parseAuthorizedMediaPath(path, context.tenantId));
+  const uniqueTargets = new Map(targets.map((target) => [`${target.entityType}:${target.entityId}`, target]));
+
+  for (const target of uniqueTargets.values()) {
+    await authorize(req, target.entityType, target.entityId);
+  }
+
   const storage = client();
-  const results = await Promise.all(body.paths.map(async (path) => {
+  const results = await Promise.all(targets.map(async ({ path }) => {
     const { data, error } = await storage.storage.from(BUCKET).createSignedUrl(path, body.expiresIn);
     return { path, signedUrl: error ? null : data.signedUrl, error: error?.message || null };
   }));
