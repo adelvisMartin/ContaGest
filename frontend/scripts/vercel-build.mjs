@@ -41,6 +41,10 @@ function runStage(stage, index) {
 
   if (result.status !== 0) {
     console.error(`[vercel-build][FAIL] stage=${stage.id} elapsedMs=${elapsedMs} exit=${result.status ?? 'null'} signal=${result.signal || 'none'}`);
+    if (process.env.VERCEL) {
+      process.exitCode = 71 + index;
+      return false;
+    }
     process.exitCode = Number(result.status || 1);
     return false;
   }
