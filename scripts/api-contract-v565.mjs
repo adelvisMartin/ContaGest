@@ -2,8 +2,10 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
+import { fileURLToPath } from 'node:url';
 
-const ROOT=process.cwd();
+const SCRIPT_DIR=path.dirname(fileURLToPath(import.meta.url));
+const ROOT=path.resolve(SCRIPT_DIR,'..');
 const APP_FILE='backend/src/app.ts';
 const MANIFEST_FILE='backend/src/modules/route-manifest.ts';
 const POLICY_FILE='backend/src/contracts/api-contract-v1.json';
@@ -31,18 +33,14 @@ function sourceHash(file){
 function routeMethods(source){
   const routes=[];
   const expression=/\brouter\.(get|post|put|patch|delete|options|head)\s*\(\s*(['"`])([^'"`]+)\2/g;
-  for(const match of source.matchAll(expression)){
-    routes.push({method:match[1].toUpperCase(),relativePath:match[3]});
-  }
+  for(const match of source.matchAll(expression)) routes.push({method:match[1].toUpperCase(),relativePath:match[3]});
   return routes;
 }
 
 function manifestMounts(){
   const imports=new Map();
   const importExpression=/import\s+(\w+)\s+from\s+['"]\.\/([^'"]+\.routes)\.js['"]/g;
-  for(const match of manifestSource.matchAll(importExpression)){
-    imports.set(match[1],`backend/src/modules/${match[2]}.ts`);
-  }
+  for(const match of manifestSource.matchAll(importExpression)) imports.set(match[1],`backend/src/modules/${match[2]}.ts`);
   const mounts=[];
   const entryExpression=/\{\s*id:\s*'([^']+)'\s*,\s*domain:\s*'([^']+)'\s*,\s*path:\s*'([^']+)'\s*,\s*router:\s*(\w+)\s*\}/g;
   for(const match of manifestSource.matchAll(entryExpression)){
@@ -93,9 +91,7 @@ function discover(){
       });
     }
   }
-  for(const endpoint of policy.specialEndpoints){
-    endpoints.push({...endpoint,source:APP_FILE,sourceHash:sourceHash(APP_FILE),origin:'app.ts-special'});
-  }
+  for(const endpoint of policy.specialEndpoints) endpoints.push({...endpoint,source:APP_FILE,sourceHash:sourceHash(APP_FILE),origin:'app.ts-special'});
   const unique=new Map();
   for(const endpoint of endpoints){
     const key=`${endpoint.method} ${endpoint.path}`;
@@ -139,12 +135,7 @@ function toOpenApi(endpoints){
     paths,
     components:{schemas:{
       ErrorEnvelope:{type:'object',required:policy.errorEnvelope.required,properties:{
-        ok:{type:'boolean',const:false},
-        code:{type:'string'},
-        message:{type:'string'},
-        details:{},
-        requestId:{type:'string'},
-        retryable:{type:'boolean'}
+        ok:{type:'boolean',const:false},code:{type:'string'},message:{type:'string'},details:{},requestId:{type:'string'},retryable:{type:'boolean'}
       }},
       DecimalString:{type:'string',pattern:'^-?\\d+(?:\\.\\d+)?$'},
       Rfc3339DateTime:{type:'string',format:'date-time'},
@@ -157,13 +148,7 @@ function toOpenApi(endpoints){
 
 const endpoints=discover();
 const openapi=toOpenApi(endpoints);
-const catalog={
-  schemaVersion:policy.schemaVersion,
-  apiVersion:policy.apiVersion,
-  generatedFrom:[APP_FILE,MANIFEST_FILE,POLICY_FILE],
-  endpointCount:endpoints.length,
-  endpoints
-};
+const catalog={schemaVersion:policy.schemaVersion,apiVersion:policy.apiVersion,generatedFrom:[APP_FILE,MANIFEST_FILE,POLICY_FILE],endpointCount:endpoints.length,endpoints};
 
 if(checkMode){
   const operationIds=new Set();
