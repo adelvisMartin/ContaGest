@@ -58,6 +58,7 @@
     { "method": "POST", "path": "/api/v1/security/csp-report", "owner": "security", "auth": "public-rate-limited", "tenant": "none", "operationId": "securityCspReport" }
   ],
   "directMounts": [
+    { "alias": "apiContractRoutes", "source": "backend/src/contracts/api-contract.routes.ts", "basePath": "/api/v1", "owner": "platform-contracts", "auth": "public", "tenant": "none" },
     { "alias": "authRoutes", "source": "backend/src/modules/auth/auth.routes.ts", "basePath": "/api/v1/auth", "owner": "platform-auth", "auth": "mixed", "tenant": "session-derived" },
     { "alias": "hipicoSystemRoutes", "source": "backend/src/modules/hipico/hipico-system.routes.ts", "basePath": "/api/v1/hipico/system", "owner": "hipico", "auth": "bounded-system-policy", "tenant": "route-policy" },
     { "alias": "hipicoDocumentRoutes", "source": "backend/src/modules/hipico/document.routes.ts", "basePath": "/api/v1/hipico/documents", "owner": "hipico", "auth": "required", "tenant": "required" },
