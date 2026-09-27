@@ -26,11 +26,16 @@ function runStage(stage, index) {
   console.log(`[vercel-build][START] stage=${stage.id} index=${index + 1}/${stages.length} sha=${context.sha} ref=${context.ref} env=${context.environment} node=${context.node}`);
 
   const diagnosticSource = stage.id === 'source-qa' && process.env.VERCEL;
-  const command = diagnosticSource ? 'node' : stage.command;
-  const args = diagnosticSource ? ['../scripts/vercel-source-preqa-diagnostic.mjs'] : stage.args;
+  const command = diagnosticSource ? process.execPath : stage.command;
+  const args = diagnosticSource
+    ? ['--max-old-space-size=128','../scripts/vercel-source-preqa-diagnostic.mjs']
+    : stage.args;
+  const stageEnv = diagnosticSource
+    ? { ...process.env, HIPICO_ROOT_TEST_HEAP_MB: process.env.HIPICO_ROOT_TEST_HEAP_MB || '256' }
+    : process.env;
   const result = spawnSync(command, args, {
     stdio: 'inherit',
-    env: process.env,
+    env: stageEnv,
     shell: false
   });
 
@@ -45,9 +50,9 @@ function runStage(stage, index) {
   if (result.status !== 0) {
     console.error(`[vercel-build][FAIL] stage=${stage.id} elapsedMs=${elapsedMs} exit=${result.status ?? 'null'} signal=${result.signal || 'none'}`);
     if (process.env.VERCEL) {
-      process.exitCode = diagnosticSource && Number.isInteger(result.status) && result.status >= 101 && result.status <= 229
-        ? result.status
-        : 71 + index;
+      const diagnosticExit = diagnosticSource && Number.isInteger(result.status)
+        && result.status >= 101 && result.status <= 250;
+      process.exitCode = diagnosticExit ? result.status : 71 + index;
       return false;
     }
     process.exitCode = Number(result.status || 1);
