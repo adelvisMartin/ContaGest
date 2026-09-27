@@ -1,6 +1,10 @@
-const CACHE = 'contagest-ve-v70-assets-1';
+const CACHE_VERSION = 'v563-1';
+const ASSET_CACHE = `contagest-ve-${CACHE_VERSION}-assets`;
+const SESSION_CACHE_PREFIX = `contagest-ve-${CACHE_VERSION}-session-`;
+let SESSION_SCOPE = null;
+
 const APP_SHELL = [
-  '/', '/index.html', '/manifest.webmanifest',
+  '/', '/index.html', '/manifest.webmanifest', '/pwa-install.js',
   '/icons/contagest-app.svg', '/icons/contagest-app-192.svg', '/icons/contagest-app-512.svg',
   '/vendor/fontawesome/css/all.min.css',
   '/vendor/fontawesome/webfonts/fa-solid-900.woff2',
@@ -10,48 +14,53 @@ const APP_SHELL = [
   '/vendor/fonts/fonts.css',
   '/vendor/fonts/inter/Inter-Variable.ttf',
   '/vendor/fonts/jetbrains-mono/JetBrainsMono-Variable.ttf',
-  '/vertical-assets/veterinary.svg',
-  '/vertical-assets/dentistry.svg',
-  '/vertical-assets/psychology.svg',
-  '/vertical-assets/gym.svg',
-  '/vertical-assets/nutrition.svg',
-  '/vertical-assets/login-security.svg'
+  '/vertical-assets/veterinary.svg', '/vertical-assets/dentistry.svg', '/vertical-assets/psychology.svg',
+  '/vertical-assets/gym.svg', '/vertical-assets/nutrition.svg', '/vertical-assets/login-security.svg'
 ];
 
+async function primeShell() {
+  const cache = await caches.open(ASSET_CACHE);
+  await Promise.allSettled(APP_SHELL.map((url) => cache.add(new Request(url, { cache: 'reload' }))));
+}
+
 self.addEventListener('install', (event) => {
-  self.skipWaiting();
-  event.waitUntil(
-    caches.open(CACHE).then((cache) => Promise.allSettled(
-      APP_SHELL.map((url) => cache.add(new Request(url, { cache:'reload' })))
-    ))
-  );
+  // Do not skipWaiting here: the current page keeps one coherent shell until the
+  // runtime explicitly promotes the fully-installed replacement worker.
+  event.waitUntil(primeShell());
 });
 
 self.addEventListener('activate', (event) => {
-  event.waitUntil(
-    caches.keys()
-      .then((keys) => Promise.all(keys.filter((key) => key.startsWith('contagest-ve-') && key !== CACHE).map((key) => caches.delete(key))))
-      .then(() => self.clients.claim())
-  );
+  event.waitUntil((async () => {
+    const keys = await caches.keys();
+    await Promise.all(keys
+      .filter((key) => key.startsWith('contagest-ve-') && key !== ASSET_CACHE && !key.startsWith(SESSION_CACHE_PREFIX))
+      .map((key) => caches.delete(key)));
+    // Session caches are deliberately discarded across SW versions/upgrades.
+    await Promise.all(keys.filter((key) => key.includes('-session-') && !key.startsWith(SESSION_CACHE_PREFIX)).map((key) => caches.delete(key)));
+    await self.clients.claim();
+  })());
 });
 
 function isSensitiveRequest(url) {
   return url.pathname.startsWith('/api/')
-    || url.pathname.includes('/auth/')
+    || url.pathname.startsWith('/auth/')
     || url.pathname.includes('/licenses')
     || url.pathname.includes('/media')
     || url.pathname.includes('/admin');
 }
 
-function networkFirst(request) {
-  return fetch(request, { cache:'no-store' })
-    .then((response) => {
-      if (response.ok && (response.type === 'basic' || response.type === 'cors')) {
-        caches.open(CACHE).then((cache) => cache.put(request, response.clone())).catch(() => undefined);
-      }
-      return response;
-    })
-    .catch(() => caches.match(request).then((cached) => cached || new Response('Recurso no disponible sin conexión.', { status:503 })));
+async function networkFirst(request) {
+  try {
+    const response = await fetch(request, { cache: 'no-store' });
+    if (response.ok && (response.type === 'basic' || response.type === 'cors')) {
+      const cache = await caches.open(ASSET_CACHE);
+      await cache.put(request, response.clone());
+    }
+    return response;
+  } catch {
+    return (await caches.match(request, { cacheName: ASSET_CACHE }))
+      || new Response('Recurso no disponible sin conexión.', { status: 503, headers: { 'X-CG-Offline': 'true' } });
+  }
 }
 
 self.addEventListener('fetch', (event) => {
@@ -60,39 +69,38 @@ self.addEventListener('fetch', (event) => {
   const url = new URL(request.url);
   if (url.origin !== self.location.origin || isSensitiveRequest(url)) return;
 
-  // Build identity is release evidence. It must never be satisfied by a stale
-  // service-worker cache because #182 compares the served SHA with the exact
-  // candidate being promoted.
   if (url.pathname === '/build-info.json') {
-    event.respondWith(fetch(request, { cache:'no-store' }).catch(() => new Response(JSON.stringify({
-      schemaVersion:1,
-      product:'contagest-erp',
-      candidateSha:'unavailable-offline',
-      bound:false,
-      error:'BUILD_IDENTITY_OFFLINE'
-    }), { status:503, headers:{ 'Content-Type':'application/json; charset=utf-8', 'Cache-Control':'no-store' } })));
+    event.respondWith(fetch(request, { cache: 'no-store' }).catch(() => new Response(JSON.stringify({
+      schemaVersion: 1,
+      product: 'contagest-erp',
+      candidateSha: 'unavailable-offline',
+      bound: false,
+      error: 'BUILD_IDENTITY_OFFLINE'
+    }), { status: 503, headers: { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', 'X-CG-Offline': 'true' } })));
     return;
   }
 
   if (request.mode === 'navigate') {
-    event.respondWith(
-      fetch(request, { cache:'no-store' })
-        .then((response) => {
-          if (response.ok) {
-            caches.open(CACHE).then((cache) => cache.put('/index.html', response.clone())).catch(() => undefined);
-          }
-          return response;
-        })
-        .catch(() => caches.match('/index.html').then((cached) => cached || new Response('ContaGest no está disponible sin conexión.', {
-          status:503,
-          headers:{ 'Content-Type':'text/plain; charset=utf-8' }
-        })))
-    );
+    event.respondWith((async () => {
+      try {
+        const response = await fetch(request, { cache: 'no-store' });
+        if (response.ok) {
+          const cache = await caches.open(ASSET_CACHE);
+          await cache.put('/index.html', response.clone());
+        }
+        return response;
+      } catch {
+        const cached = await caches.match('/index.html', { cacheName: ASSET_CACHE });
+        if (!cached) return new Response('ContaGest no está disponible sin conexión.', { status: 503, headers: { 'Content-Type': 'text/plain; charset=utf-8', 'X-CG-Offline': 'true' } });
+        const headers = new Headers(cached.headers);
+        headers.set('X-CG-Offline', 'true');
+        headers.set('X-CG-Stale', 'true');
+        return new Response(await cached.blob(), { status: cached.status, statusText: cached.statusText, headers });
+      }
+    })());
     return;
   }
 
-  // JS and CSS must prefer the network so a deployment cannot leave an open
-  // browser tab mixing an old UI bundle with a newly deployed backend.
   if (request.destination === 'script' || request.destination === 'style') {
     event.respondWith(networkFirst(request));
     return;
@@ -102,22 +110,56 @@ self.addEventListener('fetch', (event) => {
     || ['/manifest.webmanifest', '/icons/contagest-app.svg', '/icons/contagest-app-192.svg', '/icons/contagest-app-512.svg', '/pwa-install.js'].includes(url.pathname);
   if (!cacheableAsset) return;
 
-  event.respondWith(
-    caches.match(request).then((cached) => {
-      const refresh = fetch(request).then((response) => {
-        if (response.ok && (response.type === 'basic' || response.type === 'cors')) {
-          caches.open(CACHE).then((cache) => cache.put(request, response.clone())).catch(() => undefined);
-        }
-        return response;
-      }).catch(() => cached);
-      return cached || refresh;
-    })
-  );
+  event.respondWith((async () => {
+    const cached = await caches.match(request, { cacheName: ASSET_CACHE });
+    const refresh = fetch(request, { cache: 'no-store' }).then(async (response) => {
+      if (response.ok && (response.type === 'basic' || response.type === 'cors')) {
+        const cache = await caches.open(ASSET_CACHE);
+        await cache.put(request, response.clone());
+      }
+      return response;
+    }).catch(() => cached);
+    return cached || refresh || new Response('', { status: 503, headers: { 'X-CG-Offline': 'true' } });
+  })());
 });
 
+async function clearSessionData(scopeToken) {
+  const token = String(scopeToken || '').trim();
+  const keys = await caches.keys();
+  await Promise.all(keys
+    .filter((key) => key.startsWith(SESSION_CACHE_PREFIX) && (!token || key === `${SESSION_CACHE_PREFIX}${token}`))
+    .map((key) => caches.delete(key)));
+  if (!token || SESSION_SCOPE?.scopeToken === token) SESSION_SCOPE = null;
+}
+
+async function recoverCache() {
+  const keys = await caches.keys();
+  await Promise.all(keys.filter((key) => key.startsWith('contagest-ve-')).map((key) => caches.delete(key)));
+  SESSION_SCOPE = null;
+  await primeShell();
+  return { recovered: true, cacheVersion: CACHE_VERSION };
+}
+
 self.addEventListener('message', (event) => {
-  if (event.data?.type === 'SKIP_WAITING') self.skipWaiting();
-  if (event.data?.type === 'CLEAR_APP_CACHE') {
-    event.waitUntil(caches.keys().then((keys) => Promise.all(keys.filter((key) => key.startsWith('contagest-ve-')).map((key) => caches.delete(key)))));
+  const data = event.data || {};
+  if (data.type === 'ACTIVATE_UPDATE') {
+    self.skipWaiting();
+    return;
+  }
+  if (data.type === 'SET_SESSION_SCOPE') {
+    // Values are already non-reversible hashes; raw tenantId/userId are never logged or cached.
+    SESSION_SCOPE = {
+      scopeToken: String(data.scopeToken || ''),
+      tenantId: String(data.tenantIdHash || ''),
+      userId: String(data.userIdHash || '')
+    };
+    return;
+  }
+  if (data.type === 'CLEAR_SESSION_DATA' || data.type === 'CLEAR_APP_CACHE') {
+    event.waitUntil(clearSessionData(data.scopeToken));
+    return;
+  }
+  if (data.type === 'RECOVER_CACHE') {
+    event.waitUntil(recoverCache().then((result) => event.ports?.[0]?.postMessage(result)).catch((error) => event.ports?.[0]?.postMessage({ recovered: false, error: String(error?.message || error) })));
   }
 });
