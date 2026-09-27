@@ -9,7 +9,9 @@ import { runFinancialIdempotentMutation } from '../../shared/services/financial-
 import { assertBalanced, assertPeriodOpen, inverseLedgerLines, purchaseInvoiceLinesForLedger } from '../accounting/accounting.service.js';
 import { calculateInvoiceTotals } from '../../shared/financial/invoice.js';
 import { decimalSchema } from '../../shared/financial/zod.js';
-import { ONE, ZERO } from '../../shared/financial/decimal.js';
+import { ONE } from '../../shared/financial/decimal.js';
+import { convertToFunctional, functionalizeBalancedLedgerLines, resolveFxContext } from '../../shared/financial/fx.js';
+import { copyLedgerLineSnapshotsForReversal, getFxPolicy, recordDocumentSnapshot, recordLedgerLineSnapshots } from '../currency/fx.repository.js';
 
 const router = Router();
 router.use(requireTenant, requirePermission('purchases.manage'));
@@ -26,7 +28,12 @@ const purchaseSchema = z.object({
   supplierId: z.string().optional(),
   number: z.string().min(1),
   controlNo: z.string().optional(),
+  issueDate: z.coerce.date().optional(),
   fiscalPeriod: z.string().min(6),
+  currency: z.string().default('VES'),
+  exchangeRate: decimalSchema('exchangeRate', { defaultValue: 1, positive: true }),
+  exchangeRateDate: z.coerce.date().optional(),
+  exchangeRateSource: z.string().trim().min(2).max(120).optional(),
   status: z.enum(['draft', 'issued', 'paid', 'overdue']).default('issued'),
   ocrStatus: z.string().optional(),
   lines: z.array(lineSchema).min(1)
@@ -55,11 +62,7 @@ router.get('/', asyncHandler(async (req, res) => {
 router.post('/', validateBody(purchaseSchema), asyncHandler(async (req, res) => {
   const ctx = context(req);
   const actorId = req.body.status === 'draft' ? null : requireActor(ctx);
-  const calculated = calculateInvoiceTotals(req.body.lines.map((line: any) => ({
-    quantity: line.quantity,
-    unitAmount: line.unitCost,
-    taxRate: line.taxRate
-  })));
+  const calculated = calculateInvoiceTotals(req.body.lines.map((line: any) => ({ quantity: line.quantity, unitAmount: line.unitCost, taxRate: line.taxRate })));
   const lines = req.body.lines.map((line: any, index: number) => ({ ...line, total: calculated.lines[index].total }));
   const subtotal = calculated.subtotal;
   const iva = calculated.tax;
@@ -80,14 +83,40 @@ router.post('/', validateBody(purchaseSchema), asyncHandler(async (req, res) => 
     }
   }, async (tx) => {
     if (req.body.status !== 'draft') await assertPeriodOpen(ctx.tenantId, req.body.fiscalPeriod, tx);
+    const policy = await getFxPolicy(ctx.tenantId, tx);
+    const fx = resolveFxContext({
+      originalCurrency: req.body.currency,
+      functionalCurrency: policy.functionalCurrency,
+      exchangeRate: req.body.exchangeRate,
+      rateDate: req.body.exchangeRateDate,
+      rateSource: req.body.exchangeRateSource,
+      documentDate: req.body.issueDate || new Date()
+    });
     const purchase = await tx.purchaseInvoice.create({
-      data: { tenantId: ctx.tenantId, supplierId: req.body.supplierId, number: req.body.number, controlNo: req.body.controlNo, fiscalPeriod: req.body.fiscalPeriod, subtotal, iva, total, status: req.body.status, ocrStatus: req.body.ocrStatus, lines: { create: lines } },
+      data: {
+        tenantId: ctx.tenantId,
+        supplierId: req.body.supplierId,
+        number: req.body.number,
+        controlNo: req.body.controlNo,
+        issueDate: req.body.issueDate,
+        fiscalPeriod: req.body.fiscalPeriod,
+        currency: fx.originalCurrency,
+        subtotal,
+        iva,
+        total,
+        status: req.body.status,
+        ocrStatus: req.body.ocrStatus,
+        lines: { create: lines }
+      },
       include: { supplier: true, lines: true }
     });
 
     let ledgerEntryId: string | null = null;
     if (purchase.status !== 'draft') {
-      const ledgerLines = purchaseInvoiceLinesForLedger(purchase);
+      const originalLedgerLines = purchaseInvoiceLinesForLedger(purchase);
+      assertBalanced(originalLedgerLines);
+      const functionalized = functionalizeBalancedLedgerLines(originalLedgerLines, fx.exchangeRate);
+      const ledgerLines = functionalized.lines.map((line) => ({ accountCode: line.accountCode, accountName: line.accountName, debit: line.functionalDebit, credit: line.functionalCredit }));
       assertBalanced(ledgerLines);
       const draftLedger = await tx.ledgerEntry.create({
         data: {
@@ -101,23 +130,28 @@ router.post('/', validateBody(purchaseSchema), asyncHandler(async (req, res) => 
           postedAt: null,
           postedBy: null,
           reversalOfId: null,
-          lines: {
-            create: ledgerLines.map((line) => ({
-              accountCode: line.accountCode,
-              accountName: line.accountName,
-              debit: line.debit ?? ZERO,
-              credit: line.credit ?? ZERO,
-              currency: 'VES',
-              exchangeRate: ONE
-            }))
-          }
+          lines: { create: ledgerLines.map((line) => ({ ...line, currency: fx.functionalCurrency, exchangeRate: ONE })) }
         }
       });
       const postedAt = new Date();
-      const ledgerEntry = await tx.ledgerEntry.update({
-        where: { id: draftLedger.id },
-        data: { posted: true, postedAt, postedBy: actorId! }
-      });
+      const ledgerEntry = await tx.ledgerEntry.update({ where: { id: draftLedger.id }, data: { posted: true, postedAt, postedBy: actorId! } });
+      await recordDocumentSnapshot({
+        tenantId: ctx.tenantId,
+        documentType: 'purchase',
+        documentId: purchase.id,
+        originalCurrency: fx.originalCurrency,
+        functionalCurrency: fx.functionalCurrency,
+        exchangeRate: fx.exchangeRate,
+        rateDate: fx.rateDate,
+        rateSource: fx.rateSource,
+        originalSubtotal: subtotal,
+        originalTax: iva,
+        originalTotal: total,
+        functionalSubtotal: convertToFunctional(subtotal, fx.exchangeRate),
+        functionalTax: convertToFunctional(iva, fx.exchangeRate),
+        functionalTotal: convertToFunctional(total, fx.exchangeRate)
+      }, tx);
+      await recordLedgerLineSnapshots({ tenantId: ctx.tenantId, ledgerEntryId: ledgerEntry.id, lines: functionalized.lines, originalCurrency: fx.originalCurrency, functionalCurrency: fx.functionalCurrency, exchangeRate: fx.exchangeRate, rateDate: fx.rateDate, rateSource: fx.rateSource }, tx);
       await tx.auditLog.create({
         data: {
           tenantId: ctx.tenantId,
@@ -126,7 +160,7 @@ router.post('/', validateBody(purchaseSchema), asyncHandler(async (req, res) => 
           entity: 'LedgerEntry',
           entityId: ledgerEntry.id,
           before: { posted: false, source: 'purchase', sourceId: purchase.id, fiscalPeriod: purchase.fiscalPeriod },
-          after: { posted: true, postedAt: postedAt.toISOString(), postedBy: actorId, source: 'purchase', sourceId: purchase.id, fiscalPeriod: purchase.fiscalPeriod, requestId: requestId(req) },
+          after: { posted: true, postedAt: postedAt.toISOString(), postedBy: actorId, source: 'purchase', sourceId: purchase.id, fiscalPeriod: purchase.fiscalPeriod, originalCurrency: fx.originalCurrency, functionalCurrency: fx.functionalCurrency, exchangeRate: fx.exchangeRate.toFixed(4), exchangeRateDate: fx.rateDate.toISOString(), exchangeRateSource: fx.rateSource, roundingAdjustment: functionalized.roundingAdjustment.toFixed(2), requestId: requestId(req) },
           ipAddress: ctx.ip || null,
           userAgent: ctx.userAgent || null
         }
@@ -213,6 +247,7 @@ router.patch('/:id/cancel', validateBody(cancellationSchema), asyncHandler(async
       });
       const postedAt = new Date();
       const reversal = await tx.ledgerEntry.update({ where: { id: draftReversal.id }, data: { posted: true, postedAt, postedBy: actorId, reversalOfId: original.id } });
+      await copyLedgerLineSnapshotsForReversal({ tenantId: ctx.tenantId, originalEntryId: original.id, reversalEntryId: reversal.id }, tx);
       await tx.auditLog.create({
         data: {
           tenantId: ctx.tenantId,
