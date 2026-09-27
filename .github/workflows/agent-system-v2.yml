@@ -1,0 +1,44 @@
+name: Agent System v2
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'AGENTS.md'
+      - '.agents/**'
+      - 'agent-skills.lock.json'
+      - 'qa/support/domain-risk-catalog.mjs'
+      - 'scripts/agent-*'
+      - 'scripts/*skill*'
+      - 'scripts/graphify-context-v2.mjs'
+      - 'scripts/duplicate-work-claims-v2.mjs'
+      - 'tests/agent_*_v2*.test.mjs'
+      - 'tests/duplicate_work_claims_v2.test.mjs'
+      - 'package.json'
+      - '.github/workflows/agent-system-v2.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  contracts:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout exact pull request head
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Setup Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Run Agent System v2 contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          mapfile -t tests < <(find tests -maxdepth 1 -type f \( -name 'agent_*_v2*.test.mjs' -o -name 'duplicate_work_claims_v2.test.mjs' \) -print | sort)
+          test "${#tests[@]}" -gt 0
+          node --test "${tests[@]}"
