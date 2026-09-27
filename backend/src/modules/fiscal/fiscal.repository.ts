@@ -50,8 +50,8 @@ export async function createFiscalRuleVersion(input: {
   return prisma.$transaction(async (tx) => {
     // A transaction-scoped advisory lock serializes version allocation and the
     // overlap check for one tenant/ruleKey without requiring privileged DB extensions.
-    await tx.$executeRaw(Prisma.sql`
-      SELECT pg_advisory_xact_lock(hashtextextended(${`${input.tenantId}:${input.ruleKey}`}, 561))
+    await tx.$queryRaw<Array<{ locked: unknown }>>(Prisma.sql`
+      SELECT pg_advisory_xact_lock(hashtextextended(${`${input.tenantId}:${input.ruleKey}`}, 561)) AS "locked"
     `);
 
     const overlapping = await tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`
