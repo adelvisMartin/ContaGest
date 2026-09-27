@@ -91,6 +91,17 @@
       ]
     },
     {
+      "id": "playwright-mcp",
+      "kind": "mcp-package",
+      "repo": "microsoft/playwright-mcp",
+      "commit": "7e0457a7cbf88823bf0146d12c46ae12c6818247",
+      "license": "Apache-2.0",
+      "trustLevel": "official-browser-automation",
+      "package": "@playwright/mcp",
+      "packageVersion": "0.0.79",
+      "vendorPaths": []
+    },
+    {
       "id": "cloudflare-security-audit",
       "kind": "github-skill",
       "repo": "cloudflare/security-audit-skill",
@@ -121,17 +132,6 @@
         "skills/security-audit/validate-findings.cjs",
         "skills/security-audit/validate-findings.test.cjs"
       ]
-    },
-    {
-      "id": "playwright-mcp",
-      "kind": "mcp-package",
-      "repo": "microsoft/playwright-mcp",
-      "commit": "7e0457a7cbf88823bf0146d12c46ae12c6818247",
-      "license": "Apache-2.0",
-      "trustLevel": "official-browser-automation",
-      "package": "@playwright/mcp",
-      "packageVersion": "0.0.79",
-      "vendorPaths": []
     }
   ]
 }

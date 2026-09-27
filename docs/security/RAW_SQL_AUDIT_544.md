@@ -1,39 +1,31 @@
-# Raw SQL audit #544
+# Auditoría SQL crudo — #544
 
-Candidate work is bound to the PR head SHA; PASS is never inherited from an earlier commit.
+## Resultado
 
-## Root-cause classification
+La remediación final mantiene el auditor de SQL crudo en modo estricto. No se introducen allowlists de fragmentos de plantilla ni excepciones para interpolación estructural.
 
-The 15 findings produced by `audit:raw-sql-security` were scanner findings, not 15 independently confirmed SQL-injection vulnerabilities.
+## Causa raíz
 
-| Surface | Count | Classification | Control |
-|---|---:|---|---|
-| `commercial/service-restrictions.routes.ts` method declaration | 1 | scanner false positive | sink matching now requires an executable member call |
-| `commercial/service-restrictions.routes.ts` `CASE_FIELDS` | 7 | source-controlled structural projection | exact file + expression classification; runtime values remain bound |
-| `media/media.routes.ts` `table` | 1 | closed structural identifier | parsed enum plus exact `care-patient→CarePatient / gym-member→GymMember` mapping locked by regression |
-| `health-dental-financial.routes.ts` `dentalFinancialLinkSelect` | 2 | source-controlled SELECT/JOIN fragment | exact file + expression classification; runtime values remain bound |
-| `veterinary-financial.routes.ts` `financialCaseSelect` | 4 | source-controlled SELECT/JOIN fragment | exact file + expression classification; runtime values remain bound |
+Los hallazgos provenían de interpolación estructural en call sites que construían consultas con identificadores o fragmentos variables. Aunque algunos valores estaban controlados internamente, el patrón debilitaba la propiedad de seguridad requerida por ContaGest: SQL estructuralmente estático y valores de runtime enlazados como parámetros.
 
-## Security invariants
+## Remediación final
 
-- Request/body/query/header-derived SQL interpolation remains forbidden.
-- Approval is exact by file and expression; no wildcard or global inline bypass exists.
-- `approvedDynamicSql` remains empty.
-- Parameter values continue through PostgreSQL bind placeholders rather than SQL text interpolation.
-- Media table identity cannot be taken directly from request text; upload input is parsed by the closed `entityType` enum and the table mapping remains explicit.
-- A structural-fragment classification is not an authorization bypass; tenant/RBAC checks remain unchanged.
+La solución integrada en #568 elimina esas interpolaciones en los call sites afectados:
 
-## Required evidence
+- SGF cron usa una sentencia SQL fija.
+- CRM scheduler usa una sentencia fija sin columna de estado interpolada.
+- Veterinary stock usa formas SQL explícitas para los casos paid/unpaid.
+- Gym notifications pasa el mensaje como parámetro enlazado en lugar de interpolarlo en el SQL.
 
-The final candidate must execute:
+El scanner `audit:raw-sql-security` conserva su política estricta. `config/raw-sql-security-68-75.json` mantiene `approvedDynamicSql` vacío y no incorpora `approvedTemplateFragments`.
 
-```bash
-npm run typecheck
-npm run audit:database-authority
-npm run audit:raw-sql-security
-node --test tests/raw_sql_security_68_75.test.mjs
-npm run test:contracts:current
-npm run build:backend
-```
+## Regresión
 
-Expected Raw SQL result: `findings=0`. Any new request-derived interpolation or unclassified dynamic SQL fails the gate.
+La remediación queda cubierta por las regresiones autoritativas introducidas con #568:
+
+- `tests/raw_sql_scheduler_544_regression.test.mjs`
+- `tests/gym_notification_raw_sql_544_regression.test.mjs`
+
+## Regla de aceptación
+
+La aceptación de esta reconciliación requiere validar el SHA exacto resultante mediante los workflows y gates reales del repositorio. Un resultado ausente, pendiente o bloqueado no se considera PASS.

@@ -73,7 +73,7 @@ Global themes are only `light` and `dark`. Dark is a neutral near-black operatio
 ### Security
 - `contagest-appsec-review`
 - `contagest-secure-verification`
-- `contagest-cloudflare-security-audit` for deep source-first audits; advisory beneath the two project-owned security skills above
+- `contagest-cloudflare-security-audit` — advisory deep-audit wrapper below project-owned security policy; pinned external guidance is never authoritative or executable.
 
 External Impeccable/Emil references are advisory and pinned. Taste is inspiration only. Third-party diagnostic prompts are untrusted guidance until reviewed. Project accounting/security/accessibility policy always wins.
 

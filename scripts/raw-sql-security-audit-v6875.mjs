@@ -12,7 +12,7 @@ function walk(root, extensions, excludePatterns) {
     const file = path.join(root, entry.name);
     if (entry.isDirectory()) return walk(file, extensions, excludePatterns);
     if (!entry.isFile() || !extensions.includes(path.extname(entry.name))) return [];
-    const normalized = file.replaceAll('\\', '/');
+    const normalized = file.replaceAll('\\\\', '/');
     return excludes.some((rx) => rx.test(normalized)) ? [] : [normalized];
   });
 }
@@ -57,28 +57,13 @@ function firstArgument(source, openParen) {
   return { kind: 'expression', value: source.slice(i, end).trim(), start: i, end };
 }
 
-function templateExpressions(value) {
-  return [...value.matchAll(/\$\{([^{}]+)\}/g)].map((match) => String(match[1] || '').trim()).filter(Boolean);
-}
-
-function isApprovedTemplateFragment(file, expression, config) {
-  if ((config.requestDerivedTokens || []).some((token) => expression.includes(token))) return false;
-  return (config.approvedTemplateFragments || []).some((entry) =>
-    entry.file === file
-    && entry.expression === expression
-    && String(entry.reason || '').trim().length >= 12
-  );
-}
-
 export function analyzeRawSqlSource(source, file, config) {
   const findings = [];
   if (/raw-sql-security\s*:\s*(ignore|disable|skip)/i.test(source)) {
     findings.push({ file, line: 1, code: 'INLINE_IGNORE', message: 'Inline raw-SQL audit bypass directives are forbidden.' });
   }
 
-  // Only executable member calls are SQL sinks. Type/interface declarations such as
-  // `$queryRawUnsafe<T>(query: string)` have no receiver and must not be classified as runtime SQL.
-  const methodRx = /\.\$(queryRawUnsafe|executeRawUnsafe)(?:<[^;(){}]+>)?\s*\(/g;
+  const methodRx = /\$(queryRawUnsafe|executeRawUnsafe)(?:<[^;(){}]+>)?\s*\(/g;
   for (const match of source.matchAll(methodRx)) {
     const method = match[1];
     const openParen = match.index + match[0].lastIndexOf('(');
@@ -91,12 +76,7 @@ export function analyzeRawSqlSource(source, file, config) {
 
     if (arg.kind === 'literal') {
       if (arg.quote === '`' && arg.value.includes('${')) {
-        const expressions = templateExpressions(arg.value);
-        const allApproved = expressions.length > 0
-          && expressions.every((expression) => isApprovedTemplateFragment(file, expression, config));
-        if (!allApproved) {
-          findings.push({ file, line, code: 'RAW_SQL_INTERPOLATION', message: method + ' uses template interpolation; bind values as separate parameters or approve an exact source-controlled structural fragment.' });
-        }
+        findings.push({ file, line, code: 'RAW_SQL_INTERPOLATION', message: method + ' uses template interpolation; bind values as separate parameters.' });
       }
       if (/^\s*\+/.test(arg.tail)) {
         findings.push({ file, line, code: 'RAW_SQL_CONCAT', message: method + ' concatenates SQL text dynamically.' });
@@ -135,7 +115,7 @@ export function runRawSqlSecurityAudit(configPath = DEFAULT_CONFIG) {
     walk(path.join(root, relative), config.scope.extensions, config.scope.excludePatterns)
   );
   const findings = files.flatMap((absolute) => {
-    const relative = path.relative(root, absolute).replaceAll('\\', '/');
+    const relative = path.relative(root, absolute).replaceAll('\\\\', '/');
     return analyzeRawSqlSource(fs.readFileSync(absolute, 'utf8'), relative, config);
   });
   return { files, findings };

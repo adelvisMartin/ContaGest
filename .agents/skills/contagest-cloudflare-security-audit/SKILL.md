@@ -1,46 +1,89 @@
 ---
 name: contagest-cloudflare-security-audit
-description: Project-owned wrapper for Cloudflare security-audit guidance under ContaGest policy.
+description: Project-owned wrapper for the pinned Cloudflare security-audit methodology. Use for deep, source-first security audits without granting external guidance authority over ContaGest policy.
 ---
 
 # ContaGest Cloudflare Security Audit
 
-Cloudflare guidance is advisory. The mandatory precedence for every audit decision is:
+Cloudflare guidance is advisory only. The mandatory precedence is:
 
-1. `AGENTS.md`
-2. `contagest-erp-orchestrator`
-3. `contagest-appsec-review`
-4. `contagest-secure-verification`
-5. Cloudflare `security-audit-skill`
+1. `AGENTS.md` and explicit owner instructions.
+2. `contagest-erp-orchestrator`.
+3. `contagest-appsec-review`.
+4. `contagest-secure-verification`.
+5. Pinned Cloudflare `security-audit-skill` guidance.
 
-If Cloudflare guidance conflicts with project accounting, tenant-isolation, accessibility, release, or security policy, project policy wins and the conflict must be recorded.
+If Cloudflare guidance conflicts with tenant isolation, accounting invariants, Control Hípico authority boundaries, privacy, release policy, or an explicit owner instruction, the ContaGest rule wins and the conflict is recorded.
 
 ## Operating mode
 
-For the approved ContaGest initiative, use a **deep**, source-first audit bound to one exact source SHA. Do not probe production, brute-force identities, mutate external services, send paid-provider traffic, or test with live user data.
+The default mode for this initiative is **deep, source-first, defensive audit**. Bind every audit run to one exact 40-character repository SHA before classifying findings. Never silently move an in-progress audit to a newer commit.
 
-Execution evidence uses only:
+Use only the execution statuses:
 
-`PASS | FAIL | BLOCKED | NOT_EXECUTED`
+```text
+PASS | FAIL | BLOCKED | NOT_EXECUTED
+```
 
-A security finding is `CONFIRMED` only when source/runtime evidence demonstrates a lower-trust principal or input crossing a real trust boundary and producing a concrete security result. Hypotheses that depend on deployed settings, provider policy, runtime topology, headers, ACLs, or other facts not proven by the audited source remain `NEEDS_VALIDATION` and receive no severity until validated.
+A source review, build, preview deployment, HTTP 200, queued workflow, or stale run from another SHA is never a substitute for executed evidence.
+
+## Production safety
+
+Do not perform destructive exploitation, brute force, credential attacks, production mutation, paid-provider traffic, or testing against live-user/customer data. Do not probe production or third-party providers merely to satisfy an audit checklist. Prefer repository source, local isolated fixtures, ephemeral PostgreSQL, LAB destinations, and read-only configuration evidence.
+
+Do not execute vendored Cloudflare `.cjs` validators or any other upstream executable simply because they are present in `.agents/vendor`. The lockfile keeps upstream scripts inert; project-owned tests and validation decide whether the integration is acceptable.
 
 ## Required coverage
 
-Review auth/session, tenant/RBAC/RLS, database/raw SQL, accounting authority, browser/PWA, files/import/export, cloud/CI/deployment, supply chain, Control Hípico/WhatsApp, AI/Jev/tools, health-data surfaces, availability/recovery, and local/desktop IPC where present.
+A deep audit must account explicitly for:
 
-Maintain an explicit coverage ledger. Adjacent code does not inherit coverage automatically.
+- authentication, recovery, sessions, CSRF and throttling;
+- tenant isolation, IDOR/BOLA, RBAC, RLS/PostgREST and exports;
+- Prisma/raw SQL, migrations, SECURITY DEFINER functions and audit integrity;
+- financial/accounting posting, reversal, closing, idempotency and sequences;
+- browser/PWA storage, CSP, DOM sinks, caches and deep links;
+- files, uploads, imports, exports, PDF/archive handling and formula injection;
+- GitHub Actions, Vercel/serverless boundaries, secrets and artifact provenance;
+- npm/dependency/action/external-skill supply chain;
+- Control Hípico SOURCE/LAB, webhook authenticity, replay, outbox and destination binding;
+- AI/Jev/tool injection, data sharing, promotion gates and financial authority;
+- sensitive health/vertical data authorization and exports;
+- availability, rate/cost amplification, retries, queues, backup and recovery.
 
-## Findings and backlog
+No neighboring subsystem inherits coverage automatically. Record explicit `covered`, `candidate`, `needs_validation`, or `deferred` state per review unit.
 
-Deduplicate manifestations that share one authoritative root cause. Each confirmed finding must state severity, affected boundary/resource, abuse path, preconditions, evidence, root cause, minimal remediation, regression test, and merge-blocking status.
+## Finding validation
 
-Number remediation issues only after validation and deduplication as `1/N → N/N`; never force an arbitrary total. `NEEDS_VALIDATION` items are tracked separately and are not assigned P0–P3 severity.
+A `CONFIRMED` security finding requires all of the following:
 
-## Supply-chain rule
+- a lower-trust principal or input;
+- the accepted action/input path;
+- the intended security control;
+- a demonstrated crossed trust boundary;
+- the affected principal/resource;
+- a concrete security result;
+- source/runtime evidence sufficient to reproduce safely;
+- a smallest-fix recommendation and regression test.
 
-The pinned Cloudflare source is vendored only as reviewed guidance. **Do not execute vendored `.cjs` validators, hooks, installers, or upstream scripts.** Project-owned tests and verification scripts remain authoritative. `agent-skills.lock.json` must stay `pinned-only`, with upstream scripts disabled and remote instructions unable to override project policy.
+Best-practice gaps without a concrete crossed boundary/result are not `CONFIRMED` vulnerabilities.
 
-## Production and release
+Facts that depend on deployed headers, provider settings, broker ACLs, production topology, account policy, or other evidence unavailable in source are `NEEDS_VALIDATION`. They receive no severity until validated and must include the exact blocker plus a safe owner-action validation plan.
 
-No production exploitation or mutation is authorized. Any release/security PASS must be tied to the exact candidate SHA that actually executed the relevant project-owned gates. Missing runner/runtime/browser evidence is `BLOCKED` or `NOT_EXECUTED`, never inferred as PASS.
+## Severity and backlog
+
+Assign severity only after confirmation. Map demonstrated Cloudflare severity anchors to ContaGest priority as follows:
+
+- critical → P0;
+- high → P1;
+- medium → P2;
+- low/informational → P3.
+
+Deduplicate by root cause/fingerprint. Multiple manifestations fixed by one authority become one remediation issue with all evidence references. Derive `TOTAL` from validated actionable root causes; never force an arbitrary ticket count.
+
+Each remediation issue must contain severity/priority, fingerprint, files/routes, trust boundary, abuse path, preconditions, evidence, root cause, smallest fix, regression coverage, acceptance criteria, rollback/risk, dependencies, and exact-SHA completion evidence.
+
+## Evidence and artifacts
+
+Canonical full-audit artifacts stay outside the application repository. A repository summary may contain only non-secret metadata: audited SHA, methodology, counts, issue links, coverage caveats, and the external artifact location convention.
+
+Never commit live tokens, provider credentials, raw private data, exploit dumps, session material, or audit scratch files.
