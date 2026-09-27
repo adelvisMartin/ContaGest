@@ -109,6 +109,9 @@ jobs:
           npm --workspace backend run prisma:generate 2>&1 | tee -a prisma-v559.log
           npm --workspace backend run prisma:deploy 2>&1 | tee migrations-v559.log
           npm --workspace backend run seed 2>&1 | tee seed-v559.log
+          dropdb -h 127.0.0.1 -U postgres --if-exists contagest_finance_v559
+          createdb -h 127.0.0.1 -U postgres -T contagest_finance_v559_e2e contagest_finance_v559
+          psql -h 127.0.0.1 -U postgres -d contagest_finance_v559 -Atc 'select current_database(), current_setting('"'"'server_version'"'"');' | tee clone-v559.log
       - name: Skills + static quality
         run: |
           set -o pipefail
@@ -117,10 +120,16 @@ jobs:
           npm run typecheck 2>&1 | tee typecheck-v559.log
           npm run lint 2>&1 | tee lint-v559.log
       - name: Golden financial reconciliation
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/contagest_finance_v559?schema=public
+          DIRECT_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/contagest_finance_v559?schema=public
         run: |
           set -o pipefail
           GITHUB_SHA="$CANDIDATE_SHA" npm run test:backend:financial:reconciliation:real 2>&1 | tee reconciliation-v559.log
       - name: Historical financial regressions
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/contagest_finance_v559?schema=public
+          DIRECT_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/contagest_finance_v559?schema=public
         run: |
           set -o pipefail
           npm run test:backend:financial:real 2>&1 | tee financial-regression-v559.log
@@ -139,6 +148,7 @@ jobs:
             prisma-v559.log
             migrations-v559.log
             seed-v559.log
+            clone-v559.log
             skills-v559.log
             agent-gates-v559.log
             typecheck-v559.log
