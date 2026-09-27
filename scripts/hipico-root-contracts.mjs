@@ -42,7 +42,8 @@ export function runHipicoRootContracts(root=REPO_ROOT){
   console.log(`[hipico-root-contracts] ${files.length} files · concurrency=${effectiveConcurrency} · isolated=${isolated}${isolated?` · heapMb=${heapLimitMb}`:''}`);
   for(const file of files)console.log(` - ${relative(root,resolve(root,file)).replaceAll('\\','/')}`);
 
-  for(const batch of batches){
+  for(let index=0;index<batches.length;index+=1){
+    const batch=batches[index];
     const result=spawnSync(process.execPath,[
       ...(isolated?[`--max-old-space-size=${heapLimitMb}`]:[]),
       '--test',
@@ -56,10 +57,13 @@ export function runHipicoRootContracts(root=REPO_ROOT){
       shell:false
     });
     if(result.error){
-      console.error(`[hipico-root-contracts] FAIL: ${result.error.message}`);
-      return 2;
+      console.error(`[hipico-root-contracts] FAIL: file=${batch[0]||'aggregate'} spawn=${result.error.message}`);
+      return isolated?Math.min(250,130+index):2;
     }
-    if(result.status!==0)return Number.isInteger(result.status)?result.status:2;
+    if(result.status!==0){
+      console.error(`[hipico-root-contracts] FAIL: file=${batch[0]||'aggregate'} exit=${result.status ?? 'null'} signal=${result.signal||'none'}`);
+      return isolated?Math.min(250,130+index):(Number.isInteger(result.status)?result.status:2);
+    }
   }
   return 0;
 }
