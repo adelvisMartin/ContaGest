@@ -1,11 +1,9 @@
 import { spawnSync } from 'node:child_process';
 
+// DIAGNOSTIC-ONLY branch probe. Never merge this reduced stage list.
 const stages = Object.freeze([
   { id:'identity', command:'npm', args:['run','build:identity'] },
-  { id:'source-qa', command:'npm', args:['run','preqa:source'] },
-  { id:'browser-qa', command:'npm', args:['run','preqa:browser'] },
-  { id:'backend-stage', command:'npm', args:['run','stage:backend'] },
-  { id:'vite-build', command:'vite', args:['build'] }
+  { id:'source-qa', command:'npm', args:['run','preqa:source'] }
 ]);
 
 function safeBuildContext() {
@@ -57,7 +55,3 @@ if (!process.exitCode) {
   const context = safeBuildContext();
   console.log(`[vercel-build][PASS] all-stages=${stages.length} sha=${context.sha}`);
 }
-
-// Diagnostic marker: no behavioral change. This commit exists only to trigger a
-// Vercel release/** preview without a pull request, matching production's
-// browser-preQA skip path while preserving all other build stages.
