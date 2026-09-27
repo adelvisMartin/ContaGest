@@ -1,0 +1,59 @@
+name: PWA tenant-safe #563
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'frontend/public/sw.js'
+      - 'frontend/src/services/authService.js'
+      - 'frontend/src/services/pwaOfflinePolicy.js'
+      - 'frontend/src/styles/pwa-offline.css'
+      - 'qa/pwa-tenant-safe-v563.spec.mjs'
+      - 'tests/pwa_tenant_safe_v563_contract.test.mjs'
+      - 'docs/ADR_PWA_OFFLINE_V563.md'
+      - 'scripts/run-authoritative-contracts.mjs'
+      - '.github/workflows/pwa-tenant-safe-v563.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pwa-v563-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - run: node --test tests/pwa_tenant_safe_v563_contract.test.mjs
+      - run: npm run build:frontend
+
+  chromium:
+    needs: contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - run: npx playwright install --with-deps chromium
+      - run: npx playwright test qa/pwa-tenant-safe-v563.spec.mjs --project=chromium --workers=1
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: pwa-v563-${{ github.sha }}
+          path: |
+            playwright-report
+            test-results
+          if-no-files-found: ignore
