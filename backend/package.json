@@ -9,16 +9,14 @@
     "./access-manifest.json": "./src/shared/contracts/access-manifest.json",
     "./access-manifest": "./src/shared/contracts/accessManifestRuntime.js"
   },
-  "engines": {
-    "node": "22.x"
-  },
+  "engines": { "node": "22.x" },
   "description": "Backend ContaGest-VE Enterprise con RBAC, licencias, MFA, Prisma/Supabase, verticales clínicas y endurecimiento operativo.",
   "scripts": {
-    "dev": "tsx watch src/server.ts",
+    "dev": "node ../scripts/api-contract-v565.mjs --write && tsx watch src/server.ts",
     "start": "node dist/src/server.js",
-    "build": "tsc -p tsconfig.json && node scripts/copy-runtime-assets.mjs",
-    "lint": "tsc --noEmit",
-    "typecheck": "tsc --noEmit",
+    "build": "node ../scripts/api-contract-v565.mjs --write && tsc -p tsconfig.json && node scripts/copy-runtime-assets.mjs",
+    "lint": "node ../scripts/api-contract-v565.mjs --check && tsc --noEmit",
+    "typecheck": "node ../scripts/api-contract-v565.mjs --check && tsc --noEmit",
     "test:config": "tsx --test src/config/*.test.ts",
     "test:financial-idempotency": "tsx --test src/shared/services/financial-idempotency.service.test.ts",
     "test:xlsx": "tsx --test src/modules/exports/xlsx-writer.test.ts",
@@ -85,7 +83,5 @@
     "tsx": "4.23.13",
     "typescript": "5.9.3"
   },
-  "prisma": {
-    "seed": "tsx prisma/seed.ts"
-  }
+  "prisma": { "seed": "tsx prisma/seed.ts" }
 }
