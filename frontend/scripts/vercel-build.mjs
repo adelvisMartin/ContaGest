@@ -25,7 +25,10 @@ function runStage(stage, index) {
   const context = safeBuildContext();
   console.log(`[vercel-build][START] stage=${stage.id} index=${index + 1}/${stages.length} sha=${context.sha} ref=${context.ref} env=${context.environment} node=${context.node}`);
 
-  const result = spawnSync(stage.command, stage.args, {
+  const diagnosticSource = stage.id === 'source-qa' && process.env.VERCEL;
+  const command = diagnosticSource ? 'node' : stage.command;
+  const args = diagnosticSource ? ['../scripts/vercel-source-preqa-diagnostic.mjs'] : stage.args;
+  const result = spawnSync(command, args, {
     stdio: 'inherit',
     env: process.env,
     shell: false
