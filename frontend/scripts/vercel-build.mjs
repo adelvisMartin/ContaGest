@@ -11,20 +11,15 @@ if (result.error) {
   process.exitCode = 0;
 } else {
   const normalized = `${result.stdout || ''}\n${result.stderr || ''}`.replaceAll('\\', '/');
-  const areas = [
-    ['src/shared/observability/context.test.ts', 61],
-    ['src/shared/observability/context.ts', 62],
-    ['src/shared/observability/http.ts', 63],
-    ['src/shared/observability/logger.ts', 64],
-    ['src/shared/security/production-boundaries.test.ts', 65],
-    ['src/shared/security/production-boundaries.ts', 66],
-    ['src/shared/financial/', 67],
-    ['src/shared/services/financial-idempotency.service', 68],
-    ['src/shared/services/', 69],
-    ['src/shared/middleware/', 70],
-    ['src/shared/http', 71],
-    ['src/shared/', 72]
-  ];
-  const match = areas.find(([needle]) => normalized.includes(needle));
-  process.exitCode = match ? match[1] : 90;
+  const match = normalized.match(/src\/shared\/observability\/context\.ts\((\d+),(\d+)\):\s*error\s+TS(\d+)/);
+  if (!match) {
+    process.exitCode = 90;
+  } else {
+    const line = Number(match[1]);
+    if (line <= 15) process.exitCode = 81;
+    else if (line <= 30) process.exitCode = 82;
+    else if (line <= 45) process.exitCode = 83;
+    else if (line <= 60) process.exitCode = 84;
+    else process.exitCode = 85;
+  }
 }
