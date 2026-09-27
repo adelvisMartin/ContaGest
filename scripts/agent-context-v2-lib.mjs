@@ -84,6 +84,25 @@ function reachableOwners(root, edges) {
   return visited;
 }
 
+function hasDirectedCycle(owners, edges) {
+  const visiting = new Set();
+  const visited = new Set();
+
+  const visit = (owner) => {
+    if (visiting.has(owner)) return true;
+    if (visited.has(owner)) return false;
+    visiting.add(owner);
+    for (const target of edges.get(owner) ?? []) {
+      if (visit(target)) return true;
+    }
+    visiting.delete(owner);
+    visited.add(owner);
+    return false;
+  };
+
+  return owners.some((owner) => visit(owner));
+}
+
 export function detectDuplicateExclusiveClaims(pullRequests = []) {
   const openPullRequests = pullRequests
     .filter((pullRequest) => pullRequest?.state !== 'closed')
@@ -127,6 +146,7 @@ export function detectDuplicateExclusiveClaims(pullRequests = []) {
 
     const roots = owners.filter((owner) => !targeted.has(owner));
     const validSupersession = roots.length === 1
+      && !hasDirectedCycle(owners, edges)
       && reachableOwners(roots[0], edges).size === owners.length;
 
     if (!validSupersession) {
