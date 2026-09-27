@@ -33,6 +33,12 @@ test('59/75 runner is fail-fast and does not downgrade failing stages',()=>{
   assert.doesNotMatch(runner,/allowFailure|continue-on-error|process\.exitCode\s*=\s*0/);
 });
 
+test('59/75 Vercel source diagnostics preserve bounded substage exit codes',()=>{
+  assert.match(runner,/diagnosticSource && Number\.isInteger\(result\.status\)/);
+  assert.match(runner,/result\.status >= 101 && result\.status <= 127/);
+  assert.match(runner,/\? result\.status\s*:\s*71 \+ index/);
+});
+
 test('59/75 diagnostics expose only bounded non-secret build metadata',()=>{
   assert.match(runner,/VERCEL_GIT_COMMIT_SHA/);
   assert.match(runner,/VERCEL_GIT_COMMIT_REF/);
