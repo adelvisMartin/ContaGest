@@ -42,6 +42,18 @@ test('supersession without a shared exclusive issue cannot silence an owner', ()
   assert.deepEqual(result.superseded, []);
 });
 
+test('cyclic supersession fails closed because it leaves no unique closing owner', () => {
+  const result = detectDuplicateExclusiveClaims([
+    { number: 599, body: 'Agent-Claim-Supersedes: 600\nCloses #562', state: 'open' },
+    { number: 600, body: 'Agent-Claim-Supersedes: 599\nFixes #562', state: 'open' },
+  ]);
+
+  assert.equal(result.ok, false);
+  assert.equal(result.code, 'DUPLICATE_WORK_CLAIM');
+  assert.deepEqual(result.duplicates, [{ issue: 562, pullRequests: [599, 600] }]);
+  assert.deepEqual(result.superseded, []);
+});
+
 test('diagnostic or stacked PR without closure syntax is not an exclusive claim', () => {
   const result = detectDuplicateExclusiveClaims([
     { number: 701, body: 'Agent-Claim-Mode: diagnostic\nInvestigates #562', state: 'open' },
