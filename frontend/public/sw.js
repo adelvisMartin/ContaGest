@@ -49,6 +49,19 @@ function isSensitiveRequest(url) {
     || url.pathname.includes('/admin');
 }
 
+function isPublicStaticAsset(url) {
+  return APP_SHELL.includes(url.pathname)
+    || url.pathname.startsWith('/assets/')
+    || url.pathname.startsWith('/icons/')
+    || url.pathname.startsWith('/vendor/')
+    || url.pathname.startsWith('/vertical-assets/');
+}
+
+async function assetCacheMatch(request) {
+  const cache = await caches.open(ASSET_CACHE);
+  return cache.match(request);
+}
+
 async function networkFirst(request) {
   try {
     const response = await fetch(request, { cache: 'no-store' });
@@ -58,7 +71,7 @@ async function networkFirst(request) {
     }
     return response;
   } catch {
-    return (await caches.match(request, { cacheName: ASSET_CACHE }))
+    return (await assetCacheMatch(request))
       || new Response('Recurso no disponible sin conexión.', { status: 503, headers: { 'X-CG-Offline': 'true' } });
   }
 }
@@ -90,7 +103,7 @@ self.addEventListener('fetch', (event) => {
         }
         return response;
       } catch {
-        const cached = await caches.match('/index.html', { cacheName: ASSET_CACHE });
+        const cached = await assetCacheMatch('/index.html');
         if (!cached) return new Response('ContaGest no está disponible sin conexión.', { status: 503, headers: { 'Content-Type': 'text/plain; charset=utf-8', 'X-CG-Offline': 'true' } });
         const headers = new Headers(cached.headers);
         headers.set('X-CG-Offline', 'true');
@@ -106,12 +119,10 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  const cacheableAsset = ['image', 'font', 'manifest'].includes(request.destination)
-    || ['/manifest.webmanifest', '/icons/contagest-app.svg', '/icons/contagest-app-192.svg', '/icons/contagest-app-512.svg', '/pwa-install.js'].includes(url.pathname);
-  if (!cacheableAsset) return;
+  if (!isPublicStaticAsset(url)) return;
 
   event.respondWith((async () => {
-    const cached = await caches.match(request, { cacheName: ASSET_CACHE });
+    const cached = await assetCacheMatch(request);
     const refresh = fetch(request, { cache: 'no-store' }).then(async (response) => {
       if (response.ok && (response.type === 'basic' || response.type === 'cors')) {
         const cache = await caches.open(ASSET_CACHE);
