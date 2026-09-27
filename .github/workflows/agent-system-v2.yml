@@ -31,14 +31,18 @@ jobs:
         uses: actions/checkout@v4
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
       - name: Setup Node 22
         uses: actions/setup-node@v4
         with:
           node-version: '22'
+      - name: Verify Agent System v2 structure
+        run: npm run agent:system:verify
       - name: Run Agent System v2 contracts
-        shell: bash
-        run: |
-          set -euo pipefail
-          mapfile -t tests < <(find tests -maxdepth 1 -type f \( -name 'agent_*_v2*.test.mjs' -o -name 'duplicate_work_claims_v2.test.mjs' \) -print | sort)
-          test "${#tests[@]}" -gt 0
-          node --test "${tests[@]}"
+        run: npm run agent:system:test
+      - name: Verify duplicate exclusive work claims
+        if: github.event_name == 'pull_request'
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: npm run agent:claims -- --repo "${GITHUB_REPOSITORY}"
