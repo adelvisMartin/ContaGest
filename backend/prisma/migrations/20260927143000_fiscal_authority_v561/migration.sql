@@ -63,3 +63,21 @@ CREATE TABLE IF NOT EXISTS public."FiscalCloseEvidence" (
 );
 CREATE INDEX IF NOT EXISTS "FiscalCloseEvidence_tenant_period_idx"
   ON public."FiscalCloseEvidence" ("tenantId", "period", "module");
+
+-- The fiscal router already enforces these capabilities. Persist them so a clean
+-- or upgraded database cannot end up with permanently unreachable fiscal routes.
+INSERT INTO public."Permission" ("id", "key", "description") VALUES
+  ('56100000-0000-4000-8000-000000000001'::uuid, 'fiscal.read', 'Ver períodos, reglas y documentos fiscales'),
+  ('56100000-0000-4000-8000-000000000002'::uuid, 'fiscal.manage_documents', 'Emitir y gestionar documentos fiscales'),
+  ('56100000-0000-4000-8000-000000000003'::uuid, 'fiscal.close', 'Gestionar reglas y cerrar períodos fiscales'),
+  ('56100000-0000-4000-8000-000000000004'::uuid, 'fiscal.reopen', 'Reabrir períodos fiscales mediante aprobación')
+ON CONFLICT ("key") DO UPDATE SET "description" = EXCLUDED."description";
+
+-- Existing global administrators retain the capabilities they already represent.
+-- Other roles remain least-privilege and must receive fiscal grants explicitly.
+INSERT INTO public."RolePermission" ("roleId", "permissionId")
+SELECT r."id", p."id"
+FROM public."Role" r
+JOIN public."Permission" p ON p."key" IN ('fiscal.read','fiscal.manage_documents','fiscal.close','fiscal.reopen')
+WHERE r."system" = true AND r."name" = 'Administrador Global'
+ON CONFLICT ("roleId", "permissionId") DO NOTHING;
