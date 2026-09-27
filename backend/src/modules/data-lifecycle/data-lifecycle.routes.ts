@@ -17,7 +17,7 @@ import {
 } from './data-lifecycle.repository.js';
 
 const router = Router();
-router.use(requireTenant, requirePermission('admin.manage'));
+router.use(requireTenant, requirePermission('platform.manage'));
 
 type RequestContext = { tenantId: string; userId?: string; ip?: string; userAgent?: string; requestId?: string };
 const context = (req: Request) => (req as Request & { context: RequestContext }).context;
