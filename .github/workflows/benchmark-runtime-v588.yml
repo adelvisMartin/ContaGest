@@ -1,0 +1,49 @@
+name: "Benchmark #588 · critical runtime"
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'qa/benchmark-runtime-v588.spec.mjs'
+      - 'scripts/benchmark-runtime-v588.mjs'
+      - 'tests/benchmark_runtime_v588_contract.test.mjs'
+      - '.github/workflows/benchmark-runtime-v588.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CANDIDATE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+
+jobs:
+  chromium-critical:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      NODE_ENV: test
+      API_MODE: prisma
+      JWT_SECRET: benchmark-v588-ci-only-jwt-secret-0123456789-abcdef
+      LICENSE_HASH_SECRET: benchmark-v588-ci-only-license-secret-0123456789-abcdef
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.CANDIDATE_SHA }}
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - run: npx playwright install --with-deps chromium
+      - name: Execute exact-SHA synthetic runtime benchmark
+        run: node scripts/benchmark-runtime-v588.mjs
+      - name: Upload exact-SHA runtime evidence
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: benchmark-v588-${{ env.CANDIDATE_SHA }}
+          path: |
+            artifacts/qa/benchmark-v588
+            playwright-report
+            test-results
+          if-no-files-found: error
