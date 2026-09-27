@@ -36,7 +36,10 @@ const checks = Object.freeze([
 for (let index = 0; index < checks.length; index += 1) {
   const [id, command, args] = checks[index];
   console.log(`[vercel-source-diagnostic][START] ${id}`);
-  const result = spawnSync(command, args, { cwd:'..', stdio:'inherit', env:process.env, shell:false });
+  const env = id === 'hipico-root-contracts'
+    ? { ...process.env, HIPICO_ROOT_TEST_CONCURRENCY:'1' }
+    : process.env;
+  const result = spawnSync(command, args, { cwd:'..', stdio:'inherit', env, shell:false });
   if (result.error || result.status !== 0) {
     console.error(`[vercel-source-diagnostic][FAIL] ${id}`);
     process.exitCode = 101 + index;
