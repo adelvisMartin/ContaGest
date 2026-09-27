@@ -1,0 +1,43 @@
+{
+  "schemaVersion": 1,
+  "authority": "stable-navigation-only",
+  "stateResolution": "resolve live runtime state through Git/GitHub; never infer it from this map",
+  "platform": {
+    "backend": "backend/src/modules",
+    "identity": "backend/src/modules/auth",
+    "rbac": "backend/src/modules/rbac",
+    "licensing": "backend/src/modules/license"
+  },
+  "financial": {
+    "modules": "backend/src/modules",
+    "schema": "backend/prisma",
+    "accountingEvidence": "qa"
+  },
+  "commercial": {
+    "backend": "backend/src/modules",
+    "frontend": "frontend/src/pages"
+  },
+  "operations": {
+    "backend": "backend/src/modules",
+    "scripts": "scripts"
+  },
+  "verticals": {
+    "frontend": "frontend/src/pages",
+    "backend": "backend/src/modules",
+    "hipicoCli": "tools/hipico-cli"
+  },
+  "qa": {
+    "riskCatalog": "qa/support/domain-risk-catalog.mjs",
+    "routeCatalog": "qa/support/module-visual-catalog.mjs",
+    "tests": "tests",
+    "workflows": ".github/workflows"
+  },
+  "agents": {
+    "contract": "AGENTS.md",
+    "bootstrap": ".agents/context/BOOTSTRAP.md",
+    "profiles": ".agents/agents",
+    "skills": ".agents/skills",
+    "router": "scripts/agent-gate-router.mjs",
+    "graphify": ".agents/skills/graphify/SKILL.md"
+  }
+}

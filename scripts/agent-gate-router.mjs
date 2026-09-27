@@ -11,7 +11,19 @@ if(explicit){files=explicit.split(',').map((item)=>item.trim()).filter(Boolean);
 }
 const domains=gatesForFiles(files);
 const unique=(values)=>[...new Set(values)].sort();
-const output={base,files,domains:domains.map(({id,severity})=>({id,severity})),agents:unique(domains.flatMap((domain)=>domain.agents)),skills:unique(domains.flatMap((domain)=>domain.skills)),gates:unique(domains.flatMap((domain)=>domain.gates)),critical:domains.some((domain)=>domain.severity==='critical')};
+const agentIds=unique(domains.flatMap((entry)=>entry.agentIds||[]));
+const output={
+  schemaVersion:2,
+  base,
+  files,
+  domains:domains.map(({id,severity})=>({id,severity})),
+  agents:unique(domains.flatMap((entry)=>entry.agents)),
+  agentIds,
+  agentProfiles:agentIds.map((id)=>`.agents/agents/${id}.md`),
+  skills:unique(domains.flatMap((entry)=>entry.skills)),
+  gates:unique(domains.flatMap((entry)=>entry.gates)),
+  critical:domains.some((entry)=>entry.severity==='critical')
+};
 console.log(JSON.stringify(output,null,2));
 if(!files.length)console.error('Aviso: no se detectaron archivos modificados.');
 if(output.critical)console.error('Cambio crítico detectado: no reducir gates sin evidencia y aprobación del owner.');
