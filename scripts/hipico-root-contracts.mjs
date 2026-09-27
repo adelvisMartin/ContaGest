@@ -27,6 +27,18 @@ function vercelHeapLimitMb(){
   return Math.max(128,Math.min(1024,Math.trunc(raw)));
 }
 
+export function buildHipicoTestArgs(batch,{isolated=false,heapLimitMb=256,effectiveConcurrency=4}={}){
+  if(isolated)return[
+    `--max-old-space-size=${heapLimitMb}`,
+    ...batch
+  ];
+  return[
+    '--test',
+    `--test-concurrency=${effectiveConcurrency}`,
+    ...batch
+  ];
+}
+
 export function runHipicoRootContracts(root=REPO_ROOT){
   const files=discoverHipicoRootContracts(root);
   if(!files.length){
@@ -44,12 +56,11 @@ export function runHipicoRootContracts(root=REPO_ROOT){
 
   for(let index=0;index<batches.length;index+=1){
     const batch=batches[index];
-    const result=spawnSync(process.execPath,[
-      ...(isolated?[`--max-old-space-size=${heapLimitMb}`]:[]),
-      '--test',
-      `--test-concurrency=${effectiveConcurrency}`,
-      ...batch
-    ],{
+    const result=spawnSync(process.execPath,buildHipicoTestArgs(batch,{
+      isolated,
+      heapLimitMb,
+      effectiveConcurrency
+    }),{
       cwd:root,
       env:process.env,
       stdio:'inherit',
