@@ -1,0 +1,40 @@
+{
+  "schemaVersion": 1,
+  "apiVersion": "v1",
+  "basePath": "/api/v1",
+  "ownershipSource": "backend/src/modules/route-manifest.ts",
+  "runtimeInventory": "scripts/generate-api-inventory-v565.mjs",
+  "representations": {
+    "id": "uuid-string",
+    "dateTime": "iso-8601-utc-string",
+    "decimal": "canonical-decimal-string-or-legacy-number-with-exact-companion-where-supported"
+  },
+  "errorEnvelope": {
+    "required": ["ok", "message", "requestId"],
+    "optional": ["code", "details"],
+    "stackAllowedOnlyWhen": "NODE_ENV=development",
+    "unhandled5xxMessage": "Error interno del servidor."
+  },
+  "pagination": {
+    "query": { "take": { "default": 100, "maximum": 500 }, "skip": { "default": 0, "maximum": 1000000 } },
+    "responseHeaders": ["X-CG-Page-Take", "X-CG-Page-Skip"],
+    "responseShapeCompatibility": "existing arrays remain arrays"
+  },
+  "idempotency": {
+    "header": "Idempotency-Key",
+    "requiredFor": ["financial-effect-mutations", "inventory-effect-mutations", "hipico-outbox-effect-mutations"],
+    "retryRule": "same tenant+scope+key+request must replay the original effect; changed payload must fail closed"
+  },
+  "webhooks": {
+    "signatureRequired": true,
+    "replayRule": "provider event identity must be deduplicated before effects",
+    "rawBodyVerificationRequired": true
+  },
+  "breakingChanges": {
+    "rule": "remove/rename/type-semantic changes require a new API major version or an explicit compatibility adapter",
+    "canonicalHipicoPrefix": "/api/v1/hipico",
+    "legacyAdapterPrefix": "/api/v1/hipico-bot",
+    "legacyProviderSuccessor": "/api/v1/hipico/providers",
+    "sunset": "must be explicitly approved/configured before removal; no date is inferred"
+  }
+}

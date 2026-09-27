@@ -1,0 +1,58 @@
+name: "API #565 · contract governance"
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'backend/src/app.ts'
+      - 'backend/src/modules/**'
+      - 'backend/src/shared/http.ts'
+      - 'backend/src/shared/middleware/error.ts'
+      - 'backend/src/shared/contracts/apiGovernance.ts'
+      - 'backend/src/shared/contracts/api-contract-v1.json'
+      - 'scripts/generate-api-inventory-v565.mjs'
+      - 'tests/api_governance_v565_contract.test.mjs'
+      - '.github/workflows/api-contract-v565.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CANDIDATE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.CANDIDATE_SHA }}
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install locked dependencies
+        run: npm ci --no-audit --no-fund
+      - name: Governance source contracts
+        run: node --test tests/api_governance_v565_contract.test.mjs
+      - name: Generate exact-SHA endpoint inventory
+        run: node scripts/generate-api-inventory-v565.mjs
+      - name: Typecheck lint and backend build
+        run: |
+          npm run typecheck
+          npm run lint
+          npm run build:backend
+      - name: Capture exact SHA
+        if: always()
+        run: |
+          mkdir -p artifacts/contracts
+          printf 'ticket=#565\nsha=%s\nworkflow=%s\nrun_id=%s\n' "$CANDIDATE_SHA" "$GITHUB_WORKFLOW" "$GITHUB_RUN_ID" > artifacts/contracts/exact-sha-v565.txt
+      - name: Upload API contract evidence
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: api-contract-v565-${{ env.CANDIDATE_SHA }}
+          path: artifacts/contracts
+          if-no-files-found: error

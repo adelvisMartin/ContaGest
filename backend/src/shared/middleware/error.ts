@@ -8,15 +8,20 @@ function databaseMessage(error: Error) {
   if (msg.includes("Can't reach database server") || msg.includes('Timed out fetching a new connection') || msg.includes('P1001') || msg.includes('P2024')) {
     return {
       status: 503,
-      message: [
-        'Backend no pudo conectarse a Supabase/PostgreSQL.',
-        'Corrige backend/.env: DATABASE_URL debe usar el pooler 6543, no 5432, y no debe tener connection_limit=1.',
-        'Ejemplo: DATABASE_URL="postgresql://postgres.[PROJECT_REF]:[PASSWORD]@aws-1-us-east-1.pooler.supabase.com:6543/postgres?pgbouncer=true&sslmode=require&connection_limit=5&pool_timeout=60&connect_timeout=30&schema=public"',
-        'Luego reinicia el backend con Ctrl+C y npm run dev.'
-      ].join(' ')
+      message: 'El servicio de datos no está disponible temporalmente. Intenta nuevamente en unos minutos.'
     };
   }
   return null;
+}
+
+function httpErrorCode(error: Error) {
+  const direct = (error as any)?.code;
+  if (direct) return sanitizeLogValue(direct, 80) || undefined;
+  if (error instanceof HttpError && error.details && typeof error.details === 'object') {
+    const nested = (error.details as Record<string, unknown>).code;
+    if (nested) return sanitizeLogValue(nested, 80) || undefined;
+  }
+  return undefined;
 }
 
 export function notFound(req: Request, res: Response) {
@@ -33,7 +38,7 @@ export function errorHandler(error: Error, req: Request, res: Response, _next: N
   const validation = error instanceof ZodError;
   const status = db?.status || (error instanceof HttpError ? error.status : validation ? 422 : 500);
   const requestId = sanitizeLogValue((req as any).requestId || '', 96);
-  const errorCode = sanitizeLogValue((error as any)?.code || '', 80) || undefined;
+  const errorCode = httpErrorCode(error);
 
   const logFields = {
     event: 'http.error',
@@ -47,11 +52,18 @@ export function errorHandler(error: Error, req: Request, res: Response, _next: N
   if (status >= 500) requestLogger(req).error(logFields, 'request failed');
   else requestLogger(req).warn(logFields, 'request rejected');
 
+  const publicMessage = validation
+    ? 'La solicitud contiene datos inválidos.'
+    : db?.message
+      || (error instanceof HttpError ? error.message : status >= 500 ? 'Error interno del servidor.' : error.message)
+      || 'Error interno del servidor.';
+
   const payload: Record<string, unknown> = {
     ok: false,
-    message: validation ? 'La solicitud contiene datos inválidos.' : (db?.message || error.message || 'Error interno'),
+    message: publicMessage,
     requestId
   };
+  if (errorCode) payload.code = errorCode;
   if (validation) payload.details = error.issues;
   if (error instanceof HttpError && error.details) payload.details = error.details;
   if (process.env.NODE_ENV === 'development') payload.stack = error.stack;
