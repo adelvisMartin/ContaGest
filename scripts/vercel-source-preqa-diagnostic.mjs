@@ -2,7 +2,8 @@
 import { spawnSync } from 'node:child_process';
 
 // DIAGNOSTIC ONLY. Mirrors frontend preqa:source one command at a time.
-// Exit 101..127 identifies the first failing command without weakening any gate.
+// Exit 101..127 identifies the first failing command. Exit 130..229 is reserved
+// for a nested Hípico root-contract file probe. No gate is skipped or softened.
 const checks = Object.freeze([
   ['baseline-verify','npm',['run','baseline:verify']],
   ['erp-wave-a','npm',['run','audit:erp-ui-wave-a']],
@@ -41,8 +42,12 @@ for (let index = 0; index < checks.length; index += 1) {
     : process.env;
   const result = spawnSync(command, args, { cwd:'..', stdio:'inherit', env, shell:false });
   if (result.error || result.status !== 0) {
-    console.error(`[vercel-source-diagnostic][FAIL] ${id}`);
-    process.exitCode = 101 + index;
+    console.error(`[vercel-source-diagnostic][FAIL] ${id} exit=${result.status ?? 'null'} signal=${result.signal || 'none'}`);
+    const nestedHipicoExit = id === 'hipico-root-contracts'
+      && Number.isInteger(result.status)
+      && result.status >= 130
+      && result.status <= 229;
+    process.exitCode = nestedHipicoExit ? result.status : 101 + index;
     break;
   }
 }
