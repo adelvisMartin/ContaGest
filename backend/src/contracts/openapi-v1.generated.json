@@ -1,0 +1,31 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "ContaGest API v1",
+    "version": "v1",
+    "description": "Bootstrap contract. Regenerated from runtime route sources by scripts/api-contract-v565.mjs during build."
+  },
+  "servers": [{ "url": "/" }],
+  "paths": {
+    "/api/v1/openapi.json": { "get": { "operationId": "apiContract_get_openapi", "responses": { "200": { "description": "Generated OpenAPI" } } } },
+    "/api/v1/contract.json": { "get": { "operationId": "apiContract_get_contract", "responses": { "200": { "description": "Contract policy and route catalog" } } } }
+  },
+  "components": {
+    "schemas": {
+      "ErrorEnvelope": {
+        "type": "object",
+        "required": ["ok", "code", "message", "requestId", "retryable"],
+        "properties": {
+          "ok": { "type": "boolean", "const": false },
+          "code": { "type": "string" },
+          "message": { "type": "string" },
+          "details": {},
+          "requestId": { "type": "string" },
+          "retryable": { "type": "boolean" }
+        }
+      }
+    }
+  },
+  "x-contagest-bootstrap": true,
+  "x-contagest-contract-schema-version": 1
+}
