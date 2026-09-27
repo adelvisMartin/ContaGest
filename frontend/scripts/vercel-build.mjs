@@ -1,33 +1,42 @@
+import fs from 'node:fs';
 import { spawnSync } from 'node:child_process';
 
-// DIAGNOSTIC-ONLY: isolate the first failing command inside frontend preqa:source.
-// Exit 101..113 maps one-to-one to the ordered checks below. Never merge this file.
-const checks = Object.freeze([
-  { id:'baseline-verify', command:'npm', args:['run','baseline:verify'] },
-  { id:'erp-wave-a', command:'npm', args:['run','audit:erp-ui-wave-a'] },
-  { id:'contracts-current', command:'npm', args:['run','test:contracts:current'] },
-  { id:'source-contract-pack', command:'node', args:['--test','tests/marketing_seo_issue_25.test.mjs','tests/reproducible_install_contract.test.mjs','tests/preview_secret_fail_closed.test.mjs','tests/erp_performance_issue_157.test.mjs','tests/erp_performance_execution_issue_157.test.mjs','tests/erp157_finalizer_truth_issue_157.test.mjs','tests/erp157_fixture_provenance_issue_157.test.mjs','tests/erp157_budget_ratification_issue_157.test.mjs','tests/hipico_command_center_289_contract.test.mjs'] },
-  { id:'hipico-root-contracts', command:'node', args:['scripts/hipico-root-contracts.mjs'] },
-  { id:'bridge-runtime-utils', command:'node', args:['--test','tools/hipico-whatsapp-web-bridge/tests/runtime-utils.test.mjs'] },
-  { id:'syntax-pack', command:'node', args:['--check','scripts/hipico-exact-sha-gate.mjs'] },
-  { id:'backend-typecheck', command:'npm', args:['--workspace','backend','run','typecheck'] },
-  { id:'backend-config-tests', command:'npm', args:['--workspace','backend','run','test:config'] },
-  { id:'backend-hipico-tests', command:'npm', args:['--workspace','backend','run','test:hipico'] },
-  { id:'visual-source-gate', command:'node', args:['scripts/visual-source-gate-v16.mjs'] },
-  { id:'functional-source-gate', command:'node', args:['scripts/erp-functional-source-gate-v16.mjs'] },
-  { id:'ui-control-audit', command:'node', args:['scripts/ui-control-audit-v16.mjs'] }
-]);
+// DIAGNOSTIC-ONLY: isolate the first failing authoritative contract file.
+// Exit 20 + test index. Never merge this file.
+const manifest = JSON.parse(fs.readFileSync('../config/implementation-roadmap-1-58.json','utf8'));
+const implementations = Array.isArray(manifest?.implementations) ? manifest.implementations : [];
+const regressionPaths = [...new Set(implementations.flatMap((row) => row.regressionPaths || []))];
+const required59 = [
+  'tests/implementations_1_58_audit.test.mjs',
+  'tests/vercel_build_recovery_59_75.test.mjs',
+  'tests/exact_sha_workflow_recovery_59_75.test.mjs',
+  'tests/prisma_ephemeral_baseline_contract.test.mjs',
+  'tests/security_audit_surface_boundary.test.mjs',
+  'tests/authoritative_contract_suite_59_75.test.mjs',
+  'tests/api_validation_error_59_75.test.mjs',
+  'tests/rbac_authoritative_session_60_75.test.mjs',
+  'tests/full_58_route_anti_overlap_61_75.test.mjs',
+  'tests/playwright_determinism_62_75.test.mjs',
+  'tests/cross_browser_critical_matrix_63_75.test.mjs',
+  'tests/health_dentistry_bounded_contexts_66_75.test.mjs',
+  'tests/vertical_schema_authority_67_75.test.mjs',
+  'tests/database_authority_67_75.test.mjs',
+  'tests/raw_sql_security_68_75.test.mjs',
+  'tests/design_system_authority_69_75.test.mjs',
+  'tests/vertical_asset_system_70_75.test.mjs',
+  'tests/cloudflare_security_audit_skill_contract.test.mjs'
+];
+const tests = [...new Set([...regressionPaths, ...required59])];
 
-for (let index = 0; index < checks.length; index += 1) {
-  const check = checks[index];
-  const result = spawnSync(check.command, check.args, {
+for (let index = 0; index < tests.length; index += 1) {
+  const result = spawnSync(process.execPath, ['--test', tests[index]], {
     cwd: '..',
     stdio: 'inherit',
     env: process.env,
     shell: false
   });
   if (result.error || result.status !== 0) {
-    process.exitCode = 101 + index;
+    process.exitCode = 20 + index;
     break;
   }
 }
