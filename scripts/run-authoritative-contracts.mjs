@@ -36,12 +36,6 @@ for(const file of tests){
 }
 
 console.log(`[authoritative-contracts] implementations=${implementations.length} tests=${tests.length}`);
-for(let index=0; index<tests.length; index+=1){
-  const result=spawnSync(process.execPath,['--test',tests[index]],{stdio:'inherit',env:process.env,shell:false});
-  if(result.error) throw result.error;
-  if(result.status!==0){
-    // DIAGNOSTIC-ONLY: encode the first failing authoritative test index.
-    process.exitCode=20+index;
-    break;
-  }
-}
+const result=spawnSync(process.execPath,['--test',...tests],{stdio:'inherit',env:process.env,shell:false});
+if(result.error) throw result.error;
+process.exitCode=result.status??1;
