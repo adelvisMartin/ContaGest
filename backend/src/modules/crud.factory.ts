@@ -15,6 +15,23 @@ type CrudOptions = {
   searchFields?: string[];
 };
 
+const DEFAULT_LIST_TAKE = 100;
+const MAX_LIST_TAKE = 500;
+const MAX_LIST_SKIP = 1_000_000;
+
+function boundedInteger(value: unknown, fallback: number, min: number, max: number) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.min(Math.max(Math.trunc(parsed), min), max);
+}
+
+export function parseCrudListWindow(query: Record<string, unknown>) {
+  return {
+    take: boundedInteger(query.take, DEFAULT_LIST_TAKE, 1, MAX_LIST_TAKE),
+    skip: boundedInteger(query.skip, 0, 0, MAX_LIST_SKIP),
+  };
+}
+
 export function createCrudRouter(options: CrudOptions) {
   const router = Router();
   const delegate = () => {
@@ -32,7 +49,15 @@ export function createCrudRouter(options: CrudOptions) {
     if (q && options.searchFields?.length) {
       where.OR = options.searchFields.map((field) => ({ [field]: { contains: q, mode: 'insensitive' } }));
     }
-    const data = await delegate().findMany({ where, orderBy: { createdAt: 'desc' }, take: Number(req.query.take || 100) });
+    const { take, skip } = parseCrudListWindow(req.query as Record<string, unknown>);
+    const data = await delegate().findMany({
+      where,
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      take,
+      skip,
+    });
+    res.setHeader('X-CG-Page-Take', String(take));
+    res.setHeader('X-CG-Page-Skip', String(skip));
     ok(res, data);
   }));
 

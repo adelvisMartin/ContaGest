@@ -1,0 +1,98 @@
+name: "Capacity #564 · API DB browser exports baseline"
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'backend/src/modules/crud.factory.ts'
+      - 'backend/src/database/prisma.ts'
+      - 'backend/src/modules/exports/**'
+      - 'qa/capacity-baseline-v564.test.ts'
+      - 'qa/capacity-frontend-v564.spec.mjs'
+      - 'scripts/capacity-frontend-baseline-v564.mjs'
+      - 'tests/capacity_baseline_v564_contract.test.mjs'
+      - '.github/workflows/capacity-baseline-v564.yml'
+      - 'docs/ADR_CAPACITY_BASELINE_V564.md'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CANDIDATE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+
+jobs:
+  baseline:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: capacity-ci-only
+          POSTGRES_DB: contagest_capacity_v564
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d contagest_capacity_v564"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      NODE_ENV: test
+      API_MODE: prisma
+      DATABASE_URL: postgresql://postgres:capacity-ci-only@127.0.0.1:5432/contagest_capacity_v564?schema=public
+      DIRECT_DATABASE_URL: postgresql://postgres:capacity-ci-only@127.0.0.1:5432/contagest_capacity_v564?schema=public
+      JWT_SECRET: capacity-v564-ci-only-secret-more-than-thirty-two-characters
+      LICENSE_HASH_SECRET: capacity-v564-license-secret-more-than-thirty-two-characters
+      ALLOW_DEV_TENANT_HEADER: 'true'
+      PRISMA_QUERY_TELEMETRY: 'true'
+      CAPACITY_DATASET_SIZE: '2500'
+      CAPACITY_REQUESTS: '30'
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.CANDIDATE_SHA }}
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install locked dependencies
+        run: npm ci --no-audit --no-fund
+      - name: Source contract
+        run: node --test tests/capacity_baseline_v564_contract.test.mjs
+      - name: Prepare disposable PostgreSQL
+        env:
+          PGPASSWORD: capacity-ci-only
+        run: psql -h 127.0.0.1 -U postgres -d contagest_capacity_v564 -v ON_ERROR_STOP=1 -f ops/database/prepare-supabase-ephemeral.sql
+      - name: Apply canonical migrations
+        run: npm --workspace backend run prisma:deploy
+      - name: Static quality and builds
+        run: |
+          npm run typecheck
+          npm run lint
+          npm run build
+      - name: API DB export baseline
+        run: npm --workspace backend exec -- tsx --test ../qa/capacity-baseline-v564.test.ts
+      - name: Frontend bundle/chunk baseline
+        run: node scripts/capacity-frontend-baseline-v564.mjs
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+      - name: Browser render and long-task baseline
+        run: npx playwright test qa/capacity-frontend-v564.spec.mjs --project=chromium --workers=1
+      - name: Capture exact-SHA marker
+        if: always()
+        run: |
+          mkdir -p artifacts/performance
+          printf 'ticket=#564\nsha=%s\nworkflow=%s\nrun_id=%s\n' "$CANDIDATE_SHA" "$GITHUB_WORKFLOW" "$GITHUB_RUN_ID" > artifacts/performance/exact-sha-v564.txt
+      - name: Upload baseline evidence
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: capacity-v564-${{ env.CANDIDATE_SHA }}
+          path: |
+            artifacts/performance
+            playwright-report
+            test-results
+          if-no-files-found: error
