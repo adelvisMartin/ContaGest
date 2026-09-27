@@ -73,7 +73,12 @@ jobs:
       - name: ERP module function source audit 58 routes
         run: npm run audit:functions:strict
 
-      - name: Frontend build
+      - name: Frontend build (Vercel production parity)
+        env:
+          VERCEL: "1"
+          VERCEL_ENV: production
+          VERCEL_GIT_COMMIT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          VERCEL_GIT_COMMIT_REF: ${{ github.head_ref || github.ref_name }}
         run: npm run build:frontend
 
       - name: Backend build
