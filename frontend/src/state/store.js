@@ -2,11 +2,28 @@ import { createDefaultState } from '../data/defaults.js';
 import { calculateQuote } from '../core/calculator.js';
 import { normalizeLanguage } from '../i18n/locales.js';
 
-const STORAGE_KEY = 'contagest_ve_enterprise_v7_state';
+const STORAGE_KEY_PREFIX = 'contagest_ve_enterprise_v7_state';
+const AUTH_SESSION_KEY = 'contagest_auth_session';
 const listeners = new Set();
 const clone = (value) => JSON.parse(JSON.stringify(value));
 const LOGIN_RENDER_KEYS = new Set(['route', 'pendingMfa', 'profile', 'activeLicense']);
 const OFFICIAL_THEMES = new Set(['light','dark']);
+
+function hashScopePart(value) {
+  const input = String(value || 'anonymous');
+  let hash = 2166136261;
+  for (let index = 0; index < input.length; index += 1) { hash ^= input.charCodeAt(index); hash = Math.imul(hash, 16777619); }
+  return (hash >>> 0).toString(36);
+}
+function readAuthSession() {
+  try { return JSON.parse(localStorage.getItem(AUTH_SESSION_KEY) || 'null'); } catch { return null; }
+}
+function sessionScope(session = readAuthSession()) {
+  const tenantId = session?.tenantId || session?.tenant?.id || 'anonymous';
+  const userId = session?.user?.id || session?.userId || 'anonymous';
+  return `${hashScopePart(tenantId)}-${hashScopePart(userId)}`;
+}
+function storageKey(session) { return `${STORAGE_KEY_PREFIX}:${sessionScope(session)}`; }
 
 function deepMerge(target, source) {
   if (!source || typeof source !== 'object') return target;
@@ -17,20 +34,14 @@ function deepMerge(target, source) {
   });
   return output;
 }
-
 function normalizePersistedTheme(theme) {
   const value = String(theme || 'light').trim().toLowerCase();
-  /* v11.27 intentionally retires legacy shell palettes from runtime state.
-     Old persisted values are migrated to light instead of leaving a hidden
-     enterprise/sector class that can repaint the sidebar after an upgrade. */
   return OFFICIAL_THEMES.has(value) ? value : 'light';
 }
-
 function normalizeThemePatch(partial) {
   if (!partial?.settings || !Object.prototype.hasOwnProperty.call(partial.settings, 'theme')) return partial;
   return deepMerge(partial, { settings: { theme: normalizePersistedTheme(partial.settings.theme) } });
 }
-
 function normalizeCustomerSamples(nextState) {
   const settings = nextState.settings || {};
   if (settings.companyTradeName === 'ContaGest Demo') settings.companyTradeName = 'ContaGest Comercial';
@@ -39,17 +50,6 @@ function normalizeCustomerSamples(nextState) {
   nextState.suppliers = (nextState.suppliers || []).map((supplier) => supplier.name === 'Proveedor Demo CA' ? { ...supplier, name:'Suministros Centro C.A.' } : supplier);
   return nextState;
 }
-
-function hydrate() {
-  const base = createDefaultState();
-  try {
-    const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || 'null');
-    return normalize(saved ? deepMerge(base, saved) : base);
-  } catch {
-    return normalize(base);
-  }
-}
-
 function normalize(nextState) {
   nextState.settings = nextState.settings || {};
   nextState.settings.theme = normalizePersistedTheme(nextState.settings.theme);
@@ -59,21 +59,22 @@ function normalize(nextState) {
   nextState.calculation = calculateQuote(nextState.quote, rate);
   return nextState;
 }
+function hydrate(session) {
+  const base = createDefaultState();
+  try {
+    // Legacy unscoped state is intentionally not migrated: its tenant provenance is unknown.
+    const saved = JSON.parse(localStorage.getItem(storageKey(session)) || 'null');
+    return normalize(saved ? deepMerge(base, saved) : base);
+  } catch { return normalize(base); }
+}
 
+let activeScope = sessionScope();
 let state = hydrate();
-
-function persist() {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-}
-
-function emit() {
-  listeners.forEach((listener) => listener(clone(state)));
-}
-
+function persist() { localStorage.setItem(`${STORAGE_KEY_PREFIX}:${activeScope}`, JSON.stringify(state)); }
+function emit() { listeners.forEach((listener) => listener(clone(state))); }
 function shouldEmitLoginSet(previousRoute, partial) {
   if (previousRoute !== 'login' || state.route !== 'login') return true;
-  const keys = Object.keys(partial || {});
-  return keys.some((key) => LOGIN_RENDER_KEYS.has(key));
+  return Object.keys(partial || {}).some((key) => LOGIN_RENDER_KEYS.has(key));
 }
 
 export const Store = {
@@ -93,20 +94,28 @@ export const Store = {
     persist();
     if (previousRoute !== 'login' || state.route !== 'login') emit();
   },
-  subscribe(listener) {
-    listeners.add(listener);
-    return () => listeners.delete(listener);
-  },
-  reset() {
-    state = normalize(createDefaultState());
-    persist();
+  subscribe(listener) { listeners.add(listener); return () => listeners.delete(listener); },
+  reset() { state = normalize(createDefaultState()); persist(); emit(); },
+  switchSessionScope(session) {
+    activeScope = sessionScope(session);
+    state = hydrate(session);
     emit();
+    return this.get();
+  },
+  purgeSessionScope(session) {
+    const scope = sessionScope(session);
+    localStorage.removeItem(`${STORAGE_KEY_PREFIX}:${scope}`);
+    localStorage.removeItem(STORAGE_KEY_PREFIX);
+    if (scope === activeScope) {
+      activeScope = sessionScope(null);
+      state = normalize(createDefaultState());
+      emit();
+    }
   },
   export() { return JSON.stringify(state, null, 2); },
   import(json) {
     const parsed = typeof json === 'string' ? JSON.parse(json) : json;
     state = normalize(deepMerge(createDefaultState(), parsed));
-    persist();
-    emit();
+    persist(); emit();
   }
 };
