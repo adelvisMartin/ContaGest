@@ -17,7 +17,7 @@ const tenantId = randomUUID();
 const datasetSize = Math.max(500, Math.min(Number(process.env.CAPACITY_DATASET_SIZE || 2500), 10_000));
 const measuredRequests = Math.max(10, Math.min(Number(process.env.CAPACITY_REQUESTS || 30), 100));
 const candidateSha = String(process.env.CANDIDATE_SHA || process.env.GITHUB_SHA || 'unknown');
-let server: Server;
+let server: Server | undefined;
 let baseUrl = '';
 
 const report: Record<string, any> = {
@@ -111,9 +111,9 @@ test.after(async () => {
   fs.mkdirSync(outputDir, { recursive: true });
   fs.writeFileSync(path.join(outputDir, 'capacity-baseline-v564.json'), `${JSON.stringify(report, null, 2)}\n`);
 
-  await new Promise<void>((resolve) => server.close(() => resolve()));
+  if (server?.listening) await new Promise<void>((resolve) => server!.close(() => resolve()));
   await prisma.tenant.delete({ where: { id: tenantId } }).catch(() => undefined);
-  await prisma.$disconnect();
+  await prisma.$disconnect().catch(() => undefined);
 });
 
 test('API baseline publishes p50/p95/p99 and query fingerprints without invented budgets', async () => {
