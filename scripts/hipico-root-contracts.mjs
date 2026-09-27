@@ -21,6 +21,10 @@ function concurrency(){
   return Math.max(1,Math.min(8,Math.trunc(raw)));
 }
 
+function diagnosticExit(index){
+  return Math.min(229,130+index);
+}
+
 export function runHipicoRootContracts(root=REPO_ROOT){
   const files=discoverHipicoRootContracts(root);
   if(!files.length){
@@ -47,10 +51,13 @@ export function runHipicoRootContracts(root=REPO_ROOT){
       shell:false
     });
     if(result.error){
-      console.error(`[hipico-root-contracts] FAIL: ${result.error.message}`);
-      return 2;
+      console.error(`[hipico-root-contracts] FAIL: file=${batch[0]} spawn=${result.error.message}`);
+      return isolated?diagnosticExit(index):2;
     }
-    if(result.status!==0)return Number.isInteger(result.status)?result.status:2;
+    if(result.status!==0){
+      console.error(`[hipico-root-contracts] FAIL: file=${batch[0]} exit=${result.status ?? 'null'} signal=${result.signal || 'none'}`);
+      return isolated?diagnosticExit(index):(Number.isInteger(result.status)?result.status:2);
+    }
   }
   return 0;
 }
