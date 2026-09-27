@@ -6,20 +6,67 @@ on:
       - '.github/workflows/github-pages.yml'
       - 'frontend/**'
       - 'tests/github_pages_deploy_contract.test.mjs'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/github-pages.yml'
+      - 'frontend/**'
+      - 'tests/github_pages_deploy_contract.test.mjs'
   workflow_dispatch:
 
 permissions:
   contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: github-pages
+  cancel-in-progress: false
 
 jobs:
-  contract:
+  build:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v6
+
       - name: Set up Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: 22
+          cache: npm
+
       - name: Verify GitHub Pages deployment contract
         run: node --test tests/github_pages_deploy_contract.test.mjs
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Build static Pages artifact
+        working-directory: frontend
+        run: npm run build:pages
+        env:
+          GIT_SHA: ${{ github.sha }}
+          GIT_BRANCH: ${{ github.ref_name }}
+          HIPICO_RELEASE_CHANNEL: pilot
+          VITE_API_BASE_URL: ${{ vars.CONTAGEST_API_BASE_URL }}
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: frontend/dist
+
+  deploy:
+    if: github.event_name != 'pull_request'
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
