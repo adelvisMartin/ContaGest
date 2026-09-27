@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "apiVersion": "v1",
+  "generatedFrom": [
+    "backend/src/app.ts",
+    "backend/src/modules/route-manifest.ts",
+    "backend/src/contracts/api-contract-v1.json"
+  ],
+  "endpointCount": 2,
+  "bootstrap": true,
+  "endpoints": [
+    { "method": "GET", "path": "/api/v1/openapi.json", "owner": "platform-contracts", "auth": "public", "tenant": "none" },
+    { "method": "GET", "path": "/api/v1/contract.json", "owner": "platform-contracts", "auth": "public", "tenant": "none" }
+  ]
+}
