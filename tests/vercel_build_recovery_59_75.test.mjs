@@ -44,6 +44,7 @@ test('59/75 diagnostics expose only bounded non-secret build metadata',()=>{
 });
 
 test('59/75 Hípico root contracts are memory-bounded under Vercel without reducing coverage',()=>{
+  assert.match(runner,/HIPICO_ROOT_TEST_HEAP_MB: process\.env\.HIPICO_ROOT_TEST_HEAP_MB \|\| '256'/);
   assert.match(hipicoRootRunner,/HIPICO_ROOT_TEST_HEAP_MB/);
   assert.match(hipicoRootRunner,/--max-old-space-size=\$\{heapLimitMb\}/);
   assert.match(hipicoRootRunner,/files\.map\(\(file\)=>\[file\]\)/);
