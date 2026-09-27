@@ -1,0 +1,66 @@
+name: PWA offline #563 · tenant-safe session recovery
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'frontend/public/sw.js'
+      - 'frontend/public/pwa-install.js'
+      - 'frontend/src/services/authService.js'
+      - 'frontend/src/services/pwaOfflineService.js'
+      - 'frontend/index.html'
+      - 'qa/pwa-offline-v563.spec.mjs'
+      - 'tests/pwa_offline_v563_contract.test.mjs'
+      - 'docs/ADR_PWA_OFFLINE_V563.md'
+      - '.github/workflows/pwa-offline-v563.yml'
+  push:
+    branches: ['feat/563-pwa-offline-tenant-safety']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pwa-offline-v563-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with: { ref: '${{ github.sha }}' }
+      - uses: actions/setup-node@v6
+        with: { node-version: '22', cache: npm }
+      - run: npm ci
+      - run: node --test tests/pwa_offline_v563_contract.test.mjs
+      - run: npm run build:frontend
+
+  chromium:
+    needs: contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v6
+        with: { ref: '${{ github.sha }}' }
+      - uses: actions/setup-node@v6
+        with: { node-version: '22', cache: npm }
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - name: Browser install/update/offline/reconnect/logout/tenant switch
+        run: npx playwright test qa/pwa-offline-v563.spec.mjs --project=chromium --workers=1
+      - name: Evidence
+        if: always()
+        run: |
+          mkdir -p artifacts/pwa-v563
+          printf 'candidate_sha=%s\nrun_id=%s\n' "$GITHUB_SHA" "$GITHUB_RUN_ID" > artifacts/pwa-v563/evidence.txt
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: pwa-v563-${{ github.sha }}
+          path: |
+            artifacts/pwa-v563
+            playwright-report
+            test-results
+          if-no-files-found: warn
