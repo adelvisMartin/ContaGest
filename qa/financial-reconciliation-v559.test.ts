@@ -39,8 +39,7 @@ function exact(value: unknown, scale = 2) {
   const negative = source.startsWith('-');
   const unsigned = negative ? source.slice(1) : source;
   const [whole = '0', fraction = ''] = unsigned.split('.');
-  const normalized = `${negative ? '-' : ''}${whole || '0'}.${fraction.padEnd(scale, '0').slice(0, scale)}`;
-  return normalized;
+  return `${negative ? '-' : ''}${whole || '0'}.${fraction.padEnd(scale, '0').slice(0, scale)}`;
 }
 
 function scaled(value: unknown, scale = 2) {
@@ -53,8 +52,7 @@ function scaled(value: unknown, scale = 2) {
 }
 
 function outcome(id: string, expected: unknown, actual: unknown, evidence?: Record<string, unknown>): Check {
-  const same = String(expected) === String(actual);
-  return same
+  return String(expected) === String(actual)
     ? { id, status: 'PASS', expected, actual, evidence }
     : { id, status: 'FAIL', expected, actual, difference: { expected, actual }, evidence };
 }
@@ -62,7 +60,7 @@ function outcome(id: string, expected: unknown, actual: unknown, evidence?: Reco
 function ledgerBalance(entry: any) {
   const debit = (entry?.lines || []).reduce((sum: bigint, line: any) => sum + scaled(line.debit), 0n);
   const credit = (entry?.lines || []).reduce((sum: bigint, line: any) => sum + scaled(line.credit), 0n);
-  return { debit, credit, debitExact: `${debit}`, creditExact: `${credit}` };
+  return { debitExact: `${debit}`, creditExact: `${credit}` };
 }
 
 function lineAmount(entry: any, accountCode: string, side: 'debit' | 'credit') {
@@ -74,6 +72,12 @@ function candidateSha() {
   const sha = String(process.env.GITHUB_SHA || '').trim() || execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
   assert.match(sha, /^[a-f0-9]{40}$/i, 'candidate SHA must be exact');
   return sha;
+}
+
+function movementId(result: any) {
+  const id = result?.movement?.id;
+  assert.ok(id, 'inventory API response must expose movement.id');
+  return String(id);
 }
 
 test('issue #559 reconciles the golden financial dataset end-to-end on isolated PostgreSQL', async (t) => {
@@ -134,7 +138,7 @@ test('issue #559 reconciles the golden financial dataset end-to-end on isolated 
     };
     const opening = await h.ok('/inventory/movements', { method: 'POST', headers: { 'Idempotency-Key': openingKey }, body: JSON.stringify(openingBody) });
     const openingReplay = await h.ok('/inventory/movements', { method: 'POST', headers: { 'Idempotency-Key': openingKey }, body: JSON.stringify(openingBody) });
-    add('inventory-opening-retry-resource', opening.id, openingReplay.id, { sourceId: openingBody.sourceId });
+    add('inventory-opening-retry-resource', movementId(opening), movementId(openingReplay), { sourceId: openingBody.sourceId });
 
     const purchaseBody = {
       number: `${RUN}-PURCHASE`,
@@ -142,13 +146,7 @@ test('issue #559 reconciles the golden financial dataset end-to-end on isolated 
       status: 'issued',
       currency: fixture.currency,
       exchangeRate: '1.0000',
-      lines: [{
-        productId: product.id,
-        description: `${RUN} purchase line`,
-        quantity: fixture.purchase.quantity,
-        unitCost: fixture.purchase.unitCost,
-        taxRate: fixture.purchase.taxRate
-      }]
+      lines: [{ productId: product.id, description: `${RUN} purchase line`, quantity: fixture.purchase.quantity, unitCost: fixture.purchase.unitCost, taxRate: fixture.purchase.taxRate }]
     };
     const purchaseKey = `${RUN}-purchase-create`;
     const purchase = await h.ok('/purchases', { method: 'POST', headers: { 'Idempotency-Key': purchaseKey }, body: JSON.stringify(purchaseBody) });
@@ -156,18 +154,11 @@ test('issue #559 reconciles the golden financial dataset end-to-end on isolated 
     add('purchase-retry-document', purchase.id, purchaseReplay.id, { sourceId: purchase.id });
     add('purchase-retry-ledger', purchase.ledgerEntryId, purchaseReplay.ledgerEntryId, { sourceId: purchase.id });
 
-    const purchaseStockBody = {
-      productId: product.id,
-      type: 'in',
-      quantity: fixture.inventory.purchaseInQuantity,
-      unitCost: fixture.purchase.unitCost,
-      source: 'purchase',
-      sourceId: purchase.id
-    };
+    const purchaseStockBody = { productId: product.id, type: 'in', quantity: fixture.inventory.purchaseInQuantity, unitCost: fixture.purchase.unitCost, source: 'purchase', sourceId: purchase.id };
     const purchaseStockKey = `${RUN}-purchase-stock`;
     const purchaseStock = await h.ok('/inventory/movements', { method: 'POST', headers: { 'Idempotency-Key': purchaseStockKey }, body: JSON.stringify(purchaseStockBody) });
     const purchaseStockReplay = await h.ok('/inventory/movements', { method: 'POST', headers: { 'Idempotency-Key': purchaseStockKey }, body: JSON.stringify(purchaseStockBody) });
-    add('purchase-stock-retry', purchaseStock.id, purchaseStockReplay.id, { sourceId: purchase.id });
+    add('purchase-stock-retry', movementId(purchaseStock), movementId(purchaseStockReplay), { sourceId: purchase.id });
 
     const saleBody = {
       number: `${RUN}-SALE`,
@@ -175,13 +166,7 @@ test('issue #559 reconciles the golden financial dataset end-to-end on isolated 
       status: 'issued',
       currency: fixture.currency,
       exchangeRate: '1.0000',
-      lines: [{
-        productId: product.id,
-        description: `${RUN} sale line`,
-        quantity: fixture.sale.quantity,
-        unitPrice: fixture.sale.unitPrice,
-        taxRate: fixture.sale.taxRate
-      }]
+      lines: [{ productId: product.id, description: `${RUN} sale line`, quantity: fixture.sale.quantity, unitPrice: fixture.sale.unitPrice, taxRate: fixture.sale.taxRate }]
     };
     const saleKey = `${RUN}-sale-create`;
     const concurrentSales = await Promise.all([
@@ -192,18 +177,12 @@ test('issue #559 reconciles the golden financial dataset end-to-end on isolated 
     add('sale-concurrent-retry-document', sale.id, concurrentSales[1].id, { sourceId: sale.id });
     add('sale-concurrent-retry-ledger', sale.ledgerEntryId, concurrentSales[1].ledgerEntryId, { sourceId: sale.id });
 
-    const saleStockBody = {
-      productId: product.id,
-      type: 'out',
-      quantity: fixture.inventory.saleOutQuantity,
-      unitCost: fixture.inventory.unitCost,
-      source: 'sales',
-      sourceId: sale.id
-    };
+    const saleStockBody = { productId: product.id, type: 'out', quantity: fixture.inventory.saleOutQuantity, unitCost: fixture.inventory.unitCost, source: 'sales', sourceId: sale.id };
     const saleStockKey = `${RUN}-sale-stock`;
     const saleStock = await h.ok('/inventory/movements', { method: 'POST', headers: { 'Idempotency-Key': saleStockKey }, body: JSON.stringify(saleStockBody) });
     const saleStockReplay = await h.ok('/inventory/movements', { method: 'POST', headers: { 'Idempotency-Key': saleStockKey }, body: JSON.stringify(saleStockBody) });
-    add('sale-stock-retry', saleStock.id, saleStockReplay.id, { sourceId: sale.id });
+    const saleStockId = movementId(saleStock);
+    add('sale-stock-retry', saleStockId, movementId(saleStockReplay), { sourceId: sale.id });
 
     const storedSale = await h.prisma.salesInvoice.findUniqueOrThrow({ where: { id: sale.id } });
     const storedPurchase = await h.prisma.purchaseInvoice.findUniqueOrThrow({ where: { id: purchase.id } });
@@ -229,12 +208,7 @@ test('issue #559 reconciles the golden financial dataset end-to-end on isolated 
     add('purchase-vat-credit', fixture.purchase.tax, lineAmount(purchaseLedger, '1.1.05.001', 'debit'), { sourceId: purchase.id, ledgerEntryId: purchaseLedger.id });
 
     const accountKey = `${RUN}-bank-account`;
-    const accountBody = {
-      bankName: fixture.bank.bankName,
-      accountNo: `${fixture.bank.accountNo}-${RUN}`,
-      currency: fixture.currency,
-      openingBalance: fixture.bank.openingBalance
-    };
+    const accountBody = { bankName: fixture.bank.bankName, accountNo: `${fixture.bank.accountNo}-${RUN}`, currency: fixture.currency, openingBalance: fixture.bank.openingBalance };
     const bankAccount = await h.ok('/banking/accounts', { method: 'POST', headers: { 'Idempotency-Key': accountKey }, body: JSON.stringify(accountBody) });
     const bankAccountReplay = await h.ok('/banking/accounts', { method: 'POST', headers: { 'Idempotency-Key': accountKey }, body: JSON.stringify(accountBody) });
     add('bank-account-retry', bankAccount.id, bankAccountReplay.id, { sourceId: bankAccount.id });
@@ -257,7 +231,6 @@ test('issue #559 reconciles the golden financial dataset end-to-end on isolated 
     const storedPayment = await h.prisma.bankMovement.findUniqueOrThrow({ where: { id: payment.id } });
     add('collection-ledger-link', saleLedger.id, storedCollection.ledgerEntryId, { sourceId: sale.id, ledgerEntryId: saleLedger.id });
     add('payment-ledger-link', purchaseLedger.id, storedPayment.ledgerEntryId, { sourceId: purchase.id, ledgerEntryId: purchaseLedger.id });
-
     const bankAfter = await h.prisma.bankAccount.findUniqueOrThrow({ where: { id: bankAccount.id } });
     add('bank-ending-balance', fixture.bank.expectedEndingBalance, exact(bankAfter.balance), { sourceId: bankAccount.id });
 
@@ -275,12 +248,13 @@ test('issue #559 reconciles the golden financial dataset end-to-end on isolated 
       headers: { 'Idempotency-Key': `${RUN}-return-stock-out` },
       body: JSON.stringify({ productId: product.id, type: 'out', quantity: fixture.inventory.returnOutQuantity, unitCost: fixture.inventory.unitCost, source: 'sales', sourceId: returnSale.id })
     });
+    const returnStockId = movementId(returnStock);
     const cancelBody = { reason: `${RUN} customer return`, reversalFiscalPeriod: fixture.periods.reversal, reversalDate: '2098-02-15T12:00:00.000Z' };
     const cancelled = await h.ok(`/sales/${returnSale.id}/cancel`, { method: 'PATCH', headers: { 'Idempotency-Key': `${RUN}-return-cancel` }, body: JSON.stringify(cancelBody) });
     const cancelledReplay = await h.ok(`/sales/${returnSale.id}/cancel`, { method: 'PATCH', headers: { 'Idempotency-Key': `${RUN}-return-cancel` }, body: JSON.stringify(cancelBody) });
     add('sale-return-retry', cancelled.reversalId, cancelledReplay.reversalId, { sourceId: returnSale.id });
 
-    await h.ok(`/inventory/movements/${returnStock.id}/reverse`, {
+    await h.ok(`/inventory/movements/${returnStockId}/reverse`, {
       method: 'POST',
       headers: { 'Idempotency-Key': `${RUN}-return-stock-reverse` },
       body: JSON.stringify({ reasonCode: 'customer-return', reason: `${RUN} reverse stock for customer return` })
@@ -298,10 +272,10 @@ test('issue #559 reconciles the golden financial dataset end-to-end on isolated 
     const returnLink = await h.prisma.$queryRaw<Array<{ originalMovementId: string | null; relatedMovementId: string }>>`
       SELECT "originalMovementId", "relatedMovementId"
       FROM "InventoryMovementAuditLink"
-      WHERE "tenantId" = ${h.tenant.id} AND "originalMovementId" = ${returnStock.id} AND "kind" = 'reversal'
+      WHERE "tenantId" = ${h.tenant.id} AND "originalMovementId" = ${returnStockId} AND "kind" = 'reversal'
       LIMIT 1
     `;
-    add('inventory-return-audit-link', returnStock.id, returnLink[0]?.originalMovementId || null, { sourceId: returnSale.id });
+    add('inventory-return-audit-link', returnStockId, returnLink[0]?.originalMovementId || null, { sourceId: returnSale.id });
 
     const finalProduct = await h.prisma.product.findUniqueOrThrow({ where: { id: product.id } });
     add('inventory-ending-stock', fixture.inventory.expectedEndingStock, exact(finalProduct.stock, 3), { sourceId: product.id });
@@ -317,11 +291,11 @@ test('issue #559 reconciles the golden financial dataset end-to-end on isolated 
       const balance = ledgerBalance(entry);
       add(`ledger-entry-balanced:${entry.id}`, balance.debitExact, balance.creditExact, { sourceId: entry.sourceId || undefined, ledgerEntryId: entry.id });
     }
-    for (const period of [fixture.periods.operating, fixture.periods.reversal]) {
-      const entries = periodEntries.filter((entry) => entry.fiscalPeriod === period);
+    for (const periodName of [fixture.periods.operating, fixture.periods.reversal]) {
+      const entries = periodEntries.filter((entry) => entry.fiscalPeriod === periodName);
       const debit = entries.flatMap((entry) => entry.lines).reduce((sum, line) => sum + scaled(line.debit), 0n);
       const credit = entries.flatMap((entry) => entry.lines).reduce((sum, line) => sum + scaled(line.credit), 0n);
-      add(`ledger-period-balanced:${period}`, debit.toString(), credit.toString(), { sourceId: period });
+      add(`ledger-period-balanced:${periodName}`, debit.toString(), credit.toString(), { sourceId: periodName });
     }
 
     const period = await h.ok('/accounting/closing-periods', { method: 'POST', body: JSON.stringify({ period: fixture.periods.closed, note: `${RUN} closed-period gate` }) });
@@ -357,7 +331,7 @@ test('issue #559 reconciles the golden financial dataset end-to-end on isolated 
     await h.status(`/inventory/movements/${movementB.id}/reverse`, 404, { method: 'POST', headers: { 'Idempotency-Key': `${RUN}-A-TO-B-INVENTORY` }, body: JSON.stringify({ reasonCode: 'tenant-isolation', reason: `${RUN} tenant A cannot reverse tenant B` }) });
     await h.status(`/banking/movements/${bankMovementB.id}/reconcile`, 404, { method: 'PATCH', body: JSON.stringify({ matched: true, ledgerEntryId: saleLedger.id }) });
     // tenant B -> tenant A must fail closed.
-    await h.status(`/inventory/movements/${saleStock.id}/reverse`, 404, { method: 'POST', headers: { 'Idempotency-Key': `${RUN}-B-TO-A-INVENTORY` }, body: JSON.stringify({ reasonCode: 'tenant-isolation', reason: `${RUN} tenant B cannot reverse tenant A` }) }, tokenB);
+    await h.status(`/inventory/movements/${saleStockId}/reverse`, 404, { method: 'POST', headers: { 'Idempotency-Key': `${RUN}-B-TO-A-INVENTORY` }, body: JSON.stringify({ reasonCode: 'tenant-isolation', reason: `${RUN} tenant B cannot reverse tenant A` }) }, tokenB);
     await h.status(`/banking/movements/${collection.id}/reconcile`, 404, { method: 'PATCH', body: JSON.stringify({ matched: true }) }, tokenB);
     add('tenant A->tenant B isolation', true, true, { sourceId: tenantB.id });
     add('tenant B->tenant A isolation', true, true, { sourceId: h.tenant.id });
@@ -372,12 +346,12 @@ test('issue #559 reconciles the golden financial dataset end-to-end on isolated 
     add('retry-no-duplicate-opening-stock', 1, openingMovementCount, { sourceId: openingBody.sourceId });
     add('retry-no-duplicate-sale-stock', 1, saleStockCount, { sourceId: sale.id });
     add('retry-no-duplicate-bank-effects', 2, bankMovementCount, { sourceId: bankAccount.id });
-
     const idempotencyRecords = await h.prisma.idempotencyRecord.count({ where: { tenantId: h.tenant.id } });
     add('idempotency-records-observable', true, idempotencyRecords > 0, { sourceId: h.tenant.id });
   } catch (error) {
     fatal = error;
-    checks.push({ id: 'fatal-execution', status: 'FAIL', actual: error instanceof Error ? error.message : String(error), difference: { expected: 'completed golden flow', actual: error instanceof Error ? error.message : String(error) } });
+    const actual = error instanceof Error ? error.message : String(error);
+    checks.push({ id: 'fatal-execution', status: 'FAIL', actual, difference: { expected: 'completed golden flow', actual } });
   } finally {
     const reportDir = path.resolve(process.env.FINANCIAL_RECONCILIATION_REPORT_DIR || path.join(HERE, '..', 'artifacts', 'financial-reconciliation-v559'));
     await mkdir(reportDir, { recursive: true });
