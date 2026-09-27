@@ -49,7 +49,7 @@ function runStage(stage, index) {
     console.error(`[vercel-build][FAIL] stage=${stage.id} elapsedMs=${elapsedMs} exit=${result.status ?? 'null'} signal=${result.signal || 'none'}`);
     if (process.env.VERCEL) {
       const diagnosticExit = diagnosticSource && Number.isInteger(result.status)
-        && result.status >= 101 && result.status <= 127;
+        && result.status >= 101 && result.status <= 250;
       process.exitCode = diagnosticExit ? result.status : 71 + index;
       return false;
     }
