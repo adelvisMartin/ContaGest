@@ -9,9 +9,15 @@ const RUN = `QA560-${Date.now().toString(36).toUpperCase()}`;
 const OPEN_PERIOD = '2099-11';
 const CLOSED_PERIOD = '2099-12';
 
+type FixedPointLike = { toFixed: (digits: number) => string };
+
+function isFixedPointLike(value: unknown): value is FixedPointLike {
+  return value !== null && typeof value === 'object' && 'toFixed' in value && typeof (value as { toFixed?: unknown }).toFixed === 'function';
+}
+
 function exact(value: unknown, scale = 2) {
-  if (value && typeof value === 'object' && 'toFixed' in value && typeof (value as any).toFixed === 'function') {
-    return (value as any).toFixed(scale);
+  if (isFixedPointLike(value)) {
+    return value.toFixed(scale);
   }
   const source = String(value ?? '0').trim();
   const negative = source.startsWith('-');
@@ -175,7 +181,6 @@ test('issue #560 reconciles original and functional currency with audited FX lif
   });
   assert.match(JSON.stringify(closed.payload), /cerrado/i, 'closed period must be enforced server-side');
 
-  // tenant A owns the event; tenant B must not be able to retrieve it through the repository boundary.
   const tenantA = h.tenant.id;
   const tenantB = randomUUID();
   assert.notEqual(tenantA, tenantB);
