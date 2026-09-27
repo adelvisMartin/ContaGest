@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
-import { discoverHipicoRootContracts } from '../scripts/hipico-root-contracts.mjs';
+import { buildHipicoTestArgs, discoverHipicoRootContracts } from '../scripts/hipico-root-contracts.mjs';
 
 test('root Hípico contract discovery is deterministic and ignores unrelated files',()=>{
   const root=mkdtempSync(join(tmpdir(),'hipico-contract-discovery-'));
@@ -28,4 +28,28 @@ test('root discovery automatically includes newly added Hípico regression files
   ]){
     assert.ok(files.some((file)=>file.replaceAll('\\','/')===expected),`missing ${expected}`);
   }
+});
+
+test('Vercel isolated Hípico execution runs the test file directly under the bounded heap',()=>{
+  assert.deepEqual(buildHipicoTestArgs(['tests/hipico_a.test.mjs'],{
+    isolated:true,
+    heapLimitMb:256,
+    effectiveConcurrency:1
+  }),[
+    '--max-old-space-size=256',
+    'tests/hipico_a.test.mjs'
+  ]);
+});
+
+test('non-Vercel Hípico execution preserves the canonical node test-runner contract',()=>{
+  assert.deepEqual(buildHipicoTestArgs(['tests/hipico_a.test.mjs','tests/hipico_z.test.mjs'],{
+    isolated:false,
+    heapLimitMb:256,
+    effectiveConcurrency:4
+  }),[
+    '--test',
+    '--test-concurrency=4',
+    'tests/hipico_a.test.mjs',
+    'tests/hipico_z.test.mjs'
+  ]);
 });
