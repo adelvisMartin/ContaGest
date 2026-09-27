@@ -10,6 +10,8 @@ import { runFinancialIdempotentMutation } from '../../shared/services/financial-
 import { calculateInvoiceTotals } from '../../shared/financial/invoice.js';
 import { decimalSchema } from '../../shared/financial/zod.js';
 import { ONE, ZERO } from '../../shared/financial/decimal.js';
+import { convertToFunctional, functionalizeBalancedLedgerLines, resolveFxContext } from '../../shared/financial/fx.js';
+import { copyLedgerLineSnapshotsForReversal, getFxPolicy, recordDocumentSnapshot, recordLedgerLineSnapshots } from '../currency/fx.repository.js';
 
 const router = Router();
 router.use(requireTenant);
@@ -29,6 +31,8 @@ const saleSchema = z.object({
   fiscalPeriod: z.string().min(6),
   currency: z.string().default('VES'),
   exchangeRate: decimalSchema('exchangeRate', { defaultValue: 1, positive: true }),
+  exchangeRateDate: z.coerce.date().optional(),
+  exchangeRateSource: z.string().trim().min(2).max(120).optional(),
   status: z.enum(['draft', 'issued', 'paid', 'overdue']).default('issued'),
   notes: z.string().optional(),
   lines: z.array(lineSchema).min(1)
@@ -56,11 +60,7 @@ router.get('/', requirePermission('sales.view'), asyncHandler(async (req, res) =
 router.post('/', requirePermission('sales.manage'), validateBody(saleSchema), asyncHandler(async (req, res) => {
   const ctx = context(req);
   const actorId = req.body.status === 'draft' ? null : requireActor(ctx);
-  const calculated = calculateInvoiceTotals(req.body.lines.map((line: any) => ({
-    quantity: line.quantity,
-    unitAmount: line.unitPrice,
-    taxRate: line.taxRate
-  })));
+  const calculated = calculateInvoiceTotals(req.body.lines.map((line: any) => ({ quantity: line.quantity, unitAmount: line.unitPrice, taxRate: line.taxRate })));
   const lines = req.body.lines.map((line: any, index: number) => ({ ...line, total: calculated.lines[index].total }));
   const subtotal = calculated.subtotal;
   const iva = calculated.tax;
@@ -81,6 +81,15 @@ router.post('/', requirePermission('sales.manage'), validateBody(saleSchema), as
     }
   }, async (tx) => {
     if (req.body.status !== 'draft') await assertPeriodOpen(ctx.tenantId, req.body.fiscalPeriod, tx);
+    const policy = await getFxPolicy(ctx.tenantId, tx);
+    const fx = resolveFxContext({
+      originalCurrency: req.body.currency,
+      functionalCurrency: policy.functionalCurrency,
+      exchangeRate: req.body.exchangeRate,
+      rateDate: req.body.exchangeRateDate,
+      rateSource: req.body.exchangeRateSource,
+      documentDate: req.body.issueDate || new Date()
+    });
     const sale = await tx.salesInvoice.create({
       data: {
         tenantId: ctx.tenantId,
@@ -89,8 +98,8 @@ router.post('/', requirePermission('sales.manage'), validateBody(saleSchema), as
         controlNo: req.body.controlNo,
         issueDate: req.body.issueDate,
         fiscalPeriod: req.body.fiscalPeriod,
-        currency: req.body.currency,
-        exchangeRate: req.body.exchangeRate,
+        currency: fx.originalCurrency,
+        exchangeRate: fx.exchangeRate,
         subtotal,
         iva,
         total,
@@ -102,7 +111,10 @@ router.post('/', requirePermission('sales.manage'), validateBody(saleSchema), as
     });
     let ledgerEntryId: string | null = null;
     if (sale.status !== 'draft') {
-      const ledgerLines = salesInvoiceLinesForLedger(sale);
+      const originalLedgerLines = salesInvoiceLinesForLedger(sale);
+      assertBalanced(originalLedgerLines);
+      const functionalized = functionalizeBalancedLedgerLines(originalLedgerLines, fx.exchangeRate);
+      const ledgerLines = functionalized.lines.map((line) => ({ accountCode: line.accountCode, accountName: line.accountName, debit: line.functionalDebit, credit: line.functionalCredit }));
       assertBalanced(ledgerLines);
       const draftLedger = await tx.ledgerEntry.create({
         data: {
@@ -116,23 +128,28 @@ router.post('/', requirePermission('sales.manage'), validateBody(saleSchema), as
           postedAt: null,
           postedBy: null,
           reversalOfId: null,
-          lines: {
-            create: ledgerLines.map((line) => ({
-              accountCode: line.accountCode,
-              accountName: line.accountName,
-              debit: line.debit ?? ZERO,
-              credit: line.credit ?? ZERO,
-              currency: sale.currency || 'VES',
-              exchangeRate: sale.exchangeRate ?? ONE
-            }))
-          }
+          lines: { create: ledgerLines.map((line) => ({ ...line, currency: fx.functionalCurrency, exchangeRate: ONE })) }
         }
       });
       const postedAt = new Date();
-      const ledger = await tx.ledgerEntry.update({
-        where: { id: draftLedger.id },
-        data: { posted: true, postedAt, postedBy: actorId! }
-      });
+      const ledger = await tx.ledgerEntry.update({ where: { id: draftLedger.id }, data: { posted: true, postedAt, postedBy: actorId! } });
+      await recordDocumentSnapshot({
+        tenantId: ctx.tenantId,
+        documentType: 'sales',
+        documentId: sale.id,
+        originalCurrency: fx.originalCurrency,
+        functionalCurrency: fx.functionalCurrency,
+        exchangeRate: fx.exchangeRate,
+        rateDate: fx.rateDate,
+        rateSource: fx.rateSource,
+        originalSubtotal: subtotal,
+        originalTax: iva,
+        originalTotal: total,
+        functionalSubtotal: convertToFunctional(subtotal, fx.exchangeRate),
+        functionalTax: convertToFunctional(iva, fx.exchangeRate),
+        functionalTotal: convertToFunctional(total, fx.exchangeRate)
+      }, tx);
+      await recordLedgerLineSnapshots({ tenantId: ctx.tenantId, ledgerEntryId: ledger.id, lines: functionalized.lines, originalCurrency: fx.originalCurrency, functionalCurrency: fx.functionalCurrency, exchangeRate: fx.exchangeRate, rateDate: fx.rateDate, rateSource: fx.rateSource }, tx);
       await tx.auditLog.create({
         data: {
           tenantId: ctx.tenantId,
@@ -141,7 +158,7 @@ router.post('/', requirePermission('sales.manage'), validateBody(saleSchema), as
           entity: 'LedgerEntry',
           entityId: ledger.id,
           before: { posted: false, source: 'sales', sourceId: sale.id, fiscalPeriod: sale.fiscalPeriod },
-          after: { posted: true, postedAt: postedAt.toISOString(), postedBy: actorId, source: 'sales', sourceId: sale.id, fiscalPeriod: sale.fiscalPeriod, requestId: requestId(req) },
+          after: { posted: true, postedAt: postedAt.toISOString(), postedBy: actorId, source: 'sales', sourceId: sale.id, fiscalPeriod: sale.fiscalPeriod, originalCurrency: fx.originalCurrency, functionalCurrency: fx.functionalCurrency, exchangeRate: fx.exchangeRate.toFixed(4), exchangeRateDate: fx.rateDate.toISOString(), exchangeRateSource: fx.rateSource, roundingAdjustment: functionalized.roundingAdjustment.toFixed(2), requestId: requestId(req) },
           ipAddress: ctx.ip || null,
           userAgent: ctx.userAgent || null
         }
@@ -228,6 +245,7 @@ router.patch('/:id/cancel', requirePermission('sales.manage'), validateBody(canc
       });
       const postedAt = new Date();
       const reversal = await tx.ledgerEntry.update({ where: { id: draftReversal.id }, data: { posted: true, postedAt, postedBy: actorId, reversalOfId: original.id } });
+      await copyLedgerLineSnapshotsForReversal({ tenantId: ctx.tenantId, originalEntryId: original.id, reversalEntryId: reversal.id }, tx);
       await tx.auditLog.create({
         data: {
           tenantId: ctx.tenantId,
@@ -261,22 +279,14 @@ router.delete('/:id', requirePermission('sales.manage'), asyncHandler(async (req
   const sale = await prisma.salesInvoice.findFirst({ where: { id: req.params.id, tenantId: ctx.tenantId }, include: { lines: true } });
   if (!sale) throw new HttpError(404, 'Venta no encontrada.');
   if (sale.status !== 'draft') throw new HttpError(409, 'Solo se eliminan ventas en borrador. Las ventas emitidas deben anularse.');
-  const dentalLinks = await prisma.$queryRawUnsafe<Array<{ treatmentPlanId: string }>>(
-    `SELECT "treatmentPlanId" FROM public."DentalFinancialLink" WHERE "tenantId"=$1 AND "salesInvoiceId"=$2 LIMIT 1`,
-    ctx.tenantId,
-    sale.id
-  );
-  if (dentalLinks.length) {
-    throw new HttpError(409, 'El borrador está vinculado a un plan odontológico aceptado y conserva provenance financiera; no puede eliminarse desde Ventas.');
-  }
-  const veterinaryLinks = await prisma.$queryRawUnsafe<Array<{ id: string }>>(
-    `SELECT "id" FROM public."VeterinaryFinancialCase" WHERE "tenantId"=$1 AND "salesInvoiceId"=$2 LIMIT 1`,
-    ctx.tenantId,
-    sale.id
-  );
-  if (veterinaryLinks.length) {
-    throw new HttpError(409, 'El borrador está vinculado al flujo financiero veterinario y conserva provenance de estimación, autorización, atención y consumos; no puede eliminarse desde Ventas.');
-  }
+  const dentalLinks = await prisma.$queryRaw<Array<{ treatmentPlanId: string }>>`
+    SELECT "treatmentPlanId" FROM public."DentalFinancialLink" WHERE "tenantId"=${ctx.tenantId}::uuid AND "salesInvoiceId"=${sale.id}::uuid LIMIT 1
+  `;
+  if (dentalLinks.length) throw new HttpError(409, 'El borrador está vinculado a un plan odontológico aceptado y conserva provenance financiera; no puede eliminarse desde Ventas.');
+  const veterinaryLinks = await prisma.$queryRaw<Array<{ id: string }>>`
+    SELECT "id" FROM public."VeterinaryFinancialCase" WHERE "tenantId"=${ctx.tenantId}::uuid AND "salesInvoiceId"=${sale.id}::uuid LIMIT 1
+  `;
+  if (veterinaryLinks.length) throw new HttpError(409, 'El borrador está vinculado al flujo financiero veterinario y conserva provenance de estimación, autorización, atención y consumos; no puede eliminarse desde Ventas.');
   await prisma.salesInvoice.delete({ where: { id: sale.id } });
   await writeAudit({ tenantId: ctx.tenantId, userId: ctx.userId, action: 'delete-draft', entity: 'salesInvoice', entityId: sale.id, before: sale, ipAddress: ctx.ip, userAgent: ctx.userAgent });
   ok(res, { deleted: true, id: sale.id });
