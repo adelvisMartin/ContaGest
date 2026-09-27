@@ -27,6 +27,7 @@
     "test:hipico:agent": "tsx --test src/modules/hipico/hipico-agent.integration.ts",
     "probe:hipico:provider": "tsx scripts/hipico-provider-live-probe.ts",
     "lab:hipico": "tsx scripts/hipico-lab-simulator.ts --all",
+    "lab:hipico:reliability": "tsx scripts/hipico-agent-reliability-lab.ts",
     "lab:hipico:interactive": "tsx scripts/hipico-lab-simulator.ts --interactive",
     "soak:hipico": "tsx scripts/hipico-soak-v120.ts",
     "soak:hipico:smoke": "tsx scripts/hipico-soak-v120.ts --duration-minutes=0.1 --sample-seconds=1",
@@ -75,7 +76,7 @@
     "zod": "4.6.5"
   },
   "devDependencies": {
-    "@types/cors": "2.8.19",
+    "@types/cors": "5.0.6",
     "@types/express": "5.0.6",
     "@types/jsonwebtoken": "9.0.10",
     "@types/node": "22.20.3",
