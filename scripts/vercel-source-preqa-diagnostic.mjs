@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { spawnSync } from 'node:child_process';
+import { runHipicoRootContracts } from './hipico-root-contracts.mjs';
 
 // DIAGNOSTIC ONLY. Mirrors frontend preqa:source one command at a time.
 // Exit 101..127 identifies the first failing source command. Exit 130..250
@@ -9,7 +10,7 @@ const checks = Object.freeze([
   ['erp-wave-a','npm',['run','audit:erp-ui-wave-a']],
   ['contracts-current','npm',['run','test:contracts:current']],
   ['source-contract-pack','node',['--test','tests/marketing_seo_issue_25.test.mjs','tests/reproducible_install_contract.test.mjs','tests/preview_secret_fail_closed.test.mjs','tests/erp_performance_issue_157.test.mjs','tests/erp_performance_execution_issue_157.test.mjs','tests/erp157_finalizer_truth_issue_157.test.mjs','tests/erp157_fixture_provenance_issue_157.test.mjs','tests/erp157_budget_ratification_issue_157.test.mjs','tests/hipico_command_center_289_contract.test.mjs']],
-  ['hipico-root-contracts','node',['scripts/hipico-root-contracts.mjs']],
+  ['hipico-root-contracts',null,[]],
   ['bridge-runtime-utils','node',['--test','tools/hipico-whatsapp-web-bridge/tests/runtime-utils.test.mjs']],
   ['check-exact-sha','node',['--check','scripts/hipico-exact-sha-gate.mjs']],
   ['check-browser-qa','node',['--check','scripts/hipico-browser-qa.mjs']],
@@ -37,10 +38,9 @@ const checks = Object.freeze([
 for (let index = 0; index < checks.length; index += 1) {
   const [id, command, args] = checks[index];
   console.log(`[vercel-source-diagnostic][START] ${id}`);
-  const env = id === 'hipico-root-contracts'
-    ? { ...process.env, HIPICO_ROOT_TEST_CONCURRENCY:'1' }
-    : process.env;
-  const result = spawnSync(command, args, { cwd:'..', stdio:'inherit', env, shell:false });
+  const result = id === 'hipico-root-contracts'
+    ? { error:null, status:runHipicoRootContracts(), signal:null }
+    : spawnSync(command, args, { cwd:'..', stdio:'inherit', env:process.env, shell:false });
   if (result.error || result.status !== 0) {
     console.error(`[vercel-source-diagnostic][FAIL] ${id} exit=${result.status ?? 'null'} signal=${result.signal||'none'}`);
     const nestedHipicoExit = id === 'hipico-root-contracts'
