@@ -1,0 +1,69 @@
+name: Supply Chain v550
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'v*'
+  pull_request:
+    paths:
+      - 'package.json'
+      - 'package-lock.json'
+      - 'frontend/package.json'
+      - 'backend/package.json'
+      - '.github/workflows/**'
+      - 'scripts/supply-chain-v550.mjs'
+
+permissions:
+  contents: read
+
+jobs:
+  provenance:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout exact source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+
+      - name: Set up Node 22
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Frozen dependency install
+        run: npm ci
+
+      - name: Build deployable workspaces
+        run: npm run build
+
+      - name: Package reproducible evidence inputs
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/release-inputs
+          if [ -d frontend/dist ]; then tar --sort=name --mtime='UTC 1970-01-01' --owner=0 --group=0 --numeric-owner -czf artifacts/release-inputs/frontend-dist.tgz frontend/dist; fi
+          if [ -d backend/dist ]; then tar --sort=name --mtime='UTC 1970-01-01' --owner=0 --group=0 --numeric-owner -czf artifacts/release-inputs/backend-dist.tgz backend/dist; fi
+
+      - name: Generate SBOM provenance and checksums
+        shell: bash
+        run: |
+          set -euo pipefail
+          args=()
+          for artifact in artifacts/release-inputs/*.tgz; do
+            [ -f "$artifact" ] && args+=("--artifact=$artifact")
+          done
+          CANDIDATE_SHA="$GITHUB_SHA" node scripts/supply-chain-v550.mjs generate "${args[@]}"
+          out="artifacts/supply-chain/v550/$GITHUB_SHA"
+          printf '{"candidateSha":"%s","workflow":"%s","runId":"%s","runAttempt":"%s"}\n' \
+            "$GITHUB_SHA" "$GITHUB_WORKFLOW" "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" > "$out/workflow-link.json"
+
+      - name: Upload supply-chain evidence
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: supply-chain-v550-${{ github.sha }}
+          path: artifacts/supply-chain/v550/${{ github.sha }}
+          if-no-files-found: error
+          retention-days: 30
