@@ -4,7 +4,9 @@ import crypto from 'node:crypto';
 import PDFDocument from 'pdfkit';
 import { asyncHandler, HttpError } from '../../shared/http.js';
 import { validateBody } from '../../shared/middleware/validate.js';
-import { requireTenant } from '../../shared/middleware/context.js';
+import { requirePermission, requireTenant } from '../../shared/middleware/context.js';
+import { writeAudit } from '../../shared/services/audit.service.js';
+import { buildClinicalExport } from '../clinical-privacy/clinical-privacy.service.js';
 import { buildXlsxWorkbook, XlsxLimitError } from './xlsx-writer.js';
 
 const router = Router();
@@ -13,6 +15,7 @@ const exportSchema = z.object({ filename: z.string().default('contagest-export')
 const sheetSchema = z.object({ name: z.string().default('Datos'), rows: z.array(z.record(z.string(), z.unknown())).default([]) });
 const xlsxSchema = z.object({ filename: z.string().default('contagest-export'), title: z.string().default('ContaGest-VE Export'), sheets: z.array(sheetSchema).default([]) });
 const pdfSchema = z.object({ filename: z.string().default('documento-fiscal'), document: z.record(z.string(), z.unknown()).default({}) });
+const clinicalExportSchema = z.object({ patientId: z.string().uuid() });
 
 function safeDownloadBaseName(value: unknown, fallback: string) {
   const normalized = String(value ?? '')
@@ -31,6 +34,25 @@ function spreadsheetSafeText(value: unknown) {
 
 const escapeCsv = (value: unknown) => `"${spreadsheetSafeText(value).replaceAll('"', '""')}"`;
 function headersFromRows(rows: Record<string, unknown>[]) { return Array.from(new Set(rows.flatMap((r) => Object.keys(r)))); }
+
+router.post('/clinical-record', requirePermission('health.manage'), validateBody(clinicalExportSchema), asyncHandler(async (req, res) => {
+  const context = (req as any).context as { tenantId: string; userId?: string; ip?: string; userAgent?: string };
+  const data = await buildClinicalExport(context.tenantId, req.body.patientId);
+  await writeAudit({
+    tenantId: context.tenantId,
+    userId: context.userId,
+    action: 'clinical.export',
+    entity: 'CarePatient',
+    entityId: req.body.patientId,
+    after: { format: 'json', encounterCount: data.encounters.length },
+    ipAddress: context.ip,
+    userAgent: context.userAgent,
+  });
+  res.setHeader('cache-control', 'no-store, max-age=0');
+  res.setHeader('content-type', 'application/json; charset=utf-8');
+  res.setHeader('content-disposition', `attachment; filename="clinical-record-${safeDownloadBaseName(req.body.patientId, 'patient')}.json"`);
+  res.send(JSON.stringify(data));
+}));
 
 router.post('/csv', validateBody(exportSchema), asyncHandler(async (req, res) => {
   const rows = req.body.rows as Record<string, unknown>[];

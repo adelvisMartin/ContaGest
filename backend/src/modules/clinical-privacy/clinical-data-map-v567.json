@@ -1,0 +1,42 @@
+{
+  "schemaVersion": 1,
+  "ticket": 567,
+  "legalStatus": "technical-privacy-controls-only-not-a-regulatory-certification",
+  "entities": {
+    "CarePatient": {
+      "classification": "sensitive-clinical-identity",
+      "fields": ["firstName","lastName","displayName","idNumber","birthDate","sex","phone","email","address","emergencyContact","allergies","conditions","notes","photoUrl"],
+      "requiredPermission": "health.manage",
+      "retentionAuthority": "#562"
+    },
+    "CareEncounter": {
+      "classification": "sensitive-clinical-record",
+      "fields": ["subjective","objective","assessment","plan","diagnosisCodes","clinicalData","confidential"],
+      "requiredPermission": "health.manage",
+      "retentionAuthority": "#562"
+    },
+    "ClinicalMediaObject": {
+      "classification": "sensitive-clinical-blob",
+      "bucket": "contagest-clinical-media",
+      "pathScope": "tenant/patient",
+      "signedUrlTtlSecondsMaximum": 3600,
+      "requiredPermission": "health.manage",
+      "retentionAuthority": "#562"
+    }
+  },
+  "outputs": {
+    "clinicalExport": { "permission": "health.manage", "auditRequired": true, "serverSideFetch": true },
+    "signedClinicalMedia": { "permission": "health.manage", "auditRequired": true, "crossTenantDenied": true, "unlimitedTtlDenied": true }
+  },
+  "externalProviders": {
+    "openai": {
+      "operationalNonClinical": "requires OPENAI_OPERATIONAL_EXTERNAL_APPROVED=true",
+      "clinicalData": "blocked",
+      "reviewAuthority": "explicit provider/privacy review outside this technical ticket"
+    }
+  },
+  "qa": {
+    "realSensitiveDataAllowed": false,
+    "fixturePolicy": "synthetic-only"
+  }
+}

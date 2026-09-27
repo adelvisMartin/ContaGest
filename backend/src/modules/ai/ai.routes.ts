@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { prisma } from '../../database/prisma.js';
 import { asyncHandler, ok } from '../../shared/http.js';
 import { requireTenant, requirePermission } from '../../shared/middleware/context.js';
+import { assertExternalClinicalTransferAllowed, externalOperationalAiApproved } from '../clinical-privacy/clinical-privacy.service.js';
 
 const router = Router();
 router.use(requireTenant);
@@ -132,9 +133,19 @@ function openAiTimeoutMs() {
   return Number.isFinite(parsed) && parsed >= 100 && parsed <= 60_000 ? Math.round(parsed) : 18_000;
 }
 
-async function askOpenAi(message: string, history: Array<{ role: 'user' | 'assistant'; content: string }>, snapshot: OperationalSnapshot) {
+async function askOpenAi(
+  message: string,
+  history: Array<{ role: 'user' | 'assistant'; content: string }>,
+  snapshot: OperationalSnapshot,
+  context?: Record<string, unknown>
+) {
   const key = String(process.env.OPENAI_API_KEY || '').trim();
-  if (!key) return null;
+  if (!key || !externalOperationalAiApproved()) return null;
+  assertExternalClinicalTransferAllowed({
+    provider: 'openai',
+    purpose: 'operational-assistant',
+    payload: { message, history, context }
+  });
 
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), openAiTimeoutMs());
@@ -152,7 +163,7 @@ async function askOpenAi(message: string, history: Array<{ role: 'user' | 'assis
             role: 'system',
             content: [{
               type: 'input_text',
-              text: 'Eres el asistente operativo de ContaGest-VE. Analiza únicamente el tenant suministrado. Responde en español, de forma profesional, breve y accionable. No inventes datos, no reveles secretos y distingue hechos de recomendaciones.'
+              text: 'Eres el asistente operativo de ContaGest-VE. Analiza únicamente el tenant suministrado. Responde en español, de forma profesional, breve y accionable. No inventes datos, no reveles secretos y no proceses datos clínicos o historias de pacientes.'
             }]
           },
           ...history.slice(-8).map((item) => ({ role: item.role, content: [{ type: 'input_text', text: item.content }] })),
@@ -202,10 +213,11 @@ async function persistConversation(params: {
 router.get('/status', requirePermission('reports.view'), asyncHandler(async (req, res) => {
   const ctx = (req as any).context;
   const snapshot = await loadOperationalSnapshot(ctx.tenantId);
+  const externalProviderReady = Boolean(process.env.OPENAI_API_KEY) && externalOperationalAiApproved();
   ok(res, {
     available: true,
-    provider: process.env.OPENAI_API_KEY ? 'openai' : 'contagest-operational',
-    model: process.env.OPENAI_API_KEY ? (process.env.OPENAI_MODEL || 'gpt-5-mini') : 'motor-operativo-local',
+    provider: externalProviderReady ? 'openai' : 'contagest-operational',
+    model: externalProviderReady ? (process.env.OPENAI_MODEL || 'gpt-5-mini') : 'motor-operativo-local',
     snapshotAt: new Date().toISOString(),
     indicators: {
       lowStock: snapshot.lowStock.length,
@@ -228,14 +240,17 @@ router.post('/chat', requirePermission('reports.view'), asyncHandler(async(req,r
   let providerWarning: string | null = null;
 
   try {
-    const generated = await askOpenAi(body.message, history, snapshot);
+    const generated = await askOpenAi(body.message, history, snapshot, body.context);
     if (generated) {
       answer = generated.answer;
       rawId = generated.rawId;
       provider = 'openai';
     }
   } catch (error: any) {
-    providerWarning = String(error?.message || 'Proveedor generativo no disponible.');
+    const policyCode = String(error?.details?.code || '');
+    providerWarning = ['CLINICAL_EXTERNAL_TRANSFER_BLOCKED', 'EXTERNAL_PROVIDER_REVIEW_REQUIRED'].includes(policyCode)
+      ? 'El contenido se procesó localmente porque la política de privacidad bloqueó el proveedor externo.'
+      : 'Proveedor generativo no disponible; se utilizó el motor local.';
   }
 
   if (!answer) answer = operationalAnswer(body.message, snapshot);

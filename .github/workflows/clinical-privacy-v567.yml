@@ -1,0 +1,82 @@
+name: "Privacy #567 · clinical data boundaries"
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'backend/src/modules/clinical-privacy/**'
+      - 'backend/src/modules/media/**'
+      - 'backend/src/modules/exports/**'
+      - 'backend/src/modules/ai/**'
+      - 'backend/src/modules/index.ts'
+      - 'backend/src/shared/observability/logger.ts'
+      - 'qa/clinical-privacy-v567.test.ts'
+      - 'tests/clinical_privacy_v567_contract.test.mjs'
+      - '.github/workflows/clinical-privacy-v567.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CANDIDATE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+
+jobs:
+  privacy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: privacy-v567-ci-only
+          POSTGRES_DB: contagest_privacy_v567
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d contagest_privacy_v567"
+          --health-interval 5s --health-timeout 5s --health-retries 12
+    env:
+      NODE_ENV: test
+      API_MODE: prisma
+      DATABASE_URL: postgresql://postgres:privacy-v567-ci-only@127.0.0.1:5432/contagest_privacy_v567?schema=public
+      DIRECT_DATABASE_URL: postgresql://postgres:privacy-v567-ci-only@127.0.0.1:5432/contagest_privacy_v567?schema=public
+      JWT_SECRET: privacy-v567-ci-only-jwt-secret-0123456789-abcdef
+      LICENSE_HASH_SECRET: privacy-v567-ci-only-license-secret-0123456789-abcdef
+      OPENAI_OPERATIONAL_EXTERNAL_APPROVED: 'false'
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.CANDIDATE_SHA }}
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - name: Privacy source contracts
+        run: node --test tests/clinical_privacy_v567_contract.test.mjs
+      - name: Prepare isolated PostgreSQL
+        env: { PGPASSWORD: privacy-v567-ci-only }
+        run: psql -h 127.0.0.1 -U postgres -d contagest_privacy_v567 -v ON_ERROR_STOP=1 -f ops/database/prepare-supabase-ephemeral.sql
+      - name: Apply canonical migrations
+        run: npm --workspace backend run prisma:deploy
+      - name: PostgreSQL tenant/storage sandbox negative cases
+        run: npm --workspace backend exec -- tsx --test ../qa/clinical-privacy-v567.test.ts
+      - name: Typecheck lint and backend build
+        run: |
+          npm run typecheck
+          npm run lint
+          npm run build:backend
+      - name: Capture exact-SHA evidence
+        if: always()
+        run: |
+          mkdir -p artifacts/privacy
+          printf 'ticket=#567\nsha=%s\nrun_id=%s\n' "$CANDIDATE_SHA" "$GITHUB_RUN_ID" > artifacts/privacy/exact-sha-v567.txt
+      - name: Upload privacy evidence
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: clinical-privacy-v567-${{ env.CANDIDATE_SHA }}
+          path: artifacts/privacy
+          if-no-files-found: error
