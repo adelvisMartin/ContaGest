@@ -28,13 +28,19 @@ concurrency:
   group: finance-v559-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
+env:
+  CANDIDATE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+
 jobs:
   contract-red-green:
     name: Contract RED→GREEN
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v7
+      - name: Checkout exact candidate
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ env.CANDIDATE_SHA }}
       - uses: actions/setup-node@v7
         with:
           node-version: 22
@@ -54,19 +60,19 @@ jobs:
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: contagest_finance_v559
+          POSTGRES_DB: contagest_finance_v559_e2e
         ports:
           - 5432:5432
         options: >-
-          --health-cmd "pg_isready -U postgres -d contagest_finance_v559"
+          --health-cmd "pg_isready -U postgres -d contagest_finance_v559_e2e"
           --health-interval 5s
           --health-timeout 5s
           --health-retries 12
     env:
       NODE_ENV: test
       API_MODE: prisma
-      DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/contagest_finance_v559?schema=public
-      DIRECT_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/contagest_finance_v559?schema=public
+      DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/contagest_finance_v559_e2e?schema=public
+      DIRECT_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/contagest_finance_v559_e2e?schema=public
       APP_URL: http://127.0.0.1:8080
       CORS_ORIGIN: http://127.0.0.1:8080
       JWT_SECRET: finance_v559_only_jwt_secret_0123456789abcdefghijklmnopqrstuvwxyz_ABCDEF
@@ -80,6 +86,7 @@ jobs:
       - name: Checkout exact candidate
         uses: actions/checkout@v7
         with:
+          ref: ${{ env.CANDIDATE_SHA }}
           fetch-depth: 0
       - name: Node 22
         uses: actions/setup-node@v7
@@ -97,7 +104,7 @@ jobs:
           PGPASSWORD: postgres
         run: |
           set -o pipefail
-          psql -h 127.0.0.1 -U postgres -d contagest_finance_v559 -v ON_ERROR_STOP=1 -f ops/database/prepare-supabase-ephemeral.sql 2>&1 | tee postgres-prereq-v559.log
+          psql -h 127.0.0.1 -U postgres -d contagest_finance_v559_e2e -v ON_ERROR_STOP=1 -f ops/database/prepare-supabase-ephemeral.sql 2>&1 | tee postgres-prereq-v559.log
           npm --workspace backend run prisma:sync-schema 2>&1 | tee prisma-v559.log
           npm --workspace backend run prisma:generate 2>&1 | tee -a prisma-v559.log
           npm --workspace backend run prisma:deploy 2>&1 | tee migrations-v559.log
@@ -112,7 +119,7 @@ jobs:
       - name: Golden financial reconciliation
         run: |
           set -o pipefail
-          npm run test:backend:financial:reconciliation:real 2>&1 | tee reconciliation-v559.log
+          GITHUB_SHA="$CANDIDATE_SHA" npm run test:backend:financial:reconciliation:real 2>&1 | tee reconciliation-v559.log
       - name: Historical financial regressions
         run: |
           set -o pipefail
@@ -124,7 +131,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: financial-reconciliation-v559-${{ github.sha }}
+          name: financial-reconciliation-v559-${{ env.CANDIDATE_SHA }}
           path: |
             artifacts/financial-reconciliation-v559/**
             artifacts-install-v559.log
