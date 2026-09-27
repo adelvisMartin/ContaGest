@@ -39,11 +39,10 @@ test('issue #562 blocks immutable data, honors legal hold, isolates tenant purge
   const a2 = await h.prisma.analyticsEvent.create({ data: { tenantId: h.tenant.id, sessionId: `${RUN}-A2`, type: 'qa.lifecycle', createdAt: old } });
   const b1 = await h.prisma.analyticsEvent.create({ data: { tenantId: tenantB.id, sessionId: `${RUN}-B1`, type: 'qa.lifecycle', createdAt: old } });
 
-  const immutable = await assert.rejects(
+  await assert.rejects(
     () => h.prisma.$transaction((tx) => executeLifecyclePurge(tx, { tenantId: h.tenant.id, entityType: 'ledger-entry', execute: true })),
     /no permite purge|purge físico/i
   );
-  assert.ok(immutable, 'immutable ledger authority must reject generic purge');
 
   const hold = await createLegalHold({ tenantId: h.tenant.id, entityType: 'analytics-event', reason: 'QA legal hold must block purge' });
   await assert.rejects(
