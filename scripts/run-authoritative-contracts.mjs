@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import { spawnSync } from 'node:child_process';
 
 const CONTRACT_CONCURRENCY=1;
-const CONTRACT_BATCH_SIZE=8;
+const CONTRACT_BATCH_SIZE=1;
 const manifest=JSON.parse(fs.readFileSync('config/implementation-roadmap-1-58.json','utf8'));
 const implementations=Array.isArray(manifest?.implementations)?manifest.implementations:[];
 if(implementations.length!==58) throw new Error(`AUTHORITATIVE_IMPLEMENTATION_COUNT:${implementations.length}`);
