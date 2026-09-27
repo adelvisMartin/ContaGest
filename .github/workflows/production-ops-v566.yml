@@ -1,0 +1,125 @@
+name: "OPS #566 · production deployment hardening"
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'ops/release/**'
+      - 'scripts/production-config-preflight-v566.mjs'
+      - 'scripts/release-artifact-manifest-v566.mjs'
+      - 'scripts/production-smoke-v566.mjs'
+      - 'scripts/production-auth-smoke-v566.ts'
+      - 'scripts/migration-state-v566.mjs'
+      - 'backend/src/shared/observability/**'
+      - 'tests/production_ops_v566_contract.test.mjs'
+      - 'docs/RUNBOOK_PRODUCTION_V566.md'
+      - '.github/workflows/production-ops-v566.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CANDIDATE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+
+jobs:
+  production-like-drill:
+    runs-on: ubuntu-latest
+    timeout-minutes: 55
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: ops-v566-ci-only
+          POSTGRES_DB: contagest_ops_v566
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d contagest_ops_v566"
+          --health-interval 5s --health-timeout 5s --health-retries 12
+    env:
+      NODE_ENV: test
+      API_MODE: prisma
+      DATABASE_URL: postgresql://postgres:ops-v566-ci-only@127.0.0.1:5432/contagest_ops_v566?schema=public
+      DIRECT_DATABASE_URL: postgresql://postgres:ops-v566-ci-only@127.0.0.1:5432/contagest_ops_v566?schema=public
+      JWT_SECRET: ops-v566-ci-only-jwt-secret-0123456789-abcdef
+      LICENSE_HASH_SECRET: ops-v566-ci-only-license-secret-0123456789-abcdef
+      ALLOW_DEV_TENANT_HEADER: 'false'
+      GIT_COMMIT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.CANDIDATE_SHA }}
+          fetch-depth: 2
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install locked dependencies
+        run: npm ci --no-audit --no-fund
+      - name: Source contracts
+        run: node --test tests/production_ops_v566_contract.test.mjs
+      - name: Test configuration contract without printing secrets
+        run: node scripts/production-config-preflight-v566.mjs --environment=test
+      - name: Prepare disposable PostgreSQL
+        env: { PGPASSWORD: ops-v566-ci-only }
+        run: psql -h 127.0.0.1 -U postgres -d contagest_ops_v566 -v ON_ERROR_STOP=1 -f ops/database/prepare-supabase-ephemeral.sql
+      - name: Forward-only migrations
+        run: npm --workspace backend run prisma:deploy
+      - name: Verify migration state before promotion
+        run: node scripts/migration-state-v566.mjs
+      - name: Quality and immutable build artifact
+        run: |
+          npm run typecheck
+          npm run lint
+          npm run build
+          node scripts/release-artifact-manifest-v566.mjs
+      - name: Start candidate API for smoke
+        run: |
+          npm --workspace backend start > artifacts/release/backend-v566.log 2>&1 &
+          echo $! > artifacts/release/backend-v566.pid
+      - name: Wait for candidate liveness
+        run: curl --fail --silent --retry 60 --retry-delay 1 --retry-connrefused --max-time 2 http://127.0.0.1:3030/health/live >/dev/null
+      - name: Production-like unauthenticated smoke
+        env:
+          SMOKE_BASE_URL: http://127.0.0.1:3030
+        run: node scripts/production-smoke-v566.mjs
+      - name: Authenticated synthetic-tenant smoke
+        env:
+          SMOKE_BASE_URL: http://127.0.0.1:3030
+        run: npm --workspace backend exec -- tsx ../scripts/production-auth-smoke-v566.ts
+      - name: Seed isolated restore fixture
+        env: { PGPASSWORD: ops-v566-ci-only }
+        run: |
+          psql -h 127.0.0.1 -U postgres -d contagest_ops_v566 -v ON_ERROR_STOP=1 -c "INSERT INTO \"Tenant\" (id,rif,name,\"updatedAt\") VALUES (gen_random_uuid(),'J-V566-RESTORE','restore-drill',NOW());"
+      - name: Isolated database recovery drill
+        env: { PGPASSWORD: ops-v566-ci-only }
+        run: |
+          pg_dump -h 127.0.0.1 -U postgres -d contagest_ops_v566 -Fc -f artifacts/release/recovery-v566.dump
+          createdb -h 127.0.0.1 -U postgres contagest_recovery_v566
+          pg_restore -h 127.0.0.1 -U postgres -d contagest_recovery_v566 --no-owner --no-privileges artifacts/release/recovery-v566.dump
+          psql -h 127.0.0.1 -U postgres -d contagest_recovery_v566 -Atc "SELECT count(*) FROM \"Tenant\" WHERE rif='J-V566-RESTORE'" > artifacts/release/restore-count.txt
+          test "$(cat artifacts/release/restore-count.txt)" = "1"
+      - name: Isolated application rollback compatibility drill
+        env: { PGPASSWORD: ops-v566-ci-only }
+        run: |
+          parent_sha="$(git rev-parse "$CANDIDATE_SHA^")"
+          git worktree add --detach /tmp/contagest-rollback "$parent_sha"
+          cd /tmp/contagest-rollback
+          npm ci --no-audit --no-fund
+          npm run build:backend
+          GIT_COMMIT_SHA="$parent_sha" PORT=3031 npm --workspace backend start > "$GITHUB_WORKSPACE/artifacts/release/rollback-parent.log" 2>&1 &
+          echo $! > "$GITHUB_WORKSPACE/artifacts/release/rollback-parent.pid"
+          curl --fail --silent --retry 60 --retry-delay 1 --retry-connrefused --max-time 2 http://127.0.0.1:3031/health/ready > "$GITHUB_WORKSPACE/artifacts/release/rollback-parent-health.json"
+          grep -q "$parent_sha" "$GITHUB_WORKSPACE/artifacts/release/rollback-parent-health.json"
+      - name: Capture exact-SHA drill evidence
+        if: always()
+        run: printf 'ticket=#566\nsha=%s\nrun_id=%s\n' "$CANDIDATE_SHA" "$GITHUB_RUN_ID" > artifacts/release/exact-sha-v566.txt
+      - name: Upload production-like evidence
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: production-ops-v566-${{ env.CANDIDATE_SHA }}
+          path: artifacts/release
+          if-no-files-found: error

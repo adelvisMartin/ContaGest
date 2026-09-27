@@ -1,0 +1,37 @@
+{
+  "schemaVersion": 1,
+  "environments": {
+    "development": {
+      "requiredNonSecret": ["NODE_ENV"],
+      "requiredSecret": [],
+      "notes": ["Local development may use explicit development defaults and local tenant headers."]
+    },
+    "test": {
+      "requiredNonSecret": ["NODE_ENV"],
+      "requiredSecret": ["DATABASE_URL", "DIRECT_DATABASE_URL", "JWT_SECRET", "LICENSE_HASH_SECRET"],
+      "notes": ["Tests must use an isolated disposable PostgreSQL database and synthetic tenants."]
+    },
+    "staging": {
+      "requiredNonSecret": ["NODE_ENV", "APP_URL", "CORS_ORIGIN", "GIT_COMMIT_SHA", "DATABASE_RUNTIME_EXPECTED_ROLE"],
+      "requiredSecret": ["DATABASE_RUNTIME_URL", "DIRECT_DATABASE_URL", "JWT_SECRET", "LICENSE_HASH_SECRET"],
+      "notes": ["Production-like runtime role/pooler rules apply. Provider integrations remain explicitly configured."]
+    },
+    "production": {
+      "requiredNonSecret": ["NODE_ENV", "APP_URL", "CORS_ORIGIN", "GIT_COMMIT_SHA", "DATABASE_RUNTIME_EXPECTED_ROLE"],
+      "requiredSecret": ["DATABASE_RUNTIME_URL", "DIRECT_DATABASE_URL", "JWT_SECRET", "LICENSE_HASH_SECRET"],
+      "notes": ["DIRECT_DATABASE_URL is migration-only; runtime uses DATABASE_RUNTIME_URL with the dedicated non-privileged role."]
+    }
+  },
+  "parity": {
+    "requiredSameMajorRuntime": "node-22",
+    "databaseEngine": "postgresql",
+    "migrationAuthority": "backend/prisma/migrations",
+    "productionRuntimeDatabaseVariable": "DATABASE_RUNTIME_URL",
+    "migrationDatabaseVariable": "DIRECT_DATABASE_URL",
+    "documentedDeviations": [
+      "development may use local origins and development credentials",
+      "test uses ephemeral PostgreSQL and synthetic tenants",
+      "staging/production provider credentials and domains differ by environment"
+    ]
+  }
+}
