@@ -3,7 +3,7 @@ import { Prisma } from '@prisma/client';
 import { prisma } from '../../database/prisma.js';
 import { HttpError } from '../../shared/http.js';
 
-export type FiscalDb = Prisma.TransactionClient | typeof prisma;
+export type FiscalDb = Pick<Prisma.TransactionClient, '$queryRaw' | '$executeRaw'>;
 
 export type FiscalRuleVersionRow = {
   id: string;
@@ -22,7 +22,6 @@ export type FiscalRuleVersionRow = {
 
 type FiscalSequenceRow = { prefix: string; width: number; value: bigint };
 type CountRow = { count: bigint };
-type ImbalanceRow = { count: bigint };
 
 function canonicalize(value: unknown): unknown {
   if (value === null || typeof value === 'string' || typeof value === 'boolean' || typeof value === 'number') return value;
@@ -49,6 +48,12 @@ export async function createFiscalRuleVersion(input: {
   createdBy?: string | null;
 }) {
   return prisma.$transaction(async (tx) => {
+    // A transaction-scoped advisory lock serializes version allocation and the
+    // overlap check for one tenant/ruleKey without requiring privileged DB extensions.
+    await tx.$executeRaw(Prisma.sql`
+      SELECT pg_advisory_xact_lock(hashtextextended(${`${input.tenantId}:${input.ruleKey}`}, 561))
+    `);
+
     const overlapping = await tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`
       SELECT "id"
       FROM public."FiscalRuleVersion"
@@ -57,7 +62,6 @@ export async function createFiscalRuleVersion(input: {
         AND tstzrange("effectiveFrom", COALESCE("effectiveTo", 'infinity'::timestamptz), '[)')
             && tstzrange(${input.effectiveFrom}, COALESCE(${input.effectiveTo || null}::timestamptz, 'infinity'::timestamptz), '[)')
       LIMIT 1
-      FOR UPDATE
     `);
     if (overlapping.length) {
       throw new HttpError(409, 'La vigencia de la regla fiscal se solapa con una versión existente.', { code: 'FISCAL_RULE_OVERLAP', ruleKey: input.ruleKey });
@@ -67,7 +71,6 @@ export async function createFiscalRuleVersion(input: {
       SELECT COALESCE(MAX("version"), 0)::integer AS "version"
       FROM public."FiscalRuleVersion"
       WHERE "tenantId" = ${input.tenantId}::uuid AND "ruleKey" = ${input.ruleKey}
-      FOR UPDATE
     `);
     const version = Number(versions[0]?.version || 0) + 1;
     const id = randomUUID();
@@ -171,7 +174,7 @@ export async function buildCloseEvidence(db: FiscalDb, input: { tenantId: string
     db.$queryRaw<CountRow[]>(Prisma.sql`SELECT COUNT(*)::bigint AS count FROM public."LedgerEntry" WHERE "tenantId"=${input.tenantId}::uuid AND "fiscalPeriod"=${input.period} AND "posted"=false`),
     db.$queryRaw<CountRow[]>(Prisma.sql`SELECT COUNT(*)::bigint AS count FROM public."SalesInvoice" WHERE "tenantId"=${input.tenantId}::uuid AND "fiscalPeriod"=${input.period} AND "status"::text='draft'`),
     db.$queryRaw<CountRow[]>(Prisma.sql`SELECT COUNT(*)::bigint AS count FROM public."PurchaseInvoice" WHERE "tenantId"=${input.tenantId}::uuid AND "fiscalPeriod"=${input.period} AND "status"::text='draft'`),
-    db.$queryRaw<ImbalanceRow[]>(Prisma.sql`
+    db.$queryRaw<CountRow[]>(Prisma.sql`
       SELECT COUNT(*)::bigint AS count FROM (
         SELECT e."id"
         FROM public."LedgerEntry" e
