@@ -2,6 +2,7 @@
 import fs from 'node:fs';
 import { spawnSync } from 'node:child_process';
 
+const CONTRACT_BATCH_SIZE=8;
 const manifest=JSON.parse(fs.readFileSync('config/implementation-roadmap-1-58.json','utf8'));
 const implementations=Array.isArray(manifest?.implementations)?manifest.implementations:[];
 if(implementations.length!==58) throw new Error(`AUTHORITATIVE_IMPLEMENTATION_COUNT:${implementations.length}`);
@@ -35,7 +36,14 @@ for(const file of tests){
   if(!fs.existsSync(file)) throw new Error(`MISSING_AUTHORITATIVE_TEST:${file}`);
 }
 
-console.log(`[authoritative-contracts] implementations=${implementations.length} tests=${tests.length}`);
-const result=spawnSync(process.execPath,['--test',...tests],{stdio:'inherit',env:process.env,shell:false});
-if(result.error) throw result.error;
-process.exitCode=result.status??1;
+console.log(`[authoritative-contracts] implementations=${implementations.length} tests=${tests.length} batchSize=${CONTRACT_BATCH_SIZE}`);
+for(let offset=0;offset<tests.length;offset+=CONTRACT_BATCH_SIZE){
+  const batch=tests.slice(offset,offset+CONTRACT_BATCH_SIZE);
+  console.log(`[authoritative-contracts] batch=${Math.floor(offset/CONTRACT_BATCH_SIZE)+1} files=${batch.length}`);
+  const result=spawnSync(process.execPath,['--test',...batch],{stdio:'inherit',env:process.env,shell:false});
+  if(result.error) throw result.error;
+  if(result.status!==0){
+    process.exitCode=result.status??1;
+    break;
+  }
+}
