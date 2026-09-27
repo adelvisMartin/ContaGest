@@ -2,8 +2,7 @@ import { spawnSync } from 'node:child_process';
 
 // DIAGNOSTIC-ONLY branch probe. Never merge this reduced stage list.
 const stages = Object.freeze([
-  { id:'identity', command:'npm', args:['run','build:identity'] },
-  { id:'source-qa', command:'npm', args:['run','preqa:source'] }
+  { id:'identity', command:'npm', args:['run','build:identity'] }
 ]);
 
 function safeBuildContext() {
