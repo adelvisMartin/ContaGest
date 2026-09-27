@@ -30,7 +30,6 @@ const HOLD_SLUG = 'data-lifecycle-hold';
 const JOB_SLUG = 'data-lifecycle-job';
 
 type LifecycleDb = Prisma.TransactionClient;
-type CountRow = { count: bigint };
 type PolicyRow = { id: string; payload: unknown; createdAt: Date };
 type HoldRow = { id: string };
 
@@ -182,7 +181,6 @@ async function countCandidates(db: LifecycleDb, tenantId: string, entityType: Li
     case 'notification-log': return db.notificationLog.count({ where: { tenantId, createdAt: { lt: before } } });
     case 'address-geocode': return db.addressGeocode.count({ where: { tenantId, createdAt: { lt: before } } });
     case 'demo-access': return db.demoAccess.count({ where: { tenantId, createdAt: { lt: before }, expiresAt: { lt: new Date() } } });
-    case 'import-batch': return db.importBatch.count({ where: { tenantId, createdAt: { lt: before } } });
     case 'ai-conversation': return db.aiConversation.count({ where: { tenantId, updatedAt: { lt: before } } });
     case 'idempotency-record': return db.idempotencyRecord.count({ where: { tenantId, createdAt: { lt: before }, expiresAt: { lt: new Date() } } });
     default: return 0;
@@ -195,7 +193,6 @@ async function deleteCandidates(db: LifecycleDb, tenantId: string, entityType: L
     case 'notification-log': return (await db.notificationLog.deleteMany({ where: { tenantId, createdAt: { lt: before } } })).count;
     case 'address-geocode': return (await db.addressGeocode.deleteMany({ where: { tenantId, createdAt: { lt: before } } })).count;
     case 'demo-access': return (await db.demoAccess.deleteMany({ where: { tenantId, createdAt: { lt: before }, expiresAt: { lt: new Date() } } })).count;
-    case 'import-batch': return (await db.importBatch.deleteMany({ where: { tenantId, createdAt: { lt: before } } })).count;
     case 'ai-conversation': return (await db.aiConversation.deleteMany({ where: { tenantId, updatedAt: { lt: before } } })).count;
     case 'idempotency-record': return (await db.idempotencyRecord.deleteMany({ where: { tenantId, createdAt: { lt: before }, expiresAt: { lt: new Date() } } })).count;
     default: throw new HttpError(409, 'La entidad no admite purge físico.', { code: 'LIFECYCLE_PURGE_NOT_ALLOWED', entityType });
@@ -209,7 +206,7 @@ export async function executeLifecyclePurge(db: LifecycleDb, input: {
   actorId?: string | null;
 }) {
   const policy = await resolveRetentionPolicy(db, input.tenantId, input.entityType);
-  if (policy.semantics !== 'purgeable' && policy.semantics !== 'archival') {
+  if (policy.semantics !== 'purgeable') {
     throw new HttpError(409, 'La matriz de lifecycle no permite purge físico para esta entidad.', {
       code: 'LIFECYCLE_PURGE_NOT_ALLOWED', entityType: input.entityType, semantics: policy.semantics
     });
