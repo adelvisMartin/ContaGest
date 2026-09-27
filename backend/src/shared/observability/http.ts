@@ -1,4 +1,5 @@
 import type { Request, Response, NextFunction } from 'express';
+import { createTelemetryContext } from './context.js';
 import {
   logger,
   pseudonymizeIdentifier,
@@ -14,7 +15,22 @@ function durationMs(startedAt: bigint) {
 export function requestObservability(req: Request, res: Response, next: NextFunction) {
   const startedAt = process.hrtime.bigint();
   const requestId = sanitizeLogValue((req as any).requestId || '', 96);
-  const requestLog = logger.child({ requestId: requestId || undefined });
+  const telemetry = createTelemetryContext({
+    traceparent: req.header('traceparent'),
+    correlationId: req.header('x-correlation-id'),
+    requestId
+  });
+  (req as any).telemetry = telemetry;
+  (req as any).correlationId = telemetry.correlationId;
+  res.setHeader('x-correlation-id', telemetry.correlationId);
+  res.setHeader('traceparent', telemetry.traceparent);
+
+  const requestLog = logger.child({
+    requestId: requestId || undefined,
+    correlationId: telemetry.correlationId,
+    traceId: telemetry.traceId,
+    spanId: telemetry.spanId
+  });
   (req as any).log = requestLog;
 
   let recorded = false;
@@ -37,9 +53,13 @@ export function requestObservability(req: Request, res: Response, next: NextFunc
     const fields = {
       event: aborted ? 'http.request.aborted' : 'http.request',
       requestId: requestId || undefined,
+      correlationId: telemetry.correlationId,
+      traceId: telemetry.traceId,
+      spanId: telemetry.spanId,
       route,
       method,
       status,
+      outcome: status >= 500 ? 'error' : status >= 400 ? 'rejected' : 'success',
       durationMs: Number(elapsedMs.toFixed(3)),
       tenantRef
     };
