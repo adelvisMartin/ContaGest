@@ -10,9 +10,27 @@ export function assertFullSha(value) {
   return String(value).toLowerCase();
 }
 
-export function graphifyFreshness({ headSha, metadataPath }) {
+function resolveGraphPath(metadataPath, graphPath) {
+  if (graphPath) return graphPath;
+  return metadataPath ? path.join(path.dirname(metadataPath), 'graph.json') : '';
+}
+
+function hasUsableGraphArtifact(graphPath) {
+  if (!graphPath || !fs.existsSync(graphPath)) return false;
+  try {
+    const stat = fs.statSync(graphPath);
+    if (!stat.isFile() || stat.size === 0) return false;
+    JSON.parse(fs.readFileSync(graphPath, 'utf8'));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export function graphifyFreshness({ headSha, metadataPath, graphPath }) {
   const normalizedHead = assertFullSha(headSha);
-  if (!metadataPath || !fs.existsSync(metadataPath)) {
+  const resolvedGraphPath = resolveGraphPath(metadataPath, graphPath);
+  if (!metadataPath || !fs.existsSync(metadataPath) || !hasUsableGraphArtifact(resolvedGraphPath)) {
     return { status: 'UNAVAILABLE', sourceSha: null, headSha: normalizedHead };
   }
 
@@ -29,9 +47,13 @@ export function graphifyFreshness({ headSha, metadataPath }) {
   }
 }
 
-export function writeGraphifyBinding({ headSha, metadataPath, generatedAt = new Date().toISOString() }) {
+export function writeGraphifyBinding({ headSha, metadataPath, graphPath, generatedAt = new Date().toISOString() }) {
   const sourceSha = assertFullSha(headSha);
   if (!metadataPath) throw new Error('metadataPath is required');
+  const resolvedGraphPath = resolveGraphPath(metadataPath, graphPath);
+  if (!hasUsableGraphArtifact(resolvedGraphPath)) {
+    throw new Error('Graphify graph artifact is required before binding source SHA');
+  }
   fs.mkdirSync(path.dirname(metadataPath), { recursive: true });
   const payload = { schemaVersion: 1, sourceSha, generatedAt };
   fs.writeFileSync(metadataPath, `${JSON.stringify(payload, null, 2)}\n`, 'utf8');
