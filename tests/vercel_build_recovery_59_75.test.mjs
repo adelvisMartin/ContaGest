@@ -44,6 +44,13 @@ test('59/75 Vercel source diagnostics preserve bounded nested exit codes',()=>{
   assert.match(sourceDiagnostic,/nestedHipicoExit \? result\.status : 101 \+ index/);
 });
 
+test('59/75 Vercel source diagnostic removes one Node process from the Hípico path',()=>{
+  assert.match(runner,/\['--max-old-space-size=128','\.\.\/scripts\/vercel-source-preqa-diagnostic\.mjs'\]/);
+  assert.match(sourceDiagnostic,/import \{ runHipicoRootContracts \} from '\.\/hipico-root-contracts\.mjs';/);
+  assert.match(sourceDiagnostic,/runHipicoRootContracts\(\)/);
+  assert.doesNotMatch(sourceDiagnostic,/\['scripts\/hipico-root-contracts\.mjs'\]/);
+});
+
 test('59/75 diagnostics expose only bounded non-secret build metadata',()=>{
   assert.match(runner,/VERCEL_GIT_COMMIT_SHA/);
   assert.match(runner,/VERCEL_GIT_COMMIT_REF/);
