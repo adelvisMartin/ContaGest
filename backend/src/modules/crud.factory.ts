@@ -6,6 +6,8 @@ import { requirePermission, requireTenant } from '../shared/middleware/context.j
 import { validateBody } from '../shared/middleware/validate.js';
 import { writeAudit } from '../shared/services/audit.service.js';
 
+type CrudDeleteMode = 'hard-delete' | 'soft-delete-active' | 'forbidden';
+
 type CrudOptions = {
   model: keyof typeof prisma;
   entity: string;
@@ -13,6 +15,7 @@ type CrudOptions = {
   schema: z.ZodTypeAny;
   tenantScoped?: boolean;
   searchFields?: string[];
+  deleteMode?: CrudDeleteMode;
 };
 
 export function createCrudRouter(options: CrudOptions) {
@@ -63,10 +66,22 @@ export function createCrudRouter(options: CrudOptions) {
 
   router.delete('/:id', asyncHandler(async (req, res) => {
     const ctx = (req as any).context;
-    const before = await delegate().findFirst({ where: options.tenantScoped === false ? { id: req.params.id } : { id: req.params.id, tenantId: ctx.tenantId } });
+    const scopedWhere = options.tenantScoped === false ? { id: req.params.id } : { id: req.params.id, tenantId: ctx.tenantId };
+    const before = await delegate().findFirst({ where: scopedWhere });
     if (!before) throw new HttpError(404, `${options.entity} no encontrado`);
-    const data = await delegate().delete({ where: { id: req.params.id } });
-    await writeAudit({ tenantId: ctx.tenantId, userId: ctx.userId, action: 'delete', entity: options.entity, entityId: req.params.id, before, ipAddress: ctx.ip, userAgent: ctx.userAgent });
+
+    const deleteMode = options.deleteMode || 'hard-delete';
+    if (deleteMode === 'forbidden') {
+      throw new HttpError(409, `${options.entity} no admite eliminación genérica; usa su workflow de dominio/lifecycle.`, {
+        code: 'GENERIC_DELETE_FORBIDDEN', entity: options.entity
+      });
+    }
+
+    const data = deleteMode === 'soft-delete-active'
+      ? await delegate().update({ where: { id: req.params.id }, data: { active: false } })
+      : await delegate().delete({ where: { id: req.params.id } });
+    const action = deleteMode === 'soft-delete-active' ? 'soft-delete' : 'delete';
+    await writeAudit({ tenantId: ctx.tenantId, userId: ctx.userId, action, entity: options.entity, entityId: req.params.id, before, after: deleteMode === 'soft-delete-active' ? data : undefined, ipAddress: ctx.ip, userAgent: ctx.userAgent });
     ok(res, data);
   }));
 
