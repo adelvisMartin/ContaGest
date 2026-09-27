@@ -96,6 +96,12 @@ function scheduleMount() {
   queueMicrotask(mount);
 }
 
+function isCommandCenterMutation(mutation) {
+  const host = document.querySelector(HOST_SELECTOR);
+  const target = mutation?.target;
+  return Boolean(host && target && (target === host || host.contains(target)));
+}
+
 document.addEventListener('click', (event) => {
   const action = event.target.closest('[data-action]')?.dataset?.action;
   if (action === 'refresh-command-center') {
@@ -110,6 +116,9 @@ window.addEventListener('offline', () => void refresh({ force: true }));
 
 const appRoot = document.querySelector('#app');
 if (appRoot) {
-  new MutationObserver(scheduleMount).observe(appRoot, { childList: true, subtree: true });
+  new MutationObserver((mutations) => {
+    if (mutations.length > 0 && mutations.every(isCommandCenterMutation)) return;
+    scheduleMount();
+  }).observe(appRoot, { childList: true, subtree: true });
 }
 scheduleMount();
