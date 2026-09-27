@@ -24,6 +24,13 @@ test('#563 cache namespaces include release/session scope and never cache APIs',
   assert.match(sw, /cache:'no-store'/);
 });
 
+test('#563 shell cache lookups stay inside ASSET_CACHE and public-static allowlist', () => {
+  assert.match(sw, /isPublicStaticAsset/);
+  assert.match(sw, /caches\.open\(ASSET_CACHE\)/);
+  assert.doesNotMatch(sw, /caches\.match\([^\n]*cacheName/);
+  assert.doesNotMatch(sw, /\['image'\s*,\s*'font'\s*,\s*'manifest'\]\.includes\(request\.destination\)/);
+});
+
 test('#563 logout and tenant switch purge sensitive cache + IndexedDB state', () => {
   assert.match(offline, /purgeOfflineSession/);
   assert.match(offline, /indexedDB\.databases/);
