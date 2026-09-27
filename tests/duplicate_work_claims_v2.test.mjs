@@ -29,6 +29,19 @@ test('explicit machine-readable supersession permits exactly one active closing 
   assert.deepEqual(result.superseded, [{ pullRequest: 599, by: 600 }]);
 });
 
+test('supersession without a shared exclusive issue cannot silence an owner', () => {
+  const result = detectDuplicateExclusiveClaims([
+    { number: 599, body: 'Closes #562', state: 'open' },
+    { number: 600, body: 'Agent-Claim-Supersedes: 599\nCloses #563', state: 'open' },
+    { number: 601, body: 'Fixes #562', state: 'open' },
+  ]);
+
+  assert.equal(result.ok, false);
+  assert.equal(result.code, 'DUPLICATE_WORK_CLAIM');
+  assert.deepEqual(result.duplicates, [{ issue: 562, pullRequests: [599, 601] }]);
+  assert.deepEqual(result.superseded, []);
+});
+
 test('diagnostic or stacked PR without closure syntax is not an exclusive claim', () => {
   const result = detectDuplicateExclusiveClaims([
     { number: 701, body: 'Agent-Claim-Mode: diagnostic\nInvestigates #562', state: 'open' },
