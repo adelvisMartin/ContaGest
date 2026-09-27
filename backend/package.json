@@ -44,7 +44,7 @@
     "db:dev:create": "npm run prisma:migrate -- --name init && prisma db seed && npm run db:rls",
     "db:rls": "node scripts/apply-rls.mjs",
     "supabase:link": "supabase link --project-ref YOUR_PROJECT_REF",
-    "supabase:db:push": "supabase db push --include-all",
+    "supabase:db:push": "supabase db push",
     "db:reset:supabase": "npm run prisma:sync-schema && prisma migrate reset --force && prisma db seed && npm run db:rls",
     "db:validate": "npm run prisma:sync-schema && prisma validate",
     "db:doctor": "node scripts/doctor-db.mjs",
