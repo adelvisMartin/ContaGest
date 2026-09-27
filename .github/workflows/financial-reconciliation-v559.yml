@@ -1,0 +1,144 @@
+name: "Finance #559 · transversal golden reconciliation"
+
+on:
+  pull_request:
+    paths:
+      - 'backend/prisma/**'
+      - 'backend/src/modules/accounting/**'
+      - 'backend/src/modules/sales/**'
+      - 'backend/src/modules/purchases/**'
+      - 'backend/src/modules/banking/**'
+      - 'backend/src/modules/inventory/**'
+      - 'backend/src/shared/financial/**'
+      - 'backend/src/shared/services/financial-idempotency.service.ts'
+      - 'qa/financial-reconciliation-v559.test.ts'
+      - 'qa/fixtures/financial-reconciliation-v559.json'
+      - 'qa/support/real-backend-harness.ts'
+      - 'tests/financial_reconciliation_v559_contract.test.mjs'
+      - 'docs/ADR_FINANCIAL_RECONCILIATION_V559.md'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/financial-reconciliation-v559.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: finance-v559-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  contract-red-green:
+    name: Contract RED→GREEN
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - name: Contract #559
+        run: node --test tests/financial_reconciliation_v559_contract.test.mjs
+
+  golden-reconciliation-postgres:
+    name: Golden dataset · PostgreSQL 17
+    needs: contract-red-green
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: contagest_finance_v559
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d contagest_finance_v559"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      NODE_ENV: test
+      API_MODE: prisma
+      DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/contagest_finance_v559?schema=public
+      DIRECT_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/contagest_finance_v559?schema=public
+      APP_URL: http://127.0.0.1:8080
+      CORS_ORIGIN: http://127.0.0.1:8080
+      JWT_SECRET: finance_v559_only_jwt_secret_0123456789abcdefghijklmnopqrstuvwxyz_ABCDEF
+      LICENSE_HASH_SECRET: finance_v559_only_license_secret_0123456789abcdefghijklmnopqrstuvwxyz_XYZ
+      SEED_ADMIN_PASSWORD: FinanceV559-QA-Only-Password-2026!
+      ALLOW_DEV_TENANT_HEADER: 'true'
+      SUPABASE_AUTH_FALLBACK: 'false'
+      ALLOW_PUBLIC_REGISTER: 'false'
+      FINANCIAL_RECONCILIATION_REPORT_DIR: artifacts/financial-reconciliation-v559
+    steps:
+      - name: Checkout exact candidate
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Node 22
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install locked dependencies + PostgreSQL client
+        run: |
+          set -o pipefail
+          npm ci --no-audit --no-fund 2>&1 | tee artifacts-install-v559.log
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client
+      - name: Prepare isolated PostgreSQL from zero
+        env:
+          PGPASSWORD: postgres
+        run: |
+          set -o pipefail
+          psql -h 127.0.0.1 -U postgres -d contagest_finance_v559 -v ON_ERROR_STOP=1 -f ops/database/prepare-supabase-ephemeral.sql 2>&1 | tee postgres-prereq-v559.log
+          npm --workspace backend run prisma:sync-schema 2>&1 | tee prisma-v559.log
+          npm --workspace backend run prisma:generate 2>&1 | tee -a prisma-v559.log
+          npm --workspace backend run prisma:deploy 2>&1 | tee migrations-v559.log
+          npm --workspace backend run seed 2>&1 | tee seed-v559.log
+      - name: Skills + static quality
+        run: |
+          set -o pipefail
+          npm run skills:check 2>&1 | tee skills-v559.log
+          npm run agent:gates -- --base "${{ github.base_ref || 'main' }}" 2>&1 | tee agent-gates-v559.log
+          npm run typecheck 2>&1 | tee typecheck-v559.log
+          npm run lint 2>&1 | tee lint-v559.log
+      - name: Golden financial reconciliation
+        run: |
+          set -o pipefail
+          npm run test:backend:financial:reconciliation:real 2>&1 | tee reconciliation-v559.log
+      - name: Historical financial regressions
+        run: |
+          set -o pipefail
+          npm run test:backend:financial:real 2>&1 | tee financial-regression-v559.log
+          npm run test:backend:idempotency:real 2>&1 | tee idempotency-regression-v559.log
+      - name: Backend build
+        run: npm run build:backend 2>&1 | tee build-backend-v559.log
+      - name: Preserve exact-SHA evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: financial-reconciliation-v559-${{ github.sha }}
+          path: |
+            artifacts/financial-reconciliation-v559/**
+            artifacts-install-v559.log
+            postgres-prereq-v559.log
+            prisma-v559.log
+            migrations-v559.log
+            seed-v559.log
+            skills-v559.log
+            agent-gates-v559.log
+            typecheck-v559.log
+            lint-v559.log
+            reconciliation-v559.log
+            financial-regression-v559.log
+            idempotency-regression-v559.log
+            build-backend-v559.log
+          if-no-files-found: warn
+          retention-days: 21
