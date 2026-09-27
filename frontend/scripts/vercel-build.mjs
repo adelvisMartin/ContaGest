@@ -1,73 +1,42 @@
 import { spawnSync } from 'node:child_process';
+import { resolve } from 'node:path';
 
-const stages = Object.freeze([
-  { id:'identity', command:'npm', args:['run','build:identity'] },
-  { id:'source-qa', command:'npm', args:['run','preqa:source'] },
-  { id:'browser-qa', command:'npm', args:['run','preqa:browser'] },
-  { id:'backend-stage', command:'npm', args:['run','stage:backend'] },
-  { id:'vite-build', command:'vite', args:['build'] }
-]);
+const repoRoot=resolve('..');
+const file=resolve(repoRoot,'tests/hipico_epic_102_implementation_handoff.test.mjs');
+const patterns=[
+  'EPIC #102 implementation inventory is materially present',
+  'implementation handoff never masquerades as release verification',
+  'production boundaries remain fail-closed after implementation phase',
+  'QA execution gates have concrete harnesses before handoff'
+];
 
-function safeBuildContext() {
-  const sha = String(process.env.VERCEL_GIT_COMMIT_SHA || process.env.GIT_SHA || '').trim();
-  const ref = String(process.env.VERCEL_GIT_COMMIT_REF || process.env.GIT_BRANCH || '').trim();
-  const env = String(process.env.VERCEL_ENV || process.env.NODE_ENV || 'local').trim();
-  return {
-    sha: /^[a-f0-9]{40}$/i.test(sha) ? sha.toLowerCase() : 'unbound',
-    ref: ref.slice(0, 160) || 'unknown',
-    environment: env.slice(0, 40) || 'unknown',
-    node: process.version
-  };
-}
-
-function runStage(stage, index) {
-  const startedAt = Date.now();
-  const context = safeBuildContext();
-  console.log(`[vercel-build][START] stage=${stage.id} index=${index + 1}/${stages.length} sha=${context.sha} ref=${context.ref} env=${context.environment} node=${context.node}`);
-
-  const diagnosticSource = stage.id === 'source-qa' && process.env.VERCEL;
-  const command = diagnosticSource ? process.execPath : stage.command;
-  const args = diagnosticSource
-    ? ['--max-old-space-size=128','../scripts/vercel-source-preqa-diagnostic.mjs']
-    : stage.args;
-  const stageEnv = diagnosticSource
-    ? { ...process.env, HIPICO_ROOT_TEST_HEAP_MB: process.env.HIPICO_ROOT_TEST_HEAP_MB || '256' }
-    : process.env;
-  const result = spawnSync(command, args, {
-    stdio: 'inherit',
-    env: stageEnv,
-    shell: false
+for(let index=0;index<patterns.length;index+=1){
+  const pattern=patterns[index];
+  const result=spawnSync(process.execPath,[
+    '--max-old-space-size=256',
+    '--test',
+    '--test-concurrency=1',
+    `--test-name-pattern=${pattern}`,
+    file
+  ],{
+    cwd:repoRoot,
+    env:process.env,
+    encoding:'utf8',
+    maxBuffer:2*1024*1024,
+    stdio:['ignore','pipe','pipe'],
+    shell:false,
+    windowsHide:true
   });
-
-  const elapsedMs = Date.now() - startedAt;
-
-  if (result.error) {
-    console.error(`[vercel-build][ERROR] stage=${stage.id} elapsedMs=${elapsedMs} spawn=${result.error.message}`);
-    process.exitCode = 71 + index;
-    return false;
+  if(result.error||result.status!==0){
+    console.error(`[hipico-subtest-probe][FAIL] subtest=${index+1} exit=${result.status??'null'} signal=${result.signal||'none'} spawn=${result.error?.message||'none'}`);
+    if(result.stdout)process.stdout.write(result.stdout);
+    if(result.stderr)process.stderr.write(result.stderr);
+    process.exitCode=171+index;
+    break;
   }
-
-  if (result.status !== 0) {
-    console.error(`[vercel-build][FAIL] stage=${stage.id} elapsedMs=${elapsedMs} exit=${result.status ?? 'null'} signal=${result.signal || 'none'}`);
-    if (process.env.VERCEL) {
-      const diagnosticExit = diagnosticSource && Number.isInteger(result.status)
-        && result.status >= 101 && result.status <= 250;
-      process.exitCode = diagnosticExit ? result.status : 71 + index;
-      return false;
-    }
-    process.exitCode = Number(result.status || 1);
-    return false;
-  }
-
-  console.log(`[vercel-build][PASS] stage=${stage.id} elapsedMs=${elapsedMs}`);
-  return true;
+  console.log(`[hipico-subtest-probe][PASS] subtest=${index+1}`);
 }
-
-for (let index = 0; index < stages.length; index += 1) {
-  if (!runStage(stages[index], index)) break;
-}
-
-if (!process.exitCode) {
-  const context = safeBuildContext();
-  console.log(`[vercel-build][PASS] all-stages=${stages.length} sha=${context.sha}`);
+if(!process.exitCode){
+  console.log('[hipico-subtest-probe][PASS-PROBE-ONLY] index=35');
+  process.exitCode=87;
 }
