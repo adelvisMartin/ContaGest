@@ -1,12 +1,16 @@
 (() => {
-  const SW_URL = '/sw.js?v=563-1';
+  const scriptUrl = document.currentScript?.src
+    ? new URL(document.currentScript.src)
+    : new URL('./pwa-install.js', window.location.href);
+  const appBase = new URL('./', scriptUrl);
+  const SW_URL = new URL('./sw.js?v=563-2', appBase);
   const isStandalone = () => [
     '(display-mode: standalone)', '(display-mode: fullscreen)', '(display-mode: minimal-ui)'
   ].some((query) => window.matchMedia(query).matches) || window.navigator.standalone === true;
   const isMobile = () => window.matchMedia('(max-width: 900px)').matches || /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
   const isIos = () => /iPhone|iPad|iPod/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && Number(navigator.maxTouchPoints || 0) > 1);
   const isAndroid = () => /Android/i.test(navigator.userAgent);
-  const appIcon = '/icons/contagest-app.svg';
+  const appIcon = new URL('./icons/contagest-app.svg', appBase).href;
   let deferredPrompt = null;
   let registration = null;
 
@@ -89,7 +93,7 @@
   async function registerServiceWorker() {
     if (!('serviceWorker' in navigator)) return;
     try {
-      registration = await navigator.serviceWorker.register(SW_URL, { scope: '/', updateViaCache: 'none' });
+      registration = await navigator.serviceWorker.register(SW_URL.href, { scope: appBase.pathname, updateViaCache: 'none' });
       sendSessionScope(registration.active || navigator.serviceWorker.controller);
       if (registration.waiting) registration.waiting.postMessage({ type: 'ACTIVATE_UPDATE' });
       registration.addEventListener('updatefound', () => {
