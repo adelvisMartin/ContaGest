@@ -38,7 +38,7 @@
     "prisma:migrate": "npm run prisma:sync-schema && prisma migrate dev",
     "prisma:deploy": "npm run prisma:sync-schema && node scripts/prisma-deploy-safe.mjs",
     "prisma:seed": "tsx prisma/seed.ts",
-    "studio": "npm run prisma:sync-schema && prisma studio",
+    "studio": "tsx prisma studio",
     "dev:mock": "node mock-server.mjs",
     "db:auto:create": "npm run prisma:deploy && prisma db seed && npm run db:rls",
     "db:dev:create": "npm run prisma:migrate -- --name init && prisma db seed && npm run db:rls",
@@ -76,7 +76,7 @@
     "zod": "4.6.5"
   },
   "devDependencies": {
-    "@types/cors": "5.0.6",
+    "@types/cors": "2.8.19",
     "@types/express": "5.0.6",
     "@types/jsonwebtoken": "9.0.10",
     "@types/node": "22.20.3",
