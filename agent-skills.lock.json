@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-09-26",
+  "generatedAt": "2026-09-27",
   "policy": {
     "updateMode": "pinned-only",
     "executeUpstreamScripts": false,
@@ -131,6 +131,27 @@
         "skills/security-audit/validate-coverage-ledger.test.cjs",
         "skills/security-audit/validate-findings.cjs",
         "skills/security-audit/validate-findings.test.cjs"
+      ]
+    },
+    {
+      "id": "graphify",
+      "kind": "github-skill",
+      "repo": "Graphify-Labs/graphify",
+      "commit": "4377ee93aa6a00401bd079c5c1ce9ae15674d49d",
+      "license": "Apache-2.0",
+      "trustLevel": "reviewed-repository-intelligence",
+      "namespace": "graphify",
+      "vendorPaths": [
+        "LICENSE",
+        "graphify/skill-agents.md",
+        "graphify/skills/agents/references/add-watch.md",
+        "graphify/skills/agents/references/exports.md",
+        "graphify/skills/agents/references/extraction-spec.md",
+        "graphify/skills/agents/references/github-and-merge.md",
+        "graphify/skills/agents/references/hooks.md",
+        "graphify/skills/agents/references/query.md",
+        "graphify/skills/agents/references/transcribe.md",
+        "graphify/skills/agents/references/update.md"
       ]
     }
   ]

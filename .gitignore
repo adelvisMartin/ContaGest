@@ -34,6 +34,9 @@ tools/hipico-whatsapp-web-bridge/deploy/**/bridge.env
 # generated external agent-skill cache; source pins live in agent-skills.lock.json
 .agents/vendor/
 
+# Graphify local/generated repository intelligence
+/graphify-out/
+
 # local only
 *.log
 npm-debug.log*
