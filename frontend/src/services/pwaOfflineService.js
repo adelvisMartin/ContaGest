@@ -76,15 +76,24 @@ async function purgeIndexedDb(session) {
   await Promise.all([...targeted].map(deleteDatabase));
 }
 
+function parseStoredSession() {
+  if (typeof localStorage === 'undefined') return null;
+  try { return JSON.parse(localStorage.getItem(AUTH_SESSION_KEY) || 'null'); }
+  catch { return null; }
+}
+
 function purgeWebStorage(session) {
   if (typeof localStorage !== 'undefined') {
     const scope = sessionScope(session);
+    const current = parseStoredSession();
+    if (current && sessionScope(current) === scope) localStorage.removeItem(AUTH_SESSION_KEY);
+    localStorage.removeItem(LEGACY_STATE_PREFIX);
+    localStorage.removeItem(`${LEGACY_STATE_PREFIX}:${scope}`);
+
     const keys = [];
     for (let index = 0; index < localStorage.length; index += 1) keys.push(localStorage.key(index));
     for (const key of keys.filter(Boolean)) {
-      if (key === AUTH_SESSION_KEY || key === LEGACY_STATE_PREFIX || key.startsWith(`${LEGACY_STATE_PREFIX}:`) || key.includes(scope)) {
-        localStorage.removeItem(key);
-      }
+      if (key.includes(scope) && key !== `${LEGACY_STATE_PREFIX}:${scope}`) localStorage.removeItem(key);
     }
   }
   if (typeof sessionStorage !== 'undefined') {
