@@ -16,10 +16,6 @@ if (result.error) {
     process.exitCode = 90;
   } else {
     const line = Number(match[1]);
-    if (line <= 15) process.exitCode = 81;
-    else if (line <= 30) process.exitCode = 82;
-    else if (line <= 45) process.exitCode = 83;
-    else if (line <= 60) process.exitCode = 84;
-    else process.exitCode = 85;
+    process.exitCode = line >= 46 && line <= 60 ? 100 + (line - 45) : 91;
   }
 }
