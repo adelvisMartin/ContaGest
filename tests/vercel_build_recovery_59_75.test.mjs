@@ -4,6 +4,7 @@ import test from 'node:test';
 
 const pkg=JSON.parse(fs.readFileSync(new URL('../frontend/package.json',import.meta.url),'utf8'));
 const runner=fs.readFileSync(new URL('../frontend/scripts/vercel-build.mjs',import.meta.url),'utf8');
+const sourceDiagnostic=fs.readFileSync(new URL('../scripts/vercel-source-preqa-diagnostic.mjs',import.meta.url),'utf8');
 const hipicoRootRunner=fs.readFileSync(new URL('../scripts/hipico-root-contracts.mjs',import.meta.url),'utf8');
 
 test('59/75 frontend build uses the staged Vercel runner',()=>{
@@ -33,10 +34,14 @@ test('59/75 runner is fail-fast and does not downgrade failing stages',()=>{
   assert.doesNotMatch(runner,/allowFailure|continue-on-error|process\.exitCode\s*=\s*0/);
 });
 
-test('59/75 Vercel source diagnostics preserve bounded substage exit codes',()=>{
+test('59/75 Vercel source diagnostics preserve bounded nested exit codes',()=>{
   assert.match(runner,/diagnosticSource && Number\.isInteger\(result\.status\)/);
-  assert.match(runner,/result\.status >= 101 && result\.status <= 127/);
+  assert.match(runner,/result\.status >= 101 && result\.status <= 250/);
   assert.match(runner,/\? result\.status\s*:\s*71 \+ index/);
+  assert.match(sourceDiagnostic,/id === 'hipico-root-contracts'/);
+  assert.match(sourceDiagnostic,/result\.status >= 130/);
+  assert.match(sourceDiagnostic,/result\.status <= 250/);
+  assert.match(sourceDiagnostic,/nestedHipicoExit \? result\.status : 101 \+ index/);
 });
 
 test('59/75 diagnostics expose only bounded non-secret build metadata',()=>{
@@ -49,11 +54,12 @@ test('59/75 diagnostics expose only bounded non-secret build metadata',()=>{
   }
 });
 
-test('59/75 Hípico root contracts are memory-bounded under Vercel without reducing coverage',()=>{
+test('59/75 Hípico root contracts are memory-bounded and identify the failing file under Vercel',()=>{
   assert.match(runner,/HIPICO_ROOT_TEST_HEAP_MB: process\.env\.HIPICO_ROOT_TEST_HEAP_MB \|\| '256'/);
   assert.match(hipicoRootRunner,/HIPICO_ROOT_TEST_HEAP_MB/);
   assert.match(hipicoRootRunner,/--max-old-space-size=\$\{heapLimitMb\}/);
   assert.match(hipicoRootRunner,/files\.map\(\(file\)=>\[file\]\)/);
+  assert.match(hipicoRootRunner,/Math\.min\(250,130\+index\)/);
   assert.doesNotMatch(hipicoRootRunner,/\.slice\(|skip|only/);
 });
 
