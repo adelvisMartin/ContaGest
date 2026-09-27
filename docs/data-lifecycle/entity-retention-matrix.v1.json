@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "effectiveFrom": "2026-09-27T00:00:00Z",
+  "authority": "#562",
+  "notes": [
+    "A null retentionDays value is intentionally fail-closed: no legal duration is inferred.",
+    "Tenant-specific policies are versioned in PostgreSQL and may narrow lifecycle behavior but cannot make protected entities purgeable.",
+    "Clinical deletion remains linked to #567; this matrix does not claim regulatory compliance."
+  ],
+  "entities": [
+    { "entity": "AuditLog", "classification": "immutable/audit", "deleteSemantics": "immutable", "retentionDays": null, "purgeable": false, "legalReviewRequired": true },
+    { "entity": "LedgerEntry", "classification": "immutable/accounting", "deleteSemantics": "immutable", "retentionDays": null, "purgeable": false, "legalReviewRequired": true },
+    { "entity": "FiscalDocument", "classification": "immutable/fiscal", "deleteSemantics": "immutable", "retentionDays": null, "purgeable": false, "legalReviewRequired": true },
+    { "entity": "FiscalCloseEvidence", "classification": "immutable/evidence", "deleteSemantics": "immutable", "retentionDays": null, "purgeable": false, "legalReviewRequired": true },
+    { "entity": "AnalyticsEvent", "classification": "purgeable", "deleteSemantics": "purge", "retentionDays": null, "purgeable": true, "legalReviewRequired": false },
+    { "entity": "ImportBatch", "classification": "purgeable", "deleteSemantics": "purge", "retentionDays": null, "purgeable": true, "legalReviewRequired": false },
+    { "entity": "NotificationLog", "classification": "archival", "deleteSemantics": "archive", "retentionDays": null, "purgeable": true, "legalReviewRequired": false },
+    { "entity": "AddressGeocode", "classification": "purgeable", "deleteSemantics": "purge", "retentionDays": null, "purgeable": true, "legalReviewRequired": false },
+    { "entity": "MediaObject", "classification": "purgeable", "deleteSemantics": "purge", "retentionDays": 0, "purgeable": true, "legalReviewRequired": false },
+    { "entity": "ClinicalMediaObject", "classification": "immutable/clinical", "deleteSemantics": "immutable", "retentionDays": null, "purgeable": false, "legalReviewRequired": true },
+    { "entity": "CarePatient", "classification": "soft-delete/clinical", "deleteSemantics": "soft_delete", "retentionDays": null, "purgeable": false, "legalReviewRequired": true }
+  ]
+}
