@@ -61,19 +61,27 @@ export function detectDuplicateExclusiveClaims(pullRequests = []) {
     }))
     .filter((pullRequest) => Number.isInteger(pullRequest.number));
 
-  const explicitlySuperseded = new Map();
+  const byNumber = new Map(openPullRequests.map((pullRequest) => [pullRequest.number, pullRequest]));
+  const supersededClaims = new Map();
+  const superseded = [];
+
   for (const pullRequest of openPullRequests) {
-    for (const superseded of pullRequest.supersedes) {
-      if (openPullRequests.some((candidate) => candidate.number === superseded)) {
-        explicitlySuperseded.set(superseded, pullRequest.number);
-      }
+    for (const targetNumber of pullRequest.supersedes) {
+      const target = byNumber.get(targetNumber);
+      if (!target) continue;
+      const sharedIssues = target.claims.filter((issue) => pullRequest.claims.includes(issue));
+      if (!sharedIssues.length) continue;
+      const current = supersededClaims.get(targetNumber) ?? new Set();
+      for (const issue of sharedIssues) current.add(issue);
+      supersededClaims.set(targetNumber, current);
+      superseded.push({ pullRequest: targetNumber, by: pullRequest.number });
     }
   }
 
   const claimsByIssue = new Map();
   for (const pullRequest of openPullRequests) {
-    if (explicitlySuperseded.has(pullRequest.number)) continue;
     for (const issue of pullRequest.claims) {
+      if (supersededClaims.get(pullRequest.number)?.has(issue)) continue;
       const owners = claimsByIssue.get(issue) ?? [];
       owners.push(pullRequest.number);
       claimsByIssue.set(issue, owners);
@@ -85,15 +93,15 @@ export function detectDuplicateExclusiveClaims(pullRequests = []) {
     .map(([issue, owners]) => ({ issue, pullRequests: [...owners].sort((a, b) => a - b) }))
     .sort((a, b) => a.issue - b.issue);
 
-  const superseded = [...explicitlySuperseded.entries()]
-    .map(([pullRequest, by]) => ({ pullRequest, by }))
-    .sort((a, b) => a.pullRequest - b.pullRequest);
+  const normalizedSuperseded = [...new Map(
+    superseded.map((entry) => [`${entry.pullRequest}:${entry.by}`, entry]),
+  ).values()].sort((a, b) => a.pullRequest - b.pullRequest || a.by - b.by);
 
   return {
     ok: duplicates.length === 0,
     code: duplicates.length ? 'DUPLICATE_WORK_CLAIM' : 'OK',
     duplicates,
-    superseded,
+    superseded: normalizedSuperseded,
   };
 }
 
