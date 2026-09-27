@@ -5,6 +5,7 @@ import { installLegalAcceptanceEnhancer } from './legalAcceptanceEnhancer.js';
 import { AuthSession } from './authSession.js';
 import { BackendApi } from './backendApi.js';
 import { LicenseService } from './licenseService.js';
+import { purgeSessionArtifacts, setPwaSessionContext } from './pwaOfflinePolicy.js';
 
 installLoginEnhancer();
 installSessionAccessGuard();
@@ -17,7 +18,7 @@ function normalizeSession(payload){
   const tenantId=payload?.tenantId||payload?.tenant?.id;
   if(!tenantId)throw new Error('El backend no devolvió una sesión con empresa activa.');
   const audience=payload?.license||payload?.user?.role==='client'?'client':'staff';
-  return AuthSession.set({
+  const session=AuthSession.set({
     ...payload,
     tenantId,
     tenant:payload.tenant||null,
@@ -29,6 +30,8 @@ function normalizeSession(payload){
     sessionMode:payload.sessionMode||'cookie',
     mode:payload.sessionMode||'cookie'
   });
+  setPwaSessionContext(session).catch(()=>undefined);
+  return session;
 }
 function captchaExpiryMillis(value){
   const numeric=Number(value);
@@ -50,7 +53,9 @@ export const AuthService={
     if(mode==='demo'){
       if(!demoModeEnabled())throw new Error('El modo demo local está deshabilitado en esta compilación.');
       if(!email||!password)throw new Error('Ingresa email y contraseña.');
-      return AuthSession.set({sessionMode:'demo',user:{...DEMO_USER,email},tenantId:'demo-tenant',tenant:{id:'demo-tenant',name:'Demo local',rif:'00000000',plan:'development'},experienceProfile:{schemaVersion:1,mode:'admin',label:'Modo Administrador',description:'Experiencia local de desarrollo.',landingRoute:'dashboard',landingLabel:'Dashboard',quickRoutes:['dashboard','ventas','inventario','contabilidad','reportes']},audience:'staff',expiresAt:Date.now()+1000*60*60*8,mode:'demo'});
+      const session=AuthSession.set({sessionMode:'demo',user:{...DEMO_USER,email},tenantId:'demo-tenant',tenant:{id:'demo-tenant',name:'Demo local',rif:'00000000',plan:'development'},experienceProfile:{schemaVersion:1,mode:'admin',label:'Modo Administrador',description:'Experiencia local de desarrollo.',landingRoute:'dashboard',landingLabel:'Dashboard',quickRoutes:['dashboard','ventas','inventario','contabilidad','reportes']},audience:'staff',expiresAt:Date.now()+1000*60*60*8,mode:'demo'});
+      await setPwaSessionContext(session);
+      return session;
     }
     const payload=await BackendApi.request('/auth/login',{method:'POST',noAuth:true,body:{
       email,password,tenantRif,captchaToken,captchaAnswer,
@@ -68,10 +73,20 @@ export const AuthService={
   async me(){return normalizeSession(await BackendApi.request('/auth/me'));},
   async refresh(){return normalizeSession(await BackendApi.request('/auth/refresh',{method:'POST',skipRefresh:true}));},
   async tenants(){return BackendApi.request('/auth/tenants');},
-  async switchTenant(tenantId){return normalizeSession(await BackendApi.request('/auth/switch-tenant',{method:'POST',body:{tenantId}}));},
+  async switchTenant(tenantId){
+    const previous=AuthSession.get();
+    const payload=await BackendApi.request('/auth/switch-tenant',{method:'POST',body:{tenantId}});
+    const nextTenantId=payload?.tenantId||payload?.tenant?.id;
+    if(previous?.tenantId&&nextTenantId&&previous.tenantId!==nextTenantId){
+      await purgeSessionArtifacts(previous,{reason:'tenant-switch'});
+    }
+    return normalizeSession(payload);
+  },
   async logout(){
+    const previous=AuthSession.get();
     AuthSession.clear();
-    try{await BackendApi.request('/auth/logout',{method:'POST',body:{},skipRefresh:true});}catch{/* HttpOnly cookies expire server-side; local metadata is already cleared. */}
+    await purgeSessionArtifacts(previous,{reason:'logout'}).catch(()=>undefined);
+    try{await BackendApi.request('/auth/logout',{method:'POST',body:{},skipRefresh:true});}catch{/* HttpOnly cookies expire server-side; local metadata and offline artifacts are already cleared. */}
   },
   authHeaders(){return {};}
 };
