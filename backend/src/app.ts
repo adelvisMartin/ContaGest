@@ -2,6 +2,7 @@ import express, { type Request } from 'express';
 import helmet from 'helmet';
 import { env, isProd } from './config/env.js';
 import apiRoutes from './modules/index.js';
+import apiContractRoutes from './contracts/api-contract.routes.js';
 import authRoutes from './modules/auth/auth.routes.js';
 import hipicoSystemRoutes from './modules/hipico/hipico-system.routes.js';
 import hipicoDocumentRoutes from './modules/hipico/document.routes.js';
@@ -53,10 +54,11 @@ export function createApp(options: { readinessCheck?: ReadinessCheck } = {}) {
   app.use(securityResponseHeaders);
   app.use(corsPolicy);
 
-  // Platform probes remain independent from business authentication and mutation
-  // gates. Canonical Control Hipico system probes expose bounded state only.
+  // Platform probes and machine-readable API contracts remain independent from
+  // business authentication. Neither surface contains tenant data or secrets.
   registerHealthRoutes(app, { readinessCheck: options.readinessCheck });
   app.use(globalRateLimit);
+  app.use('/api/v1', apiContractRoutes);
 
   app.post(
     '/api/v1/security/csp-report',
@@ -65,9 +67,6 @@ export function createApp(options: { readinessCheck?: ReadinessCheck } = {}) {
     collectCspReport
   );
 
-  // Fail closed before spending CPU/memory parsing business payloads when a
-  // commercial production deployment lacks its explicit signing/license keys.
-  // Health and bounded CSP telemetry above remain available for diagnosis.
   app.use(enforceProductionSecrets);
 
   app.use(express.json({
@@ -81,9 +80,6 @@ export function createApp(options: { readinessCheck?: ReadinessCheck } = {}) {
 
   app.use('/api/v1/hipico/system', authRateLimit, hipicoSystemRoutes);
 
-  // hipico-bot is the compatibility/integration boundary. The legacy provider
-  // registry stays reachable here rather than competing with the canonical #286
-  // provider API for /api/v1/hipico/providers.
   app.use('/api/v1/hipico-bot', hipicoWebhookRoutes);
   app.use(
     '/api/v1/hipico-bot',
@@ -93,13 +89,8 @@ export function createApp(options: { readinessCheck?: ReadinessCheck } = {}) {
     hipicoLegacyProviderRoutes
   );
 
-  // Raw PDF upload/list/reprocess has its own explicit boundary and shares the
-  // same token/scope policy as the remaining canonical Hípico APIs.
   app.use('/api/v1/hipico/documents', authRateLimit, mutationRateLimit, hipicoDocumentRoutes);
 
-  // One canonical limiter chain avoids counting a request repeatedly while it
-  // traverses sibling routers. mutationRateLimit skips GET/HEAD/OPTIONS.
-  // Individual routers still enforce their own operator/group authorization.
   app.use(
     '/api/v1/hipico',
     authRateLimit,
