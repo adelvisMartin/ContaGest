@@ -1,12 +1,28 @@
 import type { Request, Response, NextFunction } from 'express';
 
+type HttpErrorOptions = {
+  code?: string;
+  retryable?: boolean;
+};
+
 export class HttpError extends Error {
   status: number;
   details?: unknown;
-  constructor(status: number, message: string, details?: unknown) {
+  code?: string;
+  retryable?: boolean;
+  constructor(status: number, message: string, details?: unknown, options: HttpErrorOptions = {}) {
     super(message);
     this.status = status;
     this.details = details;
+    const detailRecord = details && typeof details === 'object' && !Array.isArray(details)
+      ? details as Record<string, unknown>
+      : null;
+    this.code = options.code
+      || (typeof detailRecord?.code === 'string' ? detailRecord.code : undefined)
+      || `HTTP_${status}`;
+    this.retryable = options.retryable
+      ?? (typeof detailRecord?.retryable === 'boolean' ? detailRecord.retryable : undefined)
+      ?? [429, 502, 503, 504].includes(status);
   }
 }
 
