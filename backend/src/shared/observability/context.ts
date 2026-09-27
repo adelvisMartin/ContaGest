@@ -56,7 +56,7 @@ export function sanitizeTelemetryAttributes(input: Record<string, unknown>) {
     const safeKey = sanitizeLogValue(key, 80);
     if (!safeKey || SENSITIVE_ATTRIBUTE.test(safeKey)) continue;
     if (typeof value === 'number' && Number.isFinite(value)) output[safeKey] = value;
-    else if (typeof value === 'boolean') output[safeKey] = value;
+    else if (typeof value === 'boolean') output[safeKey] = Boolean(value);
     else if (value === null) output[safeKey] = null;
     else if (typeof value === 'string') output[safeKey] = sanitizeLogValue(value, 240);
   }
