@@ -1,0 +1,147 @@
+name: "Finance #560 · multi-currency FX"
+
+on:
+  pull_request:
+    paths:
+      - 'backend/prisma/migrations/**'
+      - 'backend/src/shared/financial/**'
+      - 'backend/src/modules/currency/**'
+      - 'backend/src/modules/sales/**'
+      - 'backend/src/modules/purchases/**'
+      - 'qa/financial-fx-v560.test.ts'
+      - 'tests/financial_fx_v560_contract.test.mjs'
+      - 'docs/ADR_FINANCIAL_FX_V560.md'
+      - 'package.json'
+      - '.github/workflows/financial-fx-v560.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: finance-v560-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  CANDIDATE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+
+jobs:
+  contract-red-green:
+    name: Contract RED→GREEN
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout exact candidate
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ env.CANDIDATE_SHA }}
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - name: Contract #560
+        run: node --test tests/financial_fx_v560_contract.test.mjs
+
+  postgres-fx:
+    name: FX lifecycle · PostgreSQL 17
+    needs: contract-red-green
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: contagest_fx_v560_e2e
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d contagest_fx_v560_e2e"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      NODE_ENV: test
+      API_MODE: prisma
+      DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/contagest_fx_v560_e2e?schema=public
+      DIRECT_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/contagest_fx_v560_e2e?schema=public
+      APP_URL: http://127.0.0.1:8080
+      CORS_ORIGIN: http://127.0.0.1:8080
+      JWT_SECRET: finance_v560_only_jwt_secret_0123456789abcdefghijklmnopqrstuvwxyz_ABCDEF
+      LICENSE_HASH_SECRET: finance_v560_only_license_secret_0123456789abcdefghijklmnopqrstuvwxyz_XYZ
+      SEED_ADMIN_PASSWORD: FinanceV560-QA-Only-Password-2026!
+      ALLOW_DEV_TENANT_HEADER: 'true'
+      SUPABASE_AUTH_FALLBACK: 'false'
+      ALLOW_PUBLIC_REGISTER: 'false'
+      FINANCIAL_FX_REPORT_DIR: artifacts/financial-fx-v560
+    steps:
+      - name: Checkout exact candidate
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ env.CANDIDATE_SHA }}
+          fetch-depth: 0
+      - name: Node 22
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install locked dependencies + PostgreSQL client
+        run: |
+          set -o pipefail
+          npm ci --no-audit --no-fund 2>&1 | tee install-v560.log
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client
+      - name: Build disposable PostgreSQL from canonical migrations
+        env:
+          PGPASSWORD: postgres
+        run: |
+          set -o pipefail
+          psql -h 127.0.0.1 -U postgres -d contagest_fx_v560_e2e -v ON_ERROR_STOP=1 -f ops/database/prepare-supabase-ephemeral.sql 2>&1 | tee postgres-prereq-v560.log
+          npm --workspace backend run prisma:sync-schema 2>&1 | tee prisma-v560.log
+          npm --workspace backend run prisma:generate 2>&1 | tee -a prisma-v560.log
+          npm --workspace backend run prisma:deploy 2>&1 | tee migrations-v560.log
+          npm --workspace backend run seed 2>&1 | tee seed-v560.log
+      - name: Static quality
+        run: |
+          set -o pipefail
+          npm run skills:check 2>&1 | tee skills-v560.log
+          npm run agent:gates -- --base "${{ github.base_ref || 'main' }}" 2>&1 | tee agent-gates-v560.log
+          npm run typecheck 2>&1 | tee typecheck-v560.log
+          npm run lint 2>&1 | tee lint-v560.log
+      - name: Real multi-currency regression
+        run: |
+          set -o pipefail
+          GITHUB_SHA="$CANDIDATE_SHA" npm run test:backend:financial:fx:real 2>&1 | tee fx-v560.log
+      - name: Financial regressions
+        run: |
+          set -o pipefail
+          npm run test:backend:financial:reconciliation:real 2>&1 | tee reconciliation-regression-v560.log
+          npm run test:backend:financial:real 2>&1 | tee financial-regression-v560.log
+          npm run test:backend:idempotency:real 2>&1 | tee idempotency-regression-v560.log
+      - name: Backend build
+        run: npm run build:backend 2>&1 | tee build-backend-v560.log
+      - name: Preserve exact-SHA evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: financial-fx-v560-${{ env.CANDIDATE_SHA }}
+          path: |
+            artifacts/financial-fx-v560/**
+            install-v560.log
+            postgres-prereq-v560.log
+            prisma-v560.log
+            migrations-v560.log
+            seed-v560.log
+            skills-v560.log
+            agent-gates-v560.log
+            typecheck-v560.log
+            lint-v560.log
+            fx-v560.log
+            reconciliation-regression-v560.log
+            financial-regression-v560.log
+            idempotency-regression-v560.log
+            build-backend-v560.log
+          if-no-files-found: warn
+          retention-days: 21
