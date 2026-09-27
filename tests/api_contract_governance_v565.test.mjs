@@ -7,9 +7,11 @@ const read=(path)=>{
   return fs.readFileSync(path,'utf8');
 };
 
+const policyPath='backend/src/contracts/api-contract-v1.json';
+
 test('#565 makes API contracts machine-readable and drift-detectable',()=>{
   const generator=read('scripts/api-contract-v565.mjs');
-  const policy=JSON.parse(read('config/api-contract-v1.json'));
+  const policy=JSON.parse(read(policyPath));
   const app=read('backend/src/app.ts');
   const manifest=read('backend/src/modules/route-manifest.ts');
 
@@ -42,7 +44,7 @@ test('#565 central error envelope is stable and never exposes stack',()=>{
 });
 
 test('#565 documents idempotency, decimals/dates/IDs, deprecation and canonical Hípico boundary',()=>{
-  const policy=JSON.parse(read('config/api-contract-v1.json'));
+  const policy=JSON.parse(read(policyPath));
   const adr=read('docs/ADR_API_CONTRACT_GOVERNANCE_V565.md');
   const hipico=read('backend/src/modules/hipico-bot/hipico-webhook.routes.ts');
 
