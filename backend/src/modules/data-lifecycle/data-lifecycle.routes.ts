@@ -15,6 +15,7 @@ import {
   releaseLegalHold,
   type LifecycleEntityType
 } from './data-lifecycle.repository.js';
+import { buildTenantExitPreflight } from './tenant-exit.service.js';
 
 const router = Router();
 router.use(requireTenant, requirePermission('platform.manage'));
@@ -49,6 +50,11 @@ router.get('/matrix', asyncHandler(async (_req, res) => {
 router.get('/policies', asyncHandler(async (req, res) => {
   const ctx = context(req);
   ok(res, await listRetentionPolicies(ctx.tenantId));
+}));
+
+router.get('/tenant-exit/preflight', asyncHandler(async (req, res) => {
+  const ctx = context(req);
+  ok(res, await buildTenantExitPreflight(ctx.tenantId));
 }));
 
 router.post('/policies', validateBody(policySchema), asyncHandler(async (req, res) => {
