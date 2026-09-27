@@ -16,11 +16,20 @@ router.use(approvalExecutionGate);
 
 mountModuleRouteManifest(router);
 
-router.get('/health/db', requireTenant, async (_req,res,next)=>{
+router.get('/health/db', requireTenant, async (_req, res, next) => {
   try {
-    const result=await prisma.$queryRaw<Array<{now:Date;db:string;schema:string}>>`select now() as now, current_database() as db, current_schema() as schema`;
-    res.json({ok:true,data:{database:result}});
-  } catch(error) { next(error); }
+    const result = await prisma.$queryRaw<Array<{ ready: number }>>`select 1 as ready`;
+    res.json({
+      ok: true,
+      data: {
+        database: {
+          ready: result[0]?.ready === 1,
+        },
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
 });
 
 export default router;
