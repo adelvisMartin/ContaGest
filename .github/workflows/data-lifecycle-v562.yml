@@ -1,0 +1,95 @@
+name: Data lifecycle #562 · retention, holds and tenant-safe purge
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'backend/src/modules/data-lifecycle/**'
+      - 'backend/src/modules/media/media.routes.ts'
+      - 'backend/src/modules/route-manifest.ts'
+      - 'backend/prisma/migrations/**data_lifecycle**'
+      - 'qa/data-lifecycle-v562.integration.test.ts'
+      - 'tests/data_lifecycle_v562_contract.test.mjs'
+      - 'docs/data-lifecycle/**'
+      - '.github/workflows/data-lifecycle-v562.yml'
+  push:
+    branches:
+      - 'feat/562-data-lifecycle-authority'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: data-lifecycle-v562-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  contract:
+    name: Contract RED→GREEN
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.sha }}
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: node --test tests/data_lifecycle_v562_contract.test.mjs
+
+  postgres-and-storage:
+    name: PostgreSQL tenant isolation + storage sandbox
+    needs: contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: contagest_lifecycle_v562_e2e
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d contagest_lifecycle_v562_e2e"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/contagest_lifecycle_v562_e2e?schema=public
+      DIRECT_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/contagest_lifecycle_v562_e2e?schema=public
+      NODE_ENV: test
+      JWT_SECRET: lifecycle-v562-ci-only-not-production
+      CANDIDATE_SHA: ${{ github.sha }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.sha }}
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Apply canonical migrations
+        run: npm --workspace backend exec -- prisma migrate deploy
+      - run: npm --workspace backend exec -- prisma generate
+      - run: npm run seed
+      - name: PostgreSQL lifecycle + real filesystem storage sandbox
+        run: npm --workspace backend exec -- tsx --test ../qa/data-lifecycle-v562.integration.test.ts
+      - run: npm run typecheck
+      - run: npm run build:backend
+      - name: Capture exact-SHA evidence
+        if: always()
+        run: |
+          mkdir -p artifacts/data-lifecycle-v562
+          printf 'candidate_sha=%s\nrun_id=%s\nrun_attempt=%s\n' "$CANDIDATE_SHA" "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" > artifacts/data-lifecycle-v562/evidence.txt
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: data-lifecycle-v562-${{ github.sha }}
+          path: artifacts/data-lifecycle-v562
+          if-no-files-found: error
