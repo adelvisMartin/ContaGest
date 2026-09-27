@@ -55,6 +55,15 @@ function isSensitiveRequest(url){
     || url.pathname.includes('/admin');
 }
 
+function isPublicStaticAsset(url){
+  return url.pathname==='/manifest.webmanifest'
+    || url.pathname==='/pwa-install.js'
+    || url.pathname.startsWith('/icons/')
+    || url.pathname.startsWith('/vendor/')
+    || url.pathname.startsWith('/vertical-assets/')
+    || url.pathname.startsWith('/assets/');
+}
+
 function networkFirstShell(request){
   return fetch(request,{cache:'no-store'})
     .then((response)=>{
@@ -94,10 +103,7 @@ self.addEventListener('fetch',(event)=>{
     return;
   }
 
-  const cacheableAsset=['image','font','manifest'].includes(request.destination)
-    || ['/manifest.webmanifest','/icons/contagest-app.svg','/icons/contagest-app-192.svg','/icons/contagest-app-512.svg','/pwa-install.js'].includes(url.pathname);
-  if(!cacheableAsset)return;
-
+  if(!isPublicStaticAsset(url))return;
   event.respondWith(
     caches.open(SHELL_CACHE).then((cache)=>cache.match(request).then((cached)=>{
       const refresh=fetch(request,{cache:'no-store'}).then((response)=>{
