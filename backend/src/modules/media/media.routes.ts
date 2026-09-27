@@ -6,6 +6,11 @@ import { env } from '../../config/env.js';
 import { prisma } from '../../database/prisma.js';
 import { asyncHandler, HttpError, ok } from '../../shared/http.js';
 import { requireTenant } from '../../shared/middleware/context.js';
+import {
+  assertStorageDeletionAllowed,
+  markStorageObjectDeleted,
+  registerStorageObject
+} from '../data-lifecycle/data-lifecycle.service.js';
 
 const router = Router();
 router.use(requireTenant);
@@ -232,7 +237,24 @@ router.post('/upload', asyncHandler(async (req, res) => {
     upsert: false
   });
   if (error) throw new HttpError(502, `No se pudo almacenar la imagen: ${error.message}`);
-  await updateEntityPhoto(context.tenantId, body.entityType, body.entityId, path);
+
+  try {
+    await registerStorageObject({
+      tenantId: context.tenantId,
+      bucket: BUCKET,
+      objectKey: path,
+      lifecycleEntityType: 'MediaObject',
+      subjectType: body.entityType,
+      subjectId: body.entityId,
+      checksum: crypto.createHash('sha256').update(image.bytes).digest('hex')
+    });
+    await updateEntityPhoto(context.tenantId, body.entityType, body.entityId, path);
+  } catch (registrationError) {
+    await storage.storage.from(BUCKET).remove([path]).catch(() => undefined);
+    await markStorageObjectDeleted({ tenantId: context.tenantId, bucket: BUCKET, objectKey: path }).catch(() => undefined);
+    throw registrationError;
+  }
+
   const { data: signed, error: signError } = await storage.storage.from(BUCKET).createSignedUrl(path, 3600);
   if (signError) throw new HttpError(502, `Imagen guardada, pero no se pudo firmar la URL: ${signError.message}`);
   ok(res, { path, signedUrl: signed.signedUrl, expiresIn: 3600, alt: body.alt || '' }, 201);
@@ -303,6 +325,21 @@ router.post(
     });
     if(uploadError) throw new HttpError(502,`No se pudo almacenar el adjunto clínico: ${uploadError.message}`);
 
+    try {
+      await registerStorageObject({
+        tenantId: context.tenantId,
+        bucket: DENTAL_BUCKET,
+        objectKey: storagePath,
+        lifecycleEntityType: 'ClinicalMediaObject',
+        subjectType: 'care-patient',
+        subjectId: metadata.patientId,
+        checksum: sha256
+      });
+    } catch (registrationError) {
+      await storage.storage.from(DENTAL_BUCKET).remove([storagePath]).catch(()=>undefined);
+      throw registrationError;
+    }
+
     let encounter:any;
     try{
       const rows=await prisma.$queryRawUnsafe<any[]>(`
@@ -316,6 +353,7 @@ router.post(
       if(!encounter) throw new Error('No se creó la autoridad clínica del adjunto.');
     }catch(error){
       await storage.storage.from(DENTAL_BUCKET).remove([storagePath]).catch(()=>undefined);
+      await markStorageObjectDeleted({ tenantId: context.tenantId, bucket: DENTAL_BUCKET, objectKey: storagePath }).catch(() => undefined);
       throw error;
     }
 
@@ -348,8 +386,10 @@ router.delete('/', asyncHandler(async (req, res) => {
   if (!body.path.startsWith(`${context.tenantId}/`)) throw new HttpError(403, 'La imagen no pertenece a la empresa activa.');
   if (body.path.startsWith(`${context.tenantId}/dental-attachments/`)) throw new HttpError(403, 'Un adjunto clínico firmado es inmutable y no puede eliminarse mediante el endpoint genérico.');
   if (!context.userId || !await hasPermission(context.userId, context.tenantId, 'admin.manage')) throw new HttpError(403, 'Permiso administrativo requerido para eliminar archivos.');
+  await assertStorageDeletionAllowed({ tenantId: context.tenantId, bucket: BUCKET, objectKey: body.path });
   const { error } = await client().storage.from(BUCKET).remove([body.path]);
   if (error) throw new HttpError(502, `No se pudo eliminar la imagen: ${error.message}`);
+  await markStorageObjectDeleted({ tenantId: context.tenantId, bucket: BUCKET, objectKey: body.path });
   ok(res, { deleted: true, path: body.path });
 }));
 
