@@ -4,6 +4,7 @@ import test from 'node:test';
 
 const pkg=JSON.parse(fs.readFileSync(new URL('../frontend/package.json',import.meta.url),'utf8'));
 const runner=fs.readFileSync(new URL('../frontend/scripts/vercel-build.mjs',import.meta.url),'utf8');
+const hipicoRootRunner=fs.readFileSync(new URL('../scripts/hipico-root-contracts.mjs',import.meta.url),'utf8');
 
 test('59/75 frontend build uses the staged Vercel runner',()=>{
   assert.equal(pkg.scripts.build,'node scripts/vercel-build.mjs');
@@ -42,6 +43,12 @@ test('59/75 diagnostics expose only bounded non-secret build metadata',()=>{
   }
 });
 
+test('59/75 Hípico root contracts are memory-bounded under Vercel without reducing coverage',()=>{
+  assert.match(hipicoRootRunner,/HIPICO_ROOT_TEST_HEAP_MB/);
+  assert.match(hipicoRootRunner,/--max-old-space-size=\$\{heapLimitMb\}/);
+  assert.match(hipicoRootRunner,/files\.map\(\(file\)=>\[file\]\)/);
+  assert.doesNotMatch(hipicoRootRunner,/\.slice\(|skip|only/);
+});
 
 test('59/75 Vercel preview keeps exhaustive 58x5 batches delegated to the canonical workflow',()=>{
   const source=fs.readFileSync(new URL('../scripts/vercel-browser-preqa-v16.mjs',import.meta.url),'utf8');
