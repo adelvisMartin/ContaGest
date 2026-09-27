@@ -72,6 +72,18 @@ function extractSupersededPullRequests(body = '') {
   return [...pullRequests].filter(Number.isInteger).sort((a, b) => a - b);
 }
 
+function reachableOwners(root, edges) {
+  const visited = new Set();
+  const stack = [root];
+  while (stack.length) {
+    const current = stack.pop();
+    if (visited.has(current)) continue;
+    visited.add(current);
+    for (const next of edges.get(current) ?? []) stack.push(next);
+  }
+  return visited;
+}
+
 export function detectDuplicateExclusiveClaims(pullRequests = []) {
   const openPullRequests = pullRequests
     .filter((pullRequest) => pullRequest?.state !== 'closed')
@@ -84,46 +96,60 @@ export function detectDuplicateExclusiveClaims(pullRequests = []) {
     .filter((pullRequest) => Number.isInteger(pullRequest.number));
 
   const byNumber = new Map(openPullRequests.map((pullRequest) => [pullRequest.number, pullRequest]));
-  const supersededClaims = new Map();
-  const superseded = [];
-
-  for (const pullRequest of openPullRequests) {
-    for (const targetNumber of pullRequest.supersedes) {
-      const target = byNumber.get(targetNumber);
-      if (!target) continue;
-      const sharedIssues = target.claims.filter((issue) => pullRequest.claims.includes(issue));
-      if (!sharedIssues.length) continue;
-      const current = supersededClaims.get(targetNumber) ?? new Set();
-      for (const issue of sharedIssues) current.add(issue);
-      supersededClaims.set(targetNumber, current);
-      superseded.push({ pullRequest: targetNumber, by: pullRequest.number });
-    }
-  }
-
   const claimsByIssue = new Map();
   for (const pullRequest of openPullRequests) {
     for (const issue of pullRequest.claims) {
-      if (supersededClaims.get(pullRequest.number)?.has(issue)) continue;
       const owners = claimsByIssue.get(issue) ?? [];
       owners.push(pullRequest.number);
       claimsByIssue.set(issue, owners);
     }
   }
 
-  const duplicates = [...claimsByIssue.entries()]
-    .filter(([, owners]) => owners.length > 1)
-    .map(([issue, owners]) => ({ issue, pullRequests: [...owners].sort((a, b) => a - b) }))
-    .sort((a, b) => a.issue - b.issue);
+  const duplicates = [];
+  const acceptedSupersessions = [];
 
-  const normalizedSuperseded = [...new Map(
-    superseded.map((entry) => [`${entry.pullRequest}:${entry.by}`, entry]),
+  for (const [issue, ownerList] of claimsByIssue.entries()) {
+    const owners = [...new Set(ownerList)].sort((a, b) => a - b);
+    if (owners.length <= 1) continue;
+
+    const ownerSet = new Set(owners);
+    const edges = new Map();
+    const targeted = new Set();
+    for (const owner of owners) {
+      const pullRequest = byNumber.get(owner);
+      for (const target of pullRequest?.supersedes ?? []) {
+        if (!ownerSet.has(target)) continue;
+        const targets = edges.get(owner) ?? new Set();
+        targets.add(target);
+        edges.set(owner, targets);
+        targeted.add(target);
+      }
+    }
+
+    const roots = owners.filter((owner) => !targeted.has(owner));
+    const validSupersession = roots.length === 1
+      && reachableOwners(roots[0], edges).size === owners.length;
+
+    if (!validSupersession) {
+      duplicates.push({ issue, pullRequests: owners });
+      continue;
+    }
+
+    for (const [by, targets] of edges.entries()) {
+      for (const pullRequest of targets) acceptedSupersessions.push({ pullRequest, by });
+    }
+  }
+
+  duplicates.sort((a, b) => a.issue - b.issue);
+  const superseded = [...new Map(
+    acceptedSupersessions.map((entry) => [`${entry.pullRequest}:${entry.by}`, entry]),
   ).values()].sort((a, b) => a.pullRequest - b.pullRequest || a.by - b.by);
 
   return {
     ok: duplicates.length === 0,
     code: duplicates.length ? 'DUPLICATE_WORK_CLAIM' : 'OK',
     duplicates,
-    superseded: normalizedSuperseded,
+    superseded,
   };
 }
 
