@@ -25,7 +25,7 @@ test('31/51 public boundary accepts token only in POST body and derives tenant/p
   const source=veterinaryGuardianPortalPublicSource();
   const app=read('backend/src/app.ts');
   assert.match(source,/router\.post\('\/session'/);
-  assert.match(source,/veterinaryGuardianPortalSessionSchema\\.parse\\(req\\.body/);
+  assert.match(source,/veterinaryGuardianPortalSessionSchema\.parse\(req\.body/);
   assert.doesNotMatch(source,/req\.params\.token|req\.query.*token/);
   assert.match(source,/createHash\('sha256'\)/);
   assert.match(source,/"revokedAt" IS NULL/);
@@ -62,7 +62,7 @@ test('31/51 frontend keeps token in fragment/session storage and never reads que
 test('31/51 frontend has one admin owner, explicit scopes and independent public Vite entry',()=>{
   const vite=read('frontend/vite.config.js');
   const workspace=veterinaryWorkspaceSource();
-  const panel=read('frontend/src/components/veterinary/VeterinaryGuardianPortalPanel.jsx');
+  const panel=read('frontend/src/components/veterinary/VeterinaryGuardianPortalPanel.jsx','utf8');
   assert.match(vite,/portal-veterinaria/);
   assert.equal((workspace.match(/import \{ VeterinaryGuardianPortalPanel \}/g)||[]).length,1);
   assert.equal((workspace.match(/<VeterinaryGuardianPortalPanel/g)||[]).length,1);
@@ -72,6 +72,6 @@ test('31/51 frontend has one admin owner, explicit scopes and independent public
 });
 
 test('31/51 Wave A fails closed on token leakage, sensitive fields and duplicate owner regressions',()=>{
-  const audit=read('scripts/erp-ui-wave-a-audit-v251.mjs');
+  const audit=read('scripts/erp-ui-wave-a-audit-v251.mjs','utf8');
   for(const token of ['VeterinaryGuardianPortalPanel','tokenSha256','veterinary-guardian-portal.public.routes.ts','portal-veterinaria','lastUsedAt','max(168)'])assert.ok(audit.includes(token),token);
 });
