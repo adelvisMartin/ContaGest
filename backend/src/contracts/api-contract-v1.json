@@ -1,0 +1,76 @@
+{
+  "schemaVersion": 1,
+  "apiVersion": "v1",
+  "title": "ContaGest API v1",
+  "releaseScope": "all-mounted-v1-routes",
+  "errorEnvelope": {
+    "shape": "flat",
+    "required": ["ok", "code", "message", "requestId", "retryable"],
+    "optional": ["details"],
+    "stackAllowed": false
+  },
+  "representations": {
+    "decimal": "string",
+    "date": "YYYY-MM-DD",
+    "dateTime": "RFC3339",
+    "id": "opaque-string"
+  },
+  "idempotency": {
+    "header": "Idempotency-Key",
+    "requiredForBusinessMutations": true,
+    "sameKeySameRequest": "replay-same-result",
+    "sameKeyDifferentRequest": "409-conflict",
+    "retryableStatuses": [429, 502, 503, 504]
+  },
+  "pagination": {
+    "defaultLimit": 50,
+    "maxLimit": 200,
+    "limitParameter": "limit",
+    "cursorParameter": "cursor",
+    "unboundedCollectionsAllowed": false
+  },
+  "breakingChanges": {
+    "requireVersionOrCompatibilityLayer": true,
+    "canonicalPrefix": "/api/v1",
+    "silentBreakingChangeAllowed": false
+  },
+  "deprecation": {
+    "minimumNoticeDays": 90,
+    "headers": ["Deprecation", "Sunset", "Link"],
+    "requireMigrationGuide": true
+  },
+  "webhook": {
+    "signatureHeader": "x-hub-signature-256",
+    "signatureAlgorithm": "HMAC-SHA256",
+    "persistentReplayGuardRequired": true,
+    "duplicateSafe": true,
+    "terminalReplayMismatchAckStatus": 200,
+    "transientFailureStatuses": [503]
+  },
+  "hipico": {
+    "canonicalPrefix": "/api/v1/hipico",
+    "legacyAdapterPrefix": "/api/v1/hipico-bot",
+    "legacyAdapterStatus": "transition-only"
+  },
+  "specialEndpoints": [
+    { "method": "GET", "path": "/health", "owner": "platform", "auth": "public", "tenant": "none", "operationId": "platformHealth" },
+    { "method": "GET", "path": "/readiness", "owner": "platform", "auth": "public", "tenant": "none", "operationId": "platformReadiness" },
+    { "method": "POST", "path": "/api/v1/security/csp-report", "owner": "security", "auth": "public-rate-limited", "tenant": "none", "operationId": "securityCspReport" }
+  ],
+  "directMounts": [
+    { "alias": "authRoutes", "source": "backend/src/modules/auth/auth.routes.ts", "basePath": "/api/v1/auth", "owner": "platform-auth", "auth": "mixed", "tenant": "session-derived" },
+    { "alias": "hipicoSystemRoutes", "source": "backend/src/modules/hipico/hipico-system.routes.ts", "basePath": "/api/v1/hipico/system", "owner": "hipico", "auth": "bounded-system-policy", "tenant": "route-policy" },
+    { "alias": "hipicoDocumentRoutes", "source": "backend/src/modules/hipico/document.routes.ts", "basePath": "/api/v1/hipico/documents", "owner": "hipico", "auth": "required", "tenant": "required" },
+    { "alias": "hipicoProviderRoutes", "source": "backend/src/modules/hipico/provider.routes.ts", "basePath": "/api/v1/hipico", "owner": "hipico", "auth": "required", "tenant": "required" },
+    { "alias": "hipicoRaceRoutes", "source": "backend/src/modules/hipico/race.routes.ts", "basePath": "/api/v1/hipico", "owner": "hipico", "auth": "required", "tenant": "required" },
+    { "alias": "hipicoAgentRoutes", "source": "backend/src/modules/hipico/agent.routes.ts", "basePath": "/api/v1/hipico", "owner": "hipico", "auth": "required", "tenant": "required" },
+    { "alias": "hipicoCommandCenterRoutes", "source": "backend/src/modules/hipico/command-center.routes.ts", "basePath": "/api/v1/hipico", "owner": "hipico", "auth": "required", "tenant": "required" },
+    { "alias": "hipicoOperatorReadRoutes", "source": "backend/src/modules/hipico/operator-read.routes.ts", "basePath": "/api/v1/hipico", "owner": "hipico", "auth": "required", "tenant": "required" },
+    { "alias": "hipicoWebhookRoutes", "source": "backend/src/modules/hipico-bot/hipico-webhook.routes.ts", "basePath": "/api/v1/hipico-bot", "owner": "hipico-adapter", "auth": "webhook-signature", "tenant": "provider-binding" },
+    { "alias": "hipicoBridgeRoutes", "source": "backend/src/modules/hipico-bot/hipico-bridge.routes.ts", "basePath": "/api/v1/hipico-bot", "owner": "hipico-adapter", "auth": "required", "tenant": "required" },
+    { "alias": "hipicoOperatorRoutes", "source": "backend/src/modules/hipico-bot/hipico-operator.routes.ts", "basePath": "/api/v1/hipico-bot", "owner": "hipico-adapter", "auth": "required", "tenant": "required" },
+    { "alias": "hipicoLegacyProviderRoutes", "source": "backend/src/modules/hipico-bot/hipico-provider.routes.ts", "basePath": "/api/v1/hipico-bot", "owner": "hipico-adapter", "auth": "required", "tenant": "required" },
+    { "alias": "hipicoCanonicalRoutes", "source": "backend/src/modules/hipico-bot/hipico-canonical.routes.ts", "basePath": "/api/v1/hipico", "owner": "hipico", "auth": "required", "tenant": "required" },
+    { "alias": "veterinaryGuardianPortalPublicRoutes", "source": "backend/src/modules/verticals/veterinary-guardian-portal.public.routes.ts", "basePath": "/api/v1/public/veterinary-portal", "owner": "veterinary", "auth": "public-token-policy", "tenant": "resource-derived" }
+  ]
+}
