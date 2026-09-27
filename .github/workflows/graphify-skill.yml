@@ -1,0 +1,44 @@
+name: Graphify skill contract
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.agents/skills/graphify/**'
+      - 'agent-skills.lock.json'
+      - '.gitignore'
+      - '.github/workflows/graphify-skill.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - name: Validate pinned external-skill policy
+        run: npm run skills:check
+      - name: Validate Graphify adapter contract
+        shell: bash
+        run: |
+          test -f .agents/skills/graphify/SKILL.md
+          grep -q '^name: graphify$' .agents/skills/graphify/SKILL.md
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          const lock = JSON.parse(fs.readFileSync('agent-skills.lock.json', 'utf8'));
+          const graphify = lock.sources.find((source) => source.id === 'graphify');
+          if (!graphify) throw new Error('graphify source is missing from agent-skills.lock.json');
+          if (graphify.repo !== 'Graphify-Labs/graphify') throw new Error('unexpected Graphify repository');
+          if (!/^[0-9a-f]{40}$/i.test(graphify.commit || '')) throw new Error('Graphify must be pinned to a full commit SHA');
+          if (graphify.license !== 'Apache-2.0') throw new Error('Graphify license metadata must be Apache-2.0');
+          if (!graphify.vendorPaths.includes('graphify/skill-agents.md')) throw new Error('generic Agent Skills bundle is not pinned');
+          if (!fs.readFileSync('.gitignore', 'utf8').split(/\r?\n/).includes('/graphify-out/')) throw new Error('graphify-out/ must remain ignored');
+          NODE
