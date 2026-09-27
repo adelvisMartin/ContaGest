@@ -1,73 +1,34 @@
 import { spawnSync } from 'node:child_process';
+import { readdirSync } from 'node:fs';
+import { resolve } from 'node:path';
 
-const stages = Object.freeze([
-  { id:'identity', command:'npm', args:['run','build:identity'] },
-  { id:'source-qa', command:'npm', args:['run','preqa:source'] },
-  { id:'browser-qa', command:'npm', args:['run','preqa:browser'] },
-  { id:'backend-stage', command:'npm', args:['run','stage:backend'] },
-  { id:'vite-build', command:'vite', args:['build'] }
-]);
+const RANGE_START=0;
+const RANGE_END=31;
+const PASS_MARKER=80;
+const repoRoot=resolve('..');
+const testsDir=resolve(repoRoot,'tests');
+const files=readdirSync(testsDir)
+  .filter((name)=>/^hipico.*\.test\.mjs$/i.test(name))
+  .sort();
 
-function safeBuildContext() {
-  const sha = String(process.env.VERCEL_GIT_COMMIT_SHA || process.env.GIT_SHA || '').trim();
-  const ref = String(process.env.VERCEL_GIT_COMMIT_REF || process.env.GIT_BRANCH || '').trim();
-  const env = String(process.env.VERCEL_ENV || process.env.NODE_ENV || 'local').trim();
-  return {
-    sha: /^[a-f0-9]{40}$/i.test(sha) ? sha.toLowerCase() : 'unbound',
-    ref: ref.slice(0, 160) || 'unknown',
-    environment: env.slice(0, 40) || 'unknown',
-    node: process.version
-  };
-}
-
-function runStage(stage, index) {
-  const startedAt = Date.now();
-  const context = safeBuildContext();
-  console.log(`[vercel-build][START] stage=${stage.id} index=${index + 1}/${stages.length} sha=${context.sha} ref=${context.ref} env=${context.environment} node=${context.node}`);
-
-  const diagnosticSource = stage.id === 'source-qa' && process.env.VERCEL;
-  const command = diagnosticSource ? process.execPath : stage.command;
-  const args = diagnosticSource
-    ? ['--max-old-space-size=128','../scripts/vercel-source-preqa-diagnostic.mjs']
-    : stage.args;
-  const stageEnv = diagnosticSource
-    ? { ...process.env, HIPICO_ROOT_TEST_HEAP_MB: process.env.HIPICO_ROOT_TEST_HEAP_MB || '256' }
-    : process.env;
-  const result = spawnSync(command, args, {
-    stdio: 'inherit',
-    env: stageEnv,
-    shell: false
+console.log(`[hipico-oom-probe] range=${RANGE_START}:${RANGE_END} total=${files.length}`);
+for(let index=RANGE_START;index<Math.min(RANGE_END,files.length);index+=1){
+  const file=files[index];
+  console.log(`[hipico-oom-probe][START] index=${index} file=${file}`);
+  const result=spawnSync(process.execPath,['--max-old-space-size=256',resolve(testsDir,file)],{
+    cwd:repoRoot,
+    env:process.env,
+    stdio:'inherit',
+    shell:false,
+    windowsHide:true
   });
-
-  const elapsedMs = Date.now() - startedAt;
-
-  if (result.error) {
-    console.error(`[vercel-build][ERROR] stage=${stage.id} elapsedMs=${elapsedMs} spawn=${result.error.message}`);
-    process.exitCode = 71 + index;
-    return false;
+  if(result.error||result.status!==0){
+    console.error(`[hipico-oom-probe][FAIL] index=${index} file=${file} exit=${result.status??'null'} signal=${result.signal||'none'} spawn=${result.error?.message||'none'}`);
+    process.exitCode=Math.min(250,130+index);
+    break;
   }
-
-  if (result.status !== 0) {
-    console.error(`[vercel-build][FAIL] stage=${stage.id} elapsedMs=${elapsedMs} exit=${result.status ?? 'null'} signal=${result.signal || 'none'}`);
-    if (process.env.VERCEL) {
-      const diagnosticExit = diagnosticSource && Number.isInteger(result.status)
-        && result.status >= 101 && result.status <= 250;
-      process.exitCode = diagnosticExit ? result.status : 71 + index;
-      return false;
-    }
-    process.exitCode = Number(result.status || 1);
-    return false;
-  }
-
-  console.log(`[vercel-build][PASS] stage=${stage.id} elapsedMs=${elapsedMs}`);
-  return true;
 }
-
-for (let index = 0; index < stages.length; index += 1) {
-  if (!runStage(stages[index], index)) break;
-}
-
-if (!process.exitCode) {
-  const context = safeBuildContext();
-  console.log(`[vercel-build][PASS] all-stages=${stages.length} sha=${context.sha}`);
+if(!process.exitCode){
+  console.log(`[hipico-oom-probe][PASS-PROBE-ONLY] range=${RANGE_START}:${RANGE_END}`);
+  process.exitCode=PASS_MARKER;
 }
