@@ -32,10 +32,13 @@ test('59/75 keeps recovery contracts in the authoritative suite',()=>{
   ]) assert.ok(runner.includes(file),file);
 });
 
-test('59/75 authoritative contracts are serialized without skipping coverage',()=>{
+test('59/75 authoritative contracts are serialized and resource-bounded without skipping coverage',()=>{
   assert.match(runner,/const CONTRACT_CONCURRENCY=1/);
+  assert.match(runner,/const CONTRACT_BATCH_SIZE=8/);
   assert.match(runner,/--test-concurrency=\$\{CONTRACT_CONCURRENCY\}/);
-  assert.match(runner,/\.\.\.tests/);
+  assert.match(runner,/tests\.slice\(offset,offset\+CONTRACT_BATCH_SIZE\)/);
+  assert.match(runner,/offset<tests\.length/);
+  assert.match(runner,/result\.status!==0/);
   assert.match(runner,/process\.exitCode=result\.status\?\?1/);
   assert.doesNotMatch(runner,/skip|only|allowFailure|continue-on-error/);
 });
