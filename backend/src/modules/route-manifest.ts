@@ -43,6 +43,7 @@ import verticalExtendedRoutes from './verticals/verticals-extended.routes.js';
 import veterinaryRoutes from './verticals/veterinary.routes.js';
 import veterinaryCrudRoutes from './verticals/veterinary-crud.routes.js';
 import mediaRoutes from './media/media.routes.js';
+import dataLifecycleRoutes from './data-lifecycle/data-lifecycle.routes.js';
 
 export type ArchitectureDomain = 'platform' | 'financial' | 'commercial' | 'operations' | 'vertical';
 
@@ -55,12 +56,12 @@ type RouteManifestEntry = Readonly<{
 
 export const MODULE_ROUTE_MANIFEST: readonly RouteManifestEntry[] = Object.freeze([
   { id: 'tenants', domain: 'platform', path: '/tenants', router: tenantRoutes },
-  { id: 'clients', domain: 'commercial', path: '/clients', router: createCrudRouter({ model:'client' as any, entity:'client', permission:'clients.manage', schema:clientSchema, searchFields:['name','rif'] }) },
-  { id: 'suppliers', domain: 'commercial', path: '/suppliers', router: createCrudRouter({ model:'supplier' as any, entity:'supplier', permission:'purchases.manage', schema:supplierSchema, searchFields:['name','rif'] }) },
-  { id: 'products', domain: 'operations', path: '/products', router: createCrudRouter({ model:'product' as any, entity:'product', permission:'inventory.manage', schema:productSchema, searchFields:['name','sku'] }) },
-  { id: 'bank-accounts', domain: 'financial', path: '/bank-accounts', router: createCrudRouter({ model:'bankAccount' as any, entity:'bankAccount', permission:'banking.manage', schema:bankAccountSchema, searchFields:['bankName','accountNo'] }) },
+  { id: 'clients', domain: 'commercial', path: '/clients', router: createCrudRouter({ model:'client' as any, entity:'client', permission:'clients.manage', schema:clientSchema, searchFields:['name','rif'], deleteMode:'soft-delete-active' }) },
+  { id: 'suppliers', domain: 'commercial', path: '/suppliers', router: createCrudRouter({ model:'supplier' as any, entity:'supplier', permission:'purchases.manage', schema:supplierSchema, searchFields:['name','rif'], deleteMode:'soft-delete-active' }) },
+  { id: 'products', domain: 'operations', path: '/products', router: createCrudRouter({ model:'product' as any, entity:'product', permission:'inventory.manage', schema:productSchema, searchFields:['name','sku'], deleteMode:'soft-delete-active' }) },
+  { id: 'bank-accounts', domain: 'financial', path: '/bank-accounts', router: createCrudRouter({ model:'bankAccount' as any, entity:'bankAccount', permission:'banking.manage', schema:bankAccountSchema, searchFields:['bankName','accountNo'], deleteMode:'soft-delete-active' }) },
   { id: 'employees', domain: 'operations', path: '/employees', router: employeesRoutes },
-  { id: 'tax-periods', domain: 'financial', path: '/tax-periods', router: createCrudRouter({ model:'taxPeriod' as any, entity:'taxPeriod', permission:'taxes.export', schema:taxPeriodSchema, searchFields:['period'] }) },
+  { id: 'tax-periods', domain: 'financial', path: '/tax-periods', router: createCrudRouter({ model:'taxPeriod' as any, entity:'taxPeriod', permission:'taxes.export', schema:taxPeriodSchema, searchFields:['period'], deleteMode:'forbidden' }) },
   { id: 'sales', domain: 'commercial', path: '/sales', router: salesRoutes },
   { id: 'purchases', domain: 'commercial', path: '/purchases', router: purchasesRoutes },
   { id: 'payables', domain: 'financial', path: '/payables', router: payablesRoutes },
@@ -96,6 +97,7 @@ export const MODULE_ROUTE_MANIFEST: readonly RouteManifestEntry[] = Object.freez
   { id: 'rules', domain: 'platform', path: '/rules', router: rulesRoutes },
   { id: 'rbac', domain: 'platform', path: '/rbac', router: rbacRoutes },
   { id: 'user-security', domain: 'platform', path: '/user-security', router: userSecurityRoutes },
+  { id: 'data-lifecycle', domain: 'platform', path: '/data-lifecycle', router: dataLifecycleRoutes },
   { id: 'vertical-core', domain: 'vertical', path: '/verticals', router: verticalRoutes },
   { id: 'veterinary-crud', domain: 'vertical', path: '/verticals', router: veterinaryCrudRoutes },
   { id: 'vertical-extended', domain: 'vertical', path: '/verticals', router: verticalExtendedRoutes },
