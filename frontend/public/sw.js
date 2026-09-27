@@ -1,6 +1,7 @@
 const SW_VERSION='v563';
 const SHELL_CACHE=`contagest-ve-shell-${SW_VERSION}`;
 const SESSION_CACHE_PREFIX='contagest-ve-session-';
+const CURRENT_SESSION_CACHE_PREFIX=`${SESSION_CACHE_PREFIX}${SW_VERSION}-`;
 const CACHE_FAMILY_PREFIX='contagest-ve-';
 const APP_SHELL=[
   '/', '/index.html', '/manifest.webmanifest',
@@ -24,7 +25,7 @@ const APP_SHELL=[
 let sessionContext=null;
 const safePart=(value)=>String(value||'').replace(/[^A-Za-z0-9._-]/g,'_').slice(0,96);
 const sessionCacheName=(ctx=sessionContext)=>ctx?.tenantId
-  ? `${SESSION_CACHE_PREFIX}${SW_VERSION}-${safePart(ctx.tenantId)}-${safePart(ctx.userId||'anonymous')}`
+  ? `${CURRENT_SESSION_CACHE_PREFIX}${safePart(ctx.tenantId)}-${safePart(ctx.userId||'anonymous')}`
   : null;
 
 self.addEventListener('install',(event)=>{
@@ -36,7 +37,12 @@ self.addEventListener('install',(event)=>{
 self.addEventListener('activate',(event)=>{
   event.waitUntil(
     caches.keys()
-      .then((keys)=>Promise.all(keys.filter((key)=>key.startsWith(CACHE_FAMILY_PREFIX)&&key!==SHELL_CACHE&&!key.startsWith(SESSION_CACHE_PREFIX)).map((key)=>caches.delete(key))))
+      .then((keys)=>Promise.all(keys.filter((key)=>{
+        if(!key.startsWith(CACHE_FAMILY_PREFIX))return false;
+        if(key===SHELL_CACHE)return false;
+        if(key.startsWith(SESSION_CACHE_PREFIX))return !key.startsWith(CURRENT_SESSION_CACHE_PREFIX);
+        return true;
+      }).map((key)=>caches.delete(key))))
       .then(()=>self.clients.claim())
   );
 });
@@ -57,7 +63,7 @@ function networkFirstShell(request){
       }
       return response;
     })
-    .catch(()=>caches.match(request,{cacheName:SHELL_CACHE}).then((cached)=>cached||new Response('Recurso no disponible sin conexión.',{status:503})));
+    .catch(()=>caches.open(SHELL_CACHE).then((cache)=>cache.match(request)).then((cached)=>cached||new Response('Recurso no disponible sin conexión.',{status:503})));
 }
 
 self.addEventListener('fetch',(event)=>{
@@ -107,7 +113,7 @@ async function deleteSessionCaches({tenantId,userId}={}){
   if(!tenantId)return;
   const marker=`-${safePart(tenantId)}-${safePart(userId||'anonymous')}`;
   const keys=await caches.keys();
-  await Promise.all(keys.filter((key)=>key.startsWith(SESSION_CACHE_PREFIX)&&key.includes(marker)).map((key)=>caches.delete(key)));
+  await Promise.all(keys.filter((key)=>key.startsWith(CURRENT_SESSION_CACHE_PREFIX)&&key.includes(marker)).map((key)=>caches.delete(key)));
 }
 
 async function recoverCaches(){
