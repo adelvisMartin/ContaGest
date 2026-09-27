@@ -1,42 +1,59 @@
-import fs from 'node:fs';
 import { spawnSync } from 'node:child_process';
 
-// DIAGNOSTIC-ONLY: isolate the first failing authoritative contract file.
-// Exit 20 + test index. Never merge this file.
-const manifest = JSON.parse(fs.readFileSync('../config/implementation-roadmap-1-58.json','utf8'));
-const implementations = Array.isArray(manifest?.implementations) ? manifest.implementations : [];
-const regressionPaths = [...new Set(implementations.flatMap((row) => row.regressionPaths || []))];
-const required59 = [
-  'tests/implementations_1_58_audit.test.mjs',
-  'tests/vercel_build_recovery_59_75.test.mjs',
-  'tests/exact_sha_workflow_recovery_59_75.test.mjs',
-  'tests/prisma_ephemeral_baseline_contract.test.mjs',
-  'tests/security_audit_surface_boundary.test.mjs',
-  'tests/authoritative_contract_suite_59_75.test.mjs',
-  'tests/api_validation_error_59_75.test.mjs',
-  'tests/rbac_authoritative_session_60_75.test.mjs',
-  'tests/full_58_route_anti_overlap_61_75.test.mjs',
-  'tests/playwright_determinism_62_75.test.mjs',
-  'tests/cross_browser_critical_matrix_63_75.test.mjs',
-  'tests/health_dentistry_bounded_contexts_66_75.test.mjs',
-  'tests/vertical_schema_authority_67_75.test.mjs',
-  'tests/database_authority_67_75.test.mjs',
-  'tests/raw_sql_security_68_75.test.mjs',
-  'tests/design_system_authority_69_75.test.mjs',
-  'tests/vertical_asset_system_70_75.test.mjs',
-  'tests/cloudflare_security_audit_skill_contract.test.mjs'
-];
-const tests = [...new Set([...regressionPaths, ...required59])];
+const stages = Object.freeze([
+  { id:'identity', command:'npm', args:['run','build:identity'] },
+  { id:'source-qa', command:'npm', args:['run','preqa:source'] },
+  { id:'browser-qa', command:'npm', args:['run','preqa:browser'] },
+  { id:'backend-stage', command:'npm', args:['run','stage:backend'] },
+  { id:'vite-build', command:'vite', args:['build'] }
+]);
 
-for (let index = 0; index < tests.length; index += 1) {
-  const result = spawnSync(process.execPath, ['--test', tests[index]], {
-    cwd: '..',
+function safeBuildContext() {
+  const sha = String(process.env.VERCEL_GIT_COMMIT_SHA || process.env.GIT_SHA || '').trim();
+  const ref = String(process.env.VERCEL_GIT_COMMIT_REF || process.env.GIT_BRANCH || '').trim();
+  const env = String(process.env.VERCEL_ENV || process.env.NODE_ENV || 'local').trim();
+  return {
+    sha: /^[a-f0-9]{40}$/i.test(sha) ? sha.toLowerCase() : 'unbound',
+    ref: ref.slice(0, 160) || 'unknown',
+    environment: env.slice(0, 40) || 'unknown',
+    node: process.version
+  };
+}
+
+function runStage(stage, index) {
+  const startedAt = Date.now();
+  const context = safeBuildContext();
+  console.log(`[vercel-build][START] stage=${stage.id} index=${index + 1}/${stages.length} sha=${context.sha} ref=${context.ref} env=${context.environment} node=${context.node}`);
+
+  const result = spawnSync(stage.command, stage.args, {
     stdio: 'inherit',
     env: process.env,
     shell: false
   });
-  if (result.error || result.status !== 0) {
-    process.exitCode = 20 + index;
-    break;
+
+  const elapsedMs = Date.now() - startedAt;
+
+  if (result.error) {
+    console.error(`[vercel-build][ERROR] stage=${stage.id} elapsedMs=${elapsedMs} spawn=${result.error.message}`);
+    process.exitCode = 71 + index;
+    return false;
   }
+
+  if (result.status !== 0) {
+    console.error(`[vercel-build][FAIL] stage=${stage.id} elapsedMs=${elapsedMs} exit=${result.status ?? 'null'} signal=${result.signal || 'none'}`);
+    process.exitCode = Number(result.status || 1);
+    return false;
+  }
+
+  console.log(`[vercel-build][PASS] stage=${stage.id} elapsedMs=${elapsedMs}`);
+  return true;
+}
+
+for (let index = 0; index < stages.length; index += 1) {
+  if (!runStage(stages[index], index)) break;
+}
+
+if (!process.exitCode) {
+  const context = safeBuildContext();
+  console.log(`[vercel-build][PASS] all-stages=${stages.length} sha=${context.sha}`);
 }
