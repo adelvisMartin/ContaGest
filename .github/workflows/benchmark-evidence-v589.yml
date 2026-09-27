@@ -1,0 +1,41 @@
+name: "Benchmark #589 · evidence manifest"
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'docs/evidence/benchmark-evidence-manifest-v589.json'
+      - 'scripts/verify-benchmark-evidence-v589.mjs'
+      - 'tests/benchmark_evidence_manifest_v589.test.mjs'
+      - 'qa/support/module-visual-catalog.mjs'
+      - '.github/workflows/benchmark-evidence-v589.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CANDIDATE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+
+jobs:
+  manifest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.CANDIDATE_SHA }}
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - name: Manifest contracts
+        run: node --test tests/benchmark_evidence_manifest_v589.test.mjs
+      - name: Verify and fingerprint source evidence
+        run: node scripts/verify-benchmark-evidence-v589.mjs
+      - name: Upload exact-SHA evidence map
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: benchmark-evidence-v589-${{ env.CANDIDATE_SHA }}
+          path: artifacts/evidence
+          if-no-files-found: error

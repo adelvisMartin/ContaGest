@@ -1,0 +1,122 @@
+{
+  "schemaVersion": 1,
+  "ticket": 589,
+  "statusVocabulary": ["VERIFIED", "PARTIAL", "NOT_VERIFIED", "NOT_APPLICABLE"],
+  "policy": {
+    "verifiedMeaning": "Evidence was actually executed for the referenced exact candidate SHA and artifact provenance is available.",
+    "partialMeaning": "Real route/API/test/history evidence exists, but the complete runtime claim is not executed for the current candidate.",
+    "notVerifiedMeaning": "No sufficient executed evidence exists for the capability/current candidate.",
+    "notApplicableMeaning": "Capability is explicitly outside the vertical contract, with rationale.",
+    "prohibited": ["PII", "secrets", "external proprietary benchmark content"]
+  },
+  "verticals": [
+    {
+      "id": "enterprise",
+      "label": "Enterprise",
+      "capabilities": [
+        {
+          "id": "accounting-core",
+          "status": "PARTIAL",
+          "routes": ["contabilidad", "libro-mayor", "estados-financieros", "cierre-contable"],
+          "apis": ["/api/v1"],
+          "tests": ["qa/postmerge-financial-domain-v17.test.ts", "qa/ledger-posting-real-v91.test.ts"],
+          "history": ["#552", "#564", "#565"],
+          "runtime": "NOT_VERIFIED"
+        },
+        {
+          "id": "banking-and-reports",
+          "status": "PARTIAL",
+          "routes": ["bancos", "reportes", "auditoria"],
+          "apis": ["/api/v1"],
+          "tests": ["qa/bank-reconciliation-v237.integration.test.ts", "qa/erp-functional-smoke-v14.spec.mjs"],
+          "history": ["#237", "#588"],
+          "runtime": "NOT_VERIFIED"
+        }
+      ]
+    },
+    {
+      "id": "empresas",
+      "label": "Empresas",
+      "capabilities": [
+        {
+          "id": "commercial-cycle",
+          "status": "PARTIAL",
+          "routes": ["clientes", "ventas", "compras", "proveedores"],
+          "apis": ["/api/v1"],
+          "tests": ["qa/postmerge-backend-persistence-v17.test.ts", "qa/erp-functional-smoke-v14.spec.mjs"],
+          "history": ["#552", "#588"],
+          "runtime": "NOT_VERIFIED"
+        }
+      ]
+    },
+    {
+      "id": "odontologia",
+      "label": "Odontología",
+      "capabilities": [
+        {
+          "id": "clinical-lifecycle",
+          "status": "PARTIAL",
+          "routes": ["odontologia"],
+          "apis": ["/api/v1/verticals/health"],
+          "tests": ["qa/verticals-backend-real-v4851.test.ts", "qa/clinical-privacy-v567.test.ts"],
+          "history": ["#567", "#590"],
+          "runtime": "NOT_VERIFIED"
+        }
+      ]
+    },
+    {
+      "id": "gimnasio",
+      "label": "Gimnasio",
+      "capabilities": [
+        {
+          "id": "member-training-nutrition",
+          "status": "PARTIAL",
+          "routes": ["gimnasio", "rutinas", "nutricion"],
+          "apis": ["/api/v1/verticals"],
+          "tests": ["qa/verticals-backend-real-v4851.test.ts", "qa/erp-functional-smoke-v14.spec.mjs"],
+          "history": ["#552", "#590"],
+          "runtime": "NOT_VERIFIED"
+        }
+      ]
+    },
+    {
+      "id": "veterinaria",
+      "label": "Veterinaria",
+      "capabilities": [
+        {
+          "id": "patient-hospitalization-lifecycle",
+          "status": "PARTIAL",
+          "routes": ["veterinaria"],
+          "apis": ["/api/v1/verticals/health"],
+          "tests": ["qa/verticals-backend-real-v4851.test.ts", "qa/clinical-privacy-v567.test.ts"],
+          "history": ["#567", "#590"],
+          "runtime": "NOT_VERIFIED"
+        }
+      ]
+    },
+    {
+      "id": "control-hipico",
+      "label": "Control Hípico",
+      "capabilities": [
+        {
+          "id": "autonomous-message-cycle",
+          "status": "PARTIAL",
+          "routes": [],
+          "apis": ["/api/v1/hipico"],
+          "tests": ["backend/src/modules/hipico-bot/hipico-autonomous-runtime.test.ts", "backend/src/modules/hipico-bot/hipico-autonomous-source-reply.test.ts"],
+          "history": ["#282", "#545", "#588"],
+          "runtime": "NOT_VERIFIED"
+        },
+        {
+          "id": "financial-authority-boundary",
+          "status": "PARTIAL",
+          "routes": [],
+          "apis": ["/api/v1/hipico"],
+          "tests": ["tests/hipico_messaging_cli_284.test.mjs"],
+          "history": ["#545", "#546"],
+          "runtime": "NOT_VERIFIED"
+        }
+      ]
+    }
+  ]
+}
