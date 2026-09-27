@@ -28,9 +28,12 @@ function runStage(stage, index) {
   const diagnosticSource = stage.id === 'source-qa' && process.env.VERCEL;
   const command = diagnosticSource ? 'node' : stage.command;
   const args = diagnosticSource ? ['../scripts/vercel-source-preqa-diagnostic.mjs'] : stage.args;
+  const stageEnv = diagnosticSource
+    ? { ...process.env, HIPICO_ROOT_TEST_HEAP_MB: process.env.HIPICO_ROOT_TEST_HEAP_MB || '256' }
+    : process.env;
   const result = spawnSync(command, args, {
     stdio: 'inherit',
-    env: process.env,
+    env: stageEnv,
     shell: false
   });
 
