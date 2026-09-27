@@ -1,0 +1,91 @@
+name: Fiscal #561 · versioned rules and concurrent numbering
+
+on:
+  pull_request:
+    paths:
+      - 'backend/src/modules/fiscal/**'
+      - 'backend/prisma/migrations/**fiscal**'
+      - 'qa/fiscal-authority-v561.test.ts'
+      - 'tests/fiscal_authority_v561_contract.test.mjs'
+      - 'docs/ADR_FISCAL_AUTHORITY_V561.md'
+      - 'package.json'
+      - '.github/workflows/fiscal-authority-v561.yml'
+  push:
+    branches:
+      - 'feat/561-fiscal-authority'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fiscal-authority-v561-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  contract:
+    name: Contract RED→GREEN
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.sha }}
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: node --test tests/fiscal_authority_v561_contract.test.mjs
+
+  postgres-real:
+    name: PostgreSQL real · concurrency and close boundaries
+    needs: contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: contagest_fiscal_v561_e2e
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d contagest_fiscal_v561_e2e"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/contagest_fiscal_v561_e2e?schema=public
+      NODE_ENV: test
+      JWT_SECRET: fiscal-v561-ci-only-not-production
+      CANDIDATE_SHA: ${{ github.sha }}
+      GITHUB_SHA: ${{ github.sha }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.sha }}
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: npm --workspace backend exec -- prisma migrate deploy
+      - run: npm --workspace backend exec -- prisma generate
+      - run: npm run seed
+      - run: npm run test:backend:fiscal:authority:real
+      - run: npm run typecheck
+      - run: npm run build:backend
+      - name: Evidence
+        if: always()
+        run: |
+          mkdir -p artifacts/fiscal-v561
+          printf 'candidate_sha=%s\nrun_id=%s\nrun_attempt=%s\n' "$GITHUB_SHA" "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" > artifacts/fiscal-v561/evidence.txt
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: fiscal-v561-${{ github.sha }}
+          path: artifacts/fiscal-v561
+          if-no-files-found: error
