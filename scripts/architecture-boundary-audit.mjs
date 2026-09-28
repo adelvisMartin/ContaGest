@@ -21,7 +21,7 @@ export const ROUTE_MANIFEST_EXPECTED_ORDER = Object.freeze([
   'approvals','accounting','reports','modules','currency','exports','chart-accounts','hr','banking','bank-reconciliation',
   'inventory','payroll','tasks','fiscal','analytics','qr','food','notifications','maps','ai','demos','pretesting',
   'licenses','license-devices','service-restrictions','commercial','commercial-access','imports','regulatory','rules','rbac',
-  'user-security','vertical-core','veterinary-crud','vertical-extended','veterinary','media'
+  'user-security','data-lifecycle','vertical-core','veterinary-crud','vertical-extended','veterinary','media'
 ]);
 
 const uniq = (values) => [...new Set(values)];
