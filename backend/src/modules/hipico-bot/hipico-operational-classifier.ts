@@ -73,6 +73,7 @@ const status=/\b(?:ESTADO|RECIBIDO|PENDIENTE|REVISANDO|YA\s+LLEGO)\b/;
 const PLAY_RE=/(?:\d{1,2}\s*A\s*\d{1,2}(?:[.,]\d+)?|[1-6]\s*(?:Y|\/)\s*[1-6]|[1-6]NN?|[1-6]P|PP|PK|MAR|PLA|SHOW|RET|TF|LOGRO)/i;
 const NUMBER_SOURCE='[+-]?(?:\\d{1,3}(?:\\.\\d{3})+(?:,\\d{1,2})?|\\d+(?:[.,]\\d+)?)';
 const UNIT_SOURCE='(?:K|MIL|MM?|MILLON(?:ES)?|BS\\.?|USD|\\$)?';
+const OFFER_VERB_SOURCE='(?:JUEGO|JUEGA|CONSIGO|CONSIGUE)';
 
 function numeric(raw:string){
   const value=String(raw||'').trim();
@@ -158,8 +159,29 @@ function offerFromLine(raw:string):OperationalOffer|null{
   };
 }
 
+function splitOfferLine(raw:string){
+  const source=plain(raw).trim();
+  if(!source)return[];
+  const explicit=[...source.matchAll(new RegExp(`\\b${OFFER_VERB_SOURCE}\\b`,'gi'))];
+  if(explicit.length>1){
+    return explicit.map((match,index)=>{
+      const start=match.index||0;
+      const end=explicit[index+1]?.index??source.length;
+      return source.slice(start,end).replace(/^[\s,;|]+|[\s,;|]+$/g,'').trim();
+    }).filter(Boolean);
+  }
+  if(explicit.length!==1)return[source];
+  const verb=explicit[0][0];
+  if(/^JUEGA$/i.test(verb)&&/\bDA\b/i.test(source))return[source];
+  const start=(explicit[0].index||0)+verb.length;
+  const tail=source.slice(start).trim();
+  const separator=new RegExp(`\\s*(?:[,;|]|\\s+y\\s+)\\s*(?=(?:${PLAY_RE.source}|\\d+\\s*[X*]\\s*\\d+)\\b)`,'gi');
+  const parts=tail.split(separator).map((part)=>part.trim()).filter(Boolean);
+  return parts.length>1?parts.map((part)=>`${verb} ${part}`):[source];
+}
+
 function parseOffers(text:string){
-  return String(text||'').split(/\n+/).map((line)=>offerFromLine(line)).filter(Boolean) as OperationalOffer[];
+  return String(text||'').split(/\n+/).flatMap((line)=>splitOfferLine(line)).map((line)=>offerFromLine(line)).filter(Boolean) as OperationalOffer[];
 }
 
 function parseBoard(text:string){
@@ -278,13 +300,18 @@ export function classify(text:string):IntentResult {
   if(exactConfirmation.test(c))return operational('offer_confirmation','monetary',.98,'Confirmacion corta detectada. Debe enlazarse con la oferta correcta antes de confirmar la operacion.','CONFIRMATION_REVIEW_GATE',{confirmation:c});
 
   if(receiverOffer.test(c)||playerOffer.test(c)){
-    const offer=offerFromLine(body);
+    const offers=parseOffers(body);
+    const offer=offers[0]||offerFromLine(body);
     const receiver=Boolean(offer?.role==='receiver');
     const entities=offer?{
       role:offer.role,play:offer.play,horse:offer.horse,amount:offer.amount,
-      participant:offer.participant,counterparty:offer.counterparty,offers:[offer]
+      participant:offer.participant,counterparty:offer.counterparty,offers:offers.length?offers:[offer]
     }:{};
-    return operational(receiver?'offer_receiver':'offer_player','monetary',.995,receiver?'Oferta CONSIGUE detectada. Queda pendiente de emparejamiento y validacion; no afecta saldos.':'Oferta JUEGA detectada. Queda pendiente de emparejamiento y validacion; no afecta saldos.',receiver?'RECEIVER_OFFER_REVIEW_GATE':'PLAYER_OFFER_REVIEW_GATE',entities);
+    const count=offers.length||Number(Boolean(offer));
+    const suggestion=count>1
+      ?`${count} ofertas ${receiver?'CONSIGUE':'JUEGA'} detectadas en el mismo mensaje. Permanecen separadas y pendientes de emparejamiento y validacion; no afectan saldos.`
+      :receiver?'Oferta CONSIGUE detectada. Queda pendiente de emparejamiento y validacion; no afecta saldos.':'Oferta JUEGA detectada. Queda pendiente de emparejamiento y validacion; no afecta saldos.';
+    return operational(receiver?'offer_receiver':'offer_player','monetary',.995,suggestion,receiver?'RECEIVER_OFFER_REVIEW_GATE':'PLAYER_OFFER_REVIEW_GATE',entities);
   }
 
   if(pollaOrParley.test(c))return operational('polla_or_parley','monetary',.99,'Operacion POLLA/PARLEY detectada. Requiere revision del operador antes de cualquier efecto monetario.','POLLA_PARLEY_REVIEW_GATE',{amount:extractAmount(body)});
