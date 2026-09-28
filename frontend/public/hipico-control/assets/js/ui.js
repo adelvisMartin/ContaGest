@@ -122,13 +122,159 @@ function enhanceDialogs(root = document) {
   if (activeDialog && !activeDialog.isConnected) deactivateDialog();
 }
 
+let selectSequence = 0;
+function fieldLabel(select) {
+  const explicit = select.getAttribute('aria-label');
+  if (explicit) return explicit;
+  const label = select.id ? document.querySelector(`label[for="${CSS.escape(select.id)}"]`) : select.closest('.field')?.querySelector('label, span');
+  return label?.textContent?.trim() || 'Seleccionar opción';
+}
+function enabledOptions(popover) {
+  return [...popover.querySelectorAll('.select-option:not([disabled])')];
+}
+function focusOption(popover, index) {
+  const options = enabledOptions(popover);
+  if (!options.length) return;
+  options[Math.max(0, Math.min(options.length - 1, index))]?.focus();
+}
+function closeSelect(shell, { returnFocus = false } = {}) {
+  const trigger = shell.querySelector('.select-trigger');
+  const popover = shell.querySelector('.select-popover');
+  if (!(trigger instanceof HTMLElement) || !(popover instanceof HTMLElement)) return;
+  popover.hidden = true;
+  trigger.setAttribute('aria-expanded', 'false');
+  shell.classList.remove('is-open');
+  if (returnFocus) trigger.focus();
+}
+function openSelect(shell, direction = 1) {
+  const trigger = shell.querySelector('.select-trigger');
+  const popover = shell.querySelector('.select-popover');
+  if (!(trigger instanceof HTMLElement) || !(popover instanceof HTMLElement)) return;
+  document.querySelectorAll('.select-shell.is-open').forEach((openShell) => { if (openShell !== shell) closeSelect(openShell); });
+  popover.hidden = false;
+  trigger.setAttribute('aria-expanded', 'true');
+  shell.classList.add('is-open');
+  const options = enabledOptions(popover);
+  const selectedIndex = options.findIndex((option) => option.getAttribute('aria-selected') === 'true');
+  const fallback = direction < 0 ? options.length - 1 : 0;
+  requestAnimationFrame(() => focusOption(popover, selectedIndex >= 0 ? selectedIndex : fallback));
+}
+function syncEnhancedSelect(select, trigger, popover) {
+  const selected = select.options[select.selectedIndex] || select.options[0];
+  trigger.querySelector('.select-trigger__value').textContent = selected?.textContent?.trim() || '';
+  trigger.disabled = select.disabled;
+  popover.querySelectorAll('.select-option').forEach((option) => {
+    const active = option.dataset.value === String(select.value);
+    option.setAttribute('aria-selected', active ? 'true' : 'false');
+    option.classList.toggle('is-selected', active);
+  });
+}
+function selectByOption(select, trigger, popover, option) {
+  if (!(option instanceof HTMLElement) || option.hasAttribute('disabled')) return;
+  select.value = option.dataset.value ?? '';
+  syncEnhancedSelect(select, trigger, popover);
+  select.dispatchEvent(new Event('change', { bubbles: true }));
+  closeSelect(trigger.closest('.select-shell'), { returnFocus: true });
+}
+export function enhanceSelects(root = document) {
+  root.querySelectorAll?.('select.select:not([data-ui-select-enhanced])').forEach((select) => {
+    if (!(select instanceof HTMLSelectElement)) return;
+    select.dataset.uiSelectEnhanced = 'true';
+    selectSequence += 1;
+    const shell = document.createElement('div');
+    shell.className = 'select-shell';
+    const listboxId = `hc-select-${selectSequence}`;
+    const trigger = document.createElement('button');
+    trigger.type = 'button';
+    trigger.className = 'select-trigger';
+    trigger.setAttribute('aria-haspopup', 'listbox');
+    trigger.setAttribute('aria-haspopup', 'listbox');
+    trigger.setAttribute('aria-expanded', 'false');
+    trigger.setAttribute('aria-controls', listboxId);
+    trigger.setAttribute('aria-label', fieldLabel(select));
+    trigger.innerHTML = `<span class="select-trigger__value"></span><span class="select-trigger__chevron" aria-hidden="true"></span>`;
+    const popover = document.createElement('div');
+    popover.className = 'select-popover';
+    popover.id = listboxId;
+    popover.setAttribute('role', 'listbox');
+    popover.setAttribute('aria-label', fieldLabel(select));
+    popover.hidden = true;
+    [...select.options].forEach((nativeOption) => {
+      const option = document.createElement('button');
+      option.type = 'button';
+      option.className = 'select-option';
+      option.setAttribute('role', 'option');
+      option.dataset.value = nativeOption.value;
+      option.textContent = nativeOption.textContent || nativeOption.value;
+      if (nativeOption.disabled) option.disabled = true;
+      option.addEventListener('click', () => selectByOption(select, trigger, popover, option));
+      option.addEventListener('keydown', (event) => {
+        const options = enabledOptions(popover);
+        const index = options.indexOf(option);
+        if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+          event.preventDefault();
+          focusOption(popover, index + (event.key === 'ArrowDown' ? 1 : -1));
+        } else if (event.key === 'Home' || event.key === 'End') {
+          event.preventDefault();
+          focusOption(popover, event.key === 'Home' ? 0 : options.length - 1);
+        } else if (event.key === 'Escape') {
+          event.preventDefault();
+          closeSelect(shell, { returnFocus: true });
+        }
+      });
+      popover.appendChild(option);
+    });
+    select.parentNode?.insertBefore(shell, select);
+    shell.append(select, trigger, popover);
+    select.classList.add('select--native');
+    select.tabIndex = -1;
+    select.setAttribute('aria-hidden', 'true');
+    syncEnhancedSelect(select, trigger, popover);
+    trigger.addEventListener('click', () => shell.classList.contains('is-open') ? closeSelect(shell) : openSelect(shell));
+    trigger.addEventListener('keydown', (event) => {
+      if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+        event.preventDefault();
+        openSelect(shell, event.key === 'ArrowDown' ? 1 : -1);
+      } else if (event.key === 'Escape') {
+        closeSelect(shell);
+      }
+    });
+    select.addEventListener('change', () => syncEnhancedSelect(select, trigger, popover));
+    select.form?.addEventListener('reset', () => requestAnimationFrame(() => syncEnhancedSelect(select, trigger, popover)), { once: false });
+  });
+}
+
+export function enhanceRaceSwitcher(root = document) {
+  root.querySelectorAll?.('.race-arrow--add[data-action="new-race"]:not([data-ui-race-switcher])').forEach((button) => {
+    if (!(button instanceof HTMLButtonElement)) return;
+    button.dataset.uiRaceSwitcher = 'true';
+    button.classList.add('race-change-action');
+    button.setAttribute('aria-label', 'Cambiar carrera');
+    button.title = 'Cambiar carrera';
+    button.innerHTML = `${icon('plus')}<span>Cambiar carrera</span>`;
+  });
+}
+
+function enhanceUi(root = document) {
+  enhanceDialogs(root);
+  enhanceSelects(root);
+  enhanceRaceSwitcher(root);
+}
+
 if (typeof document !== 'undefined' && typeof window !== 'undefined') {
   if (typeof MutationObserver === 'function') {
-    const dialogObserver = new MutationObserver(() => enhanceDialogs());
+    const dialogObserver = new MutationObserver(() => enhanceUi());
     if (document.documentElement) dialogObserver.observe(document.documentElement, { childList: true, subtree: true });
   }
-  window.addEventListener('DOMContentLoaded', () => enhanceDialogs());
+  window.addEventListener('DOMContentLoaded', () => enhanceUi());
+  document.addEventListener('pointerdown', (event) => {
+    document.querySelectorAll('.select-shell.is-open').forEach((shell) => { if (!shell.contains(event.target)) closeSelect(shell); });
+  });
   document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') {
+      const openSelectShell = document.querySelector('.select-shell.is-open');
+      if (openSelectShell) { event.preventDefault(); closeSelect(openSelectShell, { returnFocus: true }); return; }
+    }
     if (event.key !== 'Escape' || !activeDialog) return;
     const close = activeDialog.querySelector('[data-action="close-modal"], [data-help-close]');
     if (close instanceof HTMLElement) { event.preventDefault(); close.click(); }
