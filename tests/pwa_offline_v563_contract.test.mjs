@@ -21,7 +21,7 @@ test('#563 cache namespaces include release/session scope and never cache APIs',
   assert.match(sw, /userId/);
   assert.match(sw, /SESSION_SCOPE/);
   assert.match(sw, /pathname\.startsWith\('\/api\/'\)/);
-  assert.match(sw, /cache:'no-store'/);
+  assert.match(sw, /cache:\s*'no-store'/);
 });
 
 test('#563 shell cache lookups stay inside ASSET_CACHE and public-static allowlist', () => {
