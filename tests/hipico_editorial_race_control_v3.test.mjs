@@ -20,7 +20,7 @@ test('Editorial Race Control stays inside the canonical Hípico UI authorities',
 });
 
 test('native history selects are progressively enhanced to an accessible themed listbox',()=>{
-  assert.match(app,/select class=\\"select\\" name=\\"participant\\"/);
+  assert.match(app,/select class="select" name="participant"/);
   assert.match(ui,/select\.select:not\(\[data-ui-select-enhanced\]\)/);
   assert.match(ui,/setAttribute\('role', 'listbox'\)/);
   assert.match(ui,/setAttribute\('role', 'option'\)/);
@@ -32,7 +32,7 @@ test('native history selects are progressively enhanced to an accessible themed 
 });
 
 test('race header exposes a fast context change without mutating historical race records in place',()=>{
-  assert.match(ui,/data-ui-race-change/);
+  assert.match(ui,/dataset\.uiRaceChange = 'true'/);
   assert.match(ui,/button\.dataset\.action = 'new-race'/);
   assert.match(ui,/Cambiar carrera/);
   assert.doesNotMatch(ui,/data-action=['"]edit-race['"]/);
