@@ -122,15 +122,138 @@ function enhanceDialogs(root = document) {
   if (activeDialog && !activeDialog.isConnected) deactivateDialog();
 }
 
+const HISTORY_FILTER_LABELS = Object.freeze({ participant: 'Tercio', type: 'Jugada', status: 'Estado' });
+let listboxSequence = 0;
+function listboxOptions(listbox) {
+  return [...listbox.querySelectorAll('[data-listbox-option]')].filter((node) => !node.disabled);
+}
+function closeListbox(control, { focusTrigger = false } = {}) {
+  const trigger = control?.querySelector('[data-listbox-trigger]');
+  const listbox = control?.querySelector('[role="listbox"]');
+  if (!trigger || !listbox) return;
+  trigger.setAttribute('aria-expanded', 'false');
+  listbox.hidden = true;
+  if (focusTrigger) trigger.focus();
+}
+function closeOtherListboxes(except = null) {
+  document.querySelectorAll('[data-history-filter]').forEach((control) => {
+    if (control !== except) closeListbox(control);
+  });
+}
+function focusListboxOption(control, position = 'selected') {
+  const listbox = control?.querySelector('[role="listbox"]');
+  const options = listbox ? listboxOptions(listbox) : [];
+  if (!options.length) return;
+  let target = options.find((option) => option.getAttribute('aria-selected') === 'true') || options[0];
+  if (position === 'first') target = options[0];
+  if (position === 'last') target = options[options.length - 1];
+  requestAnimationFrame(() => target.focus());
+}
+function openListbox(control, position = 'selected') {
+  const trigger = control?.querySelector('[data-listbox-trigger]');
+  const listbox = control?.querySelector('[role="listbox"]');
+  if (!trigger || !listbox) return;
+  closeOtherListboxes(control);
+  trigger.setAttribute('aria-expanded', 'true');
+  listbox.hidden = false;
+  focusListboxOption(control, position);
+}
+function selectListboxOption(option) {
+  const control = option?.closest('[data-history-filter]');
+  const select = control?.querySelector('select');
+  const triggerLabel = control?.querySelector('[data-listbox-label]');
+  if (!control || !select || !triggerLabel) return;
+  select.value = option.dataset.value ?? '';
+  control.querySelectorAll('[data-listbox-option]').forEach((node) => node.setAttribute('aria-selected', node === option ? 'true' : 'false'));
+  triggerLabel.textContent = option.textContent || '';
+  select.dispatchEvent(new Event('change', { bubbles: true }));
+  closeListbox(control, { focusTrigger: true });
+}
+function moveListboxFocus(option, direction) {
+  const listbox = option?.closest('[role="listbox"]');
+  const options = listbox ? listboxOptions(listbox) : [];
+  const index = options.indexOf(option);
+  if (index < 0 || !options.length) return;
+  const next = direction === 'first' ? 0 : direction === 'last' ? options.length - 1 : (index + direction + options.length) % options.length;
+  options[next]?.focus();
+}
+function enhanceSelectListbox(select) {
+  if (!(select instanceof HTMLSelectElement) || select.dataset.listboxEnhanced) return;
+  const name = String(select.name || 'filter');
+  const label = HISTORY_FILTER_LABELS[name] || name;
+  const id = `history-listbox-${name}-${++listboxSequence}`;
+  select.dataset.listboxEnhanced = 'true';
+  select.classList.add('listbox-native');
+  select.tabIndex = -1;
+  select.setAttribute('aria-hidden', 'true');
+  const control = document.createElement('div');
+  control.className = 'listbox-control';
+  control.dataset.historyFilter = name;
+  const selected = select.options[select.selectedIndex] || select.options[0];
+  const options = [...select.options].map((option) => `<button type="button" class="listbox-option" role="option" tabindex="-1" data-listbox-option data-value="${escapeHtml(option.value)}" aria-selected="${option.selected ? 'true' : 'false'}">${escapeHtml(option.textContent || option.label || option.value)}</button>`).join('');
+  control.innerHTML = `<button type="button" class="listbox-trigger" data-listbox-trigger aria-haspopup="listbox" aria-expanded="false" aria-controls="${id}" aria-label="${escapeHtml(label)}"><span data-listbox-label>${escapeHtml(selected?.textContent || label)}</span><span class="listbox-chevron" aria-hidden="true">⌄</span></button><div class="listbox-popover" id="${id}" role="listbox" aria-label="${escapeHtml(label)}" hidden>${options}</div>`;
+  select.insertAdjacentElement('afterend', control);
+}
+function enhanceHistoryListboxes(root = document) {
+  root.querySelectorAll?.('#history-filter-form select[name="participant"], #history-filter-form select[name="type"], #history-filter-form select[name="status"]').forEach(enhanceSelectListbox);
+}
+function enhanceRaceQuickSwitch(root = document) {
+  const actions = root.querySelector?.('.compact-head .page-actions');
+  if (!actions || actions.querySelector('[data-race-quick-switch]')) return;
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = 'button race-quick-switch';
+  button.dataset.action = 'new-race';
+  button.dataset.raceQuickSwitch = 'true';
+  button.innerHTML = `${icon('race')}<span>Cambiar carrera</span>`;
+  actions.prepend(button);
+}
+function enhanceUi(root = document) {
+  enhanceHistoryListboxes(root);
+  enhanceRaceQuickSwitch(root);
+}
+
 if (typeof document !== 'undefined' && typeof window !== 'undefined') {
   if (typeof MutationObserver === 'function') {
-    const dialogObserver = new MutationObserver(() => enhanceDialogs());
+    const dialogObserver = new MutationObserver(() => { enhanceDialogs(); enhanceUi(); });
     if (document.documentElement) dialogObserver.observe(document.documentElement, { childList: true, subtree: true });
   }
-  window.addEventListener('DOMContentLoaded', () => enhanceDialogs());
+  window.addEventListener('DOMContentLoaded', () => { enhanceDialogs(); enhanceUi(); });
+  document.addEventListener('click', (event) => {
+    const trigger = event.target.closest?.('[data-listbox-trigger]');
+    if (trigger) {
+      const control = trigger.closest('[data-history-filter]');
+      const expanded = trigger.getAttribute('aria-expanded') === 'true';
+      expanded ? closeListbox(control, { focusTrigger: true }) : openListbox(control);
+      return;
+    }
+    const option = event.target.closest?.('[data-listbox-option]');
+    if (option) { selectListboxOption(option); return; }
+    if (!event.target.closest?.('[data-history-filter]')) closeOtherListboxes();
+  });
   document.addEventListener('keydown', (event) => {
-    if (event.key !== 'Escape' || !activeDialog) return;
-    const close = activeDialog.querySelector('[data-action="close-modal"], [data-help-close]');
-    if (close instanceof HTMLElement) { event.preventDefault(); close.click(); }
+    if (event.key === 'Escape' && activeDialog) {
+      const close = activeDialog.querySelector('[data-action="close-modal"], [data-help-close]');
+      if (close instanceof HTMLElement) { event.preventDefault(); close.click(); return; }
+    }
+    const trigger = event.target.closest?.('[data-listbox-trigger]');
+    if (trigger) {
+      const control = trigger.closest('[data-history-filter]');
+      if (event.key === 'ArrowDown') { event.preventDefault(); openListbox(control, 'first'); return; }
+      if (event.key === 'ArrowUp') { event.preventDefault(); openListbox(control, 'last'); return; }
+      if (event.key === 'Home') { event.preventDefault(); openListbox(control, 'first'); return; }
+      if (event.key === 'End') { event.preventDefault(); openListbox(control, 'last'); return; }
+      if ((event.key === 'Enter' || event.key === ' ') && trigger.getAttribute('aria-expanded') !== 'true') { event.preventDefault(); openListbox(control); return; }
+      if (event.key === 'Escape') { event.preventDefault(); closeListbox(control, { focusTrigger: true }); return; }
+    }
+    const option = event.target.closest?.('[data-listbox-option]');
+    if (option) {
+      if (event.key === 'ArrowDown') { event.preventDefault(); moveListboxFocus(option, 1); return; }
+      if (event.key === 'ArrowUp') { event.preventDefault(); moveListboxFocus(option, -1); return; }
+      if (event.key === 'Home') { event.preventDefault(); moveListboxFocus(option, 'first'); return; }
+      if (event.key === 'End') { event.preventDefault(); moveListboxFocus(option, 'last'); return; }
+      if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); selectListboxOption(option); return; }
+      if (event.key === 'Escape') { event.preventDefault(); closeListbox(option.closest('[data-history-filter]'), { focusTrigger: true }); }
+    }
   });
 }
