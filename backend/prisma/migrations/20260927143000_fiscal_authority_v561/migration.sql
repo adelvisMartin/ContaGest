@@ -3,7 +3,7 @@
 
 CREATE TABLE IF NOT EXISTS public."FiscalRuleVersion" (
   "id" uuid PRIMARY KEY,
-  "tenantId" uuid NOT NULL REFERENCES public."Tenant"("id") ON DELETE CASCADE,
+  "tenantId" text NOT NULL REFERENCES public."Tenant"("id") ON DELETE CASCADE,
   "ruleKey" text NOT NULL,
   "version" integer NOT NULL CHECK ("version" > 0),
   "effectiveFrom" timestamptz NOT NULL,
@@ -21,7 +21,7 @@ CREATE INDEX IF NOT EXISTS "FiscalRuleVersion_tenant_rule_effective_idx"
   ON public."FiscalRuleVersion" ("tenantId", "ruleKey", "effectiveFrom" DESC);
 
 CREATE TABLE IF NOT EXISTS public."FiscalSequence" (
-  "tenantId" uuid NOT NULL REFERENCES public."Tenant"("id") ON DELETE CASCADE,
+  "tenantId" text NOT NULL REFERENCES public."Tenant"("id") ON DELETE CASCADE,
   "kind" text NOT NULL,
   "prefix" text NOT NULL,
   "width" integer NOT NULL DEFAULT 8 CHECK ("width" BETWEEN 1 AND 18),
@@ -32,8 +32,8 @@ CREATE TABLE IF NOT EXISTS public."FiscalSequence" (
 
 CREATE TABLE IF NOT EXISTS public."FiscalDocumentRuleSnapshot" (
   "id" uuid PRIMARY KEY,
-  "tenantId" uuid NOT NULL REFERENCES public."Tenant"("id") ON DELETE CASCADE,
-  "fiscalDocumentId" uuid NOT NULL REFERENCES public."FiscalDocument"("id") ON DELETE RESTRICT,
+  "tenantId" text NOT NULL REFERENCES public."Tenant"("id") ON DELETE CASCADE,
+  "fiscalDocumentId" text NOT NULL REFERENCES public."FiscalDocument"("id") ON DELETE RESTRICT,
   "ruleKey" text NOT NULL,
   "ruleVersion" integer NOT NULL,
   "ruleHash" text NOT NULL,
@@ -50,8 +50,8 @@ CREATE INDEX IF NOT EXISTS "FiscalDocumentRuleSnapshot_tenant_document_idx"
 
 CREATE TABLE IF NOT EXISTS public."FiscalCloseEvidence" (
   "id" uuid PRIMARY KEY,
-  "tenantId" uuid NOT NULL REFERENCES public."Tenant"("id") ON DELETE CASCADE,
-  "closingPeriodId" uuid NOT NULL REFERENCES public."ClosingPeriod"("id") ON DELETE RESTRICT,
+  "tenantId" text NOT NULL REFERENCES public."Tenant"("id") ON DELETE CASCADE,
+  "closingPeriodId" text NOT NULL REFERENCES public."ClosingPeriod"("id") ON DELETE RESTRICT,
   "period" text NOT NULL,
   "module" text NOT NULL,
   "prechecks" jsonb NOT NULL,
@@ -67,10 +67,10 @@ CREATE INDEX IF NOT EXISTS "FiscalCloseEvidence_tenant_period_idx"
 -- The fiscal router already enforces these capabilities. Persist them so a clean
 -- or upgraded database cannot end up with permanently unreachable fiscal routes.
 INSERT INTO public."Permission" ("id", "key", "description") VALUES
-  ('56100000-0000-4000-8000-000000000001'::uuid, 'fiscal.read', 'Ver períodos, reglas y documentos fiscales'),
-  ('56100000-0000-4000-8000-000000000002'::uuid, 'fiscal.manage_documents', 'Emitir y gestionar documentos fiscales'),
-  ('56100000-0000-4000-8000-000000000003'::uuid, 'fiscal.close', 'Gestionar reglas y cerrar períodos fiscales'),
-  ('56100000-0000-4000-8000-000000000004'::uuid, 'fiscal.reopen', 'Reabrir períodos fiscales mediante aprobación')
+  ('56100000-0000-4000-8000-000000000001', 'fiscal.read', 'Ver períodos, reglas y documentos fiscales'),
+  ('56100000-0000-4000-8000-000000000002', 'fiscal.manage_documents', 'Emitir y gestionar documentos fiscales'),
+  ('56100000-0000-4000-8000-000000000003', 'fiscal.close', 'Gestionar reglas y cerrar períodos fiscales'),
+  ('56100000-0000-4000-8000-000000000004', 'fiscal.reopen', 'Reabrir períodos fiscales mediante aprobación')
 ON CONFLICT ("key") DO UPDATE SET "description" = EXCLUDED."description";
 
 -- Existing global administrators retain the capabilities they already represent.
