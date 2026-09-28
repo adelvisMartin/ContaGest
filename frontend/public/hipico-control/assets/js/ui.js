@@ -122,14 +122,171 @@ function enhanceDialogs(root = document) {
   if (activeDialog && !activeDialog.isConnected) deactivateDialog();
 }
 
+let selectSequence = 0;
+let openSelectShell = null;
+const selectState = new WeakMap();
+function closeSelect(shell, { restoreFocus = false } = {}) {
+  if (!(shell instanceof HTMLElement)) return;
+  const state = selectState.get(shell);
+  if (!state) return;
+  state.trigger.setAttribute('aria-expanded', 'false');
+  state.menu.classList.remove('is-open', 'is-up');
+  if (openSelectShell === shell) openSelectShell = null;
+  if (restoreFocus) state.trigger.focus();
+}
+function openSelect(shell, focusDirection = 0) {
+  const state = selectState.get(shell);
+  if (!state || state.select.disabled) return;
+  if (openSelectShell && openSelectShell !== shell) closeSelect(openSelectShell);
+  state.trigger.setAttribute('aria-expanded', 'true');
+  state.menu.classList.add('is-open');
+  const rect = state.trigger.getBoundingClientRect();
+  const availableBelow = window.innerHeight - rect.bottom;
+  state.menu.classList.toggle('is-up', availableBelow < Math.min(280, state.menu.scrollHeight + 12) && rect.top > availableBelow);
+  openSelectShell = shell;
+  if (focusDirection) {
+    const enabled = state.options.filter((option) => !option.disabled);
+    const selectedIndex = Math.max(0, enabled.findIndex((option) => option.getAttribute('aria-selected') === 'true'));
+    const index = focusDirection < 0 ? Math.max(0, selectedIndex - 1) : selectedIndex;
+    requestAnimationFrame(() => enabled[index]?.focus());
+  }
+}
+function selectAccessibleLabel(select) {
+  const fieldLabel = select.closest('.field')?.querySelector('label, .field-label')?.textContent?.trim();
+  return select.getAttribute('aria-label') || fieldLabel || select.name || 'Seleccionar opción';
+}
+function enhanceSelect(select) {
+  if (!(select instanceof HTMLSelectElement) || select.dataset.uiSelectEnhanced || select.required) return;
+  select.dataset.uiSelectEnhanced = 'true';
+  selectSequence += 1;
+  const shell = document.createElement('div');
+  shell.className = 'select-shell';
+  const trigger = document.createElement('button');
+  trigger.type = 'button';
+  trigger.className = 'select-trigger';
+  const listId = `hc-select-list-${selectSequence}`;
+  trigger.setAttribute('aria-haspopup', 'listbox');
+  trigger.setAttribute('aria-controls', listId);
+  trigger.setAttribute('aria-expanded', 'false');
+  trigger.setAttribute('aria-label', selectAccessibleLabel(select));
+  const menu = document.createElement('div');
+  menu.id = listId;
+  menu.className = 'select-popover';
+  menu.setAttribute('role', 'listbox');
+  menu.setAttribute('aria-label', selectAccessibleLabel(select));
+  select.parentNode?.insertBefore(shell, select);
+  shell.append(select, trigger, menu);
+  select.classList.add('select-native');
+  select.setAttribute('aria-hidden', 'true');
+  select.tabIndex = -1;
+
+  const sync = () => {
+    const selected = select.selectedOptions[0] || select.options[0];
+    trigger.textContent = selected?.textContent?.trim() || 'Seleccionar';
+    trigger.disabled = select.disabled;
+    [...menu.querySelectorAll('[role="option"]')].forEach((option) => {
+      const isSelected = option.dataset.value === select.value;
+      option.setAttribute('aria-selected', String(isSelected));
+      option.classList.toggle('is-selected', isSelected);
+    });
+  };
+  const choose = (option) => {
+    if (!(option instanceof HTMLElement) || option.getAttribute('aria-disabled') === 'true') return;
+    select.value = option.dataset.value || '';
+    select.dispatchEvent(new Event('change', { bubbles: true }));
+    sync();
+    closeSelect(shell, { restoreFocus: true });
+  };
+  [...select.options].forEach((sourceOption) => {
+    const option = document.createElement('button');
+    option.type = 'button';
+    option.className = 'select-option';
+    option.setAttribute('role', 'option');
+    option.dataset.value = sourceOption.value;
+    option.textContent = sourceOption.textContent || sourceOption.value;
+    if (sourceOption.disabled) {
+      option.disabled = true;
+      option.setAttribute('aria-disabled', 'true');
+    }
+    option.addEventListener('click', () => choose(option));
+    menu.appendChild(option);
+  });
+  const options = [...menu.querySelectorAll('[role="option"]')];
+  selectState.set(shell, { select, trigger, menu, options });
+  sync();
+  select.addEventListener('change', sync);
+  trigger.addEventListener('click', () => trigger.getAttribute('aria-expanded') === 'true' ? closeSelect(shell) : openSelect(shell));
+  trigger.addEventListener('keydown', (event) => {
+    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+      event.preventDefault();
+      openSelect(shell, event.key === 'ArrowUp' ? -1 : 1);
+    } else if (event.key === 'Escape') {
+      event.preventDefault();
+      closeSelect(shell);
+    }
+  });
+  let typeahead = '';
+  let typeaheadTimer = null;
+  menu.addEventListener('keydown', (event) => {
+    const enabled = options.filter((option) => !option.disabled);
+    const current = enabled.indexOf(document.activeElement);
+    if (event.key === 'Escape') { event.preventDefault(); closeSelect(shell, { restoreFocus: true }); return; }
+    if (event.key === 'Tab') { closeSelect(shell); return; }
+    if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); choose(document.activeElement); return; }
+    if (event.key === 'ArrowDown' || event.key === 'ArrowUp' || event.key === 'Home' || event.key === 'End') {
+      event.preventDefault();
+      let next = current;
+      if (event.key === 'Home') next = 0;
+      else if (event.key === 'End') next = enabled.length - 1;
+      else next = Math.min(enabled.length - 1, Math.max(0, current + (event.key === 'ArrowDown' ? 1 : -1)));
+      enabled[next]?.focus();
+      return;
+    }
+    if (event.key.length === 1 && /\S/.test(event.key)) {
+      typeahead += event.key.toLocaleLowerCase('es');
+      window.clearTimeout(typeaheadTimer);
+      typeaheadTimer = window.setTimeout(() => { typeahead = ''; }, 550);
+      const match = enabled.find((option) => (option.textContent || '').trim().toLocaleLowerCase('es').startsWith(typeahead));
+      if (match) { event.preventDefault(); match.focus(); }
+    }
+  });
+}
+function enhanceSelects(root = document) {
+  root.querySelectorAll?.('select.select:not([data-ui-select-enhanced])').forEach(enhanceSelect);
+}
+function enhanceRaceQuickChange(root = document) {
+  root.querySelectorAll?.('.compact-head').forEach((head) => {
+    const actions = head.querySelector('.page-actions');
+    if (!(actions instanceof HTMLElement) || actions.querySelector('[data-ui-race-change]')) return;
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'button button--small race-context-change';
+    button.dataset.action = 'new-race';
+    button.dataset.uiRaceChange = 'true';
+    button.innerHTML = `${icon('race')}<span>Cambiar carrera</span>`;
+    actions.prepend(button);
+  });
+}
+function enhanceUiSurface(root = document) {
+  enhanceDialogs(root);
+  enhanceSelects(root);
+  enhanceRaceQuickChange(root);
+}
+
 if (typeof document !== 'undefined' && typeof window !== 'undefined') {
   if (typeof MutationObserver === 'function') {
-    const dialogObserver = new MutationObserver(() => enhanceDialogs());
-    if (document.documentElement) dialogObserver.observe(document.documentElement, { childList: true, subtree: true });
+    const uiObserver = new MutationObserver(() => enhanceUiSurface());
+    if (document.documentElement) uiObserver.observe(document.documentElement, { childList: true, subtree: true });
   }
-  window.addEventListener('DOMContentLoaded', () => enhanceDialogs());
+  window.addEventListener('DOMContentLoaded', () => enhanceUiSurface());
+  document.addEventListener('pointerdown', (event) => {
+    if (!openSelectShell || openSelectShell.contains(event.target)) return;
+    closeSelect(openSelectShell);
+  });
   document.addEventListener('keydown', (event) => {
-    if (event.key !== 'Escape' || !activeDialog) return;
+    if (event.key !== 'Escape') return;
+    if (openSelectShell) { closeSelect(openSelectShell, { restoreFocus: true }); return; }
+    if (!activeDialog) return;
     const close = activeDialog.querySelector('[data-action="close-modal"], [data-help-close]');
     if (close instanceof HTMLElement) { event.preventDefault(); close.click(); }
   });
