@@ -77,7 +77,7 @@ type FxBankAccountMapRow = {
 };
 
 export async function getFxPolicy(tenantId: string, db: FxDb = prisma): Promise<FxPolicyRow> {
-  const rows = await db.$queryRaw<FxPolicyRow[]>(Prisma.sql`SELECT * FROM "FinancialFxPolicy" WHERE "tenantId" = ${tenantId}::uuid LIMIT 1`);
+  const rows = await db.$queryRaw<FxPolicyRow[]>(Prisma.sql`SELECT * FROM "FinancialFxPolicy" WHERE "tenantId" = ${tenantId} LIMIT 1`);
   return rows[0] || upsertFxPolicy({ tenantId, functionalCurrency: 'VES', updatedBy: null }, db);
 }
 
@@ -86,7 +86,7 @@ export async function upsertFxPolicy(input: { tenantId: string; functionalCurren
     INSERT INTO "FinancialFxPolicy"
       ("tenantId","policyVersion","functionalCurrency","roundingMode","moneyScale","exchangeRateScale","updatedBy","updatedAt")
     VALUES
-      (${input.tenantId}::uuid,${FX_POLICY_VERSION},${normalizeCurrency(input.functionalCurrency)},${FX_ROUNDING_MODE},2,4,${input.updatedBy || null}::uuid,NOW())
+      (${input.tenantId},${FX_POLICY_VERSION},${normalizeCurrency(input.functionalCurrency)},${FX_ROUNDING_MODE},2,4,${input.updatedBy || null},NOW())
     ON CONFLICT ("tenantId") DO UPDATE SET
       "policyVersion"=EXCLUDED."policyVersion","functionalCurrency"=EXCLUDED."functionalCurrency","roundingMode"=EXCLUDED."roundingMode",
       "moneyScale"=EXCLUDED."moneyScale","exchangeRateScale"=EXCLUDED."exchangeRateScale","updatedBy"=EXCLUDED."updatedBy","updatedAt"=NOW()
@@ -96,7 +96,7 @@ export async function upsertFxPolicy(input: { tenantId: string; functionalCurren
 }
 
 export async function countDocumentSnapshots(tenantId: string, db: FxDb = prisma) {
-  const rows = await db.$queryRaw<Array<{ count: bigint }>>(Prisma.sql`SELECT COUNT(*)::bigint AS count FROM "FinancialFxDocumentSnapshot" WHERE "tenantId" = ${tenantId}::uuid`);
+  const rows = await db.$queryRaw<Array<{ count: bigint }>>(Prisma.sql`SELECT COUNT(*)::bigint AS count FROM "FinancialFxDocumentSnapshot" WHERE "tenantId" = ${tenantId}`);
   return Number(rows[0]?.count || 0n);
 }
 
@@ -120,7 +120,7 @@ export async function recordDocumentSnapshot(input: {
     INSERT INTO "FinancialFxDocumentSnapshot"
       ("id","tenantId","documentType","documentId","originalCurrency","functionalCurrency","exchangeRate","rateDate","rateSource","originalSubtotal","originalTax","originalTotal","functionalSubtotal","functionalTax","functionalTotal","policyVersion")
     VALUES
-      (${randomUUID()}::uuid,${input.tenantId}::uuid,${input.documentType},${input.documentId}::uuid,${normalizeCurrency(input.originalCurrency)},${normalizeCurrency(input.functionalCurrency)},${serializeDecimal(input.exchangeRate,4)}::numeric,${input.rateDate},${input.rateSource},${serializeDecimal(input.originalSubtotal,2)}::numeric,${serializeDecimal(input.originalTax,2)}::numeric,${serializeDecimal(input.originalTotal,2)}::numeric,${serializeDecimal(input.functionalSubtotal,2)}::numeric,${serializeDecimal(input.functionalTax,2)}::numeric,${serializeDecimal(input.functionalTotal,2)}::numeric,${FX_POLICY_VERSION})
+      (${randomUUID()}::uuid,${input.tenantId},${input.documentType},${input.documentId},${normalizeCurrency(input.originalCurrency)},${normalizeCurrency(input.functionalCurrency)},${serializeDecimal(input.exchangeRate,4)}::numeric,${input.rateDate},${input.rateSource},${serializeDecimal(input.originalSubtotal,2)}::numeric,${serializeDecimal(input.originalTax,2)}::numeric,${serializeDecimal(input.originalTotal,2)}::numeric,${serializeDecimal(input.functionalSubtotal,2)}::numeric,${serializeDecimal(input.functionalTax,2)}::numeric,${serializeDecimal(input.functionalTotal,2)}::numeric,${FX_POLICY_VERSION})
     ON CONFLICT ("tenantId","documentType","documentId") DO UPDATE SET "documentId"=EXCLUDED."documentId"
     RETURNING *
   `);
@@ -129,7 +129,7 @@ export async function recordDocumentSnapshot(input: {
 
 export async function getDocumentSnapshot(input: { tenantId: string; documentType: FxDocumentType; documentId: string }, db: FxDb = prisma): Promise<FxDocumentSnapshotRow | null> {
   const rows = await db.$queryRaw<FxDocumentSnapshotRow[]>(Prisma.sql`
-    SELECT * FROM "FinancialFxDocumentSnapshot" WHERE "tenantId"=${input.tenantId}::uuid AND "documentType"=${input.documentType} AND "documentId"=${input.documentId}::uuid LIMIT 1
+    SELECT * FROM "FinancialFxDocumentSnapshot" WHERE "tenantId"=${input.tenantId} AND "documentType"=${input.documentType} AND "documentId"=${input.documentId} LIMIT 1
   `);
   return rows[0] || null;
 }
@@ -137,11 +137,11 @@ export async function getDocumentSnapshot(input: { tenantId: string; documentTyp
 export async function listDocumentSnapshots(input: { tenantId: string; sourceType?: FxSourceType; sourceId?: string }, db: FxDb = prisma): Promise<FxDocumentSnapshotRow[]> {
   if (input.sourceType && input.sourceId) {
     return db.$queryRaw<FxDocumentSnapshotRow[]>(Prisma.sql`
-      SELECT * FROM "FinancialFxDocumentSnapshot" WHERE "tenantId"=${input.tenantId}::uuid AND "documentType"=${input.sourceType} AND "documentId"=${input.sourceId}::uuid ORDER BY "createdAt","id"
+      SELECT * FROM "FinancialFxDocumentSnapshot" WHERE "tenantId"=${input.tenantId} AND "documentType"=${input.sourceType} AND "documentId"=${input.sourceId} ORDER BY "createdAt","id"
     `);
   }
   return db.$queryRaw<FxDocumentSnapshotRow[]>(Prisma.sql`
-    SELECT * FROM "FinancialFxDocumentSnapshot" WHERE "tenantId"=${input.tenantId}::uuid ORDER BY "createdAt" DESC,"id" DESC LIMIT 500
+    SELECT * FROM "FinancialFxDocumentSnapshot" WHERE "tenantId"=${input.tenantId} ORDER BY "createdAt" DESC,"id" DESC LIMIT 500
   `);
 }
 
@@ -171,7 +171,7 @@ export async function recordLedgerLineSnapshots(input: {
       INSERT INTO "FinancialFxLedgerLineSnapshot"
         ("id","tenantId","ledgerLineId","originalDebit","originalCredit","functionalDebit","functionalCredit","originalCurrency","functionalCurrency","exchangeRate","rateDate","rateSource","policyVersion")
       VALUES
-        (${randomUUID()}::uuid,${input.tenantId}::uuid,${persistedLine.id}::uuid,${serializeDecimal(line.originalDebit,2)}::numeric,${serializeDecimal(line.originalCredit,2)}::numeric,${serializeDecimal(line.functionalDebit,2)}::numeric,${serializeDecimal(line.functionalCredit,2)}::numeric,${normalizeCurrency(input.originalCurrency)},${normalizeCurrency(input.functionalCurrency)},${serializeDecimal(input.exchangeRate,4)}::numeric,${input.rateDate},${input.rateSource},${FX_POLICY_VERSION})
+        (${randomUUID()}::uuid,${input.tenantId},${persistedLine.id},${serializeDecimal(line.originalDebit,2)}::numeric,${serializeDecimal(line.originalCredit,2)}::numeric,${serializeDecimal(line.functionalDebit,2)}::numeric,${serializeDecimal(line.functionalCredit,2)}::numeric,${normalizeCurrency(input.originalCurrency)},${normalizeCurrency(input.functionalCurrency)},${serializeDecimal(input.exchangeRate,4)}::numeric,${input.rateDate},${input.rateSource},${FX_POLICY_VERSION})
       ON CONFLICT ("ledgerLineId") DO NOTHING
     `);
   }
@@ -181,7 +181,7 @@ export async function copyLedgerLineSnapshotsForReversal(input: { tenantId: stri
   const originals = await db.$queryRaw<Array<{ accountCode: string; originalDebit: DecimalValue; originalCredit: DecimalValue; originalCurrency: string; functionalCurrency: string; exchangeRate: DecimalValue; rateDate: Date; rateSource: string }>>(Prisma.sql`
     SELECT l."accountCode",s."originalDebit",s."originalCredit",s."originalCurrency",s."functionalCurrency",s."exchangeRate",s."rateDate",s."rateSource"
     FROM "LedgerLine" l JOIN "FinancialFxLedgerLineSnapshot" s ON s."ledgerLineId"=l."id"
-    WHERE s."tenantId"=${input.tenantId}::uuid AND l."entryId"=${input.originalEntryId}::uuid ORDER BY l."id"
+    WHERE s."tenantId"=${input.tenantId} AND l."entryId"=${input.originalEntryId} ORDER BY l."id"
   `);
   if (!originals.length) return;
   const reversals = await db.ledgerLine.findMany({ where: { entryId: input.reversalEntryId }, orderBy: { id: 'asc' } });
@@ -200,7 +200,7 @@ export async function copyLedgerLineSnapshotsForReversal(input: { tenantId: stri
       INSERT INTO "FinancialFxLedgerLineSnapshot"
         ("id","tenantId","ledgerLineId","originalDebit","originalCredit","functionalDebit","functionalCredit","originalCurrency","functionalCurrency","exchangeRate","rateDate","rateSource","policyVersion")
       VALUES
-        (${randomUUID()}::uuid,${input.tenantId}::uuid,${reversal.id}::uuid,${serializeDecimal(original.originalCredit,2)}::numeric,${serializeDecimal(original.originalDebit,2)}::numeric,${serializeDecimal(reversal.debit,2)}::numeric,${serializeDecimal(reversal.credit,2)}::numeric,${original.originalCurrency},${original.functionalCurrency},${serializeDecimal(original.exchangeRate,4)}::numeric,${original.rateDate},${original.rateSource},${FX_POLICY_VERSION})
+        (${randomUUID()}::uuid,${input.tenantId},${reversal.id},${serializeDecimal(original.originalCredit,2)}::numeric,${serializeDecimal(original.originalDebit,2)}::numeric,${serializeDecimal(reversal.debit,2)}::numeric,${serializeDecimal(reversal.credit,2)}::numeric,${original.originalCurrency},${original.functionalCurrency},${serializeDecimal(original.exchangeRate,4)}::numeric,${original.rateDate},${original.rateSource},${FX_POLICY_VERSION})
       ON CONFLICT ("ledgerLineId") DO NOTHING
     `);
   }
@@ -213,14 +213,14 @@ export async function upsertBankAccountMap(input: { tenantId: string; bankAccoun
   if (!account) throw new HttpError(422, 'La cuenta contable bancaria debe existir en el tenant y admitir contabilización.');
   const rows = await db.$queryRaw<FxBankAccountMapRow[]>(Prisma.sql`
     INSERT INTO "FinancialFxBankAccountMap" ("tenantId","bankAccountId","ledgerAccountCode","updatedAt")
-    VALUES (${input.tenantId}::uuid,${input.bankAccountId}::uuid,${account.code},NOW())
+    VALUES (${input.tenantId},${input.bankAccountId},${account.code},NOW())
     ON CONFLICT ("tenantId","bankAccountId") DO UPDATE SET "ledgerAccountCode"=EXCLUDED."ledgerAccountCode","updatedAt"=NOW() RETURNING *
   `);
   return rows[0];
 }
 
 export async function getBankAccountMap(input: { tenantId: string; bankAccountId: string }, db: FxDb = prisma): Promise<FxBankAccountMapRow | null> {
-  const rows = await db.$queryRaw<FxBankAccountMapRow[]>(Prisma.sql`SELECT * FROM "FinancialFxBankAccountMap" WHERE "tenantId"=${input.tenantId}::uuid AND "bankAccountId"=${input.bankAccountId}::uuid LIMIT 1`);
+  const rows = await db.$queryRaw<FxBankAccountMapRow[]>(Prisma.sql`SELECT * FROM "FinancialFxBankAccountMap" WHERE "tenantId"=${input.tenantId} AND "bankAccountId"=${input.bankAccountId} LIMIT 1`);
   return rows[0] || null;
 }
 
@@ -249,43 +249,43 @@ export async function createFxEvent(input: {
     INSERT INTO "FinancialFxEvent"
       ("id","tenantId","kind","sourceType","sourceId","bankMovementId","documentCurrency","settlementCurrency","functionalCurrency","originalAmount","settlementAmount","historicalRate","currentRate","historicalFunctionalAmount","currentFunctionalAmount","difference","fiscalPeriod","rateDate","rateSource","ledgerEntryId","policyVersion")
     VALUES
-      (${randomUUID()}::uuid,${input.tenantId}::uuid,${input.kind},${input.sourceType},${input.sourceId}::uuid,${input.bankMovementId || null}::uuid,${normalizeCurrency(input.documentCurrency)},${input.settlementCurrency ? normalizeCurrency(input.settlementCurrency) : null},${normalizeCurrency(input.functionalCurrency)},${serializeDecimal(input.originalAmount,2)}::numeric,${input.settlementAmount == null ? null : serializeDecimal(input.settlementAmount,2)}::numeric,${serializeDecimal(input.historicalRate,4)}::numeric,${serializeDecimal(input.currentRate,4)}::numeric,${serializeDecimal(input.historicalFunctionalAmount,2)}::numeric,${serializeDecimal(input.currentFunctionalAmount,2)}::numeric,${serializeDecimal(input.difference,2)}::numeric,${input.fiscalPeriod},${input.rateDate},${input.rateSource},${input.ledgerEntryId}::uuid,${FX_POLICY_VERSION})
+      (${randomUUID()}::uuid,${input.tenantId},${input.kind},${input.sourceType},${input.sourceId},${input.bankMovementId || null},${normalizeCurrency(input.documentCurrency)},${input.settlementCurrency ? normalizeCurrency(input.settlementCurrency) : null},${normalizeCurrency(input.functionalCurrency)},${serializeDecimal(input.originalAmount,2)}::numeric,${input.settlementAmount == null ? null : serializeDecimal(input.settlementAmount,2)}::numeric,${serializeDecimal(input.historicalRate,4)}::numeric,${serializeDecimal(input.currentRate,4)}::numeric,${serializeDecimal(input.historicalFunctionalAmount,2)}::numeric,${serializeDecimal(input.currentFunctionalAmount,2)}::numeric,${serializeDecimal(input.difference,2)}::numeric,${input.fiscalPeriod},${input.rateDate},${input.rateSource},${input.ledgerEntryId},${FX_POLICY_VERSION})
     RETURNING *
   `);
   return rows[0];
 }
 
 export async function getFxEvent(input: { tenantId: string; eventId: string }, db: FxDb = prisma): Promise<FxEventRow | null> {
-  const rows = await db.$queryRaw<FxEventRow[]>(Prisma.sql`SELECT * FROM "FinancialFxEvent" WHERE "tenantId"=${input.tenantId}::uuid AND "id"=${input.eventId}::uuid LIMIT 1`);
+  const rows = await db.$queryRaw<FxEventRow[]>(Prisma.sql`SELECT * FROM "FinancialFxEvent" WHERE "tenantId"=${input.tenantId} AND "id"=${input.eventId}::uuid LIMIT 1`);
   return rows[0] || null;
 }
 
 export async function listFxEvents(input: { tenantId: string; sourceType?: FxSourceType; sourceId?: string }, db: FxDb = prisma): Promise<FxEventRow[]> {
   if (input.sourceType && input.sourceId) {
-    return db.$queryRaw<FxEventRow[]>(Prisma.sql`SELECT * FROM "FinancialFxEvent" WHERE "tenantId"=${input.tenantId}::uuid AND "sourceType"=${input.sourceType} AND "sourceId"=${input.sourceId}::uuid ORDER BY "createdAt","id"`);
+    return db.$queryRaw<FxEventRow[]>(Prisma.sql`SELECT * FROM "FinancialFxEvent" WHERE "tenantId"=${input.tenantId} AND "sourceType"=${input.sourceType} AND "sourceId"=${input.sourceId} ORDER BY "createdAt","id"`);
   }
-  return db.$queryRaw<FxEventRow[]>(Prisma.sql`SELECT * FROM "FinancialFxEvent" WHERE "tenantId"=${input.tenantId}::uuid ORDER BY "createdAt" DESC,"id" DESC LIMIT 500`);
+  return db.$queryRaw<FxEventRow[]>(Prisma.sql`SELECT * FROM "FinancialFxEvent" WHERE "tenantId"=${input.tenantId} ORDER BY "createdAt" DESC,"id" DESC LIMIT 500`);
 }
 
 export async function realizedOriginalAmount(input: { tenantId: string; sourceType: FxSourceType; sourceId: string }, db: FxDb = prisma): Promise<DecimalValue> {
   const rows = await db.$queryRaw<Array<{ amount: DecimalValue }>>(Prisma.sql`
     SELECT COALESCE(SUM("originalAmount"),0)::numeric AS amount FROM "FinancialFxEvent"
-    WHERE "tenantId"=${input.tenantId}::uuid AND "sourceType"=${input.sourceType} AND "sourceId"=${input.sourceId}::uuid AND "kind"='realized' AND "reversedAt" IS NULL
+    WHERE "tenantId"=${input.tenantId} AND "sourceType"=${input.sourceType} AND "sourceId"=${input.sourceId} AND "kind"='realized' AND "reversedAt" IS NULL
   `);
   return money(rows[0]?.amount || '0');
 }
 
 export async function latestUnreversedRevaluation(input: { tenantId: string; sourceType: FxSourceType; sourceId: string }, db: FxDb = prisma): Promise<FxEventRow | null> {
   const rows = await db.$queryRaw<FxEventRow[]>(Prisma.sql`
-    SELECT * FROM "FinancialFxEvent" WHERE "tenantId"=${input.tenantId}::uuid AND "sourceType"=${input.sourceType} AND "sourceId"=${input.sourceId}::uuid AND "kind"='unrealized' AND "reversedAt" IS NULL ORDER BY "createdAt" DESC,"id" DESC LIMIT 1
+    SELECT * FROM "FinancialFxEvent" WHERE "tenantId"=${input.tenantId} AND "sourceType"=${input.sourceType} AND "sourceId"=${input.sourceId} AND "kind"='unrealized' AND "reversedAt" IS NULL ORDER BY "createdAt" DESC,"id" DESC LIMIT 1
   `);
   return rows[0] || null;
 }
 
 export async function markFxEventReversed(input: { tenantId: string; eventId: string; reversalLedgerEntryId: string }, db: FxDb) {
   const rows = await db.$queryRaw<FxEventRow[]>(Prisma.sql`
-    UPDATE "FinancialFxEvent" SET "reversalLedgerEntryId"=${input.reversalLedgerEntryId}::uuid,"reversedAt"=NOW()
-    WHERE "tenantId"=${input.tenantId}::uuid AND "id"=${input.eventId}::uuid AND "reversedAt" IS NULL RETURNING *
+    UPDATE "FinancialFxEvent" SET "reversalLedgerEntryId"=${input.reversalLedgerEntryId},"reversedAt"=NOW()
+    WHERE "tenantId"=${input.tenantId} AND "id"=${input.eventId}::uuid AND "reversedAt" IS NULL RETURNING *
   `);
   if (!rows[0]) throw new HttpError(409, 'El evento cambiario ya fue reversado o no existe en el tenant.');
   return rows[0];
