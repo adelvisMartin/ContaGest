@@ -122,3 +122,29 @@ test('same text is not a dedupe key at classifier level',()=>{
   // Provider-message dedupe remains the persistence responsibility; content
   // equality must never collapse two legitimate offers from different sends.
 });
+
+test('one WhatsApp source message exposes every deterministic offer without enabling auto execution',()=>{
+  const result=classify('Juega PP del 3 con 20; 1N del 4 con 25; SHOW del 2 con 10');
+  assert.equal(result.intent,'offer_player');
+  assert.equal(result.autoEligible,false);
+  assert.equal(result.risk,'monetary');
+  assert.deepEqual(result.entities?.offers?.map(({role,play,horse,amount})=>({role,play,horse,amount})),[
+    {role:'player',play:'PP',horse:'3',amount:20},
+    {role:'player',play:'1N',horse:'4',amount:25},
+    {role:'player',play:'SHOW',horse:'2',amount:10}
+  ]);
+  assert.deepEqual(
+    {role:result.entities?.role,play:result.entities?.play,horse:result.entities?.horse,amount:result.entities?.amount},
+    {role:'player',play:'PP',horse:'3',amount:20}
+  );
+});
+
+test('multiline mixed Juega and Consigue clauses preserve each role independently',()=>{
+  const result=classify('Juega PP del 3 con 20\nConsigue 1/2 del 5 con 15\nJuega SHOW del 2 con 10');
+  assert.equal(result.autoEligible,false);
+  assert.deepEqual(result.entities?.offers?.map(({role,play,horse,amount})=>({role,play,horse,amount})),[
+    {role:'player',play:'PP',horse:'3',amount:20},
+    {role:'receiver',play:'1/2',horse:'5',amount:15},
+    {role:'player',play:'SHOW',horse:'2',amount:10}
+  ]);
+});
