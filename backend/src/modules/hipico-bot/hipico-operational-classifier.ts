@@ -158,8 +158,30 @@ function offerFromLine(raw:string):OperationalOffer|null{
   };
 }
 
+function offerClauses(text:string){
+  const chunks=String(text||'')
+    .replace(/\r/g,'')
+    .split(/\n+|;+/)
+    .flatMap((chunk)=>chunk.split(/(?=\b(?:JUEGO|JUEGA|CONSIGO|CONSIGUE)\b)/i))
+    .map((chunk)=>chunk.trim().replace(/^[,|]+|[,|]+$/g,'').trim())
+    .filter(Boolean);
+  const clauses:string[]=[];
+  let role:'player'|'receiver'|null=null;
+  for(const chunk of chunks){
+    const c=canonical(chunk);
+    if(playerOffer.test(c))role='player';
+    else if(receiverOffer.test(c))role='receiver';
+    if(playerOffer.test(c)||receiverOffer.test(c)){
+      clauses.push(chunk);
+      continue;
+    }
+    if(role&&PLAY_RE.test(chunk))clauses.push(`${role==='receiver'?'Consigue':'Juega'} ${chunk}`);
+  }
+  return clauses;
+}
+
 function parseOffers(text:string){
-  return String(text||'').split(/\n+/).map((line)=>offerFromLine(line)).filter(Boolean) as OperationalOffer[];
+  return offerClauses(text).map((line)=>offerFromLine(line)).filter((offer):offer is OperationalOffer=>Boolean(offer?.play&&offer?.horse));
 }
 
 function parseBoard(text:string){
@@ -277,13 +299,14 @@ export function classify(text:string):IntentResult {
   if(cancelOrCorrection.test(c))return operational('cancel_or_correction','monetary',.985,'Anulacion o correccion detectada. Debe vincularse a la jugada original antes de cualquier cambio.','CORRECTION_REVIEW_GATE');
   if(exactConfirmation.test(c))return operational('offer_confirmation','monetary',.98,'Confirmacion corta detectada. Debe enlazarse con la oferta correcta antes de confirmar la operacion.','CONFIRMATION_REVIEW_GATE',{confirmation:c});
 
-  if(receiverOffer.test(c)||playerOffer.test(c)){
-    const offer=offerFromLine(body);
-    const receiver=Boolean(offer?.role==='receiver');
-    const entities=offer?{
+  const offers=parseOffers(body);
+  if(offers.length){
+    const offer=offers[0];
+    const receiver=offer.role==='receiver';
+    const entities={
       role:offer.role,play:offer.play,horse:offer.horse,amount:offer.amount,
-      participant:offer.participant,counterparty:offer.counterparty,offers:[offer]
-    }:{};
+      participant:offer.participant,counterparty:offer.counterparty,offers
+    };
     return operational(receiver?'offer_receiver':'offer_player','monetary',.995,receiver?'Oferta CONSIGUE detectada. Queda pendiente de emparejamiento y validacion; no afecta saldos.':'Oferta JUEGA detectada. Queda pendiente de emparejamiento y validacion; no afecta saldos.',receiver?'RECEIVER_OFFER_REVIEW_GATE':'PLAYER_OFFER_REVIEW_GATE',entities);
   }
 
