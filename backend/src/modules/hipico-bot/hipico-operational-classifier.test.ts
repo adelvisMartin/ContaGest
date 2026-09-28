@@ -111,6 +111,27 @@ test('structured shadow analyzer extracts offer, opening, close, result and bala
   ]);
 });
 
+test('one WhatsApp message can carry several independent offers without collapsing amounts',()=>{
+  const compact=classify('Juego 2P al 4 con 100, 3P al 7 con 150 y 5N al 8 con 80');
+  assert.equal(compact.intent,'offer_player');
+  assert.deepEqual(compact.entities?.offers?.map(({role,play,horse,amount})=>({role,play,horse,amount})),[
+    {role:'player',play:'2P',horse:'4',amount:100},
+    {role:'player',play:'3P',horse:'7',amount:150},
+    {role:'player',play:'5N',horse:'8',amount:80}
+  ]);
+  assert.deepEqual(
+    {role:compact.entities?.role,play:compact.entities?.play,horse:compact.entities?.horse,amount:compact.entities?.amount},
+    {role:'player',play:'2P',horse:'4',amount:100}
+  );
+
+  const explicit=classify('Consigo SHOW al 2 con 10; Consigo 1/2 al 5 con 15');
+  assert.equal(explicit.intent,'offer_receiver');
+  assert.deepEqual(explicit.entities?.offers?.map(({role,play,horse,amount})=>({role,play,horse,amount})),[
+    {role:'receiver',play:'SHOW',horse:'2',amount:10},
+    {role:'receiver',play:'1/2',horse:'5',amount:15}
+  ]);
+});
+
 test('close vocabulary wins before broad monetary parsing',()=>{
   const result=classify('Cierra carrera 4');
   assert.equal(result.intent,'race_close');
