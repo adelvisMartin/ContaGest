@@ -57,7 +57,7 @@ export async function createFiscalRuleVersion(input: {
     const overlapping = await tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`
       SELECT "id"
       FROM public."FiscalRuleVersion"
-      WHERE "tenantId" = ${input.tenantId}::uuid
+      WHERE "tenantId" = ${input.tenantId}
         AND "ruleKey" = ${input.ruleKey}
         AND tstzrange("effectiveFrom", COALESCE("effectiveTo", 'infinity'::timestamptz), '[)')
             && tstzrange(${input.effectiveFrom}, COALESCE(${input.effectiveTo || null}::timestamptz, 'infinity'::timestamptz), '[)')
@@ -70,7 +70,7 @@ export async function createFiscalRuleVersion(input: {
     const versions = await tx.$queryRaw<Array<{ version: number }>>(Prisma.sql`
       SELECT COALESCE(MAX("version"), 0)::integer AS "version"
       FROM public."FiscalRuleVersion"
-      WHERE "tenantId" = ${input.tenantId}::uuid AND "ruleKey" = ${input.ruleKey}
+      WHERE "tenantId" = ${input.tenantId} AND "ruleKey" = ${input.ruleKey}
     `);
     const version = Number(versions[0]?.version || 0) + 1;
     const id = randomUUID();
@@ -89,7 +89,7 @@ export async function createFiscalRuleVersion(input: {
         "id", "tenantId", "ruleKey", "version", "effectiveFrom", "effectiveTo",
         "source", "documentation", "definition", "hash", "createdBy"
       ) VALUES (
-        ${id}::uuid, ${input.tenantId}::uuid, ${input.ruleKey}, ${version}, ${input.effectiveFrom}, ${input.effectiveTo || null},
+        ${id}::uuid, ${input.tenantId}, ${input.ruleKey}, ${version}, ${input.effectiveFrom}, ${input.effectiveTo || null},
         ${input.source}, ${input.documentation}, ${JSON.stringify(input.definition)}::jsonb, ${hash}, ${input.createdBy || null}
       )
       RETURNING *
@@ -102,7 +102,7 @@ export async function listFiscalRuleVersions(tenantId: string, ruleKey?: string)
   return prisma.$queryRaw<FiscalRuleVersionRow[]>(Prisma.sql`
     SELECT *
     FROM public."FiscalRuleVersion"
-    WHERE "tenantId" = ${tenantId}::uuid
+    WHERE "tenantId" = ${tenantId}
       AND (${ruleKey || null}::text IS NULL OR "ruleKey" = ${ruleKey || null})
     ORDER BY "ruleKey" ASC, "version" DESC
     LIMIT 500
@@ -114,7 +114,7 @@ export async function resolveFiscalRules(db: FiscalDb, input: { tenantId: string
   const rows = await db.$queryRaw<FiscalRuleVersionRow[]>(Prisma.sql`
     SELECT DISTINCT ON ("ruleKey") *
     FROM public."FiscalRuleVersion"
-    WHERE "tenantId" = ${input.tenantId}::uuid
+    WHERE "tenantId" = ${input.tenantId}
       AND "ruleKey" IN (${Prisma.join(input.ruleKeys)})
       AND "effectiveFrom" <= ${input.effectiveAt}
       AND ("effectiveTo" IS NULL OR "effectiveTo" > ${input.effectiveAt})
@@ -131,7 +131,7 @@ export async function resolveFiscalRules(db: FiscalDb, input: { tenantId: string
 export async function allocateFiscalNumber(db: FiscalDb, input: { tenantId: string; kind: string; prefix: string; width: number }) {
   const rows = await db.$queryRaw<FiscalSequenceRow[]>(Prisma.sql`
     INSERT INTO public."FiscalSequence" ("tenantId", "kind", "prefix", "width", "nextValue")
-    VALUES (${input.tenantId}::uuid, ${input.kind}, ${input.prefix}, ${input.width}, 2)
+    VALUES (${input.tenantId}, ${input.kind}, ${input.prefix}, ${input.width}, 2)
     ON CONFLICT ("tenantId", "kind") DO UPDATE
       SET "nextValue" = public."FiscalSequence"."nextValue" + 1,
           "updatedAt" = CURRENT_TIMESTAMP
@@ -149,7 +149,7 @@ export async function recordDocumentRuleSnapshots(db: FiscalDb, input: { tenantI
         "id", "tenantId", "fiscalDocumentId", "ruleKey", "ruleVersion", "ruleHash",
         "effectiveFrom", "effectiveTo", "source", "documentation", "definition"
       ) VALUES (
-        ${randomUUID()}::uuid, ${input.tenantId}::uuid, ${input.fiscalDocumentId}::uuid,
+        ${randomUUID()}::uuid, ${input.tenantId}, ${input.fiscalDocumentId},
         ${rule.ruleKey}, ${rule.version}, ${rule.hash}, ${rule.effectiveFrom}, ${rule.effectiveTo},
         ${rule.source}, ${rule.documentation}, ${JSON.stringify(rule.definition)}::jsonb
       )
@@ -164,27 +164,27 @@ export async function getDocumentRuleSnapshots(tenantId: string, fiscalDocumentI
   }>>(Prisma.sql`
     SELECT "ruleKey", "ruleVersion", "ruleHash", "effectiveFrom", "effectiveTo", "source", "documentation", "definition", "capturedAt"
     FROM public."FiscalDocumentRuleSnapshot"
-    WHERE "tenantId" = ${tenantId}::uuid AND "fiscalDocumentId" = ${fiscalDocumentId}::uuid
+    WHERE "tenantId" = ${tenantId} AND "fiscalDocumentId" = ${fiscalDocumentId}
     ORDER BY "ruleKey" ASC
   `);
 }
 
 export async function buildCloseEvidence(db: FiscalDb, input: { tenantId: string; period: string; module: string }) {
   const [unposted, draftSales, draftPurchases, imbalancedEntries, fiscalDocuments] = await Promise.all([
-    db.$queryRaw<CountRow[]>(Prisma.sql`SELECT COUNT(*)::bigint AS count FROM public."LedgerEntry" WHERE "tenantId"=${input.tenantId}::uuid AND "fiscalPeriod"=${input.period} AND "posted"=false`),
-    db.$queryRaw<CountRow[]>(Prisma.sql`SELECT COUNT(*)::bigint AS count FROM public."SalesInvoice" WHERE "tenantId"=${input.tenantId}::uuid AND "fiscalPeriod"=${input.period} AND "status"::text='draft'`),
-    db.$queryRaw<CountRow[]>(Prisma.sql`SELECT COUNT(*)::bigint AS count FROM public."PurchaseInvoice" WHERE "tenantId"=${input.tenantId}::uuid AND "fiscalPeriod"=${input.period} AND "status"::text='draft'`),
+    db.$queryRaw<CountRow[]>(Prisma.sql`SELECT COUNT(*)::bigint AS count FROM public."LedgerEntry" WHERE "tenantId"=${input.tenantId} AND "fiscalPeriod"=${input.period} AND "posted"=false`),
+    db.$queryRaw<CountRow[]>(Prisma.sql`SELECT COUNT(*)::bigint AS count FROM public."SalesInvoice" WHERE "tenantId"=${input.tenantId} AND "fiscalPeriod"=${input.period} AND "status"::text='draft'`),
+    db.$queryRaw<CountRow[]>(Prisma.sql`SELECT COUNT(*)::bigint AS count FROM public."PurchaseInvoice" WHERE "tenantId"=${input.tenantId} AND "fiscalPeriod"=${input.period} AND "status"::text='draft'`),
     db.$queryRaw<CountRow[]>(Prisma.sql`
       SELECT COUNT(*)::bigint AS count FROM (
         SELECT e."id"
         FROM public."LedgerEntry" e
         JOIN public."LedgerLine" l ON l."entryId"=e."id"
-        WHERE e."tenantId"=${input.tenantId}::uuid AND e."fiscalPeriod"=${input.period} AND e."posted"=true
+        WHERE e."tenantId"=${input.tenantId} AND e."fiscalPeriod"=${input.period} AND e."posted"=true
         GROUP BY e."id"
         HAVING ROUND(SUM(l."debit"),2) <> ROUND(SUM(l."credit"),2)
       ) q
     `),
-    db.$queryRaw<CountRow[]>(Prisma.sql`SELECT COUNT(*)::bigint AS count FROM public."FiscalDocument" WHERE "tenantId"=${input.tenantId}::uuid AND "period"=${input.period}`)
+    db.$queryRaw<CountRow[]>(Prisma.sql`SELECT COUNT(*)::bigint AS count FROM public."FiscalDocument" WHERE "tenantId"=${input.tenantId} AND "period"=${input.period}`)
   ]);
 
   return {
@@ -225,7 +225,7 @@ export async function persistCloseEvidence(db: FiscalDb, input: {
     INSERT INTO public."FiscalCloseEvidence" (
       "id", "tenantId", "closingPeriodId", "period", "module", "prechecks", "postCloseReport", "postCloseHash", "closedBy"
     ) VALUES (
-      ${id}::uuid, ${input.tenantId}::uuid, ${input.closingPeriodId}::uuid, ${input.period}, ${input.module},
+      ${id}::uuid, ${input.tenantId}, ${input.closingPeriodId}, ${input.period}, ${input.module},
       ${JSON.stringify(input.prechecks)}::jsonb, ${JSON.stringify(input.postCloseReport)}::jsonb, ${input.postCloseHash}, ${input.closedBy || null}
     )
   `);
@@ -238,7 +238,7 @@ export async function getCloseEvidence(tenantId: string, period: string, module:
   }>>(Prisma.sql`
     SELECT "id", "period", "module", "prechecks", "postCloseReport", "postCloseHash", "closedBy", "createdAt"
     FROM public."FiscalCloseEvidence"
-    WHERE "tenantId"=${tenantId}::uuid AND "period"=${period} AND "module"=${module}
+    WHERE "tenantId"=${tenantId} AND "period"=${period} AND "module"=${module}
     ORDER BY "createdAt" DESC
     LIMIT 1
   `);
