@@ -1,10 +1,10 @@
 {
-  "id": "/",
+  "id": "./",
   "name": "ContaGest-VE Enterprise",
   "short_name": "ContaGest",
   "description": "Gestión empresarial, administrativa y verticales especializadas para Venezuela.",
-  "start_url": "/?source=pwa",
-  "scope": "/",
+  "start_url": "./?source=pwa",
+  "scope": "./",
   "display": "standalone",
   "display_override": [
     "standalone",
@@ -23,19 +23,19 @@
   "prefer_related_applications": false,
   "icons": [
     {
-      "src": "/icons/contagest-app-192.svg",
+      "src": "./icons/contagest-app-192.svg",
       "sizes": "192x192",
       "type": "image/svg+xml",
       "purpose": "any"
     },
     {
-      "src": "/icons/contagest-app-512.svg",
+      "src": "./icons/contagest-app-512.svg",
       "sizes": "512x512",
       "type": "image/svg+xml",
       "purpose": "any"
     },
     {
-      "src": "/icons/contagest-app.svg",
+      "src": "./icons/contagest-app.svg",
       "sizes": "any",
       "type": "image/svg+xml",
       "purpose": "maskable"
@@ -45,20 +45,20 @@
     {
       "name": "Dashboard",
       "short_name": "Dashboard",
-      "url": "/?module=dashboard"
+      "url": "./?module=dashboard"
     },
     {
       "name": "Clientes",
       "short_name": "Clientes",
-      "url": "/?module=clientes"
+      "url": "./?module=clientes"
     },
     {
       "name": "Odontología",
       "short_name": "Odontología",
-      "url": "/?module=odontologia",
+      "url": "./?module=odontologia",
       "icons": [
         {
-          "src": "/vertical-assets/dentistry.svg",
+          "src": "./vertical-assets/dentistry.svg",
           "sizes": "any",
           "type": "image/svg+xml"
         }
@@ -67,10 +67,10 @@
     {
       "name": "Psicología y agenda",
       "short_name": "Psicología",
-      "url": "/?module=psicologia",
+      "url": "./?module=psicologia",
       "icons": [
         {
-          "src": "/vertical-assets/psychology.svg",
+          "src": "./vertical-assets/psychology.svg",
           "sizes": "any",
           "type": "image/svg+xml"
         }
@@ -79,10 +79,10 @@
     {
       "name": "Clínica veterinaria",
       "short_name": "Veterinaria",
-      "url": "/?module=veterinaria",
+      "url": "./?module=veterinaria",
       "icons": [
         {
-          "src": "/vertical-assets/veterinary.svg",
+          "src": "./vertical-assets/veterinary.svg",
           "sizes": "any",
           "type": "image/svg+xml"
         }
@@ -91,10 +91,10 @@
     {
       "name": "Gimnasio y fitness",
       "short_name": "Gimnasio",
-      "url": "/?module=gimnasio",
+      "url": "./?module=gimnasio",
       "icons": [
         {
-          "src": "/vertical-assets/gym.svg",
+          "src": "./vertical-assets/gym.svg",
           "sizes": "any",
           "type": "image/svg+xml"
         }
@@ -103,10 +103,10 @@
     {
       "name": "Nutrición",
       "short_name": "Nutrición",
-      "url": "/?module=nutricion",
+      "url": "./?module=nutricion",
       "icons": [
         {
-          "src": "/vertical-assets/nutrition.svg",
+          "src": "./vertical-assets/nutrition.svg",
           "sizes": "any",
           "type": "image/svg+xml"
         }
