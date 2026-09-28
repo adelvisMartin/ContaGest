@@ -27,8 +27,13 @@ if (client.slice(roleStart, roleEnd).includes('user_metadata')) {
 if (!client.includes('HIPICO_RPC_REQUIRED') || !/"allowLabDirectTableFallback": false/.test(runtime)) {
   finding('H114-003', 'HIGH', 'backend authority', 'Production missing-RPC path is not demonstrably fail-closed.', '#116');
 }
-if (/send(?:Message|Text|Payload)ToSource\s*\(/i.test(bridge) || !/sourceSendPossible:\s*false/.test(bridge)) {
-  finding('H114-004', 'CRITICAL', 'WhatsApp routing', 'SOURCE write route/guard is unsafe.', '#110');
+const sourceReplyGuarded = bridge.includes('const SOURCE_REPLY_KILL_SWITCH = localKillSwitchState();')
+  && bridge.includes('const SOURCE_AUTO_REPLY_ACTIVE = SOURCE_AUTO_REPLY_ENABLED && !SOURCE_REPLY_KILL_SWITCH.active;')
+  && bridge.includes('SOURCE_REPLY_DESTINATION_MISMATCH')
+  && bridge.includes('assertCurrentSourceIdentity()')
+  && /sourceSendPossible:\s*SOURCE_AUTO_REPLY_ACTIVE\s*&&\s*backendState\s*===\s*'online'/.test(bridge);
+if (!sourceReplyGuarded) {
+  finding('H114-004', 'CRITICAL', 'WhatsApp routing', 'SOURCE auto-reply is missing kill-switch, destination, identity, or health guards.', '#110');
 }
 if (!bridge.includes('assertCurrentLabIdentity()') || !identity.includes('assertPinnedGroupIdentity')) {
   finding('H114-005', 'CRITICAL', 'WhatsApp routing', 'LAB send is not guarded by pinned identity revalidation.', '#110');
