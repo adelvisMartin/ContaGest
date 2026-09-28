@@ -1,5 +1,5 @@
 const CACHE_VERSION = 'hipico-control-v1.13.0-rc3';
-const SHELL_CACHE = `${CACHE_VERSION}-shell-r27-command-center-render-loop-fix`;
+const SHELL_CACHE = `${CACHE_VERSION}-shell-r28-editorial-race-control`;
 const APP_SHELL = [
   './', './index.html', './recovery.html', './manifest.webmanifest',
   './icons/icon-192.png', './icons/icon-512.png', './icons/icon-192-maskable.png', './icons/icon-512-maskable.png',
