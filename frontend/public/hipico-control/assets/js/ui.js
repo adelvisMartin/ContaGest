@@ -126,8 +126,14 @@ let selectSequence = 0;
 function fieldLabel(select) {
   const explicit = select.getAttribute('aria-label');
   if (explicit) return explicit;
-  const label = select.id ? document.querySelector(`label[for="${CSS.escape(select.id)}"]`) : select.closest('.field')?.querySelector('label, span');
+  const label = select.id && typeof CSS !== 'undefined' && typeof CSS.escape === 'function'
+    ? document.querySelector(`label[for="${CSS.escape(select.id)}"]`)
+    : select.closest('.field')?.querySelector('label, span');
   return label?.textContent?.trim() || 'Seleccionar opción';
+}
+function selectPopover(shell) {
+  const id = shell?.querySelector('.select-trigger')?.getAttribute('aria-controls');
+  return id ? document.getElementById(id) : null;
 }
 function enabledOptions(popover) {
   return [...popover.querySelectorAll('.select-option:not([disabled])')];
@@ -137,9 +143,33 @@ function focusOption(popover, index) {
   if (!options.length) return;
   options[Math.max(0, Math.min(options.length - 1, index))]?.focus();
 }
+function positionSelectPopover(trigger, popover) {
+  if (!(trigger instanceof HTMLElement) || !(popover instanceof HTMLElement)) return;
+  popover.style.removeProperty('bottom');
+  if (window.matchMedia('(max-width: 780px)').matches) {
+    popover.style.removeProperty('top');
+    popover.style.removeProperty('left');
+    popover.style.removeProperty('width');
+    return;
+  }
+  const rect = trigger.getBoundingClientRect();
+  const gap = 5;
+  const below = window.innerHeight - rect.bottom - gap;
+  const above = rect.top - gap;
+  popover.style.left = `${Math.max(8, rect.left)}px`;
+  popover.style.width = `${Math.max(160, rect.width)}px`;
+  if (below < 180 && above > below) {
+    popover.style.removeProperty('top');
+    popover.style.bottom = `${Math.max(8, window.innerHeight - rect.top + gap)}px`;
+  } else {
+    popover.style.removeProperty('bottom');
+    popover.style.top = `${Math.max(8, rect.bottom + gap)}px`;
+  }
+}
 function closeSelect(shell, { returnFocus = false } = {}) {
+  if (!(shell instanceof HTMLElement)) return;
   const trigger = shell.querySelector('.select-trigger');
-  const popover = shell.querySelector('.select-popover');
+  const popover = selectPopover(shell);
   if (!(trigger instanceof HTMLElement) || !(popover instanceof HTMLElement)) return;
   popover.hidden = true;
   trigger.setAttribute('aria-expanded', 'false');
@@ -147,10 +177,12 @@ function closeSelect(shell, { returnFocus = false } = {}) {
   if (returnFocus) trigger.focus();
 }
 function openSelect(shell, direction = 1) {
+  if (!(shell instanceof HTMLElement)) return;
   const trigger = shell.querySelector('.select-trigger');
-  const popover = shell.querySelector('.select-popover');
+  const popover = selectPopover(shell);
   if (!(trigger instanceof HTMLElement) || !(popover instanceof HTMLElement)) return;
   document.querySelectorAll('.select-shell.is-open').forEach((openShell) => { if (openShell !== shell) closeSelect(openShell); });
+  positionSelectPopover(trigger, popover);
   popover.hidden = false;
   trigger.setAttribute('aria-expanded', 'true');
   shell.classList.add('is-open');
@@ -161,7 +193,8 @@ function openSelect(shell, direction = 1) {
 }
 function syncEnhancedSelect(select, trigger, popover) {
   const selected = select.options[select.selectedIndex] || select.options[0];
-  trigger.querySelector('.select-trigger__value').textContent = selected?.textContent?.trim() || '';
+  const valueNode = trigger.querySelector('.select-trigger__value');
+  if (valueNode) valueNode.textContent = selected?.textContent?.trim() || '';
   trigger.disabled = select.disabled;
   popover.querySelectorAll('.select-option').forEach((option) => {
     const active = option.dataset.value === String(select.value);
@@ -176,6 +209,11 @@ function selectByOption(select, trigger, popover, option) {
   select.dispatchEvent(new Event('change', { bubbles: true }));
   closeSelect(trigger.closest('.select-shell'), { returnFocus: true });
 }
+function cleanupSelectPortals() {
+  document.querySelectorAll('.select-popover[data-select-owner]').forEach((popover) => {
+    if (!document.getElementById(popover.dataset.selectOwner || '')) popover.remove();
+  });
+}
 export function enhanceSelects(root = document) {
   root.querySelectorAll?.('select.select:not([data-ui-select-enhanced])').forEach((select) => {
     if (!(select instanceof HTMLSelectElement)) return;
@@ -183,22 +221,17 @@ export function enhanceSelects(root = document) {
     selectSequence += 1;
     const shell = document.createElement('div');
     shell.className = 'select-shell';
+    shell.id = `hc-select-shell-${selectSequence}`;
     const listboxId = `hc-select-${selectSequence}`;
-    const trigger = document.createElement('button');
-    trigger.type = 'button';
-    trigger.className = 'select-trigger';
-    trigger.setAttribute('aria-haspopup', 'listbox');
-    trigger.setAttribute('aria-haspopup', 'listbox');
-    trigger.setAttribute('aria-expanded', 'false');
-    trigger.setAttribute('aria-controls', listboxId);
-    trigger.setAttribute('aria-label', fieldLabel(select));
-    trigger.innerHTML = `<span class="select-trigger__value"></span><span class="select-trigger__chevron" aria-hidden="true"></span>`;
-    const popover = document.createElement('div');
-    popover.className = 'select-popover';
-    popover.id = listboxId;
-    popover.setAttribute('role', 'listbox');
-    popover.setAttribute('aria-label', fieldLabel(select));
-    popover.hidden = true;
+    const template = document.createElement('template');
+    template.innerHTML = `<button type="button" class="select-trigger" aria-haspopup="listbox" aria-expanded="false" aria-controls="${listboxId}"><span class="select-trigger__value"></span><span class="select-trigger__chevron" aria-hidden="true"></span></button><div class="select-popover" id="${listboxId}" role="listbox" hidden></div>`;
+    const trigger = template.content.querySelector('.select-trigger');
+    const popover = template.content.querySelector('.select-popover');
+    if (!(trigger instanceof HTMLButtonElement) || !(popover instanceof HTMLElement)) return;
+    const label = fieldLabel(select);
+    trigger.setAttribute('aria-label', label);
+    popover.setAttribute('aria-label', label);
+    popover.dataset.selectOwner = shell.id;
     [...select.options].forEach((nativeOption) => {
       const option = document.createElement('button');
       option.type = 'button';
@@ -225,7 +258,8 @@ export function enhanceSelects(root = document) {
       popover.appendChild(option);
     });
     select.parentNode?.insertBefore(shell, select);
-    shell.append(select, trigger, popover);
+    shell.append(select, trigger);
+    document.body.appendChild(popover);
     select.classList.add('select--native');
     select.tabIndex = -1;
     select.setAttribute('aria-hidden', 'true');
@@ -240,8 +274,9 @@ export function enhanceSelects(root = document) {
       }
     });
     select.addEventListener('change', () => syncEnhancedSelect(select, trigger, popover));
-    select.form?.addEventListener('reset', () => requestAnimationFrame(() => syncEnhancedSelect(select, trigger, popover)), { once: false });
+    select.form?.addEventListener('reset', () => requestAnimationFrame(() => syncEnhancedSelect(select, trigger, popover)));
   });
+  cleanupSelectPortals();
 }
 
 export function enhanceRaceSwitcher(root = document) {
@@ -267,8 +302,13 @@ if (typeof document !== 'undefined' && typeof window !== 'undefined') {
     if (document.documentElement) dialogObserver.observe(document.documentElement, { childList: true, subtree: true });
   }
   window.addEventListener('DOMContentLoaded', () => enhanceUi());
+  window.addEventListener('resize', () => document.querySelectorAll('.select-shell.is-open').forEach((shell) => closeSelect(shell)));
+  window.addEventListener('scroll', () => document.querySelectorAll('.select-shell.is-open').forEach((shell) => closeSelect(shell)), true);
   document.addEventListener('pointerdown', (event) => {
-    document.querySelectorAll('.select-shell.is-open').forEach((shell) => { if (!shell.contains(event.target)) closeSelect(shell); });
+    document.querySelectorAll('.select-shell.is-open').forEach((shell) => {
+      const popover = selectPopover(shell);
+      if (!shell.contains(event.target) && !popover?.contains(event.target)) closeSelect(shell);
+    });
   });
   document.addEventListener('keydown', (event) => {
     if (event.key === 'Escape') {
