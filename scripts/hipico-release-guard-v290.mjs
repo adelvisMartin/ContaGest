@@ -76,11 +76,12 @@ assert(cli.includes('HIPICO_CLI_REMOTE_HTTP_FORBIDDEN'), 'CLI must reject insecu
 assert(cli.includes('x-hipico-group-key'), 'CLI must bind group scope explicitly');
 
 const agentRoutes = read('backend/src/modules/hipico/agent.routes.ts');
+const agentHttp = read('backend/src/modules/hipico/agent-http.ts');
 assert(agentRoutes.includes('actions: []'), 'agent evaluation must return no direct actions');
 assert(agentRoutes.includes('financialAuthority: false'), 'agent must keep financialAuthority false');
 assert(agentRoutes.includes('directEffectsApplied: false'), 'agent must keep directEffectsApplied false');
 assert(!agentRoutes.includes('ownerApproved: body.ownerApproved'), 'client body must not grant owner approval');
-assert(agentRoutes.includes('HIPICO_AUTOMATIC_OWNER_APPROVED'), 'owner approval must be server controlled');
+assert(agentRoutes.includes('automaticOwnerApprovalConfigured()') && agentHttp.includes('HIPICO_AUTOMATIC_OWNER_APPROVED'), 'owner approval must be server controlled');
 
 const riskPolicy = read('backend/src/modules/hipico/risk-policy.ts');
 for (const marker of [
