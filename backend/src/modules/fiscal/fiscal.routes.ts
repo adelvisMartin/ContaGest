@@ -229,7 +229,7 @@ router.post('/documents/issue', requirePermission('fiscal.manage_documents'), va
     if (closedPeriod) throw new HttpError(409, `El período ${req.body.period} está cerrado para ${closedPeriod.module}.`, { code: 'FISCAL_PERIOD_CLOSED', period: req.body.period, module: closedPeriod.module });
 
     const effectiveAt = req.body.effectiveAt || new Date();
-    const ruleKeys = [...new Set(req.body.ruleKeys)].sort();
+    const ruleKeys: string[] = [...new Set(req.body.ruleKeys as string[])].sort();
     const rules = await resolveFiscalRules(tx, { tenantId: ctx.tenantId, ruleKeys, effectiveAt });
     const number = await allocateFiscalNumber(tx, {
       tenantId: ctx.tenantId,
