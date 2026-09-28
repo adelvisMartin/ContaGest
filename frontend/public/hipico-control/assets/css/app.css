@@ -411,7 +411,7 @@ a { color: var(--hc-brand); }
 .responsive-records small { grid-column: 1 / -1; color: var(--hc-text-muted); }
 .audit-row { display: grid; gap: 3px; padding: 10px; border: 1px solid var(--hc-border); border-radius: var(--hc-radius-md); background: var(--hc-surface-raised); }
 .audit-row span, .audit-row small { color: var(--hc-text-muted); font-size: 11px; }
-.more-dashboard { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin-bottom: 18px; padding: 5px; border: 1px solid var(--hc-border); border-radius: var(--hc-radius-lg); background: var(--hc-surface-raised); box-shadow: var(--hc-shadow-sm); }
+.more-dashboard { display: none; flex-wrap: wrap; align-items: center; gap: 4px; margin-bottom: 18px; padding: 5px; border: 1px solid var(--hc-border); border-radius: var(--hc-radius-lg); background: var(--hc-surface-raised); box-shadow: var(--hc-shadow-sm); }
 .more-dashboard button { min-height: 38px; display: inline-flex; align-items: center; gap: 7px; padding: 7px 10px; border: 1px solid transparent; border-radius: var(--hc-radius-md); background: transparent; color: var(--hc-text-muted); font: inherit; font-weight: 600; cursor: pointer; }
 .more-dashboard button:hover { border-color: var(--hc-border); background: var(--hc-surface); color: var(--hc-text); }
 .more-dashboard button svg { width: 16px; height: 16px; }
@@ -732,7 +732,7 @@ html[data-access-readonly] [data-user-admin] { display: none !important; }
   .participant-grid { grid-template-columns: 1fr; }
   .filter-grid { grid-template-columns: 1fr; align-items: stretch; }
   .filter-grid > .input, .filter-grid > .select-shell, .filter-grid > .button { width: 100%; height: auto; min-height: var(--hc-touch); }
-  .more-dashboard { flex-wrap: nowrap; overflow-x: auto; padding: 4px; scrollbar-width: none; }
+  .more-dashboard { display: flex; flex-wrap: nowrap; overflow-x: auto; padding: 4px; scrollbar-width: none; }
   .more-dashboard::-webkit-scrollbar { display: none; }
   .more-dashboard button { min-width: max-content; min-height: var(--hc-touch); }
   .more-dashboard .is-danger { margin-left: 0; }
