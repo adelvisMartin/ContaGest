@@ -111,6 +111,31 @@ test('structured shadow analyzer extracts offer, opening, close, result and bala
   ]);
 });
 
+test('single WhatsApp message can carry multiple player offers without losing amounts',()=>{
+  const result=classify('Juega 2P del 4 con 100, 3P del 7 con 150 y 5N del 8 con 80');
+  assert.equal(result.intent,'offer_player');
+  assert.deepEqual(result.entities?.offers?.map(({role,play,horse,amount})=>({role,play,horse,amount})),[
+    {role:'player',play:'2P',horse:'4',amount:100},
+    {role:'player',play:'3P',horse:'7',amount:150},
+    {role:'player',play:'5N',horse:'8',amount:80}
+  ]);
+});
+
+test('multi-offer segmentation preserves decimal comma and repeated receiver verbs',()=>{
+  const decimal=classify('Juega PP del 3 con 1,5K y 1N del 4 con 250');
+  assert.deepEqual(decimal.entities?.offers?.map(({play,horse,amount})=>({play,horse,amount})),[
+    {play:'PP',horse:'3',amount:1500},
+    {play:'1N',horse:'4',amount:250}
+  ]);
+
+  const receiver=classify('Consigue 1/2 del 5 con 15; Consigo show del 2 con 10');
+  assert.equal(receiver.intent,'offer_receiver');
+  assert.deepEqual(receiver.entities?.offers?.map(({role,play,horse,amount})=>({role,play,horse,amount})),[
+    {role:'receiver',play:'1/2',horse:'5',amount:15},
+    {role:'receiver',play:'SHOW',horse:'2',amount:10}
+  ]);
+});
+
 test('close vocabulary wins before broad monetary parsing',()=>{
   const result=classify('Cierra carrera 4');
   assert.equal(result.intent,'race_close');
