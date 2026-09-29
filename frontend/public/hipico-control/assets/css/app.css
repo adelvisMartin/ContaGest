@@ -16,26 +16,96 @@
 .shell.is-sidebar-collapsed .sidebar-collapse [data-v4-collapse-icon] { display: inline-grid !important; }
 .shell.is-sidebar-collapsed .sidebar-collapse [data-v4-collapse-label] { display: none !important; }
 
-.hc-help-trigger {
-  width: var(--hc-v4-control);
-  min-width: var(--hc-v4-control);
-  height: var(--hc-v4-control);
-  min-height: var(--hc-v4-control);
+/* One icon geometry for navigation, utilities, modal controls and floating actions. */
+:where(.button, .icon-button, .v4-icon-button, .nav-button, .sidebar-collapse, .hc-help-trigger, .ops-button, .ops-icon, .ops-launcher, .toast__close) svg {
+  width: 16px;
+  min-width: 16px;
+  height: 16px;
+  min-height: 16px;
+  flex: 0 0 16px;
+  display: block;
+  margin: 0;
+  vertical-align: middle;
+}
+:where(.icon-button, .v4-icon-button, .hc-help-trigger, .ops-icon, .ops-launcher, .toast__close) {
   display: inline-grid;
   place-items: center;
   padding: 0;
   gap: 0;
-  border-radius: var(--hc-v4-radius-md);
-  color: var(--hc-text-muted);
 }
-.hc-help-trigger span { display: none; }
-.hc-help-trigger svg { width: 16px; height: 16px; margin: auto; }
+
+/* Floating utilities are a vertical rail, never two controls on the same coordinates. */
+.hc-help-trigger,
+.ops-launcher {
+  right: 16px;
+  width: var(--hc-v4-control);
+  min-width: var(--hc-v4-control);
+  height: var(--hc-v4-control);
+  min-height: var(--hc-v4-control);
+  padding: 0;
+  border-radius: var(--hc-v4-radius-md);
+}
+.hc-help-trigger {
+  bottom: 16px;
+  color: var(--hc-text-muted);
+  background: var(--hc-surface);
+}
+body:has(.ops-root[data-ops-authorized="true"]) .hc-help-trigger {
+  bottom: calc(16px + var(--hc-v4-control) + 8px);
+}
+.ops-launcher {
+  bottom: 16px;
+  background: var(--hc-brand);
+  color: var(--hc-brand-foreground);
+  border-color: var(--hc-brand);
+}
+.hc-help-trigger span,
+.ops-launcher > span:last-child { display: none; }
+
+/* Operational copy center follows the same compact control standard. */
+.ops-icon {
+  width: var(--hc-v4-control);
+  min-width: var(--hc-v4-control);
+  height: var(--hc-v4-control);
+  min-height: var(--hc-v4-control);
+  border-radius: var(--hc-v4-radius-md);
+  font-size: 0;
+}
+.ops-button {
+  min-height: var(--hc-v4-control);
+  padding: 7px 10px;
+  gap: 6px;
+  border-radius: var(--hc-v4-radius-md);
+  font-size: var(--hc-v4-type-sm);
+}
+.ops-message__body { align-items: end; }
+.ops-message__body .ops-button { align-self: end; }
+.ops-chevron { display: inline-grid; place-items: center; width: 18px; height: 18px; color: var(--hc-text-muted); }
+.ops-chevron svg { transform: rotate(-90deg); }
+.ops-message[open] .ops-chevron svg { transform: rotate(90deg); }
 
 @media (pointer: coarse) {
-  .hc-help-trigger {
+  .hc-help-trigger,
+  .ops-launcher,
+  .ops-icon {
     width: var(--hc-v4-touch);
     min-width: var(--hc-v4-touch);
     height: var(--hc-v4-touch);
     min-height: var(--hc-v4-touch);
+  }
+  .ops-button { min-height: var(--hc-v4-touch); }
+}
+
+@media (max-width: 780px) {
+  .ops-launcher {
+    right: 10px;
+    bottom: calc(var(--hc-nav-height) + 12px + var(--hc-safe-bottom));
+  }
+  .hc-help-trigger {
+    right: 10px;
+    bottom: calc(var(--hc-nav-height) + 12px + var(--hc-safe-bottom));
+  }
+  body:has(.ops-root[data-ops-authorized="true"]) .hc-help-trigger {
+    bottom: calc(var(--hc-nav-height) + 12px + var(--hc-safe-bottom) + var(--hc-v4-touch) + 8px);
   }
 }
