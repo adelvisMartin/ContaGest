@@ -32,12 +32,12 @@ test('reply journal preserves exactly-once and ambiguous-delivery semantics', ()
 });
 
 test('browser closure is supervised with bounded backoff instead of silently ending autonomy', () => {
-  assert.match(runtime, /WHATSAPP_BROWSER_CLOSED/);
-  assert.match(runtime, /browserUnexpectedClose/);
-  assert.match(runtime, /process\.exitCode\s*=\s*Number\(error\?\.exitCode\s*\|\|\s*1\)/);
-  assert.match(launcher, /\$code -eq 43/);
   assert.match(launcher, /browserRestartLimit/);
+  assert.match(launcher, /health\.json/);
+  assert.match(launcher, /ConvertFrom-Json/);
+  assert.match(launcher, /\$code -eq 43/);
   assert.match(launcher, /Start-Sleep -Seconds \$delay/);
+  assert.match(launcher, /stopping/);
 });
 
 test('download-and-test runbook points to current main/v1.5 and LAB autonomous testing', () => {
