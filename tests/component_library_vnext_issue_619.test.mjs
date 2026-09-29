@@ -15,6 +15,14 @@ test('#619 canonical component library exports the required foundation API',()=>
   assert.doesNotMatch(source,/dangerouslySetInnerHTML/);
 });
 
+test('#619 existing MUI islands consume canonical Cg primitives as pilots',()=>{
+  const runtime=read('frontend/src/components/muiRuntime.js');
+  assert.match(runtime,/import \{ CgButton, CgTextField \} from '\.\/vnext\/index\.js'/);
+  assert.match(runtime,/React\.createElement\(CgTextField/);
+  assert.match(runtime,/React\.createElement\(CgButton/);
+  assert.doesNotMatch(runtime,/function ButtonIsland[^\n]*React\.createElement\(Mui\.Button/);
+});
+
 test('#619 legacy bridge is explicitly transitional and mapped to canonical owners',()=>{
   const ledger=JSON.parse(read('docs/architecture/component-library-vnext-v1.json'));
   assert.equal(ledger.canonicalOwner,'frontend/src/components/vnext/index.js');
