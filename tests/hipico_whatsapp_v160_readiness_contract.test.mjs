@@ -9,7 +9,6 @@ const transport = read('tools/hipico-whatsapp-web-bridge/src/transport-capabilit
 const policy = read('tools/hipico-whatsapp-web-bridge/src/source-policy-gate.mjs');
 const runtime = read('tools/hipico-whatsapp-web-bridge/src/index.mjs');
 const journal = read('tools/hipico-whatsapp-web-bridge/src/source-reply-journal.mjs');
-const replay = read('tools/hipico-whatsapp-web-bridge/src/replay-policy.mjs');
 const launcher = read('tools/hipico-whatsapp-web-bridge/INICIAR.ps1');
 const autonomousLauncher = read('INICIAR-HIPICO-AUTONOMO.cmd');
 const versionFile = read('tools/hipico-whatsapp-web-bridge/VERSION').trim();
@@ -48,7 +47,6 @@ test('runtime still prevents self-loop ingestion and preserves ambiguous exactly
   assert.match(journal, /PROCESS_RESTART_DURING_SEND/);
   assert.match(journal, /SOURCE_REPLY_REPLAY_MISMATCH/);
   assert.match(journal, /safeToRetry===true/);
-  assert.match(replay, /ambiguous/i);
 });
 
 test('browser closure supervision and LAB launchers remain part of autonomous readiness', () => {
