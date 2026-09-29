@@ -54,6 +54,50 @@ async function existingLifecycleTables(client) {
   return result.rows.map((row) => String(row.table_name));
 }
 
+async function inspectWithClient(client) {
+  const tenantType = await tenantIdType(client);
+  if (!tenantType) throw new Error('MISSING_PREREQUISITE:public.Tenant.id');
+  if (tenantType.data_type !== 'text' && tenantType.udt_name !== 'text') {
+    throw new Error(
+      `MIGRATION_TYPE_MISMATCH:public.Tenant.id:expected=text:actual=${tenantType.data_type || tenantType.udt_name}`
+    );
+  }
+
+  const [applied, existing] = await Promise.all([
+    appliedMigration(client, DATA_LIFECYCLE_MIGRATION),
+    existingLifecycleTables(client)
+  ]);
+
+  if (existing.length > 0 && existing.length < DATA_LIFECYCLE_TABLES.length) {
+    throw new Error(
+      `MIGRATION_DUPLICATE_AUTHORITY:${DATA_LIFECYCLE_MIGRATION}:partial-tables=${existing.join(',')}`
+    );
+  }
+  if (existing.length === DATA_LIFECYCLE_TABLES.length && !applied) {
+    throw new Error(
+      `MIGRATION_DUPLICATE_AUTHORITY:${DATA_LIFECYCLE_MIGRATION}:untracked-complete-authority`
+    );
+  }
+
+  return {
+    applied,
+    existing,
+    complete: existing.length === DATA_LIFECYCLE_TABLES.length,
+    requiresProjection: existing.length === 0
+  };
+}
+
+export async function inspectHistoricalCompatibility({ databaseUrl }) {
+  if (!databaseUrl) throw new Error('MISSING_PREREQUISITE:DATABASE_URL');
+  const client = new Client({ connectionString: databaseUrl });
+  await client.connect();
+  try {
+    return await inspectWithClient(client);
+  } finally {
+    await client.end();
+  }
+}
+
 export function projectDataLifecycleSql(source) {
   let tenantColumnReplacements = 0;
   let tenantParameterReplacements = 0;
@@ -89,21 +133,10 @@ export async function projectHistoricalCompatibility({
   const client = new Client({ connectionString: databaseUrl });
   await client.connect();
   try {
-    if (await appliedMigration(client, DATA_LIFECYCLE_MIGRATION)) return [];
-
-    const tenantType = await tenantIdType(client);
-    if (!tenantType) throw new Error('MISSING_PREREQUISITE:public.Tenant.id');
-    if (tenantType.data_type !== 'text' && tenantType.udt_name !== 'text') {
-      throw new Error(
-        `MIGRATION_TYPE_MISMATCH:public.Tenant.id:expected=text:actual=${tenantType.data_type || tenantType.udt_name}`
-      );
-    }
-
-    const existing = await existingLifecycleTables(client);
-    if (existing.length) {
-      throw new Error(
-        `MIGRATION_DUPLICATE_AUTHORITY:${DATA_LIFECYCLE_MIGRATION}:partial-or-untracked-tables=${existing.join(',')}`
-      );
+    const status = await inspectWithClient(client);
+    if (status.complete) return [];
+    if (!status.requiresProjection) {
+      throw new Error(`MIGRATION_DUPLICATE_AUTHORITY:${DATA_LIFECYCLE_MIGRATION}:unexpected-state`);
     }
 
     const migrationPath = path.join(migrationsRoot, DATA_LIFECYCLE_MIGRATION, 'migration.sql');
