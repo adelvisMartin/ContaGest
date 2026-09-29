@@ -48,8 +48,8 @@ test('Control Hípico invalidates the cached shell that contained the render loo
   );
   assert.match(
     code,
-    /r27-command-center-render-loop-fix/,
-    'the service worker must publish a new shell cache revision for the hotfix'
+    /r29-auto-update-reload/,
+    'the current service worker revision must continue invalidating the render-loop shell while delivering automatic updates'
   );
   assert.match(code, /command-center-shell\.js/);
 });
