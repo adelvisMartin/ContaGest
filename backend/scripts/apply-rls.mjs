@@ -12,6 +12,7 @@ const policyPaths=[
   path.join(backendRoot,'supabase/migrations/0003_rls_grants_security_definer_hardening.sql'),
 ];
 const connectionString = process.env.DIRECT_DATABASE_URL || process.env.DATABASE_URL;
+const forbiddenPolicyDdlRoles=new Set(['contagest_runtime','anon','authenticated','service_role']);
 
 if (!connectionString) {
   console.error('Falta DATABASE_URL o DIRECT_DATABASE_URL en backend/.env');
@@ -22,6 +23,15 @@ const client = new Client({ connectionString, ssl: connectionString.includes('su
 
 try {
   await client.connect();
+  const { rows:[authority] }=await client.query(`
+    SELECT current_user AS "currentUser",
+           has_schema_privilege(current_user,'public','CREATE') AS "canCreatePublic"
+  `);
+  const currentUser=String(authority?.currentUser||'');
+  if(!currentUser||forbiddenPolicyDdlRoles.has(currentUser)||!authority?.canCreatePublic){
+    throw new Error(`POLICY_DDL_AUTHORITY_REQUIRED:${currentUser||'UNKNOWN'}`);
+  }
+
   await client.query('BEGIN');
   for(const sqlPath of policyPaths){
     const sql=fs.readFileSync(sqlPath,'utf8');
