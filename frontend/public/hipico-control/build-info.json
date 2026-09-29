@@ -1,17 +1,8 @@
 {
-  "schemaVersion": 2,
   "product": "control-hipico",
   "version": "1.13.0-rc3",
-  "channel": "pilot",
-  "revision": "source",
-  "buildId": "1.13.0-rc3",
-  "candidateSha": "local-unbound",
-  "bound": false,
-  "generatedAt": null,
-  "baseline": "Hipico-Control-v1.13.0-RC1.apk#sha256-b477dbe224596b4e",
-  "source": "git-canonical-web",
-  "compatibility": {
-    "workspaceSchema": 10,
-    "parserContract": "whatsapp-parser-v1"
-  }
+  "uiSystem": "v4.1",
+  "uiAuthority": "Equestrian Operations",
+  "buildPolicy": "exact-sha",
+  "notes": "UI System v4.1: full-width shell, collapsible sidebar, global header, canonical density/theme/icon actions and offline PWA asset authority. GitHub-hosted runner evidence is classified independently from source readiness."
 }
