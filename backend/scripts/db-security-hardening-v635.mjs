@@ -9,7 +9,7 @@ const SCRIPT=fileURLToPath(import.meta.url);
 const BACKEND_ROOT=path.resolve(path.dirname(SCRIPT),'..');
 const REPO_ROOT=path.resolve(BACKEND_ROOT,'..');
 const RUNTIME_ROLE='contagest_runtime';
-const REQUEST_ROLES=new Set(['authenticated',RUNTIME_ROLE]);
+const TENANT_PRINCIPAL_ROLES=new Set(['authenticated','anon']);
 const PRIVILEGED_ROLES=new Set(['service_role','postgres','supabase_admin','pg_database_owner','pg_write_all_data']);
 const SAFE_DEFINER_SCHEMAS=new Set(['pg_catalog','private','public','auth']);
 
@@ -45,9 +45,9 @@ export function classifySecurityManifest(input){
   for(const policy of policies){
     const table=tableByKey.get(`${policy.schema}.${policy.table}`);
     if(!table||!normalizeBoolean(table.hasTenantId))continue;
-    const requestFacing=normalizedRoles(policy.roles).some((role)=>REQUEST_ROLES.has(role));
-    if(requestFacing&&(isTrueExpression(policy.qual)||isTrueExpression(policy.withCheck))){
-      findings.push(finding('PERMISSIVE_TENANT_POLICY','P0',`${policy.schema}.${policy.table}.${policy.name}`,'request-facing policy contains unconditional true tenant access'));
+    const tenantPrincipal=normalizedRoles(policy.roles).some((role)=>TENANT_PRINCIPAL_ROLES.has(role));
+    if(tenantPrincipal&&(isTrueExpression(policy.qual)||isTrueExpression(policy.withCheck))){
+      findings.push(finding('PERMISSIVE_TENANT_POLICY','P0',`${policy.schema}.${policy.table}.${policy.name}`,'tenant-principal policy contains unconditional true tenant access'));
     }
   }
 
