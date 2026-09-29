@@ -1,0 +1,88 @@
+{
+  "metadata": {
+    "postgresVersion": "17.6"
+  },
+  "objects": [
+    {
+      "kind": "table",
+      "schema": "public",
+      "name": "LedgerEntry",
+      "signature": {
+        "rlsEnabled": true
+      }
+    },
+    {
+      "kind": "column",
+      "schema": "public",
+      "table": "LedgerEntry",
+      "name": "postedAt",
+      "signature": {
+        "type": "timestamptz",
+        "nullable": true,
+        "default": null
+      }
+    },
+    {
+      "kind": "column",
+      "schema": "public",
+      "table": "LedgerEntry",
+      "name": "postedBy",
+      "signature": {
+        "type": "text",
+        "nullable": true,
+        "default": null
+      }
+    },
+    {
+      "kind": "column",
+      "schema": "public",
+      "table": "LedgerEntry",
+      "name": "amount",
+      "signature": {
+        "type": "numeric(18,2)",
+        "nullable": false,
+        "default": "0"
+      }
+    },
+    {
+      "kind": "constraint",
+      "schema": "public",
+      "table": "LedgerEntry",
+      "name": "fk_expected",
+      "signature": {
+        "type": "f",
+        "definition": "FOREIGN KEY (\"tenantId\") REFERENCES \"Tenant\"(id) ON DELETE CASCADE"
+      }
+    },
+    {
+      "kind": "index",
+      "schema": "public",
+      "table": "LedgerEntry",
+      "name": "idx_expected",
+      "signature": {
+        "unique": false,
+        "method": "btree",
+        "keys": [
+          "tenantId",
+          "posted"
+        ],
+        "predicate": null
+      }
+    },
+    {
+      "kind": "policy",
+      "schema": "public",
+      "table": "LedgerEntry",
+      "name": "tenant_read",
+      "signature": {
+        "permissive": true,
+        "roles": [
+          "authenticated"
+        ],
+        "command": "SELECT",
+        "using": "(tenant_id = auth.uid())",
+        "withCheck": null
+      }
+    }
+  ]
+}

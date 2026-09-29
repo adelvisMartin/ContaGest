@@ -1,0 +1,32 @@
+{
+  "version": 1,
+  "description": "Closed allowlist for PostgreSQL/Supabase managed objects. Application objects in public are never platform-ignored unless extension-owned by an allowlisted extension.",
+  "schemas": [
+    "auth",
+    "extensions",
+    "graphql",
+    "graphql_public",
+    "information_schema",
+    "pg_catalog",
+    "realtime",
+    "storage",
+    "supabase_functions",
+    "supabase_migrations",
+    "vault"
+  ],
+  "schemaPrefixes": [
+    "pg_toast",
+    "pg_temp_",
+    "pg_toast_temp_"
+  ],
+  "extensionNames": [
+    "pg_graphql",
+    "pg_stat_statements",
+    "pgcrypto",
+    "supabase_vault",
+    "uuid-ossp"
+  ],
+  "ownerEquivalenceGroups": [
+    ["postgres", "supabase_admin"]
+  ]
+}
