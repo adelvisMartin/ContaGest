@@ -8,7 +8,7 @@ import { pathToFileURL } from 'node:url';
 
 const VALID_STATUSES = new Set(['PASS','FAIL','BLOCKED','NOT_EXECUTED','NOT_APPLICABLE']);
 const DB_PROFILES = new Set(['database','financial','full']);
-const UI_PROFILES = new Set(['ui','full']);
+const UI_PROFILES = new Set(['ui','ui-routes','full']);
 
 const gate=(id,command,{required=true}={})=>Object.freeze({id,command,required});
 
@@ -47,6 +47,10 @@ export const PROFILE_GATES = Object.freeze({
     gate('ui-browser-contrast','npm run test:browser:contrast'),
     gate('ui-browser-functional','npm run test:browser:functional'),
   ]),
+  'ui-routes':Object.freeze([
+    gate('ui-routes-frontend-build','npm run build:frontend'),
+    gate('ui-routes-browser-matrix','npm run qa:browser:routes:full'),
+  ]),
 });
 
 function dedupeGates(gates){
@@ -56,7 +60,7 @@ function dedupeGates(gates){
 
 export function buildProfilePlan(profile){
   if(profile==='full') return dedupeGates([
-    ...PROFILE_GATES.backend,...PROFILE_GATES.frontend,...PROFILE_GATES.database,...PROFILE_GATES.financial,...PROFILE_GATES.ui,
+    ...PROFILE_GATES.backend,...PROFILE_GATES.frontend,...PROFILE_GATES.database,...PROFILE_GATES.financial,...PROFILE_GATES.ui,...PROFILE_GATES['ui-routes'],
   ]);
   const plan=PROFILE_GATES[profile];
   if(!plan) throw new Error(`VERIFY_PROFILE_UNKNOWN:${profile}`);
