@@ -74,6 +74,29 @@ test('tenant-scoped model query binds set_config inside the same transaction',as
   ]);
 });
 
+test('tenant-scoped raw query uses the same bound transaction',async()=>{
+  const events:string[]=[];
+  const base:any={
+    async $queryRaw(...args:any[]){events.push(`direct-raw:${args.join('|')}`);return ['direct'];},
+    async $transaction(callback:any){
+      events.push('begin');
+      const tx:any={async $queryRaw(...args:any[]){events.push(`tx-raw:${args.join('|')}`);return ['tenant'];}};
+      try{const result=await callback(tx);events.push('commit');return result;}
+      catch(error){events.push('rollback');throw error;}
+    },
+  };
+  const scoped=createTenantScopedPrismaProxy(base,async(_tx,tenantId)=>{events.push(`bind:${tenantId}`);});
+  assert.deepEqual(await scoped.$queryRaw('SELECT direct'),['direct']);
+  assert.deepEqual(await runWithRuntimeTenant(TENANT_A,()=>scoped.$queryRaw('SELECT tenant')),['tenant']);
+  assert.deepEqual(events,[
+    'direct-raw:SELECT direct',
+    'begin',
+    `bind:${TENANT_A}`,
+    'tx-raw:SELECT tenant',
+    'commit',
+  ]);
+});
+
 test('interactive transaction binds tenant once and preserves one transaction client',async()=>{
   const events:string[]=[];
   const base:any={
@@ -104,6 +127,7 @@ test('tenant-scoped sequential transaction arrays fail closed instead of losing 
 test('transaction error rolls back and AsyncLocalStorage does not leak outside request scope',async()=>{
   const events:string[]=[];
   const base:any={
+    client:{async count(){return 0;}},
     async $transaction(callback:any){
       events.push('begin');
       try{return await callback({client:{async count(){throw new Error('boom');}}});}
