@@ -1,4 +1,4 @@
-import { PageHeader, Badge, MetricGrid, Button, Field, Select, Textarea, ErpButton, ErpDataTable, ErpGrid, ErpRow, ErpSection } from '../components/ui/index.js';
+import { PageHeader, Badge, MetricGrid, Button, Field, Select, Textarea, ErpButton, CgLegacyTable, ErpGrid, ErpRow, ErpSection } from '../components/ui/index.js';
 import { calculateInventory, calculateLedger } from '../core/calculator.js';
 import { isValidRif } from '../core/validators.js';
 import { bs } from '../core/formatters.js';
@@ -12,7 +12,7 @@ const severityLabel = (severity = 'medium') => FAILURE_SEVERITIES[severity]?.lab
 const fmt = (date) => date ? new Date(date).toLocaleString('es-VE', { dateStyle:'short', timeStyle:'short' }) : '—';
 
 function failureTable(log) {
-  return ErpDataTable({
+  return CgLegacyTable({
     caption:'Bitácora interna de fallas y mejoras',
     columns:[
       {key:'severity',label:'Severidad',render:(entry)=>`${Badge(severityLabel(entry.severity),severityTone(entry.severity))}<br><small>${Badge(statusLabel(entry.status),entry.status==='resuelta'?'success':'warning')}</small>`},
@@ -23,7 +23,9 @@ function failureTable(log) {
         ? ErpButton('Reabrir hallazgo',{variant:'secondary',icon:'fa-solid fa-rotate-left',iconOnly:true,data:{'reopen-failure':entry.id}})
         : ErpButton('Marcar resuelta',{variant:'secondary',icon:'fa-solid fa-check',iconOnly:true,data:{'resolve-failure':entry.id}}),{wrap:true})}
     ],
-    rows:log.entries
+    rows:log.entries,
+    emptyTitle:'Sin hallazgos registrados',
+    emptyDescription:'La bitácora interna no contiene fallas activas ni resueltas.'
   });
 }
 
@@ -36,13 +38,14 @@ export const AuditPage = {
     const warnings = checks.filter((item) => item.tone === 'warning').length;
     const degraded=checks.filter((item)=>item.tone!=='success').length;
     const activeUser=state.rbac?.users?.find((user)=>user.id===state.rbac?.activeUserId);
-    const checkTable=ErpDataTable({
+    const checkTable=CgLegacyTable({
       caption:'Checks internos de preflight',
       columns:[
         {key:'status',label:'Estado',render:(item)=>Badge(item.status,item.tone)},
         {key:'module',label:'Módulo',render:(item)=>safe(item.module)},
         {key:'detail',label:'Detalle',render:(item)=>`<strong>${safe(item.title)}</strong><br><small>${safe(item.detail)}</small>`}
-      ],rows:checks
+      ],rows:checks,
+      emptyTitle:'Sin checks disponibles'
     });
     const form=`<form id="failureLogForm" class="cg-record-form"><div class="cg-record-fields">${Field({labelKey:'Título',name:'title',required:true,placeholder:'Ej: Botón no ejecuta la acción esperada'})}${Select({labelKey:'Módulo',name:'module',value:'dashboard',options:FailureLogService.moduleOptions()})}${Select({labelKey:'Severidad',name:'severity',value:'medium',options:Object.entries(FAILURE_SEVERITIES).filter(([key])=>key!=='resolved').map(([value,item])=>({value,label:item.label}))})}${Select({labelKey:'Estado',name:'status',value:'abierta',options:FAILURE_STATUSES.map((value)=>({value,label:statusLabel(value)}))})}${Field({labelKey:'Responsable',name:'owner',value:'QA interno'})}${Textarea({labelKey:'Detalle',name:'detail',required:true,className:'cg-field-wide'})}</div><div class="cg-record-actions">${Button({text:'Agregar a bitácora',icon:'fa-bug',type:'submit'})}</div></form>`;
 
