@@ -110,7 +110,10 @@ function enhanceSettingsTheme(scope = document) {
   const select = scope.querySelector?.('#settings-form select[name="theme"]');
   if (!select) return;
   const theme = currentTheme();
-  if (select.value !== theme) select.value = theme;
+  if (select.value !== theme) {
+    select.value = theme;
+    select.dispatchEvent(new Event('change', { bubbles: true }));
+  }
   select.dataset.presentationPreference = 'theme';
   const field = select.closest('.field');
   if (field && !field.querySelector('[data-v4-theme-help]')) {
@@ -140,13 +143,13 @@ function utilityMarkup() {
     <button type="button" class="v4-icon-button" data-v4-action="cycle-theme" aria-label="Cambiar tema" title="Tema: ${THEME_LABELS[theme]}. Cambiar tema">${icon(effectiveThemeIcon(theme))}</button>
     <button type="button" class="v4-icon-button" data-v4-action="toggle-utility-menu" aria-label="Abrir menú" title="Opciones" aria-haspopup="menu" aria-expanded="false">${icon('settings')}</button>
     <div class="v4-utility-menu" data-v4-utility-menu role="menu" aria-label="Opciones rápidas" hidden>
-      <span class="v4-utility-menu__label">Apariencia</span>
+      <span class="v4-utility-menu__label" role="presentation">Apariencia</span>
       <button type="button" class="theme-choice ${theme === 'system' ? 'is-active' : ''}" data-v4-action="set-theme" data-theme="system" role="menuitemradio" aria-checked="${theme === 'system'}">${icon('settings')}<span>Sistema</span></button>
       <button type="button" class="theme-choice ${theme === 'light' ? 'is-active' : ''}" data-v4-action="set-theme" data-theme="light" role="menuitemradio" aria-checked="${theme === 'light'}">${icon('sun')}<span>Claro</span></button>
       <button type="button" class="theme-choice ${theme === 'dark' ? 'is-active' : ''}" data-v4-action="set-theme" data-theme="dark" role="menuitemradio" aria-checked="${theme === 'dark'}">${icon('moon')}<span>Oscuro</span></button>
-      <span class="v4-utility-menu__label">Accesos</span>
+      <span class="v4-utility-menu__label" role="presentation">Accesos</span>
       <button type="button" data-view="settings" role="menuitem">${icon('settings')}<span>Configuración</span></button>
-      <button type="button" data-action="show-tips" role="menuitem">${icon('help')}<span>Ayuda</span></button>
+      <button type="button" data-v4-action="open-help" role="menuitem">${icon('help')}<span>Ayuda</span></button>
     </div>
   </div>`;
 }
@@ -266,6 +269,11 @@ function handleV4Action(button) {
     setMenuOpen(!utilityMenuOpen, { focus: !utilityMenuOpen });
     return true;
   }
+  if (action === 'open-help') {
+    setMenuOpen(false);
+    document.querySelector('[data-help-trigger]')?.click();
+    return true;
+  }
   return false;
 }
 
@@ -308,7 +316,10 @@ document.addEventListener('submit', (event) => {
   const localTheme = currentTheme();
   select.value = 'system';
   queueMicrotask(() => {
-    if (select.isConnected) select.value = localTheme;
+    if (select.isConnected) {
+      select.value = localTheme;
+      select.dispatchEvent(new Event('change', { bubbles: true }));
+    }
   });
 }, true);
 
