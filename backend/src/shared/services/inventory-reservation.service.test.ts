@@ -21,6 +21,7 @@ function fakeTx(options: {
     },
     ownerReserved: options.ownerReserved ?? '0.000',
     ownerReleased: options.ownerReleased ?? '0.000',
+    aggregateWhere: [] as any[],
     movements: [] as any[],
     sequence: 0
   };
@@ -42,9 +43,10 @@ function fakeTx(options: {
       }
     },
     inventoryMovement: {
-      aggregate: async ({ where }: any) => ({
-        _sum: { quantity: where.type === 'reservation' ? state.ownerReserved : state.ownerReleased }
-      }),
+      aggregate: async ({ where }: any) => {
+        state.aggregateWhere.push({ ...where });
+        return { _sum: { quantity: where.type === 'reservation' ? state.ownerReserved : state.ownerReleased } };
+      },
       create: async ({ data }: any) => {
         state.sequence += 1;
         const row = { id: `movement-${state.sequence}`, createdAt: new Date(0), ...data };
@@ -69,19 +71,55 @@ test('reservation owner is canonical and reusable across ERP/vertical flows', as
   assert.deepEqual(owner, { source: 'sales-order', sourceId: 'so-2026-0001' });
 });
 
-test('outstanding is derived only from reservation and release movements for the same owner', async () => {
+test('invalid owner metadata fails closed before inventory mutation', async () => {
+  const mod: any = await reservationModule();
+  assert.throws(
+    () => mod.normalizeInventoryReservationOwner({ source: '', sourceId: 'so-a' }),
+    (error: any) => error?.details?.code === 'INVENTORY_RESERVATION_SOURCE_INVALID'
+  );
+  assert.throws(
+    () => mod.normalizeInventoryReservationOwner({ source: 'sales-order', sourceId: '' }),
+    (error: any) => error?.details?.code === 'INVENTORY_RESERVATION_SOURCE_ID_INVALID'
+  );
+});
+
+test('outstanding is derived only from reservation and release movements for the same owner and tenant', async () => {
   const mod: any = await reservationModule();
   assert.equal(typeof mod.inventoryReservationOutstanding, 'function');
-  const { tx } = fakeTx({ ownerReserved: '5.000', ownerReleased: '2.000' });
+  const { tx, state } = fakeTx({ ownerReserved: '5.000', ownerReleased: '2.000' });
 
   const outstanding = await mod.inventoryReservationOutstanding(tx, {
-    tenantId: 'tenant-a',
+    tenantId: 'tenant-b',
     productId: '11111111-1111-4111-8111-111111111111',
     source: 'sales-order',
     sourceId: 'so-2026-0001'
   });
 
   assert.equal(outstanding.toFixed(3), '3.000');
+  assert.equal(state.aggregateWhere.length, 2);
+  for (const where of state.aggregateWhere) {
+    assert.equal(where.tenantId, 'tenant-b');
+    assert.equal(where.productId, state.product.id);
+    assert.equal(where.source, 'sales-order');
+    assert.equal(where.sourceId, 'so-2026-0001');
+  }
+});
+
+test('reservation rejects quantity beyond stock minus global reserved', async () => {
+  const mod: any = await reservationModule();
+  const { tx, state } = fakeTx({ stock: '5.000', reserved: '4.000' });
+
+  await assert.rejects(
+    () => mod.reserveInventoryForOwner(tx, {
+      tenantId: 'tenant-a',
+      productId: state.product.id,
+      amount: '2.000',
+      owner: { source: 'sales-order', sourceId: 'so-a' }
+    }),
+    (error: any) => error?.details?.code === 'INVENTORY_INSUFFICIENT_STOCK'
+  );
+  assert.equal(state.product.reserved, '4.000');
+  assert.equal(state.movements.length, 0);
 });
 
 test('one owner cannot release quantity reserved by another owner', async () => {
@@ -98,6 +136,24 @@ test('one owner cannot release quantity reserved by another owner', async () => 
     }),
     (error: any) => error?.details?.code === 'INVENTORY_OWNER_RELEASE_EXCEEDS_RESERVED'
   );
+  assert.equal(state.product.reserved, '8.000');
+  assert.equal(state.movements.length, 0);
+});
+
+test('one owner cannot consume quantity beyond its outstanding reservation', async () => {
+  const mod: any = await reservationModule();
+  const { tx, state } = fakeTx({ stock: '10.000', reserved: '8.000', ownerReserved: '1.000', ownerReleased: '0.000' });
+
+  await assert.rejects(
+    () => mod.consumeInventoryReservationForOwner(tx, {
+      tenantId: 'tenant-a',
+      productId: state.product.id,
+      amount: '2.000',
+      owner: { source: 'sales-order', sourceId: 'so-a' }
+    }),
+    (error: any) => error?.details?.code === 'INVENTORY_OWNER_CONSUME_EXCEEDS_RESERVED'
+  );
+  assert.equal(state.product.stock, '10.000');
   assert.equal(state.product.reserved, '8.000');
   assert.equal(state.movements.length, 0);
 });
