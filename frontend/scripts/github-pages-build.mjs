@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 const frontendRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const distDir = path.join(frontendRoot, 'dist');
 const PAGES_BASE = '/ContaGest/';
+const HIPICO_CANONICAL_PATH = `${PAGES_BASE}hipico-control/`;
 
 function run(command, args, env) {
   const result = spawnSync(command, args, {
@@ -33,6 +34,33 @@ function rewriteRootRelativeHtml(html) {
   );
 }
 
+function writeLegacyHipicoRedirect() {
+  const legacyDir = path.join(distDir, 'frontend', 'public', 'hipico-control');
+  fs.mkdirSync(legacyDir, { recursive: true });
+  const html = `<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta http-equiv="refresh" content="0; url=${HIPICO_CANONICAL_PATH}">
+  <meta name="robots" content="noindex">
+  <title>Control Hípico</title>
+</head>
+<body>
+  <p>Abriendo <a href="${HIPICO_CANONICAL_PATH}">Control Hípico</a>…</p>
+  <script>
+    (() => {
+      const target = new URL(${JSON.stringify(HIPICO_CANONICAL_PATH)}, window.location.origin);
+      target.search = window.location.search;
+      target.hash = window.location.hash;
+      window.location.replace(target.href);
+    })();
+  </script>
+</body>
+</html>\n`;
+  fs.writeFileSync(path.join(legacyDir, 'index.html'), html, 'utf8');
+}
+
 const buildEnv = {
   ...process.env,
   GIT_SHA: process.env.GITHUB_SHA || process.env.GIT_SHA || process.env.COMMIT_SHA || '',
@@ -53,7 +81,14 @@ walk(distDir, (absolute) => {
 
 const indexPath = path.join(distDir, 'index.html');
 if (!fs.existsSync(indexPath)) throw new Error('GITHUB_PAGES_INDEX_MISSING');
+
+const hipicoEntryPath = path.join(distDir, 'hipico-control', 'index.html');
+if (!fs.existsSync(hipicoEntryPath)) throw new Error('HIPICO_ENTRY_MISSING');
+writeLegacyHipicoRedirect();
+
 fs.copyFileSync(indexPath, path.join(distDir, '404.html'));
 fs.writeFileSync(path.join(distDir, '.nojekyll'), '', 'utf8');
 
+console.log(`[github-pages-build] Control Hípico canonical entry: ${HIPICO_CANONICAL_PATH}`);
+console.log('[github-pages-build] legacy compatibility redirect: frontend/public/hipico-control/');
 console.log('[github-pages-build] artifact ready: frontend/dist');
