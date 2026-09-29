@@ -41,8 +41,15 @@ export function verifyAccessToken(token: string): ContaGestAccessClaims {
     audience: JWT_AUDIENCE
   }) as ContaGestAccessClaims;
 
-  if (!decoded?.sub || !decoded?.tenantId || decoded.tokenType !== 'access') {
-    throw new Error('JWT de acceso incompleto.');
+  if (
+    !decoded?.sub
+    || !decoded?.tenantId
+    || !decoded?.email
+    || !decoded?.exp
+    || decoded.authMode !== 'backend-jwt'
+    || decoded.tokenType !== 'access'
+  ) {
+    throw new Error('JWT de acceso incompleto o con autoridad inválida.');
   }
   return decoded;
 }
