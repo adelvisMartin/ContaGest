@@ -17,8 +17,8 @@ test('legacy v3 compatibility CSS is quarantined in a lower-priority cascade lay
 });
 
 test('modal and toast surfaces use one canonical polished presentation authority', () => {
-  assert.match(ui, /class="toast toast--\$\{normalizedType\}"/);
-  assert.match(ui, /role", normalizedType === 'error' \? 'alert' : 'status'/);
+  assert.match(ui, /item\.className\s*=\s*`toast toast--\$\{normalizedType\}`/);
+  assert.match(ui, /item\.setAttribute\('role',\s*normalizedType === 'error' \? 'alert' : 'status'\)/);
   assert.match(ui, /data-modal-dialog/);
   assert.match(appCss, /\.modal-backdrop[\s\S]*backdrop-filter:\s*blur/);
   assert.match(appCss, /\.modal,[\s\S]*\.ops-dialog__shell[\s\S]*box-shadow:/);
