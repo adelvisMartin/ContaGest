@@ -1,0 +1,77 @@
+{
+  "version": 1,
+  "canonicalOwner": "frontend/src/components/vnext/index.js",
+  "foundation": "frontend/src/components/vnext/forms.js",
+  "overlayOwner": "frontend/src/components/vnext/overlays.js",
+  "filterOwner": "frontend/src/components/vnext/filters.js",
+  "errorContract": "frontend/src/components/vnext/formContracts.js",
+  "components": [
+    "CgFormField",
+    "CgSelect",
+    "CgAutocomplete",
+    "CgCombobox",
+    "CgCheckbox",
+    "CgRadioGroup",
+    "CgSwitch",
+    "CgDatePicker",
+    "CgDateRange",
+    "CgTimeField",
+    "CgDialog",
+    "CgConfirmDialog",
+    "CgDrawer",
+    "CgPopover",
+    "CgMenu",
+    "CgFilterBar",
+    "CgFilterChip"
+  ],
+  "pilots": [
+    {
+      "surface": "frontend/src/components/muiRuntime.js::SelectIsland",
+      "interaction": "select/listbox",
+      "canonical": "CgSelect",
+      "status": "migrated"
+    },
+    {
+      "surface": "frontend/src/components/muiRuntime.js::NativeFieldIsland(date/time)",
+      "interaction": "date/time field",
+      "canonical": "CgDatePicker/CgTimeField",
+      "status": "migrated"
+    },
+    {
+      "surface": "frontend/src/components/modal.js::Modal.confirm",
+      "interaction": "confirmation dialog",
+      "canonical": "CgConfirmDialog",
+      "status": "migrated"
+    }
+  ],
+  "deprecatedOwners": [
+    {
+      "owner": "frontend/src/components/ui/kit.js::Select",
+      "canonical": "CgSelect",
+      "reason": "Legacy string routes still submit native select values while rendering migrates incrementally.",
+      "removalCriteria": "direct legacy Select consumers reach zero and browser characterization is green",
+      "reviewBy": "2027-03-31"
+    },
+    {
+      "owner": "frontend/src/components/modal.js::Modal.open",
+      "canonical": "CgDialog/CgConfirmDialog",
+      "reason": "HTML-body modal compatibility remains for legacy consumers; confirm is already canonical.",
+      "removalCriteria": "raw Modal.open consumers reach zero and all overlay consumers use canonical React content",
+      "reviewBy": "2027-03-31"
+    },
+    {
+      "owner": "native date/time input presentation",
+      "canonical": "CgDatePicker/CgTimeField",
+      "reason": "Native values remain hidden submission/synchronization targets during strangler migration.",
+      "removalCriteria": "legacy date/time presentation consumers reach zero while submitted value contracts remain covered",
+      "reviewBy": "2027-03-31"
+    }
+  ],
+  "rules": {
+    "singleOverlayAuthority": true,
+    "stringIdentifiers": true,
+    "decimalValuesStayStrings": true,
+    "serverAuthorizationRemainsAuthoritative": true,
+    "noRouteLocalSelectDialogDateClones": true
+  }
+}
