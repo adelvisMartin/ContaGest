@@ -23,6 +23,7 @@ test('v635 policy sidecar is classified and applied after legacy 0002',()=>{
   const hardeningIndex=apply.indexOf('0003_rls_grants_security_definer_hardening.sql');
   assert.ok(legacyIndex>=0,'legacy 0002 must remain explicit');
   assert.ok(hardeningIndex>legacyIndex,'v635 sidecar must execute after 0002');
+  assert.match(apply,/contagest_runtime/,'policy DDL must fail closed for the runtime role');
 });
 
 test('public tenant/profile compatibility helpers are SECURITY INVOKER only',()=>{
@@ -48,9 +49,15 @@ test('private helpers are closed definers with explicit execution grants',()=>{
   assert.match(sql,/grant\s+execute\s+on\s+function\s+private\.current_profile_id\(\)\s+to\s+authenticated/i);
 });
 
-test('v635 revokes mutable schema creation and public/anon definer execution',()=>{
+test('v635 hardens only ContaGest-owned definers in the shared database',()=>{
   const sql=read(sidecar);
-  assert.match(sql,/revoke\s+create\s+on\s+schema\s+public\s+from\s+public\s*,\s*anon\s*,\s*authenticated\s*,\s*service_role/i);
-  assert.match(sql,/prosecdef/i,'sidecar must enumerate SECURITY DEFINER functions');
-  assert.match(sql,/revoke\s+all\s+on\s+function/i,'sidecar must revoke implicit definer execution');
+  assert.match(sql,/revoke\s+create\s+on\s+schema\s+public\s+from\s+public\s*,\s*anon\s*,\s*authenticated/i);
+  assert.doesNotMatch(sql,/from\s+public\s*,\s*anon\s*,\s*authenticated\s*,\s*service_role/i,'shared service_role schema privileges are out of scope');
+  assert.doesNotMatch(sql,/from\s+pg_proc/i,'sidecar must not blanket-mutate every function in shared schemas');
+  for(const name of [
+    'private.enforce_subscription_tenant_limit()',
+    'private.enforce_license_subscription_tenant()',
+    'private.enforce_subscription_user_limit()',
+    'private.sync_license_permissions()'
+  ]) assert.ok(sql.includes(name),`missing explicit hardening target ${name}`);
 });
