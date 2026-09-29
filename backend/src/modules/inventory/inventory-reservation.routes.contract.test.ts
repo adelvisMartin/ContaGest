@@ -22,3 +22,8 @@ test('consume replay reconstructs the linked release movement under the active t
   assert.match(source, /tenantId/);
   assert.match(source, /releaseMovement/);
 });
+
+test('generic reversal cannot split the two movements of reservation consumption', () => {
+  assert.match(source, /INVENTORY_RESERVATION_CONSUMPTION_REQUIRES_WORKFLOW_REVERSAL/);
+  assert.match(source, /sourceId:\s*original\.id/);
+});
