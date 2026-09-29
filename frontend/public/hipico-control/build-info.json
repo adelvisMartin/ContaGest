@@ -1,9 +1,9 @@
 {
   "product": "control-hipico",
   "version": "1.13.0-rc3",
-  "uiSystem": "v4.1.1",
+  "uiSystem": "v4.1.2",
   "uiAuthority": "Equestrian Operations",
   "buildPolicy": "exact-sha",
-  "pagesRedeployRequestedAt": "2026-09-29T18:44:10Z",
-  "notes": "UI System v4.1.1: separates floating Help/WhatsApp utilities, normalizes operational SVG icons through the canonical ui.js registry, keeps compact control geometry and rotates the offline shell cache. GitHub-hosted runner evidence remains SHA-bound and is classified independently from source readiness."
+  "pagesRedeployRequestedAt": "2026-09-29T19:40:48Z",
+  "notes": "UI System v4.1.2: renders canonical SVG icons at source, removes the post-render icon observer, isolates v3 compatibility below v4 via cascade layers, unifies modal/toast overlays, adds deterministic Playwright pixel-diff baselines, rotates the PWA shell to r33, and adds WhatsApp LAB/SOURCE readiness reporting."
 }
