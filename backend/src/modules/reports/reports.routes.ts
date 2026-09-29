@@ -1,6 +1,16 @@
 import { Router } from 'express';
+import { prisma } from '../../database/prisma.js';
+import { asyncHandler, ok } from '../../shared/http.js';
+import { requirePermission, requireTenant } from '../../shared/middleware/context.js';
+import {
+  buildInventoryStockHealth,
+  summarizeInventoryStockHealth
+} from '../../shared/services/inventory-stock-health.service.js';
 
 const router = Router();
+router.use(requireTenant, requirePermission('reports.view'));
+
+const context = (req: any) => req.context as { tenantId: string };
 
 router.get('/', (_req, res) => {
   res.json({
@@ -10,6 +20,7 @@ router.get('/', (_req, res) => {
     availableReports: [
       'sales',
       'inventory',
+      'inventory-reorder',
       'taxes',
       'accounting',
       'ledger',
@@ -45,6 +56,48 @@ router.get('/inventory', (_req, res) => {
     }
   });
 });
+
+router.get('/inventory/reorder', asyncHandler(async (req, res) => {
+  const ctx = context(req);
+  const requestedTake = Number(req.query.take || 500);
+  const take = Number.isFinite(requestedTake)
+    ? Math.min(Math.max(Math.trunc(requestedTake), 1), 1000)
+    : 500;
+  const onlyNeedsReorder = String(req.query.onlyNeedsReorder || 'false').trim().toLowerCase() === 'true';
+
+  const [activeProducts, products] = await Promise.all([
+    prisma.product.count({ where: { tenantId: ctx.tenantId, active: true } }),
+    prisma.product.findMany({
+      where: { tenantId: ctx.tenantId, active: true },
+      select: {
+        id: true,
+        sku: true,
+        name: true,
+        stock: true,
+        reserved: true,
+        minStock: true
+      },
+      orderBy: [{ sku: 'asc' }, { id: 'asc' }],
+      take
+    })
+  ]);
+
+  const rows = products.map(buildInventoryStockHealth);
+  const filteredRows = onlyNeedsReorder ? rows.filter((row) => row.needsReorder) : rows;
+
+  ok(res, {
+    report: 'inventory-reorder',
+    rows: filteredRows,
+    summary: summarizeInventoryStockHealth(filteredRows),
+    meta: {
+      onlyNeedsReorder,
+      activeProducts,
+      scannedProducts: products.length,
+      scanLimit: take,
+      truncated: activeProducts > products.length
+    }
+  });
+}));
 
 router.get('/taxes', (_req, res) => {
   res.json({
