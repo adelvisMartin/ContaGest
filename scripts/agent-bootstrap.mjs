@@ -198,7 +198,8 @@ async function main() {
 
   const inferredRisk=domains.some((domain)=>domain.severity==='critical')?'P0':domains.some((domain)=>domain.severity==='high')?'P1':'P2';
   const taskType=valueOf('--type')||'feature';
-  const route=routeTask({risk:valueOf('--risk')||inferredRisk,type:taskType,domains:routedDomainHints(domains).length?routedDomainHints(domains):['architecture'],boundaries:routedBoundaries(domains)});
+  const domainHints=routedDomainHints(domains);
+  const route=routeTask({risk:valueOf('--risk')||inferredRisk,type:taskType,domains:domainHints.length?domainHints:['architecture'],boundaries:routedBoundaries(domains)});
 
   let nextAction = 'Resolve live GitHub state before selecting or creating work.';
   if (!duplicateState.ok) nextAction = 'Reconcile DUPLICATE_WORK_CLAIM before creating or merging work.';
@@ -206,7 +207,7 @@ async function main() {
   else if (selected) nextAction = `Proceed with live issue #${selected.number} using v3 routed gates/evidence.`;
 
   const summary = {
-    marker: 'CONTAGEST_AGENT_BOOTSTRAP_V3',
+    marker: 'CONTAGEST_AGENT_BOOTSTRAP',
     schemaVersion: 3,
     repository: repository || null,
     repoRoot: root,
