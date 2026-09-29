@@ -121,7 +121,7 @@ jobs:
         run: npm ci --no-audit --no-fund
       - name: All root Hípico regression contracts
         run: node scripts/hipico-root-contracts.mjs
-      - name: UI System v4.1.3, overlay and WhatsApp readiness contracts
+      - name: UI System v4.1.3, overlay and WhatsApp v1.6 readiness contracts
         run: >-
           node --test
           tests/hipico_ui_system_v41_contract.test.mjs
@@ -130,7 +130,7 @@ jobs:
           tests/hipico_ui_v412_hardening_contract.test.mjs
           tests/hipico_ui_v413_authority_contract.test.mjs
           tests/hipico_overlay_authority_v413.test.mjs
-          tests/hipico_whatsapp_v150_readiness_contract.test.mjs
+          tests/hipico_whatsapp_v160_readiness_contract.test.mjs
       - name: PWA and serverless operational syntax checks
         run: |
           node --check scripts/hipico-exact-sha-gate.mjs
@@ -177,6 +177,9 @@ jobs:
           node --check tools/hipico-whatsapp-bridge/src/group-identity.mjs
           node --check tools/hipico-whatsapp-bridge/src/index.mjs
           node --check tools/hipico-whatsapp-web-bridge/src/runtime-config.mjs
+          node --check tools/hipico-whatsapp-web-bridge/src/transport-capabilities.mjs
+          node --check tools/hipico-whatsapp-web-bridge/src/source-policy-gate.mjs
+          node --check tools/hipico-whatsapp-web-bridge/src/source-policy-status.mjs
           node --check backend/scripts/hipico-audit-idempotency-contract.mjs
           node --check backend/scripts/hipico-db-contract.mjs
           node --check backend/scripts/hipico-outbox-reconciliation-contract.mjs
