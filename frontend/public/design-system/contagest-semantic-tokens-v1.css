@@ -17,6 +17,7 @@
   --cg-v-weight-regular: 400;
   --cg-v-weight-medium: 500;
   --cg-v-weight-semibold: 600;
+  --cg-v-weight-strong: 650;
   --cg-v-weight-bold: 700;
   --cg-v-space-0: 0;
   --cg-v-space-1: 4px;
@@ -32,8 +33,11 @@
   --cg-v-radius-lg: 12px;
   --cg-v-radius-xl: 16px;
   --cg-v-control-sm: 32px;
+  --cg-v-control-dense: 34px;
+  --cg-v-control-tabs: 36px;
   --cg-v-control: 38px;
   --cg-v-control-touch: 44px;
+  --cg-v-control-chip: 22px;
   --cg-v-page-max: 1600px;
   --cg-v-reading-max: 74ch;
   --cg-v-card-min: 210px;
@@ -136,6 +140,7 @@ html[data-theme="dark"] {
   --cg-v-weight-regular: 400;
   --cg-v-weight-medium: 500;
   --cg-v-weight-semibold: 600;
+  --cg-v-weight-strong: 650;
   --cg-v-weight-bold: 700;
   --cg-v-space-0: 0;
   --cg-v-space-1: 4px;
@@ -151,8 +156,11 @@ html[data-theme="dark"] {
   --cg-v-radius-lg: 12px;
   --cg-v-radius-xl: 16px;
   --cg-v-control-sm: 32px;
+  --cg-v-control-dense: 34px;
+  --cg-v-control-tabs: 36px;
   --cg-v-control: 38px;
   --cg-v-control-touch: 44px;
+  --cg-v-control-chip: 22px;
   --cg-v-page-max: 1600px;
   --cg-v-reading-max: 74ch;
   --cg-v-card-min: 210px;
@@ -255,6 +263,7 @@ html[data-theme="dark"] {
   --cg-v-weight-regular: 400;
   --cg-v-weight-medium: 500;
   --cg-v-weight-semibold: 600;
+  --cg-v-weight-strong: 650;
   --cg-v-weight-bold: 700;
   --cg-v-space-0: 0;
   --cg-v-space-1: 4px;
@@ -270,8 +279,11 @@ html[data-theme="dark"] {
   --cg-v-radius-lg: 12px;
   --cg-v-radius-xl: 16px;
   --cg-v-control-sm: 32px;
+  --cg-v-control-dense: 34px;
+  --cg-v-control-tabs: 36px;
   --cg-v-control: 38px;
   --cg-v-control-touch: 44px;
+  --cg-v-control-chip: 22px;
   --cg-v-page-max: 1600px;
   --cg-v-reading-max: 74ch;
   --cg-v-card-min: 210px;
