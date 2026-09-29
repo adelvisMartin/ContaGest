@@ -241,4 +241,4 @@ Red-team review is independent and non-destructive.
 - backup is not verified recovery until a restore drill succeeds;
 - never claim legal/SENIAT/clinical compliance without professional scope and evidence.
 
-Definition of Done: business behavior characterized, tenant/financial invariants preserved, one visual owner, responsive and accessible UI, all material route iterations accounted for where UI is affected, required gates actually executed, evidence bound to the final SHA, residual risks stated and rollback documented. Provider-blocked evidence remains separate and never upgrades itself to PASS.
+Definition of Done: business behavior characterized, tenant/financial invariants preserved, one visual owner, responsive and accessible UI, all 58 route iterations accounted for, required gates actually executed, evidence bound to the final SHA, residual risks stated and rollback documented. Provider-blocked evidence remains separate and never upgrades itself to PASS.
