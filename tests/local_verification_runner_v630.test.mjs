@@ -5,11 +5,13 @@ import test from 'node:test';
 import {
   buildProfilePlan,
   computeManifestHash,
+  createDryRunEvidence,
   ephemeralDatabaseConfig,
   profilesForRouterDomains,
   resolveGitContext,
   runPlan,
   sanitizeEnvironmentValue,
+  withEphemeralDatabase,
 } from '../scripts/local-verification-runner-v630.mjs';
 
 function initRepo() {
@@ -19,11 +21,10 @@ function initRepo() {
   execFileSync('git', ['config', 'user.name', 'QA'], { cwd: root });
   execFileSync('git', ['checkout', '-b', 'main'], { cwd: root });
   execFileSync('git', ['commit', '--allow-empty', '-m', 'base'], { cwd: root });
-  const base = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8' }).trim();
   execFileSync('git', ['checkout', '-b', 'feature'], { cwd: root });
   execFileSync('git', ['commit', '--allow-empty', '-m', 'candidate'], { cwd: root });
   const head = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8' }).trim();
-  return { root, base, head };
+  return { root, head };
 }
 
 test('backend profile reuses authoritative commands and does not duplicate test logic', () => {
@@ -39,6 +40,8 @@ test('backend profile reuses authoritative commands and does not duplicate test 
 test('database and financial profiles include PostgreSQL migration authority rather than ad-hoc SQL', () => {
   const database = buildProfilePlan('database').map((gate) => gate.command);
   const financial = buildProfilePlan('financial').map((gate) => gate.command);
+  assert.ok(database.includes('npm --workspace backend run db:validate'));
+  assert.ok(database.includes('npm --workspace backend run prisma:generate'));
   assert.ok(database.includes('npm run migration:test:from-zero'));
   assert.ok(database.includes('npm run migration:test:upgrade'));
   assert.ok(database.includes('npm run audit:database-authority'));
@@ -46,10 +49,11 @@ test('database and financial profiles include PostgreSQL migration authority rat
   assert.ok(financial.includes('npm run test:backend:idempotency:real'));
 });
 
-test('full profile de-duplicates commands from authoritative profiles', () => {
+test('full profile de-duplicates commands and excludes the superseded qa:ui chain', () => {
   const commands = buildProfilePlan('full').map((gate) => gate.command);
   assert.equal(new Set(commands).size, commands.length);
   assert.ok(commands.includes('npm run qa:ui:58'));
+  assert.equal(commands.includes('npm run qa:ui'), false);
   assert.ok(commands.includes('npm run migration:test:from-zero'));
 });
 
@@ -109,6 +113,33 @@ test('ephemeral database config is unique, local-only and secret-safe by constru
     candidateSha: 'a'.repeat(40),
     env: { LOCAL_VERIFY_DATABASE_ADMIN_URL: 'postgresql://postgres:secret@db.example.com:5432/postgres' },
   }), /LOCAL_POSTGRES_BLOCKED:NON_LOCAL_HOST/);
+});
+
+test('ephemeral database cleanup runs even when the profile body fails', async () => {
+  const statements = [];
+  await assert.rejects(
+    withEphemeralDatabase(
+      {
+        candidateSha: 'b'.repeat(40),
+        cwd: process.cwd(),
+        env: { LOCAL_VERIFY_DATABASE_ADMIN_URL: 'postgresql://postgres:secret@127.0.0.1:5432/postgres' },
+        runSql: (_adminUrl, sql) => statements.push(sql),
+      },
+      async () => { throw new Error('expected-profile-failure'); },
+    ),
+    /expected-profile-failure/,
+  );
+  assert.equal(statements.length, 2);
+  assert.match(statements[0], /^CREATE DATABASE /);
+  assert.match(statements[1], /^DROP DATABASE IF EXISTS .* WITH \(FORCE\)$/);
+});
+
+test('dry-run evidence marks every gate NOT_EXECUTED and never PASS', () => {
+  const plan = buildProfilePlan('backend');
+  const evidence = createDryRunEvidence({ candidateSha: 'c'.repeat(40), profile: 'backend' }, plan);
+  assert.equal(evidence.status, 'NOT_EXECUTED');
+  assert.equal(evidence.gates.length, plan.length);
+  assert.equal(evidence.gates.every((gate) => gate.status === 'NOT_EXECUTED'), true);
 });
 
 test('manifest hash is deterministic and excludes its own hash field', () => {
