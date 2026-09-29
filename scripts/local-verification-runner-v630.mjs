@@ -9,6 +9,7 @@ import { pathToFileURL } from 'node:url';
 const VALID_STATUSES = new Set(['PASS','FAIL','BLOCKED','NOT_EXECUTED','NOT_APPLICABLE']);
 const DB_PROFILES = new Set(['database','financial','full']);
 const UI_PROFILES = new Set(['ui','full']);
+
 const gate=(id,command,{required=true}={})=>Object.freeze({id,command,required});
 
 export const PROFILE_GATES = Object.freeze({
@@ -43,7 +44,9 @@ export const PROFILE_GATES = Object.freeze({
   ]),
   ui:Object.freeze([
     gate('ui-frontend-build','npm run build:frontend'),
-    gate('ui-authoritative','npm run qa:ui'),
+    gate('ui-authoritative','npm run qa:ui:58'),
+    gate('ui-browser-a11y','npm run test:browser:a11y'),
+    gate('ui-browser-contrast','npm run test:browser:contrast'),
     gate('ui-browser-functional','npm run test:browser:functional'),
   ]),
 });
