@@ -29,6 +29,7 @@ const required59=[
   'tests/vertical_asset_system_70_75.test.mjs',
   'tests/cloudflare_security_audit_skill_contract.test.mjs',
   'tests/fiscal_authority_v561_contract.test.mjs',
+  'tests/fiscal_single_source_v629_contract.test.mjs',
 ];
 const tests=[...new Set([...regressionPaths,...required59])];
 
