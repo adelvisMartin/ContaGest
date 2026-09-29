@@ -24,6 +24,8 @@ export const PROFILE_GATES = Object.freeze({
   ]),
   database:Object.freeze([
     gate('database-typecheck','npm run typecheck'),
+    gate('database-prisma-validate','npm --workspace backend run db:validate'),
+    gate('database-prisma-generate','npm --workspace backend run prisma:generate'),
     gate('database-from-zero','npm run migration:test:from-zero'),
     gate('database-upgrade','npm run migration:test:upgrade'),
     gate('database-manifest','npm run migration:manifest'),
@@ -167,11 +169,11 @@ function runPsql(adminUrl,sql,{cwd}){
   if(result.status!==0)throw new Error(`LOCAL_POSTGRES_FAILED:exit=${result.status}:${result.stderr||result.stdout}`);
 }
 
-export async function withEphemeralDatabase({candidateSha,cwd=process.cwd(),env=process.env},fn){
+export async function withEphemeralDatabase({candidateSha,cwd=process.cwd(),env=process.env,runSql=runPsql},fn){
   const config=ephemeralDatabaseConfig({candidateSha,env});
-  runPsql(config.adminUrl,`CREATE DATABASE ${quoteIdentifier(config.databaseName)}`,{cwd});
+  runSql(config.adminUrl,`CREATE DATABASE ${quoteIdentifier(config.databaseName)}`,{cwd});
   try{return await fn({...env,DATABASE_URL:config.databaseUrl},config);}
-  finally{runPsql(config.adminUrl,`DROP DATABASE IF EXISTS ${quoteIdentifier(config.databaseName)} WITH (FORCE)`,{cwd});}
+  finally{runSql(config.adminUrl,`DROP DATABASE IF EXISTS ${quoteIdentifier(config.databaseName)} WITH (FORCE)`,{cwd});}
 }
 
 function commandVersion(command,args,{cwd}){
@@ -197,6 +199,10 @@ function parseArgs(argv){
   }
   if(!out.profile)throw new Error('VERIFY_PROFILE_REQUIRED');
   return out;
+}
+
+export function createDryRunEvidence(metadata,plan){
+  return {...metadata,status:'NOT_EXECUTED',gates:plan.map((item)=>({...item,status:'NOT_EXECUTED'}))};
 }
 
 function changedPlan({cwd,baseRef}){
@@ -229,7 +235,7 @@ async function cli(){
     remote:{ci:args.remoteCi,deploy:args.remoteDeploy},
   };
   if(args.dryRun){
-    console.log(JSON.stringify({...metadata,status:'NOT_EXECUTED',gates:plan.map((item)=>({...item,status:'NOT_EXECUTED'}))},null,2));
+    console.log(JSON.stringify(createDryRunEvidence(metadata,plan),null,2));
     return;
   }
   const artifactRoot=path.join(cwd,'artifacts','local-verification',gitContext.candidateSha,args.profile);
