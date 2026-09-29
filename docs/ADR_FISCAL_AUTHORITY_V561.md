@@ -57,3 +57,20 @@ Toda query autoritativa incluye `tenantId`. Las reglas, secuencias, snapshots y 
 ### Verificación
 
 El gate #561 usa PostgreSQL 17 efímero y candidate SHA exacto. La regresión cubre vigencia/provenance, emisión concurrente, retries idempotentes, snapshot histórico, bloqueo de cierre, evidencia/hash post-close y tenant A → tenant B. Un workflow sin runner/steps se reporta como no ejecutado; nunca como PASS.
+
+## Consolidación #629 · Fiscal Single Source of Truth
+
+#629 convierte la decisión anterior en una autoridad única machine-readable:
+
+- runtime canónico: `backend/src/modules/fiscal/fiscal.routes.ts` → `backend/src/modules/fiscal/fiscal.repository.ts`;
+- esquema canónico: `backend/prisma/migrations/20260927143000_fiscal_authority_v561/migration.sql`;
+- QA canónico: `qa/fiscal-authority-v561.test.ts` + `tests/fiscal_authority_v561_contract.test.mjs` + `tests/fiscal_single_source_v629_contract.test.mjs`;
+- manifest: `config/fiscal-authority-v629.json`;
+- `backend/src/modules/accounting/fiscal.repository.ts`, el QA/contract `fiscal-engine-v561` y su workflow quedan retirados por representar una segunda autoridad incompatible;
+- `backend/prisma/migrations/20260927143000_fiscal_engine_v561/migration.sql` se conserva sin reescritura como migration histórica/no-op para mantener la cadena Prisma forward-only.
+
+`tenantId` y `fiscalDocumentId` son `TEXT` en el esquema canónico y no deben castearse a UUID. Los UUID se limitan a columnas cuyo tipo físico es UUID, como IDs internos de reglas/snapshots/evidencia.
+
+La idempotencia vigente de emisión y cierre pertenece a `runFinancialIdempotentMutation`; #629 no reintroduce `FiscalNumberReservation` ni `allocate_fiscal_number` porque no forman parte del contrato runtime canónico caracterizado. Cualquier necesidad futura de reserva previa debe modelarse explícitamente en la autoridad única y con migración forward-only, no reviviendo el engine superseded.
+
+#629 no aplica DDL en Supabase productivo. El inventario de drift pertenece a #625 y toda convergencia productiva forward-only pertenece a #627.
