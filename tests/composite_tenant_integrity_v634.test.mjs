@@ -142,6 +142,15 @@ test('historical projection plan is inert when the compatibility migration is ou
   assert.deepEqual(plan.after, []);
 });
 
+test('ephemeral deploy phases historical projection before later migrations', async () => {
+  const source = await readFile(new URL('../backend/scripts/prisma-deploy-safe.mjs', import.meta.url), 'utf8');
+  assert.doesNotMatch(source, /ephemeral-projection-must-be-terminal/);
+  assert.match(source, /planHistoricalProjection/);
+  assert.match(source, /createCompatibilityPrefixSchema/);
+  assert.match(source, /projectHistoricalCompatibility/);
+  assert.match(source, /compatibility\.before/);
+});
+
 test('forward-only migration is ordered after the already-applied production convergence migration', () => {
   assert.ok(
     migrationId.localeCompare(previousProductionConvergenceMigrationId) > 0,
