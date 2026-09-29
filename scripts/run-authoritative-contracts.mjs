@@ -35,6 +35,7 @@ const required59=[
   'tests/agent_system_v3_issue_623.test.mjs',
   'tests/access_license_policy_issue_698.test.mjs',
   'tests/react_strangler_migration_issue_639.test.mjs',
+  'tests/theme_state_accessibility_issue_645.test.mjs',
   'tests/vertical_asset_system_70_75.test.mjs',
   'tests/cloudflare_security_audit_skill_contract.test.mjs',
   'tests/fiscal_authority_v561_contract.test.mjs',
