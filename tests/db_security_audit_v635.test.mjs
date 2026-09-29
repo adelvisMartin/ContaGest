@@ -4,7 +4,7 @@ import { classifySecurityManifest } from '../backend/scripts/db-security-hardeni
 
 const base=()=>({
   roles:[{role:'contagest_runtime',superuser:false,createDb:false,createRole:false,bypassRls:false,canLogin:true}],
-  tables:[{schema:'public',name:'Client',owner:'postgres',rlsEnabled:true,rlsForced:false,hasTenantId:true,classification:'PRISMA_APPLICATION'}],
+  tables:[{schema:'public',name:'Client',owner:'postgres',rlsEnabled:true,rlsForced:false,hasTenantId:true,classification:'PRISMA_APPLICATION',anonAnyDml:false,authenticatedAnyDml:false}],
   policies:[{schema:'public',table:'Client',name:'client_tenant_all',command:'ALL',roles:['authenticated'],qual:'("tenantId" = private.current_tenant_id())',withCheck:'("tenantId" = private.current_tenant_id())'}],
   functions:[{schema:'private',name:'current_tenant_id',identityArguments:'',owner:'postgres',securityDefiner:true,searchPath:'pg_catalog, private, public',publicExecute:false,anonExecute:false,extensionOwned:false}],
   views:[],
@@ -25,6 +25,12 @@ test('tenant table without RLS is rejected',()=>{
   const fixture=base();
   fixture.tables[0].rlsEnabled=false;
   assert.ok(codes(fixture).includes('TENANT_RLS_DISABLED'));
+});
+
+test('backend-only Prisma tenant table cannot keep anon/authenticated DML',()=>{
+  const fixture=base();
+  fixture.tables[0].authenticatedAnyDml=true;
+  assert.ok(codes(fixture).includes('DIRECT_BROWSER_DML_GRANT'));
 });
 
 test('permissive authenticated tenant policy is rejected',()=>{
