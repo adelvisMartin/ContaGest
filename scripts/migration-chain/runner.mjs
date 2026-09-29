@@ -7,6 +7,7 @@ import {
   classifyApplyError,
   listMigrations,
   migrationCatalogManifest,
+  sha256,
   validateMigrationCatalog,
   validateSnapshot,
 } from './core.mjs';
@@ -93,7 +94,20 @@ export function loadSnapshotConfig() {
   const config = JSON.parse(fs.readFileSync(file, 'utf8'));
   const catalog = migrationCatalogManifest(MIGRATIONS_DIR);
   validateMigrationCatalog(catalog.migrations.map((entry) => entry.name));
-  for (const snapshot of config.snapshots) validateSnapshot(snapshot, catalog);
+  for (const snapshot of config.snapshots) {
+    validateSnapshot(snapshot, catalog);
+    const fixturePath = path.join(ROOT, snapshot.fixture);
+    if (!fs.existsSync(fixturePath)) {
+      throw new MigrationChainError('SNAPSHOT_PROVENANCE_INVALID', `snapshot fixture is missing: ${snapshot.fixture}`);
+    }
+    const actualFixtureSha = sha256(fs.readFileSync(fixturePath));
+    if (actualFixtureSha !== snapshot.fixtureSha256) {
+      throw new MigrationChainError('SNAPSHOT_PROVENANCE_INVALID', `snapshot fixture hash mismatch: ${snapshot.id}`, {
+        expected: snapshot.fixtureSha256,
+        actual: actualFixtureSha,
+      });
+    }
+  }
   return { ...config, catalog };
 }
 
