@@ -61,7 +61,37 @@ async function forceTheme(page, theme) {
 
 async function saveEvidence(page, name) {
   mkdirSync(EVIDENCE_ROOT, { recursive: true });
-  await page.screenshot({ path: join(EVIDENCE_ROOT, `${name}.png`), fullPage: true, animations: 'disabled' });
+  const screenshot = await page.screenshot({ path: join(EVIDENCE_ROOT, `${name}.png`), fullPage: true, animations: 'disabled' });
+  expect(screenshot.byteLength, `${name} must produce non-empty exact-SHA visual evidence`).toBeGreaterThan(10_000);
+}
+
+async function visualContract(page) {
+  return page.evaluate(() => {
+    const html = document.documentElement;
+    const shell = document.querySelector('.shell');
+    const sidebar = document.querySelector('.sidebar');
+    const main = document.querySelector('.main');
+    const content = document.querySelector('.content');
+    const button = [...document.querySelectorAll('.button')].find((node) => {
+      const rect = node.getBoundingClientRect();
+      return rect.width > 0 && rect.height > 0 && !node.classList.contains('button--small') && !node.classList.contains('button--xl');
+    });
+    const shellStyle = shell ? getComputedStyle(shell) : null;
+    const sidebarStyle = sidebar ? getComputedStyle(sidebar) : null;
+    const contentStyle = content ? getComputedStyle(content) : null;
+    const buttonStyle = button ? getComputedStyle(button) : null;
+    return {
+      theme: html.dataset.theme || '',
+      shellDisplay: shellStyle?.display || '',
+      sidebarWidth: sidebar ? Math.round(sidebar.getBoundingClientRect().width) : 0,
+      mainWidth: main ? Math.round(main.getBoundingClientRect().width) : 0,
+      contentWidth: content ? Math.round(content.getBoundingClientRect().width) : 0,
+      contentMaxWidth: contentStyle?.maxWidth || '',
+      buttonMinHeight: parseFloat(buttonStyle?.minHeight || '0'),
+      buttonFontSize: parseFloat(buttonStyle?.fontSize || '0'),
+      sidebarBg: sidebarStyle?.backgroundColor || ''
+    };
+  });
 }
 
 test.describe('Control Hípico UI System v4.1 · desktop shell', () => {
@@ -153,6 +183,28 @@ test.describe('Control Hípico UI System v4.1 · desktop shell', () => {
     expect(metrics.buttonFont).toBeLessThanOrEqual(13.5);
     expect(metrics.inputMinHeight).toBe(36);
     expect(metrics.inputFont).toBeLessThanOrEqual(13.5);
+  });
+
+  test('light and dark modes keep distinct deterministic visual contracts', async ({ page }) => {
+    await openView(page, 'dashboard');
+    await selectTheme(page, 'light');
+    const light = await visualContract(page);
+    await selectTheme(page, 'dark');
+    const dark = await visualContract(page);
+
+    expect(light.theme).toBe('light');
+    expect(dark.theme).toBe('dark');
+    expect(light.shellDisplay).toBe(dark.shellDisplay);
+    expect(light.contentMaxWidth).toBe('none');
+    expect(dark.contentMaxWidth).toBe('none');
+    expect(light.sidebarWidth).toBe(dark.sidebarWidth);
+    expect(Math.abs(light.mainWidth - light.contentWidth)).toBeLessThanOrEqual(1);
+    expect(Math.abs(dark.mainWidth - dark.contentWidth)).toBeLessThanOrEqual(1);
+    expect(light.buttonMinHeight).toBeGreaterThanOrEqual(36);
+    expect(dark.buttonMinHeight).toBeGreaterThanOrEqual(36);
+    expect(light.buttonFontSize).toBeLessThanOrEqual(13.5);
+    expect(dark.buttonFontSize).toBeLessThanOrEqual(13.5);
+    expect(light.sidebarBg).not.toBe(dark.sidebarBg);
   });
 
   test('captures exact-SHA light and dark visual evidence for representative views', async ({ page }) => {
