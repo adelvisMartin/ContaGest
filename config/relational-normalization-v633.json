@@ -1,0 +1,43 @@
+{
+  "version": 633,
+  "expectedPublicTableCount": 113,
+  "ownershipRules": [
+    { "pattern": "^(hipico_|Hipico)", "owner": "hipico" },
+    { "pattern": "^budgetwallet_", "owner": "budgetwallet" },
+    { "pattern": "^(Care|CommunicationTemplate$)", "owner": "clinical-care" },
+    { "pattern": "^Gym", "owner": "gym" },
+    { "pattern": "^(AccountingRule|ChartAccount|ClosingPeriod|LedgerEntry|LedgerLine)$", "owner": "accounting" },
+    { "pattern": "^(BankAccount|BankMovement)$", "owner": "banking" },
+    { "pattern": "^(TaxDeclaration|TaxPeriod|FiscalDocument|RegulatoryFeed)$", "owner": "fiscal" },
+    { "pattern": "^(PurchaseInvoice|PurchaseInvoiceLine|Supplier)$", "owner": "purchasing" },
+    { "pattern": "^(SalesInvoice|SalesInvoiceLine|Client|Product|ProductCode|InventoryMovement)$", "owner": "sales-inventory" },
+    { "pattern": "^(FoodOrder|FoodOrderItem|OrderEvent)$", "owner": "food-service" },
+    { "pattern": "^(Employee|PayrollPeriod|PayrollReceipt|HrParameter)$", "owner": "hr-payroll" },
+    { "pattern": "^(AccountUser|AuthLoginAttempt|CookiePreference|CoordinateCard|CoordinateChallenge|Permission|Role|RolePermission|Tenant|TenantMembership|UserProfile|UserRole|UserSession)$", "owner": "identity-access" },
+    { "pattern": "^(LicenseActivation|LicenseKey|ModuleEntitlement|Subscription|SubscriptionPayment|SubscriptionTenant|DemoAccess|LegalAcceptance)$", "owner": "commercial-licensing" },
+    { "pattern": "^(Commission|CustomerAccount|SalesAgent)$", "owner": "sales-channel" },
+    { "pattern": "^(AddressGeocode|AiConversation|AnalyticsEvent|AuditLog|ImportBatch|ModuleRecord|NotificationLog|contagest_keepalive)$", "owner": "platform-core" },
+    { "pattern": ".*", "owner": "platform-core", "fallback": true }
+  ],
+  "implicitLocalRelationColumns": [
+    "BankMovement.ledgerEntryId",
+    "CareCommunicationLog.templateId"
+  ],
+  "externalIdColumns": [
+    "authUserId", "sourceId", "entityId", "placeId", "providerMessageId", "phoneNumberId",
+    "client_id", "mutation_id", "last_mutation_id", "device_id", "product_id", "reference_id",
+    "external_message_id", "quoted_external_message_id", "sender_id", "observed_external_message_id",
+    "source_external_message_id"
+  ],
+  "cascadeRiskTablePatterns": [
+    "Audit", "Ledger", "Fiscal", "Tax", "Legal", "budgetwallet_audit_journal", "hipico_audit_events", "hipico_ledger_entries"
+  ],
+  "naturalKeyColumns": ["rif", "email", "sku", "number", "accountNo", "idNumber", "period"],
+  "jsonReviewThreshold": 2,
+  "p1Remediation": {
+    "MISSING_FK": 683,
+    "ORPHAN_RISK": 634,
+    "INDEX_GAP": 684,
+    "CASCADE_RISK": 685
+  }
+}
