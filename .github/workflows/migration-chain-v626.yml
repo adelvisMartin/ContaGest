@@ -1,0 +1,95 @@
+name: DB #626 · PostgreSQL 17 full migration chain
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'backend/prisma/migrations/**'
+      - 'backend/prisma/schema.prisma'
+      - 'backend/scripts/prisma-deploy-safe.mjs'
+      - 'backend/scripts/migration-chain-v626.mjs'
+      - 'backend/scripts/migration-compat-v626.mjs'
+      - 'ops/database/prepare-supabase-ephemeral.sql'
+      - 'config/migration-chain-v626.json'
+      - 'tests/migration_chain_v626_contract.test.mjs'
+      - 'docs/database/MIGRATION_CHAIN_V626.md'
+      - 'package.json'
+      - 'backend/package.json'
+      - '.github/workflows/migration-chain-v626.yml'
+  push:
+    branches:
+      - 'fix/626-full-migration-chain'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: migration-chain-v626-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  migration-chain:
+    name: PostgreSQL 17 · from-zero + upgrades + manifest
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: contagest_migration_v626_e2e
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d contagest_migration_v626_e2e"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/contagest_migration_v626_e2e?schema=public
+      DIRECT_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/contagest_migration_v626_e2e?schema=public
+      NODE_ENV: test
+      JWT_SECRET: migration-v626-ci-only-not-production
+      CANDIDATE_SHA: ${{ github.sha }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.sha }}
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Contract regression
+        run: node --test tests/migration_chain_v626_contract.test.mjs
+      - name: PostgreSQL 17 from-zero
+        run: npm run migration:test:from-zero
+      - name: Supported upgrades
+        run: npm run migration:test:upgrade
+      - name: Physical manifest
+        run: npm run migration:manifest
+      - name: Prisma validate
+        run: npm --workspace backend run db:validate
+      - name: Prisma generate
+        run: npm --workspace backend run prisma:generate
+      - name: Backend typecheck
+        run: npm run typecheck
+      - name: Database authority audit
+        run: npm run audit:database-authority
+      - name: Raw SQL security audit
+        run: npm run audit:raw-sql-security
+      - name: Backend build
+        run: npm run build:backend
+      - name: Capture exact-SHA evidence
+        if: always()
+        run: |
+          mkdir -p artifacts/migration-chain-v626
+          printf 'candidate_sha=%s\nrun_id=%s\nrun_attempt=%s\n' "$CANDIDATE_SHA" "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" > artifacts/migration-chain-v626/exact-sha.txt
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: migration-chain-v626-${{ github.sha }}
+          path: artifacts/migration-chain-v626
+          if-no-files-found: error
