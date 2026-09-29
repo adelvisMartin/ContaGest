@@ -57,7 +57,8 @@ function browserProjects(browser){
 function routePattern(routes){return `(?:${routes.map(regexEscape).join('|')})`;}
 function run(command,args,label){
   console.log(`[browser-matrix] ${label}`);
-  const result=spawnSync(command,args,{cwd:root,encoding:'utf8',stdio:'inherit',shell:false,env:{...process.env,CI:'1',PLAYWRIGHT_HTML_OPEN:'never'}});
+  const executable=process.platform==='win32'&&command==='npx'?'npx.cmd':command;
+  const result=spawnSync(executable,args,{cwd:root,encoding:'utf8',stdio:'inherit',shell:false,env:{...process.env,CI:'1',PLAYWRIGHT_HTML_OPEN:'never'}});
   if(result.error)return {label,status:'BLOCKED',exitCode:null,error:result.error.message};
   return {label,status:result.status===0?'PASS':'FAIL',exitCode:result.status??1};
 }
@@ -67,6 +68,7 @@ function runPlaywright(specs,{project,routes,label}){
   return run('npx',args,label);
 }
 
+const candidateSha=git(['rev-parse','HEAD']);
 const routes=MODE==='full'?[...FULL_ROUTE_BROWSER_CONTRACT.routes]:affectedRoutes();
 if(!routes.length)throw new Error('BROWSER_MATRIX_EMPTY_ROUTE_SET');
 const results=[];
@@ -81,13 +83,15 @@ if(BROWSER==='chromium'&&MODE==='full'){
 }
 
 for(const project of browserProjects(BROWSER)){
-  results.push(runPlaywright(['qa/accessibility-wcag22-v99.spec.mjs'],{project,label:`${project} accessibility` }));
-  results.push(runPlaywright(['qa/contrast-v15.spec.mjs'],{project,label:`${project} contrast` }));
+  results.push(runPlaywright(['qa/route-theme-motion-v640.spec.mjs'],{project,routes,label:`${project} system-theme/reduced-motion ${MODE}`}));
+  results.push(runPlaywright(['qa/accessibility-wcag22-v99.spec.mjs'],{project,label:`${project} accessibility`}));
+  results.push(runPlaywright(['qa/contrast-v15.spec.mjs'],{project,label:`${project} contrast`}));
 }
 
 const status=results.some((item)=>item.status==='FAIL')?'FAIL':results.some((item)=>item.status==='BLOCKED')?'BLOCKED':'PASS';
 const manifest={
   schemaVersion:640,
+  candidateSha,
   mode:MODE,
   browser:BROWSER,
   routeCount:routes.length,
@@ -98,7 +102,7 @@ const manifest={
   generatedAt:new Date().toISOString(),
 };
 fs.mkdirSync(artifactRoot,{recursive:true});
-const artifactPath=path.join(artifactRoot,`v640-${MODE}-${BROWSER}.json`);
+const artifactPath=path.join(artifactRoot,`v640-${MODE}-${BROWSER}-${candidateSha.slice(0,12)}.json`);
 fs.writeFileSync(artifactPath,`${JSON.stringify(manifest,null,2)}\n`,'utf8');
-console.log(`[browser-matrix] status=${status} routes=${routes.length} artifact=${path.relative(root,artifactPath)}`);
+console.log(`[browser-matrix] status=${status} sha=${candidateSha} routes=${routes.length} artifact=${path.relative(root,artifactPath)}`);
 if(status!=='PASS')process.exitCode=1;
