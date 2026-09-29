@@ -9,6 +9,7 @@
     "applyEntrypoint": "backend/scripts/apply-rls.mjs",
     "sql": [
       "backend/supabase/migrations/0002_rls_policies.sql",
+      "backend/supabase/migrations/0003_rls_grants_security_definer_hardening.sql",
       "supabase/sql/contagest_revoke_direct_rest_access.sql",
       "supabase/sql/hipico_v27_outbox_authority.sql"
     ]
