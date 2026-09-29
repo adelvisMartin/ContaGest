@@ -18,6 +18,7 @@ test('safe tenant fixture has no P0/P1 findings',()=>{
   const result=classifySecurityManifest(base());
   assert.equal(result.verdict,'PASS');
   assert.deepEqual(result.findings,[]);
+  assert.deepEqual(result.outOfScope,[]);
 });
 
 test('tenant table without RLS is rejected',()=>{
@@ -38,13 +39,36 @@ test('trusted backend runtime policy is not mistaken for a tenant principal',()=
   assert.ok(!codes(fixture).includes('PERMISSIVE_TENANT_POLICY'));
 });
 
-test('unsafe SECURITY DEFINER search_path and execution grants are rejected',()=>{
+test('unsafe ContaGest SECURITY DEFINER search_path and execution grants are rejected',()=>{
   const fixture=base();
   fixture.functions[0]={...fixture.functions[0],searchPath:'public',publicExecute:true,anonExecute:true};
   const found=codes(fixture);
   assert.ok(found.includes('UNSAFE_DEFINER_SEARCH_PATH'));
   assert.ok(found.includes('PUBLIC_DEFINER_EXECUTE'));
   assert.ok(found.includes('ANON_DEFINER_EXECUTE'));
+});
+
+test('shared product definers are surfaced but do not mutate the #635 verdict',()=>{
+  const fixture=base();
+  fixture.functions.push({schema:'public',name:'hipico_get_workspace',identityArguments:'',owner:'postgres',securityDefiner:true,searchPath:'public, pg_temp',publicExecute:true,anonExecute:true,extensionOwned:false});
+  const result=classifySecurityManifest(fixture);
+  assert.equal(result.verdict,'PASS');
+  assert.equal(result.findings.length,0);
+  assert.ok(result.outOfScope.some((item)=>item.object==='public.hipico_get_workspace()'));
+});
+
+test('exposed non-security-invoker ContaGest view is rejected',()=>{
+  const fixture=base();
+  fixture.views=[{schema:'public',name:'contagest_financial_summary',owner:'postgres',kind:'view',securityInvoker:false,anonSelect:false,authenticatedSelect:true}];
+  assert.ok(codes(fixture).includes('EXPOSED_DEFINER_VIEW'));
+});
+
+test('shared product exposed view is surfaced as out of scope',()=>{
+  const fixture=base();
+  fixture.views=[{schema:'public',name:'hipico_operator_summary',owner:'postgres',kind:'view',securityInvoker:false,anonSelect:true,authenticatedSelect:true}];
+  const result=classifySecurityManifest(fixture);
+  assert.equal(result.verdict,'PASS');
+  assert.ok(result.outOfScope.some((item)=>item.object==='public.hipico_operator_summary'));
 });
 
 test('runtime escalation and DDL ownership are rejected',()=>{
