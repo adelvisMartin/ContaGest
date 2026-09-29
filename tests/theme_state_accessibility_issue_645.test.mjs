@@ -38,6 +38,7 @@ test('#645 app, Store and MUI runtime delegate to one theme resolver',()=>{
   const app=read('frontend/src/app.js');
   const store=read('frontend/src/state/store.js');
   const mui=read('frontend/src/components/muiRuntime.js');
+  const cg=read('frontend/src/components/ui/cg/CgPrimitives.jsx');
   assert.match(app,/resolveThemeMode/);
   assert.match(app,/SYSTEM_THEME_QUERY/);
   assert.doesNotMatch(app,/const THEME_VALUES=/);
@@ -45,6 +46,7 @@ test('#645 app, Store and MUI runtime delegate to one theme resolver',()=>{
   assert.doesNotMatch(store,/OFFICIAL_THEMES/);
   assert.match(mui,/resolveThemeMode/);
   assert.doesNotMatch(mui,/function systemPrefersDark\(\)/);
+  assert.match(cg,/useMuiMode/);
 });
 
 test('#645 canonical vNext states and accessibility semantics are explicit',()=>{
@@ -60,17 +62,24 @@ test('#645 canonical vNext states and accessibility semantics are explicit',()=>
   assert.match(overlays,/aria-labelledby/);
 });
 
-test('#645 focus-visible and reduced-motion are theme-level contracts',()=>{
+test('#645 focus-visible and reduced-motion are loaded runtime contracts',()=>{
   const theme=read('frontend/src/components/muiThemeAdapter.js');
+  const css=read('frontend/public/design-system/contagest-ux-contract-v1.css');
+  const html=read('frontend/index.html');
   assert.match(theme,/Mui-focusVisible/);
   assert.match(theme,/prefers-reduced-motion:\s*reduce/);
   assert.match(theme,/color\.focus/);
+  assert.match(css,/:focus-visible/);
+  assert.match(css,/prefers-reduced-motion:\s*reduce/);
+  assert.match(css,/var\(--cg-v-focus\)/);
+  assert.match(html,/contagest-ux-contract-v1\.css/);
 });
 
-test('#645 local Chromium pilot and authoritative integration are present',()=>{
+test('#645 local Chromium pilot and verification integrations are present',()=>{
   const pilot=read('frontend/public/ux-contract-v645.html');
   const browser=read('scripts/ux-contract-browser-v645.mjs');
   const runner=read('scripts/run-authoritative-contracts.mjs');
+  const local=read('scripts/local-verification-runner-v630.mjs');
   assert.match(pilot,/data-ux-contract-pilot="645"/);
   assert.match(pilot,/contrastRatio/);
   assert.match(pilot,/zoomProbe/);
@@ -78,4 +87,6 @@ test('#645 local Chromium pilot and authoritative integration are present',()=>{
   assert.match(browser,/BLOCKED_BROWSER_RUNTIME/);
   assert.doesNotMatch(browser,/waitForTimeout|force:\s*true|\.skip\(/);
   assert.match(runner,/tests\/theme_state_accessibility_issue_645\.test\.mjs/);
+  assert.match(local,/ui-theme-state-a11y-contract/);
+  assert.match(local,/ui-theme-state-a11y-browser/);
 });
