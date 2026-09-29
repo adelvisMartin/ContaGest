@@ -17,12 +17,14 @@ on:
       - 'qa/hipico-ui-v41-shell.spec.mjs'
       - 'qa/hipico-ui-v41-shell.spec.mjs-snapshots/**'
       - 'qa/hipico-icon-overlap-v411.spec.mjs'
+      - 'qa/hipico-overlay-v413.spec.mjs'
       - 'qa/support/hipico-*.mjs'
       - 'qa/fixtures/hipico-*'
       - 'scripts/hipico-qa-runner-v103.mjs'
       - 'scripts/hipico-exact-sha-gate.mjs'
       - 'scripts/hipico-browser-qa.mjs'
       - 'scripts/hipico-root-contracts.mjs'
+      - 'scripts/hipico-visual-baseline-gate.mjs'
       - 'playwright.config.mjs'
       - 'playwright.hipico-matrix.config.mjs'
       - 'package.json'
@@ -37,6 +39,7 @@ on:
       - 'feature/hipico-*'
       - 'feat/hipico-*'
       - 'fix/hipico-*'
+      - 'refactor/hipico-*'
     paths:
       - 'frontend/public/hipico-control/**'
       - 'frontend/api/hipico/**'
@@ -52,12 +55,14 @@ on:
       - 'qa/hipico-ui-v41-shell.spec.mjs'
       - 'qa/hipico-ui-v41-shell.spec.mjs-snapshots/**'
       - 'qa/hipico-icon-overlap-v411.spec.mjs'
+      - 'qa/hipico-overlay-v413.spec.mjs'
       - 'qa/support/hipico-*.mjs'
       - 'qa/fixtures/hipico-*'
       - 'scripts/hipico-qa-runner-v103.mjs'
       - 'scripts/hipico-exact-sha-gate.mjs'
       - 'scripts/hipico-browser-qa.mjs'
       - 'scripts/hipico-root-contracts.mjs'
+      - 'scripts/hipico-visual-baseline-gate.mjs'
       - 'playwright.config.mjs'
       - 'playwright.hipico-matrix.config.mjs'
       - 'package.json'
@@ -116,19 +121,22 @@ jobs:
         run: npm ci --no-audit --no-fund
       - name: All root Hípico regression contracts
         run: node scripts/hipico-root-contracts.mjs
-      - name: UI System v4.1.2 and WhatsApp readiness contracts
+      - name: UI System v4.1.3, overlay and WhatsApp readiness contracts
         run: >-
           node --test
           tests/hipico_ui_system_v41_contract.test.mjs
           tests/hipico_presentation_preferences_v41.test.mjs
           tests/hipico_icon_action_contract_v41.test.mjs
           tests/hipico_ui_v412_hardening_contract.test.mjs
+          tests/hipico_ui_v413_authority_contract.test.mjs
+          tests/hipico_overlay_authority_v413.test.mjs
           tests/hipico_whatsapp_v150_readiness_contract.test.mjs
       - name: PWA and serverless operational syntax checks
         run: |
           node --check scripts/hipico-exact-sha-gate.mjs
           node --check scripts/hipico-browser-qa.mjs
           node --check scripts/hipico-root-contracts.mjs
+          node --check scripts/hipico-visual-baseline-gate.mjs
           node --check frontend/scripts/write-hipico-build-info.mjs
           node --check frontend/public/hipico-control/assets/js/advanced-group-scope.js
           node --check frontend/public/hipico-control/assets/js/backup-v2.js
@@ -137,6 +145,7 @@ jobs:
           node --check frontend/public/hipico-control/assets/js/local-auth.js
           node --check frontend/public/hipico-control/assets/js/recovery.js
           node --check frontend/public/hipico-control/assets/js/app.js
+          node --check frontend/public/hipico-control/assets/js/ui.js
           node --check frontend/public/hipico-control/assets/js/presentation-preferences.js
           node --check frontend/public/hipico-control/assets/js/shell-ui-v4.js
           node --check frontend/public/hipico-control/assets/js/theme-bootstrap.js
@@ -226,13 +235,16 @@ jobs:
         run: npx playwright install --with-deps chromium
       - name: Control Hípico responsive, offline and interaction E2E
         run: npm run test:browser:hipico
-      - name: Control Hípico UI System v4.1.2 shell, visual and floating-action E2E
+      - name: Reviewed visual baselines must already exist
+        run: node scripts/hipico-visual-baseline-gate.mjs
+      - name: Control Hípico UI System v4.1.3 shell, overlay and floating-action E2E
         env:
           HIPICO_QA_SHA: ${{ env.HIPICO_CANDIDATE_SHA }}
         run: >-
           npx playwright test
           qa/hipico-ui-v41-shell.spec.mjs
           qa/hipico-icon-overlap-v411.spec.mjs
+          qa/hipico-overlay-v413.spec.mjs
           --project=chromium
           --workers=1
       - name: Upload exact-SHA Chromium evidence

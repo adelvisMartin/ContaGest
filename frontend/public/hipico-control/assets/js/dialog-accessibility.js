@@ -1,4 +1,4 @@
-const DIALOG_SELECTOR = '[role="dialog"][aria-modal="true"]';
+const DIALOG_SELECTOR = '[role="dialog"][aria-modal="true"], dialog[open]';
 const FOCUSABLE_SELECTOR = [
   'button:not([disabled])',
   'a[href]',
@@ -8,6 +8,7 @@ const FOCUSABLE_SELECTOR = [
   '[tabindex]:not([tabindex="-1"])'
 ].join(',');
 const FIELD_CONTROL_SELECTOR = ':scope > input:not([type="hidden"]), :scope > select, :scope > textarea, :scope > button';
+const CLOSE_SELECTOR = '[data-action="close-calendar"], [data-action="close-modal"], [data-ops-close], [data-help-close]';
 const ACTION_LABELS = Object.freeze({
   'calendar-prev': 'Mes anterior',
   'calendar-next': 'Mes siguiente',
@@ -98,10 +99,14 @@ function activate(dialog) {
   activeDialog = dialog;
   labelDialog(dialog);
   setBackgroundInert(true);
+  if (typeof HTMLDialogElement !== 'undefined' && dialog instanceof HTMLDialogElement && !dialog.dataset.hipicoCloseObserved) {
+    dialog.dataset.hipicoCloseObserved = 'true';
+    dialog.addEventListener('close', () => queueMicrotask(scan));
+  }
   queueMicrotask(() => {
     if (activeDialog !== dialog || !dialog.isConnected) return;
     const candidates = focusable(dialog);
-    const preferred = dialog.querySelector('[data-autofocus], [data-action="close-modal"], [data-action="close-calendar"]');
+    const preferred = dialog.querySelector(`${CLOSE_SELECTOR}, [data-autofocus]`);
     const target = preferred instanceof HTMLElement && visible(preferred) ? preferred : candidates[0] || dialog;
     if (!dialog.hasAttribute('tabindex') && target === dialog) dialog.tabIndex = -1;
     target.focus({ preventScroll: true });
@@ -109,7 +114,7 @@ function activate(dialog) {
 }
 
 function deactivateIfNeeded() {
-  if (activeDialog?.isConnected) return;
+  if (activeDialog?.isConnected && activeDialog.matches(DIALOG_SELECTOR)) return;
   const nextDialog = document.querySelector(DIALOG_SELECTOR);
   activeDialog = null;
   if (nextDialog instanceof HTMLElement) {
@@ -126,10 +131,16 @@ function deactivateIfNeeded() {
 
 function closeActiveDialog() {
   if (!(activeDialog instanceof HTMLElement)) return false;
-  const close = activeDialog.querySelector('[data-action="close-calendar"], [data-action="close-modal"]');
-  if (!(close instanceof HTMLElement)) return false;
-  close.click();
-  return true;
+  const close = activeDialog.querySelector(CLOSE_SELECTOR);
+  if (close instanceof HTMLElement) {
+    close.click();
+    return true;
+  }
+  if (typeof HTMLDialogElement !== 'undefined' && activeDialog instanceof HTMLDialogElement && activeDialog.open) {
+    activeDialog.close();
+    return true;
+  }
+  return false;
 }
 
 function trapTab(event) {
@@ -158,7 +169,7 @@ function scan() {
   const dialog = document.querySelector(DIALOG_SELECTOR);
   if (dialog instanceof HTMLElement) {
     if (dialog !== activeDialog) {
-      if (activeDialog && !activeDialog.isConnected) activeDialog = null;
+      if (activeDialog && !activeDialog.matches(DIALOG_SELECTOR)) activeDialog = null;
       activate(dialog);
     } else {
       labelDialog(dialog);
@@ -170,7 +181,7 @@ function scan() {
 
 if (typeof document !== 'undefined') {
   document.addEventListener('keydown', (event) => {
-    if (!activeDialog?.isConnected) scan();
+    if (!activeDialog?.matches(DIALOG_SELECTOR)) scan();
     if (!activeDialog) return;
     if (event.key === 'Escape') {
       if (closeActiveDialog()) {
@@ -184,11 +195,29 @@ if (typeof document !== 'undefined') {
 
   const observer = new MutationObserver(() => scan());
   const start = () => {
-    observer.observe(document.documentElement, { childList: true, subtree: true });
+    observer.observe(document.documentElement, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: ['open', 'aria-modal']
+    });
     scan();
   };
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start, { once: true });
   else start();
 }
 
-export const __test__ = { focusable, hasAccessibleName, ensureActionLabels, ensureFieldLabels, labelDialog, closeActiveDialog, trapTab, DIALOG_SELECTOR, FOCUSABLE_SELECTOR, FIELD_CONTROL_SELECTOR, ACTION_LABELS };
+export const __test__ = {
+  focusable,
+  hasAccessibleName,
+  ensureActionLabels,
+  ensureFieldLabels,
+  labelDialog,
+  closeActiveDialog,
+  trapTab,
+  DIALOG_SELECTOR,
+  FOCUSABLE_SELECTOR,
+  FIELD_CONTROL_SELECTOR,
+  CLOSE_SELECTOR,
+  ACTION_LABELS
+};
