@@ -14,6 +14,7 @@ on:
       - 'tests/hipico*.test.mjs'
       - 'tests/fixtures/hipico/**'
       - 'qa/hipico-visual-functional-v105.spec.mjs'
+      - 'qa/hipico-ui-v41-shell.spec.mjs'
       - 'qa/support/hipico-*.mjs'
       - 'qa/fixtures/hipico-*'
       - 'scripts/hipico-qa-runner-v103.mjs'
@@ -21,6 +22,7 @@ on:
       - 'scripts/hipico-browser-qa.mjs'
       - 'scripts/hipico-root-contracts.mjs'
       - 'playwright.config.mjs'
+      - 'playwright.hipico-matrix.config.mjs'
       - 'package.json'
       - 'package-lock.json'
       - 'docs/hipico/**'
@@ -43,6 +45,7 @@ on:
       - 'tests/hipico*.test.mjs'
       - 'tests/fixtures/hipico/**'
       - 'qa/hipico-visual-functional-v105.spec.mjs'
+      - 'qa/hipico-ui-v41-shell.spec.mjs'
       - 'qa/support/hipico-*.mjs'
       - 'qa/fixtures/hipico-*'
       - 'scripts/hipico-qa-runner-v103.mjs'
@@ -50,6 +53,7 @@ on:
       - 'scripts/hipico-browser-qa.mjs'
       - 'scripts/hipico-root-contracts.mjs'
       - 'playwright.config.mjs'
+      - 'playwright.hipico-matrix.config.mjs'
       - 'package.json'
       - 'package-lock.json'
       - 'docs/hipico/**'
@@ -105,6 +109,12 @@ jobs:
         run: npm ci --no-audit --no-fund
       - name: All root Hípico regression contracts
         run: node scripts/hipico-root-contracts.mjs
+      - name: UI System v4.1 static and preference contracts
+        run: >-
+          node --test
+          tests/hipico_ui_system_v41_contract.test.mjs
+          tests/hipico_presentation_preferences_v41.test.mjs
+          tests/hipico_icon_action_contract_v41.test.mjs
       - name: PWA and serverless operational syntax checks
         run: |
           node --check scripts/hipico-exact-sha-gate.mjs
@@ -118,6 +128,9 @@ jobs:
           node --check frontend/public/hipico-control/assets/js/local-auth.js
           node --check frontend/public/hipico-control/assets/js/recovery.js
           node --check frontend/public/hipico-control/assets/js/app.js
+          node --check frontend/public/hipico-control/assets/js/presentation-preferences.js
+          node --check frontend/public/hipico-control/assets/js/shell-ui-v4.js
+          node --check frontend/public/hipico-control/assets/js/theme-bootstrap.js
           node --check frontend/public/hipico-control/assets/js/format.js
           node --check frontend/public/hipico-control/assets/js/whatsapp.js
           node --check frontend/public/hipico-control/assets/js/whatsapp/race-context.js
@@ -183,7 +196,7 @@ jobs:
 
   browser-regression:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 25
     env:
       HIPICO_CANDIDATE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
     steps:
@@ -203,11 +216,19 @@ jobs:
         run: npx playwright install --with-deps chromium
       - name: Control Hípico responsive, offline and interaction E2E
         run: npm run test:browser:hipico
+      - name: Control Hípico UI System v4.1 shell E2E
+        env:
+          HIPICO_QA_SHA: ${{ env.HIPICO_CANDIDATE_SHA }}
+        run: npx playwright test qa/hipico-ui-v41-shell.spec.mjs --project=chromium --workers=1
       - name: Upload exact-SHA Chromium evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: hipico-browser-${{ env.HIPICO_CANDIDATE_SHA }}
-          path: artifacts/qa/hipico-browser/${{ env.HIPICO_CANDIDATE_SHA }}/
+          path: |
+            artifacts/qa/hipico-browser/${{ env.HIPICO_CANDIDATE_SHA }}/
+            artifacts/qa/hipico-v105/${{ env.HIPICO_CANDIDATE_SHA }}/
+            test-results/
+            playwright-report/
           if-no-files-found: ignore
           retention-days: 14
