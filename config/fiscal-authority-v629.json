@@ -1,0 +1,33 @@
+{
+  "version": 1,
+  "issue": 629,
+  "status": "canonical",
+  "authority": {
+    "router": "backend/src/modules/fiscal/fiscal.routes.ts",
+    "repository": "backend/src/modules/fiscal/fiscal.repository.ts",
+    "migration": "backend/prisma/migrations/20260927143000_fiscal_authority_v561/migration.sql",
+    "qa": "qa/fiscal-authority-v561.test.ts",
+    "contract": "tests/fiscal_authority_v561_contract.test.mjs",
+    "workflow": ".github/workflows/fiscal-authority-v561.yml",
+    "adr": "docs/ADR_FISCAL_AUTHORITY_V561.md"
+  },
+  "historicalCompatibility": {
+    "retainedImmutableMigration": "backend/prisma/migrations/20260927143000_fiscal_engine_v561/migration.sql",
+    "reason": "Prisma migration history remains forward-only; the superseded fiscal engine migration is intentionally retained as a no-op."
+  },
+  "supersededRemoved": [
+    "backend/src/modules/accounting/fiscal.repository.ts",
+    "qa/fiscal-engine-v561.test.ts",
+    "tests/fiscal_engine_v561_contract.test.mjs",
+    ".github/workflows/fiscal-engine-v561.yml"
+  ],
+  "invariants": {
+    "ruleIdentity": "tenantId + ruleKey + version",
+    "numbering": "FiscalSequence inside the same idempotent document issuance transaction",
+    "snapshot": "FiscalDocumentRuleSnapshot is immutable historical evidence",
+    "closeEvidence": "FiscalCloseEvidence stores deterministic pre/post close evidence",
+    "idempotency": "runFinancialIdempotentMutation",
+    "tenantAndDocumentIds": "TEXT",
+    "productionConvergenceOwner": 627
+  }
+}
