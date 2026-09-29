@@ -2,7 +2,8 @@ import type { Request, Response, NextFunction } from 'express';
 import { createClient } from '@supabase/supabase-js';
 import { env, isProd } from '../../config/env.js';
 import { prisma } from '../../database/prisma.js';
-import { verifyAccessToken } from '../auth/jwt.js';
+import { assertSupabaseBridgeConfiguration, classifyPresentedTokenAuthority } from '../auth/authBoundary.js';
+import { JWT_ISSUER, verifyAccessToken } from '../auth/jwt.js';
 import { readAccessToken, readCsrfToken, validateCsrfAgainstSession } from '../auth/sessionCookies.js';
 import { hasPlatformAccess, isPlatformPermission } from '../identity/platformAccess.js';
 import { HttpError } from '../http.js';
@@ -23,8 +24,6 @@ type RequestContext = {
 };
 
 type AuthIdentityContext = Pick<RequestContext, 'authMode'> & Omit<Partial<RequestContext>, 'authMode'>;
-
-
 
 async function resolveBackendJwtContext(token: string, cookieMode = false): Promise<AuthIdentityContext> {
   const decoded = verifyAccessToken(token);
@@ -60,8 +59,10 @@ async function resolveBackendJwtContext(token: string, cookieMode = false): Prom
 }
 
 async function resolveSupabaseContext(token: string): Promise<AuthIdentityContext | null> {
-  if (env.SUPABASE_AUTH_FALLBACK !== 'true' || !env.SUPABASE_URL || !env.SUPABASE_ANON_KEY) return null;
-  const supabase = createClient(env.SUPABASE_URL, env.SUPABASE_ANON_KEY, {
+  const enabled=env.SUPABASE_AUTH_FALLBACK === 'true';
+  assertSupabaseBridgeConfiguration({ enabled, url:env.SUPABASE_URL, anonKey:env.SUPABASE_ANON_KEY });
+  if (!enabled) return null;
+  const supabase = createClient(env.SUPABASE_URL!, env.SUPABASE_ANON_KEY!, {
     auth: { persistSession:false, autoRefreshToken:false },
     global: { headers: { Authorization:`Bearer ${token}` } }
   });
@@ -74,14 +75,35 @@ async function resolveSupabaseContext(token: string): Promise<AuthIdentityContex
 }
 
 async function resolveSignedContext(token: string, cookieMode: boolean): Promise<AuthIdentityContext> {
-  try { return await resolveBackendJwtContext(token, cookieMode); }
-  catch (backendError) {
-    if (cookieMode) throw backendError;
-    const supabaseContext = await resolveSupabaseContext(token);
-    if (supabaseContext) return supabaseContext;
-    if (backendError instanceof HttpError && backendError.status === 403) throw backendError;
-    throw new HttpError(401, 'Sesión inválida, expirada o firmada por un emisor no autorizado.');
+  if(cookieMode){
+    try{return await resolveBackendJwtContext(token,true);}
+    catch(error){
+      if(error instanceof HttpError)throw error;
+      throw new HttpError(401,'Sesión inválida o expirada.');
+    }
   }
+
+  const supabaseBridgeEnabled=env.SUPABASE_AUTH_FALLBACK === 'true';
+  const authority=classifyPresentedTokenAuthority(token,{backendIssuer:JWT_ISSUER,supabaseBridgeEnabled});
+  if(authority==='backend-jwt'){
+    try{return await resolveBackendJwtContext(token,false);}
+    catch(error){
+      if(error instanceof HttpError&&error.status===403)throw error;
+      throw new HttpError(401,'Sesión inválida, expirada o firmada por un emisor no autorizado.');
+    }
+  }
+
+  try{
+    const supabaseContext=await resolveSupabaseContext(token);
+    if(supabaseContext)return supabaseContext;
+  }catch(error){
+    if(error instanceof HttpError)throw error;
+    if(error instanceof Error&&error.message==='SUPABASE_AUTH_BRIDGE_MISCONFIGURED'){
+      throw new HttpError(503,'El proveedor de identidad configurado no está disponible.');
+    }
+    throw new HttpError(401,'Sesión externa inválida o no verificable.');
+  }
+  throw new HttpError(401,'Sesión externa inválida o no verificable.');
 }
 
 export async function requestContext(req: Request, _res: Response, next: NextFunction) {
