@@ -208,7 +208,6 @@ async function createSnapshotSchema(snapshot, migrations) {
   const targetMigrations = path.join(prismaRoot, 'migrations');
   await mkdir(targetMigrations, { recursive: true });
   await cp(path.join(BACKEND_ROOT, 'prisma', 'schema.prisma'), path.join(prismaRoot, 'schema.prisma'));
-  await cp(path.join(BACKEND_ROOT, 'prisma', 'migration_lock.toml'), path.join(prismaRoot, 'migration_lock.toml'));
 
   const boundary = migrations.indexOf(snapshot.lastAppliedMigration);
   if (boundary < 0) throw new Error(`SNAPSHOT_PROVENANCE_INVALID:${snapshot.id}:missing-boundary`);
