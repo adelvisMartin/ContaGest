@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "batch": "enterprise-legacy-orphan",
+  "before": {
+    "legacyEnterpriseAdapterFiles": 1,
+    "knownSourceConsumers": 0,
+    "duplicatePresentationOwner": "frontend/src/components/enterprise.js"
+  },
+  "after": {
+    "legacyEnterpriseAdapterFiles": 0,
+    "knownSourceConsumers": 0,
+    "canonicalOwners": 3
+  },
+  "behavioralContract": "no route/service/API/persistence/auth/tenant/accounting behavior changed",
+  "proof": "tests/clean_code_refactor_authority_issue_622.test.mjs"
+}
