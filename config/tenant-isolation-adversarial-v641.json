@@ -1,0 +1,46 @@
+{
+  "schemaVersion": 641,
+  "issue": 641,
+  "authority": "config/tenant-isolation-adversarial-v641.json",
+  "directions": ["A_TO_B", "B_TO_A"],
+  "nonDisclosure": {
+    "readMissingOrForeign": 404,
+    "crossTenantReference": 409,
+    "forbiddenPrivilegeMutation": 403,
+    "rule": "Responses must not disclose the foreign tenant id, resource id, email, role name, or whether the resource exists."
+  },
+  "contexts": [
+    {
+      "id": "commercial",
+      "surfaces": [
+        {"id":"clients-crud","layers":["api","repository"],"attacks":["read","list","create","update","delete","query-filter"],"expected":"NOT_FOUND_OR_TENANT_OVERRIDE","evidence":["backend/src/modules/crud.factory.ts","qa/tenant-isolation-adversarial-v641.test.ts"]},
+        {"id":"suppliers-crud","layers":["api","repository"],"attacks":["read","list","create","update","delete","query-filter"],"expected":"NOT_FOUND_OR_TENANT_OVERRIDE","evidence":["backend/src/modules/crud.factory.ts","qa/tenant-isolation-adversarial-v641.test.ts"]},
+        {"id":"products-crud","layers":["api","repository"],"attacks":["read","list","create","update","delete","query-filter"],"expected":"NOT_FOUND_OR_TENANT_OVERRIDE","evidence":["backend/src/modules/crud.factory.ts","qa/tenant-isolation-adversarial-v641.test.ts"]},
+        {"id":"sales-references","layers":["api","service","postgres"],"attacks":["client-reference","product-reference","nested-reference","duplicate-retry"],"expected":"CROSS_TENANT_REFERENCE","evidence":["backend/src/shared/middleware/tenant-reference-guard.ts","config/composite-tenant-integrity-v634.json","qa/tenant-isolation-adversarial-v641.test.ts"]},
+        {"id":"purchase-references","layers":["api","service","postgres"],"attacks":["supplier-reference","product-reference","nested-reference","duplicate-retry"],"expected":"CROSS_TENANT_REFERENCE","evidence":["backend/src/shared/middleware/tenant-reference-guard.ts","config/composite-tenant-integrity-v634.json","qa/tenant-isolation-adversarial-v641.test.ts"]}
+      ]
+    },
+    {
+      "id": "financial",
+      "surfaces": [
+        {"id":"bank-accounts-crud","layers":["api","repository"],"attacks":["read","list","create","update","delete"],"expected":"NOT_FOUND_OR_TENANT_OVERRIDE","evidence":["backend/src/modules/crud.factory.ts","qa/tenant-isolation-adversarial-v641.test.ts"]},
+        {"id":"tax-periods-crud","layers":["api","repository","postgres"],"attacks":["read","list","create","update","delete","period-reference"],"expected":"NOT_FOUND_OR_TENANT_OVERRIDE","evidence":["backend/src/modules/crud.factory.ts","backend/src/shared/middleware/tenant-reference-guard.ts","qa/tenant-isolation-adversarial-v641.test.ts"]},
+        {"id":"accounting-source-identity","layers":["api","service","repository"],"attacks":["foreign-source-id","foreign-ledger-id","reversal-reference"],"expected":"NOT_FOUND_OR_FORBIDDEN","evidence":["backend/src/modules/accounting/accounting.routes.ts","qa/tenant-isolation-adversarial-v641.test.ts"]},
+        {"id":"reports-and-exports","layers":["api","service","repository"],"attacks":["list","filter","search","export"],"expected":"TENANT_SCOPED_RESULT","evidence":["backend/src/modules/reports/reports.routes.ts","backend/src/modules/exports/exports.routes.ts"]}
+      ]
+    },
+    {
+      "id": "identity",
+      "surfaces": [
+        {"id":"rbac-membership","layers":["api","service","repository"],"attacks":["membership-spoof","foreign-role-id","foreign-user-id","platform-permission-escalation"],"expected":"NOT_FOUND_OR_FORBIDDEN","evidence":["backend/src/modules/rbac/rbac.routes.ts","qa/tenant-isolation-adversarial-v641.test.ts"]}
+      ]
+    },
+    {
+      "id": "sensitive-verticals",
+      "surfaces": [
+        {"id":"clinical-media","layers":["api","service","repository"],"attacks":["foreign-attachment-id","signed-url","list"],"expected":"NOT_FOUND_OR_FORBIDDEN","evidence":["backend/src/modules/media/media.routes.ts"]},
+        {"id":"vertical-records","layers":["api","service","repository"],"attacks":["foreign-patient-id","foreign-owner-id","nested-reference","list","search"],"expected":"NOT_FOUND_OR_FORBIDDEN","evidence":["backend/src/modules/verticals/verticals.routes.ts","backend/src/modules/verticals/veterinary.routes.ts"]}
+      ]
+    }
+  ]
+}
