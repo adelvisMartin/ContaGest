@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "entries": [
+    {
+      "owner": "frontend/src/components/enterprise.js",
+      "status": "removed",
+      "canonicalReplacement": [
+        "frontend/src/components/ui/kit.js",
+        "frontend/src/components/ui/erp.js",
+        "frontend/src/components/vnext/index.js"
+      ],
+      "consumerProof": "tests/clean_code_refactor_authority_issue_622.test.mjs",
+      "reason": "zero-consumer duplicate presentation authority"
+    }
+  ]
+}

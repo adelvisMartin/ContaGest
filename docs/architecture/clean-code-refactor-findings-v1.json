@@ -1,0 +1,25 @@
+{
+  "version": 1,
+  "baseline": "334c7c608229cf53d2f423ccc38ecb0da0e2e51b",
+  "findings": [
+    {
+      "type": "LEGACY_ADAPTER_ORPHAN",
+      "severity": "P2",
+      "file": "frontend/src/components/enterprise.js",
+      "evidence": "repository code search and characterization contract found zero source consumers",
+      "owner": "#622",
+      "classification": "automatic",
+      "resolution": "removed in first behavior-preserving batch"
+    },
+    {
+      "type": "BOUNDARY_VIOLATION",
+      "severity": "P1",
+      "file": "frontend/src/app.js",
+      "symbol": "AccessControlService.canAccessRoute",
+      "evidence": "composition root overrides access policy and combines RBAC with license/QA-client policy",
+      "owner": "#698",
+      "classification": "human-review",
+      "resolution": "deferred to dedicated characterization/refactor because authorization/licensing behavior is high risk"
+    }
+  ]
+}

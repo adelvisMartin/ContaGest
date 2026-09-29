@@ -1,0 +1,36 @@
+{
+  "version": 1,
+  "owner": "scripts/architecture-clean-code-audit-v622.mjs",
+  "baseline": "334c7c608229cf53d2f423ccc38ecb0da0e2e51b",
+  "sourceRoots": ["frontend/src", "backend", "packages"],
+  "findingTypes": [
+    "DUPLICATE_AUTHORITY",
+    "BOUNDARY_VIOLATION",
+    "CYCLIC_DEPENDENCY",
+    "DEAD_CODE_CANDIDATE",
+    "UNSAFE_ANY_BOUNDARY",
+    "PERSISTENCE_LEAK",
+    "LEGACY_ADAPTER_ORPHAN",
+    "TEST_AUTHORITY_DRIFT",
+    "OVERSIZED_MODULE",
+    "DUPLICATE_HELPER"
+  ],
+  "severityOrder": ["P0", "P1", "P2", "P3"],
+  "rules": {
+    "deadCodeRequiresZeroConsumers": true,
+    "findingsRequireEvidence": true,
+    "automaticDeletion": false,
+    "allowlistRequiresOwnerReasonExpiry": true,
+    "compositionRootsOwnWiringNotDomainRules": true
+  },
+  "firstRefactorBatch": {
+    "candidate": "frontend/src/components/enterprise.js",
+    "reason": "legacy duplicate presentation authority",
+    "requiredConsumerCount": 0,
+    "canonicalOwners": [
+      "frontend/src/components/ui/kit.js",
+      "frontend/src/components/ui/erp.js",
+      "frontend/src/components/vnext/index.js"
+    ]
+  }
+}
