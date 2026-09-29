@@ -47,6 +47,8 @@ export async function executePsqlCompatibleFile(client, filePath, seen = new Set
 }
 
 export async function resetEphemeralDatabase(client) {
+  await client.query('DROP EXTENSION IF EXISTS "uuid-ossp" CASCADE');
+  await client.query('DROP EXTENSION IF EXISTS pgcrypto CASCADE');
   await client.query('DROP SCHEMA IF EXISTS public CASCADE');
   await client.query('DROP SCHEMA IF EXISTS auth CASCADE');
   await client.query('DROP SCHEMA IF EXISTS storage CASCADE');
