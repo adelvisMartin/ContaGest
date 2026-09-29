@@ -16,11 +16,12 @@ test('#620 pure form contracts preserve backend metadata and canonical date/time
   assert.deepEqual(mod.serializeDateRange({from:'2026-09-01',to:'2026-09-29'}),{from:'2026-09-01',to:'2026-09-29'});
 });
 
-test('#620 canonical form controls are exported without a new date framework',()=>{
+test('#620 canonical form controls are exported without a new date framework or barrel cycle',()=>{
   const forms=read('frontend/src/components/vnext/forms.js');
   const barrel=read('frontend/src/components/vnext/index.js');
   for(const name of ['CgFormField','CgSelect','CgAutocomplete','CgCombobox','CgCheckbox','CgRadioGroup','CgSwitch','CgDatePicker','CgDateRange','CgTimeField']) assert.match(barrel,new RegExp(`export \\{[^}]*${name}`,'s'));
   assert.doesNotMatch(forms,/@mui\/x-date-pickers|dayjs|date-fns|moment/);
+  assert.doesNotMatch(forms,/from '\.\/index\.js'/);
   assert.match(forms,/aria-describedby/);
   assert.match(forms,/loading/);
 });
@@ -32,19 +33,25 @@ test('#620 overlays and filters have one canonical owner and safe saving semanti
   for(const name of ['CgDialog','CgConfirmDialog','CgDrawer','CgPopover','CgMenu','CgFilterBar','CgFilterChip']) assert.match(barrel,new RegExp(`export \\{[^}]*${name}`,'s'));
   assert.match(overlays,/disableEscapeKeyDown/);
   assert.match(overlays,/saving/);
+  assert.match(overlays,/errorText/);
   assert.match(filters,/flexWrap/);
 });
 
-test('#620 real migration pilots delegate select and date/time to canonical controls',()=>{
+test('#620 real migration pilots delegate select/date-time and confirmation to canonical controls',()=>{
   const runtime=read('frontend/src/components/muiRuntime.js');
   assert.match(runtime,/CgSelect/);
   assert.match(runtime,/React\.createElement\(CgSelect/);
   assert.match(runtime,/CgDatePicker/);
   assert.match(runtime,/CgTimeField/);
   assert.doesNotMatch(runtime,/function SelectIsland[^\n]*React\.createElement\(Mui\.Select/);
+  const modal=read('frontend/src/components/modal.js');
+  assert.match(modal,/CgConfirmDialog/);
+  assert.match(modal,/createRoot/);
+  assert.match(modal,/normalizeUiError/);
   const ledger=JSON.parse(read('docs/architecture/forms-interaction-v1.json'));
   assert.equal(ledger.canonicalOwner,'frontend/src/components/vnext/index.js');
   assert.ok(ledger.deprecatedOwners.every((row)=>row.removalCriteria.includes('zero')));
+  assert.ok(ledger.pilots.length>=2);
 });
 
 test('#620 authority audit and authoritative runner are wired',()=>{
