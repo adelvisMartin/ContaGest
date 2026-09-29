@@ -78,6 +78,7 @@ export const CgCard=({children,...props}={})=>React.createElement(Mui.Card,{vari
 export { CgFormField, CgSelect, CgAutocomplete, CgCombobox, CgCheckbox, CgRadioGroup, CgSwitch, CgDatePicker, CgDateRange, CgTimeField } from './forms.js';
 export { CgDialog, CgConfirmDialog, CgDrawer, CgPopover, CgMenu } from './overlays.js';
 export { CgFilterBar, CgFilterChip } from './filters.js';
+export { CgTable, CgDataGrid, CgPagination, CgSkeleton, CgInlineError, CgRetryState, CgNoResults, CgDetailList, CgKpi, CgMetricGrid, CgStatusSummary, CgToolbar, CgCommandBar, CgSearchField } from './data.js';
 
 export const COMPONENT_LIBRARY_VERSION=1;
 export const COMPONENT_LIBRARY_OWNER='frontend/src/components/vnext/index.js';
