@@ -1,8 +1,10 @@
-/* Control Hípico — canonical UI System v4.1 entrypoint. */
-@import url("./ui-system-v3-compat.css");
-@import url("./ui-system-v4.css");
+/* Control Hípico — canonical UI System v4.1.2 entrypoint. */
+@layer compat, v4, convergence;
+@import url("./ui-system-v3-compat.css") layer(compat);
+@import url("./ui-system-v4.css") layer(v4);
 
-/* Final convergence rules live here so the product has one stylesheet authority. */
+/* Final convergence rules live in the highest Hípico cascade layer. */
+@layer convergence {
 .shell, .sidebar { transition: none; }
 
 .sidebar-collapse [data-v4-collapse-icon] {
@@ -108,4 +110,5 @@ body:has(.ops-root[data-ops-authorized="true"]) .hc-help-trigger {
   body:has(.ops-root[data-ops-authorized="true"]) .hc-help-trigger {
     bottom: calc(var(--hc-nav-height) + 12px + var(--hc-safe-bottom) + var(--hc-v4-touch) + 8px);
   }
+}
 }
