@@ -26,10 +26,16 @@ test('tenant table without RLS is rejected',()=>{
   assert.ok(codes(fixture).includes('TENANT_RLS_DISABLED'));
 });
 
-test('permissive authenticated/runtime tenant policy is rejected',()=>{
+test('permissive authenticated tenant policy is rejected',()=>{
+  const fixture=base();
+  fixture.policies=[{schema:'public',table:'Client',name:'authenticated_all',command:'ALL',roles:['authenticated'],qual:'true',withCheck:'true'}];
+  assert.ok(codes(fixture).includes('PERMISSIVE_TENANT_POLICY'));
+});
+
+test('trusted backend runtime policy is not mistaken for a tenant principal',()=>{
   const fixture=base();
   fixture.policies=[{schema:'public',table:'Client',name:'contagest_runtime_backend_all',command:'ALL',roles:['contagest_runtime'],qual:'true',withCheck:'true'}];
-  assert.ok(codes(fixture).includes('PERMISSIVE_TENANT_POLICY'));
+  assert.ok(!codes(fixture).includes('PERMISSIVE_TENANT_POLICY'));
 });
 
 test('unsafe SECURITY DEFINER search_path and execution grants are rejected',()=>{
