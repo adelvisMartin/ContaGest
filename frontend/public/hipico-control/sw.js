@@ -3,7 +3,7 @@ const SHELL_CACHE = `${CACHE_VERSION}-shell-r33-ui-v4-1-2-hardening`;
 const APP_SHELL = [
   './', './index.html', './recovery.html', './manifest.webmanifest',
   './icons/icon-192.png', './icons/icon-512.png', './icons/icon-192-maskable.png', './icons/icon-512-maskable.png',
-  './assets/css/app.css', './assets/css/platform-tokens-v1.css', './assets/css/ui-system-v3-compat.css', './assets/css/ui-system-v4.css',
+  './assets/css/app.css', './assets/css/platform-tokens-v1.css', './assets/css/ui-system-v3-compat.css', './assets/css/ui-system-v4.css', './assets/css/ui-system-v4-overlays.css',
   './assets/js/advanced-group-scope.js', './assets/js/agent-router-pro.js', './assets/js/agent-router.js', './assets/js/app-shell.js', './assets/js/app.js', './assets/js/pwa-update.js',
   './assets/js/theme-bootstrap.js', './assets/js/presentation-preferences.js', './assets/js/shell-ui-v4.js', './assets/js/control-accessibility.js', './assets/js/command-center.js', './assets/js/command-center-shell.js',
   './assets/js/backup-secure-ui.js', './assets/js/backup-v2.js', './assets/js/backup.js', './assets/js/compat.js', './assets/js/dialog-accessibility.js',
