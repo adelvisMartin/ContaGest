@@ -1,6 +1,8 @@
 export const SYSTEM_THEME_QUERY='(prefers-color-scheme: dark)';
 
 const THEME_PREFERENCES=Object.freeze(['light','dark','system']);
+const MOTION_MODES=Object.freeze(['normal','reduced']);
+const ZOOM_LEVELS=Object.freeze([100,200]);
 const UI_STATES=Object.freeze([
   'idle','loading','empty','no-results','success','warning','error','disabled','readOnly',
   'permission-denied','offline-stale','saving-submitting','retry-recovery'
@@ -39,7 +41,9 @@ export const UX_CONTRACT_V1=Object.freeze({
     overlayFocusRestore:true,
     escapeClose:true,
     zoomPercent:200,
+    zoomLevels:ZOOM_LEVELS,
     reducedMotion:true,
+    motionModes:MOTION_MODES,
     colorAloneForbidden:true,
     errorAssociationRequired:true,
     iconOnlyAccessibleNameRequired:true,
