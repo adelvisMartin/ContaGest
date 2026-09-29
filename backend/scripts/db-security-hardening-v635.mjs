@@ -12,16 +12,38 @@ const RUNTIME_ROLE='contagest_runtime';
 const TENANT_PRINCIPAL_ROLES=new Set(['authenticated','anon']);
 const PRIVILEGED_ROLES=new Set(['service_role','postgres','supabase_admin','pg_database_owner','pg_write_all_data']);
 const SAFE_DEFINER_SCHEMAS=new Set(['pg_catalog','private','public','auth']);
+const CONTAGEST_DEFINERS=new Set([
+  'current_tenant_id',
+  'current_profile_id',
+  'enforce_subscription_tenant_limit',
+  'enforce_license_subscription_tenant',
+  'enforce_subscription_user_limit',
+  'sync_license_permissions',
+]);
 
 function normalizeBoolean(value){return value===true||value==='t'||value==='true'||value===1;}
 function normalizeExpression(value){return String(value??'').trim().replace(/^\(+|\)+$/g,'').trim().toLowerCase();}
 function isTrueExpression(value){return normalizeExpression(value)==='true';}
 function normalizedRoles(value){return Array.isArray(value)?value.map(String):[];}
-function finding(code,severity,object,detail){return {code,severity,object,detail};}
+function finding(code,severity,object,detail,classification='CONTAGEST_APPLICATION'){return {code,severity,object,detail,classification};}
 function searchPathIsSafe(value){
   const parts=String(value??'').split(',').map((item)=>item.trim().replace(/^"|"$/g,'')).filter(Boolean);
   return parts.length>0&&parts[0]==='pg_catalog'&&parts.every((item)=>SAFE_DEFINER_SCHEMAS.has(item));
 }
+function isSharedProductName(name){return /^(?:budgetwallet_|hipico_)/i.test(String(name||''));}
+function classifyFunction(fn){
+  if(normalizeBoolean(fn.extensionOwned))return 'EXTENSION_OWNED';
+  if(isSharedProductName(fn.name))return 'SHARED_PRODUCT_OUT_OF_SCOPE';
+  if(fn.name==='rls_auto_enable')return 'PLATFORM_MANAGED_REVIEW';
+  if(CONTAGEST_DEFINERS.has(fn.name)||String(fn.name||'').startsWith('contagest_'))return 'CONTAGEST_APPLICATION';
+  return 'UNCLASSIFIED_REVIEW';
+}
+function classifyView(view){
+  if(isSharedProductName(view.name))return 'SHARED_PRODUCT_OUT_OF_SCOPE';
+  if(String(view.name||'').startsWith('contagest_'))return 'CONTAGEST_APPLICATION';
+  return 'UNCLASSIFIED_REVIEW';
+}
+function securityObject(fn){return `${fn.schema}.${fn.name}(${fn.identityArguments||''})`;}
 
 export function classifySecurityManifest(input){
   const roles=[...(input.roles||[])];
@@ -31,6 +53,7 @@ export function classifySecurityManifest(input){
   const views=[...(input.views||[])];
   const roleMemberships=[...(input.roleMemberships||[])];
   const findings=[];
+  const outOfScope=[];
   const tableByKey=new Map(tables.map((table)=>[`${table.schema}.${table.name}`,table]));
 
   for(const table of tables){
@@ -52,26 +75,56 @@ export function classifySecurityManifest(input){
   }
 
   for(const fn of functions){
-    if(fn.owner===RUNTIME_ROLE){
-      findings.push(finding('RUNTIME_OBJECT_OWNERSHIP','P0',`${fn.schema}.${fn.name}(${fn.identityArguments||''})`,'runtime role owns an application function'));
+    const classification=classifyFunction(fn);
+    fn.classification=classification;
+    const object=securityObject(fn);
+    if(fn.owner===RUNTIME_ROLE&&classification==='CONTAGEST_APPLICATION'){
+      findings.push(finding('RUNTIME_OBJECT_OWNERSHIP','P0',object,'runtime role owns an application function',classification));
     }
-    if(!normalizeBoolean(fn.securityDefiner)||normalizeBoolean(fn.extensionOwned))continue;
-    const object=`${fn.schema}.${fn.name}(${fn.identityArguments||''})`;
-    if(!searchPathIsSafe(fn.searchPath)){
-      findings.push(finding('UNSAFE_DEFINER_SEARCH_PATH','P0',object,`unsafe search_path: ${fn.searchPath||'(unset)'}`));
+    if(!normalizeBoolean(fn.securityDefiner)||classification==='EXTENSION_OWNED')continue;
+
+    const unsafePath=!searchPathIsSafe(fn.searchPath);
+    const publicExecute=normalizeBoolean(fn.publicExecute);
+    const anonExecute=normalizeBoolean(fn.anonExecute);
+    if(classification==='SHARED_PRODUCT_OUT_OF_SCOPE'||classification==='PLATFORM_MANAGED_REVIEW'){
+      if(unsafePath||publicExecute||anonExecute){
+        outOfScope.push(finding(
+          'OUT_OF_SCOPE_SECURITY_DEFINER_REVIEW','OUT_OF_SCOPE',object,
+          `shared/platform authority: search_path=${fn.searchPath||'(unset)'} publicExecute=${publicExecute} anonExecute=${anonExecute}`,
+          classification
+        ));
+      }
+      continue;
     }
-    if(normalizeBoolean(fn.publicExecute)){
-      findings.push(finding('PUBLIC_DEFINER_EXECUTE','P0',object,'PUBLIC can execute SECURITY DEFINER'));
+    if(classification==='UNCLASSIFIED_REVIEW'){
+      findings.push(finding('UNCLASSIFIED_SECURITY_DEFINER','P1',object,'SECURITY DEFINER must be assigned to a known application/platform authority',classification));
+      continue;
     }
-    if(normalizeBoolean(fn.anonExecute)){
-      findings.push(finding('ANON_DEFINER_EXECUTE','P0',object,'anon can execute SECURITY DEFINER'));
+    if(unsafePath){
+      findings.push(finding('UNSAFE_DEFINER_SEARCH_PATH','P0',object,`unsafe search_path: ${fn.searchPath||'(unset)'}`,classification));
+    }
+    if(publicExecute){
+      findings.push(finding('PUBLIC_DEFINER_EXECUTE','P0',object,'PUBLIC can execute SECURITY DEFINER',classification));
+    }
+    if(anonExecute){
+      findings.push(finding('ANON_DEFINER_EXECUTE','P0',object,'anon can execute SECURITY DEFINER',classification));
     }
   }
 
   for(const view of views){
-    if(view.owner===RUNTIME_ROLE){
-      findings.push(finding('RUNTIME_OBJECT_OWNERSHIP','P0',`${view.schema}.${view.name}`,'runtime role owns an application view'));
+    const classification=classifyView(view);
+    view.classification=classification;
+    const object=`${view.schema}.${view.name}`;
+    if(view.owner===RUNTIME_ROLE&&classification!=='SHARED_PRODUCT_OUT_OF_SCOPE'){
+      findings.push(finding('RUNTIME_OBJECT_OWNERSHIP','P0',object,'runtime role owns an application view',classification));
     }
+    const exposed=normalizeBoolean(view.anonSelect)||normalizeBoolean(view.authenticatedSelect);
+    if(!exposed||normalizeBoolean(view.securityInvoker))continue;
+    if(classification==='SHARED_PRODUCT_OUT_OF_SCOPE'){
+      outOfScope.push(finding('OUT_OF_SCOPE_EXPOSED_VIEW','OUT_OF_SCOPE',object,'shared product view is exposed without security_invoker',classification));
+      continue;
+    }
+    findings.push(finding('EXPOSED_DEFINER_VIEW','P0',object,'request-facing SELECT on view/materialized view without security_invoker',classification));
   }
 
   const runtime=roles.find((role)=>role.role===RUNTIME_ROLE);
@@ -88,7 +141,8 @@ export function classifySecurityManifest(input){
   }
 
   findings.sort((a,b)=>`${a.code}:${a.object}`.localeCompare(`${b.code}:${b.object}`));
-  return {verdict:findings.length?'FAIL':'PASS',findings};
+  outOfScope.sort((a,b)=>`${a.code}:${a.object}`.localeCompare(`${b.code}:${b.object}`));
+  return {verdict:findings.length?'FAIL':'PASS',findings,outOfScope};
 }
 
 function prismaModelNames(){
@@ -169,7 +223,10 @@ async function readCatalog(client){
 
   const {rows:views}=await client.query(`
     SELECT n.nspname AS schema, c.relname AS name, pg_get_userbyid(c.relowner) AS owner,
-           CASE c.relkind WHEN 'm' THEN 'materialized' ELSE 'view' END AS kind
+           CASE c.relkind WHEN 'm' THEN 'materialized' ELSE 'view' END AS kind,
+           COALESCE(c.reloptions,ARRAY[]::text[]) @> ARRAY['security_invoker=true'] AS "securityInvoker",
+           has_table_privilege('anon',format('%I.%I',n.nspname,c.relname),'SELECT') AS "anonSelect",
+           has_table_privilege('authenticated',format('%I.%I',n.nspname,c.relname),'SELECT') AS "authenticatedSelect"
     FROM pg_class c
     JOIN pg_namespace n ON n.oid=c.relnamespace
     WHERE n.nspname='public' AND c.relkind IN ('v','m')
@@ -238,6 +295,7 @@ export async function runSecurityAudit({connectionString,strict=false,output=nul
     roleMemberships:catalog.roleMemberships,
     runtimeSchemaCreate:catalog.runtimeSchemaCreate,
     findings:classified.findings,
+    outOfScope:classified.outOfScope,
     verdict:classified.verdict,
   };
   const serialized=`${JSON.stringify(manifest,null,2)}\n`;
