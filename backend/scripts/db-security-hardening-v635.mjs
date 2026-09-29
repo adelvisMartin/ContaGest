@@ -135,7 +135,9 @@ export function classifySecurityManifest(input){
   }
 
   const runtime=roles.find((role)=>role.role===RUNTIME_ROLE);
-  if(runtime&&(normalizeBoolean(runtime.superuser)||normalizeBoolean(runtime.createDb)||normalizeBoolean(runtime.createRole)||normalizeBoolean(runtime.bypassRls))){
+  if(!runtime){
+    findings.push(finding('RUNTIME_ROLE_MISSING','P1',RUNTIME_ROLE,'dedicated backend runtime role is not provisioned'));
+  }else if(normalizeBoolean(runtime.superuser)||normalizeBoolean(runtime.createDb)||normalizeBoolean(runtime.createRole)||normalizeBoolean(runtime.bypassRls)){
     findings.push(finding('RUNTIME_ROLE_ESCALATION','P0',RUNTIME_ROLE,'runtime has superuser/create-db/create-role/bypass-rls capability'));
   }
   if(normalizeBoolean(input.runtimeSchemaCreate)){
