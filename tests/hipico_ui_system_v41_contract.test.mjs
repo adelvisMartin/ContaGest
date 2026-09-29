@@ -8,19 +8,22 @@ const read = (path) => readFileSync(join(ROOT, path), 'utf8');
 
 const indexHtml = read('frontend/public/hipico-control/index.html');
 const appCss = read('frontend/public/hipico-control/assets/css/app.css');
+const platformTokens = read('frontend/public/hipico-control/assets/css/platform-tokens-v1.css');
 const compatCss = read('frontend/public/hipico-control/assets/css/ui-system-v3-compat.css');
 const shellCss = read('frontend/public/hipico-control/assets/css/ui-system-v4.css');
 const shellJs = read('frontend/public/hipico-control/assets/js/shell-ui-v4.js');
 const prefs = read('frontend/public/hipico-control/assets/js/presentation-preferences.js');
 const sw = read('frontend/public/hipico-control/sw.js');
 
-test('app.css is the single production stylesheet entrypoint', () => {
+test('app.css is the single production component-style entrypoint', () => {
   assert.match(indexHtml, /assets\/css\/app\.css/);
+  assert.match(indexHtml, /assets\/css\/platform-tokens-v1\.css/);
   assert.doesNotMatch(indexHtml, /ui-system-v4\.css/);
   assert.doesNotMatch(indexHtml, /ui-system-v3-compat\.css/);
   assert.match(appCss, /@import url\("\.\/ui-system-v3-compat\.css"\)/);
   assert.match(appCss, /@import url\("\.\/ui-system-v4\.css"\)/);
   assert.ok(appCss.indexOf('ui-system-v3-compat.css') < appCss.indexOf('ui-system-v4.css'), 'v3 compatibility must load before v4 authority');
+  assert.match(platformTokens, /Generated from frontend\/src\/design-system\/semanticTokens\.v1\.js/);
 });
 
 test('v4.1 presentation modules are wired into the production shell', () => {
@@ -75,9 +78,11 @@ test('global utilities expose settings, help and accessible icon controls', () =
   assert.match(shellJs, /Ayuda/);
 });
 
-test('service worker rotates beyond r29 and caches the canonical css dependency graph', () => {
+test('service worker rotates beyond r30 and caches the complete v4.1 css dependency graph', () => {
   assert.doesNotMatch(sw, /shell-r29-auto-update-reload/);
-  assert.match(sw, /shell-r30-ui-system-v4-1/);
+  assert.doesNotMatch(sw, /shell-r30-ui-system-v4-1`/);
+  assert.match(sw, /shell-r31-ui-system-v4-1-tokens/);
+  assert.match(sw, /platform-tokens-v1\.css/);
   assert.match(sw, /ui-system-v3-compat\.css/);
   assert.match(sw, /ui-system-v4\.css/);
   assert.match(sw, /presentation-preferences\.js/);
