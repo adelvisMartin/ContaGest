@@ -1,5 +1,5 @@
 import type { Prisma } from '@prisma/client';
-import { add, compare, serializeDecimal, subtract, ZERO } from '../financial/decimal.js';
+import { compare, serializeDecimal, subtract, ZERO } from '../financial/decimal.js';
 
 export type InventoryStockHealthStatus = 'out_of_stock' | 'below_minimum' | 'at_minimum' | 'healthy';
 
@@ -7,6 +7,7 @@ type InventoryStockInput = {
   id: string;
   sku: string;
   name: string;
+  unit: string;
   stock: Prisma.Decimal;
   reserved: Prisma.Decimal;
   minStock: Prisma.Decimal;
@@ -16,6 +17,7 @@ export type InventoryStockHealthRow = {
   productId: string;
   sku: string;
   name: string;
+  unit: string;
   stockExact: string;
   reservedExact: string;
   availableExact: string;
@@ -41,6 +43,7 @@ export function buildInventoryStockHealth(product: InventoryStockInput): Invento
     productId: product.id,
     sku: product.sku,
     name: product.name,
+    unit: product.unit,
     stockExact: serializeDecimal(product.stock, 3),
     reservedExact: serializeDecimal(product.reserved, 3),
     availableExact: serializeDecimal(available, 3),
@@ -59,18 +62,15 @@ export function summarizeInventoryStockHealth(rows: InventoryStockHealthRow[]) {
     healthy: 0
   };
 
-  let totalShortfall = ZERO;
   let needsReorder = 0;
   for (const row of rows) {
     counts[row.status] += 1;
     if (row.needsReorder) needsReorder += 1;
-    totalShortfall = add(totalShortfall, row.shortfallExact);
   }
 
   return {
     totalProducts: rows.length,
     needsReorder,
-    counts,
-    totalShortfallExact: serializeDecimal(totalShortfall, 3)
+    counts
   };
 }
