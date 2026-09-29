@@ -96,11 +96,11 @@ $nodeMajor = [int]($nodeVersion.Split('.')[0])
 if ($nodeMajor -ne 22) { Fail "Se requiere Node.js 22 LTS. Detectado: v$nodeVersion" }
 Write-Host "Node.js v$nodeVersion - OK" -ForegroundColor Green
 
-Write-Host '[1/4] Dependencias reproducibles...' -ForegroundColor Cyan
+Write-Host '[1/5] Dependencias reproducibles...' -ForegroundColor Cyan
 & $npmCmd ci --no-fund --no-audit
 if ($LASTEXITCODE -ne 0) { Fail 'npm ci terminó con error.' }
 
-Write-Host '[2/4] QA del Bridge y corpus real...' -ForegroundColor Cyan
+Write-Host '[2/5] QA del Bridge y corpus real...' -ForegroundColor Cyan
 & $npmCmd run qa
 if ($LASTEXITCODE -ne 0) { Fail 'Los checks/tests del Bridge fallaron. No se abrirá WhatsApp.' }
 
@@ -114,6 +114,7 @@ $env:HIPICO_LAB_CHANNEL_KEY = 'control-hipico-lab'
 $env:HIPICO_REQUIRE_PINNED_GROUP_IDS = 'true'
 $env:HIPICO_LAB_SEND_ENABLED = 'true'
 $env:HIPICO_LAB_TEST_INPUT_ENABLED = 'true'
+$env:HIPICO_SOURCE_AUTO_REPLY_ENABLED = 'false'
 $env:HIPICO_TRAINING_JOURNAL_ENABLED = 'true'
 $env:HIPICO_SOURCE_BASELINE_IGNORE_HISTORY = 'true'
 $env:HIPICO_DIAGNOSTIC_SCREENSHOTS_ENABLED = 'true'
@@ -123,21 +124,25 @@ $env:HIPICO_LAB_TEST_BOOTSTRAP_LIMIT = '8'
 
 $bindings = Read-Bindings
 if (-not $bindings) {
-  Write-Host '[3/4] No existen bindings seguros. Abriré el asistente para capturar los dos IDs @g.us.' -ForegroundColor Yellow
+  Write-Host '[3/5] No existen bindings seguros. Abriré el asistente para capturar los dos IDs @g.us.' -ForegroundColor Yellow
   Write-Host 'Te pedirá abrir manualmente primero el grupo real y luego Control hípico lab. No envía mensajes.' -ForegroundColor Yellow
   & $npmCmd run capture:groups
   if ($LASTEXITCODE -ne 0) { Fail 'No se pudieron capturar los IDs de los grupos.' }
   $bindings = Read-Bindings
   if (-not $bindings) { Fail 'Los bindings guardados no son válidos.' }
 } else {
-  Write-Host '[3/4] IDs @g.us ya verificados.' -ForegroundColor Green
+  Write-Host '[3/5] IDs @g.us ya verificados.' -ForegroundColor Green
 }
 
 $env:HIPICO_SOURCE_GROUP_ID = $bindings.SourceId
 $env:HIPICO_LAB_GROUP_ID = $bindings.LabId
 Protect-LegacyMirrorQueue
 
-Write-Host '[4/4] Iniciando comparación en vivo...' -ForegroundColor Cyan
+Write-Host '[4/5] Readiness seguro del LAB...' -ForegroundColor Cyan
+& $npmCmd run readiness -- --lab
+if ($LASTEXITCODE -ne 0) { Fail 'El readiness LAB no está verde. No se abrirá WhatsApp ni se enviará al LAB.' }
+
+Write-Host '[5/5] Iniciando comparación en vivo...' -ForegroundColor Cyan
 Write-Host 'FUENTE: CLUB HIPICO TRIPLE CROWN · SOLO LECTURA' -ForegroundColor Green
 Write-Host "SALIDA: $LabGroupName · ÚNICO DESTINO DE ESCRITURA" -ForegroundColor Green
 Write-Host 'Los mensajes nuevos del grupo real se clasifican y su propuesta se refleja en LAB.' -ForegroundColor Green
