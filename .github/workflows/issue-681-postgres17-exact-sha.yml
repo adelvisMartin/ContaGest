@@ -1,0 +1,108 @@
+name: DB #681 · #632 exact-SHA PostgreSQL 17 evidence
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/issue-681-postgres17-exact-sha.yml'
+      - 'docs/database/ISSUE_681_EXACT_SHA_EVIDENCE.md'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  TARGET_SHA: c44b58f0bd2f74df748dad96120751a987ed9e45
+  BASE_SHA: fa1197f0e1fb48c93b9f3a7173c1c44d5d628f3f
+
+jobs:
+  canonical-database-gate:
+    name: '#632 exact SHA · PostgreSQL 17'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: contagest_681_e2e
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d contagest_681_e2e"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/contagest_681_e2e
+    steps:
+      - name: Checkout exact #632 candidate
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TARGET_SHA }}
+          fetch-depth: 0
+
+      - name: Assert exact candidate and base exist
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$TARGET_SHA"
+          git cat-file -e "$BASE_SHA^{commit}"
+          test "$(git merge-base "$BASE_SHA" HEAD)" = "$BASE_SHA"
+
+      - name: Setup Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install PostgreSQL client
+        shell: bash
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Verify PostgreSQL 17 server
+        shell: bash
+        run: |
+          set -euo pipefail
+          version_num="$(psql "$DATABASE_URL" -Atqc 'SHOW server_version_num')"
+          test "$version_num" -ge 170000
+          test "$version_num" -lt 180000
+          echo "PostgreSQL server_version_num=$version_num"
+
+      - name: Backend typecheck
+        run: npm run typecheck
+
+      - name: Execute #632 canonical gate on exact SHA
+        shell: bash
+        run: |
+          set -euo pipefail
+          node scripts/canonical-database-gate-v632.mjs \
+            --base "$BASE_SHA" \
+            --expected-sha "$TARGET_SHA"
+
+      - name: Assert PASS evidence is bound to exact SHA
+        shell: bash
+        run: |
+          set -euo pipefail
+          evidence="artifacts/database-gate-v632/$TARGET_SHA/gate.json"
+          test -f "$evidence"
+          node -e '
+            const fs=require("fs");
+            const p=process.argv[1];
+            const sha=process.argv[2];
+            const x=JSON.parse(fs.readFileSync(p,"utf8"));
+            if(x.candidateSha!==sha) throw new Error(`candidate mismatch ${x.candidateSha}`);
+            if(x.category!=="PASS") throw new Error(`gate category ${x.category}`);
+            if(!Array.isArray(x.checks)||x.checks.some(c=>c.status==="FAIL"||c.status==="BLOCKED"||c.status==="NOT_EXECUTED")) throw new Error("material gate not PASS");
+          ' "$evidence" "$TARGET_SHA"
+
+      - name: Upload sanitized exact-SHA evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: issue-681-db-gate-${{ env.TARGET_SHA }}
+          path: artifacts/database-gate-v632/${{ env.TARGET_SHA }}/
+          if-no-files-found: error
