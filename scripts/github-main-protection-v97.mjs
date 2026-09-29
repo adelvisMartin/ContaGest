@@ -10,11 +10,21 @@ const command=process.argv[2]||'plan';
 const full=process.argv.includes('--full');
 const repo=governance.repository;
 const branch=governance.targetBranch;
-const ciContext='ContaGest CI / validate';
+const activeRequiredContexts=(Array.isArray(governance.requiredChecks?.active)?governance.requiredChecks.active:[])
+  .map((entry)=>typeof entry==='string'?entry:entry?.context)
+  .filter((entry)=>typeof entry==='string'&&entry.trim().length>0);
 
+function requireFullProfileAuthorization(){
+  if(full&&activeRequiredContexts.length===0){
+    throw new Error('FULL_PROFILE_REQUIRES_VERSIONED_ACTIVE_CHECK');
+  }
+}
 function protectionPayload(){
   const payload=structuredClone(structural);
-  if(full)payload.required_status_checks={strict:true,contexts:[ciContext]};
+  if(full){
+    requireFullProfileAuthorization();
+    payload.required_status_checks={strict:true,contexts:[...new Set(activeRequiredContexts)]};
+  }
   return payload;
 }
 function gh(args,input=null){
@@ -39,7 +49,9 @@ function verify(data,branchData=null){
   if(structural.required_conversation_resolution===true&&data?.required_conversation_resolution?.enabled!==true)failures.push('CONVERSATION_RESOLUTION_NOT_REQUIRED');
   if(full){
     const contexts=new Set([...(data?.required_status_checks?.contexts||[]),...(data?.required_status_checks?.checks||[]).map((item)=>item?.context).filter(Boolean)]);
-    if(!contexts.has(ciContext))failures.push(`REQUIRED_CHECK_MISSING:${ciContext}`);
+    for(const requiredContext of activeRequiredContexts){
+      if(!contexts.has(requiredContext))failures.push(`REQUIRED_CHECK_MISSING:${requiredContext}`);
+    }
   }
   return {issue:97,repository:repo,branch,profile:full?'full':'structural',verdict:failures.length?'FAIL':'PASS',failures};
 }
@@ -79,12 +91,15 @@ function readCurrent(){
   return {protection,branchData,verification};
 }
 
+if(full){
+  try{requireFullProfileAuthorization();}catch(error){console.error(String(error?.message||error));process.exit(3);}
+}
+
 if(command==='plan'){
   console.log(JSON.stringify({issue:97,profile:full?'full':'structural',endpoint:`repos/${repo}/branches/${branch}/protection`,payload:protectionPayload()},null,2));
   process.exit(0);
 }
 if(command==='apply'){
-  if(full&&!process.argv.includes('--issue-134-recovered')){console.error('FULL_PROFILE_REQUIRES_--issue-134-recovered');process.exit(3);}
   let before=null;
   try{
     const current=readCurrent();
@@ -123,4 +138,4 @@ if(command==='snapshot'){
     process.exit(3);
   }
 }
-console.error('Usa plan|apply|verify|snapshot [--full] [--issue-134-recovered].');process.exit(2);
+console.error('Usa plan|apply|verify|snapshot [--full]. El perfil full requiere requiredChecks.active versionado.');process.exit(2);
