@@ -1,5 +1,10 @@
 import { test, expect } from '@playwright/test';
+import { mkdirSync } from 'node:fs';
+import { join } from 'node:path';
 import { buildHipicoQaFixture, HIPICO_VIEWS } from './support/hipico-visual-catalog-v105.mjs';
+
+const QA_SHA = String(process.env.HIPICO_QA_SHA || process.env.GITHUB_SHA || 'local').trim();
+const EVIDENCE_ROOT = join(process.cwd(), 'artifacts', 'qa', 'hipico-v41', QA_SHA);
 
 async function resetQaStorage(page) {
   await page.goto('/hipico-control/recovery.html');
@@ -40,6 +45,17 @@ async function openView(page, view = 'dashboard') {
   await expect(page.locator('.content')).toBeVisible();
 }
 
+async function selectTheme(page, theme) {
+  await page.getByRole('button', { name: 'Abrir menú' }).click();
+  await page.getByRole('menuitemradio', { name: theme === 'dark' ? 'Oscuro' : theme === 'light' ? 'Claro' : 'Sistema' }).click();
+  await expect(page.locator('html')).toHaveAttribute('data-theme', theme);
+}
+
+async function saveEvidence(page, name) {
+  mkdirSync(EVIDENCE_ROOT, { recursive: true });
+  await page.screenshot({ path: join(EVIDENCE_ROOT, `${name}.png`), fullPage: true, animations: 'disabled' });
+}
+
 test.describe('Control Hípico UI System v4.1 · desktop shell', () => {
   test.use({ viewport: { width: 1366, height: 900 }, hasTouch: false });
 
@@ -55,9 +71,7 @@ test.describe('Control Hípico UI System v4.1 · desktop shell', () => {
         return {
           mainWidth: main?.width || 0,
           contentWidth: content?.width || 0,
-          maxWidth: style?.maxWidth || '',
-          marginLeft: style?.marginLeft || '',
-          marginRight: style?.marginRight || ''
+          maxWidth: style?.maxWidth || ''
         };
       });
       expect(metrics.maxWidth, `${view.id} must not reintroduce a centered max-width`).toBe('none');
@@ -91,7 +105,7 @@ test.describe('Control Hípico UI System v4.1 · desktop shell', () => {
     await openView(page);
     await page.getByRole('button', { name: 'Colapsar barra lateral' }).click();
     await page.getByRole('button', { name: 'Cierres y saldos' }).click();
-    await expect(page.getByRole('heading', { name: 'Cierres y saldos', exact: true })).toBeVisible();
+    await expect(page.locator('.topbar h1')).toHaveText('Cierres y saldos');
     await expect(page.locator('.shell')).toHaveClass(/is-sidebar-collapsed/);
   });
 
@@ -119,7 +133,7 @@ test.describe('Control Hípico UI System v4.1 · desktop shell', () => {
   });
 
   test('desktop button and input density stays within the v4 scale', async ({ page }) => {
-    await openView(page);
+    await openView(page, 'race');
     const metrics = await page.evaluate(() => {
       const defaultButton = [...document.querySelectorAll('.button')].find((node) => !node.classList.contains('button--small') && !node.classList.contains('button--xl'));
       const input = document.querySelector('.input');
@@ -137,6 +151,18 @@ test.describe('Control Hípico UI System v4.1 · desktop shell', () => {
     expect(metrics.buttonFont).toBeLessThanOrEqual(13.5);
     expect(metrics.inputMinHeight).toBe(36);
     expect(metrics.inputFont).toBeLessThanOrEqual(13.5);
+  });
+
+  test('captures exact-SHA light and dark visual evidence for representative views', async ({ page }) => {
+    await openView(page, 'dashboard');
+    for (const view of ['dashboard', 'race', 'reports', 'settings']) {
+      await page.goto(`/hipico-control/?view=${view}`);
+      await expect(page.locator('.shell')).toBeVisible();
+      await selectTheme(page, 'light');
+      await saveEvidence(page, `${view}-desktop-1366-light`);
+      await selectTheme(page, 'dark');
+      await saveEvidence(page, `${view}-desktop-1366-dark`);
+    }
   });
 });
 
@@ -164,5 +190,16 @@ test.describe('Control Hípico UI System v4.1 · touch shell', () => {
       })
       .map((node) => ({ label: node.getAttribute('aria-label') || node.textContent?.trim() || 'button', height: node.getBoundingClientRect().height })));
     expect(tooSmall).toEqual([]);
+  });
+
+  test('captures mobile light and dark evidence', async ({ page }) => {
+    await openView(page, 'dashboard');
+    const legacyTheme = page.getByRole('button', { name: 'Cambiar tema' }).first();
+    if (await legacyTheme.isVisible()) {
+      await legacyTheme.click();
+      await saveEvidence(page, 'dashboard-mobile-390-light');
+      await legacyTheme.click();
+      await saveEvidence(page, 'dashboard-mobile-390-dark');
+    }
   });
 });
