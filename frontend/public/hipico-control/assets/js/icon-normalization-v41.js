@@ -16,7 +16,7 @@ function normalizeOperationalCenter(scope = document) {
   scope.querySelectorAll?.('.ops-icon[data-ops-close]').forEach((button) => {
     button.setAttribute('aria-label', 'Cerrar centro operativo');
     button.setAttribute('title', 'Cerrar');
-    button.innerHTML = icon('close');
+    if (!button.querySelector('svg')) button.innerHTML = icon('close');
   });
 
   scope.querySelectorAll?.('[data-ops-copy]').forEach((button) => {
@@ -28,7 +28,7 @@ function normalizeOperationalCenter(scope = document) {
 
   scope.querySelectorAll?.('.ops-message summary > span[aria-hidden="true"]').forEach((host) => {
     host.classList.add('ops-chevron');
-    host.innerHTML = icon('back');
+    if (!host.querySelector('svg')) host.innerHTML = icon('back');
   });
 }
 
