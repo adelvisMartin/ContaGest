@@ -4,18 +4,18 @@ Canonical local verification for issue #630.
 
 ## Purpose
 
-`node scripts/local-verification-runner-v630.mjs` orchestrates existing authoritative repository commands. It does not replace test suites or GitHub workflows. Its evidence is bound to the checked-out candidate SHA and is intended to remain useful when GitHub Actions or Vercel are unavailable.
+`npm run verify:local -- --profile <profile>` orchestrates existing authoritative repository commands. It does not replace test suites or GitHub workflows. Its evidence is bound to the checked-out candidate SHA and is intended to remain useful when GitHub Actions or Vercel are unavailable.
 
 ## Profiles
 
 ```powershell
-node scripts/local-verification-runner-v630.mjs --profile backend
-node scripts/local-verification-runner-v630.mjs --profile frontend
-node scripts/local-verification-runner-v630.mjs --profile database
-node scripts/local-verification-runner-v630.mjs --profile financial
-node scripts/local-verification-runner-v630.mjs --profile ui
-node scripts/local-verification-runner-v630.mjs --profile changed --base main
-node scripts/local-verification-runner-v630.mjs --profile full
+npm run verify:local -- --profile backend
+npm run verify:local -- --profile frontend
+npm run verify:local -- --profile database
+npm run verify:local -- --profile financial
+npm run verify:local -- --profile ui
+npm run verify:local -- --profile changed --base main
+npm run verify:local -- --profile full
 ```
 
 Use `--dry-run` to print the exact plan with every gate as `NOT_EXECUTED`. A dry-run never claims PASS.
@@ -24,11 +24,11 @@ Use `--expected-sha=<40-char-sha>` whenever the candidate SHA is known. A mismat
 
 ## Profile authority
 
-- `backend`: root backend typecheck, authoritative tests/contracts and backend build.
+- `backend`: backend typecheck, authoritative tests/contracts and backend build.
 - `frontend`: frontend build plus the current visual contract suite.
 - `database`: #626 migration from-zero, supported upgrades, physical manifest, DB authority and raw-SQL security.
 - `financial`: real PostgreSQL financial/fiscal/idempotency regressions plus Decimal, ledger, typecheck and backend build.
-- `ui`: real frontend build, existing `qa:ui` authority and Chromium functional smoke.
+- `ui`: frontend build, the current `qa:ui:58` authority plus explicit Chromium functional, accessibility and contrast gates. The superseded/broken `qa:ui` chain is not selected.
 - `changed`: asks `agent:gates` for the changed boundaries and maps only affected boundaries to the profiles above; it never invents a second routing catalog.
 - `full`: de-duplicates the authoritative commands from the profiles above; it does not enumerate historical workflows.
 
@@ -47,7 +47,7 @@ The DB profile delegates migrations to #626; it does not execute ad-hoc DDL.
 
 ## Browser
 
-The UI profile uses the existing repository UI/browser commands, which are Chromium-gated. Firefox/WebKit remain separate scheduled/issue-specific evidence unless a ticket explicitly requires them.
+The UI profile uses the existing repository Chromium gates and real frontend build/runtime paths. Firefox/WebKit remain separate scheduled/issue-specific evidence unless a ticket explicitly requires them.
 
 ## Evidence
 
