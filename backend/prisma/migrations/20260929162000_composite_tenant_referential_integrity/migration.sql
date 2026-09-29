@@ -1,7 +1,7 @@
 -- #634 Composite Tenant Referential Integrity
 -- Forward-only integrity guards. Existing FK constraints remain lifecycle owners.
 -- No data rewrite/backfill is performed: VALIDATE CONSTRAINT aborts on ambiguous cross-tenant history.
--- The catalog count is fail-closed so an unexpected schema cannot receive heuristic DDL silently.
+-- Count + exact relation-set digest fail closed before any DDL when the canonical catalog drifts.
 
 BEGIN;
 
@@ -9,6 +9,7 @@ DO $$
 DECLARE
   r record;
   candidate_count integer;
+  relation_set_md5 text;
   parent_unique_name text;
   child_index_name text;
   guard_name text;
@@ -26,19 +27,31 @@ BEGIN
       FROM pg_class c
       JOIN pg_namespace n ON n.oid=c.relnamespace
      WHERE n.nspname='public' AND c.relkind='r'
+  ), candidates AS (
+    SELECT child.relname AS child_table,
+           child_col.attname::text AS child_column,
+           parent.relname AS parent_table,
+           parent_col.attname::text AS parent_column
+      FROM pg_constraint con
+      JOIN app_tables child ON child.oid=con.conrelid
+      JOIN app_tables parent ON parent.oid=con.confrelid
+      JOIN pg_attribute child_col ON child_col.attrelid=con.conrelid AND child_col.attnum=con.conkey[1]
+      JOIN pg_attribute parent_col ON parent_col.attrelid=con.confrelid AND parent_col.attnum=con.confkey[1]
+     WHERE con.contype='f'
+       AND child.tenant_col IS NOT NULL
+       AND parent.tenant_col IS NOT NULL
+       AND cardinality(con.conkey)=1
+       AND cardinality(con.confkey)=1
   )
-  SELECT count(*) INTO candidate_count
-    FROM pg_constraint con
-    JOIN app_tables child ON child.oid=con.conrelid
-    JOIN app_tables parent ON parent.oid=con.confrelid
-   WHERE con.contype='f'
-     AND child.tenant_col IS NOT NULL
-     AND parent.tenant_col IS NOT NULL
-     AND cardinality(con.conkey)=1
-     AND cardinality(con.confkey)=1;
+  SELECT count(*),
+         md5(string_agg(child_table || '.' || child_column || '->' || parent_table || '.' || parent_column, E'\n'
+                        ORDER BY child_table, child_column, parent_table, parent_column))
+    INTO candidate_count, relation_set_md5
+    FROM candidates;
 
-  IF candidate_count <> 72 THEN
-    RAISE EXCEPTION 'TENANT_RELATION_CATALOG_DRIFT expected=72 actual=%', candidate_count;
+  IF candidate_count <> 72 OR relation_set_md5 <> '54bfdcbf73818d4892484bafc0f25e2c' THEN
+    RAISE EXCEPTION 'TENANT_RELATION_CATALOG_DRIFT expected_count=72 actual_count=% expected_md5=54bfdcbf73818d4892484bafc0f25e2c actual_md5=%',
+      candidate_count, relation_set_md5;
   END IF;
 
   FOR r IN
@@ -72,7 +85,7 @@ BEGIN
        AND parent.tenant_col IS NOT NULL
        AND cardinality(con.conkey)=1
        AND cardinality(con.confkey)=1
-     ORDER BY child.relname, parent.relname, child_col.attname
+     ORDER BY child.relname, child_col.attname, parent.relname, parent_col.attname
   LOOP
     parent_unique_name := r.parent_table || '_' || r.parent_tenant_column || '_' || r.parent_column || '_tg_uk';
     child_index_name := r.child_table || '_' || r.child_tenant_column || '_' || r.child_column || '_tg_idx';
