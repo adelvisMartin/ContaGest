@@ -11,6 +11,7 @@ import { AnalyticsService } from './services/analyticsService.js';
 import { AuthService } from './services/authService.js';
 import { SupabaseSyncService } from './services/supabaseSyncService.js';
 import { AccessControlService } from './services/accessControlService.js';
+import { canAccessRouteWithLicensePolicy } from './services/routeAccessPolicy.js';
 import { UrlStateService } from './services/urlStateService.js';
 import { QueryParamEnhancer } from './services/queryParamEnhancer.js';
 import { THEME_OPTIONS } from './data/themeCatalog.js';
@@ -20,22 +21,10 @@ import { ModuleRuntimePage } from './pages/ModuleRuntimePage.js';
 import { createPageResolver } from './runtime/pageResolver.js';
 
 const pageModules=import.meta.glob(['./pages/*Page.js','./pages/*Page.jsx','./pages/*Page*.jsx','!./pages/ModuleRuntimePage.js']);
-const CORE_LICENSE=new Set(['dashboard','profile','ayuda','soporte','login']),REACT_MANAGED_ROUTES=new Set(['veterinaria']);
+const REACT_MANAGED_ROUTES=new Set(['veterinaria']);
 const {resolvePage}=createPageResolver({registry:pageRegistry,modules:pageModules,moduleRuntimePage:ModuleRuntimePage});
 const originalCanAccess=AccessControlService.canAccessRoute.bind(AccessControlService);
-AccessControlService.canAccessRoute=(state,route)=>{
-  const session=AuthService.getSession();
-  const license=state?.activeLicense;
-  const validLicense=Boolean(license?.status==='active'&&(!license.expiresAt||new Date(license.expiresAt)>new Date()));
-  const qaClient=Boolean(session?.audience==='client'&&license?.qaMode===true&&validLicense);
-  if(qaClient)return CORE_LICENSE.has(route)||(Array.isArray(license.modules)&&license.modules.includes(route));
-  const allowedByRole=originalCanAccess(state,route);
-  if(!allowedByRole)return false;
-  const enforceLicense=Boolean(license&&session?.audience==='client');
-  if(!enforceLicense)return true;
-  if(CORE_LICENSE.has(route))return true;
-  return validLicense&&Array.isArray(license.modules)&&license.modules.includes(route);
-};
+const canAccessRoute=(state,route)=>canAccessRouteWithLicensePolicy({state,route,session:AuthService.getSession(),canAccessByRole:originalCanAccess});
 const app=document.getElementById('app');
 let rendering=false,pending=false,renderGeneration=0,lastRoute=null,mountedPage=null,lastSignature='',globalKeys=false,outsideUserMenu=false,autoBcv=false,appReady=false;
 const lastAutoSync=new Map();
@@ -53,11 +42,11 @@ function applyAuthenticatedSession(session){
   });
 }
 const signature=(s,r)=>JSON.stringify({r,theme:s.settings?.theme,lang:s.settings?.lang,mode:s.settings?.businessMode,support:s.settings?.supportWidget,collapsed:s.settings?.sidebarCollapsed,profile:[s.profile?.name,s.profile?.role,s.profile?.avatarDataUrl],license:[s.activeLicense?.id,s.activeLicense?.status,s.activeLicense?.expiresAt,s.activeLicense?.qaMode],experience:[s.experienceProfile?.mode,s.experienceProfile?.landingRoute]});
-const canNavigate=(route)=>{const s=Store.get();return (AuthService.isAuthenticated()||route==='login')&&AccessControlService.canAccessRoute(s,route);};
+const canNavigate=(route)=>{const s=Store.get();return (AuthService.isAuthenticated()||route==='login')&&canAccessRoute(s,route);};
 const experienceHome=(state=Store.get())=>{
   const mode=state?.experienceProfile?.mode||state?.settings?.businessMode||'admin';
   const candidates=[state?.experienceProfile?.landingRoute,landingForMode(mode),'dashboard'].filter(Boolean);
-  return candidates.find((route)=>pageRegistry[route]&&AccessControlService.canAccessRoute(state,route))||'dashboard';
+  return candidates.find((route)=>pageRegistry[route]&&canAccessRoute(state,route))||'dashboard';
 };
 const deny=()=>Toast.show('Este módulo no está habilitado para el usuario, rol, licencia o plan activo.','warning');
 function navigate(route,params={},options={}){if(!route)return;if(!canNavigate(route))return deny();const s=Store.get(),nav=document.getElementById('mainMenu');if(nav)sessionStorage.setItem('cg_sidebar_scroll_top',String(nav.scrollTop||0));AnalyticsService.track('navigation',{from:s.route,to:route});UrlStateService.navigate(route,params,options);}
@@ -82,7 +71,7 @@ async function render({force=false}={}){
   rendering=true;
   try{
     const state=Store.get(),requested=state.route||'dashboard';
-    if(AuthService.isAuthenticated()&&requested!=='login'&&!AccessControlService.canAccessRoute(state,requested)){deny();UrlStateService.navigate(experienceHome(state),{}, {replace:true});return;}
+    if(AuthService.isAuthenticated()&&requested!=='login'&&!canAccessRoute(state,requested)){deny();UrlStateService.navigate(experienceHome(state),{}, {replace:true});return;}
     if(!AuthService.isAuthenticated()&&requested!=='login')rememberProtectedRoute(requested);
     const effective=!AuthService.isAuthenticated()&&requested!=='login'?'login':requested;
     const {page,route}=await resolvePage(effective);
