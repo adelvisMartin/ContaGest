@@ -1,15 +1,16 @@
 /*
  * Compatibility token facade.
  *
- * The canonical values live in `styles/contagest-visual-system-v12.css`.
- * This module intentionally exposes CSS variable references instead of a second
- * palette so older JS components inherit the active light/dark theme.
+ * Canonical semantic values live in `../design-system/semanticTokens.v1.js` and
+ * are emitted as CSS by `scripts/generate-design-tokens-v631.mjs`. This module
+ * intentionally exposes CSS variable references instead of a second palette so
+ * older JS components inherit the active light/dark/system theme.
  */
 export const Tokens = Object.freeze({
   colors: Object.freeze({
     primary: 'var(--cg-v-brand)',
     primaryContainer: 'var(--cg-v-brand-soft)',
-    accent: 'var(--cg-v-brand)',
+    accent: 'var(--cg-v-accent)',
     surface: 'var(--cg-v-surface)',
     canvas: 'var(--cg-v-bg)',
     darkSurface: 'var(--cg-v-surface)',
