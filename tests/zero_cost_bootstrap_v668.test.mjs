@@ -11,6 +11,7 @@ import {
   sanitizeBootstrapSummary,
   selectPostgresRuntime,
   withOwnedPostgresContainer,
+  verifyNativePostgres17,
 } from '../scripts/zero-cost-bootstrap-v668.mjs';
 
 test('parsePostgresMajor accepts PostgreSQL 17 and identifies other majors', () => {
@@ -165,4 +166,39 @@ test('zero-cost bootstrap runbook documents native, container, Windows and hones
   assert.match(source, /BLOCKED/);
   assert.match(source, /USD 0/);
   assert.match(source, /Supabase.*optional/i);
+});
+
+test('remote generic DATABASE_URL stays optional and does not block container fallback', () => {
+  const runtime = selectPostgresRuntime({
+    env: { DATABASE_URL: 'postgresql://u:p@provider.example.com:5432/prod' },
+    probe: (command) => command === 'docker'
+      ? { available: true, output: 'Docker version 28.0.0' }
+      : { available: false, output: '' },
+  });
+  assert.equal(runtime.kind, 'container');
+  assert.equal(runtime.engine, 'docker');
+});
+
+test('verifyNativePostgres17 checks server_version_num, not only the psql client version', () => {
+  const calls = [];
+  const adapter = {
+    run(command, args) {
+      calls.push([command, ...args]);
+      return { status: 0, stdout: '170006\n', stderr: '' };
+    },
+  };
+  const result = verifyNativePostgres17({
+    adminUrl: 'postgresql://u:p@127.0.0.1:5432/postgres',
+    adapter,
+  });
+  assert.equal(result.major, 17);
+  assert.ok(calls[0].includes('SHOW server_version_num'));
+
+  const wrong = {
+    run() { return { status: 0, stdout: '160009\n', stderr: '' }; },
+  };
+  assert.throws(() => verifyNativePostgres17({
+    adminUrl: 'postgresql://u:p@127.0.0.1:5432/postgres',
+    adapter: wrong,
+  }), /ZERO_COST_NATIVE_SERVER_MAJOR_NOT_17:16/);
 });
