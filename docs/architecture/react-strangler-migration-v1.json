@@ -1,0 +1,36 @@
+{
+  "version": 1,
+  "strategy": "route-slice-strangler",
+  "baseline": "4ca4ded2dcd34c864d7524ee55530cf36c5d228f",
+  "rules": {
+    "removeLegacyOnlyWhenConsumersZero": true,
+    "preserveDeepLinks": true,
+    "preserveAuthRbac": true,
+    "preserveApiContracts": true,
+    "noBigBangRewrite": true,
+    "lazyRouteLoading": true,
+    "hipicoOutOfScope": true
+  },
+  "routes": [
+    {
+      "route": "ayuda",
+      "legacyRenderer": "frontend/src/pages/HelpPage.js",
+      "reactRenderer": "frontend/src/pages/HelpPage.jsx",
+      "status": "MIGRATED_REACT",
+      "legacyConsumers": 0,
+      "risk": "low",
+      "businessAuthorityChanged": false,
+      "urlChanged": false,
+      "rbacChanged": false
+    },
+    {
+      "route": "veterinaria",
+      "reactRenderer": "frontend/src/pages/VeterinaryClinicPageV1123.jsx",
+      "status": "REACT_EXISTING",
+      "legacyConsumers": null,
+      "risk": "high"
+    }
+  ],
+  "nextSlices": ["profile", "soporte", "configuracion"],
+  "removalPolicy": "A legacy renderer may be deleted only after repository consumer search proves zero consumers and the route registry points to the React replacement."
+}
