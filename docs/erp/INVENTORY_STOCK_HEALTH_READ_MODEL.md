@@ -35,6 +35,8 @@ Statuses:
 
 `needsReorder` is true only when a positive minimum is configured and `available <= minStock`. A product with `minStock=0` does not generate reorder noise solely because its stock is zero.
 
+`shortfallExact` is deliberately **per product and per unit of measure**. The summary never adds shortfalls from different SKUs because `2 kg + 3 units + 1 litre` is not a meaningful domain quantity. Each row therefore carries `unit` alongside the exact-decimal values.
+
 ## API
 
 ```http
@@ -54,6 +56,7 @@ Example response shape:
       "productId": "...",
       "sku": "SKU-1",
       "name": "Producto 1",
+      "unit": "kg",
       "stockExact": "10.000",
       "reservedExact": "7.500",
       "availableExact": "2.500",
@@ -71,8 +74,7 @@ Example response shape:
       "below_minimum": 1,
       "at_minimum": 0,
       "healthy": 0
-    },
-    "totalShortfallExact": "1.500"
+    }
   },
   "meta": {
     "onlyNeedsReorder": true,
@@ -101,4 +103,4 @@ Those belong to #755, #756 and #757.
 
 ## Verification contract
 
-Preventive tests cover reserved-vs-available arithmetic, exact minimum boundaries, zero-minimum behavior, healthy state, tenant/RBAC route wiring, actionable-only filtering and bounded scans. Full backend typecheck/runtime evidence is accepted only when the exact candidate actually executes it; runner/quota failures remain `BLOCKED_INFRASTRUCTURE` or `NOT_EXECUTED`.
+Preventive tests cover reserved-vs-available arithmetic, exact minimum boundaries, zero-minimum behavior, healthy state, unit-scoped shortfall semantics, tenant/RBAC route wiring, actionable-only filtering and bounded scans. Full backend typecheck/runtime evidence is accepted only when the exact candidate actually executes it; runner/quota failures remain `BLOCKED_INFRASTRUCTURE` or `NOT_EXECUTED`.
