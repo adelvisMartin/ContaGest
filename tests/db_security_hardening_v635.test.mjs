@@ -36,7 +36,8 @@ test('public tenant/profile compatibility helpers are SECURITY INVOKER only',()=
     const block=functionBlock(sql,name);
     assert.match(block,/security\s+invoker/i,`${name} must be invoker`);
     assert.doesNotMatch(block,/security\s+definer/i,`${name} must not be definer`);
-    assert.match(block,/set\s+search_path\s*=\s*pg_catalog\s*,\s*private\s*,\s*public/i,`${name} search_path must be closed`);
+    assert.match(block,/set\s+search_path\s*=\s*pg_catalog\b/i,`${name} search_path must start and end at pg_catalog`);
+    assert.doesNotMatch(block,/set\s+search_path\s*=\s*pg_catalog\s*,/i,`${name} must not append application schemas`);
   }
 });
 
@@ -45,7 +46,8 @@ test('private helpers are closed definers with explicit execution grants',()=>{
   for(const name of ['private.current_tenant_id','private.current_profile_id']){
     const block=functionBlock(sql,name);
     assert.match(block,/security\s+definer/i,`${name} must remain a controlled definer`);
-    assert.match(block,/set\s+search_path\s*=\s*pg_catalog\s*,\s*private\s*,\s*public/i,`${name} search_path must be closed`);
+    assert.match(block,/set\s+search_path\s*=\s*pg_catalog\b/i,`${name} search_path must start and end at pg_catalog`);
+    assert.doesNotMatch(block,/set\s+search_path\s*=\s*pg_catalog\s*,/i,`${name} must not append application schemas`);
   }
   assert.match(sql,/revoke\s+all\s+on\s+function\s+private\.current_tenant_id\(\)\s+from\s+public\s*,\s*anon/i);
   assert.match(sql,/revoke\s+all\s+on\s+function\s+private\.current_profile_id\(\)\s+from\s+public\s*,\s*anon/i);
@@ -58,6 +60,7 @@ test('v635 hardens only ContaGest-owned definers in the shared database',()=>{
   assert.match(sql,/revoke\s+create\s+on\s+schema\s+public\s+from\s+public\s*,\s*anon\s*,\s*authenticated/i);
   assert.doesNotMatch(sql,/from\s+public\s*,\s*anon\s*,\s*authenticated\s*,\s*service_role/i,'shared service_role schema privileges are out of scope');
   assert.doesNotMatch(sql,/from\s+pg_proc/i,'sidecar must not blanket-mutate every function in shared schemas');
+  assert.match(sql,/ALTER FUNCTION %s SET search_path TO pg_catalog/);
   for(const name of [
     'private.enforce_subscription_tenant_limit()',
     'private.enforce_license_subscription_tenant()',
