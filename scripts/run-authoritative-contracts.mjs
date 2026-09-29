@@ -46,6 +46,8 @@ const required59=[
   'tests/relational_normalization_audit_v633.test.mjs',
   'tests/composite_tenant_integrity_v634.test.mjs',
   'tests/tenant_isolation_adversarial_issue_641.test.mjs',
+  'tests/db_security_hardening_v635.test.mjs',
+  'tests/db_security_audit_v635.test.mjs',
 ];
 const tests=[...new Set([...regressionPaths,...required59])];
 
