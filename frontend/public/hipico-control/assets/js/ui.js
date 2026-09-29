@@ -84,44 +84,6 @@ export function toast(message, type = 'success', options = {}) {
   return { dismiss, element: item };
 }
 
-let activeDialog = null;
-let returnFocus = null;
-function focusableNodes(dialog) {
-  return [...dialog.querySelectorAll('button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])')].filter((node) => !node.hidden && node.getAttribute('aria-hidden') !== 'true');
-}
-function activateDialog(dialog) {
-  if (!dialog || dialog === activeDialog) return;
-  activeDialog = dialog;
-  returnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-  const nodes = focusableNodes(dialog);
-  requestAnimationFrame(() => (nodes[0] || dialog).focus?.());
-}
-function deactivateDialog() {
-  activeDialog = null;
-  const target = returnFocus;
-  returnFocus = null;
-  requestAnimationFrame(() => target?.isConnected && target.focus());
-}
-function enhanceDialogs(root = document) {
-  root.querySelectorAll?.('[data-modal-dialog], [role="dialog"][aria-modal="true"]').forEach((dialog) => {
-    if (!(dialog instanceof HTMLElement)) return;
-    if (!dialog.hasAttribute('tabindex')) dialog.tabIndex = -1;
-    if (!dialog.dataset.uiDialogEnhanced) {
-      dialog.dataset.uiDialogEnhanced = 'true';
-      dialog.addEventListener('keydown', (event) => {
-        if (event.key !== 'Tab') return;
-        const nodes = focusableNodes(dialog);
-        if (!nodes.length) { event.preventDefault(); dialog.focus(); return; }
-        const first = nodes[0], last = nodes[nodes.length - 1];
-        if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
-        else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
-      });
-    }
-    activateDialog(dialog);
-  });
-  if (activeDialog && !activeDialog.isConnected) deactivateDialog();
-}
-
 let selectSequence = 0;
 let openSelectShell = null;
 const selectState = new WeakMap();
@@ -268,7 +230,6 @@ function enhanceRaceQuickChange(root = document) {
   });
 }
 function enhanceUiSurface(root = document) {
-  enhanceDialogs(root);
   enhanceSelects(root);
   enhanceRaceQuickChange(root);
 }
@@ -284,10 +245,7 @@ if (typeof document !== 'undefined' && typeof window !== 'undefined') {
     closeSelect(openSelectShell);
   });
   document.addEventListener('keydown', (event) => {
-    if (event.key !== 'Escape') return;
-    if (openSelectShell) { closeSelect(openSelectShell, { restoreFocus: true }); return; }
-    if (!activeDialog) return;
-    const close = activeDialog.querySelector('[data-action="close-modal"], [data-help-close]');
-    if (close instanceof HTMLElement) { event.preventDefault(); close.click(); }
+    if (event.key !== 'Escape' || !openSelectShell) return;
+    closeSelect(openSelectShell, { restoreFocus: true });
   });
 }
