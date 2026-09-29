@@ -53,7 +53,7 @@ function defaultProbe(command) {
 }
 
 export function selectPostgresRuntime({ env = process.env, probe = defaultProbe } = {}) {
-  const configuredAdminUrl = String(env.LOCAL_VERIFY_DATABASE_ADMIN_URL || env.DATABASE_URL || '').trim();
+  const configuredAdminUrl = String(env.LOCAL_VERIFY_DATABASE_ADMIN_URL || '').trim();
   if (configuredAdminUrl) assertLoopbackPostgresUrl(configuredAdminUrl);
 
   const psql = probe('psql');
@@ -90,6 +90,19 @@ export function buildContainerRunArgs({ name, user, password, database = 'postgr
     '-p', '127.0.0.1::5432',
     'postgres:17',
   ];
+}
+
+export function verifyNativePostgres17({ adminUrl, adapter = { run: defaultAdapterRun } }) {
+  assertLoopbackPostgresUrl(adminUrl);
+  const result = adapter.run('psql', ['--dbname', adminUrl, '-Atqc', 'SHOW server_version_num']);
+  if (result.status !== 0) throw new Error(`ZERO_COST_NATIVE_SERVER_PROBE_FAILED:${result.stderr || 'unknown'}`);
+  const serverVersionNum = Number(String(result.stdout || '').trim());
+  if (!Number.isInteger(serverVersionNum) || serverVersionNum <= 0) {
+    throw new Error(`ZERO_COST_NATIVE_SERVER_VERSION_INVALID:${String(result.stdout || '').trim() || 'missing'}`);
+  }
+  const major = Math.trunc(serverVersionNum / 10000);
+  if (major !== 17) throw new Error(`ZERO_COST_NATIVE_SERVER_MAJOR_NOT_17:${major}`);
+  return { major, serverVersionNum };
 }
 
 export function buildVerifyLocalCommand({ profile, expectedSha }) {
@@ -150,11 +163,11 @@ export async function withOwnedPostgresContainer({
   let started = false;
   try {
     const runResult = adapter.run(engine, buildContainerRunArgs({ name, user, password, database }));
-    if (runResult.status !== 0) throw new Error(`ZERO_COST_CONTAINER_START_FAILED:${runResult.stderr || 'unknown'}`);
+    if (runResult.status !== 0) throw new Error(`ZERO_COST_CONTAINER_START_FAILED:${sanitizeScalar('stderr', runResult.stderr)}`);
     started = true;
 
     const portResult = adapter.run(engine, ['port', name, '5432/tcp']);
-    if (portResult.status !== 0) throw new Error(`ZERO_COST_CONTAINER_PORT_FAILED:${portResult.stderr || 'unknown'}`);
+    if (portResult.status !== 0) throw new Error(`ZERO_COST_CONTAINER_PORT_FAILED:${sanitizeScalar('stderr', portResult.stderr)}`);
     const port = parsePublishedPostgresPort(portResult.stdout);
 
     let ready = false;
@@ -216,7 +229,7 @@ function runVerificationProfiles({ adminUrl, expectedSha, financial, smoke, cwd 
 }
 
 function printHelp() {
-  console.log(`ContaGest #668 zero-cost bootstrap\n\nUsage:\n  node scripts/zero-cost-bootstrap-v668.mjs [--financial] [--smoke] [--expected-sha <40-hex>]\n\nRuntime order:\n  1. LOCAL_VERIFY_DATABASE_ADMIN_URL/DATABASE_URL on loopback + psql 17\n  2. Docker postgres:17\n  3. Podman postgres:17\n  4. BLOCKED with actionable prerequisite message\n`);
+  console.log(`ContaGest #668 zero-cost bootstrap\n\nUsage:\n  npm run bootstrap:zero-cost -- [--financial] [--smoke] [--expected-sha <40-hex>]\n\nRuntime order:\n  1. LOCAL_VERIFY_DATABASE_ADMIN_URL on loopback + PostgreSQL server 17\n  2. Docker postgres:17\n  3. Podman postgres:17\n  4. BLOCKED with actionable prerequisite message\n`);
 }
 
 async function cli() {
@@ -251,6 +264,7 @@ async function cli() {
   };
 
   if (runtime.kind === 'native') {
+    verifyNativePostgres17({ adminUrl: runtime.adminUrl });
     await execute(runtime.adminUrl);
     return;
   }
