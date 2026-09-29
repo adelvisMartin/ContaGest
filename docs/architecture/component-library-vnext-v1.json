@@ -1,0 +1,35 @@
+{
+  "version": 1,
+  "canonicalOwner": "frontend/src/components/vnext/index.js",
+  "themeOwner": "frontend/src/design-system/semanticTokens.v1.js",
+  "legacyBridge": "frontend/src/components/vnext/legacyBridge.js",
+  "components": [
+    {"component":"CgButton","legacy":"Button","status":"canonical","consumers":["new React UI","MUI islands"]},
+    {"component":"CgIconButton","legacy":"TopIconButton","status":"canonical","consumers":["new React UI"]},
+    {"component":"CgTextField","legacy":"Field","status":"canonical","consumers":["new React UI","MUI islands"]},
+    {"component":"CgTextarea","legacy":"Textarea","status":"canonical","consumers":["new React UI","MUI islands"]},
+    {"component":"CgPageHeader","legacy":"PageHeader","status":"canonical","consumers":["new React UI"]},
+    {"component":"CgSection","legacy":"Section","status":"canonical","consumers":["new React UI"]},
+    {"component":"CgStatusChip","legacy":"Badge","status":"canonical","consumers":["new React UI"]},
+    {"component":"CgMoney","legacy":"money","status":"canonical","consumers":["new React UI"]},
+    {"component":"CgLoadingState","legacy":null,"status":"canonical","consumers":["new React UI"]},
+    {"component":"CgEmptyState","legacy":"EmptyState","status":"canonical","consumers":["new React UI"]},
+    {"component":"CgErrorState","legacy":null,"status":"canonical","consumers":["new React UI"]},
+    {"component":"CgPermissionState","legacy":null,"status":"canonical","consumers":["new React UI"]}
+  ],
+  "deprecatedOwners": [
+    {
+      "owner":"frontend/src/components/ui/kit.js",
+      "status":"deprecated-transition",
+      "reason":"Existing HTML/string routes remain supported while migrations move to Cg* primitives.",
+      "removalCriteria":"Direct imports from kit.js for mapped primitives are zero and browser characterization proves equivalent behavior.",
+      "reviewBy":"2027-03-31"
+    }
+  ],
+  "rules": {
+    "noLocalCloneWhenCanonicalExists": true,
+    "noCompetingThemeProvider": true,
+    "unsafeHtmlByDefault": false,
+    "businessRulesInComponents": false
+  }
+}
