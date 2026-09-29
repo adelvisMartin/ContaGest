@@ -21,6 +21,12 @@ test('safe tenant fixture has no P0/P1 findings',()=>{
   assert.deepEqual(result.outOfScope,[]);
 });
 
+test('missing dedicated runtime role is rejected',()=>{
+  const fixture=base();
+  fixture.roles=[];
+  assert.ok(codes(fixture).includes('RUNTIME_ROLE_MISSING'));
+});
+
 test('tenant table without RLS is rejected',()=>{
   const fixture=base();
   fixture.tables[0].rlsEnabled=false;
