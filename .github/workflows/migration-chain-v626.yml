@@ -56,7 +56,7 @@ jobs:
       - name: Prisma validate
         run: npm --workspace backend run db:validate
       - name: Prisma generate
-        run: npm --workspace backend run db:generate
+        run: npm --workspace backend run prisma:generate
       - name: PostgreSQL 17 from-zero
         run: npm run migration:test:from-zero
       - name: PostgreSQL 17 supported upgrades
