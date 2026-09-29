@@ -1,0 +1,77 @@
+name: DB Full Migration Chain 626
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'backend/prisma/**'
+      - 'ops/database/**'
+      - 'scripts/migration-chain.mjs'
+      - 'scripts/migration-chain/**'
+      - 'scripts/database-drift/**'
+      - 'config/migration-chain-snapshots.json'
+      - 'tests/full_migration_chain_626*.test.mjs'
+      - 'tests/fixtures/migration-chain/**'
+      - '.github/workflows/migration-chain-v626.yml'
+      - 'package.json'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  postgres-17-migration-chain:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: contagest_migrations_e2e
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d contagest_migrations_e2e"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/contagest_migrations_e2e
+      DIRECT_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/contagest_migrations_e2e
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Static migration contracts
+        run: npm run test:migration-chain:contract
+      - name: Database authority
+        run: npm run audit:database-authority
+      - name: Raw SQL security
+        run: npm run audit:raw-sql-security
+      - name: Prisma validate
+        run: npm --workspace backend run db:validate
+      - name: Prisma generate
+        run: npm --workspace backend run db:generate
+      - name: PostgreSQL 17 from-zero
+        run: npm run migration:test:from-zero
+      - name: PostgreSQL 17 supported upgrades
+        run: npm run migration:test:upgrade
+      - name: Invalid migration rollback
+        run: npm run test:migration-chain:postgres
+      - name: Backend typecheck
+        run: npm run typecheck
+      - name: Backend build
+        run: npm run build:backend
+      - name: Upload migration manifests
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: migration-chain-626-${{ github.sha }}
+          path: artifacts/database/migration-chain/
+          if-no-files-found: warn
+          retention-days: 14
