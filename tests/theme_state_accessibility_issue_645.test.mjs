@@ -15,6 +15,8 @@ async function loadContract(){
 test('#645 canonical contract owns theme resolution and the complete UI state catalog',async()=>{
   const contract=await loadContract();
   assert.deepEqual(contract.UX_CONTRACT_V1.theme.preferences,['light','dark','system']);
+  assert.deepEqual(contract.UX_CONTRACT_V1.accessibility.motionModes,['normal','reduced']);
+  assert.deepEqual(contract.UX_CONTRACT_V1.accessibility.zoomLevels,[100,200]);
   assert.equal(contract.normalizeThemePreference('DARK'),'dark');
   assert.equal(contract.normalizeThemePreference('sepia'),'light');
   assert.equal(contract.resolveThemeMode('light',true),'light');
@@ -73,6 +75,22 @@ test('#645 focus-visible and reduced-motion are loaded runtime contracts',()=>{
   assert.match(css,/prefers-reduced-motion:\s*reduce/);
   assert.match(css,/var\(--cg-v-focus\)/);
   assert.match(html,/contagest-ux-contract-v1\.css/);
+});
+
+test('#645 route browser matrix consumes canonical theme/state/a11y requirements instead of duplicating them',async()=>{
+  const {UX_CONTRACT_V1}=await loadContract();
+  const routeContract=await import(`${pathToFileURL(path.join(root,'qa/support/full-route-browser-contract-v640.mjs')).href}?v=${Date.now()}`);
+  const matrix=routeContract.FULL_ROUTE_BROWSER_CONTRACT;
+  assert.equal(matrix.uxContractAuthority,UX_CONTRACT_V1.authority);
+  assert.equal(matrix.uxContractVersion,UX_CONTRACT_V1.version);
+  assert.deepEqual(matrix.themes,UX_CONTRACT_V1.theme.preferences);
+  assert.deepEqual(matrix.motion,UX_CONTRACT_V1.accessibility.motionModes);
+  assert.deepEqual(matrix.zoom,UX_CONTRACT_V1.accessibility.zoomLevels);
+  assert.deepEqual(matrix.states,UX_CONTRACT_V1.states.catalog);
+  const source=read('qa/support/full-route-browser-contract-v640.mjs');
+  assert.match(source,/UX_CONTRACT_V1/);
+  assert.doesNotMatch(source,/const STATES=/);
+  assert.doesNotMatch(source,/themes:Object\.freeze\(\['light','dark','system'\]\)/);
 });
 
 test('#645 local Chromium pilot and verification integrations are present',()=>{
