@@ -7,7 +7,10 @@ on:
       - 'backend/prisma/migrations/**fiscal**'
       - 'qa/fiscal-authority-v561.test.ts'
       - 'tests/fiscal_authority_v561_contract.test.mjs'
+      - 'tests/fiscal_single_source_v629_contract.test.mjs'
+      - 'config/fiscal-authority-v629.json'
       - 'docs/ADR_FISCAL_AUTHORITY_V561.md'
+      - 'scripts/run-authoritative-contracts.mjs'
       - 'package.json'
       - '.github/workflows/fiscal-authority-v561.yml'
   push:
@@ -36,7 +39,7 @@ jobs:
           node-version: '22'
           cache: npm
       - run: npm ci
-      - run: node --test tests/fiscal_authority_v561_contract.test.mjs
+      - run: node --test tests/fiscal_authority_v561_contract.test.mjs tests/fiscal_single_source_v629_contract.test.mjs
 
   postgres-real:
     name: PostgreSQL real · concurrency and close boundaries
