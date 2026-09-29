@@ -1,0 +1,124 @@
+name: Local Verification v630
+
+on:
+  pull_request:
+    paths:
+      - 'scripts/local-verification-runner-v630.mjs'
+      - 'tests/local_verification_runner_v630.test.mjs'
+      - 'docs/qa/local-verification-runner-v630.md'
+      - 'scripts/run-authoritative-contracts.mjs'
+      - 'package.json'
+      - '.github/workflows/local-verification-v630.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: local-verification-v630-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  contract:
+    name: Runner contract / exact SHA
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout candidate HEAD
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+      - name: Setup Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install
+        run: npm ci
+      - name: Runner contract
+        run: npm run test:verify:local
+      - name: Backend dry-run cannot claim PASS
+        env:
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: npm run verify:local -- --profile backend --base "$BASE_SHA" --expected-sha "$HEAD_SHA" --dry-run
+
+  postgres:
+    name: PostgreSQL 17 / database profile
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - name: Checkout candidate HEAD
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+      - name: Setup Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install PostgreSQL client
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client
+      - name: Install
+        run: npm ci
+      - name: Execute database profile through canonical runner
+        env:
+          LOCAL_VERIFY_DATABASE_ADMIN_URL: postgresql://postgres:postgres@127.0.0.1:5432/postgres
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: npm run verify:local -- --profile database --base "$BASE_SHA" --expected-sha "$HEAD_SHA"
+      - name: Upload exact-SHA evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: local-verification-v630-postgres-${{ github.event.pull_request.head.sha || github.sha }}
+          path: artifacts/local-verification/
+          if-no-files-found: error
+
+  chromium:
+    name: Chromium / UI profile
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout candidate HEAD
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+      - name: Setup Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install
+        run: npm ci
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+      - name: Execute UI profile through canonical runner
+        env:
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: npm run verify:local -- --profile ui --base "$BASE_SHA" --expected-sha "$HEAD_SHA"
+      - name: Upload exact-SHA evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: local-verification-v630-ui-${{ github.event.pull_request.head.sha || github.sha }}
+          path: |
+            artifacts/local-verification/
+            playwright-report/
+            test-results/
+          if-no-files-found: warn

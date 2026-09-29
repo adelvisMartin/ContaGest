@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 630,
+  "canonicalEntry": "npm run verify:local -- --profile <profile>",
+  "profiles": ["backend", "frontend", "database", "financial", "ui", "changed", "full"],
+  "databaseProfiles": ["database", "financial", "full"],
+  "browserProfiles": ["ui", "full"],
+  "evidenceStatuses": ["PASS", "FAIL", "BLOCKED", "NOT_EXECUTED", "NOT_APPLICABLE"],
+  "remoteEvidenceIsInformational": true,
+  "postgresql": {
+    "major": 17,
+    "destructiveHosts": ["localhost", "127.0.0.1", "::1"],
+    "databaseSuffix": "_e2e"
+  },
+  "browser": {
+    "requiredLocal": "chromium",
+    "scheduled": ["firefox", "webkit"]
+  }
+}
