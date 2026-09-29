@@ -13,6 +13,10 @@ export const RUNTIME_MODES = Object.freeze({
 });
 const CHANNEL_KEY_RE=/^[A-Za-z0-9_-]{3,120}$/;
 const PUBLIC_SECRET_PLACEHOLDER_PATTERN=/(?:REEMPLAZA|REPLACE|CHANGE[_-]?ME|CHANGEME|PLACEHOLDER|YOUR[_-]?(?:SECRET|TOKEN|KEY)|TU[_-]?(?:SECRETO|TOKEN|CLAVE)|EXAMPLE[_-]?(?:SECRET|TOKEN|KEY))/i;
+// Current WhatsApp Business rules do not provide a production GO for this real-money
+// gambling workflow. Keep SOURCE automatic writing fail-closed; LAB remains the safe
+// autonomous test target until a fresh platform/jurisdiction capability review says GO.
+export const SOURCE_AUTO_REPLY_POLICY_NO_GO = 'SOURCE_AUTO_REPLY_POLICY_NO_GO';
 
 export function repairUtf8Mojibake(value) {
   const raw = String(value ?? '').trim();
@@ -123,6 +127,9 @@ export function validateRuntimeConfig(config) {
   if (!CHANNEL_KEY_RE.test(config.sourceChannelKey)) errors.push('HIPICO_SOURCE_CHANNEL_KEY no es válido.');
   if (!CHANNEL_KEY_RE.test(config.labChannelKey)) errors.push('HIPICO_LAB_CHANNEL_KEY no es válido.');
   if (config.sourceChannelKey === config.labChannelKey) errors.push('SOURCE y LAB deben usar channel keys distintos.');
+  if (config.sourceAutoReplyEnabled) {
+    errors.push(`${SOURCE_AUTO_REPLY_POLICY_NO_GO}: la política vigente de WhatsApp Business no autoriza este flujo automatizado de apuestas con dinero real en SOURCE; usa LAB hasta una reevaluación documentada GO.`);
+  }
   if (config.sourceAutoReplyEnabled && config.runtimeMode !== RUNTIME_MODES.PRODUCTION) errors.push('HIPICO_SOURCE_AUTO_REPLY_ENABLED solo se admite en production.');
   if (config.sourceAutoReplyEnabled && !config.backendSyncEnabled) errors.push('Auto reply SOURCE exige backend sync autoritativo.');
   if (config.sourceAutoReplyEnabled && !isWhatsAppGroupId(config.sourceGroupId)) errors.push('Auto reply SOURCE exige HIPICO_SOURCE_GROUP_ID pinneado.');

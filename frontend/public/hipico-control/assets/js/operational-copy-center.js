@@ -4,13 +4,10 @@ import { generateClosureText } from './whatsapp.js';
 import { downloadFile, flushWorkspaceWrites, loadLocalWorkspace } from './store.js';
 import { normalizeWorkspaceShape } from './workspace.js';
 import { activeDay, activeGroupId, activeRace, balanceRows, dailyStats, groupProfile, participantStatement, scopeItems } from './operational-ledger.js';
+import { escapeHtml, icon } from './ui.js';
 
 const ROOT_ID = 'hipico-operational-copy-center';
 let state = { workspace: null, participantId: '' };
-
-function escapeHtml(value) {
-  return String(value ?? '').replace(/[&<>"']/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]));
-}
 
 function raceOrdinal(value) {
   const n = Number(value || 1);
@@ -104,13 +101,17 @@ function buildTexts(workspace) {
   };
 }
 
+function copyButtonContent(copied = false) {
+  return `${icon(copied ? 'check' : 'copy')}<span>${copied ? 'Copiado' : 'Copiar texto'}</span>`;
+}
+
 function messageCard(id, title, hint, text, open = false) {
   const disabled = !String(text || '').trim();
   return `<details class="ops-message" ${open ? 'open' : ''}>
-    <summary><span><strong>${escapeHtml(title)}</strong><small>${escapeHtml(hint)}</small></span><span aria-hidden="true">⌄</span></summary>
+    <summary><span><strong>${escapeHtml(title)}</strong><small>${escapeHtml(hint)}</small></span><span class="ops-chevron" aria-hidden="true">${icon('back')}</span></summary>
     <div class="ops-message__body">
       <textarea readonly spellcheck="false" data-ops-text="${escapeHtml(id)}" aria-label="${escapeHtml(title)}">${escapeHtml(text || 'Todavía no hay datos suficientes para generar este mensaje.')}</textarea>
-      <button type="button" class="ops-button ops-button--primary" data-ops-copy="${escapeHtml(id)}" ${disabled ? 'disabled' : ''}>Copiar texto</button>
+      <button type="button" class="ops-button ops-button--primary" data-ops-copy="${escapeHtml(id)}" ${disabled ? 'disabled' : ''}>${copyButtonContent(false)}</button>
     </div>
   </details>`;
 }
@@ -129,7 +130,7 @@ function renderDialog(root) {
   dialog.innerHTML = `<div class="ops-dialog__shell">
     <header class="ops-dialog__head">
       <div><span class="ops-kicker">Centro operativo</span><h2 id="ops-dialog-title">Textos de WhatsApp</h2><p id="ops-dialog-description">${escapeHtml(group.companyName)} · ${race ? `${escapeHtml(race.racetrack)} ${raceOrdinal(race.number)}` : 'sin carrera activa'}</p></div>
-      <button type="button" class="ops-icon" data-ops-close aria-label="Cerrar centro operativo">×</button>
+      <button type="button" class="ops-icon" data-ops-close aria-label="Cerrar centro operativo" title="Cerrar">${icon('close')}</button>
     </header>
     <div class="ops-dialog__toolbar">
       <div><strong>${day ? escapeHtml(localDate(day.date)) : 'Sin jornada'}</strong><small>Copiar es manual. Este panel nunca envía mensajes por sí solo.</small></div>
@@ -146,7 +147,7 @@ function renderDialog(root) {
       </section>
       <section class="ops-participant">
         <div class="ops-participant__head"><div><span class="ops-kicker">Privado manual</span><h3>Estado de participante</h3><p>Se genera desde el histórico persistido. No se envía automáticamente.</p></div>
-          <button type="button" class="ops-button" data-ops-export ${participants.length ? '' : 'disabled'}>Archivo del día (.txt)</button>
+          <button type="button" class="ops-button" data-ops-export ${participants.length ? '' : 'disabled'}>${icon('report')}<span>Archivo del día (.txt)</span></button>
         </div>
         <label><span>Participante</span><select data-ops-participant ${participants.length ? '' : 'disabled'}>${participants.map((participant) => `<option value="${escapeHtml(participant.id)}" ${participant.id === selected?.id ? 'selected' : ''}>${escapeHtml(String(participant.code || '').toUpperCase())} · ${escapeHtml(participant.name || participant.code || '')}</option>`).join('')}</select></label>
         ${messageCard('participant', selected ? `Estado de ${String(selected.code || selected.name).toUpperCase()}` : 'Estado individual', 'Listo para copiar al chat privado', messages.participant, true)}
@@ -214,7 +215,7 @@ export function mountOperationalCopyCenter() {
   root.dataset.opsAuthorized = 'false';
   root.setAttribute('inert', '');
   root.setAttribute('aria-hidden', 'true');
-  root.innerHTML = `<button type="button" class="ops-launcher" data-ops-open aria-label="Abrir textos operativos de WhatsApp"><span aria-hidden="true">✦</span><span>Mensajes</span></button>`;
+  root.innerHTML = `<button type="button" class="ops-launcher" data-ops-open aria-label="Abrir textos operativos de WhatsApp" title="Textos de WhatsApp">${icon('chat')}<span>Mensajes</span></button>`;
   document.body.append(root);
   root.addEventListener('click', async (event) => {
     if (root.dataset.opsAuthorized !== 'true') return;
@@ -230,8 +231,8 @@ export function mountOperationalCopyCenter() {
         const id = copy.getAttribute('data-ops-copy');
         const text = target.closest('dialog')?.querySelector(`[data-ops-text="${CSS.escape(id || '')}"]`)?.value || '';
         if (text) await copyText(text);
-        copy.textContent = 'Copiado ✓';
-        setTimeout(() => { if (copy.isConnected) copy.textContent = 'Copiar texto'; }, 1200);
+        copy.innerHTML = copyButtonContent(true);
+        setTimeout(() => { if (copy.isConnected) copy.innerHTML = copyButtonContent(false); }, 1200);
       }
     } catch (error) {
       window.dispatchEvent(new CustomEvent('hipico:notice', { detail: { message: error?.message || 'No se pudo completar la acción.' } }));

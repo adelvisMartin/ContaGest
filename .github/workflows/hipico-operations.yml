@@ -15,6 +15,7 @@ on:
       - 'tests/fixtures/hipico/**'
       - 'qa/hipico-visual-functional-v105.spec.mjs'
       - 'qa/hipico-ui-v41-shell.spec.mjs'
+      - 'qa/hipico-ui-v41-shell.spec.mjs-snapshots/**'
       - 'qa/hipico-icon-overlap-v411.spec.mjs'
       - 'qa/support/hipico-*.mjs'
       - 'qa/fixtures/hipico-*'
@@ -29,6 +30,7 @@ on:
       - 'docs/hipico/**'
       - '.github/workflows/hipico-operations.yml'
       - 'frontend/package.json'
+      - 'INICIAR-HIPICO-AUTONOMO.cmd'
   push:
     branches:
       - main
@@ -48,6 +50,7 @@ on:
       - 'tests/fixtures/hipico/**'
       - 'qa/hipico-visual-functional-v105.spec.mjs'
       - 'qa/hipico-ui-v41-shell.spec.mjs'
+      - 'qa/hipico-ui-v41-shell.spec.mjs-snapshots/**'
       - 'qa/hipico-icon-overlap-v411.spec.mjs'
       - 'qa/support/hipico-*.mjs'
       - 'qa/fixtures/hipico-*'
@@ -62,6 +65,7 @@ on:
       - 'docs/hipico/**'
       - '.github/workflows/hipico-operations.yml'
       - 'frontend/package.json'
+      - 'INICIAR-HIPICO-AUTONOMO.cmd'
 
 permissions:
   contents: read
@@ -112,12 +116,14 @@ jobs:
         run: npm ci --no-audit --no-fund
       - name: All root Hípico regression contracts
         run: node scripts/hipico-root-contracts.mjs
-      - name: UI System v4.1 static and preference contracts
+      - name: UI System v4.1.2 and WhatsApp readiness contracts
         run: >-
           node --test
           tests/hipico_ui_system_v41_contract.test.mjs
           tests/hipico_presentation_preferences_v41.test.mjs
           tests/hipico_icon_action_contract_v41.test.mjs
+          tests/hipico_ui_v412_hardening_contract.test.mjs
+          tests/hipico_whatsapp_v150_readiness_contract.test.mjs
       - name: PWA and serverless operational syntax checks
         run: |
           node --check scripts/hipico-exact-sha-gate.mjs
@@ -133,7 +139,6 @@ jobs:
           node --check frontend/public/hipico-control/assets/js/app.js
           node --check frontend/public/hipico-control/assets/js/presentation-preferences.js
           node --check frontend/public/hipico-control/assets/js/shell-ui-v4.js
-          node --check frontend/public/hipico-control/assets/js/icon-normalization-v41.js
           node --check frontend/public/hipico-control/assets/js/theme-bootstrap.js
           node --check frontend/public/hipico-control/assets/js/format.js
           node --check frontend/public/hipico-control/assets/js/whatsapp.js
@@ -162,6 +167,7 @@ jobs:
           node --check frontend/api/hipico/whatsapp-webhook.js
           node --check tools/hipico-whatsapp-bridge/src/group-identity.mjs
           node --check tools/hipico-whatsapp-bridge/src/index.mjs
+          node --check tools/hipico-whatsapp-web-bridge/src/runtime-config.mjs
           node --check backend/scripts/hipico-audit-idempotency-contract.mjs
           node --check backend/scripts/hipico-db-contract.mjs
           node --check backend/scripts/hipico-outbox-reconciliation-contract.mjs
@@ -220,7 +226,7 @@ jobs:
         run: npx playwright install --with-deps chromium
       - name: Control Hípico responsive, offline and interaction E2E
         run: npm run test:browser:hipico
-      - name: Control Hípico UI System v4.1 shell and floating-action E2E
+      - name: Control Hípico UI System v4.1.2 shell, visual and floating-action E2E
         env:
           HIPICO_QA_SHA: ${{ env.HIPICO_CANDIDATE_SHA }}
         run: >-

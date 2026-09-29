@@ -1,68 +1,83 @@
 # Control Hípico — WhatsApp Production Compliance Gate (#154)
 
-**Revisión:** 2026-08-29  
-**Decisión actual:** **NO-GO para escritura automatizada al grupo real**.
+**Revisión:** 2026-09-29  
+**Decisión actual:** **NO-GO para escritura automatizada al grupo real SOURCE**.
 
 ## Qué está demostrado
 
-La revisión usa fuentes oficiales vigentes al 2026-08-29. La WhatsApp Business Messaging Policy prohíbe usar WhatsApp Business Services para comprar, vender, promover o facilitar determinados bienes/servicios regulados o restringidos, incluyendo **gambling**; la propia política indica que esas prohibiciones aplican incluso cuando el negocio posee licencias/aprobaciones locales o globales.
+La revisión fue renovada después de la entrada en vigencia de los términos anunciados para el 2026-09-23. Las fuentes oficiales vigentes de WhatsApp/Meta continúan tratando los servicios de apuestas/juegos de azar con dinero real como una categoría restringida/prohibida para el uso comercial automatizado aplicable a este caso.
 
-WhatsApp Business Solution Terms obliga además a cumplir la Business Messaging Policy y la documentación técnica/productiva. Los Terms/Help Center generales mantienen restricciones frente a auto-messaging/non-personal use no autorizado.
-
-Por tanto, que browser automation pueda escribir técnicamente en un grupo **no demuestra autorización productiva**.
+Que una automatización por navegador, WebSocket u otro transporte pueda escribir técnicamente en WhatsApp **no constituye autorización de plataforma**. La capacidad técnica y la autorización productiva son gates distintos.
 
 ## Lo que NO está demostrado
 
-- jurisdicción exacta del grupo/operación;
-- una capability oficial/autorizada para el caso exacto de escritura grupal automatizada;
-- permiso de la política vigente para este flujo de apuestas con dinero real;
-- approvals/licencias externas suficientes para levantar la prohibición de plataforma;
-- autorización específica de Meta/WhatsApp para el conector pretendido.
+- una capability oficial/autorizada para este flujo exacto de grupo + apuestas con dinero real;
+- permiso de la política vigente para automatizar mensajes del caso de negocio de Control Hípico;
+- autorización específica de Meta/WhatsApp que levante ese NO-GO;
+- una combinación jurisdicción/licencias/aprobaciones que modifique la restricción de plataforma.
 
-La falta de esos datos se representa explícitamente como NO-GO; no se rellena por inferencia.
+La ausencia de cualquiera de esas evidencias mantiene `NO_GO`; no se sustituye por inferencias ni por el hecho de que el bridge funcione técnicamente.
 
 ## Fuentes oficiales revisadas
 
 - `https://business.whatsapp.com/policy/` — WhatsApp Business Messaging Policy.
-- `https://www.whatsapp.com/legal/business-solution-terms` — WhatsApp Business Solution Terms.
+- `https://www.whatsapp.com/legal/business-solution-terms` — WhatsApp Business Solution Terms / términos vigentes.
 - `https://www.whatsapp.com/legal/terms-of-service` — WhatsApp Terms of Service.
-- `https://faq.whatsapp.com/5957850900902049` — Unauthorized use of automated or bulk messaging.
-- `https://www.whatsapp.com/legal/` — legal hub; anuncia cambios de Business terms con vigencia 2026-09-23.
+- `https://www.whatsapp.com/legal/` — legal hub y documentos vigentes.
+- documentación oficial de uso no autorizado/automatización disponible desde el Help Center de WhatsApp.
 
-Debido a ese cambio anunciado para septiembre de 2026, este gate exige evidencia de política reciente (<30 días) antes de reconsiderar una promoción.
+Una promoción futura exige evidencia fresca (<30 días) y una decisión explícita GO; una copia antigua de política no sirve como excepción permanente.
 
-## Arquitectura
+## Arquitectura y enforcement
 
-`WhatsAppTransport` separa dominio/bot del conector:
+El dominio/bot permanece separado del transporte. La política productiva se aplica en más de una capa:
 
-- `LabMemoryTransport`: sólo `mode=lab`;
-- `DisabledProductionTransport`: siempre rechaza;
-- cualquier futuro adapter productivo debe declarar `capability=authorized-production` y pasar el gate.
+- SOURCE se mantiene read-only para QA/operación actual;
+- LAB puede responder automáticamente con identidad de grupo pinneada;
+- el Bridge valida nombre + ID `@g.us`, backend y readiness;
+- `HIPICO_SOURCE_AUTO_REPLY_ENABLED=true` falla cerrado en `runtime-config.mjs` con `SOURCE_AUTO_REPLY_POLICY_NO_GO`;
+- `INICIAR-HIPICO-AUTONOMO.cmd` ejecuta autonomía segura en LAB y no activa escritura SOURCE;
+- el kill switch local continúa siendo una protección adicional, no un sustituto del gate de política.
 
-No existe adapter productivo habilitado en este cambio.
+Un transporte futuro sólo puede habilitar SOURCE writing si existe una capability de plataforma permitida y la evidencia de compliance cambia formalmente a GO.
 
-## Gate
+## Qué sí puede automatizarse hoy
 
-`evaluateWhatsAppProductionCompliance()` exige simultáneamente:
+Con SOURCE read-only:
 
-- evidence decision GO;
-- connector exacto identificado;
-- capability de plataforma autorizada;
-- policy que permita el uso pretendido;
-- jurisdicción confirmada;
-- approvals requeridos obtenidos;
-- evidence fechada y fresca.
+```text
+leer -> deduplicar -> persistir/spoolear -> clasificar -> sugerir -> auditar
+```
 
-Falta de cualquiera => `NO_GO`.
+En LAB de QA también se permite respuesta automática, replay controlado, pruebas de reconnect/restart, idempotencia, ambiguous delivery y recuperación de spools.
 
-## Alternativa segura actual
+## Qué permanece bloqueado
 
-Mantener SOURCE read-only y ejecutar análisis, replay y respuestas sugeridas únicamente en LAB/local. El operador humano puede usar un workflow independiente que sea legal y permitido por la plataforma; el software no habilita escritura productiva directa mientras este gate sea NO-GO.
+El software no habilita automáticamente en SOURCE:
 
-## Relación con #121
+- mensajes de apuestas con dinero real;
+- confirmaciones financieras;
+- cambios de saldo/ledger;
+- liquidaciones/premios;
+- resultados definitivos con efectos de negocio.
 
-#121 debe tratar este resultado como bloqueo de capability productiva. Superar accuracy, physical QA o soak **no anula** este NO-GO de plataforma/compliance.
+Las protecciones de dominio/dinero siguen siendo independientes de la capa WhatsApp.
 
-## Estado del issue
+## Relación con QA
 
-La parte técnica del gate queda implementada, pero #154 no debe cerrarse como “GO” mientras jurisdicción/capability/autorizaciones sigan sin evidencia. Una futura reevaluación debe actualizar el JSON de evidence, fuentes y fecha; nunca sólo un booleano en frontend.
+Accuracy, Playwright, physical QA, soak o una sesión estable de WhatsApp Web **no anulan** este NO-GO. Esos gates prueban calidad técnica; no convierten una capability no autorizada en permitida.
+
+El procedimiento físico vigente está en `docs/hipico/QA_DOWNLOAD_AND_BOT_TEST.md` y el análisis técnico/mercado en `docs/hipico/WHATSAPP_READINESS_2026-09-29.md`.
+
+## Reconsideración futura
+
+Para reconsiderar SOURCE writing deben actualizarse en un PR separado:
+
+1. fuente oficial y fecha;
+2. connector/capability exacta;
+3. uso permitido para el caso exacto;
+4. jurisdicción/aprobaciones requeridas;
+5. decisión `GO` explícita y revisada;
+6. tests que demuestren que el gate no puede activarse por un simple booleano local.
+
+Hasta entonces, el estado correcto es **NO-GO**.

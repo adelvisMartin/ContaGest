@@ -7,7 +7,7 @@ const read = (path) => readFileSync(join(process.cwd(), path), 'utf8');
 const css = read('frontend/public/hipico-control/assets/css/ui-system-v4.css');
 const entryCss = read('frontend/public/hipico-control/assets/css/app.css');
 const shell = read('frontend/public/hipico-control/assets/js/shell-ui-v4.js');
-const iconNormalization = read('frontend/public/hipico-control/assets/js/icon-normalization-v41.js');
+const operationalCenter = read('frontend/public/hipico-control/assets/js/operational-copy-center.js');
 const index = read('frontend/public/hipico-control/index.html');
 const sw = read('frontend/public/hipico-control/sw.js');
 
@@ -74,16 +74,19 @@ test('help and WhatsApp floating utilities cannot occupy the same coordinates', 
   assert.match(entryCss, /@media \(max-width: 780px\)[\s\S]*body:has\(\.ops-root\[data-ops-authorized="true"\]\) \.hc-help-trigger[\s\S]*var\(--hc-v4-touch\) \+ 8px/);
 });
 
-test('operational copy center uses the canonical svg registry instead of ad-hoc glyph icons', () => {
-  assert.match(iconNormalization, /import \{ icon \} from '\.\/ui\.js'/);
-  assert.match(iconNormalization, /icon\('chat'\)/);
-  assert.match(iconNormalization, /icon\('close'\)/);
-  assert.match(iconNormalization, /copied \? 'check' : 'copy'/);
-  assert.match(iconNormalization, /icon\('back'\)/);
-  assert.match(index, /icon-normalization-v41\.js/);
+test('operational copy center owns canonical SVG icons directly without mutation-observer patching', () => {
+  assert.match(operationalCenter, /import \{ escapeHtml, icon \} from '\.\/ui\.js'/);
+  assert.match(operationalCenter, /icon\('chat'\)/);
+  assert.match(operationalCenter, /icon\('close'\)/);
+  assert.match(operationalCenter, /icon\('copy'\)/);
+  assert.match(operationalCenter, /icon\('check'\)/);
+  assert.match(operationalCenter, /icon\('report'\)/);
+  assert.match(operationalCenter, /icon\('back'\)/);
+  assert.doesNotMatch(operationalCenter, /aria-hidden="true">⌄|>×<|>✦<|Copiado ✓/);
+  assert.doesNotMatch(index, /icon-normalization-v41\.js/);
 });
 
-test('PWA rotates cache and ships the icon normalization module with the shell', () => {
-  assert.match(sw, /shell-r32-icon-overlap-normalized/);
-  assert.match(sw, /icon-normalization-v41\.js/);
+test('PWA rotates v4.1.2 shell without the obsolete icon-normalization module', () => {
+  assert.match(sw, /shell-r33-ui-v4-1-2-hardening/);
+  assert.doesNotMatch(sw, /icon-normalization-v41\.js/);
 });
