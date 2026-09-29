@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="es" data-theme="light">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>ContaGest UX Contract #645</title>
+  <link rel="stylesheet" href="/frontend/public/design-system/contagest-semantic-tokens-v1.css" />
+  <style>
+    *{box-sizing:border-box}html,body{margin:0;max-width:100%;overflow-x:hidden}body{font-family:var(--cg-v-font-sans);background:var(--cg-v-bg);color:var(--cg-v-text);padding:var(--cg-v-space-4)}
+    main{max-width:980px;margin:0 auto;display:grid;gap:var(--cg-v-space-4)}
+    .surface{background:var(--cg-v-surface);border:1px solid var(--cg-v-border);border-radius:var(--cg-v-radius-lg);padding:var(--cg-v-space-4);min-width:0}
+    .controls,.states{display:flex;gap:var(--cg-v-space-2);flex-wrap:wrap}.states>span{border:1px solid var(--cg-v-border-strong);border-radius:var(--cg-v-radius-pill,999px);padding:6px 9px;background:var(--cg-v-surface-2)}
+    button{min-height:44px;border:1px solid var(--cg-v-border-strong);border-radius:var(--cg-v-radius-md);padding:0 12px;background:var(--cg-v-surface);color:var(--cg-v-text);font:inherit}button:focus-visible{outline:2px solid var(--cg-v-focus);outline-offset:2px}
+    #motionProbe{width:40px;height:12px;background:var(--cg-v-brand);transition:transform var(--cg-v-duration) var(--cg-v-ease)}
+    dialog{border:1px solid var(--cg-v-border);border-radius:var(--cg-v-radius-lg);background:var(--cg-v-surface);color:var(--cg-v-text);max-width:min(92vw,480px)}
+    .unicode{overflow-wrap:anywhere}
+    @media (prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important;scroll-behavior:auto!important}}
+  </style>
+</head>
+<body>
+<main data-ux-contract-pilot="645" id="pilot">
+  <section class="surface"><h1>Theme, State & Accessibility Contract</h1><p class="unicode">Texto largo/Unicode: Gestión empresarial — acción, información, ñ, ✓, € · sin pérdida de contenido.</p><div class="controls"><button id="focusProbe">Foco visible</button><button id="openDialog">Abrir diálogo</button></div></section>
+  <section class="surface"><h2>Estados canónicos</h2><div class="states" id="stateProbe"></div></section>
+  <section class="surface"><h2>Reduced motion / zoom</h2><div id="motionProbe" aria-label="Indicador de movimiento"></div><div id="zoomProbe">Contenido de prueba para zoom al 200% sin overflow horizontal.</div></section>
+</main>
+<dialog id="dialogProbe" aria-labelledby="dialogTitle"><h2 id="dialogTitle">Diálogo accesible</h2><p>Escape cierra y restaura el foco.</p><button id="closeDialog">Cerrar</button></dialog>
+<pre id="uxResult" aria-live="polite">RUNNING</pre>
+<script type="module">
+import { UX_CONTRACT_V1, normalizeThemePreference, resolveThemeMode, SYSTEM_THEME_QUERY } from '/frontend/src/design-system/uxContract.v1.js';
+
+const params=new URLSearchParams(location.search);
+const preference=normalizeThemePreference(params.get('theme')||'light');
+const systemDark=matchMedia(SYSTEM_THEME_QUERY).matches;
+const resolved=resolveThemeMode(preference,systemDark);
+document.documentElement.dataset.theme=preference;
+document.documentElement.dataset.resolvedTheme=resolved;
+document.documentElement.classList.toggle('dark',resolved==='dark');
+
+const stateProbe=document.getElementById('stateProbe');
+UX_CONTRACT_V1.states.catalog.forEach((state)=>{const node=document.createElement('span');node.dataset.state=state;node.textContent=`${state} · estado`;stateProbe.appendChild(node);});
+
+const focusProbe=document.getElementById('focusProbe');
+const dialog=document.getElementById('dialogProbe');
+const openDialog=document.getElementById('openDialog');
+openDialog.addEventListener('click',()=>dialog.showModal());
+document.getElementById('closeDialog').addEventListener('click',()=>dialog.close());
+dialog.addEventListener('close',()=>openDialog.focus());
+document.addEventListener('keydown',(event)=>{if(event.key==='Escape'&&dialog.open)dialog.close();});
+
+function hexRgb(value){const text=value.trim();if(!/^#[0-9a-f]{6}$/i.test(text))throw new Error(`UNSUPPORTED_COLOR:${text}`);return [1,3,5].map((index)=>Number.parseInt(text.slice(index,index+2),16));}
+function luminance(rgb){const linear=rgb.map((channel)=>{const value=channel/255;return value<=.03928?value/12.92:((value+.055)/1.055)**2.4;});return .2126*linear[0]+.7152*linear[1]+.0722*linear[2];}
+function contrastRatio(foreground,background){const a=luminance(hexRgb(foreground)),b=luminance(hexRgb(background));return (Math.max(a,b)+.05)/(Math.min(a,b)+.05);}
+window.contrastRatio=contrastRatio;
+
+await new Promise((resolve)=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
+focusProbe.focus();
+const focusStyle=getComputedStyle(focusProbe);
+const rootStyle=getComputedStyle(document.documentElement);
+const contrast=contrastRatio(rootStyle.getPropertyValue('--cg-v-text'),rootStyle.getPropertyValue('--cg-v-bg'));
+openDialog.click();
+dialog.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));
+document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));
+await new Promise((resolve)=>requestAnimationFrame(resolve));
+
+if(params.get('zoom')==='2')document.documentElement.style.zoom='2';
+await new Promise((resolve)=>requestAnimationFrame(resolve));
+const overflow=document.documentElement.scrollWidth>document.documentElement.clientWidth+1;
+const results={
+  preference,resolved,systemDark,
+  states:stateProbe.children.length,
+  focusVisible:focusStyle.outlineStyle!=='none'&&Number.parseFloat(focusStyle.outlineWidth)>=2,
+  focusColor:focusStyle.outlineColor,
+  escapeClosed:!dialog.open,
+  focusRestored:document.activeElement===openDialog,
+  reducedMotion:matchMedia('(prefers-reduced-motion: reduce)').matches,
+  contrast:Number(contrast.toFixed(2)),
+  contrastPass:contrast>=4.5,
+  zoom:Number(params.get('zoom')||1),
+  zoomNoOverflow:!overflow,
+  viewport:innerWidth,
+  touchTarget:focusProbe.getBoundingClientRect().height>=44,
+  stateOnlyByColor:[...stateProbe.children].every((node)=>node.textContent.includes('estado'))
+};
+const pass=results.states===UX_CONTRACT_V1.states.catalog.length&&results.focusVisible&&results.escapeClosed&&results.focusRestored&&results.contrastPass&&results.zoomNoOverflow&&results.touchTarget&&results.stateOnlyByColor;
+const output=document.getElementById('uxResult');output.dataset.status=pass?'PASS':'FAIL';output.textContent=JSON.stringify(results);
+</script>
+</body>
+</html>
