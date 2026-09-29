@@ -38,6 +38,7 @@ const required59=[
   'tests/local_verification_runner_v630.test.mjs',
   'tests/production_convergence_v627.test.mjs',
   'tests/relational_normalization_audit_v633.test.mjs',
+  'tests/composite_tenant_integrity_v634.test.mjs',
 ];
 const tests=[...new Set([...regressionPaths,...required59])];
 

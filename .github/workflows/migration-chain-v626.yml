@@ -11,8 +11,12 @@ on:
       - 'backend/scripts/migration-compat-v626.mjs'
       - 'ops/database/prepare-supabase-ephemeral.sql'
       - 'config/migration-chain-v626.json'
+      - 'config/composite-tenant-integrity-v634.json'
+      - 'scripts/composite-tenant-integrity-v634.mjs'
       - 'tests/migration_chain_v626_contract.test.mjs'
+      - 'tests/composite_tenant_integrity_v634.test.mjs'
       - 'docs/database/MIGRATION_CHAIN_V626.md'
+      - 'docs/composite-tenant-integrity-v634.md'
       - 'package.json'
       - 'backend/package.json'
       - '.github/workflows/migration-chain-v626.yml'
@@ -64,8 +68,14 @@ jobs:
       - run: npm ci
       - name: Contract regression
         run: node --test tests/migration_chain_v626_contract.test.mjs
+      - name: Composite tenant integrity contract
+        run: node --test tests/composite_tenant_integrity_v634.test.mjs
+      - name: Tenant reference service negatives
+        run: npm --workspace backend run test:tenant-references
       - name: PostgreSQL 17 from-zero
         run: npm run migration:test:from-zero
+      - name: Composite tenant integrity · PostgreSQL 17 A/B negatives
+        run: node scripts/composite-tenant-integrity-v634.mjs --verify-database
       - name: Supported upgrades
         run: npm run migration:test:upgrade
       - name: Physical manifest
