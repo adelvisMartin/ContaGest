@@ -5,7 +5,8 @@ const TONES=new Set(['neutral','brand','success','warning','danger','info']);
 const SIZES=new Set(['small','medium','large']);
 const safeTone=(tone='neutral')=>TONES.has(tone)?tone:'neutral';
 const safeSize=(size='medium')=>SIZES.has(size)?size:'medium';
-const toneToColor={neutral:'default',brand:'primary',success:'success',warning:'warning',danger:'error',info:'info'};
+const toneToActionColor={neutral:'inherit',brand:'primary',success:'success',warning:'warning',danger:'error',info:'info'};
+const toneToChipColor={neutral:'default',brand:'primary',success:'success',warning:'warning',danger:'error',info:'info'};
 const stateLabels={loading:'Cargando',empty:'Sin datos',error:'Ocurrió un error',permission:'Sin permisos'};
 
 /** @typedef {'neutral'|'brand'|'success'|'warning'|'danger'|'info'} CgTone */
@@ -13,12 +14,12 @@ const stateLabels={loading:'Cargando',empty:'Sin datos',error:'Ocurrió un error
 
 export function CgButton({tone='brand',variant='solid',size='medium',loading=false,disabled=false,startIcon,endIcon,children,...props}={}){
   const muiVariant=variant==='ghost'?'text':variant==='outline'?'outlined':'contained';
-  return React.createElement(Mui.Button,{...props,color:toneToColor[safeTone(tone)]||'primary',variant:muiVariant,size:safeSize(size),disabled:disabled||loading,'aria-busy':loading||undefined,startIcon,endIcon},loading?'Cargando…':children);
+  return React.createElement(Mui.Button,{...props,color:toneToActionColor[safeTone(tone)]||'primary',variant:muiVariant,size:safeSize(size),disabled:disabled||loading,'aria-busy':loading||undefined,startIcon,endIcon},loading?'Cargando…':children);
 }
 
 export function CgIconButton({label,tone='neutral',size='medium',disabled=false,children,...props}={}){
   if(!label)throw new Error('CgIconButton requires an accessible label');
-  return React.createElement(Mui.IconButton,{...props,'aria-label':label,color:toneToColor[safeTone(tone)]||'default',size:safeSize(size),disabled},children);
+  return React.createElement(Mui.IconButton,{...props,'aria-label':label,color:toneToActionColor[safeTone(tone)]||'inherit',size:safeSize(size),disabled},children);
 }
 
 export function CgTextField({error=false,helperText='',size='medium',...props}={}){
@@ -46,7 +47,7 @@ export function CgSection({title,description='',actions=null,children,...props}=
 }
 
 export function CgStatusChip({label,tone='neutral',size='small',...props}={}){
-  return React.createElement(Mui.Chip,{...props,label,color:toneToColor[safeTone(tone)]||'default',size:safeSize(size)==='large'?'medium':safeSize(size)});
+  return React.createElement(Mui.Chip,{...props,label,color:toneToChipColor[safeTone(tone)]||'default',size:safeSize(size)==='large'?'medium':safeSize(size)});
 }
 export const CgBadge=CgStatusChip;
 
