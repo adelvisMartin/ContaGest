@@ -1,0 +1,56 @@
+{
+  "schemaVersion": 3,
+  "authority": "AGENTS.md",
+  "routing": {
+    "minSkills": 2,
+    "maxSkills": 4,
+    "defaultRisk": "P2",
+    "allowedRisks": ["P0", "P1", "P2", "P3"],
+    "taskTypes": ["feature", "bugfix", "refactor", "migration", "incident", "audit", "design"]
+  },
+  "evidence": {
+    "dimensions": ["SOURCE_REVIEW", "LOCAL_STATIC", "LOCAL_UNIT", "LOCAL_INTEGRATION", "LOCAL_POSTGRES", "LOCAL_BUILD", "LOCAL_BROWSER_E2E", "REMOTE_CI", "REMOTE_DEPLOY", "PHYSICAL_EXTERNAL"],
+    "statuses": ["PASS", "FAIL", "BLOCKED", "NOT_EXECUTED", "NOT_APPLICABLE"],
+    "passRequiresCommand": true,
+    "passRequiresEnvironment": true,
+    "passRequiresEvidence": true,
+    "exactShaRequired": true,
+    "remoteBlockedDoesNotBecomePass": true
+  },
+  "graphify": {
+    "statuses": ["CURRENT", "STALE", "UNAVAILABLE"],
+    "authority": "navigation-only",
+    "unavailableBlocksSimpleWork": false
+  },
+  "claims": {
+    "modes": ["exclusive", "advisory"],
+    "singleExclusiveOwner": true,
+    "supersessionRequiresDirectedSingleOwner": true,
+    "staleAfterHours": 24
+  },
+  "externalSkills": {
+    "canOverrideProjectAuthority": false,
+    "executeUpstreamScripts": false,
+    "requiresPin": true,
+    "inertByDefault": true
+  },
+  "providerPolicy": {
+    "REMOTE_CI_BLOCKED_PLAN": "BLOCKED",
+    "REMOTE_DEPLOY_BLOCKED_PLAN": "BLOCKED",
+    "providerExclusiveEvidenceRequiredOnlyWhenMaterial": true
+  },
+  "errorCodes": [
+    "AGENT_ROUTE_AMBIGUOUS",
+    "SKILL_CONTRACT_INVALID",
+    "SKILL_SOURCE_STALE",
+    "GRAPHIFY_STALE",
+    "DUPLICATE_WORK_CLAIM",
+    "EVIDENCE_SHA_MISMATCH",
+    "LOCAL_GATE_FAILED",
+    "REMOTE_CI_BLOCKED_PLAN",
+    "REMOTE_DEPLOY_BLOCKED_PLAN",
+    "REQUIRED_EVIDENCE_MISSING",
+    "SUPERSEDED_AUTHORITY",
+    "UNSAFE_EXTERNAL_SKILL"
+  ]
+}
