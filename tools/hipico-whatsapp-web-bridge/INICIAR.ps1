@@ -11,7 +11,7 @@ $ErrorActionPreference = 'Stop'
 [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)
 $OutputEncoding = [System.Text.UTF8Encoding]::new($false)
 
-$Version = '1.5.0'
+$Version = '1.6.0'
 $LabGroupName = 'Control h' + [char]0x00ED + 'pico lab'
 
 function Fail([string]$Message) {
@@ -225,6 +225,7 @@ HIPICO_INGEST_URL=https://conta-gest-frontend.vercel.app/api/v1/hipico-bot/bridg
 HIPICO_BRIDGE_HEALTH_URL=https://conta-gest-frontend.vercel.app/api/v1/hipico-bot/bridge/health
 HIPICO_GROUP_BRIDGE_TOKEN=$token
 HIPICO_DATA_DIR=$dataForEnv
+HIPICO_TRANSPORT_ADAPTER=playwright-web
 HIPICO_SOURCE_GROUP_MATCHES=CLUB HIPICO TRIPLE COWN|CLUB HIPICO TRIPLE CROWN
 HIPICO_SOURCE_GROUP_ID=$sourceGroupId
 HIPICO_SOURCE_CHANNEL_KEY=club-hipico-triple-crown-official
