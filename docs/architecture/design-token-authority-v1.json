@@ -1,0 +1,52 @@
+{
+  "version": 1,
+  "canonicalSource": "frontend/src/design-system/semanticTokens.v1.js",
+  "generatedBy": "scripts/generate-design-tokens-v631.mjs",
+  "adapters": {
+    "mui": "frontend/src/components/muiThemeAdapter.js",
+    "legacyCss": "frontend/public/design-system/contagest-semantic-tokens-v1.css",
+    "hipico": "frontend/public/hipico-control/assets/css/platform-tokens-v1.css"
+  },
+  "mappings": [
+    {
+      "legacyOwner": "frontend/src/styles/contagest-visual-system-v12.css::@layer cg.visual.tokens",
+      "canonical": "frontend/src/design-system/semanticTokens.v1.js",
+      "adapter": "frontend/public/design-system/contagest-semantic-tokens-v1.css",
+      "status": "deprecated-fallback",
+      "owner": "frontend-platform",
+      "reason": "Keep rollback/import stability while legacy styles continue to reference --cg-v-* directly.",
+      "reviewBy": "2026-12-31",
+      "removalCriteria": "All supported entrypoints load the generated adapter and authority audit proves zero runtime dependence on the layered fallback declarations."
+    },
+    {
+      "legacyOwner": "frontend/public/hipico-control/assets/css/app.css::root token blocks",
+      "canonical": "frontend/src/design-system/semanticTokens.v1.js::products.hipico",
+      "adapter": "frontend/public/hipico-control/assets/css/platform-tokens-v1.css",
+      "status": "deprecated-fallback",
+      "owner": "hipico-platform",
+      "reason": "Preserve static-PWA rollback safety while Hípico adopts the shared platform token adapter incrementally.",
+      "reviewBy": "2026-12-31",
+      "removalCriteria": "The generated Hípico adapter is covered by release QA and direct --hc-* value declarations in app.css have zero consumers as an authority."
+    },
+    {
+      "legacyOwner": "frontend/src/components/designTokens.js",
+      "canonical": "frontend/src/design-system/semanticTokens.v1.js",
+      "adapter": "CSS variable compatibility facade",
+      "status": "active-compatibility",
+      "owner": "frontend-platform",
+      "reason": "Older JS consumers receive semantic CSS variable references without owning values.",
+      "reviewBy": "2027-03-31",
+      "removalCriteria": "All direct imports are migrated to canonical component/theme APIs."
+    },
+    {
+      "legacyOwner": "frontend/src/components/muiRuntime.js::inline palette",
+      "canonical": "frontend/src/design-system/semanticTokens.v1.js",
+      "adapter": "frontend/src/components/muiThemeAdapter.js",
+      "status": "removed",
+      "owner": "frontend-platform",
+      "reason": "MUI must consume semantic roles instead of maintaining equivalent physical values.",
+      "reviewBy": "2026-09-29",
+      "removalCriteria": "Satisfied by #631: muiRuntime delegates theme construction and contains no palette literals."
+    }
+  ]
+}
