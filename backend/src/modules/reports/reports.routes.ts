@@ -73,6 +73,7 @@ router.get('/inventory/reorder', asyncHandler(async (req, res) => {
         id: true,
         sku: true,
         name: true,
+        unit: true,
         stock: true,
         reserved: true,
         minStock: true
