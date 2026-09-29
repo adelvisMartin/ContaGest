@@ -78,7 +78,8 @@ jobs:
           node-version: '22'
           cache: npm
       - run: npm ci
-      - run: npm --workspace backend run prisma:deploy
+      - name: PostgreSQL 17 canonical from-zero
+        run: npm run migration:test:from-zero
       - run: npm --workspace backend run prisma:generate
       - run: npm run seed
       - run: npm run test:backend:fiscal:authority:real
