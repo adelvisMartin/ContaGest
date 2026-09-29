@@ -32,6 +32,7 @@ const required59=[
   'tests/forms_interaction_issue_620.test.mjs',
   'tests/enterprise_data_ui_issue_621.test.mjs',
   'tests/clean_code_refactor_authority_issue_622.test.mjs',
+  'tests/agent_system_v3_issue_623.test.mjs',
   'tests/vertical_asset_system_70_75.test.mjs',
   'tests/cloudflare_security_audit_skill_contract.test.mjs',
   'tests/fiscal_authority_v561_contract.test.mjs',
