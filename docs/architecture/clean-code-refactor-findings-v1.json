@@ -17,9 +17,9 @@
       "file": "frontend/src/app.js",
       "symbol": "AccessControlService.canAccessRoute",
       "evidence": "composition root overrides access policy and combines RBAC with license/QA-client policy",
-      "owner": "follow-up-required",
+      "owner": "#698",
       "classification": "human-review",
-      "resolution": "not changed in #622 because authorization/licensing behavior requires dedicated characterization"
+      "resolution": "deferred to dedicated characterization/refactor because authorization/licensing behavior is high risk"
     }
   ]
 }
