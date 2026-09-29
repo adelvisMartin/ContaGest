@@ -45,10 +45,19 @@ test('permissive authenticated tenant policy is rejected',()=>{
   assert.ok(codes(fixture).includes('PERMISSIVE_TENANT_POLICY'));
 });
 
-test('trusted backend runtime policy is not mistaken for a tenant principal',()=>{
+test('contagest_runtime all-tenant policy on tenant-owned table is release-blocking',()=>{
   const fixture=base();
   fixture.policies=[{schema:'public',table:'Client',name:'contagest_runtime_backend_all',command:'ALL',roles:['contagest_runtime'],qual:'true',withCheck:'true'}];
-  assert.ok(!codes(fixture).includes('PERMISSIVE_TENANT_POLICY'));
+  const result=classifySecurityManifest(fixture);
+  assert.equal(result.verdict,'FAIL');
+  assert.ok(result.findings.some((item)=>item.code==='RUNTIME_ALL_TENANT_POLICY'&&item.severity==='P0'));
+});
+
+test('global/shared table without tenant ownership is not a runtime all-tenant false positive',()=>{
+  const fixture=base();
+  fixture.tables=[{schema:'public',name:'GlobalTaxCatalog',owner:'postgres',rlsEnabled:true,rlsForced:false,hasTenantId:false,classification:'PRISMA_APPLICATION',anonAnyDml:false,authenticatedAnyDml:false}];
+  fixture.policies=[{schema:'public',table:'GlobalTaxCatalog',name:'contagest_runtime_backend_all',command:'ALL',roles:['contagest_runtime'],qual:'true',withCheck:'true'}];
+  assert.ok(!codes(fixture).includes('RUNTIME_ALL_TENANT_POLICY'));
 });
 
 test('unsafe ContaGest SECURITY DEFINER search_path and execution grants are rejected',()=>{
