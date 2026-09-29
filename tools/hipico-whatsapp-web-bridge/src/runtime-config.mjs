@@ -1,22 +1,20 @@
 import path from 'node:path';
 import { normalize, splitGroupMatches } from './runtime-utils.mjs';
 import { normalizeGroupId } from './group-identity.mjs';
+import { isKnownTransportAdapter, resolveTransportCapabilities } from './transport-capabilities.mjs';
+import { evaluateSourceAutoReplyPolicy, SOURCE_AUTO_REPLY_POLICY_NO_GO } from './source-policy-gate.mjs';
 
-// The linked-device bridge persists WhatsApp content locally. Keep every file
-// it creates private by default on POSIX; Windows safely ignores POSIX modes.
+export { SOURCE_AUTO_REPLY_POLICY_NO_GO } from './source-policy-gate.mjs';
+
 try { process.umask(0o077); } catch {}
 
-export const VERSION = '1.5.0';
+export const VERSION = '1.6.0';
 export const RUNTIME_MODES = Object.freeze({
   PRODUCTION: 'production',
   SHADOW_LOCAL: 'shadow-local'
 });
 const CHANNEL_KEY_RE=/^[A-Za-z0-9_-]{3,120}$/;
 const PUBLIC_SECRET_PLACEHOLDER_PATTERN=/(?:REEMPLAZA|REPLACE|CHANGE[_-]?ME|CHANGEME|PLACEHOLDER|YOUR[_-]?(?:SECRET|TOKEN|KEY)|TU[_-]?(?:SECRETO|TOKEN|CLAVE)|EXAMPLE[_-]?(?:SECRET|TOKEN|KEY))/i;
-// Current WhatsApp Business rules do not provide a production GO for this real-money
-// gambling workflow. Keep SOURCE automatic writing fail-closed; LAB remains the safe
-// autonomous test target until a fresh platform/jurisdiction capability review says GO.
-export const SOURCE_AUTO_REPLY_POLICY_NO_GO = 'SOURCE_AUTO_REPLY_POLICY_NO_GO';
 
 export function repairUtf8Mojibake(value) {
   const raw = String(value ?? '').trim();
@@ -29,32 +27,21 @@ function envText(env, name, fallback = '') {
   const value = repairUtf8Mojibake(env[name]);
   return value || fallback;
 }
-
 function boolEnv(env, name, fallback = false) {
   const value = env[name];
   if (value == null || value === '') return fallback;
   return String(value).trim().toLowerCase() === 'true';
 }
-
 function numberEnv(env, name, fallback, min, max) {
   const value = Number(env[name]);
   if (!Number.isFinite(value)) return fallback;
   return Math.min(max, Math.max(min, Math.trunc(value)));
 }
-
 function defaultDataDir(env, cwd) {
-  return path.resolve(String(
-    env.HIPICO_DATA_DIR ||
-    (env.LOCALAPPDATA
-      ? path.join(env.LOCALAPPDATA, 'ControlHipicoBridge', 'data')
-      : path.join(cwd, 'data'))
-  ));
+  return path.resolve(String(env.HIPICO_DATA_DIR || (env.LOCALAPPDATA ? path.join(env.LOCALAPPDATA, 'ControlHipicoBridge', 'data') : path.join(cwd, 'data'))));
 }
 
-export function isWhatsAppGroupId(value) {
-  return Boolean(normalizeGroupId(value));
-}
-
+export function isWhatsAppGroupId(value) { return Boolean(normalizeGroupId(value)); }
 export function strongBridgeTokenConfigured(value) {
   const token=String(value||'').trim();
   return Buffer.byteLength(token,'utf8')>=32&&!PUBLIC_SECRET_PLACEHOLDER_PATTERN.test(token);
@@ -64,14 +51,8 @@ export function loadRuntimeConfig(env = process.env, cwd = process.cwd()) {
   const runtimeMode = envText(env, 'HIPICO_RUNTIME_MODE', RUNTIME_MODES.PRODUCTION).toLowerCase();
   const backendSyncEnabled = boolEnv(env, 'HIPICO_BACKEND_SYNC_ENABLED', runtimeMode === RUNTIME_MODES.PRODUCTION);
   const ingestUrl = envText(env, 'HIPICO_INGEST_URL', '');
-  const healthUrl = envText(
-    env,
-    'HIPICO_BRIDGE_HEALTH_URL',
-    ingestUrl ? ingestUrl.replace(/\/events(?:\?.*)?$/, '/health') : ''
-  );
-  const sourceMatches = splitGroupMatches(
-    envText(env, 'HIPICO_SOURCE_GROUP_MATCHES', envText(env, 'HIPICO_SOURCE_GROUP_MATCH', 'CLUB HIPICO TRIPLE COWN|CLUB HIPICO TRIPLE CROWN'))
-  ).map(repairUtf8Mojibake);
+  const healthUrl = envText(env, 'HIPICO_BRIDGE_HEALTH_URL', ingestUrl ? ingestUrl.replace(/\/events(?:\?.*)?$/, '/health') : '');
+  const sourceMatches = splitGroupMatches(envText(env, 'HIPICO_SOURCE_GROUP_MATCHES', envText(env, 'HIPICO_SOURCE_GROUP_MATCH', 'CLUB HIPICO TRIPLE COWN|CLUB HIPICO TRIPLE CROWN'))).map(repairUtf8Mojibake);
 
   return Object.freeze({
     version: VERSION,
@@ -81,6 +62,7 @@ export function loadRuntimeConfig(env = process.env, cwd = process.cwd()) {
     ingestUrl,
     healthUrl,
     token: envText(env, 'HIPICO_GROUP_BRIDGE_TOKEN', ''),
+    transportAdapter: envText(env, 'HIPICO_TRANSPORT_ADAPTER', 'playwright-web').toLowerCase(),
     sourceMatches,
     sourceGroupId: envText(env, 'HIPICO_SOURCE_GROUP_ID', '').toLowerCase(),
     sourceChannelKey: envText(env, 'HIPICO_SOURCE_CHANNEL_KEY', 'club-hipico-triple-crown-official'),
@@ -89,6 +71,10 @@ export function loadRuntimeConfig(env = process.env, cwd = process.cwd()) {
     labChannelKey: envText(env, 'HIPICO_LAB_CHANNEL_KEY', 'control-hipico-lab'),
     labSendEnabled: boolEnv(env, 'HIPICO_LAB_SEND_ENABLED', false),
     sourceAutoReplyEnabled: boolEnv(env, 'HIPICO_SOURCE_AUTO_REPLY_ENABLED', false),
+    sourcePolicyReviewId: envText(env, 'HIPICO_SOURCE_POLICY_REVIEW_ID', ''),
+    sourceLicenseEvidenceRef: envText(env, 'HIPICO_SOURCE_LICENSE_EVIDENCE_REF', ''),
+    metaPermissionEvidenceRef: envText(env, 'HIPICO_META_PERMISSION_EVIDENCE_REF', ''),
+    sourceAgeGateConfirmed: boolEnv(env, 'HIPICO_SOURCE_AGE_GATE_CONFIRMED', false),
     requirePinnedGroupIds: boolEnv(env, 'HIPICO_REQUIRE_PINNED_GROUP_IDS', true),
     pollMs: numberEnv(env, 'HIPICO_POLL_MS', 1000, 500, 5000),
     backendTimeoutMs: numberEnv(env, 'HIPICO_BACKEND_TIMEOUT_MS', 15000, 5000, 60000),
@@ -114,21 +100,23 @@ function isSafeHttps(value) {
 
 export function validateRuntimeConfig(config) {
   const errors = [];
+  const transport = resolveTransportCapabilities(config.transportAdapter);
   if (!Object.values(RUNTIME_MODES).includes(config.runtimeMode)) errors.push('HIPICO_RUNTIME_MODE debe ser production o shadow-local.');
+  if (!isKnownTransportAdapter(config.transportAdapter)) errors.push('HIPICO_TRANSPORT_ADAPTER debe ser playwright-web o cloud-api.');
+  else if (!transport.implemented) errors.push(`HIPICO_TRANSPORT_ADAPTER=${transport.id} está registrado pero todavía no está implementado en este Bridge.`);
+  if (!transport.sourceRead) errors.push(`HIPICO_TRANSPORT_ADAPTER=${transport.id} no implementa lectura SOURCE.`);
   if (!config.sourceMatches.length) errors.push('No hay aliases de grupo fuente configurados.');
-  if (config.sourceMatches.some((item) => normalize(item) === normalize(config.labGroupName))) {
-    errors.push('El grupo fuente y el laboratorio deben ser distintos.');
-  }
+  if (config.sourceMatches.some((item) => normalize(item) === normalize(config.labGroupName))) errors.push('El grupo fuente y el laboratorio deben ser distintos.');
   if (config.sourceGroupId && !isWhatsAppGroupId(config.sourceGroupId)) errors.push('HIPICO_SOURCE_GROUP_ID no tiene formato @g.us válido.');
   if (config.labGroupId && !isWhatsAppGroupId(config.labGroupId)) errors.push('HIPICO_LAB_GROUP_ID no tiene formato @g.us válido.');
-  if (config.sourceGroupId && config.labGroupId && config.sourceGroupId === config.labGroupId) {
-    errors.push('El ID del grupo fuente y el ID del LAB deben ser distintos.');
-  }
+  if (config.sourceGroupId && config.labGroupId && config.sourceGroupId === config.labGroupId) errors.push('El ID del grupo fuente y el ID del LAB deben ser distintos.');
   if (!CHANNEL_KEY_RE.test(config.sourceChannelKey)) errors.push('HIPICO_SOURCE_CHANNEL_KEY no es válido.');
   if (!CHANNEL_KEY_RE.test(config.labChannelKey)) errors.push('HIPICO_LAB_CHANNEL_KEY no es válido.');
   if (config.sourceChannelKey === config.labChannelKey) errors.push('SOURCE y LAB deben usar channel keys distintos.');
+  if ((config.labSendEnabled || config.labTestInputEnabled) && !transport.labSend) errors.push(`HIPICO_TRANSPORT_ADAPTER=${transport.id} no implementa envío LAB.`);
   if (config.sourceAutoReplyEnabled) {
-    errors.push(`${SOURCE_AUTO_REPLY_POLICY_NO_GO}: la política vigente de WhatsApp Business no autoriza este flujo automatizado de apuestas con dinero real en SOURCE; usa LAB hasta una reevaluación documentada GO.`);
+    const policy = evaluateSourceAutoReplyPolicy(config, transport);
+    errors.push(`${SOURCE_AUTO_REPLY_POLICY_NO_GO}: WhatsApp Business prohíbe facilitar apuestas con dinero real en la política revisada; razones=${policy.reasons.join(',')}. SOURCE permanece read-only.`);
   }
   if (config.sourceAutoReplyEnabled && config.runtimeMode !== RUNTIME_MODES.PRODUCTION) errors.push('HIPICO_SOURCE_AUTO_REPLY_ENABLED solo se admite en production.');
   if (config.sourceAutoReplyEnabled && !config.backendSyncEnabled) errors.push('Auto reply SOURCE exige backend sync autoritativo.');

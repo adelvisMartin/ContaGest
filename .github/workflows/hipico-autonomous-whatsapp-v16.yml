@@ -1,4 +1,4 @@
-name: Hípico Autonomous WhatsApp v15
+name: Hípico Autonomous WhatsApp v16
 
 on:
   pull_request:
@@ -15,10 +15,11 @@ on:
       - 'backend/.env.example'
       - 'supabase/sql/hipico_v26_autonomous_source_reply.sql'
       - 'tools/hipico-whatsapp-web-bridge/**'
+      - 'tests/hipico_whatsapp_v160_readiness_contract.test.mjs'
       - 'INICIAR-HIPICO-AUTONOMO.cmd'
       - 'INICIAR-HIPICO-WHATSAPP.cmd'
-      - 'docs/hipico/README.md'
-      - '.github/workflows/hipico-autonomous-whatsapp-v15.yml'
+      - 'docs/hipico/**'
+      - '.github/workflows/hipico-autonomous-whatsapp-v16.yml'
   workflow_dispatch:
 
 permissions: { contents: read }
@@ -27,7 +28,7 @@ env:
   HIPICO_CANDIDATE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
 
 concurrency:
-  group: hipico-autonomous-whatsapp-v15-${{ github.event.pull_request.number || github.ref }}
+  group: hipico-autonomous-whatsapp-v16-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -95,6 +96,13 @@ jobs:
       - name: WhatsApp Bridge syntax and unit regressions
         run: npm --prefix tools/hipico-whatsapp-web-bridge run qa
 
+      - name: SOURCE policy diagnostic stays fail-closed
+        working-directory: tools/hipico-whatsapp-web-bridge
+        run: npm run source:policy
+
+      - name: Root WhatsApp v1.6 readiness contract
+        run: node --test tests/hipico_whatsapp_v160_readiness_contract.test.mjs
+
       - name: PostgreSQL autonomous reply durability E2E
         run: npm --workspace backend run test:hipico:autonomous-reply
 
@@ -120,7 +128,8 @@ jobs:
           cleanup_rc=0
           if [ -n "${HIPICO_E2E_DATABASE_URL:-}" ]; then
             db="${HIPICO_E2E_DATABASE_URL##*/}"
-            psql -h 127.0.0.1 -p 5432 -U postgres -d postgres -v ON_ERROR_STOP=1               -c "select pg_terminate_backend(pid) from pg_stat_activity where datname='${db}' and pid <> pg_backend_pid();" || cleanup_rc=1
+            psql -h 127.0.0.1 -p 5432 -U postgres -d postgres -v ON_ERROR_STOP=1 \
+              -c "select pg_terminate_backend(pid) from pg_stat_activity where datname='${db}' and pid <> pg_backend_pid();" || cleanup_rc=1
             dropdb -h 127.0.0.1 -p 5432 -U postgres --if-exists "$db" || cleanup_rc=1
           fi
           exit "$cleanup_rc"
