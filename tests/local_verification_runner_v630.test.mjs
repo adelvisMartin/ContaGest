@@ -48,9 +48,10 @@ test('backend profile reuses authoritative commands and does not duplicate test 
 
 test('database and financial profiles consume one canonical database contract', () => {
   const canonical = 'node scripts/canonical-database-gate-v632.mjs';
+  const tenantIntegrity = 'node scripts/composite-tenant-integrity-v634.mjs --verify-database';
   const database = buildProfilePlan('database').map((gate) => gate.command);
   const financial = buildProfilePlan('financial').map((gate) => gate.command);
-  assert.deepEqual(database, ['npm run typecheck', canonical]);
+  assert.deepEqual(database, ['npm run typecheck', canonical, tenantIntegrity]);
   assert.ok(financial.includes(canonical));
   assert.ok(!database.includes('npm run migration:test:from-zero'));
   assert.ok(!database.includes('npm run migration:test:upgrade'));
@@ -59,11 +60,13 @@ test('database and financial profiles consume one canonical database contract', 
   assert.ok(financial.includes('npm run test:backend:idempotency:real'));
 });
 
-test('full profile de-duplicates the canonical database gate', () => {
+test('full profile de-duplicates the canonical database gate and retains tenant integrity', () => {
   const canonical = 'node scripts/canonical-database-gate-v632.mjs';
+  const tenantIntegrity = 'node scripts/composite-tenant-integrity-v634.mjs --verify-database';
   const commands = buildProfilePlan('full').map((gate) => gate.command);
   assert.equal(new Set(commands).size, commands.length);
   assert.equal(commands.filter((command) => command === canonical).length, 1);
+  assert.equal(commands.filter((command) => command === tenantIntegrity).length, 1);
   assert.ok(commands.includes('npm run qa:ui:58'));
 });
 
