@@ -20,16 +20,22 @@ const dark = {
 };
 
 const hipicoLight = {
-  background: '#f7f7f6', surface: '#ffffff', surfaceSubtle: '#f2f2f0', surfaceRaised: '#fafaf9', border: '#deded9', borderStrong: '#c8c8c1', textPrimary: '#202221', textSecondary: '#6b706d',
-  brand: '#721522', group: '#721522', brandForeground: '#ffffff', brandHover: '#5f111c', brandSoft: '#f7ecee', accent: '#8d7545', success: '#35705a', successSoft: '#edf6f1', warning: '#8a682f', warningSoft: '#fbf5e8', danger: '#9b4750', dangerSoft: '#fbefef', info: '#526f86', infoSoft: '#eef3f6', focus: '#b18b40',
-  shadowSmall: '0 1px 2px rgba(20,22,21,.05)', shadowMedium: '0 8px 24px rgba(20,22,21,.08)'
+  background: '#F4F5F2', surface: '#FFFFFF', surfaceSubtle: '#ECEFEA', surfaceRaised: '#F8F9F7', border: '#D7DCD6', borderStrong: '#B9C1BA', textPrimary: '#171A18', textSecondary: '#667069',
+  brand: '#235C45', group: '#235C45', brandForeground: '#FFFFFF', brandHover: '#1B4937', brandSoft: '#E7F0EB', accent: '#A77B36', success: '#2D6A4F', successSoft: '#E9F3ED', warning: '#9A6B18', warningSoft: '#F8F0DE', danger: '#A23A43', dangerSoft: '#F8E9EB', info: '#3F647C', infoSoft: '#E9F0F4', focus: '#2F7A5B',
+  shadowSmall: '0 1px 2px rgba(19,28,22,.04)', shadowMedium: '0 10px 28px rgba(19,28,22,.10)'
 };
 
 const hipicoDark = {
-  background: '#0f1012', surface: '#17181b', surfaceSubtle: '#1d1f23', surfaceRaised: '#1a1b1f', border: '#303238', borderStrong: '#464951', textPrimary: '#f3f4f6', textSecondary: '#a5a7ad',
-  brand: '#c76474', group: '#721522', brandForeground: '#111214', brandHover: '#d16f7e', brandSoft: '#2a181d', accent: '#c1a36a', success: '#76b899', successSoft: '#172720', warning: '#d0ad70', warningSoft: '#2b251b', danger: '#e08a94', dangerSoft: '#301d22', info: '#91afc5', infoSoft: '#1b252d', focus: '#d0ad70',
-  shadowSmall: '0 1px 2px rgba(20,22,21,.05)', shadowMedium: '0 12px 34px rgba(0,0,0,.32)'
+  background: '#0B0E0C', surface: '#121714', surfaceSubtle: '#18201B', surfaceRaised: '#151B17', border: '#2A352E', borderStrong: '#47564C', textPrimary: '#F3F6F3', textSecondary: '#A6B0A9',
+  brand: '#79B891', group: '#79B891', brandForeground: '#08100B', brandHover: '#8BC7A2', brandSoft: '#173324', accent: '#D1AD6A', success: '#78C39D', successSoft: '#173326', warning: '#DBB568', warningSoft: '#312916', danger: '#E5848A', dangerSoft: '#351C20', info: '#8DB4CE', infoSoft: '#192A34', focus: '#8CCAA5',
+  shadowSmall: '0 1px 2px rgba(0,0,0,.20)', shadowMedium: '0 12px 34px rgba(0,0,0,.34)'
 };
+
+const hipicoTypography = {
+  metadata: '11px', label: '12px', body: '13px', touch: '14px', heading: '16px', section: '20px', page: '24px', kpi: '22px'
+};
+
+const hipicoControls = { small: '32px', default: '36px', primary: '38px', touch: '44px' };
 
 export const SEMANTIC_TOKENS_V1 = deepFreeze({
   contract: 'contagest-semantic-design-tokens',
@@ -51,9 +57,11 @@ export const SEMANTIC_TOKENS_V1 = deepFreeze({
   color: { light, dark },
   products: {
     hipico: {
-      variantReason: 'editorial-brand',
-      sharedPrimitives: ['typography.family.sans', 'radius.md', 'controls.touch', 'motion', 'layout.breakpoints'],
-      radius: { xs: '6px', sm: '8px', md: '10px', lg: '12px', xl: '14px' },
+      variantReason: 'equestrian-operations',
+      sharedPrimitives: ['typography.family.sans', 'controls.touch', 'motion', 'layout.breakpoints'],
+      typography: hipicoTypography,
+      controls: hipicoControls,
+      radius: { xs: '4px', sm: '6px', md: '8px', lg: '10px', xl: '12px' },
       light: hipicoLight,
       dark: hipicoDark
     }
@@ -85,9 +93,9 @@ export function getHipicoThemeTokens(mode = 'light') {
     mode: normalized,
     color: SEMANTIC_TOKENS_V1.products.hipico[normalized],
     radius: SEMANTIC_TOKENS_V1.products.hipico.radius,
-    typography: SEMANTIC_TOKENS_V1.typography,
+    typography: SEMANTIC_TOKENS_V1.products.hipico.typography,
     spacing: SEMANTIC_TOKENS_V1.spacing,
-    controls: SEMANTIC_TOKENS_V1.controls,
+    controls: SEMANTIC_TOKENS_V1.products.hipico.controls,
     layout: SEMANTIC_TOKENS_V1.layout,
     motion: SEMANTIC_TOKENS_V1.motion,
     zIndex: SEMANTIC_TOKENS_V1.zIndex

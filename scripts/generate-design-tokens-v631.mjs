@@ -45,10 +45,15 @@ function hipicoEntries(tokens, mode) {
   const hipico = tokens.products.hipico;
   const color = hipico[mode];
   const r = hipico.radius;
+  const t = hipico.typography;
+  const c = hipico.controls;
   return [
-    ['--hc-font-sans', tokens.typography.family.sans], ['font-family', 'var(--hc-font-sans)'], ['--hc-bg', color.background], ['--hc-surface', color.surface], ['--hc-surface-subtle', color.surfaceSubtle], ['--hc-surface-raised', color.surfaceRaised], ['--hc-border', color.border], ['--hc-border-strong', color.borderStrong], ['--hc-text', color.textPrimary], ['--hc-text-muted', color.textSecondary],
+    ['--hc-font-sans', tokens.typography.family.sans], ['font-family', 'var(--hc-font-sans)'],
+    ['--hc-text-2xs', t.metadata], ['--hc-text-xs', t.label], ['--hc-text-sm', t.body], ['--hc-text-touch', t.touch], ['--hc-text-heading', t.heading], ['--hc-text-section', t.section], ['--hc-text-page', t.page], ['--hc-text-kpi', t.kpi],
+    ['--hc-control-sm', c.small], ['--hc-control', c.default], ['--hc-control-primary', c.primary], ['--hc-touch', c.touch],
+    ['--hc-bg', color.background], ['--hc-surface', color.surface], ['--hc-surface-subtle', color.surfaceSubtle], ['--hc-surface-raised', color.surfaceRaised], ['--hc-border', color.border], ['--hc-border-strong', color.borderStrong], ['--hc-text', color.textPrimary], ['--hc-text-muted', color.textSecondary],
     ['--hc-brand', color.brand], ['--hc-brand-foreground', color.brandForeground], ['--hc-brand-hover', color.brandHover], ['--hc-brand-soft', color.brandSoft], ['--hc-accent', color.accent], ['--hc-success', color.success], ['--hc-success-soft', color.successSoft], ['--hc-warning', color.warning], ['--hc-warning-soft', color.warningSoft], ['--hc-danger', color.danger], ['--hc-danger-soft', color.dangerSoft], ['--hc-info', color.info], ['--hc-info-soft', color.infoSoft], ['--hc-focus', color.focus], ['--hc-group', color.group],
-    ['--hc-radius-xs', r.xs], ['--hc-radius-sm', r.sm], ['--hc-radius-md', r.md], ['--hc-radius-lg', r.lg], ['--hc-radius-xl', r.xl], ['--hc-shadow-sm', color.shadowSmall], ['--hc-shadow-md', color.shadowMedium], ['--hc-touch', tokens.controls.touch], ['--hc-duration-fast', tokens.motion.fast], ['--hc-duration', tokens.motion.standard], ['--hc-ease', tokens.motion.easing],
+    ['--hc-radius-xs', r.xs], ['--hc-radius-sm', r.sm], ['--hc-radius-md', r.md], ['--hc-radius-lg', r.lg], ['--hc-radius-xl', r.xl], ['--hc-shadow-sm', color.shadowSmall], ['--hc-shadow-md', color.shadowMedium], ['--hc-duration-fast', tokens.motion.fast], ['--hc-duration', tokens.motion.standard], ['--hc-ease', tokens.motion.easing],
     ['--hc-breakpoint-mobile', `${tokens.layout.breakpoints.mobile}px`], ['--hc-breakpoint-tablet', `${tokens.layout.breakpoints.tablet}px`], ['--hc-breakpoint-desktop', `${tokens.layout.breakpoints.desktop}px`]
   ];
 }
@@ -67,7 +72,7 @@ export function renderHipicoCss(tokens = SEMANTIC_TOKENS_V1) {
   const system = block('  :root[data-theme="system"]', [['color-scheme', 'dark'], ...hipicoEntries(tokens, 'dark')]);
   const reduced = block('  :root', [['--hc-duration-fast', tokens.motion.reduced], ['--hc-duration', tokens.motion.reduced]]);
   const reducedElements = block('  *,\n  *::before,\n  *::after', [['scroll-behavior', 'auto !important'], ['transition-duration', '0.01ms !important'], ['animation-duration', '0.01ms !important'], ['animation-iteration-count', '1 !important']]);
-  return `/* ${GENERATED_NOTICE} */\n/* Hípico consumes shared platform semantics plus the documented editorial-brand variant. */\n${light}\n\n${dark}\n\n@media (prefers-color-scheme: dark) {\n${system}\n}\n\n@media (prefers-reduced-motion: reduce) {\n${reduced}\n${reducedElements}\n}\n`;
+  return `/* ${GENERATED_NOTICE} */\n/* Hípico consumes shared platform semantics plus the documented equestrian-operations variant. */\n${light}\n\n${dark}\n\n@media (prefers-color-scheme: dark) {\n${system}\n}\n\n@media (prefers-reduced-motion: reduce) {\n${reduced}\n${reducedElements}\n}\n`;
 }
 
 const outputs = () => [[mainOutput, renderContaGestCss()], [hipicoOutput, renderHipicoCss()]];
