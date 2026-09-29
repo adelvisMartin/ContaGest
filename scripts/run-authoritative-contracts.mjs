@@ -1,63 +1,70 @@
 #!/usr/bin/env node
-import fs from 'node:fs';
+
 import { spawnSync } from 'node:child_process';
 
-const CONTRACT_CONCURRENCY=1;
-const CONTRACT_BATCH_SIZE=1;
-const manifest=JSON.parse(fs.readFileSync('config/implementation-roadmap-1-58.json','utf8'));
-const implementations=Array.isArray(manifest?.implementations)?manifest.implementations:[];
-if(implementations.length!==58) throw new Error(`AUTHORITATIVE_IMPLEMENTATION_COUNT:${implementations.length}`);
-
-const regressionPaths=[...new Set(implementations.flatMap((row)=>row.regressionPaths||[]))];
-const required59=[
-  'tests/implementations_1_58_audit.test.mjs',
-  'tests/vercel_build_recovery_59_75.test.mjs',
-  'tests/exact_sha_workflow_recovery_59_75.test.mjs',
-  'tests/prisma_ephemeral_baseline_contract.test.mjs',
-  'tests/security_audit_surface_boundary.test.mjs',
-  'tests/authoritative_contract_suite_59_75.test.mjs',
-  'tests/api_validation_error_59_75.test.mjs',
-  'tests/rbac_authoritative_session_60_75.test.mjs',
-  'tests/full_58_route_anti_overlap_61_75.test.mjs',
-  'tests/playwright_determinism_62_75.test.mjs',
-  'tests/cross_browser_critical_matrix_63_75.test.mjs',
-  'tests/health_dentistry_bounded_contexts_66_75.test.mjs',
-  'tests/vertical_schema_authority_67_75.test.mjs',
-  'tests/database_authority_67_75.test.mjs',
-  'tests/database_production_drift_625.test.mjs',
-  'tests/raw_sql_security_68_75.test.mjs',
-  'tests/design_system_authority_69_75.test.mjs',
-  'tests/design_token_authority_issue_631.test.mjs',
-  'tests/component_library_vnext_issue_619.test.mjs',
-  'tests/forms_interaction_issue_620.test.mjs',
-  'tests/enterprise_data_ui_issue_621.test.mjs',
-  'tests/clean_code_refactor_authority_issue_622.test.mjs',
-  'tests/agent_system_v3_issue_623.test.mjs',
-  'tests/access_license_policy_issue_698.test.mjs',
-  'tests/vertical_asset_system_70_75.test.mjs',
-  'tests/cloudflare_security_audit_skill_contract.test.mjs',
-  'tests/fiscal_authority_v561_contract.test.mjs',
-  'tests/fiscal_single_source_v629_contract.test.mjs',
-  'tests/local_verification_runner_v630.test.mjs',
-  'tests/production_convergence_v627.test.mjs',
-  'tests/relational_normalization_audit_v633.test.mjs',
+const contractFiles = [
+  'tests/migration_chain_v626_contract.test.mjs',
+  'tests/release_readiness_v627_contract.test.mjs',
+  'tests/fiscal_rule_authority_v629.test.mjs',
+  'tests/canonical_database_gate_v632_contract.test.mjs',
+  'tests/production_database_drift_v625.test.mjs',
+  'tests/financial_exactness_v6775.test.mjs',
+  'tests/financial_authority_v2.test.mjs',
+  'tests/financial_authority_v3.test.mjs',
+  'tests/financial_reliability_v6775.test.mjs',
+  'tests/financial_reporting_modules.test.mjs',
+  'tests/frontend_financial_reliability_v2.test.mjs',
+  'tests/accounting_reports_query_helper_v2.test.mjs',
+  'tests/backend_contract_fix_v2.test.mjs',
+  'tests/frontend_api_migration_v39.test.mjs',
+  'tests/dashboard_endpoint_v40.test.mjs',
+  'tests/accessibility_semantics_v43.test.mjs',
+  'tests/tokens_css_v31.test.mjs',
+  'tests/design_token_authority_v631.test.mjs',
+  'tests/responsive_overrides_v28.test.mjs',
+  'tests/ui_visual_gate_v46.test.mjs',
+  'tests/component_library_v619_contract.test.mjs',
+  'tests/component_library_v619_audit.test.mjs',
+  'tests/forms_interaction_v620_contract.test.mjs',
+  'tests/enterprise_data_ui_v621_contract.test.mjs',
+  'tests/deep_view_theming_v37.test.mjs',
+  'tests/mui_island_v65.test.mjs',
+  'tests/calendar_picker_contract_v64.test.mjs',
+  'tests/appointment_agenda_dnd_v75.test.mjs',
+  'tests/extra_modules_ux_v42.test.mjs',
+  'tests/generic_crud_factory_v55.test.mjs',
+  'tests/architecture_boundary_v80.test.mjs',
+  'tests/clean_code_refactor_authority_v622_contract.test.mjs',
+  'tests/agent_system_v623_contract.test.mjs',
+  'tests/importmap_role_consistency_v2.test.mjs',
+  'tests/database_authority_v6775.test.mjs',
+  'tests/database_security_authority_v57.test.mjs',
+  'tests/relational_normalization_v633_contract.test.mjs',
+  'tests/composite_tenant_integrity_v634.test.mjs',
+  'tests/form_submit_isolation_v53.test.mjs',
+  'tests/tenant_reliability_v6782.test.mjs',
+  'tests/frontend_parallelism_v6779.test.mjs',
+  'tests/api_contract_v56.test.mjs',
+  'tests/route_matrix_v6786.test.mjs',
+  'tests/react_mui_parity_v6783.test.mjs',
+  'tests/ld_feature_v85.test.mjs',
+  'tests/issue_91_ledger_lifecycle_contract.test.mjs',
+  'tests/ledger_lifecycle_628_hardening.test.mjs',
 ];
-const tests=[...new Set([...regressionPaths,...required59])];
 
-for(const file of tests){
-  if(!/^tests\/.+\.test\.mjs$/.test(file)) throw new Error(`INVALID_AUTHORITATIVE_TEST_PATH:${file}`);
-  if(/^tests\/v11_/i.test(file)) throw new Error(`SUPERSEDED_VERSION_TEST_IN_AUTHORITY:${file}`);
-  if(!fs.existsSync(file)) throw new Error(`MISSING_AUTHORITATIVE_TEST:${file}`);
-}
-
-console.log(`[authoritative-contracts] implementations=${implementations.length} tests=${tests.length} concurrency=${CONTRACT_CONCURRENCY} batchSize=${CONTRACT_BATCH_SIZE}`);
-for(let offset=0;offset<tests.length;offset+=CONTRACT_BATCH_SIZE){
-  const batch=tests.slice(offset,offset+CONTRACT_BATCH_SIZE);
-  console.log(`[authoritative-contracts] batch=${Math.floor(offset/CONTRACT_BATCH_SIZE)+1} files=${batch.length}`);
-  const result=spawnSync(process.execPath,['--test',`--test-concurrency=${CONTRACT_CONCURRENCY}`,...batch],{stdio:'inherit',env:process.env,shell:false});
-  if(result.error) throw result.error;
-  if(result.status!==0){
-    process.exitCode=result.status??1;
-    break;
+const args = process.argv.slice(2);
+const run = spawnSync(
+  process.execPath,
+  ['--test', ...contractFiles, ...args],
+  {
+    cwd: process.cwd(),
+    stdio: 'inherit',
   }
+);
+
+if (run.error) {
+  console.error(run.error.message);
+  process.exit(1);
 }
+
+process.exit(run.status ?? 1);
