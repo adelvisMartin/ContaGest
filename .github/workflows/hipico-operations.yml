@@ -112,12 +112,13 @@ jobs:
         run: npm ci --no-audit --no-fund
       - name: All root Hípico regression contracts
         run: node scripts/hipico-root-contracts.mjs
-      - name: UI System v4.1 static and preference contracts
+      - name: UI System v4.1.2 static, preference and refactor contracts
         run: >-
           node --test
           tests/hipico_ui_system_v41_contract.test.mjs
           tests/hipico_presentation_preferences_v41.test.mjs
           tests/hipico_icon_action_contract_v41.test.mjs
+          tests/hipico_ui_v412_hardening_contract.test.mjs
       - name: PWA and serverless operational syntax checks
         run: |
           node --check scripts/hipico-exact-sha-gate.mjs
@@ -133,7 +134,6 @@ jobs:
           node --check frontend/public/hipico-control/assets/js/app.js
           node --check frontend/public/hipico-control/assets/js/presentation-preferences.js
           node --check frontend/public/hipico-control/assets/js/shell-ui-v4.js
-          node --check frontend/public/hipico-control/assets/js/icon-normalization-v41.js
           node --check frontend/public/hipico-control/assets/js/theme-bootstrap.js
           node --check frontend/public/hipico-control/assets/js/format.js
           node --check frontend/public/hipico-control/assets/js/whatsapp.js
@@ -220,7 +220,7 @@ jobs:
         run: npx playwright install --with-deps chromium
       - name: Control Hípico responsive, offline and interaction E2E
         run: npm run test:browser:hipico
-      - name: Control Hípico UI System v4.1 shell and floating-action E2E
+      - name: Control Hípico UI System v4.1.2 shell, visual and floating-action E2E
         env:
           HIPICO_QA_SHA: ${{ env.HIPICO_CANDIDATE_SHA }}
         run: >-
