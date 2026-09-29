@@ -52,7 +52,6 @@ function brandLockup({ hero = false } = {}) {
 
 export function replaceLegacyBranding(scope = document) {
   scope.querySelectorAll?.('img.brand-logo').forEach((image) => {
-    if (image.dataset.v4Replaced === 'true') return;
     const hero = image.classList.contains('brand-logo--wordmark') || image.classList.contains('brand-logo--splash') || image.closest('.auth-wordmark, .group-hero__logo');
     const template = document.createElement('template');
     template.innerHTML = brandLockup({ hero: Boolean(hero) });
@@ -83,9 +82,7 @@ function applyTheme(theme) {
 }
 
 function migrateThemeIfNeeded() {
-  if (!hasStoredTheme()) {
-    migrateLegacyTheme(document.documentElement.dataset.theme || 'system');
-  }
+  if (!hasStoredTheme()) migrateLegacyTheme(document.documentElement.dataset.theme || 'system');
   applyThemePreference(currentTheme());
 }
 
@@ -118,9 +115,7 @@ function setMenuOpen(open, { focus = false } = {}) {
     button.setAttribute('aria-expanded', String(utilityMenuOpen));
     button.classList.toggle('is-active', utilityMenuOpen);
   });
-  if (utilityMenuOpen && focus) {
-    requestAnimationFrame(() => document.querySelector('[data-v4-utility-menu] button')?.focus());
-  }
+  if (utilityMenuOpen && focus) requestAnimationFrame(() => document.querySelector('[data-v4-utility-menu] button')?.focus());
 }
 
 function utilityMarkup() {
@@ -149,7 +144,27 @@ function enhanceGlobalHeader(scope = document) {
 }
 
 function sidebarCollapseMarkup(collapsed) {
-  return `<button type="button" class="button button--ghost button--small sidebar-collapse" data-v4-action="toggle-sidebar" aria-label="${collapsed ? 'Expandir barra lateral' : 'Colapsar barra lateral'}" title="${collapsed ? 'Expandir barra lateral' : 'Colapsar barra lateral'}">${icon(collapsed ? 'menu' : 'back')}<span>${collapsed ? 'Expandir' : 'Colapsar'}</span></button>`;
+  return `<button type="button" class="button button--ghost button--small sidebar-collapse" data-v4-action="toggle-sidebar"><span data-v4-collapse-icon>${icon(collapsed ? 'menu' : 'back')}</span><span data-v4-collapse-label>${collapsed ? 'Expandir' : 'Colapsar'}</span></button>`;
+}
+
+function syncSidebarCollapseControl(footer, collapsed) {
+  let control = footer.querySelector('[data-v4-action="toggle-sidebar"]');
+  if (!control) {
+    footer.insertAdjacentHTML('beforeend', sidebarCollapseMarkup(collapsed));
+    control = footer.querySelector('[data-v4-action="toggle-sidebar"]');
+  }
+  if (!control) return;
+  const accessibleLabel = collapsed ? 'Expandir barra lateral' : 'Colapsar barra lateral';
+  control.setAttribute('aria-label', accessibleLabel);
+  control.setAttribute('title', accessibleLabel);
+  const iconHost = control.querySelector('[data-v4-collapse-icon]');
+  const textHost = control.querySelector('[data-v4-collapse-label]');
+  const iconName = collapsed ? 'menu' : 'back';
+  if (iconHost?.dataset.iconName !== iconName) {
+    iconHost.innerHTML = icon(iconName);
+    iconHost.dataset.iconName = iconName;
+  }
+  if (textHost && textHost.textContent !== (collapsed ? 'Expandir' : 'Colapsar')) textHost.textContent = collapsed ? 'Expandir' : 'Colapsar';
 }
 
 function enhanceSidebar(scope = document) {
@@ -174,9 +189,7 @@ function enhanceSidebar(scope = document) {
     logout.setAttribute('title', 'Cerrar sesión');
   }
   const footer = sidebar.querySelector('.sidebar-footer');
-  if (!footer) return;
-  footer.querySelector('[data-v4-action="toggle-sidebar"]')?.remove();
-  footer.insertAdjacentHTML('beforeend', sidebarCollapseMarkup(collapsed));
+  if (footer) syncSidebarCollapseControl(footer, collapsed);
 }
 
 function enhanceIconButtons(scope = document) {
