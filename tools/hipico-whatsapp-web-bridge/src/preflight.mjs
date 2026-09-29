@@ -1,13 +1,15 @@
 import { assertRuntimeConfig, loadRuntimeConfig, RUNTIME_MODES, VERSION } from './runtime-config.mjs';
 import { assertLocalPromotionSafe } from './promotion-guard.mjs';
+import { policyDiagnostic } from './source-policy-gate.mjs';
 
 const config = assertRuntimeConfig(loadRuntimeConfig());
 const promotion = assertLocalPromotionSafe(process.env, process.cwd());
+const diagnostic = policyDiagnostic(config);
 
 if (promotion.active && config.sourceAutoReplyEnabled) throw new Error('PREFLIGHT_KILL_SWITCH_BLOCKS_SOURCE_REPLY');
 
 if (config.runtimeMode !== RUNTIME_MODES.PRODUCTION) {
-  console.log(`PREFLIGHT_OK version=${VERSION} mode=${config.runtimeMode} backend=not-required killSwitch=${promotion.active?'active':'inactive'}`);
+  console.log(`PREFLIGHT_OK version=${VERSION} mode=${config.runtimeMode} backend=not-required transport=${diagnostic.transport.id} sourcePolicy=${diagnostic.sourcePolicy.status} labSendPossible=${Boolean(config.labSendEnabled && diagnostic.transport.labSend)} killSwitch=${promotion.active?'active':'inactive'}`);
   process.exit(0);
 }
 
@@ -30,4 +32,4 @@ const expectedMode=config.sourceAutoReplyEnabled?'safe-auto':'shadow';
 if (body?.mode !== expectedMode) throw new Error(`PREFLIGHT_BACKEND_MODE_MISMATCH:${body?.mode||'unknown'}!=${expectedMode}`);
 if (Boolean(body?.sourceSendPossible) !== Boolean(config.sourceAutoReplyEnabled)) throw new Error('PREFLIGHT_SOURCE_SEND_CONFIG_MISMATCH');
 
-console.log(`PREFLIGHT_OK version=${VERSION} mode=production backend=online persistence=ready sourceSendPossible=${Boolean(body.sourceSendPossible)} killSwitch=inactive build=${body.buildCommit || 'unknown'}`);
+console.log(`PREFLIGHT_OK version=${VERSION} mode=production backend=online persistence=ready transport=${diagnostic.transport.id} sourcePolicy=${diagnostic.sourcePolicy.status} sourceSendPossible=${Boolean(body.sourceSendPossible)} labSendPossible=${Boolean(config.labSendEnabled && diagnostic.transport.labSend)} killSwitch=inactive build=${body.buildCommit || 'unknown'}`);
