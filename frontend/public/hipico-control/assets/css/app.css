@@ -1,5 +1,6 @@
 /* Control Hípico — canonical UI System v4.1.3 entrypoint.
-   Import order is the visual authority: legacy < v4 < convergence. */
+ * Import order is the visual authority: legacy < v4 < convergence.
+ */
 @layer legacy;
 @import url("./ui-system-v3-compat.css") layer(legacy);
 @import url("./ui-system-v4.css");
