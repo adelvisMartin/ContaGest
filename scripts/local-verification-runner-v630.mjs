@@ -24,15 +24,11 @@ export const PROFILE_GATES = Object.freeze({
   ]),
   database:Object.freeze([
     gate('database-typecheck','npm run typecheck'),
-    gate('database-from-zero','npm run migration:test:from-zero'),
-    gate('database-upgrade','npm run migration:test:upgrade'),
-    gate('database-manifest','npm run migration:manifest'),
-    gate('database-authority','npm run audit:database-authority'),
-    gate('database-raw-sql-security','npm run audit:raw-sql-security'),
+    gate('database-canonical-gate','node scripts/canonical-database-gate-v632.mjs'),
   ]),
   financial:Object.freeze([
     gate('financial-typecheck','npm run typecheck'),
-    gate('financial-database-from-zero','npm run migration:test:from-zero'),
+    gate('financial-canonical-database-gate','node scripts/canonical-database-gate-v632.mjs'),
     gate('financial-decimal','npm run test:financial:decimal'),
     gate('financial-ledger-unit','npm run test:ledger:unit'),
     gate('financial-domain-real','npm run test:backend:financial:real'),
