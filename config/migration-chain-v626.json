@@ -1,0 +1,61 @@
+{
+  "version": 626,
+  "authority": "backend/prisma/migrations",
+  "database": "PostgreSQL 17",
+  "ephemeralDatabasePattern": "(_e2e|_drill|_restore)$",
+  "historicalCompatibility": [
+    {
+      "migration": "20260927152000_data_lifecycle_v562",
+      "reason": "Historical #562 declared tenant foreign keys as UUID while canonical Tenant.id is TEXT.",
+      "strategy": "ephemeral-projection-only",
+      "productionOwner": 627,
+      "immutableSource": true
+    }
+  ],
+  "duplicateTimestampAllowlist": [
+    {
+      "prefix": "20260927143000",
+      "migrations": [
+        "20260927143000_fiscal_authority_v561",
+        "20260927143000_fiscal_engine_v561"
+      ],
+      "reason": "The engine directory is a historical compatibility no-op; fiscal_authority is canonical."
+    }
+  ],
+  "supportedSnapshots": [
+    {
+      "id": "pre-ledger-hardening",
+      "lastAppliedMigration": "20260827054000_financial_idempotency",
+      "provenance": "Versioned migration boundary immediately before issue #91 ledger hardening."
+    },
+    {
+      "id": "pre-fx-fiscal-data-lifecycle",
+      "lastAppliedMigration": "20260924142000_hipico_autonomous_source_reply_v15",
+      "provenance": "Versioned migration boundary immediately before the 2026-09-27 FX/fiscal/data-lifecycle wave."
+    },
+    {
+      "id": "production-audit-2026-09-29",
+      "lastAppliedMigration": "20260924142000_hipico_autonomous_source_reply_v15",
+      "provenance": "Synthetic structural approximation of the audited production gap; contains no production rows, PII, credentials or dumps."
+    }
+  ],
+  "criticalColumns": [
+    { "table": "Tenant", "column": "id", "type": "text" },
+    { "table": "DataRetentionPolicyVersion", "column": "tenantId", "type": "text" },
+    { "table": "DataLegalHold", "column": "tenantId", "type": "text" },
+    { "table": "DataLifecycleJob", "column": "tenantId", "type": "text" },
+    { "table": "DataLifecycleEvidence", "column": "tenantId", "type": "text" },
+    { "table": "DataStorageObject", "column": "tenantId", "type": "text" }
+  ],
+  "errorCatalog": [
+    "MIGRATION_APPLY_FAILED",
+    "MIGRATION_ORDER_INVALID",
+    "MIGRATION_DUPLICATE_AUTHORITY",
+    "MIGRATION_TYPE_MISMATCH",
+    "UPGRADE_DIVERGENCE",
+    "FROM_ZERO_SCHEMA_MISMATCH",
+    "MISSING_PREREQUISITE",
+    "UNSAFE_PRODUCTION_COMMAND",
+    "SNAPSHOT_PROVENANCE_INVALID"
+  ]
+}
