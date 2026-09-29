@@ -25,6 +25,7 @@ export const PROFILE_GATES = Object.freeze({
   database:Object.freeze([
     gate('database-typecheck','npm run typecheck'),
     gate('database-canonical-gate','node scripts/canonical-database-gate-v632.mjs'),
+    gate('database-tenant-integrity-v634','node scripts/composite-tenant-integrity-v634.mjs --verify-database'),
   ]),
   financial:Object.freeze([
     gate('financial-typecheck','npm run typecheck'),
