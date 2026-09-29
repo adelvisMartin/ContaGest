@@ -137,9 +137,14 @@ export function validateSnapshot(snapshot, catalog) {
   return snapshot;
 }
 
+function isPrismaMigrationMetadata(object) {
+  return object?.schema === 'public'
+    && (object?.name === '_prisma_migrations' || object?.table === '_prisma_migrations');
+}
+
 export function stablePhysicalSnapshot(snapshot) {
   const objects = (snapshot?.objects ?? [])
-    .filter((object) => !(object.schema === 'public' && object.name === '_prisma_migrations'))
+    .filter((object) => !isPrismaMigrationMetadata(object))
     .map((object) => {
       const clone = structuredClone(object);
       if (clone.signature?.owner && ['postgres', 'supabase_admin'].includes(clone.signature.owner)) clone.signature.owner = '<db-owner>';
