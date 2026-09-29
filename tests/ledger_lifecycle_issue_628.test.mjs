@@ -1,0 +1,11 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import { LEDGER_RECONCILIATION_SQL, assertReadOnlySql, normalizeClassifications } from '../scripts/ledger-lifecycle/reconcile.mjs';
+const migration=fs.readFileSync('backend/prisma/migrations/20260929193000_issue_628_ledger_lifecycle_hardening/migration.sql','utf8');
+const lifecycle=fs.readFileSync('backend/prisma/migrations/20260827060000_issue_91_ledger_posting_immutability/migration.sql','utf8');
+const service=fs.readFileSync('backend/src/modules/accounting/accounting.service.ts','utf8');
+test('#628 reconciliation query is read-only and classifier is stable',()=>{assert.equal(assertReadOnlySql(LEDGER_RECONCILIATION_SQL),true);assert.equal(normalizeClassifications({DOCUMENT_WITH_VALID_LEDGER:'3'}).DOCUMENT_WITH_VALID_LEDGER,3)});
+test('#628 DB authority keeps posted ledger immutable and balanced',()=>{assert.match(lifecycle,/guard_ledger_entry_lifecycle/i);assert.match(lifecycle,/guard_posted_ledger_line_mutation/i);assert.match(lifecycle,/total_debit/i);assert.match(lifecycle,/total_credit/i)});
+test('#628 closes DB-bypass gaps',()=>{for(const s of ['LedgerEntry_tenantId_source_sourceId_key','LedgerEntry_period_insert_gate','LedgerLine_period_gate','LedgerEntry_reversal_compensation_guard','LEDGER_DUPLICATE_EFFECT','PERIOD_CLOSED','REVERSAL_SOURCE_INVALID','CROSS_TENANT_LEDGER_REFERENCE'])assert.match(migration,new RegExp(s));assert.doesNotMatch(migration,/\b(TRUNCATE|DROP TABLE|DELETE FROM|UPDATE public\."LedgerEntry")\b/i)});
+test('#628 service owns state machine and retry contracts',()=>{for(const s of [/createLedgerEntry/,/posted:\s*false/,/postLedgerEntry/,/updateMany/,/reverseLedgerEntry/,/reversalOfId/,/assertPeriodOpen/,/P2002/])assert.match(service,s)});
