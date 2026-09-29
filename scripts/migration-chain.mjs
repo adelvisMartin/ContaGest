@@ -13,6 +13,7 @@ import {
 import {
   ROOT,
   MIGRATIONS_DIR,
+  PREPARE_SQL,
   applyMigration,
   assertCriticalSchema,
   buildState,
@@ -40,6 +41,20 @@ function runAuthorityPreflight() {
   execFileSync(process.execPath, [path.join(ROOT, 'scripts/database-authority-audit-v6775.mjs')], { cwd: ROOT, stdio: 'inherit' });
 }
 
+function runCanonicalPrismaDeploy(url) {
+  try {
+    execFileSync(process.execPath, [path.join(ROOT, 'backend/scripts/prisma-deploy-safe.mjs')], {
+      cwd: path.join(ROOT, 'backend'),
+      stdio: 'inherit',
+      env: { ...process.env, DATABASE_URL: url, DIRECT_DATABASE_URL: url },
+    });
+  } catch (error) {
+    throw new MigrationChainError('MIGRATION_APPLY_FAILED', 'canonical Prisma migrate deploy failed', {
+      status: error?.status ?? null,
+    });
+  }
+}
+
 async function physicalSnapshot(url, applicationName) {
   return introspectDatabase(url, { applicationName });
 }
@@ -52,7 +67,9 @@ function writeManifest(name, value) {
 }
 
 async function runFromZero(client, url, catalog) {
-  await buildState(client);
+  await resetEphemeralDatabase(client);
+  await executePsqlCompatibleFile(client, PREPARE_SQL);
+  runCanonicalPrismaDeploy(url);
   await assertCriticalSchema(client);
   const physical = await physicalSnapshot(url, 'contagest-migration-chain-626-from-zero');
   const schemaHash = physicalSchemaHash(physical);
