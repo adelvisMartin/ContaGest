@@ -18,18 +18,20 @@ function HelpWorkspace(){
     if(!term)return SUPPORT_ROWS;
     return SUPPORT_ROWS.filter((row)=>[row.area,row.command,row.note].some((value)=>value.toLowerCase().includes(term)));
   },[applied]);
+  const submitSearch=(event)=>{event.preventDefault();setApplied(query);};
+  const clearSearch=()=>{setQuery('');setApplied('');};
 
   return <Stack sx={{gap:2.5}} data-react-strangler-route="ayuda">
     <CgPageHeader eyebrow="Soporte" title="Ayuda y operación" description="Guía operativa sobre el runtime canónico, QA y soporte de ContaGest." />
     <Paper variant="outlined" sx={{p:2}}>
       <Stack sx={{gap:1.5}}>
         <CgState severity="info" title="Migración React/Cg activa">Esta ruta conserva URL, sesión y control de acceso del shell existente; sólo cambia su renderer.</CgState>
-        <Stack direction={{xs:'column',sm:'row'}} sx={{gap:1,alignItems:{sm:'flex-start'}}}>
+        <Stack component="form" role="search" onSubmit={submitSearch} direction={{xs:'column',sm:'row'}} sx={{gap:1,alignItems:{sm:'flex-start'}}}>
           <CgTextField label="Buscar ayuda" value={query} onChange={(event)=>setQuery(event.target.value)} helperText="Busca por área, comando o descripción." />
-          <CgButton onClick={()=>setApplied(query)}>Buscar</CgButton>
-          {applied?<CgButton variant="outlined" onClick={()=>{setQuery('');setApplied('');}}>Limpiar</CgButton>:null}
+          <CgButton type="submit">Buscar</CgButton>
+          {applied?<CgButton type="button" variant="outlined" onClick={clearSearch}>Limpiar</CgButton>:null}
         </Stack>
-        <Box><CgStatusChip label={applied?`${rows.length} resultado(s)`:'Guía completa'} tone="success" /></Box>
+        <Box aria-live="polite"><CgStatusChip label={applied?`${rows.length} resultado(s)`:'Guía completa'} tone="success" /></Box>
       </Stack>
     </Paper>
     <Box component="section" aria-labelledby="help-operations-title">
