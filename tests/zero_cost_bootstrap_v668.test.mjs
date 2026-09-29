@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { readFileSync } from 'node:fs';
 
 import {
   assertLoopbackPostgresUrl,
@@ -115,4 +116,53 @@ test('withOwnedPostgresContainer always removes owned container after delegated 
     /delegated failure/
   );
   assert.ok(calls.some((call) => call[1] === 'rm' && call.includes('-f')));
+});
+
+test('remote admin URL is rejected before any executable probe is attempted', () => {
+  let probes = 0;
+  assert.throws(() => selectPostgresRuntime({
+    env: { LOCAL_VERIFY_DATABASE_ADMIN_URL: 'postgresql://u:p@prod.example.com:5432/postgres' },
+    probe: () => { probes += 1; return { available: true, output: 'psql (PostgreSQL) 17.6' }; },
+  }), /ZERO_COST_UNSAFE_REMOTE_POSTGRES/);
+  assert.equal(probes, 0);
+});
+
+test('container readiness failure is bounded and still cleans up', async () => {
+  const calls = [];
+  let pauses = 0;
+  const adapter = {
+    run(engine, args) {
+      calls.push([engine, ...args]);
+      if (args[0] === 'run') return { status: 0, stdout: 'container-id\n', stderr: '' };
+      if (args[0] === 'port') return { status: 0, stdout: '127.0.0.1:49153\n', stderr: '' };
+      if (args[0] === 'exec') return { status: 1, stdout: '', stderr: 'not ready' };
+      if (args[0] === 'rm') return { status: 0, stdout: '', stderr: '' };
+      return { status: 0, stdout: '', stderr: '' };
+    },
+    async pause() { pauses += 1; },
+  };
+  await assert.rejects(
+    withOwnedPostgresContainer({ engine: 'docker', adapter, readinessAttempts: 3 }, async () => {}),
+    /ZERO_COST_POSTGRES17_NOT_READY:attempts=3/
+  );
+  assert.equal(pauses, 2);
+  assert.ok(calls.some((call) => call[1] === 'rm'));
+});
+
+test('PowerShell entrypoint is thin, portable and does not require WSL', () => {
+  const source = readFileSync(new URL('../scripts/zero-cost-bootstrap-v668.ps1', import.meta.url), 'utf8');
+  assert.match(source, /zero-cost-bootstrap-v668\.mjs/);
+  assert.match(source, /@args/);
+  assert.doesNotMatch(source, /\bwsl\b/i);
+});
+
+test('zero-cost bootstrap runbook documents native, container, Windows and honest BLOCKED status', () => {
+  const source = readFileSync(new URL('../docs/qa/ZERO_COST_BOOTSTRAP_V668.md', import.meta.url), 'utf8');
+  assert.match(source, /PostgreSQL 17/);
+  assert.match(source, /postgres:17/);
+  assert.match(source, /PowerShell/);
+  assert.match(source, /LOCAL_VERIFY_DATABASE_ADMIN_URL/);
+  assert.match(source, /BLOCKED/);
+  assert.match(source, /USD 0/);
+  assert.match(source, /Supabase.*optional/i);
 });
