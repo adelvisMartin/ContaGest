@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
+import { planHistoricalProjection } from '../backend/scripts/migration-compat-plan-v626.mjs';
 import {
   CLASSIFICATION,
   buildGuardStatements,
@@ -18,6 +19,7 @@ const key = (relation) => `${relation.childTable}.${relation.childColumn}->${rel
 const byKey = new Map(relations.map((relation) => [key(relation), relation]));
 const migrationId = '20260929173500_issue_634_composite_tenant_referential_integrity';
 const previousProductionConvergenceMigrationId = '20260929164500_issue_627_production_convergence_hardening';
+const dataLifecycleMigrationId = '20260927152000_data_lifecycle_v562';
 
 const criticalDbRelations = [
   'BankMovement.accountId->BankAccount.id',
@@ -116,6 +118,28 @@ test('two-tenant smoke covers both cross-tenant directions, reparent and rollbac
   assert.match(sql, /TENANT_CROSS_REPARENT_ACCEPTED/);
   assert.match(sql, /TENANT_LIFECYCLE_SEMANTICS_REGRESSION/);
   assert.match(sql, /ROLLBACK;/);
+});
+
+test('historical lifecycle projection remains valid when later migrations exist', () => {
+  const ordered = [
+    '20260927143000_fiscal_authority_v561',
+    dataLifecycleMigrationId,
+    previousProductionConvergenceMigrationId,
+    migrationId,
+  ];
+  const plan = planHistoricalProjection(ordered, dataLifecycleMigrationId);
+  assert.equal(plan.available, true);
+  assert.deepEqual(plan.before, ['20260927143000_fiscal_authority_v561']);
+  assert.deepEqual(plan.after, [previousProductionConvergenceMigrationId, migrationId]);
+  assert.equal(plan.migration, dataLifecycleMigrationId);
+});
+
+test('historical projection plan is inert when the compatibility migration is outside a snapshot', () => {
+  const ordered = ['20260827054000_financial_idempotency'];
+  const plan = planHistoricalProjection(ordered, dataLifecycleMigrationId);
+  assert.equal(plan.available, false);
+  assert.deepEqual(plan.before, ordered);
+  assert.deepEqual(plan.after, []);
 });
 
 test('forward-only migration is ordered after the already-applied production convergence migration', () => {
