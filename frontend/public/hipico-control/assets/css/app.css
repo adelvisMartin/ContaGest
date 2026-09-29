@@ -3,6 +3,8 @@
 @import url("./ui-system-v4.css");
 
 /* Final convergence rules live here so the product has one stylesheet authority. */
+.shell, .sidebar { transition: none; }
+
 .sidebar-collapse [data-v4-collapse-icon] {
   display: inline-grid;
   place-items: center;
