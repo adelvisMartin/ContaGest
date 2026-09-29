@@ -1,12 +1,13 @@
 import React from 'react';
 import * as Mui from '@mui/material';
 import { normalizePageQuery } from './dataContracts.js';
+import { CgNoResultsState, CgRetryState as CanonicalRetryState } from './states.js';
 
 const cellValue=(row,column)=>typeof column?.render==='function'?column.render(row):row?.[column?.field??column?.key];
 const alignFor=(column)=>column?.numeric||column?.align==='right'?'right':column?.align||'left';
 
 export function CgSkeleton({rows=5,columns=4,ariaLabel='Cargando datos'}={}){
-  return React.createElement(Mui.Stack,{spacing:1,'aria-label':ariaLabel,role:'status'},Array.from({length:rows},(_,row)=>React.createElement(Mui.Stack,{key:row,direction:'row',spacing:1},Array.from({length:columns},(_,column)=>React.createElement(Mui.Skeleton,{key:column,variant:'rounded',height:32,sx:{flex:1}})))));
+  return React.createElement(Mui.Stack,{spacing:1,'aria-label':ariaLabel,role:'status','aria-busy':true},Array.from({length:rows},(_,row)=>React.createElement(Mui.Stack,{key:row,direction:'row',spacing:1},Array.from({length:columns},(_,column)=>React.createElement(Mui.Skeleton,{key:column,variant:'rounded',height:32,sx:{flex:1}})))));
 }
 
 export function CgInlineError({message='No se pudieron cargar los datos.',correlationId='',action=null}={}){
@@ -14,12 +15,12 @@ export function CgInlineError({message='No se pudieron cargar los datos.',correl
 }
 
 export function CgRetryState({message='No se pudieron cargar los datos.',onRetry,retryLabel='Reintentar',correlationId=''}={}){
-  const action=onRetry?React.createElement(Mui.Button,{size:'small',onClick:onRetry},retryLabel):null;
-  return React.createElement(CgInlineError,{message,correlationId,action});
+  const description=correlationId?`${message} · Referencia: ${correlationId}`:message;
+  return React.createElement(CanonicalRetryState,{title:'No se pudo completar',description,onRetry,retryLabel,compact:true});
 }
 
 export function CgNoResults({title='Sin resultados',description='Prueba con otros filtros o términos de búsqueda.',action=null}={}){
-  return React.createElement(Mui.Stack,{className:'cg-data-no-results',role:'status',alignItems:'center',spacing:1,sx:{py:5,textAlign:'center'}},React.createElement(Mui.Typography,{fontWeight:700},title),React.createElement(Mui.Typography,{color:'text.secondary'},description),action);
+  return React.createElement(CgNoResultsState,{title,description,action});
 }
 
 export function CgPagination({page=1,pageSize=25,total=0,onChange,disabled=false,pageSizeOptions=[10,25,50,100]}={}){
@@ -30,7 +31,7 @@ export function CgPagination({page=1,pageSize=25,total=0,onChange,disabled=false
 export function CgTable({columns=[],rows=[],caption='',loading=false,error=null,noResults=false,emptyTitle='Sin datos',emptyDescription='',rowKey='id',onRowClick=null,stickyHeader=true,size='small'}={}){
   if(loading)return React.createElement(CgSkeleton,{rows:Math.min(6,Math.max(3,rows.length||5)),columns:Math.max(1,columns.length)});
   if(error)return React.createElement(CgInlineError,{message:error.message||String(error),correlationId:error.correlationId||''});
-  if(!rows.length)return React.createElement(CgNoResults,{title:noResults?'Sin resultados':emptyTitle,description:noResults?'Prueba con otros filtros o términos de búsqueda.':emptyDescription});
+  if(!rows.length)return noResults?React.createElement(CgNoResults,null):React.createElement(CgNoResultsState,{title:emptyTitle,description:emptyDescription});
   return React.createElement(Mui.TableContainer,{component:Mui.Paper,variant:'outlined',sx:{maxWidth:'100%',overflowX:'auto'}},
     React.createElement(Mui.Table,{stickyHeader,size,'aria-label':caption||'Tabla de datos'},
       caption?React.createElement('caption',{style:{position:'absolute',width:1,height:1,padding:0,margin:-1,overflow:'hidden',clip:'rect(0,0,0,0)',whiteSpace:'nowrap',border:0}},caption):null,

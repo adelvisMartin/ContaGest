@@ -7,7 +7,6 @@ const safeTone=(tone='neutral')=>TONES.has(tone)?tone:'neutral';
 const safeSize=(size='medium')=>SIZES.has(size)?size:'medium';
 const toneToActionColor={neutral:'inherit',brand:'primary',success:'success',warning:'warning',danger:'error',info:'info'};
 const toneToChipColor={neutral:'default',brand:'primary',success:'success',warning:'warning',danger:'error',info:'info'};
-const stateLabels={loading:'Cargando',empty:'Sin datos',error:'Ocurrió un error',permission:'Sin permisos'};
 
 /** @typedef {'neutral'|'brand'|'success'|'warning'|'danger'|'info'} CgTone */
 /** @typedef {'small'|'medium'|'large'} CgSize */
@@ -57,28 +56,16 @@ export function CgMoney({value=0,currency='VES',locale='es-VE',minimumFractionDi
   return React.createElement(Mui.Typography,{component:'span',variant:'body2',...props},text);
 }
 
-function CgState({kind='empty',title,description='',action=null}={}){
-  const tone=kind==='error'?'error.main':kind==='permission'?'warning.main':'text.secondary';
-  return React.createElement(Mui.Stack,{role:kind==='error'?'alert':'status',spacing:1,alignItems:'center',justifyContent:'center',sx:{minHeight:160,textAlign:'center',p:3}},
-    kind==='loading'?React.createElement(Mui.CircularProgress,{size:28,'aria-label':title||stateLabels.loading}):null,
-    React.createElement(Mui.Typography,{fontWeight:700,color:tone},title||stateLabels[kind]||stateLabels.empty),
-    description?React.createElement(Mui.Typography,{color:'text.secondary',sx:{maxWidth:'52ch'}},description):null,
-    action);
-}
-export const CgLoadingState=(props)=>React.createElement(CgState,{...props,kind:'loading'});
-export const CgEmptyState=(props)=>React.createElement(CgState,{...props,kind:'empty'});
-export const CgErrorState=(props)=>React.createElement(CgState,{...props,kind:'error'});
-export const CgPermissionState=(props)=>React.createElement(CgState,{...props,kind:'permission'});
-
 export const CgStack=(props)=>React.createElement(Mui.Stack,props);
 export const CgGrid=(props)=>React.createElement(Mui.Grid,props);
 export const CgSurface=({children,...props}={})=>React.createElement(Mui.Paper,{elevation:0,...props},children);
 export const CgCard=({children,...props}={})=>React.createElement(Mui.Card,{variant:'outlined',...props},children);
 
+export { CgUiState, CgLoadingState, CgEmptyState, CgNoResultsState, CgSuccessState, CgWarningState, CgErrorState, CgPermissionState, CgOfflineState, CgSavingState, CgRetryState } from './states.js';
 export { CgFormField, CgSelect, CgAutocomplete, CgCombobox, CgCheckbox, CgRadioGroup, CgSwitch, CgDatePicker, CgDateRange, CgTimeField } from './forms.js';
 export { CgDialog, CgConfirmDialog, CgDrawer, CgPopover, CgMenu } from './overlays.js';
 export { CgFilterBar, CgFilterChip } from './filters.js';
-export { CgTable, CgDataGrid, CgPagination, CgSkeleton, CgInlineError, CgRetryState, CgNoResults, CgDetailList, CgKpi, CgMetricGrid, CgStatusSummary, CgToolbar, CgCommandBar, CgSearchField } from './data.js';
+export { CgTable, CgDataGrid, CgPagination, CgSkeleton, CgInlineError, CgRetryState as CgDataRetryState, CgNoResults, CgDetailList, CgKpi, CgMetricGrid, CgStatusSummary, CgToolbar, CgCommandBar, CgSearchField } from './data.js';
 
 export const COMPONENT_LIBRARY_VERSION=1;
 export const COMPONENT_LIBRARY_OWNER='frontend/src/components/vnext/index.js';

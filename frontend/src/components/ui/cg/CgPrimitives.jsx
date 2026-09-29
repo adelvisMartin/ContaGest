@@ -26,12 +26,12 @@ import {
   ThemeProvider,
   Typography,
 } from '@mui/material';
-import { createContaGestMuiTheme, muiModeFor } from '../../muiRuntime.js';
+import { createContaGestMuiTheme, useMuiMode } from '../../muiRuntime.js';
 import { formatMoneyExact } from './moneyFormat.js';
 import { verticalAsset } from '../../../assets/verticalAssets.js';
 
 export function CgProvider({ state, children }) {
-  const mode = muiModeFor(state);
+  const mode = useMuiMode(state);
   const theme = React.useMemo(() => createContaGestMuiTheme(mode), [mode]);
   return <ThemeProvider theme={theme}>{children}</ThemeProvider>;
 }
