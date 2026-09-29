@@ -37,15 +37,17 @@ test('#640 theme/motion browser contract covers system preference and reduced mo
   assert.doesNotMatch(source,/waitForTimeout|\.skip\(|force:\s*true/);
 });
 
-test('#640 package and local verification expose canonical route-matrix entrypoints',()=>{
+test('#640 package and local verification expose canonical route-matrix entrypoints',async()=>{
   const pkg=JSON.parse(read('package.json'));
   assert.equal(pkg.scripts['qa:browser:routes:affected'],'node scripts/full-route-browser-matrix-v640.mjs affected chromium');
   assert.equal(pkg.scripts['qa:browser:routes:full'],'node scripts/full-route-browser-matrix-v640.mjs full chromium');
   assert.equal(pkg.scripts['qa:browser:routes:firefox'],'node scripts/full-route-browser-matrix-v640.mjs full firefox');
   assert.equal(pkg.scripts['qa:browser:routes:webkit'],'node scripts/full-route-browser-matrix-v640.mjs full webkit');
-  const local=read('scripts/local-verification-runner-v630.mjs');
-  assert.match(local,/['"]ui-routes['"]/);
-  assert.match(local,/npm run qa:browser:routes:full/);
+  const local=await import('../scripts/local-verification-runner-v630.mjs');
+  const routeProfile=local.buildProfilePlan('ui-routes');
+  assert.ok(routeProfile.some((gate)=>gate.command==='npm run qa:browser:routes:full'));
+  const fullProfile=local.buildProfilePlan('full');
+  assert.ok(fullProfile.some((gate)=>gate.command==='npm run qa:browser:routes:full'),'full verification must include the canonical route browser matrix');
 });
 
 test('#640 contract is wired into the authoritative contract runner',()=>{
