@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import { spawnSync } from 'node:child_process';
 
 const read=(file)=>fs.readFileSync(file,'utf8');
 
@@ -21,6 +22,7 @@ test('#621 canonical data primitives are exported without commercial or direct M
   assert.doesNotMatch(data,/@mui\/x-data-grid-pro|@mui\/x-data-grid-premium/);
   assert.match(data,/scope:'col'/);
   assert.match(data,/no-results|noResults/i);
+  assert.match(data,/TablePagination/);
 });
 
 test('#621 pilots consume canonical data rendering without changing service authority',()=>{
@@ -38,4 +40,18 @@ test('#621 architecture explicitly avoids MUI X until measured need exists',()=>
   assert.match(design,/no MUI X dependency required/i);
   assert.match(design,/AuditPage/);
   assert.match(design,/ApprovalsPage/);
+  const ledger=JSON.parse(read('docs/architecture/enterprise-data-ui-v1.json'));
+  assert.equal(ledger.rules.commercialMuiX,false);
+  assert.equal(ledger.performance.newRuntimeDependencies,0);
+  assert.equal(ledger.pilots.length,2);
+});
+
+test('#621 authority audit and authoritative runner are wired',()=>{
+  const result=spawnSync(process.execPath,['scripts/enterprise-data-ui-authority-audit-v621.mjs'],{encoding:'utf8'});
+  assert.equal(result.status,0,result.stderr||result.stdout);
+  const report=JSON.parse(result.stdout.trim());
+  assert.equal(report.ok,true);
+  assert.deepEqual(report.pilots,['AuditPage','ApprovalsPage']);
+  const runner=read('scripts/run-authoritative-contracts.mjs');
+  assert.match(runner,/enterprise_data_ui_issue_621\.test\.mjs/);
 });
