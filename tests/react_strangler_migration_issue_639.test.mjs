@@ -15,6 +15,16 @@ test('#639 Help route is migrated through the React/Cg strangler boundary',()=>{
   assert.doesNotMatch(page,/innerHTML|ErpDataTable|mountCgFoundationPilot/);
 });
 
+test('#639 Help search remains keyboard-operable and announces result changes',()=>{
+  const page=read('frontend/src/pages/HelpPage.jsx');
+  assert.match(page,/component="form"/);
+  assert.match(page,/role="search"/);
+  assert.match(page,/onSubmit=\{submitSearch\}/);
+  assert.match(page,/type="submit"/);
+  assert.match(page,/type="button"/);
+  assert.match(page,/aria-live="polite"/);
+});
+
 test('#639 migration ledger keeps legacy removal fail-closed',()=>{
   const ledger=JSON.parse(read('docs/architecture/react-strangler-migration-v1.json'));
   const help=ledger.routes.find((item)=>item.route==='ayuda');
