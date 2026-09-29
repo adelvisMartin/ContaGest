@@ -16,6 +16,12 @@ import {
   lockInventoryLot,
   lockInventoryProduct as lockProduct
 } from '../../shared/services/inventory-movement.service.js';
+import {
+  consumeInventoryReservationForOwner,
+  normalizeInventoryReservationOwner,
+  releaseInventoryReservationForOwner,
+  reserveInventoryForOwner
+} from '../../shared/services/inventory-reservation.service.js';
 
 const router = Router();
 router.use(requireTenant, requirePermission('inventory.manage'));
@@ -41,6 +47,15 @@ const adjustmentSchema = z.object({
 const reversalSchema = z.object({
   reasonCode: z.string().trim().min(2).max(64).default('REVERSAL'),
   reason: z.string().trim().min(5).max(500)
+}).strict();
+
+const reservationConsumeSchema = z.object({
+  productId: z.string().uuid(),
+  quantity: decimalSchema('quantity', { positive: true }),
+  unitCost: decimalSchema('money', { nonnegative: true }).optional(),
+  source: z.string().trim().min(2).max(80),
+  sourceId: z.string().trim().min(1).max(120),
+  note: z.string().trim().max(500).optional()
 }).strict();
 
 const context = (req: any) => req.context as { tenantId: string; userId?: string; ip?: string; userAgent?: string };
@@ -84,6 +99,24 @@ async function replayMovement(tx: Prisma.TransactionClient, tenantId: string, re
   return { movement: serializeMovement(movement), product: serializeProduct(movement.product) };
 }
 
+async function replayReservationConsumption(tx: Prisma.TransactionClient, tenantId: string, resourceId: string | null) {
+  if (!resourceId) throw new HttpError(409, 'El consumo idempotente no tiene movimiento asociado.', { code: 'IDEMPOTENCY_RESULT_UNAVAILABLE' });
+  const outMovement = await tx.inventoryMovement.findFirst({
+    where: { id: resourceId, tenantId, type: 'out', source: 'reservation-consume' },
+    include: { product: true }
+  });
+  if (!outMovement?.sourceId) throw new HttpError(409, 'El consumo original ya no puede reconstruirse.', { code: 'IDEMPOTENCY_RESULT_UNAVAILABLE' });
+  const releaseMovement = await tx.inventoryMovement.findFirst({
+    where: { id: outMovement.sourceId, tenantId, productId: outMovement.productId, type: 'release' }
+  });
+  if (!releaseMovement) throw new HttpError(409, 'La liberación vinculada al consumo ya no puede reconstruirse.', { code: 'IDEMPOTENCY_RESULT_UNAVAILABLE' });
+  return {
+    outMovement: serializeMovement(outMovement),
+    releaseMovement: serializeMovement(releaseMovement),
+    product: serializeProduct(outMovement.product)
+  };
+}
+
 router.get('/movements', asyncHandler(async (req, res) => {
   const ctx = context(req);
   const productId = String(req.query.productId || '');
@@ -111,26 +144,114 @@ router.get('/movements', asyncHandler(async (req, res) => {
 router.post('/movements', validateBody(movementSchema), asyncHandler(async (req, res) => {
   const ctx = context(req);
   const input = req.body as z.infer<typeof movementSchema>;
+  const owner = input.type === 'reservation' || input.type === 'release'
+    ? normalizeInventoryReservationOwner({ source: input.source || '', sourceId: input.sourceId || '' })
+    : null;
   const execution = await runFinancialIdempotentMutation({
     tenantId: ctx.tenantId, scope: 'inventory.movements.create', key: idempotencyKey(req),
-    request: { ...input, quantity: serializeDecimal(input.quantity, 3), unitCost: input.unitCost ? serializeDecimal(input.unitCost, 2) : null }, requestId: requestId(req),
+    request: {
+      ...input,
+      source: owner?.source ?? input.source ?? null,
+      sourceId: owner?.sourceId ?? input.sourceId ?? null,
+      quantity: serializeDecimal(input.quantity, 3),
+      unitCost: input.unitCost ? serializeDecimal(input.unitCost, 2) : null
+    }, requestId: requestId(req),
     replay: (tx, record) => replayMovement(tx, ctx.tenantId, record.resourceId)
   }, async (tx) => {
-    const product = await lockProduct(tx, ctx.tenantId, input.productId);
-    const updated = await applyStandardEffect(tx, product, input.type, input.quantity);
-    const movement = await tx.inventoryMovement.create({ data: {
-      tenantId: ctx.tenantId, productId: product.id, type: input.type, quantity: input.quantity,
-      unitCost: input.unitCost ?? null, source: input.source || null, sourceId: input.sourceId || null, note: input.note || null
-    }});
-    if (String(input.source || '').toLowerCase() === 'opening') {
-      const prior = await tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`SELECT "id" FROM "InventoryMovementAuditLink" WHERE "tenantId"=${ctx.tenantId} AND "productId"=${product.id} AND "kind"='opening' LIMIT 1`);
+    let movement: any;
+    let updated: any;
+    if (input.type === 'reservation') {
+      const result = await reserveInventoryForOwner(tx, {
+        tenantId: ctx.tenantId,
+        productId: input.productId,
+        amount: input.quantity,
+        owner: owner!,
+        unitCost: input.unitCost ?? null,
+        note: input.note || null
+      });
+      movement = result.movement;
+      updated = result.product;
+    } else if (input.type === 'release') {
+      const result = await releaseInventoryReservationForOwner(tx, {
+        tenantId: ctx.tenantId,
+        productId: input.productId,
+        amount: input.quantity,
+        owner: owner!,
+        unitCost: input.unitCost ?? null,
+        note: input.note || null
+      });
+      movement = result.movement;
+      updated = result.product;
+    } else {
+      const product = await lockProduct(tx, ctx.tenantId, input.productId);
+      updated = await applyStandardEffect(tx, product, input.type, input.quantity);
+      movement = await tx.inventoryMovement.create({ data: {
+        tenantId: ctx.tenantId, productId: product.id, type: input.type, quantity: input.quantity,
+        unitCost: input.unitCost ?? null, source: input.source || null, sourceId: input.sourceId || null, note: input.note || null
+      }});
+    }
+    if (input.type === 'in' && String(input.source || '').toLowerCase() === 'opening') {
+      const prior = await tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`SELECT "id" FROM "InventoryMovementAuditLink" WHERE "tenantId"=${ctx.tenantId} AND "productId"=${movement.productId} AND "kind"='opening' LIMIT 1`);
       if (prior.length) throw new HttpError(409, 'El producto ya tiene saldo de apertura registrado.', { code: 'INVENTORY_OPENING_ALREADY_EXISTS' });
-      await insertAuditLink(tx, { tenantId: ctx.tenantId, productId: product.id, relatedMovementId: movement.id, kind: 'opening', reasonCode: input.reasonCode || 'OPENING', reason: input.note || 'Saldo inicial de inventario.', createdBy: ctx.userId });
+      await insertAuditLink(tx, { tenantId: ctx.tenantId, productId: movement.productId, relatedMovementId: movement.id, kind: 'opening', reasonCode: input.reasonCode || 'OPENING', reason: input.note || 'Saldo inicial de inventario.', createdBy: ctx.userId });
     }
     return { data: { movement: serializeMovement(movement), product: serializeProduct(updated) }, resourceType: 'InventoryMovement', resourceId: movement.id };
   });
   res.setHeader('Idempotency-Replayed', execution.replayed ? 'true' : 'false');
   if (!execution.replayed) await writeAudit({ tenantId: ctx.tenantId, userId: ctx.userId, action: `inventory.${input.type}`, entity: 'InventoryMovement', entityId: (execution.data as any).movement.id, after: execution.data, ipAddress: ctx.ip, userAgent: ctx.userAgent });
+  ok(res, execution.data, execution.responseCode);
+}));
+
+router.post('/reservations/consume', validateBody(reservationConsumeSchema), asyncHandler(async (req, res) => {
+  const ctx = context(req);
+  const input = req.body as z.infer<typeof reservationConsumeSchema>;
+  const owner = normalizeInventoryReservationOwner({ source: input.source, sourceId: input.sourceId });
+  const execution = await runFinancialIdempotentMutation({
+    tenantId: ctx.tenantId,
+    scope: 'inventory.reservations.consume',
+    key: idempotencyKey(req),
+    request: {
+      productId: input.productId,
+      quantity: serializeDecimal(input.quantity, 3),
+      unitCost: input.unitCost ? serializeDecimal(input.unitCost, 2) : null,
+      source: owner.source,
+      sourceId: owner.sourceId,
+      note: input.note || null
+    },
+    requestId: requestId(req),
+    replay: (tx, record) => replayReservationConsumption(tx, ctx.tenantId, record.resourceId)
+  }, async (tx) => {
+    const result = await consumeInventoryReservationForOwner(tx, {
+      tenantId: ctx.tenantId,
+      productId: input.productId,
+      amount: input.quantity,
+      owner,
+      unitCost: input.unitCost ?? null,
+      note: input.note || null
+    });
+    return {
+      data: {
+        outMovement: serializeMovement(result.outMovement),
+        releaseMovement: serializeMovement(result.releaseMovement),
+        product: serializeProduct(result.product)
+      },
+      resourceType: 'InventoryReservationConsumption',
+      resourceId: result.outMovement.id
+    };
+  });
+  res.setHeader('Idempotency-Replayed', execution.replayed ? 'true' : 'false');
+  if (!execution.replayed) {
+    await writeAudit({
+      tenantId: ctx.tenantId,
+      userId: ctx.userId,
+      action: 'inventory.reservation.consume',
+      entity: 'InventoryMovement',
+      entityId: (execution.data as any).outMovement.id,
+      after: execution.data,
+      ipAddress: ctx.ip,
+      userAgent: ctx.userAgent
+    });
+  }
   ok(res, execution.data, execution.responseCode);
 }));
 
@@ -165,6 +286,17 @@ router.post('/movements/:id/reverse', requirePermission('inventory.adjust'), val
   }, async (tx) => {
     const original = await tx.inventoryMovement.findFirst({ where: { id: req.params.id, tenantId: ctx.tenantId } });
     if (!original) throw new HttpError(404, 'Movimiento de inventario no encontrado.', { code: 'INVENTORY_MOVEMENT_NOT_FOUND' });
+    const consumePair = original.source === 'reservation-consume'
+      ? { id: original.id }
+      : await tx.inventoryMovement.findFirst({
+          where: { tenantId: ctx.tenantId, source: 'reservation-consume', sourceId: original.id, type: 'out' },
+          select: { id: true }
+        });
+    if (consumePair) {
+      throw new HttpError(409, 'El consumo de una reserva debe revertirse desde su workflow de fulfillment, no por movimientos individuales.', {
+        code: 'INVENTORY_RESERVATION_CONSUMPTION_REQUIRES_WORKFLOW_REVERSAL'
+      });
+    }
     const sourceLink = await tx.$queryRaw<Array<{ kind: string }>>(Prisma.sql`SELECT "kind" FROM "InventoryMovementAuditLink" WHERE "tenantId"=${ctx.tenantId} AND "relatedMovementId"=${original.id} LIMIT 1`);
     if (sourceLink[0]?.kind === 'reversal') throw new HttpError(409, 'No se permite reversar un reverso; crea un ajuste explícito.', { code: 'INVENTORY_REVERSAL_OF_REVERSAL' });
     const prior = await tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`SELECT "id" FROM "InventoryMovementAuditLink" WHERE "tenantId"=${ctx.tenantId} AND "originalMovementId"=${original.id} AND "kind"='reversal' LIMIT 1`);
@@ -193,7 +325,18 @@ router.post('/movements/:id/reverse', requirePermission('inventory.adjust'), val
       if (compare(nextStock, ZERO) < 0 || compare(nextStock, product.reserved) < 0) throw new HttpError(409, 'El reverso dejaría un saldo de inventario inválido.', { code: 'INVENTORY_REVERSAL_INVALID_BALANCE' });
       updated = await tx.product.update({ where: { id: product.id }, data: { stock: nextStock } });
     } else updated = await applyStandardEffect(tx, product, type, reversalQuantity);
-    const reversal = await tx.inventoryMovement.create({ data: { tenantId: ctx.tenantId, productId: product.id, lotId: original.lotId || null, type, quantity: reversalQuantity, unitCost: original.unitCost, source: 'reversal', sourceId: original.id, note: input.reason } });
+    let reversalSource = 'reversal';
+    let reversalSourceId = original.id;
+    if ((original.type === 'reservation' || original.type === 'release') && original.source && original.sourceId) {
+      try {
+        const owner = normalizeInventoryReservationOwner({ source: original.source, sourceId: original.sourceId });
+        reversalSource = owner.source;
+        reversalSourceId = owner.sourceId;
+      } catch {
+        // Legacy owner metadata can be malformed. Preserve reversibility without legitimizing it as a new owner key.
+      }
+    }
+    const reversal = await tx.inventoryMovement.create({ data: { tenantId: ctx.tenantId, productId: product.id, lotId: original.lotId || null, type, quantity: reversalQuantity, unitCost: original.unitCost, source: reversalSource, sourceId: reversalSourceId, note: input.reason } });
     await insertAuditLink(tx, { tenantId: ctx.tenantId, productId: product.id, originalMovementId: original.id, relatedMovementId: reversal.id, kind: 'reversal', reasonCode: input.reasonCode, reason: input.reason, createdBy: ctx.userId });
     return { data: { movement: serializeMovement(reversal), product: serializeProduct(updated), originalMovementId: original.id }, resourceType: 'InventoryMovement', resourceId: reversal.id };
   });
