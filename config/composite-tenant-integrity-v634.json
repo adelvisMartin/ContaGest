@@ -1,6 +1,7 @@
 {
   "version": 634,
   "baselinePublicDbEnforceableCount": 72,
+  "baselineRelationSetMd5": "54bfdcbf73818d4892484bafc0f25e2c",
   "dbEnforceableRelations": [
     "AiConversation.userId->UserProfile.id",
     "AuditLog.userId->UserProfile.id",
