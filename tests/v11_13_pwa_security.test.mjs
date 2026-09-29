@@ -34,7 +34,7 @@ test('PWA install flow and service worker do not cache API data', () => {
   assert.match(installer, /beforeinstallprompt/);
   assert.match(installer, /appinstalled/);
   assert.match(sw, /url\.pathname\.startsWith\('\/api\/'\)/);
-  assert.match(sw, /cache:'no-store'/);
+  assert.match(sw, /cache:\s*'no-store'/);
   assert.equal(manifest.display, 'standalone');
   assert.equal(manifest.scope, '/');
 });

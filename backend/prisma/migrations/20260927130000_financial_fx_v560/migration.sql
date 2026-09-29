@@ -2,13 +2,13 @@
 -- Forward-only. Existing financial documents and ledger rows remain untouched.
 
 CREATE TABLE "FinancialFxPolicy" (
-  "tenantId" UUID NOT NULL,
+  "tenantId" TEXT NOT NULL,
   "policyVersion" INTEGER NOT NULL DEFAULT 1,
   "functionalCurrency" VARCHAR(3) NOT NULL,
   "roundingMode" TEXT NOT NULL DEFAULT 'ROUND_HALF_UP',
   "moneyScale" SMALLINT NOT NULL DEFAULT 2,
   "exchangeRateScale" SMALLINT NOT NULL DEFAULT 4,
-  "updatedBy" UUID,
+  "updatedBy" TEXT,
   "createdAt" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   "updatedAt" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   CONSTRAINT "FinancialFxPolicy_pkey" PRIMARY KEY ("tenantId"),
@@ -21,9 +21,9 @@ CREATE TABLE "FinancialFxPolicy" (
 
 CREATE TABLE "FinancialFxDocumentSnapshot" (
   "id" UUID NOT NULL,
-  "tenantId" UUID NOT NULL,
+  "tenantId" TEXT NOT NULL,
   "documentType" TEXT NOT NULL,
-  "documentId" UUID NOT NULL,
+  "documentId" TEXT NOT NULL,
   "originalCurrency" VARCHAR(3) NOT NULL,
   "functionalCurrency" VARCHAR(3) NOT NULL,
   "exchangeRate" NUMERIC(18,4) NOT NULL,
@@ -50,8 +50,8 @@ CREATE INDEX "FinancialFxDocumentSnapshot_tenant_currency_idx" ON "FinancialFxDo
 
 CREATE TABLE "FinancialFxLedgerLineSnapshot" (
   "id" UUID NOT NULL,
-  "tenantId" UUID NOT NULL,
-  "ledgerLineId" UUID NOT NULL,
+  "tenantId" TEXT NOT NULL,
+  "ledgerLineId" TEXT NOT NULL,
   "originalDebit" NUMERIC(18,2) NOT NULL DEFAULT 0,
   "originalCredit" NUMERIC(18,2) NOT NULL DEFAULT 0,
   "functionalDebit" NUMERIC(18,2) NOT NULL DEFAULT 0,
@@ -74,8 +74,8 @@ CREATE TABLE "FinancialFxLedgerLineSnapshot" (
 CREATE INDEX "FinancialFxLedgerLineSnapshot_tenant_idx" ON "FinancialFxLedgerLineSnapshot"("tenantId","createdAt");
 
 CREATE TABLE "FinancialFxBankAccountMap" (
-  "tenantId" UUID NOT NULL,
-  "bankAccountId" UUID NOT NULL,
+  "tenantId" TEXT NOT NULL,
+  "bankAccountId" TEXT NOT NULL,
   "ledgerAccountCode" TEXT NOT NULL,
   "createdAt" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   "updatedAt" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -87,11 +87,11 @@ CREATE TABLE "FinancialFxBankAccountMap" (
 
 CREATE TABLE "FinancialFxEvent" (
   "id" UUID NOT NULL,
-  "tenantId" UUID NOT NULL,
+  "tenantId" TEXT NOT NULL,
   "kind" TEXT NOT NULL,
   "sourceType" TEXT NOT NULL,
-  "sourceId" UUID NOT NULL,
-  "bankMovementId" UUID,
+  "sourceId" TEXT NOT NULL,
+  "bankMovementId" TEXT,
   "documentCurrency" VARCHAR(3) NOT NULL,
   "settlementCurrency" VARCHAR(3),
   "functionalCurrency" VARCHAR(3) NOT NULL,
@@ -105,8 +105,8 @@ CREATE TABLE "FinancialFxEvent" (
   "fiscalPeriod" TEXT NOT NULL,
   "rateDate" TIMESTAMPTZ NOT NULL,
   "rateSource" TEXT NOT NULL,
-  "ledgerEntryId" UUID NOT NULL,
-  "reversalLedgerEntryId" UUID,
+  "ledgerEntryId" TEXT NOT NULL,
+  "reversalLedgerEntryId" TEXT,
   "reversedAt" TIMESTAMPTZ,
   "policyVersion" INTEGER NOT NULL DEFAULT 1,
   "createdAt" TIMESTAMPTZ NOT NULL DEFAULT NOW(),

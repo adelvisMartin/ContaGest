@@ -510,7 +510,7 @@ router.get('/fx/exposure', requireTenant, requirePermission('accounting.view'), 
       original: { currency: snapshot.originalCurrency, subtotal: snapshot.originalSubtotal, tax: snapshot.originalTax, total: snapshot.originalTotal, exchangeRate: snapshot.exchangeRate, rateDate: snapshot.rateDate, rateSource: snapshot.rateSource },
       functional: { currency: snapshot.functionalCurrency, subtotal: snapshot.functionalSubtotal, tax: snapshot.functionalTax, total: snapshot.functionalTotal },
       realizedOriginalAmount: realized,
-      outstandingOriginalAmount,
+      outstandingOriginalAmount: outstandingOriginal,
       carryingFunctionalAmount: activeRevaluation?.currentFunctionalAmount ?? convertToFunctional(outstandingOriginal, snapshot.exchangeRate),
       activeRevaluation,
       events
