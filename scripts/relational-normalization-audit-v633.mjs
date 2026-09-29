@@ -38,7 +38,8 @@ function hasFkColumn(table,name){return (table.foreignKeys||[]).some((fk)=>fk.co
 function indexSupports(columns,indexes){return (indexes||[]).some((idx)=>columns.every((column,i)=>idx.columns?.[i]===column));}
 function uniqueCovers(column,table){
   if((table.primaryKey||[]).includes(column))return true;
-  return (table.uniqueConstraints||[]).some((u)=>u.columns?.includes(column));
+  if((table.uniqueConstraints||[]).some((u)=>u.columns?.includes(column)))return true;
+  return (table.indexes||[]).some((index)=>index.unique===true&&index.valid!==false&&index.columns?.includes(column));
 }
 
 export function analyzeTable(table,policy){
