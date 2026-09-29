@@ -12,15 +12,14 @@ REVOKE CREATE ON SCHEMA private FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON SCHEMA private FROM PUBLIC, anon;
 GRANT USAGE ON SCHEMA private TO authenticated, service_role;
 
--- Canonical tenant/profile resolvers. The privileged lookup stays private, uses
--- schema-qualified objects and a closed search_path. Policies that still refer
--- to the historical public names call SECURITY INVOKER compatibility wrappers.
+-- Canonical tenant/profile resolvers. Every application object is schema-qualified,
+-- so the executable namespace can be restricted to pg_catalog only.
 CREATE OR REPLACE FUNCTION private.current_tenant_id()
 RETURNS text
 LANGUAGE sql
 STABLE
 SECURITY DEFINER
-SET search_path = pg_catalog, private, public
+SET search_path = pg_catalog
 AS $$
   SELECT up."tenantId"
   FROM public."UserProfile" AS up
@@ -37,7 +36,7 @@ RETURNS text
 LANGUAGE sql
 STABLE
 SECURITY DEFINER
-SET search_path = pg_catalog, private, public
+SET search_path = pg_catalog
 AS $$
   SELECT up."id"
   FROM public."UserProfile" AS up
@@ -49,12 +48,14 @@ $$;
 REVOKE ALL ON FUNCTION private.current_profile_id() FROM PUBLIC, anon, service_role;
 GRANT EXECUTE ON FUNCTION private.current_profile_id() TO authenticated;
 
+-- Historical 0002 policies still call the public helper names. Keep them as
+-- SECURITY INVOKER compatibility wrappers; they cannot elevate on their own.
 CREATE OR REPLACE FUNCTION public.current_tenant_id()
 RETURNS text
 LANGUAGE sql
 STABLE
 SECURITY INVOKER
-SET search_path = pg_catalog, private, public
+SET search_path = pg_catalog
 AS $$
   SELECT private.current_tenant_id();
 $$;
@@ -67,7 +68,7 @@ RETURNS text
 LANGUAGE sql
 STABLE
 SECURITY INVOKER
-SET search_path = pg_catalog, private, public
+SET search_path = pg_catalog
 AS $$
   SELECT private.current_profile_id();
 $$;
@@ -96,7 +97,7 @@ BEGIN
     END IF;
 
     EXECUTE format(
-      'ALTER FUNCTION %s SET search_path TO pg_catalog, private, public',
+      'ALTER FUNCTION %s SET search_path TO pg_catalog',
       resolved
     );
     EXECUTE format(
