@@ -1,0 +1,54 @@
+{
+  "version": 1,
+  "canonicalOwner": "frontend/src/components/vnext/index.js",
+  "dataOwner": "frontend/src/components/vnext/data.js",
+  "queryContract": "frontend/src/components/vnext/dataContracts.js",
+  "legacyBridge": "frontend/src/components/vnext/dataLegacyBridge.js",
+  "components": [
+    "CgTable",
+    "CgDataGrid",
+    "CgPagination",
+    "CgSkeleton",
+    "CgInlineError",
+    "CgRetryState",
+    "CgNoResults",
+    "CgDetailList",
+    "CgKpi",
+    "CgMetricGrid",
+    "CgStatusSummary",
+    "CgToolbar",
+    "CgCommandBar",
+    "CgSearchField"
+  ],
+  "paginationModes": ["page", "cursor"],
+  "pilots": [
+    {"surface":"frontend/src/pages/AuditPage.js","status":"migrated","adapter":"CgLegacyTable"},
+    {"surface":"frontend/src/pages/ApprovalsPage.js","status":"migrated","adapter":"CgLegacyTable"}
+  ],
+  "rules": {
+    "serverQueryAuthority": true,
+    "noUnlimitedDatasetAssumption": true,
+    "deterministicSerialization": true,
+    "commercialMuiX": false,
+    "noRouteLocalTableAuthorityForMigratedPilots": true
+  },
+  "performance": {
+    "newRuntimeDependencies": 0,
+    "muiXAdded": false,
+    "virtualization": "not enabled; no measured need in the selected pilots"
+  },
+  "deprecatedOwners": [
+    {
+      "owner":"frontend/src/components/ui/erp.js::ErpDataTable",
+      "canonical":"CgTable/CgLegacyTable",
+      "removalCriteria":"direct ErpDataTable consumers reach zero after characterization",
+      "reviewBy":"2027-03-31"
+    },
+    {
+      "owner":"route-local raw table markup",
+      "canonical":"CgTable/CgLegacyTable",
+      "removalCriteria":"migrated route-local table consumers reach zero",
+      "reviewBy":"2027-03-31"
+    }
+  ]
+}
