@@ -2,6 +2,7 @@
 @layer compat, v4, convergence;
 @import url("./ui-system-v3-compat.css") layer(compat);
 @import url("./ui-system-v4.css") layer(v4);
+@import url("./ui-system-v4-overlays.css") layer(v4);
 
 /* Final convergence rules live in the highest Hípico cascade layer. */
 @layer convergence {
