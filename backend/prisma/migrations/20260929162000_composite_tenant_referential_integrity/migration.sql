@@ -49,8 +49,8 @@ BEGIN
     INTO candidate_count, relation_set_md5
     FROM candidates;
 
-  IF candidate_count <> 72 OR relation_set_md5 <> '54bfdcbf73818d4892484bafc0f25e2c' THEN
-    RAISE EXCEPTION 'TENANT_RELATION_CATALOG_DRIFT expected_count=72 actual_count=% expected_md5=54bfdcbf73818d4892484bafc0f25e2c actual_md5=%',
+  IF candidate_count <> 80 OR relation_set_md5 <> '40bcc4ea915585c961a4327c109e4358' THEN
+    RAISE EXCEPTION 'TENANT_RELATION_CATALOG_DRIFT expected_count=80 actual_count=% expected_md5=40bcc4ea915585c961a4327c109e4358 actual_md5=%',
       candidate_count, relation_set_md5;
   END IF;
 
