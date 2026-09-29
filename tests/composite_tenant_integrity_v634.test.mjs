@@ -94,11 +94,14 @@ test('policy summary leaves no critical relation unclassified', () => {
   assert.equal(summary.byClassification.SERVICE_ENFORCED, 3);
 });
 
-test('forward-only migration is generated from the same policy and contains no data rewrite', async () => {
+test('forward-only migration is catalog-bounded and contains no data rewrite', async () => {
   const migration = await readFile(new URL('../backend/prisma/migrations/20260929162000_composite_tenant_referential_integrity/migration.sql', import.meta.url), 'utf8');
   assert.match(migration, /#634 Composite Tenant Referential Integrity/);
-  assert.match(migration, /BankMovement_tenantId_accountId_tg_fk/);
-  assert.match(migration, /CareEncounter_tenantId_patientId_tg_fk/);
+  assert.match(migration, /candidate_count <> 72/);
+  assert.match(migration, /TENANT_RELATION_CATALOG_DRIFT/);
+  assert.match(migration, /_tg_fk/);
+  assert.match(migration, /FOREIGN KEY \(%I, %I\) REFERENCES %I \(%I, %I\) ON DELETE NO ACTION ON UPDATE NO ACTION NOT VALID/);
+  assert.match(migration, /VALIDATE CONSTRAINT/);
   assert.doesNotMatch(migration, /\bUPDATE\s+"|\bDELETE\s+FROM\s+"|\bINSERT\s+INTO\s+"/i);
   assert.doesNotMatch(migration, /DROP\s+TABLE|DROP\s+COLUMN|TRUNCATE/i);
 });
