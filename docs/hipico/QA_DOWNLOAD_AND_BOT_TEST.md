@@ -1,135 +1,148 @@
 # Control Hípico · qué descargar, instalar y probar
 
-Este documento es el procedimiento manual del release candidate `1.13.0-rc2` + Bridge `1.4.1` cuando CI/GitHub Actions no puede ejecutar los runners.
+**Actualizado:** 2026-09-29  
+**Código de prueba:** rama `main`, registrando el SHA exacto antes de ejecutar QA.  
+**UI:** v4.1.2 hardening.  
+**WhatsApp Bridge:** `1.5.0`.
+
+Este es el procedimiento manual cuando GitHub-hosted runners no ejecutan los jobs. Un comando local sólo cuenta como PASS si realmente termina correctamente en tu equipo; cualquier dependencia ausente se registra `BLOCKED`/`NOT_EXECUTED`.
 
 ## 1. Código que debes usar
 
-Rama de QA:
+Descarga/actualiza `main`. No pruebes una carpeta vieja ni mezcles archivos de otro branch.
 
-```text
-feat/production-finalization-v150
+Antes de comenzar guarda el SHA:
+
+```powershell
+git switch main
+git pull --ff-only
+git rev-parse HEAD
 ```
 
-Actualiza tu checkout local y confirma esa rama antes de probar. No pruebes una carpeta antigua mezclada con otro branch.
+Ese SHA identifica toda la evidencia de la jornada.
 
-## 2. Prueba completa del repositorio
+## 2. Gate local del repositorio
 
-En la raíz `ContaGest-main`:
+En la raíz de ContaGest:
 
 ```powershell
 .\QA-PRODUCCION.ps1
 ```
 
-Ese comando instala dependencias y ejecuta el gate local de ContaGest + Control Hípico. No hace merge, deploy, migraciones ni firma release.
+El gate instala/valida las dependencias que corresponden y genera evidencia local. No debe inventar PASS para Android, browser, PostgreSQL u otra herramienta que no exista en la máquina.
 
-Reportes:
+Revisa:
 
 ```text
 artifacts\qa\production-readiness.md
 artifacts\qa\production-readiness.json
 ```
 
-Si el equipo no tiene JDK/Android SDK, el reporte marcará el APK como `BLOCKED` en lugar de fingir un PASS.
+## 3. PWA / frontend de Control Hípico
 
-## 3. APK que debes instalar en el teléfono
+Prueba desde el checkout o desde el SHA publicado, pero no mezcles ambos durante una misma comparación.
 
-Requisitos para construirlo localmente:
+Verifica como mínimo:
+
+- UI System v4.1.2 y paleta light/dark/system;
+- header global y menú de opciones;
+- sidebar 224px / 66px, persistencia después de recargar;
+- todas las vistas principales full-width;
+- controles compactos en desktop y touch targets >=44px;
+- modales/dialogs sin clipping ni overlap;
+- toasts success/warning/error/info con estilos v4;
+- Centro Operativo de WhatsApp con iconos SVG canónicos;
+- Ayuda y launcher de WhatsApp sin solaparse;
+- offline -> online sin perder el workspace;
+- service worker `r33-ui-v4-1-2-hardening` o una revisión posterior equivalente.
+
+## 4. Android físico, si vas a probar APK
+
+Requisitos de build:
 
 - Node.js 22 LTS;
 - JDK 21;
-- Android SDK con API 35 / Build Tools 35.0.0.
+- Android SDK con API/Build Tools que exija el proyecto.
 
-Desde:
+Construye el APK desde **el mismo SHA** que la PWA. No uses un APK antiguo de Descargas como evidencia del candidato actual.
 
-```powershell
-cd android\hipico-control-v1130
-npm ci --no-audit --no-fund
-npm run android:qa
-```
+En el teléfono prueba:
 
-Instala **este** archivo:
-
-```text
-android\hipico-control-v1130\artifacts\Hipico-Control-v1.13.0-rc2-debug.apk
-```
-
-Comprueba también:
-
-```text
-android\hipico-control-v1130\artifacts\SHA256SUMS.txt
-android\hipico-control-v1130\artifacts\QA_APK_METADATA.json
-```
-
-No uses un APK antiguo de Descargas para decidir si RC2 funciona.
-
-## 4. QA del APK
-
-En un Android físico prueba, como mínimo:
-
-1. instalar desde cero;
-2. abrir/cerrar/volver a abrir;
-3. login/sesión cloud si aplica;
-4. navegación completa y botón Atrás;
-5. teclado y formularios;
-6. vertical/horizontal y safe areas;
-7. Wi‑Fi activo → sin red → red recuperada;
+1. instalación limpia;
+2. abrir/cerrar/reabrir;
+3. sesión si aplica;
+4. navegación y Atrás;
+5. teclado/formularios;
+6. vertical/horizontal/safe areas;
+7. Wi‑Fi -> sin red -> red recuperada;
 8. persistencia y recuperación;
-9. exportaciones/archivos;
-10. feed shadow de WhatsApp;
-11. confirmar que no reaparezcan datos/demo ficticios;
-12. comparar visual y funcionalmente con la PWA del mismo commit.
+9. exportaciones;
+10. feed shadow WhatsApp;
+11. ausencia de fixtures/demo no autorizados;
+12. comparación funcional/visual contra PWA del mismo SHA.
 
-## 5. Configurar el bot por primera vez
+Si el equipo no dispone de JDK/Android SDK, registra ese bloque como `BLOCKED`; no lo conviertas en PASS.
 
-En la raíz del repositorio ejecuta:
+## 5. Configurar WhatsApp Bridge v1.5.0
+
+Primera vez o después de limpiar el runtime:
 
 ```text
 CONFIGURAR-GRUPOS-HIPICO.cmd
 ```
 
-Qué ocurre:
+El helper:
 
-1. prepara el runtime Bridge v1.4.1 bajo `%LOCALAPPDATA%`;
-2. abre WhatsApp Web con un perfil dedicado;
-3. si aparece QR, vinculas el dispositivo;
-4. cuando lo solicite, abres manualmente el grupo oficial `CLUB HIPICO TRIPLE COWN/CROWN` y presionas ENTER en la consola;
-5. luego abres `Control hípico lab` y presionas ENTER;
-6. el helper obtiene los IDs estables `@g.us` y verifica que sean diferentes;
-7. guarda los bindings únicamente en el equipo local.
+1. prepara el runtime bajo `%LOCALAPPDATA%\ControlHipicoBridge`;
+2. abre WhatsApp Web con perfil dedicado;
+3. muestra QR si el dispositivo aún no está vinculado;
+4. pide abrir el SOURCE oficial;
+5. pide abrir `Control hípico lab`;
+6. obtiene IDs `@g.us` y comprueba que sean distintos;
+7. guarda bindings sólo en el equipo local.
 
-Este proceso **no envía mensajes**.
+Este proceso no debe enviar mensajes.
 
-Archivos locales sensibles:
+Archivos sensibles:
 
 ```text
 %LOCALAPPDATA%\ControlHipicoBridge\data\group-bindings.json
 %LOCALAPPDATA%\ControlHipicoBridge\data\group-bindings.env
 ```
 
-No los subas a Git ni los publiques.
+No los subas a Git ni los compartas.
 
-## 6. Probar al bot automático sin riesgo sobre el grupo real
+## 6. Probar el bot automático hoy
 
-Después del binding ejecuta:
+Después del binding usa:
 
 ```text
 PROBAR-HIPICO-LAB.cmd
 ```
 
+También puedes usar:
+
+```text
+INICIAR-HIPICO-AUTONOMO.cmd
+```
+
+En el hardening actual ese launcher significa **autonomía segura en LAB**. No habilita escritura al grupo real SOURCE.
+
 El modo QA puede:
 
-- leer mensajes de la fuente;
-- clasificarlos;
+- leer SOURCE;
+- ignorar mensajes propios para evitar loops;
+- deduplicar;
 - persistir/spoolear;
-- producir propuestas shadow;
-- responder automáticamente en `Control hípico lab`;
-- leer mensajes de prueba escritos directamente en LAB y contestarlos.
+- clasificar;
+- producir propuestas;
+- responder automáticamente en LAB;
+- leer entradas escritas directamente en LAB y contestarlas;
+- conservar estado de delivery/receipt para evitar retries inseguros.
 
-Antes de cada envío verifica **nombre + ID `@g.us`** del LAB. Si el chat cambió, no presiona Enter.
+Antes de cualquier envío LAB el bridge debe verificar nombre + ID `@g.us` del chat.
 
-### Corpus manual mínimo en LAB
-
-Prueba ejemplos no monetarios y de clasificación controlada, por ejemplo:
+### Corpus mínimo
 
 ```text
 hola
@@ -140,59 +153,67 @@ JUEGA 30K AL 5
 CONSIGUE 20K 2N AL 3
 ```
 
-Las respuestas deben llevar marca `[LABTEST:...]` o `[SHADOW:...]`. Repetir el mismo evento no debe generar duplicados indebidos.
+Las respuestas de QA deben llevar la identificación LAB/shadow correspondiente. Repetir un mismo evento no debe producir un segundo efecto indebido.
 
-## 7. Lo que debes observar mientras corre
+## 7. Estado y observabilidad
 
-Archivo:
+Archivo principal:
 
 ```text
 %LOCALAPPDATA%\ControlHipicoBridge\data\health.json
 ```
 
-Comprueba:
+Para la prueba actual confirma:
 
 - `sourceSendPossible` = `false`;
-- fuente correcta;
-- bindings presentes cuando LAB está habilitado;
+- SOURCE correcto;
+- bindings presentes;
 - backend `online` cuando corresponde;
-- `deadLetters` = 0;
-- spools regresan a 0 después de recuperar red/backend;
-- no aparecen secretos en health/logs.
+- `deadLetters` = 0 o con causa explícita investigada;
+- colas/spools convergen de nuevo después de recuperar red/backend;
+- no aparecen tokens/secretos en health/logs.
 
-También revisa:
+Revisa también:
 
 ```text
 %LOCALAPPDATA%\ControlHipicoBridge\data\bridge.log
-%LOCALAPPDATA%\ControlHipicoBridge\data\spool-events\
-%LOCALAPPDATA%\ControlHipicoBridge\data\spool-lab-mirror\
+%LOCALAPPDATA%\ControlHipicoBridge\data\spool-v2\
+%LOCALAPPDATA%\ControlHipicoBridge\data\source-replies\
 %LOCALAPPDATA%\ControlHipicoBridge\data\dead-letter\
 ```
 
-## 8. Pruebas de resiliencia del bot
+La distribución exacta de subdirectorios puede evolucionar; `health.json` es la autoridad de estado del runtime actual.
+
+## 8. Resiliencia obligatoria
 
 Durante QA:
 
 - desconecta Internet y vuelve a conectarlo;
-- cierra/reabre el Bridge;
+- deja backend inaccesible temporalmente;
+- cierra/reabre el bridge;
 - reinicia Windows;
 - repite un mensaje/evento;
-- prueba imagen, video, audio y PDF como contexto;
-- deja backend temporalmente inaccesible y verifica spool/retry;
-- cambia deliberadamente del LAB a otro chat justo antes de una prueba: el guard debe cancelar el envío;
-- confirma visualmente que **nunca aparece un mensaje saliente en el grupo fuente**.
+- prueba texto y, cuando corresponda, imagen/audio/video/PDF como contexto;
+- cambia del LAB a otro chat justo antes de un envío: debe cancelarse por identity guard;
+- verifica que una entrega incierta quede `ambiguous` y no se repita a ciegas;
+- confirma visualmente que **nunca aparece un mensaje automático en SOURCE**.
 
-## 9. ¿Puede quedar trabajando solo?
+## 9. ¿Puede trabajar solo?
 
-Sí, dentro del alcance shadow actual. Después del binding y de que el backend/host estén configurados, el worker puede quedar ejecutándose de forma permanente para:
+Sí, para el alcance permitido:
 
 ```text
-leer → deduplicar → persistir/spoolear → clasificar → sugerir → auditar
+SOURCE read-only
+  -> deduplicar
+  -> persistir/spoolear
+  -> clasificar
+  -> sugerir/auditar
+  -> responder automáticamente en LAB durante QA
 ```
 
-Y durante QA autorizado puede además responder automáticamente **solo en LAB**.
+No está autorizado para escribir automáticamente apuestas de dinero real al SOURCE. `HIPICO_SOURCE_AUTO_REPLY_ENABLED=true` falla cerrado por `SOURCE_AUTO_REPLY_POLICY_NO_GO` mientras la evidencia de plataforma/compliance siga en NO-GO.
 
-Todavía NO puede actuar solo sobre dinero real. Se mantienen bloqueados:
+Tampoco obtiene autoridad automática para:
 
 ```text
 crear/confirmar apuestas reales
@@ -200,30 +221,29 @@ modificar saldos
 escribir ledger
 aplicar liquidaciones/premios
 publicar resultados definitivos
-enviar al grupo fuente
 ```
 
-Esos gates se habilitan progresivamente únicamente después de medir precisión y ejecutar pruebas de seguridad/negocio.
+## 10. Host permanente
 
-## 10. Para dejar de depender de la laptop
-
-Después de aprobar Windows/LAB, instala el Bridge en un servidor Linux usando una de estas dos opciones:
+Después de aprobar la jornada Windows/LAB puedes evaluar los despliegues existentes bajo:
 
 ```text
-tools/hipico-whatsapp-web-bridge/deploy/linux/
-tools/hipico-whatsapp-web-bridge/deploy/docker/
+tools\hipico-whatsapp-web-bridge\deploy\linux\
+tools\hipico-whatsapp-web-bridge\deploy\docker\
 ```
 
-El host necesita una vinculación QR propia/controlada, los dos IDs `@g.us`, el token backend y almacenamiento persistente. El teléfono puede quedar sin señal después de la vinculación siempre que la sesión de WhatsApp Web siga válida y el servidor tenga Internet.
+Un host permanente necesita sesión vinculada propia, almacenamiento persistente, bindings exactos y secretos fuera del repo.
 
-## 11. Gates que no debes saltar antes de producción real
+## 11. Gates antes de cualquier promoción
 
-- APK físico aprobado;
-- PWA instalada/offline aprobada;
-- pruebas de bot LAB y source zero-send aprobadas;
-- soak test del worker alojado;
-- backup/restore probado;
-- migraciones v1.13 probadas en entorno aislado con usuario A/B;
-- migraciones productivas autorizadas;
-- firma release con keystore privado;
-- verificación del SHA desplegado.
+- PWA/browser QA del SHA exacto;
+- Android físico si forma parte del release;
+- LAB + source-zero-send aprobados;
+- reconnect/restart/replay aprobados;
+- soak prolongado;
+- backup/restore;
+- backend/DB gates que correspondan;
+- verificación del SHA desplegado;
+- reevaluación fresca de política/plataforma antes de cualquier cambio en SOURCE writing.
+
+La investigación y el estado técnico del bot están documentados en `docs/hipico/WHATSAPP_READINESS_2026-09-29.md`.
