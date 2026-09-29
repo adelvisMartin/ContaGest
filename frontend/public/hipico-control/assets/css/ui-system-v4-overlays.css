@@ -1,0 +1,191 @@
+/* Control Hípico UI System v4.1.2 — canonical overlays, dialogs and toasts. */
+
+.modal-backdrop,
+.calendar-overlay,
+.hc-help-backdrop {
+  background: color-mix(in srgb, #07100b 58%, transparent);
+  backdrop-filter: blur(8px) saturate(.9);
+  -webkit-backdrop-filter: blur(8px) saturate(.9);
+}
+
+.modal,
+.calendar-card,
+.hc-help-panel,
+.ops-dialog {
+  border: 1px solid color-mix(in srgb, var(--hc-border-strong) 78%, transparent);
+  border-radius: var(--hc-v4-radius-xl);
+  background: var(--hc-surface);
+  color: var(--hc-text);
+  box-shadow: var(--hc-shadow-md);
+}
+
+.modal {
+  width: min(100%, 680px);
+  max-height: min(88dvh, 820px);
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+
+.modal__head,
+.hc-help-head,
+.ops-dialog__head {
+  min-height: 56px;
+  padding: 13px 16px;
+  border-bottom: 1px solid var(--hc-border);
+  background: color-mix(in srgb, var(--hc-surface) 96%, var(--hc-surface-raised));
+}
+
+.modal__head h3,
+.hc-help-head h2,
+.ops-dialog__head h2 {
+  color: var(--hc-text);
+  font-size: var(--hc-v4-type-lg);
+  font-weight: 720;
+  letter-spacing: -.012em;
+}
+
+.modal__body,
+.hc-help-content,
+.ops-dialog__body {
+  padding: 16px;
+  color: var(--hc-text);
+  font-size: var(--hc-v4-type-md);
+}
+
+.ops-dialog {
+  width: min(980px, calc(100vw - 32px));
+  max-width: 980px;
+  height: min(88dvh, 900px);
+  max-height: 88dvh;
+  padding: 0;
+  overflow: hidden;
+}
+
+.ops-dialog::backdrop {
+  background: color-mix(in srgb, #07100b 58%, transparent);
+  backdrop-filter: blur(8px) saturate(.9);
+  -webkit-backdrop-filter: blur(8px) saturate(.9);
+}
+
+.ops-dialog__toolbar {
+  min-height: 52px;
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--hc-border);
+  background: var(--hc-surface-raised);
+}
+
+.ops-dialog__body {
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+
+.ops-message {
+  border-color: var(--hc-border);
+  border-radius: var(--hc-v4-radius-lg);
+  background: var(--hc-surface);
+  box-shadow: none;
+}
+
+.ops-message[open] {
+  border-color: color-mix(in srgb, var(--hc-brand) 22%, var(--hc-border));
+}
+
+.ops-message summary {
+  min-height: 46px;
+  padding: 9px 11px;
+}
+
+.ops-message textarea {
+  border-color: var(--hc-border);
+  border-radius: var(--hc-v4-radius-md);
+  background: var(--hc-bg);
+  color: var(--hc-text);
+}
+
+.ops-icon,
+.modal__head .icon-button,
+.hc-help-head .icon-button {
+  border-color: var(--hc-border);
+  background: var(--hc-surface);
+  color: var(--hc-text-muted);
+  box-shadow: none;
+}
+
+.ops-icon:hover,
+.modal__head .icon-button:hover,
+.hc-help-head .icon-button:hover {
+  border-color: var(--hc-border-strong);
+  background: var(--hc-surface-subtle);
+  color: var(--hc-text);
+}
+
+.toast-region {
+  right: 16px;
+  bottom: 16px;
+  width: min(380px, calc(100vw - 32px));
+  gap: 8px;
+}
+
+.toast {
+  grid-template-columns: 28px minmax(0, 1fr) 32px;
+  gap: 9px;
+  padding: 10px 10px 10px 11px;
+  border: 1px solid var(--hc-border);
+  border-left: 3px solid var(--hc-info);
+  border-radius: var(--hc-v4-radius-lg);
+  background: color-mix(in srgb, var(--hc-surface) 97%, var(--hc-surface-raised));
+  color: var(--hc-text);
+  box-shadow: var(--hc-shadow-md);
+}
+
+.toast--success { border-left-color: var(--hc-success); }
+.toast--warning { border-left-color: var(--hc-warning); }
+.toast--error { border-left-color: var(--hc-danger); }
+.toast--info { border-left-color: var(--hc-info); }
+
+.toast__icon {
+  width: 28px;
+  height: 28px;
+  border-radius: var(--hc-v4-radius-md);
+  background: var(--hc-surface-subtle);
+}
+
+.toast__copy { gap: 2px; }
+.toast__copy strong { font-size: var(--hc-v4-type-sm); font-weight: 680; }
+.toast__copy span { color: var(--hc-text-muted); font-size: var(--hc-v4-type-xs); line-height: 1.35; }
+.toast__close { width: 32px; height: 32px; border-radius: var(--hc-v4-radius-md); }
+.toast__close:hover { background: var(--hc-surface-subtle); color: var(--hc-text); }
+
+@media (max-width: 780px) {
+  .modal-backdrop,
+  .calendar-overlay,
+  .hc-help-backdrop { padding: 10px; align-items: end; }
+
+  .modal,
+  .hc-help-panel {
+    width: 100%;
+    max-height: min(90dvh, 840px);
+    border-radius: var(--hc-v4-radius-xl) var(--hc-v4-radius-xl) 0 0;
+  }
+
+  .ops-dialog {
+    width: calc(100vw - 16px);
+    height: min(92dvh, 920px);
+    max-height: 92dvh;
+    border-radius: var(--hc-v4-radius-xl);
+  }
+
+  .toast-region {
+    right: 10px;
+    bottom: calc(var(--hc-nav-height) + 12px + var(--hc-safe-bottom));
+    width: calc(100vw - 20px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .toast,
+  .modal,
+  .ops-dialog,
+  .hc-help-panel { transition: none !important; animation: none !important; }
+}
