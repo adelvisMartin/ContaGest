@@ -4,6 +4,7 @@ import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { gatesForFiles } from '../qa/support/domain-risk-catalog.mjs';
 import { detectDuplicateExclusiveClaims, extractExclusiveIssueClaims, graphifyFreshness, unique } from './agent-context-v2-lib.mjs';
+import { routeTask } from './agent-system-v3-lib.mjs';
 
 const args = process.argv.slice(2);
 const valueOf = (flag) => {
@@ -30,7 +31,7 @@ async function githubJson(repository, endpoint, token) {
   const headers = {
     Accept: 'application/vnd.github+json',
     'X-GitHub-Api-Version': '2022-11-28',
-    'User-Agent': 'contagest-agent-bootstrap-v2',
+    'User-Agent': 'contagest-agent-bootstrap-v3',
   };
   if (token) headers.Authorization = `Bearer ${token}`;
   const response = await fetch(`https://api.github.com/repos/${repository}${endpoint}`, { headers });
@@ -89,8 +90,48 @@ function changedFiles(root, explicit, base) {
   return diff ? diff.split(/\r?\n/).filter(Boolean) : [];
 }
 
-function asSkillPath(skill) {
-  return skill.includes('/') ? skill : `.agents/skills/${skill}/SKILL.md`;
+function routedDomainHints(domains) {
+  const map = {
+    'accounting-financial':['finance'],
+    'identity-tenant-rbac':['auth-security'],
+    'database-migration':['database'],
+    'frontend-shell-design':['frontend-ui'],
+    'health-sensitive':['clinical'],
+    'pwa-offline':['frontend-ui'],
+    integrations:['backend'],
+    'release-infrastructure':['release'],
+    'agent-system':['architecture'],
+    'hipico-automation':['hipico'],
+    'data-lifecycle':['database'],
+    'api-governance':['backend'],
+    observability:['backend'],
+    'supply-chain':['auth-security','release'],
+    'vertical-runtime':['clinical','frontend-ui'],
+    'privacy-sensitive':['auth-security'],
+  };
+  return unique(domains.flatMap((domain) => map[domain.id] || []));
+}
+
+function routedBoundaries(domains) {
+  const map = {
+    'accounting-financial':['financial','persistence'],
+    'identity-tenant-rbac':['auth','tenant'],
+    'database-migration':['persistence','tenant'],
+    'frontend-shell-design':['ui','browser'],
+    'health-sensitive':['api','tenant','ui'],
+    'pwa-offline':['ui','browser'],
+    integrations:['api','provider'],
+    'release-infrastructure':['provider','deploy'],
+    'agent-system':['api'],
+    'hipico-automation':['api','provider'],
+    'data-lifecycle':['persistence','tenant'],
+    'api-governance':['api'],
+    observability:['api'],
+    'supply-chain':['security','provider'],
+    'vertical-runtime':['api','ui','browser','tenant'],
+    'privacy-sensitive':['security','tenant'],
+  };
+  return unique(domains.flatMap((domain) => map[domain.id] || []));
 }
 
 function printHuman(summary) {
@@ -106,6 +147,7 @@ function printHuman(summary) {
     `risk domains: ${summary.riskDomains.join(', ') || 'none'}`,
     `agents: ${summary.agentProfiles.join(', ') || 'none'}`,
     `skills: ${summary.skills.join(', ') || 'none'}`,
+    `evidence plan: ${summary.evidencePlan.join(', ') || 'none'}`,
     `gates: ${summary.gates.join(', ') || 'none'}`,
     `next action: ${summary.nextAction}`,
   ];
@@ -114,7 +156,7 @@ function printHuman(summary) {
 
 async function main() {
   if (has('--help')) {
-    console.log('ContaGest Agent Context Plane v2 discovery-only bootstrap. It reads local/live state and does not mutate GitHub, create branches, merge, close issues, deploy, or install tools.');
+    console.log('ContaGest Agent System v3 discovery-only bootstrap. It reads local/live state, routes minimal skills and plans exact-SHA evidence. It does not mutate GitHub, create branches, merge, close issues, deploy, migrate production or install tools.');
     return;
   }
 
@@ -142,7 +184,6 @@ async function main() {
   const base = liveState.defaultBranch || 'main';
   const files = changedFiles(root, valueOf('--files'), base);
   const domains = gatesForFiles(files);
-  const agentIds = unique(domains.flatMap((domain) => domain.agentIds || []));
   const graphify = graphifyFreshness({
     headSha,
     metadataPath: path.join(root, 'graphify-out', 'source-sha.json'),
@@ -155,14 +196,18 @@ async function main() {
         .map((pullRequest) => ({ pullRequest: pullRequest.number, headRef: pullRequest.headRef, headSha: pullRequest.headSha }))
     : [];
 
+  const inferredRisk=domains.some((domain)=>domain.severity==='critical')?'P0':domains.some((domain)=>domain.severity==='high')?'P1':'P2';
+  const taskType=valueOf('--type')||'feature';
+  const route=routeTask({risk:valueOf('--risk')||inferredRisk,type:taskType,domains:routedDomainHints(domains).length?routedDomainHints(domains):['architecture'],boundaries:routedBoundaries(domains)});
+
   let nextAction = 'Resolve live GitHub state before selecting or creating work.';
   if (!duplicateState.ok) nextAction = 'Reconcile DUPLICATE_WORK_CLAIM before creating or merging work.';
   else if (selected && workClaims.length) nextAction = `Continue existing claim for #${selected.number}; do not create duplicate work.`;
-  else if (selected) nextAction = `Proceed with live issue #${selected.number} using routed gates.`;
+  else if (selected) nextAction = `Proceed with live issue #${selected.number} using v3 routed gates/evidence.`;
 
   const summary = {
-    marker: 'CONTAGEST_AGENT_BOOTSTRAP',
-    schemaVersion: 2,
+    marker: 'CONTAGEST_AGENT_BOOTSTRAP_V3',
+    schemaVersion: 3,
     repository: repository || null,
     repoRoot: root,
     branch,
@@ -173,11 +218,13 @@ async function main() {
     selectedWorkItem: selected,
     workClaims,
     duplicateWorkClaims: duplicateState,
-    graphify,
+    graphify: {...graphify,authority:'navigation-only'},
     files,
+    task:{type:route.type,risk:route.risk,boundaries:route.boundaries},
     riskDomains: domains.map((domain) => domain.id),
-    agentProfiles: agentIds.map((id) => `.agents/agents/${id}.md`),
-    skills: unique(domains.flatMap((domain) => domain.skills || [])).map(asSkillPath),
+    agentProfiles: route.agents.map((id) => `.agents/agents/${id}.md`),
+    skills: route.skills.map((skill)=>`.agents/skills/${skill}/SKILL.md`),
+    evidencePlan: route.verification,
     gates: unique(domains.flatMap((domain) => domain.gates || [])),
     nextAction,
   };
