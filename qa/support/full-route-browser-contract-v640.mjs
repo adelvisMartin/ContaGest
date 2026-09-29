@@ -1,3 +1,4 @@
+import { UX_CONTRACT_V1 } from '../../frontend/src/design-system/uxContract.v1.js';
 import { MODULE_VISUAL_CATALOG } from './module-visual-catalog.mjs';
 
 const VIEWPORTS=Object.freeze([
@@ -11,25 +12,23 @@ const VIEWPORTS=Object.freeze([
   {name:'wide-1920',width:1920,height:1080,class:'wide'},
 ]);
 
-const STATES=Object.freeze([
-  'loading','empty','no-results','success','error','disabled','permission-denied',
-]);
-
 export const FULL_ROUTE_BROWSER_CONTRACT=Object.freeze({
   schemaVersion:640,
+  uxContractVersion:UX_CONTRACT_V1.version,
+  uxContractAuthority:UX_CONTRACT_V1.authority,
   sourceCatalog:'qa/support/module-visual-catalog.mjs',
   routes:Object.freeze(MODULE_VISUAL_CATALOG.map((item)=>item.route)),
   routeClasses:Object.freeze(Object.fromEntries(MODULE_VISUAL_CATALOG.map((item)=>[
     item.route,Object.freeze({family:item.family,priority:item.priority,standalone:Boolean(item.standalone),framework:item.framework||'legacy'})
   ]))),
   viewports:VIEWPORTS,
-  themes:Object.freeze(['light','dark','system']),
-  motion:Object.freeze(['normal','reduced']),
-  zoom:Object.freeze([100,200]),
-  states:STATES,
+  themes:UX_CONTRACT_V1.theme.preferences,
+  motion:UX_CONTRACT_V1.accessibility.motionModes,
+  zoom:UX_CONTRACT_V1.accessibility.zoomLevels,
+  states:UX_CONTRACT_V1.states.catalog,
   invariants:Object.freeze({
-    keyboard:true,
-    visibleFocus:true,
+    keyboard:UX_CONTRACT_V1.accessibility.keyboardOnly,
+    visibleFocus:UX_CONTRACT_V1.accessibility.visibleFocus,
     deepLink:true,
     refresh:true,
     noHorizontalOverflow:true,
