@@ -23,10 +23,14 @@ test('#639 migration ledger keeps legacy removal fail-closed',()=>{
   assert.equal(ledger.rules.removeLegacyOnlyWhenConsumersZero,true);
   assert.equal(ledger.rules.preserveDeepLinks,true);
   assert.equal(ledger.rules.preserveAuthRbac,true);
+  assert.equal(ledger.rules.preserveApiContracts,true);
+  assert.equal(fs.existsSync('frontend/src/pages/HelpPage.js'),false);
 });
 
-test('#639 composition root explicitly preserves migrated React slice lifecycle',()=>{
-  const app=read('frontend/src/app.js');
-  assert.match(app,/REACT_MANAGED_ROUTES=new Set\(\['veterinaria','ayuda'\]\)/);
-  assert.match(app,/REACT_MANAGED_ROUTES\.has\(route\)/);
+test('#639 migrated slice owns and cleans its React root without changing shell authority',()=>{
+  const page=read('frontend/src/pages/HelpPage.jsx');
+  assert.match(page,/let activeRoot=null/);
+  assert.match(page,/activeRoot\?\.unmount\(\)/);
+  assert.match(page,/data-react-strangler-route="ayuda"/);
+  assert.doesNotMatch(page,/AccessControlService|AuthService|BackendApi|fetch\(/);
 });
