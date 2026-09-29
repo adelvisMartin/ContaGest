@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
+  LEGACY_BASELINE_MIGRATIONS,
   MigrationChainError,
   classifyApplyError,
   listMigrations,
@@ -78,7 +79,12 @@ export async function buildState(client, { through = null } = {}) {
   validateMigrationCatalog(names);
   const boundary = through ? names.indexOf(through) : names.length - 1;
   if (boundary < 0) throw new MigrationChainError('SNAPSHOT_PROVENANCE_INVALID', `unknown migration boundary ${through}`);
-  for (let i = 0; i <= boundary; i += 1) await applyMigration(client, MIGRATIONS_DIR, names[i]);
+
+  for (let i = 0; i <= boundary; i += 1) {
+    const name = names[i];
+    if (LEGACY_BASELINE_MIGRATIONS.includes(name)) continue;
+    await applyMigration(client, MIGRATIONS_DIR, name);
+  }
   return { names, lastMigration: names[boundary] };
 }
 
@@ -107,10 +113,56 @@ export async function assertCriticalSchema(client) {
     const actual = byKey.get(`${table}.tenantId`);
     if (actual !== 'text') throw new MigrationChainError('MIGRATION_TYPE_MISMATCH', `${table}.tenantId expected text, got ${actual ?? 'missing'}`);
   }
+
   const tables = await client.query(`select table_name from information_schema.tables where table_schema='public'`);
-  const set = new Set(tables.rows.map((row) => row.table_name));
-  for (const table of ['FxRate','FxPolicy','FiscalRuleVersion','FiscalSequence','FiscalDocumentRuleSnapshot','FiscalCloseEvidence','RolePermission']) {
-    if (!set.has(table)) throw new MigrationChainError('FROM_ZERO_SCHEMA_MISMATCH', `missing critical table ${table}`);
+  const tableSet = new Set(tables.rows.map((row) => row.table_name));
+  for (const table of [
+    'FinancialFxPolicy',
+    'FinancialFxDocumentSnapshot',
+    'FinancialFxLedgerLineSnapshot',
+    'FinancialFxBankAccountMap',
+    'FinancialFxEvent',
+    'FiscalRuleVersion',
+    'FiscalSequence',
+    'FiscalDocumentRuleSnapshot',
+    'FiscalCloseEvidence',
+    'Permission',
+    'RolePermission',
+  ]) {
+    if (!tableSet.has(table)) throw new MigrationChainError('FROM_ZERO_SCHEMA_MISMATCH', `missing critical table ${table}`);
+  }
+
+  const constraints = await client.query(`
+    select c.conname
+      from pg_constraint c
+      join pg_class r on r.oid = c.conrelid
+      join pg_namespace n on n.oid = r.relnamespace
+     where n.nspname='public'
+  `);
+  const constraintSet = new Set(constraints.rows.map((row) => row.conname));
+  for (const name of [
+    'FinancialFxPolicy_tenant_fkey',
+    'FinancialFxLedgerLineSnapshot_line_fkey',
+    'FinancialFxEvent_ledger_fkey',
+  ]) {
+    if (!constraintSet.has(name)) throw new MigrationChainError('FROM_ZERO_SCHEMA_MISMATCH', `missing critical FK ${name}`);
+  }
+
+  const triggers = await client.query(`
+    select t.tgname
+      from pg_trigger t
+      join pg_class r on r.oid = t.tgrelid
+      join pg_namespace n on n.oid = r.relnamespace
+     where n.nspname='public' and not t.tgisinternal
+  `);
+  const triggerSet = new Set(triggers.rows.map((row) => row.tgname));
+  for (const name of [
+    'LedgerEntry_lifecycle_guard',
+    'LedgerLine_posted_guard',
+    'DataRetentionPolicyVersion_guard_trg',
+    'DataLifecycleEvidence_immutable_trg',
+  ]) {
+    if (!triggerSet.has(name)) throw new MigrationChainError('FROM_ZERO_SCHEMA_MISMATCH', `missing critical trigger ${name}`);
   }
 }
 
