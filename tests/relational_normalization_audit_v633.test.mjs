@@ -96,6 +96,16 @@ test('manifest requires remediation issue for every P0/P1 finding',()=>{
   assert.equal(manifest.summary.unassignedP0P1,0);
 });
 
+test('natural key protected by unique index is not reported as WEAK_UNIQUE',()=>{
+  const result=analyzeTable(table({
+    table:'Product',
+    columns:[{name:'id',type:'text',nullable:false},{name:'sku',type:'text',nullable:false}],
+    primaryKey:['id'],
+    indexes:[{name:'Product_tenantId_sku_key',columns:['tenantId','sku'],unique:true,valid:true}],
+  }),policy);
+  assert.equal(result.findings.some((x)=>x.category===FINDING.WEAK_UNIQUE),false);
+});
+
 test('manifest hash is deterministic across timestamps and key order',()=>{
   const a={candidateSha:'a',generatedAt:'x',summary:{b:2,a:1}};
   const b={summary:{a:1,b:2},candidateSha:'a',generatedAt:'later',manifestSha256:'ignored'};
