@@ -34,6 +34,14 @@ test('Pages build is isolated from the Vercel build pipeline and binds the repos
   assert.doesNotMatch(script, /vercel-build/);
 });
 
+test('Pages build publishes Control Hípico at the canonical dist root and keeps the historical URL as a redirect only', () => {
+  const script = read('frontend/scripts/github-pages-build.mjs');
+  assert.match(script, /hipico-control/);
+  assert.match(script, /HIPICO_ENTRY_MISSING/);
+  assert.match(script, /frontend[\\/]+public[\\/]+hipico-control/);
+  assert.match(script, /location\.replace/);
+});
+
 test('private app PWA assets are repository-base safe instead of origin-root bound', () => {
   const index = read('frontend/index.html');
   assert.match(index, /href="\.\/manifest\.webmanifest"/);
@@ -66,4 +74,12 @@ test('Control Hípico remains a relative-path PWA under the Pages repository sub
   assert.equal(manifest.id, './');
   assert.equal(manifest.scope, './');
   assert.match(sw, /self\.registration\.scope/);
+});
+
+test('GitHub Pages login fails closed without leaking a returned HTML error document', () => {
+  const login = read('frontend/src/pages/LoginPage.js');
+  assert.match(login, /STATIC_PAGES_API_UNCONFIGURED/);
+  assert.match(login, /github\.io/);
+  assert.match(login, /<!doctype html|Site not found/i);
+  assert.doesNotMatch(login, /return raw\|\|'No se pudo cargar la verificación/);
 });
