@@ -58,10 +58,9 @@ test('v559 source fixture remains explicit money characterization, not productio
   assert.equal(fixture.inventory.expectedEndingStock,'11.000');
 });
 
-test('Local Verification financial/full and authoritative contracts consume v643 without duplicating the real PG flow',()=>{
+test('Local Verification financial/full keeps the real PostgreSQL adapter as a mandatory gate',()=>{
   const runner=read('scripts/local-verification-runner-v630.mjs');
-  const authoritative=read('scripts/run-authoritative-contracts.mjs');
-  assert.match(runner,/financial-accounting-characterization-v643/);
+  assert.match(runner,/financial-reconciliation-real/);
   assert.match(runner,/test:backend:financial:reconciliation:real/);
-  assert.match(authoritative,/accounting_characterization_reconciliation_issue_643\.test\.mjs/);
+  assert.match(runner,/if\(profile==='full'\)/);
 });
