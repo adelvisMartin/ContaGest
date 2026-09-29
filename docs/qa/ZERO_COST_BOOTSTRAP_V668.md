@@ -32,7 +32,7 @@ Optional local build smoke after the DB profiles:
 
 The bootstrap never installs system software silently. It selects, in order:
 
-1. an explicitly configured loopback **PostgreSQL 17** admin connection in `LOCAL_VERIFY_DATABASE_ADMIN_URL` (or a loopback `DATABASE_URL`) when the local `psql` major is exactly 17;
+1. an explicitly configured loopback **PostgreSQL 17** admin connection in `LOCAL_VERIFY_DATABASE_ADMIN_URL` when the local `psql` major is exactly 17 and the server itself reports PostgreSQL 17;
 2. Docker using an ephemeral `postgres:17` container bound only to `127.0.0.1` with a dynamic local port;
 3. Podman using the same `postgres:17` contract;
 4. otherwise it returns `BLOCKED` with `POSTGRES17_OR_CONTAINER_RUNTIME_REQUIRED`.
@@ -47,7 +47,7 @@ Provide a local admin URL only. Example shape (use your own local synthetic cred
 LOCAL_VERIFY_DATABASE_ADMIN_URL=postgresql://local_user:local_password@127.0.0.1:5432/postgres
 ```
 
-The bootstrap rejects non-loopback hosts before invoking any destructive database lifecycle. The existing #630 runner then creates its own per-run database and #632 remains the canonical migration/drift/tenant gate.
+The bootstrap rejects non-loopback hosts before invoking any executable probe or destructive database lifecycle. A generic/provider `DATABASE_URL` is ignored for runtime selection; native reuse must be explicitly opted into with `LOCAL_VERIFY_DATABASE_ADMIN_URL`. The bootstrap checks `SHOW server_version_num` before delegation, then the existing #630 runner creates its own per-run database and #632 remains the canonical migration/drift/tenant gate.
 
 ## Docker / Podman
 
@@ -67,8 +67,9 @@ With `--financial`, it then runs the existing `financial` profile on the same is
 
 ## Safety
 
-- remote/provider DB URLs are rejected;
-- PostgreSQL major must be 17 for the native path;
+- remote/provider DB URLs are rejected as explicit native admin targets;
+- generic remote `DATABASE_URL` values remain optional and are not used for destructive bootstrap runtime selection;
+- PostgreSQL client and server major must both be 17 for the native path;
 - Docker/Podman publish must resolve to `127.0.0.1`/`::1` only;
 - generated DB passwords are redacted from summaries;
 - no production PII/fixtures/dumps;
