@@ -6,7 +6,7 @@ CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
 CREATE TABLE public."DataRetentionPolicyVersion" (
   "id" uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  "tenantId" uuid REFERENCES public."Tenant"("id") ON DELETE CASCADE,
+  "tenantId" text REFERENCES public."Tenant"("id") ON DELETE CASCADE,
   "entityType" text NOT NULL,
   "version" integer NOT NULL CHECK ("version" > 0),
   "effectiveFrom" timestamptz NOT NULL,
@@ -109,7 +109,7 @@ WHERE NOT EXISTS (
 
 CREATE TABLE public."DataLegalHold" (
   "id" uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  "tenantId" uuid NOT NULL REFERENCES public."Tenant"("id") ON DELETE RESTRICT,
+  "tenantId" text NOT NULL REFERENCES public."Tenant"("id") ON DELETE RESTRICT,
   "scopeType" text NOT NULL CHECK ("scopeType" IN ('tenant','entity','record')),
   "entityType" text,
   "recordId" text,
@@ -189,7 +189,7 @@ FOR EACH ROW EXECUTE FUNCTION public.data_lifecycle_hold_guard();
 
 CREATE TABLE public."DataLifecycleJob" (
   "id" uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  "tenantId" uuid NOT NULL REFERENCES public."Tenant"("id") ON DELETE CASCADE,
+  "tenantId" text NOT NULL REFERENCES public."Tenant"("id") ON DELETE CASCADE,
   "operation" text NOT NULL CHECK ("operation" IN ('archive','purge','tenant_export','tenant_delete','storage_reconcile')),
   "entityType" text,
   "idempotencyKey" text NOT NULL,
@@ -213,7 +213,7 @@ CREATE INDEX "DataLifecycleJob_tenant_status_idx"
 
 CREATE TABLE public."DataLifecycleEvidence" (
   "id" uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  "tenantId" uuid NOT NULL REFERENCES public."Tenant"("id") ON DELETE RESTRICT,
+  "tenantId" text NOT NULL REFERENCES public."Tenant"("id") ON DELETE RESTRICT,
   "jobId" uuid REFERENCES public."DataLifecycleJob"("id") ON DELETE RESTRICT,
   "action" text NOT NULL,
   "entityType" text NOT NULL,
@@ -239,7 +239,7 @@ FOR EACH ROW EXECUTE FUNCTION public.data_lifecycle_evidence_immutable();
 
 CREATE TABLE public."DataStorageObject" (
   "id" uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  "tenantId" uuid NOT NULL REFERENCES public."Tenant"("id") ON DELETE CASCADE,
+  "tenantId" text NOT NULL REFERENCES public."Tenant"("id") ON DELETE CASCADE,
   "bucket" text NOT NULL,
   "objectKey" text NOT NULL,
   "lifecycleEntityType" text NOT NULL CHECK ("lifecycleEntityType" IN ('MediaObject','ClinicalMediaObject')),
@@ -267,7 +267,7 @@ BEFORE DELETE ON public."DataStorageObject"
 FOR EACH ROW EXECUTE FUNCTION public.data_lifecycle_storage_no_delete();
 
 CREATE OR REPLACE FUNCTION public.data_lifecycle_assert_not_held(
-  p_tenant uuid,
+  p_tenant text,
   p_entity_type text,
   p_record_id text DEFAULT NULL
 ) RETURNS void
