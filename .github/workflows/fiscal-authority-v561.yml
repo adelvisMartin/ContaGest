@@ -7,16 +7,23 @@ on:
       - 'backend/prisma/migrations/**fiscal**'
       - 'qa/fiscal-authority-v561.test.ts'
       - 'tests/fiscal_authority_v561_contract.test.mjs'
+      - 'tests/fiscal_single_source_v629_contract.test.mjs'
+      - 'config/fiscal-authority-v629.json'
       - 'docs/ADR_FISCAL_AUTHORITY_V561.md'
+      - 'scripts/run-authoritative-contracts.mjs'
       - 'package.json'
       - '.github/workflows/fiscal-authority-v561.yml'
   push:
     branches:
       - 'feat/561-fiscal-authority'
+      - 'fix/629-fiscal-single-source-of-truth'
   workflow_dispatch:
 
 permissions:
   contents: read
+
+env:
+  CANDIDATE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
 
 concurrency:
   group: fiscal-authority-v561-${{ github.ref }}
@@ -30,13 +37,13 @@ jobs:
     steps:
       - uses: actions/checkout@v6
         with:
-          ref: ${{ github.sha }}
+          ref: ${{ env.CANDIDATE_SHA }}
       - uses: actions/setup-node@v6
         with:
           node-version: '22'
           cache: npm
       - run: npm ci
-      - run: node --test tests/fiscal_authority_v561_contract.test.mjs
+      - run: node --test tests/fiscal_authority_v561_contract.test.mjs tests/fiscal_single_source_v629_contract.test.mjs
 
   postgres-real:
     name: PostgreSQL real · concurrency and close boundaries
@@ -59,21 +66,21 @@ jobs:
           --health-retries 20
     env:
       DATABASE_URL: postgresql://postgres:postgres@localhost:5432/contagest_fiscal_v561_e2e?schema=public
+      DIRECT_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/contagest_fiscal_v561_e2e?schema=public
       NODE_ENV: test
       JWT_SECRET: fiscal-v561-ci-only-not-production
-      CANDIDATE_SHA: ${{ github.sha }}
-      GITHUB_SHA: ${{ github.sha }}
     steps:
       - uses: actions/checkout@v6
         with:
-          ref: ${{ github.sha }}
+          ref: ${{ env.CANDIDATE_SHA }}
       - uses: actions/setup-node@v6
         with:
           node-version: '22'
           cache: npm
       - run: npm ci
-      - run: npm --workspace backend exec -- prisma migrate deploy
-      - run: npm --workspace backend exec -- prisma generate
+      - name: PostgreSQL 17 canonical from-zero
+        run: npm run migration:test:from-zero
+      - run: npm --workspace backend run prisma:generate
       - run: npm run seed
       - run: npm run test:backend:fiscal:authority:real
       - run: npm run typecheck
@@ -82,10 +89,10 @@ jobs:
         if: always()
         run: |
           mkdir -p artifacts/fiscal-v561
-          printf 'candidate_sha=%s\nrun_id=%s\nrun_attempt=%s\n' "$GITHUB_SHA" "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" > artifacts/fiscal-v561/evidence.txt
+          printf 'candidate_sha=%s\nrun_id=%s\nrun_attempt=%s\n' "$CANDIDATE_SHA" "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" > artifacts/fiscal-v561/evidence.txt
       - uses: actions/upload-artifact@v7
         if: always()
         with:
-          name: fiscal-v561-${{ github.sha }}
+          name: fiscal-v561-${{ env.CANDIDATE_SHA }}
           path: artifacts/fiscal-v561
           if-no-files-found: error

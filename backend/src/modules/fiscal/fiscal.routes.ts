@@ -243,7 +243,7 @@ router.post('/documents/issue', requirePermission('fiscal.manage_documents'), va
     await recordDocumentRuleSnapshots(tx, { tenantId: ctx.tenantId, fiscalDocumentId: record.id, rules });
     const snapshots = await tx.$queryRaw<Array<{ ruleKey: string; ruleVersion: number; ruleHash: string }>>`
       SELECT "ruleKey", "ruleVersion", "ruleHash" FROM public."FiscalDocumentRuleSnapshot"
-      WHERE "tenantId"=${ctx.tenantId}::uuid AND "fiscalDocumentId"=${record.id}::uuid ORDER BY "ruleKey"
+      WHERE "tenantId"=${ctx.tenantId} AND "fiscalDocumentId"=${record.id} ORDER BY "ruleKey"
     `;
     return { data: { ...record, module: req.body.module, appliedRules: snapshots }, responseCode: 201, resourceType: 'FiscalDocument', resourceId: record.id };
   });
