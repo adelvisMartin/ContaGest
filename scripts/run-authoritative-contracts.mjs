@@ -30,6 +30,7 @@ const required59=[
   'tests/design_token_authority_issue_631.test.mjs',
   'tests/component_library_vnext_issue_619.test.mjs',
   'tests/forms_interaction_issue_620.test.mjs',
+  'tests/enterprise_data_ui_issue_621.test.mjs',
   'tests/vertical_asset_system_70_75.test.mjs',
   'tests/cloudflare_security_audit_skill_contract.test.mjs',
   'tests/fiscal_authority_v561_contract.test.mjs',
