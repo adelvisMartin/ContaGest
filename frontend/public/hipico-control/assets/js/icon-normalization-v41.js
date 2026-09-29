@@ -50,9 +50,7 @@ function scheduleNormalization() {
   });
 }
 
-const root = document.querySelector('#app') || document.body;
-new MutationObserver(scheduleNormalization).observe(root, { childList: true, subtree: true, characterData: true });
-new MutationObserver(scheduleNormalization).observe(document.body, { childList: true, subtree: false });
+new MutationObserver(scheduleNormalization).observe(document.body, { childList: true, subtree: true, characterData: true });
 
 if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', scheduleNormalization, { once: true });
 else scheduleNormalization();
