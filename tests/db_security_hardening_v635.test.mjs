@@ -69,10 +69,15 @@ test('v635 hardens only ContaGest-owned definers in the shared database',()=>{
   ]) assert.ok(sql.includes(name),`missing explicit hardening target ${name}`);
 });
 
-test('backend-only grant sidecar revokes browser DML only from PascalCase tenant tables',()=>{
+test('backend-only grant sidecar revokes browser DML only from observed ContaGest drift',()=>{
   const sql=read(grantSidecar);
-  assert.match(sql,/attname\s*=\s*'tenantId'/i);
-  assert.match(sql,/relname\s*~\s*'\^\[A-Z\]'/i);
+  const expected=[
+    'DataLegalHold','DataLifecycleEvidence','DataLifecycleJob','DataRetentionPolicyVersion','DataStorageObject',
+    'FinancialFxBankAccountMap','FinancialFxDocumentSnapshot','FinancialFxEvent','FinancialFxLedgerLineSnapshot','FinancialFxPolicy',
+    'FiscalCloseEvidence','FiscalDocumentRuleSnapshot','FiscalRuleVersion','FiscalSequence'
+  ];
+  for(const table of expected)assert.ok(sql.includes(`'${table}'`),`missing stale-grant target ${table}`);
+  assert.match(sql,/to_regclass\(format\('public\.%I',table_name\)\)/i,'sidecar must tolerate supported upgrades where a newer table is absent');
   assert.match(sql,/revoke\s+all\s+privileges\s+on\s+table/i);
   assert.match(sql,/from\s+anon/i);
   assert.match(sql,/from\s+authenticated/i);
