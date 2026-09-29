@@ -24,21 +24,16 @@ test('#626 exposes one local migration runner and versioned manifest', async () 
   assert.match(runner, /SNAPSHOT_PROVENANCE_INVALID/);
 });
 
-test('#626 keeps historical #562 immutable and projects only ephemeral TEXT compatibility', async () => {
-  const [legacy, deploy, projector] = await Promise.all([
+test('#626 canonical #562 migration matches Tenant TEXT authority without ephemeral projection', async () => {
+  const [migration, deploy] = await Promise.all([
     read('backend/prisma/migrations/20260927152000_data_lifecycle_v562/migration.sql'),
-    read('backend/scripts/prisma-deploy-safe.mjs'),
-    read('backend/scripts/migration-compat-v626.mjs')
+    read('backend/scripts/prisma-deploy-safe.mjs')
   ]);
-  assert.match(legacy, /"tenantId" uuid REFERENCES public\."Tenant"\("id"\)/);
-  assert.match(deploy, /isEphemeralDatabase/);
-  assert.match(deploy, /projectHistoricalCompatibility/);
-  assert.match(projector, /20260927152000_data_lifecycle_v562/);
-  assert.match(projector, /MIGRATION_TYPE_MISMATCH/);
-  assert.match(projector, /"tenantId"\\s\+uuid/g);
-  assert.match(projector, /p_tenant\\w\*\\s\+uuid/);
-  assert.match(projector, /BEGIN/);
-  assert.match(projector, /ROLLBACK/);
+  assert.equal((migration.match(/"tenantId"\s+uuid\b/gi) ?? []).length, 0);
+  assert.equal((migration.match(/"tenantId"\s+text\b/gi) ?? []).length, 5);
+  assert.match(migration, /\bp_tenant\s+text\b/i);
+  assert.doesNotMatch(deploy, /projectHistoricalCompatibility|inspectHistoricalCompatibility|reserving immutable historical migration/);
+  assert.match(deploy, /prisma.*migrate.*deploy|migrate', 'deploy/s);
 });
 
 test('#626 workflow runs PostgreSQL 17 from-zero and supported upgrades', async () => {
@@ -50,9 +45,10 @@ test('#626 workflow runs PostgreSQL 17 from-zero and supported upgrades', async 
   assert.doesNotMatch(workflow, /continue-on-error:\s*true/);
 });
 
-test('#626 documents immutable history and production separation', async () => {
+test('#626 documents immutable deployed history and the audited exception for unapplied #562', async () => {
   const docs = await read('docs/database/MIGRATION_CHAIN_V626.md');
   assert.match(docs, /no reescribir|no se reescribe/i);
+  assert.match(docs, /no desplegada|no aplicada/i);
   assert.match(docs, /#627/);
   assert.match(docs, /PostgreSQL 17/);
   assert.match(docs, /from-zero/i);
