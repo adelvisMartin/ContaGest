@@ -1,13 +1,13 @@
 import { createDefaultState } from '../data/defaults.js';
 import { calculateQuote } from '../core/calculator.js';
 import { normalizeLanguage } from '../i18n/locales.js';
+import { normalizeThemePreference } from '../design-system/uxContract.v1.js';
 
 const STORAGE_KEY_PREFIX = 'contagest_ve_enterprise_v7_state';
 const AUTH_SESSION_KEY = 'contagest_auth_session';
 const listeners = new Set();
 const clone = (value) => JSON.parse(JSON.stringify(value));
 const LOGIN_RENDER_KEYS = new Set(['route', 'pendingMfa', 'profile', 'activeLicense']);
-const OFFICIAL_THEMES = new Set(['light','dark','system']);
 
 function hashScopePart(value) {
   const input = String(value || 'anonymous');
@@ -34,13 +34,9 @@ function deepMerge(target, source) {
   });
   return output;
 }
-function normalizePersistedTheme(theme) {
-  const value = String(theme || 'light').trim().toLowerCase();
-  return OFFICIAL_THEMES.has(value) ? value : 'light';
-}
 function normalizeThemePatch(partial) {
   if (!partial?.settings || !Object.prototype.hasOwnProperty.call(partial.settings, 'theme')) return partial;
-  return deepMerge(partial, { settings: { theme: normalizePersistedTheme(partial.settings.theme) } });
+  return deepMerge(partial, { settings: { theme: normalizeThemePreference(partial.settings.theme) } });
 }
 function normalizeCustomerSamples(nextState) {
   const settings = nextState.settings || {};
@@ -52,7 +48,7 @@ function normalizeCustomerSamples(nextState) {
 }
 function normalize(nextState) {
   nextState.settings = nextState.settings || {};
-  nextState.settings.theme = normalizePersistedTheme(nextState.settings.theme);
+  nextState.settings.theme = normalizeThemePreference(nextState.settings.theme);
   nextState.settings.lang = normalizeLanguage(nextState.settings.lang);
   normalizeCustomerSamples(nextState);
   const rate = Number(nextState.bcv?.rate || 0);
