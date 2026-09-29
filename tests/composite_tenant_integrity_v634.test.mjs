@@ -6,6 +6,7 @@ import {
   buildGuardStatements,
   expandPolicy,
   guardNames,
+  relationSetMd5,
   validatePolicy,
   summarizePolicy,
 } from '../scripts/composite-tenant-integrity-v634.mjs';
@@ -35,6 +36,8 @@ test('policy is explicit, unique, and every relation has an owner/classification
   assert.doesNotThrow(() => validatePolicy(policy));
   assert.equal(new Set(relations.map(key)).size, relations.length);
   assert.equal(policy.dbEnforceableRelations.length, 72);
+  assert.equal(relationSetMd5(policy), '54bfdcbf73818d4892484bafc0f25e2c');
+  assert.equal(policy.baselineRelationSetMd5, relationSetMd5(policy));
   for (const relation of relations) {
     assert.ok(Object.values(CLASSIFICATION).includes(relation.classification));
     assert.ok(String(relation.owner || '').trim().length > 0);
@@ -90,6 +93,7 @@ test('policy summary leaves no critical relation unclassified', () => {
   const summary = summarizePolicy(policy);
   assert.equal(summary.total, relations.length);
   assert.equal(summary.unclassified, 0);
+  assert.equal(summary.relationSetMd5, policy.baselineRelationSetMd5);
   assert.equal(summary.byClassification.DB_ENFORCEABLE, 72);
   assert.equal(summary.byClassification.SERVICE_ENFORCED, 3);
 });
@@ -98,6 +102,7 @@ test('forward-only migration is catalog-bounded and contains no data rewrite', a
   const migration = await readFile(new URL('../backend/prisma/migrations/20260929162000_composite_tenant_referential_integrity/migration.sql', import.meta.url), 'utf8');
   assert.match(migration, /#634 Composite Tenant Referential Integrity/);
   assert.match(migration, /candidate_count <> 72/);
+  assert.match(migration, /54bfdcbf73818d4892484bafc0f25e2c/);
   assert.match(migration, /TENANT_RELATION_CATALOG_DRIFT/);
   assert.match(migration, /_tg_fk/);
   assert.match(migration, /FOREIGN KEY \(%I, %I\) REFERENCES %I \(%I, %I\) ON DELETE NO ACTION ON UPDATE NO ACTION NOT VALID/);
