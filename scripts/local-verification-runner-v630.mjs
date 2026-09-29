@@ -8,7 +8,7 @@ import { pathToFileURL } from 'node:url';
 
 const VALID_STATUSES = new Set(['PASS','FAIL','BLOCKED','NOT_EXECUTED','NOT_APPLICABLE']);
 const DB_PROFILES = new Set(['database','financial','full']);
-const UI_PROFILES = new Set(['ui','full']);
+const UI_PROFILES = new Set(['ui','ui-routes','full']);
 
 const gate=(id,command,{required=true}={})=>Object.freeze({id,command,required});
 
@@ -44,6 +44,10 @@ export const PROFILE_GATES = Object.freeze({
     gate('ui-browser-a11y','npm run test:browser:a11y'),
     gate('ui-browser-contrast','npm run test:browser:contrast'),
     gate('ui-browser-functional','npm run test:browser:functional'),
+  ]),
+  'ui-routes':Object.freeze([
+    gate('ui-routes-frontend-build','npm run build:frontend'),
+    gate('ui-routes-browser-matrix','npm run qa:browser:routes:full'),
   ]),
 });
 
