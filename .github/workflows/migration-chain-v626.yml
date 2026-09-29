@@ -52,11 +52,11 @@ jobs:
       DIRECT_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/contagest_migration_v626_e2e?schema=public
       NODE_ENV: test
       JWT_SECRET: migration-v626-ci-only-not-production
-      CANDIDATE_SHA: ${{ github.sha }}
+      CANDIDATE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
     steps:
       - uses: actions/checkout@v6
         with:
-          ref: ${{ github.sha }}
+          ref: ${{ env.CANDIDATE_SHA }}
       - uses: actions/setup-node@v6
         with:
           node-version: '22'
@@ -90,6 +90,6 @@ jobs:
       - uses: actions/upload-artifact@v7
         if: always()
         with:
-          name: migration-chain-v626-${{ github.sha }}
+          name: migration-chain-v626-${{ env.CANDIDATE_SHA }}
           path: artifacts/migration-chain-v626
           if-no-files-found: error
