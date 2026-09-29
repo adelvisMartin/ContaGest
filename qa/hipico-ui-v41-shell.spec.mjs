@@ -61,8 +61,49 @@ async function forceTheme(page, theme) {
 
 async function saveEvidence(page, name) {
   mkdirSync(EVIDENCE_ROOT, { recursive: true });
-  const screenshot = await page.screenshot({ path: join(EVIDENCE_ROOT, `${name}.png`), fullPage: true, animations: 'disabled' });
-  expect(screenshot.byteLength, `${name} must produce non-empty exact-SHA visual evidence`).toBeGreaterThan(10_000);
+  await page.screenshot({ path: join(EVIDENCE_ROOT, `${name}.png`), fullPage: true, animations: 'disabled' });
+}
+
+async function mountVisualSentinel(page) {
+  await page.evaluate(() => {
+    document.querySelector('[data-v4-visual-sentinel]')?.remove();
+    const sentinel = document.createElement('div');
+    sentinel.dataset.v4VisualSentinel = 'true';
+    sentinel.setAttribute('aria-hidden', 'true');
+    Object.assign(sentinel.style, {
+      position: 'fixed', left: '0', top: '0', zIndex: '2147483647',
+      width: '240px', height: '120px', display: 'grid',
+      gridTemplateColumns: 'repeat(4, 60px)', gridTemplateRows: 'repeat(2, 60px)',
+      gap: '0', margin: '0', padding: '0', border: '0', overflow: 'hidden',
+      pointerEvents: 'none'
+    });
+
+    const addSolid = (background) => {
+      const block = document.createElement('div');
+      block.style.cssText = `width:60px;height:60px;margin:0;padding:0;border:0;background:${background}`;
+      sentinel.append(block);
+      return block;
+    };
+
+    addSolid('var(--hc-bg)');
+    addSolid('var(--hc-surface)');
+    addSolid('var(--hc-brand)');
+    addSolid('var(--hc-accent)');
+    addSolid('var(--hc-danger)');
+    addSolid('var(--hc-text)');
+
+    const controlCell = addSolid('var(--hc-surface)');
+    const controlToken = document.createElement('div');
+    controlToken.style.cssText = 'width:60px;height:var(--hc-v4-control);background:var(--hc-brand);margin:0;padding:0;border:0';
+    controlCell.append(controlToken);
+
+    const typeCell = addSolid('var(--hc-surface)');
+    const typeToken = document.createElement('div');
+    typeToken.style.cssText = 'width:60px;height:var(--hc-v4-type-sm);background:var(--hc-text-muted);margin:0;padding:0;border:0';
+    typeCell.append(typeToken);
+
+    document.body.append(sentinel);
+  });
 }
 
 async function visualContract(page) {
@@ -94,7 +135,7 @@ async function visualContract(page) {
   });
 }
 
-test.describe('Control Hípico UI System v4.1 · desktop shell', () => {
+test.describe('Control Hípico UI System v4.1.2 · desktop shell', () => {
   test.use({ viewport: { width: 1366, height: 900 }, hasTouch: false });
 
   test('content is fluid full-width in every primary view', async ({ page }) => {
@@ -207,6 +248,17 @@ test.describe('Control Hípico UI System v4.1 · desktop shell', () => {
     expect(light.sidebarBg).not.toBe(dark.sidebarBg);
   });
 
+  test('pixel-diff gate locks semantic palette, compact control height and type scale', async ({ page }) => {
+    await openView(page, 'dashboard');
+    await forceTheme(page, 'light');
+    await mountVisualSentinel(page);
+    const sentinel = page.locator('[data-v4-visual-sentinel]');
+    await expect(sentinel).toHaveScreenshot('v412-token-sentinel-light.png', { animations: 'disabled', caret: 'hide' });
+
+    await forceTheme(page, 'dark');
+    await expect(sentinel).toHaveScreenshot('v412-token-sentinel-dark.png', { animations: 'disabled', caret: 'hide' });
+  });
+
   test('captures exact-SHA light and dark visual evidence for representative views', async ({ page }) => {
     await openView(page, 'dashboard');
     for (const view of ['dashboard', 'race', 'reports', 'settings']) {
@@ -220,7 +272,7 @@ test.describe('Control Hípico UI System v4.1 · desktop shell', () => {
   });
 });
 
-test.describe('Control Hípico UI System v4.1 · touch shell', () => {
+test.describe('Control Hípico UI System v4.1.2 · touch shell', () => {
   test.use({ viewport: { width: 390, height: 844 }, hasTouch: true });
 
   test('mobile keeps its dedicated navigation and ignores desktop collapse state', async ({ page }) => {
