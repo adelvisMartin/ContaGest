@@ -12,8 +12,16 @@ const QA_SESSION={
 async function seed(page){
   await page.emulateMedia({colorScheme:'dark',reducedMotion:'reduce'});
   await page.addInitScript((session)=>{
+    const hashScopePart=(value)=>{
+      const input=String(value||'anonymous');
+      let hash=2166136261;
+      for(let index=0;index<input.length;index+=1){hash^=input.charCodeAt(index);hash=Math.imul(hash,16777619);}
+      return (hash>>>0).toString(36);
+    };
     localStorage.setItem('contagest_auth_session',JSON.stringify(session));
-    const key='contagest_ve_enterprise_v7_state';
+    const tenantId=session?.tenantId||session?.tenant?.id||'anonymous';
+    const userId=session?.user?.id||session?.userId||'anonymous';
+    const key=`contagest_ve_enterprise_v7_state:${hashScopePart(tenantId)}-${hashScopePart(userId)}`;
     let current={};
     try{current=JSON.parse(localStorage.getItem(key)||'{}')||{};}catch{}
     localStorage.setItem(key,JSON.stringify({...current,settings:{...(current.settings||{}),theme:'system'}}));
