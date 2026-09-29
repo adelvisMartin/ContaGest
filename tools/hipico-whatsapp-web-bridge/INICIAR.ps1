@@ -253,7 +253,7 @@ HIPICO_HISTORY_SYNC_ON_START=false
 Write-Host "LAB UTF-8 configurado: $LabGroupName" -ForegroundColor Green
 Write-Host "Binding IDs: $([bool]$bindings)" -ForegroundColor Green
 if ($EnableSourceAutoReply) {
-  Write-Host 'AUTO-REPLY SOURCE habilitado: solo respuestas autorizadas por backend, sin autoridad financiera/estado.' -ForegroundColor Yellow
+  Write-Host 'AUTO-REPLY SOURCE solicitado, pero el preflight lo bloqueará mientras SOURCE_AUTO_REPLY_POLICY_NO_GO siga vigente.' -ForegroundColor Yellow
 } else {
   Write-Host 'AUTO-REPLY SOURCE deshabilitado. Fuente en solo lectura.' -ForegroundColor Green
 }
@@ -268,7 +268,7 @@ if (Test-Path -LiteralPath $profileResetFlag) { Quarantine-BridgeProfile 'repara
 Write-Host '[1/2] Validando backend, token y persistencia...' -ForegroundColor Cyan
 & $npmCmd run production:check
 if ($LASTEXITCODE -ne 0) {
-  Fail 'El backend no cumple el gate de producción. Confirma despliegue, token y /bridge/health antes de reintentar.'
+  Fail 'El backend/runtime no cumple el gate de producción. Confirma despliegue, token, bindings y políticas antes de reintentar.'
 }
 
 Write-Host '[2/2] Iniciando listener oficial...' -ForegroundColor Cyan
@@ -278,9 +278,13 @@ Write-Host 'Ledger, saldos, jugadas y resultados reales: SIN ESCRITURA AUTOMÁTI
 Write-Host 'Ctrl+C detiene de forma segura.' -ForegroundColor Cyan
 
 $repairedThisRun = $false
+$browserRestartAttempts = 0
+$browserRestartLimit = 5
+$healthPath = Join-Path $dataDir 'health.json'
 while ($true) {
   & $nodeExe --env-file=.env src/index.mjs
   $code = $LASTEXITCODE
+
   if ($code -eq 42 -and -not $repairedThisRun) {
     $repairedThisRun = $true
     Quarantine-BridgeProfile 'WhatsApp Web reportó base de datos dañada'
@@ -289,6 +293,30 @@ while ($true) {
     continue
   }
   if ($code -eq 42) { Fail 'WhatsApp Web volvió a reportar base de datos dañada con un perfil limpio.' }
+
+  # A normal operator shutdown writes stopping=true to health.json. If Node exits 0
+  # without that marker, the browser/context ended unexpectedly; supervise it.
+  $gracefulStop = $false
+  if ($code -eq 0 -and (Test-Path -LiteralPath $healthPath)) {
+    try {
+      $health = Get-Content -LiteralPath $healthPath -Raw -Encoding UTF8 | ConvertFrom-Json
+      $gracefulStop = [bool]$health.stopping
+    } catch { $gracefulStop = $false }
+  }
+  if ($code -eq 0 -and $gracefulStop) { break }
+  if ($code -eq 0) { $code = 43 }
+
+  if ($code -eq 43) {
+    $browserRestartAttempts += 1
+    if ($browserRestartAttempts -gt $browserRestartLimit) {
+      Fail "WhatsApp Web se cerró inesperadamente más de $browserRestartLimit veces. Revisa $dataDir\bridge.log y health.json."
+    }
+    $delay = [Math]::Min(30, [Math]::Pow(2, $browserRestartAttempts))
+    Write-Host "WhatsApp Web se cerró inesperadamente. Reinicio supervisado $browserRestartAttempts/$browserRestartLimit en $delay s; colas y journal se conservan." -ForegroundColor Yellow
+    Start-Sleep -Seconds $delay
+    continue
+  }
+
   if ($code -ne 0) { Fail "El Bridge terminó con código $code. Revisa $dataDir\bridge.log y health.json." }
   break
 }
