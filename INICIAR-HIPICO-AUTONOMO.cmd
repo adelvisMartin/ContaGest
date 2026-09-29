@@ -4,7 +4,7 @@ cd /d "%~dp0"
 
 echo.
 echo ==============================================================
-echo  CONTROL HIPICO - WHATSAPP AUTONOMO SEGURO v1.5.0
+echo  CONTROL HIPICO - WHATSAPP AUTONOMO SEGURO v1.6.0
 echo ==============================================================
 echo Modo autonomo habilitado SOLO en Control hipico lab.
 echo El grupo SOURCE permanece SOLO LECTURA por el gate de politica.
