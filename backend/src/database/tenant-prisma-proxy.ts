@@ -34,7 +34,7 @@ export function createTenantScopedPrismaProxy<TClient extends object>(base:TClie
       const member=Reflect.get(target,property,target);
 
       if(property==='$transaction'&&typeof member==='function'){
-        return (input:unknown,options?:unknown)=>{
+        return async(input:unknown,options?:unknown)=>{
           const tenantId=currentRuntimeTenantId();
           if(!tenantId)return Reflect.apply(member,target,[input,options]);
           if(typeof input!=='function')throw new Error('TENANT_TRANSACTION_CALLBACK_REQUIRED');
