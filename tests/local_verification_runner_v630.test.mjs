@@ -49,7 +49,7 @@ test('database and financial profiles include PostgreSQL migration authority rat
 test('full profile de-duplicates commands from authoritative profiles', () => {
   const commands = buildProfilePlan('full').map((gate) => gate.command);
   assert.equal(new Set(commands).size, commands.length);
-  assert.ok(commands.includes('npm run qa:ui'));
+  assert.ok(commands.includes('npm run qa:ui:58'));
   assert.ok(commands.includes('npm run migration:test:from-zero'));
 });
 
