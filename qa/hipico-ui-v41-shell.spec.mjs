@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { buildHipicoQaFixture, HIPICO_VIEWS } from './support/hipico-visual-catalog-v105.mjs';
 
 const QA_SHA = String(process.env.HIPICO_QA_SHA || process.env.GITHUB_SHA || 'local').trim();
-const EVIDENCE_ROOT = join(process.cwd(), 'artifacts', 'qa', 'hipico-v41', QA_SHA);
+const EVIDENCE_ROOT = join(process.cwd(), 'artifacts', 'qa', 'hipico-browser', QA_SHA, 'ui-v41');
 
 async function resetQaStorage(page) {
   await page.goto('/hipico-control/recovery.html');
@@ -51,6 +51,14 @@ async function selectTheme(page, theme) {
   await expect(page.locator('html')).toHaveAttribute('data-theme', theme);
 }
 
+async function forceTheme(page, theme) {
+  await page.evaluate((value) => {
+    localStorage.setItem('hipico-control-theme', value);
+    document.documentElement.dataset.theme = value;
+  }, theme);
+  await expect(page.locator('html')).toHaveAttribute('data-theme', theme);
+}
+
 async function saveEvidence(page, name) {
   mkdirSync(EVIDENCE_ROOT, { recursive: true });
   await page.screenshot({ path: join(EVIDENCE_ROOT, `${name}.png`), fullPage: true, animations: 'disabled' });
@@ -68,11 +76,7 @@ test.describe('Control Hípico UI System v4.1 · desktop shell', () => {
         const main = document.querySelector('.main')?.getBoundingClientRect();
         const content = document.querySelector('.content')?.getBoundingClientRect();
         const style = document.querySelector('.content') ? getComputedStyle(document.querySelector('.content')) : null;
-        return {
-          mainWidth: main?.width || 0,
-          contentWidth: content?.width || 0,
-          maxWidth: style?.maxWidth || ''
-        };
+        return { mainWidth: main?.width || 0, contentWidth: content?.width || 0, maxWidth: style?.maxWidth || '' };
       });
       expect(metrics.maxWidth, `${view.id} must not reintroduce a centered max-width`).toBe('none');
       expect(Math.abs(metrics.mainWidth - metrics.contentWidth), `${view.id} must use all available main width`).toBeLessThanOrEqual(1);
@@ -113,13 +117,11 @@ test.describe('Control Hípico UI System v4.1 · desktop shell', () => {
     await openView(page);
     await expect(page.getByRole('button', { name: 'Cambiar tema' }).last()).toBeVisible();
     await expect(page.getByRole('button', { name: 'Abrir menú' })).toBeVisible();
-
     await page.getByRole('button', { name: 'Abrir menú' }).click();
     await expect(page.getByRole('menu', { name: 'Opciones rápidas' })).toBeVisible();
     await page.getByRole('menuitemradio', { name: 'Oscuro' }).click();
     await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
     expect(await page.evaluate(() => localStorage.getItem('hipico-control-theme'))).toBe('dark');
-
     await page.getByRole('button', { name: 'Abrir menú' }).click();
     await expect(page.getByRole('menuitem', { name: 'Configuración' })).toBeVisible();
     await expect(page.getByRole('menuitem', { name: 'Ayuda' })).toBeVisible();
@@ -194,12 +196,9 @@ test.describe('Control Hípico UI System v4.1 · touch shell', () => {
 
   test('captures mobile light and dark evidence', async ({ page }) => {
     await openView(page, 'dashboard');
-    const legacyTheme = page.getByRole('button', { name: 'Cambiar tema' }).first();
-    if (await legacyTheme.isVisible()) {
-      await legacyTheme.click();
-      await saveEvidence(page, 'dashboard-mobile-390-light');
-      await legacyTheme.click();
-      await saveEvidence(page, 'dashboard-mobile-390-dark');
-    }
+    await forceTheme(page, 'light');
+    await saveEvidence(page, 'dashboard-mobile-390-light');
+    await forceTheme(page, 'dark');
+    await saveEvidence(page, 'dashboard-mobile-390-dark');
   });
 });
