@@ -1,0 +1,30 @@
+{
+  "version": 1,
+  "ticket": 626,
+  "snapshots": [
+    {
+      "id": "pre-ledger-hardening",
+      "lastMigration": "20260827054000_financial_idempotency",
+      "source": "canonical-rebuild",
+      "createdFromRepoSha": "ccebefa9c05e0ad81609c09300a6c32c1bb8a1eb",
+      "fixture": "tests/fixtures/migration-chain/pre-ledger-hardening.sql",
+      "provenanceSha256": "cdce25f3339a9c91f280bac6025ef4b64fff04c1aeaa389554d2e89ad3b060a5"
+    },
+    {
+      "id": "pre-fx-fiscal-data-lifecycle",
+      "lastMigration": "20260924142000_hipico_autonomous_source_reply_v15",
+      "source": "canonical-rebuild",
+      "createdFromRepoSha": "ccebefa9c05e0ad81609c09300a6c32c1bb8a1eb",
+      "fixture": "tests/fixtures/migration-chain/pre-fx-fiscal-data-lifecycle.sql",
+      "provenanceSha256": "1a55fad97ceea1135e64113f0b3b30745882f143eb7d4c7e9306226778021008"
+    },
+    {
+      "id": "production-audit-nearest-2026-09-29",
+      "lastMigration": "20260910063500_hipico_role_scope_performance",
+      "source": "production-audit-nearest-canonical-no-prod-data",
+      "createdFromRepoSha": "ccebefa9c05e0ad81609c09300a6c32c1bb8a1eb",
+      "fixture": "tests/fixtures/migration-chain/production-audit-nearest.sql",
+      "provenanceSha256": "c761be3d621b527462a1333454c99f6f2862e9f0838094141c8f511769249d45"
+    }
+  ]
+}
