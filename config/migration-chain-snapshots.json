@@ -8,7 +8,8 @@
       "source": "canonical-rebuild",
       "createdFromRepoSha": "ccebefa9c05e0ad81609c09300a6c32c1bb8a1eb",
       "fixture": "tests/fixtures/migration-chain/pre-ledger-hardening.sql",
-      "provenanceSha256": "cdce25f3339a9c91f280bac6025ef4b64fff04c1aeaa389554d2e89ad3b060a5"
+      "fixtureSha256": "db1139fa098af27521be83b3c86bf901e5264fbf496d5a136f0999d257dddd1b",
+      "provenanceSha256": "dbcf866bd32a81a972ab3291bc3e13d24befa5a82f0f6452cd6b1815cb925387"
     },
     {
       "id": "pre-fx-fiscal-data-lifecycle",
@@ -16,7 +17,8 @@
       "source": "canonical-rebuild",
       "createdFromRepoSha": "ccebefa9c05e0ad81609c09300a6c32c1bb8a1eb",
       "fixture": "tests/fixtures/migration-chain/pre-fx-fiscal-data-lifecycle.sql",
-      "provenanceSha256": "1a55fad97ceea1135e64113f0b3b30745882f143eb7d4c7e9306226778021008"
+      "fixtureSha256": "84ba306d7b8abd35d6288feba7f545bbccd4b2713c1320a43d1bc950e91773b8",
+      "provenanceSha256": "988369f7f9e19bc06da0a0f73c1fd208595f068944cbe934232aa1039c424088"
     },
     {
       "id": "production-audit-nearest-2026-09-29",
@@ -24,7 +26,8 @@
       "source": "production-audit-nearest-canonical-no-prod-data",
       "createdFromRepoSha": "ccebefa9c05e0ad81609c09300a6c32c1bb8a1eb",
       "fixture": "tests/fixtures/migration-chain/production-audit-nearest.sql",
-      "provenanceSha256": "c761be3d621b527462a1333454c99f6f2862e9f0838094141c8f511769249d45"
+      "fixtureSha256": "99fd0771584f2e20d039dbb1a524e4f88b1f76d3e666a81b4a6b132ae6a19158",
+      "provenanceSha256": "76fc4cf17ba29373989cad8c2228b93e690dc81ba28445ba794b4b4bba928b7a"
     }
   ]
 }
