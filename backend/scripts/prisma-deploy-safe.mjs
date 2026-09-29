@@ -79,19 +79,20 @@ async function pendingLegacyBaseline(databaseUrl) {
   }
 }
 
-async function assertCompatibilityMigrationIsTerminal(migrationsRoot) {
+async function compatibilityMigrationState(migrationsRoot) {
   const entries = (await readdir(migrationsRoot, { withFileTypes: true }))
     .filter((entry) => entry.isDirectory())
     .map((entry) => entry.name)
     .sort();
   const index = entries.indexOf(DATA_LIFECYCLE_MIGRATION);
-  if (index < 0) throw new Error(`MISSING_PREREQUISITE:${DATA_LIFECYCLE_MIGRATION}`);
+  if (index < 0) return { available: false, entries };
   if (index !== entries.length - 1) {
     throw new Error(
       `MIGRATION_ORDER_INVALID:${DATA_LIFECYCLE_MIGRATION}:ephemeral-projection-must-be-terminal:` +
       `next=${entries[index + 1]}`
     );
   }
+  return { available: true, entries };
 }
 
 export async function deployMigrations({ schemaPath = 'prisma/schema.prisma' } = {}) {
@@ -99,7 +100,7 @@ export async function deployMigrations({ schemaPath = 'prisma/schema.prisma' } =
   if (!databaseUrl) throw new Error('DATABASE_URL_REQUIRED_FOR_PRISMA_DEPLOY');
 
   let compatibilityStatus = null;
-  let migrationsRoot = path.resolve(process.cwd(), path.dirname(schemaPath), 'migrations');
+  const migrationsRoot = path.resolve(process.cwd(), path.dirname(schemaPath), 'migrations');
 
   if (isEphemeralDatabase(databaseUrl)) {
     for (const migration of await pendingLegacyBaseline(databaseUrl)) {
@@ -107,11 +108,13 @@ export async function deployMigrations({ schemaPath = 'prisma/schema.prisma' } =
       runPrisma(['migrate', 'resolve', '--applied', migration, '--schema', schemaPath]);
     }
 
-    await assertCompatibilityMigrationIsTerminal(migrationsRoot);
-    compatibilityStatus = await inspectHistoricalCompatibility({ databaseUrl });
-    if (compatibilityStatus.requiresProjection && !compatibilityStatus.applied) {
-      console.log(`[prisma-compat] reserving immutable historical migration: ${DATA_LIFECYCLE_MIGRATION}`);
-      runPrisma(['migrate', 'resolve', '--applied', DATA_LIFECYCLE_MIGRATION, '--schema', schemaPath]);
+    const compatibility = await compatibilityMigrationState(migrationsRoot);
+    if (compatibility.available) {
+      compatibilityStatus = await inspectHistoricalCompatibility({ databaseUrl });
+      if (compatibilityStatus.requiresProjection && !compatibilityStatus.applied) {
+        console.log(`[prisma-compat] reserving immutable historical migration: ${DATA_LIFECYCLE_MIGRATION}`);
+        runPrisma(['migrate', 'resolve', '--applied', DATA_LIFECYCLE_MIGRATION, '--schema', schemaPath]);
+      }
     }
   }
 
