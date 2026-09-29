@@ -118,12 +118,13 @@ export function snapshotProvenanceHash(snapshot) {
     source: snapshot.source,
     createdFromRepoSha: snapshot.createdFromRepoSha,
     fixture: snapshot.fixture ?? null,
+    fixtureSha256: snapshot.fixtureSha256 ?? null,
   };
   return sha256(JSON.stringify(canonical));
 }
 
 export function validateSnapshot(snapshot, catalog) {
-  if (!snapshot?.id || !snapshot.lastMigration || !snapshot.provenanceSha256 || !snapshot.source || !snapshot.createdFromRepoSha) {
+  if (!snapshot?.id || !snapshot.lastMigration || !snapshot.provenanceSha256 || !snapshot.source || !snapshot.createdFromRepoSha || !snapshot.fixture || !snapshot.fixtureSha256) {
     throw new MigrationChainError('SNAPSHOT_PROVENANCE_INVALID', 'snapshot metadata is incomplete');
   }
   if (!catalog.migrations.some((entry) => entry.name === snapshot.lastMigration)) {
