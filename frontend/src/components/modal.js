@@ -1,9 +1,53 @@
+import React from 'react';
+import { createRoot } from 'react-dom/client';
+import { ThemeProvider } from '@mui/material';
+import { CgConfirmDialog } from './vnext/index.js';
+import { normalizeUiError } from './vnext/formContracts.js';
+import { createContaGestMuiTheme } from './muiThemeAdapter.js';
+
 const text = (value) => String(value ?? '').replace(/[&<>"']/g, (char) => ({
   '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#039;'
 }[char]));
 
+let activeReactRoot=null;
+let activeCancel=null;
+let restoreFocusTarget=null;
+
+function documentThemeMode(){
+  const requested=document.documentElement?.dataset?.theme||'light';
+  if(requested==='light'||requested==='dark')return requested;
+  return globalThis.matchMedia?.('(prefers-color-scheme: dark)')?.matches?'dark':'light';
+}
+
+function unmountReactModal({restoreFocus=true}={}){
+  const root=document.getElementById('modal-root');
+  activeReactRoot?.unmount();
+  activeReactRoot=null;
+  activeCancel=null;
+  if(root)root.innerHTML='';
+  document.body.classList.remove('modal-open');
+  const target=restoreFocusTarget;
+  restoreFocusTarget=null;
+  if(restoreFocus&&target?.focus)queueMicrotask(()=>target.focus());
+}
+
+function ConfirmHost({title,body,message,confirmText='Confirmar',cancelText='Cancelar',tone='danger',onConfirm,settle}){
+  const [saving,setSaving]=React.useState(false);
+  const [errorText,setErrorText]=React.useState('');
+  const confirm=async()=>{
+    if(saving)return;
+    setSaving(true);
+    setErrorText('');
+    try{await onConfirm?.();settle(true);}
+    catch(error){setSaving(false);setErrorText(normalizeUiError(error).message);}
+  };
+  return React.createElement(CgConfirmDialog,{open:true,title,description:body??message??'',confirmLabel:confirmText,cancelLabel:cancelText,danger:tone==='danger',saving,errorText,onConfirm:confirm,onClose:()=>!saving&&settle(false)});
+}
+
 export const Modal = {
   open({ title = '', body = '', actions = '', ariaLabel = '' }) {
+    activeCancel?.();
+    unmountReactModal({restoreFocus:false});
     const root = document.getElementById('modal-root');
     if (!root) return null;
     document.body.classList.add('modal-open');
@@ -28,35 +72,32 @@ export const Modal = {
   },
 
   close() {
+    if(activeCancel){activeCancel();return;}
     const root = document.getElementById('modal-root');
     if (root) root.innerHTML = '';
     document.body.classList.remove('modal-open');
   },
 
   confirm({ title, body, message, confirmText = 'Confirmar', cancelText = 'Cancelar', tone = 'danger', onConfirm }) {
-    return new Promise((resolve) => {
-      const root = document.getElementById('modal-root');
-      let settled = false;
-      const finish = (value) => {
-        if (settled) return;
-        settled = true;
-        this.close();
+    const root=document.getElementById('modal-root');
+    if(!root)return Promise.resolve(false);
+    activeCancel?.();
+    unmountReactModal({restoreFocus:false});
+    restoreFocusTarget=document.activeElement;
+    document.body.classList.add('modal-open');
+    return new Promise((resolve)=>{
+      let settled=false;
+      const settle=(value)=>{
+        if(settled)return;
+        settled=true;
+        activeCancel=null;
+        unmountReactModal({restoreFocus:true});
         resolve(value);
       };
-      const variant = tone === 'danger' ? 'danger' : 'primary';
-      this.open({
-        title,
-        body:`<p class="cg-ui-muted cg-modal-message">${text(body ?? message ?? '')}</p>`,
-        actions:`<button type="button" id="modalCancelBtn" class="cg-ui-button cg-ui-button-secondary">${text(cancelText)}</button><button type="button" id="modalConfirmBtn" class="cg-ui-button cg-ui-button-${variant}">${text(confirmText)}</button>`
-      });
-      const backdrop = root?.querySelector('[data-modal-backdrop]');
-      root?.querySelector('#modalCancelBtn')?.addEventListener('click', () => finish(false), { once:true });
-      root?.querySelector('#modalConfirmBtn')?.addEventListener('click', async () => {
-        try { await onConfirm?.(); finish(true); }
-        catch { finish(false); }
-      }, { once:true });
-      root?.querySelector('[data-modal-close]')?.addEventListener('click', () => finish(false), { once:true });
-      backdrop?.addEventListener('click', (event) => { if (event.target === backdrop) finish(false); }, { once:true });
+      activeCancel=()=>settle(false);
+      activeReactRoot=createRoot(root);
+      const theme=createContaGestMuiTheme(documentThemeMode());
+      activeReactRoot.render(React.createElement(ThemeProvider,{theme},React.createElement(ConfirmHost,{title,body,message,confirmText,cancelText,tone,onConfirm,settle})));
     });
   }
 };
