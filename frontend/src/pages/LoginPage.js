@@ -7,6 +7,7 @@ import { verticalAsset } from '../assets/verticalAssets.js';
 
 const safe=(value)=>escapeHtml(String(value??''));
 const legalBody=(body)=>String(body||'').split(/\n{2,}/).filter(Boolean).map((paragraph)=>`<p>${safe(paragraph).replace(/\n/g,'<br>')}</p>`).join('');
+const hipicoEntryUrl=()=>`${String(import.meta?.env?.BASE_URL||'/').replace(/\/?$/,'/')}hipico-control/`;
 
 function input({name,label,type='text',value='',autocomplete='',required=true,placeholder=''}){
   const id=`login-${name}`;
@@ -34,9 +35,20 @@ function publicLegalDialog(catalog){
   return `<div class="coordinate-challenge-layer" role="dialog" aria-modal="true" aria-labelledby="publicLegalTitle" data-public-legal-dialog><section class="coordinate-challenge-card"><header><span><i class="fa-solid fa-scale-balanced" aria-hidden="true"></i></span><div><p class="cgx-eyebrow">Información permanente</p><h2 id="publicLegalTitle">Legal y privacidad</h2><p>Consulta las políticas vigentes antes de iniciar sesión. Esta lectura no registra aceptación.</p></div></header><div class="cgx-module-standard">${documents.map((doc)=>`<details class="cgx-section"><summary><strong>${safe(doc.title)}</strong> · versión ${safe(doc.version)} · vigente desde ${safe(doc.effectiveAt)}</summary><div class="cgx-section-body">${legalBody(doc.body)}</div></details>`).join('')}<div class="coordinate-actions">${Button({id:'btnClosePublicLegal',label:'Cerrar',iconName:'fa-xmark',variant:'secondary',type:'button'})}</div></div></section></div>`;
 }
 
+function staticPagesApiUnavailable(){
+  if(typeof location==='undefined')return false;
+  const host=String(location.hostname||'').toLowerCase();
+  if(!host.endsWith('.github.io'))return false;
+  const base=String(BackendApi.baseUrl||'').trim().replace(/\/$/,'');
+  return base==='/api/v1'||base===`${location.origin}/api/v1`;
+}
+
 function friendlyCaptchaError(error){
   const raw=String(error?.message||'').trim();
+  if(/STATIC_PAGES_API_UNCONFIGURED/i.test(raw))return'Este despliegue estático no tiene conectada la API de autenticación. Usa el acceso operativo de Control Hípico o abre ContaGest desde su despliegue con backend.';
+  if(/<!doctype html|<html\b|Site not found|There isn't a GitHub Pages site here|HTTP\s*404/i.test(raw))return'El servicio de verificación no está disponible en este despliegue. No se recibió una respuesta válida de la API.';
   if(/FUNCTION_INVOCATION_FAILED|BACKEND_NOT_STAGED|server error/i.test(raw))return'El servicio de verificación no está disponible en este despliegue. Actualiza el reto o intenta nuevamente en unos minutos.';
+  if(raw.length>280)return'No se pudo cargar la verificación porque el servicio respondió de forma inesperada. Intenta nuevamente.';
   return raw||'No se pudo cargar la verificación. Usa el botón de actualizar.';
 }
 
@@ -54,7 +66,7 @@ export const LoginPage={
           <div class="login-form-status" aria-live="polite" data-login-status></div>
           ${Button({id:'btnLoginSubmit',label:'Entrar a ContaGest',iconName:'fa-arrow-right-to-bracket',variant:'primary',type:'submit',className:'w-full login-submit'})}
         </form>
-        <div class="login-privacy"><i class="fa-solid fa-lock" aria-hidden="true"></i><span>Sesión cifrada, permisos por rol y aislamiento por empresa.</span>${Button({id:'btnOpenLegalPolicies',label:'Legal y privacidad',iconName:'fa-scale-balanced',variant:'secondary',type:'button'})}</div>
+        <div class="login-privacy"><i class="fa-solid fa-lock" aria-hidden="true"></i><span>Sesión cifrada, permisos por rol y aislamiento por empresa.</span>${Button({id:'btnOpenLegalPolicies',label:'Legal y privacidad',iconName:'fa-scale-balanced',variant:'secondary',type:'button'})}<a class="button button--secondary" data-hipico-entry href="${safe(hipicoEntryUrl())}"><i class="fa-solid fa-horse-head" aria-hidden="true"></i><span>Abrir Control Hípico</span></a></div>
       </section>
       <section class="login-panel" aria-label="Seguridad y alcance de ContaGest"><div class="login-panel-inner"><img class="login-security-asset" src="${safe(verticalAsset('login'))}" alt="" aria-hidden="true"><span class="login-panel-badge"><i class="fa-solid fa-building" aria-hidden="true"></i><span>ContaGest Enterprise</span></span><h2>Un acceso claro para toda la operación.</h2><p class="login-panel-lead">Cada usuario entra únicamente a los módulos, empresas y funciones que le corresponden.</p><div class="login-assurance-grid">${assurance('fa-user-shield','Permisos por rol','La navegación refleja el alcance real del usuario.')}${assurance('fa-building-lock','Aislamiento por empresa','Cada RIF mantiene sus datos y contexto separados.')}${assurance('fa-layer-group','Verticales adaptables','Comercio, contabilidad, salud, veterinaria y más.')}${assurance('fa-display','Responsive real','La misma operación se adapta a escritorio, tablet y móvil.')}</div><div class="login-panel-foot"><i class="fa-solid fa-circle-check" aria-hidden="true"></i><span>Las cuentas de prueba y clientes se habilitan mediante invitación o licencia; no se publican credenciales administrativas.</span></div></div></section>
       ${coordinateChallenge(state.pendingMfa)}
@@ -83,6 +95,7 @@ export const LoginPage={
       if(question)question.textContent='cargando…';
       if(expiry)expiry.textContent='Preparando verificación…';
       try{
+        if(staticPagesApiUnavailable())throw new Error('STATIC_PAGES_API_UNCONFIGURED');
         const captcha=await AuthService.captcha();
         if(!captcha?.token||!captcha?.question||!captcha?.expiresAt)throw new Error('La verificación devolvió una respuesta incompleta.');
         if(question){question.textContent=`${captcha.question} = ?`;question.setAttribute('aria-label',captcha.prompt||captcha.question);}
