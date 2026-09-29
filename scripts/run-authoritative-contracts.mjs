@@ -33,6 +33,7 @@ const required59=[
   'tests/fiscal_single_source_v629_contract.test.mjs',
   'tests/local_verification_runner_v630.test.mjs',
   'tests/relational_normalization_audit_v633.test.mjs',
+  'tests/composite_tenant_integrity_v634.test.mjs',
 ];
 const tests=[...new Set([...regressionPaths,...required59])];
 
