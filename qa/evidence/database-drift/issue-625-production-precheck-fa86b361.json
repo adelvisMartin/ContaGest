@@ -1,0 +1,50 @@
+{
+  "evidenceVersion": 1,
+  "ticket": 625,
+  "observedAt": "2026-09-29T02:43:56Z",
+  "observationType": "TARGETED_PRODUCTION_READ_ONLY_PRECHECK",
+  "completeExpectedVsProductionManifest": false,
+  "repoSha": "fa86b361288247ba24e3f633f5895165cd707f1e",
+  "projectRef": "soxzatxiwlfsvtblrqal",
+  "productionMutationPerformed": false,
+  "postgresVersion": "17.6",
+  "authorityHistory": {
+    "prismaMigrationsRelationPresent": false,
+    "supabasePlatformMigrationRelationPresent": true,
+    "classification": "AUTHORITY_HISTORY_MISSING",
+    "severity": "P0",
+    "followUpTickets": [626, 627]
+  },
+  "ledgerLifecycle": {
+    "tablePresent": true,
+    "missingColumns": ["postedAt", "postedBy", "reversalOfId"],
+    "lifecycleFunctionPresent": false,
+    "lineGuardFunctionPresent": false,
+    "targetedLifecycleTriggersPresent": false,
+    "classification": "MISSING_IN_PROD",
+    "severity": "P0",
+    "followUpTickets": [628, 627]
+  },
+  "fiscalAuthority": {
+    "missingTables": [
+      "FiscalRuleVersion",
+      "FiscalSequence",
+      "FiscalDocumentRuleSnapshot",
+      "FiscalCloseEvidence"
+    ],
+    "classification": "MISSING_IN_PROD",
+    "severity": "P0",
+    "followUpTickets": [629, 627]
+  },
+  "safety": {
+    "applicationRowsRead": false,
+    "credentialsPersisted": false,
+    "jwtPersisted": false,
+    "ddlExecuted": false,
+    "dmlExecuted": false
+  },
+  "limitations": [
+    "This file is a targeted production precheck, not the complete expected-vs-production manifest.",
+    "The complete manifest requires a PostgreSQL 17 isolated expected database built from the exact candidate migration chain."
+  ]
+}
