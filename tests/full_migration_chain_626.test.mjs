@@ -3,9 +3,11 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import {
   ALLOWED_DUPLICATE_TIMESTAMPS,
   ERROR_CODES,
+  LEGACY_BASELINE_MIGRATIONS,
   assertEphemeralDatabase,
   migrationCatalogManifest,
   physicalSchemaHash,
@@ -13,6 +15,8 @@ import {
   validateMigrationCatalog,
   validateSnapshot,
 } from '../scripts/migration-chain/core.mjs';
+
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
 test('#626 exposes the complete error catalog', () => {
   for (const code of [
@@ -56,4 +60,30 @@ test('#626 physical manifest is deterministic and ignores equivalent owner alias
     { kind:'table', schema:'public', name:'B', signature:{owner:'supabase_admin'} },
   ]};
   assert.equal(physicalSchemaHash(a), physicalSchemaHash(b));
+});
+
+test('#626 data lifecycle tenant references match Tenant TEXT authority', () => {
+  const sql = fs.readFileSync(path.join(ROOT, 'backend/prisma/migrations/20260927152000_data_lifecycle_v562/migration.sql'), 'utf8');
+  assert.equal((sql.match(/"tenantId"\s+uuid/gi) ?? []).length, 0);
+  assert.equal((sql.match(/"tenantId"\s+text/gi) ?? []).length, 5);
+  assert.match(sql, /p_tenant\s+text/i);
+});
+
+test('#626 fiscal duplicate timestamp is a documented no-op compatibility directory', () => {
+  const noOp = fs.readFileSync(path.join(ROOT, 'backend/prisma/migrations/20260927143000_fiscal_engine_v561/migration.sql'), 'utf8');
+  const executable = noOp.replace(/--.*$/gm, '').replace(/\/\*[\s\S]*?\*\//g, '').trim();
+  assert.equal(executable, '');
+  assert.deepEqual(ALLOWED_DUPLICATE_TIMESTAMPS['20260927143000'], [
+    '20260927143000_fiscal_authority_v561',
+    '20260927143000_fiscal_engine_v561',
+  ]);
+});
+
+test('#626 historical bootstrap deltas are explicit and closed', () => {
+  assert.deepEqual(LEGACY_BASELINE_MIGRATIONS, [
+    '0001_init',
+    '0003_accounting_hr_fiscal_hardening',
+    '0004_analytics_qr_barcode',
+    '0005_food_orders_notifications_ai_demo',
+  ]);
 });
