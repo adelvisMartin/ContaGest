@@ -4,14 +4,16 @@ import { readFile } from 'node:fs/promises';
 import {
   CLASSIFICATION,
   buildGuardStatements,
+  expandPolicy,
+  guardNames,
   validatePolicy,
   summarizePolicy,
 } from '../scripts/composite-tenant-integrity-v634.mjs';
 
 const policy = JSON.parse(await readFile(new URL('../config/composite-tenant-integrity-v634.json', import.meta.url), 'utf8'));
-
+const relations = expandPolicy(policy);
 const key = (relation) => `${relation.childTable}.${relation.childColumn}->${relation.parentTable}.${relation.parentColumn}`;
-const byKey = new Map(policy.relations.map((relation) => [key(relation), relation]));
+const byKey = new Map(relations.map((relation) => [key(relation), relation]));
 
 const criticalDbRelations = [
   'BankMovement.accountId->BankAccount.id',
@@ -31,8 +33,9 @@ const serviceRelations = [
 
 test('policy is explicit, unique, and every relation has an owner/classification', () => {
   assert.doesNotThrow(() => validatePolicy(policy));
-  assert.equal(new Set(policy.relations.map(key)).size, policy.relations.length);
-  for (const relation of policy.relations) {
+  assert.equal(new Set(relations.map(key)).size, relations.length);
+  assert.equal(policy.dbEnforceableRelations.length, 72);
+  for (const relation of relations) {
     assert.ok(Object.values(CLASSIFICATION).includes(relation.classification));
     assert.ok(String(relation.owner || '').trim().length > 0);
     assert.ok(String(relation.reason || '').trim().length > 0);
@@ -58,7 +61,7 @@ test('line-item/fiscal references without child tenant ownership are SERVICE_ENF
 });
 
 test('clinical tenant-scoped relations are explicitly DB-enforced', () => {
-  const clinical = policy.relations.filter((relation) => relation.owner === 'clinical-care' && relation.classification === CLASSIFICATION.DB_ENFORCEABLE);
+  const clinical = relations.filter((relation) => relation.owner === 'clinical-care' && relation.classification === CLASSIFICATION.DB_ENFORCEABLE);
   assert.ok(clinical.length >= 30, `expected clinical DB coverage, got ${clinical.length}`);
   assert.equal(clinical.some((relation) => key(relation) === 'CareEncounter.patientId->CarePatient.id'), true);
   assert.equal(clinical.some((relation) => key(relation) === 'CareProfessional.userId->UserProfile.id'), true);
@@ -72,23 +75,30 @@ test('generated guard DDL creates parent composite uniqueness, child indexes, an
   assert.match(sql, /"SalesInvoice" \("tenantId", "clientId"\)/);
   assert.match(sql, /FOREIGN KEY \("tenantId", "clientId"\)/);
   assert.match(sql, /REFERENCES "Client" \("tenantId", "id"\)/);
-  assert.match(sql, /ON DELETE NO ACTION ON UPDATE NO ACTION/);
+  assert.match(sql, /ON DELETE NO ACTION ON UPDATE NO ACTION NOT VALID/);
+  assert.match(sql, /VALIDATE CONSTRAINT/);
   assert.doesNotMatch(sql, /\bUPDATE\b|\bDELETE FROM\b|\bINSERT INTO\b/i);
+});
+
+test('generated identifiers stay within PostgreSQL 63-byte identifier limit', () => {
+  for (const relation of relations.filter((item) => item.classification === CLASSIFICATION.DB_ENFORCEABLE)) {
+    for (const name of Object.values(guardNames(relation))) assert.ok(name.length <= 63, `${name} is too long`);
+  }
 });
 
 test('policy summary leaves no critical relation unclassified', () => {
   const summary = summarizePolicy(policy);
-  assert.equal(summary.total, policy.relations.length);
+  assert.equal(summary.total, relations.length);
   assert.equal(summary.unclassified, 0);
-  assert.ok(summary.byClassification.DB_ENFORCEABLE >= criticalDbRelations.length + 30);
-  assert.ok(summary.byClassification.SERVICE_ENFORCED >= serviceRelations.length);
+  assert.equal(summary.byClassification.DB_ENFORCEABLE, 72);
+  assert.equal(summary.byClassification.SERVICE_ENFORCED, 3);
 });
 
 test('forward-only migration is generated from the same policy and contains no data rewrite', async () => {
   const migration = await readFile(new URL('../backend/prisma/migrations/20260929162000_composite_tenant_referential_integrity/migration.sql', import.meta.url), 'utf8');
   assert.match(migration, /#634 Composite Tenant Referential Integrity/);
-  assert.match(migration, /BankMovement_tenantId_accountId_tenant_guard_fkey/);
-  assert.match(migration, /CareEncounter_tenantId_patientId_tenant_guard_fkey/);
+  assert.match(migration, /BankMovement_tenantId_accountId_tg_fk/);
+  assert.match(migration, /CareEncounter_tenantId_patientId_tg_fk/);
   assert.doesNotMatch(migration, /\bUPDATE\s+"|\bDELETE\s+FROM\s+"|\bINSERT\s+INTO\s+"/i);
   assert.doesNotMatch(migration, /DROP\s+TABLE|DROP\s+COLUMN|TRUNCATE/i);
 });
