@@ -78,6 +78,7 @@ function applyTheme(theme) {
   const value = setThemePreference(theme);
   applyThemePreference(value);
   refreshThemeControls();
+  enhanceSettingsTheme(document);
   return value;
 }
 
@@ -103,6 +104,21 @@ function refreshThemeControls() {
     button.setAttribute('aria-label', 'Cambiar tema');
     button.setAttribute('title', `Tema: ${THEME_LABELS[theme]}. Cambiar tema`);
   });
+}
+
+function enhanceSettingsTheme(scope = document) {
+  const select = scope.querySelector?.('#settings-form select[name="theme"]');
+  if (!select) return;
+  const theme = currentTheme();
+  if (select.value !== theme) select.value = theme;
+  select.dataset.presentationPreference = 'theme';
+  const field = select.closest('.field');
+  if (field && !field.querySelector('[data-v4-theme-help]')) {
+    const help = document.createElement('small');
+    help.dataset.v4ThemeHelp = 'true';
+    help.textContent = 'Preferencia de este dispositivo; no altera la configuración compartida del grupo.';
+    field.appendChild(help);
+  }
 }
 
 function setMenuOpen(open, { focus = false } = {}) {
@@ -215,6 +231,7 @@ function enhanceSurface(scope = document) {
   replaceLegacyBranding(scope);
   enhanceSidebar(scope);
   enhanceGlobalHeader(scope);
+  enhanceSettingsTheme(scope);
   enhanceIconButtons(scope);
   enhanceActionIcons(scope);
   refreshThemeControls();
@@ -276,6 +293,23 @@ document.addEventListener('click', (event) => {
     return;
   }
   if (utilityMenuOpen && !target.closest('[data-v4-utilities]')) setMenuOpen(false);
+}, true);
+
+document.addEventListener('change', (event) => {
+  const target = event.target;
+  if (target instanceof HTMLSelectElement && target.matches('#settings-form select[name="theme"]')) applyTheme(target.value);
+}, true);
+
+document.addEventListener('submit', (event) => {
+  const form = event.target;
+  if (!(form instanceof HTMLFormElement) || form.id !== 'settings-form') return;
+  const select = form.querySelector('select[name="theme"]');
+  if (!(select instanceof HTMLSelectElement)) return;
+  const localTheme = currentTheme();
+  select.value = 'system';
+  queueMicrotask(() => {
+    if (select.isConnected) select.value = localTheme;
+  });
 }, true);
 
 document.addEventListener('keydown', (event) => {
