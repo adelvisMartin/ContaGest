@@ -58,7 +58,7 @@ function dedupeGates(gates){
 
 export function buildProfilePlan(profile){
   if(profile==='full') return dedupeGates([
-    ...PROFILE_GATES.backend,...PROFILE_GATES.frontend,...PROFILE_GATES.database,...PROFILE_GATES.financial,...PROFILE_GATES.ui,
+    ...PROFILE_GATES.backend,...PROFILE_GATES.frontend,...PROFILE_GATES.database,...PROFILE_GATES.financial,...PROFILE_GATES.ui,...PROFILE_GATES['ui-routes'],
   ]);
   const plan=PROFILE_GATES[profile];
   if(!plan) throw new Error(`VERIFY_PROFILE_UNKNOWN:${profile}`);
