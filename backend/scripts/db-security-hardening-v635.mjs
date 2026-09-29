@@ -60,6 +60,13 @@ export function classifySecurityManifest(input){
     if(table.classification==='PRISMA_APPLICATION'&&normalizeBoolean(table.hasTenantId)&&!normalizeBoolean(table.rlsEnabled)){
       findings.push(finding('TENANT_RLS_DISABLED','P1',`${table.schema}.${table.name}`,'tenantId table has RLS disabled'));
     }
+    if(table.classification==='PRISMA_APPLICATION'&&normalizeBoolean(table.hasTenantId)
+      &&(normalizeBoolean(table.anonAnyDml)||normalizeBoolean(table.authenticatedAnyDml))){
+      findings.push(finding(
+        'DIRECT_BROWSER_DML_GRANT','P1',`${table.schema}.${table.name}`,
+        `backend-only tenant table exposes browser DML: anon=${normalizeBoolean(table.anonAnyDml)} authenticated=${normalizeBoolean(table.authenticatedAnyDml)}`
+      ));
+    }
     if(table.owner===RUNTIME_ROLE){
       findings.push(finding('RUNTIME_OBJECT_OWNERSHIP','P0',`${table.schema}.${table.name}`,'runtime role owns an application table'));
     }
@@ -156,8 +163,16 @@ function candidateSha(){
   catch{return 'UNKNOWN';}
 }
 
+function anyDmlExpression(role){
+  return ['SELECT','INSERT','UPDATE','DELETE']
+    .map((privilege)=>`has_table_privilege('${role}',format('%I.%I',n.nspname,c.relname),'${privilege}')`)
+    .join(' OR ');
+}
+
 async function readCatalog(client){
   const models=prismaModelNames();
+  const anonAnyDml=anyDmlExpression('anon');
+  const authenticatedAnyDml=anyDmlExpression('authenticated');
   const {rows:roles}=await client.query(`
     SELECT rolname AS "role", rolsuper AS superuser, rolcreatedb AS "createDb",
            rolcreaterole AS "createRole", rolbypassrls AS "bypassRls", rolcanlogin AS "canLogin"
@@ -172,7 +187,9 @@ async function readCatalog(client){
            EXISTS (
              SELECT 1 FROM pg_attribute a
              WHERE a.attrelid=c.oid AND a.attname='tenantId' AND a.attnum>0 AND NOT a.attisdropped
-           ) AS "hasTenantId"
+           ) AS "hasTenantId",
+           (${anonAnyDml}) AS "anonAnyDml",
+           (${authenticatedAnyDml}) AS "authenticatedAnyDml"
     FROM pg_class c
     JOIN pg_namespace n ON n.oid=c.relnamespace
     WHERE n.nspname='public' AND c.relkind IN ('r','p')
