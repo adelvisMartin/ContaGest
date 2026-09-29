@@ -38,15 +38,23 @@ test('#626 rejects unordered and unapproved duplicate authorities', () => {
   assert.equal(validateMigrationCatalog(approved).duplicates.length, 1);
 });
 
-test('#626 binds snapshot provenance to metadata and a real migration boundary', () => {
+test('#626 binds snapshot provenance to metadata, fixture content hash and a real migration boundary', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'cg626-'));
   for (const [name, sql] of [['0001_init','select 1;'],['20260101000000_next','select 2;']]) {
     const dir = path.join(root, name); fs.mkdirSync(dir); fs.writeFileSync(path.join(dir, 'migration.sql'), sql);
   }
   const catalog = migrationCatalogManifest(root, ['0001_init','20260101000000_next']);
-  const snapshot = { id: 'baseline', lastMigration: '0001_init', source: 'canonical-rebuild', createdFromRepoSha: 'abc', fixture: null };
+  const snapshot = {
+    id: 'baseline',
+    lastMigration: '0001_init',
+    source: 'canonical-rebuild',
+    createdFromRepoSha: 'abc',
+    fixture: 'tests/fixture.sql',
+    fixtureSha256: 'f'.repeat(64),
+  };
   snapshot.provenanceSha256 = snapshotProvenanceHash(snapshot);
   assert.equal(validateSnapshot(snapshot, catalog), snapshot);
+  assert.throws(() => validateSnapshot({ ...snapshot, fixtureSha256: '0'.repeat(64) }, catalog), (error) => error.code === 'SNAPSHOT_PROVENANCE_INVALID');
   assert.throws(() => validateSnapshot({ ...snapshot, provenanceSha256: '0'.repeat(64) }, catalog), (error) => error.code === 'SNAPSHOT_PROVENANCE_INVALID');
 });
 
