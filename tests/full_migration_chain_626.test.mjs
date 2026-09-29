@@ -58,10 +58,13 @@ test('#626 binds snapshot provenance to metadata, fixture content hash and a rea
   assert.throws(() => validateSnapshot({ ...snapshot, provenanceSha256: '0'.repeat(64) }, catalog), (error) => error.code === 'SNAPSHOT_PROVENANCE_INVALID');
 });
 
-test('#626 physical manifest is deterministic and ignores equivalent owner aliases', () => {
+test('#626 physical manifest is deterministic and ignores owner aliases plus Prisma history metadata', () => {
   const a = { objects: [
     { kind:'table', schema:'public', name:'B', signature:{owner:'postgres'} },
     { kind:'table', schema:'public', name:'A', signature:{owner:'postgres'} },
+    { kind:'table', schema:'public', name:'_prisma_migrations', signature:{owner:'postgres'} },
+    { kind:'column', schema:'public', table:'_prisma_migrations', name:'id', signature:{type:'text'} },
+    { kind:'index', schema:'public', table:'_prisma_migrations', name:'_prisma_migrations_pkey', signature:{unique:true} },
   ]};
   const b = { objects: [
     { kind:'table', schema:'public', name:'A', signature:{owner:'supabase_admin'} },
