@@ -27,7 +27,6 @@ if ('serviceWorker' in navigator) {
     } catch (error) {
       if (navigator.onLine) console.warn('No se pudo comprobar la actualización de Control Hípico.', error);
     }
-    promoteWaitingWorker(registration);
   }
 
   navigator.serviceWorker.addEventListener('controllerchange', reloadForServiceWorkerUpdate);
