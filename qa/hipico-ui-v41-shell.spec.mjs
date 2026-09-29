@@ -1,10 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { mkdirSync } from 'node:fs';
-import { join } from 'node:path';
 import { buildHipicoQaFixture, HIPICO_VIEWS } from './support/hipico-visual-catalog-v105.mjs';
-
-const QA_SHA = String(process.env.HIPICO_QA_SHA || process.env.GITHUB_SHA || 'local').trim();
-const EVIDENCE_ROOT = join(process.cwd(), 'artifacts', 'qa', 'hipico-browser', QA_SHA, 'ui-v41');
 
 async function resetQaStorage(page) {
   await page.goto('/hipico-control/recovery.html');
@@ -59,10 +54,13 @@ async function forceTheme(page, theme) {
   await expect(page.locator('html')).toHaveAttribute('data-theme', theme);
 }
 
-async function saveEvidence(page, name) {
-  mkdirSync(EVIDENCE_ROOT, { recursive: true });
-  const screenshot = await page.screenshot({ path: join(EVIDENCE_ROOT, `${name}.png`), fullPage: true, animations: 'disabled' });
-  expect(screenshot.byteLength, `${name} must produce non-empty exact-SHA visual evidence`).toBeGreaterThan(10_000);
+async function assertVisualGolden(page, name) {
+  await expect(page, `${name} must match the reviewed visual baseline`).toHaveScreenshot(`${name}.png`, {
+    fullPage: true,
+    animations: 'disabled',
+    caret: 'hide',
+    maxDiffPixelRatio: 0.002
+  });
 }
 
 async function visualContract(page) {
@@ -207,15 +205,15 @@ test.describe('Control Hípico UI System v4.1 · desktop shell', () => {
     expect(light.sidebarBg).not.toBe(dark.sidebarBg);
   });
 
-  test('captures exact-SHA light and dark visual evidence for representative views', async ({ page }) => {
+  test('matches reviewed light and dark visual baselines for representative views', async ({ page }) => {
     await openView(page, 'dashboard');
     for (const view of ['dashboard', 'race', 'reports', 'settings']) {
       await page.goto(`/hipico-control/?view=${view}`);
       await expect(page.locator('.shell')).toBeVisible();
       await selectTheme(page, 'light');
-      await saveEvidence(page, `${view}-desktop-1366-light`);
+      await assertVisualGolden(page, `${view}-desktop-1366-light`);
       await selectTheme(page, 'dark');
-      await saveEvidence(page, `${view}-desktop-1366-dark`);
+      await assertVisualGolden(page, `${view}-desktop-1366-dark`);
     }
   });
 });
@@ -246,11 +244,11 @@ test.describe('Control Hípico UI System v4.1 · touch shell', () => {
     expect(tooSmall).toEqual([]);
   });
 
-  test('captures mobile light and dark evidence', async ({ page }) => {
+  test('matches reviewed mobile light and dark visual baselines', async ({ page }) => {
     await openView(page, 'dashboard');
     await forceTheme(page, 'light');
-    await saveEvidence(page, 'dashboard-mobile-390-light');
+    await assertVisualGolden(page, 'dashboard-mobile-390-light');
     await forceTheme(page, 'dark');
-    await saveEvidence(page, 'dashboard-mobile-390-dark');
+    await assertVisualGolden(page, 'dashboard-mobile-390-dark');
   });
 });
