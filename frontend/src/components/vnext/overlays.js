@@ -2,7 +2,9 @@ import React from 'react';
 import * as Mui from '@mui/material';
 
 export function CgDialog({open=false,onClose,title='',children,actions=null,disableEscapeKeyDown=false,maxWidth='sm',fullScreen=false,...props}={}){
-  return React.createElement(Mui.Dialog,{...props,open,onClose,disableEscapeKeyDown,maxWidth,fullWidth:true,fullScreen},title?React.createElement(Mui.DialogTitle,null,title):null,React.createElement(Mui.DialogContent,{dividers:true},children),actions?React.createElement(Mui.DialogActions,null,actions):null);
+  const generatedId=React.useId().replace(/:/g,'');
+  const titleId=title?`cg-dialog-title-${generatedId}`:undefined;
+  return React.createElement(Mui.Dialog,{...props,open,onClose,disableEscapeKeyDown,maxWidth,fullWidth:true,fullScreen,'aria-labelledby':titleId||props['aria-labelledby']},title?React.createElement(Mui.DialogTitle,{id:titleId},title):null,React.createElement(Mui.DialogContent,{dividers:true},children),actions?React.createElement(Mui.DialogActions,null,actions):null);
 }
 
 export function CgConfirmDialog({open=false,onClose,onConfirm,title='Confirmar',description='',confirmLabel='Confirmar',cancelLabel='Cancelar',saving=false,danger=true,errorText=''}={}){
