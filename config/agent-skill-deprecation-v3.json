@@ -1,0 +1,43 @@
+{
+  "schemaVersion": 3,
+  "projectOwnedAuthority": "config/agent-skill-contracts-v3.json",
+  "entries": [
+    {
+      "id": "graphify",
+      "status": "EXTERNAL_PINNED_ADAPTER",
+      "authority": "navigation-only",
+      "sourceLock": "graphify",
+      "replacement": null,
+      "notes": "Never source authority; CURRENT/STALE/UNAVAILABLE is exact-HEAD metadata only."
+    },
+    {
+      "id": "react-doctor",
+      "status": "EXTERNAL_DIAGNOSTIC_ADAPTER",
+      "authority": "supplemental-only",
+      "sourceLock": null,
+      "replacement": null,
+      "notes": "Diagnostic score is never business-flow, security, persistence or release evidence."
+    },
+    {
+      "id": "Agent Context Plane v2 routing schema",
+      "status": "SUPERSEDED",
+      "authority": "compatibility-only",
+      "replacement": "Agent System v3",
+      "notes": "v2 tests/helpers remain for compatibility; new routing/evidence/claims use schemaVersion 3."
+    },
+    {
+      "id": "duplicate-work-claims-v2.mjs",
+      "status": "SUPERSEDED",
+      "authority": "compatibility-only",
+      "replacement": "scripts/duplicate-work-claims-v3.mjs",
+      "notes": "v3 adds advisory/exclusive modes, stale reconciliation and explicit single-owner supersession."
+    },
+    {
+      "id": "verify-agent-system-v2.mjs",
+      "status": "SUPERSEDED",
+      "authority": "compatibility-only",
+      "replacement": "scripts/verify-agent-system-v3.mjs",
+      "notes": "v2 structural verifier remains for historical regression tests."
+    }
+  ]
+}
