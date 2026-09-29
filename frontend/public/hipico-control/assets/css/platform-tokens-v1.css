@@ -1,0 +1,147 @@
+/* Generated from frontend/src/design-system/semanticTokens.v1.js by scripts/generate-design-tokens-v631.mjs. Do not edit by hand. */
+/* Hípico consumes shared platform semantics plus the documented editorial-brand variant. */
+:root {
+  color-scheme: light;
+  --hc-font-sans: Inter, "Segoe UI Variable", "Segoe UI", system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+  font-family: var(--hc-font-sans);
+  --hc-bg: #f7f7f6;
+  --hc-surface: #ffffff;
+  --hc-surface-subtle: #f2f2f0;
+  --hc-surface-raised: #fafaf9;
+  --hc-border: #deded9;
+  --hc-border-strong: #c8c8c1;
+  --hc-text: #202221;
+  --hc-text-muted: #6b706d;
+  --hc-brand: #721522;
+  --hc-brand-foreground: #ffffff;
+  --hc-brand-hover: #5f111c;
+  --hc-brand-soft: #f7ecee;
+  --hc-accent: #8d7545;
+  --hc-success: #35705a;
+  --hc-success-soft: #edf6f1;
+  --hc-warning: #8a682f;
+  --hc-warning-soft: #fbf5e8;
+  --hc-danger: #9b4750;
+  --hc-danger-soft: #fbefef;
+  --hc-info: #526f86;
+  --hc-info-soft: #eef3f6;
+  --hc-focus: #b18b40;
+  --hc-group: #721522;
+  --hc-radius-xs: 6px;
+  --hc-radius-sm: 8px;
+  --hc-radius-md: 10px;
+  --hc-radius-lg: 12px;
+  --hc-radius-xl: 14px;
+  --hc-shadow-sm: 0 1px 2px rgba(20,22,21,.05);
+  --hc-shadow-md: 0 8px 24px rgba(20,22,21,.08);
+  --hc-touch: 44px;
+  --hc-duration-fast: 120ms;
+  --hc-duration: 170ms;
+  --hc-ease: cubic-bezier(.2,.75,.25,1);
+  --hc-breakpoint-mobile: 760px;
+  --hc-breakpoint-tablet: 1024px;
+  --hc-breakpoint-desktop: 1440px;
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --hc-font-sans: Inter, "Segoe UI Variable", "Segoe UI", system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+  font-family: var(--hc-font-sans);
+  --hc-bg: #0f1012;
+  --hc-surface: #17181b;
+  --hc-surface-subtle: #1d1f23;
+  --hc-surface-raised: #1a1b1f;
+  --hc-border: #303238;
+  --hc-border-strong: #464951;
+  --hc-text: #f3f4f6;
+  --hc-text-muted: #a5a7ad;
+  --hc-brand: #c76474;
+  --hc-brand-foreground: #111214;
+  --hc-brand-hover: #d16f7e;
+  --hc-brand-soft: #2a181d;
+  --hc-accent: #c1a36a;
+  --hc-success: #76b899;
+  --hc-success-soft: #172720;
+  --hc-warning: #d0ad70;
+  --hc-warning-soft: #2b251b;
+  --hc-danger: #e08a94;
+  --hc-danger-soft: #301d22;
+  --hc-info: #91afc5;
+  --hc-info-soft: #1b252d;
+  --hc-focus: #d0ad70;
+  --hc-group: #721522;
+  --hc-radius-xs: 6px;
+  --hc-radius-sm: 8px;
+  --hc-radius-md: 10px;
+  --hc-radius-lg: 12px;
+  --hc-radius-xl: 14px;
+  --hc-shadow-sm: 0 1px 2px rgba(20,22,21,.05);
+  --hc-shadow-md: 0 12px 34px rgba(0,0,0,.32);
+  --hc-touch: 44px;
+  --hc-duration-fast: 120ms;
+  --hc-duration: 170ms;
+  --hc-ease: cubic-bezier(.2,.75,.25,1);
+  --hc-breakpoint-mobile: 760px;
+  --hc-breakpoint-tablet: 1024px;
+  --hc-breakpoint-desktop: 1440px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root[data-theme="system"] {
+  color-scheme: dark;
+  --hc-font-sans: Inter, "Segoe UI Variable", "Segoe UI", system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+  font-family: var(--hc-font-sans);
+  --hc-bg: #0f1012;
+  --hc-surface: #17181b;
+  --hc-surface-subtle: #1d1f23;
+  --hc-surface-raised: #1a1b1f;
+  --hc-border: #303238;
+  --hc-border-strong: #464951;
+  --hc-text: #f3f4f6;
+  --hc-text-muted: #a5a7ad;
+  --hc-brand: #c76474;
+  --hc-brand-foreground: #111214;
+  --hc-brand-hover: #d16f7e;
+  --hc-brand-soft: #2a181d;
+  --hc-accent: #c1a36a;
+  --hc-success: #76b899;
+  --hc-success-soft: #172720;
+  --hc-warning: #d0ad70;
+  --hc-warning-soft: #2b251b;
+  --hc-danger: #e08a94;
+  --hc-danger-soft: #301d22;
+  --hc-info: #91afc5;
+  --hc-info-soft: #1b252d;
+  --hc-focus: #d0ad70;
+  --hc-group: #721522;
+  --hc-radius-xs: 6px;
+  --hc-radius-sm: 8px;
+  --hc-radius-md: 10px;
+  --hc-radius-lg: 12px;
+  --hc-radius-xl: 14px;
+  --hc-shadow-sm: 0 1px 2px rgba(20,22,21,.05);
+  --hc-shadow-md: 0 12px 34px rgba(0,0,0,.32);
+  --hc-touch: 44px;
+  --hc-duration-fast: 120ms;
+  --hc-duration: 170ms;
+  --hc-ease: cubic-bezier(.2,.75,.25,1);
+  --hc-breakpoint-mobile: 760px;
+  --hc-breakpoint-tablet: 1024px;
+  --hc-breakpoint-desktop: 1440px;
+}
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+  --hc-duration-fast: 0ms;
+  --hc-duration: 0ms;
+}
+  *,
+  *::before,
+  *::after {
+  scroll-behavior: auto !important;
+  transition-duration: 0.01ms !important;
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+}
+}

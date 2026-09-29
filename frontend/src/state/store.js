@@ -7,7 +7,7 @@ const AUTH_SESSION_KEY = 'contagest_auth_session';
 const listeners = new Set();
 const clone = (value) => JSON.parse(JSON.stringify(value));
 const LOGIN_RENDER_KEYS = new Set(['route', 'pendingMfa', 'profile', 'activeLicense']);
-const OFFICIAL_THEMES = new Set(['light','dark']);
+const OFFICIAL_THEMES = new Set(['light','dark','system']);
 
 function hashScopePart(value) {
   const input = String(value || 'anonymous');

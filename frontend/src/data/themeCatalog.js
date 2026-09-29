@@ -1,6 +1,7 @@
 export const THEME_OPTIONS = Object.freeze([
   { key:'light', name:'Claro empresarial', description:'Tema claro principal con superficies y navegación de alto contraste.' },
-  { key:'dark', name:'Oscuro empresarial', description:'Tema oscuro principal para trabajo prolongado y baja iluminación.' }
+  { key:'dark', name:'Oscuro empresarial', description:'Tema oscuro principal para trabajo prolongado y baja iluminación.' },
+  { key:'system', name:'Seguir el sistema', description:'Respeta automáticamente la preferencia clara u oscura del dispositivo.' }
 ]);
 
 export const SUPPORT_WIDGET_OPTIONS = Object.freeze([

@@ -27,6 +27,7 @@ const required59=[
   'tests/database_production_drift_625.test.mjs',
   'tests/raw_sql_security_68_75.test.mjs',
   'tests/design_system_authority_69_75.test.mjs',
+  'tests/design_token_authority_issue_631.test.mjs',
   'tests/vertical_asset_system_70_75.test.mjs',
   'tests/cloudflare_security_audit_skill_contract.test.mjs',
   'tests/fiscal_authority_v561_contract.test.mjs',
