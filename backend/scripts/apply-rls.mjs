@@ -10,6 +10,7 @@ const backendRoot=path.resolve(scriptDir,'..');
 const policyPaths=[
   path.join(backendRoot,'supabase/migrations/0002_rls_policies.sql'),
   path.join(backendRoot,'supabase/migrations/0003_rls_grants_security_definer_hardening.sql'),
+  path.join(backendRoot,'supabase/migrations/0004_backend_only_browser_grants_hardening.sql'),
 ];
 const connectionString = process.env.DIRECT_DATABASE_URL || process.env.DATABASE_URL;
 const forbiddenPolicyDdlRoles=new Set(['contagest_runtime','anon','authenticated','service_role']);
