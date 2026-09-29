@@ -1,0 +1,44 @@
+{
+  "schemaVersion": 1,
+  "issue": 643,
+  "datasetVersion": "accounting-characterization-v643.1",
+  "synthetic": true,
+  "currency": "VES",
+  "sourceFixture": "qa/fixtures/financial-reconciliation-v559.json",
+  "realPostgresAdapter": "qa/financial-reconciliation-v559.test.ts",
+  "scenarios": [
+    "sale-tax",
+    "purchase-payable",
+    "collection-banking",
+    "supplier-payment-banking",
+    "sale-return-reversal",
+    "duplicate-retry-concurrency",
+    "period-close",
+    "document-ledger-source-identity",
+    "module-total-ledger-reconciliation",
+    "tenant-a-b-isolation"
+  ],
+  "invariants": [
+    "DEBIT_EQUALS_CREDIT",
+    "ONE_LOGICAL_SOURCE_ONE_EFFECT",
+    "DECIMAL_STABLE",
+    "BALANCE_RECONSTRUCTABLE",
+    "POSTED_HISTORY_IMMUTABLE",
+    "NO_ORPHAN_LEDGER_SOURCE",
+    "TENANT_ISOLATED"
+  ],
+  "goldenEffects": [
+    {"source":"sale-001","kind":"sales","debitMinor":23200,"creditMinor":23200,"effectKey":"sales:sale-001","posted":true,"sourceExists":true},
+    {"source":"purchase-001","kind":"purchase","debitMinor":13920,"creditMinor":13920,"effectKey":"purchase:purchase-001","posted":true,"sourceExists":true},
+    {"source":"collection-001","kind":"banking","debitMinor":23200,"creditMinor":23200,"effectKey":"banking:collection-001","posted":true,"sourceExists":true},
+    {"source":"supplier-payment-001","kind":"banking","debitMinor":13920,"creditMinor":13920,"effectKey":"banking:supplier-payment-001","posted":true,"sourceExists":true},
+    {"source":"sale-return-001","kind":"reversal","debitMinor":5800,"creditMinor":5800,"effectKey":"reversal:sale-return-001","posted":true,"sourceExists":true}
+  ],
+  "expectedBalancesMinor": {
+    "accountsReceivable": 17400,
+    "accountsPayable": 0,
+    "bank": 9280,
+    "vatPayable": 2080
+  },
+  "failureFixtures": ["duplicate-effect","unbalanced-entry","orphan-source"]
+}
