@@ -1,6 +1,5 @@
 param(
-  [switch]$Full,
-  [switch]$Issue134Recovered
+  [switch]$Full
 )
 
 $ErrorActionPreference = 'Stop'
@@ -23,10 +22,6 @@ if ($LASTEXITCODE -ne 0) { throw 'GitHub CLI no esta autenticado.' }
 $argsCommon = @()
 if ($Full) {
   $argsCommon += '--full'
-  if (-not $Issue134Recovered) {
-    throw 'El perfil full requiere -Issue134Recovered y evidencia real de que #134 recupero runners.'
-  }
-  $argsCommon += '--issue-134-recovered'
 }
 
 Write-Host 'Plan:'

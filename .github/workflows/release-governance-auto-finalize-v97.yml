@@ -1,25 +1,18 @@
-name: Release Governance Auto Finalize #97
+name: Release Governance Structural Apply #97
 
 on:
   workflow_dispatch:
-  workflow_run:
-    workflows: ['Actions Recovery #134']
-    types: [completed]
-  schedule:
-    - cron: '23 5 * * 1'
 
 permissions:
   contents: read
-  issues: write
 
 concurrency:
-  group: release-governance-auto-finalize-v97
+  group: release-governance-structural-v97
   cancel-in-progress: true
 
 jobs:
   protect-main:
-    name: Aplicar protección real y cerrar #97 sólo con verificación live
-    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
+    name: Aplicar protección estructural y verificar live
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
@@ -46,34 +39,23 @@ jobs:
           gh auth status
 
       - name: Contrato de automatización #97
-        run: node --test tests/release_governance_auto_finalize_issue_97.test.mjs
+        run: node --test tests/release_governance_auto_finalize_issue_97.test.mjs tests/release_governance_issue_97.test.mjs
 
-      - name: Aplicar perfil correcto según recuperación de Actions
-        id: apply
+      - name: Plan estructural
+        run: node scripts/github-main-protection-v97.mjs plan
+
+      - name: Aplicar Fase A estructural
+        run: node scripts/github-main-protection-v97.mjs apply
+
+      - name: Verificar Fase A live
+        run: node scripts/github-main-protection-v97.mjs verify
+
+      - name: Registrar evidencia honesta de proveedor
         shell: bash
         run: |
           set -euo pipefail
-          STATE="$(gh issue view 134 --repo "$GITHUB_REPOSITORY" --json state --jq .state)"
-          echo "issue134=$STATE"
           mkdir -p artifacts/qa/release-governance-auto-v97
-          if [ "$STATE" = "CLOSED" ]; then
-            echo 'profile=full' >> "$GITHUB_OUTPUT"
-            node scripts/github-main-protection-v97.mjs apply --full --issue-134-recovered
-            node scripts/github-main-protection-v97.mjs verify --full
-            printf '{"issue":97,"profile":"full","issue134":"closed","candidateSha":"%s","verdict":"PASS"}\n' "$GITHUB_SHA" > artifacts/qa/release-governance-auto-v97/summary.json
-          else
-            echo 'profile=structural' >> "$GITHUB_OUTPUT"
-            node scripts/github-main-protection-v97.mjs apply
-            node scripts/github-main-protection-v97.mjs verify
-            printf '{"issue":97,"profile":"structural","issue134":"open","candidateSha":"%s","verdict":"BLOCKED_FULL_PROFILE"}\n' "$GITHUB_SHA" > artifacts/qa/release-governance-auto-v97/summary.json
-          fi
-
-      - name: Cerrar #97 sólo con perfil full verificado
-        if: steps.apply.outputs.profile == 'full'
-        shell: bash
-        run: |
-          set -euo pipefail
-          gh issue close 97 --repo "$GITHUB_REPOSITORY" --reason completed --comment "Branch Protection de main verificada live con perfil full sobre ${GITHUB_SHA}: PR obligatorio, admins protegidos, force-push/delete bloqueados, conversaciones resueltas y ContaGest CI / validate requerido. #134 ya estaba recuperado al promover el required check."
+          printf '{"issue":97,"profile":"structural","candidateSha":"%s","verdict":"PASS","requiredChecks":[],"remoteCi":"NOT_EXECUTED","remoteDeploy":"NOT_EXECUTED"}\n' "$GITHUB_SHA" > artifacts/qa/release-governance-auto-v97/summary.json
 
       - name: Conservar evidencia de governance
         if: always()

@@ -24,6 +24,7 @@ const required59=[
   'tests/health_dentistry_bounded_contexts_66_75.test.mjs',
   'tests/vertical_schema_authority_67_75.test.mjs',
   'tests/database_authority_67_75.test.mjs',
+  'tests/database_production_drift_625.test.mjs',
   'tests/raw_sql_security_68_75.test.mjs',
   'tests/design_system_authority_69_75.test.mjs',
   'tests/vertical_asset_system_70_75.test.mjs',
