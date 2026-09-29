@@ -58,7 +58,12 @@ function dedupeGates(gates){
 
 export function buildProfilePlan(profile){
   if(profile==='full') return dedupeGates([
-    ...PROFILE_GATES.backend,...PROFILE_GATES.frontend,...PROFILE_GATES.database,...PROFILE_GATES.financial,...PROFILE_GATES.ui,
+    ...PROFILE_GATES.backend,
+    ...PROFILE_GATES.frontend,
+    ...PROFILE_GATES.database,
+    ...PROFILE_GATES.financial,
+    ...PROFILE_GATES.ui,
+    ...PROFILE_GATES['ui-routes'],
   ]);
   const plan=PROFILE_GATES[profile];
   if(!plan) throw new Error(`VERIFY_PROFILE_UNKNOWN:${profile}`);
@@ -180,75 +185,58 @@ function commandVersion(command,args,{cwd}){
   return result.status===0?String(result.stdout||result.stderr).trim():'UNAVAILABLE';
 }
 
-function parseArgs(argv){
-  const out={profile:'',base:'main',expectedSha:'',dryRun:false,remoteCi:'NOT_EXECUTED',remoteDeploy:'NOT_EXECUTED'};
-  for(let i=0;i<argv.length;i++){
-    const arg=argv[i];
-    if(arg==='--profile')out.profile=argv[++i]||'';
-    else if(arg.startsWith('--profile='))out.profile=arg.slice(10);
-    else if(arg==='--base')out.base=argv[++i]||'main';
-    else if(arg.startsWith('--base='))out.base=arg.slice(7);
-    else if(arg==='--expected-sha')out.expectedSha=argv[++i]||'';
-    else if(arg.startsWith('--expected-sha='))out.expectedSha=arg.slice(15);
-    else if(arg==='--dry-run')out.dryRun=true;
-    else if(arg.startsWith('--remote-ci='))out.remoteCi=arg.slice(12);
-    else if(arg.startsWith('--remote-deploy='))out.remoteDeploy=arg.slice(16);
-    else throw new Error(`VERIFY_ARGUMENT_UNKNOWN:${arg}`);
-  }
-  if(!out.profile)throw new Error('VERIFY_PROFILE_REQUIRED');
-  return out;
-}
-
-function changedPlan({cwd,baseRef}){
-  const files=git(cwd,['diff','--name-only',`${baseRef}...HEAD`]).split(/\r?\n/).filter(Boolean);
-  const router=spawnSync(process.platform==='win32'?'npm.cmd':'npm',['run','--silent','agent:gates','--','--base',baseRef],{cwd,encoding:'utf8',shell:false});
-  if(router.error||router.status!==0)throw new Error(`LOCAL_GATE_FAILED:agent:gates:${router.error?.message||router.stderr}`);
-  const parsed=JSON.parse(router.stdout);
-  const profiles=profilesForRouterDomains((parsed.domains||[]).map((item)=>item.id));
-  if(files.some((file)=>file.startsWith('frontend/'))&&!profiles.includes('frontend'))profiles.push('frontend');
-  if(files.some((file)=>file.startsWith('backend/'))&&!profiles.includes('backend'))profiles.push('backend');
-  if(!profiles.length)profiles.push('backend');
-  return {files,profiles,plan:dedupeGates(profiles.flatMap((profile)=>buildProfilePlan(profile)))};
-}
-
-async function cli(){
-  const args=parseArgs(process.argv.slice(2));
-  const cwd=process.cwd();
-  const gitContext=resolveGitContext({cwd,expectedSha:args.expectedSha,baseRef:args.base});
-  const changed=args.profile==='changed'?changedPlan({cwd,baseRef:args.base}):null;
-  const plan=changed?.plan||buildProfilePlan(args.profile);
-  const metadata={
-    schemaVersion:630,
-    candidateSha:gitContext.candidateSha,
-    baseSha:gitContext.baseSha,
-    baseRef:gitContext.baseRef,
-    profile:args.profile,
-    changedFiles:changed?.files||[],
-    derivedProfiles:changed?.profiles||[],
-    platform:{os:`${os.platform()} ${os.release()}`,arch:os.arch(),node:process.version,npm:commandVersion('npm',['--version'],{cwd}),postgres:DB_PROFILES.has(args.profile)?commandVersion('psql',['--version'],{cwd}):'NOT_APPLICABLE',playwright:UI_PROFILES.has(args.profile)?commandVersion('npx',['playwright','--version'],{cwd}):'NOT_APPLICABLE'},
-    remote:{ci:args.remoteCi,deploy:args.remoteDeploy},
+export function collectRuntimeMetadata({cwd=process.cwd()}={}){
+  return {
+    platform:process.platform,
+    arch:process.arch,
+    node:process.version,
+    npm:commandVersion('npm',['--version'],{cwd}),
+    pnpm:commandVersion('pnpm',['--version'],{cwd}),
+    postgresql:commandVersion(process.platform==='win32'?'psql.exe':'psql',['--version'],{cwd}),
+    chromium:process.env.CHROMIUM_VERSION||process.env.PLAYWRIGHT_CHROMIUM_VERSION||'UNDECLARED',
+    hostnameHash:crypto.createHash('sha256').update(os.hostname()).digest('hex').slice(0,12),
   };
-  if(args.dryRun){
-    console.log(JSON.stringify({...metadata,status:'NOT_EXECUTED',gates:plan.map((item)=>({...item,status:'NOT_EXECUTED'}))},null,2));
-    return;
-  }
-  const artifactRoot=path.join(cwd,'artifacts','local-verification',gitContext.candidateSha,args.profile);
-  const logDir=path.join(artifactRoot,'logs');await mkdir(logDir,{recursive:true});
-  const execute=(item,ctx)=>defaultExecute(item,{cwd,env:ctx.env||process.env,logDir});
-  const run=async(env)=>runPlan({plan,execute,remote:metadata.remote,context:{env}});
-  let result;
-  if(DB_PROFILES.has(args.profile)||(args.profile==='changed'&&changed?.profiles.some((p)=>DB_PROFILES.has(p)))){
-    result=await withEphemeralDatabase({candidateSha:gitContext.candidateSha,cwd,env:process.env},async(env,db)=>{
-      metadata.postgres={databaseName:db.databaseName,adminUrl:sanitizeEnvironmentValue(db.adminUrl)};
-      return run(env);
-    });
-  }else result=await run(process.env);
-  const manifest={...metadata,status:result.status,exitCode:result.exitCode,gates:result.gates,finishedAt:new Date().toISOString()};
-  manifest.manifestSha256=computeManifestHash(manifest);
-  await writeFile(path.join(artifactRoot,'manifest.json'),`${JSON.stringify(manifest,null,2)}\n`,'utf8');
-  console.log(JSON.stringify({status:manifest.status,manifest:path.relative(cwd,path.join(artifactRoot,'manifest.json')),manifestSha256:manifest.manifestSha256},null,2));
-  if(result.status!=='PASS')process.exitCode=result.exitCode||1;
 }
 
-const invokedAsScript=process.argv[1]&&import.meta.url===pathToFileURL(process.argv[1]).href;
-if(invokedAsScript)cli().catch((error)=>{console.error('[verify-local-v630]',error instanceof Error?error.message:String(error));process.exitCode=1;});
+export async function executeProfile({profile,cwd=process.cwd(),expectedSha='',baseRef='main',remoteCi='NOT_EXECUTED',remoteDeploy='NOT_EXECUTED',env=process.env,execute=defaultExecute}={}){
+  const gitContext=resolveGitContext({cwd,expectedSha,baseRef});
+  const plan=buildProfilePlan(profile);
+  const evidenceRoot=path.join(cwd,'artifacts','local-verification',gitContext.candidateSha);
+  const logDir=path.join(evidenceRoot,'logs');
+  await mkdir(logDir,{recursive:true});
+  const runtime=collectRuntimeMetadata({cwd});
+  const baseContext={cwd,logDir,env};
+  let result;
+  if(DB_PROFILES.has(profile)){
+    result=await withEphemeralDatabase({candidateSha:gitContext.candidateSha,cwd,env},async(dbEnv)=>runPlan({plan,execute,remote:{ci:remoteCi,deploy:remoteDeploy},context:{...baseContext,env:dbEnv}}));
+  }else result=await runPlan({plan,execute,remote:{ci:remoteCi,deploy:remoteDeploy},context:baseContext});
+  const manifest={
+    schemaVersion:1,
+    profile,
+    ...gitContext,
+    runtime,
+    generatedAt:new Date().toISOString(),
+    uiProfile:UI_PROFILES.has(profile),
+    databaseProfile:DB_PROFILES.has(profile),
+    ...result,
+  };
+  manifest.manifestSha256=computeManifestHash(manifest);
+  const manifestPath=path.join(evidenceRoot,`${profile}.json`);
+  await writeFile(manifestPath,`${JSON.stringify(manifest,null,2)}\n`,'utf8');
+  return {manifest,manifestPath};
+}
+
+const isMain=process.argv[1]&&pathToFileURL(path.resolve(process.argv[1])).href===import.meta.url;
+if(isMain){
+  const profile=String(process.argv[2]||'full').trim();
+  const expectedSha=String(process.env.LOCAL_VERIFY_EXPECTED_SHA||'').trim();
+  const baseRef=String(process.env.LOCAL_VERIFY_BASE_REF||'main').trim()||'main';
+  executeProfile({profile,expectedSha,baseRef}).then(({manifest,manifestPath})=>{
+    console.log(`[local-verification] profile=${manifest.profile} status=${manifest.status} sha=${manifest.candidateSha}`);
+    console.log(`[local-verification] manifest=${manifestPath} hash=${manifest.manifestSha256}`);
+    process.exitCode=manifest.status==='PASS'?0:1;
+  }).catch((error)=>{
+    console.error(error instanceof Error?error.stack||error.message:String(error));
+    process.exitCode=1;
+  });
+}
