@@ -8,27 +8,29 @@ const read = (path) => readFileSync(join(ROOT, path), 'utf8');
 
 const indexHtml = read('frontend/public/hipico-control/index.html');
 const appCss = read('frontend/public/hipico-control/assets/css/app.css');
-const shellCssPath = 'frontend/public/hipico-control/assets/css/ui-system-v4.css';
-const shellJsPath = 'frontend/public/hipico-control/assets/js/shell-ui-v4.js';
-const prefsPath = 'frontend/public/hipico-control/assets/js/presentation-preferences.js';
+const compatCss = read('frontend/public/hipico-control/assets/css/ui-system-v3-compat.css');
+const shellCss = read('frontend/public/hipico-control/assets/css/ui-system-v4.css');
+const shellJs = read('frontend/public/hipico-control/assets/js/shell-ui-v4.js');
+const prefs = read('frontend/public/hipico-control/assets/js/presentation-preferences.js');
 const sw = read('frontend/public/hipico-control/sw.js');
 
-function maybeRead(path) {
-  try { return read(path); } catch { return ''; }
-}
-
-const shellCss = maybeRead(shellCssPath);
-const shellJs = maybeRead(shellJsPath);
-const prefs = maybeRead(prefsPath);
+test('app.css is the single production stylesheet entrypoint', () => {
+  assert.match(indexHtml, /assets\/css\/app\.css/);
+  assert.doesNotMatch(indexHtml, /ui-system-v4\.css/);
+  assert.doesNotMatch(indexHtml, /ui-system-v3-compat\.css/);
+  assert.match(appCss, /@import url\("\.\/ui-system-v3-compat\.css"\)/);
+  assert.match(appCss, /@import url\("\.\/ui-system-v4\.css"\)/);
+  assert.ok(appCss.indexOf('ui-system-v3-compat.css') < appCss.indexOf('ui-system-v4.css'), 'v3 compatibility must load before v4 authority');
+});
 
 test('v4.1 presentation modules are wired into the production shell', () => {
-  assert.match(indexHtml, /ui-system-v4\.css/);
   assert.match(indexHtml, /presentation-preferences\.js/);
   assert.match(indexHtml, /shell-ui-v4\.js/);
 });
 
-test('legacy wordmark is not rendered by the boot shell and is actively replaced at runtime', () => {
+test('legacy wordmark is not rendered by the boot shell or cached as shell authority', () => {
   assert.doesNotMatch(indexHtml, /logo-control-hipico\.png/);
+  assert.doesNotMatch(sw, /logo-control-hipico\.png/);
   assert.match(indexHtml, /hc-brand-lockup/);
   assert.match(shellJs, /replaceLegacyBranding/);
   assert.match(shellJs, /logo-control-hipico\.png/);
@@ -55,13 +57,14 @@ test('all desktop views use the available main width and sidebar has collapsed s
 
 test('theme preference has a single device-local authority', () => {
   assert.match(prefs, /hipico-control-theme/);
-  assert.match(prefs, /system/);
-  assert.match(prefs, /light/);
-  assert.match(prefs, /dark/);
+  assert.match(prefs, /new Set\(\['system', 'light', 'dark'\]\)/);
   assert.match(prefs, /getThemePreference/);
   assert.match(prefs, /setThemePreference/);
   assert.match(prefs, /migrateLegacyTheme/);
   assert.match(shellJs, /cycle-theme/);
+  assert.match(shellJs, /data\.presentationPreference = 'theme'/);
+  assert.match(shellJs, /Preferencia de este dispositivo/);
+  assert.match(shellJs, /select\.value = 'system'/);
 });
 
 test('global utilities expose settings, help and accessible icon controls', () => {
@@ -72,15 +75,17 @@ test('global utilities expose settings, help and accessible icon controls', () =
   assert.match(shellJs, /Ayuda/);
 });
 
-test('service worker rotates beyond r29 and caches v4 shell assets', () => {
+test('service worker rotates beyond r29 and caches the canonical css dependency graph', () => {
   assert.doesNotMatch(sw, /shell-r29-auto-update-reload/);
+  assert.match(sw, /shell-r30-ui-system-v4-1/);
+  assert.match(sw, /ui-system-v3-compat\.css/);
   assert.match(sw, /ui-system-v4\.css/);
   assert.match(sw, /presentation-preferences\.js/);
   assert.match(sw, /shell-ui-v4\.js/);
 });
 
-test('legacy v3 css remains a base only and v4 is the declared visual authority', () => {
-  assert.match(appCss, /canonical UI System v3/);
+test('legacy v3 is compatibility only and v4.1 is the declared visual authority', () => {
+  assert.match(compatCss, /canonical UI System v3/);
   assert.match(shellCss, /canonical UI System v4\.1/);
   assert.match(shellCss, /V4 AUTHORITY/);
 });
