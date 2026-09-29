@@ -38,7 +38,7 @@ test('Pages build publishes Control Hípico at the canonical dist root and keeps
   const script = read('frontend/scripts/github-pages-build.mjs');
   assert.match(script, /hipico-control/);
   assert.match(script, /HIPICO_ENTRY_MISSING/);
-  assert.match(script, /frontend[\\/]+public[\\/]+hipico-control/);
+  assert.match(script, /path\.join\(distDir,\s*'frontend',\s*'public',\s*'hipico-control'\)/);
   assert.match(script, /location\.replace/);
 });
 
