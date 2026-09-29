@@ -5,6 +5,7 @@ import {
   Section as LegacySection,
   Field as LegacyField,
   Textarea as LegacyTextarea,
+  Select as LegacySelect,
   EmptyState as LegacyEmptyState,
   money as legacyMoney,
 } from '../ui/kit.js';
@@ -19,10 +20,11 @@ export const legacyComponentBridge=Object.freeze({
   Section:LegacySection,
   Field:LegacyField,
   Textarea:LegacyTextarea,
+  Select:LegacySelect,
   EmptyState:LegacyEmptyState,
   money:legacyMoney,
 });
 
 export function legacyOwnerFor(componentName=''){
-  return ({Button:'CgButton',Badge:'CgBadge',PageHeader:'CgPageHeader',Section:'CgSection',Field:'CgTextField',Textarea:'CgTextarea',EmptyState:'CgEmptyState',money:'CgMoney'})[componentName]||null;
+  return ({Button:'CgButton',Badge:'CgBadge',PageHeader:'CgPageHeader',Section:'CgSection',Field:'CgTextField',Textarea:'CgTextarea',Select:'CgSelect',EmptyState:'CgEmptyState',money:'CgMoney'})[componentName]||null;
 }

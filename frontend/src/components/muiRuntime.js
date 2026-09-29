@@ -4,7 +4,7 @@ import * as Mui from '@mui/material';
 import { Toaster, toast } from 'react-hot-toast';
 import { translations } from '../i18n/translations.js';
 import { createContaGestMuiTheme } from './muiThemeAdapter.js';
-import { CgButton, CgTextField } from './vnext/index.js';
+import { CgButton, CgTextField, CgSelect, CgDatePicker, CgTimeField } from './vnext/index.js';
 
 export { createContaGestMuiTheme } from './muiThemeAdapter.js';
 
@@ -44,7 +44,9 @@ function NativeFieldIsland({node,state,multiline=false}){
   const sourceType=multiline?'text':(fallback.type||'text'),type=sourceType==='password'&&passwordVisible?'text':sourceType;
   const endAdornment=sourceType==='password'?React.createElement(Mui.InputAdornment,{position:'end'},React.createElement(Mui.IconButton,{size:'small',edge:'end','aria-label':passwordVisible?'Ocultar contraseña':'Mostrar contraseña',onClick:()=>setPasswordVisible((current)=>!current)},React.createElement('i',{className:`fa-solid ${passwordVisible?'fa-eye-slash':'fa-eye'}`,style:{fontSize:12}}))):undefined;
   const slotProps={htmlInput:{min:fallback.min||undefined,max:fallback.max||undefined,step:fallback.step||undefined,pattern:fallback.pattern||undefined,inputMode:fallback.inputMode||undefined,maxLength:fallback.maxLength>0?fallback.maxLength:undefined},input:endAdornment?{endAdornment}:undefined,inputLabel:{shrink:true}};
-  return React.createElement(Theme,{state},React.createElement(CgTextField,{label:labelFor(node,humanize(fallback.name||fallback.placeholder)),value,type,fullWidth:true,size:'small',variant:'outlined',required:Boolean(fallback.dataset.wasRequired==='true'),placeholder:fallback.placeholder||'',multiline,minRows:multiline?3:undefined,autoComplete:fallback.autocomplete||undefined,slotProps,onChange:(event)=>{const next=event.target.value;setValue(next);syncFallback(fallback,next);},onBlur:()=>fallback.dispatchEvent(new Event('blur',{bubbles:true}))}));
+  const common={label:labelFor(node,humanize(fallback.name||fallback.placeholder)),value,fullWidth:true,size:'small',required:Boolean(fallback.dataset.wasRequired==='true'),placeholder:fallback.placeholder||'',slotProps,onChange:(eventOrValue)=>{const next=typeof eventOrValue==='string'?eventOrValue:eventOrValue?.target?.value??'';setValue(next);syncFallback(fallback,next);},onBlur:()=>fallback.dispatchEvent(new Event('blur',{bubbles:true}))};
+  const FieldComponent=sourceType==='date'?CgDatePicker:sourceType==='time'?CgTimeField:CgTextField;
+  return React.createElement(Theme,{state},React.createElement(FieldComponent,{...common,type:sourceType==='date'||sourceType==='time'?undefined:type,variant:'outlined',multiline,minRows:multiline?3:undefined,autoComplete:fallback.autocomplete||undefined}));
 }
 
 function SelectIsland({node,state}){
@@ -53,7 +55,7 @@ function SelectIsland({node,state}){
   const [value,setValue]=React.useState(String(node.dataset.muiValue??hidden?.value??fallback?.value??''));
   React.useEffect(()=>{const form=fallback?.form;const reset=()=>window.setTimeout(()=>setValue(String(fallback?.defaultValue??fallback?.options?.[0]?.value??'')),0);form?.addEventListener('reset',reset);return()=>form?.removeEventListener('reset',reset);},[fallback]);
   const emit=(next)=>{setValue(next);node.dataset.muiValue=next;if(hidden)syncFallback(hidden,next);if(fallback)syncFallback(fallback,next);};
-  return React.createElement(Theme,{state},React.createElement(Mui.FormControl,{fullWidth:true,size:'small'},!labelHidden&&React.createElement(Mui.InputLabel,{id:`${id}-label`},label),React.createElement(Mui.Select,{id,labelId:labelHidden?undefined:`${id}-label`,label:labelHidden?undefined:label,value,displayEmpty:labelHidden,required:Boolean(fallback?.dataset?.wasRequired==='true'),onChange:(event)=>emit(String(event.target.value)),inputProps:{'aria-label':label},MenuProps:{PaperProps:{sx:{mt:.6,maxHeight:340,borderRadius:2,'& .MuiMenu-list':{p:.5}}}}},options.map((option)=>React.createElement(Mui.MenuItem,{key:String(option.value),value:String(option.value)},String(option.label))))));
+  return React.createElement(Theme,{state},React.createElement(CgSelect,{id,label:labelHidden?'':label,value,options,required:Boolean(fallback?.dataset?.wasRequired==='true'),onChange:(next)=>emit(String(next)),'aria-label':label}));
 }
 
 function icon(name){return React.createElement('i',{className:`fa-solid ${name||'fa-circle-dot'}`,style:{fontSize:11}});}
@@ -83,8 +85,7 @@ function promoteLegacyFields(root=document){
 
 function mountNativeFields(ctx){
   promoteLegacyFields();
-  document.querySelectorAll('[data-cgx-kit="field"]').forEach((node)=>{prepareNativeField(node,'field');if(node.dataset.muiNativePrepared==='true')mount(node,'muiNativeMounted','[data-mui-native-mount]',React.createElement(NativeFieldIsland,{node,state:ctx.state}));});
-  document.querySelectorAll('[data-cgx-kit="textarea"]').forEach((node)=>{prepareNativeField(node,'textarea');if(node.dataset.muiNativePrepared==='true')mount(node,'muiNativeMounted','[data-mui-native-mount]',React.createElement(NativeFieldIsland,{node,state:ctx.state,multiline:true}));});
+  document.querySelectorAll('[data-cgx-kit="field"]').forEach((node)=>{const fallback=node.querySelector('input');if(!fallback||!['date','time'].includes(fallback.type))return;prepareNativeField(node,'field');if(node.dataset.muiNativePrepared==='true')mount(node,'muiNativeMounted','[data-mui-native-mount]',React.createElement(NativeFieldIsland,{node,state:ctx.state}));});
   document.querySelectorAll('[data-cgx-kit="select"]').forEach((node)=>{prepareSelect(node);if(node.dataset.muiSelectPrepared==='true')mount(node,'muiMounted','[data-mui-mount]',React.createElement(SelectIsland,{node,state:ctx.state}));});
 }
 function mountSelect(node,ctx){const root=mount(node,'muiMounted','[data-mui-mount]',React.createElement(SelectIsland,{node,state:ctx.state}));if(root)node.classList.add('mui-loading-done');}
@@ -93,6 +94,4 @@ function mountBreadcrumbs(node,ctx){const root=mount(node,'muiBreadcrumbsMounted
 function mountButton(node,ctx){const root=mount(node,'muiButtonMounted','[data-mui-button-mount]',React.createElement(ButtonIsland,{node,state:ctx.state}));if(root){node.querySelector('[data-mui-button-fallback]')?.classList.add('mui-fallback-hidden');node.classList.add('mui-button-ready');}}
 function mountToast(ctx){const node=document.getElementById('hot-toast-root');if(!node||node.dataset.hotToastMounted==='true')return;node.dataset.hotToastMounted='true';window.CG_HOT_TOAST=toast;createRoot(node).render(React.createElement(Toaster,{position:'top-right',gutter:8,toastOptions:{duration:3600,style:{borderRadius:'10px',background:'var(--cg-v-surface)',color:'var(--cg-v-text)',border:'1px solid var(--cg-v-border)',boxShadow:'var(--cg-v-shadow-2)',fontSize:11,fontWeight:600}}}));}
 
-// Canonical forms remain native HTML/CSS. MUI mounts only on explicitly marked
-// islands so a field never renders as a native control and a MUI control at once.
-export const MuiRuntime={mountAll(ctx={}){window.__CG_MUI__=runtime;mountToast(ctx);document.querySelectorAll('[data-mui-select-field]').forEach((node)=>mountSelect(node,ctx));document.querySelectorAll('[data-mui-button-field]').forEach((node)=>mountButton(node,ctx));document.querySelectorAll('[data-mui-quicktabs]').forEach((node)=>mountQuickTabs(node,ctx));document.querySelectorAll('[data-mui-breadcrumbs]').forEach((node)=>mountBreadcrumbs(node,ctx));}};
+export const MuiRuntime={mountAll(ctx={}){window.__CG_MUI__=runtime;mountToast(ctx);mountNativeFields(ctx);document.querySelectorAll('[data-mui-select-field]').forEach((node)=>mountSelect(node,ctx));document.querySelectorAll('[data-mui-button-field]').forEach((node)=>mountButton(node,ctx));document.querySelectorAll('[data-mui-quicktabs]').forEach((node)=>mountQuickTabs(node,ctx));document.querySelectorAll('[data-mui-breadcrumbs]').forEach((node)=>mountBreadcrumbs(node,ctx));}};
