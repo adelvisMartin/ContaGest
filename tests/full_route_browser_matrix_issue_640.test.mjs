@@ -23,8 +23,18 @@ test('#640 runner supports full/affected and advisory browser profiles without s
   assert.match(runner,/firefox/);
   assert.match(runner,/webkit/);
   assert.match(runner,/CG_AFFECTED_ROUTES/);
+  assert.match(runner,/route-theme-motion-v640\.spec\.mjs/);
   assert.match(runner,/artifacts\/browser-matrix/);
   assert.doesNotMatch(runner,/waitForTimeout|\.skip\(|--force|force:\s*true/);
+});
+
+test('#640 theme/motion browser contract covers system preference and reduced motion explicitly',()=>{
+  const source=read('qa/route-theme-motion-v640.spec.mjs');
+  assert.match(source,/colorScheme:\s*'dark'/);
+  assert.match(source,/reducedMotion:\s*'reduce'/);
+  assert.match(source,/data-theme/);
+  assert.match(source,/prefers-reduced-motion/);
+  assert.doesNotMatch(source,/waitForTimeout|\.skip\(|force:\s*true/);
 });
 
 test('#640 package and local verification expose canonical route-matrix entrypoints',()=>{
