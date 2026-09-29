@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 3,
+  "candidateSha": null,
+  "issue": null,
+  "branch": null,
+  "entries": [
+    {"dimension":"SOURCE_REVIEW","status":"NOT_EXECUTED","sha":null,"command":"","environment":"","evidence":"","reasonCode":null},
+    {"dimension":"LOCAL_STATIC","status":"NOT_EXECUTED","sha":null,"command":"","environment":"","evidence":"","reasonCode":null},
+    {"dimension":"LOCAL_UNIT","status":"NOT_EXECUTED","sha":null,"command":"","environment":"","evidence":"","reasonCode":null},
+    {"dimension":"LOCAL_INTEGRATION","status":"NOT_APPLICABLE","sha":null,"command":"","environment":"","evidence":"","reasonCode":null},
+    {"dimension":"LOCAL_POSTGRES","status":"NOT_APPLICABLE","sha":null,"command":"","environment":"","evidence":"","reasonCode":null},
+    {"dimension":"LOCAL_BUILD","status":"NOT_EXECUTED","sha":null,"command":"","environment":"","evidence":"","reasonCode":null},
+    {"dimension":"LOCAL_BROWSER_E2E","status":"NOT_APPLICABLE","sha":null,"command":"","environment":"","evidence":"","reasonCode":null},
+    {"dimension":"REMOTE_CI","status":"NOT_EXECUTED","sha":null,"command":"","environment":"","evidence":"","reasonCode":null},
+    {"dimension":"REMOTE_DEPLOY","status":"NOT_APPLICABLE","sha":null,"command":"","environment":"","evidence":"","reasonCode":null},
+    {"dimension":"PHYSICAL_EXTERNAL","status":"NOT_APPLICABLE","sha":null,"command":"","environment":"","evidence":"","reasonCode":null}
+  ],
+  "notes": "Template only. A PASS is invalid until candidateSha/entry SHA and actual command/environment/evidence are populated for the exact candidate. BLOCKED remote provider evidence never becomes PASS."
+}
