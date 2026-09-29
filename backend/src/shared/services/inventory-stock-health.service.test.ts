@@ -1,7 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { Prisma } from '@prisma/client';
-import { buildInventoryStockHealth } from './inventory-stock-health.service.js';
+import {
+  buildInventoryStockHealth,
+  summarizeInventoryStockHealth
+} from './inventory-stock-health.service.js';
 
 const D = (value: string) => new Prisma.Decimal(value);
 
@@ -46,4 +49,23 @@ test('healthy stock remains non-actionable with exact decimals', () => {
   assert.equal(result.shortfallExact, '0.000');
   assert.equal(result.status, 'healthy');
   assert.equal(result.needsReorder, false);
+});
+
+test('summary reconciles counts and exact shortfall with the returned rows', () => {
+  const rows = [
+    buildInventoryStockHealth({ id: 'p-1', sku: 'A', name: 'A', stock: D('2.000'), reserved: D('1.000'), minStock: D('3.000') }),
+    buildInventoryStockHealth({ id: 'p-2', sku: 'B', name: 'B', stock: D('5.000'), reserved: D('1.000'), minStock: D('4.000') }),
+    buildInventoryStockHealth({ id: 'p-3', sku: 'C', name: 'C', stock: D('9.000'), reserved: D('1.000'), minStock: D('2.000') })
+  ];
+
+  const summary = summarizeInventoryStockHealth(rows);
+  assert.equal(summary.totalProducts, 3);
+  assert.equal(summary.needsReorder, 2);
+  assert.deepEqual(summary.counts, {
+    out_of_stock: 0,
+    below_minimum: 1,
+    at_minimum: 1,
+    healthy: 1
+  });
+  assert.equal(summary.totalShortfallExact, '2.000');
 });
