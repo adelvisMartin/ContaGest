@@ -1,33 +1,46 @@
-# QA REPORT — Bridge v1.5.0
+# QA REPORT — Bridge v1.6.0
 
 ## Objetivo
 
-La versión 1.5.0 añade respuesta autónoma segura en el grupo SOURCE. El canal permanece en solo lectura por defecto y sólo puede enviar cuando backend y Bridge habilitan explícitamente `HIPICO_SOURCE_AUTO_REPLY_ENABLED=true`, el grupo `@g.us` está pinneado, el preflight está listo y no existe kill switch local.
+v1.6.0 separa explícitamente **capacidad técnica de transporte** de **permiso de negocio/política**. El Bridge puede observar SOURCE y ejecutar conversación automática en LAB, pero SOURCE permanece read-only porque la Política de mensajes de WhatsApp Business revisada el 2026-09-29 prohíbe facilitar apuestas con dinero real.
 
-## Controles v1.5.0
+## Controles v1.6.0
 
-- árbitro backend determinista para respuestas autónomas;
-- Jev sólo puede degradar una respuesta segura; nunca aumenta autoridad;
-- consultas hípicas read-only usan el store canónico y Risk Policy antes de responder;
-- mensajes monetarios/lifecycle pueden recibir ACK o aclaración, pero nunca ejecutar dinero/estado;
-- adjuntos solicitan texto antes de recurrir a humano;
-- hasta tres aclaraciones automáticas antes del handoff de último recurso;
-- comandos `source_reply` persistidos e idempotentes;
-- journal local `prepared → sending → sent|ambiguous`;
-- un crash durante envío queda `ambiguous` y no se reenvía a ciegas;
-- mensajes `fromMe` se excluyen para evitar feedback loops;
-- identidad SOURCE se revalida antes de escribir y antes de Enter;
-- recibos de entrega se reconcilian con backend;
-- kill switch local bloquea auto-reply aunque la configuración siga activa;
-- datos/colas permanecen bajo el directorio persistente del Bridge.
+- adapter actual `playwright-web` declarado mediante contrato de capacidades;
+- boundary `cloud-api` registrado como oficial pero `implemented=false` para no fingir soporte;
+- gate `SOURCE_AUTO_REPLY_POLICY_NO_GO` con snapshot/reason codes estructurados;
+- ningún `.env`, país, licencia o metadata de revisión puede convertir el snapshot actual en GO;
+- árbitro backend determinista para respuestas conversacionales;
+- Jev puede degradar una respuesta segura, nunca aumentar autoridad;
+- consultas read-only usan store/risk policy canónicos;
+- mensajes monetarios/lifecycle pueden generar ACK/aclaración, no ejecutar dinero/estado;
+- adjuntos no conceden autoridad financiera;
+- comandos y eventos persistidos/idempotentes;
+- journal durable `prepared → sending → sent|ambiguous`;
+- crash durante envío queda `ambiguous`, sin retry ciego;
+- `fromMe` se excluye para evitar feedback loops;
+- identidad de SOURCE/LAB se revalida con IDs `@g.us`;
+- kill switch local bloquea promoción/envío;
+- spool/backoff/replay conservan trabajo seguro durante fallos;
+- diagnóstico `npm run source:policy` expone capacidades/política sin secretos.
 
-## Gate
+## Gate de QA
 
-`npm run check`, `npm test`, typecheck y tests Hípico del backend, PostgreSQL
-aislado para idempotencia/recibos, build backend y `git diff --check` deben pasar
-sobre el SHA exacto. CI nunca activa el envío real a WhatsApp.
+```text
+npm run check
+npm test
+npm run source:policy
+```
 
-El Bridge sólo puede operar SOURCE auto-reply cuando
-`/api/v1/hipico-bot/bridge/health` responde `ready=true`,
-`sourceSendPossible=true` y `mode=safe-auto`. En cualquier discrepancia el
-preflight falla cerrado.
+El gate de repositorio agrega contratos backend, PostgreSQL efímero, browser y exact-SHA cuando la infraestructura está disponible. Un job GitHub sin steps ejecutados es `BLOCKED_INFRASTRUCTURE / NOT_EXECUTED`, no PASS.
+
+## Resultado esperado de la prueba local
+
+- SOURCE recibe cero mensajes automáticos;
+- LAB puede responder automáticamente con IDs pinneados y distintos;
+- duplicados no producen doble efecto;
+- entregas inciertas quedan `ambiguous`;
+- reconnect/restart conserva spool/journals;
+- `sourceSendPossible=false` permanece coherente con la política actual.
+
+Un LAB verde demuestra readiness técnica del entorno de prueba; no autoriza SOURCE writing.
