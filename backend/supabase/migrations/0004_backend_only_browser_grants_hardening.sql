@@ -1,30 +1,34 @@
 -- ContaGest issue #635 · backend-only browser grant hardening.
--- Policy sidecar: no structural tables, no data mutation, no shared-product enumeration.
+-- Forward-only policy correction for the exact tenant tables observed with stale
+-- anon/authenticated DML grants. Future drift is blocked by the v635 catalog gate.
 -- SOURCE_REUSE=NONE
 
 DO $$
 DECLARE
-  rec record;
+  table_name text;
 BEGIN
-  FOR rec IN
-    SELECT c.relname
-    FROM pg_class AS c
-    JOIN pg_namespace AS n ON n.oid=c.relnamespace
-    WHERE n.nspname='public'
-      AND c.relkind IN ('r','p')
-      AND c.relname ~ '^[A-Z]'
-      AND EXISTS (
-        SELECT 1
-        FROM pg_attribute AS a
-        WHERE a.attrelid=c.oid
-          AND a.attname='tenantId'
-          AND a.attnum>0
-          AND NOT a.attisdropped
-      )
-    ORDER BY c.relname
+  FOREACH table_name IN ARRAY ARRAY[
+    'DataLegalHold',
+    'DataLifecycleEvidence',
+    'DataLifecycleJob',
+    'DataRetentionPolicyVersion',
+    'DataStorageObject',
+    'FinancialFxBankAccountMap',
+    'FinancialFxDocumentSnapshot',
+    'FinancialFxEvent',
+    'FinancialFxLedgerLineSnapshot',
+    'FinancialFxPolicy',
+    'FiscalCloseEvidence',
+    'FiscalDocumentRuleSnapshot',
+    'FiscalRuleVersion',
+    'FiscalSequence'
+  ]
   LOOP
-    EXECUTE format('REVOKE ALL PRIVILEGES ON TABLE public.%I FROM anon',rec.relname);
-    EXECUTE format('REVOKE ALL PRIVILEGES ON TABLE public.%I FROM authenticated',rec.relname);
+    IF to_regclass(format('public.%I',table_name)) IS NULL THEN
+      CONTINUE;
+    END IF;
+    EXECUTE format('REVOKE ALL PRIVILEGES ON TABLE public.%I FROM anon',table_name);
+    EXECUTE format('REVOKE ALL PRIVILEGES ON TABLE public.%I FROM authenticated',table_name);
   END LOOP;
 END
 $$;
