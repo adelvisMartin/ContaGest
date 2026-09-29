@@ -7,7 +7,9 @@ export function createContaGestMuiTheme(mode = 'light') {
   const tokens = getContaGestThemeTokens(mode);
   const { color, typography, radius, controls, elevation, zIndex, layout } = tokens;
   const mobileQuery = `@media (max-width:${layout.breakpoints.mobile}px)`;
+  const reducedMotionQuery = '@media (prefers-reduced-motion: reduce)';
   const onBrand = color.textInverse;
+  const focusVisible = { outline:`2px solid ${color.focus}`, outlineOffset:2 };
 
   return createTheme({
     palette: {
@@ -52,17 +54,20 @@ export function createContaGestMuiTheme(mode = 'light') {
       tooltip: zIndex.toast + 10
     },
     components: {
-      MuiCssBaseline: { styleOverrides: { body: { backgroundImage: 'none', backgroundColor: color.background, color: color.textPrimary } } },
+      MuiCssBaseline: { styleOverrides: {
+        body: { backgroundImage: 'none', backgroundColor: color.background, color: color.textPrimary },
+        [reducedMotionQuery]: { '*, *::before, *::after': { animationDuration:'0.01ms !important', animationIterationCount:'1 !important', transitionDuration:'0.01ms !important', scrollBehavior:'auto !important' } }
+      } },
       MuiPaper: { styleOverrides: { root: { backgroundImage: 'none', borderColor: color.border } } },
       MuiCard: { styleOverrides: { root: { backgroundImage: 'none', border: `1px solid ${color.border}`, borderRadius: pxNumber(radius.lg), boxShadow: elevation.low } } },
       MuiButton: {
         defaultProps: { disableElevation: true, size: 'small' },
         styleOverrides: {
-          root: { minHeight: pxNumber(controls.default), borderRadius: pxNumber(radius.control), paddingInline: pxNumber(controls.horizontalPadding), whiteSpace: 'nowrap', boxShadow: 'none', fontSize: pxNumber(typography.roles.label), [mobileQuery]: { minHeight: pxNumber(controls.touch) } },
+          root: { minHeight: pxNumber(controls.default), borderRadius: pxNumber(radius.control), paddingInline: pxNumber(controls.horizontalPadding), whiteSpace: 'nowrap', boxShadow: 'none', fontSize: pxNumber(typography.roles.label), '&.Mui-focusVisible':focusVisible, [mobileQuery]: { minHeight: pxNumber(controls.touch) } },
           containedPrimary: { color: onBrand, '&:hover': { backgroundColor: color.brandHover, color: onBrand } }
         }
       },
-      MuiIconButton: { styleOverrides: { root: { borderRadius: pxNumber(radius.control), [mobileQuery]: { minWidth: pxNumber(controls.touch), minHeight: pxNumber(controls.touch) } } } },
+      MuiIconButton: { styleOverrides: { root: { borderRadius: pxNumber(radius.control), '&.Mui-focusVisible':focusVisible, [mobileQuery]: { minWidth: pxNumber(controls.touch), minHeight: pxNumber(controls.touch) } } } },
       MuiTextField: { defaultProps: { size: 'small', fullWidth: true, variant: 'outlined', slotProps: { inputLabel: { shrink: true } } } },
       MuiOutlinedInput: {
         styleOverrides: {
@@ -71,6 +76,7 @@ export function createContaGestMuiTheme(mode = 'light') {
             '& .MuiOutlinedInput-notchedOutline': { borderColor: color.borderStrong },
             '&:hover .MuiOutlinedInput-notchedOutline': { borderColor: color.textMuted },
             '&.Mui-focused .MuiOutlinedInput-notchedOutline': { borderColor: color.focus, borderWidth: 1.5 },
+            '&.Mui-focused': { outline:`2px solid ${color.focus}`, outlineOffset:1 },
             [mobileQuery]: { minHeight: pxNumber(controls.touch) }
           },
           input: { padding: '9px 10px', fontSize: pxNumber(typography.roles.dense), fontWeight: typography.weight.regular },
@@ -80,12 +86,12 @@ export function createContaGestMuiTheme(mode = 'light') {
       MuiInputBase: { styleOverrides: { inputMultiline: { padding: 0, lineHeight: typography.lineHeight.body } } },
       MuiInputLabel: { styleOverrides: { root: { fontSize: pxNumber(typography.roles.metadata), fontWeight: typography.weight.semibold, color: color.textSecondary } } },
       MuiSelect: { styleOverrides: { select: { paddingBlock: '8px', fontSize: pxNumber(typography.roles.dense), fontWeight: typography.weight.medium } } },
-      MuiMenuItem: { styleOverrides: { root: { minHeight: pxNumber(controls.dense), margin: '2px 5px', borderRadius: pxNumber(radius.sm), fontSize: pxNumber(typography.roles.dense), fontWeight: typography.weight.medium, [mobileQuery]: { minHeight: pxNumber(controls.touch) } } } },
-      MuiTab: { styleOverrides: { root: { minHeight: pxNumber(controls.tabs), minWidth: 0, padding: '7px 10px', fontSize: pxNumber(typography.roles.label), fontWeight: typography.weight.semibold, textTransform: 'none', [mobileQuery]: { minHeight: pxNumber(controls.touch) } } } },
+      MuiMenuItem: { styleOverrides: { root: { minHeight: pxNumber(controls.dense), margin: '2px 5px', borderRadius: pxNumber(radius.sm), fontSize: pxNumber(typography.roles.dense), fontWeight: typography.weight.medium, '&.Mui-focusVisible':focusVisible, [mobileQuery]: { minHeight: pxNumber(controls.touch) } } } },
+      MuiTab: { styleOverrides: { root: { minHeight: pxNumber(controls.tabs), minWidth: 0, padding: '7px 10px', fontSize: pxNumber(typography.roles.label), fontWeight: typography.weight.semibold, textTransform: 'none', '&.Mui-focusVisible':focusVisible, [mobileQuery]: { minHeight: pxNumber(controls.touch) } } } },
       MuiTabs: { styleOverrides: { root: { minHeight: pxNumber(controls.tabs) }, indicator: { height: 2, borderRadius: 4 } } },
       MuiTableContainer: { styleOverrides: { root: { border: `1px solid ${color.border}`, borderRadius: pxNumber(radius.md), boxShadow: 'none' } } },
       MuiTableCell: { styleOverrides: { root: { padding: '9px 10px', fontSize: pxNumber(typography.roles.label), borderColor: color.border }, head: { fontSize: 9, fontWeight: typography.weight.strong, textTransform: 'uppercase', letterSpacing: '.045em', color: color.textMuted, backgroundColor: color.surfaceSubtle } } },
-      MuiChip: { defaultProps: { size: 'small' }, styleOverrides: { root: { height: pxNumber(controls.chip), fontSize: 9, fontWeight: typography.weight.strong, borderRadius: pxNumber(radius.pill) } } },
+      MuiChip: { defaultProps: { size: 'small' }, styleOverrides: { root: { height: pxNumber(controls.chip), fontSize: 9, fontWeight: typography.weight.strong, borderRadius: pxNumber(radius.pill), '&.Mui-focusVisible':focusVisible } } },
       MuiDialog: { styleOverrides: { paper: { borderRadius: pxNumber(radius.lg), backgroundImage: 'none', border: `1px solid ${color.border}`, boxShadow: elevation.high } } },
       MuiBreadcrumbs: { styleOverrides: { root: { fontSize: pxNumber(typography.roles.metadata), fontWeight: typography.weight.medium, color: color.textMuted } } },
       MuiTooltip: { styleOverrides: { tooltip: { fontSize: pxNumber(typography.roles.metadata), borderRadius: pxNumber(radius.sm) } } }

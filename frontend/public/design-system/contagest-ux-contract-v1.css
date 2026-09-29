@@ -1,0 +1,24 @@
+/* UX behavior adapter for UX_CONTRACT_V1. Semantic values remain owned by contagest-semantic-tokens-v1.css. */
+:where(button,a[href],input,select,textarea,[role="button"],[role="menuitem"],[role="tab"],[tabindex]):focus-visible {
+  outline: 2px solid var(--cg-v-focus);
+  outline-offset: 2px;
+}
+
+:where(button,[role="button"],input,select,textarea) {
+  accent-color: var(--cg-v-brand);
+}
+
+@media (max-width: 760px) {
+  :where(button,a[href],[role="button"],[role="menuitem"],[role="tab"]) {
+    min-height: var(--cg-v-control-touch);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

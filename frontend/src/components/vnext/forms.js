@@ -5,23 +5,30 @@ import { normalizeDateValue, normalizeTimeValue, serializeDateRange } from './fo
 const optionValue=(option)=>String(option?.value??option??'');
 const optionLabel=(option)=>String(option?.label??option?.value??option??'');
 const fieldIds=(id='cg-field')=>({helperId:`${id}-helper`,errorId:`${id}-error`});
+const describedByFor=(id,helperText='',errorText='',includeBoth=false)=>{
+  const {helperId,errorId}=fieldIds(id);
+  if(includeBoth)return [helperText&&helperId,errorText&&errorId].filter(Boolean).join(' ')||undefined;
+  return errorText?errorId:helperText?helperId:undefined;
+};
 const renderTextField=(props={})=>React.createElement(Mui.TextField,{fullWidth:true,size:'small',variant:'outlined',...props});
 
 export function CgFormField({id='cg-field',label,helperText='',errorText='',required=false,children}={}){
   const {helperId,errorId}=fieldIds(id);
-  const describedBy=[helperText&&helperId,errorText&&errorId].filter(Boolean).join(' ')||undefined;
+  const describedBy=describedByFor(id,helperText,errorText,true);
   return React.createElement(Mui.FormControl,{fullWidth:true,error:Boolean(errorText),required},label?React.createElement(Mui.FormLabel,{htmlFor:id},label):null,typeof children==='function'?children({'aria-describedby':describedBy,id}):children,helperText?React.createElement(Mui.FormHelperText,{id:helperId},helperText):null,errorText?React.createElement(Mui.FormHelperText,{id:errorId},errorText):null);
 }
 
 export function CgSelect({id='cg-select',label='',value='',onChange,options=[],loading=false,disabled=false,readOnly=false,helperText='',errorText='',required=false,emptyLabel='Sin opciones',...props}={}){
   const {helperId,errorId}=fieldIds(id);
-  const describedBy=[helperText&&helperId,errorText&&errorId].filter(Boolean).join(' ')||undefined;
+  const describedBy=describedByFor(id,helperText,errorText,true);
   return React.createElement(Mui.FormControl,{fullWidth:true,size:'small',error:Boolean(errorText),disabled:disabled||loading,required},label?React.createElement(Mui.InputLabel,{id:`${id}-label`},label):null,React.createElement(Mui.Select,{...props,id,labelId:label?`${id}-label`:undefined,label:label||undefined,value:String(value??''),readOnly:Boolean(readOnly),onChange:(event)=>onChange?.(String(event.target.value),event),inputProps:{...(props.inputProps||{}),'aria-label':label||props['aria-label']||'Seleccione','aria-describedby':describedBy},MenuProps:{PaperProps:{sx:{mt:.5,maxHeight:340,borderRadius:2}},...(props.MenuProps||{})}},loading?React.createElement(Mui.MenuItem,{disabled:true,value:''},'Cargando…'):options.length?options.map((option)=>React.createElement(Mui.MenuItem,{key:optionValue(option),value:optionValue(option)},optionLabel(option))):React.createElement(Mui.MenuItem,{disabled:true,value:''},emptyLabel)),helperText?React.createElement(Mui.FormHelperText,{id:helperId},helperText):null,errorText?React.createElement(Mui.FormHelperText,{id:errorId},errorText):null);
 }
 
 export function CgAutocomplete({id='cg-autocomplete',label='',value=null,onChange,options=[],loading=false,disabled=false,readOnly=false,helperText='',errorText='',freeSolo=false,...props}={}){
   const selected=options.find((option)=>optionValue(option)===String(value??''))??(freeSolo&&value!=null?String(value):null);
-  return React.createElement(Mui.Autocomplete,{...props,id,options,loading,disabled,readOnly,freeSolo,value:selected,getOptionLabel:optionLabel,isOptionEqualToValue:(a,b)=>optionValue(a)===optionValue(b),onChange:(event,next)=>onChange?.(next==null?'':optionValue(next),event),onInputChange:freeSolo?(event,next,reason)=>{if(reason==='input')onChange?.(String(next),event);props.onInputChange?.(event,next,reason);}:props.onInputChange,renderInput:(params)=>renderTextField({...params,label,error:Boolean(errorText),helperText:errorText||helperText,inputProps:{...params.inputProps,'aria-describedby':`${id}-helper`}})});
+  const {helperId,errorId}=fieldIds(id);
+  const describedBy=describedByFor(id,helperText,errorText);
+  return React.createElement(Mui.Autocomplete,{...props,id,options,loading,disabled,readOnly,freeSolo,value:selected,getOptionLabel:optionLabel,isOptionEqualToValue:(a,b)=>optionValue(a)===optionValue(b),onChange:(event,next)=>onChange?.(next==null?'':optionValue(next),event),onInputChange:freeSolo?(event,next,reason)=>{if(reason==='input')onChange?.(String(next),event);props.onInputChange?.(event,next,reason);}:props.onInputChange,renderInput:(params)=>renderTextField({...params,label,error:Boolean(errorText),helperText:errorText||helperText,inputProps:{...params.inputProps,'aria-describedby':describedBy},slotProps:{...(params.slotProps||{}),formHelperText:{...(params.slotProps?.formHelperText||{}),id:errorText?errorId:helperId}}})});
 }
 
 export function CgCombobox(props={}){return React.createElement(CgAutocomplete,{...props,freeSolo:true});}

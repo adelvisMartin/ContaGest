@@ -40,6 +40,8 @@ export const PROFILE_GATES = Object.freeze({
   ]),
   ui:Object.freeze([
     gate('ui-frontend-build','npm run build:frontend'),
+    gate('ui-theme-state-a11y-contract','node --test tests/theme_state_accessibility_issue_645.test.mjs'),
+    gate('ui-theme-state-a11y-browser','node scripts/ux-contract-browser-v645.mjs'),
     gate('ui-authoritative','npm run qa:ui:58'),
     gate('ui-browser-a11y','npm run test:browser:a11y'),
     gate('ui-browser-contrast','npm run test:browser:contrast'),

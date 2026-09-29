@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client';
 import * as Mui from '@mui/material';
 import { Toaster, toast } from 'react-hot-toast';
 import { translations } from '../i18n/translations.js';
+import { normalizeThemePreference, resolveThemeMode, SYSTEM_THEME_QUERY } from '../design-system/uxContract.v1.js';
 import { createContaGestMuiTheme } from './muiThemeAdapter.js';
 import { CgButton, CgTextField, CgSelect, CgDatePicker, CgTimeField } from './vnext/index.js';
 
@@ -10,24 +11,22 @@ export { createContaGestMuiTheme } from './muiThemeAdapter.js';
 
 const runtime={React,createRoot,Mui,HotToast:{Toaster,toast}};
 const mountedRoots=new WeakMap();
-const SYSTEM_THEME_QUERY='(prefers-color-scheme: dark)';
 
 function parseJson(value,fallback=[]){try{return JSON.parse(value||'[]');}catch{return fallback;}}
 function ensureId(node,prefix='mui'){if(!node.dataset.muiId)node.dataset.muiId=`${prefix}_${Math.random().toString(36).slice(2,9)}`;return node.dataset.muiId;}
-function systemPrefersDark(){return Boolean(globalThis.matchMedia?.(SYSTEM_THEME_QUERY)?.matches);}
-export function muiModeFor(state){const requested=state?.settings?.theme||'light';if(requested==='dark'||requested==='light')return requested;return systemPrefersDark()?'dark':'light';}
-function useMuiMode(state){
-  const requested=state?.settings?.theme||'light';
-  const [systemDark,setSystemDark]=React.useState(systemPrefersDark);
+export function muiModeFor(state){return resolveThemeMode(state?.settings?.theme||'light',Boolean(globalThis.matchMedia?.(SYSTEM_THEME_QUERY)?.matches));}
+export function useMuiMode(state){
+  const requested=normalizeThemePreference(state?.settings?.theme||'light');
+  const [systemDark,setSystemDark]=React.useState(()=>Boolean(globalThis.matchMedia?.(SYSTEM_THEME_QUERY)?.matches));
   React.useEffect(()=>{
     if(requested!=='system'||!globalThis.matchMedia)return undefined;
     const query=globalThis.matchMedia(SYSTEM_THEME_QUERY);
     const onChange=(event)=>setSystemDark(Boolean(event.matches));
     setSystemDark(Boolean(query.matches));
-    query.addEventListener('change',onChange);
-    return()=>query.removeEventListener('change',onChange);
+    query.addEventListener?.('change',onChange);
+    return()=>query.removeEventListener?.('change',onChange);
   },[requested]);
-  return requested==='system'?(systemDark?'dark':'light'):muiModeFor(state);
+  return resolveThemeMode(requested,systemDark);
 }
 function humanize(value='Campo'){return String(value).replace(/([a-z])([A-Z])/g,'$1 $2').replace(/[_-]+/g,' ').replace(/^./,(char)=>char.toUpperCase());}
 
