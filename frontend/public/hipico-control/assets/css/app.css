@@ -1,3 +1,39 @@
 /* Control Hípico — canonical UI System v4.1 entrypoint. */
 @import url("./ui-system-v3-compat.css");
 @import url("./ui-system-v4.css");
+
+/* Final convergence rules live here so the product has one stylesheet authority. */
+.sidebar-collapse [data-v4-collapse-icon] {
+  display: inline-grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  flex: 0 0 16px;
+}
+.sidebar-collapse [data-v4-collapse-icon] svg { width: 15px; height: 15px; margin: auto; }
+.shell.is-sidebar-collapsed .sidebar-collapse [data-v4-collapse-icon] { display: inline-grid !important; }
+.shell.is-sidebar-collapsed .sidebar-collapse [data-v4-collapse-label] { display: none !important; }
+
+.hc-help-trigger {
+  width: var(--hc-v4-control);
+  min-width: var(--hc-v4-control);
+  height: var(--hc-v4-control);
+  min-height: var(--hc-v4-control);
+  display: inline-grid;
+  place-items: center;
+  padding: 0;
+  gap: 0;
+  border-radius: var(--hc-v4-radius-md);
+  color: var(--hc-text-muted);
+}
+.hc-help-trigger span { display: none; }
+.hc-help-trigger svg { width: 16px; height: 16px; margin: auto; }
+
+@media (pointer: coarse) {
+  .hc-help-trigger {
+    width: var(--hc-v4-touch);
+    min-width: var(--hc-v4-touch);
+    height: var(--hc-v4-touch);
+    min-height: var(--hc-v4-touch);
+  }
+}
