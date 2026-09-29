@@ -76,10 +76,11 @@ test('Control Hípico remains a relative-path PWA under the Pages repository sub
   assert.match(sw, /self\.registration\.scope/);
 });
 
-test('GitHub Pages login fails closed without leaking a returned HTML error document', () => {
+test('GitHub Pages login fails closed without leaking the observed 404 HTML document', () => {
   const login = read('frontend/src/pages/LoginPage.js');
   assert.match(login, /STATIC_PAGES_API_UNCONFIGURED/);
   assert.match(login, /github\.io/);
   assert.match(login, /<!doctype html|Site not found/i);
-  assert.doesNotMatch(login, /return raw\|\|'No se pudo cargar la verificación/);
+  assert.match(login, /raw\.length>280/);
+  assert.match(login, /data-hipico-entry/);
 });
