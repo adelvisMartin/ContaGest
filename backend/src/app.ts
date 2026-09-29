@@ -18,6 +18,7 @@ import hipicoCanonicalRoutes from './modules/hipico-bot/hipico-canonical.routes.
 import hipicoLegacyProviderRoutes from './modules/hipico-bot/hipico-provider.routes.js';
 import { requestContext } from './shared/middleware/context.js';
 import { errorHandler, notFound } from './shared/middleware/error.js';
+import { tenantReferenceGuard } from './shared/middleware/tenant-reference-guard.js';
 import {
   authRateLimit,
   collectCspReport,
@@ -121,7 +122,7 @@ export function createApp(options: { readinessCheck?: ReadinessCheck } = {}) {
     ['/api/v1/ai', '/api/v1/exports', '/api/v1/imports', '/api/v1/reports', '/api/v1/payables'],
     expensiveOperationRateLimit
   );
-  app.use('/api/v1', mutationRateLimit, requestContext, apiRoutes);
+  app.use('/api/v1', mutationRateLimit, requestContext, tenantReferenceGuard, apiRoutes);
 
   app.use(notFound);
   app.use(errorHandler);
