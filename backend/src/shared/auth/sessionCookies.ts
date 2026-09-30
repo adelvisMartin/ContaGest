@@ -1,6 +1,7 @@
 import crypto from 'node:crypto';
 import type { Request, Response } from 'express';
 import { prisma } from '../../database/prisma.js';
+import { runWithRuntimeTenant } from '../../database/runtime-tenant-context.js';
 import { env, isProd } from '../../config/env.js';
 import { signAccessToken, tokenExpiresAt } from './jwt.js';
 import { HttpError } from '../http.js';
@@ -126,6 +127,21 @@ export function setDeviceCredentialCookie(res: Response, credential: string, exp
   });
 }
 
+async function resolveRefreshSession(refreshHash:string){
+  const rows=await prisma.$queryRaw<Array<{
+    session_id:string;user_id:string;tenant_id:string;refresh_hash:string;csrf_hash:string;
+    status:string;rotation_counter:number;expires_at:Date;
+  }>>`
+    SELECT * FROM private.contagest_runtime_refresh_session_identity(${refreshHash})
+  `;
+  const row=rows[0];
+  if(!row)return null;
+  return{
+    id:row.session_id,userId:row.user_id,tenantId:row.tenant_id,refreshHash:row.refresh_hash,
+    csrfHash:row.csrf_hash,status:row.status,rotationCounter:Number(row.rotation_counter||0),expiresAt:new Date(row.expires_at)
+  } satisfies SessionRow;
+}
+
 export async function issueBrowserSession(req: Request, res: Response, user: { id:string; email:string }, tenantId: string, metadata: Record<string, unknown> = {}) {
   const id = crypto.randomUUID();
   const refreshToken = opaqueToken('cgr', 36);
@@ -161,16 +177,12 @@ export async function rotateBrowserSession(req: Request, res: Response) {
   }
   const refreshHash = hashOpaque('refresh', refreshToken);
   const csrfHash = hashOpaque('csrf', csrfCookie);
-  const rows = await prisma.$queryRaw<SessionRow[]>`
-    SELECT "id","userId","tenantId","refreshHash","csrfHash","status","rotationCounter","expiresAt"
-    FROM public."UserSession"
-    WHERE "refreshHash" = ${refreshHash} AND "status" = 'active'
-    LIMIT 1
-  `;
-  const session = rows[0];
+  const session = await resolveRefreshSession(refreshHash);
   if (!session || new Date(session.expiresAt).getTime() <= Date.now()) {
     if (session?.id) {
-      await prisma.$executeRaw`UPDATE public."UserSession" SET "status"='expired', "updatedAt"=now() WHERE "id"=${session.id}`;
+      await runWithRuntimeTenant(session.tenantId,()=>prisma.$executeRaw`
+        UPDATE public."UserSession" SET "status"='expired', "updatedAt"=now() WHERE "id"=${session.id}
+      `);
     }
     clearSessionCookies(res);
     throw new HttpError(401, 'La sesión de renovación venció. Inicia sesión nuevamente.');
@@ -179,60 +191,65 @@ export async function rotateBrowserSession(req: Request, res: Response) {
     throw new HttpError(403, 'El token CSRF no pertenece a esta sesión.');
   }
 
-  const user = await prisma.userProfile.findFirst({
-    where:{ id:session.userId, tenantId:session.tenantId, status:'active' },
-    select:{ id:true, email:true, accessExpiresAt:true }
+  return runWithRuntimeTenant(session.tenantId,async()=>{
+    const user = await prisma.userProfile.findFirst({
+      where:{ id:session.userId, tenantId:session.tenantId, status:'active' },
+      select:{ id:true, email:true, accessExpiresAt:true }
+    });
+    if (!user) {
+      await prisma.$executeRaw`UPDATE public."UserSession" SET "status"='revoked', "revokedAt"=now(), "updatedAt"=now() WHERE "id"=${session.id}`;
+      clearSessionCookies(res);
+      throw new HttpError(401, 'La cuenta de la sesión ya no está activa.');
+    }
+    if (user.accessExpiresAt && user.accessExpiresAt.getTime() <= Date.now()) {
+      await prisma.$executeRaw`UPDATE public."UserSession" SET "status"='revoked', "revokedAt"=now(), "updatedAt"=now() WHERE "id"=${session.id}`;
+      clearSessionCookies(res);
+      throw new HttpError(403, 'El acceso temporal venció.');
+    }
+
+    const nextRefreshToken = opaqueToken('cgr', 36);
+    const nextCsrfToken = opaqueToken('cgc', 24);
+    const nextRefreshHash = hashOpaque('refresh', nextRefreshToken);
+    const nextCsrfHash = hashOpaque('csrf', nextCsrfToken);
+    const nextExpiry = new Date(Date.now() + REFRESH_TTL_MS);
+
+    const changed=await prisma.$executeRaw`
+      UPDATE public."UserSession"
+      SET "refreshHash"=${nextRefreshHash}, "csrfHash"=${nextCsrfHash},
+          "rotationCounter"="rotationCounter"+1, "expiresAt"=${nextExpiry},
+          "lastSeenAt"=now(), "lastIp"=${req.ip || null}, "lastUserAgent"=${req.headers['user-agent'] || null}, "updatedAt"=now()
+      WHERE "id"=${session.id} AND "refreshHash"=${refreshHash} AND "csrfHash"=${csrfHash} AND "status"='active'
+    `;
+    if(Number(changed)!==1){
+      await prisma.$executeRaw`UPDATE public."UserSession" SET "status"='revoked',"revokedAt"=now(),"updatedAt"=now() WHERE "id"=${session.id}`;
+      clearSessionCookies(res);
+      throw new HttpError(401,'Se detectó una renovación reutilizada o concurrente. Inicia sesión nuevamente.');
+    }
+
+    const accessToken = signAccessToken(user, session.tenantId, session.id);
+    setSessionCookies(res, accessToken, nextRefreshToken, nextCsrfToken, nextExpiry);
+    return {
+      sessionId:session.id,
+      userId:user.id,
+      tenantId:session.tenantId,
+      expiresAt:tokenExpiresAt(accessToken),
+      sessionExpiresAt:nextExpiry.toISOString()
+    };
   });
-  if (!user) {
-    await prisma.$executeRaw`UPDATE public."UserSession" SET "status"='revoked', "revokedAt"=now(), "updatedAt"=now() WHERE "id"=${session.id}`;
-    clearSessionCookies(res);
-    throw new HttpError(401, 'La cuenta de la sesión ya no está activa.');
-  }
-  if (user.accessExpiresAt && user.accessExpiresAt.getTime() <= Date.now()) {
-    await prisma.$executeRaw`UPDATE public."UserSession" SET "status"='revoked', "revokedAt"=now(), "updatedAt"=now() WHERE "id"=${session.id}`;
-    clearSessionCookies(res);
-    throw new HttpError(403, 'El acceso temporal venció.');
-  }
-
-  const nextRefreshToken = opaqueToken('cgr', 36);
-  const nextCsrfToken = opaqueToken('cgc', 24);
-  const nextRefreshHash = hashOpaque('refresh', nextRefreshToken);
-  const nextCsrfHash = hashOpaque('csrf', nextCsrfToken);
-  const nextExpiry = new Date(Date.now() + REFRESH_TTL_MS);
-
-  const changed=await prisma.$executeRaw`
-    UPDATE public."UserSession"
-    SET "refreshHash"=${nextRefreshHash}, "csrfHash"=${nextCsrfHash},
-        "rotationCounter"="rotationCounter"+1, "expiresAt"=${nextExpiry},
-        "lastSeenAt"=now(), "lastIp"=${req.ip || null}, "lastUserAgent"=${req.headers['user-agent'] || null}, "updatedAt"=now()
-    WHERE "id"=${session.id} AND "refreshHash"=${refreshHash} AND "csrfHash"=${csrfHash} AND "status"='active'
-  `;
-  if(Number(changed)!==1){
-    await prisma.$executeRaw`UPDATE public."UserSession" SET "status"='revoked',"revokedAt"=now(),"updatedAt"=now() WHERE "id"=${session.id}`;
-    clearSessionCookies(res);
-    throw new HttpError(401,'Se detectó una renovación reutilizada o concurrente. Inicia sesión nuevamente.');
-  }
-
-  const accessToken = signAccessToken(user, session.tenantId, session.id);
-  setSessionCookies(res, accessToken, nextRefreshToken, nextCsrfToken, nextExpiry);
-  return {
-    sessionId:session.id,
-    userId:user.id,
-    tenantId:session.tenantId,
-    expiresAt:tokenExpiresAt(accessToken),
-    sessionExpiresAt:nextExpiry.toISOString()
-  };
 }
 
 export async function revokeBrowserSession(req: Request, res: Response) {
   const refreshToken = readCookie(req, COOKIE_NAMES.refresh);
   if (refreshToken) {
     const refreshHash = hashOpaque('refresh', refreshToken);
-    await prisma.$executeRaw`
-      UPDATE public."UserSession"
-      SET "status"='revoked', "revokedAt"=now(), "updatedAt"=now()
-      WHERE "refreshHash"=${refreshHash} AND "status"='active'
-    `;
+    const session=await resolveRefreshSession(refreshHash);
+    if(session){
+      await runWithRuntimeTenant(session.tenantId,()=>prisma.$executeRaw`
+        UPDATE public."UserSession"
+        SET "status"='revoked', "revokedAt"=now(), "updatedAt"=now()
+        WHERE "id"=${session.id} AND "refreshHash"=${refreshHash} AND "status"='active'
+      `);
+    }
   }
   clearSessionCookies(res);
 }

@@ -1,5 +1,6 @@
 import type { Prisma } from '@prisma/client';
 import { prisma } from '../../database/prisma.js';
+import { runWithRuntimeTenant } from '../../database/runtime-tenant-context.js';
 import { HttpError } from '../http.js';
 import { assertSubscriptionAccess } from '../commercial/subscriptionGuard.js';
 import { hasPlatformAccess, PLATFORM_TENANT_RIF } from './platformAccess.js';
@@ -30,6 +31,16 @@ type LicenseExtensionRow = {
   maxDevices:number|null;
   activationCount:number|null;
   subscriptionId:string|null;
+};
+
+type AccessibleTenantIdentityRow = {
+  membershipId:string;
+  tenantId:string;
+  userProfileId:string;
+  roleLabel:string|null;
+  rif:string;
+  name:string;
+  legalName:string|null;
 };
 
 function normalizeLicenseModules(value:unknown){
@@ -151,58 +162,49 @@ export async function listAccessibleTenants(userProfileId:string) {
   }
   if(membership.accountStatus==='disabled')return [];
 
-  const rows = await prisma.$queryRaw<Array<{
-    membershipId:string;tenantId:string;userProfileId:string;roleLabel:string|null;status:string;rif:string;name:string;legalName:string|null;
-    tenantStatus:string;hasPlatformPermission:boolean;licenseStatus:string|null;licenseExpiresAt:Date|null;subscriptionId:string|null;
-  }>>`
-    SELECT tm."id" AS "membershipId", tm."tenantId", tm."userProfileId", tm."roleLabel", tm."status",
-           t."rif", t."name", t."legalName", t."status"::text AS "tenantStatus",
-           EXISTS (
-             SELECT 1 FROM public."UserRole" ur
-             JOIN public."Role" r ON r."id"=ur."roleId" AND r."tenantId"=tm."tenantId" AND r."scope"='platform'
-             JOIN public."RolePermission" rp ON rp."roleId"=r."id"
-             JOIN public."Permission" p ON p."id"=rp."permissionId" AND p."key"='platform.manage'
-             WHERE ur."userId"=tm."userProfileId" AND t."rif"=${PLATFORM_TENANT_RIF}
-           ) AS "hasPlatformPermission",
-           lk."status" AS "licenseStatus", lk."expiresAt" AS "licenseExpiresAt", lk."subscriptionId"
-    FROM public."TenantMembership" tm
-    JOIN public."Tenant" t ON t."id"=tm."tenantId"
-    LEFT JOIN LATERAL (
-      SELECT "status","expiresAt","subscriptionId" FROM public."LicenseKey"
-      WHERE "tenantId"=tm."tenantId" AND "userId"=tm."userProfileId"
-      ORDER BY "createdAt" DESC LIMIT 1
-    ) lk ON true
-    WHERE tm."accountUserId"=${membership.accountUserId} AND tm."status"='active' AND t."status"::text IN ('active','trial')
-    ORDER BY tm."isDefault" DESC, t."name" ASC
+  const rows=await prisma.$queryRaw<AccessibleTenantIdentityRow[]>`
+    SELECT * FROM private.contagest_runtime_list_accessible_tenants(${userProfileId})
   `;
 
-  const now=Date.now();const allowed=[];
+  const allowed=[];
   for(const row of rows){
-    if(!row.hasPlatformPermission){
-      if(row.licenseStatus!=='active'||!row.licenseExpiresAt||new Date(row.licenseExpiresAt).getTime()<=now)continue;
-      try{await assertSubscriptionAccess(row.subscriptionId||null,row.tenantId);}catch{continue;}
-    }
-    allowed.push({membershipId:row.membershipId,tenantId:row.tenantId,userProfileId:row.userProfileId,rif:row.rif,name:row.name,legalName:row.legalName,roleLabel:row.roleLabel,subscriptionId:row.subscriptionId||null,access:row.hasPlatformPermission?'platform':'licensed-client'});
+    const access=await runWithRuntimeTenant(row.tenantId,async()=>{
+      if(await hasPlatformAccess({userId:row.userProfileId,tenantId:row.tenantId})){
+        return{kind:'platform' as const,subscriptionId:null};
+      }
+      const license=await activeLicenseForProfile(row.userProfileId,row.tenantId);
+      if(!license)return null;
+      try{await assertSubscriptionAccess(license.subscriptionId||null,row.tenantId);}catch{return null;}
+      return{kind:'licensed-client' as const,subscriptionId:license.subscriptionId||null};
+    });
+    if(!access)continue;
+    allowed.push({
+      membershipId:row.membershipId,
+      tenantId:row.tenantId,
+      userProfileId:row.userProfileId,
+      rif:row.rif,
+      name:row.name,
+      legalName:row.legalName,
+      roleLabel:row.roleLabel,
+      subscriptionId:access.subscriptionId,
+      access:access.kind
+    });
   }
   return allowed;
 }
 
 export async function resolveTenantSwitch(currentUserProfileId:string, targetTenantId:string) {
-  const source=await membershipForProfile(currentUserProfileId);
-  if(!source||source.accountStatus==='disabled')throw new HttpError(403,'La cuenta actual no tiene una identidad multiempresa activa.');
-  const rows=await prisma.$queryRaw<Array<{membershipId:string;userProfileId:string;tenantId:string;email:string;fullName:string;profileStatus:string}>>`
-    SELECT tm."id" AS "membershipId",tm."userProfileId",tm."tenantId",up."email",up."fullName",up."status"::text AS "profileStatus"
-    FROM public."TenantMembership" tm
-    JOIN public."UserProfile" up ON up."id"=tm."userProfileId" AND up."tenantId"=tm."tenantId"
-    WHERE tm."accountUserId"=${source.accountUserId} AND tm."tenantId"=${targetTenantId} AND tm."status"='active' AND up."status"::text='active'
-    LIMIT 1
+  const rows=await prisma.$queryRaw<Array<{membershipId:string;userProfileId:string;tenantId:string;email:string;fullName:string}>>`
+    SELECT * FROM private.contagest_runtime_resolve_tenant_switch(${currentUserProfileId},${targetTenantId})
   `;
   const target=rows[0];
   if(!target)throw new HttpError(403,'La cuenta no tiene membresía activa en la empresa solicitada.');
-  if(!await hasPlatformAccess({userId:target.userProfileId,tenantId:target.tenantId})){
+
+  await runWithRuntimeTenant(target.tenantId,async()=>{
+    if(await hasPlatformAccess({userId:target.userProfileId,tenantId:target.tenantId}))return;
     const license=await activeLicenseForProfile(target.userProfileId,target.tenantId);
     if(!license)throw new HttpError(403,'La empresa solicitada no está cubierta por una licencia activa para esta cuenta.');
     await assertSubscriptionAccess(license.subscriptionId||null,target.tenantId);
-  }
+  });
   return target;
 }
