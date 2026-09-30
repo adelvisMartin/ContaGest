@@ -241,6 +241,14 @@ export async function configureDocumentSequence(input: {
       input.currentValue ?? existing?.currentValue ?? 0n,
       settings.padding
     );
+    if (existing && input.currentValue !== undefined && currentValue < existing.currentValue) {
+      throw new HttpError(409, 'No se permite retroceder una secuencia documental existente.', {
+        code: 'DOCUMENT_SEQUENCE_REWIND_FORBIDDEN',
+        key,
+        periodKey,
+        currentValue: existing.currentValue.toString()
+      });
+    }
 
     const rows = await tx.$queryRaw<SequenceRow[]>`
       INSERT INTO public."DocumentSequence" (
