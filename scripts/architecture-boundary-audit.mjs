@@ -17,7 +17,7 @@ export const ROUTE_MANIFEST_DUPLICATE_PATH_ALLOWLIST = new Map([
   ['/verticals', ['vertical-core', 'veterinary-crud', 'vertical-extended']]
 ]);
 export const ROUTE_MANIFEST_EXPECTED_ORDER = Object.freeze([
-  'tenants','clients','suppliers','products','bank-accounts','employees','tax-periods','sales','purchases','payables',
+  'tenants','document-sequences','clients','suppliers','products','bank-accounts','employees','tax-periods','sales','purchases','payables',
   'approvals','accounting','reports','modules','currency','exports','chart-accounts','hr','banking','bank-reconciliation',
   'inventory','payroll','tasks','fiscal','analytics','qr','food','notifications','maps','ai','demos','pretesting',
   'licenses','license-devices','service-restrictions','commercial','commercial-access','imports','regulatory','rules','rbac',
