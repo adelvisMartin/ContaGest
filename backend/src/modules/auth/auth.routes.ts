@@ -3,6 +3,12 @@ import crypto from 'node:crypto';
 import bcrypt from 'bcryptjs';
 import { z } from 'zod';
 import { prisma } from '../../database/prisma.js';
+import {
+  isBootstrapRegistrationConflict,
+  registerTenantBootstrap,
+  resolveLoginBootstrapIdentity
+} from '../../database/auth-bootstrap.js';
+import { runWithRuntimeTenant } from '../../database/runtime-tenant-context.js';
 import { env, isProd } from '../../config/env.js';
 import { asyncHandler, HttpError, ok } from '../../shared/http.js';
 import { validateBody } from '../../shared/middleware/validate.js';
@@ -30,9 +36,9 @@ import {
 
 const router = Router();
 const userRoleInclude = { include:{ role:{ include:{ permissions:{ include:{ permission:true } } } } } } as const;
-// Unknown/inactive identities still pay a bcrypt cost comparable to a real password
-// check. The dummy hash is never authoritative: a real active user + passwordHash is
-// still required before authentication can succeed.
+// Unknown identities still pay a bcrypt cost comparable to a real password check.
+// The dummy hash is never authoritative: a server-resolved bootstrap identity and
+// a tenant-scoped active profile are both required before authentication succeeds.
 const dummyPasswordHashPromise = bcrypt.hash('contagest-invalid-login-timing-equalizer',12);
 
 function ensureAccessNotExpired(user:{accessExpiresAt?:Date|null}) {
@@ -87,52 +93,79 @@ function publicLicense(license:any){
   return safe;
 }
 
-async function sessionPayload(req:any,res:any,user:any,tenant:any,options:{role?:string;license?:any;rotateResult?:any}={}){
-  const platformOperator=await hasPlatformAccess({userId:user.id,tenantId:tenant.id});
-  const role=options.role||roleForUser(user,platformOperator);
-  await ensureAccountMembership({tenantId:tenant.id,userProfileId:user.id,email:user.email,fullName:user.fullName,roleLabel:role});
-  const cookieSession=options.rotateResult||await issueBrowserSession(req,res,user,tenant.id,{role,audience:role==='client'?'client':'staff'});
-  const accessibleTenants=await listAccessibleTenants(user.id);
-  const effectiveLicense=options.license!==undefined
-    ? options.license
-    : platformOperator
-      ? null
-      : await activeLicenseForProfile(user.id,tenant.id);
-  const safeLicense=publicLicense(effectiveLicense);
-  const experienceProfile=experienceProfileForMode(safeLicense?.businessSector||role);
-  return{
-    ...cookieSession,
-    tenantId:tenant.id,
-    tenant,
-    user:publicUser(user,role),
-    license:safeLicense,
-    experienceProfile,
-    accessibleTenants
-  };
+async function loadActiveTenantUser(tenantId:string,userId:string){
+  return runWithRuntimeTenant(tenantId,async()=>{
+    const user=await prisma.userProfile.findFirst({
+      where:{id:userId,tenantId,status:'active'},
+      include:{tenant:true,userRoles:userRoleInclude}
+    });
+    if(user)ensureAccessNotExpired(user);
+    return user;
+  });
 }
 
-async function ensureAdminRole(db:any,tenantId:string,userId:string){
-  const permissionKeys=['admin.manage','clients.manage','inventory.manage','sales.manage','sales.view','purchases.manage','reports.view','modules.manage','payroll.manage','banking.manage','taxes.export','health.manage','gym.manage','communications.manage'];
-  for(const key of permissionKeys)await db.permission.upsert({where:{key},update:{},create:{key,description:`Permiso ${key}`}});
-  const role=await db.role.upsert({where:{tenantId_name:{tenantId,name:'Administrador'}},update:{description:'Rol administrador de ContaGest.',system:true},create:{tenantId,name:'Administrador',description:'Rol administrador de ContaGest.',system:true}});
-  const permissions=await db.permission.findMany({where:{key:{in:permissionKeys}},select:{id:true}});
-  for(const permission of permissions)await db.rolePermission.upsert({where:{roleId_permissionId:{roleId:role.id,permissionId:permission.id}},update:{},create:{roleId:role.id,permissionId:permission.id}});
-  await db.userRole.upsert({where:{userId_roleId:{userId,roleId:role.id}},update:{},create:{userId,roleId:role.id}});
+async function sessionPayload(req:any,res:any,user:any,tenant:any,options:{role?:string;license?:any;rotateResult?:any}={}){
+  // Multi-company discovery is an existing identity-plane authority. Establish the
+  // current tenant membership under tenant context first, then perform only the
+  // identity listing outside it; all current-tenant session/license work is scoped.
+  const identity=await runWithRuntimeTenant(tenant.id,async()=>{
+    const platformOperator=await hasPlatformAccess({userId:user.id,tenantId:tenant.id});
+    const role=options.role||roleForUser(user,platformOperator);
+    await ensureAccountMembership({tenantId:tenant.id,userProfileId:user.id,email:user.email,fullName:user.fullName,roleLabel:role});
+    return{platformOperator,role};
+  });
+  const accessibleTenants=await listAccessibleTenants(user.id);
+  return runWithRuntimeTenant(tenant.id,async()=>{
+    const cookieSession=options.rotateResult||await issueBrowserSession(req,res,user,tenant.id,{role:identity.role,audience:identity.role==='client'?'client':'staff'});
+    const effectiveLicense=options.license!==undefined
+      ? options.license
+      : identity.platformOperator
+        ? null
+        : await activeLicenseForProfile(user.id,tenant.id);
+    const safeLicense=publicLicense(effectiveLicense);
+    const experienceProfile=experienceProfileForMode(safeLicense?.businessSector||identity.role);
+    return{
+      ...cookieSession,
+      tenantId:tenant.id,
+      tenant,
+      user:publicUser(user,identity.role),
+      license:safeLicense,
+      experienceProfile,
+      accessibleTenants
+    };
+  });
 }
 
 async function authenticatedSession(req:any){
   const auth=readAccessToken(req);
   if(!auth)throw new HttpError(401,'Sesión requerida.');
   let decoded:any;try{decoded=verifyAccessToken(auth.token);}catch{throw new HttpError(401,'Sesión inválida o expirada.');}
-  if(auth.mode==='cookie'&&decoded.sid){
-    const rows=await prisma.$queryRaw<Array<{status:string;expiresAt:Date}>>`
-      SELECT "status","expiresAt" FROM public."UserSession" WHERE "id"=${decoded.sid} AND "userId"=${decoded.sub} AND "tenantId"=${decoded.tenantId} LIMIT 1
-    `;
-    const browserSession=rows[0];
-    if(!browserSession||browserSession.status!=='active'||new Date(browserSession.expiresAt).getTime()<=Date.now())throw new HttpError(401,'La sesión fue revocada o venció.');
+
+  try{
+    return await runWithRuntimeTenant(decoded.tenantId,async()=>{
+      if(auth.mode==='cookie'){
+        if(!decoded.sid)throw new HttpError(401,'La cookie de acceso no está vinculada a una sesión de servidor.');
+        const rows=await prisma.$queryRaw<Array<{status:string;expiresAt:Date}>>`
+          SELECT "status","expiresAt"
+          FROM public."UserSession"
+          WHERE "id"=${decoded.sid} AND "userId"=${decoded.sub} AND "tenantId"=${decoded.tenantId}
+          LIMIT 1
+        `;
+        const browserSession=rows[0];
+        if(!browserSession||browserSession.status!=='active'||new Date(browserSession.expiresAt).getTime()<=Date.now())throw new HttpError(401,'La sesión fue revocada o venció.');
+      }
+      const user=await prisma.userProfile.findFirst({
+        where:{id:decoded.sub,tenantId:decoded.tenantId,status:'active'},
+        include:{tenant:true,userRoles:userRoleInclude}
+      });
+      if(!user)throw new HttpError(401,'Usuario no encontrado o deshabilitado.');
+      ensureAccessNotExpired(user);
+      return{decoded,user,authMode:auth.mode};
+    });
+  }catch(error){
+    if(error instanceof HttpError)throw error;
+    throw new HttpError(401,'Sesión inválida o expirada.');
   }
-  const user=await prisma.userProfile.findFirst({where:{id:decoded.sub,tenantId:decoded.tenantId,status:'active'},include:{tenant:true,userRoles:userRoleInclude}});
-  if(!user)throw new HttpError(401,'Usuario no encontrado o deshabilitado.');ensureAccessNotExpired(user);return{decoded,user,authMode:auth.mode};
 }
 
 router.get('/captcha',(_req,res)=>ok(res,createCaptchaChallenge()));
@@ -143,25 +176,26 @@ router.post('/register',validateBody(registerSchema),asyncHandler(async(req,res)
   verifyCaptcha(req.body);
   const body=req.body,email=String(body.email).trim().toLowerCase(),tenantRif=String(body.tenantRif).trim().toUpperCase();
   const passwordHash=await bcrypt.hash(body.password,12);
-  let provisioned:{tenant:any;userId:string};
+
+  let provisioned:{tenantId:string;userProfileId:string};
   try{
-    provisioned=await prisma.$transaction(async(tx)=>{
-      const existingTenant=await tx.tenant.findFirst({where:{rif:{equals:tenantRif,mode:'insensitive'}},select:{id:true}});
-      if(existingTenant)throw new HttpError(409,'Ya existe una empresa registrada con ese RIF. Usa el acceso existente o solicita vinculación controlada.');
-      const tenant=await tx.tenant.create({data:{rif:tenantRif,name:body.tenantName,legalName:body.legalName||body.tenantName,plan:body.plan||'enterprise',status:'active',settings:{}}});
-      const user=await tx.userProfile.create({data:{tenantId:tenant.id,email,fullName:body.fullName,passwordHash,status:'active'}});
-      await ensureAdminRole(tx,tenant.id,user.id);
-      await ensureAccountMembership({tenantId:tenant.id,userProfileId:user.id,email:user.email,fullName:user.fullName,roleLabel:'Administrador'},tx);
-      return{tenant,userId:user.id};
+    provisioned=await registerTenantBootstrap({
+      tenantRif,
+      tenantName:body.tenantName,
+      legalName:body.legalName||body.tenantName,
+      plan:body.plan||'enterprise',
+      email,
+      fullName:body.fullName,
+      passwordHash
     });
-  }catch(error:any){
-    if(error instanceof HttpError)throw error;
-    if(error?.code==='P2002')throw new HttpError(409,'El RIF o correo ya está asociado a un alta concurrente. Revisa la empresa existente antes de reintentar.');
+  }catch(error){
+    if(isBootstrapRegistrationConflict(error))throw new HttpError(409,'El RIF o correo ya está asociado a un alta concurrente. Revisa la empresa existente antes de reintentar.');
     throw error;
   }
-  const sessionUser=await prisma.userProfile.findUnique({where:{id:provisioned.userId},include:{userRoles:userRoleInclude}});
+
+  const sessionUser=await loadActiveTenantUser(provisioned.tenantId,provisioned.userProfileId);
   if(!sessionUser)throw new HttpError(500,'El alta se confirmó pero la sesión administrativa no pudo materializarse.');
-  ok(res,await sessionPayload(req,res,sessionUser,provisioned.tenant,{role:'admin'}),201);
+  ok(res,await sessionPayload(req,res,sessionUser,sessionUser.tenant,{role:'admin'}),201);
 }));
 
 router.post('/login',validateBody(loginSchema),asyncHandler(async(req,res)=>{
@@ -172,88 +206,104 @@ router.post('/login',validateBody(loginSchema),asyncHandler(async(req,res)=>{
     throw new HttpError(401,INVALID_LOGIN_MESSAGE);
   }
 
-  const tenant=await prisma.tenant.findFirst({where:{rif:{equals:throttle.identity.tenantRif,mode:'insensitive'}}});
-  const user=tenant
-    ? await prisma.userProfile.findFirst({where:{tenantId:tenant.id,email:throttle.identity.email},include:{userRoles:userRoleInclude}})
-    : null;
-  const candidateHash=user?.passwordHash||await dummyPasswordHashPromise;
+  const bootstrap=await resolveLoginBootstrapIdentity(throttle.identity.tenantRif,throttle.identity.email);
+  const candidateHash=bootstrap?.passwordHash||await dummyPasswordHashPromise;
   const passwordValid=await bcrypt.compare(req.body.password,candidateHash);
-
-  if(!tenant||!user||user.status!=='active'||!user.passwordHash||!passwordValid){
-    const reason=!tenant
-      ? 'tenant_not_found'
-      : !user
-        ? 'user_not_found'
-        : user.status!=='active'
-          ? 'account_inactive'
-          : 'invalid_password';
-    await recordLoginFailure(req,{tenantId:tenant?.id,reason});
+  if(!bootstrap||!bootstrap.passwordHash||!passwordValid){
+    await recordLoginFailure(req,{tenantId:bootstrap?.tenantId,reason:bootstrap?'invalid_password':'identity_not_found'});
     throw new HttpError(401,INVALID_LOGIN_MESSAGE);
   }
 
-  await recordLoginSuccess(req,tenant.id);
-  ensureAccessNotExpired(user);
-  const platformOperator=await hasPlatformAccess({userId:user.id,tenantId:tenant.id});
-  const role=roleForUser(user,platformOperator);
-  let license:any=null;
-  if(!platformOperator){
-    license=await validateUserLicense({
-      tenantId:tenant.id,userId:user.id,userEmail:user.email,
-      licenseKey:req.body.licenseKey||null,deviceId:req.body.deviceId||null,
-      deviceCredential:readDeviceCredential(req),deviceLabel:req.body.deviceLabel||null,
-      route:'login',ip:req.ip,userAgent:req.headers['user-agent']||null,
-      metadata:{source:'login',accessMode:'client'}
-    });
-    if(license._issuedDeviceCredential){
-      setDeviceCredentialCookie(res,license._issuedDeviceCredential,license._issuedDeviceCredentialExpiresAt);
-    }
+  const user=await loadActiveTenantUser(bootstrap.tenantId,bootstrap.userProfileId);
+  if(!user||user.passwordHash!==bootstrap.passwordHash){
+    await recordLoginFailure(req,{tenantId:bootstrap.tenantId,reason:user?'credential_changed':'account_inactive'});
+    throw new HttpError(401,INVALID_LOGIN_MESSAGE);
   }
-  await ensureAccountMembership({tenantId:tenant.id,userProfileId:user.id,email:user.email,fullName:user.fullName,roleLabel:role});
-  const safeLicense=publicLicense(license);
-  const mfa=await issueCoordinateChallenge({tenantId:tenant.id,userId:user.id,ip:req.ip,userAgent:req.headers['user-agent']||'',context:{role,license:safeLicense}});
-  if(mfa)return ok(res,{...mfa,user:{email:user.email,fullName:user.fullName},tenant:{id:tenant.id,name:tenant.name,rif:tenant.rif}},202);
-  ok(res,await sessionPayload(req,res,user,tenant,{role,license:safeLicense}));
+
+  await recordLoginSuccess(req,bootstrap.tenantId);
+  const loginState=await runWithRuntimeTenant(bootstrap.tenantId,async()=>{
+    const platformOperator=await hasPlatformAccess({userId:user.id,tenantId:bootstrap.tenantId});
+    const role=roleForUser(user,platformOperator);
+    let license:any=null;
+    if(!platformOperator){
+      license=await validateUserLicense({
+        tenantId:bootstrap.tenantId,userId:user.id,userEmail:user.email,
+        licenseKey:req.body.licenseKey||null,deviceId:req.body.deviceId||null,
+        deviceCredential:readDeviceCredential(req),deviceLabel:req.body.deviceLabel||null,
+        route:'login',ip:req.ip,userAgent:req.headers['user-agent']||null,
+        metadata:{source:'login',accessMode:'client'}
+      });
+      if(license._issuedDeviceCredential){
+        setDeviceCredentialCookie(res,license._issuedDeviceCredential,license._issuedDeviceCredentialExpiresAt);
+      }
+    }
+    await ensureAccountMembership({tenantId:bootstrap.tenantId,userProfileId:user.id,email:user.email,fullName:user.fullName,roleLabel:role});
+    const safeLicense=publicLicense(license);
+    const mfa=await issueCoordinateChallenge({tenantId:bootstrap.tenantId,userId:user.id,ip:req.ip,userAgent:req.headers['user-agent']||'',context:{role,license:safeLicense}});
+    return{role,safeLicense,mfa};
+  });
+
+  if(loginState.mfa)return ok(res,{...loginState.mfa,user:{email:user.email,fullName:user.fullName},tenant:{id:user.tenant.id,name:user.tenant.name,rif:user.tenant.rif}},202);
+  ok(res,await sessionPayload(req,res,user,user.tenant,{role:loginState.role,license:loginState.safeLicense}));
 }));
 
 router.post('/login/coordinates',validateBody(coordinateLoginSchema),asyncHandler(async(req,res)=>{
   const verified=await verifyCoordinateChallenge({challengeId:req.body.challengeId,answers:req.body.answers,ip:req.ip,userAgent:req.headers['user-agent']||''});
-  const user=await prisma.userProfile.findFirst({where:{id:verified.userId,tenantId:verified.tenantId,status:'active'},include:{tenant:true,userRoles:userRoleInclude}});if(!user)throw new HttpError(401,'Usuario del reto no disponible.');ensureAccessNotExpired(user);
+  const user=await loadActiveTenantUser(verified.tenantId,verified.userId);
+  if(!user)throw new HttpError(401,'Usuario del reto no disponible.');
   const context=verified.context as any;
   ok(res,await sessionPayload(req,res,user,user.tenant,{role:context.role,license:context.license||null}));
 }));
 
-router.get('/coordinates/status',asyncHandler(async(req,res)=>{const{user}=await authenticatedSession(req);ok(res,await coordinateCardStatus(user.tenantId,user.id));}));
-router.post('/coordinates/enroll',asyncHandler(async(req,res)=>{const{user}=await authenticatedSession(req);ok(res,await generateCoordinateCard(user.tenantId,user.id),201);}));
-router.post('/coordinates/revoke',asyncHandler(async(req,res)=>{const{user}=await authenticatedSession(req);ok(res,await revokeCoordinateCard(user.tenantId,user.id));}));
+router.get('/coordinates/status',asyncHandler(async(req,res)=>{
+  const{user}=await authenticatedSession(req);
+  ok(res,await runWithRuntimeTenant(user.tenantId,()=>coordinateCardStatus(user.tenantId,user.id)));
+}));
+router.post('/coordinates/enroll',asyncHandler(async(req,res)=>{
+  const{user}=await authenticatedSession(req);
+  ok(res,await runWithRuntimeTenant(user.tenantId,()=>generateCoordinateCard(user.tenantId,user.id)),201);
+}));
+router.post('/coordinates/revoke',asyncHandler(async(req,res)=>{
+  const{user}=await authenticatedSession(req);
+  ok(res,await runWithRuntimeTenant(user.tenantId,()=>revokeCoordinateCard(user.tenantId,user.id)));
+}));
 router.get('/me',asyncHandler(async(req,res)=>{
   const{decoded,user}=await authenticatedSession(req);
-  const platformOperator=await hasPlatformAccess({userId:user.id,tenantId:user.tenantId});
-  const role=roleForUser(user,platformOperator);
-  const license=platformOperator?null:await activeLicenseForProfile(user.id,user.tenantId);
+  const accessibleTenants=await listAccessibleTenants(user.id);
+  const current=await runWithRuntimeTenant(user.tenantId,async()=>{
+    const platformOperator=await hasPlatformAccess({userId:user.id,tenantId:user.tenantId});
+    const role=roleForUser(user,platformOperator);
+    const license=platformOperator?null:await activeLicenseForProfile(user.id,user.tenantId);
+    const coordinateCard=await coordinateCardStatus(user.tenantId,user.id);
+    return{role,license,coordinateCard};
+  });
   ok(res,{
     sessionMode:'cookie',
     tenantId:user.tenantId,
-    user:publicUser(user,role),
+    user:publicUser(user,current.role),
     tenant:user.tenant,
-    license,
-    experienceProfile:experienceProfileForMode(license?.businessSector||role),
-    accessibleTenants:await listAccessibleTenants(user.id),
-    coordinateCard:await coordinateCardStatus(user.tenantId,user.id),
+    license:current.license,
+    experienceProfile:experienceProfileForMode(current.license?.businessSector||current.role),
+    accessibleTenants,
+    coordinateCard:current.coordinateCard,
     expiresAt:decoded.exp?decoded.exp*1000:null
   });
 }));
-router.get('/tenants',asyncHandler(async(req,res)=>{const{user}=await authenticatedSession(req);ok(res,await listAccessibleTenants(user.id));}));
+router.get('/tenants',asyncHandler(async(req,res)=>{
+  const{user}=await authenticatedSession(req);
+  ok(res,await listAccessibleTenants(user.id));
+}));
 router.post('/switch-tenant',validateBody(switchTenantSchema),asyncHandler(async(req,res)=>{
   const{user}=await authenticatedSession(req);
   const target=await resolveTenantSwitch(user.id,req.body.tenantId);
-  const targetUser=await prisma.userProfile.findFirst({where:{id:target.userProfileId,tenantId:target.tenantId,status:'active'},include:{tenant:true,userRoles:userRoleInclude}});
+  const targetUser=await loadActiveTenantUser(target.tenantId,target.userProfileId);
   if(!targetUser)throw new HttpError(403,'La membresía destino ya no está disponible.');
   await revokeBrowserSession(req,res);
   ok(res,await sessionPayload(req,res,targetUser,targetUser.tenant));
 }));
 router.post('/refresh',asyncHandler(async(req,res)=>{
   const rotated=await rotateBrowserSession(req,res);
-  const user=await prisma.userProfile.findFirst({where:{id:rotated.userId,tenantId:rotated.tenantId,status:'active'},include:{tenant:true,userRoles:userRoleInclude}});
+  const user=await loadActiveTenantUser(rotated.tenantId,rotated.userId);
   if(!user)throw new HttpError(401,'La cuenta ya no está activa.');
   ok(res,await sessionPayload(req,res,user,user.tenant,{rotateResult:rotated}));
 }));
