@@ -105,16 +105,13 @@ async function loadActiveTenantUser(tenantId:string,userId:string){
 }
 
 async function sessionPayload(req:any,res:any,user:any,tenant:any,options:{role?:string;license?:any;rotateResult?:any}={}){
-  // Multi-company discovery is an existing identity-plane authority. Establish the
-  // current tenant membership under tenant context first, then perform only the
-  // identity listing outside it; all current-tenant session/license work is scoped.
   const identity=await runWithRuntimeTenant(tenant.id,async()=>{
     const platformOperator=await hasPlatformAccess({userId:user.id,tenantId:tenant.id});
     const role=options.role||roleForUser(user,platformOperator);
     await ensureAccountMembership({tenantId:tenant.id,userProfileId:user.id,email:user.email,fullName:user.fullName,roleLabel:role});
     return{platformOperator,role};
   });
-  const accessibleTenants=await listAccessibleTenants(user.id);
+  const accessibleTenants=await runWithRuntimeTenant(tenant.id,()=>listAccessibleTenants(user.id));
   return runWithRuntimeTenant(tenant.id,async()=>{
     const cookieSession=options.rotateResult||await issueBrowserSession(req,res,user,tenant.id,{role:identity.role,audience:identity.role==='client'?'client':'staff'});
     const effectiveLicense=options.license!==undefined
@@ -268,7 +265,7 @@ router.post('/coordinates/revoke',asyncHandler(async(req,res)=>{
 }));
 router.get('/me',asyncHandler(async(req,res)=>{
   const{decoded,user}=await authenticatedSession(req);
-  const accessibleTenants=await listAccessibleTenants(user.id);
+  const accessibleTenants=await runWithRuntimeTenant(user.tenantId,()=>listAccessibleTenants(user.id));
   const current=await runWithRuntimeTenant(user.tenantId,async()=>{
     const platformOperator=await hasPlatformAccess({userId:user.id,tenantId:user.tenantId});
     const role=roleForUser(user,platformOperator);
@@ -290,11 +287,11 @@ router.get('/me',asyncHandler(async(req,res)=>{
 }));
 router.get('/tenants',asyncHandler(async(req,res)=>{
   const{user}=await authenticatedSession(req);
-  ok(res,await listAccessibleTenants(user.id));
+  ok(res,await runWithRuntimeTenant(user.tenantId,()=>listAccessibleTenants(user.id)));
 }));
 router.post('/switch-tenant',validateBody(switchTenantSchema),asyncHandler(async(req,res)=>{
   const{user}=await authenticatedSession(req);
-  const target=await resolveTenantSwitch(user.id,req.body.tenantId);
+  const target=await runWithRuntimeTenant(user.tenantId,()=>resolveTenantSwitch(user.id,req.body.tenantId));
   const targetUser=await loadActiveTenantUser(target.tenantId,target.userProfileId);
   if(!targetUser)throw new HttpError(403,'La membresía destino ya no está disponible.');
   await revokeBrowserSession(req,res);
