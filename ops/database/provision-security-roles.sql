@@ -55,12 +55,16 @@ REVOKE CREATE ON SCHEMA public FROM contagest_runtime, contagest_backup, contage
 \ir runtime-rls-policy-v845.sql
 
 -- Fresh databases may apply migrations before security roles exist. Restore the
--- narrow refresh/logout bootstrap grant after the role is provisioned.
+-- narrow session/MFA bootstrap grants after the runtime role is provisioned.
 DO $$
 BEGIN
   IF to_regprocedure('private.contagest_runtime_refresh_session_identity(text)') IS NOT NULL THEN
     GRANT USAGE ON SCHEMA private TO contagest_runtime;
     GRANT EXECUTE ON FUNCTION private.contagest_runtime_refresh_session_identity(text) TO contagest_runtime;
+  END IF;
+  IF to_regprocedure('private.contagest_bootstrap_coordinate_challenge_identity(text)') IS NOT NULL THEN
+    GRANT USAGE ON SCHEMA private TO contagest_runtime;
+    GRANT EXECUTE ON FUNCTION private.contagest_bootstrap_coordinate_challenge_identity(text) TO contagest_runtime;
   END IF;
 END $$;
 

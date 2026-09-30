@@ -27,6 +27,7 @@
     "test:auth-bootstrap:unit": "tsx --test src/database/auth-bootstrap.test.ts src/modules/auth/*.test.ts",
     "test:auth-bootstrap:postgres": "node scripts/auth-bootstrap-v844.mjs",
     "test:runtime-rls:postgres": "node scripts/runtime-rls-v845.mjs",
+    "test:runtime-tenant-adversarial:postgres": "node scripts/runtime-tenant-adversarial-v846.mjs",
     "test:inventory": "tsx --test src/shared/services/inventory-reservation.service.test.ts src/shared/services/inventory-stock-health.service.test.ts src/modules/inventory/*.test.ts",
     "test:reports": "tsx --test src/modules/reports/*.test.ts",
     "test:xlsx": "tsx --test src/modules/exports/xlsx-writer.test.ts",
