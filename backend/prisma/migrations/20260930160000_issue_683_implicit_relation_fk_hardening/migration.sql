@@ -46,7 +46,7 @@ BEGIN
       AND i.indisunique
       AND i.indisvalid
       AND (
-        SELECT array_agg(a.attname ORDER BY u.ord)
+        SELECT array_agg(a.attname::text ORDER BY u.ord)
         FROM unnest(i.indkey::smallint[]) WITH ORDINALITY u(attnum,ord)
         JOIN pg_attribute a ON a.attrelid=i.indrelid AND a.attnum=u.attnum
         WHERE u.attnum>0
