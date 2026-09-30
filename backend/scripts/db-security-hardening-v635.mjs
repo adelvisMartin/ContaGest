@@ -12,6 +12,8 @@ const RUNTIME_ROLE='contagest_runtime';
 const TENANT_PRINCIPAL_ROLES=new Set(['authenticated','anon']);
 const PRIVILEGED_ROLES=new Set(['service_role','postgres','supabase_admin','pg_database_owner','pg_write_all_data']);
 const SAFE_DEFINER_SCHEMAS=new Set(['pg_catalog','private','public','auth']);
+export const RUNTIME_ALL_TENANT_POLICY_ALLOWLIST_V1=Object.freeze([]);
+const RUNTIME_ALL_TENANT_POLICY_ALLOWLIST=new Set(RUNTIME_ALL_TENANT_POLICY_ALLOWLIST_V1);
 const CONTAGEST_DEFINERS=new Set([
   'current_tenant_id',
   'current_profile_id',
@@ -44,6 +46,8 @@ function classifyView(view){
   return 'UNCLASSIFIED_REVIEW';
 }
 function securityObject(fn){return `${fn.schema}.${fn.name}(${fn.identityArguments||''})`;}
+function tableObject(table){return `${table.schema}.${table.name}`;}
+function runtimeAllTenantPolicyAllowlisted(table){return RUNTIME_ALL_TENANT_POLICY_ALLOWLIST.has(tableObject(table));}
 
 export function classifySecurityManifest(input){
   const roles=[...(input.roles||[])];
@@ -75,9 +79,18 @@ export function classifySecurityManifest(input){
   for(const policy of policies){
     const table=tableByKey.get(`${policy.schema}.${policy.table}`);
     if(!table||!normalizeBoolean(table.hasTenantId))continue;
-    const tenantPrincipal=normalizedRoles(policy.roles).some((role)=>TENANT_PRINCIPAL_ROLES.has(role));
-    if(tenantPrincipal&&(isTrueExpression(policy.qual)||isTrueExpression(policy.withCheck))){
+    const policyRoles=normalizedRoles(policy.roles);
+    const unconditionalTenantAccess=isTrueExpression(policy.qual)||isTrueExpression(policy.withCheck);
+    const tenantPrincipal=policyRoles.some((role)=>TENANT_PRINCIPAL_ROLES.has(role));
+    const runtimePrincipal=policyRoles.includes(RUNTIME_ROLE);
+    if(tenantPrincipal&&unconditionalTenantAccess){
       findings.push(finding('PERMISSIVE_TENANT_POLICY','P0',`${policy.schema}.${policy.table}.${policy.name}`,'tenant-principal policy contains unconditional true tenant access'));
+    }
+    if(runtimePrincipal&&unconditionalTenantAccess&&!runtimeAllTenantPolicyAllowlisted(table)){
+      findings.push(finding(
+        'RUNTIME_ALL_TENANT_POLICY','P0',`${policy.schema}.${policy.table}.${policy.name}`,
+        'contagest_runtime policy grants unconditional tenant-table access; blocked until a trusted transaction-scoped tenant context replaces all-tenant RLS'
+      ));
     }
   }
 
@@ -306,6 +319,8 @@ export async function runSecurityAudit({connectionString,strict=false,output=nul
     candidateSha:candidateSha(),
     source:'postgresql-catalog-read-only',
     serverVersion,
+    runtimeAllTenantPolicyAllowlistVersion:1,
+    runtimeAllTenantPolicyAllowlist:[...RUNTIME_ALL_TENANT_POLICY_ALLOWLIST_V1],
     roles:catalog.roles,
     tables:catalog.tables,
     policies:catalog.policies,

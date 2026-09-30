@@ -1,5 +1,6 @@
 import 'dotenv/config';
 import { PrismaClient } from '@prisma/client';
+import { createTenantScopedPrismaProxy } from './tenant-prisma-proxy.js';
 
 const isProduction = process.env.NODE_ENV === 'production' || Boolean(process.env.VERCEL_ENV);
 const isServerless = Boolean(process.env.VERCEL) || Boolean(process.env.VERCEL_ENV);
@@ -83,7 +84,12 @@ function resolveRuntimeDatabaseUrl() {
   return databaseUrl;
 }
 
-const globalForPrisma = globalThis as unknown as { prisma?: PrismaClient };
+const globalForPrisma = globalThis as unknown as {
+  prisma?: PrismaClient;
+  tenantScopedPrisma?: PrismaClient;
+};
+let modulePrisma: PrismaClient | undefined;
+let moduleTenantScopedPrisma: PrismaClient | undefined;
 const queryTelemetryEnabled = !isProduction && String(process.env.PRISMA_QUERY_TELEMETRY || '').toLowerCase() === 'true';
 
 type PrismaQueryTelemetrySample = {
@@ -125,16 +131,33 @@ function createPrismaClient() {
   return client;
 }
 
-function getPrismaClient() {
+function getBasePrismaClient() {
   if (globalForPrisma.prisma) return globalForPrisma.prisma;
+  if (modulePrisma) return modulePrisma;
   const client = createPrismaClient();
+  modulePrisma = client;
   if (process.env.NODE_ENV !== 'production') globalForPrisma.prisma = client;
   return client;
 }
 
+async function bindRuntimeTenant(transactionClient: any, tenantId: string) {
+  await transactionClient.$executeRaw`SELECT set_config('contagest.tenant_id', ${tenantId}, true)`;
+}
+
+function getPrismaClient() {
+  if (globalForPrisma.tenantScopedPrisma) return globalForPrisma.tenantScopedPrisma;
+  if (moduleTenantScopedPrisma) return moduleTenantScopedPrisma;
+  const tenantScoped = createTenantScopedPrismaProxy(getBasePrismaClient(), bindRuntimeTenant) as PrismaClient;
+  moduleTenantScopedPrisma = tenantScoped;
+  if (process.env.NODE_ENV !== 'production') globalForPrisma.tenantScopedPrisma = tenantScoped;
+  return tenantScoped;
+}
+
 // Keep the existing `prisma.model...` API across the codebase while making client
-// construction lazy. Function members are bound to the concrete Prisma instance so
-// `$transaction`, `$queryRaw`, `$connect`, etc. keep their required `this` context.
+// construction lazy. Model/raw operations executed inside a trusted runtime tenant
+// context are wrapped in a transaction that binds `contagest.tenant_id` with
+// `set_config(..., true)`, so pooling cannot leak tenant identity across transactions.
+// Interactive `$transaction(async tx => ...)` is also bound once on the same `tx`.
 export const prisma = new Proxy({} as PrismaClient, {
   get(_target, property) {
     const client = getPrismaClient();
