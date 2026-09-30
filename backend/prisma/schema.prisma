@@ -99,6 +99,7 @@ model Tenant {
   regulatoryFeeds RegulatoryFeed[]
   idempotencyRecords IdempotencyRecord[]
   documentSequences DocumentSequence[]
+  businessLocations BusinessLocation[]
 
   @@index([rif])
 }
@@ -803,8 +804,34 @@ model AddressGeocode {
 
   tenant      Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
+  businessLocations BusinessLocation[]
+
   @@index([tenantId, address])
 }
+
+model BusinessLocation {
+  id               String   @id @default(uuid())
+  tenantId         String
+  code             String
+  name             String
+  status           String   @default("active")
+  timezone         String
+  addressGeocodeId String?
+  phone            String?
+  email            String?
+  createdBy        String?
+  updatedBy        String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  tenant         Tenant          @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  addressGeocode AddressGeocode? @relation(fields: [addressGeocodeId], references: [id], onDelete: SetNull)
+
+  @@unique([tenantId, code])
+  @@index([tenantId, status])
+  @@index([tenantId, addressGeocodeId])
+}
+
 
 model DemoAccess {
   id          String   @id @default(uuid())

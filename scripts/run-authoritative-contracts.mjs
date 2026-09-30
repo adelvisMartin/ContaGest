@@ -49,6 +49,7 @@ const required59=[
   'tests/implicit_relation_fk_hardening_v683.test.mjs',
   'tests/historical_cascade_policy_v685.test.mjs',
   'tests/api_contract_authority_v652.test.mjs',
+  'tests/business_location_issue_857.test.mjs',
   'tests/composite_tenant_integrity_v634.test.mjs',
   'tests/tenant_isolation_adversarial_issue_641.test.mjs',
   'tests/db_security_hardening_v635.test.mjs',
