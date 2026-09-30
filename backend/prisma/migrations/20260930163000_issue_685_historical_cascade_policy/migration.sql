@@ -1,9 +1,9 @@
 -- #685 Historical Cascade Policy.
 -- Forward-only hardening derived from the #633 CASCADE_RISK inventory.
 -- Historical/regulated roots are fail-closed through the existing #562 lifecycle
--- authority. Only FKs classified RETENTION_RISK are rewritten from CASCADE to
--- RESTRICT. Supplemental BudgetWallet/Hipico surfaces are conditional so a clean
--- ContaGest-only replay remains valid when those SQL-first tables are absent.
+-- authority. SQL-first audit FKs that cannot reuse the tenant-aware lifecycle guard
+-- are rewritten from CASCADE to RESTRICT. Supplemental BudgetWallet/Hipico surfaces
+-- remain conditional so a clean ContaGest-only replay is a safe no-op for them.
 
 -- Extend the versioned lifecycle authority without inventing retention durations.
 INSERT INTO public."DataRetentionPolicyVersion" (
@@ -128,47 +128,8 @@ BEGIN
 END
 $tax_guard$;
 
--- RETENTION_RISK: declaration history must not disappear when a period is deleted.
-DO $tax_fk$
-BEGIN
-  IF EXISTS (
-    SELECT 1 FROM pg_constraint
-    WHERE conrelid = to_regclass('public."TaxDeclaration"')
-      AND conname = 'TaxDeclaration_periodId_fkey'
-      AND confdeltype = 'c'
-  ) THEN
-    ALTER TABLE public."TaxDeclaration"
-      DROP CONSTRAINT "TaxDeclaration_periodId_fkey";
-    ALTER TABLE public."TaxDeclaration"
-      ADD CONSTRAINT "TaxDeclaration_periodId_fkey"
-      FOREIGN KEY ("periodId") REFERENCES public."TaxPeriod"("id") ON DELETE RESTRICT NOT VALID;
-    ALTER TABLE public."TaxDeclaration"
-      VALIDATE CONSTRAINT "TaxDeclaration_periodId_fkey";
-  END IF;
-END
-$tax_fk$;
-
--- RETENTION_RISK: deleting an application user cannot erase legal acceptance evidence.
-DO $legal_fk$
-BEGIN
-  IF EXISTS (
-    SELECT 1 FROM pg_constraint
-    WHERE conrelid = to_regclass('public."LegalAcceptance"')
-      AND conname = 'LegalAcceptance_userId_fkey'
-      AND confdeltype = 'c'
-  ) THEN
-    ALTER TABLE public."LegalAcceptance"
-      DROP CONSTRAINT "LegalAcceptance_userId_fkey";
-    ALTER TABLE public."LegalAcceptance"
-      ADD CONSTRAINT "LegalAcceptance_userId_fkey"
-      FOREIGN KEY ("userId") REFERENCES public."UserProfile"("id") ON DELETE RESTRICT NOT VALID;
-    ALTER TABLE public."LegalAcceptance"
-      VALIDATE CONSTRAINT "LegalAcceptance_userId_fkey";
-  END IF;
-END
-$legal_fk$;
-
--- RETENTION_RISK: SQL-first audit journals must survive auth identity deletion.
+-- RETENTION_RISK: SQL-first audit journals cannot use the tenantId lifecycle
+-- guard, so parent deletion is made physically fail-closed with RESTRICT.
 DO $budgetwallet_fk$
 BEGIN
   IF to_regclass('public.budgetwallet_audit_journal') IS NOT NULL
