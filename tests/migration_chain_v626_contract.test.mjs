@@ -36,8 +36,9 @@ test('#626 preserves immutable #562 history and projects TEXT only for disposabl
   assert.match(compatibility, /TENANT_COLUMN_UUID/);
   assert.match(compatibility, /projectDataLifecycleSql/);
   assert.match(compatibility, /requiresProjection/);
-  assert.doesNotMatch(deploy, /projectHistoricalCompatibility|inspectHistoricalCompatibility|reserving immutable historical migration/);
-  assert.match(deploy, /prisma.*migrate.*deploy|migrate', 'deploy/s);
+  assert.match(deploy, /const\s+ephemeral\s*=\s*isEphemeralDatabase\(databaseUrl\)/);
+  assert.match(deploy, /if\s*\(ephemeral\)[\s\S]*inspectHistoricalCompatibility[\s\S]*projectHistoricalCompatibility/);
+  assert.match(deploy, /runPrisma\(\['migrate',\s*'deploy'/);
 });
 
 test('#626 workflow runs PostgreSQL 17 from-zero and supported upgrades', async () => {
