@@ -4,9 +4,9 @@ BEGIN;
 SET LOCAL lock_timeout = '5s';
 SET LOCAL statement_timeout = '60s';
 
--- Fail closed if #633's classified canonical cascades have drifted before any DDL is applied.
--- Budget Wallet is handled separately because that vertical is not present in every supported
--- from-zero snapshot; absence means there is no physical cascade to harden on that baseline.
+-- Fail closed if #633's classified canonical Prisma cascades have drifted before any DDL is applied.
+-- Platform/vertical surfaces are handled separately because supported historical snapshots may
+-- omit those FKs or may already carry the retention-safe delete action.
 DO $$
 DECLARE name text;
 BEGIN
@@ -14,7 +14,6 @@ BEGIN
     'FinancialFxLedgerLineSnapshot_line_fkey','FinancialFxLedgerLineSnapshot_tenant_fkey',
     'FiscalDocumentRuleSnapshot_tenantId_fkey','FiscalRuleVersion_tenantId_fkey','FiscalSequence_tenantId_fkey',
     'LegalAcceptance_tenantId_fkey','LegalAcceptance_userId_fkey',
-    'hipico_audit_events_owner_id_fkey','hipico_audit_events_workspace_id_fkey',
     'TaxPeriod_tenantId_fkey'
   ] LOOP
     IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname=name AND contype='f' AND confdeltype='c') THEN
@@ -70,10 +69,50 @@ BEGIN
   END IF;
 END $$;
 
-ALTER TABLE public.hipico_audit_events DROP CONSTRAINT hipico_audit_events_owner_id_fkey;
-ALTER TABLE public.hipico_audit_events ADD CONSTRAINT hipico_audit_events_owner_id_fkey FOREIGN KEY (owner_id) REFERENCES auth.users(id) ON DELETE RESTRICT;
-ALTER TABLE public.hipico_audit_events DROP CONSTRAINT hipico_audit_events_workspace_id_fkey;
-ALTER TABLE public.hipico_audit_events ADD CONSTRAINT hipico_audit_events_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.hipico_workspaces(id) ON DELETE SET NULL;
+-- Control Hípico is also an optional platform surface. Historical snapshots legitimately differ:
+-- owner_id can have no physical FK, while workspace_id can already be SET NULL. Harden only a
+-- physical CASCADE; accept absence or the requested safe terminal action, and fail on other drift.
+DO $$
+DECLARE
+  owner_action "char";
+  workspace_action "char";
+BEGIN
+  IF to_regclass('public.hipico_audit_events') IS NULL THEN
+    RAISE NOTICE 'ISSUE_685_OPTIONAL_CASCADE_ABSENT:hipico_audit_events_owner_id_fkey';
+    RAISE NOTICE 'ISSUE_685_OPTIONAL_CASCADE_ABSENT:hipico_audit_events_workspace_id_fkey';
+    RETURN;
+  END IF;
+
+  SELECT confdeltype INTO owner_action
+  FROM pg_constraint
+  WHERE conrelid = 'public.hipico_audit_events'::regclass
+    AND conname = 'hipico_audit_events_owner_id_fkey'
+    AND contype = 'f';
+
+  IF owner_action IS NULL THEN
+    RAISE NOTICE 'ISSUE_685_OPTIONAL_CASCADE_ABSENT:hipico_audit_events_owner_id_fkey';
+  ELSIF owner_action = 'c' THEN
+    ALTER TABLE public.hipico_audit_events DROP CONSTRAINT hipico_audit_events_owner_id_fkey;
+    ALTER TABLE public.hipico_audit_events ADD CONSTRAINT hipico_audit_events_owner_id_fkey FOREIGN KEY (owner_id) REFERENCES auth.users(id) ON DELETE RESTRICT;
+  ELSIF owner_action <> 'r' THEN
+    RAISE EXCEPTION 'ISSUE_685_OPTIONAL_CASCADE_DRIFT:hipico_audit_events_owner_id_fkey:%', owner_action;
+  END IF;
+
+  SELECT confdeltype INTO workspace_action
+  FROM pg_constraint
+  WHERE conrelid = 'public.hipico_audit_events'::regclass
+    AND conname = 'hipico_audit_events_workspace_id_fkey'
+    AND contype = 'f';
+
+  IF workspace_action IS NULL THEN
+    RAISE NOTICE 'ISSUE_685_OPTIONAL_CASCADE_ABSENT:hipico_audit_events_workspace_id_fkey';
+  ELSIF workspace_action = 'c' THEN
+    ALTER TABLE public.hipico_audit_events DROP CONSTRAINT hipico_audit_events_workspace_id_fkey;
+    ALTER TABLE public.hipico_audit_events ADD CONSTRAINT hipico_audit_events_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.hipico_workspaces(id) ON DELETE SET NULL;
+  ELSIF workspace_action <> 'n' THEN
+    RAISE EXCEPTION 'ISSUE_685_OPTIONAL_CASCADE_DRIFT:hipico_audit_events_workspace_id_fkey:%', workspace_action;
+  END IF;
+END $$;
 
 -- TaxPeriod is Prisma-managed. Reuse #562's lifecycle authority instead of creating
 -- a second DDL authority that would make schema.prisma drift from PostgreSQL.
