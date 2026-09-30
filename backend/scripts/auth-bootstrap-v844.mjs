@@ -58,6 +58,7 @@ async function resetFixture() {
       "name" text NOT NULL,
       "description" text,
       "system" boolean NOT NULL DEFAULT false,
+      "scope" text NOT NULL DEFAULT 'tenant',
       "createdAt" timestamptz NOT NULL DEFAULT now(),
       "updatedAt" timestamptz NOT NULL DEFAULT now(),
       UNIQUE ("tenantId", "name")
@@ -74,7 +75,7 @@ async function resetFixture() {
     );
     CREATE TABLE public."AccountUser" (
       "id" text PRIMARY KEY DEFAULT gen_random_uuid()::text,
-      "email" text NOT NULL UNIQUE,
+      "email" text NOT NULL,
       "fullName" text,
       "status" text NOT NULL DEFAULT 'active',
       "createdAt" timestamptz NOT NULL DEFAULT now(),
@@ -88,6 +89,8 @@ async function resetFixture() {
       "roleLabel" text,
       "status" text NOT NULL DEFAULT 'active',
       "isDefault" boolean NOT NULL DEFAULT false,
+      "linkSource" text NOT NULL DEFAULT 'self',
+      "linkedAt" timestamptz NOT NULL DEFAULT now(),
       "createdAt" timestamptz NOT NULL DEFAULT now(),
       "updatedAt" timestamptz NOT NULL DEFAULT now(),
       UNIQUE ("accountUserId", "tenantId")
@@ -217,9 +220,9 @@ async function assertRegistration() {
     SELECT
       (SELECT count(*)::int FROM public."Tenant" WHERE "id"=$1) AS tenants,
       (SELECT count(*)::int FROM public."UserProfile" WHERE "id"=$2 AND "tenantId"=$1 AND "status"='active') AS profiles,
-      (SELECT count(*)::int FROM public."Role" WHERE "tenantId"=$1 AND "name"='Administrador' AND "system") AS admin_roles,
+      (SELECT count(*)::int FROM public."Role" WHERE "tenantId"=$1 AND "name"='Administrador' AND "system" AND "scope"='tenant') AS admin_roles,
       (SELECT count(*)::int FROM public."UserRole" ur JOIN public."Role" r ON r."id"=ur."roleId" WHERE ur."userId"=$2 AND r."tenantId"=$1) AS user_roles,
-      (SELECT count(*)::int FROM public."TenantMembership" WHERE "tenantId"=$1 AND "userProfileId"=$2 AND "status"='active') AS memberships
+      (SELECT count(*)::int FROM public."TenantMembership" WHERE "tenantId"=$1 AND "userProfileId"=$2 AND "status"='active' AND "linkSource"='self') AS memberships
   `, [tenantId, userId]);
   assert.deepEqual(graph.rows[0], { tenants:1, profiles:1, admin_roles:1, user_roles:1, memberships:1 });
 
@@ -229,6 +232,15 @@ async function assertRegistration() {
   );
   const duplicateCount = await exec(`SELECT count(*)::int AS count FROM public."Tenant" WHERE upper(btrim("rif"))='J-30000000-3'`);
   assert.equal(duplicateCount.rows[0].count, 1);
+
+  const secondTenant = await asRuntime(
+    'SELECT * FROM private.contagest_bootstrap_register_tenant($1,$2,$3,$4,$5,$6,$7)',
+    ['J-40000000-4','Tenant D','Tenant D Legal','enterprise','admin@tenant-c.test','Admin D','bcrypt-hash-d']
+  );
+  assert.equal(secondTenant.rowCount, 1, 'equal email text in another tenant must not imply the same AccountUser identity');
+  assert.notEqual(secondTenant.rows[0].tenant_id, tenantId);
+  const accountUsers = await exec(`SELECT count(*)::int AS count FROM public."AccountUser" WHERE lower("email")='admin@tenant-c.test'`);
+  assert.equal(accountUsers.rows[0].count, 2, 'bootstrap registration must preserve distinct cross-tenant identity records');
 }
 
 try {
