@@ -4,7 +4,9 @@ BEGIN;
 SET LOCAL lock_timeout = '5s';
 SET LOCAL statement_timeout = '60s';
 
--- Fail closed if #633's classified baseline has drifted before any DDL is applied.
+-- Fail closed if #633's classified canonical cascades have drifted before any DDL is applied.
+-- Budget Wallet is handled separately because that vertical is not present in every supported
+-- from-zero snapshot; absence means there is no physical cascade to harden on that baseline.
 DO $$
 DECLARE name text;
 BEGIN
@@ -12,7 +14,7 @@ BEGIN
     'FinancialFxLedgerLineSnapshot_line_fkey','FinancialFxLedgerLineSnapshot_tenant_fkey',
     'FiscalDocumentRuleSnapshot_tenantId_fkey','FiscalRuleVersion_tenantId_fkey','FiscalSequence_tenantId_fkey',
     'LegalAcceptance_tenantId_fkey','LegalAcceptance_userId_fkey',
-    'budgetwallet_audit_journal_owner_id_fkey','hipico_audit_events_owner_id_fkey','hipico_audit_events_workspace_id_fkey',
+    'hipico_audit_events_owner_id_fkey','hipico_audit_events_workspace_id_fkey',
     'TaxPeriod_tenantId_fkey'
   ] LOOP
     IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname=name AND contype='f' AND confdeltype='c') THEN
@@ -41,8 +43,33 @@ ALTER TABLE public."LegalAcceptance" ADD CONSTRAINT "LegalAcceptance_tenantId_fk
 ALTER TABLE public."LegalAcceptance" DROP CONSTRAINT "LegalAcceptance_userId_fkey";
 ALTER TABLE public."LegalAcceptance" ADD CONSTRAINT "LegalAcceptance_userId_fkey" FOREIGN KEY ("userId") REFERENCES public."UserProfile"("id") ON DELETE RESTRICT;
 
-ALTER TABLE public.budgetwallet_audit_journal DROP CONSTRAINT budgetwallet_audit_journal_owner_id_fkey;
-ALTER TABLE public.budgetwallet_audit_journal ADD CONSTRAINT budgetwallet_audit_journal_owner_id_fkey FOREIGN KEY (owner_id) REFERENCES auth.users(id) ON DELETE RESTRICT;
+-- Budget Wallet is an optional platform surface in supported historical snapshots.
+-- If the #633 cascade exists, harden it. If the table/FK is absent there is no cascade risk
+-- on that snapshot, so keep replay forward-compatible instead of fabricating an authority.
+DO $$
+DECLARE action "char";
+BEGIN
+  IF to_regclass('public.budgetwallet_audit_journal') IS NULL THEN
+    RAISE NOTICE 'ISSUE_685_OPTIONAL_CASCADE_ABSENT:budgetwallet_audit_journal_owner_id_fkey';
+    RETURN;
+  END IF;
+
+  SELECT confdeltype INTO action
+  FROM pg_constraint
+  WHERE conrelid = 'public.budgetwallet_audit_journal'::regclass
+    AND conname = 'budgetwallet_audit_journal_owner_id_fkey'
+    AND contype = 'f';
+
+  IF action IS NULL THEN
+    RAISE NOTICE 'ISSUE_685_OPTIONAL_CASCADE_ABSENT:budgetwallet_audit_journal_owner_id_fkey';
+  ELSIF action = 'c' THEN
+    ALTER TABLE public.budgetwallet_audit_journal DROP CONSTRAINT budgetwallet_audit_journal_owner_id_fkey;
+    ALTER TABLE public.budgetwallet_audit_journal ADD CONSTRAINT budgetwallet_audit_journal_owner_id_fkey FOREIGN KEY (owner_id) REFERENCES auth.users(id) ON DELETE RESTRICT;
+  ELSIF action <> 'r' THEN
+    RAISE EXCEPTION 'ISSUE_685_OPTIONAL_CASCADE_DRIFT:budgetwallet_audit_journal_owner_id_fkey:%', action;
+  END IF;
+END $$;
+
 ALTER TABLE public.hipico_audit_events DROP CONSTRAINT hipico_audit_events_owner_id_fkey;
 ALTER TABLE public.hipico_audit_events ADD CONSTRAINT hipico_audit_events_owner_id_fkey FOREIGN KEY (owner_id) REFERENCES auth.users(id) ON DELETE RESTRICT;
 ALTER TABLE public.hipico_audit_events DROP CONSTRAINT hipico_audit_events_workspace_id_fkey;
