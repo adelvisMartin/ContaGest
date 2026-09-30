@@ -1,7 +1,9 @@
 import assert from 'node:assert/strict';
+import { EventEmitter } from 'node:events';
 import test from 'node:test';
 import { readFileSync } from 'node:fs';
 
+import * as zeroCostBootstrap from '../scripts/zero-cost-bootstrap-v668.mjs';
 import {
   assertLoopbackPostgresUrl,
   buildContainerRunArgs,
@@ -166,6 +168,10 @@ test('zero-cost bootstrap runbook documents native, container, Windows and hones
   assert.match(source, /BLOCKED/);
   assert.match(source, /USD 0/);
   assert.match(source, /Supabase.*optional/i);
+  assert.match(source, /\/health\/ready/);
+  assert.match(source, /frontend.*HTTP/i);
+  assert.match(source, /#664/);
+  assert.match(source, /SIGINT|SIGTERM/);
 });
 
 test('remote generic DATABASE_URL stays optional and does not block container fallback', () => {
@@ -201,4 +207,59 @@ test('verifyNativePostgres17 checks server_version_num, not only the psql client
     adminUrl: 'postgresql://u:p@127.0.0.1:5432/postgres',
     adapter: wrong,
   }), /ZERO_COST_NATIVE_SERVER_MAJOR_NOT_17:16/);
+});
+
+test('signal cleanup registry drains resources in reverse order exactly once before termination', () => {
+  assert.equal(typeof zeroCostBootstrap.createSignalCleanupRegistry, 'function');
+  const target = new EventEmitter();
+  const order = [];
+  const registry = zeroCostBootstrap.createSignalCleanupRegistry({
+    target,
+    terminate(signal) { order.push(`terminate:${signal}`); },
+  });
+  registry.register(() => order.push('container'));
+  registry.register(() => order.push('runtime'));
+
+  target.emit('SIGTERM');
+  target.emit('SIGTERM');
+
+  assert.deepEqual(order, ['runtime', 'container', 'terminate:SIGTERM']);
+  registry.dispose();
+});
+
+test('HTTP readiness polling is bounded and waits only between failed attempts', async () => {
+  assert.equal(typeof zeroCostBootstrap.waitForHttpReadiness, 'function');
+  let fetches = 0;
+  let pauses = 0;
+  await zeroCostBootstrap.waitForHttpReadiness({
+    url: 'http://127.0.0.1:3030/health/ready',
+    attempts: 3,
+    intervalMs: 1,
+    fetchImpl: async () => {
+      fetches += 1;
+      const ready = fetches === 3;
+      return {
+        ok: ready,
+        status: ready ? 200 : 503,
+        async json() { return { ok: ready, status: ready ? 'ready' : 'not_ready' }; },
+      };
+    },
+    pause: async () => { pauses += 1; },
+    validate: async (response) => response.ok && (await response.json()).status === 'ready',
+  });
+
+  assert.equal(fetches, 3);
+  assert.equal(pauses, 2);
+
+  await assert.rejects(
+    zeroCostBootstrap.waitForHttpReadiness({
+      url: 'http://127.0.0.1:8080/',
+      attempts: 2,
+      intervalMs: 1,
+      fetchImpl: async () => ({ ok: false, status: 503 }),
+      pause: async () => {},
+      validate: async (response) => response.ok,
+    }),
+    /ZERO_COST_HTTP_NOT_READY:attempts=2/
+  );
 });
