@@ -54,6 +54,16 @@ REVOKE CREATE ON SCHEMA public FROM contagest_runtime, contagest_backup, contage
 -- contagest_runtime_backend_all policy and installs fail-closed tenant/shared rules.
 \ir runtime-rls-policy-v845.sql
 
+-- Fresh databases may apply migrations before security roles exist. Restore the
+-- narrow refresh/logout bootstrap grant after the role is provisioned.
+DO $$
+BEGIN
+  IF to_regprocedure('private.contagest_runtime_refresh_session_identity(text)') IS NOT NULL THEN
+    GRANT USAGE ON SCHEMA private TO contagest_runtime;
+    GRANT EXECUTE ON FUNCTION private.contagest_runtime_refresh_session_identity(text) TO contagest_runtime;
+  END IF;
+END $$;
+
 -- Scope contractual: PascalCase public tables are ContaGest application objects.
 -- Runtime receives DML only when RLS is enabled. Unknown non-RLS application
 -- tables therefore fail closed instead of silently gaining unrestricted DML.
