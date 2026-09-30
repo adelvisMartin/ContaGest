@@ -109,8 +109,12 @@ async function resetEphemeralDatabase(rawUrl) {
   const client = new Client({ connectionString: rawUrl });
   await client.connect();
   try {
+    // Every replay must start without application-owned objects from the previous fixture.
+    // In particular, private contains SECURITY DEFINER auth/session functions whose signatures
+    // evolve across migrations and must never leak from from-zero into a historical upgrade run.
     await client.query('DROP SCHEMA IF EXISTS storage CASCADE');
     await client.query('DROP SCHEMA IF EXISTS auth CASCADE');
+    await client.query('DROP SCHEMA IF EXISTS private CASCADE');
     await client.query('DROP SCHEMA IF EXISTS public CASCADE');
     await client.query('CREATE SCHEMA public');
   } finally {
