@@ -4,6 +4,7 @@ import jwt, { type SignOptions } from 'jsonwebtoken';
 import { env } from '../../config/env.js';
 import { assertSupabaseBridgeConfiguration, classifyPresentedTokenAuthority } from '../../shared/auth/authBoundary.js';
 import { JWT_AUDIENCE, JWT_ISSUER, signAccessToken, verifyAccessToken } from '../../shared/auth/jwt.js';
+import { sessionCookieContract } from '../../shared/auth/sessionCookies.js';
 
 const testToken=(payload:Record<string,unknown>,options:SignOptions={})=>jwt.sign(payload,env.JWT_SECRET,{algorithm:'HS256',noTimestamp:true,...options});
 
@@ -56,4 +57,25 @@ test('backend access token validates signature, issuer, audience, expiry and aut
   assert.throws(()=>verifyAccessToken(testToken(base,{issuer:JWT_ISSUER,audience:JWT_AUDIENCE})));
   assert.throws(()=>verifyAccessToken(testToken({...base,authMode:'other'},{issuer:JWT_ISSUER,audience:JWT_AUDIENCE,expiresIn:60})));
   assert.throws(()=>verifyAccessToken(testToken({...base,tokenType:'refresh'},{issuer:JWT_ISSUER,audience:JWT_AUDIENCE,expiresIn:60})));
+});
+
+test('production session cookies are host-only and deletion reuses one canonical attribute contract',()=>{
+  const access=sessionCookieContract('access',true);
+  const refresh=sessionCookieContract('refresh',true);
+  const csrf=sessionCookieContract('csrf',true);
+  const device=sessionCookieContract('device',true);
+
+  for(const contract of [access,refresh,csrf,device]){
+    assert.match(contract.name,/^__Host-/);
+    assert.equal(contract.options.secure,true);
+    assert.equal(contract.options.path,'/');
+    assert.equal('domain' in contract.options,false);
+  }
+  assert.equal(access.options.httpOnly,true);
+  assert.equal(refresh.options.httpOnly,true);
+  assert.equal(csrf.options.httpOnly,false);
+  assert.equal(access.options.sameSite,'lax');
+  assert.equal(refresh.options.sameSite,'lax');
+  assert.equal(csrf.options.sameSite,'lax');
+  assert.equal(device.options.sameSite,'strict');
 });
