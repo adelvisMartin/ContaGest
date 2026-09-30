@@ -46,6 +46,7 @@ const required59=[
   'tests/production_convergence_v627.test.mjs',
   'tests/relational_normalization_audit_v633.test.mjs',
   'tests/budgetwallet_fk_indexes_v684.test.mjs',
+  'tests/historical_cascade_policy_v685.test.mjs',
   'tests/composite_tenant_integrity_v634.test.mjs',
   'tests/tenant_isolation_adversarial_issue_641.test.mjs',
   'tests/db_security_hardening_v635.test.mjs',
