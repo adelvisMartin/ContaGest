@@ -22,11 +22,13 @@ Optional heavier financial verification:
 .\scripts\zero-cost-bootstrap-v668.ps1 --financial --expected-sha <HEAD>
 ```
 
-Optional local build smoke after the DB profiles:
+Optional local runtime smoke after the DB profiles:
 
 ```powershell
 .\scripts\zero-cost-bootstrap-v668.ps1 --smoke --expected-sha <HEAD>
 ```
+
+`--smoke` keeps the existing backend/frontend production builds and then performs a bounded bootstrap-level runtime check: the built backend is started on loopback and must return ready from `/health/ready` with a successful database probe; the built frontend artifact is served over loopback HTTP and its root document must be reachable. This is deliberately smaller than the operational smoke authority in #664: login/session, tenant context, CRUD, financial commands, verticals, Hípico and browser journeys remain owned by #664 and are not duplicated here.
 
 ## Runtime selection
 
@@ -53,7 +55,7 @@ The bootstrap rejects non-loopback hosts before invoking any executable probe or
 
 No DB URL is required. The bootstrap starts `postgres:17` with generated synthetic credentials, publishes `5432` to a dynamic **loopback-only** host port, waits with bounded `pg_isready` polling, delegates verification, and removes the owned container in `finally` even when delegated verification fails.
 
-The container path does not mount production dumps or provider volumes.
+The container path does not mount production dumps or provider volumes. While an owned container or smoke runtime is active, the bootstrap also registers best-effort `SIGINT`/`SIGTERM` cleanup. Signal cleanup drains resources in reverse registration order before restoring normal termination semantics, so backend processes do not intentionally outlive the bootstrap and the owned PostgreSQL container is removed before exit.
 
 ## What is delegated
 
@@ -63,7 +65,7 @@ The bootstrap does not reimplement #630 or #632. It injects only a safe local `L
 npm run verify:local -- --profile database --expected-sha <HEAD>
 ```
 
-With `--financial`, it then runs the existing `financial` profile on the same isolated PostgreSQL 17 runtime. With `--smoke`, it runs the existing backend/frontend local build smoke after DB verification. Provider-specific checks remain separate evidence.
+With `--financial`, it then runs the existing `financial` profile on the same isolated PostgreSQL 17 runtime. With `--smoke`, it runs the existing backend/frontend builds, starts the backend with a loopback-only database URL, polls `/health/ready` with bounded retries, serves the built frontend artifact over loopback HTTP, probes its root page, and then tears both runtime resources down. Provider-specific checks remain separate evidence.
 
 ## Safety
 
@@ -71,6 +73,8 @@ With `--financial`, it then runs the existing `financial` profile on the same is
 - generic remote `DATABASE_URL` values remain optional and are not used for destructive bootstrap runtime selection;
 - PostgreSQL client and server major must both be 17 for the native path;
 - Docker/Podman publish must resolve to `127.0.0.1`/`::1` only;
+- bootstrap HTTP readiness probes accept loopback targets only;
+- readiness polling is bounded; there are no arbitrary fixed sleeps used as a success condition;
 - generated DB passwords are redacted from summaries;
 - no production PII/fixtures/dumps;
 - no paid Supabase/Vercel/GitHub Actions capability is required;
@@ -83,5 +87,7 @@ With `--financial`, it then runs the existing `financial` profile on the same is
 If native PostgreSQL is detected as 16 or 18, the bootstrap does not treat it as the canonical DB gate runtime. Configure PG17 or use Docker/Podman.
 
 If a container publishes `0.0.0.0` or a LAN address, the bootstrap fails closed with `ZERO_COST_UNSAFE_CONTAINER_BINDING`.
+
+If `/health/ready` does not reach `ready` within the bounded retry window, or the built frontend cannot be served from loopback HTTP, `--smoke` fails. It does not downgrade the result to a build-only PASS.
 
 GitHub Actions/Vercel quota failures remain `BLOCKED_INFRASTRUCTURE`/`NOT_EXECUTED`, separate from local material verification.
