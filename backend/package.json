@@ -33,7 +33,7 @@
     "test:xlsx": "tsx --test src/modules/exports/xlsx-writer.test.ts",
     "test:hipico": "tsx --test src/modules/hipico-bot/*.test.ts src/modules/hipico/*.test.ts",
     "test:hipico:data": "tsx --test src/modules/hipico/hipico-data.integration.ts",
-    "test:hipico:agent": "tsx scripts/hipico-agent.integration.ts",
+    "test:hipico:agent": "tsx --test src/modules/hipico/hipico-agent.integration.ts",
     "probe:hipico:provider": "tsx scripts/hipico-provider-live-probe.ts",
     "lab:hipico": "tsx scripts/hipico-lab-simulator.ts --all",
     "lab:hipico:reliability": "tsx scripts/hipico-agent-reliability-lab.ts",
@@ -88,7 +88,7 @@
     "zod": "4.6.5"
   },
   "devDependencies": {
-    "@types/cors": "5.0.6",
+    "@types/cors": "2.8.19",
     "@types/express": "5.0.6",
     "@types/jsonwebtoken": "9.0.10",
     "@types/node": "22.20.4",
