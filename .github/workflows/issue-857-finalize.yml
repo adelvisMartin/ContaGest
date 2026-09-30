@@ -1,0 +1,85 @@
+name: Issue 857 finalize isolated implementation
+
+on:
+  push:
+    branches:
+      - feat/857-business-location-authority
+
+permissions:
+  contents: write
+
+jobs:
+  finalize:
+    if: ${{ !contains(github.event.head_commit.message, '[857-impl]') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/contagest_validate
+      DIRECT_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/contagest_validate
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/857-business-location-authority
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Recreate exact implementation and regression
+        shell: bash
+        run: |
+          set -euo pipefail
+          python <<'PY'
+          from pathlib import Path
+          p=Path('.github/workflows/issue-857-implement.yml')
+          lines=p.read_text().splitlines()
+          # Reuse implementation block exactly.
+          start=lines.index('      - name: Implement Business Location authority')
+          end=lines.index('      - name: Install dependencies')
+          run_idx=next(i for i in range(start,end) if lines[i].strip()=='run: |')
+          impl=[line[10:] if line.startswith('          ') else line for line in lines[run_idx+1:end]]
+          Path('/tmp/issue857-impl.sh').write_text('\n'.join(impl)+'\n')
+          # Recreate the exact regression file that already proved RED in run 36756260503.
+          marker="          cat > tests/business_location_issue_857.test.mjs <<'EOF'"
+          hstart=lines.index(marker)+1
+          hend=next(i for i in range(hstart,len(lines)) if lines[i]=='          EOF')
+          test_lines=[line[10:] if line.startswith('          ') else line for line in lines[hstart:hend]]
+          Path('/tmp/business_location_issue_857.test.mjs').write_text('\n'.join(test_lines)+'\n')
+          PY
+          bash /tmp/issue857-impl.sh
+          cp /tmp/business_location_issue_857.test.mjs tests/business_location_issue_857.test.mjs
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Prisma format and validate
+        run: |
+          npm --workspace backend exec -- prisma format
+          npm --workspace backend exec -- prisma validate
+
+      - name: Targeted GREEN
+        run: |
+          node --test tests/business_location_issue_857.test.mjs
+          npm --workspace backend exec -- tsx --test ../qa/business-location-v857.test.ts
+
+      - name: Preserve route-matrix authority
+        run: node --test tests/full_route_browser_matrix_issue_640.test.mjs
+
+      - name: Backend typecheck
+        run: npm run typecheck
+
+      - name: Frontend build
+        run: npm run build:frontend
+
+      - name: Commit verified implementation
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm .github/workflows/issue-857-implement.yml .github/workflows/issue-857-resume.yml .github/workflows/issue-857-finalize.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git diff --cached --check
+          git commit -m 'feat(core): add tenant Business Location authority (#857) [857-impl]'
+          git push origin HEAD:feat/857-business-location-authority
