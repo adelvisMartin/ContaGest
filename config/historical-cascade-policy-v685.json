@@ -1,0 +1,132 @@
+{
+  "schemaVersion": 685,
+  "derivedFromIssue": 633,
+  "authority": "#685 historical cascade lifecycle policy",
+  "productionCatalogRef": "soxzatxiwlfsvtblrqal",
+  "policy": {
+    "default": "fail-closed",
+    "retentionRiskAction": "ON DELETE RESTRICT or immutable lifecycle guard",
+    "productionApplication": "forward-only via #627 convergence; never destructive QA on production"
+  },
+  "cascades": [
+    {
+      "table": "AuditLog",
+      "constraint": "AuditLog_tenantId_fkey",
+      "classification": "TENANT_DELETION_POLICY",
+      "retentionDecision": "AuditLog is immutable under the #562 lifecycle authority; tenant deletion must fail closed while audit evidence exists.",
+      "recovery": "Recover through approved backup/PITR or a future versioned retention policy; generic tenant CRUD cannot erase audit evidence."
+    },
+    {
+      "table": "FinancialFxLedgerLineSnapshot",
+      "constraint": "FinancialFxLedgerLineSnapshot_line_fkey",
+      "classification": "INTENTIONAL_CHILD_CASCADE",
+      "retentionDecision": "The snapshot is structurally owned by its ledger line, but #685 additionally protects the snapshot as immutable lifecycle history.",
+      "recovery": "Deletion remains blocked by immutable lifecycle policy unless a future approved purge policy supersedes the baseline."
+    },
+    {
+      "table": "FinancialFxLedgerLineSnapshot",
+      "constraint": "FinancialFxLedgerLineSnapshot_tenant_fkey",
+      "classification": "TENANT_DELETION_POLICY",
+      "retentionDecision": "FX ledger snapshots are immutable historical evidence and are protected directly by #685 before tenant cleanup may proceed.",
+      "recovery": "Use approved restore/PITR or a future versioned lifecycle policy; direct tenant cascade is fail closed."
+    },
+    {
+      "table": "FiscalCloseEvidence",
+      "constraint": "FiscalCloseEvidence_tenantId_fkey",
+      "classification": "TENANT_DELETION_POLICY",
+      "retentionDecision": "Fiscal close evidence is already immutable under #562 and blocks accidental tenant cascades.",
+      "recovery": "Restore from approved evidence/backup workflow; no generic destructive recovery path is permitted."
+    },
+    {
+      "table": "FiscalDocument",
+      "constraint": "FiscalDocument_tenantId_fkey",
+      "classification": "TENANT_DELETION_POLICY",
+      "retentionDecision": "Fiscal documents are already immutable under #562 and therefore survive accidental tenant deletion attempts.",
+      "recovery": "Restore through approved backup/PITR; any future purge requires a separately approved versioned retention policy."
+    },
+    {
+      "table": "FiscalDocumentRuleSnapshot",
+      "constraint": "FiscalDocumentRuleSnapshot_tenantId_fkey",
+      "classification": "TENANT_DELETION_POLICY",
+      "retentionDecision": "Captured fiscal rule snapshots are immutable evidence; #685 adds lifecycle protection before tenant cleanup.",
+      "recovery": "Fail closed and restore from approved backup/PITR; no generic CRUD deletion is allowed."
+    },
+    {
+      "table": "FiscalRuleVersion",
+      "constraint": "FiscalRuleVersion_tenantId_fkey",
+      "classification": "TENANT_DELETION_POLICY",
+      "retentionDecision": "Versioned fiscal rules are historical regulatory evidence; #685 adds immutable lifecycle protection.",
+      "recovery": "Recover through approved backup/PITR or a superseding versioned retention policy, never tenant CRUD."
+    },
+    {
+      "table": "FiscalSequence",
+      "constraint": "FiscalSequence_tenantId_fkey",
+      "classification": "PLATFORM_CLEANUP",
+      "retentionDecision": "FiscalSequence is mutable counter state rather than issued fiscal evidence; issued documents and rule snapshots remain separately protected.",
+      "recovery": "Sequence state is reconstructed only through controlled platform recovery using retained fiscal evidence and documented numbering authority."
+    },
+    {
+      "table": "LedgerEntry",
+      "constraint": "LedgerEntry_tenantId_fkey",
+      "classification": "TENANT_DELETION_POLICY",
+      "retentionDecision": "LedgerEntry is immutable under #562, so tenant deletion cannot accidentally erase ledger history.",
+      "recovery": "Restore through approved accounting backup/PITR; generic tenant CRUD remains denied."
+    },
+    {
+      "table": "LedgerLine",
+      "constraint": "LedgerLine_entryId_fkey",
+      "classification": "INTENTIONAL_CHILD_CASCADE",
+      "retentionDecision": "Ledger lines are structural children of LedgerEntry; parent lifecycle immutability is the deletion authority.",
+      "recovery": "Recover the complete ledger aggregate from approved backup/PITR; child rows are never independently purged as posted history."
+    },
+    {
+      "table": "LegalAcceptance",
+      "constraint": "LegalAcceptance_tenantId_fkey",
+      "classification": "TENANT_DELETION_POLICY",
+      "retentionDecision": "Legal acceptance evidence becomes immutable under #685 so tenant cascade cannot erase acceptance history.",
+      "recovery": "Fail closed; restore from approved backup/PITR or future legal-policy authority, never generic tenant CRUD."
+    },
+    {
+      "table": "LegalAcceptance",
+      "constraint": "LegalAcceptance_userId_fkey",
+      "classification": "RETENTION_RISK",
+      "retentionDecision": "Deleting a user must not erase legal acceptance evidence; #685 changes this FK to ON DELETE RESTRICT and protects direct deletes.",
+      "recovery": "Identity deletion requires an explicit lifecycle/privacy process that preserves required legal evidence and documents any approved transformation."
+    },
+    {
+      "table": "TaxDeclaration",
+      "constraint": "TaxDeclaration_periodId_fkey",
+      "classification": "RETENTION_RISK",
+      "retentionDecision": "Deleting a tax period must not silently erase declarations; #685 changes this FK to ON DELETE RESTRICT and protects direct declaration deletes.",
+      "recovery": "Tax history is restored from approved backup/PITR; purge requires a future versioned policy and legal review."
+    },
+    {
+      "table": "TaxPeriod",
+      "constraint": "TaxPeriod_tenantId_fkey",
+      "classification": "TENANT_DELETION_POLICY",
+      "retentionDecision": "Tax periods become immutable lifecycle history under #685, blocking accidental tenant cascades.",
+      "recovery": "Restore from approved backup/PITR or supersede through a reviewed lifecycle policy; generic deletion remains denied."
+    },
+    {
+      "table": "budgetwallet_audit_journal",
+      "constraint": "budgetwallet_audit_journal_owner_id_fkey",
+      "classification": "RETENTION_RISK",
+      "retentionDecision": "Deleting an auth user must not erase BudgetWallet audit evidence; #685 changes the FK to ON DELETE RESTRICT when the supplemental table exists.",
+      "recovery": "Preserve audit evidence and use an explicit identity/lifecycle process; production rollout is coordinated through #627."
+    },
+    {
+      "table": "hipico_audit_events",
+      "constraint": "hipico_audit_events_owner_id_fkey",
+      "classification": "RETENTION_RISK",
+      "retentionDecision": "Deleting an auth user must not erase Hípico audit events; #685 changes the FK to ON DELETE RESTRICT when present.",
+      "recovery": "Preserve audit evidence and use explicit identity lifecycle procedures rather than parent cascade deletion."
+    },
+    {
+      "table": "hipico_audit_events",
+      "constraint": "hipico_audit_events_workspace_id_fkey",
+      "classification": "RETENTION_RISK",
+      "retentionDecision": "Deleting a workspace must not erase Hípico audit evidence; #685 changes the FK to ON DELETE RESTRICT when present.",
+      "recovery": "Workspace retirement must preserve referenced audit history and use an explicit lifecycle operation if deletion is ever approved."
+    }
+  ]
+}
