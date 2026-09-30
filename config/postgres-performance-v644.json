@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 644,
+  "description": "Evidence-driven PostgreSQL/RLS performance baseline. No index change is authorized without before/after output from this contract.",
+  "journeys": [
+    {
+      "id": "client-tenant-name-prefix",
+      "table": "Client",
+      "sql": "SELECT id, name FROM \"Client\" WHERE \"tenantId\" = :tenantId AND name >= 'Cliente 00001000' ORDER BY name LIMIT 50"
+    },
+    {
+      "id": "ledger-posted-period-recent",
+      "table": "LedgerEntry",
+      "sql": "SELECT id, date, source, posted FROM \"LedgerEntry\" WHERE \"tenantId\" = :tenantId AND posted = true AND \"fiscalPeriod\" = '2026-09' ORDER BY date DESC LIMIT 100"
+    },
+    {
+      "id": "analytics-route-recent",
+      "table": "AnalyticsEvent",
+      "sql": "SELECT id, route, \"createdAt\" FROM \"AnalyticsEvent\" WHERE \"tenantId\" = :tenantId AND route = 'dashboard' ORDER BY \"createdAt\" DESC LIMIT 100"
+    }
+  ]
+}
