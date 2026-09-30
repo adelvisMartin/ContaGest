@@ -4,8 +4,6 @@ export type LoginBootstrapIdentity = {
   tenantId: string;
   userProfileId: string;
   passwordHash: string | null;
-  userStatus: string;
-  accessExpiresAt: Date | null;
 };
 
 export type SupabaseBootstrapIdentity = {
@@ -32,8 +30,6 @@ type LoginBootstrapRow = {
   tenant_id: string;
   user_profile_id: string;
   password_hash: string | null;
-  user_status: string;
-  access_expires_at: Date | null;
 };
 
 type IdentityBootstrapRow = {
@@ -49,18 +45,15 @@ export async function resolveLoginBootstrapIdentity(
   db: BootstrapDb = prisma
 ): Promise<LoginBootstrapIdentity | null> {
   const rows = await db.$queryRaw<LoginBootstrapRow[]>`
-    SELECT "tenant_id", "user_profile_id", "password_hash", "user_status", "access_expires_at"
+    SELECT "tenant_id", "user_profile_id", "password_hash"
     FROM private.contagest_bootstrap_login_identity(${tenantRif}, ${email})
   `;
   const row = rows[0];
-  if (!row) return null;
-  return {
+  return row ? {
     tenantId: row.tenant_id,
     userProfileId: row.user_profile_id,
-    passwordHash: row.password_hash,
-    userStatus: row.user_status,
-    accessExpiresAt: row.access_expires_at
-  };
+    passwordHash: row.password_hash
+  } : null;
 }
 
 export async function resolveSupabaseBootstrapIdentity(
