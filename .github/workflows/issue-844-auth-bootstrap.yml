@@ -1,0 +1,54 @@
+name: Issue 844 auth bootstrap authority
+
+on:
+  push:
+    branches:
+      - codex/844-auth-bootstrap-authority
+  pull_request:
+    paths:
+      - 'backend/prisma/migrations/**'
+      - 'backend/src/database/auth-bootstrap*'
+      - 'backend/src/shared/middleware/context.ts'
+      - 'backend/src/modules/auth/**'
+      - 'backend/scripts/auth-bootstrap-v844.mjs'
+      - '.github/workflows/issue-844-auth-bootstrap.yml'
+      - 'docs/security/auth-bootstrap-authority-v844.md'
+
+permissions:
+  contents: read
+
+jobs:
+  postgres-auth-bootstrap:
+    name: PostgreSQL 17 bootstrap authority
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: contagest-v844-only
+          POSTGRES_DB: contagest_v844
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d contagest_v844"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://postgres:contagest-v844-only@127.0.0.1:5432/contagest_v844
+      DIRECT_DATABASE_URL: postgresql://postgres:contagest-v844-only@127.0.0.1:5432/contagest_v844
+      NODE_ENV: test
+      JWT_SECRET: issue-844-ci-only-secret-with-at-least-32-characters
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install locked dependencies
+        run: npm ci --ignore-scripts
+      - name: Run isolated auth bootstrap adversarial gate
+        working-directory: backend
+        run: node scripts/auth-bootstrap-v844.mjs
