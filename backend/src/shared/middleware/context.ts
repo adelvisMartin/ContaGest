@@ -31,21 +31,23 @@ async function resolveBackendJwtContext(token: string, cookieMode = false): Prom
   // The signature, issuer, audience and authority claims are verified before the
   // signed tenant claim can influence any database context.
   const decoded = verifyAccessToken(token);
+  if (!decoded.sid) throw new HttpError(401, 'El token de acceso no está vinculado a una sesión de servidor.');
+
   return runWithRuntimeTenant(decoded.tenantId, async () => {
-    if (cookieMode) {
-      if (!decoded.sid) throw new HttpError(401, 'La cookie de acceso no está vinculada a una sesión de servidor.');
-      const sessions = await prisma.$queryRaw<Array<{ status:string; expiresAt:Date }>>`
-        SELECT "status", "expiresAt"
-        FROM public."UserSession"
-        WHERE "id"=${decoded.sid}
-          AND "userId"=${decoded.sub}
-          AND "tenantId"=${decoded.tenantId}
-        LIMIT 1
-      `;
-      const session = sessions[0];
-      if (!session || session.status !== 'active' || new Date(session.expiresAt).getTime() <= Date.now()) {
-        throw new HttpError(401, 'La sesión fue revocada, reemplazada o venció. Inicia sesión nuevamente.');
-      }
+    // Every backend token (cookie or bearer) is session-bound. This makes
+    // revocation authoritative regardless of transport and prevents a valid
+    // signed tenant claim from bypassing UserSession revalidation.
+    const sessions = await prisma.$queryRaw<Array<{ status:string; expiresAt:Date }>>`
+      SELECT "status", "expiresAt"
+      FROM public."UserSession"
+      WHERE "id"=${decoded.sid}
+        AND "userId"=${decoded.sub}
+        AND "tenantId"=${decoded.tenantId}
+      LIMIT 1
+    `;
+    const session = sessions[0];
+    if (!session || session.status !== 'active' || new Date(session.expiresAt).getTime() <= Date.now()) {
+      throw new HttpError(401, 'La sesión fue revocada, reemplazada o venció. Inicia sesión nuevamente.');
     }
 
     const profile = await prisma.userProfile.findFirst({
