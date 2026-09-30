@@ -39,20 +39,24 @@ ALTER ROLE contagest_monitor WITH LOGIN PASSWORD :'monitor_password'
 ALTER ROLE contagest_runtime SET statement_timeout='30s';
 ALTER ROLE contagest_runtime SET lock_timeout='5s';
 ALTER ROLE contagest_runtime SET idle_in_transaction_session_timeout='15s';
-ALTER ROLE contagest_runtime SET search_path='public,pg_catalog';
+ALTER ROLE contagest_runtime SET search_path='pg_catalog,public';
 ALTER ROLE contagest_backup SET statement_timeout='15min';
-ALTER ROLE contagest_backup SET search_path='public,pg_catalog';
+ALTER ROLE contagest_backup SET search_path='pg_catalog,public';
 ALTER ROLE contagest_monitor SET statement_timeout='15s';
-ALTER ROLE contagest_monitor SET search_path='public,private,pg_catalog';
+ALTER ROLE contagest_monitor SET search_path='pg_catalog,private,public';
 
 SELECT current_database() AS target_database \gset
 GRANT CONNECT ON DATABASE :"target_database" TO contagest_runtime, contagest_backup, contagest_monitor;
 GRANT USAGE ON SCHEMA public TO contagest_runtime, contagest_backup, contagest_monitor;
 REVOKE CREATE ON SCHEMA public FROM contagest_runtime, contagest_backup, contagest_monitor;
 
--- Scope contractual: las tablas gestionadas por Prisma/ContaGest usan nombres PascalCase.
--- El proyecto Supabase contiene además tablas lower_snake_case de productos auxiliares;
--- esos objetos NO se conceden a los roles del backend ContaGest.
+-- #845 is the single forward-only runtime RLS authority. It removes the former
+-- contagest_runtime_backend_all policy and installs fail-closed tenant/shared rules.
+\ir runtime-rls-policy-v845.sql
+
+-- Scope contractual: PascalCase public tables are ContaGest application objects.
+-- Runtime receives DML only when RLS is enabled. Unknown non-RLS application
+-- tables therefore fail closed instead of silently gaining unrestricted DML.
 DO $$
 DECLARE
   rec record;
@@ -66,8 +70,12 @@ BEGIN
       AND c.relname ~ '^[A-Z]'
     ORDER BY c.relname
   LOOP
-    EXECUTE format('GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.%I TO contagest_runtime', rec.relname);
-    EXECUTE format('REVOKE TRUNCATE, REFERENCES, TRIGGER ON TABLE public.%I FROM contagest_runtime', rec.relname);
+    IF rec.relrowsecurity THEN
+      EXECUTE format('GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.%I TO contagest_runtime', rec.relname);
+      EXECUTE format('REVOKE TRUNCATE, REFERENCES, TRIGGER ON TABLE public.%I FROM contagest_runtime', rec.relname);
+    ELSE
+      EXECUTE format('REVOKE ALL PRIVILEGES ON TABLE public.%I FROM contagest_runtime', rec.relname);
+    END IF;
 
     EXECUTE format('GRANT SELECT ON TABLE public.%I TO contagest_backup', rec.relname);
     EXECUTE format('REVOKE INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER ON TABLE public.%I FROM contagest_backup', rec.relname);
@@ -75,11 +83,6 @@ BEGIN
     EXECUTE format('REVOKE ALL PRIVILEGES ON TABLE public.%I FROM contagest_monitor', rec.relname);
 
     IF rec.relrowsecurity THEN
-      EXECUTE format('DROP POLICY IF EXISTS contagest_runtime_backend_all ON public.%I', rec.relname);
-      EXECUTE format(
-        'CREATE POLICY contagest_runtime_backend_all ON public.%I FOR ALL TO contagest_runtime USING (true) WITH CHECK (true)',
-        rec.relname
-      );
       EXECUTE format('DROP POLICY IF EXISTS contagest_backup_read_all ON public.%I', rec.relname);
       EXECUTE format(
         'CREATE POLICY contagest_backup_read_all ON public.%I FOR SELECT TO contagest_backup USING (true)',
@@ -128,5 +131,5 @@ GRANT SELECT, INSERT, UPDATE ON TABLE private.contagest_security_metric_snapshot
 -- Nunca otorgar herencia de roles que eludan RLS ni privilegios de plataforma Supabase.
 REVOKE service_role FROM contagest_runtime, contagest_backup, contagest_monitor;
 
-\echo 'Roles de seguridad ContaGest provisionados. Ejecuta verify-security-roles.sql antes de rotar Vercel.'
+\echo 'Roles + RLS runtime tenant-aware #845 provisionados. Ejecuta verify-security-roles.sql antes de rotar el runtime.'
 \echo 'Tras cada migración que añada tablas Prisma, vuelve a ejecutar este script con passwords rotados/seguros.'
