@@ -11,7 +11,7 @@ CREATE TABLE public."DocumentSequence" (
   "padding" INTEGER NOT NULL DEFAULT 6,
   "currentValue" BIGINT NOT NULL DEFAULT 0,
   "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  "updatedAt" TIMESTAMP(3) NOT NULL,
 
   CONSTRAINT "DocumentSequence_pkey" PRIMARY KEY ("tenantId", "key", "periodKey"),
   CONSTRAINT "DocumentSequence_tenantId_fkey"
