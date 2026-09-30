@@ -28,10 +28,12 @@ test('#846 covers fail-closed, A-B CRUD, child scope and transaction cleanup',()
     'TRANSACTION_CONTEXT_LEAK_AFTER_COMMIT',
     'TRANSACTION_CONTEXT_LEAK_AFTER_ROLLBACK',
     'TRANSACTION_CONTEXT_LEAK_AFTER_ERROR',
-    'TRANSACTION_CONTEXT_LEAK_AFTER_TIMEOUT'
+    'TRANSACTION_CONTEXT_LEAK_AFTER_TIMEOUT',
+    'TRANSACTION_CONTEXT_LEAK_AFTER_CANCEL'
   ]) assert.match(source,new RegExp(marker));
   assert.match(source,/statement_timeout/);
   assert.match(source,/pg_sleep/);
+  assert.match(source,/pg_cancel_backend/);
 });
 
 test('#846 runs a real Prisma interactive-transaction probe under #843 authority',()=>{
@@ -47,6 +49,7 @@ test('#846 runs a real Prisma interactive-transaction probe under #843 authority
 
 test('#846 verifies least privilege, bootstrap authority, exact-SHA artifact and pooler contract docs',()=>{
   const runner=read('backend/scripts/runtime-tenant-adversarial-v846.mjs');
+  const provision=read('ops/database/provision-security-roles.sql');
   const docs=read('docs/security/runtime-tenant-adversarial-v846.md');
   const pkg=JSON.parse(read('backend/package.json'));
   assert.match(runner,/rolsuper/);
@@ -54,6 +57,8 @@ test('#846 verifies least privilege, bootstrap authority, exact-SHA artifact and
   assert.match(runner,/rolcreaterole/);
   assert.match(runner,/rolbypassrls/);
   assert.match(runner,/contagest_bootstrap_login_identity/);
+  assert.match(provision,/contagest_bootstrap_coordinate_challenge_identity\(text\)/);
+  assert.match(provision,/GRANT EXECUTE ON FUNCTION private\.contagest_bootstrap_coordinate_challenge_identity\(text\) TO contagest_runtime/);
   assert.match(runner,/RUNTIME_ALL_TENANT_POLICY/);
   assert.match(runner,/CG_CANDIDATE_SHA/);
   assert.match(runner,/artifacts\/qa\/db-security-v846/);
