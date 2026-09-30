@@ -23,8 +23,8 @@
 \endif
 
 -- Managed PostgreSQL (including Supabase) may grant CREATEROLE without real
--- SUPERUSER. New roles therefore start with PostgreSQL's least-privilege defaults;
--- we verify those attributes instead of issuing ALTER ROLE ... NOSUPERUSER, which
+-- SUPERUSER. New roles are created with the least-privilege attributes explicitly;
+-- existing roles are verified instead of issuing ALTER ROLE ... NOSUPERUSER, which
 -- managed owners are not allowed to execute even when the role is already non-super.
 DO $$
 DECLARE
@@ -33,7 +33,10 @@ DECLARE
 BEGIN
   FOREACH role_name IN ARRAY ARRAY['contagest_runtime','contagest_backup','contagest_monitor'] LOOP
     IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname=role_name) THEN
-      EXECUTE format('CREATE ROLE %I',role_name);
+      EXECUTE format(
+        'CREATE ROLE %I NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS INHERIT',
+        role_name
+      );
     END IF;
 
     SELECT rolcanlogin,rolsuper,rolcreatedb,rolcreaterole,rolreplication,rolbypassrls
