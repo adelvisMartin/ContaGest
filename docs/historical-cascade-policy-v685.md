@@ -1,0 +1,9 @@
+# Historical Cascade Policy — #685
+
+#685 closes the `CASCADE_RISK` findings emitted by #633 without treating every cascade as a defect. The policy is executable in `config/historical-cascade-policy-v685.json`; its classifier consumes a #633 manifest and fails closed if a new historical cascade appears without an explicit decision.
+
+The 17 baseline cascades are classified as `INTENTIONAL_CHILD_CASCADE`, `RETENTION_RISK`, or `TENANT_DELETION_POLICY` (the supported catalog also reserves `PLATFORM_CLEANUP`). `LedgerLine → LedgerEntry` and `TaxDeclaration → TaxPeriod` remain structural child cascades because their parents are protected. `AuditLog`, `LedgerEntry`, `FiscalDocument`, and `FiscalCloseEvidence` keep their tenant cascades because #562 already intercepts destructive deletes with immutable retention policy guards.
+
+The forward migration hardens only the remaining retention risks. FX ledger snapshots, fiscal rule/snapshot/sequence authority, legal acceptance evidence, and Budget Wallet/Hípico owner audit relationships become restrictive. Hípico workspace deletion uses `SET NULL` because `workspace_id` is nullable, preserving the audit event while allowing workspace cleanup. `TaxPeriod` stays aligned with Prisma's existing FK contract but gains the canonical #562 protected-delete guard and an immutable, non-purgeable lifecycle policy; therefore a direct period delete or tenant cascade aborts atomically before `TaxDeclaration` child deletion can occur.
+
+Recovery is fail-closed: a blocked parent deletion rolls back as one transaction, retained rows remain available for export/restore, and accounting/fiscal history is corrected through reversal or an explicitly authorized lifecycle workflow rather than generic CRUD. Production DDL is not executed by this ticket; #627 remains the convergence authority. Validation uses isolated PostgreSQL 17 fixtures for parent/child delete behavior and tenant A/B isolation before merge.
