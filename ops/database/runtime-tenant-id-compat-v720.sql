@@ -20,6 +20,13 @@ BEGIN
     RETURN NULL;
   END IF;
 
+  -- UUID-looking identifiers must be canonical version/variant UUIDs. Otherwise
+  -- they are rejected instead of falling through as a legacy slug.
+  IF raw_value ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+     AND raw_value !~* '^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$' THEN
+    RETURN NULL;
+  END IF;
+
   -- Covers canonical UUIDs plus the bounded legacy slug form observed in the
   -- authoritative production Tenant table. Reject whitespace, path separators,
   -- control characters and overlong identifiers before catalog access.
