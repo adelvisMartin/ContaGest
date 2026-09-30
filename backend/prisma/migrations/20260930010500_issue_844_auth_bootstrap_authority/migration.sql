@@ -209,7 +209,7 @@ BEGIN
     v_user_id,
     'Administrador',
     'active',
-    true,
+    false,
     pg_catalog.now(),
     pg_catalog.now()
   );
