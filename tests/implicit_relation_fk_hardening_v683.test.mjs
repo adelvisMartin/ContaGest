@@ -65,4 +65,5 @@ test('forward-only migration preflights both local relations before any FK DDL a
   assert.equal((migration.match(/VALIDATE CONSTRAINT/g)||[]).length,2);
   assert.doesNotMatch(migration,/^\s*(UPDATE|DELETE|TRUNCATE)\b/im);
   assert.match(migration,/ON DELETE NO ACTION/);
+  assert.match(migration,/array_agg\(a\.attname::text ORDER BY u\.ord\)/);
 });
