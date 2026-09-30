@@ -42,6 +42,8 @@ test('forward-only migration is atomic, preserves rows, and hardens risky cascad
  assert.match(migration,/LegalAcceptance_tenantId_fkey[\s\S]*ON DELETE RESTRICT/);
  assert.match(migration,/LegalAcceptance_userId_fkey[\s\S]*ON DELETE RESTRICT/);
  assert.match(migration,/budgetwallet_audit_journal_owner_id_fkey[\s\S]*ON DELETE RESTRICT/);
+ assert.match(migration,/to_regclass\('public\.budgetwallet_audit_journal'\)/);
+ assert.match(migration,/ISSUE_685_OPTIONAL_CASCADE_ABSENT:budgetwallet_audit_journal_owner_id_fkey/);
  assert.match(migration,/hipico_audit_events_owner_id_fkey[\s\S]*ON DELETE RESTRICT/);
  assert.match(migration,/hipico_audit_events_workspace_id_fkey[\s\S]*ON DELETE SET NULL/);
  assert.match(migration,/TaxPeriod_lifecycle_delete_guard/);
