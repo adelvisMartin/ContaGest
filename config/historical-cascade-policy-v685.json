@@ -90,14 +90,14 @@
       "table": "LegalAcceptance",
       "constraint": "LegalAcceptance_userId_fkey",
       "classification": "RETENTION_RISK",
-      "retentionDecision": "Deleting a user must not erase legal acceptance evidence; #685 changes this FK to ON DELETE RESTRICT and protects direct deletes.",
+      "retentionDecision": "Deleting a user must not erase legal acceptance evidence; #685 keeps the existing relation contract but blocks the cascade through the immutable LegalAcceptance lifecycle guard.",
       "recovery": "Identity deletion requires an explicit lifecycle/privacy process that preserves required legal evidence and documents any approved transformation."
     },
     {
       "table": "TaxDeclaration",
       "constraint": "TaxDeclaration_periodId_fkey",
       "classification": "RETENTION_RISK",
-      "retentionDecision": "Deleting a tax period must not silently erase declarations; #685 changes this FK to ON DELETE RESTRICT and protects direct declaration deletes.",
+      "retentionDecision": "Deleting a tax period must not silently erase declarations; #685 blocks both parent and direct deletes through immutable TaxPeriod/TaxDeclaration lifecycle guards without changing the Prisma FK contract.",
       "recovery": "Tax history is restored from approved backup/PITR; purge requires a future versioned policy and legal review."
     },
     {
