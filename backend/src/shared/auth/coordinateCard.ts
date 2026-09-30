@@ -1,5 +1,7 @@
 import crypto from 'node:crypto';
 import { prisma } from '../../database/prisma.js';
+import { resolveCoordinateChallengeBootstrapIdentity } from '../../database/auth-bootstrap.js';
+import { runWithRuntimeTenant } from '../../database/runtime-tenant-context.js';
 import { env } from '../../config/env.js';
 import { HttpError } from '../http.js';
 
@@ -136,45 +138,72 @@ export async function verifyCoordinateChallenge(input: {
   ip?:string;
   userAgent?:string;
 }) {
-  const rows = await prisma.$queryRawUnsafe<any[]>(`
-    SELECT ch.*,card."cellHashes",card."status" AS "cardStatus"
-    FROM public."CoordinateChallenge" ch
-    JOIN public."CoordinateCard" card ON card."id"=ch."cardId"
-    WHERE ch."id"=$1 LIMIT 1
-  `,input.challengeId);
-  const challenge = rows[0];
-  if (!challenge) throw new HttpError(404,'Reto de coordenadas no encontrado.');
-  if (challenge.usedAt) throw new HttpError(409,'Este reto ya fue utilizado. Solicita uno nuevo.');
-  if (challenge.cardStatus !== 'active') throw new HttpError(403,'La tarjeta de coordenadas ya no está activa.');
-  if (new Date(challenge.expiresAt).getTime() <= Date.now()) {
-    await prisma.$executeRawUnsafe(`UPDATE public."CoordinateChallenge" SET "usedAt"=now() WHERE "id"=$1`,challenge.id);
-    throw new HttpError(410,'El reto de coordenadas expiró. Inicia sesión nuevamente.');
-  }
-  if (Number(challenge.attempts) >= Number(challenge.maxAttempts)) throw new HttpError(429,'Se agotaron los intentos del reto.');
-  if (!safeHexEqual(challenge.fingerprintHash,requestFingerprint(input.ip,input.userAgent))) {
-    throw new HttpError(403,'El reto debe completarse desde el mismo dispositivo y navegador.');
-  }
+  const identity = await resolveCoordinateChallengeBootstrapIdentity(input.challengeId);
+  if (!identity) throw new HttpError(404,'Reto de coordenadas no encontrado.');
 
-  const coordinates = Array.isArray(challenge.coordinates) ? challenge.coordinates.map(String) : [];
-  const hashes = challenge.cellHashes && typeof challenge.cellHashes === 'object' ? challenge.cellHashes as Record<string,string> : {};
-  const valid = coordinates.every((coordinate) => {
-    const answer = String(input.answers?.[coordinate] || '').trim();
-    const expected = String(hashes[coordinate] || '');
-    return /^\d{4}$/.test(answer) && expected && safeHexEqual(expected,cellHash(challenge.cardId,coordinate,answer));
-  });
-  if (!valid) {
-    const attempts = Number(challenge.attempts) + 1;
-    await prisma.$executeRawUnsafe(`UPDATE public."CoordinateChallenge" SET "attempts"=$2,"usedAt"=CASE WHEN $2 >= "maxAttempts" THEN now() ELSE NULL END WHERE "id"=$1`,challenge.id,attempts);
-    throw new HttpError(422,attempts >= Number(challenge.maxAttempts) ? 'Tarjeta bloqueada para este intento. Inicia sesión nuevamente.' : `Coordenadas incorrectas. Quedan ${Number(challenge.maxAttempts)-attempts} intento(s).`);
-  }
+  return runWithRuntimeTenant(identity.tenantId, async () => {
+    const rows = await prisma.$queryRawUnsafe<any[]>(`
+      SELECT ch.*,card."cellHashes",card."status" AS "cardStatus"
+      FROM public."CoordinateChallenge" ch
+      JOIN public."CoordinateCard" card
+        ON card."id"=ch."cardId"
+       AND card."tenantId"=ch."tenantId"
+       AND card."userId"=ch."userId"
+      WHERE ch."id"=$1 AND ch."tenantId"=$2 AND ch."userId"=$3
+      LIMIT 1
+    `,input.challengeId,identity.tenantId,identity.userProfileId);
+    const challenge = rows[0];
+    if (!challenge) throw new HttpError(404,'Reto de coordenadas no encontrado.');
+    if (challenge.usedAt) throw new HttpError(409,'Este reto ya fue utilizado. Solicita uno nuevo.');
+    if (challenge.cardStatus !== 'active') throw new HttpError(403,'La tarjeta de coordenadas ya no está activa.');
+    if (new Date(challenge.expiresAt).getTime() <= Date.now()) {
+      await prisma.$executeRawUnsafe(
+        `UPDATE public."CoordinateChallenge" SET "usedAt"=now() WHERE "id"=$1 AND "tenantId"=$2 AND "userId"=$3`,
+        challenge.id,identity.tenantId,identity.userProfileId
+      );
+      throw new HttpError(410,'El reto de coordenadas expiró. Inicia sesión nuevamente.');
+    }
+    if (Number(challenge.attempts) >= Number(challenge.maxAttempts)) throw new HttpError(429,'Se agotaron los intentos del reto.');
+    if (!safeHexEqual(challenge.fingerprintHash,requestFingerprint(input.ip,input.userAgent))) {
+      throw new HttpError(403,'El reto debe completarse desde el mismo dispositivo y navegador.');
+    }
 
-  await prisma.$transaction(async (tx) => {
-    await tx.$executeRawUnsafe(`UPDATE public."CoordinateChallenge" SET "attempts"="attempts"+1,"usedAt"=now() WHERE "id"=$1`,challenge.id);
-    await tx.$executeRawUnsafe(`UPDATE public."CoordinateCard" SET "lastUsedAt"=now(),"updatedAt"=now() WHERE "id"=$1`,challenge.cardId);
+    const coordinates = Array.isArray(challenge.coordinates) ? challenge.coordinates.map(String) : [];
+    const hashes = challenge.cellHashes && typeof challenge.cellHashes === 'object' ? challenge.cellHashes as Record<string,string> : {};
+    const valid = coordinates.every((coordinate) => {
+      const answer = String(input.answers?.[coordinate] || '').trim();
+      const expected = String(hashes[coordinate] || '');
+      return /^\d{4}$/.test(answer) && expected && safeHexEqual(expected,cellHash(challenge.cardId,coordinate,answer));
+    });
+    if (!valid) {
+      const attempts = Number(challenge.attempts) + 1;
+      await prisma.$executeRawUnsafe(
+        `UPDATE public."CoordinateChallenge"
+         SET "attempts"=$2,"usedAt"=CASE WHEN $2 >= "maxAttempts" THEN now() ELSE NULL END
+         WHERE "id"=$1 AND "tenantId"=$3 AND "userId"=$4`,
+        challenge.id,attempts,identity.tenantId,identity.userProfileId
+      );
+      throw new HttpError(422,attempts >= Number(challenge.maxAttempts) ? 'Tarjeta bloqueada para este intento. Inicia sesión nuevamente.' : `Coordenadas incorrectas. Quedan ${Number(challenge.maxAttempts)-attempts} intento(s).`);
+    }
+
+    await prisma.$transaction(async (tx) => {
+      await tx.$executeRawUnsafe(
+        `UPDATE public."CoordinateChallenge"
+         SET "attempts"="attempts"+1,"usedAt"=now()
+         WHERE "id"=$1 AND "tenantId"=$2 AND "userId"=$3`,
+        challenge.id,identity.tenantId,identity.userProfileId
+      );
+      await tx.$executeRawUnsafe(
+        `UPDATE public."CoordinateCard"
+         SET "lastUsedAt"=now(),"updatedAt"=now()
+         WHERE "id"=$1 AND "tenantId"=$2 AND "userId"=$3`,
+        challenge.cardId,identity.tenantId,identity.userProfileId
+      );
+    });
+    return {
+      tenantId:identity.tenantId,
+      userId:identity.userProfileId,
+      context:challenge.context && typeof challenge.context === 'object' ? challenge.context : {}
+    };
   });
-  return {
-    tenantId:String(challenge.tenantId),
-    userId:String(challenge.userId),
-    context:challenge.context && typeof challenge.context === 'object' ? challenge.context : {}
-  };
 }
