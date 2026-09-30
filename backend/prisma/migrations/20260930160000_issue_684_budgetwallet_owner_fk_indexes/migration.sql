@@ -14,7 +14,7 @@ BEGIN
        JOIN pg_catalog.pg_attribute AS a
          ON a.attrelid = i.indrelid
         AND a.attnum = key.attnum
-       WHERE i.indrelid = 'public.budgetwallet_purchase_events'::regclass
+       WHERE i.indrelid = to_regclass('public.budgetwallet_purchase_events')
          AND key.ord = 1
          AND a.attname = 'owner_id'
          AND i.indisvalid
@@ -33,7 +33,7 @@ BEGIN
        JOIN pg_catalog.pg_attribute AS a
          ON a.attrelid = i.indrelid
         AND a.attnum = key.attnum
-       WHERE i.indrelid = 'public.budgetwallet_security_events'::regclass
+       WHERE i.indrelid = to_regclass('public.budgetwallet_security_events')
          AND key.ord = 1
          AND a.attname = 'owner_id'
          AND i.indisvalid
