@@ -24,16 +24,30 @@ test('#626 exposes one local migration runner and versioned manifest', async () 
   assert.match(runner, /SNAPSHOT_PROVENANCE_INVALID/);
 });
 
-test('#626 canonical #562 migration matches Tenant TEXT authority without ephemeral projection', async () => {
-  const [migration, deploy] = await Promise.all([
+test('#626 preserves immutable #562 history and projects TEXT only for disposable replay', async () => {
+  const [migration, compatibility, deploy] = await Promise.all([
     read('backend/prisma/migrations/20260927152000_data_lifecycle_v562/migration.sql'),
+    read('backend/scripts/migration-compat-v626.mjs'),
     read('backend/scripts/prisma-deploy-safe.mjs')
   ]);
-  assert.equal((migration.match(/"tenantId"\s+uuid\b/gi) ?? []).length, 0);
-  assert.equal((migration.match(/"tenantId"\s+text\b/gi) ?? []).length, 5);
-  assert.match(migration, /\bp_tenant\s+text\b/i);
-  assert.doesNotMatch(deploy, /projectHistoricalCompatibility|inspectHistoricalCompatibility|reserving immutable historical migration/);
-  assert.match(deploy, /prisma.*migrate.*deploy|migrate', 'deploy/s);
+  assert.equal((migration.match(/"tenantId"\s+uuid\b/gi) ?? []).length, 5);
+  assert.equal((migration.match(/"tenantId"\s+text\b/gi) ?? []).length, 0);
+  assert.match(migration, /\bp_tenant\s+uuid\b/i);
+  assert.match(compatibility, /TENANT_COLUMN_UUID/);
+  assert.match(compatibility, /projectDataLifecycleSql/);
+  assert.match(compatibility, /requiresProjection/);
+  assert.match(deploy, /const\s+ephemeral\s*=\s*isEphemeralDatabase\(databaseUrl\)/);
+  assert.match(deploy, /if\s*\(ephemeral\)[\s\S]*inspectHistoricalCompatibility[\s\S]*projectHistoricalCompatibility/);
+  assert.match(deploy, /runPrisma\(\['migrate',\s*'deploy'/);
+});
+
+test('#626 resets every application-owned schema between disposable upgrade fixtures', async () => {
+  const runner = await read('backend/scripts/migration-chain-v626.mjs');
+  assert.match(runner, /DROP SCHEMA IF EXISTS storage CASCADE/);
+  assert.match(runner, /DROP SCHEMA IF EXISTS auth CASCADE/);
+  assert.match(runner, /DROP SCHEMA IF EXISTS private CASCADE/);
+  assert.match(runner, /DROP SCHEMA IF EXISTS public CASCADE/);
+  assert.match(runner, /CREATE SCHEMA public/);
 });
 
 test('#626 workflow runs PostgreSQL 17 from-zero and supported upgrades', async () => {
@@ -45,10 +59,11 @@ test('#626 workflow runs PostgreSQL 17 from-zero and supported upgrades', async 
   assert.doesNotMatch(workflow, /continue-on-error:\s*true/);
 });
 
-test('#626 documents immutable deployed history and the audited exception for unapplied #562', async () => {
+test('#626 documents immutable history, ephemeral compatibility, and #627 production ownership', async () => {
   const docs = await read('docs/database/MIGRATION_CHAIN_V626.md');
   assert.match(docs, /no reescribir|no se reescribe/i);
-  assert.match(docs, /no desplegada|no aplicada/i);
+  assert.match(docs, /proyecta exclusivamente|compatibilidad/i);
+  assert.match(docs, /desechable|efímera/i);
   assert.match(docs, /#627/);
   assert.match(docs, /PostgreSQL 17/);
   assert.match(docs, /from-zero/i);

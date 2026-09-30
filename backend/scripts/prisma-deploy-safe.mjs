@@ -9,6 +9,11 @@ import {
   inspectHistoricalCompatibility,
   projectHistoricalCompatibility
 } from './migration-compat-v626.mjs';
+import {
+  COMPOSITE_TENANT_MIGRATION,
+  inspectCompositeTenantCompatibility,
+  projectCompositeTenantCompatibility
+} from './migration-compat-v634.mjs';
 import { planHistoricalProjection } from './migration-compat-plan-v626.mjs';
 
 const { Client } = pg;
@@ -81,12 +86,12 @@ async function pendingLegacyBaseline(databaseUrl) {
   }
 }
 
-async function compatibilityMigrationState(migrationsRoot) {
+async function migrationProjectionState(migrationsRoot, migrationName) {
   const entries = (await readdir(migrationsRoot, { withFileTypes: true }))
     .filter((entry) => entry.isDirectory())
     .map((entry) => entry.name)
     .sort();
-  return { ...planHistoricalProjection(entries, DATA_LIFECYCLE_MIGRATION), entries };
+  return { ...planHistoricalProjection(entries, migrationName), entries };
 }
 
 async function createCompatibilityPrefixSchema(schemaPath, migrationsRoot, migrationNames) {
@@ -109,13 +114,21 @@ async function createCompatibilityPrefixSchema(schemaPath, migrationsRoot, migra
   return { root, schemaPath: path.join(prismaRoot, 'schema.prisma') };
 }
 
+async function deployPrefix({ schemaPath, migrationsRoot, migrationNames, label }) {
+  if (migrationNames.length === 0) return null;
+  const prefix = await createCompatibilityPrefixSchema(schemaPath, migrationsRoot, migrationNames);
+  console.log(`[prisma-compat] deploying ${migrationNames.length} migrations before ${label}`);
+  runPrisma(['migrate', 'deploy', '--schema', prefix.schemaPath]);
+  return prefix;
+}
+
 export async function deployMigrations({ schemaPath = 'prisma/schema.prisma' } = {}) {
   const databaseUrl = String(process.env.DATABASE_URL || '').trim();
   if (!databaseUrl) throw new Error('DATABASE_URL_REQUIRED_FOR_PRISMA_DEPLOY');
 
   const ephemeral = isEphemeralDatabase(databaseUrl);
   const migrationsRoot = path.resolve(process.cwd(), path.dirname(schemaPath), 'migrations');
-  let temporaryPrefix = null;
+  const temporaryPrefixes = [];
 
   try {
     if (ephemeral) {
@@ -124,26 +137,50 @@ export async function deployMigrations({ schemaPath = 'prisma/schema.prisma' } =
         runPrisma(['migrate', 'resolve', '--applied', migration, '--schema', schemaPath]);
       }
 
-      const compatibility = await compatibilityMigrationState(migrationsRoot);
-      if (compatibility.available) {
-        let compatibilityStatus = await inspectHistoricalCompatibility({ databaseUrl });
-        if (compatibilityStatus.requiresProjection && !compatibilityStatus.applied) {
-          if (compatibility.before.length > 0) {
-            temporaryPrefix = await createCompatibilityPrefixSchema(schemaPath, migrationsRoot, compatibility.before);
-            console.log(
-              `[prisma-compat] deploying ${compatibility.before.length} migrations before ${DATA_LIFECYCLE_MIGRATION}`
-            );
-            runPrisma(['migrate', 'deploy', '--schema', temporaryPrefix.schemaPath]);
-          }
+      const lifecycle = await migrationProjectionState(migrationsRoot, DATA_LIFECYCLE_MIGRATION);
+      if (lifecycle.available) {
+        let lifecycleStatus = await inspectHistoricalCompatibility({ databaseUrl });
+        if (lifecycleStatus.requiresProjection && !lifecycleStatus.applied) {
+          const prefix = await deployPrefix({
+            schemaPath,
+            migrationsRoot,
+            migrationNames: lifecycle.before,
+            label: DATA_LIFECYCLE_MIGRATION,
+          });
+          if (prefix) temporaryPrefixes.push(prefix);
 
           console.log(`[prisma-compat] reserving immutable historical migration: ${DATA_LIFECYCLE_MIGRATION}`);
           runPrisma(['migrate', 'resolve', '--applied', DATA_LIFECYCLE_MIGRATION, '--schema', schemaPath]);
 
           console.log(`[prisma-compat] projecting TEXT tenant compatibility: ${DATA_LIFECYCLE_MIGRATION}`);
           await projectHistoricalCompatibility({ databaseUrl, migrationsRoot });
-          compatibilityStatus = await inspectHistoricalCompatibility({ databaseUrl });
-          if (!compatibilityStatus.applied || !compatibilityStatus.complete) {
+          lifecycleStatus = await inspectHistoricalCompatibility({ databaseUrl });
+          if (!lifecycleStatus.applied || !lifecycleStatus.complete) {
             throw new Error(`MIGRATION_APPLY_FAILED:${DATA_LIFECYCLE_MIGRATION}:projection-not-complete`);
+          }
+        }
+      }
+
+      const composite = await migrationProjectionState(migrationsRoot, COMPOSITE_TENANT_MIGRATION);
+      if (composite.available) {
+        let compositeStatus = await inspectCompositeTenantCompatibility({ databaseUrl });
+        if (compositeStatus.requiresProjection && !compositeStatus.applied) {
+          const prefix = await deployPrefix({
+            schemaPath,
+            migrationsRoot,
+            migrationNames: composite.before,
+            label: COMPOSITE_TENANT_MIGRATION,
+          });
+          if (prefix) temporaryPrefixes.push(prefix);
+
+          console.log(`[prisma-compat] reserving immutable historical migration: ${COMPOSITE_TENANT_MIGRATION}`);
+          runPrisma(['migrate', 'resolve', '--applied', COMPOSITE_TENANT_MIGRATION, '--schema', schemaPath]);
+
+          console.log(`[prisma-compat] projecting policy-bounded tenant guards: ${COMPOSITE_TENANT_MIGRATION}`);
+          await projectCompositeTenantCompatibility({ databaseUrl });
+          compositeStatus = await inspectCompositeTenantCompatibility({ databaseUrl });
+          if (!compositeStatus.applied || !compositeStatus.complete) {
+            throw new Error(`MIGRATION_APPLY_FAILED:${COMPOSITE_TENANT_MIGRATION}:projection-not-complete`);
           }
         }
       }
@@ -151,7 +188,9 @@ export async function deployMigrations({ schemaPath = 'prisma/schema.prisma' } =
 
     runPrisma(['migrate', 'deploy', '--schema', schemaPath]);
   } finally {
-    if (temporaryPrefix?.root) await rm(temporaryPrefix.root, { recursive: true, force: true });
+    for (const prefix of temporaryPrefixes) {
+      if (prefix?.root) await rm(prefix.root, { recursive: true, force: true });
+    }
   }
 }
 
