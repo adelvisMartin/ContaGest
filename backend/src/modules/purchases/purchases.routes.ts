@@ -6,6 +6,7 @@ import { requirePermission, requireTenant } from '../../shared/middleware/contex
 import { validateBody } from '../../shared/middleware/validate.js';
 import { writeAudit } from '../../shared/services/audit.service.js';
 import { runFinancialIdempotentMutation } from '../../shared/services/financial-idempotency.service.js';
+import { allocateDocumentNumber, PURCHASE_INVOICE_SEQUENCE_KEY } from '../../shared/services/document-sequence.service.js';
 import { assertBalanced, assertPeriodOpen, inverseLedgerLines, purchaseInvoiceLinesForLedger } from '../accounting/accounting.service.js';
 import { calculateInvoiceTotals } from '../../shared/financial/invoice.js';
 import { decimalSchema } from '../../shared/financial/zod.js';
@@ -26,7 +27,7 @@ const lineSchema = z.object({
 
 const purchaseSchema = z.object({
   supplierId: z.string().optional(),
-  number: z.string().min(1),
+  number: z.string().trim().min(1).optional(),
   controlNo: z.string().optional(),
   issueDate: z.coerce.date().optional(),
   fiscalPeriod: z.string().min(6),
@@ -92,11 +93,12 @@ router.post('/', validateBody(purchaseSchema), asyncHandler(async (req, res) => 
       rateSource: req.body.exchangeRateSource,
       documentDate: req.body.issueDate || new Date()
     });
+    const number = req.body.number || (await allocateDocumentNumber({ tenantId: ctx.tenantId, key: PURCHASE_INVOICE_SEQUENCE_KEY }, tx)).number;
     const purchase = await tx.purchaseInvoice.create({
       data: {
         tenantId: ctx.tenantId,
         supplierId: req.body.supplierId,
-        number: req.body.number,
+        number,
         controlNo: req.body.controlNo,
         issueDate: req.body.issueDate,
         fiscalPeriod: req.body.fiscalPeriod,

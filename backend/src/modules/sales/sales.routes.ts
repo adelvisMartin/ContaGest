@@ -7,6 +7,7 @@ import { validateBody } from '../../shared/middleware/validate.js';
 import { assertBalanced, assertPeriodOpen, inverseLedgerLines, salesInvoiceLinesForLedger } from '../accounting/accounting.service.js';
 import { writeAudit } from '../../shared/services/audit.service.js';
 import { runFinancialIdempotentMutation } from '../../shared/services/financial-idempotency.service.js';
+import { allocateDocumentNumber, SALES_INVOICE_SEQUENCE_KEY } from '../../shared/services/document-sequence.service.js';
 import { calculateInvoiceTotals } from '../../shared/financial/invoice.js';
 import { decimalSchema } from '../../shared/financial/zod.js';
 import { ONE, ZERO } from '../../shared/financial/decimal.js';
@@ -25,7 +26,7 @@ const lineSchema = z.object({
 });
 const saleSchema = z.object({
   clientId: z.string().optional(),
-  number: z.string().min(1),
+  number: z.string().trim().min(1).optional(),
   controlNo: z.string().optional(),
   issueDate: z.coerce.date().optional(),
   fiscalPeriod: z.string().min(6),
@@ -90,11 +91,12 @@ router.post('/', requirePermission('sales.manage'), validateBody(saleSchema), as
       rateSource: req.body.exchangeRateSource,
       documentDate: req.body.issueDate || new Date()
     });
+    const number = req.body.number || (await allocateDocumentNumber({ tenantId: ctx.tenantId, key: SALES_INVOICE_SEQUENCE_KEY }, tx)).number;
     const sale = await tx.salesInvoice.create({
       data: {
         tenantId: ctx.tenantId,
         clientId: req.body.clientId,
-        number: req.body.number,
+        number,
         controlNo: req.body.controlNo,
         issueDate: req.body.issueDate,
         fiscalPeriod: req.body.fiscalPeriod,

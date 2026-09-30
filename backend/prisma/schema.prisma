@@ -98,8 +98,26 @@ model Tenant {
   importBatches ImportBatch[]
   regulatoryFeeds RegulatoryFeed[]
   idempotencyRecords IdempotencyRecord[]
+  documentSequences DocumentSequence[]
 
   @@index([rif])
+}
+
+model DocumentSequence {
+  tenantId     String
+  key          String
+  periodKey    String   @default("")
+  prefix       String   @default("")
+  suffix       String   @default("")
+  padding      Int      @default(6)
+  currentValue BigInt   @default(0)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@id([tenantId, key, periodKey])
+  @@index([tenantId, key])
 }
 
 model UserProfile {
