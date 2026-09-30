@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   isBootstrapRegistrationConflict,
   registerTenantBootstrap,
+  resolveCoordinateChallengeBootstrapIdentity,
   resolveLoginBootstrapIdentity,
   resolveSupabaseBootstrapIdentity
 } from './auth-bootstrap.js';
@@ -41,8 +42,10 @@ test('login bootstrap adapter exposes only the minimal identity row and preserve
 test('bootstrap identity adapters return null when the private authority resolves no row', async () => {
   const login = fakeDb([]);
   const supabase = fakeDb([]);
+  const coordinate = fakeDb([]);
   assert.equal(await resolveLoginBootstrapIdentity('J-404', 'nobody@example.test', login.db), null);
   assert.equal(await resolveSupabaseBootstrapIdentity('auth-missing', supabase.db), null);
+  assert.equal(await resolveCoordinateChallengeBootstrapIdentity('00000000-0000-4000-8000-000000000000', coordinate.db), null);
 });
 
 test('supabase bootstrap accepts only provider user id and returns tenant/profile identity', async () => {
@@ -57,6 +60,22 @@ test('supabase bootstrap accepts only provider user id and returns tenant/profil
     userProfileId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
   });
   assert.deepEqual(calls, [['supabase-a']]);
+});
+
+test('coordinate challenge bootstrap accepts only the opaque challenge id and returns tenant/profile identity', async () => {
+  const { db, calls } = fakeDb([{
+    tenant_id: '11111111-1111-4111-8111-111111111111',
+    user_profile_id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
+  }]);
+
+  const challengeId = '12345678-1234-4234-8234-123456789abc';
+  const result = await resolveCoordinateChallengeBootstrapIdentity(challengeId, db);
+  assert.deepEqual(result, {
+    tenantId: '11111111-1111-4111-8111-111111111111',
+    userProfileId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
+  });
+  assert.deepEqual(calls, [[challengeId]]);
+  assert.deepEqual(Object.keys(result!).sort(), ['tenantId','userProfileId']);
 });
 
 test('registration bootstrap maps only newly-created ids and forwards application inputs', async () => {
