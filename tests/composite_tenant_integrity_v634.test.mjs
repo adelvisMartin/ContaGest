@@ -142,13 +142,20 @@ test('historical projection plan is inert when the compatibility migration is ou
   assert.deepEqual(plan.after, []);
 });
 
-test('ephemeral deploy phases historical projection before later migrations', async () => {
-  const source = await readFile(new URL('../backend/scripts/prisma-deploy-safe.mjs', import.meta.url), 'utf8');
-  assert.doesNotMatch(source, /ephemeral-projection-must-be-terminal/);
-  assert.match(source, /planHistoricalProjection/);
-  assert.match(source, /createCompatibilityPrefixSchema/);
-  assert.match(source, /projectHistoricalCompatibility/);
-  assert.match(source, /compatibility\.before/);
+test('ephemeral deploy phases immutable #562 and #634 snapshots before later migrations', async () => {
+  const [deploy, compatibility] = await Promise.all([
+    readFile(new URL('../backend/scripts/prisma-deploy-safe.mjs', import.meta.url), 'utf8'),
+    readFile(new URL('../backend/scripts/migration-compat-v634.mjs', import.meta.url), 'utf8'),
+  ]);
+  assert.doesNotMatch(deploy, /ephemeral-projection-must-be-terminal/);
+  assert.match(deploy, /planHistoricalProjection/);
+  assert.match(deploy, /projectHistoricalCompatibility/);
+  assert.match(deploy, /COMPOSITE_TENANT_MIGRATION/);
+  assert.match(deploy, /projectCompositeTenantCompatibility/);
+  assert.match(deploy, /if\s*\(ephemeral\)[\s\S]*projectCompositeTenantCompatibility/);
+  assert.match(compatibility, /buildMigration/);
+  assert.match(compatibility, /partial-guards/);
+  assert.doesNotMatch(compatibility, /TENANT_RELATION_CATALOG_DRIFT/);
 });
 
 test('forward-only migration is ordered after the already-applied production convergence migration', () => {
