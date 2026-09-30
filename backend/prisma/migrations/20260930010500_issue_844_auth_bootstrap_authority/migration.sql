@@ -11,9 +11,7 @@ CREATE OR REPLACE FUNCTION private.contagest_bootstrap_login_identity(
 RETURNS TABLE (
   tenant_id text,
   user_profile_id text,
-  password_hash text,
-  user_status text,
-  access_expires_at timestamptz
+  password_hash text
 )
 LANGUAGE sql
 STABLE
@@ -23,9 +21,7 @@ AS $$
   SELECT
     t."id" AS tenant_id,
     u."id" AS user_profile_id,
-    u."passwordHash" AS password_hash,
-    u."status"::text AS user_status,
-    u."accessExpiresAt" AS access_expires_at
+    u."passwordHash" AS password_hash
   FROM public."Tenant" AS t
   JOIN public."UserProfile" AS u
     ON u."tenantId" = t."id"
