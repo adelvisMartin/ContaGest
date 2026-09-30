@@ -24,9 +24,7 @@ test('login bootstrap adapter exposes only the minimal identity row and preserve
   const { db, calls } = fakeDb([{
     tenant_id: '11111111-1111-4111-8111-111111111111',
     user_profile_id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
-    password_hash: 'hash-a',
-    user_status: 'active',
-    access_expires_at: null
+    password_hash: 'hash-a'
   }]);
 
   const result = await resolveLoginBootstrapIdentity(' J-10000000-1 ', ' OWNER@EXAMPLE.TEST ', db);
@@ -34,13 +32,10 @@ test('login bootstrap adapter exposes only the minimal identity row and preserve
   assert.deepEqual(result, {
     tenantId: '11111111-1111-4111-8111-111111111111',
     userProfileId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
-    passwordHash: 'hash-a',
-    userStatus: 'active',
-    accessExpiresAt: null
+    passwordHash: 'hash-a'
   });
   assert.deepEqual(calls, [[' J-10000000-1 ', ' OWNER@EXAMPLE.TEST ']]);
-  assert.equal(Object.hasOwn(result!, 'email'), false);
-  assert.equal(Object.hasOwn(result!, 'tenantRif'), false);
+  assert.deepEqual(Object.keys(result!).sort(), ['passwordHash','tenantId','userProfileId']);
 });
 
 test('bootstrap identity adapters return null when the private authority resolves no row', async () => {
@@ -64,7 +59,7 @@ test('supabase bootstrap accepts only provider user id and returns tenant/profil
   assert.deepEqual(calls, [['supabase-a']]);
 });
 
-test('registration bootstrap maps only newly-created ids and forwards normalized application inputs', async () => {
+test('registration bootstrap maps only newly-created ids and forwards application inputs', async () => {
   const { db, calls } = fakeDb([{
     tenant_id: '33333333-3333-4333-8333-333333333333',
     user_profile_id: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd'
