@@ -17,7 +17,7 @@ This ticket deliberately does **not** perform the RLS policy cutover. #845 owns 
 
 `verifyAccessToken()` validates signature, algorithm, issuer, audience, expiry and ContaGest authority claims before `tenantId` is used to enter runtime tenant context. A modified tenant claim therefore invalidates the token rather than selecting another tenant.
 
-After verification, ContaGest enters `runWithRuntimeTenant(decoded.tenantId)` and revalidates the active `UserProfile`. Cookie-backed access additionally requires a signed `sid` and revalidates the matching active, unexpired `UserSession` in the same tenant.
+After verification, every backend access token accepted by the request/auth boundaries must contain the server-issued `sid`. ContaGest then enters `runWithRuntimeTenant(decoded.tenantId)` and revalidates both the matching active/unexpired `UserSession` (`sid + sub + tenantId`) and the active `UserProfile` in that same tenant. This applies equally to cookie and bearer transport; bearer does not bypass revocation. Cookie transport additionally keeps the existing CSRF contract for state-changing requests.
 
 The request middleware keeps the verified tenant AsyncLocalStorage context active while downstream Express middleware/handlers are invoked, so Prisma operations created downstream inherit the server-derived tenant identity.
 
@@ -47,9 +47,9 @@ The function returns only the matching active ContaGest `tenant_id` + `user_prof
 - AccountUser;
 - TenantMembership.
 
-The function normalizes RIF/email, takes a transaction-scoped advisory lock for the normalized RIF, and maps uniqueness races to `CONTAGEST_BOOTSTRAP_REGISTRATION_CONFLICT`. PostgreSQL statement/function atomicity prevents partial tenant/admin graphs; retry/conflict tests assert that only one tenant remains. The backend then re-enters normal tenant context before materializing the administrative session.
+The function normalizes RIF/email, takes a transaction-scoped advisory lock for the normalized RIF, and maps uniqueness races to `CONTAGEST_BOOTSTRAP_REGISTRATION_CONFLICT`. PostgreSQL statement/function atomicity prevents partial tenant/admin graphs; retry/conflict tests assert that only one tenant remains for the same RIF. Equal email text in two independent tenant registrations deliberately creates two distinct `AccountUser` identities, preserving the existing rule that email equality alone does not prove cross-tenant identity linkage.
 
-No bootstrap function requires or grants `BYPASSRLS`.
+The backend then re-enters normal tenant context before materializing the administrative session. No bootstrap function requires or grants `BYPASSRLS`.
 
 ## Database security contract
 
