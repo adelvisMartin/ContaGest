@@ -1,0 +1,286 @@
+{
+  "schemaVersion": 683,
+  "sourceManifestIssue": 633,
+  "productionConvergenceIssue": 627,
+  "tenantIntegrityIssue": 634,
+  "classifications": [
+    {
+      "key": "AddressGeocode.placeId",
+      "classification": "EXTERNAL_ID",
+      "reason": "Provider-owned geocoding place identifier; there is no local place entity authority.",
+      "ddlOwnedByIssue683": false
+    },
+    {
+      "key": "AnalyticsEvent.sessionId",
+      "classification": "EXTERNAL_ID",
+      "reason": "Client telemetry session correlation identifier; no relational session entity is authoritative for analytics events.",
+      "ddlOwnedByIssue683": false
+    },
+    {
+      "key": "AnalyticsEvent.userId",
+      "classification": "DERIVED_REFERENCE",
+      "reason": "Optional actor snapshot is analytics provenance and intentionally survives user lifecycle without owning a relation.",
+      "ddlOwnedByIssue683": false
+    },
+    {
+      "key": "AuditLog.entityId",
+      "classification": "POLYMORPHIC_REFERENCE",
+      "reason": "AuditLog.entity selects the target entity type, so entityId is intentionally polymorphic across local domains.",
+      "ddlOwnedByIssue683": false
+    },
+    {
+      "key": "BankMovement.ledgerEntryId",
+      "classification": "LOCAL_RELATION",
+      "reason": "Bank reconciliation stores an optional local LedgerEntry reference; tenant-scoped FK hardening prevents orphan and cross-tenant matches.",
+      "ddlOwnedByIssue683": true,
+      "target": "LedgerEntry.id",
+      "tenantScoped": true,
+      "onDelete": "NO ACTION"
+    },
+    {
+      "key": "BankMovement.tenantId",
+      "classification": "DERIVED_REFERENCE",
+      "reason": "Tenant discriminator is derived from the bank-account ownership path; cross-tenant enforcement is owned by #634.",
+      "ddlOwnedByIssue683": false,
+      "ownerIssue": 634
+    },
+    {
+      "key": "CareCommunicationLog.providerMessageId",
+      "classification": "EXTERNAL_ID",
+      "reason": "Messaging-provider delivery identifier retained for delivery evidence, not a local entity relation.",
+      "ddlOwnedByIssue683": false
+    },
+    {
+      "key": "CareCommunicationLog.templateId",
+      "classification": "LOCAL_RELATION",
+      "reason": "Care communication logs optionally point to a local CommunicationTemplate; tenant-scoped integrity is required without rewriting history.",
+      "ddlOwnedByIssue683": true,
+      "target": "CommunicationTemplate.id",
+      "tenantScoped": true,
+      "onDelete": "NO ACTION"
+    },
+    {
+      "key": "HipicoBotOutbox.providerMessageId",
+      "classification": "EXTERNAL_ID",
+      "reason": "Messaging-provider delivery identifier retained after send, not a local relational entity.",
+      "ddlOwnedByIssue683": false
+    },
+    {
+      "key": "HipicoWebhookEvent.phoneNumberId",
+      "classification": "EXTERNAL_ID",
+      "reason": "WhatsApp/provider phone-number identifier belongs to the external transport namespace.",
+      "ddlOwnedByIssue683": false
+    },
+    {
+      "key": "HipicoWebhookEvent.providerMessageId",
+      "classification": "EXTERNAL_ID",
+      "reason": "WhatsApp/provider message identifier belongs to the external transport namespace.",
+      "ddlOwnedByIssue683": false
+    },
+    {
+      "key": "ImportBatch.userId",
+      "classification": "DERIVED_REFERENCE",
+      "reason": "Optional importer snapshot is historical provenance and intentionally does not own user lifecycle.",
+      "ddlOwnedByIssue683": false
+    },
+    {
+      "key": "InventoryMovement.sourceId",
+      "classification": "POLYMORPHIC_REFERENCE",
+      "reason": "InventoryMovement.source selects the business source type, so sourceId is intentionally polymorphic.",
+      "ddlOwnedByIssue683": false
+    },
+    {
+      "key": "InventoryMovement.tenantId",
+      "classification": "DERIVED_REFERENCE",
+      "reason": "Tenant discriminator is derived from product/lot ownership paths; cross-tenant enforcement is owned by #634.",
+      "ddlOwnedByIssue683": false,
+      "ownerIssue": 634
+    },
+    {
+      "key": "LedgerEntry.sourceId",
+      "classification": "POLYMORPHIC_REFERENCE",
+      "reason": "LedgerEntry.source selects the posting source type, so sourceId is intentionally polymorphic across document domains.",
+      "ddlOwnedByIssue683": false
+    },
+    {
+      "key": "NotificationLog.providerId",
+      "classification": "EXTERNAL_ID",
+      "reason": "Notification-provider delivery identifier is external evidence and has no local entity authority.",
+      "ddlOwnedByIssue683": false
+    },
+    {
+      "key": "UserProfile.authUserId",
+      "classification": "EXTERNAL_ID",
+      "reason": "Authentication principal identifier is owned by Supabase Auth rather than a public application table.",
+      "ddlOwnedByIssue683": false
+    },
+    {
+      "key": "budgetwallet_analytics_events.client_id",
+      "classification": "EXTERNAL_ID",
+      "reason": "Client-generated installation/session identity used for telemetry correlation, not a local entity row.",
+      "ddlOwnedByIssue683": false
+    },
+    {
+      "key": "budgetwallet_audit_journal.client_id",
+      "classification": "EXTERNAL_ID",
+      "reason": "Client-generated identity captured as audit provenance, not a local relational entity.",
+      "ddlOwnedByIssue683": false
+    },
+    {
+      "key": "budgetwallet_audit_journal.entity_id",
+      "classification": "POLYMORPHIC_REFERENCE",
+      "reason": "entity_type selects the audited object family, making entity_id intentionally polymorphic.",
+      "ddlOwnedByIssue683": false
+    },
+    {
+      "key": "budgetwallet_audit_journal.mutation_id",
+      "classification": "EXTERNAL_ID",
+      "reason": "Client-supplied mutation/idempotency identifier belongs to the sync protocol namespace.",
+      "ddlOwnedByIssue683": false
+    },
+    {
+      "key": "budgetwallet_devices.device_id",
+      "classification": "EXTERNAL_ID",
+      "reason": "Device identifier is generated by the client/device namespace and is not a local entity FK target.",
+      "ddlOwnedByIssue683": false
+    },
+    {
+      "key": "budgetwallet_entitlements.product_id",
+      "classification": "EXTERNAL_ID",
+      "reason": "Store/provider product identifier belongs to the entitlement provider namespace.",
+      "ddlOwnedByIssue683": false
+    },
+    {
+      "key": "budgetwallet_import_batches.mutation_id",
+      "classification": "EXTERNAL_ID",
+      "reason": "Client mutation/idempotency identifier is protocol evidence, not a local entity relation.",
+      "ddlOwnedByIssue683": false
+    },
+    {
+      "key": "budgetwallet_purchase_events.product_id",
+      "classification": "EXTERNAL_ID",
+      "reason": "Store/provider product identifier belongs to the purchase-provider namespace.",
+      "ddlOwnedByIssue683": false
+    },
+    {
+      "key": "budgetwallet_security_events.client_id",
+      "classification": "EXTERNAL_ID",
+      "reason": "Client-generated identity is security-event provenance, not a local entity relation.",
+      "ddlOwnedByIssue683": false
+    },
+    {
+      "key": "budgetwallet_sync_events.client_id",
+      "classification": "EXTERNAL_ID",
+      "reason": "Client-generated identity is sync-protocol provenance, not a local entity relation.",
+      "ddlOwnedByIssue683": false
+    },
+    {
+      "key": "budgetwallet_sync_events.mutation_id",
+      "classification": "EXTERNAL_ID",
+      "reason": "Client mutation/idempotency identifier belongs to the sync protocol namespace.",
+      "ddlOwnedByIssue683": false
+    },
+    {
+      "key": "budgetwallet_workspaces.client_id",
+      "classification": "EXTERNAL_ID",
+      "reason": "Last writer/client identity belongs to the sync protocol namespace, not a local entity table.",
+      "ddlOwnedByIssue683": false
+    },
+    {
+      "key": "budgetwallet_workspaces.last_mutation_id",
+      "classification": "DERIVED_REFERENCE",
+      "reason": "Cached pointer to the latest protocol mutation is derived state, not a durable entity relationship.",
+      "ddlOwnedByIssue683": false
+    },
+    {
+      "key": "hipico_audit_events.entity_id",
+      "classification": "POLYMORPHIC_REFERENCE",
+      "reason": "entity_type selects the audited Hípico object family, making entity_id intentionally polymorphic.",
+      "ddlOwnedByIssue683": false
+    },
+    {
+      "key": "hipico_bot_channels.owner_id",
+      "classification": "EXTERNAL_ID",
+      "reason": "Workspace owner is an authentication principal outside the local Hípico table authority.",
+      "ddlOwnedByIssue683": false
+    },
+    {
+      "key": "hipico_ledger_entries.owner_id",
+      "classification": "EXTERNAL_ID",
+      "reason": "Ledger owner is an authentication principal outside the local Hípico table authority.",
+      "ddlOwnedByIssue683": false
+    },
+    {
+      "key": "hipico_ledger_entries.reference_id",
+      "classification": "POLYMORPHIC_REFERENCE",
+      "reason": "reference_type selects the Hípico business reference family, making reference_id intentionally polymorphic.",
+      "ddlOwnedByIssue683": false
+    },
+    {
+      "key": "hipico_messages.external_message_id",
+      "classification": "EXTERNAL_ID",
+      "reason": "Transport-provider message identifier is external delivery/source evidence.",
+      "ddlOwnedByIssue683": false
+    },
+    {
+      "key": "hipico_messages.owner_id",
+      "classification": "EXTERNAL_ID",
+      "reason": "Workspace owner is an authentication principal outside the local Hípico table authority.",
+      "ddlOwnedByIssue683": false
+    },
+    {
+      "key": "hipico_messages.quoted_external_message_id",
+      "classification": "EXTERNAL_ID",
+      "reason": "Quoted transport-provider message identifier is external conversational evidence.",
+      "ddlOwnedByIssue683": false
+    },
+    {
+      "key": "hipico_messages.sender_id",
+      "classification": "EXTERNAL_ID",
+      "reason": "Sender identifier originates from WhatsApp/source transport and is not a local application entity.",
+      "ddlOwnedByIssue683": false
+    },
+    {
+      "key": "hipico_operation_events.owner_id",
+      "classification": "EXTERNAL_ID",
+      "reason": "Workspace owner is an authentication principal outside the local Hípico table authority.",
+      "ddlOwnedByIssue683": false
+    },
+    {
+      "key": "hipico_outbox.external_message_id",
+      "classification": "EXTERNAL_ID",
+      "reason": "Transport-provider message identifier is external send evidence.",
+      "ddlOwnedByIssue683": false
+    },
+    {
+      "key": "hipico_outbox.owner_id",
+      "classification": "EXTERNAL_ID",
+      "reason": "Workspace owner is an authentication principal outside the local Hípico table authority.",
+      "ddlOwnedByIssue683": false
+    },
+    {
+      "key": "hipico_reconciliations.owner_id",
+      "classification": "EXTERNAL_ID",
+      "reason": "Workspace owner is an authentication principal outside the local Hípico table authority.",
+      "ddlOwnedByIssue683": false
+    },
+    {
+      "key": "hipico_shadow_evaluations.observed_external_message_id",
+      "classification": "EXTERNAL_ID",
+      "reason": "Observed transport-provider message identifier is external evidence for shadow evaluation.",
+      "ddlOwnedByIssue683": false
+    },
+    {
+      "key": "hipico_shadow_evaluations.owner_id",
+      "classification": "EXTERNAL_ID",
+      "reason": "Workspace owner is an authentication principal outside the local Hípico table authority.",
+      "ddlOwnedByIssue683": false
+    },
+    {
+      "key": "hipico_shadow_evaluations.source_external_message_id",
+      "classification": "EXTERNAL_ID",
+      "reason": "Source transport-provider message identifier is external evidence for shadow evaluation.",
+      "ddlOwnedByIssue683": false
+    }
+  ]
+}
