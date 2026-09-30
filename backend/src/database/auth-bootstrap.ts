@@ -11,6 +11,11 @@ export type SupabaseBootstrapIdentity = {
   userProfileId: string;
 };
 
+export type CoordinateChallengeBootstrapIdentity = {
+  tenantId: string;
+  userProfileId: string;
+};
+
 export type RegistrationBootstrapInput = {
   tenantRif: string;
   tenantName: string;
@@ -63,6 +68,18 @@ export async function resolveSupabaseBootstrapIdentity(
   const rows = await db.$queryRaw<IdentityBootstrapRow[]>`
     SELECT "tenant_id", "user_profile_id"
     FROM private.contagest_bootstrap_supabase_identity(${authUserId})
+  `;
+  const row = rows[0];
+  return row ? { tenantId: row.tenant_id, userProfileId: row.user_profile_id } : null;
+}
+
+export async function resolveCoordinateChallengeBootstrapIdentity(
+  challengeId: string,
+  db: BootstrapDb = prisma
+): Promise<CoordinateChallengeBootstrapIdentity | null> {
+  const rows = await db.$queryRaw<IdentityBootstrapRow[]>`
+    SELECT "tenant_id", "user_profile_id"
+    FROM private.contagest_bootstrap_coordinate_challenge_identity(${challengeId})
   `;
   const row = rows[0];
   return row ? { tenantId: row.tenant_id, userProfileId: row.user_profile_id } : null;
