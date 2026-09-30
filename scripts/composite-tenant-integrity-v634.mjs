@@ -158,7 +158,8 @@ function psql(rawUrl, sql, env = process.env) {
   return String(result.stdout).trim();
 }
 
-function relationCatalogSql() {
+function relationCatalogSql(policy) {
+  const owned = [...(policy.dbEnforceableRelations || [])].sort().map(sqlLiteral).join(',');
   return String.raw`
 WITH app_tables AS (
   SELECT c.oid, c.relname,
@@ -169,7 +170,8 @@ WITH app_tables AS (
    WHERE n.nspname='public' AND c.relkind='r'
 ), candidates AS (
   SELECT child.relname child_table, child_col.attname::text child_column,
-         parent.relname parent_table, parent_col.attname::text parent_column
+         parent.relname parent_table, parent_col.attname::text parent_column,
+         child.relname||'.'||child_col.attname::text||'->'||parent.relname||'.'||parent_col.attname::text relation_key
     FROM pg_constraint con
     JOIN app_tables child ON child.oid=con.conrelid
     JOIN app_tables parent ON parent.oid=con.confrelid
@@ -177,9 +179,10 @@ WITH app_tables AS (
     JOIN pg_attribute parent_col ON parent_col.attrelid=con.confrelid AND parent_col.attnum=con.confkey[1]
    WHERE con.contype='f' AND child.tenant_col IS NOT NULL AND parent.tenant_col IS NOT NULL
      AND cardinality(con.conkey)=1 AND cardinality(con.confkey)=1
+), owned AS (
+  SELECT * FROM candidates WHERE relation_key IN (${owned})
 )
-SELECT count(*)::text || ':' || md5(string_agg(child_table||'.'||child_column||'->'||parent_table||'.'||parent_column,E'\n'
-  ORDER BY child_table,child_column,parent_table,parent_column)) FROM candidates;`;
+SELECT count(*)::text || ':' || md5(string_agg(relation_key,E'\n' ORDER BY relation_key)) FROM owned;`;
 }
 
 function relationGuardShapeSql(relation, names) {
@@ -282,7 +285,7 @@ export async function verifyDatabase({ rawUrl, policy, env = process.env }) {
   const version = Number(psql(rawUrl, `SELECT current_setting('server_version_num')`, env));
   if (!Number.isInteger(version) || version < 170000 || version >= 180000) throw new Error(`TENANT_RELATION_POSTGRES_17_REQUIRED:${version}`);
 
-  const catalog = psql(rawUrl, relationCatalogSql(), env);
+  const catalog = psql(rawUrl, relationCatalogSql(policy), env);
   const expectedCatalog = `${policy.baselinePublicDbEnforceableCount}:${policy.baselineRelationSetMd5}`;
   if (catalog !== expectedCatalog) throw new Error(`TENANT_RELATION_CATALOG_DRIFT:expected=${expectedCatalog}:actual=${catalog}`);
 
