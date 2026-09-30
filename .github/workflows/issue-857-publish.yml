@@ -1,0 +1,57 @@
+name: Issue 857 publish verified scope candidate
+
+on:
+  push:
+    branches: [feat/857-business-location-authority]
+permissions:
+  contents: write
+jobs:
+  publish:
+    if: ${{ !contains(github.event.head_commit.message, '[857-impl]') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/contagest_validate
+      DIRECT_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/contagest_validate
+    steps:
+      - uses: actions/checkout@v4
+        with: {ref: feat/857-business-location-authority, fetch-depth: 0}
+      - uses: actions/setup-node@v4
+        with: {node-version: 22, cache: npm}
+      - name: Recreate implementation and regression
+        shell: bash
+        run: |
+          set -euo pipefail
+          python <<'PY'
+          from pathlib import Path
+          lines=Path('.github/workflows/issue-857-implement.yml').read_text().splitlines()
+          start=lines.index('      - name: Implement Business Location authority'); end=lines.index('      - name: Install dependencies')
+          run_idx=next(i for i in range(start,end) if lines[i].strip()=='run: |')
+          Path('/tmp/impl.sh').write_text('\n'.join([x[10:] if x.startswith('          ') else x for x in lines[run_idx+1:end]])+'\n')
+          marker="          cat > tests/business_location_issue_857.test.mjs <<'EOF'"; a=lines.index(marker)+1; b=next(i for i in range(a,len(lines)) if lines[i]=='          EOF')
+          Path('/tmp/reg.mjs').write_text('\n'.join([x[10:] if x.startswith('          ') else x for x in lines[a:b]])+'\n')
+          PY
+          bash /tmp/impl.sh
+          cp /tmp/reg.mjs tests/business_location_issue_857.test.mjs
+      - run: npm ci
+      - name: Scope verification
+        run: |
+          npm --workspace backend exec -- prisma format
+          npm --workspace backend exec -- prisma validate
+          node --test tests/business_location_issue_857.test.mjs tests/full_route_browser_matrix_issue_640.test.mjs
+          npm --workspace backend exec -- tsx --test ../qa/business-location-v857.test.ts
+          npm run typecheck
+          node --check frontend/src/pages/BusinessLocationsPage.js
+          node --check frontend/src/components/businessLocationSelector.js
+          node --check frontend/src/services/businessLocationsService.js
+      - name: Publish candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -f .github/workflows/issue-857-implement.yml .github/workflows/issue-857-resume.yml .github/workflows/issue-857-finalize.yml .github/workflows/issue-857-publish.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git diff --cached --check
+          git commit -m 'feat(core): add tenant Business Location authority (#857) [857-impl]'
+          git push origin HEAD:feat/857-business-location-authority
