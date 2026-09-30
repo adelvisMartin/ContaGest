@@ -41,6 +41,15 @@ test('#626 preserves immutable #562 history and projects TEXT only for disposabl
   assert.match(deploy, /runPrisma\(\['migrate',\s*'deploy'/);
 });
 
+test('#626 resets every application-owned schema between disposable upgrade fixtures', async () => {
+  const runner = await read('backend/scripts/migration-chain-v626.mjs');
+  assert.match(runner, /DROP SCHEMA IF EXISTS storage CASCADE/);
+  assert.match(runner, /DROP SCHEMA IF EXISTS auth CASCADE/);
+  assert.match(runner, /DROP SCHEMA IF EXISTS private CASCADE/);
+  assert.match(runner, /DROP SCHEMA IF EXISTS public CASCADE/);
+  assert.match(runner, /CREATE SCHEMA public/);
+});
+
 test('#626 workflow runs PostgreSQL 17 from-zero and supported upgrades', async () => {
   const workflow = await read('.github/workflows/migration-chain-v626.yml');
   assert.match(workflow, /postgres:17-alpine/);
