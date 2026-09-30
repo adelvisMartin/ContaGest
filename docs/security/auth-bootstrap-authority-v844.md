@@ -25,6 +25,12 @@ The request middleware invokes downstream Express middleware/handlers while Asyn
 
 Password verification occurs against the returned hash (or the existing dummy bcrypt hash when no identity resolves). Success is still insufficient on its own: the backend enters the resolved tenant context and revalidates the same active profile/current password hash before license, MFA and session work.
 
+## Coordinate-card MFA continuation
+
+The coordinate challenge is an opaque server-issued UUID and remains the only client input needed by `/auth/login/coordinates`. `private.contagest_bootstrap_coordinate_challenge_identity(text)` resolves that exact challenge to only `tenant_id` and `user_profile_id`; it does not accept a tenant selector and does not expose card hashes, answers or challenge context.
+
+`verifyCoordinateChallenge()` immediately enters `runWithRuntimeTenant` with that server-resolved tenant before reading or mutating `CoordinateChallenge`/`CoordinateCard`. Every challenge/card query is re-constrained by `challengeId + tenantId + userId`, including expiration, failed-attempt and success mutations. This keeps the second MFA step compatible with #845 fail-closed tenant policies without changing the public request contract.
+
 ## Supabase fallback
 
 The bridge remains opt-in. The provider token is first verified using `supabase.auth.getUser(token)`. Only that verified provider `user.id` reaches `private.contagest_bootstrap_supabase_identity(text)`. The function returns only the matching active ContaGest tenant/profile identity, and the backend re-enters tenant context and revalidates exact `authUserId` equality before exposing ContaGest context.
@@ -33,15 +39,15 @@ The bridge remains opt-in. The provider token is first verified using `supabase.
 
 `private.contagest_bootstrap_register_tenant(...)` performs the unavoidable pre-context write as one PostgreSQL invocation. It creates the Tenant, first active UserProfile, canonical administrator role/permissions, distinct AccountUser identity and TenantMembership.
 
-The function normalizes RIF/email, takes a transaction-scoped advisory lock keyed by normalized RIF and maps uniqueness races to `CONTAGEST_BOOTSTRAP_REGISTRATION_CONFLICT`. PostgreSQL function/statement atomicity prevents partial tenant/admin graphs. Equal email text in two independent tenant registrations deliberately creates distinct `AccountUser` rows because email equality does not prove cross-tenant identity linkage.
+The function normalizes RIF/email, takes a transaction-scoped advisory lock keyed by normalized RIF and maps uniqueness races to `CONTAGEST_BOOTSTRAP_REGISTRATION_CONFLICT`. PostgreSQL function/statement atomicity prevents partial tenant/admin graphs and repeated/conflicting submissions cannot create duplicate tenant graphs. Equal email text in two independent tenant registrations deliberately creates distinct `AccountUser` rows because email equality does not prove cross-tenant identity linkage.
 
 After creation, the backend enters the new tenant context before materializing the administrative session. No bootstrap function requires or grants `BYPASSRLS`.
 
 ## Database security contract
 
-All bootstrap functions live in `private` and are `SECURITY DEFINER`, use `SET search_path = pg_catalog`, fully qualify application objects, are revoked from `PUBLIC`, and revoke EXECUTE from `anon`, `authenticated` and `service_role` when those roles exist. EXECUTE is granted only to an already-provisioned `contagest_runtime`; the migration never creates login credentials or widens runtime role attributes.
+All bootstrap functions live in `private` and are `SECURITY DEFINER`, use `SET search_path = pg_catalog`, fully qualify application objects, are revoked from `PUBLIC`, and revoke EXECUTE from `anon`, `authenticated` and `service_role` when those roles exist. EXECUTE is granted only to an already-provisioned `contagest_runtime`; the migrations never create login credentials or widen runtime role attributes.
 
-The PostgreSQL gate asserts runtime stays `NOSUPERUSER`, `NOCREATEDB`, `NOCREATEROLE`, `NOBYPASSRLS` and browser/public roles cannot execute bootstrap functions.
+The PostgreSQL gates assert runtime stays `NOSUPERUSER`, `NOCREATEDB`, `NOCREATEROLE`, `NOBYPASSRLS`, browser/public roles cannot execute bootstrap functions, the opaque MFA challenge resolves only its own tenant/profile pair, and direct table access is not required for that pre-context lookup.
 
 ## Shared identity operations
 
@@ -64,7 +70,7 @@ npm run audit:raw-sql-security
 npm run agent:gates -- --base main --type backend
 ```
 
-The PostgreSQL harness refuses to run unless `DATABASE_URL` names an isolated database containing `v844`, `ephemeral`, or `test`. Production/Supabase must never be reset or used for destructive/adversarial QA. If the current executor has no PG17/container runtime, the PostgreSQL evidence is `BLOCKED_INFRASTRUCTURE/NOT_EXECUTED`, not PASS.
+The PostgreSQL gate runs both the login/Supabase/registration harness and the coordinate-MFA bootstrap harness. Both refuse to run unless `DATABASE_URL` names an isolated database containing `v844`, `ephemeral`, or `test`. Production/Supabase must never be reset or used for destructive/adversarial QA. If the current executor has no PG17/container runtime, the PostgreSQL evidence is `BLOCKED_INFRASTRUCTURE/NOT_EXECUTED`, not PASS.
 
 ## Rollout order
 
