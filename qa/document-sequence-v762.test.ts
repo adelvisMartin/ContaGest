@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import type { AddressInfo } from 'node:net';
 import test, { after, before } from 'node:test';
+import type { Prisma } from '@prisma/client';
 import { createApp } from '../backend/src/app.ts';
 import { prisma } from '../backend/src/database/prisma.ts';
 import { signAccessToken } from '../backend/src/shared/auth/jwt.ts';
@@ -79,6 +80,19 @@ before(async () => {
   await prisma.rolePermission.createMany({
     data: permissions.map((permission) => ({ roleId: role.id, permissionId: permission.id }))
   });
+  await prisma.licenseKey.create({
+    data: {
+      tenantId,
+      userId: user.id,
+      userEmail: user.email,
+      plan: 'enterprise',
+      keyHash: `qa762-${runId}`,
+      keyPreview: `QA762-${runId.slice(0, 6)}`,
+      modules: ['ventas', 'historial', 'compras', 'configuracion'],
+      expiresAt: new Date(Date.now() + 60 * 60 * 1000),
+      status: 'active'
+    }
+  });
   token = signAccessToken({ id: user.id, email: user.email }, tenantId);
 
   server = createApp().listen(0, '127.0.0.1');
@@ -124,7 +138,7 @@ test('financial idempotency replay reuses the original number without consuming 
     key: `retry-${runId}`,
     request: { operation: 'allocate', runId }
   };
-  const effect = (tx: Parameters<Parameters<typeof runFinancialIdempotentMutation>[1]>[0]) =>
+  const effect = (tx: Prisma.TransactionClient) =>
     allocateDocumentNumber({ tenantId, key, defaults: { prefix: 'ID-', padding: 3 } }, tx)
       .then((allocated) => ({ data: { number: allocated.number }, resourceType: 'DocumentSequence' }));
 
