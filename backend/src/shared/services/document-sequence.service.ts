@@ -139,7 +139,9 @@ function lockIdentity(tenantId: string, key: string, periodKey: string) {
 
 async function lockSequence(tx: Prisma.TransactionClient, tenantId: string, key: string, periodKey: string) {
   const identity = lockIdentity(tenantId, key, periodKey);
-  await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${identity}, 0))`;
+  await tx.$queryRaw<Array<{ locked: string | null }>>`
+    SELECT pg_advisory_xact_lock(hashtextextended(${identity}, 0))::text AS locked
+  `;
 }
 
 export async function allocateDocumentNumber(
