@@ -6,7 +6,7 @@ The API contract is **derived from the canonical backend source**. It is not a m
 
 `node scripts/api-contract-authority-v652.mjs --check --base main` builds two deterministic manifests:
 
-1. the merge-base contract by reading the base tree with `git ls-tree` / `git show`;
+1. the merge-base contract by reading the base tree with `git ls-tree` / `git show` using the same extractor;
 2. the candidate contract from the current worktree.
 
 The gate compares both manifests and fails on incompatible drift. No endpoint lockfile is checked in, so changing a generated JSON file cannot hide a breaking change.

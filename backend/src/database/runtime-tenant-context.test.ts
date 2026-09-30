@@ -9,12 +9,22 @@ import { createTenantScopedPrismaProxy } from './tenant-prisma-proxy.js';
 
 const TENANT_A='11111111-1111-4111-8111-111111111111';
 const TENANT_B='22222222-2222-4222-8222-222222222222';
+const LEGACY_TENANT='tenant-main_1';
 
 function delay(ms:number){return new Promise((resolve)=>setTimeout(resolve,ms));}
 
-test('runtime tenant id accepts canonical UUIDs and rejects untrusted identifiers',()=>{
+test('runtime tenant id accepts canonical UUIDs and bounded legacy ids while rejecting unsafe identifiers',()=>{
   assert.equal(normalizeRuntimeTenantId(`  ${TENANT_A.toUpperCase()}  `),TENANT_A);
-  for(const invalid of ['', 'tenant-a', '11111111-1111-1111-1111-111111111111', '11111111-1111-4111-7111-111111111111']){
+  assert.equal(normalizeRuntimeTenantId(`  ${LEGACY_TENANT}  `),LEGACY_TENANT);
+  for(const invalid of [
+    '',
+    '../tenant',
+    'tenant main',
+    'tenant/main',
+    `tenant-${'a'.repeat(64)}`,
+    '11111111-1111-1111-1111-111111111111',
+    '11111111-1111-4111-7111-111111111111',
+  ]){
     assert.throws(()=>normalizeRuntimeTenantId(invalid),/RUNTIME_TENANT_ID_INVALID/);
   }
 });
@@ -40,6 +50,14 @@ test('AsyncLocalStorage isolates concurrent tenant contexts',async()=>{
     `b1:${TENANT_B}`,
     `b2:${TENANT_B}`,
   ].sort());
+  assert.equal(currentRuntimeTenantId(),null);
+});
+
+test('legacy tenant ids preserve exact case because Tenant.id is a text key',async()=>{
+  const legacy='LegacyTenant_1';
+  await runWithRuntimeTenant(legacy,async()=>{
+    assert.equal(currentRuntimeTenantId(),legacy);
+  });
   assert.equal(currentRuntimeTenantId(),null);
 });
 
