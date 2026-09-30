@@ -1,0 +1,83 @@
+name: Document Sequence Authority v762
+
+on:
+  pull_request:
+    paths:
+      - 'backend/prisma/schema.prisma'
+      - 'backend/prisma/migrations/**'
+      - 'backend/src/modules/document-sequences/**'
+      - 'backend/src/modules/sales/sales.routes.ts'
+      - 'backend/src/modules/purchases/purchases.routes.ts'
+      - 'backend/src/shared/services/document-sequence.service.ts'
+      - 'backend/src/shared/services/document-sequence.service.test.ts'
+      - 'qa/document-sequence-v762.test.ts'
+      - 'package.json'
+      - 'backend/package.json'
+      - '.github/workflows/document-sequence-v762.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: document-sequence-v762-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  document-sequence-postgres:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: contagest_762_e2e
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d contagest_762_e2e"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+
+    env:
+      NODE_ENV: test
+      DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/contagest_762_e2e?schema=public
+      DIRECT_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/contagest_762_e2e?schema=public
+      DOCUMENT_SEQUENCE_TEST_ISOLATED_DB: '1'
+
+    steps:
+      - name: Checkout exact candidate
+        uses: actions/checkout@v4
+
+      - name: Setup Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install PostgreSQL client
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Validate Prisma schema
+        run: npm --workspace backend run db:validate
+
+      - name: Unit contracts
+        run: npm --workspace backend run test:document-sequence
+
+      - name: Typecheck backend
+        run: npm run typecheck
+
+      - name: Migration chain from zero
+        run: npm run migration:test:from-zero
+
+      - name: Migration upgrade convergence
+        run: npm run migration:test:upgrade
+
+      - name: Document sequence real PostgreSQL QA
+        run: npm run test:backend:document-sequence:real

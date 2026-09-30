@@ -1,79 +1,64 @@
 # Issue 844 Auth Bootstrap Authority Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **Execution:** apply with `superpowers:executing-plans` and TDD. The approved design is `docs/superpowers/specs/2026-09-29-trusted-runtime-tenant-context-design.md` plus issue #844.
 
-**Goal:** Separate pre-tenant authentication bootstrap from tenant-scoped runtime access without preserving any all-tenant application bypass.
+**Goal:** Separate pre-tenant authentication bootstrap from tenant-scoped runtime access without preserving an all-tenant application bypass.
 
-**Architecture:** Three narrow private `SECURITY DEFINER` database functions own the unavoidable pre-context reads/writes: login identity resolution, Supabase auth-user resolution, and first-tenant registration. Backend JWT claims are verified before any database access and then revalidated inside `runWithRuntimeTenant`; once identity bootstrap yields a tenant, all normal auth reads/writes execute through the transaction-scoped tenant authority introduced by #843.
+**Architecture:** Three narrow private `SECURITY DEFINER` functions own the unavoidable pre-context reads/writes: login identity resolution, Supabase auth-user resolution, and first-tenant registration. Backend JWT claims are verified before database authority is established; immediately after a signed/database-resolved tenant exists, all normal access crosses into #843 `runWithRuntimeTenant`.
 
-**Tech Stack:** PostgreSQL 17, Prisma 6.19.3, Node 22, TypeScript 5.9, Express 5, jsonwebtoken, Supabase Auth bridge.
+**Constraints:** `SOURCE_REUSE=NONE`; forward-only migration; no production destructive QA; no client tenant selector as authority; no runtime BYPASSRLS/DDL/ownership; private functions use schema-qualified application objects, closed search path, safe ownership and explicit EXECUTE only for `contagest_runtime`.
 
-**Spec:** `docs/superpowers/specs/2026-09-29-trusted-runtime-tenant-context-design.md` plus GitHub issue #844.
+## Task 1 — database bootstrap authority
 
-## Global Constraints
+Files:
+- `backend/prisma/migrations/20260930010500_issue_844_auth_bootstrap_authority/migration.sql`
+- `backend/scripts/auth-bootstrap-v844.mjs`
+- `backend/package.json`
 
-- `SOURCE_REUSE=NONE`.
-- No production database mutation or destructive QA.
-- Bootstrap functions live in `private`, use `SECURITY DEFINER`, `SET search_path = pg_catalog`, schema-qualified objects, safe ownership, and no EXECUTE for `PUBLIC`, `anon`, or `authenticated`.
-- Explicit EXECUTE is limited to `contagest_runtime` when that role exists; absence of the role during pre-cutover migration must remain fail-closed rather than widening grants.
-- Client-provided `tenantId` is never an authority.
-- Existing post-bootstrap behavior remains tenant scoped through #843.
-- #845 owns the runtime RLS policy cutover; this ticket must not introduce or change tenant table policies.
+Verification contract:
+- login accepts only RIF + email and returns only tenant/profile/password-hash identity;
+- Supabase accepts only provider `authUserId` and returns one active profile/tenant identity;
+- registration is one atomic database invocation with per-RIF advisory serialization and conflict mapping;
+- PUBLIC/anon/authenticated/service_role cannot execute the private functions;
+- runtime remains NOSUPERUSER/NOCREATEDB/NOCREATEROLE/NOBYPASSRLS.
 
-## Review Focus
+Use existing zero-cost/local verification infrastructure; do not add a ticket-specific GitHub Actions workflow. PostgreSQL 17 execution is required when a local/container runtime exists and is otherwise recorded `BLOCKED_INFRASTRUCTURE/NOT_EXECUTED`, never PASS.
 
-- A backend JWT whose tenant claim is modified without a valid signature must fail before any tenant DB lookup.
-- A valid signed tenant claim must still match an active session/profile inside that tenant.
-- Login resolution must require the exact RIF + normalized email pair and never enumerate tenants.
-- Supabase resolution must bind one `authUserId` to one active profile in an active tenant and expose no arbitrary tenant selector.
-- Registration retries/concurrency must never create a partial or duplicate tenant/admin graph.
+## Task 2 — backend handoff
 
----
+Files:
+- `backend/src/database/auth-bootstrap.ts`
+- `backend/src/database/auth-bootstrap.test.ts`
+- `backend/src/shared/middleware/context.ts`
+- `backend/src/modules/auth/auth.routes.ts`
+- `backend/src/modules/auth/auth.boundary.test.ts`
 
-### Task 1: PostgreSQL bootstrap authority and adversarial gate
+Verification contract:
+- forged/tampered backend JWT fails before tenant DB lookup;
+- signed tenant claim is revalidated against active server session/profile inside the same tenant;
+- Supabase token is verified by provider before private identity resolution;
+- login password validation is followed by same-profile revalidation inside tenant context;
+- downstream Express work inherits tenant ALS context;
+- registration materializes the session only after entering the newly created tenant context.
 
-**Files:**
-- Create: `backend/prisma/migrations/20260930010500_issue_844_auth_bootstrap_authority/migration.sql`
-- Create: `backend/scripts/auth-bootstrap-v844.mjs`
-- Modify: `backend/package.json`
-- Create: `.github/workflows/issue-844-auth-bootstrap.yml`
+## Task 3 — docs and evidence
 
-**Interfaces:**
-- Produces `private.contagest_bootstrap_login_identity(text,text)`, `private.contagest_bootstrap_supabase_identity(text)`, and `private.contagest_bootstrap_register_tenant(text,text,text,text,text,text,text)`.
-- The lookup functions return only identity fields required to establish tenant context; registration returns only newly-created tenant/profile IDs.
+File:
+- `docs/security/auth-bootstrap-authority-v844.md`
 
-- [ ] Write the isolated PostgreSQL 17 test first, covering A/A, A/B, inactive profile/tenant, ACL/search_path/owner, registration atomicity, retry conflict, and no `BYPASSRLS` requirement for runtime.
-- [ ] Run the gate on an ephemeral PostgreSQL instance and confirm RED because the functions do not exist.
-- [ ] Add the migration with narrow functions and privileges.
-- [ ] Re-run the gate and confirm GREEN.
+Run when infrastructure exists:
 
-### Task 2: Backend bootstrap adapter and runtime context handoff
+```bash
+npm --workspace backend run test:auth-bootstrap:postgres
+npm --workspace backend run test:auth-bootstrap:unit
+npm --workspace backend run test:runtime-tenant-context
+npm --workspace backend run typecheck
+npm --workspace backend run build
+npm --workspace backend run migration:test:from-zero
+npm --workspace backend run migration:test:upgrade
+npm run audit:database-authority
+npm run audit:raw-sql-security
+npm run agent:gates -- --base main --type backend
+```
 
-**Files:**
-- Create: `backend/src/database/auth-bootstrap.ts`
-- Create: `backend/src/database/auth-bootstrap.test.ts`
-- Modify: `backend/src/shared/middleware/context.ts`
-- Modify: `backend/src/modules/auth/auth.routes.ts`
-- Modify: `backend/src/modules/auth/auth.boundary.test.ts`
-
-**Interfaces:**
-- Produces `resolveLoginBootstrapIdentity`, `resolveSupabaseBootstrapIdentity`, and `registerTenantBootstrap`.
-- Consumes #843 `runWithRuntimeTenant(tenantId, operation)` immediately after a signed/backend or database-resolved tenant identity exists.
-
-- [ ] Add failing tests for minimal bootstrap result mapping and tampered backend JWT rejection.
-- [ ] Implement the database adapter with parameterized Prisma raw queries only.
-- [ ] Rework backend JWT and Supabase request context so verification/bootstrap occurs before tenant scope, then session/profile revalidation and downstream middleware execute inside #843 context.
-- [ ] Rework `/login`, `/register`, and coordinate-login bootstrap paths to cross the boundary exactly once and keep post-bootstrap work tenant scoped.
-- [ ] Run auth regressions and typecheck.
-
-### Task 3: Documentation and exact-SHA release evidence
-
-**Files:**
-- Create: `docs/security/auth-bootstrap-authority-v844.md`
-
-**Interfaces:**
-- Documents trust boundaries, function ACLs, rollout dependency on #845, and verification commands.
-
-- [ ] Document the bootstrap/runtime boundary and failure modes.
-- [ ] Run `git diff --check` equivalent review through the GitHub patch, typecheck, auth tests, PostgreSQL gate, migration from-zero/upgrade, and relevant security gates on the exact branch SHA where infrastructure permits.
-- [ ] Create the PR with `Closes #844` only if every acceptance criterion is implemented; merge only if required checks actually execute and are green.
+Create the PR with exact candidate SHA and classify every unavailable gate honestly. #845 remains the owner of runtime RLS cutover; #846 remains the owner of the two-tenant/pool adversarial closure gate.

@@ -4,76 +4,52 @@
 
 ## Purpose
 
-ContaGest has two different trust phases during authentication:
+ContaGest separates two trust phases during authentication:
 
-1. **Bootstrap identity**: the backend does not yet have a tenant-scoped database context and must resolve only enough server-side identity to establish one.
-2. **Tenant runtime**: after a signed/backend or database-resolved tenant identity exists, normal tenant data access runs through `runWithRuntimeTenant` from #843, which binds `contagest.tenant_id` transaction-locally for Prisma.
+1. **Bootstrap identity** — before a tenant DB context exists, the backend may resolve only the minimum server-side identity needed to establish one.
+2. **Tenant runtime** — after a signed/backend or database-resolved tenant identity exists, normal database access runs through #843 `runWithRuntimeTenant`, which binds `contagest.tenant_id` transaction-locally for Prisma.
 
-This ticket deliberately does **not** perform the RLS policy cutover. #845 owns the forward-only tenant policy migration and runtime-role rollout; #846 owns the two-tenant/pool rollback adversarial closure gate.
+#844 does not perform the RLS cutover. #845 owns the forward-only runtime policy cutover and #846 owns the two-tenant/pool adversarial closure gate.
 
-## Trust boundaries
+## Backend JWT boundary
 
-### Backend JWT
+`verifyAccessToken()` validates signature, algorithm, issuer, audience, expiry and ContaGest authority claims before the signed `tenantId` can influence database context. A modified tenant claim invalidates the token rather than selecting another tenant.
 
-`verifyAccessToken()` validates signature, algorithm, issuer, audience, expiry and ContaGest authority claims before `tenantId` is used to enter runtime tenant context. A modified tenant claim therefore invalidates the token rather than selecting another tenant.
+Every backend access token accepted by request/auth boundaries must be bound to a server-issued `sid`. After verification, ContaGest enters `runWithRuntimeTenant(decoded.tenantId)` and revalidates the matching active/unexpired `UserSession` (`sid + sub + tenantId`) plus the active `UserProfile` in the same tenant. Cookie transport retains the CSRF contract for state-changing requests; bearer transport does not bypass server-side revocation.
 
-After verification, every backend access token accepted by the request/auth boundaries must contain the server-issued `sid`. ContaGest then enters `runWithRuntimeTenant(decoded.tenantId)` and revalidates both the matching active/unexpired `UserSession` (`sid + sub + tenantId`) and the active `UserProfile` in that same tenant. This applies equally to cookie and bearer transport; bearer does not bypass revocation. Cookie transport additionally keeps the existing CSRF contract for state-changing requests.
+The request middleware invokes downstream Express middleware/handlers while AsyncLocalStorage contains that verified tenant, so Prisma calls inherit the server-derived authority.
 
-The request middleware keeps the verified tenant AsyncLocalStorage context active while downstream Express middleware/handlers are invoked, so Prisma operations created downstream inherit the server-derived tenant identity.
+## Login by RIF + email
 
-### Login by RIF + email
+`private.contagest_bootstrap_login_identity(text,text)` is the only pre-context tenant lookup used by `/auth/login`. It accepts the presented RIF/email pair and returns exactly `tenant_id`, `user_profile_id`, and `password_hash`; it does not accept a `tenantId` selector or enumerate tenants.
 
-`private.contagest_bootstrap_login_identity(text,text)` is the only pre-context tenant lookup used by `/auth/login`. It accepts the presented RIF/email pair and returns exactly:
+Password verification occurs against the returned hash (or the existing dummy bcrypt hash when no identity resolves). Success is still insufficient on its own: the backend enters the resolved tenant context and revalidates the same active profile/current password hash before license, MFA and session work.
 
-- `tenant_id`;
-- `user_profile_id`;
-- `password_hash`.
+## Supabase fallback
 
-It does not list tenants, does not accept `tenantId`, and does not return profile/tenant metadata. Password verification occurs against the returned hash (or the existing dummy bcrypt hash when no identity resolves). A successful password is still insufficient: the backend then enters the returned tenant context and revalidates the same active profile and current password hash before license/MFA/session work.
+The bridge remains opt-in. The provider token is first verified using `supabase.auth.getUser(token)`. Only that verified provider `user.id` reaches `private.contagest_bootstrap_supabase_identity(text)`. The function returns only the matching active ContaGest tenant/profile identity, and the backend re-enters tenant context and revalidates exact `authUserId` equality before exposing ContaGest context.
 
-### Supabase fallback
+## First-tenant registration
 
-Supabase remains opt-in. The provider token is first verified through `supabase.auth.getUser(token)`. Only the verified provider `user.id` is passed to `private.contagest_bootstrap_supabase_identity(text)`.
+`private.contagest_bootstrap_register_tenant(...)` performs the unavoidable pre-context write as one PostgreSQL invocation. It creates the Tenant, first active UserProfile, canonical administrator role/permissions, distinct AccountUser identity and TenantMembership.
 
-The function returns only the matching active ContaGest `tenant_id` + `user_profile_id`, requires an active profile and active tenant, and exposes no tenant selector. The backend then enters that tenant context and revalidates the exact profile including `authUserId` equality before the request receives ContaGest context.
+The function normalizes RIF/email, takes a transaction-scoped advisory lock keyed by normalized RIF and maps uniqueness races to `CONTAGEST_BOOTSTRAP_REGISTRATION_CONFLICT`. PostgreSQL function/statement atomicity prevents partial tenant/admin graphs. Equal email text in two independent tenant registrations deliberately creates distinct `AccountUser` rows because email equality does not prove cross-tenant identity linkage.
 
-### First-tenant registration
-
-`private.contagest_bootstrap_register_tenant(...)` performs the unavoidable pre-context write as one PostgreSQL function invocation. It creates:
-
-- Tenant;
-- first active UserProfile;
-- canonical administrator permissions/role assignments;
-- AccountUser;
-- TenantMembership.
-
-The function normalizes RIF/email, takes a transaction-scoped advisory lock for the normalized RIF, and maps uniqueness races to `CONTAGEST_BOOTSTRAP_REGISTRATION_CONFLICT`. PostgreSQL statement/function atomicity prevents partial tenant/admin graphs; retry/conflict tests assert that only one tenant remains for the same RIF. Equal email text in two independent tenant registrations deliberately creates two distinct `AccountUser` identities, preserving the existing rule that email equality alone does not prove cross-tenant identity linkage.
-
-The backend then re-enters normal tenant context before materializing the administrative session. No bootstrap function requires or grants `BYPASSRLS`.
+After creation, the backend enters the new tenant context before materializing the administrative session. No bootstrap function requires or grants `BYPASSRLS`.
 
 ## Database security contract
 
-All three functions are in schema `private` and are:
+All bootstrap functions live in `private` and are `SECURITY DEFINER`, use `SET search_path = pg_catalog`, fully qualify application objects, are revoked from `PUBLIC`, and revoke EXECUTE from `anon`, `authenticated` and `service_role` when those roles exist. EXECUTE is granted only to an already-provisioned `contagest_runtime`; the migration never creates login credentials or widens runtime role attributes.
 
-- `SECURITY DEFINER`;
-- owned by the safe migration owner `postgres`;
-- declared with `SET search_path = pg_catalog`;
-- fully schema-qualified for application objects;
-- revoked from `PUBLIC`;
-- revoked from `anon`, `authenticated` and `service_role` when those roles exist;
-- granted only `EXECUTE` to `contagest_runtime` when that runtime role already exists.
+The PostgreSQL gate asserts runtime stays `NOSUPERUSER`, `NOCREATEDB`, `NOCREATEROLE`, `NOBYPASSRLS` and browser/public roles cannot execute bootstrap functions.
 
-`contagest_runtime` also receives only `USAGE` on `private` needed to invoke the functions. The migration does not create a login role or credentials. When #845 provisions/cuts over the runtime role after #844 has already been migrated, that rollout must ensure these three EXECUTE grants are present before switching the application connection role.
+## Shared identity operations
 
-The isolated PostgreSQL 17 gate asserts `contagest_runtime` is `NOSUPERUSER`, `NOCREATEDB`, `NOCREATEROLE`, `NOBYPASSRLS` and that `PUBLIC`/browser roles cannot execute the bootstrap functions.
-
-## Existing identity-plane operations outside this ticket
-
-Multi-company membership discovery/switching and refresh/logout session-token rotation already have separate cross-tenant/global identity semantics. #844 does not widen them or create a generic bypass. Current-tenant profile/session/license/MFA work touched by this ticket is tenant scoped; broader session/token hardening remains coordinated by #851.
+Multi-company membership discovery/switching has cross-tenant identity semantics and is not converted into a blanket exception here. #845 must keep shared/global objects explicit and #846 must prove no cross-tenant bypass through connection reuse or identity-plane paths. Broader session hardening remains coordinated by #851.
 
 ## Verification
 
-The ticket-specific commands are:
+Use the existing local/canonical infrastructure rather than a ticket-specific workflow:
 
 ```bash
 npm --workspace backend run test:auth-bootstrap:postgres
@@ -88,11 +64,11 @@ npm run audit:raw-sql-security
 npm run agent:gates -- --base main --type backend
 ```
 
-The PostgreSQL gate refuses to run unless `DATABASE_URL` names an isolated database containing `v844`, `ephemeral`, or `test`. The repository workflow supplies PostgreSQL 17 `contagest_v844`; production/Supabase is never reset or mutated for this QA.
+The PostgreSQL harness refuses to run unless `DATABASE_URL` names an isolated database containing `v844`, `ephemeral`, or `test`. Production/Supabase must never be reset or used for destructive/adversarial QA. If the current executor has no PG17/container runtime, the PostgreSQL evidence is `BLOCKED_INFRASTRUCTURE/NOT_EXECUTED`, not PASS.
 
 ## Rollout order
 
-1. Merge/deploy #844 schema + backend while existing production authority remains compatible.
-2. Provision/verify `contagest_runtime` grants and perform fail-closed RLS policy cutover in #845.
-3. Run #846 against isolated PostgreSQL 17 with two tenants, rollback/error and connection reuse.
-4. Only then close the parent runtime tenant-context work when exact-SHA evidence is complete.
+1. Integrate #844 bootstrap schema/backend while existing runtime policy remains compatible.
+2. #845 provisions/verifies the runtime role and cuts tenant-owned tables to fail-closed tenant-aware RLS.
+3. #846 executes PostgreSQL 17 A↔B, rollback/error and connection-reuse evidence.
+4. Close #739 only when that exact-SHA evidence is complete.
