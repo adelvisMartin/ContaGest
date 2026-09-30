@@ -45,6 +45,7 @@ import veterinaryCrudRoutes from './verticals/veterinary-crud.routes.js';
 import mediaRoutes from './media/media.routes.js';
 import dataLifecycleRoutes from './data-lifecycle/data-lifecycle.routes.js';
 import documentSequenceRoutes from './document-sequences/document-sequences.routes.js';
+import businessLocationRoutes from './business-locations/business-locations.routes.js';
 
 export type ArchitectureDomain = 'platform' | 'financial' | 'commercial' | 'operations' | 'vertical';
 
@@ -58,6 +59,7 @@ type RouteManifestEntry = Readonly<{
 export const MODULE_ROUTE_MANIFEST: readonly RouteManifestEntry[] = Object.freeze([
   { id: 'tenants', domain: 'platform', path: '/tenants', router: tenantRoutes },
   { id: 'document-sequences', domain: 'platform', path: '/document-sequences', router: documentSequenceRoutes },
+  { id: 'business-locations', domain: 'operations', path: '/business-locations', router: businessLocationRoutes },
   { id: 'clients', domain: 'commercial', path: '/clients', router: createCrudRouter({ model:'client' as any, entity:'client', permission:'clients.manage', schema:clientSchema, searchFields:['name','rif'] }) },
   { id: 'suppliers', domain: 'commercial', path: '/suppliers', router: createCrudRouter({ model:'supplier' as any, entity:'supplier', permission:'purchases.manage', schema:supplierSchema, searchFields:['name','rif'] }) },
   { id: 'products', domain: 'operations', path: '/products', router: createCrudRouter({ model:'product' as any, entity:'product', permission:'inventory.manage', schema:productSchema, searchFields:['name','sku'] }) },
