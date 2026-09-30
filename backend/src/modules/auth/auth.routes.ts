@@ -140,20 +140,19 @@ async function authenticatedSession(req:any){
   const auth=readAccessToken(req);
   if(!auth)throw new HttpError(401,'Sesión requerida.');
   let decoded:any;try{decoded=verifyAccessToken(auth.token);}catch{throw new HttpError(401,'Sesión inválida o expirada.');}
+  if(!decoded.sid)throw new HttpError(401,'El token de acceso no está vinculado a una sesión de servidor.');
 
   try{
     return await runWithRuntimeTenant(decoded.tenantId,async()=>{
-      if(auth.mode==='cookie'){
-        if(!decoded.sid)throw new HttpError(401,'La cookie de acceso no está vinculada a una sesión de servidor.');
-        const rows=await prisma.$queryRaw<Array<{status:string;expiresAt:Date}>>`
-          SELECT "status","expiresAt"
-          FROM public."UserSession"
-          WHERE "id"=${decoded.sid} AND "userId"=${decoded.sub} AND "tenantId"=${decoded.tenantId}
-          LIMIT 1
-        `;
-        const browserSession=rows[0];
-        if(!browserSession||browserSession.status!=='active'||new Date(browserSession.expiresAt).getTime()<=Date.now())throw new HttpError(401,'La sesión fue revocada o venció.');
-      }
+      const rows=await prisma.$queryRaw<Array<{status:string;expiresAt:Date}>>`
+        SELECT "status","expiresAt"
+        FROM public."UserSession"
+        WHERE "id"=${decoded.sid} AND "userId"=${decoded.sub} AND "tenantId"=${decoded.tenantId}
+        LIMIT 1
+      `;
+      const browserSession=rows[0];
+      if(!browserSession||browserSession.status!=='active'||new Date(browserSession.expiresAt).getTime()<=Date.now())throw new HttpError(401,'La sesión fue revocada o venció.');
+
       const user=await prisma.userProfile.findFirst({
         where:{id:decoded.sub,tenantId:decoded.tenantId,status:'active'},
         include:{tenant:true,userRoles:userRoleInclude}
