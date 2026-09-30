@@ -1,81 +1,92 @@
-# #720 Production Security Convergence — exact-SHA evidence
+# #720 Production Security Convergence — evidence
 
-Date: 2026-09-30
-Repository baseline: `main@3a278d0a321ab3e00fd090aeb9d1f82ebec17eeb`
-#635 source merge: PR #735 / merge `66a4130b6472eea824f675ef2b4a1e9b66e34718`
-Current runtime-RLS authority consumed: #845 and the current `ops/database/provision-security-roles.sql` / `runtime-rls-policy-v845.sql` on the baseline above.
-Production project: Supabase project ref only; connection URLs, passwords, JWTs, user data and tenant identifiers are intentionally omitted.
+Status captured: 2026-09-30 UTC.
 
-## Scope decision
+## Source authorities
 
-#720 is an operational convergence ticket. Production was audited read-only before any DDL decision. The catalog already contains the post-#635/#845 state, so reapplying 0003/0004 or the runtime policy sidecar would add operational risk without changing the converged state. No production DDL or business-row mutation was performed by this execution.
+- Ticket: #720.
+- #635 source authority: PR #735 merge `66a4130b6472eea824f675ef2b4a1e9b66e34718`.
+- Runtime RLS authority: #845 (`ops/database/runtime-rls-policy-v845.sql`).
+- #720 candidate branch started from `main@b581b9ca950563286e47df37f503b06d1e0d624e`.
+- #762 route-manifest baseline prerequisite was repaired independently by PR #867 and merged as `3a278d0a321ab3e00fd090aeb9d1f82ebec17eeb`; it is not part of #720's DB/security diff.
 
-The repository still classifies `0002 -> 0003 -> 0004` as policy authority, while #845 is the forward-only runtime RLS authority that removes the superseded all-tenant runtime policy. Hípico/BudgetWallet objects were not changed.
+## Production characterization before convergence
 
-## Production catalog evidence
+Target project: `soxzatxiwlfsvtblrqal` (PostgreSQL 17 managed by Supabase).
 
-Observed server: PostgreSQL 17.6.
+- `contagest_runtime`, `contagest_backup`, `contagest_monitor`: absent.
+- #720 stale-grant target set: 14/14 tables present and directly readable/writable by both `anon` and `authenticated` through table ACLs.
+- ContaGest SECURITY DEFINER functions in scope included non-canonical search paths and/or public execution grants.
+- Production already contained a newer RLS policy set than historical `0002_rls_policies.sql`; replaying `0002` would remove newer policies. Therefore #720 did not replay that destructive historical cleanup. It converged the current policy state and applied the exact #635 forward sidecars `0003`/`0004`.
+- One active customer tenant uses a bounded legacy TEXT primary key predating the current UUID default. No tenant id value is recorded in this evidence.
 
-Dedicated roles:
+## Production convergence already applied by owner/migration identity
 
-- `contagest_runtime`: LOGIN, NOSUPERUSER, NOCREATEDB, NOCREATEROLE, NOREPLICATION, NOBYPASSRLS.
-- `contagest_backup`: same least-privilege role attributes.
-- `contagest_monitor`: same least-privilege role attributes.
-- runtime has no CREATE on `public` or `private`.
-- runtime is not a member of `service_role`.
-- runtime owns no tables/relations or functions in `public`/`private`.
-- backup can read `AuditLog` and cannot INSERT/UPDATE/DELETE it.
-- monitor snapshot exists, supports SELECT/INSERT/UPDATE and denies DELETE.
+Applied transactionally through Supabase migration authority:
 
-RLS / grants:
+1. #635 `0003` + `0004` sidecar semantics.
+2. Dedicated role provisioning with passwords generated inside PostgreSQL and stored only in Supabase Vault.
+3. #845 runtime RLS helper/policy authority.
+4. Least-privilege runtime/backup/monitor table and function grants.
 
-- application tables inspected: 104.
-- tenant tables with RLS disabled: 0.
-- tenant tables exposing direct anon/authenticated SELECT/INSERT/UPDATE/DELETE: 0.
-- the 14 #635 stale-grant tables: 14/14 have anon=false and authenticated=false for SELECT/INSERT/UPDATE/DELETE.
-- `contagest_runtime_backend_all` present: false.
-- tenant-owned runtime policies with unconditional `true`: 0.
-- direct tenant tables missing `contagest_runtime_tenant_scope`: 0.
-- child tenant tables detected: 9; missing `contagest_runtime_parent_scope`: 0.
-- runtime SELECT access to lower_snake_case shared-product tables: 0.
+Managed-provider constraint: Supabase's managed `postgres` role cannot delegate `pg_read_all_stats`. Monitoring therefore uses explicit ContaGest grants only; the runtime and backup contracts are unaffected.
 
-Functions / helpers:
+## Verified catalog state
 
-- `private.contagest_runtime_tenant_id()` exists, is runtime-executable and fixes `search_path=pg_catalog`.
-- ContaGest SECURITY DEFINER functions in audited scope with unsafe search path: 0.
-- ContaGest SECURITY DEFINER functions with PUBLIC EXECUTE: 0.
-- ContaGest SECURITY DEFINER functions with anon EXECUTE: 0.
-- public `current_tenant_id()` / `current_profile_id()` are SECURITY INVOKER compatibility wrappers; private resolvers are controlled SECURITY DEFINER functions with `search_path=pg_catalog`.
+- Dedicated roles: 3/3 present with `LOGIN=true` and `SUPERUSER=false`, `CREATEDB=false`, `CREATEROLE=false`, `REPLICATION=false`, `BYPASSRLS=false`.
+- `contagest_runtime`: no `CREATE` on `public` or `private`, no `service_role` membership, no `TRUNCATE`, no ownership of application tables/functions.
+- Browser DML: 0 of 83 PascalCase tenant-aware tables grant direct SELECT/INSERT/UPDATE/DELETE to `anon` or `authenticated`.
+- Ticket stale-grant set: 14/14 hardened.
+- Tenant-aware RLS disabled: 0.
+- Permissive `anon`/`authenticated` tenant policies with unconditional `true`: 0.
+- Runtime access to lower-snake shared-product tables: 0.
+- ContaGest SECURITY DEFINER functions in strict scope: unsafe search path = 0, PUBLIC EXECUTE = 0, anon EXECUTE = 0.
+- Exposed non-`security_invoker` ContaGest views: 0.
 
-Result: **production database security catalog CONVERGED** for the #720/#635/#845 scope.
+## Shared-product non-mutation proof
 
-## Runtime/backend smoke
+Pre/post catalog hashes are identical:
 
-`SET ROLE contagest_runtime` from the Supabase management SQL session was rejected because the managed `postgres` session is not a member of `contagest_runtime`. This is consistent with separation of owner/runtime authority. A proposed temporary membership inside a rolled-back transaction was not executed because the connected tool safety boundary blocks role-membership mutation.
+- `hipico_*` / `budgetwallet_*` relations: `ed5d208e08767252c2521c1124d1be73` (22 objects).
+- `hipico_*` / `budgetwallet_*` functions: `8553446198fa69285518e6f6e789c798` (28 objects).
 
-The exact `main` production deployment visible in Vercel is currently `ERROR` with provider metadata `BUILD_UTILS_SPAWN_103` / build command exit 103. Therefore an HTTP backend smoke using the deployed application and its actual runtime DSN cannot be represented as PASS in this evidence.
+No business row was modified as part of the convergence.
 
-Classification: `BLOCKED_PROVIDER_RUNTIME` / `NOT_EXECUTED` for the deployed backend smoke only. Database catalog convergence is independently verified and does not depend on that provider execution.
+## Runtime compatibility finding
 
-## Reproducible gate
+The first controlled runtime smoke exposed a real compatibility gap: #845 and the Node runtime context accepted only UUID-shaped tenant ids, while `Tenant.id` is a Prisma `String` and production has one active legacy customer id. The dedicated runtime failed closed for that tenant.
 
-`ops/database/verify-production-security-convergence-v720.sql` is a read-only fail-closed catalog verifier for the state above. It checks roles, schema CREATE, service-role inheritance, ownership, runtime all-tenant policies, tenant/child policies, the 14 stale grants and ContaGest SECURITY DEFINER search paths without reading business rows.
+#720 fixes this without rewriting business PK/FK rows:
 
-## Security / data handling
+- modern canonical UUIDs remain accepted and normalized;
+- UUID-shaped values with invalid version/variant remain rejected;
+- bounded legacy `[A-Za-z0-9_-]` ids are accepted only as context syntax;
+- database authority still requires an exact active/trial `Tenant` row;
+- the compatibility helper is a forward-only sidecar applied after #845.
 
-- no credentials, passwords, database URLs, JWTs, recovery links, PII or tenant IDs are recorded;
-- no Hípico/BudgetWallet object was mutated;
-- no production business row was changed;
-- infrastructure cost added by this ticket: $0.
+## Verification state for candidate
 
-## Status by acceptance criterion
+VERIFIED:
 
-- exact source/main SHA fixed: VERIFIED.
-- dedicated roles present/minimal: VERIFIED.
-- 0003/0004 catalog outcome present: VERIFIED; no redundant reapply performed.
-- 14/14 stale grants removed: VERIFIED.
-- helpers/function ACL/search_path converged: VERIFIED.
-- v635-equivalent P0/P1 catalog findings in ContaGest scope: 0, VERIFIED.
-- Hípico/BudgetWallet untouched: VERIFIED for this execution.
-- backend connected with `contagest_runtime` / HTTP smoke: NOT VERIFIED — provider deployment is ERROR and direct-role smoke is unavailable through the connected management session.
-- evidence redaction: VERIFIED.
+- focused Node 22 runtime-context regression: pass;
+- Prisma schema validation on GitHub Actions: pass;
+- TypeScript (`tsc --noEmit`) on GitHub Actions: pass;
+- technical baseline: pass;
+- DB security contract audit after managed-Supabase provisioning fix: pass;
+- #635-equivalent production strict catalog checks listed above: pass.
+
+PREEXISTING / OUT OF SCOPE:
+
+- IAM platform-selector gate currently fails on main because the multi-company selector does not require both platform scope and the internal tenant. #720 does not change that selector.
+- Control Hípico design-system authority currently fails on main for a stale generated CSS adapter and competing `--hc-*` owners. #720 does not change UI/CSS.
+
+PENDING BEFORE #720 CAN BE CLOSED:
+
+1. Merge PR #866 and pin its final merge SHA.
+2. Apply `ops/database/runtime-tenant-id-compat-v720.sql` from that exact merge SHA.
+3. Re-run customer-tenant runtime smoke: tenant resolution, tenant read, rolled-back tenant write, and non-destructive accounting read.
+4. Rotate production backend connection to `contagest_runtime` and verify with the deployed runtime.
+
+Provider blocker: current Vercel production deployments are in `ERROR`, and the available connector does not expose environment-variable mutation. `DATABASE_RUNTIME_URL` cutover and deployed backend smoke must remain `BLOCKED_INFRASTRUCTURE`/`NOT VERIFIED` until they can be executed; they are not represented as PASS.
+
+No URLs, database passwords, JWTs, raw cookie/session values, PII, or tenant identifiers are recorded here.
