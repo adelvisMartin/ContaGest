@@ -4,23 +4,15 @@ import path from 'node:path';
 import pg from 'pg';
 
 const { Client } = pg;
-const migrationPath = path.resolve(
-  process.cwd(),
-  'prisma/migrations/20260930010500_issue_844_auth_bootstrap_authority/migration.sql'
-);
 const connectionString = String(process.env.DATABASE_URL || '').trim();
+const migrationPath = path.resolve(process.cwd(), 'prisma/migrations/20260930010500_issue_844_auth_bootstrap_authority/migration.sql');
 
 if (!connectionString) throw new Error('V844_DATABASE_URL_REQUIRED');
 const databaseName = new URL(connectionString).pathname.replace(/^\//, '');
-if (!/v844|ephemeral|test/i.test(databaseName)) {
-  throw new Error(`V844_EPHEMERAL_DATABASE_REQUIRED:${databaseName || 'unknown'}`);
-}
+if (!/v844|ephemeral|test/i.test(databaseName)) throw new Error(`V844_EPHEMERAL_DATABASE_REQUIRED:${databaseName || 'unknown'}`);
 
 const client = new Client({ connectionString });
-
-async function exec(sql, values = []) {
-  return client.query(sql, values);
-}
+const exec = (sql, values = []) => client.query(sql, values);
 
 async function resetFixture() {
   await exec('DROP SCHEMA IF EXISTS private CASCADE');
@@ -34,7 +26,6 @@ async function resetFixture() {
       CREATE ROLE contagest_runtime NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS;
     END IF;
   END $$`);
-
   await exec(`
     CREATE TABLE public."Tenant" (
       "id" text PRIMARY KEY DEFAULT gen_random_uuid()::text,
@@ -60,11 +51,7 @@ async function resetFixture() {
       "updatedAt" timestamptz NOT NULL DEFAULT now(),
       UNIQUE ("tenantId", "email")
     );
-    CREATE TABLE public."Permission" (
-      "id" text PRIMARY KEY DEFAULT gen_random_uuid()::text,
-      "key" text NOT NULL UNIQUE,
-      "description" text
-    );
+    CREATE TABLE public."Permission" ("id" text PRIMARY KEY DEFAULT gen_random_uuid()::text, "key" text NOT NULL UNIQUE, "description" text);
     CREATE TABLE public."Role" (
       "id" text PRIMARY KEY DEFAULT gen_random_uuid()::text,
       "tenantId" text NOT NULL REFERENCES public."Tenant"("id") ON DELETE CASCADE,
@@ -110,9 +97,8 @@ async function resetFixture() {
 
 async function applyMigration() {
   let sql;
-  try {
-    sql = await readFile(migrationPath, 'utf8');
-  } catch (error) {
+  try { sql = await readFile(migrationPath, 'utf8'); }
+  catch (error) {
     if (error?.code === 'ENOENT') throw new Error(`V844_MIGRATION_MISSING:${migrationPath}`);
     throw error;
   }
@@ -162,68 +148,50 @@ async function assertFunctionSecurity() {
              has_function_privilege('authenticated', p.oid, 'EXECUTE') AS authenticated_exec,
              has_function_privilege('contagest_runtime', p.oid, 'EXECUTE') AS runtime_exec,
              EXISTS (
-               SELECT 1
-               FROM aclexplode(COALESCE(p.proacl, acldefault('f', p.proowner))) acl
+               SELECT 1 FROM aclexplode(COALESCE(p.proacl, acldefault('f', p.proowner))) acl
                WHERE acl.grantee=0 AND acl.privilege_type='EXECUTE'
              ) AS public_exec
-      FROM pg_proc p
-      WHERE p.oid = to_regprocedure($1)
+      FROM pg_proc p WHERE p.oid = to_regprocedure($1)
     `, [signature]);
     assert.equal(result.rowCount, 1, `${signature} must exist`);
     const row = result.rows[0];
-    assert.equal(row.security_definer, true, `${signature} must be SECURITY DEFINER`);
-    assert.equal(row.owner, 'postgres', `${signature} must be owned by postgres in the isolated gate`);
-    assert.deepEqual(row.proconfig, ['search_path=pg_catalog'], `${signature} must close search_path to pg_catalog`);
-    assert.equal(row.public_exec, false, `${signature} must revoke PUBLIC EXECUTE`);
-    assert.equal(row.anon_exec, false, `${signature} must revoke anon EXECUTE`);
-    assert.equal(row.authenticated_exec, false, `${signature} must revoke authenticated EXECUTE`);
-    assert.equal(row.runtime_exec, true, `${signature} must grant contagest_runtime only`);
+    assert.equal(row.security_definer, true);
+    assert.equal(row.owner, 'postgres');
+    assert.deepEqual(row.proconfig, ['search_path=pg_catalog']);
+    assert.equal(row.public_exec, false);
+    assert.equal(row.anon_exec, false);
+    assert.equal(row.authenticated_exec, false);
+    assert.equal(row.runtime_exec, true);
   }
-
+  const schemaUsage = await exec(`SELECT has_schema_privilege('contagest_runtime','private','USAGE') AS runtime_usage`);
+  assert.equal(schemaUsage.rows[0].runtime_usage, true);
   const runtime = await exec(`SELECT rolsuper, rolcreatedb, rolcreaterole, rolbypassrls FROM pg_roles WHERE rolname='contagest_runtime'`);
   assert.deepEqual(runtime.rows[0], { rolsuper:false, rolcreatedb:false, rolcreaterole:false, rolbypassrls:false });
 }
 
 async function assertLoginResolution({ tenantA, tenantB }) {
-  const own = await asRuntime(
-    'SELECT * FROM private.contagest_bootstrap_login_identity($1,$2)',
-    [' j-10000000-1 ', ' OWNER@EXAMPLE.TEST ']
-  );
+  const own = await asRuntime('SELECT * FROM private.contagest_bootstrap_login_identity($1,$2)', [' j-10000000-1 ', ' OWNER@EXAMPLE.TEST ']);
   assert.equal(own.rowCount, 1);
   assert.deepEqual(own.rows[0], {
     tenant_id: tenantA,
     user_profile_id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
-    password_hash: 'hash-a',
-    user_status: 'active',
-    access_expires_at: null
+    password_hash: 'hash-a'
   });
+  assert.deepEqual(Object.keys(own.rows[0]).sort(), ['password_hash','tenant_id','user_profile_id']);
 
-  const otherTenantSameEmail = await asRuntime(
-    'SELECT * FROM private.contagest_bootstrap_login_identity($1,$2)',
-    ['J-20000000-2', 'owner@example.test']
-  );
-  assert.equal(otherTenantSameEmail.rows[0].tenant_id, tenantB);
+  const other = await asRuntime('SELECT * FROM private.contagest_bootstrap_login_identity($1,$2)', ['J-20000000-2', 'owner@example.test']);
+  assert.equal(other.rows[0].tenant_id, tenantB);
 
-  const crossPair = await asRuntime(
-    'SELECT * FROM private.contagest_bootstrap_login_identity($1,$2)',
-    ['J-10000000-1', 'disabled@example.test']
-  );
-  assert.equal(crossPair.rowCount, 0, 'RIF/email from different identities must not cross-resolve');
+  const crossPair = await asRuntime('SELECT * FROM private.contagest_bootstrap_login_identity($1,$2)', ['J-10000000-1', 'disabled@example.test']);
+  assert.equal(crossPair.rowCount, 0);
 
-  const arbitraryTenant = await asRuntime(
-    'SELECT * FROM private.contagest_bootstrap_login_identity($1,$2)',
-    [tenantB, 'owner@example.test']
-  );
+  const arbitraryTenant = await asRuntime('SELECT * FROM private.contagest_bootstrap_login_identity($1,$2)', [tenantB, 'owner@example.test']);
   assert.equal(arbitraryTenant.rowCount, 0, 'tenant id must never be accepted as login authority');
 }
 
 async function assertSupabaseResolution({ tenantA, tenantB }) {
   const own = await asRuntime('SELECT * FROM private.contagest_bootstrap_supabase_identity($1)', ['supabase-a']);
-  assert.equal(own.rowCount, 1);
-  assert.deepEqual(own.rows[0], {
-    tenant_id: tenantA,
-    user_profile_id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
-  });
+  assert.deepEqual(own.rows[0], { tenant_id: tenantA, user_profile_id:'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' });
 
   const other = await asRuntime('SELECT * FROM private.contagest_bootstrap_supabase_identity($1)', ['supabase-b']);
   assert.equal(other.rows[0].tenant_id, tenantB);
@@ -232,8 +200,8 @@ async function assertSupabaseResolution({ tenantA, tenantB }) {
   assert.equal(disabled.rowCount, 0);
 
   await exec(`UPDATE public."Tenant" SET "status"='suspended' WHERE "id"=$1`, [tenantB]);
-  const suspendedTenant = await asRuntime('SELECT * FROM private.contagest_bootstrap_supabase_identity($1)', ['supabase-b']);
-  assert.equal(suspendedTenant.rowCount, 0, 'Supabase bootstrap must require an active tenant');
+  const suspended = await asRuntime('SELECT * FROM private.contagest_bootstrap_supabase_identity($1)', ['supabase-b']);
+  assert.equal(suspended.rowCount, 0);
   await exec(`UPDATE public."Tenant" SET "status"='active' WHERE "id"=$1`, [tenantB]);
 }
 
@@ -241,7 +209,7 @@ async function assertRegistration() {
   const input = ['J-30000000-3','Tenant C','Tenant C Legal','enterprise','ADMIN@TENANT-C.TEST','Admin C','bcrypt-hash-c'];
   const created = await asRuntime('SELECT * FROM private.contagest_bootstrap_register_tenant($1,$2,$3,$4,$5,$6,$7)', input);
   assert.equal(created.rowCount, 1);
-  const { tenant_id: tenantId, user_profile_id: userId } = created.rows[0];
+  const { tenant_id:tenantId, user_profile_id:userId } = created.rows[0];
   assert.match(tenantId, /^[0-9a-f-]{36}$/i);
   assert.match(userId, /^[0-9a-f-]{36}$/i);
 
@@ -260,7 +228,7 @@ async function assertRegistration() {
     /CONTAGEST_BOOTSTRAP_REGISTRATION_CONFLICT/
   );
   const duplicateCount = await exec(`SELECT count(*)::int AS count FROM public."Tenant" WHERE upper(btrim("rif"))='J-30000000-3'`);
-  assert.equal(duplicateCount.rows[0].count, 1, 'retry conflict must not duplicate tenant data');
+  assert.equal(duplicateCount.rows[0].count, 1);
 }
 
 try {
