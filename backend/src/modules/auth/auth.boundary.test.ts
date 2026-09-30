@@ -13,6 +13,22 @@ test('ContaGest-looking token cannot verifier-hop to Supabase after backend veri
   assert.throws(()=>verifyAccessToken(forged));
 });
 
+test('changing only the tenant claim invalidates a previously valid backend token',()=>{
+  const valid=signAccessToken(
+    {id:'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',email:'owner@example.test'},
+    '11111111-1111-4111-8111-111111111111',
+    'session-1'
+  );
+  const [header,payload,signature]=valid.split('.');
+  const claims=JSON.parse(Buffer.from(payload,'base64url').toString('utf8'));
+  claims.tenantId='22222222-2222-4222-8222-222222222222';
+  const forgedPayload=Buffer.from(JSON.stringify(claims)).toString('base64url');
+  const forged=`${header}.${forgedPayload}.${signature}`;
+
+  assert.equal(classifyPresentedTokenAuthority(forged,{backendIssuer:JWT_ISSUER,supabaseBridgeEnabled:true}),'backend-jwt');
+  assert.throws(()=>verifyAccessToken(forged));
+});
+
 test('Supabase bridge is opt-in and unknown tokens remain backend-owned when disabled',()=>{
   const external=testToken({iss:'https://project.supabase.co/auth/v1',sub:'provider-user'});
   assert.equal(classifyPresentedTokenAuthority(external,{backendIssuer:JWT_ISSUER,supabaseBridgeEnabled:false}),'backend-jwt');

@@ -2,6 +2,8 @@ import type { Request, Response, NextFunction } from 'express';
 import { createClient } from '@supabase/supabase-js';
 import { env, isProd } from '../../config/env.js';
 import { prisma } from '../../database/prisma.js';
+import { resolveSupabaseBootstrapIdentity } from '../../database/auth-bootstrap.js';
+import { runWithRuntimeTenant } from '../../database/runtime-tenant-context.js';
 import { assertSupabaseBridgeConfiguration, classifyPresentedTokenAuthority } from '../auth/authBoundary.js';
 import { JWT_ISSUER, verifyAccessToken } from '../auth/jwt.js';
 import { readAccessToken, readCsrfToken, validateCsrfAgainstSession } from '../auth/sessionCookies.js';
@@ -26,9 +28,15 @@ type RequestContext = {
 type AuthIdentityContext = Pick<RequestContext, 'authMode'> & Omit<Partial<RequestContext>, 'authMode'>;
 
 async function resolveBackendJwtContext(token: string, cookieMode = false): Promise<AuthIdentityContext> {
+  // The signature, issuer, audience and authority claims are verified before the
+  // signed tenant claim can influence any database context.
   const decoded = verifyAccessToken(token);
-  if (cookieMode) {
-    if (!decoded.sid) throw new HttpError(401, 'La cookie de acceso no está vinculada a una sesión de servidor.');
+  if (!decoded.sid) throw new HttpError(401, 'El token de acceso no está vinculado a una sesión de servidor.');
+
+  return runWithRuntimeTenant(decoded.tenantId, async () => {
+    // Every backend token (cookie or bearer) is session-bound. This makes
+    // revocation authoritative regardless of transport and prevents a valid
+    // signed tenant claim from bypassing UserSession revalidation.
     const sessions = await prisma.$queryRaw<Array<{ status:string; expiresAt:Date }>>`
       SELECT "status", "expiresAt"
       FROM public."UserSession"
@@ -41,21 +49,21 @@ async function resolveBackendJwtContext(token: string, cookieMode = false): Prom
     if (!session || session.status !== 'active' || new Date(session.expiresAt).getTime() <= Date.now()) {
       throw new HttpError(401, 'La sesión fue revocada, reemplazada o venció. Inicia sesión nuevamente.');
     }
-  }
 
-  const profile = await prisma.userProfile.findFirst({
-    where: { id: decoded.sub, tenantId: decoded.tenantId, status: 'active' },
-    select: { id: true, tenantId: true, email: true, accessExpiresAt:true }
+    const profile = await prisma.userProfile.findFirst({
+      where: { id:decoded.sub, tenantId:decoded.tenantId, status:'active' },
+      select: { id:true, tenantId:true, email:true, accessExpiresAt:true }
+    });
+    if (!profile) throw new HttpError(403, 'Usuario de sesión sin perfil activo.');
+    if (profile.accessExpiresAt && profile.accessExpiresAt.getTime() <= Date.now()) throw new HttpError(403, 'El acceso temporal venció.');
+    return {
+      authMode:cookieMode ? 'backend-cookie' : 'backend-jwt',
+      userId:profile.id,
+      tenantId:profile.tenantId,
+      email:profile.email,
+      sessionId:decoded.sid
+    };
   });
-  if (!profile) throw new HttpError(403, 'Usuario de sesión sin perfil activo.');
-  if (profile.accessExpiresAt && profile.accessExpiresAt.getTime() <= Date.now()) throw new HttpError(403, 'El acceso temporal venció.');
-  return {
-    authMode:cookieMode ? 'backend-cookie' : 'backend-jwt',
-    userId:profile.id,
-    tenantId:profile.tenantId,
-    email:profile.email,
-    sessionId:decoded.sid
-  };
 }
 
 async function resolveSupabaseContext(token: string): Promise<AuthIdentityContext | null> {
@@ -68,10 +76,33 @@ async function resolveSupabaseContext(token: string): Promise<AuthIdentityContex
   });
   const { data, error } = await supabase.auth.getUser(token);
   if (error || !data.user) return null;
-  const profile = await prisma.userProfile.findFirst({ where:{ authUserId:data.user.id, status:'active' }, select:{ id:true, tenantId:true, email:true, accessExpiresAt:true } });
-  if (!profile) throw new HttpError(403, 'Usuario Supabase autenticado sin perfil activo en ContaGest-VE.');
-  if (profile.accessExpiresAt && profile.accessExpiresAt.getTime() <= Date.now()) throw new HttpError(403, 'El acceso temporal venció.');
-  return { authMode:'supabase', authUserId:data.user.id, userId:profile.id, tenantId:profile.tenantId, email:profile.email || data.user.email || undefined };
+
+  // Supabase proves only the provider identity. The private bootstrap authority
+  // maps that exact auth user id to one active ContaGest profile/tenant without
+  // accepting a tenant selector from the request.
+  const identity = await resolveSupabaseBootstrapIdentity(data.user.id);
+  if (!identity) throw new HttpError(403, 'Usuario Supabase autenticado sin perfil activo en ContaGest-VE.');
+
+  return runWithRuntimeTenant(identity.tenantId, async () => {
+    const profile = await prisma.userProfile.findFirst({
+      where: {
+        id:identity.userProfileId,
+        tenantId:identity.tenantId,
+        authUserId:data.user.id,
+        status:'active'
+      },
+      select: { id:true, tenantId:true, email:true, accessExpiresAt:true }
+    });
+    if (!profile) throw new HttpError(403, 'Usuario Supabase autenticado sin perfil activo en ContaGest-VE.');
+    if (profile.accessExpiresAt && profile.accessExpiresAt.getTime() <= Date.now()) throw new HttpError(403, 'El acceso temporal venció.');
+    return {
+      authMode:'supabase',
+      authUserId:data.user.id,
+      userId:profile.id,
+      tenantId:profile.tenantId,
+      email:profile.email || data.user.email || undefined
+    };
+  });
 }
 
 async function resolveSignedContext(token: string, cookieMode: boolean): Promise<AuthIdentityContext> {
@@ -112,15 +143,22 @@ export async function requestContext(req: Request, _res: Response, next: NextFun
     if (auth) {
       const cookieMode = auth.mode === 'cookie';
       const secureContext = await resolveSignedContext(auth.token, cookieMode);
-      if (cookieMode && !['GET','HEAD','OPTIONS'].includes(req.method.toUpperCase())) {
-        const csrfCookie = readCsrfToken(req);
-        const csrfHeader = String(req.header('x-csrf-token') || '');
-        if (!csrfCookie || csrfCookie !== csrfHeader || !await validateCsrfAgainstSession(secureContext.sessionId, csrfCookie)) {
-          throw new HttpError(403, 'La sesión CSRF no es válida. Renueva la sesión e intenta de nuevo.');
+      if (!secureContext.tenantId) throw new HttpError(401, 'La identidad autenticada no contiene un tenant verificable.');
+
+      // Keep the AsyncLocalStorage tenant authority active while Express invokes
+      // downstream middleware/handlers. Async resources created by `next()` inherit
+      // this store, so Prisma runtime access is transaction-scoped by #843.
+      return runWithRuntimeTenant(secureContext.tenantId, async () => {
+        if (cookieMode && !['GET','HEAD','OPTIONS'].includes(req.method.toUpperCase())) {
+          const csrfCookie = readCsrfToken(req);
+          const csrfHeader = String(req.header('x-csrf-token') || '');
+          if (!csrfCookie || csrfCookie !== csrfHeader || !await validateCsrfAgainstSession(secureContext.sessionId, csrfCookie)) {
+            throw new HttpError(403, 'La sesión CSRF no es válida. Renueva la sesión e intenta de nuevo.');
+          }
         }
-      }
-      (req as any).context = { ...secureContext, ip:req.ip, userAgent:req.headers['user-agent'] } satisfies RequestContext;
-      return next();
+        (req as any).context = { ...secureContext, ip:req.ip, userAgent:req.headers['user-agent'] } satisfies RequestContext;
+        next();
+      });
     }
     const allowDevelopmentHeader = !isProd && env.ALLOW_DEV_TENANT_HEADER === 'true';
     const tenantId = allowDevelopmentHeader ? req.header(DEV_TENANT_ID_HEADER) || req.query.tenantId?.toString() : undefined;
