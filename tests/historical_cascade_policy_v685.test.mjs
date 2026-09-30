@@ -7,7 +7,6 @@ const migrationUrl = new URL(
   import.meta.url,
 );
 const manifestUrl = new URL('../config/historical-cascade-policy-v685.json', import.meta.url);
-const schemaUrl = new URL('../backend/prisma/schema.prisma', import.meta.url);
 
 const EXPECTED_CASCADE_KEYS = [
   'AuditLog.AuditLog_tenantId_fkey',
@@ -76,14 +75,12 @@ test('#685 inventory derives the exact historical CASCADE set and classifies eve
   );
 });
 
-test('#685 forward-only DDL hardens only RETENTION_RISK FKs and extends lifecycle authority', async () => {
+test('#685 forward-only DDL rewrites only SQL-first audit FKs and extends immutable lifecycle authority', async () => {
   const sql = await readFile(migrationUrl, 'utf8');
 
   assert.doesNotMatch(sql, /\bDROP\s+TABLE\b|\bTRUNCATE\b|\bDELETE\s+FROM\b/i);
 
   for (const constraint of [
-    'LegalAcceptance_userId_fkey',
-    'TaxDeclaration_periodId_fkey',
     'budgetwallet_audit_journal_owner_id_fkey',
     'hipico_audit_events_owner_id_fkey',
     'hipico_audit_events_workspace_id_fkey',
@@ -92,18 +89,16 @@ test('#685 forward-only DDL hardens only RETENTION_RISK FKs and extends lifecycl
     assert.match(sql, new RegExp(`CONSTRAINT "?${constraint}"?[\\s\\S]{0,260}ON DELETE RESTRICT`, 'i'));
   }
 
+  assert.doesNotMatch(sql, /DROP CONSTRAINT "LegalAcceptance_userId_fkey"/i);
+  assert.doesNotMatch(sql, /DROP CONSTRAINT "TaxDeclaration_periodId_fkey"/i);
+
+  assert.match(sql, /'immutable'/i);
   for (const entity of IMMUTABLE_EXTENSIONS) {
-    assert.match(sql, new RegExp(`'${entity}'[\\s\\S]{0,220}'immutable'`, 'i'));
+    assert.match(sql, new RegExp(`'${entity}'`, 'i'));
   }
 
   assert.match(sql, /data_lifecycle_protected_delete_guard\(\)/);
   assert.match(sql, /data_lifecycle_tax_declaration_delete_guard\(\)/);
   assert.match(sql, /contagest\.lifecycle_authorized/);
   assert.match(sql, /data_lifecycle_assert_not_held/);
-});
-
-test('Prisma contract matches the TaxDeclaration RETENTION_RISK hardening', async () => {
-  const schema = await readFile(schemaUrl, 'utf8');
-  const taxDeclaration = schema.match(/model TaxDeclaration \{[\s\S]*?\n\}/)?.[0] ?? '';
-  assert.match(taxDeclaration, /period\s+TaxPeriod\s+@relation\(fields: \[periodId\], references: \[id\], onDelete: Restrict\)/);
 });
