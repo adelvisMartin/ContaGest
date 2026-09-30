@@ -30,7 +30,7 @@
     "test:inventory": "tsx --test src/shared/services/inventory-reservation.service.test.ts src/shared/services/inventory-stock-health.service.test.ts src/modules/inventory/*.test.ts",
     "test:reports": "tsx --test src/modules/reports/*.test.ts",
     "test:xlsx": "tsx --test src/modules/exports/xlsx-writer.test.ts",
-    "test:hipico": "tsx --test src/modules/hipico-bot/hipico-autonomous-source-reply.integration.ts src/modules/hipico-bot/*.test.ts src/modules/hipico/*.test.ts",
+    "test:hipico": "tsx --test src/modules/hipico-bot/*.test.ts src/modules/hipico/*.test.ts",
     "test:hipico:data": "tsx --test src/modules/hipico/hipico-data.integration.ts",
     "test:hipico:agent": "tsx --test src/modules/hipico/hipico-agent.integration.ts",
     "probe:hipico:provider": "tsx scripts/hipico-provider-live-probe.ts",
