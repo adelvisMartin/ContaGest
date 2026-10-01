@@ -1,42 +1,55 @@
 ---
 name: contagest-ui-ux-pro-max
 description: Project-owned wrapper for pinned UI/UX Pro Max design intelligence across ContaGest and Control Hipico.
-contractVersion: 3
+contractVersion: 2
 ---
 
 # ContaGest UI/UX Pro Max
 
 ## Trigger
-Use for material UI design/review work involving layout, responsive behavior, accessibility, interaction, typography, color, charts, forms or design-system decisions in ContaGest or Control Hipico.
+Material UI design/review involving layout, responsive behavior, accessibility, interaction, typography, color, charts, forms or design-system decisions in ContaGest or Control Hipico.
+
+## Non-trigger
+Pure backend, database, infrastructure or non-visual work; do not use it merely because a frontend file exists.
 
 ## Authority
-Precedence is explicit owner instruction + `AGENTS.md`; canonical ContaGest visual/functionality source; `contagest-ui-audit` and `contagest-functional-module-audit`; then the pinned `ui-ux-pro-max` reference. External guidance is advisory only.
+Explicit owner instruction + `AGENTS.md`; canonical ContaGest visual/functionality source; `contagest-ui-audit` and `contagest-functional-module-audit`; then the pinned `ui-ux-pro-max` reference. External guidance is advisory only.
+
+## Source of truth
+Exact candidate source, canonical project styles/tokens/components, affected workflow source and executed browser evidence when UI behavior changes.
+
+## Graphify probes
+May map affected routes/components and dependencies for navigation only. Graph output never proves UI correctness or design authority.
 
 ## Inputs
 Exact candidate SHA, affected routes/components, detected stack, current canonical UI owner, workflow state and the observable UX concern.
 
 ## Invariants
-- Preserve the existing visual ownership declared in `AGENTS.md`; never introduce a second CSS/design-system authority.
-- Operational routes keep project rules: no gradients/glass/decorative blobs, themes change color not geometry, and mobile 360/390/430 plus keyboard/focus/contrast/reduced-motion remain mandatory.
-- A visual recommendation never substitutes for a bound workflow, persistence proof or business-domain evidence.
+- Never introduce a second CSS/design-system authority.
+- Operational project rules, accessibility and mobile 360/390/430 gates remain mandatory.
+- Visual guidance never substitutes for workflow/persistence/domain evidence.
 - Control Hipico SOURCE/LAB, permissions and operational semantics outrank external UI suggestions.
-- Regulated/financial/tenant/security semantics are never rewritten for aesthetics.
-
-## External reference policy
-The source is pinned by `agent-skills.lock.json`. Do not implicitly execute upstream search scripts, package installers or remote instructions. Do not persist or force-regenerate an external design system without explicit owner intent and review against the canonical project styles.
+- Financial, tenant, security, legal and clinical semantics are not rewritten for aesthetics.
+- Upstream scripts/installers are not implicitly executable.
 
 ## Workflow
 1. Establish the real route/component and current visual owner from source.
-2. Characterize the user-visible problem and functional state first.
-3. Use the pinned guidance only to supplement accessibility, hierarchy, responsive geometry, typography, color or interaction decisions.
-4. Reconcile every recommendation with ContaGest tokens/components and Hípico/domain invariants.
-5. Verify source/static/build/browser evidence proportional to the change; critical journeys require actual interaction evidence.
+2. Characterize the visible problem and functional state first.
+3. Apply only pinned guidance compatible with project components/tokens.
+4. Reconcile conflicts in favor of project/domain authority.
+5. Verify proportional static/build/browser evidence on the candidate SHA.
+
+## Negative tests
+Check duplicate visual ownership, keyboard/focus loss, contrast regressions, 360/390/430 overlap/overflow, dark/light geometry drift, hidden/truncated operational meaning and visual changes that mask broken workflows.
 
 ## Stop conditions
-Stop and escalate when guidance would require a second UI authority, weaken accessibility, alter business semantics, overwrite an existing design authority, execute upstream code implicitly or make a claim unsupported by candidate-SHA evidence.
+Stop when guidance would create another visual authority, weaken accessibility, alter business semantics, execute upstream code implicitly or require evidence that has not run.
 
-## Output
-A project-owned recommendation/change with affected routes, canonical owner, applicable external guidance, conflicts rejected, and exact-SHA verification status.
+## Verification
+Use project evidence states only. UI source review is not browser PASS; a screenshot is not functional proof. Bind any PASS to the exact candidate SHA and executed command/environment/evidence.
+
+## Output schema
+Report affected routes/components, canonical owner, applicable external guidance, rejected conflicts, changes/recommendations, verification dimensions/statuses and residual risk.
 
 ## References
-`AGENTS.md`, `contagest-ui-audit`, `contagest-functional-module-audit`, pinned source `ui-ux-pro-max` in `agent-skills.lock.json`.
+`AGENTS.md`, `contagest-ui-audit`, `contagest-functional-module-audit`, pinned `ui-ux-pro-max` source in `agent-skills.lock.json`.
