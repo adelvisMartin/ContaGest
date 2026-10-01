@@ -1,4 +1,5 @@
 import { sanitizeLogValue } from './logger.js';
+import { redactSensitiveText } from './sensitive.js';
 
 const SENSITIVE_DETAIL_KEY = /(authorization|cookie|password|passphrase|token|secret|api[-_]?key|clientsecret|smtp|email|phone|rif|session|signed[-_]?url|url)/i;
 const MAX_DETAIL_DEPTH = 4;
@@ -9,7 +10,7 @@ function safeDetailValue(value: unknown, depth: number): unknown {
   if (depth > MAX_DETAIL_DEPTH) return undefined;
   if (value === null || typeof value === 'boolean') return value;
   if (typeof value === 'number') return Number.isFinite(value) ? value : undefined;
-  if (typeof value === 'string') return sanitizeLogValue(value, 240);
+  if (typeof value === 'string') return redactSensitiveText(value, 240);
 
   if (Array.isArray(value)) {
     return value
@@ -55,7 +56,7 @@ export function publicErrorEnvelope(
 
   return {
     ok: false as const,
-    message: sanitizeLogValue(message || 'Error interno del servidor.', 500) || 'Error interno del servidor.',
+    message: redactSensitiveText(message || 'Error interno del servidor.', 500) || 'Error interno del servidor.',
     requestId,
     correlationId,
     ...(code ? { code } : {}),
