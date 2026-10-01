@@ -23,6 +23,11 @@ const ROUTES=Object.freeze({
 const DOMAIN_ALIASES=Object.freeze({
   db:'database',persistence:'database',migration:'database',accounting:'finance',financial:'finance',auth:'auth-security',security:'auth-security',frontend:'frontend-ui',ui:'frontend-ui',browser:'qa',infra:'release',infrastructure:'release','infra-release':'release',refactor:'architecture',agents:'architecture','agent-system':'architecture','vertical-clinical':'clinical'
 });
+const INTENT_SKILLS=Object.freeze({
+  'ui-polish':'contagest-impeccable',
+  'architecture-diagram':'contagest-archify',
+  copywriting:'contagest-copywriting'
+});
 const DIMENSION_ORDER=policy.evidence.dimensions;
 const uniq=(values)=>[...new Set(values.filter(Boolean))];
 const orderedEvidence=(values)=>uniq(values).sort((a,b)=>DIMENSION_ORDER.indexOf(a)-DIMENSION_ORDER.indexOf(b));
@@ -30,6 +35,11 @@ const orderedEvidence=(values)=>uniq(values).sort((a,b)=>DIMENSION_ORDER.indexOf
 function canonicalDomain(value){const key=String(value??'').trim().toLowerCase();return DOMAIN_ALIASES[key]||key;}
 function assertRisk(risk){if(!policy.routing.allowedRisks.includes(risk))throw new Error(`AGENT_ROUTE_AMBIGUOUS unsupported risk ${risk}`);}
 function assertTaskType(type){if(!policy.routing.taskTypes.includes(type))throw new Error(`AGENT_ROUTE_AMBIGUOUS unsupported task type ${type}`);}
+function normalizeIntents(intents=[]){
+  const normalized=uniq((Array.isArray(intents)?intents:[intents]).map((intent)=>String(intent??'').trim().toLowerCase()));
+  for(const intent of normalized)if(!Object.hasOwn(INTENT_SKILLS,intent))throw new Error(`AGENT_ROUTE_AMBIGUOUS unsupported intent ${intent}`);
+  return normalized;
+}
 
 export function planVerification({type='feature',boundaries=[]}={}){
   assertTaskType(type);
@@ -50,8 +60,9 @@ export function planVerification({type='feature',boundaries=[]}={}){
   return orderedEvidence([...set]);
 }
 
-export function routeTask({risk='P2',type='feature',domains=[],boundaries=[]}={}){
+export function routeTask({risk='P2',type='feature',domains=[],boundaries=[],intents=[]}={}){
   assertRisk(risk);assertTaskType(type);
+  const normalizedIntents=normalizeIntents(intents);
   const canonical=uniq(domains.map(canonicalDomain));
   if(!canonical.length)canonical.push('architecture');
   const selected=canonical.map((domain)=>ROUTES[domain]).filter(Boolean);
@@ -73,7 +84,17 @@ export function routeTask({risk='P2',type='feature',domains=[],boundaries=[]}={}
     if(!fallback)break;skills.push(fallback);
   }
   if(skills.length<policy.routing.minSkills)throw new Error('AGENT_ROUTE_AMBIGUOUS insufficient active skills');
-  return {schemaVersion:3,risk,type,domains:canonical,boundaries:uniq(boundaries),agents,skills,verification:planVerification({type,boundaries})};
+
+  const explicitAdvisory=normalizedIntents.map((intent)=>INTENT_SKILLS[intent]);
+  const normalizedBoundaries=new Set(boundaries.map((item)=>String(item??'').trim().toLowerCase()));
+  const uiMaterial=canonical.includes('frontend-ui')||normalizedBoundaries.has('ui')||normalizedBoundaries.has('frontend')||normalizedBoundaries.has('browser');
+  const advisoryCandidates=explicitAdvisory.length?explicitAdvisory:(uiMaterial?['contagest-ui-ux-pro-max']:[]);
+  for(const id of advisoryCandidates){
+    if(skills.length>=policy.routing.maxSkills)break;
+    if(activeSkills.has(id)&&!skills.includes(id))skills.push(id);
+  }
+
+  return {schemaVersion:3,risk,type,domains:canonical,boundaries:uniq(boundaries),intents:normalizedIntents,agents,skills,verification:planVerification({type,boundaries})};
 }
 
 export function normalizeEvidence(entry={}){
