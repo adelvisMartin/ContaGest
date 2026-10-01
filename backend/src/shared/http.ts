@@ -1,4 +1,5 @@
 import type { Request, Response, NextFunction } from 'express';
+import { publicErrorEnvelope } from './observability/error-contract.js';
 
 export class HttpError extends Error {
   status: number;
@@ -24,12 +25,5 @@ export function fail(
   message: string,
   options: { code?: string; details?: unknown } = {},
 ) {
-  const requestId = String((req as any).requestId || '').slice(0, 96);
-  return res.status(status).json({
-    ok: false,
-    message,
-    requestId,
-    ...(options.code ? { code: String(options.code).slice(0, 80) } : {}),
-    ...(options.details === undefined ? {} : { details: options.details }),
-  });
+  return res.status(status).json(publicErrorEnvelope(req, message, options));
 }
