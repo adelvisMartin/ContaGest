@@ -1,6 +1,6 @@
 import crypto from 'node:crypto';
 import { AsyncLocalStorage } from 'node:async_hooks';
-import { redactTelemetryValue, sanitizeLogValue } from './logger.js';
+import { redactTelemetryValue, sanitizeLogValue } from './redaction.js';
 
 const TRACEPARENT = /^00-([a-f0-9]{32})-([a-f0-9]{16})-([a-f0-9]{2})$/i;
 const CORRELATION_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{7,95}$/;
