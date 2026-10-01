@@ -33,7 +33,7 @@ const domainHints=unique(domains.flatMap((entry)=>({
   'supply-chain':['auth-security','release'],
   'vertical-runtime':['clinical','frontend-ui'],
   'privacy-sensitive':['auth-security']
-}[entry.id]||[]));
+}[entry.id]||[])));
 const boundaries=unique(domains.flatMap((entry)=>({
   'accounting-financial':['financial','persistence'],
   'identity-tenant-rbac':['auth','tenant'],
@@ -51,7 +51,7 @@ const boundaries=unique(domains.flatMap((entry)=>({
   'supply-chain':['security','provider'],
   'vertical-runtime':['api','ui','browser','tenant'],
   'privacy-sensitive':['security','tenant']
-}[entry.id]||[]));
+}[entry.id]||[])));
 const inferredRisk=domains.some((entry)=>entry.severity==='critical')?'P0':domains.some((entry)=>entry.severity==='high')?'P1':'P2';
 const routed=routeTask({risk:explicitRisk||inferredRisk,type:taskType,domains:domainHints.length?domainHints:['architecture'],boundaries,intents});
 const rawAgentIds=unique(domains.flatMap((entry)=>entry.agentIds||[]));
