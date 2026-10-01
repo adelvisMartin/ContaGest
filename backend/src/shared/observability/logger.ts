@@ -2,7 +2,7 @@ import { createHmac } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import pino, { type DestinationStream, type LoggerOptions } from 'pino';
 import { deploymentEnvironment, env } from '../../config/env.js';
-import { redactTelemetryValue, sanitizeLogValue } from './redaction.js';
+import { sanitizeLogValue } from './redaction.js';
 
 export { redactTelemetryValue, sanitizeLogValue } from './redaction.js';
 
@@ -163,6 +163,3 @@ export function pseudonymizeIdentifier(namespace: string, value: unknown) {
 export function requestLogger(req: any) {
   return req?.log || logger.child({ requestId: sanitizeLogValue(req?.requestId || '', 96) || undefined });
 }
-
-// Keep the pure redactor reachable from the logger module for backwards-compatible adapters.
-void redactTelemetryValue;
