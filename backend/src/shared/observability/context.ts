@@ -1,5 +1,6 @@
 import crypto from 'node:crypto';
 import { sanitizeLogValue } from './logger.js';
+import { redactSensitiveText } from './sensitive.js';
 
 const TRACEPARENT = /^00-([a-f0-9]{32})-([a-f0-9]{16})-([a-f0-9]{2})$/i;
 const CORRELATION_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{7,95}$/;
@@ -58,7 +59,7 @@ export function sanitizeTelemetryAttributes(input: Record<string, unknown>) {
     if (typeof value === 'number' && Number.isFinite(value)) output[safeKey] = value;
     else if (typeof value === 'boolean') output[safeKey] = Boolean(value);
     else if (value === null) output[safeKey] = null;
-    else if (typeof value === 'string') output[safeKey] = sanitizeLogValue(value, 240);
+    else if (typeof value === 'string') output[safeKey] = redactSensitiveText(value, 240);
   }
   return output;
 }
