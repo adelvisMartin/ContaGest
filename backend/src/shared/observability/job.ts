@@ -1,5 +1,6 @@
 import { createTelemetryContext, sanitizeTelemetryAttributes } from './context.js';
 import { logger, sanitizeLogValue } from './logger.js';
+import { runWithTelemetryContext } from './store.js';
 
 type JobLog = Pick<typeof logger, 'debug' | 'info' | 'warn' | 'error'>;
 type CompletionLevel = 'debug' | 'info';
@@ -38,7 +39,7 @@ export async function observeJob<T>(
   log.debug({ ...base, event: 'job.started' }, 'job started');
 
   try {
-    const result = await run();
+    const result = await runWithTelemetryContext(telemetry, () => Promise.resolve(run()));
     const summary = options.summarize
       ? sanitizeTelemetryAttributes(options.summarize(result))
       : {};
