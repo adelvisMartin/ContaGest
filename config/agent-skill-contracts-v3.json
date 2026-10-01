@@ -183,6 +183,62 @@
       "riskEscalation": "Motion-induced focus/interaction regression blocks UI completion.",
       "dependencies": ["contagest-ui-audit"],
       "provenance": {"kind":"project-owned","version":"3","path":".agents/skills/contagest-motion/SKILL.md"}
+    },
+    {
+      "id": "contagest-ui-ux-pro-max",
+      "status": "ACTIVE",
+      "purpose": "Supplement project-owned UI review with pinned UI/UX design intelligence without creating a second visual authority.",
+      "triggers": ["UI design", "responsive design", "accessibility", "interaction", "typography", "color", "charts"],
+      "requiredInputs": ["affected routes/components", "canonical visual authority", "candidate SHA"],
+      "authoritativeSources": ["AGENTS.md UI standards", "contagest-ui-audit", "contagest-functional-module-audit", "pinned reviewed vendor reference"],
+      "prohibitedActions": ["create alternate design authority", "execute upstream scripts implicitly", "weaken accessibility", "override Hípico/domain semantics"],
+      "expectedEvidence": ["source-grounded UI recommendation", "conflict resolution", "risk-proportional UI verification"],
+      "minimumValidation": ["SOURCE_REVIEW", "LOCAL_STATIC"],
+      "riskEscalation": "Any conflict with canonical UI or domain policy resolves in favor of project authority.",
+      "dependencies": ["contagest-ui-audit", "contagest-functional-module-audit"],
+      "provenance": {"kind":"project-owned-wrapper","version":"3","path":".agents/skills/contagest-ui-ux-pro-max/SKILL.md","sourceLock":"ui-ux-pro-max"}
+    },
+    {
+      "id": "contagest-impeccable",
+      "status": "ACTIVE",
+      "purpose": "Apply pinned Impeccable critique and polish guidance only after functionality and geometry are stable.",
+      "triggers": ["UI polish", "visual critique", "responsive refinement", "UX writing refinement"],
+      "requiredInputs": ["stable workflow", "stable UI geometry", "canonical visual authority"],
+      "authoritativeSources": ["AGENTS.md UI standards", "contagest-ui-audit", "contagest-functional-module-audit", "pinned reviewed vendor reference"],
+      "prohibitedActions": ["polish broken workflow", "create alternate design authority", "execute upstream scripts implicitly", "visual-only PASS"],
+      "expectedEvidence": ["polish scope", "canonical component reuse", "responsive/accessibility verification"],
+      "minimumValidation": ["SOURCE_REVIEW", "LOCAL_STATIC"],
+      "riskEscalation": "Functional, accessibility or domain defects must be fixed before cosmetic polish.",
+      "dependencies": ["contagest-ui-audit", "contagest-functional-module-audit"],
+      "provenance": {"kind":"project-owned-wrapper","version":"3","path":".agents/skills/contagest-impeccable/SKILL.md","sourceLock":"impeccable"}
+    },
+    {
+      "id": "contagest-archify",
+      "status": "ACTIVE",
+      "purpose": "Create source-grounded architecture/dependency visualizations without turning generated diagrams into architecture authority.",
+      "triggers": ["architecture diagram", "dependency map", "data-flow map", "module boundary visualization"],
+      "requiredInputs": ["exact SHA", "diagram scope", "authoritative source paths"],
+      "authoritativeSources": ["AGENTS.md", "project source/tests/contracts", "live repository state", "pinned reviewed vendor reference"],
+      "prohibitedActions": ["invent architecture", "present inference as verified", "execute upstream scripts implicitly", "authorize mutation from diagram"],
+      "expectedEvidence": ["source provenance", "verified nodes/edges", "explicit inference/gaps"],
+      "minimumValidation": ["SOURCE_REVIEW"],
+      "riskEscalation": "Unknown topology or source conflict remains unverified and cannot become release/architecture evidence.",
+      "dependencies": ["contagest-erp-orchestrator"],
+      "provenance": {"kind":"project-owned-wrapper","version":"3","path":".agents/skills/contagest-archify/SKILL.md","sourceLock":"archify"}
+    },
+    {
+      "id": "contagest-copywriting",
+      "status": "ACTIVE",
+      "purpose": "Improve product/interface copy using the pinned Copywriting skill without changing implemented or regulated meaning.",
+      "triggers": ["copywriting", "CTA", "onboarding copy", "helper text", "empty state", "error text", "marketing copy"],
+      "requiredInputs": ["audience/context", "project terminology", "intended action", "domain constraints"],
+      "authoritativeSources": ["AGENTS.md", "project domain contracts", "implemented product behavior", "pinned reviewed vendor reference"],
+      "prohibitedActions": ["invent capability", "invent compliance claim", "rewrite regulated semantics", "expose sensitive data", "load unreviewed marketing modules"],
+      "expectedEvidence": ["semantic-preservation review", "project terminology alignment", "affected UI/workflow verification when shipped in code"],
+      "minimumValidation": ["SOURCE_REVIEW"],
+      "riskEscalation": "Legal/fiscal/clinical/security ambiguity escalates to the owning project/domain authority.",
+      "dependencies": ["contagest-erp-orchestrator"],
+      "provenance": {"kind":"project-owned-wrapper","version":"3","path":".agents/skills/contagest-copywriting/SKILL.md","sourceLock":"marketing-copywriting"}
     }
   ]
 }

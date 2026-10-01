@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-09-27",
+  "generatedAt": "2026-10-01",
   "policy": {
     "updateMode": "pinned-only",
     "executeUpstreamScripts": false,
@@ -152,6 +152,45 @@
         "graphify/skills/agents/references/query.md",
         "graphify/skills/agents/references/transcribe.md",
         "graphify/skills/agents/references/update.md"
+      ]
+    },
+    {
+      "id": "ui-ux-pro-max",
+      "kind": "github-skill",
+      "repo": "nextlevelbuilder/ui-ux-pro-max-skill",
+      "commit": "09170eec67eefd46a7ae85de61b40c194020f997",
+      "license": "MIT",
+      "trustLevel": "reviewed-design-guidance",
+      "namespace": "ui-ux-pro-max",
+      "vendorPaths": [
+        "LICENSE",
+        ".claude/skills/ui-ux-pro-max/SKILL.md"
+      ]
+    },
+    {
+      "id": "archify",
+      "kind": "github-skill",
+      "repo": "tt-a1i/archify",
+      "commit": "d5a1333d7447c866a765adac7d4d062f2f02e4d2",
+      "license": "MIT",
+      "trustLevel": "reviewed-architecture-visualization",
+      "namespace": "archify",
+      "vendorPaths": [
+        "LICENSE",
+        "archify/SKILL.md"
+      ]
+    },
+    {
+      "id": "marketing-copywriting",
+      "kind": "github-skill",
+      "repo": "coreyhaines31/marketingskills",
+      "commit": "5b2c0007766c6a1cf1d53fd8fc73e979e0821022",
+      "license": "MIT",
+      "trustLevel": "reviewed-copywriting-guidance",
+      "namespace": "marketing-copywriting",
+      "vendorPaths": [
+        "LICENSE",
+        "skills/copywriting/SKILL.md"
       ]
     }
   ]
