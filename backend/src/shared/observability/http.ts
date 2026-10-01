@@ -42,8 +42,10 @@ export function requestObservability(req: Request, res: Response, next: NextFunc
     const route = requestRouteTemplate(req);
     const status = aborted && !res.writableEnded ? 499 : res.statusCode;
     const method = sanitizeLogValue(req.method || 'UNKNOWN', 12).toUpperCase();
-    const tenantId = (req as any).context?.tenantId;
+    const tenantId = (req as any).context?.tenantId ?? (req as any).auth?.tenantId;
+    const userId = (req as any).auth?.userId ?? (req as any).context?.userId;
     const tenantRef = tenantId ? pseudonymizeIdentifier('tenant', tenantId) : undefined;
+    const userRef = userId ? pseudonymizeIdentifier('user', userId) : undefined;
 
     recordHttpRequest({ method, route, status, durationMs: elapsedMs });
     if (method !== 'GET' && String(req.originalUrl || '').startsWith('/api/v1/imports')) {
@@ -61,7 +63,8 @@ export function requestObservability(req: Request, res: Response, next: NextFunc
       status,
       outcome: status >= 500 ? 'error' : status >= 400 ? 'rejected' : 'success',
       durationMs: Number(elapsedMs.toFixed(3)),
-      tenantRef
+      tenantRef,
+      userRef
     };
 
     if (status >= 500) requestLog.error(fields, aborted ? 'request aborted' : 'request completed');
