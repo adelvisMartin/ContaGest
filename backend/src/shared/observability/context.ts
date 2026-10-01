@@ -1,5 +1,6 @@
 import crypto from 'node:crypto';
-import { sanitizeLogValue } from './logger.js';
+import { AsyncLocalStorage } from 'node:async_hooks';
+import { redactTelemetryValue, sanitizeLogValue } from './redaction.js';
 
 const TRACEPARENT = /^00-([a-f0-9]{32})-([a-f0-9]{16})-([a-f0-9]{2})$/i;
 const CORRELATION_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{7,95}$/;
@@ -12,6 +13,8 @@ export type TelemetryContext = {
   traceFlags: string;
   traceparent: string;
 };
+
+const telemetryStorage = new AsyncLocalStorage<TelemetryContext>();
 
 function hex(bytes: number) { return crypto.randomBytes(bytes).toString('hex'); }
 function traceparent(traceId: string, spanId: string, flags = '01') { return `00-${traceId}-${spanId}-${flags}`; }
@@ -46,6 +49,27 @@ export function childTelemetryContext(parent: TelemetryContext): TelemetryContex
   return { ...parent, spanId, traceparent: traceparent(parent.traceId, spanId, parent.traceFlags) };
 }
 
+export function runWithTelemetryContext<T>(context: TelemetryContext, operation: () => T): T {
+  return telemetryStorage.run(context, operation);
+}
+
+export function currentTelemetryContext() {
+  return telemetryStorage.getStore() || null;
+}
+
+export function currentCorrelationId() {
+  return telemetryStorage.getStore()?.correlationId;
+}
+
+export function createJobTelemetryContext(input: {
+  traceparent?: unknown;
+  correlationId?: unknown;
+  requestId?: unknown;
+} = {}) {
+  const active = currentTelemetryContext();
+  return active ? childTelemetryContext(active) : createTelemetryContext(input);
+}
+
 export function propagationHeaders(context: TelemetryContext) {
   return { traceparent: context.traceparent, 'x-correlation-id': context.correlationId };
 }
@@ -58,7 +82,10 @@ export function sanitizeTelemetryAttributes(input: Record<string, unknown>) {
     if (typeof value === 'number' && Number.isFinite(value)) output[safeKey] = value;
     else if (typeof value === 'boolean') output[safeKey] = Boolean(value);
     else if (value === null) output[safeKey] = null;
-    else if (typeof value === 'string') output[safeKey] = sanitizeLogValue(value, 240);
+    else if (typeof value === 'string') {
+      const redacted = redactTelemetryValue(value);
+      if (typeof redacted === 'string') output[safeKey] = sanitizeLogValue(redacted, 240);
+    }
   }
   return output;
 }

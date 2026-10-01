@@ -1,4 +1,7 @@
 import type { Request, Response, NextFunction } from 'express';
+import { buildErrorEnvelope, normalizeOperationalError } from './observability/contract.js';
+import { createTelemetryContext, currentCorrelationId } from './observability/context.js';
+import { sanitizeLogValue } from './observability/logger.js';
 
 export class HttpError extends Error {
   status: number;
@@ -24,12 +27,19 @@ export function fail(
   message: string,
   options: { code?: string; details?: unknown } = {},
 ) {
-  const requestId = String((req as any).requestId || '').slice(0, 96);
-  return res.status(status).json({
-    ok: false,
-    message,
-    requestId,
-    ...(options.code ? { code: String(options.code).slice(0, 80) } : {}),
-    ...(options.details === undefined ? {} : { details: options.details }),
-  });
+  const requestId = sanitizeLogValue((req as any).requestId || '', 96);
+  const correlationId = sanitizeLogValue(
+    (req as any).correlationId
+      || (req as any).telemetry?.correlationId
+      || currentCorrelationId()
+      || createTelemetryContext({ requestId }).correlationId,
+    96
+  );
+  const normalized = normalizeOperationalError(Object.assign(new Error(message), {
+    status,
+    ...(options.code ? { code: options.code } : {}),
+    ...(options.details === undefined ? {} : { details: options.details })
+  }));
+
+  return res.status(normalized.status).json(buildErrorEnvelope(normalized, { correlationId, requestId }));
 }

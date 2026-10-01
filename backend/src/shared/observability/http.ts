@@ -1,5 +1,5 @@
 import type { Request, Response, NextFunction } from 'express';
-import { createTelemetryContext } from './context.js';
+import { createTelemetryContext, runWithTelemetryContext } from './context.js';
 import {
   logger,
   pseudonymizeIdentifier,
@@ -74,5 +74,5 @@ export function requestObservability(req: Request, res: Response, next: NextFunc
     if (!res.writableEnded) record(true);
   });
 
-  next();
+  return runWithTelemetryContext(telemetry, () => next());
 }
