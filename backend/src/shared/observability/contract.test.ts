@@ -1,8 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { HttpError } from '../http.js';
 import * as contextModule from './context.js';
-import * as loggerModule from './logger.js';
+import * as redactionModule from './redaction.js';
 
 const contractModule = await import('./contract.js').catch(() => null as any);
 
@@ -36,7 +35,7 @@ test('#650 correlation survives API -> service -> repository async boundaries', 
 });
 
 test('#650 recursively redacts nested secrets, DSNs and signed URLs', () => {
-  const redactTelemetryValue = requireFunction(loggerModule, 'redactTelemetryValue');
+  const redactTelemetryValue = requireFunction(redactionModule, 'redactTelemetryValue');
   const redacted = redactTelemetryValue({
     harmless: 'ok',
     nested: {
@@ -60,7 +59,10 @@ test('#650 normalizes 4xx, dependency and unhandled errors into stable safe enve
   const normalizeOperationalError = requireFunction(contractModule, 'normalizeOperationalError');
   const buildErrorEnvelope = requireFunction(contractModule, 'buildErrorEnvelope');
 
-  const notFound = normalizeOperationalError(new HttpError(404, 'Documento no encontrado.', { code: 'DOCUMENT_NOT_FOUND' }));
+  const notFound = normalizeOperationalError(Object.assign(
+    new Error('Documento no encontrado.'),
+    { status: 404, details: { code: 'DOCUMENT_NOT_FOUND' } }
+  ));
   assert.equal(notFound.status, 404);
   assert.equal(notFound.code, 'DOCUMENT_NOT_FOUND');
   assert.equal(notFound.errorClass, 'not_found');
