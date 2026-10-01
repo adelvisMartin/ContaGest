@@ -68,6 +68,7 @@ test('issue #650 expected errors expose bounded details and correlation', () => 
     new HttpError(409, 'Conflicto de negocio.', {
       code: 'BUSINESS_CONFLICT',
       field: 'documentNumber',
+      reason: 'password=SENSITIVE_SENTINEL_650',
       password: 'SENSITIVE_SENTINEL_650'
     }),
     req,
@@ -79,12 +80,15 @@ test('issue #650 expected errors expose bounded details and correlation', () => 
   assert.equal(body.code, 'BUSINESS_CONFLICT');
   assert.equal(body.requestId, 'qa-request-650-http-error');
   assert.equal(body.correlationId, 'qa-correlation-650-http-error');
-  assert.deepEqual(body.details, { code: 'BUSINESS_CONFLICT', field: 'documentNumber' });
+  assert.equal(body.details.code, 'BUSINESS_CONFLICT');
+  assert.equal(body.details.field, 'documentNumber');
+  assert.equal(body.details.password, undefined);
+  assert.equal(body.details.reason, '[REDACTED]');
   assert.equal(logged.correlationId, 'qa-correlation-650-http-error');
   assert.doesNotMatch(JSON.stringify({ body, logged }), /SENSITIVE_SENTINEL_650|password=/i);
 });
 
-test('issue #650 observed jobs share correlation and never serialize thrown error messages', async () => {
+test('issue #650 observed jobs share correlation and never serialize sensitive values or thrown error messages', async () => {
   const records: Array<{ level: string; fields: Record<string, unknown> }> = [];
   const log: any = {
     debug(fields: Record<string, unknown>) { records.push({ level: 'debug', fields }); },
@@ -93,7 +97,11 @@ test('issue #650 observed jobs share correlation and never serialize thrown erro
     error(fields: Record<string, unknown>) { records.push({ level: 'error', fields }); }
   };
 
-  const result = await observeJob('qa650.job', async () => ({ processed: 3, reason: 'complete', password: 'SENSITIVE_SENTINEL_650' }), {
+  const result = await observeJob('qa650.job', async () => ({
+    processed: 3,
+    reason: 'password=SENSITIVE_SENTINEL_650',
+    password: 'SENSITIVE_SENTINEL_650'
+  }), {
     log,
     completionLevel: 'info',
     summarize: (value) => value
@@ -103,7 +111,9 @@ test('issue #650 observed jobs share correlation and never serialize thrown erro
   assert.equal(records[1].fields.event, 'job.completed');
   assert.equal(records[0].fields.correlationId, records[1].fields.correlationId);
   assert.equal(records[1].fields.processed, 3);
+  assert.equal(records[1].fields.reason, '[REDACTED]');
   assert.equal('password' in records[1].fields, false);
+  assert.doesNotMatch(JSON.stringify(records), /SENSITIVE_SENTINEL_650|password=/i);
 
   records.length = 0;
   await assert.rejects(observeJob('qa650.job.failure', async () => {
