@@ -79,10 +79,8 @@ export function errorHandler(error: Error, req: Request, res: Response, _next: N
       ? error.details
       : undefined;
 
-  const payload = publicErrorEnvelope(req, publicMessage, {
+  res.status(status).json(publicErrorEnvelope(req, publicMessage, {
     code: errorCode,
     details
-  });
-  if (process.env.NODE_ENV === 'development') (payload as Record<string, unknown>).stack = error.stack;
-  res.status(status).json(payload);
+  }));
 }
