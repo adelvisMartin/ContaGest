@@ -1,5 +1,4 @@
-import { ZodError } from 'zod';
-import { redactTelemetryValue, sanitizeLogValue } from './logger.js';
+import { redactTelemetryValue, sanitizeLogValue } from './redaction.js';
 
 export const OBSERVABILITY_CONTRACT = Object.freeze({
   version: 1,
@@ -75,6 +74,10 @@ function errorCode(error: any) {
   return error?.code ?? nested;
 }
 
+function isValidationError(error: any) {
+  return error?.name === 'ZodError' && Array.isArray(error?.issues);
+}
+
 function isDependencyError(error: any) {
   const code = safeCode(errorCode(error), '');
   if (DEPENDENCY_CODES.has(code)) return true;
@@ -111,7 +114,7 @@ export function normalizeOperationalError(error: unknown): NormalizedOperational
   const source: any = error instanceof Error || (error && typeof error === 'object')
     ? error
     : new Error('unknown error');
-  const validation = source instanceof ZodError;
+  const validation = isValidationError(source);
   const dependency = isDependencyError(source);
   const explicitStatus = boundedStatus(source?.status);
   const status = dependency ? 503 : validation ? 422 : explicitStatus || 500;
