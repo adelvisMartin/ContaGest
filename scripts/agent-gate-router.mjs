@@ -8,6 +8,8 @@ const explicit=valueOf('--files');
 const base=valueOf('--base')||process.env.CG_DIFF_BASE||'main';
 const taskType=valueOf('--type')||'feature';
 const explicitRisk=valueOf('--risk');
+const explicitIntents=valueOf('--intent');
+const intents=explicitIntents?explicitIntents.split(',').map((item)=>item.trim()).filter(Boolean):[];
 let files=[];
 if(explicit){files=explicit.split(',').map((item)=>item.trim()).filter(Boolean);}else{
   try{files=execFileSync('git',['diff','--name-only',`${base}...HEAD`],{encoding:'utf8'}).split(/\r?\n/).map((item)=>item.trim()).filter(Boolean);}catch(error){console.error(`No se pudo obtener el diff contra ${base}: ${error.message}`);process.exit(2);}
@@ -51,14 +53,14 @@ const boundaries=unique(domains.flatMap((entry)=>({
   'privacy-sensitive':['security','tenant']
 }[entry.id]||[]));
 const inferredRisk=domains.some((entry)=>entry.severity==='critical')?'P0':domains.some((entry)=>entry.severity==='high')?'P1':'P2';
-const routed=routeTask({risk:explicitRisk||inferredRisk,type:taskType,domains:domainHints.length?domainHints:['architecture'],boundaries});
+const routed=routeTask({risk:explicitRisk||inferredRisk,type:taskType,domains:domainHints.length?domainHints:['architecture'],boundaries,intents});
 const rawAgentIds=unique(domains.flatMap((entry)=>entry.agentIds||[]));
 const agentIds=unique([...routed.agents,...rawAgentIds]).slice(0,6);
 const output={
   schemaVersion:3,
   base,
   files,
-  task:{type:taskType,risk:routed.risk,boundaries:routed.boundaries},
+  task:{type:taskType,risk:routed.risk,boundaries:routed.boundaries,intents:routed.intents},
   domains:domains.map(({id,severity})=>({id,severity})),
   agents:agentIds,
   agentProfiles:agentIds.filter((id)=>!['orchestrator'].includes(id)||true).map((id)=>`.agents/agents/${id}.md`),
