@@ -5,6 +5,7 @@ import fs from 'node:fs';
 const policy = JSON.parse(fs.readFileSync('backend/src/shared/contracts/api-contract-v1.json', 'utf8'));
 const governance = fs.readFileSync('backend/src/shared/contracts/apiGovernance.ts', 'utf8');
 const errorMiddleware = fs.readFileSync('backend/src/shared/middleware/error.ts', 'utf8');
+const observabilityContract = fs.readFileSync('backend/src/shared/observability/contract.ts', 'utf8');
 const http = fs.readFileSync('backend/src/shared/http.ts', 'utf8');
 const legacyProvider = fs.readFileSync('backend/src/modules/hipico-bot/hipico-provider.routes.ts', 'utf8');
 const generator = fs.readFileSync('scripts/generate-api-inventory-v565.mjs', 'utf8');
@@ -20,10 +21,15 @@ test('#565 machine-readable policy defines v1, stable representations and compat
   assert.match(policy.breakingChanges.rule, /new API major version|compatibility adapter/i);
 });
 
-test('#565 unhandled 5xx is generic and error envelope carries correlation id/code', () => {
-  assert.match(errorMiddleware, /status >= 500 \? 'Error interno del servidor\.'/);
+test('#565 unhandled 5xx delegates to the canonical #650 error authority with stable diagnostics', () => {
+  assert.match(errorMiddleware, /normalizeOperationalError\(error\)/);
+  assert.match(errorMiddleware, /buildErrorEnvelope\(normalized, context\)/);
   assert.doesNotMatch(errorMiddleware, /DATABASE_URL debe usar/);
-  assert.match(errorMiddleware, /payload\.code = errorCode/);
+  assert.match(observabilityContract, /status >= 500/);
+  assert.match(observabilityContract, /Error interno del servidor\./);
+  for (const field of ['type', 'title', 'status', 'detail', 'code', 'message', 'correlationId']) {
+    assert.match(observabilityContract, new RegExp(`\\b${field}\\b`));
+  }
   assert.match(http, /requestId/);
   assert.match(http, /ok: false/);
 });
