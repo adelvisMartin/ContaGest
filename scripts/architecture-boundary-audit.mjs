@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const DEFAULT_EXPECTED_ROUTES = 58;
+const DEFAULT_EXPECTED_ROUTES = 59;
 const OPTIONAL_PACK_MODULES = new Set(['verticals', 'food', 'hipico', 'hipico-bot']);
 const OPTIONAL_PACK_FAMILIES = new Map([
   ['verticals', 'verticals'],
