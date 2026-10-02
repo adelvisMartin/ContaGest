@@ -59,9 +59,6 @@ function parametersFor(route) {
   for (const [name, meta] of Object.entries(route.request?.query || {}).sort(([a],[b]) => a.localeCompare(b))) {
     parameters.push({ name, in:'query', required:false, schema:schemaForQuery(meta) });
   }
-  if (route.auth?.tenantRequired) {
-    parameters.push({ name:'x-tenant-id', in:'header', required:false, schema:{type:'string'}, description:'Tenant context when required by the runtime guard; session-derived context remains authoritative.' });
-  }
   return parameters;
 }
 function requestBodyFor(route) {
