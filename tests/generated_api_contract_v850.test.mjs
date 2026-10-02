@@ -48,6 +48,17 @@ test('projection is deterministic and public audience excludes privileged operat
   assert.doesNotThrow(() => assertAudienceIsolation(publicDoc));
 });
 
+test('projection never invents tenant headers that are absent from #652 route metadata', () => {
+  const operation = buildProjection(contract, { audience: 'all' }).paths['/api/v1/clients/{id}'].get;
+  assert.deepEqual(operation.parameters.map(({ name, in: location }) => [name, location]), [
+    ['id', 'path'],
+    ['q', 'query'],
+    ['take', 'query'],
+  ]);
+  assert.equal(operation.parameters.some((parameter) => parameter.name === 'x-tenant-id'), false);
+  assert.equal(operation['x-contagest-auth'].tenantRequired, true);
+});
+
 test('operation ids are required, stable and unique', () => {
   const doc = buildProjection(contract, { audience: 'all' });
   assert.equal(doc.paths['/api/v1/clients/{id}'].get.operationId, 'getApiV1ClientsById');
