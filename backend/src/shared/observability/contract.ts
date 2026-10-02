@@ -4,7 +4,7 @@ export const OBSERVABILITY_CONTRACT = Object.freeze({
   version: 1,
   correlationHeader: 'x-correlation-id',
   traceHeader: 'traceparent',
-  errorEnvelopeVersion: 1,
+  errorEnvelopeVersion: 2,
   persistedErrorMaxLength: 320,
   sensitivePayloadRetention: 'forbidden' as const
 });
@@ -55,6 +55,20 @@ const FALLBACK_CODE_BY_STATUS: Record<number, string> = {
   502: 'DEPENDENCY_UNAVAILABLE',
   503: 'DEPENDENCY_UNAVAILABLE',
   504: 'DEPENDENCY_UNAVAILABLE'
+};
+
+const PROBLEM_TITLE_BY_STATUS: Record<number, string> = {
+  400: 'Solicitud inválida',
+  401: 'No autenticado',
+  403: 'Acceso denegado',
+  404: 'Recurso no encontrado',
+  409: 'Conflicto',
+  422: 'Validación fallida',
+  423: 'Recurso bloqueado',
+  429: 'Demasiadas solicitudes',
+  502: 'Dependencia no disponible',
+  503: 'Dependencia no disponible',
+  504: 'Dependencia no disponible'
 };
 
 function boundedStatus(value: unknown) {
@@ -110,6 +124,18 @@ function safePublicMessage(error: any, status: number, validation: boolean) {
   return message || 'Solicitud rechazada.';
 }
 
+function problemTitle(status: number) {
+  return PROBLEM_TITLE_BY_STATUS[status] || (status >= 500 ? 'Error interno del servidor' : 'Solicitud rechazada');
+}
+
+function problemType(code: string) {
+  const normalized = String(code || 'client-error')
+    .toLowerCase()
+    .replace(/[^a-z0-9._:-]+/g, '-')
+    .replace(/^-+|-+$/g, '') || 'client-error';
+  return `urn:contagest:problem:${normalized}`;
+}
+
 export function normalizeOperationalError(error: unknown): NormalizedOperationalError {
   const source: any = error instanceof Error || (error && typeof error === 'object')
     ? error
@@ -144,12 +170,18 @@ export function normalizeOperationalError(error: unknown): NormalizedOperational
 
 export function buildErrorEnvelope(
   error: NormalizedOperationalError,
-  context: { correlationId: string; requestId?: string }
+  context: { correlationId: string; requestId?: string; instance?: string }
 ) {
   const correlationId = sanitizeLogValue(context.correlationId, 96);
   const requestId = sanitizeLogValue(context.requestId || '', 96);
+  const instance = sanitizeLogValue(context.instance || '', 240);
   return {
     ok: false as const,
+    type: problemType(error.code),
+    title: problemTitle(error.status),
+    status: error.status,
+    detail: error.safeMessage,
+    ...(instance ? { instance } : {}),
     code: error.code,
     message: error.safeMessage,
     correlationId,

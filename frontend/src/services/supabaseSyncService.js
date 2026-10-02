@@ -1,5 +1,8 @@
+import { createGeneratedApiClient } from '../generated/api-client-v850.ts';
 import { BackendApi } from './backendApi.js';
+import { GeneratedApiTransport } from './generatedApiTransport.js';
 
+const GeneratedApi = createGeneratedApiClient(GeneratedApiTransport);
 const loadedAt = new Map();
 const pulling = new Set();
 const TTL_MS = 120_000;
@@ -295,7 +298,7 @@ export const SupabaseSyncService = {
   },
 
   async pullClients(ctx = {}) {
-    return safePull('clients', () => BackendApi.list('clients'), (data) => updateState(ctx.Store, { clients: data.map(normalizeClient) }), ctx);
+    return safePull('clients', () => GeneratedApi.getApiV1Clients(), (data) => updateState(ctx.Store, { clients: data.map(normalizeClient) }), ctx);
   },
   async pullSuppliers(ctx = {}) {
     return safePull('suppliers', () => BackendApi.list('suppliers'), (data) => updateState(ctx.Store, { suppliers: data.map(normalizeSupplier) }), ctx);
@@ -350,8 +353,8 @@ export const SupabaseSyncService = {
     ]);
   },
 
-  async createClient(data) { return normalizeClient(await BackendApi.create('clients', clientPayload(data))); },
-  async deleteClient(id) { return BackendApi.remove('clients', id); },
+  async createClient(data) { return normalizeClient(await GeneratedApi.createApiV1Clients({ body: clientPayload(data) })); },
+  async deleteClient(id) { return GeneratedApi.deleteApiV1ClientsById({ id }); },
 
   async createSupplier(data) { return normalizeSupplier(await BackendApi.create('suppliers', supplierPayload(data))); },
   async deleteSupplier(id) { return BackendApi.remove('suppliers', id); },

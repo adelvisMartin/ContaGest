@@ -16,7 +16,8 @@ function responseContext(req: Request) {
       || createTelemetryContext({ requestId }).correlationId,
     96
   );
-  return { requestId, correlationId };
+  const instance = sanitizeLogValue(String(req.originalUrl || req.path || '/').split('?')[0], 240);
+  return { requestId, correlationId, instance };
 }
 
 export function notFound(req: Request, res: Response) {
