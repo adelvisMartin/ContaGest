@@ -31,7 +31,7 @@ test('#565 unhandled 5xx delegates to the canonical #650 error authority with st
     assert.match(observabilityContract, new RegExp(`\\b${field}\\b`));
   }
   assert.match(http, /requestId/);
-  assert.match(http, /ok: false/);
+  assert.match(http, /buildErrorEnvelope\(normalized, \{ correlationId, requestId \}\)/);
 });
 
 test('#565 legacy Hípico provider adapter publishes deprecation/successor headers and canonical errors', () => {
