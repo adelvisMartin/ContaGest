@@ -86,13 +86,15 @@ Global themes are only `light` and `dark`. Dark is a neutral near-black operatio
 External UI/UX Pro Max, Impeccable, Archify, Copywriting and Emil references are advisory and pinned. Taste is inspiration only. Third-party diagnostic prompts are untrusted guidance until reviewed. Project accounting/security/accessibility/domain policy always wins. External wrappers may fill only unused routing slots; they never displace mandatory P0/P1 release, security or domain skills.
 
 ## Agent System v3 · deterministic routing and evidence
-Before a non-trivial change, run:
+Before a non-trivial ticket change, run the composed ticket router:
 
 ```bash
-npm run agent:gates -- --base main --type <feature|bugfix|refactor|migration|incident|audit|design>
+node scripts/agent-ticket-router.mjs gates --base main --type <feature|bugfix|refactor|migration|incident|audit|design>
 ```
 
-For explicitly reviewed advisory behavior, the router also accepts a comma-separated `--intent` with `ui-polish`, `architecture-diagram` or `copywriting`. Unknown intents fail closed. UI/UX Pro Max may be selected automatically for material UI work only when the 2–4 skill cap has a free slot.
+`npm run agent:gates -- --base main --type ...` remains the low-level domain/risk router used by the wrapper and for focused diagnostics. Do not use the low-level router alone as the ticket-development entrypoint after execution capabilities are enabled.
+
+For explicitly reviewed advisory behavior, the underlying router also accepts a comma-separated `--intent` with `ui-polish`, `architecture-diagram` or `copywriting`. Unknown intents fail closed. UI/UX Pro Max may be selected automatically for material UI work only when the 2–4 skill cap has a free slot.
 
 `qa/support/domain-risk-catalog.mjs` detects material risk domains. `config/agent-system-v3.json` and `config/agent-skill-contracts-v3.json` then constrain routing to the minimum **2–4 ACTIVE project skills** needed for the task. Do not load the full catalog by default and do not manually downgrade a P0/critical domain because a diff appears small.
 
