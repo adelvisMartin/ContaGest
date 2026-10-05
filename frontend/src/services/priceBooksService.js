@@ -6,5 +6,6 @@ export const PriceBooksService={
   update(id,data){return BackendApi.patch(`/price-books/${encodeURIComponent(id)}`,data);},
   entries(id){return BackendApi.get(`/price-books/${encodeURIComponent(id)}/entries`);},
   addEntry(id,data){return BackendApi.post(`/price-books/${encodeURIComponent(id)}/entries`,data);},
-  preview(data){return BackendApi.post('/price-books/preview/resolve',data);}
+  preview(data){return BackendApi.post('/price-books/preview/resolve',data);},
+  products(){return BackendApi.get('/products?take=500');}
 };
