@@ -13,6 +13,7 @@ export async function enforceCanonicalSalesPricing(req: Request, _res: Response,
     const documentCurrency = String(body.currency || 'VES').trim().toUpperCase();
     const instant = body.issueDate ? new Date(body.issueDate) : new Date();
     if (Number.isNaN(instant.getTime())) return next(new HttpError(422, 'issueDate inválido para resolver pricing.'));
+    if (!body.issueDate) body.issueDate = instant.toISOString();
 
     body.lines = await Promise.all(body.lines.map(async (line: any) => {
       if (!line?.productId) return line;
@@ -22,8 +23,6 @@ export async function enforceCanonicalSalesPricing(req: Request, _res: Response,
         targetId: String(line.productId),
         documentCurrency,
         instant,
-        // Sales has no persisted location context on this baseline. Location-scoped
-        // pricing is consumed by preview/future POS owners, never guessed here.
         businessLocationId: null,
         fxRate: body.exchangeRate,
         fxRateDate: body.exchangeRateDate ? new Date(body.exchangeRateDate) : undefined,
@@ -31,8 +30,6 @@ export async function enforceCanonicalSalesPricing(req: Request, _res: Response,
       });
       return {
         ...line,
-        // The browser may submit a legacy unitPrice, but product pricing is canonical.
-        // Replacing it before validation/totals prevents a caller from becoming the authority.
         unitPrice: resolved.amount.toFixed(2),
       };
     }));
