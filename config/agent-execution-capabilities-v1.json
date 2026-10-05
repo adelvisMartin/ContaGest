@@ -1,0 +1,32 @@
+{
+  "schemaVersion": 1,
+  "authority": "AGENTS.md",
+  "domainSkillSlotsUnaffected": true,
+  "capabilities": {
+    "contagest-batch": {
+      "minIndependentWorkUnits": 5,
+      "maxWorkers": 30,
+      "requiresIsolation": true,
+      "orderedDatabaseMutationParallelism": false
+    },
+    "contagest-loop": {
+      "sessionBound": true,
+      "requiresContinuationAuthorization": true,
+      "requiresStopCondition": true
+    },
+    "contagest-run-skill-generator": {
+      "recordSecretValues": false,
+      "projectRecipeOnly": true
+    },
+    "contagest-fewer-permission-prompts": {
+      "triggerAfterRepeatedPrompts": 3,
+      "autoApply": false,
+      "scope": "project",
+      "lowRiskOnly": true
+    },
+    "contagest-skill-doctor": {
+      "readOnly": true,
+      "autoOnSkillSurfaceChange": true
+    }
+  }
+}
