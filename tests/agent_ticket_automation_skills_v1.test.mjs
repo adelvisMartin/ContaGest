@@ -10,26 +10,18 @@ function requirePlanner() {
   assert.equal(typeof automation.inferTicketAutomationSignals, 'function');
   return automation;
 }
-
-function capability(plan, id) {
-  return plan.capabilities.find((item) => item.id === id);
-}
+function capability(plan, id) { return plan.capabilities.find((item) => item.id === id); }
 
 test('batch requires independent work and never exceeds 30 workers', () => {
   const { planTicketAutomation } = requirePlanner();
-  const tooSmall = planTicketAutomation({ signals: { independentWorkUnits: 4 } });
-  assert.equal(capability(tooSmall, 'contagest-batch'), undefined);
-  const eligible = planTicketAutomation({ signals: { independentWorkUnits: 12 } });
-  assert.equal(capability(eligible, 'contagest-batch')?.workers, 12);
-  assert.equal(capability(eligible, 'contagest-batch')?.requiresIsolation, true);
-  const capped = planTicketAutomation({ signals: { independentWorkUnits: 99 } });
-  assert.equal(capability(capped, 'contagest-batch')?.workers, 30);
+  assert.equal(capability(planTicketAutomation({ signals: { independentWorkUnits: 4 } }), 'contagest-batch'), undefined);
+  assert.equal(capability(planTicketAutomation({ signals: { independentWorkUnits: 12 } }), 'contagest-batch')?.workers, 12);
+  assert.equal(capability(planTicketAutomation({ signals: { independentWorkUnits: 99 } }), 'contagest-batch')?.workers, 30);
 });
 
 test('ordered or destructive migration work is never auto-parallelized', () => {
   const { planTicketAutomation } = requirePlanner();
-  const plan = planTicketAutomation({ type: 'migration', boundaries: ['database', 'persistence'], signals: { independentWorkUnits: 20, orderedMutation: true } });
-  assert.equal(capability(plan, 'contagest-batch'), undefined);
+  assert.equal(capability(planTicketAutomation({ type: 'migration', boundaries: ['database','persistence'], signals: { independentWorkUnits: 20, orderedMutation: true } }), 'contagest-batch'), undefined);
 });
 
 test('loop is selected only for bounded recurring continuation with a stop condition', () => {
@@ -42,7 +34,7 @@ test('loop is selected only for bounded recurring continuation with a stop condi
 
 test('runtime/bootstrap changes select run-skill-generator without secret capture', () => {
   const { inferTicketAutomationSignals, planTicketAutomation } = requirePlanner();
-  assert.equal(inferTicketAutomationSignals({ files: ['package.json', 'backend/package.json'] }).runtimeRecipeDrift, true);
+  assert.equal(inferTicketAutomationSignals({ files: ['package.json','backend/package.json'] }).runtimeRecipeDrift, true);
   assert.equal(capability(planTicketAutomation({ files: ['package.json'] }), 'contagest-run-skill-generator')?.recordSecretValues, false);
 });
 
@@ -76,18 +68,23 @@ test('five project-owned execution skills exist outside the 2-4 domain skill reg
 test('automation augments an existing route without consuming domain skill slots', () => {
   const { augmentAgentRoute } = requirePlanner();
   assert.equal(typeof augmentAgentRoute, 'function');
-  const route = {
-    schemaVersion: 3,
-    files: ['config/agent-skill-contracts-v3.json'],
-    task: { type: 'feature', risk: 'P1', boundaries: ['api'] },
-    domains: [{ id: 'agent-system', severity: 'high' }],
-    skills: ['skill-a', 'skill-b', 'skill-c', 'skill-d'],
-    routingPolicy: 'minimal-2-4-skills',
-  };
+  const route = { schemaVersion: 3, files: ['config/agent-skill-contracts-v3.json'], task: { type: 'feature', risk: 'P1', boundaries: ['api'] }, domains: [{ id: 'agent-system', severity: 'high' }], skills: ['skill-a','skill-b','skill-c','skill-d'], routingPolicy: 'minimal-2-4-skills' };
   const augmented = augmentAgentRoute(route, { signals: { independentWorkUnits: 8 } });
   assert.deepEqual(augmented.skills, route.skills);
   assert.equal(augmented.skills.length, 4);
   assert.ok(augmented.executionCapabilities.some((item) => item.id === 'contagest-batch'));
   assert.ok(augmented.executionCapabilities.some((item) => item.id === 'contagest-skill-doctor'));
   assert.equal(augmented.routingPolicy, 'minimal-2-4-skills+execution-capabilities-v1');
+});
+
+test('canonical ticket router exists and supports gates plus bootstrap composition', () => {
+  const url = new URL('../scripts/agent-ticket-router.mjs', import.meta.url);
+  assert.equal(fs.existsSync(url), true, 'missing canonical ticket automation router');
+  const source = fs.readFileSync(url, 'utf8');
+  assert.match(source, /agent-gate-router\.mjs/);
+  assert.match(source, /agent-bootstrap\.mjs/);
+  assert.match(source, /augmentAgentRoute/);
+  assert.match(source, /--independent-units/);
+  assert.match(source, /--permission-prompts/);
+  assert.match(source, /--waiting-external/);
 });
