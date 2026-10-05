@@ -103,3 +103,11 @@ test('project authority requires ticket capability reevaluation at development c
   assert.match(ticketPolicy, /re-evaluate/i);
   assert.match(ticketPolicy, /permission prompts/i);
 });
+
+test('agent system verifier enforces execution capability policy and sources', () => {
+  const verifier = fs.readFileSync(new URL('../scripts/verify-agent-system-v3.mjs', import.meta.url), 'utf8');
+  assert.match(verifier, /agent-execution-capabilities-v1\.json/);
+  assert.match(verifier, /\.agents\/execution-skills/);
+  assert.match(verifier, /maxWorkers/);
+  assert.match(verifier, /agent-ticket-router\.mjs/);
+});
