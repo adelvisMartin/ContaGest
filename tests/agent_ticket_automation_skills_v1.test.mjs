@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 
 const automation = await import('../scripts/agent-ticket-automation-lib.mjs').catch(() => null);
 
@@ -79,4 +80,21 @@ test('small ordinary tickets do not receive unnecessary execution capabilities',
   const { planTicketAutomation } = requirePlanner();
   const plan = planTicketAutomation({ type: 'feature', domains: ['backend'], files: ['backend/src/foo.ts'] });
   assert.deepEqual(plan.capabilities, []);
+});
+
+test('five project-owned execution skills exist outside the 2-4 domain skill registry', () => {
+  const ids = [
+    'contagest-batch',
+    'contagest-loop',
+    'contagest-run-skill-generator',
+    'contagest-fewer-permission-prompts',
+    'contagest-skill-doctor',
+  ];
+  for (const id of ids) {
+    assert.equal(fs.existsSync(new URL(`../.agents/execution-skills/${id}/SKILL.md`, import.meta.url)), true, `missing execution skill ${id}`);
+  }
+
+  const policy = JSON.parse(fs.readFileSync(new URL('../config/agent-execution-capabilities-v1.json', import.meta.url), 'utf8'));
+  assert.equal(policy.domainSkillSlotsUnaffected, true);
+  for (const id of ids) assert.ok(policy.capabilities[id], `missing execution capability contract ${id}`);
 });
