@@ -110,3 +110,5 @@ test('#874 CLI forwards explicit intents and existing provider semantics stay un
   assert.equal(policy.providerPolicy.REMOTE_CI_BLOCKED_PLAN,'BLOCKED');
   assert.equal(policy.providerPolicy.REMOTE_DEPLOY_BLOCKED_PLAN,'BLOCKED');
 });
+
+await import('./agent_ticket_automation_skills_v1.test.mjs');
