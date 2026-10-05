@@ -9,7 +9,8 @@ const WRAPPERS=[
   'contagest-ui-ux-pro-max',
   'contagest-impeccable',
   'contagest-archify',
-  'contagest-copywriting'
+  'contagest-copywriting',
+  'contagest-apple-design'
 ];
 
 const EXPECTED_SOURCES={
@@ -30,6 +31,19 @@ const EXPECTED_SOURCES={
     commit:'5b2c0007766c6a1cf1d53fd8fc73e979e0821022',
     license:'MIT',
     requiredPaths:['LICENSE','skills/copywriting/SKILL.md']
+  },
+  'apple-design-skills':{
+    repo:'s1gmamale1/apple-design-skills',
+    commit:'8a3fbea8b561405e5719d682ebd1d14c952aecd7',
+    license:'MIT',
+    requiredPaths:[
+      'LICENSE',
+      'skills/apple-design/SKILL.md',
+      'skills/apple-design-foundations/SKILL.md',
+      'skills/apple-design-interaction/SKILL.md',
+      'skills/apple-design-motion/SKILL.md',
+      'skills/apple-design-tactics/SKILL.md'
+    ]
   }
 };
 
@@ -54,7 +68,7 @@ test('#874 pins only reviewed external sources and preserves unique Cloudflare/I
   }
 });
 
-test('#874 exposes four ACTIVE project-owned wrappers and still rejects an external ACTIVE contract',()=>{
+test('#874 exposes ACTIVE project-owned wrappers and still rejects an external ACTIVE contract',()=>{
   const registry=readJson('config/agent-skill-contracts-v3.json');
   const byId=new Map(registry.skills.map((skill)=>[skill.id,skill]));
   for(const id of WRAPPERS){
@@ -89,6 +103,17 @@ test('#874 explicit advisory intents are deterministic and do not crowd out core
   assert.ok(polish.skills.includes('contagest-ui-audit'));
   assert.ok(polish.skills.includes('contagest-functional-module-audit'));
   assert.equal(polish.skills.includes('contagest-ui-ux-pro-max'),false,'explicit polish wins the one advisory slot');
+
+  const apple=v3.routeTask({risk:'P2',type:'audit',domains:['frontend-ui'],boundaries:['ui','browser'],intents:['apple-design-review']});
+  assert.ok(apple.skills.includes('contagest-apple-design'));
+  assert.ok(apple.skills.includes('contagest-ui-audit'));
+  assert.ok(apple.skills.includes('contagest-functional-module-audit'));
+  assert.equal(apple.skills.includes('contagest-ui-ux-pro-max'),false,'explicit Apple review wins the advisory slot');
+  assert.ok(apple.skills.length<=4);
+
+  const p1Apple=v3.routeTask({risk:'P1',type:'audit',domains:['frontend-ui'],boundaries:['ui','browser'],intents:['apple-design-review']});
+  for(const required of ['contagest-erp-orchestrator','contagest-release-evidence','contagest-ui-audit','contagest-functional-module-audit']) assert.ok(p1Apple.skills.includes(required),`P1 Apple review displaced ${required}`);
+  assert.equal(p1Apple.skills.includes('contagest-apple-design'),false,'advisory Apple review must not displace P1 core skills');
 
   const arch=v3.routeTask({risk:'P2',type:'design',domains:['architecture'],boundaries:['api'],intents:['architecture-diagram']});
   assert.ok(arch.skills.includes('contagest-archify'));
