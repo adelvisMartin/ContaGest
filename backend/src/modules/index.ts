@@ -6,6 +6,7 @@ import { requireCurrentLegalAcceptance } from '../shared/legal/legalAcceptanceMi
 import { writeAudit } from '../shared/services/audit.service.js';
 import legalRoutes from './legal/legal.routes.js';
 import { approvalExecutionGate } from './approvals/approval-execution-gate.js';
+import { enforceCanonicalSalesPricing } from './pricing/pricing-sales.middleware.js';
 import { mountModuleRouteManifest } from './route-manifest.js';
 
 const router = Router();
@@ -41,6 +42,10 @@ router.use((req, res, next) => {
   });
   next();
 });
+
+// Product lines must be resolved before Sales validates the request and calculates
+// subtotal/tax/total. Manual lines without productId keep their explicit price.
+router.use(enforceCanonicalSalesPricing);
 
 mountModuleRouteManifest(router);
 
