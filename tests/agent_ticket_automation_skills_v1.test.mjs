@@ -88,3 +88,18 @@ test('canonical ticket router exists and supports gates plus bootstrap compositi
   assert.match(source, /--permission-prompts/);
   assert.match(source, /--waiting-external/);
 });
+
+test('project authority requires ticket capability reevaluation at development checkpoints', () => {
+  const agents = fs.readFileSync(new URL('../AGENTS.md', import.meta.url), 'utf8');
+  const context = fs.readFileSync(new URL('../.agents/context/AGENT_SYSTEM_V3.md', import.meta.url), 'utf8');
+  const ticketPolicy = fs.readFileSync(new URL('../.agents/TICKET_EXECUTION_POLICY.md', import.meta.url), 'utf8');
+  for (const source of [agents, context, ticketPolicy]) {
+    assert.match(source, /agent-ticket-router\.mjs/);
+    assert.match(source, /execution capabilities/i);
+    assert.match(source, /\.agents\/execution-skills/);
+  }
+  assert.match(agents, /2–4 ACTIVE project skills/);
+  assert.match(agents, /30/);
+  assert.match(ticketPolicy, /re-evaluate/i);
+  assert.match(ticketPolicy, /permission prompts/i);
+});
