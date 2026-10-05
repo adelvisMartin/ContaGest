@@ -20,6 +20,7 @@ export const MODULE_VISUAL_CATALOG = Object.freeze([
   { route:'compras', family:'commercial', label:'Compras', priority:'critical' },
   { route:'auditoria', family:'governance', label:'Auditoría', priority:'critical' },
   { route:'configuracion', family:'admin', label:'Configuración', priority:'high' },
+  { route:'sedes', family:'admin', label:'Sedes', priority:'high' },
   { route:'ayuda', family:'support', label:'Ayuda', priority:'medium' },
   { route:'tasks', family:'operations', label:'Tareas', priority:'medium' },
   { route:'profile', family:'admin', label:'Perfil', priority:'medium' },
