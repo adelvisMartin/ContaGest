@@ -1,4 +1,4 @@
-# ContaGest VE · Agent Engineering Contract v16.5
+# ContaGest VE · Agent Engineering Contract v16.6
 
 ## Mission
 ContaGest is a Venezuelan multi-tenant horizontal ERP with optional vertical packs. Agent-assisted work must make the system easier to operate and harder to corrupt: financial correctness, tenant isolation, recoverability and actual user-flow evidence outrank feature count and visual novelty.
@@ -97,6 +97,28 @@ For explicitly reviewed advisory behavior, the router also accepts a comma-separ
 `qa/support/domain-risk-catalog.mjs` detects material risk domains. `config/agent-system-v3.json` and `config/agent-skill-contracts-v3.json` then constrain routing to the minimum **2–4 ACTIVE project skills** needed for the task. Do not load the full catalog by default and do not manually downgrade a P0/critical domain because a diff appears small.
 
 `AGENTS.md` remains the permanent authority. The v3 JSON contracts implement it; they cannot supersede it. Live Git/GitHub state outranks cached work metadata. External skills are pinned/inert by default, cannot execute upstream scripts implicitly, and cannot elevate themselves above project policy.
+
+### Ticket execution capabilities
+
+The 2–4 routed domain/risk skills are not an upper bound on execution mechanics. During ticket development, compose the normal v3 route with the project-owned ticket router:
+
+```bash
+node scripts/agent-ticket-router.mjs gates --base main --type <feature|bugfix|refactor|migration|incident|audit|design>
+node scripts/agent-ticket-router.mjs bootstrap
+```
+
+The wrapper delegates to the existing `agent-gate-router.mjs` or `agent-bootstrap.mjs` first, then adds `executionCapabilities` from `config/agent-execution-capabilities-v1.json`. These capabilities live under `.agents/execution-skills/<id>/SKILL.md` and **do not consume or displace the 2–4 ACTIVE project skills** selected for domain/security/release correctness.
+
+Re-evaluate execution capabilities after ticket decomposition and whenever observable execution state changes materially. Supported signals are independent-unit count (`--independent-units N`), repeated permission prompts (`--permission-prompts N`), bounded external waiting (`--waiting-external --continuation-authorized --stop-condition <condition>`), and ordered/destructive mutation flags.
+
+Automatic capability invariants:
+- `contagest-batch`: only for at least 5 genuinely independent units, hard cap **30** workers, isolated worktrees/branches where supported, no overlapping writes, and no parallel ordered/destructive persistence work;
+- `contagest-loop`: only for an already-authorized ticket continuation with an explicit stop condition; it cannot create new scope or turn BLOCKED into PASS;
+- `contagest-run-skill-generator`: maintain the reproducible project run/verify recipe when package/build/bootstrap/runtime surfaces change; record environment variable names only, never secret values;
+- `contagest-fewer-permission-prompts`: activate after repeated prompt friction, recommendation-first, project-scoped and low-risk only; never auto-apply blanket/destructive/global permission expansion;
+- `contagest-skill-doctor`: activate automatically when agent/skill/routing metadata changes; diagnose read-only by default and never remove/disable a skill merely to make checks green.
+
+If the active harness cannot provide parallel agents/worktrees, scheduling or a native permission rule mechanism, follow the selected execution skill's safe sequential/advisory fallback. Never fabricate execution or evidence.
 
 Before implementation, derive an evidence plan from touched boundaries. Canonical dimensions are:
 
