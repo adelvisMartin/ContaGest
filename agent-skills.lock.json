@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-10-01",
+  "generatedAt": "2026-10-05",
   "policy": {
     "updateMode": "pinned-only",
     "executeUpstreamScripts": false,
@@ -191,6 +191,34 @@
       "vendorPaths": [
         "LICENSE",
         "skills/copywriting/SKILL.md"
+      ]
+    },
+    {
+      "id": "apple-design-skills",
+      "kind": "github-skill",
+      "repo": "s1gmamale1/apple-design-skills",
+      "commit": "8a3fbea8b561405e5719d682ebd1d14c952aecd7",
+      "license": "MIT",
+      "trustLevel": "reviewed-design-guidance",
+      "namespace": "apple-design",
+      "vendorPaths": [
+        "LICENSE",
+        "skills/apple-design/SKILL.md",
+        "skills/apple-design/references/restraint-and-antislop.md",
+        "skills/apple-design/references/philosophy-and-evolution.md",
+        "skills/apple-design-foundations/SKILL.md",
+        "skills/apple-design-foundations/references/color-systems.md",
+        "skills/apple-design-foundations/references/typography.md",
+        "skills/apple-design-foundations/references/layout-grid-spacing.md",
+        "skills/apple-design-interaction/SKILL.md",
+        "skills/apple-design-interaction/references/navigation-models.md",
+        "skills/apple-design-interaction/references/state-and-feedback-logic.md",
+        "skills/apple-design-interaction/references/perceived-performance-and-input.md",
+        "skills/apple-design-motion/SKILL.md",
+        "skills/apple-design-motion/references/motion-animation.md",
+        "skills/apple-design-motion/references/microinteractions-feedback.md",
+        "skills/apple-design-tactics/SKILL.md",
+        "skills/apple-design-tactics/references/accessibility-inclusive.md"
       ]
     }
   ]
