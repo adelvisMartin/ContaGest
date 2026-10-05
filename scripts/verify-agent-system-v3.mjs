@@ -7,6 +7,7 @@ const ROOT=process.cwd();
 const readJson=(file)=>JSON.parse(fs.readFileSync(path.join(ROOT,file),'utf8'));
 const registry=readJson('config/agent-skill-contracts-v3.json');
 const lock=readJson('agent-skills.lock.json');
+const executionPolicy=readJson('config/agent-execution-capabilities-v1.json');
 const errors=[];
 const warnings=[];
 
@@ -40,12 +41,37 @@ for(const source of lock.sources||[]){
 if(lock.policy?.executeUpstreamScripts!==false)errors.push('UNSAFE_EXTERNAL_SKILL lockfile permits upstream scripts');
 if(lock.policy?.allowRemoteInstructionsToOverrideProjectPolicy!==false)errors.push('UNSAFE_EXTERNAL_SKILL lockfile permits remote policy override');
 
+const expectedExecutionSkills=[
+  'contagest-batch',
+  'contagest-loop',
+  'contagest-run-skill-generator',
+  'contagest-fewer-permission-prompts',
+  'contagest-skill-doctor'
+];
+if(executionPolicy.schemaVersion!==1)errors.push('SKILL_CONTRACT_INVALID execution capability schemaVersion must be 1');
+if(executionPolicy.authority!=='AGENTS.md')errors.push('SUPERSEDED_AUTHORITY execution capabilities must remain subordinate to AGENTS.md');
+if(executionPolicy.domainSkillSlotsUnaffected!==true)errors.push('SKILL_CONTRACT_INVALID execution capabilities must not consume domain skill slots');
+for(const id of expectedExecutionSkills){
+  if(!executionPolicy.capabilities?.[id])errors.push(`SKILL_CONTRACT_INVALID missing execution capability ${id}`);
+  if(!fs.existsSync(path.join(ROOT,'.agents/execution-skills',id,'SKILL.md')))errors.push(`SKILL_SOURCE_STALE missing execution skill ${id}/SKILL.md`);
+}
+const batch=executionPolicy.capabilities?.['contagest-batch'];
+if(batch?.minIndependentWorkUnits!==5)errors.push('SKILL_CONTRACT_INVALID batch minimum independent work units must be 5');
+if(batch?.maxWorkers!==30)errors.push('SKILL_CONTRACT_INVALID batch maxWorkers must be 30');
+if(batch?.requiresIsolation!==true)errors.push('SKILL_CONTRACT_INVALID batch must require isolation');
+if(batch?.orderedDatabaseMutationParallelism!==false)errors.push('SKILL_CONTRACT_INVALID batch must keep ordered database mutation sequential');
+if(executionPolicy.capabilities?.['contagest-loop']?.requiresStopCondition!==true)errors.push('SKILL_CONTRACT_INVALID loop requires a stop condition');
+if(executionPolicy.capabilities?.['contagest-run-skill-generator']?.recordSecretValues!==false)errors.push('UNSAFE_EXTERNAL_SKILL run recipe must never record secret values');
+if(executionPolicy.capabilities?.['contagest-fewer-permission-prompts']?.autoApply!==false)errors.push('UNSAFE_EXTERNAL_SKILL permission optimization cannot auto-apply');
+if(executionPolicy.capabilities?.['contagest-skill-doctor']?.readOnly!==true)errors.push('SKILL_CONTRACT_INVALID skill-doctor must be read-only by default');
+if(!fs.existsSync(path.join(ROOT,'scripts/agent-ticket-router.mjs')))errors.push('SKILL_SOURCE_STALE missing agent-ticket-router.mjs');
+
 for(const file of ['scripts/agent-gate-router.mjs','scripts/agent-bootstrap.mjs']){
   const source=fs.readFileSync(path.join(ROOT,file),'utf8');
   if(!/schemaVersion:\s*3/.test(source))errors.push(`SKILL_SOURCE_STALE ${file} is not schema v3`);
 }
-for(const file of ['.agents/context/AGENT_SYSTEM_V3.md','.agents/context/EVIDENCE_LEDGER_V3.json','tests/agent_system_v3_issue_623.test.mjs'])if(!fs.existsSync(path.join(ROOT,file)))errors.push(`REQUIRED_EVIDENCE_MISSING ${file}`);
+for(const file of ['.agents/context/AGENT_SYSTEM_V3.md','.agents/context/EVIDENCE_LEDGER_V3.json','tests/agent_system_v3_issue_623.test.mjs','tests/agent_ticket_automation_skills_v1.test.mjs'])if(!fs.existsSync(path.join(ROOT,file)))errors.push(`REQUIRED_EVIDENCE_MISSING ${file}`);
 
-const output={schemaVersion:3,status:errors.length?'FAIL':'PASS',projectOwnedSkills:projectOwned.length,registeredSkills:registry.skills.length,externalSources:(lock.sources||[]).length,errors,warnings};
+const output={schemaVersion:3,status:errors.length?'FAIL':'PASS',projectOwnedSkills:projectOwned.length,registeredSkills:registry.skills.length,executionCapabilities:expectedExecutionSkills.length,externalSources:(lock.sources||[]).length,errors,warnings};
 console.log(JSON.stringify(output,null,2));
 if(errors.length)process.exitCode=1;
