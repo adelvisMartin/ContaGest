@@ -37,7 +37,7 @@ function booleanSignal(value) {
 
 export function inferTicketAutomationSignals({ files = [], signals = {} } = {}) {
   const normalizedFiles = normalizeFiles(files);
-  const inferred = {
+  return {
     independentWorkUnits: positiveInteger(signals.independentWorkUnits),
     waitingOnExternalState: booleanSignal(signals.waitingOnExternalState),
     continuationAuthorized: booleanSignal(signals.continuationAuthorized),
@@ -48,7 +48,6 @@ export function inferTicketAutomationSignals({ files = [], signals = {} } = {}) 
     orderedMutation: booleanSignal(signals.orderedMutation),
     destructiveMutation: booleanSignal(signals.destructiveMutation),
   };
-  return inferred;
 }
 
 function hasDatabaseBoundary(boundaries = []) {
@@ -62,10 +61,7 @@ export function planTicketAutomation({ type = 'feature', domains = [], boundarie
   const databaseMigration = String(type).toLowerCase() === 'migration' && hasDatabaseBoundary(boundaries);
   const orderedPersistence = databaseMigration || normalizedSignals.orderedMutation || normalizedSignals.destructiveMutation;
 
-  if (
-    normalizedSignals.independentWorkUnits >= caps['contagest-batch'].minIndependentWorkUnits
-    && !orderedPersistence
-  ) {
+  if (normalizedSignals.independentWorkUnits >= caps['contagest-batch'].minIndependentWorkUnits && !orderedPersistence) {
     capabilities.push({
       id: 'contagest-batch',
       mode: 'parallel-isolated',
@@ -77,11 +73,7 @@ export function planTicketAutomation({ type = 'feature', domains = [], boundarie
     });
   }
 
-  if (
-    normalizedSignals.waitingOnExternalState
-    && normalizedSignals.continuationAuthorized
-    && normalizedSignals.stopCondition
-  ) {
+  if (normalizedSignals.waitingOnExternalState && normalizedSignals.continuationAuthorized && normalizedSignals.stopCondition) {
     capabilities.push({
       id: 'contagest-loop',
       mode: 'bounded-continuation',
@@ -131,6 +123,25 @@ export function planTicketAutomation({ type = 'feature', domains = [], boundarie
     boundaries: uniq(boundaries),
     signals: normalizedSignals,
     capabilities,
+  };
+}
+
+export function augmentAgentRoute(route = {}, { signals = {} } = {}) {
+  const task = route.task || {};
+  const domainIds = (route.domains || []).map((entry) => typeof entry === 'string' ? entry : entry?.id).filter(Boolean);
+  const automation = planTicketAutomation({
+    type: task.type || 'feature',
+    domains: domainIds,
+    boundaries: task.boundaries || [],
+    files: route.files || [],
+    signals,
+  });
+  return {
+    ...route,
+    executionSignals: automation.signals,
+    executionCapabilities: automation.capabilities,
+    executionCapabilityPolicy: 'agent-execution-capabilities-v1',
+    routingPolicy: `${route.routingPolicy || 'minimal-2-4-skills'}+execution-capabilities-v1`,
   };
 }
 
