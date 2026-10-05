@@ -98,6 +98,7 @@ test('project authority requires ticket capability reevaluation at development c
     assert.match(source, /execution capabilities/i);
     assert.match(source, /\.agents\/execution-skills/);
   }
+  assert.match(agents, /Before a non-trivial ticket change[\s\S]*agent-ticket-router\.mjs/);
   assert.match(agents, /2–4 ACTIVE project skills/);
   assert.match(agents, /30/);
   assert.match(ticketPolicy, /re-evaluate/i);
