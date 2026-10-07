@@ -22,7 +22,7 @@ function pageRegistryRoutes(){
 
 test('53/75 canonical access manifest covers every authenticated runtime route exactly once',()=>{
   assert.equal(manifest.schemaVersion,1);
-  assert.equal(manifest.modules.length,58);
+  assert.equal(manifest.modules.length,59);
   const routes=manifest.modules.map((item)=>item.route);
   assert.equal(new Set(routes).size,routes.length,'manifest contains duplicate routes');
   const runtime=pageRegistryRoutes().filter((route)=>route!=='login').sort();

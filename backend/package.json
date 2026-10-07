@@ -41,7 +41,7 @@
     "soak:hipico": "tsx scripts/hipico-soak-v120.ts",
     "soak:hipico:smoke": "tsx scripts/hipico-soak-v120.ts --duration-minutes=0.1 --sample-seconds=1",
     "test:observability": "tsx --test src/shared/observability/*.test.ts ../qa/observability-v98.test.ts ../tests/observability_frontend_v650.test.mjs ../qa/observability-v650.test.ts",
-    "test": "npm run test:config && npm run test:tenant-references && npm run test:runtime-tenant-context && npm run test:inventory && npm run test:reports && tsx --test src/modules/auth/*.test.ts src/modules/hipico-bot/*.test.ts src/modules/hipico/*.test.ts src/modules/payables/*.test.ts src/shared/services/*.test.ts && npm run test:xlsx && npm run test:observability",
+    "test": "npm run test:config && npm run test:tenant-references && npm run test:runtime-tenant-context && npm run test:inventory && npm run test:reports && npm run test:pricing && tsx --test src/modules/auth/*.test.ts src/modules/hipico-bot/*.test.ts src/modules/hipico/*.test.ts src/modules/payables/*.test.ts src/shared/services/*.test.ts && npm run test:xlsx && npm run test:observability",
     "prisma:sync-schema": "node scripts/sync-employee-prisma-schema.mjs",
     "prisma:generate": "npm run prisma:sync-schema && prisma generate",
     "prisma:migrate": "npm run prisma:sync-schema && prisma migrate dev",
@@ -59,14 +59,16 @@
     "db:doctor": "node scripts/doctor-db.mjs",
     "db:create:safe": "npm run db:doctor && npm run db:validate && npm run prisma:generate && npm run prisma:deploy && prisma db seed && npm run db:rls",
     "db:create:gitbash": "bash scripts/create-tables-gitbash.sh",
-    "migration:test:from-zero": "node scripts/migration-chain-v626.mjs from-zero",
-    "migration:test:upgrade": "node scripts/migration-chain-v626.mjs upgrade",
+    "migration:test:from-zero": "node scripts/migration-chain-v626.mjs from-zero && npm run test:pricing:postgres",
+    "migration:test:upgrade": "node scripts/migration-chain-v626.mjs upgrade && npm run test:pricing:postgres",
     "migration:manifest": "node scripts/migration-chain-v626.mjs manifest",
     "postinstall": "npm run prisma:generate",
     "seed": "tsx prisma/seed.ts",
     "seed:admin": "tsx prisma/seed.ts",
     "seed:clean": "tsx prisma/seed.ts --clean-demo",
-    "test:hipico:autonomous-reply": "tsx --test src/modules/hipico-bot/hipico-autonomous-source-reply.integration.ts"
+    "test:hipico:autonomous-reply": "tsx --test src/modules/hipico-bot/hipico-autonomous-source-reply.integration.ts",
+    "test:pricing": "tsx --test src/modules/pricing/*.test.ts",
+    "test:pricing:postgres": "tsx --test ../qa/price-book-authority-v856.test.ts"
   },
   "dependencies": {
     "@prisma/client": "6.19.3",

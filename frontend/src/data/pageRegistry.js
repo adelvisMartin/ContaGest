@@ -21,6 +21,7 @@ export const PAGE_REGISTRY = {
   auditoria: ['./pages/AuditPage.js', 'AuditPage'],
   configuracion: ['./pages/SettingsPage.js', 'SettingsPage'],
   sedes: ['./pages/BusinessLocationsPage.js', 'BusinessLocationsPage'],
+  'listas-precio': ['./pages/PriceBooksPage.js', 'PriceBooksPage'],
   ayuda: ['./pages/HelpPage.jsx', 'HelpPage'],
   tasks: ['./pages/TasksPage.js', 'TasksPage'],
   profile: ['./pages/ProfilePage.js', 'ProfilePage'],

@@ -1,7 +1,7 @@
 ---
 name: contagest-apple-design
 description: Project-owned wrapper for pinned Apple-design guidance, adapted to dense ERP utility interfaces without creating an Apple-branded or second visual authority.
-contractVersion: 3
+contractVersion: 2
 ---
 
 # ContaGest Apple Design Review

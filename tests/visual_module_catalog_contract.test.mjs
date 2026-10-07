@@ -22,12 +22,12 @@ function appRoutes(){
 test('visual module catalog covers every runtime pageRegistry route exactly once',()=>{
   const runtime=[...appRoutes()].sort();
   const catalog=[...MODULE_VISUAL_ROUTES].sort();
-  assert.equal(runtime.length,59,'canonical ERP registry must expose 59 routes after sedes');
-  assert.equal(catalog.length,59,'visual QA catalog must cover all 59 routes');
+  assert.equal(runtime.length,60,'canonical ERP registry must expose 60 routes after price books');
+  assert.equal(catalog.length,60,'visual QA catalog must cover all 60 routes');
   assert.deepEqual(catalog,runtime);
   assert.equal(new Set(MODULE_VISUAL_ROUTES).size,MODULE_VISUAL_ROUTES.length,'catalog has duplicate routes');
   const sedes=MODULE_VISUAL_CATALOG.find((item)=>item.route==='sedes');
-  assert.deepEqual(sedes,{route:'sedes',family:'admin',label:'Sedes',priority:'high'});
+  assert.deepEqual(sedes,{route:'sedes',family:'operations',label:'Sedes',priority:'high'});
 });
 
 test('every catalog row has family, label and explicit risk priority',()=>{
@@ -107,11 +107,11 @@ test('operational motion remains restrained and reduced-motion stays a hard guar
   assert.doesNotMatch(shell,/scroll-snap-type\s*:\s*y\s+mandatory/i);
 });
 
-test('browser route runner follows the 59-route catalog instead of hard-coding 58',()=>{
+test('browser route runner follows the 60-route catalog instead of legacy route counts',()=>{
   const runner=read('scripts/erp-browser-58x5-v251.mjs');
-  assert.match(runner,/MODULE_VISUAL_CATALOG\.length!==59/);
-  assert.match(runner,/expected 59 routes/);
-  assert.doesNotMatch(runner,/MODULE_VISUAL_CATALOG\.length!==58/);
+  assert.match(runner,/MODULE_VISUAL_CATALOG\.length!==60/);
+  assert.match(runner,/expected 60 routes/);
+  assert.doesNotMatch(runner,/MODULE_VISUAL_CATALOG\.length!==(58|59)/);
 });
 
 test('deep Playwright audit is wired to the canonical visual catalog',()=>{
