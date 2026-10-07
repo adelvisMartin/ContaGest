@@ -9,7 +9,9 @@
     "./access-manifest.json": "./src/shared/contracts/access-manifest.json",
     "./access-manifest": "./src/shared/contracts/accessManifestRuntime.js"
   },
-  "engines": { "node": "22.x" },
+  "engines": {
+    "node": "22.x"
+  },
   "description": "Backend ContaGest-VE Enterprise con RBAC, licencias, MFA, Prisma/Supabase, verticales clínicas y endurecimiento operativo.",
   "scripts": {
     "dev": "tsx watch src/server.ts",
@@ -28,7 +30,6 @@
     "test:runtime-tenant-adversarial:postgres": "node scripts/runtime-tenant-adversarial-v846.mjs",
     "test:inventory": "tsx --test src/shared/services/inventory-reservation.service.test.ts src/shared/services/inventory-stock-health.service.test.ts src/modules/inventory/*.test.ts",
     "test:reports": "tsx --test src/modules/reports/*.test.ts",
-    "test:pricing": "tsx --test src/modules/pricing/*.test.ts",
     "test:xlsx": "tsx --test src/modules/exports/xlsx-writer.test.ts",
     "test:hipico": "tsx --test src/modules/hipico-bot/*.test.ts src/modules/hipico/*.test.ts",
     "test:hipico:data": "tsx --test src/modules/hipico/hipico-data.integration.ts",
@@ -65,11 +66,12 @@
     "seed": "tsx prisma/seed.ts",
     "seed:admin": "tsx prisma/seed.ts",
     "seed:clean": "tsx prisma/seed.ts --clean-demo",
-    "test:hipico:autonomous-reply": "tsx --test src/modules/hipico-bot/hipico-autonomous-source-reply.integration.ts"
+    "test:hipico:autonomous-reply": "tsx --test src/modules/hipico-bot/hipico-autonomous-source-reply.integration.ts",
+    "test:pricing": "tsx --test src/modules/pricing/*.test.ts"
   },
   "dependencies": {
     "@prisma/client": "6.19.3",
-    "@supabase/supabase-js": "2.117.1",
+    "@supabase/supabase-js": "2.117.2",
     "bcryptjs": "3.0.3",
     "bwip-js": "4.11.4",
     "cors": "2.8.6",
@@ -80,7 +82,7 @@
     "jsonwebtoken": "9.0.3",
     "morgan": "1.12.1",
     "pdfkit": "0.20.2",
-    "pg": "8.23.0",
+    "pg": "8.23.1",
     "pino": "10.3.1",
     "prisma": "6.19.3",
     "qrcode": "1.5.4",
@@ -90,11 +92,13 @@
     "@types/cors": "2.8.19",
     "@types/express": "5.0.6",
     "@types/jsonwebtoken": "9.0.10",
-    "@types/node": "22.20.4",
+    "@types/node": "22.20.5",
     "@types/pdfkit": "0.17.6",
     "@types/pg": "8.23.1",
     "tsx": "4.23.15",
     "typescript": "5.9.3"
   },
-  "prisma": { "seed": "tsx prisma/seed.ts" }
+  "prisma": {
+    "seed": "tsx prisma/seed.ts"
+  }
 }
