@@ -42,11 +42,11 @@ function runCore(){
   runGroup('2/51 vertical Wave A geometry',['qa/erp-ui-wave-a-v251.spec.mjs']);
   runGroup('49/51 anti-overlap visual matrix',['qa/erp-visual-overlap-v4951.spec.mjs']);
   runGroup('50/51 reusable component contracts',['qa/erp-component-contracts-v5051.spec.mjs']);
-  runGroup('58-route functional smoke',['qa/erp-functional-smoke-v14.spec.mjs']);
-  runGroup('58-route controls/icons',['qa/ui-controls-runtime-v16.spec.mjs']);
+  runGroup('60-route functional smoke',['qa/erp-functional-smoke-v14.spec.mjs']);
+  runGroup('60-route controls/icons',['qa/ui-controls-runtime-v16.spec.mjs']);
   runGroup('mobile deep 360/390/430 + shell contrast',['qa/mobile-deep-v162.spec.mjs']);
   runGroup('observable safe click-smoke',['qa/module-actions-runtime-v163.spec.mjs']);
-  runGroup('58x5 route transitions',['qa/route-transition-v164.spec.mjs']);
+  runGroup('60-route transitions',['qa/route-transition-v164.spec.mjs']);
   runGroup('mobile command navigation',['qa/mobile-navigation-v163.spec.mjs','--grep','command palette opens']);
 }
 
@@ -65,15 +65,15 @@ function runShard(index){
     'qa/exhaustive-route-v164.spec.mjs','--grep',routePattern+' · deep desktop/mobile light/dark audit'
   ]);
   runGroup('61/75 anti-overlap shard '+(index+1)+'/'+batches.length,[
-    'qa/erp-visual-overlap-v6175.spec.mjs','--grep',routePattern+' · full anti-overlap 58-route matrix'
+    'qa/erp-visual-overlap-v6175.spec.mjs','--grep',routePattern+' · full anti-overlap 60-route matrix'
   ]);
   runGroup('mobile sidebar shard '+(index+1)+'/'+batches.length,[
     'qa/mobile-navigation-v163.spec.mjs','--grep','every actual sidebar route button'
   ],{env:{CG_MOBILE_NAV_BATCH_INDEX:String(index),CG_MOBILE_NAV_BATCH_SIZE:String(BATCH_SIZE)}});
 }
 
-if(MODULE_VISUAL_CATALOG.length!==58){
-  throw new Error('58x5 catalog drift: expected 58 routes, received '+MODULE_VISUAL_CATALOG.length);
+if(MODULE_VISUAL_CATALOG.length!==60){
+  throw new Error('58x5 catalog drift: expected 60 routes, received '+MODULE_VISUAL_CATALOG.length);
 }
 
 if(mode==='core')runCore();
