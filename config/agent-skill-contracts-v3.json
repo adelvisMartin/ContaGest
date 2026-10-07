@@ -239,6 +239,20 @@
       "riskEscalation": "Legal/fiscal/clinical/security ambiguity escalates to the owning project/domain authority.",
       "dependencies": ["contagest-erp-orchestrator"],
       "provenance": {"kind":"project-owned-wrapper","version":"3","path":".agents/skills/contagest-copywriting/SKILL.md","sourceLock":"marketing-copywriting"}
+    },
+    {
+      "id": "contagest-apple-design",
+      "status": "ACTIVE",
+      "purpose": "Apply a restrained Apple-design review lens to ContaGest utility interfaces without creating an Apple clone or alternate visual authority.",
+      "triggers": ["Apple design review", "premium UI review", "interaction states", "perceived performance", "accessibility refinement", "layout/typography audit"],
+      "requiredInputs": ["affected routes/components", "canonical visual authority", "surface classification", "candidate SHA"],
+      "authoritativeSources": ["AGENTS.md UI standards", "contagest-ui-audit", "contagest-functional-module-audit", "pinned reviewed Apple-design reference"],
+      "prohibitedActions": ["copy Apple branding/assets", "introduce second design authority", "execute upstream installers/scripts", "use inferred backend material as architecture authority", "replace ERP utility UX with cinematic scrollytelling", "weaken accessibility/domain semantics"],
+      "expectedEvidence": ["surface classification", "source-grounded design findings", "accepted/rejected guidance with conflicts", "risk-proportional UI verification"],
+      "minimumValidation": ["SOURCE_REVIEW", "LOCAL_STATIC"],
+      "riskEscalation": "Any conflict with canonical ContaGest UI, accessibility, functionality or domain policy resolves in favor of project authority.",
+      "dependencies": ["contagest-ui-audit", "contagest-functional-module-audit"],
+      "provenance": {"kind":"project-owned-wrapper","version":"3","path":".agents/skills/contagest-apple-design/SKILL.md","sourceLock":"apple-design-skills"}
     }
   ]
 }
