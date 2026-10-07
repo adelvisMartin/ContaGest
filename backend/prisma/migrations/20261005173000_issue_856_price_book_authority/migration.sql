@@ -251,7 +251,7 @@ DECLARE winner_count integer;
 DECLARE resolved numeric(18,2);
 BEGIN
   IF NEW."productId" IS NULL THEN RETURN NEW; END IF;
-  SELECT i."tenantId", upper(i."currency") AS currency, i."exchangeRate", i."issueDate"
+  SELECT i."tenantId", upper(i."currency") AS currency, i."exchangeRate", i."issueDate", i."status" AS status
   INTO inv FROM "SalesInvoice" i WHERE i."id"=NEW."invoiceId";
   IF inv."tenantId" IS NULL THEN RAISE EXCEPTION 'PRICE_SALES_INVOICE_CONTEXT_MISSING' USING ERRCODE='23514'; END IF;
 
@@ -287,6 +287,9 @@ BEGIN
   IF resolved IS NULL OR NEW."unitPrice" IS DISTINCT FROM resolved THEN
     RAISE EXCEPTION 'PRICE_SNAPSHOT_MISMATCH expected=% actual=%', resolved, NEW."unitPrice" USING ERRCODE='23514';
   END IF;
+
+  -- Draft sales remain deletable/editable; immutable price evidence starts on finalized sales.
+  IF inv.status='draft' THEN RETURN NEW; END IF;
 
   INSERT INTO "SalesLinePriceSnapshot" ("salesInvoiceLineId","tenantId","priceBookId","priceEntryId","priceBookVersion","priceEntryVersion","priceMode","sourceAmount","sourceCurrency","finalUnitPrice","documentCurrency","fxRate","fxRateDate","fxRateSource")
   VALUES (NEW."id",inv."tenantId",winner.book_id,winner.entry_id,winner.book_version,winner.entry_version,winner."priceMode",winner.amount,upper(winner.currency),resolved,inv.currency,

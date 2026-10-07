@@ -13,6 +13,8 @@ test('#856 pricing is one tenant-scoped authority with immutable used-price evid
   const routes=read('backend/src/modules/pricing/price-books.routes.ts');
   const index=read('backend/src/modules/index.ts');
   const manifest=read('backend/src/modules/route-manifest.ts');
+  const backendPkg=JSON.parse(read('backend/package.json'));
+  const rootPkg=JSON.parse(read('package.json'));
 
   for(const model of ['PriceBook','PriceBookLocation','PriceEntry','SalesLinePriceSnapshot']){
     assert.match(migration,new RegExp(`CREATE TABLE IF NOT EXISTS "${model}"`));
@@ -26,6 +28,10 @@ test('#856 pricing is one tenant-scoped authority with immutable used-price evid
   assert.match(migration,/LEGACY_PRODUCT/);
   assert.match(migration,/Product_sync_legacy_price/);
   assert.match(migration,/SalesInvoiceLine_price_snapshot/);
+  assert.match(migration,/IF inv\.status='draft' THEN RETURN NEW; END IF;/);
+  assert.match(backendPkg.scripts['migration:test:from-zero'],/test:pricing:postgres/);
+  assert.match(backendPkg.scripts['migration:test:upgrade'],/test:pricing:postgres/);
+  assert.match(rootPkg.scripts['test:backend:persistence:real'],/price-book-authority-v856\.test\.ts/);
   assert.doesNotMatch(migration,/\beval\s*\(/i);
 
   assert.match(policy,/Prisma\.Decimal/);
