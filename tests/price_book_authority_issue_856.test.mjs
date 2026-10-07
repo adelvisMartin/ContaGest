@@ -24,6 +24,7 @@ test('#856 pricing is one tenant-scoped authority with immutable used-price evid
   assert.match(migration,/PRICE_LOCATION_TENANT_MISMATCH/);
   assert.match(migration,/PRICE_ENTRY_EFFECTIVE_OVERLAP/);
   assert.match(migration,/CREATE EXTENSION IF NOT EXISTS btree_gist/);
+  assert.match(migration,/DO \\$price\\$/);
   assert.match(migration,/PriceEntry_no_active_overlap/);
   assert.match(migration,/PriceEntry_target_version_key/);
   assert.match(migration,/USED_PRICE_ENTRY_IMMUTABLE/);

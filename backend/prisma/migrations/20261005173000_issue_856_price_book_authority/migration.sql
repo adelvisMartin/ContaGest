@@ -73,7 +73,7 @@ CREATE INDEX IF NOT EXISTS "PriceEntry_book_target_idx" ON "PriceEntry"("priceBo
 CREATE UNIQUE INDEX IF NOT EXISTS "PriceEntry_target_version_key"
   ON "PriceEntry"("tenantId","priceBookId","targetType","targetId","version");
 
-DO $
+DO $price$
 BEGIN
   IF NOT EXISTS (
     SELECT 1
@@ -92,7 +92,7 @@ BEGIN
       )
       WHERE ("status"='active');
   END IF;
-END $;
+END $price$;
 
 CREATE TABLE IF NOT EXISTS "SalesLinePriceSnapshot" (
   "salesInvoiceLineId" TEXT NOT NULL,
