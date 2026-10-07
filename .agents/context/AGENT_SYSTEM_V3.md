@@ -8,11 +8,12 @@
 2. Reconcile duplicate work claims before creating another candidate.
 3. Classify touched domains, risk, task type and boundaries.
 4. Route only 2–4 ACTIVE project skills needed for the task.
-5. Derive the minimum verification matrix.
-6. Bind every evidence entry to the exact candidate SHA.
-7. Keep remote provider status separate from local/code correctness.
+5. Re-evaluate project-owned execution capabilities from observable ticket signals without consuming domain-skill slots.
+6. Derive the minimum verification matrix.
+7. Bind every evidence entry to the exact candidate SHA.
+8. Keep remote provider status separate from local/code correctness.
 
-Canonical commands remain:
+Canonical domain commands remain:
 
 ```bash
 npm run agent:bootstrap -- --json
@@ -21,6 +22,27 @@ npm run agent:claims -- --repo owner/repo
 npm run agent:system:verify
 npm run agent:system:test
 ```
+
+For ticket development, the composition entrypoint is:
+
+```bash
+node scripts/agent-ticket-router.mjs gates --base main --type feature
+node scripts/agent-ticket-router.mjs bootstrap
+```
+
+The ticket router delegates to the canonical v3 gate/bootstrap implementations, then adds `executionCapabilities` from `config/agent-execution-capabilities-v1.json`. Selected capability instructions live under `.agents/execution-skills/<id>/SKILL.md`; they are execution mechanics, not domain/business authorities.
+
+Supported observable execution signals are:
+
+```text
+--independent-units <N>
+--permission-prompts <N>
+--waiting-external --continuation-authorized --stop-condition <condition>
+--ordered-mutation
+--destructive-mutation
+```
+
+Re-evaluate these signals after ticket decomposition and whenever the execution state materially changes. `contagest-batch` is eligible only for at least 5 genuinely independent units and is capped at 30 isolated workers; ordered/destructive persistence work remains sequential. `contagest-loop` requires an already-authorized continuation plus a concrete stop condition. `contagest-run-skill-generator` may record commands and required environment variable names but never secret values. `contagest-fewer-permission-prompts` is recommendation-first and cannot auto-apply broader permissions. `contagest-skill-doctor` is read-only by default.
 
 ## Evidence matrix
 
@@ -35,6 +57,8 @@ The only statuses are `PASS`, `FAIL`, `BLOCKED`, `NOT_EXECUTED`, `NOT_APPLICABLE
 ## Router v3
 
 Inputs are risk (`P0..P3`), task type, domain and touched boundaries. The router favors a small set of project-owned skills. Deprecated/superseded skills are not selectable. P0/P1 work includes release-evidence ownership; bugs/incidents include systematic debugging. Domain skills remain authoritative only inside the boundaries granted by `AGENTS.md`.
+
+Execution capabilities are layered on top of that route. They must never replace, evict or downgrade the 2–4 domain/risk skills chosen by v3.
 
 ## Verification planner
 
@@ -67,8 +91,10 @@ Graphify state is only `CURRENT`, `STALE` or `UNAVAILABLE` and is bound to exact
 
 ## Skill Contract v3
 
-`config/agent-skill-contracts-v3.json` is the machine-readable registry. Every project-owned `contagest-*` skill must be `ACTIVE`, `DEPRECATED` or `SUPERSEDED` and declare purpose, triggers, inputs, authorities, prohibited actions, expected evidence, minimum validation, escalation, dependencies and provenance. External adapters remain pinned/inert and subordinate to `AGENTS.md`.
+`config/agent-skill-contracts-v3.json` is the machine-readable registry for routed domain/risk skills. Every project-owned `contagest-*` directory under `.agents/skills/` must be `ACTIVE`, `DEPRECATED` or `SUPERSEDED` and declare purpose, triggers, inputs, authorities, prohibited actions, expected evidence, minimum validation, escalation, dependencies and provenance. External adapters remain pinned/inert and subordinate to `AGENTS.md`.
+
+Project-owned execution skills are intentionally separate under `.agents/execution-skills/` and are governed by `config/agent-execution-capabilities-v1.json`; this separation prevents execution mechanics from consuming the v3 2–4 skill budget.
 
 ## Security/privacy
 
-Evidence metadata may include issue, branch, SHA, commands, paths, statuses and artifact hashes. It must not persist tokens, secrets, PII, clinical content, production payloads or database dumps.
+Evidence and execution metadata may include issue, branch, SHA, commands, paths, statuses, artifact hashes, work-unit counts and prompt-count telemetry. It must not persist tokens, secrets, permission credentials, PII, clinical content, production payloads or database dumps.

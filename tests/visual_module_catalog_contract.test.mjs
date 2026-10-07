@@ -22,9 +22,12 @@ function appRoutes(){
 test('visual module catalog covers every runtime pageRegistry route exactly once',()=>{
   const runtime=[...appRoutes()].sort();
   const catalog=[...MODULE_VISUAL_ROUTES].sort();
-  assert.ok(runtime.length>=50,`expected a large ERP registry, got ${runtime.length}`);
+  assert.equal(runtime.length,59,'canonical ERP registry must expose 59 routes after sedes');
+  assert.equal(catalog.length,59,'visual QA catalog must cover all 59 routes');
   assert.deepEqual(catalog,runtime);
   assert.equal(new Set(MODULE_VISUAL_ROUTES).size,MODULE_VISUAL_ROUTES.length,'catalog has duplicate routes');
+  const sedes=MODULE_VISUAL_CATALOG.find((item)=>item.route==='sedes');
+  assert.deepEqual(sedes,{route:'sedes',family:'admin',label:'Sedes',priority:'high'});
 });
 
 test('every catalog row has family, label and explicit risk priority',()=>{
@@ -49,6 +52,66 @@ test('visual viewport matrix includes narrow phones, tablet, laptop and desktop'
     assert.ok(item.height>=768,`${item.name}: height too small for deterministic audit`);
     assert.ok(item.name&&Number.isInteger(item.width));
   }
+});
+
+test('canonical Field and Select emit disabled/required semantics instead of dropping page intent',()=>{
+  const kit=read('frontend/src/components/ui/kit.js');
+  assert.match(kit,/export function Field\([^)]*disabled=false/);
+  assert.match(kit,/export function Field\([^)]*ariaDescribedBy/);
+  assert.match(kit,/\$\{disabled\?'disabled':''\}/);
+  assert.match(kit,/export function Select\([^)]*required=false/);
+  assert.match(kit,/export function Select\([^)]*disabled=false/);
+  assert.match(kit,/\$\{required\?'required':''\}/);
+});
+
+test('sedes uses human address options and keeps AddressGeocode identifiers internal',()=>{
+  const page=read('frontend/src/pages/BusinessLocationsPage.js');
+  const service=read('frontend/src/services/businessLocationsService.js');
+  const routes=read('backend/src/modules/business-locations/business-locations.routes.ts');
+  assert.doesNotMatch(page,/AddressGeocode ID|UUID opcional/i);
+  assert.match(page,/Direcci[oó]n/);
+  assert.match(page,/businessLocationAddressOptions/);
+  assert.match(service,/addressOptions/);
+  assert.match(service,/\/business-locations\/address-options/);
+  assert.match(routes,/router\.get\('\/address-options'/);
+  assert.match(routes,/formattedAddress/);
+  assert.match(routes,/tenantId:ctx\.tenantId/);
+  assert.ok(routes.indexOf("router.get('/address-options'")<routes.indexOf("router.get('/:id'"),'address-options route must be declared before /:id');
+});
+
+test('canonical UI exposes loading/error/success/disabled states with accessible semantics',()=>{
+  const kit=read('frontend/src/components/ui/kit.js');
+  for(const name of ['LoadingState','ErrorState','SuccessState','DisabledState'])assert.match(kit,new RegExp(`export function ${name}\\(`));
+  assert.match(kit,/data-cgx-state=\\"loading\\"/);
+  assert.match(kit,/role=\\"status\\"/);
+  assert.match(kit,/aria-live=\\"polite\\"/);
+  assert.match(kit,/data-cgx-state=\\"error\\"/);
+  assert.match(kit,/role=\\"alert\\"/);
+  assert.match(kit,/data-cgx-state=\\"success\\"/);
+  assert.match(kit,/data-cgx-state=\\"disabled\\"/);
+});
+
+test('accessibility gate applies the formal 200% zoom proxy to critical and high routes',()=>{
+  const a11y=read('qa/accessibility-wcag22-v99.spec.mjs');
+  const harness=read('qa/support/accessibility-harness-v99.mjs');
+  assert.match(a11y,/\['critical','high'\]\.includes\(item\.priority\).*auditZoomProxy/);
+  assert.match(harness,/proxy de zoom 200%/i);
+  assert.match(harness,/Math\.floor\(original\.width \/ 2\)/);
+});
+
+test('operational motion remains restrained and reduced-motion stays a hard guard',()=>{
+  const css=read('frontend/src/styles/contagest-visual-system-v12.css');
+  const shell=read('frontend/src/styles/shell-contract.css');
+  assert.match(css,/@media \(prefers-reduced-motion:reduce\)/);
+  assert.doesNotMatch(css,/scroll-snap-type\s*:\s*y\s+mandatory/i);
+  assert.doesNotMatch(shell,/scroll-snap-type\s*:\s*y\s+mandatory/i);
+});
+
+test('browser route runner follows the 59-route catalog instead of hard-coding 58',()=>{
+  const runner=read('scripts/erp-browser-58x5-v251.mjs');
+  assert.match(runner,/MODULE_VISUAL_CATALOG\.length!==59/);
+  assert.match(runner,/expected 59 routes/);
+  assert.doesNotMatch(runner,/MODULE_VISUAL_CATALOG\.length!==58/);
 });
 
 test('deep Playwright audit is wired to the canonical visual catalog',()=>{

@@ -25,6 +25,7 @@ const DOMAIN_ALIASES=Object.freeze({
 });
 const INTENT_SKILLS=Object.freeze({
   'ui-polish':'contagest-impeccable',
+  'apple-design-review':'contagest-apple-design',
   'architecture-diagram':'contagest-archify',
   copywriting:'contagest-copywriting'
 });
