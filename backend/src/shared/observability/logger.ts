@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import pino, { type DestinationStream, type LoggerOptions } from 'pino';
 import { deploymentEnvironment, env } from '../../config/env.js';
 import { sanitizeLogValue } from './redaction.js';
+import { currentTelemetryContext } from './context.js';
 
 export { redactTelemetryValue, sanitizeLogValue } from './redaction.js';
 
@@ -22,6 +23,9 @@ const REDACT_PATHS = [
   'api_key',
   'secret',
   'clientSecret',
+  'signedUrl',
+  'signedURL',
+  'session',
   'email',
   'rif',
   'phone',
@@ -51,6 +55,9 @@ const REDACT_PATHS = [
   'body.apiKey',
   'body.api_key',
   'body.secret',
+  'body.signedUrl',
+  'body.signedURL',
+  'body.session',
   'body.email',
   'body.rif',
   'body.phone',
@@ -122,6 +129,16 @@ export function createLogger(destination?: DestinationStream) {
     redact: {
       paths: REDACT_PATHS,
       censor: REDACTION_CENSOR
+    },
+    mixin() {
+      const telemetry = currentTelemetryContext();
+      return telemetry
+        ? {
+            correlationId: telemetry.correlationId,
+            traceId: telemetry.traceId,
+            spanId: telemetry.spanId
+          }
+        : {};
     },
     timestamp: () => `,"timestamp":"${new Date().toISOString()}"`,
     formatters: {
