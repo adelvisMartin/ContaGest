@@ -1,3 +1,4 @@
+import { observeJob } from '../../shared/observability/job.js';
 import { cloudOutboundPolicy, cloudTransportConfiguration } from './hipico-outbound-policy.js';
 import { dispatchCanonicalOutbound } from './hipico-outbound-worker.js';
 import { canonicalOutboxReadiness, configuredOutboxOwnerId } from './hipico-outbox.store.js';
@@ -70,10 +71,16 @@ export function startCanonicalOutboundRunner(env:RuntimeEnv=process.env,deps:Run
     if(running){schedule();return;}
     running=true;
     try{
-      const result=await runCanonicalOutboundCycle({maxPerCycle:config.maxPerCycle},deps);
-      if(result.processed>0)console.info('[hipico-outbox] runner cycle',{processed:result.processed,reason:result.reason});
-    }catch(error:any){
-      console.error('[hipico-outbox] runner cycle failed',{error:error?.message||String(error),code:error?.code||null});
+      await observeJob(
+        'hipico.outbound.cycle',
+        ()=>runCanonicalOutboundCycle({maxPerCycle:config.maxPerCycle},deps),
+        {
+          completionLevel:(result)=>result.processed>0?'info':'debug',
+          summarize:(result)=>({processed:result.processed,reason:result.reason})
+        }
+      );
+    }catch{
+      // observeJob emits the bounded failure record; the runner remains alive.
     }finally{
       running=false;
       schedule();

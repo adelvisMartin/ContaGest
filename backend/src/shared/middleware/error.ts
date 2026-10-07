@@ -5,7 +5,7 @@ import {
   structuredErrorFields
 } from '../observability/contract.js';
 import { createTelemetryContext, currentCorrelationId } from '../observability/context.js';
-import { requestLogger, requestRouteTemplate, sanitizeLogValue } from '../observability/logger.js';
+import { pseudonymizeIdentifier, requestLogger, requestRouteTemplate, sanitizeLogValue } from '../observability/logger.js';
 
 function responseContext(req: Request) {
   const requestId = sanitizeLogValue((req as any).requestId || '', 96);
@@ -16,7 +16,7 @@ function responseContext(req: Request) {
       || createTelemetryContext({ requestId }).correlationId,
     96
   );
-  const instance = sanitizeLogValue(String(req.originalUrl || req.path || '/').split('?')[0], 240);
+  const instance = requestRouteTemplate(req);
   return { requestId, correlationId, instance };
 }
 
@@ -32,10 +32,16 @@ export function notFound(req: Request, res: Response) {
 export function errorHandler(error: Error, req: Request, res: Response, _next: NextFunction) {
   const normalized = normalizeOperationalError(error);
   const context = responseContext(req);
+  const tenantId = (req as any).context?.tenantId ?? (req as any).auth?.tenantId;
+  const userId = (req as any).auth?.userId ?? (req as any).context?.userId;
+  const tenantRef = tenantId ? pseudonymizeIdentifier('tenant', tenantId) : undefined;
+  const userRef = userId ? pseudonymizeIdentifier('user', userId) : undefined;
   const logFields = {
     event: 'http.error',
     requestId: context.requestId || undefined,
     correlationId: context.correlationId,
+    tenantRef,
+    userRef,
     route: requestRouteTemplate(req),
     method: sanitizeLogValue(req.method || 'UNKNOWN', 12).toUpperCase(),
     ...structuredErrorFields(normalized)
