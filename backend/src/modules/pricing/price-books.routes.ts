@@ -30,6 +30,7 @@ const bookSchema = z.object({
 });
 
 const bookPatchSchema = z.object({
+  expectedVersion: z.coerce.number().int().positive(),
   name: z.string().trim().min(2).max(160).optional(),
   status: z.enum(['active', 'archived']).optional(),
   priority: z.coerce.number().int().min(-1000000).max(1000000).optional(),
@@ -115,6 +116,9 @@ router.patch('/:id', requirePermission('sales.manage'), validateBody(bookPatchSc
   if (before.isSystem) throw new HttpError(409, 'La lista legacy del sistema se administra desde compatibilidad de Product.price.', { code: 'PRICE_SYSTEM_BOOK_IMMUTABLE' });
 
   const body = req.body as z.infer<typeof bookPatchSchema>;
+  if (Number(before.version) !== body.expectedVersion) {
+    throw new HttpError(409, 'La lista cambió desde que fue leída. Recarga antes de guardar.', { code: 'PRICE_BOOK_VERSION_CONFLICT' });
+  }
   const locationScope = body.locationScope ?? before.locationScope;
   const locationIds = body.locationIds ?? (await prisma.$queryRaw<Array<{ businessLocationId: string }>>`
     SELECT "businessLocationId" FROM public."PriceBookLocation" WHERE "priceBookId"=${before.id}
@@ -133,9 +137,12 @@ router.patch('/:id', requirePermission('sales.manage'), validateBody(bookPatchSc
         "version"="version"+1,
         "updatedBy"=${context.userId || null},
         "updatedAt"=CURRENT_TIMESTAMP
-      WHERE "id"=${before.id} AND "tenantId"=${context.tenantId}
+      WHERE "id"=${before.id} AND "tenantId"=${context.tenantId} AND "version"=${body.expectedVersion}
       RETURNING *
     `;
+    if (!rows[0]) {
+      throw new HttpError(409, 'La lista cambió durante la actualización. Recarga antes de guardar.', { code: 'PRICE_BOOK_VERSION_CONFLICT' });
+    }
     await tx.$executeRaw`DELETE FROM public."PriceBookLocation" WHERE "priceBookId"=${before.id}`;
     for (const locationId of locationIds) {
       await tx.$executeRaw`INSERT INTO public."PriceBookLocation" ("tenantId","priceBookId","businessLocationId") VALUES (${context.tenantId},${before.id},${locationId})`;
@@ -166,6 +173,11 @@ router.post('/:id/entries', requirePermission('sales.manage'), validateBody(entr
 
   const entryId = randomUUID();
   const row = await prisma.$transaction(async (tx) => {
+    await tx.$queryRaw`
+      SELECT pg_advisory_xact_lock(
+        hashtextextended(concat_ws(':', ${context.tenantId}::text, ${book.id}::text, ${body.targetType}::text, ${body.targetId}::text), 0)
+      )
+    `;
     let version = 1;
     const versions = await tx.$queryRaw<Array<{ version: number }>>`
       SELECT COALESCE(max("version"),0)::int AS "version" FROM public."PriceEntry"

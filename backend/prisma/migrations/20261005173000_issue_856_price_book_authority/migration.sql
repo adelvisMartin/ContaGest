@@ -1,6 +1,8 @@
 -- #856 canonical Price Book authority.
 -- Pricing owns commercial base-price selection only. Tax, FX discovery, promotions and entitlements remain separate authorities.
 
+CREATE EXTENSION IF NOT EXISTS btree_gist;
+
 CREATE TABLE IF NOT EXISTS "PriceBook" (
   "id" TEXT NOT NULL,
   "tenantId" TEXT NOT NULL,
@@ -67,6 +69,30 @@ CREATE TABLE IF NOT EXISTS "PriceEntry" (
 );
 CREATE INDEX IF NOT EXISTS "PriceEntry_resolution_idx" ON "PriceEntry"("tenantId","targetType","targetId","status","effectiveFrom");
 CREATE INDEX IF NOT EXISTS "PriceEntry_book_target_idx" ON "PriceEntry"("priceBookId","targetType","targetId","effectiveFrom");
+
+CREATE UNIQUE INDEX IF NOT EXISTS "PriceEntry_target_version_key"
+  ON "PriceEntry"("tenantId","priceBookId","targetType","targetId","version");
+
+DO $
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_constraint
+    WHERE conname='PriceEntry_no_active_overlap'
+      AND conrelid='public."PriceEntry"'::regclass
+  ) THEN
+    ALTER TABLE public."PriceEntry"
+      ADD CONSTRAINT "PriceEntry_no_active_overlap"
+      EXCLUDE USING gist (
+        "tenantId" WITH =,
+        "priceBookId" WITH =,
+        "targetType" WITH =,
+        "targetId" WITH =,
+        tsrange("effectiveFrom","effectiveTo",'[)') WITH &&
+      )
+      WHERE ("status"='active');
+  END IF;
+END $;
 
 CREATE TABLE IF NOT EXISTS "SalesLinePriceSnapshot" (
   "salesInvoiceLineId" TEXT NOT NULL,

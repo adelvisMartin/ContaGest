@@ -132,3 +132,70 @@ test('#856 PostgreSQL authority preserves legacy compatibility, tenant isolation
     await client.end();
   }
 });
+
+
+test('#856 PostgreSQL authority serializes overlapping entry races and optimistic book updates', { skip: !rawUrl }, async () => {
+  assert.ok(isEphemeralDatabase(rawUrl), `UNSAFE_PRODUCTION_COMMAND:${new URL(rawUrl).pathname.replace(/^\\//, '')}`);
+
+  const setup = new Client({ connectionString: rawUrl });
+  const writerA = new Client({ connectionString: rawUrl });
+  const writerB = new Client({ connectionString: rawUrl });
+  const tenantId = randomUUID();
+  const productId = randomUUID();
+  const bookId = randomUUID();
+  const run = randomUUID().slice(0, 8).toUpperCase();
+
+  await Promise.all([setup.connect(), writerA.connect(), writerB.connect()]);
+  try {
+    await setup.query(
+      'INSERT INTO "Tenant" ("id","rif","name") VALUES ($1,$2,$3)',
+      [tenantId,`J-V856-RACE-${run}`,`V856 Race ${run}`],
+    );
+    await setup.query(
+      'INSERT INTO "Product" ("id","tenantId","sku","name","price") VALUES ($1,$2,$3,$4,$5)',
+      [productId,tenantId,`V856-RACE-${run}`,'Producto race','7.00'],
+    );
+    await setup.query(
+      'INSERT INTO "PriceBook" ("id","tenantId","code","name","currency","priceMode","priority","locationScope") VALUES ($1,$2,$3,$4,\'VES\',\'fixed\',700,\'global\')',
+      [bookId,tenantId,`V856-RACE-${run}`,'Precio concurrente'],
+    );
+
+    const insertSql =
+      'INSERT INTO "PriceEntry" ("id","tenantId","priceBookId","targetType","targetId","amount","effectiveFrom","effectiveTo","version") ' +
+      'VALUES ($1,$2,$3,\'product\',$4,$5,TIMESTAMP \'2098-01-01 00:00:00\',TIMESTAMP \'2098-12-31 00:00:00\',1) RETURNING "id"';
+    const race = await Promise.allSettled([
+      writerA.query(insertSql,[randomUUID(),tenantId,bookId,productId,'31.00']),
+      writerB.query(insertSql,[randomUUID(),tenantId,bookId,productId,'32.00']),
+    ]);
+    assert.equal(race.filter((result)=>result.status==='fulfilled').length,1,'exactly one overlapping insert must commit');
+    const rejected = race.find((result)=>result.status==='rejected');
+    assert.ok(rejected && rejected.status==='rejected','one overlapping insert must fail closed');
+    assert.match(
+      String((rejected as PromiseRejectedResult).reason?.message || (rejected as PromiseRejectedResult).reason),
+      /PRICE_ENTRY_EFFECTIVE_OVERLAP|PriceEntry_no_active_overlap|conflicting key value violates exclusion constraint/,
+    );
+    const entries = await setup.query(
+      'SELECT count(*)::int AS count FROM "PriceEntry" WHERE "tenantId"=$1 AND "priceBookId"=$2 AND "targetId"=$3',
+      [tenantId,bookId,productId],
+    );
+    assert.equal(entries.rows[0].count,1,'overlap race must leave one authoritative interval');
+
+    const updateSql =
+      'UPDATE "PriceBook" SET "name"=$1,"version"="version"+1 WHERE "id"=$2 AND "tenantId"=$3 AND "version"=$4 RETURNING "version"';
+    const [updateA, updateB] = await Promise.all([
+      writerA.query(updateSql,['Precio concurrente A',bookId,tenantId,1]),
+      writerB.query(updateSql,['Precio concurrente B',bookId,tenantId,1]),
+    ]);
+    assert.equal(Number(updateA.rowCount || 0)+Number(updateB.rowCount || 0),1,'optimistic version predicate must allow only one writer');
+    const current = await setup.query('SELECT "version" FROM "PriceBook" WHERE "id"=$1',[bookId]);
+    assert.equal(current.rows[0].version,2);
+  } finally {
+    await Promise.allSettled([writerA.end(),writerB.end()]);
+    await setup.query('DELETE FROM "PriceEntry" WHERE "tenantId"=$1',[tenantId]).catch(()=>undefined);
+    await setup.query('DELETE FROM "PriceBookLocation" WHERE "tenantId"=$1',[tenantId]).catch(()=>undefined);
+    await setup.query('DELETE FROM "PriceBook" WHERE "tenantId"=$1',[tenantId]).catch(()=>undefined);
+    await setup.query('DELETE FROM "Product" WHERE "tenantId"=$1',[tenantId]).catch(()=>undefined);
+    await setup.query('DELETE FROM "Tenant" WHERE "id"=$1',[tenantId]).catch(()=>undefined);
+    await setup.end().catch(()=>undefined);
+  }
+});

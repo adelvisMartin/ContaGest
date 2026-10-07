@@ -23,6 +23,9 @@ test('#856 pricing is one tenant-scoped authority with immutable used-price evid
   assert.match(migration,/PRICE_PRODUCT_TENANT_MISMATCH/);
   assert.match(migration,/PRICE_LOCATION_TENANT_MISMATCH/);
   assert.match(migration,/PRICE_ENTRY_EFFECTIVE_OVERLAP/);
+  assert.match(migration,/CREATE EXTENSION IF NOT EXISTS btree_gist/);
+  assert.match(migration,/PriceEntry_no_active_overlap/);
+  assert.match(migration,/PriceEntry_target_version_key/);
   assert.match(migration,/USED_PRICE_ENTRY_IMMUTABLE/);
   assert.match(migration,/PRICE_SNAPSHOT_IMMUTABLE/);
   assert.match(migration,/LEGACY_PRODUCT/);
@@ -45,6 +48,9 @@ test('#856 pricing is one tenant-scoped authority with immutable used-price evid
   assert.ok(index.indexOf('enforceCanonicalSalesPricing')<index.indexOf('mountModuleRouteManifest(router)'),'pricing must run before Sales route totals');
   assert.match(manifest,/id: 'price-books'.*path: '\/price-books'/s);
   assert.match(routes,/requirePermission\('sales\.manage'\)/);
+  assert.match(routes,/expectedVersion/);
+  assert.match(routes,/PRICE_BOOK_VERSION_CONFLICT/);
+  assert.match(routes,/pg_advisory_xact_lock/);
   assert.match(routes,/\/preview\/resolve/);
   assert.doesNotMatch(routes,/router\.delete\s*\(/i);
 });
