@@ -2,7 +2,10 @@ import { createHmac } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import pino, { type DestinationStream, type LoggerOptions } from 'pino';
 import { deploymentEnvironment, env } from '../../config/env.js';
-import { currentTelemetryContext } from './store.js';
+import { sanitizeLogValue } from './redaction.js';
+import { currentTelemetryContext } from './context.js';
+
+export { redactTelemetryValue, sanitizeLogValue } from './redaction.js';
 
 const SERVICE_NAME = 'contagest-api';
 const REDACTION_CENSOR = '[REDACTED]';
@@ -22,6 +25,7 @@ const REDACT_PATHS = [
   'clientSecret',
   'signedUrl',
   'signedURL',
+  'session',
   'email',
   'rif',
   'phone',
@@ -53,6 +57,7 @@ const REDACT_PATHS = [
   'body.secret',
   'body.signedUrl',
   'body.signedURL',
+  'body.session',
   'body.email',
   'body.rif',
   'body.phone',
@@ -147,14 +152,6 @@ export function createLogger(destination?: DestinationStream) {
 }
 
 export const logger = createLogger();
-
-export function sanitizeLogValue(value: unknown, maxLength = 240) {
-  return String(value ?? '')
-    .replace(/[\u0000-\u001f\u007f]/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim()
-    .slice(0, maxLength);
-}
 
 export function requestRouteTemplate(req: any) {
   const routePath = typeof req?.route?.path === 'string' ? req.route.path : '';

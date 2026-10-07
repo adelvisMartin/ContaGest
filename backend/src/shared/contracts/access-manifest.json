@@ -760,6 +760,19 @@
       "adminOnly": true
     },
     {
+      "route": "sedes",
+      "name": "Sedes",
+      "area": "Administración",
+      "tier": "core",
+      "modes": [
+        "admin"
+      ],
+      "permission": "admin.manage",
+      "accessGroup": "Admin",
+      "licenseModule": "sedes",
+      "adminOnly": true
+    },
+    {
       "route": "backend",
       "name": "Integraciones",
       "area": "Administración",

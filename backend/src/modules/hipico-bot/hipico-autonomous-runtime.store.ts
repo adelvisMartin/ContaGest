@@ -1,4 +1,5 @@
 import { prisma } from '../../database/prisma.js';
+import { safePersistedError } from '../../shared/observability/contract.js';
 
 export type AutonomousSourceReplyState =
   | 'planned'
@@ -23,7 +24,8 @@ export type AutonomousSourceReplyRow = {
 };
 
 function safeError(value: unknown) {
-  return String(value ?? '').trim().slice(0, 500) || null;
+  const raw = String(value ?? '').trim();
+  return raw ? safePersistedError(value) : null;
 }
 
 export async function claimAutonomousSourceReply(id: string) {

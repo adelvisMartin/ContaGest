@@ -20,12 +20,12 @@ const route = (overrides = {}) => ({
   request: { bodySchema: null }, responses: { success: [200], errors: [401, 403] }, deprecated: false,
   ...overrides,
 });
-const manifest = (routes) => ({
+const manifest = (routes, errorEnvelope = { required: ['ok', 'code', 'message', 'correlationId'], optional: ['requestId', 'details'] }) => ({
   schemaVersion: 652, apiVersion: API_CONTRACT_VERSION,
   conventions: {
     successEnvelope: { required: ['ok', 'data', 'meta'] },
-    errorEnvelope: { required: ['ok', 'message', 'requestId'], optional: ['code', 'details'] },
-    correlationHeader: 'x-request-id',
+    errorEnvelope,
+    correlationHeader: 'x-correlation-id',
     pagination: { style: 'take-skip', takeDefault: 100, takeMax: 500, skipMax: 1000000, headers: ['X-CG-Page-Take', 'X-CG-Page-Skip'] },
   }, routes,
 });
@@ -44,23 +44,26 @@ test('compatibility gate rejects removed routes, stricter RBAC, schema drift and
   assert.match(compareApiContracts(base, manifest([route({ request: { bodySchema: 'sha256:new' } })])).breaking.join('\n'), /REQUEST_SCHEMA_CHANGED/);
   assert.match(compareApiContracts(manifest([route({ responses: { success: [200, 201], errors: [401, 403] } })]), base).breaking.join('\n'), /SUCCESS_STATUS_REMOVED/);
 });
-test('additive routes and error statuses remain backwards compatible', () => {
+test('additive routes, error statuses and error envelope fields remain backwards compatible', () => {
   const base = manifest([route()]);
-  const next = manifest([route({ responses: { success: [200], errors: [401, 403, 422] } }), route({ method: 'POST', path: '/api/v1/clients/search' })]);
-  assert.deepEqual(compareApiContracts(base, next).breaking, []);
+  const expandedEnvelope = { required: [...base.conventions.errorEnvelope.required, 'type', 'title', 'status', 'detail'], optional: [...base.conventions.errorEnvelope.optional, 'instance'] };
+  const next = manifest([route({ responses: { success: [200], errors: [401, 403, 422] } }), route({ method: 'POST', path: '/api/v1/clients/search' })], expandedEnvelope);
+  const comparison = compareApiContracts(base, next);
+  assert.deepEqual(comparison.breaking, []);
+  assert.match(comparison.additive.join('\n'), /ERROR_ENVELOPE_FIELDS_ADDED/);
 });
 test('manifest hash is stable across object-key ordering', () => {
   assert.equal(stableContractHash({ b: 2, a: 1 }), stableContractHash({ a: 1, b: 2 }));
 });
 test('canonical success/error envelopes and correlation are verified from source, not duplicated docs', () => {
   const httpSource = `res.status(httpStatus).json({ ok: true, data, meta });`;
-  const errorSource = `const payload = { ok: false, message: publicMessage, requestId }; if (errorCode) payload.code = errorCode; payload.details = error.details;`;
-  const securitySource = `res.setHeader('x-request-id', id);`;
-  assert.doesNotThrow(() => validateEnvelopeSources({ httpSource, errorSource, securitySource }));
-  assert.throws(() => validateEnvelopeSources({ httpSource: 'json({data})', errorSource, securitySource }), /API_SUCCESS_ENVELOPE_DRIFT/);
+  const errorSource = `return res.json(buildErrorEnvelope(normalized, context));`;
+  const observabilitySource = `const correlationHeader='x-correlation-id'; return { ok: false, type, title, status, detail, instance, code, message, correlationId, requestId, details };`;
+  assert.doesNotThrow(() => validateEnvelopeSources({ httpSource, errorSource, observabilitySource }));
+  assert.throws(() => validateEnvelopeSources({ httpSource: 'json({data})', errorSource, observabilitySource }), /API_SUCCESS_ENVELOPE_DRIFT/);
 });
 
-test('source projection follows app mounts, module manifest, CRUD generation, RBAC and health aliases', () => {
+test('source projection follows app mounts, module manifest, CRUD generation, RBAC and canonical observability', () => {
   const sources = {
     'backend/src/app.ts': `import apiRoutes from './modules/index.js'; import authRoutes from './modules/auth/auth.routes.js'; import { registerHealthRoutes } from './shared/observability/health.js'; const app:any={}; registerHealthRoutes(app); app.use('/api/v1/auth', authRoutes); app.use('/api/v1', apiRoutes);`,
     'backend/src/modules/index.ts': `import { mountModuleRouteManifest } from './route-manifest.js'; const router:any={}; mountModuleRouteManifest(router); router.get('/health/db', requireTenant, (_q:any,r:any)=>r.json({ok:true,data:{}})); export default router;`,
@@ -69,8 +72,9 @@ test('source projection follows app mounts, module manifest, CRUD generation, RB
     'backend/src/modules/auth/auth.routes.ts': `const router:any={}; router.post('/login', validateBody(loginSchema), (_q:any,r:any)=>r.status(200).json({ok:true,data:{},meta:{}})); export default router;`,
     'backend/src/shared/observability/health.ts': `export function registerHealthRoutes(app:any){ app.get('/health/live',(_q:any,r:any)=>r.status(200).json({ok:true})); app.get('/health',(_q:any,r:any)=>r.status(200).json({ok:true})); }`,
     'backend/src/shared/http.ts': `export const ok=(res:any,data:any,meta={})=>res.status(200).json({ ok: true, data, meta });`,
-    'backend/src/shared/middleware/error.ts': `const payload:any={ ok: false, message: publicMessage, requestId }; payload.code=errorCode; payload.details=error.details;`,
+    'backend/src/shared/middleware/error.ts': `return res.json(buildErrorEnvelope(normalized, context));`,
     'backend/src/shared/middleware/security.ts': `res.setHeader('x-request-id', id);`,
+    'backend/src/shared/observability/contract.ts': `export const OBSERVABILITY_CONTRACT={ correlationHeader:'x-correlation-id' }; export const buildErrorEnvelope=()=>({ ok:false, type:'urn:problem', title:'Problem', status:400, detail:'detail', instance:'/x', code:'BAD_REQUEST', message:'detail', correlationId:'cid', requestId:'rid', details:{} });`,
     'backend/src/modules/crud.factory.ts': `const DEFAULT_LIST_TAKE=100; const MAX_LIST_TAKE=500; const MAX_LIST_SKIP=1_000_000;`,
     'backend/src/modules/schemas.ts': `export const clientSchema=z.object({name:z.string()}); export const loginSchema=z.object({email:z.string()});`,
   };
@@ -86,6 +90,8 @@ test('source projection follows app mounts, module manifest, CRUD generation, RB
   const custom = contract.routes.find((item)=>item.path==='/api/v1/custom/:id');
   assert.deepEqual(custom.auth, { tenantRequired:true, permissions:['custom.read'] });
   assert.equal(contract.conventions.pagination.takeMax, 500);
+  assert.equal(contract.conventions.correlationHeader, 'x-correlation-id');
+  assert.ok(contract.conventions.errorEnvelope.required.includes('detail'));
 });
 
 test('#652 is in the authoritative contracts consumed by #630 backend/full verification', async () => {

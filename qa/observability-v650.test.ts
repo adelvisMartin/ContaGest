@@ -82,8 +82,8 @@ test('issue #650 expected errors expose bounded details and correlation', () => 
   assert.equal(body.correlationId, 'qa-correlation-650-http-error');
   assert.equal(body.details.code, 'BUSINESS_CONFLICT');
   assert.equal(body.details.field, 'documentNumber');
-  assert.equal(body.details.password, undefined);
-  assert.equal(body.details.reason, '[REDACTED]');
+  assert.equal(body.details.password, '[REDACTED]');
+  assert.equal(body.details.reason, 'password=[REDACTED]');
   assert.equal(logged.correlationId, 'qa-correlation-650-http-error');
   assert.doesNotMatch(JSON.stringify({ body, logged }), /SENSITIVE_SENTINEL_650|password=/i);
 });
@@ -111,7 +111,7 @@ test('issue #650 observed jobs share correlation and never serialize sensitive v
   assert.equal(records[1].fields.event, 'job.completed');
   assert.equal(records[0].fields.correlationId, records[1].fields.correlationId);
   assert.equal(records[1].fields.processed, 3);
-  assert.equal(records[1].fields.reason, '[REDACTED]');
+  assert.equal(records[1].fields.reason, 'password=[REDACTED]');
   assert.equal('password' in records[1].fields, false);
   assert.doesNotMatch(JSON.stringify(records), /SENSITIVE_SENTINEL_650|password=/i);
 

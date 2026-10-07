@@ -6,10 +6,10 @@ import { validateAccessManifest } from '../backend/src/shared/contracts/accessMa
 const manifest=JSON.parse(fs.readFileSync('backend/src/shared/contracts/access-manifest.json','utf8'));
 const clone=()=>structuredClone(manifest);
 
-test('55/75 canonical manifest passes runtime validation with 57 unique routes and eligible landings',()=>{
+test('55/75 canonical manifest passes runtime validation with 58 unique routes and eligible landings',()=>{
   const result=validateAccessManifest(clone());
-  assert.equal(result.modules.length,57);
-  assert.equal(new Set(result.modules.map((item)=>item.route)).size,57);
+  assert.equal(result.modules.length,58);
+  assert.equal(new Set(result.modules.map((item)=>item.route)).size,58);
   for(const [mode,route] of Object.entries(result.landingByMode)){
     const item=result.modules.find((module)=>module.route===route);
     assert.ok(item,`${mode}: landing route missing`);

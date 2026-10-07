@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const DEFAULT_EXPECTED_ROUTES = 58;
+const DEFAULT_EXPECTED_ROUTES = 59;
 const OPTIONAL_PACK_MODULES = new Set(['verticals', 'food', 'hipico', 'hipico-bot']);
 const OPTIONAL_PACK_FAMILIES = new Map([
   ['verticals', 'verticals'],
@@ -17,7 +17,7 @@ export const ROUTE_MANIFEST_DUPLICATE_PATH_ALLOWLIST = new Map([
   ['/verticals', ['vertical-core', 'veterinary-crud', 'vertical-extended']]
 ]);
 export const ROUTE_MANIFEST_EXPECTED_ORDER = Object.freeze([
-  'tenants','document-sequences','clients','suppliers','products','bank-accounts','employees','tax-periods','sales','purchases','payables',
+  'tenants','document-sequences','business-locations','clients','suppliers','products','bank-accounts','employees','tax-periods','sales','purchases','payables',
   'approvals','accounting','reports','modules','currency','exports','chart-accounts','hr','banking','bank-reconciliation',
   'inventory','payroll','tasks','fiscal','analytics','qr','food','notifications','maps','ai','demos','pretesting',
   'licenses','license-devices','service-restrictions','commercial','commercial-access','imports','regulatory','rules','rbac',

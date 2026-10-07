@@ -1,5 +1,5 @@
 import type { Request, Response, NextFunction } from 'express';
-import { createTelemetryContext } from './context.js';
+import { createTelemetryContext, runWithTelemetryContext } from './context.js';
 import {
   logger,
   pseudonymizeIdentifier,
@@ -7,7 +7,6 @@ import {
   sanitizeLogValue
 } from './logger.js';
 import { recordHttpRequest, recordImportBatchDuration } from './metrics.js';
-import { runWithTelemetryContext } from './store.js';
 
 function durationMs(startedAt: bigint) {
   return Number(process.hrtime.bigint() - startedAt) / 1_000_000;
@@ -78,5 +77,5 @@ export function requestObservability(req: Request, res: Response, next: NextFunc
     if (!res.writableEnded) record(true);
   });
 
-  runWithTelemetryContext(telemetry, next);
+  return runWithTelemetryContext(telemetry, () => next());
 }

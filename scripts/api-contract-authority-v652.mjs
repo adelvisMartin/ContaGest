@@ -36,6 +36,14 @@ export function assertNoRouteConflicts(routes) {
   return true;
 }
 function setDifference(left = [], right = []) { const r = new Set(right); return left.filter((value) => !r.has(value)); }
+function compareEnvelopeShape(label, before = {}, after = {}, breaking, additive) {
+  const beforeFields = [...(before.required || []), ...(before.optional || [])];
+  const afterFields = [...(after.required || []), ...(after.optional || [])];
+  const removed = setDifference(beforeFields, afterFields);
+  const added = setDifference(afterFields, beforeFields);
+  if (removed.length) breaking.push(`${label}_FIELDS_REMOVED:${removed.join(',')}`);
+  if (added.length) additive.push(`${label}_FIELDS_ADDED:${added.join(',')}`);
+}
 export function compareApiContracts(base, current) {
   const breaking = []; const additive = [];
   const baseRoutes = new Map((base?.routes || []).map((route) => [routeKey(route), route]));
@@ -51,18 +59,25 @@ export function compareApiContracts(base, current) {
     if (removedStatuses.length) breaking.push(`SUCCESS_STATUS_REMOVED:${key}:${removedStatuses.join(',')}`);
   }
   for (const key of currentRoutes.keys()) if (!baseRoutes.has(key)) additive.push(`ROUTE_ADDED:${key}`);
-  for (const key of ['successEnvelope','errorEnvelope','correlationHeader','pagination']) {
+  compareEnvelopeShape('SUCCESS_ENVELOPE', base?.conventions?.successEnvelope, current?.conventions?.successEnvelope, breaking, additive);
+  compareEnvelopeShape('ERROR_ENVELOPE', base?.conventions?.errorEnvelope, current?.conventions?.errorEnvelope, breaking, additive);
+  for (const key of ['correlationHeader','pagination']) {
     if (JSON.stringify(base?.conventions?.[key]) !== JSON.stringify(current?.conventions?.[key])) breaking.push(`${key.replace(/[A-Z]/g,m=>`_${m}`).toUpperCase()}_CHANGED`);
   }
   const baseConflicts = new Set((base?.conflicts || []).map((item)=>item.key));
   for (const conflict of current?.conflicts || []) if (!baseConflicts.has(conflict.key)) breaking.push(`ROUTE_CONFLICT_ADDED:${conflict.key}`);
   return { breaking, additive, compatible: breaking.length === 0 };
 }
-export function validateEnvelopeSources({ httpSource, errorSource, securitySource }) {
+export function validateEnvelopeSources({ httpSource, errorSource, securitySource = '', observabilitySource = '' }) {
   if (!/ok\s*:\s*true[\s\S]*data[\s\S]*meta/.test(httpSource)) throw new Error('API_SUCCESS_ENVELOPE_DRIFT');
-  if (!/ok\s*:\s*false/.test(errorSource) || !/message/.test(errorSource) || !/requestId/.test(errorSource)) throw new Error('API_ERROR_ENVELOPE_DRIFT');
-  if (!/payload\.code|code\s*:/.test(errorSource) || !/payload\.details|details\s*:/.test(errorSource)) throw new Error('API_ERROR_OPTIONAL_FIELDS_DRIFT');
-  if (!/x-request-id/i.test(securitySource)) throw new Error('API_CORRELATION_HEADER_DRIFT');
+  const delegated = /buildErrorEnvelope/.test(errorSource) && /ok\s*:\s*false/.test(observabilitySource);
+  const inline = /ok\s*:\s*false/.test(errorSource);
+  if (!delegated && !inline) throw new Error('API_ERROR_ENVELOPE_DRIFT');
+  const authority = delegated ? observabilitySource : errorSource;
+  for (const token of ['message','code','correlationId']) if (!new RegExp(`\\b${token}\\b`).test(authority)) throw new Error(`API_ERROR_FIELD_DRIFT:${token}`);
+  if (!/details/.test(authority)) throw new Error('API_ERROR_OPTIONAL_FIELDS_DRIFT');
+  const correlationAuthority = observabilitySource || securitySource;
+  if (!/x-correlation-id/i.test(correlationAuthority) && !/x-request-id/i.test(correlationAuthority)) throw new Error('API_CORRELATION_HEADER_DRIFT');
   return true;
 }
 
@@ -115,13 +130,31 @@ function scanManifest(reader,schemaCorpusHash,basePath='/api/v1') {
 }
 function scanRouterTree(reader,startFile,basePath,schemaCorpusHash,seen,routes){const key=`${startFile}@${basePath}`;if(seen.has(key)||!reader.exists(startFile))return;seen.add(key);const source=reader.read(startFile);routes.push(...scanRouteCalls(source,startFile,basePath,schemaCorpusHash));if(startFile.endsWith('/modules/index.ts')){const manifest=scanManifest(reader,schemaCorpusHash,basePath);routes.push(...manifest.routes);for(const mount of manifest.mounts)scanRouterTree(reader,mount.file,mount.base,schemaCorpusHash,seen,routes);}for(const mount of parseMounts(source,startFile,basePath,reader))scanRouterTree(reader,mount.file,mount.base,schemaCorpusHash,seen,routes);}
 function schemaCorpus(reader){const files=reader.list(BACKEND_SRC).filter((file)=>/schema/i.test(path.posix.basename(file))&&/\.(ts|tsx)$/.test(file)).sort();return fingerprint(files.map((file)=>`${file}\n${reader.read(file)}`).join('\n---\n'));}
-function contractConventions(reader){const httpSource=reader.read('backend/src/shared/http.ts');const errorSource=reader.read('backend/src/shared/middleware/error.ts');const securitySource=reader.read('backend/src/shared/middleware/security.ts');validateEnvelopeSources({httpSource,errorSource,securitySource});const crud=reader.read('backend/src/modules/crud.factory.ts');return{successEnvelope:{required:['ok','data','meta']},errorEnvelope:{required:['ok','message','requestId'],optional:['code','details']},correlationHeader:'x-request-id',pagination:{style:'take-skip',takeDefault:literalNumber(crud,/DEFAULT_LIST_TAKE\s*=\s*([\d_]+)/,100),takeMax:literalNumber(crud,/MAX_LIST_TAKE\s*=\s*([\d_]+)/,500),skipMax:literalNumber(crud,/MAX_LIST_SKIP\s*=\s*([\d_]+)/,1000000),headers:['X-CG-Page-Take','X-CG-Page-Skip'],filter:'q',sort:'createdAt desc,id desc'},versioning:{strategy:'contract-semver; business routes use /api/v1; probes remain stable aliases',contractVersion:API_CONTRACT_VERSION}};}
+function problemFields(source) {
+  const required = ['ok','code','message','correlationId'];
+  for (const field of ['type','title','status','detail']) if (new RegExp(`\\b${field}\\s*:`).test(source)) required.push(field);
+  const optional = ['requestId','details'];
+  if (/\binstance\s*:/.test(source)) optional.push('instance');
+  return {required,optional};
+}
+function contractConventions(reader){
+  const httpSource=reader.read('backend/src/shared/http.ts');
+  const errorSource=reader.read('backend/src/shared/middleware/error.ts');
+  const securitySource=reader.read('backend/src/shared/middleware/security.ts');
+  const observabilityPath='backend/src/shared/observability/contract.ts';
+  const observabilitySource=reader.exists(observabilityPath)?reader.read(observabilityPath):'';
+  validateEnvelopeSources({httpSource,errorSource,securitySource,observabilitySource});
+  const crud=reader.read('backend/src/modules/crud.factory.ts');
+  const correlationHeader=/x-correlation-id/i.test(observabilitySource)?'x-correlation-id':'x-request-id';
+  return{successEnvelope:{required:['ok','data','meta']},errorEnvelope:problemFields(observabilitySource || errorSource),correlationHeader,pagination:{style:'take-skip',takeDefault:literalNumber(crud,/DEFAULT_LIST_TAKE\s*=\s*([\d_]+)/,100),takeMax:literalNumber(crud,/MAX_LIST_TAKE\s*=\s*([\d_]+)/,500),skipMax:literalNumber(crud,/MAX_LIST_SKIP\s*=\s*([\d_]+)/,1000000),headers:['X-CG-Page-Take','X-CG-Page-Skip'],filter:'q',sort:'createdAt desc,id desc'},versioning:{strategy:'contract-semver; business routes use /api/v1; probes remain stable aliases',contractVersion:API_CONTRACT_VERSION}};
+}
 export function buildApiContract(reader=localReader()) {
   const corpus=schemaCorpus(reader);const routes=[];const seen=new Set();const appFile='backend/src/app.ts';const app=reader.read(appFile);routes.push(...scanRouteCalls(app,appFile,'',corpus,'app'));const imports=importMap(app,appFile,reader);
   for(const match of app.matchAll(/\bapp\.use\s*\(\s*(['"])(\/[^'"]*)\1/g)){const args=balancedCall(app,app.indexOf('(',match.index));const base=normalizeApiPath('',match[2]);for(const[name,target]of imports)if(new RegExp(`\\b${name}\\b`).test(args))scanRouterTree(reader,target,base,corpus,seen,routes);}
   const healthTarget=imports.get('registerHealthRoutes');if(healthTarget)routes.push(...scanRouteCalls(reader.read(healthTarget),healthTarget,'',corpus,'app'));const apiTarget=imports.get('apiRoutes');if(apiTarget&&!seen.has(`${apiTarget}@/api/v1`))scanRouterTree(reader,apiTarget,'/api/v1',corpus,seen,routes);
   const sorted=routes.sort((a,b)=>routeKey(a).localeCompare(routeKey(b))||a.source.localeCompare(b.source));const manifest={schemaVersion:652,apiVersion:API_CONTRACT_VERSION,conventions:contractConventions(reader),routes:sorted,conflicts:routeConflicts(sorted)};return{...manifest,manifestSha256:stableContractHash(manifest)};
 }
+export function buildApiContractForRef(ref) { return buildApiContract(gitReader(ref)); }
 function parseArgs(argv){const out={base:'main',out:'',print:false,check:false};for(let i=0;i<argv.length;i++){const arg=argv[i];if(arg==='--base')out.base=argv[++i]||'main';else if(arg.startsWith('--base='))out.base=arg.slice(7);else if(arg==='--out')out.out=argv[++i]||'';else if(arg.startsWith('--out='))out.out=arg.slice(6);else if(arg==='--print')out.print=true;else if(arg==='--check')out.check=true;else throw new Error(`API_CONTRACT_ARGUMENT_UNKNOWN:${arg}`);}return out;}
 function cli(){const args=parseArgs(process.argv.slice(2));const current=buildApiContract(localReader());let compatibility={breaking:[],additive:[],compatible:true};let baseSha=null;if(args.check){baseSha=execFileSync('git',['merge-base',args.base,'HEAD'],{cwd:ROOT,encoding:'utf8'}).trim();const base=buildApiContract(gitReader(baseSha));compatibility=compareApiContracts(base,current);if(compatibility.breaking.length)throw new Error(`API_CONTRACT_BREAKING_CHANGE:${compatibility.breaking.join('|')}`);}const evidence={ticket:652,candidateSha:execFileSync('git',['rev-parse','HEAD'],{cwd:ROOT,encoding:'utf8'}).trim(),baseSha,manifest:current,compatibility};if(args.out){const target=path.resolve(ROOT,args.out);fs.mkdirSync(path.dirname(target),{recursive:true});fs.writeFileSync(target,`${JSON.stringify(evidence,null,2)}\n`);}if(args.print||!args.out)process.stdout.write(`${JSON.stringify(evidence,null,2)}\n`);}
 if(process.argv[1]&&path.resolve(process.argv[1])===fileURLToPath(import.meta.url)){try{cli();}catch(error){console.error(error instanceof Error?error.message:String(error));process.exitCode=1;}}

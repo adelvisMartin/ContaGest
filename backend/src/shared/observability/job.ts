@@ -1,6 +1,5 @@
-import { createTelemetryContext, sanitizeTelemetryAttributes } from './context.js';
+import { createJobTelemetryContext, runWithTelemetryContext, sanitizeTelemetryAttributes } from './context.js';
 import { logger, sanitizeLogValue } from './logger.js';
-import { runWithTelemetryContext } from './store.js';
 
 type JobLog = Pick<typeof logger, 'debug' | 'info' | 'warn' | 'error'>;
 type CompletionLevel = 'debug' | 'info';
@@ -26,7 +25,7 @@ export async function observeJob<T>(
   options: ObserveJobOptions<T> = {}
 ): Promise<T> {
   const log = options.log || logger;
-  const telemetry = createTelemetryContext();
+  const telemetry = createJobTelemetryContext();
   const startedAt = process.hrtime.bigint();
   const job = sanitizeLogValue(name, 120) || 'unnamed';
   const base = {
