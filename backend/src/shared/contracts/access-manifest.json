@@ -165,6 +165,26 @@
       "licenseModule": "cotizacion"
     },
     {
+      "route": "listas-precio",
+      "name": "Listas de precio",
+      "area": "Ventas",
+      "tier": "core",
+      "modes": [
+        "comercio",
+        "restaurante",
+        "servicios",
+        "salud",
+        "veterinaria",
+        "psicologia",
+        "odontologia",
+        "gimnasio",
+        "admin"
+      ],
+      "permission": "sales.manage",
+      "accessGroup": "Ventas",
+      "licenseModule": "listas-precio"
+    },
+    {
       "route": "clientes",
       "name": "Clientes",
       "area": "Ventas",
