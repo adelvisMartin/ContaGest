@@ -21,7 +21,7 @@ async function expectPgError(client: PgClient, sql: string, params: unknown[], p
 }
 
 test('#856 PostgreSQL authority preserves legacy compatibility, tenant isolation and immutable finalized snapshots', { skip: !rawUrl }, async () => {
-  assert.ok(isEphemeralDatabase(rawUrl), `UNSAFE_PRODUCTION_COMMAND:${new URL(rawUrl).pathname.replace(/^\\//, '')}`);
+  assert.ok(isEphemeralDatabase(rawUrl), `UNSAFE_PRODUCTION_COMMAND:${new URL(rawUrl).pathname.replace(/^\//, '')}`);
 
   const client = new Client({ connectionString: rawUrl });
   await client.connect();
