@@ -246,7 +246,7 @@ async function cli(){
     changedFiles:changed?.files||[],
     derivedProfiles:changed?.profiles||[],
     riskDecision:changed?.risk||null,
-    platform:{os:`${os.platform()} ${os.release()}`,arch:os.arch(),node:process.version,npm:commandVersion('npm',['--version'],{cwd}),postgres:DB_PROFILES.has(args.profile)?commandVersion('psql',['--version'],{cwd}):'NOT_APPLICABLE',playwright:UI_PROFILES.has(args.profile)?commandVersion('npx',['playwright','--version'],{cwd}):'NOT_APPLICABLE'},
+    platform:{os:`${os.platform()} ${os.release()}`,arch:os.arch(),node:process.version,npm:commandVersion('npm',['--version'],{cwd}),postgres:(DB_PROFILES.has(args.profile)||(args.profile==='changed'&&changed?.profiles.some((p)=>DB_PROFILES.has(p))))?commandVersion('psql',['--version'],{cwd}):'NOT_APPLICABLE',playwright:(UI_PROFILES.has(args.profile)||(args.profile==='changed'&&changed?.profiles.some((p)=>UI_PROFILES.has(p))))?commandVersion('npx',['playwright','--version'],{cwd}):'NOT_APPLICABLE'},
     remote:{ci:args.remoteCi,deploy:args.remoteDeploy},
   };
   if(args.dryRun){
