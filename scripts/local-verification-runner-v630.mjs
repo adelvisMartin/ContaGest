@@ -5,6 +5,7 @@ import path from 'node:path';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { pathToFileURL } from 'node:url';
+import { classifyChangeRisk } from '../qa/support/change-risk-classifier-v667.mjs';
 
 const VALID_STATUSES = new Set(['PASS','FAIL','BLOCKED','NOT_EXECUTED','NOT_APPLICABLE']);
 const DB_PROFILES = new Set(['database','financial','full']);
@@ -13,6 +14,20 @@ const UI_PROFILES = new Set(['ui','ui-routes','full']);
 const gate=(id,command,{required=true}={})=>Object.freeze({id,command,required});
 
 export const PROFILE_GATES = Object.freeze({
+  docs:Object.freeze([
+    gate('docs-risk-contract','node --test tests/change_risk_classifier_v667.test.mjs'),
+  ]),
+  agent:Object.freeze([
+    gate('agent-system-contract','npm run agent:system:verify'),
+  ]),
+  security:Object.freeze([
+    gate('security-auth-bootstrap','npm --workspace backend run test:auth-bootstrap:unit'),
+    gate('security-tenant-boundary','npm --workspace backend run test:runtime-tenant-context'),
+  ]),
+  infra:Object.freeze([
+    gate('infra-build','npm run build'),
+    gate('infra-contracts','npm run test:contracts:current'),
+  ]),
   backend:Object.freeze([
     gate('backend-typecheck','npm run typecheck'),
     gate('backend-tests','npm test'),
@@ -184,7 +199,7 @@ function commandVersion(command,args,{cwd}){
 }
 
 function parseArgs(argv){
-  const out={profile:'',base:'main',expectedSha:'',dryRun:false,remoteCi:'NOT_EXECUTED',remoteDeploy:'NOT_EXECUTED'};
+  const out={profile:'',base:'main',expectedSha:'',dryRun:false,remoteCi:'NOT_EXECUTED',remoteDeploy:'NOT_EXECUTED',addProfiles:[],removeProfiles:[],overrideReason:''};
   for(let i=0;i<argv.length;i++){
     const arg=argv[i];
     if(arg==='--profile')out.profile=argv[++i]||'';
@@ -193,6 +208,12 @@ function parseArgs(argv){
     else if(arg.startsWith('--base='))out.base=arg.slice(7);
     else if(arg==='--expected-sha')out.expectedSha=argv[++i]||'';
     else if(arg.startsWith('--expected-sha='))out.expectedSha=arg.slice(15);
+    else if(arg==='--add-profiles')out.addProfiles=(argv[++i]||'').split(',').filter(Boolean);
+    else if(arg.startsWith('--add-profiles='))out.addProfiles=arg.slice(15).split(',').filter(Boolean);
+    else if(arg==='--remove-profiles')out.removeProfiles=(argv[++i]||'').split(',').filter(Boolean);
+    else if(arg.startsWith('--remove-profiles='))out.removeProfiles=arg.slice(18).split(',').filter(Boolean);
+    else if(arg==='--override-reason')out.overrideReason=argv[++i]||'';
+    else if(arg.startsWith('--override-reason='))out.overrideReason=arg.slice(18);
     else if(arg==='--dry-run')out.dryRun=true;
     else if(arg.startsWith('--remote-ci='))out.remoteCi=arg.slice(12);
     else if(arg.startsWith('--remote-deploy='))out.remoteDeploy=arg.slice(16);
@@ -202,23 +223,19 @@ function parseArgs(argv){
   return out;
 }
 
-function changedPlan({cwd,baseRef}){
+function changedPlan({cwd,baseRef,addProfiles=[],removeProfiles=[],overrideReason=''}) {
   const files=git(cwd,['diff','--name-only',`${baseRef}...HEAD`]).split(/\r?\n/).filter(Boolean);
-  const router=spawnSync(process.platform==='win32'?'npm.cmd':'npm',['run','--silent','agent:gates','--','--base',baseRef],{cwd,encoding:'utf8',shell:false});
-  if(router.error||router.status!==0)throw new Error(`LOCAL_GATE_FAILED:agent:gates:${router.error?.message||router.stderr}`);
-  const parsed=JSON.parse(router.stdout);
-  const profiles=profilesForRouterDomains((parsed.domains||[]).map((item)=>item.id));
-  if(files.some((file)=>file.startsWith('frontend/'))&&!profiles.includes('frontend'))profiles.push('frontend');
-  if(files.some((file)=>file.startsWith('backend/'))&&!profiles.includes('backend'))profiles.push('backend');
-  if(!profiles.length)profiles.push('backend');
-  return {files,profiles,plan:dedupeGates(profiles.flatMap((profile)=>buildProfilePlan(profile)))};
+  const risk=classifyChangeRisk(files,{addProfiles,removeProfiles,reason:overrideReason});
+  const profiles=risk.profiles;
+  return {files,profiles,risk,plan:dedupeGates(profiles.flatMap((profile)=>buildProfilePlan(profile)))};
 }
 
 async function cli(){
   const args=parseArgs(process.argv.slice(2));
   const cwd=process.cwd();
   const gitContext=resolveGitContext({cwd,expectedSha:args.expectedSha,baseRef:args.base});
-  const changed=args.profile==='changed'?changedPlan({cwd,baseRef:args.base}):null;
+  const changed=args.profile==='changed'?changedPlan({cwd,baseRef:args.base,addProfiles:args.addProfiles,removeProfiles:args.removeProfiles,overrideReason:args.overrideReason}):null;
+  if(args.profile!=='changed'&&(args.addProfiles.length||args.removeProfiles.length))throw new Error('VERIFY_OVERRIDE_REQUIRES_CHANGED_PROFILE');
   const plan=changed?.plan||buildProfilePlan(args.profile);
   const metadata={
     schemaVersion:630,
@@ -228,7 +245,8 @@ async function cli(){
     profile:args.profile,
     changedFiles:changed?.files||[],
     derivedProfiles:changed?.profiles||[],
-    platform:{os:`${os.platform()} ${os.release()}`,arch:os.arch(),node:process.version,npm:commandVersion('npm',['--version'],{cwd}),postgres:DB_PROFILES.has(args.profile)?commandVersion('psql',['--version'],{cwd}):'NOT_APPLICABLE',playwright:UI_PROFILES.has(args.profile)?commandVersion('npx',['playwright','--version'],{cwd}):'NOT_APPLICABLE'},
+    riskDecision:changed?.risk||null,
+    platform:{os:`${os.platform()} ${os.release()}`,arch:os.arch(),node:process.version,npm:commandVersion('npm',['--version'],{cwd}),postgres:(DB_PROFILES.has(args.profile)||(args.profile==='changed'&&changed?.profiles.some((p)=>DB_PROFILES.has(p))))?commandVersion('psql',['--version'],{cwd}):'NOT_APPLICABLE',playwright:(UI_PROFILES.has(args.profile)||(args.profile==='changed'&&changed?.profiles.some((p)=>UI_PROFILES.has(p))))?commandVersion('npx',['playwright','--version'],{cwd}):'NOT_APPLICABLE'},
     remote:{ci:args.remoteCi,deploy:args.remoteDeploy},
   };
   if(args.dryRun){
