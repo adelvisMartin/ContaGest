@@ -43,6 +43,7 @@ const required59=[
   'tests/fiscal_authority_v561_contract.test.mjs',
   'tests/fiscal_single_source_v629_contract.test.mjs',
   'tests/local_verification_runner_v630.test.mjs',
+  'tests/change_risk_classifier_v667.test.mjs',
   'tests/production_convergence_v627.test.mjs',
   'tests/relational_normalization_audit_v633.test.mjs',
   'tests/budgetwallet_fk_indexes_v684.test.mjs',
