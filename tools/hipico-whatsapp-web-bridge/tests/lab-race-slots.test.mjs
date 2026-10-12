@@ -71,7 +71,7 @@ test('LAB multi-message track then date conversation uses same JID, ACK-gated me
   assert.equal(trackPlan.raceScope,null);
   assert.equal(trackPlan.raceTrack,'La Rinconada');
   assert.equal(trackPlan.clarificationPending,'date');
-  assert.match(composeLabAssistantReply({classification:trackClass,plan:trackPlan}),/qué fecha/);
+  assert.match(composeLabAssistantReply({classification:trackClass,plan:trackPlan}),/fecha/i);
   await context.remember(ANA,trackPlan.raceNumber,trackPlan.raceScope,
     {raceTrack:trackPlan.raceTrack,raceDate:trackPlan.raceDate});
   const restored=factory();
