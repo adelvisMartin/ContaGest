@@ -1268,7 +1268,11 @@ async function resumePendingLabQueries(visibleIds = new Set()) {
   }
 }
 
+let labTestProcessing=false;
 async function processLabTestInput() {
+  if(labTestProcessing)return;
+  labTestProcessing=true;
+  try {
   if (!LAB_TEST_INPUT_ENABLED) return;
   const sourceBefore = await currentChatTitle();
   const opened = await openGroup(LAB_GROUP_NAME, true);
@@ -1413,6 +1417,7 @@ async function processLabTestInput() {
   if (processed) console.log('LAB prueba: '+processed+' mensaje(s) leído(s) y clasificado(s).');
   await openSourceGroup().catch(() => false);
   activeSourceTitle = await currentChatTitle();
+  } finally {labTestProcessing=false;}
 }
 async function visibleLabHasTag(tag) {
   return page.evaluate((needle) => {
