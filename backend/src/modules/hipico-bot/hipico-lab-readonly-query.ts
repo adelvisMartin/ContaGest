@@ -5,7 +5,8 @@ const PROHIBITED=/\b(?:apostar|apuesta|jugada|juega|consigue|pag[oa]r?|cobrar|de
 const TOPICS:Record<LabRaceQuestion,RegExp>={
   status:/\b(?:estado|estatus|situacion|abierta|cerrada|como\s+va)\b/,
   result:/\b(?:resultado|llegada|pizarra|ganador|gano|primer[oa]|segund[oa]|tercer[oa])\b/,
-  participants:/\b(?:participantes|ejemplares|caballos|inscritos|quienes\s+corren)\b/
+  participants:/\b(?:participantes|ejemplares|caballos|inscritos|quienes\s+corren)\b/,
+  summary:/\b(?:resumen|resumeme|sintesis|recapitulacion)\b/
 };
 export function isLabInformationRequest(text:string,purpose:LabRaceQuestion,result:Pick<IntentResult,'intent'|'risk'>){
   const normalized=String(text||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().trim();
@@ -14,5 +15,5 @@ export function isLabInformationRequest(text:string,purpose:LabRaceQuestion,resu
   // Race-result parsing with an explicit board is a proposed state mutation,
   // never an informational question.
   if(!['conversation','status_non_monetary','help'].includes(result.intent))return false;
-  return /[?¿]/.test(text)||/^(?:estado|resultado|pizarra|participantes|caballos|ejemplares|inscritos|consulta|dime|muestra|indica|quienes|cual|como)\b/.test(normalized);
+  return /[?¿]/.test(text)||/^(?:estado|resultado|pizarra|participantes|caballos|ejemplares|inscritos|resumen|resumeme|sintesis|recapitulacion|dame|hazme|consulta|dime|muestra|indica|quienes|cual|como)\b/.test(normalized);
 }
