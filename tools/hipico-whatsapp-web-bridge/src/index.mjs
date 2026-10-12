@@ -1232,14 +1232,14 @@ async function processLabTestInput() {
     const plan=planLabConversation(row,classification,prior,scopedRace);
     // Canonical read completes before any durable browser send intent.
     const quotedVerified=Boolean(row.quotedId && scopedRace && !explicitLabRaceScope(body));
-    const canonical = inquiryPurpose && sender && BACKEND_SYNC_ENABLED && backendState === 'online'
+    const canonical = inquiryPurpose && sender && !plan.scopeConflict && BACKEND_SYNC_ENABLED && backendState === 'online'
       ? await queryCanonicalLab({
           ingestUrl:INGEST_URL,token:TOKEN,
           labGroupId:LAB_GROUP_ID,labChannelKey:LAB_CHANNEL_KEY,
           messageId:row.id,senderId:sender,text:body,
           purpose:inquiryPurpose,
           quotedMessageId:quotedVerified?row.quotedId:null,
-          race:scopedRace || plan.raceScope,timeoutMs:Math.min(5000,BACKEND_TIMEOUT_MS)
+          race:plan.scopeConflict?null:(scopedRace || plan.raceScope),timeoutMs:Math.min(5000,BACKEND_TIMEOUT_MS)
         })
       : {available:false,reason:'LAB_CANONICAL_NOT_QUERIED'};
     await labTestReplyJournal.prepare(row.id); // fsync before any browser send
