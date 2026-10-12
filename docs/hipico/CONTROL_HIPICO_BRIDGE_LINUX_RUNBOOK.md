@@ -237,3 +237,31 @@ y pruebas reales; #899 no debe cerrarse por el merge de código.
 Las pruebas unitarias y de contratos se versionan en GitHub, pero no sustituyen
 un fault-injection real (commit/timeout/restart), Postgres aislado y QA de
 WhatsApp Windows con dos sesiones en LAB.
+
+## Recuperación de estado/llegada LAB con prueba de revisión (#899 fase 2)
+
+`POST /api/v1/hipico-bot/bridge/lab/query` dispone de un recibo de **solo lectura**
+para preguntas `purpose=status` y `purpose=result` cuando el read model canónico
+verificó el agregado y expone `state`, `version`, `updatedAt` y respuesta textual.
+Se conserva el **digest SHA-256** del texto y el fingerprint de versión en
+`HipicoResponseReceipt` ANTES de responder HTTP, sin persistir el cuerpo.
+La clave vincula owner, SOURCE, grupo y canal LAB, remitente e ID de mensaje.
+
+Si el HTTP falla después de guardar el recibo y antes del `prepare` local,
+el Bridge reintenta **una sola vez con el mismo envelope**. El backend vuelve
+a leer el agregado: exige el mismo estado, revisión, timestamp, propósito,
+hash de respuesta, política, identidad y recibo sin evidencia financiera.
+Tras una corrección o cambio de versión devuelve
+`LAB_CANONICAL_REVISION_CHANGED` y solicita una consulta nueva, sin datos antiguos.
+El handoff humano global o de carrera, falta de persistencia, consulta antigua
+(más de 90 segundos) y cualquier inconsistencia de recibo bloquean la recuperación.
+
+Una respuesta HTTP exitosa NO confirma entrega WhatsApp. El Bridge mantiene
+`labTestReplyJournal.prepare → begin → Enter → confirm` y reconciliación por
+etiqueta, nunca reintenta un Enter ambiguo. SOURCE no obtiene permiso de envío.
+
+**Límites:** los propósitos `next/active/schedule/participants` no tienen
+todavía una revisión canónica suficientemente fuerte para usar este recibo.
+No garantiza snapshot serializable entre lectura y una corrección concurrente.
+Faltan fault-injection PostgreSQL, WhatsApp Windows físico y soak 24–72h;
+por ello #899 sigue abierto. Los tests locales no sustituyen esos gates.

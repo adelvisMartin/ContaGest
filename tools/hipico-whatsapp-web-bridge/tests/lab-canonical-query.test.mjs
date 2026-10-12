@@ -146,3 +146,48 @@ test('safe local next/active/program questions use existing LAB read-only envelo
   assert.equal(labReadOnlyQueryPurpose('¿Qué carrera sigue y pagar premio?',reviewed),null);
   assert.equal(labReadOnlyQueryPurpose('REGISTRA CARTELERA',reviewed),null);
 });
+
+
+test('lost LAB canonical HTTP after backend commit retries identical request identity before journal',async()=>{
+  let calls=0;
+  const seen=[];
+  const result=await queryCanonicalLab({...base,purpose:'result',
+    race:{raceNumber:5,racetrack:'La Rinconada',raceDate:'2026-10-12'},
+    fetchImpl:async(url,options)=>{
+      calls++;
+      seen.push({url,headers:options.headers,body:options.body});
+      if(calls===1)throw new Error('ECONNRESET after backend committed response receipt');
+      return json({ok:true,mode:'shadow',status:'LAB_CANONICAL_RECOVERED',
+        text:'Resultado interno previamente validado, versión idéntica.',
+        authority:{sourceWriteAllowed:false,financialAuthority:false,domainEffectsAllowed:false}});
+    }});
+  assert.equal(calls,2);
+  assert.equal(result.available,true);
+  assert.equal(result.reason,'LAB_CANONICAL_RECOVERED');
+  assert.equal(seen[0].url,seen[1].url);
+  assert.equal(seen[0].body,seen[1].body);
+  assert.equal(seen[0].headers['x-hipico-bridge-token'],seen[1].headers['x-hipico-bridge-token']);
+  assert.equal(JSON.parse(seen[1].body).externalMessageId,base.messageId);
+});
+
+test('twice lost HTTP fails closed, never assumes the response was delivered to WhatsApp',async()=>{
+  let calls=0;
+  const result=await queryCanonicalLab({...base,fetchImpl:async()=>{
+    calls++;throw new Error('lost-response');
+  }});
+  assert.equal(calls,2);
+  assert.deepEqual(result,{available:false,reason:'LAB_CANONICAL_UNAVAILABLE'});
+});
+
+test('backend canonical revision mismatch is returned as non-authoritative fallback',async()=>{
+  let attempts=0;
+  const result=await queryCanonicalLab({...base,fetchImpl:async()=>{
+    attempts++;
+    return json({ok:true,mode:'shadow',status:'LAB_CANONICAL_REVISION_CHANGED',
+      text:'La carrera cambió. Vuelve a consultar.',
+      authority:{sourceWriteAllowed:false,financialAuthority:false,domainEffectsAllowed:false}});
+  }});
+  assert.equal(attempts,1);
+  assert.equal(result.reason,'LAB_CANONICAL_REVISION_CHANGED');
+  assert.equal(result.available,true); // informational fallback, not an authorization to send money
+});
