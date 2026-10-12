@@ -1,6 +1,6 @@
 // LAB-only pure slot parser. Untrusted message -> bounded, non-authoritative hint.
 const TRACK = /^[\p{L}][\p{L}\p{N} '-]{1,79}$/u;
-const RISK = /\b(?:carrera|apuesta|apostar|juega|jugada|consigue|monto|saldo|pagar|pago|cobrar|premio|dinero|resultado|llegada|cierre|cerrar|anula|cancelar|registrar|ignora|instrucciones|sistema|admin|token|secret|otro|otra|hoy|ayer|manana)\b/;
+const RISK = /\b(?:carrera|apuesta|apostar|juega|jugada|consigue|monto|saldo|pagar|pago|cobrar|premio|dinero|resultado|llegada|cierre|cerrar|anula|cancelar|registrar|registra|ignora|instrucciones|sistema|admin|token|secret|otro|otra|hoy|ayer|manana|proxima|proximo|siguiente|anterior|misma|mismo|confirmar|confirma|ganador|cobro)\b/;
 const normalize = s => String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
 
 export function validLabDate(value) {
