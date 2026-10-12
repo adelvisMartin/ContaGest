@@ -135,6 +135,16 @@ test('a different race invalidates partial hints and quoted-scope conflicts befo
   assert.equal(p.raceScope,null);
   assert.equal(p.raceTrack,null);
   assert.equal(p.raceDate,null);
+  for (const utterance of [
+    '¿Estado de carrera 5 o carrera 6?',
+    '¿La 5ta o la 6ta?',
+    '¿La quinta o la sexta?'
+  ]) {
+    const ambiguous=planLabConversation(row('ambiguous',ANA,utterance),
+      classifyLocal(utterance),partial);
+    assert.equal(ambiguous.scopeConflict,true,utterance);
+    assert.equal(ambiguous.rememberRace,false,utterance);
+  }
   const conflict=row('conflict',ANA,'¿Estado de carrera 6?');
   const c=classifyLocal(conflict.text);
   const q=planLabConversation(conflict,c,partial,expected);
