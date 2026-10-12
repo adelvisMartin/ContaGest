@@ -39,6 +39,10 @@ export function composeLabAssistantReply({ classification, plan, canonical, answ
     return 'Entiendo el mensaje, pero necesita revisión de un operador. No registré ni confirmé ninguna operación.';
   }
 
+  if (plan?.scopeConflict) {
+    return 'Veo referencias a carreras diferentes. ¿Me confirmas una sola carrera, hipódromo y fecha antes de consultar?';
+  }
+
   const reference = raceReference(plan);
   if (plan?.summaryRequested) {
     // A race summary from the canonical read endpoint outranks the local
