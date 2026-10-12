@@ -25,6 +25,7 @@ import {
 import { assessRuntimeReadiness } from './health-state.mjs';
 import { createBridgeSpoolRuntime } from './spool-runtime.mjs';
 import { createSourceReplyJournal } from './source-reply-journal.mjs';
+import { labSendFailure, labSeenOutcome } from './lab-delivery-state.mjs';
 import { localKillSwitchState } from './promotion-guard.mjs';
 
 const config = assertRuntimeConfig(loadRuntimeConfig());
@@ -106,6 +107,7 @@ let deliveredCount = 0;
 let mirroredCount = 0;
 let sourceReplySentCount = 0;
 let sourceReplyAmbiguousCount = 0;
+let labTestAmbiguousCount = 0;
 let duplicateVisibleCount = 0;
 let nonOperationalCount = 0;
 let lastPostStartedAt = 0;
@@ -227,6 +229,7 @@ async function writeHealth(extra = {}) {
     mirrored: mirroredCount,
     sourceRepliesSent: sourceReplySentCount,
     sourceRepliesAmbiguous: sourceReplyAmbiguousCount,
+    labTestReplyAmbiguous: labTestAmbiguousCount,
     duplicateVisible: duplicateVisibleCount,
     nonOperational: nonOperationalCount,
     seenIds: seen.size,
@@ -1003,12 +1006,13 @@ function localLabTestReply(row, classification) {
 }
 
 async function clearComposerSafely(composer) {
-  try { await composer.fill(''); return; } catch {}
+  try { await composer.fill(''); return true; } catch {}
   try {
     await composer.click({ timeout: 1000 });
     await page.keyboard.press('Control+A');
     await page.keyboard.press('Backspace');
-  } catch {}
+    return true;
+  } catch { return false; }
 }
 
 async function visibleComposer() {
@@ -1126,25 +1130,30 @@ async function flushSourceReplies() {
 }
 
 async function sendTextInCurrentLab(textValue, tag) {
-  await assertCurrentLabIdentity();
+  try { await assertCurrentLabIdentity(); }
+  catch { throw labSendFailure({sendAttempted:false,composerCleared:true}); }
   if (tag && await visibleLabHasTag(tag)) return true;
-  const composer = await visibleComposer();
-  if (!composer) throw new Error('No encontré el compositor del grupo LAB.');
-  await composer.click({ timeout: 3000 });
-  await page.keyboard.insertText(String(textValue).slice(0, 3900));
+  let composer;
+  try { composer = await visibleComposer(); }
+  catch { throw labSendFailure({sendAttempted:false,composerCleared:true}); }
+  if (!composer) throw labSendFailure({sendAttempted:false,composerCleared:true});
+  let sendAttempted = false;
   try {
+    await composer.click({ timeout: 3000 });
+    await page.keyboard.insertText(String(textValue).slice(0, 3900));
     await assertCurrentLabIdentity();
-  } catch (error) {
-    await clearComposerSafely(composer);
-    throw error;
+    // Keyboard.press may send even if it later throws. From here, delivery is ambiguous.
+    sendAttempted = true;
+    await page.keyboard.press('Enter');
+    await sleep(700);
+    await assertCurrentLabIdentity();
+    if (tag && !(await visibleLabHasTag(tag))) throw new Error('LAB_DELIVERY_NOT_VISIBLE');
+    return true;
+  } catch {
+    const cleared = !sendAttempted && await clearComposerSafely(composer);
+    throw labSendFailure({sendAttempted,composerCleared:Boolean(cleared)});
   }
-  await page.keyboard.press('Enter');
-  await sleep(700);
-  await assertCurrentLabIdentity();
-  if (tag && !(await visibleLabHasTag(tag))) throw new Error('No pude verificar la respuesta de prueba en LAB.');
-  return true;
 }
-
 async function processLabTestInput() {
   if (!LAB_TEST_INPUT_ENABLED) return;
   const sourceBefore = await currentChatTitle();
@@ -1170,19 +1179,28 @@ async function processLabTestInput() {
 
   for (const row of visible) {
     if (!row?.id || labSeen.has(row.id)) continue;
-    rememberLabSeen(row.id);
     const body = String(row.text || '').trim();
-    if (!body) continue;
-    if (body.includes('[SHADOW:') || body.includes('[LABTEST:') || body.includes('🧪 CONTROL HÍPICO · SHADOW')) continue;
+    if (!body || body.includes('[SHADOW:') || body.includes('[LABTEST:') || body.includes('🧪 CONTROL HÍPICO · SHADOW')) {
+      rememberLabSeen(row.id); // intentionally ignored, never a pending response
+      continue;
+    }
 
     const classification = classifyLocal(body);
     const tag = labTestTagFor(row.id);
     try {
       await sendTextInCurrentLab(localLabTestReply(row, classification), tag);
+      rememberLabSeen(row.id); // confirmed delivery/tag; never ack before sending
+      await saveLabSeenNow();
       processed += 1;
-      await log(`LAB_TEST_READ id=${row.id} intent=${classification.intent}`);
+      await log(`LAB_TEST_READ id=${tag} intent=${classification.intent}`);
     } catch (error) {
-      await log(`LAB_TEST_REPLY_FAIL id=${row.id} ${error.message}`);
+      const outcome = labSeenOutcome({error});
+      if (outcome === 'AMBIGUOUS') {
+        rememberLabSeen(row.id); // no automatic duplicate after uncertain Enter
+        await saveLabSeenNow();
+        labTestAmbiguousCount += 1;
+      }
+      await log(`LAB_TEST_REPLY_${outcome} id=${tag}`);
     }
   }
 
