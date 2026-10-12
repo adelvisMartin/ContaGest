@@ -7,7 +7,7 @@ umask 077
 : "${HIPICO_BACKUP_RCLONE_REMOTE:?set HIPICO_BACKUP_RCLONE_REMOTE}"
 : "${HIPICO_CANDIDATE_SHA:?set HIPICO_CANDIDATE_SHA to an exact 40-hex commit}"
 
-EXPECTED_ROLE="${HIPICO_BACKUP_EXPECTED_ROLE:-hipico_backup}"
+EXPECTED_ROLE="hipico_backup"
 MODE="${HIPICO_BACKUP_MODE:-PRE_ROLLOUT}"
 SCOPE="hipico-canonical-v12-v27"
 CHAIN="v12-v27"
@@ -23,9 +23,20 @@ case "$MODE" in
 esac
 [[ -f "$TABLE_FILE" ]] || { echo "Missing Hípico table inventory: $TABLE_FILE" >&2; exit 3; }
 
-for command in psql pg_dump pg_restore age rclone sha256sum node; do
+for command in psql pg_dump pg_restore age rclone sha256sum node git; do
   command -v "$command" >/dev/null || { echo "$command is required" >&2; exit 3; }
 done
+
+# Release evidence must describe the checked-out code, not a different commit.
+# Run these gates before creating any output or making the first DB query.
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+head_sha="$(git -C "$REPO_ROOT" rev-parse HEAD | tr '[:upper:]' '[:lower:]')"
+[[ "$head_sha" == "${HIPICO_CANDIDATE_SHA,,}" ]] || { echo "Backup candidate checkout mismatch." >&2; exit 4; }
+(
+  cd "$REPO_ROOT" &&
+  node scripts/hipico-exact-sha-gate.mjs &&
+  HIPICO_BACKUP_ROLE_MODE="$MODE" node scripts/hipico-backup-role-verify-v24.mjs
+) || { echo "Backup preflight rejected: exact SHA or hipico_backup privileges invalid." >&2; exit 5; }
 
 mapfile -t TABLES < <(grep -Ev '^\s*(#|$)' "$TABLE_FILE")
 table_count="${#TABLES[@]}"

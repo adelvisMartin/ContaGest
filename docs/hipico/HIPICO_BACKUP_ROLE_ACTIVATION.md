@@ -56,6 +56,19 @@ Después verifica usando la conexión runtime real del rol dedicado:
 
 No habilites ni cargues los secrets de backup en GitHub hasta obtener PASS del verifier v24 sobre el SHA exacto. Un estado FAIL o NOT_EXECUTED bloquea backup/change-control.
 
+
+## Puerta obligatoria antes del backup real (#842)
+
+El script `ops/backup/hipico-backup-postgres.sh` ahora exige **antes de consultar producción, crear archivos o cifrar datos**:
+
+1. El checkout tiene el SHA exacto de `HIPICO_CANDIDATE_SHA` y pasa `scripts/hipico-exact-sha-gate.mjs`.
+2. La conexión `HIPICO_BACKUP_DATABASE_URL` pasa el verificador canónico v24 para el modo indicado. Se comprueban NOINHERIT/NOBYPASSRLS, pertenencia de roles, privilegios, alcance y ausencia de acceso a `auth`; no basta con consultar cuatro flags de `pg_roles`.
+3. La única identidad permitida para backup runtime es `hipico_backup`. La variable antigua `HIPICO_BACKUP_EXPECTED_ROLE` no puede autorizar otra identidad.
+
+Para la certificación final del estado de producción debe usarse `HIPICO_BACKUP_MODE=STEADY_STATE`; el modo `PRE_ROLLOUT` sirve exclusivamente para despliegues graduales y no demuestra 25/25 tablas. No guardar DSN, destinatarios `age` ni secretos en issues o artefactos. Ejecutar backup cifrado + transferencia off-site con destino autorizado y posteriormente `ops/backup/hipico-restore-drill.sh` sobre PG17 local desechable. El PASS exige conteos, integridad referencial, hash de inventario y tiempos RPO/RTO reales asociados al candidate.
+
+La existencia de los scripts y sus pruebas de regresión **no certifica** que el rol esté activado en producción ni que un backup remoto haya sido restaurado. Sin esas operaciones #842 continúa `NOT_EXECUTED/BLOCKED_INFRASTRUCTURE`.
+
 ## Después del rollout: STEADY_STATE
 
 Cuando las migraciones canónicas ya hayan creado las 25 tablas:
