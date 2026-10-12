@@ -245,6 +245,7 @@ async function writeHealth(extra = {}) {
   const spool = await spoolRuntime.snapshot();
   const sourceReplies = await sourceReplyJournal.snapshot();
   const labAck = labTestReplyJournal ? await labTestReplyJournal.snapshot() : null;
+  const labPending = labPendingInbox ? await labPendingInbox.snapshot() : null;
   labTestAmbiguousCount=labAck?.ambiguous ?? 0;
   const counters = {
     captured: capturedCount,
@@ -254,6 +255,7 @@ async function writeHealth(extra = {}) {
     sourceRepliesAmbiguous: sourceReplyAmbiguousCount,
     labTestReplyAmbiguous: labTestAmbiguousCount,
     labTestReplyPending: labAck?.pending ?? 0,
+    labPendingQueries: labPending?.pending ?? 0,
     labTestReplyStates: labAck?.counts ?? null,
     duplicateVisible: duplicateVisibleCount,
     nonOperational: nonOperationalCount,
@@ -1466,6 +1468,7 @@ async function printHealthSummary(force = false) {
   const eventSpool = spool.pendingBackend;
   const mirrorSpool = spool.pendingLab;
   const deadLetters = spool.quarantined;
+  const pendingQueries = labPendingInbox ? (await labPendingInbox.snapshot()).pending : 0;
   const cooldown = Math.max(0, backendNextAllowedAt - Date.now());
   const backendLabel = BACKEND_SYNC_ENABLED ? backendState : 'local-only';
   const readiness = assessRuntimeReadiness({
@@ -1477,7 +1480,7 @@ async function printHealthSummary(force = false) {
     mirrorSpool,
     deadLetters
   });
-  const line = `HEALTH ready=${readiness.ready} mode=${RUNTIME_MODE} source=${activeSourceTitle || 'buscando'} | backend=${backendLabel}${cooldown && BACKEND_SYNC_ENABLED ? ` cooldown=${Math.ceil(cooldown/1000)}s` : ''} | capturados=${capturedCount} | spool=${eventSpool} | sourceReply=${sourceReplies.pending}/${sourceReplies.ambiguous} | labPend=${mirrorSpool} | dead=${deadLetters}`;
+  const line = `HEALTH ready=${readiness.ready} mode=${RUNTIME_MODE} source=${activeSourceTitle || 'buscando'} | backend=${backendLabel}${cooldown && BACKEND_SYNC_ENABLED ? ` cooldown=${Math.ceil(cooldown/1000)}s` : ''} | capturados=${capturedCount} | spool=${eventSpool} | sourceReply=${sourceReplies.pending}/${sourceReplies.ambiguous} | labPend=${mirrorSpool} | labQueries=${pendingQueries} | dead=${deadLetters}`;
   const heartbeatDue = Date.now() - lastHealthHeartbeatAt >= 300000;
   if (force && (line !== lastPrintedHealthLine || heartbeatDue)) {
     console.log(line);
