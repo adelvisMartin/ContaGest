@@ -26,6 +26,8 @@ import { assessRuntimeReadiness } from './health-state.mjs';
 import { createBridgeSpoolRuntime } from './spool-runtime.mjs';
 import { createSourceReplyJournal } from './source-reply-journal.mjs';
 import { labSendFailure, labSeenOutcome } from './lab-delivery-state.mjs';
+import { createLabTestReplyJournal, labTestTagForMessage } from './lab-test-reply-journal.mjs';
+import { atomicWriteJson } from './spool-journal.mjs';
 import { localKillSwitchState } from './promotion-guard.mjs';
 
 const config = assertRuntimeConfig(loadRuntimeConfig());
@@ -66,6 +68,7 @@ const LEGACY_MIRROR_SPOOL_DIR = path.join(DATA_DIR, 'spool-lab-mirror');
 const LEGACY_DEADLETTER_DIR = path.join(DATA_DIR, 'dead-letter');
 const SPOOL_V2_DIR = path.join(DATA_DIR, 'spool-v2');
 const SOURCE_REPLY_DIR = path.join(DATA_DIR, 'source-replies');
+const LAB_TEST_REPLY_DIR = path.join(DATA_DIR, 'lab-test-replies');
 const TRAINING_DIR = path.join(DATA_DIR, 'training');
 const SEEN_FILE = path.join(DATA_DIR, 'seen-source-message-ids.json');
 const LAB_SEEN_FILE = path.join(DATA_DIR, 'seen-lab-test-message-ids.json');
@@ -89,6 +92,9 @@ let context = null;
 let page = null;
 let seen = await loadSeen();
 let labSeen = await loadLabSeen();
+const labTestReplyJournal = LAB_TEST_INPUT_ENABLED ? createLabTestReplyJournal({
+  rootDir:LAB_TEST_REPLY_DIR,labGroupId:LAB_GROUP_ID,sourceGroupId:SOURCE_GROUP_ID
+}) : null;
 let sourceBaselineCompleted = false;
 let activeSourceTitle = '';
 let flushingEvents = false;
@@ -179,7 +185,7 @@ function rememberSeen(id) {
 
 async function saveLabSeenNow() {
   const values = [...labSeen].slice(-10000);
-  await fs.writeFile(LAB_SEEN_FILE, JSON.stringify(values), 'utf8').catch(() => {});
+  await atomicWriteJson(LAB_SEEN_FILE,values);
 }
 function rememberLabSeen(id) {
   if (!id) return;
@@ -223,6 +229,8 @@ async function writeHealth(extra = {}) {
   const now = Date.now();
   const spool = await spoolRuntime.snapshot();
   const sourceReplies = await sourceReplyJournal.snapshot();
+  const labAck = labTestReplyJournal ? await labTestReplyJournal.snapshot() : null;
+  labTestAmbiguousCount=labAck?.ambiguous ?? 0;
   const counters = {
     captured: capturedCount,
     delivered: deliveredCount,
@@ -230,6 +238,8 @@ async function writeHealth(extra = {}) {
     sourceRepliesSent: sourceReplySentCount,
     sourceRepliesAmbiguous: sourceReplyAmbiguousCount,
     labTestReplyAmbiguous: labTestAmbiguousCount,
+    labTestReplyPending: labAck?.pending ?? 0,
+    labTestReplyStates: labAck?.counts ?? null,
     duplicateVisible: duplicateVisibleCount,
     nonOperational: nonOperationalCount,
     seenIds: seen.size,
@@ -981,7 +991,7 @@ async function processSourceRows() {
 }
 
 function labTestTagFor(externalMessageId) {
-  return `[LABTEST:${sha256(externalMessageId).slice(0, 10)}]`;
+  return labTestTagForMessage(externalMessageId);
 }
 
 function localLabTestReply(row, classification) {
@@ -1159,16 +1169,13 @@ async function processLabTestInput() {
   const sourceBefore = await currentChatTitle();
   const opened = await openGroup(LAB_GROUP_NAME, true);
   if (!opened || normalize(await currentChatTitle()) !== normalize(LAB_GROUP_NAME)) {
-    await log(`LAB_TEST_OPEN_FAIL current=${await currentChatTitle()}`);
-    await writeDomDiagnostic('lab-test-open-fail');
+    await log('LAB_TEST_OPEN_FAIL');
     if (sourceTitleMatches(sourceBefore, SOURCE_MATCHES)) await openSourceGroup().catch(() => false);
     return;
   }
-  try {
-    await assertCurrentLabIdentity();
-  } catch (error) {
-    await log(`LAB_TEST_IDENTITY_FAIL ${error.message}`);
-    await writeDomDiagnostic('lab-test-identity-fail');
+  try { await assertCurrentLabIdentity(); }
+  catch {
+    await log('LAB_TEST_IDENTITY_FAIL');
     await openSourceGroup().catch(() => false);
     return;
   }
@@ -1180,40 +1187,66 @@ async function processLabTestInput() {
   for (const row of visible) {
     if (!row?.id || labSeen.has(row.id)) continue;
     const body = String(row.text || '').trim();
-    if (!body || body.includes('[SHADOW:') || body.includes('[LABTEST:') || body.includes('🧪 CONTROL HÍPICO · SHADOW')) {
+    if (row.fromMe || !body || body.includes('[SHADOW:') || body.includes('[LABTEST:') || body.includes('🧪 CONTROL HÍPICO · SHADOW')) {
       rememberLabSeen(row.id); // intentionally ignored, never a pending response
       continue;
     }
 
-    const classification = classifyLocal(body);
     const tag = labTestTagFor(row.id);
+    // A confirmed ack survives restart even if the legacy seen-file did not.
+    const journalRecord = await labTestReplyJournal.read(row.id);
+    if (journalRecord?.state === 'confirmed') {
+      rememberLabSeen(row.id);
+      await saveLabSeenNow();
+      continue;
+    }
+    if (journalRecord?.state === 'ambiguous' || journalRecord?.state === 'sending') {
+      // Never retry an uncertain Enter. Only an outbound tagged message is proof.
+      await assertCurrentLabIdentity();
+      if (await visibleLabHasTag(tag)) {
+        await labTestReplyJournal.confirm(row.id,{visibleTag:true});
+        rememberLabSeen(row.id);
+        await saveLabSeenNow();
+        await log('LAB_TEST_REPLY_RECONCILED id='+tag);
+      }
+      continue;
+    }
+
+    const classification = classifyLocal(body);
+    await labTestReplyJournal.prepare(row.id); // fsync before any browser send
+    await labTestReplyJournal.begin(row.id); // durable sending intent
     try {
       await sendTextInCurrentLab(localLabTestReply(row, classification), tag);
+      await labTestReplyJournal.confirm(row.id,{visibleTag:true});
       rememberLabSeen(row.id); // confirmed delivery/tag; never ack before sending
       await saveLabSeenNow();
       processed += 1;
-      await log(`LAB_TEST_READ id=${tag} intent=${classification.intent}`);
+      await log('LAB_TEST_READ id='+tag+' intent='+classification.intent);
     } catch (error) {
+      const state=await labTestReplyJournal.read(row.id);
+      // A confirmed journal always wins if the auxiliary seen file failed.
+      if (state?.state === 'confirmed') throw error;
       const outcome = labSeenOutcome({error});
+      if (outcome === 'RETRY') {
+        await labTestReplyJournal.retryPrepared(row.id);
+      }
       if (outcome === 'AMBIGUOUS') {
-        rememberLabSeen(row.id); // no automatic duplicate after uncertain Enter
-        await saveLabSeenNow();
+        await labTestReplyJournal.markAmbiguous(row.id);
         labTestAmbiguousCount += 1;
       }
-      await log(`LAB_TEST_REPLY_${outcome} id=${tag}`);
+      await log('LAB_TEST_REPLY_'+outcome+' id='+tag);
     }
   }
 
   labBootstrapCompleted = true;
   await saveLabSeenNow();
-  if (processed) console.log(`LAB prueba: ${processed} mensaje(s) leído(s) y clasificado(s).`);
+  if (processed) console.log('LAB prueba: '+processed+' mensaje(s) leído(s) y clasificado(s).');
   await openSourceGroup().catch(() => false);
   activeSourceTitle = await currentChatTitle();
 }
-
 async function visibleLabHasTag(tag) {
   return page.evaluate((needle) => {
-    const messages = Array.from(document.querySelectorAll('.message-out, [data-id]')).slice(-100);
+    const messages = Array.from(document.querySelectorAll('.message-out')).slice(-100);
     return messages.some((node) => String(node.innerText || '').includes(needle));
   }, tag).catch(() => false);
 }
@@ -1365,6 +1398,15 @@ async function main() {
 
   const spoolInit = await spoolRuntime.initialize();
   const sourceReplyInit = await sourceReplyJournal.initialize();
+  if (labTestReplyJournal) {
+    const labInit=await labTestReplyJournal.initialize();
+    const labState=await labTestReplyJournal.snapshot();
+    labTestAmbiguousCount=labState.ambiguous;
+    if(labInit.recovered) {
+      await log(`LAB_TEST_RECOVERED_AMBIGUOUS count=${labInit.recovered}`);
+      console.log(`LAB: ${labInit.recovered} envío(s) interrumpido(s) requieren conciliación; no se reenviarán automáticamente.`);
+    }
+  }
   if (sourceReplyInit.recovered) {
     console.log(`Source reply: ${sourceReplyInit.recovered} entrega(s) in-flight quedaron ambiguas; no se reenviarán automáticamente.`);
     await log(`SOURCE_REPLY_RECOVERED_AMBIGUOUS count=${sourceReplyInit.recovered}`);
