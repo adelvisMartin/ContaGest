@@ -213,8 +213,13 @@ export function createLabPendingQueryInbox({rootDir,labGroupId,sourceGroupId,now
     async read(messageId){
       assertReady();
       const hash=identity(messageId);
-      await scan(); // Enforce short expiry before reading a trusted reference.
-      return openFile(hash);
+      const item=await openFile(hash);
+      if(!item)return null;
+      if(clock()-Date.parse(item.messageTimestamp)>=maxAgeMs){
+        await fs.rm(fileFor(hash));
+        return null;
+      }
+      return item;
     },
     async enqueue(candidate){
       assertReady();
