@@ -39,12 +39,12 @@ export function createLabPendingQueryInbox({rootDir,labGroupId,sourceGroupId,now
   const fileFor=hash=>path.join(root,hash+'.json');
   const assertReady=()=>{if(!initialized||!token||!key)throw new Error('LAB_PENDING_NOT_INITIALIZED');};
 
-  function validate(item){
+  function validate(item,{allowExpired=false}={}){
     if(!item||typeof item!=='object'||Array.isArray(item)||
       typeof item.messageId!=='string'||typeof item.senderId!=='string'||
       typeof item.text!=='string'||item.text.length<6||item.text.length>1200||
       !PURPOSES.has(item.purpose)||!Number.isFinite(item.capturedAt)||
-      item.capturedAt>clock()+60_000||clock()-item.capturedAt>maxAgeMs||
+      item.capturedAt>clock()+60_000||(!allowExpired&&clock()-item.capturedAt>maxAgeMs)||
       stableLabSenderKey(item.messageId)!==item.senderId||
       labReadOnlyQueryPurpose(item.text,classifyLocal(item.text))!==item.purpose||
       !labConversationInput({id:item.messageId,text:item.text,fromMe:false,hasMedia:false},classifyLocal(item.text)).eligible||
@@ -136,7 +136,7 @@ export function createLabPendingQueryInbox({rootDir,labGroupId,sourceGroupId,now
       decipher.setAAD(Buffer.from(scopeHash+'|'+hash));
       decipher.setAuthTag(Buffer.from(data.tag,'hex'));
       const decoded=Buffer.concat([decipher.update(Buffer.from(data.ciphertext,'base64')),decipher.final()]);
-      const item=validate(JSON.parse(decoded.toString('utf8')));
+      const item=validate(JSON.parse(decoded.toString('utf8')),{allowExpired:true});
       if(identity(item.messageId)!==hash)throw new Error('LAB_PENDING_ID_MISMATCH');
       return item;
     }catch{throw new Error('LAB_PENDING_RECORD_INVALID');}
@@ -151,15 +151,19 @@ export function createLabPendingQueryInbox({rootDir,labGroupId,sourceGroupId,now
   }
   async function scan(){
     const names=(await fs.readdir(root)).filter(n=>n.endsWith('.json'));
-    if(names.length>maxEntries)throw new Error('LAB_PENDING_CAPACITY_EXCEEDED');
     const rows=[];let expired=0;
     for(const filename of names.sort()){
       if(!/^[a-f0-9]{64}\.json$/.test(filename))throw new Error('LAB_PENDING_FILE_INVALID');
       const hash=filename.slice(0,-5);
       let item;
       try{item=await openFile(hash);}catch(e){throw e;}
-      if(item){rows.push(item);}
+      if(item){
+        if(clock()-item.capturedAt>=maxAgeMs){
+          await fs.rm(fileFor(hash));expired++;
+        }else rows.push(item);
+      }
     }
+    if(rows.length>maxEntries)throw new Error('LAB_PENDING_CAPACITY_EXCEEDED');
     return {rows,expired};
   }
   return Object.freeze({
@@ -183,6 +187,7 @@ export function createLabPendingQueryInbox({rootDir,labGroupId,sourceGroupId,now
       assertReady();
       const item=validate({...candidate,capturedAt:clock()});
       const hash=identity(item.messageId);
+      await scan(); // Expire old entries before testing idempotency and capacity.
       const existing=await openFile(hash);
       if(existing){
         // Do not rewrite a quoted race scope or candidate text under a reused ID.
