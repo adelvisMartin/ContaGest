@@ -31,6 +31,7 @@ import { atomicWriteJson } from './spool-journal.mjs';
 import { createLabConversationContext, labConversationInput, planLabConversation, stableLabSenderKey } from './lab-conversation-context.mjs';
 import { localKillSwitchState } from './promotion-guard.mjs';
 import { queryCanonicalLab, explicitLabRaceScope, labReadOnlyQueryPurpose, resolveQuotedLabRaceScope } from './lab-canonical-query.mjs';
+import { checkLabSendEligibility } from './lab-handoff-eligibility.mjs';
 import { selectLabAnswer } from './lab-answer-policy.mjs';
 import { createLabQuotedRaceJournal } from './lab-quoted-race-journal.mjs';
 
@@ -1264,6 +1265,24 @@ async function processLabTestInput() {
       : null;
     const scopedRace=directRace||visibleQuotedRace||durableQuotedRace||null;
     const quotedVerified=Boolean(row.quotedId && !directRace && (visibleQuotedRace||durableQuotedRace));
+    const eligibilityArgs={
+      ingestUrl:INGEST_URL,token:TOKEN,labGroupId:LAB_GROUP_ID,
+      labChannelKey:LAB_CHANNEL_KEY,messageId:row.id,senderId:sender,
+      race:scopedRace,timeoutMs:Math.min(5000,BACKEND_TIMEOUT_MS)
+    };
+    // Fail closed: a missing backend/identity/handoff table must never
+    // silently turn a human-owned chat into an autonomous LAB send.
+    const eligibleBefore=sender && BACKEND_SYNC_ENABLED && backendState === 'online'
+      ? await checkLabSendEligibility(eligibilityArgs)
+      : {allowed:false,reason:'LAB_HANDOFF_UNAVAILABLE'};
+    if(!eligibleBefore.allowed){
+      if(eligibleBefore.reason==='LAB_HANDOFF_HELD'){
+        rememberLabSeen(row.id); // avoid delayed bot reply after operator resumes
+        await saveLabSeenNow();
+      }
+      await log('LAB_HANDOFF_PRECHECK_'+eligibleBefore.reason+' id='+tag);
+      continue; // never prepare a send journal for a human-owned conversation
+    }
     const canonical = inquiryPurpose && sender && BACKEND_SYNC_ENABLED && backendState === 'online'
       ? await queryCanonicalLab({
           ingestUrl:INGEST_URL,token:TOKEN,
@@ -1274,6 +1293,23 @@ async function processLabTestInput() {
           race:scopedRace,timeoutMs:Math.min(5000,BACKEND_TIMEOUT_MS)
         })
       : {available:false,reason:'LAB_CANONICAL_NOT_QUERIED'};
+    if(canonical.reason==='LAB_HANDOFF_HELD'){
+      rememberLabSeen(row.id);
+      await saveLabSeenNow();
+      await log('LAB_HANDOFF_QUERY_HELD id='+tag);
+      continue;
+    }
+    // A slower canonical query may overlap operator takeover: recheck the
+    // current ownership immediately before creating a durable send intent.
+    const eligibleAfter=await checkLabSendEligibility(eligibilityArgs);
+    if(!eligibleAfter.allowed){
+      if(eligibleAfter.reason==='LAB_HANDOFF_HELD'){
+        rememberLabSeen(row.id);
+        await saveLabSeenNow();
+      }
+      await log('LAB_HANDOFF_RECHECK_'+eligibleAfter.reason+' id='+tag);
+      continue;
+    }
     await labTestReplyJournal.prepare(row.id); // fsync before any browser send
     await labTestReplyJournal.begin(row.id); // durable sending intent
     try {
