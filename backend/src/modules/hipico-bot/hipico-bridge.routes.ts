@@ -13,6 +13,7 @@ import { operationalRaceContextKey } from './hipico-race-context-key.js';
 import { applyOperatorCommand, planSafeResponse, updateHandoffAfterDecision } from './hipico-response-safety.js';
 import { loadHandoff, persistResponsePlan, readResponseReceiptForRecovery, responseSafetyReadiness, saveHandoff } from './hipico-handoff.store.js';
 import { verifyLabResponseRecovery } from './hipico-lab-response-recovery.js';
+import { reconcileCanonicalLabReceipt } from './hipico-lab-canonical-receipt.js';
 import { canonicalShadowReadiness, persistCanonicalShadow } from './hipico-canonical-shadow.store.js';
 import { bridgePersistenceReady, ensureGroupShadowOutbox, ensureSourceReplyOutbox, getSourceReplyOutbox, persistBridgeTransportEvent, recordSourceReplyDelivery, sourceReplyOutboxReady } from './hipico-bridge-transport.store.js';
 import { bridgeTokenConfigured, bridgeTokenValid } from './hipico-bridge-security.js';
@@ -178,12 +179,35 @@ router.post('/bridge/lab/query',async(req,res)=>{
           ownerId,groupKey:OFFICIAL_SOURCE_CHANNEL_KEY,race:input.race,
           purpose:input.purpose as 'status'|'result'|'participants'
         });
-    return res.json({ok:true,mode:'shadow',status:canonical.reason,
-      text:canonical.text,canonical:{
-        available:canonical.available,
-        ...(canonical.available&&'state' in canonical&&'version' in canonical&&'updatedAt' in canonical
-          ?{state:canonical.state,version:canonical.version,updatedAt:canonical.updatedAt}:{})
-      },authority:canonical.authority,decision:{intent:result.intent,reason:decision.decisionReason}});
+    // Read-only canonical race responses are committed as immutable hashes in
+    // the existing response receipt authority before the HTTP response leaves.
+    // The duplicate request must observe the SAME canonical revision/text;
+    // never resurrect a result after a later operator correction.
+    let receiptProjection:Awaited<ReturnType<typeof reconcileCanonicalLabReceipt>>|null=null;
+    if((input.purpose==='status'||input.purpose==='result')&&canonical.available){
+      const readiness=await responseSafetyReadiness();
+      if(!readiness.ready)return res.status(503).json({ok:false,error:'LAB_QUERY_RECEIPT_STORE_UNAVAILABLE'});
+      const raceKey=input.race?operationalRaceContextKey(input.race):null;
+      const [labGlobalHandoff,labRaceHandoff]=await Promise.all([
+        loadHandoff(input.channelKey,sender,null),
+        raceKey?loadHandoff(input.channelKey,sender,raceKey):Promise.resolve(null)
+      ]);
+      receiptProjection=await reconcileCanonicalLabReceipt({
+        ownerId,sourceGroupKey:OFFICIAL_SOURCE_CHANNEL_KEY,
+        labGroupId:input.groupId,labChannelKey:input.channelKey,
+        senderId:sender,externalMessageId:input.externalMessageId,
+        purpose:input.purpose,canonical,
+        timestamp:input.timestamp,nowMs:Date.now(),
+        humanOwned:labGlobalHandoff.ownership==='human'||labRaceHandoff?.ownership==='human'
+      });
+    }
+    const verified=receiptProjection||canonical;
+    return res.json({ok:true,mode:'shadow',status:verified.reason,
+      text:verified.text,canonical:{
+        available:verified.available,
+        ...(verified.available&&'state' in verified&&'version' in verified&&'updatedAt' in verified
+          ?{state:verified.state,version:verified.version,updatedAt:verified.updatedAt}:{})
+      },authority:verified.authority,decision:{intent:result.intent,reason:decision.decisionReason}});
   }catch{
     return res.status(503).json({ok:false,error:'LAB_QUERY_CANONICAL_UNAVAILABLE'});
   }
