@@ -63,7 +63,7 @@ export function resolveLabRaceClarification(text, priorContext, classification) 
       !validRaceNumber(priorContext?.raceNumber) || priorContext?.raceScope) return null;
   const raw = String(text || '').trim();
   if (!raw || raw.length > 140 || /[\n\r\[\]{};<>$]/.test(raw) ||
-      /\b(?:juega|consigue|apuesta|apostar|jugada|monto|saldo|pagar|pago|cobrar|premio|confirmar|cierra|cerrar|anula|cancelar|ignora|instrucciones|sistema|admin|token)\b/i.test(normalize(raw))) return null;
+      /\b(?:carrera|juega|consigue|apuesta|apostar|jugada|monto|saldo|pagar|pago|cobrar|premio|confirmar|cierra|cerrar|anula|cancelar|resultado|llegada|pizarra|ignora|instrucciones|sistema|admin|token)\b/i.test(normalize(raw))) return null;
   const match = raw.match(/^(?:en\s+)?(?:(?:el\s+)?hip[oó]dromo\s+)?([\p{L}][\p{L}\p{N} -]{1,79}?)\s+(?:el|fecha)\s+(\d{4}-\d{2}-\d{2})[.!?]?$/iu);
   if (!match) return null;
   return safeRaceScope({
