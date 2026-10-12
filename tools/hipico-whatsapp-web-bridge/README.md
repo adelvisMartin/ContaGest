@@ -135,6 +135,17 @@ Si la fecha no corresponde a ninguna reunión, o existen dos reuniones que coinc
 
 Esta es una mejora de código y pruebas; la verificación operacional con múltiples reuniones reales y WhatsApp LAB sigue pendiente.
 
+## Referencias citadas LAB fuera del historial visible (#892)
+
+El Bridge puede conservar una **pista no autoritativa** para preguntas citadas del mismo participante aunque el mensaje original haya salido de la ventana de WhatsApp Web o el proceso se haya reiniciado. El journal privado `HIPICO_DATA_DIR/lab-quoted-races-<hash>.json` está vinculado a IDs SOURCE y LAB pinneados y guarda un máximo de **300** referencias durante **20 minutos**.
+
+Cada referencia usa una clave HMAC derivada del ID de mensaje y la identidad estable del remitente `@lid` / `@c.us`, junto a **número de carrera, hipódromo y fecha válidos**. No conserva mensaje original, JID de participante, cuerpo del chat, token, datos de sesión, saldos o apuestas. Directorio privado y fichero 0600.
+
+La pista solo se escribe si se ha confirmado de forma durable el envío LAB correspondiente. Ante reinicio después del ACK durable pero antes del guardado auxiliar, se puede reconstruir la pista mientras el original vuelva a estar visible. Ante corrupción del fichero o cambio de grupos, la inicialización falla cerrada, sin reconstruirlo a ciegas.
+
+Para responder una cita se exige remitente estable coincidente, IDs del mismo LAB, mensaje citado distinto del mensaje actual, TTL vigente y ausencia de conflicto con la carrera escrita en la nueva pregunta. La respuesta siempre requiere la consulta canónica del backend: el journal **no constituye evidencia de participantes, resultados ni oficialidad**. Si la referencia expira o no puede validarse, el bot solicita número, hipódromo y fecha de nuevo.
+
+Esto no habilita SOURCE write, no sustituye la política del Conversation Engine y no equivale a QA real con WhatsApp.
 ## Consultas de programación hípica segura desde LAB (consolidación #898)
 
 El mismo endpoint autenticado `POST /api/v1/hipico-bot/bridge/lab/query` también interpreta preguntas no monetarias como «¿Qué carrera sigue?», «¿Cuál es la carrera activa?» y «¿Cuál es la cartelera?». **No se habilita el PR anterior de ingestión LAB ni se crea una segunda autoridad conversacional.** Se reutiliza `RaceQueryService` con `RaceLifecycleStore` para lecturas bajo `ownerId` y grupo SOURCE configurados únicamente por el backend.
