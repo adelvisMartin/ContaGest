@@ -31,6 +31,7 @@ import { atomicWriteJson } from './spool-journal.mjs';
 import { createLabConversationContext, labConversationInput, planLabConversation, stableLabSenderKey } from './lab-conversation-context.mjs';
 import { localKillSwitchState } from './promotion-guard.mjs';
 import { queryCanonicalLab, explicitLabRaceScope } from './lab-canonical-query.mjs';
+import { composeLabAssistantReply } from './lab-assistant-replies.mjs';
 
 const config = assertRuntimeConfig(loadRuntimeConfig());
 const {
@@ -60,7 +61,8 @@ const {
   baselineIgnoreHistory: BASELINE_IGNORE_HISTORY,
   labTestInputEnabled: LAB_TEST_INPUT_ENABLED,
   labTestPollMs: LAB_TEST_POLL_MS,
-  labTestBootstrapLimit: LAB_TEST_BOOTSTRAP_LIMIT
+  labTestBootstrapLimit: LAB_TEST_BOOTSTRAP_LIMIT,
+  labAssistantName: LAB_ASSISTANT_NAME
 } = config;
 const SOURCE_REPLY_KILL_SWITCH = localKillSwitchState();
 const SOURCE_AUTO_REPLY_ACTIVE = SOURCE_AUTO_REPLY_ENABLED && !SOURCE_REPLY_KILL_SWITCH.active;
@@ -1003,24 +1005,12 @@ function labTestTagFor(externalMessageId) {
 }
 
 function localLabTestReply(row, classification, plan = null, canonical = null) {
-  const textValue = String(row.text || '').slice(0, 1200);
-  const entities = classification.entities || {};
-  const details = [];
-  if (entities.role) details.push(`Rol: ${entities.role === 'player' ? 'JUEGA' : 'CONSIGUE'}`);
-  if (entities.play) details.push(`Jugada: ${entities.play}`);
-  if (entities.horse) details.push(`Caballo: ${entities.horse}`);
-  if (entities.amount != null) details.push(`Monto detectado: ${entities.amount}`);
-  if (entities.raceNumber != null) details.push(`Carrera: ${entities.raceNumber}`);
-  if (Array.isArray(entities.board) && entities.board.length) details.push(`Pizarra: ${entities.board.join('-')}`);
-  return [
-    labTestTagFor(row.id),
-    '🧪 CONTROL HÍPICO · PRUEBA LAB',
-    `Mensaje: ${textValue || '[sin texto]'}`,
-    `Lectura: ${classification.intent} · riesgo ${classification.risk} · confianza ${(classification.confidence * 100).toFixed(1)}%`,
-    ...details,
-    `Propuesta: ${localSuggestion(classification)}`,
-    '⚠️ PRUEBA LOCAL. No modifica jugadas, saldos, cierres ni resultados reales.'
-  ].join('\n').slice(0, 3900);
+  // Only presentation changes here: the browser send, LAB tag, journal and ACK
+  // retain their previous single-send safety authority.
+  const text = composeLabAssistantReply({
+    classification, plan, canonical, assistantName: LAB_ASSISTANT_NAME
+  });
+  return [text, labTestTagFor(row.id)].join('\n').slice(0, 3900);
 }
 
 async function clearComposerSafely(composer) {
@@ -1230,12 +1220,12 @@ async function processLabTestInput() {
     const plan = planLabConversation(row, classification, prior);
     // Query-only backend call completes BEFORE claiming a WhatsApp send intent.
     // No token, URL or raw API response is ever appended to chat logs.
-    const canonical = classification.risk === 'safe' && sender && BACKEND_SYNC_ENABLED && backendState === 'online'
+    const canonical = classification.risk === 'safe' && sender && plan.isQuestion && plan.raceScope && BACKEND_SYNC_ENABLED && backendState === 'online'
       ? await queryCanonicalLab({
           ingestUrl:INGEST_URL,token:TOKEN,
           labGroupId:LAB_GROUP_ID,labChannelKey:LAB_CHANNEL_KEY,
           messageId:row.id,senderId:sender,text:body,
-          race:explicitLabRaceScope(body),timeoutMs:Math.min(5000,BACKEND_TIMEOUT_MS)
+          race:plan.raceScope || explicitLabRaceScope(body),timeoutMs:Math.min(5000,BACKEND_TIMEOUT_MS)
         })
       : {available:false,reason:'LAB_CANONICAL_NOT_QUERIED'};
     await labTestReplyJournal.prepare(row.id); // fsync before any browser send
@@ -1248,7 +1238,7 @@ async function processLabTestInput() {
       // The WAL-backed confirmed acknowledgement is the single send authority.
       // Context is only a local hint; failed persistence can never resend LAB.
       if (plan.rememberRace && labConversationContext) {
-        try { await labConversationContext.remember(plan.sender,plan.raceNumber); }
+        try { await labConversationContext.remember(plan.sender,plan.raceNumber,plan.raceScope); }
         catch { await log('LAB_CONTEXT_PERSIST_FAILED'); }
       }
       processed += 1;
