@@ -94,6 +94,14 @@ El motor conversacional backend y los datos canónicos siguen siendo la autorida
 
 Pruebas de contrato: `npm --prefix tools/hipico-whatsapp-web-bridge run qa`. No equivale a QA de WhatsApp real, Windows ni soak prolongado.
 
+## Consultas canónicas del LAB (#892)
+
+El listener LAB de grupo pinneado conserva el journal durable y el filtro anti-eco; cuando la sincronización backend está habilitada, envía un evento **shadow** con `channelRole=lab` al endpoint `/bridge/events` existente. El remitente sólo se identifica si el ID de mensaje contiene un JID estable `@lid` o `@c.us`; jamás se usa el nombre mostrado como identidad. Si el backend no confirma una decisión tipada, no hay envío automático ni respuesta local que finja datos.
+
+Las preguntas informativas reconocidas por el backend se resuelven mediante `RaceQueryService`, con el `ownerId` y `groupKey` verificados contra el canal persistido: próxima/activa, programación, hora, inscritos, retiros, resultados y etapa de oficialidad. `carrera 5` y `la quinta` exigen un contexto único; se solicita aclaración cuando hay reuniones ambiguas. Datos ausentes se comunican como ausentes, nunca como inventados.
+
+El motor de decisiones y handoff conserva la autoridad, y los mensajes con riesgo monetario, adjuntos, prompt injection, rate limits o fallos de permisos no obtienen datos ni efectos. Se mantiene `SOURCE` read-only y Jev en shadow. La habilitación del envío LAB y la verificación física siguen sujetas a #119/#120/#837, no se afirman como aprobadas en este cambio.
+
 ## Prueba autónoma LAB
 
 Desde la raíz:
