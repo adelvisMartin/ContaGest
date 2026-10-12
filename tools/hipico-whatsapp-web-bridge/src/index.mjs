@@ -1220,7 +1220,7 @@ async function processLabTestInput() {
     const plan = planLabConversation(row, classification, prior);
     // Query-only backend call completes BEFORE claiming a WhatsApp send intent.
     // No token, URL or raw API response is ever appended to chat logs.
-    const canonical = classification.risk === 'safe' && sender && plan.isQuestion && plan.raceScope && BACKEND_SYNC_ENABLED && backendState === 'online'
+    const canonical = classification.risk === 'safe' && sender && plan.queryCategory === 'STATUS' && plan.raceScope && BACKEND_SYNC_ENABLED && backendState === 'online'
       ? await queryCanonicalLab({
           ingestUrl:INGEST_URL,token:TOKEN,
           labGroupId:LAB_GROUP_ID,labChannelKey:LAB_CHANNEL_KEY,
