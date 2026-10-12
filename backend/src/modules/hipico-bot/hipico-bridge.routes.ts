@@ -15,7 +15,7 @@ import { operatorActorRef, operatorTokenConfigured, operatorTokenValid } from '.
 import { configuredOutboxOwnerId } from './hipico-outbox.store.js';
 import { AutonomousReplyService, sourceAutoReplyEnabled } from '../hipico/autonomous-reply.service.js';
 import { resolveCanonicalLabRaceQuery } from './hipico-lab-race-query.js';
-import { persistLabReplayCandidate, recoverLabReplayCandidate } from './hipico-lab-recovery.store.js';
+import { persistLabReplayCandidate, recoverLabReplayCandidate, pruneExpiredLabReplayCandidates } from './hipico-lab-recovery.store.js';
 
 const router = Router();
 const autonomousReplyService = new AutonomousReplyService();
@@ -108,6 +108,21 @@ router.post('/bridge/replies/:id/receipt',async(req,res)=>{
     return res.status(503).json({ok:false,retryable:true,error:'SOURCE_REPLY_RECEIPT_FAILED'});
   }
 });
+// LAB replay maintenance is a narrow, token-authenticated operation. It only
+// clears expired non-financial snapshot text from existing response receipts.
+router.post('/bridge/maintenance/lab-replay-prune',async(req,res)=>{
+  if(!bridgeTokenValid(req.header('x-hipico-bridge-token')||undefined)){
+    return res.status(401).json({ok:false,error:'Token del Bridge Hipico invalido.'});
+  }
+  try{
+    const deleted=await pruneExpiredLabReplayCandidates();
+    return res.status(200).json({ok:true,expiredSnapshotsCleared:deleted});
+  }catch(error:any){
+    console.error('[hipico-bridge] LAB replay purge unavailable',{error:error?.code||'DATABASE_UNAVAILABLE'});
+    return res.status(503).json({ok:false,retryable:true,error:'LAB_REPLAY_PRUNE_UNAVAILABLE'});
+  }
+});
+
 router.post('/bridge/events',async(req,res)=>{
   if(!bridgeTokenValid(req.header('x-hipico-bridge-token')||undefined))return res.status(401).json({ok:false,error:'Token del Bridge Hipico invalido.'});
   const parsed=bridgeEventSchema.safeParse(req.body);if(!parsed.success)return res.status(400).json({ok:false,retryable:false,error:'Evento del Bridge invalido.'});const input=parsed.data;
