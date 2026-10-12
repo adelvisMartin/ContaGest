@@ -6,6 +6,24 @@ export const SPOOL_SCHEMA_VERSION=2;
 export const SPOOL_STATES=Object.freeze(['queued','sent','failed','quarantined','replayed','expired']);
 const PRIVATE_DIR_MODE=0o700;
 const PRIVATE_FILE_MODE=0o600;
+const RECORD_ID_PATTERN=/^[0-9a-f]{64}$/;
+const SAFE_FAILURE_CODES=new Set([
+  'ECONNRESET','ECONNREFUSED','ETIMEDOUT','ENOTFOUND','EAI_AGAIN',
+  'EPIPE','EHOSTUNREACH','ENETUNREACH','ABORT_ERR','SPOOL_DISK_FULL',
+  'LAB_SEND_DISABLED','SPOOL_REPLAY_MISMATCH'
+]);
+export function spoolFailureCode(error){
+  const code=String(error?.code||'').trim().toUpperCase();
+  if(SAFE_FAILURE_CODES.has(code))return code;
+  const status=Number(error?.statusCode??error?.status);
+  if(Number.isInteger(status)&&status>=400&&status<=599)return `HTTP_${status}`;
+  return 'DELIVERY_FAILED';
+}
+
+
+export function spoolRecordId(kind,key){
+  return crypto.createHash('sha256').update(`${kind}|${key}`).digest('hex');
+}
 
 async function ensurePrivateDir(dir){
   await fs.mkdir(dir,{recursive:true,mode:PRIVATE_DIR_MODE});
@@ -16,7 +34,7 @@ export function createSpoolRecord({kind,key,payload,parserVersion='unknown',crea
   if(!kind||!key)throw new Error('SPOOL_KIND_KEY_REQUIRED');
   return{
     schemaVersion:SPOOL_SCHEMA_VERSION,
-    recordId:crypto.createHash('sha256').update(`${kind}|${key}`).digest('hex'),
+    recordId:spoolRecordId(kind,key),
     kind,key,state:'queued',payload,parserVersion,createdAt,updatedAt:createdAt,
     attempts:0,maxAttempts,nextAttemptAt:0,lastError:null
   };
@@ -52,7 +70,15 @@ export function validateSpoolRecord(record,{parserVersion}={}){
   const errors=[];
   if(Number(record?.schemaVersion)!==SPOOL_SCHEMA_VERSION)errors.push('SCHEMA_VERSION_MISMATCH');
   if(!SPOOL_STATES.includes(record?.state))errors.push('INVALID_STATE');
-  if(!record?.recordId||!record?.kind||!record?.key)errors.push('IDENTITY_MISSING');
+  const kind=record?.kind;
+  const key=record?.key;
+  if(typeof kind!=='string'||!kind||typeof key!=='string'||!key){
+    errors.push('IDENTITY_MISSING');
+  }else if(typeof record?.recordId!=='string'
+    ||!RECORD_ID_PATTERN.test(record.recordId)
+    ||record.recordId!==spoolRecordId(kind,key)){
+    errors.push('RECORD_ID_MISMATCH');
+  }
   if(parserVersion&&record?.parserVersion!==parserVersion)errors.push('PARSER_VERSION_MISMATCH');
   return{valid:errors.length===0,errors};
 }
@@ -66,10 +92,10 @@ export function transitionSpool(record,state,extra={}){
 
 export function registerFailure(record,error,{baseMs=5000,maxMs=900000,jitter=.2,random=Math.random,now=Date.now}={}){
   const attempts=Number(record.attempts||0)+1;
-  if(attempts>=Number(record.maxAttempts||8))return transitionSpool(record,'quarantined',{attempts,lastError:String(error?.message||error),nextAttemptAt:0});
+  if(attempts>=Number(record.maxAttempts||8))return transitionSpool(record,'quarantined',{attempts,lastError:spoolFailureCode(error),nextAttemptAt:0});
   const raw=Math.min(maxMs,baseMs*2**Math.max(0,attempts-1));
   const factor=1+((random()*2)-1)*jitter;
-  return transitionSpool(record,'failed',{attempts,lastError:String(error?.message||error),nextAttemptAt:now()+Math.max(0,Math.round(raw*factor))});
+  return transitionSpool(record,'failed',{attempts,lastError:spoolFailureCode(error),nextAttemptAt:now()+Math.max(0,Math.round(raw*factor))});
 }
 
 export function expireIfOld(record,{maxAgeMs,now=Date.now()}={}){

@@ -142,3 +142,14 @@ La fuente continúa sin ruta de envío. Un binding correcto no habilita por sí 
 ## 11. Criterio de salida
 
 Requiere evidencia reproducible de lectura source sin escritura, binding fuente/LAB, dedupe/retry, persistencia backend, recuperación de red/browser, host real, backup/restore y aceptación del riesgo de WhatsApp Web. Hasta completar QA del host, el estado correcto es `READY FOR QA`, no `PRODUCTION READY`.
+
+
+## Spool v2: unicidad y recuperación segura (#837)
+
+El runtime conserva **una autoridad por directorio de spool**: arrancar **una sola instancia** del Bridge propietaria de `HIPICO_DATA_DIR`. No compartir el directorio entre Docker, systemd, Windows, ni réplicas paralelas. La serialización de queue/flush añadida es **intraproceso**, no es una promesa de locking distribuido.
+
+Cada registro queued/failed/sent/quarantined exige identidad canónica SHA-256 de `kind|key`, coincidencia entre nombre del archivo y registro, y correspondencia del estado con su carpeta. Los registros manipulados o incoherentes nunca se envían automáticamente; pasan a cuarentena con un identificador nuevo seguro. Si ya existe un archivo corrupto para el ID esperado, el productor rechaza sobrescribirlo y se detiene para revisión. Ante un JSON corrupto, el Bridge conserva una copia byte-a-byte en `spool-v2/quarantined-raw/*.raw` con permisos 0700 en el directorio y 0600 en el archivo; ese material puede contener datos sensibles y se mantiene exclusivamente en el host autorizado.
+
+Los dos canales (`backend-event` y `lab-mirror`) tienen lanes independientes y cada uno admite un solo `flush` simultáneo por proceso. Una segunda invocación concurrente devuelve `busy=true` y cero intentos. Esto protege frente a reentradas del event loop, pero **no reemplaza** control de idempotencia persistente del backend, reconciliación de recibos, exclusión de procesos ni QA de reinicios y entregas ambiguas.
+
+Ante `SPOOL_EXISTING_RECORD_INVALID` o `SPOOL_QUARANTINE`, parar el Bridge, preservar copia privada del directorio y revisar el inventario. No borrar/renombrar manualmente records de envío ni usar replay sin la aprobación del procedimiento correspondiente. Nunca subir contenidos del spool, perfiles o mensajes completos a GitHub Actions.

@@ -8,6 +8,7 @@ import {
   expireIfOld,
   loadSpoolFile,
   registerFailure,
+  spoolFailureCode,
   validateSpoolRecord
 } from './spool-journal.mjs';
 import { normalizeReplayArgs } from './replay-policy.mjs';
@@ -57,6 +58,9 @@ export function createBridgeSpoolRuntime({
   if(!rootDir)throw new Error('SPOOL_ROOT_REQUIRED');
   const root=path.resolve(rootDir);
   const archive=path.join(root,'legacy-archive');
+  // Spool directory must be owned by one Bridge process. Serializes that owner's lanes.
+  const flushingKinds=new Set();
+  const queueInFlight=new Map();
 
   function stateDir(state){
     if(!SPOOL_STATES.includes(state))throw new Error('SPOOL_STATE_INVALID');
@@ -64,14 +68,22 @@ export function createBridgeSpoolRuntime({
   }
   function recordFile(record,state=record.state){return path.join(stateDir(state),`${record.recordId}.json`);}
   async function ensure(){
-    await Promise.all([...SPOOL_STATES.map((state)=>fs.mkdir(stateDir(state),{recursive:true})),fs.mkdir(archive,{recursive:true})]);
+    const dirs=[...SPOOL_STATES.map((state)=>stateDir(state)),archive,path.join(root,'quarantined-raw')];
+    await Promise.all(dirs.map(async(dir)=>{
+      await fs.mkdir(dir,{recursive:true,mode:0o700});
+      await fs.chmod(dir,0o700).catch(()=>{});
+    }));
   }
   async function findRecord(recordId){
     for(const state of SPOOL_STATES){
       const file=path.join(stateDir(state),`${recordId}.json`);
       const loaded=await loadSpoolFile(file).catch(()=>null);
-      if(loaded?.record&&loaded.validation.valid)return{...loaded,file,state};
-      if(loaded?.error?.code!=='ENOENT'&&loaded?.record)return{...loaded,file,state};
+      if(loaded?.record&&loaded.validation.valid){
+        if(loaded.record.state!==state)throw new Error('SPOOL_STATE_DIRECTORY_MISMATCH');
+        return{...loaded,file,state};
+      }
+      if(loaded?.record)throw new Error('SPOOL_EXISTING_RECORD_INVALID');
+      if(loaded?.error&&loaded.error.code!=='ENOENT')throw new Error('SPOOL_EXISTING_RECORD_INVALID');
     }
     return null;
   }
@@ -84,25 +96,49 @@ export function createBridgeSpoolRuntime({
   async function queue(kind,key,payload){
     if(!KIND_VALUES.has(kind))throw new Error('SPOOL_KIND_INVALID');
     const candidate=createSpoolRecord({kind,key,payload,parserVersion,createdAt:iso(now()),maxAttempts});
-    const existing=await findRecord(candidate.recordId);
-    if(existing){
-      if(payloadFingerprint(existing.record.payload)!==payloadFingerprint(payload)){
-        const error=new Error('Spool identity was reused with different payload content.');
-        error.code='SPOOL_REPLAY_MISMATCH';
-        error.retryable=false;
-        throw error;
-      }
-      return{record:existing.record,file:existing.file,duplicate:true};
+    const inflight=queueInFlight.get(candidate.recordId);
+    if(inflight){
+      await inflight;
+      return queue(kind,key,payload);
     }
-    const written=await persist(candidate);
-    return{...written,duplicate:false};
+    const insert=async()=>{
+      const existing=await findRecord(candidate.recordId);
+      if(existing){
+        if(payloadFingerprint(existing.record.payload)!==payloadFingerprint(payload)){
+          const error=new Error('SPOOL_REPLAY_MISMATCH');
+          error.code='SPOOL_REPLAY_MISMATCH';error.retryable=false;
+          throw error;
+        }
+        return{record:existing.record,file:existing.file,duplicate:true};
+      }
+      const written=await persist(candidate);
+      return{...written,duplicate:false};
+    };
+    const promise=insert();
+    queueInFlight.set(candidate.recordId,promise);
+    try{return await promise;}finally{
+      if(queueInFlight.get(candidate.recordId)===promise)queueInFlight.delete(candidate.recordId);
+    }
   }
   async function quarantineLoaded(file,record,reason){
     const nowIso=iso(now());
-    const quarantined={
-      ...(record||createSpoolRecord({kind:BRIDGE_SPOOL_KINDS.BACKEND_EVENT,key:`corrupt:${path.basename(file)}`,payload:{legacyFile:path.basename(file)},parserVersion,createdAt:nowIso,maxAttempts})),
-      state:'quarantined',updatedAt:nowIso,nextAttemptAt:0,lastError:String(reason||'QUARANTINED'),quarantineReason:String(reason||'QUARANTINED')
-    };
+    const invalid=!validateSpoolRecord(record).valid;
+    const safe=!invalid?record:createSpoolRecord({
+      kind:BRIDGE_SPOOL_KINDS.BACKEND_EVENT,
+      key:`invalid-record:${path.basename(file)}:${crypto.randomUUID()}`,
+      payload:{quarantinedOriginal:record??null,sourceFile:path.basename(file)},
+      parserVersion,createdAt:nowIso,maxAttempts
+    });
+    // A corrupt on-disk recordId is never trusted as a filesystem path segment.
+    if(invalid){
+      // Keep the exact original bytes for operator-led recovery; never post them to CI.
+      await ensure();
+      const original=path.join(root,'quarantined-raw',safe.recordId+'.raw');
+      await fs.copyFile(file,original,fs.constants.COPYFILE_EXCL);
+      await fs.chmod(original,0o600).catch(()=>{});
+    }
+    const quarantined={...safe,state:'quarantined',updatedAt:nowIso,nextAttemptAt:0,
+      lastError:String(reason||'QUARANTINED'),quarantineReason:String(reason||'QUARANTINED')};
     return persist(quarantined,{fromFile:file});
   }
   async function moveRecord(file,record,nextState,extra={}){
@@ -116,9 +152,12 @@ export function createBridgeSpoolRuntime({
     for(const name of names){
       const file=path.join(stateDir(state),name);
       const loaded=await loadSpoolFile(file);
-      if(!loaded.validation.valid){
-        await quarantineLoaded(file,loaded.record,loaded.validation.errors.join(','));
-        await logger(`SPOOL_QUARANTINE invalid=${name} reason=${loaded.validation.errors.join(',')}`);
+      const errors=[...loaded.validation.errors];
+      if(loaded.validation.valid&&loaded.record.state!==state)errors.push('STATE_DIRECTORY_MISMATCH');
+      if(loaded.validation.valid&&path.basename(name,'.json')!==loaded.record.recordId)errors.push('RECORD_FILENAME_MISMATCH');
+      if(errors.length){
+        await quarantineLoaded(file,loaded.record,errors.join(','));
+        await logger(`SPOOL_QUARANTINE invalid=${name} reason=${errors.join(',')}`);
         continue;
       }
       if(ACTIVE_STATES.has(state)&&loaded.record.parserVersion!==parserVersion){
@@ -163,7 +202,7 @@ export function createBridgeSpoolRuntime({
   }
   async function fail(file,record,error){
     if(error?.retryable===false){
-      return moveRecord(file,record,'quarantined',{attempts:Number(record.attempts||0)+1,nextAttemptAt:0,lastError:String(error?.message||error).slice(0,500),quarantineReason:'NON_RETRYABLE'});
+      return moveRecord(file,record,'quarantined',{attempts:Number(record.attempts||0)+1,nextAttemptAt:0,lastError:spoolFailureCode(error),quarantineReason:'NON_RETRYABLE'});
     }
     let failed=registerFailure(record,error,{baseMs,maxMs,jitter,random,now});
     if(failed.state==='failed'&&Number(error?.retryAfterMs||0)>0){
@@ -173,6 +212,9 @@ export function createBridgeSpoolRuntime({
   }
   async function flushKind(kind,deliver,{limit=100,canContinue=()=>true}={}){
     if(!KIND_VALUES.has(kind))throw new Error('SPOOL_KIND_INVALID');
+    if(flushingKinds.has(kind))return{kind,attempted:0,delivered:0,failed:0,quarantined:0,expired:0,busy:true};
+    flushingKinds.add(kind);
+    try{
     const safeLimit=boundedLimit(limit);
     const result={kind,attempted:0,delivered:0,failed:0,quarantined:0,expired:0};
     const candidates=await due(kind,{limit:safeLimit});
@@ -193,6 +235,7 @@ export function createBridgeSpoolRuntime({
       }
     }
     return result;
+    }finally{flushingKinds.delete(kind);}
   }
   async function migrateLegacyDir(dir,kind,label){
     if(!dir)return{migrated:0,corrupt:0};
@@ -205,7 +248,7 @@ export function createBridgeSpoolRuntime({
       let raw;let wrapper;
       try{raw=await fs.readFile(source,'utf8');wrapper=JSON.parse(raw);}catch(error){
         const key=`legacy-corrupt:${label}:${name}`;
-        const record=createSpoolRecord({kind,key,payload:{legacyFile:name,legacyKind:label,readError:String(error?.message||error)},parserVersion:'legacy-v1',createdAt:iso(now()),maxAttempts});
+        const record=createSpoolRecord({kind,key,payload:{legacyFile:name,legacyKind:label,readError:'LEGACY_READ_OR_JSON_ERROR'},parserVersion:'legacy-v1',createdAt:iso(now()),maxAttempts});
         await persist({...record,state:'quarantined',lastError:'LEGACY_CORRUPT_JSON',quarantineReason:'LEGACY_CORRUPT_JSON'});
         await fs.rename(source,path.join(archiveDir,name)).catch(async(renameError)=>{if(renameError?.code!=='ENOENT')throw renameError;});
         corrupt+=1;continue;
