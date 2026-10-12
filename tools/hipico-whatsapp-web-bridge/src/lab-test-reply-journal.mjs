@@ -63,7 +63,7 @@ export function createLabTestReplyJournal({rootDir,labGroupId,sourceGroupId='',n
     }
     for(const name of files){
       if(!name.endsWith('.json'))continue;
-      if(!/^[a-f0-9]{64}\\.json$/.test(name))throw new Error('LAB_TEST_JOURNAL_FILE_INVALID');
+      if(!/^[a-f0-9]{64}\.json$/.test(name))throw new Error('LAB_TEST_JOURNAL_FILE_INVALID');
       const file=path.join(root,name);
       const record=await loadFile(file);
       if(!record||record.idHash+'.json'!==name)throw new Error('LAB_TEST_JOURNAL_RECORD_INVALID');
