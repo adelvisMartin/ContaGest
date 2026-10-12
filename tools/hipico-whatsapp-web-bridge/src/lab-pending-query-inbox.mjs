@@ -1,0 +1,261 @@
+import crypto from 'node:crypto';
+import fs from 'node:fs/promises';
+import path from 'node:path';
+import { atomicWriteJson } from './spool-journal.mjs';
+import { normalizeGroupId } from './group-identity.mjs';
+import { stableLabSenderKey, labConversationInput } from './lab-conversation-context.mjs';
+import { classifyLocal } from './runtime-utils.mjs';
+import { labReadOnlyQueryPurpose, explicitLabRaceScope } from './lab-canonical-query.mjs';
+
+const SCHEMA=1;
+const HASH=/^[a-f0-9]{64}$/;
+const HEX=/^[a-f0-9]+$/;
+const PURPOSES=new Set(['status','result','participants']);
+const MAX_AGE_MS=10*60*1000;
+const MAX_RECORDS=200;
+const MAX_SIZE=12*1024;
+
+// Encrypted pre-query inbox; this is NOT a WhatsApp delivery or financial authority.
+export function createLabPendingQueryInbox({rootDir,labGroupId,sourceGroupId,now=Date.now,maxAgeMs=MAX_AGE_MS,maxEntries=MAX_RECORDS}={}){
+  const lab=normalizeGroupId(labGroupId);
+  const source=normalizeGroupId(sourceGroupId);
+  if(!rootDir||!lab||!source||lab===source)throw new Error('LAB_PENDING_SCOPE_REQUIRED');
+  if(!Number.isInteger(maxAgeMs)||maxAgeMs<1000||maxAgeMs>MAX_AGE_MS
+    ||!Number.isInteger(maxEntries)||maxEntries<1||maxEntries>MAX_RECORDS){
+    throw new Error('LAB_PENDING_LIMITS_INVALID');
+  }
+  const root=path.resolve(rootDir);
+  const keyFile=path.join(root,'inbox.key');
+  const lockFile=path.join(root,'owner.lock');
+  const scopeHash=crypto.createHash('sha256').update('lab-inbox|'+lab+'|'+source).digest('hex');
+  let key=null;
+  let token=null;
+  let initialized=false;
+  const clock=()=>Number(now());
+  const identity=(id)=>{
+    if(typeof id!=='string'||id.length<8||id.length>320)throw new Error('LAB_PENDING_MESSAGE_ID_INVALID');
+    return crypto.createHmac('sha256',key).update('lab-query|'+scopeHash+'|'+id).digest('hex');
+  };
+  const fileFor=hash=>path.join(root,hash+'.json');
+  const assertReady=()=>{if(!initialized||!token||!key)throw new Error('LAB_PENDING_NOT_INITIALIZED');};
+
+  function validate(item,{allowExpired=false}={}){
+    if(!item||typeof item!=='object'||Array.isArray(item)||
+      typeof item.messageId!=='string'||typeof item.senderId!=='string'||
+      typeof item.text!=='string'||item.text.length<6||item.text.length>1200||
+      typeof item.messageTimestamp!=='string'||!Number.isFinite(Date.parse(item.messageTimestamp))||
+      Date.parse(item.messageTimestamp)>clock()+60_000||
+      (!allowExpired&&clock()-Date.parse(item.messageTimestamp)>=maxAgeMs)||
+      !PURPOSES.has(item.purpose)||!Number.isFinite(item.capturedAt)||
+      item.capturedAt>clock()+60_000||(!allowExpired&&clock()-item.capturedAt>maxAgeMs)||
+      stableLabSenderKey(item.messageId)!==item.senderId||
+      labReadOnlyQueryPurpose(item.text,classifyLocal(item.text))!==item.purpose||
+      !labConversationInput({id:item.messageId,text:item.text,fromMe:false,hasMedia:false},classifyLocal(item.text)).eligible||
+      (item.quotedMessageId!==null&&(typeof item.quotedMessageId!=='string'||item.quotedMessageId.length>320))||
+      (item.race!==null&&(!Number.isInteger(item.race?.raceNumber)||item.race.raceNumber<1||
+        item.race.raceNumber>999||typeof item.race.racetrack!=='string'||
+        !item.race.racetrack.trim()||item.race.racetrack.length>90||
+        !/^\d{4}-\d{2}-\d{2}$/.test(item.race.raceDate)))||
+      (item.quotedMessageId!==null&&item.race===null)||
+      (item.race!==null&&item.quotedMessageId===null&&
+        JSON.stringify(explicitLabRaceScope(item.text))!==JSON.stringify(item.race))){
+      throw new Error('LAB_PENDING_QUERY_INVALID');
+    }
+    return item;
+  }
+  async function safeRoot(){
+    await fs.mkdir(root,{recursive:true,mode:0o700});
+    const stat=await fs.lstat(root);
+    if(!stat.isDirectory()||stat.isSymbolicLink())throw new Error('LAB_PENDING_ROOT_UNSAFE');
+    await fs.chmod(root,0o700).catch(()=>{});
+  }
+  async function loadKey(){
+    let handle;
+    try{
+      handle=await fs.open(keyFile,'wx',0o600);
+      await handle.writeFile(crypto.randomBytes(32));
+      await handle.sync();
+    }catch(e){if(e?.code!=='EEXIST')throw e;}
+    finally{await handle?.close();}
+    const stat=await fs.lstat(keyFile);
+    if(!stat.isFile()||stat.isSymbolicLink()||stat.size!==32)throw new Error('LAB_PENDING_KEY_INVALID');
+    return await fs.readFile(keyFile);
+  }
+  async function lockOwner(){
+    const myToken=crypto.randomUUID();
+    const body={pid:process.pid,token:myToken,scopeHash};
+    const acquire=async()=>{
+      let handle;
+      try{
+        handle=await fs.open(lockFile,'wx',0o600);
+        await handle.writeFile(JSON.stringify(body));
+        await handle.sync();
+        token=myToken;
+        return true;
+      }catch(e){
+        if(e?.code!=='EEXIST')throw e;
+        return false;
+      }finally{await handle?.close();}
+    };
+    if(await acquire())return;
+    let old,stat;
+    try{
+      stat=await fs.lstat(lockFile);
+      if(!stat.isFile()||stat.isSymbolicLink()||stat.size>512)throw new Error('LAB_PENDING_LOCK_INVALID');
+      old=JSON.parse(await fs.readFile(lockFile,'utf8'));
+      if(old.scopeHash!==scopeHash||!Number.isInteger(old.pid)||old.pid<1||
+         typeof old.token!=='string')throw new Error('LAB_PENDING_LOCK_INVALID');
+    }catch(e){throw new Error('LAB_PENDING_LOCK_INVALID');}
+    try{
+      process.kill(old.pid,0);
+      throw new Error('LAB_PENDING_ALREADY_RUNNING');
+    }catch(e){
+      if(e?.message==='LAB_PENDING_ALREADY_RUNNING'||e?.code!=='ESRCH'){
+        throw new Error('LAB_PENDING_ALREADY_RUNNING');
+      }
+    }
+    // Only dead local PIDs can be reclaimed. Conservative on permission failures.
+    const same=await fs.lstat(lockFile);
+    if(same.ino!==stat.ino||same.size!==stat.size)throw new Error('LAB_PENDING_LOCK_CONFLICT');
+    await fs.rm(lockFile);
+    if(!(await acquire()))throw new Error('LAB_PENDING_ALREADY_RUNNING');
+  }
+  function seal(item,hash){
+    const iv=crypto.randomBytes(12);
+    const cipher=crypto.createCipheriv('aes-256-gcm',key,iv);
+    cipher.setAAD(Buffer.from(scopeHash+'|'+hash));
+    const ciphertext=Buffer.concat([cipher.update(JSON.stringify(item),'utf8'),cipher.final()]);
+    return {schemaVersion:SCHEMA,scopeHash,idHash:hash,
+      nonce:iv.toString('hex'),tag:cipher.getAuthTag().toString('hex'),
+      ciphertext:ciphertext.toString('base64')};
+  }
+  function openRecord(data,hash){
+    if(data?.schemaVersion!==SCHEMA||data.scopeHash!==scopeHash||data.idHash!==hash||
+       typeof data.nonce!=='string'||data.nonce.length!==24||!HEX.test(data.nonce)||
+       typeof data.tag!=='string'||data.tag.length!==32||!HEX.test(data.tag)||
+       typeof data.ciphertext!=='string'||data.ciphertext.length>MAX_SIZE){
+      throw new Error('LAB_PENDING_RECORD_INVALID');
+    }
+    try{
+      const decipher=crypto.createDecipheriv('aes-256-gcm',key,Buffer.from(data.nonce,'hex'));
+      decipher.setAAD(Buffer.from(scopeHash+'|'+hash));
+      decipher.setAuthTag(Buffer.from(data.tag,'hex'));
+      const decoded=Buffer.concat([decipher.update(Buffer.from(data.ciphertext,'base64')),decipher.final()]);
+      const item=validate(JSON.parse(decoded.toString('utf8')),{allowExpired:true});
+      if(identity(item.messageId)!==hash)throw new Error('LAB_PENDING_ID_MISMATCH');
+      return item;
+    }catch{throw new Error('LAB_PENDING_RECORD_INVALID');}
+  }
+  async function openFile(hash){
+    const file=fileFor(hash);
+    let stat;
+    try{stat=await fs.lstat(file);}catch(e){if(e?.code==='ENOENT')return null;throw e;}
+    if(!stat.isFile()||stat.isSymbolicLink()||stat.size>MAX_SIZE)throw new Error('LAB_PENDING_FILE_INVALID');
+    try{return openRecord(JSON.parse(await fs.readFile(file,'utf8')),hash);}
+    catch{throw new Error('LAB_PENDING_RECORD_INVALID');}
+  }
+  async function scan(){
+    const names=(await fs.readdir(root)).filter(n=>n.endsWith('.json'));
+    const rows=[];let expired=0;
+    for(const filename of names.sort()){
+      if(!/^[a-f0-9]{64}\.json$/.test(filename))throw new Error('LAB_PENDING_FILE_INVALID');
+      const hash=filename.slice(0,-5);
+      let item;
+      try{item=await openFile(hash);}catch(e){throw e;}
+      if(item){
+        if(clock()-Date.parse(item.messageTimestamp)>=maxAgeMs){
+          await fs.rm(fileFor(hash));expired++;
+        }else rows.push(item);
+      }
+    }
+    if(rows.length>maxEntries)throw new Error('LAB_PENDING_CAPACITY_EXCEEDED');
+    return {rows,expired};
+  }
+  return Object.freeze({
+    async initialize(){
+      if(initialized)return;
+      await safeRoot();
+      key=await loadKey();
+      await lockOwner();
+      try{
+        const {rows}=await scan(); // Never silently accept corrupted encrypted input.
+        initialized=true;
+        return {recovered:rows.length};
+      }catch(e){
+        const mine=token;
+        token=null;
+        if(mine){try{await fs.rm(lockFile);}catch{}}
+        throw e;
+      }
+    },
+    async enqueue(candidate){
+      assertReady();
+      const item=validate({...candidate,capturedAt:clock()});
+      const hash=identity(item.messageId);
+      await scan(); // Expire old entries before testing idempotency and capacity.
+      const existing=await openFile(hash);
+      if(existing){
+        // Do not rewrite a quoted race scope or candidate text under a reused ID.
+        const original={...existing,capturedAt:0},next={...item,capturedAt:0};
+        if(JSON.stringify(original)!==JSON.stringify(next))throw new Error('LAB_PENDING_REPLAY_MISMATCH');
+        return {created:false};
+      }
+      const {rows}=await scan();
+      if(rows.length>=maxEntries)throw new Error('LAB_PENDING_CAPACITY_EXCEEDED');
+      const payload=seal(item,hash);
+      let handle;
+      try{
+        handle=await fs.open(fileFor(hash),'wx',0o600);
+        await handle.writeFile(JSON.stringify(payload));
+        await handle.sync();
+        await handle.close();handle=null;
+        try{
+          const dir=await fs.open(root,'r');
+          try{await dir.sync();}finally{await dir.close();}
+        }catch{}
+        return {created:true};
+      }catch(e){
+        await handle?.close().catch(()=>{});
+        if(e?.code==='EEXIST'){
+          const stored=await openFile(hash);
+          if(stored&&JSON.stringify({...stored,capturedAt:0})===JSON.stringify({...item,capturedAt:0}))return {created:false};
+          throw new Error('LAB_PENDING_REPLAY_MISMATCH');
+        }
+        throw e;
+      }
+    },
+    async prune(){
+      assertReady();
+      const state=await scan();
+      return state.expired;
+    },
+    async list(limit=25){
+      assertReady();
+      if(!Number.isInteger(limit)||limit<1||limit>maxEntries)throw new Error('LAB_PENDING_LIST_LIMIT_INVALID');
+      const {rows}=await scan();
+      return rows.sort((a,b)=>a.capturedAt-b.capturedAt).slice(0,limit);
+    },
+    async remove(id){
+      assertReady();
+      if(!id)return false;
+      const hash=identity(id);
+      const current=await openFile(hash);
+      if(!current)return false;
+      await fs.rm(fileFor(hash));
+      return true;
+    },
+    async snapshot(){
+      assertReady();
+      const {rows}=await scan();
+      return {pending:rows.length,sourceWriteAllowed:false,deliveryAuthority:false};
+    },
+    async close(){
+      if(!token)return;
+      const mine=token;token=null;initialized=false;
+      try{
+        const data=JSON.parse(await fs.readFile(lockFile,'utf8'));
+        if(data?.token===mine)await fs.rm(lockFile);
+      }catch{}
+    }
+  });
+}
