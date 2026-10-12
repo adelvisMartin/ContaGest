@@ -68,7 +68,8 @@
     "seed:clean": "tsx prisma/seed.ts --clean-demo",
     "test:hipico:autonomous-reply": "tsx --test src/modules/hipico-bot/hipico-autonomous-source-reply.integration.ts",
     "test:pricing": "tsx --test src/modules/pricing/*.test.ts",
-    "test:pricing:postgres": "tsx --test ../qa/price-book-authority-v856.test.ts"
+    "test:pricing:postgres": "tsx --test ../qa/price-book-authority-v856.test.ts",
+    "test:hipico:lab-receipt:postgres": "tsx --test src/modules/hipico-bot/hipico-lab-canonical-receipt.integration.ts"
   },
   "dependencies": {
     "@prisma/client": "6.19.3",
