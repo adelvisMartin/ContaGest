@@ -40,8 +40,8 @@ export async function readCanonicalLabRace(
   if(!STATES.has(state)||!Number.isSafeInteger(version)||version<1){
     return{available:false,reason:'CANONICAL_RACE_UNVERIFIED',text:'El registro todavía no tiene un estado validado para consulta.',authority:AUTHORITY};
   }
-  const stamp=new Date(data.aggregate.updatedAt);
-  if(!Number.isFinite(stamp.getTime()))throw new Error('HIPICO_CANONICAL_UPDATED_AT_INVALID');
+  const stamp=data.aggregate.updatedAt;
+  if(!(stamp instanceof Date)||!Number.isFinite(stamp.getTime()))throw new Error('HIPICO_CANONICAL_UPDATED_AT_INVALID');
   const updatedAt=stamp.toISOString();
   return{available:true,reason:'CANONICAL_STATE_FOUND',state,version,updatedAt,
     text:'Según el registro interno, la carrera '+context.raceNumber+' en '+safeTrack+' ('+context.raceDate+') está '+STATE_LABEL[state]+'. No implica resultado oficial externo ni confirma jugadas o saldos.',
