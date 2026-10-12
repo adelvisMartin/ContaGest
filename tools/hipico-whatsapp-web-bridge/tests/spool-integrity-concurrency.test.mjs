@@ -114,3 +114,30 @@ test('corrupt existing same-ID file blocks overwriting instead of losing recover
     assert.equal(await fs.readFile(target,'utf8'),'{"malformed":');
   }finally{await f.cleanup();}
 });
+
+
+test('spool record validation rejects a modified kind/key digest and replay skips it',async()=>{
+  const record=createSpoolRecord({kind:'lab-mirror',key:'source-event-7',payload:{text:'LAB only'},parserVersion:'bridge-v1'});
+  assert.equal(validateSpoolRecord(record).valid,true);
+  assert.ok(validateSpoolRecord({...record,key:'source-event-8'}).errors.includes('RECORD_ID_MISMATCH'));
+  assert.ok(validateSpoolRecord({...record,kind:'backend-event'}).errors.includes('RECORD_ID_MISMATCH'));
+  assert.ok(validateSpoolRecord({...record,recordId:'../source'}).errors.includes('RECORD_ID_MISMATCH'));
+});
+
+test('two different spool kinds can flush independently without global head-of-line blocking',async()=>{
+  const f=await fixture();
+  try{
+    await f.runtime.queueBackendEvent({channelKey:'source',externalMessageId:'m-backend'});
+    await f.runtime.queueLabMirror({sourceExternalMessageId:'m-lab-kind',text:'test'});
+    let unblock;
+    const hold=new Promise(resolve=>{unblock=resolve;});
+    let began;
+    const started=new Promise(resolve=>{began=resolve;});
+    const backend=f.runtime.flushBackend(async()=>{began();await hold;});
+    await started;
+    const lab=await f.runtime.flushLab(async()=>{});
+    assert.equal(lab.delivered,1);
+    unblock();
+    assert.equal((await backend).delivered,1);
+  }finally{await f.cleanup();}
+});
