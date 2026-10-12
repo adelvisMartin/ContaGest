@@ -17,6 +17,22 @@ type SnapshotRow={
 
 const digest=(value:string)=>crypto.createHash('sha256').update(value).digest('hex');
 
+/** Bounded opportunistic pruning; an operations job may also invoke it. */
+export async function pruneExpiredLabReplayCandidates(limit=100):Promise<number>{
+  const cap=Math.min(100,Math.max(1,Math.trunc(limit)));
+  return prisma.$executeRaw`
+    UPDATE public."HipicoResponseReceipt"
+    SET "labReplayText"=NULL,"labReplayScopeHash"=NULL,
+        "labReplayKind"=NULL,"labReplayPolicy"=NULL,
+        "labReplayReadDigest"=NULL,"labReplayExpiresAt"=NULL
+    WHERE "id" IN (
+      SELECT "id" FROM public."HipicoResponseReceipt"
+      WHERE "labReplayExpiresAt" < CURRENT_TIMESTAMP
+      ORDER BY "labReplayExpiresAt" ASC
+      LIMIT ${cap} FOR UPDATE SKIP LOCKED
+    )`;
+}
+
 /**
  * Store the entire authorized, bounded LAB reply in the existing response receipt.
  * A transport replay does not regenerate domain mutations or change this snapshot.
@@ -27,6 +43,7 @@ export async function persistLabReplayCandidate(input:{
 }):Promise<void>{
   const candidate=labReplayCandidate(input.scope,input.plan);
   if(!candidate)return;
+  await pruneExpiredLabReplayCandidates();
   const expiresAt=new Date((input.now||new Date()).getTime()+LAB_REPLY_REPLAY_TTL_MS);
   const hash=digest(candidate.text);
   const rows=await prisma.$queryRaw<Array<{id:string}>>`
@@ -79,7 +96,7 @@ export async function recoverLabReplayCandidate(input:{
     LIMIT 2`;
   if(rows.length!==1)return null;
   const row=rows[0];
-  if(row.status!=='planned' || row.intent==='CONFIRMED' || row.intent==='NONE'
+  if(row.status!=='planned' || !['ACK_RECEIVED','NEEDS_CLARIFICATION'].includes(row.intent)
     || !row.scopeHash || !row.kind || !row.policy || !row.text || !row.expiresAt
     || !labReplaySnapshotValid({
       scopeHash:row.scopeHash,policy:row.policy,kind:row.kind,text:row.text,
