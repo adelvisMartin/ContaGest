@@ -30,7 +30,7 @@ import { createLabTestReplyJournal, labTestTagForMessage } from './lab-test-repl
 import { atomicWriteJson } from './spool-journal.mjs';
 import { createLabConversationContext, labConversationInput, planLabConversation, stableLabSenderKey } from './lab-conversation-context.mjs';
 import { localKillSwitchState } from './promotion-guard.mjs';
-import { queryCanonicalLab, explicitLabRaceScope } from './lab-canonical-query.mjs';
+import { queryCanonicalLab, explicitLabRaceScope, labReadOnlyQueryPurpose, resolveQuotedLabRaceScope } from './lab-canonical-query.mjs';
 
 const config = assertRuntimeConfig(loadRuntimeConfig());
 const {
@@ -1230,12 +1230,17 @@ async function processLabTestInput() {
     const plan = planLabConversation(row, classification, prior);
     // Query-only backend call completes BEFORE claiming a WhatsApp send intent.
     // No token, URL or raw API response is ever appended to chat logs.
-    const canonical = classification.risk === 'safe' && sender && BACKEND_SYNC_ENABLED && backendState === 'online'
+    const inquiryPurpose=labReadOnlyQueryPurpose(body,classification);
+    const scopedRace=explicitLabRaceScope(body) || resolveQuotedLabRaceScope(row,visible);
+    const quotedVerified=Boolean(row.quotedId && scopedRace && !explicitLabRaceScope(body));
+    const canonical = inquiryPurpose && sender && BACKEND_SYNC_ENABLED && backendState === 'online'
       ? await queryCanonicalLab({
           ingestUrl:INGEST_URL,token:TOKEN,
           labGroupId:LAB_GROUP_ID,labChannelKey:LAB_CHANNEL_KEY,
           messageId:row.id,senderId:sender,text:body,
-          race:explicitLabRaceScope(body),timeoutMs:Math.min(5000,BACKEND_TIMEOUT_MS)
+          purpose:inquiryPurpose,
+          quotedMessageId:quotedVerified?row.quotedId:null,
+          race:scopedRace,timeoutMs:Math.min(5000,BACKEND_TIMEOUT_MS)
         })
       : {available:false,reason:'LAB_CANONICAL_NOT_QUERIED'};
     await labTestReplyJournal.prepare(row.id); // fsync before any browser send
