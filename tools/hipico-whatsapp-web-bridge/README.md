@@ -84,7 +84,7 @@ Los nombres son sólo discovery hints; el envío LAB valida el ID real.
 
 ## Contexto conversacional LAB (incremento 2026-10-12)
 
-La entrada interactiva LAB conserva **únicamente** la última referencia explícita de carrera por participante durante 20 minutos, con máximo 300 entradas y persistencia atómica en `lab-conversation-context.json`. Las claves se derivan mediante HMAC usando una semilla local; no se guardan mensajes ni nombres/teléfonos en claro. Si falta identidad de grupo pinneada o remitente reconocible, no se reutiliza memoria.
+La entrada interactiva LAB conserva **únicamente** la última referencia explícita de carrera por participante durante 20 minutos, con máximo 300 entradas y persistencia atómica en `lab-conversation-<hash-grupo>.json` (archivo separado por grupo). Las claves se derivan mediante HMAC usando una semilla local; no se guardan mensajes ni nombres/teléfonos en claro. Si falta identidad de grupo pinneada o remitente reconocible, no se reutiliza memoria.
 
 La captura descarta mensajes propios, medios no textuales, ecos del bot y conversación casual que no solicite respuesta. Las consultas de seguimiento pueden reutilizar el número de carrera **sólo para respuestas seguras en LAB**. Las ofertas, confirmaciones, saldos, cierres, resultados y cualquier intención no segura no heredan contexto y permanecen en revisión. El contexto se escribe únicamente tras una entrega LAB confirmada; un fallo de persistencia no reenvía mensajes.
 
