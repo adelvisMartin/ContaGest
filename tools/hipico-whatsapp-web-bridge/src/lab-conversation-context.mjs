@@ -3,6 +3,7 @@ import fs from 'node:fs/promises';
 import { atomicWriteJson } from './spool-journal.mjs';
 import { normalize } from './runtime-utils.mjs';
 import { normalizeGroupId } from './group-identity.mjs';
+import { parseLabRaceSlotReply, validLabTrack, validLabDate } from './lab-race-slots.mjs';
 
 // LAB-only non-authoritative conversation hints. No message content, money or sender names are persisted.
 const SCHEMA_VERSION = 1;
@@ -59,18 +60,12 @@ function mentionedRaceNumber(normalized) {
 // race number from the SAME pinned LAB sender and unexpired memory entry.
 // Never mine free-form prose, implicit "today" dates, money, or a new race.
 export function resolveLabRaceClarification(text, priorContext, classification) {
-  if (classification?.risk !== 'safe' || classification?.intent !== 'conversation' ||
-      !validRaceNumber(priorContext?.raceNumber) || priorContext?.raceScope) return null;
-  const raw = String(text || '').trim();
-  if (!raw || raw.length > 140 || /[\n\r\[\]{};<>$]/.test(raw) ||
-      /\b(?:carrera|juega|consigue|apuesta|apostar|jugada|monto|saldo|pagar|pago|cobrar|premio|confirmar|cierra|cerrar|anula|cancelar|resultado|llegada|pizarra|ignora|instrucciones|sistema|admin|token)\b/i.test(normalize(raw))) return null;
-  const match = raw.match(/^(?:en\s+)?(?:(?:el\s+)?hip[oó]dromo\s+)?([\p{L}][\p{L}\p{N} -]{1,79}?)\s+(?:el|fecha)\s+(\d{4}-\d{2}-\d{2})[.!?]?$/iu);
-  if (!match) return null;
-  return safeRaceScope({
-    raceNumber: priorContext.raceNumber,
-    racetrack: match[1].trim().replace(/\s+/g, ' '),
-    raceDate: match[2]
-  });
+  if (classification?.risk !== 'safe' || classification?.intent !== 'conversation') return null;
+  const slots = parseLabRaceSlotReply(text, priorContext);
+  if (!slots) return null;
+  // Omit parser metadata from public planner contracts.
+  const { complete, ...reference } = slots;
+  return reference;
 }
 
 export function labConversationInput(row, classification, priorContext = null) {
@@ -105,8 +100,9 @@ export function planLabConversation(row, classification, priorContext = null, su
   const previousRace = risk === 'safe' && sender && validRaceNumber(priorContext?.raceNumber)
     ? priorContext.raceNumber : null;
   const previousScope = sender ? safeRaceScope(priorContext?.raceScope) : null;
-  const clarificationScope = risk === 'safe' && sender && !suppliedScope
+  const clarification = risk === 'safe' && sender && !suppliedScope
     ? resolveLabRaceClarification(row?.text, priorContext, classification) : null;
+  const clarificationScope = safeRaceScope(clarification);
   const explicitScope = risk === 'safe' ? (safeRaceScope(suppliedScope) || clarificationScope) : null;
   const reuseReference = followUp || summaryRequested;
   const raceNumber = risk === 'safe'
@@ -120,6 +116,8 @@ export function planLabConversation(row, classification, priorContext = null, su
     guidance = 'Se detectó una operación que requiere revisión; no se registró ni confirmó ningún efecto.';
   } else if (clarificationScope) {
     guidance = 'Referencia de carrera completada con hipódromo y fecha aportados explícitamente.';
+  } else if (clarification) {
+    guidance = 'Referencia parcial de carrera recibida; solicita el dato faltante.';
   } else if (isQuestion && raceNumber) {
     guidance = 'La consulta se refiere a la carrera ' + raceNumber + '; los estados y resultados deben venir de datos canónicos.';
   } else if (isQuestion && followUp && !raceNumber) {
@@ -133,9 +131,19 @@ export function planLabConversation(row, classification, priorContext = null, su
   } else {
     guidance = 'Consulta recibida en el laboratorio, sin cambios de estado ni dinero.';
   }
+  const raceTrack = risk === 'safe' && raceNumber && !raceScope
+    ? (validLabTrack(clarification?.racetrack) ||
+        (reuseReference || clarification ? validLabTrack(priorContext?.raceTrack) : null))
+    : null;
+  const raceDate = risk === 'safe' && raceNumber && !raceScope
+    ? (validLabDate(clarification?.raceDate) ? clarification.raceDate :
+        (reuseReference || clarification) && validLabDate(priorContext?.raceDate) ? priorContext.raceDate : null)
+    : null;
   return {
-    sender, raceNumber, raceScope, isQuestion, summaryRequested, queryCategory,
-    clarificationCompleted: Boolean(clarificationScope), guidance,
+    sender, raceNumber, raceScope, raceTrack, raceDate, isQuestion, summaryRequested, queryCategory,
+    clarificationCompleted: Boolean(clarificationScope),
+    clarificationPending: clarification && !clarificationScope ? (raceTrack && !raceDate ? 'date' : !raceTrack && raceDate ? 'track' : null) : null,
+    guidance,
     rememberRace: risk === 'safe' && Boolean(sender) && validRaceNumber(raceNumber)
   };
 }
@@ -158,9 +166,16 @@ export function createLabConversationContext({ file, groupId, now = Date.now, tt
       .filter(([key, row]) => /^[a-f0-9]{64}$/.test(key) && validRaceNumber(row?.raceNumber) && Number.isFinite(row.updatedAt)
         && row.updatedAt <= current && current - row.updatedAt < ttlMs)
       .sort((a, b) => b[1].updatedAt - a[1].updatedAt).slice(0, maxEntries)
-      .map(([key, row]) => [key, { raceNumber: row.raceNumber,
-        ...(safeRaceScope(row.raceScope)?.raceNumber === row.raceNumber ? { raceScope: safeRaceScope(row.raceScope) } : {}),
-        updatedAt: row.updatedAt }]));
+      .map(([key, row]) => {
+        const scope = safeRaceScope(row.raceScope);
+        const track = validLabTrack(row.raceTrack);
+        const date = validLabDate(row.raceDate) ? row.raceDate : null;
+        return [key, { raceNumber: row.raceNumber,
+          ...(scope?.raceNumber === row.raceNumber ? { raceScope: scope } : {
+            ...(track ? { raceTrack: track } : {}), ...(date ? { raceDate: date } : {})
+          }),
+          updatedAt: row.updatedAt }];
+      }));
   };
   const assertInitialized = () => { if (!initialized) throw new Error('LAB_CONTEXT_NOT_INITIALIZED'); };
   return {
@@ -187,16 +202,24 @@ export function createLabConversationContext({ file, groupId, now = Date.now, tt
       const key = keyFor(sender);
       const entry = key ? retained()[key] : null;
       return entry ? { raceNumber: entry.raceNumber,
-        ...(safeRaceScope(entry.raceScope)?.raceNumber === entry.raceNumber ? { raceScope: safeRaceScope(entry.raceScope) } : {}) } : null;
+        ...(safeRaceScope(entry.raceScope)?.raceNumber === entry.raceNumber
+          ? { raceScope: safeRaceScope(entry.raceScope) }
+          : { ...(validLabTrack(entry.raceTrack) ? { raceTrack: validLabTrack(entry.raceTrack) } : {}),
+              ...(validLabDate(entry.raceDate) ? { raceDate: entry.raceDate } : {}) }) } : null;
     },
-    async remember(sender, raceNumber, raceScope = null) {
+    async remember(sender, raceNumber, raceScope = null, partial = null) {
       assertInitialized();
       const key = keyFor(sender);
       if (!key || !validRaceNumber(raceNumber)) return false;
       const previous = entries;
       const scope = safeRaceScope(raceScope);
+      const track = !scope ? validLabTrack(partial?.raceTrack) : null;
+      const date = !scope && validLabDate(partial?.raceDate) ? partial.raceDate : null;
       entries = { ...retained(), [key]: { raceNumber,
-        ...(scope?.raceNumber === raceNumber ? { raceScope: scope } : {}),
+        ...(scope?.raceNumber === raceNumber ? { raceScope: scope } : {
+          ...(track ? { raceTrack: track } : {}),
+          ...(date ? { raceDate: date } : {})
+        }),
         updatedAt: now() } };
       entries = retained();
       try {
