@@ -69,6 +69,28 @@ export async function canonicalShadowReadiness(){
   return{ready:labChannelCount===1,schemaReady:true,labChannelCount};
 }
 
+/**
+ * Resolve the authoritative tenant behind an already-persisted Bridge channel.
+ * The caller must supply the canonical channel ID returned by persistence,
+ * never a sender-controlled tenant/owner header.
+ */
+export async function canonicalBridgeReadScope(channelId:string,groupKey:string){
+  if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(channelId)
+    || !/^[A-Za-z0-9._:-]{3,120}$/.test(groupKey)){
+    throw Object.assign(new Error('HIPICO_CANONICAL_QUERY_SCOPE_INVALID'),{code:'HIPICO_CANONICAL_QUERY_SCOPE_INVALID'});
+  }
+  const rows=await prisma.$queryRaw<Array<{ownerId:string;groupKey:string}>>`
+    SELECT owner_id::text AS "ownerId",group_key AS "groupKey"
+    FROM public.hipico_bot_channels
+    WHERE id=${channelId}::uuid AND group_key=${groupKey}
+      AND channel_type='web_bridge' AND status='active'
+    LIMIT 2`;
+  if(rows.length!==1||rows[0].groupKey!==groupKey){
+    throw Object.assign(new Error('HIPICO_CANONICAL_QUERY_SCOPE_UNAVAILABLE'),{code:'HIPICO_CANONICAL_QUERY_SCOPE_UNAVAILABLE'});
+  }
+  return{ownerId:rows[0].ownerId,groupKey};
+}
+
 export function groupKeyFromName(value:string){
   return String(value||'')
     .normalize('NFD')
