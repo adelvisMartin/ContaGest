@@ -22,7 +22,7 @@ function completePhysicalQa(dir,file,sha){
   for(const [id,mode] of [['browser','pwa-browser'],['pwa','pwa-standalone'],['apk','android-apk']]){
     assert.equal(run([
       'add-env',`--file=${file}`,`--id=${id}`,`--mode=${mode}`,'--device=Device',
-      `--source-session-hash=${sourceHash}`,`--lab-session-hash=${labHash}`
+      `--source-session-hash=${sourceHash}`,`--lab-session-hash=${labHash}`,...(mode==='android-apk'?['--apk-version=1.13.0-rc3','--apk-sha256='+('a'.repeat(64))]:[])
     ],sha).status,0);
   }
   const raw=JSON.parse(fs.readFileSync(file,'utf8'));
