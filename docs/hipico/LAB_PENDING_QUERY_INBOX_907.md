@@ -28,8 +28,8 @@ monetarias y no se crea otro motor de conversación ni tabla de dominio.
 5. El ACK `confirmed` precede a la eliminación de la entrada. Si el proceso
    termina entre ambos pasos, el ACK sigue ganando y se limpia la bandeja
    sin duplicar el mensaje.
-6. Las entradas caducan tras **10 minutos**, con un máximo de **200** en
-   disco. El Bridge limpia caducadas cada minuto, incluso con WhatsApp
+6. Las entradas caducan tras **10 minutos desde la marca original del mensaje WhatsApp**, con un máximo de **200** en
+   disco. Una marca no interpretable, futura o caducada se rechaza y no se renueva cuando el mensaje reaparece en pantalla. El Bridge limpia caducadas cada minuto, incluso con WhatsApp
    desconectado, mientras el proceso siga levantado; también limpia en
    la recuperación inicial. Un registro corrupto bloquea la recuperación
    (fail-closed) en vez de descartarse y reenviarse a ciegas.
