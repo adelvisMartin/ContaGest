@@ -9,6 +9,9 @@ const SCHEMA_VERSION = 1;
 const DEFAULT_TTL_MS = 20 * 60 * 1000;
 const DEFAULT_MAX_ENTRIES = 300;
 const RACE_PATTERN = /\bcarrera\s*(?:n(?:umero|ro)?\s*)?(\d{1,2})\b/;
+const ORDINAL_NUMBER_PATTERN = /\b(?:la\s+)?([1-9]\d?)\s*(?:ra|da|ta|ma)\b/;
+const ORDINAL_WORD_PATTERN = /\bla\s+(primera|segunda|tercera|cuarta|quinta|sexta|septima|octava|novena|decima)\b/;
+const ORDINAL_WORDS = Object.freeze({primera:1,segunda:2,tercera:3,cuarta:4,quinta:5,sexta:6,septima:7,octava:8,novena:9,decima:10});
 const FOLLOW_UP_PATTERN = /\b(?:esa|ese|esta|este|misma|mismo|anterior|participantes|caballos|corren|resultado)\b/;
 const QUESTION_PATTERN = /[¿?]|\b(?:quien|quienes|cual|cuando|donde|como|sigue|proxima|proximo)\b/;
 const BOT_PATTERN = /\b(?:bot|control hipico)\b/;
@@ -43,13 +46,40 @@ function safeRaceScope(value) {
   return { raceNumber: value.raceNumber, racetrack, raceDate };
 }
 
-export function labConversationInput(row, classification) {
+function mentionedRaceNumber(normalized) {
+  const explicit = normalized.match(RACE_PATTERN);
+  const numeric = normalized.match(ORDINAL_NUMBER_PATTERN);
+  const word = normalized.match(ORDINAL_WORD_PATTERN);
+  const value = explicit ? Number(explicit[1])
+    : numeric ? Number(numeric[1]) : word ? ORDINAL_WORDS[word[1]] : null;
+  return validRaceNumber(value) ? value : null;
+}
+
+// A follow-up that supplies only track + ISO date may complete a *previous*
+// race number from the SAME pinned LAB sender and unexpired memory entry.
+// Never mine free-form prose, implicit "today" dates, money, or a new race.
+export function resolveLabRaceClarification(text, priorContext, classification) {
+  if (classification?.risk !== 'safe' || classification?.intent !== 'conversation' ||
+      !validRaceNumber(priorContext?.raceNumber) || priorContext?.raceScope) return null;
+  const raw = String(text || '').trim();
+  if (!raw || raw.length > 140 || /[\n\r\[\]{};<>$]/.test(raw) ||
+      /\b(?:carrera|juega|consigue|apuesta|apostar|jugada|monto|saldo|pagar|pago|cobrar|premio|confirmar|cierra|cerrar|anula|cancelar|resultado|llegada|pizarra|ignora|instrucciones|sistema|admin|token)\b/i.test(normalize(raw))) return null;
+  const match = raw.match(/^(?:en\s+)?(?:(?:el\s+)?hip[oó]dromo\s+)?([\p{L}][\p{L}\p{N} -]{1,79}?)\s+(?:el|fecha)\s+(\d{4}-\d{2}-\d{2})[.!?]?$/iu);
+  if (!match) return null;
+  return safeRaceScope({
+    raceNumber: priorContext.raceNumber,
+    racetrack: match[1].trim().replace(/\s+/g, ' '),
+    raceDate: match[2]
+  });
+}
+
+export function labConversationInput(row, classification, priorContext = null) {
   const content = String(row?.text || '').trim();
   if (!row?.id || row.fromMe || row.hasMedia || !content || content.length > 4000) return { eligible: false, reason: 'IGNORED' };
   if (/\[(?:SHADOW|LABTEST):|🧪\s*CONTROL HÍPICO/i.test(content)) return { eligible: false, reason: 'BOT_ECHO' };
   if (classification?.intent === 'empty') return { eligible: false, reason: 'EMPTY' };
   const normalized = normalize(content);
-  if (classification?.intent === 'conversation' && !QUESTION_PATTERN.test(normalized) && !BOT_PATTERN.test(normalized) && !SUMMARY_PATTERN.test(normalized)) {
+  if (classification?.intent === 'conversation' && !QUESTION_PATTERN.test(normalized) && !BOT_PATTERN.test(normalized) && !SUMMARY_PATTERN.test(normalized) && !resolveLabRaceClarification(content, priorContext, classification)) {
     return { eligible: false, reason: 'CASUAL_CHAT' };
   }
   return { eligible: true, reason: 'RESPONSE_CANDIDATE' };
@@ -59,9 +89,7 @@ export function planLabConversation(row, classification, priorContext = null, su
   const normalized = normalize(row?.text);
   const sender = stableLabSenderKey(row?.id);
   const risk = classification?.risk || 'review';
-  const explicitRace = normalized.match(RACE_PATTERN);
-  const mentionedRace = explicitRace ? Number(explicitRace[1]) : null;
-  const safeRace = validRaceNumber(mentionedRace) ? mentionedRace : null;
+  const safeRace = mentionedRaceNumber(normalized);
   const isQuestion = QUESTION_PATTERN.test(normalized) || classification?.intent === 'status_non_monetary';
   const summaryRequested = risk === 'safe' && SUMMARY_PATTERN.test(normalized);
   // The LAB backend now supports status and internally confirmed results; unavailable topics remain explicit.
@@ -77,7 +105,9 @@ export function planLabConversation(row, classification, priorContext = null, su
   const previousRace = risk === 'safe' && sender && validRaceNumber(priorContext?.raceNumber)
     ? priorContext.raceNumber : null;
   const previousScope = sender ? safeRaceScope(priorContext?.raceScope) : null;
-  const explicitScope = risk === 'safe' ? safeRaceScope(suppliedScope) : null;
+  const clarificationScope = risk === 'safe' && sender && !suppliedScope
+    ? resolveLabRaceClarification(row?.text, priorContext, classification) : null;
+  const explicitScope = risk === 'safe' ? (safeRaceScope(suppliedScope) || clarificationScope) : null;
   const reuseReference = followUp || summaryRequested;
   const raceNumber = risk === 'safe'
     ? (safeRace ?? explicitScope?.raceNumber ?? (reuseReference ? previousRace : null))
@@ -88,6 +118,8 @@ export function planLabConversation(row, classification, priorContext = null, su
   let guidance = '';
   if (risk !== 'safe') {
     guidance = 'Se detectó una operación que requiere revisión; no se registró ni confirmó ningún efecto.';
+  } else if (clarificationScope) {
+    guidance = 'Referencia de carrera completada con hipódromo y fecha aportados explícitamente.';
   } else if (isQuestion && raceNumber) {
     guidance = 'La consulta se refiere a la carrera ' + raceNumber + '; los estados y resultados deben venir de datos canónicos.';
   } else if (isQuestion && followUp && !raceNumber) {
@@ -102,7 +134,8 @@ export function planLabConversation(row, classification, priorContext = null, su
     guidance = 'Consulta recibida en el laboratorio, sin cambios de estado ni dinero.';
   }
   return {
-    sender, raceNumber, raceScope, isQuestion, summaryRequested, queryCategory, guidance,
+    sender, raceNumber, raceScope, isQuestion, summaryRequested, queryCategory,
+    clarificationCompleted: Boolean(clarificationScope), guidance,
     rememberRace: risk === 'safe' && Boolean(sender) && validRaceNumber(raceNumber)
   };
 }
