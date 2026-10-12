@@ -194,3 +194,18 @@ test('live LAB read uses immutable restored scope rather than disappearing visib
   assert.match(live,/trustedQuote=verified\.quotedMessageId/);
   assert.match(live,/LAB_PENDING_REVIEW_REQUIRED id=/);
 });
+
+
+test('direct lookup expires only its matching encrypted record and preserves other pending queries',async t=>{
+  const f=await harness(t);const inbox=f.create();await inbox.initialize();
+  await inbox.enqueue(candidate());
+  const second=candidate({messageId:'false_120363222222222222@g.us_msg-two_'+SENDER});
+  await inbox.enqueue(second);
+  assert.equal((await inbox.read(MESSAGE))?.messageId,MESSAGE);
+  assert.equal((await inbox.read('false_120363222222222222@g.us_does-not-exist_'+SENDER)),null);
+  f.advance(10*60*1000);
+  assert.equal(await inbox.read(MESSAGE),null);
+  assert.equal(await inbox.read(second.messageId),null);
+  assert.equal((await inbox.snapshot()).pending,0);
+  await inbox.close();
+});
