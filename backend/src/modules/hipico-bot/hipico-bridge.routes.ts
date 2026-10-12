@@ -3,6 +3,8 @@ import { Router } from 'express';
 import { z } from 'zod';
 import type { IntentResult } from './hipico-operational-classifier.js';
 import { decideConversation } from './hipico-conversation-engine.js';
+import { readCanonicalLabRace } from './hipico-lab-canonical-read.js';
+import { configuredCanonicalOwnerId } from './hipico-canonical.routes.js';
 import { bridgeParticipantRateLimiter, classifyUntrustedConversation, safePublicAbuseMetadata } from './hipico-conversation-appsec.js';
 import { effectiveBridgeMediaKind, historySyncRateCheck, liveRateLimitClock, normalizeBridgeSender, validateBridgeGroupIdentity } from './hipico-bridge-input-policy.js';
 import { operationalRaceContextKey } from './hipico-race-context-key.js';
@@ -21,6 +23,22 @@ const OFFICIAL_SOURCE_CHANNEL_KEY=String(process.env.HIPICO_OFFICIAL_SOURCE_CHAN
 const DEFAULT_LAB_CHANNEL_KEY=String(process.env.HIPICO_LAB_CHANNEL_KEY||'control-hipico-lab').trim();
 
 const bridgeEventSchema=z.object({bridgeVersion:z.string().min(1).max(80),externalMessageId:z.string().min(1).max(320),groupId:z.string().min(3).max(220),groupName:z.string().trim().min(1).max(220),channelKey:z.string().trim().min(3).max(120).optional(),labChannelKey:z.string().trim().min(3).max(120).optional(),channelRole:z.enum(['source','lab']),shadowMode:z.boolean(),historySync:z.boolean().default(false),senderId:z.string().min(1).max(220),senderLabel:z.string().max(220).default(''),fromMe:z.boolean().default(false),timestamp:z.string().datetime({offset:true}),type:z.string().min(1).max(80).default('chat'),mediaKind:z.enum(['none','image','video','audio','document','unknown']).default('none'),mediaName:z.string().max(240).default(''),text:z.string().max(4000).default(''),hasMedia:z.boolean().default(false),quotedExternalMessageId:z.string().max(320).nullable().default(null),quoteDepth:z.number().int().min(0).max(20).default(0),rawMeta:z.string().max(500).default('')});
+const labCanonicalQuerySchema=z.object({
+  externalMessageId:z.string().min(1).max(320),
+  groupId:z.string().min(3).max(220),
+  channelRole:z.literal('lab'),
+  channelKey:z.string().trim().min(3).max(120),
+  labChannelKey:z.string().trim().min(3).max(120),
+  shadowMode:z.literal(true),
+  senderId:z.string().trim().min(1).max(220),
+  timestamp:z.string().datetime({offset:true}),
+  text:z.string().trim().min(1).max(1200),
+  race:z.object({
+    raceNumber:z.number().int().min(1).max(999),
+    racetrack:z.string().trim().min(2).max(120),
+    raceDate:z.string().regex(/^\d{4}-\d{2}-\d{2}$/)
+  }).strict().nullable().default(null)
+}).strict();
 const handoffCommandSchema=z.object({groupKey:z.string().trim().min(3).max(120),participantId:z.string().trim().min(1).max(220),raceId:z.string().trim().max(120).nullable().default(null),command:z.enum(['pause','resume','escalate','resolve','reject']),operatorId:z.string().trim().min(1).max(220).optional(),reason:z.string().trim().max(500).optional(),ttlMs:z.number().int().min(0).max(24*60*60*1000).optional()});
 const sourceReplyReceiptSchema=z.object({status:z.enum(['sent','ambiguous']),providerMessageId:z.string().trim().max(320).nullable().optional(),error:z.string().trim().max(500).nullable().optional()}).strict();
 
@@ -104,6 +122,52 @@ router.post('/bridge/replies/:id/receipt',async(req,res)=>{
     if(error?.code==='HIPICO_SOURCE_REPLY_TERMINAL'||error?.code==='HIPICO_SOURCE_REPLY_STATUS_CONFLICT')return res.status(409).json({ok:false,retryable:false,error:error.code});
     console.error('[hipico-bridge] source reply receipt failed',{commandId,error:error?.message||String(error)});
     return res.status(503).json({ok:false,retryable:true,error:'SOURCE_REPLY_RECEIPT_FAILED'});
+  }
+});
+// LAB-only, bridge-token-authenticated read projection. No operator token,
+// raw event list, financial records, state changes, or SOURCE send commands.
+router.post('/bridge/lab/query',async(req,res)=>{
+  if(!bridgeTokenValid(req.header('x-hipico-bridge-token')||undefined)){
+    return res.status(401).json({ok:false,error:'LAB_QUERY_UNAUTHORIZED'});
+  }
+  const parsed=labCanonicalQuerySchema.safeParse(req.body);
+  if(!parsed.success)return res.status(400).json({ok:false,error:'LAB_QUERY_INVALID'});
+  const input=parsed.data;
+  if(validateBridgeGroupIdentity(input)){
+    return res.status(403).json({ok:false,error:'LAB_QUERY_GROUP_FORBIDDEN'});
+  }
+  const sender=normalizeBridgeSender(input.senderId);
+  if(!sender)return res.status(400).json({ok:false,error:'LAB_QUERY_SENDER_INVALID'});
+  const {assessment,result}=classifyUntrustedConversation({
+    text:input.text,mediaKind:'none',quoteDepth:0,participantId:sender
+  });
+  const rate=bridgeParticipantRateLimiter.check('lab-query:'+input.groupId+':'+sender,assessment.digest,Date.now());
+  if(!rate.allowed)return res.status(429).json({ok:false,error:'LAB_QUERY_RATE_LIMITED'});
+  const decision=decideConversation({
+    sourceMessageId:input.externalMessageId,participantId:sender,
+    text:assessment.sanitizedText,timestamp:input.timestamp,mediaKind:'none'
+  },{},()=>result);
+  const authority={sourceWriteAllowed:false,financialAuthority:false,domainEffectsAllowed:false};
+  if(result.risk!=='safe'||decision.audit.monetaryOrStateful||decision.decision!=='ACK_RECEIVED'){
+    return res.json({ok:true,mode:'shadow',status:'REVIEW_REQUIRED',
+      text:'La consulta requiere revisión. No se realizó ninguna operación ni se confirmó información oficial.',
+      authority,decision:{intent:result.intent,reason:decision.decisionReason}});
+  }
+  const ownerId=configuredCanonicalOwnerId();
+  if(!ownerId)return res.status(503).json({ok:false,error:'LAB_QUERY_OWNER_UNAVAILABLE'});
+  try{
+    // Always read SOURCE-owned canonical aggregates; a LAB caller cannot select
+    // a tenant, arbitrary group key, or a different read authority.
+    const canonical=await readCanonicalLabRace({
+      ownerId,groupKey:OFFICIAL_SOURCE_CHANNEL_KEY,race:input.race
+    });
+    return res.json({ok:true,mode:'shadow',status:canonical.reason,
+      text:canonical.text,canonical:{
+        available:canonical.available,
+        ...(canonical.available?{state:canonical.state,version:canonical.version,updatedAt:canonical.updatedAt}:{})
+      },authority:canonical.authority,decision:{intent:result.intent,reason:decision.decisionReason}});
+  }catch{
+    return res.status(503).json({ok:false,error:'LAB_QUERY_CANONICAL_UNAVAILABLE'});
   }
 });
 router.post('/bridge/events',async(req,res)=>{

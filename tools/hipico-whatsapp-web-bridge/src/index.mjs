@@ -30,6 +30,7 @@ import { createLabTestReplyJournal, labTestTagForMessage } from './lab-test-repl
 import { atomicWriteJson } from './spool-journal.mjs';
 import { createLabConversationContext, labConversationInput, planLabConversation, stableLabSenderKey } from './lab-conversation-context.mjs';
 import { localKillSwitchState } from './promotion-guard.mjs';
+import { queryCanonicalLab, explicitLabRaceScope } from './lab-canonical-query.mjs';
 
 const config = assertRuntimeConfig(loadRuntimeConfig());
 const {
@@ -332,7 +333,8 @@ function localMirrorText(event, classification) {
     `Remitente: ${event.senderLabel || 'participante'}`,
     `Mensaje: ${(event.text || `[${event.mediaKind || 'media'}]`).slice(0, 1000)}`,
     `Lectura: ${classification.intent} · riesgo ${classification.risk} · confianza ${(classification.confidence * 100).toFixed(1)}%`,
-    `Respuesta contextual: ${plan?.guidance || 'Sin contexto adicional disponible.'}`,
+    `Respuesta contextual: ${canonical?.available ? canonical.text : plan?.guidance || 'Sin contexto adicional disponible.'}`,
+    `Estado de consulta canónica: ${canonical?.reason || 'LAB_LOCAL_ONLY'}`,
     `Propuesta: ${localSuggestion(classification)}`,
     '⚠️ SOLO LABORATORIO. No registró ni modificó dinero, jugadas, resultados o saldos reales.'
   ];
@@ -1000,7 +1002,7 @@ function labTestTagFor(externalMessageId) {
   return labTestTagForMessage(externalMessageId);
 }
 
-function localLabTestReply(row, classification, plan = null) {
+function localLabTestReply(row, classification, plan = null, canonical = null) {
   const textValue = String(row.text || '').slice(0, 1200);
   const entities = classification.entities || {};
   const details = [];
@@ -1226,10 +1228,20 @@ async function processLabTestInput() {
     const sender = stableLabSenderKey(row.id);
     const prior = sender ? labConversationContext?.get(sender) : null;
     const plan = planLabConversation(row, classification, prior);
+    // Query-only backend call completes BEFORE claiming a WhatsApp send intent.
+    // No token, URL or raw API response is ever appended to chat logs.
+    const canonical = classification.risk === 'safe' && sender && BACKEND_SYNC_ENABLED && backendState === 'online'
+      ? await queryCanonicalLab({
+          ingestUrl:INGEST_URL,token:TOKEN,
+          labGroupId:LAB_GROUP_ID,labChannelKey:LAB_CHANNEL_KEY,
+          messageId:row.id,senderId:sender,text:body,
+          race:explicitLabRaceScope(body),timeoutMs:Math.min(5000,BACKEND_TIMEOUT_MS)
+        })
+      : {available:false,reason:'LAB_CANONICAL_NOT_QUERIED'};
     await labTestReplyJournal.prepare(row.id); // fsync before any browser send
     await labTestReplyJournal.begin(row.id); // durable sending intent
     try {
-      await sendTextInCurrentLab(localLabTestReply(row, classification, plan), tag);
+      await sendTextInCurrentLab(localLabTestReply(row, classification, plan, canonical), tag);
       await labTestReplyJournal.confirm(row.id,{visibleTag:true});
       rememberLabSeen(row.id); // confirmed delivery/tag; never ack before sending
       await saveLabSeenNow();

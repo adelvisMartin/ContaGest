@@ -94,6 +94,27 @@ El motor conversacional backend y los datos canónicos siguen siendo la autorida
 
 Pruebas de contrato: `npm --prefix tools/hipico-whatsapp-web-bridge run qa`. No equivale a QA de WhatsApp real, Windows ni soak prolongado.
 
+## Consultas canónicas de carrera desde LAB (incremento #892)
+
+El Bridge envía una consulta **de lectura** al backend Hípico existente solamente cuando: el grupo LAB está pinneado, el remitente dispone de identidad estable, el clasificador local la califica como segura, el backend está online y se dispone del token del Bridge. Usa el endpoint derivado de `HIPICO_INGEST_URL` de la misma autoridad:
+
+```text
+POST /api/v1/hipico-bot/bridge/lab/query
+x-hipico-bridge-token: [secreto del servidor]
+```
+
+No necesita credenciales de operador, no expone el dominio financiero y no autoriza SOURCE. El endpoint valida el grupo LAB y la política del Conversation Engine antes de leer el estado desde el agregador de carreras bajo el dueño y grupo SOURCE configurados en el backend.
+
+Ejemplo de consulta expresamente contextualizada:
+
+> Estado de carrera 5 en hipódromo La Rinconada el 2026-10-12
+
+Para consultar un estado se exige **número de carrera, hipódromo y fecha válida AAAA-MM-DD**. Preguntar solo «¿cómo va la carrera 5?» no identifica inequívocamente un agregado canónico: el bot solicita esos datos, sin deducir hipódromo ni fecha. La lectura pública permite un estado interno validado y su actualización, **no** resultados oficiales externos, lista de participantes, importes o confirmaciones de jugadas.
+
+Si el backend falla, rechaza el grupo, no dispone de propietario canónico, no reconoce el agregado o devuelve un cuerpo incompatible, el adaptador desactiva la respuesta canónica y responde con la guía local de falta de información. Nunca adjunta credenciales, errores raw o contenido de la API a mensajes/logs. Las consultas de riesgo monetario se quedan fuera de esta ruta. La secuencia de envío `prepare → sending → confirm → seen` no cambia.
+
+**Evidencia pendiente:** tests de contrato y transporte local versionados; despliegue real y sesiones WhatsApp LAB requieren QA físico posterior. Aún no se considera completo #892: faltan modelos verificados de participantes/resultados y conciliación íntegra de threads/quoted replies.
+
 ## Prueba autónoma LAB
 
 Desde la raíz:
