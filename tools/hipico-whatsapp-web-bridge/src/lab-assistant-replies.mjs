@@ -48,6 +48,11 @@ export function composeLabAssistantReply({ classification, plan, canonical, assi
     return 'Para darte información confiable necesito que un operador revise esa consulta. No se hizo ningún cambio.';
   }
 
+  if (plan?.queryCategory === 'UNSUPPORTED') {
+    return reference
+      ? 'Tengo la referencia de la ' + reference + ', pero todavía no dispongo de una consulta verificada para esos datos en el LAB. Por ahora solo puedo comprobar el estado interno de la carrera; no voy a inventar participantes, resultados ni horarios.'
+      : 'Todavía no dispongo de una consulta verificada para esos datos en el LAB. Puedo revisar el estado interno de una carrera cuando me indiques número, hipódromo y fecha.';
+  }
   if (classification?.intent === 'greeting') {
     return `¡Buenas! Soy ${name}, el asistente virtual de Control Hípico. Puedo ayudarte a consultar carreras y aclarar dudas. ¿Qué necesitas?`;
   }
