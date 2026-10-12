@@ -68,7 +68,11 @@ export function createBridgeSpoolRuntime({
   }
   function recordFile(record,state=record.state){return path.join(stateDir(state),`${record.recordId}.json`);}
   async function ensure(){
-    await Promise.all([...SPOOL_STATES.map((state)=>fs.mkdir(stateDir(state),{recursive:true})),fs.mkdir(archive,{recursive:true})]);
+    const dirs=[...SPOOL_STATES.map((state)=>stateDir(state)),archive,path.join(root,'quarantined-raw')];
+    await Promise.all(dirs.map(async(dir)=>{
+      await fs.mkdir(dir,{recursive:true,mode:0o700});
+      await fs.chmod(dir,0o700).catch(()=>{});
+    }));
   }
   async function findRecord(recordId){
     for(const state of SPOOL_STATES){
@@ -118,13 +122,21 @@ export function createBridgeSpoolRuntime({
   }
   async function quarantineLoaded(file,record,reason){
     const nowIso=iso(now());
-    const safe=validateSpoolRecord(record).valid?record:createSpoolRecord({
+    const invalid=!validateSpoolRecord(record).valid;
+    const safe=!invalid?record:createSpoolRecord({
       kind:BRIDGE_SPOOL_KINDS.BACKEND_EVENT,
       key:`invalid-record:${path.basename(file)}:${crypto.randomUUID()}`,
       payload:{quarantinedOriginal:record??null,sourceFile:path.basename(file)},
       parserVersion,createdAt:nowIso,maxAttempts
     });
     // A corrupt on-disk recordId is never trusted as a filesystem path segment.
+    if(invalid){
+      // Keep the exact original bytes for operator-led recovery; never post them to CI.
+      await ensure();
+      const original=path.join(root,'quarantined-raw',safe.recordId+'.raw');
+      await fs.copyFile(file,original,fs.constants.COPYFILE_EXCL);
+      await fs.chmod(original,0o600).catch(()=>{});
+    }
     const quarantined={...safe,state:'quarantined',updatedAt:nowIso,nextAttemptAt:0,
       lastError:String(reason||'QUARANTINED'),quarantineReason:String(reason||'QUARANTINED')};
     return persist(quarantined,{fromFile:file});
