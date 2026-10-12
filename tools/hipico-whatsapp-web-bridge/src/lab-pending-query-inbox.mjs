@@ -7,7 +7,6 @@ import { classifyLocal } from './runtime-utils.mjs';
 import { labReadOnlyQueryPurpose, explicitLabRaceScope } from './lab-canonical-query.mjs';
 
 const SCHEMA=1;
-const HASH=/^[a-f0-9]{64}$/;
 const HEX=/^[a-f0-9]+$/;
 const PURPOSES=new Set(['status','result','participants','next','active','schedule']);
 const MAX_AGE_MS=10*60*1000;
@@ -225,7 +224,7 @@ export function createLabPendingQueryInbox({rootDir,labGroupId,sourceGroupId,now
       assertReady();
       const item=validate({...candidate,capturedAt:clock()});
       const hash=identity(item.messageId);
-      await scan(); // Expire old entries before testing idempotency and capacity.
+      const {rows}=await scan(); // Expire old entries and bound total disk state.
       const existing=await openFile(hash);
       if(existing){
         // Do not rewrite a quoted race scope or candidate text under a reused ID.
@@ -233,7 +232,6 @@ export function createLabPendingQueryInbox({rootDir,labGroupId,sourceGroupId,now
         if(JSON.stringify(original)!==JSON.stringify(next))throw new Error('LAB_PENDING_REPLAY_MISMATCH');
         return {created:false};
       }
-      const {rows}=await scan();
       if(rows.length>=maxEntries)throw new Error('LAB_PENDING_CAPACITY_EXCEEDED');
       const payload=seal(item,hash);
       let handle;
