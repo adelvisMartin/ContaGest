@@ -69,10 +69,14 @@ export function createLabPendingQueryInbox({rootDir,labGroupId,sourceGroupId,now
       (!allowExpired&&clock()-Date.parse(item.messageTimestamp)>=maxAgeMs)||
       !PURPOSES.has(item.purpose)||!Number.isFinite(item.capturedAt)||
       item.capturedAt>clock()+60_000||(!allowExpired&&clock()-item.capturedAt>maxAgeMs)||
-      stableLabSenderKey(item.messageId)!==item.senderId||
+      !item.messageId.includes(lab)||stableLabSenderKey(item.messageId)!==item.senderId||
       labReadOnlyQueryPurpose(item.text,classifyLocal(item.text))!==item.purpose||
       !labConversationInput({id:item.messageId,text:item.text,fromMe:false,hasMedia:false},classifyLocal(item.text)).eligible||
-      (item.quotedMessageId!==null&&(typeof item.quotedMessageId!=='string'||item.quotedMessageId.length>320))||
+      (item.quotedMessageId!==null&&(
+        typeof item.quotedMessageId!=='string'||item.quotedMessageId.length>320||
+        !item.quotedMessageId.includes(lab)||
+        stableLabSenderKey(item.quotedMessageId)!==item.senderId
+      ))||
       (item.race!==null&&(!Number.isInteger(item.race?.raceNumber)||item.race.raceNumber<1||
         item.race.raceNumber>999||typeof item.race.racetrack!=='string'||
         !item.race.racetrack.trim()||item.race.racetrack.length>90||
