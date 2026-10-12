@@ -164,3 +164,13 @@ El modo QA `HIPICO_LAB_TEST_INPUT_ENABLED=true` nunca confirma un mensaje de ent
 - **Entrega confirmada por tag visible o respuesta ya existente:** se marca como visto y se intenta persistir `labSeen`. Los mensajes vacíos o respuestas propias siguen ignorándose deliberadamente.
 
 El mismo clasificador se aplica al envío de espejos del spool: los errores posteriores a Enter no se reintentan automáticamente y quedan en cuarentena en vez de arriesgar dos publicaciones. No se promete entrega exactly-once ante una caída exacta entre Enter y persistencia; la validación visual por tag y la conciliación de receipts siguen siendo obligatorias durante QA. No habilita escritura SOURCE ni pagos.
+
+## LAB send-intent WAL y conciliación post-restart (#837)
+
+El Bridge guarda ahora un **intento durable de envío** antes de llamar al navegador: `queued/failed → sending → sent/replayed`. Un fallo seguro anterior a Enter puede avanzar de `sending → failed` con backoff; un error posterior a Enter se clasifica como ambiguo y pasa a cuarentena sin reenvío ciego.
+
+En el arranque, cualquier registro persistido en `sending` se mueve **antes de iniciar las entregas** a `quarantined` con `quarantineReason=LAB_SEND_INTERRUPTED` y `lastError=LAB_DELIVERY_AMBIGUOUS`. También se bloquea un duplicado `queued/failed` si existe otra copia `sending/quarantined` con el mismo ID lógico. Ni `spool:replay --execute` ni `requestReplay` permiten reencolar estas entregas ambiguas; el plan de replay las informa como `LAB_DELIVERY_RECONCILIATION_REQUIRED`.
+
+**Procedimiento para el operador (cuando se haga el QA físico):** detener el Bridge; conservar el directorio privado de spool; comprobar en el grupo LAB **con ID pinneado** si ya existe la respuesta con la etiqueta exacta `mirrorTag`; registrar resultado y SHA candidato sin publicar chat/PII; sólo tras investigación específica decidir el curso de recuperación. **No** renombrar archivos para forzar `queued`, ni reenviar al grupo SOURCE, ni activar un replay por una entrega no confirmada. El sistema prefiere detener una respuesta dudosa antes que duplicarla.
+
+Esta garantía cubre reinicios de un solo proceso Bridge y pérdida de confirmación entre Playwright y el disco. No asegura exactamente-una-entrega en WhatsApp, no sustituye recibos verificados del proveedor, y requiere pruebas de reinicio/reconexión con un LAB real antes de cerrar #837/#120.
