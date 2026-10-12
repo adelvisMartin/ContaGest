@@ -8,7 +8,7 @@ import { labCanonicalEvent, selectCanonicalLabReply } from '../src/lab-canonical
 const SOURCE='120363111111111111@g.us';
 const LAB='120363222222222222@g.us';
 const config={labGroupId:LAB,sourceGroupId:SOURCE,labChannelKey:'control-hipico-lab',labGroupName:'Control hípico lab',bridgeVersion:'test-v1'};
-const row=(extra={})=>({id:'lab-event-0001',pre:'[9:15, 12/10/2026] Participante:',text:'¿Qué carrera sigue?',fromMe:false,hasMedia:false,quotedId:'quoted-01',...extra});
+const row=(extra={})=>({id:'msg_1234567890@lid_001',pre:'[9:15, 12/10/2026] Participante:',text:'¿Qué carrera sigue?',fromMe:false,hasMedia:false,quotedId:'quoted-01',...extra});
 const response=(overrides={})=>({
   ok:true,duplicate:false,
   data:{risk:'safe',intent:'conversation'},
@@ -27,7 +27,8 @@ test('LAB normalized event reuses canonical Bridge event schema without SOURCE w
   assert.equal(normalized.event.shadowMode,true);
   assert.equal(normalized.event.historySync,false);
   assert.equal(normalized.event.quotedExternalMessageId,'quoted-01');
-  assert.equal(normalized.event.senderId,'Participante');
+  assert.equal(normalized.event.senderId,'1234567890@lid');
+  assert.equal(normalized.event.senderLabel,'Participante');
   assert.equal(normalized.event.fromMe,false);
   assert.equal(normalized.event.rawMeta,'');
   assert.match(normalized.event.timestamp,/^2026-10-12T/);
@@ -35,9 +36,9 @@ test('LAB normalized event reuses canonical Bridge event schema without SOURCE w
 
 test('untrusted and unbound LAB events cannot reach backend',()=>{
   for(const example of [
-    row({fromMe:true}),row({hasMedia:true}),row({text:''}),row({id:''}),row({pre:''})
+    row({fromMe:true}),row({hasMedia:true}),row({text:''}),row({id:''}),row({id:'lab-without-jid'})
   ])assert.equal(labCanonicalEvent(example,config).eligible,false);
-  for(const invalid of [{...config,labGroupId:SOURCE},{...config,labGroupId:''},{...config,labGroupId:'wrong'},{...config,labChannelKey:''}]){
+  for(const invalid of [{...config,labGroupId:SOURCE},{...config,labGroupId:''},{...config,labGroupId:'wrong'},{...config,labChannelKey:''},{...config,sourceGroupId:''}]){
     assert.equal(labCanonicalEvent(row(),invalid).eligible,false);
   }
 });
