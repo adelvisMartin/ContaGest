@@ -1,6 +1,7 @@
 import crypto from 'node:crypto';
 import { prisma } from '../../database/prisma.js';
 import { RaceQueryService, formatRaceQueryResponse } from '../hipico/race-query.service.js';
+import { canonicalRaceReadDigest } from './hipico-lab-race-query.js';
 import { canonicalBridgeReadScope } from './hipico-canonical-shadow.store.js';
 import {
   labReplayCandidate, labReplayEligible, labReplaySnapshotValid, LAB_REPLY_REPLAY_TTL_MS,
@@ -108,7 +109,7 @@ export async function recoverLabReplayCandidate(input:{
       const result=await new RaceQueryService().execute({
         ownerId:scope.ownerId,groupKey:scope.groupKey,text:input.scope.messageText
       });
-      const freshHash=digest(JSON.stringify(result));
+      const freshHash=canonicalRaceReadDigest(result);
       const freshText=formatRaceQueryResponse(result).slice(0,3000);
       if(freshHash!==row.readDigest || freshText!==row.text)return null;
     }catch{return null;}
