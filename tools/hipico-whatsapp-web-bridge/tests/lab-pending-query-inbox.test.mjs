@@ -4,7 +4,7 @@ import crypto from 'node:crypto';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { createLabPendingQueryInbox } from '../src/lab-pending-query-inbox.mjs';
+import { createLabPendingQueryInbox, reconcileLabPendingObservation } from '../src/lab-pending-query-inbox.mjs';
 
 const LAB='120363222222222222@g.us';
 const SOURCE='120363111111111111@g.us';
@@ -143,4 +143,54 @@ test('non-quoted race scope must have appeared explicitly in that very question'
   const quote=candidate({text:'¿Cuál es el resultado?',quotedMessageId:'prior-verified-from-same-sender'});
   assert.equal((await inbox.enqueue(quote)).created,true);
   await inbox.close();
+});
+
+
+test('an originally verified quote survives loss of its prior visible DOM message',async t=>{
+  const f=await harness(t);const inbox=f.create();await inbox.initialize();
+  const original=candidate({
+    text:'¿Cuál es el resultado?',
+    quotedMessageId:'verified-prior-message-id'
+  });
+  await inbox.enqueue(original);
+  const stored=await inbox.read(MESSAGE);
+  assert.ok(stored);
+  const recovered=reconcileLabPendingObservation(stored,{
+    messageId:MESSAGE,senderId:SENDER,text:'¿Cuál es el resultado?',
+    purpose:'result',messageTimestamp:original.messageTimestamp,
+    quotedMessageId:null,explicitRace:null
+  });
+  assert.equal(recovered.valid,true);
+  assert.equal(recovered.quotedMessageId,'verified-prior-message-id');
+  assert.deepEqual(recovered.race,original.race);
+  await inbox.close();
+});
+
+test('ID reuse, changed quote, sender, timestamp or race never override encrypted scope',()=>{
+  const stored=candidate({quotedMessageId:'original-quoted-id'});
+  const base={
+    messageId:stored.messageId,senderId:stored.senderId,text:stored.text,
+    purpose:stored.purpose,messageTimestamp:stored.messageTimestamp,
+    quotedMessageId:stored.quotedMessageId,explicitRace:stored.race
+  };
+  assert.equal(reconcileLabPendingObservation(stored,base).valid,true);
+  for(const changed of [
+    {messageId:'other-message-id'},{senderId:'99999999999@lid'},
+    {text:stored.text+' cambiado'},{purpose:'status'},
+    {messageTimestamp:new Date(501000).toISOString()},
+    {quotedMessageId:'spoofed-quoted-id'},
+    {explicitRace:{raceNumber:6,racetrack:'La Rinconada',raceDate:'2026-10-12'}}
+  ])assert.equal(reconcileLabPendingObservation(stored,{...base,...changed}).valid,false);
+});
+
+test('live LAB read uses immutable restored scope rather than disappearing visible quote',async()=>{
+  const src=await fs.readFile(new URL('../src/index.mjs',import.meta.url),'utf8');
+  const live=src.slice(src.indexOf('async function processLabTestInput()'),src.indexOf('async function visibleLabHasTag'));
+  const read=live.indexOf('await labPendingInbox.read(row.id)');
+  const reconcile=live.indexOf('reconcileLabPendingObservation(original');
+  const lookup=live.indexOf('await queryCanonicalLab({');
+  assert.ok(read>=0&&reconcile>read&&lookup>reconcile);
+  assert.match(live,/trustedRace=verified\.race/);
+  assert.match(live,/trustedQuote=verified\.quotedMessageId/);
+  assert.match(live,/LAB_PENDING_REVIEW_REQUIRED id=/);
 });
