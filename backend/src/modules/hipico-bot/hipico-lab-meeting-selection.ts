@@ -29,7 +29,8 @@ export function parseExplicitLabMeeting(text:string):LabMeetingSelection{
   const venueMatch=/^en\s+(?:(?:el\s+)?hip[oó]dromo\s+)?([^?!.;,]+)[?!.;,]*$/iu.exec(suffix);
   if(!venueMatch)return{kind:'invalid'};
   const venue=venueMatch[1].trim().replace(/\s+/g,' ');
-  if(venue.length<2||venue.length>64||!/^[\p{L}\d][\p{L}\d '-]*$/u.test(venue)){
+  if(venue.length<2||venue.length>64||/\b(?:y|o|otro|otra)\b/iu.test(venue)||
+     !/^[\p{L}\d][\p{L}\d '-]*$/u.test(venue)){
     return{kind:'invalid'};
   }
   return{kind:'explicit',meetingDate:dateMatch[1],venue};
