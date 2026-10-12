@@ -23,6 +23,7 @@ export function createLabTestReplyJournal({rootDir,labGroupId,sourceGroupId='',n
   if(!source)throw new Error('LAB_TEST_JOURNAL_PINNED_SOURCE_REQUIRED');
   const root=path.resolve(rootDir);
   const scopeHash=crypto.createHash('sha256').update('lab-test|'+lab).digest('hex');
+  let scopeVerified=false;
 
   function identity(externalId){
     if(typeof externalId!=='string'||!externalId||externalId.length>2048)throw new Error('LAB_TEST_MESSAGE_ID_INVALID');
@@ -52,12 +53,31 @@ export function createLabTestReplyJournal({rootDir,labGroupId,sourceGroupId='',n
     try{return validate(JSON.parse(data),expected);}
     catch{throw new Error('LAB_TEST_JOURNAL_RECORD_INVALID');}
   }
+  async function verifyScope(){
+    if(scopeVerified)return;
+    let files;
+    try{files=await fs.readdir(root);}
+    catch(error){
+      if(error?.code==='ENOENT'){scopeVerified=true;return;}
+      throw error;
+    }
+    for(const name of files){
+      if(!name.endsWith('.json'))continue;
+      if(!/^[a-f0-9]{64}\\.json$/.test(name))throw new Error('LAB_TEST_JOURNAL_FILE_INVALID');
+      const file=path.join(root,name);
+      const record=await loadFile(file);
+      if(!record||record.idHash+'.json'!==name)throw new Error('LAB_TEST_JOURNAL_RECORD_INVALID');
+    }
+    scopeVerified=true;
+  }
   async function read(externalId){
     const expected=identity(externalId);
+    await verifyScope();
     return loadFile(expected.file,expected);
   }
   async function prepare(externalId){
     const meta=identity(externalId);
+    await verifyScope();
     await ensure();
     const timestamp=stamp();
     const record={
@@ -127,6 +147,7 @@ export function createLabTestReplyJournal({rootDir,labGroupId,sourceGroupId='',n
         recovered++;
       }
     }
+    scopeVerified=true;
     return{recovered};
   }
   async function snapshot(){
