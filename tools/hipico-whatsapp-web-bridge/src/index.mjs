@@ -1252,7 +1252,7 @@ async function processLabTestInput() {
       // The WAL-backed confirmed acknowledgement is the single send authority.
       // Context is only a local hint; failed persistence can never resend LAB.
       if (plan.rememberRace && labConversationContext) {
-        try { await labConversationContext.remember(plan.sender,plan.raceNumber,plan.raceScope); }
+        try { await labConversationContext.remember(plan.sender,plan.raceNumber,plan.raceScope,{raceTrack:plan.raceTrack,raceDate:plan.raceDate}); }
         catch { await log('LAB_CONTEXT_PERSIST_FAILED'); }
       }
       processed += 1;
