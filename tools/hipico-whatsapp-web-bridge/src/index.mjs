@@ -32,6 +32,7 @@ import { createLabConversationContext, labConversationInput, planLabConversation
 import { localKillSwitchState } from './promotion-guard.mjs';
 import { queryCanonicalLab, explicitLabRaceScope, labReadOnlyQueryPurpose, resolveQuotedLabRaceScope } from './lab-canonical-query.mjs';
 import { selectLabAnswer } from './lab-answer-policy.mjs';
+import { composeLabAssistantReply } from './lab-assistant-replies.mjs';
 
 const config = assertRuntimeConfig(loadRuntimeConfig());
 const {
@@ -61,7 +62,8 @@ const {
   baselineIgnoreHistory: BASELINE_IGNORE_HISTORY,
   labTestInputEnabled: LAB_TEST_INPUT_ENABLED,
   labTestPollMs: LAB_TEST_POLL_MS,
-  labTestBootstrapLimit: LAB_TEST_BOOTSTRAP_LIMIT
+  labTestBootstrapLimit: LAB_TEST_BOOTSTRAP_LIMIT,
+  labAssistantName: LAB_ASSISTANT_NAME
 } = config;
 const SOURCE_REPLY_KILL_SWITCH = localKillSwitchState();
 const SOURCE_AUTO_REPLY_ACTIVE = SOURCE_AUTO_REPLY_ENABLED && !SOURCE_REPLY_KILL_SWITCH.active;
@@ -1004,29 +1006,14 @@ function labTestTagFor(externalMessageId) {
 }
 
 function localLabTestReply(row, classification, plan = null, canonical = null) {
-  const textValue = String(row.text || '').slice(0, 1200);
-  const entities = classification.entities || {};
-  const details = [];
-  if (entities.role) details.push(`Rol: ${entities.role === 'player' ? 'JUEGA' : 'CONSIGUE'}`);
-  if (entities.play) details.push(`Jugada: ${entities.play}`);
-  if (entities.horse) details.push(`Caballo: ${entities.horse}`);
-  if (entities.amount != null) details.push(`Monto detectado: ${entities.amount}`);
-  if (entities.raceNumber != null) details.push(`Carrera: ${entities.raceNumber}`);
-  if (Array.isArray(entities.board) && entities.board.length) details.push(`Pizarra: ${entities.board.join('-')}`);
-  const answer=selectLabAnswer({
-    canonical,plan,localFallback:localSuggestion(classification)
+  const answer = selectLabAnswer({
+    canonical, plan, localFallback: localSuggestion(classification)
   });
-  return [
-    labTestTagFor(row.id),
-    '🧪 CONTROL HÍPICO · PRUEBA LAB',
-    `Mensaje: ${textValue || '[sin texto]'}`,
-    `Lectura: ${classification.intent} · riesgo ${classification.risk} · confianza ${(classification.confidence * 100).toFixed(1)}%`,
-    ...details,
-    `Respuesta: ${answer.text}`,
-    `Fuente: ${answer.source}`,
-    `Consulta: ${answer.reason}`,
-    '⚠️ SOLO LAB. No modifica jugadas, saldos, cierres ni resultados reales. Un resultado interno no certifica oficialidad externa.'
-  ].join('\n').slice(0, 3900);
+  const text = composeLabAssistantReply({
+    classification, plan, canonical, answer, assistantName: LAB_ASSISTANT_NAME
+  });
+  // Keep the visible LABTEST tag as evidence for exactly-once delivery.
+  return [text, labTestTagFor(row.id)].join('\n').slice(0, 3900);
 }
 
 async function clearComposerSafely(composer) {
@@ -1233,11 +1220,11 @@ async function processLabTestInput() {
     }
     const sender = stableLabSenderKey(row.id);
     const prior = sender ? labConversationContext?.get(sender) : null;
-    const plan = planLabConversation(row, classification, prior);
-    // Query-only backend call completes BEFORE claiming a WhatsApp send intent.
-    // No token, URL or raw API response is ever appended to chat logs.
+    // Scope comes from this message or an exact same-sender quoted message.
     const inquiryPurpose=labReadOnlyQueryPurpose(body,classification);
     const scopedRace=explicitLabRaceScope(body) || resolveQuotedLabRaceScope(row,visible);
+    const plan = planLabConversation(row, classification, prior, scopedRace);
+    // Backend read completes before the durable send intent.
     const quotedVerified=Boolean(row.quotedId && scopedRace && !explicitLabRaceScope(body));
     const canonical = inquiryPurpose && sender && BACKEND_SYNC_ENABLED && backendState === 'online'
       ? await queryCanonicalLab({
@@ -1246,7 +1233,7 @@ async function processLabTestInput() {
           messageId:row.id,senderId:sender,text:body,
           purpose:inquiryPurpose,
           quotedMessageId:quotedVerified?row.quotedId:null,
-          race:scopedRace,timeoutMs:Math.min(5000,BACKEND_TIMEOUT_MS)
+          race:scopedRace || plan.raceScope,timeoutMs:Math.min(5000,BACKEND_TIMEOUT_MS)
         })
       : {available:false,reason:'LAB_CANONICAL_NOT_QUERIED'};
     await labTestReplyJournal.prepare(row.id); // fsync before any browser send
@@ -1259,7 +1246,7 @@ async function processLabTestInput() {
       // The WAL-backed confirmed acknowledgement is the single send authority.
       // Context is only a local hint; failed persistence can never resend LAB.
       if (plan.rememberRace && labConversationContext) {
-        try { await labConversationContext.remember(plan.sender,plan.raceNumber); }
+        try { await labConversationContext.remember(plan.sender,plan.raceNumber,plan.raceScope); }
         catch { await log('LAB_CONTEXT_PERSIST_FAILED'); }
       }
       processed += 1;
