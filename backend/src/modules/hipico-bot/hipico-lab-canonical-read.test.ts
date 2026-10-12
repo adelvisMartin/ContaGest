@@ -127,3 +127,67 @@ test('financial participant counterparties are never repurposed into horse entri
   assert.equal(got.available,false);
   assert.doesNotMatch(JSON.stringify(got),/PRIVATE-BETTOR|1000/);
 });
+
+test('canonical summary reads one tenant-scoped snapshot and contains only verified status',async()=>{
+  const calls:any[]=[];
+  const reader=(async(args:any)=>{calls.push(args);return{
+    aggregate:{status:'OPEN',stateVersion:2,updatedAt:new Date('2026-10-12T13:00:00Z')},
+    events:[{eventType:'SETTLEMENT_RECORDED',normalizedPayload:{amount:950000,participant:'PRIVATE_PERSON'}}]
+  };}) as any;
+  const got=await readCanonicalLabRace({...input,purpose:'summary'},reader);
+  assert.equal(got.available,true);
+  assert.equal(got.reason,'CANONICAL_RACE_SUMMARY');
+  assert.match(got.text,/Resumen del registro interno de carrera 5/);
+  assert.match(got.text,/estado abierta/);
+  assert.match(got.text,/No hay una llegada validada/);
+  assert.doesNotMatch(JSON.stringify(got),/950000|PRIVATE_PERSON|SETTLEMENT_RECORDED/);
+  assert.equal(got.authority.sourceWriteAllowed,false);
+  assert.equal(got.authority.financialAuthority,false);
+  assert.equal(got.authority.officiality,'NOT_EXTERNALLY_VERIFIED');
+  assert.equal(calls.length,1,'summary must not refetch different state versions');
+  assert.equal(calls[0].ownerId,input.ownerId);
+  assert.equal(calls[0].groupKey,input.groupKey);
+  assert.equal(calls[0].limit,30);
+});
+
+test('canonical summary includes only operator-confirmed numeric board with matching race and no later correction',async()=>{
+  const confirmed={
+    eventType:'RESULT_RECORDED',disposition:'applied',operatorConfirmed:true,
+    previousState:'CLOSED',nextState:'RESULT_RECEIVED',
+    normalizedPayload:{...race,raceContextComplete:true,board:['7','3','1'],amount:99111,participant:'PRIVATE_BETTOR'}
+  };
+  const make=(events:any[])=>async()=>({
+    aggregate:{status:'PUBLISHED',stateVersion:7,updatedAt:new Date('2026-10-12T13:02:00Z')},
+    events
+  });
+  const good=await readCanonicalLabRace({...input,purpose:'summary'},make([confirmed]) as any);
+  assert.equal(good.available,true);
+  assert.match(good.text,/7 - 3 - 1/);
+  assert.doesNotMatch(JSON.stringify(good),/99111|PRIVATE_BETTOR/);
+  for(const events of [
+    [{eventType:'CORRECTION'},confirmed],
+    [{eventType:'REVERSAL'},confirmed],
+    [{...confirmed,operatorConfirmed:false}],
+    [{...confirmed,normalizedPayload:{...confirmed.normalizedPayload,raceDate:'2026-10-13'}}],
+    [{...confirmed,normalizedPayload:{...confirmed.normalizedPayload,board:['7','7']}}]
+  ]){
+    const output=await readCanonicalLabRace({...input,purpose:'summary'},make(events) as any);
+    assert.equal(output.available,true);
+    assert.equal(output.reason,'CANONICAL_RACE_SUMMARY');
+    assert.match(output.text,/No hay una llegada validada/);
+    assert.doesNotMatch(output.text,/7 - 3 - 1/);
+  }
+});
+
+test('canonical summary requires exact race scope and verified aggregate, no accidental fallback',async()=>{
+  let reads=0;
+  const reader=(async()=>{reads++;return null;}) as any;
+  const bad=await readCanonicalLabRace({...input,purpose:'summary',race:{...race,raceDate:'2026-02-30'}},reader);
+  assert.equal(bad.available,false);
+  assert.equal(bad.reason,'INVALID_RACE_CONTEXT');
+  assert.equal(reads,0);
+  const absent=await readCanonicalLabRace({...input,purpose:'summary'},reader);
+  assert.equal(absent.available,false);
+  assert.equal(absent.reason,'CANONICAL_RACE_NOT_FOUND');
+  assert.equal(reads,1);
+});
