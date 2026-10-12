@@ -20,7 +20,7 @@ export function createLabTestReplyJournal({rootDir,labGroupId,sourceGroupId='',n
   const lab=normalizeGroupId(labGroupId);
   const source=sourceGroupId?normalizeGroupId(sourceGroupId):'';
   if(!lab||lab===source)throw new Error('LAB_TEST_JOURNAL_PINNED_LAB_REQUIRED');
-  if(sourceGroupId&&!source)throw new Error('LAB_TEST_JOURNAL_SOURCE_ID_INVALID');
+  if(!source)throw new Error('LAB_TEST_JOURNAL_PINNED_SOURCE_REQUIRED');
   const root=path.resolve(rootDir);
   const scopeHash=crypto.createHash('sha256').update('lab-test|'+lab).digest('hex');
 
