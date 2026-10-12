@@ -1185,6 +1185,88 @@ async function sendTextInCurrentLab(textValue, tag) {
     throw labSendFailure({sendAttempted,composerCleared:Boolean(cleared)});
   }
 }
+// Restore bounded encrypted LAB informational queries independently of DOM scroll state.
+// This operation runs only while the correct LAB group is open and pinned.
+async function resumePendingLabQueries(visibleIds = new Set()) {
+  if (!labPendingInbox || backendState !== 'online' || !BACKEND_SYNC_ENABLED) return;
+  const pending = await labPendingInbox.list(25);
+  for (const entry of pending) {
+    if (visibleIds.has(entry.messageId)) continue; // The live path owns visible rows.
+    const tag = labTestTagFor(entry.messageId);
+    const state = await labTestReplyJournal.read(entry.messageId);
+    if (state?.state === 'confirmed') {
+      rememberLabSeen(entry.messageId);
+      await saveLabSeenNow();
+      await labPendingInbox.remove(entry.messageId);
+      continue;
+    }
+    if (state?.state === 'sending' || state?.state === 'ambiguous') {
+      await assertCurrentLabIdentity();
+      if (await visibleLabHasTag(tag)) {
+        await labTestReplyJournal.confirm(entry.messageId,{visibleTag:true});
+        rememberLabSeen(entry.messageId);
+        await saveLabSeenNow();
+        await labPendingInbox.remove(entry.messageId);
+        await log('LAB_PENDING_RECONCILED id='+tag);
+      }
+      // An uncertain Enter is never authorized to be repeated.
+      continue;
+    }
+    const row = {
+      id:entry.messageId, text:entry.text, fromMe:false, hasMedia:false,
+      quotedId:entry.quotedMessageId, pre:''
+    };
+    const classification = classifyLocal(entry.text);
+    const sender = stableLabSenderKey(entry.messageId);
+    if (!sender || sender!==entry.senderId ||
+        !labConversationInput(row,classification).eligible ||
+        labReadOnlyQueryPurpose(entry.text,classification)!==entry.purpose) {
+      await labPendingInbox.remove(entry.messageId);
+      await log('LAB_PENDING_REVIEW_REQUIRED id='+tag+' reason=RISK_CHANGED');
+      continue;
+    }
+    if (!labQueryBackoff.allowed(entry.messageId)) continue;
+    const canonical = await queryCanonicalLab({
+      ingestUrl:INGEST_URL,token:TOKEN,
+      labGroupId:LAB_GROUP_ID,labChannelKey:LAB_CHANNEL_KEY,
+      messageId:entry.messageId,senderId:entry.senderId,text:entry.text,
+      purpose:entry.purpose,quotedMessageId:entry.quotedMessageId,
+      race:entry.race,timeoutMs:Math.min(5000,BACKEND_TIMEOUT_MS)
+    });
+    if (canonical.available!==true) {
+      const delay=labQueryBackoff.fail(entry.messageId);
+      await log('LAB_PENDING_QUERY_RETRY id='+tag+' reason='+canonical.reason+' retryMs='+delay);
+      continue;
+    }
+    labQueryBackoff.clear(entry.messageId);
+    const plan=planLabConversation(row,classification,labConversationContext?.get(sender));
+    await labTestReplyJournal.prepare(entry.messageId);
+    await labTestReplyJournal.begin(entry.messageId);
+    try {
+      await sendTextInCurrentLab(localLabTestReply(row,classification,plan,canonical),tag);
+      await labTestReplyJournal.confirm(entry.messageId,{visibleTag:true});
+      rememberLabSeen(entry.messageId);
+      await saveLabSeenNow();
+      await labPendingInbox.remove(entry.messageId);
+      if(plan.rememberRace&&labConversationContext){
+        try {await labConversationContext.remember(plan.sender,plan.raceNumber);}
+        catch {await log('LAB_CONTEXT_PERSIST_FAILED');}
+      }
+      await log('LAB_PENDING_RECOVERED id='+tag);
+    } catch(error) {
+      const current=await labTestReplyJournal.read(entry.messageId);
+      if(current?.state==='confirmed') throw error;
+      const outcome=labSeenOutcome({error});
+      if(outcome==='RETRY')await labTestReplyJournal.retryPrepared(entry.messageId);
+      if(outcome==='AMBIGUOUS'){
+        await labTestReplyJournal.markAmbiguous(entry.messageId);
+        labTestAmbiguousCount++;
+      }
+      await log('LAB_PENDING_SEND_'+outcome+' id='+tag);
+    }
+  }
+}
+
 async function processLabTestInput() {
   if (!LAB_TEST_INPUT_ENABLED) return;
   const sourceBefore = await currentChatTitle();
