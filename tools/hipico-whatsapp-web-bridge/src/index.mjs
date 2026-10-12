@@ -70,7 +70,7 @@ const SOURCE_REPLY_DIR = path.join(DATA_DIR, 'source-replies');
 const TRAINING_DIR = path.join(DATA_DIR, 'training');
 const SEEN_FILE = path.join(DATA_DIR, 'seen-source-message-ids.json');
 const LAB_SEEN_FILE = path.join(DATA_DIR, 'seen-lab-test-message-ids.json');
-const LAB_CONTEXT_FILE = path.join(DATA_DIR, 'lab-conversation-context.json');
+const LAB_CONTEXT_FILE = path.join(DATA_DIR, `lab-conversation-${sha256(LAB_GROUP_ID || LAB_CHANNEL_KEY).slice(0, 16)}.json`);
 const labConversationContext = LAB_TEST_INPUT_ENABLED && LAB_GROUP_ID
   ? createLabConversationContext({ file: LAB_CONTEXT_FILE, groupId: LAB_GROUP_ID }) : null;
 const LEGACY_SEEN_FILE = path.join(DATA_DIR, 'seen-message-ids.json');
