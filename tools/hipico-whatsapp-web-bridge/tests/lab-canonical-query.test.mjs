@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
-import {labCanonicalQueryUrl,explicitLabRaceScope,queryCanonicalLab} from '../src/lab-canonical-query.mjs';
+import {labCanonicalQueryUrl,explicitLabRaceScope,queryCanonicalLab,labReadOnlyQueryPurpose,resolveQuotedLabRaceScope} from '../src/lab-canonical-query.mjs';
 
 const event='https://example.org/api/v1/hipico-bot/bridge/events';
 const base={
@@ -87,7 +87,51 @@ test('live Bridge queries only safe LAB input before journal send intent',async(
   const prepare=body.indexOf('await labTestReplyJournal.prepare(row.id)');
   const send=body.indexOf('await sendTextInCurrentLab(');
   assert.ok(query>=0&&prepare>query&&send>prepare);
-  assert.match(body,/classification\.risk === 'safe'/);
+  assert.match(body,/labReadOnlyQueryPurpose\(body,classification\)/);
+  assert.match(body,/resolveQuotedLabRaceScope\(row,visible\)/);
   assert.match(body,/labConversationInput\(row, classification\)/);
   assert.match(src,/sourceSendPossible: SOURCE_AUTO_REPLY_ACTIVE && backendState === 'online'/);
+});
+
+
+test('read-only question classifier asks for specific results, entries or state only',()=>{
+  const reviewed={intent:'conversation',risk:'review'};
+  assert.equal(labReadOnlyQueryPurpose('¿Cuál es el resultado?',reviewed),'result');
+  assert.equal(labReadOnlyQueryPurpose('¿Qué caballos corren?',reviewed),'participants');
+  assert.equal(labReadOnlyQueryPurpose('¿Estado de carrera 5?',{intent:'status_non_monetary',risk:'safe'}),'status');
+  assert.equal(labReadOnlyQueryPurpose('RESULTADO 7-3-1',{intent:'race_result',risk:'review'}),null);
+  assert.equal(labReadOnlyQueryPurpose('¿Resultado y pagar premio?',reviewed),null);
+  assert.equal(labReadOnlyQueryPurpose('¿saldo y resultados?',{intent:'betting_or_balance',risk:'monetary'}),null);
+});
+
+test('quoted race context requires exact prior visible LAB message and the same stable sender',()=>{
+  const scope='Consulta: carrera 5 en hipódromo La Rinconada el 2026-10-12';
+  const sender='123456789012@lid';
+  const prior={id:'false_120363222222222222@g.us_m-1_'+sender,text:scope,fromMe:false,hasMedia:false};
+  const reply={id:'false_120363222222222222@g.us_m-2_'+sender,text:'¿Cuál fue el resultado?',quotedId:prior.id};
+  assert.deepEqual(resolveQuotedLabRaceScope(reply,[prior,reply]),
+    {raceNumber:5,racetrack:'La Rinconada',raceDate:'2026-10-12'});
+  assert.equal(resolveQuotedLabRaceScope({...reply,quotedId:reply.id},[prior,reply]),null);
+  assert.equal(resolveQuotedLabRaceScope({...reply,quotedId:'unknown'},[prior,reply]),null);
+  assert.equal(resolveQuotedLabRaceScope({...reply,id:'false_120363222222222222@g.us_m-2_234567890123@lid'},[prior,reply]),null);
+  assert.equal(resolveQuotedLabRaceScope({...reply,text:'¿Resultado de carrera 8?'},[prior,reply]),null);
+  assert.equal(resolveQuotedLabRaceScope(reply,[{...prior,fromMe:true},reply]),null);
+  assert.equal(resolveQuotedLabRaceScope(reply,[{...prior,hasMedia:true},reply]),null);
+});
+
+test('query adapter sends purpose and verified quoted identity only in the LAB query payload',async()=>{
+  let sent;
+  const prior={raceNumber:5,racetrack:'La Rinconada',raceDate:'2026-10-12'};
+  await queryCanonicalLab({...base,purpose:'result',race:prior,quotedMessageId:'quoted-verified',
+    fetchImpl:async(_url,opts)=>{
+      sent=JSON.parse(opts.body);
+      return json({ok:true,mode:'shadow',status:'CANONICAL_RESULT_CONFIRMED_INTERNAL',
+        text:'Llegada interna: 7 - 3 - 1.',authority:{
+          sourceWriteAllowed:false,financialAuthority:false,domainEffectsAllowed:false
+        }});
+    }});
+  assert.equal(sent.purpose,'result');
+  assert.equal(sent.quotedExternalMessageId,'quoted-verified');
+  assert.deepEqual(sent.race,prior);
+  assert.equal(sent.channelRole,'lab');
 });
