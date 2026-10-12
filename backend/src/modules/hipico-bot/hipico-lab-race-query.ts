@@ -1,3 +1,4 @@
+import crypto from 'node:crypto';
 import { classifyRaceQueryIntent } from '../hipico/race-lifecycle.js';
 import { RaceQueryService, formatRaceQueryResponse, type RaceQueryResult } from '../hipico/race-query.service.js';
 import { canonicalBridgeReadScope } from './hipico-canonical-shadow.store.js';
@@ -55,7 +56,8 @@ export async function resolveCanonicalLabRaceQuery(input:LabQueryInput,deps:Quer
       canSend:true,
       evidence:null,
       confirmationVerified:false,
-      reason:'CANONICAL_LAB_RACE_QUERY'
+      reason:'CANONICAL_LAB_RACE_QUERY',
+      readModelDigest:crypto.createHash('sha256').update(JSON.stringify(result)).digest('hex')
     };
   }catch(error:unknown){
     const code=String((error as {code?:string})?.code||'');
