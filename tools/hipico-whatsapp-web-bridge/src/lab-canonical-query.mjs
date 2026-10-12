@@ -38,6 +38,7 @@ export function labReadOnlyQueryPurpose(text,classification){
     classification?.risk==='monetary'||
     !['safe','review'].includes(classification?.risk)||
     !['conversation','status_non_monetary','help'].includes(classification?.intent))return null;
+  if(TOPIC.summary.test(value) && /\b(?:chat|conversacion|mensajes?|historial|hablamos)\b/.test(value))return null;
   if(TOPIC.summary.test(value) && !/\b(?:carrera|hipodromo)\b/.test(value))return null;
   if(!/[¿?]/.test(text)&&!/^(?:consulta|dime|muestra|indica|dame|hazme|resumen|resumeme|sintesis|recapitulacion|resultado|participantes|pizarra|estado)/.test(value))return null;
   for(const key of ['summary','result','participants','status']){
