@@ -146,6 +146,7 @@ export function planLabConversation(row, classification, priorContext = null, su
     : null;
   return {
     sender, raceNumber, raceScope, raceTrack, raceDate, isQuestion, summaryRequested, queryCategory,
+    scopeConflict: conflictingRace,
     clarificationCompleted: Boolean(clarificationScope),
     clarificationPending: clarification && !clarificationScope ? (raceTrack && !raceDate ? 'date' : !raceTrack && raceDate ? 'track' : null) : null,
     guidance,
