@@ -2,6 +2,7 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { verifyHipicoCssGraph } from './verify-css-graph.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const wrapper = path.resolve(here, '..');
@@ -53,12 +54,11 @@ function verifyRuntime(root, label) {
     if (!fs.existsSync(file)) throw new Error(`${label}: falta ${relative}`);
   }
   for (const relative of forbiddenLegacy) if (fs.existsSync(path.resolve(root, relative))) throw new Error(`${label}: permanece asset legacy ${relative}`);
-  const cssFiles = filesUnder(path.join(root, 'assets/css')).filter((file) => file.endsWith('.css'));
-  if (cssFiles.length !== 1 || cssFiles[0] !== 'app.css') throw new Error(`${label}: assets/css debe contener únicamente app.css; encontrados ${cssFiles.join(', ')}`);
   const buildInfo = JSON.parse(fs.readFileSync(path.join(root, 'build-info.json'), 'utf8'));
   if (buildInfo.version !== expectedVersion) throw new Error(`${label}: versión ${buildInfo.version || 'desconocida'}; se esperaba ${expectedVersion}`);
   const index = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
   if (/<link[^>]*>\s*>/i.test(index)) throw new Error(`${label}: HTML contiene un cierre de link duplicado.`);
+  verifyHipicoCssGraph(root, index);
   if (!index.includes('./assets/js/app.js')) throw new Error(`${label}: app.js no está enlazado de forma portable.`);
   if (!index.includes('./assets/js/theme-bootstrap.js')) throw new Error(`${label}: theme-bootstrap.js no está enlazado.`);
   if (!index.includes('./assets/js/command-center-shell.js')) throw new Error(`${label}: command-center-shell.js no está enlazado.`);
@@ -87,4 +87,4 @@ if (!checkOnly) {
 if (!fs.existsSync(target)) throw new Error('No existe www. Ejecuta npm run sync:web antes de verificar.');
 const targetFiles = verifyRuntime(target, 'Android www');
 verifyParity(sourceFiles, targetFiles);
-console.log(`Control Hípico ${expectedVersion}: paridad web/Android zero-legacy verificada (${sourceFiles.length} archivos).`);
+console.log(`Control Hípico ${expectedVersion}: paridad web/Android y CSS graph verificada (${sourceFiles.length} archivos).`);

@@ -4,6 +4,7 @@ import test from 'node:test';
 
 const recoveryPath = 'frontend/public/hipico-control/assets/js/password-recovery.js';
 const canonicalCssPath = 'frontend/public/hipico-control/assets/css/app.css';
+const compatibilityCssPath = 'frontend/public/hipico-control/assets/css/ui-system-v3-compat.css';
 const indexPath = 'frontend/public/hipico-control/index.html';
 
 test('#267 exposes password recovery from the auth screen without enabling public signup', async () => {
@@ -59,11 +60,15 @@ test('#267 validates password/confirmation and avoids account enumeration copy',
 });
 
 test('#267 recovery presentation uses the canonical UI and remains mobile-safe', async () => {
-  const css = await fs.readFile(canonicalCssPath, 'utf8');
-  assert.match(css, /\.auth-card--recovery\s*\{/);
-  assert.match(css, /width:\s*min\(100%,\s*520px\)/);
-  assert.match(css, /grid-template-columns:\s*1fr/);
-  assert.match(css, /@media \(max-width:\s*780px\)/);
+  const [entrypoint, compatibleStyles] = await Promise.all([
+    fs.readFile(canonicalCssPath, 'utf8'),
+    fs.readFile(compatibilityCssPath, 'utf8')
+  ]);
+  assert.match(entrypoint, /@import url\("\.\/ui-system-v3-compat\.css"\) layer\(legacy\)/);
+  assert.match(compatibleStyles, /\.auth-card--recovery\s*\{/);
+  assert.match(compatibleStyles, /width:\s*min\(100%,\s*520px\)/);
+  assert.match(compatibleStyles, /grid-template-columns:\s*1fr/);
+  assert.match(compatibleStyles, /@media \(max-width:\s*780px\)/);
   await assert.rejects(fs.access('frontend/public/hipico-control/assets/css/password-recovery.css'));
   await assert.rejects(fs.access('frontend/public/hipico-control/assets/css/ui-system.css'));
 });
