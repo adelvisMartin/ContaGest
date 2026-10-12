@@ -77,10 +77,11 @@ test('no SOURCE, operational, unauthenticated, human-owned or degraded response 
   }
 });
 test('static greeting remains replayable but review/finance cannot impersonate a static reply',()=>{
-  const input={...scope(),classification:{intent:'greeting',risk:'safe',confidence:.99,suggestion:'Hola',autoEligible:true,reason:'SAFE_GREETING'}};
+  const input:LabReplayScope={...scope(),classification:{intent:'greeting',risk:'safe',confidence:.99,suggestion:'Hola',autoEligible:true,reason:'SAFE_GREETING'}};
   const reply={...plan(),reason:'SAFE_GREETING',text:'¡Hola!',readModelDigest:undefined};
   assert.equal(labReplayCandidate(input,reply)?.kind,'static_safe');
   assert.equal(labReplaySnapshotValid(snapshot(input,reply),input,now),true);
   assert.equal(labReplaySnapshotValid(snapshot(input,reply),{...input,classification:scope().classification},now),false);
-  assert.equal(labReplayCandidate({...input,classification:{...input.classification,risk:'monetary'}},reply),null);
+  const monetary:LabReplayScope={...input,classification:{...input.classification,risk:'monetary'}};
+  assert.equal(labReplayCandidate(monetary,reply),null);
 });
