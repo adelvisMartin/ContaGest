@@ -13,6 +13,7 @@ export function isLabInformationRequest(text:string,purpose:LabRaceQuestion,resu
   if(normalized.length<6||normalized.length>1200||PROHIBITED.test(normalized)||
      !TOPICS[purpose].test(normalized)||result.risk==='monetary')return false;
   // A racing summary is not a WhatsApp transcript, financial recap, or participant history.
+  if(purpose==='summary' && /\b(?:chat|conversacion|mensajes?|historial|hablamos)\b/.test(normalized))return false;
   if(purpose==='summary' && !/\b(?:carrera|hipodromo)\b/.test(normalized))return false;
   // Race-result parsing with an explicit board is a proposed state mutation,
   // never an informational question.
