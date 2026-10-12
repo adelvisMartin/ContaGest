@@ -76,6 +76,9 @@ export async function queryCanonicalLab({
     timestamp,text:String(text||'').slice(0,1200),race,purpose,
     quotedExternalMessageId:quotedMessageId
   };
+  // A lost HTTP response after the backend commit is retried once using the
+  // exact same request identity, before any WhatsApp send intent exists.
+  for(let attempt=0;attempt<2;attempt++){
   try{
     const response=await fetchImpl(url,{
       method:'POST',redirect:'manual',cache:'no-store',
@@ -101,6 +104,8 @@ export async function queryCanonicalLab({
     }
     return{available:true,reason:String(body.status),text:body.text};
   }catch{
-    return{available:false,reason:'LAB_CANONICAL_UNAVAILABLE'};
+    if(attempt===1)return{available:false,reason:'LAB_CANONICAL_UNAVAILABLE'};
   }
+  }
+  return{available:false,reason:'LAB_CANONICAL_UNAVAILABLE'};
 }
