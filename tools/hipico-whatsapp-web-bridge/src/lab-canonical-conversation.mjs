@@ -1,4 +1,5 @@
 import { parseWhatsAppPre } from './runtime-utils.mjs';
+import { stableLabSenderKey } from './lab-conversation-context.mjs';
 
 // Adapter only. All authorization, conversation/risk rules and domain state live in the backend.
 // Incoming LAB chat is shadow evidence; this module never builds a domain command.
@@ -9,11 +10,12 @@ export function labCanonicalEvent(row, config, now = () => new Date()) {
   const groupId = String(config?.labGroupId || '').trim().toLowerCase();
   const channelKey = String(config?.labChannelKey || '').trim();
   const sourceId = String(config?.sourceGroupId || '').trim().toLowerCase();
-  if (!/^[0-9]+@g\.us$/.test(groupId) || groupId === sourceId || !channelKey) {
+  if (!/^[0-9]+@g\.us$/.test(groupId) || !/^[0-9]+@g\.us$/.test(sourceId) || groupId === sourceId || !channelKey) {
     return { eligible: false, reason: 'LAB_IDENTITY_UNAVAILABLE' };
   }
   const parsed = parseWhatsAppPre(row.pre, now());
-  const sender = String(parsed.senderLabel || '').trim();
+  // Only the message JID is an identity; never trust the displayed group nickname.
+  const sender = stableLabSenderKey(row.id);
   if (!sender || sender.toLowerCase() === 'unknown') {
     return { eligible: false, reason: 'LAB_SENDER_UNVERIFIED' };
   }
@@ -30,7 +32,7 @@ export function labCanonicalEvent(row, config, now = () => new Date()) {
       shadowMode: true,
       historySync: false,
       senderId: sender.slice(0, 220),
-      senderLabel: sender.slice(0, 220),
+      senderLabel: String(parsed.senderLabel || '').slice(0, 220),
       fromMe: false,
       timestamp: parsed.timestamp,
       type: 'chat',
