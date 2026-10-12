@@ -1195,6 +1195,26 @@ async function sendTextInCurrentLab(textValue, tag) {
 }
 // Restore bounded encrypted LAB informational queries independently of DOM scroll state.
 // This operation runs only while the correct LAB group is open and pinned.
+// A durable LAB response ACK can outlive the journal hint persistence.
+// Rebuild only informational same-sender, explicit race context after ACK.
+async function rememberConfirmedPendingLabQuote(entry) {
+  if(!labQuotedRaceJournal)return true;
+  const sender=stableLabSenderKey(entry.messageId);
+  const race=explicitLabRaceScope(entry.text);
+  const purpose=labReadOnlyQueryPurpose(entry.text,classifyLocal(entry.text));
+  if(!sender||sender!==entry.senderId||!race||!purpose)return true;
+  try{
+    await labQuotedRaceJournal.remember({
+      messageId:entry.messageId,senderId:sender,race,confirmed:true
+    });
+    return true;
+  }catch{
+    await log('LAB_QUOTE_HINT_PERSIST_FAILED');
+    // Preserve encrypted pending input for the next ACK-only recovery cycle.
+    return false;
+  }
+}
+
 async function resumePendingLabQueries(visibleIds = new Set()) {
   if (!labPendingInbox || backendState !== 'online' || !BACKEND_SYNC_ENABLED) return;
   const pending = await labPendingInbox.list(25);
@@ -1205,7 +1225,9 @@ async function resumePendingLabQueries(visibleIds = new Set()) {
     if (state?.state === 'confirmed') {
       rememberLabSeen(entry.messageId);
       await saveLabSeenNow();
-      await labPendingInbox.remove(entry.messageId);
+      if(await rememberConfirmedPendingLabQuote(entry)){
+        await labPendingInbox.remove(entry.messageId);
+      }
       continue;
     }
     if (state?.state === 'sending' || state?.state === 'ambiguous') {
@@ -1214,7 +1236,9 @@ async function resumePendingLabQueries(visibleIds = new Set()) {
         await labTestReplyJournal.confirm(entry.messageId,{visibleTag:true});
         rememberLabSeen(entry.messageId);
         await saveLabSeenNow();
-        await labPendingInbox.remove(entry.messageId);
+        if(await rememberConfirmedPendingLabQuote(entry)){
+          await labPendingInbox.remove(entry.messageId);
+        }
         await log('LAB_PENDING_RECONCILED id='+tag);
       }
       // An uncertain Enter is never authorized to be repeated.
@@ -1255,7 +1279,9 @@ async function resumePendingLabQueries(visibleIds = new Set()) {
       await labTestReplyJournal.confirm(entry.messageId,{visibleTag:true});
       rememberLabSeen(entry.messageId);
       await saveLabSeenNow();
-      await labPendingInbox.remove(entry.messageId);
+      if(await rememberConfirmedPendingLabQuote(entry)){
+        await labPendingInbox.remove(entry.messageId);
+      }
       if(plan.rememberRace&&labConversationContext){
         try {await labConversationContext.remember(plan.sender,plan.raceNumber);}
         catch {await log('LAB_CONTEXT_PERSIST_FAILED');}
