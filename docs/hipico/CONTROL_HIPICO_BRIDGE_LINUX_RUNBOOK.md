@@ -174,3 +174,16 @@ En el arranque, cualquier registro persistido en `sending` se mueve **antes de i
 **Procedimiento para el operador (cuando se haga el QA físico):** detener el Bridge; conservar el directorio privado de spool; comprobar en el grupo LAB **con ID pinneado** si ya existe la respuesta con la etiqueta exacta `mirrorTag`; registrar resultado y SHA candidato sin publicar chat/PII; sólo tras investigación específica decidir el curso de recuperación. **No** renombrar archivos para forzar `queued`, ni reenviar al grupo SOURCE, ni activar un replay por una entrega no confirmada. El sistema prefiere detener una respuesta dudosa antes que duplicarla.
 
 Esta garantía cubre reinicios de un solo proceso Bridge y pérdida de confirmación entre Playwright y el disco. No asegura exactamente-una-entrega en WhatsApp, no sustituye recibos verificados del proveedor, y requiere pruebas de reinicio/reconexión con un LAB real antes de cerrar #837/#120.
+
+
+## Acuses LAB persistentes entre reinicios — v1.6 / #837
+
+El modo `HIPICO_LAB_TEST_INPUT_ENABLED=true` ahora mantiene una autoridad local dedicada en `HIPICO_DATA_DIR/lab-test-replies/`. Cada mensaje de entrada LAB tiene un archivo de identidad SHA-256 con alcance al **ID pinneado del grupo LAB**, etiqueta `[LABTEST:…]` y estado `prepared | sending | confirmed | ambiguous`. El journal no guarda texto del mensaje, teléfono, identificador externo sin hash, token ni sesión de WhatsApp; usa archivos privados (0600) en directorio privado (0700).
+
+El procesamiento es `prepare → sending (fsync) → Enter en LAB → confirmación del tag saliente → confirmed (fsync) → seen legacy`. Confirmar el acuse requiere comprobación de la etiqueta **en un mensaje saliente** del LAB pinneado; una etiqueta falsificada en un mensaje recibido no es evidencia.
+
+Si Chrome o el Bridge se cierran estando en `sending`, en el próximo arranque el journal mueve esa entrada a `ambiguous` y **no la vuelve a publicar**. Durante el monitoreo LAB, al detectar la respuesta saliente con el tag exacto, registra `confirmed` sin un segundo envío. Si no está visible, la entrada sigue bloqueada para conciliación humana; la ausencia de la etiqueta entre los últimos mensajes visibles no prueba que nunca se entregó. Un fallo seguro pre-Enter con compositor limpiado correctamente vuelve a `prepared`. Si `confirmed` existe aunque falte el archivo auxiliar `seen-lab-test-message-ids.json`, el journal impide repetir el envío.
+
+La observabilidad expone `labTestReplyPending`, `labTestReplyAmbiguous` y `labTestReplyStates` en el health JSON. Ante `LAB_TEST_JOURNAL_RECORD_INVALID` (archivo corrupto, estado manipulado o alcance de grupo distinto) el procesamiento falla cerrado: conservar la copia privada, detener el Bridge, no borrar ni reconstruir el acuse a ciegas. No compartir el journal, perfiles, capturas ni chats en CI.
+
+**Límites:** protección intraproceso + journal local, no delivery exactly-once garantizada por WhatsApp, ni prueba real de entrega en dispositivos. Los acuses antiguos que solo constan en `seen-lab-test-message-ids.json` no pueden clasificarse retroactivamente como confirmados o ambiguos; deben investigarse durante QA sin reinyectar automáticamente mensajes antiguos. SOURCE continúa read-only y la política #728/#154 permanece NO-GO.
