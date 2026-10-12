@@ -1,12 +1,14 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import os from 'node:os';
 import { normalizeGroupId } from './group-identity.mjs';
 import { stableLabSenderKey, labConversationInput } from './lab-conversation-context.mjs';
 import { classifyLocal } from './runtime-utils.mjs';
 import { labReadOnlyQueryPurpose, explicitLabRaceScope } from './lab-canonical-query.mjs';
 
 const SCHEMA=1;
+const HASH=/^[a-f0-9]{64}$/;
 const HEX=/^[a-f0-9]+$/;
 const PURPOSES=new Set(['status','result','participants','next','active','schedule']);
 const MAX_AGE_MS=10*60*1000;
@@ -49,6 +51,7 @@ export function createLabPendingQueryInbox({rootDir,labGroupId,sourceGroupId,now
   const keyFile=path.join(root,'inbox.key');
   const lockFile=path.join(root,'owner.lock');
   const scopeHash=crypto.createHash('sha256').update('lab-inbox|'+lab+'|'+source).digest('hex');
+  const hostHash=crypto.createHash('sha256').update('lab-host|'+os.hostname().trim().toLowerCase()).digest('hex');
   let key=null;
   let token=null;
   let initialized=false;
@@ -108,7 +111,7 @@ export function createLabPendingQueryInbox({rootDir,labGroupId,sourceGroupId,now
   }
   async function lockOwner(){
     const myToken=crypto.randomUUID();
-    const body={pid:process.pid,token:myToken,scopeHash};
+    const body={pid:process.pid,token:myToken,scopeHash,hostHash};
     const acquire=async()=>{
       let handle;
       try{
@@ -129,8 +132,16 @@ export function createLabPendingQueryInbox({rootDir,labGroupId,sourceGroupId,now
       if(!stat.isFile()||stat.isSymbolicLink()||stat.size>512)throw new Error('LAB_PENDING_LOCK_INVALID');
       old=JSON.parse(await fs.readFile(lockFile,'utf8'));
       if(old.scopeHash!==scopeHash||!Number.isInteger(old.pid)||old.pid<1||
-         typeof old.token!=='string')throw new Error('LAB_PENDING_LOCK_INVALID');
-    }catch(e){throw new Error('LAB_PENDING_LOCK_INVALID');}
+         typeof old.token!=='string'||typeof old.hostHash!=='string'||!HASH.test(old.hostHash)){
+        throw new Error('LAB_PENDING_LOCK_INVALID');
+      }
+      // A PID only identifies a process on this host; another host may own the same number.
+      // Never reclaim a lock from another machine through local process.kill().
+      if(old.hostHash!==hostHash)throw new Error('LAB_PENDING_REMOTE_OWNER');
+    }catch(e){
+      if(e?.message==='LAB_PENDING_REMOTE_OWNER')throw e;
+      throw new Error('LAB_PENDING_LOCK_INVALID');
+    }
     try{
       process.kill(old.pid,0);
       throw new Error('LAB_PENDING_ALREADY_RUNNING');
