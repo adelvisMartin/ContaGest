@@ -183,6 +183,10 @@ router.post('/bridge/events',async(req,res)=>{
           responsePlan=recovered;
         }
       }
+      if(responsePlan.intent==='NONE'){
+        // Surface the unrecoverable replay once for operator review, never invent a reply.
+        responsePlan={...responsePlan,reason:'LAB_REPLAY_REVIEW_REQUIRED'};
+      }
     }
     const autoReplyConfigured=sourceAutoReplyEnabled();
     const ownerId=configuredOutboxOwnerId();
