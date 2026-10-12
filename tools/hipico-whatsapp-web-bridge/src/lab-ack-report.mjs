@@ -1,4 +1,5 @@
 import path from 'node:path';
+import {fileURLToPath} from 'node:url';
 import { loadRuntimeConfig } from './runtime-config.mjs';
 import { createLabTestReplyJournal, LAB_TEST_ACK_STATES } from './lab-test-reply-journal.mjs';
 
@@ -42,7 +43,7 @@ export async function runLabAckReport({argv=[],env=process.env,rootDir=null}={})
   return{report,exitCode:args.check&&report.reviewRequired>0?2:0};
 }
 
-const direct=process.argv[1]&&path.resolve(process.argv[1])===new URL(import.meta.url).pathname;
+const direct=process.argv[1]&&path.resolve(process.argv[1])===fileURLToPath(import.meta.url);
 if(direct){
   try{
     const {report,exitCode}=await runLabAckReport({argv:process.argv.slice(2)});
