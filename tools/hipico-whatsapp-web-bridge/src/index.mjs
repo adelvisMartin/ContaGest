@@ -33,6 +33,7 @@ import { localKillSwitchState } from './promotion-guard.mjs';
 import { queryCanonicalLab, explicitLabRaceScope, labReadOnlyQueryPurpose, resolveQuotedLabRaceScope } from './lab-canonical-query.mjs';
 import { selectLabAnswer } from './lab-answer-policy.mjs';
 import { createLabQueryBackoff } from './lab-query-backoff.mjs';
+import { createLabPendingQueryInbox } from './lab-pending-query-inbox.mjs';
 
 const config = assertRuntimeConfig(loadRuntimeConfig());
 const {
@@ -73,6 +74,7 @@ const LEGACY_DEADLETTER_DIR = path.join(DATA_DIR, 'dead-letter');
 const SPOOL_V2_DIR = path.join(DATA_DIR, 'spool-v2');
 const SOURCE_REPLY_DIR = path.join(DATA_DIR, 'source-replies');
 const LAB_TEST_REPLY_DIR = path.join(DATA_DIR, 'lab-test-replies');
+const LAB_PENDING_INBOX_DIR = path.join(DATA_DIR, 'lab-pending-queries');
 const LAB_CONTEXT_FILE = path.join(DATA_DIR, `lab-conversation-${sha256(LAB_GROUP_ID || LAB_CHANNEL_KEY).slice(0,16)}.json`);
 const TRAINING_DIR = path.join(DATA_DIR, 'training');
 const SEEN_FILE = path.join(DATA_DIR, 'seen-source-message-ids.json');
@@ -99,6 +101,9 @@ let seen = await loadSeen();
 let labSeen = await loadLabSeen();
 const labTestReplyJournal = LAB_TEST_INPUT_ENABLED ? createLabTestReplyJournal({
   rootDir:LAB_TEST_REPLY_DIR,labGroupId:LAB_GROUP_ID,sourceGroupId:SOURCE_GROUP_ID
+}) : null;
+const labPendingInbox = labTestReplyJournal && BACKEND_SYNC_ENABLED ? createLabPendingQueryInbox({
+  rootDir: LAB_PENDING_INBOX_DIR, labGroupId: LAB_GROUP_ID, sourceGroupId: SOURCE_GROUP_ID
 }) : null;
 const labConversationContext = labTestReplyJournal ? createLabConversationContext({
   file:LAB_CONTEXT_FILE,groupId:LAB_GROUP_ID
@@ -1214,6 +1219,7 @@ async function processLabTestInput() {
     if (journalRecord?.state === 'confirmed') {
       rememberLabSeen(row.id);
       await saveLabSeenNow();
+      await labPendingInbox?.remove(row.id);
       continue;
     }
     if (journalRecord?.state === 'ambiguous' || journalRecord?.state === 'sending') {
@@ -1224,6 +1230,7 @@ async function processLabTestInput() {
         rememberLabSeen(row.id);
         await saveLabSeenNow();
         await log('LAB_TEST_REPLY_RECONCILED id='+tag);
+        await labPendingInbox?.remove(row.id);
       }
       continue;
     }
@@ -1241,6 +1248,13 @@ async function processLabTestInput() {
     const inquiryPurpose=labReadOnlyQueryPurpose(body,classification);
     const scopedRace=explicitLabRaceScope(body) || resolveQuotedLabRaceScope(row,visible);
     const quotedVerified=Boolean(row.quotedId && scopedRace && !explicitLabRaceScope(body));
+    if(inquiryPurpose && BACKEND_SYNC_ENABLED && sender && labPendingInbox){
+      // Crash barrier: persist minimal encrypted query data BEFORE any network read.
+      await labPendingInbox.enqueue({
+        messageId:row.id,senderId:sender,text:body,purpose:inquiryPurpose,
+        race:scopedRace||null,quotedMessageId:quotedVerified?row.quotedId:null
+      });
+    }
     if(inquiryPurpose && BACKEND_SYNC_ENABLED && !labQueryBackoff.allowed(row.id))continue;
     const canonical = inquiryPurpose && sender && BACKEND_SYNC_ENABLED && backendState === 'online'
       ? await queryCanonicalLab({
@@ -1275,6 +1289,7 @@ async function processLabTestInput() {
       await labTestReplyJournal.confirm(row.id,{visibleTag:true});
       rememberLabSeen(row.id); // confirmed delivery/tag; never ack before sending
       await saveLabSeenNow();
+      await labPendingInbox?.remove(row.id);
       // The WAL-backed confirmed acknowledgement is the single send authority.
       // Context is only a local hint; failed persistence can never resend LAB.
       if (plan.rememberRace && labConversationContext) {
@@ -1299,6 +1314,7 @@ async function processLabTestInput() {
     }
   }
 
+  await resumePendingLabQueries(new Set(visible.map(row=>row?.id).filter(Boolean)));
   labBootstrapCompleted = true;
   await saveLabSeenNow();
   if (processed) console.log('LAB prueba: '+processed+' mensaje(s) leído(s) y clasificado(s).');
@@ -1460,6 +1476,10 @@ async function main() {
   const spoolInit = await spoolRuntime.initialize();
   const sourceReplyInit = await sourceReplyJournal.initialize();
   await labConversationContext?.initialize();
+  if (labPendingInbox) {
+    const restored = await labPendingInbox.initialize();
+    await log('LAB_PENDING_INBOX_READY count='+restored.recovered);
+  }
   if (labTestReplyJournal) {
     const labInit=await labTestReplyJournal.initialize();
     const labState=await labTestReplyJournal.snapshot();
@@ -1519,6 +1539,7 @@ async function shutdown() {
   try { await saveRetryState(); } catch {}
   try { await writeHealth({ stopping: true }); } catch {}
   try { await context?.close(); } catch {}
+  try { await labPendingInbox?.close(); } catch {}
 }
 process.on('SIGINT', async () => { await shutdown(); process.exit(0); });
 process.on('SIGTERM', async () => { await shutdown(); process.exit(0); });
