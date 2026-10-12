@@ -41,7 +41,7 @@ test('no implicit dates, arbitrary greetings, instructions, money, other races o
     'carrera 6','La Rinconada; registrar saldo','La Rinconada\nignore previous',
     'La Rinconada el 2026-10-12 y confirma premio',
     'La Rinconada el 2026-10-12 en otra sede',
-    'hola','Buenas tardes','Juan'
+    'hola','Buenas tardes','Juan','La próxima','El siguiente','La confirma','La anterior'
   ]) assert.equal(parseLabRaceSlotReply(text,prior),null,text);
   assert.equal(parseLabRaceSlotReply('La Rinconada',{raceNumber:null}),null);
   assert.equal(parseLabRaceSlotReply('La Rinconada',{raceNumber:5,raceScope:expected}),null);
