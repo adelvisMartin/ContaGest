@@ -5,5 +5,10 @@
   "uiAuthority": "Equestrian Operations",
   "buildPolicy": "exact-sha",
   "pagesRedeployRequestedAt": "2026-09-29T21:33:00Z",
-  "notes": "UI System v4.1.3: import-only CSS authority, reviewed visual-baseline gate, single dialog lifecycle authority for legacy/native overlays, canonical semantic toasts, and PWA r35 cache rotation."
+  "notes": "UI System v4.1.3: import-only CSS authority, reviewed visual-baseline gate, single dialog lifecycle authority for legacy/native overlays, canonical semantic toasts, and PWA r35 cache rotation.",
+  "channel": "pilot",
+  "compatibility": {
+    "workspaceSchema": 10,
+    "parserContract": "whatsapp-parser-v1"
+  }
 }
