@@ -8,6 +8,7 @@ import {
   expireIfOld,
   loadSpoolFile,
   registerFailure,
+  spoolFailureCode,
   validateSpoolRecord
 } from './spool-journal.mjs';
 import { normalizeReplayArgs } from './replay-policy.mjs';
@@ -189,7 +190,7 @@ export function createBridgeSpoolRuntime({
   }
   async function fail(file,record,error){
     if(error?.retryable===false){
-      return moveRecord(file,record,'quarantined',{attempts:Number(record.attempts||0)+1,nextAttemptAt:0,lastError:String(error?.message||error).slice(0,500),quarantineReason:'NON_RETRYABLE'});
+      return moveRecord(file,record,'quarantined',{attempts:Number(record.attempts||0)+1,nextAttemptAt:0,lastError:spoolFailureCode(error),quarantineReason:'NON_RETRYABLE'});
     }
     let failed=registerFailure(record,error,{baseMs,maxMs,jitter,random,now});
     if(failed.state==='failed'&&Number(error?.retryAfterMs||0)>0){
@@ -235,7 +236,7 @@ export function createBridgeSpoolRuntime({
       let raw;let wrapper;
       try{raw=await fs.readFile(source,'utf8');wrapper=JSON.parse(raw);}catch(error){
         const key=`legacy-corrupt:${label}:${name}`;
-        const record=createSpoolRecord({kind,key,payload:{legacyFile:name,legacyKind:label,readError:String(error?.message||error)},parserVersion:'legacy-v1',createdAt:iso(now()),maxAttempts});
+        const record=createSpoolRecord({kind,key,payload:{legacyFile:name,legacyKind:label,readError:'LEGACY_READ_OR_JSON_ERROR'},parserVersion:'legacy-v1',createdAt:iso(now()),maxAttempts});
         await persist({...record,state:'quarantined',lastError:'LEGACY_CORRUPT_JSON',quarantineReason:'LEGACY_CORRUPT_JSON'});
         await fs.rename(source,path.join(archiveDir,name)).catch(async(renameError)=>{if(renameError?.code!=='ENOENT')throw renameError;});
         corrupt+=1;continue;
