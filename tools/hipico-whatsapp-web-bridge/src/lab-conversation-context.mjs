@@ -104,7 +104,7 @@ export function planLabConversation(row, classification, priorContext = null, su
     ? resolveLabRaceClarification(row?.text, priorContext, classification) : null;
   const clarificationScope = safeRaceScope(clarification);
   const explicitScope = risk === 'safe' ? (safeRaceScope(suppliedScope) || clarificationScope) : null;
-  const reuseReference = followUp || summaryRequested;
+  const reuseReference = followUp || summaryRequested || Boolean(clarification);
   const raceNumber = risk === 'safe'
     ? (safeRace ?? explicitScope?.raceNumber ?? (reuseReference ? previousRace : null))
     : null;
