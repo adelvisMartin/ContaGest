@@ -11,7 +11,7 @@ const run=(argv,sha)=>spawnSync(process.execPath,[script,...argv],{encoding:'utf
 function prepareCompleteEvidence(dir,file,sha,evidence='proof.log'){
   const sourceHash='1'.repeat(64),labHash='2'.repeat(64);
   assert.equal(run(['init',`--file=${file}`,'--force','--operator=QA'],sha).status,0);
-  for(const [id,mode] of [['browser','pwa-browser'],['pwa','pwa-standalone'],['apk','android-apk']])assert.equal(run(['add-env',`--file=${file}`,`--id=${id}`,`--mode=${mode}`,'--device=Device',`--source-session-hash=${sourceHash}`,`--lab-session-hash=${labHash}`],sha).status,0);
+  for(const [id,mode] of [['browser','pwa-browser'],['pwa','pwa-standalone'],['apk','android-apk']])assert.equal(run(['add-env',`--file=${file}`,`--id=${id}`,`--mode=${mode}`,'--device=Device',`--source-session-hash=${sourceHash}`,`--lab-session-hash=${labHash}`,...(mode==='android-apk'?['--apk-version=1.13.0-rc3','--apk-sha256='+('a'.repeat(64))]:[])],sha).status,0);
   const raw=JSON.parse(fs.readFileSync(file,'utf8'));
   for(const env of raw.environments)for(const scenario of catalog.scenarios)env.scenarios[scenario.id]={status:'PASS',severity:null,notes:'verified',evidence:[evidence]};
   raw.invariants={sourceReadOnly:'PASS',labOnlyWriteDestination:'PASS',sessionFallbackSafe:'PASS'};
@@ -104,4 +104,30 @@ test('directories and symlink-aware verifier cannot satisfy file evidence',()=>{
   prepareCompleteEvidence(dir,file,sha,'proof');fs.mkdirSync(path.join(dir,'proof'));
   const checked=run(['check',`--file=${file}`],sha);assert.equal(checked.status,1);assert.match(checked.stderr,/archivo regular/);
   const source=fs.readFileSync(script,'utf8');assert.match(source,/isSymbolicLink\(\)/);assert.match(source,/realpathSync/);
+});
+
+test('#119 physical release requires tested APK version and SHA-256, not only scenario PASS',()=>{
+  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'hipico-v119-apk-bind-'));
+  const file=path.join(dir,'physical.json');
+  try{
+    const sha='9'.repeat(40);
+    prepareCompleteEvidence(dir,file,sha,'proof.log');
+    fs.writeFileSync(path.join(dir,'proof.log'),'sanitized device proof');
+    const baseline=run(['status',`--file=${file}`],sha);
+    assert.equal(baseline.status,0,baseline.stderr);
+    assert.equal(JSON.parse(baseline.stdout).apkArtifactBound,true);
+    const raw=JSON.parse(fs.readFileSync(file,'utf8'));
+    const apk=raw.environments.find((env)=>env.mode==='android-apk');
+    apk.apkSha256='unbound';
+    fs.writeFileSync(file,JSON.stringify(raw));
+    const unbound=JSON.parse(run(['status',`--file=${file}`],sha).stdout);
+    assert.equal(unbound.apkArtifactBound,false);
+    assert.equal(unbound.releasePhysicalGate,'NOT_READY');
+    apk.apkSha256='a'.repeat(64);
+    apk.apkVersion='another-unapproved-build';
+    fs.writeFileSync(file,JSON.stringify(raw));
+    const wrongVersion=JSON.parse(run(['status',`--file=${file}`],sha).stdout);
+    assert.equal(wrongVersion.apkArtifactBound,false);
+    assert.equal(wrongVersion.releasePhysicalGate,'NOT_READY');
+  }finally{fs.rmSync(dir,{recursive:true,force:true});}
 });
