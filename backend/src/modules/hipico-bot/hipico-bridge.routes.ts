@@ -14,6 +14,7 @@ import { bridgeTokenConfigured, bridgeTokenValid } from './hipico-bridge-securit
 import { operatorActorRef, operatorTokenConfigured, operatorTokenValid } from './hipico-operator-security.js';
 import { configuredOutboxOwnerId } from './hipico-outbox.store.js';
 import { AutonomousReplyService, sourceAutoReplyEnabled } from '../hipico/autonomous-reply.service.js';
+import { resolveCanonicalLabRaceQuery } from './hipico-lab-race-query.js';
 
 const router = Router();
 const autonomousReplyService = new AutonomousReplyService();
@@ -135,6 +136,22 @@ router.post('/bridge/events',async(req,res)=>{
     let responsePlan=planSafeResponse(conversationDecision,{handoffState,systemHealthy:safetyReady.ready,at:new Date()});
     if(input.historySync)responsePlan={...responsePlan,intent:'NONE',text:null,canSend:false,confirmationVerified:false,evidence:null,handoffRequired:false,reason:'HISTORY_SYNC_NO_RESPONSE'};
     else if(!rate.allowed)responsePlan={...responsePlan,intent:'NONE',text:null,canSend:false,confirmationVerified:false,evidence:null,handoffRequired:false,reason:rate.reason||'RATE_LIMIT'};
+    if(input.channelRole==='lab'&&event.inserted){
+      responsePlan=await resolveCanonicalLabRaceQuery({
+        channelRole:input.channelRole,
+        channelId:String(canonical.channelId),
+        groupKey,
+        text:assessment.sanitizedText,
+        fromMe:input.fromMe,
+        historySync:input.historySync,
+        mediaKind:effectiveMediaKind,
+        rateAllowed:rate.allowed,
+        systemHealthy:safetyReady.ready,
+        forceReview:assessment.forceReview,
+        classification:result,
+        responsePlan
+      });
+    }
     const responseReceipt=safetyReady.ready&&!input.historySync&&event.inserted?await persistResponsePlan(responsePlan):null;
     const autoReplyConfigured=sourceAutoReplyEnabled();
     const ownerId=configuredOutboxOwnerId();
