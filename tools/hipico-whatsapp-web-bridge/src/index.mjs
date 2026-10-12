@@ -31,6 +31,7 @@ import { atomicWriteJson } from './spool-journal.mjs';
 import { createLabConversationContext, labConversationInput, planLabConversation, stableLabSenderKey } from './lab-conversation-context.mjs';
 import { localKillSwitchState } from './promotion-guard.mjs';
 import { queryCanonicalLab, explicitLabRaceScope, labReadOnlyQueryPurpose, resolveQuotedLabRaceScope } from './lab-canonical-query.mjs';
+import { selectLabAnswer } from './lab-answer-policy.mjs';
 
 const config = assertRuntimeConfig(loadRuntimeConfig());
 const {
@@ -1012,19 +1013,18 @@ function localLabTestReply(row, classification, plan = null, canonical = null) {
   if (entities.amount != null) details.push(`Monto detectado: ${entities.amount}`);
   if (entities.raceNumber != null) details.push(`Carrera: ${entities.raceNumber}`);
   if (Array.isArray(entities.board) && entities.board.length) details.push(`Pizarra: ${entities.board.join('-')}`);
-  const canonicalRead=canonical?.available===true&&typeof canonical.text==='string';
-  const guidance=canonicalRead
-    ? canonical.text
-    : plan?.guidance || localSuggestion(classification);
+  const answer=selectLabAnswer({
+    canonical,plan,localFallback:localSuggestion(classification)
+  });
   return [
     labTestTagFor(row.id),
     '🧪 CONTROL HÍPICO · PRUEBA LAB',
     `Mensaje: ${textValue || '[sin texto]'}`,
     `Lectura: ${classification.intent} · riesgo ${classification.risk} · confianza ${(classification.confidence * 100).toFixed(1)}%`,
     ...details,
-    `Respuesta: ${guidance}`,
-    `Fuente: ${canonicalRead ? 'LECTURA_CANÓNICA_LIMITADA' : 'ORIENTACIÓN_LOCAL_SIN_DATOS_CANÓNICOS'}`,
-    `Consulta: ${canonical?.reason||'LAB_LOCAL_ONLY'}`,
+    `Respuesta: ${answer.text}`,
+    `Fuente: ${answer.source}`,
+    `Consulta: ${answer.reason}`,
     '⚠️ SOLO LAB. No modifica jugadas, saldos, cierres ni resultados reales. Un resultado interno no certifica oficialidad externa.'
   ].join('\n').slice(0, 3900);
 }
