@@ -62,3 +62,33 @@ test('missing scratches evidence produces a bounded factual fallback instead of 
   });
   assert.match(formatRaceQueryResponse(result),/No tengo retiros verificados/);
 });
+
+
+test('explicit fifth-race query selects only a uniquely matched race',async()=>{
+  const service=new RaceQueryService(fakeStore([
+    {id:'r4',meetingId:'m1',number:4,name:'Fourth',state:'OPEN',resultStage:'none'},
+    {id:'r5',meetingId:'m1',number:5,name:'Fifth',state:'ANNOUNCED',resultStage:'none',
+     resultData:{runners:['Candidate A']}}
+  ]) as any);
+  const result=await service.execute({...scope,text:'¿Quiénes corren en la quinta?'});
+  assert.equal(result.intent,'RUNNERS');
+  assert.equal((result.answer as any).raceId,'r5');
+});
+test('duplicate race numbers across meetings require an explicit meeting ID',async()=>{
+  const service=new RaceQueryService(fakeStore([
+    {id:'m1-r5',meetingId:'m1',number:5,state:'OPEN',resultStage:'none'},
+    {id:'m2-r5',meetingId:'m2',number:5,state:'OPEN',resultStage:'none'}
+  ]) as any);
+  await assert.rejects(()=>service.execute({...scope,text:'¿Quiénes corren en carrera 5?'}),
+    (error:any)=>error?.code==='RACE_QUERY_AMBIGUOUS');
+  const selected=await service.execute({...scope,meetingId:'m1',text:'¿Quiénes corren en carrera 5?'});
+  assert.equal((selected.answer as any).raceId,'m1-r5');
+  assert.equal((selected.answer as any).known,false);
+});
+test('unknown explicit number does not become the only currently active race',async()=>{
+  const service=new RaceQueryService(fakeStore([
+    {id:'r1',meetingId:'m1',number:1,state:'OPEN',resultStage:'none'}
+  ]) as any);
+  await assert.rejects(()=>service.execute({...scope,text:'participantes de carrera 5'}),
+    (error:any)=>error?.code==='RACE_QUERY_CONTEXT_REQUIRED');
+});
