@@ -99,6 +99,7 @@ test('journal cannot be reused across LAB groups or pointed to SOURCE',async()=>
   try{
     await f.journal.prepare('lab-scope-key');
     await assert.rejects(()=>f.make(OTHER_LAB).read('lab-scope-key'),/LAB_TEST_JOURNAL_RECORD_INVALID/);
+    await assert.rejects(()=>f.make(OTHER_LAB).prepare('foreign-message'),/LAB_TEST_JOURNAL_RECORD_INVALID/);
     await assert.rejects(()=>f.make(OTHER_LAB).initialize(),/LAB_TEST_JOURNAL_RECORD_INVALID/);
     assert.throws(()=>f.make(SOURCE_ID),/LAB_TEST_JOURNAL_PINNED_LAB_REQUIRED/);
     assert.throws(()=>f.make('not-a-group'),/LAB_TEST_JOURNAL_PINNED_LAB_REQUIRED/);
