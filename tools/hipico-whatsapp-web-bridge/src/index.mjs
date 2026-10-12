@@ -132,6 +132,7 @@ let nonOperationalCount = 0;
 let lastPostStartedAt = 0;
 let lastLabTestPollAt = 0;
 let labBootstrapCompleted = false;
+let lastLabPendingPruneAt = 0;
 const labQueryBackoff=createLabQueryBackoff();
 let sourceDiscoveryFailures = 0;
 let lastPrintedHealthLine = '';
@@ -1476,6 +1477,11 @@ async function monitor() {
   let lastHealthPrint = 0;
   while (!stopping && page && !page.isClosed()) {
     try {
+      if(labPendingInbox && Date.now()-lastLabPendingPruneAt>=60000){
+        lastLabPendingPruneAt=Date.now();
+        const expired=await labPendingInbox.prune();
+        if(expired>0)await log('LAB_PENDING_EXPIRED count='+expired);
+      }
       if (await hasWhatsAppBrowserDatabaseError()) {
         await requestCleanProfileReset('WHATSAPP_BROWSER_DATABASE_ERROR');
         break;
