@@ -43,7 +43,7 @@ export function eligibleCanonicalLabRaceQuery(input:LabQueryInput){
 
 /** Never generates a domain command. Missing or ambiguous evidence is made explicit. */
 export async function resolveCanonicalLabRaceQuery(input:LabQueryInput,deps:QueryDeps=fallbackDeps):
-  Promise<SafeResponsePlan>{
+  Promise<SafeResponsePlan & {readModelDigest?:string}>{
   if(!eligibleCanonicalLabRaceQuery(input))return input.responsePlan;
   try{
     const scope=await deps.readScope(input.channelId,input.groupKey);
