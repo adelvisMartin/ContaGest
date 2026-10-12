@@ -4,7 +4,21 @@ import { initialHandoffState, type HandoffState, type SafeResponsePlan } from '.
 
 function uuid() { return crypto.randomUUID(); }
 
-type ExistingResponseReceipt={
+export type StoredResponseReceipt={
+  idempotencyKey:string;
+  id:string;
+  sourceMessageId:string;
+  decisionVersion:string;
+  correlationId:string;
+  intent:string;
+  responseHash:string|null;
+  receiptId:string|null;
+  transactionId:string|null;
+  stateId:string|null;
+  confirmationVerified:boolean;
+  status:string;
+};
+type ExistingResponseReceipt=Omit<StoredResponseReceipt,'idempotencyKey'>;
   id:string;
   sourceMessageId:string;
   decisionVersion:string;
@@ -121,6 +135,22 @@ export async function saveHandoff(state: HandoffState, audit?: { eventType: stri
   });
 }
 
+/** Read-only receipt lookup. Never creates/replaces candidate text or alters status. */
+export async function readResponseReceiptForRecovery(idempotencyKey:string):Promise<StoredResponseReceipt|null>{
+  if(!/^resp_[a-f0-9]{32}$/.test(idempotencyKey)){
+    throw Object.assign(new Error('LAB_RECOVERY_KEY_INVALID'),{code:'LAB_RECOVERY_KEY_INVALID'});
+  }
+  const rows=await prisma.$queryRaw<StoredResponseReceipt[]>`
+    SELECT "id","idempotencyKey","sourceMessageId","decisionVersion",
+           "correlationId","intent","responseHash","receiptId","transactionId",
+           "stateId","confirmationVerified","status"
+    FROM public."HipicoResponseReceipt"
+    WHERE "idempotencyKey"=${idempotencyKey}
+    LIMIT 2
+  `;
+  if(rows.length>1)throw Object.assign(new Error('LAB_RECOVERY_RECEIPT_AMBIGUOUS'),{code:'LAB_RECOVERY_RECEIPT_AMBIGUOUS'});
+  return rows[0]??null;
+}
 export async function persistResponsePlan(plan: SafeResponsePlan) {
   const responseHash = plan.text ? crypto.createHash('sha256').update(plan.text).digest('hex') : null;
   const evidence = plan.evidence || {};

@@ -204,3 +204,36 @@ El modo `--check` retorna **exit 2** si existe un `sending` o `ambiguous` pendie
 **Flujo de conciliación segura:** filtrar `--state=ambiguous`, localizar cada `tag` **en mensajes salientes** del LAB cuyo ID se ha verificado en la aplicación, contrastar con el acuse durable y dejar evidencia sanitizada ligada al SHA. Si no está visible, eso **no demuestra** que nunca se envió (puede estar fuera del histórico cargado), así que NO reencolar el mensaje. Esta herramienta es **estrictamente de lectura** y no cambia `sending`, `ambiguous` ni `confirmed`.
 
 Ante `LAB_TEST_JOURNAL_MISSING`, `LAB_TEST_JOURNAL_FILE_INVALID` o `LAB_TEST_JOURNAL_RECORD_INVALID`, el resultado es error (no un falso PASS). Preservar los archivos del host y resolver el incidente sin borrarlos a mano. El journal es propiedad exclusiva de un único proceso Bridge; no mezclar perfiles, sesiones, hosts o grupos LAB diferentes.
+
+## Recuperación tras commit backend y HTTP perdido — #899 (fase segura)
+
+La ruta existente `POST /api/v1/hipico-bot/bridge/events` escribe primero el evento
+y el recibo `HipicoResponseReceipt`. Si ocurre una pérdida de la respuesta HTTP
+**después de guardar ese recibo**, una repetición de la misma entrada LAB puede
+recuperar únicamente un **acuse informativo estático**, no un resultado de carrera
+ni una transacción, al volver a evaluar la política vigente y comparar el
+`responseHash` SHA-256 con el recibo inmutable de la primera decisión.
+
+**Invariantes obligatorios:** evento persistido con la misma identidad, grupo
+LAB pinneado, clasificación `greeting/help/status_non_monetary` sin riesgo,
+mismo `sourceMessageId`, política y correlación, digest exacto, recibo de estado
+`planned`, evidencia financiera nula, ausencia de handoff humano, sin medio,
+prompt injection, rate limit ni history sync, y marca temporal dentro de
+**90 segundos**. Si alguno falta, el backend devuelve
+`responsePlan.canSend=false` y razón `LAB_RECOVERY_*`; no reconstruye texto a
+partir de un hash, no crea otro recibo ni habilita SOURCE.
+
+La respuesta HTTP por sí sola **no prueba entrega WhatsApp**: en el cliente
+se mantiene la autoridad del `labTestReplyJournal` y la comprobación de
+etiqueta en mensajes salientes. El Bridge serializa ciclos de procesamiento LAB
+en un solo proceso para evitar dos `Enter` simultáneos para el mismo mensaje.
+
+**Límite explícito:** si el proceso falló antes de persistir el recibo, si el
+resultado depende de estado canónico cambiante, o si el PR #898 todavía no está
+integrado, este mecanismo no recupera esa respuesta dinámica. Esos casos
+permanecen `REVIEW_REQUIRED` y requieren una autoridad de respuesta versionada
+y pruebas reales; #899 no debe cerrarse por el merge de código.
+
+Las pruebas unitarias y de contratos se versionan en GitHub, pero no sustituyen
+un fault-injection real (commit/timeout/restart), Postgres aislado y QA de
+WhatsApp Windows con dos sesiones en LAB.
