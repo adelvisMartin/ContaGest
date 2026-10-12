@@ -30,7 +30,8 @@ import { createLabTestReplyJournal, labTestTagForMessage } from './lab-test-repl
 import { atomicWriteJson } from './spool-journal.mjs';
 import { createLabConversationContext, labConversationInput, planLabConversation, stableLabSenderKey } from './lab-conversation-context.mjs';
 import { localKillSwitchState } from './promotion-guard.mjs';
-import { queryCanonicalLab, explicitLabRaceScope } from './lab-canonical-query.mjs';
+import { queryCanonicalLab, explicitLabRaceScope, labReadOnlyQueryPurpose, resolveQuotedLabRaceScope } from './lab-canonical-query.mjs';
+import { selectLabAnswer } from './lab-answer-policy.mjs';
 
 const config = assertRuntimeConfig(loadRuntimeConfig());
 const {
@@ -1012,14 +1013,19 @@ function localLabTestReply(row, classification, plan = null, canonical = null) {
   if (entities.amount != null) details.push(`Monto detectado: ${entities.amount}`);
   if (entities.raceNumber != null) details.push(`Carrera: ${entities.raceNumber}`);
   if (Array.isArray(entities.board) && entities.board.length) details.push(`Pizarra: ${entities.board.join('-')}`);
+  const answer=selectLabAnswer({
+    canonical,plan,localFallback:localSuggestion(classification)
+  });
   return [
     labTestTagFor(row.id),
     '🧪 CONTROL HÍPICO · PRUEBA LAB',
     `Mensaje: ${textValue || '[sin texto]'}`,
     `Lectura: ${classification.intent} · riesgo ${classification.risk} · confianza ${(classification.confidence * 100).toFixed(1)}%`,
     ...details,
-    `Propuesta: ${localSuggestion(classification)}`,
-    '⚠️ PRUEBA LOCAL. No modifica jugadas, saldos, cierres ni resultados reales.'
+    `Respuesta: ${answer.text}`,
+    `Fuente: ${answer.source}`,
+    `Consulta: ${answer.reason}`,
+    '⚠️ SOLO LAB. No modifica jugadas, saldos, cierres ni resultados reales. Un resultado interno no certifica oficialidad externa.'
   ].join('\n').slice(0, 3900);
 }
 
@@ -1230,12 +1236,17 @@ async function processLabTestInput() {
     const plan = planLabConversation(row, classification, prior);
     // Query-only backend call completes BEFORE claiming a WhatsApp send intent.
     // No token, URL or raw API response is ever appended to chat logs.
-    const canonical = classification.risk === 'safe' && sender && BACKEND_SYNC_ENABLED && backendState === 'online'
+    const inquiryPurpose=labReadOnlyQueryPurpose(body,classification);
+    const scopedRace=explicitLabRaceScope(body) || resolveQuotedLabRaceScope(row,visible);
+    const quotedVerified=Boolean(row.quotedId && scopedRace && !explicitLabRaceScope(body));
+    const canonical = inquiryPurpose && sender && BACKEND_SYNC_ENABLED && backendState === 'online'
       ? await queryCanonicalLab({
           ingestUrl:INGEST_URL,token:TOKEN,
           labGroupId:LAB_GROUP_ID,labChannelKey:LAB_CHANNEL_KEY,
           messageId:row.id,senderId:sender,text:body,
-          race:explicitLabRaceScope(body),timeoutMs:Math.min(5000,BACKEND_TIMEOUT_MS)
+          purpose:inquiryPurpose,
+          quotedMessageId:quotedVerified?row.quotedId:null,
+          race:scopedRace,timeoutMs:Math.min(5000,BACKEND_TIMEOUT_MS)
         })
       : {available:false,reason:'LAB_CANONICAL_NOT_QUERIED'};
     await labTestReplyJournal.prepare(row.id); // fsync before any browser send

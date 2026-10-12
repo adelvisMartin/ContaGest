@@ -109,11 +109,14 @@ Ejemplo de consulta expresamente contextualizada:
 
 > Estado de carrera 5 en hipódromo La Rinconada el 2026-10-12
 
-Para consultar un estado se exige **número de carrera, hipódromo y fecha válida AAAA-MM-DD**. Preguntar solo «¿cómo va la carrera 5?» no identifica inequívocamente un agregado canónico: el bot solicita esos datos, sin deducir hipódromo ni fecha. La lectura pública permite un estado interno validado y su actualización, **no** resultados oficiales externos, lista de participantes, importes o confirmaciones de jugadas.
+Para consultar un estado se exige **número de carrera, hipódromo y fecha válida AAAA-MM-DD**. Preguntar solo «¿cómo va la carrera 5?» no identifica inequívocamente un agregado canónico: el bot solicita esos datos, sin deducir hipódromo ni fecha. La consulta de **estado** devuelve el estado interno validado. Una consulta de **resultado** devuelve únicamente la pizarra numérica de llegada si existe un evento `RESULT_RECORDED` aplicado y confirmado por operador, vinculado a la fecha/hipódromo/carrera exactos y sin una corrección o reversión posterior; nunca equivale a un resultado oficial externo. Una consulta de **participantes/ejemplares inscritos** reconoce que aún falta un catálogo canónico validado y no confunde nombres de personas de las liquidaciones con caballos. Ninguna consulta devuelve importes ni confirma jugadas.
 
 Si el backend falla, rechaza el grupo, no dispone de propietario canónico, no reconoce el agregado o devuelve un cuerpo incompatible, el adaptador desactiva la respuesta canónica y responde con la guía local de falta de información. Nunca adjunta credenciales, errores raw o contenido de la API a mensajes/logs. Las consultas de riesgo monetario se quedan fuera de esta ruta. La secuencia de envío `prepare → sending → confirm → seen` no cambia.
 
-**Evidencia pendiente:** tests de contrato y transporte local versionados; despliegue real y sesiones WhatsApp LAB requieren QA físico posterior. Aún no se considera completo #892: faltan modelos verificados de participantes/resultados y conciliación íntegra de threads/quoted replies.
+
+**Quoted replies en LAB:** cuando un participante responde a **su propio mensaje anterior** y ese mensaje está visible en el grupo LAB con ID de remitente estable y el mismo ID de referencia citado, el Bridge puede reutilizar los datos explícitos de hipódromo/carrera/fecha de esa cita como *pista para una lectura*. No confía en el texto citado no verificable ni en una cita de otra persona, tampoco reutiliza el contexto de carrera diferente. Si el original ya no está visible, solicita los datos de nuevo; no inventa contexto. La decisión del backend sigue siendo de solo lectura y sin efectos.
+
+**Evidencia pendiente:** tests de contrato y transporte local versionados; despliegue real y sesiones WhatsApp LAB requieren QA físico posterior. Aún no se considera completo #892: faltan el catálogo verificado de ejemplares y la conciliación persistente de threads/citas no visibles, además del E2E real.
 
 ## Prueba autónoma LAB
 
