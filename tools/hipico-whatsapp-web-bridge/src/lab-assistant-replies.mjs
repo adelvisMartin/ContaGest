@@ -55,6 +55,11 @@ export function composeLabAssistantReply({ classification, plan, canonical, answ
       : 'Puedo resumir la referencia de carrera que vayamos consultando, pero no tengo un historial completo verificado para resumir. ¿Qué carrera quieres revisar?';
   }
 
+  if (plan?.clarificationCompleted && plan?.raceScope && reference) {
+    return 'Perfecto, ya tengo la referencia de la ' + reference +
+      '. ¿Quieres que consulte su estado o un resultado interno confirmado, si está disponible?';
+  }
+
   if (plan?.queryCategory === 'UNSUPPORTED') {
     return reference
       ? 'Tengo la referencia de la ' + reference + ', pero todavía no dispongo de una consulta verificada para esos datos en el LAB. Puedo consultar estados y resultados internos confirmados, pero no voy a inventar participantes, horarios ni oficialidad externa.'
