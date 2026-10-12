@@ -280,3 +280,39 @@ test('same-host stale PID lock is reclaimed only with matching scope and host id
   assert.equal((await recovered.snapshot()).pending,0);
   await recovered.close();
 });
+
+
+test('confirmed LAB ACK, including restart and ambiguous reconciliation, backfills verified quote before inbox deletion',async()=>{
+  const source=await fs.readFile(new URL('../src/index.mjs',import.meta.url),'utf8');
+  const helper=source.slice(source.indexOf('async function rememberConfirmedPendingLabQuote('),
+    source.indexOf('async function resumePendingLabQueries('));
+  assert.match(helper,/labQuotedRaceJournal\.remember\(\{/);
+  assert.match(helper,/confirmed:true/);
+  assert.match(helper,/sender!==entry\.senderId/);
+  assert.match(helper,/explicitLabRaceScope\(entry\.text\)/);
+  assert.match(helper,/return false;/); // Hint failure retains encrypted pending data.
+
+  const recovery=source.slice(source.indexOf('async function resumePendingLabQueries('),
+    source.indexOf('async function processLabTestInput()'));
+  const confirmed=recovery.slice(recovery.indexOf("if (state?.state === 'confirmed')"),
+    recovery.indexOf("if (state?.state === 'sending'"));
+  assert.ok(confirmed.indexOf('await saveLabSeenNow()') <
+    confirmed.indexOf('await rememberConfirmedPendingLabQuote(entry)'));
+  assert.ok(confirmed.indexOf('await rememberConfirmedPendingLabQuote(entry)') <
+    confirmed.indexOf('await labPendingInbox.remove(entry.messageId)'));
+  assert.doesNotMatch(confirmed,/sendTextInCurrentLab/);
+
+  const ambiguous=recovery.slice(recovery.indexOf("if (state?.state === 'sending'"),
+    recovery.indexOf('const row = {'));
+  assert.ok(ambiguous.indexOf('await labTestReplyJournal.confirm(entry.messageId') <
+    ambiguous.indexOf('await rememberConfirmedPendingLabQuote(entry)'));
+  assert.ok(ambiguous.indexOf('await rememberConfirmedPendingLabQuote(entry)') <
+    ambiguous.indexOf('await labPendingInbox.remove(entry.messageId)'));
+  assert.doesNotMatch(ambiguous,/sendTextInCurrentLab/);
+
+  const afterSend=recovery.slice(recovery.indexOf('await sendTextInCurrentLab('));
+  assert.ok(afterSend.indexOf('await labTestReplyJournal.confirm(entry.messageId') <
+    afterSend.indexOf('await rememberConfirmedPendingLabQuote(entry)'));
+  assert.ok(afterSend.indexOf('await rememberConfirmedPendingLabQuote(entry)') <
+    afterSend.indexOf('await labPendingInbox.remove(entry.messageId)'));
+});
