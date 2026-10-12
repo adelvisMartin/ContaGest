@@ -19,18 +19,6 @@ export type StoredResponseReceipt={
   status:string;
 };
 type ExistingResponseReceipt=Omit<StoredResponseReceipt,'idempotencyKey'>;
-  id:string;
-  sourceMessageId:string;
-  decisionVersion:string;
-  correlationId:string;
-  intent:string;
-  responseHash:string|null;
-  receiptId:string|null;
-  transactionId:string|null;
-  stateId:string|null;
-  confirmationVerified:boolean;
-  status:string;
-};
 
 function sameNullable(left:unknown,right:unknown){return String(left??'')===String(right??'');}
 function assertResponseReceiptReplay(row:ExistingResponseReceipt,plan:SafeResponsePlan,responseHash:string|null){
