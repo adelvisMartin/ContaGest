@@ -118,3 +118,29 @@ test('re-capturing an old message cannot renew the original timestamp after TTL'
   assert.equal((await inbox.snapshot()).pending,0);
   await inbox.close();
 });
+
+test('changing pinned LAB group cannot decrypt pending questions or silently migrate them',async t=>{
+  const f=await harness(t);
+  const original=f.create();await original.initialize();await original.enqueue(candidate());
+  await original.close();
+  const other=f.create('120363333333333333@g.us');
+  await assert.rejects(other.initialize(),/LAB_PENDING_RECORD_INVALID/);
+  const restored=f.create();await restored.initialize();
+  assert.equal((await restored.list()).length,1);
+  await restored.close();
+});
+
+test('unknown original message time cannot be used to extend pending query lifetime',async t=>{
+  const f=await harness(t);const inbox=f.create();await inbox.initialize();
+  await assert.rejects(inbox.enqueue(candidate({messageTimestamp:'unknown'})),/LAB_PENDING_QUERY_INVALID/);
+  await assert.rejects(inbox.enqueue(candidate({messageTimestamp:new Date(f.now()+65000).toISOString()})),/LAB_PENDING_QUERY_INVALID/);
+  await inbox.close();
+});
+
+test('non-quoted race scope must have appeared explicitly in that very question',async t=>{
+  const f=await harness(t);const inbox=f.create();await inbox.initialize();
+  await assert.rejects(inbox.enqueue(candidate({text:'¿Cuál es el resultado?',quotedMessageId:null})),/LAB_PENDING_QUERY_INVALID/);
+  const quote=candidate({text:'¿Cuál es el resultado?',quotedMessageId:'prior-verified-from-same-sender'});
+  assert.equal((await inbox.enqueue(quote)).created,true);
+  await inbox.close();
+});
