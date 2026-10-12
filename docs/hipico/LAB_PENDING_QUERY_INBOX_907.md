@@ -49,11 +49,15 @@ monetarias y no se crea otro motor de conversación ni tabla de dominio.
   del dispositivo**: restringir el acceso al perfil del servicio y a sus
   copias de respaldo forma parte del despliegue físico.
 - `owner.lock` impide levantar dos Bridge que utilicen el mismo
-  directorio de datos. Tras caída, sólo se reclama un lock de un PID
-  local demostrablemente terminado; fallos de permisos se bloquean.
-  No constituye coordinación distribuida entre *dos máquinas* con
-  perfiles y carpetas diferentes: ese escenario necesita un gate
-  adicional de despliegue y QA.
+  directorio de datos. Se vincula al hash de identidad del equipo
+  además del PID: nunca se reclama un lock de otro equipo usando
+  `process.kill(pid, 0)` local. Si hay propietario remoto, se bloquea
+  el segundo Bridge. Tras una caída sólo puede recuperarse un PID
+  local demostrablemente terminado; los permisos ambiguos bloquean.
+  El hash del nombre del equipo no es una autoridad distribuida
+  infalible (nombres duplicados y carpetas distintas); desplegar
+  dos máquinas para el mismo grupo requiere un gate centralizado
+  o exclusión operativa y QA.
 - Para evitar que la bandeja capture mensajes monetarios o texto
   malicioso, reevalúa la clasificación al guardar **y** al recuperar.
   La bandeja no concede permiso de consulta por sí misma.
