@@ -42,3 +42,17 @@ test('migration extends a receipt without replacing the existing authority',asyn
   assert.match(sql,/CHECK\s*\(/);
   assert.doesNotMatch(sql,/DROP TABLE|CREATE TABLE/i);
 });
+
+test('bounded retention endpoint is token protected, wipes expired text without deleting receipts',async()=>{
+  const route=await code('hipico-bridge.routes.ts');
+  const body=route.slice(route.indexOf("router.post('/bridge/maintenance/lab-replay-prune'"),route.indexOf("router.post('/bridge/events'"));
+  assert.match(body,/bridgeTokenValid\(req\.header\('x-hipico-bridge-token'\)/);
+  assert.match(body,/res\.status\(401\)/);
+  assert.match(body,/await pruneExpiredLabReplayCandidates\(\)/);
+  assert.match(body,/LAB_REPLAY_PRUNE_UNAVAILABLE/);
+  const store=await code('hipico-lab-recovery.store.ts');
+  assert.match(store,/FOR UPDATE SKIP LOCKED/);
+  assert.match(store,/ORDER BY "labReplayExpiresAt" ASC/);
+  assert.match(store,/SET "labReplayText"=NULL/);
+  assert.doesNotMatch(store,/DELETE FROM public\."HipicoResponseReceipt"/);
+});
