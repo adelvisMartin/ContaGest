@@ -92,3 +92,28 @@ El barrido global se mantiene en arranque, inserción y limpieza periódica. Se
 registran únicamente razones de revisión y conteos, no texto, remitentes ni
 las citas en claro. La contención por múltiples Windows/hosts sigue siendo
 un gate de despliegue: el candado local sólo coordina un directorio compartido.
+
+## Backfill seguro de citas después de una caída
+
+Una respuesta LAB puede estar marcada `confirmed` en el journal de envío
+antes de que la referencia HMAC de carrera haya terminado de persistirse. En
+recuperación fuera del DOM, un ACK confirmado o reconciliado con etiqueta visible
+reconstruye **sólo** la pista de carrera explícita, segura y del mismo JID,
+escribiéndola en `lab-quoted-race-journal` con `confirmed:true` **antes**
+de eliminar la entrada de la bandeja cifrada. Si persiste un error al guardar
+la pista, la pregunta permanece pendiente para reintentar el *backfill*,
+**sin ejecutar otro Enter**; el ACK confirmado es siempre definitivo.
+
+### Evidencia de CI y límites
+
+El CI del candidato anterior `cfc5db7c5c9dc44c481e0a54ee27c084af553331`
+falló en dos contratos locales del Bridge: un cambio explícito inválido de carrera
+retornaba `LAB_PENDING_QUERY_INVALID` pero el test esperaba exclusivamente
+`LAB_PENDING_REPLAY_MISMATCH`; el test de orden de envío confundía el
+`confirm` de conciliación previa con el ACK posterior al envío. Los tests
+se corrigieron preservando validaciones y verificando ambos flujos por
+separado. La prueba adicional de recuperación tras caída comprueba que la
+referencia HMAC se reconstruye sólo tras ACK y antes de limpiar la bandeja.
+
+Estos cambios **no** declaran QA verde, funcionamiento físico de Windows,
+ejecución de PostgreSQL o autorización para escribir al grupo SOURCE.
