@@ -64,7 +64,7 @@ test('immutable message identity rejects text or quoted-race mutation and financ
   const f=await harness(t);const inbox=f.create();await inbox.initialize();
   await inbox.enqueue(candidate());
   await assert.rejects(inbox.enqueue(candidate({text:TEXT+' otra información'})),/LAB_PENDING_REPLAY_MISMATCH/);
-  await assert.rejects(inbox.enqueue(candidate({race:{raceNumber:6,racetrack:'La Rinconada',raceDate:'2026-10-12'}})),/LAB_PENDING_REPLAY_MISMATCH/);
+  await assert.rejects(inbox.enqueue(candidate({race:{raceNumber:6,racetrack:'La Rinconada',raceDate:'2026-10-12'}})),/LAB_PENDING_QUERY_INVALID/);
   await assert.rejects(inbox.enqueue(candidate({text:'Juega 20 al caballo 5',purpose:'result'})),/LAB_PENDING_QUERY_INVALID/);
   await assert.rejects(inbox.enqueue(candidate({senderId:'999999999999@lid'})),/LAB_PENDING_QUERY_INVALID/);
   await assert.rejects(inbox.enqueue(candidate({quotedMessageId:'prior-claim',race:null})),/LAB_PENDING_QUERY_INVALID/);
@@ -97,8 +97,9 @@ test('Bridge persists encrypted request before HTTP read and uses only verified 
   const queue=process.indexOf('await labPendingInbox.enqueue(');
   const canonical=process.indexOf('await queryCanonicalLab({');
   const send=process.indexOf('await sendTextInCurrentLab(');
-  const ack=process.indexOf('await labTestReplyJournal.confirm(');
-  assert.ok(queue>=0&&queue<canonical&&canonical<send&&send<ack);
+  const prepare=process.indexOf('await labTestReplyJournal.prepare(row.id)');
+  const ack=process.indexOf('await labTestReplyJournal.confirm(row.id,{visibleTag:true});',send);
+  assert.ok(queue>=0&&queue<canonical&&canonical<prepare&&prepare<send&&send<ack);
   assert.match(process,/await resumePendingLabQueries\(/);
   const recovery=src.slice(src.indexOf('async function resumePendingLabQueries('),src.indexOf('async function processLabTestInput()'));
   assert.match(recovery,/await labTestReplyJournal\.read\(entry.messageId\)/);
@@ -106,6 +107,11 @@ test('Bridge persists encrypted request before HTTP read and uses only verified 
   assert.match(recovery,/canonical\.available!==true/);
   assert.match(recovery,/await assertCurrentLabIdentity\(\)/);
   assert.match(recovery,/await labPendingInbox\.remove\(entry.messageId\)/);
+  const recoveredQuery=recovery.indexOf('await queryCanonicalLab({');
+  const recoveredPrepare=recovery.indexOf('await labTestReplyJournal.prepare(entry.messageId)');
+  const recoveredSend=recovery.indexOf('await sendTextInCurrentLab(');
+  const recoveredAck=recovery.indexOf('await labTestReplyJournal.confirm(entry.messageId,{visibleTag:true});',recoveredSend);
+  assert.ok(recoveredQuery>=0&&recoveredQuery<recoveredPrepare&&recoveredPrepare<recoveredSend&&recoveredSend<recoveredAck);
   assert.match(src,/SOURCE_AUTO_REPLY_ACTIVE = SOURCE_AUTO_REPLY_ENABLED && !SOURCE_REPLY_KILL_SWITCH.active/);
 });
 
