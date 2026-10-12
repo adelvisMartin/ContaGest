@@ -159,7 +159,7 @@ router.post('/bridge/events',async(req,res)=>{
       sentAt:input.timestamp,messageText:assessment.sanitizedText,
       fromMe:input.fromMe,historySync:input.historySync,mediaKind:effectiveMediaKind,
       forceReview:assessment.forceReview,rateAllowed:rate.allowed,systemHealthy:safetyReady.ready,
-      humanOwned:handoffState?.ownership==='human',classification:result
+      humanOwned:Boolean(handoffState?.ownership==='human'),classification:result
     };
     const responseReceipt=safetyReady.ready&&!input.historySync&&event.inserted?await persistResponsePlan(responsePlan):null;
     if(input.channelRole==='lab'&&event.inserted&&responseReceipt){
