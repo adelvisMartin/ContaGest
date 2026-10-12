@@ -1,8 +1,9 @@
 import { RaceQueryService } from '../hipico/race-query.service.js';
 import { RaceLifecycleStore } from '../hipico/race.store.js';
+import { parseExplicitLabMeeting } from './hipico-lab-meeting-selection.js';
 
 export type LabSchedulePurpose='next'|'active'|'schedule';
-type ReadStore=Pick<RaceLifecycleStore,'listRaces'|'listMeetings'|'getMeeting'>;
+type ReadStore=Pick<RaceLifecycleStore,'listRaces'|'listMeetings'|'getMeeting'|'findMeetingsForLabQuery'>;
 const AUTHORITY={sourceWriteAllowed:false,financialAuthority:false,domainEffectsAllowed:false,officiality:'NOT_EXTERNALLY_VERIFIED'} as const;
 const ALLOWED_STATES=new Set(['DISCOVERED','ANNOUNCED','OPEN','CLOSING','RUNNING']);
 const QUERY_TEXT:Record<LabSchedulePurpose,string>={
@@ -25,17 +26,26 @@ const unavailable=(reason:string,text:string)=>({available:false,reason,text,aut
  * leave this projection. The store is the existing tenant-scoped lifecycle store.
  */
 export async function readScopedLabSchedule(input:{
-  ownerId:string;groupKey:string;purpose:LabSchedulePurpose
+  ownerId:string;groupKey:string;purpose:LabSchedulePurpose;text?:string
 },store:ReadStore=new RaceLifecycleStore(),nowMs=Date.now()){
   if(!Object.hasOwn(QUERY_TEXT,input.purpose)){
     return unavailable('LAB_SCHEDULE_PURPOSE_INVALID','La consulta no tiene un propósito de solo lectura permitido.');
   }
-  // Never select a meeting just because it was most recently inserted.
-  const meetings=await store.listMeetings(input.ownerId,input.groupKey,2);
+  // Only natural-language DATE [+VENUE] can select a meeting. Never accept
+  // arbitrary meetingId, owner or group key from a WhatsApp request.
+  const selector=parseExplicitLabMeeting(input.text||'');
+  if(selector.kind==='invalid'){
+    return unavailable('CANONICAL_MEETING_SELECTOR_INVALID',
+      'La fecha o el hipódromo de la reunión no son válidos. Indica reunión del AAAA-MM-DD en el hipódromo correspondiente.');
+  }
+  const meetings=selector.kind==='explicit'
+    ? await store.findMeetingsForLabQuery(input.ownerId,input.groupKey,selector.meetingDate,selector.venue)
+    : await store.listMeetings(input.ownerId,input.groupKey,2);
   if(meetings.length!==1){
     return unavailable(meetings.length?'CANONICAL_MEETING_AMBIGUOUS':'CANONICAL_MEETING_NOT_FOUND',
-      meetings.length?'Hay más de una reunión; hace falta identificar la reunión antes de responder.':
-        'No encuentro una reunión registrada para esta consulta.');
+      meetings.length
+        ?'Hay varias reuniones que coinciden. Indica la reunión del AAAA-MM-DD en el hipódromo correspondiente.'
+        :'No encuentro una reunión que coincida con esos datos registrados.');
   }
   const query=new RaceQueryService(store);
   let result;
@@ -78,7 +88,7 @@ export async function readScopedLabSchedule(input:{
   }
   const lines=projected.slice(0,10).map(x=>'Carrera '+x.number+': '+x.date+' (estado '+x.state+')');
   return{available:true,reason:'CANONICAL_SCHEDULE_FOUND',
-    text:['Programación registrada de la única reunión disponible:',...lines,
+    text:['Programación registrada de la reunión seleccionada:',...lines,
       'Los horarios pueden cambiar y no constituyen resultados oficiales.'].join('\n').slice(0,1500),
     authority:AUTHORITY};
 }

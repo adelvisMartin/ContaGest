@@ -171,7 +171,8 @@ router.post('/bridge/lab/query',async(req,res)=>{
     const canonical=['next','active','schedule'].includes(input.purpose)
       ? await readScopedLabSchedule({
           ownerId,groupKey:OFFICIAL_SOURCE_CHANNEL_KEY,
-          purpose:input.purpose as 'next'|'active'|'schedule'
+          purpose:input.purpose as 'next'|'active'|'schedule',
+          text:assessment.sanitizedText
         })
       : await readCanonicalLabRace({
           ownerId,groupKey:OFFICIAL_SOURCE_CHANNEL_KEY,race:input.race,

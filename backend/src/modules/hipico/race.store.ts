@@ -16,6 +16,24 @@ export class RaceLifecycleStore {
       RETURNING id,name,meeting_date AS "meetingDate",venue,external_ref AS "externalRef",created_at AS "createdAt"`;return rows[0];
   }
   async listMeetings(ownerId:string,groupKey:string,limit=50){scope(ownerId,groupKey);const bounded=Math.min(100,Math.max(1,Math.trunc(limit)||50));return prisma.$queryRaw<any[]>`SELECT id,name,meeting_date AS "meetingDate",venue,external_ref AS "externalRef",created_at AS "createdAt" FROM public.hipico_meetings WHERE owner_id=${ownerId}::uuid AND group_key=${groupKey} ORDER BY meeting_date DESC NULLS LAST,created_at DESC LIMIT ${bounded}`;}
+  /** Scoped date/venue query: LIMIT 2 proves uniqueness even with large histories. */
+  async findMeetingsForLabQuery(ownerId:string,groupKey:string,meetingDate:string,venue:string|null){
+    scope(ownerId,groupKey);
+    const stamp=new Date(meetingDate+'T00:00:00.000Z');
+    if(!/^\d{4}-\d{2}-\d{2}$/.test(meetingDate)||!Number.isFinite(stamp.getTime())||
+       stamp.toISOString().slice(0,10)!==meetingDate||
+       (venue!==null&&(venue.length<2||venue.length>64||!/^[\p{L}\d][\p{L}\d '-]*$/u.test(venue)))){
+      throw Object.assign(new Error('HIPICO_LAB_MEETING_SELECTOR_INVALID'),{code:'HIPICO_LAB_MEETING_SELECTOR_INVALID'});
+    }
+    const rows=await prisma.$queryRaw<Array<{id:string}>>`
+      SELECT id::text AS id FROM public.hipico_meetings
+      WHERE owner_id=${ownerId}::uuid AND group_key=${groupKey}
+        AND meeting_date::date=${meetingDate}::date
+        AND (${venue}::text IS NULL OR LOWER(TRIM(venue))=LOWER(TRIM(${venue}::text)))
+      ORDER BY id ASC LIMIT 2
+    `;
+    return rows;
+  }
   async getMeeting(ownerId:string,groupKey:string,id:string){scope(ownerId,groupKey);const rows=await prisma.$queryRaw<any[]>`SELECT id,name,meeting_date AS "meetingDate",venue,external_ref AS "externalRef",created_at AS "createdAt" FROM public.hipico_meetings WHERE id=${id}::uuid AND owner_id=${ownerId}::uuid AND group_key=${groupKey} LIMIT 1`;return rows[0]||null;}
   async createRace(input:{ownerId:string;groupKey:string;meetingId:string;number:number;name:string;scheduledAt?:string|null;externalRef?:string|null}){
     scope(input.ownerId,input.groupKey);const id=crypto.randomUUID();const rows=await prisma.$queryRaw<any[]>`
