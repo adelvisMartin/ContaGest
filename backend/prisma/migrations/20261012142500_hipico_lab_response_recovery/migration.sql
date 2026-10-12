@@ -13,7 +13,6 @@ ALTER TABLE public."HipicoResponseReceipt"
   CHECK (
     "labReplayText" IS NULL OR
     (
-      "status" = 'planned' AND
       "confirmationVerified" = false AND
       "labReplayKind" IN ('race_query', 'static_safe') AND
       length("labReplayText") BETWEEN 1 AND 3000 AND
