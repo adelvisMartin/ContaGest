@@ -140,7 +140,7 @@ test('unknown original message time cannot be used to extend pending query lifet
 test('non-quoted race scope must have appeared explicitly in that very question',async t=>{
   const f=await harness(t);const inbox=f.create();await inbox.initialize();
   await assert.rejects(inbox.enqueue(candidate({text:'¿Cuál es el resultado?',quotedMessageId:null})),/LAB_PENDING_QUERY_INVALID/);
-  const quote=candidate({text:'¿Cuál es el resultado?',quotedMessageId:'prior-verified-from-same-sender'});
+  const quote=candidate({text:'¿Cuál es el resultado?',quotedMessageId:'false_120363222222222222@g.us_quoted-from-same-sender_'+SENDER});
   assert.equal((await inbox.enqueue(quote)).created,true);
   await inbox.close();
 });
@@ -150,7 +150,7 @@ test('an originally verified quote survives loss of its prior visible DOM messag
   const f=await harness(t);const inbox=f.create();await inbox.initialize();
   const original=candidate({
     text:'¿Cuál es el resultado?',
-    quotedMessageId:'verified-prior-message-id'
+    quotedMessageId:'false_120363222222222222@g.us_prior-visible_'+SENDER
   });
   await inbox.enqueue(original);
   const stored=await inbox.read(MESSAGE);
@@ -161,7 +161,7 @@ test('an originally verified quote survives loss of its prior visible DOM messag
     quotedMessageId:null,explicitRace:null
   });
   assert.equal(recovered.valid,true);
-  assert.equal(recovered.quotedMessageId,'verified-prior-message-id');
+  assert.equal(recovered.quotedMessageId,'false_120363222222222222@g.us_prior-visible_'+SENDER);
   assert.deepEqual(recovered.race,original.race);
   await inbox.close();
 });
@@ -229,5 +229,21 @@ test('next, active and schedule canonical read intents are durably recoverable w
     assert.equal((await inbox.read(messageId))?.purpose,purpose);
   }
   assert.equal((await inbox.snapshot()).pending,3);
+  await inbox.close();
+});
+
+test('pinned LAB group and stable quote JID reject forged cross-group recovery',async t=>{
+  const f=await harness(t);const inbox=f.create();await inbox.initialize();
+  await assert.rejects(inbox.enqueue(candidate({
+    messageId:'false_120363999999999999@g.us_foreign_'+SENDER
+  })),/LAB_PENDING_QUERY_INVALID/);
+  await assert.rejects(inbox.enqueue(candidate({
+    text:'¿Cuál es el resultado?',
+    quotedMessageId:'false_120363999999999999@g.us_quoted_'+SENDER
+  })),/LAB_PENDING_QUERY_INVALID/);
+  await assert.rejects(inbox.enqueue(candidate({
+    text:'¿Cuál es el resultado?',
+    quotedMessageId:'false_120363222222222222@g.us_quoted_999999999999@lid'
+  })),/LAB_PENDING_QUERY_INVALID/);
   await inbox.close();
 });
