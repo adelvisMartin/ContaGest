@@ -247,3 +247,30 @@ test('pinned LAB group and stable quote JID reject forged cross-group recovery',
   })),/LAB_PENDING_QUERY_INVALID/);
   await inbox.close();
 });
+
+
+test('foreign-host lock never reclaimed merely because its PID is absent on this Windows host',async t=>{
+  const f=await harness(t);
+  const owner=f.create();await owner.initialize();
+  const file=path.join(f.rootDir,'owner.lock');
+  const original=JSON.parse(await fs.readFile(file,'utf8'));
+  const foreign={...original,hostHash:original.hostHash==='a'.repeat(64)?'b'.repeat(64):'a'.repeat(64),pid:2147483647};
+  await fs.writeFile(file,JSON.stringify(foreign));
+  const secondary=f.create();
+  await assert.rejects(secondary.initialize(),/LAB_PENDING_REMOTE_OWNER/);
+  await fs.writeFile(file,JSON.stringify(original));
+  await owner.close();
+});
+
+test('same-host stale PID lock is reclaimed only with matching scope and host identity',async t=>{
+  const f=await harness(t);
+  const owner=f.create();await owner.initialize();
+  const file=path.join(f.rootDir,'owner.lock');
+  const old=JSON.parse(await fs.readFile(file,'utf8'));
+  await owner.close();
+  await fs.writeFile(file,JSON.stringify({...old,pid:2147483647}));
+  const recovered=f.create();
+  await recovered.initialize();
+  assert.equal((await recovered.snapshot()).pending,0);
+  await recovered.close();
+});
