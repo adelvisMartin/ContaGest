@@ -187,3 +187,20 @@ Si Chrome o el Bridge se cierran estando en `sending`, en el próximo arranque e
 La observabilidad expone `labTestReplyPending`, `labTestReplyAmbiguous` y `labTestReplyStates` en el health JSON. Ante `LAB_TEST_JOURNAL_RECORD_INVALID` (archivo corrupto, estado manipulado o alcance de grupo distinto) el procesamiento falla cerrado: conservar la copia privada, detener el Bridge, no borrar ni reconstruir el acuse a ciegas. No compartir el journal, perfiles, capturas ni chats en CI.
 
 **Límites:** protección intraproceso + journal local, no delivery exactly-once garantizada por WhatsApp, ni prueba real de entrega en dispositivos. Los acuses antiguos que solo constan en `seen-lab-test-message-ids.json` no pueden clasificarse retroactivamente como confirmados o ambiguos; deben investigarse durante QA sin reinyectar automáticamente mensajes antiguos. SOURCE continúa read-only y la política #728/#154 permanece NO-GO.
+
+## Conciliación LAB sin manipular el journal — herramienta read-only (#837)
+
+**Comando operacional** (Node 22; desde la raíz del repositorio, con las variables del Bridge configuradas):
+
+```bash
+npm --prefix tools/hipico-whatsapp-web-bridge run lab:ack-report -- --state=ambiguous --limit=50
+npm --prefix tools/hipico-whatsapp-web-bridge run lab:ack-report -- --state=all --limit=100 --check
+```
+
+El informe presenta solo `recordRef` (16 caracteres de SHA-256), `tag` del mensaje saliente `[LABTEST:…]`, `state`, `attempts`, `updatedAt` y un código acotado de `resolution`. Incluye `counts`, `pending`, `reviewRequired`, `selectedCount` y `truncated`. **Nunca entrega el cuerpo del chat, teléfono, JID del grupo, token, nombre de archivo ni ubicación del directorio.** El comando exige IDs SOURCE/LAB pinneados y distintos, y usa el `HIPICO_DATA_DIR` autorizado; no admite `--dir` ni ejecución de replay.
+
+El modo `--check` retorna **exit 2** si existe un `sending` o `ambiguous` pendiente de revisión, **exit 0** cuando no existen esos estados y **exit 1** si hay error de lectura, configuración o integridad. Sin `--check`, una conciliación pendiente permanece visible en `status: REVIEW_REQUIRED` pero el comando retorna 0 para permitir inspección manual. En cualquier caso `releaseGate: NOT_EVALUATED`: un informe sin ambiguos **no certifica** release ni sustituye QA.
+
+**Flujo de conciliación segura:** filtrar `--state=ambiguous`, localizar cada `tag` **en mensajes salientes** del LAB cuyo ID se ha verificado en la aplicación, contrastar con el acuse durable y dejar evidencia sanitizada ligada al SHA. Si no está visible, eso **no demuestra** que nunca se envió (puede estar fuera del histórico cargado), así que NO reencolar el mensaje. Esta herramienta es **estrictamente de lectura** y no cambia `sending`, `ambiguous` ni `confirmed`.
+
+Ante `LAB_TEST_JOURNAL_MISSING`, `LAB_TEST_JOURNAL_FILE_INVALID` o `LAB_TEST_JOURNAL_RECORD_INVALID`, el resultado es error (no un falso PASS). Preservar los archivos del host y resolver el incidente sin borrarlos a mano. El journal es propiedad exclusiva de un único proceso Bridge; no mezclar perfiles, sesiones, hosts o grupos LAB diferentes.
