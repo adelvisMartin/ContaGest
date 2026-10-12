@@ -6,6 +6,7 @@ import { execFileSync } from 'node:child_process';
 import { monitorEventLoopDelay } from 'node:perf_hooks';
 import { runLabScenario } from '../src/modules/hipico-bot/hipico-lab-simulator.js';
 import { labScenarioById } from '../src/modules/hipico-bot/hipico-lab-scenarios.js';
+import { probeSoakHealth, validateSoakHealthUrl } from '../src/modules/hipico-bot/hipico-soak-health.js';
 import { createSoakReleaseEvidence, evaluateSoak, type EvidenceStatus, type SoakDrillEvidence, type SoakSummaryInput } from '../src/modules/hipico-bot/hipico-soak-policy.js';
 
 const backendDir=path.basename(process.cwd())==='backend'?process.cwd():path.join(process.cwd(),'backend');
@@ -20,7 +21,8 @@ function positiveNumber(name:string,fallback:string,minimum:number){
 }
 const durationMinutes=positiveNumber('duration-minutes','1440',0.05);
 const sampleSeconds=positiveNumber('sample-seconds',String(policy.sampleSeconds||30),1);
-const healthUrl=arg('health-url','').trim();
+const healthUrlArg=arg('health-url','').trim();
+const healthUrl=healthUrlArg?validateSoakHealthUrl(healthUrlArg):'';
 const spoolPathArg=arg('spool-path','').trim();
 const drillEvidenceArg=arg('drill-evidence','').trim();
 const safetyEvidenceArg=arg('safety-evidence','').trim();
@@ -135,10 +137,8 @@ function assertSpoolTopology(target:string){
   for(const name of ['queued','failed']){const child=path.join(full,name);if(!fs.existsSync(child))throw new Error(`SPOOL_${name.toUpperCase()}_MISSING`);const stat=fs.lstatSync(child);if(stat.isSymbolicLink()||!stat.isDirectory())throw new Error(`SPOOL_${name.toUpperCase()}_INVALID`);}
 }
 async function assertHealthReachable(){
-  try{
-    const response=await fetch(healthUrl,{headers:process.env.HIPICO_BRIDGE_TOKEN?{'x-hipico-bridge-token':process.env.HIPICO_BRIDGE_TOKEN}:{},signal:AbortSignal.timeout(5000),cache:'no-store'});
-    if(!response.ok)throw new Error(`HTTP_${response.status}`);
-  }catch(error){throw new Error(`HEALTH_PREFLIGHT_FAILED:${error instanceof Error?error.message:String(error)}`);}
+  const result=await probeSoakHealth(healthUrl,process.env.HIPICO_BRIDGE_TOKEN||'');
+  if(!result.ok)throw new Error(`HEALTH_PREFLIGHT_FAILED:${result.reason}`);
 }
 
 function releasePreflight(){
@@ -147,7 +147,7 @@ function releasePreflight(){
   if(/^[a-f0-9]{40}$/i.test(repoHead)&&candidateSha!==repoHead)throw new Error(`CANDIDATE_SHA_HEAD_MISMATCH:${candidateSha}:${repoHead}`);
   if(!operatorId)throw new Error('OPERATOR_ID_REQUIRED_FOR_RELEASE');
   if(!healthUrl)throw new Error('HEALTH_URL_REQUIRED_FOR_RELEASE');
-  try{const parsed=new URL(healthUrl);if(!['http:','https:'].includes(parsed.protocol))throw new Error('protocol');}catch{throw new Error('HEALTH_URL_INVALID');}
+  // The URL has already passed the strict HTTPS / loopback-only validator above.
   if(!spoolPathArg)throw new Error('SPOOL_PATH_REQUIRED_FOR_RELEASE');
   if(!physicalEvidenceArg)throw new Error('PHYSICAL_EVIDENCE_REQUIRED_FOR_RELEASE');
   if(!safetyEvidenceArg)throw new Error('SAFETY_EVIDENCE_REQUIRED_FOR_RELEASE');
@@ -211,12 +211,12 @@ function spoolStats(target:string){
   return{available,files:total.files,bytes:total.bytes,activeFiles:queued.files+failed.files,queuedFiles:queued.files,failedFiles:failed.files,oldestAgeSeconds:oldestActive===null?0:Math.max(0,(Date.now()-oldestActive)/1000)};
 }
 async function health(){
-  if(!healthUrl)return null;healthChecks+=1;const started=performance.now();
-  try{
-    const response=await fetch(healthUrl,{headers:process.env.HIPICO_BRIDGE_TOKEN?{'x-hipico-bridge-token':process.env.HIPICO_BRIDGE_TOKEN}:{},signal:AbortSignal.timeout(5000),cache:'no-store'});
-    if(!response.ok)healthFailures+=1;
-    return{status:response.status,ok:response.ok,latencyMs:performance.now()-started};
-  }catch(error){healthFailures+=1;return{status:0,ok:false,latencyMs:performance.now()-started,error:error instanceof Error?error.message:String(error)};}
+  if(!healthUrl)return null;
+  healthChecks+=1;
+  const started=performance.now();
+  const result=await probeSoakHealth(healthUrl,process.env.HIPICO_BRIDGE_TOKEN||'');
+  if(!result.ok)healthFailures+=1;
+  return {status:result.status,ok:result.ok,reason:result.reason,latencyMs:performance.now()-started};
 }
 function append(row:unknown){fs.appendFileSync(samplesFile,`${JSON.stringify(row)}\n`);}
 
