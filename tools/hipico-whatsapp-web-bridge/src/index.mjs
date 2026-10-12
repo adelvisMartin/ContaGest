@@ -28,7 +28,7 @@ import { createSourceReplyJournal } from './source-reply-journal.mjs';
 import { labSendFailure, labSeenOutcome } from './lab-delivery-state.mjs';
 import { createLabTestReplyJournal, labTestTagForMessage } from './lab-test-reply-journal.mjs';
 import { atomicWriteJson } from './spool-journal.mjs';
-import { createLabConversationContext, labConversationInput, planLabConversation } from './lab-conversation-context.mjs';
+import { createLabConversationContext, labConversationInput, planLabConversation, stableLabSenderKey } from './lab-conversation-context.mjs';
 import { localKillSwitchState } from './promotion-guard.mjs';
 
 const config = assertRuntimeConfig(loadRuntimeConfig());
@@ -1223,7 +1223,7 @@ async function processLabTestInput() {
       rememberLabSeen(row.id); // ignored echo/media/casual chat; never respond
       continue;
     }
-    const sender = parseWhatsAppPre(row.pre).senderLabel;
+    const sender = stableLabSenderKey(row.id);
     const prior = sender ? labConversationContext?.get(sender) : null;
     const plan = planLabConversation(row, classification, prior);
     await labTestReplyJournal.prepare(row.id); // fsync before any browser send
