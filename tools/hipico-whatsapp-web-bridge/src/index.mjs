@@ -27,6 +27,8 @@ import { createBridgeSpoolRuntime } from './spool-runtime.mjs';
 import { createSourceReplyJournal } from './source-reply-journal.mjs';
 import { labSendFailure, labSeenOutcome } from './lab-delivery-state.mjs';
 import { createLabTestReplyJournal, labTestTagForMessage } from './lab-test-reply-journal.mjs';
+import { createLabConversationContext, labConversationInput, planLabConversation } from './lab-conversation-context.mjs';
+import { labCanonicalEvent, selectCanonicalLabReply } from './lab-canonical-conversation.mjs';
 import { atomicWriteJson } from './spool-journal.mjs';
 import { localKillSwitchState } from './promotion-guard.mjs';
 
@@ -72,6 +74,9 @@ const LAB_TEST_REPLY_DIR = path.join(DATA_DIR, 'lab-test-replies');
 const TRAINING_DIR = path.join(DATA_DIR, 'training');
 const SEEN_FILE = path.join(DATA_DIR, 'seen-source-message-ids.json');
 const LAB_SEEN_FILE = path.join(DATA_DIR, 'seen-lab-test-message-ids.json');
+const LAB_CONTEXT_FILE = path.join(DATA_DIR, `lab-conversation-${sha256(LAB_GROUP_ID || LAB_CHANNEL_KEY).slice(0, 16)}.json`);
+const labConversationContext = LAB_TEST_INPUT_ENABLED && LAB_GROUP_ID
+  ? createLabConversationContext({ file: LAB_CONTEXT_FILE, groupId: LAB_GROUP_ID }) : null;
 const LEGACY_SEEN_FILE = path.join(DATA_DIR, 'seen-message-ids.json');
 const RETRY_STATE_FILE = path.join(DATA_DIR, 'retry-state.json');
 const HEALTH_FILE = path.join(DATA_DIR, 'health.json');
@@ -994,7 +999,7 @@ function labTestTagFor(externalMessageId) {
   return labTestTagForMessage(externalMessageId);
 }
 
-function localLabTestReply(row, classification) {
+function localLabTestReply(row, classification, plan = null, canonical = null) {
   const textValue = String(row.text || '').slice(0, 1200);
   const entities = classification.entities || {};
   const details = [];
@@ -1010,7 +1015,8 @@ function localLabTestReply(row, classification) {
     `Mensaje: ${textValue || '[sin texto]'}`,
     `Lectura: ${classification.intent} · riesgo ${classification.risk} · confianza ${(classification.confidence * 100).toFixed(1)}%`,
     ...details,
-    `Propuesta: ${localSuggestion(classification)}`,
+    `Propuesta: ${canonical?.text || plan?.guidance || localSuggestion(classification)}`,
+    canonical ? 'Fuente: Conversation Engine del backend (shadow, sin efectos)' : 'Fuente: clasificador local (sin autoridad de datos)',
     '⚠️ PRUEBA LOCAL. No modifica jugadas, saldos, cierres ni resultados reales.'
   ].join('\n').slice(0, 3900);
 }
@@ -1213,13 +1219,58 @@ async function processLabTestInput() {
     }
 
     const classification = classifyLocal(body);
+    if (!labConversationInput(row, classification).eligible) {
+      rememberLabSeen(row.id);
+      await saveLabSeenNow();
+      continue;
+    }
+    const parsedSender = parseWhatsAppPre(row.pre).senderLabel;
+    const plan = planLabConversation(row, classification, labConversationContext?.get(parsedSender));
+    let canonical = null;
+    if (BACKEND_SYNC_ENABLED) {
+      // LAB is explicitly pinned. Reuse the existing Bridge event API, never call
+      // private domain routes or add a second financial/conversation authority.
+      const normalized = labCanonicalEvent(row, {
+        labGroupId: LAB_GROUP_ID, sourceGroupId: SOURCE_GROUP_ID,
+        labGroupName: LAB_GROUP_NAME, labChannelKey: LAB_CHANNEL_KEY,
+        bridgeVersion: `official-web-playwright-${VERSION}`
+      });
+      if (!normalized.eligible) {
+        await log('LAB_CANONICAL_IGNORED reason='+normalized.reason);
+        rememberLabSeen(row.id);
+        await saveLabSeenNow();
+        continue;
+      }
+      try {
+        canonical = selectCanonicalLabReply(await backendPost(normalized.event), classification);
+      } catch (error) {
+        await log('LAB_CANONICAL_UNAVAILABLE id='+tag);
+        if (error?.retryable !== false) await enterBackendCooldown(error, normalized.event);
+        // No send intent created: backend may recover and next poll can retry safely.
+        continue;
+      }
+      if (canonical.kind === 'NO_RESPONSE') {
+        rememberLabSeen(row.id);
+        await saveLabSeenNow();
+        continue;
+      }
+      if (canonical.kind !== 'SEND_LAB') {
+        await log('LAB_CANONICAL_HELD reason='+canonical.reason);
+        continue;
+      }
+    }
     await labTestReplyJournal.prepare(row.id); // fsync before any browser send
     await labTestReplyJournal.begin(row.id); // durable sending intent
     try {
-      await sendTextInCurrentLab(localLabTestReply(row, classification), tag);
+      await sendTextInCurrentLab(localLabTestReply(row, classification, plan, canonical), tag);
       await labTestReplyJournal.confirm(row.id,{visibleTag:true});
       rememberLabSeen(row.id); // confirmed delivery/tag; never ack before sending
       await saveLabSeenNow();
+      // Persist the hint only after durable confirmation. A failure cannot cause resend.
+      if (plan.rememberRace && labConversationContext) {
+        try { await labConversationContext.remember(plan.sender, plan.raceNumber); }
+        catch { await log('LAB_CONTEXT_PERSIST_FAILED'); }
+      }
       processed += 1;
       await log('LAB_TEST_READ id='+tag+' intent='+classification.intent);
     } catch (error) {
@@ -1397,6 +1448,7 @@ async function main() {
   console.log(`Datos locales: ${DATA_DIR}\n`);
 
   const spoolInit = await spoolRuntime.initialize();
+  await labConversationContext?.initialize();
   const sourceReplyInit = await sourceReplyJournal.initialize();
   if (labTestReplyJournal) {
     const labInit=await labTestReplyJournal.initialize();
