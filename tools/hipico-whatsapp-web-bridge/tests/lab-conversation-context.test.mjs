@@ -79,7 +79,7 @@ test('Bridge uses planner only in interactive LAB and acknowledges deliveries be
   const block = code.slice(start, end);
   assert.match(block, /labConversationInput\(row, classification\)/);
   assert.match(block, /planLabConversation\(row, classification/);
-  assert.match(block, /sendTextInCurrentLab\(localLabTestReply\(row, classification, plan\), tag\)/);
+  assert.match(block, /sendTextInCurrentLab\(localLabTestReply\(row, classification, plan, canonical\), tag\)/);
   assert.match(block, /labConversationInput\(row, classification\)/);
   const delivered=block.indexOf('await sendTextInCurrentLab(');
   const ack = block.indexOf('await labTestReplyJournal.confirm(row.id,{visibleTag:true});',delivered);
