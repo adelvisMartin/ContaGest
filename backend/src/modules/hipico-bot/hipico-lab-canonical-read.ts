@@ -1,4 +1,5 @@
 import { operationalRaceContextKey } from './hipico-race-context-key.js';
+import { normalizedRaceTrack } from '../hipico/hipico-domain.js';
 import { readHipicoDomainAggregate } from './hipico-domain-query.store.js';
 
 export type LabRaceScope = {raceNumber:number;racetrack:string;raceDate:string};
@@ -21,8 +22,9 @@ export async function readCanonicalLabRace(
   if(!context){
     return{available:false,reason:'EXPLICIT_RACE_CONTEXT_REQUIRED',text:'Para consultar el estado registrado, indica carrera, hipódromo y fecha (AAAA-MM-DD).',authority:AUTHORITY};
   }
+  const safeTrack=normalizedRaceTrack(context.racetrack).slice(0,80);
   const key=operationalRaceContextKey(context);
-  if(!key || !context.raceDate || !context.racetrack.trim()){
+  if(!key || !context.raceDate || !safeTrack){
     return{available:false,reason:'INVALID_RACE_CONTEXT',text:'La referencia de carrera no es válida. Verifica número, hipódromo y fecha.',authority:AUTHORITY};
   }
   const data=await read({
@@ -42,7 +44,7 @@ export async function readCanonicalLabRace(
   if(!Number.isFinite(stamp.getTime()))throw new Error('HIPICO_CANONICAL_UPDATED_AT_INVALID');
   const updatedAt=stamp.toISOString();
   return{available:true,reason:'CANONICAL_STATE_FOUND',state,version,updatedAt,
-    text:'Según el registro interno, la carrera '+context.raceNumber+' en '+context.racetrack.slice(0,80)+' ('+context.raceDate+') está '+STATE_LABEL[state]+'. No implica resultado oficial externo ni confirma jugadas o saldos.',
+    text:'Según el registro interno, la carrera '+context.raceNumber+' en '+safeTrack+' ('+context.raceDate+') está '+STATE_LABEL[state]+'. No implica resultado oficial externo ni confirma jugadas o saldos.',
     authority:AUTHORITY
   };
 }
