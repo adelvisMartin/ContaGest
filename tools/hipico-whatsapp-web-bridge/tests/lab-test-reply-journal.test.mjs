@@ -3,7 +3,6 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import crypto from 'node:crypto';
 import {fileURLToPath} from 'node:url';
 import {createLabTestReplyJournal,labTestTagForMessage} from '../src/lab-test-reply-journal.mjs';
 
@@ -103,6 +102,7 @@ test('journal cannot be reused across LAB groups or pointed to SOURCE',async()=>
     await assert.rejects(()=>f.make(OTHER_LAB).initialize(),/LAB_TEST_JOURNAL_RECORD_INVALID/);
     assert.throws(()=>f.make(SOURCE_ID),/LAB_TEST_JOURNAL_PINNED_LAB_REQUIRED/);
     assert.throws(()=>f.make('not-a-group'),/LAB_TEST_JOURNAL_PINNED_LAB_REQUIRED/);
+    assert.throws(()=>createLabTestReplyJournal({rootDir:f.rootDir,labGroupId:LAB_ID}),/LAB_TEST_JOURNAL_PINNED_SOURCE_REQUIRED/);
   }finally{await f.clean();}
 });
 
