@@ -126,3 +126,25 @@ test('Bridge cannot persist partial slots before the delivery journal ACK and ne
   assert.match(block,/finally \{labTestProcessing=false;\}/);
   assert.doesNotMatch(block,/sendTextInCurrentSource/);
 });
+
+test('a different race invalidates partial hints and quoted-scope conflicts before any canonical call',async()=>{
+  const partial={raceNumber:5,raceTrack:'La Rinconada',raceDate:'2026-10-12'};
+  const changed=row('different',ANA,'¿Estado de carrera 6 y esa?');
+  const p=planLabConversation(changed,classifyLocal(changed.text),partial);
+  assert.equal(p.raceNumber,6);
+  assert.equal(p.raceScope,null);
+  assert.equal(p.raceTrack,null);
+  assert.equal(p.raceDate,null);
+  const conflict=row('conflict',ANA,'¿Estado de carrera 6?');
+  const c=classifyLocal(conflict.text);
+  const q=planLabConversation(conflict,c,partial,expected);
+  assert.equal(q.scopeConflict,true);
+  assert.equal(q.raceNumber,null);
+  assert.equal(q.rememberRace,false);
+  assert.match(composeLabAssistantReply({classification:c,plan:q}),/carreras diferentes/);
+  const index=await fs.readFile(new URL('../src/index.mjs',import.meta.url),'utf8');
+  const block=index.slice(index.indexOf('async function processLabTestInput()'),
+    index.indexOf('async function visibleLabHasTag'));
+  assert.match(block,/inquiryPurpose && sender && !plan\.scopeConflict/);
+  assert.match(block,/race:plan\.scopeConflict\?null:/);
+});
