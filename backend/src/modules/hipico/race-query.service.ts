@@ -30,11 +30,26 @@ function resultData(race: any) {
   return race?.resultData && typeof race.resultData === 'object' ? race.resultData : {};
 }
 
-function exactRaceContext(races: any[], intent: RaceQueryIntent, raceId: string | null) {
+function mentionedRaceNumber(text:string):number|null{
+  const normalized=String(text||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase();
+  const explicit=/\bcarrera\s*(?:n(?:umero|ro)\s*)?(\d{1,2})\b/.exec(normalized);
+  if(explicit)return Number(explicit[1]);
+  const words:Record<string,number>={primera:1,segunda:2,tercera:3,cuarta:4,quinta:5,sexta:6,septima:7,octava:8,novena:9,decima:10};
+  const ordinal=/\b(?:la|el)\s+(primera|segunda|tercera|cuarta|quinta|sexta|septima|octava|novena|decima)\b/.exec(normalized);
+  return ordinal?words[ordinal[1]]:null;
+}
+
+function exactRaceContext(races: any[], intent: RaceQueryIntent, raceId: string | null, text:string) {
   if (raceId) {
     const match = races.find((race) => race.id === raceId);
     if (!match) queryError('HIPICO_RACE_NOT_FOUND');
     return match;
+  }
+  const mentioned=mentionedRaceNumber(text);
+  if(mentioned!==null){
+    const matches=races.filter((race)=>race.number===mentioned);
+    if(matches.length===1)return matches[0];
+    queryError(matches.length===0?'RACE_QUERY_CONTEXT_REQUIRED':'RACE_QUERY_AMBIGUOUS');
   }
   const resultIntent = intent === 'RESULT' || intent === 'OFFICIALITY';
   const candidates = resultIntent
@@ -97,7 +112,7 @@ export class RaceQueryService {
         };
       }
     } else if (['STATUS', 'SCHEDULED_TIME', 'RUNNERS', 'SCRATCHES', 'ODDS', 'RESULT', 'OFFICIALITY'].includes(intent)) {
-      const race = exactRaceContext(races, intent, raceId);
+      const race = exactRaceContext(races, intent, raceId, input.text);
       const data = resultData(race);
       if (intent === 'STATUS') {
         answer = {

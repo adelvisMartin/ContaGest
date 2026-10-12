@@ -30,3 +30,13 @@ test('purpose mismatch or arbitrary statements cannot force aggregate reads',()=
   assert.equal(isLabInformationRequest('¿Cuál es el resultado?','status',classified('conversation','review')),false);
   assert.equal(isLabInformationRequest('¿Qué caballos corren?','participants',classified('race_open','review')),false);
 });
+
+
+test('new canonical schedule purposes require specific informational-only topic',()=>{
+  assert.equal(isLabInformationRequest('¿Qué carrera sigue?','next',{intent:'conversation',risk:'review'}),true);
+  assert.equal(isLabInformationRequest('¿Cuál es la carrera activa?','active',{intent:'conversation',risk:'review'}),true);
+  assert.equal(isLabInformationRequest('¿Cuál es la cartelera?','schedule',{intent:'conversation',risk:'review'}),true);
+  assert.equal(isLabInformationRequest('¿Qué carrera sigue y pagar premio?','next',{intent:'conversation',risk:'review'}),false);
+  assert.equal(isLabInformationRequest('Registra la programación','schedule',{intent:'conversation',risk:'review'}),false);
+  assert.equal(isLabInformationRequest('¿Qué carrera sigue?','next',{intent:'offer_player',risk:'monetary'}),false);
+});

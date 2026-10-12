@@ -4,6 +4,7 @@ import { z } from 'zod';
 import type { IntentResult } from './hipico-operational-classifier.js';
 import { decideConversation } from './hipico-conversation-engine.js';
 import { readCanonicalLabRace } from './hipico-lab-canonical-read.js';
+import { readScopedLabSchedule } from './hipico-lab-schedule-read.js';
 import { isLabInformationRequest } from './hipico-lab-readonly-query.js';
 import { configuredCanonicalOwnerId } from './hipico-canonical.routes.js';
 import { bridgeParticipantRateLimiter, classifyUntrustedConversation, safePublicAbuseMetadata } from './hipico-conversation-appsec.js';
@@ -35,7 +36,7 @@ const labCanonicalQuerySchema=z.object({
   senderId:z.string().trim().min(1).max(220),
   timestamp:z.string().datetime({offset:true}),
   text:z.string().trim().min(1).max(1200),
-  purpose:z.enum(['status','result','participants']).default('status'),
+  purpose:z.enum(['status','result','participants','next','active','schedule']).default('status'),
   quotedExternalMessageId:z.string().trim().min(1).max(320).nullable().default(null),
   race:z.object({
     raceNumber:z.number().int().min(1).max(999),
@@ -167,13 +168,19 @@ router.post('/bridge/lab/query',async(req,res)=>{
   try{
     // Always read SOURCE-owned canonical aggregates; a LAB caller cannot select
     // a tenant, arbitrary group key, or a different read authority.
-    const canonical=await readCanonicalLabRace({
-      ownerId,groupKey:OFFICIAL_SOURCE_CHANNEL_KEY,race:input.race,purpose:input.purpose
-    });
+    const canonical=['next','active','schedule'].includes(input.purpose)
+      ? await readScopedLabSchedule({
+          ownerId,groupKey:OFFICIAL_SOURCE_CHANNEL_KEY,
+          purpose:input.purpose as 'next'|'active'|'schedule'
+        })
+      : await readCanonicalLabRace({
+          ownerId,groupKey:OFFICIAL_SOURCE_CHANNEL_KEY,race:input.race,
+          purpose:input.purpose as 'status'|'result'|'participants'
+        });
     return res.json({ok:true,mode:'shadow',status:canonical.reason,
       text:canonical.text,canonical:{
         available:canonical.available,
-        ...(canonical.available?{state:canonical.state,version:canonical.version,updatedAt:canonical.updatedAt}:{})
+        ...(canonical.available&&'state' in canonical?{state:canonical.state,version:canonical.version,updatedAt:canonical.updatedAt}:{})
       },authority:canonical.authority,decision:{intent:result.intent,reason:decision.decisionReason}});
   }catch{
     return res.status(503).json({ok:false,error:'LAB_QUERY_CANONICAL_UNAVAILABLE'});

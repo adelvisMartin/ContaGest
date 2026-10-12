@@ -118,6 +118,17 @@ Si el backend falla, rechaza el grupo, no dispone de propietario canónico, no r
 
 **Evidencia pendiente:** tests de contrato y transporte local versionados; despliegue real y sesiones WhatsApp LAB requieren QA físico posterior. Aún no se considera completo #892: faltan el catálogo verificado de ejemplares y la conciliación persistente de threads/citas no visibles, además del E2E real.
 
+
+## Consultas de programación hípica segura desde LAB (consolidación #898)
+
+El mismo endpoint autenticado `POST /api/v1/hipico-bot/bridge/lab/query` también interpreta preguntas no monetarias como «¿Qué carrera sigue?», «¿Cuál es la carrera activa?» y «¿Cuál es la cartelera?». **No se habilita el PR anterior de ingestión LAB ni se crea una segunda autoridad conversacional.** Se reutiliza `RaceQueryService` con `RaceLifecycleStore` para lecturas bajo `ownerId` y grupo SOURCE configurados únicamente por el backend.
+
+Para no cruzar reuniones, el backend exige **exactamente una reunión** en el alcance de lectura; si hay dos o más, solicita precisar la reunión. Para próxima carrera, el horario debe estar registrado y ser futuro; para carrera activa, muestra solo el estado **interno** registrado y no lo presenta como ejecución física en tiempo real. Para programación, entrega como máximo diez filas futuras ordenadas y con estados permitidos. Los JSON de carrera, cuotas, importes y datos de participantes de liquidaciones nunca forman parte de esta proyección.
+
+Las consultas con resultado/llegada, participantes y carrera explícita conservan los controles de #900/#904. El token Bridge no concede privilegios de operador; las consultas monetarias o que sugieren cambiar carreras continúan en `REVIEW_REQUIRED`. La respuesta sigue pasando por `labTestReplyJournal` antes de enviarse únicamente a LAB.
+
+**Límites y gates:** aun cuando el endpoint responda, no se afirma oficialidad externa ni se valida una reunión en producción. Falta habilitar selección explícita de reuniones cuando haya varias, confirmar fuente autorizada de caballos inscritos, completar #899 para planes dinámicos, y ejecutar QA Windows/WhatsApp, soak, respaldo y gates finales. Los tests de esta fase son unitarios y de contrato, no QA físico.
+
 ## Prueba autónoma LAB
 
 Desde la raíz:

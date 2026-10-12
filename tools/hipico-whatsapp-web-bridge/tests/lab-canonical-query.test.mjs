@@ -135,3 +135,14 @@ test('query adapter sends purpose and verified quoted identity only in the LAB q
   assert.deepEqual(sent.race,prior);
   assert.equal(sent.channelRole,'lab');
 });
+
+
+test('safe local next/active/program questions use existing LAB read-only envelope',()=>{
+  const reviewed={intent:'conversation',risk:'review'};
+  assert.equal(labReadOnlyQueryPurpose('¿Qué carrera sigue?',reviewed),'next');
+  assert.equal(labReadOnlyQueryPurpose('¿Cuál es la próxima carrera?',reviewed),'next');
+  assert.equal(labReadOnlyQueryPurpose('¿Cuál es la carrera activa?',reviewed),'active');
+  assert.equal(labReadOnlyQueryPurpose('¿Cuál es la cartelera?',reviewed),'schedule');
+  assert.equal(labReadOnlyQueryPurpose('¿Qué carrera sigue y pagar premio?',reviewed),null);
+  assert.equal(labReadOnlyQueryPurpose('REGISTRA CARTELERA',reviewed),null);
+});

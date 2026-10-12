@@ -25,6 +25,9 @@ export function explicitLabRaceScope(text){
 }
 
 const TOPIC={
+  next:/\b(?:proxima carrera|carrera sigue|siguiente carrera)\b/,
+  active:/\b(?:carrera activa|carrera abierta|cual esta abierta)\b/,
+  schedule:/\b(?:programacion|cartelera|programa de carreras|carreras programadas)\b/,
   result:/\b(?:resultado|llegada|pizarra|ganador|gano|primero|segundo|tercero)\b/,
   participants:/\b(?:participantes|ejemplares|caballos|inscritos|quienes\s+corren)\b/,
   status:/\b(?:estado|estatus|situacion|abierta|cerrada|como\s+va)\b/
@@ -38,7 +41,7 @@ export function labReadOnlyQueryPurpose(text,classification){
     !['safe','review'].includes(classification?.risk)||
     !['conversation','status_non_monetary','help'].includes(classification?.intent))return null;
   if(!/[¿?]/.test(text)&&!/^(?:consulta|dime|muestra|indica|resultado|participantes|pizarra|estado)/.test(value))return null;
-  for(const key of ['result','participants','status']){
+  for(const key of ['next','active','schedule','result','participants','status']){
     if(TOPIC[key].test(value))return key;
   }
   return null;
