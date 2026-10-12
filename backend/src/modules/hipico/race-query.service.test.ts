@@ -62,3 +62,32 @@ test('missing scratches evidence produces a bounded factual fallback instead of 
   });
   assert.match(formatRaceQueryResponse(result),/No tengo retiros verificados/);
 });
+
+test('colloquial runner question resolves only a uniquely scoped fifth race',async()=>{
+  const service=new RaceQueryService(fakeStore([
+    {id:'race-4',meetingId:'m1',number:4,name:'Cuarta',state:'OPEN',resultStage:'none'},
+    {id:'race-5',meetingId:'m1',number:5,name:'Quinta',state:'ANNOUNCED',resultStage:'none',resultData:{runners:['Caballo A','Caballo B']}}
+  ]) as any);
+  const output=await service.execute({...scope,text:'¿Quiénes corren en la quinta?'});
+  assert.equal(output.intent,'RUNNERS');
+  assert.equal((output.answer as any).raceId,'race-5');
+  assert.deepEqual((output.answer as any).runners,['Caballo A','Caballo B']);
+});
+
+test('identical race numbers in different meetings reject implicit cross-meeting context',async()=>{
+  const service=new RaceQueryService(fakeStore([
+    {id:'m1-5',meetingId:'m1',number:5,name:'Quinta A',state:'OPEN',resultStage:'none'},
+    {id:'m2-5',meetingId:'m2',number:5,name:'Quinta B',state:'OPEN',resultStage:'none'}
+  ]) as any);
+  await assert.rejects(()=>service.execute({...scope,text:'participantes de la carrera 5'}),
+    (error:any)=>error?.code==='RACE_QUERY_AMBIGUOUS');
+  const selected=await service.execute({...scope,text:'participantes de la carrera 5',meetingId:'m1'});
+  assert.equal((selected.answer as any).raceId,'m1-5');
+  assert.equal((selected.answer as any).known,false);
+});
+
+test('missing canonical race is never interpreted as an official or verified entry',async()=>{
+  const service=new RaceQueryService(fakeStore([]) as any);
+  await assert.rejects(()=>service.execute({...scope,text:'resultado carrera 5'}),
+    (error:any)=>error?.code==='RACE_QUERY_CONTEXT_REQUIRED');
+});
