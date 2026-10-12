@@ -26,7 +26,7 @@ test('canonical absence never invents entries or other operational facts',async(
   assert.equal(calls[0].groupKey,input.groupKey);
   assert.equal(calls[0].aggregateKind,'race');
   assert.match(calls[0].aggregateKey,/^racectx_[a-f0-9]{24}$/);
-  assert.equal(calls[0].limit,1);
+  assert.equal(calls[0].limit,30);
 });
 
 test('canonical known state reveals no raw event data and is not officiality attestation',async()=>{
@@ -62,4 +62,67 @@ test('LAB endpoint checks token/group then policy then read without mutation',()
   assert.match(route,/result\.risk!=='safe'/);
   assert.match(route,/groupKey:OFFICIAL_SOURCE_CHANNEL_KEY/);
   assert.doesNotMatch(route,/persistBridgeTransportEvent|persistCanonicalShadow|ensureSourceReplyOutbox/);
+});
+
+
+test('confirmed internal result board is limited to numeric finishing positions, not external officiality',async()=>{
+  const board=['7','3','1'];
+  const event={
+    eventType:'RESULT_RECORDED',disposition:'applied',operatorConfirmed:true,
+    previousState:'CLOSED',nextState:'RESULT_RECEIVED',
+    normalizedPayload:{...race,raceContextComplete:true,board}
+  };
+  const got=await readCanonicalLabRace({...input,purpose:'result'},(async()=>({
+    aggregate:{status:'PUBLISHED',stateVersion:4,updatedAt:new Date('2026-10-12T12:34:00Z')},
+    events:[event]
+  })) as any);
+  assert.equal(got.available,true);
+  assert.equal(got.reason,'CANONICAL_RESULT_CONFIRMED_INTERNAL');
+  assert.match(got.text,/7 - 3 - 1/);
+  assert.equal(got.authority.officiality,'NOT_EXTERNALLY_VERIFIED');
+  assert.equal(got.authority.financialAuthority,false);
+});
+
+test('result refuses unconfirmed, wrongly scoped, corrected, spoofed and malformed evidence',async()=>{
+  const valid={
+    eventType:'RESULT_RECORDED',disposition:'applied',operatorConfirmed:true,
+    previousState:'CLOSED',nextState:'RESULT_RECEIVED',
+    normalizedPayload:{...race,raceContextComplete:true,board:['7','3','1']}
+  };
+  const scenarios=[
+    [{...valid,operatorConfirmed:false}],
+    [{...valid,disposition:'review'}],
+    [{...valid,normalizedPayload:{...valid.normalizedPayload,raceDate:'2026-10-13'}}],
+    [{...valid,normalizedPayload:{...valid.normalizedPayload,board:['7','7']}}],
+    [{...valid,normalizedPayload:{...valid.normalizedPayload,board:['private name']}}],
+    [{eventType:'CORRECTION'},valid],
+    [{eventType:'REVERSAL'},valid]
+  ];
+  for(const events of scenarios){
+    const got=await readCanonicalLabRace({...input,purpose:'result'},(async()=>({
+      aggregate:{status:'PUBLISHED',stateVersion:4,updatedAt:new Date()},
+      events
+    })) as any);
+    assert.equal(got.available,false,JSON.stringify(events));
+    assert.doesNotMatch(JSON.stringify(got),/private name/);
+  }
+});
+
+test('a finished-state aggregate without operator-confirmed RESULT_RECORDED yields no result',async()=>{
+  const got=await readCanonicalLabRace({...input,purpose:'result'},(async()=>({
+    aggregate:{status:'RESULT_RECEIVED',stateVersion:2,updatedAt:new Date()},
+    events:[]
+  })) as any);
+  assert.equal(got.available,false);
+  assert.equal(got.reason,'CANONICAL_RESULT_EVIDENCE_MISSING');
+});
+
+test('financial participant counterparties are never repurposed into horse entries',async()=>{
+  const got=await readCanonicalLabRace({...input,purpose:'participants'},(async()=>({
+    aggregate:{status:'OPEN',stateVersion:2,updatedAt:new Date()},
+    events:[{eventType:'SETTLEMENT_RECORDED',normalizedPayload:{settlementRows:[{participant:'PRIVATE-BETTOR',amount:1000}]}}]
+  })) as any);
+  assert.equal(got.reason,'CANONICAL_ENTRIES_UNAVAILABLE');
+  assert.equal(got.available,false);
+  assert.doesNotMatch(JSON.stringify(got),/PRIVATE-BETTOR|1000/);
 });
