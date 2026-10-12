@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { eligibleCanonicalLabRaceQuery, resolveCanonicalLabRaceQuery } from './hipico-lab-race-query.js';
+import { canonicalRaceReadDigest, eligibleCanonicalLabRaceQuery, resolveCanonicalLabRaceQuery } from './hipico-lab-race-query.js';
 
 const scope={ownerId:'11111111-1111-4111-8111-111111111111',groupKey:'control-hipico-lab'};
 const request=()=>({
@@ -75,4 +75,16 @@ test('tenant mismatch cannot answer using another owner/group',async()=>{
   });
   assert.equal(result.canSend,false);
   assert.equal(result.text,null);
+});
+
+test('read-model digest changes when race moves from provisional to official even with same runner board',()=>{
+  const base={
+    intent:'RESULT' as const,
+    answer:{known:true,raceId:'r1',resultStage:'provisional',result:{arrival:['3','5','1']},state:'PROVISIONAL_RESULT'},
+    scope:{ownerId:scope.ownerId,groupId:scope.groupKey,meetingId:null,raceId:'r1'}
+  };
+  const initial=canonicalRaceReadDigest(base);
+  assert.equal(initial,canonicalRaceReadDigest({...base}));
+  const official=canonicalRaceReadDigest({...base,answer:{...base.answer,resultStage:'official',state:'OFFICIAL_RESULT'}});
+  assert.notEqual(initial,official);
 });
