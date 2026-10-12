@@ -625,7 +625,7 @@ async function requestCleanProfileReset(reason) {
     version: VERSION,
     reason,
     profileDir: PROFILE_DIR,
-    preserve: ['spool-v2', 'spool-events', 'spool-lab-mirror', 'dead-letter', 'training', 'seen-source-message-ids.json']
+    preserve: ['spool-v2', 'spool-events', 'spool-lab-mirror', 'dead-letter', 'training', 'seen-source-message-ids.json', 'lab-test-replies', 'lab-pending-queries']
   };
   await fs.writeFile(PROFILE_RESET_FLAG, JSON.stringify(payload, null, 2), 'utf8').catch(() => {});
   await log(`PROFILE_RESET_REQUIRED ${reason}`);
