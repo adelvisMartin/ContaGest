@@ -119,6 +119,22 @@ Si el backend falla, rechaza el grupo, no dispone de propietario canónico, no r
 **Evidencia pendiente:** tests de contrato y transporte local versionados; despliegue real y sesiones WhatsApp LAB requieren QA físico posterior. Aún no se considera completo #892: faltan el catálogo verificado de ejemplares y la conciliación persistente de threads/citas no visibles, además del E2E real.
 
 
+## Selección inequívoca de reunión en consultas LAB (#892)
+
+Cuando Control Hípico tenga varias reuniones, el bot puede consultar **una específica** si la pregunta incluye una fecha de reunión válida y, si es necesario para desambiguar, el hipódromo registrado:
+
+```text
+¿Qué carrera sigue en la reunión del 2026-10-12?
+¿Cuál es la próxima carrera en la reunión del 2026-10-12 en La Rinconada?
+¿Cuál es la cartelera de la reunión del 2026-10-12 en el hipódromo La Rinconada?
+```
+
+La fecha debe ser `AAAA-MM-DD` real, no un día inexistente. El backend **extrae el selector del texto evaluado**, nunca de `ownerId`, `groupKey`, `meetingId` ni cabeceras proporcionadas por el participante. El repositorio PostgreSQL aplica simultáneamente propietario, grupo oficial, fecha y, cuando procede, hipódromo; consulta como máximo **dos coincidencias** para demostrar unicidad sin depender de cuántas reuniones históricas existan.
+
+Si la fecha no corresponde a ninguna reunión, o existen dos reuniones que coinciden incluso con el hipódromo, se solicita aclaración sin leer carreras. Una expresión explícita inválida tampoco vuelve a la última reunión. Sin selector explícito se conserva la política anterior: solo se responde si existe una única reunión en el ámbito autorizado. Ninguna respuesta afirma resultados externos, revela datos de clientes/apuestas ni habilita envíos a SOURCE.
+
+Esta es una mejora de código y pruebas; la verificación operacional con múltiples reuniones reales y WhatsApp LAB sigue pendiente.
+
 ## Consultas de programación hípica segura desde LAB (consolidación #898)
 
 El mismo endpoint autenticado `POST /api/v1/hipico-bot/bridge/lab/query` también interpreta preguntas no monetarias como «¿Qué carrera sigue?», «¿Cuál es la carrera activa?» y «¿Cuál es la cartelera?». **No se habilita el PR anterior de ingestión LAB ni se crea una segunda autoridad conversacional.** Se reutiliza `RaceQueryService` con `RaceLifecycleStore` para lecturas bajo `ownerId` y grupo SOURCE configurados únicamente por el backend.
