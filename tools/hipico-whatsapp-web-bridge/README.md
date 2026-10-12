@@ -129,6 +129,43 @@ Las consultas con resultado/llegada, participantes y carrera explícita conserva
 
 **Límites y gates:** aun cuando el endpoint responda, no se afirma oficialidad externa ni se valida una reunión en producción. Falta habilitar selección explícita de reuniones cuando haya varias, confirmar fuente autorizada de caballos inscritos, completar #899 para planes dinámicos, y ejecutar QA Windows/WhatsApp, soak, respaldo y gates finales. Los tests de esta fase son unitarios y de contrato, no QA físico.
 
+## Resumen canónico de una carrera (incremento #892)
+
+El Bridge interpreta **resumen de carrera** como una consulta `purpose=summary`
+al endpoint existente `/bridge/lab/query`. La petición necesita un alcance
+explícito de carrera, hipódromo y fecha, procedente del mensaje actual o de una
+referencia citada que cumpla las restricciones de identidad; las referencias
+de memoria contextual siguen siendo solo pistas y no prueban el dato.
+
+La lectura backend utiliza **una sola versión del agregado** para construir:
+- carrera/hipódromo/fecha solicitados y estado interno validado;
+- llegada numérica **únicamente** si el evento `RESULT_RECORDED` está
+  confirmado por operador, corresponde a esa carrera y no hay corrección/reversión
+  posterior que invalide su publicación;
+- aviso explícito de falta de resultado cuando no existe evidencia suficiente;
+- recordatorio de que el registro interno **no certifica oficialidad externa**.
+
+No expone nombres, terceros, importes, apuestas, saldos, eventos originales,
+porcentajes, datos del chat, resúmenes de conversaciones ni acciones de terceros.
+`resumen de jugadas/saldo` se rechaza. La política SOURCE y los journals de
+entrega LAB no cambian. `CANONICAL_RACE_SUMMARY` es solo una proyección
+informativa; no es un permiso nuevo para responder con IA generativa ni un
+estado monetario.
+
+Caso de QA LAB:
+
+```text
+Dame un resumen de la carrera 5 en hipódromo La Rinconada el 2026-10-12
+hazme un resumen de lo que hablamos
+resumen de saldo de carrera 5 en hipódromo La Rinconada el 2026-10-12
+```
+
+El primero responde únicamente con datos presentes y validados, o indica
+que el agregado no existe. Los demás **no** deben obtener un resumen
+canónico de carreras. Repetir con datos inexistentes, evento corregido,
+otro grupo, otro remitente, backend desconectado y reconexión. No interpretar
+los tests unitarios como prueba física de Windows/WhatsApp.
+
 ## Prueba autónoma LAB
 
 Desde la raíz:
