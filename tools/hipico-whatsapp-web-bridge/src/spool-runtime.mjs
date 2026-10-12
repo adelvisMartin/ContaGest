@@ -173,13 +173,24 @@ export function createBridgeSpoolRuntime({
     const safeLimit=boundedLimit(limit);
     const rows=[];
     const terminalIds=new Set();
-    for(const terminalState of ['sent','replayed','expired']){
-      for(const {record} of await listState(terminalState)){if(record.kind===kind)terminalIds.add(record.recordId);}
+    const blockedIds=new Set();
+    for(const terminalState of ['sent','replayed','expired','sending','quarantined']){
+      for(const {record} of await listState(terminalState)){
+        if(record.kind!==kind)continue;
+        if(['sending','quarantined'].includes(terminalState))blockedIds.add(record.recordId);
+        else terminalIds.add(record.recordId);
+      }
     }
     const seenIds=new Set();
     for(const state of ['queued','failed']){
       for(const item of await listState(state)){
         if(item.record.kind!==kind)continue;
+        if(blockedIds.has(item.record.recordId)){
+          // Preserve the duplicate file for audit; do not send while another copy
+          // is quarantined or still marked sending.
+          await logger(`SPOOL_BLOCKED_DUPLICATE kind=${kind} id=${item.record.recordId}`);
+          continue;
+        }
         if(terminalIds.has(item.record.recordId)){
           await fs.rm(item.file,{force:true});
           await logger(`SPOOL_STALE_ACTIVE_DUPLICATE kind=${kind} id=${item.record.recordId}`);
@@ -215,26 +226,38 @@ export function createBridgeSpoolRuntime({
     if(flushingKinds.has(kind))return{kind,attempted:0,delivered:0,failed:0,quarantined:0,expired:0,busy:true};
     flushingKinds.add(kind);
     try{
-    const safeLimit=boundedLimit(limit);
-    const result={kind,attempted:0,delivered:0,failed:0,quarantined:0,expired:0};
-    const candidates=await due(kind,{limit:safeLimit});
-    for(const item of candidates){
-      if(!canContinue())break;
-      result.attempted+=1;
-      try{
-        await deliver(item.record.payload,item.record);
-        const replayed=Boolean(item.record.replayRequestedAt);
-        await moveRecord(item.file,item.record,replayed?'replayed':'sent',{
+      const safeLimit=boundedLimit(limit);
+      const result={kind,attempted:0,delivered:0,failed:0,quarantined:0,expired:0};
+      const candidates=await due(kind,{limit:safeLimit});
+      for(const item of candidates){
+        if(!canContinue())break;
+        result.attempted+=1;
+        let delivery=item;
+        if(kind===BRIDGE_SPOOL_KINDS.LAB_MIRROR){
+          // Durably claim before any Playwright/browser side effect.
+          // A restart between this write and final receipt is not safe to retry.
+          delivery=await moveRecord(item.file,item.record,'sending',{
+            sendStartedAt:iso(now()),lastError:null,nextAttemptAt:0
+          });
+        }
+        try{
+          await deliver(delivery.record.payload,delivery.record);
+        }catch(error){
+          const next=await fail(delivery.file,delivery.record,error);
+          if(next.record.state==='quarantined')result.quarantined+=1;
+          else result.failed+=1;
+          continue;
+        }
+        // Persist receipt outside the delivery catch: a disk failure after a
+        // successful Enter must NEVER turn a sent message back into retryable.
+        const replayed=Boolean(delivery.record.replayRequestedAt);
+        await moveRecord(delivery.file,delivery.record,replayed?'replayed':'sent',{
           deliveredAt:iso(now()),nextAttemptAt:0,lastError:null,
           ...(replayed?{replayedAt:iso(now())}:{sentAt:iso(now())})
         });
         result.delivered+=1;
-      }catch(error){
-        const next=await fail(item.file,item.record,error);
-        if(next.record.state==='quarantined')result.quarantined+=1;else result.failed+=1;
       }
-    }
-    return result;
+      return result;
     }finally{flushingKinds.delete(kind);}
   }
   async function migrateLegacyDir(dir,kind,label){
@@ -270,10 +293,22 @@ export function createBridgeSpoolRuntime({
   }
   async function initialize(){
     await ensure();
+    // An interrupted LAB send could have reached WhatsApp before the process died.
+    // Never dispatch it again automatically; require a visible LAB receipt check.
+    let interruptedLab=0;
+    for(const {file,record} of await listState('sending')){
+      if(record.kind!==BRIDGE_SPOOL_KINDS.LAB_MIRROR)throw new Error('SPOOL_UNEXPECTED_SENDING_KIND');
+      await moveRecord(file,record,'quarantined',{
+        lastError:'LAB_DELIVERY_AMBIGUOUS',quarantineReason:'LAB_SEND_INTERRUPTED',
+        interruptedAt:iso(now()),nextAttemptAt:0
+      });
+      interruptedLab+=1;
+      await logger(`SPOOL_LAB_INTERRUPTED id=${record.recordId} action=MANUAL_RECONCILIATION_REQUIRED`);
+    }
     const events=await migrateLegacyDir(legacyEventDir,BRIDGE_SPOOL_KINDS.BACKEND_EVENT,'backend-event');
     const mirrors=await migrateLegacyDir(legacyMirrorDir,BRIDGE_SPOOL_KINDS.LAB_MIRROR,'lab-mirror');
     const dead=await migrateLegacyDir(legacyDeadLetterDir,BRIDGE_SPOOL_KINDS.BACKEND_EVENT,'dead-letter');
-    return{events,mirrors,dead};
+    return{events,mirrors,dead,interruptedLab};
   }
   async function snapshot(){
     const counts=Object.fromEntries(SPOOL_STATES.map((state)=>[state,0]));
@@ -332,6 +367,11 @@ export function createBridgeSpoolRuntime({
       const found=await findRecord(id);
       if(!found||!REPLAYABLE_STATES.has(found.record.state)||found.record.kind!==kind){
         throw new Error(`REPLAY_RECORD_NOT_ELIGIBLE:${id}`);
+      }
+      if(kind===BRIDGE_SPOOL_KINDS.LAB_MIRROR&&
+        (found.record.quarantineReason==='LAB_SEND_INTERRUPTED'||
+          found.record.lastError==='LAB_DELIVERY_AMBIGUOUS')){
+        throw new Error('REPLAY_LAB_AMBIGUOUS_RECONCILIATION_REQUIRED');
       }
       prepared.push(found);
     }
