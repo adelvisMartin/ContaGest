@@ -4,9 +4,10 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { classifyLocal } from '../src/runtime-utils.mjs';
-import { labConversationInput, planLabConversation, createLabConversationContext } from '../src/lab-conversation-context.mjs';
+import { labConversationInput, planLabConversation, createLabConversationContext, stableLabSenderKey } from '../src/lab-conversation-context.mjs';
 
-const row = (id, sender, text, extra = {}) => ({ id, pre: `[09:15, 12/10/2026] ${sender}:`, text, ...extra });
+const PARTICIPANTS={Ana:'123456789012@lid',Bea:'234567890123@lid',Carla:'345678901234@lid',A:'456789012345@lid',B:'567890123456@lid'};
+const row=(id,sender,text,extra={})=>({id:`false_120363222222222222@g.us_${id}_${PARTICIPANTS[sender]||'678901234567@lid'}`,pre:`[09:15, 12/10/2026] ${sender}:`,text,...extra});
 
 test('ignores own messages, media, bot echoes and ordinary conversation', () => {
   for (const incoming of [row('a','A','hola',{fromMe:true}), row('a','A','hola',{hasMedia:true}), row('a','A','[LABTEST:123] hola'), row('a','A','Que bien todo')]) {
@@ -39,19 +40,20 @@ test('LAB memory is durable, isolated, expiring and contains no raw identity or 
   const make = (groupId) => createLabConversationContext({ file, groupId, now: () => clock, ttlMs: 2000, maxEntries: 2 });
   const memory = make('120363222222222222@g.us');
   await memory.initialize();
-  assert.equal(await memory.remember('Ana', 5), true);
-  assert.equal(memory.get('Ana')?.raceNumber, 5);
-  assert.equal(memory.get('Bea'), null);
+  assert.equal(await memory.remember(PARTICIPANTS.Ana, 5), true);
+  assert.equal(memory.get(PARTICIPANTS.Ana)?.raceNumber, 5);
+  assert.equal(memory.get(PARTICIPANTS.Bea), null);
   const raw = await fs.readFile(file, 'utf8');
   assert.equal(raw.includes('Ana'), false);
+  assert.equal(raw.includes(PARTICIPANTS.Ana),false);
   assert.equal(raw.includes('120363222222222222@g.us'), false);
   const restored = make('120363222222222222@g.us');
   await restored.initialize();
-  assert.equal(restored.get('Ana')?.raceNumber, 5);
+  assert.equal(restored.get(PARTICIPANTS.Ana)?.raceNumber, 5);
   await assert.rejects(make('120363333333333333@g.us').initialize(), /LAB_CONTEXT_STORAGE_INVALID/);
   clock += 2000;
-  assert.equal(restored.get('Ana'), null);
-  assert.equal(await restored.remember('Bea', 0), false);
+  assert.equal(restored.get(PARTICIPANTS.Ana), null);
+  assert.equal(await restored.remember(PARTICIPANTS.Bea, 0), false);
 });
 
 test('LAB memory bounds participants and drops oldest references', async (t) => {
@@ -60,12 +62,12 @@ test('LAB memory bounds participants and drops oldest references', async (t) => 
   let clock = 10000;
   const memory = createLabConversationContext({ file: path.join(dir, 'memory.json'), groupId: '120363222222222222@g.us', now: () => clock++, maxEntries: 2 });
   await memory.initialize();
-  await memory.remember('Ana', 4);
-  await memory.remember('Bea', 5);
-  await memory.remember('Carla', 6);
-  assert.equal(memory.get('Ana'), null);
-  assert.equal(memory.get('Bea')?.raceNumber, 5);
-  assert.equal(memory.get('Carla')?.raceNumber, 6);
+  await memory.remember(PARTICIPANTS.Ana, 4);
+  await memory.remember(PARTICIPANTS.Bea, 5);
+  await memory.remember(PARTICIPANTS.Carla, 6);
+  assert.equal(memory.get(PARTICIPANTS.Ana), null);
+  assert.equal(memory.get(PARTICIPANTS.Bea)?.raceNumber, 5);
+  assert.equal(memory.get(PARTICIPANTS.Carla)?.raceNumber, 6);
 });
 
 test('Bridge uses planner only in interactive LAB and acknowledges deliveries before remembering context', async () => {
@@ -109,4 +111,18 @@ test('LAB context rejects invalid group pins, excessive TTL/entries and unsafe s
       /LAB_CONTEXT_STORAGE_INVALID/
     );
   }
+});
+
+test('planner cannot reuse nickname-only or ambiguous participant identities',()=>{
+  const alice=row('m-1','Ana','¿Quién corre en carrera 5?');
+  const alias=row('m-2','Bea','¿y los participantes de esa?');
+  assert.equal(stableLabSenderKey(alice.id),PARTICIPANTS.Ana);
+  assert.equal(stableLabSenderKey(alias.id),PARTICIPANTS.Bea);
+  const unverified={...alias,id:'false_120363222222222222@g.us_opaque'};
+  assert.equal(stableLabSenderKey(unverified.id),'');
+  const plan=planLabConversation(unverified,classifyLocal(unverified.text),{raceNumber:5});
+  assert.equal(plan.raceNumber,null);
+  assert.equal(plan.rememberRace,false);
+  const double={...alias,id:'id_123456789012@lid_234567890123@lid'};
+  assert.equal(stableLabSenderKey(double.id),'');
 });
