@@ -31,6 +31,7 @@ import { atomicWriteJson } from './spool-journal.mjs';
 import { createLabConversationContext, labConversationInput, planLabConversation, stableLabSenderKey } from './lab-conversation-context.mjs';
 import { localKillSwitchState } from './promotion-guard.mjs';
 import { labCanonicalEvent, selectCanonicalLabReply } from './lab-canonical-conversation.mjs';
+import { labReplayPruneUrl, labReplayPruneDue } from './lab-replay-maintenance.mjs';
 
 const config = assertRuntimeConfig(loadRuntimeConfig());
 const {
@@ -475,14 +476,11 @@ async function backendPostSourceReplyReceipt(record) {
 
 async function pruneLabReplayFromBridge(){
   if(!BACKEND_SYNC_ENABLED || !INGEST_URL || !TOKEN)return;
-  // Only a pinned backend event URL may supply the maintenance destination.
-  const url=new URL(INGEST_URL);
-  if(!url.pathname.endsWith('/bridge/events') || !['https:','http:'].includes(url.protocol)){
+  const url=labReplayPruneUrl(INGEST_URL);
+  if(!url){
     await log('LAB_REPLAY_PRUNE_SKIPPED reason=INVALID_BACKEND_URL');
     return;
   }
-  url.pathname=url.pathname.slice(0,-'/events'.length)+'/maintenance/lab-replay-prune';
-  url.search='';
   try{
     const response=await fetch(url,{
       method:'POST',
@@ -1403,7 +1401,7 @@ async function monitor() {
   while (!stopping && page && !page.isClosed()) {
     try {
       // Run retention maintenance even when WhatsApp is logged out or idle.
-      if(BACKEND_SYNC_ENABLED && Date.now()-lastLabReplayPruneAt>=60000){
+      if(labReplayPruneDue({backendSyncEnabled:BACKEND_SYNC_ENABLED,lastAttemptAt:lastLabReplayPruneAt,now:Date.now()})){
         lastLabReplayPruneAt=Date.now();
         await pruneLabReplayFromBridge();
       }
