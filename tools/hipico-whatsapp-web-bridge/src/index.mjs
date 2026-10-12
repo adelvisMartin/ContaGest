@@ -30,6 +30,7 @@ import { createLabTestReplyJournal, labTestTagForMessage } from './lab-test-repl
 import { atomicWriteJson } from './spool-journal.mjs';
 import { createLabConversationContext, labConversationInput, planLabConversation, stableLabSenderKey } from './lab-conversation-context.mjs';
 import { localKillSwitchState } from './promotion-guard.mjs';
+import { labCanonicalEvent, selectCanonicalLabReply } from './lab-canonical-conversation.mjs';
 
 const config = assertRuntimeConfig(loadRuntimeConfig());
 const {
@@ -1000,7 +1001,7 @@ function labTestTagFor(externalMessageId) {
   return labTestTagForMessage(externalMessageId);
 }
 
-function localLabTestReply(row, classification, plan = null) {
+function localLabTestReply(row, classification, plan = null, canonical = null) {
   const textValue = String(row.text || '').slice(0, 1200);
   const entities = classification.entities || {};
   const details = [];
@@ -1016,7 +1017,8 @@ function localLabTestReply(row, classification, plan = null) {
     `Mensaje: ${textValue || '[sin texto]'}`,
     `Lectura: ${classification.intent} · riesgo ${classification.risk} · confianza ${(classification.confidence * 100).toFixed(1)}%`,
     ...details,
-    `Propuesta: ${localSuggestion(classification)}`,
+    `Propuesta: ${canonical?.text || plan?.guidance || localSuggestion(classification)}`,
+    canonical ? 'Fuente: backend canónico · lectura shadow' : 'Fuente: clasificador local · sin datos canónicos',
     '⚠️ PRUEBA LOCAL. No modifica jugadas, saldos, cierres ni resultados reales.'
   ].join('\n').slice(0, 3900);
 }
@@ -1226,10 +1228,41 @@ async function processLabTestInput() {
     const sender = stableLabSenderKey(row.id);
     const prior = sender ? labConversationContext?.get(sender) : null;
     const plan = planLabConversation(row, classification, prior);
+    let canonical = null;
+    if (BACKEND_SYNC_ENABLED) {
+      const normalized = labCanonicalEvent(row, {
+        labGroupId: LAB_GROUP_ID, sourceGroupId: SOURCE_GROUP_ID,
+        labGroupName: LAB_GROUP_NAME, labChannelKey: LAB_CHANNEL_KEY,
+        bridgeVersion: `official-web-playwright-${VERSION}`
+      });
+      if (!normalized.eligible) {
+        await log('LAB_CANONICAL_IGNORED reason='+normalized.reason);
+        rememberLabSeen(row.id);
+        await saveLabSeenNow();
+        continue;
+      }
+      try {
+        canonical = selectCanonicalLabReply(await backendPost(normalized.event), classification);
+      } catch (error) {
+        await log('LAB_CANONICAL_UNAVAILABLE id='+tag);
+        if (error?.retryable !== false) await enterBackendCooldown(error, normalized.event);
+        // No sending intent exists: the next poll may safely retry backend lookup.
+        continue;
+      }
+      if (canonical.kind === 'NO_RESPONSE') {
+        rememberLabSeen(row.id);
+        await saveLabSeenNow();
+        continue;
+      }
+      if (canonical.kind !== 'SEND_LAB') {
+        await log('LAB_CANONICAL_HELD reason='+canonical.reason);
+        continue;
+      }
+    }
     await labTestReplyJournal.prepare(row.id); // fsync before any browser send
     await labTestReplyJournal.begin(row.id); // durable sending intent
     try {
-      await sendTextInCurrentLab(localLabTestReply(row, classification, plan), tag);
+      await sendTextInCurrentLab(localLabTestReply(row, classification, plan, canonical), tag);
       await labTestReplyJournal.confirm(row.id,{visibleTag:true});
       rememberLabSeen(row.id); // confirmed delivery/tag; never ack before sending
       await saveLabSeenNow();
