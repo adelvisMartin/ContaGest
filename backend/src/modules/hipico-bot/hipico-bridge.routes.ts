@@ -181,7 +181,8 @@ router.post('/bridge/lab/query',async(req,res)=>{
     return res.json({ok:true,mode:'shadow',status:canonical.reason,
       text:canonical.text,canonical:{
         available:canonical.available,
-        ...(canonical.available&&'state' in canonical?{state:canonical.state,version:canonical.version,updatedAt:canonical.updatedAt}:{})
+        ...(canonical.available&&'state' in canonical&&'version' in canonical&&'updatedAt' in canonical
+          ?{state:canonical.state,version:canonical.version,updatedAt:canonical.updatedAt}:{})
       },authority:canonical.authority,decision:{intent:result.intent,reason:decision.decisionReason}});
   }catch{
     return res.status(503).json({ok:false,error:'LAB_QUERY_CANONICAL_UNAVAILABLE'});
