@@ -5,7 +5,7 @@ import { atomicWriteJson } from './spool-journal.mjs';
 import { normalizeGroupId } from './group-identity.mjs';
 import { stableLabSenderKey, labConversationInput } from './lab-conversation-context.mjs';
 import { classifyLocal } from './runtime-utils.mjs';
-import { labReadOnlyQueryPurpose } from './lab-canonical-query.mjs';
+import { labReadOnlyQueryPurpose, explicitLabRaceScope } from './lab-canonical-query.mjs';
 
 const SCHEMA=1;
 const HASH=/^[a-f0-9]{64}$/;
@@ -56,7 +56,9 @@ export function createLabPendingQueryInbox({rootDir,labGroupId,sourceGroupId,now
         item.race.raceNumber>999||typeof item.race.racetrack!=='string'||
         !item.race.racetrack.trim()||item.race.racetrack.length>90||
         !/^\d{4}-\d{2}-\d{2}$/.test(item.race.raceDate)))||
-      (item.quotedMessageId!==null&&item.race===null)){
+      (item.quotedMessageId!==null&&item.race===null)||
+      (item.race!==null&&item.quotedMessageId===null&&
+        JSON.stringify(explicitLabRaceScope(item.text))!==JSON.stringify(item.race))){
       throw new Error('LAB_PENDING_QUERY_INVALID');
     }
     return item;
