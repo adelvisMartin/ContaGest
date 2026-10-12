@@ -67,8 +67,10 @@ export function planLabConversation(row, classification, priorContext = null, su
   // The LAB backend now supports status and internally confirmed results; unavailable topics remain explicit.
   const unsupportedQuestion = /\b(?:retiros|horario|hora|oficial)\b/.test(normalized);
   const statusQuestion = /\b(?:estado|estatus|situacion|como va|abierta|abierto|cerrada|cerrado)\b/.test(normalized);
+  const resultQuestion = /\b(?:resultado|ganador|gano|llegada|pizarra)\b/.test(normalized);
+  const participantsQuestion = /\b(?:participantes|quienes corren|caballos|ejemplares|inscritos)\b/.test(normalized);
   const queryCategory = risk === 'safe' && isQuestion && !summaryRequested
-    ? (unsupportedQuestion ? 'UNSUPPORTED' : statusQuestion ? 'STATUS' : 'UNKNOWN')
+    ? (unsupportedQuestion ? 'UNSUPPORTED' : resultQuestion ? 'RESULT' : participantsQuestion ? 'PARTICIPANTS' : statusQuestion ? 'STATUS' : 'UNKNOWN')
     : 'NONE';
   const followUp = FOLLOW_UP_PATTERN.test(normalized);
   // Monetary/state-changing messages never inherit or store a race reference.
