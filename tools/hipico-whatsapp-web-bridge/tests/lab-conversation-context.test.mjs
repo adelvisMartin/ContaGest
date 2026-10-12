@@ -79,9 +79,10 @@ test('Bridge uses planner only in interactive LAB and acknowledges deliveries be
   assert.match(block, /planLabConversation\(row, classification/);
   assert.match(block, /sendTextInCurrentLab\(localLabTestReply\(row, classification, plan\), tag\)/);
   assert.match(block, /labConversationInput\(row, classification\)/);
-  const ack = block.indexOf('await labTestReplyJournal.confirm(row.id,{visibleTag:true});');
+  const delivered=block.indexOf('await sendTextInCurrentLab(');
+  const ack = block.indexOf('await labTestReplyJournal.confirm(row.id,{visibleTag:true});',delivered);
   const persist = block.indexOf('labConversationContext.remember(');
-  assert.ok(ack >= 0 && persist > ack, 'context memory must follow confirmed delivery');
+  assert.ok(delivered>=0 && ack > delivered && persist > ack, 'context memory must follow confirmed delivery');
   assert.match(code, /SOURCE_AUTO_REPLY_ACTIVE = SOURCE_AUTO_REPLY_ENABLED && !SOURCE_REPLY_KILL_SWITCH.active/);
   assert.ok(block.indexOf('await labTestReplyJournal.prepare(row.id)')<block.indexOf('await sendTextInCurrentLab('));
   assert.ok(block.indexOf('await labTestReplyJournal.begin(row.id)')<block.indexOf('await sendTextInCurrentLab('));
