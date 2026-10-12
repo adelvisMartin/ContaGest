@@ -49,7 +49,8 @@ test('explicit malformed date, unsafe suffix and ambiguous venue never fall back
     '¿Cartelera de la reunión del 2026-10-12 de otra reunión?',
     '¿Cartelera de la reunión del 2026-10-12 en La Rinconada y otra sede?',
     '¿Cartelera de la reunión del 2026-10-12 en x?',
-    '¿Cartelera de la reunión del NO-EXISTE?'
+    '¿Cartelera de la reunión del NO-EXISTE?',
+    '¿Qué carrera sigue en la reunión de hoy?'
   ])assert.equal(parseExplicitLabMeeting(text).kind,'invalid',text);
 });
 
