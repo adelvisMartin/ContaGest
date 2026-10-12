@@ -32,6 +32,7 @@ import { createLabConversationContext, labConversationInput, planLabConversation
 import { localKillSwitchState } from './promotion-guard.mjs';
 import { queryCanonicalLab, explicitLabRaceScope, labReadOnlyQueryPurpose, resolveQuotedLabRaceScope } from './lab-canonical-query.mjs';
 import { selectLabAnswer } from './lab-answer-policy.mjs';
+import { createLabQueryBackoff } from './lab-query-backoff.mjs';
 
 const config = assertRuntimeConfig(loadRuntimeConfig());
 const {
@@ -126,6 +127,7 @@ let nonOperationalCount = 0;
 let lastPostStartedAt = 0;
 let lastLabTestPollAt = 0;
 let labBootstrapCompleted = false;
+const labQueryBackoff=createLabQueryBackoff();
 let sourceDiscoveryFailures = 0;
 let lastPrintedHealthLine = '';
 let lastHealthHeartbeatAt = 0;
@@ -1239,6 +1241,7 @@ async function processLabTestInput() {
     const inquiryPurpose=labReadOnlyQueryPurpose(body,classification);
     const scopedRace=explicitLabRaceScope(body) || resolveQuotedLabRaceScope(row,visible);
     const quotedVerified=Boolean(row.quotedId && scopedRace && !explicitLabRaceScope(body));
+    if(inquiryPurpose && BACKEND_SYNC_ENABLED && !labQueryBackoff.allowed(row.id))continue;
     const canonical = inquiryPurpose && sender && BACKEND_SYNC_ENABLED && backendState === 'online'
       ? await queryCanonicalLab({
           ingestUrl:INGEST_URL,token:TOKEN,
@@ -1260,8 +1263,11 @@ async function processLabTestInput() {
       // A read-only lookup may be repeated after lost HTTP, but NO WhatsApp
       // send intent may be started until the canonical backend responds.
       // No seen ACK: a later LAB poll can query fresh verified data.
-      await log('LAB_CANONICAL_QUERY_PENDING id='+tag+' reason='+canonical.reason);
+      const delay=labQueryBackoff.fail(row.id);
+      await log('LAB_CANONICAL_QUERY_PENDING id='+tag+' reason='+canonical.reason+' retryMs='+delay);
       continue;
+    }
+    if(inquiryPurpose)labQueryBackoff.clear(row.id);
     }
     await labTestReplyJournal.prepare(row.id); // fsync before any browser send
     await labTestReplyJournal.begin(row.id); // durable sending intent
