@@ -1218,12 +1218,14 @@ async function processLabTestInput() {
     }
 
     const classification = classifyLocal(body);
-    if (!labConversationInput(row, classification).eligible) {
+    // Resolve the sender before consulting bounded conversation memory.
+    // Visible nicknames never grant an identity or a race reference.
+    const sender = stableLabSenderKey(row.id);
+    const prior = sender ? labConversationContext?.get(sender) : null;
+    if (!labConversationInput(row, classification, prior).eligible) {
       rememberLabSeen(row.id); // ignored echo/media/casual chat; never respond
       continue;
     }
-    const sender = stableLabSenderKey(row.id);
-    const prior = sender ? labConversationContext?.get(sender) : null;
     // Preserve authoritative topic and same-sender quoted-race resolution.
     const inquiryPurpose=labReadOnlyQueryPurpose(body,classification);
     const scopedRace=explicitLabRaceScope(body) || resolveQuotedLabRaceScope(row,visible);
