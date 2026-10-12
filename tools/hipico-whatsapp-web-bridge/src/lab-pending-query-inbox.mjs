@@ -43,6 +43,9 @@ export function createLabPendingQueryInbox({rootDir,labGroupId,sourceGroupId,now
     if(!item||typeof item!=='object'||Array.isArray(item)||
       typeof item.messageId!=='string'||typeof item.senderId!=='string'||
       typeof item.text!=='string'||item.text.length<6||item.text.length>1200||
+      typeof item.messageTimestamp!=='string'||!Number.isFinite(Date.parse(item.messageTimestamp))||
+      Date.parse(item.messageTimestamp)>clock()+60_000||
+      (!allowExpired&&clock()-Date.parse(item.messageTimestamp)>=maxAgeMs)||
       !PURPOSES.has(item.purpose)||!Number.isFinite(item.capturedAt)||
       item.capturedAt>clock()+60_000||(!allowExpired&&clock()-item.capturedAt>maxAgeMs)||
       stableLabSenderKey(item.messageId)!==item.senderId||
@@ -158,7 +161,7 @@ export function createLabPendingQueryInbox({rootDir,labGroupId,sourceGroupId,now
       let item;
       try{item=await openFile(hash);}catch(e){throw e;}
       if(item){
-        if(clock()-item.capturedAt>=maxAgeMs){
+        if(clock()-Date.parse(item.messageTimestamp)>=maxAgeMs){
           await fs.rm(fileFor(hash));expired++;
         }else rows.push(item);
       }
