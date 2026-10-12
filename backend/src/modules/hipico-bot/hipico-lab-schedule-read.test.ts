@@ -15,7 +15,9 @@ const scoped=(races:any[],meetings:any[]=[meeting])=>{
     },
     async listRaces(owner:string,group:string,meetingId?:string|null){
       calls.push({ownerId:owner,groupKey:group,meetingId});
-      return races.filter(race=>!meetingId||race.meetingId===meetingId);
+      return races.filter(race=>!meetingId||race.meetingId===meetingId).map((race)=>({
+        stateVersion:race.stateVersion??2,updatedAt:race.updatedAt??new Date('2026-10-12T12:00:00Z'),...race
+      }));
     },
     async getMeeting(_owner:string,_group:string,id:string){
       return meetings.find(x=>x.id===id)||null;
