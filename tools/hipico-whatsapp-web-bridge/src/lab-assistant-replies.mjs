@@ -55,6 +55,13 @@ export function composeLabAssistantReply({ classification, plan, canonical, answ
       : 'Puedo resumir la referencia de carrera que vayamos consultando, pero no tengo un historial completo verificado para resumir. ¿Qué carrera quieres revisar?';
   }
 
+  if (plan?.clarificationPending === 'date') {
+    return 'Perfecto, tengo el hipódromo de la ' + reference + '. ¿Qué fecha corresponde (AAAA-MM-DD)?';
+  }
+  if (plan?.clarificationPending === 'track') {
+    return 'Perfecto, tengo la fecha de la ' + reference + '. ¿En qué hipódromo se corre?';
+  }
+
   if (plan?.clarificationCompleted && plan?.raceScope && reference) {
     return 'Perfecto, ya tengo la referencia de la ' + reference +
       '. ¿Quieres que consulte su estado o un resultado interno confirmado, si está disponible?';
