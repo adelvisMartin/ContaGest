@@ -15,6 +15,7 @@ import { operatorActorRef, operatorTokenConfigured, operatorTokenValid } from '.
 import { configuredOutboxOwnerId } from './hipico-outbox.store.js';
 import { AutonomousReplyService, sourceAutoReplyEnabled } from '../hipico/autonomous-reply.service.js';
 import { resolveCanonicalLabRaceQuery } from './hipico-lab-race-query.js';
+import { persistLabReplayCandidate, recoverLabReplayCandidate } from './hipico-lab-recovery.store.js';
 
 const router = Router();
 const autonomousReplyService = new AutonomousReplyService();
@@ -126,7 +127,7 @@ router.post('/bridge/events',async(req,res)=>{
     const event=await persistBridgeTransportEvent({providerMessageId,phoneNumberId:`group:${input.groupId}`,sender,messageType:input.type,body:input.text,result,payload:transportPayload});
     const canonical=await persistCanonicalShadow({groupName:input.groupName,channelKey:input.channelKey,labChannelKey:input.labChannelKey,channelRole:input.channelRole,providerMessageId,sender,senderLabel:input.senderLabel,fromMe:input.fromMe,sentAt:input.timestamp,messageType:input.type,mediaKind:effectiveMediaKind,mediaName:input.mediaName,historySync:input.historySync,body:input.text,quotedExternalMessageId:input.quotedExternalMessageId,bridgeVersion:input.bridgeVersion,rawMeta:input.rawMeta,transportEventId:event.id,result});
     const outbox=await ensureGroupShadowOutbox({eventId:event.id,recipient:input.groupId,result});const safetyReady=await responseSafetyReadiness();const groupKey=String(canonical?.groupKey||input.channelKey||input.groupId);let handoffState=safetyReady.ready&&!input.historySync?await loadHandoff(groupKey,sender,raceContextKey):null;
-    const conversationDecision=decideConversation({sourceMessageId:input.externalMessageId,participantId:sender,participantLabel:input.senderLabel,text:assessment.sanitizedText,timestamp:input.timestamp,raceId:raceContextKey,quotedSourceMessageId:input.quotedExternalMessageId,mediaKind:effectiveMediaKind},{seenSourceMessageIds:event.inserted?[]:[input.externalMessageId],humanOwnedParticipantIds:handoffState?.ownership==='human'?[sender]:[]},()=>result);
+    let conversationDecision=decideConversation({sourceMessageId:input.externalMessageId,participantId:sender,participantLabel:input.senderLabel,text:assessment.sanitizedText,timestamp:input.timestamp,raceId:raceContextKey,quotedSourceMessageId:input.quotedExternalMessageId,mediaKind:effectiveMediaKind},{seenSourceMessageIds:event.inserted?[]:[input.externalMessageId],humanOwnedParticipantIds:handoffState?.ownership==='human'?[sender]:[]},()=>result);
     if(handoffState&&!input.historySync){
       const next=updateHandoffAfterDecision(handoffState,conversationDecision,new Date());
       if(JSON.stringify(next)!==JSON.stringify(handoffState)){
@@ -152,7 +153,37 @@ router.post('/bridge/events',async(req,res)=>{
         responsePlan
       });
     }
+    const replayScope={
+      channelRole:input.channelRole,channelId:String(canonical.channelId),
+      groupId:input.groupId,groupKey,sender,sourceMessageId:input.externalMessageId,
+      sentAt:input.timestamp,messageText:assessment.sanitizedText,
+      fromMe:input.fromMe,historySync:input.historySync,mediaKind:effectiveMediaKind,
+      forceReview:assessment.forceReview,rateAllowed:rate.allowed,systemHealthy:safetyReady.ready,
+      humanOwned:handoffState?.ownership==='human',classification:result
+    };
     const responseReceipt=safetyReady.ready&&!input.historySync&&event.inserted?await persistResponsePlan(responsePlan):null;
+    if(input.channelRole==='lab'&&event.inserted&&responseReceipt){
+      // Snapshot only the committed deterministic LAB plan. If this write fails,
+      // return 503 before the Bridge starts its LAB sending intent.
+      await persistLabReplayCandidate({receiptId:responseReceipt.id,scope:replayScope,plan:responsePlan});
+    } else if(input.channelRole==='lab'&&!event.inserted&&safetyReady.ready){
+      const recovered=await recoverLabReplayCandidate({scope:replayScope,duplicatePlan:responsePlan});
+      if(recovered){
+        // Replay the pure conversation policy without a duplicate marker, but
+        // never replay handoff transitions, DB mutations or transport actions.
+        const freshDecision=decideConversation({
+          sourceMessageId:input.externalMessageId,participantId:sender,participantLabel:input.senderLabel,
+          text:assessment.sanitizedText,timestamp:input.timestamp,raceId:raceContextKey,
+          quotedSourceMessageId:input.quotedExternalMessageId,mediaKind:effectiveMediaKind
+        },{humanOwnedParticipantIds:handoffState?.ownership==='human'?[sender]:[]},()=>result);
+        const freshSafety=planSafeResponse(freshDecision,{handoffState,systemHealthy:safetyReady.ready,at:new Date()});
+        if(freshDecision.effectsAllowed===false&&freshDecision.transportAction==='NONE'
+          &&freshSafety.canSend&&!freshSafety.handoffRequired&&!freshSafety.confirmationVerified){
+          conversationDecision=freshDecision;
+          responsePlan=recovered;
+        }
+      }
+    }
     const autoReplyConfigured=sourceAutoReplyEnabled();
     const ownerId=configuredOutboxOwnerId();
     let sourceReplyCommand:any=null;
