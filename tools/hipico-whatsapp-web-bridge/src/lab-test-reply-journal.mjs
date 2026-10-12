@@ -140,7 +140,73 @@ export function createLabTestReplyJournal({rootDir,labGroupId,sourceGroupId='',n
     }
     return{counts,pending:counts.prepared+counts.sending,ambiguous:counts.ambiguous};
   }
+
+  async function inspectReadOnly({state='all',limit=50}={}){
+    // No ensure(), chmod(), initialization or transition: safe while the Bridge is down.
+    if(state!=='all'&&!STATES.has(state))throw new Error('LAB_TEST_REPORT_STATE_INVALID');
+    if(!Number.isInteger(limit)||limit<1||limit>100)throw new Error('LAB_TEST_REPORT_LIMIT_INVALID');
+    let rootStat;
+    try{rootStat=await fs.lstat(root);}
+    catch(error){
+      if(error?.code==='ENOENT')throw new Error('LAB_TEST_JOURNAL_MISSING');
+      throw new Error('LAB_TEST_JOURNAL_READ_FAILED');
+    }
+    if(!rootStat.isDirectory()||rootStat.isSymbolicLink())throw new Error('LAB_TEST_JOURNAL_ROOT_UNSAFE');
+    let entries;
+    try{entries=await fs.readdir(root,{withFileTypes:true});}
+    catch{throw new Error('LAB_TEST_JOURNAL_READ_FAILED');}
+    const counts=Object.fromEntries(LAB_TEST_ACK_STATES.map(key=>[key,0]));
+    const matches=[];
+    for(const entry of entries.sort((a,b)=>a.name.localeCompare(b.name))){
+      if(!entry.isFile()||!/^[a-f0-9]{64}\.json$/.test(entry.name)){
+        throw new Error('LAB_TEST_JOURNAL_FILE_INVALID');
+      }
+      // The reporter must never follow a symlink or expose raw disk payloads.
+      const file=path.join(root,entry.name);
+      let record;
+      try{record=await loadFile(file);}
+      catch{throw new Error('LAB_TEST_JOURNAL_RECORD_INVALID');}
+      if(!record||entry.name!==record.idHash+'.json'||
+         !Number.isFinite(Date.parse(record.createdAt))||
+         !Number.isFinite(Date.parse(record.updatedAt))){
+        throw new Error('LAB_TEST_JOURNAL_RECORD_INVALID');
+      }
+      counts[record.state]++;
+      if(state==='all'||record.state===state){
+        matches.push({
+          recordRef:record.idHash.slice(0,16),
+          tag:record.tag,
+          state:record.state,
+          attempts:record.attempts,
+          updatedAt:record.updatedAt,
+          resolution:(
+            ['SAFE_PRE_SEND_FAILURE','UNCERTAIN_LAB_DELIVERY',
+             'PROCESS_RESTART_DURING_SEND','VISIBLE_OUTGOING_TAG']
+              .includes(record.resolution)
+          )?record.resolution:null
+        });
+      }
+    }
+    const reviewRequired=counts.sending+counts.ambiguous;
+    return{
+      schemaVersion:1,
+      mode:'READ_ONLY',
+      sourceWriteAllowed:false,
+      releaseGate:'NOT_EVALUATED',
+      generatedAt:stamp(),
+      status:reviewRequired>0?'REVIEW_REQUIRED':'NO_AMBIGUOUS_RECORDS',
+      counts,
+      pending:counts.prepared+counts.sending,
+      reviewRequired,
+      selectedState:state,
+      selectedCount:matches.length,
+      returnedCount:Math.min(matches.length,limit),
+      truncated:matches.length>limit,
+      rows:matches.slice(0,limit)
+    };
+  }
+
   return Object.freeze({
-    rootDir:root,initialize,prepare,read,begin,retryPrepared,markAmbiguous,confirm,snapshot
+    rootDir:root,initialize,prepare,read,begin,retryPrepared,markAmbiguous,confirm,snapshot,inspectReadOnly
   });
 }
