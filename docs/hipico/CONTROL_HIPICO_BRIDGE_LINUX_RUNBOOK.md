@@ -153,3 +153,14 @@ Cada registro queued/failed/sent/quarantined exige identidad canónica SHA-256 d
 Los dos canales (`backend-event` y `lab-mirror`) tienen lanes independientes y cada uno admite un solo `flush` simultáneo por proceso. Una segunda invocación concurrente devuelve `busy=true` y cero intentos. Esto protege frente a reentradas del event loop, pero **no reemplaza** control de idempotencia persistente del backend, reconciliación de recibos, exclusión de procesos ni QA de reinicios y entregas ambiguas.
 
 Ante `SPOOL_EXISTING_RECORD_INVALID` o `SPOOL_QUARANTINE`, parar el Bridge, preservar copia privada del directorio y revisar el inventario. No borrar/renombrar manualmente records de envío ni usar replay sin la aprobación del procedimiento correspondiente. Nunca subir contenidos del spool, perfiles o mensajes completos a GitHub Actions.
+
+
+## LAB test input: confirmación, reintento y entrega ambigua (#837)
+
+El modo QA `HIPICO_LAB_TEST_INPUT_ENABLED=true` nunca confirma un mensaje de entrada como procesado **antes** de la respuesta LAB. El cambio introducido distingue tres resultados operativos:
+
+- **Antes de Enter y con compositor limpiado correctamente:** `LAB_PRE_SEND_RETRYABLE`; el mensaje permanece sin ack en `labSeen` y puede procesarse en el siguiente ciclo.
+- **Después de intentar Enter o si no se puede confirmar el estado del compositor:** `LAB_DELIVERY_AMBIGUOUS`; se marca como visto para **evitar reenvíos ciegos**, y aparece `LAB_TEST_REPLY_AMBIGUOUS` con identificador correlacionado por tag en el log. El monitor expone `counters.labTestReplyAmbiguous`. Un operador debe revisar el LAB y decidir una recuperación controlada.
+- **Entrega confirmada por tag visible o respuesta ya existente:** se marca como visto y se intenta persistir `labSeen`. Los mensajes vacíos o respuestas propias siguen ignorándose deliberadamente.
+
+El mismo clasificador se aplica al envío de espejos del spool: los errores posteriores a Enter no se reintentan automáticamente y quedan en cuarentena en vez de arriesgar dos publicaciones. No se promete entrega exactly-once ante una caída exacta entre Enter y persistencia; la validación visual por tag y la conciliación de receipts siguen siendo obligatorias durante QA. No habilita escritura SOURCE ni pagos.
