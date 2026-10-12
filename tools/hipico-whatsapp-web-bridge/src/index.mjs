@@ -1222,7 +1222,8 @@ async function processLabTestInput() {
       // Crash after confirmed ACK but before hint persistence: safe to backfill.
       const verifiedSender=stableLabSenderKey(row.id);
       const verifiedRace=explicitLabRaceScope(body);
-      if(verifiedSender&&verifiedRace&&labQuotedRaceJournal){
+      const verifiedPurpose=labReadOnlyQueryPurpose(body,classifyLocal(body));
+      if(verifiedSender&&verifiedRace&&verifiedPurpose&&labQuotedRaceJournal){
         try{await labQuotedRaceJournal.remember({
           messageId:row.id,senderId:verifiedSender,race:verifiedRace,confirmed:true
         });}catch{await log('LAB_QUOTE_HINT_PERSIST_FAILED');}
@@ -1282,7 +1283,7 @@ async function processLabTestInput() {
       await saveLabSeenNow();
       // Hints are safe only after the durable confirmed LAB ACK; errors cannot
       // authorize a second send or overwrite the underlying ACK.
-      if(sender&&directRace&&labQuotedRaceJournal){
+      if(sender&&directRace&&inquiryPurpose&&labQuotedRaceJournal){
         try{await labQuotedRaceJournal.remember({
           messageId:row.id,senderId:sender,race:directRace,confirmed:true
         });}catch{await log('LAB_QUOTE_HINT_PERSIST_FAILED');}
