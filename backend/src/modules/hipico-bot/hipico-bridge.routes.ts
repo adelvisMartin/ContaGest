@@ -36,7 +36,7 @@ const labCanonicalQuerySchema=z.object({
   senderId:z.string().trim().min(1).max(220),
   timestamp:z.string().datetime({offset:true}),
   text:z.string().trim().min(1).max(1200),
-  purpose:z.enum(['status','result','participants','next','active','schedule']).default('status'),
+  purpose:z.enum(['status','result','participants','summary','next','active','schedule']).default('status'),
   quotedExternalMessageId:z.string().trim().min(1).max(320).nullable().default(null),
   race:z.object({
     raceNumber:z.number().int().min(1).max(999),
@@ -175,7 +175,7 @@ router.post('/bridge/lab/query',async(req,res)=>{
         })
       : await readCanonicalLabRace({
           ownerId,groupKey:OFFICIAL_SOURCE_CHANNEL_KEY,race:input.race,
-          purpose:input.purpose as 'status'|'result'|'participants'
+          purpose:input.purpose as 'status'|'result'|'participants'|'summary'
         });
     return res.json({ok:true,mode:'shadow',status:canonical.reason,
       text:canonical.text,canonical:{
