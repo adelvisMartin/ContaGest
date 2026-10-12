@@ -118,6 +118,75 @@ Si el backend falla, rechaza el grupo, no dispone de propietario canónico, no r
 
 **Evidencia pendiente:** tests de contrato y transporte local versionados; despliegue real y sesiones WhatsApp LAB requieren QA físico posterior. Aún no se considera completo #892: faltan el catálogo verificado de ejemplares y la conciliación persistente de threads/citas no visibles, además del E2E real.
 
+## Asistente conversacional LAB · respuesta natural y memoria acotada
+
+El LAB deja de imprimir diagnósticos tipo `Lectura/riesgo/propuesta` en las respuestas
+interactivas: ahora utiliza `lab-assistant-replies.mjs` para contestar de forma breve,
+cordial y transparente como **asistente virtual**. Conserva el marcador visible
+`[LABTEST:...]` necesario para confirmar entregas e impedir duplicados; solo aplica
+a LAB, no a SOURCE.
+
+Personalización opcional en `.env`:
+
+```dotenv
+HIPICO_LAB_ASSISTANT_NAME=Asistente Hípico
+```
+
+El nombre admite letras, números, espacios, puntos, guiones y guion bajo, hasta
+32 caracteres; cualquier valor inválido se sustituye por el nombre predeterminado.
+No permite alterar instrucciones ni permisos.
+
+**Skills disponibles de este incremento:** saludo y ayuda, aclaración de referencia,
+consulta de **estado y resultado interno confirmado** a través del backend, seguimiento de
+referencia por remitente y resumen breve de esa referencia. Son respuestas
+deterministas: **no hay un LLM generativo activado por este cambio**, ni búsqueda
+externa, ni ejecución de operaciones monetarias. El Agent/Shadow y sus métricas
+continúan en su autoridad existente.
+
+El contexto LAB recuerda exclusivamente carrera, hipódromo y fecha *aportados
+explícitamente* por ese remitente. Guarda referencias limitadas en el mismo
+archivo privado de memoria con HMAC, caducidad máxima de 20 minutos, límite
+de 300 remitentes y sin texto completo del chat. Solo se escribe después de
+confirmar la entrega. Los archivos previos, que recordaban únicamente el
+número de carrera, siguen siendo legibles. Una carrera diferente invalida la
+reutilización del contexto anterior. Sin identificador de remitente estable no
+se reutiliza contexto.
+
+El endpoint LAB canónico ahora puede consultar **estados de carrera y llegadas
+confirmadas por operador en los registros internos**, además de informar con
+honestidad cuando faltan listas de ejemplares verificadas. No certifica
+resultados oficiales externos, datos monetarios ni horarios no registrados.
+Las respuestas canónicas siguen pasando por `selectLabAnswer`; esta nueva
+presentación no redefine la autoridad de consulta ni la de entrega.
+
+El resumen es **solo de referencias disponibles**, no una reconstrucción de
+todo el historial del grupo.
+
+### Corpus mínimo para la prueba física de hoy (solo LAB)
+
+Enviar como mensajes separados desde un remitente con JID estable:
+
+```text
+hola
+ayuda
+estado de carrera 5 en hipódromo La Rinconada el 2026-10-12
+¿y el estado de esa?
+hazme un resumen de lo que hablamos
+¿quiénes corren en esa?
+Juega PP del 3 con 20
+```
+
+Esperado: identificación virtual, ayuda breve, lectura canónica **si existe en
+backend**, referencia contextual, resumen limitado, negativa honesta para datos
+no disponibles y revisión para el mensaje monetario. Repetir con otro remitente,
+reinicio, backend fuera de línea, pregunta sobre otra carrera y salida/retorno
+a WhatsApp. La confirmación de envío LAB sigue dependiendo de journal + tag,
+no de la respuesta del backend ni del contexto.
+
+**Gate:** `npm run qa` en este directorio, seguido de QA físico en Windows,
+dos sesiones, recuperación y soak #119/#120. El QA unitario no certifica
+WhatsApp real. SOURCE permanece NO-GO por el gate #728/#154.
+
 ## Prueba autónoma LAB
 
 Desde la raíz:
