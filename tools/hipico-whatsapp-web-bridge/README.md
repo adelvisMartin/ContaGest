@@ -192,6 +192,17 @@ el `labTestReplyJournal` confirmado permite guardar la referencia.
 Si la memoria expiró, el participante debe aportar otra vez el
 contexto completo.
 
+El asistente también permite completar los campos **uno por uno**.
+Por ejemplo: `¿Estado de carrera 5?` → `La Rinconada` →
+`2026-10-12`, o primero la fecha y luego `en La Rinconada`.
+Hasta disponer de ambos campos, solo conserva una **pista parcial**;
+no consulta resultados ni da una confirmación de carrera.
+Los campos parciales siguen ligados al mismo remitente HMAC, al grupo
+LAB pinneado y al vencimiento de veinte minutos; la escritura ocurre
+solo después del ACK durable de salida. No se persiste el texto completo.
+Si otro participante responde, si expira la pista o si hay una fecha
+incorrecta, no se hereda información.
+
 Corpus adicional en LAB, enviar por separado desde la misma identidad:
 
 ```text
