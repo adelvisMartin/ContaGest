@@ -1,7 +1,7 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs/promises';
 import { atomicWriteJson } from './spool-journal.mjs';
-import { normalize, parseWhatsAppPre } from './runtime-utils.mjs';
+import { normalize } from './runtime-utils.mjs';
 import { normalizeGroupId } from './group-identity.mjs';
 
 // LAB-only non-authoritative conversation hints. No message content, money or sender names are persisted.
@@ -12,6 +12,17 @@ const RACE_PATTERN = /\bcarrera\s*(?:n(?:umero|ro)?\s*)?(\d{1,2})\b/;
 const FOLLOW_UP_PATTERN = /\b(?:esa|ese|esta|este|misma|mismo|anterior|participantes|caballos|corren|resultado)\b/;
 const QUESTION_PATTERN = /[¿?]|\b(?:quien|quienes|cual|cuando|donde|como|sigue|proxima|proximo)\b/;
 const BOT_PATTERN = /\b(?:bot|control hipico)\b/;
+
+// Participant identity is accepted only when a WhatsApp DOM message ID contains
+// exactly one participant JID. Display names are not stable or unique; never key
+// shared memory by a nickname or raw message content.
+export function stableLabSenderKey(messageId){
+  const id=String(messageId||'');
+  const matches=[...id.matchAll(/(?:^|_)(\\d{6,}(?:-\\d+)?@c\\.us|\\d{6,}@lid)(?=_|$)/gi)]
+    .map(match=>match[1].toLowerCase());
+  const unique=[...new Set(matches)];
+  return unique.length===1?unique[0]:'';
+}
 
 function validRaceNumber(number) {
   return Number.isInteger(number) && number >= 1 && number <= 99;
@@ -31,8 +42,7 @@ export function labConversationInput(row, classification) {
 
 export function planLabConversation(row, classification, priorContext = null) {
   const normalized = normalize(row?.text);
-  const parsedSender = parseWhatsAppPre(row?.pre).senderLabel;
-  const sender = parsedSender && parsedSender.toLowerCase() !== 'unknown' ? parsedSender : '';
+  const sender = stableLabSenderKey(row?.id);
   const risk = classification?.risk || 'review';
   const explicitRace = normalized.match(RACE_PATTERN);
   const mentionedRace = explicitRace ? Number(explicitRace[1]) : null;
