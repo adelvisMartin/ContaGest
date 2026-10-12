@@ -128,6 +128,7 @@ let labBootstrapCompleted = false;
 let sourceDiscoveryFailures = 0;
 let lastPrintedHealthLine = '';
 let lastHealthHeartbeatAt = 0;
+let lastLabReplayPruneAt = 0;
 
 async function loadSeen() {
   for (const file of [SEEN_FILE, LEGACY_SEEN_FILE]) {
@@ -470,6 +471,34 @@ async function backendPostSourceReplyReceipt(record) {
     throw error;
   }
   return body;
+}
+
+async function pruneLabReplayFromBridge(){
+  if(!BACKEND_SYNC_ENABLED || !INGEST_URL || !TOKEN)return;
+  // Only a pinned backend event URL may supply the maintenance destination.
+  const url=new URL(INGEST_URL);
+  if(!url.pathname.endsWith('/bridge/events') || !['https:','http:'].includes(url.protocol)){
+    await log('LAB_REPLAY_PRUNE_SKIPPED reason=INVALID_BACKEND_URL');
+    return;
+  }
+  url.pathname=url.pathname.slice(0,-'/events'.length)+'/maintenance/lab-replay-prune';
+  url.search='';
+  try{
+    const response=await fetch(url,{
+      method:'POST',
+      headers:{'x-hipico-bridge-token':TOKEN},
+      signal:AbortSignal.timeout(Math.min(BACKEND_TIMEOUT_MS,8000))
+    });
+    if(!response.ok){
+      await log('LAB_REPLAY_PRUNE_PENDING status='+response.status);
+      return;
+    }
+    const data=await response.json().catch(()=>({}));
+    if(data?.expiredSnapshotsCleared>0)await log('LAB_REPLAY_PRUNED count='+Math.trunc(data.expiredSnapshotsCleared));
+  }catch{
+    // Retention issues remain observable; no duplicate messages or domain writes.
+    await log('LAB_REPLAY_PRUNE_PENDING status=NETWORK_UNAVAILABLE');
+  }
 }
 
 async function backendHealth() {
@@ -1373,6 +1402,11 @@ async function monitor() {
   let lastHealthPrint = 0;
   while (!stopping && page && !page.isClosed()) {
     try {
+      // Run retention maintenance even when WhatsApp is logged out or idle.
+      if(BACKEND_SYNC_ENABLED && Date.now()-lastLabReplayPruneAt>=60000){
+        lastLabReplayPruneAt=Date.now();
+        await pruneLabReplayFromBridge();
+      }
       if (await hasWhatsAppBrowserDatabaseError()) {
         await requestCleanProfileReset('WHATSAPP_BROWSER_DATABASE_ERROR');
         break;
