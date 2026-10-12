@@ -156,7 +156,8 @@ export function createLabTestReplyJournal({rootDir,labGroupId,sourceGroupId='',n
     try{entries=await fs.readdir(root,{withFileTypes:true});}
     catch{throw new Error('LAB_TEST_JOURNAL_READ_FAILED');}
     const counts=Object.fromEntries(LAB_TEST_ACK_STATES.map(key=>[key,0]));
-    const matches=[];
+    const rows=[];
+    let selectedCount=0;
     for(const entry of entries.sort((a,b)=>a.name.localeCompare(b.name))){
       if(!entry.isFile()||!/^[a-f0-9]{64}\.json$/.test(entry.name)){
         throw new Error('LAB_TEST_JOURNAL_FILE_INVALID');
@@ -173,7 +174,9 @@ export function createLabTestReplyJournal({rootDir,labGroupId,sourceGroupId='',n
       }
       counts[record.state]++;
       if(state==='all'||record.state===state){
-        matches.push({
+        selectedCount++;
+        if(rows.length>=limit)continue;
+        rows.push({
           recordRef:record.idHash.slice(0,16),
           tag:record.tag,
           state:record.state,
@@ -199,10 +202,10 @@ export function createLabTestReplyJournal({rootDir,labGroupId,sourceGroupId='',n
       pending:counts.prepared+counts.sending,
       reviewRequired,
       selectedState:state,
-      selectedCount:matches.length,
-      returnedCount:Math.min(matches.length,limit),
-      truncated:matches.length>limit,
-      rows:matches.slice(0,limit)
+      selectedCount,
+      returnedCount:rows.length,
+      truncated:selectedCount>limit,
+      rows
     };
   }
 
