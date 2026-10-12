@@ -18,7 +18,7 @@ function validISODate(value:string){
 export function parseExplicitLabMeeting(text:string):LabMeetingSelection{
   const input=String(text||'');
   const marker=/\breuni[oó]n\s+(?:del?|para\s+el)\s+/iu.exec(input);
-  if(!marker)return{kind:'absent'};
+  if(!marker)return /\breuni[oó]n\b/iu.test(input)?{kind:'invalid'}:{kind:'absent'};
   const tail=input.slice(marker.index+marker[0].length).trimStart();
   const dateMatch=/^(\d{4}-\d{2}-\d{2})(.*)$/su.exec(tail);
   if(!dateMatch||!validISODate(dateMatch[1]))return{kind:'invalid'};
