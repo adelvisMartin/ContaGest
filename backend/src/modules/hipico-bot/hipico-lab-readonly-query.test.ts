@@ -41,6 +41,8 @@ test('race summary is read-only and excludes transcript summaries and financial 
   for(const text of cases) assert.equal(isLabInformationRequest(text,'summary',safe),true,text);
   for(const text of [
     'hazme un resumen de lo que hablamos',
+    'hazme un resumen de lo que hablamos sobre carrera 5',
+    'resume los mensajes del chat de carrera 5',
     'resumen de saldo de carrera 5',
     '¿resumen de apuesta carrera 5?',
     'resumen de carrera 5, confirma el pago',
