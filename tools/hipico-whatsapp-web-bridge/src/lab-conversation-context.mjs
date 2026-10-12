@@ -65,7 +65,7 @@ export function planLabConversation(row, classification, priorContext = null) {
 export function createLabConversationContext({ file, groupId, now = Date.now, ttlMs = DEFAULT_TTL_MS, maxEntries = DEFAULT_MAX_ENTRIES }) {
   const pinnedGroup=normalizeGroupId(groupId);
   if (!file || typeof file !== 'string' || !pinnedGroup) throw new Error('LAB_CONTEXT_IDENTITY_REQUIRED');
-  if (!Number.isInteger(ttlMs) || ttlMs < 1000 || !Number.isInteger(maxEntries) || maxEntries < 1) throw new Error('LAB_CONTEXT_LIMITS_INVALID');
+  if (!Number.isInteger(ttlMs) || ttlMs < 1000 || ttlMs > DEFAULT_TTL_MS || !Number.isInteger(maxEntries) || maxEntries < 1 || maxEntries > DEFAULT_MAX_ENTRIES) throw new Error('LAB_CONTEXT_LIMITS_INVALID');
   let secret;
   let entries = {};
   let initialized = false;
@@ -85,6 +85,8 @@ export function createLabConversationContext({ file, groupId, now = Date.now, tt
     async initialize() {
       if (initialized) return;
       try {
+        const stat = await fs.lstat(file);
+        if (!stat.isFile() || stat.isSymbolicLink() || stat.size > 128 * 1024) throw new Error('LAB_CONTEXT_STORAGE_INVALID');
         const saved = JSON.parse(await fs.readFile(file, 'utf8'));
         if (saved?.schemaVersion !== SCHEMA_VERSION || saved?.groupIdHash !== crypto.createHash('sha256').update(pinnedGroup).digest('hex')
           || typeof saved.secret !== 'string' || !/^[a-f0-9]{64}$/.test(saved.secret)
