@@ -82,6 +82,25 @@ Se guardan localmente:
 
 Los nombres son sólo discovery hints; el envío LAB valida el ID real.
 
+## LAB interactivo: Conversation Engine canónico (#892 / #837)
+
+Con `HIPICO_LAB_TEST_INPUT_ENABLED=true` y `HIPICO_BACKEND_SYNC_ENABLED=true`, los mensajes **entrantes** del grupo LAB autorizado (ID `@g.us` pinneado y distinto del SOURCE) atraviesan la misma ruta `/bridge/events` que la captura de SOURCE, ahora con `channelRole=lab` y `shadowMode=true`. El backend realiza clasificación, persistencia, `decideConversation`, handoff, `planSafeResponse` y entrega al Bridge una **decisión tipada**. El Bridge no escribe directamente al dominio ni usa el texto del modelo como permiso. El envío visible es únicamente LAB y conserva el journal durable `prepared → sending → confirmed/ambiguous` y la conciliación por tag. Si el backend configurado no responde, se retiene la solicitud sin publicar una respuesta local que finja datos canónicos.
+
+Si `HIPICO_BACKEND_SYNC_ENABLED=false`, el modo LAB puede mostrar **diagnóstico local** con `classifyLocal` sin afirmar resultados, saldos, carreras o confirmaciones oficiales. No equivale al motor canónico y debe etiquetarse como tal.
+
+Filtro anti-eco: mensajes propios, medios sin texto, etiquetas `[SHADOW:...]`/`[LABTEST:...]`, y conversación casual no dirigida no crean respuesta. La memoria opcional sólo conserva un número explícito de carrera por remitente (máximo 300, TTL 20 minutos, HMAC privado y archivo por grupo); se escribe después de una entrega LAB confirmada. No se transmite esa pista como autoridad financiera ni como un estado de carrera. Si no hay identidad de remitente verificable no se crea un evento backend.
+
+**Límites:** este incremento consume el Conversation Engine y los planes de respuesta existentes, pero todavía no ofrece una respuesta con participantes/resultados live verificados a partir de una consulta libre; esa capacidad requiere read models y una herramienta autorizada del servidor. Tampoco promociona Jev fuera de shadow. #119 QA físico, #120 soak, y #839 Go/No-Go siguen pendientes de ejecución real. SOURCE permanece read-only por #728.
+
+Para el checkout del SHA candidato:
+
+```powershell
+cd tools/hipico-whatsapp-web-bridge
+npm ci
+npm run qa
+npm run source:policy
+```
+
 ## Prueba autónoma LAB
 
 Desde la raíz:
