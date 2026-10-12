@@ -18,7 +18,7 @@ const BOT_PATTERN = /\b(?:bot|control hipico)\b/;
 // shared memory by a nickname or raw message content.
 export function stableLabSenderKey(messageId){
   const id=String(messageId||'');
-  const matches=[...id.matchAll(/(?:^|_)(\\d{6,}(?:-\\d+)?@c\\.us|\\d{6,}@lid)(?=_|$)/gi)]
+  const matches=[...id.matchAll(/(?:^|_)(\d{6,}(?:-\d+)?@c\.us|\d{6,}@lid)(?=_|$)/gi)]
     .map(match=>match[1].toLowerCase());
   const unique=[...new Set(matches)];
   return unique.length===1?unique[0]:'';
