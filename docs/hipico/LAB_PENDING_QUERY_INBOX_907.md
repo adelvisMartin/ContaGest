@@ -21,7 +21,11 @@ monetarias y no se crea otro motor de conversación ni tabla de dominio.
 3. Si se interrumpe la conexión o se reinicia Windows, las preguntas aún
    pendientes se recuperan sin necesidad de que el mensaje siga visible en
    WhatsApp Web. El backend se consulta de nuevo: nunca se reutiliza una
-   respuesta de carrera antigua.
+   respuesta de carrera antigua. Si la pregunta citaba otro mensaje cuya
+   referencia ya fue verificada y cifrada, se mantiene esa referencia sin
+   confiar en el DOM cambiante; si cambian JID, texto, marca temporal,
+   número de carrera explícito o ID de cita, el candidato queda retenido
+   para revisión y nunca se sobreescribe silenciosamente.
 4. Una respuesta canónica verificada permite **preparar** el ACK y enviar;
    una entrega ambigua o `sending` sólo puede reconciliarse mediante la
    etiqueta realmente visible, nunca con otro Enter.
@@ -75,3 +79,12 @@ de casos simultáneos, red perdida, sesiones y la fase soak (#119/#120).
 existan logs/artifacts verificables.** El código nuevo se integra sobre
 el PR #906 como dependencia: primero debe aprobarse y fusionarse su
 recuperación read-only.
+
+## Coste de consulta y observabilidad
+
+La lectura de un mensaje pendiente localiza directamente su archivo por HMAC,
+lo descifra y comprueba su caducidad sin volver a procesar la bandeja completa.
+El barrido global se mantiene en arranque, inserción y limpieza periódica. Se
+registran únicamente razones de revisión y conteos, no texto, remitentes ni
+las citas en claro. La contención por múltiples Windows/hosts sigue siendo
+un gate de despliegue: el candado local sólo coordina un directorio compartido.
