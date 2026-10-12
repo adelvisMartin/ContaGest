@@ -188,7 +188,10 @@ test('endpoint and Bridge keep recovery before durable send intent, with handoff
   assert.match(block,/isLabInformationRequest\(input\.text,input\.purpose,result\)/);
   assert.match(block,/loadHandoff\(input\.channelKey,sender,null\)/);
   assert.match(block,/reconcileCanonicalLabReceipt\(/);
-  assert.ok(block.indexOf('await reconcileCanonicalLabReceipt({')<block.indexOf('return res.json({ok:true,mode:'));
+  const commitBeforeHttp=block.indexOf('await reconcileCanonicalLabReceipt({');
+  const finalReply=block.indexOf('const verified=receiptProjection||canonical;');
+  assert.ok(commitBeforeHttp>=0&&finalReply>commitBeforeHttp&&
+    block.indexOf('return res.json({ok:true,mode:',finalReply)>finalReply);
   assert.doesNotMatch(block,/ensureSourceReplyOutbox|sendCloudText|persistBridgeTransportEvent/);
   const adapter=readFileSync(new URL('../../../../tools/hipico-whatsapp-web-bridge/src/lab-canonical-query.mjs',import.meta.url),'utf8');
   assert.match(adapter,/for\(let attempt=0;attempt<2;attempt\+\+\)/);
