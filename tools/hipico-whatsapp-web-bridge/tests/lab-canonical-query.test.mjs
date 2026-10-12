@@ -145,6 +145,8 @@ test('LAB supports only explicit race summaries, not whole-chat or monetary summ
   ])assert.equal(labReadOnlyQueryPurpose(message,safe),'summary',message);
   for(const message of [
     'hazme un resumen de lo que hablamos',
+    'hazme un resumen de lo que hablamos sobre carrera 5',
+    'resume los mensajes del chat de carrera 5',
     'resumen de los saldos de carrera 5',
     'resumen de apuesta de carrera 5',
     'resumen de carrera 5 y registra la jugada',
