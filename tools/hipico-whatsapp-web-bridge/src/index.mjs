@@ -1214,12 +1214,14 @@ async function processLabTestInput() {
     }
 
     const classification = classifyLocal(body);
-    if (!labConversationInput(row, classification).eligible) {
+    const sender = stableLabSenderKey(row.id);
+    // A clarification can be accepted only after resolving an unambiguous
+    // stable JID in this pinned LAB. Nicknames never grant memory access.
+    const prior = sender ? labConversationContext?.get(sender) : null;
+    if (!labConversationInput(row, classification, prior).eligible) {
       rememberLabSeen(row.id); // ignored echo/media/casual chat; never respond
       continue;
     }
-    const sender = stableLabSenderKey(row.id);
-    const prior = sender ? labConversationContext?.get(sender) : null;
     // Scope comes from this message or an exact same-sender quoted message.
     const inquiryPurpose=labReadOnlyQueryPurpose(body,classification);
     const scopedRace=explicitLabRaceScope(body) || resolveQuotedLabRaceScope(row,visible);
