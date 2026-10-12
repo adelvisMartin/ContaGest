@@ -86,6 +86,12 @@ test('invalid digest/path-like record IDs never become deliverable or write outs
     assert.match(quarantined.recordId,/^[a-f0-9]{64}$/);
     assert.equal(quarantined.state,'quarantined');
     assert.equal(quarantined.payload.quarantinedOriginal.recordId,forged.recordId);
+    const raw=await fs.readFile(path.join(f.root,'quarantined-raw',quarantined.recordId+'.raw'),'utf8');
+    assert.deepEqual(JSON.parse(raw),forged);
+    if(process.platform!=='win32'){
+      assert.equal((await fs.stat(path.join(f.root,'quarantined-raw'))).mode&0o777,0o700);
+      assert.equal((await fs.stat(path.join(f.root,'quarantined-raw',quarantined.recordId+'.raw'))).mode&0o777,0o600);
+    }
   }finally{await f.cleanup();}
 });
 
@@ -163,5 +169,23 @@ test('transport failures never persist tokens, raw response text or message PII 
     assert.equal(record.record.state,'quarantined');
     assert.equal(record.record.lastError,'DELIVERY_FAILED');
     assert.doesNotMatch(JSON.stringify(record.record),/secret access token/);
+  }finally{await f.cleanup();}
+});
+
+
+test('unparseable spool JSON is retained byte-for-byte in private forensic quarantine',async()=>{
+  const f=await fixture();
+  try{
+    const broken='{"broken": "private"';
+    const original=path.join(f.root,'queued','broken-entry.json');
+    await fs.writeFile(original,broken);
+    const result=await f.runtime.flushBackend(async()=>{throw Error('not deliverable');});
+    assert.equal(result.attempted,0);
+    const quarantined=await fs.readdir(path.join(f.root,'quarantined'));
+    assert.equal(quarantined.length,1);
+    const ids=await fs.readdir(path.join(f.root,'quarantined-raw'));
+    assert.equal(ids.length,1);
+    assert.equal(await fs.readFile(path.join(f.root,'quarantined-raw',ids[0]),'utf8'),broken);
+    await assert.rejects(()=>fs.stat(original),{code:'ENOENT'});
   }finally{await f.cleanup();}
 });
