@@ -156,6 +156,57 @@ Las consultas con resultado/llegada, participantes y carrera explícita conserva
 
 **Límites y gates:** aun cuando el endpoint responda, no se afirma oficialidad externa ni se valida una reunión en producción. Falta habilitar selección explícita de reuniones cuando haya varias, confirmar fuente autorizada de caballos inscritos, completar #899 para planes dinámicos, y ejecutar QA Windows/WhatsApp, soak, respaldo y gates finales. Los tests de esta fase son unitarios y de contrato, no QA físico.
 
+## Handoff de operador y silencio automático en LAB (#892)
+
+El backend ya dispone de la autoridad de operador `/bridge/handoff` y
+persistencia `HipicoConversationHandoff`. Este incremento **no crea una
+segunda autoridad**: el Bridge LAB verifica ese estado mediante
+`POST /bridge/lab/eligibility` usando su mismo token y el grupo LAB
+pinneado. La consulta es estrictamente de solo lectura; el operador
+controla la pausa/reanudación mediante la ruta autenticada existente.
+
+Para cada mensaje LAB candidato, se comprueba la titularidad **antes
+y después** de la lectura canónica y siempre antes de preparar el journal
+de envío. Se revisa la titularidad general del participante en
+`HIPICO_OFFICIAL_SOURCE_CHANNEL_KEY` y en el canal LAB configurado; cuando
+hay una referencia completa de carrera, también se comprueba su ámbito
+específico. No se acepta que el remitente seleccione dueño de datos,
+grupo arbitrario, operador o credenciales.
+
+Cuando la autoridad indica `LAB_HANDOFF_HELD`, se marca el mensaje
+como atendido/suprimido **sin enviar respuesta** ni preparar un nuevo
+journal, para impedir una respuesta atrasada tras reanudar al bot.
+Si el backend está desconectado, la ruta no existe, la base de datos
+falla o la respuesta no tiene autoridad explícita, el Bridge **no envía
+nada** y mantiene el mensaje pendiente de revisión en una nueva
+comprobación. Esto también significa que el LAB conversacional autónomo
+requiere backend accesible: no hay fallback de envío offline inseguro.
+
+La ruta `/bridge/lab/query` conserva un segundo control de handoff:
+antes y después de consultas canónicas; no emite datos de un operador.
+No existe autorización para escritura automática en SOURCE, ni un
+transporte alternativo. Una pausa por carrera se limita a esa referencia;
+para silenciar todo el participante utilizar una **pausa global**
+(`raceId: null`) y el identificador normalizado de remitente usado por
+el backend. No usar nombres visibles de WhatsApp como identidad.
+
+**Prueba LAB para hoy:** activar `LAB` y registrar una pausa global
+autenticada desde la interfaz/flujo de operador; enviar una pregunta
+desde ese participante, verificar que **no hay mensaje saliente**.
+Repetir con otro participante (sin contaminación), reiniciar el Bridge,
+repetir pausa/reanudación y comprobar que el mensaje suprimido no se
+reproduce. Repetir con corte de backend, con lectura canónica demorada
+y con una carrera específica. `npm run qa` incluye los tests
+`lab-handoff-eligibility.test.mjs`; los de backend cubren el gate
+`hipico-lab-handoff-gate.test.ts`.
+
+**Límite de carrera:** existe una ventana inevitable entre la última
+comprobación remota y el envío de WhatsApp; cerrar esa ventana por
+completo requeriría un protocolo transaccional de permisos de envío.
+La doble comprobación la reduce, pero no constituye una garantía
+atómica de tiempo real. Es imprescindible probar el caso de takeover
+concurrente antes de una promoción a producción.
+
 ## Prueba autónoma LAB
 
 Desde la raíz:
