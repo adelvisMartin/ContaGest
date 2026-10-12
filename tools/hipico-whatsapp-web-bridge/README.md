@@ -82,6 +82,21 @@ Se guardan localmente:
 
 Los nombres son sólo discovery hints; el envío LAB valida el ID real.
 
+## Contexto conversacional LAB (incremento 2026-10-12)
+
+La entrada interactiva LAB conserva **únicamente** la última referencia explícita de carrera por participante durante 20 minutos, con máximo 300 entradas y persistencia atómica en `lab-conversation-context.json`. Las claves se derivan mediante HMAC usando una semilla local; no se guardan mensajes ni nombres/teléfonos en claro. Si falta identidad de grupo pinneada o remitente reconocible, no se reutiliza memoria.
+
+La captura descarta mensajes propios, medios no textuales, ecos del bot y conversación casual que no solicite respuesta. Las consultas de seguimiento pueden reutilizar el número de carrera **sólo para respuestas seguras en LAB**. Las ofertas, confirmaciones, saldos, cierres, resultados y cualquier intención no segura no heredan contexto y permanecen en revisión. El contexto se escribe únicamente tras una entrega LAB confirmada; un fallo de persistencia no reenvía mensajes.
+
+Esta memoria del Bridge es una **pista operativa local**, no una segunda autoridad: no sustituye la Conversation Engine, el estado de carreras ni los datos de PostgreSQL. Cuando no existen datos deportivos confirmados, responde que falta consultar una fuente autorizada, sin inventar participantes o resultados. El gate SOURCE de #728 continúa sin cambios. La automatización completa (backend, QA físico, soak y autorización del canal) sigue requiriendo los gates #837/#839.
+
+Comprobación focalizada:
+
+```powershell
+cd tools/hipico-whatsapp-web-bridge
+npm run qa
+```
+
 ## Prueba autónoma LAB
 
 Desde la raíz:
