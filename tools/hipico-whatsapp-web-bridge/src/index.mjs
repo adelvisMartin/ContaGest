@@ -32,6 +32,7 @@ import { createLabConversationContext, labConversationInput, planLabConversation
 import { localKillSwitchState } from './promotion-guard.mjs';
 import { queryCanonicalLab, explicitLabRaceScope, labReadOnlyQueryPurpose, resolveQuotedLabRaceScope } from './lab-canonical-query.mjs';
 import { selectLabAnswer } from './lab-answer-policy.mjs';
+import { createLabQuotedRaceJournal } from './lab-quoted-race-journal.mjs';
 
 const config = assertRuntimeConfig(loadRuntimeConfig());
 const {
@@ -73,6 +74,7 @@ const SPOOL_V2_DIR = path.join(DATA_DIR, 'spool-v2');
 const SOURCE_REPLY_DIR = path.join(DATA_DIR, 'source-replies');
 const LAB_TEST_REPLY_DIR = path.join(DATA_DIR, 'lab-test-replies');
 const LAB_CONTEXT_FILE = path.join(DATA_DIR, `lab-conversation-${sha256(LAB_GROUP_ID || LAB_CHANNEL_KEY).slice(0,16)}.json`);
+const LAB_QUOTED_CONTEXT_FILE = path.join(DATA_DIR, `lab-quoted-races-${sha256(`${LAB_GROUP_ID}|${SOURCE_GROUP_ID}`).slice(0,16)}.json`);
 const TRAINING_DIR = path.join(DATA_DIR, 'training');
 const SEEN_FILE = path.join(DATA_DIR, 'seen-source-message-ids.json');
 const LAB_SEEN_FILE = path.join(DATA_DIR, 'seen-lab-test-message-ids.json');
@@ -101,6 +103,9 @@ const labTestReplyJournal = LAB_TEST_INPUT_ENABLED ? createLabTestReplyJournal({
 }) : null;
 const labConversationContext = labTestReplyJournal ? createLabConversationContext({
   file:LAB_CONTEXT_FILE,groupId:LAB_GROUP_ID
+}) : null;
+const labQuotedRaceJournal = labTestReplyJournal ? createLabQuotedRaceJournal({
+  file:LAB_QUOTED_CONTEXT_FILE,labGroupId:LAB_GROUP_ID,sourceGroupId:SOURCE_GROUP_ID
 }) : null;
 let sourceBaselineCompleted = false;
 let activeSourceTitle = '';
@@ -1214,6 +1219,15 @@ async function processLabTestInput() {
     // A confirmed ack survives restart even if the legacy seen-file did not.
     const journalRecord = await labTestReplyJournal.read(row.id);
     if (journalRecord?.state === 'confirmed') {
+      // Crash after confirmed ACK but before hint persistence: safe to backfill.
+      const verifiedSender=stableLabSenderKey(row.id);
+      const verifiedRace=explicitLabRaceScope(body);
+      const verifiedPurpose=labReadOnlyQueryPurpose(body,classifyLocal(body));
+      if(verifiedSender&&verifiedRace&&verifiedPurpose&&labQuotedRaceJournal){
+        try{await labQuotedRaceJournal.remember({
+          messageId:row.id,senderId:verifiedSender,race:verifiedRace,confirmed:true
+        });}catch{await log('LAB_QUOTE_HINT_PERSIST_FAILED');}
+      }
       rememberLabSeen(row.id);
       await saveLabSeenNow();
       continue;
@@ -1241,8 +1255,15 @@ async function processLabTestInput() {
     // Query-only backend call completes BEFORE claiming a WhatsApp send intent.
     // No token, URL or raw API response is ever appended to chat logs.
     const inquiryPurpose=labReadOnlyQueryPurpose(body,classification);
-    const scopedRace=explicitLabRaceScope(body) || resolveQuotedLabRaceScope(row,visible);
-    const quotedVerified=Boolean(row.quotedId && scopedRace && !explicitLabRaceScope(body));
+    const directRace=explicitLabRaceScope(body);
+    const visibleQuotedRace=resolveQuotedLabRaceScope(row,visible);
+    const durableQuotedRace=!directRace&&!visibleQuotedRace&&row.quotedId&&sender
+      ? labQuotedRaceJournal?.lookup({
+          quotedMessageId:row.quotedId,senderId:sender,currentMessageId:row.id
+        })
+      : null;
+    const scopedRace=directRace||visibleQuotedRace||durableQuotedRace||null;
+    const quotedVerified=Boolean(row.quotedId && !directRace && (visibleQuotedRace||durableQuotedRace));
     const canonical = inquiryPurpose && sender && BACKEND_SYNC_ENABLED && backendState === 'online'
       ? await queryCanonicalLab({
           ingestUrl:INGEST_URL,token:TOKEN,
@@ -1260,6 +1281,13 @@ async function processLabTestInput() {
       await labTestReplyJournal.confirm(row.id,{visibleTag:true});
       rememberLabSeen(row.id); // confirmed delivery/tag; never ack before sending
       await saveLabSeenNow();
+      // Hints are safe only after the durable confirmed LAB ACK; errors cannot
+      // authorize a second send or overwrite the underlying ACK.
+      if(sender&&directRace&&inquiryPurpose&&labQuotedRaceJournal){
+        try{await labQuotedRaceJournal.remember({
+          messageId:row.id,senderId:sender,race:directRace,confirmed:true
+        });}catch{await log('LAB_QUOTE_HINT_PERSIST_FAILED');}
+      }
       // The WAL-backed confirmed acknowledgement is the single send authority.
       // Context is only a local hint; failed persistence can never resend LAB.
       if (plan.rememberRace && labConversationContext) {
@@ -1446,6 +1474,7 @@ async function main() {
   const spoolInit = await spoolRuntime.initialize();
   const sourceReplyInit = await sourceReplyJournal.initialize();
   await labConversationContext?.initialize();
+  await labQuotedRaceJournal?.initialize();
   if (labTestReplyJournal) {
     const labInit=await labTestReplyJournal.initialize();
     const labState=await labTestReplyJournal.snapshot();
