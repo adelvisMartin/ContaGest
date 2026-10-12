@@ -1268,7 +1268,6 @@ async function processLabTestInput() {
       continue;
     }
     if(inquiryPurpose)labQueryBackoff.clear(row.id);
-    }
     await labTestReplyJournal.prepare(row.id); // fsync before any browser send
     await labTestReplyJournal.begin(row.id); // durable sending intent
     try {
