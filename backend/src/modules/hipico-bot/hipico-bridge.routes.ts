@@ -35,7 +35,7 @@ const labCanonicalQuerySchema=z.object({
   senderId:z.string().trim().min(1).max(220),
   timestamp:z.string().datetime({offset:true}),
   text:z.string().trim().min(1).max(1200),
-  purpose:z.enum(['status','result','participants']).default('status'),
+  purpose:z.enum(['status','result','participants','summary']).default('status'),
   quotedExternalMessageId:z.string().trim().min(1).max(320).nullable().default(null),
   race:z.object({
     raceNumber:z.number().int().min(1).max(999),
