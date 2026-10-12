@@ -82,6 +82,18 @@ Se guardan localmente:
 
 Los nombres son sólo discovery hints; el envío LAB valida el ID real.
 
+## Contexto conversacional seguro del LAB (#892)
+
+El modo interactivo **LAB**, opcional y con grupos pinneados, aplica un filtro anti-eco antes de preparar un envío: ignora mensajes propios, adjuntos sin texto, tags [SHADOW:]/[LABTEST:] y charla casual no dirigida. Las consultas de carrera y sus seguimientos únicamente reutilizan una referencia **numérica de carrera**, nunca un saldo, apuesta, resultado ni hecho no verificado.
+
+La pista se almacena por grupo y remitente reconocido durante **20 minutos**, con máximo **300 entradas**. Cada clave de participante se deriva con HMAC en un archivo local privado; no guarda nombres, números ni cuerpos de mensajes en texto claro. Identidades ausentes no heredan contexto. Un grupo diferente tampoco puede leer el mismo archivo. Las referencias de carrera se obtienen de mensajes explícitos, y una consulta sobre participantes/resultados remite a datos verificados, sin inventarlos.
+
+**Secuencia relevante:** filtrar → leer confirmación del journal → plan LAB → prepare/sending durable → navegador LAB → confirm visible → ACK durable → seen → guardar pista. El archivo de memoria **no es autoridad de entrega ni autorización financiera**. Si su escritura falla, se registra el fallo sin intentar una segunda respuesta.
+
+El motor conversacional backend y los datos canónicos siguen siendo la autoridad para consultas de carreras; esta mejora es el filtro/contexto local previo. La integración completa de dichos datos continúa como seguimiento del issue #892. SOURCE permanece read-only bajo el gate de política actual.
+
+Pruebas de contrato: `npm --prefix tools/hipico-whatsapp-web-bridge run qa`. No equivale a QA de WhatsApp real, Windows ni soak prolongado.
+
 ## Prueba autónoma LAB
 
 Desde la raíz:
