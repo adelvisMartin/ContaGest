@@ -39,6 +39,8 @@ test('parser recognizes meeting date alone and exact venue with or without hipó
     {kind:'explicit',meetingDate:'2026-10-12',venue:'La Rinconada'});
   assert.deepEqual(parseExplicitLabMeeting('¿Cartelera de la reunión del 2026-10-12 en el hipódromo La Rinconada?'),
     {kind:'explicit',meetingDate:'2026-10-12',venue:'La Rinconada'});
+  assert.deepEqual(parseExplicitLabMeeting('¿Carrera activa de la reunión del 2026-10-12 en Otro Hipódromo?'),
+    {kind:'explicit',meetingDate:'2026-10-12',venue:'Otro Hipódromo'});
   assert.deepEqual(parseExplicitLabMeeting('¿Qué carrera sigue?'),{kind:'absent'});
 });
 
