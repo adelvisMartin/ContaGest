@@ -59,7 +59,8 @@ test('LAB endpoint checks token/group then policy then read without mutation',()
   const route=s.slice(start,end);
   assert.ok(route.indexOf('validateBridgeGroupIdentity(input)')<route.indexOf('readCanonicalLabRace({'));
   assert.match(route,/decideConversation\(/);
-  assert.match(route,/result\.risk!=='safe'/);
+  assert.match(route,/isLabInformationRequest\(input\.text,input\.purpose,result\)/);
+  assert.match(route,/decision\.audit\.monetaryOrStateful/);
   assert.match(route,/groupKey:OFFICIAL_SOURCE_CHANNEL_KEY/);
   assert.doesNotMatch(route,/persistBridgeTransportEvent|persistCanonicalShadow|ensureSourceReplyOutbox/);
 });
