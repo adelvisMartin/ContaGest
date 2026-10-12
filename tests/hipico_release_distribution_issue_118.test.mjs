@@ -1,8 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
-import { readFileSync, rmSync } from 'node:fs';
+import { execFileSync, spawnSync } from 'node:child_process';
+import { readFileSync, rmSync, mkdirSync, writeFileSync, copyFileSync } from 'node:fs';
 import path from 'node:path';
+import os from 'node:os';
 import { fileURLToPath } from 'node:url';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -82,4 +83,40 @@ test('#118 signing and promotion policy fail closed by contract', () => {
   assert.match(gate, /RELEASE_BLOCKED/);
   assert.match(gate, /--require-apk/);
   assert.doesNotMatch(JSON.stringify(policy), /BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY|password|secretKey/i);
+});
+
+
+test('#118 generator derives channel and compatibility from release policy, rejects an unapproved channel', () => {
+  const fixture = path.join(os.tmpdir(), 'hipico-release-policy-' + process.pid + '-' + Date.now());
+  const scriptDir = path.join(fixture, 'frontend/scripts');
+  const uiDir = path.join(fixture, 'frontend/public/hipico-control/assets/js');
+  const policyDir = path.join(fixture, 'products/hipico-control');
+  mkdirSync(scriptDir, { recursive: true });
+  mkdirSync(uiDir, { recursive: true });
+  mkdirSync(policyDir, { recursive: true });
+  try {
+    copyFileSync(path.join(root, 'frontend/scripts/write-hipico-build-info.mjs'), path.join(scriptDir, 'write-hipico-build-info.mjs'));
+    writeFileSync(path.join(uiDir, 'config.js'), 'export const APP_VERSION = "1.13.0-rc3";\n');
+    writeFileSync(path.join(policyDir, 'release-policy.json'), JSON.stringify(json('products/hipico-control/release-policy.json')));
+    const script = path.join(scriptDir, 'write-hipico-build-info.mjs');
+    const good = spawnSync(process.execPath, [script], {
+      env: { ...process.env, HIPICO_RELEASE_CHANNEL: 'stable', VERCEL_GIT_COMMIT_SHA: '1'.repeat(40) },
+      encoding: 'utf8'
+    });
+    assert.equal(good.status, 0, good.stderr);
+    const info = JSON.parse(readFileSync(path.join(fixture, 'frontend/public/hipico-control/build-info.json'), 'utf8'));
+    const policy = json('products/hipico-control/release-policy.json');
+    assert.equal(info.channel, 'stable');
+    assert.deepEqual(info.compatibility, { workspaceSchema: policy.workspaceSchema, parserContract: policy.parserContract });
+    assert.equal(info.candidateSha, '1'.repeat(40));
+
+    const invalid = spawnSync(process.execPath, [script], {
+      env: { ...process.env, HIPICO_RELEASE_CHANNEL: 'production' },
+      encoding: 'utf8'
+    });
+    assert.notEqual(invalid.status, 0, 'unapproved promotion channel must fail closed');
+    assert.match(invalid.stderr, /HIPICO_RELEASE_CHANNEL_NOT_ALLOWED/);
+  } finally {
+    rmSync(fixture, { recursive: true, force: true });
+  }
 });
