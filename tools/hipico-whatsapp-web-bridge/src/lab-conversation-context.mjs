@@ -80,8 +80,9 @@ export function createLabConversationContext({ file, groupId, now = Date.now, tt
   let entries = {};
   let initialized = false;
   const keyFor = (sender) => {
-    if (!String(sender || '').trim() || !secret) return null;
-    return crypto.createHmac('sha256', secret).update(`${pinnedGroup}\0${normalize(sender)}`).digest('hex');
+    const stable=stableLabSenderKey(sender);
+    if (!stable || !secret) return null;
+    return crypto.createHmac('sha256', secret).update(`${pinnedGroup}\0${stable}`).digest('hex');
   };
   const retained = () => {
     const current = now();
