@@ -44,15 +44,18 @@ Superar este gate **no cambia** `canAct`, `riskPolicy`, tools, estados de carrer
 
 Los contadores de uso del proveedor se persisten como `inputUnits/outputUnits`, no como claves que contengan `token`, para mantener compatibilidad con el sanitizer de secretos de la evidencia.
 
+## WhatsApp SOURCE/LAB · política vigente (#728 / #154)
 
-## Fase 3 · respuestas autónomas en el grupo WhatsApp
+La fase de respuestas directas a SOURCE que se diseñó históricamente **no está habilitada para producción**. El Bridge conserva partes de ese contrato para compatibilidad, pero su guard canónico en `tools/hipico-whatsapp-web-bridge/src/source-policy-gate.mjs` siempre devuelve `eligible: false` para la revisión vigente; `runtime-config.mjs` rechaza arrancar con `HIPICO_SOURCE_AUTO_REPLY_ENABLED=true`. Ni `.env`, una cuenta personal ni otro transporte pueden usarse para eludir la decisión.
 
-La fase 3 separa la autonomía conversacional de la autoridad operacional. El bot puede responder por sí solo en el grupo oficial cuando `HIPICO_SOURCE_AUTO_REPLY_ENABLED=true`, pero una respuesta nunca equivale a una mutación de carrera, jugada, saldo, ledger o liquidación.
+La automatización que sí debe verificarse es **SOURCE de solo lectura (cuando esté permitido) → normalización/dedupe → Conversation Engine + Risk Policy → LAB autorizado**. Los mensajes casuales y consultas seguras pueden responderse autónomamente en LAB. Para ambigüedad, jugadas, resultados, saldos o liquidaciones, las reglas del dominio conservan la autoridad y pueden requerir aclaración o revisión humana. Un proveedor LLM nunca tiene autoridad financiera.
 
-El flujo es: mensaje SOURCE → persistencia/dedupe → clasificación determinista → response safety → Jev como evidencia downgrade-only → consulta canónica read-only cuando aplique → Risk Policy → comando `source_reply` persistido → journal durable del Bridge → validación del `@g.us` exacto → envío → recibo `sent|ambiguous`.
+La entrega a LAB está sujeta a identidad exacta de los grupos, control de duplicados, spool durable, kill switch y permisos del adapter. La simulación LAB no acredita soporte oficial de WhatsApp para el grupo real ni permiso para facilitar apuestas monetarias.
 
-Jev nunca puede ampliar autoridad. Cuando su readiness está probado sólo puede degradar una respuesta segura a aclaración ante señales fuertes: conflicto de intención con confianza ≥ 0.90, probabilidad de revisión humana ≥ 0.90 o acuerdo con el candidato ≤ 0.10. Una discrepancia débil no crea trabajo humano innecesario. Si Jev está OFF o no disponible, una consulta determinista segura puede continuar usando la fuente canónica. Para consultas ambiguas, el bot solicita contexto; para adjuntos solicita texto; si un subsistema pierde autoridad pero todavía existe una respuesta segura, el bot informa la degradación sin confirmar operaciones. La intervención humana se reserva como último recurso tras tres aclaraciones fallidas o cuando existe un bloqueo real de seguridad/estado.
+## Contrato de configuración Hípico (#665)
 
-El Bridge evita loops ignorando mensajes `fromMe`. Antes de pulsar Enter revalida el grupo SOURCE exacto. Si falla antes de enviar, el journal permite reintento; si el proceso cae durante o después del intento y no puede probarse la entrega, el estado queda `ambiguous` y no se reenvía automáticamente.
+Los archivos versionados `backend/.env.example`, `frontend/.env.example` y `tools/hipico-whatsapp-web-bridge/.env.example` deben permanecer sincronizados en sus claves compartidas. Ejecutar:
 
-La autonomía SOURCE exige simultáneamente switch backend + Bridge, owner configurado, grupo `@g.us` pinneado, schema de `source_reply` listo, backend saludable y kill switch local inactivo. El default continúa siendo OFF.
+    npm run test:hipico:config
+
+El gate comprueba los **templates versionados**, sus flags fail-closed, la identidad de canales, la separación SOURCE/LAB, los identificadores y tokens sin rellenar y ausencia de variables privadas `VITE_*`. Nunca lee `.env` ni secretos reales, por lo que **no sustituye** el preflight de runtime, la validación de un despliegue ni el QA E2E sobre un candidate SHA.
