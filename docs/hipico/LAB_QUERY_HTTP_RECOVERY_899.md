@@ -21,7 +21,9 @@ sobre este flujo ni introducir una migración innecesaria.
 4. Si hay errores 401/403/404/429, respuesta malformada o autoridad
    indebida, no se reintenta inmediatamente. Ante fallo de consulta LAB
    con backend configurado, se conserva el mensaje sin ACK ni envío, para
-   volver a consultar datos frescos en un ciclo posterior.
+   volver a consultar datos frescos en un ciclo posterior. Se usa un backoff
+   volátil por mensaje (15, 30 y máximo 60 segundos; 500 entradas en memoria)
+   para limitar carga sobre el backend y evitar bucles de reintentos inmediatos.
 5. Si un Enter fue ambiguo, la conciliación por etiqueta visible existente
    prevalece; este cambio no abre un nuevo envío ni altera el gate SOURCE.
 
