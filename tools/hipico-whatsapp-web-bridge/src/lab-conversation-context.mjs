@@ -104,15 +104,19 @@ export function planLabConversation(row, classification, priorContext = null, su
     ? resolveLabRaceClarification(row?.text, priorContext, classification) : null;
   const clarificationScope = safeRaceScope(clarification);
   const explicitScope = risk === 'safe' ? (safeRaceScope(suppliedScope) || clarificationScope) : null;
+  // A message mentioning race X cannot inherit (or overwrite) scope Y.
+  const conflictingRace = Boolean(explicitScope && safeRace && explicitScope.raceNumber !== safeRace);
   const reuseReference = followUp || summaryRequested || Boolean(clarification);
-  const raceNumber = risk === 'safe'
+  const raceNumber = risk === 'safe' && !conflictingRace
     ? (safeRace ?? explicitScope?.raceNumber ?? (reuseReference ? previousRace : null))
     : null;
-  const raceScope = risk === 'safe'
+  const raceScope = risk === 'safe' && !conflictingRace
     ? (explicitScope ?? (reuseReference && previousScope?.raceNumber === raceNumber ? previousScope : null))
     : null;
   let guidance = '';
-  if (risk !== 'safe') {
+  if (conflictingRace) {
+    guidance = 'Se mencionaron carreras diferentes; confirma una sola referencia antes de consultar datos.';
+  } else if (risk !== 'safe') {
     guidance = 'Se detectó una operación que requiere revisión; no se registró ni confirmó ningún efecto.';
   } else if (clarificationScope) {
     guidance = 'Referencia de carrera completada con hipódromo y fecha aportados explícitamente.';
@@ -131,13 +135,14 @@ export function planLabConversation(row, classification, priorContext = null, su
   } else {
     guidance = 'Consulta recibida en el laboratorio, sin cambios de estado ni dinero.';
   }
+  const samePreviousRace = previousRace !== null && previousRace === raceNumber;
   const raceTrack = risk === 'safe' && raceNumber && !raceScope
     ? (validLabTrack(clarification?.racetrack) ||
-        (reuseReference || clarification ? validLabTrack(priorContext?.raceTrack) : null))
+        (samePreviousRace && reuseReference ? validLabTrack(priorContext?.raceTrack) : null))
     : null;
   const raceDate = risk === 'safe' && raceNumber && !raceScope
     ? (validLabDate(clarification?.raceDate) ? clarification.raceDate :
-        (reuseReference || clarification) && validLabDate(priorContext?.raceDate) ? priorContext.raceDate : null)
+        samePreviousRace && reuseReference && validLabDate(priorContext?.raceDate) ? priorContext.raceDate : null)
     : null;
   return {
     sender, raceNumber, raceScope, raceTrack, raceDate, isQuestion, summaryRequested, queryCategory,
