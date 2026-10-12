@@ -205,3 +205,17 @@ test('exhausted network recovery does not create an ACK or send intent for a can
   assert.match(section,/LAB_CANONICAL_QUERY_PENDING/);
   assert.match(section,/if\(inquiryPurpose && BACKEND_SYNC_ENABLED && !sender\)/);
 });
+
+
+test('blank canonical response never authorizes a LAB send or local factual fallback',async()=>{
+  for(const text of ['', '  \t  ']){
+    let calls=0;
+    const result=await queryCanonicalLab({...base,fetchImpl:async()=>{
+      calls++;
+      return json({ok:true,mode:'shadow',status:'CANONICAL_STATE_FOUND',text,
+        authority:{sourceWriteAllowed:false,financialAuthority:false,domainEffectsAllowed:false}});
+    }});
+    assert.equal(calls,1);
+    assert.deepEqual(result,{available:false,reason:'LAB_CANONICAL_INVALID_RESPONSE'});
+  }
+});
