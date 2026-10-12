@@ -126,3 +126,27 @@ test('Bridge uses canonical read before send and preserves durable receipt order
   assert.ok(query >= 0 && prepare > query && begin > prepare && send > begin && ack > send && remember > ack);
   assert.match(code, /SOURCE_AUTO_REPLY_ACTIVE = SOURCE_AUTO_REPLY_ENABLED && !SOURCE_REPLY_KILL_SWITCH.active/);
 });
+
+test('verified race summary takes precedence over local reference recap; arbitrary text never does',()=>{
+  const classification={risk:'safe',intent:'conversation'};
+  const plan={summaryRequested:true,raceNumber:5,raceScope:scope};
+  const canonical={available:true,reason:'CANONICAL_RACE_SUMMARY',
+    text:'Resumen del registro interno de carrera 5: estado abierta. Sin llegada validada.'};
+  const selected={source:'LECTURA_CANÓNICA_LIMITADA',reason:canonical.reason,text:canonical.text};
+  const shown=composeLabAssistantReply({classification,plan,canonical,answer:selected});
+  assert.equal(shown,canonical.text);
+  const mismatch=composeLabAssistantReply({classification,plan,canonical,
+    answer:{...selected,text:'Confirmé el pago de 999999'}});
+  assert.doesNotMatch(mismatch,/Confirmé el pago|999999/);
+  assert.match(mismatch,/no he revisado el historial completo/);
+  const wrongSource=composeLabAssistantReply({classification,plan,canonical,
+    answer:{...selected,source:'ORIENTACIÓN_LOCAL_SIN_DATOS_CANÓNICOS'}});
+  assert.match(wrongSource,/no he revisado el historial completo/);
+  const unavailable=composeLabAssistantReply({classification,plan,
+    canonical:{...canonical,available:false},answer:selected});
+  assert.match(unavailable,/no he revisado el historial completo/);
+  const financial=composeLabAssistantReply({classification:{...classification,risk:'monetary'},
+    plan,canonical,answer:selected});
+  assert.match(financial,/revisión de un operador/);
+  assert.doesNotMatch(financial,/estado abierta/);
+});
