@@ -31,9 +31,14 @@ delivery acknowledgement authority.
   flag, duplicate rate limit or changed policy holds the reply.
 - An unrecoverable duplicate produces `LAB_REPLAY_REVIEW_REQUIRED` in the
   Bridge's redacted operational log and never publishes automatically.
-- Text is short-lived **for reuse**; expired snapshots are cleared from DB
-  opportunistically (100 per inbound eligible snapshot). A scheduled cleanup
-  job is still required for hard wall-clock retention during prolonged idle.
+- Text is short-lived **for reuse**. Expired snapshots are pruned in bounded batches
+  both opportunistically on eligible ingestion and by the Windows Bridge once
+  per minute, including when WhatsApp Web is logged out/idle. The maintenance
+  request uses the existing Bridge token, same HTTPS backend origin (HTTP only
+  for localhost), and only clears expired snapshot columns, preserving the
+  receipt/audit row. If Windows and all other workers are offline, the job
+  cannot execute; hard wall-clock retention requires an independently scheduled
+  backend runner in that deployment.
 
 ## Deployment/rollback
 Migration: `backend/prisma/migrations/20261012142500_hipico_lab_response_recovery/migration.sql`.
