@@ -1249,6 +1249,20 @@ async function processLabTestInput() {
           race:scopedRace,timeoutMs:Math.min(5000,BACKEND_TIMEOUT_MS)
         })
       : {available:false,reason:'LAB_CANONICAL_NOT_QUERIED'};
+    if(inquiryPurpose && BACKEND_SYNC_ENABLED && !sender){
+      // An unverified display name can never inherit another participant's facts.
+      rememberLabSeen(row.id);
+      await saveLabSeenNow();
+      await log('LAB_CANONICAL_IDENTITY_REQUIRED id='+tag);
+      continue;
+    }
+    if(inquiryPurpose && BACKEND_SYNC_ENABLED && canonical.available!==true){
+      // A read-only lookup may be repeated after lost HTTP, but NO WhatsApp
+      // send intent may be started until the canonical backend responds.
+      // No seen ACK: a later LAB poll can query fresh verified data.
+      await log('LAB_CANONICAL_QUERY_PENDING id='+tag+' reason='+canonical.reason);
+      continue;
+    }
     await labTestReplyJournal.prepare(row.id); // fsync before any browser send
     await labTestReplyJournal.begin(row.id); // durable sending intent
     try {
