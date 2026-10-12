@@ -14,6 +14,29 @@ const MAX_AGE_MS=10*60*1000;
 const MAX_RECORDS=200;
 const MAX_SIZE=12*1024;
 
+/**
+ * A previously verified quoted race may scroll out of the DOM. Reuse only
+ * immutable encrypted input, never a newly guessed quote or changed sender.
+ */
+export function reconcileLabPendingObservation(saved,observed){
+  if(!saved||!observed ||
+    saved.messageId!==observed.messageId ||
+    saved.senderId!==observed.senderId ||
+    saved.text!==observed.text ||
+    saved.purpose!==observed.purpose ||
+    saved.messageTimestamp!==observed.messageTimestamp){
+    return {valid:false,reason:'LAB_PENDING_OBSERVATION_MISMATCH'};
+  }
+  if(observed.quotedMessageId && saved.quotedMessageId!==observed.quotedMessageId){
+    return {valid:false,reason:'LAB_PENDING_QUOTE_CHANGED'};
+  }
+  const explicit=observed.explicitRace;
+  if(explicit && JSON.stringify(explicit)!==JSON.stringify(saved.race)){
+    return {valid:false,reason:'LAB_PENDING_RACE_CHANGED'};
+  }
+  return {valid:true,race:saved.race,quotedMessageId:saved.quotedMessageId};
+}
+
 // Encrypted pre-query inbox; this is NOT a WhatsApp delivery or financial authority.
 export function createLabPendingQueryInbox({rootDir,labGroupId,sourceGroupId,now=Date.now,maxAgeMs=MAX_AGE_MS,maxEntries=MAX_RECORDS}={}){
   const lab=normalizeGroupId(labGroupId);
