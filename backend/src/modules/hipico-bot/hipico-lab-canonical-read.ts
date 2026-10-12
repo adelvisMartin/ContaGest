@@ -3,6 +3,7 @@ import { normalizedRaceTrack } from '../hipico/hipico-domain.js';
 import { readHipicoDomainAggregate } from './hipico-domain-query.store.js';
 
 export type LabRaceScope = {raceNumber:number;racetrack:string;raceDate:string};
+export type LabRaceQuestion = 'status'|'result'|'participants';
 type Reader=typeof readHipicoDomainAggregate;
 
 const STATES=new Set(['PREPARING','OPEN','CLOSED','RESULT_RECEIVED','SETTLEMENT_READY','SETTLED','BALANCED','PUBLISHED','ARCHIVED']);
@@ -15,7 +16,7 @@ const STATE_LABEL:Record<string,string>={
 const AUTHORITY={sourceWriteAllowed:false,financialAuthority:false,domainEffectsAllowed:false,officiality:'NOT_EXTERNALLY_VERIFIED'} as const;
 
 export async function readCanonicalLabRace(
-  input:{ownerId:string;groupKey:string;race:LabRaceScope|null},
+  input:{ownerId:string;groupKey:string;race:LabRaceScope|null;purpose?:LabRaceQuestion},
   read:Reader=readHipicoDomainAggregate
 ){
   const context=input.race;
@@ -29,7 +30,7 @@ export async function readCanonicalLabRace(
   }
   const data=await read({
     ownerId:input.ownerId,groupKey:input.groupKey,
-    aggregateKind:'race',aggregateKey:key,limit:1
+    aggregateKind:'race',aggregateKey:key,limit:30
   });
   if(!data){
     return{available:false,reason:'CANONICAL_RACE_NOT_FOUND',
@@ -43,6 +44,54 @@ export async function readCanonicalLabRace(
   const stamp=data.aggregate.updatedAt;
   if(!(stamp instanceof Date)||!Number.isFinite(stamp.getTime()))throw new Error('HIPICO_CANONICAL_UPDATED_AT_INVALID');
   const updatedAt=stamp.toISOString();
+  if(input.purpose==='participants'){
+    // Participant names in settlement/balance payloads are private financial
+    // counterparties, NOT a verified horse-entry catalog. Never repurpose them.
+    return{available:false,reason:'CANONICAL_ENTRIES_UNAVAILABLE',
+      text:'El registro interno no contiene todavía una lista de ejemplares inscritos verificada para esta carrera. No puedo identificar participantes con seguridad.',
+      authority:AUTHORITY};
+  }
+  if(input.purpose==='result'){
+    const terminalStates=new Set(['RESULT_RECEIVED','SETTLEMENT_READY','SETTLED','BALANCED','PUBLISHED','ARCHIVED']);
+    if(!terminalStates.has(state)){
+      return{available:false,reason:'CANONICAL_RESULT_NOT_CONFIRMED',
+        text:'Todavía no existe un resultado confirmado de esta carrera en los registros internos.',authority:AUTHORITY};
+    }
+    // Events are returned newest first. A later correction/reversal means the
+    // winner/podium must be reconciled by an operator before read-only display.
+    const events=Array.isArray(data.events)?data.events:[];
+    const resultIndex=events.findIndex(event=>event.eventType==='RESULT_RECORDED');
+    if(resultIndex<0||events.slice(0,resultIndex).some(event=>
+      event.eventType==='CORRECTION'||event.eventType==='REVERSAL'||event.eventType==='RESULT_RECORDED'
+    )){
+      return{available:false,reason:'CANONICAL_RESULT_EVIDENCE_MISSING',
+        text:'No hay una llegada confirmada y libre de correcciones pendientes para mostrar.',authority:AUTHORITY};
+    }
+    const result=events[resultIndex];
+    const payload=result.normalizedPayload;
+    const details=(payload && typeof payload==='object' && !Array.isArray(payload))
+      ? payload as Record<string,unknown> : null;
+    const rawBoard=details?.board;
+    const board=Array.isArray(rawBoard)?rawBoard:[];
+    const matchingScope=Boolean(details?.raceContextComplete===true&&
+      operationalRaceContextKey({
+        racetrack:details?.racetrack,raceNumber:details?.raceNumber,raceDate:details?.raceDate
+      })===key);
+    if(result.disposition!=='applied'||result.operatorConfirmed!==true||
+       result.nextState!=='RESULT_RECEIVED'||result.previousState!=='CLOSED'||
+       !matchingScope||board.length<1||board.length>20||
+       board.some(value=>typeof value!=='string'||!/^[1-9][0-9]{0,2}$/.test(value))||
+       new Set(board).size!==board.length){
+      return{available:false,reason:'CANONICAL_RESULT_EVIDENCE_INVALID',
+        text:'La evidencia de llegada no cumple los controles para publicarse como resultado confirmado.',authority:AUTHORITY};
+    }
+    return{available:true,reason:'CANONICAL_RESULT_CONFIRMED_INTERNAL',
+      state,version,updatedAt,board:board as string[],
+      text:'La llegada confirmada por operador en el registro interno para la carrera '+
+        context.raceNumber+' ('+safeTrack+', '+context.raceDate+') es: '+
+        board.join(' - ')+'. Esta confirmación interna no prueba oficialidad externa ni implica pagos.',
+      authority:AUTHORITY};
+  }
   return{available:true,reason:'CANONICAL_STATE_FOUND',state,version,updatedAt,
     text:'Según el registro interno, la carrera '+context.raceNumber+' en '+safeTrack+' ('+context.raceDate+') está '+STATE_LABEL[state]+'. No implica resultado oficial externo ni confirma jugadas o saldos.',
     authority:AUTHORITY
