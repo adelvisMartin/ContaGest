@@ -10,7 +10,8 @@ import { bridgeParticipantRateLimiter, classifyUntrustedConversation, safePublic
 import { effectiveBridgeMediaKind, historySyncRateCheck, liveRateLimitClock, normalizeBridgeSender, validateBridgeGroupIdentity } from './hipico-bridge-input-policy.js';
 import { operationalRaceContextKey } from './hipico-race-context-key.js';
 import { applyOperatorCommand, planSafeResponse, updateHandoffAfterDecision } from './hipico-response-safety.js';
-import { loadHandoff, persistResponsePlan, responseSafetyReadiness, saveHandoff } from './hipico-handoff.store.js';
+import { loadHandoff, persistResponsePlan, readResponseReceiptForRecovery, responseSafetyReadiness, saveHandoff } from './hipico-handoff.store.js';
+import { verifyLabResponseRecovery } from './hipico-lab-response-recovery.js';
 import { canonicalShadowReadiness, persistCanonicalShadow } from './hipico-canonical-shadow.store.js';
 import { bridgePersistenceReady, ensureGroupShadowOutbox, ensureSourceReplyOutbox, getSourceReplyOutbox, persistBridgeTransportEvent, recordSourceReplyDelivery, sourceReplyOutboxReady } from './hipico-bridge-transport.store.js';
 import { bridgeTokenConfigured, bridgeTokenValid } from './hipico-bridge-security.js';
@@ -207,7 +208,36 @@ router.post('/bridge/events',async(req,res)=>{
     let responsePlan=planSafeResponse(conversationDecision,{handoffState,systemHealthy:safetyReady.ready,at:new Date()});
     if(input.historySync)responsePlan={...responsePlan,intent:'NONE',text:null,canSend:false,confirmationVerified:false,evidence:null,handoffRequired:false,reason:'HISTORY_SYNC_NO_RESPONSE'};
     else if(!rate.allowed)responsePlan={...responsePlan,intent:'NONE',text:null,canSend:false,confirmationVerified:false,evidence:null,handoffRequired:false,reason:rate.reason||'RATE_LIMIT'};
-    const responseReceipt=safetyReady.ready&&!input.historySync&&event.inserted?await persistResponsePlan(responsePlan):null;
+    let responseReceipt=safetyReady.ready&&!input.historySync&&event.inserted?await persistResponsePlan(responsePlan):null;
+    // A duplicate LAB event may be a committed request whose HTTP reply was
+    // lost before the client could durably prepare its LAB send intent.
+    // The existing immutable receipt is the only authority for replay.
+    if(input.channelRole==='lab'&&!event.inserted&&!input.historySync){
+      const replayDecision=decideConversation({
+        sourceMessageId:input.externalMessageId,participantId:sender,
+        participantLabel:input.senderLabel,text:assessment.sanitizedText,
+        timestamp:input.timestamp,raceId:raceContextKey,
+        quotedSourceMessageId:input.quotedExternalMessageId,mediaKind:effectiveMediaKind
+      },{seenSourceMessageIds:[],humanOwnedParticipantIds:handoffState?.ownership==='human'?[sender]:[]},()=>result);
+      const candidate=planSafeResponse(replayDecision,{handoffState,systemHealthy:safetyReady.ready,at:new Date()});
+      const stored=safetyReady.ready&&rate.allowed&&!assessment.forceReview
+        ?await readResponseReceiptForRecovery(candidate.responseIdempotencyKey):null;
+      const recovery=verifyLabResponseRecovery({
+        channelRole:input.channelRole,duplicate:true,historySync:input.historySync,
+        fromMe:input.fromMe,mediaKind:effectiveMediaKind,
+        forceReview:assessment.forceReview,rateAllowed:rate.allowed,
+        systemHealthy:safetyReady.ready,timestamp:input.timestamp,nowMs:Date.now(),
+        currentHandoff:handoffState,classification:result,
+        candidate,receipt:stored
+      });
+      if(recovery.recovered){
+        responsePlan={...recovery.plan,reason:recovery.reason};
+        responseReceipt=stored?{id:stored.id,idempotencyKey:stored.idempotencyKey,duplicate:true}:null;
+      }else{
+        responsePlan={...responsePlan,canSend:false,text:null,confirmationVerified:false,
+          intent:'NONE',reason:recovery.reason};
+      }
+    }
     const autoReplyConfigured=sourceAutoReplyEnabled();
     const ownerId=configuredOutboxOwnerId();
     let sourceReplyCommand:any=null;
