@@ -209,3 +209,25 @@ test('direct lookup expires only its matching encrypted record and preserves oth
   assert.equal((await inbox.snapshot()).pending,0);
   await inbox.close();
 });
+
+
+test('next, active and schedule canonical read intents are durably recoverable without a fabricated race',async t=>{
+  const f=await harness(t);
+  const inbox=f.create();await inbox.initialize();
+  const topics=[
+    ['next','¿Qué carrera sigue?'],
+    ['active','¿Cuál es la carrera activa?'],
+    ['schedule','¿Cuál es la cartelera?']
+  ];
+  for(let index=0;index<topics.length;index++){
+    const [purpose,text]=topics[index];
+    const messageId='false_120363222222222222@g.us_info-'+index+'_'+SENDER;
+    const result=await inbox.enqueue(candidate({
+      messageId,text,purpose,race:null,quotedMessageId:null
+    }));
+    assert.equal(result.created,true);
+    assert.equal((await inbox.read(messageId))?.purpose,purpose);
+  }
+  assert.equal((await inbox.snapshot()).pending,3);
+  await inbox.close();
+});
