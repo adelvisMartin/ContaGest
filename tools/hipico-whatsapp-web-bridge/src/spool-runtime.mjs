@@ -78,6 +78,7 @@ export function createBridgeSpoolRuntime({
         return{...loaded,file,state};
       }
       if(loaded?.record)throw new Error('SPOOL_EXISTING_RECORD_INVALID');
+      if(loaded?.error&&loaded.error.code!=='ENOENT')throw new Error('SPOOL_EXISTING_RECORD_INVALID');
     }
     return null;
   }
