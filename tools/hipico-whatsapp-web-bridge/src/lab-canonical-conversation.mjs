@@ -51,7 +51,9 @@ export function selectCanonicalLabReply(response, localClassification) {
   }
   const decision = response.conversationDecision;
   const plan = response.responsePlan;
-  if (response.duplicate === true || decision.decision === 'NO_RESPONSE' ||
+  // A backend replay may be the first response received by this Bridge.
+  // Only the durable LAB ACK journal authorizes or deduplicates physical sends.
+  if (decision.decision === 'NO_RESPONSE' ||
       plan.intent === 'NONE' || plan.handoffRequired || !plan.canSend || !plan.text) {
     return { kind: 'NO_RESPONSE', reason: String(plan.reason || decision.decisionReason || 'NO_RESPONSE'), text: null };
   }
