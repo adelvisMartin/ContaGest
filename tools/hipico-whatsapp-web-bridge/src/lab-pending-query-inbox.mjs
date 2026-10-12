@@ -204,6 +204,10 @@ export function createLabPendingQueryInbox({rootDir,labGroupId,sourceGroupId,now
         await handle.writeFile(JSON.stringify(payload));
         await handle.sync();
         await handle.close();handle=null;
+        try{
+          const dir=await fs.open(root,'r');
+          try{await dir.sync();}finally{await dir.close();}
+        }catch{}
         return {created:true};
       }catch(e){
         await handle?.close().catch(()=>{});
@@ -214,6 +218,11 @@ export function createLabPendingQueryInbox({rootDir,labGroupId,sourceGroupId,now
         }
         throw e;
       }
+    },
+    async prune(){
+      assertReady();
+      const state=await scan();
+      return state.expired;
     },
     async list(limit=25){
       assertReady();
