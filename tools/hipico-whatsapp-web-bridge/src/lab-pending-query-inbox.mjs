@@ -1,7 +1,6 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { atomicWriteJson } from './spool-journal.mjs';
 import { normalizeGroupId } from './group-identity.mjs';
 import { stableLabSenderKey, labConversationInput } from './lab-conversation-context.mjs';
 import { classifyLocal } from './runtime-utils.mjs';
