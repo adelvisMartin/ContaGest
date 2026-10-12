@@ -8,7 +8,8 @@ const CANONICAL_READ_STATUSES = new Set([
   'CANONICAL_RACE_UNVERIFIED', 'EXPLICIT_RACE_CONTEXT_REQUIRED',
   'INVALID_RACE_CONTEXT', 'CANONICAL_RESULT_CONFIRMED_INTERNAL',
   'CANONICAL_RESULT_NOT_CONFIRMED', 'CANONICAL_RESULT_EVIDENCE_MISSING',
-  'CANONICAL_RESULT_EVIDENCE_INVALID', 'CANONICAL_ENTRIES_UNAVAILABLE'
+  'CANONICAL_RESULT_EVIDENCE_INVALID', 'CANONICAL_ENTRIES_UNAVAILABLE',
+  'CANONICAL_RACE_SUMMARY'
 ]);
 
 export function normalizeLabAssistantName(value) {
@@ -36,6 +37,15 @@ export function composeLabAssistantReply({ classification, plan, canonical, answ
 
   const reference = raceReference(plan);
   if (plan?.summaryRequested) {
+    // A race summary from the canonical read endpoint outranks the local
+    // conversation-reference summary, but only if its bounded text and
+    // receipt agree with the selector. This cannot promote a financial fact.
+    if (risk === 'safe' && canonical?.available === true &&
+        canonical.reason === 'CANONICAL_RACE_SUMMARY' &&
+        answer?.source === 'LECTURA_CANÓNICA_LIMITADA' &&
+        answer?.reason === canonical.reason && answer.text === canonical.text &&
+        typeof answer.text === 'string' && answer.text.length > 0 &&
+        answer.text.length <= 1500) return answer.text;
     return reference
       ? `Hasta ahora tengo como referencia la ${reference}. Es solo contexto de esta conversación: no he revisado el historial completo ni puedo confirmar operaciones o resultados sin consultar los registros.`
       : 'Puedo resumir la referencia de carrera que vayamos consultando, pero no tengo un historial completo verificado para resumir. ¿Qué carrera quieres revisar?';
