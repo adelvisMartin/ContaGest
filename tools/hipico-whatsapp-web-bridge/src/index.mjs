@@ -1179,7 +1179,10 @@ async function sendTextInCurrentLab(textValue, tag) {
   }
 }
 let labTestProcessing=false;
-async function processLabTestInputUnlocked() {
+async function processLabTestInput() {
+  if(labTestProcessing)return;
+  labTestProcessing=true;
+  try {
   if (!LAB_TEST_INPUT_ENABLED) return;
   const sourceBefore = await currentChatTitle();
   const opened = await openGroup(LAB_GROUP_NAME, true);
@@ -1286,13 +1289,7 @@ async function processLabTestInputUnlocked() {
   if (processed) console.log('LAB prueba: '+processed+' mensaje(s) leído(s) y clasificado(s).');
   await openSourceGroup().catch(() => false);
   activeSourceTitle = await currentChatTitle();
-}
-// Only one DOM reconciliation / send cycle may run in a Bridge process.
-async function processLabTestInput() {
-  if(labTestProcessing)return;
-  labTestProcessing=true;
-  try{await processLabTestInputUnlocked();}
-  finally{labTestProcessing=false;}
+  } finally {labTestProcessing=false;}
 }
 async function visibleLabHasTag(tag) {
   return page.evaluate((needle) => {
