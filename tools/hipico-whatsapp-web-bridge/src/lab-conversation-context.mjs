@@ -85,6 +85,14 @@ export function planLabConversation(row, classification, priorContext = null, su
   const sender = stableLabSenderKey(row?.id);
   const risk = classification?.risk || 'review';
   const safeRace = mentionedRaceNumber(normalized);
+  // Reject competing references in one utterance, even when the quoted scope
+  // coincidentally agrees with the first mention. Never pick one silently.
+  const mentioned = [
+    ...[...normalized.matchAll(new RegExp(RACE_PATTERN.source, 'g'))].map(m => Number(m[1])),
+    ...[...normalized.matchAll(new RegExp(ORDINAL_NUMBER_PATTERN.source, 'g'))].map(m => Number(m[1])),
+    ...[...normalized.matchAll(new RegExp(ORDINAL_WORD_PATTERN.source, 'g'))].map(m => ORDINAL_WORDS[m[1]])
+  ].filter(validRaceNumber);
+  const multipleRaces = new Set(mentioned).size > 1;
   const isQuestion = QUESTION_PATTERN.test(normalized) || classification?.intent === 'status_non_monetary';
   const summaryRequested = risk === 'safe' && SUMMARY_PATTERN.test(normalized);
   // The LAB backend now supports status and internally confirmed results; unavailable topics remain explicit.
@@ -105,7 +113,8 @@ export function planLabConversation(row, classification, priorContext = null, su
   const clarificationScope = safeRaceScope(clarification);
   const explicitScope = risk === 'safe' ? (safeRaceScope(suppliedScope) || clarificationScope) : null;
   // A message mentioning race X cannot inherit (or overwrite) scope Y.
-  const conflictingRace = Boolean(explicitScope && safeRace && explicitScope.raceNumber !== safeRace);
+  const conflictingRace = multipleRaces ||
+    Boolean(explicitScope && safeRace && explicitScope.raceNumber !== safeRace);
   const reuseReference = followUp || summaryRequested || Boolean(clarification);
   const raceNumber = risk === 'safe' && !conflictingRace
     ? (safeRace ?? explicitScope?.raceNumber ?? (reuseReference ? previousRace : null))
