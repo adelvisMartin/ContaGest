@@ -65,6 +65,13 @@ export function planLabConversation(row, classification, priorContext = null) {
   const safeRace = validRaceNumber(mentionedRace) ? mentionedRace : null;
   const isQuestion = QUESTION_PATTERN.test(normalized) || classification?.intent === 'status_non_monetary';
   const summaryRequested = risk === 'safe' && SUMMARY_PATTERN.test(normalized);
+  // The current canonical LAB endpoint reads only race state, never participants,
+  // results, officiality or schedules. Do not answer a different question with a state.
+  const unsupportedQuestion = /\b(?:participantes|quienes|quien|corren|caballos|resultado|ganador|gano|llegada|retiros|horario|hora|oficial|inscritos)\b/.test(normalized);
+  const statusQuestion = /\b(?:estado|estatus|situacion|como va|abierta|abierto|cerrada|cerrado)\b/.test(normalized);
+  const queryCategory = risk === 'safe' && isQuestion && !summaryRequested
+    ? (unsupportedQuestion ? 'UNSUPPORTED' : statusQuestion ? 'STATUS' : 'UNKNOWN')
+    : 'NONE';
   const followUp = FOLLOW_UP_PATTERN.test(normalized);
   // Monetary/state-changing messages never inherit or store a race reference.
   const previousRace = risk === 'safe' && sender && validRaceNumber(priorContext?.raceNumber)
@@ -95,7 +102,7 @@ export function planLabConversation(row, classification, priorContext = null) {
     guidance = 'Consulta recibida en el laboratorio, sin cambios de estado ni dinero.';
   }
   return {
-    sender, raceNumber, raceScope, isQuestion, summaryRequested, guidance,
+    sender, raceNumber, raceScope, isQuestion, summaryRequested, queryCategory, guidance,
     rememberRace: risk === 'safe' && Boolean(sender) && validRaceNumber(raceNumber)
   };
 }
