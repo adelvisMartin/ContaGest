@@ -3,7 +3,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 
 export const SPOOL_SCHEMA_VERSION=2;
-export const SPOOL_STATES=Object.freeze(['queued','sent','failed','quarantined','replayed','expired']);
+export const SPOOL_STATES=Object.freeze(['queued','sending','sent','failed','quarantined','replayed','expired']);
 const PRIVATE_DIR_MODE=0o700;
 const PRIVATE_FILE_MODE=0o600;
 const RECORD_ID_PATTERN=/^[0-9a-f]{64}$/;
