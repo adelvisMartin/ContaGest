@@ -13,6 +13,7 @@ const MESSAGE='false_120363222222222222@g.us_m-1_'+SENDER;
 const TEXT='¿Cuál es el resultado de la carrera 5 en hipódromo La Rinconada el 2026-10-12?';
 const candidate=(extra={})=>({
   messageId:MESSAGE,senderId:SENDER,text:TEXT,purpose:'result',
+  messageTimestamp:new Date(500000).toISOString(),
   race:{raceNumber:5,racetrack:'La Rinconada',raceDate:'2026-10-12'},
   quotedMessageId:null,...extra
 });
@@ -106,4 +107,14 @@ test('Bridge persists encrypted request before HTTP read and uses only verified 
   assert.match(recovery,/await assertCurrentLabIdentity\(\)/);
   assert.match(recovery,/await labPendingInbox\.remove\(entry.messageId\)/);
   assert.match(src,/SOURCE_AUTO_REPLY_ACTIVE = SOURCE_AUTO_REPLY_ENABLED && !SOURCE_REPLY_KILL_SWITCH.active/);
+});
+
+test('re-capturing an old message cannot renew the original timestamp after TTL',async t=>{
+  const f=await harness(t);const inbox=f.create();await inbox.initialize();
+  await inbox.enqueue(candidate());
+  f.advance(10*60*1000+1000);
+  assert.equal(await inbox.prune(),1);
+  await assert.rejects(inbox.enqueue(candidate()),/LAB_PENDING_QUERY_INVALID/);
+  assert.equal((await inbox.snapshot()).pending,0);
+  await inbox.close();
 });
