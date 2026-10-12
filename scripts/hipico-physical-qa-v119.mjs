@@ -6,6 +6,7 @@ import { execFileSync } from 'node:child_process';
 
 const root=process.cwd();
 const catalog=JSON.parse(fs.readFileSync(path.join(root,'products/hipico-control/physical-qa-v119.json'),'utf8'));
+const releasePolicy=JSON.parse(fs.readFileSync(path.join(root,'products/hipico-control/release-policy.json'),'utf8'));
 const args=process.argv.slice(2);
 const command=args[0]||'status';
 const value=(name)=>args.find((arg)=>arg.startsWith(`--${name}=`))?.slice(name.length+3)??null;
@@ -112,9 +113,12 @@ function summary(result){
   const expectedCases=(result.environments||[]).length*catalog.scenarios.length;
   const operatorPresent=Boolean(String(result.operator||'').trim());
   const sessionTopologySafe=(result.environments||[]).length>0&&(result.environments||[]).every((env)=>validSessionHash(env.sourceSessionIdHash)&&validSessionHash(env.labSessionIdHash)&&String(env.sourceSessionIdHash).toLowerCase()!==String(env.labSessionIdHash).toLowerCase());
+  const apkEnvironments=(result.environments||[]).filter((env)=>env.mode==='android-apk');
+  const apkArtifactBound=apkEnvironments.length>0&&apkEnvironments.every((env)=>
+    env.apkVersion===releasePolicy.version&&/^[a-f0-9]{64}$/i.test(String(env.apkSha256||'')));
   const evidenceComplete=expectedCases>0&&counts.PASS===expectedCases&&passRowsWithEvidence===expectedCases;
-  const complete=expectedCases>0&&counts.PASS===expectedCases&&counts.FAIL===0&&counts.BLOCKED===0&&counts.NOT_EXECUTED===0&&sourceSafe&&invariantEvidenceComplete&&requiredModesCovered&&operatorPresent&&sessionTopologySafe&&evidenceComplete;
-  return{counts,totalCases:expectedCases,environments:(result.environments||[]).length,modeCoverage,requiredModesCovered,sourceSafe,invariantEvidenceComplete,operatorPresent,sessionTopologySafe,evidenceComplete,passRowsWithEvidence,releasePhysicalGate:complete?'PASS':'NOT_READY'};
+  const complete=expectedCases>0&&counts.PASS===expectedCases&&counts.FAIL===0&&counts.BLOCKED===0&&counts.NOT_EXECUTED===0&&sourceSafe&&invariantEvidenceComplete&&requiredModesCovered&&apkArtifactBound&&operatorPresent&&sessionTopologySafe&&evidenceComplete;
+  return{counts,totalCases:expectedCases,environments:(result.environments||[]).length,modeCoverage,requiredModesCovered,sourceSafe,invariantEvidenceComplete,apkArtifactBound,operatorPresent,sessionTopologySafe,evidenceComplete,passRowsWithEvidence,releasePhysicalGate:complete?'PASS':'NOT_READY'};
 }
 function writeManifest(result,target){const dir=path.dirname(target);fs.mkdirSync(dir,{recursive:true});fs.writeFileSync(target,`${JSON.stringify(result,null,2)}\n`);}
 function writeReleaseEvidence(final,target){
