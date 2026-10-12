@@ -24,6 +24,10 @@ type QueryDeps = {
   readScope:(channelId:string,groupKey:string)=>Promise<ReadScope>;
   execute:(request:{ownerId:string;groupKey:string;text:string})=>Promise<RaceQueryResult>;
 };
+export function canonicalRaceReadDigest(result:RaceQueryResult):string{
+  return crypto.createHash('sha256').update(JSON.stringify(result)).digest('hex');
+}
+
 const fallbackDeps:QueryDeps={
   readScope:canonicalBridgeReadScope,
   execute:(request)=>new RaceQueryService().execute(request)
@@ -57,7 +61,7 @@ export async function resolveCanonicalLabRaceQuery(input:LabQueryInput,deps:Quer
       evidence:null,
       confirmationVerified:false,
       reason:'CANONICAL_LAB_RACE_QUERY',
-      readModelDigest:crypto.createHash('sha256').update(JSON.stringify(result)).digest('hex')
+      readModelDigest:canonicalRaceReadDigest(result)
     };
   }catch(error:unknown){
     const code=String((error as {code?:string})?.code||'');
