@@ -191,3 +191,76 @@ test('backend canonical revision mismatch is returned as non-authoritative fallb
   assert.equal(result.reason,'LAB_CANONICAL_REVISION_CHANGED');
   assert.equal(result.available,true); // informational fallback, not an authorization to send money
 });
+
+test('lost HTTP response retries read-only lookup once with identical message identity',async()=>{
+  let calls=0;const envelopes=[];
+  const result=await queryCanonicalLab({...base,fetchImpl:async(_url,options)=>{
+    calls++;
+    envelopes.push(JSON.parse(options.body));
+    if(calls===1)throw new TypeError('network socket dropped after backend read');
+    return json({ok:true,mode:'shadow',status:'CANONICAL_STATE_FOUND',text:'Estado interno verificado.',
+      authority:{sourceWriteAllowed:false,financialAuthority:false,domainEffectsAllowed:false}});
+  }});
+  assert.equal(calls,2);
+  assert.deepEqual(envelopes[0],envelopes[1]);
+  assert.equal(result.available,true);
+  assert.equal(result.text,'Estado interno verificado.');
+});
+
+test('only transient gateway failures are retried: never replay auth, rate-limit or invalid authority',async()=>{
+  for(const status of [502,503,504]){
+    let calls=0;
+    const result=await queryCanonicalLab({...base,fetchImpl:async()=>{
+      calls++;
+      if(calls===1)return json({},status);
+      return json({ok:true,mode:'shadow',status:'CANONICAL_RACE_NOT_FOUND',
+        text:'No se ha confirmado esa carrera.',authority:{
+          sourceWriteAllowed:false,financialAuthority:false,domainEffectsAllowed:false}});
+    }});
+    assert.equal(calls,2);
+    assert.equal(result.available,true);
+  }
+  for(const status of [401,403,404,429]){
+    let calls=0;
+    const result=await queryCanonicalLab({...base,fetchImpl:async()=>{calls++;return json({},status);}});
+    assert.equal(calls,1);
+    assert.equal(result.available,false);
+  }
+  let invalidCalls=0;
+  const invalid=await queryCanonicalLab({...base,fetchImpl:async()=>{
+    invalidCalls++;return json({ok:true,mode:'shadow',status:'CANONICAL_STATE_FOUND',text:'unsafe',
+      authority:{sourceWriteAllowed:true,financialAuthority:false,domainEffectsAllowed:false}});
+  }});
+  assert.equal(invalidCalls,1);
+  assert.equal(invalid.reason,'LAB_CANONICAL_INVALID_RESPONSE');
+});
+
+test('exhausted network recovery does not create an ACK or send intent for a canonical question',async()=>{
+  let calls=0;
+  const result=await queryCanonicalLab({...base,fetchImpl:async()=>{calls++;throw new TypeError('network');}});
+  assert.equal(calls,2);
+  assert.deepEqual(result,{available:false,reason:'LAB_CANONICAL_UNAVAILABLE'});
+  const source=await fs.readFile(path.join(path.dirname(fileURLToPath(import.meta.url)),'..','src','index.mjs'),'utf8');
+  const section=source.slice(source.indexOf('async function processLabTestInput()'),source.indexOf('async function visibleLabHasTag'));
+  const lookup=section.indexOf('await queryCanonicalLab({');
+  const hold=section.indexOf("if(inquiryPurpose && BACKEND_SYNC_ENABLED && canonical.available!==true)");
+  const prepare=section.indexOf('await labTestReplyJournal.prepare(row.id)');
+  const send=section.indexOf('await sendTextInCurrentLab(');
+  assert.ok(lookup>=0&&hold>lookup&&prepare>hold&&send>prepare);
+  assert.match(section,/LAB_CANONICAL_QUERY_PENDING/);
+  assert.match(section,/if\(inquiryPurpose && BACKEND_SYNC_ENABLED && !sender\)/);
+});
+
+
+test('blank canonical response never authorizes a LAB send or local factual fallback',async()=>{
+  for(const text of ['', '  \t  ']){
+    let calls=0;
+    const result=await queryCanonicalLab({...base,fetchImpl:async()=>{
+      calls++;
+      return json({ok:true,mode:'shadow',status:'CANONICAL_STATE_FOUND',text,
+        authority:{sourceWriteAllowed:false,financialAuthority:false,domainEffectsAllowed:false}});
+    }});
+    assert.equal(calls,1);
+    assert.deepEqual(result,{available:false,reason:'LAB_CANONICAL_INVALID_RESPONSE'});
+  }
+});
