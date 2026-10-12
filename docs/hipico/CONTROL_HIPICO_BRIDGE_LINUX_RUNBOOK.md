@@ -265,3 +265,29 @@ todavía una revisión canónica suficientemente fuerte para usar este recibo.
 No garantiza snapshot serializable entre lectura y una corrección concurrente.
 Faltan fault-injection PostgreSQL, WhatsApp Windows físico y soak 24–72h;
 por ello #899 sigue abierto. Los tests locales no sustituyen esos gates.
+
+## Inyección de fallos real con PostgreSQL aislado (#899 — CI)
+
+El workflow `Hípico Autonomous WhatsApp v16` ahora ejecuta
+`npm --workspace backend run test:hipico:lab-receipt:postgres` después del E2E
+de source-reply y ANTES del build del backend. Comparte únicamente la base
+efímera creada por GitHub Actions, con nombre obligado
+`hipico_autoreply_e2e_<RUN_ID>_<ATTEMPT>` y conexión exclusivamente en loopback.
+El script comprueba que `DATABASE_URL` y `HIPICO_E2E_DATABASE_URL` coinciden
+y aborta si apunta a una base distinta o remota. No utiliza Supabase real.
+
+El fixture aplica `20260829214500_hipico_response_handoff` (CREATE IF NOT EXISTS)
+y ejecuta consultas de lectura/escritura contra `HipicoResponseReceipt`:
+
+- commit → inyección de excepción de conexión perdida antes de devolver el HTTP → mismo mensaje, revisión y hash se recuperan con una sola fila;
+- `BEGIN/ROLLBACK` de un recibo parcial → el registro no queda comprometido y una solicitud posterior crea el recibo correcto;
+- estado/versión/texto cambiado → `LAB_CANONICAL_REVISION_CHANGED`, sin reemplazar la primera respuesta;
+- dos consultas concurrentes → índice único y recibo inmutable, sin dos filas;
+- `ambiguous`, antigüedad vencida o takeover humano → no recuperar.
+
+**Límites de evidencia:** la pérdida HTTP se inyecta en la frontera del
+servicio tras completar el commit, no es un corte real de TCP/Chromium ni
+demuestra que WhatsApp envió una sola vez. El E2E utiliza PostgreSQL real
+pero no certifica una corrección concurrente dentro de una transacción
+serializable. La evidencia de logs del SHA exacto y el ensayo físico en LAB
+se conservan como gates antes de cerrar #899 y #837.
