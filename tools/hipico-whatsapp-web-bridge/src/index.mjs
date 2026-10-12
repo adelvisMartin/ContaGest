@@ -1231,7 +1231,7 @@ async function resumePendingLabQueries(visibleIds = new Set()) {
       ingestUrl:INGEST_URL,token:TOKEN,
       labGroupId:LAB_GROUP_ID,labChannelKey:LAB_CHANNEL_KEY,
       messageId:entry.messageId,senderId:entry.senderId,text:entry.text,
-      purpose:entry.purpose,quotedMessageId:entry.quotedMessageId,
+      timestamp:entry.messageTimestamp,purpose:entry.purpose,quotedMessageId:entry.quotedMessageId,
       race:entry.race,timeoutMs:Math.min(5000,BACKEND_TIMEOUT_MS)
     });
     if (canonical.available!==true) {
@@ -1331,10 +1331,20 @@ async function processLabTestInput() {
     const inquiryPurpose=labReadOnlyQueryPurpose(body,classification);
     const scopedRace=explicitLabRaceScope(body) || resolveQuotedLabRaceScope(row,visible);
     const quotedVerified=Boolean(row.quotedId && scopedRace && !explicitLabRaceScope(body));
+    const parsedLabStamp=inquiryPurpose && BACKEND_SYNC_ENABLED ? parseWhatsAppPre(row.pre) : null;
+    if(inquiryPurpose && BACKEND_SYNC_ENABLED && (!parsedLabStamp?.parsed ||
+        Date.now()-Date.parse(parsedLabStamp.timestamp)>=10*60*1000 ||
+        Date.parse(parsedLabStamp.timestamp)>Date.now()+60000)){
+      rememberLabSeen(row.id);
+      await saveLabSeenNow();
+      await log('LAB_PENDING_MESSAGE_STALE_OR_UNVERIFIED id='+tag);
+      continue;
+    }
     if(inquiryPurpose && BACKEND_SYNC_ENABLED && sender && labPendingInbox){
       // Crash barrier: persist minimal encrypted query data BEFORE any network read.
       await labPendingInbox.enqueue({
         messageId:row.id,senderId:sender,text:body,purpose:inquiryPurpose,
+        messageTimestamp:parsedLabStamp.timestamp,
         race:scopedRace||null,quotedMessageId:quotedVerified?row.quotedId:null
       });
     }
@@ -1344,7 +1354,7 @@ async function processLabTestInput() {
           ingestUrl:INGEST_URL,token:TOKEN,
           labGroupId:LAB_GROUP_ID,labChannelKey:LAB_CHANNEL_KEY,
           messageId:row.id,senderId:sender,text:body,
-          purpose:inquiryPurpose,
+          timestamp:parsedLabStamp.timestamp,purpose:inquiryPurpose,
           quotedMessageId:quotedVerified?row.quotedId:null,
           race:scopedRace,timeoutMs:Math.min(5000,BACKEND_TIMEOUT_MS)
         })
