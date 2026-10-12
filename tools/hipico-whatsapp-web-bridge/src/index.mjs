@@ -28,6 +28,7 @@ import { createSourceReplyJournal } from './source-reply-journal.mjs';
 import { labSendFailure, labSeenOutcome } from './lab-delivery-state.mjs';
 import { createLabTestReplyJournal, labTestTagForMessage } from './lab-test-reply-journal.mjs';
 import { atomicWriteJson } from './spool-journal.mjs';
+import { createLabConversationContext, labConversationInput, planLabConversation, stableLabSenderKey } from './lab-conversation-context.mjs';
 import { localKillSwitchState } from './promotion-guard.mjs';
 
 const config = assertRuntimeConfig(loadRuntimeConfig());
@@ -69,6 +70,7 @@ const LEGACY_DEADLETTER_DIR = path.join(DATA_DIR, 'dead-letter');
 const SPOOL_V2_DIR = path.join(DATA_DIR, 'spool-v2');
 const SOURCE_REPLY_DIR = path.join(DATA_DIR, 'source-replies');
 const LAB_TEST_REPLY_DIR = path.join(DATA_DIR, 'lab-test-replies');
+const LAB_CONTEXT_FILE = path.join(DATA_DIR, `lab-conversation-${sha256(LAB_GROUP_ID || LAB_CHANNEL_KEY).slice(0,16)}.json`);
 const TRAINING_DIR = path.join(DATA_DIR, 'training');
 const SEEN_FILE = path.join(DATA_DIR, 'seen-source-message-ids.json');
 const LAB_SEEN_FILE = path.join(DATA_DIR, 'seen-lab-test-message-ids.json');
@@ -94,6 +96,9 @@ let seen = await loadSeen();
 let labSeen = await loadLabSeen();
 const labTestReplyJournal = LAB_TEST_INPUT_ENABLED ? createLabTestReplyJournal({
   rootDir:LAB_TEST_REPLY_DIR,labGroupId:LAB_GROUP_ID,sourceGroupId:SOURCE_GROUP_ID
+}) : null;
+const labConversationContext = labTestReplyJournal ? createLabConversationContext({
+  file:LAB_CONTEXT_FILE,groupId:LAB_GROUP_ID
 }) : null;
 let sourceBaselineCompleted = false;
 let activeSourceTitle = '';
@@ -327,6 +332,7 @@ function localMirrorText(event, classification) {
     `Remitente: ${event.senderLabel || 'participante'}`,
     `Mensaje: ${(event.text || `[${event.mediaKind || 'media'}]`).slice(0, 1000)}`,
     `Lectura: ${classification.intent} · riesgo ${classification.risk} · confianza ${(classification.confidence * 100).toFixed(1)}%`,
+    `Respuesta contextual: ${plan?.guidance || 'Sin contexto adicional disponible.'}`,
     `Propuesta: ${localSuggestion(classification)}`,
     '⚠️ SOLO LABORATORIO. No registró ni modificó dinero, jugadas, resultados o saldos reales.'
   ];
@@ -994,7 +1000,7 @@ function labTestTagFor(externalMessageId) {
   return labTestTagForMessage(externalMessageId);
 }
 
-function localLabTestReply(row, classification) {
+function localLabTestReply(row, classification, plan = null) {
   const textValue = String(row.text || '').slice(0, 1200);
   const entities = classification.entities || {};
   const details = [];
@@ -1213,13 +1219,26 @@ async function processLabTestInput() {
     }
 
     const classification = classifyLocal(body);
+    if (!labConversationInput(row, classification).eligible) {
+      rememberLabSeen(row.id); // ignored echo/media/casual chat; never respond
+      continue;
+    }
+    const sender = stableLabSenderKey(row.id);
+    const prior = sender ? labConversationContext?.get(sender) : null;
+    const plan = planLabConversation(row, classification, prior);
     await labTestReplyJournal.prepare(row.id); // fsync before any browser send
     await labTestReplyJournal.begin(row.id); // durable sending intent
     try {
-      await sendTextInCurrentLab(localLabTestReply(row, classification), tag);
+      await sendTextInCurrentLab(localLabTestReply(row, classification, plan), tag);
       await labTestReplyJournal.confirm(row.id,{visibleTag:true});
       rememberLabSeen(row.id); // confirmed delivery/tag; never ack before sending
       await saveLabSeenNow();
+      // The WAL-backed confirmed acknowledgement is the single send authority.
+      // Context is only a local hint; failed persistence can never resend LAB.
+      if (plan.rememberRace && labConversationContext) {
+        try { await labConversationContext.remember(plan.sender,plan.raceNumber); }
+        catch { await log('LAB_CONTEXT_PERSIST_FAILED'); }
+      }
       processed += 1;
       await log('LAB_TEST_READ id='+tag+' intent='+classification.intent);
     } catch (error) {
@@ -1398,6 +1417,7 @@ async function main() {
 
   const spoolInit = await spoolRuntime.initialize();
   const sourceReplyInit = await sourceReplyJournal.initialize();
+  await labConversationContext?.initialize();
   if (labTestReplyJournal) {
     const labInit=await labTestReplyJournal.initialize();
     const labState=await labTestReplyJournal.snapshot();
