@@ -76,20 +76,34 @@ export async function queryCanonicalLab({
     timestamp,text:String(text||'').slice(0,1200),race,purpose,
     quotedExternalMessageId:quotedMessageId
   };
-  try{
-    const response=await fetchImpl(url,{
-      method:'POST',redirect:'manual',cache:'no-store',
-      headers:{'Content-Type':'application/json','x-hipico-bridge-token':token},
-      body:JSON.stringify(payload),signal:AbortSignal.timeout(Math.min(5000,Math.max(500,timeoutMs)))
-    });
+  // Read-only query: a lost HTTP response has no committed send/domain effect.
+  // One immediate retry is safe; never retry auth, rate limits or invalid contracts.
+  for(let attempt=0;attempt<2;attempt++){
+    let response;
+    try{
+      response=await fetchImpl(url,{
+        method:'POST',redirect:'manual',cache:'no-store',
+        headers:{'Content-Type':'application/json','x-hipico-bridge-token':token},
+        body:JSON.stringify(payload),signal:AbortSignal.timeout(Math.min(5000,Math.max(500,timeoutMs)))
+      });
+    }catch{
+      if(attempt===0)continue;
+      return{available:false,reason:'LAB_CANONICAL_UNAVAILABLE'};
+    }
+    if([502,503,504].includes(response.status)&&attempt===0)continue;
     if(response.status!==200||!response.headers.get('content-type')?.toLowerCase().includes('application/json')){
       return{available:false,reason:'LAB_CANONICAL_UNAVAILABLE'};
     }
     const length=Number(response.headers.get('content-length')||0);
     if(length>16_384)return{available:false,reason:'LAB_CANONICAL_INVALID_RESPONSE'};
-    const raw=await response.text();
+    let raw;
+    try{raw=await response.text();}catch{
+      if(attempt===0)continue;
+      return{available:false,reason:'LAB_CANONICAL_UNAVAILABLE'};
+    }
     if(raw.length>16_384)return{available:false,reason:'LAB_CANONICAL_INVALID_RESPONSE'};
-    const body=JSON.parse(raw);
+    let body;
+    try{body=JSON.parse(raw);}catch{return{available:false,reason:'LAB_CANONICAL_INVALID_RESPONSE'};}
     const authority=body?.authority;
     if(body?.ok!==true||body?.mode!=='shadow'||
        authority?.sourceWriteAllowed!==false||
@@ -100,7 +114,6 @@ export async function queryCanonicalLab({
       return{available:false,reason:'LAB_CANONICAL_INVALID_RESPONSE'};
     }
     return{available:true,reason:String(body.status),text:body.text};
-  }catch{
-    return{available:false,reason:'LAB_CANONICAL_UNAVAILABLE'};
   }
+  return{available:false,reason:'LAB_CANONICAL_UNAVAILABLE'};
 }
