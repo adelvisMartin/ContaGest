@@ -59,3 +59,14 @@ Los archivos versionados `backend/.env.example`, `frontend/.env.example` y `tool
     npm run test:hipico:config
 
 El gate comprueba los **templates versionados**, sus flags fail-closed, la identidad de canales, la separación SOURCE/LAB, los identificadores y tokens sin rellenar y ausencia de variables privadas `VITE_*`. Nunca lee `.env` ni secretos reales, por lo que **no sustituye** el preflight de runtime, la validación de un despliegue ni el QA E2E sobre un candidate SHA.
+
+## Smoke operacional de solo lectura Hípico (#664)
+
+Después de arrancar el frontend/API del candidate se puede ejecutar:
+
+    npm run smoke:hipico
+    npm run smoke:hipico -- --base-url=https://host-autorizado.example/
+
+El smoke exige una URL HTTPS (HTTP sólo en loopback) y consulta **exclusivamente con GET** el estado público `/api/hipico/status` y la ruta servida `/hipico-control/`. Verifica el contrato de modo/identidad, el indicador `sourceSendPossible=false`, la política sin caché del status y la existencia del shell PWA. No utiliza tokens, cookies, escritura al SOURCE, datos reales ni mutations financieras. Sus resultados son `PASS/FAIL/BLOCKED` con códigos estructurados que no incluyen cuerpos de respuesta ni secretos.
+
+Las pruebas con HTTP local efímero corren mediante `npm run test:hipico:smoke` y están incluidas en `npm run test:hipico`. No equivalen a verificar login real, DB, Android ni autonomía LAB; esos gates continúan en #837/#839.
