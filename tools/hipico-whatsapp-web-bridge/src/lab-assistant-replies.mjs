@@ -60,6 +60,13 @@ export function composeLabAssistantReply({ classification, plan, canonical, answ
     return 'Para darte información confiable necesito que un operador revise esa consulta. No se hizo ningún cambio.';
   }
 
+  if (plan?.queryCategory === 'RESULT' || plan?.queryCategory === 'PARTICIPANTS') {
+    const topic = plan.queryCategory === 'RESULT' ? 'el resultado' : 'la lista de participantes';
+    return reference
+      ? 'Tengo la referencia de la ' + reference + ', pero en este momento no puedo verificar ' + topic + ' en los registros. Prefiero no inventar datos.'
+      : 'No puedo verificar ' + topic + ' sin una carrera concreta. ¿Me indicas número, hipódromo y fecha (AAAA-MM-DD)?';
+  }
+
   if (classification?.intent === 'greeting') {
     return `¡Buenas! Soy ${name}, el asistente virtual de Control Hípico. Puedo ayudarte a consultar carreras y aclarar dudas. ¿Qué necesitas?`;
   }
