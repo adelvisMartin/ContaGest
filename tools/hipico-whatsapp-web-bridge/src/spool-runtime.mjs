@@ -21,6 +21,14 @@ export const BRIDGE_SPOOL_KINDS=Object.freeze({
 const ACTIVE_STATES=new Set(['queued','failed']);
 const REPLAYABLE_STATES=new Set(['failed','quarantined','expired']);
 const KIND_VALUES=new Set(Object.values(BRIDGE_SPOOL_KINDS));
+function labNeedsReconciliation(record){
+  return record?.kind===BRIDGE_SPOOL_KINDS.LAB_MIRROR&&(
+    record.state==='sending'||
+    record.quarantineReason==='LAB_SEND_INTERRUPTED'||
+    record.lastError==='LAB_DELIVERY_AMBIGUOUS'
+  );
+}
+
 
 function safePart(value){return String(value??'').replace(/[^a-zA-Z0-9._-]+/g,'_').slice(0,120)||'unknown';}
 function iso(value=Date.now()){return new Date(value).toISOString();}
@@ -343,6 +351,10 @@ export function createBridgeSpoolRuntime({
     for(const state of [...REPLAYABLE_STATES]){
       for(const {record} of await listState(state)){
         if(record.kind!==kind)continue;
+        if(labNeedsReconciliation(record)){
+          skipped.push({recordId:record.recordId,reason:'LAB_DELIVERY_RECONCILIATION_REQUIRED'});
+          continue;
+        }
         const created=new Date(record.createdAt||0).getTime();
         if(created<start||created>end){skipped.push({recordId:record.recordId,reason:'OUTSIDE_RANGE'});continue;}
         eligible.push({recordId:record.recordId,key:record.key,state:record.state,destination});
@@ -368,9 +380,7 @@ export function createBridgeSpoolRuntime({
       if(!found||!REPLAYABLE_STATES.has(found.record.state)||found.record.kind!==kind){
         throw new Error(`REPLAY_RECORD_NOT_ELIGIBLE:${id}`);
       }
-      if(kind===BRIDGE_SPOOL_KINDS.LAB_MIRROR&&
-        (found.record.quarantineReason==='LAB_SEND_INTERRUPTED'||
-          found.record.lastError==='LAB_DELIVERY_AMBIGUOUS')){
+      if(labNeedsReconciliation(found.record)){
         throw new Error('REPLAY_LAB_AMBIGUOUS_RECONCILIATION_REQUIRED');
       }
       prepared.push(found);
