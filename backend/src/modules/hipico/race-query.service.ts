@@ -78,11 +78,12 @@ function nextRace(races: any[]) {
 export class RaceQueryService {
   constructor(private readonly store: RaceQueryStore = new RaceLifecycleStore()) {}
 
-  async execute(input: RaceQueryRequest): Promise<RaceQueryResult> {
+  async execute(input: RaceQueryRequest, verifiedScopedRaces?:any[]): Promise<RaceQueryResult> {
     const intent = classifyRaceQueryIntent(input.text);
     const meetingId = input.meetingId || null;
     const raceId = input.raceId || null;
-    const races = await this.store.listRaces(input.ownerId, input.groupKey, meetingId, 200);
+    // LAB passes a DB-scoped snapshot so the answer and revision hash use one read.
+    const races = verifiedScopedRaces ?? await this.store.listRaces(input.ownerId, input.groupKey, meetingId, 200);
     let answer: any = null;
 
     if (intent === 'ACTIVE_RACE') {
