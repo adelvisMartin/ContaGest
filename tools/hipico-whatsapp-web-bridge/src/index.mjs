@@ -1250,6 +1250,10 @@ async function processLabTestInput() {
         continue;
       }
       if (canonical.kind === 'NO_RESPONSE') {
+        if (canonical.reason === 'LAB_REPLAY_REVIEW_REQUIRED') {
+          // Durable evidence is missing or stale: do not publish or retry blindly.
+          await log('LAB_REPLAY_REVIEW_REQUIRED id='+tag);
+        }
         rememberLabSeen(row.id);
         await saveLabSeenNow();
         continue;
