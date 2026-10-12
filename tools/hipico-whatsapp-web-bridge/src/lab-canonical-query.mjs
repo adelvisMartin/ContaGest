@@ -109,7 +109,7 @@ export async function queryCanonicalLab({
        authority?.sourceWriteAllowed!==false||
        authority?.financialAuthority!==false||
        authority?.domainEffectsAllowed!==false||
-       typeof body.text!=='string'||body.text.length>1500||
+       typeof body.text!=='string'||!body.text.trim()||body.text.length>1500||
        !/^[A-Z0-9_]{4,80}$/.test(String(body.status||''))){
       return{available:false,reason:'LAB_CANONICAL_INVALID_RESPONSE'};
     }
