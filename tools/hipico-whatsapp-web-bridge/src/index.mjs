@@ -26,6 +26,7 @@ import { assessRuntimeReadiness } from './health-state.mjs';
 import { createBridgeSpoolRuntime } from './spool-runtime.mjs';
 import { createSourceReplyJournal } from './source-reply-journal.mjs';
 import { labSendFailure, labSeenOutcome } from './lab-delivery-state.mjs';
+import { createLabConversationContext, labConversationInput, planLabConversation } from './lab-conversation-context.mjs';
 import { localKillSwitchState } from './promotion-guard.mjs';
 
 const config = assertRuntimeConfig(loadRuntimeConfig());
@@ -69,6 +70,9 @@ const SOURCE_REPLY_DIR = path.join(DATA_DIR, 'source-replies');
 const TRAINING_DIR = path.join(DATA_DIR, 'training');
 const SEEN_FILE = path.join(DATA_DIR, 'seen-source-message-ids.json');
 const LAB_SEEN_FILE = path.join(DATA_DIR, 'seen-lab-test-message-ids.json');
+const LAB_CONTEXT_FILE = path.join(DATA_DIR, 'lab-conversation-context.json');
+const labConversationContext = LAB_TEST_INPUT_ENABLED && LAB_GROUP_ID
+  ? createLabConversationContext({ file: LAB_CONTEXT_FILE, groupId: LAB_GROUP_ID }) : null;
 const LEGACY_SEEN_FILE = path.join(DATA_DIR, 'seen-message-ids.json');
 const RETRY_STATE_FILE = path.join(DATA_DIR, 'retry-state.json');
 const HEALTH_FILE = path.join(DATA_DIR, 'health.json');
@@ -984,7 +988,7 @@ function labTestTagFor(externalMessageId) {
   return `[LABTEST:${sha256(externalMessageId).slice(0, 10)}]`;
 }
 
-function localLabTestReply(row, classification) {
+function localLabTestReply(row, classification, plan = null) {
   const textValue = String(row.text || '').slice(0, 1200);
   const entities = classification.entities || {};
   const details = [];
@@ -1000,6 +1004,7 @@ function localLabTestReply(row, classification) {
     `Mensaje: ${textValue || '[sin texto]'}`,
     `Lectura: ${classification.intent} · riesgo ${classification.risk} · confianza ${(classification.confidence * 100).toFixed(1)}%`,
     ...details,
+    `Respuesta contextual: ${plan?.guidance || 'Sin contexto adicional disponible.'}`,
     `Propuesta: ${localSuggestion(classification)}`,
     '⚠️ PRUEBA LOCAL. No modifica jugadas, saldos, cierres ni resultados reales.'
   ].join('\n').slice(0, 3900);
@@ -1180,17 +1185,24 @@ async function processLabTestInput() {
   for (const row of visible) {
     if (!row?.id || labSeen.has(row.id)) continue;
     const body = String(row.text || '').trim();
-    if (!body || body.includes('[SHADOW:') || body.includes('[LABTEST:') || body.includes('🧪 CONTROL HÍPICO · SHADOW')) {
+    const classification = classifyLocal(body);
+    if (!labConversationInput(row, classification).eligible) {
       rememberLabSeen(row.id); // intentionally ignored, never a pending response
       continue;
     }
 
-    const classification = classifyLocal(body);
+    const sender = parseWhatsAppPre(row.pre).senderLabel;
+    const plan = planLabConversation(row, classification, labConversationContext?.get(sender));
     const tag = labTestTagFor(row.id);
     try {
-      await sendTextInCurrentLab(localLabTestReply(row, classification), tag);
+      await sendTextInCurrentLab(localLabTestReply(row, classification, plan), tag);
       rememberLabSeen(row.id); // confirmed delivery/tag; never ack before sending
       await saveLabSeenNow();
+      // Context is a LAB-only hint; a failed write cannot trigger a second WhatsApp send.
+      if (plan.rememberRace && labConversationContext) {
+        try { await labConversationContext.remember(plan.sender, plan.raceNumber); }
+        catch { await log('LAB_CONTEXT_PERSIST_FAILED'); }
+      }
       processed += 1;
       await log(`LAB_TEST_READ id=${tag} intent=${classification.intent}`);
     } catch (error) {
@@ -1364,6 +1376,7 @@ async function main() {
   console.log(`Datos locales: ${DATA_DIR}\n`);
 
   const spoolInit = await spoolRuntime.initialize();
+  await labConversationContext?.initialize();
   const sourceReplyInit = await sourceReplyJournal.initialize();
   if (sourceReplyInit.recovered) {
     console.log(`Source reply: ${sourceReplyInit.recovered} entrega(s) in-flight quedaron ambiguas; no se reenviarán automáticamente.`);
