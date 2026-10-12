@@ -1012,14 +1012,20 @@ function localLabTestReply(row, classification, plan = null, canonical = null) {
   if (entities.amount != null) details.push(`Monto detectado: ${entities.amount}`);
   if (entities.raceNumber != null) details.push(`Carrera: ${entities.raceNumber}`);
   if (Array.isArray(entities.board) && entities.board.length) details.push(`Pizarra: ${entities.board.join('-')}`);
+  const canonicalRead=canonical?.available===true&&typeof canonical.text==='string';
+  const guidance=canonicalRead
+    ? canonical.text
+    : plan?.guidance || localSuggestion(classification);
   return [
     labTestTagFor(row.id),
     '🧪 CONTROL HÍPICO · PRUEBA LAB',
     `Mensaje: ${textValue || '[sin texto]'}`,
     `Lectura: ${classification.intent} · riesgo ${classification.risk} · confianza ${(classification.confidence * 100).toFixed(1)}%`,
     ...details,
-    `Propuesta: ${localSuggestion(classification)}`,
-    '⚠️ PRUEBA LOCAL. No modifica jugadas, saldos, cierres ni resultados reales.'
+    `Respuesta: ${guidance}`,
+    `Fuente: ${canonicalRead ? 'LECTURA_CANÓNICA_LIMITADA' : 'ORIENTACIÓN_LOCAL_SIN_DATOS_CANÓNICOS'}`,
+    `Consulta: ${canonical?.reason||'LAB_LOCAL_ONLY'}`,
+    '⚠️ SOLO LAB. No modifica jugadas, saldos, cierres ni resultados reales. Un resultado interno no certifica oficialidad externa.'
   ].join('\n').slice(0, 3900);
 }
 
