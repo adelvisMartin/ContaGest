@@ -53,7 +53,11 @@ test('contextual clarifications and summaries are scoped to verified sender hint
   const plan = planLabConversation(question, classification, prior);
   assert.equal(plan.raceNumber, 5);
   assert.deepEqual(plan.raceScope, scope);
-  assert.match(composeLabAssistantReply({ classification, plan }), /no puedo verificar/);
+  assert.match(composeLabAssistantReply({ classification, plan }), /todavía no dispongo/);
+  const mismatched = composeLabAssistantReply({ classification, plan, canonical: {
+    available: true, reason: 'CANONICAL_STATE_FOUND', text: 'Estado interno: abierta'
+  } });
+  assert.doesNotMatch(mismatched, /Estado interno: abierta/);
   const summary = row('s', ANA, 'Hazme un resumen de lo que hablamos');
   const cSummary = classifyLocal(summary.text);
   assert.equal(labConversationInput(summary, cSummary).eligible, true);
