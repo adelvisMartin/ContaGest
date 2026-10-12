@@ -33,7 +33,7 @@ import { localKillSwitchState } from './promotion-guard.mjs';
 import { queryCanonicalLab, explicitLabRaceScope, labReadOnlyQueryPurpose, resolveQuotedLabRaceScope } from './lab-canonical-query.mjs';
 import { selectLabAnswer } from './lab-answer-policy.mjs';
 import { createLabQueryBackoff } from './lab-query-backoff.mjs';
-import { createLabPendingQueryInbox } from './lab-pending-query-inbox.mjs';
+import { createLabPendingQueryInbox, reconcileLabPendingObservation } from './lab-pending-query-inbox.mjs';
 
 const config = assertRuntimeConfig(loadRuntimeConfig());
 const {
@@ -1346,13 +1346,33 @@ async function processLabTestInput() {
       await log('LAB_PENDING_MESSAGE_STALE_OR_UNVERIFIED id='+tag);
       continue;
     }
+    let trustedRace=scopedRace;
+    let trustedQuote=quotedVerified?row.quotedId:null;
     if(inquiryPurpose && BACKEND_SYNC_ENABLED && sender && labPendingInbox){
       // Crash barrier: persist minimal encrypted query data BEFORE any network read.
-      await labPendingInbox.enqueue({
-        messageId:row.id,senderId:sender,text:body,purpose:inquiryPurpose,
-        messageTimestamp:parsedLabStamp.timestamp,
-        race:scopedRace||null,quotedMessageId:quotedVerified?row.quotedId:null
-      });
+      const original=await labPendingInbox.read(row.id);
+      if(original){
+        const verified=reconcileLabPendingObservation(original,{
+          messageId:row.id,senderId:sender,text:body,purpose:inquiryPurpose,
+          messageTimestamp:parsedLabStamp.timestamp,
+          quotedMessageId:row.quotedId||null,
+          explicitRace:explicitLabRaceScope(body)
+        });
+        if(!verified.valid){
+          // An ID collision or altered quoted reference is an operator issue,
+          // not a reason to overwrite the encrypted record or send again.
+          await log('LAB_PENDING_REVIEW_REQUIRED id='+tag+' reason='+verified.reason);
+          continue;
+        }
+        trustedRace=verified.race;
+        trustedQuote=verified.quotedMessageId;
+      }else{
+        await labPendingInbox.enqueue({
+          messageId:row.id,senderId:sender,text:body,purpose:inquiryPurpose,
+          messageTimestamp:parsedLabStamp.timestamp,
+          race:trustedRace||null,quotedMessageId:trustedQuote
+        });
+      }
     }
     if(inquiryPurpose && BACKEND_SYNC_ENABLED && !labQueryBackoff.allowed(row.id))continue;
     const canonical = inquiryPurpose && sender && BACKEND_SYNC_ENABLED && backendState === 'online'
@@ -1361,8 +1381,8 @@ async function processLabTestInput() {
           labGroupId:LAB_GROUP_ID,labChannelKey:LAB_CHANNEL_KEY,
           messageId:row.id,senderId:sender,text:body,
           timestamp:parsedLabStamp.timestamp,purpose:inquiryPurpose,
-          quotedMessageId:quotedVerified?row.quotedId:null,
-          race:scopedRace,timeoutMs:Math.min(5000,BACKEND_TIMEOUT_MS)
+          quotedMessageId:trustedQuote,
+          race:trustedRace,timeoutMs:Math.min(5000,BACKEND_TIMEOUT_MS)
         })
       : {available:false,reason:'LAB_CANONICAL_NOT_QUERIED'};
     if(inquiryPurpose && BACKEND_SYNC_ENABLED && !sender){
