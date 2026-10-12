@@ -141,3 +141,27 @@ test('two different spool kinds can flush independently without global head-of-l
     assert.equal((await backend).delivered,1);
   }finally{await f.cleanup();}
 });
+
+
+test('transport failures never persist tokens, raw response text or message PII in retry or quarantine records',async()=>{
+  const f=await fixture();
+  try{
+    const first=await f.runtime.queueBackendEvent({channelKey:'source',externalMessageId:'sensitive-1'});
+    const error=new Error('Authorization: Bearer do-not-store-secret, message from private user');
+    error.code='ECONNRESET';
+    await f.runtime.flushBackend(async()=>{throw error;});
+    let record=await f.runtime.findRecord(first.record.recordId);
+    assert.equal(record.record.state,'failed');
+    assert.equal(record.record.lastError,'ECONNRESET');
+    assert.doesNotMatch(JSON.stringify(record.record),/Bearer|do-not-store-secret|private user/);
+
+    const second=await f.runtime.queueLabMirror({sourceExternalMessageId:'sensitive-2',text:'dummy'});
+    const nonretry=new Error('secret access token private');
+    nonretry.retryable=false;
+    await f.runtime.flushLab(async()=>{throw nonretry;});
+    record=await f.runtime.findRecord(second.record.recordId);
+    assert.equal(record.record.state,'quarantined');
+    assert.equal(record.record.lastError,'DELIVERY_FAILED');
+    assert.doesNotMatch(JSON.stringify(record.record),/secret access token/);
+  }finally{await f.cleanup();}
+});
