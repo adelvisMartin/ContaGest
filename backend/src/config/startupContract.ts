@@ -13,7 +13,9 @@ export function checkBackendStartupConfig(config: BackendStartupInput) {
   const vercelEnv=config.VERCEL_ENV || '';
   if(!NODE_ENVS.has(nodeEnv))failures.push('NODE_ENV_UNRECOGNIZED');
   if(vercelEnv&&!VERCEL_ENVS.has(vercelEnv))failures.push('VERCEL_ENV_UNRECOGNIZED');
-  const production=vercelEnv==='production'||(!vercelEnv&&nodeEnv==='production');
+  // Either runtime declaring production must keep hard fail-closed boundaries.
+  // A preview/development Vercel label cannot downgrade NODE_ENV=production.
+  const production=vercelEnv==='production'||nodeEnv==='production';
   if(config.PORT!==undefined){
     // Coercing with Number alone allows empty strings and fractional ports.
     const candidate=String(config.PORT).trim();
