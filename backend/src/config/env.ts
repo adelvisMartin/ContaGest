@@ -1,7 +1,7 @@
 import 'dotenv/config';
 import { createHash } from 'node:crypto';
 import { z } from 'zod';
-import { assertBackendStartupConfig } from './startupContract.js';
+import { assertBackendStartupConfig, isProductionBackendRuntime } from './startupContract.js';
 
 const DEFAULT_APP_URL = 'http://localhost:8080';
 const DEVELOPMENT_JWT_SECRET = 'dev_secret_change_me_please_32_chars';
@@ -72,8 +72,7 @@ assertBackendStartupConfig(process.env);
 const parsedEnv = envSchema.parse(process.env);
 export const deploymentEnvironment = process.env.VERCEL_ENV || parsedEnv.NODE_ENV;
 export const isVercelPreview = process.env.VERCEL_ENV === 'preview';
-export const isProductionDeployment = process.env.VERCEL_ENV === 'production'
-  || (!process.env.VERCEL_ENV && parsedEnv.NODE_ENV === 'production');
+export const isProductionDeployment = isProductionBackendRuntime(process.env);
 export const isProd = parsedEnv.NODE_ENV === 'production' || Boolean(process.env.VERCEL_ENV);
 
 const vercelOrigins = [

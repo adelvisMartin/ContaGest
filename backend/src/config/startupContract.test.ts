@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {assertBackendStartupConfig,checkBackendStartupConfig} from './startupContract.js';
+import {assertBackendStartupConfig,checkBackendStartupConfig,isProductionBackendRuntime} from './startupContract.js';
 import {readFileSync} from 'node:fs';
 
 const production={NODE_ENV:'production',API_MODE:'prisma',PORT:'3030',ALLOW_DEV_TENANT_HEADER:'false'};
@@ -105,4 +105,33 @@ test('#665 backend sample .env.example carries the same safe startup authority',
     template.split(/\r?\n/).filter(x=>/^[A-Z][A-Z0-9_]*=/.test(x))
       .map(x=>[x.slice(0,x.indexOf('=')),x.slice(x.indexOf('=')+1)])
   )).ok,true);
+});
+
+
+test('#665 shared production classifier cannot be downgraded by hosting preview',()=>{
+  for(const [NODE_ENV,VERCEL_ENV,expected] of [
+    ['production','preview',true],
+    ['production','development',true],
+    ['production','production',true],
+    ['development','production',true],
+    ['test','production',true],
+    ['development','preview',false],
+    ['development','development',false],
+    ['test',undefined,false],
+    [undefined,undefined,false]
+  ] as const){
+    const config={NODE_ENV,VERCEL_ENV,API_MODE:'mock'};
+    assert.equal(isProductionBackendRuntime(config),expected,
+      String(NODE_ENV)+' / '+String(VERCEL_ENV));
+    assert.equal(checkBackendStartupConfig(config).failures.includes(
+      'PRODUCTION_MOCK_API_FORBIDDEN'),expected);
+  }
+});
+
+test('#665 env runtime consumes the same pure startup production predicate',()=>{
+  const source=readFileSync(new URL('./env.ts',import.meta.url),'utf8');
+  assert.match(source,/isProductionBackendRuntime.*from '.\/startupContract\.js'/);
+  assert.match(source,
+    /export const isProductionDeployment = isProductionBackendRuntime\(process\.env\);/);
+  assert.doesNotMatch(source,/!process\.env\.VERCEL_ENV && parsedEnv\.NODE_ENV/);
 });
