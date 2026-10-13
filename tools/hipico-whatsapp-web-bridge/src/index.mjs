@@ -1398,13 +1398,18 @@ async function processLabTestInput() {
     // A confirmed ack survives restart even if the legacy seen-file did not.
     const journalRecord = await labTestReplyJournal.read(row.id);
     if (journalRecord?.state === 'confirmed') {
+      // Immutable input survives an ACK crash; the mutable DOM cannot mint facts.
+      const durableConfirmed=labPendingInbox?await labPendingInbox.read(row.id):null;
+      await finalizeConfirmedVisibleLabQuote(row,body);
       // Crash after confirmed ACK but before hint persistence: safe to backfill.
       const verifiedSender=stableLabSenderKey(row.id);
-      const verifiedPurpose=labReadOnlyQueryPurpose(body,classifyLocal(body));
+      const verifiedText=labPendingInbox?(durableConfirmed?.text||''):body;
+      const verifiedPurpose=labReadOnlyQueryPurpose(verifiedText,classifyLocal(verifiedText));
       // Re-evaluate ambiguity after crash instead of trusting the first
       // explicit race captured by a permissive regex.
-      const verifiedRace=confirmedLabQuoteHint(row,classifyLocal(body));
-      if(verifiedSender&&verifiedRace&&labQuotedRaceJournal){
+      const verifiedRace=verifiedText?
+        confirmedLabQuoteHint({...row,text:verifiedText},classifyLocal(verifiedText)):null;
+      if(!labPendingInbox&&verifiedSender&&verifiedRace&&labQuotedRaceJournal){
         try{await labQuotedRaceJournal.remember({
           messageId:row.id,senderId:verifiedSender,race:verifiedRace,confirmed:true
         });}catch{await log('LAB_QUOTE_HINT_PERSIST_FAILED');}
@@ -1433,6 +1438,7 @@ async function processLabTestInput() {
         await labTestReplyJournal.confirm(row.id,{visibleTag:true});
         rememberLabSeen(row.id);
         await saveLabSeenNow();
+        await finalizeConfirmedVisibleLabQuote(row,body);
         await log('LAB_TEST_REPLY_RECONCILED id='+tag);
       }
       continue;
@@ -1478,14 +1484,48 @@ async function processLabTestInput() {
       await log('LAB_HANDOFF_PRECHECK_'+eligibleBefore.reason+' id='+tag);
       continue; // never prepare a send journal for a human-owned conversation
     }
+    let parsedLabStamp=null;
+    let trustedRace=verifiedRace;
+    let trustedQuote=quotedVerified?row.quotedId:null;
+    if(inquiryPurpose && BACKEND_SYNC_ENABLED && labPendingInbox){
+      parsedLabStamp=parseWhatsAppPre(row.pre);
+      const stamp=parsedLabStamp?.timestamp;
+      const age=Date.now()-Date.parse(stamp||'');
+      if(!parsedLabStamp?.parsed || !Number.isFinite(age) ||
+         age>=10*60*1000 || age < -60000){
+        rememberLabSeen(row.id);await saveLabSeenNow();
+        await log('LAB_PENDING_MESSAGE_STALE_OR_UNVERIFIED id='+tag);
+        continue;
+      }
+      const original=await labPendingInbox.read(row.id);
+      if(original){
+        const verified=reconcileLabPendingObservation(original,{
+          messageId:row.id,senderId:sender,text:body,purpose:inquiryPurpose,
+          messageTimestamp:stamp,quotedMessageId:row.quotedId||null,
+          explicitRace:explicitLabRaceScope(body)
+        });
+        if(!verified.valid){
+          await log('LAB_PENDING_REVIEW_REQUIRED id='+tag+' reason='+verified.reason);
+          continue;
+        }
+        trustedRace=verified.race;trustedQuote=verified.quotedMessageId;
+      }else{
+        // Durable barrier: plaintext is encrypted+fsynced before HTTP.
+        await labPendingInbox.enqueue({
+          messageId:row.id,senderId:sender,text:body,purpose:inquiryPurpose,
+          messageTimestamp:stamp,race:trustedRace||null,quotedMessageId:trustedQuote
+        });
+      }
+      if(!labQueryBackoff.allowed(row.id))continue;
+    }
     const canonical = inquiryPurpose && sender && !plan.scopeConflict && BACKEND_SYNC_ENABLED && backendState === 'online'
       ? await queryCanonicalLab({
           ingestUrl:INGEST_URL,token:TOKEN,
           labGroupId:LAB_GROUP_ID,labChannelKey:LAB_CHANNEL_KEY,
           messageId:row.id,senderId:sender,text:body,
-          purpose:inquiryPurpose,
-          quotedMessageId:quotedVerified?row.quotedId:null,
-          race:verifiedRace,timeoutMs:Math.min(5000,BACKEND_TIMEOUT_MS)
+          timestamp:parsedLabStamp?.timestamp,purpose:inquiryPurpose,
+          quotedMessageId:trustedQuote,
+          race:trustedRace,timeoutMs:Math.min(5000,BACKEND_TIMEOUT_MS)
         })
       : {available:false,reason:'LAB_CANONICAL_NOT_QUERIED'};
     if(canonical.reason==='LAB_HANDOFF_HELD'){
@@ -1498,8 +1538,16 @@ async function processLabTestInput() {
     // autonomous answer or durable send intent. A failed/invalid lookup may
     // be retried on the next LAB poll; never send a locally inferred answer.
     if(inquiryPurpose && canonical.available!==true){
-      await log('LAB_CANONICAL_QUERY_PENDING id='+tag+' reason='+canonical.reason);
+      const delay=labPendingInbox?labQueryBackoff.fail(row.id):0;
+      await log('LAB_CANONICAL_QUERY_PENDING id='+tag+' reason='+canonical.reason+' retryMs='+delay);
       continue;
+    }
+    if(inquiryPurpose && labPendingInbox){
+      labQueryBackoff.clear(row.id);
+      if(!(await labPendingInbox.read(row.id))){
+        await log('LAB_PENDING_EXPIRED_BEFORE_SEND id='+tag);
+        continue;
+      }
     }
     // A slower canonical query may overlap operator takeover: recheck the
     // current ownership immediately before creating a durable send intent.
@@ -1533,9 +1581,10 @@ async function processLabTestInput() {
       await labTestReplyJournal.confirm(row.id,{visibleTag:true});
       rememberLabSeen(row.id); // confirmed delivery/tag; never ack before sending
       await saveLabSeenNow();
+      await finalizeConfirmedVisibleLabQuote(row,body);
       // Hints are safe only after the durable confirmed LAB ACK; errors cannot
       // authorize a second send or overwrite the underlying ACK.
-      const confirmedQuote=confirmedLabQuoteHint(row,classification);
+      const confirmedQuote=labPendingInbox?null:confirmedLabQuoteHint(row,classification);
       if(sender&&confirmedQuote&&labQuotedRaceJournal){
         try{await labQuotedRaceJournal.remember({
           messageId:row.id,senderId:sender,race:confirmedQuote,confirmed:true
@@ -1565,6 +1614,7 @@ async function processLabTestInput() {
     }
   }
 
+  await resumePendingLabQueries(new Set(visible.map(row=>row?.id).filter(Boolean)));
   labBootstrapCompleted = true;
   await saveLabSeenNow();
   if (processed) console.log('LAB prueba: '+processed+' mensaje(s) leído(s) y clasificado(s).');
