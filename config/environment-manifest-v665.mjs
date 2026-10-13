@@ -1,16 +1,16 @@
-// #665 cross-process inventory: metadata only. No credential values or runtime secret reads.
+// #665 cross-process inventory: metadata only; no credential values.
 export const CONFIG_MANIFEST_V665=Object.freeze({
   "version": 1,
   "description": "Declarative inventory; no runtime credentials",
   "surfaces": {"backend":{"examplePath":"backend/.env.example"},"frontend":{"examplePath":"frontend/.env.example"},"bridge":{"examplePath":"tools/hipico-whatsapp-web-bridge/.env.example"},"build":{"examplePath":null}},
   "variables": {
     "backend": {
-      "NODE_ENV": {"type":"enum","visibility":"server","sensitive":false,"requiredWhen":"optional","sample":"required"},
+      "NODE_ENV": {"type":"enum","visibility":"server","sensitive":false,"requiredWhen":"optional","sample":"required","allowedValues":["development","test","production"]},
       "PORT": {"type":"integer","visibility":"server","sensitive":false,"requiredWhen":"optional","sample":"required"},
       "APP_URL": {"type":"url","visibility":"server","sensitive":false,"requiredWhen":"optional","sample":"required"},
       "CORS_ORIGIN": {"type":"string","visibility":"server","sensitive":false,"requiredWhen":"optional","sample":"required"},
       "JWT_SECRET": {"type":"secret","visibility":"server","sensitive":true,"requiredWhen":"production","sample":"required"},
-      "API_MODE": {"type":"enum","visibility":"server","sensitive":false,"requiredWhen":"optional","sample":"required","safeSample":"prisma"},
+      "API_MODE": {"type":"enum","visibility":"server","sensitive":false,"requiredWhen":"optional","sample":"required","safeSample":"prisma","allowedValues":["prisma","mock"]},
       "ALLOW_DEV_TENANT_HEADER": {"type":"boolean","visibility":"server","sensitive":false,"requiredWhen":"optional","sample":"required","safeSample":"false"},
       "JSON_BODY_LIMIT": {"type":"string","visibility":"server","sensitive":false,"requiredWhen":"optional","sample":"required"},
       "LOG_LEVEL": {"type":"string","visibility":"server","sensitive":false,"requiredWhen":"optional","sample":"required"},
@@ -112,7 +112,7 @@ export const CONFIG_MANIFEST_V665=Object.freeze({
       "HIPICO_BRIDGE_HEALTH_URL": {"type":"url","visibility":"server","sensitive":false,"requiredWhen":"optional","sample":"required"},
       "HIPICO_GROUP_BRIDGE_TOKEN": {"type":"secret","visibility":"server","sensitive":true,"requiredWhen":"lab-send","sample":"required","safeSample":""},
       "HIPICO_DATA_DIR": {"type":"string","visibility":"server","sensitive":false,"requiredWhen":"optional","sample":"required"},
-      "HIPICO_TRANSPORT_ADAPTER": {"type":"enum","visibility":"server","sensitive":false,"requiredWhen":"optional","sample":"required","safeSample":"playwright-web"},
+      "HIPICO_TRANSPORT_ADAPTER": {"type":"enum","visibility":"server","sensitive":false,"requiredWhen":"optional","sample":"required","safeSample":"playwright-web","allowedValues":["playwright-web"]},
       "HIPICO_SOURCE_GROUP_MATCHES": {"type":"string","visibility":"server","sensitive":false,"requiredWhen":"optional","sample":"required"},
       "HIPICO_SOURCE_GROUP_MATCH": {"type":"string","visibility":"server","sensitive":false,"requiredWhen":"optional","sample":"required"},
       "HIPICO_SOURCE_GROUP_ID": {"type":"string","visibility":"server","sensitive":false,"requiredWhen":"optional","sample":"required","safeSample":""},
@@ -149,7 +149,7 @@ export const CONFIG_MANIFEST_V665=Object.freeze({
       "HIPICO_HISTORY_UPLOAD_CONCURRENCY": {"type":"integer","visibility":"server","sensitive":false,"requiredWhen":"optional","sample":"required"}
     },
     "build": {
-      "VERCEL_ENV": {"type":"enum","visibility":"build","sensitive":false,"requiredWhen":"optional","sample":"not-applicable"},
+      "VERCEL_ENV": {"type":"enum","visibility":"build","sensitive":false,"requiredWhen":"optional","sample":"not-applicable","allowedValues":["development","preview","production"]},
       "VERCEL_URL": {"type":"string","visibility":"build","sensitive":false,"requiredWhen":"optional","sample":"not-applicable"},
       "VERCEL_PROJECT_PRODUCTION_URL": {"type":"string","visibility":"build","sensitive":false,"requiredWhen":"optional","sample":"not-applicable"},
       "GITHUB_SHA": {"type":"string","visibility":"build","sensitive":false,"requiredWhen":"optional","sample":"not-applicable"},

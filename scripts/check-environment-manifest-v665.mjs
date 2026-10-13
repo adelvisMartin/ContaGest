@@ -26,6 +26,26 @@ export function parseTemplateInventory(source){
  return{entries,duplicates};
 }
 
+const URL_SCHEMES=new Set(['http:','https:','postgres:','postgresql:','mysql:','mongodb:','mongodb+srv:','redis:','rediss:']);
+function sampleMatchesDeclaredType(value,record,owner){
+ if(value==='')return true; // Empty placeholders are intentional.
+ switch(record.type){
+  case 'boolean':return value==='true'||value==='false';
+  case 'integer':return /^(?:0|[1-9][0-9]*)$/.test(value)&&Number.isSafeInteger(Number(value));
+  case 'number':return /^-?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?$/.test(value)&&Number.isFinite(Number(value));
+  case 'enum':return Array.isArray(record.allowedValues)&&record.allowedValues.includes(value);
+  case 'url':{
+   // A marketing deep link may be relative; infrastructure URLs cannot.
+   if(owner==='frontend'&&value.startsWith('/')&&!value.startsWith('//'))
+     return !/[\s\\]/.test(value);
+   const normalized=value.replace(/\[[A-Za-z0-9_-]+\]/g,'example');
+   try{const url=new URL(normalized);return URL_SCHEMES.has(url.protocol)&&Boolean(url.hostname);}
+   catch{return false;}
+  }
+  default:return true;
+ }
+}
+
 export function checkEnvironmentManifest(samples,registry=CONFIG_MANIFEST_V665){
  const findings=[],add=(code,owner,key)=>findings.push({code,owner,key});
  for(const [owner,meta] of Object.entries(registry.surfaces)){
@@ -39,12 +59,18 @@ export function checkEnvironmentManifest(samples,registry=CONFIG_MANIFEST_V665){
    if((owner==='frontend')!==(record.visibility==='public')||
       (owner==='build')!==(record.visibility==='build'))
      add('MANIFEST_VISIBILITY_MISMATCH',owner,key);
-   // Frontend variables cannot use a secret type even when the separate
-   // sensitivity flag is incorrectly set to false.
+   // Sensitive public types are rejected even if a flag was mislabeled.
    if(owner==='frontend'&&(record.sensitive||record.type==='secret'))
      add('MANIFEST_PUBLIC_SECRET',owner,key);
    if(record.sample==='required'&&!parsed.entries.has(key))add('MANIFEST_MISSING_SAMPLE_KEY',owner,key);
    if(record.sample==='not-applicable'&&parsed.entries.has(key))add('MANIFEST_UNEXPECTED_SAMPLE',owner,key);
+   if(record.type==='enum'&&(
+      !Array.isArray(record.allowedValues)||record.allowedValues.length===0||
+      record.allowedValues.some(v=>typeof v!=='string'||!v)||
+      new Set(record.allowedValues).size!==record.allowedValues.length))
+     add('MANIFEST_ENUM_VALUES_INVALID',owner,key);
+   if(parsed.entries.has(key)&&!sampleMatchesDeclaredType(parsed.entries.get(key),record,owner))
+     add('MANIFEST_SAMPLE_TYPE_INVALID',owner,key);
    if(record.safeSample!==undefined&&parsed.entries.has(key)&&parsed.entries.get(key)!==record.safeSample)
      add('MANIFEST_UNSAFE_DEFAULT',owner,key);
    if(record.aliasFor){
