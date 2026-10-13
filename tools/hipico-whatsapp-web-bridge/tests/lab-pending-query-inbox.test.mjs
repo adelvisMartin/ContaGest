@@ -775,3 +775,50 @@ test('live LAB recovery serves all 200 encrypted pending IDs within eight bounde
   await recover(visibleIds);
   assert.deepEqual(inspected.slice(200),inspected.slice(0,25),'the next fair round begins at the first batch');
 });
+
+
+test('privacy-safe LAB health counters report age and expiry without exposing message identities',async t=>{
+  const f=await harness(t);
+  const inbox=f.create();
+  await inbox.initialize();
+  const empty=await inbox.snapshot();
+  assert.deepEqual({
+    pending:empty.pending,nearingExpiry:empty.nearingExpiry,
+    oldestAgeSeconds:empty.oldestAgeSeconds
+  },{pending:0,nearingExpiry:0,oldestAgeSeconds:0});
+  await inbox.enqueue(candidate());
+  const fresh=await inbox.snapshot();
+  assert.equal(fresh.pending,1);
+  assert.equal(fresh.nearingExpiry,0);
+  assert.equal(fresh.oldestAgeSeconds,0);
+  for(const forbidden of [MESSAGE,SENDER,TEXT,LAB,SOURCE,'La Rinconada']){
+    assert.equal(JSON.stringify(fresh).includes(forbidden),false);
+  }
+  assert.equal(fresh.sourceWriteAllowed,false);
+  assert.equal(fresh.deliveryAuthority,false);
+
+  f.advance(8*60*1000+1000);
+  const warning=await inbox.snapshot();
+  assert.equal(warning.pending,1);
+  assert.equal(warning.nearingExpiry,1);
+  assert.equal(warning.oldestAgeSeconds,481);
+
+  f.advance(2*60*1000);
+  const expired=await inbox.snapshot();
+  assert.equal(expired.pending,0);
+  assert.equal(expired.nearingExpiry,0);
+  assert.equal(expired.oldestAgeSeconds,0);
+  await inbox.close();
+});
+
+test('Bridge health includes only aggregate LAB pending and near-expiry counters',async()=>{
+  const source=await fs.readFile(new URL('../src/index.mjs',import.meta.url),'utf8');
+  const start=source.indexOf('async function printHealthSummary(');
+  const end=source.indexOf('async function monitor()',start);
+  const section=source.slice(start,end);
+  assert.ok(start>=0&&end>start);
+  assert.match(section,/await labPendingInbox\.snapshot\(\)/);
+  assert.match(section,/labNearExpiry=\$\{pendingStatus\?\.nearingExpiry \?\? 0\}/);
+  assert.match(section,/labOldestSec=\$\{pendingStatus\?\.oldestAgeSeconds \?\? 0\}/);
+  assert.doesNotMatch(section,/pendingStatus\?\.text|pendingStatus\?\.senderId|pendingStatus\?\.quotedMessageId/);
+});
