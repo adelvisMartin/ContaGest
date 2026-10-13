@@ -550,6 +550,7 @@ test('confirmed LAB queries finish ACK-only hints while still visible or backend
       rememberLabSeen:()=>{actions.push('seen');},
       saveLabSeenNow:async()=>{actions.push('save-seen');},
       rememberConfirmedPendingLabQuote:async()=>{actions.push('hint');return scenario.hint;},
+      recoverConfirmedLabConversation:async()=>{},
       assertCurrentLabIdentity:async()=>{actions.push('pinned');},
       visibleLabHasTag:async()=>{actions.push('outgoing-proof');return true;},
       log:async()=>{actions.push('logged');}
