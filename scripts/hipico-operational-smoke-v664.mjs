@@ -42,7 +42,10 @@ export async function runHipicoSmoke(baseUrl, request = fetch) {
     // Neither HTML/JSONP nor mixed Content-Type headers may be interpreted as JSON.
     const contentType = response.headers.get('content-type')?.split(';', 1)[0]?.trim().toLowerCase();
     if (contentType !== 'application/json') return false;
-    if (!response.headers.get('cache-control')?.includes('no-store')) return false;
+    // Cache-Control consists of comma-delimited directives. A substring
+    // such as "no-store=false" or "x-no-store" is NOT the no-store directive.
+    const directives = response.headers.get('cache-control')?.split(',').map(value => value.trim().toLowerCase());
+    if (!directives?.includes('no-store')) return false;
     const body = await response.json();
     return body?.ok === true
       && body?.service === 'hipico-control-operations'

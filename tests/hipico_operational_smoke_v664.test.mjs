@@ -12,7 +12,7 @@ async function withServer(responder, run) {
 }
 const respond = (options = {}) => (req, res) => {
   if (req.url === '/api/hipico/status') {
-    res.writeHead(options.httpCode || 200, { 'Content-Type': options.statusContentType ?? 'application/json', 'Cache-Control': 'no-store' });
+    res.writeHead(options.httpCode || 200, { 'Content-Type': options.statusContentType ?? 'application/json', 'Cache-Control': options.statusCacheControl ?? 'no-store' });
     res.end(JSON.stringify(options.body || status));
   } else if (req.url === '/hipico-control/') {
     res.writeHead(200, { 'Content-Type': options.pwaContentType ?? 'text/html' });
@@ -113,4 +113,37 @@ test('#664 PWA smoke refuses spoofed HTML MIME before reading the body', async (
   const result = await runHipicoSmoke('http://127.0.0.1:8080/', request);
   assert.deepEqual(result.checks[1], { name: 'pwa', status: 'FAIL', code: 'CONTRACT_MISMATCH' });
   assert.equal(htmlReads, 0);
+});
+
+test('#664 status cache policy requires an exact no-store directive, not a substring', async () => {
+  for (const statusCacheControl of ['no-store=false', 'x-no-store', 'public, no-storex', 'private', 'no-cache, must-revalidate']) {
+    await withServer(respond({ statusCacheControl }), async url => {
+      const result = await runHipicoSmoke(url);
+      assert.equal(result.status, 'FAIL', statusCacheControl);
+      assert.deepEqual(result.checks[0], { name: 'status', status: 'FAIL', code: 'CONTRACT_MISMATCH' });
+      assert.equal(result.checks[1].status, 'PASS');
+    });
+  }
+  for (const statusCacheControl of ['no-store', 'private, no-store', 'No-Store, no-cache', 'private,  NO-STORE  ']) {
+    await withServer(respond({ statusCacheControl }), async url => {
+      assert.equal((await runHipicoSmoke(url)).status, 'PASS', statusCacheControl);
+    });
+  }
+});
+
+test('#664 invalid cache directive short-circuits body parsing before touching JSON', async () => {
+  let reads = 0;
+  const request = async url => url.pathname === '/api/hipico/status' ? {
+    ok: true,
+    headers: new Headers({ 'content-type': 'application/json', 'cache-control': 'x-no-store' }),
+    json: async () => { reads++; throw Error('INVALID_CACHE_POLICY_MUST_NOT_PARSE'); }
+  } : {
+    ok: true,
+    headers: new Headers({ 'content-type': 'text/html' }),
+    text: async () => '<title>Control Hípico</title><script src="./assets/js/app.js"></script>'
+  };
+  const result = await runHipicoSmoke('http://127.0.0.1:8080/', request);
+  assert.equal(result.status, 'FAIL');
+  assert.deepEqual(result.checks[0], { name: 'status', status: 'FAIL', code: 'CONTRACT_MISMATCH' });
+  assert.equal(reads, 0);
 });
