@@ -864,3 +864,48 @@ test('LAB health reveals aggregate near-expiry pressure without leaking input id
   assert.notEqual(await inbox.read(second),null);
   await inbox.close();
 });
+
+
+test('confirmed ACK retains encrypted input until conversation context persistence succeeds',async()=>{
+  const vm=await import('node:vm');
+  const source=await fs.readFile(new URL('../src/index.mjs',import.meta.url),'utf8');
+  const start=source.indexOf('async function finalizeConfirmedVisibleLabQuote(');
+  const end=source.indexOf('async function resumePendingLabQueries(',start);
+  assert.ok(start>=0&&end>start);
+  const helper=source.slice(start,end).trim();
+  const original=candidate();
+  let hintOk=true;
+  const events=[];
+  const finalize=vm.runInNewContext('('+helper+')',{
+    labPendingInbox:{
+      read:async()=>{events.push('read-original');return original;},
+      remove:async()=>events.push('delete-original')
+    },
+    rememberConfirmedPendingLabQuote:async()=>{events.push('persist-hint');return hintOk;},
+    log:async()=>{}
+  });
+  await finalize({id:MESSAGE},'visible text changed',{retainEncryptedInput:true});
+  assert.deepEqual(events,['read-original','persist-hint'],
+    'failed conversation persistence must not delete the only immutable input');
+  events.length=0;
+  await finalize({id:MESSAGE},'visible text changed',{retainEncryptedInput:false});
+  assert.deepEqual(events,['read-original','persist-hint','delete-original']);
+  events.length=0;
+  hintOk=false;
+  await finalize({id:MESSAGE},'visible text changed');
+  assert.deepEqual(events,['read-original','persist-hint'],
+    'failed quote persistence also retains encrypted original');
+
+  const live=source.slice(source.indexOf('async function processLabTestInput()'),
+    source.indexOf('async function visibleLabHasTag('));
+  const ack=live.lastIndexOf('await labTestReplyJournal.confirm(row.id,{visibleTag:true});');
+  const persist=live.indexOf('await labConversationContext.remember(plan.sender',ack);
+  const finalizer=live.indexOf('await finalizeConfirmedVisibleLabQuote(row,body,{retainEncryptedInput:!contextPersisted})',ack);
+  assert.ok(ack>=0&&persist>ack&&finalizer>persist,
+    'durable ACK must precede context persistence, which must precede inbox removal');
+  assert.match(live.slice(persist,finalizer),/contextPersisted=false/);
+  const recovery=source.slice(source.indexOf('async function resumePendingLabQueries('),
+    source.indexOf('let labTestProcessing=false'));
+  assert.match(recovery,/!entry\.race\|\|restored/);
+  assert.match(live,/retainEncryptedInput:Boolean\(encryptedOriginal\?\.race\)&&!restored/);
+});
