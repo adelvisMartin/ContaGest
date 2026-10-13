@@ -102,3 +102,52 @@ test('#665 permits harmless URL parameters and empty credentials', () => {
     assert.deepEqual(check({ frontend: frontend + '\nVITE_HIPICO_ENDPOINT=' + url }), { status: 'PASS', findings: [] });
   }
 });
+
+
+test('#665 public URL userinfo with comments and spacing stays secret', () => {
+  const credential = 'https://operator:private-password@api.example.test/v1';
+  for (const value of [
+    credential + ' # note',
+    '"' + credential + '" # note',
+    "'" + credential + "' # note",
+    '"' + credential + '" # comment with "quoted" text'
+  ]) {
+    for (const prefix of ['VITE_TARGET=', 'VITE_TARGET = ', 'export VITE_TARGET = ']) {
+      const report = check({ frontend: frontend + '\n' + prefix + value });
+      assert.ok(report.findings.some(f => f.code === 'PUBLIC_SECRET_VALUE' && f.key === 'VITE_TARGET'));
+      assert.doesNotMatch(JSON.stringify(report), /operator|private-password/);
+    }
+  }
+});
+
+test('#665 public JWT with Supabase service_role is denied regardless of env variable name', () => {
+  const jwt = role => {
+    const encode = value => Buffer.from(JSON.stringify(value)).toString('base64url');
+    return encode({ alg: 'HS256', typ: 'JWT' }) + '.' + encode({ role, aud: 'authenticated' }) + '.fixture';
+  };
+  for (const key of ['VITE_SUPABASE_ANON_KEY', 'VITE_PUBLIC_SETTINGS']) {
+    const value = key === 'VITE_SUPABASE_ANON_KEY'
+      ? frontend.replace('VITE_SUPABASE_ANON_KEY=replace_me', 'VITE_SUPABASE_ANON_KEY="' + jwt('service_role') + '" # comment')
+      : frontend + '\nVITE_PUBLIC_SETTINGS="' + jwt('service_role') + '" # comment';
+    const report = check({ frontend: value });
+    assert.ok(report.findings.some(f => f.code === 'PUBLIC_PRIVILEGED_JWT' && f.key === key));
+    assert.doesNotMatch(JSON.stringify(report), /service_role|fixture/);
+  }
+  const anon = check({ frontend: frontend.replace('VITE_SUPABASE_ANON_KEY=replace_me',
+    'VITE_SUPABASE_ANON_KEY=' + jwt('authenticated')) });
+  assert.equal(anon.status, 'PASS');
+});
+
+test('#665 quoted dotenv comments preserve internal hashes and allowed URLs', () => {
+  const values = parseEnvTemplate([
+    'VITE_API="https://api.example.test/v1#fragment" # note',
+    "VITE_HEADING='Demo #1' # note",
+    'VITE_RAW=https://api.example.test/v1#fragment # note',
+    'VITE_DEMO="http://example.test/#user-guide" # a note with "quotes"'
+  ].join('\n')).vars;
+  assert.equal(values.get('VITE_API'), 'https://api.example.test/v1#fragment');
+  assert.equal(values.get('VITE_HEADING'), 'Demo #1');
+  assert.equal(values.get('VITE_RAW'), 'https://api.example.test/v1#fragment');
+  assert.equal(values.get('VITE_DEMO'), 'http://example.test/#user-guide');
+  assert.equal(parseEnvTemplate('HIPICO_SOURCE_AUTO_REPLY_ENABLED = false').vars.get('HIPICO_SOURCE_AUTO_REPLY_ENABLED'), 'false');
+});
