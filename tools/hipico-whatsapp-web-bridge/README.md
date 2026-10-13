@@ -319,6 +319,29 @@ no de la respuesta del backend ni del contexto.
 dos sesiones, recuperación y soak #119/#120. El QA unitario no certifica
 WhatsApp real. SOURCE permanece NO-GO por el gate #728/#154.
 
+## Recuperación inmutable de resúmenes de carrera LAB
+
+El propósito `summary` utiliza ahora el mismo recibo durable de
+`/bridge/lab/query` que `status`, `result` y `next/active/schedule`.
+El backend valida **estado, versión, fecha de actualización, tipo de
+respuesta y hash del texto** antes de entregar un resumen confirmado.
+No se crea otra tabla ni otra fuente de datos, y el recibo solo contiene
+huellas e identidad acotada: no guarda el texto ni datos financieros.
+
+Si el HTTP termina después de persistir el recibo pero antes de llegar
+al Bridge, el segundo intento con **el mismo ID de mensaje** recupera
+`LAB_CANONICAL_RECOVERED` solo si la proyección sigue siendo idéntica.
+El asistente puede presentar ese texto recuperado de forma natural.
+Si aparece una corrección de carrera, cambia la versión, el texto o el
+tipo de consulta, la respuesta queda bloqueada con
+`LAB_CANONICAL_REVISION_CHANGED`; se requiere un mensaje nuevo.
+Un takeover humano y una consulta vencida también bloquean la entrega.
+
+Regresiones nuevas: unidad de recibos + renderizado en Bridge +
+PostgreSQL aislado (pérdida de HTTP, replay idéntico, revisión posterior
+y solicitud con nueva identidad). La prueba aislada no reemplaza la QA
+física de WhatsApp/Windows. SOURCE conserva NO-GO.
+
 ## Resumen canónico de una carrera (incremento #892)
 
 El Bridge interpreta **resumen de carrera** como una consulta `purpose=summary`
