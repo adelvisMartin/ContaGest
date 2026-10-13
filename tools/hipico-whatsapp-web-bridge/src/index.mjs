@@ -143,6 +143,7 @@ let lastPostStartedAt = 0;
 let lastLabTestPollAt = 0;
 let labBootstrapCompleted = false;
 let lastLabPendingPruneAt = 0;
+let lastLabPendingOffset = 0;
 const labQueryBackoff=createLabQueryBackoff();
 let sourceDiscoveryFailures = 0;
 let lastPrintedHealthLine = '';
@@ -1233,7 +1234,8 @@ async function finalizeConfirmedVisibleLabQuote(row,body) {
 
 async function resumePendingLabQueries(visibleIds = new Set()) {
   if (!labPendingInbox || !BACKEND_SYNC_ENABLED) return;
-  const pending = await labPendingInbox.list(25);
+  const pending = await labPendingInbox.list(25,{offset:lastLabPendingOffset});
+  lastLabPendingOffset=(lastLabPendingOffset+Math.max(1,pending.length))%200;
   for (const entry of pending) {
     const tag = labTestTagFor(entry.messageId);
     const state = await labTestReplyJournal.read(entry.messageId);
@@ -1330,6 +1332,11 @@ async function resumePendingLabQueries(visibleIds = new Set()) {
       await log('LAB_PENDING_HANDOFF_RECHECK_'+eligibleAfter.reason+' id='+tag);
       continue;
     }
+    // A handoff lookup itself may have crossed the original encrypted TTL.
+    if(!(await labPendingInbox.read(entry.messageId))){
+      await log('LAB_PENDING_EXPIRED_BEFORE_SEND id='+tag);
+      continue;
+    }
     await labTestReplyJournal.prepare(entry.messageId);
     await labTestReplyJournal.begin(entry.messageId);
     try {
@@ -1343,6 +1350,11 @@ async function resumePendingLabQueries(visibleIds = new Set()) {
           await labPendingInbox.remove(entry.messageId);
         }
         await log('LAB_PENDING_HANDOFF_SEND_GATE_'+eligibleToSend.reason+' id='+tag);
+        continue;
+      }
+      if(!(await labPendingInbox.read(entry.messageId))){
+        await labTestReplyJournal.retryPrepared(entry.messageId);
+        await log('LAB_PENDING_EXPIRED_BEFORE_SEND id='+tag);
         continue;
       }
       await sendTextInCurrentLab(localLabTestReply(row,classification,plan,canonical),tag);
@@ -1559,6 +1571,12 @@ async function processLabTestInput() {
       await log('LAB_HANDOFF_RECHECK_'+eligibleAfter.reason+' id='+tag);
       continue;
     }
+    // The canonical response and handoff checks may outlive a LAB message.
+    if(inquiryPurpose && BACKEND_SYNC_ENABLED && labPendingInbox &&
+       !(await labPendingInbox.read(row.id))){
+      await log('LAB_PENDING_EXPIRED_BEFORE_SEND id='+tag);
+      continue;
+    }
     await labTestReplyJournal.prepare(row.id); // fsync before any browser send
     await labTestReplyJournal.begin(row.id); // durable sending intent
     try {
@@ -1574,6 +1592,12 @@ async function processLabTestInput() {
           await saveLabSeenNow();
         }
         await log('LAB_HANDOFF_SEND_GATE_'+eligibleToSend.reason+' id='+tag);
+        continue;
+      }
+      if(inquiryPurpose && BACKEND_SYNC_ENABLED && labPendingInbox &&
+         !(await labPendingInbox.read(row.id))){
+        await labTestReplyJournal.retryPrepared(row.id);
+        await log('LAB_PENDING_EXPIRED_BEFORE_SEND id='+tag);
         continue;
       }
       await sendTextInCurrentLab(localLabTestReply(row, classification, plan, canonical), tag);
