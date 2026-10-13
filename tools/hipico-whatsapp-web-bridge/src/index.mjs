@@ -1504,7 +1504,13 @@ async function processLabTestInput() {
     const quotedVerified=Boolean(row.quotedId && !directRace && (visibleQuotedRace||durableQuotedRace));
     // Persist immutable, pinned LAB question and verified sender before backend calls.
     const parsedLabStamp=inquiryPurpose && BACKEND_SYNC_ENABLED ? parseWhatsAppPre(row.pre) : null;
-    let trustedRace=verifiedRace;
+    // Context recalled from a previous message is only a conversational
+    // hint. An autonomous replay must never persist that implicit race as
+    // though it were explicitly scoped in this original inbound message.
+    // Only an explicit original race or a verified same-sender quote can
+    // be bound to the encrypted inbox and the canonical HTTP lookup.
+    let trustedRace=plan.scopeConflict?null:
+      (directRace||(quotedVerified?verifiedRace:null));
     let trustedQuote=quotedVerified?row.quotedId:null;
     if(inquiryPurpose && BACKEND_SYNC_ENABLED){
       if(!sender || !parsedLabStamp?.parsed || !Number.isFinite(Date.parse(parsedLabStamp.timestamp)) ||
