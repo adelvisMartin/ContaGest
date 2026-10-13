@@ -49,7 +49,7 @@ test('current LAB send reconciles all authorities before the durable journal',()
     prepare>handoff2&&begin>prepare&&preEnter>begin&&rollback>preEnter&&
     send>rollback&&ack>send&&memo>ack);
   assert.match(lab,/inquiryPurpose && sender && !plan\.scopeConflict/);
-  assert.match(lab,/race:verifiedRace/);
+  assert.match(lab,/race:trustedRace/);
   assert.match(lab,/labQuotedRaceJournal\.remember\(/);
   assert.match(lab,/eligibleBefore\.reason==='LAB_HANDOFF_HELD'/);
   assert.match(lab,/eligibleAfter\.reason==='LAB_HANDOFF_HELD'/);
@@ -165,12 +165,14 @@ test('current integrated Bridge verifies pinned LAB outgoing DOM twice and never
   assert.doesNotMatch(mirror,/canonical\?\.|plan\?\./);
 });
 
-test('completed multi-turn race reference is passed to the canonical query, not only handoff',()=>{
+test('multi-turn memory guides conversation but only verified immutable scope reaches canonical query',()=>{
   const lookup=lab.indexOf('await queryCanonicalLab({');
   const end=lab.indexOf('})',lookup);
   assert.ok(lookup>=0&&end>lookup);
   const request=lab.slice(lookup,end);
-  assert.match(request,/race:verifiedRace/);
+  assert.match(request,/race:trustedRace/);
+  assert.match(lab,/let trustedRace=scopedRace/);
+  assert.doesNotMatch(request,/race:verifiedRace/);
   assert.doesNotMatch(request,/race:scopedRace/);
   assert.match(lab,/const verifiedRace=plan\.scopeConflict\?null:\(scopedRace\|\|plan\.raceScope\)/);
   assert.match(lab,/inquiryPurpose && sender && !plan\.scopeConflict/);
