@@ -96,3 +96,35 @@ test('#665 missing or duplicate enum values fail the registry validation',()=>{
  duplicate.variables.backend.NODE_ENV.allowedValues=['development','development'];
  assert.ok(checkEnvironmentManifest(samples,duplicate).findings.some(x=>x.code==='MANIFEST_ENUM_VALUES_INVALID'));
 });
+
+test('#665 malformed active template lines fail closed without leaking values',()=>{
+  for(const [owner,line] of [
+    ['frontend','VITE_BAD-TOKEN=secret-do-not-echo'],
+    ['frontend','VITE_DANGLING="secret-do-not-echo'],
+    ['backend','PORT:3030'],
+    ['bridge','export HIPICO_LAB_SEND_ENABLED false']
+  ]){
+    const report=check({[owner]:samples[owner]+'\n'+line});
+    assert.equal(report.status,'FAIL',owner);
+    assert.ok(report.findings.some(f=>f.code==='MANIFEST_INVALID_SAMPLE_LINE'&&f.owner===owner),owner);
+    assert.equal(JSON.stringify(report).includes('secret-do-not-echo'),false);
+    assert.equal(JSON.stringify(report).includes(line),false);
+  }
+  assert.equal(check({backend:samples.backend+'\n# note: ignored\n'}).status,'PASS');
+});
+
+test('#665 blank booleans counts and enumerations are invalid, blank secrets stay valid',()=>{
+  for(const [owner,key,value] of [
+    ['backend','PORT','3030'],
+    ['backend','NODE_ENV','development'],
+    ['backend','ALLOW_DEV_TENANT_HEADER','false'],
+    ['bridge','HIPICO_POLL_MS','1000'],
+    ['bridge','HIPICO_LAB_SEND_ENABLED','false']
+  ]){
+    const original=key+'='+value;
+    assert.ok(samples[owner].includes(original),original);
+    const report=check({[owner]:samples[owner].replace(original,key+'=')});
+    assert.ok(report.findings.some(f=>f.code==='MANIFEST_SAMPLE_TYPE_INVALID'&&f.key===key),original);
+  }
+  assert.equal(check().status,'PASS');
+});
