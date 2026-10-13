@@ -1566,7 +1566,7 @@ async function processLabTestInput() {
       await log('LAB_HANDOFF_QUERY_HELD id='+tag);
       continue;
     }
-    if(inquiryPurpose && BACKEND_SYNC_ENABLED && canonical.available!==true){
+    if(inquiryPurpose && canonical.available!==true){
       const delay=labQueryBackoff.fail(row.id);
       await log('LAB_CANONICAL_QUERY_PENDING id='+tag+' reason='+canonical.reason+' retryMs='+delay);
       continue; // No send intent while canonical truth is unknown.
@@ -1712,7 +1712,8 @@ async function printHealthSummary(force = false) {
   const eventSpool = spool.pendingBackend;
   const mirrorSpool = spool.pendingLab;
   const deadLetters = spool.quarantined;
-  const pendingQueries = labPendingInbox ? (await labPendingInbox.snapshot()).pending : 0;
+  const pendingStatus = labPendingInbox ? await labPendingInbox.snapshot() : null;
+  const pendingQueries = pendingStatus?.pending ?? 0;
   const cooldown = Math.max(0, backendNextAllowedAt - Date.now());
   const backendLabel = BACKEND_SYNC_ENABLED ? backendState : 'local-only';
   const readiness = assessRuntimeReadiness({
@@ -1724,7 +1725,7 @@ async function printHealthSummary(force = false) {
     mirrorSpool,
     deadLetters
   });
-  const line = `HEALTH ready=${readiness.ready} mode=${RUNTIME_MODE} source=${activeSourceTitle || 'buscando'} | backend=${backendLabel}${cooldown && BACKEND_SYNC_ENABLED ? ` cooldown=${Math.ceil(cooldown/1000)}s` : ''} | capturados=${capturedCount} | spool=${eventSpool} | sourceReply=${sourceReplies.pending}/${sourceReplies.ambiguous} | labPend=${mirrorSpool} | labQueries=${pendingQueries} | dead=${deadLetters}`;
+  const line = `HEALTH ready=${readiness.ready} mode=${RUNTIME_MODE} source=${activeSourceTitle || 'buscando'} | backend=${backendLabel}${cooldown && BACKEND_SYNC_ENABLED ? ` cooldown=${Math.ceil(cooldown/1000)}s` : ''} | capturados=${capturedCount} | spool=${eventSpool} | sourceReply=${sourceReplies.pending}/${sourceReplies.ambiguous} | labPend=${mirrorSpool} | labQueries=${pendingQueries} | labNearExpiry=${pendingStatus?.nearingExpiry ?? 0} | labOldestSec=${pendingStatus?.oldestAgeSeconds ?? 0} | dead=${deadLetters}`;
   const heartbeatDue = Date.now() - lastHealthHeartbeatAt >= 300000;
   if (force && (line !== lastPrintedHealthLine || heartbeatDue)) {
     console.log(line);
