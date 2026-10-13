@@ -511,3 +511,38 @@ test('implicit prior race never becomes encrypted LAB replay authority',()=>{
   assert.match(lab,/quotedMessageId:trustedQuote/);
   assert.doesNotMatch(lab,/let trustedRace=verifiedRace;/);
 });
+
+
+test('human review from canonical backend is terminal before LAB WAL and Enter',async()=>{
+  const replay=part(bridge,'async function resumePendingLabQueries(','let labTestProcessing=false');
+  const branches=[
+    {label:'off-DOM',body:replay,identity:'entry.messageId',end:'if (canonical.available!==true)',
+      event:'LAB_PENDING_QUERY_REVIEW_REQUIRED'},
+    {label:'visible',body:lab,identity:'row.id',end:'if(inquiryPurpose && canonical.available!==true)',
+      event:'LAB_CANONICAL_REVIEW_REQUIRED'}
+  ];
+  for(const branch of branches){
+    const begin=branch.body.indexOf("if(canonical.reason==='LAB_CANONICAL_REVIEW_REQUIRED'){");
+    const end=branch.body.indexOf(branch.end,begin);
+    assert.ok(begin>=0&&end>begin,'review must precede retry/canonical gate: '+branch.label);
+    const snippet=branch.body.slice(begin,end);
+    assert.match(snippet,/rememberLabSeen/);
+    assert.match(snippet,/await saveLabSeenNow\(\)/);
+    assert.match(snippet,/await labPendingInbox\?\.remove|await labPendingInbox\.remove/);
+    assert.match(snippet,new RegExp(branch.event));
+    assert.doesNotMatch(snippet,/labQueryBackoff\.fail|labTestReplyJournal\.prepare|sendTextInCurrentLab/);
+    const operations=[];
+    const fn=vm.runInNewContext(
+      '(async()=>{const row={id:"one"},entry={messageId:"one"},tag="fixture";'
+      +'const canonical={available:false,reason:"LAB_CANONICAL_REVIEW_REQUIRED"};'
+      +'for(const once of [1]){'+snippet+'throw new Error("REVIEW_WAS_RETRIED");}'
+      +'return "TERMINAL";})',
+      {rememberLabSeen:()=>operations.push('seen'),
+       saveLabSeenNow:async()=>operations.push('seen-fsync'),
+       labPendingInbox:{remove:async()=>operations.push('remove-ciphertext')},
+       log:async()=>operations.push('log')}
+    );
+    assert.equal(await fn(),'TERMINAL',branch.label);
+    assert.deepEqual(operations,['seen','seen-fsync','remove-ciphertext','log'],branch.label);
+  }
+});
