@@ -1474,7 +1474,9 @@ async function processLabTestInput() {
     // Fail closed: a missing backend/identity/handoff table must never
     // silently turn a human-owned chat into an autonomous LAB send.
     let parsedLabStamp=null;
-    let trustedRace=verifiedRace;
+    // Only explicit or verified quoted scopes can survive encryption/replay.
+    // Sender-memory hints may shape guidance but are not durable race authority.
+    let trustedRace=scopedRace;
     let trustedQuote=quotedVerified?row.quotedId:null;
     if(inquiryPurpose && BACKEND_SYNC_ENABLED && labPendingInbox && sender){
       parsedLabStamp=parseWhatsAppPre(row.pre);
