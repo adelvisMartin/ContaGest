@@ -1516,6 +1516,9 @@ async function processLabTestInput() {
           messageTimestamp:stamp,race:trustedRace||null,quotedMessageId:trustedQuote
         });
       }
+      // The rest of the handoff lifecycle must authorize the exact immutable
+      // race passed into /bridge/lab/query, not the initial DOM-derived guess.
+      eligibilityArgs.race=trustedRace;
       if(!labQueryBackoff.allowed(row.id))continue;
     }
     const canonical = inquiryPurpose && sender && !plan.scopeConflict && BACKEND_SYNC_ENABLED && backendState === 'online'
