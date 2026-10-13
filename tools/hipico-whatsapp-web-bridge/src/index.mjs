@@ -1236,12 +1236,14 @@ async function finalizeConfirmedVisibleLabQuote(row,body) {
 }
 
 async function resumePendingLabQueries(visibleIds = new Set()) {
-  if (!labPendingInbox || backendState !== 'online' || !BACKEND_SYNC_ENABLED) return;
+  if (!labPendingInbox || !BACKEND_SYNC_ENABLED) return;
   const pending = await labPendingInbox.list(25);
   for (const entry of pending) {
-    if (visibleIds.has(entry.messageId)) continue; // The live path owns visible rows.
     const tag = labTestTagFor(entry.messageId);
     const state = await labTestReplyJournal.read(entry.messageId);
+    // An already confirmed ACK can finish its auxiliary HMAC hint even when
+    // the row is still visible or the canonical backend is offline. No Enter.
+    if (visibleIds.has(entry.messageId) && state?.state !== 'confirmed') continue;
     if (state?.state === 'confirmed') {
       rememberLabSeen(entry.messageId);
       await saveLabSeenNow();
@@ -1264,6 +1266,9 @@ async function resumePendingLabQueries(visibleIds = new Set()) {
       // An uncertain Enter is never authorized to be repeated.
       continue;
     }
+    // A new response requires fresh verified canonical data. Only post-ACK
+    // housekeeping and strict-tag reconciliation may run without backend.
+    if (backendState !== 'online') continue;
     const row = {
       id:entry.messageId, text:entry.text, fromMe:false, hasMedia:false,
       quotedId:entry.quotedMessageId, pre:''
