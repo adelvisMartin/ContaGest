@@ -372,7 +372,12 @@ export function createLabPendingQueryInbox({rootDir,labGroupId,sourceGroupId,now
       // Aggregate-only status for operators. Never expose encrypted content,
       // group/sender IDs, quoted scopes or delivery authority to health output.
       const timestamp=clock();
-      const ages=rows.map(item=>Math.max(0,timestamp-Date.parse(item.messageTimestamp)));
+      // An ahead-of-time WhatsApp clock must not hide expiry proximity:
+      // the same earliest deadline controls both pruning and health metrics.
+      const ages=rows.map(item=>Math.max(0,
+        timestamp-Date.parse(item.messageTimestamp),
+        timestamp-item.capturedAt
+      ));
       const nearExpiryAt=maxAgeMs-Math.min(120_000,Math.floor(maxAgeMs/4));
       return {
         pending:rows.length,
