@@ -2,7 +2,9 @@ import type { IntentResult } from './hipico-operational-classifier.js';
 import type { LabRaceQuestion } from './hipico-lab-canonical-read.js';
 import type { LabSchedulePurpose } from './hipico-lab-schedule-read.js';
 
-const PROHIBITED=/\b(?:apostar|apuesta|jugada|juega|consigue|pag[oa]r?|cobrar|depositar|retirar|saldo|abonar|liquidar|cerrar|abrir|registrar|editar|actualizar|cancelar|confirmar|monto|dinero|bs|usdt|pago|premio)\b|\$/i;
+// Shared read-only policy: plural monetary terms are mutations/financial
+// topics, never implicit authority to summarize balances or bets.
+const PROHIBITED=/\b(?:apostar|apuestas?|jugadas?|juega|consigue|pag[oa]r?|pagar|pagos?|cobrar|depositar|retirar|saldos?|abonar|liquidar|cerrar|abrir|registrar|editar|actualizar|cancelar|confirmar|montos?|dinero|bs|usdt|premios?)\b|\$/i;
 const TOPICS:Record<LabRaceQuestion|LabSchedulePurpose,RegExp>={
   next:/\b(?:proxima carrera|carrera sigue|siguiente carrera)\b/,
   active:/\b(?:carrera activa|carrera abierta|cual esta abierta)\b/,

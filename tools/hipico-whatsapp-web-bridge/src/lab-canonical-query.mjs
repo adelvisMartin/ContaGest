@@ -61,7 +61,8 @@ const TOPIC={
   status:/\b(?:estado|estatus|situacion|abierta|cerrada|como\s+va)\b/,
   summary:/\b(?:resumen|resumeme|sintesis|recapitulacion)\b/
 };
-const MONEY=/\b(?:apuesta|apostar|juega|jugada|consigue|pagar|cobrar|saldo|liquidar|cerrar|abrir|registrar|premio|dinero|bs|usdt)\b|\$/;
+// Monetary words including plurals must not masquerade as informational race questions.
+const MONEY=/\b(?:apuestas?|apostar|juega|jugadas?|consigue|pagar|pagos?|cobrar|saldos?|depositar|retirar|abonar|liquidar|cerrar|abrir|registrar|editar|actualizar|cancelar|confirmar|montos?|premios?|dinero|bs|usdt)\b|\$/;
 const normalizeQuery=text=>String(text||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().trim();
 export function labReadOnlyQueryPurpose(text,classification){
   const value=normalizeQuery(text);
