@@ -50,6 +50,22 @@ test('#665 invalid environment labels cannot accidentally opt out of production 
   }
 });
 
+test('#665 production Node runtime remains protected when Vercel label is preview or development',()=>{
+  for(const VERCEL_ENV of ['preview','development']){
+    const config={NODE_ENV:'production',VERCEL_ENV,API_MODE:'mock',
+      ALLOW_DEV_TENANT_HEADER:'true',PORT:'0'};
+    const result=checkBackendStartupConfig(config);
+    assert.equal(result.ok,false,VERCEL_ENV);
+    for(const code of ['PRODUCTION_MOCK_API_FORBIDDEN',
+      'PRODUCTION_DEV_TENANT_HEADER_FORBIDDEN','PORT_OUT_OF_RANGE'])
+      assert.ok(result.failures.includes(code),VERCEL_ENV+':'+code);
+    assert.throws(()=>assertBackendStartupConfig(config),/BACKEND_STARTUP_CONFIG_INVALID/);
+  }
+  // Actual preview with a non-production Node runtime may still use local mock.
+  assert.equal(checkBackendStartupConfig({NODE_ENV:'development',
+    VERCEL_ENV:'preview',API_MODE:'mock',PORT:'0'}).ok,true);
+});
+
 test('#665 port validation rejects invalid and out-of-range values before listen',()=>{
   for(const PORT of ['','0','-1','65536','3030.5','abc','Infinity','  ']){
     assert.ok(checkBackendStartupConfig({...production,PORT}).failures.includes('PORT_OUT_OF_RANGE'));
