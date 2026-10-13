@@ -88,6 +88,43 @@ test('verified quoted race rejects invalid calendar day and accepts leap day',as
 });
 
 
+
+test('scan expiry predicate cannot be shadowed by expired-count accumulator',async t=>{
+  const source=await fs.readFile(new URL('../src/lab-pending-query-inbox.mjs',import.meta.url),'utf8');
+  const begin=source.indexOf('  async function scan(){');
+  const end=source.indexOf('  return Object.freeze({',begin);
+  assert.ok(begin>=0&&end>begin,'canonical inbox scan source missing');
+  const section=source.slice(begin,end);
+  const checks=await import('node:vm');
+  const cases=[
+    {age:100_000,expired:0,recovered:1},
+    {age:600_000,expired:1,recovered:0}
+  ];
+  for(const c of cases){
+    let removals=0;
+    const hash='a'.repeat(64);
+    const now=700_000;
+    const entry={
+      messageTimestamp:new Date(now-c.age).toISOString(),
+      capturedAt:now-c.age
+    };
+    const env={
+      fs:{readdir:async()=>[hash+'.json'],rm:async()=>{removals++;}},
+      root:'/inbox',
+      openFile:async()=>entry,
+      fileFor:()=>'/inbox/'+hash+'.json',
+      expired:item=>now-Date.parse(item.messageTimestamp)>=600_000||
+        now-item.capturedAt>=600_000,
+      maxEntries:200
+    };
+    const scan=checks.runInNewContext('(()=>{'+section+'return scan;})()',env);
+    const out=await scan();
+    assert.equal(out.expired,c.expired);
+    assert.equal(out.rows.length,c.recovered);
+    assert.equal(removals,c.expired);
+  }
+});
+
 test('future-dated LAB message expires at capture TTL even before WhatsApp timestamp TTL',async t=>{
   const h=await harness(t);
   const inbox=h.create();await inbox.initialize();
