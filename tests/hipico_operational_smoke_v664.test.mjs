@@ -12,10 +12,10 @@ async function withServer(responder, run) {
 }
 const respond = (options = {}) => (req, res) => {
   if (req.url === '/api/hipico/status') {
-    res.writeHead(options.httpCode || 200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+    res.writeHead(options.httpCode || 200, { 'Content-Type': options.statusContentType ?? 'application/json', 'Cache-Control': 'no-store' });
     res.end(JSON.stringify(options.body || status));
   } else if (req.url === '/hipico-control/') {
-    res.writeHead(200, { 'Content-Type': 'text/html' });
+    res.writeHead(200, { 'Content-Type': options.pwaContentType ?? 'text/html' });
     res.end('<title>Control Hípico</title><script src="./assets/js/app.js"></script>');
   } else { res.writeHead(404); res.end(); }
 };
@@ -51,4 +51,66 @@ test('#664 offline backend is BLOCKED, never reported as PASS', async () => {
     assert.equal(result.status, 'BLOCKED');
     assert.doesNotMatch(JSON.stringify(result), /secret token/);
   });
+});
+
+test('#664 status refuses spoofed JSON under HTML, JSONP or mixed MIME', async () => {
+  for (const statusContentType of ['text/html', 'application/jsonp', 'application/json, text/html']) {
+    await withServer(respond({ statusContentType }), async url => {
+      const result = await runHipicoSmoke(url);
+      assert.equal(result.status, 'FAIL', statusContentType);
+      assert.deepEqual(result.checks[0], { name: 'status', status: 'FAIL', code: 'CONTRACT_MISMATCH' });
+      assert.equal(result.checks[1].status, 'PASS');
+    });
+  }
+});
+
+test('#664 status accepts application/json with standard charset parameter', async () => {
+  await withServer(respond({ statusContentType: 'application/json; charset=utf-8' }), async url => {
+    const result = await runHipicoSmoke(url);
+    assert.equal(result.status, 'PASS');
+  });
+});
+
+test('#664 invalid MIME short-circuits status JSON parsing before touching untrusted body', async () => {
+  for (const mediaType of ['text/html', 'application/jsonp', 'application/json, text/html', 'application/problem+json']) {
+    let parsed = 0;
+    const request = async url => url.pathname === '/api/hipico/status' ? {
+      ok: true, status: 200,
+      headers: new Headers({ 'content-type': mediaType, 'cache-control': 'no-store' }),
+      json: async () => { parsed++; throw new Error('MIME must be checked before body parsing'); }
+    } : {
+      ok: true, status: 200,
+      headers: new Headers({ 'content-type': 'text/html' }),
+      text: async () => '<title>Control Hípico</title><script src="./assets/js/app.js"></script>'
+    };
+    const result = await runHipicoSmoke('http://127.0.0.1:8080/', request);
+    assert.deepEqual(result.checks[0], { name: 'status', status: 'FAIL', code: 'CONTRACT_MISMATCH' });
+    assert.equal(result.checks[1].status, 'PASS');
+    assert.equal(parsed, 0, 'invalid content-type may not invoke response.json()');
+  }
+});
+
+test('#664 PWA smoke refuses spoofed HTML MIME before reading the body', async () => {
+  for (const pwaContentType of ['application/json; note=text/html', 'text/html, application/json', 'text/htmlp']) {
+    await withServer(respond({ pwaContentType }), async url => {
+      const result = await runHipicoSmoke(url);
+      assert.equal(result.status, 'FAIL');
+      assert.deepEqual(result.checks[1], { name: 'pwa', status: 'FAIL', code: 'CONTRACT_MISMATCH' });
+      assert.equal(result.checks[0].status, 'PASS');
+    });
+  }
+  await withServer(respond({ pwaContentType: 'Text/HTML; charset=utf-8' }), async url => {
+    assert.equal((await runHipicoSmoke(url)).status, 'PASS');
+  });
+  let htmlReads = 0;
+  const request = async url => url.pathname === '/api/hipico/status' ? {
+    ok: true, headers: new Headers({ 'content-type': 'application/json', 'cache-control': 'no-store' }),
+    json: async () => status
+  } : {
+    ok: true, headers: new Headers({ 'content-type': 'application/json; note=text/html' }),
+    text: async () => { htmlReads++; throw new Error('HTML should not be read with JSON MIME'); }
+  };
+  const result = await runHipicoSmoke('http://127.0.0.1:8080/', request);
+  assert.deepEqual(result.checks[1], { name: 'pwa', status: 'FAIL', code: 'CONTRACT_MISMATCH' });
+  assert.equal(htmlReads, 0);
 });

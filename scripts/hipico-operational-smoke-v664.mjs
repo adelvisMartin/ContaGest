@@ -38,9 +38,13 @@ export async function runHipicoSmoke(baseUrl, request = fetch) {
     }
   };
   await check('status', '/api/hipico/status', 'application/json', async (response) => {
+    // Validate the declared media type *before* parsing untrusted bytes.
+    // Neither HTML/JSONP nor mixed Content-Type headers may be interpreted as JSON.
+    const contentType = response.headers.get('content-type')?.split(';', 1)[0]?.trim().toLowerCase();
+    if (contentType !== 'application/json') return false;
+    if (!response.headers.get('cache-control')?.includes('no-store')) return false;
     const body = await response.json();
-    return response.headers.get('cache-control')?.includes('no-store')
-      && body?.ok === true
+    return body?.ok === true
       && body?.service === 'hipico-control-operations'
       && MODES.has(body?.mode)
       && typeof body?.persistence?.ready === 'boolean'
@@ -49,9 +53,10 @@ export async function runHipicoSmoke(baseUrl, request = fetch) {
       && body?.linkedDeviceBridge?.sourceSendPossible === false;
   });
   await check('pwa', '/hipico-control/', 'text/html', async (response) => {
+    const mediaType = response.headers.get('content-type')?.split(';', 1)[0]?.trim().toLowerCase();
+    if (mediaType !== 'text/html') return false;
     const html = await response.text();
-    return /text\/html/i.test(response.headers.get('content-type') || '')
-      && /Control Hípico/.test(html)
+    return /Control Hípico/.test(html)
       && /assets\/js\/app\.js/.test(html);
   });
   const status = checks.some(x => x.status === 'FAIL') ? 'FAIL' : checks.some(x => x.status === 'BLOCKED') ? 'BLOCKED' : 'PASS';
