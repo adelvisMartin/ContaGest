@@ -28,7 +28,8 @@ function validCanonical(read:CanonicalRead){
   const date=typeof read.updatedAt==='string'?Date.parse(read.updatedAt):NaN;
   return read.available===true&&
     ['CANONICAL_STATE_FOUND','CANONICAL_RESULT_CONFIRMED_INTERNAL',
-     'CANONICAL_NEXT_RACE','CANONICAL_ACTIVE_RACE','CANONICAL_SCHEDULE_FOUND'].includes(read.reason)&&
+     'CANONICAL_NEXT_RACE','CANONICAL_ACTIVE_RACE','CANONICAL_SCHEDULE_FOUND',
+     'CANONICAL_RACE_SUMMARY'].includes(read.reason)&&
     typeof read.text==='string'&&read.text.length>0&&read.text.length<=1500&&
     typeof read.state==='string'&&/^[A-Z_]{3,40}$/.test(read.state)&&
     Number.isSafeInteger(v)&&v>=1&&v<=Number.MAX_SAFE_INTEGER&&
@@ -43,12 +44,13 @@ function validCanonical(read:CanonicalRead){
  */
 export async function reconcileCanonicalLabReceipt(input:{
   ownerId:string;sourceGroupKey:string;labGroupId:string;labChannelKey:string;
-  senderId:string;externalMessageId:string;purpose:'status'|'result'|'next'|'active'|'schedule';
+  senderId:string;externalMessageId:string;purpose:'status'|'result'|'summary'|'next'|'active'|'schedule';
   canonical:CanonicalRead;timestamp:string;nowMs:number;humanOwned:boolean;
 },store:ReceiptStore=STORE){
   if(!validCanonical(input.canonical)||
      (input.purpose==='status'&&input.canonical.reason!=='CANONICAL_STATE_FOUND')||
      (input.purpose==='result'&&input.canonical.reason!=='CANONICAL_RESULT_CONFIRMED_INTERNAL')||
+     (input.purpose==='summary'&&input.canonical.reason!=='CANONICAL_RACE_SUMMARY')||
      (input.purpose==='next'&&input.canonical.reason!=='CANONICAL_NEXT_RACE')||
      (input.purpose==='active'&&input.canonical.reason!=='CANONICAL_ACTIVE_RACE')||
      (input.purpose==='schedule'&&input.canonical.reason!=='CANONICAL_SCHEDULE_FOUND')||
