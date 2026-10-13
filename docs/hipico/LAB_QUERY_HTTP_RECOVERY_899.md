@@ -69,3 +69,27 @@ formato inválido sigue tratándose como error de contrato. Las respuestas
 informativas verificadas como `CANONICAL_RACE_NOT_FOUND` conservan su
 comportamiento de ausencia explícita de datos. Esta es una mejora de seguridad
 de LAB, **no** habilita SOURCE ni omite #119/#120/#839.
+
+
+### Códigos de respuesta explícitamente autorizados
+
+El Bridge ya no convierte cualquier `status` en mayúsculas y con `text`
+en autorización de envío. El adaptador read-only permite únicamente códigos
+informativos que realmente producen los lectores canónicos de carrera,
+cartelera y conciliación inmutable (`CANONICAL_*` conocidos y exactamente
+`LAB_CANONICAL_RECOVERED`/`LAB_CANONICAL_REVISION_CHANGED`). Los códigos
+nuevos o desconocidos son `LAB_CANONICAL_INVALID_RESPONSE`, sin Enter, y
+requieren actualizar explícitamente backend, adaptador y pruebas.
+
+Los estados `LAB_CANONICAL_HUMAN_HANDOFF`,
+`LAB_CANONICAL_REQUEST_STALE` y `LAB_CANONICAL_RECEIPT_NOT_VERIFIABLE`
+tampoco publican respuestas: el Bridge los trata como revisión terminal
+`LAB_CANONICAL_REVIEW_REQUIRED`, igual que `REVIEW_REQUIRED`. Un estado
+sintácticamente bien formado como `TRANSFER_APPROVED` no constituye una
+respuesta oficial ni concede permisos al agente. Esto no concede acceso
+financiero, escritura a SOURCE ni autorización para omitir QA.
+
+Regresiones del adaptador: códigos ajenos, respuestas de control terminales
+y códigos informativos válidos. Las comprobaciones V8 aisladas del SHA del
+PR pasaron 15/15, pero la suite Node completa y pruebas reales de Windows,
+PostgreSQL y WhatsApp LAB siguen pendientes.
