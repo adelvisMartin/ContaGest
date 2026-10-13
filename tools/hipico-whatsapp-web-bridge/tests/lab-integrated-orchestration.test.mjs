@@ -193,6 +193,7 @@ test('confirmed ACK restores conversation only from original encrypted LAB reque
   const recover=vm.runInNewContext('('+helper+')',{
     labConversationContext:{recoverConfirmed:async(sender,race,at)=>{
       trace.push({sender,race,at});
+      return true;
     }},
     stableLabSenderKey:()=>original.senderId,
     classifyLocal,labReadOnlyQueryPurpose,
@@ -233,6 +234,46 @@ test('confirmed ACK restores conversation only from original encrypted LAB reque
   await confirmed(row,'DOM cambiado otra vez',{state:'confirmed',updatedAt:ackAt});
   assert.equal(restored,1,'no encrypted request means no context backfill');
   assert.equal(seen,2,'confirmed ACK never starts another WhatsApp send');
+});
+
+test('confirmed LAB ACK returns actual memory recovery verdict and keeps bounded ciphertext on skip',async()=>{
+  const helper=part(bridge,'async function recoverConfirmedLabConversation(',
+    'async function rememberConfirmedPendingLabQuote(').trim();
+  const race={raceNumber:5,racetrack:'La Rinconada',raceDate:'2026-10-12'};
+  const entry={
+    messageId:'false_120363222222222222@g.us_1_123456789012@lid',
+    senderId:'123456789012@lid',
+    text:'¿Estado de la carrera 5?',purpose:'status',race
+  };
+  const ack='2026-10-12T23:05:00.000Z';
+  let outcome=true,calls=0;
+  const fn=vm.runInNewContext('('+helper+')',{
+    labConversationContext:{recoverConfirmed:async(sender,scope,at)=>{
+      calls++;
+      assert.equal(sender,entry.senderId);
+      assert.equal(scope.raceNumber,race.raceNumber);
+      assert.equal(at,ack,'restart must never renew the original ACK timestamp');
+      if(outcome instanceof Error)throw outcome;
+      return outcome;
+    }},
+    stableLabSenderKey:()=>entry.senderId,
+    classifyLocal,labReadOnlyQueryPurpose,
+    planLabConversation:()=>({scopeConflict:false,raceScope:race}),
+    log:async()=>{}
+  });
+  for(const [verdict,expected] of [[true,true],[false,false],[undefined,false],[null,false]]){
+    outcome=verdict;
+    assert.equal(await fn(entry,ack),expected,
+      'skipped memory write cannot masquerade as successful persistence');
+  }
+  outcome=new Error('simulated persistence failure');
+  assert.equal(await fn(entry,ack),false);
+  assert.equal(calls,5);
+  const replay=part(bridge,'async function resumePendingLabQueries(','let labTestProcessing=false');
+  assert.match(replay,/if\(await rememberConfirmedPendingLabQuote\(entry\) && \(!entry\.race\|\|restored\)\)/);
+  assert.match(replay,/if\(hintSaved && \(!entry\.race\|\|restored\)\)/);
+  assert.doesNotMatch(helper,/await labConversationContext\.recoverConfirmed[\s\S]*return true;/,
+    'helper must not discard the canonical boolean result');
 });
 
 test('LAB pending inbox and human handoff protect visible + out-of-DOM recovery',()=>{
