@@ -2,7 +2,7 @@ import crypto from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
-import { normalizeGroupId } from './group-identity.mjs';
+import { normalizeGroupId, extractGroupIds } from './group-identity.mjs';
 import { stableLabSenderKey, labConversationInput } from './lab-conversation-context.mjs';
 import { classifyLocal } from './runtime-utils.mjs';
 import { labReadOnlyQueryPurpose, explicitLabRaceScope } from './lab-canonical-query.mjs';
@@ -63,6 +63,10 @@ export function createLabPendingQueryInbox({rootDir,labGroupId,sourceGroupId,now
   const fileFor=hash=>path.join(root,hash+'.json');
   const assertReady=()=>{if(!initialized||!token||!key)throw new Error('LAB_PENDING_NOT_INITIALIZED');};
 
+  const belongsExclusivelyToLab = id => {
+    const groups=extractGroupIds(id);
+    return groups.length===1 && groups[0]===lab;
+  };
   function validate(item,{allowExpired=false}={}){
     if(!item||typeof item!=='object'||Array.isArray(item)||
       typeof item.messageId!=='string'||typeof item.senderId!=='string'||
@@ -72,12 +76,12 @@ export function createLabPendingQueryInbox({rootDir,labGroupId,sourceGroupId,now
       (!allowExpired&&clock()-Date.parse(item.messageTimestamp)>=maxAgeMs)||
       !PURPOSES.has(item.purpose)||!Number.isFinite(item.capturedAt)||
       item.capturedAt>clock()+60_000||(!allowExpired&&clock()-item.capturedAt>maxAgeMs)||
-      !item.messageId.includes(lab)||stableLabSenderKey(item.messageId)!==item.senderId||
+      !belongsExclusivelyToLab(item.messageId)||stableLabSenderKey(item.messageId)!==item.senderId||
       labReadOnlyQueryPurpose(item.text,classifyLocal(item.text))!==item.purpose||
       !labConversationInput({id:item.messageId,text:item.text,fromMe:false,hasMedia:false},classifyLocal(item.text)).eligible||
       (item.quotedMessageId!==null&&(
         typeof item.quotedMessageId!=='string'||item.quotedMessageId.length>320||
-        !item.quotedMessageId.includes(lab)||
+        !belongsExclusivelyToLab(item.quotedMessageId)||
         stableLabSenderKey(item.quotedMessageId)!==item.senderId
       ))||
       (item.race!==null&&(!Number.isInteger(item.race?.raceNumber)||item.race.raceNumber<1||
