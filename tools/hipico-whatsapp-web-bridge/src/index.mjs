@@ -1264,13 +1264,23 @@ async function finalizeConfirmedVisibleLabQuote(row,body,{retainEncryptedInput=f
   await log('LAB_QUOTE_HINT_NO_VERIFIED_INPUT');
 }
 
-async function resumePendingLabQueries(visibleIds = new Set()) {
+async function resumePendingLabQueries(visibleIds = new Set(), alreadySeenIds = new Set()) {
   if (!labPendingInbox || !BACKEND_SYNC_ENABLED) return;
   const pending = await labPendingInbox.list(25,{offset:lastLabPendingOffset});
   lastLabPendingOffset=(lastLabPendingOffset+Math.max(1,pending.length))%200;
   for (const entry of pending) {
     const tag = labTestTagFor(entry.messageId);
     const state = await labTestReplyJournal.read(entry.messageId);
+    // A persisted human takeover/terminal LAB seen marker wins if a crash
+    // occurred between fsync of LAB_SEEN_FILE and ciphertext deletion.
+    // Keep uncertain Enter and confirmed ACK rows eligible for evidence-only
+    // reconciliation; they must never trigger a new send from this branch.
+    if(alreadySeenIds.has(entry.messageId) &&
+       !['confirmed','sending','ambiguous'].includes(state?.state)){
+      await labPendingInbox.remove(entry.messageId);
+      await log('LAB_PENDING_ALREADY_HANDLED id='+tag);
+      continue;
+    }
     // An already confirmed ACK can finish its auxiliary HMAC hint even when
     // the row is still visible or the canonical backend is offline. No Enter.
     if (visibleIds.has(entry.messageId) && state?.state !== 'confirmed') continue;
@@ -1696,7 +1706,7 @@ async function processLabTestInput() {
     }
   }
 
-  await resumePendingLabQueries(new Set(visible.map(row=>row?.id).filter(Boolean)));
+  await resumePendingLabQueries(new Set(visible.map(row=>row?.id).filter(Boolean)),labSeen);
   labBootstrapCompleted = true;
   await saveLabSeenNow();
   if (processed) console.log('LAB prueba: '+processed+' mensaje(s) leído(s) y clasificado(s).');

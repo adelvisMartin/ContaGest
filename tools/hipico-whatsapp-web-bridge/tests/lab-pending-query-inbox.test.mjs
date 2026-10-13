@@ -1065,3 +1065,92 @@ test('real canonical transport propagates backend empty-text takeover to encrypt
     'eligibility-clear','backend-handoff','seen','saved','removed','logged'
   ]);
 });
+
+
+test('persisted human LAB handoff marker prevents requery after interrupted encrypted deletion',async()=>{
+  const vm=await import('node:vm');
+  const index=await fs.readFile(new URL('../src/index.mjs',import.meta.url),'utf8');
+  const begin=index.indexOf('async function resumePendingLabQueries(');
+  const end=index.indexOf('let labTestProcessing=false;',begin);
+  assert.ok(begin>=0&&end>begin);
+  const entry=candidate(),seen=new Set(),events=[];
+  let removeCalls=0,reads=0;
+  const ctx={
+    BACKEND_SYNC_ENABLED:true,backendState:'online',lastLabPendingOffset:0,
+    INGEST_URL:'https://example.org/api/v1/hipico-bot/bridge/events',
+    TOKEN:'fixture-only',LAB_GROUP_ID:LAB,LAB_CHANNEL_KEY:'lab-fixture',BACKEND_TIMEOUT_MS:4500,
+    labPendingInbox:{
+      list:async()=>[entry],
+      remove:async id=>{
+        assert.equal(id,MESSAGE);
+        removeCalls++;
+        events.push('remove');
+        if(removeCalls===1)throw new Error('CRASH_AFTER_SEEN_FSYNC');
+      }
+    },
+    labTestTagFor:()=> '[LABTEST:012345abcd]',
+    labTestReplyJournal:{
+      read:async()=>null,
+      prepare:async()=>{throw new Error('NEVER_PREPARE_WAL');}
+    },
+    classifyLocal:()=>({intent:'conversation',risk:'safe'}),
+    stableLabSenderKey:()=>SENDER,
+    labConversationInput:()=>({eligible:true}),
+    labReadOnlyQueryPurpose:()=>entry.purpose,
+    planLabConversation:()=>({scopeConflict:false}),
+    checkLabSendEligibility:async()=>({allowed:true,reason:'LAB_HANDOFF_CLEAR'}),
+    labQueryBackoff:{
+      allowed:()=>true,
+      fail:()=>{throw new Error('NEVER_BACKOFF_A_TERMINAL_HANDOFF');},
+      clear:()=>{throw new Error('NEVER_CLEAR_TERMINAL_BACKOFF');}
+    },
+    queryCanonicalLab:async()=>{
+      reads++;
+      if(reads!==1)throw new Error('NEVER_REQUERY_A_TERMINAL_HANDOFF');
+      return{available:false,reason:'LAB_HANDOFF_HELD'};
+    },
+    rememberLabSeen:id=>{assert.equal(id,MESSAGE);seen.add(id);events.push('seen');},
+    saveLabSeenNow:async()=>{assert.ok(seen.has(MESSAGE));events.push('fsync');},
+    log:async value=>events.push(value.includes('ALREADY_HANDLED')?'terminal':'handoff')
+  };
+  const resume=vm.runInNewContext('('+index.slice(begin,end).trim()+')',ctx);
+  await assert.rejects(resume(new Set(),seen),/CRASH_AFTER_SEEN_FSYNC/);
+  assert.ok(seen.has(MESSAGE),'durable mark was saved before removal failed');
+  events.push('restart');
+  await resume(new Set(),seen);
+  assert.equal(reads,1,'no canonical replay when a terminal seen entry survived restart');
+  assert.equal(removeCalls,2,'residual ciphertext is cleaned');
+  assert.deepEqual(events,['seen','fsync','remove','restart','remove','terminal']);
+});
+
+test('previously seen confirmed or ambiguous LAB replies still reconcile by ACK evidence only',async()=>{
+  const vm=await import('node:vm');
+  const src=await fs.readFile(new URL('../src/index.mjs',import.meta.url),'utf8');
+  const recovery=src.slice(src.indexOf('async function resumePendingLabQueries('),
+    src.indexOf('let labTestProcessing=false;')).trim();
+  for(const state of ['confirmed','ambiguous']){
+    const calls=[];
+    const context={
+      BACKEND_SYNC_ENABLED:true,backendState:'offline',lastLabPendingOffset:0,
+      labPendingInbox:{
+        list:async()=>[candidate()],
+        remove:async()=>calls.push('remove')
+      },
+      labTestTagFor:()=> '[LABTEST:012345abcd]',
+      labTestReplyJournal:{
+        read:async()=>({state,updatedAt:'2026-10-13T03:00:00Z'}),
+        confirm:async()=>({state:'confirmed',updatedAt:'2026-10-13T03:00:00Z'})
+      },
+      assertCurrentLabIdentity:async()=>calls.push('identity'),
+      visibleLabHasTag:async()=>true,
+      recoverConfirmedLabConversation:async()=>{calls.push('context');return true;},
+      rememberLabSeen:()=>calls.push('seen'),
+      saveLabSeenNow:async()=>calls.push('save'),
+      rememberConfirmedPendingLabQuote:async()=>{calls.push('hint');return true;},
+      log:async()=>calls.push('log')
+    };
+    await vm.runInNewContext('('+recovery+')',context)(new Set(),new Set([MESSAGE]));
+    assert.ok(calls.includes('context')&&calls.includes('hint')&&calls.includes('remove'),state);
+    assert.equal(calls.includes('query'),false);
+  }
+});
