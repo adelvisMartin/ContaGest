@@ -158,6 +158,27 @@ Las consultas con resultado/llegada, participantes y carrera explícita conserva
 
 ## Handoff de operador y silencio automático en LAB (#892)
 
+### Integridad de registros de handoff
+
+Antes de permitir una respuesta LAB, el backend no solo verifica si la
+conversación está marcada como `bot`: compara el estado recuperado con
+**la clave de conversación derivada** y con grupo, remitente estable y
+ámbito global/carrera de la consulta. Una fila de BD inconsistente,
+una clave de otro participante o un estado de titularidad desconocido
+se trata como `LAB_HANDOFF_HELD` (bloqueo), nunca como permiso.
+Ambos canales deben existir y ser diferentes **sin distinguir
+mayúsculas/minúsculas**, porque el identificador canónico del handoff
+normaliza el grupo. Una pausa humana vencida se libera mediante la
+política ya existente sin escribir ni modificar la fila en esta ruta.
+
+Pruebas unitarias: falsificación de `conversationKey`, cruce de grupo,
+remitente o carrera, `clarificationCount` inválido, ownership no
+reconocido y variaciones de mayúsculas; contrastar contra la consulta
+válida y contra la expiración natural. El operador debe comprobar
+también la pausa global cuando la referencia de carrera sea incompleta.
+
+
+
 El backend ya dispone de la autoridad de operador `/bridge/handoff` y
 persistencia `HipicoConversationHandoff`. Este incremento **no crea una
 segunda autoridad**: el Bridge LAB verifica ese estado mediante
