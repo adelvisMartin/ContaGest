@@ -62,3 +62,37 @@ test('#665 startup contract from merged #955 cannot be switched on in checked-in
  const result=check({backend:samples.backend.replace('ALLOW_DEV_TENANT_HEADER=false','ALLOW_DEV_TENANT_HEADER=true')});
  assert.ok(result.findings.some(f=>f.code==='MANIFEST_UNSAFE_DEFAULT'&&f.key==='ALLOW_DEV_TENANT_HEADER'));
 });
+
+test('#665 typed examples reject nonboolean, invalid numeric, unsupported enum and malformed URL',()=>{
+ for(const [owner,key,from,bad] of [
+  ['backend','PORT','3030','not-a-number'],
+  ['backend','MOCK_BCV_RATE','36.25','thirty-six'],
+  ['backend','NODE_ENV','development','production-preview'],
+  ['backend','READINESS_CACHE_MS','2000','1.5'],
+  ['bridge','HIPICO_POLL_MS','1000','2 seconds'],
+  ['bridge','HIPICO_LAB_SEND_ENABLED','false','enabled'],
+  ['bridge','HIPICO_TRANSPORT_ADAPTER','playwright-web','unsupported-adapter'],
+  ['frontend','VITE_API_BASE_URL','http://localhost:3030/api/v1','not-an-endpoint']
+ ]){
+  assert.ok(samples[owner].includes(key+'='+from),key);
+  const result=check({[owner]:samples[owner].replace(key+'='+from,key+'='+bad)});
+  assert.ok(result.findings.some(x=>x.code==='MANIFEST_SAMPLE_TYPE_INVALID'&&x.key===key),key);
+  assert.equal(JSON.stringify(result).includes(bad),false);
+ }
+});
+
+test('#665 valid Supabase placeholders and relative marketing links remain supported',()=>{
+ assert.equal(check().status,'PASS');
+ const changed=samples.frontend.replace('VITE_MARKETING_DEMO_URL=/?module=login',
+   'VITE_MARKETING_DEMO_URL=/landing?campaign=demo');
+ assert.equal(check({frontend:changed}).status,'PASS');
+});
+
+test('#665 missing or duplicate enum values fail the registry validation',()=>{
+ const empty=JSON.parse(JSON.stringify(MANIFEST));
+ empty.variables.backend.NODE_ENV.allowedValues=[];
+ assert.ok(checkEnvironmentManifest(samples,empty).findings.some(x=>x.code==='MANIFEST_ENUM_VALUES_INVALID'));
+ const duplicate=JSON.parse(JSON.stringify(MANIFEST));
+ duplicate.variables.backend.NODE_ENV.allowedValues=['development','development'];
+ assert.ok(checkEnvironmentManifest(samples,duplicate).findings.some(x=>x.code==='MANIFEST_ENUM_VALUES_INVALID'));
+});
