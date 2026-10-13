@@ -541,7 +541,8 @@ test('confirmed LAB queries finish ACK-only hints while still visible or backend
       },
       backendState:scenario.online?'online':'offline',
       BACKEND_SYNC_ENABLED:true,
-      labTestTagFor:()=> '[LABTEST:012345abcd]',
+      labPendingRecoveryOffset:0,
+      labTestTagFor:()=> '[LABTEST:012345abcd]'
       labTestReplyJournal:{
         read:async()=>{actions.push('journal-read');return scenario.state?{state:scenario.state}:null;},
         confirm:async()=>{actions.push('confirm');}
@@ -657,7 +658,8 @@ test('rechecks original LAB TTL after a slow canonical HTTP response before send
       read:async id=>{assert.equal(id,MESSAGE);actions.push('freshness-read');return null;}
     },
     backendState:'online',BACKEND_SYNC_ENABLED:true,
-    labTestTagFor:()=> '[LABTEST:012345abcd]',
+    labPendingRecoveryOffset:0,
+    labTestTagFor:()=> '[LABTEST:012345abcd]'
     labTestReplyJournal:{
       read:async()=>{actions.push('journal-read');return null;},
       prepare:async()=>{throw new Error('EXPIRED_QUERY_MUST_NOT_PREPARE');},
@@ -734,4 +736,42 @@ test('live pending LAB poll always advances fair recovery cursor even if backend
   assert.ok(get>=0&&advance>get&&backend>advance,
     'rotating selection must not wait for the backend or an ACK');
   assert.doesNotMatch(recovery.slice(get,backend),/sendTextInCurrentLab/);
+});
+
+
+test('live LAB recovery serves all 200 encrypted pending IDs within eight bounded polls',async()=>{
+  const vm=await import('node:vm');
+  const src=await fs.readFile(new URL('../src/index.mjs',import.meta.url),'utf8');
+  const start=src.indexOf('async function resumePendingLabQueries(');
+  const end=src.indexOf('let labTestProcessing=false;',start);
+  assert.ok(start>=0&&end>start);
+  const body=src.slice(start,end).trim();
+  const all=Array.from({length:200},(_,i)=>({messageId:'round-robin-'+i}));
+  const inspected=[];
+  const offsets=[];
+  const context={
+    BACKEND_SYNC_ENABLED:true,
+    labPendingRecoveryOffset:0,
+    labPendingInbox:{
+      list:async (limit,{offset}={})=>{
+        assert.equal(limit,25,'at most 25 recovery candidates per poll');
+        offsets.push(offset);
+        return Array.from({length:limit},(_,i)=>all[(offset+i)%all.length]);
+      }
+    },
+    labTestTagFor:()=> '[LABTEST:012345abcd]',
+    labTestReplyJournal:{read:async messageId=>{inspected.push(messageId);return null;}}
+  };
+  const recover=vm.runInNewContext('('+body+')',context);
+  const visibleIds=new Set(all.map(item=>item.messageId));
+  for(let poll=1;poll<=8;poll++){
+    await recover(visibleIds);
+    assert.equal(inspected.length,poll*25,'bounded candidate count each poll');
+    assert.equal(new Set(inspected).size,inspected.length,'no duplicate candidates within one rotation');
+  }
+  assert.deepEqual(offsets,[0,25,50,75,100,125,150,175]);
+  assert.equal(new Set(inspected).size,200,'even all-visible and blocked messages cannot starve later IDs');
+  assert.equal(context.labPendingRecoveryOffset,0,'volatile cursor wraps after the eighth poll');
+  await recover(visibleIds);
+  assert.deepEqual(inspected.slice(200),inspected.slice(0,25),'the next fair round begins at the first batch');
 });
