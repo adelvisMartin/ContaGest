@@ -276,6 +276,31 @@ presentación no redefine la autoridad de consulta ni la de entrega.
 El resumen es **solo de referencias disponibles**, no una reconstrucción de
 todo el historial del grupo.
 
+### Referencias citadas verificadas (seguimiento #892)
+
+El journal privado de referencias para mensajes citados es **una pista
+no autoritativa**, no una confirmación de estado, resultado ni operación.
+`confirmedLabQuoteHint` autoriza almacenar solo una referencia
+explícita y coherente (número + hipódromo + fecha) proveniente de un
+mensaje no monetario. Rechaza «carrera 5 o carrera 6», «quinta o sexta»,
+una fecha inválida o mensajes sin remitente estable. Esta misma regla
+se aplica **después del ACK normal** y cuando el Bridge reinicia tras
+haber confirmado una respuesta antes de guardar la pista auxiliar.
+
+Las citas de mensajes todavía visibles también pasan por la validación
+de ambigüedad del planner, incluso si no hay entrada en el journal.
+Si la cita o la nueva pregunta contienen referencias contradictorias,
+el asistente debe pedir aclaración; no puede usar la primera carrera
+encontrada por una expresión regular como autoridad de lectura.
+La verificación canónica por backend sigue siendo obligatoria para
+presentar hechos de carrera. No se guarda el texto completo ni se
+habilita SOURCE.
+
+Pruebas de regresión:
+`lab-confirmed-quote-hint.test.mjs` (memoria, ACK y reinicio) y
+`lab-canonical-query.test.mjs` (cita visible normal, conflicto de
+números/ordinales y operaciones monetarias).
+
 ### Conversaciones por pasos (follow-up #892)
 
 Además de frases explícitas como `carrera 5 en hipódromo La Rinconada el
