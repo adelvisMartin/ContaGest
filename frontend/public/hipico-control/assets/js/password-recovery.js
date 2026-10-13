@@ -6,6 +6,15 @@ let recoveryAccessToken = '';
 let recoveryError = '';
 let recoveryNoticeShown = false;
 
+// Query parameters can be logged by hosting intermediaries. Strip any
+// recovery/session material from the visible URL on the first app render,
+// including invalid or unexpected callbacks; never reflect token values.
+const RECOVERY_URL_PARAMS = Object.freeze([
+  'access_token', 'refresh_token', 'provider_token', 'provider_refresh_token',
+  'token', 'token_hash', 'code', 'type', 'expires_in', 'expires_at',
+  'error', 'error_code', 'error_description'
+]);
+
 function authHeaders(token = '') {
   return {
     apikey: CLOUD_CONFIG.publishableKey,
@@ -16,9 +25,7 @@ function authHeaders(token = '') {
 function cleanAppUrl() {
   const url = new URL(location.href);
   url.hash = '';
-  url.searchParams.delete('error');
-  url.searchParams.delete('error_code');
-  url.searchParams.delete('error_description');
+  for (const key of RECOVERY_URL_PARAMS) url.searchParams.delete(key);
   return url;
 }
 function recoveryRedirectUrl() {
@@ -34,13 +41,16 @@ function readRecoveryContext() {
   const hashError = String(hash.get('error_description') || hash.get('error') || '');
   const query = new URLSearchParams(location.search);
   const queryError = String(query.get('error_description') || query.get('error') || '');
+  // Even an invalid link can contain sensitive material. Clean it before
+  // exposing the login screen and show a generic recovery error.
+  const hadAuthMaterial = RECOVERY_URL_PARAMS.some(key => hash.has(key) || query.has(key));
+  if (hadAuthMaterial) history.replaceState(history.state, '', cleanAppUrl().toString());
   if (type === 'recovery' && token) {
     recoveryAccessToken = token;
-    history.replaceState(history.state, '', cleanAppUrl().toString());
+    recoveryError = '';
     return;
   }
-  recoveryError = hashError || queryError;
-  if (recoveryError) history.replaceState(history.state, '', cleanAppUrl().toString());
+  recoveryError = hashError || queryError || (hadAuthMaterial ? 'INVALID_RECOVERY_LINK' : '');
 }
 async function parseError(response) {
   try {
