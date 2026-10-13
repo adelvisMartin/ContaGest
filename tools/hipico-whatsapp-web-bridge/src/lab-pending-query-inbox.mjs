@@ -14,6 +14,12 @@ const PURPOSES=new Set(['status','result','participants','next','active','schedu
 const MAX_AGE_MS=10*60*1000;
 const MAX_RECORDS=200;
 const MAX_SIZE=12*1024;
+// Durable quoted race scopes must contain an actual calendar date.
+const isCalendarDate = value => {
+  if(typeof value!=='string'||!/^\d{4}-\d{2}-\d{2}$/.test(value))return false;
+  const iso=value+'T00:00:00.000Z';
+  return Number.isFinite(Date.parse(iso)) && new Date(iso).toISOString().slice(0,10)===value;
+};
 
 /**
  * A previously verified quoted race may scroll out of the DOM. Reuse only
@@ -87,7 +93,7 @@ export function createLabPendingQueryInbox({rootDir,labGroupId,sourceGroupId,now
       (item.race!==null&&(!Number.isInteger(item.race?.raceNumber)||item.race.raceNumber<1||
         item.race.raceNumber>999||typeof item.race.racetrack!=='string'||
         !item.race.racetrack.trim()||item.race.racetrack.length>90||
-        !/^\d{4}-\d{2}-\d{2}$/.test(item.race.raceDate)))||
+        !isCalendarDate(item.race.raceDate)))||
       (item.quotedMessageId!==null&&item.race===null)||
       (item.race!==null&&item.quotedMessageId===null&&
         JSON.stringify(explicitLabRaceScope(item.text))!==JSON.stringify(item.race))){
