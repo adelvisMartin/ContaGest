@@ -672,3 +672,39 @@ test('visible LAB canonical response rechecks encrypted TTL before WAL send inte
   assert.match(live.slice(guard,sendIntent),/LAB_PENDING_EXPIRED_BEFORE_SEND/);
   assert.match(live.slice(guard,sendIntent),/continue;/);
 });
+
+
+test('round-robin encrypted inbox visits later pending questions even when first 25 are blocked',async t=>{
+  const f=await harness(t);
+  const inbox=f.create();await inbox.initialize();
+  const ids=[];
+  for(let i=0;i<31;i++){
+    const id='false_'+LAB+'_rr-'+String(i).padStart(3,'0')+'_'+SENDER;
+    ids.push(id);
+    await inbox.enqueue(candidate({messageId:id}));
+  }
+  const first=await inbox.list(25,{offset:0});
+  const second=await inbox.list(25,{offset:25});
+  assert.equal(first.length,25);
+  assert.equal(second.length,25);
+  const seen=new Set([...first,...second].map(row=>row.messageId));
+  assert.equal(seen.size,31,'later queries must be offered even if first 25 cannot progress');
+  assert.ok(second.some(row=>!first.some(prior=>prior.messageId===row.messageId)));
+  assert.deepEqual(await inbox.list(25,{offset:0}),first,'stable order without mutation');
+  assert.deepEqual((await inbox.snapshot()).pending,31);
+  await assert.rejects(inbox.list(25,{offset:-1}),/LAB_PENDING_LIST_LIMIT_INVALID/);
+  await assert.rejects(inbox.list(25,{offset:200}),/LAB_PENDING_LIST_LIMIT_INVALID/);
+  await inbox.close();
+});
+
+test('live pending LAB poll always advances fair recovery cursor even if backend is offline',async()=>{
+  const src=await fs.readFile(new URL('../src/index.mjs',import.meta.url),'utf8');
+  const recovery=src.slice(src.indexOf('async function resumePendingLabQueries('),
+    src.indexOf('let labTestProcessing=false;'));
+  const get=recovery.indexOf('await labPendingInbox.list(25,{offset:labPendingRecoveryOffset})');
+  const advance=recovery.indexOf('labPendingRecoveryOffset=(labPendingRecoveryOffset+25)%200');
+  const backend=recovery.indexOf("if (backendState !== 'online') continue");
+  assert.ok(get>=0&&advance>get&&backend>advance,
+    'rotating selection must not wait for the backend or an ACK');
+  assert.doesNotMatch(recovery.slice(get,backend),/sendTextInCurrentLab/);
+});
