@@ -78,7 +78,8 @@ function validateSoakEvidence(data) {
     && Date.parse(data.completedAt) >= Date.parse(data.startedAt)
     && String(data?.operatorId || '').trim().length > 0
     && summarySha === candidateSha
-    && validSoakMetricEvidence(data,Number(soakPolicy?.releaseMinimumHours))
+    && validSoakMetricEvidence(data,
+      Number(soakPolicy?.releaseMinimumHours), Number(soakPolicy?.sampleSeconds))
     && Number(data?.durationRequestedMinutes) >= Number(soakPolicy?.releaseMinimumHours) * 60
     && evaluation?.status === 'PASS'
     && Number(evaluation?.durationHours) >= Number(soakPolicy?.releaseMinimumHours)
