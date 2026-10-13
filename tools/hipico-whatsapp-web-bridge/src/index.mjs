@@ -1216,6 +1216,25 @@ async function rememberConfirmedPendingLabQuote(entry) {
   }
 }
 
+// The confirmed send journal outranks the auxiliary seen file. Finish
+// quote persistence using the immutable encrypted pre-query record before
+// removing it; after a crash this can run again without ever pressing Enter.
+async function finalizeConfirmedVisibleLabQuote(row,body) {
+  const stored=await labPendingInbox?.read(row.id);
+  if(stored){
+    if(await rememberConfirmedPendingLabQuote(stored)){
+      await labPendingInbox.remove(row.id);
+    }
+    return;
+  }
+  const sender=stableLabSenderKey(row.id);
+  if(sender){
+    await rememberConfirmedPendingLabQuote({
+      messageId:row.id,senderId:sender,text:body
+    });
+  }
+}
+
 async function resumePendingLabQueries(visibleIds = new Set()) {
   if (!labPendingInbox || backendState !== 'online' || !BACKEND_SYNC_ENABLED) return;
   const pending = await labPendingInbox.list(25);
@@ -1338,18 +1357,11 @@ async function processLabTestInput() {
     // A confirmed ack survives restart even if the legacy seen-file did not.
     const journalRecord = await labTestReplyJournal.read(row.id);
     if (journalRecord?.state === 'confirmed') {
-      // Crash after confirmed ACK but before hint persistence: safe to backfill.
-      const verifiedSender=stableLabSenderKey(row.id);
-      const verifiedRace=explicitLabRaceScope(body);
-      const verifiedPurpose=labReadOnlyQueryPurpose(body,classifyLocal(body));
-      if(verifiedSender&&verifiedRace&&verifiedPurpose&&labQuotedRaceJournal){
-        try{await labQuotedRaceJournal.remember({
-          messageId:row.id,senderId:verifiedSender,race:verifiedRace,confirmed:true
-        });}catch{await log('LAB_QUOTE_HINT_PERSIST_FAILED');}
-      }
+      // Crash after confirmed ACK but before quote persistence: retry the
+      // HMAC hint using the original encrypted query, without re-sending LAB.
       rememberLabSeen(row.id);
       await saveLabSeenNow();
-      await labPendingInbox?.remove(row.id);
+      await finalizeConfirmedVisibleLabQuote(row,body);
       continue;
     }
     if (journalRecord?.state === 'ambiguous' || journalRecord?.state === 'sending') {
@@ -1359,8 +1371,8 @@ async function processLabTestInput() {
         await labTestReplyJournal.confirm(row.id,{visibleTag:true});
         rememberLabSeen(row.id);
         await saveLabSeenNow();
+        await finalizeConfirmedVisibleLabQuote(row,body);
         await log('LAB_TEST_REPLY_RECONCILED id='+tag);
-        await labPendingInbox?.remove(row.id);
       }
       continue;
     }
@@ -1456,12 +1468,7 @@ async function processLabTestInput() {
       await labTestReplyJournal.confirm(row.id,{visibleTag:true});
       rememberLabSeen(row.id); // confirmed delivery/tag; never ack before sending
       await saveLabSeenNow();
-      await labPendingInbox?.remove(row.id);
-      if(sender&&directRace&&inquiryPurpose&&labQuotedRaceJournal){
-        try{await labQuotedRaceJournal.remember({
-          messageId:row.id,senderId:sender,race:directRace,confirmed:true
-        });}catch{await log('LAB_QUOTE_HINT_PERSIST_FAILED');}
-      }
+      await finalizeConfirmedVisibleLabQuote(row,body);
       // The WAL-backed confirmed acknowledgement is the single send authority.
       // Context is only a local hint; failed persistence can never resend LAB.
       if (plan.rememberRace && labConversationContext) {
