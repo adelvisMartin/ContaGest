@@ -669,6 +669,10 @@ test('rechecks original LAB TTL after a slow canonical HTTP response before send
     stableLabSenderKey:()=>SENDER,
     labConversationInput:()=>({eligible:true}),
     labReadOnlyQueryPurpose:()=>entry.purpose,
+    planLabConversation:()=>({scopeConflict:false}),
+    checkLabSendEligibility:async()=>{
+      actions.push('handoff-pre');return {allowed:true,reason:'LAB_HANDOFF_CLEAR'};
+    },
     labQueryBackoff:{
       allowed:()=>{actions.push('backoff-allowed');return true;},
       clear:()=>{actions.push('backoff-clear');}
@@ -682,8 +686,8 @@ test('rechecks original LAB TTL after a slow canonical HTTP response before send
   const resume=vm.runInNewContext('('+body+')',context);
   await resume(new Set());
   assert.deepEqual(actions,[
-    'journal-read','backoff-allowed','canonical-read','backoff-clear',
-    'freshness-read','expired-log'
+    'journal-read','backoff-allowed','handoff-pre','canonical-read',
+    'backoff-clear','freshness-read','expired-log'
   ]);
 });
 
@@ -694,7 +698,7 @@ test('visible LAB canonical response rechecks encrypted TTL before WAL send inte
   assert.ok(start>=0&&end>start);
   const live=source.slice(start,end);
   const canonical=live.indexOf('const canonical = inquiryPurpose');
-  const guard=live.indexOf('if(inquiryPurpose && BACKEND_SYNC_ENABLED && labPendingInbox &&');
+  const guard=live.indexOf('if(inquiryPurpose && labPendingInbox){',canonical);
   const sendIntent=live.indexOf('await labTestReplyJournal.prepare(row.id)');
   assert.ok(canonical>=0&&guard>canonical&&sendIntent>guard);
   assert.match(live.slice(guard,sendIntent),/await labPendingInbox\.read\(row\.id\)/);
