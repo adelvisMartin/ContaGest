@@ -32,6 +32,7 @@ import { createLabConversationContext, labConversationInput, planLabConversation
 import { localKillSwitchState } from './promotion-guard.mjs';
 import { queryCanonicalLab, explicitLabRaceScope, labReadOnlyQueryPurpose, resolveQuotedLabRaceScope } from './lab-canonical-query.mjs';
 import { selectLabAnswer } from './lab-answer-policy.mjs';
+import { labOutgoingEvidenceMatches } from './lab-outgoing-evidence.mjs';
 import { createLabQuotedRaceJournal } from './lab-quoted-race-journal.mjs';
 
 const config = assertRuntimeConfig(loadRuntimeConfig());
@@ -339,8 +340,8 @@ function localMirrorText(event, classification) {
     `Remitente: ${event.senderLabel || 'participante'}`,
     `Mensaje: ${(event.text || `[${event.mediaKind || 'media'}]`).slice(0, 1000)}`,
     `Lectura: ${classification.intent} · riesgo ${classification.risk} · confianza ${(classification.confidence * 100).toFixed(1)}%`,
-    `Respuesta contextual: ${canonical?.available ? canonical.text : plan?.guidance || 'Sin contexto adicional disponible.'}`,
-    `Estado de consulta canónica: ${canonical?.reason || 'LAB_LOCAL_ONLY'}`,
+    'Respuesta contextual: Espejo informativo local; no se ha consultado una fuente canónica.',
+    'Estado de consulta canónica: LAB_LOCAL_ONLY',
     `Propuesta: ${localSuggestion(classification)}`,
     '⚠️ SOLO LABORATORIO. No registró ni modificó dinero, jugadas, resultados o saldos reales.'
   ];
@@ -1320,10 +1321,18 @@ async function processLabTestInput() {
   } finally {labTestProcessing=false;}
 }
 async function visibleLabHasTag(tag) {
-  return page.evaluate((needle) => {
-    const messages = Array.from(document.querySelectorAll('.message-out')).slice(-100);
-    return messages.some((node) => String(node.innerText || '').includes(needle));
-  }, tag).catch(() => false);
+  // A matching substring in a quote or unrelated outgoing message is NOT
+  // evidence. Scope must still be the exact pinned LAB group before and
+  // after collecting bounded outgoing DOM text.
+  await assertCurrentLabIdentity();
+  const outgoingTexts = await page.evaluate(() => {
+    const main=document.querySelector('#main');
+    if(!main)return[];
+    return Array.from(main.querySelectorAll('.message-out')).slice(-100)
+      .map(node=>String(node.innerText||node.textContent||'').slice(0,4201));
+  }).catch(() => []);
+  await assertCurrentLabIdentity();
+  return outgoingTexts.some(text=>labOutgoingEvidenceMatches(text,tag));
 }
 async function sendMirrorToLab(mirror) {
   if (!LAB_SEND_ENABLED) return false;
