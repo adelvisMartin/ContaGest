@@ -254,6 +254,40 @@ test('next, active and schedule canonical read intents are durably recoverable w
   await inbox.close();
 });
 
+test('race summary is durably replayable only as a verified informational LAB query',async t=>{
+  const f=await harness(t);
+  const inbox=f.create();await inbox.initialize();
+  const full='Hazme un resumen de la carrera 5 en hipódromo La Rinconada el 2026-10-12';
+  const scoped=candidate({messageId:'false_'+LAB+'_summary-explicit_'+SENDER,
+    text:full,purpose:'summary'});
+  assert.deepEqual(await inbox.enqueue(scoped),{created:true});
+  const restored=await inbox.read(scoped.messageId);
+  assert.equal(restored?.purpose,'summary');
+  assert.deepEqual(restored?.race,scoped.race);
+  const unscoped=candidate({messageId:'false_'+LAB+'_summary-general_'+SENDER,
+    text:'¿Resumen de la carrera 5?',purpose:'summary',race:null});
+  assert.deepEqual(await inbox.enqueue(unscoped),{created:true});
+  assert.equal((await inbox.read(unscoped.messageId))?.race,null,
+    'a summary without complete original scope cannot invent track/date');
+  for(const text of [
+    'Hazme un resumen de lo que hablamos sobre carrera 5',
+    'Resumen de apuestas y saldos de carrera 5',
+    'Hazme resumen de carrera 5 y registra mi jugada'
+  ]){
+    const forged=candidate({messageId:'false_'+LAB+'_summary-unsafe_'+SENDER,
+      text,purpose:'summary',race:null});
+    await assert.rejects(inbox.enqueue(forged),/LAB_PENDING_QUERY_INVALID/,text);
+  }
+  await assert.rejects(inbox.enqueue(candidate({
+    messageId:'false_'+LAB+'_summary-fake-scope_'+SENDER,
+    text:'¿Resumen de la carrera 5?',purpose:'summary',
+    race:scoped.race
+  })),/LAB_PENDING_QUERY_INVALID/,
+    'implicit original race cannot authorize a pinned autonomous read');
+  assert.equal((await inbox.snapshot()).pending,2);
+  await inbox.close();
+});
+
 test('pinned LAB group and stable quote JID reject forged cross-group recovery',async t=>{
   const f=await harness(t);const inbox=f.create();await inbox.initialize();
   await assert.rejects(inbox.enqueue(candidate({
