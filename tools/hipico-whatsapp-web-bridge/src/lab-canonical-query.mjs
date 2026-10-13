@@ -91,36 +91,45 @@ export async function queryCanonicalLab({
     timestamp,text:String(text||'').slice(0,1200),race,purpose,
     quotedExternalMessageId:quotedMessageId
   };
-  // A lost HTTP response after the backend commit is retried once using the
-  // exact same request identity, before any WhatsApp send intent exists.
+  // Read-only query: a lost HTTP response has no committed send/domain effect.
+  // One immediate retry is safe; never retry auth, rate limits or invalid contracts.
   for(let attempt=0;attempt<2;attempt++){
-  try{
-    const response=await fetchImpl(url,{
-      method:'POST',redirect:'manual',cache:'no-store',
-      headers:{'Content-Type':'application/json','x-hipico-bridge-token':token},
-      body:JSON.stringify(payload),signal:AbortSignal.timeout(Math.min(5000,Math.max(500,timeoutMs)))
-    });
+    let response;
+    try{
+      response=await fetchImpl(url,{
+        method:'POST',redirect:'manual',cache:'no-store',
+        headers:{'Content-Type':'application/json','x-hipico-bridge-token':token},
+        body:JSON.stringify(payload),signal:AbortSignal.timeout(Math.min(5000,Math.max(500,timeoutMs)))
+      });
+    }catch{
+      if(attempt===0)continue;
+      return{available:false,reason:'LAB_CANONICAL_UNAVAILABLE'};
+    }
+    // 503 is an explicit overload/unavailable signal; do not amplify it.
+    if([502,504].includes(response.status)&&attempt===0)continue;
     if(response.status!==200||!response.headers.get('content-type')?.toLowerCase().includes('application/json')){
       return{available:false,reason:'LAB_CANONICAL_UNAVAILABLE'};
     }
     const length=Number(response.headers.get('content-length')||0);
     if(length>16_384)return{available:false,reason:'LAB_CANONICAL_INVALID_RESPONSE'};
-    const raw=await response.text();
+    let raw;
+    try{raw=await response.text();}catch{
+      if(attempt===0)continue;
+      return{available:false,reason:'LAB_CANONICAL_UNAVAILABLE'};
+    }
     if(raw.length>16_384)return{available:false,reason:'LAB_CANONICAL_INVALID_RESPONSE'};
-    const body=JSON.parse(raw);
+    let body;
+    try{body=JSON.parse(raw);}catch{return{available:false,reason:'LAB_CANONICAL_INVALID_RESPONSE'};}
     const authority=body?.authority;
     if(body?.ok!==true||body?.mode!=='shadow'||
        authority?.sourceWriteAllowed!==false||
        authority?.financialAuthority!==false||
        authority?.domainEffectsAllowed!==false||
-       typeof body.text!=='string'||body.text.length>1500||
+       typeof body.text!=='string'||!body.text.trim()||body.text.length>1500||
        !/^[A-Z0-9_]{4,80}$/.test(String(body.status||''))){
       return{available:false,reason:'LAB_CANONICAL_INVALID_RESPONSE'};
     }
     return{available:true,reason:String(body.status),text:body.text};
-  }catch{
-    if(attempt===1)return{available:false,reason:'LAB_CANONICAL_UNAVAILABLE'};
-  }
   }
   return{available:false,reason:'LAB_CANONICAL_UNAVAILABLE'};
 }
