@@ -241,6 +241,21 @@ test('LAB supports only explicit race summaries, not whole-chat or monetary summ
   assert.equal(labReadOnlyQueryPurpose('resumen de carrera 5', {intent:'betting_or_balance',risk:'monetary'}),null);
 });
 
+test('plural financial summary requests cannot gain LAB canonical read authority',()=>{
+  const safe={intent:'conversation',risk:'safe'};
+  for(const text of [
+    'Resumen de apuestas y saldos de carrera 5',
+    'Hazme resumen de pagos, premios y jugadas de la carrera 5',
+    '¿Resumen de transferencias y ganancias de carrera 5?',
+    'Resumen de liquidaciones de la carrera 5',
+    '¿Resumen de depósitos y retiros de carrera 5?'
+  ])assert.equal(labReadOnlyQueryPurpose(text,safe),null,text);
+  for(const text of [
+    'Hazme un resumen de la carrera 5 en hipódromo La Rinconada el 2026-10-12',
+    '¿Resumen de la carrera 5?'
+  ])assert.equal(labReadOnlyQueryPurpose(text,safe),'summary',text);
+});
+
 test('LAB summary transport preserves pinned identity, no SOURCE write, and strict read-only purpose',async()=>{
   let submitted=null;
   const race={raceNumber:5,racetrack:'La Rinconada',raceDate:'2026-10-12'};
