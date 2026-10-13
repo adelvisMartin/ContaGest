@@ -133,7 +133,7 @@ test('split UTF-8 streamed handoff grants only validated explicit operator permi
   const parts=[bytes.slice(0,split+1),bytes.slice(split+1)];
   let reads=0,cancels=0;
   const outcome=await checkLabSendEligibility({...base,fetchImpl:async()=>({
-    status:200,headers:new Headers({'content-type':'application/json'}),
+    status:200,headers:new Headers({'content-type':'application/json','content-length':String(bytes.byteLength)}),
     body:{getReader:()=>({
       read:async()=>reads<parts.length?{done:false,value:parts[reads++]}:{done:true},
       cancel:async()=>{cancels++;},releaseLock:()=>{}
@@ -177,3 +177,18 @@ test('streamless handoff adapters also enforce UTF-8 byte length, not character 
   })});
   assert.deepEqual(result,{allowed:false,reason:'LAB_HANDOFF_INVALID_RESPONSE'});
 });
+
+test('lying short Content-Length cannot bypass the real 4096-byte stream limit',async()=>{
+  let read=0,cancel=0;
+  const result=await checkLabSendEligibility({...base,fetchImpl:async()=>({
+    status:200,headers:new Headers({'content-type':'application/json','content-length':'10'}),
+    body:{getReader:()=>({
+      read:async()=>{read++;return{done:false,value:new Uint8Array(4097)};},
+      cancel:async()=>{cancel++;},releaseLock:()=>{}
+    })}
+  })});
+  assert.deepEqual(result,{allowed:false,reason:'LAB_HANDOFF_INVALID_RESPONSE'});
+  assert.equal(read,1);
+  assert.equal(cancel,1);
+});
+
