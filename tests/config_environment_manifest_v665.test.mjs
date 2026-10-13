@@ -96,3 +96,41 @@ test('#665 missing or duplicate enum values fail the registry validation',()=>{
  duplicate.variables.backend.NODE_ENV.allowedValues=['development','development'];
  assert.ok(checkEnvironmentManifest(samples,duplicate).findings.some(x=>x.code==='MANIFEST_ENUM_VALUES_INVALID'));
 });
+
+
+test('#665 URL protocols are scoped to frontend/API, Bridge and PostgreSQL roles',()=>{
+ for(const [owner,key,unsafe] of [
+  ['frontend','VITE_API_BASE_URL','postgresql://postgres@example.test:5432/postgres'],
+  ['frontend','VITE_API_BASE_URL','/api/v1'],
+  ['frontend','VITE_SUPABASE_URL','postgresql://postgres@example.test:5432/postgres'],
+  ['backend','DATABASE_RUNTIME_URL','https://db.example.test/postgres'],
+  ['backend','DIRECT_DATABASE_URL','https://db.example.test/postgres'],
+  ['bridge','HIPICO_INGEST_URL','postgresql://postgres@example.test:5432/postgres'],
+  ['frontend','VITE_MARKETING_DEMO_URL','postgresql://postgres@example.test:5432/postgres']
+ ]){
+  const before=samples[owner];
+  const expression=new RegExp('^'+key+'=.*$','m');
+  assert.match(before,expression,key+' must exist in the versioned template');
+  const modified=before.replace(expression,key+'='+unsafe);
+  const results=check({[owner]:modified});
+  assert.ok(results.findings.some(x=>x.code==='MANIFEST_SAMPLE_TYPE_INVALID'&&x.key===key),owner+'/'+key);
+  assert.ok(!JSON.stringify(results).includes(unsafe),'auditor must not reveal URLs');
+ }
+ assert.equal(check({frontend:samples.frontend.replace(
+  /^VITE_MARKETING_DEMO_URL=.*$/m,'VITE_MARKETING_DEMO_URL=/landing?campaign=demo'
+ )}).status,'PASS','marketing deep link is the only frontend relative URL role');
+});
+
+test('#665 missing, duplicate and cross-owner URL policies fail closed',()=>{
+ for(const change of [
+  m=>{delete m.variables.frontend.VITE_API_BASE_URL.allowedSchemes;},
+  m=>{m.variables.bridge.HIPICO_INGEST_URL.allowedSchemes=['http:','http:'];},
+  m=>{m.variables.backend.APP_URL.allowRelative=true;},
+  m=>{m.variables.frontend.VITE_SUPABASE_ANON_KEY.allowedSchemes=['https:'];}
+ ]){
+  const altered=JSON.parse(JSON.stringify(MANIFEST));
+  change(altered);
+  const report=checkEnvironmentManifest(samples,altered);
+  assert.ok(report.findings.some(x=>x.code==='MANIFEST_URL_POLICY_INVALID'),JSON.stringify(report.findings));
+ }
+});

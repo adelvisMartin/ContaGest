@@ -35,12 +35,18 @@ function sampleMatchesDeclaredType(value,record,owner){
   case 'number':return /^-?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?$/.test(value)&&Number.isFinite(Number(value));
   case 'enum':return Array.isArray(record.allowedValues)&&record.allowedValues.includes(value);
   case 'url':{
-   // A marketing deep link may be relative; infrastructure URLs cannot.
-   if(owner==='frontend'&&value.startsWith('/')&&!value.startsWith('//'))
+   // Relative URLs are explicitly authorized only by catalog metadata.
+   // A backend/Bridge endpoint or Supabase public API may not silently
+   // become a relative marketing route or a PostgreSQL connection string.
+   if(record.allowRelative===true&&owner==='frontend'&&
+      value.startsWith('/')&&!value.startsWith('//'))
      return !/[\s\\]/.test(value);
    const normalized=value.replace(/\[[A-Za-z0-9_-]+\]/g,'example');
-   try{const url=new URL(normalized);return URL_SCHEMES.has(url.protocol)&&Boolean(url.hostname);}
-   catch{return false;}
+   try{
+     const url=new URL(normalized);
+     return Array.isArray(record.allowedSchemes)&&record.allowedSchemes.includes(url.protocol)&&
+       URL_SCHEMES.has(url.protocol)&&Boolean(url.hostname);
+   }catch{return false;}
   }
   default:return true;
  }
@@ -69,6 +75,17 @@ export function checkEnvironmentManifest(samples,registry=CONFIG_MANIFEST_V665){
       record.allowedValues.some(v=>typeof v!=='string'||!v)||
       new Set(record.allowedValues).size!==record.allowedValues.length))
      add('MANIFEST_ENUM_VALUES_INVALID',owner,key);
+   // Protocol authority belongs to the manifest, never to a heuristic
+   // that allows any URL scheme for all URL-typed fields.
+   if(record.type==='url'&&(
+      !Array.isArray(record.allowedSchemes)||record.allowedSchemes.length===0||
+      record.allowedSchemes.some(v=>typeof v!=='string'||!URL_SCHEMES.has(v))||
+      new Set(record.allowedSchemes).size!==record.allowedSchemes.length||
+      (record.allowRelative!==undefined&&typeof record.allowRelative!=='boolean')||
+      (record.allowRelative===true&&(owner!=='frontend'||key!=='VITE_MARKETING_DEMO_URL'))))
+     add('MANIFEST_URL_POLICY_INVALID',owner,key);
+   if(record.type!=='url'&&(record.allowedSchemes!==undefined||record.allowRelative!==undefined))
+     add('MANIFEST_URL_POLICY_INVALID',owner,key);
    if(parsed.entries.has(key)&&!sampleMatchesDeclaredType(parsed.entries.get(key),record,owner))
      add('MANIFEST_SAMPLE_TYPE_INVALID',owner,key);
    if(record.safeSample!==undefined&&parsed.entries.has(key)&&parsed.entries.get(key)!==record.safeSample)
