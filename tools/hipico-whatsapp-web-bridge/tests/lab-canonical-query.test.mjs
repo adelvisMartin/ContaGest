@@ -369,3 +369,36 @@ test('canonical adapter accepts only the exact application/json HTTP media type'
     assert.equal(accepted.text,canonical.text);
   }
 });
+
+
+test('enforces a scoped safe race summary after a network retry',async()=>{
+  const text='¿Resumen de la carrera 5 en hipódromo La Rinconada el 2026-10-12?';
+  const kind={intent:'conversation',risk:'safe'};
+  assert.equal(labReadOnlyQueryPurpose(text,kind),'summary');
+  for(const blocked of [
+    '¿Resumen de los mensajes del chat de carrera 5?',
+    '¿Resumen de lo que hablamos sobre carrera 5?',
+    '¿Resumen de saldos de la carrera 5?',
+    '¿Resumen de apuestas de carrera 5?',
+    '¿Resumen de jugadas de carrera 5?',
+    '¿Resumen de pagos de carrera 5?',
+    '¿Resumen de premios de carrera 5?'
+  ])assert.equal(labReadOnlyQueryPurpose(blocked,kind),null,blocked);
+  let count=0;
+  const race={raceNumber:5,racetrack:'La Rinconada',raceDate:'2026-10-12'};
+  const response=await queryCanonicalLab({...base,text,purpose:'summary',race,
+    fetchImpl:async(_url,options)=>{
+      count++;
+      const payload=JSON.parse(options.body);
+      assert.equal(payload.purpose,'summary');
+      assert.equal(payload.channelRole,'lab');
+      assert.deepEqual(payload.race,race);
+      if(count===1)throw new Error('NETWORK_LOST_AFTER_CANONICAL_COMMIT');
+      return json({ok:true,mode:'shadow',status:'CANONICAL_RACE_SUMMARY',
+        text:'Resumen interno confirmado, sin oficialidad externa.',
+        authority:{sourceWriteAllowed:false,financialAuthority:false,domainEffectsAllowed:false}});
+    }});
+  assert.equal(count,2);
+  assert.equal(response.available,true);
+  assert.equal(response.reason,'CANONICAL_RACE_SUMMARY');
+});

@@ -985,3 +985,29 @@ test('human takeover after canonical HTTP or WAL begin prevents Enter during pen
     }
   }
 });
+
+
+test('encrypted LAB inbox restores safe race summaries but not private chat or betting summaries',async t=>{
+  const f=await harness(t);
+  const inbox=f.create();await inbox.initialize();
+  const summary='¿Resumen de la carrera 5 en hipódromo La Rinconada el 2026-10-12?';
+  const item=candidate({text:summary,purpose:'summary'});
+  assert.deepEqual(await inbox.enqueue(item),{created:true});
+  for(const blocked of [
+    '¿Resumen de los mensajes del chat de carrera 5?',
+    '¿Resumen de saldos de la carrera 5?',
+    '¿Resumen de apuestas de carrera 5?',
+    '¿Resumen de pagos de carrera 5?'
+  ]){
+    await assert.rejects(inbox.enqueue(candidate({text:blocked,purpose:'summary',
+      messageId:'false_'+LAB+'_summary-blocked-'+SENDER
+    })),/LAB_PENDING_QUERY_INVALID/,blocked);
+  }
+  const before=await inbox.read(MESSAGE);
+  assert.equal(before.purpose,'summary');
+  await inbox.close();
+  const restored=f.create();await restored.initialize();
+  assert.equal((await restored.read(MESSAGE))?.purpose,'summary');
+  assert.equal((await restored.snapshot()).deliveryAuthority,false);
+  await restored.close();
+});
