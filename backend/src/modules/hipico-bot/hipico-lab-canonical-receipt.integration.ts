@@ -188,6 +188,7 @@ test('real PostgreSQL: editing a non-displayed race invalidates a previously com
   const initial=await readScopedLabSchedule(args,undefined,clock);
   assert.equal(initial.available,true);
   assert.equal(initial.reason,'CANONICAL_NEXT_RACE');
+  if(!('revisionToken' in initial))throw new Error('LAB_NEXT_REVISION_REQUIRED');
   assert.match(initial.text,/número 1/);
   assert.match(initial.revisionToken,/^[a-f0-9]{64}$/);
   const input={...base,externalMessageId:'pg-next-'+suffix,purpose:'next' as const,canonical:initial};
@@ -203,6 +204,7 @@ test('real PostgreSQL: editing a non-displayed race invalidates a previously com
   `,[second,base.ownerId,base.sourceGroupKey]);
   const changed=await readScopedLabSchedule(args,undefined,clock);
   assert.equal(changed.available,true);
+  if(!('revisionToken' in changed))throw new Error('LAB_NEXT_REVISION_REQUIRED');
   assert.equal(changed.text,initial.text);
   assert.notEqual(changed.revisionToken,initial.revisionToken);
   const blocked=await reconcileCanonicalLabReceipt({...input,canonical:changed});
@@ -230,6 +232,7 @@ test('real PostgreSQL: adding a scheduled race invalidates the old program but p
   args.text='¿Cuál es la cartelera de la reunión del '+date+' en el hipódromo Hipódromo Fixture Dos?';
   const firstAnswer=await readScopedLabSchedule(args,undefined,clock);
   assert.equal(firstAnswer.available,true);
+  if(!('revisionToken' in firstAnswer))throw new Error('LAB_SCHEDULE_REVISION_REQUIRED');
   const input={...base,externalMessageId:'pg-schedule-'+suffix,
     purpose:'schedule' as const,canonical:firstAnswer};
   await reconcileCanonicalLabReceipt(input);
@@ -239,6 +242,7 @@ test('real PostgreSQL: adding a scheduled race invalidates the old program but p
   `,[id2,base.ownerId,base.sourceGroupKey,meeting,new Date(clock+7_200_000)]);
   const secondAnswer=await readScopedLabSchedule(args,undefined,clock);
   assert.equal(secondAnswer.available,true);
+  if(!('revisionToken' in secondAnswer))throw new Error('LAB_SCHEDULE_REVISION_REQUIRED');
   assert.notEqual(secondAnswer.revisionToken,firstAnswer.revisionToken);
   assert.match(secondAnswer.text,/Carrera 2:/);
   const blocked=await reconcileCanonicalLabReceipt({...input,canonical:secondAnswer});
