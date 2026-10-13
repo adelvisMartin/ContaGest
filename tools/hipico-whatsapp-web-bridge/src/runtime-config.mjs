@@ -85,6 +85,7 @@ export function loadRuntimeConfig(env = process.env, cwd = process.cwd()) {
     trainingJournalEnabled: boolEnv(env, 'HIPICO_TRAINING_JOURNAL_ENABLED', true),
     diagnosticScreenshotsEnabled: boolEnv(env, 'HIPICO_DIAGNOSTIC_SCREENSHOTS_ENABLED', false),
     baselineIgnoreHistory: boolEnv(env, 'HIPICO_SOURCE_BASELINE_IGNORE_HISTORY', true),
+    labAssistantName: envText(env, 'HIPICO_LAB_ASSISTANT_NAME', 'Asistente Hípico'),
     labTestInputEnabled: boolEnv(env, 'HIPICO_LAB_TEST_INPUT_ENABLED', false),
     labTestPollMs: numberEnv(env, 'HIPICO_LAB_TEST_POLL_MS', 5000, 2000, 30000),
     labTestBootstrapLimit: numberEnv(env, 'HIPICO_LAB_TEST_BOOTSTRAP_LIMIT', 8, 1, 30)

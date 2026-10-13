@@ -156,6 +156,304 @@ Las consultas con resultado/llegada, participantes y carrera explícita conserva
 
 **Límites y gates:** aun cuando el endpoint responda, no se afirma oficialidad externa ni se valida una reunión en producción. Falta habilitar selección explícita de reuniones cuando haya varias, confirmar fuente autorizada de caballos inscritos, completar #899 para planes dinámicos, y ejecutar QA Windows/WhatsApp, soak, respaldo y gates finales. Los tests de esta fase son unitarios y de contrato, no QA físico.
 
+## Handoff de operador y silencio automático en LAB (#892)
+
+### Integridad de registros de handoff
+
+Antes de permitir una respuesta LAB, el backend no solo verifica si la
+conversación está marcada como `bot`: compara el estado recuperado con
+**la clave de conversación derivada** y con grupo, remitente estable y
+ámbito global/carrera de la consulta. Una fila de BD inconsistente,
+una clave de otro participante o un estado de titularidad desconocido
+se trata como `LAB_HANDOFF_HELD` (bloqueo), nunca como permiso.
+Ambos canales deben existir y ser diferentes **sin distinguir
+mayúsculas/minúsculas**, porque el identificador canónico del handoff
+normaliza el grupo. Una pausa humana vencida se libera mediante la
+política ya existente sin escribir ni modificar la fila en esta ruta.
+
+Pruebas unitarias: falsificación de `conversationKey`, cruce de grupo,
+remitente o carrera, `clarificationCount` inválido, ownership no
+reconocido y variaciones de mayúsculas; contrastar contra la consulta
+válida y contra la expiración natural. El operador debe comprobar
+también la pausa global cuando la referencia de carrera sea incompleta.
+
+
+
+El backend ya dispone de la autoridad de operador `/bridge/handoff` y
+persistencia `HipicoConversationHandoff`. Este incremento **no crea una
+segunda autoridad**: el Bridge LAB verifica ese estado mediante
+`POST /bridge/lab/eligibility` usando su mismo token y el grupo LAB
+pinneado. La consulta es estrictamente de solo lectura; el operador
+controla la pausa/reanudación mediante la ruta autenticada existente.
+
+Para cada mensaje LAB candidato, se comprueba la titularidad **antes
+y después** de la lectura canónica y **una tercera vez tras marcar el
+journal como «en envío», inmediatamente antes de tocar el compositor**
+de WhatsApp. Si el operador toma la conversación en esta última ventana,
+el intento se devuelve duraderamente a «preparado» sin pulsar Enter,
+sin marcar la entrega como confirmada y sin guardar memoria.
+Se revisa la titularidad general del participante en
+`HIPICO_OFFICIAL_SOURCE_CHANNEL_KEY` y en el canal LAB configurado; cuando
+hay una referencia completa de carrera, también se comprueba su ámbito
+específico. No se acepta que el remitente seleccione dueño de datos,
+grupo arbitrario, operador o credenciales.
+
+Cuando la autoridad indica `LAB_HANDOFF_HELD`, se marca el mensaje
+como atendido/suprimido **sin enviar respuesta** ni preparar un nuevo
+journal, para impedir una respuesta atrasada tras reanudar al bot.
+Si el backend está desconectado, la ruta no existe, la base de datos
+falla o la respuesta no tiene autoridad explícita, el Bridge **no envía
+nada** y mantiene el mensaje pendiente de revisión en una nueva
+comprobación. Esto también significa que el LAB conversacional autónomo
+requiere backend accesible: no hay fallback de envío offline inseguro.
+
+La ruta `/bridge/lab/query` conserva un segundo control de handoff:
+antes y después de consultas canónicas; no emite datos de un operador.
+No existe autorización para escritura automática en SOURCE, ni un
+transporte alternativo. Una pausa por carrera se limita a esa referencia;
+para silenciar todo el participante utilizar una **pausa global**
+(`raceId: null`) y el identificador normalizado de remitente usado por
+el backend. No usar nombres visibles de WhatsApp como identidad.
+
+**Prueba LAB para hoy:** activar `LAB` y registrar una pausa global
+autenticada desde la interfaz/flujo de operador; enviar una pregunta
+desde ese participante, verificar que **no hay mensaje saliente**.
+Repetir con otro participante (sin contaminación), reiniciar el Bridge,
+repetir pausa/reanudación y comprobar que el mensaje suprimido no se
+reproduce. Repetir con corte de backend, con lectura canónica demorada
+y con una carrera específica. `npm run qa` incluye los tests
+`lab-handoff-eligibility.test.mjs`; los de backend cubren el gate
+`hipico-lab-handoff-gate.test.ts`.
+
+**Límite de carrera:** existe una ventana inevitable entre la última
+comprobación remota y el envío de WhatsApp; cerrar esa ventana por
+completo requeriría un protocolo transaccional de permisos de envío.
+Las tres comprobaciones reducen esa ventana, pero no constituyen una
+garantía atómica de tiempo real. Es imprescindible probar el caso de takeover
+concurrente antes de una promoción a producción.
+
+## Asistente conversacional LAB · respuesta natural y memoria acotada
+
+El LAB deja de imprimir diagnósticos tipo `Lectura/riesgo/propuesta` en las respuestas
+interactivas: ahora utiliza `lab-assistant-replies.mjs` para contestar de forma breve,
+cordial y transparente como **asistente virtual**. Conserva el marcador visible
+`[LABTEST:...]` necesario para confirmar entregas e impedir duplicados; solo aplica
+a LAB, no a SOURCE.
+
+Personalización opcional en `.env`:
+
+```dotenv
+HIPICO_LAB_ASSISTANT_NAME=Asistente Hípico
+```
+
+El nombre admite letras, números, espacios, puntos, guiones y guion bajo, hasta
+32 caracteres; cualquier valor inválido se sustituye por el nombre predeterminado.
+No permite alterar instrucciones ni permisos.
+
+**Skills disponibles de este incremento:** saludo y ayuda, aclaración de referencia,
+consulta de **estado y resultado interno confirmado** a través del backend, seguimiento de
+referencia por remitente y resumen breve de esa referencia. Son respuestas
+deterministas: **no hay un LLM generativo activado por este cambio**, ni búsqueda
+externa, ni ejecución de operaciones monetarias. El Agent/Shadow y sus métricas
+continúan en su autoridad existente.
+
+El contexto LAB recuerda exclusivamente carrera, hipódromo y fecha *aportados
+explícitamente* por ese remitente. Guarda referencias limitadas en el mismo
+archivo privado de memoria con HMAC, caducidad máxima de 20 minutos, límite
+de 300 remitentes y sin texto completo del chat. Solo se escribe después de
+confirmar la entrega. Los archivos previos, que recordaban únicamente el
+número de carrera, siguen siendo legibles. Una carrera diferente invalida la
+reutilización del contexto anterior. Sin identificador de remitente estable no
+se reutiliza contexto.
+
+El endpoint LAB canónico ahora puede consultar **estados de carrera y llegadas
+confirmadas por operador en los registros internos**, además de informar con
+honestidad cuando faltan listas de ejemplares verificadas. No certifica
+resultados oficiales externos, datos monetarios ni horarios no registrados.
+Las respuestas canónicas siguen pasando por `selectLabAnswer`; esta nueva
+presentación no redefine la autoridad de consulta ni la de entrega.
+
+El resumen es **solo de referencias disponibles**, no una reconstrucción de
+todo el historial del grupo.
+
+### Referencias citadas verificadas (seguimiento #892)
+
+El journal privado de referencias para mensajes citados es **una pista
+no autoritativa**, no una confirmación de estado, resultado ni operación.
+`confirmedLabQuoteHint` autoriza almacenar solo una referencia
+explícita y coherente (número + hipódromo + fecha) proveniente de un
+mensaje no monetario. Rechaza «carrera 5 o carrera 6», «quinta o sexta»,
+una fecha inválida o mensajes sin remitente estable. Esta misma regla
+se aplica **después del ACK normal** y cuando el Bridge reinicia tras
+haber confirmado una respuesta antes de guardar la pista auxiliar.
+
+Las citas de mensajes todavía visibles también pasan por la validación
+de ambigüedad del planner, incluso si no hay entrada en el journal.
+Si la cita o la nueva pregunta contienen referencias contradictorias,
+el asistente debe pedir aclaración; no puede usar la primera carrera
+encontrada por una expresión regular como autoridad de lectura.
+La verificación canónica por backend sigue siendo obligatoria para
+presentar hechos de carrera. No se guarda el texto completo ni se
+habilita SOURCE.
+
+Pruebas de regresión:
+`lab-confirmed-quote-hint.test.mjs` (memoria, ACK y reinicio) y
+`lab-canonical-query.test.mjs` (cita visible normal, conflicto de
+números/ordinales y operaciones monetarias).
+
+### Conversaciones por pasos (follow-up #892)
+
+Además de frases explícitas como `carrera 5 en hipódromo La Rinconada el
+2026-10-12`, el planner acepta referencias informales `la quinta` o
+`la 5ta` **solo como número de carrera**, nunca como datos verificables.
+Si una pregunta previa dejó guardada la carrera 5 sin hipódromo/fecha, el
+mismo remitente puede responder `La Rinconada el 2026-10-12` o
+`Hipódromo La Rinconada fecha 2026-10-12`: el sistema completa la
+referencia y pregunta qué consulta desea realizar. No llama al backend
+con una pregunta inventada en nombre del usuario.
+
+La aclaración requiere JID estable, mismo grupo LAB pinneado, memoria
+no vencida y formato estricto `nombre de hipódromo + fecha ISO`; no
+acepta fechas relativas (`hoy`), nombre visible, importes, comandos,
+referencias a otra carrera ni payloads de chat con instrucciones. Solo
+el `labTestReplyJournal` confirmado permite guardar la referencia.
+Si la memoria expiró, el participante debe aportar otra vez el
+contexto completo.
+
+El asistente también permite completar los campos **uno por uno**.
+Por ejemplo: `¿Estado de carrera 5?` → `La Rinconada` →
+`2026-10-12`, o primero la fecha y luego `en La Rinconada`.
+Hasta disponer de ambos campos, solo conserva una **pista parcial**;
+no consulta resultados ni da una confirmación de carrera.
+Los campos parciales siguen ligados al mismo remitente HMAC, al grupo
+LAB pinneado y al vencimiento de veinte minutos; la escritura ocurre
+solo después del ACK durable de salida. No se persiste el texto completo.
+Si otro participante responde, si expira la pista o si hay una fecha
+incorrecta, no se hereda información.
+
+Corpus adicional en LAB, enviar por separado desde la misma identidad:
+
+```text
+¿Estado de la quinta?
+La Rinconada el 2026-10-12
+¿estado de esa?
+```
+
+Repetir el segundo mensaje desde otro participante y después de caducar
+la memoria: ambos casos deben **rechazar la herencia de contexto**.
+El backend solo responde si posee el dato verificado; un resultado interno
+nunca se presenta como oficialidad externa.
+
+### Corpus mínimo para la prueba física de hoy (solo LAB)
+
+Enviar como mensajes separados desde un remitente con JID estable:
+
+```text
+hola
+ayuda
+estado de carrera 5 en hipódromo La Rinconada el 2026-10-12
+¿y el estado de esa?
+hazme un resumen de lo que hablamos
+¿quiénes corren en esa?
+Juega PP del 3 con 20
+```
+
+Esperado: identificación virtual, ayuda breve, lectura canónica **si existe en
+backend**, referencia contextual, resumen limitado, negativa honesta para datos
+no disponibles y revisión para el mensaje monetario. Repetir con otro remitente,
+reinicio, backend fuera de línea, pregunta sobre otra carrera y salida/retorno
+a WhatsApp. La confirmación de envío LAB sigue dependiendo de journal + tag,
+no de la respuesta del backend ni del contexto.
+
+**Gate:** `npm run qa` en este directorio, seguido de QA físico en Windows,
+dos sesiones, recuperación y soak #119/#120. El QA unitario no certifica
+WhatsApp real. SOURCE permanece NO-GO por el gate #728/#154.
+
+## Continuidad de la conversación tras una confirmación LAB
+
+Cuando un mensaje de respuesta LAB ya tiene un **ACK durable confirmado**,
+un cierre del Bridge antes de guardar el contexto puede dejar la carrera
+sin memoria auxiliar. Al reiniciar, el Bridge recupera **solo** la referencia
+completa de carrera (número, hipódromo y fecha ISO) explícita en el mensaje
+de origen, de ese mismo remitente y con un acuse de entrega confirmado.
+Esto no crea un nuevo envío WhatsApp, no intenta reabrir la cola ni altera
+la autoridad del resultado canónico.
+
+La recuperación utiliza la fecha original del ACK y no alarga el límite
+de 20 minutos. Si existe una referencia más nueva del mismo remitente,
+si el ACK venció, si la identidad es ambigua o si la fecha no es válida,
+el sistema no restaura nada. La memoria permanece limitada al grupo
+LAB pinneado y a las claves HMAC; nunca almacena el JID, contenido completo,
+números de saldo o credenciales. El Bridge conserva el orden de
+`prepare → begin → send → confirm → remember`; este caso solamente
+rehidrata una pista después de un ACK **ya confirmado**.
+
+Una prueba de regresión de `lab-integrated-orchestration.test.mjs`
+comprueba además que la referencia completada en varios mensajes sea
+la enviada al backend, y no solo a la comprobación de handoff. Las
+pruebas de `lab-conversation-context.test.mjs` cubren reinicio,
+caducidad original, aislamiento y ausencia de reenvío.
+
+## Recuperación inmutable de resúmenes de carrera LAB
+
+El propósito `summary` utiliza ahora el mismo recibo durable de
+`/bridge/lab/query` que `status`, `result` y `next/active/schedule`.
+El backend valida **estado, versión, fecha de actualización, tipo de
+respuesta y hash del texto** antes de entregar un resumen confirmado.
+No se crea otra tabla ni otra fuente de datos, y el recibo solo contiene
+huellas e identidad acotada: no guarda el texto ni datos financieros.
+
+Si el HTTP termina después de persistir el recibo pero antes de llegar
+al Bridge, el segundo intento con **el mismo ID de mensaje** recupera
+`LAB_CANONICAL_RECOVERED` solo si la proyección sigue siendo idéntica.
+El asistente puede presentar ese texto recuperado de forma natural.
+Si aparece una corrección de carrera, cambia la versión, el texto o el
+tipo de consulta, la respuesta queda bloqueada con
+`LAB_CANONICAL_REVISION_CHANGED`; se requiere un mensaje nuevo.
+Un takeover humano y una consulta vencida también bloquean la entrega.
+
+Regresiones nuevas: unidad de recibos + renderizado en Bridge +
+PostgreSQL aislado (pérdida de HTTP, replay idéntico, revisión posterior
+y solicitud con nueva identidad). La prueba aislada no reemplaza la QA
+física de WhatsApp/Windows. SOURCE conserva NO-GO.
+
+## Resumen canónico de una carrera (incremento #892)
+
+El Bridge interpreta **resumen de carrera** como una consulta `purpose=summary`
+al endpoint existente `/bridge/lab/query`. La petición necesita un alcance
+explícito de carrera, hipódromo y fecha, procedente del mensaje actual o de una
+referencia citada que cumpla las restricciones de identidad; las referencias
+de memoria contextual siguen siendo solo pistas y no prueban el dato.
+
+La lectura backend utiliza **una sola versión del agregado** para construir:
+- carrera/hipódromo/fecha solicitados y estado interno validado;
+- llegada numérica **únicamente** si el evento `RESULT_RECORDED` está
+  confirmado por operador, corresponde a esa carrera y no hay corrección/reversión
+  posterior que invalide su publicación;
+- aviso explícito de falta de resultado cuando no existe evidencia suficiente;
+- recordatorio de que el registro interno **no certifica oficialidad externa**.
+
+No expone nombres, terceros, importes, apuestas, saldos, eventos originales,
+porcentajes, datos del chat, resúmenes de conversaciones ni acciones de terceros.
+`resumen de jugadas/saldo` se rechaza. La política SOURCE y los journals de
+entrega LAB no cambian. `CANONICAL_RACE_SUMMARY` es solo una proyección
+informativa; no es un permiso nuevo para responder con IA generativa ni un
+estado monetario.
+
+Caso de QA LAB:
+
+```text
+Dame un resumen de la carrera 5 en hipódromo La Rinconada el 2026-10-12
+hazme un resumen de lo que hablamos
+resumen de saldo de carrera 5 en hipódromo La Rinconada el 2026-10-12
+```
+
+El primero responde únicamente con datos presentes y validados, o indica
+que el agregado no existe. Los demás **no** deben obtener un resumen
+canónico de carreras. Repetir con datos inexistentes, evento corregido,
+otro grupo, otro remitente, backend desconectado y reconexión. No interpretar
+los tests unitarios como prueba física de Windows/WhatsApp.
+
 ## Prueba autónoma LAB
 
 Desde la raíz:
