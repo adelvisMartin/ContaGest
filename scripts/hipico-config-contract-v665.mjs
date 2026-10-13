@@ -29,12 +29,29 @@ const PUBLIC_URL_PROTOCOLS = new Set([
   'http:', 'https:', 'postgres:', 'postgresql:', 'mysql:', 'mongodb:',
   'mongodb+srv:', 'redis:', 'rediss:'
 ]);
-// A frontend env example must not carry a connection string with userinfo.
-// Report only the variable name, never the URL, username or password.
+const SENSITIVE_URL_PARAMS = new Set([
+  'accesstoken', 'refreshtoken', 'apikey', 'xapikey', 'clientsecret',
+  'clienttoken', 'servicerolekey', 'password', 'passwd', 'authorization',
+  'jwt', 'secret', 'token'
+]);
+const containsUrlSecret = params => [...params].some(([key, value]) =>
+  value.length > 0 && SENSITIVE_URL_PARAMS.has(key.toLowerCase().replace(/[^a-z0-9]/g, ''))
+);
+// Frontend template URLs are public: userinfo and credentialed query/fragment
+// parameters are unsafe even when VITE_* variable names look innocuous.
+// Accept root-relative frontend routes as well as supported absolute URLs.
+// Findings expose only the variable name, never parameter values or credentials.
 function exposesUrlCredentials(value) {
   try {
-    const url = new URL(value);
-    return PUBLIC_URL_PROTOCOLS.has(url.protocol) && Boolean(url.username || url.password);
+    const raw = String(value);
+    const relative = raw.startsWith('/');
+    const url = relative ? new URL(raw, 'https://config.invalid') : new URL(raw);
+    if (!relative && !PUBLIC_URL_PROTOCOLS.has(url.protocol)) return false;
+    const fragment = url.hash.slice(1);
+    const fragmentParams = fragment.includes('?') ? fragment.slice(fragment.indexOf('?') + 1) : fragment;
+    return Boolean(url.username || url.password) ||
+      containsUrlSecret(url.searchParams) ||
+      containsUrlSecret(new URLSearchParams(fragmentParams));
   } catch { return false; }
 }
 

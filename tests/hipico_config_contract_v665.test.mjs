@@ -64,3 +64,34 @@ test('#665 public non-credentialed endpoints remain allowed', () => {
     assert.equal(result.status, 'PASS', url);
   }
 });
+
+test('#665 rejects embedded URL query and fragment credentials without logging secrets', () => {
+  const secretUrls = [
+    'https://api.example.test/v1?access_token=dummy-secret',
+    'https://api.example.test/v1?client-secret=dummy-secret',
+    'https://api.example.test/v1?API_KEY=dummy-secret',
+    'https://api.example.test/v1#refresh_token=dummy-secret',
+    'https://api.example.test/#/callback?access_token=dummy-secret',
+    '/?auth=dummy-secret',
+    '//operator:dummy-secret@api.example.test/v1'
+  ];
+  for (const url of secretUrls) {
+    const result = check({ frontend: frontend + '\nVITE_HIPICO_ENDPOINT=' + url });
+    assert.equal(result.status, 'FAIL', url.replace(/dummy-secret/g, '<redacted>'));
+    assert.ok(result.findings.some(f => f.code === 'PUBLIC_SECRET_VALUE' && f.key === 'VITE_HIPICO_ENDPOINT'));
+    assert.doesNotMatch(JSON.stringify(result), /dummy-secret|operator|access_token|client-secret/i);
+  }
+});
+
+test('#665 permits harmless URL parameters and empty credentials', () => {
+  const safeUrls = [
+    'https://api.example.test/v1?module=login',
+    'https://api.example.test/v1#documentation',
+    'https://api.example.test/?token=',
+    '/?module=login',
+    '/#/landing?module=login'
+  ];
+  for (const url of safeUrls) {
+    assert.deepEqual(check({ frontend: frontend + '\nVITE_HIPICO_ENDPOINT=' + url }), { status: 'PASS', findings: [] });
+  }
+});
