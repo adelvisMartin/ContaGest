@@ -1278,6 +1278,27 @@ async function resumePendingLabQueries(visibleIds = new Set()) {
       await log('LAB_PENDING_REVIEW_REQUIRED id='+tag+' reason=RISK_CHANGED');
       continue;
     }
+    // Encrypted identity remains immutable; never inherit newer sender memory.
+    const plan=planLabConversation(row,classification,null,entry.race);
+    if(plan.scopeConflict){
+      await log('LAB_PENDING_REVIEW_REQUIRED id='+tag+' reason=RACE_SCOPE_CHANGED');
+      continue;
+    }
+    const eligibilityArgs={
+      ingestUrl:INGEST_URL,token:TOKEN,labGroupId:LAB_GROUP_ID,
+      labChannelKey:LAB_CHANNEL_KEY,messageId:entry.messageId,
+      senderId:sender,race:entry.race,timeoutMs:Math.min(5000,BACKEND_TIMEOUT_MS)
+    };
+    const eligibleBefore=await checkLabSendEligibility(eligibilityArgs);
+    if(!eligibleBefore.allowed){
+      if(eligibleBefore.reason==='LAB_HANDOFF_HELD'){
+        rememberLabSeen(entry.messageId);
+        await saveLabSeenNow();
+        await labPendingInbox.remove(entry.messageId);
+      }
+      await log('LAB_PENDING_HANDOFF_PRECHECK_'+eligibleBefore.reason+' id='+tag);
+      continue;
+    }
     if (!labQueryBackoff.allowed(entry.messageId)) continue;
     const canonical = await queryCanonicalLab({
       ingestUrl:INGEST_URL,token:TOKEN,
@@ -1298,10 +1319,32 @@ async function resumePendingLabQueries(visibleIds = new Set()) {
       await log('LAB_PENDING_EXPIRED_BEFORE_SEND id='+tag);
       continue;
     }
-    const plan=planLabConversation(row,classification,labConversationContext?.get(sender));
+    // The operator may take over while the canonical read is pending.
+    const eligibleAfter=await checkLabSendEligibility(eligibilityArgs);
+    if(!eligibleAfter.allowed){
+      if(eligibleAfter.reason==='LAB_HANDOFF_HELD'){
+        rememberLabSeen(entry.messageId);
+        await saveLabSeenNow();
+        await labPendingInbox.remove(entry.messageId);
+      }
+      await log('LAB_PENDING_HANDOFF_RECHECK_'+eligibleAfter.reason+' id='+tag);
+      continue;
+    }
     await labTestReplyJournal.prepare(entry.messageId);
     await labTestReplyJournal.begin(entry.messageId);
     try {
+      // WAL is prepared, but an operator takeover before Enter must still win.
+      const eligibleToSend=await checkLabSendEligibility(eligibilityArgs);
+      if(!eligibleToSend.allowed){
+        await labTestReplyJournal.retryPrepared(entry.messageId);
+        if(eligibleToSend.reason==='LAB_HANDOFF_HELD'){
+          rememberLabSeen(entry.messageId);
+          await saveLabSeenNow();
+          await labPendingInbox.remove(entry.messageId);
+        }
+        await log('LAB_PENDING_HANDOFF_SEND_GATE_'+eligibleToSend.reason+' id='+tag);
+        continue;
+      }
       await sendTextInCurrentLab(localLabTestReply(row,classification,plan,canonical),tag);
       await labTestReplyJournal.confirm(entry.messageId,{visibleTag:true});
       rememberLabSeen(entry.messageId);
@@ -1310,7 +1353,7 @@ async function resumePendingLabQueries(visibleIds = new Set()) {
         await labPendingInbox.remove(entry.messageId);
       }
       if(plan.rememberRace&&labConversationContext){
-        try {await labConversationContext.remember(plan.sender,plan.raceNumber);}
+        try {await labConversationContext.remember(plan.sender,plan.raceNumber,plan.raceScope,{raceTrack:plan.raceTrack,raceDate:plan.raceDate});}
         catch {await log('LAB_CONTEXT_PERSIST_FAILED');}
       }
       await log('LAB_PENDING_RECOVERED id='+tag);
