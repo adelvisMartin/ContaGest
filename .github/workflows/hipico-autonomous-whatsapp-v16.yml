@@ -98,6 +98,9 @@ jobs:
       - name: WhatsApp Bridge syntax and unit regressions
         run: npm --prefix tools/hipico-whatsapp-web-bridge run qa
 
+      - name: Loopback TCP fault injection and LAB WAL restart gate
+        run: npm --prefix tools/hipico-whatsapp-web-bridge run test:lab:tcp
+
       - name: SOURCE policy diagnostic stays fail-closed
         working-directory: tools/hipico-whatsapp-web-bridge
         run: npm run source:policy
