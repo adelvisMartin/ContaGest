@@ -574,3 +574,102 @@ test('canonical REVIEW_REQUIRED is terminal and cannot authorize a WhatsApp LAB 
   })});
   assert.equal(canonical.available,true,'verified informational absence remains allowed');
 });
+
+test('canonical LAB rejects unrecognized send statuses even with innocent-looking false authority',async()=>{
+  const authority={sourceWriteAllowed:false,financialAuthority:false,domainEffectsAllowed:false};
+  for(const status of [
+    'FINANCIAL_SETTLEMENT_APPROVED','SOURCE_WRITE_COMPLETE','TRANSFER_APPROVED',
+    'CANONICAL_UNKNOWN_FUTURE_OPERATION','LAB_HANDOFF_CLEAR'
+  ]){
+    const result=await queryCanonicalLab({...base,fetchImpl:async()=>json({
+      ok:true,mode:'shadow',status,text:'Respuesta no autorizada.',authority
+    })});
+    assert.deepEqual(result,{available:false,reason:'LAB_CANONICAL_INVALID_RESPONSE'},status);
+  }
+  for(const status of [
+    'LAB_CANONICAL_HUMAN_HANDOFF',
+    'LAB_CANONICAL_REQUEST_STALE',
+    'LAB_CANONICAL_RECEIPT_NOT_VERIFIABLE'
+  ]){
+    const result=await queryCanonicalLab({...base,fetchImpl:async()=>json({
+      ok:true,mode:'shadow',status,text:'No se confirmó un hecho publicable.',authority,
+      canonical:{available:false}
+    })});
+    assert.deepEqual(result,{available:false,reason:'LAB_CANONICAL_REVIEW_REQUIRED'},status);
+  }
+  for(const status of [
+    'CANONICAL_STATE_FOUND','CANONICAL_RACE_NOT_FOUND',
+    'CANONICAL_RACE_SUMMARY','CANONICAL_NEXT_RACE',
+    'LAB_CANONICAL_REVISION_CHANGED','LAB_CANONICAL_RECOVERED'
+  ]){
+    const purpose=status==='CANONICAL_RACE_SUMMARY'?'summary'
+      :status==='CANONICAL_NEXT_RACE'?'next':'status';
+    const result=await queryCanonicalLab({...base,purpose,fetchImpl:async()=>json({
+      ok:true,mode:'shadow',status,text:'Respuesta informativa verificada.',authority
+    })});
+    assert.equal(result.available,true,status);
+    assert.equal(result.reason,status);
+  }
+});
+
+
+test('canonical LAB success status must match the immutable requested purpose',async()=>{
+  const authority={sourceWriteAllowed:false,financialAuthority:false,domainEffectsAllowed:false};
+  const matching=[
+    ['status','CANONICAL_STATE_FOUND'],
+    ['result','CANONICAL_RESULT_CONFIRMED_INTERNAL'],
+    ['summary','CANONICAL_RACE_SUMMARY'],
+    ['next','CANONICAL_NEXT_RACE'],
+    ['active','CANONICAL_ACTIVE_RACE'],
+    ['schedule','CANONICAL_SCHEDULE_FOUND']
+  ];
+  const simulated=(purpose,status)=>queryCanonicalLab({...base,purpose,
+    fetchImpl:async()=>json({
+      ok:true,mode:'shadow',status,text:'Respuesta interna verificable.',authority
+    })
+  });
+  for(const [purpose,status] of matching){
+    const accepted=await simulated(purpose,status);
+    assert.equal(accepted.available,true,purpose);
+    assert.equal(accepted.reason,status);
+    for(const wrongPurpose of matching.map(row=>row[0]).filter(name=>name!==purpose)){
+      assert.deepEqual(await simulated(wrongPurpose,status),
+        {available:false,reason:'LAB_CANONICAL_INVALID_RESPONSE'},
+        status+' cannot authorize unrelated '+wrongPurpose);
+    }
+  }
+  for(const purpose of ['participants','unknown']){
+    for(const status of ['LAB_CANONICAL_RECOVERED','LAB_CANONICAL_REVISION_CHANGED']){
+      assert.deepEqual(await simulated(purpose,status),
+        {available:false,reason:'LAB_CANONICAL_INVALID_RESPONSE'},status);
+    }
+  }
+  for(const purpose of ['status','result','summary','next','active','schedule']){
+    assert.equal((await simulated(purpose,'LAB_CANONICAL_RECOVERED')).available,true,purpose);
+  }
+});
+
+
+test('LAB human review receipt statuses require a bounded unavailable canonical read',async()=>{
+  const authority={sourceWriteAllowed:false,financialAuthority:false,domainEffectsAllowed:false};
+  for(const status of ['LAB_CANONICAL_HUMAN_HANDOFF',
+    'LAB_CANONICAL_REQUEST_STALE','LAB_CANONICAL_RECEIPT_NOT_VERIFIABLE']){
+    const normal={ok:true,mode:'shadow',status,
+      text:'El comprobante necesita revisión humana.',authority,
+      canonical:{available:false}};
+    assert.deepEqual(await queryCanonicalLab({...base,fetchImpl:async()=>json(normal)}),
+      {available:false,reason:'LAB_CANONICAL_REVIEW_REQUIRED'},status);
+    for(const bad of [
+      {...normal,text:''},
+      {...normal,text:' '.repeat(5)},
+      {...normal,text:'X'.repeat(1501)},
+      {...normal,canonical:{available:true}},
+      {...normal,canonical:{}},
+      {...normal,canonical:null}
+    ]){
+      const result=await queryCanonicalLab({...base,fetchImpl:async()=>json(bad)});
+      assert.deepEqual(result,{available:false,reason:'LAB_CANONICAL_INVALID_RESPONSE'},
+        'contradictory review receipt must fail closed: '+status);
+    }
+  }
+});
