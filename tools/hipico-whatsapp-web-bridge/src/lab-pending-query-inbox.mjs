@@ -329,11 +329,20 @@ export function createLabPendingQueryInbox({rootDir,labGroupId,sourceGroupId,now
       const state=await scan();
       return state.expired;
     },
-    async list(limit=25){
+    async list(limit=25,{offset=0}={}){
       assertReady();
-      if(!Number.isInteger(limit)||limit<1||limit>maxEntries)throw new Error('LAB_PENDING_LIST_LIMIT_INVALID');
+      if(!Number.isInteger(limit)||limit<1||limit>maxEntries||
+         !Number.isInteger(offset)||offset<0||offset>=maxEntries){
+        throw new Error('LAB_PENDING_LIST_LIMIT_INVALID');
+      }
       const {rows}=await scan();
-      return rows.sort((a,b)=>a.capturedAt-b.capturedAt).slice(0,limit);
+      rows.sort((a,b)=>a.capturedAt-b.capturedAt || a.messageId.localeCompare(b.messageId));
+      if(rows.length<=limit)return rows;
+      // A first batch of ambiguous/temporarily blocked queries must not
+      // monopolize every poll. Rotate a bounded window without persisting
+      // any sensitive cursor or changing immutable encrypted records.
+      const start=offset%rows.length;
+      return Array.from({length:limit},(_,i)=>rows[(start+i)%rows.length]);
     },
     async remove(id){
       assertReady();
