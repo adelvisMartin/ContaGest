@@ -225,7 +225,12 @@ export async function queryCanonicalLab({
     // visible and off-DOM paths, just like the explicit REVIEW_REQUIRED state.
     if(['LAB_CANONICAL_HUMAN_HANDOFF','LAB_CANONICAL_REQUEST_STALE',
         'LAB_CANONICAL_RECEIPT_NOT_VERIFIABLE'].includes(body.status)){
-      return{available:false,reason:'LAB_CANONICAL_REVIEW_REQUIRED'};
+      // Receipt refusals from backend have unavailable canonical state and
+      // a bounded human notice. Contradictory or missing data is invalid.
+      return body.canonical?.available===false&&
+        typeof body.text==='string'&&body.text.trim()&&body.text.length<=1500
+        ? {available:false,reason:'LAB_CANONICAL_REVIEW_REQUIRED'}
+        : {available:false,reason:'LAB_CANONICAL_INVALID_RESPONSE'};
     }
     if(!SAFE_LAB_INFORMATION_STATUSES.has(body.status)||
        (CANONICAL_FACT_PURPOSE[body.status] && CANONICAL_FACT_PURPOSE[body.status]!==purpose)||

@@ -592,7 +592,8 @@ test('canonical LAB rejects unrecognized send statuses even with innocent-lookin
     'LAB_CANONICAL_RECEIPT_NOT_VERIFIABLE'
   ]){
     const result=await queryCanonicalLab({...base,fetchImpl:async()=>json({
-      ok:true,mode:'shadow',status,text:'No se confirmó un hecho publicable.',authority
+      ok:true,mode:'shadow',status,text:'No se confirmó un hecho publicable.',authority,
+      canonical:{available:false}
     })});
     assert.deepEqual(result,{available:false,reason:'LAB_CANONICAL_REVIEW_REQUIRED'},status);
   }
@@ -643,5 +644,30 @@ test('canonical LAB success status must match the immutable requested purpose',a
   }
   for(const purpose of ['status','result','summary','next','active','schedule']){
     assert.equal((await simulated(purpose,'LAB_CANONICAL_RECOVERED')).available,true,purpose);
+  }
+});
+
+
+test('LAB human review receipt statuses require a bounded unavailable canonical read',async()=>{
+  const authority={sourceWriteAllowed:false,financialAuthority:false,domainEffectsAllowed:false};
+  for(const status of ['LAB_CANONICAL_HUMAN_HANDOFF',
+    'LAB_CANONICAL_REQUEST_STALE','LAB_CANONICAL_RECEIPT_NOT_VERIFIABLE']){
+    const normal={ok:true,mode:'shadow',status,
+      text:'El comprobante necesita revisión humana.',authority,
+      canonical:{available:false}};
+    assert.deepEqual(await queryCanonicalLab({...base,fetchImpl:async()=>json(normal)}),
+      {available:false,reason:'LAB_CANONICAL_REVIEW_REQUIRED'},status);
+    for(const bad of [
+      {...normal,text:''},
+      {...normal,text:' '.repeat(5)},
+      {...normal,text:'X'.repeat(1501)},
+      {...normal,canonical:{available:true}},
+      {...normal,canonical:{}},
+      {...normal,canonical:null}
+    ]){
+      const result=await queryCanonicalLab({...base,fetchImpl:async()=>json(bad)});
+      assert.deepEqual(result,{available:false,reason:'LAB_CANONICAL_INVALID_RESPONSE'},
+        'contradictory review receipt must fail closed: '+status);
+    }
   }
 });
