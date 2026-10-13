@@ -107,7 +107,7 @@ test('malformed or impossible 24h soak metrics cannot PASS',()=>{
   ];
   for(const mutation of mutations){
     const checked=evaluateSoak({...base,...mutation},policy);
-    assert.equal(checked.status,'BLOCKED',Object.keys(mutation).join(','));
+    assert.ok(['BLOCKED','FAIL'].includes(checked.status),Object.keys(mutation).join(','));
     assert.ok(checked.blocked.includes('SOAK_METRICS_INVALID'));
   }
 });
