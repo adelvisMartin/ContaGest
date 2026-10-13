@@ -1,6 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
+import vm from 'node:vm';
+import { labOutgoingEvidenceMatches } from '../src/lab-outgoing-evidence.mjs';
 import { labReadOnlyQueryPurpose } from '../src/lab-canonical-query.mjs';
 import { composeLabAssistantReply } from '../src/lab-assistant-replies.mjs';
 
@@ -82,4 +84,46 @@ test('summary intent requires a race and rejects transcripts, money and unsafe c
   ])assert.equal(labReadOnlyQueryPurpose(text,safe),null,text);
   assert.equal(labReadOnlyQueryPurpose('Resumen de carrera 5',
     {intent:'offer_player',risk:'monetary'}),null);
+});
+
+test('human-friendly LAB answer retains strict first-line outgoing proof without quoted-tag ACKs',()=>{
+  const marker='function localLabTestReply(',start=bridge.indexOf(marker);
+  const end=bridge.indexOf('async function clearComposerSafely(',start);
+  assert.ok(start>0&&end>start);
+  const tag='[LABTEST:012345abcd]';
+  const fn=vm.runInNewContext('('+bridge.slice(start,end).trim()+')',{
+    labTestTagFor:()=>tag,
+    LAB_ASSISTANT_NAME:'Asistente Hípico',
+    selectLabAnswer:()=>({
+      text:'Datos validados.',reason:'LAB_CANONICAL_RECOVERED',
+      source:'LECTURA_CANÓNICA_LIMITADA'
+    }),
+    composeLabAssistantReply:()=> '¡Claro! La carrera 5 está abierta según el registro interno.',
+    localSuggestion:()=> 'Orientación local.'
+  });
+  const output=fn({id:'incoming'}, {risk:'safe',intent:'conversation'},
+    {raceNumber:5},{available:true,reason:'LAB_CANONICAL_RECOVERED'});
+  assert.match(output,/^\[LABTEST:012345abcd\]\n🧪 CONTROL HÍPICO · PRUEBA LAB\n/);
+  assert.match(output,/Respuesta: ¡Claro! La carrera 5 está abierta/);
+  assert.match(output,/Fuente: LECTURA_CANÓNICA_LIMITADA/);
+  assert.equal(labOutgoingEvidenceMatches(output,tag),true);
+  assert.equal(labOutgoingEvidenceMatches('Citado:\n'+output,tag),false);
+  assert.equal(labOutgoingEvidenceMatches(
+    'Respuesta humana.\n'+tag,tag),false);
+  assert.equal(labOutgoingEvidenceMatches(output.replace('Fuente:','F:'),tag),false);
+});
+
+test('current integrated Bridge verifies pinned LAB outgoing DOM twice and never uses tag substring',()=>{
+  const start=bridge.indexOf('async function visibleLabHasTag(tag)');
+  const end=bridge.indexOf('async function sendMirrorToLab(',start);
+  assert.ok(start>=0&&end>start);
+  const code=bridge.slice(start,end);
+  assert.equal((code.match(/await assertCurrentLabIdentity\(\)/g)||[]).length,2);
+  assert.match(code,/const main=document\.querySelector\('#main'\)/);
+  assert.match(code,/main\.querySelectorAll\('\.message-out'\)/);
+  assert.match(code,/labOutgoingEvidenceMatches\(text,tag\)/);
+  assert.doesNotMatch(code,/\.includes\(needle\)/);
+  const mirror=bridge.slice(bridge.indexOf('function localMirrorText('),
+    bridge.indexOf('function shouldMirror('));
+  assert.doesNotMatch(mirror,/canonical\?\.|plan\?\./);
 });
