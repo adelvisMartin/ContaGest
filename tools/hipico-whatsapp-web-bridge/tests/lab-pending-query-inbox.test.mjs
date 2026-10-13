@@ -659,6 +659,8 @@ test('rechecks original LAB TTL after a slow canonical HTTP response before send
     },
     backendState:'online',BACKEND_SYNC_ENABLED:true,
     labPendingRecoveryOffset:0,
+    INGEST_URL:'https://example.org/api/v1/hipico-bot/bridge/events',
+    TOKEN:'fixture-only',LAB_GROUP_ID:LAB,LAB_CHANNEL_KEY:'lab-fixture',BACKEND_TIMEOUT_MS:4500,
     labTestTagFor:()=> '[LABTEST:012345abcd]',
     labTestReplyJournal:{
       read:async()=>{actions.push('journal-read');return null;},
@@ -879,6 +881,8 @@ test('encrypted pending reply is suppressed when the operator holds LAB',async()
       remove:async id=>{assert.equal(id,MESSAGE);events.push('remove');}
     },
     BACKEND_SYNC_ENABLED:true,backendState:'online',labPendingRecoveryOffset:0,
+    INGEST_URL:'https://example.org/api/v1/hipico-bot/bridge/events',
+    TOKEN:'fixture-only',LAB_GROUP_ID:LAB,LAB_CHANNEL_KEY:'lab-fixture',BACKEND_TIMEOUT_MS:4500,
     labTestTagFor:()=> '[LABTEST:012345abcd]',
     labTestReplyJournal:{
       read:async()=>null,
