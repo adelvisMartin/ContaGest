@@ -16,7 +16,7 @@ const respond = (options = {}) => (req, res) => {
     res.end(JSON.stringify(options.body || status));
   } else if (req.url === '/hipico-control/') {
     res.writeHead(200, { 'Content-Type': options.pwaContentType ?? 'text/html' });
-    res.end('<title>Control Hípico</title><script src="./assets/js/app.js"></script>');
+    res.end(options.pwaHtml ?? '<title>Control Hípico</title><script type="module" src="./assets/js/app.js"></script>');
   } else { res.writeHead(404); res.end(); }
 };
 
@@ -81,7 +81,7 @@ test('#664 invalid MIME short-circuits status JSON parsing before touching untru
     } : {
       ok: true, status: 200,
       headers: new Headers({ 'content-type': 'text/html' }),
-      text: async () => '<title>Control Hípico</title><script src="./assets/js/app.js"></script>'
+      text: async () => '<title>Control Hípico</title><script type="module" src="./assets/js/app.js"></script>'
     };
     const result = await runHipicoSmoke('http://127.0.0.1:8080/', request);
     assert.deepEqual(result.checks[0], { name: 'status', status: 'FAIL', code: 'CONTRACT_MISMATCH' });
@@ -140,10 +140,40 @@ test('#664 invalid cache directive short-circuits body parsing before touching J
   } : {
     ok: true,
     headers: new Headers({ 'content-type': 'text/html' }),
-    text: async () => '<title>Control Hípico</title><script src="./assets/js/app.js"></script>'
+    text: async () => '<title>Control Hípico</title><script type="module" src="./assets/js/app.js"></script>'
   };
   const result = await runHipicoSmoke('http://127.0.0.1:8080/', request);
   assert.equal(result.status, 'FAIL');
   assert.deepEqual(result.checks[0], { name: 'status', status: 'FAIL', code: 'CONTRACT_MISMATCH' });
   assert.equal(reads, 0);
+});
+
+
+test('#664 PWA status cannot pass with text, commented scripts, or non-module assets', async () => {
+  const invalid = [
+    'Control Hípico assets/js/app.js',
+    '<!-- <title>Control Hípico</title><script type="module" src="./assets/js/app.js"></script> -->',
+    '<title>Control Hípico</title><p>assets/js/app.js</p>',
+    '<title>Control Hípico</title><script data-src="./assets/js/app.js" type="module"></script>',
+    '<title>Control Hípico</title><script src="./assets/js/app.js"></script>'
+  ];
+  for (const pwaHtml of invalid) {
+    await withServer(respond({ pwaHtml }), async url => {
+      const result = await runHipicoSmoke(url);
+      assert.equal(result.status, 'FAIL', pwaHtml);
+      assert.equal(result.checks[0].status, 'PASS');
+      assert.deepEqual(result.checks[1], { name: 'pwa', status: 'FAIL', code: 'CONTRACT_MISMATCH' });
+    });
+  }
+});
+
+test('#664 PWA smoke accepts a genuine app module script in either attribute order', async () => {
+  for (const pwaHtml of [
+    '<title>Control Hípico</title><script type="module" src="./assets/js/app.js"></script>',
+    '<title>Control Hípico</title><script src="./assets/js/app.js" type="module"></script>'
+  ]) {
+    await withServer(respond({ pwaHtml }), async url => {
+      assert.equal((await runHipicoSmoke(url)).status, 'PASS');
+    });
+  }
 });
