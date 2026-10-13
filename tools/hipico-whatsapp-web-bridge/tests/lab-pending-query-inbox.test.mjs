@@ -542,7 +542,7 @@ test('confirmed LAB queries finish ACK-only hints while still visible or backend
       backendState:scenario.online?'online':'offline',
       BACKEND_SYNC_ENABLED:true,
       labPendingRecoveryOffset:0,
-      labTestTagFor:()=> '[LABTEST:012345abcd]'
+      labTestTagFor:()=> '[LABTEST:012345abcd]',
       labTestReplyJournal:{
         read:async()=>{actions.push('journal-read');return scenario.state?{state:scenario.state}:null;},
         confirm:async()=>{actions.push('confirm');}
@@ -659,7 +659,7 @@ test('rechecks original LAB TTL after a slow canonical HTTP response before send
     },
     backendState:'online',BACKEND_SYNC_ENABLED:true,
     labPendingRecoveryOffset:0,
-    labTestTagFor:()=> '[LABTEST:012345abcd]'
+    labTestTagFor:()=> '[LABTEST:012345abcd]',
     labTestReplyJournal:{
       read:async()=>{actions.push('journal-read');return null;},
       prepare:async()=>{throw new Error('EXPIRED_QUERY_MUST_NOT_PREPARE');},
