@@ -822,3 +822,45 @@ test('Bridge health includes only aggregate LAB pending and near-expiry counters
   assert.match(section,/labOldestSec=\$\{pendingStatus\?\.oldestAgeSeconds \?\? 0\}/);
   assert.doesNotMatch(section,/pendingStatus\?\.text|pendingStatus\?\.senderId|pendingStatus\?\.quotedMessageId/);
 });
+
+
+test('LAB health reveals aggregate near-expiry pressure without leaking input identities',async t=>{
+  const f=await harness(t);
+  const inbox=f.create();
+  await inbox.initialize();
+  await inbox.enqueue(candidate());
+  f.advance(240_000); // First message is four minutes old.
+  const second='false_'+LAB+'_health-second_'+SENDER;
+  await inbox.enqueue(candidate({
+    messageId:second,
+    messageTimestamp:new Date(740_000).toISOString()
+  }));
+  const early=await inbox.snapshot();
+  assert.equal(early.pending,2);
+  assert.equal(early.nearingExpiry,0);
+  assert.equal(early.oldestAgeSeconds,240);
+  assert.equal(early.sourceWriteAllowed,false);
+  assert.equal(early.deliveryAuthority,false);
+  f.advance(240_000); // First message reaches the 8-minute warning threshold.
+  const warning=await inbox.snapshot();
+  assert.equal(warning.pending,2);
+  assert.equal(warning.nearingExpiry,1);
+  assert.equal(warning.oldestAgeSeconds,480);
+  for(const secret of [MESSAGE,second,SENDER,TEXT,LAB,SOURCE]){
+    assert.equal(JSON.stringify(warning).includes(secret),false,
+      'health cannot include any group/message/sender/text identifier');
+  }
+  f.advance(119_999);
+  const beforeExpiry=await inbox.snapshot();
+  assert.equal(beforeExpiry.pending,2);
+  assert.equal(beforeExpiry.nearingExpiry,1);
+  assert.equal(beforeExpiry.oldestAgeSeconds,599);
+  f.advance(1); // No continued attempt after the original 10-minute TTL.
+  const afterExpiry=await inbox.snapshot();
+  assert.equal(afterExpiry.pending,1);
+  assert.equal(afterExpiry.nearingExpiry,0);
+  assert.equal(afterExpiry.oldestAgeSeconds,360);
+  assert.equal(await inbox.read(MESSAGE),null);
+  assert.notEqual(await inbox.read(second),null);
+  await inbox.close();
+});
