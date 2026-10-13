@@ -602,7 +602,9 @@ test('canonical LAB rejects unrecognized send statuses even with innocent-lookin
     'CANONICAL_RACE_SUMMARY','CANONICAL_NEXT_RACE',
     'LAB_CANONICAL_REVISION_CHANGED','LAB_CANONICAL_RECOVERED'
   ]){
-    const result=await queryCanonicalLab({...base,fetchImpl:async()=>json({
+    const purpose=status==='CANONICAL_RACE_SUMMARY'?'summary'
+      :status==='CANONICAL_NEXT_RACE'?'next':'status';
+    const result=await queryCanonicalLab({...base,purpose,fetchImpl:async()=>json({
       ok:true,mode:'shadow',status,text:'Respuesta informativa verificada.',authority
     })});
     assert.equal(result.available,true,status);
