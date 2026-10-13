@@ -53,6 +53,7 @@ export type SoakEvaluation={
 };
 export type SoakPolicy={
   releaseMinimumHours:number;
+  sampleSeconds?:number;
   requiredDrills:string[];
   minimumHealthCoverageRatio:number;
   minimumSpoolCoverageRatio:number;
@@ -157,6 +158,14 @@ export function evaluateSoak(input:SoakSummaryInput,policy:SoakPolicy):SoakEvalu
     'samples','healthChecks','healthFailures','spoolChecks','spoolAvailableChecks',
     'unexpectedDuplicateResponses','lostDecisions','contextLeaks','maxSpoolBytes'
   ] as const;
+  // A full-day PASS needs sustained sampling, not just a claimed wall clock
+  // and one healthy reading. Allow 10% scheduling jitter on the policy's
+  // canonical sampling cadence; a slower override cannot self-authorize PASS.
+  const sampleSeconds=Number(policy.sampleSeconds??30);
+  if(!Number.isFinite(sampleSeconds)||sampleSeconds<1||
+     input.samples<Math.floor(input.durationMs/(sampleSeconds*1000)*0.9)){
+    blocked.push('SOAK_SAMPLE_CADENCE_INSUFFICIENT');
+  }
   if(metrics.some(key=>!Number.isFinite(input[key])||input[key]<0) ||
      counters.some(key=>!Number.isSafeInteger(input[key])) ||
      input.healthChecks>input.samples ||
