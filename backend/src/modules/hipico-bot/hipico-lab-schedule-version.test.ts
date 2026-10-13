@@ -54,7 +54,7 @@ test('maximum state version never overflows the receipt version integer',()=>{
 
 test('schedule projector and RaceQueryService must reuse one DB list for data and revision',()=>{
   const fs=requireSafeRead();
-  assert.match(fs,/store\.listRaces\(input\.ownerId,input\.groupKey,String\(meetings\[0\]\.id\),201\)/);
+  assert.match(fs,/store\.listRacesForLabSnapshot\(input\.ownerId,input\.groupKey,String\(meetings\[0\]\.id\)\)/);
   assert.match(fs,/versionLabScheduleSnapshot\(String\(meetings\[0\]\.id\),rows\)/);
   assert.match(fs,/query\.execute\(\{\.\.\.input,meetingId:String\(meetings\[0\]\.id\),text:QUERY_TEXT\[input\.purpose\]\},rows\)/);
 });
