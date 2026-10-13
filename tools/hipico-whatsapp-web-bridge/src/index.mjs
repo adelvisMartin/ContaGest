@@ -1211,8 +1211,10 @@ async function recoverConfirmedLabConversation(entry,confirmedAt) {
   );
   if(plan.scopeConflict||!plan.raceScope)return false;
   try {
-    await labConversationContext.recoverConfirmed(sender,plan.raceScope,confirmedAt);
-    return true;
+    // False means the context store intentionally declined the backfill
+    // (expired ACK or a newer sender hint). Do not report it as restored or
+    // discard the encrypted original merely because the call did not throw.
+    return (await labConversationContext.recoverConfirmed(sender,plan.raceScope,confirmedAt))===true;
   }catch{
     await log('LAB_CONTEXT_ACK_RECOVERY_FAILED');
     return false;
