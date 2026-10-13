@@ -398,3 +398,40 @@ test('LAB streamless adapters apply byte limit on UTF-8, not UTF-16 length',asyn
   })});
   assert.deepEqual(result,{available:false,reason:'LAB_CANONICAL_INVALID_RESPONSE'});
 });
+
+test('canonical adapter accepts only the exact application/json HTTP media type',async()=>{
+  const canonical={
+    ok:true,mode:'shadow',status:'CANONICAL_STATE_FOUND',text:'Estado interno verificado.',
+    authority:{sourceWriteAllowed:false,financialAuthority:false,domainEffectsAllowed:false}
+  };
+  for(const contentType of [
+    'text/plain; note=application/json',
+    'application/jsonp',
+    'application/problem+json',
+    'text/html, application/json',
+    'application/json, text/html',
+    'application/javascript',
+    ''
+  ]){
+    let calls=0,bodyReads=0;
+    const actual=await queryCanonicalLab({...base,fetchImpl:async()=>{
+      calls++;
+      return{
+        status:200,headers:new Headers({'content-type':contentType}),
+        text:async()=>{bodyReads++;return JSON.stringify(canonical);}
+      };
+    }});
+    assert.deepEqual(actual,{available:false,reason:'LAB_CANONICAL_UNAVAILABLE'},contentType);
+    assert.equal(calls,1,'invalid media type must not trigger automatic HTTP retries');
+    assert.equal(bodyReads,0,'unexpected HTTP content must not be parsed');
+  }
+  for(const contentType of ['application/json','Application/JSON; charset=UTF-8',
+    'application/json ; charset=utf-8']){
+    const accepted=await queryCanonicalLab({...base,fetchImpl:async()=>({
+      status:200,headers:new Headers({'content-type':contentType}),
+      text:async()=>JSON.stringify(canonical)
+    })});
+    assert.equal(accepted.available,true,contentType);
+    assert.equal(accepted.text,canonical.text);
+  }
+});
