@@ -13,12 +13,12 @@ sobre este flujo ni introducir una migración innecesaria.
 ## Recuperación real
 1. La consulta está limitada a LAB y a preguntas informativas; sender JID,
    grupo e identidad se validan antes de consultar.
-2. Si la conexión se interrumpe o la proyección responde 502/503/504, se
+2. Si la conexión se interrumpe o la proyección responde 502/504, se
    permite un único nuevo POST **de solo lectura** con el mismo envelope
    y token, al mismo endpoint fijado por la URL de ingestión.
 3. Si la respuesta contiene autoridad canónica verificada, se prepara y
    confirma la escritura solamente mediante el journal LAB.
-4. Si hay errores 401/403/404/429, respuesta malformada o autoridad
+4. Si hay errores 401/403/404/429/503, respuesta malformada o autoridad
    indebida, no se reintenta inmediatamente. Ante fallo de consulta LAB
    con backend configurado, se conserva el mensaje sin ACK ni envío, para
    volver a consultar datos frescos en un ciclo posterior. Se usa un backoff
