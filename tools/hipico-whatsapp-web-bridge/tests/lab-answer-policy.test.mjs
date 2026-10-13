@@ -45,7 +45,8 @@ test('live Bridge passes selected canonical response text to its LAB-only transp
   assert.ok(i>0&&end>i);
   const block=s.slice(i,end);
   assert.match(block,/selectLabAnswer\(/);
-  assert.match(block,/Respuesta: \${answer\.text}/);
-  assert.match(block,/Fuente: \${answer\.source}/);
+  assert.match(block,/composeLabAssistantReply\(/);
+  assert.match(block,/selectLabAnswer\(/);
+  assert.doesNotMatch(block,/Lectura:|Fuente:|Propuesta:/);
   assert.match(s,/sendTextInCurrentLab\(localLabTestReply\(row, classification, plan, canonical\), tag\)/);
 });

@@ -17,7 +17,8 @@ test('new LAB schedule queries stay on authenticated existing read-only route',(
   assert.match(block,/decision\.audit\.monetaryOrStateful/);
   assert.match(block,/decision\.audit\.humanOwned/);
   assert.match(block,/ownerId,groupKey:OFFICIAL_SOURCE_CHANNEL_KEY/);
-  assert.match(block,/status:canonical\.reason/);
+  assert.match(block,/status:verified\.reason/);
+  assert.match(block,/'version' in verified&&'updatedAt' in verified/);
   assert.doesNotMatch(block,/persistBridgeTransportEvent|persistHipicoDomainEvent|ensureSourceReplyOutbox|sendCloudText|responsePlan\.canSend/);
 });
 

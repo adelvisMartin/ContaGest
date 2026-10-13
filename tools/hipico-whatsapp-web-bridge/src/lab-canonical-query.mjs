@@ -1,4 +1,5 @@
-import {stableLabSenderKey} from './lab-conversation-context.mjs';
+import {stableLabSenderKey,planLabConversation} from './lab-conversation-context.mjs';
+import {classifyLocal} from './runtime-utils.mjs';
 // Query-only LAB transport: exactly the existing bridge origin and service credential.
 // Never used for SOURCE writes; it cannot create an outbox or accept arbitrary URLs.
 export function labCanonicalQueryUrl(ingestUrl){
@@ -11,6 +12,33 @@ export function labCanonicalQueryUrl(ingestUrl){
     url.pathname=url.pathname.slice(0,-'/bridge/events'.length)+'/bridge/lab/query';
     return url.toString();
   }catch{return null;}
+}
+
+const MAX_LAB_CANONICAL_BYTES=16_384;
+// Bound decompressed UTF-8 bytes as they arrive, before allocating a full body.
+// Native fetch exposes body.getReader(); streamless test adapters use text().
+async function readBoundedLabCanonicalBody(response){
+  if(typeof response.body?.getReader==='function'){
+    const reader=response.body.getReader();
+    const decoder=new TextDecoder('utf-8',{fatal:true});
+    let bytes=0,raw='',complete=false;
+    try{
+      while(true){
+        const {done,value}=await reader.read();
+        if(done){complete=true;break;}
+        if(!(value instanceof Uint8Array))return null;
+        bytes+=value.byteLength;
+        if(bytes>MAX_LAB_CANONICAL_BYTES)return null;
+        try{raw+=decoder.decode(value,{stream:true});}catch{return null;}
+      }
+      try{return raw+decoder.decode();}catch{return null;}
+    }finally{
+      if(!complete)void reader.cancel().catch(()=>{});
+      try{reader.releaseLock();}catch{}
+    }
+  }
+  const raw=await response.text();
+  return new TextEncoder().encode(raw).byteLength<=MAX_LAB_CANONICAL_BYTES?raw:null;
 }
 
 export function explicitLabRaceScope(text){
@@ -33,7 +61,7 @@ const TOPIC={
   status:/\b(?:estado|estatus|situacion|abierta|cerrada|como\s+va)\b/,
   summary:/\b(?:resumen|resumeme|sintesis|recapitulacion)\b/
 };
-const MONEY=/\b(?:apuesta|apostar|juega|jugada|consigue|pagar|cobrar|saldo|liquidar|cerrar|abrir|registrar|premio|dinero|bs|usdt)\b|\$/;
+const MONEY=/\b(?:apostar|apuestas?|jugadas?|juega|consigue|pagos?|pagar|cobros?|cobrar|depositar|depositos?|retirar|retiros?|saldos?|abonar|liquidacion(?:es)?|liquidar|ganancias?|deudas?|transferencias?|cerrar|abrir|registrar|editar|actualizar|cancelar|confirmar|montos?|dineros?|premios?|bolivares?|balances?|bs|usdt)\b|\$/;
 const normalizeQuery=text=>String(text||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().trim();
 export function labReadOnlyQueryPurpose(text,classification){
   const value=normalizeQuery(text);
@@ -59,8 +87,19 @@ export function resolveQuotedLabRaceScope(row,visibleRows){
   if(!prior||prior.fromMe||prior.hasMedia||stableLabSenderKey(prior.id)!==sender)return null;
   const scope=explicitLabRaceScope(prior.text);
   if(!scope)return null;
-  const currentRace=normalizeQuery(row.text).match(/\bcarrera\s*(?:numero|nro)?\.?\s*(\d{1,3})\b/);
-  if(currentRace&&Number(currentRace[1])!==scope.raceNumber)return null;
+  // Visible quoted messages bypass the confirmed-ACK hint journal. Subject
+  // them to the same single-race and safety restrictions; otherwise a
+  // message naming both race 5 and 6 can silently become a scoped quote.
+  const safety=classifyLocal(prior.text);
+  if(safety.risk!=='safe'||MONEY.test(normalizeQuery(prior.text)))return null;
+  const quotedPlan=planLabConversation(prior,safety,null,scope);
+  if(quotedPlan.scopeConflict||!quotedPlan.raceScope||
+     quotedPlan.raceScope.raceNumber!==scope.raceNumber)return null;
+  // A follow-up may name a different race via "carrera 6", "6ta",
+  // "la sexta", or multiple references. Never let quoting race 5 override it.
+  const followup=planLabConversation(row,classifyLocal(row.text),null,scope);
+  if(followup.scopeConflict||!followup.raceScope||
+     followup.raceScope.raceNumber!==scope.raceNumber)return null;
   return scope;
 }
 
@@ -79,31 +118,51 @@ export async function queryCanonicalLab({
     timestamp,text:String(text||'').slice(0,1200),race,purpose,
     quotedExternalMessageId:quotedMessageId
   };
-  try{
-    const response=await fetchImpl(url,{
-      method:'POST',redirect:'manual',cache:'no-store',
-      headers:{'Content-Type':'application/json','x-hipico-bridge-token':token},
-      body:JSON.stringify(payload),signal:AbortSignal.timeout(Math.min(5000,Math.max(500,timeoutMs)))
-    });
-    if(response.status!==200||!response.headers.get('content-type')?.toLowerCase().includes('application/json')){
+  // Read-only query: a lost HTTP response has no committed send/domain effect.
+  // One immediate retry is safe; never retry auth, rate limits or invalid contracts.
+  for(let attempt=0;attempt<2;attempt++){
+    let response;
+    try{
+      response=await fetchImpl(url,{
+        method:'POST',redirect:'manual',cache:'no-store',
+        headers:{'Content-Type':'application/json','x-hipico-bridge-token':token},
+        body:JSON.stringify(payload),signal:AbortSignal.timeout(Math.min(5000,Math.max(500,timeoutMs)))
+      });
+    }catch{
+      if(attempt===0)continue;
       return{available:false,reason:'LAB_CANONICAL_UNAVAILABLE'};
     }
-    const length=Number(response.headers.get('content-length')||0);
-    if(length>16_384)return{available:false,reason:'LAB_CANONICAL_INVALID_RESPONSE'};
-    const raw=await response.text();
-    if(raw.length>16_384)return{available:false,reason:'LAB_CANONICAL_INVALID_RESPONSE'};
-    const body=JSON.parse(raw);
+    // 503 is an explicit overload/unavailable signal; do not amplify it.
+    if([502,504].includes(response.status)&&attempt===0)continue;
+    // Reject JSONP, mixed MIME types or misleading substrings in HTTP metadata.
+    const mediaType=response.headers.get('content-type')?.split(';',1)[0]?.trim().toLowerCase();
+    if(response.status!==200||mediaType!=='application/json'){
+      return{available:false,reason:'LAB_CANONICAL_UNAVAILABLE'};
+    }
+    const lengthHeader=response.headers.get('content-length');
+    if(lengthHeader!==null&&(!/^\d+$/.test(lengthHeader)||
+      !Number.isSafeInteger(Number(lengthHeader))||
+      Number(lengthHeader)>MAX_LAB_CANONICAL_BYTES)){
+      return{available:false,reason:'LAB_CANONICAL_INVALID_RESPONSE'};
+    }
+    let raw;
+    try{raw=await readBoundedLabCanonicalBody(response);}catch{
+      if(attempt===0)continue;
+      return{available:false,reason:'LAB_CANONICAL_UNAVAILABLE'};
+    }
+    if(raw===null)return{available:false,reason:'LAB_CANONICAL_INVALID_RESPONSE'};
+    let body;
+    try{body=JSON.parse(raw);}catch{return{available:false,reason:'LAB_CANONICAL_INVALID_RESPONSE'};}
     const authority=body?.authority;
     if(body?.ok!==true||body?.mode!=='shadow'||
        authority?.sourceWriteAllowed!==false||
        authority?.financialAuthority!==false||
        authority?.domainEffectsAllowed!==false||
-       typeof body.text!=='string'||body.text.length>1500||
+       typeof body.text!=='string'||!body.text.trim()||body.text.length>1500||
        !/^[A-Z0-9_]{4,80}$/.test(String(body.status||''))){
       return{available:false,reason:'LAB_CANONICAL_INVALID_RESPONSE'};
     }
     return{available:true,reason:String(body.status),text:body.text};
-  }catch{
-    return{available:false,reason:'LAB_CANONICAL_UNAVAILABLE'};
   }
+  return{available:false,reason:'LAB_CANONICAL_UNAVAILABLE'};
 }
