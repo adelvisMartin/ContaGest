@@ -23,7 +23,8 @@
     "spool:replay": "node --env-file-if-exists=.env src/replay-spool.mjs",
     "report": "node --env-file=.env src/report.mjs",
     "support:bundle": "node --env-file-if-exists=.env src/support-bundle.mjs",
-    "lab:ack-report": "node --env-file-if-exists=.env src/lab-ack-report.mjs"
+    "lab:ack-report": "node --env-file-if-exists=.env src/lab-ack-report.mjs",
+    "test:lab:tcp": "node --test tests/lab-real-tcp-recovery.test.mjs"
   },
   "dependencies": {
     "playwright-core": "1.62.1"

@@ -345,3 +345,31 @@ nombre obligatorio de base efímera; no se instala ninguna tabla nueva en
 producción. Esta evidencia no sustituye el test de TCP/WhatsApp en Windows
 ni un caso de corrección concurrente entre commit y Enter. #899 continúa
 abierto hasta completar la matriz física y los gates de liberación.
+
+## Corte TCP real y recuperación de ACK LAB (CI #899)
+
+El workflow `Hípico Autonomous WhatsApp v16` ejecuta una suite separada
+`npm --prefix tools/hipico-whatsapp-web-bridge run test:lab:tcp`,
+además del `qa` canónico. No usa servicios externos: levanta un servidor
+HTTP efímero en **127.0.0.1** y lo cierra al terminar cada prueba.
+
+Las pruebas destruyen el socket luego de recibir el POST, emulando la
+pérdida de la respuesta HTTP tras un commit backend; comprueban que se
+repita **una sola vez la misma identidad, token y payload LAB**. También
+interrumpen un JSON a mitad del cuerpo, fuerzan dos cortes consecutivos,
+verifican que 503 y 302 nunca activen un retry hacia otro origen y
+comprueban la separación de la consulta HTTP y el journal de envío.
+
+Para el reinicio, después de recuperar la respuesta HTTP se prepara el
+recibo LAB y se registra `sending` antes de cualquier `Enter`. Un nuevo
+journal convierte `sending` en `ambiguous`: está **prohibido** volver a
+`prepared` automáticamente o declarar `confirmed` sin etiqueta de salida
+verificada. Esto protege el principio de no duplicar envíos en LAB.
+
+**Alcance:** caída real de sockets TCP en Node.js + journal durable local,
+no un WhatsApp Web físico ni PostgreSQL dentro del mismo proceso TCP.
+Las pruebas PG aisladas de #922/#925 son un gate distinto: conjuntamente
+cubren transporte y autoridad persistente, pero no constituyen aún el
+E2E completo con browser, usuario real, corte de red y dispositivo Android.
+Sin enviar nada a SOURCE. #899 y #837 deben mantenerse abiertos hasta
+certificación física y soak.
