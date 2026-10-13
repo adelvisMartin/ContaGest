@@ -608,3 +608,40 @@ test('canonical LAB rejects unrecognized send statuses even with innocent-lookin
     assert.equal(result.reason,status);
   }
 });
+
+
+test('canonical LAB success status must match the immutable requested purpose',async()=>{
+  const authority={sourceWriteAllowed:false,financialAuthority:false,domainEffectsAllowed:false};
+  const matching=[
+    ['status','CANONICAL_STATE_FOUND'],
+    ['result','CANONICAL_RESULT_CONFIRMED_INTERNAL'],
+    ['summary','CANONICAL_RACE_SUMMARY'],
+    ['next','CANONICAL_NEXT_RACE'],
+    ['active','CANONICAL_ACTIVE_RACE'],
+    ['schedule','CANONICAL_SCHEDULE_FOUND']
+  ];
+  const simulated=(purpose,status)=>queryCanonicalLab({...base,purpose,
+    fetchImpl:async()=>json({
+      ok:true,mode:'shadow',status,text:'Respuesta interna verificable.',authority
+    })
+  });
+  for(const [purpose,status] of matching){
+    const accepted=await simulated(purpose,status);
+    assert.equal(accepted.available,true,purpose);
+    assert.equal(accepted.reason,status);
+    for(const wrongPurpose of matching.map(row=>row[0]).filter(name=>name!==purpose)){
+      assert.deepEqual(await simulated(wrongPurpose,status),
+        {available:false,reason:'LAB_CANONICAL_INVALID_RESPONSE'},
+        status+' cannot authorize unrelated '+wrongPurpose);
+    }
+  }
+  for(const purpose of ['participants','unknown']){
+    for(const status of ['LAB_CANONICAL_RECOVERED','LAB_CANONICAL_REVISION_CHANGED']){
+      assert.deepEqual(await simulated(purpose,status),
+        {available:false,reason:'LAB_CANONICAL_INVALID_RESPONSE'},status);
+    }
+  }
+  for(const purpose of ['status','result','summary','next','active','schedule']){
+    assert.equal((await simulated(purpose,'LAB_CANONICAL_RECOVERED')).available,true,purpose);
+  }
+});
