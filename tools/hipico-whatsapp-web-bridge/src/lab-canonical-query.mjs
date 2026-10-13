@@ -1,4 +1,5 @@
 import {stableLabSenderKey,planLabConversation} from './lab-conversation-context.mjs';
+import {classifyLocal} from './runtime-utils.mjs';
 // Query-only LAB transport: exactly the existing bridge origin and service credential.
 // Never used for SOURCE writes; it cannot create an outbox or accept arbitrary URLs.
 export function labCanonicalQueryUrl(ingestUrl){
@@ -62,8 +63,8 @@ export function resolveQuotedLabRaceScope(row,visibleRows){
   // Visible quoted messages bypass the confirmed-ACK hint journal. Subject
   // them to the same single-race and safety restrictions; otherwise a
   // message naming both race 5 and 6 can silently become a scoped quote.
-  const safety={risk:'safe',intent:'conversation'};
-  if(!labReadOnlyQueryPurpose(prior.text,safety))return null;
+  const safety=classifyLocal(prior.text);
+  if(safety.risk!=='safe'||MONEY.test(normalizeQuery(prior.text)))return null;
   const quotedPlan=planLabConversation(prior,safety,null,scope);
   if(quotedPlan.scopeConflict||!quotedPlan.raceScope||
      quotedPlan.raceScope.raceNumber!==scope.raceNumber)return null;
