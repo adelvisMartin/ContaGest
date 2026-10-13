@@ -467,3 +467,50 @@ test('startup cleanup checks lock ownership token before removing lock on failur
   assert.match(block,/owned\?\.token===mine/);
   assert.doesNotMatch(block,/if\(mine\)\{try\{await fs\.rm\(lockFile\)/);
 });
+
+
+test('confirmed LAB queries finish ACK-only hints while still visible or backend offline',async()=>{
+  const vm=await import('node:vm');
+  const src=await fs.readFile(new URL('../src/index.mjs',import.meta.url),'utf8');
+  const start=src.indexOf('async function resumePendingLabQueries(');
+  const end=src.indexOf('let labTestProcessing=false;',start);
+  assert.ok(start>=0&&end>start);
+  const body=src.slice(start,end).trim();
+  const entry={messageId:MESSAGE};
+  for(const scenario of [
+    {name:'confirmed visible offline, HMAC failure',state:'confirmed',visible:true,hint:false,online:false,
+      expected:['journal-read','seen','save-seen','hint']},
+    {name:'confirmed visible offline, HMAC success',state:'confirmed',visible:true,hint:true,online:false,
+      expected:['journal-read','seen','save-seen','hint','remove']},
+    {name:'unconfirmed out-of-DOM offline, no new send',state:null,visible:false,hint:true,online:false,
+      expected:['journal-read']},
+    {name:'ambiguous out-of-DOM offline, strict outgoing proof',state:'ambiguous',visible:false,hint:true,online:false,
+      expected:['journal-read','pinned','outgoing-proof','confirm','seen','save-seen','hint','remove','logged']}
+  ]){
+    const actions=[];
+    const context={
+      labPendingInbox:{
+        list:async()=>[entry],
+        remove:async()=>{actions.push('remove');}
+      },
+      backendState:scenario.online?'online':'offline',
+      BACKEND_SYNC_ENABLED:true,
+      labTestTagFor:()=> '[LABTEST:012345abcd]',
+      labTestReplyJournal:{
+        read:async()=>{actions.push('journal-read');return scenario.state?{state:scenario.state}:null;},
+        confirm:async()=>{actions.push('confirm');}
+      },
+      rememberLabSeen:()=>{actions.push('seen');},
+      saveLabSeenNow:async()=>{actions.push('save-seen');},
+      rememberConfirmedPendingLabQuote:async()=>{actions.push('hint');return scenario.hint;},
+      assertCurrentLabIdentity:async()=>{actions.push('pinned');},
+      visibleLabHasTag:async()=>{actions.push('outgoing-proof');return true;},
+      log:async()=>{actions.push('logged');}
+    };
+    const recover=vm.runInNewContext('('+body+')',context);
+    await recover(new Set(scenario.visible?[MESSAGE]:[]));
+    assert.deepEqual(actions,scenario.expected,scenario.name);
+  }
+  assert.match(body,/if \(visibleIds\.has\(entry\.messageId\) && state\?\.state !== 'confirmed'\) continue/);
+  assert.match(body,/if \(backendState !== 'online'\) continue/);
+});
