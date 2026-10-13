@@ -169,6 +169,12 @@ export async function queryCanonicalLab({
         ? {available:false,reason:'LAB_HANDOFF_HELD'}
         : {available:false,reason:'LAB_CANONICAL_INVALID_RESPONSE'};
     }
+    // REVIEW_REQUIRED is a terminal *human review* decision, not a
+    // verified informational answer. A nonempty review notice must never
+    // become automatic send authority or be re-queried after release.
+    if(body.status==='REVIEW_REQUIRED'){
+      return {available:false,reason:'LAB_CANONICAL_REVIEW_REQUIRED'};
+    }
     if(typeof body.text!=='string'||!body.text.trim()||body.text.length>1500){
       return{available:false,reason:'LAB_CANONICAL_INVALID_RESPONSE'};
     }
