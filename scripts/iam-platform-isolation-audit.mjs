@@ -48,8 +48,13 @@ const legal = read('backend/src/shared/legal/legalAcceptanceMiddleware.ts');
 assert(legal.includes('if(await hasPlatformAccess(ctx))return next();'), 'aceptación legal sólo puede omitir gate para platformOperator verificado');
 
 const membership = read('backend/src/shared/identity/accountMembership.ts');
-assert(membership.includes('r."scope"=\'platform\''), 'selector multiempresa debe exigir scope platform');
-assert(membership.includes('t."rif"=${PLATFORM_TENANT_RIF}'), 'selector multiempresa debe exigir tenant interno');
+// The membership selector now delegates enumeration and switching to runtime SQL
+// functions. Authorization for platform operators remains in hasPlatformAccess,
+// whose role scope, internal tenant and permission predicates are checked above.
+assert(membership.includes('private.contagest_runtime_list_accessible_tenants('), 'selector multiempresa debe usar la función runtime de enumeración');
+assert(membership.includes('private.contagest_runtime_resolve_tenant_switch('), 'tenant switch debe usar la función runtime de resolución');
+assert(membership.includes('runWithRuntimeTenant(row.tenantId,async()=>'), 'selector multiempresa debe evaluar acceso dentro del tenant seleccionado');
+assert(membership.includes('if(await hasPlatformAccess({userId:row.userProfileId,tenantId:row.tenantId}))'), 'selector multiempresa debe verificar identidad plataforma con scope y tenant interno');
 assert(membership.includes('hasPlatformAccess({userId:target.userProfileId,tenantId:target.tenantId})'), 'tenant switch debe validar identidad explícita');
 
 const migration = read('backend/prisma/migrations/20260827043000_issue_27_platform_identity_normalization/migration.sql');
