@@ -335,3 +335,32 @@ test('out-of-DOM recovery rejects operator takeover before query, after query an
   assert.ok(allowed.indexOf('send')>allowed.indexOf('gate-3:true'));
   assert.ok(allowed.indexOf('confirm')>allowed.indexOf('send'));
 });
+
+
+test('canonical LAB read is mandatory before informational WAL or keyboard',async()=>{
+  const q=lab.indexOf('await queryCanonicalLab({');
+  const st=lab.indexOf('if(inquiryPurpose && canonical.available!==true)',q);
+  const en=lab.indexOf('// A slower canonical query may overlap operator takeover',st);
+  const recheck=lab.indexOf('const eligibleAfter=await checkLabSendEligibility(',st);
+  const prepare=lab.indexOf('await labTestReplyJournal.prepare(row.id)',st);
+  const send=lab.indexOf('await sendTextInCurrentLab(',st);
+  assert.ok(q>=0&&st>q&&en>st&&recheck>en&&prepare>recheck&&send>prepare);
+  const guard=lab.slice(st,en);
+  assert.match(guard,/continue;/);
+  assert.doesNotMatch(guard,/labTestReplyJournal\.prepare|sendTextInCurrentLab/);
+  const actions=[];
+  const evaluator=vm.runInNewContext(
+    '(async(purpose,result)=>{const inquiryPurpose=purpose,canonical=result,row={id:"inbound"},tag="tag";for(const once of [1]){'+guard+'return "CAN_PROCEED_TO_NEXT_GATE";}return "BLOCKED";})',{
+      log:async()=>actions.push('log'),
+      labQueryBackoff:{fail:()=>{actions.push('backoff');return 1000;},clear:()=>actions.push('clear')}
+    }
+  );
+  for(const reason of ['LAB_CANONICAL_UNAVAILABLE','LAB_CANONICAL_INVALID_RESPONSE','LAB_CANONICAL_NOT_QUERIED']){
+    assert.equal(await evaluator('status',{available:false,reason}),'BLOCKED',reason);
+  }
+  assert.equal(await evaluator('status',{available:true,reason:'CANONICAL_RACE_NOT_FOUND'}),
+    'CAN_PROCEED_TO_NEXT_GATE');
+  assert.equal(await evaluator(null,{available:false,reason:'LAB_CANONICAL_NOT_QUERIED'}),
+    'CAN_PROCEED_TO_NEXT_GATE','safe local clarification may continue');
+  assert.equal(actions.filter(x=>x==='backoff').length,3);
+});
