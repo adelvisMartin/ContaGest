@@ -191,3 +191,43 @@ test('backend canonical revision mismatch is returned as non-authoritative fallb
   assert.equal(result.reason,'LAB_CANONICAL_REVISION_CHANGED');
   assert.equal(result.available,true); // informational fallback, not an authorization to send money
 });
+
+test('LAB supports only explicit race summaries, not whole-chat or monetary summaries',async()=>{
+  const safe={intent:'conversation',risk:'safe'};
+  for(const message of [
+    'Hazme un resumen de la carrera 5 en hipódromo La Rinconada el 2026-10-12',
+    '¿Resumen de la carrera 5?',
+    'Dame una sintesis de carrera 5'
+  ])assert.equal(labReadOnlyQueryPurpose(message,safe),'summary',message);
+  for(const message of [
+    'hazme un resumen de lo que hablamos',
+    'hazme un resumen de lo que hablamos sobre carrera 5',
+    'resume los mensajes del chat de carrera 5',
+    'resumen de los saldos de carrera 5',
+    'resumen de apuesta de carrera 5',
+    'resumen de carrera 5 y registra la jugada',
+    'resumen de carrera 5 y cobrar premio'
+  ])assert.equal(labReadOnlyQueryPurpose(message,safe),null,message);
+  assert.equal(labReadOnlyQueryPurpose('¿Estado de carrera 5?',safe),'status');
+  assert.equal(labReadOnlyQueryPurpose('¿Resultado carrera 5?',{intent:'conversation',risk:'review'}),'result');
+  assert.equal(labReadOnlyQueryPurpose('resumen de carrera 5', {intent:'betting_or_balance',risk:'monetary'}),null);
+});
+
+test('LAB summary transport preserves pinned identity, no SOURCE write, and strict read-only purpose',async()=>{
+  let submitted=null;
+  const race={raceNumber:5,racetrack:'La Rinconada',raceDate:'2026-10-12'};
+  const res=await queryCanonicalLab({...base,race,purpose:'summary',
+    text:'resumen de carrera 5 en hipódromo La Rinconada el 2026-10-12',
+    fetchImpl:async(_url,options)=>{
+      submitted={url:_url,options};
+      return json({ok:true,mode:'shadow',status:'CANONICAL_RACE_SUMMARY',
+        text:'Resumen del registro interno de carrera 5: estado abierta.',
+        authority:{sourceWriteAllowed:false,financialAuthority:false,domainEffectsAllowed:false}});
+    }});
+  assert.equal(res.available,true);
+  assert.equal(res.reason,'CANONICAL_RACE_SUMMARY');
+  assert.equal(submitted.options.redirect,'manual');
+  assert.equal(JSON.parse(submitted.options.body).purpose,'summary');
+  assert.equal(JSON.parse(submitted.options.body).channelRole,'lab');
+  assert.deepEqual(JSON.parse(submitted.options.body).race,race);
+});
