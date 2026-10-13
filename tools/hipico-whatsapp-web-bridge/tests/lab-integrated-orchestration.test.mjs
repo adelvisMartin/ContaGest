@@ -364,3 +364,43 @@ test('canonical LAB read is mandatory before informational WAL or keyboard',asyn
     'CAN_PROCEED_TO_NEXT_GATE','safe local clarification may continue');
   assert.equal(actions.filter(x=>x==='backoff').length,3);
 });
+
+
+test('human LAB handoff cancels persisted pending replay at every visible-send gate',async()=>{
+  const tests=[
+    {name:'precheck',from:'if(!eligibleBefore.allowed){',until:'const canonical ='},
+    {name:'canonical',from:"if(canonical.reason==='LAB_HANDOFF_HELD'){",until:'if(inquiryPurpose && canonical.available!==true)'},
+    {name:'post-read',from:'if(!eligibleAfter.allowed){',until:'// The canonical response and handoff checks'},
+    {name:'pre-Enter',from:'if(!eligibleToSend.allowed){',until:'if(inquiryPurpose && BACKEND_SYNC_ENABLED && labPendingInbox &&',rollback:true}
+  ];
+  for(const testCase of tests){
+    const start=lab.indexOf(testCase.from);
+    const end=lab.indexOf(testCase.until,start+testCase.from.length);
+    assert.ok(start>=0&&end>start,'missing handoff contract '+testCase.name);
+    const snippet=lab.slice(start,end);
+    assert.match(snippet,/await labPendingInbox\?\.remove\(row\.id\)/,testCase.name);
+    const events=[];
+    const scope={
+      rememberLabSeen:()=>events.push('seen'),
+      saveLabSeenNow:async()=>events.push('persist-seen'),
+      labPendingInbox:{remove:async()=>events.push('discard-pending')},
+      labTestReplyJournal:{retryPrepared:async()=>events.push('rollback-no-Enter')},
+      log:async()=>events.push('log')
+    };
+    const runner=vm.runInNewContext(
+      '(async()=>{const row={id:"visible-id"},tag="tag";'
+      +'const eligibleBefore={allowed:false,reason:"LAB_HANDOFF_HELD"};'
+      +'const eligibleAfter=eligibleBefore,eligibleToSend=eligibleBefore;'
+      +'const canonical={reason:"LAB_HANDOFF_HELD"};'
+      +'for(const once of [1]){'+snippet+'return "UNSAFE_NEXT_GATE";}'
+      +'return "HANDOFF_STOPPED";})',
+      scope
+    );
+    assert.equal(await runner(),'HANDOFF_STOPPED',testCase.name);
+    assert.deepEqual(events.slice(0,testCase.rollback?4:3),
+      testCase.rollback?
+        ['rollback-no-Enter','seen','persist-seen','discard-pending']:
+        ['seen','persist-seen','discard-pending'],testCase.name);
+    assert.equal(events.at(-1),'log',testCase.name);
+  }
+});
