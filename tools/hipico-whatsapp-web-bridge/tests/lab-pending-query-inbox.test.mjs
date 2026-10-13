@@ -205,6 +205,58 @@ test('ID reuse, changed quote, sender, timestamp or race never override encrypte
   ])assert.equal(reconcileLabPendingObservation(stored,{...base,...changed}).valid,false);
 });
 
+test('self-contained race in a WhatsApp reply never binds an unused quoted message during inbox replay',async t=>{
+  const f=await harness(t);
+  const inbox=f.create();
+  await inbox.initialize();
+  const savedInput=candidate({quotedMessageId:null});
+  await inbox.enqueue(savedInput);
+  const original=await inbox.read(MESSAGE);
+  const observedReply='false_'+LAB+'_unrelated-reply_'+SENDER;
+  const observed={
+    messageId:MESSAGE,senderId:SENDER,text:TEXT,purpose:'result',
+    messageTimestamp:savedInput.messageTimestamp,
+    quotedMessageId:null, // same normalization used by the visible Bridge
+    explicitRace:savedInput.race
+  };
+  assert.equal(reconcileLabPendingObservation(original,observed).valid,true);
+  assert.equal(reconcileLabPendingObservation(original,{
+    ...observed,quotedMessageId:observedReply
+  }).valid,false,'a raw quoted JID is still rejected at the inbox boundary');
+
+  const source=await fs.readFile(new URL('../src/index.mjs',import.meta.url),'utf8');
+  const live=source.slice(source.indexOf('async function processLabTestInput()'),
+    source.indexOf('async function visibleLabHasTag(tag)'));
+  const pre=live.indexOf('const directRace=explicitLabRaceScope(body)');
+  const captured=live.indexOf('quotedMessageId:trustedQuote',pre);
+  const reconciled=live.indexOf('reconcileLabPendingObservation(saved',pre);
+  assert.ok(pre>=0&&captured>pre&&reconciled>pre);
+  assert.match(live,/quotedMessageId:directRace\?null:\(row\.quotedId\|\|null\)/);
+  assert.match(live,/explicitRace:directRace/);
+  assert.match(live,/let trustedQuote=quotedVerified\?row\.quotedId:null/);
+  assert.equal((await inbox.read(MESSAGE)).quotedMessageId,null);
+  await inbox.close();
+});
+
+test('quoted-race LAB query preserves exact JID matching instead of treating every reply as irrelevant',()=>{
+  const quote='false_'+LAB+'_original-quote_'+SENDER;
+  const stored=candidate({
+    text:'¿Cuál es el resultado?',quotedMessageId:quote,purpose:'result'
+  });
+  const base={
+    messageId:stored.messageId,senderId:SENDER,text:stored.text,
+    purpose:stored.purpose,messageTimestamp:stored.messageTimestamp,
+    explicitRace:null,quotedMessageId:quote
+  };
+  assert.equal(reconcileLabPendingObservation(stored,base).valid,true);
+  assert.deepEqual(reconcileLabPendingObservation(stored,{
+    ...base,quotedMessageId:'false_'+LAB+'_different-quote_'+SENDER
+  }),{valid:false,reason:'LAB_PENDING_QUOTE_CHANGED'});
+  assert.equal(reconcileLabPendingObservation(stored,{
+    ...base,explicitRace:{...stored.race,raceNumber:6}
+  }).valid,false,'the reply cannot override original verified race scope');
+});
+
 test('live LAB read uses immutable restored scope rather than disappearing visible quote',async()=>{
   const src=await fs.readFile(new URL('../src/index.mjs',import.meta.url),'utf8');
   const live=src.slice(src.indexOf('async function processLabTestInput()'),src.indexOf('async function visibleLabHasTag'));
