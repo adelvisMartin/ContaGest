@@ -20,10 +20,11 @@ function fixture(matches:Array<{id:string}>,ordinary:Array<{id:string}>=[selecte
       calls.push({method:'findMeetingsForLabQuery',ownerId:owner,groupKey:group,meetingDate,venue});
       return matches.slice(0,2);
     },
-    async listRaces(owner:string,group:string,meetingId?:string|null){
+    async listRacesForLabSnapshot(owner:string,group:string,meetingId?:string|null){
       calls.push({method:'listRaces',ownerId:owner,groupKey:group,meetingId});
       if(meetingId!==selected.id)return [];
       return [{id:'r-1',meetingId:selected.id,number:1,state:'ANNOUNCED',
+        stateVersion:2,updatedAt:new Date('2026-10-12T12:00:00Z'),
         scheduledAt:new Date('2026-10-12T17:00:00Z'),
         resultData:{bet:{amount:1000},counterparty:'SECRET'}}];
     },
@@ -64,7 +65,7 @@ test('explicit meeting with unique match unlocks schedule without trusting clien
   },f.store,clock);
   assert.equal(result.available,true);
   assert.equal(result.reason,'CANONICAL_NEXT_RACE');
-  assert.deepEqual(f.calls.map(x=>x.method),['findMeetingsForLabQuery','listRaces']);
+  assert.deepEqual(f.calls.map(x=>x.method),['findMeetingsForLabQuery','listRacesForLabSnapshot']);
   assert.deepEqual(f.calls[0],{
     method:'findMeetingsForLabQuery',ownerId,groupKey,
     meetingDate:'2026-10-12',venue:'La Rinconada'

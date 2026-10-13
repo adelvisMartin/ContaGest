@@ -265,3 +265,62 @@ todavía una revisión canónica suficientemente fuerte para usar este recibo.
 No garantiza snapshot serializable entre lectura y una corrección concurrente.
 Faltan fault-injection PostgreSQL, WhatsApp Windows físico y soak 24–72h;
 por ello #899 sigue abierto. Los tests locales no sustituyen esos gates.
+
+## Inyección de fallos real con PostgreSQL aislado (#899 — CI)
+
+El workflow `Hípico Autonomous WhatsApp v16` ahora ejecuta
+`npm --workspace backend run test:hipico:lab-receipt:postgres` después del E2E
+de source-reply y ANTES del build del backend. Comparte únicamente la base
+efímera creada por GitHub Actions, con nombre obligado
+`hipico_autoreply_e2e_<RUN_ID>_<ATTEMPT>` y conexión exclusivamente en loopback.
+El script comprueba que `DATABASE_URL` y `HIPICO_E2E_DATABASE_URL` coinciden
+y aborta si apunta a una base distinta o remota. No utiliza Supabase real.
+
+El fixture aplica `20260829214500_hipico_response_handoff` (CREATE IF NOT EXISTS)
+y ejecuta consultas de lectura/escritura contra `HipicoResponseReceipt`:
+
+- commit → inyección de excepción de conexión perdida antes de devolver el HTTP → mismo mensaje, revisión y hash se recuperan con una sola fila;
+- `BEGIN/ROLLBACK` de un recibo parcial → el registro no queda comprometido y una solicitud posterior crea el recibo correcto;
+- estado/versión/texto cambiado → `LAB_CANONICAL_REVISION_CHANGED`, sin reemplazar la primera respuesta;
+- dos consultas concurrentes → índice único y recibo inmutable, sin dos filas;
+- `ambiguous`, antigüedad vencida o takeover humano → no recuperar.
+
+**Límites de evidencia:** la pérdida HTTP se inyecta en la frontera del
+servicio tras completar el commit, no es un corte real de TCP/Chromium ni
+demuestra que WhatsApp envió una sola vez. El E2E utiliza PostgreSQL real
+pero no certifica una corrección concurrente dentro de una transacción
+serializable. La evidencia de logs del SHA exacto y el ensayo físico en LAB
+se conservan como gates antes de cerrar #899 y #837.
+
+## Recuperación versionada de próxima carrera, carrera activa y programación (#899)
+
+Además de estado/llegada, el backend ahora autoriza un recibo canónico para
+`purpose=next|active|schedule` solo si **todas las carreras de la reunión**
+poseen ID, `state_version`, `updated_at`, número, reunión, estado y horario
+coherentes. `RaceLifecycleStore.listRacesForLabSnapshot` lee solo metadatos
+(no carga `result_data`, nombres, apuestas ni participantes), con **LIMIT 201**; la
+proyección rechaza la reunión si sobrepasa 200 o contiene una revisión incompleta.
+El texto mostrado y la huella SHA-256 se derivan de **una única lectura**
+de la reunión, reutilizada por `RaceQueryService`, sin otra consulta susceptible
+de carrera entre cálculo de respuesta y cálculo de versión.
+
+La huella se compone de la identidad de la reunión y todas las carreras
+ordenadas por ID (estado, versión, horario, última actualización y número),
+incluidas las no mostradas. No incluye nombres de caballos, participantes,
+cuotas, apuestas ni `resultData`. Una adición, eliminación, corrección o
+nuevo estado en cualquier carrera cambia la huella. El recibo inmutable
+existente combina `revisionToken`, versión de política y hash del texto;
+la respuesta HTTP solo se devuelve como recuperable cuando esos datos
+coinciden con el recibo previo y no existe handoff humano.
+
+Los recibos de `status|result` anteriores conservan su fingerprint previo.
+Si el conjunto es ambiguo, tiene más de 200 carreras, falta una revisión
+o el horario de la próxima carrera venció, el backend responde sin inventar
+programación. El Bridge mantiene un reintento HTTP con la misma identidad
+antes de cualquier intención de envío WhatsApp y requiere el ACK LAB durable.
+
+**QA aún exigido:** tests exact-SHA, PostgreSQL real con una carrera editada
+entre commit y reintento, WhatsApp Web físico con caída de red, handoff, soak
+y el control de una actualización concurrente durante la entrega. La huella
+cubre una lectura consistente de una sentencia SQL, no impone transacción
+serializable a todo el intercambio HTTP. SOURCE sigue en NO-GO.

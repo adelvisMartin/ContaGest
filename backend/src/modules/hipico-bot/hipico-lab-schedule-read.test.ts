@@ -13,9 +13,11 @@ const scoped=(races:any[],meetings:any[]=[meeting])=>{
       calls.push({ownerId:owner,groupKey:group});
       return meetings;
     },
-    async listRaces(owner:string,group:string,meetingId?:string|null){
+    async listRacesForLabSnapshot(owner:string,group:string,meetingId?:string|null){
       calls.push({ownerId:owner,groupKey:group,meetingId});
-      return races.filter(race=>!meetingId||race.meetingId===meetingId);
+      return races.filter(race=>!meetingId||race.meetingId===meetingId).map((race)=>({
+        stateVersion:race.stateVersion??2,updatedAt:race.updatedAt??new Date('2026-10-12T12:00:00Z'),...race
+      }));
     },
     async getMeeting(_owner:string,_group:string,id:string){
       return meetings.find(x=>x.id===id)||null;
@@ -56,7 +58,8 @@ test('stale or unverified schedule never claims next active race',async()=>{
     const f=scoped([{id:'r-1',meetingId:meeting.id,number:1,state:'ANNOUNCED',scheduledAt}]);
     const result=await readScopedLabSchedule({ownerId,groupKey,purpose:'next'},f.store,at);
     assert.equal(result.available,false);
-    assert.equal(result.reason,'CANONICAL_SCHEDULE_STALE');
+    assert.equal(result.reason,scheduledAt==='not-a-date'
+      ?'CANONICAL_SCHEDULE_REVISION_UNAVAILABLE':'CANONICAL_SCHEDULE_STALE');
   }
 });
 
@@ -94,4 +97,36 @@ test('missing meeting, invalid purpose and absent future program fail closed',as
   assert.equal((await readScopedLabSchedule({ownerId,groupKey,purpose:'result' as any},f.store,at)).reason,'LAB_SCHEDULE_PURPOSE_INVALID');
   const p=scoped([]);
   assert.equal((await readScopedLabSchedule({ownerId,groupKey,purpose:'schedule'},p.store,at)).reason,'CANONICAL_SCHEDULE_NOT_FOUND');
+});
+
+
+test('verified schedule returns a stable fingerprint even for a race not shown in next answer',async()=>{
+  const races=[
+    {id:'r1',meetingId:meeting.id,number:1,state:'ANNOUNCED',stateVersion:1,
+      scheduledAt:new Date('2026-10-12T18:00:00Z'),updatedAt:new Date('2026-10-12T12:00:00Z')},
+    {id:'r2',meetingId:meeting.id,number:2,state:'ANNOUNCED',stateVersion:1,
+      scheduledAt:new Date('2026-10-12T20:00:00Z'),updatedAt:new Date('2026-10-12T12:00:00Z')}
+  ];
+  const before=await readScopedLabSchedule({ownerId,groupKey,purpose:'next'},scoped(races).store,at);
+  assert.equal(before.available,true);
+  assert.match(before.revisionToken,/^[a-f0-9]{64}$/);
+  assert.equal(before.state,'NEXT_SNAPSHOT');
+  assert.equal(before.version,2);
+  races[1].stateVersion=2;
+  const after=await readScopedLabSchedule({ownerId,groupKey,purpose:'next'},scoped(races).store,at);
+  assert.equal(after.available,true);
+  assert.equal(after.text,before.text);
+  assert.notEqual(after.revisionToken,before.revisionToken);
+});
+
+test('201-row truncation disables recovery and returns no partial program',async()=>{
+  const races=Array.from({length:201},(_,i)=>({
+    id:'r'+i,meetingId:meeting.id,number:i%99+1,state:'ANNOUNCED',stateVersion:1,
+    scheduledAt:new Date('2026-10-12T18:00:00Z'),
+    updatedAt:new Date('2026-10-12T12:00:00Z')
+  }));
+  const got=await readScopedLabSchedule({ownerId,groupKey,purpose:'schedule'},scoped(races).store,at);
+  assert.equal(got.available,false);
+  assert.equal(got.reason,'CANONICAL_SCHEDULE_REVISION_UNAVAILABLE');
+  assert.doesNotMatch(got.text,/Carrera\s+1:/);
 });

@@ -197,3 +197,52 @@ test('endpoint and Bridge keep recovery before durable send intent, with handoff
   assert.match(adapter,/for\(let attempt=0;attempt<2;attempt\+\+\)/);
   assert.match(adapter,/redirect:'manual'/);
 });
+
+
+test('next/active/schedule responses recover only with the same full meeting snapshot',async()=>{
+  const purposes=[
+    {purpose:'next' as const,reason:'CANONICAL_NEXT_RACE',state:'NEXT_SNAPSHOT'},
+    {purpose:'active' as const,reason:'CANONICAL_ACTIVE_RACE',state:'ACTIVE_SNAPSHOT'},
+    {purpose:'schedule' as const,reason:'CANONICAL_SCHEDULE_FOUND',state:'SCHEDULE_SNAPSHOT'}
+  ];
+  for(const {purpose,reason,state} of purposes){
+    const receipt=mockStore();
+    const read={...canonical,reason,state,
+      revisionToken:'f'.repeat(64),version:3,text:'Programación interna del grupo, sin oficialidad externa.'};
+    const input={...defaults,purpose,canonical:read};
+    const original=await reconcileCanonicalLabReceipt(input,receipt.store);
+    assert.equal(original.available,true);
+    assert.equal(receipt.rows.length,1);
+    assert.match(receipt.rows[0].decisionVersion,/^lab-canonical-v1-/);
+    const replay=await reconcileCanonicalLabReceipt(input,receipt.store);
+    assert.equal(replay.reason,'LAB_CANONICAL_RECOVERED');
+    assert.equal(receipt.rows.length,1);
+    for(const altered of [
+      {...read,revisionToken:'a'.repeat(64)},
+      {...read,version:4},
+      {...read,text:'Programación corregida'},
+      {...read,updatedAt:'2026-10-12T18:59:00.000Z'}
+    ]){
+      const fail=await reconcileCanonicalLabReceipt({...input,canonical:altered},receipt.store);
+      assert.equal(fail.available,false);
+      assert.equal(fail.reason,'LAB_CANONICAL_REVISION_CHANGED');
+    }
+    assert.equal(receipt.rows.length,1);
+  }
+});
+
+test('missing snapshot or mismatched LAB purpose cannot create an immutable receipt',async()=>{
+  const incorrect=[
+    {purpose:'next' as const,canonical:{...canonical,reason:'CANONICAL_NEXT_RACE',state:'NEXT_SNAPSHOT'}},
+    {purpose:'active' as const,canonical:{...canonical,reason:'CANONICAL_ACTIVE_RACE',state:'ACTIVE_SNAPSHOT',revisionToken:'x'}},
+    {purpose:'schedule' as const,canonical:{...canonical,reason:'CANONICAL_SCHEDULE_FOUND',state:'SCHEDULE_SNAPSHOT',revisionToken:'f'.repeat(64),version:0}},
+    {purpose:'next' as const,canonical:{...canonical,reason:'CANONICAL_ACTIVE_RACE',state:'NEXT_SNAPSHOT',revisionToken:'f'.repeat(64)}},
+    {purpose:'next' as const,canonical:{...canonical,reason:'CANONICAL_NEXT_RACE',state:'SCHEDULE_SNAPSHOT',revisionToken:'f'.repeat(64)}}
+  ];
+  for(const input of incorrect){
+    const store=mockStore();
+    const result=await reconcileCanonicalLabReceipt({...defaults,...input},store.store);
+    assert.equal(result.available,false);
+    assert.equal(store.rows.length,0);
+  }
+});
