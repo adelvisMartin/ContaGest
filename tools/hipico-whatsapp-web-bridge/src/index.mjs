@@ -1222,9 +1222,17 @@ async function recoverConfirmedLabConversation(entry,confirmedAt) {
 async function rememberConfirmedPendingLabQuote(entry) {
   if(!labQuotedRaceJournal)return true;
   const sender=stableLabSenderKey(entry.messageId);
-  const race=explicitLabRaceScope(entry.text);
-  const purpose=labReadOnlyQueryPurpose(entry.text,classifyLocal(entry.text));
-  if(!sender||sender!==entry.senderId||!race||!purpose)return true;
+  const classification=classifyLocal(entry.text);
+  // The encrypted request is immutable, but an ACK is NOT a claim that the
+  // text is unambiguous. Reuse the same conservative single-race predicate
+  // as live conversation processing; never promote first-regex-match facts.
+  const race=confirmedLabQuoteHint({
+    id:entry.messageId,text:entry.text,fromMe:false,hasMedia:false
+  },classification);
+  if(!sender||sender!==entry.senderId||!race||
+     entry.race?.raceNumber!==race.raceNumber||
+     entry.race?.racetrack!==race.racetrack||
+     entry.race?.raceDate!==race.raceDate)return true;
   try{
     await labQuotedRaceJournal.remember({
       messageId:entry.messageId,senderId:sender,race,confirmed:true
