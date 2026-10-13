@@ -607,6 +607,33 @@ test('damaged existing AES key is never re-created or replaced on restart',async
   await restored.close();
 });
 
+test('missing AES key blocks startup while encrypted records remain and permits restoration',async t=>{
+  const f=await harness(t);
+  const inbox=f.create();await inbox.initialize();
+  await inbox.enqueue(candidate());
+  await inbox.close();
+  const keyFile=path.join(f.rootDir,'inbox.key');
+  const backupKey=path.join(f.rootDir,'inbox.key.operator-backup');
+  const record=(await fs.readdir(f.rootDir)).find(name=>name.endsWith('.json'));
+  const ciphertext=await fs.readFile(path.join(f.rootDir,record));
+  await fs.rename(keyFile,backupKey);
+
+  const reboot=f.create();
+  await assert.rejects(reboot.initialize(),/LAB_PENDING_KEY_MISSING_WITH_RECORDS/);
+  assert.equal((await fs.readdir(f.rootDir)).includes('inbox.key'),false,
+    'must not silently rotate key when ciphertext already exists');
+  assert.equal((await fs.readdir(f.rootDir)).includes('owner.lock'),false,
+    'failed initialization must release its own owner lock');
+  assert.deepEqual(await fs.readFile(path.join(f.rootDir,record)),ciphertext,
+    'existing encrypted query is never destroyed during missing-key failure');
+
+  await fs.rename(backupKey,keyFile);
+  const restored=f.create();await restored.initialize();
+  assert.equal((await restored.read(MESSAGE))?.text,TEXT,
+    'original backed-up key recovers the durable encrypted query');
+  await restored.close();
+});
+
 test('inbox source acquires owner lock before generating encryption key',async()=>{
   const src=await fs.readFile(new URL('../src/lab-pending-query-inbox.mjs',import.meta.url),'utf8');
   const init=src.slice(src.indexOf('    async initialize(){'),src.indexOf('    async read(messageId)'));
@@ -675,4 +702,77 @@ test('visible LAB canonical response rechecks encrypted TTL before WAL send inte
   assert.match(live.slice(guard,sendIntent),/await labPendingInbox\.read\(row\.id\)/);
   assert.match(live.slice(guard,sendIntent),/LAB_PENDING_EXPIRED_BEFORE_SEND/);
   assert.match(live.slice(guard,sendIntent),/continue;/);
+});
+
+test('round-robin encrypted inbox visits later pending questions even when first 25 are blocked',async t=>{
+  const f=await harness(t);
+  const inbox=f.create();await inbox.initialize();
+  const ids=[];
+  for(let i=0;i<31;i++){
+    const id='false_'+LAB+'_rr-'+String(i).padStart(3,'0')+'_'+SENDER;
+    ids.push(id);
+    await inbox.enqueue(candidate({messageId:id}));
+  }
+  const first=await inbox.list(25,{offset:0});
+  const second=await inbox.list(25,{offset:25});
+  assert.equal(first.length,25);
+  assert.equal(second.length,25);
+  const seen=new Set([...first,...second].map(row=>row.messageId));
+  assert.equal(seen.size,31,'later queries must be offered even if first 25 cannot progress');
+  assert.ok(second.some(row=>!first.some(prior=>prior.messageId===row.messageId)));
+  assert.deepEqual(await inbox.list(25,{offset:0}),first,'stable order without mutation');
+  assert.deepEqual((await inbox.snapshot()).pending,31);
+  await assert.rejects(inbox.list(25,{offset:-1}),/LAB_PENDING_LIST_LIMIT_INVALID/);
+  await assert.rejects(inbox.list(25,{offset:200}),/LAB_PENDING_LIST_LIMIT_INVALID/);
+  await inbox.close();
+});
+
+test('live pending LAB poll always advances fair recovery cursor even if backend is offline',async()=>{
+  const src=await fs.readFile(new URL('../src/index.mjs',import.meta.url),'utf8');
+  const recovery=src.slice(src.indexOf('async function resumePendingLabQueries('),
+    src.indexOf('let labTestProcessing=false;'));
+  const get=recovery.indexOf('await labPendingInbox.list(25,{offset:lastLabPendingOffset})');
+  const advance=recovery.indexOf('lastLabPendingOffset=(lastLabPendingOffset+Math.max(1,pending.length))%200');
+  const backend=recovery.indexOf("if (backendState !== 'online') continue");
+  assert.ok(get>=0&&advance>get&&backend>advance,
+    'rotating selection must not wait for the backend or an ACK');
+  assert.doesNotMatch(recovery.slice(get,backend),/sendTextInCurrentLab/);
+});
+
+
+test('live LAB recovery serves all 200 encrypted pending IDs within eight bounded polls',async()=>{
+  const vm=await import('node:vm');
+  const src=await fs.readFile(new URL('../src/index.mjs',import.meta.url),'utf8');
+  const start=src.indexOf('async function resumePendingLabQueries(');
+  const end=src.indexOf('let labTestProcessing=false;',start);
+  assert.ok(start>=0&&end>start);
+  const body=src.slice(start,end).trim();
+  const all=Array.from({length:200},(_,i)=>({messageId:'round-robin-'+i}));
+  const inspected=[];
+  const offsets=[];
+  const context={
+    BACKEND_SYNC_ENABLED:true,
+    lastLabPendingOffset:0,
+    labPendingInbox:{
+      list:async (limit,{offset}={})=>{
+        assert.equal(limit,25,'at most 25 recovery candidates per poll');
+        offsets.push(offset);
+        return Array.from({length:limit},(_,i)=>all[(offset+i)%all.length]);
+      }
+    },
+    labTestTagFor:()=> '[LABTEST:012345abcd]',
+    labTestReplyJournal:{read:async messageId=>{inspected.push(messageId);return null;}}
+  };
+  const recover=vm.runInNewContext('('+body+')',context);
+  const visibleIds=new Set(all.map(item=>item.messageId));
+  for(let poll=1;poll<=8;poll++){
+    await recover(visibleIds);
+    assert.equal(inspected.length,poll*25,'bounded candidate count each poll');
+    assert.equal(new Set(inspected).size,inspected.length,'no duplicate candidates within one rotation');
+  }
+  assert.deepEqual(offsets,[0,25,50,75,100,125,150,175]);
+  assert.equal(new Set(inspected).size,200,'even all-visible and blocked messages cannot starve later IDs');
+  assert.equal(context.lastLabPendingOffset,0,'volatile cursor wraps after the eighth poll');
+  await recover(visibleIds);
+  assert.deepEqual(inspected.slice(200),inspected.slice(0,25),'the next fair round begins at the first batch');
 });
