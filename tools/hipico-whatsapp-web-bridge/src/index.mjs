@@ -37,6 +37,8 @@ import { labOutgoingEvidenceMatches } from './lab-outgoing-evidence.mjs';
 import { composeLabAssistantReply } from './lab-assistant-replies.mjs';
 import { createLabQuotedRaceJournal } from './lab-quoted-race-journal.mjs';
 import { confirmedLabQuoteHint } from './lab-confirmed-quote-hint.mjs';
+import { createLabPendingQueryInbox, reconcileLabPendingObservation } from './lab-pending-query-inbox.mjs';
+import { createLabQueryBackoff } from './lab-query-backoff.mjs';
 
 const config = assertRuntimeConfig(loadRuntimeConfig());
 const {
@@ -78,6 +80,7 @@ const LEGACY_DEADLETTER_DIR = path.join(DATA_DIR, 'dead-letter');
 const SPOOL_V2_DIR = path.join(DATA_DIR, 'spool-v2');
 const SOURCE_REPLY_DIR = path.join(DATA_DIR, 'source-replies');
 const LAB_TEST_REPLY_DIR = path.join(DATA_DIR, 'lab-test-replies');
+const LAB_PENDING_INBOX_DIR = path.join(DATA_DIR, 'lab-pending-queries');
 const LAB_CONTEXT_FILE = path.join(DATA_DIR, `lab-conversation-${sha256(LAB_GROUP_ID || LAB_CHANNEL_KEY).slice(0,16)}.json`);
 const LAB_QUOTED_CONTEXT_FILE = path.join(DATA_DIR, `lab-quoted-races-${sha256(`${LAB_GROUP_ID}|${SOURCE_GROUP_ID}`).slice(0,16)}.json`);
 const TRAINING_DIR = path.join(DATA_DIR, 'training');
@@ -112,6 +115,9 @@ const labConversationContext = labTestReplyJournal ? createLabConversationContex
 const labQuotedRaceJournal = labTestReplyJournal ? createLabQuotedRaceJournal({
   file:LAB_QUOTED_CONTEXT_FILE,labGroupId:LAB_GROUP_ID,sourceGroupId:SOURCE_GROUP_ID
 }) : null;
+const labPendingInbox = labTestReplyJournal && BACKEND_SYNC_ENABLED ? createLabPendingQueryInbox({
+  rootDir:LAB_PENDING_INBOX_DIR,labGroupId:LAB_GROUP_ID,sourceGroupId:SOURCE_GROUP_ID
+}) : null;
 let sourceBaselineCompleted = false;
 let activeSourceTitle = '';
 let flushingEvents = false;
@@ -136,6 +142,9 @@ let nonOperationalCount = 0;
 let lastPostStartedAt = 0;
 let lastLabTestPollAt = 0;
 let labBootstrapCompleted = false;
+let lastLabPendingPruneAt = 0;
+let labPendingRecoveryOffset = 0;
+const labQueryBackoff=createLabQueryBackoff();
 let sourceDiscoveryFailures = 0;
 let lastPrintedHealthLine = '';
 let lastHealthHeartbeatAt = 0;
@@ -1182,6 +1191,177 @@ async function sendTextInCurrentLab(textValue, tag) {
     throw labSendFailure({sendAttempted,composerCleared:Boolean(cleared)});
   }
 }
+async function rememberConfirmedPendingLabQuote(entry) {
+  if(!labQuotedRaceJournal)return true;
+  const sender=stableLabSenderKey(entry.messageId);
+  const race=confirmedLabQuoteHint({id:entry.messageId,text:entry.text,fromMe:false,hasMedia:false},classifyLocal(entry.text));
+  const purpose=labReadOnlyQueryPurpose(entry.text,classifyLocal(entry.text));
+  if(!sender||sender!==entry.senderId||!race||!purpose)return true;
+  try{
+    await labQuotedRaceJournal.remember({
+      messageId:entry.messageId,senderId:sender,race,confirmed:true
+    });
+    return true;
+  }catch{
+    await log('LAB_QUOTE_HINT_PERSIST_FAILED');
+    // Preserve encrypted pending input for the next ACK-only recovery cycle.
+    return false;
+  }
+}
+
+// The confirmed send journal outranks the auxiliary seen file. Finish
+// quote persistence using the immutable encrypted pre-query record before
+// removing it; after a crash this can run again without ever pressing Enter.
+async function finalizeConfirmedVisibleLabQuote(row,body) {
+  if(!labPendingInbox)return;
+  const stored=await labPendingInbox?.read(row.id);
+  if(stored){
+    if(await rememberConfirmedPendingLabQuote(stored)){
+      await labPendingInbox.remove(row.id);
+    }
+    return;
+  }
+  // Without the original encrypted, pre-query input we cannot prove the
+  // visible text/quoted race matches the immutable ACKed request. No memory
+  // backfill from mutable DOM content; the confirmed delivery still stands.
+  await log('LAB_QUOTE_HINT_NO_VERIFIED_INPUT');
+}
+
+async function resumePendingLabQueries(visibleIds = new Set()) {
+  if (!labPendingInbox || !BACKEND_SYNC_ENABLED) return;
+  const pending = await labPendingInbox.list(25,{offset:labPendingRecoveryOffset});
+  // Advance even when every sampled record is ambiguous or under backoff.
+  // This is scheduling only; it never authorizes a query or WhatsApp send.
+  labPendingRecoveryOffset=(labPendingRecoveryOffset+25)%200;
+  for (const entry of pending) {
+    const tag = labTestTagFor(entry.messageId);
+    const state = await labTestReplyJournal.read(entry.messageId);
+    // An already confirmed ACK can finish its auxiliary HMAC hint even when
+    // the row is still visible or the canonical backend is offline. No Enter.
+    if (visibleIds.has(entry.messageId) && state?.state !== 'confirmed') continue;
+    if (state?.state === 'confirmed') {
+      rememberLabSeen(entry.messageId);
+      await saveLabSeenNow();
+      if(await rememberConfirmedPendingLabQuote(entry)){
+        await labPendingInbox.remove(entry.messageId);
+      }
+      continue;
+    }
+    if (state?.state === 'sending' || state?.state === 'ambiguous') {
+      await assertCurrentLabIdentity();
+      if (await visibleLabHasTag(tag)) {
+        await labTestReplyJournal.confirm(entry.messageId,{visibleTag:true});
+        rememberLabSeen(entry.messageId);
+        await saveLabSeenNow();
+        if(await rememberConfirmedPendingLabQuote(entry)){
+          await labPendingInbox.remove(entry.messageId);
+        }
+        await log('LAB_PENDING_RECONCILED id='+tag);
+      }
+      // An uncertain Enter is never authorized to be repeated.
+      continue;
+    }
+    // A new response requires fresh verified canonical data. Only post-ACK
+    // housekeeping and strict-tag reconciliation may run without backend.
+    if (backendState !== 'online') continue;
+    const row = {
+      id:entry.messageId, text:entry.text, fromMe:false, hasMedia:false,
+      quotedId:entry.quotedMessageId, pre:''
+    };
+    const classification = classifyLocal(entry.text);
+    const sender = stableLabSenderKey(entry.messageId);
+    if (!sender || sender!==entry.senderId ||
+        !labConversationInput(row,classification,labConversationContext?.get(sender)).eligible ||
+        labReadOnlyQueryPurpose(entry.text,classification)!==entry.purpose) {
+      await labPendingInbox.remove(entry.messageId);
+      await log('LAB_PENDING_REVIEW_REQUIRED id='+tag+' reason=RISK_CHANGED');
+      continue;
+    }
+    if (!labQueryBackoff.allowed(entry.messageId)) continue;
+    const prior=labConversationContext?.get(sender);
+    const plan=planLabConversation(row,classification,prior,entry.race);
+    if(plan.scopeConflict){await log('LAB_PENDING_RACE_CONFLICT id='+tag);continue;}
+    const eligibilityArgs={
+      ingestUrl:INGEST_URL,token:TOKEN,labGroupId:LAB_GROUP_ID,
+      labChannelKey:LAB_CHANNEL_KEY,messageId:entry.messageId,senderId:sender,
+      race:entry.race,timeoutMs:Math.min(5000,BACKEND_TIMEOUT_MS)
+    };
+    const pre=await checkLabSendEligibility(eligibilityArgs);
+    if(!pre.allowed){
+      if(pre.reason==='LAB_HANDOFF_HELD'){
+        rememberLabSeen(entry.messageId);await saveLabSeenNow();
+        await labPendingInbox.remove(entry.messageId);
+      }
+      await log('LAB_PENDING_HANDOFF_PRECHECK_'+pre.reason+' id='+tag);
+      continue;
+    }
+    const canonical = await queryCanonicalLab({
+      ingestUrl:INGEST_URL,token:TOKEN,
+      labGroupId:LAB_GROUP_ID,labChannelKey:LAB_CHANNEL_KEY,
+      messageId:entry.messageId,senderId:entry.senderId,text:entry.text,
+      timestamp:entry.messageTimestamp,purpose:entry.purpose,quotedMessageId:entry.quotedMessageId,
+      race:entry.race,timeoutMs:Math.min(5000,BACKEND_TIMEOUT_MS)
+    });
+    if (canonical.available!==true) {
+      const delay=labQueryBackoff.fail(entry.messageId);
+      await log('LAB_PENDING_QUERY_RETRY id='+tag+' reason='+canonical.reason+' retryMs='+delay);
+      continue;
+    }
+    labQueryBackoff.clear(entry.messageId);
+    // HTTP can complete after the original WhatsApp message's ten-minute TTL.
+    // Recheck the durable encrypted record before starting a new send intent.
+    if (!(await labPendingInbox.read(entry.messageId))) {
+      await log('LAB_PENDING_EXPIRED_BEFORE_SEND id='+tag);
+      continue;
+    }
+    const after=await checkLabSendEligibility(eligibilityArgs);
+    if(!after.allowed){
+      if(after.reason==='LAB_HANDOFF_HELD'){
+        rememberLabSeen(entry.messageId);await saveLabSeenNow();
+        await labPendingInbox.remove(entry.messageId);
+      }
+      await log('LAB_PENDING_HANDOFF_RECHECK_'+after.reason+' id='+tag);
+      continue;
+    }
+    await labTestReplyJournal.prepare(entry.messageId);
+    await labTestReplyJournal.begin(entry.messageId);
+    try {
+      const beforeEnter=await checkLabSendEligibility(eligibilityArgs);
+      if(!beforeEnter.allowed){
+        await labTestReplyJournal.retryPrepared(entry.messageId);
+        if(beforeEnter.reason==='LAB_HANDOFF_HELD'){
+          rememberLabSeen(entry.messageId);await saveLabSeenNow();
+          await labPendingInbox.remove(entry.messageId);
+        }
+        await log('LAB_PENDING_HANDOFF_SEND_GATE_'+beforeEnter.reason+' id='+tag);
+        continue;
+      }
+      await sendTextInCurrentLab(localLabTestReply(row,classification,plan,canonical),tag);
+      await labTestReplyJournal.confirm(entry.messageId,{visibleTag:true});
+      rememberLabSeen(entry.messageId);
+      await saveLabSeenNow();
+      if(await rememberConfirmedPendingLabQuote(entry)){
+        await labPendingInbox.remove(entry.messageId);
+      }
+      if(plan.rememberRace&&labConversationContext){
+        try {await labConversationContext.remember(plan.sender,plan.raceNumber,plan.raceScope,{raceTrack:plan.raceTrack,raceDate:plan.raceDate});}
+        catch {await log('LAB_CONTEXT_PERSIST_FAILED');}
+      }
+      await log('LAB_PENDING_RECOVERED id='+tag);
+    } catch(error) {
+      const current=await labTestReplyJournal.read(entry.messageId);
+      if(current?.state==='confirmed') throw error;
+      const outcome=labSeenOutcome({error});
+      if(outcome==='RETRY')await labTestReplyJournal.retryPrepared(entry.messageId);
+      if(outcome==='AMBIGUOUS'){
+        await labTestReplyJournal.markAmbiguous(entry.messageId);
+        labTestAmbiguousCount++;
+      }
+      await log('LAB_PENDING_SEND_'+outcome+' id='+tag);
+    }
+  }
+}
+
 let labTestProcessing=false;
 async function processLabTestInput() {
   if(labTestProcessing)return;
@@ -1447,6 +1627,7 @@ async function printHealthSummary(force = false) {
   const eventSpool = spool.pendingBackend;
   const mirrorSpool = spool.pendingLab;
   const deadLetters = spool.quarantined;
+  const pendingStatus=labPendingInbox?await labPendingInbox.snapshot():null;
   const cooldown = Math.max(0, backendNextAllowedAt - Date.now());
   const backendLabel = BACKEND_SYNC_ENABLED ? backendState : 'local-only';
   const readiness = assessRuntimeReadiness({
@@ -1458,7 +1639,7 @@ async function printHealthSummary(force = false) {
     mirrorSpool,
     deadLetters
   });
-  const line = `HEALTH ready=${readiness.ready} mode=${RUNTIME_MODE} source=${activeSourceTitle || 'buscando'} | backend=${backendLabel}${cooldown && BACKEND_SYNC_ENABLED ? ` cooldown=${Math.ceil(cooldown/1000)}s` : ''} | capturados=${capturedCount} | spool=${eventSpool} | sourceReply=${sourceReplies.pending}/${sourceReplies.ambiguous} | labPend=${mirrorSpool} | dead=${deadLetters}`;
+  const line = `HEALTH ready=${readiness.ready} mode=${RUNTIME_MODE} source=${activeSourceTitle || 'buscando'} | backend=${backendLabel}${cooldown && BACKEND_SYNC_ENABLED ? ` cooldown=${Math.ceil(cooldown/1000)}s` : ''} | capturados=${capturedCount} | spool=${eventSpool} | sourceReply=${sourceReplies.pending}/${sourceReplies.ambiguous} | labPend=${mirrorSpool} | labQueries=${pendingStatus?.pending ?? 0} | dead=${deadLetters}`;
   const heartbeatDue = Date.now() - lastHealthHeartbeatAt >= 300000;
   if (force && (line !== lastPrintedHealthLine || heartbeatDue)) {
     console.log(line);
@@ -1473,6 +1654,11 @@ async function monitor() {
   let lastHealthPrint = 0;
   while (!stopping && page && !page.isClosed()) {
     try {
+      if(labPendingInbox && Date.now()-lastLabPendingPruneAt>=60000){
+        lastLabPendingPruneAt=Date.now();
+        const expired=await labPendingInbox.prune();
+        if(expired>0)await log('LAB_PENDING_EXPIRED count='+expired);
+      }
       if (await hasWhatsAppBrowserDatabaseError()) {
         await requestCleanProfileReset('WHATSAPP_BROWSER_DATABASE_ERROR');
         break;
@@ -1556,6 +1742,10 @@ async function main() {
   const sourceReplyInit = await sourceReplyJournal.initialize();
   await labConversationContext?.initialize();
   await labQuotedRaceJournal?.initialize();
+  if(labPendingInbox){
+    const restored=await labPendingInbox.initialize();
+    await log('LAB_PENDING_INBOX_READY count='+restored.recovered);
+  }
   if (labTestReplyJournal) {
     const labInit=await labTestReplyJournal.initialize();
     const labState=await labTestReplyJournal.snapshot();
@@ -1615,6 +1805,7 @@ async function shutdown() {
   try { await saveRetryState(); } catch {}
   try { await writeHealth({ stopping: true }); } catch {}
   try { await context?.close(); } catch {}
+  try { await labPendingInbox?.close(); } catch {}
 }
 process.on('SIGINT', async () => { await shutdown(); process.exit(0); });
 process.on('SIGTERM', async () => { await shutdown(); process.exit(0); });
@@ -1633,5 +1824,6 @@ main().catch(async (error) => {
   console.error(`FALLO DE INICIO: ${error.message}`);
   await log(`START_FAIL ${error.stack || error.message}`);
   await screenshot('start-fail');
+  try { await labPendingInbox?.close(); } catch {}
   process.exitCode = 1;
 });
