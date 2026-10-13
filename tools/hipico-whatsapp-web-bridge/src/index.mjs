@@ -1226,6 +1226,19 @@ async function processLabTestInput() {
           messageId:row.id,senderId:verifiedSender,race:verifiedRace,confirmed:true
         });}catch{await log('LAB_QUOTE_HINT_PERSIST_FAILED');}
       }
+      // A crash may occur after durable outgoing confirmation and before
+      // conversation hint persistence. Backfill only a fully explicit, safe,
+      // original-ACK-fresh scope without replacing any newer sender hint.
+      if(verifiedSender&&verifiedRace&&verifiedPurpose&&labConversationContext){
+        const safePlan=planLabConversation(row,classifyLocal(body),null,verifiedRace);
+        if(safePlan.raceScope&&!safePlan.scopeConflict){
+          try{
+            await labConversationContext.recoverConfirmed(
+              verifiedSender,safePlan.raceScope,journalRecord.updatedAt
+            );
+          }catch{await log('LAB_CONTEXT_ACK_RECOVERY_FAILED');}
+        }
+      }
       rememberLabSeen(row.id);
       await saveLabSeenNow();
       continue;
