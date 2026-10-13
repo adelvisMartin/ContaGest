@@ -98,6 +98,33 @@ test('release evidence is emitted only from a real release PASS, never from smok
   assert.equal(blocked,null);
 });
 
+
+test('24h release cannot PASS with sparse or fabricated sampling despite a valid wall clock',()=>{
+  const one={...base,samples:1,healthChecks:1,spoolChecks:1,spoolAvailableChecks:1};
+  const result=evaluateSoak(one,policy);
+  assert.equal(result.status,'BLOCKED');
+  assert.ok(result.blocked.includes('SOAK_SAMPLE_CADENCE_INSUFFICIENT'));
+  assert.equal(createSoakReleaseEvidence({
+    candidateSha:one.candidateSha,attemptId:'sparse-run',operatorId:'qa',
+    startedAt:'2026-10-10T00:00:00.000Z',
+    completedAt:'2026-10-11T00:00:00.000Z',
+    durationRequestedMinutes:1440,policyVersion:5,
+    summaryInput:one,evaluation:result,
+    evidenceIntegrity:{samplesSha256:'1'.repeat(64),physicalEvidenceSha256:null,
+      safetyEvidenceSha256:null,drillEvidenceSha256:null,
+      physicalVerifiedFiles:0,safetyMaterial:[],drillMaterial:[]}
+  },policy),null);
+  const threshold=Math.floor(24*3600/30*.9);
+  const atBoundary={...base,samples:threshold,healthChecks:threshold,
+    spoolChecks:threshold,spoolAvailableChecks:threshold};
+  assert.equal(evaluateSoak(atBoundary,policy).status,'PASS');
+  assert.ok(evaluateSoak({...atBoundary,samples:threshold-1},policy)
+    .blocked.includes('SOAK_SAMPLE_CADENCE_INSUFFICIENT'));
+  assert.ok(evaluateSoak({...base, samples:1,healthChecks:1,
+    spoolChecks:1,spoolAvailableChecks:1}, {...policy,sampleSeconds:60})
+    .blocked.includes('SOAK_SAMPLE_CADENCE_INSUFFICIENT'));
+});
+
 test('malformed or impossible 24h soak metrics cannot PASS',()=>{
   const mutations=[
     {durationMs:NaN},{rssEndMb:NaN},{heapEndMb:Infinity},
