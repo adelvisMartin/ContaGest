@@ -259,3 +259,154 @@ test('LAB summary transport preserves pinned identity, no SOURCE write, and stri
   assert.equal(JSON.parse(submitted.options.body).channelRole,'lab');
   assert.deepEqual(JSON.parse(submitted.options.body).race,race);
 });
+
+
+test('only 502/504 gateway failures retry; 503/auth/rate-limit/invalid authority fail closed',async()=>{
+  for(const status of [502,504]){
+    let calls=0;
+    const result=await queryCanonicalLab({...base,fetchImpl:async()=>{
+      calls++;
+      if(calls===1)return json({},status);
+      return json({ok:true,mode:'shadow',status:'CANONICAL_RACE_NOT_FOUND',
+        text:'No se ha confirmado esa carrera.',authority:{
+          sourceWriteAllowed:false,financialAuthority:false,domainEffectsAllowed:false}});
+    }});
+    assert.equal(calls,2);
+    assert.equal(result.available,true);
+  }
+  for(const status of [401,403,404,429,503]){
+    let calls=0;
+    const result=await queryCanonicalLab({...base,fetchImpl:async()=>{calls++;return json({},status);}});
+    assert.equal(calls,1);
+    assert.equal(result.available,false);
+  }
+  let invalidCalls=0;
+  const invalid=await queryCanonicalLab({...base,fetchImpl:async()=>{
+    invalidCalls++;return json({ok:true,mode:'shadow',status:'CANONICAL_STATE_FOUND',text:'unsafe',
+      authority:{sourceWriteAllowed:true,financialAuthority:false,domainEffectsAllowed:false}});
+  }});
+  assert.equal(invalidCalls,1);
+  assert.equal(invalid.reason,'LAB_CANONICAL_INVALID_RESPONSE');
+});
+
+
+test('blank canonical response never authorizes a LAB send or local factual fallback',async()=>{
+  for(const text of ['', '  \t  ']){
+    let calls=0;
+    const result=await queryCanonicalLab({...base,fetchImpl:async()=>{
+      calls++;
+      return json({ok:true,mode:'shadow',status:'CANONICAL_STATE_FOUND',text,
+        authority:{sourceWriteAllowed:false,financialAuthority:false,domainEffectsAllowed:false}});
+    }});
+    assert.equal(calls,1);
+    assert.deepEqual(result,{available:false,reason:'LAB_CANONICAL_INVALID_RESPONSE'});
+  }
+});
+
+
+test('LAB HTTP response stream caps bytes before full-body buffering',async()=>{
+  let reads=0,cancels=0,fetches=0;
+  const result=await queryCanonicalLab({...base,fetchImpl:async()=>{
+    fetches++;
+    return{
+      status:200,headers:new Headers({'content-type':'application/json'}),
+      body:{getReader:()=>({
+        read:async()=>{reads++;return {done:false,value:new Uint8Array(16_385)};},
+        cancel:async()=>{cancels++;},releaseLock:()=>{}
+      })},
+      text:async()=>{throw new Error('unbounded text() must not be called')}
+    };
+  }});
+  assert.deepEqual(result,{available:false,reason:'LAB_CANONICAL_INVALID_RESPONSE'});
+  assert.equal(fetches,1);assert.equal(reads,1);assert.equal(cancels,1);
+});
+
+
+test('LAB HTTP streamed multi-byte UTF-8 preserves valid JSON and read-only envelope',async()=>{
+  const reply='Hipódromo La Rinconada, resultado interno.';
+  const bytes=new TextEncoder().encode(JSON.stringify({
+    ok:true,mode:'shadow',status:'CANONICAL_STATE_FOUND',text:reply,
+    authority:{sourceWriteAllowed:false,financialAuthority:false,domainEffectsAllowed:false}
+  }));
+  const i=bytes.indexOf(0xc3);
+  assert.ok(i>0);
+  const parts=[bytes.slice(0,i+1),bytes.slice(i+1)];
+  let index=0;
+  const result=await queryCanonicalLab({...base,fetchImpl:async()=>({
+    status:200,headers:new Headers({'content-type':'application/json'}),
+    body:{getReader:()=>({
+      read:async()=>index<parts.length?{done:false,value:parts[index++]}:{done:true},
+      cancel:async()=>{throw new Error('valid stream cancelled')},releaseLock:()=>{}
+    })}
+  })});
+  assert.equal(result.available,true);
+  assert.equal(result.text,reply);
+  assert.equal(index,2);
+});
+
+
+test('LAB canonical response rejects invalid length headers without reading or retrying',async()=>{
+  for(const length of ['invalid','-1','16385','999999999999999999999']){
+    let fetches=0,reads=0;
+    const result=await queryCanonicalLab({...base,fetchImpl:async()=>{
+      fetches++;
+      return{
+        status:200,headers:new Headers({'content-type':'application/json','content-length':length}),
+        text:async()=>{reads++;throw new Error('must not read body')}
+      };
+    }});
+    assert.deepEqual(result,{available:false,reason:'LAB_CANONICAL_INVALID_RESPONSE'});
+    assert.equal(fetches,1,length);
+    assert.equal(reads,0,length);
+  }
+});
+
+
+test('LAB streamless adapters apply byte limit on UTF-8, not UTF-16 length',async()=>{
+  const result=await queryCanonicalLab({...base,fetchImpl:async()=>({
+    status:200,headers:new Headers({'content-type':'application/json'}),
+    text:async()=>JSON.stringify({
+      ok:true,mode:'shadow',status:'CANONICAL_STATE_FOUND',text:'á'.repeat(8200),
+      authority:{sourceWriteAllowed:false,financialAuthority:false,domainEffectsAllowed:false}
+    })
+  })});
+  assert.deepEqual(result,{available:false,reason:'LAB_CANONICAL_INVALID_RESPONSE'});
+});
+
+
+test('canonical adapter accepts only the exact application/json HTTP media type',async()=>{
+  const canonical={
+    ok:true,mode:'shadow',status:'CANONICAL_STATE_FOUND',text:'Estado interno verificado.',
+    authority:{sourceWriteAllowed:false,financialAuthority:false,domainEffectsAllowed:false}
+  };
+  for(const contentType of [
+    'text/plain; note=application/json',
+    'application/jsonp',
+    'application/problem+json',
+    'text/html, application/json',
+    'application/json, text/html',
+    'application/javascript',
+    ''
+  ]){
+    let calls=0,bodyReads=0;
+    const actual=await queryCanonicalLab({...base,fetchImpl:async()=>{
+      calls++;
+      return{
+        status:200,headers:new Headers({'content-type':contentType}),
+        text:async()=>{bodyReads++;return JSON.stringify(canonical);}
+      };
+    }});
+    assert.deepEqual(actual,{available:false,reason:'LAB_CANONICAL_UNAVAILABLE'},contentType);
+    assert.equal(calls,1,'invalid media type must not trigger automatic HTTP retries');
+    assert.equal(bodyReads,0,'unexpected HTTP content must not be parsed');
+  }
+  for(const contentType of ['application/json','Application/JSON; charset=UTF-8',
+    'application/json ; charset=utf-8']){
+    const accepted=await queryCanonicalLab({...base,fetchImpl:async()=>({
+      status:200,headers:new Headers({'content-type':contentType}),
+      text:async()=>JSON.stringify(canonical)
+    })});
+    assert.equal(accepted.available,true,contentType);
+    assert.equal(accepted.text,canonical.text);
+  }
+});
