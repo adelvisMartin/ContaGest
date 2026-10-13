@@ -13,6 +13,7 @@ export function checkBackendStartupConfig(config: BackendStartupInput) {
   const vercelEnv=config.VERCEL_ENV || '';
   if(!NODE_ENVS.has(nodeEnv))failures.push('NODE_ENV_UNRECOGNIZED');
   if(vercelEnv&&!VERCEL_ENVS.has(vercelEnv))failures.push('VERCEL_ENV_UNRECOGNIZED');
+  const production=vercelEnv==='production'||(!vercelEnv&&nodeEnv==='production');
   if(config.PORT!==undefined){
     // Coercing with Number alone allows empty strings and fractional ports.
     const candidate=String(config.PORT).trim();
@@ -20,10 +21,9 @@ export function checkBackendStartupConfig(config: BackendStartupInput) {
     // Node port 0 is useful for ephemeral test/dev listeners, but it is
     // not a stable production endpoint and must not silently auto-bind.
     if(!/^[0-9]{1,5}$/.test(candidate)||!Number.isInteger(port)||port>65535||
-       (port===0&&(vercelEnv==='production'||nodeEnv==='production')))
+       (port===0&&production))
       failures.push('PORT_OUT_OF_RANGE');
   }
-  const production=vercelEnv==='production'||(!vercelEnv&&nodeEnv==='production');
   if(production){
     if(config.API_MODE==='mock')failures.push('PRODUCTION_MOCK_API_FORBIDDEN');
     if(config.ALLOW_DEV_TENANT_HEADER==='true')failures.push('PRODUCTION_DEV_TENANT_HEADER_FORBIDDEN');
