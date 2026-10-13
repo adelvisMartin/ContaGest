@@ -440,3 +440,30 @@ test('live LAB confirmed, ambiguous and normal send paths share ACK-only quote f
   assert.doesNotMatch(confirmed,/sendTextInCurrentLab/);
   assert.doesNotMatch(reconciled,/sendTextInCurrentLab/);
 });
+
+
+test('corrupt encrypted startup releases only its own lock but never deletes the damaged record',async t=>{
+  const f=await harness(t);const first=f.create();await first.initialize();
+  await first.enqueue(candidate());
+  await first.close();
+  const filename=(await fs.readdir(f.rootDir)).find(name=>name.endsWith('.json'));
+  const item=path.join(f.rootDir,filename);
+  const original=await fs.readFile(item,'utf8');
+  await fs.writeFile(item,'{"incomplete":true}');
+  const restarted=f.create();
+  await assert.rejects(restarted.initialize(),/LAB_PENDING_RECORD_INVALID/);
+  assert.equal((await fs.readdir(f.rootDir)).includes('owner.lock'),false);
+  assert.equal(await fs.readFile(item,'utf8'),'{"incomplete":true}');
+  // Operator remediation, not silent recovery, is required for a broken record.
+  await fs.writeFile(item,original);
+  const recovered=f.create();await recovered.initialize();
+  assert.equal((await recovered.snapshot()).pending,1);
+  await recovered.close();
+});
+
+test('startup cleanup checks lock ownership token before removing lock on failure',async()=>{
+  const src=await fs.readFile(new URL('../src/lab-pending-query-inbox.mjs',import.meta.url),'utf8');
+  const block=src.slice(src.indexOf('    async initialize(){'),src.indexOf('    async read(messageId)',src.indexOf('    async initialize(){')));
+  assert.match(block,/owned\?\.token===mine/);
+  assert.doesNotMatch(block,/if\(mine\)\{try\{await fs\.rm\(lockFile\)/);
+});
