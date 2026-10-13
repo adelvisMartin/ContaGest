@@ -316,3 +316,18 @@ test('confirmed LAB ACK, including restart and ambiguous reconciliation, backfil
   assert.ok(afterSend.indexOf('await rememberConfirmedPendingLabQuote(entry)') <
     afterSend.indexOf('await labPendingInbox.remove(entry.messageId)'));
 });
+
+
+test('mixed SOURCE/LAB message identifiers and quotes never enter the encrypted inbox',async t=>{
+  const f=await harness(t);
+  const inbox=f.create();await inbox.initialize();
+  // A raw substring check for LAB could otherwise accept both group JIDs.
+  const mixedId='false_120363111111111111@g.us_120363222222222222@g.us_mix_'+SENDER;
+  await assert.rejects(inbox.enqueue(candidate({messageId:mixedId})),/LAB_PENDING_QUERY_INVALID/);
+  const quote='false_120363111111111111@g.us_120363222222222222@g.us_quoted_'+SENDER;
+  await assert.rejects(inbox.enqueue(candidate({
+    text:'¿Cuál es el resultado?',quotedMessageId:quote
+  })),/LAB_PENDING_QUERY_INVALID/);
+  assert.equal((await inbox.snapshot()).pending,0);
+  await inbox.close();
+});
