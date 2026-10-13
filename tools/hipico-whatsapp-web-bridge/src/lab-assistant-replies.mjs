@@ -39,6 +39,10 @@ export function composeLabAssistantReply({ classification, plan, canonical, answ
     return 'Entiendo el mensaje, pero necesita revisión de un operador. No registré ni confirmé ninguna operación.';
   }
 
+  if (plan?.scopeConflict) {
+    return 'Veo referencias a carreras diferentes. ¿Me confirmas una sola carrera, hipódromo y fecha antes de consultar?';
+  }
+
   const reference = raceReference(plan);
   if (plan?.summaryRequested) {
     // A race summary from the canonical read endpoint outranks the local
@@ -53,6 +57,18 @@ export function composeLabAssistantReply({ classification, plan, canonical, answ
     return reference
       ? `Hasta ahora tengo como referencia la ${reference}. Es solo contexto de esta conversación: no he revisado el historial completo ni puedo confirmar operaciones o resultados sin consultar los registros.`
       : 'Puedo resumir la referencia de carrera que vayamos consultando, pero no tengo un historial completo verificado para resumir. ¿Qué carrera quieres revisar?';
+  }
+
+  if (plan?.clarificationPending === 'date') {
+    return 'Perfecto, tengo el hipódromo de la ' + reference + '. ¿Qué fecha corresponde (AAAA-MM-DD)?';
+  }
+  if (plan?.clarificationPending === 'track') {
+    return 'Perfecto, tengo la fecha de la ' + reference + '. ¿En qué hipódromo se corre?';
+  }
+
+  if (plan?.clarificationCompleted && plan?.raceScope && reference) {
+    return 'Perfecto, ya tengo la referencia de la ' + reference +
+      '. ¿Quieres que consulte su estado o un resultado interno confirmado, si está disponible?';
   }
 
   if (plan?.queryCategory === 'UNSUPPORTED') {

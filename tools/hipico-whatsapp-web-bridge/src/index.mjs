@@ -1218,26 +1218,28 @@ async function processLabTestInput() {
     }
 
     const classification = classifyLocal(body);
-    if (!labConversationInput(row, classification).eligible) {
+    // Resolve the sender before consulting bounded conversation memory.
+    // Visible nicknames never grant an identity or a race reference.
+    const sender = stableLabSenderKey(row.id);
+    const prior = sender ? labConversationContext?.get(sender) : null;
+    if (!labConversationInput(row, classification, prior).eligible) {
       rememberLabSeen(row.id); // ignored echo/media/casual chat; never respond
       continue;
     }
-    const sender = stableLabSenderKey(row.id);
-    const prior = sender ? labConversationContext?.get(sender) : null;
     // Preserve authoritative topic and same-sender quoted-race resolution.
     const inquiryPurpose=labReadOnlyQueryPurpose(body,classification);
     const scopedRace=explicitLabRaceScope(body) || resolveQuotedLabRaceScope(row,visible);
     const plan=planLabConversation(row,classification,prior,scopedRace);
     // Canonical read completes before any durable browser send intent.
     const quotedVerified=Boolean(row.quotedId && scopedRace && !explicitLabRaceScope(body));
-    const canonical = inquiryPurpose && sender && BACKEND_SYNC_ENABLED && backendState === 'online'
+    const canonical = inquiryPurpose && sender && !plan.scopeConflict && BACKEND_SYNC_ENABLED && backendState === 'online'
       ? await queryCanonicalLab({
           ingestUrl:INGEST_URL,token:TOKEN,
           labGroupId:LAB_GROUP_ID,labChannelKey:LAB_CHANNEL_KEY,
           messageId:row.id,senderId:sender,text:body,
           purpose:inquiryPurpose,
           quotedMessageId:quotedVerified?row.quotedId:null,
-          race:scopedRace || plan.raceScope,timeoutMs:Math.min(5000,BACKEND_TIMEOUT_MS)
+          race:plan.scopeConflict?null:(scopedRace || plan.raceScope),timeoutMs:Math.min(5000,BACKEND_TIMEOUT_MS)
         })
       : {available:false,reason:'LAB_CANONICAL_NOT_QUERIED'};
     await labTestReplyJournal.prepare(row.id); // fsync before any browser send
@@ -1250,7 +1252,7 @@ async function processLabTestInput() {
       // The WAL-backed confirmed acknowledgement is the single send authority.
       // Context is only a local hint; failed persistence can never resend LAB.
       if (plan.rememberRace && labConversationContext) {
-        try { await labConversationContext.remember(plan.sender,plan.raceNumber,plan.raceScope); }
+        try { await labConversationContext.remember(plan.sender,plan.raceNumber,plan.raceScope,{raceTrack:plan.raceTrack,raceDate:plan.raceDate}); }
         catch { await log('LAB_CONTEXT_PERSIST_FAILED'); }
       }
       processed += 1;
