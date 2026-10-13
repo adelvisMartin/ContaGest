@@ -23,7 +23,7 @@ async function readBoundedLabHandoffBody(response){
       }
       try{return raw+decoder.decode();}catch{return null;}
     }finally{
-      if(!complete)await reader.cancel().catch(()=>{});
+      if(!complete)void reader.cancel().catch(()=>{});
       try{reader.releaseLock();}catch{}
     }
   }
@@ -66,7 +66,7 @@ export async function checkLabSendEligibility({
       return {allowed:false,reason:'LAB_HANDOFF_UNAVAILABLE'};
     }
     const lengthHeader=response.headers.get('content-length');
-    if(lengthHeader!==null&&(!/^\\d+$/.test(lengthHeader)||
+    if(lengthHeader!==null&&(!/^\d+$/.test(lengthHeader)||
       !Number.isSafeInteger(Number(lengthHeader))||
       Number(lengthHeader)>MAX_LAB_HANDOFF_BYTES)){
       return {allowed:false,reason:'LAB_HANDOFF_INVALID_RESPONSE'};
