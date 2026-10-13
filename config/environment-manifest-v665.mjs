@@ -1,0 +1,1055 @@
+// #665: single versioned environment inventory. NEVER add secret values.
+export const CONFIG_MANIFEST_V665=Object.freeze({
+  "version": 1,
+  "description": "Declarative inventory; no runtime credentials",
+  "surfaces": {
+    "backend": {
+      "examplePath": "backend/.env.example"
+    },
+    "frontend": {
+      "examplePath": "frontend/.env.example"
+    },
+    "bridge": {
+      "examplePath": "tools/hipico-whatsapp-web-bridge/.env.example"
+    },
+    "build": {
+      "examplePath": null
+    }
+  },
+  "variables": {
+    "backend": {
+      "NODE_ENV": {
+        "type": "enum",
+        "visibility": "server",
+        "sensitive": false,
+        "requiredWhen": "optional",
+        "sample": "required"
+      },
+      "PORT": {
+        "type": "integer",
+        "visibility": "server",
+        "sensitive": false,
+        "requiredWhen": "optional",
+        "sample": "required"
+      },
+      "APP_URL": {
+        "type": "url",
+        "visibility": "server",
+        "sensitive": false,
+        "requiredWhen": "optional",
+        "sample": "required"
+      },
+      "CORS_ORIGIN": {
+        "type": "string",
+        "visibility": "server",
+        "sensitive": false,
+        "requiredWhen": "optional",
+        "sample": "required"
+      },
+      "JWT_SECRET": {
+        "type": "secret",
+        "visibility": "server",
+        "sensitive": true,
+        "requiredWhen": "production",
+        "sample": "required"
+      },
+      "API_MODE": {
+        "type": "enum",
+        "visibility": "server",
+        "sensitive": false,
+        "requiredWhen": "optional",
+        "sample": "required",
+        "safeSample": "prisma"
+      },
+      "ALLOW_DEV_TENANT_HEADER": {
+        "type": "boolean",
+        "visibility": "server",
+        "sensitive": false,
+        "requiredWhen": "optional",
+        "sample": "required",
+        "safeSample": "false"
+      },
+      "JSON_BODY_LIMIT": {
+        "type": "string",
+        "visibility": "server",
+        "sensitive": false,
+        "requiredWhen": "optional",
+        "sample": "required"
+      },
+      "LOG_LEVEL": {
+        "type": "string",
+        "visibility": "server",
+        "sensitive": false,
+        "requiredWhen": "optional",
+        "sample": "required"
+      },
+      "GIT_COMMIT_SHA": {
+        "type": "string",
+        "visibility": "server",
+        "sensitive": false,
+        "requiredWhen": "optional",
+        "sample": "required"
+      },
+      "SERVICE_VERSION": {
+        "type": "string",
+        "visibility": "server",
+        "sensitive": false,
+        "requiredWhen": "optional",
+        "sample": "required"
+      },
+      "READINESS_DB_TIMEOUT_MS": {
+        "type": "integer",
+        "visibility": "server",
+        "sensitive": false,
+        "requiredWhen": "optional",
+        "sample": "required"
+      },
+      "READINESS_CACHE_MS": {
+        "type": "integer",
+        "visibility": "server",
+        "sensitive": false,
+        "requiredWhen": "optional",
+        "sample": "required"
+      },
+      "OBSERVABILITY_METRICS_TOKEN": {
+        "type": "secret",
+        "visibility": "server",
+        "sensitive": true,
+        "requiredWhen": "optional",
+        "sample": "required"
+      },
+      "LEGAL_PROVIDER_NAME": {
+        "type": "string",
+        "visibility": "server",
+        "sensitive": false,
+        "requiredWhen": "optional",
+        "sample": "required"
+      },
+      "LEGAL_PROVIDER_RIF": {
+        "type": "string",
+        "visibility": "server",
+        "sensitive": false,
+        "requiredWhen": "optional",
+        "sample": "required"
+      },
+      "LEGAL_PROVIDER_ADDRESS": {
+        "type": "string",
+        "visibility": "server",
+        "sensitive": false,
+        "requiredWhen": "optional",
+        "sample": "required"
+      },
+      "LEGAL_CONTACT_EMAIL": {
+        "type": "string",
+        "visibility": "server",
+        "sensitive": false,
+        "requiredWhen": "optional",
+        "sample": "required"
+      },
+      "LEGAL_SUPPORT_EMAIL": {
+        "type": "string",
+        "visibility": "server",
+        "sensitive": false,
+        "requiredWhen": "optional",
+        "sample": "required"
+      },
+      "LEGAL_REVIEW_APPROVED_VERSION": {
+        "type": "string",
+        "visibility": "server",
+        "sensitive": false,
+        "requiredWhen": "optional",
+        "sample": "required"
+      },
+      "LEGAL_REVIEW_EVIDENCE_SHA256": {
+        "type": "string",
+        "visibility": "server",
+        "sensitive": false,
+        "requiredWhen": "optional",
+        "sample": "required"
+      },
+      "AUTH_LOGIN_FAILURE_LIMIT": {
+        "type": "integer",
+        "visibility": "server",
+        "sensitive": false,
+        "requiredWhen": "optional",
+        "sample": "required"
+      },
+      "AUTH_LOGIN_OBSERVATION_WINDOW_SECONDS": {
+        "type": "integer",
+        "visibility": "server",
+        "sensitive": false,
+        "requiredWhen": "optional",
+        "sample": "required"
+      },
+      "AUTH_LOGIN_LOCK_SECONDS": {
+        "type": "integer",
+        "visibility": "server",
+        "sensitive": false,
+        "requiredWhen": "optional",
+        "sample": "required"
+      },
+      "AUTH_LOGIN_ATTEMPT_RETENTION_DAYS": {
+        "type": "integer",
+        "visibility": "server",
+        "sensitive": false,
+        "requiredWhen": "optional",
+        "sample": "required"
+      },
+      "DATABASE_RUNTIME_URL": {
+        "type": "url",
+        "visibility": "server",
+        "sensitive": true,
+        "requiredWhen": "production",
+        "sample": "required"
+      },
+      "DATABASE_RUNTIME_EXPECTED_ROLE": {
+        "type": "string",
+        "visibility": "server",
+        "sensitive": false,
+        "requiredWhen": "optional",
+        "sample": "required"
+      },
+      "DIRECT_DATABASE_URL": {
+        "type": "url",
+        "visibility": "server",
+        "sensitive": true,
+        "requiredWhen": "optional",
+        "sample": "required"
+      },
+      "DATABASE_URL": {
+        "type": "url",
+        "visibility": "server",
+        "sensitive": true,
+        "requiredWhen": "optional",
+        "sample": "required"
+      },
+      "DATABASE_BACKUP_URL": {
+        "type": "secret",
+        "visibility": "server",
+        "sensitive": true,
+        "requiredWhen": "optional",
+        "sample": "required"
+      },
+      "DATABASE_BACKUP_EXPECTED_ROLE": {
+        "type": "string",
+        "visibility": "server",
+        "sensitive": false,
+        "requiredWhen": "optional",
+        "sample": "required"
+      },
+      "DATABASE_MONITOR_URL": {
+        "type": "secret",
+        "visibility": "server",
+        "sensitive": true,
+        "requiredWhen": "optional",
+        "sample": "required"
+      },
+      "DATABASE_MONITOR_EXPECTED_ROLE": {
+        "type": "string",
+        "visibility": "server",
+        "sensitive": false,
+        "requiredWhen": "optional",
+        "sample": "required"
+      },
+      "DB_MASS_CHANGE_ROW_THRESHOLD": {
+        "type": "integer",
+        "visibility": "server",
+        "sensitive": false,
+        "requiredWhen": "optional",
+        "sample": "required"
+      },
+      "DB_SECURITY_AUDIT_WINDOW_MINUTES": {
+        "type": "integer",
+        "visibility": "server",
+        "sensitive": false,
+        "requiredWhen": "optional",
+        "sample": "required"
+      },
+      "SECURITY_ALERT_WEBHOOK_URL": {
+        "type": "url",
+        "visibility": "server",
+        "sensitive": false,
+        "requiredWhen": "optional",
+        "sample": "required"
+      },
+      "SUPABASE_URL": {
+        "type": "url",
+        "visibility": "server",
+        "sensitive": false,
+        "requiredWhen": "optional",
+        "sample": "required"
+      },
+      "SUPABASE_ANON_KEY": {
+        "type": "string",
+        "visibility": "server",
+        "sensitive": false,
+        "requiredWhen": "optional",
+        "sample": "required"
+      },
+      "SUPABASE_SERVICE_ROLE_KEY": {
+        "type": "secret",
+        "visibility": "server",
+        "sensitive": true,
+        "requiredWhen": "optional",
+        "sample": "required"
+      },
+      "BCV_PROVIDER": {
+        "type": "string",
+        "visibility": "server",
+        "sensitive": false,
+        "requiredWhen": "optional",
+        "sample": "required"
+      },
+      "BCV_CACHE_TTL_MS": {
+        "type": "integer",
+        "visibility": "server",
+        "sensitive": false,
+        "requiredWhen": "optional",
+        "sample": "required"
+      },
+      "MOCK_BCV_RATE": {
+        "type": "number",
+        "visibility": "server",
+        "sensitive": false,
+        "requiredWhen": "optional",
+        "sample": "required"
+      },
+      "SENIAT_BASE_URL": {
+        "type": "url",
+        "visibility": "server",
+        "sensitive": false,
+        "requiredWhen": "optional",
+        "sample": "required"
+      },
+      "GOOGLE_MAPS_API_KEY": {
+        "type": "secret",
+        "visibility": "server",
+        "sensitive": true,
+        "requiredWhen": "optional",
+        "sample": "required"
+      },
+      "MAPBOX_TOKEN": {
+        "type": "secret",
+        "visibility": "server",
+        "sensitive": true,
+        "requiredWhen": "optional",
+        "sample": "required"
+      },
+      "OPENAI_API_KEY": {
+        "type": "secret",
+        "visibility": "server",
+        "sensitive": true,
+        "requiredWhen": "optional",
+        "sample": "required"
+      },
+      "OPENAI_MODEL": {
+        "type": "string",
+        "visibility": "server",
+        "sensitive": false,
+        "requiredWhen": "optional",
+        "sample": "required"
+      },
+      "HIPICO_OWNER_ID": {
+        "type": "string",
+        "visibility": "server",
+        "sensitive": false,
+        "requiredWhen": "optional",
+        "sample": "required"
+      },
+      "HIPICO_SUPABASE_URL": {
+        "type": "url",
+        "visibility": "server",
+        "sensitive": false,
+        "requiredWhen": "optional",
+        "sample": "required"
+      },
+      "HIPICO_SUPABASE_SERVICE_ROLE_KEY": {
+        "type": "secret",
+        "visibility": "server",
+        "sensitive": true,
+        "requiredWhen": "optional",
+        "sample": "required"
+      },
+      "HIPICO_INTERNAL_API_TOKEN": {
+        "type": "secret",
+        "visibility": "server",
+        "sensitive": true,
+        "requiredWhen": "optional",
+        "sample": "required"
+      },
+      "HIPICO_OPERATOR_CONTROL_TOKEN": {
+        "type": "secret",
+        "visibility": "server",
+        "sensitive": true,
+        "requiredWhen": "optional",
+        "sample": "required"
+      },
+      "HIPICO_BOT_OPERATOR_TOKEN": {
+        "type": "secret",
+        "visibility": "server",
+        "sensitive": true,
+        "requiredWhen": "optional",
+        "sample": "required",
+        "aliasFor": "HIPICO_OPERATOR_CONTROL_TOKEN",
+        "deprecation": "provider-parity"
+      },
+      "HIPICO_BOT_PROMOTION": {
+        "type": "string",
+        "visibility": "server",
+        "sensitive": false,
+        "requiredWhen": "optional",
+        "sample": "required"
+      },
+      "HIPICO_JEV_MODE": {
+        "type": "string",
+        "visibility": "server",
+        "sensitive": false,
+        "requiredWhen": "optional",
+        "sample": "required"
+      },
+      "HIPICO_JEV_MODEL": {
+        "type": "string",
+        "visibility": "server",
+        "sensitive": false,
+        "requiredWhen": "optional",
+        "sample": "required"
+      },
+      "HIPICO_JEV_TIMEOUT_MS": {
+        "type": "integer",
+        "visibility": "server",
+        "sensitive": false,
+        "requiredWhen": "optional",
+        "sample": "required"
+      },
+      "HIPICO_JEV_DATA_SHARING_APPROVED": {
+        "type": "boolean",
+        "visibility": "server",
+        "sensitive": false,
+        "requiredWhen": "optional",
+        "sample": "required"
+      },
+      "TYPESAFE_API_KEY": {
+        "type": "secret",
+        "visibility": "server",
+        "sensitive": true,
+        "requiredWhen": "optional",
+        "sample": "required"
+      },
+      "WHATSAPP_VERIFY_TOKEN": {
+        "type": "secret",
+        "visibility": "server",
+        "sensitive": true,
+        "requiredWhen": "optional",
+        "sample": "required"
+      },
+      "WHATSAPP_APP_SECRET": {
+        "type": "secret",
+        "visibility": "server",
+        "sensitive": true,
+        "requiredWhen": "optional",
+        "sample": "required"
+      },
+      "WHATSAPP_CLOUD_TOKEN": {
+        "type": "secret",
+        "visibility": "server",
+        "sensitive": true,
+        "requiredWhen": "optional",
+        "sample": "required"
+      },
+      "WHATSAPP_PHONE_NUMBER_ID": {
+        "type": "string",
+        "visibility": "server",
+        "sensitive": false,
+        "requiredWhen": "optional",
+        "sample": "required"
+      },
+      "WHATSAPP_GRAPH_API_VERSION": {
+        "type": "string",
+        "visibility": "server",
+        "sensitive": false,
+        "requiredWhen": "optional",
+        "sample": "required"
+      },
+      "WHATSAPP_GRAPH_VERSION": {
+        "type": "string",
+        "visibility": "server",
+        "sensitive": false,
+        "requiredWhen": "optional",
+        "sample": "required",
+        "aliasFor": "WHATSAPP_GRAPH_API_VERSION",
+        "deprecation": "provider-parity"
+      },
+      "HIPICO_GROUP_BRIDGE_TOKEN": {
+        "type": "secret",
+        "visibility": "server",
+        "sensitive": true,
+        "requiredWhen": "lab-send",
+        "sample": "required",
+        "safeSample": ""
+      },
+      "HIPICO_SOURCE_AUTO_REPLY_ENABLED": {
+        "type": "boolean",
+        "visibility": "server",
+        "sensitive": false,
+        "requiredWhen": "optional",
+        "sample": "required",
+        "safeSample": "false"
+      },
+      "HIPICO_SOURCE_GROUP_ID": {
+        "type": "string",
+        "visibility": "server",
+        "sensitive": false,
+        "requiredWhen": "optional",
+        "sample": "required",
+        "safeSample": ""
+      },
+      "HIPICO_LAB_GROUP_ID": {
+        "type": "string",
+        "visibility": "server",
+        "sensitive": false,
+        "requiredWhen": "optional",
+        "sample": "required",
+        "safeSample": ""
+      },
+      "HIPICO_OFFICIAL_SOURCE_CHANNEL_KEY": {
+        "type": "string",
+        "visibility": "server",
+        "sensitive": false,
+        "requiredWhen": "optional",
+        "sample": "required"
+      },
+      "HIPICO_SOURCE_CHANNEL_KEY": {
+        "type": "string",
+        "visibility": "server",
+        "sensitive": false,
+        "requiredWhen": "optional",
+        "sample": "required",
+        "aliasFor": "HIPICO_OFFICIAL_SOURCE_CHANNEL_KEY",
+        "deprecation": "provider-parity"
+      },
+      "HIPICO_LAB_CHANNEL_KEY": {
+        "type": "string",
+        "visibility": "server",
+        "sensitive": false,
+        "requiredWhen": "optional",
+        "sample": "required"
+      },
+      "HIPICO_CLOUD_SEND_ENABLED": {
+        "type": "boolean",
+        "visibility": "server",
+        "sensitive": false,
+        "requiredWhen": "optional",
+        "sample": "required",
+        "safeSample": "false"
+      },
+      "HIPICO_WHATSAPP_COMPLIANCE_DECISION": {
+        "type": "string",
+        "visibility": "server",
+        "sensitive": false,
+        "requiredWhen": "optional",
+        "sample": "required",
+        "safeSample": ""
+      },
+      "HIPICO_CLOUD_SEND_APPROVED_BY": {
+        "type": "string",
+        "visibility": "server",
+        "sensitive": false,
+        "requiredWhen": "optional",
+        "sample": "required"
+      },
+      "HIPICO_CLOUD_SEND_CANDIDATE_SHA": {
+        "type": "string",
+        "visibility": "server",
+        "sensitive": false,
+        "requiredWhen": "optional",
+        "sample": "required"
+      },
+      "HIPICO_CLOUD_ALLOWED_DESTINATIONS": {
+        "type": "string",
+        "visibility": "server",
+        "sensitive": false,
+        "requiredWhen": "optional",
+        "sample": "required"
+      },
+      "HIPICO_CLOUD_SEND_TIMEOUT_MS": {
+        "type": "integer",
+        "visibility": "server",
+        "sensitive": false,
+        "requiredWhen": "optional",
+        "sample": "required"
+      },
+      "HIPICO_OUTBOX_WORKER_ENABLED": {
+        "type": "boolean",
+        "visibility": "server",
+        "sensitive": false,
+        "requiredWhen": "optional",
+        "sample": "required",
+        "safeSample": "false"
+      },
+      "HIPICO_OUTBOX_WORKER_INTERVAL_MS": {
+        "type": "integer",
+        "visibility": "server",
+        "sensitive": false,
+        "requiredWhen": "optional",
+        "sample": "required"
+      },
+      "HIPICO_OUTBOX_WORKER_MAX_PER_CYCLE": {
+        "type": "integer",
+        "visibility": "server",
+        "sensitive": false,
+        "requiredWhen": "optional",
+        "sample": "required"
+      },
+      "HIPICO_RACE_PROVIDER": {
+        "type": "string",
+        "visibility": "server",
+        "sensitive": false,
+        "requiredWhen": "optional",
+        "sample": "required"
+      },
+      "HIPICO_RACE_PROVIDER_BASE_URL": {
+        "type": "url",
+        "visibility": "server",
+        "sensitive": false,
+        "requiredWhen": "optional",
+        "sample": "required"
+      },
+      "HIPICO_SPORTRADAR_UOF_TOKEN": {
+        "type": "secret",
+        "visibility": "server",
+        "sensitive": true,
+        "requiredWhen": "optional",
+        "sample": "required"
+      },
+      "HIPICO_RACE_PROVIDER_LANGUAGE": {
+        "type": "string",
+        "visibility": "server",
+        "sensitive": false,
+        "requiredWhen": "optional",
+        "sample": "required"
+      },
+      "HIPICO_RACE_PROVIDER_TIMEOUT_MS": {
+        "type": "integer",
+        "visibility": "server",
+        "sensitive": false,
+        "requiredWhen": "optional",
+        "sample": "required"
+      },
+      "HIPICO_RACE_PROVIDER_CACHE_TTL_MS": {
+        "type": "integer",
+        "visibility": "server",
+        "sensitive": false,
+        "requiredWhen": "optional",
+        "sample": "required"
+      },
+      "HIPICO_RACE_PROVIDER_STALE_TTL_MS": {
+        "type": "integer",
+        "visibility": "server",
+        "sensitive": false,
+        "requiredWhen": "optional",
+        "sample": "required"
+      },
+      "HIPICO_RACE_PROVIDER_FAILURE_THRESHOLD": {
+        "type": "integer",
+        "visibility": "server",
+        "sensitive": false,
+        "requiredWhen": "optional",
+        "sample": "required"
+      },
+      "HIPICO_RACE_PROVIDER_BACKOFF_MS": {
+        "type": "integer",
+        "visibility": "server",
+        "sensitive": false,
+        "requiredWhen": "optional",
+        "sample": "required"
+      },
+      "LICENSE_HASH_SECRET": {
+        "type": "secret",
+        "visibility": "server",
+        "sensitive": true,
+        "requiredWhen": "production",
+        "sample": "optional"
+      }
+    },
+    "frontend": {
+      "VITE_API_BASE_URL": {
+        "type": "url",
+        "visibility": "public",
+        "sensitive": false,
+        "requiredWhen": "optional",
+        "sample": "required"
+      },
+      "VITE_SUPABASE_URL": {
+        "type": "url",
+        "visibility": "public",
+        "sensitive": false,
+        "requiredWhen": "supabase-enabled",
+        "sample": "required"
+      },
+      "VITE_SUPABASE_ANON_KEY": {
+        "type": "string",
+        "visibility": "public",
+        "sensitive": false,
+        "requiredWhen": "supabase-enabled",
+        "sample": "required"
+      },
+      "VITE_MARKETING_WHATSAPP_NUMBER": {
+        "type": "string",
+        "visibility": "public",
+        "sensitive": false,
+        "requiredWhen": "optional",
+        "sample": "required"
+      },
+      "VITE_MARKETING_WHATSAPP_MESSAGE": {
+        "type": "string",
+        "visibility": "public",
+        "sensitive": false,
+        "requiredWhen": "optional",
+        "sample": "required"
+      },
+      "VITE_MARKETING_DEMO_URL": {
+        "type": "url",
+        "visibility": "public",
+        "sensitive": false,
+        "requiredWhen": "optional",
+        "sample": "required"
+      }
+    },
+    "bridge": {
+      "HIPICO_RUNTIME_MODE": {
+        "type": "string",
+        "visibility": "server",
+        "sensitive": false,
+        "requiredWhen": "optional",
+        "sample": "required"
+      },
+      "HIPICO_BACKEND_SYNC_ENABLED": {
+        "type": "boolean",
+        "visibility": "server",
+        "sensitive": false,
+        "requiredWhen": "optional",
+        "sample": "required",
+        "safeSample": "true"
+      },
+      "HIPICO_INGEST_URL": {
+        "type": "url",
+        "visibility": "server",
+        "sensitive": false,
+        "requiredWhen": "optional",
+        "sample": "required"
+      },
+      "HIPICO_BRIDGE_HEALTH_URL": {
+        "type": "url",
+        "visibility": "server",
+        "sensitive": false,
+        "requiredWhen": "optional",
+        "sample": "required"
+      },
+      "HIPICO_GROUP_BRIDGE_TOKEN": {
+        "type": "secret",
+        "visibility": "server",
+        "sensitive": true,
+        "requiredWhen": "lab-send",
+        "sample": "required",
+        "safeSample": ""
+      },
+      "HIPICO_DATA_DIR": {
+        "type": "string",
+        "visibility": "server",
+        "sensitive": false,
+        "requiredWhen": "optional",
+        "sample": "required"
+      },
+      "HIPICO_TRANSPORT_ADAPTER": {
+        "type": "enum",
+        "visibility": "server",
+        "sensitive": false,
+        "requiredWhen": "optional",
+        "sample": "required",
+        "safeSample": "playwright-web"
+      },
+      "HIPICO_SOURCE_GROUP_MATCHES": {
+        "type": "string",
+        "visibility": "server",
+        "sensitive": false,
+        "requiredWhen": "optional",
+        "sample": "required"
+      },
+      "HIPICO_SOURCE_GROUP_MATCH": {
+        "type": "string",
+        "visibility": "server",
+        "sensitive": false,
+        "requiredWhen": "optional",
+        "sample": "required"
+      },
+      "HIPICO_SOURCE_GROUP_ID": {
+        "type": "string",
+        "visibility": "server",
+        "sensitive": false,
+        "requiredWhen": "optional",
+        "sample": "required",
+        "safeSample": ""
+      },
+      "HIPICO_SOURCE_CHANNEL_KEY": {
+        "type": "string",
+        "visibility": "server",
+        "sensitive": false,
+        "requiredWhen": "optional",
+        "sample": "required"
+      },
+      "HIPICO_LAB_GROUP_NAME": {
+        "type": "string",
+        "visibility": "server",
+        "sensitive": false,
+        "requiredWhen": "optional",
+        "sample": "required"
+      },
+      "HIPICO_LAB_GROUP_ID": {
+        "type": "string",
+        "visibility": "server",
+        "sensitive": false,
+        "requiredWhen": "optional",
+        "sample": "required",
+        "safeSample": ""
+      },
+      "HIPICO_LAB_CHANNEL_KEY": {
+        "type": "string",
+        "visibility": "server",
+        "sensitive": false,
+        "requiredWhen": "optional",
+        "sample": "required"
+      },
+      "HIPICO_REQUIRE_PINNED_GROUP_IDS": {
+        "type": "boolean",
+        "visibility": "server",
+        "sensitive": false,
+        "requiredWhen": "optional",
+        "sample": "required",
+        "safeSample": "true"
+      },
+      "HIPICO_SOURCE_AUTO_REPLY_ENABLED": {
+        "type": "boolean",
+        "visibility": "server",
+        "sensitive": false,
+        "requiredWhen": "optional",
+        "sample": "required",
+        "safeSample": "false"
+      },
+      "HIPICO_SOURCE_POLICY_REVIEW_ID": {
+        "type": "string",
+        "visibility": "server",
+        "sensitive": false,
+        "requiredWhen": "optional",
+        "sample": "required"
+      },
+      "HIPICO_SOURCE_LICENSE_EVIDENCE_REF": {
+        "type": "string",
+        "visibility": "server",
+        "sensitive": false,
+        "requiredWhen": "optional",
+        "sample": "required"
+      },
+      "HIPICO_META_PERMISSION_EVIDENCE_REF": {
+        "type": "string",
+        "visibility": "server",
+        "sensitive": false,
+        "requiredWhen": "optional",
+        "sample": "required"
+      },
+      "HIPICO_SOURCE_AGE_GATE_CONFIRMED": {
+        "type": "boolean",
+        "visibility": "server",
+        "sensitive": false,
+        "requiredWhen": "optional",
+        "sample": "required"
+      },
+      "HIPICO_LAB_SEND_ENABLED": {
+        "type": "boolean",
+        "visibility": "server",
+        "sensitive": false,
+        "requiredWhen": "optional",
+        "sample": "required",
+        "safeSample": "false"
+      },
+      "HIPICO_LAB_TEST_INPUT_ENABLED": {
+        "type": "boolean",
+        "visibility": "server",
+        "sensitive": false,
+        "requiredWhen": "optional",
+        "sample": "required",
+        "safeSample": "false"
+      },
+      "HIPICO_LAB_ASSISTANT_NAME": {
+        "type": "string",
+        "visibility": "server",
+        "sensitive": false,
+        "requiredWhen": "optional",
+        "sample": "required"
+      },
+      "HIPICO_POLL_MS": {
+        "type": "integer",
+        "visibility": "server",
+        "sensitive": false,
+        "requiredWhen": "optional",
+        "sample": "required"
+      },
+      "HIPICO_BACKEND_TIMEOUT_MS": {
+        "type": "integer",
+        "visibility": "server",
+        "sensitive": false,
+        "requiredWhen": "optional",
+        "sample": "required"
+      },
+      "HIPICO_BACKEND_MAX_RPS": {
+        "type": "integer",
+        "visibility": "server",
+        "sensitive": false,
+        "requiredWhen": "optional",
+        "sample": "required"
+      },
+      "HIPICO_BACKEND_MAX_PER_FLUSH": {
+        "type": "integer",
+        "visibility": "server",
+        "sensitive": false,
+        "requiredWhen": "optional",
+        "sample": "required"
+      },
+      "HIPICO_BACKEND_BASE_BACKOFF_MS": {
+        "type": "integer",
+        "visibility": "server",
+        "sensitive": false,
+        "requiredWhen": "optional",
+        "sample": "required"
+      },
+      "HIPICO_BACKEND_MAX_BACKOFF_MS": {
+        "type": "integer",
+        "visibility": "server",
+        "sensitive": false,
+        "requiredWhen": "optional",
+        "sample": "required"
+      },
+      "HIPICO_TRAINING_JOURNAL_ENABLED": {
+        "type": "boolean",
+        "visibility": "server",
+        "sensitive": false,
+        "requiredWhen": "optional",
+        "sample": "required"
+      },
+      "HIPICO_DIAGNOSTIC_SCREENSHOTS_ENABLED": {
+        "type": "boolean",
+        "visibility": "server",
+        "sensitive": false,
+        "requiredWhen": "optional",
+        "sample": "required"
+      },
+      "HIPICO_SOURCE_BASELINE_IGNORE_HISTORY": {
+        "type": "boolean",
+        "visibility": "server",
+        "sensitive": false,
+        "requiredWhen": "optional",
+        "sample": "required"
+      },
+      "HIPICO_LAB_TEST_POLL_MS": {
+        "type": "integer",
+        "visibility": "server",
+        "sensitive": false,
+        "requiredWhen": "optional",
+        "sample": "required"
+      },
+      "HIPICO_LAB_TEST_BOOTSTRAP_LIMIT": {
+        "type": "integer",
+        "visibility": "server",
+        "sensitive": false,
+        "requiredWhen": "optional",
+        "sample": "required"
+      },
+      "HIPICO_REPORT_INCLUDE_SAMPLES": {
+        "type": "boolean",
+        "visibility": "server",
+        "sensitive": false,
+        "requiredWhen": "optional",
+        "sample": "required"
+      },
+      "HIPICO_HISTORY_SYNC_ON_START": {
+        "type": "boolean",
+        "visibility": "server",
+        "sensitive": false,
+        "requiredWhen": "optional",
+        "sample": "required",
+        "safeSample": "false"
+      },
+      "HIPICO_HISTORY_MAX_MESSAGES": {
+        "type": "integer",
+        "visibility": "server",
+        "sensitive": false,
+        "requiredWhen": "optional",
+        "sample": "required"
+      },
+      "HIPICO_HISTORY_MAX_MINUTES": {
+        "type": "integer",
+        "visibility": "server",
+        "sensitive": false,
+        "requiredWhen": "optional",
+        "sample": "required"
+      },
+      "HIPICO_HISTORY_IDLE_ROUNDS": {
+        "type": "integer",
+        "visibility": "server",
+        "sensitive": false,
+        "requiredWhen": "optional",
+        "sample": "required"
+      },
+      "HIPICO_HISTORY_PAGE_WAIT_MS": {
+        "type": "integer",
+        "visibility": "server",
+        "sensitive": false,
+        "requiredWhen": "optional",
+        "sample": "required"
+      },
+      "HIPICO_HISTORY_UPLOAD_CONCURRENCY": {
+        "type": "integer",
+        "visibility": "server",
+        "sensitive": false,
+        "requiredWhen": "optional",
+        "sample": "required"
+      }
+    },
+    "build": {
+      "VERCEL_ENV": {
+        "type": "enum",
+        "visibility": "build",
+        "sensitive": false,
+        "requiredWhen": "optional",
+        "sample": "not-applicable"
+      },
+      "VERCEL_URL": {
+        "type": "string",
+        "visibility": "build",
+        "sensitive": false,
+        "requiredWhen": "optional",
+        "sample": "not-applicable"
+      },
+      "VERCEL_PROJECT_PRODUCTION_URL": {
+        "type": "string",
+        "visibility": "build",
+        "sensitive": false,
+        "requiredWhen": "optional",
+        "sample": "not-applicable"
+      },
+      "GITHUB_SHA": {
+        "type": "string",
+        "visibility": "build",
+        "sensitive": false,
+        "requiredWhen": "optional",
+        "sample": "not-applicable"
+      },
+      "VERCEL_GIT_COMMIT_SHA": {
+        "type": "string",
+        "visibility": "build",
+        "sensitive": false,
+        "requiredWhen": "optional",
+        "sample": "not-applicable"
+      }
+    }
+  }
+});
