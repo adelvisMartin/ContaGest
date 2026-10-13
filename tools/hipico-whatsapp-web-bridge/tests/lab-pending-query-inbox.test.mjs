@@ -385,3 +385,58 @@ test('only completed encrypted LAB records use final .json filenames',async t=>{
   assert.match(contents.find(name=>name.endsWith('.json')),/^[a-f0-9]{64}\.json$/);
   await inbox.close();
 });
+
+
+test('confirmed visible LAB ACK only clears inbox after private quote persistence succeeds',async()=>{
+  const vm=await import('node:vm');
+  const source=await fs.readFile(new URL('../src/index.mjs',import.meta.url),'utf8');
+  const from=source.indexOf('async function finalizeConfirmedVisibleLabQuote(');
+  const to=source.indexOf('async function resumePendingLabQueries(',from);
+  assert.ok(from>=0&&to>from);
+  const helper=source.slice(from,to).trim();
+  assert.doesNotMatch(helper,/sendTextInCurrentLab|page\.keyboard\.press/);
+
+  const entry=candidate();
+  const actions=[];
+  let hintOk=false;
+  const fn=vm.runInNewContext('('+helper+')',{
+    labPendingInbox:{
+      read:async id=>{actions.push('read');assert.equal(id,MESSAGE);return entry;},
+      remove:async id=>{actions.push('remove');assert.equal(id,MESSAGE);}
+    },
+    stableLabSenderKey:()=>SENDER,
+    rememberConfirmedPendingLabQuote:async saved=>{
+      actions.push('hint');
+      assert.equal(saved,entry);
+      return hintOk;
+    }
+  });
+  await fn({id:MESSAGE},TEXT);
+  assert.deepEqual(actions,['read','hint'],'failed HMAC write retains pending input');
+  actions.length=0;
+  hintOk=true;
+  await fn({id:MESSAGE},TEXT);
+  assert.deepEqual(actions,['read','hint','remove'],'durable HMAC hint precedes inbox deletion');
+});
+
+test('live LAB confirmed, ambiguous and normal send paths share ACK-only quote finalization',async()=>{
+  const source=await fs.readFile(new URL('../src/index.mjs',import.meta.url),'utf8');
+  const start=source.indexOf('async function processLabTestInput()');
+  const end=source.indexOf('async function visibleLabHasTag(tag)',start);
+  const live=source.slice(start,end);
+  const confirmed=live.slice(live.indexOf("if (journalRecord?.state === 'confirmed')"),
+    live.indexOf("if (journalRecord?.state === 'ambiguous'"));
+  const reconciled=live.slice(live.indexOf("if (journalRecord?.state === 'ambiguous'"),
+    live.indexOf('const classification = classifyLocal(body);'));
+  const afterSend=live.slice(live.indexOf('await sendTextInCurrentLab('));
+  assert.ok(confirmed.includes('await finalizeConfirmedVisibleLabQuote(row,body)'));
+  assert.ok(reconciled.indexOf('await labTestReplyJournal.confirm(row.id') <
+    reconciled.indexOf('await finalizeConfirmedVisibleLabQuote(row,body)'));
+  assert.ok(afterSend.indexOf('await labTestReplyJournal.confirm(row.id') <
+    afterSend.indexOf('await finalizeConfirmedVisibleLabQuote(row,body)'));
+  for(const section of [confirmed,reconciled,afterSend]){
+    assert.doesNotMatch(section,/await labPendingInbox\?\.remove\(row\.id\)/);
+  }
+  assert.doesNotMatch(confirmed,/sendTextInCurrentLab/);
+  assert.doesNotMatch(reconciled,/sendTextInCurrentLab/);
+});
