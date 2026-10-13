@@ -11,24 +11,29 @@ const VALID_SAMPLE=new Set(['required','optional','not-applicable']);
 
 // Inspect only versioned examples; no access to OS or provider secrets.
 export function parseTemplateInventory(source){
- const entries=new Map(),duplicates=[];
- for(const raw of String(source).split(/\r?\n/)){
+ const entries=new Map(),duplicates=[],invalidLines=[];
+ for(const [index,raw] of String(source).split(/\r?\n/).entries()){
    const line=raw.trim();
    if(!line||line.startsWith('#'))continue;
    const m=/^(?:export\s+)?([A-Z][A-Z0-9_]*)\s*=\s*(.*)$/.exec(line);
-   if(!m)continue;
+   if(!m){invalidLines.push(index+1);continue;}
    const rawValue=m[2].trim();
    const quoted=/^(?:"([\s\S]*)"|'([\s\S]*)')(?:\s+#.*)?$/.exec(rawValue);
+   if((rawValue.startsWith('"')||rawValue.startsWith("'"))&&!quoted){
+     invalidLines.push(index+1);continue;
+   }
    const value=quoted?(quoted[1]??quoted[2]):rawValue.replace(/\s+#.*$/,'').trim();
    if(entries.has(m[1]))duplicates.push(m[1]);
    entries.set(m[1],value);
  }
- return{entries,duplicates};
+ return{entries,duplicates,invalidLines};
 }
 
 const URL_SCHEMES=new Set(['http:','https:','postgres:','postgresql:','mysql:','mongodb:','mongodb+srv:','redis:','rediss:']);
 function sampleMatchesDeclaredType(value,record,owner){
- if(value==='')return true; // Empty placeholders are intentional.
+ // Empty string/URL/secret placeholders are intentional, but typed control
+ // switches, counts and enums cannot silently become unset in required samples.
+ if(value==='')return !['boolean','integer','number','enum'].includes(record.type);
  switch(record.type){
   case 'boolean':return value==='true'||value==='false';
   case 'integer':return /^(?:0|[1-9][0-9]*)$/.test(value)&&Number.isSafeInteger(Number(value));
@@ -50,7 +55,9 @@ export function checkEnvironmentManifest(samples,registry=CONFIG_MANIFEST_V665){
  const findings=[],add=(code,owner,key)=>findings.push({code,owner,key});
  for(const [owner,meta] of Object.entries(registry.surfaces)){
   const catalog=registry.variables[owner]||{};
-  const parsed=meta.examplePath?parseTemplateInventory(samples[owner]??''):{entries:new Map(),duplicates:[]};
+  const parsed=meta.examplePath?parseTemplateInventory(samples[owner]??''):{entries:new Map(),duplicates:[],invalidLines:[]};
+  // Only line numbers may enter diagnostics; never echo malformed lines or values.
+  for(const line of parsed.invalidLines)add('MANIFEST_INVALID_SAMPLE_LINE',owner,'line '+line);
   for(const key of parsed.duplicates)add('DUPLICATE_SAMPLE_KEY',owner,key);
   for(const [key,record] of Object.entries(catalog)){
    if(!VALID_TYPES.has(record.type)||!VALID_VISIBILITY.has(record.visibility)||
