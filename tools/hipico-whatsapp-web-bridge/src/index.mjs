@@ -1211,8 +1211,12 @@ async function recoverConfirmedLabConversation(entry,confirmedAt) {
   );
   if(plan.scopeConflict||!plan.raceScope)return false;
   try {
-    await labConversationContext.recoverConfirmed(sender,plan.raceScope,confirmedAt);
-    return true;
+    // The context authority can legitimately decline a stale ACK or protect
+    // newer sender context. Never interpret that as persisted recovery: the
+    // encrypted original is retained until its bounded TTL expires.
+    return (await labConversationContext.recoverConfirmed(
+      sender,plan.raceScope,confirmedAt
+    ))===true;
   }catch{
     await log('LAB_CONTEXT_ACK_RECOVERY_FAILED');
     return false;
