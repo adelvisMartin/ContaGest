@@ -38,13 +38,13 @@ export async function runHipicoSmoke(baseUrl, request = fetch) {
     }
   };
   await check('status', '/api/hipico/status', 'application/json', async (response) => {
-    const body = await response.json();
-    // A JSON-shaped body served as HTML or JSONP is not an authorized status response.
-    // Ignore optional charset parameters, but reject ambiguous/mixed media types.
+    // Validate the declared media type *before* parsing untrusted bytes.
+    // Neither HTML/JSONP nor mixed Content-Type headers may be interpreted as JSON.
     const contentType = response.headers.get('content-type')?.split(';', 1)[0]?.trim().toLowerCase();
-    return contentType === 'application/json'
-      && response.headers.get('cache-control')?.includes('no-store')
-      && body?.ok === true
+    if (contentType !== 'application/json') return false;
+    if (!response.headers.get('cache-control')?.includes('no-store')) return false;
+    const body = await response.json();
+    return body?.ok === true
       && body?.service === 'hipico-control-operations'
       && MODES.has(body?.mode)
       && typeof body?.persistence?.ready === 'boolean'
