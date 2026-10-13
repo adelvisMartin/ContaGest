@@ -323,6 +323,31 @@ no de la respuesta del backend ni del contexto.
 dos sesiones, recuperación y soak #119/#120. El QA unitario no certifica
 WhatsApp real. SOURCE permanece NO-GO por el gate #728/#154.
 
+## Continuidad de la conversación tras una confirmación LAB
+
+Cuando un mensaje de respuesta LAB ya tiene un **ACK durable confirmado**,
+un cierre del Bridge antes de guardar el contexto puede dejar la carrera
+sin memoria auxiliar. Al reiniciar, el Bridge recupera **solo** la referencia
+completa de carrera (número, hipódromo y fecha ISO) explícita en el mensaje
+de origen, de ese mismo remitente y con un acuse de entrega confirmado.
+Esto no crea un nuevo envío WhatsApp, no intenta reabrir la cola ni altera
+la autoridad del resultado canónico.
+
+La recuperación utiliza la fecha original del ACK y no alarga el límite
+de 20 minutos. Si existe una referencia más nueva del mismo remitente,
+si el ACK venció, si la identidad es ambigua o si la fecha no es válida,
+el sistema no restaura nada. La memoria permanece limitada al grupo
+LAB pinneado y a las claves HMAC; nunca almacena el JID, contenido completo,
+números de saldo o credenciales. El Bridge conserva el orden de
+`prepare → begin → send → confirm → remember`; este caso solamente
+rehidrata una pista después de un ACK **ya confirmado**.
+
+Una prueba de regresión de `lab-integrated-orchestration.test.mjs`
+comprueba además que la referencia completada en varios mensajes sea
+la enviada al backend, y no solo a la comprobación de handoff. Las
+pruebas de `lab-conversation-context.test.mjs` cubren reinicio,
+caducidad original, aislamiento y ausencia de reenvío.
+
 ## Recuperación inmutable de resúmenes de carrera LAB
 
 El propósito `summary` utiliza ahora el mismo recibo durable de
