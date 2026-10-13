@@ -5,6 +5,9 @@ import crypto from 'node:crypto';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import {execFile} from 'node:child_process';
+import {promisify} from 'node:util';
+import {fileURLToPath} from 'node:url';
 import {queryCanonicalLab} from '../src/lab-canonical-query.mjs';
 import {createLabTestReplyJournal} from '../src/lab-test-reply-journal.mjs';
 
@@ -198,4 +201,40 @@ test('transport integrity contract preserves one canonical query before journal 
   assert.match(section,/journalRecord\?\.state === 'ambiguous'/);
   assert.match(section,/visibleLabHasTag\(tag\)/);
   assert.doesNotMatch(section,/sendTextInCurrentSource\(/);
+});
+
+
+test('independent Node process restart quarantines persisted sending before any new Enter',async()=>{
+  const dir=await fs.mkdtemp(path.join(os.tmpdir(),'hipico-real-restart-'));
+  try{
+    const rootDir=path.join(dir,'ack');
+    const id='false_'+LAB+'_child-restart_123456789012@lid';
+    const original=createLabTestReplyJournal({rootDir,labGroupId:LAB,sourceGroupId:SOURCE});
+    await original.initialize();
+    await original.prepare(id);
+    await original.begin(id);
+    const moduleFile=fileURLToPath(new URL('../src/lab-test-reply-journal.mjs',import.meta.url));
+    const code=[
+      "import {pathToFileURL} from 'node:url';",
+      'const args=process.argv.slice(1);',
+      'const {createLabTestReplyJournal}=await import(pathToFileURL(args[0]).href);',
+      'const journal=createLabTestReplyJournal({rootDir:args[1],labGroupId:args[2],sourceGroupId:args[3]});',
+      'const init=await journal.initialize();',
+      'const row=await journal.read(args[4]);',
+      'let replayBlocked=false;',
+      'try { await journal.begin(args[4]); }',
+      "catch(error){replayBlocked=error.message==='LAB_TEST_JOURNAL_STATE_CONFLICT';}",
+      'process.stdout.write(JSON.stringify({recovered:init.recovered,state:row.state,replayBlocked}));'
+    ].join('\n');
+    const run=promisify(execFile);
+    const result=await run(process.execPath,[
+      '--input-type=module','-e',code,moduleFile,rootDir,LAB,SOURCE,id
+    ],{timeout:10_000,maxBuffer:16_384});
+    assert.deepEqual(JSON.parse(result.stdout),{
+      recovered:1,state:'ambiguous',replayBlocked:true
+    });
+    assert.equal((await createLabTestReplyJournal({
+      rootDir,labGroupId:LAB,sourceGroupId:SOURCE
+    }).read(id)).state,'ambiguous');
+  }finally{await fs.rm(dir,{recursive:true,force:true});}
 });
