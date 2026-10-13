@@ -75,6 +75,25 @@ test('invalid scope and unknown ownership never silently allow a LAB send',async
   assert.equal((await checkLabHandoff(input,unknown)).allowed,false);
 });
 
+test('missing or overlapping pinned channels never turn a partial handoff check into permission',async()=>{
+  let calls=0;
+  const read=async(group:string,sender:string,context:string|null)=>{
+    calls++;
+    return initialHandoffState(group,sender,context,now);
+  };
+  for(const config of [
+    {...input,sourceGroupKey:''},
+    {...input,labGroupKey:''},
+    {...input,sourceGroupKey:'control-hipico-lab'},
+    {...input,labGroupKey:'official-source'},
+    {...input,sender:''}
+  ]){
+    assert.deepEqual(await checkLabHandoff(config,read),
+      {allowed:false,reason:'LAB_HANDOFF_SCOPE_INVALID'});
+  }
+  assert.equal(calls,0,'no DB reads with incomplete or overlapping pinned identity');
+});
+
 test('DB outage is propagated for route 503 fail closed, never mistaken for a bot-owned row',async()=>{
   await assert.rejects(checkLabHandoff(input,async()=>{throw new Error('DB_UNAVAILABLE');}),
     /DB_UNAVAILABLE/);
