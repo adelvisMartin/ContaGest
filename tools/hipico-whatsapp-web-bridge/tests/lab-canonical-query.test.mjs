@@ -499,3 +499,56 @@ test('race summaries reject plural money-related topics on LAB Bridge',()=>{
   assert.equal(labReadOnlyQueryPurpose('¿Resumen de la carrera 5?',classification),'summary');
   assert.equal(labReadOnlyQueryPurpose('¿Estado de carrera 5?',classification),'status');
 });
+
+
+test('canonical empty-text human handoff propagates deny and never grants a LAB reply',async()=>{
+  const authority={sourceWriteAllowed:false,financialAuthority:false,domainEffectsAllowed:false};
+  let count=0;
+  const result=await queryCanonicalLab({...base,
+    fetchImpl:async()=>{
+      count++;
+      return json({ok:true,mode:'shadow',status:'LAB_HANDOFF_HELD',text:'',authority});
+    }
+  });
+  assert.deepEqual(result,{available:false,reason:'LAB_HANDOFF_HELD'});
+  assert.equal(count,1,'human takeover must not retry a canonical read');
+});
+
+test('canonical LAB handoff cannot be spoofed by wrong authority, mode or a nonempty reply',async()=>{
+  const deny={ok:true,mode:'shadow',status:'LAB_HANDOFF_HELD',text:'',
+    authority:{sourceWriteAllowed:false,financialAuthority:false,domainEffectsAllowed:false}
+  };
+  const tampered=[
+    {...deny,mode:'source'},
+    {...deny,ok:false},
+    {...deny,text:'Bot should send anyway'},
+    {...deny,text:null},
+    {...deny,text:undefined},
+    {...deny,authority:{...deny.authority,sourceWriteAllowed:true}},
+    {...deny,authority:{...deny.authority,financialAuthority:true}},
+    {...deny,authority:{...deny.authority,domainEffectsAllowed:true}},
+    {...deny,authority:null}
+  ];
+  for(const candidate of tampered){
+    let calls=0;
+    const result=await queryCanonicalLab({...base,
+      fetchImpl:async()=>{
+        calls++;
+        return json(candidate);
+      }
+    });
+    assert.deepEqual(result,{available:false,reason:'LAB_CANONICAL_INVALID_RESPONSE'},
+      'untrusted/noisy takeover must never become send authority');
+    assert.equal(calls,1);
+  }
+});
+
+test('canonical ordinary empty responses still fail closed and do not impersonate takeover',async()=>{
+  const authority={sourceWriteAllowed:false,financialAuthority:false,domainEffectsAllowed:false};
+  for(const status of ['CANONICAL_STATE_FOUND','REVIEW_REQUIRED','LAB_HANDOFF_CLEAR']){
+    const result=await queryCanonicalLab({...base,fetchImpl:async()=>json({
+      ok:true,mode:'shadow',status,text:'',authority
+    })});
+    assert.deepEqual(result,{available:false,reason:'LAB_CANONICAL_INVALID_RESPONSE'},status);
+  }
+});

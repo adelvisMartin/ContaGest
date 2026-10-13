@@ -158,8 +158,18 @@ export async function queryCanonicalLab({
        authority?.sourceWriteAllowed!==false||
        authority?.financialAuthority!==false||
        authority?.domainEffectsAllowed!==false||
-       typeof body.text!=='string'||!body.text.trim()||body.text.length>1500||
        !/^[A-Z0-9_]{4,80}$/.test(String(body.status||''))){
+      return{available:false,reason:'LAB_CANONICAL_INVALID_RESPONSE'};
+    }
+    // The authoritative backend intentionally uses an empty text on takeover.
+    // This is an explicit DENY, never an answer or a send authorization.
+    // Only the exact no-text handoff contract may cancel a pending LAB replay.
+    if(body.status==='LAB_HANDOFF_HELD'){
+      return body.text===''
+        ? {available:false,reason:'LAB_HANDOFF_HELD'}
+        : {available:false,reason:'LAB_CANONICAL_INVALID_RESPONSE'};
+    }
+    if(typeof body.text!=='string'||!body.text.trim()||body.text.length>1500){
       return{available:false,reason:'LAB_CANONICAL_INVALID_RESPONSE'};
     }
     return{available:true,reason:String(body.status),text:body.text};
