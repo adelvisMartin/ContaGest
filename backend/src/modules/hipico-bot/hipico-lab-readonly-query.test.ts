@@ -65,3 +65,18 @@ test('race summary is read-only and excludes transcript summaries and financial 
   assert.equal(isLabInformationRequest('¿Estado de carrera 5?','summary',safe),false);
   assert.equal(isLabInformationRequest('Resumen de carrera 5','summary',classified('race_result','review')),false);
 });
+
+test('canonical backend blocks plural betting and balance words in read-only summaries',()=>{
+  const safe=classified('conversation','safe');
+  for(const term of ['saldos','apuestas','jugadas','premios','pagos','montos',
+    'saldo','apuesta','premio','pago','monto','depositar','retirar',
+    'transferencias','ganancias','deudas','liquidaciones','balances',
+    'depósitos','retiros','cobros','bolívares']){
+    const summary='¿Resumen de '+term+' de la carrera 5?';
+    assert.equal(isLabInformationRequest(summary,'summary',safe),false,summary);
+    assert.equal(isLabInformationRequest('¿Estado de carrera 5 y '+term+'?','status',safe),
+      false,term);
+  }
+  assert.equal(isLabInformationRequest('¿Resumen de la carrera 5?','summary',safe),true);
+  assert.equal(isLabInformationRequest('¿Estado de carrera 5?','status',safe),true);
+});

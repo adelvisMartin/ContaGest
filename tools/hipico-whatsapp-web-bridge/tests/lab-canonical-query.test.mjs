@@ -483,3 +483,19 @@ test('lost HTTP in a scoped LAB race summary preserves immutable read-only reque
   assert.equal(result.reason,'CANONICAL_RACE_SUMMARY');
   assert.equal(result.text,'Resumen interno, sin carácter oficial.');
 });
+
+test('race summaries reject plural money-related topics on LAB Bridge',()=>{
+  const classification={intent:'conversation',risk:'safe'};
+  const monetaryTopics=['saldos','apuestas','jugadas','premios','pagos','montos',
+    'saldo','apuesta','premio','pago','monto','depositar','retirar',
+    'transferencias','ganancias','deudas','liquidaciones','balances',
+    'depósitos','retiros','cobros','bolívares'];
+  for(const topic of monetaryTopics){
+    const text='¿Resumen de '+topic+' de la carrera 5?';
+    assert.equal(labReadOnlyQueryPurpose(text,classification),null,text);
+    assert.equal(labReadOnlyQueryPurpose('¿Estado de carrera 5 y '+topic+'?',classification),
+      null,'state must not bypass monetary gate: '+topic);
+  }
+  assert.equal(labReadOnlyQueryPurpose('¿Resumen de la carrera 5?',classification),'summary');
+  assert.equal(labReadOnlyQueryPurpose('¿Estado de carrera 5?',classification),'status');
+});
