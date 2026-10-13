@@ -1360,3 +1360,47 @@ test('non-handoff eligibility outage before LAB Enter rolls back WAL without ter
     assert.deepEqual(calls,['prepared','logged'],label);
   }
 });
+
+
+test('failed encrypted deletion after fsynced handoff does not reclassify pre-Enter WAL as ambiguous',async()=>{
+  const vm=await import('node:vm');
+  const source=await fs.readFile(new URL('../src/index.mjs',import.meta.url),'utf8');
+  const chunks=[
+    ['pending',source.slice(source.indexOf('async function resumePendingLabQueries('),
+      source.indexOf('let labTestProcessing=false;'))],
+    ['visible',source.slice(source.indexOf('async function processLabTestInput()'),
+      source.indexOf('async function visibleLabHasTag('))]
+  ];
+  for(const [label,section] of chunks){
+    const begin=section.indexOf('const eligibleToSend=await checkLabSendEligibility(eligibilityArgs)');
+    const stop=section.indexOf('continue;\n      }',begin);
+    assert.ok(begin>=0&&stop>begin,label);
+    const gate=section.slice(begin,stop+'continue;\n      }'.length);
+    const events=[];
+    let durable=false,wal='sending';
+    const context={
+      eligibilityArgs:{},tag:'[LABTEST:012345abcd]',
+      row:{id:MESSAGE},entry:{messageId:MESSAGE},
+      checkLabSendEligibility:async()=>({allowed:false,reason:'LAB_HANDOFF_HELD'}),
+      rememberLabSeen:()=>events.push('seen'),
+      saveLabSeenNow:async()=>{durable=true;events.push('fsync')},
+      labTestReplyJournal:{
+        retryPrepared:async()=>{
+          assert.equal(durable,true);
+          wal='prepared';
+          events.push('prepared');
+        },
+        markAmbiguous:async()=>{throw new Error('PRE_ENTER_CANCEL_IS_NOT_AMBIGUOUS');}
+      },
+      labPendingInbox:{
+        remove:async()=>{events.push('remove-failed');throw new Error('DISK_REMOVE_FAILED');}
+      },
+      log:async line=>events.push(line.includes('CLEANUP_DEFERRED')?'deferred':'gate-logged')
+    };
+    await vm.runInNewContext('(async()=>{for(const once of [true]){'+gate+'}})()',context);
+    assert.equal(wal,'prepared');
+    assert.deepEqual(events,[
+      'seen','fsync','prepared','remove-failed','deferred','gate-logged'
+    ],label);
+  }
+});

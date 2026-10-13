@@ -1405,7 +1405,11 @@ async function resumePendingLabQueries(visibleIds = new Set(), alreadySeenIds = 
           rememberLabSeen(entry.messageId);
           await saveLabSeenNow();
           await labTestReplyJournal.retryPrepared(entry.messageId);
-          await labPendingInbox.remove(entry.messageId);
+          // At this point the seen marker is fsynced and WAL is prepared.
+          // Ciphertext removal is housekeeping; a disk fault must not turn
+          // a pre-Enter cancellation into a spurious ambiguous-send transition.
+          try{await labPendingInbox.remove(entry.messageId);}
+          catch{await log('LAB_PENDING_HANDOFF_CLEANUP_DEFERRED id='+tag);}
         }else{
           await labTestReplyJournal.retryPrepared(entry.messageId);
         }
@@ -1660,7 +1664,8 @@ async function processLabTestInput() {
           rememberLabSeen(row.id);
           await saveLabSeenNow();
           await labTestReplyJournal.retryPrepared(row.id);
-          await labPendingInbox?.remove(row.id);
+          try{await labPendingInbox?.remove(row.id);}
+          catch{await log('LAB_HANDOFF_CLEANUP_DEFERRED id='+tag);}
         }else{
           await labTestReplyJournal.retryPrepared(row.id);
         }
