@@ -261,22 +261,8 @@ confirmaciones de jugadas ni nuevos envíos.
 
 Pruebas agregadas de cero registros, entrada reciente, frontera de ocho
 minutos, expiración, ausencia de identificadores en la respuesta y
-contrato de HEALTH. La función efectiva `snapshot()` se ejecutó con
-entradas temporales controladas y verificó las transiciones; no reemplaza
+contrato de HEALTH. Una regresión adicional comprueba simultáneamente dos
+consultas a los 4, 8, 9:59 y 10 minutos, incluida la eliminación exacta
+del registro vencido y la continuidad del segundo. La función efectiva
+`snapshot()` se ejecutó con entradas temporales controladas; no reemplaza
 QA de Node en Windows ni las verificaciones de integración del PR.
-
-
-## Telemetría agregada de caducidad LAB (2026-10-13)
-
-El health local del Bridge muestra `labQueries` (consultas cifradas vigentes),
-`labNearExpiry` (cantidad que ya alcanzó los últimos **2 minutos** de su TTL
-original de 10 minutos) y `labOldestSec` (edad en segundos, truncada, de la
-consulta vigente más antigua). No aparecen texto, remitentes, JID, token,
-hipódromo, carrera ni referencias a archivos en estas métricas.
-
-Los números ayudan a detectar presión en recuperación y backend sin atribuir
-entrega ni habilitar SOURCE; al vencer el plazo se elimina la entrada cifrada
-expirada y la consulta ya no puede volver a originar un envío nuevo. La regresión
-con reloj controlado verifica 4, 8, 9:59 y 10 minutos, la desaparición
-estricta del registro vencido y la ausencia de identificadores en el snapshot.
-El contador no constituye prueba de E2E Windows/WhatsApp ni de CI exact-SHA.
