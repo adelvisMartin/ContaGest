@@ -43,6 +43,20 @@ const SAFE_LAB_INFORMATION_STATUSES=new Set([
   'LAB_CANONICAL_REVISION_CHANGED'
 ]);
 
+// Successful verified facts have exactly one read-only purpose. A response
+// belonging to a different race question cannot authorize WhatsApp Enter.
+const CANONICAL_FACT_PURPOSE=Object.freeze({
+  CANONICAL_STATE_FOUND:'status',
+  CANONICAL_RESULT_CONFIRMED_INTERNAL:'result',
+  CANONICAL_RACE_SUMMARY:'summary',
+  CANONICAL_NEXT_RACE:'next',
+  CANONICAL_ACTIVE_RACE:'active',
+  CANONICAL_SCHEDULE_FOUND:'schedule'
+});
+const CANONICAL_RECEIPT_PURPOSES=new Set([
+  'status','result','summary','next','active','schedule'
+]);
+
 const MAX_LAB_CANONICAL_BYTES=16_384;
 // Bound decompressed UTF-8 bytes as they arrive, before allocating a full body.
 // Native fetch exposes body.getReader(); streamless test adapters use text().
@@ -214,6 +228,9 @@ export async function queryCanonicalLab({
       return{available:false,reason:'LAB_CANONICAL_REVIEW_REQUIRED'};
     }
     if(!SAFE_LAB_INFORMATION_STATUSES.has(body.status)||
+       (CANONICAL_FACT_PURPOSE[body.status] && CANONICAL_FACT_PURPOSE[body.status]!==purpose)||
+       (['LAB_CANONICAL_RECOVERED','LAB_CANONICAL_REVISION_CHANGED'].includes(body.status)&&
+        !CANONICAL_RECEIPT_PURPOSES.has(purpose))||
        typeof body.text!=='string'||!body.text.trim()||body.text.length>1500){
       return{available:false,reason:'LAB_CANONICAL_INVALID_RESPONSE'};
     }
