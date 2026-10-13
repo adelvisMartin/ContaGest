@@ -64,3 +64,19 @@ function requireSafeRead(){
 }
 import {readFileSync} from 'node:fs';
 function requireSource(){return readFileSync(new URL('./hipico-lab-schedule-read.ts',import.meta.url),'utf8');}
+
+
+test('LAB SQL snapshot exposes revision metadata only and remains owner/group/meeting scoped',()=>{
+  const code=readFileSync(new URL('../hipico/race.store.ts',import.meta.url),'utf8');
+  const first=code.indexOf('async listRacesForLabSnapshot(');
+  const next=code.indexOf('async getRace(',first);
+  assert.ok(first>0&&next>first);
+  const sql=code.slice(first,next);
+  assert.match(sql,/scope\(ownerId,groupKey\)/);
+  assert.match(sql,/owner_id=\$\{ownerId\}::uuid AND group_key=\$\{groupKey\}/);
+  assert.match(sql,/meeting_id=\$\{meetingId\}::uuid/);
+  assert.match(sql,/state_version AS "stateVersion"/);
+  assert.match(sql,/updated_at AS "updatedAt"/);
+  assert.match(sql,/LIMIT 201/);
+  assert.doesNotMatch(sql,/result_data|resultData|participant|odds|amount|INSERT|UPDATE|DELETE/i);
+});
