@@ -150,3 +150,22 @@ test('verified race summary takes precedence over local reference recap; arbitra
   assert.match(financial,/revisión de un operador/);
   assert.doesNotMatch(financial,/estado abierta/);
 });
+
+test('verified lost-HTTP receipt remains a natural, evidence-matched answer on retry',()=>{
+  const classification={risk:'safe',intent:'conversation'};
+  const message='Resumen interno de carrera 5: abierta, sin resultado confirmado.';
+  const canonical={available:true,reason:'LAB_CANONICAL_RECOVERED',text:message};
+  const answer={source:'LECTURA_CANÓNICA_LIMITADA',reason:canonical.reason,text:message};
+  const summaryPlan={raceNumber:5,raceScope:scope,summaryRequested:true};
+  assert.equal(composeLabAssistantReply({classification,plan:summaryPlan,canonical,answer}),message);
+  const statusPlan={raceNumber:5,raceScope:scope,queryCategory:'STATUS'};
+  assert.equal(composeLabAssistantReply({classification,plan:statusPlan,canonical,answer}),message);
+  const untrusted=composeLabAssistantReply({classification,plan:summaryPlan,canonical,
+    answer:{...answer,text:'Pago confirmado 1000'}});
+  assert.doesNotMatch(untrusted,/Pago confirmado 1000/);
+  assert.match(untrusted,/no he revisado el historial completo/);
+  const forbidden=composeLabAssistantReply({classification:{...classification,risk:'monetary'},
+    plan:summaryPlan,canonical,answer});
+  assert.match(forbidden,/revisión de un operador/);
+  assert.doesNotMatch(forbidden,/Resumen interno de carrera 5/);
+});

@@ -40,3 +40,28 @@ test('new canonical schedule purposes require specific informational-only topic'
   assert.equal(isLabInformationRequest('Registra la programación','schedule',{intent:'conversation',risk:'review'}),false);
   assert.equal(isLabInformationRequest('¿Qué carrera sigue?','next',{intent:'offer_player',risk:'monetary'}),false);
 });
+
+test('race summary is read-only and excludes transcript summaries and financial requests',()=>{
+  const safe=classified('conversation','safe');
+  const cases=[
+    'Hazme un resumen de la carrera 5',
+    '¿Cuál es el resumen de carrera 5?',
+    'Dame una síntesis de la carrera 5'
+  ];
+  for(const text of cases) assert.equal(isLabInformationRequest(text,'summary',safe),true,text);
+  for(const text of [
+    'hazme un resumen de lo que hablamos',
+    'hazme un resumen de lo que hablamos sobre carrera 5',
+    'resume los mensajes del chat de carrera 5',
+    'resumen de saldo de carrera 5',
+    'Resumen de apuestas y saldos de carrera 5',
+    'Hazme resumen de pagos, premios y jugadas de la carrera 5',
+    '¿Resumen de transferencias y ganancias de carrera 5?',
+    'Resumen de liquidaciones de la carrera 5',
+    '¿resumen de apuesta carrera 5?',
+    'resumen de carrera 5, confirma el pago',
+    'resumen de carrera 5; registrar cierre'
+  ])assert.equal(isLabInformationRequest(text,'summary',safe),false,text);
+  assert.equal(isLabInformationRequest('¿Estado de carrera 5?','summary',safe),false);
+  assert.equal(isLabInformationRequest('Resumen de carrera 5','summary',classified('race_result','review')),false);
+});

@@ -10,6 +10,8 @@ on:
       - 'backend/src/modules/hipico-bot/hipico-conversation-engine*.ts'
       - 'backend/src/modules/hipico-bot/hipico-response-safety*.ts'
       - 'backend/src/modules/hipico-bot/hipico-autonomous-source-reply.integration.ts'
+      - 'backend/src/modules/hipico-bot/hipico-lab-canonical-receipt*.ts'
+      - 'backend/src/modules/hipico-bot/hipico-handoff.store.ts'
       - 'backend/prisma/migrations/20260924142000_hipico_autonomous_source_reply_v15/migration.sql'
       - 'backend/package.json'
       - 'backend/.env.example'
@@ -96,6 +98,9 @@ jobs:
       - name: WhatsApp Bridge syntax and unit regressions
         run: npm --prefix tools/hipico-whatsapp-web-bridge run qa
 
+      - name: Loopback TCP fault injection and LAB WAL restart gate
+        run: npm --prefix tools/hipico-whatsapp-web-bridge run test:lab:tcp
+
       - name: SOURCE policy diagnostic stays fail-closed
         working-directory: tools/hipico-whatsapp-web-bridge
         run: npm run source:policy
@@ -105,6 +110,9 @@ jobs:
 
       - name: PostgreSQL autonomous reply durability E2E
         run: npm --workspace backend run test:hipico:autonomous-reply
+
+      - name: PostgreSQL LAB canonical receipt fault-injection E2E
+        run: npm --workspace backend run test:hipico:lab-receipt:postgres
 
       - name: Backend build exact candidate
         run: npm --workspace backend run build

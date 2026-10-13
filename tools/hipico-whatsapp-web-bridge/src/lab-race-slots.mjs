@@ -28,6 +28,9 @@ export function parseLabRaceSlotReply(text, prior = null) {
       prior.raceNumber > 99 || prior.raceScope || !raw ||
       raw.length > 140 || /[\n\r\[\]{};<>$\x60*]/.test(raw) ||
       RISK.test(normalize(raw))) return null;
+  // "La sexta" (or "la quinta") is an ordinal RACE reference, not the
+  // name of a racetrack. Never persist it into the partial track slot.
+  if(/^(?:en\s+)?(?:la\s+)?(?:primera|segunda|tercera|cuarta|quinta|sexta|septima|octava|novena|decima)[.!?]?$/i.test(normalize(raw)))return null;
   const storedTrack = prior.raceTrack ? validLabTrack(prior.raceTrack) : null;
   const storedDate = prior.raceDate && validLabDate(prior.raceDate) ? prior.raceDate : null;
   const full = raw.match(/^(?:en\s+)?(?:(?:el\s+)?hip[oó]dromo\s+)?([\p{L}][\p{L}\p{N} '-]{1,79}?)\s+(?:el|fecha)\s+(\d{4}-\d{2}-\d{2})[.!?]?$/iu);

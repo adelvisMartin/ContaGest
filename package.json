@@ -123,7 +123,7 @@
     "audit:vertical-assets": "node scripts/vertical-asset-system-audit-v7075.mjs"
   },
   "devDependencies": {
-    "@playwright/test": "1.63.0"
+    "@playwright/test": "1.64.0"
   },
   "overrides": {
     "deepmerge-ts": "8.0.1",

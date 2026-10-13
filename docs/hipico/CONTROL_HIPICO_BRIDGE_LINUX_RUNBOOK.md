@@ -237,3 +237,165 @@ y pruebas reales; #899 no debe cerrarse por el merge de código.
 Las pruebas unitarias y de contratos se versionan en GitHub, pero no sustituyen
 un fault-injection real (commit/timeout/restart), Postgres aislado y QA de
 WhatsApp Windows con dos sesiones en LAB.
+
+## Recuperación de estado/llegada LAB con prueba de revisión (#899 fase 2)
+
+`POST /api/v1/hipico-bot/bridge/lab/query` dispone de un recibo de **solo lectura**
+para preguntas `purpose=status` y `purpose=result` cuando el read model canónico
+verificó el agregado y expone `state`, `version`, `updatedAt` y respuesta textual.
+Se conserva el **digest SHA-256** del texto y el fingerprint de versión en
+`HipicoResponseReceipt` ANTES de responder HTTP, sin persistir el cuerpo.
+La clave vincula owner, SOURCE, grupo y canal LAB, remitente e ID de mensaje.
+
+Si el HTTP falla después de guardar el recibo y antes del `prepare` local,
+el Bridge reintenta **una sola vez con el mismo envelope**. El backend vuelve
+a leer el agregado: exige el mismo estado, revisión, timestamp, propósito,
+hash de respuesta, política, identidad y recibo sin evidencia financiera.
+Tras una corrección o cambio de versión devuelve
+`LAB_CANONICAL_REVISION_CHANGED` y solicita una consulta nueva, sin datos antiguos.
+El handoff humano global o de carrera, falta de persistencia, consulta antigua
+(más de 90 segundos) y cualquier inconsistencia de recibo bloquean la recuperación.
+
+Una respuesta HTTP exitosa NO confirma entrega WhatsApp. El Bridge mantiene
+`labTestReplyJournal.prepare → begin → Enter → confirm` y reconciliación por
+etiqueta, nunca reintenta un Enter ambiguo. SOURCE no obtiene permiso de envío.
+
+**Límites:** los propósitos `next/active/schedule/participants` no tienen
+todavía una revisión canónica suficientemente fuerte para usar este recibo.
+No garantiza snapshot serializable entre lectura y una corrección concurrente.
+Faltan fault-injection PostgreSQL, WhatsApp Windows físico y soak 24–72h;
+por ello #899 sigue abierto. Los tests locales no sustituyen esos gates.
+
+## Inyección de fallos real con PostgreSQL aislado (#899 — CI)
+
+El workflow `Hípico Autonomous WhatsApp v16` ahora ejecuta
+`npm --workspace backend run test:hipico:lab-receipt:postgres` después del E2E
+de source-reply y ANTES del build del backend. Comparte únicamente la base
+efímera creada por GitHub Actions, con nombre obligado
+`hipico_autoreply_e2e_<RUN_ID>_<ATTEMPT>` y conexión exclusivamente en loopback.
+El script comprueba que `DATABASE_URL` y `HIPICO_E2E_DATABASE_URL` coinciden
+y aborta si apunta a una base distinta o remota. No utiliza Supabase real.
+
+El fixture aplica `20260829214500_hipico_response_handoff` (CREATE IF NOT EXISTS)
+y ejecuta consultas de lectura/escritura contra `HipicoResponseReceipt`:
+
+- commit → inyección de excepción de conexión perdida antes de devolver el HTTP → mismo mensaje, revisión y hash se recuperan con una sola fila;
+- `BEGIN/ROLLBACK` de un recibo parcial → el registro no queda comprometido y una solicitud posterior crea el recibo correcto;
+- estado/versión/texto cambiado → `LAB_CANONICAL_REVISION_CHANGED`, sin reemplazar la primera respuesta;
+- dos consultas concurrentes → índice único y recibo inmutable, sin dos filas;
+- `ambiguous`, antigüedad vencida o takeover humano → no recuperar.
+
+**Límites de evidencia:** la pérdida HTTP se inyecta en la frontera del
+servicio tras completar el commit, no es un corte real de TCP/Chromium ni
+demuestra que WhatsApp envió una sola vez. El E2E utiliza PostgreSQL real
+pero no certifica una corrección concurrente dentro de una transacción
+serializable. La evidencia de logs del SHA exacto y el ensayo físico en LAB
+se conservan como gates antes de cerrar #899 y #837.
+
+## Recuperación versionada de próxima carrera, carrera activa y programación (#899)
+
+Además de estado/llegada, el backend ahora autoriza un recibo canónico para
+`purpose=next|active|schedule` solo si **todas las carreras de la reunión**
+poseen ID, `state_version`, `updated_at`, número, reunión, estado y horario
+coherentes. `RaceLifecycleStore.listRacesForLabSnapshot` lee solo metadatos
+(no carga `result_data`, nombres, apuestas ni participantes), con **LIMIT 201**; la
+proyección rechaza la reunión si sobrepasa 200 o contiene una revisión incompleta.
+El texto mostrado y la huella SHA-256 se derivan de **una única lectura**
+de la reunión, reutilizada por `RaceQueryService`, sin otra consulta susceptible
+de carrera entre cálculo de respuesta y cálculo de versión.
+
+La huella se compone de la identidad de la reunión y todas las carreras
+ordenadas por ID (estado, versión, horario, última actualización y número),
+incluidas las no mostradas. No incluye nombres de caballos, participantes,
+cuotas, apuestas ni `resultData`. Una adición, eliminación, corrección o
+nuevo estado en cualquier carrera cambia la huella. El recibo inmutable
+existente combina `revisionToken`, versión de política y hash del texto;
+la respuesta HTTP solo se devuelve como recuperable cuando esos datos
+coinciden con el recibo previo y no existe handoff humano.
+
+Los recibos de `status|result` anteriores conservan su fingerprint previo.
+Si el conjunto es ambiguo, tiene más de 200 carreras, falta una revisión
+o el horario de la próxima carrera venció, el backend responde sin inventar
+programación. El Bridge mantiene un reintento HTTP con la misma identidad
+antes de cualquier intención de envío WhatsApp y requiere el ACK LAB durable.
+
+**QA aún exigido:** tests exact-SHA, PostgreSQL real con una carrera editada
+entre commit y reintento, WhatsApp Web físico con caída de red, handoff, soak
+y el control de una actualización concurrente durante la entrega. La huella
+cubre una lectura consistente de una sentencia SQL, no impone transacción
+serializable a todo el intercambio HTTP. SOURCE sigue en NO-GO.
+
+## PostgreSQL real: corrección posterior de carrera y nueva programación (#899)
+
+La suite `test:hipico:lab-receipt:postgres` contiene dos escenarios
+adicionales que leen las carreras desde `RaceLifecycleStore` en una base
+efímera de PostgreSQL y concilian contra `HipicoResponseReceipt`:
+
+1. El backend confirma «próxima carrera». Se modifica con `UPDATE` una
+carrera distinta que no aparece en ese texto. La siguiente lectura mantiene
+el texto pero cambia la huella de la reunión; el mismo ID de mensaje obtiene
+`LAB_CANONICAL_REVISION_CHANGED` y se conserva intacto el recibo anterior.
+2. El backend confirma una cartelera; después se inserta otra carrera.
+La cartelera nueva contiene la carrera añadida y un digest diferente.
+El mismo ID queda bloqueado; una **nueva consulta** crea su recibo nuevo.
+
+Los fixtures SQL de reuniones/carreras se crean solamente **después** de la
+protección `HIPICO_E2E_DATABASE_URL === DATABASE_URL`, de loopback y del
+nombre obligatorio de base efímera; no se instala ninguna tabla nueva en
+producción. Esta evidencia no sustituye el test de TCP/WhatsApp en Windows
+ni un caso de corrección concurrente entre commit y Enter. #899 continúa
+abierto hasta completar la matriz física y los gates de liberación.
+
+## Corte TCP real y recuperación de ACK LAB (CI #899)
+
+El workflow `Hípico Autonomous WhatsApp v16` ejecuta una suite separada
+`npm --prefix tools/hipico-whatsapp-web-bridge run test:lab:tcp`,
+además del `qa` canónico. No usa servicios externos: levanta un servidor
+HTTP efímero en **127.0.0.1** y lo cierra al terminar cada prueba.
+
+Las pruebas destruyen el socket luego de recibir el POST, emulando la
+pérdida de la respuesta HTTP tras un commit backend; comprueban que se
+repita **una sola vez la misma identidad, token y payload LAB**. También
+interrumpen un JSON a mitad del cuerpo, fuerzan dos cortes consecutivos,
+verifican que 503 y 302 nunca activen un retry hacia otro origen y
+comprueban la separación de la consulta HTTP y el journal de envío.
+
+Para el reinicio, después de recuperar la respuesta HTTP se prepara el
+recibo LAB y se registra `sending` antes de cualquier `Enter`. Un nuevo
+journal convierte `sending` en `ambiguous`: está **prohibido** volver a
+`prepared` automáticamente o declarar `confirmed` sin etiqueta de salida
+verificada. Esto protege el principio de no duplicar envíos en LAB.
+
+**Alcance:** caída real de sockets TCP en Node.js + journal durable local,
+no un WhatsApp Web físico ni PostgreSQL dentro del mismo proceso TCP.
+Las pruebas PG aisladas de #922/#925 son un gate distinto: conjuntamente
+cubren transporte y autoridad persistente, pero no constituyen aún el
+E2E completo con browser, usuario real, corte de red y dispositivo Android.
+Sin enviar nada a SOURCE. #899 y #837 deben mantenerse abiertos hasta
+certificación física y soak.
+
+## Verificación estricta de mensaje saliente LAB y espejo local (#837)
+
+El Bridge ahora considera una etiqueta `[LABTEST:...]` como evidencia de
+respuesta **solo si es la primera línea de una burbuja `.message-out`**
+del panel `#main` correspondiente al grupo LAB pinneado. Además verifica
+el encabezado `🧪 CONTROL HÍPICO · PRUEBA LAB` y las líneas `Respuesta:`
+y `Fuente:`. La coincidencia como subcadena dentro de un texto citado,
+mensaje ajeno o reenvío NO confirma un ACK ni saca un envío de cuarentena.
+
+La identificación del chat se comprueba antes y después del escaneo DOM.
+Para los espejos `[SHADOW:...]` se exige también etiqueta íntegra
+como primera línea, sin obligarlos a usar el formato de respuestas LAB.
+El espejo local ahora declara `LAB_LOCAL_ONLY` y no hace referencia a
+variables de una consulta canónica inexistente. No se inventa una lectura
+de base de datos para mensajes capturados en SOURCE.
+
+Si WhatsApp modifica su DOM o coloca contenido inesperado antes de la
+etiqueta, el sistema puede producir un **falso negativo seguro**:
+deja el envío sin confirmar y exige conciliación, en vez de reenviarlo
+o afirmar una entrega. La validación de la etiqueta visible no reemplaza
+el QA físico ni la confirmación de recepción en otro dispositivo.
+
+Pruebas incorporadas: coincidencias exactas y falsas, citas con tags,
+separación SHADOW/LABTEST, hash inválido, aislamiento al panel saliente,
+acuses durables y ejecución del formateador de espejo local.

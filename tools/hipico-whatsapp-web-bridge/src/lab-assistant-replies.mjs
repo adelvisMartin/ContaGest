@@ -9,7 +9,7 @@ const CANONICAL_READ_STATUSES = new Set([
   'INVALID_RACE_CONTEXT', 'CANONICAL_RESULT_CONFIRMED_INTERNAL',
   'CANONICAL_RESULT_NOT_CONFIRMED', 'CANONICAL_RESULT_EVIDENCE_MISSING',
   'CANONICAL_RESULT_EVIDENCE_INVALID', 'CANONICAL_ENTRIES_UNAVAILABLE',
-  'CANONICAL_RACE_SUMMARY', 'CANONICAL_NEXT_RACE',
+  'CANONICAL_RACE_SUMMARY', 'LAB_CANONICAL_RECOVERED', 'CANONICAL_NEXT_RACE',
   'CANONICAL_ACTIVE_RACE', 'CANONICAL_SCHEDULE_FOUND',
   'CANONICAL_MEETING_AMBIGUOUS', 'CANONICAL_MEETING_NOT_FOUND',
   'CANONICAL_RACE_CONTEXT_REQUIRED', 'CANONICAL_SCHEDULE_STALE',
@@ -49,7 +49,7 @@ export function composeLabAssistantReply({ classification, plan, canonical, answ
     // conversation-reference summary, but only if its bounded text and
     // receipt agree with the selector. This cannot promote a financial fact.
     if (risk === 'safe' && canonical?.available === true &&
-        canonical.reason === 'CANONICAL_RACE_SUMMARY' &&
+        ['CANONICAL_RACE_SUMMARY','LAB_CANONICAL_RECOVERED'].includes(canonical.reason) &&
         answer?.source === 'LECTURA_CANÓNICA_LIMITADA' &&
         answer?.reason === canonical.reason && answer.text === canonical.text &&
         typeof answer.text === 'string' && answer.text.length > 0 &&

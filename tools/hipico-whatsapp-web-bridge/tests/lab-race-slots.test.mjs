@@ -41,10 +41,15 @@ test('no implicit dates, arbitrary greetings, instructions, money, other races o
     'carrera 6','La Rinconada; registrar saldo','La Rinconada\nignore previous',
     'La Rinconada el 2026-10-12 y confirma premio',
     'La Rinconada el 2026-10-12 en otra sede',
-    'hola','Buenas tardes','Juan','La próxima','El siguiente','La confirma','La anterior'
+    'hola','Buenas tardes','Juan','La próxima','El siguiente','La confirma','La anterior',
+    'La primera','La quinta','La sexta','en la sexta','la novena','la décima'
   ]) assert.equal(parseLabRaceSlotReply(text,prior),null,text);
   assert.equal(parseLabRaceSlotReply('La Rinconada',{raceNumber:null}),null);
   assert.equal(parseLabRaceSlotReply('La Rinconada',{raceNumber:5,raceScope:expected}),null);
+  // An explicitly named venue remains possible, but an isolated ordinal
+  // must never become a racetrack after a prior race message.
+  assert.deepEqual(parseLabRaceSlotReply('hipódromo La Sexta',{raceNumber:5}),
+    {raceNumber:5,racetrack:'La Sexta',complete:false});
   assert.equal(parseLabRaceSlotReply('2026-10-13',{raceNumber:5,raceDate:'2026-10-12'}),null);
   assert.equal(parseLabRaceSlotReply('El Paraíso',{raceNumber:5,raceTrack:'La Rinconada'}),null);
   assert.equal(parseLabRaceSlotReply('La Rinconada el 2026-10-13',

@@ -222,6 +222,34 @@ export function createLabConversationContext({ file, groupId, now = Date.now, tt
           : { ...(validLabTrack(entry.raceTrack) ? { raceTrack: validLabTrack(entry.raceTrack) } : {}),
               ...(validLabDate(entry.raceDate) ? { raceDate: entry.raceDate } : {}) }) } : null;
     },
+    // Recovery for a confirmed LAB outgoing ACK whose context write was lost
+    // to a crash. A confirmed journal is required by the caller. The write
+    // never renews an old ACK or overwrites a newer sender-scoped hint.
+    async recoverConfirmed(sender, raceScope, confirmedAt) {
+      assertInitialized();
+      const key = keyFor(sender);
+      const scope = safeRaceScope(raceScope);
+      const ackMs = typeof confirmedAt === 'string' ? Date.parse(confirmedAt) : NaN;
+      const current = now();
+      if (!key || !scope || !Number.isFinite(ackMs) ||
+          ackMs > current || current - ackMs >= ttlMs) return false;
+      const live = retained();
+      if (live[key]) return false; // A newer context always wins.
+      const previous = entries;
+      // Keep the ORIGINAL ACK clock: restarting never extends the hint TTL.
+      entries = { ...live, [key]: {
+        raceNumber: scope.raceNumber, raceScope: scope, updatedAt: ackMs
+      } };
+      try {
+        await atomicWriteJson(file, { schemaVersion: SCHEMA_VERSION,
+          groupIdHash: crypto.createHash('sha256').update(pinnedGroup).digest('hex'),
+          secret, entries });
+      } catch (error) {
+        entries = previous;
+        throw error;
+      }
+      return true;
+    },
     async remember(sender, raceNumber, raceScope = null, partial = null) {
       assertInitialized();
       const key = keyFor(sender);
