@@ -361,7 +361,17 @@ export function createLabPendingQueryInbox({rootDir,labGroupId,sourceGroupId,now
     async snapshot(){
       assertReady();
       const {rows}=await scan();
-      return {pending:rows.length,sourceWriteAllowed:false,deliveryAuthority:false};
+      // Aggregate-only status for operators. Never expose encrypted content,
+      // group/sender IDs, quoted scopes or delivery authority to health output.
+      const timestamp=clock();
+      const ages=rows.map(item=>Math.max(0,timestamp-Date.parse(item.messageTimestamp)));
+      const nearExpiryAt=maxAgeMs-Math.min(120_000,Math.floor(maxAgeMs/4));
+      return {
+        pending:rows.length,
+        nearingExpiry:ages.filter(age=>age>=nearExpiryAt).length,
+        oldestAgeSeconds:ages.length?Math.floor(Math.max(...ages)/1000):0,
+        sourceWriteAllowed:false,deliveryAuthority:false
+      };
     },
     async close(){
       if(!token)return;
