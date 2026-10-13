@@ -207,8 +207,8 @@ test('lost HTTP response retries read-only lookup once with identical message id
   assert.equal(result.text,'Estado interno verificado.');
 });
 
-test('only transient gateway failures are retried: never replay auth, rate-limit or invalid authority',async()=>{
-  for(const status of [502,503,504]){
+test('only 502/504 gateway failures retry; 503/auth/rate-limit/invalid authority fail closed',async()=>{
+  for(const status of [502,504]){
     let calls=0;
     const result=await queryCanonicalLab({...base,fetchImpl:async()=>{
       calls++;
@@ -220,7 +220,7 @@ test('only transient gateway failures are retried: never replay auth, rate-limit
     assert.equal(calls,2);
     assert.equal(result.available,true);
   }
-  for(const status of [401,403,404,429]){
+  for(const status of [401,403,404,429,503]){
     let calls=0;
     const result=await queryCanonicalLab({...base,fetchImpl:async()=>{calls++;return json({},status);}});
     assert.equal(calls,1);
