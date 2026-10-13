@@ -1648,13 +1648,21 @@ async function processLabTestInput() {
       // original request. Never write a second hint from the mutable DOM.
       // The WAL-backed confirmed acknowledgement is the single send authority.
       // Context is only a local hint; failed persistence can never resend LAB.
-      let contextPersisted=true;
-      if (plan.rememberRace && labConversationContext) {
-        try { await labConversationContext.remember(plan.sender,plan.raceNumber,plan.raceScope,{raceTrack:plan.raceTrack,raceDate:plan.raceDate}); }
-        catch { contextPersisted=false; await log('LAB_CONTEXT_PERSIST_FAILED'); }
+      let contextPersisted=!plan.rememberRace;
+      if(plan.rememberRace && labConversationContext){
+        try{
+          // A non-throwing false is a rejected durable write, not success.
+          contextPersisted=(await labConversationContext.remember(
+            plan.sender,plan.raceNumber,plan.raceScope,
+            {raceTrack:plan.raceTrack,raceDate:plan.raceDate}
+          ))===true;
+        }catch{
+          contextPersisted=false;
+          await log('LAB_CONTEXT_PERSIST_FAILED');
+        }
       }
-      // ACK is already durable; auxiliary failure retains the encrypted
-      // original for recovery and can never authorize a second WhatsApp send.
+      // No second Enter may follow a durable ACK. Retain the original
+      // encrypted request if the auxiliary conversation write was declined.
       await finalizeConfirmedVisibleLabQuote(row,body,{retainEncryptedInput:!contextPersisted});
       processed += 1;
       await log('LAB_TEST_READ id='+tag+' intent='+classification.intent);
