@@ -5,6 +5,8 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { createLabPendingQueryInbox, reconcileLabPendingObservation } from '../src/lab-pending-query-inbox.mjs';
+import {labReadOnlyQueryPurpose} from '../src/lab-canonical-query.mjs';
+import {classifyLocal} from '../src/runtime-utils.mjs';
 
 const LAB='120363222222222222@g.us';
 const SOURCE='120363111111111111@g.us';
@@ -999,8 +1001,9 @@ test('encrypted LAB inbox restores safe race summaries but not private chat or b
     '¿Resumen de apuestas de carrera 5?',
     '¿Resumen de pagos de carrera 5?'
   ]){
+    assert.equal(labReadOnlyQueryPurpose(blocked,classifyLocal(blocked)),null,blocked);
     await assert.rejects(inbox.enqueue(candidate({text:blocked,purpose:'summary',
-      messageId:'false_'+LAB+'_summary-blocked-'+SENDER
+      messageId:'false_'+LAB+'_summary-blocked_'+SENDER
     })),/LAB_PENDING_QUERY_INVALID/,blocked);
   }
   const before=await inbox.read(MESSAGE);
