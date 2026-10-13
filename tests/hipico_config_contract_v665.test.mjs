@@ -151,3 +151,63 @@ test('#665 quoted dotenv comments preserve internal hashes and allowed URLs', ()
   assert.equal(values.get('VITE_DEMO'), 'http://example.test/#user-guide');
   assert.equal(parseEnvTemplate('HIPICO_SOURCE_AUTO_REPLY_ENABLED = false').vars.get('HIPICO_SOURCE_AUTO_REPLY_ENABLED'), 'false');
 });
+
+test('#665 rejects public credential URLs with quoted comments and privileged JWT role',()=>{
+  const credential='https://operator:private-password@api.example.test/v1';
+  for(const value of [
+    credential+' # comment',
+    '"'+credential+'" # comment',
+    "'"+credential+"' # comment"
+  ]){
+    const report=check({frontend:frontend+'\nVITE_TARGET='+value});
+    assert.ok(report.findings.some(f=>f.code==='PUBLIC_SECRET_VALUE'&&f.key==='VITE_TARGET'));
+    assert.doesNotMatch(JSON.stringify(report),/operator|private-password/);
+  }
+  const jwt=role=>{
+    const encode=v=>Buffer.from(JSON.stringify(v)).toString('base64url');
+    return encode({alg:'HS256',typ:'JWT'})+'.'+encode({role,aud:'authenticated'})+'.fixture';
+  };
+  for(const key of ['VITE_SUPABASE_ANON_KEY','VITE_PUBLIC_SETTINGS']){
+    const value=key==='VITE_SUPABASE_ANON_KEY'
+      ?frontend.replace('VITE_SUPABASE_ANON_KEY=replace_me',
+        'VITE_SUPABASE_ANON_KEY="'+jwt('service_role')+'" # comment')
+      :frontend+'\nVITE_PUBLIC_SETTINGS="'+jwt('service_role')+'" # comment';
+    const report=check({frontend:value});
+    assert.ok(report.findings.some(f=>f.code==='PUBLIC_PRIVILEGED_JWT'&&f.key===key));
+    assert.doesNotMatch(JSON.stringify(report),/service_role|fixture/);
+  }
+  const anon=check({frontend:frontend.replace(
+    'VITE_SUPABASE_ANON_KEY=replace_me',
+    'VITE_SUPABASE_ANON_KEY='+jwt('authenticated')
+  )});
+  assert.equal(anon.status,'PASS');
+});
+
+test('#665 quoted env comments retain internal hashes and safe URLs',()=>{
+  const values=parseEnvTemplate([
+    'VITE_API="https://api.example.test/v1#fragment" # note',
+    "VITE_HEADING='Demo #1' # note",
+    'VITE_RAW=https://api.example.test/v1#fragment # note'
+  ].join('\n')).vars;
+  assert.equal(values.get('VITE_API'),'https://api.example.test/v1#fragment');
+  assert.equal(values.get('VITE_HEADING'),'Demo #1');
+  assert.equal(values.get('VITE_RAW'),'https://api.example.test/v1#fragment');
+});
+
+test('#665 spaces near = cannot bypass public frontend credential checks',()=>{
+  const password='https://operator:sensitive-password@api.example.test/v1';
+  const lines=[
+    'VITE_REMOTE = "'+password+'" # note',
+    'export VITE_REMOTE    =   "'+password+'" # note',
+    'VITE_REMOTE = '+password+' # note'
+  ];
+  for(const item of lines){
+    const parsed=parseEnvTemplate(item);
+    assert.equal(parsed.vars.get('VITE_REMOTE'),password);
+    const findings=check({frontend:frontend+'\n'+item}).findings;
+    assert.ok(findings.some(f=>f.code==='PUBLIC_SECRET_VALUE'&&f.key==='VITE_REMOTE'));
+    assert.doesNotMatch(JSON.stringify(findings),/operator|sensitive-password/);
+  }
+  assert.deepEqual(parseEnvTemplate('HIPICO_SOURCE_AUTO_REPLY_ENABLED = false').vars.get(
+    'HIPICO_SOURCE_AUTO_REPLY_ENABLED'),'false');
+});
