@@ -291,3 +291,35 @@ demuestra que WhatsApp envió una sola vez. El E2E utiliza PostgreSQL real
 pero no certifica una corrección concurrente dentro de una transacción
 serializable. La evidencia de logs del SHA exacto y el ensayo físico en LAB
 se conservan como gates antes de cerrar #899 y #837.
+
+## Recuperación versionada de próxima carrera, carrera activa y programación (#899)
+
+Además de estado/llegada, el backend ahora autoriza un recibo canónico para
+`purpose=next|active|schedule` solo si **todas las carreras de la reunión**
+poseen ID, `state_version`, `updated_at`, número, reunión, estado y horario
+coherentes. `RaceLifecycleStore.listRaces` lee hasta **201 filas** y la
+proyección rechaza la reunión si sobrepasa 200 o contiene una revisión incompleta.
+El texto mostrado y la huella SHA-256 se derivan de **una única lectura**
+de la reunión, reutilizada por `RaceQueryService`, sin otra consulta susceptible
+de carrera entre cálculo de respuesta y cálculo de versión.
+
+La huella se compone de la identidad de la reunión y todas las carreras
+ordenadas por ID (estado, versión, horario, última actualización y número),
+incluidas las no mostradas. No incluye nombres de caballos, participantes,
+cuotas, apuestas ni `resultData`. Una adición, eliminación, corrección o
+nuevo estado en cualquier carrera cambia la huella. El recibo inmutable
+existente combina `revisionToken`, versión de política y hash del texto;
+la respuesta HTTP solo se devuelve como recuperable cuando esos datos
+coinciden con el recibo previo y no existe handoff humano.
+
+Los recibos de `status|result` anteriores conservan su fingerprint previo.
+Si el conjunto es ambiguo, tiene más de 200 carreras, falta una revisión
+o el horario de la próxima carrera venció, el backend responde sin inventar
+programación. El Bridge mantiene un reintento HTTP con la misma identidad
+antes de cualquier intención de envío WhatsApp y requiere el ACK LAB durable.
+
+**QA aún exigido:** tests exact-SHA, PostgreSQL real con una carrera editada
+entre commit y reintento, WhatsApp Web físico con caída de red, handoff, soak
+y el control de una actualización concurrente durante la entrega. La huella
+cubre una lectura consistente de una sentencia SQL, no impone transacción
+serializable a todo el intercambio HTTP. SOURCE sigue en NO-GO.
