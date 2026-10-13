@@ -487,3 +487,27 @@ test('replayed LAB ACK keeps ciphertext when auxiliary writes fail and never rep
   assert.match(replay,/const confirmed=await labTestReplyJournal\.confirm\(entry\.messageId/);
   assert.doesNotMatch(replay,/labConversationContext\.remember\(plan\.sender/);
 });
+
+
+test('implicit prior race never becomes encrypted LAB replay authority',()=>{
+  const start=lab.indexOf('let trustedRace=plan.scopeConflict?null:');
+  const stop=lab.indexOf('let trustedQuote=quotedVerified?',start);
+  assert.ok(start>=0&&stop>start);
+  const calculate=vm.runInNewContext(
+    '(plan,directRace,quotedVerified,verifiedRace)=>{'+lab.slice(start,stop)+'return trustedRace;}',{}
+  );
+  const previousHint={raceNumber:5,racetrack:'La Rinconada',raceDate:'2026-10-12'};
+  const currentExplicit={raceNumber:6,racetrack:'La Rinconada',raceDate:'2026-10-12'};
+  assert.equal(calculate({scopeConflict:false},null,false,previousHint),null,
+    'previous sender context can guide a clarification, not authorize durable replay');
+  assert.deepEqual(calculate({scopeConflict:false},currentExplicit,false,currentExplicit),
+    currentExplicit,'fresh explicit race is immutable and replayable');
+  assert.deepEqual(calculate({scopeConflict:false},null,true,previousHint),previousHint,
+    'verified same-sender quote can carry a bounded replay scope');
+  assert.equal(calculate({scopeConflict:true},currentExplicit,false,currentExplicit),null,
+    'ambiguous or conflicting race can never become persisted authority');
+  assert.match(lab,/race:trustedRace\|\|null/);
+  assert.match(lab,/race:trustedRace,timeoutMs:/);
+  assert.match(lab,/quotedMessageId:trustedQuote/);
+  assert.doesNotMatch(lab,/let trustedRace=verifiedRace;/);
+});
