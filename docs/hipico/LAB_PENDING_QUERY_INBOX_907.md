@@ -119,3 +119,23 @@ referencia HMAC se reconstruye sólo tras ACK y antes de limpiar la bandeja.
 
 Estos cambios **no** declaran QA verde, funcionamiento físico de Windows,
 ejecución de PostgreSQL o autorización para escribir al grupo SOURCE.
+
+## Publicación atómica de la bandeja y evidencia de salida (2026-10-13)
+
+Una entrada cifrada se escribe primero como archivo privado `.tmp`, se sincroniza,
+y sólo entonces se renombra al nombre HMAC final `.json` antes del HTTP.
+La inicialización, bajo el candado de propietario local, elimina restos
+`.tmp` de procesos anteriores; un archivo definitivo incompleto sigue
+siendo inválido y detiene el Bridge para revisión (no se reenvía ciegamente).
+El registro definitivo se conserva intacto tras un reinicio cuando existe
+un archivo temporal abandonado.
+
+El ACK de LAB requiere la comprobación estricta de salida de `main`:
+burbuja `.message-out` dentro de `#main`, JID del grupo fijado validado
+antes y después de leer el DOM, etiqueta `[LABTEST:…]` exactamente en
+la primera línea y líneas completas de respuesta y fuente. Una etiqueta
+dentro de una cita o un reenvío no confirma ni reactiva el mensaje.
+
+Se incluyeron regresiones de archivos temporales huérfanos, publicación
+completa y citas con etiquetas falsificadas. Estas pruebas de código no
+sustituyen su ejecución real en Node/Windows ni el soak.
