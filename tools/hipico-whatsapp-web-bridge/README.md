@@ -454,6 +454,28 @@ canónico de carreras. Repetir con datos inexistentes, evento corregido,
 otro grupo, otro remitente, backend desconectado y reconexión. No interpretar
 los tests unitarios como prueba física de Windows/WhatsApp.
 
+## Handoff LAB: respuesta de permiso acotada (2026-10-13)
+
+El permiso para responder automáticamente en LAB se consulta en el backend
+canónico, con el mismo origen fijado del Bridge. Una respuesta HTTP del endpoint
+`/bridge/lab/eligibility` solo autoriza si declara expresamente
+`allowed:true`, `status:LAB_HANDOFF_CLEAR`, modo `shadow` y las tres
+prohibiciones de efectos y escritura SOURCE. No hay autorización por defecto.
+
+Para evitar respuestas enormes o malformadas, el lector ahora limita a **4096
+bytes UTF-8 descomprimidos** mientras recibe el stream; un `Content-Length`
+inválido o superior a ese máximo se rechaza antes de leer. Si el encabezado
+miente con un tamaño menor, manda la cantidad real recibida. Se cancelan
+lecturas excesivas; UTF-8 inválido, JSON corrupto, caídas de red y permisos
+de operador retenidos siguen fallando cerrados. Solo los adaptadores de test
+sin `body.getReader()` utilizan `text()` con comprobación posterior.
+
+Pruebas focalizadas Node 22 ejecutadas contra el **archivo productivo exacto**
+(hash de blob `975bd0e74248621224d62604a6bbaabfaedaa1f1`) con sustituto local para
+la derivación de URL: 7/7 PASS. Esto **no** acredita las pruebas globales del
+repositorio, PostgreSQL, integración de #930, CI exact-SHA ni WhatsApp físico.
+SOURCE sigue NO-GO.
+
 ## Prueba autónoma LAB
 
 Desde la raíz:
