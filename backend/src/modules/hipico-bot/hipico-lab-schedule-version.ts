@@ -15,7 +15,7 @@ export function versionLabScheduleSnapshot(meetingId:string,rows:unknown[]){
     const id=String(row.id||'');
     const scope=String(row.meetingId||'');
     const num=Number(row.number);
-    const version=Number(row.stateVersion);
+    const version=typeof row.stateVersion==='number'?row.stateVersion:NaN;
     const state=String(row.state||'');
     const stamp=row.updatedAt instanceof Date?row.updatedAt:
       typeof row.updatedAt==='string'?new Date(row.updatedAt):null;
@@ -37,6 +37,7 @@ export function versionLabScheduleSnapshot(meetingId:string,rows:unknown[]){
     .update(JSON.stringify({policy:'hipico-lab-schedule-snapshot-v1',meetingId,facts}))
     .digest('hex');
   const highestVersion=Math.max(...facts.map(row=>row.version));
+  if(highestVersion>=Number.MAX_SAFE_INTEGER)return null;
   const updatedAt=facts.map(row=>row.updatedAt).sort().at(-1)!;
   return{revisionToken:digest,version:highestVersion+1,updatedAt};
 }
