@@ -324,3 +324,24 @@ entre commit y reintento, WhatsApp Web físico con caída de red, handoff, soak
 y el control de una actualización concurrente durante la entrega. La huella
 cubre una lectura consistente de una sentencia SQL, no impone transacción
 serializable a todo el intercambio HTTP. SOURCE sigue en NO-GO.
+
+## PostgreSQL real: corrección posterior de carrera y nueva programación (#899)
+
+La suite `test:hipico:lab-receipt:postgres` contiene dos escenarios
+adicionales que leen las carreras desde `RaceLifecycleStore` en una base
+efímera de PostgreSQL y concilian contra `HipicoResponseReceipt`:
+
+1. El backend confirma «próxima carrera». Se modifica con `UPDATE` una
+carrera distinta que no aparece en ese texto. La siguiente lectura mantiene
+el texto pero cambia la huella de la reunión; el mismo ID de mensaje obtiene
+`LAB_CANONICAL_REVISION_CHANGED` y se conserva intacto el recibo anterior.
+2. El backend confirma una cartelera; después se inserta otra carrera.
+La cartelera nueva contiene la carrera añadida y un digest diferente.
+El mismo ID queda bloqueado; una **nueva consulta** crea su recibo nuevo.
+
+Los fixtures SQL de reuniones/carreras se crean solamente **después** de la
+protección `HIPICO_E2E_DATABASE_URL === DATABASE_URL`, de loopback y del
+nombre obligatorio de base efímera; no se instala ninguna tabla nueva en
+producción. Esta evidencia no sustituye el test de TCP/WhatsApp en Windows
+ni un caso de corrección concurrente entre commit y Enter. #899 continúa
+abierto hasta completar la matriz física y los gates de liberación.
