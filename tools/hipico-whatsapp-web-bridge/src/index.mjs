@@ -1692,7 +1692,7 @@ async function printHealthSummary(force = false) {
     mirrorSpool,
     deadLetters
   });
-  const line = `HEALTH ready=${readiness.ready} mode=${RUNTIME_MODE} source=${activeSourceTitle || 'buscando'} | backend=${backendLabel}${cooldown && BACKEND_SYNC_ENABLED ? ` cooldown=${Math.ceil(cooldown/1000)}s` : ''} | capturados=${capturedCount} | spool=${eventSpool} | sourceReply=${sourceReplies.pending}/${sourceReplies.ambiguous} | labPend=${mirrorSpool} | labQueries=${pendingStatus?.pending ?? 0} | dead=${deadLetters}`;
+  const line = `HEALTH ready=${readiness.ready} mode=${RUNTIME_MODE} source=${activeSourceTitle || 'buscando'} | backend=${backendLabel}${cooldown && BACKEND_SYNC_ENABLED ? ` cooldown=${Math.ceil(cooldown/1000)}s` : ''} | capturados=${capturedCount} | spool=${eventSpool} | sourceReply=${sourceReplies.pending}/${sourceReplies.ambiguous} | labPend=${mirrorSpool} | labQueries=${pendingStatus?.pending ?? 0} | labNearExpiry=${pendingStatus?.nearingExpiry ?? 0} | labOldestSec=${pendingStatus?.oldestAgeSeconds ?? 0} | dead=${deadLetters}`;
   const heartbeatDue = Date.now() - lastHealthHeartbeatAt >= 300000;
   if (force && (line !== lastPrintedHealthLine || heartbeatDue)) {
     console.log(line);
