@@ -24,6 +24,20 @@ export function parseEnvTemplate(source) {
   return { vars, duplicates };
 }
 
+
+const PUBLIC_URL_PROTOCOLS = new Set([
+  'http:', 'https:', 'postgres:', 'postgresql:', 'mysql:', 'mongodb:',
+  'mongodb+srv:', 'redis:', 'rediss:'
+]);
+// A frontend env example must not carry a connection string with userinfo.
+// Report only the variable name, never the URL, username or password.
+function exposesUrlCredentials(value) {
+  try {
+    const url = new URL(value);
+    return PUBLIC_URL_PROTOCOLS.has(url.protocol) && Boolean(url.username || url.password);
+  } catch { return false; }
+}
+
 export function checkHipicoConfigTemplates(sources) {
   const parsed = Object.fromEntries(Object.entries(paths).map(([name]) => [name, parseEnvTemplate(sources[name] ?? '')]));
   const findings = [];
@@ -61,7 +75,7 @@ export function checkHipicoConfigTemplates(sources) {
   }
   for (const [key, sample] of parsed.frontend.vars) {
     if (/^VITE_.*(?:SECRET|SERVICE_ROLE|PASSWORD|PRIVATE|TOKEN)/i.test(key)) add('PUBLIC_SECRET_KEY', 'frontend', key);
-    if (/(?:sb_secret_|-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----)/i.test(sample)) add('PUBLIC_SECRET_VALUE', 'frontend', key);
+    if (/(?:sb_secret_|-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----)/i.test(sample) || exposesUrlCredentials(sample)) add('PUBLIC_SECRET_VALUE', 'frontend', key);
   }
   return { status: findings.length ? 'FAIL' : 'PASS', findings };
 }
