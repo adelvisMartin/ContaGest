@@ -70,6 +70,22 @@ test('immutable message identity rejects text or quoted-race mutation and financ
   await assert.rejects(inbox.enqueue(candidate({quotedMessageId:'prior-claim',race:null})),/LAB_PENDING_QUERY_INVALID/);
   await inbox.close();
 });
+test('verified quoted race rejects invalid calendar day and accepts leap day',async t=>{
+  const f=await harness(t);const inbox=f.create();await inbox.initialize();
+  const quote='false_120363222222222222@g.us_prior_'+SENDER;
+  for(const raceDate of ['2026-02-31','2026-02-29','2026-13-01','2026-04-31']){
+    await assert.rejects(inbox.enqueue(candidate({
+      text:'¿Cuál es el resultado?',quotedMessageId:quote,
+      race:{raceNumber:5,racetrack:'La Rinconada',raceDate}
+    })),/LAB_PENDING_QUERY_INVALID/);
+  }
+  const valid=candidate({text:'¿Cuál es el resultado?',quotedMessageId:quote,
+    race:{raceNumber:5,racetrack:'La Rinconada',raceDate:'2028-02-29'}});
+  assert.deepEqual(await inbox.enqueue(valid),{created:true});
+  assert.equal((await inbox.read(MESSAGE))?.race.raceDate,'2028-02-29');
+  await inbox.close();
+});
+
 test('expired queries are discarded even while backend is down; no stale reply can be recovered',async t=>{
   const f=await harness(t);const inbox=f.create();await inbox.initialize();
   await inbox.enqueue(candidate());
