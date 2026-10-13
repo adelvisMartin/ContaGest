@@ -242,3 +242,25 @@ Se añadió regresión de pérdida de clave, rechazo sin rotación, conservació
 byte a byte de los registros y recuperación tras restaurar la clave original.
 No implica validación física de NTFS/Windows, ejecución de suite completa ni
 permiso de envío al grupo SOURCE.
+
+## Señales operativas agregadas del inbox LAB (2026-10-13)
+
+El resumen HEALTH incluye `labQueries` (entradas cifradas vigentes),
+`labNearExpiry` (entradas dentro de los últimos dos minutos de su TTL
+máximo de diez minutos) y `labOldestSec` (antigüedad máxima, en segundos).
+Estos valores se obtienen únicamente de las marcas temporales de
+consultas descifradas en memoria por el propietario autorizado; no se
+publican mensajes, participantes, números telefónicos, carreras ni citas.
+
+Las consultas expiradas se descartan de forma acotada según la política
+de retención. El contador de cercanía a caducidad permite diagnosticar
+desconexiones sin considerar el número de pendientes como entrega efectiva.
+Los campos `sourceWriteAllowed:false` y `deliveryAuthority:false`
+permanecen en el estado del inbox; estas métricas nunca autorizan
+confirmaciones de jugadas ni nuevos envíos.
+
+Pruebas agregadas de cero registros, entrada reciente, frontera de ocho
+minutos, expiración, ausencia de identificadores en la respuesta y
+contrato de HEALTH. La función efectiva `snapshot()` se ejecutó con
+entradas temporales controladas y verificó las transiciones; no reemplaza
+QA de Node en Windows ni las verificaciones de integración del PR.
