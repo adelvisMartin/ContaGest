@@ -119,7 +119,10 @@ export async function queryCanonicalLab({
     }
     // 503 is an explicit overload/unavailable signal; do not amplify it.
     if([502,504].includes(response.status)&&attempt===0)continue;
-    if(response.status!==200||!response.headers.get('content-type')?.toLowerCase().includes('application/json')){
+    // Only the actual media type is authority. A substring inside parameters,
+    // a JSONP suffix or a combined content-type cannot authorize a LAB reply.
+    const mediaType=response.headers.get('content-type')?.split(';',1)[0]?.trim().toLowerCase();
+    if(response.status!==200||mediaType!=='application/json'){
       return{available:false,reason:'LAB_CANONICAL_UNAVAILABLE'};
     }
     const lengthHeader=response.headers.get('content-length');
