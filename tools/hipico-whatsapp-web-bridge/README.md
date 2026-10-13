@@ -537,6 +537,31 @@ Existen plantillas bajo `deploy/linux/` y `deploy/docker/`. Cada host necesita u
 
 ## QA local
 
+En Windows (PowerShell), ejecuta las regresiones del Bridge **antes** de
+vincular una sesión real. El comando LAB de recuperación incluye fallos de
+socket TCP sobre loopback, entradas cifradas, journal de envíos, pruebas de
+handoff, deduplicación y memoria recuperada tras ACK:
+
+```powershell
+npm ci --no-audit --no-fund
+npm run check
+npm run test:lab:recovery
+npm run qa
+npm run production:check
+npm run source:policy
+```
+
+`test:lab:recovery` ejecuta las 13 suites requeridas explícitamente y una
+regresión protege la lista para que no se omitan accidentalmente los tests
+TCP o los guards del ACK. El script `test:lab:tcp` sigue disponible para
+ejecuciones más focalizadas. Estos tests emplean sockets locales y disco
+temporal, **no envían mensajes reales a WhatsApp**, y no sustituyen las
+pruebas físicas con dos sesiones LAB/SOURCE, PostgreSQL 17, ni el soak
+#119/#120. Un `FAIL` deja el release en NO-GO; estados `queued` de
+GitHub Actions no equivalen a PASS. SOURCE sigue en lectura.
+
+Para el QA general:
+
 ```bash
 npm ci --no-audit --no-fund
 npm run qa
