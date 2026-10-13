@@ -218,6 +218,13 @@ export function createLabPendingQueryInbox({rootDir,labGroupId,sourceGroupId,now
       key=await loadKey();
       await lockOwner();
       try{
+        // Only this instance holds the owner lock. Abandoned .tmp files can
+        // never represent a completed candidate and are safe to discard.
+        for(const name of await fs.readdir(root)){
+          if(/^[a-f0-9]{64}\.[a-f0-9-]{36}\.tmp$/.test(name)){
+            await fs.rm(path.join(root,name));
+          }
+        }
         const {rows}=await scan(); // Never silently accept corrupted encrypted input.
         initialized=true;
         return {recovered:rows.length};
@@ -253,25 +260,29 @@ export function createLabPendingQueryInbox({rootDir,labGroupId,sourceGroupId,now
       }
       if(rows.length>=maxEntries)throw new Error('LAB_PENDING_CAPACITY_EXCEEDED');
       const payload=seal(item,hash);
+      // A crash during write can only leave a .tmp; never a partial final
+      // encrypted record. Single local owner.lock serializes all writers.
+      const temp=path.join(root,hash+'.'+crypto.randomUUID()+'.tmp');
       let handle;
       try{
-        handle=await fs.open(fileFor(hash),'wx',0o600);
+        handle=await fs.open(temp,'wx',0o600);
         await handle.writeFile(JSON.stringify(payload));
         await handle.sync();
         await handle.close();handle=null;
+        // The final name becomes visible only after a complete, fsynced record.
+        // Lock ownership plus immutable-id preflight prevent overwrite races.
+        if(await openFile(hash)){
+          throw new Error('LAB_PENDING_REPLAY_MISMATCH');
+        }
+        await fs.rename(temp,fileFor(hash));
         try{
           const dir=await fs.open(root,'r');
           try{await dir.sync();}finally{await dir.close();}
         }catch{}
         return {created:true};
-      }catch(e){
+      }finally{
         await handle?.close().catch(()=>{});
-        if(e?.code==='EEXIST'){
-          const stored=await openFile(hash);
-          if(stored&&JSON.stringify({...stored,capturedAt:0})===JSON.stringify({...item,capturedAt:0}))return {created:false};
-          throw new Error('LAB_PENDING_REPLAY_MISMATCH');
-        }
-        throw e;
+        await fs.rm(temp,{force:true}).catch(()=>{});
       }
     },
     async prune(){
