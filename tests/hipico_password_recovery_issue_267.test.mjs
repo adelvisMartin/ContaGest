@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import test from 'node:test';
+import vm from 'node:vm';
 
 const recoveryPath = 'frontend/public/hipico-control/assets/js/password-recovery.js';
 const canonicalCssPath = 'frontend/public/hipico-control/assets/css/app.css';
@@ -71,4 +72,63 @@ test('#267 recovery presentation uses the canonical UI and remains mobile-safe',
   assert.match(compatibleStyles, /@media \(max-width:\s*780px\)/);
   await assert.rejects(fs.access('frontend/public/hipico-control/assets/css/password-recovery.css'));
   await assert.rejects(fs.access('frontend/public/hipico-control/assets/css/ui-system.css'));
+});
+
+
+test('#267 removes invalid recovery credentials from URL without accepting them as a session', async () => {
+  const source = await fs.readFile(recoveryPath, 'utf8');
+  const start = source.indexOf('const RECOVERY_URL_PARAMS =');
+  const end = source.indexOf('async function parseError(', start);
+  assert.ok(start >= 0 && end > start, 'password recovery URL boundary missing');
+  const isolated = source.slice(start, end);
+  function run(href) {
+    let current = new URL(href);
+    const location = {
+      get href() { return current.toString(); },
+      get hash() { return current.hash; },
+      get search() { return current.search; }
+    };
+    const history = {
+      state: {},
+      replaced: 0,
+      replaceState(_state, _unused, nextUrl) {
+        this.replaced += 1;
+        current = new URL(nextUrl);
+      }
+    };
+    const api = vm.runInNewContext(
+      '(function(){ let recoveryAccessToken="",recoveryError="";'
+      + isolated
+      + ';return {run:readRecoveryContext,clean:cleanAppUrl,'
+      + 'state:()=>({token:recoveryAccessToken,error:recoveryError})};})()',
+      { URL, URLSearchParams, location, history }
+    );
+    api.run();
+    return { url:current, replaced:history.replaced, ...api.state() };
+  }
+  const recovered=run('https://example.org/hipico-control/?retry=1#type=recovery&access_token=sensitive&refresh_token=private');
+  assert.equal(recovered.token,'sensitive');
+  assert.equal(recovered.error,'');
+  assert.equal(recovered.url.toString(),'https://example.org/hipico-control/?retry=1');
+  assert.equal(recovered.replaced,1);
+
+  for(const url of [
+    'https://example.org/hipico-control/#type=signup&access_token=secret',
+    'https://example.org/hipico-control/?access_token=secret&refresh_token=private&retry=1',
+    'https://example.org/hipico-control/?type=recovery&code=auth-code&token_hash=one-time',
+    'https://example.org/hipico-control/#error=access_denied&error_description=private'
+  ]){
+    const state=run(url);
+    assert.equal(state.token,'','invalid recovery context cannot grant access');
+    assert.ok(state.error,'invalid context must show a generic error');
+    assert.equal(state.url.hash,'');
+    assert.equal(state.replaced,1);
+    for(const key of ['access_token','refresh_token','code','token_hash','error','error_description','type'])
+      assert.equal(state.url.searchParams.has(key),false,key);
+  }
+  const regular=run('https://example.org/hipico-control/?retry=1');
+  assert.equal(regular.replaced,0);
+  assert.equal(regular.error,'');
+  assert.equal(regular.url.searchParams.get('retry'),'1');
+  assert.doesNotMatch(source,/service[_-]?role|SUPABASE_SERVICE_ROLE_KEY|sb_secret_/i);
 });
