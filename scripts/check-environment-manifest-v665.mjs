@@ -39,7 +39,10 @@ export function checkEnvironmentManifest(samples,registry=CONFIG_MANIFEST_V665){
    if((owner==='frontend')!==(record.visibility==='public')||
       (owner==='build')!==(record.visibility==='build'))
      add('MANIFEST_VISIBILITY_MISMATCH',owner,key);
-   if(owner==='frontend'&&record.sensitive)add('MANIFEST_PUBLIC_SECRET',owner,key);
+   // Frontend variables cannot use a secret type even when the separate
+   // sensitivity flag is incorrectly set to false.
+   if(owner==='frontend'&&(record.sensitive||record.type==='secret'))
+     add('MANIFEST_PUBLIC_SECRET',owner,key);
    if(record.sample==='required'&&!parsed.entries.has(key))add('MANIFEST_MISSING_SAMPLE_KEY',owner,key);
    if(record.sample==='not-applicable'&&parsed.entries.has(key))add('MANIFEST_UNEXPECTED_SAMPLE',owner,key);
    if(record.safeSample!==undefined&&parsed.entries.has(key)&&parsed.entries.get(key)!==record.safeSample)
