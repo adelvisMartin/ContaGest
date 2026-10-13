@@ -51,7 +51,7 @@ test('current LAB send reconciles all authorities before the durable journal',()
   assert.match(lab,/inquiryPurpose && sender && !plan\.scopeConflict/);
   assert.match(lab,/race:trustedRace/);
   assert.match(lab,/const verifiedRace=plan\.scopeConflict\?null:\(scopedRace\|\|plan\.raceScope\)/);
-  assert.match(lab,/labQuotedRaceJournal\.remember\(/);
+  assert.match(lab,/finalizeConfirmedVisibleLabQuote\(row,body\)/);
   assert.match(lab,/eligibleBefore\.reason==='LAB_HANDOFF_HELD'/);
   assert.match(lab,/eligibleAfter\.reason==='LAB_HANDOFF_HELD'/);
   assert.match(lab,/finally \{labTestProcessing=false;\}/);
@@ -181,45 +181,59 @@ test('completed multi-turn race reference is passed to the canonical query, not 
 });
 
 
-test('confirmed LAB ACK recovers context only for a verified informational purpose without re-sending',async()=>{
-  const start=lab.indexOf("if (journalRecord?.state === 'confirmed') {");
-  const end=lab.indexOf("if (journalRecord?.state === 'ambiguous'",start);
-  assert.ok(start>=0&&end>start,'confirmed ACK recovery branch missing');
-  const confirmed=lab.slice(start,end);
-  assert.match(confirmed,/const verifiedPurpose=labReadOnlyQueryPurpose\(body,classifyLocal\(body\)\)/);
-  let seen=0,quoteHints=0,contextCalls=0,recoveredAt=null;
-  const scope={raceNumber:5,racetrack:'La Rinconada',raceDate:'2026-10-12'};
-  const restore=vm.runInNewContext(
-    '(async function(row,body,journalRecord){for(const once of [row]){\n'+confirmed+'\n}})',
-    {
-      stableLabSenderKey:()=> 'sender-stable',
-      labReadOnlyQueryPurpose, classifyLocal,
-      confirmedLabQuoteHint:()=> scope,
-      labQuotedRaceJournal:{remember:async()=>{quoteHints++;}},
-      labConversationContext:{recoverConfirmed:async(sender,race,at)=>{
-        assert.equal(sender,'sender-stable');
-        assert.equal(race.raceNumber,5);
-        recoveredAt=at;
-        contextCalls++;
-      }},
-      planLabConversation:()=>({raceScope:scope,scopeConflict:false}),
+test('confirmed ACK restores conversation only from original encrypted LAB request, never mutable DOM',async()=>{
+  const helper=part(bridge,'async function recoverConfirmedLabConversation(',
+    'async function rememberConfirmedPendingLabQuote(').trim();
+  const trace=[];const scope={raceNumber:5,racetrack:'La Rinconada',raceDate:'2026-10-12'};
+  const original={
+    messageId:'false_120363222222222222@g.us_1_123456789012@lid',
+    senderId:'123456789012@lid',
+    text:'¿Cuál es el estado de la carrera 5?',purpose:'status',race:scope
+  };
+  const recover=vm.runInNewContext('('+helper+')',{
+    labConversationContext:{recoverConfirmed:async(sender,race,at)=>{
+      trace.push({sender,race,at});
+    }},
+    stableLabSenderKey:()=>original.senderId,
+    classifyLocal,labReadOnlyQueryPurpose,
+    planLabConversation:()=>({scopeConflict:false,raceScope:scope}),
+    log:async()=>{}
+  });
+  const ackAt='2026-10-12T23:00:00.000Z';
+  assert.equal(await recover(original,ackAt),true);
+  assert.equal(trace.length,1);
+  assert.equal(trace[0].race.raceNumber,5);
+  assert.equal(trace[0].at,ackAt,'original ACK timestamp cannot extend context TTL');
+  assert.equal(await recover({...original,senderId:'attacker@lid'},ackAt),false);
+  assert.equal(await recover({...original,text:'Registrar apuesta de carrera 5',purpose:'status'},ackAt),false);
+  assert.equal(trace.length,1,'unverified sender or monetary purpose never restores memory');
+
+  const st=lab.indexOf("if (journalRecord?.state === 'confirmed') {");
+  const en=lab.indexOf("if (journalRecord?.state === 'ambiguous'",st);
+  assert.ok(st>=0&&en>st);
+  const branch=lab.slice(st,en);
+  assert.doesNotMatch(branch,/labQuotedRaceJournal\.remember|confirmedLabQuoteHint\(/);
+  assert.match(branch,/labPendingInbox\?\.read\(row\.id\)/);
+  let saved=original,restored=0,seen=0;
+  const confirmed=vm.runInNewContext(
+    '(async function(row,body,journalRecord){for(const once of [row]){\n'+branch+'\n}})',{
+      labPendingInbox:{read:async()=>saved},
+      recoverConfirmedLabConversation:async entry=>{
+        assert.equal(entry,original,'only encrypted pre-query input is authorized');
+        restored++;
+      },
       rememberLabSeen:()=>{seen++;},
       saveLabSeenNow:async()=>{},
-      finalizeConfirmedVisibleLabQuote:async()=>{},
-      log:async()=>{}
-    }
-  );
-  const row={id:'false_120363222222222222@g.us_1_123456789012@lid'};
-  const journal={state:'confirmed',updatedAt:'2026-10-12T23:00:00.000Z'};
-  await restore(row,'¿Cuál es el estado de la carrera 5?',journal);
-  assert.equal(contextCalls,1);
-  assert.equal(quoteHints,1);
-  assert.equal(recoveredAt,journal.updatedAt,'original ACK timestamp must not extend TTL');
-  await restore(row,'Registrar apuesta para carrera 5',journal);
-  assert.equal(contextCalls,1,'monetary message cannot restore domain context');
-  assert.equal(seen,2,'confirmed message is never re-sent, including unsafe intent');
+      finalizeConfirmedVisibleLabQuote:async()=>{}
+    });
+  const row={id:original.messageId};
+  await confirmed(row,'DOM cambiado: carrera 6 en otro hipódromo',{state:'confirmed',updatedAt:ackAt});
+  assert.equal(restored,1);
+  saved=null;
+  await confirmed(row,'DOM cambiado otra vez',{state:'confirmed',updatedAt:ackAt});
+  assert.equal(restored,1,'no encrypted request means no context backfill');
+  assert.equal(seen,2,'confirmed ACK never starts another WhatsApp send');
 });
-
 
 test('LAB pending inbox and human handoff protect visible + out-of-DOM recovery',()=>{
   const replay=part(bridge,'async function resumePendingLabQueries(','let labTestProcessing=false');
