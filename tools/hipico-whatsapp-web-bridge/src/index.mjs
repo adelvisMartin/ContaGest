@@ -33,6 +33,7 @@ import { localKillSwitchState } from './promotion-guard.mjs';
 import { queryCanonicalLab, explicitLabRaceScope, labReadOnlyQueryPurpose, resolveQuotedLabRaceScope } from './lab-canonical-query.mjs';
 import { checkLabSendEligibility } from './lab-handoff-eligibility.mjs';
 import { selectLabAnswer } from './lab-answer-policy.mjs';
+import { composeLabAssistantReply } from './lab-assistant-replies.mjs';
 import { createLabQuotedRaceJournal } from './lab-quoted-race-journal.mjs';
 
 const config = assertRuntimeConfig(loadRuntimeConfig());
@@ -63,7 +64,8 @@ const {
   baselineIgnoreHistory: BASELINE_IGNORE_HISTORY,
   labTestInputEnabled: LAB_TEST_INPUT_ENABLED,
   labTestPollMs: LAB_TEST_POLL_MS,
-  labTestBootstrapLimit: LAB_TEST_BOOTSTRAP_LIMIT
+  labTestBootstrapLimit: LAB_TEST_BOOTSTRAP_LIMIT,
+  labAssistantName: LAB_ASSISTANT_NAME
 } = config;
 const SOURCE_REPLY_KILL_SWITCH = localKillSwitchState();
 const SOURCE_AUTO_REPLY_ACTIVE = SOURCE_AUTO_REPLY_ENABLED && !SOURCE_REPLY_KILL_SWITCH.active;
@@ -1010,29 +1012,15 @@ function labTestTagFor(externalMessageId) {
 }
 
 function localLabTestReply(row, classification, plan = null, canonical = null) {
-  const textValue = String(row.text || '').slice(0, 1200);
-  const entities = classification.entities || {};
-  const details = [];
-  if (entities.role) details.push(`Rol: ${entities.role === 'player' ? 'JUEGA' : 'CONSIGUE'}`);
-  if (entities.play) details.push(`Jugada: ${entities.play}`);
-  if (entities.horse) details.push(`Caballo: ${entities.horse}`);
-  if (entities.amount != null) details.push(`Monto detectado: ${entities.amount}`);
-  if (entities.raceNumber != null) details.push(`Carrera: ${entities.raceNumber}`);
-  if (Array.isArray(entities.board) && entities.board.length) details.push(`Pizarra: ${entities.board.join('-')}`);
   const answer=selectLabAnswer({
     canonical,plan,localFallback:localSuggestion(classification)
   });
-  return [
-    labTestTagFor(row.id),
-    '🧪 CONTROL HÍPICO · PRUEBA LAB',
-    `Mensaje: ${textValue || '[sin texto]'}`,
-    `Lectura: ${classification.intent} · riesgo ${classification.risk} · confianza ${(classification.confidence * 100).toFixed(1)}%`,
-    ...details,
-    `Respuesta: ${answer.text}`,
-    `Fuente: ${answer.source}`,
-    `Consulta: ${answer.reason}`,
-    '⚠️ SOLO LAB. No modifica jugadas, saldos, cierres ni resultados reales. Un resultado interno no certifica oficialidad externa.'
-  ].join('\n').slice(0, 3900);
+  const text=composeLabAssistantReply({
+    classification,plan,canonical,answer,assistantName:LAB_ASSISTANT_NAME
+  });
+  // Preserve durable visible LABTEST tag even when the human-facing answer
+  // is a bounded clarification; neither a canonical read nor memory is ACK.
+  return [text,labTestTagFor(row.id)].join('\n').slice(0,3900);
 }
 
 async function clearComposerSafely(composer) {
@@ -1246,15 +1234,13 @@ async function processLabTestInput() {
     }
 
     const classification = classifyLocal(body);
-    if (!labConversationInput(row, classification).eligible) {
+    // The stable sender key is checked before any bounded conversation hints.
+    const sender = stableLabSenderKey(row.id);
+    const prior = sender ? labConversationContext?.get(sender) : null;
+    if (!labConversationInput(row, classification, prior).eligible) {
       rememberLabSeen(row.id); // ignored echo/media/casual chat; never respond
       continue;
     }
-    const sender = stableLabSenderKey(row.id);
-    const prior = sender ? labConversationContext?.get(sender) : null;
-    const plan = planLabConversation(row, classification, prior);
-    // Query-only backend call completes BEFORE claiming a WhatsApp send intent.
-    // No token, URL or raw API response is ever appended to chat logs.
     const inquiryPurpose=labReadOnlyQueryPurpose(body,classification);
     const directRace=explicitLabRaceScope(body);
     const visibleQuotedRace=resolveQuotedLabRaceScope(row,visible);
@@ -1263,12 +1249,16 @@ async function processLabTestInput() {
           quotedMessageId:row.quotedId,senderId:sender,currentMessageId:row.id
         })
       : null;
+    // Durable quotes are same-sender confirmed hints, never facts. An
+    // explicit mismatch or multiple races blocks domain reads.
     const scopedRace=directRace||visibleQuotedRace||durableQuotedRace||null;
+    const plan=planLabConversation(row,classification,prior,scopedRace);
+    const verifiedRace=plan.scopeConflict?null:(scopedRace||plan.raceScope);
     const quotedVerified=Boolean(row.quotedId && !directRace && (visibleQuotedRace||durableQuotedRace));
     const eligibilityArgs={
       ingestUrl:INGEST_URL,token:TOKEN,labGroupId:LAB_GROUP_ID,
       labChannelKey:LAB_CHANNEL_KEY,messageId:row.id,senderId:sender,
-      race:scopedRace,timeoutMs:Math.min(5000,BACKEND_TIMEOUT_MS)
+      race:verifiedRace,timeoutMs:Math.min(5000,BACKEND_TIMEOUT_MS)
     };
     // Fail closed: a missing backend/identity/handoff table must never
     // silently turn a human-owned chat into an autonomous LAB send.
@@ -1283,7 +1273,7 @@ async function processLabTestInput() {
       await log('LAB_HANDOFF_PRECHECK_'+eligibleBefore.reason+' id='+tag);
       continue; // never prepare a send journal for a human-owned conversation
     }
-    const canonical = inquiryPurpose && sender && BACKEND_SYNC_ENABLED && backendState === 'online'
+    const canonical = inquiryPurpose && sender && !plan.scopeConflict && BACKEND_SYNC_ENABLED && backendState === 'online'
       ? await queryCanonicalLab({
           ingestUrl:INGEST_URL,token:TOKEN,
           labGroupId:LAB_GROUP_ID,labChannelKey:LAB_CHANNEL_KEY,
@@ -1327,7 +1317,7 @@ async function processLabTestInput() {
       // The WAL-backed confirmed acknowledgement is the single send authority.
       // Context is only a local hint; failed persistence can never resend LAB.
       if (plan.rememberRace && labConversationContext) {
-        try { await labConversationContext.remember(plan.sender,plan.raceNumber); }
+        try { await labConversationContext.remember(plan.sender,plan.raceNumber,plan.raceScope,{raceTrack:plan.raceTrack,raceDate:plan.raceDate}); }
         catch { await log('LAB_CONTEXT_PERSIST_FAILED'); }
       }
       processed += 1;
