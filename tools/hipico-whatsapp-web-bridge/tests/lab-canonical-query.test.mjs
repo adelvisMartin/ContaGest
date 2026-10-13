@@ -316,7 +316,7 @@ test('exhausted network recovery does not create an ACK or send intent for a can
   const send=section.indexOf('await sendTextInCurrentLab(');
   assert.ok(lookup>=0&&hold>lookup&&prepare>hold&&send>prepare);
   assert.match(section,/LAB_CANONICAL_QUERY_PENDING/);
-  assert.match(section,/if\(inquiryPurpose && BACKEND_SYNC_ENABLED && !sender\)/);
+  assert.match(section,/if\(!sender \|\| !parsedLabStamp\?\.parsed/);
 });
 
 
