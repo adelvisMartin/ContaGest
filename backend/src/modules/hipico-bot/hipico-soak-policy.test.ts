@@ -18,12 +18,12 @@ const policy={
 };
 const drill=(id:string)=>({status:'PASS' as const,at:'2026-08-30T23:00:00.000Z',evidence:[`${id}.log`]});
 const base={
-  candidateSha:'a'.repeat(40),durationMs:24*3600000,samples:100,
+  candidateSha:'a'.repeat(40),durationMs:24*3600000,samples:2880,
   rssStartMb:100,rssEndMb:120,heapStartMb:50,heapEndMb:60,
   eventLoopP95Ms:10,maxBacklogAgeSeconds:5,maxSpoolBytes:1024,
   unexpectedDuplicateResponses:0,lostDecisions:0,contextLeaks:0,
-  healthConfigured:true,spoolConfigured:true,healthChecks:100,healthFailures:0,
-  spoolChecks:100,spoolAvailableChecks:100,operatorPresent:true,
+  healthConfigured:true,spoolConfigured:true,healthChecks:2880,healthFailures:0,
+  spoolChecks:2880,spoolAvailableChecks:2880,operatorPresent:true,
   physicalEvidenceComplete:true,
   sourceReadOnly:'PASS' as const,labOnlyWriteDestination:'PASS' as const,sessionFallbackSafe:'PASS' as const,
   invariantEvidenceComplete:true,drillMaterialEvidenceComplete:true,
@@ -101,8 +101,8 @@ test('release evidence is emitted only from a real release PASS, never from smok
 test('malformed or impossible 24h soak metrics cannot PASS',()=>{
   const mutations=[
     {durationMs:NaN},{rssEndMb:NaN},{heapEndMb:Infinity},
-    {healthFailures:-1},{healthFailures:101},{spoolAvailableChecks:101},
-    {healthChecks:101},{spoolChecks:101},{samples:.5},
+    {healthFailures:-1},{healthFailures:2881},{spoolAvailableChecks:2881},
+    {healthChecks:2881},{spoolChecks:2881},{samples:.5},
     {lostDecisions:-1},{maxSpoolBytes:-1}
   ];
   for(const mutation of mutations){
