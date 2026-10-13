@@ -358,3 +358,30 @@ test('out-of-DOM LAB reconciliation relies on strict pinned outgoing first-line 
   assert.equal(labOutgoingEvidenceMatches('Cita anterior:\n'+valid,tag),false);
   assert.equal(labOutgoingEvidenceMatches(tag+'\nTexto incompleto',tag),false);
 });
+
+
+test('atomic encrypted inbox restart deletes orphan temporary writes, preserves complete records',async t=>{
+  const fixture=await harness(t);
+  const first=fixture.create();await first.initialize();
+  await first.enqueue(candidate());
+  const tempName='a'.repeat(64)+'.'+crypto.randomUUID()+'.tmp';
+  await fs.writeFile(path.join(fixture.rootDir,tempName),'interrupted encrypted candidate', {mode:0o600});
+  await first.close();
+  const restored=fixture.create();
+  const start=await restored.initialize();
+  assert.equal(start.recovered,1);
+  assert.equal((await restored.list()).length,1);
+  assert.equal((await fs.readdir(fixture.rootDir)).includes(tempName),false);
+  await restored.close();
+});
+
+test('only completed encrypted LAB records use final .json filenames',async t=>{
+  const fixture=await harness(t);const inbox=fixture.create();
+  await inbox.initialize();
+  await inbox.enqueue(candidate());
+  const contents=await fs.readdir(fixture.rootDir);
+  assert.equal(contents.filter(name=>name.endsWith('.json')).length,1);
+  assert.equal(contents.filter(name=>name.endsWith('.tmp')).length,0);
+  assert.match(contents.find(name=>name.endsWith('.json')),/^[a-f0-9]{64}\.json$/);
+  await inbox.close();
+});
