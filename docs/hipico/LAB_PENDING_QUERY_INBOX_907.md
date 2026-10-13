@@ -206,3 +206,24 @@ original, y comprobación de orden `lock → key → scan`.
 
 Estas comprobaciones no certifican todavía el manejo de ACL de NTFS,
 apagones físicos ni los workflows de Node completos.
+
+## Selección equitativa de recuperación (2026-10-13)
+
+El Bridge procesa como máximo **25 consultas cifradas por ciclo LAB**, pero
+ahora avanza un cursor rotativo incluso cuando las primeras consultas siguen
+ambiguas, el backend está desconectado o hay *backoff*. Antes siempre volvía
+a elegir las mismas 25 más antiguas y podía dejar sin oportunidad a consultas
+posteriores hasta que caducasen.
+
+La nueva lectura `list(25,{offset})` realiza una ventana circular sobre
+el máximo configurado de 200 entradas; no altera la identidad, orden de
+confirmación ni contenido de ningún registro cifrado. El cursor es temporal
+y **no constituye un ACK**, una autoridad de entrega ni un permiso de envío.
+Las consultas nuevas siguen necesitando respuesta canónica reciente y los
+envíos ambiguos se concilian exclusivamente por prueba saliente válida.
+
+Pruebas agregadas: 31 entradas, ventanas rotativas que cubren todas,
+rechazo de desplazamientos inválidos y avance del cursor antes del control
+de backend. El selector real se ejecutó con 31 registros simulados:
+cobertura 31/31 en dos ventanas, **PASS**. La validación de Node con cifrado
+y filesystem real permanece pendiente de CI/Windows.
