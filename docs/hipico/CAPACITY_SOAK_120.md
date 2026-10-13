@@ -14,6 +14,7 @@ El soak de release se ejecuta **después** de #119. Debe existir el `manifest.js
 
 - 24 h mínimo para release, 48 h recomendado y 72 h preferido para RC;
 - thresholds de crecimiento RSS/heap, event-loop p95, backlog age, spool, duplicados, pérdidas, context leaks y health failure rate;
+- muestreo continuo cada 30 segundos según la política; para release deben existir al menos el **90% de las muestras esperadas por tiempo transcurrido** (24 h: 2880 esperadas, 2592 mínimo); un `--sample-seconds` más lento no concede por sí mismo PASS;
 - health y spool observados durante al menos 90% de las muestras;
 - drills obligatorios: restart Bridge, restart backend, reconnect LAB y reconnect SOURCE manteniendo SOURCE read-only;
 - operador QA identificado;
@@ -127,6 +128,7 @@ El verifier de release v290 descubre `soak-evidence.json` como evidencia opciona
 - duration <24 h → `SMOKE_ONLY` si no existe otra violación/bloqueo;
 - drill no ejecutado, fuera de la ventana del run o sin evidence material → `BLOCKED`;
 - SOURCE/LAB/session invariant no verificada al final del run o sin evidence material → `BLOCKED`;
+- número de muestras inferior al 90% de la frecuencia oficial de 30 s → `BLOCKED` (`SOAK_SAMPLE_CADENCE_INSUFFICIENT`), aunque duración/health/spool afirmados parezcan correctos;
 - health/spool sin cobertura suficiente → `BLOCKED`;
 - threshold excedido → `FAIL`;
 - sin muestras → `NOT_EXECUTED`;
