@@ -29,7 +29,7 @@ test('current LAB send reconciles all authorities before the durable journal',()
   const prior=lab.indexOf('const prior = sender ? labConversationContext?.get(sender)');
   const eligible=lab.indexOf('labConversationInput(row, classification, prior)');
   const quoted=lab.indexOf('labQuotedRaceJournal?.lookup(');
-  const plan=lab.indexOf('planLabConversation(row,classification,prior,scopedRace)');
+  const plan=lab.indexOf('planLabConversation(row, classification, prior, scopedRace)');
   const handoff1=lab.indexOf('const eligibleBefore=');
   const canonical=lab.indexOf('await queryCanonicalLab(');
   const handoff2=lab.indexOf('const eligibleAfter=await checkLabSendEligibility(');
