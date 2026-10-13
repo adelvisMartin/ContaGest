@@ -47,8 +47,11 @@ function readRecoveryContext() {
   if (hadAuthMaterial) history.replaceState(history.state, '', cleanAppUrl().toString());
   // A contradictory callback (success token plus provider error) is not
   // authorized recovery. Never activate its token even if type=recovery.
-  if (type === 'recovery' && token && !hashError && !queryError &&
-      !hash.has('error_code') && !query.has('error_code')) {
+  // Presence of any provider error field vetoes the token, even if its value
+  // is empty. A contradictory callback must fail closed.
+  const providerHasError = ['error', 'error_description', 'error_code']
+    .some(key => hash.has(key) || query.has(key));
+  if (type === 'recovery' && token && !providerHasError) {
     recoveryAccessToken = token;
     recoveryError = '';
     return;
