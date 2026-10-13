@@ -135,3 +135,15 @@ test('#665 env runtime consumes the same pure startup production predicate',()=>
     /export const isProductionDeployment = isProductionBackendRuntime\(process\.env\);/);
   assert.doesNotMatch(source,/!process\.env\.VERCEL_ENV && parsedEnv\.NODE_ENV/);
 });
+
+
+test('#665 explicitly empty NODE_ENV fails instead of silently selecting development',()=>{
+  for(const NODE_ENV of ['', ' ', '\t']){
+    const config={NODE_ENV,API_MODE:'mock'};
+    assert.ok(checkBackendStartupConfig(config).failures.includes('NODE_ENV_UNRECOGNIZED'),
+      'blank env value must not become local development');
+    assert.throws(()=>assertBackendStartupConfig(config),/NODE_ENV_UNRECOGNIZED/);
+  }
+  // An actually absent variable retains the documented local default.
+  assert.equal(checkBackendStartupConfig({API_MODE:'mock'}).ok,true);
+});

@@ -15,7 +15,9 @@ export function isProductionBackendRuntime(config: BackendStartupInput): boolean
 
 export function checkBackendStartupConfig(config: BackendStartupInput) {
   const failures: string[]=[];
-  const nodeEnv=config.NODE_ENV || 'development';
+  // Only a missing NODE_ENV selects the local default. An explicitly blank
+  // label is a configuration error, never an implicit development fallback.
+  const nodeEnv=config.NODE_ENV === undefined ? 'development' : config.NODE_ENV;
   const vercelEnv=config.VERCEL_ENV || '';
   if(!NODE_ENVS.has(nodeEnv))failures.push('NODE_ENV_UNRECOGNIZED');
   if(vercelEnv&&!VERCEL_ENVS.has(vercelEnv))failures.push('VERCEL_ENV_UNRECOGNIZED');
