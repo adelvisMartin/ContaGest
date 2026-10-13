@@ -530,3 +530,57 @@ test('confirmed LAB queries finish ACK-only hints while still visible or backend
   assert.match(body,/if \(visibleIds\.has\(entry\.messageId\) && state\?\.state !== 'confirmed'\) continue/);
   assert.match(body,/if \(backendState !== 'online'\) continue/);
 });
+
+
+test('initial AES key is atomically published under owner lock and orphan key stage is cleaned',async t=>{
+  const f=await harness(t);
+  // Model a crash before the key's staged bytes could become authoritative.
+  const stage=path.join(f.rootDir,'inbox.key.'+crypto.randomUUID()+'.tmp');
+  await fs.writeFile(stage,Buffer.from('incomplete-key'),{mode:0o600});
+  const inbox=f.create();
+  assert.deepEqual(await inbox.initialize(),{recovered:0});
+  assert.equal((await fs.readdir(f.rootDir)).includes(path.basename(stage)),false);
+  const key=await fs.readFile(path.join(f.rootDir,'inbox.key'));
+  assert.equal(key.length,32);
+  await inbox.enqueue(candidate());
+  await inbox.close();
+
+  const recovered=f.create();await recovered.initialize();
+  assert.equal((await recovered.list()).length,1);
+  assert.deepEqual(await fs.readFile(path.join(f.rootDir,'inbox.key')),key,
+    'restart must never rotate the durable AES key');
+  await recovered.close();
+});
+
+test('damaged existing AES key is never re-created or replaced on restart',async t=>{
+  const f=await harness(t);
+  const inbox=f.create();await inbox.initialize();await inbox.enqueue(candidate());await inbox.close();
+  const keyFile=path.join(f.rootDir,'inbox.key');
+  const goodKey=await fs.readFile(keyFile);
+  const row=(await fs.readdir(f.rootDir)).find(name=>name.endsWith('.json'));
+  const encryptedBefore=await fs.readFile(path.join(f.rootDir,row));
+  const malformed=Buffer.from('bad-and-incomplete');
+  await fs.writeFile(keyFile,malformed);
+  const recovered=f.create();
+  await assert.rejects(recovered.initialize(),/LAB_PENDING_KEY_INVALID/);
+  assert.deepEqual(await fs.readFile(keyFile),malformed,'never silently rotate an existing key');
+  assert.deepEqual(await fs.readFile(path.join(f.rootDir,row)),encryptedBefore,
+    'failure never deletes encrypted business context');
+  assert.equal((await fs.readdir(f.rootDir)).includes('owner.lock'),false,
+    'failed bootstrap must release only its own lock');
+
+  // Recovery is only possible with the original key, not a new random one.
+  await fs.writeFile(keyFile,goodKey);
+  const restored=f.create();await restored.initialize();
+  assert.equal((await restored.snapshot()).pending,1);
+  await restored.close();
+});
+
+test('inbox source acquires owner lock before generating encryption key',async()=>{
+  const src=await fs.readFile(new URL('../src/lab-pending-query-inbox.mjs',import.meta.url),'utf8');
+  const init=src.slice(src.indexOf('    async initialize(){'),src.indexOf('    async read(messageId)'));
+  assert.ok(init.indexOf('await lockOwner()')>=0);
+  assert.ok(init.indexOf('await lockOwner()')<init.indexOf('key=await loadKey()'));
+  assert.match(src,/await fs\.rename\(temp,keyFile\)/);
+  assert.match(src,/await handle\.sync\(\)/);
+});
