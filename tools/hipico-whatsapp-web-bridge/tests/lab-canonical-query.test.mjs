@@ -450,3 +450,36 @@ test('canonical adapter accepts only the exact application/json HTTP media type'
     assert.equal(accepted.text,canonical.text);
   }
 });
+
+test('lost HTTP in a scoped LAB race summary preserves immutable read-only request across retry',async()=>{
+  const race={raceNumber:5,racetrack:'La Rinconada',raceDate:'2026-10-12'};
+  const question='¿Resumen de la carrera 5 en hipódromo La Rinconada el 2026-10-12?';
+  assert.equal(labReadOnlyQueryPurpose(question,{intent:'conversation',risk:'safe'}),'summary');
+  const seen=[];
+  let calls=0;
+  const result=await queryCanonicalLab({...base,race,text:question,purpose:'summary',
+    fetchImpl:async(url,options)=>{
+      calls++;
+      seen.push({url,method:options.method,redirect:options.redirect,
+        token:options.headers['x-hipico-bridge-token'],body:options.body});
+      if(calls===1)throw new TypeError('ECONNRESET_AFTER_READ_ONLY_BACKEND_COMMIT');
+      return json({ok:true,mode:'shadow',status:'CANONICAL_RACE_SUMMARY',
+        text:'Resumen interno, sin carácter oficial.',
+        authority:{sourceWriteAllowed:false,financialAuthority:false,domainEffectsAllowed:false}
+      });
+    }});
+  assert.equal(calls,2);
+  assert.deepEqual(seen[0],seen[1],'a lost response may only retry an identical read-only request');
+  assert.equal(seen[0].redirect,'manual');
+  assert.equal(seen[0].method,'POST');
+  const envelope=JSON.parse(seen[1].body);
+  assert.equal(envelope.externalMessageId,base.messageId);
+  assert.equal(envelope.groupId,base.labGroupId);
+  assert.equal(envelope.channelRole,'lab');
+  assert.equal(envelope.shadowMode,true);
+  assert.equal(envelope.purpose,'summary');
+  assert.deepEqual(envelope.race,race);
+  assert.equal(result.available,true);
+  assert.equal(result.reason,'CANONICAL_RACE_SUMMARY');
+  assert.equal(result.text,'Resumen interno, sin carácter oficial.');
+});

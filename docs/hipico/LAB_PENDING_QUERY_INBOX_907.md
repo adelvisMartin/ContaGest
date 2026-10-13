@@ -317,3 +317,19 @@ backend. Comprobación aislada de funciones reales (V8): nueve mensajes
 positivos/negativos y cinco validaciones del inbox con resultados esperados.
 Node tests completos, PostgreSQL y Windows todavía no tienen evidencia verde
 del SHA final. No se activó SOURCE ni ninguna autoridad monetaria.
+
+## Reconciliación de conflictos PR #930 vs. #932 (2026-10-13)
+
+La integración conversacional + inbox cifrado de PR #932 llegó primero a
+`main`. Para resolver la divergencia de PR #930 sin revertir el código
+fusionado, se eligió la versión canónica de `main` en todos los conflictos
+que ya estaban cubiertos por #932: el flujo con tres gates de handoff,
+WAL, recuperación por ACK saliente, antigüedad real de las consultas,
+resúmenes de carrera, privacidad y memoria conversacional tras reinicio.
+No se sustituyó el Bridge integrado por el `index.mjs` antiguo del PR #930.
+
+Se conserva además una regresión específica para garantizar que, si se pierde
+la respuesta HTTP a un resumen de carrera, el segundo intento conserva el
+mismo identificador, canal LAB, alcance y propósito read-only. Esta
+reconciliación de Git no es por sí sola evidencia de suite Node, CI o pruebas
+Windows/WhatsApp ejecutadas. SOURCE continúa sin autoridad de escritura.
