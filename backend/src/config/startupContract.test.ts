@@ -86,7 +86,7 @@ test('#665 backend sample .env.example carries the same safe startup authority',
     assert.match(template,new RegExp('^'+key+'='+value+'$','m'));
   }
   assert.equal(checkBackendStartupConfig(Object.fromEntries(
-    template.split(/\\r?\\n/).filter(x=>/^[A-Z][A-Z0-9_]*=/.test(x))
+    template.split(/\r?\n/).filter(x=>/^[A-Z][A-Z0-9_]*=/.test(x))
       .map(x=>[x.slice(0,x.indexOf('=')),x.slice(x.indexOf('=')+1)])
   )).ok,true);
 });
