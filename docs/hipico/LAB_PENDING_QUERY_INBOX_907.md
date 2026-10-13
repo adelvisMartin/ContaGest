@@ -184,3 +184,25 @@ el CI exact-SHA ni la verificación física de WhatsApp en Windows.
 Si el journal de salida ya tiene un ACK confirmado pero **no existe** la entrada cifrada original de la consulta, el Bridge no reconstruye pistas de carrera a partir del texto mutable del DOM. Mantiene el ACK, registra únicamente `LAB_QUOTE_HINT_NO_VERIFIED_INPUT` y omite la pista auxiliar. Una entrada cifrada que sí existe tiene prioridad sobre texto/cita visible y se elimina únicamente después de guardar la pista HMAC. Esto no provoca un segundo envío ni afecta SOURCE.
 
 Regresión: DOM con otra carrera + bandeja vacía no genera pistas; DOM alterado + entrada cifrada válida usa solamente la entrada cifrada. QA Node/CI exact-SHA y Windows físico siguen como gates independientes.
+
+## Arranque transaccional de clave privada AES (2026-10-13)
+
+El Bridge adquiere `owner.lock` **antes** de leer o crear `inbox.key`.
+Una clave nueva se genera en `inbox.key.<UUID>.tmp` con modo privado,
+se sincroniza y después se renombra atómicamente a `inbox.key`.
+Sólo bajo el candado se limpian restos temporales abandonados.
+
+Una clave existente **nunca se reemplaza ni se regenera**: si mide distinto
+de 32 bytes, es un enlace simbólico o no puede leerse, el arranque falla
+cerrado. Rotarla destruiría la posibilidad de recuperar consultas cifradas
+pendientes; restaurar la clave original corresponde al procedimiento seguro
+de respaldo. El error libera únicamente el candado cuya identidad/token
+siga perteneciendo al proceso de arranque.
+
+Pruebas añadidas: inicialización con clave temporal incompleta abandonada,
+reinicio que conserva exactamente los mismos 32 bytes, rechazo de clave
+existente dañada conservando ciphertext, arranque restaurado con la clave
+original, y comprobación de orden `lock → key → scan`.
+
+Estas comprobaciones no certifican todavía el manejo de ACL de NTFS,
+apagones físicos ni los workflows de Node completos.
