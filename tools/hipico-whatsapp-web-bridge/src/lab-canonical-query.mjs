@@ -13,6 +13,33 @@ export function labCanonicalQueryUrl(ingestUrl){
   }catch{return null;}
 }
 
+const MAX_LAB_CANONICAL_BYTES=16_384;
+// Bound decompressed UTF-8 bytes as they arrive, before allocating a full body.
+// Native fetch exposes body.getReader(); streamless test adapters use text().
+async function readBoundedLabCanonicalBody(response){
+  if(typeof response.body?.getReader==='function'){
+    const reader=response.body.getReader();
+    const decoder=new TextDecoder('utf-8',{fatal:true});
+    let bytes=0,raw='',complete=false;
+    try{
+      while(true){
+        const {done,value}=await reader.read();
+        if(done){complete=true;break;}
+        if(!(value instanceof Uint8Array))return null;
+        bytes+=value.byteLength;
+        if(bytes>MAX_LAB_CANONICAL_BYTES)return null;
+        try{raw+=decoder.decode(value,{stream:true});}catch{return null;}
+      }
+      try{return raw+decoder.decode();}catch{return null;}
+    }finally{
+      if(!complete)void reader.cancel().catch(()=>{});
+      try{reader.releaseLock();}catch{}
+    }
+  }
+  const raw=await response.text();
+  return new TextEncoder().encode(raw).byteLength<=MAX_LAB_CANONICAL_BYTES?raw:null;
+}
+
 export function explicitLabRaceScope(text){
   const raw=String(text||'');
   const match=raw.match(/\bcarrera\s*(?:n(?:[úu]mero|ro)?\.?\s*)?(\d{1,3})\s+en\s+(?:(?:el\s+)?hip[oó]dromo\s+)?([\p{L}0-9 ]{2,90}?)\s+(?:el|fecha)\s+(\d{4}-\d{2}-\d{2})\b/iu);
@@ -95,14 +122,18 @@ export async function queryCanonicalLab({
     if(response.status!==200||!response.headers.get('content-type')?.toLowerCase().includes('application/json')){
       return{available:false,reason:'LAB_CANONICAL_UNAVAILABLE'};
     }
-    const length=Number(response.headers.get('content-length')||0);
-    if(length>16_384)return{available:false,reason:'LAB_CANONICAL_INVALID_RESPONSE'};
+    const lengthHeader=response.headers.get('content-length');
+    if(lengthHeader!==null&&(!/^\d+$/.test(lengthHeader)||
+      !Number.isSafeInteger(Number(lengthHeader))||
+      Number(lengthHeader)>MAX_LAB_CANONICAL_BYTES)){
+      return{available:false,reason:'LAB_CANONICAL_INVALID_RESPONSE'};
+    }
     let raw;
-    try{raw=await response.text();}catch{
+    try{raw=await readBoundedLabCanonicalBody(response);}catch{
       if(attempt===0)continue;
       return{available:false,reason:'LAB_CANONICAL_UNAVAILABLE'};
     }
-    if(raw.length>16_384)return{available:false,reason:'LAB_CANONICAL_INVALID_RESPONSE'};
+    if(raw===null)return{available:false,reason:'LAB_CANONICAL_INVALID_RESPONSE'};
     let body;
     try{body=JSON.parse(raw);}catch{return{available:false,reason:'LAB_CANONICAL_INVALID_RESPONSE'};}
     const authority=body?.authority;
