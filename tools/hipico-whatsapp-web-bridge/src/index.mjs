@@ -1252,7 +1252,7 @@ async function processLabTestInput() {
     // Durable quotes are same-sender confirmed hints, never facts. An
     // explicit mismatch or multiple races blocks domain reads.
     const scopedRace=directRace||visibleQuotedRace||durableQuotedRace||null;
-    const plan=planLabConversation(row,classification,prior,scopedRace);
+    const plan=planLabConversation(row, classification, prior, scopedRace);
     const verifiedRace=plan.scopeConflict?null:(scopedRace||plan.raceScope);
     const quotedVerified=Boolean(row.quotedId && !directRace && (visibleQuotedRace||durableQuotedRace));
     const eligibilityArgs={
