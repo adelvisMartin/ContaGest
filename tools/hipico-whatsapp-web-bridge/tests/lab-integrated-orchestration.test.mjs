@@ -550,3 +550,48 @@ test('human review from canonical backend is terminal before LAB WAL and Enter',
     assert.deepEqual(operations,['seen','seen-fsync','remove-ciphertext','log'],branch.label);
   }
 });
+
+
+test('durable canonical human review remains terminal after encrypted cleanup fault',async()=>{
+  const replay=part(bridge,'async function resumePendingLabQueries(','let labTestProcessing=false');
+  const boundaries=[
+    {label:'off-DOM',body:replay,end:'if (canonical.available!==true)',cleanup:'LAB_PENDING_REVIEW_CLEANUP_DEFERRED'},
+    {label:'visible',body:lab,end:'if(inquiryPurpose && canonical.available!==true)',cleanup:'LAB_REVIEW_CLEANUP_DEFERRED'}
+  ];
+  for(const item of boundaries){
+    const begin=item.body.indexOf("if(canonical.reason==='LAB_CANONICAL_REVIEW_REQUIRED'){");
+    const end=item.body.indexOf(item.end,begin);
+    assert.ok(begin>=0&&end>begin,'terminal review boundary: '+item.label);
+    const snippet=item.body.slice(begin,end);
+    assert.match(snippet,/await saveLabSeenNow\(\)/);
+    assert.match(snippet,/CLEANUP_DEFERRED/);
+    assert.doesNotMatch(snippet,/labTestReplyJournal\.prepare|sendTextInCurrentLab|labQueryBackoff\.fail/);
+    const run=async({failFsync=false,failCleanup=false}={})=>{
+      const events=[];
+      const fn=vm.runInNewContext(
+        '(async()=>{const row={id:"one"},entry={messageId:"one"},tag="fixture";'
+        +'const canonical={available:false,reason:"LAB_CANONICAL_REVIEW_REQUIRED"};'
+        +'for(const once of [1]){'+snippet+'throw Error("UNSAFE_RETRY");}'
+        +'return "TERMINAL";})',
+        {rememberLabSeen:()=>events.push('seen'),
+         saveLabSeenNow:async()=>{
+           events.push('fsync');
+           if(failFsync)throw Error('FSYNC_FAILED');
+         },
+         labPendingInbox:{remove:async()=>{
+           events.push('remove');
+           if(failCleanup)throw Error('CLEANUP_FAILED');
+         }},
+         log:async message=>events.push(message.includes('CLEANUP_DEFERRED')?'deferred':'terminal-log')}
+      );
+      return {fn,events};
+    };
+    const cleanup=await run({failCleanup:true});
+    assert.equal(await cleanup.fn(),'TERMINAL',item.label);
+    assert.deepEqual(cleanup.events,['seen','fsync','remove','deferred','terminal-log'],item.label);
+    const fsync=await run({failFsync:true});
+    await assert.rejects(fsync.fn(),/FSYNC_FAILED/,item.label);
+    assert.deepEqual(fsync.events,['seen','fsync'],
+      'failed durability must never remove encrypted request or release authority: '+item.label);
+  }
+});

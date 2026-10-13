@@ -1368,7 +1368,10 @@ async function resumePendingLabQueries(visibleIds = new Set(), alreadySeenIds = 
     if(canonical.reason==='LAB_CANONICAL_REVIEW_REQUIRED'){
       rememberLabSeen(entry.messageId);
       await saveLabSeenNow();
-      await labPendingInbox.remove(entry.messageId);
+      // The terminal human-review decision is already durable. Cleanup
+      // failure must not make this message eligible for automated retry.
+      try{await labPendingInbox.remove(entry.messageId);}
+      catch{await log('LAB_PENDING_REVIEW_CLEANUP_DEFERRED id='+tag);}
       await log('LAB_PENDING_QUERY_REVIEW_REQUIRED id='+tag);
       continue;
     }
@@ -1634,7 +1637,10 @@ async function processLabTestInput() {
     if(canonical.reason==='LAB_CANONICAL_REVIEW_REQUIRED'){
       rememberLabSeen(row.id);
       await saveLabSeenNow();
-      await labPendingInbox?.remove(row.id);
+      // Preserve the fsynced review veto despite ciphertext cleanup faults;
+      // cleanup is secondary and never grants permission for LAB Enter.
+      try{await labPendingInbox?.remove(row.id);}
+      catch{await log('LAB_REVIEW_CLEANUP_DEFERRED id='+tag);}
       await log('LAB_CANONICAL_REVIEW_REQUIRED id='+tag);
       continue;
     }
