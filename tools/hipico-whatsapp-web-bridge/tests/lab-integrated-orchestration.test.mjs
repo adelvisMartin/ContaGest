@@ -399,8 +399,12 @@ test('human LAB handoff cancels persisted pending replay at every visible-send g
     assert.equal(await runner(),'HANDOFF_STOPPED',testCase.name);
     assert.deepEqual(events.slice(0,testCase.rollback?4:3),
       testCase.rollback?
-        ['rollback-no-Enter','seen','persist-seen','discard-pending']:
+        ['seen','persist-seen','rollback-no-Enter','discard-pending']:
         ['seen','persist-seen','discard-pending'],testCase.name);
+    if(testCase.rollback){
+      assert.ok(events.indexOf('persist-seen')<events.indexOf('rollback-no-Enter'),
+        'terminal LAB handoff must be durable before WAL becomes retryable');
+    }
     assert.equal(events.at(-1),'log',testCase.name);
   }
 });
