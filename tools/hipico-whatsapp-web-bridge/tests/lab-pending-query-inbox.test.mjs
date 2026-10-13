@@ -331,3 +331,30 @@ test('mixed SOURCE/LAB message identifiers and quotes never enter the encrypted 
   assert.equal((await inbox.snapshot()).pending,0);
   await inbox.close();
 });
+
+
+test('out-of-DOM LAB reconciliation relies on strict pinned outgoing first-line evidence, never quoted tag substring',async()=>{
+  const fs=await import('node:fs/promises');
+  const index=await fs.readFile(new URL('../src/index.mjs',import.meta.url),'utf8');
+  const section=index.slice(index.indexOf('async function resumePendingLabQueries('),index.indexOf('async function processLabTestInput()'));
+  assert.match(section,/if \(await visibleLabHasTag\(tag\)\)/);
+  const start=index.indexOf('async function visibleLabHasTag(tag) {');
+  const stop=index.indexOf('async function sendMirrorToLab(mirror) {',start);
+  const proof=index.slice(start,stop);
+  assert.ok(start>0&&stop>start);
+  assert.match(proof,/const main=document\.querySelector\('#main'\)/);
+  assert.match(proof,/main\.querySelectorAll\('\.message-out'\)/);
+  assert.equal((proof.match(/await assertCurrentLabIdentity\(\)/g)||[]).length,2);
+  assert.match(proof,/labOutgoingEvidenceMatches\(text,tag\)/);
+  assert.doesNotMatch(proof,/\.includes\(needle\)/);
+  const {labOutgoingEvidenceMatches}=await import('../src/lab-outgoing-evidence.mjs');
+  const tag='[LABTEST:012345abcd]';
+  const valid=[
+    tag,'🧪 CONTROL HÍPICO · PRUEBA LAB',
+    'Respuesta: Se requiere confirmación canónica.',
+    'Fuente: Lectura LAB'
+  ].join('\n');
+  assert.equal(labOutgoingEvidenceMatches(valid,tag),true);
+  assert.equal(labOutgoingEvidenceMatches('Cita anterior:\n'+valid,tag),false);
+  assert.equal(labOutgoingEvidenceMatches(tag+'\nTexto incompleto',tag),false);
+});
