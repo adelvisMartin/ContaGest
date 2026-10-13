@@ -435,6 +435,36 @@ test('confirmed visible LAB ACK only clears inbox after private quote persistenc
   assert.deepEqual(actions,['read','hint','remove'],'durable HMAC hint precedes inbox deletion');
 });
 
+test('confirmed LAB ACK never backfills race from mutable DOM without encrypted input',async()=>{
+  const vm=await import('node:vm');
+  const source=await fs.readFile(new URL('../src/index.mjs',import.meta.url),'utf8');
+  const from=source.indexOf('async function finalizeConfirmedVisibleLabQuote(');
+  const to=source.indexOf('async function resumePendingLabQueries(',from);
+  assert.ok(from>=0&&to>from);
+  const helper=source.slice(from,to).trim();
+  const actions=[];
+  let stored=null;
+  const fn=vm.runInNewContext('('+helper+')',{
+    labPendingInbox:{
+      read:async id=>{assert.equal(id,MESSAGE);actions.push('read');return stored;},
+      remove:async id=>{assert.equal(id,MESSAGE);actions.push('remove');}
+    },
+    rememberConfirmedPendingLabQuote:async entry=>{
+      actions.push('hint');
+      assert.equal(entry,stored,'hint must come from original encrypted input');
+      return true;
+    },
+    log:async reason=>{assert.equal(reason,'LAB_QUOTE_HINT_NO_VERIFIED_INPUT');actions.push('no-verified-input');}
+  });
+  await fn({id:MESSAGE},'Consulta: carrera 6 en La Rinconada el 2026-10-12');
+  assert.deepEqual(actions,['read','no-verified-input'],'unverified DOM can never establish quoted context');
+  actions.length=0;
+  stored=candidate();
+  await fn({id:MESSAGE},'Consulta: carrera 6 en La Rinconada el 2026-10-12');
+  assert.deepEqual(actions,['read','hint','remove'],'verified encrypted context wins over changed DOM');
+  assert.doesNotMatch(helper,/senderId:sender,text:body/);
+});
+
 test('live LAB confirmed, ambiguous and normal send paths share ACK-only quote finalization',async()=>{
   const source=await fs.readFile(new URL('../src/index.mjs',import.meta.url),'utf8');
   const start=source.indexOf('async function processLabTestInput()');
@@ -529,4 +559,118 @@ test('confirmed LAB queries finish ACK-only hints while still visible or backend
   }
   assert.match(body,/if \(visibleIds\.has\(entry\.messageId\) && state\?\.state !== 'confirmed'\) continue/);
   assert.match(body,/if \(backendState !== 'online'\) continue/);
+});
+
+
+test('initial AES key is atomically published under owner lock and orphan key stage is cleaned',async t=>{
+  const f=await harness(t);
+  // Model a crash before the key's staged bytes could become authoritative.
+  const stage=path.join(f.rootDir,'inbox.key.'+crypto.randomUUID()+'.tmp');
+  await fs.writeFile(stage,Buffer.from('incomplete-key'),{mode:0o600});
+  const inbox=f.create();
+  assert.deepEqual(await inbox.initialize(),{recovered:0});
+  assert.equal((await fs.readdir(f.rootDir)).includes(path.basename(stage)),false);
+  const key=await fs.readFile(path.join(f.rootDir,'inbox.key'));
+  assert.equal(key.length,32);
+  await inbox.enqueue(candidate());
+  await inbox.close();
+
+  const recovered=f.create();await recovered.initialize();
+  assert.equal((await recovered.list()).length,1);
+  assert.deepEqual(await fs.readFile(path.join(f.rootDir,'inbox.key')),key,
+    'restart must never rotate the durable AES key');
+  await recovered.close();
+});
+
+test('damaged existing AES key is never re-created or replaced on restart',async t=>{
+  const f=await harness(t);
+  const inbox=f.create();await inbox.initialize();await inbox.enqueue(candidate());await inbox.close();
+  const keyFile=path.join(f.rootDir,'inbox.key');
+  const goodKey=await fs.readFile(keyFile);
+  const row=(await fs.readdir(f.rootDir)).find(name=>name.endsWith('.json'));
+  const encryptedBefore=await fs.readFile(path.join(f.rootDir,row));
+  const malformed=Buffer.from('bad-and-incomplete');
+  await fs.writeFile(keyFile,malformed);
+  const recovered=f.create();
+  await assert.rejects(recovered.initialize(),/LAB_PENDING_KEY_INVALID/);
+  assert.deepEqual(await fs.readFile(keyFile),malformed,'never silently rotate an existing key');
+  assert.deepEqual(await fs.readFile(path.join(f.rootDir,row)),encryptedBefore,
+    'failure never deletes encrypted business context');
+  assert.equal((await fs.readdir(f.rootDir)).includes('owner.lock'),false,
+    'failed bootstrap must release only its own lock');
+
+  // Recovery is only possible with the original key, not a new random one.
+  await fs.writeFile(keyFile,goodKey);
+  const restored=f.create();await restored.initialize();
+  assert.equal((await restored.snapshot()).pending,1);
+  await restored.close();
+});
+
+test('inbox source acquires owner lock before generating encryption key',async()=>{
+  const src=await fs.readFile(new URL('../src/lab-pending-query-inbox.mjs',import.meta.url),'utf8');
+  const init=src.slice(src.indexOf('    async initialize(){'),src.indexOf('    async read(messageId)'));
+  assert.ok(init.indexOf('await lockOwner()')>=0);
+  assert.ok(init.indexOf('await lockOwner()')<init.indexOf('key=await loadKey()'));
+  assert.match(src,/await fs\.rename\(temp,keyFile\)/);
+  assert.match(src,/await handle\.sync\(\)/);
+});
+
+test('rechecks original LAB TTL after a slow canonical HTTP response before sending',async()=>{
+  const vm=await import('node:vm');
+  const source=await fs.readFile(new URL('../src/index.mjs',import.meta.url),'utf8');
+  const start=source.indexOf('async function resumePendingLabQueries(');
+  const end=source.indexOf('let labTestProcessing=false;',start);
+  assert.ok(start>=0&&end>start);
+  const body=source.slice(start,end).trim();
+  const actions=[];
+  const entry=candidate();
+  const context={
+    labPendingInbox:{
+      list:async()=>[entry],
+      read:async id=>{assert.equal(id,MESSAGE);actions.push('freshness-read');return null;}
+    },
+    backendState:'online',BACKEND_SYNC_ENABLED:true,
+    labTestTagFor:()=> '[LABTEST:012345abcd]',
+    labTestReplyJournal:{
+      read:async()=>{actions.push('journal-read');return null;},
+      prepare:async()=>{throw new Error('EXPIRED_QUERY_MUST_NOT_PREPARE');},
+      begin:async()=>{throw new Error('EXPIRED_QUERY_MUST_NOT_BEGIN');}
+    },
+    classifyLocal:()=>({intent:'result'}),
+    stableLabSenderKey:()=>SENDER,
+    labConversationInput:()=>({eligible:true}),
+    labReadOnlyQueryPurpose:()=>entry.purpose,
+    planLabConversation:()=>({scopeConflict:false}),
+    checkLabSendEligibility:async()=>{actions.push('handoff-before');return{allowed:true}},
+    labQueryBackoff:{
+      allowed:()=>{actions.push('backoff-allowed');return true;},
+      clear:()=>{actions.push('backoff-clear');}
+    },
+    queryCanonicalLab:async()=>{actions.push('canonical-read');return {available:true};},
+    log:async message=>{
+      assert.match(message,/^LAB_PENDING_EXPIRED_BEFORE_SEND id=/);
+      actions.push('expired-log');
+    }
+  };
+  const resume=vm.runInNewContext('('+body+')',context);
+  await resume(new Set());
+  assert.deepEqual(actions,[
+    'journal-read','handoff-before','backoff-allowed','canonical-read','backoff-clear',
+    'freshness-read','expired-log'
+  ]);
+});
+
+test('visible LAB canonical response rechecks encrypted TTL before WAL send intent',async()=>{
+  const source=await fs.readFile(new URL('../src/index.mjs',import.meta.url),'utf8');
+  const start=source.indexOf('async function processLabTestInput()');
+  const end=source.indexOf('async function visibleLabHasTag(tag)',start);
+  assert.ok(start>=0&&end>start);
+  const live=source.slice(start,end);
+  const canonical=live.indexOf('const canonical = inquiryPurpose');
+  const guard=live.indexOf('if(inquiryPurpose && BACKEND_SYNC_ENABLED && labPendingInbox &&');
+  const sendIntent=live.indexOf('await labTestReplyJournal.prepare(row.id)');
+  assert.ok(canonical>=0&&guard>canonical&&sendIntent>guard);
+  assert.match(live.slice(guard,sendIntent),/await labPendingInbox\.read\(row\.id\)/);
+  assert.match(live.slice(guard,sendIntent),/LAB_PENDING_EXPIRED_BEFORE_SEND/);
+  assert.match(live.slice(guard,sendIntent),/continue;/);
 });
