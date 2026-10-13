@@ -126,3 +126,72 @@ test('planner cannot reuse nickname-only or ambiguous participant identities',()
   const double={...alias,id:'id_123456789012@lid_234567890123@lid'};
   assert.equal(stableLabSenderKey(double.id),'');
 });
+
+test('durable ACK recovers exactly one recent race scope without extending its TTL',async t=>{
+  const dir=await fs.mkdtemp(path.join(os.tmpdir(),'hipico-ack-hint-'));
+  t.after(()=>fs.rm(dir,{recursive:true,force:true}));
+  const file=path.join(dir,'lab-context.json');
+  const groupId='120363222222222222@g.us';
+  let clock=Date.UTC(2026,9,12,17,0,0);
+  const make=()=>createLabConversationContext({file,groupId,ttlMs:20000,
+    now:()=>clock});
+  const context=make();
+  await context.initialize();
+  const scope={raceNumber:5,racetrack:'La Rinconada',raceDate:'2026-10-12'};
+  const acknowledgedAt=new Date(clock-2000).toISOString();
+  const sender=PARTICIPANTS.Ana;
+  assert.equal(await context.recoverConfirmed(sender,scope,acknowledgedAt),true);
+  assert.deepEqual(context.get(sender),{raceNumber:5,raceScope:scope});
+  assert.equal(context.get(PARTICIPANTS.Bea),null);
+  const restarted=make();
+  await restarted.initialize();
+  assert.deepEqual(restarted.get(sender),{raceNumber:5,raceScope:scope});
+  assert.equal(await restarted.recoverConfirmed(sender,scope,acknowledgedAt),false);
+  const disk=await fs.readFile(file,'utf8');
+  assert.doesNotMatch(disk,/123456789012@lid|120363222222222222@g.us|La Rinconada|2026-10-12/);
+  clock+=18000;
+  assert.equal(restarted.get(sender),null,'ACK timestamp, not restart, defines expiration');
+  assert.equal(await restarted.recoverConfirmed(sender,scope,acknowledgedAt),false,
+    'expired ACK cannot resurrect old context');
+});
+
+test('confirmed ACK recovery fails closed for bad proof and does not overwrite newer participant memory',async t=>{
+  const dir=await fs.mkdtemp(path.join(os.tmpdir(),'hipico-ack-guard-'));
+  t.after(()=>fs.rm(dir,{recursive:true,force:true}));
+  const file=path.join(dir,'context.json');
+  const groupId='120363222222222222@g.us';
+  const t0=Date.UTC(2026,9,12,17,0,0);
+  const c=createLabConversationContext({file,groupId,now:()=>t0});
+  await c.initialize();
+  const oldScope={raceNumber:5,racetrack:'La Rinconada',raceDate:'2026-10-12'};
+  const newer={raceNumber:6,racetrack:'La Rinconada',raceDate:'2026-10-12'};
+  const sender=PARTICIPANTS.Ana;
+  for(const [race,stamp] of [
+    [{...oldScope,raceDate:'2026-02-30'},new Date(t0-1000).toISOString()],
+    [oldScope,'not-a-date'],
+    [oldScope,new Date(t0+1000).toISOString()],
+    [oldScope,new Date(t0-20*60*1000).toISOString()],
+    [oldScope,new Date(t0-1000).toISOString()]
+  ]){
+    const actual=await c.recoverConfirmed('nickname',race,stamp);
+    assert.equal(actual,false);
+  }
+  assert.equal(c.get(sender),null);
+  await c.remember(sender,newer.raceNumber,newer);
+  assert.equal(await c.recoverConfirmed(sender,oldScope,new Date(t0-1000).toISOString()),false);
+  assert.deepEqual(c.get(sender),{raceNumber:6,raceScope:newer});
+  assert.equal(c.get(PARTICIPANTS.Bea),null);
+});
+
+test('confirmed ACK hint restoration never triggers a WhatsApp re-send',async()=>{
+  const code=await fs.readFile(new URL('../src/index.mjs',import.meta.url),'utf8');
+  const start=code.indexOf("if (journalRecord?.state === 'confirmed')");
+  const end=code.indexOf("if (journalRecord?.state === 'ambiguous'",start);
+  assert.ok(start>0&&end>start);
+  const block=code.slice(start,end);
+  assert.match(block,/labConversationContext\.recoverConfirmed\(/);
+  assert.match(block,/journalRecord\.updatedAt/);
+  assert.match(block,/safePlan\.raceScope&&!safePlan\.scopeConflict/);
+  assert.match(block,/rememberLabSeen\(row\.id\)/);
+  assert.doesNotMatch(block,/sendTextInCurrentLab\(|labTestReplyJournal\.begin\(|labTestReplyJournal\.prepare\(/);
+});
