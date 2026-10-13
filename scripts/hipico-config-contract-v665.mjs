@@ -24,7 +24,7 @@ export function parseEnvTemplate(source) {
   for (const [index, raw] of String(source).split(/\r?\n/).entries()) {
     const line = raw.trim();
     if (!line || line.startsWith('#')) continue;
-    const match = /^(?:export\s+)?([A-Z][A-Z0-9_]*)=(.*)$/.exec(line);
+    const match = /^(?:export\s+)?([A-Z][A-Z0-9_]*)\s*=\s*(.*)$/.exec(line);
     if (!match) continue;
     if (vars.has(match[1])) duplicates.push({ key: match[1], line: index + 1 });
     vars.set(match[1], parseTemplateValue(match[2]));

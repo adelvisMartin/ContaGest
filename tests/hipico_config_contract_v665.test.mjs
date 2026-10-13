@@ -106,3 +106,21 @@ test('#665 quoted env comments retain internal hashes and safe URLs',()=>{
   assert.equal(values.get('VITE_HEADING'),'Demo #1');
   assert.equal(values.get('VITE_RAW'),'https://api.example.test/v1#fragment');
 });
+
+test('#665 spaces near = cannot bypass public frontend credential checks',()=>{
+  const password='https://operator:sensitive-password@api.example.test/v1';
+  const lines=[
+    'VITE_REMOTE = "'+password+'" # note',
+    'export VITE_REMOTE    =   "'+password+'" # note',
+    'VITE_REMOTE = '+password+' # note'
+  ];
+  for(const item of lines){
+    const parsed=parseEnvTemplate(item);
+    assert.equal(parsed.vars.get('VITE_REMOTE'),password);
+    const findings=check({frontend:frontend+'\n'+item}).findings;
+    assert.ok(findings.some(f=>f.code==='PUBLIC_SECRET_VALUE'&&f.key==='VITE_REMOTE'));
+    assert.doesNotMatch(JSON.stringify(findings),/operator|sensitive-password/);
+  }
+  assert.deepEqual(parseEnvTemplate('HIPICO_SOURCE_AUTO_REPLY_ENABLED = false').vars.get(
+    'HIPICO_SOURCE_AUTO_REPLY_ENABLED'),'false');
+});
