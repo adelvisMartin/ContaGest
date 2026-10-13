@@ -57,6 +57,38 @@ test('current LAB send reconciles all authorities before the durable journal',()
   assert.doesNotMatch(lab,/sendTextInCurrentSource/);
 });
 
+test('canonical informational failures cannot reach LAB send journal or keyboard',async()=>{
+  const read=lab.indexOf('await queryCanonicalLab({');
+  const start=lab.indexOf('if(inquiryPurpose && canonical.available!==true)',read);
+  const end=lab.indexOf('// A slower canonical query may overlap operator takeover',start);
+  const recheck=lab.indexOf('const eligibleAfter=await checkLabSendEligibility(',read);
+  const prepare=lab.indexOf('await labTestReplyJournal.prepare(row.id)',read);
+  const send=lab.indexOf('await sendTextInCurrentLab(',read);
+  assert.ok(read>=0&&start>read&&end>start&&recheck>end&&
+    prepare>recheck&&send>prepare,'canonical availability must gate handoff, WAL and Enter');
+  const snippet=lab.slice(start,end);
+  assert.match(snippet,/continue;/);
+  assert.doesNotMatch(snippet,/prepare\(|begin\(|sendTextInCurrentLab\(/);
+  const logs=[];
+  const evaluate=vm.runInNewContext(
+    '(async (purpose,response)=>{const inquiryPurpose=purpose,canonical=response,tag="[LABTEST:fixture]";for(const row of [1]){'+snippet+'return "MAY_CONTINUE_TO_WAL";}return "NO_SEND";})',
+    {log:async value=>logs.push(value)}
+  );
+  for(const canonical of [
+    {available:false,reason:'LAB_CANONICAL_UNAVAILABLE'},
+    {available:false,reason:'LAB_CANONICAL_INVALID_RESPONSE'},
+    {available:false,reason:'LAB_CANONICAL_NOT_QUERIED'}
+  ]){
+    assert.equal(await evaluate('result',canonical),'NO_SEND',canonical.reason);
+  }
+  assert.equal(logs.length,3);
+  assert.equal(await evaluate('result',{available:true,reason:'CANONICAL_RACE_NOT_FOUND'}),'MAY_CONTINUE_TO_WAL',
+    'a verified absence is still a valid canonical informational response');
+  assert.equal(await evaluate(null,{available:false,reason:'LAB_CANONICAL_NOT_QUERIED'}),'MAY_CONTINUE_TO_WAL',
+    'purely local non-factual clarification remains available');
+  assert.equal(logs.length,3);
+});
+
 test('natural replies never promote unverified read-model text to canonical evidence',()=>{
   const classification={risk:'safe',intent:'conversation'};
   const plan={summaryRequested:true,raceNumber:5,
